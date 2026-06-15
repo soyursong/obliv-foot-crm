@@ -194,6 +194,26 @@ export interface KohRow {
   chart_number: string | null;   // 차트번호
   nail_sites: NailSite[];        // PHASE15(A): 발톱부위(koh_nail_sites jsonb 파생)
   treatment_sites: NailSite[];   // NAILSYNC(AC1): 치료부위(treatment_memo.foot_site → L→Lt/R→Rt 정규화 미러)
+  koh_requested: boolean;        // LIFECYCLE(AC-1/AC-2): KOH 신청 플래그. true=active(신청)/false=inactive(미신청·취소)
+}
+
+// ---------------------------------------------------------------------------
+// 발행 결과지 — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-3/AC-4/AC-5).
+//   form_submissions(status='published', template=koh_result) 1건 = 1 발행 결과지.
+//   KOH 검사행 ↔ 결과지 연결 = field_data.koh_service_id(스키마 무변경).
+// ---------------------------------------------------------------------------
+export interface PublishedKoh {
+  id: string;                       // form_submissions.id
+  koh_service_id: string;           // 연결 check_in_services.id
+  request_no: string;               // 의뢰번호(자동채번)
+  field_data: Record<string, unknown>;
+  created_at: string;
+}
+
+/** 검체채취일/검사의뢰일 표기 — 진료일(검사일) KST 'YYYY.MM.DD'(정본 양식 점 구분). */
+export function formatDocDate(createdAt: string | null | undefined): string {
+  if (!createdAt) return '—';
+  return seoulISODate(createdAt).replace(/-/g, '.');
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +235,8 @@ function useKohReport(clinicId: string | null, ym: string) {
       //     koh_nail_sites 제외 select 로 1회 폴백(발톱부위는 빈값). 마이그 적용 후 자동 활성.
       // NAILSYNC(AC1/AC2): check_ins.treatment_memo 동봉 → 치료부위(foot_site) 미러 소스.
       //   treatment_memo 는 既존 jsonb 컬럼(신규 컬럼 0). 균검사지에서 치료부위 선택분을 프리필.
-      const SELECT_WITH = 'id, service_name, created_at, koh_nail_sites, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
+      // LIFECYCLE(AC-1/AC-2): koh_requested(신청 플래그) 추가. koh_nail_sites 와 동일 column-missing 폴백 대상.
+      const SELECT_WITH = 'id, service_name, created_at, koh_nail_sites, koh_requested, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
       const SELECT_WITHOUT = 'id, service_name, created_at, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
       const runQuery = (sel: string) =>
         supabase
@@ -230,7 +251,8 @@ function useKohReport(clinicId: string | null, ym: string) {
           .order('created_at', { ascending: false });
 
       let { data, error } = await runQuery(SELECT_WITH);
-      if (error && /koh_nail_sites/.test(error.message ?? '')) {
+      // koh_nail_sites 또는 koh_requested 컬럼 부재(마이그 적용 전) 시 1회 폴백 — 둘 다 같은 마이그.
+      if (error && /(koh_nail_sites|koh_requested)/.test(error.message ?? '')) {
         ({ data, error } = await runQuery(SELECT_WITHOUT));
       }
       if (error) throw error;
@@ -256,6 +278,7 @@ function useKohReport(clinicId: string | null, ym: string) {
           chart_number: cust?.chart_number ?? null,
           nail_sites: parseNailSites(row['koh_nail_sites']),
           treatment_sites: treatmentNailSites(ci?.treatment_memo),
+          koh_requested: row['koh_requested'] === true, // 컬럼 부재 폴백 시 undefined → false(미신청)
         } as KohRow;
       });
     },
