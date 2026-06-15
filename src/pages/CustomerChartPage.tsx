@@ -1,6 +1,6 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
@@ -1885,7 +1885,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const medchartInitialTab = (RIGHT_TAB_KEYS as readonly string[]).includes(medchartParam ?? '')
     ? (medchartParam as 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult')
     : undefined;
-  const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
@@ -1966,6 +1965,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [treatmentImageUrls, setTreatmentImageUrls] = useState<string[]>([]);
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 편집 상태
   const [resvMemoInputs, setResvMemoInputs] = useState<Record<string, string>>({});
+  // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-1: 예약메모 표시(✏️)↔편집폼 토글 대상 예약 id (null=전부 display-only)
+  const [editingResvMemoId, setEditingResvMemoId] = useState<string | null>(null);
   // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 인라인 편집
   const [editingPhone, setEditingPhone] = useState(false);
   const [phoneText, setPhoneText] = useState('');
@@ -4169,6 +4170,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
 
+  // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-1: 예약메모 저장.
+  //   기존 append-only RPC(insertReservationMemo)·상태초기화·1번차트 알림 로직 그대로 — 표시/토글만 추가.
+  //   (customer·profile 은 위 early-return 통과 후이므로 non-null. 일반 함수 → hooks 규칙 무관.)
+  const saveResvMemo = async (reservationId: string) => {
+    const content = (resvMemoInputs[reservationId] ?? '').trim();
+    if (!content) { setEditingResvMemoId(null); return; }
+    await insertReservationMemo(reservationId, customer.clinic_id ?? '', content, profile.name ?? null);
+    setResvMemoInputs(prev => ({ ...prev, [reservationId]: '' }));
+    // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    setEditingResvMemoId(null);
+  };
+
   /* ── 공통 셀 스타일 (tailwind concat 대체) ── */
   const LC = 'bg-[#eef3f7] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#334e65] whitespace-nowrap text-[11px] w-[90px] shrink-0';
   const VC = 'border-b border-gray-200 px-2 py-1.5 text-xs';
@@ -4189,21 +4203,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           </Badge>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          {/* T-20260517-foot-RESV-NAV-DIRECT: 고객 컨텍스트 있음 → 예약관리로 이동 + 고객 자동채움 */}
-          {/* LOGIC-LOCK: L-002 — [예약하기] 클릭 시 항상 /admin/reservations full page 전환. 예외 없음. 변경 시 현장 승인 필수 */}
+          {/* T-20260615-foot-CHART2-RESVBTN-POPUP-NONAV (현장 승인: 김주연 총괄): 2번차트 [예약하기] → navigate 대신 예약 미니팝업 오버레이.
+              차트 닫지 않고(navigate X) 현 환자 컨텍스트로 예약. 기존 openResvMiniPopup 자산 재사용. */}
+          {/* LOGIC-LOCK: L-002 (부분 supersede) — 2번차트 surface 한정 예외: [예약하기] = 팝업 오버레이(navigate X, 차트 유지).
+              사이드바·상단메뉴·고객관리·대시보드·캘린더 등 타 surface [예약하기]는 여전히 /admin/reservations full page 전환 유지. 변경 시 현장 승인 필수 */}
           <button
             onClick={() => {
-              navigate('/admin/reservations', {
-                state: {
-                  openReservationFor: {
-                    customer_id: customer.id,
-                    name: customer.name,
-                    phone: customer.phone ?? '',
-                    visit_type: customer.visit_type,
-                  },
-                },
-              });
-              chartSheetClose?.();
+              // 차트 유지 + 화면 이동 없음 — 현 환자(customer) 컨텍스트로 미니팝업 오버레이 오픈
+              setResvMiniForm({ date: '', startTime: '', memo: '', designatedTherapistId: '' });
+              setOpenResvMiniPopup(true);
             }}
             className="rounded px-2 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-500 transition flex items-center gap-1"
             data-testid="btn-chart-make-reservation"
@@ -6162,24 +6170,53 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         >
                           <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
                         </button>
-                        {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 인라인 추가 (append-only) */}
-                        <input
-                          type="text"
-                          value={resvMemoInputs[r.id] ?? ''}
-                          onChange={(e) => setResvMemoInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                          onKeyDown={async (e) => {
-                            if (e.key !== 'Enter') return;
-                            const content = (resvMemoInputs[r.id] ?? '').trim();
-                            if (!content) return;
-                            const clinicId = customer?.clinic_id ?? '';
-                            await insertReservationMemo(r.id, clinicId, content, profile?.name ?? null);
-                            setResvMemoInputs(prev => ({ ...prev, [r.id]: '' }));
-                            // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
-                            if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
-                          }}
-                          placeholder="예약메모 추가 후 Enter"
-                          className="w-full h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
-                        />
+                        {/* T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-1: 항상 열린 입력창 → 표시(텍스트+✏️)↔편집폼 토글.
+                            저장 로직·데이터모델 불변 — saveResvMemo 가 기존 append-only RPC 그대로 호출(표시·토글만). */}
+                        {editingResvMemoId === r.id ? (
+                          <div className="flex items-center gap-1" data-testid="resv-memo-edit-form">
+                            <input
+                              type="text"
+                              autoFocus
+                              value={resvMemoInputs[r.id] ?? ''}
+                              onChange={(e) => setResvMemoInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Escape') { setEditingResvMemoId(null); return; }
+                                if (e.key !== 'Enter') return;
+                                await saveResvMemo(r.id);
+                              }}
+                              placeholder="예약메모 추가"
+                              className="flex-1 h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
+                            />
+                            <button
+                              type="button"
+                              data-testid="resv-memo-save"
+                              onClick={() => saveResvMemo(r.id)}
+                              className="shrink-0 h-5 px-1.5 rounded bg-teal-600 text-white text-[10px] font-medium hover:bg-teal-700 transition"
+                            >
+                              저장
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="resv-memo-cancel"
+                              onClick={() => { setResvMemoInputs(prev => ({ ...prev, [r.id]: '' })); setEditingResvMemoId(null); }}
+                              className="shrink-0 h-5 px-1.5 rounded border border-gray-200 text-gray-500 text-[10px] hover:bg-gray-50 transition"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid="resv-memo-display"
+                            onClick={() => setEditingResvMemoId(r.id)}
+                            className="group w-full flex items-center gap-1 h-5 rounded px-1.5 text-left hover:bg-muted/40 transition"
+                          >
+                            <span className={cn('flex-1 truncate text-[10px]', r.booking_memo ? 'text-gray-600' : 'text-gray-300')}>
+                              {r.booking_memo || '예약메모 추가'}
+                            </span>
+                            <Pencil className="h-3 w-3 shrink-0 text-gray-400 group-hover:text-teal-600" />
+                          </button>
+                        )}
                         {/* T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 (공유 컴포넌트) */}
                         <ReservationAuditLogPanel
                           reservationId={r.id}
@@ -6326,7 +6363,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   );
                 }
                 return (
-                  <div className="space-y-3" data-testid="slot-dwell-panel">
+                  // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-2: 체류시간 콘텐츠 스크롤을 이 탭 영역으로 재한정.
+                  //   max-h + overflow-y-auto → 좌측 패널 전체(고객정보)·우측 2구역으로 스크롤이 번지지 않고 박스 내부에서만 스크롤.
+                  //   overscroll-contain → 끝점 도달 시 스크롤 체이닝(전이) 차단. 이 분기 한정 → 수납내역 등 타 탭 부수효과 0.
+                  <div
+                    className="space-y-3 max-h-[70vh] overflow-y-auto overscroll-contain"
+                    data-testid="slot-dwell-panel"
+                  >
                     <div className="text-[11px] text-muted-foreground">
                       방문건별 각 슬롯(상담실·치료실 등)에 머문 시간입니다. 슬롯 이동 시각(전이 로그) 기준 산출.
                     </div>
@@ -7256,9 +7299,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
       </div>{/* /main-flex */}
 
-      {/* C2-RESV-MINI-POPUP: 예약하기 미니창 */}
+      {/* C2-RESV-MINI-POPUP: 예약하기 미니창 (T-20260615-foot-CHART2-RESVBTN-POPUP-NONAV: 2번차트 [예약하기]가 navigate 대신 이 팝업을 오버레이로 오픈) */}
       {openResvMiniPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" data-testid="resv-mini-popup">
           <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-[360px] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-[#1e4e6e]">예약 등록 — {customer.name}</h3>
@@ -7334,7 +7377,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               >
                 {savingResvMini ? '저장 중…' : '예약 등록'}
               </Button>
-              <Button variant="outline" className="h-8 text-xs px-3" onClick={() => setOpenResvMiniPopup(false)}>
+              <Button variant="outline" className="h-8 text-xs px-3" data-testid="resv-mini-cancel" onClick={() => setOpenResvMiniPopup(false)}>
                 취소
               </Button>
             </div>
