@@ -1,0 +1,33 @@
+-- T-20260615-foot-RLS-CLINIC-ISOLATION — Phase 2b (AC2 완료: anon 직접 SELECT 제거 + REVOKE)
+-- 표준: cross_crm_data_contract.md §16-3 / §15 (v1.12).
+-- ════════════════════════════════════════════════════════════════════════════
+-- ⛔ 적용 보류(.PHASE2B_HOLD) — 마이그 러너 SKIP. 아래 GATE 충족 전 prod 적용 금지.
+-- ════════════════════════════════════════════════════════════════════════════
+-- GATE (선결 조건 — 둘 다 충족 후에만 적용):
+--   ① 라이브 셀프체크인 키오스크 레포 `foot-checkin`(foot-checkin.pages.dev, 도메인 밖)이
+--      customers/check_ins/reservations 의 anon 직접 SELECT + INSERT...RETURNING 의존을
+--      Phase 2a RPC(20260615170000_*_additive.sql, fn_selfcheckin_*) 로 전량 전환 완료(cross-repo).
+--   ② obliv-foot-crm 의 src/pages/SelfCheckIn.tsx(native 경로) 동일 전환 완료.
+--   실증 근거: anon SELECT 정책 제거 시 anon INSERT...RETURNING 이 42501(new row violates RLS) →
+--     write 경로도 RPC 화 필수. Phase 2a RPC 6·7(upsert_customer/create_check_in)이 그 대체.
+--   조율: planner FOLLOWUP(cross-repo 시퀀싱) + architect CONSULT(2a/2b 분리 패턴 확정).
+--   §16-3 "무삭제 금지 / 선대체 후 제거" — '제거' 가 본 파일(2a '선대체' 후).
+--   §16-7 INVARIANT: 본 파일 적용 전 셀프체크인 동선 회귀 0 (RPC 전환분) prod 검증 필수.
+-- ════════════════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+-- anon 직접 SELECT 정책 제거 (Phase 2a RPC 로 대체 완료 전제).
+DROP POLICY IF EXISTS anon_select_customer_self_checkin ON customers;   -- USING(clinic_id IS NOT NULL)
+DROP POLICY IF EXISTS anon_checkin_read                 ON check_ins;   -- USING(true)
+DROP POLICY IF EXISTS anon_reservation_read             ON reservations;-- USING(true)
+
+-- §15 백스톱: anon SELECT 권한 회수. INSERT 정책/권한은 보존(셀프체크인 write 경로 — 단,
+--   2a RPC 전환 후 write 도 RPC 경유라면 별도 검토). 우선 SELECT 만 회수.
+REVOKE SELECT ON customers    FROM anon;
+REVOKE SELECT ON check_ins    FROM anon;
+REVOKE SELECT ON reservations FROM anon;
+-- payments: anon 경로 의존 0 → 전체 REVOKE 가능(§15-1 백스톱)
+REVOKE ALL ON payments FROM anon;
+
+COMMIT;
