@@ -530,7 +530,13 @@ export default function AdminLayout() {
                           setSearchOpen(false);
                           setSearchQuery('');
                           setSearchResults([]);
-                          navigate(`/admin/customers?id=${c.id}`);
+                          // T-20260615-foot-DASH-GLOBALSEARCH-CHART-OPEN:
+                          // 고객관리 탭 전환(navigate) + 선택 고객 2번차트 자동 오픈(openChart).
+                          // 기존엔 navigate(?id=)만 호출 → Customers.tsx는 location.state.openCustomerId로만
+                          // 차트를 열어 ?id= 쿼리를 무시 → 탭만 전환되고 차트 미오픈 버그.
+                          // CustomerChartSheet는 AdminLayout 레벨(chartId)에서 렌더되므로 openChart로 즉시 오픈.
+                          navigate('/admin/customers');
+                          openChart(c.id);
                         }}
                         className="w-full flex items-center justify-between rounded px-3 py-2 text-sm hover:bg-muted transition text-left"
                       >
