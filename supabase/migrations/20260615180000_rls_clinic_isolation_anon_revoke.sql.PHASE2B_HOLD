@@ -22,12 +22,17 @@ DROP POLICY IF EXISTS anon_select_customer_self_checkin ON customers;   -- USING
 DROP POLICY IF EXISTS anon_checkin_read                 ON check_ins;   -- USING(true)
 DROP POLICY IF EXISTS anon_reservation_read             ON reservations;-- USING(true)
 
--- §15 백스톱: anon SELECT 권한 회수. INSERT 정책/권한은 보존(셀프체크인 write 경로 — 단,
---   2a RPC 전환 후 write 도 RPC 경유라면 별도 검토). 우선 SELECT 만 회수.
+-- §15 백스톱: anon SELECT 권한만 회수. anon INSERT 정책/권한은 본 2b 에서 **보존**.
+--   ── architect CONSULT-REPLY(DA-...-foot, Q4) 의무: anon INSERT→write RPC(2a #6 upsert_customer
+--      / #7 create_check_in) 전환 + FE write 전환 확정 후에만 REVOKE = **별도 게이트 2c**로 분리.
+--      INSERT 직접 잔존은 create_check_in RPC 의 status 화이트리스트·clinic 스코프 우회 구멍이라
+--      반드시 제거 대상이나, read/write FE 전환 시점이 달라 2b(SELECT)와 2c(INSERT)를 분리한다.
+--      2c 게이트 = foot-checkin 키오스크 + native SelfCheckIn.tsx 의 write 경로 RPC 전환 완료.
+--      (body 횡전개도 동일: body anon_customer_create INSERT 정책에 2c 그대로 상속.)
 REVOKE SELECT ON customers    FROM anon;
 REVOKE SELECT ON check_ins    FROM anon;
 REVOKE SELECT ON reservations FROM anon;
--- payments: anon 경로 의존 0 → 전체 REVOKE 가능(§15-1 백스톱)
+-- payments: anon 경로 의존 0(read/write 모두) → 전체 REVOKE 가능(§15-1 백스톱)
 REVOKE ALL ON payments FROM anon;
 
 COMMIT;
