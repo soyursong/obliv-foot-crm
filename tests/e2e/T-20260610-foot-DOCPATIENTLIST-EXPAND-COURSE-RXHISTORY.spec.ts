@@ -148,8 +148,10 @@ test.describe('R1/R2 회귀가드 — 불가패널 빈 렌더 + 빠른처방 게
     const block = src.match(/<QuickRxBar[\s\S]*?\/>/);
     expect(block, 'QuickRxBar JSX 블록 존재').not.toBeNull();
     expect(block![0]).toContain('onOpenChart={onOpenChart}');
-    // 빠른처방 미확정 분기(!isConfirmed) 자체 보존.
-    expect(src).toMatch(/\{expanded && !isConfirmed && \(/);
+    // 빠른처방(편집) 분기 보존 — T-20260615-foot-RXLIST-COLALIGN-DONE-READONLY item3:
+    //   진료완료(isVisitDone) 환자 차단 가드 추가 → '{expanded && !isVisitDone && !isConfirmed && ('.
+    //   미확정(!isConfirmed) 분기 자체는 보존(진료 미완료시 편집 허용 동선 불변).
+    expect(src).toMatch(/\{expanded && !isVisitDone && !isConfirmed && \(/);
   });
 });
 

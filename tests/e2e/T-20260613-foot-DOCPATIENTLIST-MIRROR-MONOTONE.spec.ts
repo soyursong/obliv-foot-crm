@@ -52,23 +52,28 @@ test.describe('항목B — 대기순번(queue_number) 표시 제거 (1차 선배
   });
 
   test('회귀: grid-template에서 선두 대기순번 칼럼(1.75rem) 제거', () => {
-    // 변경 전: main = 1.75rem_3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto (9칼럼)
-    //          history = 1.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto (8칼럼)
-    // 변경 후: 선두 1.75rem(번호 칼럼) 사라지고 첫 칼럼=3rem(방문배지)로 시작.
+    // 변경 전(MIRROR-MONOTONE): main = 1.75rem_3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto (9칼럼)
+    //                            history = 1.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto (8칼럼)
+    // T-20260615-foot-RXLIST-COLALIGN-DONE-READONLY item2(컬럼 일치): main 행 재정렬 —
+    //   방→상태→방문유형→이름→차트번호→처방→예약메모→액션 = 4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto.
+    //   history 행은 미변경(3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto, 7칼럼).
+    // 회귀 불변식: 어느 행 grid 도 선두 1.75rem(대기순번)으로 시작하지 않는다(queue 칼럼 제거 유지).
     const patientGrids = gridTemplates.filter((g) => g.includes('3rem_5rem_4.5rem'));
     expect(patientGrids.length).toBeGreaterThanOrEqual(2);
     for (const g of patientGrids) {
       const cols = g.split('_');
       // 선두 칼럼이 더 이상 1.75rem(대기순번)이 아님.
       expect(cols[0]).not.toBe('1.75rem');
-      expect(cols[0]).toBe('3rem');
+      // 재정렬 후: main=4.75rem(방) / history=3rem(방문배지) 로 시작(둘 다 1.75rem 아님).
+      expect(['4.75rem', '3rem']).toContain(cols[0]);
     }
   });
 
   test('회귀: main 행 8칼럼 / history 행 7칼럼', () => {
-    const main = gridTemplates.find((g) => g.includes('3.75rem_4.75rem')); // 상태+치료실 보유 = main
+    // COLALIGN item2: main 은 방(4.75rem)·상태(3.75rem)를 선두로 보유 = '4.75rem_3.75rem' 로 식별.
+    const main = gridTemplates.find((g) => g.includes('4.75rem_3.75rem')); // 방+상태 선두 = main
     const history = gridTemplates.find(
-      (g) => g.includes('3rem_5rem_4.5rem') && !g.includes('3.75rem_4.75rem'),
+      (g) => g.includes('3rem_5rem_4.5rem') && !g.includes('4.75rem_3.75rem'),
     );
     expect(main).toBeTruthy();
     expect(history).toBeTruthy();

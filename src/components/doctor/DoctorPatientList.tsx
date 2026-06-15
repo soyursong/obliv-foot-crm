@@ -491,6 +491,14 @@ function PatientRow({
 
   const hasPendingRx = row.prescription_status === 'pending';
   const isConfirmed = row.prescription_status === 'confirmed';
+  // T-20260615-foot-RXLIST-COLALIGN-DONE-READONLY item3 (문지은 대표원장 '완료=읽기전용'):
+  //   '진료완료' 판정 SSOT = RXLIST-RENAME-DOCFILTER 의 목록 필터(usePatientsByDate L285) ·
+  //   DoctorCallDashboard.completedPatients(L504) 와 글자 그대로 1:1 동일 —
+  //     completed_at(귀가/원내잔류-시술완료) 보유  OR  status_flag==='pink'(진료완료 처리).
+  //   ⚠ prescription_status==='confirmed'(처방 확정)와는 다른 축 — 처방 미확정이어도 진료완료면 읽기전용.
+  //   진료완료 환자는 펼침 시 편집(QuickRxBar) 분기 진입 금지 → 항상 읽기전용 요약/임상경과만(빈 편집폼 금지).
+  //   (이 목록은 RENAME-DOCFILTER 이후 '처방 환자 목록 = 진료완료 고객만' → 처방 입력/수정은 차트에서.)
+  const isVisitDone = !!row.completed_at || row.status_flag === 'pink';
 
   // ---------------------------------------------------------------------------
   // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY (AC-1/2): 어제 이전 날짜 = 이력 모드(read-only).
@@ -577,54 +585,25 @@ function PatientRow({
     >
       {/*
         기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
-        열 순서: 방문배지(②이름왼쪽) / 이름(④고정폭) / 차트번호(독립칼럼) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
-        T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: '상태'와 '메모' 사이에 치료실(방이름) 컬럼 추가.
+        T-20260615-foot-RXLIST-COLALIGN-DONE-READONLY item2 (문지은 대표원장 '진료대시보드랑 일치'):
+          공통 컬럼 순서를 진료 알림판(DoctorCallDashboard CallFeedRow) 기준으로 맞춤 —
+          알림판 공통열 순서 = 방 → 상태 → 이름 → 차트번호 → 처방.
+          ▸ A 고유 2열(방문유형 배지·예약메모)은 '무리 통합 금지' → 의미 다른 알림판열(생년/오늘시술/임상경과)과
+            억지 합치지 않고 자연 위치 유지: 방문유형=이름 바로 왼쪽(이름 식별 prefix), 예약메모=유연폭 끝(처방 뒤).
+          ▸ 새 열 순서: 방(치료실) → 상태 → 방문유형 → 이름 → 차트번호 → 처방배지 → 예약메모 → 액션.
+          ▸ 폭/비율 보존(AC3) — 각 rem 값은 기존 그대로, 순서만 재배열. data-testid 전부 유지(회귀 0).
+            (이전 순서: 방문유형 3rem · 이름 5rem · 차트 4.5rem · 처방 5.5rem · 상태 3.75rem · 방 4.75rem · 메모 1fr · 액션 auto)
+        T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: 치료실(방이름) 컬럼.
         T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 칸 내 차트번호 서브텍스트 제거 → 이름 바로 옆 독립 칼럼.
         T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 칼럼 제거 → 차트번호만 숫자.
-        모든 행이 동일 grid-template → 배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
+        모든 행이 동일 grid-template → 배지·이름·차트번호·처방 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. 그리드 레이아웃/컬럼셋/워크플로 무변경. */}
-      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
+      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. */}
+      <div className="grid grid-cols-[4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
         {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number=1036) 표시 칼럼 제거.
             차트번호 외 식별 숫자 비표시(reporter 요청). queue_number 타입/SELECT/정렬·RPC는 무손상 — 표시만 숨김. */}
 
-        {/* ② 방문유형 배지 — 이름 왼쪽(행 첫 식별 위치) */}
-        <div className="flex justify-start">
-          <VisitTypeBadge type={row.visit_type} />
-        </div>
-
-        {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
-            T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
-            T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
-        {/* item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
-        <span
-          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
-          title={row.customer_name}
-          data-testid="patient-name"
-        >
-          {row.customer_name}
-        </span>
-
-        {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지).
-            item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
-        <span
-          className="min-w-0 max-w-full truncate text-left font-mono text-[13px] text-gray-500"
-          title={chartNoDisplay(row.chart_number)}
-          data-testid="patient-chartno"
-        >
-          {chartNoDisplay(row.chart_number)}
-        </span>
-
-        {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
-            item4: justify-start → justify-center (이름과 같이 가로 중앙정렬). */}
-        <div className="flex justify-start">
-          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
-        </div>
-
-        {/* 상태 — T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
-        <StatusCell status={row.status} statusFlag={row.status_flag} />
-
-        {/* 치료실(방이름) — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
+        {/* 1. 방(치료실) — COLALIGN item2: 알림판 1열(방)과 동일 선두. T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
             getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
         {(() => {
           const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
@@ -644,8 +623,42 @@ function PatientRow({
           );
         })()}
 
-        {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4.
-            item⑤(B안): 테이블 본문/빈값 톤 통일 — text-[13px] gray-600/gray-300. */}
+        {/* 2. 상태 — COLALIGN item2: 알림판 2열(상태). T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
+        <StatusCell status={row.status} statusFlag={row.status_flag} />
+
+        {/* 3. 방문유형 배지 — A 고유(알림판 대응 없음). COLALIGN item2 '무리 통합 금지' → 이름 식별 prefix 위치 유지(이름 바로 왼쪽). */}
+        <div className="flex justify-start">
+          <VisitTypeBadge type={row.visit_type} />
+        </div>
+
+        {/* 4. 이름 — 알림판 3열(이름). 고정 너비(글자수 변동 무관), 초과 시 truncate.
+            T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전.
+            item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
+        <span
+          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
+          title={row.customer_name}
+          data-testid="patient-name"
+        >
+          {row.customer_name}
+        </span>
+
+        {/* 5. 차트번호 — 알림판 5열(차트번호). CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지).
+            item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
+        <span
+          className="min-w-0 max-w-full truncate text-left font-mono text-[13px] text-gray-500"
+          title={chartNoDisplay(row.chart_number)}
+          data-testid="patient-chartno"
+        >
+          {chartNoDisplay(row.chart_number)}
+        </span>
+
+        {/* 6. 처방 상태 배지 — 알림판 8열(처방). + hover 처방내용 툴팁. */}
+        <div className="flex justify-start">
+          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
+        </div>
+
+        {/* 7. 예약메모 — A 고유(알림판 대응 없음). COLALIGN item2 '무리 통합 금지' → 유연폭 끝(처방 뒤) 유지.
+            T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4. item⑤(B안): 본문/빈값 톤 통일 — text-[13px] gray-600/gray-300. */}
         <span
           className={`text-[13px] truncate ${row.booking_memo ? 'text-gray-600' : 'text-gray-300'}`}
           title={row.booking_memo ?? undefined}
@@ -654,7 +667,7 @@ function PatientRow({
           {row.booking_memo || '—'}
         </span>
 
-        {/* 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 */}
+        {/* 8. 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 (알림판 시간열 자리). */}
         <div className="flex items-center gap-1.5 justify-end">
           {/* 임시 처방이고 의사인 경우 → 확정 버튼 */}
           {hasPendingRx && doctorMode && (
@@ -693,10 +706,13 @@ function PatientRow({
         </div>
       </div>
 
-      {/* 펼쳐진 영역 — 빠른처방 버튼
+      {/* 펼쳐진 영역 — 빠른처방 버튼(편집)
           T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 아래에 임상경과+처방내역 블록이
-          이어지므로 rounded-b-lg 는 최하단 블록으로 이관(여기선 제거). 게이트/버튼 로직 불변(AC-3). */}
-      {expanded && !isConfirmed && (
+          이어지므로 rounded-b-lg 는 최하단 블록으로 이관(여기선 제거). 게이트/버튼 로직 불변(AC-3).
+          T-20260615-foot-RXLIST-COLALIGN-DONE-READONLY item3: 진료완료(isVisitDone) 환자는 편집 분기 진입 금지.
+            → !isVisitDone(진료 미완료) AND !isConfirmed(처방 미확정)일 때만 QuickRxBar(편집) 렌더.
+            진료완료 환자는 아래 읽기전용 요약/임상경과 분기만 표시(빈 편집폼 금지). */}
+      {expanded && !isVisitDone && !isConfirmed && (
         <div className="border-t px-3 py-2.5 bg-white">
           <QuickRxBar
             doctorMode={doctorMode}
