@@ -9,6 +9,10 @@ import { PenChartTab } from '@/components/PenChartTab';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
+// T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-1): 패키지 탭 치료부위 우측 상단 KOH ON/OFF 토글
+import KohRequestToggle from '@/components/KohRequestToggle';
+// T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
+import KohPublishedResults from '@/components/KohPublishedResults';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
 import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
@@ -5616,7 +5620,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* T-20260615-foot-PKGTAB-TOE-RESTORE: 치료부위 발가락 일러스트 원상 복원(김주연 총괄, 3b6ab2f 제거분 역복원).
                   패키지명 조건 없이 패키지 탭 상단에 항상 고정 노출. 양발 발가락 10개 멀티선택.
                   저장: latestCheckIn.treatment_memo.foot_sites(신규 컬럼 0). 1번차트는 이 값 read-only 연동. */}
-              <div className="rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
+              <div className="relative rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
+                {/* AC-1: 치료부위 우측 상단 KOH 균검사 ON/OFF 토글 — 금일 균검사 service 있을 때만 노출 */}
+                <div className="absolute right-3 top-3 z-10">
+                  <KohRequestToggle checkInId={latestCheckIn?.id ?? null} />
+                </div>
                 <FootToeIllustration
                   value={treatmentToes}
                   onChange={canEditToes ? saveTreatmentToes : undefined}
@@ -6249,6 +6257,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   accept="image/*"
                 />
               </div>
+              {/* AC-4: 진료대시보드 균검사지에서 발행된 검사결과 보고서 자동 표시(읽기전용·비가역) */}
+              <KohPublishedResults clinicId={customer.clinic_id} customerId={customer.id} />
             </div>
           )}
 

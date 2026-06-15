@@ -40,9 +40,10 @@ import { todaySeoulISODate, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search, Printer, FileCheck2 } from 'lucide-react';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+import { printKohResult } from '@/lib/printKohResult';
 
 // ---------------------------------------------------------------------------
 // KOH 진균검사 매칭 — service_name denormalized ILIKE 정본(SSOT).
@@ -365,6 +366,95 @@ function useSaveNailSites(clinicId: string | null, ym: string) {
 }
 
 // ---------------------------------------------------------------------------
+// 발행 결과지 인덱스 — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-3/AC-5).
+//   koh_result 템플릿의 published form_submissions 를 koh_service_id(=check_in_services.id)로 인덱싱.
+//   행이 이미 발행됐는지 판정(버튼 비활성·발행완료 표시) + 결과지 인쇄(field_data) 소스.
+//   템플릿(마이그) 미적용 시 빈 맵 폴백 — 발행기능 비활성(에러 미표출).
+// ---------------------------------------------------------------------------
+function usePublishedKoh(clinicId: string | null) {
+  return useQuery<Map<string, PublishedKoh>>({
+    queryKey: ['koh_published', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      const map = new Map<string, PublishedKoh>();
+      if (!clinicId) return map;
+      const { data: tpl } = await supabase
+        .from('form_templates')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('form_key', 'koh_result')
+        .limit(1)
+        .maybeSingle();
+      if (!tpl?.id) return map; // 마이그 미적용 → 발행기능 비활성 폴백
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, field_data, created_at')
+        .eq('clinic_id', clinicId)
+        .eq('template_id', tpl.id)
+        .eq('status', 'published');
+      if (error) throw error;
+      for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+        const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+        const sid = String(fd['koh_service_id'] ?? '');
+        if (!sid) continue;
+        map.set(sid, {
+          id: String(r['id']),
+          koh_service_id: sid,
+          request_no: String(fd['request_no'] ?? ''),
+          field_data: fd,
+          created_at: String(r['created_at'] ?? ''),
+        });
+      }
+      return map;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * 발행 RPC 전달용 field_data 구성 — 정본 양식(검사결과지 양식.png) FE 표시필드.
+ *   의뢰번호/의뢰기관/koh_service_id 는 RPC(publish_koh_result)에서 채워 병합(자동채번·고정값).
+ *   검사결과 라인(KOH mount Hyphae/Yeast)은 양식 고정값(AC-3 동일결과) → 템플릿 HTML에 고정, 여기 미포함.
+ *   검체번호(specimen_no) = DA Q2 default OFF(빈값). 원내 자체수행 확정 시 토글.
+ */
+export function buildKohFieldData(r: KohRow, doctorName: string): Record<string, string> {
+  return {
+    doctor_name: doctorName === '미정' ? '' : doctorName,
+    patient_name: r.customer_name === '—' ? '' : r.customer_name,
+    chart_number: r.chart_number ?? '',
+    birth_date: formatBirthDate(r.birth_date) === '—' ? '' : formatBirthDate(r.birth_date),
+    remark: '',
+    collected_date: formatDocDate(r.created_at),
+    requested_date: formatDocDate(r.created_at),
+    specimen_type: formatNailSites(r.nail_sites) === '—' ? '' : formatNailSites(r.nail_sites),
+    specimen_no: '',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 결과지 발행 mutation — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4/AC-5).
+//   publish_koh_result RPC(비가역·자동채번·published insert). 성공 시 발행 인덱스 invalidate.
+//   반환 = {id, request_no, specimen_no}. 단건 발행 후 결과지 인쇄에 request_no 병합 사용.
+// ---------------------------------------------------------------------------
+function usePublishKoh(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ serviceId, fieldData }: { serviceId: string; fieldData: Record<string, string> }) => {
+      const { data, error } = await supabase.rpc('publish_koh_result', {
+        p_check_in_service_id: serviceId,
+        p_field_data: fieldData,
+      });
+      if (error) throw error;
+      return data as { id: string; request_no: string; specimen_no: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['koh_published', clinicId] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 발톱부위 입력 위젯 — KOHSHEET-RENEWAL §C (PHASE15 §A-2 단일선택 위젯 흡수·대체).
 //   레이아웃: [좌발] L1 L2 L3 L4 L5  │(구분선)│  [우발] R1 R2 R3 R4 R5  + '조갑' 고정.
 //   다중선택(C2): 각 버튼 = 독립 토글. 누르면 {side,toe} 가 배열에 추가/제거(누적). 선택 강조(C3).
@@ -476,6 +566,57 @@ export default function KohReportTab() {
   const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, ym);
   const saveNailSites = useSaveNailSites(clinicId, ym);
 
+  // LIFECYCLE(AC-3/AC-4/AC-5): 발행 인덱스 + 발행 mutation + 일괄선택.
+  const { data: publishedMap } = usePublishedKoh(clinicId);
+  const publishKoh = usePublishKoh(clinicId);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkPublishing, setBulkPublishing] = useState(false);
+
+  /** 발행 여부 — published 인덱스에 koh_service_id(=row.id) 존재. */
+  const isPublished = (id: string) => publishedMap?.has(id) ?? false;
+  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) 아직 미발행. */
+  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !isPublished(r.id);
+
+  // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
+  const handlePublish = async (r: KohRow) => {
+    if (!canPublish(r)) return;
+    if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    const doctorName = doctorNameForRow(r, doctorMap);
+    const fieldData = buildKohFieldData(r, doctorName);
+    try {
+      const res = await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
+      toast.success(`발행 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
+      // 결과지 인쇄(자동채번 의뢰번호·기관 병합).
+      const ok = printKohResult({ ...fieldData, request_no: res?.request_no ?? '', request_org: '오블리브의원' });
+      if (!ok) toast.error('팝업이 차단되어 결과지를 열 수 없습니다. 검사결과 탭에서 다시 인쇄하세요.');
+    } catch (e) {
+      toast.error(`발행 실패: ${(e as Error).message}`);
+    }
+  };
+
+  // 일괄 발행(AC-3: 발행 동작만 일괄, 결과값 개별입력 없음) — 선택분 순차 발행. 인쇄는 미발화(다중 창 방지).
+  const handleBulkPublish = async () => {
+    const targets = filtered.filter((r) => selected.has(r.id) && canPublish(r));
+    if (targets.length === 0) return;
+    if (!window.confirm(`선택한 ${targets.length}건의 검사결과 보고서를 일괄 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    setBulkPublishing(true);
+    let ok = 0;
+    let fail = 0;
+    for (const r of targets) {
+      try {
+        const doctorName = doctorNameForRow(r, doctorMap);
+        await publishKoh.mutateAsync({ serviceId: r.id, fieldData: buildKohFieldData(r, doctorName) });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setBulkPublishing(false);
+    setSelected(new Set());
+    if (fail === 0) toast.success(`${ok}건 일괄 발행 완료`);
+    else toast.error(`${ok}건 발행 완료, ${fail}건 실패`);
+  };
+
   // T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3): +1일 경과(검사 다음날부터)만 노출.
   //   검사 당일(+1일 미경과) row 는 제외 — isKohExamEligible(검사일 KST < 오늘 KST).
   //   이번 달 조회 시 오늘 검사분이 걸러지고, 과거 달은 전부 경과 → 자연 통과.
@@ -494,6 +635,33 @@ export default function KohReportTab() {
         (r.chart_number ?? '').toLowerCase().includes(q),
     );
   }, [eligibleRows, query]);
+
+  // LIFECYCLE: 일괄발행 대상(발행가능=조갑부위 있고 미발행) id 집합 — 전체선택 토글 근거.
+  const publishableIds = useMemo(
+    () => filtered.filter((r) => r.nail_sites.length > 0 && !isPublished(r.id)).map((r) => r.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, publishedMap],
+  );
+  const selectedCount = publishableIds.filter((id) => selected.has(id)).length;
+  const allSelected = publishableIds.length > 0 && selectedCount === publishableIds.length;
+  const toggleSelectAll = () => {
+    setSelected((prev) => {
+      if (publishableIds.every((id) => prev.has(id))) {
+        const next = new Set(prev);
+        publishableIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...publishableIds]);
+    });
+  };
+  const toggleSelectOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -562,12 +730,27 @@ export default function KohReportTab() {
             data-testid="koh-search"
           />
         </div>
-        <span className="text-xs text-muted-foreground" data-testid="koh-count">
-          {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
-          {query.trim() && eligibleRows.length !== filtered.length && (
-            <span className="ml-1 text-muted-foreground/70">(전체 {eligibleRows.length}건 중)</span>
+        <div className="flex items-center gap-2">
+          {/* AC-3: 일괄 발행 — 선택분(발행가능)만 발행. 발행 동작만 일괄(결과값 개별입력 없음). */}
+          {selectedCount > 0 && (
+            <Button
+              size="sm"
+              className="h-8 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
+              onClick={handleBulkPublish}
+              disabled={bulkPublishing || publishKoh.isPending}
+              data-testid="koh-bulk-publish"
+            >
+              {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
+              선택 {selectedCount}건 일괄발행
+            </Button>
           )}
-        </span>
+          <span className="text-xs text-muted-foreground" data-testid="koh-count">
+            {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
+            {query.trim() && eligibleRows.length !== filtered.length && (
+              <span className="ml-1 text-muted-foreground/70">(전체 {eligibleRows.length}건 중)</span>
+            )}
+          </span>
+        </div>
       </div>
 
       {/* 본문 */}
@@ -589,23 +772,55 @@ export default function KohReportTab() {
         <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">
           <table className="w-full text-sm">
             <thead>
-              {/* KOHSHEET-RENEWAL §B: 6컬럼 통일 — 이름/생년/차트/검사일/조갑부위/진료의 */}
+              {/* KOHSHEET-RENEWAL §B: 6컬럼 + LIFECYCLE: 선택(일괄발행)·상태(active/inactive)·발행 */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">
+                  {/* AC-3: 전체선택(발행가능 행만 대상) */}
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 cursor-pointer accent-teal-600 disabled:opacity-40"
+                    checked={allSelected}
+                    disabled={publishableIds.length === 0}
+                    onChange={toggleSelectAll}
+                    aria-label="전체 선택"
+                    data-testid="koh-select-all"
+                  />
+                </th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">이름</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">검사일</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">조갑부위</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">진료의</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">상태</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">발행</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                const published = publishedMap?.get(r.id);
+                const rowPublishable = canPublish(r);
+                return (
                 <tr
                   key={r.id}
-                  className="border-b last:border-0 transition hover:bg-accent/30"
+                  className={`border-b last:border-0 transition hover:bg-accent/30 ${
+                    r.koh_requested ? '' : 'opacity-55'
+                  }`}
                   data-testid="koh-row"
+                  data-koh-active={r.koh_requested ? 'true' : 'false'}
                 >
+                  {/* AC-3: 행 선택(일괄발행) — 발행가능(조갑부위 있고 미발행)일 때만 활성. */}
+                  <td className="px-1.5 py-1 text-center" data-testid="koh-cell-select">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 cursor-pointer accent-teal-600 disabled:opacity-30"
+                      checked={selected.has(r.id)}
+                      disabled={!rowPublishable}
+                      onChange={() => toggleSelectOne(r.id)}
+                      aria-label={`${r.customer_name} 선택`}
+                      data-testid="koh-row-select"
+                    />
+                  </td>
                   {/* NAILSYNC(AC5): 이름 클릭 → 고객차트(MedicalChartPanel) 열기. customer_id 없으면 비활성 텍스트. */}
                   <td
                     className="px-1.5 py-1 whitespace-nowrap max-w-[8rem]"
@@ -690,8 +905,58 @@ export default function KohReportTab() {
                   >
                     {doctorNameForRow(r, doctorMap)}
                   </td>
+                  {/* AC-2: KOH 신청 상태 — active(신청)/inactive(미신청). OFF=행 유지·회색(위 opacity). */}
+                  <td className="px-1.5 py-1 text-center whitespace-nowrap" data-testid="koh-cell-status">
+                    {r.koh_requested ? (
+                      <span className="inline-flex items-center rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700" data-testid="koh-status-active">
+                        신청
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground" data-testid="koh-status-inactive">
+                        미신청
+                      </span>
+                    )}
+                  </td>
+                  {/* AC-4/AC-5: 발행 — 미발행+조갑부위 있을 때만 활성. 발행=비가역(완료 시 비활성). */}
+                  <td className="px-1.5 py-1 text-center whitespace-nowrap" data-testid="koh-cell-publish">
+                    {published ? (
+                      <div className="flex flex-col items-center gap-0.5" data-testid="koh-published">
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700">
+                          <FileCheck2 className="h-3 w-3" /> 발행완료
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const ok = printKohResult(published.field_data);
+                            if (!ok) toast.error('팝업이 차단되어 결과지를 열 수 없습니다.');
+                          }}
+                          className="inline-flex items-center gap-0.5 text-[10px] text-teal-600 hover:underline"
+                          title={`의뢰번호 ${published.request_no}`}
+                          data-testid="koh-print-published"
+                        >
+                          <Printer className="h-3 w-3" /> 인쇄
+                        </button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="h-7 gap-1 bg-teal-600 px-2 text-[11px] text-white hover:bg-teal-700 disabled:opacity-40"
+                        onClick={() => handlePublish(r)}
+                        disabled={!rowPublishable || publishKoh.isPending || bulkPublishing}
+                        title={
+                          rowPublishable
+                            ? '검사결과 보고서 발행(비가역)'
+                            : '채취 조갑부위를 먼저 선택해야 발행할 수 있습니다'
+                        }
+                        data-testid="koh-publish-btn"
+                      >
+                        발행
+                      </Button>
+                    )}
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -699,7 +964,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 여러 부위를 함께 선택할 수 있습니다(다시 누르면 해제). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 여러 부위를 함께 선택할 수 있습니다(다시 누르면 해제). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발행</strong>은 채취 조갑부위를 선택해야 활성화되며, 발행 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발행은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발행할 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
