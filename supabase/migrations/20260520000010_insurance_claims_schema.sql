@@ -1,8 +1,14 @@
 -- T-20260520-ins-SCHEMA-COMMON (풋센터 적용)
 -- T-20260520-foot-INS-UI AC-2
--- 건보 1차 공통 DB 스키마 — insurance_claims / claim_items / claim_diagnoses / edi_submissions
+-- 건보 1차 공통 DB 스키마 — insurance_claims / claim_items / insurance_claim_diagnoses / edi_submissions
 -- Rollback: 20260520000010_insurance_claims_schema.down.sql
 -- Created: 2026-05-20 (dev-foot)
+--
+-- ★ 2026-06-15 개명 (옵션 A) — T-20260615-foot-PROD-MIGRATION-PARITY-AUDIT AC-3 #A DRIFT 해소.
+--   DA CONSULT-REPLY DA-20260615-foot-INSURANCE-CLAIM-NAMING (cross_crm §14 v1.10 + schema_registry v1.11.0 rev7).
+--   claim_diagnoses → insurance_claim_diagnoses 전면 개명. prod live claim_diagnoses
+--   (결제연계 PHI, disease_code)는 본 마이그가 apply/rollback 모두에서 절대 미접촉.
+--   건보 child 는 §12-4 canonical RLS (is_approved_user() AND clinic_id=current_user_clinic_id()).
 
 -- ============================================================
 -- 1) insurance_claims — 진료비 청구 요약
@@ -116,42 +122,39 @@ COMMENT ON TABLE claim_items IS
   '청구 항목 — claim 1건당 서비스별 1행. (T-20260520-ins-SCHEMA-COMMON)';
 
 -- ============================================================
--- 3) claim_diagnoses — 청구 상병
+-- 3) insurance_claim_diagnoses — 건보 청구 상병 (KCD)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS claim_diagnoses (
+-- ★ 개명 (옵션 A): prod live claim_diagnoses(결제연계 PHI, disease_code)와 이름 충돌 →
+--   건보 신규 테이블이 양보. 부모-prefix child 패턴(insurance_claims 헤더 + 본 KCD child).
+--   진단코드 컬럼 = kcd_code (NHIS=KCD 기준. 결제연계 disease_code 와 의도적 구분).
+CREATE TABLE IF NOT EXISTS insurance_claim_diagnoses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   claim_id        UUID NOT NULL REFERENCES insurance_claims(id) ON DELETE CASCADE,
+  clinic_id       UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,  -- §12-4 canonical RLS 술어 대상
 
-  kcd_code        TEXT NOT NULL,           -- KCD 상병코드 (예: B35.1 발백선)
+  kcd_code        TEXT NOT NULL,           -- KCD 상병코드 (NHIS=KCD 기준. 예: B35.1 발백선)
   is_primary      BOOLEAN NOT NULL DEFAULT false,
   sort_order      INTEGER NOT NULL DEFAULT 0,
 
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-ALTER TABLE claim_diagnoses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE insurance_claim_diagnoses ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "claim_diagnoses_auth_all" ON claim_diagnoses;
-CREATE POLICY "claim_diagnoses_auth_all" ON claim_diagnoses
+-- §12-4 canonical RLS (건보=PHI 인접, EXCL 분류): approved 직원이 본인 clinic 행만. anon 차단.
+DROP POLICY IF EXISTS "insurance_claim_diagnoses_auth_all" ON insurance_claim_diagnoses;
+CREATE POLICY "insurance_claim_diagnoses_auth_all" ON insurance_claim_diagnoses
   FOR ALL TO authenticated
-  USING (
-    claim_id IN (
-      SELECT ic.id FROM insurance_claims ic
-      INNER JOIN staff s ON s.clinic_id = ic.clinic_id AND s.user_id = auth.uid()
-    )
-  )
-  WITH CHECK (
-    claim_id IN (
-      SELECT ic.id FROM insurance_claims ic
-      INNER JOIN staff s ON s.clinic_id = ic.clinic_id AND s.user_id = auth.uid()
-    )
-  );
+  USING (is_approved_user() AND clinic_id = current_user_clinic_id())
+  WITH CHECK (is_approved_user() AND clinic_id = current_user_clinic_id());
 
-CREATE INDEX IF NOT EXISTS idx_claim_diagnoses_claim
-  ON claim_diagnoses(claim_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_claim_diagnoses_claim
+  ON insurance_claim_diagnoses(claim_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_claim_diagnoses_clinic
+  ON insurance_claim_diagnoses(clinic_id);
 
-COMMENT ON TABLE claim_diagnoses IS
-  '청구 상병코드 (KCD) — claim당 복수 상병 가능. (T-20260520-ins-SCHEMA-COMMON)';
+COMMENT ON TABLE insurance_claim_diagnoses IS
+  '건보 청구 상병코드 (KCD) — claim당 복수 상병. 결제연계 claim_diagnoses(disease_code)와 네임스페이스 분리. 옵션 A 개명 (T-20260615-foot-PROD-MIGRATION-PARITY-AUDIT / DA cross_crm §14 v1.10).';
 
 -- ============================================================
 -- 4) edi_submissions — EDI 전송 이력 (2차 EDI 대비, nullable)
