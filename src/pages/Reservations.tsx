@@ -530,6 +530,14 @@ export default function Reservations() {
   const fetchWeek = useCallback(async () => {
     if (!clinic) return;
     setLoading(true);
+    // T-20260615-foot-RESV-DWELL-LOADING-STUCK: fetchWeek 전구간 try/catch/finally 가드.
+    //   회귀 진단 결과 6cdce9d(REFIX-8 레이아웃)는 fetch/loading 경로 무접촉 → 회귀 원인 아님.
+    //   실제 무한 로딩 고착 RC = 본 함수에 예외 경계가 없던 것: supabase await가 reject(네트워크 단절·
+    //   PostgREST throw)하거나 stripSimulationRows가 throw하면 setLoading(false)에 도달 못 해
+    //   '불러오는 중…' 스피너가 영구 고착(새로고침 전 자가복구 불가). field-soak 중 일시적 fetch 실패가
+    //   이 잠복 결함을 영구화. finally에서 로딩을 무조건 해제해 어떤 예외 경로에서도 그리드가 복구되도록 보장.
+    //   (REFIX-8 레이아웃 COMPLEMENT — 레이아웃/동선 코드 무변경)
+    try {
     const startStr = viewMode === 'week'
       ? format(weekDays[0], 'yyyy-MM-dd')
       : format(selectedDay, 'yyyy-MM-dd');
@@ -663,6 +671,15 @@ export default function Reservations() {
       setResvAssignedStaffMap(new Map());
       setTreatmentCycleMap(new Map());
       setNextHealerByCustomer({});
+    }
+    } catch (e) {
+      // T-20260615-foot-RESV-DWELL-LOADING-STUCK: 예외로 인한 무한 로딩 고착 방지.
+      //   실패를 사용자에게 알려 명시적 재시도를 유도(무성 고착 금지). 로딩 해제는 아래 안전 블록이 보장.
+      console.error('[fetchWeek] 예약 로딩 예외', e);
+      toast.error('예약 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      // 어떤 경로(정상 완료·error 반환·throw)에서도 로딩 스피너가 반드시 해제되도록 보장.
+      setLoading(false);
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
 
