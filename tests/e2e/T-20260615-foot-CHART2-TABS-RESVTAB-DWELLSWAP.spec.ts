@@ -147,3 +147,53 @@ test.describe('T-20260615 DWELLSWAP — AC-5 무한로딩 RC', () => {
     expect(loading).toBe(false); // 빈 ids → loading 안 켜짐(무한 스피너 불가)
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// AC-2 — '최근방문 + 예약내역' 2구역 → 예약내역 탭 이동 + 2구역 제거(소스 구조 검증)
+// ──────────────────────────────────────────────────────────────────────
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __srcPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../src/pages/CustomerChartPage.tsx',
+);
+const src = readFileSync(__srcPath, 'utf-8');
+
+test.describe('T-20260615 DWELLSWAP — AC-2 2구역 → 예약내역 탭 이동', () => {
+  test('예약내역 탭 본문에 최근 방문 블록(resv-tab-last-visit)이 존재', () => {
+    // 예약내역 탭 렌더 블록 추출 (chartTab === \'reservations\' && ( ... ) ~ 다음 탭 경계)
+    const start = src.indexOf("chartTab === 'reservations' &&");
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf("chartTab === 'test_result'", start);
+    expect(end).toBeGreaterThan(start);
+    const tabBlock = src.slice(start, end);
+    expect(tabBlock).toContain('data-testid="resv-tab-last-visit"');
+    expect(tabBlock).toContain('최근 방문');
+    // 예약내역 본문(다음 예약 버튼·ReservationAuditLogPanel)도 동일 탭에 공존
+    expect(tabBlock).toContain('data-testid="btn-next-reservation"');
+    expect(tabBlock).toContain('ReservationAuditLogPanel');
+  });
+
+  test('우측 2구역 패널(40% 컬럼)에는 최근 방문 블록이 더 이상 없음(중복 제거)', () => {
+    // 우측 패널 시작점(건강보험 · 예약 정보 서브헤더) 이후 ~ 지정 치료사 직전 영역에 '최근 방문' 헤더가 없어야 함
+    const panelStart = src.indexOf('건강보험 · 예약 정보');
+    expect(panelStart).toBeGreaterThan(-1);
+    const desigStart = src.indexOf('지정 치료사', panelStart);
+    expect(desigStart).toBeGreaterThan(panelStart);
+    const panelTop = src.slice(panelStart, desigStart);
+    // '최근 방문' 헤더 div 가 2구역 상단(지정치료사 전)에 잔존하면 실패 — 탭으로 이동했으므로 0건
+    expect(panelTop).not.toContain('mb-1">최근 방문</div>');
+  });
+
+  test('예약내역은 2구역에서 제거됨 — ReservationAuditLogPanel 사용처는 예약내역 탭 1곳뿐', () => {
+    // import 라인은 명명 import + 모듈 경로로 문자열 2회 출현 → 총 3.
+    // 2구역에 중복 사용(JSX 태그)이 있었다면 4가 됨. 화면별 복제 금지(공유 컴포넌트) 준수 확인.
+    const occurrences = src.split('ReservationAuditLogPanel').length - 1;
+    expect(occurrences).toBe(3);
+    // JSX 사용처(<ReservationAuditLogPanel)는 정확히 1곳
+    const jsxUses = src.split('<ReservationAuditLogPanel').length - 1;
+    expect(jsxUses).toBe(1);
+  });
+});
