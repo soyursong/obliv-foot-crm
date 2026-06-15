@@ -11,8 +11,9 @@ interface Props {
   loading: boolean;
 }
 
-// 막대 색: 연그레이 모노톤(slate-400) — 깔끔한 단색 통일 (그린/틸 제거)
-const AVG_BAR_COLOR = '#94a3b8';
+// 막대 색: 뉴트럴 모노톤(neutral-400, hue 0) — 진행 중 뉴트럴 테마(index.css '일반영역 = hue 0 중립 그레이')에 정합.
+// slate(blue hue)에서 순수 무채색으로 정렬. 컴포넌트 로컬 fill 한정 — 글로벌 teal 토큰/칸반·칩 불변 (T-20260615-foot-STATS-THERAPIST-CHART-COLOR AC2).
+const AVG_BAR_COLOR = '#a3a3a3';
 
 // 지표2: 시술 4종 정규 순서 (0건도 한 줄로 표기해 카드 높이/구성 일관 유지)
 const TREATMENT_TYPES = ['비가열', '가열', '포돌로게', 'Re:Born'] as const;
