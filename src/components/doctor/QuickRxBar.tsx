@@ -829,11 +829,15 @@ export function RxConfirmedSummary({
             canExpand ? 'cursor-pointer hover:underline underline-offset-2' : 'cursor-default',
           )}
         >
-          <span className="shrink-0 font-semibold text-sky-600">{label}</span>
-          {summary && (
-            <span className="truncate text-foreground" data-testid="rx-confirmed-drugs" title={summary}>
+          {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item1(문지은 대표원장): '처방완료' 텍스트 제거 →
+              왼쪽 파란 체크 아이콘(✓) 1개 + 처방한 약 내용을 파란 글씨(sky-600)로. 약 내용 없을 때만 라벨 폴백. */}
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-sky-600" aria-label={label} />
+          {summary ? (
+            <span className="truncate text-sky-600" data-testid="rx-confirmed-drugs" title={summary}>
               {summary}
             </span>
+          ) : (
+            <span className="shrink-0 font-semibold text-sky-600">{label}</span>
           )}
         </button>
 

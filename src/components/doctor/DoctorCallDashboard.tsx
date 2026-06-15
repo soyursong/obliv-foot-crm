@@ -246,12 +246,19 @@ function ColumnExpandPopover({
   onClose,
   children,
   testId,
+  widthScale = 1,
 }: {
   open: boolean;
   anchorRef: React.RefObject<HTMLElement>;
   onClose: () => void;
   children: React.ReactNode;
   testId: string;
+  /**
+   * T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item2(문지은 대표원장): 처방 드롭다운만 폭 ×2(가독성).
+   *   policy_superseded: f8ad7a9 '비가림(폭=앵커 컬럼폭)' 설계를 rx 드롭다운 한정 역전(reporter-explicit 예외).
+   *   left clamp 로 우측 화면 이탈만 방지(다른 드롭다운=임상경과는 widthScale=1 유지, 무회귀).
+   */
+  widthScale?: number;
 }) {
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; width: number; placement: 'down' | 'up' } | null>(null);
@@ -267,8 +274,8 @@ function ColumnExpandPopover({
       const r = el.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      // 폭 = 앵커 셀(컬럼) 폭 — 가로로 다른 컬럼 침범 0(시야 비가림). 셀 좌측에 정렬, 우측 화면 이탈만 clamp.
-      const width = Math.min(r.width, vw - 16);
+      // 폭 = 앵커 셀(컬럼) 폭 × widthScale — 기본 1(비가림). item2: rx 드롭다운만 ×2(가독성). 셀 좌측 정렬, 우측 이탈 clamp.
+      const width = Math.min(r.width * widthScale, vw - 16);
       const left = Math.max(8, Math.min(r.left, vw - width - 8));
       // 세로: 아래 공간 부족 + 위 공간 더 넓으면 위쪽으로(하단 행 잘림 방지) — RxPopover 선례 동일.
       const estH = popRef.current?.offsetHeight ?? 160;
@@ -291,7 +298,7 @@ function ColumnExpandPopover({
       window.removeEventListener('scroll', compute, true);
       window.removeEventListener('resize', compute);
     };
-  }, [open, anchorRef]);
+  }, [open, anchorRef, widthScale]);
 
   // 바깥 클릭 + Esc 닫기(앵커 셀 클릭은 본문 토글이 처리하므로 제외) — CHART-CLINICAL-CLICKOUTSIDE mousedown 패턴.
   useEffect(() => {
@@ -614,8 +621,10 @@ export default function DoctorCallDashboard() {
                 <col className="w-[9%]" />
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
-                <col className="w-[12%]" />
-                <col className="w-[38%]" />
+                {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item3(문지은 대표원장): 처방 12%→18%(×1.5).
+                    +6%p 는 임상경과(38→32)에서 흡수 — 합 100% 유지, 타 컬럼 불변, 양 테이블 동일. */}
+                <col className="w-[18%]" />
+                <col className="w-[32%]" />
                 <col className="w-[5%]" />
               </colgroup>
               {/* DOCDASH_THEAD — 3FIX item2: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과·시간 ('차트' 칼럼 제거). */}
@@ -682,8 +691,10 @@ export default function DoctorCallDashboard() {
                 <col className="w-[9%]" />
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
-                <col className="w-[12%]" />
-                <col className="w-[38%]" />
+                {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item3(문지은 대표원장): 처방 12%→18%(×1.5).
+                    +6%p 는 임상경과(38→32)에서 흡수 — 합 100% 유지, 타 컬럼 불변, 양 테이블 동일. */}
+                <col className="w-[18%]" />
+                <col className="w-[32%]" />
                 <col className="w-[5%]" />
               </colgroup>
               {/* COMPLETED THEAD — WAITDONE-ALIGN: 대기 테이블과 동일 순서·폭('차트' 칼럼 제거). 시간 칼럼은 빈 헤더(완료는 경과시간 미표시). */}
@@ -918,7 +929,7 @@ function CallFeedRow({
         {/* 7. 처방 — AC-7(FULLWIDTH 보존): 확정 시 알약버튼 제거→파란글씨 '처방완료'(plainText)+약명 미리보기. 미처방 시 알약 드롭다운. 중앙정렬.
             COLWIDTH-EXPAND-QUICKEDIT AC-2: rxCellRef = 처방완료 펼침 드롭다운(ColumnExpandPopover) 앵커(컬럼 폭). */}
         <td ref={rxCellRef} className="px-1.5 py-1 text-center" data-testid="doctor-call-rx-cell">
-          <div className="flex flex-wrap items-center justify-start gap-1.5">
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
               <RxConfirmedSummary
                 checkInId={checkIn.id}
@@ -992,7 +1003,7 @@ function CallFeedRow({
               aria-expanded={expandClinical}
               data-testid="doctor-call-clinical-expand-btn"
               title="클릭하면 전체 내용이 펼쳐져요"
-              className="block w-full max-w-full truncate text-left text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+              className="block w-full max-w-full truncate text-center text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
             >
               {clinicalPreview}
             </button>
@@ -1068,12 +1079,13 @@ function CallFeedRow({
         anchorRef={rxCellRef}
         onClose={() => setExpandRx(false)}
         testId="doctor-call-rx-expand-pop"
+        widthScale={2}
       >
         <div
           className="px-3 py-2 text-[13px] leading-relaxed text-gray-700"
           data-testid="doctor-call-rx-expand"
         >
-          <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
+          {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item5(문지은 대표원장): 드롭다운 '처방 전체' 헤더 텍스트 제거. */}
           {rxFullLines.length > 0 ? (
             <ul className="space-y-0.5">
               {rxFullLines.map((line, i) => (
@@ -1228,7 +1240,7 @@ function CompletedRow({
         {/* 7. 처방 — AC-7(보존): 귀가(discharged) 미처방 '-', 원내잔류 알약 드롭다운, 확정 시 파란글씨 '처방완료'+미리보기. 중앙정렬.
             COLWIDTH-EXPAND-QUICKEDIT AC-2: rxCellRef = 처방완료 펼침 드롭다운 앵커(컬럼 폭). */}
         <td ref={rxCellRef} className="px-1.5 py-1 text-center" data-testid="doctor-completed-rx-cell">
-          <div className="flex flex-wrap items-center justify-start gap-1.5">
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
               /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지(진료완료 무회귀).
                  item9: plainText 파란글씨 '처방완료'(버튼 chrome 제거). item8: 약명 RXSET 표시모델 셀 미리보기. */
@@ -1307,7 +1319,7 @@ function CompletedRow({
               aria-expanded={expandClinical}
               data-testid="doctor-completed-clinical-expand-btn"
               title="클릭하면 전체 내용이 펼쳐져요"
-              className="block w-full max-w-full truncate text-left text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+              className="block w-full max-w-full truncate text-center text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
             >
               {clinicalPreview}
             </button>
@@ -1377,12 +1389,13 @@ function CompletedRow({
         anchorRef={rxCellRef}
         onClose={() => setExpandRx(false)}
         testId="doctor-completed-rx-expand-pop"
+        widthScale={2}
       >
         <div
           className="px-3 py-2 text-[13px] leading-relaxed text-gray-700"
           data-testid="doctor-completed-rx-expand"
         >
-          <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
+          {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item5(문지은 대표원장): 드롭다운 '처방 전체' 헤더 텍스트 제거. */}
           {rxFullLines.length > 0 ? (
             <ul className="space-y-0.5">
               {rxFullLines.map((line, i) => (
