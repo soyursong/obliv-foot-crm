@@ -1,0 +1,120 @@
+=== POST-APPLY  2026-06-15T14:16:37.817Z ===
+
+-- check_ins --
+  [ALL] check_ins_admin_all roles={authenticated}
+     USING: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+  [DELETE] check_ins_delete_admin roles={authenticated}
+     USING: (current_user_is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+  [INSERT] anon_insert_checkin_self roles={anon}
+     CHECK: ((clinic_id IS NOT NULL) AND (status = ANY (ARRAY['registered'::text, 'treatment_waiting'::text, 'consult_waiting'::text, 'receiving'::text])))
+  [INSERT] check_ins_consult_insert roles={authenticated}
+     CHECK: (is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))
+  [INSERT] check_ins_coord_insert roles={authenticated}
+     CHECK: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+  [INSERT] check_ins_insert roles={authenticated}
+     CHECK: ((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))
+  [SELECT] anon_checkin_read roles={anon}
+     USING: true
+  [SELECT] check_ins_approved_read roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+  [SELECT] check_ins_read roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_consult_update roles={authenticated}
+     USING: (is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_coord_update roles={authenticated}
+     USING: (is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text])) AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text, 'consult_waiting'::text, 'cancelled'::text])) AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_flag_update roles={authenticated}
+     USING: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_floor_dashboard_update roles={authenticated}
+     USING: (is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text, 'technician'::text])) AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text, 'technician'::text])) AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_therap_update roles={authenticated}
+     USING: (is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_update_privileged roles={authenticated}
+     USING: ((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))
+     CHECK: ((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_update_therapist_own roles={authenticated}
+     USING: ((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()) AND (clinic_id = current_user_clinic_id()))
+     CHECK: ((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()) AND (clinic_id = current_user_clinic_id()))
+
+-- customers --
+  [ALL] customers_admin_all roles={authenticated}
+     USING: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+  [INSERT] anon_insert_customer_self_checkin roles={anon}
+     CHECK: (clinic_id IS NOT NULL)
+  [INSERT] customers_coord_insert roles={authenticated}
+     CHECK: ((is_coordinator_or_above() OR is_consultant_or_above()) AND (clinic_id = current_user_clinic_id()))
+  [SELECT] anon_select_customer_self_checkin roles={anon}
+     USING: (clinic_id IS NOT NULL)
+  [SELECT] customers_approved_read roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+  [SELECT] customers_staff_select roles={authenticated}
+     USING: (is_floor_staff() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] customers_consult_update roles={authenticated}
+     USING: (is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] customers_coord_update roles={authenticated}
+     USING: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] customers_staff_update roles={authenticated}
+     USING: (is_floor_staff() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_floor_staff() AND (clinic_id = current_user_clinic_id()))
+
+-- payments --
+  [ALL] payments_admin_all roles={authenticated}
+     USING: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+  [DELETE] payments_delete_admin roles={authenticated}
+     USING: (current_user_is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+  [INSERT] payments_consult_insert roles={authenticated}
+     CHECK: (is_consultant_or_above() AND (payment_type = 'payment'::text) AND (clinic_id = current_user_clinic_id()))
+  [INSERT] payments_coord_insert roles={authenticated}
+     CHECK: (is_coordinator_or_above() AND (payment_type = 'payment'::text) AND (clinic_id = current_user_clinic_id()))
+  [INSERT] payments_insert roles={authenticated}
+     CHECK: ((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))
+  [INSERT] payments_therap_insert roles={authenticated}
+     CHECK: (is_therapist_or_technician() AND (payment_type = 'payment'::text) AND (clinic_id = current_user_clinic_id()))
+  [SELECT] payments_approved_read roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+  [SELECT] payments_read roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] payments_update roles={authenticated}
+     USING: ((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))
+     CHECK: ((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))
+
+-- reservations --
+  [ALL] reservations_admin_all roles={authenticated}
+     USING: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))
+  [ALL] reservations_coord_all roles={authenticated}
+     USING: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))
+  [SELECT] anon_reservation_read roles={anon}
+     USING: true
+  [SELECT] reservations_approved_read roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] reservations_consult_update roles={authenticated}
+     USING: (is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] reservations_staff_update roles={authenticated}
+     USING: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_approved_user() AND (clinic_id = current_user_clinic_id()))
+
+[diag] authenticated clinic-술어 부재 = 0건, anon 직접 SELECT/USING(true) = 3건
+
+[rrn_decrypt] SECURITY DEFINER | admin게이트=true | clinic게이트=true | search_path고정=true
+
+[RPC 7종] (존재 7/7)
+  fn_selfcheckin_create_check_in  ret=uuid  secdef=true  anon_exec=true
+  fn_selfcheckin_existing_checkin_today  ret=TABLE(id uuid, queue_number integer)  secdef=true  anon_exec=true
+  fn_selfcheckin_find_customer  ret=uuid  secdef=true  anon_exec=true
+  fn_selfcheckin_linked_checkin  ret=TABLE(id uuid, queue_number integer)  secdef=true  anon_exec=true
+  fn_selfcheckin_match_reservation  ret=uuid  secdef=true  anon_exec=true
+  fn_selfcheckin_reservation_banner  ret=TABLE(reservation_time time without time zone, visit_type text)  secdef=true  anon_exec=true
+  fn_selfcheckin_upsert_customer  ret=uuid  secdef=true  anon_exec=true

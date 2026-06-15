@@ -1,0 +1,163 @@
+✅ PROD 연결  2026-06-15T14:06:16.487Z  (READ-ONLY)
+
+═══ pg_policies (customers/check_ins/reservations/payments) ═══
+
+── check_ins ──
+  [ALL] check_ins_admin_all  roles={authenticated}
+     USING: is_admin_or_manager()
+     CHECK: is_admin_or_manager()
+  [DELETE] check_ins_delete_admin  roles={authenticated}
+     USING: current_user_is_admin_or_manager()
+  [INSERT] anon_insert_checkin_self  roles={anon}
+     CHECK: ((clinic_id IS NOT NULL) AND (status = ANY (ARRAY['registered'::text, 'treatment_waiting'::text, 'consult_waiting'::text, 'receiving'::text])))
+  [INSERT] check_ins_consult_insert  roles={authenticated}
+     CHECK: is_consultant_or_above()
+  [INSERT] check_ins_coord_insert  roles={authenticated}
+     CHECK: is_coordinator_or_above()
+  [INSERT] check_ins_insert  roles={authenticated}
+     CHECK: (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  [SELECT] anon_checkin_read  roles={anon}
+     USING: true
+  [SELECT] check_ins_approved_read  roles={authenticated}
+     USING: is_approved_user()
+  [SELECT] check_ins_read  roles={authenticated}
+     USING: true
+  [UPDATE] check_ins_consult_update  roles={authenticated}
+     USING: (is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()))
+     CHECK: (is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()))
+  [UPDATE] check_ins_coord_update  roles={authenticated}
+     USING: (is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text])))
+     CHECK: (is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text, 'consult_waiting'::text, 'cancelled'::text])))
+  [UPDATE] check_ins_flag_update  roles={authenticated}
+     USING: is_coordinator_or_above()
+     CHECK: is_coordinator_or_above()
+  [UPDATE] check_ins_floor_dashboard_update  roles={authenticated}
+     USING: (is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text, 'technician'::text])) AND (clinic_id = current_user_clinic_id()))
+     CHECK: (is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text, 'technician'::text])) AND (clinic_id = current_user_clinic_id()))
+  [UPDATE] check_ins_therap_update  roles={authenticated}
+     USING: (is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()))
+     CHECK: (is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()))
+  [UPDATE] check_ins_update_privileged  roles={authenticated}
+     USING: (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+     CHECK: (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  [UPDATE] check_ins_update_therapist_own  roles={authenticated}
+     USING: ((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()))
+     CHECK: ((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()))
+
+── customers ──
+  [ALL] customers_admin_all  roles={authenticated}
+     USING: is_admin_or_manager()
+     CHECK: is_admin_or_manager()
+  [INSERT] anon_insert_customer_self_checkin  roles={anon}
+     CHECK: (clinic_id IS NOT NULL)
+  [INSERT] customers_coord_insert  roles={authenticated}
+     CHECK: (is_coordinator_or_above() OR is_consultant_or_above())
+  [SELECT] anon_select_customer_self_checkin  roles={anon}
+     USING: (clinic_id IS NOT NULL)
+  [SELECT] customers_approved_read  roles={authenticated}
+     USING: is_approved_user()
+  [SELECT] customers_staff_select  roles={authenticated}
+     USING: is_floor_staff()
+  [UPDATE] customers_consult_update  roles={authenticated}
+     USING: is_consultant_or_above()
+     CHECK: is_consultant_or_above()
+  [UPDATE] customers_coord_update  roles={authenticated}
+     USING: is_coordinator_or_above()
+     CHECK: is_coordinator_or_above()
+  [UPDATE] customers_staff_update  roles={authenticated}
+     USING: is_floor_staff()
+     CHECK: is_floor_staff()
+
+── payments ──
+  [ALL] payments_admin_all  roles={authenticated}
+     USING: is_admin_or_manager()
+     CHECK: is_admin_or_manager()
+  [DELETE] payments_delete_admin  roles={authenticated}
+     USING: current_user_is_admin_or_manager()
+  [INSERT] payments_consult_insert  roles={authenticated}
+     CHECK: (is_consultant_or_above() AND (payment_type = 'payment'::text))
+  [INSERT] payments_coord_insert  roles={authenticated}
+     CHECK: (is_coordinator_or_above() AND (payment_type = 'payment'::text))
+  [INSERT] payments_insert  roles={authenticated}
+     CHECK: (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  [INSERT] payments_therap_insert  roles={authenticated}
+     CHECK: (is_therapist_or_technician() AND (payment_type = 'payment'::text))
+  [SELECT] payments_approved_read  roles={authenticated}
+     USING: is_approved_user()
+  [SELECT] payments_read  roles={authenticated}
+     USING: true
+  [UPDATE] payments_update  roles={authenticated}
+     USING: (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+     CHECK: (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+
+── reservations ──
+  [ALL] reservations_admin_all  roles={authenticated}
+     USING: is_admin_or_manager()
+     CHECK: is_admin_or_manager()
+  [ALL] reservations_coord_all  roles={authenticated}
+     USING: is_coordinator_or_above()
+     CHECK: is_coordinator_or_above()
+  [SELECT] anon_reservation_read  roles={anon}
+     USING: true
+  [SELECT] reservations_approved_read  roles={authenticated}
+     USING: is_approved_user()
+  [UPDATE] reservations_consult_update  roles={authenticated}
+     USING: is_consultant_or_above()
+     CHECK: is_consultant_or_above()
+  [UPDATE] reservations_staff_update  roles={authenticated}
+     USING: is_approved_user()
+     CHECK: is_approved_user()
+
+═══ §16 DRIFT 진단 (clinic 술어 부재 = 결함) ═══
+  ⚠ clinic 술어 부재 [ALL] check_ins.check_ins_admin_all  qual=is_admin_or_manager() check=is_admin_or_manager()
+  ⚠ clinic 술어 부재 [DELETE] check_ins.check_ins_delete_admin  qual=current_user_is_admin_or_manager() check=
+  ⚠ clinic 술어 부재 [INSERT] check_ins.check_ins_consult_insert  qual= check=is_consultant_or_above()
+  ⚠ clinic 술어 부재 [INSERT] check_ins.check_ins_coord_insert  qual= check=is_coordinator_or_above()
+  ⚠ clinic 술어 부재 [INSERT] check_ins.check_ins_insert  qual= check=(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  ⚠ ANON 직접경로 [SELECT] check_ins.anon_checkin_read  qual=true check=
+  ⚠ clinic 술어 부재 [SELECT] check_ins.check_ins_approved_read  qual=is_approved_user() check=
+  ⚠ clinic 술어 부재 [SELECT] check_ins.check_ins_read  qual=true check=
+  ⚠ clinic 술어 부재 [UPDATE] check_ins.check_ins_consult_update  qual=(is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager())) check=(is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()))
+  ⚠ clinic 술어 부재 [UPDATE] check_ins.check_ins_coord_update  qual=(is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text]))) check=(is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text, 'consult_waiting'::text, 'cancelled'::text])))
+  ⚠ clinic 술어 부재 [UPDATE] check_ins.check_ins_flag_update  qual=is_coordinator_or_above() check=is_coordinator_or_above()
+  ⚠ clinic 술어 부재 [UPDATE] check_ins.check_ins_therap_update  qual=(is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager())) check=(is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()))
+  ⚠ clinic 술어 부재 [UPDATE] check_ins.check_ins_update_privileged  qual=(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) check=(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  ⚠ clinic 술어 부재 [UPDATE] check_ins.check_ins_update_therapist_own  qual=((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id())) check=((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()))
+  ⚠ clinic 술어 부재 [ALL] customers.customers_admin_all  qual=is_admin_or_manager() check=is_admin_or_manager()
+  ⚠ clinic 술어 부재 [INSERT] customers.customers_coord_insert  qual= check=(is_coordinator_or_above() OR is_consultant_or_above())
+  ⚠ ANON 직접경로 [SELECT] customers.anon_select_customer_self_checkin  qual=(clinic_id IS NOT NULL) check=
+  ⚠ clinic 술어 부재 [SELECT] customers.customers_approved_read  qual=is_approved_user() check=
+  ⚠ clinic 술어 부재 [SELECT] customers.customers_staff_select  qual=is_floor_staff() check=
+  ⚠ clinic 술어 부재 [UPDATE] customers.customers_consult_update  qual=is_consultant_or_above() check=is_consultant_or_above()
+  ⚠ clinic 술어 부재 [UPDATE] customers.customers_coord_update  qual=is_coordinator_or_above() check=is_coordinator_or_above()
+  ⚠ clinic 술어 부재 [UPDATE] customers.customers_staff_update  qual=is_floor_staff() check=is_floor_staff()
+  ⚠ clinic 술어 부재 [ALL] payments.payments_admin_all  qual=is_admin_or_manager() check=is_admin_or_manager()
+  ⚠ clinic 술어 부재 [DELETE] payments.payments_delete_admin  qual=current_user_is_admin_or_manager() check=
+  ⚠ clinic 술어 부재 [INSERT] payments.payments_consult_insert  qual= check=(is_consultant_or_above() AND (payment_type = 'payment'::text))
+  ⚠ clinic 술어 부재 [INSERT] payments.payments_coord_insert  qual= check=(is_coordinator_or_above() AND (payment_type = 'payment'::text))
+  ⚠ clinic 술어 부재 [INSERT] payments.payments_insert  qual= check=(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  ⚠ clinic 술어 부재 [INSERT] payments.payments_therap_insert  qual= check=(is_therapist_or_technician() AND (payment_type = 'payment'::text))
+  ⚠ clinic 술어 부재 [SELECT] payments.payments_approved_read  qual=is_approved_user() check=
+  ⚠ clinic 술어 부재 [SELECT] payments.payments_read  qual=true check=
+  ⚠ clinic 술어 부재 [UPDATE] payments.payments_update  qual=(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) check=(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))
+  ⚠ clinic 술어 부재 [ALL] reservations.reservations_admin_all  qual=is_admin_or_manager() check=is_admin_or_manager()
+  ⚠ clinic 술어 부재 [ALL] reservations.reservations_coord_all  qual=is_coordinator_or_above() check=is_coordinator_or_above()
+  ⚠ ANON 직접경로 [SELECT] reservations.anon_reservation_read  qual=true check=
+  ⚠ clinic 술어 부재 [SELECT] reservations.reservations_approved_read  qual=is_approved_user() check=
+  ⚠ clinic 술어 부재 [UPDATE] reservations.reservations_consult_update  qual=is_consultant_or_above() check=is_consultant_or_above()
+  ⚠ clinic 술어 부재 [UPDATE] reservations.reservations_staff_update  qual=is_approved_user() check=is_approved_user()
+
+═══ 헬퍼/대상 함수 존재 ═══
+  current_user_clinic_id, is_approved_user, rrn_decrypt
+
+═══ rrn_decrypt 시그니처 ═══
+  rrn_decrypt(customer_uuid uuid)  SECURITY DEFINER  oid=18916
+     EXECUTE grants: postgres:EXECUTE, authenticated:EXECUTE, service_role:EXECUTE
+
+═══ anon table-level grants ═══
+  customers: DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+  check_ins: DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+  reservations: DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+  payments: DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+
+✅ DRIFT 조회 완료 (영속 변경 없음)
