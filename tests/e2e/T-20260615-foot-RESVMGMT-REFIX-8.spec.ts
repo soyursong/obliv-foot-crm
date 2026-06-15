@@ -17,10 +17,15 @@ import path from 'path';
  *        🔒L-004 유지(new-mode 팝업 = 예약 생성 폼 affordance, 캔버스 연결 아님).
  *
  * 보류(현장 회신 대기, 본 커밋 미구현):
- *   AC2 '담당자 드롭' — 코드에 복구 대상 부재(ac105b6 diff 무변경). 현장 스샷 대기 → planner 별도 FIX-REQUEST.
- *   AC4 'per-day×per-time 최종형' — 5FIX AC2(a921cef) supersede. 최종 표시형 설계결정 → 현장 옵션 택1 대기.
  *   AC7-registrar — DB 자가검증 완료(evidence/T-...-REFIX8-AC7_registrar_null.md): write 경로 무결(NOT 회귀),
  *        createReservationCanonical 생성시점 registrar 미수집이 근본 — planner (a)/feature 분기 판단 대기.
+ *
+ * 추가 구현(FIX-REQUEST MSG-20260615-135808-4si3 — 현장 1회 수렴 AC2·AC4 확정):
+ *   AC2 '예약상세 예약 등록자 표시' — 신규 담당자 드롭 신설 아님(현장 "예약 등록자 그대로 가져와").
+ *        예약상세 FieldRow '예약등록자'가 본 예약(anchor) 상세에서도 항상 렌더(기존 id!==anchor 게이트 해제).
+ *        데이터 소스 = AC7과 동일(registrar_name) → 미할당 예약은 '—' graceful(AC7 DB검증: write 무결·생성시 미수집).
+ *   AC4 '일자×시간 매트릭스' (옵션2 확정) — 5FIX AC2(a921cef) 좌측 시간축 '날짜 합산'(time-axis-kind-count) supersede →
+ *        각 (날짜×시간) 셀에 per-cell 건수 분포(cell-kind-count) 표기. 집계 시맨틱(resvKind·cancelled 제외) 동일, 차원만 per-day 분리.
  */
 
 const RESV_PAGE = fs.readFileSync(path.resolve('src/pages/Reservations.tsx'), 'utf-8');
@@ -164,5 +169,67 @@ test.describe('AC3: 슬롯(+) → 예약상세 팝업 new-mode 통일', () => {
   test('AC3-5: L-002/L-004 준수 추적 주석', () => {
     expect(RESV_PAGE).toMatch(/REFIX-8 AC3[\s\S]{0,400}?L-002/);
     expect(RESV_PAGE).toMatch(/REFIX-8 AC3[\s\S]{0,400}?L-004/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC2 — 예약상세에 '예약 등록자' 항상 표시 (현장 확정: 드롭 신설 X, 등록자 그대로)
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC2: 예약상세 예약등록자 항상 렌더', () => {
+  test('AC2-1: 예약등록자 FieldRow가 id!==anchor 게이트 밖으로 이동(항상 렌더)', () => {
+    // 예약등록자 FieldRow 가 selectedResv.id !== reservation.id 조건 블록 안에 갇혀 있지 않아야 함.
+    const gated = RESV_POPUP.match(/selectedResv\.id !== reservation\.id && \(\s*<FieldRow label="예약경로"[\s\S]*?\)\}/);
+    expect(gated, 'id!==anchor 게이트 블록 파싱 실패').toBeTruthy();
+    expect(gated![0], '예약등록자 FieldRow가 여전히 id!==anchor 게이트 안에 갇힘(anchor 상세 미표시)')
+      .not.toContain('label="예약등록자"');
+  });
+
+  test('AC2-2: 예약등록자 FieldRow가 registrar_name(graceful — 미할당 시 —) 렌더', () => {
+    expect(RESV_POPUP, '예약등록자 FieldRow 누락')
+      .toContain('<FieldRow label="예약등록자" value={selectedResv.registrar_name ?? \'—\'} />');
+  });
+
+  test('AC2-3: 신규 담당자 드롭다운 신설 0 — 기존 registrar 소스 재사용(현장 의도)', () => {
+    // AC2는 "예약 등록자 그대로 가져와" = 신규 staff 필터 드롭 신설 아님. registrar_name 소스 그대로.
+    expect(RESV_POPUP, 'AC2 추적 주석 누락').toMatch(/REFIX-8 AC2[\s\S]{0,300}?예약 등록자 그대로/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC4 — 일자×시간 매트릭스: 좌측 시간축 날짜합산 supersede → per-cell 건수 분포
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC4: 일자×시간 per-cell 건수 매트릭스', () => {
+  test('AC4-1: 좌측 시간축 날짜합산(time-axis-kind-count) 제거(5FIX AC2 supersede)', () => {
+    expect(RESV_PAGE, 'time-axis-kind-count 잔존 — 날짜합산 supersede 미반영(매트릭스와 중복)')
+      .not.toContain('time-axis-kind-count-${time}');
+    // 시간축 셀 자체는 시간 라벨로 보존(회귀 가드)
+    expect(RESV_PAGE, '시간축 셀(resv-time-col-cell) 소실(회귀)')
+      .toContain('data-testid="resv-time-col-cell"');
+  });
+
+  test('AC4-2: 각 (날짜×시간) 셀에 per-cell 카운트(cell-kind-count) 신설', () => {
+    expect(RESV_PAGE, 'per-cell 카운트 testid(cell-kind-count) 누락 — 매트릭스 미반영')
+      .toContain('data-testid={`cell-kind-count-${dateStr}-${time}`}');
+  });
+
+  test('AC4-3: per-cell 집계 시맨틱 = resvByKey[key] 활성(취소 제외) 초/재/HL 분류', () => {
+    // cell-kind-count 블록 추출 — 셀 단위(resvByKey[key]) 집계 확인.
+    const m = RESV_PAGE.match(/cell-kind-count-\$\{dateStr\}-\$\{time\}[\s\S]*?\}\)\(\)\}/);
+    // testid는 JSX attr 위치라 IIFE 본문은 그 위에 있음 → 직전 블록을 별도 추출.
+    const block = RESV_PAGE.match(/AC4[\s\S]*?for \(const r of \(resvByKey\[key\] \?\? \[\]\)\)[\s\S]*?cell-kind-count-\$\{dateStr\}-\$\{time\}/);
+    expect(block, 'per-cell 집계 블록(resvByKey[key] 순회) 파싱 실패').toBeTruthy();
+    expect(block![0], '취소 제외 가드 누락').toContain("r.status === 'cancelled') continue");
+    expect(block![0], '초진 분류 누락').toContain("kind === 'new') n += 1");
+    expect(block![0], '재진 분류 누락').toContain("kind === 'returning') rr += 1");
+    expect(block![0], '힐러 분류 누락').toContain("kind === 'healer') h += 1");
+  });
+
+  test('AC4-4: 전건 0 시 per-cell 칩 null 가드 + 초/재/HL 색상 코딩', () => {
+    const block = RESV_PAGE.match(/AC4[\s\S]*?cell-kind-count[\s\S]*?HL \{h\}<\/span>/);
+    expect(block, 'per-cell 칩 렌더 블록 파싱 실패').toBeTruthy();
+    expect(block![0], '전건 0 null 가드 누락').toContain('if (n === 0 && rr === 0 && h === 0) return null');
+    expect(block![0], '초진 emerald 칩 누락').toMatch(/n > 0 &&[\s\S]*?bg-emerald-100[\s\S]*?초 \{n\}/);
+    expect(block![0], '재진 blue 칩 누락').toMatch(/rr > 0 &&[\s\S]*?bg-blue-100[\s\S]*?재 \{rr\}/);
+    expect(block![0], 'HL yellow 칩 누락').toMatch(/h > 0 &&[\s\S]*?bg-yellow-100[\s\S]*?HL \{h\}/);
   });
 });
