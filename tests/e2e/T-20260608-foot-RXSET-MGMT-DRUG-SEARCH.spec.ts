@@ -29,22 +29,25 @@ const RX = 'src/components/admin/PrescriptionSetsTab.tsx';
 const CONTRA = 'src/components/admin/ContraindicationsTab.tsx';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC1: 드롭다운 검색 — 전체 약품 마스터(prescription_codes) 직접 검색
+// AC1: 드롭다운 검색
+//   ⚠️ SUPERSEDED by T-20260615-foot-RXSET-DRUGSOURCE-SVCRX:
+//      약 출처가 전체 마스터(prescription_codes) → services 처방약 리스트로 스왑(김주연 총괄 A 회신).
+//      아래 단언은 새 출처 기준으로 갱신. 검색 드롭다운 UX 불변식(디바운스·자동채움·빈상태)은 존속.
+//      출처별 상세 단언은 T-20260615 spec 참조.
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC1-1: searchRxMaster 가 prescription_codes 전체 카탈로그를 ilike 검색', () => {
+test('AC1-1: searchRxMaster 가 services 처방약 캡슐(searchServiceRxDrugs)로 검색 [SUPERSEDED→SVCRX]', () => {
   const src = read(RX);
   expect(src).toContain('async function searchRxMaster');
-  expect(src).toContain(".from('prescription_codes')");
-  expect(src).toContain('name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%');
-  // custom(자체·카피약) 우선 노출
-  expect(src).toContain("order('code_source', { ascending: false })");
+  // (구) prescription_codes 직접 검색 → (신) services 처방약 캡슐 위임
+  expect(src).toContain('searchServiceRxDrugs');
+  expect(src).not.toContain(".from('prescription_codes')");
 });
 
-test('AC1-2: 출처제한 검색(prescribableDrugs) import·호출 안 함 — 0건 순환 회피', () => {
+test('AC1-2: services 처방약 캡슐 import — 단일 재바인딩 지점 사용 [SUPERSEDED→SVCRX]', () => {
   const src = read(RX);
-  // 세트관리에서 출처를 '처방세트 등록 약'으로 제한하면 빈 세트 상태에서 0건 순환 → 사용 금지.
-  //   (주석 언급은 허용. import/호출만 금지)
-  expect(src).not.toMatch(/from\s+['"]@\/lib\/prescribableDrugs['"]/);
+  // (구) prescribableDrugs import 금지 → (신) searchServiceRxDrugs 캡슐 import 사용.
+  //   단 출처제한 금기 소스(searchPrescribableDrugs/getPrescribableCodeIds)는 여전히 호출 안 함(0건 순환 회피).
+  expect(src).toMatch(/from\s+['"]@\/lib\/prescribableDrugs['"]/);
   expect(src).not.toMatch(/searchPrescribableDrugs\s*\(/);
   expect(src).not.toMatch(/getPrescribableCodeIds\s*\(/);
 });
@@ -53,7 +56,6 @@ test('AC1-3: 약품명 필드가 검색 인풋 + 드롭다운(Search 아이콘·
   const src = read(RX);
   expect(src).toContain('rx-set-item-name-input');
   expect(src).toContain('rx-set-drug-search-dropdown');
-  expect(src).toContain('약품명·보험코드 검색');
   // 디바운스(과도 호출 방지)
   expect(src).toContain('setTimeout');
 });
@@ -61,13 +63,12 @@ test('AC1-3: 약품명 필드가 검색 인풋 + 드롭다운(Search 아이콘·
 // ─────────────────────────────────────────────────────────────────────────────
 // AC2: 검색 결과 선택 → 자동채움
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC2-1: 결과 선택 시 name·route·classification·prescription_code_id 자동채움', () => {
+test('AC2-1: 결과 선택 시 name 자동채움 — services.id는 code_id로 저장 안 함 [SUPERSEDED→SVCRX]', () => {
   const src = read(RX);
   expect(src).toContain('function handleSelectDrug');
-  expect(src).toContain('prescription_code_id: code.id');
-  expect(src).toContain('classification: code.classification ?? null');
-  // route 는 classification 파생(classificationToRoute), 파생 비면 기존값 유지
-  expect(src).toContain('classificationToRoute(code.classification)');
+  // (구) prescription_code_id: code.id → (신) services 소스라 null화(prescription_codes FK 미보유).
+  expect(src).toContain('prescription_code_id: null');
+  expect(src).not.toContain('prescription_code_id: code.id');
   expect(src).toContain('rx-set-drug-search-option');
 });
 
