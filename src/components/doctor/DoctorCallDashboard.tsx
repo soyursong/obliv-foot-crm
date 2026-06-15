@@ -709,7 +709,6 @@ export default function DoctorCallDashboard() {
                     role={profile?.role ?? ''}
                     clinicId={clinicId ?? ''}
                     currentUserEmail={profile?.email ?? null}
-                    actor={actor}
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
                     onRefresh={() => void refetch()}
@@ -821,13 +820,21 @@ function CallFeedRow({
             />
             {inactive ? '진료완료' : '진료필요'}
             {!inactive && (
-              <HandToggle
-                checkIn={checkIn}
-                doctorMode={doctorMode}
-                actor={actor}
-                completed={false}
-                onRefresh={onRefresh}
-              />
+              <>
+                {/* ✋ 손 = 수신확인(ack) 전용. 진료완료는 손이 아닌 옆 '진료완료' 명시 버튼에서만. */}
+                <HandToggle
+                  checkIn={checkIn}
+                  doctorMode={doctorMode}
+                  completed={false}
+                  onRefresh={onRefresh}
+                />
+                {/* T-20260615-foot-SHAKEHAND-NO-COMPLETE: 완료 전이는 별도 명시 액션(이 버튼)에서만. */}
+                <TreatmentCompleteButton
+                  checkIn={checkIn}
+                  actor={actor}
+                  onCompleted={onRefresh}
+                />
+              </>
             )}
           </span>
         </td>
@@ -1079,7 +1086,6 @@ function CompletedRow({
   role,
   clinicId,
   currentUserEmail,
-  actor,
   clinicalPreview,
   onOpenChart,
   onRefresh,
@@ -1089,8 +1095,6 @@ function CompletedRow({
   role: string;
   clinicId: string;
   currentUserEmail: string | null;
-  /** T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-4: 상태셀 ✋ 토글(HandToggle) status_flag 전이 처리자 기록. */
-  actor: FlagTransitionActor;
   /** T-20260612-foot-DOCDASH-11FIX AC-11: 최신 임상경과 1줄 미리보기(없으면 null). */
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
@@ -1157,11 +1161,10 @@ function CompletedRow({
               />
               {discharged ? '귀가' : '귀가 대기'}
             </span>
-            {/* T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-4/AC-5a: 진료완료 = 파랑 ✋(의사ack 뱃지 대체). cross-client DB-backed. */}
+            {/* 진료완료 환자 = 파랑 ✋(의사ack 표상). 완료 테이블이라 ✋ 는 안내 토스트만(완료 해제 미지원). */}
             <HandToggle
               checkIn={checkIn}
               doctorMode={doctorMode}
-              actor={actor}
               completed
               onRefresh={onRefresh}
             />
@@ -1395,102 +1398,64 @@ function CompletedRow({
   );
 }
 
-// ─── 상태 셀 ✋ 손 토글 (단색 미니멀) ──────────────────────────────────────────
-// T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-4/AC-5 (현장 미니멀 리레이아웃):
-//   상태 셀 '진료필요' 옆 ✋ 아이콘 1개로 3-상태 토글. 별도 버튼/라벨 없이 손 아이콘 색으로 단계 표상:
-//     • 회색 + SHAKE  = 진료필요·미ack(초기). 클릭 → 의사 전용 ✋확인(recordAck → doctor_ack_at).
-//     • 초록(emerald) = 의사 확인됨(acked). 클릭 → 진료완료(applyStatusFlagTransition purple→pink). 의사+직원.
-//     • 파랑(blue)    = 진료완료(completed). AC-5b 옵션 B(데이터 보수) — 클릭해도 완료 해제 안 함(안내 토스트만).
+// ─── 상태 셀 ✋ 손 토글 (수신확인 ack 전용) ──────────────────────────────────────
+// T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-4/AC-5: 상태 셀 '진료필요' 옆 ✋ 손 아이콘.
+//   색으로 단계 표상 — 회색+SHAKE=미ack / 초록=의사 확인됨(acked) / 파랑=진료완료된 환자.
 //   교차 클라이언트 동기화(AC-5a): 로컬 state 아님 — doctor_ack_at/status_flag DB값을 그대로 색으로 투영,
 //     write 후 onRefresh → realtime refetch 로 타 기기 자동 반영.
-//   ⚠ 상태머신 신설 0 — 기존 recordAck(DoctorAck) + applyStatusFlagTransition(SSOT) 재사용(스키마 무변경).
-//   ⚠ GUARD(의료법): ack/완료 전이는 medical_charts 진료의 강제(MEDCHART-SIGN-AUDIT) 무관(무회귀).
-//   권한: 회색→초록(ack) = 의사 전용. 초록→파랑(완료) = 의사 + 직원(staff) 공통.
 //
-// T-20260615-foot-DOCDASH-SHAKE-ACK-NOT-COMPLETE (문지은 대표원장 P0 핫픽스) — 근본원인 = 가설 A 확정.
-//   증상: 진료호출알람 수신 후 손(✋) '첫 탭'이 ack 가 아니라 곧장 진료완료로 점프.
-//   재현·추적(코드): 본 손 토글의 acked = doctor_ack_at(값존재) 다.
-//     그런데 doctor_ack_at 은 이 위젯 외 두 동선에서도 '선점(preset)'되어 손이 초록으로 도착할 수 있다 —
-//       (1) 진료알림판 floating 호출바의 DoctorStageStepper '원장확인' 노드 클릭(setDoctorStage(1)) → doctor_ack_at=now
-//           (T-20260614-foot-DOCCALL-PURPLE-STEPPER. 알람 surface 에서 의사가 콜을 인지하며 누르는 자연 동선).
-//       (2) 동일 check_in 의 재호출(purple→pink→purple). status_flag 전이(applyStatusFlagTransition)는 ack 컬럼을
-//           건드리지 않아(설계상 별개 신호) 직전 라운드의 doctor_ack_at 이 잔존 → 새 호출인데 손이 초록.
-//     두 경우 모두 손이 초록(acked)으로 도착 → 기존 로직은 '초록 탭=즉시 완료' 이므로 의사의 '첫 손 탭'이 완료가 됨.
-//   교정(consumption-point, 스키마/스텝퍼 무변경): 초록이라도 '이 위젯에서 완료 의도가 확인(arm)된 두 번째 탭'에서만 완료.
-//     · arm 은 (a) 회색→ack 탭에서 자동 set(정상 2-탭 흐름 보존) 또는 (b) 초록 첫 탭에서 안내 토스트와 함께 set.
-//     · arm 레지스트리는 '현재 호출키(id@콜시각)' 단위(모듈 스코프) → refetch/remount 보존 + 재호출마다 자연 리셋
-//       (선점 ack 와 무관하게 새 호출의 '첫 완료 탭'은 항상 안내만, 완료는 두 번째 탭).
-//   ⚠ 비범위 가드: 손 위젯 형태·색팔레트·되돌리기 팝업·PURPLE-STEPPER A/B(손유지 vs stepper) 결정 변경 없음 —
-//     첫 전이 회귀(첫 탭 완료 점프)만 교정. doctor_ack_at 의미(ack-only) 및 status_flag 상태모델 무변경.
-//
-// arm 레지스트리: 이 위젯에서 '진료완료'가 확인된 호출키 집합. React state 아님(모듈 스코프) →
-//   onRefresh/realtime refetch 로 행이 remount 되어도 보존, 새 호출(콜키 변경)이면 자연 만료.
-const armedCompleteCalls = new Set<string>();
+// T-20260615-foot-SHAKEHAND-NO-COMPLETE (문지은 대표원장 P0 핫픽스) — ✋ = 수신확인(ack) 전용으로 환원.
+//   증상: ✋ 클릭이 ack 만 되어야 하는데 진료완료까지 오발동(status_flag 오염). 재현: 운영 중 첫 손 탭이 완료로 점프.
+//   근본원인: T-20260613 RELAYOUT 이 별도 '진료완료' 버튼(e6138e7 TreatmentCompleteButton)을 제거하고
+//     완료 전이(applyStatusFlagTransition purple→pink)를 ✋ 핸들러(초록 탭)에 결합 → ack 와 완료가 한 손에 얽힘.
+//     doctor_ack_at 은 stepper '원장확인' 클릭·재호출 잔존 등 다른 동선에서 선점되어 손이 초록으로 도착할 수 있어
+//     '초록 탭=완료' 로직이 의사의 '첫 손 탭'을 완료로 만들었다(직전 2-탭 arm 땜질로도 결합은 잔존).
+//   교정(SSOT 분리 환원): ✋ 핸들러에서 완료/상태전이 호출을 제거하고 ack write(recordAck)만 남긴다.
+//     완료(purple→pink)는 손이 아닌 '별도 명시 액션' TreatmentCompleteButton('진료완료' 라벨 버튼)에서만 일어난다.
+//   AC: ✋클릭=doctor_ack_at 만 write / completed_at·status_flag 전이 트리거 금지 / 회색↔초록 재클릭 idempotent /
+//       파랑(완료)은 안내만 / 완료는 별도 명시 액션에서만.
+//   ⚠ doctor_ack_at(ack=진료 시작 신호)과 status_flag(purple/pink) 는 설계상 별개 — ✋ 는 ack 컬럼만 만진다.
 function HandToggle({
   checkIn,
   doctorMode,
-  actor,
   completed,
   onRefresh,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
-  actor: FlagTransitionActor;
-  /** 진료 완료 테이블(파랑·잠금) 여부. true면 AC-5b 옵션 B 안내 토스트만. */
+  /** 진료 완료 테이블(파랑·잠금) 여부. true면 안내 토스트만. */
   completed: boolean;
   onRefresh: () => void;
 }) {
   const [pending, setPending] = useState(false);
   const acked = isDoctorAcked(checkIn.doctor_ack_at);
   const visual: 'blue' | 'green' | 'shake' = completed ? 'blue' : acked ? 'green' : 'shake';
-  // T-20260615 SHAKE-ACK-NOT-COMPLETE: 현재 호출 단위 arm 키. 재호출 시 콜시각이 바뀌어 자연 리셋.
-  const callId = callKey(checkIn);
 
   const handleClick = async () => {
     if (pending) return;
-    // 파랑(완료) — AC-5b 옵션 B: 완료 해제 안 함(데이터 보수). 안내만.
+    // 파랑(완료) — 안내만. ✋ 는 완료를 만들지도 해제하지도 않는다.
     if (visual === 'blue') {
-      toast.warning('이미 진료완료된 환자예요. 완료 해제는 지원하지 않아요.');
+      toast.warning('이미 진료완료된 환자예요. 진료완료/해제는 손이 아닌 진료완료 버튼에서 처리해요.');
       return;
     }
-    // 회색(초기) — 의사 전용 ✋확인(ack). 직원 클릭은 차단 안내.
-    if (visual === 'shake') {
-      if (!doctorMode) {
-        toast.warning('의사만 확인(손 들기)할 수 있어요.');
-        return;
-      }
-      setPending(true);
-      try {
-        await recordAck(checkIn.id);
-        // T-20260615 SHAKE-ACK-NOT-COMPLETE AC2: 의사가 손으로 직접 ack → 이 호출은 정상 2-탭 흐름.
-        //   다음(초록) 탭이 바로 완료되도록 arm. (별도 안내 탭 없이 ack→완료 2탭 보존)
-        armedCompleteCalls.add(callId);
-        onRefresh();
-        toast.confirm('환자에게 손을 들었어요. 호출 직원 화면에 바로 표시돼요.');
-      } catch (e) {
-        toast.error(`확인 표시 실패: ${(e as Error).message}`);
-      } finally {
-        setPending(false);
-      }
+    // 초록(확인됨) — 이미 ack 됨. 재클릭은 idempotent(상태 변화 없음). 완료 전이 절대 호출 안 함.
+    if (visual === 'green') {
+      toast.info('이미 확인(손 들기)한 환자예요. 진료완료는 진료완료 버튼에서 처리해요.');
       return;
     }
-    // 초록(확인됨) — 진료완료 전이(purple→pink). 의사+직원 공통.
-    // T-20260615 SHAKE-ACK-NOT-COMPLETE AC1/AC2 (근본원인 가설 A): doctor_ack_at 은 진료알림판 stepper(원장확인)·
-    //   재호출 잔존 등 다른 동선에서 선점될 수 있어 손이 '초록'으로 도착할 수 있다. 그때 '첫 탭'이 곧장 완료로
-    //   점프하던 회귀를 차단 — 이 위젯에서 완료 의도가 확인(arm)되지 않은 초록 첫 탭은 완료가 아니라 '완료 예고'만.
-    if (!armedCompleteCalls.has(callId)) {
-      armedCompleteCalls.add(callId);
-      toast.confirm('의사 확인 상태예요. 한 번 더 누르면 진료완료로 처리돼요.');
+    // 회색(초기) — 의사 전용 ✋확인(ack=doctor_ack_at). 직원 클릭은 차단 안내.
+    if (!doctorMode) {
+      toast.warning('의사만 확인(손 들기)할 수 있어요.');
       return;
     }
     setPending(true);
     try {
-      await applyStatusFlagTransition(checkIn, 'pink', actor);
-      armedCompleteCalls.delete(callId); // 완료 처리됨 — arm 해제(이 호출 종료).
+      // SHAKEHAND-NO-COMPLETE: 수신확인(ack) write 만. 완료/상태 전이 호출 없음(분리된 명시 버튼 담당).
+      await recordAck(checkIn.id);
       onRefresh();
-      toast.confirm('진료완료 처리했어요. 활성 호출 명단에서 빠졌어요.');
+      toast.confirm('환자에게 손을 들었어요. 호출 직원 화면에 바로 표시돼요.');
     } catch (e) {
-      toast.error(`진료완료 처리 실패: ${(e as Error).message}`);
+      toast.error(`확인 표시 실패: ${(e as Error).message}`);
     } finally {
       setPending(false);
     }
@@ -1504,10 +1469,10 @@ function HandToggle({
         : 'text-gray-400 animate-shake';
   const title =
     visual === 'blue'
-      ? '진료완료됨 (완료 해제 미지원)'
+      ? '진료완료됨 — 완료 처리는 진료완료 버튼에서'
       : visual === 'green'
-        ? '의사 확인됨 — 한 번 더 누르면 진료완료 처리' // T-20260615: 초록 첫 탭=완료 예고, 두 번째 탭=완료
-        : '의사 확인(손 들기) — 클릭하면 환자에게 확인 신호';
+        ? '의사 확인됨 — 진료완료는 진료완료 버튼에서 처리'
+        : '의사 확인(손 들기) — 클릭하면 환자에게 확인 신호 (ack)';
 
   return (
     <button
@@ -1516,7 +1481,6 @@ function HandToggle({
       disabled={pending}
       data-testid="doctor-hand-toggle"
       data-hand-state={visual}
-      data-hand-armed={String(armedCompleteCalls.has(callId))}
       aria-label={title}
       title={title}
       className="inline-flex items-center justify-center rounded p-0.5 transition active:scale-90 disabled:opacity-50"
@@ -1526,6 +1490,50 @@ function HandToggle({
       ) : (
         <Hand className={cn('h-4 w-4', colorClass)} />
       )}
+    </button>
+  );
+}
+
+// ─── 진료완료 버튼 (별도 명시 액션) ───────────────────────────────────────────
+// T-20260615-foot-SHAKEHAND-NO-COMPLETE: 완료(purple→pink)는 손(✋)이 아니라 이 명시 버튼에서만.
+//   e6138e7(TREATMENT-COMPLETE-BTN) 원형 복원 — RELAYOUT 이 제거했던 분리 액션을 되살린다.
+//   진료호출(purple) 환자를 의사/직원 누구나 '진료완료' 처리 → status_flag purple→pink 전이로 활성 명단에서 제거.
+//   status_flag 전이는 applyStatusFlagTransition(SSOT)에 위임 — ⚠ doctor_ack_at(✋)은 만지지 않는다(별개 신호).
+function TreatmentCompleteButton({
+  checkIn,
+  actor,
+  onCompleted,
+}: {
+  checkIn: CheckIn;
+  actor: FlagTransitionActor;
+  onCompleted: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const handleComplete = async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await applyStatusFlagTransition(checkIn, 'pink', actor);
+      onCompleted();
+      toast.confirm('진료완료 처리했어요. 활성 호출 명단에서 빠졌어요.');
+    } catch (e) {
+      toast.error(`진료완료 처리 실패: ${(e as Error).message}`);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleComplete}
+      disabled={pending}
+      data-testid="doctor-call-complete-btn"
+      aria-label="진료완료 처리"
+      className="inline-flex items-center gap-0.5 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-600 transition hover:bg-gray-50 active:scale-95 disabled:opacity-50"
+      title="이 환자 진료를 완료 처리해요 (활성 호출 명단에서 제거)"
+    >
+      {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+      진료완료
     </button>
   );
 }

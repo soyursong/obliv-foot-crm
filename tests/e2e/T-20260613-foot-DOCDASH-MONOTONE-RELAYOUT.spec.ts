@@ -132,11 +132,14 @@ test.describe('AC-4/AC-5 — HandToggle 상태 셀 3-상태 토글', () => {
   });
 
   test('AC-5b 옵션 B: 파랑(완료) 클릭은 완료 해제 안 함(상태 전이 호출 없음, 안내만)', () => {
+    // ⚠ T-20260615-foot-SHAKEHAND-NO-COMPLETE 가 ✋ 를 ack 전용으로 환원 → 파랑 안내 문구 갱신.
+    //   불변식(파랑 클릭=완료 해제 안 함, 안내만)은 유지.
     const s = DASH();
-    const fn = s.slice(s.indexOf('function HandToggle('));
-    // blue 분기는 toast 안내 후 return — un-complete 전이 미수행
+    const start = s.indexOf('function HandToggle(');
+    const end = s.indexOf('// ─── 진료완료 버튼', start);
+    const fn = s.slice(start, end > 0 ? end : undefined);
     expect(fn).toContain("if (visual === 'blue')");
-    expect(fn).toContain('완료 해제는 지원하지 않아요');
+    expect(fn).toContain('이미 진료완료된 환자예요'); // 안내만, un-complete 미수행
   });
 
   test('SHAKE 애니메이션 tailwind 정의(미ack 초기)', () => {
@@ -192,9 +195,11 @@ test.describe('GUARD — 회귀 0', () => {
     expect(DASH()).toContain('ProcedureCell');
   });
 
-  test('구 손들기 워크플로(TreatmentCompleteButton/DoctorAckButton) 잔존 0', () => {
+  test('구 손들기 워크플로(DoctorAckButton/Handshake) 잔존 0', () => {
+    // ⚠ T-20260615-foot-SHAKEHAND-NO-COMPLETE: RELAYOUT 이 제거했던 TreatmentCompleteButton(별도 명시 완료액션)을
+    //   의도적으로 복원했다(✋=ack 전용, 완료=별도 버튼). 따라서 TreatmentCompleteButton 은 더 이상 '잔존 금지' 대상 아님.
     const s = DASH();
-    expect(s).not.toContain('TreatmentCompleteButton');
+    expect(s).toContain('function TreatmentCompleteButton('); // 별도 명시 완료액션 복원 보장
     expect(s).not.toContain('DoctorAckButton');
     expect(s).not.toContain('Handshake');
   });
