@@ -111,7 +111,7 @@ const CHART_CELL_EMOJI_BTN =
 //     (요청 9칼럼 순서를 contiguous prefix 로 그대로 유지, 시간만 끝에 append = 10칼럼). responder confirm 대상.
 //   · 완료 테이블은 경과시간이 UX7 에서 이미 제거(완료환자 대기시간 불요) → 9칼럼(시간 없음).
 const DOCDASH_COLSPAN = 10; // 진료 대기중(호출): 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간
-const DOCDASH_COMPLETED_COLSPAN = 9; // 진료 완료: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과
+const DOCDASH_COMPLETED_COLSPAN = 10; // T-20260615-WAITDONE-ALIGN: 완료 테이블도 대기와 동일 10칼럼(끝 시간=빈칸 placeholder)
 
 // T-20260612-foot-CHARTNO-B2-P1: customers 임베드(to-one)에서 차트번호 안전 추출.
 //   PostgREST 임베드는 object|array 양쪽으로 직렬화될 수 있어 둘 다 흡수(KohReportTab 흡수 패턴 동일).
@@ -586,8 +586,11 @@ export default function DoctorCallDashboard() {
           {/* T-20260612-foot-DOCDASH-11FIX AC-1: 전화 아이콘 제거 → 호출 알람 의미의 Bell 로 교체. */}
           <Bell className="h-4 w-4 text-red-600" />
           <span className="text-sm font-semibold text-gray-800">진료 대기중</span>
-          {/* 카운트는 plain text. T-20260612-WAITELAPSED-POLISH AC-1: '완료 N명' 배지 완전 제거(진료필요만 노출). */}
-          <span className="text-xs font-medium text-red-600">진료필요 {activeCalls.length}</span>
+          {/* T-20260615-foot-DOCDASH-WAITDONE-ALIGN-CNTNUM (문지은 대표원장): '진료필요' 라벨 제거 → 숫자만 크게·볼드.
+              섹션 제목 「진료 대기중」 + 행 상태 라벨에 '진료필요'가 이미 있어 배지 라벨은 중복. (WAITELAPSED-POLISH AC-1 plain text 갱신) */}
+          <span className="text-2xl font-bold text-red-600" data-testid="doctor-call-active-count">
+            {activeCalls.length}
+          </span>
         </div>
         {isLoading ? (
           <div className="flex justify-center py-8">
@@ -668,27 +671,26 @@ export default function DoctorCallDashboard() {
             아직 진료 완료된 환자가 없어요.
           </div>
         ) : (
-          // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7: 진료 완료 섹션은 경과시간 칼럼 제거(7칼럼).
-          //   호출 섹션(8칼럼)과 폭 통일이 아닌 독립 — 완료환자는 대기시간 불요(문지은 대표원장). 제거된 11% 재분배.
+          // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7: 진료 완료 섹션은 경과시간(시간) 값은 표시 안 함(완료환자 대기시간 불요).
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-completed-table">
-              {/* COMPLETED COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 경과시간 제거(UX7 유지) + 생년 신설(9칼럼).
-                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-RATIO-TUNE: EXPAND-QUICKEDIT 배포본(방5·상태10·이름12·처방25) 기준 비율 축소.
-                  방 ×0.75(5→4) · 상태 ×0.75(10→8) · 이름 ×0.50(12→6) · 처방 ×0.50(25→13). 해방된 21%p 전량을 임상경과 본문(16→37)에 재분배(나머지 불변).
-                  순서·합 100%: 방4 · 상태(✋)8 · 이름6 · 생년(만나이)9 · 차트번호8 · 오늘시술9 · 차트6 · 처방13 · 임상경과37.
-                  T-20260615-foot-DOCDASH-STATNAME-WIDEN-CENTER: 상태 8→10·이름 6→7(×1.2), 임상경과 37→34(차감). 합 100%. */}
+              {/* COMPLETED COLGROUP — T-20260615-foot-DOCDASH-WAITDONE-ALIGN-CNTNUM (문지은 대표원장):
+                  진료대기↔진료완료 두 테이블 칼럼 세로경계를 픽셀단위 일치(같은 테이블처럼). 접근(a): 완료 테이블을
+                  대기 테이블과 '글자 그대로 동일' 10칼럼 colgroup 으로 맞추고, 시간 칼럼은 빈칸 placeholder(값 미표시, UX7 유지).
+                  폭 = STATNAME-WIDEN-CENTER 확정 대기 실폭과 1:1 동일 — 방4·상태8·이름7·생년9·차트번호8·오늘시술9·차트6·처방12·임상경과32·시간5 = 100%. */}
               <colgroup>
                 <col className="w-[4%]" />
-                <col className="w-[10%]" />
+                <col className="w-[8%]" />
                 <col className="w-[7%]" />
                 <col className="w-[9%]" />
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
                 <col className="w-[6%]" />
-                <col className="w-[13%]" />
-                <col className="w-[34%]" />
+                <col className="w-[12%]" />
+                <col className="w-[32%]" />
+                <col className="w-[5%]" />
               </colgroup>
-              {/* COMPLETED THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과(시간 없음). */}
+              {/* COMPLETED THEAD — WAITDONE-ALIGN: 대기 테이블과 동일 순서·폭. 시간 칼럼은 빈 헤더(완료는 경과시간 미표시). */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
                   <th className="px-1.5 py-1">방</th>
@@ -700,6 +702,8 @@ export default function DoctorCallDashboard() {
                   <th className="px-1.5 py-1">차트</th>
                   <th className="px-1.5 py-1">처방</th>
                   <th className="px-1.5 py-1">임상경과</th>
+                  {/* 시간 — 대기 테이블 폭 정렬용 빈 칼럼(완료환자 경과시간 미표시, WAITFILTER-UX7 유지). */}
+                  <th className="px-1.5 py-1"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
@@ -1330,6 +1334,9 @@ function CompletedRow({
             <span className="text-[13px] text-gray-300">—</span>
           )}
         </td>
+
+        {/* 시간(끝) — T-20260615-foot-DOCDASH-WAITDONE-ALIGN-CNTNUM: 대기 테이블 폭 정렬용 빈 셀(완료환자 경과시간 미표시). */}
+        <td className="px-1.5 py-1 text-center" data-testid="doctor-completed-elapsed-empty"></td>
       </tr>
 
       {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 드롭다운 펼침행(<tr colSpan>) 폐지 →
