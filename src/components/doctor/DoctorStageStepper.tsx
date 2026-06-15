@@ -81,13 +81,26 @@ interface DoctorStageStepperProps {
   /** 전환 성공 후 부모 rows 갱신(realtime 보강) */
   onChanged?: () => void;
   className?: string;
+  /**
+   * 콤팩트 모드 — T-20260615-foot-CALLLIST-STEPPER-INLINE-COMPACT (현장 김주연 총괄).
+   *   진료콜 명단 다수 행에서 한 명이 칸을 크게 차지하는 문제 → 노선도를 이름·배지와 한 묶음으로 축소.
+   *   변형(단순 인라인 X): 노드별 라벨(대기/원장확인/…) 제거 → 4개 점(클릭 가능)만 콤팩트 한 줄 +
+   *   "현 단계만 텍스트"(현재 단계 1개 라벨)로 표기. ▼ 현위치 마커 유지(AC-2). 라벨 4개가 사라져
+   *   카드 세로 높이(▼+점만, ~38px→~24px)·가로폭(라벨 4개분) 동시 축소(AC-1). 폭이 좁아 wrap 가독성↓ 가드.
+   *   클릭 전환/도달표시/idempotent write/realtime 동기는 일체 불변(setDoctorStage/deriveDoctorStage 미변경, AC-3).
+   *   ▶ REDEFINITION: T-20260614 이슈2의 "stepper 가로폭 필요→전용줄(라벨 4개 노출)" 결정을 동일 reporter
+   *     명시 요청으로 갱신(policy_superseded). 라벨 4개 동시노출 대신 현단계 텍스트로 식별성 유지.
+   */
+  compact?: boolean;
 }
 
 /**
  * 인라인 노선도 stepper. 각 노드 = 클릭 가능한 버튼(min 28px 터치 타깃, 태블릿 UX).
  * 도달 단계(index <= current)=purple 채움, 미도달=gray 빈 원. 현재 노드 위 ▼ 마커.
+ *
+ * compact=true: 노드별 라벨 미렌더(점만) + 우측에 현재 단계 1개 텍스트 라벨. 노드 4개·▼·클릭전환 동일.
  */
-export default function DoctorStageStepper({ checkIn, onChanged, className }: DoctorStageStepperProps) {
+export default function DoctorStageStepper({ checkIn, onChanged, className, compact = false }: DoctorStageStepperProps) {
   const current = deriveDoctorStage(checkIn);
   const [pending, setPending] = useState<DoctorStageIndex | null>(null);
 
@@ -109,75 +122,95 @@ export default function DoctorStageStepper({ checkIn, onChanged, className }: Do
     <div
       data-testid="doctor-stage-stepper"
       data-current-stage={current}
-      className={cn('flex items-end gap-0 select-none', className)}
+      data-compact={String(compact)}
+      className={cn(
+        compact ? 'flex items-center gap-1.5 select-none' : 'flex items-end gap-0 select-none',
+        className,
+      )}
       role="group"
       aria-label="진료 단계"
     >
-      {DOCTOR_STAGES.map((label, idx) => {
-        const i = idx as DoctorStageIndex;
-        const reached = i <= current; // 도달(채움)
-        const isCurrent = i === current;
-        const busy = pending === i;
-        return (
-          <div key={label} className="flex items-end">
-            {/* 연결선(첫 노드 앞에는 없음). 양끝이 모두 도달이면 purple, 아니면 gray. */}
-            {idx > 0 && (
-              <span
-                data-testid="doctor-stage-connector"
-                className={cn(
-                  'h-0.5 w-4 mb-[13px] shrink-0',
-                  i <= current ? 'bg-purple-500' : 'bg-gray-300',
-                )}
-              />
-            )}
-            <button
-              type="button"
-              data-testid="doctor-stage-node"
-              data-stage={i}
-              data-reached={String(reached)}
-              data-current={String(isCurrent)}
-              onClick={() => handleClick(i)}
-              disabled={pending !== null}
-              className="flex flex-col items-center gap-0.5 px-0.5 disabled:opacity-70"
-              title={`진료 단계: ${label}${isCurrent ? ' (현재)' : ''} — 클릭 시 이 단계로 변경`}
-              aria-current={isCurrent ? 'step' : undefined}
-            >
-              {/* ▼ 현위치 마커 — 현재 단계 노드 위에만 표시 */}
-              <span
-                data-testid={isCurrent ? 'doctor-stage-here' : undefined}
-                className={cn(
-                  'text-[9px] leading-none text-purple-600 h-[9px]',
-                  isCurrent ? 'opacity-100' : 'opacity-0',
-                )}
-                aria-hidden={!isCurrent}
+      {/* 점(노드) 묶음 — 노선도. compact 든 아니든 4노드·연결선·▼ 동일. 차이는 노드 하단 라벨 유무. */}
+      <div className="flex items-end gap-0">
+        {DOCTOR_STAGES.map((label, idx) => {
+          const i = idx as DoctorStageIndex;
+          const reached = i <= current; // 도달(채움)
+          const isCurrent = i === current;
+          const busy = pending === i;
+          return (
+            <div key={label} className="flex items-end">
+              {/* 연결선(첫 노드 앞에는 없음). 양끝이 모두 도달이면 purple, 아니면 gray.
+                  compact: 라벨 미렌더로 점 컬럼이 낮아짐 → mb 보정(점 중심 정렬). */}
+              {idx > 0 && (
+                <span
+                  data-testid="doctor-stage-connector"
+                  className={cn(
+                    'h-0.5 shrink-0',
+                    compact ? 'w-2 mb-[7px]' : 'w-4 mb-[13px]',
+                    i <= current ? 'bg-purple-500' : 'bg-gray-300',
+                  )}
+                />
+              )}
+              <button
+                type="button"
+                data-testid="doctor-stage-node"
+                data-stage={i}
+                data-reached={String(reached)}
+                data-current={String(isCurrent)}
+                onClick={() => handleClick(i)}
+                disabled={pending !== null}
+                className={cn('flex flex-col items-center gap-0.5 disabled:opacity-70', compact ? 'px-px' : 'px-0.5')}
+                title={`진료 단계: ${label}${isCurrent ? ' (현재)' : ''} — 클릭 시 이 단계로 변경`}
+                aria-current={isCurrent ? 'step' : undefined}
               >
-                ▼
-              </span>
-              {/* 원(●/○) — 도달=purple 채움, 미도달=gray 빈 원. 진행 중이면 spinner. */}
-              <span
-                className={cn(
-                  'flex items-center justify-center h-4 w-4 rounded-full border-2 transition-colors',
-                  reached
-                    ? 'bg-purple-500 border-purple-500'
-                    : 'bg-white border-gray-300',
-                  isCurrent && 'ring-2 ring-purple-200',
+                {/* ▼ 현위치 마커 — 현재 단계 노드 위에만 표시 (compact 에서도 유지: AC-2 현위치 식별) */}
+                <span
+                  data-testid={isCurrent ? 'doctor-stage-here' : undefined}
+                  className={cn(
+                    'text-[9px] leading-none text-purple-600 h-[9px]',
+                    isCurrent ? 'opacity-100' : 'opacity-0',
+                  )}
+                  aria-hidden={!isCurrent}
+                >
+                  ▼
+                </span>
+                {/* 원(●/○) — 도달=purple 채움, 미도달=gray 빈 원. 진행 중이면 spinner. */}
+                <span
+                  className={cn(
+                    'flex items-center justify-center h-4 w-4 rounded-full border-2 transition-colors',
+                    reached
+                      ? 'bg-purple-500 border-purple-500'
+                      : 'bg-white border-gray-300',
+                    isCurrent && 'ring-2 ring-purple-200',
+                  )}
+                >
+                  {busy && <Loader2 className="h-2.5 w-2.5 animate-spin text-white" />}
+                </span>
+                {/* 라벨 — compact 에서는 노드 하단 라벨 미렌더(가로폭·세로높이 축소). 식별은 우측 현단계 텍스트로. */}
+                {!compact && (
+                  <span
+                    className={cn(
+                      'text-[9px] leading-none whitespace-nowrap mt-0.5',
+                      isCurrent ? 'font-bold text-purple-700' : reached ? 'text-purple-600' : 'text-gray-400',
+                    )}
+                  >
+                    {label}
+                  </span>
                 )}
-              >
-                {busy && <Loader2 className="h-2.5 w-2.5 animate-spin text-white" />}
-              </span>
-              {/* 라벨 */}
-              <span
-                className={cn(
-                  'text-[9px] leading-none whitespace-nowrap mt-0.5',
-                  isCurrent ? 'font-bold text-purple-700' : reached ? 'text-purple-600' : 'text-gray-400',
-                )}
-              >
-                {label}
-              </span>
-            </button>
-          </div>
-        );
-      })}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {/* compact: "현 단계만 텍스트" — 점 묶음 우측에 현재 단계 1개 라벨(단순 인라인 시 라벨 4개 wrap 가독성↓ 가드). */}
+      {compact && (
+        <span
+          data-testid="doctor-stage-current-label"
+          className="text-[11px] leading-none font-bold text-purple-700 whitespace-nowrap"
+        >
+          {DOCTOR_STAGES[current]}
+        </span>
+      )}
     </div>
   );
 }

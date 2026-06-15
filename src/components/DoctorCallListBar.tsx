@@ -838,8 +838,11 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
               · shrink-0: 노선도 4단계가 압축돼 라벨 겹치지 않도록 폭 보존.
               · T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2 산출(✋ 손 아이콘 대체 4단계 노선도)·전환·실시간동기 불변
                 — 위치(전용 줄→인라인)만 변경. 노드 클릭/도달표시/▼현위치/idempotent write 로직 일체 미접촉.
-              T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리. */}
-          <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} className="shrink-0" />
+              T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리.
+              T-20260615-foot-CALLLIST-STEPPER-INLINE-COMPACT (현장 김주연 총괄): 단순 인라인은 노드 라벨 4개로
+                폭이 넓어 다수 행에서 칸을 크게 점유 → compact 변형. 노드 라벨 4개 미렌더(점만)+현단계 1개 텍스트로
+                이름·배지와 한 묶음 축소(세로↓·가로↓). ▼ 현위치/4노드 클릭전환/realtime 동기 불변(렌더 레이아웃만). */}
+          <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} compact className="shrink-0" />
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {inactive && (
