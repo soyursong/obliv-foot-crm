@@ -52,24 +52,40 @@ export async function seedCheckIn(opts: {
   if (cErr || !c) throw new Error(`seedCheckIn: customer insert failed: ${cErr?.message}`);
   const customerId = c.id as string;
 
-  const { data: ci, error: ciErr } = await sb
-    .from('check_ins')
-    .insert({
-      clinic_id: CLINIC_ID,
-      customer_id: customerId,
-      customer_name: name,
-      customer_phone: phone,
-      visit_type: opts.visit_type ?? 'new',
-      status: opts.status ?? 'registered',
-      queue_number: 990 + (ts % 10),
-      package_id: opts.package_id,
-      // 실제 체크인은 항상 checked_in_at 보유. 대시보드 카드 쿼리가
-      // checked_in_at 오늘범위(gte/lte)로 필터하므로 미설정 시 카드가 안 뜬다.
-      checked_in_at: new Date().toISOString(),
-      notes: MARKER,
-    })
-    .select('id')
-    .single();
+  // queue_number 충돌 회피:
+  //   유니크 제약 idx_checkins_clinic_date_queue = (clinic_id, kst_date(checked_in_at), queue_number).
+  //   기존 `990 + ts%10` 은 동일 일자에 단 10버킷뿐 → 다회 시딩/잔존 row 와 duplicate key.
+  //   QA 픽스처는 고대역(900000~999999) 랜덤으로 실데이터(1..N 순차 발번)와 분리하고,
+  //   그래도 충돌 시 23505(unique_violation) 만 새 번호로 재시도.
+  const checkedInAt = new Date().toISOString();
+  const qaQueue = () => 900000 + Math.floor(Math.random() * 100000);
+  let ci: { id: string } | null = null;
+  let ciErr: { message?: string; code?: string } | null = null;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const res = await sb
+      .from('check_ins')
+      .insert({
+        clinic_id: CLINIC_ID,
+        customer_id: customerId,
+        customer_name: name,
+        customer_phone: phone,
+        visit_type: opts.visit_type ?? 'new',
+        status: opts.status ?? 'registered',
+        queue_number: qaQueue(),
+        package_id: opts.package_id,
+        // 실제 체크인은 항상 checked_in_at 보유. 대시보드 카드 쿼리가
+        // checked_in_at 오늘범위(gte/lte)로 필터하므로 미설정 시 카드가 안 뜬다.
+        checked_in_at: checkedInAt,
+        notes: MARKER,
+      })
+      .select('id')
+      .single();
+    ci = (res.data as { id: string } | null) ?? null;
+    ciErr = (res.error as { message?: string; code?: string } | null) ?? null;
+    if (!ciErr) break;
+    if (ciErr.code === '23505') continue; // queue_number 충돌 → 새 번호 재시도
+    break; // 그 외 오류는 즉시 중단
+  }
   if (ciErr || !ci) {
     await sb.from('customers').delete().eq('id', customerId);
     throw new Error(`seedCheckIn: check_in insert failed: ${ciErr?.message}`);
