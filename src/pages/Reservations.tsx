@@ -956,7 +956,7 @@ export default function Reservations() {
   //   🔒 L-002(개정): 생성경로는 함수 1곳뿐. 팝업은 콜백만 호출(팝업 내 reservations.insert 0). 5요소는 함수 내부 보존.
   const handleCreateReservationFromPopup = useCallback(
     async (params: {
-      customerId: string;
+      customerId: string | null;
       name: string;
       phone: string | null;
       date: string;
@@ -964,9 +964,47 @@ export default function Reservations() {
       visit_type: VisitType;
     }): Promise<{ ok: boolean; reason?: string; message?: string }> => {
       if (!clinic) return { ok: false, reason: 'error', message: '클리닉 정보를 불러오지 못했습니다.' };
+      // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 팝업이 customerId=null(시스템에 없는 신규 고객)을 넘기면
+      //   여기서 고객 resolve(phone E.164) → 없으면 customers INSERT. 고객 INSERT 책임은 호출측(이 콜백) —
+      //   기존 신규(CREATE) 경로(§2554~)와 동일 패턴 재사용. 생성 무결성 5요소는 단일소스 함수 내부 보존(🔒 L-002).
+      let resolvedCustomerId = params.customerId;
+      if (!resolvedCustomerId && params.phone && params.phone.trim()) {
+        const normalized = normalizeToE164(params.phone) ?? params.phone.trim();
+        const { data: existing } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('clinic_id', clinic.id)
+          .eq('phone', normalized)
+          .maybeSingle();
+        if (existing) {
+          resolvedCustomerId = existing.id as string;
+        } else {
+          const { data: created, error } = await supabase
+            .from('customers')
+            .insert({
+              clinic_id: clinic.id,
+              name: params.name.trim(),
+              phone: normalized,
+              visit_type: params.visit_type === 'new' ? 'new' : 'returning',
+            })
+            .select('id')
+            .single();
+          if (error) {
+            return {
+              ok: false,
+              reason: 'error',
+              message: error.code === '23505' ? '이미 등록된 전화번호입니다' : `고객 생성 실패: ${error.message}`,
+            };
+          }
+          resolvedCustomerId = (created as { id: string }).id;
+        }
+      }
+      if (!resolvedCustomerId) {
+        return { ok: false, reason: 'error', message: '고객 정보(성함·연락처)가 필요합니다.' };
+      }
       const res = await createReservationCanonical({
         clinicId: clinic.id,
-        customerId: params.customerId,
+        customerId: resolvedCustomerId,
         name: params.name,
         phone: params.phone,
         date: params.date,

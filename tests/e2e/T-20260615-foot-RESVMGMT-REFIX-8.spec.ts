@@ -173,6 +173,75 @@ test.describe('AC3: 슬롯(+) → 예약상세 팝업 new-mode 통일', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// AC3-b — (+) new-mode 팝업에서 '시스템에 없는 완전 신규 고객' 성함+연락처 직접 등록
+//   FIX-REQUEST MSG-20260615-155004-k5le. 신규 컴포넌트/스키마 0, 기존 신규고객 생성 경로 재사용.
+//   🔒 L-002: 팝업 내 customers/reservations.insert = 0 — 고객 INSERT 는 parent(onCreateReservation) 책임.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC3-b: (+) 팝업 신규고객 직접 등록(성함+연락처)', () => {
+  test('AC3b-1: 빈 상태에 직접 등록 진입 버튼(btn-newmode-manual-register) 노출', () => {
+    expect(RESV_POPUP, '직접 등록 진입 버튼 누락')
+      .toContain('data-testid="btn-newmode-manual-register"');
+    // 진입 버튼이 setManualNew(true) 로 직접 등록 모드를 켬(attr 순서 무관 — 동일 button 블록 내)
+    const btn = RESV_POPUP.match(/onClick=\{\(\) => \{ setManualNew\(true\); setSearchValue\(''\); \}\}[\s\S]{0,160}?btn-newmode-manual-register/);
+    expect(btn, '직접 등록 토글(setManualNew(true)) 미배선').toBeTruthy();
+  });
+
+  test('AC3b-2: 직접 등록 폼에 성함·연락처 입력 필드 신설', () => {
+    expect(RESV_POPUP, '성함 입력 필드 누락').toContain('data-testid="newmode-cust-name-input"');
+    expect(RESV_POPUP, '연락처 입력 필드 누락').toContain('data-testid="newmode-cust-phone-input"');
+  });
+
+  test('AC3b-3: 연락처 입력은 기존 포맷터(formatPhoneInput) 적용 — 하이픈 표기', () => {
+    expect(RESV_POPUP, 'formatPhoneInput import 누락').toMatch(/import \{[^}]*formatPhoneInput[^}]*\} from '@\/lib\/format'/);
+    // 연락처 input(testid) 와 onChange 포맷터가 모두 존재(직접 등록 폼은 연락처 input 1개뿐 → 동일 input)
+    expect(RESV_POPUP, '연락처 onChange 포맷터 미적용')
+      .toContain('onChange={(e) => setNewCustPhone(formatPhoneInput(e.target.value))}');
+  });
+
+  test('AC3b-4: 성함/연락처 미입력 시 생성 버튼 disabled(빈 고객 INSERT 방지)', () => {
+    // 생성 버튼(btn-newmode-create-entry) 존재 + disabled 가드에 직접 등록 성함/연락처 미입력 차단 포함
+    expect(RESV_POPUP, 'create 버튼 testid 누락').toContain('data-testid="btn-newmode-create-entry"');
+    const dis = RESV_POPUP.match(/disabled=\{\s*creatingResv \|\|\s*!pickedDate \|\|[\s\S]*?manualNew[\s\S]*?\}/);
+    expect(dis, '직접 등록 disabled 가드 파싱 실패').toBeTruthy();
+    expect(dis![0], '성함 미입력 가드 누락').toContain('!newCustName.trim()');
+    expect(dis![0], '연락처 미입력 가드 누락').toContain('!newCustPhone.trim()');
+  });
+
+  test('AC3b-5: submitNewReservation이 직접 등록 시 customerId=null + 성함/연락처 위임', () => {
+    const fn = RESV_POPUP.match(/async function submitNewReservation\(\)[\s\S]*?onChanged\(\);\s*\}/);
+    expect(fn, 'submitNewReservation 파싱 실패').toBeTruthy();
+    expect(fn![0], 'customerId null 위임(직접 등록) 누락')
+      .toContain('customerId: loadedMatch ? loadedMatch.id : null');
+    expect(fn![0], '직접 등록 성함/연락처 필수 가드 누락').toContain("'신규 고객 성함을 입력하세요.'");
+    expect(fn![0], '직접 등록 연락처 필수 가드 누락').toContain("'신규 고객 연락처를 입력하세요.'");
+  });
+
+  test('AC3b-6: 🔒 L-002 — 팝업 내 customers/reservations INSERT 0(parent 위임)', () => {
+    // 팝업은 onCreateReservation 콜백만 호출. 직접적인 .insert( customers/reservations ) 작성 금지.
+    expect(RESV_POPUP, '팝업이 customers/reservations 직접 INSERT — L-002 위반')
+      .not.toMatch(/\.from\('(customers|reservations)'\)\s*\.insert\(/);
+  });
+
+  test('AC3b-7: parent 콜백이 customerId null 수신 → phone resolve/신규 customers INSERT', () => {
+    const fn = RESV_PAGE.match(/handleCreateReservationFromPopup = useCallback\([\s\S]*?\[clinic, changedBy, profile\?\.name\]/);
+    expect(fn, 'handleCreateReservationFromPopup 파싱 실패').toBeTruthy();
+    expect(fn![0], 'customerId null 수신 타입 미반영').toContain('customerId: string | null');
+    expect(fn![0], 'E.164 정규화 누락').toContain('normalizeToE164(params.phone)');
+    expect(fn![0], '신규 customers INSERT 경로 누락').toMatch(/\.from\('customers'\)\s*[\s\S]*?\.insert\(/);
+    expect(fn![0], '중복 전화 23505 처리 누락').toContain("error.code === '23505'");
+    expect(fn![0], '고객 정보 필수 가드 누락').toContain('고객 정보(성함·연락처)가 필요합니다.');
+  });
+
+  test('AC3b-8: 기존 고객 검색 선택 동선 불변(handleSelectOtherCustomer에서 직접 등록 모드 해제)', () => {
+    const fn = RESV_POPUP.match(/function handleSelectOtherCustomer\(p: PatientMatch\)[\s\S]*?loadZone1Data\(p\.id\);\s*\}/);
+    expect(fn, 'handleSelectOtherCustomer 파싱 실패').toBeTruthy();
+    expect(fn![0], '검색 선택 시 직접 등록 모드 미해제(stale 입력 잔존)').toContain('setManualNew(false)');
+    // 검색 선택은 여전히 loadedMatch set + zone1 로드(동선 불변)
+    expect(fn![0], '검색 선택 동선 회귀(loadedMatch set 소실)').toContain('setLoadedMatch(p)');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // AC2 — 예약상세에 '예약 등록자' 항상 표시 (현장 확정: 드롭 신설 X, 등록자 그대로)
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC2: 예약상세 예약등록자 항상 렌더', () => {
