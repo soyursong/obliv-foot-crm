@@ -325,6 +325,9 @@ export default function Reservations() {
   // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2 시나리오1): (+) 새 예약 → 예약상세 팝업 new-mode 오픈
   //   (별도 폼/ReservationEditor 모달 스폰 폐기). reservation=null 이어도 팝업이 검색→생성 폼만 렌더.
   const [newReservationMode, setNewReservationMode] = useState(false);
+  // T-20260615-foot-RESVMGMT-REFIX-8 AC3 (planner GO): 빈슬롯 (+) → new-mode 진입 시 클릭 슬롯 날짜/시간 prefill 운반.
+  //   상단 '새 예약' 버튼은 null 로 리셋(빈 진입). 팝업 close/changed 시에도 클리어.
+  const [newReservationInitial, setNewReservationInitial] = useState<{ date: string; time: string } | null>(null);
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
   const [treatmentCycleMap, setTreatmentCycleMap] = useState<Map<string, number>>(new Map());
@@ -900,16 +903,12 @@ export default function Reservations() {
 
   const openNewSlot = (d: Date, time: string) => {
     // T-20260516-foot-RESV-PLUS-CANVAS AC-1 🔒L-004: 항상 예약 생성 폼 (캔버스/Phase0Shell 연결 금지)
-    setEditor({
-      date: format(d, 'yyyy-MM-dd'),
-      time,
-      name: '',
-      phone: '',
-      visit_type: 'returning',
-      memo: '',
-      booking_memo: '',
-      visit_route: '',
-    });
+    // T-20260615-foot-RESVMGMT-REFIX-8 AC3 (planner GO · 🔒L-002·L-004 준수): 빈슬롯 (+) →
+    //   구 ReservationEditor 모달 스폰 폐기, 예약상세 팝업 new-mode 로 통일. 클릭 슬롯 날짜/시간 prefill.
+    //   🔒 L-004 유지: new-mode 팝업이 곧 '예약 생성 폼' affordance(캔버스 연결 아님). 생성 capability 보존.
+    //   🔒 L-002 유지: 생성 로직은 단일소스 createReservationCanonical(팝업은 콜백 위임, insert 0) — 진입 '배선'만 통일.
+    setNewReservationInitial({ date: format(d, 'yyyy-MM-dd'), time });
+    setNewReservationMode(true);
   };
 
   const openEdit = (r: Reservation) => {
@@ -1357,7 +1356,8 @@ export default function Reservations() {
               /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2): (+) → 예약상세 팝업 new-mode 오픈.
                  별도 폼/ReservationEditor 모달 스폰 폐기. 생성은 팝업 → handleCreateReservationFromPopup
                  → 단일소스 createReservationCanonical 위임(L-002 개정). */
-              onClick={() => setNewReservationMode(true)}
+              /* AC3: 상단 '새 예약'은 prefill 없이 빈 진입(기존 동작) — initial 클리어 후 new-mode. */
+              onClick={() => { setNewReservationInitial(null); setNewReservationMode(true); }}
               className="gap-1.5"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -1909,11 +1909,12 @@ export default function Reservations() {
         changedBy={changedBy}
         authorName={profile?.name ?? ''}
         isAdmin={profile?.role === 'admin'}
-        onClose={() => { setDetail(null); setNewReservationMode(false); }}
+        onClose={() => { setDetail(null); setNewReservationMode(false); setNewReservationInitial(null); }}
         onEdit={openEdit}
         onChanged={() => {
           setDetail(null);
           setNewReservationMode(false);
+          setNewReservationInitial(null);
           fetchWeek();
         }}
         /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 팝업 new-mode → 단일소스 생성 함수 위임(모달 스폰 폐기). */
@@ -1921,6 +1922,9 @@ export default function Reservations() {
         /* AC2 시나리오1: (+) 새 예약 → anchor 예약 없이 new-mode 진입. clinic_id 직접 주입(useClinic). */
         newMode={newReservationMode}
         clinicId={clinic?.id ?? null}
+        /* T-20260615-foot-RESVMGMT-REFIX-8 AC3: 빈슬롯 (+) 진입 시 클릭 슬롯 날짜/시간 prefill(상단 '새 예약'은 null). */
+        initialDate={newReservationInitial?.date ?? null}
+        initialTime={newReservationInitial?.time ?? null}
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}

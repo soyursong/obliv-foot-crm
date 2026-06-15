@@ -10,20 +10,22 @@ import path from 'path';
  * 본 spec 구현 범위 = AC1·AC5·AC6·AC7-color·AC8 (FE-only, DB 무변경, source-integrity gating).
  *   거대 인라인(Reservations.tsx) 관례 = 소스 정합 게이트. 실 렌더 검증은 supervisor field-soak(갤탭 실기기).
  *
- * 보류(코드증거 FOLLOWUP/NOTIFY 별도 발행, 본 커밋 미구현):
- *   AC2 '내 예약 시 담당자 드롭 누락' — 코드증거상 MYRESV-DEF(ac105b6)는 '담당자 드롭다운'을
- *        제거/추가한 바 없음(내예약 필터 select만 신설). 5FIX spec L24-31에 기록된 데이터소스 블로커
- *        (registrar_name = auth.uid 무연계 자유선택 마스터명)와 동일 맥락. '담당자 드롭' 정의 확정 전 추정 구현 금지 → planner FOLLOWUP.
- *   AC3 '(+) → 예약상세 팝업' — 상단 '새 예약'은 이미 newReservationMode → ReservationDetailPopup 오픈(구현 완료).
- *        슬롯 (+)는 openNewSlot(🔒L-004) = 빈슬롯 신규생성 폼, *항상 예약 미연결*. L-002 LOGIC-LOCK(신규생성 로직 삭제 금지) →
- *        임의 변경 금지, 코드증거 첨부 targeted FOLLOWUP.
- *   AC4 '일자&시간별(per-day×per-time) 집계' — 5FIX AC2(좌측 시간축 per-time-sum, a921cef) supersede 결정.
- *        일자별 헤더 합계(day-summary)는 이미 존재. per-day×per-time 최종형은 설계 결정 → supervisor NOTIFY.
- *   AC7-registrar '@예약등록자 하단우측' — registrar-tag-{id} 이미 렌더(데이터 null 의심) → FOLLOWUP에 포함.
+ * 추가 구현(FIX-REQUEST MSG-20260615-134257-58f6 planner GO):
+ *   AC3 '슬롯 (+) → 예약상세 팝업' — planner GO. openNewSlot = 구 ReservationEditor(setEditor) 스폰 폐기,
+ *        ReservationDetailPopup new-mode 로 통일 + 클릭 슬롯 날짜/시간 prefill(initialDate/initialTime prop 신설).
+ *        🔒L-002 준수(생성 capability 팝업 내 보존·단일소스 createReservationCanonical 위임, 진입 배선만 통일).
+ *        🔒L-004 유지(new-mode 팝업 = 예약 생성 폼 affordance, 캔버스 연결 아님).
+ *
+ * 보류(현장 회신 대기, 본 커밋 미구현):
+ *   AC2 '담당자 드롭' — 코드에 복구 대상 부재(ac105b6 diff 무변경). 현장 스샷 대기 → planner 별도 FIX-REQUEST.
+ *   AC4 'per-day×per-time 최종형' — 5FIX AC2(a921cef) supersede. 최종 표시형 설계결정 → 현장 옵션 택1 대기.
+ *   AC7-registrar — DB 자가검증 완료(evidence/T-...-REFIX8-AC7_registrar_null.md): write 경로 무결(NOT 회귀),
+ *        createReservationCanonical 생성시점 registrar 미수집이 근본 — planner (a)/feature 분기 판단 대기.
  */
 
 const RESV_PAGE = fs.readFileSync(path.resolve('src/pages/Reservations.tsx'), 'utf-8');
 const HOVERCARD = fs.readFileSync(path.resolve('src/components/CustomerHoverCard.tsx'), 'utf-8');
+const RESV_POPUP = fs.readFileSync(path.resolve('src/components/ReservationDetailPopup.tsx'), 'utf-8');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AC1 — 상단 컨트롤 재구성: 내예약 토글→이번주 옆 이동 + 새예약→경과분석→뷰토글 순
@@ -119,5 +121,48 @@ test.describe('AC8: 취소고객 인앱 차트 통일', () => {
   test('AC8-2: 취소 고객 클릭이 정상예약과 동일 인앱 차트(handleResvOpenChart)로 통일', () => {
     const m = RESV_PAGE.match(/REFIX-8 AC8[\s\S]{0,500}?handleResvOpenChart\(resvAsCheckIn\(r\)\)/);
     expect(m, 'AC8 인앱 차트(handleResvOpenChart) 동선 통일 미반영').toBeTruthy();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC3 — 슬롯 (+) → 예약상세 팝업 new-mode 통일 + 슬롯 날짜/시간 prefill (planner GO)
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC3: 슬롯(+) → 예약상세 팝업 new-mode 통일', () => {
+  test('AC3-1: openNewSlot이 구 ReservationEditor(setEditor) 스폰 폐기 → new-mode 라우팅', () => {
+    // openNewSlot 본문에서 setEditor 호출 제거, setNewReservationMode(true) + prefill 운반으로 전환.
+    const m = RESV_PAGE.match(/const openNewSlot = \(d: Date, time: string\) => \{([\s\S]*?)\n  \};/);
+    expect(m, 'openNewSlot 함수 본문 파싱 실패').toBeTruthy();
+    const body = m![1];
+    expect(body, 'openNewSlot이 여전히 setEditor(구 모달 스폰) 호출 — 배선 통일 미반영').not.toContain('setEditor(');
+    expect(body, 'openNewSlot → new-mode 전환 누락').toContain('setNewReservationMode(true)');
+    expect(body, '슬롯 날짜/시간 prefill 운반 누락').toContain('setNewReservationInitial({ date: format(d');
+  });
+
+  test('AC3-2: 팝업에 initialDate/initialTime prop 전달 + 상단 "새 예약"은 빈 진입(initial 클리어)', () => {
+    expect(RESV_PAGE, 'ReservationDetailPopup initialDate prop 미전달').toMatch(/initialDate=\{newReservationInitial\?\.date \?\? null\}/);
+    expect(RESV_PAGE, 'ReservationDetailPopup initialTime prop 미전달').toMatch(/initialTime=\{newReservationInitial\?\.time \?\? null\}/);
+    // 상단 '새 예약' 버튼 = prefill 없는 빈 진입(initial 클리어)
+    expect(RESV_PAGE, '상단 새 예약 빈 진입(initial null) 미반영').toContain('setNewReservationInitial(null); setNewReservationMode(true);');
+  });
+
+  test('AC3-3: 팝업 컴포넌트가 initialDate/initialTime prop 수신 + newMode reset에서 pickedDate prefill', () => {
+    expect(RESV_POPUP, 'initialDate prop 선언 누락').toMatch(/initialDate\?: string \| null/);
+    expect(RESV_POPUP, 'initialTime prop 선언 누락').toMatch(/initialTime\?: string \| null/);
+    // newMode 진입 reset effect가 initialDate를 pickedDate로 prefill하고 deps에 포함
+    const m = RESV_POPUP.match(/if \(newMode\) \{([\s\S]*?)\}\s*\}, \[newMode, initialDate, initialTime\]\);/);
+    expect(m, 'newMode reset effect deps에 initialDate/initialTime 미포함').toBeTruthy();
+    expect(m![1], 'initialDate → pickedDate prefill 누락').toContain('setPickedDate(new Date(y, m - 1, d))');
+    expect(m![1], 'initialTime → newResvTime prefill 누락').toContain("setNewResvTime(initialTime || '10:00')");
+  });
+
+  test('AC3-4: prefill 시간이 클리닉 슬롯간격(비30분)일 때 select 옵션 합류 가드', () => {
+    expect(RESV_POPUP, 'newResvTimeOptions 가드 누락').toContain('const newResvTimeOptions = NEW_RESV_TIME_SLOTS.includes(newResvTime)');
+    expect(RESV_POPUP, 'time select가 가드된 옵션 미사용(NEW_RESV_TIME_SLOTS 직접 map 잔존)').not.toContain('NEW_RESV_TIME_SLOTS.map');
+    expect(RESV_POPUP, 'newResvTimeOptions.map 미적용').toContain('newResvTimeOptions.map');
+  });
+
+  test('AC3-5: L-002/L-004 준수 추적 주석', () => {
+    expect(RESV_PAGE).toMatch(/REFIX-8 AC3[\s\S]{0,400}?L-002/);
+    expect(RESV_PAGE).toMatch(/REFIX-8 AC3[\s\S]{0,400}?L-004/);
   });
 });
