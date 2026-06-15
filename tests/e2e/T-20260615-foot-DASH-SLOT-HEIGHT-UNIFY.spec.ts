@@ -10,6 +10,12 @@
  *        내부 overflow-y:auto 로 처리된다. (슬롯 본문에 세로 오버플로 스크롤 보장)
  * AC-3 (슬롯 독립 — 형제 stretch 연동 제거): 부모 flex 행이 items-start 라 형제 슬롯 높이가
  *        서로 끌려가지 않는다. 한 슬롯 콘텐츠가 많아도 다른 슬롯 높이에 영향 없음(고정값 유지).
+ * AC-4 (bed-grid 컴팩트화 — FIX/gvsl scope-narrow): 치료실·레이저실(bed-grid)은 컨테이너가 기준
+ *        높이를 채우되 grid align-content:start 로 bed 셀을 자연 높이(컴팩트)로 상단 정렬한다.
+ *        (stretch 면 bed 셀이 비정상적으로 길어짐 — "보기싫다"의 실체. 고정 bed 수 격자라 내부 스크롤 강제 아님.)
+ *
+ * Scope 한정 (MSG-k63x 4차 명확화): 조정 대상 = 치료실·레이저실·수납대기+완료 3타입.
+ *   기준 슬롯 = [치료대기](불변). gvsl: bed-grid는 컴팩트화 허용(내부 스크롤 강제 아님).
  *
  * 구현 SSOT: src/pages/Dashboard.tsx — const SLOT_COLUMN_HEIGHT = 'calc(100vh - 200px)'
  *   slot-col-* data-testid 4종(treatment-waiting / treatment-rooms / desk / laser-rooms).
@@ -119,6 +125,24 @@ test.describe('T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY', () => {
     const min = Math.min(...measured);
     // 카드가 많은 슬롯이 다른 슬롯을 끌어올리거나 자기만 길어지면 max-min 차이가 발생.
     expect(max - min).toBeLessThanOrEqual(1);
+  });
+
+  // AC-4: bed-grid(치료실/레이저실) 그리드가 align-content:start 로 bed 셀을 컴팩트 상단 정렬한다
+  //       (stretch 면 auto 행이 늘어나 bed 셀이 비정상적으로 길어짐 — gvsl 격자 컴팩트화 핀포인트)
+  test('AC-4: 치료실/레이저실 bed-grid 가 content-start(align-content:start)로 컴팩트 정렬한다', async ({ page }) => {
+    let checked = 0;
+    for (const tid of ['slot-col-treatment-rooms', 'slot-col-laser-rooms'] as const) {
+      const col = page.getByTestId(tid);
+      if (await col.count() === 0) continue; // 방 0개면 미렌더 → 스킵
+      // fillHeight 그리드 = 컬럼 내부 grid display + overflow-y auto 컨테이너
+      const grid = col.first().locator('.grid').last();
+      if (await grid.count() === 0) continue;
+      const alignContent = await grid.first().evaluate((el) => getComputedStyle(el).alignContent);
+      // 'start' / 'flex-start' 둘 다 허용(브라우저 정규화). 'stretch'/'normal'이면 셀이 늘어나 FAIL.
+      expect(['start', 'flex-start'], `${tid} align-content`).toContain(alignContent);
+      checked += 1;
+    }
+    test.skip(checked === 0, 'bed-grid 슬롯 미렌더(방 0개)');
   });
 
   // 회귀: 칸반 슬롯 영역이 콘솔 오류 없이 정상 렌더된다

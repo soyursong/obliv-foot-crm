@@ -1125,8 +1125,12 @@ function RoomSection({
         </DroppableColumn>
       )}
       {/* L-3: 그리드 갭 균일 — RoomSlot 내부(space-y-1)와 동일하게 1.5 유지, 가로/세로 동일 */}
-      {/* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: fillHeight면 그리드가 남은 높이를 채우고 초과분만 내부 스크롤 → 컨테이너 세로 성장 금지. */}
-      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols, fillHeight && 'flex-1 min-h-0 overflow-y-auto')}>
+      {/* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (FIX/gvsl scope-narrow): bed-grid는 컨테이너가
+          [치료대기] 기준 고정 높이를 채우되(flex-1), content-start 로 bed 셀을 자연 높이(컴팩트)로
+          상단 정렬한다. content-start 없으면 grid align-content 기본 stretch 가 auto 행을 늘려
+          bed 셀이 비정상적으로 길어짐("보기싫다"의 실체) → 고정 bed 수 격자 컴팩트화로 해소.
+          초과분만 overflow-y-auto 내부 스크롤(강제 아님, 트리거 시에만). */}
+      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols, fillHeight && 'flex-1 min-h-0 overflow-y-auto content-start')}>
         {rooms.map((room) => {
           // T-20260614-foot-SLOT-CRUD-ALLTYPES: AC-2/3 기본=잠금, 세션 내 추가=삭제
           const isDefault = defaultRoomIds ? defaultRoomIds.has(room.id) : true;
