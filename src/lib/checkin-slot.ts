@@ -87,3 +87,19 @@ export function getCurrentLocationLabel(ci: CheckIn): string {
   }
   return stage;
 }
+
+/**
+ * T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-A — 현재 입실 방코드(라벨 없이 코드만).
+ *
+ *  진료콜 명단 상단 "방번호 한줄 요약"(예: 'C2 · C5 · C1', 원장님 한눈에)용.
+ *  getCurrentLocationLabel과 *완전히 동일한* 입실-단계 게이트(IN_ROOM_STATUSES) + getAssignedSlotName을
+ *  재사용한다(중복구현 금지) → 요약행 방코드와 각 행 위치배지(getCurrentLocationLabel)의 방번호가 항상 일치.
+ *  입실 전(대기 등)·미배정이면 null → 호출측에서 미배정 토큰('–')으로 표기.
+ *  read-only. 스키마·비즈로직·write 변경 없음.
+ */
+export function getCurrentRoomCode(ci: CheckIn): string | null {
+  if (IN_ROOM_STATUSES.includes(ci.status)) {
+    return getAssignedSlotName(ci);
+  }
+  return null;
+}
