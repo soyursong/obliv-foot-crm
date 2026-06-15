@@ -14,38 +14,39 @@
     /* T-20260522-foot-TOUCH-EXPAND: 태블릿 터치 타겟 최소 크기 */
     --touch-min: 44px;
 
-    /* ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepD) ───────────────────────
-       김주연 총괄 확정 5색 warm-monochrome 팔레트 (AC1 토큰 레이어 우선):
-         Vanilla #F8F4EE(기본배경) · Soft Dune #E4DDCC(보조면/보더) ·
-         Classic Taupe #C5BEA3(포인트, 절제) · Umber #443A35(다크 액센트) · Black #252525(텍스트).
-       AC7 절제: 베이스=Vanilla 배경+Black 텍스트 모노톤, Taupe/Umber는 핵심 강조에만.
+    /* ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepF 재오픈 정정) ───────────────
+       재오픈(2026-06-15 김주연 총괄): 직전 warm-monochrome가 배경/카드/일반영역까지
+       Vanilla·Soft Dune 베이지로 깔려 "너무 베이지함" → 일반영역=순수 흰색/중립 그레이 복원.
+       베이지·브라운(Umber/Taupe)은 버튼·활성탭·포커스 등 강조 포인트에만 최소 유지.
+         · 일반영역(배경/카드/팝오버/보조면/muted/accent/보더): white·neutral gray (hue 0)
+         · 강조 포인트(primary=Umber·ring=Taupe): warm 브라운 유지
        의미색(--status-*, --destructive, --chart-*)은 유지(AC4). */
 
-    /* Background / Surface — Vanilla 베이스, 카드는 살짝 밝게 들어올림(AC6 군더더기↓) */
-    --background: oklch(0.965 0.008 80);
+    /* Background / Surface — 순수 흰색 복원(재오픈). 카드/팝오버도 흰색. */
+    --background: oklch(1 0 0);
     --foreground: oklch(0.265 0 0);
-    --card: oklch(0.99 0.004 80);
+    --card: oklch(1 0 0);
     --card-foreground: oklch(0.265 0 0);
-    --popover: oklch(0.99 0.004 80);
+    --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.265 0 0);
 
-    /* Primary / Secondary — Primary=Umber(다크 액센트), Secondary=Soft Dune */
+    /* Primary / Secondary — Primary=Umber(강조 포인트 유지), Secondary=중립 라이트 그레이 */
     --primary: oklch(0.33 0.012 60);
-    --primary-foreground: oklch(0.97 0.008 80);
-    --secondary: oklch(0.89 0.022 85);
-    --secondary-foreground: oklch(0.30 0.010 60);
+    --primary-foreground: oklch(0.98 0 0);
+    --secondary: oklch(0.968 0 0);
+    --secondary-foreground: oklch(0.30 0 0);
 
-    /* Muted / Accent — Muted=연한 warm, Accent=Soft Dune 라이트(hover 절제) */
-    --muted: oklch(0.93 0.012 82);
-    /* A-4: 색상 대비 강화 — muted-foreground (WCAG AA 4.5:1 충족, warm 톤) */
-    --muted-foreground: oklch(0.42 0.012 65);
-    --accent: oklch(0.91 0.020 85);
-    --accent-foreground: oklch(0.30 0.010 60);
+    /* Muted / Accent — 일반영역 hover/보조면은 중립 그레이(베이지 제거) */
+    --muted: oklch(0.968 0 0);
+    /* A-4: 색상 대비 강화 — muted-foreground (WCAG AA 4.5:1 충족, 중립 톤) */
+    --muted-foreground: oklch(0.45 0 0);
+    --accent: oklch(0.96 0 0);
+    --accent-foreground: oklch(0.30 0 0);
 
-    /* Functional — destructive 의미색 유지, border/input/ring 은 warm 톤(AC6 노이즈↓) */
+    /* Functional — destructive 의미색 유지, border/input 은 중립 그레이, ring 은 Taupe(포커스 포인트) */
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.88 0.018 84);
-    --input: oklch(0.88 0.018 84);
+    --border: oklch(0.92 0 0);
+    --input: oklch(0.92 0 0);
     --ring: oklch(0.70 0.030 88);
 
     /* Charts */
@@ -57,14 +58,14 @@
 
     --radius: 0.625rem;
 
-    /* Sidebar — warm-monochrome 정렬(T-20260614 RECOLOR): Vanilla 면 + Umber primary */
-    --sidebar: oklch(0.95 0.010 82);
+    /* Sidebar — 일반 네비 패널은 near-white 중립(재오픈), 활성항목(primary)만 Umber 포인트 */
+    --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.265 0 0);
     --sidebar-primary: oklch(0.33 0.012 60);
-    --sidebar-primary-foreground: oklch(0.97 0.008 80);
-    --sidebar-accent: oklch(0.90 0.020 85);
-    --sidebar-accent-foreground: oklch(0.30 0.010 60);
-    --sidebar-border: oklch(0.88 0.018 84);
+    --sidebar-primary-foreground: oklch(0.98 0 0);
+    --sidebar-accent: oklch(0.96 0 0);
+    --sidebar-accent-foreground: oklch(0.30 0 0);
+    --sidebar-border: oklch(0.92 0 0);
     --sidebar-ring: oklch(0.70 0.030 88);
 
     /* Status (11단계 흐름 매핑) */
