@@ -1841,9 +1841,78 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 균검사 결과지(검사결과 보고서) — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4) ───
+//   정본 양식 = "검사결과 양식.png"(F0BA2NJLJH5). 변수 = 의뢰번호/검체번호(자동채번)·담당의·수진자·검체종류·날짜.
+//   검사결과 라인(보험코드 D6201002 / ▶임상미생물 KOH mount / Hyphae:+ · Yeast:-)은
+//   양식 고정값(AC-3 "결과값 개별 입력 없음·모든 환자 동일 결과값") → 템플릿에 고정(field_data 미주입).
+//   footer 의사면허번호는 per-doctor 데이터 부재 → 담당의 성명만 렌더(현장 confirm 시 번호 정책 확정).
+//   Tel/Fax = 오블리브의원 정본 양식 고정값.
+const KOH_RESULT_HTML = `
+${COMMON_STYLE}
+<div class="form-wrap">
+  <div class="title" style="letter-spacing:8px; font-size:18pt; margin-bottom:10px;">검사결과 보고서</div>
+
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr><td style="width:90px; background:#f8f8f8;">의 뢰 번 호</td><td>{{request_no}}</td></tr>
+      <tr><td style="background:#f8f8f8;">의 뢰 기 관</td><td>{{request_org}}</td></tr>
+      <tr><td style="background:#f8f8f8;">담 당 의</td><td>{{doctor_name}}</td></tr>
+    </tbody>
+  </table>
+
+  <table style="margin-top:8px;">
+    <tbody>
+      <tr><td style="width:90px; background:#f8f8f8;">수 진 자 명</td><td>{{patient_name}}</td></tr>
+      <tr><td style="background:#f8f8f8;">차 트 번 호</td><td>{{chart_number}}</td></tr>
+      <tr><td style="background:#f8f8f8;">생 년 월 일</td><td>{{birth_date}}</td></tr>
+      <tr><td style="background:#f8f8f8;">비 고</td><td style="min-height:24px;">{{remark}}</td></tr>
+    </tbody>
+  </table>
+
+  <table style="margin-top:8px;">
+    <tbody>
+      <tr><td style="width:90px; background:#f8f8f8;">검체채취일</td><td>{{collected_date}}</td></tr>
+      <tr><td style="background:#f8f8f8;">검사의뢰일</td><td>{{requested_date}}</td></tr>
+      <tr><td style="background:#f8f8f8;">검 체 종 류</td><td>{{specimen_type}}</td></tr>
+      <tr><td style="background:#f8f8f8;">검 체 번 호</td><td>{{specimen_no}}</td></tr>
+    </tbody>
+  </table>
+
+  <table style="margin-top:10px;">
+    <thead>
+      <tr>
+        <th style="width:90px;">보험코드</th>
+        <th>검사명</th>
+        <th style="width:50px;">L/H</th>
+        <th style="width:150px;">검사결과</th>
+        <th style="width:80px;">참고치</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:center;">D6201002</td>
+        <td>▶임상미생물<br>&nbsp;&nbsp;&nbsp;KOH mount</td>
+        <td></td>
+        <td style="color:#b91c1c;">Hyphae : +<br>Yeast : -</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="text-align:center; margin-top:18px; font-size:9pt;">
+    의사면허 : {{doctor_name}}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;검사자 : {{doctor_name}}
+  </div>
+
+  <div style="margin-top:18px; font-size:9pt; line-height:1.5;">
+    Tel. 032)851-9119<br>Fax. 032)858-8118
+  </div>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
+  koh_result: KOH_RESULT_HTML,
   diagnosis: DIAGNOSIS_HTML,
   treat_confirm: TREAT_CONFIRM_HTML,
   visit_confirm: VISIT_CONFIRM_HTML,
