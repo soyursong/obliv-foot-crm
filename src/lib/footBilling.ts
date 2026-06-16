@@ -293,3 +293,72 @@ export function buildFootBillDetailItems(
     };
   });
 }
+
+/**
+ * T-20260616-foot-DOCFORM-3FIX-REGRESSION — service_charges 직결 경로(Path A) per-item 본인부담금 보강.
+ *
+ * 회귀 RC: T-20260609-foot-DOCFORM-3FIX(0cbbdc2)는 `check_in_services` 폴백 경로(Path B,
+ *   buildFootBillDetailItems)만 비례배분으로 채웠다. `service_charges` 기록을 보유한 차트는
+ *   DocumentPrintPanel 의 Path A(serviceItems 직결)로 빌드되는데, 이 경로는 per-item 배분 없이
+ *   `service_charges.copayment_amount`(흔히 null)에만 의존 → 급여 항목 본인/공단 컬럼이 '0'/공란
+ *   잔존(=박민석 케이스). 0cbbdc2 의 미커버 경로.
+ *
+ * 해소: copayInfo 비례배분과 동일 규칙을 service_charges 빌아이템에 적용한다. 단 무파괴 —
+ *   covered 항목 중 하나라도 copayment_amount 가 이미 있으면 DB 권위로 보고 미개입한다. 등급이
+ *   covered 가 아니면(무보험·copayRate null) 미개입(=본인부담 분리 불가, 데이터 조건). 합계는
+ *   진료비계산서 {{copayment}}(copaymentTotal)와 정합. billItems 를 in-place 변형한다.
+ */
+export function fillBillItemCopayment(
+  billItems: Array<{
+    amount: number;
+    count?: number;
+    days?: number;
+    is_insurance_covered: boolean;
+    copayment_amount?: number;
+  }>,
+  insuranceGrade: InsuranceGrade | null,
+): void {
+  const covered = billItems
+    .map((it, i) => ({ i, total: it.amount * (it.count ?? 1) * (it.days ?? 1) }))
+    .filter((x) => billItems[x.i].is_insurance_covered && x.total > 0);
+  if (covered.length === 0) return;
+
+  // 무파괴: covered 항목 중 하나라도 copayment_amount 가 이미 채워져 있으면 DB 권위 → 미개입.
+  const anyExisting = covered.some((x) => billItems[x.i].copayment_amount != null);
+  if (anyExisting) return;
+
+  const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
+    ? getBaseCopayRate(insuranceGrade)
+    : null;
+  // 무보험·비대상 등급: 본인/공단 분리 자체가 성립 안 함(데이터 조건) → 미개입(기존 동작 보존).
+  if (copayRate === null) return;
+
+  const coveredSum = covered.reduce((s, x) => s + x.total, 0);
+  // 100원 절상 — computeFootBilling / copayCalc / PMW 와 동일 규칙
+  const copaymentTotal = Math.min(Math.ceil((coveredSum * copayRate) / 100) * 100, coveredSum);
+
+  if (copaymentTotal <= 0) {
+    // 급여 본인부담 0 등급(예: 의료급여 1종): 0 명시 → 공단부담금=급여전액 정상 산출.
+    for (const x of covered) billItems[x.i].copayment_amount = 0;
+    return;
+  }
+
+  // 비례 배분 + 잔차 보정(소수부 큰 순서 1원씩) — buildFootBillDetailItems 와 동일 규칙.
+  let allocated = 0;
+  const fracs: Array<{ i: number; frac: number; cap: number }> = [];
+  for (const x of covered) {
+    const raw = (copaymentTotal * x.total) / coveredSum;
+    const floor = Math.min(Math.floor(raw), x.total);
+    billItems[x.i].copayment_amount = floor;
+    allocated += floor;
+    fracs.push({ i: x.i, frac: raw - Math.floor(raw), cap: x.total - floor });
+  }
+  let remainder = copaymentTotal - allocated;
+  fracs.sort((a, b) => b.frac - a.frac);
+  for (const f of fracs) {
+    if (remainder <= 0) break;
+    const add = Math.min(remainder, f.cap);
+    billItems[f.i].copayment_amount = (billItems[f.i].copayment_amount ?? 0) + add;
+    remainder -= add;
+  }
+}
