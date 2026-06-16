@@ -7,8 +7,9 @@
 //   빠른처방버튼·경과분석플랜·금기증관리)는 '서비스 관리 > 진료관리'(ClinicManagement)로 분리됨.
 //   진료 도구에는 전체 공개 운영 화면 2개만 잔존:
 //     - 진료 알림판 (DoctorCallDashboard) — 호출 알람+처방+차팅+진료완료 통합 대시보드
-//     - 처방 환자 목록 (DoctorPatientList) — 원장 진료 완료 고객의 처방 현황
-//       (T-20260615-foot-RXLIST-RENAME-DOCFILTER: 라벨 리네임 + 진료완료 고객만 표시)
+//     - 처방 환자 목록 (DoctorPatientList) — 원장 진료콜 명단에 오른 고객의 처방 현황
+//       (T-20260615-foot-RXLIST-RENAME-DOCFILTER: 라벨 리네임
+//        → T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER: 모집단을 진료콜 명단(doctor_call list) 교집합으로 정정)
 //   부원장(consultant)/코디(coordinator)/치료사(therapist)가 진입해도 어드민성 항목은 비노출.
 
 import { useState } from 'react';
