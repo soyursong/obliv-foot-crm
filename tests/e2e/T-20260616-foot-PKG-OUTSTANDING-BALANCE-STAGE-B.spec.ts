@@ -65,5 +65,47 @@ test.describe('T-20260616 PKG-OUTSTANDING-BALANCE Stage B — 금액 분리·항
     // 배너는 미수금>0 고객 식별 시에만 — 다이얼로그 오픈 직후(고객 미선택)에는 비노출이어야 한다.
     const banner = page.getByTestId('checkin-outstanding-banner');
     expect(await banner.count()).toBe(0);
+
+    // ③ 확인 팝업도 트리거 전(고객 미선택)에는 DOM에 없어야 한다.
+    expect(await page.getByTestId('checkin-outstanding-confirm').count()).toBe(0);
+  });
+
+  test('AC-B4(§8 ③): 미수금 고객 체크인 시 [수납]/[그냥 진행] 확인 팝업 — 잔금 합산 단독표기 없음', async ({ page }) => {
+    const loaded = await loginAndWaitForDashboard(page);
+    if (!loaded) { test.skip(true, '대시보드 접근 불가'); return; }
+
+    const addBtn = page.getByRole('button', { name: /체크인 추가|체크인/ }).first();
+    if (!(await addBtn.isVisible().catch(() => false))) { test.skip(true, '체크인 추가 진입점 없음'); return; }
+    await addBtn.click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('체크인 추가')).toBeVisible({ timeout: 5_000 }).catch(() => {});
+
+    // 미수금>0 고객을 식별해야 팝업 경로 검증 가능 — 오늘 예약 row 중 잔금 뱃지가 붙은 건을 선택.
+    // (데이터 의존: 미수금 예약 고객이 없으면 skip — 라이브 데이터는 갤탭 필드테스트에서 최종 확인)
+    const dueRow = dialog.locator('button', { has: page.getByText(/잔금\s/) }).first();
+    if (!(await dueRow.isVisible().catch(() => false))) {
+      test.skip(true, '미수금>0 예약 고객 없음(데이터)'); return;
+    }
+    await dueRow.click();
+
+    // 미수금 배너가 떠야 한다(고객 식별 → 미수금 인지).
+    await expect(page.getByTestId('checkin-outstanding-banner')).toBeVisible({ timeout: 5_000 });
+
+    // 체크인 버튼 클릭 → 바로 체크인하지 않고 ③ 확인 팝업이 떠야 한다.
+    await dialog.getByRole('button', { name: /^체크인$/ }).click();
+    const confirm = page.getByTestId('checkin-outstanding-confirm');
+    await expect(confirm).toBeVisible({ timeout: 5_000 });
+    await expect(confirm.getByText('미납금이 있어요. 수납 후 진행하시겠어요?')).toBeVisible();
+    await expect(page.getByTestId('checkin-outstanding-settle')).toBeVisible();
+    await expect(page.getByTestId('checkin-outstanding-proceed')).toBeVisible();
+
+    // §4-A: 팝업 내 잔금/진료비는 별도 칩 — '총금액'/'총 미수금' 합산 단독표기가 없어야 한다.
+    expect(await confirm.getByText(/총\s*금액|총\s*미수금/).count()).toBe(0);
+
+    // [수납] → 체크인하지 않고 팝업만 닫힘(체크인 다이얼로그는 유지).
+    await page.getByTestId('checkin-outstanding-settle').click();
+    await expect(confirm).toBeHidden({ timeout: 5_000 });
+    await expect(dialog.getByText('체크인 추가')).toBeVisible();
   });
 });
