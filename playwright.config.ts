@@ -17,6 +17,11 @@ const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 export default defineConfig({
   testDir: './tests',
   testIgnore: ['**/helpers.ts'],
+  // RC#0(PROD 픽스처 누적) 구조적 차단:
+  //   globalSetup  = run 시작 전 직전 잔존 픽스처 pre-sweep (hard-kill 보강)
+  //   globalTeardown = run 종료 시 성공/실패 무관 전수 스윕 (잔존 0건 보장)
+  globalSetup: path.join(__dirname, 'tests', 'global-setup.ts'),
+  globalTeardown: path.join(__dirname, 'tests', 'global-teardown.ts'),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -125,6 +130,12 @@ export default defineConfig({
         // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX: 예약메모 표시(✏️)↔편집 토글 + 체류시간 스크롤 재한정
         //   (소스 미러 정적 가드 + page.setContent 실DOM 스크롤 containment, auth 불요)
         '**/T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX.spec.ts',
+        // T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX (Stage A ①②③): 처방세트(DrugFoldersTab) 우측
+        //   약 검색영역 — 외겹박스 제거/약물목록 table화/분류해제 케밥+확인다이얼로그 (정적 소스 가드, auth 불요)
+        '**/T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX.spec.ts',
+        // T-20260616-foot-E2E-PROD-WRITE-ISOLATION: RC#0 픽스처 누적 차단 — cleanupAll orphan 스윕 +
+        //   globalSetup/Teardown 안전망 회귀 가드 (service_role DB 직접 검증, page/auth 불요)
+        '**/T-20260616-foot-E2E-PROD-WRITE-ISOLATION.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
