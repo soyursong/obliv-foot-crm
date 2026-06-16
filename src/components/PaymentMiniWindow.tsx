@@ -32,6 +32,7 @@ import {
   FileText,
   Layers,
   Printer,
+  Plus,
   Square,
   CheckSquare,
   Trash2,
@@ -591,6 +592,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [saved, setSaved] = useState(false);
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
+  // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 — 하나의 수납 건을 복수 결제수단으로 나눠 받기.
+  //   splitMode off(기본) → 기존 단일 결제수단 동선(payMethod) 그대로(AC-4 회귀 없음).
+  //   splitMode on → splitRows의 (method, amount) 각각을 payments 행으로 분리 insert(AC-3).
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitRows, setSplitRows] = useState<{ method: PayMethod; amount: number }[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
@@ -675,6 +681,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setSelectedItems([]);
     setSaved(false);
     setPayMethod('card');
+    // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
+    setSplitMode(false);
+    setSplitRows([]);
     setActiveTab('풋케어');
     setFootcareCat('기본(진찰료)');
     setSelectedDocKeys(new Set());
@@ -1373,30 +1382,36 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── executeAutoDone ────────────────────────────────────────────────────────
+  // T-20260616-foot-PMW-SPLIT-PAYMENT AC-3/AC-4:
+  //   splits = [{method, amount}] N개 → payments 행 N개를 동일 check_in_id로 분리 insert.
+  //   단일 결제수단(분할 미사용)은 splits 길이 1로 종전과 동일하게 1행 insert(회귀 없음).
+  //   수납완료 전이(check_ins.status='done')는 행 개수와 무관 — 합산=수납액 검증은 호출부에서 강제(AC-5).
   const executeAutoDone = async (
-    amount: number,
-    method: string,
+    splits: { method: PayMethod; amount: number }[],
     taxType?: string | null,
   ) => {
-    // PAY-CASH-RECEIPT: 결제 삽입 시 cash_receipt_issued 포함
-    const isCashLike = method === 'cash' || method === 'transfer';
-    const { error: payErr } = await supabase.from('payments').insert({
-      check_in_id: checkIn.id,
-      clinic_id: checkIn.clinic_id,
-      customer_id: checkIn.customer_id,
-      amount,
-      method,
-      installment: null,
-      memo: null,
-      payment_type: 'payment',
-      tax_type: taxType ?? null,
-      cash_receipt_issued: isCashLike ? cashReceiptIssued : null,
-      cash_receipt_type:
-        isCashLike && cashReceiptIssued ? cashReceiptType : null,
-      // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움 (UI 입력 제거)
-      external_approval_no: null,
-      external_tid: null,
+    // PAY-CASH-RECEIPT: 결제 삽입 시 cash_receipt_issued 포함 (현금/이체 행에 한해)
+    const payRows = splits.map((s) => {
+      const isCashLike = s.method === 'cash' || s.method === 'transfer';
+      return {
+        check_in_id: checkIn.id,
+        clinic_id: checkIn.clinic_id,
+        customer_id: checkIn.customer_id,
+        amount: s.amount,
+        method: s.method,
+        installment: null,
+        memo: null,
+        payment_type: 'payment',
+        tax_type: taxType ?? null,
+        cash_receipt_issued: isCashLike ? cashReceiptIssued : null,
+        cash_receipt_type:
+          isCashLike && cashReceiptIssued ? cashReceiptType : null,
+        // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움 (UI 입력 제거)
+        external_approval_no: null,
+        external_tid: null,
+      };
     });
+    const { error: payErr } = await supabase.from('payments').insert(payRows);
     if (payErr) throw payErr;
 
     const { error: ciErr } = await supabase
@@ -1430,6 +1445,35 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     await promoteVisitTypeToReturning(checkIn.customer_id);
   };
 
+  // ── T-20260616-foot-PMW-SPLIT-PAYMENT: 수납 splits 빌더 ─────────────────────
+  //   splitMode off → 단일 [{payMethod, amount}] (AC-4 회귀 동선).
+  //   splitMode on  → splitRows(금액>0만) 사용 + 합산=수납액 검증(AC-2). 불일치 시 null 반환(차단).
+  const buildSettleSplits = (
+    amount: number,
+  ): { method: PayMethod; amount: number }[] | null => {
+    if (!splitMode) {
+      return [{ method: payMethod, amount }];
+    }
+    const rows = splitRows
+      .map((r) => ({ method: r.method, amount: Math.round(r.amount) }))
+      .filter((r) => r.amount > 0);
+    if (rows.length === 0) {
+      toast.error('분할 결제 금액을 입력해주세요');
+      return null;
+    }
+    const sum = rows.reduce((s, r) => s + r.amount, 0);
+    if (sum !== amount) {
+      const diff = amount - sum;
+      toast.error(
+        diff > 0
+          ? `분할 금액 합계가 ${formatAmount(diff)} 부족합니다`
+          : `분할 금액 합계가 ${formatAmount(-diff)} 초과입니다`,
+      );
+      return null;
+    }
+    return rows;
+  };
+
   // ── [수납] — PAY-SLOT-MOVE: [수납] 클릭 시만 done 이동 ─────────────────────
   const handleSettle = async () => {
     if (!saved) {
@@ -1453,16 +1497,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
     // 선수금차감 여부와 무관하게 항상 사용자가 선택한 payMethod 기록
     // (선수금차감 추적은 package_sessions 회차 소진으로 별도 관리)
-    const method = payMethod;
     const taxType = deductMode ? '선수금' : null;
 
     if (amount < 0) {
       toast.error('결제 금액이 올바르지 않습니다');
       return;
     }
+    // T-20260616-foot-PMW-SPLIT-PAYMENT AC-2: 분할 합산=수납액 아닐 시 차단
+    const splits = buildSettleSplits(amount);
+    if (!splits) return;
     setSubmitting(true);
     try {
-      await executeAutoDone(amount, method, taxType);
+      await executeAutoDone(splits, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
       toast.success('수납 완료 — 완료 슬롯으로 이동됩니다');
       setSubmitting(false);
@@ -1748,9 +1794,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
       // 2. 수납 + auto-done
       // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
-      const method = payMethod;
+      // T-20260616-foot-PMW-SPLIT-PAYMENT AC-2: 분할결제도 동일 합산 검증 경유
       const taxType = deductMode ? '선수금' : null;
-      await executeAutoDone(amount, method, taxType);
+      const splits = buildSettleSplits(amount);
+      if (!splits) {
+        setDocSettlePrinting(false);
+        return;
+      }
+      await executeAutoDone(splits, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
       toast.success('출력 및 수납 완료 — 완료 슬롯으로 이동됩니다');
       setDocSettlePrinting(false);
@@ -1764,6 +1815,40 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── 표시용 수납 금액 ─────────────────────────────────────────────────────
   const displayAmount = deductMode ? deductAmount : grandTotal;
+
+  // ── T-20260616-foot-PMW-SPLIT-PAYMENT: 분할 합산/차액 (AC-2) ───────────────
+  const splitSum = splitRows.reduce((s, r) => s + (r.amount || 0), 0);
+  const splitDiff = displayAmount - splitSum; // 양수=부족, 음수=초과, 0=일치
+  const splitValid = splitMode ? splitDiff === 0 && splitSum > 0 : true;
+  // 현금영수증/카드 안내 노출 판정 — 분할 시 해당 수단 행이 하나라도 있으면 노출
+  const showCashReceipt = splitMode
+    ? splitRows.some((r) => r.method === 'cash' || r.method === 'transfer')
+    : payMethod === 'cash' || payMethod === 'transfer';
+  const showCardInfo = splitMode
+    ? splitRows.some((r) => r.method === 'card')
+    : payMethod === 'card';
+
+  const addSplitRow = () =>
+    setSplitRows((rows) => [...rows, { method: 'card', amount: 0 }]);
+  const removeSplitRow = (idx: number) =>
+    setSplitRows((rows) => rows.filter((_, i) => i !== idx));
+  const updateSplitRow = (
+    idx: number,
+    patch: Partial<{ method: PayMethod; amount: number }>,
+  ) =>
+    setSplitRows((rows) =>
+      rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
+    );
+  // 분할결제 토글: 켜면 잔여 차액을 첫 행에 자동 채워 빠른 입력 보조
+  const toggleSplitMode = () => {
+    setSplitMode((on) => {
+      const next = !on;
+      if (next && splitRows.length === 0) {
+        setSplitRows([{ method: payMethod, amount: displayAmount }]);
+      }
+      return next;
+    });
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -2201,27 +2286,124 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       deductMode 여부·잔액 무관 — 저장 후 항상 결제수단 선택 노출
                       선수금차감(잔액=0)이어도 실제 수단을 기록해 일마감 분류 정확성 보장 */}
                   {saved && (
-                    <div className="flex gap-1">
-                      {METHOD_OPTIONS.map((m) => (
-                        <button
-                          key={m.value}
-                          onClick={() => setPayMethod(m.value)}
-                          className={cn(
-                            'flex-1 h-11 sm:h-8 rounded text-xs font-medium border transition-colors',
-                            payMethod === m.value
-                              ? 'bg-purple-600 text-white border-purple-600'
-                              : 'border-input hover:bg-muted',
-                          )}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
+                    <div className="space-y-1.5">
+                      {/* T-20260616-foot-PMW-SPLIT-PAYMENT AC-1: 분할결제 토글 */}
+                      <button
+                        onClick={toggleSplitMode}
+                        className={cn(
+                          'flex items-center gap-1.5 w-full h-9 sm:h-7 rounded px-2 text-xs font-medium border transition-colors',
+                          splitMode
+                            ? 'bg-purple-50 border-purple-300 text-purple-700'
+                            : 'border-input text-muted-foreground hover:bg-muted',
+                        )}
+                        data-testid="btn-split-toggle"
+                      >
+                        {splitMode ? (
+                          <CheckSquare className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <Square className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                        분할결제 (복수 결제수단)
+                      </button>
+
+                      {!splitMode ? (
+                        /* 단일 결제수단 (회귀 동선 — AC-4) */
+                        <div className="flex gap-1">
+                          {METHOD_OPTIONS.map((m) => (
+                            <button
+                              key={m.value}
+                              onClick={() => setPayMethod(m.value)}
+                              className={cn(
+                                'flex-1 h-11 sm:h-8 rounded text-xs font-medium border transition-colors',
+                                payMethod === m.value
+                                  ? 'bg-purple-600 text-white border-purple-600'
+                                  : 'border-input hover:bg-muted',
+                              )}
+                            >
+                              {m.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        /* 분할 결제수단 행 (method + 금액 + 삭제) — AC-1 */
+                        <div className="space-y-1.5" data-testid="split-rows">
+                          {splitRows.map((row, idx) => (
+                            <div key={idx} className="flex items-center gap-1" data-testid={`split-row-${idx}`}>
+                              <select
+                                value={row.method}
+                                onChange={(e) =>
+                                  updateSplitRow(idx, { method: e.target.value as PayMethod })
+                                }
+                                className="h-11 sm:h-8 rounded border border-input bg-background text-xs px-1.5 w-16 shrink-0"
+                                data-testid={`split-method-${idx}`}
+                              >
+                                {METHOD_OPTIONS.map((m) => (
+                                  <option key={m.value} value={m.value}>
+                                    {m.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatAmountDisplay(row.amount)}
+                                onChange={(e) =>
+                                  updateSplitRow(idx, {
+                                    amount: Number(parseAmountRaw(e.target.value)) || 0,
+                                  })
+                                }
+                                placeholder="0"
+                                className="h-11 sm:h-8 flex-1 min-w-0 rounded border border-input bg-background text-xs px-2 text-right tabular-nums"
+                                data-testid={`split-amount-${idx}`}
+                              />
+                              <button
+                                onClick={() => removeSplitRow(idx)}
+                                disabled={splitRows.length <= 1}
+                                className="h-11 sm:h-8 w-8 shrink-0 rounded border border-input text-muted-foreground hover:bg-muted disabled:opacity-30 flex items-center justify-center"
+                                data-testid={`split-remove-${idx}`}
+                                aria-label="결제수단 삭제"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            onClick={addSplitRow}
+                            className="flex items-center justify-center gap-1 w-full h-9 sm:h-7 rounded border border-dashed border-purple-300 text-purple-600 text-xs hover:bg-purple-50"
+                            data-testid="btn-split-add"
+                          >
+                            <Plus className="h-3.5 w-3.5" /> 결제수단 추가
+                          </button>
+                          {/* AC-2: 합산/차액 표시 */}
+                          <div
+                            className={cn(
+                              'flex items-center justify-between rounded px-2 py-1.5 text-xs',
+                              splitDiff === 0
+                                ? 'bg-teal-50 text-teal-700'
+                                : 'bg-amber-50 text-amber-700',
+                            )}
+                            data-testid="split-summary"
+                          >
+                            <span>
+                              합계 {formatAmount(splitSum)} / 수납 {formatAmount(displayAmount)}
+                            </span>
+                            <span className="font-semibold" data-testid="split-diff">
+                              {splitDiff === 0
+                                ? '일치'
+                                : splitDiff > 0
+                                  ? `${formatAmount(splitDiff)} 부족`
+                                  : `${formatAmount(-splitDiff)} 초과`}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* PAY-CASH-RECEIPT: 현금영수증 체크박스 — 현금/이체 선택 시 표시
-                      T-20260519-foot-DEDUCT-PAY-METHOD: deductMode 무관 항상 표시 */}
-                  {saved && (payMethod === 'cash' || payMethod === 'transfer') && (
+                      T-20260519-foot-DEDUCT-PAY-METHOD: deductMode 무관 항상 표시
+                      T-20260616-foot-PMW-SPLIT-PAYMENT: 분할 시 현금/이체 행 있으면 표시 */}
+                  {saved && showCashReceipt && (
                     <div className="rounded border px-2.5 py-2 bg-muted/20 space-y-1.5">
                       <button
                         onClick={() => setCashReceiptIssued((v) => !v)}
@@ -2263,8 +2445,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   )}
 
                   {/* T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 카드 자동 매칭 안내 (입력 칸 제거)
-                      대표 지시 2026-05-26 — 매처가 시간·금액 기반으로 자동 매칭 */}
-                  {saved && payMethod === 'card' && (
+                      대표 지시 2026-05-26 — 매처가 시간·금액 기반으로 자동 매칭
+                      T-20260616-foot-PMW-SPLIT-PAYMENT AC-6: 분할 시 카드 행이 있으면 안내 유지 */}
+                  {saved && showCardInfo && (
                     <p className="text-[10px] text-muted-foreground px-1" data-testid="card-auto-match-info">
                       결제 정보는 단말기 데이터와 시간·금액 기반으로 자동 매칭됩니다.
                     </p>
@@ -2286,7 +2469,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     <Button
                       className="w-full h-11 sm:h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
                       onClick={handleSettle}
-                      disabled={submitting || medGateBlocked}
+                      disabled={submitting || medGateBlocked || !splitValid}
                       data-testid="btn-settle"
                     >
                       {submitting ? '처리 중...' : (
@@ -2546,7 +2729,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 size="sm"
                 className="w-full gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white h-11 sm:h-9"
                 onClick={handleDocAndSettle}
-                disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved}
+                disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved || !splitValid}
                 data-testid="btn-doc-settle"
               >
                 <Printer className="h-3.5 w-3.5" />
