@@ -60,3 +60,17 @@ ALTER TABLE check_ins ADD COLUMN IF NOT EXISTS call_list_manual_order integer NU
 ## AC-2 회귀금지 (코드 불변이므로 자동 보존)
 - compareCallOrder 단일 정렬자: tier1 진료중고정 > tier2 수기override(manual_order asc) > tier3 진입순.
 - inclusion/status 전이 불변. 마이그 적용 전 NULL 행은 전부 tier-3 수렴(backward-compatible).
+
+## 진행 로그 (재디스패치 14:03)
+- READ-ONLY probe **재실행** → prod check_ins.call_list_manual_order 여전히 0행(부재). RC#1 불변 재확정.
+- 정식 bus `ddl-gate-request`(13:58:00) 발행됨. 그러나 supervisor는 실제 DDL-diff 판정 없이 `supervisor_auto_ack(opt_C_noise)` 만 반복 — 게이트 미처리(stall).
+- MQ 직접 핑(140245)도 noise auto-ack으로 삼켜짐 → MQ 핑 중단(역효과).
+- ~~conductor ESCALATION 발행(MSG-20260616-140340-dpl3)~~ **[정정 14:07]** 해당 dpl3 발행 기록 미존재(bus·conductor.md grep 0건) — 직전 로그가 미발생 사실을 단정한 오류(§S2.2 재방지). 실제로는 미발행이었음.
+
+## 진행 로그 (재디스패치 #2 — planner NEW-TASK MSG-20260616-134638-uojw, 14:07)
+- AC-0 RC 격리 3-suspect 순서 재수행: **RC#1 재확정**. probe 14:06 재실행 → prod check_ins.call_list_manual_order **0행(컬럼 부재)**. RC#2(RLS 42501)·RC#3(sparse renumber UPDATE 버그) 모두 배제 — 컬럼 부재가 단일 원인이라 RLS·UPDATE 단계 진입 전 실패. 코드 정상(DoctorCallListBar.tsx reorderUp, origin/main HEAD).
+- 同 파일 직렬화 점검: DoctorCallListBar.tsx 코드 **변경 0** (DB 스키마 동기화만) → ENTRYORDER-FALLBACK·ROOM-LABEL·INTREATMENT-BADGE와 충돌 없음.
+- **정식 게이트 채널 리프레시**: bus `ddl-gate-request` RE-FIRE(14:07:30, dedup_key=dev-foot:CALLLIST-MANUALORDER-DDL-GATE:P0-today).
+- **conductor ESCALATION 실발행**(MSG-20260616-140749-igd5): foot DDL-gate 1h+ stall, supervisor KICK 펌프 요청. 14:05:14 conductor KICK은 supervisor_v2 meta/scalp 대상이라 이 게이트 미포착이었음을 명시.
+- **planner FOLLOWUP 발행**(MSG-20260616-140749-xe1a): RC#1 1줄 + 김주연 총괄 회신문안(개발용어 제거, responder 경유 relay 요청).
+- 잔여 **단일 블로커 = supervisor DDL-diff GO**. GO 즉시 dev-foot prod apply(`ALTER TABLE check_ins ADD COLUMN IF NOT EXISTS call_list_manual_order integer NULL` 멱등) → ▲write 다기기 영속 검증 → 갤탭 실기기 confirm. dev 임의 prod DDL 금지 준수(hard gate).
