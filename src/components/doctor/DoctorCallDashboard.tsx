@@ -60,7 +60,6 @@ import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 펼침(읽기) 전문 — 약 1건당 '약물명 1/3/2' 토큰(RX-TOKEN-FORMAT SSOT).
 import { formatRxItemToken } from '@/lib/rxTooltip';
 import { recordAck, isDoctorAcked } from './DoctorAck';
-import { applyStatusFlagTransition, type FlagTransitionActor } from '@/lib/statusFlagTransition';
 import type { CheckIn } from '@/lib/types';
 
 const CALL_SELECT =
@@ -407,11 +406,8 @@ export default function DoctorCallDashboard() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
-  // T-20260610-foot-TREATMENT-COMPLETE-BTN: 진료완료 처리자 기록(의료 추적) — 의사/직원 공통.
-  const actor: FlagTransitionActor = useMemo(
-    () => ({ id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null }),
-    [profile?.id, profile?.name, profile?.role],
-  );
+  // T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE: 진료완료 버튼 제거로 actor(처리자 기록) 진입점 소멸.
+  //   완료 전이는 칸반 상태 플래그 메뉴(handleFlagChange)가 담당 — 처리자 기록은 그쪽 actor가 적재.
   // T-20260603-foot-RX-CHART-FOLLOWUP3 C-1: 차팅 클릭 → '진료차트'(MedicalChartPanel) 직접 오픈.
   //   FOLLOWUP2 #6은 2번차트 서랍(펜차트=기본차트)으로 열려 현장 의도(진단/경과/처방 진료차트)와 어긋났음.
   //   Dashboard 패턴 재사용 — 로컬 상태로 MedicalChartPanel 단독 오픈.
@@ -696,7 +692,6 @@ export default function DoctorCallDashboard() {
                     role={profile?.role ?? ''}
                     clinicId={clinicId ?? ''}
                     currentUserEmail={profile?.email ?? null}
-                    actor={actor}
                     /* T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3: 끝 임상경과 칼럼 미리보기(저장 즉시 반영). */
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
@@ -864,7 +859,6 @@ function CallFeedRow({
   role,
   clinicId,
   currentUserEmail,
-  actor,
   clinicalPreview,
   onOpenChart,
   onRefresh,
@@ -875,7 +869,6 @@ function CallFeedRow({
   role: string;
   clinicId: string;
   currentUserEmail: string | null;
-  actor: FlagTransitionActor;
   /** T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3: 끝 임상경과 칼럼 최신 1줄 미리보기(없으면 null). */
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
@@ -942,18 +935,16 @@ function CallFeedRow({
             {inactive ? '진료완료' : '진료필요'}
             {!inactive && (
               <>
-                {/* ✋ 손 = 수신확인(ack) 전용. 진료완료는 손이 아닌 옆 '진료완료' 명시 버튼에서만. */}
+                {/* ✋ 손 = 수신확인(ack) 전용. */}
+                {/* T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE (김주연 총괄 확정): 진료완료 버튼 제거.
+                    완료(purple→pink) 처리는 칸반 '상태 플래그 메뉴 → 진료완료(핑크)'로 일원화 —
+                    핑크 전이 시 이 화면의 '진료완료' 섹션에 자동 리스트업(status_flag==='pink' 필터).
+                    상태 플래그 메뉴는 역할 게이트 없음 → 의사/직원 공통 완료 경로 보존(purple 잔존 회귀 0). */}
                 <HandToggle
                   checkIn={checkIn}
                   doctorMode={doctorMode}
                   completed={false}
                   onRefresh={onRefresh}
-                />
-                {/* T-20260615-foot-SHAKEHAND-NO-COMPLETE: 완료 전이는 별도 명시 액션(이 버튼)에서만. */}
-                <TreatmentCompleteButton
-                  checkIn={checkIn}
-                  actor={actor}
-                  onCompleted={onRefresh}
                 />
                 {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: 별도 '시간' 칼럼 폐지 → ✋ 옆 "+N분" 인라인.
                     30분 이상 빨간색(급한 대기 환자 강조). 손 상태머신·ack 동작과 무관(표시 전용). */}
@@ -973,9 +964,12 @@ function CallFeedRow({
           </span>
         </td>
 
-        {/* 3. 이름 — 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음. */}
+        {/* 3. 이름 — 초/재 레이블 + 이름(이름 텍스트 좌정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음.
+            T-20260616-foot-DOCDASH-NAMECOL-LEFTALIGN-BADGEFIX (문지은 대표원장, #foot):
+            ① 환자이름 텍스트만 좌정렬(text-left), ② 초/재 배지는 셀 좌측 고정 슬롯(justify-start)에 앵커 →
+            이름 길이와 무관하게 배지 x위치 불변(기존 justify-center는 [배지+이름] 그룹 전체를 중앙정렬해 이름이 길어질수록 배지가 왼쪽으로 밀림). */}
         <td className="px-1.5 py-1 text-center">
-          <div className="flex items-center justify-center gap-1.5">
+          <div className="flex items-center justify-start gap-1.5">
             <VisitBadge visitType={checkIn.visit_type} />
             <button
               type="button"
@@ -984,7 +978,7 @@ function CallFeedRow({
               data-testid="doctor-call-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
               className={cn(
-                'min-w-[4rem] break-keep text-center underline-offset-2 transition-colors cursor-pointer disabled:cursor-default disabled:no-underline',
+                'min-w-[4rem] break-keep text-left underline-offset-2 transition-colors cursor-pointer disabled:cursor-default disabled:no-underline',
                 inactive
                   ? 'text-gray-500 hover:text-gray-700 hover:underline'
                   : 'text-gray-900 hover:text-indigo-700 hover:underline',
@@ -1294,9 +1288,12 @@ function CompletedRow({
           </div>
         </td>
 
-        {/* 3. 이름 — 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음. */}
+        {/* 3. 이름 — 초/재 레이블 + 이름(이름 텍스트 좌정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음.
+            T-20260616-foot-DOCDASH-NAMECOL-LEFTALIGN-BADGEFIX (문지은 대표원장, #foot):
+            ① 환자이름 텍스트만 좌정렬(text-left), ② 초/재 배지는 셀 좌측 고정 슬롯(justify-start)에 앵커 →
+            이름 길이와 무관하게 배지 x위치 불변(진료완료 섹션도 활성 행과 동일 규칙 통일). */}
         <td className="px-1.5 py-1 text-center">
-          <div className="flex items-center justify-center gap-1.5">
+          <div className="flex items-center justify-start gap-1.5">
             <VisitBadge visitType={checkIn.visit_type} />
             <button
               type="button"
@@ -1304,7 +1301,7 @@ function CompletedRow({
               disabled={!checkIn.customer_id}
               data-testid="doctor-completed-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
-              className="min-w-[4rem] break-keep text-center underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
+              className="min-w-[4rem] break-keep text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
             >
               <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
             </button>
@@ -1541,9 +1538,12 @@ function CompletedRow({
 //     doctor_ack_at 은 stepper '원장확인' 클릭·재호출 잔존 등 다른 동선에서 선점되어 손이 초록으로 도착할 수 있어
 //     '초록 탭=완료' 로직이 의사의 '첫 손 탭'을 완료로 만들었다(직전 2-탭 arm 땜질로도 결합은 잔존).
 //   교정(SSOT 분리 환원): ✋ 핸들러에서 완료/상태전이 호출을 제거하고 ack write(recordAck)만 남긴다.
-//     완료(purple→pink)는 손이 아닌 '별도 명시 액션' TreatmentCompleteButton('진료완료' 라벨 버튼)에서만 일어난다.
+//     완료(purple→pink)는 손이 아닌 별도 명시 액션에서만 일어난다.
+//   T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE (김주연 총괄 확정): 그 '별도 명시 액션'이던 진료완료 버튼
+//     (TreatmentCompleteButton)을 제거 → 완료 동선을 칸반 '상태 플래그 메뉴 → 진료완료(핑크)'로 일원화.
+//     ✋ 의 ack-전용 불변식은 그대로(완료/상태전이 트리거 금지). 단지 완료 진입점이 버튼→상태 메뉴로 이전됐을 뿐.
 //   AC: ✋클릭=doctor_ack_at 만 write / completed_at·status_flag 전이 트리거 금지 / 회색↔초록 재클릭 idempotent /
-//       파랑(완료)은 안내만 / 완료는 별도 명시 액션에서만.
+//       파랑(완료)은 안내만 / 완료는 상태 플래그 메뉴(핑크)에서만.
 //   ⚠ doctor_ack_at(ack=진료 시작 신호)과 status_flag(purple/pink) 는 설계상 별개 — ✋ 는 ack 컬럼만 만진다.
 function HandToggle({
   checkIn,
@@ -1565,12 +1565,12 @@ function HandToggle({
     if (pending) return;
     // 파랑(완료) — 안내만. ✋ 는 완료를 만들지도 해제하지도 않는다.
     if (visual === 'blue') {
-      toast.warning('이미 진료완료된 환자예요. 진료완료/해제는 손이 아닌 진료완료 버튼에서 처리해요.');
+      toast.warning('이미 진료완료된 환자예요. 진료완료/해제는 손이 아닌 카드의 상태 메뉴에서 진료완료(핑크)로 처리해요.');
       return;
     }
     // 초록(확인됨) — 이미 ack 됨. 재클릭은 idempotent(상태 변화 없음). 완료 전이 절대 호출 안 함.
     if (visual === 'green') {
-      toast.info('이미 확인(손 들기)한 환자예요. 진료완료는 진료완료 버튼에서 처리해요.');
+      toast.info('이미 확인(손 들기)한 환자예요. 진료완료는 카드의 상태 메뉴에서 진료완료(핑크)로 처리해요.');
       return;
     }
     // 회색(초기) — 의사 전용 ✋확인(ack=doctor_ack_at). 직원 클릭은 차단 안내.
@@ -1599,9 +1599,9 @@ function HandToggle({
         : 'text-gray-400 animate-shake';
   const title =
     visual === 'blue'
-      ? '진료완료됨 — 완료 처리는 진료완료 버튼에서'
+      ? '진료완료됨 — 완료 처리는 카드 상태 메뉴의 진료완료(핑크)에서'
       : visual === 'green'
-        ? '의사 확인됨 — 진료완료는 진료완료 버튼에서 처리'
+        ? '의사 확인됨 — 진료완료는 카드 상태 메뉴의 진료완료(핑크)에서'
         : '의사 확인(손 들기) — 클릭하면 환자에게 확인 신호 (ack)';
 
   return (
@@ -1624,49 +1624,12 @@ function HandToggle({
   );
 }
 
-// ─── 진료완료 버튼 (별도 명시 액션) ───────────────────────────────────────────
-// T-20260615-foot-SHAKEHAND-NO-COMPLETE: 완료(purple→pink)는 손(✋)이 아니라 이 명시 버튼에서만.
-//   e6138e7(TREATMENT-COMPLETE-BTN) 원형 복원 — RELAYOUT 이 제거했던 분리 액션을 되살린다.
-//   진료호출(purple) 환자를 의사/직원 누구나 '진료완료' 처리 → status_flag purple→pink 전이로 활성 명단에서 제거.
-//   status_flag 전이는 applyStatusFlagTransition(SSOT)에 위임 — ⚠ doctor_ack_at(✋)은 만지지 않는다(별개 신호).
-function TreatmentCompleteButton({
-  checkIn,
-  actor,
-  onCompleted,
-}: {
-  checkIn: CheckIn;
-  actor: FlagTransitionActor;
-  onCompleted: () => void;
-}) {
-  const [pending, setPending] = useState(false);
-  const handleComplete = async () => {
-    if (pending) return;
-    setPending(true);
-    try {
-      await applyStatusFlagTransition(checkIn, 'pink', actor);
-      onCompleted();
-      toast.confirm('진료완료 처리했어요. 활성 호출 명단에서 빠졌어요.');
-    } catch (e) {
-      toast.error(`진료완료 처리 실패: ${(e as Error).message}`);
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      onClick={handleComplete}
-      disabled={pending}
-      data-testid="doctor-call-complete-btn"
-      aria-label="진료완료 처리"
-      className="inline-flex items-center gap-0.5 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-600 transition hover:bg-gray-50 active:scale-95 disabled:opacity-50"
-      title="이 환자 진료를 완료 처리해요 (활성 호출 명단에서 제거)"
-    >
-      {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-      진료완료
-    </button>
-  );
-}
+// ─── 진료완료 처리 동선 (T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE) ───────────
+// 김주연 총괄 확정(slack 1781584427.576269): 진료 알림판의 '진료완료' 버튼(구 TreatmentCompleteButton,
+//   data-testid=doctor-call-complete-btn)을 제거. 완료(purple→pink) 처리는 칸반 '상태 플래그 메뉴 →
+//   진료완료(핑크)'로 일원화한다. 핑크 전이 시 위 '진료완료' 섹션에 자동 리스트업(status_flag==='pink' 필터).
+//   · 상태 플래그 메뉴(StatusContextMenu)는 역할 게이트 없음 → 의사/직원 공통 완료 경로 보존(purple 잔존 회귀 0).
+//   · status_flag 전이 SSOT(applyStatusFlagTransition)는 handleFlagChange(Dashboard) 경유로 유지 — ✋(doctor_ack_at) 불간섭.
 
 // T-20260612-foot-WAITELAPSED-POLISH AC-8: 초진/재진(/체험) 레이블을 한 글자(초/재/체)로 축약.
 //   색상(cls)·매핑 동작은 유지 — 좁은 칼럼에서 이름·차트번호 가독성 확보. title 로 풀이 hover 제공(AC-9 안전).
