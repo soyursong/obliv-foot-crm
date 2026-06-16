@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
@@ -2484,38 +2485,38 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     <div key={service.id} className="space-y-0.5">
                       <p className="text-[9px] text-amber-700 truncate font-medium">{service.name}</p>
                       <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">용량</span>
+                        <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">{RX_COL.dosage}</span>
                         <input
                           type="text"
                           inputMode="numeric"
                           value={rxItemDosages[service.id]?.unit_dose ?? ''}
                           onChange={(e) => setRxItemDosages((p) => ({
                             ...p,
-                            [service.id]: { ...p[service.id], unit_dose: e.target.value },
+                            [service.id]: { ...p[service.id], unit_dose: rxDigits(e.target.value) },
                           }))}
                           placeholder="1"
                           className="h-5 w-10 text-[10px] text-center border rounded px-1 bg-white"
                         />
-                        <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">횟수</span>
+                        <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">{RX_COL.count}</span>
                         <input
                           type="text"
                           inputMode="numeric"
                           value={rxItemDosages[service.id]?.daily_freq ?? ''}
                           onChange={(e) => setRxItemDosages((p) => ({
                             ...p,
-                            [service.id]: { ...p[service.id], daily_freq: e.target.value },
+                            [service.id]: { ...p[service.id], daily_freq: rxDigits(e.target.value) },
                           }))}
                           placeholder="1"
                           className="h-5 w-10 text-[10px] text-center border rounded px-1 bg-white"
                         />
-                        <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">일수</span>
+                        <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">{RX_COL.days}</span>
                         <input
                           type="text"
                           inputMode="numeric"
                           value={rxItemDosages[service.id]?.total_days ?? ''}
                           onChange={(e) => setRxItemDosages((p) => ({
                             ...p,
-                            [service.id]: { ...p[service.id], total_days: e.target.value },
+                            [service.id]: { ...p[service.id], total_days: rxDigits(e.target.value) },
                           }))}
                           placeholder="7"
                           className="h-5 w-10 text-[10px] text-center border rounded px-1 bg-white"
