@@ -10,7 +10,7 @@ db-change: true
 spec-added: false
 spec-exempt: true
 rollback-sql: supabase/migrations/20260616000000_callist_manual_order.rollback.sql
-commit_sha: pending
+commit_sha: 6431eb8c
 alias_ticket: T-20260616-foot-CALLLIST-REORDER-SAVE-FAIL (planner NEW-TASK MSG-20260616-171346-sfbn 재디스패치, 동일 RC)
 prod_applied: 2026-06-16 — ADD COLUMN IF NOT EXISTS call_list_manual_order integer NULL (idempotent, 데이터변경0)
 created: 2026-06-16
