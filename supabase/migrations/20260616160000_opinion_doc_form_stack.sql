@@ -19,7 +19,8 @@
 --      ※ 2026-06-16 probe: 현 prod published 행 0건 → 기존행 회귀 위험 0.
 --   2. opinion_doc form_template seed(OPINIONCERT/KOH 동일 패턴: html + field_map=옵션/문구 그리드).
 --      AC-8 설정 UI = 기존 form_templates CRUD 재사용(field_map 편집). 신규 enum/컬럼 불요.
---   3. publish_opinion_doc RPC = publish_koh_result 동형(권한게이트 + snapshot 병합 + atomic insert).
+--   3. publish_opinion_doc RPC = publish_koh_result 구조 동형(snapshot 병합 + atomic insert)이나,
+--      발행게이트만 의도적 상이: C2=is_doctor_role(isDoctorRole director|doctor, 의료법 §17) ≠ KOH의 is_admin_or_manager.
 --      자동채번 불요. C4 정정=신규 발행(supersede) → KOH 식 dup-block 미적용(append-only).
 --      C3 정정 체인 = field_data.supersedes_id (self-FK 컬럼 신설 대신 field_data 채택 — KOH
 --        field_data.koh_service_id 연결 선례와 동형, 스키마 churn 0. 비차단, 문서화).
@@ -142,6 +143,28 @@ END
 $seed$;
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- SECTION 2.5 (C2 표준함수 이식): is_doctor_role() = isDoctorRole(director|doctor)
+--   cross_crm_data_contract §2-3 의사직군 게이트 표준 함수(dev-derm 확립, MSG-20260611-161240).
+--   foot 미보유 → §2-3 정의대로 이식(one-off 신규정의 X, 의료-CRM 공통 표준 재사용).
+--   foot role SSOT = user_profiles.role(current_user_role()) — is_admin_or_manager 동일 패턴.
+--   ※ 'doctor'(봉직의)는 §2-3 ADDITIVE 9th — foot user_profiles CHECK 미보유여도 무해
+--     (현 매칭=director 단독, foot 봉직의 운용 시 CHECK 확장은 별도 비-blocking 티켓).
+-- ════════════════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION public.is_doctor_role()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT is_approved_user()
+     AND current_user_role() IN ('director','doctor');
+$$;
+
+COMMENT ON FUNCTION public.is_doctor_role() IS
+  'cross_crm_data_contract §2-3 isDoctorRole(director|doctor): 의사직군(진료의) 게이트. 의료법 제17조 진단서·소견서 발급주체 한정. dev-derm 확립 표준 함수 foot 이식(T-20260616-foot-OPINION-DOC-FEATURE C2).';
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- SECTION 3: publish_opinion_doc RPC (발행 = published insert, atomic)
 --   publish_koh_result 동형: 권한게이트(C2) + clinic/customer 해석 + snapshot 병합 + insert.
 --   append-only(C4) — KOH dup-block 미적용. 정정=신규 발행(field_data.supersedes_id, C3).
@@ -164,9 +187,12 @@ DECLARE
   v_field        jsonb;
   v_new_id       uuid;
 BEGIN
-  -- C2: 발행 게이트 = isDoctorRole(director|doctor) = is_admin_or_manager(admin|manager|director).
-  IF NOT is_admin_or_manager() THEN
-    RAISE EXCEPTION '소견서 발행은 원장(의료진) 권한입니다' USING ERRCODE = '42501';
+  -- C2(DA ruling B, MSG-20260616-163159): 발행 게이트 = isDoctorRole(director|doctor).
+  --   소견서=진단서(의료법 제17조 직접 진찰한 의료인 전속 발급) → 진료의만 발행.
+  --   is_admin_or_manager 재사용 금지(admin/manager 비의사 발행=§17 위반 + doctor 제외=동선 결함).
+  --   KOH(검사결과 보고서, 행정 release)와 의도적으로 다른 게이트 — cross_crm_data_contract §2-7 v2 note.
+  IF NOT is_doctor_role() THEN
+    RAISE EXCEPTION '소견서 발행은 진료의(원장·의사) 권한입니다' USING ERRCODE = '42501';
   END IF;
 
   -- 대상 내방(check_in) → clinic/customer 해석.
@@ -230,7 +256,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.publish_opinion_doc(uuid, jsonb) IS
-  'T-20260616-foot-OPINION-DOC-FEATURE: 소견서 발행(published insert). publish_koh_result 동형(권한게이트 is_admin_or_manager + snapshot 병합 + atomic). append-only(정정=신규발행, field_data.supersedes_id). 비가역성=form_submissions published 트리거(C1).';
+  'T-20260616-foot-OPINION-DOC-FEATURE: 소견서 발행(published insert). 구조=publish_koh_result 동형(snapshot 병합 + atomic)이나 권한게이트=is_doctor_role(isDoctorRole director|doctor, 의료법 §17 진료의 전속 — KOH의 is_admin_or_manager와 의도적 상이, DA ruling B). append-only(정정=신규발행, field_data.supersedes_id). 비가역성=form_submissions published 트리거(C1).';
 
 REVOKE ALL ON FUNCTION public.publish_opinion_doc(uuid, jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.publish_opinion_doc(uuid, jsonb) TO authenticated;
@@ -263,7 +289,19 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='publish_opinion_doc')
   THEN RAISE EXCEPTION 'publish_opinion_doc RPC 생성 실패'; END IF;
 
-  RAISE NOTICE 'T-20260616-foot-OPINION-DOC-FEATURE form 스택: C1 하드닝 + opinion_doc seed + publish RPC 검증 통과';
+  -- C2: is_doctor_role() 표준 함수 존재 + RPC 본문이 isDoctorRole 게이트 사용(is_admin_or_manager 아님).
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='is_doctor_role')
+  THEN RAISE EXCEPTION 'C2 is_doctor_role() 표준 함수 생성 실패'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc WHERE proname='publish_opinion_doc'
+     AND pg_get_functiondef(oid) LIKE '%is_doctor_role()%'
+  ) THEN RAISE EXCEPTION 'C2 publish_opinion_doc 게이트가 is_doctor_role 아님(gate 교체 누락)'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc WHERE proname='publish_opinion_doc'
+     AND pg_get_functiondef(oid) LIKE '%is_admin_or_manager()%'
+  ) THEN RAISE EXCEPTION 'C2 publish_opinion_doc 가 is_admin_or_manager 잔존(§17 위반 게이트)'; END IF;
+
+  RAISE NOTICE 'T-20260616-foot-OPINION-DOC-FEATURE form 스택: C1 하드닝 + opinion_doc seed + publish RPC(C2 isDoctorRole 게이트) 검증 통과';
 END
 $verify$;
 
@@ -277,6 +315,7 @@ COMMIT;
 --                              + form_submissions_update USING 에 status<>'published'.
 -- [ ] ③ KOH 무회귀  : draft/printed/signed/voided/completed 행 UPDATE 정상(트리거는 OLD.status='published' 만 차단).
 --                      현 prod published 행 0건 → 기존행 회귀 0.
--- [ ] ④ 발행 게이트 : publish_opinion_doc → is_admin_or_manager() 외 호출 시 42501.
+-- [ ] ④ 발행 게이트 : publish_opinion_doc → is_doctor_role()(isDoctorRole director|doctor) 외 호출 시 42501.
+--                      ※ DA ruling B: admin/manager(비의사)는 발행 불가(§17), SELECT·데스크출력은 전 직군 유지(AC-7 무영향).
 -- [ ] ⑤ clinic 격리 : publish RPC 가 check_in→clinic 해석, form_submissions RLS(clinic_id) 적용.
 -- ============================================================

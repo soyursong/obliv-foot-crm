@@ -11,6 +11,10 @@ BEGIN;
 -- 3: publish_opinion_doc RPC 제거
 DROP FUNCTION IF EXISTS public.publish_opinion_doc(uuid, jsonb);
 
+-- 2.5: is_doctor_role() 표준 함수는 보존(harmless·idempotent SQL 함수, RPC 제거 후 잔존 무해).
+--   cross_crm_data_contract §2-3 공통 표준 — 향후 타 의료문서 게이트 재사용 대비 DROP 안 함.
+--   완전 원복 필요 시 수동: DROP FUNCTION IF EXISTS public.is_doctor_role();
+
 -- 2: opinion_doc form_template seed 제거 (발행 이력 없을 때만 안전 — template_id 참조 보존 위해 발행본 있으면 비활성만)
 DO $rb$
 DECLARE
