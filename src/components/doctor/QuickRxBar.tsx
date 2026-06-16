@@ -16,7 +16,9 @@ import { toast } from '@/lib/toast';
 import { useAuth } from '@/lib/auth';
 import { Loader2, FileText, CheckCircle2, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
+// T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX (AC-4): 빠른처방 아이콘 제거 → 색상 토큰(icon 컬럼 재활용).
+//   진료화면 버튼도 아이콘 대신 선택 색상 닷으로 표시(레거시 아이콘값은 slate 폴백).
+import { quickRxDotClass } from '@/lib/quickRxColors';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
@@ -127,7 +129,10 @@ function QuickRxButton({
         {loading ? (
           <Loader2 className={compact ? 'h-3 w-3 animate-spin' : 'h-3.5 w-3.5 animate-spin'} />
         ) : (
-          <IconRenderer icon={btn.icon} className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+          <span
+            className={`rounded-full shrink-0 ${compact ? 'h-2 w-2' : 'h-2.5 w-2.5'} ${quickRxDotClass(btn.icon)}`}
+            aria-hidden
+          />
         )}
         {btn.name}
       </button>

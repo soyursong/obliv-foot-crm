@@ -34,12 +34,18 @@ const LEGACY_NONDRUG_VALUES = [
 ];
 
 // ── AC-1: picker가 DRUG 서브셋만 노출 ───────────────────────────────────────
-test.describe('아이콘 picker 약 서브셋 노출 — AC-1', () => {
-  test('DRUG_ICON_OPTIONS 파생 + picker가 이를 map 한다(ICON_OPTIONS 전체 아님)', () => {
+// ⚠ SUPERSEDED (부분): T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX AC-4 — 문지은 대표원장 요청으로
+//    빠른처방 생성 화면의 이모지/아이콘 picker 자체가 제거되고 "차분한 모노톤 색상 태그"로 교체됨.
+//    → QuickRxButtonsTab 의 아이콘 picker(DRUG_ICON_OPTIONS.map) 가정은 더 이상 유효하지 않다.
+//    DRUG_ICON_OPTIONS / ICON_OPTIONS 레지스트리 자체는 묶음처방(PrescriptionSetsTab)·BundleRxTagBar·
+//    IconRenderer 가 계속 사용하므로 export·레지스트리 보존 검증(AC-2/AC-3)은 그대로 유지한다.
+test.describe('아이콘 picker 약 서브셋 노출 — AC-1 (REFINE-5FIX로 picker 제거)', () => {
+  test('DRUG_ICON_OPTIONS 파생 export 보존(타 화면 의존) + 전체 ICON_OPTIONS 직접 노출 없음', () => {
     expect(src).toContain('export const DRUG_ICON_OPTIONS = ICON_OPTIONS.filter((o) => o.drug)');
-    // picker는 약 서브셋만 순회
-    expect(src).toContain('{DRUG_ICON_OPTIONS.map(({ value, label, Icon })');
-    // 이전: 전체 ICON_OPTIONS 노출 회귀 가드
+    // REFINE-5FIX(AC-4): 빠른처방 다이얼로그의 아이콘 picker 제거 → 색상 팔레트로 교체됨.
+    expect(src).not.toContain('{DRUG_ICON_OPTIONS.map(({ value, label, Icon })');
+    expect(src).toContain('data-testid="quick-rx-color-palette"');
+    // 회귀 가드: 전체 ICON_OPTIONS picker 노출은 여전히 금지
     expect(src).not.toContain('{ICON_OPTIONS.map(({ value, label, Icon })');
   });
 
@@ -87,8 +93,10 @@ test.describe('약 서브셋 충분성 — AC-3', () => {
     expect(unique.size).toBe(10);
   });
 
-  test('신규 폼 기본 아이콘(pill)은 약 서브셋에 포함 — picker 하이라이트 정상', () => {
-    expect(src).toContain("icon: 'pill'");
-    expect(DRUG_VALUES).toContain('pill');
+  // ⚠ SUPERSEDED: REFINE-5FIX(AC-4) — 신규 폼 기본값이 아이콘('pill')에서 색상 토큰(DEFAULT_QUICK_RX_COLOR)
+  //    으로 바뀜. icon 컬럼을 색상 토큰 저장에 재활용(db_change=false). 기본 아이콘 검증은 폐지.
+  test('신규 폼 기본값은 색상 토큰(DEFAULT_QUICK_RX_COLOR) — 아이콘 기본값 폐지', () => {
+    expect(src).toContain('icon: DEFAULT_QUICK_RX_COLOR');
+    expect(src).not.toContain("icon: 'pill'");
   });
 });
