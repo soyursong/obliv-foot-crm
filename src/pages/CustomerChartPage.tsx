@@ -135,6 +135,10 @@ interface TimerRecord {
   stopped_at: string | null;
 }
 
+// T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 비가열 레이저 타이머 시작 버튼 폴백.
+// 클리닉 설정(clinics.laser_time_units)이 비었거나 null일 때만 사용 — 버튼이 사라지지 않도록 보장.
+const LASER_TIMER_FALLBACK_UNITS = [5, 15, 20];
+
 function formatTimerRemaining(secs: number): string {
   if (secs <= 0) return '00:00';
   const m = Math.floor(secs / 60);
@@ -1892,6 +1896,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
+  // T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 비가열 레이저 타이머 시작 버튼 시간 단위.
+  // 클리닉 설정(clinics.laser_time_units, ClinicSettingsTab에서 저장)을 READ. 비었거나 null이면 폴백.
+  // 실시간 push 불요 — 설정 변경 후 재진입/새로고침 시 반영(getClinic 캐시는 페이지 재로드 시 초기화).
+  const laserTimerUnits = useMemo<number[]>(
+    () => (clinic?.laser_time_units?.length ? clinic.laser_time_units : LASER_TIMER_FALLBACK_UNITS),
+    [clinic?.laser_time_units],
+  );
   // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드에서 닫기 콜백 (null이면 독립 페이지 모드)
   const chartSheetClose = useChartSheetClose();
   // T-20260611-foot-CHART2-SAVE-DIRTY-RESET: 본문 저장 성공 시 Sheet 미저장 가드 clean 리셋 (독립 페이지 모드 no-op)
@@ -3268,7 +3279,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     return () => clearInterval(id);
   }, [activeTimer]);
 
-  const handleStartTimer = useCallback(async (minutes: 5 | 15 | 20) => {
+  const handleStartTimer = useCallback(async (minutes: number) => {
     if (!latestCheckIn?.id || !customer) return;
     setTimerLoading(true);
     try {
@@ -6944,7 +6955,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 {!activeTimer ? (
                   /* 타이머 미실행 — 시작 버튼 3종 */
                   <div className="flex gap-1.5" data-testid="laser-timer-start-buttons">
-                    {([5, 15, 20] as const).map((min) => (
+                    {laserTimerUnits.map((min) => (
                       <button
                         key={min}
                         type="button"

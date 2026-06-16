@@ -32,6 +32,9 @@ const SUPA_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 // 종로 풋센터 clinic_id (PAYMENT-AUTO-DONE 등 기존 spec 과 동일 상수)
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+// T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 타이머 버튼이 clinics.laser_time_units 로 동적화됨.
+// 이 spec 은 btn-5/15/20 고정 가정이므로, 결정성 확보를 위해 clinic 설정을 [5,15,20] 으로 시드 후 원복.
+const CLINIC_SLUG = 'jongno-foot';
 
 const seedReady = Boolean(SUPA_URL && SERVICE_KEY);
 
@@ -40,12 +43,19 @@ let sb: SupabaseClient | null = null;
 let seededCheckInId: string | null = null;
 let seededCustomerId: string | null = null;
 let seededName = '';
+let originalUnits: number[] | null = null;
 
 test.describe('T-20260523-foot-LASER-TIMER — AC-1 위치(2번차트) + 확인 다이얼로그 + 2단계 색상', () => {
   // 오늘 날짜 활성 check-in 1건 시드 → 대시보드 칸반 카드 보장
   test.beforeAll(async () => {
     if (!seedReady) return;
     sb = createClient(SUPA_URL, SERVICE_KEY);
+
+    // T-20260616: 버튼 동적화 대응 — clinic 설정을 [5,15,20] 으로 고정 (원래값 백업·afterAll 원복)
+    const { data: clinicRow } = await sb
+      .from('clinics').select('laser_time_units').eq('slug', CLINIC_SLUG).single();
+    originalUnits = (clinicRow?.laser_time_units as number[] | null) ?? null;
+    await sb.from('clinics').update({ laser_time_units: [5, 15, 20] }).eq('slug', CLINIC_SLUG);
 
     seededName = `laser-timer-qa-${Date.now()}`;
     const phone = `010${String(Date.now()).slice(-8)}`;
@@ -84,6 +94,8 @@ test.describe('T-20260523-foot-LASER-TIMER — AC-1 위치(2번차트) + 확인 
   // 시드 정리 — timer_records(FK CASCADE 대비 명시 삭제) → check_ins → customers
   test.afterAll(async () => {
     if (!sb) return;
+    // T-20260616: clinic 설정 원복 (비파괴)
+    await sb.from('clinics').update({ laser_time_units: originalUnits }).eq('slug', CLINIC_SLUG);
     if (seededCheckInId) {
       await sb.from('timer_records').delete().eq('check_in_id', seededCheckInId);
       await sb.from('check_ins').delete().eq('id', seededCheckInId);
@@ -91,7 +103,7 @@ test.describe('T-20260523-foot-LASER-TIMER — AC-1 위치(2번차트) + 확인 
     if (seededCustomerId) {
       await sb.from('customers').delete().eq('id', seededCustomerId);
     }
-    console.log('[seed] 정리 완료');
+    console.log('[seed] 정리 + clinic 설정 원복 완료');
   });
 
   test.beforeEach(async ({ page }) => {
