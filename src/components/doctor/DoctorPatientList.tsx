@@ -50,9 +50,9 @@ interface PatientRow {
   /** T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분 + 처방 게이트 컨텍스트.
    *  check_ins 기존 컬럼(status_flag) — SELECT 확장만, 스키마 무변경. */
   status_flag: string | null;
-  /** T-20260615-foot-RXLIST-RENAME-DOCFILTER (item2): 원장 진료 완료 판정 SSOT.
-   *  진료완료 = completed_at 보유 OR status_flag='pink' (DoctorCallDashboard.completedPatients 필터와 1:1 동일).
-   *  check_ins 기존 컬럼(DoctorCallDashboard CALL_SELECT 동일) — SELECT 확장만, 스키마 무변경. */
+  /** 행별 진료완료 시각 구분(isVisitDone)용. completed_at 보유 OR status_flag='pink'.
+   *  ※ 목록 모집단 필터는 T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER로 진료콜 명단(DoctorCallListBar) 멤버십으로 교체됨.
+   *  check_ins 기존 컬럼 — SELECT 확장만, 스키마 무변경. */
   completed_at: string | null;
   checked_in_at: string;
   queue_number: number | null;
@@ -249,7 +249,9 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
           // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: *_room 추가(기존 컬럼, SELECT 확장만) — 치료실명 표시.
           // T-20260610-foot-DOCDASH-STATUS-SPLIT: status_flag 추가(기존 컬럼, SELECT 확장만) — 진료완료/귀가 구분.
           // T-20260612-foot-CHARTNO-B2-P1: 이름 옆 차트번호 인접 표기용 customers join 추가(read-only, DB 무변경).
-          // T-20260615-foot-RXLIST-RENAME-DOCFILTER item2: completed_at 추가(기존 컬럼, DoctorCallDashboard CALL_SELECT 동일 — SELECT 확장만) — 진료완료 필터 SSOT.
+          // T-20260615-foot-RXLIST-RENAME-DOCFILTER item2: completed_at 추가(기존 컬럼, SELECT 확장만).
+          //   ※ T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER로 목록 모집단 필터는 진료콜 명단(status_flag/status)으로 교체됨.
+          //     completed_at은 이제 행별 isVisitDone(진료완료 시각 구분) 표시에만 사용(필터 SSOT 아님).
           'id, customer_id, customer_name, visit_type, status, status_flag, completed_at, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo), customers!customer_id(chart_number)',
         )
         .eq('clinic_id', clinicId)
@@ -277,12 +279,22 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         }
         return { ...row, booking_memo, chart_number } as unknown as PatientRow;
       });
-      // T-20260615-foot-RXLIST-RENAME-DOCFILTER (item2): '처방 환자 목록' = 원장 진료 완료 고객만 표시.
-      //   진료완료 판정 SSOT = DoctorCallDashboard.completedPatients 필터(L504)와 글자 그대로 1:1 동일:
-      //     completed_at(귀가/원내잔류-시술완료) 보유  OR  status_flag==='pink'(진료완료 처리).
-      //   → 진료 대기중(status_flag='purple') / 진료 전(미호출) 행은 제외(진료완료 전 고객 비노출, AC).
+      // T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER (AC-2): '처방 환자 목록' 모집단을
+      //   '금일 내방객 전체' → '금일 원장 진료콜 명단(doctor_call list) 교집합'으로 좁힘(진료콜 명단에 오른 환자만).
+      //   ※ 6/15 RXLIST-RENAME-DOCFILTER의 '진료완료'(completed_at OR pink) 필터를 본 티켓이 정정·교체한다.
+      //   진료콜 명단 멤버십 SSOT = DoctorCallListBar.displayList(activeList ∪ doneList)와 글자 그대로 1:1 동일:
+      //     activeList: status_flag==='purple'(진료필요) OR status_flag==='yellow'(HL) OR status==='healer_waiting'(힐러대기)
+      //     doneList  : status_flag==='pink'(진료완료/비활성)
+      //   → 진료콜 명단에 한 번도 오르지 않은 행, 귀가(status='done'→status_flag='dark_gray', 명단 이탈) 행은 제외.
       //   '표시 대상 행만 축소' — 행별 처방 배지/요약/확정 등 표시 로직은 무변경(회귀 0).
-      return mapped.filter((row) => !!row.completed_at || row.status_flag === 'pink');
+      //   빈 명단(0건) 엣지: filter 결과 [] → 하단 빈 상태 정상 렌더(크래시 없음).
+      return mapped.filter(
+        (row) =>
+          row.status_flag === 'purple' ||
+          row.status_flag === 'yellow' ||
+          row.status_flag === 'pink' ||
+          row.status === 'healer_waiting',
+      );
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -1064,8 +1076,9 @@ export default function DoctorPatientList() {
         </div>
       ) : sorted.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          {/* T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER: 모집단=진료콜 명단 → 빈 상태 문구도 명단 기준으로 정정. */}
           {filter === 'all'
-            ? `${isToday ? '오늘' : formatISOToKoLabel(selectedDate)} 진료 완료된 환자가 없습니다.`
+            ? `${isToday ? '오늘' : formatISOToKoLabel(selectedDate)} 진료콜 명단에 오른 환자가 없습니다.`
             : '해당 조건의 환자가 없습니다.'}
         </div>
       ) : (

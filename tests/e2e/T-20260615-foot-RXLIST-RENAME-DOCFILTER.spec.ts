@@ -53,7 +53,10 @@ test.describe('S1 item1 — 라벨 리네임(텍스트만) + 식별자 보존', 
 // 시나리오 2 (현장 클릭): 진료부가 '처방 환자 목록'을 열면 '원장 진료 완료' 고객만 보인다.
 //   진료 대기중(보라 호출)·진료 전 고객은 목록에서 빠진다.
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('S2 item2 — 진료완료 고객만 표시(진료 전 고객 제외)', () => {
+// ⚠ SUPERSEDED — 본 S2(진료완료 completed_at||pink 모집단)는 T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER
+//   (AC-2)가 모집단을 '원장 진료콜 명단(doctor_call list) 교집합'으로 정정하면서 폐기됨.
+//   현행 모집단 회귀가드는 T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER.spec.ts 참조. S1(라벨)은 유효.
+test.describe.skip('S2 item2 — [SUPERSEDED→DOCTORCALL-FILTER] 진료완료 고객만 표시(진료 전 고객 제외)', () => {
   const rows: Row[] = [
     // 진료완료 — completed_at 보유(귀가/시술완료)
     { customer_name: '강감찬', status: 'done', status_flag: null, completed_at: '2026-06-15T05:00:00Z' },
