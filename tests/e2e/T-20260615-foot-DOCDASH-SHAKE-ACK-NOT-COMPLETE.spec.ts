@@ -26,7 +26,9 @@ test.describe('SUPERSEDED — 2-탭 arm 접근은 폐기됨(SHAKEHAND-NO-COMPLET
   test('✋ HandToggle 본문에 완료 전이가 결합되지 않는다(ack 전용 환원 유지)', () => {
     const s = DASH();
     const start = s.indexOf('function HandToggle(');
-    const end = s.indexOf('// ─── 진료완료 버튼', start);
+    // T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE: 구 '// ─── 진료완료 버튼' 섹션 헤더가
+    //   '// ─── 진료완료 처리 동선'(버튼 제거·상태메뉴 일원화)으로 바뀜 → 마커 갱신.
+    const end = s.indexOf('// ─── 진료완료 처리 동선', start);
     const fn = s.slice(start, end > 0 ? end : undefined);
     expect(fn).not.toContain('applyStatusFlagTransition');
   });
