@@ -19,11 +19,34 @@
 #   (2) A caller-passed 120s timeout is too tight when several cold builds
 #       contend for CPU on macstudio. A 240s floor is enforced (see below).
 #
-# Usage: bash scripts/build.sh [timeout_seconds]
-#   timeout_seconds defaults to 120; effective timeout is floored at 240.
+# FIX (2026-06-17 T-20260616-foot-E2E-PROD-WRITE-ISOLATION FIX-REQUEST):
+#   Root cause of the recurring false build_fail is PHYSICS, not build.sh: the
+#   supervisor QA harness kills the *foreground* command at a ~50s safety
+#   ceiling. Under parallel-worktree CPU contention a ~14s build can exceed 50s,
+#   so a synchronous `build.sh` (whatever its internal 240s floor) gets killed
+#   externally → exit 124 → false build_fail. No synchronous command can return
+#   in 50s when the build needs 70s of wall-clock.
+#
+#   NEW `--bg` MODE (the alternative the FIX-REQUEST asked for): launches the
+#   build DETACHED in its own session (survives the foreground kill) and polls
+#   only up to a sub-ceiling deadline (default 45s). It ALWAYS returns a clean
+#   `RESULT:` line within the window — OK / FAIL / RUNNING. On RUNNING the build
+#   keeps going detached; a follow-up `build.sh --status` reads the verdict.
+#
+#     QA build command (recommended):
+#       bash scripts/build.sh --bg 45      # → RESULT: OK | FAIL | RUNNING
+#       bash scripts/build.sh --status     # poll if RUNNING → RESULT: OK | FAIL
+#
+# Usage:
+#   bash scripts/build.sh [timeout_seconds]   # SYNCHRONOUS (legacy, unchanged)
+#   bash scripts/build.sh --bg [deadline]     # DETACHED + bounded poll (QA-safe)
+#   bash scripts/build.sh --status            # read last detached build verdict
+#   bash scripts/build.sh --wait [deadline]   # poll an in-flight detached build
+#     timeout_seconds defaults to 120; effective timeout is floored at 240.
+#     deadline defaults to 45 (kept under the 50s foreground ceiling).
 #
 # DO NOT run: timeout 60 npm run build
-#   → Use this script or plain: npm run build
+#   → Use this script (prefer --bg for QA) or plain: npm run build
 
 set -euo pipefail
 
@@ -32,12 +55,36 @@ set -euo pipefail
 # the false-build_fail class without masking a genuinely hung build (it still
 # dies at 240s).
 TIMEOUT_FLOOR=240
-REQUESTED_TIMEOUT="${1:-120}"
+MODE="sync"
+DEADLINE=45
+case "${1:-}" in
+  --bg|--background)   MODE="bg";     DEADLINE="${2:-45}" ;;
+  --status)            MODE="status" ;;
+  --wait)              MODE="wait";   DEADLINE="${2:-45}" ;;
+esac
+
+# For sync mode the (possibly numeric) first arg is the requested timeout.
+if [ "$MODE" = "sync" ]; then
+  REQUESTED_TIMEOUT="${1:-120}"
+else
+  REQUESTED_TIMEOUT=120
+fi
 if [ "$REQUESTED_TIMEOUT" -gt "$TIMEOUT_FLOOR" ] 2>/dev/null; then
   TIMEOUT_SECS="$REQUESTED_TIMEOUT"
 else
   TIMEOUT_SECS="$TIMEOUT_FLOOR"
 fi
+
+# ── detached-build state (.build/ is gitignored) ─────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR=".build"
+LOG_FILE="$STATE_DIR/build.log"
+PID_FILE="$STATE_DIR/build.pid"
+RESULT_FILE="$STATE_DIR/build.result"
+
+build_running() {
+  [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null
+}
 
 # ── dependency guard (git worktree / fresh clone) ────────────────────────────
 # node_modules/.bin/tsc is required by `npm run build`.
@@ -56,6 +103,7 @@ fi
 #   When that checkout already has node_modules AND its package-lock.json is
 #   identical (same deps), we symlink it — near-instant, no install at all.
 #   Lock mismatch (feature branch changed deps) → fall back to npm ci.
+ensure_deps() {
 if [ ! -f "node_modules/.bin/tsc" ]; then
   echo "[build.sh] node_modules/.bin/tsc not found — resolving dependencies ..."
   DEP_START=$(date +%s)
@@ -97,7 +145,84 @@ if [ ! -f "node_modules/.bin/tsc" ]; then
 
   echo "[build.sh] dependency setup complete in $(( $(date +%s) - DEP_START ))s."
 fi
+}
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ── detached-build helpers (--bg / --status / --wait) ────────────────────────
+# Print the verdict for an already-finished or in-flight detached build.
+#   exit 0  → RESULT: OK
+#   exit !0 → RESULT: FAIL (code echoed) — caller treats as build_fail
+#   RUNNING is NOT a failure: exit 0 so the harness records a clean return; the
+#   build is still alive detached and a follow-up --status reads the verdict.
+report_detached() {
+  if [ -f "$RESULT_FILE" ]; then
+    local r; r="$(cat "$RESULT_FILE" 2>/dev/null || true)"
+    if [ "$r" = "OK" ]; then
+      echo "RESULT: OK"
+      return 0
+    fi
+    echo "RESULT: FAIL ($r)" >&2
+    echo "---- last 30 lines of $LOG_FILE ----" >&2
+    tail -30 "$LOG_FILE" 2>/dev/null >&2 || true
+    return "${r#FAIL:}"
+  fi
+  if build_running; then
+    echo "RESULT: RUNNING (detached pid $(cat "$PID_FILE")) — re-run: bash scripts/build.sh --status"
+    return 0
+  fi
+  echo "RESULT: NONE (no detached build found — run: bash scripts/build.sh --bg)" >&2
+  return 3
+}
+
+# Poll for up to DEADLINE seconds, then report whatever state we have.
+poll_detached() {
+  local waited=0
+  while [ "$waited" -lt "$DEADLINE" ]; do
+    # Verdict written → done.
+    [ -f "$RESULT_FILE" ] && break
+    # Stop early ONLY for a confirmed crash: the runner recorded its pid but
+    # that process is now gone AND no result was written. Before the pid file
+    # exists we are still in the runner's startup window — keep waiting.
+    if [ -f "$PID_FILE" ] && ! build_running; then
+      break
+    fi
+    sleep 1
+    waited=$(( waited + 1 ))
+  done
+  report_detached
+}
+
+if [ "$MODE" = "status" ]; then
+  report_detached
+  exit $?
+fi
+
+if [ "$MODE" = "wait" ]; then
+  poll_detached
+  exit $?
+fi
+
+if [ "$MODE" = "bg" ]; then
+  if build_running; then
+    echo "[build.sh] adopting in-flight detached build (pid $(cat "$PID_FILE"))"
+  else
+    ensure_deps
+    mkdir -p "$STATE_DIR"
+    rm -f "$RESULT_FILE" "$PID_FILE"
+    : > "$LOG_FILE"
+    # Launch fully detached: _build_runner.py calls os.setsid() so it leaves
+    # build.sh's process group and survives the supervisor's foreground kill.
+    nohup python3 "$SCRIPT_DIR/_build_runner.py" \
+      "$TIMEOUT_SECS" "$LOG_FILE" "$RESULT_FILE" "$PID_FILE" >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    echo "[build.sh] started detached build (timeout ${TIMEOUT_SECS}s, foreground deadline ${DEADLINE}s)"
+  fi
+  poll_detached
+  exit $?
+fi
+
+# ── SYNCHRONOUS MODE (legacy, unchanged) ─────────────────────────────────────
+ensure_deps
 
 # Start build in background
 npm run build &
