@@ -11,6 +11,7 @@ import FootToeIllustration from '@/components/FootToeIllustration';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-1): 패키지 탭 치료부위 우측 상단 KOH ON/OFF 토글
 import KohRequestToggle from '@/components/KohRequestToggle';
+import BloodTestRequestToggle from '@/components/BloodTestRequestToggle';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
@@ -5662,8 +5663,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 {/* AC-1: 치료부위 우측 상단 KOH 균검사 ON/OFF 토글 — KOH 검사 이력 있는 환자에게 노출.
                     T-20260616-foot-KOHTOGGLE-NOTRENDER: latestCheckIn(단일 최근 내원) 키잉 시 재방문 환자에게서 토글 소멸.
                     customerId 로 전환 → KOH 보유 가장 최근 내원을 컴포넌트 내부에서 타겟팅(재방문 무관 노출). */}
-                <div className="absolute right-3 top-3 z-10">
+                {/* AC-1: KOH 토글 + 바로 하단 피검사 토글(T-20260615-foot-BLOODTEST-TOGGLE-ADD). 우측 상단 세로 스택. */}
+                <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-1.5">
                   <KohRequestToggle customerId={customer?.id ?? null} />
+                  <BloodTestRequestToggle customerId={customer?.id ?? null} />
                 </div>
                 <FootToeIllustration
                   value={treatmentToes}
