@@ -263,7 +263,10 @@ export interface MedicalChartPanelProps {
   embed?: boolean;
   // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 저장 성공 직후 호출(인라인 아코디언 접기용).
   //   저장 로직 자체는 무변경 — 성공 후 presentation 콜백만 추가.
-  onSaved?: () => void;
+  // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 방금 저장한 임상경과 본문을 인자로 전달
+  //   → caller(진료대시보드)가 미리보기 맵을 즉시 optimistic 갱신(refetch 왕복 대기 없는 체감 0지연).
+  //   인자 옵셔널 — 기존 `() =>` caller 는 인자 무시(하위호환).
+  onSaved?: (savedClinical?: string) => void;
   // T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3, 문지은 대표원장):
   //   caller-forced 읽기전용 게이트. 진료환자목록 펼침 패널에서 '당일 외(과거/미래) 접수' 환자의
   //   임상경과 오기입 차단용 — readOnly=true 면 textarea readOnly + 저장 버튼(embed footer) 미노출.
@@ -1253,7 +1256,8 @@ export default function MedicalChartPanel({
       setSignerAuditRefresh((n) => n + 1); // AC-P2-3: 변경이력 패널 재조회
       loadData();
       // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 저장 성공 → 인라인 아코디언 접기(presentation only).
-      onSaved?.();
+      // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 방금 저장한 임상경과 본문 전달(optimistic 미리보기용).
+      onSaved?.(formClinical.trim() || undefined);
     } catch (err: unknown) {
       toast.error(`저장 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
     } finally {
