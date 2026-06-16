@@ -1,0 +1,19 @@
+{
+  "sets": 19,
+  "total_items": 19,
+  "single_item_sets": 19,
+  "multi_item_sets": 0,
+  "item_has_cid": 0,
+  "item_null_cid": 19,
+  "distinct_drugs": 19,
+  "matchable": 0,
+  "new_codes_needed": 19,
+  "loose_match": 0,
+  "ambiguous": 0,
+  "folder_assign": 19,
+  "migrate_folder_exists": false,
+  "qrb_total": 1,
+  "qrb_cascade_delete": 1,
+  "qrb_cascade_active": 1,
+  "qrb_referenced_sets": 1
+}
