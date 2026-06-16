@@ -86,6 +86,7 @@ import {
   loadFootBillingItems,
   loadCustomerInsuranceGrade,
   buildFootBillDetailItems,
+  fillBillItemCopayment,
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
 
@@ -1761,6 +1762,11 @@ function IssueDialog({
         is_insurance_covered: item.is_insurance_covered,
         copayment_amount: item.copayment_amount ?? undefined,
       }));
+      // T-20260616-foot-DOCFORM-3FIX-REGRESSION 회귀 RC: Path A(service_charges 직결)는 0cbbdc2
+      //   의 per-item 본인부담금 배분 미적용 → 급여 본인/공단 컬럼 공란 잔존(박민석 케이스).
+      //   covered 항목 전체가 copayment_amount 미설정일 때만 등급기준 집계 copaymentTotal 을
+      //   비례배분해 채운다(무파괴: DB 값 있으면 미개입). 합계 = 진료비계산서 {{copayment}} 정합.
+      fillBillItemCopayment(billItems, customerInsuranceGrade);
       base.items_html = buildBillDetailItemsHtml(billItems);
       const nonCoveredTotal = billItems
         .filter((i) => !i.is_insurance_covered)
