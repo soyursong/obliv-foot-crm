@@ -25,6 +25,63 @@ import { supabase } from './supabase';
 
 export type TaxClass = '비급여(과세)' | '비급여(면세)' | '급여';
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * T-20260616-foot-PKG-OUTSTANDING-BALANCE — 패키지 미수금(잔금) 산출 단일소스(SSOT)
+ *
+ * 잔금은 캐시컬럼이 아니라 파생값이다(정합성 우선, data-architect GO 2026-06-16):
+ *   패키지 잔금  = packages.total_amount    − Σ signed(package_payments.amount WHERE fee_kind='package')
+ *   진료비 잔금  = packages.consultation_fee − Σ signed(package_payments.amount WHERE fee_kind='consultation')
+ *   signed: payment_type='refund' → 음수.
+ *
+ * ★ §4-A 제약: 패키지 금액/진료비 금액(및 각 잔금)을 합산한 단일 "총금액" 표기 절대 금지.
+ *   → 이 모듈은 두 잔금을 **각각** 반환하며, 합산 헬퍼를 의도적으로 제공하지 않는다.
+ *
+ * 성능: 패키지 목록(최대 200행)은 결제행 조인 대신 동기화 캐시 paid_amount 를 net 으로 사용해도 무방
+ *   (Packages.tsx 가 결제 변경 시 paid_amount = Σpackage_payments 로 재동기화). 상세/정밀 경로는
+ *   결제행에서 netPaidFromPayments() 로 정확히 산출한다.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export type BalanceStatus = 'paid' | 'due' | 'over';
+
+export interface PackagePaymentRow {
+  amount: number;
+  payment_type?: string | null;  // 'payment' | 'refund'
+  fee_kind?: string | null;      // 'package' | 'consultation'
+}
+
+/** 결제행 → 순납부액(Σpayment − Σrefund). feeKind 지정 시 해당 귀속분만 합산(미지정 행은 'package'로 간주). */
+export function netPaidFromPayments(
+  payments: PackagePaymentRow[] | null | undefined,
+  feeKind?: 'package' | 'consultation',
+): number {
+  if (!payments) return 0;
+  return payments.reduce((sum, p) => {
+    if (feeKind && (p.fee_kind ?? 'package') !== feeKind) return sum;
+    const signed = p.payment_type === 'refund' ? -(p.amount ?? 0) : (p.amount ?? 0);
+    return sum + signed;
+  }, 0);
+}
+
+/** 잔금 = 총액 − 순납부액. 음수면 과수(환불검토). 반올림(정수원 도메인). */
+export function computeOutstanding(
+  totalAmount: number | null | undefined,
+  netPaid: number | null | undefined,
+): number {
+  return Math.round((totalAmount ?? 0) - (netPaid ?? 0));
+}
+
+/** 잔금 상태: >0 미수(due) / <0 과수(over) / 0 완납(paid). */
+export function balanceStatus(outstanding: number): BalanceStatus {
+  if (outstanding > 0) return 'due';
+  if (outstanding < 0) return 'over';
+  return 'paid';
+}
+
+/** 상태 한국어 라벨(뱃지·배너용). */
+export function balanceStatusLabel(status: BalanceStatus): string {
+  return status === 'due' ? '미수' : status === 'over' ? '과수' : '완납';
+}
+
 /**
  * T-20260610-foot-PKGCLASS-SESSION1-SINGLE — 회수=1 패키지 = 단건 결제 자동 분류.
  *

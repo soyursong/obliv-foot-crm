@@ -423,6 +423,9 @@ export interface Package {
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목
   reborn_sessions?: number;
   reborn_unit_price?: number;
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE: 진료비 금액(패키지 금액 total_amount 과 별도, 합산표기 금지).
+  // 마이그(20260617120000) ADDITIVE NOT NULL DEFAULT 0. 마이그 미적용 환경 대비 옵셔널 표기.
+  consultation_fee?: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
