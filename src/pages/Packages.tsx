@@ -21,7 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
-import { isSinglePaymentByCount } from '@/lib/footBilling';
+import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
@@ -132,6 +132,8 @@ export default function Packages() {
               <th className="px-3 py-2 text-left font-medium">패키지</th>
               <th className="px-3 py-2 text-right font-medium">총회차</th>
               <th className="px-3 py-2 text-right font-medium">금액</th>
+              {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE §7: 잔금 컬럼(전체−납부, 0이면 '—'). 합산 단일표기 아님. */}
+              <th className="px-3 py-2 text-right font-medium">잔금</th>
               <th className="px-3 py-2 text-left font-medium">계약일</th>
               <th className="px-3 py-2 text-left font-medium">상태</th>
               {isAdmin && <th className="px-3 py-2 text-center font-medium">관리</th>}
@@ -151,6 +153,16 @@ export default function Packages() {
                 <td className="px-3 py-2">{p.package_name}</td>
                 <td className="px-3 py-2 text-right">{p.total_sessions}</td>
                 <td className="px-3 py-2 text-right">{formatAmount(p.total_amount)}</td>
+                {/* 잔금 = 패키지 금액 − 순납부(paid_amount 캐시 = Σpackage_payments). 0/완납이면 '—'(0이면 생략). */}
+                {(() => {
+                  const outstanding = computeOutstanding(p.total_amount, p.paid_amount);
+                  const st = balanceStatus(outstanding);
+                  return (
+                    <td className={cn('px-3 py-2 text-right tabular-nums', st === 'due' ? 'font-semibold text-red-600' : st === 'over' ? 'text-amber-600' : 'text-muted-foreground')}>
+                      {st === 'paid' ? '—' : formatAmount(Math.abs(outstanding))}
+                    </td>
+                  );
+                })()}
                 <td className="px-3 py-2 text-muted-foreground">{p.contract_date}</td>
                 <td className="px-3 py-2">
                   <Badge
@@ -200,7 +212,7 @@ export default function Packages() {
             ))}
             {!loading && visible.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 7 : 6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '패키지 없음'}
                 </td>
               </tr>
@@ -1365,6 +1377,35 @@ function PackageDetailSheet({
               </div>
             </div>
           </div>
+
+          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE: 미수금(잔금) = 패키지 금액 − 순납부(납부−환불). 파생값, 합산 단일표기 아님. */}
+          {(() => {
+            const outstanding = computeOutstanding(pkg.total_amount, totalPaid - totalRefunded);
+            const st = balanceStatus(outstanding);
+            return (
+              <div
+                className={cn(
+                  'flex items-center justify-between rounded-lg px-3 py-2',
+                  st === 'due' ? 'bg-red-50' : st === 'over' ? 'bg-amber-50' : 'bg-emerald-50',
+                )}
+              >
+                <div className="text-xs text-muted-foreground">미수금 (패키지 잔금)</div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'text-base font-bold tabular-nums',
+                      st === 'due' ? 'text-red-600' : st === 'over' ? 'text-amber-600' : 'text-emerald-600',
+                    )}
+                  >
+                    {st === 'paid' ? formatAmount(0) : formatAmount(Math.abs(outstanding))}
+                  </span>
+                  <Badge variant={st === 'due' ? 'destructive' : st === 'over' ? 'outline' : 'teal'}>
+                    {balanceStatusLabel(st)}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })()}
 
           {pkg.status === 'active' && (
             <div className="flex flex-wrap gap-2">
