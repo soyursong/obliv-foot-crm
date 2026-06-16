@@ -5621,9 +5621,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   패키지명 조건 없이 패키지 탭 상단에 항상 고정 노출. 양발 발가락 10개 멀티선택.
                   저장: latestCheckIn.treatment_memo.foot_sites(신규 컬럼 0). 1번차트는 이 값 read-only 연동. */}
               <div className="relative rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
-                {/* AC-1: 치료부위 우측 상단 KOH 균검사 ON/OFF 토글 — 금일 균검사 service 있을 때만 노출 */}
+                {/* AC-1: 치료부위 우측 상단 KOH 균검사 ON/OFF 토글 — KOH 검사 이력 있는 환자에게 노출.
+                    T-20260616-foot-KOHTOGGLE-NOTRENDER: latestCheckIn(단일 최근 내원) 키잉 시 재방문 환자에게서 토글 소멸.
+                    customerId 로 전환 → KOH 보유 가장 최근 내원을 컴포넌트 내부에서 타겟팅(재방문 무관 노출). */}
                 <div className="absolute right-3 top-3 z-10">
-                  <KohRequestToggle checkInId={latestCheckIn?.id ?? null} />
+                  <KohRequestToggle customerId={customer?.id ?? null} />
                 </div>
                 <FootToeIllustration
                   value={treatmentToes}
