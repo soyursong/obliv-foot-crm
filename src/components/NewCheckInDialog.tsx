@@ -16,6 +16,9 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
+// T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 재방 미수금 배너/뱃지 (자동 문자 발송 없음 — 화면 표기만)
+import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
+import { PkgOutstandingBadge } from '@/components/PkgOutstandingBadge';
 import type { Reservation, VisitType } from '@/lib/types';
 
 interface Props {
@@ -42,6 +45,9 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   const [linkedReservation, setLinkedReservation] = useState<Reservation | null>(null);
   /** 인라인 검색으로 선택된 기존 고객 */
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 예약 고객 미수금 맵(row 뱃지) + 선택 고객 미수금(배너)
+  const [outstandingMap, setOutstandingMap] = useState<Map<string, CustomerOutstanding>>(new Map());
+  const [selectedOutstanding, setSelectedOutstanding] = useState<CustomerOutstanding | null>(null);
 
   /** 폼 전체 초기화 — 제출 완료 후 또는 다이얼로그 닫힐 때 호출 */
   const resetDialog = () => {
@@ -51,6 +57,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setLinkedReservation(null);
     setSelectedCustomerId(null);
     setTodayReservations([]);
+    setSelectedOutstanding(null);
   };
 
   useEffect(() => {
@@ -86,9 +93,25 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       } else {
         setResvChartMap(new Map());
       }
+      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 예약 고객 활성 패키지 미수금 일괄 조회(row 뱃지용).
+      setOutstandingMap(custIds.length > 0 ? await loadCustomerOutstanding(custIds, clinicId) : new Map());
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clinicId]);
+
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 고객 식별(검색/예약 연결) 시 미수금 조회 → 배너.
+  useEffect(() => {
+    if (!open || !clinicId || !selectedCustomerId) { setSelectedOutstanding(null); return; }
+    const cached = outstandingMap.get(selectedCustomerId);
+    if (cached) { setSelectedOutstanding(cached); return; }
+    let cancelled = false;
+    (async () => {
+      const m = await loadCustomerOutstanding([selectedCustomerId], clinicId);
+      if (!cancelled) setSelectedOutstanding(m.get(selectedCustomerId) ?? null);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomerId, open, clinicId]);
 
   const selectReservation = (r: Reservation) => {
     setLinkedReservation(r);
@@ -298,6 +321,8 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
                     <span className="text-xs text-muted-foreground">
                       {r.reservation_time?.slice(0, 5)}
                     </span>
+                    {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 예약 row 잔금 뱃지(잔금>0만) */}
+                    <PkgOutstandingBadge data={r.customer_id ? outstandingMap.get(r.customer_id) : undefined} />
                   </span>
                   <Badge variant="secondary" className="text-xs">
                     {r.visit_type === 'new' ? '신규' : '재진'}
@@ -330,6 +355,18 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
             >
               해제
             </Button>
+          </div>
+        )}
+
+        {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 재방 미수금 배너 — 미수금>0 데스크 경고.
+            §4-A: 패키지/진료비 잔금 별도 표기. 자동 SMS/알림톡 독촉 없음(화면 표기만). */}
+        {selectedOutstanding && (selectedOutstanding.packageDue > 0 || selectedOutstanding.consultationDue > 0) && (
+          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2" data-testid="checkin-outstanding-banner">
+            <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
+              <span>⚠ 미수금 있음</span>
+              <PkgOutstandingBadge data={selectedOutstanding} />
+            </div>
+            <div className="mt-0.5 text-[11px] text-red-600">결제 화면에서 잔금을 안내·수납하세요.</div>
           </div>
         )}
 

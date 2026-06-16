@@ -82,6 +82,72 @@ export function balanceStatusLabel(status: BalanceStatus): string {
   return status === 'due' ? '미수' : status === 'over' ? '과수' : '완납';
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * T-20260616-foot-PKG-OUTSTANDING-BALANCE ②③④ — 고객별 패키지 미수금 배치 조회.
+ *
+ * 대기열·예약 '잔금 O원' 뱃지(②)/체크인 미납 팝업(③)/결제 잔금 프리필(④)의 공유 소스.
+ * 활성 패키지의 패키지 잔금(fee_kind='package')만 합산한다(§4-A: 진료비 합산 금지 —
+ * 진료비 잔금은 별도 표기/별도 결제). per-package outstanding>0 분만 합산(과수는 미반영).
+ * 결제행 직접 산출(netPaidFromPayments)로 fee_kind 분리 정확. 리스트 N은 작아 1+1 쿼리로 충분.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export interface CustomerOutstanding {
+  /** 패키지 잔금 합(fee_kind='package', per-package due>0만 합산). */
+  packageDue: number;
+  /** 진료비 잔금 합(fee_kind='consultation', per-package due>0만 합산). §4-A: 패키지 잔금과 별도. */
+  consultationDue: number;
+  /** 잔금>0인 활성 패키지 1건(프리필 대상). 여러 건이면 가장 최근 due 패키지. */
+  duePackageId: string | null;
+}
+
+/** 고객 id 목록 → 고객별 패키지/진료비 미수금 Map. clinic 스코프 한정. */
+export async function loadCustomerOutstanding(
+  customerIds: string[],
+  clinicId: string,
+): Promise<Map<string, CustomerOutstanding>> {
+  const result = new Map<string, CustomerOutstanding>();
+  const ids = [...new Set(customerIds.filter(Boolean))];
+  if (ids.length === 0 || !clinicId) return result;
+
+  const { data: pkgs } = await supabase
+    .from('packages')
+    .select('id, customer_id, total_amount, consultation_fee, created_at')
+    .eq('clinic_id', clinicId)
+    .eq('status', 'active')
+    .in('customer_id', ids);
+  const pkgRows = (pkgs ?? []) as Array<{
+    id: string; customer_id: string; total_amount: number | null;
+    consultation_fee: number | null; created_at: string;
+  }>;
+  if (pkgRows.length === 0) return result;
+
+  const pkgIds = pkgRows.map((p) => p.id);
+  const { data: pays } = await supabase
+    .from('package_payments')
+    .select('package_id, amount, payment_type, fee_kind')
+    .in('package_id', pkgIds);
+  const payByPkg = new Map<string, PackagePaymentRow[]>();
+  for (const pay of (pays ?? []) as Array<PackagePaymentRow & { package_id: string }>) {
+    const arr = payByPkg.get(pay.package_id) ?? [];
+    arr.push(pay);
+    payByPkg.set(pay.package_id, arr);
+  }
+
+  // created_at 최신 우선 — duePackageId 가 가장 최근 due 패키지를 가리키도록.
+  const sorted = [...pkgRows].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  for (const pkg of sorted) {
+    const rows = payByPkg.get(pkg.id);
+    const pkgDue = computeOutstanding(pkg.total_amount, netPaidFromPayments(rows, 'package'));
+    const consultDue = computeOutstanding(pkg.consultation_fee ?? 0, netPaidFromPayments(rows, 'consultation'));
+    const prev = result.get(pkg.customer_id) ?? { packageDue: 0, consultationDue: 0, duePackageId: null };
+    if (pkgDue > 0) prev.packageDue += pkgDue;
+    if (consultDue > 0) prev.consultationDue += consultDue;
+    if ((pkgDue > 0 || consultDue > 0) && prev.duePackageId === null) prev.duePackageId = pkg.id;
+    result.set(pkg.customer_id, prev);
+  }
+  return result;
+}
+
 /**
  * T-20260610-foot-PKGCLASS-SESSION1-SINGLE — 회수=1 패키지 = 단건 결제 자동 분류.
  *

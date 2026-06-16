@@ -18,7 +18,7 @@ import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount, chartNoBadge } from '@/lib/format';
-import { isSinglePaymentByCount } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, type PackagePaymentRow } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 완료 하드차단(방어적 적용).
 import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
 import { cn } from '@/lib/utils';
@@ -92,10 +92,16 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 승인번호·TID 입력 칸 제거 (매처 자동 채움)
   // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 활성 패키지 (단건 membership 결제 시 단가 auto-fill)
   const [customerPackage, setCustomerPackage] = useState<{
+    id: string;
     package_name: string;
     total_amount: number;
     total_sessions: number;
+    consultation_fee: number;
   } | null>(null);
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 고객 활성 패키지의 패키지/진료비 잔금(파생값) + 잔금결제 모드.
+  const [pkgBalanceDue, setPkgBalanceDue] = useState(0);
+  const [consultBalanceDue, setConsultBalanceDue] = useState(0);
+  const [balanceKind, setBalanceKind] = useState<'package' | 'consultation' | null>(null);
 
   // T-20260523-foot-PKG-TMPL-LINK: clinic_id 기준으로 package_templates 로드
   useEffect(() => {
@@ -138,6 +144,10 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       setSelectedStaffId(checkIn.consultant_id ?? '');
       // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 패키지 초기화 후 재조회
       setCustomerPackage(null);
+      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 잔금 상태 초기화
+      setPkgBalanceDue(0);
+      setConsultBalanceDue(0);
+      setBalanceKind(null);
       // 활성 직원 목록 로드
       supabase
         .from('staff')
@@ -148,17 +158,35 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         .order('name')
         .then(({ data }) => { setStaffList((data ?? []) as StaffOption[]); });
       // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 활성 패키지 조회 (단건+membership 금액 auto-fill)
+      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: consultation_fee + 결제행 동반 조회 → 패키지/진료비 잔금 산출.
       if (checkIn.customer_id && checkIn.clinic_id) {
-        supabase
-          .from('packages')
-          .select('package_name, total_amount, total_sessions')
-          .eq('customer_id', checkIn.customer_id)
-          .eq('clinic_id', checkIn.clinic_id)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-          .then(({ data }) => setCustomerPackage(data ?? null));
+        (async () => {
+          const { data: pkg } = await supabase
+            .from('packages')
+            .select('id, package_name, total_amount, total_sessions, consultation_fee')
+            .eq('customer_id', checkIn.customer_id)
+            .eq('clinic_id', checkIn.clinic_id)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!pkg) { setCustomerPackage(null); setPkgBalanceDue(0); setConsultBalanceDue(0); return; }
+          const cp = {
+            id: pkg.id as string,
+            package_name: pkg.package_name as string,
+            total_amount: (pkg.total_amount as number) ?? 0,
+            total_sessions: (pkg.total_sessions as number) ?? 0,
+            consultation_fee: (pkg.consultation_fee as number) ?? 0,
+          };
+          setCustomerPackage(cp);
+          const { data: pays } = await supabase
+            .from('package_payments')
+            .select('amount, payment_type, fee_kind')
+            .eq('package_id', cp.id);
+          const rows = (pays ?? []) as PackagePaymentRow[];
+          setPkgBalanceDue(computeOutstanding(cp.total_amount, netPaidFromPayments(rows, 'package')));
+          setConsultBalanceDue(computeOutstanding(cp.consultation_fee, netPaidFromPayments(rows, 'consultation')));
+        })();
       }
     }
   }, [checkIn?.id]);
@@ -256,7 +284,41 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       }
     }
 
-    if (paymentMode === 'package') {
+    if (balanceKind) {
+      // ── T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 잔금(미수금) 결제 ──────────────
+      // 활성 패키지의 패키지 잔금(fee_kind='package') 또는 진료비 잔금(fee_kind='consultation')을
+      // package_payments 에 분리 적재한다(§4-A: 두 잔금은 별도 결제 — 합산 단일 결제 금지).
+      // 단건(payments)·신규패키지 생성 경로를 타지 않는 독립 분기. CHECK(card/cash/transfer)로
+      // membership 은 card 로 보정.
+      if (!customerPackage) {
+        toast.error('활성 패키지가 없습니다');
+        setSubmitting(false);
+        return;
+      }
+      if (amount <= 0) {
+        toast.error('금액을 입력하세요');
+        setSubmitting(false);
+        return;
+      }
+      const { error: balErr } = await supabase.from('package_payments').insert({
+        clinic_id: checkIn.clinic_id,
+        package_id: customerPackage.id,
+        customer_id: checkIn.customer_id,
+        amount,
+        method: method === 'membership' ? 'card' : method,
+        installment: method === 'card' && installment > 0 ? installment : null,
+        memo: memo || (balanceKind === 'package' ? '패키지 잔금 결제' : '진료비 잔금 결제'),
+        payment_type: 'payment',
+        fee_kind: balanceKind,
+        external_approval_no: null,
+        external_tid: null,
+      });
+      if (balErr) {
+        toast.error(`잔금 결제 실패: ${balErr.message}`);
+        setSubmitting(false);
+        return;
+      }
+    } else if (paymentMode === 'package') {
       // AC-5(B): package_payments CHECK ❌ membership 제외 — submit 가드
       if (!isSplit && method === 'membership') {
         toast.error('패키지 결제는 멤버십 결제수단을 지원하지 않습니다');
@@ -551,7 +613,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       });
     }
 
-    toast.success(paymentMode === 'package' ? '패키지 결제 완료' : '결제 완료');
+    toast.success(balanceKind ? '잔금 결제 완료' : paymentMode === 'package' ? '패키지 결제 완료' : '결제 완료');
     onPaid();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '결제 처리 중 오류가 발생했습니다';
@@ -587,10 +649,10 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setPaymentMode('single')}
+                onClick={() => { setPaymentMode('single'); setBalanceKind(null); }}
                 className={cn(
                   'flex-1 rounded-md border py-2 text-sm font-medium transition',
-                  paymentMode === 'single'
+                  paymentMode === 'single' && !balanceKind
                     ? 'border-teal-600 bg-teal-50 text-teal-700'
                     : 'border-input hover:bg-muted',
                 )}
@@ -602,6 +664,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                 onClick={() => {
                   if (canShowPackageMode) {
                     setPaymentMode('package');
+                    setBalanceKind(null);
                     // AC-5: 패키지 모드 전환 시 membership이 선택돼 있으면 card로 리셋
                     if (method === 'membership') setMethod('card');
                   }
@@ -627,6 +690,44 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             {paymentMode === 'package' && !canShowPackageMode && (
               <div className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 이미 패키지가 연결된 체크인입니다. 패키지 페이지에서 회차 소진하세요.
+              </div>
+            )}
+
+            {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 활성 패키지 미수금(잔금) 안내 + 잔금 프리필 결제.
+                §4-A: 패키지 잔금/진료비 잔금 각각 별도 표기·별도 결제(합산 단일표기 금지). */}
+            {customerPackage && (pkgBalanceDue > 0 || consultBalanceDue > 0) && (
+              <div className="rounded-md border border-red-200 bg-red-50/60 p-3 space-y-2" data-testid="payment-balance-panel">
+                <div className="text-xs font-semibold text-red-700">미수금 — {customerPackage.package_name}</div>
+                {pkgBalanceDue > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-gray-700">패키지 잔금 <span className="font-bold text-red-600 tabular-nums">{formatAmount(pkgBalanceDue)}</span></span>
+                    <Button
+                      type="button" size="sm" variant={balanceKind === 'package' ? 'default' : 'outline'}
+                      data-testid="btn-pay-package-balance"
+                      onClick={() => { setBalanceKind('package'); setPaymentMode('single'); setIsSplit(false); setAmountStr(String(pkgBalanceDue)); if (method === 'membership') setMethod('card'); }}
+                    >
+                      잔금 결제
+                    </Button>
+                  </div>
+                )}
+                {consultBalanceDue > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-gray-700">진료비 잔금 <span className="opacity-60">(별도)</span> <span className="font-bold text-amber-600 tabular-nums">{formatAmount(consultBalanceDue)}</span></span>
+                    <Button
+                      type="button" size="sm" variant={balanceKind === 'consultation' ? 'default' : 'outline'}
+                      data-testid="btn-pay-consultation-balance"
+                      onClick={() => { setBalanceKind('consultation'); setPaymentMode('single'); setIsSplit(false); setAmountStr(String(consultBalanceDue)); if (method === 'membership') setMethod('card'); }}
+                    >
+                      잔금 결제
+                    </Button>
+                  </div>
+                )}
+                {balanceKind && (
+                  <div className="flex items-center justify-between rounded bg-white/70 px-2 py-1 text-[11px] text-red-700">
+                    <span>{balanceKind === 'package' ? '패키지' : '진료비'} 잔금 결제 모드 — 아래 [잔금 결제]로 기록됩니다</span>
+                    <button type="button" className="underline" onClick={() => { setBalanceKind(null); setAmountStr(''); }}>일반 결제로</button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1005,9 +1106,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             >
               {submitting
                 ? '처리 중…'
-                : paymentMode === 'package'
-                  ? '패키지 결제 완료'
-                  : '결제 완료'}
+                : balanceKind
+                  ? '잔금 결제'
+                  : paymentMode === 'package'
+                    ? '패키지 결제 완료'
+                    : '결제 완료'}
             </Button>
           </DialogFooter>
         </DialogContent>

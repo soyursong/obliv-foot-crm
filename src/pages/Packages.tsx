@@ -21,7 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
-import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
@@ -1284,7 +1284,7 @@ function PackageDetailSheet({
     { id: string; session_number: number; session_type: string; session_date: string; status: string }[]
   >([]);
   const [pkgPayments, setPkgPayments] = useState<
-    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string }[]
+    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null }[]
   >([]);
   const [refundOpen, setRefundOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -1300,7 +1300,7 @@ function PackageDetailSheet({
       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete(status='deleted') 회차는 소진이력 표시에서 제외.
       supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
         .eq('package_id', packageId).neq('status', 'deleted').order('session_number', { ascending: true }),
-      supabase.from('package_payments').select('id, amount, method, payment_type, created_at')
+      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind')
         .eq('package_id', packageId).order('created_at', { ascending: false }),
     ]);
     setPkg(pkgRes.data as unknown as PackageListItem);
@@ -1378,9 +1378,10 @@ function PackageDetailSheet({
             </div>
           </div>
 
-          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE: 미수금(잔금) = 패키지 금액 − 순납부(납부−환불). 파생값, 합산 단일표기 아님. */}
+          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE: 미수금(잔금) = 패키지 금액 − 순납부(fee_kind='package'). 파생값, 합산 단일표기 아님. */}
           {(() => {
-            const outstanding = computeOutstanding(pkg.total_amount, totalPaid - totalRefunded);
+            // fee_kind 분리: 패키지 결제분만 패키지 잔금에 반영(기존 행은 backfill='package'로 동일 동작).
+            const outstanding = computeOutstanding(pkg.total_amount, netPaidFromPayments(pkgPayments, 'package'));
             const st = balanceStatus(outstanding);
             return (
               <div
@@ -1390,6 +1391,36 @@ function PackageDetailSheet({
                 )}
               >
                 <div className="text-xs text-muted-foreground">미수금 (패키지 잔금)</div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'text-base font-bold tabular-nums',
+                      st === 'due' ? 'text-red-600' : st === 'over' ? 'text-amber-600' : 'text-emerald-600',
+                    )}
+                  >
+                    {st === 'paid' ? formatAmount(0) : formatAmount(Math.abs(outstanding))}
+                  </span>
+                  <Badge variant={st === 'due' ? 'destructive' : st === 'over' ? 'outline' : 'teal'}>
+                    {balanceStatusLabel(st)}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비(별도) — consultation_fee − 순납부(fee_kind='consultation'). §4-A: 패키지 금액과 합산 단일표기 금지(별도 박스). */}
+          {((pkg.consultation_fee ?? 0) > 0 || netPaidFromPayments(pkgPayments, 'consultation') !== 0) && (() => {
+            const fee = pkg.consultation_fee ?? 0;
+            const outstanding = computeOutstanding(fee, netPaidFromPayments(pkgPayments, 'consultation'));
+            const st = balanceStatus(outstanding);
+            return (
+              <div
+                className={cn(
+                  'flex items-center justify-between rounded-lg px-3 py-2',
+                  st === 'due' ? 'bg-red-50' : st === 'over' ? 'bg-amber-50' : 'bg-emerald-50',
+                )}
+              >
+                <div className="text-xs text-muted-foreground">진료비 잔금 <span className="opacity-70">(진료비 {formatAmount(fee)} · 별도)</span></div>
                 <div className="flex items-center gap-2">
                   <span
                     className={cn(
