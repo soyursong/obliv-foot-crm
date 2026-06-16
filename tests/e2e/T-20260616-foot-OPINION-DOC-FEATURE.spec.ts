@@ -1,17 +1,43 @@
 /**
- * E2E spec — T-20260616-foot-OPINION-DOC-FEATURE (Phase 1 — FE scaffold, 영속 제외)
+ * E2E spec — T-20260616-foot-OPINION-DOC-FEATURE (Phase 2 — 영속·발행·출력)
  * 소견서(진단서) 작성 탭 — 균검사지 '옆' 신규 탭.
  *
- * 검증 대상(Phase 1):
+ * 검증 대상:
  *   S1 옵션 자동삽입(toggle) — 옵션 phrase 가 editor 본문에 줄 단위로 append/remove(AC-3).
  *   S2 수기수정 보존 — editor 텍스트가 SSOT. 빈 본문/공백 경계에서 append 정상(AC-4).
  *   S3 옵션 그리드 무결성 — F0BAETELCTF 섹션/옵션 구성, key 중복 없음.
- *   S4 Phase 경계 — '최종 발행'(AC-6)·서류 출력(AC-7) 은 Phase 1 미포함(준비중). 영속 ZERO.
+ *   S4 발행 게이트(AC-6) — isDoctor(director|doctor) 만 발행 가능.
+ *   S5 발행자 스냅샷(AC-6) — clinic_doctors 선택 → 이름/면허, 미등록 시 profile.name → '원장' fallback.
+ *   S6 source_option_name 스냅샷 — 선택 옵션 라벨 join(provenance).
+ *   S7 실 브라우저 렌더 — 소견서 탭/팝업/발행이력 섹션(균검사지 옆 신설 무회귀).
  *
- * 스타일: in-page 순수 로직 시뮬레이션 — 구현 정본(OpinionDocTab.togglePhraseInText / OPINION_SECTIONS)을
- *   모사해 회귀를 잡는다. (컴포넌트는 auth/DB 의존이라 직접 마운트 대신 로직 동치 검증 — KOH spec 동일 컨벤션.)
+ * 스타일: in-page 순수 로직 시뮬레이션 — 구현 정본(OpinionDocTab)을 모사해 회귀를 잡는다.
+ *   (컴포넌트는 auth/DB 의존이라 직접 마운트 대신 로직 동치 검증 — KOH spec 동일 컨벤션.)
  */
 import { test, expect } from '@playwright/test';
+
+// ── 정본 모사: isDoctor (QuickRxBar.tsx) — 발행 권한 게이트 ─────────────────────
+const DOCTOR_ROLES = ['director', 'admin', 'manager'];
+const isDoctor = (role: string): boolean => DOCTOR_ROLES.includes(role);
+
+// ── 정본 모사: resolveIssuer (OpinionDocTab.tsx) ──────────────────────────────
+type Doc = { id: string; name: string; license_no: string | null; is_default: boolean };
+const resolveIssuer = (
+  doctors: Doc[],
+  doctorId: string,
+  profileName: string | null,
+): { issuedBy: string | null; issuedByName: string; issuedByLicenseNo: string | null } => {
+  const doc = doctors.find((d) => d.id === doctorId) ?? null;
+  return {
+    issuedBy: doc?.id ?? null,
+    issuedByName: doc?.name || profileName || '원장',
+    issuedByLicenseNo: doc?.license_no ?? null,
+  };
+};
+
+// ── 정본 모사: source_option_name join ────────────────────────────────────────
+const joinSourceOptions = (labels: string[]): string | null =>
+  labels.filter(Boolean).join(', ') || null;
 
 // ── 정본 모사: togglePhraseInText (OpinionDocTab.tsx) ─────────────────────────
 const togglePhraseInText = (text: string, phrase: string): string => {
@@ -29,7 +55,7 @@ const togglePhraseInText = (text: string, phrase: string): string => {
 const SECTION_TITLES = ['진단서', '금기증'];
 const SAMPLE_KEYS = ['oral_o', 'oral_x', 'after_1m', 'medical_staff', 'hyperlipidemia', 'diabetes', 'pediatric'];
 
-test.describe('T-20260616-foot-OPINION-DOC-FEATURE (Phase 1 scaffold)', () => {
+test.describe('T-20260616-foot-OPINION-DOC-FEATURE (Phase 2)', () => {
   // S1 — 옵션 클릭 시 phrase 가 editor 에 자동 삽입(빈 본문)
   test('S1: 빈 editor 에 옵션 phrase append', () => {
     const phrase = '경구약 복용이 가능한 상태로 확인됩니다.';
@@ -86,19 +112,52 @@ test.describe('T-20260616-foot-OPINION-DOC-FEATURE (Phase 1 scaffold)', () => {
     expect(new Set(SAMPLE_KEYS).size).toBe(SAMPLE_KEYS.length);
   });
 
-  // S4 — Phase 경계: 발행/저장은 Phase 1 비활성(영속 ZERO). 로직상 toggle 결과는 순수 문자열만 생산.
-  test('S4: toggle 은 부수효과(저장/발행) 없는 순수 변환', () => {
+  // toggle 은 부수효과(저장/발행) 없는 순수 변환(입력 불변).
+  test('toggle 은 순수 변환(입력 불변)', () => {
     const before = '기존 본문';
     const after = togglePhraseInText(before, '추가 문구');
-    // 순수 함수 — 입력 불변
     expect(before).toBe('기존 본문');
     expect(after).toBe('기존 본문\n추가 문구');
   });
+
+  // S4 — 발행 게이트(AC-6): director|doctor(=isDoctor) 만 발행. DB INSERT RLS(is_admin_or_manager)와 동치.
+  test('S4: 발행 권한 = isDoctor(director/admin/manager) 만 true', () => {
+    expect(isDoctor('director')).toBe(true);
+    expect(isDoctor('admin')).toBe(true);
+    expect(isDoctor('manager')).toBe(true);
+    expect(isDoctor('consultant')).toBe(false);
+    expect(isDoctor('coordinator')).toBe(false);
+    expect(isDoctor('therapist')).toBe(false);
+    expect(isDoctor('staff')).toBe(false);
+  });
+
+  // S5 — 발행자 스냅샷(AC-6): 진료의 선택 시 이름/면허, 미선택/미등록 시 fallback.
+  test('S5: clinic_doctors 선택 → 이름/면허 스냅샷', () => {
+    const docs: Doc[] = [
+      { id: 'd1', name: '김원장', license_no: '12345', is_default: true },
+      { id: 'd2', name: '이원장', license_no: null, is_default: false },
+    ];
+    expect(resolveIssuer(docs, 'd1', '관리자')).toEqual({ issuedBy: 'd1', issuedByName: '김원장', issuedByLicenseNo: '12345' });
+    expect(resolveIssuer(docs, 'd2', '관리자')).toEqual({ issuedBy: 'd2', issuedByName: '이원장', issuedByLicenseNo: null });
+  });
+
+  test('S5: 진료의 미등록 → profile.name, 그것도 없으면 "원장" fallback (issued_by_name NOT NULL 보장)', () => {
+    expect(resolveIssuer([], '', '문원장')).toEqual({ issuedBy: null, issuedByName: '문원장', issuedByLicenseNo: null });
+    expect(resolveIssuer([], '', null)).toEqual({ issuedBy: null, issuedByName: '원장', issuedByLicenseNo: null });
+    expect(resolveIssuer([], '', '')).toEqual({ issuedBy: null, issuedByName: '원장', issuedByLicenseNo: null });
+  });
+
+  // S6 — source_option_name 스냅샷: 선택 라벨 join, 없으면 null.
+  test('S6: source_option_name = 선택 옵션 라벨 join (없으면 null)', () => {
+    expect(joinSourceOptions(['경구약 O', '당뇨'])).toBe('경구약 O, 당뇨');
+    expect(joinSourceOptions([])).toBeNull();
+    expect(joinSourceOptions(['', ''])).toBeNull();
+  });
 });
 
-// ── S5: 실 브라우저 렌더 — 소견서 탭 + 팝업 동선 (균검사지 옆 신설 무회귀) ───────
+// ── S7: 실 브라우저 렌더 — 소견서 탭 + 팝업 + 발행이력 섹션 (균검사지 옆 신설 무회귀) ──
 test.describe('T-20260616-foot-OPINION-DOC-FEATURE — render', () => {
-  test('S5: 진료대시보드 → 소견서 탭 렌더 + (데이터 있으면) 작성 팝업 오픈', async ({ page }) => {
+  test('S7: 진료대시보드 → 소견서 탭 렌더 + (데이터 있으면) 팝업/발행이력', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(1500);
     await page.getByRole('link', { name: '진료 대시보드' }).click();
@@ -125,8 +184,9 @@ test.describe('T-20260616-foot-OPINION-DOC-FEATURE — render', () => {
       await page.getByTestId('opinion-opt-oral_o').click();
       await page.waitForTimeout(300);
       await expect(page.getByTestId('opinion-editor')).not.toHaveValue('');
-      // 발행 버튼 = Phase 1 비활성(준비중).
-      await expect(page.getByTestId('opinion-publish-btn')).toBeDisabled();
+      // 발행 버튼 + 발행이력 섹션(AC-6/AC-7) 노출 — enabled 여부는 로그인 역할 의존이라 존재만 확인.
+      await expect(page.getByTestId('opinion-publish-btn')).toBeVisible();
+      await expect(page.getByTestId('opinion-published')).toBeVisible();
       await page.screenshot({ path: 'evidence/T-20260616-foot-OPINION-DOC-FEATURE_dialog.png', fullPage: true });
     } else {
       await page.screenshot({ path: 'evidence/T-20260616-foot-OPINION-DOC-FEATURE_empty.png', fullPage: true });
