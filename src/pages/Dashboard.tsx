@@ -3009,6 +3009,11 @@ export default function Dashboard() {
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
+  // T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK (옵션 A, read-side no-DDL):
+  //   진료콜 명단 진입순 폴백 2순위 전용 맵 — check_in_id → 명단 active 전환(to_status∈healer_waiting/purple/yellow)
+  //   최신 transitioned_at. stageStartMap(임의 to_status 최신, 위치라벨용)과 의도적으로 분리 — 의미·소비처가 다름
+  //   (stageStartMap 회귀 금지). fetchStageStarts의 *동일 fetch*에서 additive로 파생(라운드트립 추가 없음).
+  const [callEntryMap, setCallEntryMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
@@ -3855,10 +3860,22 @@ export default function Dashboard() {
       .order('transitioned_at', { ascending: false });
     // check_in_id별 가장 최근 전이 = 현재 섹션 진입 시각
     const map = new Map<string, string>();
+    // T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK: 동일 fetch에서 진료콜 진입순 폴백 2순위 맵도 파생.
+    //   명단 active 전환(to_status∈healer_waiting/purple/yellow)의 *최신* transitioned_at만 골라 담는다(desc 정렬 → 첫 매치).
+    //   healer_waiting처럼 status 전환만 되고 status_flag_history가 비는 케이스의 진입(activation)시각 복구용.
+    //   (purple/yellow는 flag라 transition row가 통상 없으나, 향후 호환 위해 set에 포함 — 없으면 자연 미반영.)
+    const callEntry = new Map<string, string>();
     for (const t of (data ?? []) as { check_in_id: string; to_status: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
+      if (
+        !callEntry.has(t.check_in_id) &&
+        (t.to_status === 'healer_waiting' || t.to_status === 'purple' || t.to_status === 'yellow')
+      ) {
+        callEntry.set(t.check_in_id, t.transitioned_at);
+      }
     }
     setStageStartMap(map);
+    setCallEntryMap(callEntry);
   }, [clinic, dateStr]);
 
   const fetchPackageLabels = useCallback(async () => {
@@ -5690,6 +5707,15 @@ export default function Dashboard() {
     return stageStartMap.get(ci.id) ?? ci.checked_in_at;
   }, [stageStartMap]);
 
+  // T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK (옵션 A, read-side no-DDL):
+  //   진료콜 명단 위젯 전용 rows — status_transitions 파생(callEntryMap)을 derivedCallEntryAt에 read-path 주입.
+  //   ⚠ 원본 rows는 *불변*(별도 배열 — 칸반/INTREATMENT-BADGE/ROOMSUMMARY 등 다른 소비처 row shape 보존, GO_WARN iii).
+  //   callEntryMap 미보유 행은 주입 없음 → callEntryTime이 ③ checked_in_at으로 정상 폴백.
+  const doctorCallRows = useMemo(
+    () => rows.map((r) => (callEntryMap.has(r.id) ? { ...r, derivedCallEntryAt: callEntryMap.get(r.id) } : r)),
+    [rows, callEntryMap],
+  );
+
   const getPkgLabel = useCallback((ci: CheckIn): PackageLabel | null => {
     if (ci.visit_type === 'new' || !ci.customer_id) return null;
     return pkgMap.get(ci.customer_id) ?? null;
@@ -6760,7 +6786,7 @@ export default function Dashboard() {
             #2: onOpenChart=고객 이름 클릭 시 진료차트(MedicalChartPanel) 직접 오픈.
             T-20260603-foot-DOCTOR-CALL-DEFAULT-MEDTAB: 기본차트 서랍이 아닌 진료차트가 기본 진입.
             데이터·집계·메모·초재진 회차 로직은 DOCTOR-CALL-LIST 그대로 보존. */}
-        <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} onOpenChart={handleOpenChartFromList} />
+        <DoctorCallListBar checkIns={doctorCallRows} onRefresh={fetchCheckIns} onOpenChart={handleOpenChartFromList} />
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
