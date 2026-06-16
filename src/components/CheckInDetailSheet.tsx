@@ -1716,7 +1716,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                         type="button"
                         disabled={linkSaving}
                         onClick={() => handleLinkCustomer(c.id)}
-                        className="shrink-0 rounded bg-teal-500 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-teal-600 disabled:opacity-50 transition"
+                        className="shrink-0 rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-neutral-900 disabled:opacity-50 transition"
                         data-testid="link-customer-btn"
                       >
                         연결

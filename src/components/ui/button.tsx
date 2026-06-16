@@ -8,11 +8,16 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // T-20260616-foot-ACTIONBTN-MONOTONE-UNIFY: primary/action 버튼 모노톤 통일.
+        // RECOLOR가 남긴 warm 강조(Umber=--primary)를 action 버튼 한정 neutral charcoal로 치환(policy_superseded).
+        // --primary 토큰 자체는 불변(활성탭·CTA 텍스트 warm 유지 → RECOLOR AC3 충돌 없음).
+        default:
+          "bg-neutral-800 text-white hover:bg-neutral-900 [a]:hover:bg-neutral-900",
+        // AC4: secondary/cancel = 흰배경 + 그레이 테두리
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-neutral-300 bg-background hover:bg-neutral-100 hover:text-foreground aria-expanded:bg-neutral-100 aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "border-neutral-300 bg-background text-foreground hover:bg-neutral-100 aria-expanded:bg-neutral-100 aria-expanded:text-foreground",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:

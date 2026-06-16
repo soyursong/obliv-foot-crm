@@ -598,7 +598,7 @@ function OpinionEditorDialog({
               </span>
               <Button
                 size="sm"
-                className="h-8 gap-1 bg-teal-600 px-3 text-xs text-white hover:bg-teal-700 disabled:opacity-40"
+                className="h-8 gap-1 bg-neutral-800 px-3 text-xs text-white hover:bg-neutral-900 disabled:opacity-40"
                 disabled={!canPublish || publishMut.isPending || !text.trim()}
                 onClick={handlePublish}
                 title={canPublish ? '소견서를 발행합니다(비가역).' : '소견서 발행은 원장(의료진) 권한입니다.'}

@@ -201,7 +201,7 @@ export function NhisLookupPanel({ customerId, clinicId: _clinicId, hiraConsent, 
               onClick={() => performLookup(true)}
               disabled={loading}
               title="다시 조회"
-              className="inline-flex items-center gap-0.5 rounded border border-blue-300 bg-white px-1.5 py-0.5 text-[10px] text-blue-700 hover:bg-blue-50 transition disabled:opacity-50"
+              className="inline-flex items-center gap-0.5 rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[10px] text-neutral-700 hover:bg-neutral-100 transition disabled:opacity-50"
             >
               <RefreshCw className={cn('h-2.5 w-2.5', loading && 'animate-spin')} />
               갱신
@@ -281,7 +281,7 @@ export function NhisLookupPanel({ customerId, clinicId: _clinicId, hiraConsent, 
               href={NHIS_EXTERNAL_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50 transition"
+              className="inline-flex items-center gap-1 rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 transition"
             >
               <ExternalLink className="h-3 w-3" />
               외부 조회 링크 (요양기관 정보마당)

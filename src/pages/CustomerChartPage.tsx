@@ -1301,7 +1301,7 @@ function TreatmentImagesSection({
                   type="button"
                   onClick={downloadSelected}
                   disabled={downloading || selectedPaths.size === 0}
-                  className="inline-flex items-center gap-1 text-xs border border-teal-400 rounded px-2 py-0.5 bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-50"
+                  className="inline-flex items-center gap-1 text-xs border border-neutral-700 rounded px-2 py-0.5 bg-neutral-800 text-white hover:bg-neutral-900 transition disabled:opacity-50"
                 >
                   {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                   선택 다운로드 ({selectedPaths.size})
@@ -1348,7 +1348,7 @@ function TreatmentImagesSection({
           <button
             type="button"
             onClick={openCameraModal}
-            className="inline-flex items-center gap-1 text-xs border border-teal-400 rounded px-2 py-0.5 bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800 transition font-medium"
+            className="inline-flex items-center gap-1 text-xs border border-neutral-700 rounded px-2 py-0.5 bg-neutral-800 text-white hover:bg-neutral-900 active:bg-neutral-900 transition font-medium"
           >
             <Camera className="h-3 w-3" />
             사진촬영
@@ -1460,7 +1460,7 @@ function TreatmentImagesSection({
                                   {!selectMode && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); openEdit(img); }}
-                                    className="absolute bottom-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-teal-600 text-white shadow"
+                                    className="absolute bottom-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-neutral-800 text-white shadow"
                                     title="편집(회전)"
                                   >
                                     <RotateCw className="h-2.5 w-2.5" />
@@ -1728,7 +1728,7 @@ function TreatmentImagesSection({
               <button
                 onClick={saveRotation}
                 disabled={savingRotation || editRotation === 0}
-                className="flex-1 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                className="flex-1 px-4 py-2 rounded-lg bg-neutral-800 text-white text-sm font-semibold hover:bg-neutral-900 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {savingRotation && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 저장
@@ -4515,7 +4515,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <button
                           onClick={savePhone}
                           disabled={savingField}
-                          className="rounded border border-teal-500 bg-teal-50 text-teal-700 text-[10px] px-1.5 py-0.5 hover:bg-teal-100 transition shrink-0"
+                          className="rounded bg-neutral-800 text-white text-[10px] px-1.5 py-0.5 hover:bg-neutral-900 transition shrink-0"
                         >저장</button>
                         <button
                           onClick={() => { setEditingPhone(false); setPhoneText(customer.phone ?? ''); }}
@@ -6271,7 +6271,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               type="button"
                               data-testid="resv-memo-save"
                               onClick={() => saveResvMemo(r.id)}
-                              className="shrink-0 h-5 px-1.5 rounded bg-teal-600 text-white text-[10px] font-medium hover:bg-teal-700 transition"
+                              className="shrink-0 h-5 px-1.5 rounded bg-neutral-800 text-white text-[10px] font-medium hover:bg-neutral-900 transition"
                             >
                               저장
                             </button>
@@ -6804,7 +6804,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     disabled={confirmingVisit}
                     onClick={() => handleVisitConfirm(true)}
                     data-testid="btn-visit-confirm-yes"
-                    className="flex-1 rounded bg-teal-600 text-white py-1.5 text-[11px] font-semibold hover:bg-teal-700 transition disabled:opacity-50"
+                    className="flex-1 rounded bg-neutral-800 text-white py-1.5 text-[11px] font-semibold hover:bg-neutral-900 transition disabled:opacity-50"
                   >
                     방문 예정 ✓
                   </button>
@@ -6950,7 +6950,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       type="button"
                       onClick={saveC22Deduct}
                       disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0 || (packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length >= 1 && !c22DeductForm.packageId)}
-                      className="flex-1 rounded bg-teal-600 text-white py-1.5 text-[10px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                      className="flex-1 rounded bg-neutral-800 text-white py-1.5 text-[10px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
                     >
                       {savingC22Deduct ? '저장 중…' : '차감'}
                     </button>
@@ -6962,8 +6962,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       className={cn(
                         'flex-1 rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50',
                         isActive
-                          ? 'bg-slate-500 text-white hover:bg-slate-600'
-                          : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100',
+                          ? 'bg-neutral-800 text-white hover:bg-neutral-900'
+                          : 'bg-background text-foreground border border-neutral-300 hover:bg-neutral-100',
                       )}
                     >
                       {savingHealerDeduct
@@ -7132,7 +7132,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="button"
                   onClick={saveResvDetail}
                   disabled={savingResvDetail}
-                  className="w-full rounded bg-teal-600 text-white py-1.5 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                  className="w-full rounded bg-neutral-800 text-white py-1.5 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
                 >
                   {savingResvDetail ? '저장 중…' : '저장'}
                 </button>
@@ -7248,7 +7248,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="button"
                   onClick={saveConsultation}
                   disabled={savingConsultation}
-                  className="w-full rounded bg-teal-600 text-white py-1.5 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                  className="w-full rounded bg-neutral-800 text-white py-1.5 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
                 >
                   {savingConsultation ? '저장 중…' : '저장'}
                 </button>
@@ -7281,7 +7281,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       type="button"
                       onClick={saveNewTreatmentMemo}
                       disabled={savingNewMemo || !newMemoText.trim()}
-                      className="w-full rounded bg-teal-600 text-white py-1.5 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                      className="w-full rounded bg-neutral-800 text-white py-1.5 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
                     >
                       {savingNewMemo ? '저장 중…' : '메모 추가'}
                     </button>
@@ -7312,7 +7312,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 type="button"
                                 onClick={saveTreatmentMemoEdit}
                                 disabled={savingEditMemo || !editingMemoText.trim()}
-                                className="flex-1 rounded bg-teal-600 text-white py-1 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                                className="flex-1 rounded bg-neutral-800 text-white py-1 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
                               >
                                 {savingEditMemo ? '저장 중…' : '수정 저장'}
                               </button>
@@ -8897,7 +8897,7 @@ function PackagePurchaseFromTemplateDialog({
           <button
             disabled={submitting || totalSessions === 0}
             onClick={submit}
-            className="h-8 rounded bg-teal-600 px-3 text-xs font-medium text-white hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-8 rounded bg-neutral-800 px-3 text-xs font-medium text-white hover:bg-neutral-900 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '구입 티켓 생성'}
           </button>
