@@ -40,7 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { PaymentDialog } from '@/components/PaymentDialog';
+import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { ReceiptUpload } from '@/components/ReceiptUpload';
 import { cn } from '@/lib/utils';
 
@@ -248,6 +248,8 @@ export default function Closing() {
   const [actualTransfer, setActualTransfer] = useState(0);
   const [memo, setMemo] = useState('');
   const [payTarget, setPayTarget] = useState<CheckIn | null>(null);
+  // T-20260616-foot-CLOSING-PAYWAIT-PMW-SWAP: 같은 checkIn 연속 재결제 시 강제 리마운트 (Dashboard BUG4 패턴)
+  const [payAttemptCounter, setPayAttemptCounter] = useState(0);
   const [showManualDialog, setShowManualDialog] = useState(false);
   /** 수기 수정 대상 (null이면 신규 추가 모드) */
   const [manualEditTarget, setManualEditTarget] = useState<ManualPaymentRow | null>(null);
@@ -1743,12 +1745,18 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
         />
       )}
 
-      {/* 결제 처리 다이얼로그 (미수 클릭 시) */}
-      <PaymentDialog
+      {/* T-20260616-foot-CLOSING-PAYWAIT-PMW-SWAP: 미수 클릭 시 결제 미니창 (레거시 PaymentDialog → PaymentMiniWindow) */}
+      <PaymentMiniWindow
+        key={`closing-mini-${payTarget?.id ?? 'none'}-${payAttemptCounter}`}
         checkIn={payTarget}
         onClose={() => setPayTarget(null)}
-        onPaid={() => {
+        onComplete={() => {
           setPayTarget(null);
+          setPayAttemptCounter((c) => c + 1);
+          refreshPayments();
+        }}
+        onSaved={() => {
+          // 시술 저장 후 미수금(결제대기) 즉시 갱신
           refreshPayments();
         }}
       />
