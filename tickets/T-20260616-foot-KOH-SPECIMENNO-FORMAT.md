@@ -12,6 +12,7 @@ data_architect_consult: 旣 ADDITIVE-GO(KOHTEST-LIFECYCLE) 스코프 내 포맷 
 db_gate: supabase/migrations/20260616180000_koh_specimen_no_format.sql (테이블 무변경·RPC body/시그니처만, supervisor DDL-diff Gate 대기)
 risk_level: GO (1/5 — RPC body/시그니처만, 테이블/enum 무변경. 旣 미호출 함수 DROP→콜러 회귀 0)
 deploy_ready: true
+commit_sha: a7b31cf8
 ---
 
 ## 요청 (NEW-TASK, planner P2 — MSG-20260616-132019-84ws)
