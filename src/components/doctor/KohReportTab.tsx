@@ -595,6 +595,7 @@ export default function KohReportTab() {
   };
 
   // 일괄 발행(AC-3: 발행 동작만 일괄, 결과값 개별입력 없음) — 선택분 순차 발행. 인쇄는 미발화(다중 창 방지).
+  //   BULK-PUBLISH(AC-4 부분실패): 성공건은 발행완료로 자연 제외, 실패건은 선택 유지 → 재시도 가능. 전체 롤백 아님.
   const handleBulkPublish = async () => {
     const targets = filtered.filter((r) => selected.has(r.id) && canPublish(r));
     if (targets.length === 0) return;
@@ -602,6 +603,7 @@ export default function KohReportTab() {
     setBulkPublishing(true);
     let ok = 0;
     let fail = 0;
+    const failedIds = new Set<string>();
     for (const r of targets) {
       try {
         const doctorName = doctorNameForRow(r, doctorMap);
@@ -609,12 +611,18 @@ export default function KohReportTab() {
         ok += 1;
       } catch {
         fail += 1;
+        failedIds.add(r.id); // AC-4: 실패 건 식별 — 선택 유지해 재시도 가능하게.
       }
     }
     setBulkPublishing(false);
-    setSelected(new Set());
+    // AC-4: 성공 건(+stale 선택)은 해제, 실패 건만 선택 유지(재시도). 성공 건은 published invalidate 로 발행완료 전이.
+    setSelected((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => { if (failedIds.has(id)) next.add(id); });
+      return next;
+    });
     if (fail === 0) toast.success(`${ok}건 일괄 발행 완료`);
-    else toast.error(`${ok}건 발행 완료, ${fail}건 실패`);
+    else toast.error(`${ok}건 발행 완료, ${fail}건 실패 — 실패 건은 선택 유지(재시도 가능)`);
   };
 
   // T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3): +1일 경과(검사 다음날부터)만 노출.
@@ -731,19 +739,18 @@ export default function KohReportTab() {
           />
         </div>
         <div className="flex items-center gap-2">
-          {/* AC-3: 일괄 발행 — 선택분(발행가능)만 발행. 발행 동작만 일괄(결과값 개별입력 없음). */}
-          {selectedCount > 0 && (
-            <Button
-              size="sm"
-              className="h-8 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
-              onClick={handleBulkPublish}
-              disabled={bulkPublishing || publishKoh.isPending}
-              data-testid="koh-bulk-publish"
-            >
-              {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-              선택 {selectedCount}건 일괄발행
-            </Button>
-          )}
+          {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 항상 노출. 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
+              발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행. */}
+          <Button
+            size="sm"
+            className="h-8 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700 disabled:opacity-40"
+            onClick={handleBulkPublish}
+            disabled={selectedCount === 0 || bulkPublishing || publishKoh.isPending}
+            data-testid="koh-bulk-publish"
+          >
+            {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
+            {selectedCount > 0 ? `선택 ${selectedCount}건 일괄발행` : '일괄발행'}
+          </Button>
           <span className="text-xs text-muted-foreground" data-testid="koh-count">
             {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
             {query.trim() && eligibleRows.length !== filtered.length && (
