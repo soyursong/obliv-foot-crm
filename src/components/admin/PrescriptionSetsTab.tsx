@@ -20,6 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import RxCountInput from '@/components/admin/RxCountInput';
+import { RX_COL } from '@/lib/rxFormat';
 import { searchServiceRxDrugs } from '@/lib/prescribableDrugs';
 import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical, Tag } from 'lucide-react';
 // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그/아이콘 vocab SSOT 공유 — 빠른처방과 동일 어휘(분기 방지).
@@ -343,7 +344,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           투여경로·용법(frequency)은 여전히 등록화면 미노출(use-time 입력 유지) — NAMEDESC AC2-2 중 route/frequency 금지만 존속. */}
       <div className="col-span-4">
         <Label className="text-[10px] flex items-center gap-1">
-          약품/시술명 *
+          {RX_COL.name} *
           {linked && (
             <span className="inline-flex items-center gap-0.5 text-[9px] text-teal-600" title="약품 마스터에 연결됨">
               <Link2 className="h-2.5 w-2.5" />연결됨
@@ -402,7 +403,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
         </div>
       </div>
       <div className="col-span-2">
-        <Label className="text-[10px]">용량</Label>
+        <Label className="text-[10px]">{RX_COL.dosage}</Label>
         <Input
           value={item.dosage}
           onChange={(e) => onChange(idx, 'dosage', e.target.value)}
@@ -413,7 +414,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
       </div>
       {/* AC-2: 횟수(count) baked default — 숫자만 저장, "회"는 RxCountInput suffix. use-time 수동 조정 가능. */}
       <div className="col-span-2">
-        <Label className="text-[10px]">횟수</Label>
+        <Label className="text-[10px]">{RX_COL.count}</Label>
         <RxCountInput
           value={item.count ?? null}
           onChange={(v) => onChange(idx, 'count', v)}
@@ -421,7 +422,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
       </div>
       {/* AC-2: 일수(days) baked default — 정수. use-time 수동 조정 가능. */}
       <div className="col-span-1">
-        <Label className="text-[10px]">일수</Label>
+        <Label className="text-[10px]">{RX_COL.days}</Label>
         <Input
           type="number"
           min={0}

@@ -54,6 +54,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 import type { CheckIn } from '@/lib/types';
@@ -2187,34 +2188,34 @@ function IssueDialog({
                           {/* T-20260517-foot-RX-DOSAGE-DYNAMIC: rx_standard 전용 용량/용법/투약일수 입력 */}
                           {template.form_key === 'rx_standard' && (
                             <div className="flex items-center gap-1 mt-1 ml-0.5">
-                              <span className="text-[10px] text-muted-foreground shrink-0">용량</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0">{RX_COL.dosage}</span>
                               <Input
                                 value={rxItemDosages[item.id]?.unit_dose ?? ''}
                                 onChange={(e) => setRxItemDosages((prev) => ({
                                   ...prev,
-                                  [item.id]: { ...prev[item.id], unit_dose: e.target.value },
+                                  [item.id]: { ...prev[item.id], unit_dose: rxDigits(e.target.value) },
                                 }))}
                                 placeholder="1"
                                 className="h-5 text-[10px] w-10 px-1 text-center"
                                 inputMode="numeric"
                               />
-                              <span className="text-[10px] text-muted-foreground shrink-0">횟수</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0">{RX_COL.count}</span>
                               <Input
                                 value={rxItemDosages[item.id]?.daily_freq ?? ''}
                                 onChange={(e) => setRxItemDosages((prev) => ({
                                   ...prev,
-                                  [item.id]: { ...prev[item.id], daily_freq: e.target.value },
+                                  [item.id]: { ...prev[item.id], daily_freq: rxDigits(e.target.value) },
                                 }))}
                                 placeholder="1"
                                 className="h-5 text-[10px] w-10 px-1 text-center"
                                 inputMode="numeric"
                               />
-                              <span className="text-[10px] text-muted-foreground shrink-0">일수</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0">{RX_COL.days}</span>
                               <Input
                                 value={rxItemDosages[item.id]?.total_days ?? ''}
                                 onChange={(e) => setRxItemDosages((prev) => ({
                                   ...prev,
-                                  [item.id]: { ...prev[item.id], total_days: e.target.value },
+                                  [item.id]: { ...prev[item.id], total_days: rxDigits(e.target.value) },
                                 }))}
                                 placeholder="7"
                                 className="h-5 text-[10px] w-10 px-1 text-center"

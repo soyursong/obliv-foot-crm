@@ -34,6 +34,7 @@ import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2, X, Sparkles, Stethoscope, FileText, FlaskConical } from 'lucide-react';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import RxCountInput from '@/components/admin/RxCountInput';
+import { RX_COL, rxDigits, rxDigitsRange } from '@/lib/rxFormat';
 // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-5: 진료차트와 동일 진단명 선택기 재사용
 //   (a) 필드 기준 앵커 드롭다운(native datalist 위치 이상 해소) (b) 상병명+코드 항상 동반.
 import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
@@ -228,7 +229,7 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
   return (
     <div className="grid grid-cols-12 gap-1.5 items-end border rounded-lg p-2.5 bg-muted/30">
       <div className="col-span-3">
-        <Label className="text-[10px]">약품/시술명 *</Label>
+        <Label className="text-[10px]">{RX_COL.name} *</Label>
         <Input
           value={item.name}
           onChange={(e) => onChange(idx, 'name', e.target.value)}
@@ -237,7 +238,7 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
         />
       </div>
       <div className="col-span-2">
-        <Label className="text-[10px]">용량</Label>
+        <Label className="text-[10px]">{RX_COL.dosage}</Label>
         <Input
           value={item.dosage}
           onChange={(e) => onChange(idx, 'dosage', e.target.value)}
@@ -254,29 +255,36 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
           className="h-7 text-xs mt-0.5"
         />
       </div>
+      {/* T-20260616-foot-RX-COLUMN-INPUT-UNIFY-ALLSCREENS AC2: 용법(frequency) 박스 숫자전용(범위 ~ 허용, 한글·영문 차단).
+          필드매핑 불변(item.frequency). 기존 자유텍스트('1일 3회') 대신 숫자/범위 코어('3'·'2~3')만 입력 — RXTABLE 표시 정본과 일치. */}
       <div className="col-span-2">
-        <Label className="text-[10px]">용법</Label>
+        <Label className="text-[10px]">{RX_COL.freq}</Label>
         <Input
+          inputMode="numeric"
           value={item.frequency}
-          onChange={(e) => onChange(idx, 'frequency', e.target.value)}
-          placeholder="1일 2회"
-          className="h-7 text-xs mt-0.5"
+          onChange={(e) => onChange(idx, 'frequency', rxDigitsRange(e.target.value))}
+          placeholder="3"
+          className="h-7 text-xs mt-0.5 text-center"
         />
       </div>
       <div className="col-span-1">
-        <Label className="text-[10px]">횟수</Label>
+        <Label className="text-[10px]">{RX_COL.count}</Label>
         <RxCountInput
           value={item.count ?? null}
           onChange={(v) => onChange(idx, 'count', v)}
         />
       </div>
       <div className="col-span-1">
-        <Label className="text-[10px]">일수</Label>
+        <Label className="text-[10px]">{RX_COL.days}</Label>
         <Input
           type="number"
+          inputMode="numeric"
           value={item.days}
-          onChange={(e) => onChange(idx, 'days', Number(e.target.value))}
-          className="h-7 text-xs mt-0.5"
+          onChange={(e) => {
+            const d = rxDigits(e.target.value);
+            onChange(idx, 'days', d === '' ? 0 : Number(d));
+          }}
+          className="h-7 text-xs mt-0.5 text-center"
           min={1}
         />
       </div>
