@@ -264,7 +264,7 @@ export default function Closing() {
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
-    queryFn: getClinic,
+    queryFn: () => getClinic(),
   });
 
   const { start, end } = useMemo(() => dayBoundsISO(date), [date]);

@@ -1898,7 +1898,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const clinic = useClinic();
   // T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 비가열 레이저 타이머 시작 버튼 시간 단위.
   // 클리닉 설정(clinics.laser_time_units, ClinicSettingsTab에서 저장)을 READ. 비었거나 null이면 폴백.
-  // 실시간 push 불요 — 설정 변경 후 재진입/새로고침 시 반영(getClinic 캐시는 페이지 재로드 시 초기화).
+  // T-20260616-foot-LASER-TIMER-SETTING-NOREFLECT: useClinic 이 window focus/visibility 시
+  //   force 재조회하므로, 다른 스테이션에서 설정을 바꾼 뒤 이 차트로 전환(refocus)하면
+  //   하드리로드 없이도 버튼이 갱신된다(getClinic 싱글톤 영구 staleness 해소).
   const laserTimerUnits = useMemo<number[]>(
     () => (clinic?.laser_time_units?.length ? clinic.laser_time_units : LASER_TIMER_FALLBACK_UNITS),
     [clinic?.laser_time_units],

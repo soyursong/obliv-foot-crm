@@ -60,7 +60,8 @@ export default function StaffPage() {
 
   const { data: clinic, refetch: refetchClinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
-    queryFn: getClinic,
+    // 설정 화면도 항상 최신값을 보여야 한다(stale 위에서 편집 시 누락 방지) → force 재조회.
+    queryFn: () => getClinic({ force: true }),
   });
 
   return (
