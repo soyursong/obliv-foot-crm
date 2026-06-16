@@ -984,7 +984,10 @@ function CallFeedRow({
                   : 'text-gray-900 hover:text-indigo-700 hover:underline',
               )}
             >
-              <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
+              {/* T-20260616-foot-DOCDASH-FONT-UNIFY AC-1 (문지은 대표원장, #foot): 이름 '과한 볼드' 해소 →
+                  font-semibold(600)→font-medium(500)로 통일. 같은 15px 클릭 데이터셀인 처방 링크(text-[15px] font-medium)와 동일 weight.
+                  size(15px)·정렬(text-left, NAMECOL)·배지·클릭→차트 동선 불변(weight만 조정). */}
+              <span className="block text-[15px] font-medium">{checkIn.customer_name}</span>
             </button>
           </div>
           {/* T-20260615-foot-DOCDASH-MEMO-ICON-TOOLTIP AC4: 이름 아래 메모 텍스트 제거 → 상태셀 MemoBell로 이전. */}
@@ -1004,7 +1007,10 @@ function CallFeedRow({
 
         {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
         <td className="px-1.5 py-1 text-center">
-          <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-call-chartno">
+          {/* T-20260616-foot-DOCDASH-FONT-UNIFY AC-2 (문지은 대표원장, #foot): 차트번호 '폰트 이상' 해소 →
+              font-mono(고정폭 monospace 글꼴이 다른 셀과 튀어 보임) 제거. tabular-nums로 표준 sans 글꼴 통일하되
+              자릿폭 정렬은 유지(같은 테이블 경과시간 셀과 동일 컨벤션). 값·포맷(chartNoDisplay) 불변. */}
+          <span className="tabular-nums text-[13px] text-gray-500" data-testid="doctor-call-chartno">
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
@@ -1303,7 +1309,10 @@ function CompletedRow({
               title="이름 클릭 — 진료차트 열기 (서랍)"
               className="min-w-[4rem] break-keep text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
             >
-              <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
+              {/* T-20260616-foot-DOCDASH-FONT-UNIFY AC-1 (문지은 대표원장, #foot): 이름 '과한 볼드' 해소 →
+                  font-semibold(600)→font-medium(500)로 통일. 같은 15px 클릭 데이터셀인 처방 링크(text-[15px] font-medium)와 동일 weight.
+                  size(15px)·정렬(text-left, NAMECOL)·배지·클릭→차트 동선 불변(weight만 조정). */}
+              <span className="block text-[15px] font-medium">{checkIn.customer_name}</span>
             </button>
           </div>
         </td>
@@ -1322,7 +1331,8 @@ function CompletedRow({
 
         {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
         <td className="px-1.5 py-1 text-center">
-          <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-completed-chartno">
+          {/* T-20260616-foot-DOCDASH-FONT-UNIFY AC-2: 진료완료 행도 활성 행과 동일 — font-mono 제거 → tabular-nums 표준 sans 통일. */}
+          <span className="tabular-nums text-[13px] text-gray-500" data-testid="doctor-completed-chartno">
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
