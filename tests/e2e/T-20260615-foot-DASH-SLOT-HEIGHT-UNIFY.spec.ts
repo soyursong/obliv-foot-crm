@@ -4,8 +4,8 @@
  *
  * 요청자: 김주연 총괄 — "다 비워져 있을 때 5개 슬롯 세로 사이즈가 동일한 형태"
  *
- * AC-1 (빈 상태 동일 높이): 5개 슬롯(치료대기·치료실·레이저실·수납대기·완료)의 컬럼 컨테이너가
- *        [치료대기] 빈 상태 기준 고정 높이(calc(100vh - 200px))로 묶여, 렌더된 슬롯 컬럼들의 픽셀 높이가 동일하다.
+ * AC-1 (빈 상태 동일 높이): 슬롯(치료대기·치료실·레이저실·수납대기·완료)의 컬럼 컨테이너가
+ *        고정 높이(REOPEN/h2c8: 상담실 자연 높이 맞춤 fixed 420px)로 묶여, 렌더된 슬롯 컬럼들의 픽셀 높이가 동일하다.
  * AC-2 (콘텐츠 비성장 + 내부 스크롤): 카드(고객박스)가 추가돼도 슬롯 컨테이너는 세로로 성장하지 않고
  *        내부 overflow-y:auto 로 처리된다. (슬롯 본문에 세로 오버플로 스크롤 보장)
  * AC-3 (target 슬롯 고정 — 콘텐츠 비연동): 조정 대상 4슬롯은 inline height(calc(100vh-200px)) 가
@@ -25,7 +25,7 @@
  * Scope 한정 (MSG-k63x 4차 명확화): 조정 대상 = 치료실·레이저실·수납대기+완료 3타입.
  *   기준 슬롯 = [치료대기](불변). gvsl: bed-grid는 컴팩트화 허용(내부 스크롤 강제 아님).
  *
- * 구현 SSOT: src/pages/Dashboard.tsx — const SLOT_COLUMN_HEIGHT = 'calc(100vh - 200px)'
+ * 구현 SSOT: src/pages/Dashboard.tsx — const SLOT_COLUMN_HEIGHT = '420px' (REOPEN/h2c8: 상담실 맞춤)
  *   slot-col-* data-testid 4종(treatment-waiting / treatment-rooms / desk / laser-rooms).
  */
 import { test, expect } from '@playwright/test';
@@ -61,19 +61,19 @@ test.describe('T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY', () => {
   });
 
   // AC-1: 렌더된 모든 슬롯 컬럼이 동일한 고정 height 인라인 스타일을 가진다 (빈/내용 무관 결정적)
-  test('AC-1: 슬롯 컬럼들이 동일한 고정 height(calc(100vh - 200px)) 스타일을 가진다', async ({ page }) => {
+  // REOPEN/h2c8: 기준값을 뷰포트 calc(100vh-200px) → 상담실 자연 높이 맞춤 fixed 420px 로 변경.
+  test('AC-1: 슬롯 컬럼들이 동일한 고정 height(420px, 상담실 맞춤) 스타일을 가진다', async ({ page }) => {
     let present = 0;
     for (const tid of SLOT_COLS) {
       const el = page.getByTestId(tid);
       if (await el.count() === 0) continue; // 방 0개 등으로 미렌더된 슬롯은 스킵
       present += 1;
-      // 브라우저 CSSOM이 calc 를 정규화(예: 'calc(-200px + 100vh)')하므로 토큰 단위로 검증.
       const styleAttr = ((await el.first().getAttribute('style')) ?? '').replace(/\s+/g, '');
       // 1) height(=고정) 선언이 존재하고 min-height 가 아니다 → 콘텐츠로 성장 불가
       expect(/(^|;)height:/.test(styleAttr), `${tid} has fixed height decl`).toBe(true);
-      // 2) 값이 뷰포트(100vh)에서 상단 영역(200px)을 뺀 calc 기준값이다
-      expect(styleAttr).toContain('100vh');
-      expect(styleAttr).toContain('200px');
+      // 2) 값이 뷰포트 비의존 fixed px(420px) — 상담실 컴팩트 높이 기준. 뷰포트 calc 아님(과거 회귀 가드).
+      expect(styleAttr, `${tid} height value`).toContain('height:420px');
+      expect(styleAttr, `${tid} 뷰포트 calc 잔존 금지`).not.toContain('100vh');
     }
     // 최소 기준 슬롯 + 1개 이상은 렌더돼야 비교 의미가 있음
     expect(present).toBeGreaterThanOrEqual(2);

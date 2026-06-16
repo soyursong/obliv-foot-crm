@@ -263,11 +263,17 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
 };
 
 // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: 대시보드 슬롯 높이 통일 기준.
-//   5개 슬롯(치료대기·치료실·레이저실·수납대기·완료) 컨테이너 높이를 이 '빈 상태 기준'
-//   고정값으로 묶는다. 카드(고객박스)가 추가돼도 컨테이너 세로 성장 금지 → 내부 overflow-y:auto.
-//   형제 슬롯 stretch 연동 제거(부모 flex items-start) → 각 슬롯 독립 고정 높이.
-//   값은 편집모드 board minHeight(calc(100vh - 200px))와 동일 — 슬롯 위 영역(헤더/타임라인) 보정 SSOT.
-const SLOT_COLUMN_HEIGHT = 'calc(100vh - 200px)';
+//   모든 슬롯(치료대기·치료실·레이저실·수납대기·완료 + 비대상 stretch 슬롯) 컨테이너 높이를
+//   이 '빈 상태 기준' 고정값으로 묶는다. 카드(고객박스)가 추가돼도 컨테이너 세로 성장 금지 → 내부 overflow-y:auto.
+//
+//   ── REOPEN/h2c8 기준값 변경 (김주연 총괄, ts 1781570110.451759) ──────────────────────
+//   기존 calc(100vh - 200px)(= 뷰포트 꽉 채움, 800px 기준 600px)이 "상담실 제외하고 다 쓸데없이 길어짐".
+//   상담실([상담실] 슬롯)은 fixed height 가 아니라 자연 콘텐츠 높이(헤더+룸 그리드, 실측 ~411px,
+//   뷰포트 비의존)로 컴팩트하게 보이는데 나머지 bordered 슬롯만 600px 로 길었던 게 원인.
+//   → 기준을 뷰포트 기반 calc → 상담실 자연 높이에 맞춘 fixed 420px 로 변경.
+//   상담실은 viewport-independent(콘텐츠 결정)라 fixed px 가 화면 크기와 무관하게 상담실과 정렬된다.
+//   초과 콘텐츠는 컬럼 본문 overflow-y:auto 로 내부 스크롤(컨테이너 비성장).
+const SLOT_COLUMN_HEIGHT = '420px';
 
 // ── 그룹 정렬 핸들용 SortableGroupItem ────────────────────────────────────────
 function SortableGroupItem({
