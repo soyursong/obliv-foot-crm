@@ -945,3 +945,27 @@ export const INSURANCE_FALLBACK_TEMPLATES: FormTemplate[] = [
 
 /** insurance 카테고리 form_key 목록 */
 export const INSURANCE_FORM_KEYS: ReadonlyArray<string> = ['ins_claim_form'];
+
+// ─── 결제미니창 서류발행 탭 비노출 양식 (T-20260616-foot-DOCPANEL-PENCHART-INSCLAIM-HIDE) ───
+
+/**
+ * 결제미니창(PaymentMiniWindow) > 서류발행 탭(DocumentPrintPanel) 목록에서만 숨기는 form_key.
+ *
+ * 펜차트 계열 4종 + 보험청구서는 임상 작성용 / 보험청구 전용 양식이라, 수납 미니창에서
+ * 환자 발행 서류를 고르는 목록에 섞여 현장 혼동을 유발 → 이 탭 목록 노출만 제거한다.
+ *
+ * ⚠️ 양식 자체 삭제 아님(db_change 없음). 본 목록은 DocumentPrintPanel 분류 단계의 '표시 필터'.
+ *    - 펜차트 4종(pen_chart / health_questionnaire_general / health_questionnaire_senior /
+ *      refund_consent)은 차트탭(PenChartTab)의 펜차트 draw 작성·발행 경로에서 그대로 사용.
+ *    - 보험청구서(ins_claim_form, category='insurance')는 별도 보험 경로에서 그대로 사용.
+ *    → 다른 surface·발행 로직·발행 이력 라벨 무영향. AC-3(원경로 보존) 자동 충족.
+ *
+ * ※ diag_opinion_v2(소견서-보험청구용)는 명세상 제거 대상 아님 → 미포함(AC-4: 보험청구서만 제거).
+ */
+export const DOC_PANEL_HIDDEN_FORM_KEYS: ReadonlyArray<string> = [
+  'pen_chart',
+  'health_questionnaire_general',
+  'health_questionnaire_senior',
+  'refund_consent',
+  'ins_claim_form',
+];
