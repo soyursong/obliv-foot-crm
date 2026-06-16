@@ -1,10 +1,10 @@
 # T-20260616-foot-BUNDLERX-DRUGNAME-MIGRATE — DB-gate evidence
-- prod: rxlomoozakkjesdqjtvd | 2026-06-16T06:29:49.812Z | mode: AUDIT-ONLY
+- prod: rxlomoozakkjesdqjtvd | 2026-06-16T07:03:39.442Z | mode: AUDIT-ONLY
 
 ## [A] read-only audit
 ```
-got: sets=19 distinct_drugs=19 new_codes=19 (folder_assign_or_new=19)
-exp: sets=19 distinct_drugs=19 new_codes=19
+got: sets=19 distinct_drugs=19 new_codes=19 ambiguous=0
+exp: sets=19 distinct_drugs=19 new_codes=19 ambiguous=0
 ```
 
 ## [GATE] PASS ✅
