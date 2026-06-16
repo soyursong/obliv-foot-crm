@@ -143,9 +143,12 @@ test.describe('AC-7 — 콜 후 _분 경과', () => {
   });
   // T-20260612-foot-DOCDASH-WAITELAPSED-POLISH supersede(AC-3): 대시보드 경과시간 표기가 '콜 후 N분'(formatSinceCall)
   //   → '+N분'(formatElapsedPlus)로 축약. formatSinceCall 순수 헬퍼는 lib 잔존(타 surface 무회귀).
+  // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1 supersede: 경과 계산 체인(elapsedMinutes→formatElapsedPlus) 보존하되
+  //   별도 칼럼 → 상태셀 인라인 이전을 위해 elapsedMin 중간변수로 분리(표시위치만 이동, 헬퍼 무회귀).
   test('대시보드가 formatElapsedPlus("+N분") 사용(콜 후 표기 축약)', () => {
     const s = DASH();
-    expect(s).toContain('formatElapsedPlus(elapsedMinutes(getCallTime(checkIn)))');
+    expect(s).toContain('elapsedMinutes(getCallTime(checkIn))');
+    expect(s).toContain('formatElapsedPlus(elapsedMin)');
     expect(s).not.toContain('formatSinceCall(elapsedMinutes');
   });
   test('formatElapsed 헬퍼는 잔존(타 surface 무회귀)', () => {
@@ -220,16 +223,19 @@ test.describe('AC-11 — 임상경과 칼럼', () => {
     expect(s).toContain('data-testid="doctor-completed-clinical-cell"');
     expect(s).toContain('useCompletedClinicalProgress');
   });
-  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT supersede(AC-3): 차트 칼럼 신설(처방 오른쪽) → 피드 테이블 9칼럼.
-  test('피드(대기) 테이블 9칼럼(차트 칼럼 신설, MONOTONE-RELAYOUT)', () => {
+  // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1 supersede: '시간(경과시간)' 칼럼 제거(✋ 옆 인라인 이전) → 피드 테이블 8칼럼.
+  //   (선행 NAME-EMOJI-CLINICAL-3FIX 가 이미 '차트' 칼럼 제거 → 9칼럼이었고, 본 티켓이 시간 칼럼까지 제거.)
+  test('피드(대기) 테이블 8칼럼(시간 칼럼 제거, ELAPSED-CLINICAL-3FIX)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
-    expect((feedThead.match(/<th /g) ?? []).length).toBe(9);
-    expect(feedThead).toContain('임상경과');
-    expect(feedThead).toContain('차트');
+    expect((feedThead.match(/<th /g) ?? []).length).toBe(8);
+    // th 라벨만 추출(주석의 '시간' 언급과 무관) — 마지막 칼럼=임상경과, '시간' th 부재.
+    const labels = (feedThead.match(/>([가-힣()]+)<\/th>/g) ?? []).map((m) => m.replace(/<\/?th>|[<>]/g, ''));
+    expect(labels).toContain('임상경과');
+    expect(labels).not.toContain('시간');
   });
   test('진료완료 expand colSpan = 8칼럼(DOCDASH_COLSPAN, SECTION-RESTRUCTURE)', () => {
     expect(DASH()).toContain('colSpan={DOCDASH_COLSPAN}');

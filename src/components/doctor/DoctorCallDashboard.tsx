@@ -107,8 +107,10 @@ const CELL_ACTION_BTN =
 //     (요청 9칼럼 순서를 contiguous prefix 로 그대로 유지, 시간만 끝에 append = 10칼럼). responder confirm 대상.
 //   · 완료 테이블은 경과시간이 UX7 에서 이미 제거(완료환자 대기시간 불요) → 9칼럼(시간 없음).
 // T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼 제거 → 10→9칼럼.
-const DOCDASH_COLSPAN = 9; // 진료 대기중(호출): 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과·시간
-const DOCDASH_COMPLETED_COLSPAN = 9; // 완료 테이블도 대기와 동일 9칼럼(끝 시간=빈칸 placeholder)
+// T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1(문지은 대표원장): 별도 '시간(경과시간)' 칼럼 제거 →
+//   "+N분"을 상태 셀 ✋ 옆 인라인으로 이전. 두 테이블 모두 9→8칼럼.
+const DOCDASH_COLSPAN = 8; // 진료 대기중(호출): 방·상태(✋+N분)·이름·생년·차트번호·오늘시술·처방·임상경과
+const DOCDASH_COMPLETED_COLSPAN = 8; // 완료 테이블도 대기와 동일 8칼럼(시간 칼럼 제거)
 
 // T-20260612-foot-CHARTNO-B2-P1: customers 임베드(to-one)에서 차트번호 안전 추출.
 //   PostgREST 임베드는 object|array 양쪽으로 직렬화될 수 있어 둘 다 흡수(KohReportTab 흡수 패턴 동일).
@@ -427,7 +429,8 @@ export default function DoctorCallDashboard() {
 
   const { data: rows = [], isLoading, refetch } = useDoctorCallFeed(clinicId);
   // T-20260612-foot-DOCDASH-11FIX AC-11: 진료완료 환자 임상경과 미리보기 맵(customer_id → 최신 1줄).
-  const { data: clinicalMap } = useCompletedClinicalProgress(clinicId);
+  // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 칼럼 즉시 반영용 refetch.
+  const { data: clinicalMap, refetch: refetchClinical } = useCompletedClinicalProgress(clinicId);
 
   // 음소거 (localStorage 영속, AC-2)
   const [muted, setMuted] = useState<boolean>(() => loadMute());
@@ -633,7 +636,8 @@ export default function DoctorCallDashboard() {
                   방 ×0.75(5→4) · 상태 ×0.75(9→7) · 이름 ×0.50(11→6) · 처방 ×0.50(24→12). 해방된 20%p 전량을 임상경과 본문(14→34)에 재분배(나머지 불변).
                   순서·합 100%: 방 4 · 상태(✋) 7 · 이름 6 · 생년(만나이) 9 · 차트번호 8 · 오늘시술 9 · 차트 6 · 처방 12 · 임상경과 34 · 시간 5.
                   T-20260615-foot-DOCDASH-STATNAME-WIDEN-CENTER: 상태 7→8·이름 6→7(×1.2 재확대), 임상경과 34→32(차감 흡수). 합 100%.
-                  T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(6%) 제거 → 해방 6%p 전량 임상경과(32→38)에 재분배. 9칼럼 합 100%. */}
+                  T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(6%) 제거 → 해방 6%p 전량 임상경과(32→38)에 재분배. 9칼럼 합 100%.
+                  T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: '시간(경과시간)' 칼럼(5%) 제거 → 해방 5%p 전량 임상경과(32→37)에 재분배. 8칼럼 합 100%. */}
               <colgroup>
                 <col className="w-[4%]" />
                 <col className="w-[8%]" />
@@ -644,10 +648,9 @@ export default function DoctorCallDashboard() {
                 {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item3(문지은 대표원장): 처방 12%→18%(×1.5).
                     +6%p 는 임상경과(38→32)에서 흡수 — 합 100% 유지, 타 컬럼 불변, 양 테이블 동일. */}
                 <col className="w-[18%]" />
-                <col className="w-[32%]" />
-                <col className="w-[5%]" />
+                <col className="w-[37%]" />
               </colgroup>
-              {/* DOCDASH_THEAD — 3FIX item2: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과·시간 ('차트' 칼럼 제거). */}
+              {/* DOCDASH_THEAD — 3FIX item2: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과 ('차트'·'시간' 칼럼 제거). */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
                   <th className="px-1.5 py-1">방</th>
@@ -658,7 +661,6 @@ export default function DoctorCallDashboard() {
                   <th className="px-1.5 py-1">오늘시술</th>
                   <th className="px-1.5 py-1">처방</th>
                   <th className="px-1.5 py-1">임상경과</th>
-                  <th className="px-1.5 py-1">시간</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-call-feed-rows">
@@ -675,6 +677,8 @@ export default function DoctorCallDashboard() {
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
                     onRefresh={() => void refetch()}
+                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 임상경과 저장 즉시 미리보기 반영. */
+                    onClinicalSaved={() => void refetchClinical()}
                   />
                 ))}
               </tbody>
@@ -735,7 +739,8 @@ export default function DoctorCallDashboard() {
                   진료대기↔진료완료 두 테이블 칼럼 세로경계를 픽셀단위 일치(같은 테이블처럼). 접근(a): 완료 테이블을
                   대기 테이블과 '글자 그대로 동일' 10칼럼 colgroup 으로 맞추고, 시간 칼럼은 빈칸 placeholder(값 미표시, UX7 유지).
                   폭 = STATNAME-WIDEN-CENTER 확정 대기 실폭과 1:1 동일.
-                  T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(6%) 제거 → 임상경과 32→38 재분배 (대기 테이블과 동일). 9칼럼 합 100%. */}
+                  T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(6%) 제거 → 임상경과 32→38 재분배 (대기 테이블과 동일). 9칼럼 합 100%.
+                  T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: '시간' placeholder 칼럼(5%) 제거 → 임상경과 32→37 (대기 테이블과 동일). 8칼럼 합 100%. */}
               <colgroup>
                 <col className="w-[4%]" />
                 <col className="w-[8%]" />
@@ -746,10 +751,9 @@ export default function DoctorCallDashboard() {
                 {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item3(문지은 대표원장): 처방 12%→18%(×1.5).
                     +6%p 는 임상경과(38→32)에서 흡수 — 합 100% 유지, 타 컬럼 불변, 양 테이블 동일. */}
                 <col className="w-[18%]" />
-                <col className="w-[32%]" />
-                <col className="w-[5%]" />
+                <col className="w-[37%]" />
               </colgroup>
-              {/* COMPLETED THEAD — WAITDONE-ALIGN: 대기 테이블과 동일 순서·폭('차트' 칼럼 제거). 시간 칼럼은 빈 헤더(완료는 경과시간 미표시). */}
+              {/* COMPLETED THEAD — WAITDONE-ALIGN: 대기 테이블과 동일 순서·폭('차트'·'시간' 칼럼 제거). */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
                   <th className="px-1.5 py-1">방</th>
@@ -760,8 +764,6 @@ export default function DoctorCallDashboard() {
                   <th className="px-1.5 py-1">오늘시술</th>
                   <th className="px-1.5 py-1">처방</th>
                   <th className="px-1.5 py-1">임상경과</th>
-                  {/* 시간 — 대기 테이블 폭 정렬용 빈 칼럼(완료환자 경과시간 미표시, WAITFILTER-UX7 유지). */}
-                  <th className="px-1.5 py-1"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
@@ -776,6 +778,8 @@ export default function DoctorCallDashboard() {
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
                     onRefresh={() => void refetch()}
+                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 임상경과 저장 즉시 미리보기 반영. */
+                    onClinicalSaved={() => void refetchClinical()}
                   />
                 ))}
               </tbody>
@@ -840,6 +844,7 @@ function CallFeedRow({
   clinicalPreview,
   onOpenChart,
   onRefresh,
+  onClinicalSaved,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
@@ -851,11 +856,16 @@ function CallFeedRow({
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
+  /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 즉시 반영 트리거. */
+  onClinicalSaved?: () => void;
 }) {
   const inactive = checkIn.status_flag === 'pink';
   const slotName = getAssignedSlotName(checkIn);
   // T-20260612-foot-WAITELAPSED-POLISH AC-3: 콜(진료호출 purple) 시각 기준 "+N분" 분단위 컴팩트 표기('콜 후' 제거).
-  const elapsed = formatElapsedPlus(elapsedMinutes(getCallTime(checkIn)));
+  // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: 계산 로직(elapsedMinutes/formatElapsedPlus)은 그대로 재사용,
+  //   표시 위치만 별도 '시간' 칼럼 → 상태 셀 ✋ 옆 인라인. elapsedMin 으로 30분↑ 빨간색 분기.
+  const elapsedMin = elapsedMinutes(getCallTime(checkIn));
+  const elapsed = formatElapsedPlus(elapsedMin);
   const [showRx, setShowRx] = useState(false);
   // T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 팝오버 anchor(알약 버튼) — 좌표 기준점.
   const rxBtnRef = useRef<HTMLButtonElement>(null);
@@ -921,6 +931,17 @@ function CallFeedRow({
                   actor={actor}
                   onCompleted={onRefresh}
                 />
+                {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: 별도 '시간' 칼럼 폐지 → ✋ 옆 "+N분" 인라인.
+                    30분 이상 빨간색(급한 대기 환자 강조). 손 상태머신·ack 동작과 무관(표시 전용). */}
+                <span
+                  className={cn(
+                    'text-[12px] tabular-nums',
+                    elapsedMin >= 30 ? 'font-semibold text-red-500' : 'text-muted-foreground',
+                  )}
+                  data-testid="doctor-call-elapsed"
+                >
+                  {elapsed}
+                </span>
               </>
             )}
             {/* 전달사항 메모 有 → ✋/진료완료 옆 빨간 종 + hover 전문 툴팁. 無 시 미표시(AC1/AC3/AC5). */}
@@ -1074,12 +1095,8 @@ function CallFeedRow({
           )}
         </td>
 
-        {/* 9(끝). 시간 — AC-1 dev판단 기본보존(요청순서 미포함이나 경과시간 유지). 시계 이모지 제거, "+N분" 텍스트만. 중앙정렬. */}
-        <td className="px-1.5 py-1 text-center">
-          <span className="text-[13px] text-muted-foreground" data-testid="doctor-call-elapsed">
-            {elapsed}
-          </span>
-        </td>
+        {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: 별도 '시간(경과시간)' 칼럼 제거.
+            "+N분" 은 상태 셀(✋ 옆)로 이전 — elapsed testid 동일 유지(회귀 spec 보존). */}
       </tr>
 
       {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 드롭다운 펼침행(<tr colSpan>) 폐지 →
@@ -1089,19 +1106,24 @@ function CallFeedRow({
           tall 아코디언 제거 — MedicalChartPanel singleLine 모드 재사용(저장 로직·진료의 NOT NULL 강제 동일). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-call-chart-inline-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
+          {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-2: 인라인 임상경과 패널 full-width → 50% + 오른쪽 끝 정렬.
+              colSpan(8)은 폭 정렬 위해 유지하되, 내부 div(ml-auto w-1/2 overflow-hidden)로 우측 절반만 차지·내부 overflow truncate.
+              패널 내부(textarea 확대·담당의 one-row=CLINICAL-INLINE-REFINE)는 미접촉. */}
           <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2" data-testid="doctor-call-chart-inline">
-            <MedicalChartPanel
-              embed
-              open
-              variant="clinical"
-              singleLine
-              customerId={checkIn.customer_id}
-              clinicId={clinicId}
-              currentUserRole={role}
-              currentUserEmail={currentUserEmail}
-              onOpenChange={(v) => { if (!v) setShowClinical(false); }}
-              onSaved={() => setShowClinical(false)}
-            />
+            <div className="ml-auto w-1/2 overflow-hidden" data-testid="doctor-call-chart-inline-half">
+              <MedicalChartPanel
+                embed
+                open
+                variant="clinical"
+                singleLine
+                customerId={checkIn.customer_id}
+                clinicId={clinicId}
+                currentUserRole={role}
+                currentUserEmail={currentUserEmail}
+                onOpenChange={(v) => { if (!v) setShowClinical(false); }}
+                onSaved={() => { setShowClinical(false); onClinicalSaved?.(); }}
+              />
+            </div>
           </td>
         </tr>
       )}
@@ -1163,6 +1185,7 @@ function CompletedRow({
   clinicalPreview,
   onOpenChart,
   onRefresh,
+  onClinicalSaved,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
@@ -1173,6 +1196,8 @@ function CompletedRow({
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
+  /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 즉시 반영 트리거. */
+  onClinicalSaved?: () => void;
 }) {
   const slotName = getAssignedSlotName(checkIn);
   // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (POLISH AC-4 supersede): 진료 완료 섹션은 경과시간 칼럼 자체 제거(7칼럼).
@@ -1390,8 +1415,7 @@ function CompletedRow({
           )}
         </td>
 
-        {/* 시간(끝) — T-20260615-foot-DOCDASH-WAITDONE-ALIGN-CNTNUM: 대기 테이블 폭 정렬용 빈 셀(완료환자 경과시간 미표시). */}
-        <td className="px-1.5 py-1 text-center" data-testid="doctor-completed-elapsed-empty"></td>
+        {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: '시간' placeholder 칼럼 제거(대기 테이블도 칼럼 제거 → 정렬 유지). */}
       </tr>
 
       {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 드롭다운 펼침행(<tr colSpan>) 폐지 →
@@ -1400,19 +1424,22 @@ function CompletedRow({
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-completed-chart-inline-row" className="bg-white">
+          {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-2: 인라인 임상경과 패널 full-width → 50% + 오른쪽 끝 정렬(대기 섹션 동일). */}
           <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
-            <MedicalChartPanel
-              embed
-              open
-              variant="clinical"
-              singleLine
-              customerId={checkIn.customer_id}
-              clinicId={clinicId}
-              currentUserRole={role}
-              currentUserEmail={currentUserEmail}
-              onOpenChange={(v) => { if (!v) setShowClinical(false); }}
-              onSaved={() => setShowClinical(false)}
-            />
+            <div className="ml-auto w-1/2 overflow-hidden" data-testid="doctor-completed-chart-inline-half">
+              <MedicalChartPanel
+                embed
+                open
+                variant="clinical"
+                singleLine
+                customerId={checkIn.customer_id}
+                clinicId={clinicId}
+                currentUserRole={role}
+                currentUserEmail={currentUserEmail}
+                onOpenChange={(v) => { if (!v) setShowClinical(false); }}
+                onSaved={() => { setShowClinical(false); onClinicalSaved?.(); }}
+              />
+            </div>
           </td>
         </tr>
       )}
