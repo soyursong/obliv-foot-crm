@@ -1118,26 +1118,38 @@ function ClinicSettingsTab({ clinic, onSaved }: { clinic: Clinic; onSaved: () =>
     setCustomInput('');
   };
 
-  const save = async () => {
-    if (units.length === 0) {
-      toast.error('최소 1개 이상의 시간 단위를 선택하세요');
-      return;
-    }
+  // T-20260616-foot-LASER-UNIT-DELETE: 추가/삭제 공통 저장 경로(T-20260502 저장 경로 재사용).
+  const persistUnits = async (nextUnits: number[]): Promise<boolean> => {
     setSaving(true);
     const { error } = await supabase
       .from('clinics')
-      .update({ laser_time_units: units })
+      .update({ laser_time_units: nextUnits })
       .eq('id', clinic.id);
     setSaving(false);
     if (error) {
       toast.error(`저장 실패: ${error.message}`);
-      return;
+      return false;
     }
     // clinic 캐시 초기화 (React Query + 모듈 레벨)
     clearClinicCache();
     qc.invalidateQueries({ queryKey: ['clinic'] });
-    toast.success('레이저 시간 단위 저장됨');
     onSaved();
+    return true;
+  };
+
+  const save = async () => {
+    // AC-4: 빈 배열도 저장 허용(가드 제거). 타이머 측 [5,15,20] 폴백이 버튼을 보장.
+    const ok = await persistUnits(units);
+    if (ok) toast.success('레이저 시간 단위 저장됨');
+  };
+
+  // T-20260616-foot-LASER-UNIT-DELETE / AC-2: 칩 삭제 클릭 시 즉시 제거 + 저장(추가 동선의 역연산 1:1).
+  const removeUnit = async (min: number) => {
+    const next = units.filter((u) => u !== min);
+    setUnits(next);
+    const ok = await persistUnits(next);
+    if (ok) toast.success(`${min}분 삭제됨`);
+    else setUnits(units); // 저장 실패 시 롤백
   };
 
   const reset = () => {
@@ -1205,22 +1217,28 @@ function ClinicSettingsTab({ clinic, onSaved }: { clinic: Clinic; onSaved: () =>
           <div className="space-y-2">
             <Label className="text-sm font-medium">현재 설정된 단위</Label>
             {units.length === 0 ? (
-              <div className="text-xs text-muted-foreground">선택된 단위가 없습니다</div>
+              <div className="text-xs text-muted-foreground" data-testid="laser-unit-empty-hint">
+                선택된 단위가 없습니다 · 미설정 시 기본값 5·15·20분이 적용됩니다
+              </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {units.map((min) => (
                   <span
                     key={min}
+                    data-testid={`laser-unit-chip-${min}`}
                     className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-1 text-xs font-medium text-teal-800"
                   >
                     {min}분
                     <button
                       type="button"
-                      onClick={() => setUnits((prev) => prev.filter((u) => u !== min))}
-                      className="text-teal-500 hover:text-teal-800 transition"
-                      title="제거"
+                      onClick={() => removeUnit(min)}
+                      disabled={saving}
+                      aria-label={`${min}분 삭제`}
+                      data-testid={`laser-unit-delete-${min}`}
+                      className="ml-0.5 -mr-1 p-1 rounded-full text-teal-500 hover:text-teal-900 hover:bg-teal-200 transition disabled:opacity-40"
+                      title="삭제"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </span>
                 ))}
