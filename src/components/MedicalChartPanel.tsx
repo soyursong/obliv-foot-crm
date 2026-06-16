@@ -1267,20 +1267,17 @@ export default function MedicalChartPanel({
 
   // ── 임상경과 상용구 ────────────────────────────────────────────────────────────
 
-  // T-20260526-foot-PHRASE-SLASH AC-2/3: `//` 트리거 (기존 `#` 대체)
+  // T-20260616-foot-CLINPROG-SLASH-DISABLE: 임상경과 필드에 한해 `//` 슈퍼상용구 트리거 비활성화.
+  //   ⚠ REDEFINITION — T-20260526-foot-PHRASE-SLASH / T-20260607-foot-CLINCOURSE-SLASH-PHRASE-FIX
+  //   (둘 다 '임상경과 // 동작' 방향)의 정반대 지시. 같은 reporter(문지은 대표원장)가 방향 반전 →
+  //   임상경과는 `//` 슈퍼상용구를 쓰지 않는 게 확정 스펙. 선행 티켓은 superseded.
+  //   AC-1: `//` 검출 → 팝오버 발동 조건 skip. `//`는 평문 그대로 입력·저장.
+  //   슈퍼상용구 기능 자체는 유지 — 슈퍼상용구 패널(applySuperPhrase) 클릭 경로로 계속 사용 가능.
+  //   처방/펜차트/의료진전용메모 등 타 필드는 handleClinicalChange 미사용 → 영향 0.
   function handleClinicalChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const value = e.target.value;
-    setFormClinical(value);
-    const cursor = e.target.selectionStart ?? value.length;
-    const textBefore = value.substring(0, cursor);
-    // `//` 입력 후 이어지는 문자를 단축어 query로 캡처
-    const match = textBefore.match(/\/\/([^\s/]*)$/);
-    if (match) {
-      setPhraseQuery(match[1]);
-      setPhrasePopoverVisible(true);
-    } else {
-      setPhrasePopoverVisible(false);
-    }
+    setFormClinical(e.target.value);
+    // `//` 트리거 팝오버는 임상경과에서 더 이상 발동하지 않음. 잔존 표시 상태가 있으면 닫음.
+    if (phrasePopoverVisible) setPhrasePopoverVisible(false);
   }
 
   const filteredPhrases = phraseTemplates.filter(p => {
@@ -2002,7 +1999,7 @@ export default function MedicalChartPanel({
               onChange={handleClinicalChange}
               onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
               readOnly={isReadOnly}
-              placeholder="임상경과를 입력하세요  예: //통증감소"
+              placeholder="임상경과를 입력하세요"
               rows={embed ? 9 : 14}
               className={cn(
                 'text-sm resize-y placeholder:text-gray-300',
@@ -2195,7 +2192,7 @@ export default function MedicalChartPanel({
             onChange={handleClinicalChange}
             onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
             readOnly={isReadOnly}
-            placeholder="임상경과 입력  예: //통증감소"
+            placeholder="임상경과 입력"
             rows={1}
             /* T-20260612-foot-DOCDASH-11FIX AC-5: 고정 h-9 → 내용 높이만큼 auto-resize(useEffect가 scrollHeight로 확장).
                min-h 로 한 줄 기준 높이 보장, overflow-hidden 으로 스크롤 없이 전체 표시. */
@@ -3385,7 +3382,7 @@ export default function MedicalChartPanel({
                         onChange={handleClinicalChange}
                         onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
                         readOnly={isReadOnly}
-                        placeholder="임상경과를 입력하세요  예: //통증감소"
+                        placeholder="임상경과를 입력하세요"
                         rows={13}
                         className={`text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="medical-chart-clinical"
