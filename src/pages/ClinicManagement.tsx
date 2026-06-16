@@ -18,6 +18,9 @@ import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
 //   부모(PHRASEMGMT)가 제거한 'phrases' 탭 복원이 아니라, lockedType='medical_chart' 로 마운트하는 새 surface.
 //   value/testid 는 'phrases' 와 다른 신규 키(medchart_phrases) — 부모 redirect(?tab=phrases) 충돌 방지.
 import PhrasesTab from '@/components/admin/PhrasesTab';
+// T-20260616-foot-OPINION-PHRASE-MGMT-TAB: 소견서 상용구(버튼이름+자동삽입멘트) 관리.
+//   진료차트 상용구(PhrasesTab/phrase_templates)와 별개 — form_templates(opinion_doc).field_map.sections 편집(DDL 없음).
+import OpinionPhrasesTab from '@/components/admin/OpinionPhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 // T-20260606-foot-RX-SET-REDESIGN AC-R2: 약품 폴더 관리(개별 약품 분류 트리). 묶음처방(prescription_sets)과 별개.
 import DrugFoldersTab from '@/components/admin/DrugFoldersTab';
@@ -33,7 +36,7 @@ import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 // T-20260609-foot-DRUG-INSURANCE-GATE Phase1: 약품별 급여여부(보험상태) 관리 — 처방 게이트(checkRxInsuranceGate) 소스
 import InsuranceStatusTab from '@/components/admin/InsuranceStatusTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck, BookText } from 'lucide-react';
+import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck, BookText, MessageSquareText } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -41,6 +44,9 @@ export default function ClinicManagement() {
   const isAdmin = profile?.role === 'admin';
   // 급여여부 관리(InsuranceStatusTab) — admin/manager write(RLS is_admin_or_manager 일치).
   const canManageInsurance = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260616-foot-OPINION-PHRASE-MGMT-TAB (AC-1): 소견서 상용구 관리 — admin/manager only
+  //   (form_templates_admin_all RLS = is_admin_or_manager 와 일치, write 가능 role 만 탭 노출).
+  const canManageOpinionPhrases = profile?.role === 'admin' || profile?.role === 'manager';
 
   // 진료차트 우측 패널 '관리 화면으로' 진입 시 ?tab= 쿼리로 해당 탭 pre-select.
   //   (T-20260606-foot-RX-PANEL-UX-5FIX AC-5 동선 — 메뉴 분리 후 진입 경로를 clinic-management 로 이전)
@@ -62,6 +68,8 @@ export default function ClinicManagement() {
     'super_phrases',
     // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 진료차트 상용구 딥링크(?tab=medchart_phrases) 허용.
     'medchart_phrases',
+    // T-20260616-foot-OPINION-PHRASE-MGMT-TAB: 소견서 상용구 딥링크(?tab=opinion_phrases) — admin/manager only.
+    ...(canManageOpinionPhrases ? ['opinion_phrases'] : []),
     'prescriptions',
     'drug_folders',
     'diagnosis_names',
@@ -155,6 +163,13 @@ export default function ClinicManagement() {
             <BookText className="h-3.5 w-3.5" />
             진료차트 상용구
           </TabsTrigger>
+          {/* T-20260616-foot-OPINION-PHRASE-MGMT-TAB (AC-1): 소견서 상용구 — 진료차트 상용구 옆. admin/manager only. */}
+          {canManageOpinionPhrases && (
+            <TabsTrigger value="opinion_phrases" className="gap-1.5" data-testid="tab-opinion-phrases">
+              <MessageSquareText className="h-3.5 w-3.5" />
+              소견서 상용구
+            </TabsTrigger>
+          )}
           <TabsTrigger value="documents" className="gap-1.5" data-testid="tab-documents">
             <FileText className="h-3.5 w-3.5" />
             서류 템플릿
@@ -207,6 +222,12 @@ export default function ClinicManagement() {
         <TabsContent value="medchart_phrases">
           <PhrasesTab lockedType="medical_chart" />
         </TabsContent>
+        {/* T-20260616-foot-OPINION-PHRASE-MGMT-TAB: 소견서 상용구 — form_templates(opinion_doc).field_map.sections 편집. */}
+        {canManageOpinionPhrases && (
+          <TabsContent value="opinion_phrases">
+            <OpinionPhrasesTab />
+          </TabsContent>
+        )}
         <TabsContent value="documents">
           <DocumentTemplatesTab />
         </TabsContent>
