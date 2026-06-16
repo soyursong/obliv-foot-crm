@@ -115,12 +115,15 @@ test.describe('AC-3 — 임상경과 저장 후 미리보기 즉시 반영', () 
   });
 
   test('두 행 컴포넌트에 onClinicalSaved 전달 + 저장 시 호출', () => {
+    // ⚠ SUPERSEDED by T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3:
+    //   3FIX 는 refetch-only 였으나 POLISH 가 optimistic 갱신으로 강화 — 배선이 (saved) 인자 전달형으로 바뀜.
+    //   본 테스트는 POLISH 의 신 배선에 맞춰 갱신(stale fail 방지). 0지연 검증 본체는 POLISH spec 참조.
     const s = DASH();
-    // 부모 → 행 prop 전달(대기 + 완료 = 2회).
-    const passed = s.match(/onClinicalSaved=\{\(\) => void refetchClinical\(\)\}/g) ?? [];
+    // 부모 → 행 prop 전달: 저장 본문으로 optimistic 갱신(대기 + 완료 = 2회).
+    const passed = s.match(/onClinicalSaved=\{\(saved\) => applyClinicalOptimistic\(ci\.customer_id, saved\)\}/g) ?? [];
     expect(passed.length).toBe(2);
-    // onSaved 에서 패널 닫기 + 미리보기 refetch 트리거(대기 + 완료 = 2회).
-    const onSaved = s.match(/onSaved=\{\(\) => \{ setShowClinical\(false\); onClinicalSaved\?\.\(\); \}\}/g) ?? [];
+    // onSaved 에서 패널 닫기 + 저장 본문 전달(대기 + 완료 = 2회).
+    const onSaved = s.match(/onSaved=\{\(saved\) => \{ setShowClinical\(false\); onClinicalSaved\?\.\(saved\); \}\}/g) ?? [];
     expect(onSaved.length).toBe(2);
   });
 });

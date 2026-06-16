@@ -13,9 +13,9 @@
  *   기존 발신/상태머신/집계 로직은 변경하지 않고 표시만 추가(회귀 0).
  * 실시간: check_ins postgres_changes 구독 → refetch (3초 내 반영, AC-1).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Stethoscope,
   Volume2,
@@ -427,10 +427,34 @@ export default function DoctorCallDashboard() {
     setMedicalChartOpen(true);
   };
 
+  const queryClient = useQueryClient();
   const { data: rows = [], isLoading, refetch } = useDoctorCallFeed(clinicId);
   // T-20260612-foot-DOCDASH-11FIX AC-11: 진료완료 환자 임상경과 미리보기 맵(customer_id → 최신 1줄).
   // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 칼럼 즉시 반영용 refetch.
   const { data: clinicalMap, refetch: refetchClinical } = useCompletedClinicalProgress(clinicId);
+
+  // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3 (지연 해소): 3FIX 의 refetch 트리거만으로는
+  //   useCompletedClinicalProgress 재조회(Supabase 왕복) 동안 미리보기가 옛 값/빈값으로 남아 체감 지연이 남았다.
+  //   → 저장 콜백에서 방금 저장한 본문으로 미리보기 맵(queryKey ['docdash_completed_clinical', clinicId])을
+  //     optimistic 갱신(0지연 반영) 후 refetchClinical 로 백그라운드 정합. 데이터 CRUD/스키마 불변(캐시 표시만).
+  const applyClinicalOptimistic = useCallback(
+    (customerId: string | null, savedText?: string) => {
+      if (customerId) {
+        const text = (savedText ?? '').trim();
+        queryClient.setQueryData<Map<string, string>>(
+          ['docdash_completed_clinical', clinicId],
+          (old) => {
+            const next = new Map(old ?? []);
+            if (text) next.set(customerId, text);
+            else next.delete(customerId);
+            return next;
+          },
+        );
+      }
+      void refetchClinical();
+    },
+    [queryClient, clinicId, refetchClinical],
+  );
 
   // 음소거 (localStorage 영속, AC-2)
   const [muted, setMuted] = useState<boolean>(() => loadMute());
@@ -677,8 +701,8 @@ export default function DoctorCallDashboard() {
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
                     onRefresh={() => void refetch()}
-                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 임상경과 저장 즉시 미리보기 반영. */
-                    onClinicalSaved={() => void refetchClinical()}
+                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 저장 본문으로 미리보기 optimistic 0지연 반영 + 백그라운드 정합. */
+                    onClinicalSaved={(saved) => applyClinicalOptimistic(ci.customer_id, saved)}
                   />
                 ))}
               </tbody>
@@ -778,8 +802,8 @@ export default function DoctorCallDashboard() {
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
                     onRefresh={() => void refetch()}
-                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 임상경과 저장 즉시 미리보기 반영. */
-                    onClinicalSaved={() => void refetchClinical()}
+                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 저장 본문으로 미리보기 optimistic 0지연 반영 + 백그라운드 정합. */
+                    onClinicalSaved={(saved) => applyClinicalOptimistic(ci.customer_id, saved)}
                   />
                 ))}
               </tbody>
@@ -856,8 +880,8 @@ function CallFeedRow({
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
-  /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 즉시 반영 트리거. */
-  onClinicalSaved?: () => void;
+  /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 인라인 임상경과 저장 직후 미리보기 optimistic 반영(저장 본문 전달). */
+  onClinicalSaved?: (savedText?: string) => void;
 }) {
   const inactive = checkIn.status_flag === 'pink';
   const slotName = getAssignedSlotName(checkIn);
@@ -1121,7 +1145,7 @@ function CallFeedRow({
                 currentUserRole={role}
                 currentUserEmail={currentUserEmail}
                 onOpenChange={(v) => { if (!v) setShowClinical(false); }}
-                onSaved={() => { setShowClinical(false); onClinicalSaved?.(); }}
+                onSaved={(saved) => { setShowClinical(false); onClinicalSaved?.(saved); }}
               />
             </div>
           </td>
@@ -1196,8 +1220,8 @@ function CompletedRow({
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
-  /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 즉시 반영 트리거. */
-  onClinicalSaved?: () => void;
+  /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 인라인 임상경과 저장 직후 미리보기 optimistic 반영(저장 본문 전달). */
+  onClinicalSaved?: (savedText?: string) => void;
 }) {
   const slotName = getAssignedSlotName(checkIn);
   // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (POLISH AC-4 supersede): 진료 완료 섹션은 경과시간 칼럼 자체 제거(7칼럼).
@@ -1437,7 +1461,7 @@ function CompletedRow({
                 currentUserRole={role}
                 currentUserEmail={currentUserEmail}
                 onOpenChange={(v) => { if (!v) setShowClinical(false); }}
-                onSaved={() => { setShowClinical(false); onClinicalSaved?.(); }}
+                onSaved={(saved) => { setShowClinical(false); onClinicalSaved?.(saved); }}
               />
             </div>
           </td>
