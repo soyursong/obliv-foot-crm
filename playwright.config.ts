@@ -136,6 +136,10 @@ export default defineConfig({
         // T-20260616-foot-E2E-PROD-WRITE-ISOLATION: RC#0 픽스처 누적 차단 — cleanupAll orphan 스윕 +
         //   globalSetup/Teardown 안전망 회귀 가드 (service_role DB 직접 검증, page/auth 불요)
         '**/T-20260616-foot-E2E-PROD-WRITE-ISOLATION.spec.ts',
+        // T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE: 영수증·수납내역 표시 재구성 (DISPLAY-ONLY).
+        //   ★CRITICAL 회귀가드 = 영수증 업로드 write 경로(package_payments.insert + paid_amount update) 보존
+        //   + 표시 필터(feePayments/directPkgPayments/pkgPayments) + readOnly 뷰어 (정적 소스 가드, auth 불요)
+        '**/T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

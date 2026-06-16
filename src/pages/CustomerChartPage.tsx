@@ -234,12 +234,16 @@ function CustomerStorageImageSection({
   label,
   accent,
   accept = 'image/*',
+  readOnly = false,
 }: {
   customerId: string;
   prefix: string;
   label: string;
   accent: 'blue' | 'green' | 'orange';
   accept?: string;
+  // T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE: 수납내역에서 영수증을 read-only 뷰어로 표시.
+  //   업로드/삭제 버튼 제거 → 보기 전용. (write 경로 없음 — 순수 표시 레이어)
+  readOnly?: boolean;
 }) {
   const [images, setImages] = useState<StorageImageItem[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -300,20 +304,23 @@ function CustomerStorageImageSection({
           <span className={`h-2 w-2 rounded-full shrink-0 ${ac.dot}`} />
           {label}
         </span>
-        <label className="cursor-pointer">
-          <input
-            type="file"
-            accept={accept}
-            multiple
-            className="hidden"
-            onChange={handleUpload}
-            disabled={uploading}
-          />
-          <span className={`inline-flex items-center gap-1 text-xs border rounded px-2 py-0.5 bg-white transition cursor-pointer ${ac.btn}`}>
-            <Upload className="h-3 w-3" />
-            {uploading ? '중…' : '추가'}
-          </span>
-        </label>
+        {/* T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE: readOnly 시 업로드 버튼 미노출 (뷰어 전용) */}
+        {!readOnly && (
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              accept={accept}
+              multiple
+              className="hidden"
+              onChange={handleUpload}
+              disabled={uploading}
+            />
+            <span className={`inline-flex items-center gap-1 text-xs border rounded px-2 py-0.5 bg-white transition cursor-pointer ${ac.btn}`}>
+              <Upload className="h-3 w-3" />
+              {uploading ? '중…' : '추가'}
+            </span>
+          </label>
+        )}
       </div>
       {images.length === 0 ? (
         <div className="rounded border border-dashed py-2.5 text-center text-xs text-muted-foreground">
@@ -329,13 +336,16 @@ function CustomerStorageImageSection({
                 className="w-full h-full object-cover rounded border cursor-pointer"
                 onClick={() => window.open(img.signedUrl, '_blank')}
               />
-              <button
-                onClick={() => remove(img)}
-                className="absolute top-1 right-1 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow"
-                title="삭제"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
+              {/* T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE: readOnly 시 삭제 버튼 미노출 (뷰어 전용) */}
+              {!readOnly && (
+                <button
+                  onClick={() => remove(img)}
+                  className="absolute top-1 right-1 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow"
+                  title="삭제"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -5156,12 +5166,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
               {/* Clinical: 수납내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
               {/* T-20260615 DWELLSWAP AC-3: payments는 HISTORY 그룹으로 이동 → 그룹 비종속(키 단독) 가드 */}
-              {chartTab === 'payments' && (
+              {chartTab === 'payments' && (() => {
+            // ── T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE (요청 #2) ─────────────
+            // 수납내역 탭은 '진료비 수납내역'만. 영수증 업로드(상담내역>결제영수증 경로)로
+            // 생성된 결제 행은 제외 — 상담내역 결제영수증 섹션에서 표기(요청 #1)하므로 중복 방지.
+            //   · 일반 결제(payments): memo가 '영수증 업로드…'로 시작하는 행 제외(회수1·단건 영수증 포함).
+            //   · 패키지 결제(package_payments): memo==='영수증 업로드'(영수증 연결분) 제외 → 직접 결제분만 잔존.
+            // ★DISPLAY-ONLY: 프론트 필터만. write 경로·집계 쿼리·스키마 불변(§3 하드가드 준수).
+            const feePayments = payments.filter((p) => !(p.memo ?? '').startsWith('영수증 업로드'));
+            const directPkgPayments = pkgPayments.filter((p) => p.memo !== '영수증 업로드');
+            return (
             <div className="space-y-3">
-              {/* 일반 결제 */}
+              {/* 일반 결제 — 진료비 수납내역만 (영수증 업로드분 제외) */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="font-semibold text-muted-foreground mb-2">수납내역</div>
-                {payments.length === 0 ? (
+                {feePayments.length === 0 ? (
                   <div className="text-muted-foreground py-2">결제 없음</div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -5179,7 +5198,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </tr>
                       </thead>
                       <tbody>
-                        {payments.map((p) => (
+                        {feePayments.map((p) => (
                           <Fragment key={p.id}>
                             <tr
                               className="border-b border-muted/20 hover:bg-muted/10 cursor-pointer select-none"
@@ -5227,8 +5246,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 )}
               </div>
 
-              {/* 패키지 결제 */}
-              {pkgPayments.length > 0 && (
+              {/* 패키지 결제 — 영수증 연결분(memo='영수증 업로드')은 상담내역>결제영수증에서 표기(요청 #1) → 직접 결제분만 */}
+              {directPkgPayments.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs">
                   <div className="font-semibold text-muted-foreground mb-2">패키지 결제</div>
                   <div className="overflow-x-auto">
@@ -5243,7 +5262,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </tr>
                       </thead>
                       <tbody>
-                        {pkgPayments.map((p) => (
+                        {directPkgPayments.map((p) => (
                           <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
                             <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
                             <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
@@ -5266,6 +5285,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               )}
 
               {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 영수증 자동업로드 — AC-1 */}
+              {/* T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE (요청 #2): 업로드 버튼 제거 → read-only 뷰어.
+                  업로드는 상담내역>결제영수증(ReceiptUploadSection write 경로)에서만 — §3 하드가드 준수. */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-green-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-green-500" />
@@ -5274,13 +5295,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <CustomerStorageImageSection
                   customerId={customer.id}
                   prefix="receipt"
-                  label="영수증 업로드 (결제 완료 시 자동 첨부)"
+                  label="영수증 (상담내역에서 업로드)"
                   accent="green"
                   accept="image/*"
+                  readOnly
                 />
               </div>
             </div>
-          )}
+            );
+          })()}
 
               {/* History: 방문이력 (T-20260526-foot-VISIT-HIST-FILTER: 펼침/접기 + 메모유형 필터) */}
               {chartTabGroup === 'history' && chartTab === 'treatments' && (() => {
@@ -6082,15 +6105,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 />
               </div>
 
-              {/* 영수증 연결 수납내역 */}
-              {payments.filter((p) => p.memo === '영수증 업로드').length > 0 && (
+              {/* 영수증 연결 수납내역 — T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE (요청 #1) */}
+              {/* 영수증과 연결된 수납내역을 결제영수증 영역에 함께 표기. **패키지 결제 건만**.
+                  영수증 업로드 write 경로(ReceiptUploadSection)는 회수>1 영수증을 package_payments(memo='영수증 업로드')로
+                  적재 → 원천을 pkgPayments로 전환(기존 payments 단일테이블 필터는 회수1·단건만 잡혀 패키지 영수증 누락).
+                  단일회차/진료비 건은 제외(스펙 §4-1). ★DISPLAY-ONLY: 표시 필터만, write·집계 불변. */}
+              {pkgPayments.filter((p) => p.memo === '영수증 업로드').length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs">
                   <div className="flex items-center gap-1.5 font-semibold text-green-800 mb-2">
                     <span className="h-2 w-2 rounded-full bg-green-500" />
                     영수증 연결 수납내역
                   </div>
                   <div className="space-y-1">
-                    {payments
+                    {pkgPayments
                       .filter((p) => p.memo === '영수증 업로드')
                       .map((p) => (
                         <div key={p.id} className="flex items-center gap-2 rounded bg-green-50 px-2 py-1">
@@ -6098,7 +6125,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           <span className="font-semibold text-green-700">{formatAmount(p.amount)}</span>
                           {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
                           <span className="text-muted-foreground">{METHOD_KO[p.method] ?? p.method}</span>
-                          <Badge variant="secondary" className="text-[10px] ml-auto">수납내역 연결</Badge>
+                          <Badge variant="secondary" className="text-[10px] ml-auto">패키지 결제 연결</Badge>
                         </div>
                       ))}
                   </div>
