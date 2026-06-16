@@ -10,7 +10,7 @@
 //   AC-3 고객 클릭 → 팝업(F0BAETELCTF 옵션 그리드). 옵션 클릭 → 템플릿 문구 editor 자동 삽입.
 //   AC-4 자동삽입 최종본을 원장이 textarea 에서 수기 수정(editor = SSOT).
 //   AC-6 [최종 발행] → publish_opinion_doc RPC(form_submissions status='published' insert). window.confirm 가드.
-//        발행자(진료의)=clinic_doctors 선택(is_default 기본) → 이름/면허는 field_data 스냅샷. 발행 권한=isDoctor(director|doctor).
+//        발행자(진료의)=clinic_doctors 선택(is_default 기본) → 이름/면허는 field_data 스냅샷. 발행 권한=is_doctor_role(director|doctor, C2).
 //        비가역성 = form_submissions published 트리거(C1, 의료법 제22조). 정정=신규 발행(append-only, C4).
 //   AC-7 발행 이력 [출력] → printOpinionDoc(diag_opinion 양식, bindHtmlTemplate L-006 재사용, window.open 인쇄).
 //        스냅샷 body(field_data.final_text) 그대로 출력(변조 불가). 신규 출력 스택 금지 — 기존 양식·인쇄 경로 재사용.
@@ -33,7 +33,6 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate, seoulISODate, birthYearAgeDisplay, chartNoDisplay } from '@/lib/format';
-import { isDoctor } from '@/components/doctor/QuickRxBar';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
 import type { UserProfile } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -386,7 +385,10 @@ function OpinionEditorDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [doctorId, setDoctorId] = useState<string>(''); // clinic_doctors.id ('' = 미선택→profile 명의)
 
-  const canPublish = isDoctor(profile?.role ?? ''); // 발행=director|doctor(=is_admin_or_manager DB RLS)
+  // 발행 게이트(C2, DA ruling B): is_doctor_role = director|doctor 만(의료법 §17 진료의 전속).
+  //   ⚠ QuickRxBar.isDoctor(director|admin|manager, Rx취소용)와 의도적으로 다름 — 재사용 금지.
+  //   DB publish_opinion_doc RPC 가 is_doctor_role() 로 hard-enforce → FE 도 동일해야 admin/manager dead-button 방지.
+  const canPublish = ['director', 'doctor'].includes(profile?.role ?? '');
 
   // opinion_doc 템플릿(form_templates: templateId + field_map 옵션 그리드) + clinic_doctors + 발행 이력.
   const { data: tpl } = useOpinionTemplate(clinicId);

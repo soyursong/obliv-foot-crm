@@ -22,9 +22,11 @@
  */
 import { test, expect } from '@playwright/test';
 
-// ── 정본 모사: isDoctor (QuickRxBar.tsx) — 발행 권한 게이트 ─────────────────────
-const DOCTOR_ROLES = ['director', 'admin', 'manager'];
-const isDoctor = (role: string): boolean => DOCTOR_ROLES.includes(role);
+// ── 정본 모사: canPublish 게이트 (OpinionDocTab.tsx) — C2 is_doctor_role ────────
+//   발행 권한 = director|doctor 만(의료법 §17 진료의 전속, DA ruling B).
+//   ⚠ QuickRxBar.isDoctor(director|admin|manager, Rx취소용)와 다름 — admin/manager 발행 불가.
+const PUBLISH_ROLES = ['director', 'doctor'];
+const isDoctor = (role: string): boolean => PUBLISH_ROLES.includes(role);
 
 // ── 정본 모사: resolveIssuer (OpinionDocTab.tsx) ──────────────────────────────
 type Doc = { id: string; name: string; license_no: string | null; is_default: boolean };
@@ -167,11 +169,13 @@ test.describe('T-20260616-foot-OPINION-DOC-FEATURE (Phase 2)', () => {
     expect(after).toBe('기존 본문\n추가 문구');
   });
 
-  // S4 — 발행 게이트(AC-6): director|doctor(=isDoctor) 만 발행. DB INSERT RLS(is_admin_or_manager)와 동치.
-  test('S4: 발행 권한 = isDoctor(director/admin/manager) 만 true', () => {
+  // S4 — 발행 게이트(AC-6, C2): director|doctor 만 발행. DB publish_opinion_doc=is_doctor_role()와 동치.
+  //   ★admin/manager 는 발행 불가(의료법 §17 진료의 전속) — Rx취소 isDoctor(director|admin|manager)와 의도적으로 다름.
+  test('S4: 발행 권한 = is_doctor_role(director/doctor) 만 true (admin/manager 제외)', () => {
     expect(isDoctor('director')).toBe(true);
-    expect(isDoctor('admin')).toBe(true);
-    expect(isDoctor('manager')).toBe(true);
+    expect(isDoctor('doctor')).toBe(true);
+    expect(isDoctor('admin')).toBe(false);
+    expect(isDoctor('manager')).toBe(false);
     expect(isDoctor('consultant')).toBe(false);
     expect(isDoctor('coordinator')).toBe(false);
     expect(isDoctor('therapist')).toBe(false);
