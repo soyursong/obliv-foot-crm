@@ -48,6 +48,8 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   // T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 예약 고객 미수금 맵(row 뱃지) + 선택 고객 미수금(배너)
   const [outstandingMap, setOutstandingMap] = useState<Map<string, CustomerOutstanding>>(new Map());
   const [selectedOutstanding, setSelectedOutstanding] = useState<CustomerOutstanding | null>(null);
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 체크인 시 미수금>0이면 [수납]/[그냥 진행] 확인 팝업.
+  const [confirmOutstanding, setConfirmOutstanding] = useState(false);
 
   /** 폼 전체 초기화 — 제출 완료 후 또는 다이얼로그 닫힐 때 호출 */
   const resetDialog = () => {
@@ -58,6 +60,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setSelectedCustomerId(null);
     setTodayReservations([]);
     setSelectedOutstanding(null);
+    setConfirmOutstanding(false);
   };
 
   useEffect(() => {
@@ -144,9 +147,25 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     return (data as string | null) ?? null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 선택 고객 미수금(패키지/진료비 잔금) 존재 여부.
+  const hasOutstanding =
+    !!selectedOutstanding &&
+    (selectedOutstanding.packageDue > 0 || selectedOutstanding.consultationDue > 0);
+
+  // 체크인 버튼 클릭 → 미수금>0이면 [수납]/[그냥 진행] 확인 팝업으로 가로채고(§8 ③), 잔금 0이면 바로 진행.
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!clinicId || submitting) return;
+    if (hasOutstanding && !confirmOutstanding) {
+      setConfirmOutstanding(true);
+      return;
+    }
+    void proceedCheckIn();
+  };
+
+  const proceedCheckIn = async () => {
     if (!clinicId) return;
+    setConfirmOutstanding(false);
     setSubmitting(true);
 
     // AC1: 수동 선택 없으면 todayReservations에서 자동 매칭
@@ -293,6 +312,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -444,5 +464,45 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         </form>
       </DialogContent>
     </Dialog>
+
+    {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 미수금 있는 고객 체크인 확인 팝업.
+        체크인 버튼 클릭 → 잔금>0이면 이 팝업으로 [수납]/[그냥 진행] 확인(잔금 0이면 미노출, 바로 체크인).
+        §4-A: 패키지/진료비 잔금을 합산 단일표기하지 않고 별도 칩(PkgOutstandingBadge)으로 병기. 자동 SMS 없음. */}
+    <Dialog open={confirmOutstanding} onOpenChange={(o) => { if (!o) setConfirmOutstanding(false); }}>
+      <DialogContent className="max-w-sm" data-testid="checkin-outstanding-confirm">
+        <DialogHeader>
+          <DialogTitle>미납금 안내</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-foreground">
+            미납금이 있어요. 수납 후 진행하시겠어요?
+          </p>
+          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <PkgOutstandingBadge data={selectedOutstanding ?? undefined} />
+          </div>
+        </div>
+        <DialogFooter>
+          {/* [수납]: 체크인하지 않고 팝업만 닫음 → 데스크가 결제 화면에서 수납 후 다시 진행. */}
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="checkin-outstanding-settle"
+            onClick={() => setConfirmOutstanding(false)}
+          >
+            수납
+          </Button>
+          {/* [그냥 진행]: 미수금 있어도 체크인 진행. */}
+          <Button
+            type="button"
+            data-testid="checkin-outstanding-proceed"
+            disabled={submitting}
+            onClick={() => { void proceedCheckIn(); }}
+          >
+            {submitting ? '처리 중…' : '그냥 진행'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
