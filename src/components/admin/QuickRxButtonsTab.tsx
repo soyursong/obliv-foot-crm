@@ -38,6 +38,15 @@ import {
 // T-20260607-foot-RXQUICK-SET-FOLDER-NAV: 처방세트 선택을 진료차트와 동일한 folder→set 트리로 통일.
 import PrescriptionSetTreePicker from '@/components/prescription/PrescriptionSetTreePicker';
 import { toast } from '@/lib/toast';
+// T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX (AC-4): 이모지/아이콘 제거 → 차분한 모노톤 색상 태그.
+//   영속화는 신규 컬럼 없이 기존 icon 컬럼 재활용(색상 토큰 저장). 자세한 근거 = quickRxColors.ts.
+import {
+  QUICK_RX_COLORS,
+  DEFAULT_QUICK_RX_COLOR,
+  quickRxChipClass,
+  quickRxDotClass,
+  normalizeQuickRxColor,
+} from '@/lib/quickRxColors';
 import {
   Loader2, Plus, Pencil, Trash2, GripVertical,
   Pill, Activity, Zap, Heart, Stethoscope, Thermometer, Bandage, Syringe,
@@ -114,7 +123,8 @@ interface QuickRxForm {
 
 const EMPTY_FORM: QuickRxForm = {
   name: '',
-  icon: 'pill',
+  // AC-4 (REFINE-5FIX): icon 컬럼을 색상 토큰 저장에 재활용. 기본 = 하늘색(sky).
+  icon: DEFAULT_QUICK_RX_COLOR,
   prescription_set_id: null,
   sort_order: 0,
   is_active: true,
@@ -243,15 +253,20 @@ function SortableQuickRxRow({ btn, canEdit, delPending, onEdit, onDelete }: Sort
         </button>
       )}
 
-      {/* 아이콘 */}
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 border border-teal-200 shrink-0">
-        <IconRenderer icon={btn.icon} className="h-4.5 w-4.5 text-teal-700" />
-      </div>
+      {/* AC-4 (REFINE-5FIX): 아이콘 박스 제거 → 선택 색상 닷. 색상은 icon 컬럼 재활용 토큰. */}
+      <span
+        className={`h-3 w-3 rounded-full shrink-0 ${quickRxDotClass(btn.icon)}`}
+        data-testid="quick-rx-btn-color-dot"
+        aria-hidden
+      />
 
-      {/* 정보 */}
+      {/* 정보 — 처방세트명을 선택 색상 태그(pill) 안에 표시 */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={`text-sm font-medium ${!btn.is_active ? 'text-muted-foreground line-through' : ''}`}>
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-sm font-medium ${quickRxChipClass(btn.icon)} ${!btn.is_active ? 'line-through opacity-60' : ''}`}
+            data-testid="quick-rx-btn-name-chip"
+          >
             {btn.name}
           </span>
           {!btn.is_active && (
@@ -367,7 +382,8 @@ export default function QuickRxButtonsTab() {
     setEditing(btn);
     setForm({
       name: btn.name,
-      icon: btn.icon,
+      // AC-4: 레거시 아이콘 식별자(pill 등)는 색상 토큰으로 정규화(기본 sky) → 색상 팔레트 하이라이트 정상.
+      icon: normalizeQuickRxColor(btn.icon),
       prescription_set_id: btn.prescription_set_id,
       sort_order: btn.sort_order,
       is_active: btn.is_active,
@@ -420,13 +436,14 @@ export default function QuickRxButtonsTab() {
             {items
               .filter((b) => b.is_active)
               .map((btn) => (
-                <div
+                /* AC-4 (REFINE-5FIX): 아이콘 프리뷰 → 선택 색상 태그(pill) 안에 처방세트명 표시. */
+                <span
                   key={btn.id}
-                  className="flex items-center gap-1.5 rounded-lg border border-teal-300 bg-white px-3 py-2 text-xs font-medium text-teal-800 shadow-sm"
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${quickRxChipClass(btn.icon)}`}
+                  data-testid="quick-rx-preview-chip"
                 >
-                  <IconRenderer icon={btn.icon} className="h-3.5 w-3.5 text-teal-600" />
                   {btn.name}
-                </div>
+                </span>
               ))}
           </div>
         </div>
@@ -485,33 +502,52 @@ export default function QuickRxButtonsTab() {
               />
             </div>
 
-            {/* 아이콘 선택 */}
+            {/* AC-4 (REFINE-5FIX): 이모지/아이콘 picker 제거 → 차분한 모노톤 색상 팔레트.
+                선택 색상은 icon 컬럼에 토큰으로 저장(db_change=false). 처방세트명은 아래 미리보기처럼
+                선택 색상 태그(pill) 안에 표시된다. (형광·고채도 없음 — quickRxColors SSOT) */}
             <div>
-              <Label className="text-xs">아이콘 <span className="text-muted-foreground">(약·처방 관련)</span></Label>
-              <div className="grid grid-cols-4 gap-2 mt-1" data-testid="quick-rx-icon-picker">
-                {DRUG_ICON_OPTIONS.map(({ value, label, Icon }) => (
+              <Label className="text-xs">태그 색상 <span className="text-muted-foreground">(차분한 모노톤)</span></Label>
+              <div className="mt-1.5 flex flex-wrap gap-2" data-testid="quick-rx-color-palette">
+                {QUICK_RX_COLORS.map((c) => (
                   <button
-                    key={value}
+                    key={c.value}
                     type="button"
-                    onClick={() => setForm((f) => ({ ...f, icon: value }))}
-                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-[10px] transition
-                      ${form.icon === value
-                        ? 'border-teal-500 bg-teal-50 text-teal-800 ring-1 ring-teal-400'
-                        : 'border-border text-muted-foreground hover:bg-accent/50'
-                      }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </button>
+                    onClick={() => setForm((f) => ({ ...f, icon: c.value }))}
+                    title={c.label}
+                    aria-label={`색상 ${c.label}`}
+                    aria-pressed={form.icon === c.value}
+                    data-testid={`quick-rx-color-${c.value}`}
+                    className={`h-7 w-7 rounded-full ${c.dot} transition ${
+                      form.icon === c.value
+                        ? 'ring-2 ring-offset-2 ring-foreground'
+                        : 'opacity-70 hover:opacity-100'
+                    }`}
+                  />
                 ))}
+              </div>
+              {/* 미리보기 칩 — 입력한 이름이 선택 색상 태그 안에 표시 */}
+              <div className="mt-2.5">
+                <span className="text-[10px] text-muted-foreground">미리보기: </span>
+                <span
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${quickRxChipClass(form.icon)}`}
+                  data-testid="quick-rx-color-preview-chip"
+                >
+                  {form.name.trim() || '처방세트명'}
+                </span>
               </div>
             </div>
 
             {/* 처방세트 선택 — T-20260607-foot-RXQUICK-SET-FOLDER-NAV:
                   flat <Select> → 진료차트와 동일한 folder→set 2단 트리 picker(+검색)로 통일.
-                  AC-1 폴더 펼침/접기, AC-2 세트명 부분일치 검색, AC-3 기존 연결값 하이라이트 유지. */}
+                  AC-1 폴더 펼침/접기, AC-2 세트명 부분일치 검색, AC-3 기존 연결값 하이라이트 유지.
+                T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX (AC-5): 연결 `<` 대상을 처방세트 "폴더 구조"
+                  로 통일 표기. picker 는 처방세트를 폴더(folder)별로 묶은 트리 — 폴더를 펼쳐 안의 세트를
+                  선택한다. (BUNDLE-MERGE 로 단독약이 folder='약' 폴더로 그룹핑된 구조 그대로 재사용) */}
             <div>
-              <Label className="text-xs">연결할 처방세트 *</Label>
+              <Label className="text-xs">연결할 처방세트 <span className="text-muted-foreground">(폴더 구조)</span> *</Label>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                처방세트 폴더를 펼쳐 안의 세트를 선택하세요.
+              </p>
               {sets.length === 0 ? (
                 <p className="text-[11px] text-amber-600 mt-1">
                   ⚠ 처방세트를 먼저 등록하세요 (처방세트 탭)
@@ -527,6 +563,11 @@ export default function QuickRxButtonsTab() {
                     onSelect={(s) => setForm((f) => ({ ...f, prescription_set_id: s.id }))}
                     searchable
                     searchPlaceholder="처방세트 이름 검색..."
+                    emptyMessage={
+                      <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center">
+                        등록된 처방세트가 없습니다.
+                      </div>
+                    }
                     testIdPrefix="quick-rx-set"
                   />
                 </div>

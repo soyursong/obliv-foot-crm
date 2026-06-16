@@ -8,7 +8,7 @@
 // 권한: 폴더·분류 CRUD = 관리권한 role 한정(현장 "어드민만 관리").
 //   PrescriptionSetsTab 과 동일 집합(director/manager/admin) — 대표원장(director) 본인 관리 동선 보존.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -24,6 +24,7 @@ import {
   FolderOpen,
   FolderPlus,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
   Search,
@@ -51,6 +52,74 @@ interface RxCodeResult {
   claim_code: string;
   classification: string | null;
   code_source: string;
+}
+
+// ---------------------------------------------------------------------------
+// DrugRowMoreMenu — T-20260616-foot-RXSET-QUICKRX-UI-REFINE-5FIX (AC-3)
+//   문지은 대표원장: 삭제(분류 해제) 버튼 직접노출 제거 → "…"(더보기) 버튼 뒤로 숨기고,
+//   클릭 시 팝업으로 "삭제하기"를 한 번 더 확인한 뒤에만 실행.
+//   PrescriptionSetsTab.RxSetKebabMenu(DELETE-KEBAB-GUARD) 동형 — 신규 패키지 없이
+//   경량 인라인 popover(클릭 토글 + 바깥클릭/ESC 닫힘). 실제 삭제는 destructive "삭제하기"에서만.
+// ---------------------------------------------------------------------------
+function DrugRowMoreMenu({ onDelete, disabled }: { onDelete: () => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent | TouchEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-muted-foreground"
+        onClick={() => setOpen((v) => !v)}
+        title="더보기"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-testid="drug-folder-row-more-btn"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-8 z-30 min-w-[120px] overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-md"
+          data-testid="drug-folder-row-more-menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+            data-testid="drug-folder-row-delete-action"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> 삭제하기
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function DrugFoldersTab() {
@@ -385,8 +454,10 @@ export default function DrugFoldersTab() {
             )}
           </div>
 
+          {/* AC-1 (REFINE-5FIX): 검색창을 감싸던 외겹 라운드박스(rounded-lg border bg-card) 제거.
+              검색 input 자체 테두리만 유지. 검색 결과 드롭다운은 입력 아래 별도 박스로 노출. */}
           {selectedFolder && canEdit && (
-            <div className="rounded-lg border bg-card p-2 space-y-1.5">
+            <div className="space-y-1.5">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
@@ -399,7 +470,7 @@ export default function DrugFoldersTab() {
                 {searching && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
               </div>
               {drugQuery.trim() !== '' && (
-                <div className="max-h-44 overflow-y-auto space-y-0.5">
+                <div className="max-h-44 overflow-y-auto space-y-0.5 rounded-md border bg-popover p-1 shadow-sm">
                   {searchResults.length === 0 && !searching ? (
                     <div className="text-[10px] text-muted-foreground text-center py-2">검색 결과 없음</div>
                   ) : (
@@ -431,31 +502,53 @@ export default function DrugFoldersTab() {
             </div>
           )}
 
+          {/* AC-2 (REFINE-5FIX): 분류된 약물 목록을 라운드박스(카드) 나열 → 데이터테이블(헤더행+약물명행).
+              AC-3: 행 우측 직접노출 삭제(X) 제거 → "…"(더보기) + 팝업 "삭제하기" 확인 후에만 분류 해제. */}
           {selectedFolder && (
-            <div className="rounded-lg border p-2 min-h-[100px] space-y-1" data-testid="drug-folder-assigned-list">
+            <div className="rounded-lg border min-h-[100px] overflow-visible" data-testid="drug-folder-assigned-list">
               {(drugsByFolder.get(selectedFolder.id) ?? []).length === 0 ? (
                 <div className="text-[11px] text-muted-foreground text-center py-6">
                   이 폴더에 분류된 약품이 없습니다.
                 </div>
               ) : (
-                (drugsByFolder.get(selectedFolder.id) ?? []).map((d) => (
-                  <div key={d.prescription_code_id} className="flex items-center gap-2 rounded-md border px-2 py-1.5 bg-muted/20" data-testid="drug-folder-assigned-item">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-medium truncate">{d.name_ko}</span>
-                        {d.code_source === 'custom' && (
-                          <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                <table className="w-full text-left" data-testid="drug-folder-assigned-table">
+                  <thead>
+                    <tr className="border-b bg-muted/30 text-[10px] text-muted-foreground">
+                      <th className="px-2 py-1.5 font-medium">약물명</th>
+                      <th className="px-2 py-1.5 font-medium">보험코드</th>
+                      {canEdit && <th className="px-1 py-1.5 w-9" aria-label="작업" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(drugsByFolder.get(selectedFolder.id) ?? []).map((d) => (
+                      <tr
+                        key={d.prescription_code_id}
+                        className="border-b last:border-b-0 hover:bg-muted/20 align-middle"
+                        data-testid="drug-folder-assigned-item"
+                      >
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs font-medium truncate">{d.name_ko}</span>
+                            {d.code_source === 'custom' && (
+                              <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-2 py-1.5 text-[10px] text-muted-foreground font-mono whitespace-nowrap">
+                          {d.claim_code}
+                        </td>
+                        {canEdit && (
+                          <td className="px-1 py-1 text-right">
+                            <DrugRowMoreMenu
+                              onDelete={() => handleUnassign(d)}
+                              disabled={unassignDrug.isPending}
+                            />
+                          </td>
                         )}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground font-mono">{d.claim_code}</div>
-                    </div>
-                    {canEdit && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive shrink-0" title="분류 해제" onClick={() => handleUnassign(d)} disabled={unassignDrug.isPending}>
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                ))
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           )}
