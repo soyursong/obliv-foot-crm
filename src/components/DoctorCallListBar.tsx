@@ -884,6 +884,9 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
 
   // 3) 진료 전달사항 메모
   const [editing, setEditing] = useState(false);
+  // T-20260616-foot-CALLCARD-COMPACT-MEMO-TOGGLE #2/#3: 전달사항 박스 기본 숨김 + 연필 클릭 토글.
+  //   상시 노출(구 DOCDASH-MEMO-ICON-TOOLTIP/항상표시)을 정정 — 명단 가독성↑. 필드(doctor_call_memo)·저장로직 불변.
+  const [showMemo, setShowMemo] = useState(false);
   const [memoDraft, setMemoDraft] = useState(checkIn.doctor_call_memo ?? '');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -918,6 +921,17 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
     onRefresh?.();
   }, [memoDraft, checkIn.doctor_call_memo, checkIn.id, onRefresh]);
 
+  // T-20260616-foot-CALLCARD-COMPACT-MEMO-TOGGLE #3: 연필 토글 — 박스 펼침/접힘.
+  //   접을 때 편집 종료. 펼칠 때 메모 비어있으면 바로 입력 모드(클릭 1회 절약).
+  const toggleMemo = useCallback(() => {
+    setShowMemo((prev) => {
+      const next = !prev;
+      if (!next) setEditing(false);
+      else if (!checkIn.doctor_call_memo) setEditing(true);
+      return next;
+    });
+  }, [checkIn.doctor_call_memo]);
+
   const visitBadge = isReturning ? (
     <span className="bg-green-100 text-green-800 text-[10px] px-1 py-px rounded font-medium whitespace-nowrap">
       재진{typeof visitCount === 'number' && visitCount > 0 ? ` ${visitCount}회차` : ''}
@@ -939,7 +953,8 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
       data-inactive={String(inactive)}
       className={cn(
         // VERTICAL-LAYOUT req2: 세로 나열 → 카드는 패널 폭 가득(w-full). (구 가로배치 shrink-0 w-56 폐기)
-        'w-full rounded-lg border p-2 transition-all',
+        // T-20260616 #5/#6: 컴팩트 — 카드 패딩 p-2 → p-1.5(불필요 여백 절감, 세로높이↓).
+        'w-full rounded-lg border p-1.5 transition-all',
         // CALLLIST-DONE-INACTIVE) 진료완료 = 비활성 (흐림 + 회색조), 콜 대상 활성과 시각 구분
         inactive
           ? 'border-gray-200 bg-gray-50 opacity-60'
@@ -949,7 +964,7 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
       {/* 헤더: 고객명(클릭→진료차트) + 위치배지 + 배지 + 지정콜/호출표시 */}
       {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 이름=차트, 지정콜=별도 버튼(클릭영역 분리) */}
       <div className="flex items-start justify-between gap-1">
-        <div className="flex items-start flex-wrap gap-1.5 min-w-0 flex-1">
+        <div className="flex items-start flex-wrap gap-1 min-w-0 flex-1">
           {/* T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-B) 진입순 번호뱃지 — 박스 앞(좌측 선두).
               진료콜 진입순(activeList) 1-based. 활성 콜대상만 부여(done/비활성 행은 orderNo undefined → 미표기). */}
           {typeof orderNo === 'number' && (
@@ -1003,17 +1018,10 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
             </span>
           )}
           {visitBadge}
-          {/* T-20260615-foot-CALLLIST-SUBWAY-BADGE-INLINE: 진료 단계 노선도(현장 호칭 "지하철 표시") stepper를
-              아래 전용 줄(mt-1.5) → 환자명/상태배지와 같은 가로 줄(인라인)로 이동해 카드 세로 높이 축소(AC-1·AC-2).
-              · 좌측 flex-wrap 그룹 마지막 요소로 합류 — 폭 여유 있으면 같은 줄, 없으면 자연 wrap(빈 공간 안 깨짐, AC-4).
-              · shrink-0: 노선도 4단계가 압축돼 라벨 겹치지 않도록 폭 보존.
-              · T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2 산출(✋ 손 아이콘 대체 4단계 노선도)·전환·실시간동기 불변
-                — 위치(전용 줄→인라인)만 변경. 노드 클릭/도달표시/▼현위치/idempotent write 로직 일체 미접촉.
-              T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리.
-              T-20260615-foot-CALLLIST-STEPPER-INLINE-COMPACT (현장 김주연 총괄): 단순 인라인은 노드 라벨 4개로
-                폭이 넓어 다수 행에서 칸을 크게 점유 → compact 변형. 노드 라벨 4개 미렌더(점만)+현단계 1개 텍스트로
-                이름·배지와 한 묶음 축소(세로↓·가로↓). ▼ 현위치/4노드 클릭전환/realtime 동기 불변(렌더 레이아웃만). */}
-          <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} compact className="shrink-0" />
+          {/* T-20260616-foot-CALLCARD-COMPACT-MEMO-TOGGLE #1: stepper(현장 호칭 "지하철 표시")를 이 인라인 그룹에서
+              빼내 성함 바로 아래 전용 줄로 이동(아래 doctor-call-stepper-line). SUBWAY-BADGE-INLINE이 세로높이 축소
+              목적으로 인라인 합류시켰으나, 긴 이름은 wrap·짧은 이름은 인라인이라 카드마다 위치가 흔들림(현장 지적
+              "카드마다 위치 달라 지저분") → 모든 카드 동일 위치(성함 아래 고정)로 정정. compact 렌더(점+현단계)는 유지. */}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {inactive && (
@@ -1038,6 +1046,25 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
               <ArrowUp className="h-3.5 w-3.5" />
             </button>
           )}
+          {/* T-20260616-foot-CALLCARD-COMPACT-MEMO-TOGGLE #3/#4: 진료 전달사항 토글 연필 —
+              숨김(EyeOff) 아이콘과 같은 flex-row gap-1 그룹에서 가로로 나란히(AC-4). 클릭 시 아래 박스 펼침/접힘.
+              메모가 있으면 보라 강조(상시박스 제거 후에도 메모 존재 식별성 유지). */}
+          <button
+            onClick={toggleMemo}
+            data-testid="doctor-call-memo-toggle"
+            aria-pressed={showMemo}
+            className={cn(
+              'inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border transition-colors',
+              showMemo
+                ? 'border-purple-300 bg-purple-50 text-purple-600'
+                : checkIn.doctor_call_memo
+                  ? 'border-purple-200 bg-white text-purple-500 hover:bg-purple-50'
+                  : 'border-gray-200 bg-white text-gray-400 hover:text-purple-500 hover:bg-purple-50',
+            )}
+            title={showMemo ? '진료 전달사항 닫기' : checkIn.doctor_call_memo ? '진료 전달사항 보기/수정' : '진료 전달사항 입력'}
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
           {/* T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1) 이 행 숨기기 — 표시 필터에서 제외.
               신규 listup 시그니처로 재등장하면 자동 재노출(부모 hiddenSigs/listupSignature가 보장).
               이름클릭→차트와 클릭영역 분리된 별도 버튼. */}
@@ -1054,12 +1081,16 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
         </div>
       </div>
 
-      {/* T-20260615-foot-CALLLIST-SUBWAY-BADGE-INLINE: stepper 전용 줄 제거 — 위 환자명/배지 줄로 인라인 이동.
-          (T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2 stepper는 원장·직원 공용 클릭 전환 + check_ins UPDATE 영속
-           → Dashboard realtime 구독 동기 그대로. ✋ 손 아이콘 완전 대체도 유지 — 표시 위치만 변경.) */}
+      {/* T-20260616-foot-CALLCARD-COMPACT-MEMO-TOGGLE #1: stepper(지하철 표시) 성함 바로 아래 고정 줄.
+          모든 카드 동일 위치 보장(인라인 흔들림 해소). compact 렌더(점+현단계 라벨)·노드 클릭 전환·▼현위치·
+          realtime 동기는 DoctorStageStepper 내부 그대로(미접촉) — 표시 위치(줄)만 통일. */}
+      <div className="mt-1" data-testid="doctor-call-stepper-line">
+        <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} compact />
+      </div>
 
-      {/* 진료 전달사항 메모 */}
-      <div className="mt-1.5">
+      {/* 진료 전달사항 메모 — T-20260616 #2: 기본 숨김, 연필 토글(showMemo)로만 노출 */}
+      {showMemo && (
+      <div className="mt-1" data-testid="doctor-call-memo-box">
         {editing ? (
           <div className="flex flex-col gap-1">
             <textarea
@@ -1100,6 +1131,7 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
             className="w-full text-left flex items-start gap-1 group"
             title="진료 전달사항 입력/수정"
           >
+            {/* T-20260616 #4: 연필은 헤더 토글로 이동 — display 내부 인라인 연필 제거(중복 방지). 클릭 시 편집 진입. */}
             <span
               className={cn(
                 'text-xs flex-1 break-words',
@@ -1108,10 +1140,10 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
             >
               {checkIn.doctor_call_memo || '진료 전달사항 +'}
             </span>
-            <Pencil className="h-3 w-3 text-gray-300 group-hover:text-purple-500 shrink-0 mt-0.5" />
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }
