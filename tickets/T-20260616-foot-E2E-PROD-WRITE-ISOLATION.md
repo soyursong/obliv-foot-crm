@@ -14,7 +14,13 @@ assignee: dev-foot
 reporter: planner (MSG-20260616-211825-4zg1) — 부모 P0 PKG-CUSTNAME-ENCRYPTED RC#0 파생
 source-msg: MSG-20260616-211825-4zg1
 da-consult: 불요 (테스트 인프라/스펙 수정만 — 별도 DB 미도입, customers 등 운영스키마 변경 0)
+fix-request: MSG-20260616-233701-xqcq (phase1 build_fail → scripts/build.sh --bg detached mode, commit 471f2191)
 ---
+
+## FIX (MSG-20260616-233701-xqcq · 2026-06-17, commit 471f2191)
+supervisor QA phase1 build_fail = foreground 50s safety ceiling 이 `build.sh 120` 을 외부 SIGKILL(exit 124). RC=physics(병렬-worktree CPU 경합 시 ~14s 빌드가 50s 초과), 티켓 코드/빌드 정상.
+→ `scripts/build.sh --bg [deadline]` detached 모드 신설(`_build_runner.py` os.setsid 새 세션 → foreground kill 생존, sub-ceiling deadline polling → 항상 RESULT: OK|FAIL|RUNNING 반환). RUNNING=빌드 detached 계속 → `--status` 로 verdict 회수.
+권장 QA: `bash scripts/build.sh --bg 45` → RUNNING 시 `bash scripts/build.sh --status`. 레거시 동기 모드 불변.
 
 # T-20260616-foot-E2E-PROD-WRITE-ISOLATION — E2E PROD write 격리 (RC#0 재발방지)
 
