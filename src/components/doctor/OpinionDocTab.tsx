@@ -9,17 +9,23 @@
 //   AC-2 금일 내방객(check_ins, KST 당일) 리스트업(read-only).
 //   AC-3 고객 클릭 → 팝업(F0BAETELCTF 옵션 그리드). 옵션 클릭 → 템플릿 문구 editor 자동 삽입.
 //   AC-4 자동삽입 최종본을 원장이 textarea 에서 수기 수정(editor = SSOT).
-//   AC-6 [최종 발행] → opinion_documents INSERT(append-only, IMMUTABLE 의무기록). window.confirm 가드.
-//        발행자(issued_by)=clinic_doctors 선택(is_default 기본) → 이름/면허 스냅샷. 발행 권한=isDoctor(director|doctor).
+//   AC-6 [최종 발행] → publish_opinion_doc RPC(form_submissions status='published' insert). window.confirm 가드.
+//        발행자(진료의)=clinic_doctors 선택(is_default 기본) → 이름/면허는 field_data 스냅샷. 발행 권한=isDoctor(director|doctor).
+//        비가역성 = form_submissions published 트리거(C1, 의료법 제22조). 정정=신규 발행(append-only, C4).
 //   AC-7 발행 이력 [출력] → printOpinionDoc(diag_opinion 양식, bindHtmlTemplate L-006 재사용, window.open 인쇄).
-//        스냅샷 body 그대로 출력(변조 불가). 신규 출력 스택 금지 — 기존 양식·인쇄 경로 재사용.
-//   AC-8 템플릿 설정/관리 UI 위치 = planner FOLLOWUP 제안(미구현). 본 파일은 opinion_doc_templates read 만 wiring
-//        (active 행 있으면 "원내 등록 문구" 섹션으로 추가, 없으면 하드코드 OPINION_SECTIONS 만 — empty-safe).
+//        스냅샷 body(field_data.final_text) 그대로 출력(변조 불가). 신규 출력 스택 금지 — 기존 양식·인쇄 경로 재사용.
+//   AC-8 템플릿 설정/관리 UI 위치 = planner FOLLOWUP 제안(미구현). 본 파일은 form_templates(form_key='opinion_doc')
+//        field_map.sections 를 read 만 wiring(있으면 그 옵션 그리드, 없으면 하드코드 OPINION_SECTIONS — empty-safe).
+//
+// === DA 재판정(GO_REUSE_A) — KOH form 스택 재사용 ===
+//   전용 2테이블(opinion_doc_templates/opinion_documents) 폐기. form_templates + form_submissions 재사용.
+//   템플릿 = form_templates(form_key='opinion_doc').field_map.sections. 발행본 = form_submissions(status='published').
+//   cross_crm_data_contract §2-7 v2. (마이그 20260616160000_opinion_doc_form_stack.sql)
 //
 // === 템플릿 옵션(OPINION_SECTIONS) — 하드코드 기본값 ===
 //   F0BAETELCTF 의 2개 섹션(진단서 / 금기증) + 옵션 라벨을 그대로 미러.
 //   원장이 editor 에서 수기 수정하므로 기본 문구는 출발점일 뿐(AC-4). 임의 임상 단정 회피 — 라벨 기반 중립 문장.
-//   원내 등록 문구(opinion_doc_templates)가 있으면 추가 섹션으로 병합 노출.
+//   form_templates(form_key='opinion_doc').field_map.sections 가 있으면 그 그리드를 우선 사용(없으면 이 하드코드).
 
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -158,30 +164,59 @@ function useTodayVisitors(clinicId: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2 데이터 계층 — 템플릿(read)·진료의·의료기관 헤더·발행본(append-only INSERT).
-//   스키마: opinion_doc_templates / opinion_documents (DA CONSULT GO, immutable 의무기록).
+// Phase 2 데이터 계층(form 스택 재사용) — 템플릿(form_templates)·진료의·기관 헤더·발행본(form_submissions).
+//   DA 재판정 GO_REUSE_A: 전용테이블 X. form_key='opinion_doc' + status='published'.
 // ---------------------------------------------------------------------------
 
-// 원내 등록 소견 문구(opinion_doc_templates, active). 비어있으면 하드코드 OPINION_SECTIONS 만 노출(empty-safe).
-function useOpinionTemplates(clinicId: string | null) {
-  return useQuery<OpinionOption[]>({
-    queryKey: ['opinion_templates', clinicId],
+// field_map.sections(jsonb) → OpinionSection[] 방어적 파싱(형식 불량/누락 시 빈 배열 → 하드코드 폴백).
+export function parseOpinionSections(fieldMap: unknown): OpinionSection[] {
+  const fm = (fieldMap ?? {}) as Record<string, unknown>;
+  const raw = Array.isArray(fm['sections']) ? (fm['sections'] as unknown[]) : [];
+  const out: OpinionSection[] = [];
+  for (const s of raw) {
+    const sec = (s ?? {}) as Record<string, unknown>;
+    const title = typeof sec['title'] === 'string' ? (sec['title'] as string) : '';
+    const optsRaw = Array.isArray(sec['options']) ? (sec['options'] as unknown[]) : [];
+    const options: OpinionOption[] = [];
+    for (const o of optsRaw) {
+      const opt = (o ?? {}) as Record<string, unknown>;
+      if (
+        typeof opt['key'] === 'string' &&
+        typeof opt['label'] === 'string' &&
+        typeof opt['phrase'] === 'string'
+      ) {
+        options.push({ key: opt['key'] as string, label: opt['label'] as string, phrase: opt['phrase'] as string });
+      }
+    }
+    if (title && options.length > 0) out.push({ title, options });
+  }
+  return out;
+}
+
+// opinion_doc form_template — templateId(발행/이력 필터·provenance) + field_map.sections(옵션 그리드).
+//   마이그 미적용/seed 없음 → templateId=null, sections=[] (FE 하드코드 OPINION_SECTIONS 폴백, empty-safe).
+export interface OpinionTemplate {
+  templateId: string | null;
+  sections: OpinionSection[];
+}
+function useOpinionTemplate(clinicId: string | null) {
+  return useQuery<OpinionTemplate>({
+    queryKey: ['opinion_form_template', clinicId],
     enabled: !!clinicId,
     queryFn: async () => {
-      if (!clinicId) return [];
+      if (!clinicId) return { templateId: null, sections: [] };
       const { data, error } = await supabase
-        .from('opinion_doc_templates')
-        .select('id, option_name, body_template')
+        .from('form_templates')
+        .select('id, field_map')
         .eq('clinic_id', clinicId)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true });
+        .eq('form_key', 'opinion_doc')
+        .eq('active', true)
+        .limit(1)
+        .maybeSingle();
       if (error) throw error;
-      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-        key: `tpl_${String(r['id'])}`,
-        label: String(r['option_name'] ?? ''),
-        phrase: String(r['body_template'] ?? ''),
-      }));
+      const tpl = (data ?? null) as { id?: string; field_map?: unknown } | null;
+      if (!tpl?.id) return { templateId: null, sections: [] };
+      return { templateId: String(tpl.id), sections: parseOpinionSections(tpl.field_map) };
     },
     staleTime: 60_000,
   });
@@ -249,7 +284,8 @@ function useClinicHeader(clinicId: string | null) {
   });
 }
 
-// 발행본(opinion_documents) — 해당 고객의 발행 이력(최신순). 데스크 재출력 + 발행 상태 표기.
+// 발행본(form_submissions, template=opinion_doc, status='published') — 고객의 발행 이력(최신순).
+//   데스크 재출력 + 발행 상태 표기. body/발행자/면허/차트번호 = field_data 스냅샷.
 export interface PublishedOpinionRow {
   id: string;
   body: string;
@@ -258,63 +294,68 @@ export interface PublishedOpinionRow {
   issued_by_license_no: string | null;
   issued_at: string;
 }
-function usePublishedOpinions(clinicId: string | null, customerId: string | null) {
+function usePublishedOpinions(clinicId: string | null, customerId: string | null, templateId: string | null) {
   return useQuery<PublishedOpinionRow[]>({
-    queryKey: ['opinion_published', clinicId, customerId],
-    enabled: !!clinicId && !!customerId,
+    queryKey: ['opinion_published', clinicId, customerId, templateId],
+    enabled: !!clinicId && !!customerId && !!templateId,
     queryFn: async () => {
-      if (!clinicId || !customerId) return [];
+      if (!clinicId || !customerId || !templateId) return [];
       const { data, error } = await supabase
-        .from('opinion_documents')
-        .select('id, body, chart_no, issued_by_name, issued_by_license_no, issued_at')
+        .from('form_submissions')
+        .select('id, field_data, created_at')
         .eq('clinic_id', clinicId)
         .eq('customer_id', customerId)
-        .order('issued_at', { ascending: false });
+        .eq('template_id', templateId)
+        .eq('status', 'published')
+        .order('created_at', { ascending: false });
       if (error) throw error;
-      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-        id: String(r['id']),
-        body: String(r['body'] ?? ''),
-        chart_no: (r['chart_no'] as string | null) ?? null,
-        issued_by_name: String(r['issued_by_name'] ?? ''),
-        issued_by_license_no: (r['issued_by_license_no'] as string | null) ?? null,
-        issued_at: String(r['issued_at'] ?? ''),
-      }));
+      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+        const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+        return {
+          id: String(r['id']),
+          body: String(fd['final_text'] ?? ''),
+          chart_no: (fd['chart_no'] as string | null) ?? null,
+          issued_by_name: String(fd['doctor_name'] ?? ''),
+          issued_by_license_no: (fd['doctor_license_no'] as string | null) ?? null,
+          // 표시·인쇄는 seoulISODate(timestamptz) 경유 → created_at(정규 tz) 사용. field_data.published_at 는 KST 스냅샷 보존.
+          issued_at: String(r['created_at'] ?? ''),
+        };
+      });
     },
     staleTime: 10_000,
   });
 }
 
 export interface PublishOpinionInput {
-  clinicId: string;
-  customerId: string;
+  checkInId: string;                // check_ins.id (RPC 가 clinic/customer 해석)
+  customerId: string;               // invalidate 키용
   chartNo: string | null;
-  body: string;
+  finalText: string;                // 수기 최종본 SSOT(C4)
+  selectedOptionKeys: string[];
   sourceOptionName: string | null;
-  issuedBy: string | null;          // clinic_doctors.id
-  issuedByName: string;             // NOT NULL
-  issuedByLicenseNo: string | null;
+  doctorId: string | null;          // clinic_doctors.id (진료의 provenance)
+  doctorName: string;
+  doctorLicenseNo: string | null;
 }
-// 발행 = opinion_documents INSERT(append-only, immutable). 정정은 신규 발행으로만(supersedes_id, Phase 후속).
+// 발행 = publish_opinion_doc RPC(form_submissions published insert, append-only). 비가역=published 트리거(C1).
 function usePublishOpinion(clinicId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: PublishOpinionInput) => {
-      const { data, error } = await supabase
-        .from('opinion_documents')
-        .insert({
-          clinic_id: input.clinicId,
-          customer_id: input.customerId,
-          chart_no: input.chartNo,
-          body: input.body,
+      const { data, error } = await supabase.rpc('publish_opinion_doc', {
+        p_check_in_id: input.checkInId,
+        p_field_data: {
+          final_text: input.finalText,
+          selected_option_keys: input.selectedOptionKeys,
           source_option_name: input.sourceOptionName,
-          issued_by: input.issuedBy,
-          issued_by_name: input.issuedByName,
-          issued_by_license_no: input.issuedByLicenseNo,
-        })
-        .select('id')
-        .single();
+          doctor_name: input.doctorName,
+          doctor_license_no: input.doctorLicenseNo,
+          issued_by_doctor_id: input.doctorId,
+          chart_no: input.chartNo,
+        },
+      });
       if (error) throw error;
-      return data;
+      return data as { id: string; published_at: string };
     },
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['opinion_published', clinicId, vars.customerId] });
@@ -347,10 +388,16 @@ function OpinionEditorDialog({
 
   const canPublish = isDoctor(profile?.role ?? ''); // 발행=director|doctor(=is_admin_or_manager DB RLS)
 
-  // 원내 등록 문구(DB) + clinic_doctors + 발행 이력.
-  const { data: dbTemplates = [] } = useOpinionTemplates(clinicId);
+  // opinion_doc 템플릿(form_templates: templateId + field_map 옵션 그리드) + clinic_doctors + 발행 이력.
+  const { data: tpl } = useOpinionTemplate(clinicId);
+  const templateId = tpl?.templateId ?? null;
+  const dbSections = tpl?.sections ?? [];
   const { data: doctors = [] } = useClinicDoctors(clinicId);
-  const { data: published = [], isLoading: pubLoading } = usePublishedOpinions(clinicId, visitor?.customer_id ?? null);
+  const { data: published = [], isLoading: pubLoading } = usePublishedOpinions(
+    clinicId,
+    visitor?.customer_id ?? null,
+    templateId,
+  );
   const publishMut = usePublishOpinion(clinicId);
 
   // 발행자 기본값: is_default 진료의 → 첫 진료의.
@@ -369,11 +416,11 @@ function OpinionEditorDialog({
     setDoctorId(defaultDoctorId);
   }
 
-  // DB 템플릿을 하드코드 섹션 뒤 "원내 등록 문구" 섹션으로 추가(있을 때만 — empty-safe).
-  const sections: OpinionSection[] = useMemo(() => {
-    if (dbTemplates.length === 0) return OPINION_SECTIONS;
-    return [...OPINION_SECTIONS, { title: '원내 등록 문구', options: dbTemplates }];
-  }, [dbTemplates]);
+  // 옵션 그리드 = form_templates(opinion_doc).field_map.sections 우선, 없으면 하드코드 OPINION_SECTIONS(empty-safe).
+  const sections: OpinionSection[] = useMemo(
+    () => (dbSections.length > 0 ? dbSections : OPINION_SECTIONS),
+    [dbSections],
+  );
 
   // 클릭된 옵션 라벨(provenance) — source_option_name 스냅샷용.
   const labelByKey = useMemo(() => {
@@ -419,19 +466,21 @@ function OpinionEditorDialog({
       return;
 
     const issuer = resolveIssuer();
+    const selectedKeys = [...selected];
     const sourceOptionName =
-      [...selected].map((k) => labelByKey.get(k)).filter(Boolean).join(', ') || null;
+      selectedKeys.map((k) => labelByKey.get(k)).filter(Boolean).join(', ') || null;
 
     try {
       await publishMut.mutateAsync({
-        clinicId,
+        checkInId: visitor.id,
         customerId: visitor.customer_id,
         chartNo: visitor.chart_number,
-        body,
+        finalText: body,
+        selectedOptionKeys: selectedKeys,
         sourceOptionName,
-        issuedBy: issuer.issuedBy,
-        issuedByName: issuer.issuedByName,
-        issuedByLicenseNo: issuer.issuedByLicenseNo,
+        doctorId: issuer.issuedBy,
+        doctorName: issuer.issuedByName,
+        doctorLicenseNo: issuer.issuedByLicenseNo,
       });
       toast.success('소견서가 발행되었습니다.');
       setText('');

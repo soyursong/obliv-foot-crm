@@ -10,9 +10,15 @@
  *   S5 발행자 스냅샷(AC-6) — clinic_doctors 선택 → 이름/면허, 미등록 시 profile.name → '원장' fallback.
  *   S6 source_option_name 스냅샷 — 선택 옵션 라벨 join(provenance).
  *   S7 실 브라우저 렌더 — 소견서 탭/팝업/발행이력 섹션(균검사지 옆 신설 무회귀).
+ *   S8 form 스택 재사용(DA GO_REUSE_A) — publish_opinion_doc RPC field_data shape(final_text SSOT).
+ *   S9 parseOpinionSections — form_templates.field_map.sections 파싱 + 불량입력 폴백.
  *
  * 스타일: in-page 순수 로직 시뮬레이션 — 구현 정본(OpinionDocTab)을 모사해 회귀를 잡는다.
  *   (컴포넌트는 auth/DB 의존이라 직접 마운트 대신 로직 동치 검증 — KOH spec 동일 컨벤션.)
+ *
+ * ⚠ DA 재판정 GO_REUSE_A: 전용 2테이블 폐기 → form_templates(form_key='opinion_doc') +
+ *   form_submissions(status='published') 재사용. 발행=publish_opinion_doc RPC(append-only).
+ *   비가역=form_submissions published 트리거(C1). 정정=신규 발행(supersede, C4).
  */
 import { test, expect } from '@playwright/test';
 
@@ -54,6 +60,47 @@ const togglePhraseInText = (text: string, phrase: string): string => {
 // ── 정본 모사: OPINION_SECTIONS 구조(요약) ────────────────────────────────────
 const SECTION_TITLES = ['진단서', '금기증'];
 const SAMPLE_KEYS = ['oral_o', 'oral_x', 'after_1m', 'medical_staff', 'hyperlipidemia', 'diabetes', 'pediatric'];
+
+// ── 정본 모사: parseOpinionSections (OpinionDocTab.tsx) — field_map.sections 방어 파싱 ──
+type Sec = { title: string; options: { key: string; label: string; phrase: string }[] };
+const parseOpinionSections = (fieldMap: unknown): Sec[] => {
+  const fm = (fieldMap ?? {}) as Record<string, unknown>;
+  const raw = Array.isArray(fm['sections']) ? (fm['sections'] as unknown[]) : [];
+  const out: Sec[] = [];
+  for (const s of raw) {
+    const sec = (s ?? {}) as Record<string, unknown>;
+    const title = typeof sec['title'] === 'string' ? (sec['title'] as string) : '';
+    const optsRaw = Array.isArray(sec['options']) ? (sec['options'] as unknown[]) : [];
+    const options: Sec['options'] = [];
+    for (const o of optsRaw) {
+      const opt = (o ?? {}) as Record<string, unknown>;
+      if (typeof opt['key'] === 'string' && typeof opt['label'] === 'string' && typeof opt['phrase'] === 'string') {
+        options.push({ key: opt['key'] as string, label: opt['label'] as string, phrase: opt['phrase'] as string });
+      }
+    }
+    if (title && options.length > 0) out.push({ title, options });
+  }
+  return out;
+};
+
+// ── 정본 모사: publish_opinion_doc RPC field_data 구성 (usePublishOpinion) ──
+const buildPublishFieldData = (input: {
+  finalText: string;
+  selectedOptionKeys: string[];
+  sourceOptionName: string | null;
+  doctorName: string;
+  doctorLicenseNo: string | null;
+  doctorId: string | null;
+  chartNo: string | null;
+}) => ({
+  final_text: input.finalText,
+  selected_option_keys: input.selectedOptionKeys,
+  source_option_name: input.sourceOptionName,
+  doctor_name: input.doctorName,
+  doctor_license_no: input.doctorLicenseNo,
+  issued_by_doctor_id: input.doctorId,
+  chart_no: input.chartNo,
+});
 
 test.describe('T-20260616-foot-OPINION-DOC-FEATURE (Phase 2)', () => {
   // S1 — 옵션 클릭 시 phrase 가 editor 에 자동 삽입(빈 본문)
@@ -152,6 +199,53 @@ test.describe('T-20260616-foot-OPINION-DOC-FEATURE (Phase 2)', () => {
     expect(joinSourceOptions(['경구약 O', '당뇨'])).toBe('경구약 O, 당뇨');
     expect(joinSourceOptions([])).toBeNull();
     expect(joinSourceOptions(['', ''])).toBeNull();
+  });
+
+  // S8 — form 스택 재사용(DA GO_REUSE_A): publish_opinion_doc RPC field_data shape.
+  //   final_text = 수기 최종본 SSOT(C4). selected_option_keys/doctor 스냅샷이 field_data 에 적재.
+  test('S8: publish RPC field_data 에 final_text(SSOT)+선택키+발행자 스냅샷 포함', () => {
+    const fd = buildPublishFieldData({
+      finalText: '경구약 복용이 가능한 상태로 확인됩니다.',
+      selectedOptionKeys: ['oral_o', 'diabetes'],
+      sourceOptionName: '경구약 O, 당뇨',
+      doctorName: '김원장',
+      doctorLicenseNo: '12345',
+      doctorId: 'd1',
+      chartNo: 'A-001',
+    });
+    expect(fd.final_text).toBe('경구약 복용이 가능한 상태로 확인됩니다.'); // 수기 SSOT
+    expect(fd.selected_option_keys).toEqual(['oral_o', 'diabetes']);
+    expect(fd.doctor_name).toBe('김원장');
+    expect(fd.doctor_license_no).toBe('12345');
+    expect(fd.issued_by_doctor_id).toBe('d1');
+    expect(fd.chart_no).toBe('A-001');
+    // chart_no/published_at 서버 스냅샷은 RPC 가 병합(여기선 FE 전달분만 검증).
+  });
+
+  // S9 — parseOpinionSections: field_map.sections 정상 파싱 + 불량입력 폴백(빈 배열 → 하드코드 폴백 보장).
+  test('S9: field_map.sections 정상 파싱', () => {
+    const fm = {
+      sections: [
+        { title: '진단서', options: [{ key: 'oral_o', label: '경구약 O', phrase: '...' }] },
+        { title: '금기증', options: [{ key: 'diabetes', label: '당뇨', phrase: '...' }] },
+      ],
+    };
+    const secs = parseOpinionSections(fm);
+    expect(secs.map((s) => s.title)).toEqual(['진단서', '금기증']);
+    expect(secs[0].options[0].key).toBe('oral_o');
+  });
+
+  test('S9: 불량/누락 field_map → 빈 배열(FE 하드코드 OPINION_SECTIONS 폴백)', () => {
+    expect(parseOpinionSections(null)).toEqual([]);
+    expect(parseOpinionSections({})).toEqual([]);
+    expect(parseOpinionSections({ sections: 'nope' })).toEqual([]);
+    // options 누락/형식불량 섹션은 제외(title만 있고 옵션 없음 → drop).
+    expect(parseOpinionSections({ sections: [{ title: '진단서' }] })).toEqual([]);
+    // 옵션 중 형식 불량 항목만 제거, 정상 항목 보존.
+    const mixed = parseOpinionSections({
+      sections: [{ title: 'T', options: [{ key: 'a', label: 'A', phrase: 'p' }, { key: 1 }] }],
+    });
+    expect(mixed[0].options).toHaveLength(1);
   });
 });
 

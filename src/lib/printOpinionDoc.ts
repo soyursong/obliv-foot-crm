@@ -1,6 +1,6 @@
-// printOpinionDoc — 발행된 소견서(opinion_documents) 인쇄/미리보기 헬퍼
-// T-20260616-foot-OPINION-DOC-FEATURE (Phase 2, AC-7 출력 연동)
-//   데스크 서류 출력 = 발행본(opinion_documents) 스냅샷을 기존 소견서 HTML 양식(diag_opinion)에
+// printOpinionDoc — 발행된 소견서(form_submissions, template=opinion_doc) 인쇄/미리보기 헬퍼
+// T-20260616-foot-OPINION-DOC-FEATURE (Phase 2, AC-7 출력 연동 — DA 재판정 form 스택 재사용)
+//   데스크 서류 출력 = 발행본(field_data.final_text 스냅샷)을 기존 소견서 HTML 양식(diag_opinion)에
 //   바인딩해 새 창 인쇄. ⚠ 신규 출력 스택 금지 — 양식 바인딩은 LOGIC-LOCK L-006 의
 //   bindHtmlTemplate 단일 경로 재사용, 인쇄 창은 printKohResult 와 동일 패턴(window.open).
 //   "데스크 출력 = SELECT(스냅샷 body 그대로, 재조회 변조 불가)" — body 는 발행 시점 그대로 출력.

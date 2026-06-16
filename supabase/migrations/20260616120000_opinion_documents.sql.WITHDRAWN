@@ -1,3 +1,8 @@
+-- ⛔⛔⛔ WITHDRAWN 2026-06-16T15:16 — 절대 적용 금지 ⛔⛔⛔
+--   DA 재판정(MSG-20260616-151210-xxy7 / INFO-151227-ttta)으로 본 2테이블 모델은 NO_GO 폐기.
+--   정본 = KOH form 스택 재사용안 A → 20260616160000_opinion_doc_form_stack.sql 참조.
+--   prod 미적용 확인됨(2026-06-16 probe: opinion_documents/opinion_doc_templates 부재).
+--   역사 보존용으로만 .WITHDRAWN 보관. cross_crm_data_contract §2-7 v2.
 -- ============================================================
 -- T-20260616-foot-OPINION-DOC-FEATURE (Phase 2): 소견서 템플릿 + 발행본
 -- 김주연 총괄 (#foot, 채널 C0ATE5P6JTH, thread 1781491923.605529)
