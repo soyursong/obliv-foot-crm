@@ -123,10 +123,13 @@ test.describe('AC-4/AC-5 — HandToggle 상태 셀 3-상태 토글', () => {
     expect(s).toMatch(/<HandToggle[\s\S]*?completed\s*\n\s*onRefresh/);
   });
 
-  test('AC-5a 교차 클라이언트: ack/완료는 DB SSOT write 재사용(recordAck/applyStatusFlagTransition)', () => {
+  test('AC-5a 교차 클라이언트: ack 는 DB SSOT write 재사용(recordAck)', () => {
+    // ⚠ T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE: 진료완료 버튼 제거로 완료 전이
+    //   (applyStatusFlagTransition pink)가 DoctorCallDashboard 밖(칸반 상태 플래그 메뉴 → Dashboard.handleFlagChange)
+    //   으로 이전됨. 이 화면은 ack(recordAck)만 write — 완료 전이 호출 0(아래 GUARD 로 박제).
     const s = DASH();
     expect(s).toContain('recordAck(checkIn.id)');
-    expect(s).toContain("applyStatusFlagTransition(checkIn, 'pink', actor)");
+    expect(s).not.toContain("applyStatusFlagTransition(checkIn, 'pink'"); // 완료 전이는 이 화면 밖(상태 플래그 메뉴)
     // recordAck export(SSOT 재사용)
     expect(ACK()).toContain('export async function recordAck');
   });
@@ -196,10 +199,12 @@ test.describe('GUARD — 회귀 0', () => {
   });
 
   test('구 손들기 워크플로(DoctorAckButton/Handshake) 잔존 0', () => {
-    // ⚠ T-20260615-foot-SHAKEHAND-NO-COMPLETE: RELAYOUT 이 제거했던 TreatmentCompleteButton(별도 명시 완료액션)을
-    //   의도적으로 복원했다(✋=ack 전용, 완료=별도 버튼). 따라서 TreatmentCompleteButton 은 더 이상 '잔존 금지' 대상 아님.
+    // ⚠ T-20260615-foot-SHAKEHAND-NO-COMPLETE 가 TreatmentCompleteButton(별도 명시 완료액션)을 복원했으나,
+    //   T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE (김주연 총괄 확정)가 다시 제거 → 완료 동선을 칸반
+    //   '상태 플래그 메뉴 → 진료완료(핑크)'로 일원화. 따라서 이제 TreatmentCompleteButton 도 '잔존 금지' 대상.
     const s = DASH();
-    expect(s).toContain('function TreatmentCompleteButton('); // 별도 명시 완료액션 복원 보장
+    expect(s).not.toContain('function TreatmentCompleteButton('); // 버튼 제거 — 완료는 상태 플래그 메뉴로 이전
+    expect(s).not.toContain('<TreatmentCompleteButton');
     expect(s).not.toContain('DoctorAckButton');
     expect(s).not.toContain('Handshake');
   });

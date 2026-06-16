@@ -54,9 +54,10 @@ test.describe('AC-1 GUARD — 경과시간 칼럼 제거 / ✋ 옆 +N분 / 30분
     expect(s).toContain("elapsedMin >= 30 ? 'font-semibold text-red-500' : 'text-muted-foreground'");
   });
 
-  test('GUARD — ✋ 첫탭 ack-only(SHAKE-ACK-NOT-COMPLETE) + 진료완료 명시버튼 분리 보존', () => {
+  test('GUARD — ✋ 첫탭 ack-only(SHAKE-ACK-NOT-COMPLETE) 보존 / 진료완료 버튼 제거(상태 메뉴 일원화)', () => {
     const s = DASH();
-    expect(s).toContain('<TreatmentCompleteButton');
+    // T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE: 진료완료 버튼 제거 — 완료는 칸반 상태 플래그 메뉴(핑크)로 이전.
+    expect(s).not.toContain('<TreatmentCompleteButton');
     expect(s).toContain('recordAck');
     expect(s).toContain('SHAKEHAND-NO-COMPLETE');
   });
