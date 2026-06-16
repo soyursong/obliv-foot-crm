@@ -205,7 +205,8 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
     if ((await activeRow.count()) > 0) {
       await expect(activeRow.locator('[data-testid="doctor-call-name"]')).toBeVisible();
       await expect(activeRow.locator('[data-testid="doctor-call-select"]')).toHaveCount(0);
-      await expect(activeRow.locator('[data-testid="doctor-call-memo-display"]')).toBeVisible();
+      // SUPERSEDED-BY CALLCARD-COMPACT-MEMO-TOGGLE: 메모 박스 기본 숨김 → 진입점은 연필 토글.
+      await expect(activeRow.locator('[data-testid="doctor-call-memo-toggle"]')).toBeVisible();
     }
     const loc = page.locator('[data-testid="doctor-call-location"]');
     if ((await loc.count()) > 0) {

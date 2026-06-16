@@ -121,16 +121,18 @@ test.describe('T-20260615 CALLLIST-STEPPER-INLINE-COMPACT — "지하철 표시"
     // 현단계 텍스트 라벨 1개 노출(AC-2 식별성).
     await expect(stepper.locator('[data-testid="doctor-stage-current-label"]')).toHaveCount(1);
     await expect(stepper.locator('[data-testid="doctor-stage-current-label"]')).toBeVisible();
-    // 인라인 — stepper 부모 == 이름버튼 부모(같은 가로 줄).
-    const inline = await firstRow.evaluate((rowEl) => {
+    // (정정) SUPERSEDED-BY CALLCARD-COMPACT-MEMO-TOGGLE: stepper 는 성함 아래 전용 줄(doctor-call-stepper-line).
+    //   compact 렌더(점+현단계 라벨)는 유지, 위치만 인라인 → 전용 줄. ∴ 이름버튼과 다른 부모.
+    const onOwnLine = await firstRow.evaluate((rowEl) => {
       const s = rowEl.querySelector('[data-testid="doctor-stage-stepper"]');
       const nm = rowEl.querySelector('[data-testid="doctor-call-name"]');
-      return !!s && !!nm && s.parentElement === nm.parentElement;
+      const line = rowEl.querySelector('[data-testid="doctor-call-stepper-line"]');
+      return !!s && !!nm && !!line && line.contains(s) && s.parentElement !== nm.parentElement;
     });
-    expect(inline).toBe(true);
-    // AC-4 회귀: 이름·메모 진입점 유지.
+    expect(onOwnLine).toBe(true);
+    // AC-4 회귀: 이름·메모 토글 진입점 유지(메모 박스는 기본 숨김, 토글이 진입점).
     await expect(firstRow.locator('[data-testid="doctor-call-name"]')).toBeVisible();
-    await expect(firstRow.locator('[data-testid="doctor-call-memo-display"]')).toBeVisible();
+    await expect(firstRow.locator('[data-testid="doctor-call-memo-toggle"]')).toBeVisible();
   });
 
   // ── S2 (DOM 스모크): 4명+ — 각 행 compact stepper 일관 + 인라인 + 레이아웃 무파손 ────────────────
@@ -162,12 +164,13 @@ test.describe('T-20260615 CALLLIST-STEPPER-INLINE-COMPACT — "지하철 표시"
         await expect(stepper.locator('[data-testid="doctor-stage-current-label"]')).toHaveCount(1);
         await expect(stepper.locator('[data-testid="doctor-stage-here"]')).toHaveCount(1);
         await expect(stepper.locator('[data-testid="doctor-stage-node"]')).toHaveCount(4);
-        const inline = await row.evaluate((rowEl) => {
+        const onOwnLine = await row.evaluate((rowEl) => {
           const s = rowEl.querySelector('[data-testid="doctor-stage-stepper"]');
           const nm = rowEl.querySelector('[data-testid="doctor-call-name"]');
-          return !!s && !!nm && s.parentElement === nm.parentElement;
+          const line = rowEl.querySelector('[data-testid="doctor-call-stepper-line"]');
+          return !!s && !!nm && !!line && line.contains(s) && s.parentElement !== nm.parentElement;
         });
-        expect(inline).toBe(true);
+        expect(onOwnLine).toBe(true);
       }
     }
     await expect(widget.first()).toBeVisible();
