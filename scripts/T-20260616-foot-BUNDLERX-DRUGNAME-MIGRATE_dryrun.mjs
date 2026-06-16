@@ -43,7 +43,10 @@ const sb = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
 
 const MIGRATE_FOLDER_NAME = '이관약';
 const arr = (x) => (Array.isArray(x) ? x : []);
+// 표시용 정규화: trim + 연속공백 압축 (원형 유지)
 const norm = (s) => (s == null ? '' : String(s).trim().replace(/\s+/g, ' '));
+// §1-safe 조건2 매칭키: 위 + 대소문자 통일(lower)
+const normKey = (s) => norm(s).toLowerCase();
 
 const log = [];
 const out = (s) => { console.log(s); log.push(s); };
@@ -80,9 +83,9 @@ const out = (s) => { console.log(s); log.push(s); };
 
   // 인덱스
   const codeById = new Map(codes.map((c) => [c.id, c]));
-  const codesByName = new Map(); // norm(name_ko) -> [codes]
+  const codesByName = new Map(); // normKey(name_ko) -> [codes]  (§1-safe 조건2: lower 정규화 매칭)
   for (const c of codes) {
-    const k = norm(c.name_ko);
+    const k = normKey(c.name_ko);
     if (!codesByName.has(k)) codesByName.set(k, []);
     codesByName.get(k).push(c);
   }
@@ -98,20 +101,23 @@ const out = (s) => { console.log(s); log.push(s); };
   out('');
 
   // ── 2. 묶음처방 약 수집 (distinct) ────────────────────────────
-  // 키: code_id 있으면 'cid:'+id, 없으면 'name:'+norm(name)
+  // 키: code_id 있으면 'cid:'+id, 없으면 'name:'+normKey(name)  (§1-safe 조건2)
+  // sources: §1-safe 조건4 provenance — 약별 출처(prescription_set_id/name/item idx) 기록
   const drugs = new Map();
   let totalItems = 0;
   for (const s of sets) {
-    for (const it of arr(s.items)) {
+    arr(s.items).forEach((it, idx) => {
       totalItems++;
       const cid = it.prescription_code_id || null;
       const nm = norm(it.name);
-      const key = cid ? `cid:${cid}` : `name:${nm}`;
+      const key = cid ? `cid:${cid}` : `name:${normKey(it.name)}`;
       if (!drugs.has(key)) {
-        drugs.set(key, { cid, name: nm, fromSets: new Set(), hasCid: !!cid });
+        drugs.set(key, { cid, name: nm, fromSets: new Set(), sources: [], hasCid: !!cid });
       }
-      drugs.get(key).fromSets.add(s.name);
-    }
+      const d = drugs.get(key);
+      d.fromSets.add(s.name);
+      d.sources.push({ set_id: s.id, set_name: s.name, item_idx: idx });
+    });
   }
 
   out('[1] 묶음처방 약 항목 수집');
@@ -125,34 +131,38 @@ const out = (s) => { console.log(s); log.push(s); };
     let resolvedCodeId = null;
     let status, note = '';
 
+    // §1-safe 조건3: 정규화 후 모호(동명 2건+)면 silent 신규생성·auto-pick·fuzzy 병합 금지
+    //   → resolvedCodeId=null 유지, status=AMBIGUOUS(unmapped). 신규생성·폴더배정 안 함.
     if (d.hasCid) {
       const c = codeById.get(d.cid);
       if (c) {
-        resolvedCodeId = c.id;
+        resolvedCodeId = c.id;          // 조건1: 기존 재사용
         status = 'LINKED';
         note = `code_id 직접연결 (name_ko="${c.name_ko}")`;
       } else {
         status = 'DANGLING_CID';
         note = `items.prescription_code_id=${d.cid} 가 prescription_codes 에 없음 → name 으로 폴백`;
-        // 폴백: 이름 매칭
-        const cands = codesByName.get(d.name) || [];
+        // 폴백: 정규화 이름 매칭
+        const cands = codesByName.get(normKey(d.name)) || [];
         if (cands.length === 1) { resolvedCodeId = cands[0].id; status = 'NAME_MATCH(fallback)'; }
-        else if (cands.length > 1) { resolvedCodeId = cands[0].id; status = 'NAME_AMBIGUOUS(fallback)'; note += ` / 동명 ${cands.length}건`; }
+        else if (cands.length > 1) { status = 'AMBIGUOUS(fallback,unmapped)'; note += ` / 동명 ${cands.length}건 → 미배정(문지은 확인)`; }
         else { status = 'NEW_NEEDED(fallback)'; note += ' / 이름매칭 0 → 신규생성'; }
       }
     } else {
       if (!d.name) { status = 'EMPTY_NAME'; note = '약 이름 빈값 → 스킵'; }
       else {
-        const cands = codesByName.get(d.name) || [];
-        if (cands.length === 1) { resolvedCodeId = cands[0].id; status = 'NAME_MATCH'; note = `name_ko 정확일치 (claim=${cands[0].claim_code})`; }
-        else if (cands.length > 1) { resolvedCodeId = cands[0].id; status = 'NAME_AMBIGUOUS'; note = `동명 ${cands.length}건 → 첫 후보(${cands[0].claim_code}) 사용`; }
+        const cands = codesByName.get(normKey(d.name)) || [];
+        if (cands.length === 1) { resolvedCodeId = cands[0].id; status = 'NAME_MATCH'; note = `name_ko 정규화 정확일치 (claim=${cands[0].claim_code})`; }
+        else if (cands.length > 1) { status = 'AMBIGUOUS(unmapped)'; note = `동명 ${cands.length}건 → 자동해소 금지·미배정 (문지은 대표원장 확인 후 처리)`; }
         else { status = 'NEW_NEEDED'; note = '이름매칭 0 → 신규 prescription_codes 생성 (claim=RXMIG-*)'; }
       }
     }
 
     // 폴더 배정 판단
     let folderAction;
-    if (resolvedCodeId && assignedCodeIds.has(resolvedCodeId)) {
+    if (status.startsWith('AMBIGUOUS')) {
+      folderAction = 'SKIP(모호 unmapped)';     // 조건3: 미배정
+    } else if (resolvedCodeId && assignedCodeIds.has(resolvedCodeId)) {
       folderAction = 'SKIP(이미 폴더배정)';
     } else if (status === 'EMPTY_NAME') {
       folderAction = 'SKIP(빈이름)';
@@ -167,6 +177,7 @@ const out = (s) => { console.log(s); log.push(s); };
       folderAction,
       note,
       fromSets: [...d.fromSets],
+      sources: d.sources,   // §1-safe 조건4 provenance
     });
   }
 
@@ -199,11 +210,10 @@ const out = (s) => { console.log(s); log.push(s); };
   newNeeded.forEach((p, i) => out(`    ${i + 1}. "${p.name}"  ← 출처세트: [${p.fromSets.join(', ')}]`));
   out('');
 
-  if (ambiguous.length) {
-    out('[5] 모호(동명 다건) — 게이트 검토 필요');
-    ambiguous.forEach((p, i) => out(`    ${i + 1}. "${p.name}"  ${p.note}`));
-    out('');
-  }
+  out('[5] 모호(동명 2건+) UNMAPPED — §1-safe 조건3 (자동해소 금지, 문지은 대표원장 확인 대상)');
+  if (ambiguous.length === 0) out('    (없음) → 추가 confirm 불요');
+  ambiguous.forEach((p, i) => out(`    ${i + 1}. "${p.name}"  ${p.note}`));
+  out('');
 
   out('[6] 전체 이관 계획 (약별)');
   out('    ─────────────────────────────────────────────────────────');
@@ -239,11 +249,31 @@ const out = (s) => { console.log(s); log.push(s); };
     new_codes: newNeeded.length,
     folder_assign: toAssign.length,
     skip: toSkip.length,
-    ambiguous: ambiguous.length,
+    ambiguous: ambiguous.length,   // §1-safe 조건3: >0 이면 apply 게이트 fail-closed
+    unmapped: ambiguous.length,    // 모호=unmapped (문지은 확인 대상)
     migrate_folder_exists: !!migrateFolder,
   };
   writeFileSync(join(dir, 'T-20260616-foot-BUNDLERX-DRUGNAME-MIGRATE_dryrun.json'), JSON.stringify(counts, null, 2));
   console.log('EXPECT=' + JSON.stringify(counts));
+
+  // §1-safe 조건4 provenance 산출물: 약별 출처(prescription_set_id/name/item idx) + 해소경로 (스키마 변경 없이 감사기록)
+  const provenance = plan
+    .filter((p) => p.status !== 'EMPTY_NAME')
+    .map((p) => ({
+      drug_name: p.name,
+      status: p.status,
+      resolved_code_id: p.resolvedCodeId,
+      new_claim_code: p.status.startsWith('NEW_NEEDED')
+        ? 'RXMIG-(md5 12)'
+        : null,
+      folder_action: p.folderAction,
+      sources: p.sources, // [{set_id, set_name, item_idx}]
+    }));
+  writeFileSync(
+    join(dir, 'T-20260616-foot-BUNDLERX-DRUGNAME-MIGRATE_provenance.json'),
+    JSON.stringify({ generated: new Date().toISOString(), note: '§1-safe 조건4: 이관 약별 출처(prescription_set_id/item idx) — posology 미이관·값 날조 없음', drugs: provenance }, null, 2),
+  );
+  console.log('📄 provenance → db-gate/T-20260616-foot-BUNDLERX-DRUGNAME-MIGRATE_provenance.json');
 })().catch((e) => {
   console.error('❌ DRY-RUN 실패:', e.message);
   process.exit(1);

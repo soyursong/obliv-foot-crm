@@ -35,7 +35,7 @@ const MIG = readFileSync(
 const EVID = join(REPO, 'db-gate', 'T-20260616-foot-BUNDLERX-DRUGNAME-MIGRATE_evidence.md');
 
 // dry-run JSON 의 기대값 (없으면 디폴트)
-let EXPECT = { sets: 19, distinct_drugs: 19, new_codes: 19, folder_assign: 19, skip: 0, ambiguous: 0 };
+let EXPECT = { sets: 19, distinct_drugs: 19, new_codes: 19, folder_assign: 19, skip: 0, ambiguous: 0, unmapped: 0 };
 try {
   EXPECT = { ...EXPECT, ...JSON.parse(readFileSync(join(REPO, 'db-gate', 'T-20260616-foot-BUNDLERX-DRUGNAME-MIGRATE_dryrun.json'), 'utf8')) };
 } catch { /* keep default */ }
@@ -62,40 +62,56 @@ const flush = () => {
   out(`- prod: rxlomoozakkjesdqjtvd | ${new Date().toISOString()} | mode: ${DO_APPLY ? 'AUDIT+APPLY' : 'AUDIT-ONLY'}`);
   out('');
 
-  // ── [A] audit (read-only) ──
+  // ── [A] audit (read-only) — §1-safe 조건2(case-fold) + 조건3(1건매칭/모호버킷) 동형 ──
   out('## [A] read-only audit');
   const { rows: aR } = await client.query(`
     WITH bundle_drugs AS (
-      SELECT DISTINCT btrim(regexp_replace(it->>'name', '\\s+', ' ', 'g')) AS dname,
-                      NULLIF(it->>'prescription_code_id','')::uuid AS cid
+      SELECT DISTINCT
+        btrim(regexp_replace(it->>'name','\\s+',' ','g'))        AS dname,
+        lower(btrim(regexp_replace(it->>'name','\\s+',' ','g'))) AS dname_norm,
+        NULLIF(it->>'prescription_code_id','')::uuid             AS cid
       FROM prescription_sets ps CROSS JOIN LATERAL jsonb_array_elements(ps.items) it
       WHERE COALESCE(btrim(it->>'name'),'') <> ''
+    ), name_match AS (
+      SELECT bd.dname_norm, count(*) AS n,
+             (array_agg(pc.id ORDER BY pc.created_at NULLS LAST))[1] AS first_id
+      FROM bundle_drugs bd
+      JOIN prescription_codes pc
+        ON lower(btrim(regexp_replace(pc.name_ko,'\\s+',' ','g'))) = bd.dname_norm
+      GROUP BY bd.dname_norm
     ), resolved AS (
       SELECT bd.dname,
         COALESCE(
           (SELECT pc.id FROM prescription_codes pc WHERE pc.id = bd.cid),
-          (SELECT pc.id FROM prescription_codes pc
-             WHERE btrim(regexp_replace(pc.name_ko,'\\s+',' ','g'))=bd.dname LIMIT 1)
-        ) AS existing_code_id
-      FROM bundle_drugs bd
+          CASE WHEN COALESCE(nm.n,0)=1 THEN nm.first_id ELSE NULL END
+        ) AS existing_code_id,
+        CASE
+          WHEN (SELECT pc.id FROM prescription_codes pc WHERE pc.id = bd.cid) IS NOT NULL THEN 'LINKED'
+          WHEN COALESCE(nm.n,0)=1  THEN 'NAME_MATCH'
+          WHEN COALESCE(nm.n,0)>=2 THEN 'AMBIGUOUS'
+          ELSE 'NEW'
+        END AS status
+      FROM bundle_drugs bd LEFT JOIN name_match nm ON nm.dname_norm = bd.dname_norm
     )
     SELECT
-      (SELECT count(*) FROM prescription_sets)                                AS sets,
-      (SELECT count(*) FROM resolved)                                          AS distinct_drugs,
-      (SELECT count(*) FROM resolved WHERE existing_code_id IS NULL)           AS new_codes,
-      (SELECT count(*) FROM resolved r WHERE NOT EXISTS (
-          SELECT 1 FROM prescription_code_folders cf WHERE cf.prescription_code_id = r.existing_code_id)
-        )                                                                      AS folder_assign_or_new;`);
+      (SELECT count(*) FROM prescription_sets)                  AS sets,
+      (SELECT count(*) FROM resolved)                           AS distinct_drugs,
+      (SELECT count(*) FROM resolved WHERE status='NEW')        AS new_codes,
+      (SELECT count(*) FROM resolved WHERE status='AMBIGUOUS')  AS ambiguous;`);
   const a = aR[0];
-  const got = { sets: +a.sets, distinct_drugs: +a.distinct_drugs, new_codes: +a.new_codes };
+  const got = { sets: +a.sets, distinct_drugs: +a.distinct_drugs, new_codes: +a.new_codes, ambiguous: +a.ambiguous };
   out('```');
-  out(`got: sets=${got.sets} distinct_drugs=${got.distinct_drugs} new_codes=${got.new_codes} (folder_assign_or_new=${a.folder_assign_or_new})`);
-  out(`exp: sets=${EXPECT.sets} distinct_drugs=${EXPECT.distinct_drugs} new_codes=${EXPECT.new_codes}`);
+  out(`got: sets=${got.sets} distinct_drugs=${got.distinct_drugs} new_codes=${got.new_codes} ambiguous=${got.ambiguous}`);
+  out(`exp: sets=${EXPECT.sets} distinct_drugs=${EXPECT.distinct_drugs} new_codes=${EXPECT.new_codes} ambiguous=${EXPECT.ambiguous}`);
   out('```');
 
-  const gateOk = got.sets === EXPECT.sets && got.distinct_drugs === EXPECT.distinct_drugs && got.new_codes === EXPECT.new_codes;
+  const countOk = got.sets === EXPECT.sets && got.distinct_drugs === EXPECT.distinct_drugs && got.new_codes === EXPECT.new_codes;
+  // §1-safe 조건3: 모호 1건이라도 있으면 fail-closed (자동해소 금지 → 문지은 대표원장 확인 필요)
+  const ambiguousOk = got.ambiguous === 0;
+  const gateOk = countOk && ambiguousOk;
   out(`\n## [GATE] ${gateOk ? 'PASS ✅' : 'FAIL ❌'}`);
-  if (!gateOk) { out('⛔ EXPECT 불일치 → apply 중단. supervisor 보고 필요.'); await client.end(); flush(); process.exit(2); }
+  if (!ambiguousOk) out(`⛔ §1-safe 조건3 위반: 모호 약 ${got.ambiguous}건 — 자동해소 금지. unmapped 문지은 대표원장 확인 후 처리.`);
+  if (!gateOk) { out('⛔ apply 중단. supervisor 보고 필요.'); await client.end(); flush(); process.exit(2); }
   if (!DO_APPLY) { out('✋ audit-only: 게이트 PASS. --apply 미지정 → apply 미실행 (supervisor GO 대기).'); await client.end(); flush(); process.exit(0); }
 
   // ── [B] apply ──

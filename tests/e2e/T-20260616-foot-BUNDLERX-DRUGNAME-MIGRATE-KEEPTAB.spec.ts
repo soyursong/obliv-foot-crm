@@ -71,7 +71,8 @@ test('A-3: 이관 산출물 — prescription_codes/folders/code_folders INSERT',
 
 test('A-4: "약 이름만" — posology(dosage/route/frequency/days/notes) 이관 안 함', () => {
   const src = read(MIG);
-  // 신규 prescription_codes INSERT 컬럼은 claim_code/name_ko/code_type/classification 만.
+  // 신규 prescription_codes INSERT 컬럼 = claim_code/name_ko/code_type/code_source 만.
+  //   classification 등 누락필드는 컬럼 DEFAULT 의존(§1-safe 조건4 값 날조 금지).
   // posology 키를 items 에서 뽑아 어디에도 쓰지 않는다.
   expect(src).not.toMatch(/it->>'dosage'/);
   expect(src).not.toMatch(/it->>'route'/);
@@ -79,6 +80,29 @@ test('A-4: "약 이름만" — posology(dosage/route/frequency/days/notes) 이�
   expect(src).not.toMatch(/it->>'days'/);
   // 이름만 추출
   expect(src).toContain("it->>'name'");
+});
+
+test('A-8: §1-safe 매핑 안전조건 4종 (case-fold / 모호 fail-closed / code_source / provenance)', () => {
+  const mig = read(MIG);
+  const dry = read(DRYRUN);
+  const apply = read(APPLY);
+  // 조건2 정규화 후 매칭 — 대소문자 통일(lower) 가 마이그/감사 양쪽에 적용
+  expect(mig).toMatch(/lower\(btrim\(regexp_replace\(pc\.name_ko/);
+  expect(apply).toMatch(/lower\(btrim\(regexp_replace\(pc\.name_ko/);
+  // 조건3 모호 silent 금지 — 정확히 1건일 때만 자동해소, 2건+ 는 AMBIGUOUS 분리
+  expect(mig).toContain("'AMBIGUOUS'");
+  expect(mig).toMatch(/COALESCE\(nm\.n, ?0\) ?= ?1/);
+  // 조건3 fail-closed — 모호 1건이라도 있으면 VERIFY RAISE
+  expect(mig).toMatch(/v_ambiguous > 0[\s\S]*RAISE EXCEPTION/);
+  // apply 게이트도 ambiguous=0 강제
+  expect(apply).toMatch(/ambiguous === 0/);
+  // 조건3 신규생성은 status='NEW' 에 한정(모호건 신규생성 금지)
+  expect(mig).toMatch(/WHERE r\.status = 'NEW'/);
+  // 조건4 code_source='custom'(자유텍스트 출신=정직값), code_type='이관약'(provenance 마커)
+  expect(mig).toMatch(/'이관약', ?'custom'/);
+  // 조건4 provenance 산출물 — 약별 출처(prescription_set_id/item idx) 기록
+  expect(dry).toContain('provenance');
+  expect(dry).toMatch(/set_id|item_idx/);
 });
 
 test('A-5: 백업 스냅샷 3종 + 롤백 식별(RXMIG/이관약) + 검증 DO', () => {

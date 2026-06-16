@@ -1,0 +1,272 @@
+{
+  "generated": "2026-06-16T07:03:24.278Z",
+  "note": "§1-safe 조건4: 이관 약별 출처(prescription_set_id/item idx) — posology 미이관·값 날조 없음",
+  "drugs": [
+    {
+      "drug_name": "닥터로반",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 23,
+          "set_name": "닥터로반",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "대웅푸루나졸정150mg(플루코나졸)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 16,
+          "set_name": "대웅푸루나졸정150mg(플루코나졸)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "록소포펜",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 20,
+          "set_name": "록소포펜",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "루마졸크림",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 17,
+          "set_name": "루마졸크림",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "바르토벤 외용액 4ml(에피나코나졸)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 7,
+          "set_name": "바르토벤 외용액 4ml(에피나코나졸)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "바르토벤 외용액 8ml(에피나코나졸)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 8,
+          "set_name": "바르토벤 외용액 8ml(에피나코나졸)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "베타베이트연고(클로베타솔프로피오네이트)15g",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 14,
+          "set_name": "베타베이트연고(클로베타솔프로피오네이트)15g",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "삼아리도멕스크림(프레드니솔론발레로아세테이트)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 15,
+          "set_name": "삼아리도멕스크림(프레드니솔론발레로아세테이트)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "세파클리어",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 21,
+          "set_name": "세파클리어",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "스티렌",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 19,
+          "set_name": "스티렌",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "에스로반연고(무피로신)10g",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 12,
+          "set_name": "에스로반연고(무피로신)10g",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "오구멘토",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 22,
+          "set_name": "오구멘토",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "주블리아 외용액 8ml(에피나코나졸)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 6,
+          "set_name": "주블리아 외용액 8ml(에피나코나졸)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "주블리아외용액 4ml(에피나코나졸)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 5,
+          "set_name": "주블리아외용액 4ml(에피나코나졸)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "터미졸크림(테르비나핀염산염)15g",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 11,
+          "set_name": "터미졸크림(테르비나핀염산염)15g",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "플루나코엠캡슐(플루코나졸)",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 18,
+          "set_name": "플루나코엠캡슐(플루코나졸)",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "하이트리크림 20g",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 13,
+          "set_name": "하이트리크림 20g",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "한미유리아크림 200ml(우레아)20g",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 10,
+          "set_name": "한미유리아크림 200ml(우레아)20g",
+          "item_idx": 0
+        }
+      ]
+    },
+    {
+      "drug_name": "한미유리아크림 200ml(우레아)50g",
+      "status": "NEW_NEEDED",
+      "resolved_code_id": null,
+      "new_claim_code": "RXMIG-(md5 12)",
+      "folder_action": "ASSIGN→'이관약'",
+      "sources": [
+        {
+          "set_id": 9,
+          "set_name": "한미유리아크림 200ml(우레아)50g",
+          "item_idx": 0
+        }
+      ]
+    }
+  ]
+}
