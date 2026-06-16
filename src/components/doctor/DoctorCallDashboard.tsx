@@ -1424,6 +1424,18 @@ function CompletedRow({
             >
               {clinicalPreview}
             </button>
+          ) : discharged ? (
+            /* T-20260616-foot-DISCHARGED-DASH-RX-TOGGLE-READONLY (AC-1/AC-2/AC-3):
+               귀가(discharged) 환자는 임상경과 작성 진입(editable input) 차단 — 빈값은 클릭 불가 readonly '—'(텍스트).
+               clinicalPreview 있으면 위 분기에서 read-only 펼침(AC-2)으로 확인. 작성·수정은 차트(이름 클릭)에서.
+               ⚠ 원내잔류(!discharged)는 아래 button 분기 그대로 — 작성 흐름 무회귀(AC-4). 회색+cursor default+hover 제거(AC-3). */
+            <span
+              data-testid="doctor-completed-clinical-empty-readonly"
+              title="귀가 환자의 임상경과는 차트(이름 클릭)에서 확인하세요"
+              className="cursor-default select-none text-[15px] font-medium text-gray-300"
+            >
+              —
+            </span>
           ) : (
             <button
               type="button"
@@ -1446,7 +1458,9 @@ function CompletedRow({
           처방 셀의 RxPopover(알약 anchor portal 팝오버)로 대체(완료 섹션 동일). */}
 
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
-      {showClinical && checkIn.customer_id && (
+      {/* T-20260616-foot-DISCHARGED-DASH-RX-TOGGLE-READONLY (AC-1 fail-closed 이중방어): 귀가(discharged)는 인라인 임상경과 편집창(MedicalChartPanel editable) 미렌더.
+          진입점('—' 버튼)을 이미 readonly span 으로 막았으나, showClinical 이 어떤 경로로 true 가 되더라도 editable input 이 안 열리도록 분기에서 한 번 더 차단. */}
+      {showClinical && !discharged && checkIn.customer_id && (
         <tr data-testid="doctor-completed-chart-inline-row" className="bg-white">
           {/* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-2: 인라인 임상경과 패널 full-width → 50% + 오른쪽 끝 정렬(대기 섹션 동일). */}
           <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
