@@ -175,13 +175,24 @@ export function listupSignature(ci: CheckIn): string {
  *     checked_in_at 폴백(방문 단위 안정값).
  *   ※ listupSignature의 activationAt 파생과 의도적으로 동일 규칙(콜 진입 모먼트). 다만 listupSignature는
  *     형제 티켓(ROW-HIDE-AUTOSHOW)이 본문을 정적 가드로 락하고 있어 그 함수를 건드리지 않고 별도 헬퍼로 둔다.
+ *
+ *   T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK (옵션 A, read-side no-DDL) — 폴백 사다리 보강:
+ *     현장 김주연 총괄 "1차 순서가 여전히 접수순처럼 보인다" 결함. 근본원인 = healer_waiting로 *status 전환만* 된
+ *     환자는 status_flag_history에 purple/yellow 진입기록이 없어 곧장 checked_in_at(접수시각)으로 폴백 → tier3가
+ *     사실상 접수순으로 새는 케이스. 그 환자의 *명단 진입(activation) 시각*은 status_transitions 테이블에 남아 있으므로
+ *     (Dashboard fetch가 read-path로 ci.derivedCallEntryAt에 주입 — DDL 없음), 1순위(flag history) 부재 시
+ *     2순위로 derivedCallEntryAt(명단 active 전환 to_status∈healer_waiting/purple/yellow 최신 transitioned_at)을 쓴다.
+ *     ⚠ known-limitation: HL자동노랑(Dashboard.tsx 벌크 yellow-update가 SSOT 우회)은 transition row 자체가 없어
+ *       2순위로도 복구 불가 → checked_in_at 잔존(소수 엣지, source-side 교정은 옵션 B 별도티켓 — 본 WS 범위 외).
+ *     폴백 사다리: ① status_flag_history 최근 purple/yellow changed_at → ② derivedCallEntryAt(status_transitions)
+ *       → ③ checked_in_at(어떤 전환기록도 없는 안정값). NaN/누락 정렬 금지(항상 유효 ISO 문자열 반환).
  */
 export function callEntryTime(
-  ci: Pick<CheckIn, 'checked_in_at' | 'status_flag_history'>,
+  ci: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt'>,
 ): string {
   const hist = ci.status_flag_history;
   if (Array.isArray(hist) && hist.length > 0) {
-    // 뒤에서부터 가장 최근 active(purple/yellow) 진입 엔트리를 찾음 = 최신 진료콜 진입 모먼트.
+    // ① 뒤에서부터 가장 최근 active(purple/yellow) 진입 엔트리를 찾음 = 최신 진료콜 진입 모먼트.
     for (let i = hist.length - 1; i >= 0; i--) {
       const entry = hist[i];
       if (entry && (entry.flag === 'purple' || entry.flag === 'yellow') && entry.changed_at) {
@@ -189,7 +200,11 @@ export function callEntryTime(
       }
     }
   }
-  return ci.checked_in_at; // 폴백: 방문(체크인) 시각 — 방문 단위 안정.
+  // ② status_transitions 명단 active 전환 최신 transitioned_at (read-path 주입, healer_waiting 등 flag history 부재 복구).
+  if (ci.derivedCallEntryAt) {
+    return ci.derivedCallEntryAt;
+  }
+  return ci.checked_in_at; // ③ 폴백: 접수(체크인) 시각 — 어떤 전환기록도 없는 방문 단위 안정값.
 }
 
 /**
@@ -214,8 +229,8 @@ function isInTreatment(
  *   call_list_manual_order 미적용(마이그 전)·NULL → 전부 tier-3(자동 진입순)로 수렴 = 기존 거동 보존(backward-compatible).
  */
 export function compareCallOrder(
-  a: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
-  b: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
+  a: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
+  b: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
 ): number {
   // tier 1) 진료중 고정 — 상단.
   const at = isInTreatment(a) ? 0 : 1;

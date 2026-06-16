@@ -385,6 +385,13 @@ export interface CheckIn {
    *  T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designated_therapist_id 추가(additive, read-only) —
    *    통합시간표 [치료사별] 탭 그룹핑 키 + "지정" 배지 판정용. customers.designated_therapist_id SSOT 재사용. */
   customers?: { name: string | null; chart_number?: string | null; designated_therapist_id?: string | null } | null;
+  /** T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK — 진료콜 진입순 폴백 사다리 2순위(파생/비DB).
+   *  status_transitions(별도 테이블) 중 명단 active 전환(to_status ∈ healer_waiting/purple/yellow)의 최신
+   *  transitioned_at. Dashboard fetch가 read-path로 주입(DB 컬럼 아님 — DDL 없음). callEntryTime이
+   *  status_flag_history(1순위) 부재 시 checked_in_at(최종단) 직전 2순위로 소비.
+   *  ※ healer_waiting처럼 status 전환만 되고 flag history 미기록인 케이스의 진입(activation)시각 복구용.
+   *    HL자동노랑(SSOT 우회 벌크 yellow)은 transition row 자체가 없어 미복구 → known-limitation(접수시각 잔존). */
+  derivedCallEntryAt?: string | null;
 }
 
 export interface Package {
