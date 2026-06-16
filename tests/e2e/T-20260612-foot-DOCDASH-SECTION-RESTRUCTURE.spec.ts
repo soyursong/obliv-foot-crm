@@ -30,12 +30,24 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = (rel: string) => readFileSync(join(HERE, '../../src', rel), 'utf-8');
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 
-// T-20260612-foot-DOCDASH-WAITELAPSED-POLISH(후속) supersede: 헤더 '콜경과시간' → '경과시간'(AC-2).
-// T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 옆 '차트번호' 독립 칼럼 추가.
-// T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-2/AC-3 재정의(문지은 대표원장):
-//   '경과시간' 헤더 → '시간'(시계 이모지 제거) + 임상경과=처방 왼쪽 + '차트' 칼럼 신설(처방 오른쪽).
-//   → 대기 9칼럼: 이름·차트번호·상태·시간·방·오늘시술·임상경과·처방·차트.
-const NEW_ORDER = ['이름', '차트번호', '상태', '시간', '방', '오늘시술', '임상경과', '처방', '차트'];
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260617-foot-DOCDASH-SPEC-DRIFT-3CAUSE (spec 위생, test_only — 코드 롤백 아님):
+//   본 spec(SECTION-RESTRUCTURE)은 MONOTONE-RELAYOUT 시절 9칼럼(차트 신설·시간 칼럼)을 박제했으나,
+//   이후 deployed 된 UI 3건이 칼럼 구성을 바꿔 정본과 drift 발생 → 현 deployed 렌더를 정답으로 재동기한다.
+//     ① T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(📝/🩺 헤더+셀) 통째 제거,
+//        진료차트 진입을 이름 버튼(doctor-*-name-chart-btn, onOpenChart 'full')으로 이동. (9→여전히 9, 시간 잔존)
+//     ② T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: '시간(경과시간)' 칼럼 제거 → colspan 9→8,
+//        "+N분"을 상태 셀 ✋ 옆 인라인으로 이전(formatElapsedPlus 재사용). (9→8칼럼)
+//     ③ T-20260616-foot-DOCDASH-NAMECOL-LEFTALIGN-BADGEFIX: 이름 버튼 text-center→text-left.
+//   ⇒ deployed 정본 = 대기·완료 양 테이블 동일 8칼럼:
+//        방 · 상태 · 이름 · 생년(만나이) · 차트번호 · 오늘시술 · 처방 · 임상경과.
+//   각 변경 의도를 회귀로 박제(아래 시나리오2/3) — 정본이 다시 9칼럼/차트칼럼/시간칼럼으로 회귀하면 fail.
+const DEPLOYED_ORDER = ['방', '상태', '이름', '생년(만나이)', '차트번호', '오늘시술', '처방', '임상경과'];
+
+// thead 블록의 <th>텍스트</th> 라벨 순서 추출(클래스 무관·괄호 포함 '생년(만나이)'도 캡처).
+function thOrder(block: string): string[] {
+  return [...block.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1].trim());
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오1 — AC-1 필터링 버그(진료 대기중에서 completed_at 제외)
@@ -82,70 +94,87 @@ test.describe('시나리오2 — AC-3 flat + 칼럼 너비/스키마 동일', ()
     expect(s).toContain('<section className="bg-white" data-testid="doctor-call-feed">');
     expect(s).toContain('<section className="bg-white" data-testid="doctor-completed-section">');
   });
-  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3 supersede: 차트 칼럼 신설(처방 오른쪽) →
-  //   호출=9칼럼 / 완료=8칼럼(완료는 시간 칼럼 제거 UX7 유지). 섹션별 독립 colgroup/thead.
-  test('colgroup: 호출 9칼럼 / 완료 8칼럼(MONOTONE-RELAYOUT 차트 칼럼 신설)', () => {
+  // SPEC-DRIFT-3CAUSE 재동기: NAME-EMOJI(차트 칼럼 제거)+ELAPSED(시간 칼럼 제거) →
+  //   양 테이블 동일 8칼럼(deployed 정본). 차트칼럼/시간칼럼 복원 시 fail로 회귀 차단.
+  test('colgroup: 호출·완료 모두 8칼럼(차트·시간 칼럼 제거 정본)', () => {
     const s = DASH();
     const colgroups = s.match(/<colgroup>[\s\S]*?<\/colgroup>/g) ?? [];
     expect(colgroups.length).toBe(2);
-    expect((colgroups[0].match(/<col /g) ?? []).length).toBe(9); // 호출
-    expect((colgroups[1].match(/<col /g) ?? []).length).toBe(8); // 완료(시간 제거 + 차트 신설)
+    expect((colgroups[0].match(/<col /g) ?? []).length).toBe(8); // 호출
+    expect((colgroups[1].match(/<col /g) ?? []).length).toBe(8); // 완료
+    // 콜그룹 폭 합 각각 100% (드리프트 후에도 폭 정합 보존).
+    const pct = (b: string) => [...b.matchAll(/w-\[(\d+)%\]/g)].reduce((a, m) => a + Number(m[1]), 0);
+    expect(pct(colgroups[0])).toBe(100);
+    expect(pct(colgroups[1])).toBe(100);
   });
-  test('thead: 호출 9칼럼 / 완료 8칼럼(MONOTONE-RELAYOUT)', () => {
+  test('thead: 호출·완료 모두 8칼럼(차트·시간 칼럼 제거 정본)', () => {
     const s = DASH();
     const theads = s.match(/<thead>[\s\S]*?<\/thead>/g) ?? [];
     expect(theads.length).toBe(2);
-    expect((theads[0].match(/<th /g) ?? []).length).toBe(9); // 호출
-    expect((theads[1].match(/<th /g) ?? []).length).toBe(8); // 완료(시간 제거 + 차트 신설)
+    expect((theads[0].match(/<th /g) ?? []).length).toBe(8); // 호출
+    expect((theads[1].match(/<th /g) ?? []).length).toBe(8); // 완료
   });
 });
 
-test.describe('시나리오2 — AC-4 칼럼 순서(변경 불가)', () => {
-  test('대기 테이블 헤더 순서 = 이름|차트번호|상태|시간|방|오늘시술|임상경과|처방|차트(MONOTONE-RELAYOUT)', () => {
+test.describe('시나리오2 — AC-4 칼럼 순서(SPEC-DRIFT-3CAUSE deployed 정본)', () => {
+  test('대기 테이블 헤더 순서 = 방|상태|이름|생년(만나이)|차트번호|오늘시술|처방|임상경과', () => {
     const s = DASH();
     const thead = s.slice(s.indexOf('doctor-call-feed-table'), s.indexOf('doctor-call-feed-rows'));
-    const order = (thead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(NEW_ORDER);
+    expect(thOrder(thead)).toEqual(DEPLOYED_ORDER);
   });
-  // MONOTONE-RELAYOUT supersede: 완료 테이블은 시간 칼럼 제거(UX7 유지) → NEW_ORDER 에서 '시간' 뺀 8칼럼(차트 포함).
-  test('진료완료 테이블 헤더 순서 = 시간 제거 8칼럼(MONOTONE-RELAYOUT 차트 포함)', () => {
+  // 완료 테이블은 대기와 '글자 그대로 동일' 8칼럼(WAITDONE-ALIGN-CNTNUM 폭 1:1, 차트·시간 칼럼 동일 제거).
+  test('진료완료 테이블 헤더 순서 = 대기와 동일 8칼럼', () => {
     const s = DASH();
     const thead = s.slice(s.indexOf('doctor-completed-table'), s.indexOf('doctor-completed-rows'));
-    const order = (thead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(NEW_ORDER.filter((c) => c !== '시간'));
+    expect(thOrder(thead)).toEqual(DEPLOYED_ORDER);
   });
-  test('임상경과 버튼은 임상경과 칼럼 내부(toggle showClinical)', () => {
+  // NAME-EMOJI-CLINICAL-3FIX item2 회귀 박제: 임상경과는 전용 칼럼(셀 내부 showClinical 토글)으로 잔존,
+  //   '차트' 칼럼의 📝(임상경과 단축) 버튼은 제거됨 → chart-btn testid 잔존 0.
+  test('임상경과는 임상경과 칼럼(clinical-cell) 내부 토글 — 구 차트칼럼 chart-btn 제거', () => {
     const s = DASH();
-    expect(s).toContain('data-testid="doctor-call-chart-btn"');
-    expect(s).toContain('data-testid="doctor-completed-chart-btn"');
+    expect(s).toContain('data-testid="doctor-call-clinical-cell"');
+    expect(s).toContain('data-testid="doctor-completed-clinical-cell"');
+    // 빈값 '—' 클릭 = 인라인 임상경과 편집(showClinical) 진입(item3).
+    expect(s).toContain('data-testid="doctor-call-clinical-empty-btn"');
+    // 구 '차트' 칼럼 📝 단축 버튼 잔존 0(NAME-EMOJI item2 제거).
+    expect(s).not.toContain('data-testid="doctor-call-chart-btn"');
+    expect(s).not.toContain('data-testid="doctor-completed-chart-btn"');
   });
-  // FULLWIDTH-INLINE-EMOJI AC-2/AC-3: 진료차트 전용 칼럼 → 이름 옆 🩺 이모지 버튼으로 이동(testid·full chart 오픈 동선 보존).
-  test('진료차트 진입(full chart 오픈) 버튼 보존 — 이름 옆 이모지 버튼으로 이동', () => {
+  // NAME-EMOJI-CLINICAL-3FIX item1/item2 회귀 박제: 진료차트(full) 진입은 '차트' 칼럼 🩺 버튼이 아니라
+  //   이름 버튼(doctor-*-name-chart-btn, onOpenChart 'full')으로 이동. 구 fullchart-btn 칼럼 잔존 0.
+  test('진료차트(full) 진입 = 이름 버튼으로 이동 — 구 차트칼럼 fullchart-btn 제거', () => {
     const s = DASH();
-    expect(s).toContain('data-testid="doctor-call-fullchart-btn"');
-    expect(s).toContain('data-testid="doctor-completed-fullchart-btn"');
+    expect(s).toContain('data-testid="doctor-call-name-chart-btn"');
+    expect(s).toContain('data-testid="doctor-completed-name-chart-btn"');
+    expect(s).toContain("onOpenChart(checkIn.customer_id, 'full')");
+    expect(s).not.toContain('data-testid="doctor-call-fullchart-btn"');
+    expect(s).not.toContain('data-testid="doctor-completed-fullchart-btn"');
   });
-  // MONOTONE-RELAYOUT supersede: 차트 칼럼 신설 → 완료 인라인 colSpan = DOCDASH_COMPLETED_COLSPAN(8). 호출 = DOCDASH_COLSPAN(9).
-  test('인라인 펼침 행 colSpan 정합(호출 9 / 완료 8)', () => {
+  // ELAPSED-CLINICAL-3FIX AC-1 회귀 박제: 시간 칼럼 제거 → 양 테이블 colSpan 모두 8(9 복원 시 fail).
+  test('인라인 펼침 행 colSpan 정합(호출·완료 모두 8)', () => {
     const s = DASH();
-    expect(s).toContain('const DOCDASH_COLSPAN = 9');
+    expect(s).toContain('const DOCDASH_COLSPAN = 8');
     expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 8');
-    // MONOTONE-RELAYOUT: 호출(대기) 인라인 차트 1행 = DOCDASH_COLSPAN, 완료 인라인 차트 1행 = DOCDASH_COMPLETED_COLSPAN
-    //   (임상경과/처방 펼침은 셀 내부 토글 — 별도 full-width 행 아님)
+    // 호출/완료 인라인 차트 1행씩 = 각 COLSPAN 상수(임상경과/처방 펼침은 셀 내부 토글 — 별도 full-width 행 아님).
     expect((s.match(/colSpan=\{DOCDASH_COLSPAN\}/g) ?? []).length).toBe(1);
     expect((s.match(/colSpan=\{DOCDASH_COMPLETED_COLSPAN\}/g) ?? []).length).toBe(1);
-    // 구 하드코딩 colSpan(5/6) 잔존 0
+    // 9칼럼 시절 상수 + 구 하드코딩 colSpan 잔존 0.
+    expect(s).not.toContain('const DOCDASH_COLSPAN = 9');
+    expect(s).not.toContain('const DOCDASH_COMPLETED_COLSPAN = 9');
     expect(s).not.toContain('colSpan={5}');
     expect(s).not.toContain('colSpan={6}');
   });
 });
 
 test.describe('시나리오2 — AC-5 숫자/카운트 plain text', () => {
+  // WAITDONE-ALIGN-CNTNUM supersede: 대기 섹션 '진료필요' 라벨 제거 → 숫자만(doctor-call-active-count) 크게·볼드.
+  //   배지(rounded-full bg-...) 미사용 plain text 불변(AC-5 회귀 보존).
   test('섹션 카운트 배지(rounded-full bg-...) 제거 → plain text', () => {
     const s = DASH();
     expect(s).not.toContain('rounded-full bg-red-100');
     expect(s).not.toContain('rounded-full bg-emerald-100');
-    expect(s).toContain('진료필요 {activeCalls.length}');
+    expect(s).toContain('data-testid="doctor-call-active-count"');
+    expect(s).toContain('{activeCalls.length}');
     expect(s).toContain('{completedPatients.length}명');
   });
   test('방 셀은 배지/버튼 아님(span plain text + getAssignedSlotName)', () => {
@@ -160,11 +189,13 @@ test.describe('시나리오2 — AC-5 숫자/카운트 plain text', () => {
 // 시나리오3 — AC-0/AC-6 회귀 보존
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('시나리오3 — AC-0 회귀(직전 deployed 동작 보존)', () => {
-  // UX7 AC-7 supersede(POLISH AC-4 재정의): 대기 섹션 formatElapsedPlus("+N분") 1곳,
-  //   진료 완료 섹션은 경과시간 칼럼 자체 제거(셀 testid 도 소멸).
-  test('경과시간: 대기 섹션 formatElapsedPlus 사용 + 완료 섹션 칼럼 제거', () => {
+  // ELAPSED-CLINICAL-3FIX AC-1 supersede: '시간' 칼럼 제거 → "+N분"을 상태 셀 ✋ 옆 인라인으로 이전.
+  //   계산 로직(elapsedMinutes/formatElapsedPlus)은 2-line 형태로 재사용(elapsedMin → 30분↑ 빨간색 분기).
+  test('경과시간: 상태 셀 인라인 "+N분"(elapsedMin/formatElapsedPlus 재사용) + 완료 섹션 칼럼 제거', () => {
     const s = DASH();
-    expect((s.match(/formatElapsedPlus\(elapsedMinutes\(getCallTime\(checkIn\)\)\)/g) ?? []).length).toBe(1);
+    expect(s).toContain('const elapsedMin = elapsedMinutes(getCallTime(checkIn));');
+    expect(s).toContain('const elapsed = formatElapsedPlus(elapsedMin);');
+    expect(s).toContain('data-testid="doctor-call-elapsed"');
     expect(s).not.toContain('data-testid="doctor-completed-elapsed-cell"');
     expect(formatElapsedPlus(0)).toBe('+0분');
     expect(formatElapsedPlus(12)).toBe('+12분');

@@ -42,9 +42,13 @@ test.describe('AC-1 — 이름 셀 정리(이모지/꺾쇠 제거·중앙정렬)
     expect(s).not.toContain('HandRaiseFlow');
   });
 
-  test('이름 버튼 중앙정렬(text-center)', () => {
+  // T-20260617-foot-DOCDASH-SPEC-DRIFT-3CAUSE 재동기(③ NAMECOL-LEFTALIGN-BADGEFIX):
+  //   이름 버튼 text-center → text-left (이름 텍스트만 좌정렬), [배지+이름] 컨테이너 justify-start.
+  //   MONOTONE 시절 중앙정렬은 deployed 정본에서 폐지 — text-center 복원 시 fail.
+  test('이름 버튼 좌정렬(text-left) — NAMECOL-LEFTALIGN, 중앙정렬 잔재 0', () => {
     const s = DASH();
-    expect(s).toContain('min-w-[4rem] break-keep text-center');
+    expect(s).toContain('min-w-[4rem] break-keep text-left');
+    expect(s).not.toContain('min-w-[4rem] break-keep text-center');
   });
 });
 
@@ -66,20 +70,25 @@ test.describe('AC-2 — 시간 칼럼 시계 아이콘 제거', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-3 — 칼럼 순서: 임상경과=처방 왼쪽, 차트=처방 오른쪽(신설)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('AC-3 — 칼럼 재배치 + 차트 칼럼 신설', () => {
-  test('차트 칼럼 신설 반영 colspan(9 / 8)', () => {
+test.describe('AC-3 — 칼럼 재배치(SPEC-DRIFT-3CAUSE deployed 정본)', () => {
+  // SPEC-DRIFT-3CAUSE(① NAME-EMOJI 차트칼럼 제거 + ② ELAPSED 시간칼럼 제거):
+  //   MONOTONE 시절 차트 칼럼 신설(colspan 9)·시간 칼럼은 deployed 정본에서 폐지 →
+  //   양 테이블 colSpan 모두 8. 9 복원 시 fail로 회귀 차단.
+  test('칼럼 제거 반영 colspan(호출·완료 모두 8)', () => {
     const s = DASH();
-    expect(s).toContain('const DOCDASH_COLSPAN = 9;');
+    expect(s).toContain('const DOCDASH_COLSPAN = 8;');
     expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 8;');
+    expect(s).not.toContain('const DOCDASH_COLSPAN = 9;');
   });
 
-  test('진료 대기중 thead 순서: …오늘시술→임상경과→처방→차트', () => {
+  // deployed 정본 thead 순서: …오늘시술→처방→임상경과 (임상경과가 마지막 칼럼, '차트' 칼럼 폐지).
+  //   th className 도 정본 = px-1.5 py-1 (MONOTONE 시절 px-2 py-1.5 폐지).
+  test('진료 대기중 thead 순서: …오늘시술→처방→임상경과 (차트 칼럼 폐지)', () => {
     const s = DASH();
     const order = [
-      '<th className="px-2 py-1.5">오늘시술</th>',
-      '<th className="px-2 py-1.5">임상경과</th>',
-      '<th className="px-2 py-1.5">처방</th>',
-      '<th className="px-2 py-1.5">차트</th>',
+      '<th className="px-1.5 py-1">오늘시술</th>',
+      '<th className="px-1.5 py-1">처방</th>',
+      '<th className="px-1.5 py-1">임상경과</th>',
     ];
     let cursor = 0;
     for (const th of order) {
@@ -87,6 +96,9 @@ test.describe('AC-3 — 칼럼 재배치 + 차트 칼럼 신설', () => {
       expect(idx).toBeGreaterThan(cursor);
       cursor = idx;
     }
+    // '차트' 칼럼 헤더 잔존 0(NAME-EMOJI item2 제거).
+    expect(s).not.toContain('<th className="px-1.5 py-1">차트</th>');
+    expect(s).not.toContain('<th className="px-2 py-1.5">차트</th>');
   });
 
   test('두 콜그룹 폭 합계 각각 100%', () => {
@@ -152,27 +164,32 @@ test.describe('AC-4/AC-5 — HandToggle 상태 셀 3-상태 토글', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC-6 — 차트 칼럼(처방 오른쪽): 📝 + 🩺 중앙정렬
+// AC-6 — 차트 칼럼 폐지(SPEC-DRIFT-3CAUSE ① NAME-EMOJI-CLINICAL-3FIX item2)
+//   MONOTONE 시절 '차트' 칼럼(📝 임상경과 단축 / 🩺 진료차트 이모지 버튼)은 deployed 정본에서 통째 제거.
+//   진료차트(full) 진입은 이름 버튼(doctor-*-name-chart-btn)으로 이동 — 칼럼 복원 시 fail로 회귀 차단.
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('AC-6 — 차트 칼럼 이모지(📝/🩺)', () => {
-  test('차트 셀 testid + 단축 이모지 버튼 2종(call)', () => {
+test.describe('AC-6 — 차트 칼럼 폐지 + 진입 이름 버튼 이동(NAME-EMOJI item2)', () => {
+  test('차트 칼럼 셀/이모지 버튼 testid 잔존 0 (call)', () => {
     const s = DASH();
-    expect(s).toContain('data-testid="doctor-call-chart-cell"');
-    expect(s).toContain('data-testid="doctor-call-chart-btn"');
-    expect(s).toContain('data-testid="doctor-call-fullchart-btn"');
-    expect(s).toContain('📝');
-    expect(s).toContain('🩺');
+    expect(s).not.toContain('data-testid="doctor-call-chart-cell"');
+    expect(s).not.toContain('data-testid="doctor-call-chart-btn"');
+    expect(s).not.toContain('data-testid="doctor-call-fullchart-btn"');
+    // 차트 셀 이모지 span(📝/🩺) 잔재 0(CHART_CELL_EMOJI_BTN 제거).
+    expect(s).not.toContain('<span aria-hidden>📝</span>');
+    expect(s).not.toContain('<span aria-hidden>🩺</span>');
   });
 
-  test('완료 테이블 차트 셀 testid 2종', () => {
+  test('완료 테이블 차트 칼럼 셀/버튼 testid 잔존 0', () => {
     const s = DASH();
-    expect(s).toContain('data-testid="doctor-completed-chart-cell"');
-    expect(s).toContain('data-testid="doctor-completed-fullchart-btn"');
+    expect(s).not.toContain('data-testid="doctor-completed-chart-cell"');
+    expect(s).not.toContain('data-testid="doctor-completed-fullchart-btn"');
   });
 
-  test('차트 셀 중앙정렬(text-center)', () => {
+  test('진료차트(full) 진입은 이름 버튼으로 이동(onOpenChart full)', () => {
     const s = DASH();
-    expect(s).toContain('className="px-2 py-2 text-center" data-testid="doctor-call-chart-cell"');
+    expect(s).toContain('data-testid="doctor-call-name-chart-btn"');
+    expect(s).toContain('data-testid="doctor-completed-name-chart-btn"');
+    expect(s).toContain("onOpenChart(checkIn.customer_id, 'full')");
   });
 });
 
