@@ -66,6 +66,7 @@ import {
   FORM_META,
   getTemplateImageUrl,
   canAccessFormTemplate,
+  DOC_PANEL_HIDDEN_FORM_KEYS,
   type FieldMapEntry,
   type FormSubmission,
   type FormTemplate,
@@ -479,12 +480,18 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   const canAccess = (tpl: FormTemplate) => canAccessFormTemplate(tpl, userRole);
 
   // ── 분류 ──
-  const defaultTemplates = templates.filter(
+  // T-20260616-foot-DOCPANEL-PENCHART-INSCLAIM-HIDE: 목록 소스 단일 지점 필터.
+  //   여기서 한 번 제외하면 default/optional/insurance 3개 섹션에 일괄 반영(섹션별 누락 회귀 차단).
+  //   templates 원본은 유지 → 발행 이력 라벨·영수증 재발급 find 등 표시 외 로직 무영향.
+  const visibleTemplates = templates.filter(
+    (t) => !DOC_PANEL_HIDDEN_FORM_KEYS.includes(t.form_key),
+  );
+  const defaultTemplates = visibleTemplates.filter(
     (t) => FORM_META[t.form_key]?.print_preset === 'default',
   );
   // T-20260522-foot-INS-DOC-PRINT: insurance 카테고리 전용 섹션 분리
-  const insuranceTemplates = templates.filter((t) => t.category === 'insurance');
-  const optionalTemplates = templates.filter(
+  const insuranceTemplates = visibleTemplates.filter((t) => t.category === 'insurance');
+  const optionalTemplates = visibleTemplates.filter(
     (t) => FORM_META[t.form_key]?.print_preset !== 'default' && t.category !== 'insurance',
   );
 
