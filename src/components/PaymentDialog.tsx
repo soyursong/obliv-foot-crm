@@ -22,7 +22,9 @@ import { isSinglePaymentByCount } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 완료 하드차단(방어적 적용).
 import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
 import { cn } from '@/lib/utils';
-import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
+// T-20260616-foot-PAYDLG-INSURANCE-PANEL-ROLLBACK: 라이브 수납 차단 P0 핫픽스 —
+// 결제 미니창 상단 '급여 진료비 미리보기(건강보험)' 패널 렌더 롤백. 패널 컴포넌트/보험기능은 보존.
+// import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
 import type { CheckIn, PackageTemplate } from '@/lib/types';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
@@ -576,8 +578,10 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* ── 건보 본인부담 미리보기 (T-20260504-foot-INSURANCE-COPAYMENT) ── */}
-            <InsuranceCopaymentPanel checkIn={checkIn} />
+            {/* ── 건보 본인부담 미리보기 (T-20260504-foot-INSURANCE-COPAYMENT) ──
+                 T-20260616-foot-PAYDLG-INSURANCE-PANEL-ROLLBACK: 라이브 수납 차단 P0 핫픽스로 렌더 롤백.
+                 보험 청구 기능 복구 시 아래 줄 + 상단 import 주석 해제.
+            <InsuranceCopaymentPanel checkIn={checkIn} /> */}
 
             {/* 단건 / 패키지 토글 */}
             <div className="flex gap-2">
