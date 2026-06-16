@@ -143,16 +143,26 @@ test.beforeAll(async () => {
   }
   clinicId = clinic.id;
 
+  // 시드 서비스는 반드시 '비급여' 항목으로 선택한다.
+  //   의료법 제22조 게이트(medicalRecordGate)는 '급여(보험) 방문 + 서명 진료기록 부재' 시
+  //   수납/완료를 하드차단한다(T-20260612-foot-MEDLAW22-B-GATE). display_order 첫 항목
+  //   ('초진진찰료-의원' 등)이 is_insurance_covered=true(급여)면, 본 시드에 서명 진료기록이
+  //   없어 게이트가 발동 → btn-settle 비활성으로 분할결제 검증이 막힌다.
+  //   분할결제 기능 자체는 비급여/급여 무관하므로, 게이트 무관한 비급여 항목으로 시드해
+  //   분할결제 동선을 독립 검증한다(과차단 회피).
   const { data: svc } = await supabase
     .from('services')
     .select('id, name')
     .eq('clinic_id', clinic.id)
     .eq('active', true)
+    .eq('is_insurance_covered', false)
+    .is('hira_code', null)
+    .not('category_label', 'in', '("상병","처방약")')
     .order('display_order', { ascending: true })
     .limit(1)
     .maybeSingle();
   if (!svc) {
-    console.warn('⚠️ 활성 서비스 없음 — 시드 스킵');
+    console.warn('⚠️ 비급여 활성 서비스 없음 — 시드 스킵');
     return;
   }
   serviceId = svc.id;
@@ -176,7 +186,10 @@ async function openMiniWindow(page: import('@playwright/test').Page) {
   const payBtn = page.locator('[data-testid="btn-pay"]').first();
   await payBtn.waitFor({ state: 'visible', timeout: 15000 });
   await payBtn.click();
-  await page.locator('[data-testid="btn-settle"]').first().waitFor({ timeout: 10000 }).catch(() => null);
+  // 미니창 준비 신호 = btn-settle 노출(saved=true 시술 복원·마운트 완료). 콜드스타트(첫 테스트
+  //   Vite 컴파일) 시 마운트가 늦으므로 timeout 을 넉넉히 두고, 삼키지(.catch) 않고 확실히 대기한다.
+  //   여기서 삼키면 창이 덜 떴는데 다음 단계(split-toggle 탐색)로 넘어가 첫 테스트만 산발 실패한다.
+  await page.locator('[data-testid="btn-settle"]').first().waitFor({ state: 'visible', timeout: 30000 });
 }
 
 async function enableSplit(page: import('@playwright/test').Page) {
