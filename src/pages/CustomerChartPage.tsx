@@ -40,7 +40,7 @@ import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2Insurance
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
-import { isSinglePaymentByCount } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
 import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
@@ -113,6 +113,8 @@ interface PackagePayment {
   payment_type: 'payment' | 'refund';
   memo: string | null;
   created_at: string;
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE: 결제 귀속(package/consultation). 잔금 산출 시 분리.
+  fee_kind?: string | null;
 }
 
 // T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 항목
@@ -5799,10 +5801,38 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               )}
                             </div>
                           </div>
-                          {/* 총금액 */}
-                          <div className="px-3 py-1 text-[10px] text-muted-foreground border-b border-muted/10">
-                            총 금액: <span className="font-semibold text-teal-700 tabular-nums">{formatAmount(p.total_amount)}</span>
-                          </div>
+                          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 패키지 금액/진료비 금액 별도 표기 + 항목별 잔금(§4-A: 합산 단일표기 금지). */}
+                          {(() => {
+                            const rows = pkgPayments.filter((pay) => pay.package_id === p.id);
+                            const pkgDue = computeOutstanding(p.total_amount, netPaidFromPayments(rows, 'package'));
+                            const pkgSt = balanceStatus(pkgDue);
+                            const fee = p.consultation_fee ?? 0;
+                            const consultDue = computeOutstanding(fee, netPaidFromPayments(rows, 'consultation'));
+                            const consultSt = balanceStatus(consultDue);
+                            const showConsult = fee > 0 || netPaidFromPayments(rows, 'consultation') !== 0;
+                            const balanceChip = (st: ReturnType<typeof balanceStatus>, due: number) =>
+                              st === 'paid' ? (
+                                <span className="text-emerald-600">완납</span>
+                              ) : (
+                                <span className={st === 'due' ? 'text-red-600 font-semibold' : 'text-amber-600 font-semibold'}>
+                                  {balanceStatusLabel(st)} {formatAmount(Math.abs(due))}
+                                </span>
+                              );
+                            return (
+                              <div className="px-3 py-1 text-[10px] text-muted-foreground border-b border-muted/10 space-y-0.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>패키지 금액: <span className="font-semibold text-teal-700 tabular-nums">{formatAmount(p.total_amount)}</span></span>
+                                  <span className="tabular-nums">잔금 {balanceChip(pkgSt, pkgDue)}</span>
+                                </div>
+                                {showConsult && (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>진료비 <span className="opacity-70">(별도)</span>: <span className="font-semibold text-slate-700 tabular-nums">{formatAmount(fee)}</span></span>
+                                    <span className="tabular-nums">잔금 {balanceChip(consultSt, consultDue)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                           {/* 시술별 상세표 */}
                           {treatRows.length > 0 && (
                             /* T-20260510-foot-C21-PKG-ITEM-DETAIL: 잔여횟수 컬럼 추가 */
@@ -8276,6 +8306,8 @@ function PackagePurchaseFromTemplateDialog({
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
   const [manualTotal, setManualTotal] = useState(0);
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비(consultation_fee) — 패키지 금액과 별도(§4-A: 합산 단일표기 금지).
+  const [consultationFee, setConsultationFee] = useState(0);
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -8336,7 +8368,7 @@ function PackagePurchaseFromTemplateDialog({
     setTrial(0); setTrialUnitPrice(0);
     setReborn(0); setRebornUnitPrice(0);
     setPrecon(0);
-    setPriceOverride(false); setManualTotal(0); setMemo('');
+    setPriceOverride(false); setManualTotal(0); setConsultationFee(0); setMemo('');
   }, [open]);
 
   // 자동합산 변경 시 manualTotal 동기화
@@ -8377,7 +8409,7 @@ function PackagePurchaseFromTemplateDialog({
     setTrial(0); setTrialUnitPrice(0);
     setReborn(0); setRebornUnitPrice(0);
     setPrecon(0);
-    setPriceOverride(false); setManualTotal(0); setMemo('');
+    setPriceOverride(false); setManualTotal(0); setConsultationFee(0); setMemo('');
   };
 
   const submit = async () => {
@@ -8412,6 +8444,8 @@ function PackagePurchaseFromTemplateDialog({
       af_upgrade: unheatedUpgrade,
       upgrade_surcharge: upgradeSurcharge,
       total_amount: grandTotal,
+      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 별도 컬럼(§4-A: total_amount와 합산 단일표기 금지).
+      consultation_fee: consultationFee,
       paid_amount: 0,
       status: 'active',
       memo: memo.trim() || null,
@@ -8454,7 +8488,9 @@ function PackagePurchaseFromTemplateDialog({
       trial_sessions: trial, trial_unit_price: trialUnitPrice,
       // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목 (packages 전용 — package_templates에는 미반영)
       reborn_sessions: reborn, reborn_unit_price: rebornUnitPrice,
-      upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal, paid_amount: 0,
+      upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal,
+      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 별도(§4-A).
+      consultation_fee: consultationFee, paid_amount: 0,
       status: 'active', memo: memo.trim() || null,
     });
     setSubmitting(false);
@@ -8816,6 +8852,17 @@ function PackagePurchaseFromTemplateDialog({
             <div className="text-xs text-gray-400">
               총 {totalSessions}회{podologe > 0 ? ` + 포돌로게 ${podologe}회` : ''}
             </div>
+          </div>
+
+          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 — 패키지 금액과 별도 입력/표시(§4-A). 합산 단일표기 금지. */}
+          <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 space-y-1.5">
+            <label className="text-xs font-semibold text-gray-600">진료비 <span className="font-normal text-gray-400">(패키지 금액과 별도 — 합산하지 않음)</span></label>
+            <AmountInput
+              value={consultationFee}
+              onChange={(raw) => setConsultationFee(Number(raw) || 0)}
+              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+            />
+            <div className="text-xs text-gray-400">진료비는 패키지 금액에 합산되지 않고, 결제·잔금이 따로 관리됩니다.</div>
           </div>
 
           {/* 메모 */}

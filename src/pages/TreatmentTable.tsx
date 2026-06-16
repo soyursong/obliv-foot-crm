@@ -20,6 +20,9 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, chartNoBadge, chartNoDisplay } from '@/lib/format';
+// T-20260616-foot-PKG-OUTSTANDING-BALANCE ②: 대기열 '잔금 O원' 뱃지
+import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
+import { PkgOutstandingBadge } from '@/components/PkgOutstandingBadge';
 // T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (AC-2): 처방 요약을 '약물명 1/3/2' 단일 토큰 경로로 수렴.
 import { formatRxConfirmedSummary, normalizeRxItem } from '@/lib/rxTooltip';
 import type { CheckIn, Staff } from '@/lib/types';
@@ -122,6 +125,8 @@ export default function TreatmentTable() {
   const [nextResvMap, setNextResvMap] = useState<Map<string, NextReservation>>(new Map());
   // T-20260612-foot-CHARTNO-B2-P1: customer_id → chart_number 맵(환자명 옆 차트번호 인접 표기). read-only.
   const [chartMap, setChartMap] = useState<Map<string, string>>(new Map());
+  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ②: customer_id → 패키지/진료비 미수금
+  const [outstandingMap, setOutstandingMap] = useState<Map<string, CustomerOutstanding>>(new Map());
   const [dutyDoctors, setDutyDoctors] = useState<DutyDoctor[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -206,6 +211,9 @@ export default function TreatmentTable() {
       if (c.id && c.chart_number) cmap.set(c.id, c.chart_number);
     }
     setChartMap(custIds.length > 0 ? cmap : new Map());
+
+    // T-20260616-foot-PKG-OUTSTANDING-BALANCE ②: 활성 패키지 미수금 일괄 조회(카드별 N+1 방지).
+    setOutstandingMap(custIds.length > 0 ? await loadCustomerOutstanding(custIds, clinic.id) : new Map());
 
     setLoading(false);
   }, [clinic, dateFrom, dateTo, today]);
@@ -695,6 +703,8 @@ export default function TreatmentTable() {
                         <span className="font-mono text-[11px] font-normal text-muted-foreground/70" data-testid="treatment-chartno">
                           {chartNoBadge(ci.customer_id ? (chartMap.get(ci.customer_id) ?? null) : null)}
                         </span>
+                        {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ②: 활성 패키지 잔금 뱃지(잔금>0만) */}
+                        <PkgOutstandingBadge data={ci.customer_id ? outstandingMap.get(ci.customer_id) : undefined} />
                       </div>
                     </td>
 
