@@ -128,22 +128,22 @@ function PrescriptionStatusBadge({
     //   → sky-100/700 + sky-200 테두리로 확정(명확히 '하늘색'으로 보이게). 일반 blue 잔재 교체.
     //   ⚠️ green/emerald/teal/mint/cyan/blue 계열 금지 — reporter가 거부한 톤. 아이콘·모양·툴팁·위치 전부 유지, 색만 교체. DB 무변경.
     badge = (
-      <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
-        <CheckCircle2 className="h-2.5 w-2.5" />
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-sky-200 bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
         처방전 O
       </span>
     );
   } else if (status === 'pending') {
     badge = (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-        <Clock className="h-2.5 w-2.5" />
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+        <Clock className="h-2.5 w-2.5 shrink-0" />
         임시
       </span>
     );
   } else {
     // AC-2: 처방전 X = 회색(유지·정밀화). 강조 없는 중립 회색.
     badge = (
-      <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400">
         처방전 X
       </span>
     );
@@ -195,7 +195,7 @@ function prescriptionOneLine(items: unknown): string {
 function HealerLaserBadge({ confirmed }: { confirmed: boolean }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+      className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${
         confirmed ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-500'
       }`}
       data-testid="healer-laser-badge"
@@ -408,7 +408,7 @@ function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
   const { label, cls } = map[type] ?? { label: type, cls: 'bg-gray-100 text-gray-600' };
   return (
     <span
-      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium text-center ${cls}`}
+      className={`inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium text-center ${cls}`}
       data-testid="visit-type-badge"
     >
       {label}
@@ -428,7 +428,7 @@ function StatusCell({ status, statusFlag }: { status: CheckInStatus; statusFlag:
   if (statusFlag === 'pink') {
     return (
       <span
-        className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+        className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
         data-testid="status-cell"
         data-state="treatment-done"
         title="진료완료 — 원내 잔류(처방 가능)"
@@ -440,7 +440,7 @@ function StatusCell({ status, statusFlag }: { status: CheckInStatus; statusFlag:
   if (status === 'done') {
     return (
       <span
-        className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600"
+        className="inline-flex items-center whitespace-nowrap rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600"
         data-testid="status-cell"
         data-state="discharged"
         title="귀가 — 수납완료(처방은 차트에서 수정)"
