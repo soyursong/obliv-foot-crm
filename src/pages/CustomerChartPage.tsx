@@ -4188,14 +4188,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   /* ── 공통 셀 스타일 (tailwind concat 대체) ── */
-  const LC = 'bg-[#eef3f7] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#334e65] whitespace-nowrap text-[11px] w-[90px] shrink-0';
+  const LC = 'bg-[#f8fafc] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#475569] whitespace-nowrap text-[11px] w-[90px] shrink-0';
   const VC = 'border-b border-gray-200 px-2 py-1.5 text-xs';
 
   return (
-    <div className="min-h-screen bg-[#c8d5de] flex flex-col">
+    <div className="min-h-screen bg-[#e8e8e8] flex flex-col">
 
       {/* ── 헤더 (전능CRM 스타일) ─────────────────────────────────────── */}
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-[#1e4e6e] px-3 py-1.5 text-white shadow shrink-0">
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-[#2d2d2d] px-3 py-1.5 text-white shadow shrink-0">
         <span className="text-sm font-bold tracking-tight">SMART DOCTOR — 고객정보</span>
         <div className="flex items-center gap-2 ml-2 text-xs">
           <span className="bg-white/20 rounded px-2 py-0.5 font-semibold">{customer.name}</span>
@@ -4244,8 +4244,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="flex flex-col overflow-hidden border-r border-gray-400 bg-white" style={{ width: '60%', minWidth: 0 }}>
 
           {/* 패널 서브헤더 — T-20260510-foot-C21-SAVE-UNIFY: 통합 저장 버튼 */}
-          <div className="flex items-center gap-3 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-            <span className="text-[11px] font-semibold text-[#1e4e6e]">고객정보</span>
+          <div className="flex items-center gap-3 bg-[#e2e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#2d2d2d]">고객정보</span>
             <span className="text-[11px] text-muted-foreground">
               방문 <strong className="text-teal-700">{visits.length}회</strong>
               {' · '}결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
@@ -4864,7 +4864,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
             {/* T-20260522-foot-REFUND-HIST-TAB AC-3: flex 균등 배치 (좌측 쏠림 해소) */}
             <div data-testid="chart-tab-clinical" className="border-t-2 border-gray-300 shrink-0">
-              <div className="flex bg-[#d8e8f0]">
+              <div className="flex bg-[#e2e8f0]">
                 {CLINICAL_TABS.map(({ key, label }) => (
                   <Fragment key={key}>
                     <button
@@ -4874,7 +4874,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                         chartTabGroup === 'clinical' && chartTab === key
                           ? 'bg-white text-teal-700 font-semibold shadow-sm'
-                          : 'text-[#334e65] hover:bg-white/60',
+                          : 'text-[#475569] hover:bg-white/60',
                       )}
                     >
                       {label}
@@ -4901,7 +4901,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* ─ 탭 열 2 (이력 탭) ─────────────────────────────────────── */}
             {/* T-20260522-foot-REFUND-HIST-TAB AC-3: flex 균등 배치 (좌측 쏠림 해소) */}
             <div data-testid="chart-tab-history" className="border-b border-gray-300 shrink-0">
-              <div className="flex bg-[#e4eef4]">
+              <div className="flex bg-[#f1f5f9]">
                 {HISTORY_TABS.map(({ key, label }) => (
                   <button
                     key={key}
@@ -4911,7 +4911,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'history' && chartTab === key
                         ? 'bg-white text-teal-700 font-semibold shadow-sm'
-                        : 'text-[#334e65] hover:bg-white/60',
+                        : 'text-[#475569] hover:bg-white/60',
                     )}
                   >
                     {label}
@@ -6131,7 +6131,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="space-y-3" data-testid="reservations-tab-content">
               {/* AC-2: 2구역에 있던 '최근 방문'을 예약내역 탭으로 이동(중복 제거). 콘텐츠 동등. */}
               <div className="rounded-lg border bg-white p-3 text-xs" data-testid="resv-tab-last-visit">
-                <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1">최근 방문</div>
+                <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1">최근 방문</div>
                 <div className="text-xs text-gray-700">
                   {latestCheckIn
                     ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
@@ -6140,7 +6140,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </div>
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
+                  <div className="text-[11px] font-semibold text-[#2d2d2d]">예약내역</div>
                   {/* T-20260515-foot-INLINE-RESV: 다음 예약 → 인라인 예약 패널 (페이지 이동 없음) */}
                   <button
                     type="button"
@@ -6645,14 +6645,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="flex flex-col overflow-y-auto bg-white" style={{ width: '40%' }}>
 
           {/* 패널 서브헤더 */}
-          <div className="bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-            <span className="text-[11px] font-semibold text-[#1e4e6e]">건강보험 · 예약 정보</span>
+          <div className="bg-[#e2e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#2d2d2d]">건강보험 · 예약 정보</span>
           </div>
 
           {/* 건보 조회 + 자격등급 */}
           <div className="border-b border-gray-200 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#1e4e6e]">건강보험 자격등급</span>
+              <span className="text-xs font-semibold text-[#2d2d2d]">건강보험 자격등급</span>
               <div className="flex items-center gap-1.5">
                 <a
                   href="https://medicare.nhis.or.kr/portal/refer/selectReferInq.do"
@@ -6755,7 +6755,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {/* 상담메모 */}
           {customer.tm_memo && (
             <div className="border-b border-gray-200 px-3 py-2">
-              <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1">상담메모</div>
+              <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1">상담메모</div>
               <div className="text-xs text-gray-700 whitespace-pre-wrap line-clamp-6">{customer.tm_memo}</div>
             </div>
           )}
@@ -6765,7 +6765,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {/* T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 드롭다운 (최근방문↔회차차감 사이) */}
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-[11px] font-semibold text-[#1e4e6e] flex items-center gap-1">
+              <div className="text-[11px] font-semibold text-[#2d2d2d] flex items-center gap-1">
                 지정 치료사
                 {/* AC-R1 (2026-05-23): 자동 선택 배지 제거 — 수기 선택 방식 */}
               </div>
@@ -6791,7 +6791,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 — 복구 T-20260510-foot-C22-SECTION-MERGE regression fix */}
           {/* T-20260521-foot-PKG-ZONE2-HIDE: remaining_count===0 패키지 비노출 (FE 필터, DB 삭제 아님) */}
           <div className="border-b border-gray-200 px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-1">
+            <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5 flex items-center gap-1">
               회차 차감
               <span className="text-[9px] font-normal bg-teal-100 text-teal-700 rounded px-1 py-0.5">치료사 기입</span>
               {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0 && (
@@ -6910,8 +6910,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
           {/* C23-DETAIL-SIMPLIFY: 상세 패널 (2-3) */}
           <div className="border-b border-gray-200">
-            <div className="bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-              <span className="text-[11px] font-semibold text-[#1e4e6e]">상세</span>
+            <div className="bg-[#e2e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+              <span className="text-[11px] font-semibold text-[#2d2d2d]">상세</span>
             </div>
 
             {/* T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): [상세] 탭 상단 — 탭 선택 무관하게 항상 표시 */}
@@ -7027,7 +7027,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     'flex-1 px-2 min-h-[44px] text-[11px] font-medium border-r border-gray-200 last:border-r-0 transition flex items-center justify-center',
                     resvDetailTab === tab
                       ? 'bg-white text-teal-700 font-semibold'
-                      : 'bg-[#eef3f7] text-[#334e65] hover:bg-white/70',
+                      : 'bg-[#f8fafc] text-[#475569] hover:bg-white/70',
                   )}
                 >
                   {tab}
@@ -7225,7 +7225,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <div className="text-[11px] text-muted-foreground text-center py-3">아직 치료메모가 없습니다</div>
                 ) : (
                   <div className="space-y-1.5 mt-1">
-                    <label className="block text-[11px] font-semibold text-[#1e4e6e]">메모 이력</label>
+                    <label className="block text-[11px] font-semibold text-[#2d2d2d]">메모 이력</label>
                     {treatmentMemos.map((memo) => (
                       <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
                         {editingMemoId === memo.id ? (
@@ -7293,7 +7293,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
           {/* 수납 통계 — C2-REMOVE-PKG-STATS: 패키지 항목 삭제 */}
           <div className="px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5">수납 통계</div>
+            <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5">수납 통계</div>
             <div className="space-y-1 text-[11px]">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">총 방문</span>
@@ -7316,7 +7316,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" data-testid="resv-mini-popup">
           <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-[360px] p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#1e4e6e]">예약 등록 — {customer.name}</h3>
+              <h3 className="text-sm font-semibold text-[#2d2d2d]">예약 등록 — {customer.name}</h3>
               <button onClick={() => setOpenResvMiniPopup(false)} className="p-1 rounded hover:bg-muted text-muted-foreground">
                 <X className="h-4 w-4" />
               </button>
@@ -7402,7 +7402,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-[340px] p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#1e4e6e]">예약 수정</h3>
+              <h3 className="text-sm font-semibold text-[#2d2d2d]">예약 수정</h3>
               <button onClick={() => setEditResvId(null)} className="p-1 rounded hover:bg-muted text-muted-foreground">
                 <X className="h-4 w-4" />
               </button>
@@ -7487,7 +7487,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#1e4e6e]">다음 예약 — {customer.name}</h3>
+              <h3 className="text-sm font-semibold text-[#2d2d2d]">다음 예약 — {customer.name}</h3>
               <button
                 type="button"
                 onClick={() => setInlineResvOpen(false)}
@@ -7542,7 +7542,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </select>
             </div>
             <div>
-              <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-2">
+              <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5 flex items-center gap-2">
                 시간대별 예약 현황
                 <span className="text-[10px] font-normal text-muted-foreground">
                   ○ 빈 슬롯 클릭 시 예약 등록 · ● 예약됨
