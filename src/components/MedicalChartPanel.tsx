@@ -1384,7 +1384,7 @@ export default function MedicalChartPanel({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); confirmInsertPhrase(p); }}
-            className="mt-0.5 flex h-5 w-5 items-center justify-center rounded bg-teal-600 text-white shrink-0 hover:bg-teal-700"
+            className="mt-0.5 flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-white shrink-0 hover:bg-neutral-900"
             data-testid="phrase-insert-check"
             aria-label={`${p.name} 삽입`}
           >
@@ -2085,7 +2085,7 @@ export default function MedicalChartPanel({
           </Button>
           <Button
             size={embed ? 'default' : 'lg'}
-            className={cn('flex-1 bg-teal-600 hover:bg-teal-700 text-white', embed ? 'h-10' : 'h-12 text-base')}
+            className={cn('flex-1 bg-neutral-800 hover:bg-neutral-900 text-white', embed ? 'h-10' : 'h-12 text-base')}
             onClick={handleSave}
             disabled={saving || !formDate}
             data-testid="clinical-mini-save-btn"
@@ -2285,7 +2285,7 @@ export default function MedicalChartPanel({
         {!isReadOnly && (
           <Button
             size="sm"
-            className="h-9 shrink-0 bg-teal-600 hover:bg-teal-700 text-white"
+            className="h-9 shrink-0 bg-neutral-800 hover:bg-neutral-900 text-white"
             onClick={handleSave}
             disabled={saving || !formDate}
             data-testid="clinical-singleline-save"
@@ -2336,7 +2336,7 @@ export default function MedicalChartPanel({
                   setPendingDoctorChange(null);
                   setEditingSingleDoctor(false);
                 }}
-                className="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700"
+                className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-900"
                 data-testid="clinical-singleline-doctor-confirm-ok"
               >
                 확인
@@ -3627,7 +3627,7 @@ export default function MedicalChartPanel({
                         className={`flex-1 h-12 text-base ${
                           selectedChartId?.startsWith('__dummy__')
                             ? 'bg-gray-300 hover:bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-teal-600 hover:bg-teal-700 text-white'
+                            : 'bg-neutral-800 hover:bg-neutral-900 text-white'
                         }`}
                         onClick={handleSave}
                         disabled={saving || !formDate}
@@ -4220,7 +4220,7 @@ export default function MedicalChartPanel({
               </Button>
               <Button
                 size="sm"
-                className="flex-1 h-9 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+                className="flex-1 h-9 text-xs bg-neutral-800 hover:bg-neutral-900 text-white"
                 onClick={retryGateError}
                 data-testid="rx-contra-error-retry"
               >

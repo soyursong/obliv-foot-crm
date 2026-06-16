@@ -144,7 +144,7 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
                     type="button"
                     onClick={() => addOne(d)}
                     disabled={disabled}
-                    className="mt-0.5 flex h-5 w-5 items-center justify-center rounded bg-teal-600 text-white shrink-0 hover:bg-teal-700 disabled:opacity-50"
+                    className="mt-0.5 flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-white shrink-0 hover:bg-neutral-900 disabled:opacity-50"
                     data-testid="drug-folder-item-arrow"
                     aria-label={`${d.name_ko} 처방내역에 삽입`}
                   >

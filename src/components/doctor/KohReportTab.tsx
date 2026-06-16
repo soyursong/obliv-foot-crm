@@ -743,7 +743,7 @@ export default function KohReportTab() {
               발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행. */}
           <Button
             size="sm"
-            className="h-8 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700 disabled:opacity-40"
+            className="h-8 gap-1 bg-neutral-800 px-2.5 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
             onClick={handleBulkPublish}
             disabled={selectedCount === 0 || bulkPublishing || publishKoh.isPending}
             data-testid="koh-bulk-publish"
@@ -947,7 +947,7 @@ export default function KohReportTab() {
                     ) : (
                       <Button
                         size="sm"
-                        className="h-7 gap-1 bg-teal-600 px-2 text-[11px] text-white hover:bg-teal-700 disabled:opacity-40"
+                        className="h-7 gap-1 bg-neutral-800 px-2 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
                         onClick={() => handlePublish(r)}
                         disabled={!rowPublishable || publishKoh.isPending || bulkPublishing}
                         title={

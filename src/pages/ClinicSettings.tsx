@@ -417,7 +417,7 @@ export default function ClinicSettings() {
           <Button
             onClick={handleSaveClinic}
             disabled={clinicSaving}
-            className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+            className="w-full bg-neutral-800 hover:bg-neutral-900 text-white"
             size="sm"
           >
             {clinicSaving ? '저장 중…' : '병원정보 저장'}
@@ -459,7 +459,7 @@ export default function ClinicSettings() {
                 size="sm"
                 onClick={handleAddDoctor}
                 disabled={addingDoctor && !newDoctorForm.name.trim()}
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-neutral-800 hover:bg-neutral-900 text-white"
               >
                 추가
               </Button>

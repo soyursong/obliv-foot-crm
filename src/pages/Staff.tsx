@@ -893,7 +893,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                 onClick={handleSave}
                 disabled={saving}
                 variant={isDirty ? 'default' : 'outline'}
-                className={isDirty ? 'bg-teal-600 hover:bg-teal-700 text-white' : ''}
+                className={isDirty ? 'bg-neutral-800 hover:bg-neutral-900 text-white' : ''}
               >
                 {saving ? '저장 중…' : isDirty ? '저장 *' : '저장'}
               </Button>
@@ -1248,7 +1248,7 @@ function ClinicSettingsTab({ clinic, onSaved }: { clinic: Clinic; onSaved: () =>
 
           {/* 액션 버튼 */}
           <div className="flex items-center gap-2 pt-2">
-            <Button onClick={save} disabled={saving} className="bg-teal-600 hover:bg-teal-700 text-white">
+            <Button onClick={save} disabled={saving} className="bg-neutral-800 hover:bg-neutral-900 text-white">
               {saving ? '저장 중…' : '저장'}
             </Button>
             <Button variant="outline" size="sm" onClick={reset}>

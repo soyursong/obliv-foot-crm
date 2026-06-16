@@ -435,7 +435,7 @@ export function DutyRosterImportDialog({
               type="file"
               accept=".xlsx,.xls,.csv"
               onChange={onFile}
-              className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-teal-600 file:px-3 file:py-1.5 file:text-white hover:file:bg-teal-700"
+              className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-1.5 file:text-white hover:file:bg-neutral-900"
             />
           </div>
         ) : (

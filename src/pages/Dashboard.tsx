@@ -1104,7 +1104,7 @@ function RoomSection({
         {showBatchEdit && onAddSlot && (
           <button
             data-testid={`add-slot-btn-${roomType}`}
-            className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600"
+            className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-white hover:bg-neutral-900"
             title="슬롯 추가"
             onClick={() => onAddSlot(roomType)}
           >+ 추가</button>
@@ -2897,7 +2897,7 @@ function QuickReservationDialog({
                   <Button
                     type="button"
                     size="sm"
-                    className="text-xs h-7 bg-teal-600 hover:bg-teal-700 text-white"
+                    className="text-xs h-7 bg-neutral-800 hover:bg-neutral-900 text-white"
                     onClick={handleRegisterNew}
                     disabled={registering}
                   >
@@ -2925,7 +2925,7 @@ function QuickReservationDialog({
             size="sm"
             onClick={handleSave}
             disabled={saving}
-            className="bg-teal-600 hover:bg-teal-700 text-white"
+            className="bg-neutral-800 hover:bg-neutral-900 text-white"
           >
             {saving ? '저장 중…' : '예약 생성'}
           </Button>
@@ -5860,7 +5860,7 @@ export default function Dashboard() {
                 {slotBatchEditMode && isToday && (
                   <button
                     data-testid="add-slot-btn-examination"
-                    className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600"
+                    className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-white hover:bg-neutral-900"
                     title="슬롯 추가"
                     onClick={() => handleOpenAddSlot('examination')}
                   >+ 추가</button>
@@ -5957,7 +5957,7 @@ export default function Dashboard() {
                 <span className="text-[10px] font-medium text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">편집 모드</span>
                 <button
                   data-testid="add-consult-slot-btn"
-                  className="text-[10px] px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600"
+                  className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-white hover:bg-neutral-900"
                   onClick={() => handleOpenAddSlot('consultation')}
                 >+ 슬롯추가</button>
                 <button

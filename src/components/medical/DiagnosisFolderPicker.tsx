@@ -604,7 +604,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
               <button
                 type="button"
                 onClick={() => { setOpen(false); setQuery(''); }}
-                className="rounded bg-teal-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-700"
+                className="rounded bg-neutral-800 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-neutral-900"
                 data-testid="dx-picker-done"
               >
                 완료

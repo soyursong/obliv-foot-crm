@@ -321,7 +321,7 @@ export default function ProgressPlansTab() {
         </div>
         <Button
           size="sm"
-          className="bg-teal-600 hover:bg-teal-700 text-white gap-1.5 h-9"
+          className="bg-neutral-800 hover:bg-neutral-900 text-white gap-1.5 h-9"
           onClick={() => openCreate()}
           data-testid="progress-plan-add-btn"
         >
@@ -342,7 +342,7 @@ export default function ProgressPlansTab() {
           </p>
           <Button
             size="sm"
-            className="mt-4 bg-teal-600 hover:bg-teal-700 text-white gap-1.5"
+            className="mt-4 bg-neutral-800 hover:bg-neutral-900 text-white gap-1.5"
             onClick={() => openCreate()}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -629,7 +629,7 @@ export default function ProgressPlansTab() {
             </Button>
             <Button
               size="sm"
-              className="bg-teal-600 hover:bg-teal-700 text-white min-w-[80px]"
+              className="bg-neutral-800 hover:bg-neutral-900 text-white min-w-[80px]"
               onClick={handleSave}
               disabled={saving}
               data-testid="progress-plan-save-btn"
