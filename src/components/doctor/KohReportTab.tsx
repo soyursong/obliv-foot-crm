@@ -414,9 +414,9 @@ function usePublishedKoh(clinicId: string | null) {
 
 /**
  * 발행 RPC 전달용 field_data 구성 — 정본 양식(검사결과지 양식.png) FE 표시필드.
- *   의뢰번호/의뢰기관/koh_service_id 는 RPC(publish_koh_result)에서 채워 병합(자동채번·고정값).
+ *   의뢰번호/검체번호/의뢰기관/koh_service_id 는 RPC(publish_koh_result)에서 채워 병합(자동채번·고정값).
  *   검사결과 라인(KOH mount Hyphae/Yeast)은 양식 고정값(AC-3 동일결과) → 템플릿 HTML에 고정, 여기 미포함.
- *   검체번호(specimen_no) = DA Q2 default OFF(빈값). 원내 자체수행 확정 시 토글.
+ *   검체번호(specimen_no) = RPC 자동채번 K+YYMMDD-폰뒷4(T-20260616-KOH-SPECIMENNO-FORMAT). FE 빈값은 RPC override.
  */
 export function buildKohFieldData(r: KohRow, doctorName: string): Record<string, string> {
   return {
