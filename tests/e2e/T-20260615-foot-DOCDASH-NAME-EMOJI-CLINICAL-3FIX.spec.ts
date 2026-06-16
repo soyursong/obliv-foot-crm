@@ -65,23 +65,25 @@ test.describe('item2/AC2 — 차트 칼럼(헤더+셀+이모지) 제거', () => 
     expect(s).not.toContain('<span aria-hidden>🩺</span>');
   });
 
-  test("thead '차트' 헤더 잔존 0 + 순서 = 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과(·시간)", () => {
+  // ⚠ SUPERSEDED by T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1 (드리프트 재동기, T-20260617-SPEC-DRIFT-3CAUSE):
+  //   본 item2 의 핵심 의도('차트' 칼럼 제거)는 보존되나, 본 spec 이 박제한 9칼럼(끝 '시간' 칼럼 잔존)은
+  //   ELAPSED-CLINICAL-3FIX 가 '시간' 칼럼까지 추가 제거하며 8칼럼으로 바뀌었다. deployed 정본 = 양 테이블 동일 8칼럼:
+  //     방·상태·이름·생년(만나이)·차트번호·오늘시술·처방·임상경과. (차트·시간 칼럼 모두 폐지 — '차트' 잔존 0 의도 불변)
+  test("thead '차트'·'시간' 헤더 잔존 0 + 순서 = 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과(8칼럼)", () => {
     const s = DASH();
+    const DEPLOYED = ['방', '상태', '이름', '생년(만나이)', '차트번호', '오늘시술', '처방', '임상경과'];
     // 대기(호출) 테이블 thead
     const callStart = s.indexOf('doctor-call-feed-table');
     const callEnd = s.indexOf('doctor-call-feed-rows');
-    expect(thOrder(s.slice(callStart, callEnd))).toEqual([
-      '방', '상태', '이름', '생년(만나이)', '차트번호', '오늘시술', '처방', '임상경과', '시간',
-    ]);
-    // 완료 테이블 thead (끝 시간 = 빈 헤더 placeholder)
+    expect(thOrder(s.slice(callStart, callEnd))).toEqual(DEPLOYED);
+    // 완료 테이블 thead (대기와 동일 8칼럼 — '시간' placeholder 칼럼도 ELAPSED 가 제거)
     const doneStart = s.indexOf('doctor-completed-table');
     const doneEnd = s.indexOf('doctor-completed-rows');
-    expect(thOrder(s.slice(doneStart, doneEnd))).toEqual([
-      '방', '상태', '이름', '생년(만나이)', '차트번호', '오늘시술', '처방', '임상경과', '',
-    ]);
+    expect(thOrder(s.slice(doneStart, doneEnd))).toEqual(DEPLOYED);
   });
 
-  test('colgroup 9칼럼 + 합 100% (양 섹션, 차트 6% → 임상경과 재분배)', () => {
+  // SUPERSEDED by ELAPSED-CLINICAL-3FIX: 차트(6%) 제거(NAME-EMOJI) + 시간(5%) 제거(ELAPSED) → 8칼럼, 합 100%.
+  test('colgroup 8칼럼 + 합 100% (양 섹션, 차트·시간 제거분 임상경과 흡수)', () => {
     const s = DASH();
     const g1Start = s.indexOf('<colgroup>');
     const g1 = s.slice(g1Start, s.indexOf('</colgroup>', g1Start));
@@ -90,16 +92,18 @@ test.describe('item2/AC2 — 차트 칼럼(헤더+셀+이모지) 제거', () => 
     const cols = (b: string) => (b.match(/<col /g) ?? []).length;
     const pct = (b: string) =>
       [...b.matchAll(/w-\[(\d+)%\]/g)].reduce((a, m) => a + Number(m[1]), 0);
-    expect(cols(g1)).toBe(9);
-    expect(cols(g2)).toBe(9);
+    expect(cols(g1)).toBe(8);
+    expect(cols(g2)).toBe(8);
     expect(pct(g1)).toBe(100);
     expect(pct(g2)).toBe(100);
   });
 
-  test('인라인 펼침행 colSpan 상수 9로 갱신', () => {
+  // SUPERSEDED by ELAPSED-CLINICAL-3FIX: 시간 칼럼 제거 → colSpan 9→8(양 테이블).
+  test('인라인 펼침행 colSpan 상수 8 (시간 칼럼 제거 정본)', () => {
     const s = DASH();
-    expect(s).toContain('const DOCDASH_COLSPAN = 9;');
-    expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 9;');
+    expect(s).toContain('const DOCDASH_COLSPAN = 8;');
+    expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 8;');
+    expect(s).not.toContain('const DOCDASH_COLSPAN = 9;');
   });
 });
 
