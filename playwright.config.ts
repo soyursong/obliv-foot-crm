@@ -140,6 +140,9 @@ export default defineConfig({
         //   ★CRITICAL 회귀가드 = 영수증 업로드 write 경로(package_payments.insert + paid_amount update) 보존
         //   + 표시 필터(feePayments/directPkgPayments/pkgPayments) + readOnly 뷰어 (정적 소스 가드, auth 불요)
         '**/T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE.spec.ts',
+        // T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE: 더미생성 visit_type 을 고객 SSOT 에서 파생
+        //   (resolveVisitType 불변식 — reservation.visit_type === customers.visit_type, 순수 함수, auth 불요)
+        '**/T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
