@@ -4,11 +4,13 @@
  *
  * 본 spec 커버 범위 = 이번 PR에 구현 완료된 4개 AC + A3 DEDUP 검증.
  *   A1  진료대시보드 테이블 가로 스크롤 실효화 (DoctorCallDashboard, 두 테이블 min-w + overflow-x-auto)
- *   A2  '진료완료' 행만 상태 칼럼 우정렬 (DoctorPatientList StatusCell)
  *   A3  임상경과 입력창 처방칼럼 폭 초과 = ELAPSED-CLINICAL-3FIX(a1a44b10, main 머지) DEDUP 해소 검증
  *   B1(A4) 서브탭/헤더 라벨 '처방 환자 목록' → '진료 환자 목록' (DoctorTools + DoctorPatientList 헤더)
+ *   B2(b) 진료완료목록 뷰어 경량 re-skin (MSG-20260618-002622-dfwd):
+ *         B2-3 방·상태 칼럼 제거 / B2-4 '당일시술' 칼럼(treatmentSummary) / B2-5 진료완료행 처방·임상경과 read-only preview / B2-2 dateNav 재사용.
+ *         ⚠ B2-3 으로 상태 칼럼 자체가 사라져 A2(진료완료행 상태 우정렬, StatusCell)는 본 뷰어에서 superseded → A2 describe = 상태칼럼/StatusCell 소거 검증으로 전환.
  *
- *   B2(하단 뷰어 재설계)는 본 PR 미포함 — planner FOLLOWUP 으로 레이아웃 방향/데이터 배선 확인 후 별도 진행.
+ *   B2 풀미러(table 전환 + 생년월일 + 임상경과 인라인 칼럼)는 scope-외 → field-soak reporter confirm 시 별도 티켓.
  *
  * 컴포넌트가 auth/DB 의존 → 렌더 정본을 직접 읽어 정적 검증(repo 컨벤션, FONT-UNIFY/NAMECOL spec 동일 패턴).
  */
@@ -44,21 +46,68 @@ test.describe('A1 — 진료대시보드 테이블 가로 스크롤 실효화', 
   });
 });
 
-test.describe('A2 — 진료완료 행만 상태 칼럼 우정렬', () => {
-  test('StatusCell pink(진료완료) 분기 배지에 justify-self-end 추가', () => {
-    expect(LIST).toContain('inline-flex items-center justify-self-end whitespace-nowrap rounded-full bg-emerald-100');
+test.describe('B2-3 — 진료완료목록 뷰어에서 방·상태 칼럼 제거 (A2 superseded)', () => {
+  test('상태 칼럼(StatusCell) 컴포넌트 소거 — 정의/렌더/status-cell testid 0건', () => {
+    expect(LIST).not.toContain('function StatusCell');
+    expect(LIST).not.toContain('<StatusCell ');
+    expect(LIST).not.toContain('data-testid="status-cell"');
   });
 
-  test('귀가(done)·기타 상태 셀은 우정렬 미적용(불변)', () => {
-    // 귀가 배지(gray-200)는 justify-self-end 없음
-    expect(LIST).toContain('inline-flex items-center whitespace-nowrap rounded-full bg-gray-200');
-    expect(LIST).not.toContain('justify-self-end whitespace-nowrap rounded-full bg-gray-200');
-    // 기타 상태(STATUS_KO) 셀도 불변
-    expect(LIST).toContain('text-[13px] text-gray-600 truncate" data-testid="status-cell" data-state="in-clinic"');
+  test('방 칼럼(치료실) 소거 — getAssignedSlotName import·patient-room testid 0건', () => {
+    // import 구문에서 getAssignedSlotName 제거(주석 언급은 무관)
+    expect(LIST).not.toMatch(/import\s*\{[^}]*getAssignedSlotName[^}]*\}\s*from/);
+    expect(LIST).not.toContain('data-testid="patient-room"');
+    // MapPin 아이콘도 import 제거(방 셀 전용)
+    expect(LIST).not.toMatch(/import\s*\{[^}]*\bMapPin\b[^}]*\}\s*from 'lucide-react'/);
+  });
+
+  test('오늘모드 grid = 방문유형·이름·차트번호·당일시술·처방·예약메모·액션 7칼럼(방/상태 폭 제거)', () => {
+    expect(LIST).toContain('grid grid-cols-[3rem_5rem_4.5rem_7rem_5.5rem_minmax(0,1fr)_auto]');
+    // 구 8칼럼(방 4.75rem + 상태 3.75rem 포함) 잔재 0
+    expect(LIST).not.toContain('grid-cols-[4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto]');
   });
 
   test('완료 판정 SSOT(completed_at || pink) 분류/CRUD 로직 불변', () => {
     expect(LIST).toContain("const isVisitDone = !!row.completed_at || row.status_flag === 'pink';");
+  });
+});
+
+test.describe('B2-4 — 당일시술 칼럼(treatmentSummary)', () => {
+  test('당일시술 셀 + 라벨 노출(thead 없는 카드그리드 → 셀 내 미니라벨)', () => {
+    expect(LIST).toContain('data-testid="treatment-today"');
+    expect(LIST).toContain('<span className="text-[10px] text-gray-400">당일시술</span>');
+  });
+
+  test('값 = treatmentSummary SSOT(read-only 파생) 사용', () => {
+    expect(LIST).toContain('const t = treatmentSummary(row);');
+  });
+});
+
+test.describe('B2-5 — 진료완료행 처방·임상경과 read-only preview', () => {
+  test('진료완료(isVisitDone) 행은 처방 편집폼(QuickRxBar)·확정/취소(RxConfirmedSummary) 미노출', () => {
+    expect(LIST).toContain('{expanded && !isConfirmed && !isVisitDone && (');
+    expect(LIST).toContain('{expanded && isConfirmed && !isVisitDone && (');
+  });
+
+  test('진료완료행 처방 read-only preview 블록 + 내용없음 폴백', () => {
+    expect(LIST).toContain('{expanded && isVisitDone && (');
+    expect(LIST).toContain('data-testid="done-rx-readonly"');
+    expect(LIST).toContain("{hasRx ? rxLine : '내용 없음'}");
+  });
+
+  test('임상경과 read-only 게이트(DONE-CLINICAL-READONLY) 재사용 — readOnly={!isToday || isVisitDone}', () => {
+    expect(LIST).toContain('readOnly={!isToday || isVisitDone}');
+  });
+
+  test('처방내역 read 라인은 진료완료행에서 중복 미노출(isVisitDone 제외)', () => {
+    expect(LIST).toContain('{!isConfirmed && !isVisitDone && (');
+  });
+});
+
+test.describe('B2-2 — dateNav 기존 재사용(신규 구현 금지)', () => {
+  test('selectedDate + isPast read-only 분기 보존', () => {
+    expect(LIST).toContain("const isToday = selectedDate === todayISO;");
+    expect(LIST).toContain('const isPast = selectedDate < todayISO;');
   });
 });
 
