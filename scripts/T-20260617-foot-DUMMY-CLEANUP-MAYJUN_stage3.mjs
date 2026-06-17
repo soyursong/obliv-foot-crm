@@ -4,11 +4,14 @@
  * ⚠ supervisor DML gate 필수. 기본 = DRY-RUN(trial-delete + ROLLBACK, prod 무변경).
  *   실삭제(COMMIT)는 `--apply` 명시 + supervisor 데이터게이트 GO 후에만.
  *
- * 삭제 범위 (planner TICKET-UPDATE MSG-20260617-192628-37jt, Stage2 HARD GATE 통과):
- *   delete_set = (Tier A 850 ∪ Tier B 428) − KEEP 17 − HOLD 3
+ * 삭제 범위 (planner NEW-SUBTASK MSG-20260617-203549-q8eq, Stage3 잔여 sub-track 종결):
+ *   delete_set = (Tier A 850 ∪ Tier B 428) − KEEP 18 − HOLD 0 = 1263
  *     · Tier A/B id = Stage1 SSOT db-gate/..._stage1_tiered.json (READ-ONLY 산출)
- *     · KEEP 17 = 현장 김주연 총괄 확정(차트번호 SSOT) + Stage1 자동제외 2(김진화·이시형) + 윤민희
- *     · HOLD 3 = 신지아(체험단)·강혜인(치료사)·최다혜(치료사) — 잔여 오삭제 가드, 이번 sweep 보류 + FOLLOWUP
+ *     · KEEP 18 = 현장 김주연 총괄 확정(차트번호 SSOT 15) + Stage1 자동제외 2(김진화·이시형) + 윤민희(차트내) + 신지아(phone, Stage3 확정 18번)
+ *     · 총괄 회신(20:33, slack_ts 1781695978.766079) "신지아 010-9461-1240 남겨줘 나머진 삭제":
+ *         신지아(+821094611240) → KEEP 영구확정(삭제셋 절대 제외) / 강혜인(+821022211444)·최다혜(+821031414010) → 더미 확정 삭제(delete_set 흡수)
+ *     · 메인 배치(delete_set 1261) 미실행 확정(2026-06-17 probe: 1261/1261 생존) → 2명 포함 단일 실행(1263)
+ *     · HOLD 0 — 잔여 오삭제 가드 전원 현장 종결
  *
  * 안전장치(fail-closed):
  *   1) Stage1 JSON 로드 → candidate(=A∪B) 수 EXPECT 대조(850/428).
@@ -38,8 +41,11 @@ const APPLY = process.argv.includes('--apply');
 const TICKET = 'T-20260617-foot-DUMMY-CLEANUP-MAYJUN';
 const CLINIC = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 
-// ── EXPECT 게이트 (Stage1/Stage2 확정값) ──
-const EXPECT = { tier_a: 850, tier_b: 428, keep_in_candidate: 14, hold_in_candidate: 3, delete_set: 1261 };
+// ── EXPECT 게이트 (Stage1/Stage2/Stage3-잔여종결 확정값) ──
+//   Stage3 잔여 sub-track 종결(planner NEW-SUBTASK MSG-20260617-203549-q8eq, 총괄 회신 slack_ts 1781695978.766079
+//   "신지아 010-9461-1240 남겨줘 나머진 삭제"): 신지아 KEEP 영구확정 / 강혜인·최다혜 더미 확정 삭제.
+//   → delete_set 1261 → 1263 (+강혜인·최다혜). HOLD 3 → 0 (전원 현장 종결). keep_in_candidate 14 → 15(+신지아).
+const EXPECT = { tier_a: 850, tier_b: 428, keep_in_candidate: 15, hold_in_candidate: 0, delete_set: 1263 };
 
 // KEEP 15 (차트번호 SSOT) — chart_number → 기대 이름
 const KEEP_CHARTS = {
@@ -50,12 +56,18 @@ const KEEP_CHARTS = {
 };
 // KEEP 자동제외 2 (Stage1 real_guard) — 차트 없음, 이름으로 보존
 const KEEP_GUARD_NAMES = ['김진화', '이시형'];
-// HOLD 3 (잔여 오삭제 가드) — phone E.164로 정밀 식별 (이름은 테스트와 충돌)
-const HOLD_PHONES = {
-  '+821094611240': '신지아', // 체험단/도수 실장님
-  '+821022211444': '강혜인', // 치료샘
-  '+821031414010': '최다혜', // 다혜 치료사 선생님
+// KEEP phone (Stage3 현장확정 추가, KEEP 명단 18번) — 신지아 010-9461-1240 영구확정 (총괄 20:33)
+//   phone E.164로 정밀 식별 (이름은 테스트와 충돌). 삭제셋에서 영구 제외.
+const KEEP_PHONES = {
+  '+821094611240': '신지아', // 체험단/도수 실장님 — 총괄 "남겨줘"
 };
+// Stage3 잔여 종결: 강혜인·최다혜 → 더미 확정 삭제(총괄 "나머진 삭제"). HOLD 해제 → delete_set 흡수.
+const RESOLVED_DELETE_PHONES = {
+  '+821022211444': '강혜인', // 더미 확정
+  '+821031414010': '최다혜', // 더미 확정
+};
+// HOLD 0 (전원 현장 종결) — 신지아=KEEP / 강혜인·최다혜=삭제. 잔여 hold 없음.
+const HOLD_PHONES = {};
 
 const ENV = {};
 for (const line of readFileSync(join(REPO, '.env'), 'utf8').split('\n')) {
@@ -111,8 +123,21 @@ async function main() {
       [CLINIC, [...KEEP_GUARD_NAMES, '윤민희']],
     );
     guardRows.forEach((r) => keepIds.add(r.id));
+    // KEEP phone (신지아 — Stage3 현장확정 KEEP 18번) phone E.164 resolve
+    const keepPhoneList = Object.keys(KEEP_PHONES);
+    const { rows: keepPhoneRows } = await q(
+      `SELECT id, name, phone FROM customers WHERE clinic_id = $1 AND phone = ANY($2::text[])`,
+      [CLINIC, keepPhoneList],
+    );
+    keepPhoneRows.forEach((r) => keepIds.add(r.id));
     out(`\n── KEEP resolve (chart 15) ──`); keepResolveReport.forEach((l) => out(l));
     out(`  guard-name resolve(김진화·이시형·윤민희): ${guardRows.map((r) => `${r.name}=${r.id}`).join(', ')}`);
+    out(`  KEEP-phone resolve(신지아 18번): ${keepPhoneRows.map((r) => `${r.name}=${r.phone}=${r.id} (기대 ${KEEP_PHONES[r.phone]})`).join(', ') || '⚠ 미해소'}`);
+    // 신지아 미해소(이미 삭제됨/번호변경) 시 ABORT — KEEP 영구확정 보존 실패 방지
+    const keepPhoneMissing = keepPhoneList.filter((p) => !keepPhoneRows.some((r) => r.phone === p));
+    if (keepPhoneMissing.length) throw new Error(`ABORT: KEEP-phone 미해소 ${keepPhoneMissing.join(',')} — 신지아 KEEP 보존 불가, 현장 재확인`);
+    const keepPhoneNameMismatch = keepPhoneRows.filter((r) => (r.name || '').trim() !== KEEP_PHONES[r.phone]);
+    if (keepPhoneNameMismatch.length) throw new Error(`ABORT: KEEP-phone 이름불일치 ${keepPhoneNameMismatch.map((r) => `${r.phone}:${r.name}`).join(',')}`);
     const missingChart = chartList.filter((ch) => !keepByChart[ch]);
     const nameMismatch = keepRows.filter((r) => (r.name || '').trim() !== KEEP_CHARTS[r.chart_number]);
     if (missingChart.length) throw new Error(`ABORT: KEEP chart 미해소 ${missingChart.join(',')} — 현장 재확인 필요`);
@@ -135,11 +160,27 @@ async function main() {
     out(`\n── delete_set 산출 ──`);
     out(`  candidate ${candidate.length} − keep(후보내 ${keepInCand.length}) − hold(후보내 ${holdInCand.length}) = ${deleteIds.length}`);
 
-    // 3-b) HOLD 3 의 candidate 포함 여부(planner FOLLOWUP 트리거용) 명시
-    out(`\n── ⚠ 잔여 오삭제 가드 (신지아·강혜인·최다혜) ──`);
-    for (const r of holdRows) {
-      const inCand = candidate.includes(r.id);
-      out(`  ${HOLD_PHONES[r.phone]} (${r.id}): candidate포함=${inCand} · delete_set포함=${deleteIds.includes(r.id)} → ${inCand ? 'HOLD(이번 sweep 제외) + FOLLOWUP' : 'candidate 외(영향없음)'}`);
+    // 3-b) Stage3 잔여 종결 검증 (신지아 KEEP / 강혜인·최다혜 삭제) — COUNT diff 명시 + fail-closed
+    //   총괄 회신 "신지아 010-9461-1240 남겨줘 나머진 삭제" 정확 반영 확인.
+    out(`\n── ⚠ Stage3 잔여 종결 검증 (신지아 KEEP / 강혜인·최다혜 삭제) ──`);
+    const deleteSet = new Set(deleteIds);
+    // 신지아: phone resolve id → keepIds 포함 & deleteIds 절대 미포함
+    for (const r of keepPhoneRows) {
+      const inKeep = keepIds.has(r.id), inDel = deleteSet.has(r.id);
+      out(`  [KEEP] ${KEEP_PHONES[r.phone]} (${r.phone} / ${r.id}): KEEP포함=${inKeep} · 삭제셋포함=${inDel} → ${inKeep && !inDel ? '✓ KEEP 보존(삭제셋 제외)' : '❌ 위반'}`);
+      if (!inKeep || inDel) throw new Error(`ABORT: KEEP 신지아 보존 위반 (inKeep=${inKeep}, inDelete=${inDel}) — 영구확정 row가 삭제셋에 포함`);
+    }
+    // 강혜인·최다혜: phone resolve → candidate 포함 & deleteIds 포함 & keepIds 미포함
+    const { rows: resolvedDelRows } = await q(
+      `SELECT id, name, phone FROM customers WHERE clinic_id = $1 AND phone = ANY($2::text[])`,
+      [CLINIC, Object.keys(RESOLVED_DELETE_PHONES)],
+    );
+    for (const p of Object.keys(RESOLVED_DELETE_PHONES)) {
+      const r = resolvedDelRows.find((x) => x.phone === p);
+      if (!r) { out(`  [DEL] ${RESOLVED_DELETE_PHONES[p]} (${p}): 라이브 미해소 — 이미 삭제됨? (영향없음)`); continue; }
+      const inCand = candidate.includes(r.id), inDel = deleteSet.has(r.id), inKeep = keepIds.has(r.id);
+      out(`  [DEL] ${RESOLVED_DELETE_PHONES[p]} (${p} / ${r.id}): candidate=${inCand} · 삭제셋포함=${inDel} · KEEP포함=${inKeep} → ${inCand && inDel && !inKeep ? '✓ 삭제 진행' : '❌ 위반'}`);
+      if (!inDel || inKeep) throw new Error(`ABORT: ${RESOLVED_DELETE_PHONES[p]} 삭제셋 미포함 또는 KEEP중복 (inDelete=${inDel}, inKeep=${inKeep})`);
     }
 
     // ── ASSERTS (fail-closed) ──

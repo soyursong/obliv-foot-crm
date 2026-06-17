@@ -1,4 +1,4 @@
-== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-17T11:08:54.599Z
+== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-17T12:15:17.648Z
 Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
 
 ── KEEP resolve (chart 15) ──
@@ -18,21 +18,19 @@ Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
   ✓ F-3904: 서호영 (기대 서호영) | +821095585038 | 8ef1f602-5c89-4c50-b616-6a10695647af
   ✓ F-4067: 윤민희 (기대 윤민희) | +821067310715 | 0e27bce7-8311-4c80-9a26-edbba0b4d9e1
   guard-name resolve(김진화·이시형·윤민희): 윤민희=0e27bce7-8311-4c80-9a26-edbba0b4d9e1, 이시형=dd064755-e146-4cbc-b57f-1a06f3df24bb, 김진화=1523ba8c-e264-4708-bfe4-34bb361cbb1c
+  KEEP-phone resolve(신지아 18번): 신지아=+821094611240=6ea245fa-9528-4690-8a0e-6b4de2496979 (기대 신지아)
 
 ── HOLD 3 resolve (phone) ──
-  강혜인 | +821022211444 | fbc782a6-d5d6-4e1f-be4c-e231c51daaab (기대 강혜인)
-  최다혜 | +821031414010 | 7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4 (기대 최다혜)
-  신지아 | +821094611240 | 6ea245fa-9528-4690-8a0e-6b4de2496979 (기대 신지아)
 
 ── delete_set 산출 ──
-  candidate 1278 − keep(후보내 14) − hold(후보내 3) = 1261
+  candidate 1278 − keep(후보내 15) − hold(후보내 0) = 1263
 
-── ⚠ 잔여 오삭제 가드 (신지아·강혜인·최다혜) ──
-  강혜인 (fbc782a6-d5d6-4e1f-be4c-e231c51daaab): candidate포함=true · delete_set포함=false → HOLD(이번 sweep 제외) + FOLLOWUP
-  최다혜 (7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4): candidate포함=true · delete_set포함=false → HOLD(이번 sweep 제외) + FOLLOWUP
-  신지아 (6ea245fa-9528-4690-8a0e-6b4de2496979): candidate포함=true · delete_set포함=false → HOLD(이번 sweep 제외) + FOLLOWUP
+── ⚠ Stage3 잔여 종결 검증 (신지아 KEEP / 강혜인·최다혜 삭제) ──
+  [KEEP] 신지아 (+821094611240 / 6ea245fa-9528-4690-8a0e-6b4de2496979): KEEP포함=true · 삭제셋포함=false → ✓ KEEP 보존(삭제셋 제외)
+  [DEL] 강혜인 (+821022211444 / fbc782a6-d5d6-4e1f-be4c-e231c51daaab): candidate=true · 삭제셋포함=true · KEEP포함=false → ✓ 삭제 진행
+  [DEL] 최다혜 (+821031414010 / 7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4): candidate=true · 삭제셋포함=true · KEEP포함=false → ✓ 삭제 진행
 
-✓ ASSERT 통과: clinic 한정 OK · KEEP/HOLD 교집합 0 · real_guard 미포함 · delete_set=1261
+✓ ASSERT 통과: clinic 한정 OK · KEEP/HOLD 교집합 0 · real_guard 미포함 · delete_set=1263
 
 ── FK subgraph: customers reachable child 테이블 36개 ──
 
@@ -81,42 +79,42 @@ Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
   medical_charts · trg_medical_charts_body_audit → medical_charts_body_audit()
   insurance_claims · trg_insurance_claims_updated_at → update_insurance_claims_updated_at()
   redpay_raw_transactions · redpay_raw_updated_at_trigger → set_redpay_raw_updated_at()
-  [t0] delete_set customers 생존(삭제 전): 1261
-  [t1] _t_customers 적재: 1261
+  [t0] delete_set customers 생존(삭제 전): 1263
+  [t1] _t_customers 적재: 1263
 
 ── 삭제 실행(자식→부모) ──
-  check_in_services: 755
+  check_in_services: 769
   claim_diagnoses: 4
   payment_audit_logs: 19
-  check_in_room_logs: 514
-  timer_records: 45
-  status_transitions: 1999
-  package_sessions: 148
-  reservation_memo_history: 121
+  check_in_room_logs: 546
+  timer_records: 48
+  status_transitions: 2046
+  package_sessions: 153
+  reservation_memo_history: 123
   service_charges: 15
-  form_submissions: 95
-  payments: 203
-  check_ins: 805
-  reservation_logs: 351
+  form_submissions: 114
+  payments: 205
+  check_ins: 811
+  reservation_logs: 353
   customer_special_notes: 6
-  customer_treatment_memos: 43
+  customer_treatment_memos: 45
   package_payments: 14
-  packages: 126
-  reservations: 1228
-  health_q_results: 32
-  health_q_tokens: 107
-  [t2] Phase2 후 delete_set customers 생존: 1261
+  packages: 129
+  reservations: 1234
+  health_q_results: 33
+  health_q_tokens: 109
+  [t2] Phase2 후 delete_set customers 생존: 1263
 
 ── soft-link / SET NULL 정리 (FK그래프 외 customer_id 보유 7개) ──
   medical_charts: 62
-  notification_logs: 1520
-  [t3] 최종삭제 직전: _t_customers=1261 · customers 생존=1261
-  customers: 1261
+  notification_logs: 1529
+  [t3] 최종삭제 직전: _t_customers=1263 · customers 생존=1263
+  customers: 1263
   ✓ 백업 보존: rollback/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_backup.json (23개 테이블)
 
 ── 사후검증(txn 내) ──
-  KEEP 잔존: 17/17 (전원 잔존이어야)
-  HOLD 잔존: 3/3 (전원 잔존이어야)
+  KEEP 잔존: 18/18 (전원 잔존이어야)
+  HOLD 잔존: 0/0 (전원 잔존이어야)
   delete_set customers 잔존: 0 (0이어야)
 
 [DRY-RUN] ROLLBACK 완료 — prod 무변경. 전체 삭제 계획이 라이브 데이터에서 FK 위반 없이 검증됨.
