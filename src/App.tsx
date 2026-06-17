@@ -65,6 +65,8 @@ const Notices = lazyWithRetry(() => import('@/pages/Notices'));
 // T-20260605-foot-HANDOVER-BOARD: 파트별 인수인계 게시판(캘린더) — 전 직원 작성/조회
 const Handover = lazyWithRetry(() => import('@/pages/Handover'));
 const Sales = lazyWithRetry(() => import('@/pages/Sales'));
+// T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰(자동배정 조회 + 토스/당김/수동)
+const Assignments = lazyWithRetry(() => import('@/pages/Assignments'));
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: ClinicSettings는 더 이상 독립 라우트가 아니라
 //   Staff.tsx '원장정보' 탭에 임베드됨 → App.tsx lazy import 제거(미사용). /admin/clinic-settings 는 리다이렉트.
 // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 페이지 (admin/manager/director 전용)
@@ -207,6 +209,8 @@ function App() {
                     통계 내부 탭 가시성(TM집계 탭만)은 자매 티켓 STATS-TM-AGGREGATE-TAB 에서 처리. */}
                 <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'part_lead', 'tm']}><Stats /></RoleGuard>} />
                 <Route path="history" element={<DailyHistory />} />
+                {/* T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰. nav(AdminLayout)와 roles 패리티 SSOT. */}
+                <Route path="assignments" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Assignments /></RoleGuard>} />
                 {/* AC-6: 계정관리 — admin 전용 유지 */}
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 서비스관리 접근 (뷰 전용) */}

@@ -27,6 +27,7 @@ import {
   TrendingUp,
   KeyRound,
   MessageSquare,
+  ArrowRightLeft,
 } from 'lucide-react';
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import { supabase } from '@/lib/supabase';
@@ -90,6 +91,9 @@ const NAV_ITEMS: {
   { to: '/admin', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/admin/reservations', label: '예약관리', icon: CalendarDays },
   { to: '/admin/customers', label: '고객관리', icon: Users },
+  // T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰(자동배정 조회 + 토스/당김/수동).
+  //   nav roles = App.tsx assignments route RoleGuard 와 패리티 SSOT(메뉴 보이는데 route 튕김 차단).
+  { to: '/admin/assignments', label: '상담·치료사 배정', icon: ArrowRightLeft, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // T-20260520-foot-RBAC-MENU-EXPAND: consultant/coordinator/therapist 메뉴 권한 확장
   // AC-4: therapist → 패키지 신규 접근
   { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },

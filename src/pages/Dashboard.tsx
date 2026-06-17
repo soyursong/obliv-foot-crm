@@ -103,6 +103,8 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
+// T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 슬롯 진입 시 상담사/치료사 자동배정(best-effort)
+import { maybeAutoAssign } from '@/lib/autoAssign';
 // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 완료 슬롯 이동 하드차단.
 import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -4173,6 +4175,8 @@ export default function Dashboard() {
             newRow?.id
           ) {
             pendingAutoOpenId.current = newRow.id;
+            // T-20260617-foot-AUTOASSIGN: 셀프접수 직행 상담대기 INSERT → 상담사 자동배정(best-effort, 멱등)
+            void maybeAutoAssign(newRow.id, 'consult_waiting', profile?.id ?? null);
           }
           // T-20260511-foot-SELFCHECKIN-CRM-SYNC: 재진 셀프접수 감지 → 치료대기 칸반 활성화
           // 키오스크(anon)가 treatment_waiting으로 직행 INSERT → auto-open + toast (초진과 동일 패턴)
@@ -4185,6 +4189,8 @@ export default function Dashboard() {
             pendingAutoOpenId.current = newRow.id;
             const name = (newRow as Record<string, unknown>)?.customer_name as string | undefined;
             toast.info(`재진 접수: ${name ?? '고객'}님 치료대기`, { duration: 6000 });
+            // T-20260617-foot-AUTOASSIGN: 재진 셀프접수 직행 치료대기 INSERT → 치료사 자동배정(best-effort, 멱등)
+            void maybeAutoAssign(newRow.id, 'treatment_waiting', profile?.id ?? null);
           }
           debouncedCheckInRefetch();
         },
@@ -4813,6 +4819,11 @@ export default function Dashboard() {
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
 
+      // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 슬롯 진입 시 상담사/치료사 자동배정(best-effort, 멱등)
+      if (newStatus === 'consult_waiting' || newStatus === 'treatment_waiting') {
+        void maybeAutoAssign(row.id, newStatus, profile?.id ?? null);
+      }
+
       // AC-4: 수납대기 이동 시 PaymentDialog 대신 PaymentMiniWindow 직접 오픈
       if (newStatus === 'payment_waiting') {
         setMiniPayTarget({ ...row, status: newStatus });
@@ -5173,6 +5184,10 @@ export default function Dashboard() {
         to_status: newStatus,
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
+    }
+    // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 진입 시 자동배정(best-effort, 멱등)
+    if (newStatus === 'consult_waiting' || newStatus === 'treatment_waiting') {
+      void maybeAutoAssign(ci.id, newStatus, profile?.id ?? null);
     }
     // T-20260611-foot-CHECKIN-CANCEL-RENAME-RESTORE: '체크인 취소' = 체크인 역전이(soft).
     //   check_in row는 status='cancelled'로 보존(위 update). 추가로, 체크인 시 'checked_in'으로
