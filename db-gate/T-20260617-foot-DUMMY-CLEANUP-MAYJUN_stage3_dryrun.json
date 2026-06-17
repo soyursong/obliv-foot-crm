@@ -2,21 +2,21 @@
   "ticket": "T-20260617-foot-DUMMY-CLEANUP-MAYJUN",
   "stage": 3,
   "mode": "dry-run",
-  "measured_at": "2026-06-17T11:09:28.697Z",
+  "measured_at": "2026-06-17T12:15:40.178Z",
   "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
   "expect": {
     "tier_a": 850,
     "tier_b": 428,
-    "keep_in_candidate": 14,
-    "hold_in_candidate": 3,
-    "delete_set": 1261
+    "keep_in_candidate": 15,
+    "hold_in_candidate": 0,
+    "delete_set": 1263
   },
   "candidate": 1278,
-  "keep_ids": 17,
-  "hold_ids": 3,
-  "delete_set": 1261,
-  "keep_in_candidate": 14,
-  "hold_in_candidate": 3,
+  "keep_ids": 18,
+  "hold_ids": 0,
+  "delete_set": 1263,
+  "keep_in_candidate": 15,
+  "hold_in_candidate": 0,
   "keep_resolve": [
     "  ✓ F-1190: 최영낭 (기대 최영낭) | +821076361819 | bc35f9f3-46c4-437d-8a61-0606408e108d",
     "  ✓ F-0155: 양종필 (기대 양종필) | +821051032509 | 054948a2-fc42-483b-bc98-2ad1a5727395",
@@ -34,26 +34,7 @@
     "  ✓ F-3904: 서호영 (기대 서호영) | +821095585038 | 8ef1f602-5c89-4c50-b616-6a10695647af",
     "  ✓ F-4067: 윤민희 (기대 윤민희) | +821067310715 | 0e27bce7-8311-4c80-9a26-edbba0b4d9e1"
   ],
-  "hold_resolve": [
-    {
-      "name": "강혜인",
-      "phone": "+821022211444",
-      "id": "fbc782a6-d5d6-4e1f-be4c-e231c51daaab",
-      "in_candidate": true
-    },
-    {
-      "name": "최다혜",
-      "phone": "+821031414010",
-      "id": "7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4",
-      "in_candidate": true
-    },
-    {
-      "name": "신지아",
-      "phone": "+821094611240",
-      "id": "6ea245fa-9528-4690-8a0e-6b4de2496979",
-      "in_candidate": true
-    }
-  ],
+  "hold_resolve": [],
   "fk_reachable": [
     "health_q_tokens",
     "health_q_results",
@@ -131,31 +112,31 @@
     "health_q_tokens"
   ],
   "deleted_counts": {
-    "check_in_services": 755,
+    "check_in_services": 769,
     "claim_diagnoses": 4,
     "payment_audit_logs": 19,
-    "check_in_room_logs": 514,
-    "timer_records": 45,
-    "status_transitions": 1999,
-    "package_sessions": 148,
-    "reservation_memo_history": 121,
+    "check_in_room_logs": 546,
+    "timer_records": 48,
+    "status_transitions": 2046,
+    "package_sessions": 153,
+    "reservation_memo_history": 123,
     "service_charges": 15,
-    "form_submissions": 95,
-    "payments": 203,
-    "check_ins": 805,
-    "reservation_logs": 351,
+    "form_submissions": 114,
+    "payments": 205,
+    "check_ins": 811,
+    "reservation_logs": 353,
     "customer_special_notes": 6,
-    "customer_treatment_memos": 43,
+    "customer_treatment_memos": 45,
     "package_payments": 14,
-    "packages": 126,
-    "reservations": 1228,
-    "health_q_results": 32,
-    "health_q_tokens": 107,
-    "customers": 1261
+    "packages": 129,
+    "reservations": 1234,
+    "health_q_results": 33,
+    "health_q_tokens": 109,
+    "customers": 1263
   },
   "soft_link_counts": {
     "medical_charts": 62,
-    "notification_logs": 1520
+    "notification_logs": 1529
   },
   "soft_link_tables": [
     "medical_charts",
@@ -1113,6 +1094,7 @@
     "a8b61c4d-d77f-40c5-813c-495ed3608f03",
     "85dacfe4-e52b-4940-8c6f-75c7eb8c37e0",
     "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+    "7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4",
     "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
     "e7b0c98c-fbc1-48ae-a80c-0e0d93009a69",
     "64f3b62a-ebf3-414f-af92-df6a29cbb7fd",
@@ -1317,6 +1299,7 @@
     "15d22979-4869-4f0d-ac37-46884efbcbf1",
     "8c5a4bab-f75a-437b-8909-0190e2047bbc",
     "b844772e-d1f0-4260-b720-2785833a2167",
+    "fbc782a6-d5d6-4e1f-be4c-e231c51daaab",
     "dba2a5c1-351d-4b68-87ee-8599a3a3d678",
     "c8faccee-d95e-4c30-91fb-504c9f528dfc",
     "1cbe6114-83af-4bad-86ad-7bbd176285ca",
