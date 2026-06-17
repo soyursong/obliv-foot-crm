@@ -1,4 +1,4 @@
-== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-17T12:15:17.648Z
+== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-17T12:33:48.261Z
 Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
 
 ── KEEP resolve (chart 15) ──
