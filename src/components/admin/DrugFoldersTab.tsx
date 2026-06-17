@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/lib/toast';
 import {
+  BadgeCheck,
   Check,
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,7 @@ import {
   useDeleteFolder,
   useAssignDrugToFolder,
   useUnassignDrug,
+  MIGRATED_CODE_TYPE,
   type DrugFolderNode,
   type FolderDrug,
 } from '@/lib/drugFolders';
@@ -325,6 +327,14 @@ export default function DrugFoldersTab() {
     }
   }
 
+  // 검증(verify) 버튼 = UI surface 만 제공(본 티켓 MIGCLEAR 범위).
+  //   CORRECTION: "검증 action 의 의미·DML 은 MIGCLEAR 에서 구현하지 말 것. code_type 임의 UPDATE 금지."
+  //   실제 검증 semantics/DML(태그 의미 그라운딩 + 정합 + 게이트)은 T-20260617-foot-RX-VALID-TAG-REMOVE
+  //   정본 경로에서 단일 구현. 그 전까지 버튼은 표면만 노출하고 DML 을 수행하지 않는다(no-op 안내).
+  function handleVerify(_d: FolderDrug) {
+    toast.warning('검증 기능은 준비 중입니다.');
+  }
+
   const renderNode = (node: DrugFolderNode) => {
     const isCollapsed = collapsed.has(node.id);
     const folderDrugs = drugsByFolder.get(node.id) ?? [];
@@ -559,6 +569,33 @@ export default function DrugFoldersTab() {
                             <span className="text-xs font-medium truncate">{d.name_ko}</span>
                             {d.code_source === 'custom' && (
                               <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                            )}
+                            {/* reporter: 이관약(code_type='이관약')만 '이관' 태그 + 검증 버튼 노출.
+                                신규/정상 약엔 미노출. 검증 버튼은 UI surface 만(DML 없음) — 검증 semantics 는
+                                T-20260617-foot-RX-VALID-TAG-REMOVE 정본 경로에서 단일 구현(CORRECTION). */}
+                            {d.code_type === MIGRATED_CODE_TYPE && (
+                              <>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] h-4 px-1 shrink-0 border-amber-300 text-amber-700"
+                                  data-testid="drug-folder-viewall-migrated-tag"
+                                >
+                                  이관
+                                </Badge>
+                                {canEdit && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 gap-1 px-1.5 text-[10px] shrink-0 border-teal-300 text-teal-700 hover:bg-teal-50"
+                                    onClick={() => handleVerify(d)}
+                                    data-testid="drug-folder-viewall-verify-btn"
+                                    title="검증(준비 중)"
+                                  >
+                                    <BadgeCheck className="h-3 w-3" />
+                                    검증
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
