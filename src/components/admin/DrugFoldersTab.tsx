@@ -529,9 +529,9 @@ export default function DrugFoldersTab() {
                         data-testid="drug-folder-viewall-select-all"
                       />
                     </th>
-                    <th className="px-2 py-1.5 font-medium">약명</th>
+                    {/* §0.5 reporter(문지은 대표원장) 직접 정정 MSG-xi5h: '약 이름(용량)'=name_ko 단일 데이터(예 '어쩌구 10mg'), 용량 별도 컬럼 X. '기타 처방정보' 컬럼 제거(reporter 3컬럼만 명시). */}
+                    <th className="px-2 py-1.5 font-medium">약 이름(용량)</th>
                     <th className="px-2 py-1.5 font-medium">소속 폴더</th>
-                    <th className="px-2 py-1.5 font-medium">기타 처방정보</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -566,10 +566,6 @@ export default function DrugFoldersTab() {
                           <span className="text-[11px] text-muted-foreground truncate">
                             {folderNameById.get(d.folder_id) ?? '—'}
                           </span>
-                        </td>
-                        <td className="px-2 py-1.5 text-[10px] text-muted-foreground">
-                          <span className="font-mono">{d.claim_code}</span>
-                          {d.classification && <span> · {d.classification}</span>}
                         </td>
                       </tr>
                     );

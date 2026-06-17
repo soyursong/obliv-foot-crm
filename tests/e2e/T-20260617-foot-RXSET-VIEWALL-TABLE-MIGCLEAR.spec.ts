@@ -6,8 +6,8 @@
  *    전체보기는 약별로 테이블뷰로 체크박스로 여러개 삭제 가능하게."
  *   스펙확정(krhg, MSG-20260617-122627 / INFO MSG-20260617-123347-hpfq):
  *     - 서브탭 방식 [폴더 선택]/[전체보기] 별도 분리(인라인 토글 X).
- *     - 전체보기 컬럼: 체크박스 / 약명 / 소속 폴더 / 기타 처방정보.
- *       ※ '용량(dosage)'은 약 마스터(prescription_codes) 데이터에 소스 없음 → FOLLOWUP 확인 보류(이번 슬라이스 제외).
+ *     - 전체보기 컬럼(§0.5 reporter 직접 정정 MSG-xi5h 14:09): 체크박스 / 약 이름(용량)=name_ko / 소속 폴더 (3컬럼).
+ *       ※ '약 이름(용량)'=name_ko 단일 데이터(예 '어쩌구 10mg'), 용량 별도 컬럼 X. '기타 처방정보' 컬럼 reporter 미언급 → 제거.
  *     - 일괄 삭제 = 기존 단건 삭제 로직(useUnassignDrug=분류 해제) + 확인 팝업 재사용(신규 삭제 경로 X).
  *     - 검증(verify) 버튼: krhg 미언급 → 삭제 우선 구현(이번 슬라이스 제외, §5-1 결정포인트 유지).
  *
@@ -57,11 +57,12 @@ test('AC-2: 전체보기 = 약별 테이블뷰(전 폴더 약), all 서브탭에
   expect(src).toContain('const allDrugs = [...drugs].sort(');
 });
 
-test('AC-2-2: 컬럼 = 체크박스 / 약명 / 소속 폴더 / 기타 처방정보', () => {
+test('AC-2-2: 컬럼 = 체크박스 / 약 이름(용량) / 소속 폴더 (§0.5 reporter 정정 — 3컬럼)', () => {
   const src = read(TAB);
-  expect(src).toContain('약명');
+  expect(src).toContain('약 이름(용량)');
   expect(src).toContain('소속 폴더');
-  expect(src).toContain('기타 처방정보');
+  // §0.5 reporter authority: '기타 처방정보' 컬럼 제거(reporter 3컬럼만 명시)
+  expect(src).not.toContain('>기타 처방정보<');
   // 소속 폴더명 lookup
   expect(src).toContain('folderNameById');
   // 행/전체선택 체크박스
