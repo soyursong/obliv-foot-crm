@@ -1186,7 +1186,10 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <span className="ml-auto text-xs font-normal text-muted-foreground">마감 전 확인</span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-1 text-sm text-foreground">
+                  {/* T-20260617-foot-CLOSING-INPROG-PAYWAIT-MAXH-SCROLL:
+                      리스트 영역 고정 max-height + 내부 세로 스크롤. 헤더(제목/카운트)는 CardHeader로 스크롤 영역 밖 고정.
+                      항목 적으면 자연 높이(스크롤바 미노출), 많아도 박스 외형 일정. 두 박스 동일 max-h로 2-col 균형. */}
+                  <CardContent className="space-y-1 text-sm text-foreground max-h-48 overflow-y-auto">
                     {inProgress.map(c => (
                       <button
                         key={c.id}
@@ -1221,7 +1224,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <span className="ml-auto text-xs font-normal text-muted-foreground">클릭 → 결제 처리</span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-1 text-sm text-foreground">
+                  {/* T-20260617-foot-CLOSING-INPROG-PAYWAIT-MAXH-SCROLL: 진행중 박스와 동일 max-h-48 → 2-col 높이 균형 */}
+                  <CardContent className="space-y-1 text-sm text-foreground max-h-48 overflow-y-auto">
                     {unpaid.map(c => (
                       <button
                         key={c.id}
