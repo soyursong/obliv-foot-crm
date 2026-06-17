@@ -25,7 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
-import { normalizeToE164 } from '@/lib/phone';
+import { normalizeToE164, phoneCanonDigits } from '@/lib/phone';
 import { todaySeoulISODate, nowSeoulHHMM } from '@/lib/format';
 
 // 셀프체크인 전용 Supabase 클라이언트 (anon, 세션 없음)
@@ -1172,40 +1172,31 @@ export default function SelfCheckIn() {
       const phoneE164 = normalizeToE164(phone);
       const phoneStored = phoneE164 ?? phoneDigits;
 
-      // 전화번호로 고객 조회 (submit 처리 전용 — UI 미노출)
+      // ── 고객 해소: 복합키(성함 AND 연락처) — T-20260617-foot-CHECKIN-CHART-LINK-3KEY AC-1 ① ──
+      //   기존엔 phone 단독(3-format)으로 조회 → 연락처 중복 시 동명이인/타 고객('문자테스트')을 임의
+      //   1건 연결해 체크인 오배정(6/17 김사비→문자테스트 재발). 키오스크 셀프접수는 환자가 차트번호를
+      //   입력하지 않으므로 성함+연락처 2키가 최강(확정 스펙 reframe — 차트번호 1급 키 AC-7 은 스태프
+      //   컨텍스트 전용). 성함=eq 정확매칭 + 연락처는 canonical(포맷 무관)로 비교.
+      //   · 정확히 1건 → 자동 연결 / 0건 → 신규 INSERT / 2건+ → 임의연결 금지(미연결, 현장 재해소).
       let existing: { id: string } | null = null;
-      if (!existing) {
-        const res = await anonClient
+      let ambiguousLink = false; // 성함+연락처 동시중복 → 자동연결/신규생성 모두 보류
+      const trimmedName = name.trim();
+      const inputPhoneCanon = phoneCanonDigits(phoneStored);
+      if (trimmedName && inputPhoneCanon) {
+        const { data: nameMatches } = await anonClient
           .from('customers')
-          .select('id')
+          .select('id, phone')
           .eq('clinic_id', clinicId)
-          .eq('phone', phoneStored)
-          .maybeSingle();
-        existing = res.data as { id: string } | null;
-      }
-      if (!existing && phoneE164 && phoneDigits !== phoneE164) {
-        const { data: legacy } = await anonClient
-          .from('customers')
-          .select('id')
-          .eq('clinic_id', clinicId)
-          .eq('phone', phoneDigits)
-          .maybeSingle();
-        existing = legacy;
-      }
-      // 세 번째 시도: 하이픈 포맷 (010-XXXX-XXXX)
-      if (!existing) {
-        const d = phoneDigits;
-        const phoneFormatted =
-          d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` :
-          d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : null;
-        if (phoneFormatted && phoneFormatted !== phoneStored && phoneFormatted !== phoneDigits) {
-          const { data: formattedMatch } = await anonClient
-            .from('customers')
-            .select('id')
-            .eq('clinic_id', clinicId)
-            .eq('phone', phoneFormatted)
-            .maybeSingle();
-          existing = formattedMatch as { id: string } | null;
+          .eq('name', trimmedName)
+          .limit(10);
+        const matched = ((nameMatches ?? []) as Array<{ id: string; phone: string | null }>)
+          .filter((c) => phoneCanonDigits(c.phone) === inputPhoneCanon);
+        if (matched.length === 1) {
+          existing = { id: matched[0].id };
+        } else if (matched.length > 1) {
+          // 성함+연락처 동시중복 = 어느 차트가 본인인지 시스템이 단정 불가 → 임의연결 금지.
+          // customerId NULL 유지 → check_in 은 denormalized 성함/연락처만 기록(미연결). 대시보드에서 재해소.
+          ambiguousLink = true;
         }
       }
 
@@ -1228,8 +1219,9 @@ export default function SelfCheckIn() {
           .from('customers')
           .update(existingUpdate)
           .eq('id', customerId);
-      } else {
+      } else if (!ambiguousLink) {
         // T-20260529: 워크인 신규 고객 INSERT 시 birth_date, address, privacy_consent 포함
+        // T-20260617 (AC-1 ①): ambiguousLink(성함+연락처 동시중복) 일 땐 신규 생성도 보류 → customerId NULL 유지.
         const newCustomerPayload: Record<string, unknown> = {
           clinic_id: clinicId,
           name: name.trim(),
@@ -1269,14 +1261,17 @@ export default function SelfCheckIn() {
           .single();
         if (cErr) {
           if (cErr.code === '23505') {
-            const { data: retryData } = await anonClient
+            // T-20260617 (AC-1 ①): 중복(23505) 재조회도 복합키(성함 AND 연락처 canonical)로 — phone 단독 금지.
+            const { data: retryRows } = await anonClient
               .from('customers')
-              .select('id')
+              .select('id, phone')
               .eq('clinic_id', clinicId)
-              .eq('phone', phoneStored)
-              .maybeSingle();
-            if (retryData) {
-              customerId = (retryData as { id: string }).id;
+              .eq('name', trimmedName)
+              .limit(10);
+            const retryMatched = ((retryRows ?? []) as Array<{ id: string; phone: string | null }>)
+              .filter((c) => phoneCanonDigits(c.phone) === inputPhoneCanon);
+            if (retryMatched.length === 1) {
+              customerId = retryMatched[0].id;
             } else {
               throw new Error(`고객 등록 실패 (중복 확인 불가): ${cErr.message}`);
             }
@@ -1441,6 +1436,8 @@ export default function SelfCheckIn() {
 
       // notes: 신분증 확인 + 워크인 플래그 + 유입경로 저장
       const notesParts: Record<string, unknown> = {};
+      // T-20260617 (AC-1 ①): 성함+연락처 동시중복으로 자동연결 보류 → 현장 재해소 플래그(미연결 체크인 식별용).
+      if (ambiguousLink) notesParts.unlinked_ambiguous = true;
       if (visitType === 'new') notesParts.id_check_required = true;
       if (reservationType === 'walkin') notesParts.walk_in = true;
       if (leadSource) notesParts.lead_source = leadSource;
