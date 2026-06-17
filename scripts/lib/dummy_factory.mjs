@@ -70,6 +70,26 @@ export function dedupeByPhone(rawItems) {
   return { uniquePhones: [...itemsByPhone.keys()], itemsByPhone, normalized };
 }
 
+/**
+ * 예약/고객의 visit_type 단일 진실원(SSOT) 파생.
+ * T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE 버그 수정:
+ *   기존엔 reservation.visit_type 을 입력 item(기본 'new')에서 직접 박아,
+ *   phone UNIQUE 로 재사용된 returning 고객에도 'new' 예약이 붙어
+ *   (visit_type=new + 미체크인) → 초진 비활성 Box 로 들어가는 분기 오작동 유발.
+ *
+ * 규칙: 동일 (clinic, phone) 고객이 이미 있으면 그 고객의 visit_type 을 권위로 삼는다.
+ *       없으면 입력 item 의 visitType 을 그대로 사용(신규 더미 생성 경로).
+ * 이로써 reservation.visit_type === customers.visit_type 불변식이 항상 성립한다.
+ * @param {object} item              normalizeDummyItem 결과
+ * @param {object|null} existingCustomer  기존 고객 row({visit_type}) 또는 null
+ * @returns {'new'|'returning'}
+ */
+export function resolveVisitType(item, existingCustomer) {
+  const fromCustomer = existingCustomer?.visit_type;
+  if (fromCustomer === 'new' || fromCustomer === 'returning') return fromCustomer;
+  return item.visitType;
+}
+
 /** customers INSERT/UPSERT 행 빌더. is_simulation 항상 true. */
 export function buildCustomerRow(item, clinicId, opts = {}) {
   if (!clinicId) throw new Error('buildCustomerRow: clinicId 필수');
@@ -163,17 +183,33 @@ export async function createDummyReservations(sb, clinicId, rawItems, opts = {})
   const { uniquePhones, itemsByPhone, normalized } = dedupeByPhone(rawItems);
   log(`[dummy_factory] 항목 ${normalized.length}건 / 고유 phone ${uniquePhones.length}개`);
 
-  // 1) 기존 customer 조회 (재사용 카운트용)
+  // 1) 기존 customer 조회 (재사용 카운트 + visit_type 권위 파생용)
   const { data: existing, error: exErr } = await sb
     .from('customers')
-    .select('id, phone')
+    .select('id, phone, visit_type')
     .eq('clinic_id', clinicId)
     .in('phone', uniquePhones);
   if (exErr) throw new Error(`기존 customer 조회 실패: ${exErr.message}`);
-  const existingPhones = new Set((existing ?? []).map((c) => c.phone));
-  const reused = existingPhones.size;
+  const existingByPhone = new Map((existing ?? []).map((c) => [c.phone, c]));
+  const reused = existingByPhone.size;
   const willCreate = uniquePhones.length - reused;
   log(`[dummy_factory] 재사용 예정 ${reused}건 / 신규 생성 예정 ${willCreate}건`);
+
+  // 1-b) visit_type SSOT 정렬 — 기존 고객이 있으면 그 visit_type 으로 정규화 item 보정.
+  //      reservation.visit_type === customers.visit_type 불변식 강제(버그 수정 핵심).
+  //      (재사용된 returning 고객에 'new' 예약이 박히는 분기 오작동 차단)
+  let visitTypeRealigned = 0;
+  for (const it of normalized) {
+    const resolved = resolveVisitType(it, existingByPhone.get(it.phone));
+    if (resolved !== it.visitType) {
+      visitTypeRealigned += 1;
+      log(`[dummy_factory] visit_type 보정: ${it.name}(${it.phone}) ${it.visitType} → ${resolved} (기존 고객 권위)`);
+    }
+    it.visitType = resolved;
+  }
+  if (visitTypeRealigned > 0) {
+    log(`[dummy_factory] visit_type 보정 총 ${visitTypeRealigned}건 (고객 SSOT 정렬)`);
+  }
 
   if (opts.dryRun) {
     // 게이트 시뮬레이션: customer_id 를 placeholder 로 두고 예약 행 빌드까지 검증
