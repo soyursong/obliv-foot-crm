@@ -154,7 +154,8 @@ test.afterAll(async () => {
 async function openPaymentFromClosing(page: import('@playwright/test').Page) {
   await page.goto(`${BASE}/admin/closing`);
   // 결제대기 명단 카드 헤더 대기
-  await page.getByText(/미수 경고 — 결제대기/).waitFor({ timeout: 20000 });
+  // T-20260617-foot-CLOSING-INPROG-PAYWAIT-BOXLAYOUT: 헤더 문구 "미수 경고 — 결제대기" → "결제대기"(아이콘+배지) 톤다운
+  await page.getByText(/결제대기/).first().waitFor({ timeout: 20000 });
   // 시드 고객 행 버튼(이름 포함) 클릭
   const row = page.locator('button', { hasText: SEED_NAME }).first();
   await row.waitFor({ state: 'visible', timeout: 15000 });
@@ -202,7 +203,7 @@ test('AC-3: 미니창 닫기 시 명단 복귀 + 잔여 오버레이 없음', as
 
   // 미니창 마커 사라짐 + 명단 헤더 그대로 유지
   await expect(page.getByText('차트 코드 + 진료비 산정')).toHaveCount(0, { timeout: 8000 });
-  await expect(page.getByText(/미수 경고 — 결제대기/)).toBeVisible();
+  await expect(page.getByText(/결제대기/).first()).toBeVisible();
   // 잔여 레거시 다이얼로그 오버레이 없음
   await expect(page.locator('[data-testid="btn-payment-submit"]')).toHaveCount(0);
   console.log('✅ AC-3: 닫기 후 명단 복귀 + 잔여 오버레이 없음');
