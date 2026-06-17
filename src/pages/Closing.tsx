@@ -5,7 +5,8 @@ import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import * as XLSX from 'xlsx';
 import {
-  AlertTriangle,
+  Clock,
+  CreditCard,
   Download,
   FileDown,
   FileSpreadsheet,
@@ -1166,65 +1167,80 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             </div>
           )}
 
-          {/* 진행 중 경고 */}
-          {inProgress.length > 0 && (
-            <Card className="border-orange-300 bg-orange-50">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-orange-900">
-                  <AlertTriangle className="h-4 w-4" />
-                  진행 중 {inProgress.length}건 — 마감 전 확인 필요
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm text-orange-900">
-                {inProgress.map(c => (
-                  <button
-                    key={c.id}
-                    className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-orange-100 transition text-left"
-                    onClick={() => navigate('/admin', { state: { openCheckInId: c.id } })}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span>{c.customer_name}</span>
-                      {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-                      <span className="font-mono text-xs text-orange-700">{chartNoBadge(c.customers?.chart_number ?? null)}</span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-400 text-orange-800">
-                        {STATUS_KO[c.status as CheckInStatus] ?? c.status}
+          {/* 진행 중 / 결제대기(미수) 경고 — 2-col 병치 (md+ 좌우, sm 1-col)
+              T-20260617-foot-CLOSING-INPROG-PAYWAIT-BOXLAYOUT:
+              뉴트럴 카드 + 얇은 보더로 톤다운. 식별 포인트는 아이콘·배지·카운트 색으로 한정.
+              클릭 동선·차트번호 인접 규약(CHARTNO-B2-P2)·시각/전화 포맷 전부 보존. */}
+          {(inProgress.length > 0 || unpaid.length > 0) && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {/* 진행 중 경고 */}
+              {inProgress.length > 0 && (
+                <Card className="border bg-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm text-foreground">
+                      <Clock className="h-4 w-4 text-orange-500" />
+                      진행 중
+                      <Badge variant="outline" className="text-[11px] px-1.5 py-0 border-orange-300 text-orange-700 font-semibold">
+                        {inProgress.length}건
                       </Badge>
-                    </span>
-                    <span className="text-xs text-orange-700">{format(new Date(c.checked_in_at), 'HH:mm')}</span>
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+                      <span className="ml-auto text-xs font-normal text-muted-foreground">마감 전 확인</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 text-sm text-foreground">
+                    {inProgress.map(c => (
+                      <button
+                        key={c.id}
+                        className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-muted transition text-left"
+                        onClick={() => navigate('/admin', { state: { openCheckInId: c.id } })}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>{c.customer_name}</span>
+                          {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                          <span className="font-mono text-xs text-muted-foreground">{chartNoBadge(c.customers?.chart_number ?? null)}</span>
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-300 text-orange-700">
+                            {STATUS_KO[c.status as CheckInStatus] ?? c.status}
+                          </Badge>
+                        </span>
+                        <span className="text-xs text-muted-foreground">{format(new Date(c.checked_in_at), 'HH:mm')}</span>
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
 
-          {/* 미수 경고 */}
-          {unpaid.length > 0 && (
-            <Card className="border-amber-300 bg-amber-50">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-amber-900">
-                  <AlertTriangle className="h-4 w-4" />
-                  미수 경고 — 결제대기 {unpaid.length}건
-                  <span className="ml-1 text-xs font-normal text-amber-700">(클릭 → 결제 처리)</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm text-amber-900">
-                {unpaid.map(c => (
-                  <button
-                    key={c.id}
-                    className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-amber-100 transition text-left"
-                    onClick={async () => {
-                      const { data } = await supabase.from('check_ins').select('*, customers(name, chart_number)').eq('id', c.id).maybeSingle();
-                      if (data) setPayTarget(data as CheckIn);
-                      else toast.error('체크인을 불러올 수 없습니다');
-                    }}
-                  >
-                    {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-                    <span>{c.customer_name} <span className="font-mono text-amber-800">{chartNoBadge(c.customers?.chart_number ?? null)}</span> <span className="text-amber-700">{formatPhone(c.customer_phone)}</span></span>
-                    <span className="text-xs text-amber-700">{format(new Date(c.checked_in_at), 'HH:mm')}</span>
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
+              {/* 미수 경고 */}
+              {unpaid.length > 0 && (
+                <Card className="border bg-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm text-foreground">
+                      <CreditCard className="h-4 w-4 text-amber-500" />
+                      결제대기
+                      <Badge variant="outline" className="text-[11px] px-1.5 py-0 border-amber-300 text-amber-700 font-semibold">
+                        {unpaid.length}건
+                      </Badge>
+                      <span className="ml-auto text-xs font-normal text-muted-foreground">클릭 → 결제 처리</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 text-sm text-foreground">
+                    {unpaid.map(c => (
+                      <button
+                        key={c.id}
+                        className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-muted transition text-left"
+                        onClick={async () => {
+                          const { data } = await supabase.from('check_ins').select('*, customers(name, chart_number)').eq('id', c.id).maybeSingle();
+                          if (data) setPayTarget(data as CheckIn);
+                          else toast.error('체크인을 불러올 수 없습니다');
+                        }}
+                      >
+                        {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                        <span>{c.customer_name} <span className="font-mono text-muted-foreground">{chartNoBadge(c.customers?.chart_number ?? null)}</span> <span className="text-muted-foreground">{formatPhone(c.customer_phone)}</span></span>
+                        <span className="text-xs text-muted-foreground">{format(new Date(c.checked_in_at), 'HH:mm')}</span>
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
 
           {/* 요약 카드
