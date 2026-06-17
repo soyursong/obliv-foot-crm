@@ -762,6 +762,12 @@ function TreatmentImagesSection({
   const [hwZoomActive, setHwZoomActive] = useState(false);
   // 하드웨어 줌 capability (min/max/step). null = 미지원 → 디지털 줌 fallback (Galaxy Tab under-report 대비)
   const zoomCapsRef = useRef<{ min: number; max: number; step: number } | null>(null);
+  // ── T-20260618-foot-MEDIMG-PINCH-ZOOM: 핀치투줌(입력경로 2) — 부모 zoom state/applyZoom 공유 ──
+  // native Pointer Events 2-pointer 거리 추적만 사용(제스처 라이브러리 의존성 없음).
+  // 별도 줌 파이프라인 신설 금지 — 핀치는 applyZoom()을 호출하는 두 번째 입력경로일 뿐.
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartDistRef = useRef<number | null>(null); // 핀치 시작 시 두 손가락 거리(px)
+  const pinchStartZoomRef = useRef(1);                    // 핀치 시작 시점 zoom 배율
 
   // T-20260522-foot-MEDIMG-CAMERA: 이미지 편집/회전 상태 (AC-5)
   const [editingImg, setEditingImg] = useState<TreatImgItem | null>(null);
@@ -1183,6 +1189,48 @@ function TreatmentImagesSection({
     }
     // 디지털 줌: CSS transform(프리뷰) + 캡처 캔버스 crop으로 배율 반영
     setHwZoomActive(false);
+  }, []);
+
+  // ── T-20260618-foot-MEDIMG-PINCH-ZOOM: 핀치 제스처 핸들러 (입력경로 2) ──────────
+  // 버튼(입력경로 1)과 동일 applyZoom()/zoom state 공유 → clamp(1..MAX_ZOOM)·0.1 round·
+  // 하드웨어/디지털 분기가 한 곳으로 일원화됨. zoom 제약 ↔ focusMode 분리 원칙도 applyZoom 내부에서 보존(무회귀).
+  // 2-pointer일 때만 줌; 1-pointer는 기존 탭-투-포커스(handleVideoTap) 그대로.
+  // UNIT 매핑 수식: nextZoom = pinchStartZoom × (curDist / startDist). applyZoom이 최종 clamp/round 담당.
+  const pointerDist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+
+  const handleCameraPointerDown = useCallback((e: React.PointerEvent<HTMLVideoElement>) => {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointersRef.current.size >= 2) {
+      // 핀치 시작 — 두 손가락 기준 거리/배율 기록. 1-pointer 탭-투-포커스는 발화 금지 + 진행 중 포커스 취소.
+      const pts = Array.from(activePointersRef.current.values());
+      pinchStartDistRef.current = pointerDist(pts[0], pts[1]);
+      pinchStartZoomRef.current = zoom;
+      setIsFocusing(false);
+      setFocusPoint(null);
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 미지원 — best-effort */ }
+      return;
+    }
+    // 1-pointer: 기존 탭-투-포커스 동작 보존
+    handleVideoTap(e);
+  }, [zoom, handleVideoTap]);
+
+  const handleCameraPointerMove = useCallback((e: React.PointerEvent<HTMLVideoElement>) => {
+    if (!activePointersRef.current.has(e.pointerId)) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // 2-pointer + 핀치 기준 거리 존재할 때만 줌 (1-pointer 이동은 무시 → 탭/스크롤 무회귀)
+    if (activePointersRef.current.size < 2 || pinchStartDistRef.current == null) return;
+    const pts = Array.from(activePointersRef.current.values());
+    const curDist = pointerDist(pts[0], pts[1]);
+    if (curDist <= 0) return;
+    applyZoom(pinchStartZoomRef.current * (curDist / pinchStartDistRef.current));
+  }, [applyZoom]);
+
+  const handleCameraPointerUp = useCallback((e: React.PointerEvent<HTMLVideoElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    // 2-pointer 미만이 되면 핀치 종료 — 다음 핀치 시 zoom 기준 재계산 위해 기준 거리 초기화
+    if (activePointersRef.current.size < 2) pinchStartDistRef.current = null;
   }, []);
 
   // AC-2: 캡처 후 continuous 복원 (non-blocking, best-effort) — 다음 프리뷰 초점 추적 유지
@@ -1697,15 +1745,22 @@ function TreatmentImagesSection({
                   playsInline
                   muted
                   disablePictureInPicture
-                  onPointerDown={handleVideoTap}
+                  // T-20260618-foot-MEDIMG-PINCH-ZOOM: 1-pointer=탭포커스 / 2-pointer=핀치줌 (동일 핸들러 그룹)
+                  onPointerDown={handleCameraPointerDown}
+                  onPointerMove={handleCameraPointerMove}
+                  onPointerUp={handleCameraPointerUp}
+                  onPointerCancel={handleCameraPointerUp}
+                  onPointerLeave={handleCameraPointerUp}
                   className="absolute inset-0 w-full h-full object-cover cursor-pointer"
                   // FIX T-20260522-foot-MEDIMG-CAMERA: GPU 컴포지팅 레이어 고정
                   // translateZ(0) + willChange: transform → Android WebView 비디오 리페인트 분리
                   // AC-1: 디지털 줌 시 CSS scale로 프리뷰 확대 (하드웨어 줌이면 스트림 자체가 확대 → scale 미적용)
+                  // PINCH-ZOOM: touchAction none → 브라우저 기본 2-finger 페이지 줌 가로채기 차단(핀치 신뢰성 확보)
                   style={{
                     transform: !hwZoomActive && zoom > 1 ? `translateZ(0) scale(${zoom})` : 'translateZ(0)',
                     transformOrigin: 'center center',
                     willChange: 'transform',
+                    touchAction: 'none',
                   }}
                 />
                 {/* REOPEN #2: 탭-투-포커스 링 (노란 사각형) */}
