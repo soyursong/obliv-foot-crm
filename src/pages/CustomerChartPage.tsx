@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
@@ -710,6 +710,10 @@ function parseTreatImgMeta(name: string): { imgType: TreatImgType; timestamp: nu
   return { imgType: 'photo', timestamp: isNaN(ts) ? 0 : ts };
 }
 
+// T-20260617-foot-MEDIMG-CAMERA-ZOOM-FOCUS (AC-1): 줌 배율 범위 (사용자 노출 배율)
+const MAX_ZOOM = 3;     // 최대 3배
+const ZOOM_STEP = 0.5;  // +/− 1회당 0.5배
+
 function TreatmentImagesSection({
   customerId,
   onUrlsLoaded,
@@ -751,6 +755,13 @@ function TreatmentImagesSection({
   // REOPEN #2 T-20260526-foot-CAMERA-FOCUS-BUG: 탭-투-포커스 상태
   const [isFocusing, setIsFocusing] = useState(false);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  // T-20260617-foot-MEDIMG-CAMERA-ZOOM-FOCUS (AC-1): 줌 상태
+  // zoom = 사용자 노출 배율(1~MAX_ZOOM). hwZoomActive=true면 MediaStreamTrack zoom(하드웨어),
+  // false면 디지털 줌(프리뷰 CSS scale + 캡처 캔버스 crop)로 동작.
+  const [zoom, setZoom] = useState(1);
+  const [hwZoomActive, setHwZoomActive] = useState(false);
+  // 하드웨어 줌 capability (min/max/step). null = 미지원 → 디지털 줌 fallback (Galaxy Tab under-report 대비)
+  const zoomCapsRef = useRef<{ min: number; max: number; step: number } | null>(null);
 
   // T-20260522-foot-MEDIMG-CAMERA: 이미지 편집/회전 상태 (AC-5)
   const [editingImg, setEditingImg] = useState<TreatImgItem | null>(null);
@@ -977,6 +988,10 @@ function TreatmentImagesSection({
   const selectTypeAndStart = async (type: TreatImgType) => {
     setCameraType(type);
     setCameraError(null);
+    // AC-1: 새 스트림마다 줌 초기화
+    setZoom(1);
+    setHwZoomActive(false);
+    zoomCapsRef.current = null;
     try {
       // FIX T-20260522-foot-MEDIMG-CAMERA (flickering):
       // width/height ideal 제거 — Galaxy Tab 카메라 해상도 재협상 방지
@@ -1018,6 +1033,18 @@ function TreatmentImagesSection({
           const caps: ExtCaps = (videoTrack.getCapabilities?.() ?? {}) as ExtCaps;
           const reportedModes: string[] = caps.focusMode ?? [];
           const supportedConstraints = navigator.mediaDevices.getSupportedConstraints() as Record<string, boolean>;
+
+          // ── AC-1: 줌 capability 감지 (read-only — applyConstraints 미발생, focusMode와 무관) ──
+          // 하드웨어 줌 지원 시 zoomCapsRef에 저장 → applyZoom()에서 독립 호출로 적용.
+          // Galaxy Tab은 zoom capability를 under-report할 수 있음 → 미보고 시 디지털 줌 fallback.
+          const zoomCap = (caps as MediaTrackCapabilities & { zoom?: { min: number; max: number; step?: number } }).zoom;
+          if (zoomCap && typeof zoomCap.max === 'number' && typeof zoomCap.min === 'number' && zoomCap.max > zoomCap.min) {
+            zoomCapsRef.current = { min: zoomCap.min, max: zoomCap.max, step: zoomCap.step ?? 0.1 };
+            console.debug('[CAMERA-ZOOM] hardware zoom supported:', zoomCapsRef.current);
+          } else {
+            zoomCapsRef.current = null; // 디지털 줌 fallback
+            console.debug('[CAMERA-ZOOM] hardware zoom not reported — digital zoom fallback');
+          }
 
           // 진단 로그 (현장 브라우저 콘솔 / 개발자 도구로 확인)
           console.debug('[CAMERA-FOCUS] getSupportedConstraints.focusMode:', supportedConstraints['focusMode']);
@@ -1127,18 +1154,77 @@ function TreatmentImagesSection({
     }, 800);
   }, [isFocusing]);
 
+  // ── T-20260617-foot-MEDIMG-CAMERA-ZOOM-FOCUS (AC-1): 줌 적용 ────────────────
+  // 사용자 노출 배율(1~MAX_ZOOM)을 받아서:
+  //  - 하드웨어 줌 지원(zoomCapsRef) → applyConstraints({ advanced:[{ zoom }] }) 독립 호출
+  //    (★ focusMode와 절대 같은 applyConstraints 호출에 혼합 금지 — atomic OverconstrainedError 함정)
+  //  - 미지원 → 디지털 줌(프리뷰 CSS scale + 캡처 시 캔버스 crop)
+  const applyZoom = useCallback(async (nextLevel: number) => {
+    const clamped = Math.min(MAX_ZOOM, Math.max(1, Math.round(nextLevel * 10) / 10));
+    setZoom(clamped);
+
+    const track = streamRef.current?.getVideoTracks()[0];
+    const caps = zoomCapsRef.current;
+    if (track && caps) {
+      // 사용자 배율(1..MAX_ZOOM) → 하드웨어 줌(caps.min..caps.max) 선형 매핑
+      const hwZoom = caps.min + ((clamped - 1) / (MAX_ZOOM - 1)) * (caps.max - caps.min);
+      try {
+        // ★ 줌 전용 독립 applyConstraints — focusMode 시퀀스와 분리 (AC-2 회귀 보호)
+        await track.applyConstraints({ advanced: [{ zoom: hwZoom }] } as unknown as MediaTrackConstraints);
+        setHwZoomActive(true);
+        console.debug('[CAMERA-ZOOM] hardware zoom applied:', hwZoom);
+        return;
+      } catch {
+        // 하드웨어 줌 적용 실패 → 디지털 줌으로 전환 (under-report 기기 대응)
+        setHwZoomActive(false);
+        console.debug('[CAMERA-ZOOM] hardware zoom apply failed — digital fallback');
+        return;
+      }
+    }
+    // 디지털 줌: CSS transform(프리뷰) + 캡처 캔버스 crop으로 배율 반영
+    setHwZoomActive(false);
+  }, []);
+
+  // AC-2: 캡처 후 continuous 복원 (non-blocking, best-effort) — 다음 프리뷰 초점 추적 유지
+  const restoreContinuousFocus = (track: MediaStreamTrack | undefined) => {
+    if (!track) return;
+    track.applyConstraints({ focusMode: 'continuous' } as MediaTrackConstraints).catch(() => {
+      /* 미지원 기기 — single-shot 상태 유지 (무회귀) */
+    });
+  };
+
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+
+    // ── AC-2: capture-time 재-프리포커스 게이트 ───────────────────────────────
+    // 셔터 시점에 single-shot 1회 발화 후 짧게 수렴 대기 → 캡처. 간헐 초점 나감 완화.
+    // ★ focusMode 단독 applyConstraints — zoom 제약과 절대 혼합하지 않음(AC-1/AC-2 분리).
+    // ★ 기존 검증된 single-shot 패턴 재사용 — 미지원 기기는 try/catch로 native AF 유지(무회귀).
+    if (videoTrack) {
+      try {
+        await videoTrack.applyConstraints({ focusMode: 'single-shot' } as MediaTrackConstraints);
+        await new Promise((r) => setTimeout(r, 450)); // 하드웨어 초점 수렴 대기
+        console.debug('[CAMERA-FOCUS] capture-time single-shot refocus ok');
+      } catch {
+        // 미지원 — 기존 AF 상태 그대로 캡처 (무회귀)
+        console.debug('[CAMERA-FOCUS] capture-time refocus unsupported — native AF');
+      }
+    }
+
+    // AC-1: 디지털 줌 활성(하드웨어 줌 비활성 + 배율>1) 여부 — 캡처본에 배율 반영 경로 결정
+    const digitalZoomActive = !hwZoomActive && zoom > 1;
 
     // ── Strategy 1: ImageCapture.takePicture() ────────────────────────────────
     // REOPEN #1 AC-5: Galaxy Tab에서 hardware focus cycle 완료 후 캡처 트리거.
     // Chrome 59+, Android 7+ 지원. canvas drawImage는 현재 프레임을 즉시 캡처하므로
     // focus 수렴 전 흐린 프레임을 잡을 수 있음 → takePicture()가 근본 해결.
     // 반환 Blob은 JPEG/PNG(기기 네이티브 인코더 사용) — quality 옵션 불필요.
-    const videoTrack = streamRef.current?.getVideoTracks()[0];
-    if (videoTrack && 'ImageCapture' in window) {
+    // ★ AC-1: 디지털 줌일 때는 takePicture()가 풀프레임(미확대)을 반환하므로 skip → 캔버스 crop 경로로.
+    //   (하드웨어 줌은 스트림 자체가 확대되므로 takePicture()/canvas 모두 배율 반영됨)
+    if (!digitalZoomActive && videoTrack && 'ImageCapture' in window) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ic = new (window as any).ImageCapture(videoTrack);
@@ -1147,6 +1233,7 @@ function TreatmentImagesSection({
         if (blob && blob.size > 1000) { // sanity: 유효 이미지 (empty blob 아님)
           const previewUrl = URL.createObjectURL(blob);
           setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
+          restoreContinuousFocus(videoTrack); // AC-2: 다음 프리뷰 추적용 continuous 복원
           return; // 성공 → canvas fallback 불필요
         }
       } catch (_icErr) {
@@ -1162,17 +1249,25 @@ function TreatmentImagesSection({
     const naturalW = video.videoWidth || 1280;
     const naturalH = video.videoHeight || 720;
     const minWidth = 1280;
-    const scale = naturalW < minWidth ? minWidth / naturalW : 1;
-    canvas.width = Math.round(naturalW * scale);
-    canvas.height = Math.round(naturalH * scale);
+
+    // AC-1: 디지털 줌 — 중앙 crop으로 배율 반영(프리뷰 CSS scale과 동일한 시야)
+    //   crop 영역 = 원본 / zoom (중앙 정렬), 출력은 최소 1280px 보장 위해 scale-up
+    const cropW = digitalZoomActive ? naturalW / zoom : naturalW;
+    const cropH = digitalZoomActive ? naturalH / zoom : naturalH;
+    const cropX = (naturalW - cropW) / 2;
+    const cropY = (naturalH - cropH) / 2;
+    const scale = cropW < minWidth ? minWidth / cropW : 1;
+    canvas.width = Math.round(cropW * scale);
+    canvas.height = Math.round(cropH * scale);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
       if (!blob) return;
       const previewUrl = URL.createObjectURL(blob);
       setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
     }, 'image/jpeg', 0.9);
+    restoreContinuousFocus(videoTrack); // AC-2: continuous 복원
   };
 
   const removeCaptured = (index: number) => {
@@ -1210,6 +1305,10 @@ function TreatmentImagesSection({
     setCameraOpen(false);
     setUploadProgress(null);
     setCameraError(null);
+    // AC-1: 줌 초기화
+    setZoom(1);
+    setHwZoomActive(false);
+    zoomCapsRef.current = null;
   };
 
   // ── T-20260522-foot-MEDIMG-CAMERA: 회전 함수 (AC-5) ─────────────────────
@@ -1602,7 +1701,12 @@ function TreatmentImagesSection({
                   className="absolute inset-0 w-full h-full object-cover cursor-pointer"
                   // FIX T-20260522-foot-MEDIMG-CAMERA: GPU 컴포지팅 레이어 고정
                   // translateZ(0) + willChange: transform → Android WebView 비디오 리페인트 분리
-                  style={{ transform: 'translateZ(0)', willChange: 'transform' }}
+                  // AC-1: 디지털 줌 시 CSS scale로 프리뷰 확대 (하드웨어 줌이면 스트림 자체가 확대 → scale 미적용)
+                  style={{
+                    transform: !hwZoomActive && zoom > 1 ? `translateZ(0) scale(${zoom})` : 'translateZ(0)',
+                    transformOrigin: 'center center',
+                    willChange: 'transform',
+                  }}
                 />
                 {/* REOPEN #2: 탭-투-포커스 링 (노란 사각형) */}
                 {focusPoint && (
@@ -1629,6 +1733,35 @@ function TreatmentImagesSection({
                     </span>
                   </div>
                 )}
+                {/* AC-1: 줌 컨트롤 (우측 세로 — 태블릿 터치 큰 버튼 + 배율 표시) */}
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="camera-zoom-in"
+                    aria-label="확대"
+                    onClick={() => applyZoom(zoom + ZOOM_STEP)}
+                    disabled={zoom >= MAX_ZOOM}
+                    className="h-12 w-12 rounded-full bg-black/55 hover:bg-black/75 active:bg-black/90 text-white flex items-center justify-center shadow-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="h-6 w-6" />
+                  </button>
+                  <span
+                    data-testid="camera-zoom-level"
+                    className="text-white text-xs font-bold bg-black/55 rounded-full px-2 py-1 min-w-[44px] text-center tabular-nums"
+                  >
+                    {zoom.toFixed(1)}×
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="camera-zoom-out"
+                    aria-label="축소"
+                    onClick={() => applyZoom(zoom - ZOOM_STEP)}
+                    disabled={zoom <= 1}
+                    className="h-12 w-12 rounded-full bg-black/55 hover:bg-black/75 active:bg-black/90 text-white flex items-center justify-center shadow-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Minus className="h-6 w-6" />
+                  </button>
+                </div>
                 {/* 분류 배지 */}
                 <div className="absolute top-4 left-4 z-10">
                   <span className={`text-sm font-bold rounded-full px-3 py-1 ${cameraType === 'before' ? 'bg-slate-600 text-white' : 'bg-emerald-600 text-white'}`}>
