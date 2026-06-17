@@ -65,7 +65,8 @@ const Notices = lazyWithRetry(() => import('@/pages/Notices'));
 // T-20260605-foot-HANDOVER-BOARD: 파트별 인수인계 게시판(캘린더) — 전 직원 작성/조회
 const Handover = lazyWithRetry(() => import('@/pages/Handover'));
 const Sales = lazyWithRetry(() => import('@/pages/Sales'));
-const ClinicSettings = lazyWithRetry(() => import('@/pages/ClinicSettings'));
+// T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: ClinicSettings는 더 이상 독립 라우트가 아니라
+//   Staff.tsx '원장정보' 탭에 임베드됨 → App.tsx lazy import 제거(미사용). /admin/clinic-settings 는 리다이렉트.
 // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 페이지 (admin/manager/director 전용)
 const AdminSettings = lazyWithRetry(() => import('@/pages/AdminSettings'));
 // T-20260528-foot-PENCHART-NEWWIN: 펜차트 별도 팝업 편집 창
@@ -228,8 +229,11 @@ function App() {
                 {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 — AC-6 미노출 유지 */}
                 <Route path="sales" element={<RoleGuard roles={['admin', 'manager']}><Sales /></RoleGuard>} />
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
-                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 접근 추가 */}
-                <Route path="clinic-settings" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><ClinicSettings /></RoleGuard>} />
+                {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 메뉴를 [직원·공간](Staff)
+                    내부 '원장정보' 탭으로 편입(김주연 총괄). 이 라우트는 북마크/하드링크 404 방지용
+                    리다이렉트로 보존 → /admin/staff?tab=clinic-info. ClinicSettings 콘텐츠는 Staff.tsx에서 임베드.
+                    가시성 role(admin/manager/consultant/coordinator/therapist)은 staff 라우트 가드와 동일 집합으로 보존. */}
+                <Route path="clinic-settings" element={<Navigate to="/admin/staff?tab=clinic-info" replace />} />
                 {/* T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 */}
                 {/* T-20260525-foot-ROLE-PERM-CUSTOM 3차: consultant/coordinator/therapist 추가 */}
                 {/* T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). PERM_MATRIX.messaging 과 동일 집합 SSOT. ★tm 제외★(AC6 STAFF-ROLE-TM-ADD 최소권한). 연결설정(Solapi)=adminOnly 내부게이팅 → staff 라우트 개방해도 자격증명/계정/통계/매출 누수 0. */}
