@@ -259,7 +259,9 @@ export interface ClinicHeader {
   address: string | null;
   phone: string | null;
 }
-function useClinicHeader(clinicId: string | null) {
+// T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1: 진료대시보드(DoctorDocsHubDialog)에서 소견서 팝업을
+//   재사용하기 위해 export. 본 탭의 기존 동선·로직은 무변경(진입점만 추가, 회귀 0).
+export function useClinicHeader(clinicId: string | null) {
   return useQuery<ClinicHeader | null>({
     queryKey: ['opinion_clinic_header', clinicId],
     enabled: !!clinicId,
@@ -366,7 +368,9 @@ function usePublishOpinion(clinicId: string | null) {
 // 소견서 작성 팝업 — F0BAETELCTF 옵션 그리드 + editor.
 //   옵션 클릭 → phrase 자동삽입(toggle). editor = textarea(수기수정 SSOT).
 // ---------------------------------------------------------------------------
-function OpinionEditorDialog({
+// T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-2): 진료대시보드 행 → 소견서 작성 팝업 직접 오픈을 위해 export.
+//   발행(publish_opinion_doc)·비가역 트리거(의료법§22)·출력(printOpinionDoc, L-006)은 그대로 — 진입점만 공유.
+export function OpinionEditorDialog({
   visitor,
   open,
   onOpenChange,
