@@ -9,9 +9,11 @@
 //
 // === KOHSHEET-RENEWAL (T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR) ===
 //  B. 6컬럼 재정의 — 헤더 라벨 통일(이름/생년/차트/검사일/조갑부위/진료의). 검사일=날짜만(YYYY-MM-DD, FE 한정).
-//  C. 조갑부위 입력 = 좌발 L1~L5 | 우발 R1~R5 toggle, **다중선택**(복수 부위), 선택 강조.
+//  C. 조갑부위 입력 = 좌발 L1~L5 | 우발 R1~R5 toggle, ~~다중선택~~ → **단일선택**(SUPERSEDED).
+//     ※ T-20260617-foot-KOHGEN-PUBLISH-SINGLESEL-2FIX(이슈2): reporter(문지은 대표원장) 직접 재정의로
+//       §C 다중선택은 단일선택으로 대체. 하나만 선택(다시 누르면 해제), onCommit 배열 ≤1.
 //     L→Lt, R→Rt. 저장 shape 는 PHASE15 canon {side:Lt|Rt, toe:1-5} 그대로(DB 무변경, 배열 이미 지원).
-//     PHASE15 단일선택 UI 를 본 티켓 multi 로 직접 교체(churn 금지, 1회 ship).
+//     旣 저장된 레거시 다중값 행 파괴/마이그 없음 — 표시 보존, 발행 시 sites[0]만 사용.
 //
 // === Phase 1.5 (T-20260612-foot-KOH-REPORT-PHASE15) ===
 //  A. 발톱부위 = check_in_services.koh_nail_sites jsonb. 원소 {side:Rt|Lt, toe:1-5}.
@@ -438,6 +440,10 @@ function usePublishedKoh(clinicId: string | null) {
  *   검체번호(specimen_no) = RPC 자동채번 K+YYMMDD-폰뒷4(T-20260616-KOH-SPECIMENNO-FORMAT). FE 빈값은 RPC override.
  */
 export function buildKohFieldData(r: KohRow, doctorName: string): Record<string, string> {
+  // SINGLESEL-2FIX(이슈2): 조갑부위 = 단일선택. 신규 입력은 ≤1건이지만,
+  //   旣 저장된 레거시 다중값 행은 파괴/마이그 없이 보존하되 '발행 시 sites[0]만' 사용(planner 지시).
+  //   formatNailSites 는 정렬 후 join → slice(0,1)로 첫 부위(정렬 기준 좌발 우선)만 검체종류에 기재.
+  const primaryType = formatNailSites(r.nail_sites.slice(0, 1));
   return {
     doctor_name: doctorName === '미정' ? '' : doctorName,
     patient_name: r.customer_name === '—' ? '' : r.customer_name,
@@ -447,7 +453,7 @@ export function buildKohFieldData(r: KohRow, doctorName: string): Record<string,
     remark: '',
     collected_date: formatDocDate(r.created_at),
     requested_date: formatDocDate(r.created_at),
-    specimen_type: formatNailSites(r.nail_sites) === '—' ? '' : formatNailSites(r.nail_sites),
+    specimen_type: primaryType === '—' ? '' : primaryType,
     specimen_no: '',
   };
 }
@@ -475,10 +481,12 @@ function usePublishKoh(clinicId: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// 발톱부위 입력 위젯 — KOHSHEET-RENEWAL §C (PHASE15 §A-2 단일선택 위젯 흡수·대체).
+// 발톱부위 입력 위젯 — T-20260617-foot-KOHGEN-PUBLISH-SINGLESEL-2FIX (이슈2, 단일선택).
+//   ※ reporter(문지은 대표원장) 직접 재정의 — KOHSHEET-RENEWAL §C 다중선택(multi)은 superseded.
 //   레이아웃: [좌발] L1 L2 L3 L4 L5  │(구분선)│  [우발] R1 R2 R3 R4 R5  + '조갑' 고정.
-//   다중선택(C2): 각 버튼 = 독립 토글. 누르면 {side,toe} 가 배열에 추가/제거(누적). 선택 강조(C3).
-//   L→Lt, R→Rt(C1). 저장 shape = PHASE15 canon {side:Lt|Rt, toe:1-5} 구조만(표시문자열 저장 금지).
+//   단일선택: 각 버튼 = 라디오형 토글. 다른 부위 누르면 기존 해제 후 새 부위 1개만. 같은 부위 다시 누르면 해제(빈배열).
+//   onCommit 배열 = 최대 1개. L→Lt, R→Rt. 저장 shape = canon {side:Lt|Rt, toe:1-5}(표시문자열 저장 금지).
+//   旣 저장된 레거시 다중값 행은 파괴/마이그 없음 — 표시는 그대로(초기 current), 사용자가 누르는 순간 단일로 수렴.
 //   태블릿 동선 — 즉시 저장(별도 저장버튼 없음). 미선택 = 빈배열 저장(허용).
 //   ※ current(서버 SSOT) 를 로컬 미러 + useEffect 동기화 → 저장 왕복 중 즉시 반영 + 외부 갱신 흡수.
 // ---------------------------------------------------------------------------
@@ -506,15 +514,14 @@ function NailSiteEditor({
   }, [current]);
 
   const has = (side: NailSide, toe: number) => sites.some((s) => s.side === side && s.toe === toe);
+  // 단일선택의 '선택됨' 강조 — sites 가 정확히 이 부위 1개일 때만 active(레거시 다중값은 수렴 전까지 다중 강조 허용).
+  const isOnly = (side: NailSide, toe: number) =>
+    sites.length === 1 && sites[0].side === side && sites[0].toe === toe;
 
-  // 토글 — 있으면 제거, 없으면 추가(다중). 정렬 적용 후 즉시 commit.
+  // 토글(단일선택, SINGLESEL-2FIX) — 다른 부위 누르면 기존 전부 해제 후 그 부위 1개만.
+  //   현재 선택이 정확히 그 부위 1개면 다시 누른 것 → 해제(빈배열). onCommit 배열 = 최대 1개.
   const toggle = (side: NailSide, toe: number) => {
-    const exists = has(side, toe);
-    const next = sortNailSites(
-      exists
-        ? sites.filter((s) => !(s.side === side && s.toe === toe))
-        : [...sites, { side, toe }],
-    );
+    const next: NailSite[] = isOnly(side, toe) ? [] : [{ side, toe }];
     setSites(next);
     onCommit(next);
   };
@@ -601,8 +608,18 @@ export default function KohReportTab() {
   const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !isPublished(r.id);
 
   // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
+  //   SINGLESEL-2FIX(이슈1): 발행 불가 시 silent return 금지 — 태블릿엔 hover 툴팁이 없어 버튼이
+  //   '먹통'으로 보였음(현장 "발행 버튼 동작 안 함" RC). 사유를 toast 로 명시해 다음 행동을 안내한다.
   const handlePublish = async (r: KohRow) => {
-    if (!canPublish(r)) return;
+    if (isPublished(r.id)) return; // 이미 발행 — 발행완료 분기에서 버튼 자체가 없음(도달 불가 방어).
+    if (r.nail_sites.length === 0) {
+      toast.error(
+        r.treatment_sites.length > 0
+          ? '표시된 치료부위는 아직 저장되지 않았습니다. 조갑부위 버튼을 눌러 확정한 뒤 발행해주세요.'
+          : '채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 발행할 수 있습니다.',
+      );
+      return;
+    }
     if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     const doctorName = doctorNameForRow(r, doctorMap);
     const fieldData = buildKohFieldData(r, doctorName);
@@ -971,15 +988,23 @@ export default function KohReportTab() {
                     ) : (
                       <Button
                         size="sm"
-                        className="h-7 gap-1 bg-neutral-800 px-2 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
+                        variant={rowPublishable ? 'default' : 'outline'}
+                        className={
+                          rowPublishable
+                            ? 'h-7 gap-1 bg-neutral-800 px-2 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40'
+                            : 'h-7 gap-1 px-2 text-[11px] text-muted-foreground disabled:opacity-40'
+                        }
                         onClick={() => handlePublish(r)}
-                        disabled={!rowPublishable || publishKoh.isPending || bulkPublishing}
+                        // SINGLESEL-2FIX(이슈1): 발행 불가 상태도 탭 가능하게(disabled 제거) — 태블릿 hover 부재로
+                        //   사유가 안 보여 '먹통'으로 보였음. 탭 시 handlePublish 가 사유 toast 노출. busy 상태만 비활성.
+                        disabled={publishKoh.isPending || bulkPublishing}
                         title={
                           rowPublishable
                             ? '검사결과 보고서 발행(비가역)'
-                            : '채취 조갑부위를 먼저 선택해야 발행할 수 있습니다'
+                            : '채취 조갑부위를 먼저 선택해야 발행할 수 있습니다 (눌러서 안내 보기)'
                         }
                         data-testid="koh-publish-btn"
+                        data-publishable={rowPublishable ? 'true' : 'false'}
                       >
                         발행
                       </Button>
@@ -995,7 +1020,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 여러 부위를 함께 선택할 수 있습니다(다시 누르면 해제). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발행</strong>은 채취 조갑부위를 선택해야 활성화되며, 발행 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발행은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발행할 수 있습니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발행</strong>은 채취 조갑부위를 선택해야 활성화되며, 발행 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발행은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발행할 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
