@@ -491,10 +491,12 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
 //   삭제는 destructive 톤. 실제 del 은 부모의 확인 다이얼로그에서만 실행.
 // ---------------------------------------------------------------------------
 function RxSetKebabMenu({
+  onEdit,
   onEditTag,
   onDelete,
   deleteDisabled,
 }: {
+  onEdit?: () => void;
   onEditTag?: () => void;
   onDelete: () => void;
   deleteDisabled?: boolean;
@@ -541,6 +543,22 @@ function RxSetKebabMenu({
           className="absolute right-0 top-8 z-30 min-w-[128px] overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-md"
           data-testid="rx-set-kebab-menu"
         >
+          {/* T-20260617-foot-...-OVERHAUL Part G2: 우측 단 묶음처방 '수정'(이름/색/아이콘/이름숨김/약·1·3·2 일괄).
+              dj5p로 제거됐던 전체 수정 진입점을 reporter 직접요청(MSG-0b5d)으로 재도입 — 생성 팝업 재사용. */}
+          {onEdit && (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => {
+                setOpen(false);
+                onEdit();
+              }}
+              data-testid="rx-set-action-edit"
+            >
+              <Pencil className="h-3.5 w-3.5" /> 수정
+            </button>
+          )}
           {/* T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 편집(라벨/색/아이콘 경량 편집).
               전체 '수정' 진입점은 dj5p로 제거됐으나, 태그는 별도 경량 부여 동선으로 제공. */}
           {onEditTag && (
@@ -769,6 +787,10 @@ export default function PrescriptionSetsTab() {
   const [checkedDrugs, setCheckedDrugs] = useState<{ id: string; name: string; service_code: string | null }[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<SetForm>(EMPTY_FORM);
+  // T-20260617-foot-...-OVERHAUL Part G2: 우측 단 생성 묶음처방 '수정'. 생성 팝업(Part C/D)을 그대로 재사용 —
+  //   editingSetId != null 이면 같은 팝업이 '수정' 모드(upsert {id})로 동작(이름/색/아이콘/이름숨김/약·1·3·2 일괄 편집).
+  //   별도 인플레이스 편집 컴포넌트를 만들지 않음(회귀면 최소화 + create/edit 단일 폼).
+  const [editingSetId, setEditingSetId] = useState<number | null>(null);
 
   // Part B 좌측 테이블 약 출처 = services 처방약(빌더 현행 출처, gate#1 ⓑ 확정). 전체 1회 로드 후 클라 실시간 필터.
   const { data: allRxDrugs = [], isLoading: drugsLoading } = useQuery({
@@ -812,8 +834,34 @@ export default function PrescriptionSetsTab() {
       prescription_code_id: null,
       classification: null,
     }));
+    setEditingSetId(null); // 생성 모드
     setCreateForm({ ...EMPTY_FORM, items });
     setCreateOpen(true);
+  }
+
+  // Part G2: 우측 단 생성 묶음처방 '수정' — 같은 생성 팝업을 편집 모드로 오픈.
+  //   이름(=태그라벨)/색/아이콘/이름숨김/포함약·1·3·2 일괄 편집. 저장 = useUpsertSet({id}).
+  //   ⚠ 새 모델 invariant: name === tag_label. 레거시(태그 없는) 세트는 기존 name 을 태그라벨로 승계해 편집 가능하게 함.
+  function openEditBundle(s: PrescriptionSet) {
+    setEditingSetId(s.id);
+    setCreateForm({
+      name: s.name,
+      // 깊은 복사(편집 중 원본 불변) — items 는 객체배열.
+      items: (s.items ?? []).map((it) => ({ ...it })),
+      is_active: s.is_active,
+      sort_order: s.sort_order,
+      folder: s.folder ?? '',
+      // 이름 필드 = 태그라벨. 레거시 세트(tag_label 없음)는 name 을 라벨로 승계 → 이름 보존+편집.
+      tag_label: (s.tag_label ?? '').trim() !== '' ? (s.tag_label as string) : s.name,
+      tag_color: s.tag_color ?? DEFAULT_RX_TAG_COLOR,
+      icon: s.icon ?? '',
+      hide_name: !!s.hide_name,
+    });
+    setCreateOpen(true);
+  }
+  function closeCreate() {
+    setCreateOpen(false);
+    setEditingSetId(null);
   }
 
   function handleCreateItemChange(idx: number, field: 'dosage' | 'count' | 'days', val: string | number | null) {
@@ -850,8 +898,9 @@ export default function PrescriptionSetsTab() {
     }
     // 세트 name(NOT NULL) = 라벨 우선, 없으면 첫 약 이름 폴백.
     const setName = label !== '' ? label : (createForm.items[0]?.name ?? '묶음처방');
-    await upsert.mutateAsync({ form: { ...createForm, name: setName } });
-    setCreateOpen(false);
+    // Part G2: editingSetId 있으면 수정(update {id}), 없으면 생성(insert).
+    await upsert.mutateAsync({ id: editingSetId ?? undefined, form: { ...createForm, name: setName } });
+    closeCreate();
     setCheckedDrugs([]);
     setDrugSearch('');
   }
@@ -1104,13 +1153,13 @@ export default function PrescriptionSetsTab() {
         {/* ── 우측 = 기존 묶음처방 목록 ── */}
         <div className="space-y-4">
 
-      {/* 헤더 */}
+      {/* 헤더 — Part G1b: 우측 단 라벨 "처방세트"→"묶음처방"(현장용어 통일, reporter MSG-0b5d) */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{sets.length}개 처방세트</span>
+        <span className="text-xs text-muted-foreground" data-testid="rx-set-count-label">{sets.length}개 묶음처방</span>
         {canEdit && (
           <Button size="sm" variant="outline" onClick={openAdd} data-testid="rx-set-add-btn">
             <Plus className="h-3.5 w-3.5 mr-1" />
-            처방세트 추가
+            묶음처방 추가
           </Button>
         )}
       </div>
@@ -1118,7 +1167,7 @@ export default function PrescriptionSetsTab() {
       {/* 목록 */}
       {sets.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          등록된 처방세트가 없습니다.
+          등록된 묶음처방이 없습니다.
         </div>
       ) : (
         <div className="space-y-4" data-testid="rx-set-list">
@@ -1277,15 +1326,17 @@ export default function PrescriptionSetsTab() {
                   // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 직접노출 제거 → 우측상단 ⋮ 케밥.
                   // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 케밥에 '태그 편집' 추가.
                   <RxSetKebabMenu
+                    onEdit={() => openEditBundle(s)}
                     onEditTag={() => openEditTag(s)}
                     onDelete={() => setDeleteTarget(s)}
                     deleteDisabled={del.isPending}
                   />
                 )}
               </div>
+              {/* Part G3: 미리보기/접힘(slice 3 + "+N개 항목 더") 제거 → 무조건 전체 펼침으로 포함약 전부 노출(reporter MSG-0b5d) */}
               {s.items.length > 0 && (
-                <div className="space-y-1">
-                  {s.items.slice(0, 3).map((item, idx) => (
+                <div className="space-y-1" data-testid="rx-set-items-expanded">
+                  {s.items.map((item, idx) => (
                     <div key={idx} className="text-xs text-muted-foreground flex items-center gap-2">
                       <span className="font-medium text-foreground">{item.name}</span>
                       {item.dosage && <span>{item.dosage}</span>}
@@ -1295,9 +1346,6 @@ export default function PrescriptionSetsTab() {
                       <span>{item.days}일</span>
                     </div>
                   ))}
-                  {s.items.length > 3 && (
-                    <p className="text-[11px] text-muted-foreground">+{s.items.length - 3}개 항목 더</p>
-                  )}
                 </div>
               )}
             </div>
@@ -1340,12 +1388,13 @@ export default function PrescriptionSetsTab() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? '처방세트 수정' : '처방세트 추가'}</DialogTitle>
+            {/* Part G1b: 현장용어 통일 "처방세트"→"묶음처방" */}
+            <DialogTitle>{editing ? '묶음처방 수정' : '묶음처방 추가'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-4 gap-3">
               <div className="col-span-2">
-                <Label className="text-xs">처방세트 이름 *</Label>
+                <Label className="text-xs">묶음처방 이름 *</Label>
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -1431,10 +1480,11 @@ export default function PrescriptionSetsTab() {
 
       {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL — 신규 생성 팝업(Part C 태그편집 + Part D 선택약 1·3·2).
           좌측 약테이블에서 체크 → [묶음처방 생성] → 이 팝업. 저장 시 prescription_sets 1세트 upsert. */}
-      <Dialog open={createOpen} onOpenChange={(o) => !o && setCreateOpen(false)}>
+      <Dialog open={createOpen} onOpenChange={(o) => !o && closeCreate()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="bundlerx-create-dialog">
           <DialogHeader>
-            <DialogTitle>묶음처방 만들기</DialogTitle>
+            {/* Part G2: 동일 팝업이 생성/수정 겸용 */}
+            <DialogTitle>{editingSetId != null ? '묶음처방 수정' : '묶음처방 만들기'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-5">
             {/* Part C: 태그 편집(이름/이름숨김/10색/아이콘/미리보기) — 공통 필드 재사용 */}
@@ -1556,7 +1606,7 @@ export default function PrescriptionSetsTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>취소</Button>
+            <Button variant="outline" onClick={closeCreate}>취소</Button>
             <Button onClick={handleCreateSave} disabled={upsert.isPending} data-testid="bundlerx-create-save-btn">
               {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
               저장
