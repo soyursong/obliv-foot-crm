@@ -176,6 +176,8 @@ export interface Customer {
   pending_healer_flag?: boolean | null;
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 FK
   designated_therapist_id?: string | null;
+  // T-20260617-foot-AUTOASSIGN: 담당 실장(지정 상담사) FK→staff(id). 자동배정 0순위 우선, NULL이면 월 균등 fallback.
+  assigned_consultant_id?: string | null;
   // T-20260522-foot-ALT-BADGE: ALT(올트) 배지 시스템 (AC-2)
   alt_status?: boolean | null;      // ALT 활성 여부 (보험 반려 → 레이저 병행 대상)
   alt_detail?: string | null;       // ALT 상세 내용 (예: "5회차까지 진행, 보험 반려됨")
@@ -285,6 +287,33 @@ export interface Staff {
   created_at: string;
   updated_at?: string;
   user_id?: string | null;
+}
+
+// ── 자동배정 (T-20260617-foot-AUTOASSIGN-BALANCE-TOSS) ─────────────────────────
+
+/** 배정 축(역할): 상담사 | 치료사 */
+export type AssignmentRole = 'consult' | 'therapy';
+
+/** 배정 액션 종류: 자동배정 | 토스(push) | 당김(pull) | 수동 override */
+export type AssignmentActionType = 'auto_assign' | 'toss' | 'pull_in' | 'manual';
+
+/**
+ * assignment_actions row — 자동배정·토스·당김·수동 배정의 append-only audit SSOT.
+ * 월 균등 카운트·토스 N건·당김 N건은 전부 본 테이블 count(*) 파생(별도 카운터 없음).
+ */
+export interface AssignmentAction {
+  id: string;
+  clinic_id: string;
+  check_in_id: string | null;
+  action_type: AssignmentActionType;
+  role: AssignmentRole;
+  /** 분류 축 스냅샷: 상담=TM|인바운드|워크인|returning / 치료=main|podologue|trial */
+  axis: string | null;
+  from_staff_id: string | null;
+  to_staff_id: string | null;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface Room {
