@@ -143,6 +143,14 @@ export default function DrugFoldersTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
 
+  // T-20260617-foot-RXSET-VIEWALL-TABLE-MIGCLEAR — Part A/B
+  //   §0.3 krhg 확정: 패널 상단 서브탭 [폴더 선택]/[전체보기] 분리. 폴더 뷰 동작 회귀 0.
+  //   [전체보기] = 전 폴더 약 통합 테이블뷰 + 행 체크박스 다중선택 → 일괄 삭제
+  //     (= 기존 단건 삭제 로직 useUnassignDrug 재사용 = 분류 해제, 약 마스터는 보존).
+  const [subTab, setSubTab] = useState<'folder' | 'all'>('folder');
+  const [selectedDrugIds, setSelectedDrugIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   const tree = buildFolderTree(folders);
   const drugsByFolder = new Map<string, FolderDrug[]>();
   for (const d of drugs) {
@@ -269,6 +277,51 @@ export default function DrugFoldersTab() {
       toast.success('분류가 해제됐어요.');
     } catch (e) {
       toast.error(`해제 실패: ${(e as Error).message}`);
+    }
+  }
+
+  // ── Part B: 전체보기 다중선택 + 일괄 삭제 ───────────────────────────────────
+  //   소속 폴더 이름 lookup (drug.folder_id → 폴더명).
+  const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
+  //   전체보기 행 = 폴더에 분류된 전체 약(prescription_code_folders ⋈ codes). 약명 가나다 정렬.
+  const allDrugs = [...drugs].sort((a, b) => a.name_ko.localeCompare(b.name_ko, 'ko'));
+  const allSelected = allDrugs.length > 0 && allDrugs.every((d) => selectedDrugIds.has(d.prescription_code_id));
+
+  function toggleDrugSelect(id: string) {
+    setSelectedDrugIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllDrugs() {
+    setSelectedDrugIds((prev) =>
+      allDrugs.length > 0 && allDrugs.every((d) => prev.has(d.prescription_code_id))
+        ? new Set()
+        : new Set(allDrugs.map((d) => d.prescription_code_id)),
+    );
+  }
+
+  async function handleBulkDelete() {
+    const ids = allDrugs
+      .filter((d) => selectedDrugIds.has(d.prescription_code_id))
+      .map((d) => d.prescription_code_id);
+    if (ids.length === 0) return;
+    // §0.3-3: 기존 단건 삭제 확인 패턴 재사용(handleDeleteFolder 동형 window.confirm).
+    //   삭제 = 폴더 분류 해제. 약품(prescription_codes) 자체는 보존됨.
+    if (!window.confirm(`선택한 ${ids.length}개 약품의 폴더 분류를 해제할까요?\n(약품 자체는 보존됩니다.)`)) return;
+    setBulkDeleting(true);
+    try {
+      // 기존 단건 삭제 로직(useUnassignDrug) 그대로 재사용 — 신규 삭제 경로 만들지 않음(§0.3-3).
+      await Promise.all(ids.map((id) => unassignDrug.mutateAsync(id)));
+      setSelectedDrugIds(new Set());
+      toast.success(`${ids.length}개 약품의 분류가 해제됐어요.`);
+    } catch (e) {
+      toast.error(`일괄 삭제 실패: ${(e as Error).message}`);
+    } finally {
+      setBulkDeleting(false);
     }
   }
 
@@ -407,6 +460,128 @@ export default function DrugFoldersTab() {
         </div>
       )}
 
+      {/* Part A (§0.3 krhg): 서브탭 [폴더 선택] / [전체보기] — 인라인 토글 아닌 화면 분리 */}
+      <div className="flex items-center gap-1 border-b" data-testid="drug-folder-subtabs">
+        <button
+          type="button"
+          onClick={() => setSubTab('folder')}
+          className={`px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
+            subTab === 'folder'
+              ? 'border-teal-500 text-teal-700'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          data-testid="drug-folder-subtab-folder"
+        >
+          폴더 선택
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab('all')}
+          className={`px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
+            subTab === 'all'
+              ? 'border-teal-500 text-teal-700'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          data-testid="drug-folder-subtab-all"
+        >
+          전체보기
+        </button>
+      </div>
+
+      {/* ── Part B: 전체보기 = 전 폴더 약 통합 테이블뷰 + 체크박스 다중 삭제 ───────── */}
+      {subTab === 'all' && (
+        <div className="space-y-2" data-testid="drug-folder-viewall">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-muted-foreground">
+              전체 {allDrugs.length}개 약품 · 선택 {selectedDrugIds.size}건
+            </span>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 gap-1"
+                disabled={selectedDrugIds.size === 0 || bulkDeleting}
+                onClick={handleBulkDelete}
+                data-testid="drug-folder-viewall-bulk-delete"
+              >
+                {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                선택 {selectedDrugIds.size}건 삭제
+              </Button>
+            )}
+          </div>
+          <div className="rounded-lg border min-h-[120px] overflow-x-auto" data-testid="drug-folder-viewall-list">
+            {allDrugs.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground text-center py-8">
+                폴더에 분류된 약품이 없습니다.
+              </div>
+            ) : (
+              <table className="w-full text-left" data-testid="drug-folder-viewall-table">
+                <thead>
+                  <tr className="border-b bg-muted/30 text-[10px] text-muted-foreground">
+                    <th className="px-2 py-1.5 w-9">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAllDrugs}
+                        disabled={!canEdit}
+                        className="h-3.5 w-3.5 accent-teal-600 align-middle"
+                        aria-label="전체선택"
+                        data-testid="drug-folder-viewall-select-all"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5 font-medium">약명</th>
+                    <th className="px-2 py-1.5 font-medium">소속 폴더</th>
+                    <th className="px-2 py-1.5 font-medium">기타 처방정보</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allDrugs.map((d) => {
+                    const checked = selectedDrugIds.has(d.prescription_code_id);
+                    return (
+                      <tr
+                        key={d.prescription_code_id}
+                        className={`border-b last:border-b-0 align-middle ${checked ? 'bg-teal-50/50' : 'hover:bg-muted/20'}`}
+                        data-testid="drug-folder-viewall-row"
+                      >
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleDrugSelect(d.prescription_code_id)}
+                            disabled={!canEdit}
+                            className="h-3.5 w-3.5 accent-teal-600 align-middle"
+                            aria-label={`${d.name_ko} 선택`}
+                            data-testid="drug-folder-viewall-row-check"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs font-medium truncate">{d.name_ko}</span>
+                            {d.code_source === 'custom' && (
+                              <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <span className="text-[11px] text-muted-foreground truncate">
+                            {folderNameById.get(d.folder_id) ?? '—'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-[10px] text-muted-foreground">
+                          <span className="font-mono">{d.claim_code}</span>
+                          {d.classification && <span> · {d.classification}</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {subTab === 'folder' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 좌: 폴더 트리 */}
         <div className="space-y-2">
@@ -554,6 +729,7 @@ export default function DrugFoldersTab() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
