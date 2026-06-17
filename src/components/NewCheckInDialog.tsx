@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
-import { normalizeToE164 } from '@/lib/phone';
+import { normalizeToE164, phoneCanonDigits } from '@/lib/phone';
 import { formatPhone, chartNoBadge } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -200,37 +200,42 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       selectedCustomerId ?? effectiveLinkedReservation?.customer_id ?? null;
 
     if (!customerId && phone.trim()) {
-      // Fix-1 (T-20260517-foot-CHECKIN-E164): E.164 정규화 후 조회
+      // ── 고객 해소: 복합키(성함 AND 연락처) — T-20260617-foot-CHECKIN-CHART-LINK-3KEY AC-1 ② ──
+      //   스태프 수동 체크인(예약/인라인검색 미선택 walk-in)에서 기존엔 phone 단독(.eq + ilike fallback)
+      //   으로 조회 → 연락처 중복 시 동명이인/타 고객('문자테스트') 임의 연결(6/17 김사비 오배정 클래스).
+      //   성함=eq 정확매칭 + 연락처 canonical(포맷 무관) 비교. 차트번호로 정확히 찍으려면 인라인검색
+      //   (InlinePatientSearch)으로 선택 → selectedCustomerId 직결(이 fallback 자체를 안 탐).
+      //   · 정확히 1건 → 연결 / 0건 → 신규 INSERT / 2건+ → 임의연결 금지(미연결, 대시보드 재해소).
       const phoneE164 = normalizeToE164(phone) ?? phone.trim();
-      const phoneDigits = phone.replace(/\D/g, '');
+      const inputPhoneCanon = phoneCanonDigits(phone);
+      const trimmedName = name.trim();
 
-      const { data: existing } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('clinic_id', clinicId)
-        .eq('phone', phoneE164)
-        .maybeSingle();
-
-      // Fix-3: 2차 fallback — E.164 매칭 실패 시 digits-only ilike (SelfCheckIn.tsx 패턴)
-      let resolvedExisting = existing as { id: string } | null;
-      if (!resolvedExisting && phoneDigits.length >= 8) {
-        const { data: fallback } = await supabase
+      let resolvedExisting: { id: string } | null = null;
+      let ambiguousLink = false;
+      if (trimmedName && inputPhoneCanon) {
+        const { data: nameMatches } = await supabase
           .from('customers')
-          .select('id')
+          .select('id, phone')
           .eq('clinic_id', clinicId)
-          .ilike('phone', `%${phoneDigits.slice(-8)}%`)
-          .maybeSingle();
-        resolvedExisting = fallback as { id: string } | null;
+          .eq('name', trimmedName)
+          .limit(10);
+        const matched = ((nameMatches ?? []) as Array<{ id: string; phone: string | null }>)
+          .filter((c) => phoneCanonDigits(c.phone) === inputPhoneCanon);
+        if (matched.length === 1) {
+          resolvedExisting = { id: matched[0].id };
+        } else if (matched.length > 1) {
+          ambiguousLink = true; // 성함+연락처 동시중복 → 임의연결·신규생성 보류(미연결)
+        }
       }
 
       if (resolvedExisting) {
         customerId = resolvedExisting.id as string;
-      } else {
+      } else if (!ambiguousLink) {
         const { data: created, error: cErr } = await supabase
           .from('customers')
           .insert({
             clinic_id: clinicId,
-            name: name.trim(),
+            name: trimmedName,
             // Fix-2 (T-20260517-foot-CHECKIN-E164): 신규 생성 시 E.164 저장
             phone: phoneE164,
             visit_type: visitType === 'new' ? 'new' : 'returning',
@@ -243,6 +248,10 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
           return;
         }
         customerId = (created as { id: string }).id;
+      } else {
+        // 성함+연락처 동시중복: 어느 고객이 본인인지 단정 불가 → customer_id 미연결로 체크인 진행.
+        // 대시보드에서 차트번호/인라인검색으로 정확 연결하도록 안내(임의 오배정 방지).
+        toast.warning('동일 성함·연락처 고객이 둘 이상입니다 — 미연결로 접수합니다. 대시보드에서 차트번호로 연결하세요.');
       }
     }
 

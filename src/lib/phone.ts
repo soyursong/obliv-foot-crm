@@ -11,3 +11,16 @@ export function normalizeToE164(raw: string | null | undefined): string | null {
   return null;
 }
 
+// T-20260617-foot-CHECKIN-CHART-LINK-3KEY: 포맷 무관 비교용 canonical national digits.
+//   E.164(+8210…)/숫자(0210…)/하이픈(010-…)이 DB·입력에 혼재 → 동일 번호를 한 표준으로 환원해 비교.
+//   010… → 8210…, 8210… 유지, 그 외 8자리+ 는 그대로. RPC self_checkin_with_reservation_link 의
+//   v_phone_canon 와 동일 규칙(서버/클라 매칭 키 정합). 유효 자리수 미만이면 null(비교 근거로 안 씀).
+export function phoneCanonDigits(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = String(raw).replace(/[^0-9]/g, "");
+  if (digits.length < 8) return null;
+  if (digits.startsWith("0")) return "82" + digits.slice(1);
+  if (digits.startsWith("82")) return digits;
+  return digits;
+}
+
