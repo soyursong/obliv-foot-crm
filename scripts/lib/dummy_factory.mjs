@@ -12,6 +12,13 @@
  *   2) customer_id 즉시 연결. reservation 은 customer_id 없이는 절대 생성 불가(사전 게이트 throw).
  *   3) customers 누락/실패 시 예약 생성 중단 — 원자성 보장.
  *   4) customers.is_simulation=true (정리·집계 마킹). reservations 엔 is_simulation 컬럼 없음(설계 확인).
+ *   5) [T-20260617-foot-DUMMY-CHECKIN-POLLUTION] check_ins 직접 시드 절대 금지.
+ *      더미는 reservations + customers 만 만든다. 체크인은 오직 셀프접수/관리자접수 흐름으로만 발생해야
+ *      셀프접수 명단·일마감 접수 목록이 오염되지 않는다.
+ *      (사고: 06-17 ad-hoc 도구가 check_ins 30건을 status='registered'·reservation_id=NULL·
+ *       is_simulation 미마킹으로 직접 INSERT → 셀프접수 명단 누락 + 일마감 오염. 정규 경로 밖 생성.)
+ *      ⇒ 정리·집계가 가능한 안전한 더미는 반드시 이 factory(is_simulation=true) 경유.
+ *        체크인 상태가 필요하면 예약 생성 후 셀프접수 흐름을 타라(check_ins 직접 INSERT 금지).
  *
  * 사용:
  *   import { createDummyReservations } from './lib/dummy_factory.mjs';
