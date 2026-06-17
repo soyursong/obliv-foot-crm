@@ -1,0 +1,620 @@
+{
+  "ticket": "T-20260617-foot-DUMMY-CHECKIN-POLLUTION",
+  "stage": 3,
+  "backed_up_at": "2026-06-17T05:00:50.411Z",
+  "where_key": "reservation_id IS NULL AND status='registered' AND created_at∈[10:08:00,10:09:00)KST AND checked_in_at::date=2026-06-17",
+  "check_ins": [
+    {
+      "id": "aaf4d230-3e94-44ce-b4b2-081db85517a7",
+      "customer_id": "fd7e1200-e3da-4873-97f0-5275292972d0",
+      "reservation_id": null,
+      "customer_name": "이민준",
+      "customer_phone": "010-0001-0001",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T03:00:00+00:00",
+      "created_at": "2026-06-17T01:08:40.738293+00:00",
+      "notes": null
+    },
+    {
+      "id": "cf93365e-717d-416d-8852-edee8889fc49",
+      "customer_id": "7353dfb8-ea5d-425c-886f-3bb1cb128c98",
+      "reservation_id": null,
+      "customer_name": "류나영",
+      "customer_phone": "010-0002-0001",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T03:00:00+00:00",
+      "created_at": "2026-06-17T01:08:01.684567+00:00",
+      "notes": null
+    },
+    {
+      "id": "f39fc317-36b3-4b2e-9bab-ad522b6b18b7",
+      "customer_id": "5ff08276-4ddf-4780-b193-e597cf34cd67",
+      "reservation_id": null,
+      "customer_name": "박서연",
+      "customer_phone": "010-0001-0002",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T03:30:00+00:00",
+      "created_at": "2026-06-17T01:08:01.834137+00:00",
+      "notes": null
+    },
+    {
+      "id": "2f2baa01-42aa-40c5-b695-4ac072193427",
+      "customer_id": "6c8413fb-b6d9-4a2a-9d28-3ef8feafd961",
+      "reservation_id": null,
+      "customer_name": "서민경",
+      "customer_phone": "010-0002-0002",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T03:30:00+00:00",
+      "created_at": "2026-06-17T01:08:01.99585+00:00",
+      "notes": null
+    },
+    {
+      "id": "e86d6f14-507f-4add-b976-e660f69a8b75",
+      "customer_id": "a9f35e17-a66e-4a46-854b-e4608786f533",
+      "reservation_id": null,
+      "customer_name": "김지호",
+      "customer_phone": "010-0001-0003",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T04:00:00+00:00",
+      "created_at": "2026-06-17T01:08:02.214909+00:00",
+      "notes": null
+    },
+    {
+      "id": "dc952306-13e9-4573-a32e-33e8404eeec5",
+      "customer_id": "4a07dc94-f6f2-4f0a-a287-f9c62293ce00",
+      "reservation_id": null,
+      "customer_name": "차정훈",
+      "customer_phone": "010-0002-0003",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T04:00:00+00:00",
+      "created_at": "2026-06-17T01:08:02.365615+00:00",
+      "notes": null
+    },
+    {
+      "id": "cec45942-80f8-4d92-8292-1da1adca0c7e",
+      "customer_id": "de884404-e8fc-4be0-bdc4-fd26bbc7cb02",
+      "reservation_id": null,
+      "customer_name": "최유진",
+      "customer_phone": "010-0001-0004",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T04:30:00+00:00",
+      "created_at": "2026-06-17T01:08:02.533165+00:00",
+      "notes": null
+    },
+    {
+      "id": "1a8bd478-8b04-4bb0-b142-dfbf26facd17",
+      "customer_id": "9b1d02e2-6589-421d-96e1-c4380e7dbf6f",
+      "reservation_id": null,
+      "customer_name": "노유리",
+      "customer_phone": "010-0002-0004",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T04:30:00+00:00",
+      "created_at": "2026-06-17T01:08:02.681719+00:00",
+      "notes": null
+    },
+    {
+      "id": "a23718bf-69aa-49cf-a274-ba76b76f725a",
+      "customer_id": "b60ffa6c-b67b-4ed4-80d4-a2080f2184d2",
+      "reservation_id": null,
+      "customer_name": "정민서",
+      "customer_phone": "010-0001-0005",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T05:00:00+00:00",
+      "created_at": "2026-06-17T01:08:02.818575+00:00",
+      "notes": null
+    },
+    {
+      "id": "e3746322-486a-4dbe-b4d1-d6c3560adc56",
+      "customer_id": "df255f05-ccf1-4492-b533-7a2d2edfb054",
+      "reservation_id": null,
+      "customer_name": "구해인",
+      "customer_phone": "010-0002-0005",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T05:00:00+00:00",
+      "created_at": "2026-06-17T01:08:02.953576+00:00",
+      "notes": null
+    },
+    {
+      "id": "5b8d961d-f2b7-4f6b-b18a-93d5f7b6a8e1",
+      "customer_id": "07c6b3ec-f222-4ef7-8717-f3b037aa369d",
+      "reservation_id": null,
+      "customer_name": "한소희",
+      "customer_phone": "010-0001-0006",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T05:30:00+00:00",
+      "created_at": "2026-06-17T01:08:03.102327+00:00",
+      "notes": null
+    },
+    {
+      "id": "73da2302-efcc-4616-9dcb-6c420373f801",
+      "customer_id": "1d5aaf5c-0420-4f38-ac97-ef3bfba02c25",
+      "reservation_id": null,
+      "customer_name": "전수빈",
+      "customer_phone": "010-0002-0006",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T05:30:00+00:00",
+      "created_at": "2026-06-17T01:08:03.254032+00:00",
+      "notes": null
+    },
+    {
+      "id": "12226cb8-5a27-4042-bc46-590b673515b5",
+      "customer_id": "d9554d65-f533-4695-a82d-1aa4391e83ab",
+      "reservation_id": null,
+      "customer_name": "오준혁",
+      "customer_phone": "010-0001-0007",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T06:00:00+00:00",
+      "created_at": "2026-06-17T01:08:03.390751+00:00",
+      "notes": null
+    },
+    {
+      "id": "c46c5d80-ffaf-4303-945c-e55bd1273843",
+      "customer_id": "c10aac87-cc40-4ccf-8542-ed79b98ecdc6",
+      "reservation_id": null,
+      "customer_name": "원태양",
+      "customer_phone": "010-0002-0007",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T06:00:00+00:00",
+      "created_at": "2026-06-17T01:08:03.520777+00:00",
+      "notes": null
+    },
+    {
+      "id": "1ee62322-6c8e-4e77-9823-5c5529d00218",
+      "customer_id": "8a38fb65-78d2-4894-95bb-f4f45088ecfc",
+      "reservation_id": null,
+      "customer_name": "임하은",
+      "customer_phone": "010-0001-0008",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T06:30:00+00:00",
+      "created_at": "2026-06-17T01:08:03.654861+00:00",
+      "notes": null
+    },
+    {
+      "id": "69d4cff7-36b5-45d5-bcf6-cc4fd393798f",
+      "customer_id": "bc58b0e3-4f42-471c-a97c-5b38b169e813",
+      "reservation_id": null,
+      "customer_name": "허지민",
+      "customer_phone": "010-0002-0008",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T06:30:00+00:00",
+      "created_at": "2026-06-17T01:08:03.788433+00:00",
+      "notes": null
+    },
+    {
+      "id": "c1b990f6-6a00-4c92-986b-55643755fee0",
+      "customer_id": "b61df762-aea9-418c-90f8-065765c2c026",
+      "reservation_id": null,
+      "customer_name": "송윤서",
+      "customer_phone": "010-0001-0009",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T07:00:00+00:00",
+      "created_at": "2026-06-17T01:08:03.947903+00:00",
+      "notes": null
+    },
+    {
+      "id": "98cddd86-80b3-4917-bb44-4246fd98f2e2",
+      "customer_id": "4ed5d4d9-abeb-4952-9fd2-7886a6b996f0",
+      "reservation_id": null,
+      "customer_name": "엄소연",
+      "customer_phone": "010-0002-0009",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T07:00:00+00:00",
+      "created_at": "2026-06-17T01:08:04.084352+00:00",
+      "notes": null
+    },
+    {
+      "id": "ca8adc58-9a76-4dca-b82e-7c62c2f743b3",
+      "customer_id": "ef8655ea-d204-418f-b724-9f61d83853ee",
+      "reservation_id": null,
+      "customer_name": "배민재",
+      "customer_phone": "010-0001-0010",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T07:30:00+00:00",
+      "created_at": "2026-06-17T01:08:04.233157+00:00",
+      "notes": null
+    },
+    {
+      "id": "959ce5ec-f0ac-4eeb-9933-fba6418e28ac",
+      "customer_id": "a1482b9e-72fa-4f56-a995-b98fa69aacba",
+      "reservation_id": null,
+      "customer_name": "남기현",
+      "customer_phone": "010-0002-0010",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T07:30:00+00:00",
+      "created_at": "2026-06-17T01:08:04.367123+00:00",
+      "notes": null
+    },
+    {
+      "id": "e10468c7-1359-4e4d-a2d5-0a486230ae4c",
+      "customer_id": "661e694a-caa4-467d-9c2b-ea75d9808342",
+      "reservation_id": null,
+      "customer_name": "양지우",
+      "customer_phone": "010-0001-0011",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T08:00:00+00:00",
+      "created_at": "2026-06-17T01:08:04.534151+00:00",
+      "notes": null
+    },
+    {
+      "id": "598659d2-9fcc-4641-8299-fbcaa8edb5ce",
+      "customer_id": "c35eb8d8-cf9c-445b-8323-e9a702e8fbf1",
+      "reservation_id": null,
+      "customer_name": "변아름",
+      "customer_phone": "010-0002-0011",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T08:00:00+00:00",
+      "created_at": "2026-06-17T01:08:04.680508+00:00",
+      "notes": null
+    },
+    {
+      "id": "3d436064-f23d-4033-914b-82f0caedcc4e",
+      "customer_id": "1107dc71-6c32-40c8-92fd-ba2b4348303c",
+      "reservation_id": null,
+      "customer_name": "홍다은",
+      "customer_phone": "010-0001-0012",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T08:30:00+00:00",
+      "created_at": "2026-06-17T01:08:04.831593+00:00",
+      "notes": null
+    },
+    {
+      "id": "493131a7-4fed-4066-93a6-5925abac2644",
+      "customer_id": "b4ded8f5-2e1f-4212-bdfb-996e6abe0929",
+      "reservation_id": null,
+      "customer_name": "백지영",
+      "customer_phone": "010-0002-0012",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T08:30:00+00:00",
+      "created_at": "2026-06-17T01:08:04.98248+00:00",
+      "notes": null
+    },
+    {
+      "id": "53406bf7-dd1c-4f1c-a2d4-3ac9a73e7cdb",
+      "customer_id": "5059cb94-f327-484a-930f-e030f744bda6",
+      "reservation_id": null,
+      "customer_name": "조현준",
+      "customer_phone": "010-0001-0013",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T09:00:00+00:00",
+      "created_at": "2026-06-17T01:08:05.140047+00:00",
+      "notes": null
+    },
+    {
+      "id": "52053c77-a146-4cfa-9787-148ed4a9000a",
+      "customer_id": "037746c7-9b20-4983-97fe-31aa5fa14164",
+      "reservation_id": null,
+      "customer_name": "황성민",
+      "customer_phone": "010-0002-0013",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T09:00:00+00:00",
+      "created_at": "2026-06-17T01:08:05.29378+00:00",
+      "notes": null
+    },
+    {
+      "id": "145a3fdb-ab8e-43b2-9adc-ebda6c7ab118",
+      "customer_id": "86da6df6-94be-48ab-a030-7c0df8a4b2c6",
+      "reservation_id": null,
+      "customer_name": "방미래",
+      "customer_phone": "010-0002-0014",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T09:30:00+00:00",
+      "created_at": "2026-06-17T01:08:05.583392+00:00",
+      "notes": null
+    },
+    {
+      "id": "05877f83-b82d-4df3-8d16-8abc420841a9",
+      "customer_id": "d9c304f9-96ee-4c60-8df3-0e0d1503503b",
+      "reservation_id": null,
+      "customer_name": "신예린",
+      "customer_phone": "010-0001-0014",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T09:30:00+00:00",
+      "created_at": "2026-06-17T01:08:05.424022+00:00",
+      "notes": null
+    },
+    {
+      "id": "4feea28e-0d16-417c-921c-7c07f237f5ba",
+      "customer_id": "0f49c00f-3d1e-4743-906e-e44c98008afc",
+      "reservation_id": null,
+      "customer_name": "진서윤",
+      "customer_phone": "010-0002-0015",
+      "visit_type": "returning",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T10:00:00+00:00",
+      "created_at": "2026-06-17T01:08:05.897494+00:00",
+      "notes": null
+    },
+    {
+      "id": "db33c300-8e48-46e2-a720-5593aca5a514",
+      "customer_id": "b019cd4c-03ab-4e98-a5a9-44fe4f9cbe10",
+      "reservation_id": null,
+      "customer_name": "강태현",
+      "customer_phone": "010-0001-0015",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T10:00:00+00:00",
+      "created_at": "2026-06-17T01:08:05.742471+00:00",
+      "notes": null
+    }
+  ],
+  "customers": [
+    {
+      "id": "037746c7-9b20-4983-97fe-31aa5fa14164",
+      "name": "황성민",
+      "phone": "010-0002-0013",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:01.075136+00:00"
+    },
+    {
+      "id": "b019cd4c-03ab-4e98-a5a9-44fe4f9cbe10",
+      "name": "강태현",
+      "phone": "010-0001-0015",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.054511+00:00"
+    },
+    {
+      "id": "7353dfb8-ea5d-425c-886f-3bb1cb128c98",
+      "name": "류나영",
+      "phone": "010-0002-0001",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.220268+00:00"
+    },
+    {
+      "id": "6c8413fb-b6d9-4a2a-9d28-3ef8feafd961",
+      "name": "서민경",
+      "phone": "010-0002-0002",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.377967+00:00"
+    },
+    {
+      "id": "4a07dc94-f6f2-4f0a-a287-f9c62293ce00",
+      "name": "차정훈",
+      "phone": "010-0002-0003",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.529392+00:00"
+    },
+    {
+      "id": "9b1d02e2-6589-421d-96e1-c4380e7dbf6f",
+      "name": "노유리",
+      "phone": "010-0002-0004",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.667767+00:00"
+    },
+    {
+      "id": "df255f05-ccf1-4492-b533-7a2d2edfb054",
+      "name": "구해인",
+      "phone": "010-0002-0005",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.8213+00:00"
+    },
+    {
+      "id": "1d5aaf5c-0420-4f38-ac97-ef3bfba02c25",
+      "name": "전수빈",
+      "phone": "010-0002-0006",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:59.977042+00:00"
+    },
+    {
+      "id": "c10aac87-cc40-4ccf-8542-ed79b98ecdc6",
+      "name": "원태양",
+      "phone": "010-0002-0007",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:00.139534+00:00"
+    },
+    {
+      "id": "bc58b0e3-4f42-471c-a97c-5b38b169e813",
+      "name": "허지민",
+      "phone": "010-0002-0008",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:00.304739+00:00"
+    },
+    {
+      "id": "4ed5d4d9-abeb-4952-9fd2-7886a6b996f0",
+      "name": "엄소연",
+      "phone": "010-0002-0009",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:00.458904+00:00"
+    },
+    {
+      "id": "86da6df6-94be-48ab-a030-7c0df8a4b2c6",
+      "name": "방미래",
+      "phone": "010-0002-0014",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:01.243526+00:00"
+    },
+    {
+      "id": "0f49c00f-3d1e-4743-906e-e44c98008afc",
+      "name": "진서윤",
+      "phone": "010-0002-0015",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:01.388613+00:00"
+    },
+    {
+      "id": "fd7e1200-e3da-4873-97f0-5275292972d0",
+      "name": "이민준",
+      "phone": "010-0001-0001",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:56.922989+00:00"
+    },
+    {
+      "id": "a1482b9e-72fa-4f56-a995-b98fa69aacba",
+      "name": "남기현",
+      "phone": "010-0002-0010",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:00.611942+00:00"
+    },
+    {
+      "id": "5ff08276-4ddf-4780-b193-e597cf34cd67",
+      "name": "박서연",
+      "phone": "010-0001-0002",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:57.069154+00:00"
+    },
+    {
+      "id": "a9f35e17-a66e-4a46-854b-e4608786f533",
+      "name": "김지호",
+      "phone": "010-0001-0003",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:57.221209+00:00"
+    },
+    {
+      "id": "de884404-e8fc-4be0-bdc4-fd26bbc7cb02",
+      "name": "최유진",
+      "phone": "010-0001-0004",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:57.363514+00:00"
+    },
+    {
+      "id": "b60ffa6c-b67b-4ed4-80d4-a2080f2184d2",
+      "name": "정민서",
+      "phone": "010-0001-0005",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:57.504509+00:00"
+    },
+    {
+      "id": "07c6b3ec-f222-4ef7-8717-f3b037aa369d",
+      "name": "한소희",
+      "phone": "010-0001-0006",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:57.694148+00:00"
+    },
+    {
+      "id": "d9554d65-f533-4695-a82d-1aa4391e83ab",
+      "name": "오준혁",
+      "phone": "010-0001-0007",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:57.853768+00:00"
+    },
+    {
+      "id": "8a38fb65-78d2-4894-95bb-f4f45088ecfc",
+      "name": "임하은",
+      "phone": "010-0001-0008",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.006083+00:00"
+    },
+    {
+      "id": "b61df762-aea9-418c-90f8-065765c2c026",
+      "name": "송윤서",
+      "phone": "010-0001-0009",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.155278+00:00"
+    },
+    {
+      "id": "ef8655ea-d204-418f-b724-9f61d83853ee",
+      "name": "배민재",
+      "phone": "010-0001-0010",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.316683+00:00"
+    },
+    {
+      "id": "661e694a-caa4-467d-9c2b-ea75d9808342",
+      "name": "양지우",
+      "phone": "010-0001-0011",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.473063+00:00"
+    },
+    {
+      "id": "c35eb8d8-cf9c-445b-8323-e9a702e8fbf1",
+      "name": "변아름",
+      "phone": "010-0002-0011",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:00.76663+00:00"
+    },
+    {
+      "id": "1107dc71-6c32-40c8-92fd-ba2b4348303c",
+      "name": "홍다은",
+      "phone": "010-0001-0012",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.629275+00:00"
+    },
+    {
+      "id": "5059cb94-f327-484a-930f-e030f744bda6",
+      "name": "조현준",
+      "phone": "010-0001-0013",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.779238+00:00"
+    },
+    {
+      "id": "d9c304f9-96ee-4c60-8df3-0e0d1503503b",
+      "name": "신예린",
+      "phone": "010-0001-0014",
+      "visit_type": "new",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:07:58.9174+00:00"
+    },
+    {
+      "id": "b4ded8f5-2e1f-4212-bdfb-996e6abe0929",
+      "name": "백지영",
+      "phone": "010-0002-0012",
+      "visit_type": "returning",
+      "is_simulation": false,
+      "created_at": "2026-06-17T01:08:00.930406+00:00"
+    }
+  ],
+  "child_counts": {
+    "package_sessions": 0,
+    "payments": 0,
+    "consent_forms": 0,
+    "checklists": 0,
+    "insurance_documents": 0,
+    "notifications": 0,
+    "check_in_services": 0,
+    "status_transitions": 0
+  }
+}
