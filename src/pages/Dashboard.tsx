@@ -4828,13 +4828,19 @@ export default function Dashboard() {
     return null; // 한쪽이라도 유효 번호 아님 → 비교 불가(차단 근거로 쓰지 않음)
   }, []);
 
-  // T-20260617-foot-CHECKIN-CHART-LINK-3KEY (AC-3): 차트 오픈 직전 교차검증 — 차단형 격상.
+  // T-20260617-foot-CHECKIN-CHART-LINK-3KEY (AC-3 + AC-7): 차트 오픈 직전 교차검증 — 차단형 격상.
   //   customer_id 가 SET 이어도 연결된 고객의 성함/연락처가 카드 denormalized 값과 다르면
   //   타 환자 차트일 수 있다(6/17 김사비→문자테스트). 직전 RES-NAME-MISMATCH-WARN 은 비차단
   //   토스트뿐이라 오배정을 못 막았다 → 본 헬퍼는 성함 불일치 시 window.confirm 으로 차단(staff
   //   확인 시에만 오픈). 연락처만 다르면(번호 변경 가능) 비차단 경고로 남긴다(false-block 회피).
   //   조회 실패 시 차단하지 않음(가용성 우선 — read-only 차트 오픈 불변식과 정합).
   //   반환: true = 오픈 진행, false = 오픈 차단.
+  //
+  //   AC-7 (차트번호 1급 권위 키, 총괄 reframe MSG-utzu): 연결된 customer_id 는 예약 최초 등록 시
+  //   자동 발번된 UNIQUE·NOT NULL 차트번호(F-XXXX)를 가진다 = 세 키 중 가장 강한 disambiguator.
+  //   이 차트번호가 가리키는 환자의 성함/연락처가 카드 denormalized 값과 상충하면 오연결(데이터
+  //   오염 신호)이다. 차단형 확인 프롬프트에 차트번호를 1급 권위 키로 명시 표기해 staff 가 정확히
+  //   어느 차트가 열리는지 식별·재확인하게 한다(고객박스=고객차트, 차트번호 중복 불가).
   const verifyChartLinkOrConfirm = useCallback(async (
     customerId: string,
     expectedName?: string | null,
@@ -4842,26 +4848,28 @@ export default function Dashboard() {
   ): Promise<boolean> => {
     const { data, error } = await supabase
       .from('customers')
-      .select('name, phone')
+      .select('name, phone, chart_number')
       .eq('id', customerId)
       .maybeSingle();
     if (error || !data) return true; // 조회 실패 → 비차단(오픈 허용)
     const chartName = (data.name ?? '').trim();
     const shownName = (expectedName ?? '').trim();
+    const chartNo = (data.chart_number ?? '').trim(); // AC-7: 1급 권위 키(UNIQUE)
+    const chartLabel = chartNo ? `[${chartNo}] ` : '';
     const nameMismatch = !!chartName && !!shownName && chartName !== shownName;
     const phoneCmp = phoneSame(expectedPhone, data.phone);
     if (nameMismatch) {
-      // 성함 불일치 = 타 환자 차트 추정 → 차단형 확인 프롬프트
+      // 성함 불일치 = 타 환자 차트 추정 → 차단형 확인 프롬프트 (차트번호 1급 권위 키 명시)
       return window.confirm(
         `⚠️ 고객 연결 불일치 — 다른 환자의 차트일 수 있습니다.\n\n`
         + `· 카드 표기: ${shownName}${expectedPhone ? ` / ${expectedPhone}` : ''}\n`
-        + `· 연결된 차트: ${chartName}${data.phone ? ` / ${data.phone}` : ''}\n\n`
-        + `그래도 이 차트를 여시겠습니까?\n(취소 시 열지 않습니다 — 고객관리에서 연결을 재확인하세요)`,
+        + `· 연결된 차트: ${chartLabel}${chartName}${data.phone ? ` / ${data.phone}` : ''}\n\n`
+        + `그래도 이 차트를 여시겠습니까?\n(취소 시 열지 않습니다 — 고객관리에서 차트번호로 연결을 재확인하세요)`,
       );
     }
     if (phoneCmp === false) {
-      // 성함 일치 + 연락처 상이(번호 변경 가능) → 비차단 경고
-      toast.warning(`연락처가 차트와 다릅니다 (카드 ${expectedPhone ?? '-'} / 차트 ${data.phone ?? '-'}). 동일 고객인지 확인하세요.`);
+      // 성함 일치 + 연락처 상이(번호 변경 가능) → 비차단 경고 (연결된 차트번호 명시)
+      toast.warning(`연락처가 차트와 다릅니다 (카드 ${expectedPhone ?? '-'} / 차트 ${chartLabel}${data.phone ?? '-'}). 동일 고객인지 확인하세요.`);
     }
     return true;
   }, [phoneSame]);
