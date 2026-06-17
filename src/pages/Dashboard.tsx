@@ -270,9 +270,16 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
 //   기존 calc(100vh - 200px)(= 뷰포트 꽉 채움, 800px 기준 600px)이 "상담실 제외하고 다 쓸데없이 길어짐".
 //   상담실([상담실] 슬롯)은 fixed height 가 아니라 자연 콘텐츠 높이(헤더+룸 그리드, 실측 ~411px,
 //   뷰포트 비의존)로 컴팩트하게 보이는데 나머지 bordered 슬롯만 600px 로 길었던 게 원인.
-//   → 기준을 뷰포트 기반 calc → 상담실 자연 높이에 맞춘 fixed 420px 로 변경.
-//   상담실은 viewport-independent(콘텐츠 결정)라 fixed px 가 화면 크기와 무관하게 상담실과 정렬된다.
-//   초과 콘텐츠는 컬럼 본문 overflow-y:auto 로 내부 스크롤(컨테이너 비성장).
+//   → 기준을 뷰포트 기반 calc → 상담실 자연 높이에 맞춘 420px 로 변경.
+//   상담실은 viewport-independent(콘텐츠 결정)라 px 값이 화면 크기와 무관하게 상담실/상담대기와 정렬된다.
+//
+// T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REVERSAL 2026-06-17, scope② 4슬롯 통일):
+//   김주연 총괄 원의도 재명시 — 고정 height + 내부 스크롤(c21eaa43)은 정반대였음.
+//   신 스펙: 이 값을 "빈 상태 baseline = [상담대기] 칸 기준 최소 높이"(min-height)로 사용한다.
+//   · 빈 상태: 모든 슬롯 minHeight = SLOT_COLUMN_HEIGHT → 세로 동일(AC-NEW-1).
+//   · 카드 추가: 슬롯 칸이 콘텐츠만큼 자연 성장(고정값/내부 스크롤 X, AC-NEW-2/3).
+//   · 형제 비연동: 부모 행 align-items:stretch → items-start 로 전환(한 슬롯 성장이 형제를
+//     끌어올리지 않음). 각 슬롯이 자기 minHeight floor 위에서 독립 성장.
 const SLOT_COLUMN_HEIGHT = '420px';
 
 // ── 그룹 정렬 핸들용 SortableGroupItem ────────────────────────────────────────
@@ -759,6 +766,8 @@ function DroppableColumn({
   highlight,
   subtitle,
   invalidDrop,
+  style,
+  naturalGrow,
 }: {
   id: string;
   label: string;
@@ -768,6 +777,13 @@ function DroppableColumn({
   highlight?: string;
   subtitle?: React.ReactNode;
   invalidDrop?: boolean;
+  // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REVERSAL/SLOT-HEIGHT-UNIFY):
+  //   style  — 외부에서 minHeight(SLOT_COLUMN_HEIGHT) 등 baseline floor 주입용.
+  //   naturalGrow — true 면 본문의 고정 내부 스크롤(overflow-y-auto + max-h) 제거 →
+  //                 카드 추가 시 컬럼이 콘텐츠만큼 세로로 자연 성장(보드 외곽 스크롤로 처리).
+  //                 미지정(기본 false)이면 기존 내부 스크롤 유지 → 비대상 슬롯 동작 불변(AC-R1).
+  style?: React.CSSProperties;
+  naturalGrow?: boolean;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id });
   return (
@@ -782,7 +798,7 @@ function DroppableColumn({
       )}
       // T-20260522-foot-DRAG-RESP-OPT AC-3: 드롭 열 헤더·본문 tap delay 제거
       // 내부 draggable 카드는 touch-action:none 인라인 스타일로 자체 오버라이드
-      style={{ touchAction: 'manipulation' }}
+      style={{ touchAction: 'manipulation', ...style }}
     >
       <div className="px-2.5 py-1.5 border-b bg-muted/30 rounded-t-lg">
         <div className="flex items-center justify-between">
@@ -798,7 +814,14 @@ function DroppableColumn({
         </div>
         {subtitle && <div className="mt-0.5">{subtitle}</div>}
       </div>
-      <div className="flex-1 p-1.5 space-y-1.5 min-h-[80px] overflow-y-auto max-h-[calc(100vh-220px)]">
+      <div
+        className={cn(
+          'flex-1 p-1.5 space-y-1.5 min-h-[80px]',
+          // naturalGrow: 내부 스크롤 캡 제거 → 콘텐츠만큼 컬럼 자연 성장(REVERSAL).
+          // 기본(비대상): 기존 내부 스크롤 유지 → 동작 불변(AC-R1).
+          !naturalGrow && 'overflow-y-auto max-h-[calc(100vh-220px)]',
+        )}
+      >
         {children}
       </div>
     </div>
@@ -1093,8 +1116,11 @@ function RoomSection({
 
   const showBatchEdit = !!(batchEditMode && isToday); // T-20260614-foot-SLOT-CRUD-ALLTYPES
   return (
-    // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: fillHeight면 부모 고정 높이를 꽉 채워 방 그리드만 내부 스크롤.
-    <div className={cn('flex flex-col', fillHeight && 'h-full min-h-0')}>
+    // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REVERSAL): fillHeight면 부모(minHeight floor) flex-col 안에서
+    //   grow(=flex:1 0 auto, basis auto)로 baseline 420 을 채우되, bed 콘텐츠가 baseline 을 넘으면 그만큼
+    //   자연 성장한다(shrink-0 → 콘텐츠 밑으로 안 줄어듦). 부모가 fixed→minHeight 로 바뀌어 h-full(100% of auto)은
+    //   붕괴하므로 grow 채택. (flex-1=basis0 은 420 에 캡돼 성장 불가 → AC-NEW-3 위배라 부적합.)
+    <div className={cn('flex flex-col', fillHeight && 'grow shrink-0')}>
       <div className={cn('flex items-center text-xs font-bold px-2 py-1 rounded-t-lg', color)}>
         {title}
         <span className="ml-1.5 font-normal opacity-70">
@@ -1131,12 +1157,12 @@ function RoomSection({
         </DroppableColumn>
       )}
       {/* L-3: 그리드 갭 균일 — RoomSlot 내부(space-y-1)와 동일하게 1.5 유지, 가로/세로 동일 */}
-      {/* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (FIX/gvsl scope-narrow): bed-grid는 컨테이너가
-          [치료대기] 기준 고정 높이를 채우되(flex-1), content-start 로 bed 셀을 자연 높이(컴팩트)로
-          상단 정렬한다. content-start 없으면 grid align-content 기본 stretch 가 auto 행을 늘려
-          bed 셀이 비정상적으로 길어짐("보기싫다"의 실체) → 고정 bed 수 격자 컴팩트화로 해소.
-          초과분만 overflow-y-auto 내부 스크롤(강제 아님, 트리거 시에만). */}
-      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols, fillHeight && 'flex-1 min-h-0 overflow-y-auto content-start')}>
+      {/* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REVERSAL): bed-grid 는 grow(basis auto)로 baseline 을
+          채우되, content-start 로 bed 셀을 자연 높이(컴팩트)로 상단 정렬한다. content-start 없으면 grid
+          align-content 기본 stretch 가 auto 행을 늘려 bed 셀이 비정상적으로 길어짐("보기싫다"의 실체).
+          bed 가 baseline 을 넘으면 그리드가 콘텐츠만큼 성장(내부 스크롤 제거 — 보드 외곽 스크롤로 처리, AC-NEW-3).
+          shrink-0 으로 콘텐츠 밑으로 줄지 않게 해 성장이 컨테이너로 전파된다. */}
+      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols, fillHeight && 'grow shrink-0 content-start')}>
         {rooms.map((room) => {
           // T-20260614-foot-SLOT-CRUD-ALLTYPES: AC-2/3 기본=잠금, 세션 내 추가=삭제
           const isDefault = defaultRoomIds ? defaultRoomIds.has(room.id) : true;
@@ -5901,6 +5927,8 @@ export default function Dashboard() {
               count={(byStatus['receiving'] ?? []).length}
               className="h-full"
               highlight="text-slate-700"
+              // REVERSAL: items-start 전환 후 baseline floor 유지(붕괴 방지). 비대상 → 내부 스크롤 유지(동작 불변).
+              style={{ minHeight: SLOT_COLUMN_HEIGHT }}
             >
               {(byStatus['receiving'] ?? []).map((ci, idx, arr) => (
                 <div key={ci.id} className="relative group">
@@ -5924,7 +5952,7 @@ export default function Dashboard() {
         );
       case 'exam_section':
         return (
-          <div key="exam_section" className="w-52 shrink-0 flex flex-col gap-2">
+          <div key="exam_section" className="w-52 shrink-0 flex flex-col gap-2" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
             {examRooms.length > 0 ? (
               <RoomSection
                 title="진료"
@@ -6000,6 +6028,8 @@ export default function Dashboard() {
               count={(byStatus['consult_waiting'] ?? []).length}
               className="h-full"
               highlight="text-blue-700"
+              // [상담대기] = baseline 기준 슬롯. items-start 전환 후 minHeight floor 로 baseline 확정.
+              style={{ minHeight: SLOT_COLUMN_HEIGHT }}
             >
               {(byStatus['consult_waiting'] ?? []).map((ci, idx, arr) => (
                 <div key={ci.id} className="relative group">
@@ -6124,13 +6154,15 @@ export default function Dashboard() {
       // 배치편집 모드에서 각 슬롯을 개별 드래그/이동할 수 있도록 분리
       case 'treatment_waiting_col':
         return (
-          <div key="treatment_waiting_col" data-testid="slot-col-treatment-waiting" className="w-40 shrink-0" style={{ height: SLOT_COLUMN_HEIGHT }}>
+          <div key="treatment_waiting_col" data-testid="slot-col-treatment-waiting" className="w-40 shrink-0 flex flex-col">
             <DroppableColumn
               id="treatment_waiting"
               label="치료대기"
               count={(byStatus['treatment_waiting'] ?? []).length}
-              className="h-full"
+              className="flex-1"
               highlight="text-amber-700"
+              // 치료대기(비대상): 고정 height → minHeight floor. items-start 하에서 baseline 유지 + 내부 스크롤(동작 불변).
+              style={{ minHeight: SLOT_COLUMN_HEIGHT }}
             >
               {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
                 <div key={ci.id} className="relative group">
@@ -6161,6 +6193,7 @@ export default function Dashboard() {
               count={laserWaiting.length}
               className="h-full"
               highlight="text-rose-700"
+              style={{ minHeight: SLOT_COLUMN_HEIGHT }}
             >
               {laserWaiting.map((ci) => (
                 <DraggableCard
@@ -6186,6 +6219,7 @@ export default function Dashboard() {
               count={healerWaiting.length}
               className="h-full"
               highlight="text-violet-700"
+              style={{ minHeight: SLOT_COLUMN_HEIGHT }}
             >
               {healerWaiting.map((ci) => (
                 <DraggableCard
@@ -6205,7 +6239,7 @@ export default function Dashboard() {
         // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → 치료실만 렌더.
         if (treatmentRooms.length === 0) return null;
         return (
-          <div key="treatment_rooms" data-testid="slot-col-treatment-rooms" className="w-[480px] shrink-0 flex flex-col gap-1.5" style={{ height: SLOT_COLUMN_HEIGHT }}>
+          <div key="treatment_rooms" data-testid="slot-col-treatment-rooms" className="w-[480px] shrink-0 flex flex-col gap-1.5" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
             <RoomSection
               fillHeight
               title="치료실"
@@ -6236,12 +6270,14 @@ export default function Dashboard() {
       }
       case 'desk_section':
         return (
-          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ height: SLOT_COLUMN_HEIGHT }}>
+          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
             <DroppableColumn
               id="payment_waiting"
               label="수납대기"
               count={(byStatus['payment_waiting'] ?? []).length}
-              className="flex-1 min-h-0"
+              // REVERSAL: grow(basis auto)+naturalGrow → 카드 누적 시 칸 자연 성장(내부 스크롤 X). 빈 상태는 wrapper minHeight 로 baseline.
+              className="grow shrink-0"
+              naturalGrow
               highlight="text-purple-700"
               subtitle={
                 pendingTotal > 0 ? (
@@ -6276,7 +6312,9 @@ export default function Dashboard() {
               id="done"
               label="완료"
               count={doneCount}
-              className="flex-1 min-h-0"
+              // REVERSAL: 수납대기와 동일 — grow+naturalGrow 로 카드 누적 시 자연 성장.
+              className="grow shrink-0"
+              naturalGrow
               highlight="text-emerald-700"
               subtitle={
                 doneTotal > 0 ? (
@@ -6312,7 +6350,7 @@ export default function Dashboard() {
         );
       case 'laser_rooms':
         return laserRooms.length > 0 ? (
-          <div key="laser_rooms" data-testid="slot-col-laser-rooms" className="w-[480px] shrink-0 flex flex-col" style={{ height: SLOT_COLUMN_HEIGHT }}>
+          <div key="laser_rooms" data-testid="slot-col-laser-rooms" className="w-[480px] shrink-0 flex flex-col" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
             {/* T-20260520-foot-LASER-DROPDOWN: therapists(technician only) + onTherapistChange 전달 — 장비명 드롭다운 복구 */}
             <RoomSection
               fillHeight
@@ -6364,7 +6402,7 @@ export default function Dashboard() {
   // 일반(운영) 모드에서만 사용. 편집 모드 renderKanbanGroup 케이스는 불변 → 개별이동 보존
   // (laser_rooms 가 일반모드 클러스터·편집모드 개별드래그로 분리된 기존 선례와 동일 패턴).
   const renderWaitingPair = useCallback(() => (
-    <div className="w-40 shrink-0 self-stretch flex flex-col gap-2" data-testid="laser-healer-wait-pair">
+    <div className="w-40 shrink-0 flex flex-col gap-2" style={{ minHeight: SLOT_COLUMN_HEIGHT }} data-testid="laser-healer-wait-pair">
       {/* AC-1: 현장 요청·티켓 명시 순서 "[힐러대기 / 레이저대기]" — 힐러대기 위 / 레이저대기 아래.
           도메인 흐름(재진: 힐러/프리컨디셔닝 → 레이저)과도 일치. */}
       <DroppableColumn
@@ -6793,23 +6831,17 @@ export default function Dashboard() {
               </DndContext>
             ) : (
               /* ── 일반 모드: 카드 드래그 (DnD 컨텍스트는 상위로 이동됨) ── */
-              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (FIX/ys5t 회귀복원): h-full(기본 stretch) 복원.
-                 9340e8d가 items-start 로 바꾸면서 명시 높이가 없는 비대상 슬롯([접수중]·[상담대기]·진료·
-                 레이저대기·힐러대기·상담실)의 stretch 가 전역 제거되어 자연(짧은) 높이로 줄어든 회귀 발생.
-                 높이 통일은 조정 대상 4슬롯(치료대기 기준 + 치료실·레이저실·수납대기+완료)에 per-element
-                 inline style={{height: SLOT_COLUMN_HEIGHT}} 로만 격리 적용된다(셀렉터 누수 0). 이 4슬롯은
-                 explicit height 가 stretch 보다 우선하므로 h-full 하에서도 고정 높이를 유지하고, 카드 초과분은
-                 내부 overflow-y-auto 로 처리(컨테이너 세로 성장 금지). 비대상 슬롯은 원래대로 행 높이에 stretch. */
-              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REOPEN/qbv1): [상담대기] 부분 미복원 RC 격리 패치.
-                 RC(코드 증거): 부모 zoom 래퍼(상단 inline-block div)는 height auto(콘텐츠 hug)라
-                 이 행의 h-full(height:100%)이 definite 로 resolve 되지 못하고 auto 로 붕괴 → align-items:stretch 가
-                 비대상 컬럼([접수중]·[상담대기])을 baseline 높이로 늘리지 못함. 컬럼 높이는 콘텐츠로 결정되어
-                 (DroppableColumn body flex-1 min-h-[80px]) [접수중]은 맨앞 체크인 카드로 우연히 늘어나 복원처럼 보이고
-                 빈 [상담대기]는 min-h-80px 로 붕괴 = 비대칭의 실체. (두 case 블록은 byte-identical 이라 누수/잔존 스타일 아님.)
-                 조치: edit-mode 행(SortableContext)이 이미 갖는 style minHeight: calc(100vh-200px) 를 normal-mode 행에도
-                 동일 부여 → 행이 definite height 확보 → stretch 가 모든 비대상 컬럼을 baseline 으로 균일화([접수중]=[상담대기]).
-                 target 4슬롯은 explicit height 가 우선이라 불변(AC-R2), 누수 0(AC-R3). CSS only. */
-              <div data-testid="kanban-slot-row" className="flex gap-2 min-w-max" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
+              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REVERSAL 2026-06-17, scope② 4슬롯 통일):
+                 김주연 총괄 원의도 = "빈 상태 동일 + 카드 추가 시 칸 자연 성장"(고정 height·내부 스크롤은 정반대였음).
+                 핵심 = 형제 비연동 자연 성장. 부모 행을 stretch(기본) → items-start 로 전환한다.
+                   · stretch: 한 슬롯이 콘텐츠로 커지면 flex line cross-size 가 커져 형제 슬롯까지 끌어올림
+                     (= 비대상 슬롯이 함께 길어지는 오염, 과거 reporter "쓸데없이 길어짐" 불만).
+                   · items-start: 각 슬롯이 자기 높이를 유지하며 독립 성장. 비대상 슬롯이 안 끌려감(AC-R1).
+                 단 items-start 면 명시 높이 없는 비대상 슬롯의 stretch 가 끊겨 붕괴하므로(과거 ys5t 회귀),
+                 각 슬롯(타깃+비타깃)에 per-element minHeight: SLOT_COLUMN_HEIGHT floor 를 부여해 빈 상태
+                 baseline(=[상담대기]) 을 보존한다(AC-NEW-1). 타깃 4슬롯(치료실·레이저실·수납대기·완료)은
+                 minHeight floor + 콘텐츠 자연 성장(내부 스크롤 제거), 비타깃은 floor + 기존 내부 스크롤 유지. */
+              <div data-testid="kanban-slot-row" className="flex items-start gap-2 min-w-max" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
                 {/* 치료실+레이저실 클러스터: 치료실 | 레이저실 나란히 배치.
                     (T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거됨) */}
                 {groupOrder.map((gid) => {
