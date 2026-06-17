@@ -1,23 +1,23 @@
 // KohRequestToggle — 2번차트 패키지 탭 > 치료부위(발가락) 우측 상단 KOH 균검사 ON/OFF 토글
 // Ticket: T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-1)
 //         + T-20260616-foot-KOHTOGGLE-NOTRENDER (RC fix: 재방문 시 토글 소멸)
+//         + T-20260616-foot-KOH-BUTTON-ALL-CH (이력 무관 체크인 전원 노출 + ON 시 검사요청 신규 생성)
 //
-// 흐름: 환자가 KOH 균검사(service_name ILIKE 'KOH'|'진균검사')를 받은 적이 있으면 노출.
-//   ON  → set_koh_requested RPC(승인 사용자 누구나, 치료사 포함 한 필드만) → check_in_services.koh_requested=true
+// 흐름(BUTTON-ALL-CH, 피검사 토글 8d30bf64 동형): 체크인 내원이 있는 환자 전원에게 노출(KOH 이력 무관).
+//   기본 OFF. reporter 김주연 총괄 확정(②) "피검사처럼 기본 고정값".
+//   ON  → request_koh_for_customer RPC(승인 사용자 누구나, 치료사 포함):
+//          · KOH 보유 내원 존재 → 그 내원의 KOH service 전체 koh_requested=true(旣 동작 보존, 시나리오2).
+//          · KOH 이력 없음 → 가장 최근 non-cancelled 내원에 KOH 검사요청 행 신규 생성(시나리오1).
 //         → 진료대시보드 균검사지 목록에 active(신청)로 표시(AC-2).
-//   OFF → koh_requested=false → 균검사지 목록 행 유지·비활성(inactive·회색)(AC-2, 목록 제거 안 함).
-//   같은 내원(check_in)의 KOH service 가 여럿이면 전체 일괄 동기화.
+//   OFF → koh_requested=false → 목록 행 유지·비활성(이력 없으면 no-op). 목록 제거 안 함.
 //
-// === T-20260616-foot-KOHTOGGLE-NOTRENDER (RC fix) ===
-//   증상: KOH 검사 받은 환자라도 토글이 라이브에서 안 보임(김주연 총괄, 시크릿에서도 미표시).
-//   RC: 기존 구현이 latestCheckIn(=customer 의 가장 최근 단일 내원) 하나에만 키잉.
-//       KOH 검사 후 환자가 재방문(레이저 치료 등)하면 '최근 내원'엔 KOH service 가 없어 토글 소멸.
-//       진단(diag2): KOH 보유 31내원 중 7건(23%)이 이 사유로 미노출.
-//       특히 6/15 KOH 검사 → 6/16 재방문 환자 2명(83ab4fe1·16434582)이 정확히 그 케이스.
-//   해결: checkInId(단일 내원) 대신 customerId 로, 그 환자의 non-cancelled 내원 전체에서
-//       KOH service 보유한 '가장 최근 check_in' 을 타겟으로 선정. 그 내원의 KOH service 만 묶어 동기화.
+// === T-20260616-foot-KOHTOGGLE-NOTRENDER (RC fix, 보존) ===
+//   KOH 보유 내원 타겟팅 = customer 의 non-cancelled 내원 전체에서 KOH service 보유 '가장 최근 check_in'.
+//   재방문(레이저 등)으로 최근 내원에 KOH 가 없어도 KOH 보유 내원을 추적해 상태 반영. RPC 가 동일 로직 SSOT.
 //
-// 스키마: koh_requested 는 ADDITIVE(DEFAULT false). 마이그 미적용 prod 도달 시 select 42703 → 폴백(미노출).
+// 노출 게이트: '체크인 내원 존재'(hasCheckIn). KOH service 유무가 아님(BUTTON-ALL-CH 핵심 변경점).
+// 상태(anyOn): KOH 보유 내원의 koh_requested. 이력 없으면 false(기본 OFF).
+// 스키마: koh_requested 는 ADDITIVE(DEFAULT false). 마이그 미적용 prod 도달 시 select 42703 → 폴백.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
@@ -82,6 +82,27 @@ function useKohServicesForCustomer(customerId: string | null | undefined) {
   });
 }
 
+// BUTTON-ALL-CH 노출 게이트 — customer 의 non-cancelled 내원 존재 여부(이력 무관 전원 노출).
+//   KOH service 유무와 독립. 2번차트 환자는 체크인이 있으므로 사실상 항상 true(피검사 동형 항상 표시).
+function useHasCheckIn(customerId: string | null | undefined) {
+  return useQuery<boolean>({
+    queryKey: ['koh_has_checkin', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      if (!customerId) return false;
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('id')
+        .eq('customer_id', customerId)
+        .neq('status', 'cancelled')
+        .limit(1);
+      if (error) throw error;
+      return (data?.length ?? 0) > 0;
+    },
+    staleTime: 30_000,
+  });
+}
+
 export default function KohRequestToggle({
   customerId,
 }: {
@@ -89,23 +110,24 @@ export default function KohRequestToggle({
 }) {
   const qc = useQueryClient();
   const { data: target, isLoading } = useKohServicesForCustomer(customerId);
+  const { data: hasCheckIn, isLoading: ciLoading } = useHasCheckIn(customerId);
   const svcs = target?.svcs ?? [];
 
+  // 상태: KOH 보유 내원의 koh_requested. 이력 없으면 false(기본 OFF).
   const anyOn = svcs.some((s) => s.koh_requested);
 
   const mutation = useMutation({
+    // BUTTON-ALL-CH: 단일 RPC 위임 — 이력 있으면 동기화, 없으면 ON 시 신규 생성. FE 가 분기 안 함(서버 SSOT).
     mutationFn: async (next: boolean) => {
-      // 같은 내원의 KOH service 전체에 동일 값 적용(부분 실패 시 throw).
-      for (const s of svcs) {
-        const { error } = await supabase.rpc('set_koh_requested', {
-          p_check_in_service_id: s.id,
-          p_value: next,
-        });
-        if (error) throw error;
-      }
+      const { error } = await supabase.rpc('request_koh_for_customer', {
+        p_customer_id: customerId,
+        p_value: next,
+      });
+      if (error) throw error;
     },
     onSuccess: (_d, next) => {
       qc.invalidateQueries({ queryKey: ['koh_toggle_target', customerId] });
+      qc.invalidateQueries({ queryKey: ['koh_has_checkin', customerId] });
       // 진료대시보드 균검사지 목록(전 월) 즉시 반영.
       qc.invalidateQueries({ queryKey: ['koh_report'] });
       toast.success(next ? 'KOH 균검사 신청(ON)' : 'KOH 균검사 신청 해제(OFF)');
@@ -115,8 +137,8 @@ export default function KohRequestToggle({
     },
   });
 
-  // KOH 검사 이력 없음(또는 로딩 중) → 미노출(현장: KOH 검사 받은 환자에게만 보임).
-  if (!customerId || isLoading || svcs.length === 0) return null;
+  // BUTTON-ALL-CH: 체크인 내원 있는 환자 전원 노출(이력 무관). 로딩/내원없음 → 미노출.
+  if (!customerId || isLoading || ciLoading || !hasCheckIn) return null;
 
   return (
     <div
