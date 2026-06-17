@@ -14,7 +14,7 @@ import { ko } from 'date-fns/locale';
 import { todaySeoulISODate, chartNoDisplay } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
-import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import {
   // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 처방확정 공통 가드 + 차트변경 audit.
@@ -23,12 +23,11 @@ import {
   summarizeRxForAudit,
   IN_CLINIC_GATE_CODE,
 } from '@/lib/rxMutationGuard';
-import { STATUS_KO, isInClinic } from '@/lib/status';
+import { isInClinic } from '@/lib/status';
 import { useChart } from '@/lib/chartContext';
 import { formatRxConfirmedSummary, normalizeRxItem } from '@/lib/rxTooltip';
-// T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: 치료실명(방이름) 표시 — DoctorCallDashboard와 동일한
-//   배정 슬롯 파생 SSOT 재사용. read-only(기존 *_room 컬럼 조회만), 스키마/비즈로직 무변경.
-import { getAssignedSlotName } from '@/lib/checkin-slot';
+// T-20260617-foot-DOCDASH-DOCLIST-5FIX B2-3: 진료완료목록 뷰어 re-skin으로 방 칼럼 제거 →
+//   getAssignedSlotName(치료실 파생) 미사용 → import 제거. *_room 컬럼 SELECT/스키마는 무변경.
 import type { CheckInStatus } from '@/lib/types';
 // T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY (AC-1): 임상경과 = DoctorCallDashboard
 //   showClinical 과 동일 SSOT(MedicalChartPanel embed variant='clinical'). 신규 조회경로/Drawer 신설 금지.
@@ -435,47 +434,10 @@ function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
 }
 
 // ---------------------------------------------------------------------------
-// 상태 셀 — T-20260610-foot-DOCDASH-STATUS-SPLIT (AC-5):
-//   진료완료(status_flag='pink')와 귀가(status='done')를 시각적으로 구분.
-//   · 진료완료 = emerald 배지 '진료완료'(원내 잔류, 처방 허용) — pink 우선(done 아님).
-//   · 귀가     = gray 배지 '귀가'(수납완료, 처방 차단).
-//   · 그 외     = 기존 STATUS_KO 텍스트(현행 유지).
-//   pink와 done(dark_gray)은 상호배타라 분기 충돌 없음. 진료완료가 귀가보다 우선 표기.
+// T-20260617-foot-DOCDASH-DOCLIST-5FIX B2-3 (문지은 대표원장, MSG-20260618-002622-dfwd 경량 re-skin):
+//   진료완료목록 뷰어가 진료알림판 진료완료 섹션을 미러 → '상태' 칼럼 제거. StatusCell 미사용 → 함수 삭제.
+//   (A2 '진료완료 행 상태 우정렬'은 본 뷰어의 상태칼럼 자체가 사라져 superseded — status_flag 데이터·완료판정 SSOT 무변경.)
 // ---------------------------------------------------------------------------
-function StatusCell({ status, statusFlag }: { status: CheckInStatus; statusFlag: string | null }) {
-  if (statusFlag === 'pink') {
-    // T-20260617-foot-DOCDASH-DOCLIST-5FIX A2 (문지은 대표원장): '진료완료' 행만 상태 칼럼 내용 우정렬.
-    //   grid 셀(상태 컬럼 3.75rem) 내 배지를 justify-self-end 로 우측 앵커. 나머지 상태(귀가/대기) 행·정렬 불변.
-    return (
-      <span
-        className="inline-flex items-center justify-self-end whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
-        data-testid="status-cell"
-        data-state="treatment-done"
-        title="진료완료 — 원내 잔류(처방 가능)"
-      >
-        진료완료
-      </span>
-    );
-  }
-  if (status === 'done') {
-    return (
-      <span
-        className="inline-flex items-center whitespace-nowrap rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600"
-        data-testid="status-cell"
-        data-state="discharged"
-        title="귀가 — 수납완료(처방은 차트에서 수정)"
-      >
-        귀가
-      </span>
-    );
-  }
-  return (
-    // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 톤 통일 — text-[13px] text-gray-600.
-    <span className="text-[13px] text-gray-600 truncate" data-testid="status-cell" data-state="in-clinic">
-      {STATUS_KO[status] ?? status}
-    </span>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // 환자 행 컴포넌트
@@ -616,34 +578,13 @@ function PatientRow({
       */}
       {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1.
           T-20260615 DASHCOL-REALIGN: 컬럼 순서만 재배치(폭값은 각 컬럼에 동반 이동, 너비 무변경). */}
-      <div className="grid grid-cols-[4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
-        {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number=1036) 표시 칼럼 제거.
-            차트번호 외 식별 숫자 비표시(reporter 요청). queue_number 타입/SELECT/정렬·RPC는 무손상 — 표시만 숨김. */}
+      {/* T-20260617-foot-DOCDASH-DOCLIST-5FIX B2-3/B2-4 (문지은 대표원장, MSG-20260618-002622-dfwd 경량 re-skin):
+          진료완료목록 뷰어 = 진료알림판 진료완료 섹션 미러 → 방·상태 칼럼 제거(B2-3) + '당일시술' 칼럼 추가(B2-4).
+          카드그리드 유지(table 전환·thead 신설·birth_date/clinicalPreview 배선 금지). 컬럼셋: 방문유형·이름·차트번호·당일시술·처방·예약메모·액션. */}
+      <div className="grid grid-cols-[3rem_5rem_4.5rem_7rem_5.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
+        {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 표시 칼럼 제거. queue_number 타입/SELECT/정렬·RPC 무손상. */}
 
-        {/* ① 치료실(방이름) — DASHCOL-REALIGN: 행 선두(폭 4.75rem 보존). T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
-            getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
-        {(() => {
-          const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
-          // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 방 셀 톤 통일 —
-          //   teal 배지 → 단색 회색 plain text(text-[13px] gray-600 + MapPin gray-400), 빈값 gray-300. 동일 SSOT(getAssignedSlotName) 유지.
-          return slotName ? (
-            <span
-              className="inline-flex min-w-0 items-center gap-0.5 text-[13px] font-medium text-gray-600"
-              title={slotName}
-              data-testid="patient-room"
-            >
-              <MapPin className="h-2.5 w-2.5 shrink-0 text-gray-400" />
-              <span className="truncate">{slotName}</span>
-            </span>
-          ) : (
-            <span className="text-[13px] text-gray-300 text-left" data-testid="patient-room">—</span>
-          );
-        })()}
-
-        {/* ② 상태 — DASHCOL-REALIGN: 방 다음(폭 3.75rem 보존). T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
-        <StatusCell status={row.status} statusFlag={row.status_flag} />
-
-        {/* ③ 방문유형 배지(초진/재진) — DASHCOL-REALIGN: 상태와 이름 사이 독립 컬럼(이름 바로 왼쪽, 폭 3rem 보존). */}
+        {/* ① 방문유형 배지(초진/재진) — B2-3 후 행 선두(폭 3rem 보존, 이름 바로 왼쪽). */}
         <div className="flex justify-start">
           <VisitTypeBadge type={row.visit_type} />
         </div>
@@ -669,7 +610,24 @@ function PatientRow({
           {chartNoDisplay(row.chart_number)}
         </span>
 
-        {/* ⑥ 처방 상태 배지 — 차트번호 오른쪽(폭 5.5rem 보존) + hover 처방내용 툴팁. */}
+        {/* B2-4 (문지은 대표원장): '오늘시술'→'당일시술' 칼럼 — 진료알림판 진료완료 섹션 미러(차트번호 오른쪽, 처방 왼쪽).
+            값 = treatmentSummary(SSOT: treatment_category·contents·kind 파생, read-only). 카드그리드라 thead 없음 → 셀 내 미니 라벨로 칼럼명 노출. */}
+        <div className="flex min-w-0 flex-col leading-tight" data-testid="treatment-today">
+          <span className="text-[10px] text-gray-400">당일시술</span>
+          {(() => {
+            const t = treatmentSummary(row);
+            return (
+              <span
+                className={`truncate text-[13px] font-medium ${t ? 'text-emerald-700' : 'text-gray-300'}`}
+                title={t ?? undefined}
+              >
+                {t ?? '—'}
+              </span>
+            );
+          })()}
+        </div>
+
+        {/* ⑥ 처방 상태 배지 — 당일시술 오른쪽(폭 5.5rem 보존) + hover 처방내용 툴팁. */}
         <div className="flex justify-start">
           <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
         </div>
@@ -726,7 +684,8 @@ function PatientRow({
       {/* 펼쳐진 영역 — 빠른처방 버튼
           T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 아래에 임상경과+처방내역 블록이
           이어지므로 rounded-b-lg 는 최하단 블록으로 이관(여기선 제거). 게이트/버튼 로직 불변(AC-3). */}
-      {expanded && !isConfirmed && (
+      {/* B2-5: 진료완료(isVisitDone) 행은 처방 read-only preview(아래)로 대체 → 편집폼(QuickRxBar) 미노출. */}
+      {expanded && !isConfirmed && !isVisitDone && (
         <div className="border-t px-3 py-2.5 bg-white">
           <QuickRxBar
             doctorMode={doctorMode}
@@ -755,7 +714,8 @@ function PatientRow({
 
       {/* 확정된 경우 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4:
           "처방완료" + 약물리스트(검은글씨, 다중약 전체). 재클릭 → 취소 확인 팝업(별도 취소버튼 폐지). */}
-      {expanded && isConfirmed && (
+      {/* B2-5: 진료완료(isVisitDone) 행은 처방 read-only preview(아래)로 대체 → 확정/취소 버튼(RxConfirmedSummary) 미노출. */}
+      {expanded && isConfirmed && !isVisitDone && (
         <div className="border-t px-3 py-2.5 bg-green-50/60">
           <div className="flex items-center gap-1.5">
             <RxConfirmedSummary
@@ -784,6 +744,29 @@ function PatientRow({
         </div>
       )}
 
+      {/* T-20260617-foot-DOCDASH-DOCLIST-5FIX B2-5 (문지은 대표원장): 진료완료(isVisitDone) 행 처방 = read-only preview.
+          DONE-CLINICAL-READONLY(800be4d9) 게이트 재사용 — 편집폼(QuickRxBar)·확정/취소 버튼 미노출, 내용 없으면 '내용 없음'.
+          처방 데이터/완료판정 SSOT(completed_at||pink) 무변경, 표시만 read-only. */}
+      {expanded && isVisitDone && (
+        <div className="border-t px-3 py-2.5 bg-white" data-testid="done-rx-readonly">
+          <div className="flex items-start gap-1.5">
+            <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">처방</span>
+            {(() => {
+              const rxLine = prescriptionOneLine(row.prescription_items);
+              const hasRx = rxLine !== '처방없음';
+              return (
+                <span
+                  className={`text-[11px] ${hasRx ? 'text-foreground' : 'text-muted-foreground/60'}`}
+                  title={hasRx ? rxLine : undefined}
+                >
+                  {hasRx ? rxLine : '내용 없음'}
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* 확장 상세 — 임상경과 + 처방내역 read 뷰.
           T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY (AC-1/2, 문지은 6/10):
           - 351dd72/497672b 이후 비잔류(빠른처방 불가) 행은 QuickRxBar가 빈 렌더 → 그 빈 자리를
@@ -797,7 +780,8 @@ function PatientRow({
           className="border-t px-3 py-2.5 bg-white rounded-b-lg space-y-2"
           data-testid="patient-expand-detail"
         >
-          {!isConfirmed && (
+          {/* B2-5: 진료완료 행은 위 done-rx-readonly preview가 처방을 표시 → 중복 방지(isVisitDone 제외). */}
+          {!isConfirmed && !isVisitDone && (
             <div className="flex items-start gap-1.5" data-testid="expand-rx-history">
               <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">처방내역</span>
               {(() => {
