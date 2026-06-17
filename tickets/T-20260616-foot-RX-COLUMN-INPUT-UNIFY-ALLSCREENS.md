@@ -10,7 +10,7 @@ db_changed: false
 data_architect_consult: 불요 — presentation(라벨) + input validation(onChange 필터)만. 신규 컬럼·테이블·enum·필드매핑 변경 0
 risk_level: GO (1/5 — presentation + input validation only, DB/CRUD/토큰정의 무변경)
 deploy_ready: true
-commit_sha: e866008f
+commit_sha: c68f6112
 ---
 
 ## 요청 (NEW-TASK, planner P1 — MSG-20260616-170131-q3ob)
