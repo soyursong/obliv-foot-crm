@@ -515,7 +515,11 @@ export function ReservationDetailPopup({
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => { setManualNew(true); setSearchValue(''); }}
+                  onClick={() => {
+                    // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-f: 신규 고객 등록 = 신규 예약 = 무조건 초진.
+                    //   초/재진 선택 UI 불필요 → visit_type을 'new'(초진)로 고정. 토글은 manualNew 시 미노출.
+                    setManualNew(true); setSearchValue(''); setNewResvVisitType('new');
+                  }}
                   data-testid="btn-newmode-manual-register"
                 >
                   + 시스템에 없는 신규 고객 직접 등록
@@ -584,7 +588,8 @@ export function ReservationDetailPopup({
 
                 {/* 신규예약 만들기 폼 (메인 렌더의 new-mode 폼과 동일 입력·핸들러 재사용) */}
                 <div className="rounded-xl border border-teal-300 bg-teal-50/50 px-3.5 py-3 shadow-sm" data-testid="popup-newmode-form">
-                  <SectionHeader accent="teal">신규예약 만들기 — {loadedMatch ? loadedMatch.name : (newCustName.trim() || '신규 고객')}</SectionHeader>
+                  {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-e: 신규 고객 등록 항목명 "신규 예약"(구 "신규 예약 만들기 - 신규고객"). 기존 고객(loadedMatch)은 대상자명 유지. */}
+                  <SectionHeader accent="teal">{loadedMatch ? `신규예약 만들기 — ${loadedMatch.name}` : '신규 예약'}</SectionHeader>
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2 text-xs">
                       <span className="w-12 shrink-0 text-muted-foreground">날짜</span>
@@ -608,27 +613,31 @@ export function ReservationDetailPopup({
                         ))}
                       </select>
                     </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="w-12 shrink-0 text-muted-foreground">유형</span>
-                      <div className="grid flex-1 grid-cols-2 gap-2">
-                        {(['new', 'returning'] as const).map((v) => (
-                          <button
-                            key={v}
-                            type="button"
-                            onClick={() => setNewResvVisitType(v)}
-                            className={cn(
-                              'h-9 rounded-md border text-sm font-medium',
-                              newResvVisitType === v
-                                ? 'border-teal-600 bg-teal-50 text-teal-700'
-                                : 'border-input hover:bg-muted',
-                            )}
-                            data-testid={`newmode-visit-${v}-entry`}
-                          >
-                            {VISIT_TYPE_KO[v]}
-                          </button>
-                        ))}
+                    {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-f: 신규 고객 등록(manualNew)은 무조건 초진 →
+                        초/재진 토글 미노출(visit_type='new' 자동). 기존 고객(loadedMatch)은 재진 가능 → 토글 유지. */}
+                    {loadedMatch && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-12 shrink-0 text-muted-foreground">유형</span>
+                        <div className="grid flex-1 grid-cols-2 gap-2">
+                          {(['new', 'returning'] as const).map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => setNewResvVisitType(v)}
+                              className={cn(
+                                'h-9 rounded-md border text-sm font-medium',
+                                newResvVisitType === v
+                                  ? 'border-teal-600 bg-teal-50 text-teal-700'
+                                  : 'border-input hover:bg-muted',
+                              )}
+                              data-testid={`newmode-visit-${v}-entry`}
+                            >
+                              {VISIT_TYPE_KO[v]}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <Button
                       size="sm"
                       className="w-full"
@@ -641,7 +650,8 @@ export function ReservationDetailPopup({
                       onClick={submitNewReservation}
                       data-testid="btn-newmode-create-entry"
                     >
-                      {creatingResv ? '생성 중…' : `${loadedMatch ? loadedMatch.name : (newCustName.trim() || '신규 고객')}님 신규예약 생성`}
+                      {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-e: 신규 고객 버튼명 "신규 예약 생성"(구 "신규 고객님 신규예약 생성"). 기존 고객은 대상자명 유지. */}
+                      {creatingResv ? '생성 중…' : loadedMatch ? `${loadedMatch.name}님 신규예약 생성` : '신규 예약 생성'}
                     </Button>
                   </div>
                 </div>
@@ -945,7 +955,8 @@ export function ReservationDetailPopup({
       phone: loadedMatch ? (loadedMatch.phone ?? null) : manualPhone,
       date: format(pickedDate, 'yyyy-MM-dd'),
       time: newResvTime,
-      visit_type: newResvVisitType,
+      // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-f: 신규 고객 직접 등록(manualNew)은 무조건 초진(new) 고정 — race-safe guard.
+      visit_type: (!loadedMatch && manualNew) ? 'new' : newResvVisitType,
     });
     setCreatingResv(false);
     if (!res.ok) {
