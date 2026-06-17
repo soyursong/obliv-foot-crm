@@ -184,21 +184,34 @@ export function listupSignature(ci: CheckIn): string {
  *     2순위로 derivedCallEntryAt(명단 active 전환 to_status∈healer_waiting/purple/yellow 최신 transitioned_at)을 쓴다.
  *     ⚠ known-limitation: HL자동노랑(Dashboard.tsx 벌크 yellow-update가 SSOT 우회)은 transition row 자체가 없어
  *       2순위로도 복구 불가 → checked_in_at 잔존(소수 엣지, source-side 교정은 옵션 B 별도티켓 — 본 WS 범위 외).
- *     폴백 사다리: ① status_flag_history 최근 purple/yellow changed_at → ② derivedCallEntryAt(status_transitions)
- *       → ③ checked_in_at(어떤 전환기록도 없는 안정값). NaN/누락 정렬 금지(항상 유효 ISO 문자열 반환).
+ *     폴백 사다리: ① status_flag_history 현재 active 에피소드 *시작*(연속 purple/yellow 구간 최이른 changed_at)
+ *       → ② derivedCallEntryAt(status_transitions 최초 active 전환) → ③ checked_in_at(전환기록 없는 안정값).
+ *       NaN/누락 정렬 금지(항상 유효 ISO 문자열 반환).
+ *     ⚠ REOPEN 정정: ①을 'latest'→'에피소드 시작(earliest)'으로 변경 — 재플래그(purple 재터치)로 진입시각이
+ *       밀려 먼저 진입한 환자가 아래로 가라앉던 회귀 보정(현장 김주연 총괄). asc 방향·tier1/2 불변.
  */
 export function callEntryTime(
   ci: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt'>,
 ): string {
   const hist = ci.status_flag_history;
   if (Array.isArray(hist) && hist.length > 0) {
-    // ① 뒤에서부터 가장 최근 active(purple/yellow) 진입 엔트리를 찾음 = 최신 진료콜 진입 모먼트.
+    // ① 현재 진료콜 active 에피소드의 *시작* 시각 = 끝에서부터 연속된 active(purple/yellow) 구간의 가장 이른 changed_at.
+    //   T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK REOPEN 회귀정정(현장 김주연 총괄 3차 재보고):
+    //   기존엔 '가장 최근(latest) purple/yellow changed_at'을 진입시각으로 썼는데, 운영 중 같은 에피소드 내
+    //   purple 재터치(재플래그)가 흔해(라이브 실측: 한 환자 status_flag_history 11건) 진입시각이 '지금'으로 밀려
+    //   *먼저 진입한 환자가 asc 정렬에서 아래로 가라앉고 늦게 재터치된 환자가 상단으로 뜨는* 결함이었다.
+    //   → 끝에서부터 연속 active 구간(현재 에피소드)의 최이른 changed_at = '먼저 진입한 사람이 1순위' 의도 보장.
+    //   비-active(white/pink/dark_gray 등) 플래그를 만나면 에피소드 경계 → 중단(이전 해소 에피소드는 무시).
+    let episodeStart: string | null = null;
     for (let i = hist.length - 1; i >= 0; i--) {
       const entry = hist[i];
       if (entry && (entry.flag === 'purple' || entry.flag === 'yellow') && entry.changed_at) {
-        return entry.changed_at;
+        episodeStart = entry.changed_at; // 더 이른 active 엔트리로 계속 덮어써 구간 최이른값에 수렴.
+      } else {
+        break; // 비-active 경계 — 현재 에피소드 종료.
       }
     }
+    if (episodeStart) return episodeStart;
   }
   // ② status_transitions 명단 active 전환 최신 transitioned_at (read-path 주입, healer_waiting 등 flag history 부재 복구).
   if (ci.derivedCallEntryAt) {

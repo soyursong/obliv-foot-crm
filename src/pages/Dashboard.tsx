@@ -3887,17 +3887,18 @@ export default function Dashboard() {
     // check_in_id별 가장 최근 전이 = 현재 섹션 진입 시각
     const map = new Map<string, string>();
     // T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK: 동일 fetch에서 진료콜 진입순 폴백 2순위 맵도 파생.
-    //   명단 active 전환(to_status∈healer_waiting/purple/yellow)의 *최신* transitioned_at만 골라 담는다(desc 정렬 → 첫 매치).
+    //   명단 active 전환(to_status∈healer_waiting/purple/yellow)의 *최초* transitioned_at을 담는다.
+    //   ⚠ REOPEN 회귀정정: 기존엔 '최신' transitioned_at(desc 첫 매치)을 썼으나, 재진입 시 진입시각이 밀려
+    //     먼저 진입한 환자가 아래로 가라앉는 결함과 동일 — DoctorCallListBar tier① '에피소드 시작' 의미와 정합되도록
+    //     '먼저 진입한 사람이 1순위' = 최초 active 전환시각으로 통일. data가 desc 정렬이므로 무조건 덮어쓰면 최종=최이른값.
     //   healer_waiting처럼 status 전환만 되고 status_flag_history가 비는 케이스의 진입(activation)시각 복구용.
     //   (purple/yellow는 flag라 transition row가 통상 없으나, 향후 호환 위해 set에 포함 — 없으면 자연 미반영.)
+    //   ※ stageStartMap(map, 임의 to_status 최신·위치라벨용)은 회귀 금지라 '최신' 유지 — callEntry만 '최초'로 분리.
     const callEntry = new Map<string, string>();
     for (const t of (data ?? []) as { check_in_id: string; to_status: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
-      if (
-        !callEntry.has(t.check_in_id) &&
-        (t.to_status === 'healer_waiting' || t.to_status === 'purple' || t.to_status === 'yellow')
-      ) {
-        callEntry.set(t.check_in_id, t.transitioned_at);
+      if (t.to_status === 'healer_waiting' || t.to_status === 'purple' || t.to_status === 'yellow') {
+        callEntry.set(t.check_in_id, t.transitioned_at); // desc 순회 + 무조건 덮어쓰기 → 최종값=최초(가장 이른) 진입.
       }
     }
     setStageStartMap(map);
