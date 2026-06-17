@@ -16,7 +16,7 @@ risk_level: GO (2/5 — 부모 zoom state/applyZoom 재사용, 두 번째 입력
 deploy_ready: true
 deploy-ready-by: agent-fdd-dev-foot
 deploy-ready-at: 2026-06-18
-commit_sha: TBD
+commit_sha: afe74716
 qa_result: self-pass-pending-supervisor
 field_soak_gate: 실 Galaxy Tab 멀티터치 + 김주연 총괄 현장 confirm (최종 게이트)
 ---
