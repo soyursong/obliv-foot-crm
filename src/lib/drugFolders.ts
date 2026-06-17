@@ -36,7 +36,14 @@ export interface FolderDrug {
   classification: string | null;
   code_source: string; // 'official' | 'custom'
   manufacturer: string | null; // DRUGINFO-MANUFACTURER: 제약사(제조사). custom 코드는 NULL 가능 → 표기 생략.
+  code_type: string; // 'national' 류 정상 / '이관약'(묶음처방 이관 provenance 마커, 검증 대상) / '자체사용코드' 등
 }
+
+/** 검증 대상 마커 — 묶음처방→처방세트 이관 시 부여(20260616120000_bundlerx_drugname_migrate).
+ *  read-only: 전체보기 행에서 '이관' 배지 + 검증 버튼 UI surface 노출 게이트로만 사용.
+ *  ※ 검증(verify) semantics/DML(code_type 승격 UPDATE)은 본 티켓(MIGCLEAR) 범위 아님 —
+ *    T-20260617-foot-RX-VALID-TAG-REMOVE 정본 경로로 단일 구현(중복 빌드 0, code_type 임의 UPDATE 금지). */
+export const MIGRATED_CODE_TYPE = '이관약';
 
 // ---------------------------------------------------------------------------
 // Tree 빌더 — flat 폴더 목록 → 중첩 트리 (다단계, sort_order→가나다)
@@ -89,7 +96,7 @@ export function useFolderDrugs() {
       const { data, error } = await supabase
         .from('prescription_code_folders')
         .select(
-          'prescription_code_id, folder_id, sort_order, prescription_codes(name_ko,claim_code,classification,code_source,manufacturer)',
+          'prescription_code_id, folder_id, sort_order, prescription_codes(name_ko,claim_code,classification,code_source,manufacturer,code_type)',
         )
         .order('sort_order', { ascending: true });
       if (error) throw error;
@@ -104,6 +111,7 @@ export function useFolderDrugs() {
           classification: string | null;
           code_source: string;
           manufacturer: string | null;
+          code_type: string | null;
         } | null;
       };
       return ((data ?? []) as unknown as Row[])
@@ -117,6 +125,7 @@ export function useFolderDrugs() {
           classification: r.prescription_codes!.classification,
           code_source: r.prescription_codes!.code_source,
           manufacturer: r.prescription_codes!.manufacturer ?? null,
+          code_type: r.prescription_codes!.code_type ?? '',
         }));
     },
     staleTime: 30_000,
@@ -210,3 +219,11 @@ export function useUnassignDrug() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['prescription_code_folders'] }),
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 이관약 검증(verify) DML 은 본 티켓(MIGCLEAR) 범위 아님.
+//   CORRECTION(MSG-…RXSET-VIEWALL-TABLE-MIGCLEAR): "검증 action 의 의미·DML 은 MIGCLEAR 에서 구현하지 말 것.
+//   MIGCLEAR 에서 code_type 임의 UPDATE 금지." → 검증 승격 hook·승격 마커 상수를 본 lib 에서 제거.
+//   검증 semantics·DML·정합(가설A 자체배지 vs 가설B 별도 검증상태 그라운딩, risk#4 대량 UPDATE 게이트)은
+//   T-20260617-foot-RX-VALID-TAG-REMOVE 정본 경로 Step 1(READ-ONLY) 이후 단일 구현.
+// ─────────────────────────────────────────────────────────────────────────────
