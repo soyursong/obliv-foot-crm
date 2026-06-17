@@ -99,6 +99,8 @@ interface PrescriptionSet {
   tag_label?: string | null;
   tag_color?: string | null;
   icon?: string | null;
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL: 태그칩 이름 숨김(true=아이콘+색상만). 표시 플래그(name/tag_label 보존).
+  hide_name?: boolean | null;
 }
 
 interface SetForm {
@@ -111,6 +113,8 @@ interface SetForm {
   tag_label: string;
   tag_color: string;
   icon: string;
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL: 이름 숨기기 토글.
+  hide_name: boolean;
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -131,6 +135,7 @@ const EMPTY_FORM: SetForm = {
   tag_label: '',
   tag_color: DEFAULT_RX_TAG_COLOR,
   icon: '',
+  hide_name: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -142,7 +147,7 @@ function usePrescriptionSets() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('prescription_sets')
-        .select('id, name, items, is_active, sort_order, folder, tag_label, tag_color, icon')
+        .select('id, name, items, is_active, sort_order, folder, tag_label, tag_color, icon, hide_name')
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PrescriptionSet[];
@@ -160,11 +165,21 @@ function useUpsertSet() {
         is_active: form.is_active,
         sort_order: form.sort_order,
         folder: form.folder.trim() === '' ? null : form.folder.trim(), // AC-1
-        // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 라벨 비면 색/태그 전부 null(태그없음).
-        //   tag_color 는 라벨이 있을 때만 의미 — 라벨 없으면 null 정규화(고아 색 방지).
-        tag_label: form.tag_label.trim() === '' ? null : form.tag_label.trim(),
-        tag_color: form.tag_label.trim() === '' ? null : (form.tag_color || DEFAULT_RX_TAG_COLOR),
-        icon: form.icon.trim() === '' ? null : form.icon.trim(),
+        // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER → T-20260617 OVERHAUL: 태그 식별자(라벨 또는 아이콘) 둘 다 없으면 색/태그 null.
+        //   ★ 이름숨김(hide_name)+아이콘만 인 묶음도 '태그 있음' → tag_color 보존(useUpdateSetTagMeta 의 hasTag 와 동형).
+        //     (구버전은 라벨만으로 판단해 icon-only hide_name 태그의 색을 null 화 → 진료화면 칩 미렌더 회귀가 있었음.)
+        ...(() => {
+          const label = form.tag_label.trim();
+          const iconV = form.icon.trim();
+          const hasTag = label !== '' || iconV !== '';
+          return {
+            tag_label: label === '' ? null : label,
+            tag_color: hasTag ? (form.tag_color || DEFAULT_RX_TAG_COLOR) : null,
+            icon: iconV === '' ? null : iconV,
+          };
+        })(),
+        // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL: 이름 숨김 플래그(아이콘만 있을 때도 의미 있음).
+        hide_name: !!form.hide_name,
         updated_at: new Date().toISOString(),
       };
       if (id) {
@@ -190,16 +205,20 @@ interface TagMeta {
   tag_label: string;
   tag_color: string;
   icon: string;
+  hide_name: boolean; // T-20260617 OVERHAUL: 이름 숨김 토글.
 }
 function useUpdateSetTagMeta() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, meta }: { id: number; meta: TagMeta }) => {
       const label = meta.tag_label.trim();
+      // 이름숨김+아이콘만(라벨 없음)도 유효한 태그 → 라벨 비어도 색은 유지(아이콘 식별).
+      const hasTag = label !== '' || meta.icon.trim() !== '';
       const payload = {
         tag_label: label === '' ? null : label,
-        tag_color: label === '' ? null : (meta.tag_color || DEFAULT_RX_TAG_COLOR),
+        tag_color: hasTag ? (meta.tag_color || DEFAULT_RX_TAG_COLOR) : null,
         icon: meta.icon.trim() === '' ? null : meta.icon.trim(),
+        hide_name: !!meta.hide_name,
         updated_at: new Date().toISOString(),
       };
       const { error } = await supabase.from('prescription_sets').update(payload).eq('id', id);
@@ -559,6 +578,135 @@ function RxSetKebabMenu({
 }
 
 // ---------------------------------------------------------------------------
+// TagEditorFields — 태그 편집 공통 필드(이름/이름숨김/10색/아이콘/미리보기).
+//   T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part C. 생성 팝업·태그편집 다이얼로그 양쪽 재사용(분기 방지).
+//   testid는 idPrefix로 분기(기존 TAG-QUICKTRIGGER 스펙 호환 위해 편집 다이얼로그는 'rx-set-tag' 유지).
+// ---------------------------------------------------------------------------
+interface TagFieldsValue {
+  tag_label: string;
+  tag_color: string;
+  icon: string;
+  hide_name: boolean;
+}
+function TagEditorFields({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: TagFieldsValue;
+  onChange: (patch: Partial<TagFieldsValue>) => void;
+  idPrefix: string;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* 라벨 + 이름 숨기기 */}
+      <div>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">묶음처방 이름</Label>
+          {/* '이름 숨기기 <' 옵션 — ON: 태그 안에 아이콘(이모지)+색상만, 이름 생략 */}
+          <label className="flex items-center gap-1.5 cursor-pointer select-none" data-testid={`${idPrefix}-hidename-wrap`}>
+            <span className="text-[11px] text-muted-foreground">이름 숨기기</span>
+            <Switch
+              checked={value.hide_name}
+              onCheckedChange={(v) => onChange({ hide_name: v })}
+              data-testid={`${idPrefix}-hidename-toggle`}
+            />
+          </label>
+        </div>
+        <Input
+          value={value.tag_label}
+          onChange={(e) => onChange({ tag_label: e.target.value })}
+          placeholder="예) 무좀"
+          className="mt-1"
+          maxLength={12}
+          data-testid={`${idPrefix}-label-input`}
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          {value.hide_name
+            ? '이름을 숨기면 태그에 아이콘+색상만 표시돼요(아이콘을 골라주세요).'
+            : '비우면 태그가 사라져요.'}
+        </p>
+      </div>
+
+      {/* 색상 팔레트 (rxTagPalette SSOT — 10색 어두운톤) */}
+      <div>
+        <Label className="text-xs">색상</Label>
+        <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid={`${idPrefix}-color-palette`}>
+          {RX_TAG_COLORS.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              onClick={() => onChange({ tag_color: c.value })}
+              title={c.label}
+              aria-label={`색상 ${c.label}`}
+              aria-pressed={value.tag_color === c.value}
+              data-testid={`${idPrefix}-color-${c.value}`}
+              className={`h-7 w-7 rounded-full ${c.dot} transition ${
+                value.tag_color === c.value
+                  ? 'ring-2 ring-offset-2 ring-foreground'
+                  : 'opacity-70 hover:opacity-100'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 아이콘 (quick_rx_buttons 와 동일 vocab — DRUG_ICON_OPTIONS). 안 고를 수도 있음. 고르면 태그 왼쪽 배치. */}
+      <div>
+        <Label className="text-xs">아이콘 (선택)</Label>
+        <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid={`${idPrefix}-icon-palette`}>
+          <button
+            type="button"
+            onClick={() => onChange({ icon: '' })}
+            aria-pressed={value.icon === ''}
+            title="아이콘 없음"
+            data-testid={`${idPrefix}-icon-none`}
+            className={`flex h-8 w-8 items-center justify-center rounded-md border text-[10px] text-muted-foreground transition ${
+              value.icon === '' ? 'border-teal-500 bg-teal-50' : 'hover:bg-accent'
+            }`}
+          >
+            없음
+          </button>
+          {DRUG_ICON_OPTIONS.map(({ value: iv, label }) => (
+            <button
+              key={iv}
+              type="button"
+              onClick={() => onChange({ icon: iv })}
+              aria-pressed={value.icon === iv}
+              title={label}
+              aria-label={`아이콘 ${label}`}
+              data-testid={`${idPrefix}-icon-${iv}`}
+              className={`flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                value.icon === iv ? 'border-teal-500 bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              <IconRenderer icon={iv} className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 미리보기 칩 — 이름숨김 반영(아이콘+색만) */}
+      {(value.tag_label.trim() || (value.hide_name && value.icon)) && (
+        <div>
+          <Label className="text-xs">미리보기</Label>
+          <div className="mt-1.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tagChipClass(value.tag_color)}`}
+              data-testid={`${idPrefix}-preview-chip`}
+              data-hide-name={value.hide_name ? 'true' : 'false'}
+            >
+              {value.icon && <IconRenderer icon={value.icon} className="h-3 w-3" />}
+              {!value.hide_name && value.tag_label.trim()}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function PrescriptionSetsTab() {
@@ -588,9 +736,9 @@ export default function PrescriptionSetsTab() {
   const [form, setForm] = useState<SetForm>(EMPTY_FORM);
   // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 확인 다이얼로그 대상(네이티브 confirm 대체).
   const [deleteTarget, setDeleteTarget] = useState<PrescriptionSet | null>(null);
-  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 편집 대상 + 경량 폼(라벨/색/아이콘 3필드만).
+  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 편집 대상 + 경량 폼(라벨/색/아이콘 + 이름숨김).
   const [tagTarget, setTagTarget] = useState<PrescriptionSet | null>(null);
-  const [tagForm, setTagForm] = useState<TagMeta>({ tag_label: '', tag_color: DEFAULT_RX_TAG_COLOR, icon: '' });
+  const [tagForm, setTagForm] = useState<TagMeta>({ tag_label: '', tag_color: DEFAULT_RX_TAG_COLOR, icon: '', hide_name: false });
 
   function openEditTag(s: PrescriptionSet) {
     setTagTarget(s);
@@ -598,12 +746,114 @@ export default function PrescriptionSetsTab() {
       tag_label: s.tag_label ?? '',
       tag_color: s.tag_color ?? DEFAULT_RX_TAG_COLOR,
       icon: s.icon ?? '',
+      hide_name: !!s.hide_name,
     });
   }
   async function handleSaveTag() {
     if (!tagTarget) return;
+    // 이름숨김 ON 인데 라벨·아이콘 둘 다 없으면 식별 불가 → 검증(시나리오4-2와 동형).
+    if (tagForm.hide_name && tagForm.tag_label.trim() === '' && tagForm.icon.trim() === '') {
+      return toast.error('이름을 숨기려면 아이콘을 골라주세요.');
+    }
     await updateTagMeta.mutateAsync({ id: tagTarget.id, meta: tagForm });
     setTagTarget(null);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL — 신규 생성 동선(좌측 약 테이블 → 생성 팝업)
+  //   Part B: 좌측 단 = services 처방약 테이블뷰(체크박스+검색).  Part C/D: 생성 팝업(태그편집+선택약 1·3·2).
+  //   기존 '처방세트 추가'(ItemRow) 동선은 회귀호환 위해 보존 — 본 동선은 ADDITIVE 새 경로.
+  // ───────────────────────────────────────────────────────────────────────────
+  const [drugSearch, setDrugSearch] = useState('');
+  // 체크된 약: services.id → {id,name,service_code} (선택 순서 보존 위해 배열).
+  const [checkedDrugs, setCheckedDrugs] = useState<{ id: string; name: string; service_code: string | null }[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<SetForm>(EMPTY_FORM);
+
+  // Part B 좌측 테이블 약 출처 = services 처방약(빌더 현행 출처, gate#1 ⓑ 확정). 전체 1회 로드 후 클라 실시간 필터.
+  const { data: allRxDrugs = [], isLoading: drugsLoading } = useQuery({
+    queryKey: ['service_rx_drugs', 'all'],
+    queryFn: () => searchServiceRxDrugs(''),
+    staleTime: 60_000,
+  });
+  const filteredDrugs = (() => {
+    const q = drugSearch.trim().toLowerCase();
+    if (!q) return allRxDrugs;
+    return allRxDrugs.filter(
+      (d) => d.name.toLowerCase().includes(q) || (d.service_code ?? '').toLowerCase().includes(q),
+    );
+  })();
+  const checkedIds = new Set(checkedDrugs.map((d) => d.id));
+  const allFilteredChecked = filteredDrugs.length > 0 && filteredDrugs.every((d) => checkedIds.has(d.id));
+
+  function toggleDrug(d: { id: string; name: string; service_code: string | null }) {
+    setCheckedDrugs((prev) =>
+      prev.some((p) => p.id === d.id) ? prev.filter((p) => p.id !== d.id) : [...prev, d],
+    );
+  }
+  function toggleAllFiltered() {
+    setCheckedDrugs((prev) => {
+      if (allFilteredChecked) {
+        const fset = new Set(filteredDrugs.map((d) => d.id));
+        return prev.filter((p) => !fset.has(p.id));
+      }
+      const have = new Set(prev.map((p) => p.id));
+      return [...prev, ...filteredDrugs.filter((d) => !have.has(d.id))];
+    });
+  }
+
+  // [묶음처방 생성] → 체크약을 1·3·2 입력 가능한 items 로 변환해 생성 팝업 오픈.
+  function openCreateFromChecked() {
+    if (checkedDrugs.length === 0) return;
+    const items: PrescriptionItem[] = checkedDrugs.map((d) => ({
+      ...EMPTY_ITEM,
+      name: d.name,
+      // services 처방약 = prescription_codes FK 미보유 → null(자유텍스트 동일 취급, DRUGSOURCE-SVCRX 정합).
+      prescription_code_id: null,
+      classification: null,
+    }));
+    setCreateForm({ ...EMPTY_FORM, items });
+    setCreateOpen(true);
+  }
+
+  function handleCreateItemChange(idx: number, field: 'dosage' | 'count' | 'days', val: string | number | null) {
+    setCreateForm((f) => {
+      const items = [...f.items];
+      items[idx] = { ...items[idx], [field]: val };
+      return { ...f, items };
+    });
+  }
+  function moveCreateItem(idx: number, dir: -1 | 1) {
+    setCreateForm((f) => {
+      const items = [...f.items];
+      const j = idx + dir;
+      if (j < 0 || j >= items.length) return f;
+      [items[idx], items[j]] = [items[j], items[idx]];
+      return { ...f, items };
+    });
+  }
+  function removeCreateItem(idx: number) {
+    setCreateForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+  }
+
+  async function handleCreateSave() {
+    const label = createForm.tag_label.trim();
+    // 시나리오4-2: 이름 미입력 + 이름숨기기 OFF → 이름 필수. 이름숨김 ON 이면 아이콘 필수(식별).
+    if (label === '' && !createForm.hide_name) {
+      return toast.error('묶음처방 이름을 입력해주세요.');
+    }
+    if (label === '' && createForm.hide_name && createForm.icon.trim() === '') {
+      return toast.error('이름을 숨기려면 아이콘을 골라주세요.');
+    }
+    if (createForm.items.length === 0) {
+      return toast.error('약을 1개 이상 선택해주세요.');
+    }
+    // 세트 name(NOT NULL) = 라벨 우선, 없으면 첫 약 이름 폴백.
+    const setName = label !== '' ? label : (createForm.items[0]?.name ?? '묶음처방');
+    await upsert.mutateAsync({ form: { ...createForm, name: setName } });
+    setCreateOpen(false);
+    setCheckedDrugs([]);
+    setDrugSearch('');
   }
 
   function openAdd() {
@@ -756,6 +1006,104 @@ export default function PrescriptionSetsTab() {
         개별 약품을 폴더로 분류하려면 <span className="font-medium">처방세트</span> 탭을 이용하세요.
       </div>
 
+      {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL: 2-pane — 좌측 약 테이블(생성 소스) / 우측 묶음처방 목록 */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(300px,360px)_1fr] items-start">
+
+        {/* ── Part B: 좌측 단 = 처방약 테이블뷰(체크박스+검색) ── */}
+        {canEdit && (
+          <div className="rounded-lg border bg-card p-3 space-y-2.5" data-testid="bundlerx-drug-panel">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">처방약 선택</span>
+              <span className="text-[11px] text-muted-foreground" data-testid="bundlerx-checked-count">
+                선택 {checkedDrugs.length}개
+              </span>
+            </div>
+            {/* 검색 */}
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={drugSearch}
+                onChange={(e) => setDrugSearch(e.target.value)}
+                placeholder="약 이름·코드 검색"
+                className="h-8 text-xs pl-7"
+                data-testid="bundlerx-drug-search"
+                autoComplete="off"
+              />
+            </div>
+            {/* 테이블 */}
+            <div className="rounded-md border max-h-[420px] overflow-y-auto">
+              <table className="w-full text-xs" data-testid="bundlerx-drug-table">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                  <tr className="border-b">
+                    <th className="w-9 px-2 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredChecked}
+                        onChange={toggleAllFiltered}
+                        aria-label="검색된 약 전체선택"
+                        className="h-3.5 w-3.5 accent-teal-600 cursor-pointer"
+                        data-testid="bundlerx-drug-selectall"
+                      />
+                    </th>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{RX_COL.name}</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">코드</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drugsLoading ? (
+                    <tr><td colSpan={3} className="px-2 py-6 text-center text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin inline" /></td></tr>
+                  ) : filteredDrugs.length === 0 ? (
+                    <tr><td colSpan={3} className="px-2 py-6 text-center text-muted-foreground" data-testid="bundlerx-drug-empty">
+                      {allRxDrugs.length === 0 ? '처방약이 없습니다.' : '검색 결과가 없습니다.'}
+                    </td></tr>
+                  ) : (
+                    filteredDrugs.map((d) => {
+                      const on = checkedIds.has(d.id);
+                      return (
+                        <tr
+                          key={d.id}
+                          className={`border-b last:border-b-0 cursor-pointer hover:bg-accent/50 ${on ? 'bg-teal-50/60' : ''}`}
+                          onClick={() => toggleDrug(d)}
+                          data-testid="bundlerx-drug-row"
+                        >
+                          <td className="px-2 py-1.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggleDrug(d)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`${d.name} 선택`}
+                              className="h-3.5 w-3.5 accent-teal-600 cursor-pointer"
+                              data-testid="bundlerx-drug-checkbox"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-foreground">{d.name}</td>
+                          <td className="px-2 py-1.5 font-mono text-[10px] text-muted-foreground">{d.service_code ?? '—'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* 생성 버튼 — 0건이면 비활성(시나리오4-1) */}
+            <Button
+              size="sm"
+              className="w-full"
+              onClick={openCreateFromChecked}
+              disabled={checkedDrugs.length === 0}
+              data-testid="bundlerx-create-btn"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              묶음처방 생성 ({checkedDrugs.length})
+            </Button>
+          </div>
+        )}
+
+        {/* ── 우측 = 기존 묶음처방 목록 ── */}
+        <div className="space-y-4">
+
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{sets.length}개 처방세트</span>
@@ -905,15 +1253,17 @@ export default function PrescriptionSetsTab() {
                   <span className={`text-sm font-medium ${!s.is_active ? 'text-muted-foreground line-through' : ''}`}>
                     {s.name}
                   </span>
-                  {/* T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER AC-2: 태그 색상 칩(라벨+색)+아이콘.
-                      tag_label 있을 때만 렌더. 색은 rxTagPalette SSOT(미지 토큰=slate 폴백). */}
-                  {s.tag_label && (
+                  {/* T-20260615 TAG-QUICKTRIGGER AC-2 + T-20260617 OVERHAUL: 태그 색상 칩(라벨+색)+아이콘.
+                      tag_label 또는 (이름숨김+아이콘) 있을 때 렌더. 이름숨김=라벨 생략(아이콘+색만). 색=rxTagPalette SSOT. */}
+                  {(s.tag_label || (s.hide_name && s.icon)) && (
                     <span
                       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tagChipClass(s.tag_color)}`}
                       data-testid="rx-set-tag-chip"
+                      data-hide-name={s.hide_name ? 'true' : 'false'}
+                      title={s.tag_label ?? undefined}
                     >
                       {s.icon && <IconRenderer icon={s.icon} className="h-3 w-3" />}
-                      {s.tag_label}
+                      {!s.hide_name && s.tag_label}
                     </span>
                   )}
                   {!s.is_active && (
@@ -983,6 +1333,8 @@ export default function PrescriptionSetsTab() {
           )}
         </div>
       )}
+        </div>{/* 우측 묶음처방 목록 끝 */}
+      </div>{/* 2-pane grid 끝 */}
 
       {/* 추가/편집 다이얼로그 */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -1077,6 +1429,139 @@ export default function PrescriptionSetsTab() {
         </DialogContent>
       </Dialog>
 
+      {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL — 신규 생성 팝업(Part C 태그편집 + Part D 선택약 1·3·2).
+          좌측 약테이블에서 체크 → [묶음처방 생성] → 이 팝업. 저장 시 prescription_sets 1세트 upsert. */}
+      <Dialog open={createOpen} onOpenChange={(o) => !o && setCreateOpen(false)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="bundlerx-create-dialog">
+          <DialogHeader>
+            <DialogTitle>묶음처방 만들기</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5">
+            {/* Part C: 태그 편집(이름/이름숨김/10색/아이콘/미리보기) — 공통 필드 재사용 */}
+            <TagEditorFields
+              value={{
+                tag_label: createForm.tag_label,
+                tag_color: createForm.tag_color,
+                icon: createForm.icon,
+                hide_name: createForm.hide_name,
+              }}
+              onChange={(patch) => setCreateForm((f) => ({ ...f, ...patch }))}
+              idPrefix="bundlerx-tag"
+            />
+
+            {/* Part D: 선택약 리스트 — 순서(위/아래) / 약이름(읽기전용) / 1회량·1일횟수·투여일수(숫자만) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <Label className="text-xs">선택한 약 ({createForm.items.length}개)</Label>
+              </div>
+              <p className="mb-2 text-[11px] text-muted-foreground">
+                <span className="font-medium text-teal-700">1회량 · 1일횟수 · 투여일수</span>는 기본값이에요. 처방할 때 진료의가 환자별로 바꿀 수 있어요.
+              </p>
+              <div className="rounded-md border overflow-hidden" data-testid="bundlerx-create-items">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/80">
+                    <tr className="border-b">
+                      <th className="w-14 px-1.5 py-1.5 text-center font-medium text-muted-foreground">순서</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{RX_COL.name}</th>
+                      <th className="w-16 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1회량</th>
+                      <th className="w-16 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1일횟수</th>
+                      <th className="w-16 px-1.5 py-1.5 text-center font-medium text-muted-foreground">투여일수</th>
+                      <th className="w-8 px-1 py-1.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {createForm.items.length === 0 ? (
+                      <tr><td colSpan={6} className="px-2 py-6 text-center text-muted-foreground">선택된 약이 없습니다.</td></tr>
+                    ) : (
+                      createForm.items.map((item, idx) => (
+                        <tr key={idx} className="border-b last:border-b-0" data-testid="bundlerx-create-item-row">
+                          {/* 순서 = 위/아래 이동 */}
+                          <td className="px-1.5 py-1 text-center">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => moveCreateItem(idx, -1)}
+                                disabled={idx === 0}
+                                aria-label="위로"
+                                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent"
+                                data-testid="bundlerx-create-item-up"
+                              >▲</button>
+                              <button
+                                type="button"
+                                onClick={() => moveCreateItem(idx, 1)}
+                                disabled={idx === createForm.items.length - 1}
+                                aria-label="아래로"
+                                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent"
+                                data-testid="bundlerx-create-item-down"
+                              >▼</button>
+                            </div>
+                          </td>
+                          {/* 약이름 = 읽기전용(좌측 테이블에서 고른 약) */}
+                          <td className="px-2 py-1 text-foreground" data-testid="bundlerx-create-item-name">{item.name}</td>
+                          {/* 1회량(dosage) — 숫자만 */}
+                          <td className="px-1.5 py-1">
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              value={item.dosage}
+                              onChange={(e) => handleCreateItemChange(idx, 'dosage', e.target.value.replace(/[^0-9.]/g, ''))}
+                              placeholder="1"
+                              className="h-7 text-xs text-center"
+                              data-testid="bundlerx-create-item-dosage"
+                            />
+                          </td>
+                          {/* 1일횟수(count) — RxCountInput(숫자 + '회' suffix) */}
+                          <td className="px-1.5 py-1">
+                            <RxCountInput
+                              value={item.count ?? null}
+                              onChange={(v) => handleCreateItemChange(idx, 'count', v)}
+                            />
+                          </td>
+                          {/* 투여일수(days) — 정수만 */}
+                          <td className="px-1.5 py-1">
+                            <Input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={item.days}
+                              onChange={(e) => {
+                                const raw = e.target.value.trim();
+                                handleCreateItemChange(idx, 'days', raw === '' ? 0 : Math.max(0, Math.floor(Number(raw)) || 0));
+                              }}
+                              placeholder="3"
+                              className="h-7 text-xs text-center"
+                              data-testid="bundlerx-create-item-days"
+                            />
+                          </td>
+                          <td className="px-1 py-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeCreateItem(idx)}
+                              aria-label={`${item.name} 제거`}
+                              className="flex h-6 w-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+                              data-testid="bundlerx-create-item-remove"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>취소</Button>
+            <Button onClick={handleCreateSave} disabled={upsert.isPending} data-testid="bundlerx-create-save-btn">
+              {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 확인 다이얼로그 (네이티브 confirm 대체) */}
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="max-w-sm" data-testid="rx-set-delete-dialog">
@@ -1112,95 +1597,12 @@ export default function PrescriptionSetsTab() {
             <p className="text-[11px] text-muted-foreground">
               묶음처방에 <span className="font-medium text-teal-700">색깔 태그</span>를 붙이면, 진료화면에서 그 태그만 눌러 약을 바로 넣을 수 있어요.
             </p>
-
-            {/* 라벨 */}
-            <div>
-              <Label className="text-xs">태그 이름</Label>
-              <Input
-                value={tagForm.tag_label}
-                onChange={(e) => setTagForm((f) => ({ ...f, tag_label: e.target.value }))}
-                placeholder="예) 무좀"
-                className="mt-1"
-                maxLength={12}
-                data-testid="rx-set-tag-label-input"
-              />
-              <p className="mt-1 text-[10px] text-muted-foreground">비우면 태그가 사라져요.</p>
-            </div>
-
-            {/* 색상 팔레트 (rxTagPalette SSOT) */}
-            <div>
-              <Label className="text-xs">색상</Label>
-              <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="rx-set-tag-color-palette">
-                {RX_TAG_COLORS.map((c) => (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => setTagForm((f) => ({ ...f, tag_color: c.value }))}
-                    title={c.label}
-                    aria-label={`색상 ${c.label}`}
-                    aria-pressed={tagForm.tag_color === c.value}
-                    data-testid={`rx-set-tag-color-${c.value}`}
-                    className={`h-7 w-7 rounded-full ${c.dot} transition ${
-                      tagForm.tag_color === c.value
-                        ? 'ring-2 ring-offset-2 ring-foreground'
-                        : 'opacity-70 hover:opacity-100'
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* 아이콘 (quick_rx_buttons 와 동일 vocab — DRUG_ICON_OPTIONS) */}
-            <div>
-              <Label className="text-xs">아이콘 (선택)</Label>
-              <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="rx-set-tag-icon-palette">
-                {/* 없음 */}
-                <button
-                  type="button"
-                  onClick={() => setTagForm((f) => ({ ...f, icon: '' }))}
-                  aria-pressed={tagForm.icon === ''}
-                  title="아이콘 없음"
-                  data-testid="rx-set-tag-icon-none"
-                  className={`flex h-8 w-8 items-center justify-center rounded-md border text-[10px] text-muted-foreground transition ${
-                    tagForm.icon === '' ? 'border-teal-500 bg-teal-50' : 'hover:bg-accent'
-                  }`}
-                >
-                  없음
-                </button>
-                {DRUG_ICON_OPTIONS.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setTagForm((f) => ({ ...f, icon: value }))}
-                    aria-pressed={tagForm.icon === value}
-                    title={label}
-                    aria-label={`아이콘 ${label}`}
-                    data-testid={`rx-set-tag-icon-${value}`}
-                    className={`flex h-8 w-8 items-center justify-center rounded-md border transition ${
-                      tagForm.icon === value ? 'border-teal-500 bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    <IconRenderer icon={value} className="h-4 w-4" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 미리보기 칩 */}
-            {tagForm.tag_label.trim() && (
-              <div>
-                <Label className="text-xs">미리보기</Label>
-                <div className="mt-1.5">
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tagChipClass(tagForm.tag_color)}`}
-                    data-testid="rx-set-tag-preview-chip"
-                  >
-                    {tagForm.icon && <IconRenderer icon={tagForm.icon} className="h-3 w-3" />}
-                    {tagForm.tag_label.trim()}
-                  </span>
-                </div>
-              </div>
-            )}
+            {/* T-20260617 OVERHAUL: 라벨/이름숨김/10색/아이콘/미리보기 공통 필드. testid='rx-set-tag-*'(기존 스펙 호환). */}
+            <TagEditorFields
+              value={tagForm}
+              onChange={(patch) => setTagForm((f) => ({ ...f, ...patch }))}
+              idPrefix="rx-set-tag"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTagTarget(null)}>취소</Button>
