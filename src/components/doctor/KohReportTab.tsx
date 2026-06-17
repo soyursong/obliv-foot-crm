@@ -43,7 +43,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search, Printer, FileCheck2 } from 'lucide-react';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
-import { printKohResult } from '@/lib/printKohResult';
+import KohResultDialog from '@/components/KohResultDialog';
 
 // ---------------------------------------------------------------------------
 // KOH 진균검사 매칭 — service_name denormalized ILIKE 정본(SSOT).
@@ -79,6 +79,25 @@ export function formatBirthDate(birth: string | null | undefined): string {
   if (!birth) return '—';
   const s = String(birth).trim();
   return s.length >= 10 ? s.slice(0, 10) : s || '—';
+}
+
+/**
+ * 결과지 표기용 생년월일 — 대표원장 양식 'YYYY년 MM월 DD일'.
+ *   T-20260617-foot-KOHGEN-HTMLPORT (AC①): DB DATE(YYYY-MM-DD) 정규 경로 + 6자리(YYMMDD) 방어 파싱.
+ *   6자리 세기 추정 = 00~26 → 20xx, 그 외 → 19xx(대표원장 HTML formatBirth 규칙 동일). 결측 ''.
+ */
+export function formatBirthKo(birth: string | null | undefined): string {
+  if (!birth) return '';
+  const s = String(birth).trim();
+  const m10 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m10) return `${m10[1]}년 ${m10[2]}월 ${m10[3]}일`;
+  const m6 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (m6) {
+    const yy = parseInt(m6[1], 10);
+    const prefix = yy >= 0 && yy <= 26 ? '20' : '19';
+    return `${prefix}${m6[1]}년 ${m6[2]}월 ${m6[3]}일`;
+  }
+  return s;
 }
 
 /** 검사일 표시(레거시, 날짜+시간) — created_at(UTC) → KST 'YYYY-MM-DD HH:mm'. */
@@ -423,7 +442,8 @@ export function buildKohFieldData(r: KohRow, doctorName: string): Record<string,
     doctor_name: doctorName === '미정' ? '' : doctorName,
     patient_name: r.customer_name === '—' ? '' : r.customer_name,
     chart_number: r.chart_number ?? '',
-    birth_date: formatBirthDate(r.birth_date) === '—' ? '' : formatBirthDate(r.birth_date),
+    // HTMLPORT(AC①): 대표원장 양식 'YYYY년 MM월 DD일'(6자리 방어 파싱 포함).
+    birth_date: formatBirthKo(r.birth_date),
     remark: '',
     collected_date: formatDocDate(r.created_at),
     requested_date: formatDocDate(r.created_at),
@@ -572,6 +592,9 @@ export default function KohReportTab() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPublishing, setBulkPublishing] = useState(false);
 
+  // HTMLPORT: 결과지 미리보기/출력·복사·저장 다이얼로그. 발행 직후 + 발행완료 행 인쇄 진입점이 공유.
+  const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
+
   /** 발행 여부 — published 인덱스에 koh_service_id(=row.id) 존재. */
   const isPublished = (id: string) => publishedMap?.has(id) ?? false;
   /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) 아직 미발행. */
@@ -586,9 +609,13 @@ export default function KohReportTab() {
     try {
       const res = await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
       toast.success(`발행 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
-      // 결과지 인쇄(자동채번 의뢰번호·기관 병합).
-      const ok = printKohResult({ ...fieldData, request_no: res?.request_no ?? '', request_org: '오블리브의원' });
-      if (!ok) toast.error('팝업이 차단되어 결과지를 열 수 없습니다. 검사결과 탭에서 다시 인쇄하세요.');
+      // HTMLPORT: 결과지 미리보기 다이얼로그(출력/복사/저장 PNG). 자동채번 의뢰번호·검체번호 병합.
+      //   의뢰기관·담당의·면허는 템플릿 고정값(대표원장 양식) → 여기서 주입 불필요.
+      setPreviewData({
+        ...fieldData,
+        request_no: res?.request_no ?? '',
+        specimen_no: res?.specimen_no ?? fieldData.specimen_no ?? '',
+      });
     } catch (e) {
       toast.error(`발행 실패: ${(e as Error).message}`);
     }
@@ -933,15 +960,12 @@ export default function KohReportTab() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => {
-                            const ok = printKohResult(published.field_data);
-                            if (!ok) toast.error('팝업이 차단되어 결과지를 열 수 없습니다.');
-                          }}
+                          onClick={() => setPreviewData(published.field_data)}
                           className="inline-flex items-center gap-0.5 text-[10px] text-teal-600 hover:underline"
                           title={`의뢰번호 ${published.request_no}`}
                           data-testid="koh-print-published"
                         >
-                          <Printer className="h-3 w-3" /> 인쇄
+                          <Printer className="h-3 w-3" /> 보기
                         </button>
                       </div>
                     ) : (
@@ -989,6 +1013,13 @@ export default function KohReportTab() {
         currentUserEmail={profile?.email ?? null}
         variant={medicalChartVariant}
         onOpenFull={() => setMedicalChartVariant('full')}
+      />
+
+      {/* HTMLPORT: 결과지 미리보기 + 출력/복사/저장(PNG). 발행 직후 + 발행완료 행 '보기' 진입점 공유. */}
+      <KohResultDialog
+        open={previewData !== null}
+        onOpenChange={(v) => { if (!v) setPreviewData(null); }}
+        fieldData={previewData}
       />
     </div>
   );
