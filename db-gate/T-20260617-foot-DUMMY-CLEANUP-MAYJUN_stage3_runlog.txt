@@ -1,0 +1,123 @@
+== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-17T11:08:54.599Z
+Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
+
+── KEEP resolve (chart 15) ──
+  ✓ F-1190: 최영낭 (기대 최영낭) | +821076361819 | bc35f9f3-46c4-437d-8a61-0606408e108d
+  ✓ F-0155: 양종필 (기대 양종필) | +821051032509 | 054948a2-fc42-483b-bc98-2ad1a5727395
+  ✓ F-0156: 이영현 (기대 이영현) | +821071146637 | a1ea6800-0b4a-49fc-ab45-cf9c501b02b5
+  ✓ F-0154: 김창재 (기대 김창재) | +821062301397 | 56fb0aaa-6443-46cc-8df3-cfa90770da1e
+  ✓ F-0187: 류복화 (기대 류복화) | +821052742869 | 830a1a84-b47a-49b7-9426-054f97dc80f8
+  ✓ F-0158: 허다교 (기대 허다교) | +821044797528 | be764bbd-a35c-4d99-8a24-a85628e63790
+  ✓ F-0157: 이정연 (기대 이정연) | +821090183814 | 9580f713-fec1-4f3c-8082-fd0a6766b7ce
+  ✓ F-0455: 손효욱 (기대 손효욱) | +821092485343 | e4e4dc7e-afe3-43b2-9654-4cbfa290746f
+  ✓ F-1089: 김상곤 (기대 김상곤) | +821044990902 | de5436a5-40b0-4ef5-8f30-c3a677f33391
+  ✓ F-0896: 김수연 (기대 김수연) | +821079134380 | 65351f78-ffee-4a4a-a25d-503c716b8b1e
+  ✓ F-0521: 김나영 (기대 김나영) | +821063503883 | ad1b935f-9989-435d-89e7-66938b3fd348
+  ✓ F-1236: 유예슬 (기대 유예슬) | +821076115237 | 5b8f0aca-2bb6-482e-ba56-379956578183
+  ✓ F-1237: 안주연 (기대 안주연) | +821032146524 | d7482fe2-2e96-4d6f-9951-06f4f4fe64d3
+  ✓ F-3904: 서호영 (기대 서호영) | +821095585038 | 8ef1f602-5c89-4c50-b616-6a10695647af
+  ✓ F-4067: 윤민희 (기대 윤민희) | +821067310715 | 0e27bce7-8311-4c80-9a26-edbba0b4d9e1
+  guard-name resolve(김진화·이시형·윤민희): 윤민희=0e27bce7-8311-4c80-9a26-edbba0b4d9e1, 이시형=dd064755-e146-4cbc-b57f-1a06f3df24bb, 김진화=1523ba8c-e264-4708-bfe4-34bb361cbb1c
+
+── HOLD 3 resolve (phone) ──
+  강혜인 | +821022211444 | fbc782a6-d5d6-4e1f-be4c-e231c51daaab (기대 강혜인)
+  최다혜 | +821031414010 | 7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4 (기대 최다혜)
+  신지아 | +821094611240 | 6ea245fa-9528-4690-8a0e-6b4de2496979 (기대 신지아)
+
+── delete_set 산출 ──
+  candidate 1278 − keep(후보내 14) − hold(후보내 3) = 1261
+
+── ⚠ 잔여 오삭제 가드 (신지아·강혜인·최다혜) ──
+  강혜인 (fbc782a6-d5d6-4e1f-be4c-e231c51daaab): candidate포함=true · delete_set포함=false → HOLD(이번 sweep 제외) + FOLLOWUP
+  최다혜 (7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4): candidate포함=true · delete_set포함=false → HOLD(이번 sweep 제외) + FOLLOWUP
+  신지아 (6ea245fa-9528-4690-8a0e-6b4de2496979): candidate포함=true · delete_set포함=false → HOLD(이번 sweep 제외) + FOLLOWUP
+
+✓ ASSERT 통과: clinic 한정 OK · KEEP/HOLD 교집합 0 · real_guard 미포함 · delete_set=1261
+
+── FK subgraph: customers reachable child 테이블 36개 ──
+
+── DEBUG: 사용자 트리거 44개 ──
+  storage.objects · update_objects_updated_at → update_updated_at_column()
+  storage.buckets · enforce_bucket_name_length_trigger → enforce_bucket_name_length()
+  storage.buckets · protect_buckets_delete → protect_delete()
+  storage.objects · protect_objects_delete → protect_delete()
+  realtime.subscription · tr_check_filters → subscription_check_filters()
+  auth.users · on_auth_user_created → handle_new_user()
+  check_ins · trg_set_completed_at → set_completed_at()
+  customers · trg_updated_at → set_updated_at()
+  reservations · trg_updated_at → set_updated_at()
+  packages · trg_updated_at → set_updated_at()
+  staff · trg_updated_at → set_updated_at()
+  daily_closings · trg_updated_at → set_updated_at()
+  consent_templates · trg_updated_at → set_updated_at()
+  check_ins · trg_check_reservation_status → check_reservation_status()
+  room_assignments · trg_sync_room_assignments_cols → sync_room_assignments_cols()
+  user_profiles · trg_user_profiles_force_safe_insert → user_profiles_force_safe_insert()
+  user_profiles · trg_user_profiles_self_guard → user_profiles_self_guard()
+  user_profiles · trg_updated_at → set_updated_at()
+  clinic_memos · trg_clinic_memos_updated_at → update_clinic_memos_updated_at()
+  customers · customers_chart_number_before_insert → assign_foot_customer_chart_number()
+  check_ins · trg_checkin_sync_reservation → fn_checkin_sync_reservation()
+  notices · notices_updated_at → set_updated_at()
+  clinic_events · clinic_events_updated_at → set_updated_at()
+  treatment_sets · treatment_sets_updated_at → set_updated_at()
+  quick_rx_buttons · quick_rx_buttons_updated_at → set_updated_at()
+  payments · trg_payments_accounting_date_insert → trg_payments_set_accounting_date()
+  package_payments · trg_pkg_payments_accounting_date_insert → trg_pkg_payments_set_accounting_date()
+  cron.job · cron_job_cache_invalidate → job_cache_invalidate()
+  clinic_messaging_capability · trg_clinic_msg_cap_updated_at → moddatetime_updated_at()
+  notification_templates · trg_notif_tmpl_updated_at → moddatetime_updated_at()
+  notification_logs · trg_notif_logs_updated_at → moddatetime_updated_at()
+  reservations · reservations_messaging_trigger → notify_reservation_messaging()
+  package_progress_plans · trg_ppp_updated_at → set_updated_at()
+  check_ins · trg_checkin_cancel_restore_reservation → fn_checkin_cancel_restore_reservation()
+  customers · trg_sync_customer_name → fn_sync_customer_name()
+  package_sessions · trg_fill_session_unit_price → fn_fill_session_unit_price()
+  handover_notes · handover_notes_updated_at → set_updated_at()
+  medical_charts · trg_enforce_medchart_signing_doctor → enforce_medchart_signing_doctor()
+  check_ins · trg_dopamine_cb_checkin → enqueue_dopamine_callback()
+  reservations · trg_dopamine_cb_resv → enqueue_dopamine_callback()
+  reservation_registrars · trg_reservation_registrars_updated_at → update_reservation_registrars_updated_at()
+  medical_charts · trg_medical_charts_body_audit → medical_charts_body_audit()
+  insurance_claims · trg_insurance_claims_updated_at → update_insurance_claims_updated_at()
+  redpay_raw_transactions · redpay_raw_updated_at_trigger → set_redpay_raw_updated_at()
+  [t0] delete_set customers 생존(삭제 전): 1261
+  [t1] _t_customers 적재: 1261
+
+── 삭제 실행(자식→부모) ──
+  check_in_services: 755
+  claim_diagnoses: 4
+  payment_audit_logs: 19
+  check_in_room_logs: 514
+  timer_records: 45
+  status_transitions: 1999
+  package_sessions: 148
+  reservation_memo_history: 121
+  service_charges: 15
+  form_submissions: 95
+  payments: 203
+  check_ins: 805
+  reservation_logs: 351
+  customer_special_notes: 6
+  customer_treatment_memos: 43
+  package_payments: 14
+  packages: 126
+  reservations: 1228
+  health_q_results: 32
+  health_q_tokens: 107
+  [t2] Phase2 후 delete_set customers 생존: 1261
+
+── soft-link / SET NULL 정리 (FK그래프 외 customer_id 보유 7개) ──
+  medical_charts: 62
+  notification_logs: 1520
+  [t3] 최종삭제 직전: _t_customers=1261 · customers 생존=1261
+  customers: 1261
+  ✓ 백업 보존: rollback/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_backup.json (23개 테이블)
+
+── 사후검증(txn 내) ──
+  KEEP 잔존: 17/17 (전원 잔존이어야)
+  HOLD 잔존: 3/3 (전원 잔존이어야)
+  delete_set customers 잔존: 0 (0이어야)
+
+[DRY-RUN] ROLLBACK 완료 — prod 무변경. 전체 삭제 계획이 라이브 데이터에서 FK 위반 없이 검증됨.
+  실삭제: --apply (supervisor 데이터게이트 GO 후).
