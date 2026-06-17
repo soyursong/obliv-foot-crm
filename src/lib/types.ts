@@ -421,6 +421,13 @@ export interface CheckIn {
    *  ※ healer_waiting처럼 status 전환만 되고 flag history 미기록인 케이스의 진입(activation)시각 복구용.
    *    HL자동노랑(SSOT 우회 벌크 yellow)은 transition row 자체가 없어 미복구 → known-limitation(접수시각 잔존). */
   derivedCallEntryAt?: string | null;
+  /** T-20260617-foot-CALLLIST-HLAUTOYELLOW-TOP (AC-1', read-side no-DDL) — 힐러(노랑) [힐러대기] 이동 감지 신호.
+   *  status_transitions(별도 테이블) 중 to_status='healer_waiting'의 *최초* transitioned_at.
+   *  Dashboard fetch가 read-path로 주입(DB 컬럼 아님 — DDL 없음). compareCallOrder가 이 값 보유 + 힐러 신호
+   *  (status_flag='yellow' / status='healer_waiting' — check_ins 정본) 조합으로 힐러(노랑) 우선 sub-tier 식별·정렬.
+   *  진료필요(보라)→상위노출과 동치 동작: [힐러대기] 이동 시각이 늦어도(오후) 일반 진입순 풀 아래로 가라앉지 않게 상단 배치.
+   *  ※ derivedCallEntryAt(healer_waiting/purple/yellow 혼합 최초)과 분리 — 본 필드는 healer_waiting 전용(식별·내부정렬 명확성). */
+  healerWaitingAt?: string | null;
 }
 
 export interface Package {

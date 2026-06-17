@@ -3052,6 +3052,11 @@ export default function Dashboard() {
   //   최신 transitioned_at. stageStartMap(임의 to_status 최신, 위치라벨용)과 의도적으로 분리 — 의미·소비처가 다름
   //   (stageStartMap 회귀 금지). fetchStageStarts의 *동일 fetch*에서 additive로 파생(라운드트립 추가 없음).
   const [callEntryMap, setCallEntryMap] = useState<Map<string, string>>(new Map());
+  // T-20260617-foot-CALLLIST-HLAUTOYELLOW-TOP (AC-1', read-side no-DDL):
+  //   힐러(노랑) [힐러대기] 이동 감지 전용 맵 — check_in_id → to_status='healer_waiting' *최초* transitioned_at.
+  //   callEntryMap(healer_waiting/purple/yellow 혼합 최초, 진입순용)과 분리 — 본 맵은 healer_waiting 전용으로
+  //   힐러(노랑) 우선 sub-tier 식별 신호 + 내부 정렬키(힐러대기 이동 빠른 순)로 소비. 同 fetch에서 additive 파생.
+  const [healerWaitingMap, setHealerWaitingMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
@@ -3907,14 +3912,20 @@ export default function Dashboard() {
     //   (purple/yellow는 flag라 transition row가 통상 없으나, 향후 호환 위해 set에 포함 — 없으면 자연 미반영.)
     //   ※ stageStartMap(map, 임의 to_status 최신·위치라벨용)은 회귀 금지라 '최신' 유지 — callEntry만 '최초'로 분리.
     const callEntry = new Map<string, string>();
+    // T-20260617-foot-CALLLIST-HLAUTOYELLOW-TOP: healer_waiting 전용 *최초* transitioned_at 맵(힐러(노랑) 우선 sub-tier용).
+    const healerWaiting = new Map<string, string>();
     for (const t of (data ?? []) as { check_in_id: string; to_status: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
       if (t.to_status === 'healer_waiting' || t.to_status === 'purple' || t.to_status === 'yellow') {
         callEntry.set(t.check_in_id, t.transitioned_at); // desc 순회 + 무조건 덮어쓰기 → 최종값=최초(가장 이른) 진입.
       }
+      if (t.to_status === 'healer_waiting') {
+        healerWaiting.set(t.check_in_id, t.transitioned_at); // desc 순회 + 무조건 덮어쓰기 → 최종값=최초 [힐러대기] 이동.
+      }
     }
     setStageStartMap(map);
     setCallEntryMap(callEntry);
+    setHealerWaitingMap(healerWaiting);
   }, [clinic, dateStr]);
 
   const fetchPackageLabels = useCallback(async () => {
@@ -5834,9 +5845,21 @@ export default function Dashboard() {
   //   진료콜 명단 위젯 전용 rows — status_transitions 파생(callEntryMap)을 derivedCallEntryAt에 read-path 주입.
   //   ⚠ 원본 rows는 *불변*(별도 배열 — 칸반/INTREATMENT-BADGE/ROOMSUMMARY 등 다른 소비처 row shape 보존, GO_WARN iii).
   //   callEntryMap 미보유 행은 주입 없음 → callEntryTime이 ③ checked_in_at으로 정상 폴백.
+  //   T-20260617-foot-CALLLIST-HLAUTOYELLOW-TOP: healerWaitingAt(=[힐러대기] 최초 이동시각)도 동일 read-path 주입 —
+  //   힐러(노랑) 우선 sub-tier 식별·내부정렬용. 미보유 행은 주입 없음(undefined) → 일반 진입순 tier3 유지.
   const doctorCallRows = useMemo(
-    () => rows.map((r) => (callEntryMap.has(r.id) ? { ...r, derivedCallEntryAt: callEntryMap.get(r.id) } : r)),
-    [rows, callEntryMap],
+    () =>
+      rows.map((r) => {
+        const derived = callEntryMap.get(r.id);
+        const healerAt = healerWaitingMap.get(r.id);
+        if (derived === undefined && healerAt === undefined) return r;
+        return {
+          ...r,
+          ...(derived !== undefined ? { derivedCallEntryAt: derived } : {}),
+          ...(healerAt !== undefined ? { healerWaitingAt: healerAt } : {}),
+        };
+      }),
+    [rows, callEntryMap, healerWaitingMap],
   );
 
   const getPkgLabel = useCallback((ci: CheckIn): PackageLabel | null => {
