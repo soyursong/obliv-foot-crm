@@ -1841,70 +1841,104 @@ ${COMMON_STYLE}
 </div>
 `;
 
-// ─── 균검사 결과지(검사결과 보고서) — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4) ───
-//   정본 양식 = "검사결과 양식.png"(F0BA2NJLJH5). 변수 = 의뢰번호/검체번호(자동채번)·담당의·수진자·검체종류·날짜.
-//   검사결과 라인(보험코드 D6201002 / ▶임상미생물 KOH mount / Hyphae:+ · Yeast:-)은
-//   양식 고정값(AC-3 "결과값 개별 입력 없음·모든 환자 동일 결과값") → 템플릿에 고정(field_data 미주입).
-//   footer 의사면허번호는 per-doctor 데이터 부재 → 담당의 성명만 렌더(현장 confirm 시 번호 정책 확정).
-//   Tel/Fax = 오블리브의원 정본 양식 고정값.
+// ─── 균검사 결과지(검사결과 보고서) — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4)
+//      + T-20260617-foot-KOHGEN-HTMLPORT (대표원장 자작 HTML 양식 이식, KOH-REPORT-TAB Phase2 unblock) ───
+//
+//   정본 양식 = 대표원장 자작 웹앱(F0BB4DVM1KP, 균검사지 오리진). 종전 "검사결과 양식.png" 위에
+//   대표원장 확정 레이아웃을 1:1 이식. 단일 info-table(좌측 회색 라벨) + 결과 table + footer + 연락처.
+//
+//   ★ 자체완결·id-scoped(#koh-report-sheet) — global `* {}` reset 제거. 앱 DOM(KohResultDialog)에
+//     dangerouslySetInnerHTML 주입 시 전역 스타일 오염 0(모든 selector 가 #koh-report-sheet 하위 한정).
+//   ★ hex 색상만 사용(oklch 없음) — html2canvas 1.4.1 의 Tailwind oklch 파싱 충돌 회피(복사/저장 PNG).
+//   ★ 한글 시스템 폰트 스택 — 외부 폰트(Noto Sans KR) 로드 타이밍 의존 제거(이미지 캡처 안정).
+//
+//   고정값(대표원장 양식, 1차 고정 — AC-0 #3 지점/의사 파생경로 부재):
+//     의뢰기관=오블리브의원 서울오리진점 / 담당의·검사자=문지은 / 의사면허=145617 / Tel 02)6956-3438.
+//     ※ RPC publish_koh_result 가 field_data.request_org 를 '오블리브의원'으로 덮으나, 본 템플릿은
+//       의뢰기관을 고정 렌더 → field_data 의존 0(마이그 무변경, NO-DDL).
+//   검사결과 라인(D6201002 / ▶임상미생물 KOH mount / Hyphae:+ · Yeast:-)은 양식 고정값
+//     (AC-3 "결과값 개별 입력 없음·모든 환자 동일 결과값") → 템플릿 고정(field_data 미주입). Hyphae/Yeast 라벨만 적색.
+//   바인딩(환자별): request_no/patient_name/chart_number/birth_date/remark/collected_date/requested_date/specimen_type/specimen_no.
 const KOH_RESULT_HTML = `
-${COMMON_STYLE}
-<div class="form-wrap">
-  <div class="title" style="letter-spacing:8px; font-size:18pt; margin-bottom:10px;">검사결과 보고서</div>
+<style>
+  #koh-report-sheet { box-sizing:border-box; width:794px; margin:0 auto; padding:76px 57px;
+    background:#ffffff; color:#333333; font-size:14px; line-height:1.5;
+    font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',NanumGothic,sans-serif; }
+  #koh-report-sheet * { box-sizing:border-box; }
+  #koh-report-sheet h1 { text-align:center; font-size:28px; font-weight:700; margin:0 0 40px; color:#000000; }
+  #koh-report-sheet table { width:100%; border-collapse:collapse; margin:0 0 20px;
+    border-top:2px solid #bbbbbb; border-bottom:2px solid #bbbbbb; }
+  #koh-report-sheet th, #koh-report-sheet td { padding:10px 12px; border:1px solid #dddddd;
+    vertical-align:middle; font-size:14px; }
+  #koh-report-sheet .info-table th { background:#f5f5f5; width:130px; color:#333333; font-weight:500; text-align:left; }
+  #koh-report-sheet .info-table td { color:#000000; font-weight:400; }
+  #koh-report-sheet .spacer td { height:15px; border:none; background:#ffffff; padding:0; }
+  #koh-report-sheet .result-table { margin-top:20px; }
+  #koh-report-sheet .result-table th { background:#f5f5f5; text-align:center; font-weight:500;
+    border-bottom:2px solid #bbbbbb; padding:10px 8px; }
+  #koh-report-sheet .result-table td { text-align:center; padding:14px 8px; }
+  #koh-report-sheet .footer-section { margin-top:40px; display:flex; justify-content:center; gap:100px;
+    font-size:13px; font-weight:400; color:#333333; }
+  #koh-report-sheet .contact-info { margin-top:50px; font-size:13px; color:#333333; line-height:1.5; text-align:left; }
+  #koh-report-sheet .label-red { color:#e74c3c; }
+  #koh-report-sheet .val-black { color:#000000; }
+  @media print {
+    #koh-report-sheet { width:210mm; min-height:297mm; padding:20mm 15mm; }
+  }
+</style>
+<div id="koh-report-sheet">
+  <h1>검사결과 보고서</h1>
 
-  <table style="margin-top:4px;">
+  <table class="info-table">
     <tbody>
-      <tr><td style="width:90px; background:#f8f8f8;">의 뢰 번 호</td><td>{{request_no}}</td></tr>
-      <tr><td style="background:#f8f8f8;">의 뢰 기 관</td><td>{{request_org}}</td></tr>
-      <tr><td style="background:#f8f8f8;">담 당 의</td><td>{{doctor_name}}</td></tr>
+      <tr><th>의뢰번호</th><td>{{request_no}}</td></tr>
+      <tr><th>의뢰기관</th><td>오블리브의원 서울오리진점</td></tr>
+      <tr><th>담당의</th><td>문지은</td></tr>
+      <tr class="spacer"><td colspan="2"></td></tr>
+      <tr><th>수진자명</th><td>{{patient_name}}</td></tr>
+      <tr><th>차트번호</th><td>{{chart_number}}</td></tr>
+      <tr><th>생년월일</th><td>{{birth_date}}</td></tr>
+      <tr><th>비고</th><td>{{remark}}</td></tr>
+      <tr class="spacer"><td colspan="2"></td></tr>
+      <tr><th>검체채취일</th><td>{{collected_date}}</td></tr>
+      <tr><th>검사의뢰일</th><td>{{requested_date}}</td></tr>
+      <tr><th>검체종류</th><td>{{specimen_type}}</td></tr>
+      <tr><th>검체번호</th><td>{{specimen_no}}</td></tr>
     </tbody>
   </table>
 
-  <table style="margin-top:8px;">
-    <tbody>
-      <tr><td style="width:90px; background:#f8f8f8;">수 진 자 명</td><td>{{patient_name}}</td></tr>
-      <tr><td style="background:#f8f8f8;">차 트 번 호</td><td>{{chart_number}}</td></tr>
-      <tr><td style="background:#f8f8f8;">생 년 월 일</td><td>{{birth_date}}</td></tr>
-      <tr><td style="background:#f8f8f8;">비 고</td><td style="min-height:24px;">{{remark}}</td></tr>
-    </tbody>
-  </table>
-
-  <table style="margin-top:8px;">
-    <tbody>
-      <tr><td style="width:90px; background:#f8f8f8;">검체채취일</td><td>{{collected_date}}</td></tr>
-      <tr><td style="background:#f8f8f8;">검사의뢰일</td><td>{{requested_date}}</td></tr>
-      <tr><td style="background:#f8f8f8;">검 체 종 류</td><td>{{specimen_type}}</td></tr>
-      <tr><td style="background:#f8f8f8;">검 체 번 호</td><td>{{specimen_no}}</td></tr>
-    </tbody>
-  </table>
-
-  <table style="margin-top:10px;">
+  <table class="result-table">
     <thead>
       <tr>
-        <th style="width:90px;">보험코드</th>
-        <th>검사명</th>
-        <th style="width:50px;">L/H</th>
-        <th style="width:150px;">검사결과</th>
-        <th style="width:80px;">참고치</th>
+        <th style="width:15%">보험코드</th>
+        <th style="width:25%">검사명</th>
+        <th style="width:10%">L/H</th>
+        <th style="width:30%">검사결과</th>
+        <th style="width:20%">참고치</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td style="text-align:center;">D6201002</td>
-        <td>▶임상미생물<br>&nbsp;&nbsp;&nbsp;KOH mount</td>
+        <td>D6201002</td>
+        <td style="text-align:left; padding-left:12px;">&#9654; 임상미생물<br>KOH mount</td>
         <td></td>
-        <td style="color:#b91c1c;">Hyphae : +<br>Yeast : -</td>
+        <td style="text-align:left; padding-left:20px;">
+          <span class="label-red">Hyphae : </span><span class="val-black">+</span><br>
+          <span class="label-red">Yeast : </span><span class="val-black">-</span>
+        </td>
         <td></td>
       </tr>
     </tbody>
   </table>
 
-  <div style="text-align:center; margin-top:18px; font-size:9pt;">
-    의사면허 : {{doctor_name}}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;검사자 : {{doctor_name}}
+  <div class="footer-section">
+    <div>의사면허 : 145617 문지은</div>
+    <div>검사자 : 145617 문지은</div>
   </div>
 
-  <div style="margin-top:18px; font-size:9pt; line-height:1.5;">
-    Tel. 032)851-9119<br>Fax. 032)858-8118
+  <div class="contact-info">
+    Tel. 02)6956-3438<br>
+    Fax. 02)6956-3439
   </div>
 </div>
 `;

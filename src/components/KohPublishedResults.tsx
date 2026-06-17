@@ -7,11 +7,12 @@
 //
 // 마이그(koh_result 템플릿) 미적용 시 템플릿 조회가 빈값 → 목록 빈 상태(폴백, 에러 미표출).
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { FlaskConical, Printer } from 'lucide-react';
 import { seoulISODate } from '@/lib/format';
-import { printKohResult } from '@/lib/printKohResult';
+import KohResultDialog from '@/components/KohResultDialog';
 
 interface PublishedRow {
   id: string;
@@ -62,6 +63,8 @@ export default function KohPublishedResults({
   customerId: string | null;
 }) {
   const { data: rows = [], isLoading } = usePublishedKohForCustomer(clinicId, customerId);
+  // HTMLPORT: 결과지 보기 다이얼로그(출력/복사/저장 PNG) — KohReportTab 과 동일 surface.
+  const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
 
   if (isLoading || rows.length === 0) return null;
 
@@ -92,13 +95,7 @@ export default function KohPublishedResults({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  const ok = printKohResult(r.field_data);
-                  if (!ok) {
-                    // 팝업 차단 등 — 조용히 무시(현장 재시도). toast 미사용(컴포넌트 경량 유지).
-                    window.alert('팝업이 차단되어 결과지를 열 수 없습니다. 팝업 허용 후 다시 시도하세요.');
-                  }
-                }}
+                onClick={() => setPreviewData(r.field_data)}
                 className="inline-flex shrink-0 items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-medium text-teal-700 transition hover:bg-teal-100"
                 data-testid="koh-published-print"
               >
@@ -108,6 +105,13 @@ export default function KohPublishedResults({
           );
         })}
       </ul>
+
+      {/* HTMLPORT: 결과지 미리보기 + 출력/복사/저장(PNG). */}
+      <KohResultDialog
+        open={previewData !== null}
+        onOpenChange={(v) => { if (!v) setPreviewData(null); }}
+        fieldData={previewData}
+      />
     </div>
   );
 }
