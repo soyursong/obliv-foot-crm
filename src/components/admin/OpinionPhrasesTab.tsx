@@ -29,6 +29,14 @@ import {
   parseOpinionSections,
   type OpinionSection,
 } from '@/components/doctor/OpinionDocTab';
+import {
+  downloadPhraseCsv,
+  phraseCsvFilename,
+  parsePhraseCsv,
+  computeImportPlan,
+  applyPhraseImport,
+  type ImportPlan,
+} from '@/lib/opinionPhraseCsv';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,7 +48,79 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, Plus, Pencil, Trash2, Save, FileText, FolderPlus } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Pencil,
+  Trash2,
+  Save,
+  FileText,
+  FolderPlus,
+  Download,
+  Upload,
+  History,
+} from 'lucide-react';
+
+// 버튼별 최신 업데이트 메타(AC-5) — field_map.phrase_meta[optionKey].
+//   sections 배열과 분리 보관 → 기존 CRUD 저장(sections 교체)이 메타를 보존(field_map 다른 키 spread).
+interface PhraseMeta {
+  last_updated_at?: string;
+  updated_by?: string;
+}
+type PhraseMetaMap = Record<string, PhraseMeta>;
+interface ImportLogEntry {
+  at: string;
+  by: string;
+  added: number;
+  changed: number;
+}
+
+function parsePhraseMeta(fieldMap: Record<string, unknown>): PhraseMetaMap {
+  const raw = fieldMap['phrase_meta'];
+  if (!raw || typeof raw !== 'object') return {};
+  const out: PhraseMetaMap = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const m = (v ?? {}) as Record<string, unknown>;
+    out[k] = {
+      last_updated_at: typeof m['last_updated_at'] === 'string' ? (m['last_updated_at'] as string) : undefined,
+      updated_by: typeof m['updated_by'] === 'string' ? (m['updated_by'] as string) : undefined,
+    };
+  }
+  return out;
+}
+
+function parseImportLog(fieldMap: Record<string, unknown>): ImportLogEntry[] {
+  const raw = fieldMap['import_log'];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((e) => (e ?? {}) as Record<string, unknown>)
+    .filter((e) => typeof e['at'] === 'string')
+    .map((e) => ({
+      at: String(e['at']),
+      by: typeof e['by'] === 'string' ? (e['by'] as string) : '—',
+      added: typeof e['added'] === 'number' ? (e['added'] as number) : 0,
+      changed: typeof e['changed'] === 'number' ? (e['changed'] as number) : 0,
+    }));
+}
+
+// KST 'YYYY-MM-DD HH:mm' 표기 (parts 기반 — 로케일 포맷 문자열 흔들림 회피).
+function fmtKst(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const p: Record<string, string> = {};
+  for (const part of parts) p[part.type] = part.value;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
 
 // ---------------------------------------------------------------------------
 // opinion_doc form_template 전체 row(field_map 포함) — write 시 print_template_key 보존용.
@@ -49,6 +129,8 @@ interface OpinionTemplateRow {
   id: string | null;          // null = 아직 seed 안 됨(FE insert 경로)
   fieldMap: Record<string, unknown>;
   sections: OpinionSection[]; // parseOpinionSections 결과(빈 배열 가능)
+  phraseMeta: PhraseMetaMap;  // AC-5: 버튼별 최신 업데이트 메타.
+  importLog: ImportLogEntry[]; // AC-5: 업로드 이력.
 }
 
 function useOpinionTemplateRow(clinicId: string | null) {
@@ -56,7 +138,7 @@ function useOpinionTemplateRow(clinicId: string | null) {
     queryKey: ['opinion_phrase_template', clinicId],
     enabled: !!clinicId,
     queryFn: async () => {
-      if (!clinicId) return { id: null, fieldMap: {}, sections: [] };
+      if (!clinicId) return { id: null, fieldMap: {}, sections: [], phraseMeta: {}, importLog: [] };
       const { data, error } = await supabase
         .from('form_templates')
         .select('id, field_map')
@@ -72,6 +154,8 @@ function useOpinionTemplateRow(clinicId: string | null) {
         id: row?.id ? String(row.id) : null,
         fieldMap,
         sections: parseOpinionSections(fieldMap),
+        phraseMeta: parsePhraseMeta(fieldMap),
+        importLog: parseImportLog(fieldMap),
       };
     },
     staleTime: 30_000,
@@ -125,6 +209,73 @@ function useSaveOpinionSections(clinicId: string | null) {
       toast.success('소견서 상용구가 저장됐어요.');
     },
     onError: (e: Error) => toast.error(`저장 실패: ${e.message}`),
+  });
+}
+
+// CSV 대량입력 반영(AC-4 commit) — dry-run plan 을 form_templates.field_map 에 적용.
+//   field_map = { ...base, sections(비파괴 머지), phrase_meta(영향 옵션 갱신), import_log(append) }.
+//   신규 컬럼/테이블/CHECK 없음(ADDITIVE jsonb) — AC-5.
+function useCommitCsvImport(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      templateId,
+      baseFieldMap,
+      currentSections,
+      plan,
+      updatedBy,
+    }: {
+      templateId: string | null;
+      baseFieldMap: Record<string, unknown>;
+      currentSections: OpinionSection[];
+      plan: ImportPlan;
+      updatedBy: string;
+    }) => {
+      const { sections, affectedKeys } = applyPhraseImport(currentSections, plan);
+      const nowIso = new Date().toISOString();
+      // 옵션별 최신 업데이트 메타 갱신(추가/변경 대상만).
+      const prevMeta = parsePhraseMeta(baseFieldMap);
+      const nextMeta: PhraseMetaMap = { ...prevMeta };
+      for (const k of affectedKeys) nextMeta[k] = { last_updated_at: nowIso, updated_by: updatedBy };
+      // 업로드 이력 append.
+      const prevLog = parseImportLog(baseFieldMap);
+      const entry: ImportLogEntry = { at: nowIso, by: updatedBy, added: plan.added, changed: plan.changed };
+      const nextFieldMap = {
+        ...baseFieldMap,
+        sections,
+        phrase_meta: nextMeta,
+        import_log: [...prevLog, entry],
+      };
+      if (templateId) {
+        const { error } = await supabase
+          .from('form_templates')
+          .update({ field_map: nextFieldMap })
+          .eq('id', templateId);
+        if (error) throw error;
+      } else {
+        if (!clinicId) throw new Error('clinic 정보를 확인할 수 없습니다.');
+        const { error } = await supabase.from('form_templates').insert({
+          clinic_id: clinicId,
+          category: 'foot-service',
+          form_key: 'opinion_doc',
+          name_ko: '소견서',
+          template_path: '',
+          template_format: 'html',
+          field_map: { print_template_key: 'diag_opinion', ...nextFieldMap },
+          requires_signature: false,
+          required_role: 'admin|manager|director|consultant|coordinator|technician|therapist',
+          active: true,
+          sort_order: 120,
+        });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['opinion_phrase_template', clinicId] });
+      qc.invalidateQueries({ queryKey: ['opinion_form_template', clinicId] });
+      toast.success('CSV 내용이 반영됐어요.');
+    },
+    onError: (e: Error) => toast.error(`반영 실패: ${e.message}`),
   });
 }
 
@@ -270,6 +421,172 @@ function SectionTitleDialog({
 }
 
 // ---------------------------------------------------------------------------
+// CSV 대량입력 다이얼로그 (AC-4) — 파일선택 → dry-run 미리보기(추가/변경/오류) → '반영'.
+// ---------------------------------------------------------------------------
+function CsvImportDialog({
+  open,
+  onOpenChange,
+  currentSections,
+  committing,
+  onCommit,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  currentSections: OpinionSection[];
+  committing: boolean;
+  onCommit: (plan: ImportPlan) => void;
+}) {
+  const [fileName, setFileName] = useState<string>('');
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  // 다이얼로그 닫힐 때 상태 리셋.
+  const [boundOpen, setBoundOpen] = useState(false);
+  if (open !== boundOpen) {
+    setBoundOpen(open);
+    if (!open) {
+      setFileName('');
+      setPlan(null);
+      setParseError(null);
+    }
+  }
+
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    setFileName(file.name);
+    setParseError(null);
+    setPlan(null);
+    try {
+      const text = await file.text();
+      const rows = parsePhraseCsv(text);
+      if (rows.length === 0) {
+        setParseError('CSV에 데이터 행이 없습니다.');
+        return;
+      }
+      setPlan(computeImportPlan(currentSections, rows));
+    } catch (e) {
+      setParseError((e as Error).message);
+    }
+  };
+
+  const canCommit = !!plan && (plan.added > 0 || plan.changed > 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl" data-testid="opinion-phrase-csv-import-dialog">
+        <DialogHeader>
+          <DialogTitle>CSV 대량입력</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="rounded-md border border-dashed p-3">
+            <Label className="text-xs text-muted-foreground">
+              양식 다운로드로 받은 CSV 파일을 선택하세요. 멘트를 수정하거나 행을 추가한 뒤 업로드하면 미리보기가 표시됩니다.
+            </Label>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="mt-2 block w-full text-sm file:mr-2 file:rounded-md file:border file:border-teal-200 file:bg-teal-50 file:px-3 file:py-1.5 file:text-teal-700"
+              onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+              data-testid="opinion-phrase-csv-file-input"
+            />
+            {fileName && <p className="mt-1 text-[11px] text-muted-foreground">선택된 파일: {fileName}</p>}
+          </div>
+
+          {parseError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive" data-testid="opinion-phrase-csv-parse-error">
+              {parseError}
+            </p>
+          )}
+
+          {plan && (
+            <div className="space-y-2" data-testid="opinion-phrase-csv-preview">
+              {/* 요약 — 추가 N / 변경 M / 오류 K */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700" data-testid="opinion-phrase-csv-count-add">
+                  추가 {plan.added}
+                </span>
+                <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700" data-testid="opinion-phrase-csv-count-change">
+                  변경 {plan.changed}
+                </span>
+                <span className="rounded-full bg-muted px-2.5 py-1 font-medium text-muted-foreground" data-testid="opinion-phrase-csv-count-unchanged">
+                  변동없음 {plan.unchanged}
+                </span>
+                <span className="rounded-full bg-destructive/10 px-2.5 py-1 font-medium text-destructive" data-testid="opinion-phrase-csv-count-error">
+                  오류 {plan.errors}
+                </span>
+              </div>
+
+              {plan.errors > 0 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-700">
+                  오류 행은 반영에서 제외됩니다. 추가/변경 행만 반영됩니다.
+                </p>
+              )}
+
+              {/* 상세 — 스크롤 영역 */}
+              <div className="max-h-[260px] overflow-auto rounded-md border">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="sticky top-0 bg-muted/60 text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5">행</th>
+                      <th className="px-2 py-1.5">구분</th>
+                      <th className="px-2 py-1.5">섹션</th>
+                      <th className="px-2 py-1.5">버튼이름</th>
+                      <th className="px-2 py-1.5">삽입멘트 / 비고</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {plan.items.map((it, i) => (
+                      <tr key={i} className={it.type === 'error' ? 'bg-destructive/5' : ''} data-testid={`opinion-phrase-csv-row-${it.type}`}>
+                        <td className="px-2 py-1.5 text-muted-foreground">{it.line}</td>
+                        <td className="px-2 py-1.5">
+                          {it.type === 'add' && <span className="text-emerald-700">추가</span>}
+                          {it.type === 'change' && <span className="text-amber-700">변경</span>}
+                          {it.type === 'unchanged' && <span className="text-muted-foreground">변동없음</span>}
+                          {it.type === 'error' && <span className="text-destructive">오류</span>}
+                        </td>
+                        <td className="px-2 py-1.5">{it.section}</td>
+                        <td className="px-2 py-1.5">{it.label}</td>
+                        <td className="px-2 py-1.5 text-muted-foreground">
+                          {it.type === 'error' ? (
+                            <span className="text-destructive">{it.error}</span>
+                          ) : it.type === 'change' ? (
+                            <span>
+                              <span className="line-through opacity-60">{it.oldPhrase}</span> → {it.phrase}
+                            </span>
+                          ) : (
+                            it.phrase
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={committing}>
+            취소
+          </Button>
+          <Button
+            onClick={() => plan && onCommit(plan)}
+            disabled={!canCommit || committing}
+            className="bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"
+            data-testid="opinion-phrase-csv-commit"
+          >
+            {committing ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+            반영 ({plan ? plan.added + plan.changed : 0}건)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function OpinionPhrasesTab() {
@@ -280,11 +597,23 @@ export default function OpinionPhrasesTab() {
 
   const { data: tpl, isLoading } = useOpinionTemplateRow(clinicId);
   const saveMut = useSaveOpinionSections(clinicId);
+  const csvImportMut = useCommitCsvImport(clinicId);
 
   // 로컬 편집 draft + 서버 동기화 baseline 식별자(서버 데이터 변동 시 재초기화).
   const [draft, setDraft] = useState<OpinionSection[]>([]);
   const [baseline, setBaseline] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+
+  // AC-2 토글: 같은 영역에서 섹션(소견서/진단서 그룹)을 토글로 전환. '__all__' = 전체.
+  const [sectionFilter, setSectionFilter] = useState<string>('__all__');
+  // AC-4 CSV 대량입력 다이얼로그.
+  const [csvOpen, setCsvOpen] = useState(false);
+
+  const phraseMeta = tpl?.phraseMeta ?? {};
+  const importLog = tpl?.importLog ?? [];
+  const lastImport = importLog.length > 0 ? importLog[importLog.length - 1] : null;
+  // 업로드 반영 대상 = 서버 확정본(OpinionDocTab read 소스). 미저장 draft 와 분리.
+  const updatedBy = profile?.name || profile?.id || '알수없음';
 
   // AC-4 seed: DB sections 가 비면 현행 OPINION_SECTIONS 기본값으로 초기화 후 편집.
   const serverSections: OpinionSection[] = useMemo(
@@ -382,6 +711,39 @@ export default function OpinionPhrasesTab() {
     setDirty(false);
   };
 
+  // ── AC-3 양식 CSV 다운로드 — 현행 값(서버 확정본) 채워서 export ──
+  const handleDownloadCsv = () => {
+    downloadPhraseCsv(serverSections, phraseCsvFilename());
+  };
+
+  // ── AC-4 CSV 업로드 열기 — 미저장 변경 있으면 차단(서버 확정본 기준 반영) ──
+  const handleOpenCsv = () => {
+    if (dirty) {
+      toast.error('저장하지 않은 변경사항이 있습니다. 먼저 [저장] 또는 [되돌리기] 후 업로드해주세요.');
+      return;
+    }
+    setCsvOpen(true);
+  };
+
+  // ── AC-4 commit — dry-run plan 반영 ──
+  const handleCommitCsv = async (plan: ImportPlan) => {
+    if (!tpl) return;
+    await csvImportMut.mutateAsync({
+      templateId: tpl.id,
+      baseFieldMap: tpl.fieldMap,
+      currentSections: serverSections,
+      plan,
+      updatedBy,
+    });
+    setCsvOpen(false);
+    setBaseline(null); // 재조회 후 draft 재동기화.
+  };
+
+  // 토글 표시 대상 섹션 인덱스(원본 draft 인덱스 보존 — CRUD 핸들러가 절대 인덱스 사용).
+  const visibleSections = draft
+    .map((section, sIdx) => ({ section, sIdx }))
+    .filter(({ section }) => sectionFilter === '__all__' || section.title === sectionFilter);
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -404,7 +766,27 @@ export default function OpinionPhrasesTab() {
           </p>
         </div>
         {canEdit && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* AC-3 양식 CSV 다운로드 */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadCsv}
+              data-testid="opinion-phrase-csv-download"
+            >
+              <Download className="mr-1 h-3.5 w-3.5" />
+              양식 다운로드
+            </Button>
+            {/* AC-4 CSV 대량입력 */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenCsv}
+              data-testid="opinion-phrase-csv-upload"
+            >
+              <Upload className="mr-1 h-3.5 w-3.5" />
+              CSV 업로드
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -433,6 +815,47 @@ export default function OpinionPhrasesTab() {
         )}
       </div>
 
+      {/* AC-2 토글 — 소견서/진단서(섹션) 그룹을 같은 영역에서 전환. + 최신 업로드 표시(AC-5) */}
+      {draft.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1" data-testid="opinion-phrase-section-toggle">
+            <button
+              type="button"
+              onClick={() => setSectionFilter('__all__')}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                sectionFilter === '__all__'
+                  ? 'bg-teal-600 text-white'
+                  : 'border bg-card text-muted-foreground hover:bg-muted'
+              }`}
+              data-testid="opinion-phrase-toggle-all"
+            >
+              전체
+            </button>
+            {draft.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSectionFilter(s.title)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  sectionFilter === s.title
+                    ? 'bg-teal-600 text-white'
+                    : 'border bg-card text-muted-foreground hover:bg-muted'
+                }`}
+                data-testid="opinion-phrase-toggle-section"
+              >
+                {s.title || '(이름 없음)'}
+              </button>
+            ))}
+          </div>
+          {lastImport && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="opinion-phrase-last-import">
+              <History className="h-3 w-3" />
+              최신 업로드: {fmtKst(lastImport.at)} · {lastImport.by} (추가 {lastImport.added}/변경 {lastImport.changed})
+            </span>
+          )}
+        </div>
+      )}
+
       {dirty && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700" data-testid="opinion-phrase-dirty">
           저장하지 않은 변경사항이 있습니다. [저장]을 눌러야 소견서 화면에 반영됩니다.
@@ -447,7 +870,7 @@ export default function OpinionPhrasesTab() {
         </div>
       ) : (
         <div className="space-y-4">
-          {draft.map((section, sIdx) => (
+          {visibleSections.map(({ section, sIdx }) => (
             <div key={sIdx} className="rounded-lg border bg-card" data-testid="opinion-phrase-section">
               {/* 섹션 헤더 */}
               <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
@@ -501,6 +924,14 @@ export default function OpinionPhrasesTab() {
                         <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground" data-testid="opinion-phrase-option-phrase">
                           {opt.phrase}
                         </p>
+                        {/* AC-5: 버튼별 최신 업데이트 시각 */}
+                        {phraseMeta[opt.key]?.last_updated_at && (
+                          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground/70" data-testid="opinion-phrase-option-updated">
+                            <History className="h-2.5 w-2.5" />
+                            최신 업데이트: {fmtKst(phraseMeta[opt.key]?.last_updated_at)}
+                            {phraseMeta[opt.key]?.updated_by ? ` · ${phraseMeta[opt.key]?.updated_by}` : ''}
+                          </p>
+                        )}
                       </div>
                       {canEdit && (
                         <div className="flex shrink-0 items-center gap-0.5">
@@ -575,6 +1006,15 @@ export default function OpinionPhrasesTab() {
         onOpenChange={(v) => { if (!v) setSecDialog(null); }}
         initialTitle={secDialog && secDialog.idx !== null ? (draft[secDialog.idx]?.title ?? '') : null}
         onSubmit={submitSection}
+      />
+
+      {/* AC-4 CSV 대량입력 다이얼로그 */}
+      <CsvImportDialog
+        open={csvOpen}
+        onOpenChange={(v) => setCsvOpen(v)}
+        currentSections={serverSections}
+        committing={csvImportMut.isPending}
+        onCommit={handleCommitCsv}
       />
     </div>
   );
