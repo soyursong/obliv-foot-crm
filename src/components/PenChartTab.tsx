@@ -574,8 +574,17 @@ function PlacedItemOverlay({
       {/* 아이템 우상단 — 삭제 버튼 (선택/이동 모드 + 선택 시 표시) */}
       {interactive && isSelected && (
         <button
+          // T-20260617-foot-PENCHART-PHRASE-BUG3 이슈2(AC-2): X 클릭 삭제 복구.
+          //   [RC] 기존엔 onClick에만 삭제를 걸었는데, 버튼 pointerup이 부모 div로 버블 →
+          //   부모 handlePointerUp이 onSelect(deselect) 발화 → isSelected=false로 이 버튼이
+          //   언마운트됨 → 뒤이은 click 이벤트가 사라진 타깃에 도달 못 해 onDelete 미발화
+          //   (갤탭 터치·데스크톱 공통 레이스). → pointerup에서 stopPropagation+직접 삭제로
+          //   부모 deselect 차단. PINGPONG5 AC-1.A(외부클릭 deselect)는 캔버스 핸들러라 무관.
+          data-testid={`penchart-delete-${item.id}`}
+          data-overlay-delete="true"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+          onPointerUp={(e) => { e.stopPropagation(); onDelete(item.id); }}
+          onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             top: -10,
@@ -1837,12 +1846,16 @@ export function PenChartTab({
   }, [mode, initCanvas]);
 
   // T-20260522-foot-PENCHART-PHRASE: phrase_templates 로드 (draw 진입 시 1회)
+  // T-20260617-foot-PENCHART-PHRASE-BUG3 이슈1(AC-1): 펜차트 패널에 진료차트 상용구 섞임 →
+  //   phrase_type='pen_chart' 필터 누락이 RC(DoctorTreatmentPanel은 旣적용, 본 캔버스 패널만 누락).
+  //   pen_chart 유형만 로드 → phraseTemplates state·카테고리 카운트 모두 정합(medical_chart 미노출).
   useEffect(() => {
     if (mode !== 'draw' || phraseTemplatesLoaded) return;
     supabase
       .from('phrase_templates')
       .select('id, category, name, content')
       .eq('is_active', true)
+      .eq('phrase_type', 'pen_chart')
       .order('sort_order')
       .then(({ data }) => {
         setPhraseTemplates(data ?? []);
@@ -1930,25 +1943,34 @@ export function PenChartTab({
     return newItem.id;
   };
 
-  // #2: 현재 보이는 영역(스크롤 위치 반영) 좌상단의 캔버스 논리 좌표 — 즉시삽입 시 화면 밖 배치 방지.
-  const computeVisibleAnchor = (): { x: number; y: number } => {
+  // T-20260617-foot-PENCHART-PHRASE-BUG3 이슈3(AC-3): 상용구 즉시삽입을 캔버스 중앙에 선배치.
+  //   [RC] 기존 computeVisibleAnchor는 '가시영역 좌상단(+32px)'을 반환 → 현장 "좌측 상단 고정" 호소.
+  //   → 캔버스 논리 중앙 - 오브젝트 절반(x=W/2-objW/2, y=H/2-objH/2)으로 변경. 삽입 후 기존
+  //   이중 rAF scrollIntoView(block:'center')가 새 오버레이를 뷰포트 중앙으로 끌어와 가시성 유지.
+  //   별도 윈도우(NEWWIN/popupMode)도 동일 insertPhraseImmediate 경로라 함께 적용됨.
+  const computeCenterAnchor = (text: string, fontSize: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 60, y: 60 };
-    const dpr = drawDprRef.current;
-    const logicalW = canvas.width / dpr;
-    const logicalH = canvas.height / dpr;
-    const cRect = canvas.getBoundingClientRect();
-    if (cRect.width === 0 || cRect.height === 0) return { x: 60, y: 60 };
-    const scaleX = logicalW / cRect.width;
-    const scaleY = logicalH / cRect.height;
-    let visTopCss = 28, visLeftCss = 28;
-    const scrollEl = drawScrollRef.current;
-    if (scrollEl) {
-      const sRect = scrollEl.getBoundingClientRect();
-      visTopCss  = Math.max(0, sRect.top  - cRect.top)  + 32;
-      visLeftCss = Math.max(0, sRect.left - cRect.left) + 32;
+    const dpr = drawDprRef.current || 1;
+    const logicalW = canvas ? canvas.width / dpr : CANVAS_W;
+    const logicalH = canvas ? canvas.height / dpr : CANVAS_H;
+    const lines = text.split('\n');
+    const lineH = fontSize + 6;
+    const objH = lines.length * lineH + 8;
+    // 오브젝트 폭: 동일 폰트로 measureText(변환행렬 비의존) → 가장 긴 줄 기준. ctx 없으면 추정.
+    let objW = 120;
+    const ctx = drawCtxRef.current ?? canvas?.getContext('2d') ?? null;
+    if (ctx) {
+      ctx.save();
+      ctx.font = `${fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
+      objW = Math.max(60, ...lines.map((l) => ctx.measureText(l).width)) + 8;
+      ctx.restore();
+    } else {
+      objW = Math.max(60, ...lines.map((l) => l.length * fontSize * 0.6)) + 8;
     }
-    return { x: visLeftCss * scaleX, y: visTopCss * scaleY };
+    return {
+      x: Math.max(0, Math.round(logicalW / 2 - objW / 2)),
+      y: Math.max(0, Math.round(logicalH / 2 - objH / 2)),
+    };
   };
 
   // T-20260522-foot-PENCHART-TOOLS-V3 AC-7~9: 텍스트 도구 — placedItems에 추가 (드래그·삭제 지원)
@@ -2391,8 +2413,11 @@ export function PenChartTab({
     //   실제 배치는 사용자의 "캔버스 탭"에 의존했다. 갤탭(터치)에서는 placing 모드 캔버스 touchAction:'pan-y'
     //   라 손가락 탭이 스크롤 의도로 흡수돼 onPointerDown 미발화 → "✓ 선택만 되고 안 들어감"으로 재발.
     //   → 탭 의존 제거: 보이는 영역 좌상단에 즉시 배치 + select 도구 자동전환(드래그로 위치 조정 가능).
-    const { x, y } = computeVisibleAnchor();
-    // 연속 삽입 시 겹침 방지 — 기존 상용구 수만큼 소폭 stagger
+    // T-20260617-foot-PENCHART-PHRASE-BUG3 이슈3(AC-3): 좌상단 고정 → 캔버스 중앙 선배치.
+    //   placeBoilerplateAt 내부 fontSize 산식(penSize*4+6)과 동일하게 맞춰 중앙 좌표 계산.
+    const phraseFontSize = Math.round(penSize * 4 + 6);
+    const { x, y } = computeCenterAnchor(content, phraseFontSize);
+    // 연속 삽입 시 완전 겹침 방지 — 기존 상용구 수만큼 소폭 stagger(AC-3 합리적 오프셋)
     const n = placedItems.filter((it) => it.type === 'boilerplate').length % 6;
     const newId = placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
     // ── T-20260610-foot-PENCHART-6FIX-REFIX B: 삽입 가시화 (부모 #2 회귀 재발 차단) ──
