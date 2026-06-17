@@ -4813,26 +4813,58 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // T-20260603-foot-RES-NAME-MISMATCH-WARN: 예약명↔차트 고객명 불일치 비차단 경고 (defense-in-depth)
-  //   DASH-SLOT-CHART-MISMAP 후속 권고 #4. customer_id가 SET이어도 phone-dedup(placeholder
-  //   '+821000000000'/0000 등)으로 타 고객에 오연결될 수 있음 → 차트 오픈은 막지 않고(비차단)
-  //   예약/체크인 표기명과 실제 열린 차트 고객명이 다르면 경고 토스트로 오연결을 조기 발견한다.
-  //   ※ 동명이인 가드(T-20260529 이름-fallback)와는 무관 — 완화 금지. customer_id SET 경로에만 적용.
-  //   ※ 비차단: 조회 실패/이름 누락 시 침묵, await 하지 않음(차트 오픈을 절대 지연·차단하지 않음).
-  const warnIfNameMismatch = useCallback(async (customerId: string, displayedName?: string | null) => {
-    const shown = displayedName?.trim();
-    if (!shown) return; // 표기명 없으면 비교 불가 — false-warn/노이즈 회피
+  // T-20260603-foot-RES-NAME-MISMATCH-WARN → T-20260617-foot-CHECKIN-CHART-LINK-3KEY 로 차단형 격상.
+  //   직전 비차단 경고(warnIfNameMismatch)는 오배정을 막지 못했다(6/17 재발) → verifyChartLinkOrConfirm
+  //   (성함 불일치 시 window.confirm 차단형)으로 대체. 비차단 토스트는 연락처-only 상이에만 잔존.
+
+  // T-20260617-foot-CHECKIN-CHART-LINK-3KEY: 연락처 동일성 비교(포맷 무관) — true/false/null(비교불가)
+  const phoneSame = useCallback((a?: string | null, b?: string | null): boolean | null => {
+    const a164 = normalizeToE164(a ?? null);
+    const b164 = normalizeToE164(b ?? null);
+    if (a164 && b164) return a164 === b164;
+    const ad = (a ?? '').replace(/\D/g, '');
+    const bd = (b ?? '').replace(/\D/g, '');
+    if (ad.length >= 8 && bd.length >= 8) return ad.slice(-8) === bd.slice(-8);
+    return null; // 한쪽이라도 유효 번호 아님 → 비교 불가(차단 근거로 쓰지 않음)
+  }, []);
+
+  // T-20260617-foot-CHECKIN-CHART-LINK-3KEY (AC-3): 차트 오픈 직전 교차검증 — 차단형 격상.
+  //   customer_id 가 SET 이어도 연결된 고객의 성함/연락처가 카드 denormalized 값과 다르면
+  //   타 환자 차트일 수 있다(6/17 김사비→문자테스트). 직전 RES-NAME-MISMATCH-WARN 은 비차단
+  //   토스트뿐이라 오배정을 못 막았다 → 본 헬퍼는 성함 불일치 시 window.confirm 으로 차단(staff
+  //   확인 시에만 오픈). 연락처만 다르면(번호 변경 가능) 비차단 경고로 남긴다(false-block 회피).
+  //   조회 실패 시 차단하지 않음(가용성 우선 — read-only 차트 오픈 불변식과 정합).
+  //   반환: true = 오픈 진행, false = 오픈 차단.
+  const verifyChartLinkOrConfirm = useCallback(async (
+    customerId: string,
+    expectedName?: string | null,
+    expectedPhone?: string | null,
+  ): Promise<boolean> => {
     const { data, error } = await supabase
       .from('customers')
-      .select('name')
+      .select('name, phone')
       .eq('id', customerId)
       .maybeSingle();
-    if (error || !data) return; // 조회 실패 시 침묵 — 비차단 보장
+    if (error || !data) return true; // 조회 실패 → 비차단(오픈 허용)
     const chartName = (data.name ?? '').trim();
-    if (chartName && chartName !== shown) {
-      toast.warning(`예약명(${shown})과 차트 고객명(${chartName})이 다릅니다. 고객 오연결 여부를 확인하세요.`);
+    const shownName = (expectedName ?? '').trim();
+    const nameMismatch = !!chartName && !!shownName && chartName !== shownName;
+    const phoneCmp = phoneSame(expectedPhone, data.phone);
+    if (nameMismatch) {
+      // 성함 불일치 = 타 환자 차트 추정 → 차단형 확인 프롬프트
+      return window.confirm(
+        `⚠️ 고객 연결 불일치 — 다른 환자의 차트일 수 있습니다.\n\n`
+        + `· 카드 표기: ${shownName}${expectedPhone ? ` / ${expectedPhone}` : ''}\n`
+        + `· 연결된 차트: ${chartName}${data.phone ? ` / ${data.phone}` : ''}\n\n`
+        + `그래도 이 차트를 여시겠습니까?\n(취소 시 열지 않습니다 — 고객관리에서 연결을 재확인하세요)`,
+      );
     }
-  }, []);
+    if (phoneCmp === false) {
+      // 성함 일치 + 연락처 상이(번호 변경 가능) → 비차단 경고
+      toast.warning(`연락처가 차트와 다릅니다 (카드 ${expectedPhone ?? '-'} / 차트 ${data.phone ?? '-'}). 동일 고객인지 확인하세요.`);
+    }
+    return true;
+  }, [phoneSame]);
 
   // ════════════════════════════════════════════════════════════════════════════
   // CRITICAL: 차트오픈 단일 진입점 — openChartFor (DO NOT bypass)
@@ -4859,42 +4891,55 @@ export default function Dashboard() {
     | { kind: 'name'; customerId: string | null; name?: string | null };
 
   const openChartFor = useCallback(async (target: ChartOpenTarget) => {
-    // 0) 입력 정규화 — 어떤 뷰에서 왔든 (customerId, name, 링크백 후처리)로 환원
+    // 0) 입력 정규화 — 어떤 뷰에서 왔든 (customerId, name, phone, 링크백 후처리)로 환원
     let customerId: string | null;
     let name: string | null;
+    let phone: string | null;  // T-20260617: 복합키(성함+연락처) 검증·fallback 용 denormalized 연락처
     if (target.kind === 'checkin') {
       const ci = target.checkIn;
       // 칸반 카드: 2번차트 직접 오픈 + CheckInDetailSheet useEffect 간접 경로 보완 (항상 선행)
       setSelectedCheckIn(ci);
       customerId = ci.customer_id;
       name = ci.customer_name ?? null;
+      phone = ci.customer_phone ?? null;
     } else if (target.kind === 'reservation') {
       customerId = target.reservation.customer_id;
       name = target.reservation.customer_name ?? null;
+      phone = target.reservation.customer_phone ?? null;
     } else {
       customerId = target.customerId;
       name = target.name ?? null;
+      phone = null; // 명단 이름 진입은 연락처 컨텍스트 없음 → 성함 단독 fallback 유지(G5 무회귀)
     }
 
     // 1) customer_id 직결 — 1·2번 차트 열림의 실제 트리거 (read-only, isPast 무관)
+    //   T-20260617 (AC-3): 오픈 직전 성함/연락처 교차검증. 성함 불일치 시 차단형 확인.
     if (customerId) {
+      const ok = await verifyChartLinkOrConfirm(customerId, name, phone);
+      if (!ok) return; // 오연결 추정 → staff 가 취소 → 타 차트 오픈 차단
       ctxOpenChart(customerId);
-      // T-20260603-foot-RES-NAME-MISMATCH-WARN: 비차단 불일치 경고 (오픈 차단 X, await X)
-      void warnIfNameMismatch(customerId, name);
       return;
     }
 
-    // 2) customer_id 미연결 → 동일 클리닉·동명 1건 자동 조회 fallback (동명이인 오픈 방지)
+    // 2) customer_id 미연결 → 동일 클리닉 복합키(성함 AND 연락처) 1건 자동 조회 fallback
     //   T-20260529-foot-CHART-OPEN-{SINGLE,FAIL} + DASH-FIRSTVISIT-CHART-RECUR-RCA(P0-C) 통합
+    //   T-20260617 (AC-2): 성함 단독 fallback → 연락처가 있으면 성함 AND 연락처 복합으로 좁힘
+    //   (동명이인/오연결 차트 오픈 방지). 연락처 컨텍스트 없으면(명단 이름 진입) 성함 단독 유지.
     if (name && clinic) {
       const { data: matches } = await supabase
         .from('customers')
-        .select('id, name')
+        .select('id, name, phone')
         .eq('clinic_id', clinic.id)
         .eq('name', name)
-        .limit(2);
-      if (matches && matches.length === 1) {
-        const foundId = matches[0].id;
+        .limit(5);
+      let candidates = (matches ?? []) as Array<{ id: string; name: string | null; phone: string | null }>;
+      if (phone && candidates.length > 0) {
+        const phoneFiltered = candidates.filter((c) => phoneSame(phone, c.phone) === true);
+        // 연락처 일치가 있으면 복합키로 좁힘. 일치 0건이면 candidates 유지하지 않고 미확정 처리.
+        candidates = phoneFiltered;
+      }
+      if (candidates.length === 1) {
+        const foundId = candidates[0].id;
         ctxOpenChart(foundId);
         // 백그라운드 링크백: 다음 클릭부터 정상(customer_id 직결) 경로
         if (target.kind === 'checkin') {
@@ -4906,8 +4951,15 @@ export default function Dashboard() {
         }
         return;
       }
-      if (matches && matches.length > 1) {
-        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+      if (candidates.length > 1) {
+        toast.info(`동명이인 ${candidates.length}명 — 고객관리에서 직접 확인하세요`);
+        return;
+      }
+      // candidates.length === 0:
+      //   · phone 있었는데 성함+연락처 동시 일치 0건 → 복합키 미충족(오연결 방지) → 미확정 안내
+      //   · phone 없고 동명 0건 → 미등록
+      if (phone && (matches?.length ?? 0) > 0) {
+        toast.info('성함은 일치하나 연락처가 다릅니다 — 고객관리에서 직접 확인하세요');
         return;
       }
     }
@@ -4922,7 +4974,7 @@ export default function Dashboard() {
     } else {
       toast.info('고객 정보가 연결되어 있지 않습니다');
     }
-  }, [ctxOpenChart, clinic, fetchCheckIns, fetchTimelineReservations, warnIfNameMismatch]);
+  }, [ctxOpenChart, clinic, fetchCheckIns, fetchTimelineReservations, verifyChartLinkOrConfirm, phoneSame]);
 
   // 칸반 카드 클릭 진입점 — 단일 엔트리 openChartFor 위임 (직접 ctxOpenChart 호출 금지: INVARIANT #2)
   const handleCardClick = useCallback(
@@ -4947,31 +4999,41 @@ export default function Dashboard() {
   }, [ctxCloseChart]);
 
   const handleOpenChartFromList = useCallback(async (ci: CheckIn) => {
+    // T-20260617 (AC-3): customer_id SET 이어도 성함/연락처 교차검증 — 성함 불일치 시 차단형 확인.
     if (ci.customer_id) {
+      const ok = await verifyChartLinkOrConfirm(ci.customer_id, ci.customer_name, ci.customer_phone);
+      if (!ok) return; // 오연결 추정 → staff 취소 → 타 차트 오픈 차단
       openMedicalChartById(ci.customer_id);
       return;
     }
+    // T-20260617 (AC-2): 성함 단독 fallback 제거 → 연락처 있으면 성함 AND 연락처 복합으로 좁힘.
     if (ci.customer_name && clinic) {
       const { data: matches } = await supabase
         .from('customers')
-        .select('id, name')
+        .select('id, name, phone')
         .eq('clinic_id', clinic.id)
         .eq('name', ci.customer_name)
-        .limit(2);
-      if (matches && matches.length === 1) {
-        const foundId = matches[0].id;
+        .limit(5);
+      let candidates = (matches ?? []) as Array<{ id: string; name: string | null; phone: string | null }>;
+      if (ci.customer_phone && candidates.length > 0) {
+        candidates = candidates.filter((c) => phoneSame(ci.customer_phone, c.phone) === true);
+      }
+      if (candidates.length === 1) {
+        const foundId = candidates[0].id;
         openMedicalChartById(foundId);
         supabase.from('check_ins').update({ customer_id: foundId }).eq('id', ci.id)
           .then(({ error }) => { if (!error) fetchCheckIns(); });
-      } else if (matches && matches.length > 1) {
-        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+      } else if (candidates.length > 1) {
+        toast.info(`동명이인 ${candidates.length}명 — 고객관리에서 직접 확인하세요`);
+      } else if (ci.customer_phone && (matches?.length ?? 0) > 0) {
+        toast.info('성함은 일치하나 연락처가 다릅니다 — 고객관리에서 직접 확인하세요');
       } else {
         toast.info('고객 정보가 연결되어 있지 않습니다');
       }
     } else {
       toast.info('고객 정보가 연결되어 있지 않습니다');
     }
-  }, [openMedicalChartById, clinic, fetchCheckIns]);
+  }, [openMedicalChartById, clinic, fetchCheckIns, verifyChartLinkOrConfirm, phoneSame]);
 
   // T-20260522-foot-DRAG-RESP-OPT: useCallback 안정화 — 호출 측 클로저 의존성 최소화
   const handleCardContext = useCallback((ci: CheckIn, e: React.MouseEvent) => {
