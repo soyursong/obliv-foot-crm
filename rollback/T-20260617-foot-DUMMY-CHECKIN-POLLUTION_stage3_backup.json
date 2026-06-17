@@ -1,21 +1,9 @@
 {
   "ticket": "T-20260617-foot-DUMMY-CHECKIN-POLLUTION",
   "stage": 3,
-  "backed_up_at": "2026-06-17T05:00:50.411Z",
+  "backed_up_at": "2026-06-17T09:53:02.787Z",
   "where_key": "reservation_id IS NULL AND status='registered' AND created_at∈[10:08:00,10:09:00)KST AND checked_in_at::date=2026-06-17",
   "check_ins": [
-    {
-      "id": "aaf4d230-3e94-44ce-b4b2-081db85517a7",
-      "customer_id": "fd7e1200-e3da-4873-97f0-5275292972d0",
-      "reservation_id": null,
-      "customer_name": "이민준",
-      "customer_phone": "010-0001-0001",
-      "visit_type": "new",
-      "status": "registered",
-      "checked_in_at": "2026-06-17T03:00:00+00:00",
-      "created_at": "2026-06-17T01:08:40.738293+00:00",
-      "notes": null
-    },
     {
       "id": "cf93365e-717d-416d-8852-edee8889fc49",
       "customer_id": "7353dfb8-ea5d-425c-886f-3bb1cb128c98",
@@ -26,6 +14,18 @@
       "status": "registered",
       "checked_in_at": "2026-06-17T03:00:00+00:00",
       "created_at": "2026-06-17T01:08:01.684567+00:00",
+      "notes": null
+    },
+    {
+      "id": "aaf4d230-3e94-44ce-b4b2-081db85517a7",
+      "customer_id": "fd7e1200-e3da-4873-97f0-5275292972d0",
+      "reservation_id": null,
+      "customer_name": "이민준",
+      "customer_phone": "010-0001-0001",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T03:00:00+00:00",
+      "created_at": "2026-06-17T01:08:40.738293+00:00",
       "notes": null
     },
     {
@@ -125,18 +125,6 @@
       "notes": null
     },
     {
-      "id": "5b8d961d-f2b7-4f6b-b18a-93d5f7b6a8e1",
-      "customer_id": "07c6b3ec-f222-4ef7-8717-f3b037aa369d",
-      "reservation_id": null,
-      "customer_name": "한소희",
-      "customer_phone": "010-0001-0006",
-      "visit_type": "new",
-      "status": "registered",
-      "checked_in_at": "2026-06-17T05:30:00+00:00",
-      "created_at": "2026-06-17T01:08:03.102327+00:00",
-      "notes": null
-    },
-    {
       "id": "73da2302-efcc-4616-9dcb-6c420373f801",
       "customer_id": "1d5aaf5c-0420-4f38-ac97-ef3bfba02c25",
       "reservation_id": null,
@@ -146,6 +134,18 @@
       "status": "registered",
       "checked_in_at": "2026-06-17T05:30:00+00:00",
       "created_at": "2026-06-17T01:08:03.254032+00:00",
+      "notes": null
+    },
+    {
+      "id": "5b8d961d-f2b7-4f6b-b18a-93d5f7b6a8e1",
+      "customer_id": "07c6b3ec-f222-4ef7-8717-f3b037aa369d",
+      "reservation_id": null,
+      "customer_name": "한소희",
+      "customer_phone": "010-0001-0006",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T05:30:00+00:00",
+      "created_at": "2026-06-17T01:08:03.102327+00:00",
       "notes": null
     },
     {
@@ -245,18 +245,6 @@
       "notes": null
     },
     {
-      "id": "e10468c7-1359-4e4d-a2d5-0a486230ae4c",
-      "customer_id": "661e694a-caa4-467d-9c2b-ea75d9808342",
-      "reservation_id": null,
-      "customer_name": "양지우",
-      "customer_phone": "010-0001-0011",
-      "visit_type": "new",
-      "status": "registered",
-      "checked_in_at": "2026-06-17T08:00:00+00:00",
-      "created_at": "2026-06-17T01:08:04.534151+00:00",
-      "notes": null
-    },
-    {
       "id": "598659d2-9fcc-4641-8299-fbcaa8edb5ce",
       "customer_id": "c35eb8d8-cf9c-445b-8323-e9a702e8fbf1",
       "reservation_id": null,
@@ -269,15 +257,15 @@
       "notes": null
     },
     {
-      "id": "3d436064-f23d-4033-914b-82f0caedcc4e",
-      "customer_id": "1107dc71-6c32-40c8-92fd-ba2b4348303c",
+      "id": "e10468c7-1359-4e4d-a2d5-0a486230ae4c",
+      "customer_id": "661e694a-caa4-467d-9c2b-ea75d9808342",
       "reservation_id": null,
-      "customer_name": "홍다은",
-      "customer_phone": "010-0001-0012",
+      "customer_name": "양지우",
+      "customer_phone": "010-0001-0011",
       "visit_type": "new",
       "status": "registered",
-      "checked_in_at": "2026-06-17T08:30:00+00:00",
-      "created_at": "2026-06-17T01:08:04.831593+00:00",
+      "checked_in_at": "2026-06-17T08:00:00+00:00",
+      "created_at": "2026-06-17T01:08:04.534151+00:00",
       "notes": null
     },
     {
@@ -290,6 +278,18 @@
       "status": "registered",
       "checked_in_at": "2026-06-17T08:30:00+00:00",
       "created_at": "2026-06-17T01:08:04.98248+00:00",
+      "notes": null
+    },
+    {
+      "id": "3d436064-f23d-4033-914b-82f0caedcc4e",
+      "customer_id": "1107dc71-6c32-40c8-92fd-ba2b4348303c",
+      "reservation_id": null,
+      "customer_name": "홍다은",
+      "customer_phone": "010-0001-0012",
+      "visit_type": "new",
+      "status": "registered",
+      "checked_in_at": "2026-06-17T08:30:00+00:00",
+      "created_at": "2026-06-17T01:08:04.831593+00:00",
       "notes": null
     },
     {
@@ -616,5 +616,33 @@
     "notifications": 0,
     "check_in_services": 0,
     "status_transitions": 0
-  }
+  },
+  "customer_ref_counts": {
+    "reservations": 0,
+    "payments": 0,
+    "package_payments": 0,
+    "packages": 0,
+    "medical_charts": 0,
+    "consent_forms": 0,
+    "checklists": 0,
+    "clinical_images": 0,
+    "insurance_claims": 0,
+    "insurance_documents": 0,
+    "insurance_receipts": 0,
+    "form_submissions": 0,
+    "health_q_results": 0,
+    "health_q_tokens": 0,
+    "customer_special_notes": 0,
+    "customer_treatment_memos": 0,
+    "chart_doctor_memos": 0,
+    "message_logs": 0,
+    "notification_logs": 0,
+    "notification_opt_outs": 0,
+    "scheduled_messages": 0,
+    "prescriptions": 0,
+    "rx_audit_log": 0,
+    "payment_code_claims": 0,
+    "service_charges": 0
+  },
+  "daily_closings_snapshot": []
 }
