@@ -180,7 +180,16 @@ export default defineConfig({
     //   reuseExistingServer=true 일 때 정상 서버가 이미 떠 있으면 Playwright가 url 헬스체크 후
     //   이 command 자체를 실행하지 않으므로, free-test-port 는 launch 가 필요한 경우(=죽은/없는
     //   서버)에만 동작 → 정상 재사용 서버를 죽이지 않는다.
-    command: 'bash scripts/free-test-port.sh 8089 && npm run dev',
+    //
+    // ⚠ 고아 dev-server 누수 방지(RC 84qw / T-20260616-meta-QA-BUILD-CONTENTION):
+    //   과거 `&& npm run dev` 사용 시 프로세스 트리가 `bash -c ← npm ← vite ← esbuild` 였다.
+    //   Playwright teardown은 자신이 spawn한 PID(bash -c)에만 SIGTERM을 보내고, bash -c는
+    //   자식으로 신호를 전파하지 않으므로 bash -c만 죽고 npm+vite 가 고아가 되어 launchd(PPID=1)
+    //   로 reparent → QA 호스트에 vite/esbuild 트리가 수 시간 누수(빌드 경합 유발).
+    //   → `exec`로 vite 바이너리를 직접 실행해 중간 npm 레이어를 제거한다. 이제 Playwright가
+    //     추적하는 PID == vite 이므로 graceful SIGTERM이 vite에 직접 도달, vite가 esbuild 자식을
+    //     정리한다. (세션 SIGKILL 시의 전역 idle-tree reaper 는 meta 티켓 supervisor+conductor 소유)
+    command: 'bash scripts/free-test-port.sh 8089 && exec node_modules/.bin/vite',
     // 전용 테스트 포트 8089: 일반 dev(8085)와 분리
     // VITE_DEV_PORT=8089 → vite.config.ts server.port 에서 읽어 8089로 기동
     // reuseExistingServer: 로컬에선 이미 8089에 떠있는 서버를 재사용(잔여 프로세스로 인한
