@@ -146,6 +146,10 @@ export default defineConfig({
         // T-20260617-foot-DOCDASH-DOCLIST-5FIX: 진료대시보드 가로스크롤(A1)/진료완료행 우정렬(A2)/
         //   임상경과 폭초과 dedup(A3)/서브탭·헤더 라벨 역전(B1·A4) (소스 정적 grep, auth 불요). B2 별도.
         '**/T-20260617-foot-DOCDASH-DOCLIST-5FIX.spec.ts',
+        // T-20260617-foot-DOCFORM-POPUP-OVERHAUL (Phase 1): 진료대시보드 원장영역 연동 — 행 '서류' 진입점 일원화
+        //   (소견서/서류발급/KOH 허브). visitorFromCheckIn 매핑·단일 Dialog 불변식 순수 로직 + 재사용·무회귀
+        //   소스 정적 가드(불변 트리거·L-006·기존 탭 병행 보존). auth 불요.
+        '**/T-20260617-foot-DOCFORM-POPUP-OVERHAUL.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

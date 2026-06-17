@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   Loader2,
   Hand,
+  FileText,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -36,6 +37,8 @@ import { useAuth } from '@/lib/auth';
 //   → Dashboard.tsx handleOpenMedicalChart 패턴 재사용(로컬 MedicalChartPanel 렌더). 2번차트 서랍 게이트웨이
 //   (CHART-LOCK-011)는 다른 진입점에 그대로 유지되며, 본 화면만 진료차트 직접 오픈으로 정정.
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+// T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 → 서류 발급 허브(소견서·서류발급·검사결과지) 직접 진입.
+import DoctorDocsHubDialog from '@/components/doctor/DoctorDocsHubDialog';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate, chartNoDisplay, birthYearAgeDisplay } from '@/lib/format';
@@ -423,6 +426,15 @@ export default function DoctorCallDashboard() {
     setMedicalChartOpen(true);
   };
 
+  // T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 '서류' 액션 → 서류 발급 허브 직접 오픈.
+  //   허브가 소견서/서류발급/검사결과지(KOH) 개별 팝업으로 분기(DoctorDocsHubDialog). 패널 1개만 부모에서 렌더.
+  const [docsHubCheckIn, setDocsHubCheckIn] = useState<CheckIn | null>(null);
+  const [docsHubOpen, setDocsHubOpen] = useState(false);
+  const openDocsHub = (ci: CheckIn) => {
+    setDocsHubCheckIn(ci);
+    setDocsHubOpen(true);
+  };
+
   const queryClient = useQueryClient();
   const { data: rows = [], isLoading, refetch } = useDoctorCallFeed(clinicId);
   // T-20260612-foot-DOCDASH-11FIX AC-11: 진료완료 환자 임상경과 미리보기 맵(customer_id → 최신 1줄).
@@ -699,6 +711,7 @@ export default function DoctorCallDashboard() {
                     /* T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3: 끝 임상경과 칼럼 미리보기(저장 즉시 반영). */
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
+                    onOpenDocs={openDocsHub}
                     onRefresh={() => void refetch()}
                     /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 저장 본문으로 미리보기 optimistic 0지연 반영 + 백그라운드 정합. */
                     onClinicalSaved={(saved) => applyClinicalOptimistic(ci.customer_id, saved)}
@@ -801,6 +814,7 @@ export default function DoctorCallDashboard() {
                     currentUserEmail={profile?.email ?? null}
                     clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
                     onOpenChart={openTreatmentChart}
+                    onOpenDocs={openDocsHub}
                     onRefresh={() => void refetch()}
                     /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 저장 본문으로 미리보기 optimistic 0지연 반영 + 백그라운드 정합. */
                     onClinicalSaved={(saved) => applyClinicalOptimistic(ci.customer_id, saved)}
@@ -829,6 +843,22 @@ export default function DoctorCallDashboard() {
         // T-20260609-foot-MEDDASH-MINIMAL-TABLE AC-5: clinical 미니멀 drawer 내 '본 차트 열기' →
         //   같은 환자/같은 패널 인스턴스 유지하며 variant만 'full' 전환(작성 중 임상경과 보존, AC-6 2단 레이아웃 그대로).
         onOpenFull={() => setMedicalChartVariant('full')}
+      />
+
+      {/* T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 서류 발급 허브 — 행 '서류' 클릭 시 오픈.
+          소견서/서류발급(DocumentPrintPanel)/검사결과지(KOH) 개별 팝업으로 분기. 부모 단일 렌더(행 누수 0). */}
+      <DoctorDocsHubDialog
+        checkIn={docsHubCheckIn}
+        open={docsHubOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setDocsHubOpen(false);
+            setDocsHubCheckIn(null);
+          }
+        }}
+        clinicId={clinicId}
+        profile={profile}
+        onRefresh={() => void refetch()}
       />
     </div>
   );
@@ -866,6 +896,7 @@ function CallFeedRow({
   currentUserEmail,
   clinicalPreview,
   onOpenChart,
+  onOpenDocs,
   onRefresh,
   onClinicalSaved,
 }: {
@@ -877,6 +908,8 @@ function CallFeedRow({
   /** T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3: 끝 임상경과 칼럼 최신 1줄 미리보기(없으면 null). */
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
+  /** T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 '서류' 클릭 → 서류 발급 허브 오픈. */
+  onOpenDocs: (checkIn: CheckIn) => void;
   onRefresh: () => void;
   /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 인라인 임상경과 저장 직후 미리보기 optimistic 반영(저장 본문 전달). */
   onClinicalSaved?: (savedText?: string) => void;
@@ -993,6 +1026,18 @@ function CallFeedRow({
                   font-semibold(600)→font-medium(500)로 통일. 같은 15px 클릭 데이터셀인 처방 링크(text-[15px] font-medium)와 동일 weight.
                   size(15px)·정렬(text-left, NAMECOL)·배지·클릭→차트 동선 불변(weight만 조정). */}
               <span className="block text-[15px] font-medium">{checkIn.customer_name}</span>
+            </button>
+            {/* T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 '서류' 진입 — 소견서·서류발급·검사결과지 허브 오픈.
+                칼럼 추가 없이 이름 셀 인라인 보조 액션(8칼럼 colgroup 폭 불변). */}
+            <button
+              type="button"
+              onClick={() => onOpenDocs(checkIn)}
+              data-testid="doctor-call-docs-btn"
+              title="서류 — 소견서·진단서·검사결과지 발급"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-gray-500 transition-colors hover:bg-accent hover:text-teal-700"
+            >
+              <FileText className="h-3 w-3" />
+              서류
             </button>
           </div>
           {/* T-20260615-foot-DOCDASH-MEMO-ICON-TOOLTIP AC4: 이름 아래 메모 텍스트 제거 → 상태셀 MemoBell로 이전. */}
@@ -1213,6 +1258,7 @@ function CompletedRow({
   currentUserEmail,
   clinicalPreview,
   onOpenChart,
+  onOpenDocs,
   onRefresh,
   onClinicalSaved,
 }: {
@@ -1224,6 +1270,8 @@ function CompletedRow({
   /** T-20260612-foot-DOCDASH-11FIX AC-11: 최신 임상경과 1줄 미리보기(없으면 null). */
   clinicalPreview: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
+  /** T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 '서류' 클릭 → 서류 발급 허브 오픈. */
+  onOpenDocs: (checkIn: CheckIn) => void;
   onRefresh: () => void;
   /** T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 인라인 임상경과 저장 직후 미리보기 optimistic 반영(저장 본문 전달). */
   onClinicalSaved?: (savedText?: string) => void;
@@ -1318,6 +1366,17 @@ function CompletedRow({
                   font-semibold(600)→font-medium(500)로 통일. 같은 15px 클릭 데이터셀인 처방 링크(text-[15px] font-medium)와 동일 weight.
                   size(15px)·정렬(text-left, NAMECOL)·배지·클릭→차트 동선 불변(weight만 조정). */}
               <span className="block text-[15px] font-medium">{checkIn.customer_name}</span>
+            </button>
+            {/* T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 완료 행도 '서류' 진입 일원화(대기 행과 동일). */}
+            <button
+              type="button"
+              onClick={() => onOpenDocs(checkIn)}
+              data-testid="doctor-completed-docs-btn"
+              title="서류 — 소견서·진단서·검사결과지 발급"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-gray-500 transition-colors hover:bg-accent hover:text-teal-700"
+            >
+              <FileText className="h-3 w-3" />
+              서류
             </button>
           </div>
         </td>
