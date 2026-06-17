@@ -580,6 +580,11 @@ function PlacedItemOverlay({
           //   언마운트됨 → 뒤이은 click 이벤트가 사라진 타깃에 도달 못 해 onDelete 미발화
           //   (갤탭 터치·데스크톱 공통 레이스). → pointerup에서 stopPropagation+직접 삭제로
           //   부모 deselect 차단. PINGPONG5 AC-1.A(외부클릭 deselect)는 캔버스 핸들러라 무관.
+          // T-20260617-foot-PENCHART-PHRASE-PANEL-3FIX 이슈2 갤탭 하드닝: 18px 원형은 갤탭
+          //   손가락 터치 타깃으로 과소(WCAG/모바일 권장 44px 대비). 손가락이 버튼 밖을 짚으면
+          //   pointerup이 부모로 가 onSelect(deselect)만 발화 → "X 눌러도 안 지워짐" 재인지.
+          //   → 터치 타깃을 30px로 확대(시각 × 글리프는 유지, foot 태블릿 '큰 버튼' 원칙).
+          //   이벤트 경로(onPointerUp 직접 삭제 + onPointerDown/onClick stopPropagation)는 불변.
           data-testid={`penchart-delete-${item.id}`}
           data-overlay-delete="true"
           onPointerDown={(e) => e.stopPropagation()}
@@ -587,21 +592,24 @@ function PlacedItemOverlay({
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
-            top: -10,
-            right: -10,
-            width: 18,
-            height: 18,
+            top: -16,
+            right: -16,
+            width: 30,
+            height: 30,
             borderRadius: '50%',
             background: '#dc2626',
             color: '#fff',
-            border: 'none',
+            border: '2px solid #fff',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 10,
+            fontSize: 16,
+            lineHeight: 1,
             fontWeight: 'bold',
             zIndex: 30,
+            touchAction: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
           }}
           title="삭제"
         >
