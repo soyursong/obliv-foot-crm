@@ -650,7 +650,11 @@ export default function DoctorCallDashboard() {
         ) : (
           // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-3/AC-4: 공유 colgroup/thead 로 진료 완료 섹션과 칼럼 폭·순서 완전 동일.
           <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-[15px]" data-testid="doctor-call-feed-table">
+            {/* T-20260617-foot-DOCDASH-DOCLIST-5FIX A1 (문지은 대표원장): 가로 스크롤 실효화.
+                기존 table-fixed w-full 은 컨테이너 폭에 100% 맞춰져 overflow-x-auto 래퍼가 발동 못함(컬럼 압축만).
+                min-w-[1040px] 부여 → 데스크톱(>1040px) 풀폭 무회귀, 갤탭 등 좁은 폭에서 테이블이 넘쳐 래퍼가 가로 스크롤.
+                완료 테이블과 동일 값(WAITDONE-ALIGN 픽셀 경계 일치 유지). colgroup % 합·sticky 무회귀. */}
+            <table className="w-full min-w-[1040px] table-fixed text-[15px]" data-testid="doctor-call-feed-table">
               {/* DOCDASH_COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1(문지은 대표원장, MONOTONE 컬럼순서 supersede): 10칼럼, 합 100%.
                   T-20260614-foot-DOCPATIENTLIST-COLWIDTH-RATIO-TUNE: EXPAND-QUICKEDIT 배포본(방5·상태9·이름11·처방24) 기준 비율 축소.
                   방 ×0.75(5→4) · 상태 ×0.75(9→7) · 이름 ×0.50(11→6) · 처방 ×0.50(24→12). 해방된 20%p 전량을 임상경과 본문(14→34)에 재분배(나머지 불변).
@@ -753,7 +757,8 @@ export default function DoctorCallDashboard() {
         ) : (
           // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7: 진료 완료 섹션은 경과시간(시간) 값은 표시 안 함(완료환자 대기시간 불요).
           <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-[15px]" data-testid="doctor-completed-table">
+            {/* T-20260617-foot-DOCDASH-DOCLIST-5FIX A1: 가로 스크롤 실효화 — 대기 테이블과 동일 min-w-[1040px](WAITDONE-ALIGN 경계 일치). */}
+            <table className="w-full min-w-[1040px] table-fixed text-[15px]" data-testid="doctor-completed-table">
               {/* COMPLETED COLGROUP — T-20260615-foot-DOCDASH-WAITDONE-ALIGN-CNTNUM (문지은 대표원장):
                   진료대기↔진료완료 두 테이블 칼럼 세로경계를 픽셀단위 일치(같은 테이블처럼). 접근(a): 완료 테이블을
                   대기 테이블과 '글자 그대로 동일' 10칼럼 colgroup 으로 맞추고, 시간 칼럼은 빈칸 placeholder(값 미표시, UX7 유지).

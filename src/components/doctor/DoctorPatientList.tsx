@@ -444,9 +444,11 @@ function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
 // ---------------------------------------------------------------------------
 function StatusCell({ status, statusFlag }: { status: CheckInStatus; statusFlag: string | null }) {
   if (statusFlag === 'pink') {
+    // T-20260617-foot-DOCDASH-DOCLIST-5FIX A2 (문지은 대표원장): '진료완료' 행만 상태 칼럼 내용 우정렬.
+    //   grid 셀(상태 컬럼 3.75rem) 내 배지를 justify-self-end 로 우측 앵커. 나머지 상태(귀가/대기) 행·정렬 불변.
     return (
       <span
-        className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+        className="inline-flex items-center justify-self-end whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
         data-testid="status-cell"
         data-state="treatment-done"
         title="진료완료 — 원내 잔류(처방 가능)"
@@ -942,8 +944,8 @@ export default function DoctorPatientList() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          {/* T-20260615-foot-RXLIST-RENAME-DOCFILTER item1: 라벨 '진료 환자 목록'→'처방 환자 목록'(탭과 일관). */}
-          <p className="text-sm font-medium">처방 환자 목록</p>
+          {/* T-20260617-foot-DOCDASH-DOCLIST-5FIX B1(A4): 헤더 라벨도 서브탭과 일관 — '처방 환자 목록'→'진료 환자 목록'(reporter-explicit). */}
+          <p className="text-sm font-medium">진료 환자 목록</p>
           {/* T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1/AC-2: 날짜 헤더 + < > 전/후 이동 + 진료완료 인원 */}
           <div className="flex items-center gap-1 mt-1">
             <Button

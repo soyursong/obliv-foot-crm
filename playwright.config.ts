@@ -143,6 +143,9 @@ export default defineConfig({
         // T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE: 더미생성 visit_type 을 고객 SSOT 에서 파생
         //   (resolveVisitType 불변식 — reservation.visit_type === customers.visit_type, 순수 함수, auth 불요)
         '**/T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE.spec.ts',
+        // T-20260617-foot-DOCDASH-DOCLIST-5FIX: 진료대시보드 가로스크롤(A1)/진료완료행 우정렬(A2)/
+        //   임상경과 폭초과 dedup(A3)/서브탭·헤더 라벨 역전(B1·A4) (소스 정적 grep, auth 불요). B2 별도.
+        '**/T-20260617-foot-DOCDASH-DOCLIST-5FIX.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

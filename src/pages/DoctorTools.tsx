@@ -1,5 +1,6 @@
-// DoctorTools — 진료 도구 (진료 알림판 + 처방 환자 목록)
-// (NOTE) DoctorTools 서브탭 라벨 '진료 환자 목록' 역전은 본 파일 밖 — T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item7로 이관됨.
+// DoctorTools — 진료 도구 (진료 알림판 + 진료 환자 목록)
+// T-20260617-foot-DOCDASH-DOCLIST-5FIX B1(A4): 서브탭 라벨 '처방 환자 목록' → '진료 환자 목록' 역전 착지(reporter-explicit, 문지은 대표원장).
+//   RX-DISPLAY-REVAMP item7 결정(MSG-20260615-212624-u6y5)이 5121edbc로 역전·미착지된 것을 재착지. value/data-testid 불변.
 // Ticket: T-20260502-foot-DOCTOR-TREATMENT-FLOW (Admin CRUD, 포팅: derm → foot)
 //
 // T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-4):
@@ -7,7 +8,7 @@
 //   빠른처방버튼·경과분석플랜·금기증관리)는 '서비스 관리 > 진료관리'(ClinicManagement)로 분리됨.
 //   진료 도구에는 전체 공개 운영 화면 2개만 잔존:
 //     - 진료 알림판 (DoctorCallDashboard) — 호출 알람+처방+차팅+진료완료 통합 대시보드
-//     - 처방 환자 목록 (DoctorPatientList) — 원장 진료콜 명단에 오른 고객의 처방 현황
+//     - 진료 환자 목록 (DoctorPatientList) — 원장 진료콜 명단에 오른 고객의 처방 현황
 //       (T-20260615-foot-RXLIST-RENAME-DOCFILTER: 라벨 리네임
 //        → T-20260616-foot-RXLIST-RENAME-DOCTORCALL-FILTER: 모집단을 진료콜 명단(doctor_call list) 교집합으로 정정)
 //   부원장(consultant)/코디(coordinator)/치료사(therapist)가 진입해도 어드민성 항목은 비노출.
@@ -35,7 +36,7 @@ export default function DoctorTools() {
         {/* T-20260609-foot-DOCDASH-LABEL-RX-REFINE item1: 헤더 라벨 오기 교정('진료 도구'→'진료대시보드') */}
         <h1 className="text-lg font-bold">진료대시보드</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          진료 알림판 · 처방 환자 목록 · 균검사지(KOH) · 소견서를 확인합니다.
+          진료 알림판 · 진료 환자 목록 · 균검사지(KOH) · 소견서를 확인합니다.
         </p>
       </div>
 
@@ -46,11 +47,12 @@ export default function DoctorTools() {
             <Stethoscope className="h-3.5 w-3.5" />
             진료 알림판
           </TabsTrigger>
-          {/* 처방 환자 목록 — 전체 공개. T-20260615-foot-RXLIST-RENAME-DOCFILTER item1:
-              라벨 '진료 환자 목록'→'처방 환자 목록'(텍스트만). value/data-testid 보존(E2E·탭 상태키 무변경). */}
+          {/* 진료 환자 목록 — 전체 공개. T-20260617-foot-DOCDASH-DOCLIST-5FIX B1(A4):
+              라벨 '처방 환자 목록'→'진료 환자 목록' 역전 착지(reporter-explicit). value/data-testid 보존(E2E·탭 상태키 무변경).
+              ← T-20260615-foot-RXLIST-RENAME-DOCFILTER item1('처방 환자 목록') supersede by 대표원장 결정. */}
           <TabsTrigger value="patient_list" className="gap-1.5" data-testid="tab-patient-list">
             <Users className="h-3.5 w-3.5" />
-            처방 환자 목록
+            진료 환자 목록
           </TabsTrigger>
           {/* 균검사지 — KOH 진균검사 명단 (T-20260611-foot-KOH-REPORT-TAB Phase 1) */}
           <TabsTrigger value="koh_report" className="gap-1.5" data-testid="tab-koh-report">
