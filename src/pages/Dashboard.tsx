@@ -197,6 +197,16 @@ interface PackageLabel {
   name: string;
   remaining: number;
   total: number;
+  used: number;
+}
+
+// T-20260617-foot-PKGBOX-USED-FORMAT: 고객박스 패키지 표기를 "잔여/총"(예 12/12 — 다 쓴 것처럼 오인)
+//   에서 "회차 번호"(N = used+1 = 오늘 회차)로 변경. 신규(used=0)=1회차, 6회 사용=7회차.
+//   엣지: 전부 소진(used>=total)은 N=total+1(13회차) 방지 위해 "완료" 가드.
+//   두 렌더 지점(L497·L683)이 이 단일 함수를 공유 → 표기 불일치 차단(AC-2).
+function formatPkgLabel(p: PackageLabel): string {
+  if (p.used >= p.total) return `${p.name} 완료 (${p.total}회)`;
+  return `${p.name} ${p.used + 1}회차 / ${p.total}회`;
 }
 
 // pointerWithin 우선, 없으면 closestCenter 폴백 — 방(room) 드롭 정확도 향상
@@ -493,8 +503,8 @@ const DraggableCard = memo(function DraggableCard({
           </div>
         </div>
         {packageLabel && (
-          <div className="mt-0.5 text-xs text-violet-600 font-medium truncate">
-            {packageLabel.name} {packageLabel.remaining}/{packageLabel.total}
+          <div data-testid="pkg-session-label" className="mt-0.5 text-xs text-violet-600 font-medium truncate">
+            {formatPkgLabel(packageLabel)}
           </div>
         )}
         {/* 체크리스트 완료 배지 (T-20260430-foot-PRESCREEN-CHECKLIST) */}
@@ -679,8 +689,8 @@ const DraggableCard = memo(function DraggableCard({
         </div>
       </div>
       {packageLabel && (
-        <div className="mt-0.5 text-[10px] text-violet-600 font-medium truncate">
-          {packageLabel.name} {packageLabel.remaining}/{packageLabel.total}
+        <div data-testid="pkg-session-label" className="mt-0.5 text-[10px] text-violet-600 font-medium truncate">
+          {formatPkgLabel(packageLabel)}
         </div>
       )}
       {/* 동의서 서명 배지 */}
@@ -3938,7 +3948,8 @@ export default function Dashboard() {
     for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number }[]) {
       const used = usedMap.get(p.id) ?? 0;
       const remaining = Math.max(0, p.total_sessions - used);
-      map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions });
+      // T-20260617-foot-PKGBOX-USED-FORMAT: used 보존 → 회차 번호 표기(N=used+1)
+      map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions, used });
       if (remaining > 0) holderSet.add(p.customer_id);
     }
     setPkgMap(map);
