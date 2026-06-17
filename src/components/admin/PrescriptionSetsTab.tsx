@@ -1463,9 +1463,10 @@ export default function PrescriptionSetsTab() {
                     <tr className="border-b">
                       <th className="w-14 px-1.5 py-1.5 text-center font-medium text-muted-foreground">순서</th>
                       <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{RX_COL.name}</th>
-                      <th className="w-16 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1회량</th>
-                      <th className="w-16 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1일횟수</th>
-                      <th className="w-16 px-1.5 py-1.5 text-center font-medium text-muted-foreground">투여일수</th>
+                      {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part D usability(MSG-64ge): 숫자 입력칸 너무 작아 입력불가(갤탭) 호소 → w-16→w-20 + 입력 h-7→h-9. '회'는 헤더로 이동(hideSuffix)해 입력폭 확보. */}
+                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1회량</th>
+                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1일횟수(회)</th>
+                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">투여일수</th>
                       <th className="w-8 px-1 py-1.5" />
                     </tr>
                   </thead>
@@ -1506,15 +1507,17 @@ export default function PrescriptionSetsTab() {
                               value={item.dosage}
                               onChange={(e) => handleCreateItemChange(idx, 'dosage', e.target.value.replace(/[^0-9.]/g, ''))}
                               placeholder="1"
-                              className="h-7 text-xs text-center"
+                              className="h-9 text-sm text-center"
                               data-testid="bundlerx-create-item-dosage"
                             />
                           </td>
-                          {/* 1일횟수(count) — RxCountInput(숫자 + '회' suffix) */}
+                          {/* 1일횟수(count) — RxCountInput. '회'는 컬럼 헤더로 이동(hideSuffix)·입력박스는 셀 전폭 사용. 높이 h-9(갤탭 터치). */}
                           <td className="px-1.5 py-1">
                             <RxCountInput
                               value={item.count ?? null}
                               onChange={(v) => handleCreateItemChange(idx, 'count', v)}
+                              hideSuffix
+                              inputClassName="h-9 text-sm"
                             />
                           </td>
                           {/* 투여일수(days) — 정수만 */}
@@ -1529,7 +1532,7 @@ export default function PrescriptionSetsTab() {
                                 handleCreateItemChange(idx, 'days', raw === '' ? 0 : Math.max(0, Math.floor(Number(raw)) || 0));
                               }}
                               placeholder="3"
-                              className="h-7 text-xs text-center"
+                              className="h-9 text-sm text-center"
                               data-testid="bundlerx-create-item-days"
                             />
                           </td>
