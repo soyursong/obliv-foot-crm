@@ -32,10 +32,14 @@ interface TaggedSet {
   tag_label: string | null;
   tag_color: string | null;
   icon: string | null;
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL: 이름숨김 칩(아이콘+색만). 라벨 없는 icon-only 태그 포함.
+  hide_name: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
-// Hook — 태그가 부여된 활성 묶음처방만 (tag_label NOT NULL)
+// Hook — 태그가 부여된 활성 묶음처방만.
+//   T-20260617 OVERHAUL: 식별자 = 라벨 OR 아이콘. 이름숨김 icon-only 태그(tag_label NULL)도 포함해야 하므로
+//   서버는 (tag_label NOT NULL OR icon NOT NULL) 로 넓게 가져오고, 색 미부여(tag_color NULL) 잔여는 클라에서 제외.
 // ---------------------------------------------------------------------------
 function useTaggedBundles() {
   return useQuery({
@@ -43,12 +47,15 @@ function useTaggedBundles() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('prescription_sets')
-        .select('id, name, items, tag_label, tag_color, icon')
+        .select('id, name, items, tag_label, tag_color, icon, hide_name')
         .eq('is_active', true)
-        .not('tag_label', 'is', null)
+        .or('tag_label.not.is.null,icon.not.is.null')
         .order('sort_order', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as TaggedSet[];
+      // 태그 색(tag_color)이 있어야 칩으로 의미 — hasTag(라벨 or 아이콘) && tag_color 정상값만 노출.
+      return ((data ?? []) as TaggedSet[]).filter(
+        (b) => !!b.tag_color && (!!(b.tag_label && b.tag_label.trim()) || !!(b.icon && b.icon.trim())),
+      );
     },
     staleTime: 60_000,
   });
@@ -106,10 +113,12 @@ export default function BundleRxTagBar({ doctorMode, role, onSelectItems, classN
 
     // A안: 미리보기/확인 팝업 없이 즉시 처방 목록에 추가. DB 저장은 부모(처방 컨펌)가 담당.
     onSelectItems(items);
+    // 이름숨김(icon-only) 태그는 tag_label 이 null → name 폴백(토스트 식별).
+    const tagName = (b.tag_label && b.tag_label.trim()) || b.name;
     toast.success(
       doctorMode
-        ? `"${b.tag_label}" 처방이 입력됐어요. 처방 컨펌 버튼으로 확정하세요.`
-        : `"${b.tag_label}" 임시 처방이 입력됐어요.`,
+        ? `"${tagName}" 처방이 입력됐어요. 처방 컨펌 버튼으로 확정하세요.`
+        : `"${tagName}" 임시 처방이 입력됐어요.`,
     );
   }
 
@@ -122,23 +131,29 @@ export default function BundleRxTagBar({ doctorMode, role, onSelectItems, classN
         role="listbox"
         aria-label="묶음처방 태그 빠른삽입"
       >
-        {bundles.map((b) => (
-          <button
-            key={b.id}
-            type="button"
-            onClick={() => handleTagClick(b)}
-            data-testid={`bundle-rx-tag-${b.id}`}
-            aria-label={`묶음처방 태그 ${b.tag_label}`}
-            title={`${b.name} — 탭하면 약이 처방 목록에 추가돼요`}
-            className={cn(
-              'inline-flex min-h-[36px] items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm transition active:scale-[0.97] hover:brightness-95',
-              tagChipClass(b.tag_color),
-            )}
-          >
-            {b.icon && <IconRenderer icon={b.icon} className="h-3.5 w-3.5" />}
-            {b.tag_label}
-          </button>
-        ))}
+        {bundles.map((b) => {
+          // 이름숨김 ON → 라벨 텍스트 생략(아이콘+색만). 라벨 없을 땐 name 으로 식별(aria/title).
+          const labelText = b.tag_label && b.tag_label.trim() ? b.tag_label : '';
+          const accName = labelText || b.name;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => handleTagClick(b)}
+              data-testid={`bundle-rx-tag-${b.id}`}
+              data-hide-name={b.hide_name ? 'true' : 'false'}
+              aria-label={`묶음처방 태그 ${accName}`}
+              title={`${b.name} — 탭하면 약이 처방 목록에 추가돼요`}
+              className={cn(
+                'inline-flex min-h-[36px] items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm transition active:scale-[0.97] hover:brightness-95',
+                tagChipClass(b.tag_color),
+              )}
+            >
+              {b.icon && <IconRenderer icon={b.icon} className="h-3.5 w-3.5" />}
+              {!b.hide_name && labelText}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -62,10 +62,12 @@ test.describe('데이터 모델 ADDITIVE — AC-4 / DA Q1', () => {
 // ── DA Q2 (a): FE-enforced canonical 팔레트 SSOT ────────────────────────────
 test.describe('태그 색상 팔레트 FE-enforced SSOT — DA Q2 (a)', () => {
   test('rxTagPalette 가 canonical 토큰 + 리터럴 class 를 제공(tailwind JIT 안전)', () => {
-    for (const tok of ['purple', 'teal', 'rose', 'amber', 'sky', 'emerald', 'slate']) {
+    // T-20260617 OVERHAUL gate#4(승인 MSG-20260617-203322-i7wc): 7색 초안 → 10색 어두운톤(*-700 base).
+    //   문지은 대표원장: "색상 더 다양하게, 10가지, 눈이 피로하지 않은 어두운 톤." (10 hue 세트 확정)
+    for (const tok of ['slate', 'stone', 'red', 'orange', 'amber', 'emerald', 'teal', 'sky', 'indigo', 'fuchsia']) {
       expect(PALETTE, `${tok} 팔레트 토큰`).toContain(`value: '${tok}'`);
-      // chip 은 리터럴 class 여야 JIT 가 본다(동적 `bg-${x}` 금지) — 토큰별 리터럴 존재 확인
-      expect(PALETTE, `${tok} 리터럴 chip class`).toContain(`bg-${tok}-100`);
+      // chip 은 리터럴 class 여야 JIT 가 본다(동적 `bg-${x}` 금지) — 토큰별 어두운톤 리터럴 존재 확인
+      expect(PALETTE, `${tok} 리터럴 chip class`).toContain(`bg-${tok}-700`);
     }
     // 코드 본문에는 동적 문자열 class 구성 금지(JIT 미탐지). 경고 주석은 허용 → stripComments.
     expect(stripComments(PALETTE)).not.toContain('bg-${');
@@ -84,11 +86,15 @@ test.describe('태그 편집 UI + 칩 노출 — AC-1 / AC-2', () => {
   });
 
   test('태그 편집 다이얼로그: 라벨/색상팔레트/아이콘 + 미리보기', () => {
+    // T-20260617 OVERHAUL Part B/C: 태그 필드는 TagEditorFields 공통 컴포넌트로 추출(생성팝업·편집다이얼로그 재사용,
+    //   분기 방지). testid 는 idPrefix 로 합성 → 편집 다이얼로그는 idPrefix="rx-set-tag" 유지(런타임 id 동일).
     expect(SETS_TAB).toContain("data-testid=\"rx-set-tag-dialog\"");
-    expect(SETS_TAB).toContain("data-testid=\"rx-set-tag-label-input\"");
-    expect(SETS_TAB).toContain("data-testid=\"rx-set-tag-color-palette\"");
-    expect(SETS_TAB).toContain("data-testid=\"rx-set-tag-icon-palette\"");
-    expect(SETS_TAB).toContain("data-testid=\"rx-set-tag-preview-chip\"");
+    expect(SETS_TAB).toContain('idPrefix="rx-set-tag"');
+    // 공통 컴포넌트가 합성하는 필드 testid(템플릿 리터럴)
+    expect(SETS_TAB).toContain('`${idPrefix}-label-input`');
+    expect(SETS_TAB).toContain('`${idPrefix}-color-palette`');
+    expect(SETS_TAB).toContain('`${idPrefix}-icon-palette`');
+    expect(SETS_TAB).toContain('`${idPrefix}-preview-chip`');
   });
 
   test('색상/아이콘 picker 는 SSOT vocab 재사용 (RX_TAG_COLORS + DRUG_ICON_OPTIONS)', () => {
@@ -103,20 +109,26 @@ test.describe('태그 편집 UI + 칩 노출 — AC-1 / AC-2', () => {
     expect(SETS_TAB).toContain('tagChipClass(s.tag_color)');
   });
 
-  test('라벨 비면 색까지 null 정규화(고아 색 방지)', () => {
-    expect(SETS_TAB).toMatch(/tag_color:\s*label === '' \? null/);
+  test('태그 식별자(라벨 OR 아이콘) 둘 다 없으면 색까지 null 정규화(고아 색 방지)', () => {
+    // T-20260617 OVERHAUL Part C: 이름숨김+아이콘만(라벨 NULL) 묶음도 '태그 있음' → hasTag=라벨 OR 아이콘.
+    //   (구버전 라벨-only 판단은 icon-only hide_name 태그 색을 null 화 → 진료화면 칩 미렌더 회귀가 있었음.)
+    expect(SETS_TAB).toMatch(/const hasTag = label !== '' \|\| /);
+    expect(SETS_TAB).toMatch(/tag_color:\s*hasTag \? .* : null/);
   });
 
-  test('query 가 신규 3컬럼을 select', () => {
-    expect(SETS_TAB).toContain("'id, name, items, is_active, sort_order, folder, tag_label, tag_color, icon'");
+  test('query 가 신규 태그 컬럼 + hide_name 을 select', () => {
+    // OVERHAUL Part C: hide_name(이름숨김 영속) 추가 → 4번째 동형 컬럼.
+    expect(SETS_TAB).toContain("'id, name, items, is_active, sort_order, folder, tag_label, tag_color, icon, hide_name'");
   });
 });
 
 // ── AC-3: 태그 클릭 = 원클릭 즉시 삽입, quick_rx 미접촉 ──────────────────────
 test.describe('태그 클릭 트리거 — AC-3 (A안)', () => {
-  test('BundleRxTagBar 는 tag_label NOT NULL 활성 묶음만 읽는다', () => {
+  test('BundleRxTagBar 는 태그(라벨 OR 아이콘) 부여된 활성 묶음을 읽는다', () => {
+    // T-20260617 OVERHAUL Part C: 이름숨김 icon-only(라벨 NULL) 태그도 노출 → (tag_label NOT NULL OR icon NOT NULL).
+    //   색 미부여(tag_color NULL) 잔여는 클라에서 제외(.filter). is_active 활성만.
     expect(TAG_BAR).toContain("from('prescription_sets')");
-    expect(TAG_BAR).toContain(".not('tag_label', 'is', null)");
+    expect(TAG_BAR).toContain("'tag_label.not.is.null,icon.not.is.null'");
     expect(TAG_BAR).toContain(".eq('is_active', true)");
   });
 
