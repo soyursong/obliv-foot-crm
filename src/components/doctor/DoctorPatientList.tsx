@@ -411,10 +411,16 @@ function useConfirmPrescription() {
 // ---------------------------------------------------------------------------
 // 방문 유형 배지
 // ---------------------------------------------------------------------------
+// T-20260617-foot-DOCTABLE-VISITTYPE-UNIFY AC1 (문지은 대표원장, #foot, "모두 통일 반드시반드시"):
+//   의사 환자 테이블뷰 초/재 배지 통일 — 진료 알림판(DoctorCallDashboard VisitBadge) 미러.
+//   '초진'→'초' / '재진'→'재' 단일글자 라벨로 축약(좁은 칼럼 가독성). 분류 판정 로직·배지 배경색(cls)·
+//   칼럼폭/폰트(className)·hover/title·data-testid 불변 — 표시 라벨만 축약(AC1·AC3 회귀금지).
+//   좌정렬 블록 invariant: 배지는 grid 독립 칼럼(③, 폭 3rem 고정, flex justify-start)에서 이름(④) 바로 왼쪽 →
+//   배지 left-edge 가 모든 행에서 세로 일치(이름 길이 무관). DASHCOL-REALIGN 확정 레이아웃 보존.
 function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
   const map: Record<string, { label: string; cls: string }> = {
-    new: { label: '초진', cls: 'bg-blue-100 text-blue-700' },
-    returning: { label: '재진', cls: 'bg-emerald-100 text-emerald-700' },
+    new: { label: '초', cls: 'bg-blue-100 text-blue-700' },
+    returning: { label: '재', cls: 'bg-emerald-100 text-emerald-700' },
     // experience: 배지 미표시 (AC-4) — fallback 처리
   };
   const { label, cls } = map[type] ?? { label: type, cls: 'bg-gray-100 text-gray-600' };
