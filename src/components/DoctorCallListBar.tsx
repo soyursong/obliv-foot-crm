@@ -233,39 +233,17 @@ function isInTreatment(
 }
 
 /**
- * T-20260617-foot-CALLLIST-HLAUTOYELLOW-TOP (AC-1', read-side no-DDL) — 힐러(노랑) [힐러대기] 이동 시 상위 배치 판정.
- *   reporter(김주연 총괄) 확정: "힐러(노랑) 고객이 [힐러대기] 슬롯 이동 감지 시 진료콜 명단 상위로 자동 배치"
- *   = 진료필요(보라)→상위노출과 동치 동작. 힐러(노랑)은 체크인 즉시 노랑이라 진입시각 기준이 없으므로
- *   기준 시점을 [힐러대기] 이동시각(healerWaitingAt)으로 잡고, 그 이동이 늦어도(오후) 일반 진입순 풀 아래로
- *   가라앉지 않게 우선 sub-tier(tier1/tier2 아래·tier3 일반 진입순 위)로 상단 노출한다.
- *   식별 = 힐러 신호(status_flag='yellow'(HL) / status='healer_waiting') AND
- *          [힐러대기] 이동 감지(healerWaitingAt 보유 = status_transitions to_status='healer_waiting' row 존재).
- *   ※ 힐러 신호는 check_ins 정본 = status_flag='yellow' OR status='healer_waiting' (component isHealer 컨벤션 동일).
- *     reservations.is_healer_intent(별도 SSOT)는 check_ins row에 없어 미사용 — 진료콜 명단 정본 신호로 충분.
- *   ※ healer_waiting transition 전무한 힐러(벌크 yellow SSOT 우회 subset)는 healerWaitingAt 결측 → 본 sub-tier
- *     미적용(일반 진입순). 그 케이스는 source-side escape(별건 B안) — 본 read-side 출하 차단 사유 아님.
- */
-function isHealerPrioritized(
-  ci: Pick<CheckIn, 'status' | 'status_flag' | 'healerWaitingAt'>,
-): boolean {
-  const healerSignal = ci.status_flag === 'yellow' || ci.status === 'healer_waiting';
-  return healerSignal && !!ci.healerWaitingAt;
-}
-
-/**
  * T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-C — 진료콜 명단 단일 통합 정렬 비교자.
  *   분산 sort 금지(WS-2 정합) — 정렬 우선순위를 이 한 함수로 통합한다:
  *     1) 진료중 고정      : isInTreatment(examination/in_treatment) → 항상 상단.
  *     2) 수기 override    : call_list_manual_order asc (값 있는 행이 NULL 행보다 위, 값끼리는 작은 값 위).
- *     2.5) 힐러(노랑) 우선 : T-20260617-HLAUTOYELLOW-TOP — [힐러대기] 이동 감지 힐러(노랑)을 일반 진입순 풀 위로.
- *          내부 정렬 = healerWaitingAt asc([힐러대기] 이동 빠른 순), 동시각이면 checked_in_at asc.
  *     3) 자동 진입순      : callEntryTime asc (status_flag_history 최근 purple/yellow changed_at, 폴백 checked_in_at).
  *   WS-A 요약행·WS-B 번호뱃지는 이 정렬 결과(activeList) 순서를 그대로 인덱싱 → 수기 override 반영 최종순서 기준 재계산.
  *   call_list_manual_order 미적용(마이그 전)·NULL → 전부 tier-3(자동 진입순)로 수렴 = 기존 거동 보존(backward-compatible).
  */
 export function compareCallOrder(
-  a: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt' | 'status' | 'status_flag' | 'doctor_status' | 'call_list_manual_order' | 'healerWaitingAt'>,
-  b: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt' | 'status' | 'status_flag' | 'doctor_status' | 'call_list_manual_order' | 'healerWaitingAt'>,
+  a: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
+  b: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'derivedCallEntryAt' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
 ): number {
   // tier 1) 진료중 고정 — 상단.
   const at = isInTreatment(a) ? 0 : 1;
@@ -279,20 +257,7 @@ export function compareCallOrder(
   } else if (am !== null || bm !== null) {
     return am !== null ? -1 : 1;
   }
-  // tier 2.5) 힐러(노랑) 우선 sub-tier — [힐러대기] 이동 감지 힐러(노랑)을 일반 진입순(tier3) 위로 상단 배치.
-  //   (수기 override가 적용된 행은 위 tier2에서 이미 확정 — 수기 우선 불변. 둘 다 manual NULL인 풀에서만 평가.)
-  const ah = isHealerPrioritized(a) ? 0 : 1;
-  const bh = isHealerPrioritized(b) ? 0 : 1;
-  if (ah !== bh) return ah - bh;
-  if (ah === 0) {
-    // 둘 다 힐러(노랑) — healerWaitingAt asc([힐러대기] 이동 빠른 순). 동시각이면 checked_in_at asc 2차정렬.
-    const ahw = a.healerWaitingAt ?? a.checked_in_at; // 폴백: 결측 시 접수시각(NaN/누락 정렬 금지).
-    const bhw = b.healerWaitingAt ?? b.checked_in_at;
-    const hcmp = ahw.localeCompare(bhw);
-    if (hcmp !== 0) return hcmp;
-    return a.checked_in_at.localeCompare(b.checked_in_at);
-  }
-  // tier 3) 자동 진입순 — callEntryTime asc (둘 다 비-힐러).
+  // tier 3) 자동 진입순 — callEntryTime asc.
   return callEntryTime(a).localeCompare(callEntryTime(b));
 }
 
