@@ -25,7 +25,6 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
-  Building2,
   KeyRound,
   MessageSquare,
 } from 'lucide-react';
@@ -107,9 +106,10 @@ const NAV_ITEMS: {
   // T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). 메뉴=라우트(App.tsx settings RoleGuard)=PERM_MATRIX.messaging 동일 집합 SSOT. ★tm 제외★(최소권한). nav 누락 시 route 개방돼도 메뉴 미노출로 무력화 → 패리티 필수.
   { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'] },
   // AC-1: 3역할 → 직원·공간관리 접근
+  // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: '병원·원장 정보' 단독 navItem 제거 →
+  //   [직원·공간](Staff.tsx) 내부 '원장정보' 탭으로 편입(김주연 총괄 IA 정리). 라우트는 App.tsx에서
+  //   /admin/staff?tab=clinic-info 로 리다이렉트 보존(북마크/하드링크 404 방지). 기능/필드/저장·가시성 role 불변.
   { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
-  // AC-1: 3역할 → 병원·원장 정보 접근 (뷰 전용)
-  { to: '/admin/clinic-settings', label: '병원·원장 정보', icon: Building2, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만 노출 + 라우트 가드(App.tsx) 이중
   { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager'] },
   // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN(policy_correction_jnz7 — 김주연 총괄 직접): 일마감=직원 업무(daily closing workflow). 전직원(8역할, tm 제외) OPEN.

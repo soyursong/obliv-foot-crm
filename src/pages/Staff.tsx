@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
-import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power, ClipboardList } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power, ClipboardList, Building2 } from 'lucide-react';
 import { DutyRosterTab } from '@/components/DutyRosterTab';
 import { ReservationRegistrarTab } from '@/components/ReservationRegistrarTab';
+// T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 페이지를 '원장정보' 탭으로 임베드.
+//   기존 /admin/clinic-settings 콘텐츠(병원 기본정보 + 원장 CRUD + 직인) 컴포넌트 그대로 재사용 → 기능/필드/저장 동작 보존(회귀0).
+import ClinicSettingsPage from '@/pages/ClinicSettings';
 
 import { supabase } from '@/lib/supabase';
 import { fetchEffectiveRoomAssignments } from '@/lib/roomAssignments';
@@ -53,10 +57,19 @@ interface RoomAssignmentRow {
 
 // todayStr 함수 제거 — 컴포넌트 내부 const todayStr 로 통일 (shadow 충돌 방지)
 
+// T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 직접 진입(리다이렉트/북마크)로 열 수 있는 탭 화이트리스트.
+//   /admin/clinic-settings → /admin/staff?tab=clinic-info 리다이렉트가 이 탭을 자동 선택.
+const VALID_INITIAL_TABS = new Set(['duty', 'staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
+
 export default function StaffPage() {
-  const [tab, setTab] = useState('duty');
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → duty).
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [tab, setTab] = useState(
+    requestedTab && VALID_INITIAL_TABS.has(requestedTab) ? requestedTab : 'duty',
+  );
 
   const { data: clinic, refetch: refetchClinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -77,6 +90,12 @@ export default function StaffPage() {
           <TabsTrigger value="rooms">
             <DoorOpen className="mr-1 h-4 w-4" /> 공간 배정
           </TabsTrigger>
+          {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: '원장정보' 탭 — 기존 /admin/clinic-settings 메뉴 편입.
+              가시성=직원·공간 진입 role(admin/manager/consultant/coordinator/therapist) 전체 → isAdmin 게이트 없이 노출
+              (기존 clinic-settings 가시성 그대로 보존, open-all-except-3 위반 아님). 편집 권한은 ClinicSettings 내부 canEdit(admin/manager)이 보존. */}
+          <TabsTrigger value="clinic-info">
+            <Building2 className="mr-1 h-4 w-4" /> 원장정보
+          </TabsTrigger>
           {isAdmin && (
             <TabsTrigger value="registrars">
               <ClipboardList className="mr-1 h-4 w-4" /> 예약등록자
@@ -91,6 +110,8 @@ export default function StaffPage() {
         <TabsContent value="duty">{clinic && <DutyRosterTab clinic={clinic} />}</TabsContent>
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
         <TabsContent value="rooms">{clinic && <RoomTab clinic={clinic} />}</TabsContent>
+        {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 페이지를 그대로 임베드(자체 데이터 로드/저장 보존). */}
+        <TabsContent value="clinic-info"><ClinicSettingsPage /></TabsContent>
         {isAdmin && (
           <TabsContent value="registrars">
             {clinic && <ReservationRegistrarTab clinic={clinic} />}
