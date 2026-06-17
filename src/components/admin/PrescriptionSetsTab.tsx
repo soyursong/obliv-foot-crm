@@ -1449,13 +1449,13 @@ export default function PrescriptionSetsTab() {
               idPrefix="bundlerx-tag"
             />
 
-            {/* Part D: 선택약 리스트 — 순서(위/아래) / 약이름(읽기전용) / 1회량·1일횟수·투여일수(숫자만) */}
+            {/* Part D: 선택약 리스트 — 순서(위/아래) / 약이름(읽기전용) / 용량·횟수·일수(숫자만, RX_COL SSOT) */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <Label className="text-xs">선택한 약 ({createForm.items.length}개)</Label>
               </div>
               <p className="mb-2 text-[11px] text-muted-foreground">
-                <span className="font-medium text-teal-700">1회량 · 1일횟수 · 투여일수</span>는 기본값이에요. 처방할 때 진료의가 환자별로 바꿀 수 있어요.
+                <span className="font-medium text-teal-700">{RX_COL.dosage} · {RX_COL.count} · {RX_COL.days}</span>는 기본값이에요. 처방할 때 진료의가 환자별로 바꿀 수 있어요.
               </p>
               <div className="rounded-md border overflow-hidden" data-testid="bundlerx-create-items">
                 <table className="w-full text-xs">
@@ -1464,9 +1464,9 @@ export default function PrescriptionSetsTab() {
                       <th className="w-14 px-1.5 py-1.5 text-center font-medium text-muted-foreground">순서</th>
                       <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{RX_COL.name}</th>
                       {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part D usability(MSG-64ge): 숫자 입력칸 너무 작아 입력불가(갤탭) 호소 → w-16→w-20 + 입력 h-7→h-9. '회'는 헤더로 이동(hideSuffix)해 입력폭 확보. */}
-                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1회량</th>
-                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">1일횟수(회)</th>
-                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">투여일수</th>
+                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">{RX_COL.dosage}</th>
+                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">{RX_COL.count}</th>
+                      <th className="w-20 px-1.5 py-1.5 text-center font-medium text-muted-foreground">{RX_COL.days}</th>
                       <th className="w-8 px-1 py-1.5" />
                     </tr>
                   </thead>
@@ -1511,7 +1511,7 @@ export default function PrescriptionSetsTab() {
                               data-testid="bundlerx-create-item-dosage"
                             />
                           </td>
-                          {/* 1일횟수(count) — RxCountInput. '회'는 컬럼 헤더로 이동(hideSuffix)·입력박스는 셀 전폭 사용. 높이 h-9(갤탭 터치). */}
+                          {/* 횟수(count) — RxCountInput. 단위 suffix는 hideSuffix로 숨김·입력박스는 셀 전폭 사용. 높이 h-9(갤탭 터치). */}
                           <td className="px-1.5 py-1">
                             <RxCountInput
                               value={item.count ?? null}
