@@ -5578,6 +5578,14 @@ export default function Dashboard() {
     });
     setStageStartMap((prev) => new Map(prev).set(realId, transNow));
 
+    // T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL(REOPEN): 예약→체크인 직행이 대기슬롯으로 진입하면
+    //   슬롯 이동/상태변경 핸들러(maybeAutoAssign 호출)와 동일하게 acting 클라이언트에서 직접 자동배정.
+    //   기존엔 이 생성 경로가 maybeAutoAssign 미호출 → Realtime self-echo(visit_type 매칭) 의존이라
+    //   walk-in 상담대기 등에서 자동배정 누락. best-effort·멱등(이미 배정 시 no-op).
+    if (nextStatus === 'consult_waiting' || nextStatus === 'treatment_waiting') {
+      void maybeAutoAssign(realId, nextStatus, profile?.id ?? null);
+    }
+
     // DB 완료 후 rows에 추가 (실제 UUID)
     const newCheckIn: CheckIn = {
       ...(inserted as CheckIn),
