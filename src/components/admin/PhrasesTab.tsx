@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,9 +64,11 @@ const EMPTY_FORM: PhraseForm = {
 };
 
 // T-20260526-foot-MEDCHART-SYNC: 상용구 유형 라벨
+// T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-2: medical_chart 현장 호칭 '진료차트' → '고객차트' 통일
+//   (phrase_type 값 자체는 'medical_chart' 불변 — 무DB. 라벨/메뉴만 현장 용어로 표기)
 const PHRASE_TYPE_LABELS: Record<string, string> = {
   pen_chart: '펜차트',
-  medical_chart: '진료차트',
+  medical_chart: '고객차트',
 };
 
 // AC-3: document '서류' → '원장님'
@@ -148,6 +150,33 @@ function useDeletePhrase() {
   });
 }
 
+// T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-1: 행 단위 ↑↓ 순서변경.
+//   현장 요청 "펜/고객차트 노출 순서를 등록순서가 아니라 원하는 대로". sort_order 일괄 UPDATE(무DB 스키마변경).
+//   소비부(PenChartTab·MedicalChartPanel·DoctorTreatmentPanel)가 모두 .order('sort_order') 라 즉시 반영.
+function useReorderPhrases() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (updates: { id: number; sort_order: number }[]) => {
+      const now = new Date().toISOString();
+      // 소량(현장 수십 건) — 변경된 행만 개별 UPDATE 병렬 실행.
+      const results = await Promise.all(
+        updates.map((u) =>
+          supabase
+            .from('phrase_templates')
+            .update({ sort_order: u.sort_order, updated_at: now })
+            .eq('id', u.id),
+        ),
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['phrase_templates'] });
+    },
+    onError: (e: Error) => toast.error(`순서 변경 실패: ${e.message}`),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -169,6 +198,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
   const del = useDeletePhrase();
+  const reorder = useReorderPhrases();
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PhraseTemplate | null>(null);
@@ -223,6 +253,31 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
     del.mutate(id);
   }
 
+  // T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-1: ↑↓ 순서변경.
+  //   화면에 보이는 displayed 의 인접 행과 자리 교환하되, sort_order 는 같은 유형 전체(typeFiltered)
+  //   기준으로 재부여(10 간격) — 카테고리 필터가 걸려 있어도 유형 전역 순서가 일관되게 유지된다.
+  //   소비부는 유형별로 sort_order 오름차순 조회하므로 펜/고객차트 입력 노출순서에 즉시 반영.
+  function handleMove(phraseId: number, dir: 'up' | 'down') {
+    const dispIdx = displayed.findIndex((p) => p.id === phraseId);
+    if (dispIdx < 0) return;
+    const neighbor = displayed[dir === 'up' ? dispIdx - 1 : dispIdx + 1];
+    if (!neighbor) return; // 경계(맨 위/아래)
+    // typeFiltered 는 query 의 sort_order 오름차순을 보존 → 유형 전역 순서의 진실 원천.
+    const full = [...typeFiltered];
+    const a = full.findIndex((p) => p.id === phraseId);
+    const b = full.findIndex((p) => p.id === neighbor.id);
+    if (a < 0 || b < 0) return;
+    [full[a], full[b]] = [full[b], full[a]];
+    const updates = full
+      .map((p, i) => ({ id: p.id, sort_order: (i + 1) * 10 }))
+      .filter((u) => {
+        const cur = full.find((p) => p.id === u.id);
+        return cur && cur.sort_order !== u.sort_order;
+      });
+    if (updates.length === 0) return;
+    reorder.mutate(updates);
+  }
+
   // T-20260526-foot-MEDCHART-SYNC: phrase_type + category 복합 필터
   // T-20260608-foot-PHRASE-PEN-MED-SPLIT: phrase_type 활성 시 좌측 카테고리 카운트도 용도별로 산출
   //   (펜차트/진료차트 분리는 phrase_type 컬럼으로 이미 존재 — 무DB. 좌측 사이드 카운트만 type 미반영 버그였음)
@@ -262,7 +317,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
             </Badge>
             <span className="text-xs font-normal text-muted-foreground">
               {lockedType === 'medical_chart'
-                ? '진료차트 임상경과 입력용'
+                ? '고객차트(2번차트) 임상경과 입력용'
                 : '진료메모/서류 입력용'}
             </span>
           </div>
@@ -349,7 +404,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
           ) : (
             // AC-2: 컴팩트 리스트 — py-3→py-1.5, space-y-2→divide-y
             <div data-testid="phrase-list" className="divide-y divide-border/40">
-              {displayed.map((p) => (
+              {displayed.map((p, idx) => (
                 <div
                   key={p.id}
                   className="flex items-center justify-between px-3 py-1.5 gap-2 hover:bg-muted/20 transition-colors"
@@ -393,6 +448,30 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                   </div>
                   {canEdit && (
                     <div className="flex items-center gap-0.5 shrink-0">
+                      {/* T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-1: ↑↓ 순서변경.
+                          경계(맨 위/아래)에서 비활성. reorder 진행 중 전체 비활성(중복 클릭 방지). */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-teal-600"
+                        onClick={() => handleMove(p.id, 'up')}
+                        disabled={idx === 0 || reorder.isPending}
+                        title="위로"
+                        data-testid="phrase-move-up-btn"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-teal-600"
+                        onClick={() => handleMove(p.id, 'down')}
+                        disabled={idx === displayed.length - 1 || reorder.isPending}
+                        title="아래로"
+                        data-testid="phrase-move-down-btn"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -459,7 +538,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                         {PHRASE_TYPE_LABELS[t]}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {t === 'pen_chart' ? '(진료메모/서류 입력 시)' : '(진료차트 임상경과 입력 시)'}
+                        {t === 'pen_chart' ? '(진료메모/서류 입력 시)' : '(고객차트 임상경과 입력 시)'}
                       </span>
                     </label>
                   ))}
