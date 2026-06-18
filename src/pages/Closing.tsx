@@ -25,6 +25,8 @@ import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
+// T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL: 일일 미수금 박스 — footBilling outstanding SSOT 재사용(신규 산출 0)
+import { loadCustomerOutstanding } from '@/lib/footBilling';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -326,6 +328,45 @@ export default function Closing() {
       if (error) throw error;
       // T-20260612-foot-CHARTNO-B2-P2: supabase embed customers는 배열로 추론 → unknown 경유 캐스트
       return (data ?? []) as unknown as UnpaidCheckIn[];
+    },
+  });
+
+  // ── 일일 미수금 (T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL) ──────────────
+  //   당일(date) payment_waiting 체크인 고객의 미수금을 footBilling SSOT(loadCustomerOutstanding)로 재사용.
+  //   "당일" 윈도잉 = 화면 date 기준 미결제 체크인 고객. 금액 정의(패키지/진료비 분리)는
+  //   PKG-OUTSTANDING-BALANCE §4-A를 따른다 — 합산 단일 '총 미수금' 산출/표기 금지. 신규 쿼리 외 산출 로직 0.
+  const { data: dailyOutstanding = { packageDue: 0, consultationDue: 0, dueCustomerCount: 0 } } = useQuery<{
+    packageDue: number; consultationDue: number; dueCustomerCount: number;
+  }>({
+    queryKey: ['closing-daily-outstanding', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('customer_id')
+        .eq('clinic_id', clinic!.id)
+        .eq('status', 'payment_waiting')
+        .gte('checked_in_at', start)
+        .lte('checked_in_at', end);
+      if (error) throw error;
+      const ids = [...new Set(
+        (data ?? [])
+          .map((r: { customer_id: string | null }) => r.customer_id)
+          .filter(Boolean) as string[],
+      )];
+      if (ids.length === 0) return { packageDue: 0, consultationDue: 0, dueCustomerCount: 0 };
+      const map = await loadCustomerOutstanding(ids, clinic!.id);
+      let packageDue = 0;
+      let consultationDue = 0;
+      let dueCustomerCount = 0;
+      for (const o of map.values()) {
+        const pd = o.packageDue ?? 0;
+        const cd = o.consultationDue ?? 0;
+        if (pd > 0 || cd > 0) dueCustomerCount += 1;
+        packageDue += pd;
+        consultationDue += cd;
+      }
+      return { packageDue, consultationDue, dueCustomerCount };
     },
   });
 
@@ -1319,6 +1360,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               totalCount={totals.totalCardCount + totals.totalCashCount + totals.totalTransferCount}
               highlight
             />
+            {/* T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL: 합계 박스 옆 동일 박스 형태 일일 미수금 박스.
+                §4-A: 패키지 미수 / 진료비 미수 별도 줄, 합산 단일 '총 미수금' 미표기. 소스=footBilling SSOT. */}
+            <DailyOutstandingCard
+              packageDue={dailyOutstanding.packageDue}
+              consultationDue={dailyOutstanding.consultationDue}
+              dueCustomerCount={dailyOutstanding.dueCustomerCount}
+            />
           </div>
 
           {/* 시술별 통계 */}
@@ -2006,6 +2054,60 @@ function SummaryCard({
             {formatAmount(total)}
           </span>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL — 일일 미수금 박스.
+ * 합계(결제수단별) 박스 옆에 동일한 Card 박스 형태로 병치(reporter 스크린샷 핀, F0BB8UA0RDH).
+ * §4-A 준수: 패키지 미수 / 진료비 미수를 **별도 줄**로 표기하고, 둘을 합산한 단일 '총 미수금'은
+ * 표기하지 않는다(매출 합계와도 묶지 않음). 금액 소스 = footBilling loadCustomerOutstanding(SSOT) 재사용.
+ * 미수 없으면 '미수 없음 ₩0' 1줄(공간 낭비/스크롤 없음).
+ */
+function DailyOutstandingCard({
+  packageDue,
+  consultationDue,
+  dueCustomerCount,
+}: {
+  packageDue: number;
+  consultationDue: number;
+  dueCustomerCount: number;
+}) {
+  const hasDue = packageDue > 0 || consultationDue > 0;
+  return (
+    <Card data-testid="closing-daily-outstanding" className="border-rose-300/60 bg-rose-50/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-1.5 text-sm text-rose-700">
+          일일 미수금
+          {hasDue && (
+            <span className="text-xs font-normal text-rose-500">{dueCustomerCount}명</span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {hasDue ? (
+          <div className="space-y-1.5 text-sm">
+            {packageDue > 0 && (
+              <div data-testid="closing-outstanding-package" className="flex justify-between">
+                <span className="text-muted-foreground">패키지 미수</span>
+                <span className="tabular-nums font-semibold text-rose-700">{formatAmount(packageDue)}</span>
+              </div>
+            )}
+            {consultationDue > 0 && (
+              <div data-testid="closing-outstanding-consultation" className="flex justify-between">
+                <span className="text-muted-foreground">진료비 미수</span>
+                <span className="tabular-nums font-semibold text-rose-700">{formatAmount(consultationDue)}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div data-testid="closing-outstanding-none" className="flex justify-between text-sm">
+            <span className="text-muted-foreground">미수 없음</span>
+            <span className="tabular-nums text-muted-foreground">{formatAmount(0)}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
