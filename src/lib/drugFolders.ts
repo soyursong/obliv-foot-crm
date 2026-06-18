@@ -37,6 +37,9 @@ export interface FolderDrug {
   code_source: string; // 'official' | 'custom'
   manufacturer: string | null; // DRUGINFO-MANUFACTURER: 제약사(제조사). custom 코드는 NULL 가능 → 표기 생략.
   code_type: string; // 'national' 류 정상 / '이관약'(묶음처방 이관 provenance 마커, 검증 대상) / '자체사용코드' 등
+  // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE (AC-1): 전체보기 행 급여여부 배지 + 인라인 편집 패널용.
+  //   prescription_codes.insurance_status (covered/non_covered/deleted/criteria_changed/NULL).
+  insurance_status: string | null;
 }
 
 /** 검증 대상 마커 — 묶음처방→처방세트 이관 시 부여(20260616120000_bundlerx_drugname_migrate).
@@ -96,7 +99,7 @@ export function useFolderDrugs() {
       const { data, error } = await supabase
         .from('prescription_code_folders')
         .select(
-          'prescription_code_id, folder_id, sort_order, prescription_codes(name_ko,claim_code,classification,code_source,manufacturer,code_type)',
+          'prescription_code_id, folder_id, sort_order, prescription_codes(name_ko,claim_code,classification,code_source,manufacturer,code_type,insurance_status)',
         )
         .order('sort_order', { ascending: true });
       if (error) throw error;
@@ -112,6 +115,7 @@ export function useFolderDrugs() {
           code_source: string;
           manufacturer: string | null;
           code_type: string | null;
+          insurance_status: string | null;
         } | null;
       };
       return ((data ?? []) as unknown as Row[])
@@ -126,6 +130,7 @@ export function useFolderDrugs() {
           code_source: r.prescription_codes!.code_source,
           manufacturer: r.prescription_codes!.manufacturer ?? null,
           code_type: r.prescription_codes!.code_type ?? '',
+          insurance_status: r.prescription_codes!.insurance_status ?? null,
         }));
     },
     staleTime: 30_000,

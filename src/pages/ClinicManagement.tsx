@@ -33,17 +33,15 @@ import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
 import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
-// T-20260609-foot-DRUG-INSURANCE-GATE Phase1: 약품별 급여여부(보험상태) 관리 — 처방 게이트(checkRxInsuranceGate) 소스
-import InsuranceStatusTab from '@/components/admin/InsuranceStatusTab';
+// T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 관리 별도 탭(InsuranceStatusTab) 제거 →
+//   처방세트(drug_folders)>전체보기 우측 단 인라인 편집 + HIRA 동기화로 통합. ?tab=insurance_status 는 drug_folders 로 redirect.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck, BookText, MessageSquareText } from 'lucide-react';
+import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
   // 페이지 접근은 RoleGuard(admin/manager/director)가 1차 보장. 여기서는 금기증(admin 한정)만 추가 게이팅.
   const isAdmin = profile?.role === 'admin';
-  // 급여여부 관리(InsuranceStatusTab) — admin/manager write(RLS is_admin_or_manager 일치).
-  const canManageInsurance = profile?.role === 'admin' || profile?.role === 'manager';
   // T-20260616-foot-OPINION-PHRASE-MGMT-TAB (AC-1): 소견서 상용구 관리 — admin/manager only
   //   (form_templates_admin_all RLS = is_admin_or_manager 와 일치, write 가능 role 만 탭 노출).
   const canManageOpinionPhrases = profile?.role === 'admin' || profile?.role === 'manager';
@@ -52,7 +50,10 @@ export default function ClinicManagement() {
   //   (T-20260606-foot-RX-PANEL-UX-5FIX AC-5 동선 — 메뉴 분리 후 진입 경로를 clinic-management 로 이전)
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const requestedTab = searchParams.get('tab');
+  // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 관리 탭 제거 → 처방세트(drug_folders)로 흡수.
+  //   구 딥링크/북마크(?tab=insurance_status) 호환: drug_folders 로 정규화(같은 페이지 내 탭 이동, redirect 불요).
+  const rawRequestedTab = searchParams.get('tab');
+  const requestedTab = rawRequestedTab === 'insurance_status' ? 'drug_folders' : rawRequestedTab;
 
   // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-4): 상용구·수가세트는 '서비스관리 > 상용구관리'로 이전됨.
   //   구 딥링크(/admin/clinic-management?tab=phrases|fee_set_templates)·북마크 호환을 위해 새 위치로 redirect.
@@ -79,7 +80,7 @@ export default function ClinicManagement() {
     'quick_rx',
     'progress_plans',
     ...(isAdmin ? ['contraindications'] : []),
-    ...(canManageInsurance ? ['insurance_status'] : []),
+    // 급여여부(insurance_status)는 별도 탭 제거 → drug_folders 로 흡수(위 requestedTab 정규화로 호환).
   ];
   const tabAllowed = !!requestedTab && accessibleTabs.includes(requestedTab);
   // 기본 탭: 상용구 이전에 따라 행 1 선두인 '상병명 관리'로 변경.
@@ -140,13 +141,8 @@ export default function ClinicManagement() {
               금기증 관리
             </TabsTrigger>
           )}
-          {/* 급여여부 관리 — admin/manager 노출 (T-20260609-foot-DRUG-INSURANCE-GATE Phase1) */}
-          {canManageInsurance && (
-            <TabsTrigger value="insurance_status" className="gap-1.5" data-testid="tab-insurance-status">
-              <BadgeCheck className="h-3.5 w-3.5" />
-              급여여부 관리
-            </TabsTrigger>
-          )}
+          {/* T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: '급여여부 관리' 별도 탭 제거 →
+              처방세트 > [전체보기]에서 약을 클릭해 우측 단에서 인라인 설정 + HIRA 동기화 패널 이전. */}
 
           {/* 행 경계 1→2 (flex-wrap 강제 줄바꿈) */}
           <div className="basis-full h-0" aria-hidden="true" />
@@ -209,11 +205,7 @@ export default function ClinicManagement() {
             <ContraindicationsTab />
           </TabsContent>
         )}
-        {canManageInsurance && (
-          <TabsContent value="insurance_status">
-            <InsuranceStatusTab />
-          </TabsContent>
-        )}
+        {/* T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: insurance_status TabsContent 제거 — drug_folders 로 통합. */}
         {/* 행 2 — '상용구'(phrases) TabsContent 는 서비스관리>상용구관리로 이전(T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT). */}
         <TabsContent value="super_phrases">
           <SuperPhrasesTab />

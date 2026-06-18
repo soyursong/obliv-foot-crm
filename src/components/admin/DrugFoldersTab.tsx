@@ -9,13 +9,17 @@
 //   PrescriptionSetsTab 과 동일 집합(director/manager/admin) — 대표원장(director) 본인 관리 동선 보존.
 
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/lib/toast';
+// T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 인라인 편집(우측 단) + HIRA 동기화(AC-5 이전처).
+import InsuranceStatusPanel, { INSURANCE_STATUS_STYLE } from '@/components/admin/InsuranceStatusPanel';
+import HiraInsuranceSyncPanel from '@/components/admin/HiraInsuranceSyncPanel';
+import { insuranceStatusLabel, type InsuranceStatus } from '@/lib/prescriptionGate';
 import {
   BadgeCheck,
   Check,
@@ -128,6 +132,10 @@ export default function DrugFoldersTab() {
   const { profile } = useAuth();
   const canEdit =
     !!profile?.role && (FOLDER_MANAGE_ROLES as readonly string[]).includes(profile.role);
+  // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 편집 권한 = admin/manager.
+  //   구 InsuranceStatusTab UI 게이트(canWrite) 그대로 계승(AC-2/AC-3 무회귀). RLS(is_admin_or_manager)와 이중 가드.
+  const canManageInsurance = profile?.role === 'admin' || profile?.role === 'manager';
+  const qc = useQueryClient();
 
   const { data: folders = [], isLoading: foldersLoading } = useDrugFolders();
   const { data: drugs = [], isLoading: drugsLoading } = useFolderDrugs();
@@ -152,6 +160,9 @@ export default function DrugFoldersTab() {
   const [subTab, setSubTab] = useState<'folder' | 'all'>('folder');
   const [selectedDrugIds, setSelectedDrugIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE (AC-1): 전체보기 우측 단 급여여부 편집 대상(단건 선택).
+  //   다중선택(selectedDrugIds=일괄삭제)와 직교 — 행의 약명 클릭 = 인라인 편집 패널 열기.
+  const [insuranceSelectedId, setInsuranceSelectedId] = useState<string | null>(null);
 
   const tree = buildFolderTree(folders);
   const drugsByFolder = new Map<string, FolderDrug[]>();
@@ -288,6 +299,10 @@ export default function DrugFoldersTab() {
   //   전체보기 행 = 폴더에 분류된 전체 약(prescription_code_folders ⋈ codes). 약명 가나다 정렬.
   const allDrugs = [...drugs].sort((a, b) => a.name_ko.localeCompare(b.name_ko, 'ko'));
   const allSelected = allDrugs.length > 0 && allDrugs.every((d) => selectedDrugIds.has(d.prescription_code_id));
+  // INLINE-MERGE: 우측 급여여부 편집 대상 약(단건). 목록에서 사라지면(분류 해제 등) 자동 null 처리는 패널 조건부 렌더로 흡수.
+  const insuranceSelectedDrug = insuranceSelectedId
+    ? allDrugs.find((d) => d.prescription_code_id === insuranceSelectedId) ?? null
+    : null;
 
   function toggleDrugSelect(id: string) {
     setSelectedDrugIds((prev) => {
@@ -498,119 +513,188 @@ export default function DrugFoldersTab() {
         </button>
       </div>
 
-      {/* ── Part B: 전체보기 = 전 폴더 약 통합 테이블뷰 + 체크박스 다중 삭제 ───────── */}
+      {/* ── Part B: 전체보기 = 전 폴더 약 통합 테이블뷰 + 체크박스 다중 삭제 ───────────────────
+          T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 기존 미사용 우측 단을 활용해 2-pane 구성.
+            좌측 = 약 통합 테이블(체크박스 다중삭제 + 급여여부 배지 컬럼), 약명 클릭 → 우측 단 급여여부 편집(인라인).
+            급여여부 별도 탭(InsuranceStatusTab) 제거 → 본 우측 패널 + 하단 HIRA 동기화로 통합(AC-1/AC-5). */}
       {subTab === 'all' && (
-        <div className="space-y-2" data-testid="drug-folder-viewall">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">
-              전체 {allDrugs.length}개 약품 · 선택 {selectedDrugIds.size}건
-            </span>
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="destructive"
-                className="h-8 gap-1"
-                disabled={selectedDrugIds.size === 0 || bulkDeleting}
-                onClick={handleBulkDelete}
-                data-testid="drug-folder-viewall-bulk-delete"
-              >
-                {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                선택 {selectedDrugIds.size}건 삭제
-              </Button>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_340px] gap-4" data-testid="drug-folder-viewall">
+          {/* 좌: 약 통합 테이블 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                전체 {allDrugs.length}개 약품 · 선택 {selectedDrugIds.size}건
+              </span>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-8 gap-1"
+                  disabled={selectedDrugIds.size === 0 || bulkDeleting}
+                  onClick={handleBulkDelete}
+                  data-testid="drug-folder-viewall-bulk-delete"
+                >
+                  {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  선택 {selectedDrugIds.size}건 삭제
+                </Button>
+              )}
+            </div>
+            {canManageInsurance && (
+              <p className="text-[10px] text-muted-foreground" data-testid="drug-folder-viewall-insurance-hint">
+                약 이름을 클릭하면 오른쪽에서 급여여부를 바로 설정할 수 있어요.
+              </p>
             )}
-          </div>
-          <div className="rounded-lg border min-h-[120px] overflow-x-auto" data-testid="drug-folder-viewall-list">
-            {allDrugs.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground text-center py-8">
-                폴더에 분류된 약품이 없습니다.
-              </div>
-            ) : (
-              <table className="w-full text-left" data-testid="drug-folder-viewall-table">
-                <thead>
-                  <tr className="border-b bg-muted/30 text-[10px] text-muted-foreground">
-                    <th className="px-2 py-1.5 w-9">
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={toggleSelectAllDrugs}
-                        disabled={!canEdit}
-                        className="h-3.5 w-3.5 accent-teal-600 align-middle"
-                        aria-label="전체선택"
-                        data-testid="drug-folder-viewall-select-all"
-                      />
-                    </th>
-                    {/* §0.5 reporter(문지은 대표원장) 직접 정정 MSG-xi5h: '약 이름(용량)'=name_ko 단일 데이터(예 '어쩌구 10mg'), 용량 별도 컬럼 X. '기타 처방정보' 컬럼 제거(reporter 3컬럼만 명시). */}
-                    <th className="px-2 py-1.5 font-medium">약 이름(용량)</th>
-                    <th className="px-2 py-1.5 font-medium">소속 폴더</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allDrugs.map((d) => {
-                    const checked = selectedDrugIds.has(d.prescription_code_id);
-                    return (
-                      <tr
-                        key={d.prescription_code_id}
-                        className={`border-b last:border-b-0 align-middle ${checked ? 'bg-teal-50/50' : 'hover:bg-muted/20'}`}
-                        data-testid="drug-folder-viewall-row"
-                      >
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleDrugSelect(d.prescription_code_id)}
-                            disabled={!canEdit}
-                            className="h-3.5 w-3.5 accent-teal-600 align-middle"
-                            aria-label={`${d.name_ko} 선택`}
-                            data-testid="drug-folder-viewall-row-check"
-                          />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-xs font-medium truncate">{d.name_ko}</span>
-                            {d.code_source === 'custom' && (
-                              <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
-                            )}
-                            {/* reporter: 이관약(code_type='이관약')만 '이관' 태그 + 검증 버튼 노출.
-                                신규/정상 약엔 미노출. 검증 버튼은 UI surface 만(DML 없음) — 검증 semantics 는
-                                T-20260617-foot-RX-VALID-TAG-REMOVE 정본 경로에서 단일 구현(CORRECTION). */}
-                            {d.code_type === MIGRATED_CODE_TYPE && (
-                              <>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[9px] h-4 px-1 shrink-0 border-amber-300 text-amber-700"
-                                  data-testid="drug-folder-viewall-migrated-tag"
+            <div className="rounded-lg border min-h-[120px] overflow-x-auto" data-testid="drug-folder-viewall-list">
+              {allDrugs.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground text-center py-8">
+                  폴더에 분류된 약품이 없습니다.
+                </div>
+              ) : (
+                <table className="w-full text-left" data-testid="drug-folder-viewall-table">
+                  <thead>
+                    <tr className="border-b bg-muted/30 text-[10px] text-muted-foreground">
+                      <th className="px-2 py-1.5 w-9">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAllDrugs}
+                          disabled={!canEdit}
+                          className="h-3.5 w-3.5 accent-teal-600 align-middle"
+                          aria-label="전체선택"
+                          data-testid="drug-folder-viewall-select-all"
+                        />
+                      </th>
+                      {/* §0.5 reporter(문지은 대표원장) 직접 정정 MSG-xi5h: '약 이름(용량)'=name_ko 단일 데이터(예 '어쩌구 10mg'), 용량 별도 컬럼 X. */}
+                      <th className="px-2 py-1.5 font-medium">약 이름(용량)</th>
+                      {/* INLINE-MERGE: 급여여부 배지 컬럼 — 차단상태(비급여/급여삭제/급여기준변경) 한눈에 식별 */}
+                      <th className="px-2 py-1.5 font-medium">급여여부</th>
+                      <th className="px-2 py-1.5 font-medium">소속 폴더</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allDrugs.map((d) => {
+                      const checked = selectedDrugIds.has(d.prescription_code_id);
+                      const insSelected = insuranceSelectedId === d.prescription_code_id;
+                      const insStatus = (d.insurance_status ?? null) as InsuranceStatus | null;
+                      return (
+                        <tr
+                          key={d.prescription_code_id}
+                          className={`border-b last:border-b-0 align-middle ${
+                            insSelected ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : checked ? 'bg-teal-50/50' : 'hover:bg-muted/20'
+                          }`}
+                          data-testid="drug-folder-viewall-row"
+                        >
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDrugSelect(d.prescription_code_id)}
+                              disabled={!canEdit}
+                              className="h-3.5 w-3.5 accent-teal-600 align-middle"
+                              aria-label={`${d.name_ko} 선택`}
+                              data-testid="drug-folder-viewall-row-check"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {/* AC-1: 약명 클릭 → 우측 급여여부 편집 패널 열기(편집 권한자만). 권한 없으면 일반 텍스트. */}
+                              {canManageInsurance ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setInsuranceSelectedId(d.prescription_code_id)}
+                                  className="text-xs font-medium truncate text-left hover:text-teal-700 hover:underline"
+                                  data-testid="drug-folder-viewall-name-btn"
+                                  aria-pressed={insSelected}
                                 >
-                                  이관
-                                </Badge>
-                                {canEdit && (
-                                  <Button
-                                    size="sm"
+                                  {d.name_ko}
+                                </button>
+                              ) : (
+                                <span className="text-xs font-medium truncate">{d.name_ko}</span>
+                              )}
+                              {d.code_source === 'custom' && (
+                                <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                              )}
+                              {/* reporter: 이관약(code_type='이관약')만 '이관' 태그 + 검증 버튼 노출.
+                                  검증 버튼은 UI surface 만(DML 없음) — 검증 semantics 는
+                                  T-20260617-foot-RX-VALID-TAG-REMOVE 정본 경로에서 단일 구현(CORRECTION). */}
+                              {d.code_type === MIGRATED_CODE_TYPE && (
+                                <>
+                                  <Badge
                                     variant="outline"
-                                    className="h-6 gap-1 px-1.5 text-[10px] shrink-0 border-teal-300 text-teal-700 hover:bg-teal-50"
-                                    onClick={() => handleVerify(d)}
-                                    data-testid="drug-folder-viewall-verify-btn"
-                                    title="검증(준비 중)"
+                                    className="text-[9px] h-4 px-1 shrink-0 border-amber-300 text-amber-700"
+                                    data-testid="drug-folder-viewall-migrated-tag"
                                   >
-                                    <BadgeCheck className="h-3 w-3" />
-                                    검증
-                                  </Button>
-                                )}
-                              </>
+                                    이관
+                                  </Badge>
+                                  {canEdit && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-6 gap-1 px-1.5 text-[10px] shrink-0 border-teal-300 text-teal-700 hover:bg-teal-50"
+                                      onClick={() => handleVerify(d)}
+                                      data-testid="drug-folder-viewall-verify-btn"
+                                      title="검증(준비 중)"
+                                    >
+                                      <BadgeCheck className="h-3 w-3" />
+                                      검증
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {insStatus ? (
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] h-4 px-1 ${INSURANCE_STATUS_STYLE[insStatus] ?? ''}`}
+                                data-testid="drug-folder-viewall-insurance-badge"
+                              >
+                                {insuranceStatusLabel(insStatus)}
+                              </Badge>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">미설정</span>
                             )}
-                          </div>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <span className="text-[11px] text-muted-foreground truncate">
-                            {folderNameById.get(d.folder_id) ?? '—'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <span className="text-[11px] text-muted-foreground truncate">
+                              {folderNameById.get(d.folder_id) ?? '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
+
+          {/* 우: 급여여부 편집 패널(인라인) + HIRA 배치동기화(AC-5 이전처). canManageInsurance(admin/manager)만. */}
+          {canManageInsurance && (
+            <div className="space-y-3" data-testid="drug-folder-viewall-insurance-pane">
+              {insuranceSelectedDrug ? (
+                <InsuranceStatusPanel
+                  codeId={insuranceSelectedDrug.prescription_code_id}
+                  nameKo={insuranceSelectedDrug.name_ko}
+                  claimCode={insuranceSelectedDrug.claim_code}
+                  canWrite={canManageInsurance}
+                  onClose={() => setInsuranceSelectedId(null)}
+                  onSaved={() => qc.invalidateQueries({ queryKey: ['prescription_code_folders'] })}
+                />
+              ) : (
+                <div
+                  className="flex flex-col items-center justify-center py-10 px-3 text-center text-xs text-muted-foreground gap-1.5 rounded-lg border border-dashed"
+                  data-testid="drug-folder-viewall-insurance-empty"
+                >
+                  <BadgeCheck className="h-5 w-5 text-muted-foreground/50" />
+                  <span>왼쪽 목록에서 약 이름을 클릭하면 급여여부를 설정할 수 있어요.</span>
+                </div>
+              )}
+              {/* AC-5: 급여여부 탭 제거에 따라 HIRA 배치동기화 패널을 처방폴더 보조영역으로 이전 */}
+              <HiraInsuranceSyncPanel canWrite={canManageInsurance} />
+            </div>
+          )}
         </div>
       )}
 
