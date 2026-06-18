@@ -67,6 +67,18 @@ interface DailyClosingRow {
   status: string;
 }
 
+/**
+ * T-20260618-foot-MANUALPAY-STATS-REFLECT
+ * 일마감 수기 결제내역(closing_manual_payments). 일마감은 이를 amount 직접 합산하나
+ * 매출집계는 누락 → 합계 불일치 + '지출' 0 표시. closing_manual_payments는 tax_type/
+ * payment_type 컬럼이 없고 amount(integer) 부호로 수입(양수)/지출(음수) 구분.
+ * 입력 폼은 현재 양수만 허용하나, 향후/직접 입력된 음수도 부호 그대로 net 반영(ADDITIVE, DDL 불요).
+ */
+interface RawManual {
+  method: string | null;
+  amount: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 헬퍼
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +139,23 @@ export function SalesDailyTab({ filter }: Props) {
     },
   });
 
+  // ── 수기 결제내역 (close_date 기준) ────────────────────────────────────────
+  //   일마감 결제내역 탭에서 수기 추가/수정한 항목. 일마감과 동일하게 amount 부호 그대로 net 합산.
+  const { data: manualEntries = [], isLoading: manualLoading } = useQuery<RawManual[]>({
+    queryKey: ['sales-daily-manual', clinic?.id, from, to],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('closing_manual_payments')
+        .select('method, amount')
+        .eq('clinic_id', clinic!.id)
+        .gte('close_date', from)
+        .lte('close_date', to);
+      if (error) throw error;
+      return (data ?? []) as RawManual[];
+    },
+  });
+
   // ── 전일 마감 레코드 (현금 시재 이월용) ───────────────────────────────────
   const { data: prevClosing } = useQuery<DailyClosingRow | null>({
     queryKey: ['sales-daily-prev-closing', clinic?.id, prevDate],
@@ -143,7 +172,7 @@ export function SalesDailyTab({ filter }: Props) {
     },
   });
 
-  const isLoading = payLoading || pkgLoading;
+  const isLoading = payLoading || pkgLoading || manualLoading;
   const allPayments = useMemo<RawPayment[]>(() => [...payments, ...pkgPayments], [payments, pkgPayments]);
 
   // ── 좌측 매트릭스: 발생 기준 집계 (세금속성별) ─────────────────────────────
@@ -174,9 +203,15 @@ export function SalesDailyTab({ filter }: Props) {
       }
     }
 
+    // T-20260618-foot-MANUALPAY-STATS-REFLECT: 수기결제는 tax_type 없음 → 면세(비급여) 보수 분류.
+    //   amount 부호 그대로 합산(양수=수입, 음수=지출). 일마감 합산과 동일하게 net 반영.
+    for (const m of manualEntries) {
+      taxfree += m.amount;
+    }
+
     const total = copay + claim + taxable + taxfree + prepaid;
     return { copay, claim, taxable, taxfree, prepaid, discount: 0, total };
-  }, [allPayments]);
+  }, [allPayments, manualEntries]);
 
   // ── 우측 매트릭스: 수납수단 × 세금속성 교차 ────────────────────────────────
   type Matrix = Record<MethodRow, Record<TaxCol, number>>;
@@ -193,8 +228,13 @@ export function SalesDailyTab({ filter }: Props) {
       const col = taxTypeToCol(p.tax_type);
       if (row) m[row][col] += net(p);
     }
+    // T-20260618-foot-MANUALPAY-STATS-REFLECT: 수기결제 method → 행 매핑, tax_type 없음 → 면세 열.
+    for (const me of manualEntries) {
+      const row = DB_METHOD_TO_ROW[me.method ?? ''];
+      if (row) m[row]['면세'] += me.amount;
+    }
     return m;
-  }, [allPayments]);
+  }, [allPayments, manualEntries]);
 
   const rightRowTotals = useMemo<Record<MethodRow, number>>(() => {
     const t = {} as Record<MethodRow, number>;
@@ -215,17 +255,29 @@ export function SalesDailyTab({ filter }: Props) {
   const totalRight = TAX_COLS.reduce((s, col) => s + rightColTotals[col], 0);
 
   // AC-2: 좌우 대사 — 1원 이상 차이 시 경고
-  const mismatch = allPayments.length > 0 && Math.abs(left.total - totalRight) >= 1;
+  const hasAnyRow = allPayments.length > 0 || manualEntries.length > 0;
+  const mismatch = hasAnyRow && Math.abs(left.total - totalRight) >= 1;
 
   // ── AC-3: 현금 시재 ────────────────────────────────────────────────────────
   const cashCarryover = prevClosing?.actual_cash_total ?? 0;
-  const cashIn = useMemo(
-    () => allPayments.filter(p => p.method === 'cash').reduce((s, p) => s + net(p), 0),
-    [allPayments],
+  // T-20260618-foot-MANUALPAY-STATS-REFLECT:
+  //   당일 현금수납 = 단건/패키지 현금 net + 수기 현금 수입(양수).
+  //   지출 = 수기 현금 출금(음수 amount의 절댓값 합). 부호로 구분(DDL 불요).
+  //   잔액 = 이월금 + 현금수납 − 지출.  ⇒ 현금수납−지출 = 우측 매트릭스 '현금' 행 합과 정합.
+  const cashIn = useMemo(() => {
+    const paymentCash = allPayments.filter(p => p.method === 'cash').reduce((s, p) => s + net(p), 0);
+    const manualCashIn = manualEntries
+      .filter(m => m.method === 'cash' && m.amount > 0)
+      .reduce((s, m) => s + m.amount, 0);
+    return paymentCash + manualCashIn;
+  }, [allPayments, manualEntries]);
+  const cashExpense = useMemo(
+    () => manualEntries
+      .filter(m => m.method === 'cash' && m.amount < 0)
+      .reduce((s, m) => s + Math.abs(m.amount), 0),
+    [manualEntries],
   );
-  // 지출(현금 출금)은 closing_manual_payments 기반이나 음수 방향성 구분 불가 → 0 표시
-  // 일마감 페이지에서 수기 입력 후 actual_cash_total로 확정
-  const cashBalance = cashCarryover + cashIn;
+  const cashBalance = cashCarryover + cashIn - cashExpense;
 
   // ─────────────────────────────────────────────────────────────────────────
   // 렌더
@@ -445,10 +497,18 @@ export function SalesDailyTab({ filter }: Props) {
               </div>
             </div>
 
-            {/* 지출 */}
+            {/* 지출 (현금 출금) — 수기결제 음수 amount */}
             <div className="rounded-lg border bg-muted/20 p-3 text-center">
               <div className="mb-1 text-xs text-muted-foreground">지출</div>
-              <div className="tabular-nums text-sm font-semibold text-muted-foreground">—</div>
+              <div
+                data-testid="sales-daily-cash-expense"
+                className={cn(
+                  'tabular-nums text-sm font-semibold',
+                  cashExpense > 0 ? 'text-rose-700' : 'text-muted-foreground',
+                )}
+              >
+                {cashExpense > 0 ? `− ${formatAmount(cashExpense)}` : '—'}
+              </div>
               <div className="mt-0.5 text-[10px] text-muted-foreground">일마감 수기 처리</div>
             </div>
 
@@ -467,7 +527,7 @@ export function SalesDailyTab({ filter }: Props) {
       </Card>
 
       {/* 빈 상태 */}
-      {allPayments.length === 0 && (
+      {!hasAnyRow && (
         <div
           data-testid="sales-daily-empty"
           className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-12 text-center"
