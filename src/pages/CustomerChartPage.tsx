@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
@@ -19,6 +19,8 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+// T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
+import { canViewRrn } from '@/lib/permissions';
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO, staffRoleSortIndex } from '@/lib/status';
@@ -2095,6 +2097,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     ? (medchartParam as 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult')
     : undefined;
   const { profile, loading: authLoading } = useAuth();
+  // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 = prod rrn_decrypt 게이트(admin/manager/director).
+  //   권한 없는 직원은 rrn_decrypt 가 항상 null 을 반환 → 저장 여부를 빈 값으로 구분 불가.
+  //   이 플래그로 '미입력'(=저장 안 됨 오해) 대신 '조회 권한 없음' 안내문을 띄운다. DB 권한은 변경 없음.
+  const userCanViewRrn = canViewRrn(profile?.role ?? '');
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
   // T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 비가열 레이저 타이머 시작 버튼 시간 단위.
@@ -2672,6 +2678,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (!customer) return;
     setRrnMasked(undefined);
     setRrnFull(undefined);
+    // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 조회 권한 없는 직원은 rrn_decrypt 가
+    //   항상 null → 불필요한 RPC 호출 생략. 렌더에서 userCanViewRrn 분기로 안내문 표기.
+    if (!userCanViewRrn) {
+      setRrnMasked(null);
+      setRrnFull(null);
+      return;
+    }
     (async () => {
       const { data } = await supabase.rpc('rrn_decrypt', { customer_uuid: customer.id });
       if (data) {
@@ -2684,7 +2697,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         setRrnFull(null);
       }
     })();
-  }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [customer?.id, userCanViewRrn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // T-20260511-foot-SSN-FRONT-INPUT-BUG: autoFocus 대신 programmatic focus
   // 태블릿 가상키보드 완성 후 포커스 — 150ms 딜레이로 키보드 애니메이션 race condition 방지
@@ -4558,7 +4571,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           취소
                         </button>
                       </div>
-                    ) : (
+                    ) : userCanViewRrn ? (
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-gray-600">
                           {rrnMasked === undefined ? '...' : (rrnMasked ?? '미입력')}
@@ -4569,6 +4582,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
                         >
                           {rrnMasked ? '수정' : '입력'}
+                        </button>
+                      </div>
+                    ) : (
+                      /* T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 조회 권한 없는 직원 안내문.
+                         복호화 결과 null 을 '미입력'으로 표기하면 "저장 안 됨"으로 오해 → '조회 권한 없음'으로 명시.
+                         저장(입력) 동선은 유지(rrn_encrypt 는 별도 권한). 방금 저장한 값은 세션 내 마스킹 표시. */
+                      <div className="flex items-center gap-2">
+                        {rrnMasked ? (
+                          <span className="font-mono text-gray-600">{rrnMasked}</span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700"
+                            title="주민번호는 관리자·매니저·원장만 조회할 수 있습니다. 저장되어 있어도 이 화면에는 표시되지 않으며, 빈 값이 곧 '미저장'을 뜻하지 않습니다."
+                          >
+                            <Lock className="h-3 w-3" /> 조회 권한 없음
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { setRrnFront(''); setRrnBack(''); setEditingRrn(true); setIsDirty(true); }}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
+                        >
+                          입력
                         </button>
                       </div>
                     )}
