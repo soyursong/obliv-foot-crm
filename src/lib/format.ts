@@ -113,6 +113,18 @@ export function nowSeoulHHMM(): string {
   });
 }
 
+/**
+ * 임의 타임스탬프 → 서울 기준 "HH:MM" 문자열 반환 (예: "14:05").
+ * T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK: 패키지 차감 시 연결 대상 체크인의
+ * 내원 시각을 "오늘 HH:MM 내원 건에 연결됩니다"로 안내(AC-2)할 때 사용.
+ * checked_in_at(timestamptz, UTC) 을 KST 시:분으로 환산한다.
+ */
+export function seoulHHMM(input: string | number | Date): string {
+  return new Date(input).toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+
 /** 오늘(서울 기준) ko-KR 날짜 문자열 반환 (예: "2026. 05. 22.") */
 export function todaySeoulStr(): string {
   return new Date().toLocaleDateString('ko-KR', {

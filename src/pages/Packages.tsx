@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
+import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
@@ -1725,6 +1725,9 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
   const [surcharge, setSurcharge] = useState(0);
   const [surchargeMemo, setSurchargeMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK (1번 B안): 당일 해당 고객의 가장 최근 체크인 자동연결.
+  const [linkCheckIn, setLinkCheckIn] = useState<{ id: string; checked_in_at: string } | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
 
   const available: Record<typeof sessionType, number> = {
     heated_laser: remaining?.heated ?? 0,
@@ -1733,16 +1736,40 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
     preconditioning: remaining?.preconditioning ?? 0,
   };
 
+  // AC-1/AC-3/AC-4: 다이얼로그 오픈 시 당일(KST) 해당 고객의 가장 최근 체크인을 조회해 연결 대상 결정.
+  useEffect(() => {
+    if (!open) { setLinkCheckIn(null); return; }
+    let cancelled = false;
+    (async () => {
+      setLinkLoading(true);
+      const today = todaySeoulISODate();
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('id, checked_in_at')
+        .eq('customer_id', pkg.customer_id)
+        .eq('clinic_id', pkg.clinic_id)
+        .gte('checked_in_at', `${today}T00:00:00+09:00`)
+        .lte('checked_in_at', `${today}T23:59:59+09:00`)
+        .order('checked_in_at', { ascending: false }) // AC-4: 복수 내원 시 가장 최근(latest)
+        .limit(1);
+      if (cancelled) return;
+      setLinkCheckIn(!error && data && data.length > 0 ? (data[0] as { id: string; checked_in_at: string }) : null);
+      setLinkLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [open, pkg.customer_id, pkg.clinic_id]);
+
   const save = async () => {
     if ((available[sessionType] ?? 0) <= 0) { toast.error('남은 회차가 없습니다'); return; }
     setSubmitting(true);
     const { count } = await supabase.from('package_sessions').select('*', { count: 'exact', head: true }).eq('package_id', pkg.id);
     const nextNumber = (count ?? 0) + 1;
-    // T-20260609-foot-PKGSESS-CHECKIN-LINK: 패키지관리 화면 차감은 특정 내원(check_in) 컨텍스트가 없음
-    //   → check_in_id 미기록(NULL). 통계 RPC 는 (고객+KST일자+치료사) 근사 fallback 으로 집계.
+    // T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK: 당일 최근 체크인에 자동연결(AC-1). 0건이면 NULL(AC-3, 차감 자체는 막지 않음).
+    //   (기존 T-20260609-foot-PKGSESS-CHECKIN-LINK 의 "NULL 고정" 동작을 자동연결로 대체)
     const { error } = await supabase.from('package_sessions').insert({
       package_id: pkg.id, session_number: nextNumber, session_type: sessionType,
       surcharge, surcharge_memo: surchargeMemo.trim() || null, status: 'used',
+      check_in_id: linkCheckIn?.id ?? null,
     });
     setSubmitting(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
@@ -1775,10 +1802,24 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
             <Label>추가금 메모</Label>
             <Input value={surchargeMemo} onChange={(e) => setSurchargeMemo(e.target.value)} />
           </div>
+          {/* T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK: 연결 대상 내원 안내 (AC-2/AC-3) */}
+          {linkLoading ? (
+            <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              당일 내원 기록 확인 중…
+            </div>
+          ) : linkCheckIn ? (
+            <div className="rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
+              오늘 {seoulHHMM(linkCheckIn.checked_in_at)} 내원 건에 연결됩니다.
+            </div>
+          ) : (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              오늘 내원 기록 없음 — 내원 연결 없이 차감됩니다.
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-          <Button disabled={submitting} onClick={save}>소진 기록</Button>
+          <Button disabled={submitting || linkLoading} onClick={save}>소진 기록</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
