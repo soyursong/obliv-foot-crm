@@ -214,6 +214,16 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
+  <!-- T-20260617-foot-DOCFORM-POPUP-OVERHAUL G6/AC-3: 향후 치료기간 전용 행(치료내용/소견과 분리). -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td style="width:80px; background:#f8f8f8; vertical-align:middle; text-align:center; line-height:1.6;">향후<br>치료기간</td>
+        <td>{{future_treatment_period}}</td>
+      </tr>
+    </tbody>
+  </table>
+
   <table style="margin-top:4px;">
     <tbody>
       <tr>
@@ -1105,6 +1115,18 @@ ${COMMON_STYLE}
   <div style="border-bottom:1px solid #000; padding:10px 14px; min-height:70px;">
     <div style="font-size:9.5pt; font-weight:bold; margin-bottom:4px;">■&nbsp;의뢰내용&nbsp;:</div>
     <div style="font-size:9.5pt; min-height:40px; padding-left:12px; white-space:pre-wrap;">{{referral_content}}</div>
+  </div>
+
+  <!-- T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 검사 결과·투약 내용 전용 영역(자유서술 의뢰내용과 분리).
+       검사 결과 = 발행 KOH 균검사 이력 자동 로드, 투약 내용 = 처방약 이력 자동 로드(referralAutoLoad.ts). -->
+  <div style="border-bottom:1px solid #000; padding:10px 14px; min-height:56px;">
+    <div style="font-size:9.5pt; font-weight:bold; margin-bottom:4px;">■&nbsp;검사&nbsp;결과&nbsp;:</div>
+    <div style="font-size:9.5pt; min-height:30px; padding-left:12px; white-space:pre-wrap;">{{test_result}}</div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:10px 14px; min-height:56px;">
+    <div style="font-size:9.5pt; font-weight:bold; margin-bottom:4px;">■&nbsp;투약&nbsp;내용&nbsp;:</div>
+    <div style="font-size:9.5pt; min-height:30px; padding-left:12px; white-space:pre-wrap;">{{medication}}</div>
   </div>
 
   <div style="border-bottom:1px solid #000; padding:8px 14px;">
