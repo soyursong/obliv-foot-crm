@@ -237,6 +237,11 @@ export function ReservationDetailPopup({
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-3/4: 2번구역 미니 캘린더 선택 일자
   const [pickedDate, setPickedDate] = useState<Date | null>(null);
 
+  // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC2: 시간대 패널에서 선택한 시간(HH:mm).
+  //   anchor 예약(reservation)의 reservation_time update(저장) 대상. 날짜 변경 시 stale 선택 초기화.
+  const [selectedSlotTime, setSelectedSlotTime] = useState<string | null>(null);
+  const [reschedulingTime, setReschedulingTime] = useState(false);
+
   // 현재 우상에 표시할 예약 (좌하 클릭 선택, 기본값 = 원본 예약)
   const selectedResv: Reservation | undefined =
     allResvs.find((r) => r.id === selectedResvId) ?? reservation ?? undefined;
@@ -244,6 +249,12 @@ export function ReservationDetailPopup({
   // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC6: 캘린더 영역 '예약등록자 필터' 드롭다운 삭제(중복 표기 제거).
   //   예약이력·캘린더 점표기는 전체 예약(allResvs) 그대로 표시. 상단 예약정보의 '예약등록자'(편집)만 유지.
   const visibleResvs = allResvs;
+
+  // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC2: 날짜를 바꾸면 이전 날짜의 시간 선택은 무효 → 초기화.
+  //   (다른 날짜 슬롯을 stale 선택 상태로 anchor 예약에 잘못 저장하는 것을 방지)
+  useEffect(() => {
+    setSelectedSlotTime(null);
+  }, [pickedDate]);
 
   // ── T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1/AC5: 1번구역(고객정보·활성패키지·치료내역) 로더.
   //   현재 예약 고객(A) 최초 로드 + 검색으로 다른 고객(B) 불러올 때 동일 함수 재사용 → 1번구역만 교체(팝업 닫지 않음).
@@ -768,6 +779,49 @@ export function ReservationDetailPopup({
     onChanged();
   };
 
+  // ── 액션: AC2 시간 변경 (시간대 패널에서 선택한 시간으로 anchor 예약 reservation_time update)
+  // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC2 (field clarify Q3=저장 O, ts=1781796980.363939):
+  //   미니캘린더 날짜(pickedDate) + 시간대 패널 선택(selectedSlotTime) → 현재 예약(anchor)의
+  //   reservation_date/reservation_time update. reschedule 단일 패턴(Reservations.tsx:1104) 재사용.
+  //   🔒 GUARD(RESV-ROUTE-AUTOCLASS): update payload = 날짜·시간만. visit_type/visit_route write 무접촉.
+  //   Q2(마감 표시 불필요) → 최대인원/마감 차단 로직 미적용(예약 현황 숫자만 표기, 차단 없음).
+  const rescheduleToSelectedTime = async () => {
+    if (!pickedDate || !selectedSlotTime) return;
+    const newDate = format(pickedDate, 'yyyy-MM-dd');
+    const newTime = selectedSlotTime; // 'HH:mm' (reschedule 경로와 동일 포맷)
+    const oldData = { date: reservation.reservation_date, time: reservation.reservation_time.slice(0, 5) };
+    if (oldData.date === newDate && oldData.time === newTime) {
+      toast.info('이미 해당 시간으로 예약되어 있습니다');
+      return;
+    }
+    setReschedulingTime(true);
+    const { error } = await supabase
+      .from('reservations')
+      .update({ reservation_date: newDate, reservation_time: newTime }) // visit_type 무접촉(GUARD)
+      .eq('id', reservation.id);
+    if (error) {
+      toast.error(`시간 변경 실패: ${error.message}`);
+      setReschedulingTime(false);
+      return;
+    }
+    await supabase.from('reservation_logs').insert({
+      reservation_id: reservation.id,
+      clinic_id: reservation.clinic_id,
+      action: 'reschedule',
+      old_data: oldData,
+      new_data: { date: newDate, time: newTime },
+      changed_by: changedBy,
+    });
+    setReschedulingTime(false);
+    setSelectedSlotTime(null);
+    toast.success(
+      oldData.date === newDate
+        ? `예약 시간 변경: ${oldData.time} → ${newTime}`
+        : `예약 이동: ${oldData.date} ${oldData.time} → ${newDate} ${newTime}`,
+    );
+    onChanged();
+  };
+
   // ── 액션: 체크인 전환 (실제 DB INSERT)
   // T-20260611-foot-CHECKIN-POPUP-REVISIT-CONSULTSLOT (regression fix):
   //   canonical 슬롯 분기 복원 — 재진(returning) → treatment_waiting(치료대기), 초진/예약없이방문 → consult_waiting(상담대기).
@@ -1243,9 +1297,36 @@ export function ReservationDetailPopup({
                     .filter((r) => r.status !== 'cancelled')
                     .map((r) => r.reservation_date)}
                 />
-                {/* T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1: 선택 일자 시간대별 예약현황(read-only).
-                    날짜클릭(pickedDate) → 시간대별 초/재/힐러 카운트. AC2 시간선택·Q2 마감표시는 field clarify 대기. */}
-                <ReservationDayTimeslotPanel date={pickedDate} clinicId={reservation.clinic_id} />
+                {/* T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1/AC2: 선택 일자 시간대별 예약현황.
+                    AC1=날짜클릭(pickedDate)→시간대별 초/재/힐러 카운트. AC2=시간대 클릭→선택(저장은 아래 버튼).
+                    🔒 다른 고객(B) 로드 중(loadedMatch)에는 시간선택을 끔 — anchor 예약(A)에 잘못 저장 방지.
+                       (B는 신규예약 생성 흐름이며 reservations.update 대상 아님) */}
+                <ReservationDayTimeslotPanel
+                  date={pickedDate}
+                  clinicId={reservation.clinic_id}
+                  selectedTime={loadedMatch ? null : selectedSlotTime}
+                  onSelectTime={loadedMatch ? undefined : setSelectedSlotTime}
+                />
+                {/* AC2 Q3=저장 O: 선택 시간으로 현재 예약 시간 변경(저장). visit_type 무접촉(GUARD). */}
+                {!loadedMatch && pickedDate && selectedSlotTime && (
+                  <div
+                    className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-teal-300 bg-teal-50 px-3 py-2"
+                    data-testid="popup-reschedule-bar"
+                  >
+                    <span className="text-xs text-teal-800">
+                      선택: <span className="font-semibold">{format(pickedDate, 'M월 d일', { locale: ko })} {selectedSlotTime}</span>
+                    </span>
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      disabled={reschedulingTime}
+                      onClick={rescheduleToSelectedTime}
+                      data-testid="btn-reschedule-time"
+                    >
+                      {reschedulingTime ? '변경 중…' : '이 시간으로 변경'}
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 다른 고객(B) 로드 시 '팝업 안에서' 신규예약 생성 폼.

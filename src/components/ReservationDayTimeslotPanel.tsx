@@ -1,10 +1,13 @@
-// T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1: 예약상세팝업 미니캘린더 날짜클릭 → 시간대별 예약현황 패널.
+// T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1/AC2: 예약상세팝업 미니캘린더 날짜클릭 → 시간대별 예약현황 패널.
 //   ⚠️ read-only(현황 표시 전용). 예약경로 write 입력란 신설 금지(GUARD). reservations read + 시간대 집계만.
+//   ⚠️ 이 패널은 DB write 0 — AC2 시간 선택은 onSelectTime 콜백으로 부모(ReservationDetailPopup)에 시간만 버블업.
+//      실제 reservation_time update(저장)는 부모가 anchor 예약에 수행(쓰기 책임 격리 유지).
 //   시간대별 초/재/힐러 카운트 = RESVCAL-DISPLAY-REWORK item2 슬롯집계 로직 재사용(@/lib/resvSlotAgg, 중복 구현 금지).
 //
-//   [field_clarify 대기 — 미구현]
-//   - AC2 시간 선택(reservations 시간 update write): spec Q3 답변 대기 → 본 패널은 표시 전용, write 경로 無.
-//   - Q2 마감 표시(시간대 최대 인원 기준): spec Q2 답변 대기 → 카운트만 표시, 마감 판정 미적용.
+//   [field clarify 확정 — slack reply ts=1781796980.363939]
+//   - Q1 슬롯 단위 = 30분 단위 → 기존 슬롯집계(@/lib/resvSlotAgg, 30분 정규화 toSlotKey) 재사용. 신규 슬롯로직 금지.
+//   - Q2 마감 표시 = 불필요(예약 현황 숫자만) → '마감' 라벨/최대인원 로직 미구현(카운트만 표기 유지).
+//   - Q3 시간 선택 저장 = 저장 O → onSelectTime 으로 선택 시간(HH:mm) 버블업, 부모가 reservation_time update.
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
@@ -25,11 +28,20 @@ interface TimeslotRow {
 export function ReservationDayTimeslotPanel({
   date,
   clinicId,
+  selectedTime = null,
+  onSelectTime,
 }: {
   /** 미니캘린더에서 선택된 날짜. null 이면 안내문만 표시. */
   date: Date | null;
   /** 지점 스코프 — 해당 지점 예약만 집계. */
   clinicId: string;
+  /** AC2: 현재 선택된 시간대(HH:mm). 하이라이트 표시용. */
+  selectedTime?: string | null;
+  /**
+   * AC2: 시간대 선택 콜백(HH:mm). 제공되면 슬롯 행이 클릭 가능(선택 모드)으로 전환.
+   * 미제공이면 read-only 현황 표시(AC1 기존 동작 — 신규모드 패널 등). DB write 는 부모 책임.
+   */
+  onSelectTime?: (time: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [slots, setSlots] = useState<Array<{ time: string; counts: SlotKindCount }>>([]);
@@ -94,10 +106,15 @@ export function ReservationDayTimeslotPanel({
     );
   }
 
+  const selectable = typeof onSelectTime === 'function';
+
   return (
     <div className="mt-2" data-testid="popup-timeslot-panel">
       <div className="text-[11px] font-semibold text-teal-700 mb-1.5 px-0.5">
         {format(date, 'M월 d일')} 시간대별 예약 현황
+        {selectable && (
+          <span className="ml-1 font-normal text-muted-foreground">— 시간대를 클릭해 예약 시간을 선택하세요</span>
+        )}
       </div>
       {loading ? (
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground px-1 py-2">
@@ -112,7 +129,13 @@ export function ReservationDayTimeslotPanel({
       ) : (
         <div className="space-y-0.5 max-h-44 overflow-y-auto pr-0.5">
           {slots.map(({ time, counts }) => (
-            <TimeslotLine key={time} time={time} counts={counts} />
+            <TimeslotLine
+              key={time}
+              time={time}
+              counts={counts}
+              selected={selectable && selectedTime === time}
+              onSelect={selectable ? () => onSelectTime!(time) : undefined}
+            />
           ))}
         </div>
       )}
@@ -120,13 +143,28 @@ export function ReservationDayTimeslotPanel({
   );
 }
 
-/** 한 시간대 행: `10:00 — 초진 2 / 재진 3 / 힐러 1`. 0건 유형은 흐리게. */
-function TimeslotLine({ time, counts }: { time: string; counts: SlotKindCount }) {
-  return (
-    <div
-      className="flex items-center gap-2 rounded-md bg-card border border-border/50 px-2 py-1 text-[11px]"
-      data-testid={`popup-timeslot-row-${time}`}
-    >
+/** 한 시간대 행: `10:00 — 초진 2 / 재진 3 / 힐러 1`. 0건 유형은 흐리게.
+ *  AC2: onSelect 제공 시 클릭 가능(button) — 선택 시 teal 하이라이트. 미제공 시 read-only div(AC1). */
+function TimeslotLine({
+  time,
+  counts,
+  selected = false,
+  onSelect,
+}: {
+  time: string;
+  counts: SlotKindCount;
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
+  const baseClass = cn(
+    'flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] w-full text-left',
+    selected
+      ? 'bg-teal-50 border-teal-500 ring-1 ring-teal-400'
+      : 'bg-card border-border/50',
+    onSelect && !selected && 'hover:border-teal-300 hover:bg-teal-50/40 cursor-pointer transition-colors',
+  );
+  const inner = (
+    <>
       <span className="font-semibold tabular-nums text-foreground w-11 flex-shrink-0">{time}</span>
       <span className="text-muted-foreground">—</span>
       <span className="flex items-center gap-1.5 flex-wrap">
@@ -145,6 +183,27 @@ function TimeslotLine({ time, counts }: { time: string; counts: SlotKindCount })
       <span className="ml-auto text-[10px] text-muted-foreground tabular-nums flex-shrink-0">
         총 {counts.total}
       </span>
+    </>
+  );
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        className={baseClass}
+        onClick={onSelect}
+        aria-pressed={selected}
+        data-testid={`popup-timeslot-row-${time}`}
+        data-selected={selected ? 'true' : 'false'}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <div className={baseClass} data-testid={`popup-timeslot-row-${time}`}>
+      {inner}
     </div>
   );
 }
