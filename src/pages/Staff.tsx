@@ -13,10 +13,6 @@ import ClinicSettingsPage from '@/pages/ClinicSettings';
 
 import { supabase } from '@/lib/supabase';
 import { fetchEffectiveRoomAssignments } from '@/lib/roomAssignments';
-// T-20260618-foot-STAFFTAB-CHECKIN-BADGE-CALENDAR: 직원 탭 출근/미출근 배지.
-//   배정화면(Assignments.tsx L140)과 동일 소스(fetchTodayWorkingStaffIds = 구글시트 근무 캘린더 read)
-//   재사용 → '출근 N명' 일치. 신규 조회 로직 추가 금지(티켓 Core).
-import { fetchTodayWorkingStaffIds } from '@/lib/autoAssign';
 import { useAuth } from '@/lib/auth';
 import { getClinic, clearClinicCache } from '@/lib/clinic';
 import type { Clinic, Room, Staff, StaffRole } from '@/lib/types';
@@ -159,23 +155,6 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
     },
   });
 
-  // T-20260618-foot-STAFFTAB-CHECKIN-BADGE-CALENDAR:
-  //   오늘 출근 staff id 집합 — 배정화면과 동일 소스(구글시트 근무 캘린더 read) 재사용.
-  //   ⚠ graceful: fetchTodayWorkingStaffIds 는 시트 장애/데이터 없음 시 내부 try/catch 로 빈 Set 반환.
-  //     쿼리 자체 예외도 catch → 빈 Set. 어떤 경우에도 직원 목록(staff 테이블 기반)은 정상 렌더되고,
-  //     빈 Set 이면 전원 '미출근'으로 표시(배정화면 '출근 0명'과 일치 = 자가진단 신호).
-  const { data: workingIds = new Set<string>() } = useQuery<Set<string>>({
-    queryKey: ['staff-working-ids', clinic.id],
-    queryFn: async () => {
-      try {
-        return await fetchTodayWorkingStaffIds(clinic.id, staffList);
-      } catch {
-        return new Set<string>();
-      }
-    },
-    enabled: staffList.length > 0,
-  });
-
   const grouped = useMemo(() => {
     const map: Record<Role, Staff[]> = {
       director: [],
@@ -191,17 +170,7 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
     return map;
   }, [staffList, showInactive]);
 
-  // 오늘 출근 인원수(활성 직원 기준) — 배정화면 '출근 N명'과 동일 소스로 일치.
-  const workingCount = useMemo(
-    () => staffList.filter((s) => s.active && workingIds.has(s.id)).length,
-    [staffList, workingIds],
-  );
-
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['staff', clinic.id] });
-    // 직원 CRUD(이름 변경 등) 후 시트 이름 매칭 재계산.
-    qc.invalidateQueries({ queryKey: ['staff-working-ids', clinic.id] });
-  };
+  const refresh = () => qc.invalidateQueries({ queryKey: ['staff', clinic.id] });
 
   /** 활성화는 즉시 실행, 비활성화는 확인 다이얼로그 */
   const handleToggleActive = async (s: Staff) => {
@@ -233,13 +202,6 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-base font-semibold">직원 관리</h3>
-          {/* T-20260618-foot-STAFFTAB-CHECKIN-BADGE-CALENDAR: 오늘 출근 요약(배정화면 '출근 N명'과 동일 소스) */}
-          <span
-            data-testid="staff-working-summary"
-            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700"
-          >
-            오늘 출근 {workingCount}명
-          </span>
           <label className="flex items-center gap-1 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -278,27 +240,6 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                 >
                   <div className="flex items-center gap-2">
                     <span className={`font-medium ${!s.active ? 'text-muted-foreground' : ''}`}>{s.name}</span>
-                    {/* T-20260618-foot-STAFFTAB-CHECKIN-BADGE-CALENDAR: 출근/미출근 배지(활성 직원만).
-                        workingIds.has(id) → 녹색 '출근', 아니면 회색 '미출근'. 빈 Set(시트 장애/무출근) → 전원 '미출근'. */}
-                    {s.active && (
-                      workingIds.has(s.id) ? (
-                        <Badge
-                          variant="outline"
-                          data-testid={`staff-checkin-badge-${s.id}`}
-                          className="border-emerald-200 bg-emerald-50 text-xs font-medium text-emerald-700"
-                        >
-                          출근
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          data-testid={`staff-checkin-badge-${s.id}`}
-                          className="border-muted text-xs font-normal text-muted-foreground"
-                        >
-                          미출근
-                        </Badge>
-                      )
-                    )}
                     {!s.active && (
                       <Badge variant="destructive" className="text-xs">
                         비활성
