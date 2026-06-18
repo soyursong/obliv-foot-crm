@@ -50,8 +50,13 @@ let partial: Seeded | null = null; // used=6 → 7회차
 let soaked: Seeded | null = null; // used=12 → 완료
 
 // 정석 fixture(seedCheckIn=비-sim 실고객·checked_in_at 오늘·MARKER) + 패키지 + used 회차 차감.
+// ⚠ T-20260618-foot-THERAPYWAIT-PKGSESSION-COMPACT: 치료대기(treatment_waiting) 슬롯 카드는 이제
+//   compact 표기("N/M", 라벨 제거)로 전환됨. PKGBOX canon("N회차 / M회", formatPkgLabel)은 그 외 모든
+//   슬롯에서 유지된다. 본 spec은 formatPkgLabel(회차/회) canon을 검증하므로 시드 슬롯을
+//   treatment_waiting → laser_waiting(여전히 formatPkgLabel 사용)으로 이전. 검증 의도 불변.
+//   (고객박스·치료대기 카드는 동일 DraggableCard 컴포넌트를 공유 — 표기 분기는 pkgLabelCompact prop으로 제어)
 async function seedPkgCard(client: SupabaseClient, usedCount: number): Promise<Seeded> {
-  const ci = await seedCheckIn({ visit_type: 'returning', status: 'treatment_waiting' });
+  const ci = await seedCheckIn({ visit_type: 'returning', status: 'laser_waiting' });
   const pkg: FixtureHandle = await seedPackage({
     customerId: ci.customerId,
     preset: { label: `풋케어 패키지(QA ${TOTAL}회)`, total: TOTAL, suggestedPrice: 0 },
