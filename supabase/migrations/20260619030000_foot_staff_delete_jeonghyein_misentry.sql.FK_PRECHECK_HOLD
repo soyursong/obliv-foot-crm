@@ -1,0 +1,92 @@
+-- ============================================================
+-- T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX (AC5 · 정혜인 미입사 레코드 물리 삭제)
+-- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm)
+-- 작성: dev-foot / 2026-06-19
+-- 롤백: 20260619030000_foot_staff_delete_jeonghyein_misentry.rollback.sql
+--
+-- ⚠️⚠️ 배포 보류(HOLD) — 파일 확장자 .FK_PRECHECK_HOLD 로 마이그 러너에서 제외 ⚠️⚠️
+--   사유: 2026-06-19 READ-ONLY FK precheck 결과, 삭제 대상(정혜인) staff row 를 참조하는
+--         FK 가 3건 잔존 → 게이트(MSG-20260619-080644-euuo) "FK 참조가 하나라도 있으면
+--         물리 삭제 차단" 에 의해 보류. 깡 CASCADE 금지.
+--   FK precheck 실측(2026-06-19, 대상 id=5f141f76-7f72-4560-8a67-bbcdf4938cad):
+--     · room_assignments.staff_id  = 2건  (ON DELETE NO ACTION = RESTRICT → DELETE 하드 실패)
+--         - bd2ff40c… 2026-04-29 상담실 "1"   (staff_name=null)
+--         - 215c9b5b… 2026-05-08 "상담실5"     (staff_name='정혜인')  ← 실제 배정 흔적
+--     · customers.assigned_staff_id = 1건  (ON DELETE SET NULL)
+--         - 3ef801ea… 고객 설연우(+821027749571) 담당 실장으로 귀속
+--   ⇒ "미입사/잘못 입력 + perf 0" 전제와 달리 실제 다운스트림 참조 존재.
+--      → planner FOLLOWUP(soft-delete/재배정/참조 정리 후 삭제 재판단) 발행.
+--      참조 3건이 정리(reassign/null)되면 .FK_PRECHECK_HOLD 제거 → 010000/020000 뒤에 합류.
+--
+-- ── 안전 설계 ──────────────────────────────────────────────
+--   본 마이그는 보류 해제(파일명 .HOLD 제거) 후 실행되더라도, 아래 인라인 가드로
+--   파괴를 자기-차단한다. 따라서 참조가 남아 있는 한 어떤 경로로 실행돼도 무해:
+--     (1) 단일 행 보장: clinic_id + name + role 로 정확히 1행 특정(동명이인 방어).
+--     (2) 카탈로그 기반 FK precheck: pg_constraint 를 런타임 순회하여 staff 를 참조하는
+--         "모든" FK(향후 추가된 assignment_* 등 포함)에 대해 대상 id 참조 수를 동적 count.
+--         하나라도 >0 이면 RAISE EXCEPTION → 트랜잭션 전체 롤백(부분 삭제·CASCADE 없음).
+--     (3) 삭제 행수=1 검증: ROW_COUNT<>1 이면 abort.
+--   ⇒ 게이트의 "FK precheck 통과 시에만 합류" 를 SQL 구조로 강제.
+--
+-- ── DB 변경 성격 (게이트 판정) ─────────────────────────────
+--   DDL 아님. 단일 staff row DELETE(DML). 신규 컬럼/테이블/enum 0.
+--   data-architect CONSULT 불요. supervisor DML-diff + FK precheck 결과로 게이트 충족.
+-- ============================================================
+
+BEGIN;
+
+DO $$
+DECLARE
+  v_target uuid := '5f141f76-7f72-4560-8a67-bbcdf4938cad';  -- 정혜인 (미입사 레코드)
+  v_clinic uuid := '74967aea-a60b-4da3-a0e7-9c997a930bc8';  -- 오블리브 풋센터 종로
+  v_name   text := '정혜인';
+  v_role   text := 'consultant';
+  v_count  int;
+  v_total  int := 0;
+  v_refs   text := '';
+  r        record;
+BEGIN
+  -- (1) 단일 행 보장 (동명이인/오삭제 방어)
+  SELECT count(*) INTO v_count
+  FROM staff
+  WHERE id = v_target AND clinic_id = v_clinic AND name = v_name AND role = v_role;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'JEONGHYEIN-DELETE ABORT: 대상 staff 행 단일 특정 실패 (matched=%, expected 1). id/clinic/name/role 불일치.', v_count;
+  END IF;
+
+  -- (2) 카탈로그 기반 FK precheck — staff 를 참조하는 모든 FK 동적 순회
+  FOR r IN
+    SELECT rel.relname AS child_table, att.attname AS child_col
+    FROM pg_constraint con
+    JOIN pg_class rel  ON rel.oid  = con.conrelid
+    JOIN pg_class frel ON frel.oid = con.confrelid
+    JOIN unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+    JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+    WHERE con.contype = 'f'
+      AND frel.relname = 'staff'
+      AND frel.relnamespace = 'public'::regnamespace
+  LOOP
+    EXECUTE format('SELECT count(*) FROM public.%I WHERE %I = $1', r.child_table, r.child_col)
+      INTO v_count USING v_target;
+    IF v_count > 0 THEN
+      v_total := v_total + v_count;
+      v_refs  := v_refs || format(' %s.%s=%s;', r.child_table, r.child_col, v_count);
+    END IF;
+  END LOOP;
+
+  IF v_total > 0 THEN
+    RAISE EXCEPTION 'JEONGHYEIN-DELETE ABORT: FK 참조 %건 잔존 — 물리 삭제 차단(CASCADE 금지). 참조:%  먼저 재배정/정리 후 재실행.', v_total, v_refs;
+  END IF;
+
+  -- (3) 물리 삭제 (참조 0건일 때만 도달) + 행수 검증
+  DELETE FROM staff
+  WHERE id = v_target AND clinic_id = v_clinic AND name = v_name;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'JEONGHYEIN-DELETE ABORT: 삭제 행수=% (expected 1). 롤백.', v_count;
+  END IF;
+
+  RAISE NOTICE 'JEONGHYEIN-DELETE OK: staff 1행 물리 삭제 (id=%).', v_target;
+END $$;
+
+COMMIT;
