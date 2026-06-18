@@ -1,10 +1,11 @@
 -- ============================================================
--- ROLLBACK: T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX (파트2)
--- foot_stats_consultant 를 직전 정의(20260430110000 — 재직 필터 없음)로 복원.
+-- ROLLBACK: T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX (파트2 · REWORK)
+-- foot_stats_consultant 를 직전 정의(20260430110000 — LEFT JOIN, 전체 명단)로 복원.
 -- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm)
 -- 작성: dev-foot / 2026-06-19
 -- 즉시 역전 가능(CREATE OR REPLACE FUNCTION 1종, 테이블/데이터 변경 0).
--- ⚠️ 복원 시 퇴사자(active=false 실장)가 실장별 실적에 다시 노출됨.
+-- ⚠️ 복원 시 LEFT JOIN 으로 회귀 → 해당 기간 실적 0건 실장(퇴사자 정혜인 등)이
+--    실장별 실적에 0건 행으로 다시 노출됨(데이터-유무 필터 무효화).
 -- ============================================================
 
 BEGIN;
