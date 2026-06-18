@@ -1,0 +1,218 @@
+{
+  "generated": "2026-06-18T04:23:05.529Z",
+  "auto": [
+    {
+      "svc": {
+        "id": "37264ae8-40ae-4251-a72b-9fed34a48788",
+        "name": "대웅푸루나졸정150밀리그람(플루코나졸)"
+      },
+      "pc": {
+        "id": "676ceca0-23f0-4d33-a362-1af04770b564",
+        "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+        "claim_code": "LEGACY-12d7730e32e8",
+        "insurance_status": null
+      },
+      "kind": "NORM-EXACT"
+    },
+    {
+      "svc": {
+        "id": "c812b085-2ce6-4aa7-af93-8e372f81a7ca",
+        "name": "바르토벤외용액 4mL(에피나코나졸)"
+      },
+      "pc": {
+        "id": "1774b3c3-0ecd-49b6-85f0-8b39dfe67c20",
+        "name_ko": "바르토벤 외용액 4ml(에피나코나졸)",
+        "claim_code": "LEGACY-1bb57c2e4782",
+        "insurance_status": null
+      },
+      "kind": "NORM-EXACT"
+    },
+    {
+      "svc": {
+        "id": "7122d133-27dc-4dd8-aab5-324e3a3dd2ac",
+        "name": "바르토벤외용액 8mL(에피나코나졸)"
+      },
+      "pc": {
+        "id": "bce07aed-e428-4165-ae3d-e1a64622a686",
+        "name_ko": "바르토벤 외용액 8ml(에피나코나졸)",
+        "claim_code": "LEGACY-5d19d9727ef4",
+        "insurance_status": null
+      },
+      "kind": "NORM-EXACT"
+    },
+    {
+      "svc": {
+        "id": "9992337f-17d6-44e2-9f95-1a4cece40666",
+        "name": "주블리아외용액 4ml(에피나코나졸)"
+      },
+      "pc": {
+        "id": "5642ca63-f580-406e-a2ba-602c66e87d02",
+        "name_ko": "주블리아외용액 4ml(에피나코나졸)",
+        "claim_code": "LEGACY-ce36618a71d0",
+        "insurance_status": null
+      },
+      "kind": "NORM-EXACT"
+    },
+    {
+      "svc": {
+        "id": "57f3d494-bff0-4588-8d19-ac7bd73b820a",
+        "name": "주블리아외용액 8mL(에피나코나졸)"
+      },
+      "pc": {
+        "id": "be87fd12-6954-4ac4-9093-4a4dde7028f6",
+        "name_ko": "주블리아 외용액 8ml(에피나코나졸)",
+        "claim_code": "LEGACY-e11452cf9200",
+        "insurance_status": null
+      },
+      "kind": "NORM-EXACT"
+    }
+  ],
+  "review": [
+    {
+      "svc": {
+        "id": "9a9a41a4-4d9d-4709-b279-9498882a292b",
+        "name": "루마졸크림(플루트리마졸)_(0.3g/30g)"
+      },
+      "kind": "CORE-FUZZY",
+      "candidates": [
+        {
+          "id": "d00b8a51-5506-4221-b25c-07370482627d",
+          "name_ko": "루마졸크림",
+          "claim_code": "LEGACY-e98e0cb79ec6"
+        }
+      ]
+    },
+    {
+      "svc": {
+        "id": "03af3f65-79c4-43e4-98bd-87142af47c00",
+        "name": "베타베이트연고(클로베타솔프로피오네이트)(7.5mg/15g)"
+      },
+      "kind": "CORE-FUZZY",
+      "candidates": [
+        {
+          "id": "8f418de1-661b-4e1b-8d90-2861d9c2bf03",
+          "name_ko": "베타베이트연고(클로베타솔프로피오네이트)15g",
+          "claim_code": "LEGACY-a7a1a9195c67"
+        }
+      ]
+    },
+    {
+      "svc": {
+        "id": "1732f749-741d-4958-bf6f-bd7f15e00dae",
+        "name": "삼아리도멕스크림(프레드니솔론발레로아세테이트)(60mg/20g)"
+      },
+      "kind": "CORE-FUZZY",
+      "candidates": [
+        {
+          "id": "c4dcfad3-a528-4974-9819-3acb4f0c84d4",
+          "name_ko": "삼아리도멕스크림(프레드니솔론발레로아세테이트)",
+          "claim_code": "LEGACY-d17507bd1967"
+        }
+      ]
+    },
+    {
+      "svc": {
+        "id": "d3f50181-6778-4527-ad17-2e360b4761d2",
+        "name": "에스로반연고(무피로신)(10g)"
+      },
+      "kind": "CORE-FUZZY",
+      "candidates": [
+        {
+          "id": "2d74ecd7-36f8-4cba-a8b0-092a7162abaf",
+          "name_ko": "에스로반연고(무피로신)10g",
+          "claim_code": "LEGACY-ba5c97dfb0b8"
+        }
+      ]
+    },
+    {
+      "svc": {
+        "id": "086f9505-43d3-4b66-8591-c6f3e9b902fb",
+        "name": "터미졸크림(테르비나핀염산염)(15g)"
+      },
+      "kind": "CORE-FUZZY",
+      "candidates": [
+        {
+          "id": "1993c25a-a847-407b-8249-d7ca93a89c36",
+          "name_ko": "터미졸크림(테르비나핀염산염)15g",
+          "claim_code": "LEGACY-3e7ce9b8f6fb"
+        }
+      ]
+    },
+    {
+      "svc": {
+        "id": "ccb4e517-a8e1-4f5d-abe7-37ae41723dd2",
+        "name": "하이트리크림(0.2g,0.2g/20g)"
+      },
+      "kind": "CORE-FUZZY",
+      "candidates": [
+        {
+          "id": "f8fdcb92-046d-4719-bb87-0329911e8ab0",
+          "name_ko": "하이트리크림 20g",
+          "claim_code": "LEGACY-a9078a1449c3"
+        }
+      ]
+    }
+  ],
+  "none": [
+    {
+      "svc": {
+        "id": "074348df-5569-4131-bf86-b67c46483a43",
+        "name": "닥터로반연고"
+      }
+    },
+    {
+      "svc": {
+        "id": "66fe359f-644c-487e-ad8d-6ccc4c90bf6e",
+        "name": "록소드펜정60mg"
+      }
+    },
+    {
+      "svc": {
+        "id": "ee003978-4c52-4369-a988-de5f63b4f9ad",
+        "name": "발무드겔(테르비나핀)_(0.2g/20g)"
+      }
+    },
+    {
+      "svc": {
+        "id": "ca063278-851b-4bf7-92c4-d058481b9523",
+        "name": "세파클리캡슐"
+      }
+    },
+    {
+      "svc": {
+        "id": "fda37d2d-76f5-4497-a810-890b83a8de0f",
+        "name": "스티렌정"
+      }
+    },
+    {
+      "svc": {
+        "id": "bc1d70ef-32b1-4bd3-a6b9-f8bf18cd0946",
+        "name": "오구멘틴375mg"
+      }
+    },
+    {
+      "svc": {
+        "id": "70458d12-55ae-44e8-bac5-819d21798599",
+        "name": "케이졸"
+      }
+    },
+    {
+      "svc": {
+        "id": "bbf09956-cb7e-46d4-8727-88816b8174d0",
+        "name": "플루코엠캡슐(플루코나졸)_(50mg/1캡슐)"
+      }
+    },
+    {
+      "svc": {
+        "id": "043e5beb-e613-4a2e-b14a-9ecf19f6bd53",
+        "name": "한미유리아크림200밀리그램(우레아)(4g/20g)"
+      }
+    },
+    {
+      "svc": {
+        "id": "4dbdedcf-de1b-424b-a35a-bb6c06440576",
+        "name": "한미유리아크림200밀리그램(우레아)(50g)"
+      }
+    }
+  ]
+}
