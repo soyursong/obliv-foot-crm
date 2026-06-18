@@ -60,3 +60,15 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
 export function canAccess(role: UserRole, key: PermKey): boolean {
   return PERM_MATRIX[key].includes(role);
 }
+
+// T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B / DA CONSULT-REPLY MSG-20260618-185650-arwz):
+//   주민번호(RRN) "값 조회" 권한 = prod rrn_decrypt 게이트1(is_admin_or_manager) 미러 = admin/manager/director.
+//   ★FE-only 안내문 게이트★ — rrn_decrypt RPC 권한(DB)은 변경하지 않음(PHI 무변경).
+//   A1(전직원 복원)·A2(역할 한정 복원)는 대표 PHI 게이트 통과 전까지 HOLD(migration .PHI_GATE_HOLD).
+//   목적: 권한 없는 직원이 복호화 null(빈 값)을 보고 "저장 안 됨"으로 오해하는 것 방지
+//        — '미입력' 대신 '조회 권한 없음' 표기. 저장(rrn_encrypt)은 별도 권한이라 영향 없음.
+export const RRN_VIEW_ROLES: UserRole[] = ['admin', 'manager', 'director'];
+
+export function canViewRrn(role: UserRole): boolean {
+  return RRN_VIEW_ROLES.includes(role);
+}
