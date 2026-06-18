@@ -419,9 +419,10 @@ export default function Assignments() {
           <CardTitle className="text-sm">오늘 배정 현황</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL B: 목록만 스크롤(헤더 sticky 고정), 화면 짤림 방지 */}
+          <div className="max-h-[42vh] overflow-auto">
             <table className="w-full text-xs">
-              <thead className="border-y bg-muted/40 text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">고객</th>
                   <th className="px-2 py-2 text-left font-medium">상태</th>
@@ -509,9 +510,10 @@ export default function Assignments() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL B: 목록만 스크롤(헤더 sticky 고정) */}
+          <div className="max-h-[32vh] overflow-auto">
             <table className="w-full text-xs">
-              <thead className="border-y bg-muted/40 text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">고객</th>
                   <th className="px-2 py-2 text-left font-medium">상태</th>
@@ -570,9 +572,10 @@ export default function Assignments() {
           <CardTitle className="text-sm">직원별 당월 누적</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL B: 목록만 스크롤(헤더 sticky 고정) */}
+          <div className="max-h-[32vh] overflow-auto">
             <table className="w-full text-xs">
-              <thead className="border-y bg-muted/40 text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">직원</th>
                   <th className="px-2 py-2 text-left font-medium">역할</th>
