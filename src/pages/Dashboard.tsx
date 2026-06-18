@@ -211,6 +211,14 @@ function formatPkgLabel(p: PackageLabel): string {
   return `${p.name} ${p.used + 1}회차 / ${p.total}회`;
 }
 
+// T-20260618-foot-THERAPYWAIT-PKGSESSION-COMPACT: 치료대기 슬롯 카드 전용 간소 표기.
+//   formatPkgLabel("N회차 / M회") 의 "회차"·"회" 라벨만 제거 → "N/M". N·M 값은 동일(used+1, total).
+//   ⚠ 고객박스/그 외 칸반 슬롯은 formatPkgLabel(회차/회) 유지 — 본 함수는 치료대기 컬럼에서만 호출(AC-3 회귀 가드).
+function formatPkgLabelCompact(p: PackageLabel): string {
+  if (p.used >= p.total) return `${p.name} 완료 (${p.total})`;
+  return `${p.name} ${p.used + 1}/${p.total}`;
+}
+
 // pointerWithin 우선, 없으면 closestCenter 폴백 — 방(room) 드롭 정확도 향상
 const customCollision: CollisionDetection = (args) => {
   const pw = pointerWithin(args);
@@ -366,6 +374,7 @@ const DraggableCard = memo(function DraggableCard({
   compact,
   stageStart,
   packageLabel,
+  pkgLabelCompact,
   onClick,
   onContextMenu,
 }: {
@@ -373,6 +382,8 @@ const DraggableCard = memo(function DraggableCard({
   compact?: boolean;
   stageStart?: string;
   packageLabel?: PackageLabel | null;
+  // T-20260618-foot-THERAPYWAIT-PKGSESSION-COMPACT: true면 패키지 카운터를 "N/M"(라벨 제거)로 표기. 치료대기 슬롯 전용.
+  pkgLabelCompact?: boolean;
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
@@ -506,7 +517,7 @@ const DraggableCard = memo(function DraggableCard({
         </div>
         {packageLabel && (
           <div data-testid="pkg-session-label" className="mt-0.5 text-xs text-violet-600 font-medium truncate">
-            {formatPkgLabel(packageLabel)}
+            {pkgLabelCompact ? formatPkgLabelCompact(packageLabel) : formatPkgLabel(packageLabel)}
           </div>
         )}
         {/* 체크리스트 완료 배지 (T-20260430-foot-PRESCREEN-CHECKLIST) */}
@@ -692,7 +703,7 @@ const DraggableCard = memo(function DraggableCard({
       </div>
       {packageLabel && (
         <div data-testid="pkg-session-label" className="mt-0.5 text-[10px] text-violet-600 font-medium truncate">
-          {formatPkgLabel(packageLabel)}
+          {pkgLabelCompact ? formatPkgLabelCompact(packageLabel) : formatPkgLabel(packageLabel)}
         </div>
       )}
       {/* 동의서 서명 배지 */}
@@ -766,7 +777,8 @@ const DraggableCard = memo(function DraggableCard({
   prev.checkIn === next.checkIn &&
   prev.compact === next.compact &&
   prev.stageStart === next.stageStart &&
-  prev.packageLabel === next.packageLabel
+  prev.packageLabel === next.packageLabel &&
+  prev.pkgLabelCompact === next.pkgLabelCompact
 );
 
 function DroppableColumn({
@@ -6198,6 +6210,7 @@ export default function Dashboard() {
                     compact
                     stageStart={getStageStart(ci)}
                     packageLabel={getPkgLabel(ci)}
+                    pkgLabelCompact
                     onClick={() => handleCardClick(ci)}
                     onContextMenu={(e) => handleCardContext(ci, e)}
                   />
