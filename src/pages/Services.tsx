@@ -53,8 +53,10 @@ const FeeSetTemplatesTabPanel = lazy(() => import('@/components/admin/FeeSetTemp
 
 // AC-4: ?tab=phrases / ?tab=fee_set_templates 딥링크 → 상용구관리 서브탭 + 해당 내부 탭 pre-select.
 type TopTab = 'services' | 'phrases' | 'clinic';
-type PhraseTab = 'phrases' | 'fee_set_templates';
-const PHRASE_TAB_PARAMS: readonly string[] = ['phrases', 'fee_set_templates'];
+// T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-1: 고객차트 상용구(customer_phrases) 서브탭 추가.
+//   'phrases'=펜차트(lockedType=pen_chart), 'customer_phrases'=고객차트(lockedType=customer_chart).
+type PhraseTab = 'phrases' | 'customer_phrases' | 'fee_set_templates';
+const PHRASE_TAB_PARAMS: readonly string[] = ['phrases', 'customer_phrases', 'fee_set_templates'];
 
 // T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN: 진료관리 서브탭을 '서비스 목록 진입 role과 동일'(직원 포함)로 개방.
 //   김주연 총괄 요청 + umbrella open-all-except-3 정합(진료관리=일반=직원개방이 본래 정책, §13.1.A reporter-authorized).
@@ -243,7 +245,7 @@ export default function Services() {
   const [topTab, setTopTab] = useState<TopTab>(isPhraseParam ? 'phrases' : 'services');
   // 상용구관리 내부 탭 (상용구 / 수가세트). 딥링크 fee_set_templates 도착 시 pre-select.
   const [phraseTab, setPhraseTab] = useState<PhraseTab>(
-    tabParam === 'fee_set_templates' ? 'fee_set_templates' : 'phrases',
+    isPhraseParam ? (tabParam as PhraseTab) : 'phrases',
   );
 
   // 딥링크 param 변동 시 상용구관리 서브탭 + 내부 탭 동기화(AC-4).
@@ -604,6 +606,12 @@ export default function Services() {
                 <BookOpen className="h-3.5 w-3.5" />
                 상용구(펜차트)
               </TabsTrigger>
+              {/* T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-1: 고객차트 상용구 — 펜차트 옆.
+                  customer_chart surface 전용(lockedType). 2번차트 3구역[상세] 예약·상담·치료메모에서 호출(CS-AC-3). */}
+              <TabsTrigger value="customer_phrases" className="gap-1.5" data-testid="tab-customer-phrases">
+                <BookOpen className="h-3.5 w-3.5" />
+                상용구(고객차트)
+              </TabsTrigger>
               <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
                 <DollarSign className="h-3.5 w-3.5" />
                 수가세트
@@ -619,6 +627,10 @@ export default function Services() {
               <TabsContent value="phrases">
                 {/* T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 펜차트 상용구 전용 (lockedType). */}
                 <PhrasesTabPanel lockedType="pen_chart" />
+              </TabsContent>
+              {/* T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-1: 고객차트 상용구 전용 (lockedType=customer_chart). */}
+              <TabsContent value="customer_phrases">
+                <PhrasesTabPanel lockedType="customer_chart" />
               </TabsContent>
               <TabsContent value="fee_set_templates">
                 <FeeSetTemplatesTabPanel />

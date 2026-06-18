@@ -746,11 +746,15 @@ export default function MedicalChartPanel({
         //   현장 상용구 대부분(prod: pen_chart 33 / medical_chart 1)이 0건 노출 → 의사 입장 "불러오기 안됨/미표시".
         //   6/5 SUPER-PHRASE-LOAD-FIX(SuperPhrasesTab)와 동일 루트코즈이나 본 진료차트 패널엔 미전파였음.
         //   필터 완화: 활성 상용구 전체 노출(유형 무관) + phrase_type 보존(배지/정렬용).
+        // T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-3: 고객차트 surface(customer_chart)는
+        //   의사 진료차트와 별개 → 진료차트 패널에서 배제(.neq). pen_chart/medical_chart 노출은 그대로 보존
+        //   (phrase_type NOT NULL DEFAULT pen_chart 이므로 .neq 가 기존 행 누락 없음 — 빈목록 버그 무재발).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('phrase_templates')
           .select('id,category,name,content,shortcut_key,is_active,phrase_type,sort_order')
           .eq('is_active', true)
+          .neq('phrase_type', 'customer_chart')
           .order('sort_order', { ascending: true }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
