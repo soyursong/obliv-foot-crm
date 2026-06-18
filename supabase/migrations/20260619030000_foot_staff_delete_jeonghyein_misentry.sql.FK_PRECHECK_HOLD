@@ -17,6 +17,9 @@
 --   ⇒ "미입사/잘못 입력 + perf 0" 전제와 달리 실제 다운스트림 참조 존재.
 --      → planner FOLLOWUP(soft-delete/재배정/참조 정리 후 삭제 재판단) 발행.
 --      참조 3건이 정리(reassign/null)되면 .FK_PRECHECK_HOLD 제거 → 010000/020000 뒤에 합류.
+--   [재확인] T-20260619-foot-STAFF-DELETE-JEONGHYEIN (MSG-20260619-080120-m9ao):
+--      라이브 READ-ONLY 재조사 결과 동일 3건 잔존 확정 (customers.assigned_staff_id=1[설연우],
+--      room_assignments.staff_id=2[04-28 상담실1·05-07 상담실5]). HOLD 유지. FOLLOWUP 재발행.
 --
 -- ── 안전 설계 ──────────────────────────────────────────────
 --   본 마이그는 보류 해제(파일명 .HOLD 제거) 후 실행되더라도, 아래 인라인 가드로
