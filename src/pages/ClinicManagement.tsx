@@ -154,10 +154,12 @@ export default function ClinicManagement() {
             슈퍼상용구
           </TabsTrigger>
           {/* T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 진료차트 상용구(medical_chart) 신규 탭.
-              슈퍼상용구(SuperPhrasesTab)와 별개 — 일반 상용구 중 진료차트 임상경과 입력용. */}
+              슈퍼상용구(SuperPhrasesTab)와 별개 — 일반 상용구 중 진료차트 임상경과 입력용.
+              T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-2: 현장 호칭 '진료차트 상용구' → '상용구(고객차트)'.
+              value/testid(medchart_phrases)는 딥링크·E2E 보존상 불변, medical_chart 마운트도 불변. */}
           <TabsTrigger value="medchart_phrases" className="gap-1.5" data-testid="tab-medchart-phrases">
             <BookText className="h-3.5 w-3.5" />
-            진료차트 상용구
+            상용구(고객차트)
           </TabsTrigger>
           {/* T-20260616-foot-OPINION-PHRASE-MGMT-TAB (AC-1): 소견서 상용구 — 진료차트 상용구 옆. admin/manager only. */}
           {canManageOpinionPhrases && (
