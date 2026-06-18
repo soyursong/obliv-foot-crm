@@ -1,4 +1,4 @@
-== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-18T01:31:25.649Z
+== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-18T04:33:25.189Z
 Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
 
 ── KEEP resolve (chart 15) ──
@@ -86,28 +86,28 @@ Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
   check_in_services: 769
   claim_diagnoses: 4
   payment_audit_logs: 19
-  check_in_room_logs: 546
-  timer_records: 48
-  status_transitions: 2046
+  check_in_room_logs: 551
+  timer_records: 49
+  status_transitions: 2053
   package_sessions: 153
   reservation_memo_history: 123
   service_charges: 15
   form_submissions: 114
   payments: 205
-  check_ins: 811
+  check_ins: 815
   reservation_logs: 353
   customer_special_notes: 6
   customer_treatment_memos: 45
   package_payments: 14
-  packages: 129
-  reservations: 1234
+  packages: 130
+  reservations: 1235
   health_q_results: 33
   health_q_tokens: 109
   [t2] Phase2 후 delete_set customers 생존: 1263
 
 ── soft-link / SET NULL 정리 (FK그래프 외 customer_id 보유 7개) ──
   medical_charts: 62
-  notification_logs: 1533
+  notification_logs: 1534
   [t3] 최종삭제 직전: _t_customers=1263 · customers 생존=1263
   customers: 1263
   ✓ 백업 보존: rollback/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_backup.json (23개 테이블)
