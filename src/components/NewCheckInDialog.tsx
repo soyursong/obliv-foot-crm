@@ -19,7 +19,10 @@ import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatie
 // T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 재방 미수금 배너/뱃지 (자동 문자 발송 없음 — 화면 표기만)
 import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
 import { PkgOutstandingBadge } from '@/components/PkgOutstandingBadge';
-import type { Reservation, VisitType } from '@/lib/types';
+// T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL(REOPEN): 수동 새 체크인이 대기슬롯 직행 시
+//   신규 balanced 자동배정 엔진 연결(기존엔 레거시 assign_consultant_atomic/assigned_staff_id만 → 치료사 자동배정 누락).
+import { maybeAutoAssign } from '@/lib/autoAssign';
+import type { CheckInStatus, Reservation, VisitType } from '@/lib/types';
 
 interface Props {
   open: boolean;
@@ -283,29 +286,42 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       consultantId = (cust?.assigned_staff_id as string | null) ?? null;
     }
 
-    const { error } = await supabase.from('check_ins').insert({
-      clinic_id: clinicId,
-      customer_id: customerId,
-      reservation_id: effectiveLinkedReservation?.id ?? null,
-      customer_name: name.trim(),
-      customer_phone: phone.trim() ? (normalizeToE164(phone) ?? phone.trim()) : null,
-      visit_type: visitType,
-      // AC-1/AC-2: 재진 → 치료대기, 체험(예약없이방문) → 상담대기 (T-20260514-foot-CHECKIN-AUTO-STAGE)
-      // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 셀프접수 초진 동선(SelfCheckIn receiving)과 통일.
-      //   receiving은 기존 CheckInStatus enum 값(types.ts)·기존 칸반 컬럼(receiving_col) — 신규 상태값 아님(CHECK constraint 갱신 불요).
-      status: visitType === 'returning'
-        ? 'treatment_waiting'
-        : visitType === 'new'
-          ? 'receiving'
-          : 'consult_waiting',
-      queue_number: queueData as number,
-      consultant_id: consultantId,
-    });
+    // AC-1/AC-2: 재진 → 치료대기, 체험(예약없이방문) → 상담대기 (T-20260514-foot-CHECKIN-AUTO-STAGE)
+    // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 셀프접수 초진 동선(SelfCheckIn receiving)과 통일.
+    //   receiving은 기존 CheckInStatus enum 값(types.ts)·기존 칸반 컬럼(receiving_col) — 신규 상태값 아님(CHECK constraint 갱신 불요).
+    const newStatus: CheckInStatus = visitType === 'returning'
+      ? 'treatment_waiting'
+      : visitType === 'new'
+        ? 'receiving'
+        : 'consult_waiting';
+
+    const { data: insertedRow, error } = await supabase
+      .from('check_ins')
+      .insert({
+        clinic_id: clinicId,
+        customer_id: customerId,
+        reservation_id: effectiveLinkedReservation?.id ?? null,
+        customer_name: name.trim(),
+        customer_phone: phone.trim() ? (normalizeToE164(phone) ?? phone.trim()) : null,
+        visit_type: visitType,
+        status: newStatus,
+        queue_number: queueData as number,
+        consultant_id: consultantId,
+      })
+      .select('id')
+      .single();
 
     if (error) {
       toast.error(`체크인 실패: ${error.message}`);
       setSubmitting(false);
       return;
+    }
+
+    // T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL(REOPEN): 대기슬롯 직행 시 balanced 자동배정 호출.
+    //   재진 치료대기 → 치료사 / 체험(워크인) 상담대기 → 상담사. best-effort·멱등(이미 배정 시 no-op).
+    //   레거시 consultant 오토필(위)과 비충돌 — 치료사(therapist_id)는 별도 컬럼. 초진(receiving)은 비-트리거.
+    if (insertedRow?.id && (newStatus === 'consult_waiting' || newStatus === 'treatment_waiting')) {
+      void maybeAutoAssign(insertedRow.id, newStatus, null);
     }
 
     if (effectiveLinkedReservation) {
