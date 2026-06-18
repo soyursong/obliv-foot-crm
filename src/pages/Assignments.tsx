@@ -40,6 +40,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // ── 상태 → 활성 축(role) 매핑 ───────────────────────────────────────────────────
 const CONSULT_FLOW: CheckInStatus[] = ['consult_waiting', 'consultation', 'exam_waiting', 'examination'];
@@ -89,6 +90,10 @@ export default function Assignments() {
   const [slotEnter, setSlotEnter] = useState<Map<string, string>>(new Map());
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // T-20260618-foot-ASSIGN-CONSULT-THERAPY-TABS: 같은 화면 내 [상담]/[치료] 탭 분리
+  // (사이드바 단일 메뉴 유지. active 탭 기준 role 필터만 — 배정/토스/당김 로직 불변)
+  const [activeTab, setActiveTab] = useState<AssignmentRole>('consult');
 
   // 토스 다이얼로그
   const [tossTarget, setTossTarget] = useState<{
@@ -258,11 +263,11 @@ export default function Assignments() {
         }
       }
     }
-    return Array.from(byId.values()).sort((x, y) => {
-      if (x.staff.role !== y.staff.role) return x.staff.role === 'consultant' ? -1 : 1;
-      return y.assigned - x.assigned;
-    });
-  }, [staff, actions]);
+    const wantRole = activeTab === 'consult' ? 'consultant' : 'therapist';
+    return Array.from(byId.values())
+      .filter((st) => st.staff.role === wantRole)
+      .sort((x, y) => y.assigned - x.assigned);
+  }, [staff, actions, activeTab]);
 
   // ── 당김 후보(상담대기 10분+ 또는 미배정) ────────────────────────────────────
   const pullCandidates = useMemo(() => {
@@ -277,10 +282,10 @@ export default function Assignments() {
         const eligible = unassigned || waitMin >= PULL_THRESHOLD_MIN;
         return { ci, role, assignedId, waitMin, unassigned, eligible };
       })
-      .filter((x) => x.eligible)
+      .filter((x) => x.eligible && x.role === activeTab)
       .sort((a, b) => b.waitMin - a.waitMin)
       .slice(0, 50);
-  }, [checkIns, slotEnter]);
+  }, [checkIns, slotEnter, activeTab]);
 
   // ── 액션 핸들러 ──────────────────────────────────────────────────────────────
   const openToss = (ci: CheckIn, role: AssignmentRole) => {
@@ -371,9 +376,10 @@ export default function Assignments() {
   );
 
   // ── 렌더 ──────────────────────────────────────────────────────────────────────
-  const todayRows = checkIns
+  const allTodayRows = checkIns
     .map((ci) => ({ ci, role: activeRole(ci.status) }))
     .filter((x) => x.role !== null) as { ci: CheckIn; role: AssignmentRole }[];
+  const todayRows = allTodayRows.filter((x) => x.role === activeTab);
 
   return (
     <div className="space-y-4 p-4">
@@ -383,7 +389,7 @@ export default function Assignments() {
           <Users className="h-5 w-5 text-muted-foreground" />
           <h1 className="text-lg font-semibold">상담·치료사 배정</h1>
           <span className="text-xs text-muted-foreground">
-            출근 {workingIds.size}명 · 오늘 {todayRows.length}건
+            출근 {workingIds.size}명 · 오늘 {allTodayRows.length}건
           </span>
         </div>
         <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || busy}>
@@ -391,6 +397,18 @@ export default function Assignments() {
           새로고침
         </Button>
       </div>
+
+      {/* [상담]/[치료] 탭 — 같은 화면 내 파트별 분리 (active 탭 기준 role 필터) */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AssignmentRole)}>
+        <TabsList className="h-auto gap-1 p-1" data-testid="assignments-role-tabs">
+          <TabsTrigger value="consult" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-consult">
+            상담
+          </TabsTrigger>
+          <TabsTrigger value="therapy" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-therapy">
+            치료
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* ① 오늘 배정 현황 */}
       <Card>
