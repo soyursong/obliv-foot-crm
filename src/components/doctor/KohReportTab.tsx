@@ -1,6 +1,8 @@
 // KohReportTab — 균검사지(KOH 진균검사) 명단 리포트 탭
 // Ticket: T-20260611-foot-KOH-REPORT-TAB (Phase 1) + T-20260612-foot-KOH-REPORT-PHASE15 (Phase 1.5)
 //         + T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR (균검사지 6컬럼 재정의 + 조갑부위 multi-select)
+//         + T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE (발급버튼 라벨 역할분기: 의사=발급하기/일괄발급하기,
+//           그 외=발급요청/일괄발급요청. FE-only 표기 분기, 신규 컬럼/상태 0. 본문 isDoctor/pubNoun 참조.)
 //
 // KOH(수산화칼륨) 진균검사를 시행한 환자 명단을 '검사일'(월 단위) 기준으로 조회한다.
 // 컬럼(KOHSHEET-RENEWAL §B, 6컬럼 통일): 이름 · 생년 · 차트 · 검사일(날짜만) · 조갑부위 · 진료의
@@ -571,6 +573,17 @@ export default function KohReportTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
+  // ── T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE: 발급 버튼 라벨 역할별 분기 ──
+  //   의사(원장=director)는 본인이 직접 발급하는 주체 → '발급하기/일괄발급하기'.
+  //   그 외 직원(치료사 등)은 원장에게 검사결과 발급을 요청하는 동선(현행) → '발급요청/일괄발급요청'.
+  //   ★FE-only 표기 분기★ — 신규 컬럼/상태/role 신설 0(L25 금지). 실제 동작(publish_koh_result RPC)은
+  //   역할 무관 동일 — '치료사 발급요청→의사 발급' 2단계 승인 워크플로 아님(AC-4 1차가정 확정,
+  //   RC: 티켓이 치료사를 '(현행)'으로 명시 = 치료사 동작 무변경 → 요청상태 영속화 불필요).
+  //   director = 풋센터 유일 physician role(UserRole/StaffRole). 치료사 분기 문자열은 旣값과 byte-identical(회귀0).
+  //   pubNoun = confirm/toast 문장용 동사 명사. 버튼 라벨(발급하기/일괄발급하기)은 return 직전 별도 변수.
+  const isDoctor = profile?.role === 'director';
+  const pubNoun = isDoctor ? '발급' : '발급요청';
+
   const [ym, setYm] = useState<string>(currentYearMonthSeoul());
   const [query, setQuery] = useState('');
   const isCurrentMonth = ym === currentYearMonthSeoul();
@@ -617,8 +630,8 @@ export default function KohReportTab() {
     if (r.nail_sites.length === 0) {
       toast.error(
         r.treatment_sites.length > 0
-          ? '표시된 치료부위는 아직 저장되지 않았습니다. 조갑부위 버튼을 눌러 확정한 뒤 발급요청해주세요.'
-          : '채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 발급요청할 수 있습니다.',
+          ? `표시된 치료부위는 아직 저장되지 않았습니다. 조갑부위 버튼을 눌러 확정한 뒤 ${pubNoun}해주세요.`
+          : `채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 ${pubNoun}할 수 있습니다.`,
       );
       return;
     }
@@ -626,15 +639,15 @@ export default function KohReportTab() {
     //   AC-0 선조사: customers.birth_date NULL 다수(윤민희 등) → 생년 없는 결과보고서 발행 금지.
     //   2FIX 사유 toast 패턴 재사용 — 다음 행동(고객정보 생년월일 입력) 안내.
     if (!r.birth_date) {
-      toast.error('환자 생년월일 정보가 없어 발급요청할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.');
+      toast.error(`환자 생년월일 정보가 없어 ${pubNoun}할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.`);
       return;
     }
-    if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 발급요청하시겠습니까?\n\n발급요청 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     const doctorName = doctorNameForRow(r, doctorMap);
     const fieldData = buildKohFieldData(r, doctorName);
     try {
       const res = await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
-      toast.success(`발급요청 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
+      toast.success(`${pubNoun} 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
       // HTMLPORT: 결과지 미리보기 다이얼로그(출력/복사/저장 PNG). 자동채번 의뢰번호·검체번호 병합.
       //   의뢰기관·담당의·면허는 템플릿 고정값(대표원장 양식) → 여기서 주입 불필요.
       setPreviewData({
@@ -652,7 +665,7 @@ export default function KohReportTab() {
   const handleBulkPublish = async () => {
     const targets = filtered.filter((r) => selected.has(r.id) && canPublish(r));
     if (targets.length === 0) return;
-    if (!window.confirm(`선택한 ${targets.length}건의 검사결과 보고서를 일괄 발급요청하시겠습니까?\n\n발급요청 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    if (!window.confirm(`선택한 ${targets.length}건의 검사결과 보고서를 일괄 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     setBulkPublishing(true);
     let ok = 0;
     let fail = 0;
@@ -674,8 +687,8 @@ export default function KohReportTab() {
       prev.forEach((id) => { if (failedIds.has(id)) next.add(id); });
       return next;
     });
-    if (fail === 0) toast.success(`${ok}건 일괄 발급요청 완료`);
-    else toast.error(`${ok}건 발급요청 완료, ${fail}건 실패 — 실패 건은 선택 유지(재시도 가능)`);
+    if (fail === 0) toast.success(`${ok}건 일괄 ${pubNoun} 완료`);
+    else toast.error(`${ok}건 ${pubNoun} 완료, ${fail}건 실패 — 실패 건은 선택 유지(재시도 가능)`);
   };
 
   // T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3): +1일 경과(검사 다음날부터)만 노출.
@@ -724,6 +737,16 @@ export default function KohReportTab() {
       return next;
     });
   };
+
+  // KOHBTN-ROLE-LABEL: 버튼 라벨(역할 분기). 치료사 분기는 旣 라벨과 동일 문자열(회귀0).
+  //   단건=발급하기/발급요청. 일괄(0건 선택)=일괄발급하기/일괄발급요청. 일괄(N건 선택)='선택 N건 일괄{발급|발급요청}'.
+  const publishBtnLabel = isDoctor ? '발급하기' : '발급요청';
+  const bulkPublishBtnLabel =
+    selectedCount > 0
+      ? `선택 ${selectedCount}건 일괄${pubNoun}`
+      : isDoctor
+        ? '일괄발급하기'
+        : '일괄발급요청';
 
   return (
     <div className="space-y-4">
@@ -803,7 +826,7 @@ export default function KohReportTab() {
             data-testid="koh-bulk-publish"
           >
             {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-            {selectedCount > 0 ? `선택 ${selectedCount}건 일괄발급요청` : '일괄발급요청'}
+            {bulkPublishBtnLabel}
           </Button>
           <span className="text-xs text-muted-foreground" data-testid="koh-count">
             {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
@@ -1018,17 +1041,20 @@ export default function KohReportTab() {
                         //   사유가 안 보여 '먹통'으로 보였음. 탭 시 handlePublish 가 사유 toast 노출. busy 상태만 비활성.
                         disabled={publishKoh.isPending || bulkPublishing}
                         // 4FIX 이슈3: 발행 불가 사유(조갑부위/생년 누락)를 title 로 명시. 4FIX 이슈4: '발행'→'발급요청'.
+                        //   KOHBTN-ROLE-LABEL: title 도 pubNoun 동일치환(의사='발급', 그 외='발급요청'). 치료사 회귀0.
+                        //   ★AC-3 회귀방지★: 의사 view에서 비검증 행은 outline(비활성처럼) 표시하되 disabled 는 busy 한정 유지 —
+                        //     탭 시 handlePublish 가 사유 toast 노출(태블릿 hover 부재 대응, SINGLESEL-2FIX 이슈1 보존).
                         title={
                           rowPublishable
-                            ? '검사결과 보고서 발급요청(비가역)'
+                            ? `검사결과 보고서 ${pubNoun}(비가역)`
                             : !r.birth_date
-                              ? '환자 생년월일 미입력 — 발급요청 불가 (눌러서 안내 보기)'
-                              : '채취 조갑부위를 먼저 선택해야 발급요청할 수 있습니다 (눌러서 안내 보기)'
+                              ? `환자 생년월일 미입력 — ${pubNoun} 불가 (눌러서 안내 보기)`
+                              : `채취 조갑부위를 먼저 선택해야 ${pubNoun}할 수 있습니다 (눌러서 안내 보기)`
                         }
                         data-testid="koh-publish-btn"
                         data-publishable={rowPublishable ? 'true' : 'false'}
                       >
-                        발급요청
+                        {publishBtnLabel}
                       </Button>
                     )}
                   </td>
