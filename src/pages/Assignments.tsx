@@ -432,7 +432,11 @@ export default function Assignments() {
   const todayRows = allTodayRows.filter((x) => x.role === activeTab);
 
   return (
-    <div className="space-y-4 p-4">
+    // T-20260618-foot-MENUSCROLL-EXISTPATIENT-Q: 페이지 최상위 자체 세로 스크롤.
+    //   AdminLayout page-content-area(overflow-hidden) 안에서 각 페이지가 자체 스크롤 담당하는 패턴(Staff/Closing 동일).
+    //   이전 TABSCROLL 수정은 카드 내부 목록 스크롤만 추가 → 세 카드(①42vh+②32vh+③32vh+헤더/탭) 합이 100vh 초과 시
+    //   ③ '직원별 당월 누적'이 fold 아래로 잘려 도달 불가('현장 미체감'). h-full overflow-auto로 페이지 자체 스크롤 복원.
+    <div className="h-full overflow-auto space-y-4 p-4">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
