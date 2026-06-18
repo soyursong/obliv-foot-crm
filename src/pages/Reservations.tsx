@@ -641,9 +641,11 @@ export default function Reservations() {
       const staffIds = Array.from(new Set(custAssignedStaff.values()));
       const assignedM = new Map<string, string>(); // customer_id → staff name
       if (staffIds.length > 0) {
+        // T-20260618-foot-STAFF-DISPLAYNAME-SELECT-400: staff.display_name 컬럼 DB 미존재(STAFF-NAME-UNIFY 타입만, 미마이그) →
+        //   select 포함 시 PostgREST 400(42703) → staffRows=null → 담당자명 무음 미표시. select는 name만, UI는 ||name fallback 유지.
         const { data: staffRows } = await supabase
           .from('staff')
-          .select('id, name, display_name')
+          .select('id, name')
           .eq('clinic_id', clinic.id)
           .in('id', staffIds);
         const staffNameById = new Map<string, string>();
