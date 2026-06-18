@@ -16,8 +16,8 @@ risk_level: GO (1/5 — FE 표시 분기만. rrn_decrypt/rrn_encrypt RPC·DB 권
 deploy_ready: true
 deploy-ready-by: agent-fdd-dev-foot
 deploy-ready-at: 2026-06-18
-deploy_commit: TBD
-commit_sha: TBD
+deploy_commit: 9ee86dbf
+commit_sha: 9ee86dbf
 qa_result: pass (AC-1 게이트일치 / AC-2 viewer 상호배타 / AC-4 PHI 통과, AC-3 non-viewer 분기는 admin 시드라 skip — 실기기 confirm 대상)
 field_soak_gate: 실 Galaxy Tab — 권한 없는 직원(예 therapist) 로그인 → 2번차트 주민번호칸이 '미입력' 대신 '조회 권한 없음' 표기 + 관리자(admin/manager/director)는 기존대로 마스킹값/수정·입력 정상 + 김주연 총괄 현장 confirm (최종 게이트)
 ---
