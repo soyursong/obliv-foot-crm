@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.obliv.foot.dummy-cleanup-20260620</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/domas/Documents/GitHub/obliv-foot-crm/scripts/foot_dummy_cleanup_20260620.sh</string>
+    </array>
+    <!-- one-shot: 2026-06-20 00:30 KST 에만 발화 (Month/Day 지정으로 사실상 1회) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Month</key><integer>6</integer>
+        <key>Day</key><integer>20</integer>
+        <key>Hour</key><integer>0</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+    <key>StandardOutPath</key><string>/Users/domas/logs/foot_dummy_cleanup_20260620.out</string>
+    <key>StandardErrorPath</key><string>/Users/domas/logs/foot_dummy_cleanup_20260620.err</string>
+</dict>
+</plist>
