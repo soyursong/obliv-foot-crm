@@ -42,7 +42,7 @@ import { todaySeoulISODate, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search, Printer, FileCheck2 } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search, FileCheck2 } from 'lucide-react';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import KohResultDialog from '@/components/KohResultDialog';
@@ -604,8 +604,10 @@ export default function KohReportTab() {
 
   /** 발행 여부 — published 인덱스에 koh_service_id(=row.id) 존재. */
   const isPublished = (id: string) => publishedMap?.has(id) ?? false;
-  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) 아직 미발행. */
-  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !isPublished(r.id);
+  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) + 환자 생년월일 있고(4FIX 이슈3, hard-block) 아직 미발행.
+   *  4FIX 이슈3(의료문서 정확성): AC-0 선조사 결과 윤민희 등 prod birth_date NULL 다수 → 생년 누락 상태
+   *  발행 차단. 2FIX 이슈1(발행불가도 탭 가능 + 사유 toast) 위에 hard-block 강화(policy_superseded). */
+  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!r.birth_date && !isPublished(r.id);
 
   // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
   //   SINGLESEL-2FIX(이슈1): 발행 불가 시 silent return 금지 — 태블릿엔 hover 툴팁이 없어 버튼이
@@ -615,17 +617,24 @@ export default function KohReportTab() {
     if (r.nail_sites.length === 0) {
       toast.error(
         r.treatment_sites.length > 0
-          ? '표시된 치료부위는 아직 저장되지 않았습니다. 조갑부위 버튼을 눌러 확정한 뒤 발행해주세요.'
-          : '채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 발행할 수 있습니다.',
+          ? '표시된 치료부위는 아직 저장되지 않았습니다. 조갑부위 버튼을 눌러 확정한 뒤 발급요청해주세요.'
+          : '채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 발급요청할 수 있습니다.',
       );
       return;
     }
-    if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    // 4FIX 이슈3(hard-block, 의료문서 정확성): 환자 생년월일 누락 시 발행 차단.
+    //   AC-0 선조사: customers.birth_date NULL 다수(윤민희 등) → 생년 없는 결과보고서 발행 금지.
+    //   2FIX 사유 toast 패턴 재사용 — 다음 행동(고객정보 생년월일 입력) 안내.
+    if (!r.birth_date) {
+      toast.error('환자 생년월일 정보가 없어 발급요청할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.');
+      return;
+    }
+    if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 발급요청하시겠습니까?\n\n발급요청 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     const doctorName = doctorNameForRow(r, doctorMap);
     const fieldData = buildKohFieldData(r, doctorName);
     try {
       const res = await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
-      toast.success(`발행 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
+      toast.success(`발급요청 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
       // HTMLPORT: 결과지 미리보기 다이얼로그(출력/복사/저장 PNG). 자동채번 의뢰번호·검체번호 병합.
       //   의뢰기관·담당의·면허는 템플릿 고정값(대표원장 양식) → 여기서 주입 불필요.
       setPreviewData({
@@ -643,7 +652,7 @@ export default function KohReportTab() {
   const handleBulkPublish = async () => {
     const targets = filtered.filter((r) => selected.has(r.id) && canPublish(r));
     if (targets.length === 0) return;
-    if (!window.confirm(`선택한 ${targets.length}건의 검사결과 보고서를 일괄 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    if (!window.confirm(`선택한 ${targets.length}건의 검사결과 보고서를 일괄 발급요청하시겠습니까?\n\n발급요청 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     setBulkPublishing(true);
     let ok = 0;
     let fail = 0;
@@ -665,8 +674,8 @@ export default function KohReportTab() {
       prev.forEach((id) => { if (failedIds.has(id)) next.add(id); });
       return next;
     });
-    if (fail === 0) toast.success(`${ok}건 일괄 발행 완료`);
-    else toast.error(`${ok}건 발행 완료, ${fail}건 실패 — 실패 건은 선택 유지(재시도 가능)`);
+    if (fail === 0) toast.success(`${ok}건 일괄 발급요청 완료`);
+    else toast.error(`${ok}건 발급요청 완료, ${fail}건 실패 — 실패 건은 선택 유지(재시도 가능)`);
   };
 
   // T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3): +1일 경과(검사 다음날부터)만 노출.
@@ -688,9 +697,10 @@ export default function KohReportTab() {
     );
   }, [eligibleRows, query]);
 
-  // LIFECYCLE: 일괄발행 대상(발행가능=조갑부위 있고 미발행) id 집합 — 전체선택 토글 근거.
+  // LIFECYCLE: 일괄발행 대상(발행가능=조갑부위+생년 있고 미발행) id 집합 — 전체선택 토글 근거.
+  //   4FIX 이슈3: canPublish 와 동일 조건(생년 누락 행은 select-all 대상에서 제외).
   const publishableIds = useMemo(
-    () => filtered.filter((r) => r.nail_sites.length > 0 && !isPublished(r.id)).map((r) => r.id),
+    () => filtered.filter((r) => canPublish(r)).map((r) => r.id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filtered, publishedMap],
   );
@@ -793,7 +803,7 @@ export default function KohReportTab() {
             data-testid="koh-bulk-publish"
           >
             {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-            {selectedCount > 0 ? `선택 ${selectedCount}건 일괄발행` : '일괄발행'}
+            {selectedCount > 0 ? `선택 ${selectedCount}건 일괄발급요청` : '일괄발급요청'}
           </Button>
           <span className="text-xs text-muted-foreground" data-testid="koh-count">
             {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
@@ -896,8 +906,20 @@ export default function KohReportTab() {
                       </span>
                     )}
                   </td>
+                  {/* 4FIX 이슈1(생년): AC-0 선조사 = 바인딩 정상이나 prod birth_date NULL 다수(데이터 부재).
+                      생년 누락 시 '미입력' 경고 배지 — 발급요청 차단(이슈3) 사유를 명단에서 바로 인지. */}
                   <td className="px-1.5 py-1 tabular-nums text-foreground/90 whitespace-nowrap" data-testid="koh-cell-birth">
-                    {formatBirthDate(r.birth_date)}
+                    {r.birth_date ? (
+                      formatBirthDate(r.birth_date)
+                    ) : (
+                      <span
+                        className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                        title="생년월일 미입력 — 고객 정보에서 입력해야 발급요청 가능"
+                        data-testid="koh-birth-missing"
+                      >
+                        미입력
+                      </span>
+                    )}
                   </td>
                   <td className="px-1.5 py-1 font-mono text-foreground/90 whitespace-nowrap" data-testid="koh-cell-chart">
                     {r.chart_number || '—'}
@@ -968,23 +990,20 @@ export default function KohReportTab() {
                       </span>
                     )}
                   </td>
-                  {/* AC-4/AC-5: 발행 — 미발행+조갑부위 있을 때만 활성. 발행=비가역(완료 시 비활성). */}
+                  {/* AC-4/AC-5: 발행 — 미발행+조갑부위+생년 있을 때만 활성. 발행=비가역(완료 시 비활성). */}
                   <td className="px-1.5 py-1 text-center whitespace-nowrap" data-testid="koh-cell-publish">
                     {published ? (
-                      <div className="flex flex-col items-center gap-0.5" data-testid="koh-published">
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700">
-                          <FileCheck2 className="h-3 w-3" /> 발행완료
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setPreviewData(published.field_data)}
-                          className="inline-flex items-center gap-0.5 text-[10px] text-teal-600 hover:underline"
-                          title={`의뢰번호 ${published.request_no}`}
-                          data-testid="koh-print-published"
-                        >
-                          <Printer className="h-3 w-3" /> 보기
-                        </button>
-                      </div>
+                      /* 4FIX 이슈2: 발행완료+보기 2버튼 → '💾 발행완료' 단일 버튼만. 클릭 시 보기(미리보기) 팝업.
+                         진입점만 단일화 — 기존 보기 팝업(KohResultDialog) 동일. */
+                      <button
+                        type="button"
+                        onClick={() => setPreviewData(published.field_data)}
+                        className="inline-flex items-center gap-0.5 rounded text-[11px] font-semibold text-emerald-700 hover:underline focus:underline focus:outline-none"
+                        title={`의뢰번호 ${published.request_no} — 클릭 시 결과보고서 보기`}
+                        data-testid="koh-published-btn"
+                      >
+                        💾 발행완료
+                      </button>
                     ) : (
                       <Button
                         size="sm"
@@ -998,15 +1017,18 @@ export default function KohReportTab() {
                         // SINGLESEL-2FIX(이슈1): 발행 불가 상태도 탭 가능하게(disabled 제거) — 태블릿 hover 부재로
                         //   사유가 안 보여 '먹통'으로 보였음. 탭 시 handlePublish 가 사유 toast 노출. busy 상태만 비활성.
                         disabled={publishKoh.isPending || bulkPublishing}
+                        // 4FIX 이슈3: 발행 불가 사유(조갑부위/생년 누락)를 title 로 명시. 4FIX 이슈4: '발행'→'발급요청'.
                         title={
                           rowPublishable
-                            ? '검사결과 보고서 발행(비가역)'
-                            : '채취 조갑부위를 먼저 선택해야 발행할 수 있습니다 (눌러서 안내 보기)'
+                            ? '검사결과 보고서 발급요청(비가역)'
+                            : !r.birth_date
+                              ? '환자 생년월일 미입력 — 발급요청 불가 (눌러서 안내 보기)'
+                              : '채취 조갑부위를 먼저 선택해야 발급요청할 수 있습니다 (눌러서 안내 보기)'
                         }
                         data-testid="koh-publish-btn"
                         data-publishable={rowPublishable ? 'true' : 'false'}
                       >
-                        발행
+                        발급요청
                       </Button>
                     )}
                   </td>
@@ -1020,7 +1042,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발행</strong>은 채취 조갑부위를 선택해야 활성화되며, 발행 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발행은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발행할 수 있습니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급요청</strong>은 채취 조갑부위 선택 + 환자 생년월일이 모두 입력돼야 가능하며(생년월일 미입력 시 발급요청 불가 — 고객 정보에서 먼저 입력), 발급요청 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급요청은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급요청할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
