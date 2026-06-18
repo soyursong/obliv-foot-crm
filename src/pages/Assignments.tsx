@@ -121,9 +121,12 @@ export default function Assignments() {
       const monthStart = `${todayIso.slice(0, 7)}-01T00:00:00+09:00`;
 
       // 1) staff (active)
+      // ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
+      //   select에 포함 시 PostgREST 400 → 쿼리 전체 실패 → staff=[] → 배정 풀·통계 전부 0건.
+      //   (T-20260618-foot-ASSIGN-STAFF-EMPTY-HOTFIX) UI는 display_name ?? name fallback 유지.
       const { data: staffRows } = await supabase
         .from('staff')
-        .select('id, clinic_id, name, display_name, role, active, created_at, user_id')
+        .select('id, clinic_id, name, role, active, created_at, user_id')
         .eq('clinic_id', clinic.id)
         .eq('active', true);
       const staffList = (staffRows ?? []) as Staff[];
