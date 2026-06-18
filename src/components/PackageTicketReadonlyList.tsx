@@ -145,13 +145,15 @@ export function PackageTicketReadonlyList({
             {usedSessions.length > 0 && (
               <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
                 <div className="text-[10px] text-muted-foreground mb-1 font-medium">시술내역</div>
-                <div className="space-y-0.5">
+                {/* T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC2: 사용이력 10건+ 레이아웃 붕괴 수정.
+                    영역 내부 스크롤(max-h + overflow-y-auto)로 카드 높이 폭주 차단 + 각 항목 1행 고정(nowrap·min-w-0·ellipsis). */}
+                <div className="space-y-0.5 max-h-40 overflow-y-auto pr-0.5">
                   {usedSessions.map((s) => (
-                    <div key={s.id} className="flex items-center gap-1.5 text-[10px] rounded px-0.5">
+                    <div key={s.id} className="flex items-center gap-1.5 text-[10px] rounded px-0.5 min-w-0 flex-nowrap whitespace-nowrap">
                       <span className="text-muted-foreground w-5 tabular-nums shrink-0">{s.session_number}회</span>
                       <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
-                      <span className="text-muted-foreground shrink-0">{s.session_date}</span>
-                      {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
+                      <span className="text-muted-foreground shrink-0 tabular-nums">{s.session_date}</span>
+                      {s.staff_name && <span className="text-teal-600 truncate min-w-0">{s.staff_name}</span>}
                     </div>
                   ))}
                 </div>

@@ -47,8 +47,9 @@ import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 
-// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: 1번구역 치료내역(net-new) — check_ins treatment 필드 JOIN.
-//   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용). 일자별 시술내역 + 담당치료사.
+// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins treatment 필드 JOIN 타입.
+//   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용).
+//   T-20260619-REVERIFY-4FIX AC3: 독립 치료내역 섹션은 제거됨 — 이 로드는 재진 판정(hasPriorVisit)에서만 사용.
 type TreatmentRow = {
   id: string;
   checked_in_at: string;
@@ -175,7 +176,8 @@ export function ReservationDetailPopup({
   const [packages, setPackages] = useState<Package[]>([]);
   // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 패키지 시술내역(차감기록) — 2번차트 양식 표시용 read-only
   const [packageSessions, setPackageSessions] = useState<PackageSessionRow[]>([]);
-  // T-20260611-foot-RESVPOPUP-2ZONE AC-2: 치료내역(일자별 시술 + 담당치료사) — check_ins JOIN
+  // T-20260611-foot-RESVPOPUP-2ZONE AC-2: check_ins 내원 이력 — T-20260619-REVERIFY-4FIX AC3 이후
+  //   독립 치료내역 섹션은 제거됐고, 이 state 는 재진 판정(hasPriorVisit)에서만 사용한다.
   const [treatments, setTreatments] = useState<TreatmentRow[]>([]);
 
   // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1: 팝업 내 다른 고객 불러오기(B) — 1번구역만 교체, 팝업 닫지 않음.
@@ -208,20 +210,9 @@ export function ReservationDetailPopup({
   //   assigned_staff_id 가 clinic staff 목록(allStaff)에 없을 때(타클리닉/삭제/비활성 누락) Select 가 raw UUID 를
   //   그대로 표기하던 문제 → 해당 id 를 직접 1건 조회해 이름 확보(없으면 친화 fallback, UUID 절대 비노출).
   const [assignedStaffName, setAssignedStaffName] = useState<string | null>(null);
-  // staff id → 표시명 resolve (display_name 우선, STAFF-NAME-UNIFY 관례)
-  const staffName = (id: string | null | undefined): string | null => {
-    if (!id) return null;
-    const s = allStaff.find((x) => x.id === id);
-    return s ? (s.display_name ?? s.name) : null;
-  };
-  // 치료내역 한 줄 요약(시술내역): category · contents, 없으면 kind
-  const treatmentSummary = (t: TreatmentRow): string => {
-    const parts: string[] = [];
-    if (t.treatment_category) parts.push(t.treatment_category);
-    if (t.treatment_contents && t.treatment_contents.length) parts.push(t.treatment_contents.join(', '));
-    if (!parts.length && t.treatment_kind) parts.push(t.treatment_kind);
-    return parts.join(' · ') || '시술내역 없음';
-  };
+  // T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC3: 치료내역 섹션 제거에 따라
+  //   섹션 전용 helper(staffName·treatmentSummary) 데드코드 정리. treatments state/fetch 는
+  //   재진 판정(hasPriorVisit)에서 계속 사용하므로 유지.
 
   // ── T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자 (현재 예약 대상 편집)
   const [registrars, setRegistrars] = useState<ReservationRegistrar[]>([]);
@@ -1126,7 +1117,16 @@ export function ReservationDetailPopup({
                         disabled={consultantSaving || !reservation.customer_id}
                       >
                         <SelectTrigger className="h-8 text-xs" data-testid="popup-consultant">
-                          <SelectValue placeholder="담당자 선택" />
+                          {/* AC1: 트리거 표시명을 value→이름으로 직접 해석(아이템 등록 타이밍 무관, UUID 비노출).
+                              allStaff(드롭다운 개폐와 무관하게 로드) → assignedStaffName(직접조회) → 친화 fallback. */}
+                          <SelectValue placeholder="담당자 선택">
+                            {(val) => {
+                              if (!val || val === '__none__') return '담당자 선택';
+                              return inAllStaff
+                                ? (inAllStaff.display_name ?? inAllStaff.name)
+                                : (assignedStaffName ?? '이전 담당자');
+                            }}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__" className="text-xs">— 미배정 —</SelectItem>
@@ -1154,45 +1154,11 @@ export function ReservationDetailPopup({
                 <PackageTicketReadonlyList packages={packages} sessions={packageSessions} />
               </div>
 
-              {/* 치료내역 (net-new) — 지정치료사 + 일자별 시술내역(담당치료사). check_ins JOIN, chart2 read-only */}
-              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0" data-testid="popup-treatment-history">
-                <SectionHeader accent="teal">치료내역</SectionHeader>
-                <div className="flex items-center gap-2 text-[11px] mb-1.5">
-                  <span className="text-muted-foreground shrink-0">지정치료사</span>
-                  <span className="font-medium">
-                    {staffName(customer?.designated_therapist_id) ?? '미지정'}
-                  </span>
-                </div>
-                {treatments.length === 0 ? (
-                  <div className="text-xs text-muted-foreground italic py-1">치료내역 없음</div>
-                ) : (
-                  <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
-                    {treatments.map((t) => (
-                      <div key={t.id} className="rounded border px-2 py-1.5 text-xs">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-medium tabular-nums">
-                            {t.checked_in_at.slice(0, 10)}
-                          </span>
-                          <span
-                            className={cn(
-                              'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
-                              VISIT_TYPE_BADGE_CLASS[t.visit_type],
-                            )}
-                          >
-                            {VISIT_TYPE_KO[t.visit_type]}
-                          </span>
-                        </div>
-                        <div className="text-muted-foreground mt-0.5 break-words">
-                          {treatmentSummary(t)}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">
-                          담당치료사: {staffName(t.therapist_id) ?? '—'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {/* T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC3: 독립 "치료내역" 섹션 제거.
+                  패키지 섹션 내 시술내역(usedSessions)으로 치료내역이 함께 노출되므로 별도 섹션 불필요(reporter 지시).
+                  ⚠ 본 팝업은 치료내역 read-only — 삭제 핸들러/cascade 로직은 본래 없음(L326 주석: 삭제 핸들러는 팝업 영역 밖).
+                  따라서 orphan 핸들러 0. treatments state/fetch 는 §재진 판정(hasPriorVisit, L682)에서 계속 사용 → 유지.
+                  섹션 전용 helper(staffName·treatmentSummary)는 데드코드가 되어 제거(상단 정의부). */}
 
               {/* 고객메모 (RELOCATE: 기존 우하 메모 → 1번구역. 예약메모와 구분: 고객메모≠예약메모) */}
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
@@ -1407,11 +1373,15 @@ export function ReservationDetailPopup({
               </div>
 
               {/* AC-4 #6: 예약이력 (전체 예약 히스토리 + 변경이력). 히스토리 항목 클릭 → 상세 전환 */}
-              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-1 flex flex-col min-h-0" data-testid="popup-reservation-history">
+              {/* T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC4: 예약이력 박스 칸 밖 이탈(회귀) 수정.
+                  zone2(overflow-y-auto) 안에서 flex-1 + 내부 overflow-y-auto 조합은 높이 미확정 → 리스트가
+                  열 밖으로 폭주(이탈). flex-shrink-0 + 리스트 max-h 로 박스 높이를 한정해 칸 내부에 가둠
+                  (다른 zone2 박스들과 동일 패턴, zone2 자체 스크롤이 총량 overflow 흡수). */}
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0 flex flex-col" data-testid="popup-reservation-history">
                 <SectionHeader accent="teal">
                   예약이력{visibleResvs.length > 0 && ` (${visibleResvs.length}건)`}
                 </SectionHeader>
-                <div className="flex-1 overflow-y-auto space-y-1 pr-0.5 min-h-0">
+                <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
                   {visibleResvs.length === 0 ? (
                     <div className="text-xs text-muted-foreground italic py-2">
                       예약 없음
