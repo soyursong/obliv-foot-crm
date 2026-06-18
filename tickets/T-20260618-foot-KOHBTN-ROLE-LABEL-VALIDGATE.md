@@ -2,12 +2,14 @@
 ticket_id: T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE
 id: T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE
 status: deploy-ready
-priority: P2
+priority: P1   # 2026-06-18 P2→P1 상향(planner INFO MSG-20260618-234831-nvyz, 同 reporter 재전송 DEDUP). deadline 6-23.
 domain: foot
 created_at: 2026-06-18
 owner: agent-fdd-dev-foot
 requester: 문지은 대표원장 (진료대시보드 KOH 발급버튼 역할별 표기 요청)
 approved_by: planner NEW-TASK MSG-20260618-234452-6h0m
+slack_channel: C0ATE5P6JTH
+slack_thread_ts: "1781793705.962679"   # 배포 relay 매핑 스레드(planner INFO MSG-20260618-234831-nvyz 보강)
 build_ok: true
 spec_added: tests/e2e/T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE.spec.ts
 db_changed: false
