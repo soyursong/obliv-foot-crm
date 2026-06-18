@@ -61,8 +61,25 @@ function SelectTrigger({
 // ---------------------------------------------------------------------------
 // Value
 // ---------------------------------------------------------------------------
-function SelectValue({ placeholder }: { placeholder?: string }) {
-  return <BaseSelect.Value placeholder={placeholder} />;
+// T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC1 (담당자 UUID 2회차 회귀 근본수정):
+//   Base UI Select.Value 는 선택값 → 라벨 해석을 "등록된 Select.Item" 목록(store.items)에서 찾는다.
+//   그런데 Select.Item 은 Popup 이 처음 열릴 때 비로소 마운트·등록된다(lazy). 닫힌 트리거 상태에서는
+//   items 가 비어 resolveSelectedLabel 이 fallback → serializeValue(value) = "raw UUID" 를 그대로 렌더.
+//   (6FIX·8FIX 가 매칭 SelectItem 을 추가했어도, 드롭다운을 열기 전엔 등록되지 않아 UUID 가 재노출 = 2회차 회귀 원인)
+//   → children 을 render-function 으로 받을 수 있게 확장. 호출부가 value→표시명을 직접 해석해
+//     아이템 등록 타이밍과 무관하게 항상 이름을 표기(UUID 절대 비노출). 기존 호출부(placeholder만)는 무변경.
+function SelectValue({
+  placeholder,
+  children,
+}: {
+  placeholder?: string;
+  children?: (value: string) => React.ReactNode;
+}) {
+  return (
+    <BaseSelect.Value placeholder={placeholder}>
+      {children ? (value) => children(value as string) : undefined}
+    </BaseSelect.Value>
+  );
 }
 
 // ---------------------------------------------------------------------------

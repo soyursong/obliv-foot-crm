@@ -80,20 +80,24 @@ test.describe('STAGE 2 — 1번구역 relocate + 치료내역(net-new) (AC-2)', 
     expect(packageIdx).toBeLessThan(z2);
   });
 
-  test('AC-2 담당상담사 raw UUID resolve: allStaff(전체 staff) 로 이름 매핑(staffName)', () => {
+  test('AC-2 담당상담사 raw UUID resolve: allStaff(전체 staff) 로 이름 매핑', () => {
     // 기존 consultant-만-로드 게이트 제거 → 전체 활성 staff 로드 후 이름 resolve
+    // T-20260619-REVERIFY-4FIX AC1: 섹션용 const staffName 헬퍼는 제거(치료내역 섹션 삭제로 데드코드).
+    //   담당자 이름 resolve 는 allStaff(setAllStaff) + display_name ?? name 경로로 유지.
     expect(DETAIL_POPUP).toContain('setAllStaff');
-    expect(DETAIL_POPUP).toContain('const staffName');
     expect(DETAIL_POPUP).toContain('display_name ?? s.name');
     expect(DETAIL_POPUP).not.toContain(".eq('role', 'consultant')");
   });
 
-  test('AC-2 치료내역 net-new: check_ins treatment 필드 JOIN(신규 테이블/컬럼 0)', () => {
+  // T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC3 (policy_superseded):
+  //   독립 "치료내역" 섹션은 reporter 지시로 제거(패키지 시술내역으로 일원화). 새 canon = 섹션 미존재.
+  //   단, check_ins 로드는 재진 판정(hasPriorVisit)에서 계속 사용하므로 데이터 fetch 는 유지.
+  test('AC-2→4FIX AC3: 독립 치료내역 섹션 제거 + check_ins 데이터 fetch 유지', () => {
+    // 데이터 경로(재진 판정용)는 유지
     expect(DETAIL_POPUP).toContain("from('check_ins')");
     expect(DETAIL_POPUP).toContain('treatment_category, treatment_contents, treatment_kind, therapist_id');
-    expect(DETAIL_POPUP).toContain('data-testid="popup-treatment-history"');
-    expect(DETAIL_POPUP).toContain('지정치료사');
-    expect(DETAIL_POPUP).toContain('담당치료사');
+    // 독립 섹션은 제거됨(새 canon) — 결정적 신호 = 섹션 testid 미존재
+    expect(DETAIL_POPUP).not.toContain('data-testid="popup-treatment-history"');
   });
 
   test('AC-2 고객메모 ≠ 예약메모: 고객메모는 1번구역(zone1)', () => {
