@@ -2,7 +2,7 @@
   "ticket": "T-20260617-foot-DUMMY-CLEANUP-MAYJUN",
   "stage": 3,
   "mode": "dry-run",
-  "measured_at": "2026-06-18T04:33:48.346Z",
+  "measured_at": "2026-06-18T06:18:38.227Z",
   "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
   "expect": {
     "tier_a": 850,
@@ -112,31 +112,31 @@
     "health_q_tokens"
   ],
   "deleted_counts": {
-    "check_in_services": 769,
+    "check_in_services": 770,
     "claim_diagnoses": 4,
     "payment_audit_logs": 19,
-    "check_in_room_logs": 551,
+    "check_in_room_logs": 553,
     "timer_records": 49,
-    "status_transitions": 2053,
-    "package_sessions": 153,
-    "reservation_memo_history": 123,
+    "status_transitions": 2055,
+    "package_sessions": 154,
+    "reservation_memo_history": 124,
     "service_charges": 15,
     "form_submissions": 114,
     "payments": 205,
-    "check_ins": 815,
-    "reservation_logs": 353,
+    "check_ins": 816,
+    "reservation_logs": 356,
     "customer_special_notes": 6,
     "customer_treatment_memos": 45,
     "package_payments": 14,
-    "packages": 130,
-    "reservations": 1235,
+    "packages": 131,
+    "reservations": 1237,
     "health_q_results": 33,
     "health_q_tokens": 109,
     "customers": 1263
   },
   "soft_link_counts": {
     "medical_charts": 62,
-    "notification_logs": 1534
+    "notification_logs": 1536
   },
   "soft_link_tables": [
     "medical_charts",
