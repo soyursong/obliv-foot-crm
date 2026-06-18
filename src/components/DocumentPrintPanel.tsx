@@ -79,6 +79,8 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+// T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과(KOH)·투약내용(처방약) 자동 로드.
+import { loadReferralAutoFields } from '@/lib/referralAutoLoad';
 // T-20260608-foot-DOC-PATH12-SYNC: PATH-4(PaymentMiniWindow) 빌링 로직 1:1 재사용 (4경로 통일).
 //   service_charges 가 비어있는 경로(= PMW 수기조정만 있고 보험 copay 미산출)에서 check_in_services
 //   기반으로 PMW 와 동일한 빌링 폴백을 적용한다. (무파괴: service_charges 존재 시 기존 동작 불변.)
@@ -1595,8 +1597,17 @@ function IssueDialog({
         setServiceItems(items);
       });
 
-    const pAutoValues = loadAutoBindContext(checkIn, resolvedDoctorName).then((vals) => {
-      if (!cancelled) setAutoValues(vals);
+    const pAutoValues = loadAutoBindContext(checkIn, resolvedDoctorName).then(async (vals) => {
+      if (cancelled) return;
+      // T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과·투약내용 자동 로드 병합.
+      //   loadAutoBindContext resolve 직후 병합(setAutoValues replace 와의 race 제거). 결측 시 빈값(공란+수기).
+      if (template.form_key === 'referral_letter' && checkIn.customer_id) {
+        const ref = await loadReferralAutoFields(checkIn.clinic_id, checkIn.customer_id);
+        if (cancelled) return;
+        setAutoValues({ ...vals, test_result: ref.test_result, medication: ref.medication });
+      } else {
+        setAutoValues(vals);
+      }
     });
 
     // T-20260608-foot-DOC-PATH12-SYNC: PMW 수기조정 소스(check_in_services) + 건보 등급 로드 →
@@ -1885,18 +1896,39 @@ function IssueDialog({
   }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages]);
 
   const editableFields = useMemo(() => {
-    if (template.field_map.length > 0) return template.field_map;
-    return [
-      { key: 'patient_name', label: '환자명', type: 'text' as const, x: 0, y: 0 },
-      { key: 'patient_phone', label: '연락처', type: 'text' as const, x: 0, y: 0 },
-      { key: 'visit_date', label: '진료일', type: 'date' as const, x: 0, y: 0 },
-      { key: 'diagnosis_ko', label: '진단명', type: 'multiline' as const, x: 0, y: 0, w: 400, h: 80 },
-      { key: 'doctor_name', label: '진료 의사', type: 'text' as const, x: 0, y: 0 },
-      { key: 'total_amount', label: '총 금액', type: 'amount' as const, x: 0, y: 0 },
-      { key: 'issue_date', label: '발행일', type: 'date' as const, x: 0, y: 0 },
-      { key: 'memo', label: '비고', type: 'multiline' as const, x: 0, y: 0, w: 400, h: 60 },
-    ] satisfies FieldMapEntry[];
-  }, [template.field_map]);
+    const base: FieldMapEntry[] =
+      template.field_map.length > 0
+        ? [...template.field_map]
+        : [
+            { key: 'patient_name', label: '환자명', type: 'text' as const, x: 0, y: 0 },
+            { key: 'patient_phone', label: '연락처', type: 'text' as const, x: 0, y: 0 },
+            { key: 'visit_date', label: '진료일', type: 'date' as const, x: 0, y: 0 },
+            { key: 'diagnosis_ko', label: '진단명', type: 'multiline' as const, x: 0, y: 0, w: 400, h: 80 },
+            { key: 'doctor_name', label: '진료 의사', type: 'text' as const, x: 0, y: 0 },
+            { key: 'total_amount', label: '총 금액', type: 'amount' as const, x: 0, y: 0 },
+            { key: 'issue_date', label: '발행일', type: 'date' as const, x: 0, y: 0 },
+            { key: 'memo', label: '비고', type: 'multiline' as const, x: 0, y: 0, w: 400, h: 60 },
+          ];
+
+    // T-20260617-foot-DOCFORM-POPUP-OVERHAUL: 양식별 전용 입력필드 코드 주입(DB field_map 유무 무관 보장).
+    //   회귀 0 — 신규 placeholder 는 미바인딩 시 ''(bindHtmlTemplate). 값은 form_submissions.field_data(JSON)
+    //   에 담겨 schema-free → DB 컬럼 신설 0(data-architect CONSULT 비해당).
+    const has = (k: string) => base.some((f) => f.key === k);
+    const supplemental: FieldMapEntry[] = [];
+    if (template.form_key === 'referral_letter') {
+      // G4/AC-4: 검사 결과·투약 내용(자동 로드 후 수기 수정 가능).
+      if (!has('test_result'))
+        supplemental.push({ key: 'test_result', label: '검사 결과 (KOH 자동)', type: 'multiline' as const, x: 0, y: 0, w: 400, h: 60 });
+      if (!has('medication'))
+        supplemental.push({ key: 'medication', label: '투약 내용 (처방약 자동)', type: 'multiline' as const, x: 0, y: 0, w: 400, h: 60 });
+    }
+    if (template.form_key === 'diagnosis') {
+      // G6/AC-3: 향후 치료기간(치료내용/소견과 분리된 전용 필드).
+      if (!has('future_treatment_period'))
+        supplemental.push({ key: 'future_treatment_period', label: '향후 치료기간', type: 'text' as const, x: 0, y: 0 });
+    }
+    return [...base, ...supplemental] satisfies FieldMapEntry[];
+  }, [template.field_map, template.form_key]);
 
   const updateField = (key: string, value: string) => {
     if (key in autoValues) {

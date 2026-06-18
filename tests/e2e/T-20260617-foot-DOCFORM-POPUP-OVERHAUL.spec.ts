@@ -11,9 +11,12 @@
  *   AC-7 LOGIC-LOCK L-006(bindHtmlTemplate 4출력경로) 보존 — htmlFormTemplates/printOpinionDoc 미변경(재사용만).
  *   AC-8 기존 탭(균검사지/소견서/1번차트 서류발급) 병행 보존(덮어쓰기 금지, REDEFINITION_SANCTIONED).
  *
- * Phase 1 잔여(별도 슬라이스, 본 커밋 제외): G4 진료의뢰서 test_result/medication 전용필드 분리 + KOH/처방약
- *   자동 pull, G6 진단서 '향후 치료기간' 전용 placeholder 분리 — htmlFormTemplates(L-006) 편집 동반 → 4경로 회귀
- *   가드 별도 진행. Phase 2~4(설정 팝업·영문 AI번역·상품코드)는 data-architect CONSULT 게이트 후.
+ * Phase 1 잔여 슬라이스(본 커밋 구현 완료 — S7/S8):
+ *   AC-4/G4 진료의뢰서 검사결과(test_result)·투약내용(medication) 전용 placeholder 분리 + KOH/처방약 자동 pull
+ *     (referralAutoLoad.ts read-only). 자유서술 의뢰내용(referral_content)과 분리.
+ *   AC-3/G6 진단서 '향후 치료기간'(future_treatment_period) 전용 placeholder 분리(치료내용/소견과 분리).
+ *   가드: 신규 placeholder = ADDITIVE(미바인딩 시 ''→ L-006 4경로 기존 출력 회귀 0). 값=field_data(JSON) schema-free
+ *     → DB 컬럼 신설 0(data-architect CONSULT 비해당). Phase 2~4(설정 팝업·영문 AI번역·상품코드)는 CONSULT 게이트 후.
  *
  * 스타일: 정본 순수 로직 모사 + 소스 정적 검증(회귀 가드). auth/DB 비의존(unit 프로젝트).
  */
@@ -246,5 +249,91 @@ test.describe('S6 AC-8 — 기존 진료대시보드 탭 병행 보존', () => {
     expect(s).toContain('data-testid="tab-opinion-doc"');
     expect(s).toContain('<OpinionDocTab />');
     expect(s).toContain('<KohReportTab />');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S7 — G4/AC-4: 진료의뢰서 검사결과·투약내용 전용 placeholder + 자동 pull
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('S7 AC-4/G4 — 진료의뢰서 검사결과·투약 분리 + 자동로드', () => {
+  test('REFERRAL_LETTER_HTML: test_result/medication 전용 영역 신설(의뢰내용과 분리)', () => {
+    const tpl = SRC('lib/htmlFormTemplates.ts');
+    // 기존 자유서술 의뢰내용 보존(회귀 0)
+    expect(tpl).toContain('{{referral_content}}');
+    // 신규 전용 placeholder 2건
+    expect(tpl).toContain('{{test_result}}');
+    expect(tpl).toContain('{{medication}}');
+    // 라벨 — 검사 결과 / 투약 내용 섹션
+    expect(tpl).toContain('검사&nbsp;결과');
+    expect(tpl).toContain('투약&nbsp;내용');
+  });
+
+  test('referralAutoLoad: KOH(published)·처방약(check_ins.prescription_items) read-only 조회', () => {
+    const s = SRC('lib/referralAutoLoad.ts');
+    // KOH = form_submissions published(koh_result 템플릿)
+    expect(s).toContain("eq('form_key', 'koh_result')");
+    expect(s).toContain("eq('status', 'published')");
+    // 투약 = check_ins.prescription_items + 토큰 포맷 SSOT 재사용
+    expect(s).toContain("from('check_ins')");
+    expect(s).toContain('prescription_items');
+    expect(s).toContain('formatRxItemToken');
+    // graceful: clinic/customer 결측 시 빈 필드
+    expect(s).toContain("return { test_result: '', medication: '' }");
+    // read-only 가드 — mutation 금지(insert/update/delete/upsert 부재)
+    expect(s).not.toMatch(/\.(insert|update|delete|upsert)\(/);
+  });
+
+  test('DocumentPrintPanel: referral_letter 전용 입력필드 + 자동로드 병합 배선', () => {
+    const s = SRC('components/DocumentPrintPanel.tsx');
+    expect(s).toContain("import { loadReferralAutoFields } from '@/lib/referralAutoLoad'");
+    // 전용 editableFields 주입(중복 가드)
+    expect(s).toContain("key: 'test_result'");
+    expect(s).toContain("key: 'medication'");
+    // loadAutoBindContext resolve 직후 병합(race 제거)
+    expect(s).toContain("template.form_key === 'referral_letter' && checkIn.customer_id");
+    expect(s).toContain('test_result: ref.test_result, medication: ref.medication');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S8 — G6/AC-3: 진단서 '향후 치료기간' 전용 placeholder 분리
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('S8 AC-3/G6 — 진단서 향후 치료기간 분리', () => {
+  test('DIAGNOSIS_HTML: future_treatment_period 전용 행(치료내용/소견과 분리)', () => {
+    const tpl = SRC('lib/htmlFormTemplates.ts');
+    // 기존 치료내용/향후소견 보존(회귀 0)
+    expect(tpl).toContain('{{treatment_opinion}}');
+    // 신규 전용 placeholder
+    expect(tpl).toContain('{{future_treatment_period}}');
+    expect(tpl).toContain('향후<br>치료기간');
+  });
+
+  test('DocumentPrintPanel: diagnosis 전용 입력필드 future_treatment_period 주입', () => {
+    const s = SRC('components/DocumentPrintPanel.tsx');
+    expect(s).toContain("template.form_key === 'diagnosis'");
+    expect(s).toContain("key: 'future_treatment_period'");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S9 — L-006 회귀 가드: 신규 placeholder 는 ADDITIVE(미바인딩 시 '')
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('S9 AC-7 — bindHtmlTemplate ADDITIVE 무회귀', () => {
+  // bindHtmlTemplate 순수 모사: {{key}} → fieldValues[key] ?? ''
+  function bind(html: string, fv: Record<string, string>): string {
+    return html.replace(/\{\{(\w+)\}\}/g, (_, k: string) => fv[k] ?? '');
+  }
+
+  test('신규 placeholder 미바인딩 시 공란(기존 출력 비파괴)', () => {
+    const html = '의뢰내용:{{referral_content}} 검사:{{test_result}} 투약:{{medication}} 향후:{{future_treatment_period}}';
+    // 기존 필드만 채우고 신규는 미제공 → 신규는 ''로 소거(기존 값 보존)
+    const out = bind(html, { referral_content: '족부 백선 의증' });
+    expect(out).toBe('의뢰내용:족부 백선 의증 검사: 투약: 향후:');
+  });
+
+  test('신규 placeholder 바인딩 시 정상 치환', () => {
+    const html = '검사:{{test_result}} 투약:{{medication}} 향후:{{future_treatment_period}}';
+    const out = bind(html, { test_result: 'KOH 균검사 (2026-06-10)', medication: '테르비나핀 1/1/14', future_treatment_period: '약 4주' });
+    expect(out).toBe('검사:KOH 균검사 (2026-06-10) 투약:테르비나핀 1/1/14 향후:약 4주');
   });
 });
