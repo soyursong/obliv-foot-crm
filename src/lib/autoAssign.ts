@@ -77,9 +77,12 @@ const ROLE_STAFF_ROLE: Record<AssignmentRole, string> = {
 
 /** 활성 staff 전체(이름 매칭·후보 풀용) */
 export async function fetchActiveStaff(clinicId: string): Promise<Staff[]> {
+  // ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
+  //   select 포함 시 PostgREST 400 → staff=[] → 출근자 매칭·배정 풀 전부 공집합.
+  //   (T-20260618-foot-ASSIGN-STAFF-EMPTY-HOTFIX) UI/매칭은 display_name ?? name fallback 유지.
   const { data } = await supabase
     .from('staff')
-    .select('id, clinic_id, name, display_name, role, active, created_at')
+    .select('id, clinic_id, name, role, active, created_at')
     .eq('clinic_id', clinicId)
     .eq('active', true);
   return (data ?? []) as Staff[];
