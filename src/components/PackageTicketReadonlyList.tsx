@@ -7,9 +7,13 @@
 //     - 시술별 상세표: 시술명 · 수가(회당) · 총 횟수 · 사용 · 잔여
 //     - 시술내역(차감 기록): 회차 · 시술명 · 날짜 · 담당자
 //   ⚠ read-only — 추가/수정/삭제 버튼·다이얼로그 0 (팝업 chart2 read-only 관례). 신규 양식 발명 금지(2번차트 복제).
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { formatAmount } from '@/lib/format';
 import type { Package } from '@/lib/types';
+
+// T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC2-2(B안): 시술내역 기본 표시 건수.
+const SESSION_HISTORY_DEFAULT_VISIBLE = 5;
 
 export type PackageSessionRow = {
   id: string;
@@ -142,26 +146,59 @@ export function PackageTicketReadonlyList({
               </table>
             )}
             {/* 시술내역 (회차 차감 기록): 회차 · 시술명 · 날짜 · 담당자 */}
-            {usedSessions.length > 0 && (
-              <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
-                <div className="text-[10px] text-muted-foreground mb-1 font-medium">시술내역</div>
-                {/* T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC2: 사용이력 10건+ 레이아웃 붕괴 수정.
-                    영역 내부 스크롤(max-h + overflow-y-auto)로 카드 높이 폭주 차단 + 각 항목 1행 고정(nowrap·min-w-0·ellipsis). */}
-                <div className="space-y-0.5 max-h-40 overflow-y-auto pr-0.5">
-                  {usedSessions.map((s) => (
-                    <div key={s.id} className="flex items-center gap-1.5 text-[10px] rounded px-0.5 min-w-0 flex-nowrap whitespace-nowrap">
-                      <span className="text-muted-foreground w-5 tabular-nums shrink-0">{s.session_number}회</span>
-                      <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
-                      <span className="text-muted-foreground shrink-0 tabular-nums">{s.session_date}</span>
-                      {s.staff_name && <span className="text-teal-600 truncate min-w-0">{s.staff_name}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {usedSessions.length > 0 && <SessionHistoryBlock sessions={usedSessions} />}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC2 (스펙 재확정 2026-06-19, 김주연 총괄·IMG_8382):
+//   AC2-1 회차 열 너비 — 두 자리 회차("10회"~"99회")에서 "10"/"회" 줄바꿈 발생(실원인=첫 열 폭 부족).
+//     → 회차 span min-w-[2.4rem] + whitespace-nowrap 으로 1행 고정.
+//   AC2-2 표시 정책 B안 — 기본 최근 5건만(최신순) + "더보기" 버튼 → 클릭 시 전체 펼침.
+//     → useState 토글(신규 npm 0, CSS+state 만). 패키지별 독립 토글 위해 별도 컴포넌트로 분리.
+function SessionHistoryBlock({ sessions }: { sessions: PackageSessionRow[] }) {
+  const [expanded, setExpanded] = useState(false);
+  // 최신순: session_date 내림차순, 동일 날짜는 session_number 내림차순 보조 정렬.
+  const sorted = [...sessions].sort((a, b) => {
+    if (a.session_date !== b.session_date) return a.session_date < b.session_date ? 1 : -1;
+    return b.session_number - a.session_number;
+  });
+  const visible = expanded ? sorted : sorted.slice(0, SESSION_HISTORY_DEFAULT_VISIBLE);
+  const hiddenCount = sorted.length - visible.length;
+  return (
+    <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
+      <div className="text-[10px] text-muted-foreground mb-1 font-medium">시술내역</div>
+      <div className="space-y-0.5">
+        {visible.map((s) => (
+          <div
+            key={s.id}
+            data-testid="pkg-session-row"
+            className="flex items-center gap-1.5 text-[10px] rounded px-0.5 min-w-0 flex-nowrap whitespace-nowrap"
+          >
+            {/* AC2-1: 회차 열 너비 확보 — "10회"~"99회" 두 자리 회차 줄바꿈 차단(min-w + nowrap) */}
+            <span className="text-muted-foreground min-w-[2.4rem] tabular-nums shrink-0 whitespace-nowrap">
+              {s.session_number}회
+            </span>
+            <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
+            <span className="text-muted-foreground shrink-0 tabular-nums">{s.session_date}</span>
+            {s.staff_name && <span className="text-teal-600 truncate min-w-0">{s.staff_name}</span>}
+          </div>
+        ))}
+      </div>
+      {/* AC2-2: 기본 최근 5건 + 더보기 토글(B안) */}
+      {sorted.length > SESSION_HISTORY_DEFAULT_VISIBLE && (
+        <button
+          type="button"
+          data-testid="pkg-session-more"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-[10px] font-medium text-teal-600 hover:text-teal-800 hover:underline"
+        >
+          {expanded ? '접기' : `더보기 (+${hiddenCount}건)`}
+        </button>
+      )}
     </div>
   );
 }
