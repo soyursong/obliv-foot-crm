@@ -339,7 +339,16 @@ export async function maybeAutoAssign(
       chosen = pickLeastLoaded(pool, load);
     }
 
-    if (!chosen) return { assigned: false }; // 출근 후보 없음 → 미배정 유지(수동 배정 대기)
+    if (!chosen) {
+      // 출근 후보 없음 → 미배정 유지(수동 배정 대기). 이 분기는 의도된 동작이나,
+      // staff=[](과거 display_name 400 사고) / 시트 read 실패 시에도 조용히 빠져 진단이 어려웠음
+      // (T-20260618-foot-AUTOASSIGN-RUN-FAIL: RC=staff=[]). 무엇이 비었는지 1줄 남겨 가시화.
+      console.warn(
+        `[autoAssign] no-assign(${role}): staff=${staff.length} working=${workingIds.size} pool=${pool.length}` +
+          (staff.length === 0 ? ' ⚠staff공집합' : pool.length === 0 ? ' ⚠출근후보공집합' : ''),
+      );
+      return { assigned: false };
+    }
 
     // 6) 조건부 UPDATE(멱등·경합 안전) — null 일 때만 set
     const { data: updated } = await supabase
