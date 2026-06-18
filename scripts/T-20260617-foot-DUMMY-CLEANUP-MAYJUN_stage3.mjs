@@ -97,7 +97,19 @@ async function main() {
   const realGuardNames = j.real_guard.map((r) => r.name);
 
   await client.connect();
-  await q('BEGIN');
+  // 데드락/직렬화/락경합 재시도 가드 (T-...MAYJUN 6/18 daytime DRY-RUN 40P01 deadlock 실관측 → apply 안전화).
+  //   재시도 대상 = 40P01(deadlock)·40001(serialization)·55P03(lock_timeout)뿐. assert/무결성 실패는 즉시 throw(재시도 안 함, 한 번이라도 위반 시 ROLLBACK+중단).
+  const RETRYABLE = new Set(['40P01', '40001', '55P03']);
+  const MAX_ATTEMPTS = APPLY ? 6 : 3;
+  let attempt = 0;
+  try {
+   while (true) {
+    attempt++;
+    await q('BEGIN');
+    // 락 무한대기 → 빠른 실패+재시도로 전환(라이브 트래픽 블로킹 방지). 대량 CASCADE 삭제 statement 상한.
+    await q(`SET LOCAL lock_timeout = '20s'`);
+    await q(`SET LOCAL statement_timeout = '240s'`);
+    if (attempt > 1) out(`\n⟳ 재시도 ${attempt}/${MAX_ATTEMPTS} (직전 시도 락경합/데드락 ROLLBACK 후 재실행)`);
   // dry-run 도 trial-delete 위해 read-write txn 사용하되 마지막에 ROLLBACK → prod 무변경 보장.
 
   try {
@@ -390,10 +402,18 @@ async function main() {
       out(`\n[DRY-RUN] ROLLBACK 완료 — prod 무변경. 전체 삭제 계획이 라이브 데이터에서 FK 위반 없이 검증됨.`);
       out(`  실삭제: --apply (supervisor 데이터게이트 GO 후).`);
     }
+    break; // 성공(또는 dry-run 정상 ROLLBACK) → 재시도 루프 종료
   } catch (e) {
     await q('ROLLBACK').catch(() => {});
+    if (RETRYABLE.has(e.code) && attempt < MAX_ATTEMPTS) {
+      out(`\n⚠ ${e.code} (${e.message}) → ROLLBACK 후 재시도 (${attempt}/${MAX_ATTEMPTS})`);
+      await new Promise((r) => setTimeout(r, 800 * attempt));
+      continue; // 락경합/데드락만 재시도 — 데이터 무변경(직전 시도 ROLLBACK 완료)
+    }
     out(`\n❌ ${e.message} → ROLLBACK (prod 무변경)`);
     throw e;
+  }
+   } // retry while
   } finally {
     writeFileSync(join(REPO, 'db-gate', `${TICKET}_stage3_runlog.txt`), log.join('\n') + '\n');
     await client.end();

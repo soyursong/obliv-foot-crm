@@ -2,7 +2,7 @@
   "ticket": "T-20260617-foot-DUMMY-CLEANUP-MAYJUN",
   "stage": 3,
   "mode": "dry-run",
-  "measured_at": "2026-06-17T20:51:24.620Z",
+  "measured_at": "2026-06-18T01:32:08.256Z",
   "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
   "expect": {
     "tier_a": 850,
@@ -136,7 +136,7 @@
   },
   "soft_link_counts": {
     "medical_charts": 62,
-    "notification_logs": 1529
+    "notification_logs": 1533
   },
   "soft_link_tables": [
     "medical_charts",

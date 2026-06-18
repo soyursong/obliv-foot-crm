@@ -1,4 +1,4 @@
-== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-17T20:51:02.289Z
+== T-20260617-foot-DUMMY-CLEANUP-MAYJUN Stage3 [DRY-RUN=trial+ROLLBACK] == 2026-06-18T01:31:25.649Z
 Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
 
 ── KEEP resolve (chart 15) ──
@@ -107,7 +107,7 @@ Stage1 SSOT: TierA 850 + TierB 428 → candidate 1278 (중복제거)
 
 ── soft-link / SET NULL 정리 (FK그래프 외 customer_id 보유 7개) ──
   medical_charts: 62
-  notification_logs: 1529
+  notification_logs: 1533
   [t3] 최종삭제 직전: _t_customers=1263 · customers 생존=1263
   customers: 1263
   ✓ 백업 보존: rollback/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_backup.json (23개 테이블)
