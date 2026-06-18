@@ -32,6 +32,11 @@ import { Loader2, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-re
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+// T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-2: 'customer_chart'(고객차트/2번차트) surface 신설.
+//   pen_chart(펜차트)·medical_chart(진료차트, 의사 진료관리)와 별개인 제3 surface.
+//   DB CHECK constraint additive 확장(DA CONSULT GO MSG-20260619-001458-5t5o) 동반.
+type PhraseType = 'pen_chart' | 'medical_chart' | 'customer_chart';
+
 interface PhraseTemplate {
   id: number;
   category: string;
@@ -40,7 +45,7 @@ interface PhraseTemplate {
   shortcut_key: string | null;
   is_active: boolean;
   sort_order: number;
-  phrase_type: 'pen_chart' | 'medical_chart';
+  phrase_type: PhraseType;
 }
 
 interface PhraseForm {
@@ -50,7 +55,7 @@ interface PhraseForm {
   shortcut_key: string;
   is_active: boolean;
   sort_order: number;
-  phrase_type: 'pen_chart' | 'medical_chart';
+  phrase_type: PhraseType;
 }
 
 const EMPTY_FORM: PhraseForm = {
@@ -64,11 +69,27 @@ const EMPTY_FORM: PhraseForm = {
 };
 
 // T-20260526-foot-MEDCHART-SYNC: 상용구 유형 라벨
-// T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-2: medical_chart 현장 호칭 '진료차트' → '고객차트' 통일
-//   (phrase_type 값 자체는 'medical_chart' 불변 — 무DB. 라벨/메뉴만 현장 용어로 표기)
+// T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-1 (cross-party 확정):
+//   고객차트=신규 제3 surface(customer_chart)로 확정 → medical_chart 라벨은 '진료차트'(의사 진료관리)로 환원,
+//   '고객차트'(2번차트)는 customer_chart 신규 type에 귀속. (직전 6df52103의 medical_chart→'고객차트' 오라벨 정정)
 const PHRASE_TYPE_LABELS: Record<string, string> = {
   pen_chart: '펜차트',
-  medical_chart: '고객차트',
+  medical_chart: '진료차트',
+  customer_chart: '고객차트',
+};
+
+// surface 별 배지 색상 (펜=blue / 진료=emerald / 고객=teal)
+const PHRASE_TYPE_BADGE: Record<string, string> = {
+  pen_chart: 'text-blue-600 border-blue-200 bg-blue-50',
+  medical_chart: 'text-emerald-700 border-emerald-200 bg-emerald-50',
+  customer_chart: 'text-teal-700 border-teal-200 bg-teal-50',
+};
+
+// surface 별 안내 문구
+const PHRASE_TYPE_DESC: Record<string, string> = {
+  pen_chart: '진료메모/서류 입력용',
+  medical_chart: '진료차트(진료관리) 임상경과 입력용',
+  customer_chart: '고객차트(2번차트) 3구역[상세] 예약·상담·치료메모 입력용',
 };
 
 // AC-3: document '서류' → '원장님'
@@ -187,7 +208,7 @@ function useReorderPhrases() {
 //   (4) 빈상태/카운트도 lockedType 기준. prop 미지정 시 현행 그대로(세그먼트 노출) — 회귀 0.
 //   단일 컴포넌트를 두 surface(상용구관리=pen_chart / 진료관리=medical_chart)가 prop 만 달리 재사용.
 interface PhrasesTabProps {
-  lockedType?: 'pen_chart' | 'medical_chart';
+  lockedType?: PhraseType;
 }
 
 export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
@@ -307,23 +328,17 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
           >
             <Badge
               variant="outline"
-              className={`text-[11px] h-5 px-2 ${
-                lockedType === 'medical_chart'
-                  ? 'text-emerald-700 border-emerald-200 bg-emerald-50'
-                  : 'text-blue-700 border-blue-200 bg-blue-50'
-              }`}
+              className={`text-[11px] h-5 px-2 ${PHRASE_TYPE_BADGE[lockedType] ?? PHRASE_TYPE_BADGE.pen_chart}`}
             >
               {PHRASE_TYPE_LABELS[lockedType]} 상용구
             </Badge>
             <span className="text-xs font-normal text-muted-foreground">
-              {lockedType === 'medical_chart'
-                ? '고객차트(2번차트) 임상경과 입력용'
-                : '진료메모/서류 입력용'}
+              {PHRASE_TYPE_DESC[lockedType] ?? PHRASE_TYPE_DESC.pen_chart}
             </span>
           </div>
         ) : (
           <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-0.5">
-            {(['all', 'pen_chart', 'medical_chart'] as const).map((t) => (
+            {(['all', 'pen_chart', 'medical_chart', 'customer_chart'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -418,11 +433,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                       {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 배지 */}
                       <Badge
                         variant="outline"
-                        className={`text-[9px] h-4 px-1 shrink-0 ${
-                          (p.phrase_type ?? 'pen_chart') === 'medical_chart'
-                            ? 'text-emerald-700 border-emerald-200 bg-emerald-50'
-                            : 'text-blue-600 border-blue-200 bg-blue-50'
-                        }`}
+                        className={`text-[9px] h-4 px-1 shrink-0 ${PHRASE_TYPE_BADGE[p.phrase_type ?? 'pen_chart'] ?? PHRASE_TYPE_BADGE.pen_chart}`}
                       >
                         {PHRASE_TYPE_LABELS[p.phrase_type ?? 'pen_chart']}
                       </Badge>
@@ -519,8 +530,8 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                     — 어디서 사용하는 상용구인지 선택
                   </span>
                 </Label>
-                <div className="mt-1 flex gap-2">
-                  {(['pen_chart', 'medical_chart'] as const).map((t) => (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {(['pen_chart', 'medical_chart', 'customer_chart'] as const).map((t) => (
                     <label key={t} className="flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="radio"
@@ -530,15 +541,8 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                         onChange={() => setForm((f) => ({ ...f, phrase_type: t }))}
                         className="accent-teal-600"
                       />
-                      <span className={`text-sm px-2 py-0.5 rounded font-medium ${
-                        t === 'medical_chart'
-                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                          : 'text-blue-700 bg-blue-50 border border-blue-200'
-                      }`}>
+                      <span className={`text-sm px-2 py-0.5 rounded font-medium border ${PHRASE_TYPE_BADGE[t]}`}>
                         {PHRASE_TYPE_LABELS[t]}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {t === 'pen_chart' ? '(진료메모/서류 입력 시)' : '(고객차트 임상경과 입력 시)'}
                       </span>
                     </label>
                   ))}

@@ -2239,8 +2239,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [consultationStaffId, setConsultationStaffId] = useState('');
   const [consultationMemo, setConsultationMemo] = useState('');
   const [savingConsultation, setSavingConsultation] = useState(false);
-  // C23-PHRASE-LINK: 상담 탭 상용구 — phrase_templates WHERE category='general' DB 연동
-  const [generalPhrases, setGeneralPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
+  // C23-PHRASE-LINK: 3구역[상세] 상용구.
+  // T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-3 (cross-party 확정):
+  //   2번차트(고객차트) 3구역[상세] 예약·상담·치료메모 입력부는 고객차트 surface(phrase_type='customer_chart') 상용구를 호출.
+  //   기존 category='general'(phrase_type 무격리, 펜차트/진료차트 general 혼입)에서 customer_chart 전용으로 전환 → surface 격리.
+  //   ※ 기존 general 상용구를 고객차트로 옮기는 backfill은 별건(datafix) — 현장은 [상용구(고객차트)]에서 신규 등록.
+  const [customerChartPhrases, setCustomerChartPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
   // T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [작성]/[내용보기] 다이얼로그 상태
   const [consentDialogFormType, setConsentDialogFormType] = useState<FormType | null>(null);
   // T-20260520-foot-PENCHART-VIEW-SPLIT: 그룹3 발건강 질문지 추가
@@ -2366,15 +2370,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [altDetail, setAltDetail] = useState('');
   const [savingAlt, setSavingAlt] = useState(false);
 
-  // C23-PHRASE-LINK: 마운트 시 [일반] 카테고리 상용구 한 번 조회
+  // C23-PHRASE-LINK / CS-AC-3: 마운트 시 고객차트 surface 상용구(customer_chart, 전체 카테고리) 한 번 조회.
+  //   sort_order 오름차순 — 상용구관리>[상용구(고객차트)]의 순서변경(↑↓)이 그대로 반영됨.
   useEffect(() => {
     supabase
       .from('phrase_templates')
       .select('id, name, content')
-      .eq('category', 'general')
+      .eq('phrase_type', 'customer_chart')
       .eq('is_active', true)
       .order('sort_order')
-      .then(({ data }) => { if (data) setGeneralPhrases(data); });
+      .then(({ data }) => { if (data) setCustomerChartPhrases(data); });
   }, []);
 
   useEffect(() => {
@@ -7335,6 +7340,24 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* 예약 탭 — 고객메모 + 기타메모 + 저장 */}
             {resvDetailTab === '예약' && (
               <div className="p-2 space-y-2">
+                {/* CS-AC-3: 고객차트 상용구 — 고객메모에 삽입 */}
+                {customerChartPhrases.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
+                    <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-예약">
+                      {customerChartPhrases.map(phrase => (
+                        <button
+                          key={phrase.id}
+                          type="button"
+                          onClick={() => setResvDetailForm((f) => ({ ...f, memo: f.memo ? `${f.memo} ${phrase.content}` : phrase.content }))}
+                          className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
+                        >
+                          {phrase.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="block text-[11px] text-muted-foreground mb-0.5">고객메모</label>
                   <Textarea
@@ -7444,12 +7467,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </div>
                 </div>
 
-                {/* 상용구 — C23-PHRASE-LINK: phrase_templates WHERE category='general' DB 연동 */}
-                {generalPhrases.length > 0 && (
+                {/* 상용구 — C23-PHRASE-LINK / CS-AC-3: 고객차트 surface(customer_chart) 상용구 → 상담메모 삽입 */}
+                {customerChartPhrases.length > 0 && (
                   <div>
                     <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
-                    <div className="flex flex-wrap gap-1">
-                      {generalPhrases.map(phrase => (
+                    <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-상담">
+                      {customerChartPhrases.map(phrase => (
                         <button
                           key={phrase.id}
                           type="button"
@@ -7494,6 +7517,24 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김 */}
                 {!treatmentMemoUnavailable && (
                   <>
+                    {/* CS-AC-3: 고객차트 상용구 — 새 치료메모에 삽입 */}
+                    {customerChartPhrases.length > 0 && (
+                      <div>
+                        <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
+                        <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-치료메모">
+                          {customerChartPhrases.map(phrase => (
+                            <button
+                              key={phrase.id}
+                              type="button"
+                              onClick={() => setNewMemoText(prev => prev ? `${prev} ${phrase.content}` : phrase.content)}
+                              className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
+                            >
+                              {phrase.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
                       <Textarea
