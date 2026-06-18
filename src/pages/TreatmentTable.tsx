@@ -125,6 +125,13 @@ export default function TreatmentTable() {
   const [nextResvMap, setNextResvMap] = useState<Map<string, NextReservation>>(new Map());
   // T-20260612-foot-CHARTNO-B2-P1: customer_id → chart_number 맵(환자명 옆 차트번호 인접 표기). read-only.
   const [chartMap, setChartMap] = useState<Map<string, string>>(new Map());
+  // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX:
+  //   담당 실장 = customers.assigned_staff_id (2번차트 1구역 '담당자', T-20260508-foot-C2-STAFF-DROPDOWN 확정).
+  //     기존 check_ins.consultant_id(접수 컨설턴트) → 담당자 필드로 표시 소스 교체(check_ins 컬럼 보존).
+  const [assignedStaffMap, setAssignedStaffMap] = useState<Map<string, string>>(new Map());
+  //   담당 치료사 = 금일(session_date) package_sessions.performed_by WHERE status='used' (실제 차감 치료사).
+  //     지정치료사(designated_therapist_id) 미사용. 날짜범위 뷰 대응 위해 key="customer_id|yyyy-MM-dd".
+  const [deductTherapistMap, setDeductTherapistMap] = useState<Map<string, string>>(new Map());
   // T-20260616-foot-PKG-OUTSTANDING-BALANCE ②: customer_id → 패키지/진료비 미수금
   const [outstandingMap, setOutstandingMap] = useState<Map<string, CustomerOutstanding>>(new Map());
   const [dutyDoctors, setDutyDoctors] = useState<DutyDoctor[]>([]);
@@ -163,7 +170,7 @@ export default function TreatmentTable() {
     const ciIds   = ciRows.map((c) => c.id);
     const custIds = [...new Set(ciRows.map((c) => c.customer_id).filter(Boolean))] as string[];
 
-    const [pkgRes, payRes, resvRes, chartRes] = await Promise.all([
+    const [pkgRes, payRes, resvRes, chartRes, deductRes] = await Promise.all([
       pkgIds.length > 0
         ? supabase.from('packages').select('id, package_name, package_type, total_sessions, total_amount').in('id', pkgIds)
         : Promise.resolve({ data: [] as PackageInfo[] }),
@@ -177,9 +184,23 @@ export default function TreatmentTable() {
             .order('reservation_date', { ascending: true })
         : Promise.resolve({ data: [] as NextReservation[] }),
       // T-20260612-foot-CHARTNO-B2-P1: 환자명 옆 차트번호 인접 표기용(read-only, DB 무변경).
+      // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: assigned_staff_id(담당 실장 소스) 동반 조회(기존 쿼리 재사용).
       custIds.length > 0
-        ? supabase.from('customers').select('id, chart_number').in('id', custIds)
-        : Promise.resolve({ data: [] as { id: string; chart_number: string | null }[] }),
+        ? supabase.from('customers').select('id, chart_number, assigned_staff_id').in('id', custIds)
+        : Promise.resolve({ data: [] as { id: string; chart_number: string | null; assigned_staff_id: string | null }[] }),
+      // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: 담당 치료사 = 금일 차감 치료사.
+      //   package_sessions(status='used') → performed_by, session_date 기준. clinic_id는 packages에 존재(packages!inner).
+      //   AC-6: session_date 를 현재 뷰의 날짜범위(dateFrom~dateTo)로 제한(전체 차감이력 조회 금지). custId 교집합.
+      custIds.length > 0
+        ? supabase.from('package_sessions')
+            .select('customer_id, performed_by, session_date, packages!inner(clinic_id)')
+            .eq('packages.clinic_id', clinic.id)
+            .eq('status', 'used')
+            .not('performed_by', 'is', null)
+            .in('customer_id', custIds)
+            .gte('session_date', dateFrom)
+            .lte('session_date', dateTo)
+        : Promise.resolve({ data: [] as { customer_id: string | null; performed_by: string | null; session_date: string }[] }),
     ]);
 
     setPackages((pkgRes.data ?? []) as PackageInfo[]);
@@ -206,11 +227,25 @@ export default function TreatmentTable() {
     setNextResvMap(custIds.length > 0 ? rmap : new Map());
 
     // T-20260612-foot-CHARTNO-B2-P1: customer_id → chart_number 맵 구성(미발번은 미수록 → 렌더 시 '#미발번').
+    // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: 동일 customers 행에서 assigned_staff_id(담당 실장) 맵 동시 구성.
     const cmap = new Map<string, string>();
-    for (const c of (chartRes.data ?? []) as { id: string; chart_number: string | null }[]) {
+    const amap = new Map<string, string>();
+    for (const c of (chartRes.data ?? []) as { id: string; chart_number: string | null; assigned_staff_id: string | null }[]) {
       if (c.id && c.chart_number) cmap.set(c.id, c.chart_number);
+      if (c.id && c.assigned_staff_id) amap.set(c.id, c.assigned_staff_id);
     }
     setChartMap(custIds.length > 0 ? cmap : new Map());
+    setAssignedStaffMap(custIds.length > 0 ? amap : new Map());
+
+    // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: 담당 치료사 = 금일 차감 치료사.
+    //   key="customer_id|session_date" → performed_by. 같은 고객·같은 날 2회 이상 차감 시 가장 마지막 행 사용.
+    const dmap = new Map<string, string>();
+    for (const s of (deductRes.data ?? []) as { customer_id: string | null; performed_by: string | null; session_date: string }[]) {
+      if (s.customer_id && s.performed_by && s.session_date) {
+        dmap.set(`${s.customer_id}|${s.session_date}`, s.performed_by);
+      }
+    }
+    setDeductTherapistMap(custIds.length > 0 ? dmap : new Map());
 
     // T-20260616-foot-PKG-OUTSTANDING-BALANCE ②: 활성 패키지 미수금 일괄 조회(카드별 N+1 방지).
     setOutstandingMap(custIds.length > 0 ? await loadCustomerOutstanding(custIds, clinic.id) : new Map());
@@ -234,6 +269,21 @@ export default function TreatmentTable() {
     for (const p of packages) m.set(p.id, p);
     return m;
   }, [packages]);
+
+  // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: 담당 실장/치료사 소스 리졸버(필터·렌더·CSV 공용 단일 경로).
+  //   담당 실장 = customers.assigned_staff_id, 담당 치료사 = 당일(접수일) package_sessions 차감 performed_by.
+  const consultantIdOf = useCallback(
+    (ci: CheckIn): string | null => (ci.customer_id ? assignedStaffMap.get(ci.customer_id) ?? null : null),
+    [assignedStaffMap],
+  );
+  const therapistIdOf = useCallback(
+    (ci: CheckIn): string | null => {
+      if (!ci.customer_id) return null;
+      const d = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
+      return deductTherapistMap.get(`${ci.customer_id}|${d}`) ?? null;
+    },
+    [deductTherapistMap],
+  );
 
   const consultants = useMemo(
     () => staffList.filter((s) => s.role === 'consultant'),
@@ -267,18 +317,18 @@ export default function TreatmentTable() {
       list = list.filter((c) => c.visit_type === 'new');
     }
 
-    /* 담당 치료사 필터 */
+    /* 담당 치료사 필터 — 금일 차감 치료사(package_sessions.performed_by) 기준 (T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX) */
     if (filterTherapistId !== 'all') {
-      list = list.filter((c) => c.therapist_id === filterTherapistId);
+      list = list.filter((c) => therapistIdOf(c) === filterTherapistId);
     }
 
-    /* 담당 실장 필터 */
+    /* 담당 실장 필터 — customers.assigned_staff_id 기준 (T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX) */
     if (filterConsultantId !== 'all') {
-      list = list.filter((c) => c.consultant_id === filterConsultantId);
+      list = list.filter((c) => consultantIdOf(c) === filterConsultantId);
     }
 
     return list;
-  }, [checkIns, view, filterTherapistId, filterConsultantId]);
+  }, [checkIns, view, filterTherapistId, filterConsultantId, therapistIdOf, consultantIdOf]);
 
   /* ── 요약 통계 ───────────────────────────────────────────────── */
   const summary = useMemo(() => {
@@ -334,8 +384,9 @@ export default function TreatmentTable() {
         차트번호: chartNoDisplay(c.customer_id ? (chartMap.get(c.customer_id) ?? null) : null),
         방문유형: VISIT_TYPE_KO[c.visit_type],
         상태: STATUS_KO[c.status],
-        담당실장: c.consultant_id ? (staffMap.get(c.consultant_id)?.name ?? '') : '',
-        담당치료사: c.therapist_id ? (staffMap.get(c.therapist_id)?.name ?? '') : '',
+        // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: 화면과 동일 소스(담당자/당일 차감 치료사).
+        담당실장: (() => { const id = consultantIdOf(c); return id ? (staffMap.get(id)?.name ?? '') : ''; })(),
+        담당치료사: (() => { const id = therapistIdOf(c); return id ? (staffMap.get(id)?.name ?? '') : ''; })(),
         패키지: pkg?.package_name ?? '',
         결제금액: pay?.total ?? 0,
         결제수단: pay?.methods.map((m) => METHOD_KO[m] ?? m).join('+') ?? '',
@@ -671,8 +722,11 @@ export default function TreatmentTable() {
                 const pkg = ci.package_id ? pkgMap.get(ci.package_id) : undefined;
                 const pay = paymentMap.get(ci.id);
                 const nextResv = ci.customer_id ? nextResvMap.get(ci.customer_id) : undefined;
-                const consultant = ci.consultant_id ? staffMap.get(ci.consultant_id) : undefined;
-                const therapist = ci.therapist_id ? staffMap.get(ci.therapist_id) : undefined;
+                // T-20260618-foot-TREAT-TABLE-STAFF-SOURCE-FIX: 담당 실장=assigned_staff_id, 담당 치료사=당일 차감 performed_by.
+                const consultantId = consultantIdOf(ci);
+                const therapistId = therapistIdOf(ci);
+                const consultant = consultantId ? staffMap.get(consultantId) : undefined;
+                const therapist = therapistId ? staffMap.get(therapistId) : undefined;
 
                 return (
                   <tr
