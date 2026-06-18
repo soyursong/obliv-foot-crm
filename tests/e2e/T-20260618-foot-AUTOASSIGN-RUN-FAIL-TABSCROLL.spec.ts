@@ -138,3 +138,36 @@ test('B-3: 탭바/카드헤더는 스크롤 컨테이너 밖(고정 유지) — 
   expect(tabsIdx).toBeGreaterThan(0);
   expect(tabsIdx).toBeLessThan(firstScrollIdx);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [C] 미배정 일괄 자동배정 버튼 (reopen#2, 갈래② 소급구제)
+//   prod 증거: 16:01 이후 신규 체크인 0건 + 대기 미배정 5건 전부 직접INSERT seed
+//   → 이벤트구동 엔진이 발화할 신규 전이가 없었음(코드결함 아님). 소급 미배정은 버튼으로 일괄 통과.
+//   엔진(maybeAutoAssign) 재사용·additive·DB무변경. 재배포(4차 추정수정)가 아닌 신규 구제 UI.
+// ─────────────────────────────────────────────────────────────────────────────
+test('C-1: 일괄 자동배정 버튼이 기존 엔진(maybeAutoAssign)을 재사용 — 신규 배정로직 추가 금지', () => {
+  const src = read(PAGE);
+  expect(src).toMatch(/import\s*\{[\s\S]*maybeAutoAssign[\s\S]*\}\s*from\s*'@\/lib\/autoAssign'/);
+  expect(src).toContain('data-testid="batch-autoassign-btn"');
+  expect(src).toContain('doBatchAutoAssign');
+  // 엔진 호출은 ci.status(전이상태)·createdBy 그대로 위임(별도 배정산식 재구현 금지)
+  expect(src).toMatch(/maybeAutoAssign\(ci\.id,\s*ci\.status,\s*profile\?\.id\s*\?\?\s*null\)/);
+});
+
+test('C-2: 일괄 대상 = 활성 탭 role 의 미배정 대기 건만 (consult/therapy 분리, 멱등)', () => {
+  const src = read(PAGE);
+  // unassignedNow: PULL_WAIT 상태 + activeTab role + 해당 role 컬럼 미배정
+  expect(src).toContain('const unassignedNow = useMemo(');
+  expect(src).toMatch(/PULL_WAIT_STATUSES\.includes\(ci\.status\)/);
+  expect(src).toMatch(/if \(role !== activeTab\) return false;/);
+  expect(src).toMatch(/return !assignedId;/);
+});
+
+test('C-3: 후보 0건/배정 0건 시 명시적 가드 — 빈 클릭·조용한 실패 방지', () => {
+  const src = read(PAGE);
+  expect(src).toContain('미배정 대기 건이 없습니다.');
+  // 출근 후보 공집합으로 배정 0건이면 근무캘린더 확인 유도(조용한 no-op 금지)
+  expect(src).toMatch(/배정 0건/);
+  // 버튼은 대상 0건이면 disabled
+  expect(src).toMatch(/disabled=\{loading \|\| busy \|\| unassignedNow\.length === 0\}/);
+});
