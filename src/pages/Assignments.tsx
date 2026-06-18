@@ -26,6 +26,7 @@ import {
   tossAssignment,
   pullAssignment,
   manualAssign,
+  maybeAutoAssign,
   fetchTodayWorkingStaffIds,
 } from '@/lib/autoAssign';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -369,6 +370,52 @@ export default function Assignments() {
     }
   };
 
+  // ── 미배정 일괄 자동배정 (T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL reopen#2, 갈래② 소급구제)
+  //  이벤트구동 maybeAutoAssign 은 신규 체크인 생성/전이 시점에만 발화 → 그 전에 직접 INSERT 되어
+  //  대기슬롯에 이미 떠 있는 미배정 건은 자동배정이 소급되지 않는다. 본 버튼은 현재 활성 탭(상담/치료)의
+  //  미배정 대기 건을 기존 엔진(maybeAutoAssign)에 1클릭 일괄 통과시킨다. additive·DB무변경·엔진재사용.
+  const unassignedNow = useMemo(
+    () =>
+      checkIns.filter((ci) => {
+        if (!PULL_WAIT_STATUSES.includes(ci.status)) return false;
+        const role: AssignmentRole = ci.status === 'consult_waiting' ? 'consult' : 'therapy';
+        if (role !== activeTab) return false;
+        const assignedId = role === 'consult' ? ci.consultant_id : ci.therapist_id;
+        return !assignedId;
+      }),
+    [checkIns, activeTab],
+  );
+
+  const doBatchAutoAssign = async () => {
+    if (!clinic || busy) return;
+    const targets = unassignedNow;
+    if (targets.length === 0) {
+      toast.info('미배정 대기 건이 없습니다.');
+      return;
+    }
+    setBusy(true);
+    let assigned = 0;
+    let skipped = 0;
+    for (const ci of targets) {
+      try {
+        const res = await maybeAutoAssign(ci.id, ci.status, profile?.id ?? null);
+        if (res.assigned) assigned += 1;
+        else skipped += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+    setBusy(false);
+    if (assigned > 0 && skipped === 0) {
+      toast.success(`일괄 자동배정 완료 — ${assigned}건 배정`);
+    } else if (assigned > 0) {
+      toast.success(`${assigned}건 배정 · ${skipped}건 미배정(출근 후보 없음 등)`);
+    } else {
+      toast.error('배정 0건 — 출근한 담당 후보가 없습니다. 근무 캘린더/출근 상태를 확인해주세요.');
+    }
+    void load();
+  };
+
   // 역할별 후보(당일 출근) — 수동 배정 select 옵션
   const poolFor = useCallback(
     (role: AssignmentRole): Staff[] => {
@@ -395,10 +442,21 @@ export default function Assignments() {
             출근 {workingIds.size}명 · 오늘 {allTodayRows.length}건
           </span>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || busy}>
-          <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-          새로고침
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL reopen#2: 미배정 일괄 자동배정(소급구제) */}
+          <Button
+            size="sm"
+            onClick={() => void doBatchAutoAssign()}
+            disabled={loading || busy || unassignedNow.length === 0}
+            data-testid="batch-autoassign-btn"
+          >
+            미배정 일괄 자동배정{unassignedNow.length > 0 ? ` (${unassignedNow.length})` : ''}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || busy}>
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            새로고침
+          </Button>
+        </div>
       </div>
 
       {/* [상담]/[치료] 탭 — 같은 화면 내 파트별 분리 (active 탭 기준 role 필터) */}
