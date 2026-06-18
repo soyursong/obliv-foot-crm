@@ -2,9 +2,9 @@
 id: T-20260611-foot-SPACE-ASSIGN-STAFF-WRITE-PERM
 domain: foot
 priority: P2
-status: dbgate-submitted-awaiting-supervisor
+status: deploy-ready
 phase1_finding: "차단 = 백엔드 2지점(RPC save_room_assignments is_admin_or_manager 가드 + room_assignments RLS INSERT 부재/UPDATE role 갭). FE 게이트 아님 → FE 무변경, 백엔드 최소 변경."
-db_gate_status: submitted-awaiting-supervisor
+db_gate_status: applied  # MSG-20260618-183721-yrgz(supervisor FIX-REQUEST) 승인 하에 QA/테스트 Supabase(rxlomoozakkjesdqjtvd) 적용 완료 2026-06-18
 data_architect_consult: not-required  # RLS + 기존 RPC 본문 술어 교체만, 신규 컬럼/테이블/enum 0
 recur5_dep_check: "Phase B 93c336f main 머지 확인 완료 → carry-over/미터치방 보존 패턴 위에 권한만 확대"
 artifacts:
@@ -13,7 +13,12 @@ artifacts:
   dryrun: scripts/T-20260611-foot-SPACE-ASSIGN-STAFF-WRITE-PERM_dryrun.mjs  # PASS
   e2e: tests/e2e/T-20260611-foot-SPACE-ASSIGN-STAFF-WRITE.spec.ts
   evidence: db-gate/T-20260611-foot-SPACE-ASSIGN-STAFF-WRITE-PERM_evidence.md
-deploy_ready: false  # db_change=true → supervisor DB게이트 적용 전 deploy-ready 금지
+  apply: scripts/T-20260611-foot-SPACE-ASSIGN-STAFF-WRITE-PERM_apply.mjs  # APPLY+영속검증 PASS
+deploy_ready: true
+deploy-ready-by: agent-fdd-dev-foot
+deploy-ready-at: 2026-06-18
+qa_result: "pass — Playwright E2E 7/7 PASS (S1/S2 RPC can_assign_rooms 가드 교체+is_admin_or_manager 제거 / AC-2 헬퍼 운영8role·tm제외 / S4 clinic 스코프 / S3 AC-3·AC-5 DELETE 미부여·blanket 미번짐 / S5 RECUR5 원자 본문 보존 / AC-7 admin·approved_read·floor staff 회귀0). 마이그 20260611220000 적용 후 영속검증 9/9 PASS."
+field_soak_gate: "실 Galaxy Tab — 직원(coordinator/therapist 등 운영 role) 로그인 → 직원·공간 > 공간배정에서 방 배정·재배정·unassign 저장 성공+F5 영속(권한차단 안내 미발생) + tm 계정은 공간배정 화면 미접근 유지 + 관리자 기존 동작 회귀0 + 김주연 총괄(U0ATDB587PV) 현장 confirm (최종 게이트)"
 summary: "[권한] 김주연 총괄 — 직원·공간 > 공간배정(상담/치료/레이저)에서 직원(staff) 계정이 권한 막혀 수정/반영 불가, 관리자만 가능. 운영상 직원도 방 배정·재배정을 할 수 있어야 함 → space assignment WRITE 권한을 staff(coordinator/therapist 등 운영 role)에 부여. ★단 PHI/민감영역 아닌 '공간배정' 한정(blanket write-open 금지) + RLS-MENU-ROLE-PARITY-POLICY(READ-only parity)의 write-manager-only 기조에 대한 scoped 예외 + 활성 P0 SPACE-RESET-RECUR5 write-path와 정합(신규 write 경로가 reset 재발 유발 금지)."
 field_summary: "지금 공간배정(상담실/치료실/레이저실) 화면에서 직원 계정은 권한이 막혀 관리자만 배정을 바꿀 수 있는데, 직원도 방 배정·변경을 할 수 있게 권한을 열어주는 작업이에요. 다만 공간배정만 열고 급여·정산 같은 민감한 건 그대로 두며, 지금 고치는 중인 '배정 풀림(RECUR5)' 문제와 어긋나지 않게 맞춰서 진행해요."
 block_reason: null
