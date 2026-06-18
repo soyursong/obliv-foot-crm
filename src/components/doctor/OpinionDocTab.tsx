@@ -27,19 +27,20 @@
 //   원장이 editor 에서 수기 수정하므로 기본 문구는 출발점일 뿐(AC-4). 임의 임상 단정 회피 — 라벨 기반 중립 문장.
 //   form_templates(form_key='opinion_doc').field_map.sections 가 있으면 그 그리드를 우선 사용(없으면 이 하드코드).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate, seoulISODate, birthYearAgeDisplay, chartNoDisplay } from '@/lib/format';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 import type { UserProfile } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, FileText, Search, ClipboardList, Printer } from 'lucide-react';
+import { Loader2, FileText, FileDown, Search, ClipboardList, Printer } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // 템플릿 옵션 — F0BAETELCTF 미러 (Phase 1 하드코드 기본값, Phase 2 설정 UI 로 이관 예정 AC-8).
@@ -365,6 +366,47 @@ function usePublishOpinion(clinicId: string | null) {
 }
 
 // ---------------------------------------------------------------------------
+// ③ 발행자(진료의) = 그 내원의 진료 본 의사 일치 게이트 — read-only(NO-DDL).
+//   T-20260618-foot-OPINIONDOC-DLG-OVERHAUL AC-0 RC: medical_charts 에 check_in_id 없음 →
+//   check_ins(내원) ↔ 진료의 유일 연결키 = customer_id + visit_date(KST). (DoctorPatientList.useSigningDoctorsByDate 패턴)
+//   signing_doctor_id = clinic_doctors.id 이므로 발행자 드롭다운(clinic_doctors.id)과 직접 비교 가능.
+//   1환자 N차트 = 그날 진료의 합집합(Set). 미서명/레거시 NULL/차트없음 = 빈 Set →
+//   ★fallback 정책: 진료의 정보가 전혀 없으면 게이트 미적용(경고 후 허용) — 정상 발행 오차단 방지.
+//   정보가 있을 때만(set non-empty) 발행자가 그 Set 에 속해야 발행 가능.
+export interface VisitSigningDoctors {
+  ids: Set<string>;     // 그 내원 진료의 clinic_doctors.id 집합(non-null)
+  names: string[];      // 표기용 진료의명(중복 제거)
+}
+function useVisitSigningDoctors(clinicId: string | null, customerId: string | null, visitDate: string | null) {
+  return useQuery<VisitSigningDoctors>({
+    queryKey: ['opinion_visit_signing_doctors', clinicId, customerId, visitDate],
+    enabled: !!clinicId && !!customerId && !!visitDate,
+    queryFn: async () => {
+      const empty: VisitSigningDoctors = { ids: new Set(), names: [] };
+      if (!clinicId || !customerId || !visitDate) return empty;
+      const { data, error } = await supabase
+        .from('medical_charts')
+        .select('signing_doctor_id, signing_doctor_name')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .eq('visit_date', visitDate);
+      if (error) throw error;
+      const ids = new Set<string>();
+      const names: string[] = [];
+      for (const raw of (data ?? []) as Array<{ signing_doctor_id: string | null; signing_doctor_name: string | null }>) {
+        const did = raw.signing_doctor_id;
+        if (!did) continue; // 미서명/레거시 NULL → 게이트 제외(빈 Set 처리)
+        ids.add(did);
+        const nm = (raw.signing_doctor_name ?? '').trim();
+        if (nm && !names.includes(nm)) names.push(nm);
+      }
+      return { ids, names };
+    },
+    staleTime: 15_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 소견서 작성 팝업 — F0BAETELCTF 옵션 그리드 + editor.
 //   옵션 클릭 → phrase 자동삽입(toggle). editor = textarea(수기수정 SSOT).
 // ---------------------------------------------------------------------------
@@ -388,6 +430,8 @@ export function OpinionEditorDialog({
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [doctorId, setDoctorId] = useState<string>(''); // clinic_doctors.id ('' = 미선택→profile 명의)
+  const [doctorTouched, setDoctorTouched] = useState(false); // 발행자를 사용자가 수동 변경했는지(자동 기본값 덮어쓰기 방지)
+  const [chartOpen, setChartOpen] = useState(false);         // ① 헤더 환자명 클릭 → 진료차트 drawer
 
   // 발행 게이트(C2, DA ruling B): is_doctor_role = director|doctor 만(의료법 §17 진료의 전속).
   //   ⚠ QuickRxBar.isDoctor(director|admin|manager, Rx취소용)와 의도적으로 다름 — 재사용 금지.
@@ -406,11 +450,22 @@ export function OpinionEditorDialog({
   );
   const publishMut = usePublishOpinion(clinicId);
 
-  // 발행자 기본값: is_default 진료의 → 첫 진료의.
+  // ③ 그 내원(customer_id + visit_date=내원일 KST)의 진료 본 의사 — 발행자 일치 게이트용(read-only).
+  const visitDate = visitor?.checked_in_at ? seoulISODate(visitor.checked_in_at) : null;
+  const { data: visitSigning } = useVisitSigningDoctors(clinicId, visitor?.customer_id ?? null, visitDate);
+  const signingIds = useMemo(() => visitSigning?.ids ?? new Set<string>(), [visitSigning]);
+  const signingNames = visitSigning?.names ?? [];
+  const hasSigningInfo = signingIds.size > 0; // 진료의 정보 존재 여부(없으면 fallback=경고 후 허용)
+  // 발행자 ↔ 진료의 일치: 정보가 없으면 게이트 미적용(true), 있으면 발행자가 그날 진료의 Set 에 속해야 true.
+  const issuerMatchesSigning = !hasSigningInfo || (doctorId !== '' && signingIds.has(doctorId));
+
+  // 발행자 기본값: 그 내원 진료 본 의사가 등록 진료의에 있으면 우선 → is_default → 첫 진료의.
   const defaultDoctorId = useMemo(() => {
     if (doctors.length === 0) return '';
+    const signed = doctors.find((d) => signingIds.has(d.id));
+    if (signed) return signed.id;
     return (doctors.find((d) => d.is_default) ?? doctors[0]).id;
-  }, [doctors]);
+  }, [doctors, signingIds]);
 
   // 팝업이 새 환자로 열릴 때마다 editor 초기화(직전 환자 잔상 방지).
   const visitorId = visitor?.id ?? null;
@@ -420,7 +475,17 @@ export function OpinionEditorDialog({
     setText('');
     setSelected(new Set());
     setDoctorId(defaultDoctorId);
+    setDoctorTouched(false);
+    setChartOpen(false);
   }
+
+  // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
+  useEffect(() => {
+    if (!open || doctorTouched) return;
+    const signed = doctors.find((d) => signingIds.has(d.id));
+    if (signed && signed.id !== doctorId) setDoctorId(signed.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, doctorTouched, doctors, visitSigning]);
 
   // 옵션 그리드 = form_templates(opinion_doc).field_map.sections 우선, 없으면 하드코드 OPINION_SECTIONS(empty-safe).
   const sections: OpinionSection[] = useMemo(
@@ -511,132 +576,49 @@ export function OpinionEditorDialog({
     if (!ok) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl" data-testid="opinion-dialog">
-        <DialogTitle className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-teal-600" />
-          소견서 작성
-          {visitor && (
-            <span className="text-sm font-normal text-muted-foreground">
-              · {visitor.customer_name}
-              {visitor.chart_number && <span className="ml-1 font-mono">{chartNoDisplay(visitor.chart_number)}</span>}
-            </span>
-          )}
-        </DialogTitle>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {/* 좌: 옵션 그리드 (F0BAETELCTF) */}
-          <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
-            {sections.map((section) => (
-              <div key={section.title}>
-                <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {section.options.map((opt) => {
-                    const active = selected.has(opt.key);
-                    return (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => handleOptionClick(opt)}
-                        aria-pressed={active}
-                        title={opt.phrase}
-                        data-testid={`opinion-opt-${opt.key}`}
-                        className={`rounded-md border px-2 py-2 text-xs font-medium transition ${
-                          active
-                            ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
-                            : 'border-input bg-background text-foreground hover:bg-accent'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+  // 발행 이력 테이블(우측 단 + 직원뷰 공용) — 각 행 [저장(PDF)] [인쇄] 모두 printOpinionDoc(브라우저 인쇄대화상자=PDF저장/인쇄) 경로.
+  const historyPanel = (
+    <div className="flex min-h-0 flex-col rounded-md border bg-muted/20" data-testid="opinion-published">
+      <p className="border-b px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">발행 이력 / 서류 출력</p>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {pubLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
-
-          {/* 우: editor(수기수정) + 발행자 + 발행 + 발행 이력(출력) */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-muted-foreground" htmlFor="opinion-editor-text">
-              소견 내용 <span className="text-muted-foreground/60">(옵션을 누르면 문구가 자동 삽입됩니다. 자유롭게 수정하세요.)</span>
-            </label>
-            <Textarea
-              id="opinion-editor-text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="좌측 옵션을 눌러 문구를 삽입하거나 직접 입력하세요."
-              className="min-h-[28vh] flex-1 text-sm leading-relaxed"
-              data-testid="opinion-editor"
-            />
-
-            {/* 발행자(진료의) 선택 — clinic_doctors 등록 시 노출 */}
-            {doctors.length > 0 && (
-              <div className="flex items-center gap-2">
-                <label className="whitespace-nowrap text-xs font-medium text-muted-foreground" htmlFor="opinion-doctor">
-                  발행자(진료의)
-                </label>
-                <select
-                  id="opinion-doctor"
-                  value={doctorId}
-                  onChange={(e) => setDoctorId(e.target.value)}
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
-                  data-testid="opinion-doctor-select"
-                >
-                  {doctors.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                      {d.license_no ? ` (면허 ${d.license_no})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-muted-foreground/70">
-                {canPublish
-                  ? '※ 발행 후에는 수정·취소할 수 없습니다(의무기록·비가역).'
-                  : '※ 소견서 발행은 원장(의료진) 권한입니다.'}
-              </span>
-              <Button
-                size="sm"
-                className="h-8 gap-1 bg-neutral-800 px-3 text-xs text-white hover:bg-neutral-900 disabled:opacity-40"
-                disabled={!canPublish || publishMut.isPending || !text.trim()}
-                onClick={handlePublish}
-                title={canPublish ? '소견서를 발행합니다(비가역).' : '소견서 발행은 원장(의료진) 권한입니다.'}
-                data-testid="opinion-publish-btn"
-              >
-                {publishMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-                {publishMut.isPending ? '발행 중…' : '최종 발행'}
-              </Button>
-            </div>
-
-            {/* 발행 이력 — 데스크 서류 출력(스냅샷 body 그대로 인쇄) */}
-            <div className="mt-1 rounded-md border bg-muted/20 p-2" data-testid="opinion-published">
-              <p className="mb-1 text-[11px] font-semibold text-muted-foreground">발행 이력 / 서류 출력</p>
-              {pubLoading ? (
-                <div className="flex justify-center py-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              ) : published.length === 0 ? (
-                <p className="py-1 text-[11px] text-muted-foreground/70" data-testid="opinion-published-empty">
-                  아직 발행된 소견서가 없습니다.
-                </p>
-              ) : (
-                <ul className="space-y-1">
-                  {published.map((row) => (
-                    <li
-                      key={row.id}
-                      className="flex items-center justify-between gap-2 rounded border bg-background px-2 py-1 text-[11px]"
-                      data-testid="opinion-published-row"
-                    >
-                      <span className="min-w-0 flex-1 truncate" title={row.body}>
-                        <span className="font-mono text-muted-foreground">{seoulISODate(row.issued_at)}</span>
-                        <span className="ml-1.5 text-muted-foreground/80">· {row.issued_by_name}</span>
-                        <span className="ml-1.5 text-foreground/80">{row.body.replace(/\n+/g, ' ')}</span>
-                      </span>
+        ) : published.length === 0 ? (
+          <p className="py-2 text-center text-[11px] text-muted-foreground/70" data-testid="opinion-published-empty">
+            아직 발행된 소견서가 없습니다.
+          </p>
+        ) : (
+          <table className="w-full text-[11px]" data-testid="opinion-published-table">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">발행일시</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">발행자</th>
+                <th className="px-1.5 py-1 font-medium">내용</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-right">출력</th>
+              </tr>
+            </thead>
+            <tbody>
+              {published.map((row) => (
+                <tr key={row.id} className="border-b last:border-0 align-top" data-testid="opinion-published-row">
+                  <td className="px-1.5 py-1 font-mono text-muted-foreground whitespace-nowrap">{seoulISODate(row.issued_at)}</td>
+                  <td className="px-1.5 py-1 text-muted-foreground/90 whitespace-nowrap">{row.issued_by_name}</td>
+                  <td className="px-1.5 py-1 text-foreground/80">
+                    <span className="block max-w-[14rem] truncate" title={row.body}>{row.body.replace(/\n+/g, ' ')}</span>
+                  </td>
+                  <td className="px-1.5 py-1 whitespace-nowrap text-right">
+                    <span className="inline-flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 shrink-0 gap-1 px-2 text-[10px]"
+                        onClick={() => handlePrint(row)}
+                        data-testid="opinion-save-pdf-btn"
+                        title="브라우저 인쇄 대화상자에서 'PDF로 저장'을 선택하세요."
+                      >
+                        <FileDown className="h-3 w-3" /> 저장(PDF)
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -644,16 +626,177 @@ export function OpinionEditorDialog({
                         onClick={() => handlePrint(row)}
                         data-testid="opinion-print-btn"
                       >
-                        <Printer className="h-3 w-3" /> 출력
+                        <Printer className="h-3 w-3" /> 인쇄
                       </Button>
-                    </li>
-                  ))}
-                </ul>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={canPublish ? 'max-w-5xl' : 'max-w-2xl'} data-testid="opinion-dialog">
+        {/* ① 헤더 1줄: 왼쪽 서류명(크고 볼드) · 오른쪽 환자이름(클릭→진료차트 drawer)·생년(만나이)·차트번호. ×는 Dialog 기본(우측). */}
+        <DialogTitle className="flex items-center justify-between gap-3 pr-7">
+          <span className="flex shrink-0 items-center gap-2">
+            <FileText className="h-5 w-5 text-teal-600" />
+            <span className="text-lg font-bold text-foreground" data-testid="opinion-doc-title">소견서</span>
+          </span>
+          {visitor && (
+            <span className="flex min-w-0 items-center gap-1.5 text-sm font-normal text-muted-foreground" data-testid="opinion-header-patient">
+              <button
+                type="button"
+                onClick={() => visitor.customer_id && setChartOpen(true)}
+                disabled={!visitor.customer_id}
+                className="max-w-[10rem] truncate font-semibold text-teal-700 underline-offset-2 hover:underline focus:underline focus:outline-none disabled:no-underline disabled:text-muted-foreground"
+                title={visitor.customer_id ? `${visitor.customer_name} — 클릭 시 진료차트 열기` : visitor.customer_name}
+                data-testid="opinion-header-name"
+              >
+                {visitor.customer_name}
+              </button>
+              {birthYearAgeDisplay(visitor.birth_date) && (
+                <span className="whitespace-nowrap tabular-nums">· {birthYearAgeDisplay(visitor.birth_date)}</span>
               )}
+              {visitor.chart_number && (
+                <span className="whitespace-nowrap font-mono">· {chartNoDisplay(visitor.chart_number)}</span>
+              )}
+            </span>
+          )}
+        </DialogTitle>
+
+        {canPublish ? (
+          /* ④ 3단 레이아웃: 옵션그리드 | editor+발행자+발행 | 발행이력/출력(우측 단) */
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)]">
+            {/* 1단: 옵션 그리드 (F0BAETELCTF) */}
+            <div className="max-h-[62vh] space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
+              {sections.map((section) => (
+                <div key={section.title}>
+                  <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {section.options.map((opt) => {
+                      const active = selected.has(opt.key);
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => handleOptionClick(opt)}
+                          aria-pressed={active}
+                          title={opt.phrase}
+                          data-testid={`opinion-opt-${opt.key}`}
+                          className={`rounded-md border px-2 py-2 text-xs font-medium transition ${
+                            active
+                              ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
+                              : 'border-input bg-background text-foreground hover:bg-accent'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
+
+            {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
+            <div className="flex flex-col gap-2">
+              {/* ② 안내문구 제거 — 라벨만 유지 */}
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="opinion-editor-text">
+                소견 내용
+              </label>
+              <Textarea
+                id="opinion-editor-text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="좌측 옵션을 눌러 문구를 삽입하거나 직접 입력하세요."
+                className="min-h-[36vh] flex-1 text-sm leading-relaxed"
+                data-testid="opinion-editor"
+              />
+
+              {/* ③ 발행자(진료의) 선택 + 진료 본 의사 일치 게이트 */}
+              {doctors.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <label className="whitespace-nowrap text-xs font-medium text-muted-foreground" htmlFor="opinion-doctor">
+                    발행자(진료의)
+                  </label>
+                  <select
+                    id="opinion-doctor"
+                    value={doctorId}
+                    onChange={(e) => { setDoctorId(e.target.value); setDoctorTouched(true); }}
+                    className={`h-8 flex-1 rounded-md border bg-background px-2 text-xs ${
+                      hasSigningInfo && !issuerMatchesSigning ? 'border-red-400' : 'border-input'
+                    }`}
+                    data-testid="opinion-doctor-select"
+                  >
+                    {doctors.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                        {d.license_no ? ` (면허 ${d.license_no})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* ③ 불일치 사유 안내 */}
+              {hasSigningInfo && !issuerMatchesSigning && (
+                <p className="rounded-md border border-red-200 bg-red-50/60 px-2 py-1 text-[11px] text-red-600" data-testid="opinion-doctor-mismatch">
+                  진료 본 의사({signingNames.join(', ') || '확인 필요'})와 발행자가 일치해야 발행할 수 있습니다.
+                </p>
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground/70">
+                  ※ 발행 후에는 수정·취소할 수 없습니다(의무기록·비가역).
+                </span>
+                <Button
+                  size="sm"
+                  className="h-8 gap-1 bg-neutral-800 px-3 text-xs text-white hover:bg-neutral-900 disabled:opacity-40"
+                  disabled={!canPublish || publishMut.isPending || !text.trim() || (hasSigningInfo && !issuerMatchesSigning)}
+                  onClick={handlePublish}
+                  title={
+                    hasSigningInfo && !issuerMatchesSigning
+                      ? '진료 본 의사와 발행자가 일치해야 발행할 수 있습니다.'
+                      : '소견서를 발행합니다(비가역).'
+                  }
+                  data-testid="opinion-publish-btn"
+                >
+                  {publishMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                  {publishMut.isPending ? '발행 중…' : '발행하기'}
+                </Button>
+              </div>
+            </div>
+
+            {/* 3단: 발행 이력 / 서류 출력 (독립 우측 단) */}
+            <div className="flex min-h-0 max-h-[62vh] flex-col">{historyPanel}</div>
           </div>
-        </div>
+        ) : (
+          /* ⑥ 직원(비의사) 출력전용 뷰 — editor/발행자/발행하기 숨김, 발행이력에서 저장(PDF)·인쇄만. */
+          <div className="space-y-2" data-testid="opinion-staff-view">
+            <p className="rounded-md border border-amber-200 bg-amber-50/60 px-2 py-1.5 text-[11px] text-amber-700">
+              ※ 소견서 발행은 원장(의료진) 권한입니다. 직원은 발행된 서류의 저장(PDF)·인쇄만 가능합니다.
+            </p>
+            <div className="flex max-h-[60vh] flex-col">{historyPanel}</div>
+          </div>
+        )}
       </DialogContent>
+
+      {/* ① 진료차트 drawer — MedicalChartPanel(자체 portal drawer, read-only 진입). 소견서 팝업과 중첩 충돌 없음. */}
+      <MedicalChartPanel
+        open={chartOpen}
+        onOpenChange={setChartOpen}
+        customerId={visitor?.customer_id ?? null}
+        clinicId={clinicId ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
+        variant="full"
+      />
     </Dialog>
   );
 }
@@ -781,7 +924,7 @@ export default function OpinionDocTab() {
       )}
 
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 금일(오늘) 내원 고객 명단입니다. 고객 이름 또는 작성 버튼을 누르면 소견서 작성 창이 열립니다. 옵션 버튼을 누르면 문구가 자동으로 삽입되며(다시 누르면 해제), 원장님이 내용을 자유롭게 수정할 수 있습니다. 내용을 확인한 뒤 [최종 발행]을 누르면 소견서가 발행되며(발행 후 수정·취소 불가), 발행 이력에서 [출력]으로 서류를 인쇄할 수 있습니다.
+        ※ 금일(오늘) 내원 고객 명단입니다. 고객 이름 또는 작성 버튼을 누르면 소견서 작성 창이 열립니다. 옵션 버튼을 누르면 문구가 자동으로 삽입되며(다시 누르면 해제), 원장님이 내용을 자유롭게 수정할 수 있습니다. 내용을 확인한 뒤 [발행하기]를 누르면 소견서가 발행되며(발행 후 수정·취소 불가), 발행 이력에서 [저장(PDF)]·[인쇄]로 서류를 출력할 수 있습니다.
       </p>
 
       <OpinionEditorDialog
