@@ -1,0 +1,38 @@
+-- T-20260620-foot-MUNJIEUN-CLINICMGMT-LOCKOUT — 옵션 A 복구 DML (문지은 대표원장 운영최고권한 flag set)
+-- ⚠️ DO NOT APPLY 단독: 반드시 선행 20260619220000_user_profiles_has_ops_authority_additive.sql 적용 후 실행.
+--    .DDL_DIFF_HOLD suffix → db push 대상 아님. supervisor DDL-diff 게이트(ADDITIVE+flag set, 대표게이트 면제 autonomy §3.1) 통과 후 수동 실행.
+--
+-- ════════════════════════════════════════════════════════════════════════
+-- 왜 옵션 A 인가 (dev-foot AC1 번들해시 검증 결론, 2026-06-20 02:00 KST):
+--   prod 라이브 번들 index-BvHlKg4G.js 의 canEditClinicMgmt 가 has_ops_authority 를 *읽는다*:
+--     canEditClinicMgmt(t) = t.has_ops_authority===true ? true : t.role==="admin"
+--   ⇒ ROLE-MATRIX has_ops_authority-aware FE 게이트가 이미 prod live (last-modified 23:01 KST 6/19).
+--   ⇒ 따라서 has_ops_authority=true 적재만으로 *라이브 번들 그대로* 문지은 EDIT 복구. ★Vercel 재배포 불필요★.
+--   ⇒ 옵션 B(director-escape)는 신규 FE 번들(b0de7b3a) 배포 필요하나 Vercel 파이프라인 stall 로 prod 전파 불가
+--      (재트리거 0cf6745c 후 8회 폴링 17:03GMT까지 index-BvHlKg4G.js 고정). 즉 현재 옵션 A 만이 Vercel 독립 복구 경로.
+--   ⇒ planner 01:55 open-question("구 번들 live면 flag set inert") 해소: 구 번들 아님, has_ops_authority 참조 번들 live → 옵션 A 유효.
+--
+-- AC2(복구): 문지은 has_ops_authority=true → 라이브 번들 canEditClinicMgmt=true → 진료관리 EDIT 활성.
+-- AC3(무회귀): 타 직원 has_ops_authority=false(컬럼 DEFAULT) 유지 → admin escape(admin 11명)만 EDIT, 봉직의/일반직원 read-only 유지.
+
+BEGIN;
+
+-- 단건 가드: prod 유일 director(문지은, MUNJIEUN-ROLE-DIRECTOR B2② swap 완료, id prefix d343769a) 대상.
+--   id 전체 UUID 는 PHI 마스킹 — 실행자(supervisor)가 prod 에서 확정.
+--   role='director' 가드 = prod director 1명(문지은)뿐이라 functionally 단건. updated_at 검증 권장.
+UPDATE public.user_profiles
+   SET has_ops_authority = true
+ WHERE role = 'director'
+   AND has_ops_authority = false;   -- idempotent: 이미 true 면 no-op
+
+-- 적용 후 검증 (1행, has_ops_authority=true 여야):
+--   SELECT id, role, has_ops_authority, updated_at FROM public.user_profiles WHERE role='director';
+
+COMMIT;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- ROLLBACK (복구 되돌릴 때만)
+-- ════════════════════════════════════════════════════════════════════════
+-- BEGIN;
+--   UPDATE public.user_profiles SET has_ops_authority = false WHERE role='director' AND has_ops_authority = true;
+-- COMMIT;
