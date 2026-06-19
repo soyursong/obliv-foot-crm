@@ -45,6 +45,7 @@ import {
   useDeleteFolder,
   useAssignDrugToFolder,
   useUnassignDrug,
+  useUpdateDrugDescription,
   MIGRATED_CODE_TYPE,
   type DrugFolderNode,
   type FolderDrug,
@@ -144,6 +145,8 @@ export default function DrugFoldersTab() {
   const deleteFolder = useDeleteFolder();
   const assignDrug = useAssignDrugToFolder();
   const unassignDrug = useUnassignDrug();
+  // T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part C): 약별 설명 인라인 저장.
+  const updateDesc = useUpdateDrugDescription();
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -163,6 +166,10 @@ export default function DrugFoldersTab() {
   // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE (AC-1): 전체보기 우측 단 급여여부 편집 대상(단건 선택).
   //   다중선택(selectedDrugIds=일괄삭제)와 직교 — 행의 약명 클릭 = 인라인 편집 패널 열기.
   const [insuranceSelectedId, setInsuranceSelectedId] = useState<string | null>(null);
+  // T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part C): '설명' 셀 더블클릭 인라인 에디터.
+  //   editingDescId=편집 중인 약의 prescription_code_id, editDescValue=입력값. 폴더 rename 패턴 동형.
+  const [editingDescId, setEditingDescId] = useState<string | null>(null);
+  const [editDescValue, setEditDescValue] = useState('');
 
   const tree = buildFolderTree(folders);
   const drugsByFolder = new Map<string, FolderDrug[]>();
@@ -348,6 +355,30 @@ export default function DrugFoldersTab() {
   //   정본 경로에서 단일 구현. 그 전까지 버튼은 표면만 노출하고 DML 을 수행하지 않는다(no-op 안내).
   function handleVerify(_d: FolderDrug) {
     toast.warning('검증 기능은 준비 중입니다.');
+  }
+
+  // ── Part C: 약별 '설명' 인라인 편집 ─────────────────────────────────────────
+  //   더블클릭 → 인라인 입력 에디터(Enter 저장 / Esc 취소). 자유텍스트(빈 설명 허용=NULL).
+  //   ※ reporter "더블클릭 하면 드롭다운" 표현은 자유텍스트 입력과 상충 → 인라인 입력 에디터로 해석(AC-2).
+  function startEditDesc(d: FolderDrug) {
+    if (!canEdit) return;
+    setEditingDescId(d.prescription_code_id);
+    setEditDescValue(d.description ?? '');
+  }
+  function cancelEditDesc() {
+    setEditingDescId(null);
+    setEditDescValue('');
+  }
+  async function submitDesc(d: FolderDrug) {
+    const next = editDescValue.trim();
+    if ((d.description ?? '') === next) return cancelEditDesc(); // 변경 없음
+    try {
+      await updateDesc.mutateAsync({ prescription_code_id: d.prescription_code_id, description: next });
+      toast.success('설명이 저장됐어요.');
+      cancelEditDesc();
+    } catch (e) {
+      toast.error(`설명 저장 실패: ${(e as Error).message}`);
+    }
   }
 
   const renderNode = (node: DrugFolderNode) => {
@@ -550,10 +581,23 @@ export default function DrugFoldersTab() {
                   폴더에 분류된 약품이 없습니다.
                 </div>
               ) : (
-                <table className="w-full text-left" data-testid="drug-folder-viewall-table">
+                // Part B: 전체보기 테이블 우측 여백 활용 — table-fixed + colgroup 폭 배분으로 가로 공간을 채운다.
+                //   약 이름·설명 컬럼이 가용 폭(나머지)을 흡수(우측 빈 칸 최소화). 급여여부/소속폴더는 고정 폭.
+                <table className="w-full text-left table-fixed" data-testid="drug-folder-viewall-table">
+                  <colgroup>
+                    <col className="w-9" />
+                    {/* 약 이름(용량) — 가용 폭 흡수 */}
+                    <col />
+                    {/* 급여여부 — 고정 narrow */}
+                    <col className="w-24" />
+                    {/* 소속 폴더 — 고정 */}
+                    <col className="w-32" />
+                    {/* Part C: 설명 — 가용 폭 흡수(소속 폴더 옆) */}
+                    <col />
+                  </colgroup>
                   <thead>
                     <tr className="border-b bg-muted/30 text-[10px] text-muted-foreground">
-                      <th className="px-2 py-1.5 w-9">
+                      <th className="px-2 py-1.5">
                         <input
                           type="checkbox"
                           checked={allSelected}
@@ -569,6 +613,8 @@ export default function DrugFoldersTab() {
                       {/* INLINE-MERGE: 급여여부 배지 컬럼 — 차단상태(비급여/급여삭제/급여기준변경) 한눈에 식별 */}
                       <th className="px-2 py-1.5 font-medium">급여여부</th>
                       <th className="px-2 py-1.5 font-medium">소속 폴더</th>
+                      {/* Part C: 소속 폴더 옆 '설명' 컬럼(약별 자유텍스트, 더블클릭 인라인 편집) */}
+                      <th className="px-2 py-1.5 font-medium" data-testid="drug-folder-viewall-desc-head">설명</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -660,6 +706,71 @@ export default function DrugFoldersTab() {
                             <span className="text-[11px] text-muted-foreground truncate">
                               {folderNameById.get(d.folder_id) ?? '—'}
                             </span>
+                          </td>
+                          {/* Part C: '설명' 셀 — 더블클릭 → 인라인 입력 에디터(Enter 저장 / Esc 취소). 자유텍스트·빈값 허용. */}
+                          <td className="px-2 py-1.5" data-testid="drug-folder-viewall-desc-cell">
+                            {editingDescId === d.prescription_code_id ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  value={editDescValue}
+                                  onChange={(e) => setEditDescValue(e.target.value)}
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      void submitDesc(d);
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelEditDesc();
+                                    }
+                                  }}
+                                  placeholder="설명 입력 (예: 식후 30분, 졸림 주의)"
+                                  className="h-7 text-xs px-1.5 flex-1 min-w-0"
+                                  data-testid="drug-folder-viewall-desc-input"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-teal-600 hover:text-teal-700 shrink-0"
+                                  title="저장"
+                                  onClick={() => void submitDesc(d)}
+                                  disabled={updateDesc.isPending}
+                                  data-testid="drug-folder-viewall-desc-save"
+                                >
+                                  {updateDesc.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground shrink-0"
+                                  title="취소"
+                                  onClick={cancelEditDesc}
+                                  disabled={updateDesc.isPending}
+                                  data-testid="drug-folder-viewall-desc-cancel"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ) : canEdit ? (
+                              <button
+                                type="button"
+                                onDoubleClick={() => startEditDesc(d)}
+                                onClick={() => startEditDesc(d)}
+                                className="w-full text-left text-[11px] truncate rounded px-1 py-0.5 hover:bg-teal-50/60 hover:ring-1 hover:ring-teal-200"
+                                title="더블클릭 또는 클릭하면 설명을 입력할 수 있어요"
+                                data-testid="drug-folder-viewall-desc-trigger"
+                              >
+                                {d.description && d.description.trim() !== '' ? (
+                                  <span className="text-foreground">{d.description}</span>
+                                ) : (
+                                  <span className="text-muted-foreground/60">설명 추가…</span>
+                                )}
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground truncate">
+                                {d.description && d.description.trim() !== '' ? d.description : '—'}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
