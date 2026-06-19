@@ -65,7 +65,9 @@ test.describe('T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW', () => {
     test(`AC-2: ${file.split('/').pop()} write 게이트는 canEditClinicMgmt 재사용`, () => {
       const src = read(file);
       expect(src).toContain("import { canEditClinicMgmt } from '@/lib/permissions'");
-      expect(src).toMatch(new RegExp(`const\\s+${varName}\\s*=\\s*canEditClinicMgmt\\(profile\\?\\.role\\)`));
+      // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 탭 write 게이트가 canEditClinicMgmt(profile?.role) → canEditClinicMgmt(profile)
+      //   로 전환(has_ops_authority flag 반영). 가드의 의미(로컬 배열 대신 공통 헬퍼 재사용)는 불변 → 두 인자 형태 모두 허용.
+      expect(src).toMatch(new RegExp(`const\\s+${varName}\\s*=\\s*canEditClinicMgmt\\(profile(\\?\\.role)?\\)`));
       // 폐기된 {director,manager,admin} 로컬 배열 잔존 금지(stale 회귀 가드)
       expect(src).not.toMatch(/\[\s*'director'\s*,\s*'manager'\s*,\s*'admin'\s*\]/);
       expect(src).not.toMatch(/\[\s*'admin'\s*,\s*'manager'\s*,\s*'director'\s*\]/);
