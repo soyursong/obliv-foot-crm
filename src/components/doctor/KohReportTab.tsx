@@ -827,8 +827,13 @@ export default function KohReportTab() {
           />
         </div>
         <div className="flex items-center gap-2">
-          {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 항상 노출. 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
-              발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행. */}
+          {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
+              발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행.
+              ── T-20260620-foot-KOH-ISSUE-PERMISSION-SPEC AC-2 ──
+              진료대시보드(의사화면)에는 의사(발급하기)만 노출. 발급은 director 전용 액션이므로
+              일괄발급 버튼은 isDoctor 한정 렌더(직원의 '발급요청'은 2번차트 KohRequestToggle 동선으로 분리됨).
+              직원이 진료대시보드 진입(전체 공개) 시 발급 액션 미노출 = 직원기능 비노출(NO-STAFF-FN 방향). */}
+          {isDoctor && (
           <Button
             size="sm"
             className="h-8 gap-1 bg-neutral-800 px-2.5 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
@@ -839,6 +844,7 @@ export default function KohReportTab() {
             {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
             {bulkPublishBtnLabel}
           </Button>
+          )}
           <span className="text-xs text-muted-foreground" data-testid="koh-count">
             {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
             {query.trim() && eligibleRows.length !== filtered.length && (
@@ -869,6 +875,9 @@ export default function KohReportTab() {
             <thead>
               {/* KOHSHEET-RENEWAL §B: 6컬럼 + LIFECYCLE: 선택(일괄발행)·상태(active/inactive)·발행 */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                {/* T-20260620-foot-KOH-ISSUE-PERMISSION-SPEC AC-2: 선택(일괄발급) 컬럼 = director 전용.
+                    일괄발급은 의사 액션이므로 비-director(직원)에겐 선택 컬럼 자체 미노출(헤더·셀 동일 게이트로 정합). */}
+                {isDoctor && (
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">
                   {/* AC-3: 전체선택(발행가능 행만 대상) */}
                   <input
@@ -881,6 +890,7 @@ export default function KohReportTab() {
                     data-testid="koh-select-all"
                   />
                 </th>
+                )}
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">이름</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트</th>
@@ -904,7 +914,9 @@ export default function KohReportTab() {
                   data-testid="koh-row"
                   data-koh-active={r.koh_requested ? 'true' : 'false'}
                 >
-                  {/* AC-3: 행 선택(일괄발행) — 발행가능(조갑부위 있고 미발행)일 때만 활성. */}
+                  {/* AC-3: 행 선택(일괄발행) — 발행가능(조갑부위 있고 미발행)일 때만 활성.
+                      KOH-ISSUE-PERMISSION-SPEC AC-2: director 전용(헤더 선택 컬럼과 동일 게이트). */}
+                  {isDoctor && (
                   <td className="px-1.5 py-1 text-center" data-testid="koh-cell-select">
                     <input
                       type="checkbox"
@@ -916,6 +928,7 @@ export default function KohReportTab() {
                       data-testid="koh-row-select"
                     />
                   </td>
+                  )}
                   {/* NAILSYNC(AC5): 이름 클릭 → 고객차트(MedicalChartPanel) 열기. customer_id 없으면 비활성 텍스트. */}
                   <td
                     className="px-1.5 py-1 whitespace-nowrap max-w-[8rem]"
@@ -1038,7 +1051,10 @@ export default function KohReportTab() {
                       >
                         💾 발행완료
                       </button>
-                    ) : (
+                    ) : isDoctor ? (
+                      /* T-20260620-foot-KOH-ISSUE-PERMISSION-SPEC AC-2: 발급(발급하기)은 director 전용 액션.
+                         비-director(직원)는 진료대시보드에서 발급 액션 미노출(직원기능 비노출). 직원 발급요청은
+                         2번차트 KohRequestToggle 동선으로 분리. 발행완료 행 보기(viewer)는 전 역할 공통 유지(읽기). */
                       <Button
                         size="sm"
                         variant={rowPublishable ? 'default' : 'outline'}
@@ -1071,7 +1087,7 @@ export default function KohReportTab() {
                       >
                         {publishBtnLabel}
                       </Button>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
                 );
