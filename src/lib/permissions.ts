@@ -43,7 +43,8 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   //   ⚠️ AdminLayout nav + App.tsx route 와 3-gate 동일 집합 SSOT(한쪽만 바꾸면 NAV-BOUNCE). ★tm 제외★(STAFF-ROLE-TM-ADD 최소권한) → ALL_STAFF_ROLES 재사용으로 구조 보장.
   closing:      [...ALL_STAFF_ROLES],
   stats:        ['admin', 'manager', 'director', 'part_lead', 'tm'],
-  register:     ['admin', 'manager'],
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 접수/등록 운영 parity). admin 비제거(ADDITIVE).
+  register:     ['admin', 'manager', 'director'],
   // T-20260525-foot-MESSAGING-V1 + ROLE-PERM-CUSTOM 3차(coordinator/therapist) → T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할).
   //   ★tm 제외★: 박민지 팀장 C안(AC6, STAFF-ROLE-TM-ADD) tm=4메뉴 최소권한 고정 → messaging 미포함. ALL_STAFF_ROLES(tm 미포함) 재사용으로 구조적 보장.
   //   ⚠️ App.tsx settings RoleGuard 와 동일 집합 SSOT — 한쪽만 바꾸지 말 것.
@@ -54,7 +55,8 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 고객 리스트 내보내기(CSV).
   //   내보내기 컬럼에 전화·생년월일 등 PII 포함 → 최소권한 원칙으로 admin/manager 한정(노출·실행 동시 게이팅).
   //   ★rrn(주민번호)은 어떤 권한이든 export 컬럼에서 영구 제외(customerCsv.ts 헤더에 부재).★
-  customer_export: ['admin', 'manager'],
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director. CSV는 FE에서 이미 로드된 데이터로 생성(별도 RLS 없음) → RLS/감사로그 영향 0. rrn 영구 제외 불변. admin 비제거.
+  customer_export: ['admin', 'manager', 'director'],
 };
 
 export function canAccess(role: UserRole, key: PermKey): boolean {

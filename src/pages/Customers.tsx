@@ -176,8 +176,8 @@ export default function Customers() {
   // T-20260520-foot-STAFF-CUSTOMER-UPDATE: isAdmin → 역할별 권한 분리 (isAdmin 제거됨)
   // staff/part_lead도 customers UPDATE 가능 (RLS: customers_staff_update)
   const canEditCustomer = ['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead'].includes(profile?.role ?? '');
-  // 삭제는 admin만 (기존 동작 유지)
-  const canDeleteCustomer = profile?.role === 'admin';
+  // 삭제는 admin / T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director(대표원장). customers RLS=is_admin_or_manager(director 포함)이라 FOR ALL(DELETE) 이미 director 허용 → RLS/감사로그 영향 0. admin 비제거.
+  const canDeleteCustomer = profile?.role === 'admin' || profile?.role === 'director';
   // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기는 PII(전화·생년월일) 포함 → admin/manager 한정(노출+실행 동시 게이팅).
   const canExportCustomers = canAccess(profile?.role ?? '', 'customer_export');
   const [query, setQuery] = useState('');
