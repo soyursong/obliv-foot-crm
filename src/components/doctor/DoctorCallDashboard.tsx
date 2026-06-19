@@ -1475,16 +1475,18 @@ function CompletedRow({
             ) : checkIn.customer_id ? (
               /* T-20260616-foot-DISCHARGED-DASH-RX-CHART-ACCESS A안 (문지은 대표원장 CONFIRM MSG-20260620-023304):
                  "잠금유지하면서 차트는 열리게 해줘. 직접 차트 열어서 수정만 가능하게(귀가완료환자 기준)."
-                 귀가·미처방 '-'(데드텍스트, 찾아 들어가야 하던 동선) → 1클릭 진료차트(서랍) 오픈 진입점.
+                 ★ 동일 thread 재확인(MSG-20260620-023610-702z, planner CLARIFY): 데드 '-'(invisible click)로는 부족 →
+                   reporter는 '눈에 보이는 차트 열기 버튼/링크'를 기대. 명시 라벨('차트 열기')+아이콘+테두리 chip 로 affordance 가시화.
                  처방 작성/수정은 차트 내부에서만 — 대시보드 인플레이스 처방 mutate(QuickRxBar apply) 미노출 유지(귀가 잠금 무회귀). */
               <button
                 type="button"
                 onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
                 data-testid="doctor-completed-no-rx"
                 title="귀가 환자 — 처방은 차트에서 수정 (클릭 시 진료차트 열림)"
-                className="text-[13px] text-gray-300 underline-offset-2 transition-colors cursor-pointer hover:text-indigo-600 hover:underline"
+                className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
               >
-                -
+                <FileText className="h-3 w-3" />
+                차트 열기
               </button>
             ) : (
               /* customer_id 결측(차트 진입 불가) — 종전 정적 '-' 유지. */
@@ -1518,14 +1520,16 @@ function CompletedRow({
                작성·수정은 풀차트 서랍(별도 surface) 안에서만. clinicalPreview 있으면 위 분기 read-only 펼침으로 확인.
                ⚠ 원내잔류(!discharged)는 아래 button 분기 그대로 — 작성 흐름 무회귀(AC-4). */
             checkIn.customer_id ? (
+              /* ★ MSG-20260620-023610-702z(planner CLARIFY): 데드 '—' invisible click → 명시 '차트 열기' 버튼/링크. */
               <button
                 type="button"
                 onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
                 data-testid="doctor-completed-clinical-empty-chart-btn"
                 title="귀가 환자 — 임상경과는 차트에서 작성/수정 (클릭 시 진료차트 열림)"
-                className="text-[15px] font-medium text-gray-300 underline-offset-2 transition-colors cursor-pointer hover:text-indigo-600 hover:underline"
+                className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
               >
-                —
+                <FileText className="h-3 w-3" />
+                차트 열기
               </button>
             ) : (
               /* customer_id 결측(차트 진입 불가) — 종전 readonly '—' 유지(클릭 불가). */

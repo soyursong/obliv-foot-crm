@@ -151,3 +151,44 @@ test.describe('S2 인플레이스 처방 mutate 차단 유지(귀가 잠금)', (
     expect(err.message).toContain('차트');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// S3 — 명시적 '차트 열기' 버튼 렌더 (affordance 가시화)
+//   reporter(문지은 대표원장) 동일 thread 재확인(planner CLARIFY MSG-20260620-023610-702z):
+//   "데드 '-'/'—' invisible click 만으론 부족 — 눈에 보이는 '차트 열기' 버튼/링크를 기대".
+//   → 귀가(discharged) 행 진입점은 바로 보이는 라벨('차트 열기')+아이콘 chip 으로 렌더돼야 한다.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('S3 귀가 행 명시적 \'차트 열기\' 버튼 가시화', () => {
+  // 진입점 <button> 본문(여는 '>' 이후 children)만 잘라낸다 — 긴 className/title 뒤의 라벨까지 안전 캡처.
+  function buttonBody(block: string, testid: string): string {
+    const idx = block.indexOf(`data-testid="${testid}"`);
+    expect(idx, `${testid} 진입점이 존재해야 함`).toBeGreaterThan(-1);
+    const gt = block.indexOf('>', idx);
+    expect(gt).toBeGreaterThan(idx);
+    const close = block.indexOf('</button>', gt);
+    expect(close).toBeGreaterThan(gt);
+    return block.slice(idx, close);
+  }
+
+  test('S3-a — 귀가·미처방 처방셀 진입점이 명시 라벨 \'차트 열기\'(데드 \'-\' 텍스트 아님)', () => {
+    const scope = buttonBody(completedRxCellBlock(), 'doctor-completed-no-rx');
+    // 버튼 본문에 보이는 라벨 '차트 열기' 가 렌더된다.
+    expect(scope).toContain('차트 열기');
+    // 아이콘(FileText) 동반 — 클릭 가능한 버튼임이 시각적으로 명확.
+    expect(scope).toContain('<FileText');
+    // 더 이상 본문이 bare '-' 데드텍스트가 아니다.
+    expect(scope.replace(/\s/g, '')).not.toMatch(/>-<\/button>/);
+  });
+
+  test('S3-b — 귀가 빈값 임상경과 진입점이 명시 라벨 \'차트 열기\'(데드 \'—\' 텍스트 아님)', () => {
+    const scope = buttonBody(completedClinicalCellBlock(), 'doctor-completed-clinical-empty-chart-btn');
+    expect(scope).toContain('차트 열기');
+    expect(scope).toContain('<FileText');
+  });
+
+  test('S3-c — 데드텍스트(bare 대시) 진입점이 customer_id 있는 귀가 행에서 제거됨', () => {
+    // 귀가+customer_id 진입점은 더 이상 button 본문이 bare '-'/'—' 만 가진 데드텍스트가 아니다.
+    const rxScope = buttonBody(completedRxCellBlock(), 'doctor-completed-no-rx');
+    expect(rxScope).toContain('차트 열기');
+  });
+});
