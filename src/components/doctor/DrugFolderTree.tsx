@@ -15,6 +15,8 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Folder, FolderOpen, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+// T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part D): 약 hover → 약 정보(설명) 라운드박스 툴팁.
+import DrugInfoTooltip from '@/components/doctor/DrugInfoTooltip';
 import {
   useDrugFolders,
   useFolderDrugs,
@@ -150,31 +152,39 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => addOne(d)}
-                    disabled={disabled}
-                    className="flex-1 text-left disabled:opacity-50"
-                    data-testid="drug-folder-item-add"
+                  {/* Part D: 약 hover → 약 정보(설명) 라운드 사각 툴팁. 클릭(즉시삽입) 동선 방해 X(pointer-events:none). */}
+                  <DrugInfoTooltip
+                    name={d.name_ko}
+                    description={d.description}
+                    className="flex-1 min-w-0"
+                    testId="rx-drug-tooltip-select"
                   >
-                    {/* T-20260609-foot-DRUGINFO-TRUNCATE-FIX AC5-1/5-2: 약품명 말줄임(...) 제거 →
-                        줄바꿈(break-words)으로 전체표시. 행 높이 자동확장 허용(AC5-3). */}
-                    <div className="flex items-start gap-1.5">
-                      <span className="text-xs font-medium break-words flex-1 min-w-0">{d.name_ko}</span>
-                      {d.code_source === 'custom' && (
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 mt-0.5">자체</Badge>
-                      )}
-                    </div>
-                    {/* AC5-2: 약정보 메타(코드·분류·제조사)도 가로 잘림 없이 줄바꿈 흐름. */}
-                    <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-1.5">
-                      <span className="font-mono break-all">{d.claim_code}</span>
-                      {d.classification && <span className="break-words">· {d.classification}</span>}
-                      {/* DRUGINFO-MANUFACTURER: 제약사(제조사). NULL/빈값(custom)은 표기 생략 — 레이아웃 보존 */}
-                      {d.manufacturer && d.manufacturer.trim() !== '' && (
-                        <span data-testid="drug-folder-item-manufacturer" className="break-words">· {d.manufacturer}</span>
-                      )}
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => addOne(d)}
+                      disabled={disabled}
+                      className="w-full text-left disabled:opacity-50"
+                      data-testid="drug-folder-item-add"
+                    >
+                      {/* T-20260609-foot-DRUGINFO-TRUNCATE-FIX AC5-1/5-2: 약품명 말줄임(...) 제거 →
+                          줄바꿈(break-words)으로 전체표시. 행 높이 자동확장 허용(AC5-3). */}
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-xs font-medium break-words flex-1 min-w-0">{d.name_ko}</span>
+                        {d.code_source === 'custom' && (
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 mt-0.5">자체</Badge>
+                        )}
+                      </div>
+                      {/* AC5-2: 약정보 메타(코드·분류·제조사)도 가로 잘림 없이 줄바꿈 흐름. */}
+                      <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-1.5">
+                        <span className="font-mono break-all">{d.claim_code}</span>
+                        {d.classification && <span className="break-words">· {d.classification}</span>}
+                        {/* DRUGINFO-MANUFACTURER: 제약사(제조사). NULL/빈값(custom)은 표기 생략 — 레이아웃 보존 */}
+                        {d.manufacturer && d.manufacturer.trim() !== '' && (
+                          <span data-testid="drug-folder-item-manufacturer" className="break-words">· {d.manufacturer}</span>
+                        )}
+                      </div>
+                    </button>
+                  </DrugInfoTooltip>
                 </div>
               );
             })}

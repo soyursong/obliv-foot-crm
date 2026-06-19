@@ -72,6 +72,9 @@ import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
 // T-20260606-foot-RX-SET-REDESIGN AC-R3/R5: 약품 폴더 탐색기(개별 약품 트리). 묶음처방(set)과 별개 축.
 import DrugFolderTree, { type DrugPick } from '@/components/doctor/DrugFolderTree';
+// T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part E): 처방내역 약 hover → 설명 툴팁.
+import DrugInfoTooltip from '@/components/doctor/DrugInfoTooltip';
+import { useDrugDescriptions } from '@/lib/drugFolders';
 // T-20260607-foot-RXQUICK-SET-FOLDER-NAV: 묶음처방 folder→set 2단 트리(공용 추출).
 import PrescriptionSetTreePicker from '@/components/prescription/PrescriptionSetTreePicker';
 import RxCountInput from '@/components/admin/RxCountInput';
@@ -569,6 +572,9 @@ export default function MedicalChartPanel({
   const [formClinical, setFormClinical] = useState(''); // 임상경과
   const [formMemo, setFormMemo] = useState('');       // 원장 전용 메모
   const [formRx, setFormRx] = useState<PrescriptionItem[]>([]); // 처방내역
+  // T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part E): 처방내역 약 설명 lookup(code_id→description).
+  //   처방된 약은 PrescriptionItem.prescription_code_id 만 보유 → hover 툴팁용 설명을 prescription_codes 에서 조회.
+  const { data: rxDescMap } = useDrugDescriptions(formRx.map((it) => it.prescription_code_id));
   // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 귀속(의료법). 선택지=활성 clinic_doctors.
   //   formSigningDoctorId = 현재 폼에서 선택된 진료의(저장 시 NOT NULL 강제 — 신규/수정행).
   const [clinicDoctors, setClinicDoctors] = useState<ClinicDoctorOption[]>([]);
@@ -3189,7 +3195,15 @@ export default function MedicalChartPanel({
                                   {/* AC2: 좌측 색상 도트 제거 / AC4: dosage(용량·소량) 라벨 입력 제거(이 표시에서만 숨김).
                                       item.dosage 데이터는 formRx에 보존·저장 무변경. 약이름은 한 줄 우선·긴 이름 자연 래핑. */}
                                   <td className="px-3 py-1.5">
-                                    <span className="font-medium break-words" data-testid={`rx-name-${idx}`}>{item.name}</span>
+                                    {/* Part E: 처방된 약 hover → 약 정보(설명) 툴팁. 설명 SSOT=prescription_codes.description(code_id 매핑). */}
+                                    <DrugInfoTooltip
+                                      name={item.name}
+                                      description={item.prescription_code_id ? rxDescMap?.get(item.prescription_code_id) ?? null : null}
+                                      className="inline-block max-w-full"
+                                      testId="rx-drug-tooltip-list"
+                                    >
+                                      <span className="font-medium break-words" data-testid={`rx-name-${idx}`}>{item.name}</span>
+                                    </DrugInfoTooltip>
                                   </td>
                                   {/* AC6: 용법 = frequency 자유텍스트에서 숫자/범위 코어만 표시(presentation), 가운데정렬.
                                       원본 frequency 값·저장·필드매핑 무변경. 편집은 처방 작성 패널(out of scope) 소관. */}
