@@ -124,5 +124,15 @@ export function canEditClinicMgmt(subject: OpsAuthSubject | UserRole | null | un
     typeof subject === 'string' ? { role: subject } : subject;
   if (!s) return false;
   if (s.has_ops_authority === true) return true;
-  return s.role === 'admin';
+  if (s.role === 'admin') return true;
+  // ── T-20260620-foot-MUNJIEUN-CLINICMGMT-LOCKOUT (P0 STOPGAP, 옵션 B / DB-0 / reversible) ──
+  // 배포순서 race 로 대표원장(문지은, admin→director swap) 진료관리 EDIT 전면 lock-out.
+  //   원인: has_ops_authority 컬럼 미적재(20260619220000_..._additive.sql.DDL_DIFF_HOLD) +
+  //         swap 으로 admin escape 상실 → false||false = EDIT 차단.
+  //   stopgap: director escape 임시 추가. prod director = 문지은 1명뿐(봉직의 미고용, nafn Q1)이라
+  //            functionally = has_ops_authority flag 적재와 동일·무부작용·reversible.
+  //   ★마이그(20260619220000_..._additive.sql) landing + 문지은 has_ops_authority=true set 후
+  //     이 director escape 1줄을 제거해 converged model(EDIT=has_ops_authority 단독)로 복귀할 것.★
+  if (s.role === 'director') return true;
+  return false;
 }
