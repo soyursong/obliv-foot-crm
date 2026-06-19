@@ -81,6 +81,7 @@ class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // T-20260523-foot-NAV-MENU-REORDER: 사이드바 메뉴 순서 재배치
+// T-20260618-foot-NAV-MENU-REORDER-V2: 16항목 신규 순서로 재배치(김주연 총괄 직접). 순서만 변경 — roles/icon/end/route 불변.
 const NAV_ITEMS: {
   to: string;
   label: string;
@@ -91,13 +92,6 @@ const NAV_ITEMS: {
   { to: '/admin', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/admin/reservations', label: '예약관리', icon: CalendarDays },
   { to: '/admin/customers', label: '고객관리', icon: Users },
-  // T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰(자동배정 조회 + 토스/당김/수동).
-  //   nav roles = App.tsx assignments route RoleGuard 와 패리티 SSOT(메뉴 보이는데 route 튕김 차단).
-  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: director(대표원장) nav-parity OR-추가. App.tsx route RoleGuard 와 동일 집합 SSOT 유지. admin 비제거.
-  { to: '/admin/assignments', label: '상담·치료사 배정', icon: ArrowRightLeft, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
-  // T-20260520-foot-RBAC-MENU-EXPAND: consultant/coordinator/therapist 메뉴 권한 확장
-  // AC-4: therapist → 패키지 신규 접근
-  { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
   // AC-2: consultant/coordinator/therapist → 진료도구 접근 (T-20260525-foot-ROLE-PERM-CUSTOM 3차: therapist 추가)
   // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME (AC-2): 라벨 '진료 도구' → '진료 대시보드' (route/icon/roles 불변)
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(발견 추가분): route(App.tsx)는 director 포함인데 nav 누락 = 불일치 → +director 정합(원장이 진료 대시보드 메뉴 미노출되던 회귀 차단).
@@ -107,6 +101,15 @@ const NAV_ITEMS: {
   //   서비스관리 화면 내 서브탭으로 편입(Services.tsx). 라우트/페이지·기능은 유지(이동만).
   //   진료관리 서브탭은 Services.tsx 내부에서 admin/manager/director 한정 노출 + App.tsx RoleGuard 이중가드 보존.
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
+  // T-20260605-foot-HANDOVER-BOARD: 현장 명칭 "직원 근무 캘린더"(원장 듀티 로스터와 분리된 독립 메뉴).
+  // AC-5: 전 직원 노출 (roles 미지정). 인수인계 작성/조회가 이 캘린더 안에서 이뤄짐.
+  { to: '/admin/handover', label: '직원 근무 캘린더', icon: ClipboardCheck },
+  // T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰(자동배정 조회 + 토스/당김/수동).
+  //   nav roles = App.tsx assignments route RoleGuard 와 패리티 SSOT(메뉴 보이는데 route 튕김 차단).
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: director(대표원장) nav-parity OR-추가. App.tsx route RoleGuard 와 동일 집합 SSOT 유지. admin 비제거.
+  { to: '/admin/assignments', label: '상담·치료사 배정', icon: ArrowRightLeft, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
+  // T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만 노출 + 라우트 가드(App.tsx) 이중
+  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager', 'director'] },
   // T-20260525-foot-MESSAGING-V1 AC-S1: 메시지 설정 — 서비스관리 바로 아래 (현장 요청: 김주연 총괄)
   // T-20260525-foot-ROLE-PERM-CUSTOM 3차: coordinator/therapist 추가
   // T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). 메뉴=라우트(App.tsx settings RoleGuard)=PERM_MATRIX.messaging 동일 집합 SSOT. ★tm 제외★(최소권한). nav 누락 시 route 개방돼도 메뉴 미노출로 무력화 → 패리티 필수.
@@ -116,16 +119,14 @@ const NAV_ITEMS: {
   //   [직원·공간](Staff.tsx) 내부 '원장정보' 탭으로 편입(김주연 총괄 IA 정리). 라우트는 App.tsx에서
   //   /admin/staff?tab=clinic-info 로 리다이렉트 보존(북마크/하드링크 404 방지). 기능/필드/저장·가시성 role 불변.
   { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
-  // T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만 노출 + 라우트 가드(App.tsx) 이중
-  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager', 'director'] },
+  // T-20260520-foot-RBAC-MENU-EXPAND: consultant/coordinator/therapist 메뉴 권한 확장
+  // AC-4: therapist → 패키지 신규 접근
+  { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
   // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN(policy_correction_jnz7 — 김주연 총괄 직접): 일마감=직원 업무(daily closing workflow). 전직원(8역할, tm 제외) OPEN.
   //   ★이전 LOCK(coordinator/therapist 회수)은 '일마감'을 '매출집계'로 오분류한 것 → 정정. 매출집계(실장별·치료사별 성과)는 별도 /admin/sales(admin/manager).★
   //   nav(여기) = route(App.tsx) = PERM_MATRIX.closing 3-gate 파리티 SSOT 정렬(메뉴 보이는데 route 튕김=NAV-BOUNCE 차단). WRITE=admin/manager만(RLS daily_closings_admin_all).
   { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'] },
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
-  // T-20260605-foot-HANDOVER-BOARD: 현장 명칭 "직원 근무 캘린더"(원장 듀티 로스터와 분리된 독립 메뉴).
-  // AC-5: 전 직원 노출 (roles 미지정). 인수인계 작성/조회가 이 캘린더 안에서 이뤄짐.
-  { to: '/admin/handover', label: '직원 근무 캘린더', icon: ClipboardCheck },
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
   // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 메뉴 노출 (route 가드와 패리티).
   { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'director', 'part_lead', 'tm'] },
