@@ -63,7 +63,8 @@ const VALID_INITIAL_TABS = new Set(['duty', 'staff', 'rooms', 'clinic-info', 're
 
 export default function StaffPage() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
   // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → duty).
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
@@ -134,7 +135,8 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
   const qc = useQueryClient();
   const { profile } = useAuth();
   // admin 또는 manager 권한 모두 직원 관리 가능
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
 
   const [openCreate, setOpenCreate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);

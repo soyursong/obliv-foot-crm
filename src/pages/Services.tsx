@@ -230,7 +230,8 @@ function SortableServiceRow({
 export default function Services() {
   const clinic = useClinic();
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 서비스관리 write parity). admin 비제거(ADDITIVE).
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
 
   // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: top-level 서브탭 (서비스 목록 / 상용구관리 / 진료관리)
   // T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN: 진료관리 = 서비스 목록과 동일 role(직원 포함) 개방.

@@ -42,7 +42,8 @@ type FilterStatus = 'active' | 'completed' | 'refunded' | 'all';
 export default function Packages() {
   const clinic = useClinic();
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 패키지 관리 parity). admin 비제거(ADDITIVE).
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
   // T-20260522-foot-STAFF-REEXPAND: consultant/coordinator=WRITE, therapist/staff/part_lead=READ-only (총괄 재허용)
   const canWritePackage = ['admin', 'manager', 'consultant', 'coordinator'].includes(profile?.role ?? '');
   const [filter, setFilter] = useState<FilterStatus>('active');
