@@ -677,128 +677,137 @@ export default function Services() {
         </div>
       </div>
 
-      {/* T-20260526-foot-SVC-CATEGORY-SORT: 탭 네비게이션 (기존 Select 대체) */}
-      <div className="mb-3 flex items-center gap-2 flex-wrap">
+      {/* T-20260619-foot-SVCMGMT-SIDEBAR-LAYOUT: 가로 필터칩 → 좌측 카테고리 사이드바(상용구 관리 패턴).
+          좌측=카테고리 네비(이름+카운트), 우측=검색+테이블. 필터 로직·카운트 산식·테이블 구성 무변경. */}
+      <div className="flex flex-1 min-h-0 gap-4">
+        {/* 좌측 카테고리 사이드바 — 카테고리명 + 카운트 배지 */}
         <div
           role="tablist"
-          className="flex flex-wrap gap-1"
+          className="w-32 shrink-0 overflow-y-auto rounded-lg border bg-muted/10"
           data-testid="svc-tab-nav"
         >
-          {CATEGORY_TABS.map((tab) => (
-            <button
-              key={tab}
-              role="tab"
-              aria-selected={activeTab === tab}
-              data-testid={`svc-tab-${tab}`}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                'h-8 rounded-md border px-3 text-xs font-medium transition-colors',
-                activeTab === tab
-                  ? 'border-teal-600 bg-teal-50 text-teal-700'
-                  : 'border-input bg-background hover:bg-muted text-muted-foreground',
-              )}
-            >
-              {tab}
-              {tabCounts[tab] !== undefined && tabCounts[tab] > 0 && (
-                <span className={cn(
-                  'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none',
-                  activeTab === tab ? 'bg-teal-100 text-teal-700' : 'bg-muted text-muted-foreground',
-                )}>
-                  {tabCounts[tab]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* 검색 — 모든 탭에서 동작, 검색 중에는 재정렬 비활성 */}
-        <div className="relative min-w-[180px] flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="시술명 또는 상품코드 검색"
-            className="pl-8"
-          />
-        </div>
-      </div>
-
-      {/* 재정렬 안내 (admin + 특정 탭 + 검색 없음) */}
-      {canReorder && (
-        <p className="mb-2 text-xs text-teal-600" data-testid="reorder-hint">
-          드래그 또는 ↑↓ 버튼으로 순서를 바꾸면 자동 저장됩니다.
-        </p>
-      )}
-      {isAdmin && activeTab !== '전체' && debouncedSearch && (
-        <p className="mb-2 text-xs text-amber-600">
-          검색 중에는 순서 변경이 비활성화됩니다.
-        </p>
-      )}
-
-      {/* 서비스 목록 테이블 */}
-      <div className="flex-1 overflow-auto rounded-lg border bg-background">
-        {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">불러오는 중…</div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <table className="w-full text-sm">
-              <thead className="bg-muted/60 text-xs text-muted-foreground">
-                <tr>
-                  {/* 재정렬 핸들 컬럼 */}
-                  {canReorder && (
-                    <th className="w-16 px-2 py-2 text-left font-medium text-[10px]">순서</th>
-                  )}
-                  {/* 항목분류 — 전체 탭에서만 */}
-                  {activeTab === '전체' && (
-                    <th className="px-4 py-2 text-left font-medium">항목분류</th>
-                  )}
-                  <th className="px-3 py-2 text-left font-medium">상품코드</th>
-                  <th className="px-4 py-2 text-left font-medium">시술명</th>
-                  <th className="px-4 py-2 text-right font-medium">단가</th>
-                  <th className="px-4 py-2 text-left font-medium">VAT</th>
-                  {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
-                </tr>
-              </thead>
-              <SortableContext
-                items={canReorder ? tabItems.map((s) => s.id) : []}
-                strategy={verticalListSortingStrategy}
+          {CATEGORY_TABS.map((tab) => {
+            const isActive = activeTab === tab;
+            const count = tabCounts[tab] ?? 0;
+            return (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={isActive}
+                data-testid={`svc-tab-${tab}`}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  'flex w-full items-center justify-between gap-1.5 border-b border-border/30 px-3 py-2.5 text-left text-sm transition-colors last:border-0',
+                  isActive
+                    ? 'border-l-2 border-l-teal-500 bg-teal-50 font-semibold text-teal-700'
+                    : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
+                )}
               >
-                <tbody>
-                  {tabItems.map((svc, idx) => (
-                    <SortableServiceRow
-                      key={svc.id}
-                      svc={svc}
-                      idx={idx}
-                      total={tabItems.length}
-                      canReorder={canReorder}
-                      isAdmin={isAdmin}
-                      onReorder={handleReorderBtn}
-                      onEdit={setEditTarget}
-                      onSoftDelete={softDelete}
-                      onHardDelete={hardDelete}
-                      showCategoryLabel={activeTab === '전체'}
-                    />
-                  ))}
-                  {!loading && tabItems.length === 0 && (
-                    <tr>
-                      <td colSpan={colCount} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                        {debouncedSearch
-                          ? '검색 결과 없음'
-                          : activeTab === '전체'
-                          ? '등록된 서비스가 없습니다'
-                          : `[${activeTab}] 탭에 등록된 서비스가 없습니다`}
-                      </td>
-                    </tr>
+                <span className="truncate">{tab}</span>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none tabular-nums',
+                    isActive ? 'bg-teal-100 text-teal-700' : 'bg-muted text-muted-foreground',
                   )}
-                </tbody>
-              </SortableContext>
-            </table>
-          </DndContext>
-        )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 우측 영역 — 검색 + 재정렬 안내 + 테이블 */}
+        <div className="flex flex-1 flex-col min-h-0">
+          {/* 검색 — 모든 탭에서 동작, 검색 중에는 재정렬 비활성 */}
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="시술명 또는 상품코드 검색"
+              className="pl-8"
+            />
+          </div>
+
+          {/* 재정렬 안내 (admin + 특정 탭 + 검색 없음) */}
+          {canReorder && (
+            <p className="mb-2 text-xs text-teal-600" data-testid="reorder-hint">
+              드래그 또는 ↑↓ 버튼으로 순서를 바꾸면 자동 저장됩니다.
+            </p>
+          )}
+          {isAdmin && activeTab !== '전체' && debouncedSearch && (
+            <p className="mb-2 text-xs text-amber-600">
+              검색 중에는 순서 변경이 비활성화됩니다.
+            </p>
+          )}
+
+          {/* 서비스 목록 테이블 */}
+          <div className="flex-1 overflow-auto rounded-lg border bg-background">
+            {loading ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">불러오는 중…</div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60 text-xs text-muted-foreground">
+                    <tr>
+                      {/* 재정렬 핸들 컬럼 */}
+                      {canReorder && (
+                        <th className="w-16 px-2 py-2 text-left font-medium text-[10px]">순서</th>
+                      )}
+                      {/* 항목분류 — 전체 탭에서만 */}
+                      {activeTab === '전체' && (
+                        <th className="px-4 py-2 text-left font-medium">항목분류</th>
+                      )}
+                      <th className="px-3 py-2 text-left font-medium">상품코드</th>
+                      <th className="px-4 py-2 text-left font-medium">시술명</th>
+                      <th className="px-4 py-2 text-right font-medium">단가</th>
+                      <th className="px-4 py-2 text-left font-medium">VAT</th>
+                      {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
+                    </tr>
+                  </thead>
+                  <SortableContext
+                    items={canReorder ? tabItems.map((s) => s.id) : []}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <tbody>
+                      {tabItems.map((svc, idx) => (
+                        <SortableServiceRow
+                          key={svc.id}
+                          svc={svc}
+                          idx={idx}
+                          total={tabItems.length}
+                          canReorder={canReorder}
+                          isAdmin={isAdmin}
+                          onReorder={handleReorderBtn}
+                          onEdit={setEditTarget}
+                          onSoftDelete={softDelete}
+                          onHardDelete={hardDelete}
+                          showCategoryLabel={activeTab === '전체'}
+                        />
+                      ))}
+                      {!loading && tabItems.length === 0 && (
+                        <tr>
+                          <td colSpan={colCount} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                            {debouncedSearch
+                              ? '검색 결과 없음'
+                              : activeTab === '전체'
+                              ? '등록된 서비스가 없습니다'
+                              : `[${activeTab}] 탭에 등록된 서비스가 없습니다`}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </SortableContext>
+                </table>
+              </DndContext>
+            )}
+          </div>
+        </div>
       </div>
 
       {isAdmin && (
