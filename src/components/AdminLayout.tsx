@@ -36,7 +36,8 @@ import { formatPhone, chartNoBadge } from '@/lib/format';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { UserRole } from '@/lib/types';
+import type { UserRole, UserProfile } from '@/lib/types';
+import { hasOpsAuthority } from '@/lib/permissions';
 import ChangePasswordDialog from '@/components/ChangePasswordDialog';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
 import { useOrientation } from '@/hooks/useOrientation';
@@ -88,6 +89,10 @@ const NAV_ITEMS: {
   icon: typeof LayoutDashboard;
   end?: boolean;
   roles?: UserRole[];
+  // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 메뉴(계정·통계·매출). true 면 director 는 has_ops_authority=true 일 때만 노출
+  //   (봉직의=director,flag無 → 운영최고권한 無, 진료만). admin/manager 등은 roles 로 이미 운영 role-implied → 영향 없음.
+  //   ★lock-out-safe: 현재 운영자 전원 admin → roles 로 통과(이 단서는 director 한정). prod director=0 → 현 영향 0.★
+  requiresOpsAuthority?: boolean;
 }[] = [
   { to: '/admin', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/admin/reservations', label: '예약관리', icon: CalendarDays },
@@ -129,12 +134,26 @@ const NAV_ITEMS: {
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
   // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 메뉴 노출 (route 가드와 패리티).
-  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'director', 'part_lead', 'tm'] },
-  // AC-6: 매출집계 미노출 유지 / T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director
-  { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager', 'director'] },
-  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: 계정관리 +director(대표원장 셀프 직원계정 운영). App.tsx accounts route + user_profiles RLS 동반 widening.
-  { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin', 'director'] },
+  // AC-6: 통계 미노출 유지 / STAFF-ROLE-TM-ADD: tm. T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 flag 필요(봉직의 배제).
+  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'director', 'part_lead', 'tm'], requiresOpsAuthority: true },
+  // AC-6: 매출집계 미노출 유지 / MUNJIEUN B2①: +director. ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director flag 필요.
+  { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager', 'director'], requiresOpsAuthority: true },
+  // MUNJIEUN B2①: 계정관리 +director(대표원장 셀프 직원계정 운영). ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director flag 필요(봉직의 계정관리 배제).
+  { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin', 'director'], requiresOpsAuthority: true },
 ];
+
+// T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: nav 가시성 단일 판정(2곳 필터 SSOT).
+//   ① roles 미지정 → 전직원. roles 지정 → role 포함 필요(기존 규칙).
+//   ② requiresOpsAuthority → director(임상)는 has_ops_authority=true 일 때만(봉직의=director,flag無 배제).
+//      admin/manager 등은 roles 로 이미 통과(운영 role-implied) → 영향 없음. ★lock-out-safe(현 운영자 admin·prod director=0).★
+function isNavItemVisible(
+  item: { roles?: UserRole[]; requiresOpsAuthority?: boolean },
+  profile: UserProfile | null,
+): boolean {
+  if (item.roles && !(profile?.role && item.roles.includes(profile.role))) return false;
+  if (item.requiresOpsAuthority && profile?.role === 'director' && !hasOpsAuthority(profile)) return false;
+  return true;
+}
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -288,7 +307,7 @@ export default function AdminLayout() {
         </button>
       </div>
       <nav className="flex-1 px-2 py-3">
-        {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => {
+        {NAV_ITEMS.filter((item) => isNavItemVisible(item, profile)).map((item) => {
           // UX-9: 결제대기 건수를 일마감(closing)/대시보드(/admin)에 뱃지 표시
           const showBadge = (item.to === '/admin' || item.to === '/admin/closing') && paymentWaitingCount > 0;
           return (
@@ -386,7 +405,7 @@ export default function AdminLayout() {
         {/* Nav */}
         {/* T-20260522-foot-TABLET-DUAL-LAYOUT: data-sidebar-nav — landscape 터치 타겟 CSS용 */}
         <nav className={cn('flex-1 py-3', sidebarCollapsed ? 'px-1' : 'px-2')} data-sidebar-nav>
-          {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => {
+          {NAV_ITEMS.filter((item) => isNavItemVisible(item, profile)).map((item) => {
             const showBadge = (item.to === '/admin' || item.to === '/admin/closing') && paymentWaitingCount > 0;
             return (
               <NavLink

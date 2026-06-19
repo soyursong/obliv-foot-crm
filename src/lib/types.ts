@@ -521,6 +521,11 @@ export interface UserProfile {
   created_at: string;
   updated_at?: string;
   access_tier?: string | null;
+  // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한(계정·통계·매출 + 진료관리 수정) ADDITIVE flag.
+  //   임상 role(director)과 직교 — 대표원장=true / 봉직의=false(진료만). DA branch B(n17u pre-GO).
+  //   ⚠️ DB 컬럼은 마이그(20260619220000_..._has_ops_authority_additive.sql.DDL_DIFF_HOLD) 적용 전까지 부재 →
+  //      profile.has_ops_authority 는 undefined. 그동안 모든 ops-authority predicate는 admin escape로만 통과(inert·lock-out-safe).
+  has_ops_authority?: boolean | null;
 }
 
 

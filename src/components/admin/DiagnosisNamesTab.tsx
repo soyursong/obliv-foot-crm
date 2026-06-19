@@ -712,7 +712,8 @@ function KcdComboBox({
 export default function DiagnosisNamesTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
-  const canManage = canEditClinicMgmt(profile?.role);
+  // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: profile 전달(has_ops_authority 반영).
+  const canManage = canEditClinicMgmt(profile);
 
   const { data: items = [], isLoading } = useDiagnoses(clinicId);
   const { data: folders = [], isLoading: foldersLoading } = useDiagnosisFolders(clinicId);

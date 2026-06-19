@@ -209,12 +209,14 @@ function App() {
                 {/* T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 route 접근 허용.
                     통계 내부 탭 가시성(TM집계 탭만)은 자매 티켓 STATS-TM-AGGREGATE-TAB 에서 처리. */}
                 {/* T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2① AC2: route-guard director 부재 ↔ PERM_MATRIX.stats director 존재 = 불일치 정합화(+director). */}
-                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'director', 'part_lead', 'tm']}><Stats /></RoleGuard>} />
+                {/* T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 has_ops_authority 필요(봉직의 통계 배제). nav requiresOpsAuthority 패리티. */}
+                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'director', 'part_lead', 'tm']} requireOpsAuthority><Stats /></RoleGuard>} />
                 <Route path="history" element={<DailyHistory />} />
                 {/* T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰. nav(AdminLayout)와 roles 패리티 SSOT. */}
                 <Route path="assignments" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><Assignments /></RoleGuard>} />
                 {/* AC-6: 계정관리 — admin 전용 → T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 셀프 직원계정 운영). user_profiles RLS도 동반 widening(migration). admin 비제거. */}
-                <Route path="accounts" element={<RoleGuard roles={['admin', 'director']}><Accounts /></RoleGuard>} />
+                {/* T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 has_ops_authority 필요(봉직의 계정관리 배제). nav requiresOpsAuthority 패리티. */}
+                <Route path="accounts" element={<RoleGuard roles={['admin', 'director']} requireOpsAuthority><Accounts /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 서비스관리 접근 (뷰 전용) */}
                 <Route path="services" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><Services /></RoleGuard>} />
                 {/* T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-3) → T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN(7fed414) SUPERSEDED.
@@ -233,7 +235,8 @@ function App() {
                 {/* T-20260605-foot-HANDOVER-BOARD AC-5: 전 직원 작성/조회 — RoleGuard 없음 */}
                 <Route path="handover" element={<Handover />} />
                 {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 — AC-6 미노출 유지 / T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 매출 열람 정합). payments RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. */}
-                <Route path="sales" element={<RoleGuard roles={['admin', 'manager', 'director']}><Sales /></RoleGuard>} />
+                {/* T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 has_ops_authority 필요(봉직의 매출 배제). nav requiresOpsAuthority 패리티. */}
+                <Route path="sales" element={<RoleGuard roles={['admin', 'manager', 'director']} requireOpsAuthority><Sales /></RoleGuard>} />
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
                 {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 메뉴를 [직원·공간](Staff)
                     내부 '원장정보' 탭으로 편입(김주연 총괄). 이 라우트는 북마크/하드링크 404 방지용

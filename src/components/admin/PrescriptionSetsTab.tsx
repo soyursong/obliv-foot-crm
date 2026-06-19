@@ -735,7 +735,8 @@ export default function PrescriptionSetsTab() {
   //   (manager 제거 = 노출 축소). prescription_sets RLS write 旣존 {admin,manager,director} → director 무회귀.
   //   → 공통 헬퍼 canEditClinicMgmt 재사용.
   const { profile } = useAuth();
-  const canEdit = canEditClinicMgmt(profile?.role);
+  // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: profile 전달(has_ops_authority 반영).
+  const canEdit = canEditClinicMgmt(profile);
   const { data: sets = [], isLoading } = usePrescriptionSets();
   const upsert = useUpsertSet();
   const del = useDeleteSet();

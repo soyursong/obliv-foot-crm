@@ -95,7 +95,8 @@ export default function ProgressPlansTab() {
   const { profile } = useAuth();
   // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin(manager 제거·축소).
   //   progress_plans RLS write 旣존 {admin,manager,director} → director 무회귀. canEditClinicMgmt 재사용.
-  const canWrite = canEditClinicMgmt(profile?.role);
+  // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: profile 전달(has_ops_authority 반영).
+  const canWrite = canEditClinicMgmt(profile);
 
   const [plans, setPlans] = useState<ProgressPlan[]>([]);
   const [loading, setLoading] = useState(true);
