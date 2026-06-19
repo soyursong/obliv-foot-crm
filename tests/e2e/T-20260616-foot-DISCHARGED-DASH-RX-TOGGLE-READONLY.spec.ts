@@ -49,18 +49,21 @@ function completedClinicalCellBlock(): string {
 // S1 (AC-1/AC-2/AC-3) — 귀가(discharged) 임상경과 작성 토글 차단 + readonly + disabled UX
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('S1 귀가 임상경과 작성 진입 차단(readonly)', () => {
-  test('AC-1 — 귀가 빈값 임상경과는 editable 진입(setShowClinical(true)) 버튼이 아니라 readonly span', () => {
+  // ⚠ T-20260616-foot-DISCHARGED-DASH-RX-CHART-ACCESS A안 supersede (문지은 대표원장 CONFIRM MSG-20260620-023304):
+  //   "잠금유지하면서 차트는 열리게 해줘. 직접 차트 열어서 수정만 가능하게(귀가완료환자 기준)."
+  //   → 귀가 빈값 임상경과는 readonly 데드가 아니라 1클릭 차트오픈 버튼(onOpenChart 'full')이 됐다.
+  //     단 인플레이스 작성(setShowClinical→MedicalChartPanel embed editable)은 여전히 차단(수정은 풀차트 서랍 안에서만).
+  test('AC-1(A안 supersede) — 귀가 빈값 임상경과는 인라인 작성(setShowClinical) 진입이 아니라 차트오픈 버튼(onOpenChart)', () => {
     const block = completedClinicalCellBlock();
     // discharged 분기가 신설되어 있다(빈값 셀에서 분기).
     expect(block).toContain('discharged ?');
-    // readonly 텍스트 노드(클릭 핸들러 없는 span) 존재.
-    expect(block).toContain('data-testid="doctor-completed-clinical-empty-readonly"');
-    // readonly span 은 <button>/onClick 이 아닌 <span> — 편집 진입 코드 없음.
-    const readonlyIdx = block.indexOf('doctor-completed-clinical-empty-readonly');
-    const spanScope = block.slice(readonlyIdx - 60, readonlyIdx + 200);
-    expect(spanScope).toContain('<span');
-    expect(spanScope).not.toContain('onClick');
-    expect(spanScope).not.toContain('setShowClinical');
+    // A안: 차트오픈 진입 버튼 존재(onOpenChart 'full').
+    expect(block).toContain('data-testid="doctor-completed-clinical-empty-chart-btn"');
+    const btnIdx = block.indexOf('doctor-completed-clinical-empty-chart-btn');
+    const btnScope = block.slice(btnIdx - 220, btnIdx + 160);
+    // 인플레이스 작성 차단 무회귀 — 이 진입점은 setShowClinical 을 호출하지 않는다(차트 서랍만 연다).
+    expect(btnScope).not.toContain('setShowClinical');
+    expect(btnScope).toContain('onOpenChart');
   });
 
   test('AC-1 fail-closed — 인라인 임상경과 편집행(MedicalChartPanel)이 !discharged 게이트로 미렌더', () => {
