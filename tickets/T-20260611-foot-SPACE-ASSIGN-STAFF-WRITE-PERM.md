@@ -17,6 +17,8 @@ artifacts:
 deploy_ready: true
 deploy-ready-by: agent-fdd-dev-foot
 deploy-ready-at: 2026-06-18
+deploy_commit: 158ce760
+commit_sha: 158ce760
 qa_result: "pass — Playwright E2E 7/7 PASS (S1/S2 RPC can_assign_rooms 가드 교체+is_admin_or_manager 제거 / AC-2 헬퍼 운영8role·tm제외 / S4 clinic 스코프 / S3 AC-3·AC-5 DELETE 미부여·blanket 미번짐 / S5 RECUR5 원자 본문 보존 / AC-7 admin·approved_read·floor staff 회귀0). 마이그 20260611220000 적용 후 영속검증 9/9 PASS."
 field_soak_gate: "실 Galaxy Tab — 직원(coordinator/therapist 등 운영 role) 로그인 → 직원·공간 > 공간배정에서 방 배정·재배정·unassign 저장 성공+F5 영속(권한차단 안내 미발생) + tm 계정은 공간배정 화면 미접근 유지 + 관리자 기존 동작 회귀0 + 김주연 총괄(U0ATDB587PV) 현장 confirm (최종 게이트)"
 summary: "[권한] 김주연 총괄 — 직원·공간 > 공간배정(상담/치료/레이저)에서 직원(staff) 계정이 권한 막혀 수정/반영 불가, 관리자만 가능. 운영상 직원도 방 배정·재배정을 할 수 있어야 함 → space assignment WRITE 권한을 staff(coordinator/therapist 등 운영 role)에 부여. ★단 PHI/민감영역 아닌 '공간배정' 한정(blanket write-open 금지) + RLS-MENU-ROLE-PARITY-POLICY(READ-only parity)의 write-manager-only 기조에 대한 scoped 예외 + 활성 P0 SPACE-RESET-RECUR5 write-path와 정합(신규 write 경로가 reset 재발 유발 금지)."
