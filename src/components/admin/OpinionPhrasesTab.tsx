@@ -23,6 +23,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import {
   OPINION_SECTIONS,
@@ -592,11 +593,13 @@ function CsvImportDialog({
 export default function OpinionPhrasesTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
-  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
-  //   ★소견서 상용구(form_templates) RLS write = form_templates_admin_all(is_admin_or_manager, director 부재)
-  //   → FE 에서 director grant 시 RLS 거부. Phase A 는 노출 축소만(manager 제거 → admin-only).
-  //   director 추가는 Phase B(AC-3 RLS, CONSULT GO 후) RLS 와 동시.
-  const canEdit = profile?.role === 'admin';
+  // T-20260620-foot-OPINIONPHRASE-EDIT-DIRECTOR-ONLY (문지은 대표원장): 소견서 상용구 편집(추가/수정/삭제)
+  //   = 어드민의사(대표원장)만. ROLE-MATRIX hasOpsAuthority primitive 재사용(canEditClinicMgmt) — 진료관리(ClinicManagement)
+  //   write 전용 술어. 특정 유저 하드코딩 금지(추후 '어드민원장' 추가 시 has_ops_authority=true 부여로 자동 권한 획득).
+  //   ★lock-out-safe: canEditClinicMgmt 가 admin escape + director escape(MUNJIEUN-CLINICMGMT-LOCKOUT stopgap)를 내장 →
+  //     역배정 전/flag 미적재 상태에서도 대표원장이 편집에서 잠기지 않음. manager(role-implied ops)는 의료 surface 라 제외(read-only).
+  //   ★ supersedes WRITE-RESTRICT-MEDVIEW Phase A 의 admin-only 게이트.
+  const canEdit = canEditClinicMgmt(profile);
 
   const { data: tpl, isLoading } = useOpinionTemplateRow(clinicId);
   const saveMut = useSaveOpinionSections(clinicId);

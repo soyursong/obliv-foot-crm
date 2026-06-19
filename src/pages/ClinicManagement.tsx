@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: 상용구(PhrasesTab)·수가세트(FeeSetTemplatesTab) 2개 탭은
 //   '서비스관리 > 상용구관리' 서브탭(Services.tsx)으로 이전됨(렌더 위치 이동만). 여기서는 import/탭 제거 + 딥링크 redirect.
 import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
@@ -42,9 +43,12 @@ export default function ClinicManagement() {
   const { profile } = useAuth();
   // 페이지 접근은 RoleGuard(admin/manager/director)가 1차 보장. 여기서는 금기증(admin 한정)만 추가 게이팅.
   const isAdmin = profile?.role === 'admin';
-  // T-20260616-foot-OPINION-PHRASE-MGMT-TAB (AC-1): 소견서 상용구 관리 — admin/manager only
-  //   (form_templates_admin_all RLS = is_admin_or_manager 와 일치, write 가능 role 만 탭 노출).
-  const canManageOpinionPhrases = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260616-foot-OPINION-PHRASE-MGMT-TAB (AC-1): 소견서 상용구 관리 탭 노출.
+  // T-20260620-foot-OPINIONPHRASE-EDIT-DIRECTOR-ONLY: 편집은 어드민의사(대표원장)만(canEditClinicMgmt, 탭 내부 게이트).
+  //   탭 가시성(read)은 편집권자 + manager(기존 read 가시성 유지)로 확장 — ★대표원장(director/has_ops_authority)이
+  //   탭 자체를 못 보던 lock-out 차단(역배정 후 admin→director swap 대비, MUNJIEUN-CLINICMGMT-LOCKOUT 재발 방지).
+  //   manager 는 가시성 유지하되 편집 컨트롤은 canEdit(canEditClinicMgmt)에서 read-only 처리(의료 surface).
+  const canManageOpinionPhrases = canEditClinicMgmt(profile) || profile?.role === 'manager';
 
   // 진료차트 우측 패널 '관리 화면으로' 진입 시 ?tab= 쿼리로 해당 탭 pre-select.
   //   (T-20260606-foot-RX-PANEL-UX-5FIX AC-5 동선 — 메뉴 분리 후 진입 경로를 clinic-management 로 이전)
