@@ -47,18 +47,15 @@ import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 
-// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins treatment 필드 JOIN 타입.
+// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins 재진판정용 타입.
 //   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용).
-//   T-20260619-REVERIFY-4FIX AC3: 독립 치료내역 섹션은 제거됨 — 이 로드는 재진 판정(hasPriorVisit)에서만 사용.
+//   T-20260619-RESVPOPUP-DETAIL-REVERIFY-4FIX AC3(orphan 데드코드 정리): 독립 치료내역 섹션 제거 후
+//   유일 소비처는 getVisitTypeDisplay 의 hasPriorVisit(L684) 뿐 → checked_in_at 1개만 참조한다.
+//   completed_at·visit_type·treatment_category·treatment_contents·treatment_kind·therapist_id 는
+//   섹션 제거로 어디서도 쓰이지 않는 orphan → 타입·select 에서 제거(over-fetch 차단, read-only·스키마 무변경).
 type TreatmentRow = {
   id: string;
   checked_in_at: string;
-  completed_at: string | null;
-  visit_type: Reservation['visit_type'];
-  treatment_category: string | null;
-  treatment_contents: string[] | null;
-  treatment_kind: string | null;
-  therapist_id: string | null;
 };
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
@@ -326,9 +323,11 @@ export function ReservationDetailPopup({
     //   chart2 패키지탭 로더(CustomerChartPage L2209: .neq('status','cancelled'))와 동일 관례로 정렬 →
     //   취소 내원은 치료내역 목록에서 제외(읽기 필터만, DB/스키마 무변경 → data-architect CONSULT 면제).
     //   ⚠ check_in 삭제↔package_sessions 차감 원복(깊은 cascade)은 삭제 핸들러 surface(본 read-only 팝업 영역 밖).
+    // T-20260619-RESVPOPUP-DETAIL-REVERIFY-4FIX AC3: 독립 치료내역 섹션 제거 → 재진판정(hasPriorVisit)만 잔존.
+    //   select 도 그 유일 소비 컬럼(id·checked_in_at)으로 축소 = orphan 컬럼 over-fetch 제거.
     supabase
       .from('check_ins')
-      .select('id, checked_in_at, completed_at, visit_type, treatment_category, treatment_contents, treatment_kind, therapist_id')
+      .select('id, checked_in_at')
       .eq('customer_id', customerId)
       .neq('status', 'cancelled')
       .order('checked_in_at', { ascending: false })
@@ -1454,11 +1453,12 @@ export function ReservationDetailPopup({
               </div>
 
               {/* AC-4 #6: 예약이력 (전체 예약 히스토리 + 변경이력). 히스토리 항목 클릭 → 상세 전환 */}
-              {/* T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC4: 예약이력 박스 칸 밖 이탈(회귀) 수정.
-                  zone2(overflow-y-auto) 안에서 flex-1 + 내부 overflow-y-auto 조합은 높이 미확정 → 리스트가
-                  열 밖으로 폭주(이탈). flex-shrink-0 + 리스트 max-h 로 박스 높이를 한정해 칸 내부에 가둠
-                  (다른 zone2 박스들과 동일 패턴, zone2 자체 스크롤이 총량 overflow 흡수). */}
-              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0 flex flex-col" data-testid="popup-reservation-history">
+              {/* T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC4: 예약이력(카운트 박스) 칸 밖 이탈(8FIX AC6 회귀) 근본수정.
+                  RC: zone2 는 flex-col 칼럼이라 자식 flex item 의 기본 min-width:auto 가 콘텐츠 폭을 강제 →
+                      좁은 갤탭 뷰포트에서 박스가 칼럼(기입 칸) 우측 경계를 넘어 이탈(데스크톱 E2E 뷰포트에선 미재현).
+                  FIX: 박스에 min-w-0 + overflow-hidden 추가 → 칼럼 폭으로 강제 수축, 내부 truncate 가 실제 클립.
+                       높이는 리스트 max-h-56 + flex-shrink-0 로 기존대로 한정(세로 폭주도 zone2 스크롤이 흡수). */}
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0 flex flex-col min-w-0 overflow-hidden" data-testid="popup-reservation-history">
                 <SectionHeader accent="teal">
                   예약이력{visibleResvs.length > 0 && ` (${visibleResvs.length}건)`}
                 </SectionHeader>
