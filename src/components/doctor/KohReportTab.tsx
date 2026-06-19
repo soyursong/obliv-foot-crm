@@ -219,6 +219,7 @@ export interface KohRow {
   nail_sites: NailSite[];        // PHASE15(A): 발톱부위(koh_nail_sites jsonb 파생)
   treatment_sites: NailSite[];   // NAILSYNC(AC1): 치료부위(treatment_memo.foot_site → L→Lt/R→Rt 정규화 미러)
   koh_requested: boolean;        // LIFECYCLE(AC-1/AC-2): KOH 신청 플래그. true=active(신청)/false=inactive(미신청·취소)
+  therapist_id: string | null;   // PUBLISH-BTN-REVERIFY-GATE(AC-4): 배정 치료사(check_ins.therapist_id, read-only). 발급 enable-gate '치료사 배정됨' 판정용 — 신규 스키마 0(기존 컬럼).
 }
 
 // ---------------------------------------------------------------------------
@@ -260,8 +261,9 @@ function useKohReport(clinicId: string | null, ym: string) {
       // NAILSYNC(AC1/AC2): check_ins.treatment_memo 동봉 → 치료부위(foot_site) 미러 소스.
       //   treatment_memo 는 既존 jsonb 컬럼(신규 컬럼 0). 균검사지에서 치료부위 선택분을 프리필.
       // LIFECYCLE(AC-1/AC-2): koh_requested(신청 플래그) 추가. koh_nail_sites 와 동일 column-missing 폴백 대상.
-      const SELECT_WITH = 'id, service_name, created_at, koh_nail_sites, koh_requested, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
-      const SELECT_WITHOUT = 'id, service_name, created_at, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
+      // PUBLISH-BTN-REVERIFY-GATE(AC-4): check_ins.therapist_id(기존 컬럼, read-only) 동봉 — 발급 enable-gate '치료사 배정됨' 판정. 신규 스키마 0.
+      const SELECT_WITH = 'id, service_name, created_at, koh_nail_sites, koh_requested, check_ins!inner(clinic_id, customer_id, customer_name, therapist_id, treatment_memo, customers(name, birth_date, chart_number))';
+      const SELECT_WITHOUT = 'id, service_name, created_at, check_ins!inner(clinic_id, customer_id, customer_name, therapist_id, treatment_memo, customers(name, birth_date, chart_number))';
       const runQuery = (sel: string) =>
         supabase
           .from('check_in_services')
@@ -285,7 +287,7 @@ function useKohReport(clinicId: string | null, ym: string) {
         // PostgREST 임베드는 환경에 따라 object/array 양쪽 → 방어적 flatten.
         const ciRaw = row['check_ins'];
         const ci = (Array.isArray(ciRaw) ? ciRaw[0] : ciRaw) as
-          | { customer_id?: string | null; customer_name?: string | null; treatment_memo?: unknown; customers?: unknown }
+          | { customer_id?: string | null; customer_name?: string | null; therapist_id?: string | null; treatment_memo?: unknown; customers?: unknown }
           | undefined;
         const custRaw = ci?.customers;
         const cust = (Array.isArray(custRaw) ? custRaw[0] : custRaw) as
@@ -303,6 +305,7 @@ function useKohReport(clinicId: string | null, ym: string) {
           nail_sites: parseNailSites(row['koh_nail_sites']),
           treatment_sites: treatmentNailSites(ci?.treatment_memo),
           koh_requested: row['koh_requested'] === true, // 컬럼 부재 폴백 시 undefined → false(미신청)
+          therapist_id: ci?.therapist_id ?? null, // AC-4: 배정 치료사(read-only). null=미배정 → 발급 비활성.
         } as KohRow;
       });
     },
@@ -617,10 +620,13 @@ export default function KohReportTab() {
 
   /** 발행 여부 — published 인덱스에 koh_service_id(=row.id) 존재. */
   const isPublished = (id: string) => publishedMap?.has(id) ?? false;
-  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) + 환자 생년월일 있고(4FIX 이슈3, hard-block) 아직 미발행.
+  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) + 환자 생년월일 있고(4FIX 이슈3, hard-block)
+   *  + 담당 치료사 배정됨(PUBLISH-BTN-REVERIFY-GATE AC-4) + 아직 미발행.
    *  4FIX 이슈3(의료문서 정확성): AC-0 선조사 결과 윤민희 등 prod birth_date NULL 다수 → 생년 누락 상태
-   *  발행 차단. 2FIX 이슈1(발행불가도 탭 가능 + 사유 toast) 위에 hard-block 강화(policy_superseded). */
-  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!r.birth_date && !isPublished(r.id);
+   *  발행 차단. 2FIX 이슈1(발행불가도 탭 가능 + 사유 toast) 위에 hard-block 강화(policy_superseded).
+   *  AC-4(reporter 명시): "이미 치료사가 선택해서 정보 완비된 건만 발급 활성" → therapist_id(check_ins, read-only) AND.
+   *  미배정 사유는 button title + handlePublish toast 로 발견성 보존(KOHBTN AC-3 회귀 방지). */
+  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!r.birth_date && !!r.therapist_id && !isPublished(r.id);
 
   // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
   //   SINGLESEL-2FIX(이슈1): 발행 불가 시 silent return 금지 — 태블릿엔 hover 툴팁이 없어 버튼이
@@ -640,6 +646,11 @@ export default function KohReportTab() {
     //   2FIX 사유 toast 패턴 재사용 — 다음 행동(고객정보 생년월일 입력) 안내.
     if (!r.birth_date) {
       toast.error(`환자 생년월일 정보가 없어 ${pubNoun}할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.`);
+      return;
+    }
+    // PUBLISH-BTN-REVERIFY-GATE(AC-4): 담당 치료사 미배정 시 발급 차단 + 사유 toast(태블릿 hover 부재 대응, KOHBTN AC-3 발견성 보존).
+    if (!r.therapist_id) {
+      toast.error(`담당 치료사가 배정되지 않아 ${pubNoun}할 수 없습니다. 접수/체크인에서 담당 치료사를 먼저 지정해주세요.`);
       return;
     }
     if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
@@ -1047,9 +1058,13 @@ export default function KohReportTab() {
                         title={
                           rowPublishable
                             ? `검사결과 보고서 ${pubNoun}(비가역)`
-                            : !r.birth_date
-                              ? `환자 생년월일 미입력 — ${pubNoun} 불가 (눌러서 안내 보기)`
-                              : `채취 조갑부위를 먼저 선택해야 ${pubNoun}할 수 있습니다 (눌러서 안내 보기)`
+                            : r.nail_sites.length === 0
+                              ? `채취 조갑부위를 먼저 선택해야 ${pubNoun}할 수 있습니다 (눌러서 안내 보기)`
+                              : !r.birth_date
+                                ? `환자 생년월일 미입력 — ${pubNoun} 불가 (눌러서 안내 보기)`
+                                : !r.therapist_id
+                                  ? `담당 치료사 미배정 — ${pubNoun} 불가 (눌러서 안내 보기)`
+                                  : `${pubNoun} 불가 (눌러서 안내 보기)`
                         }
                         data-testid="koh-publish-btn"
                         data-publishable={rowPublishable ? 'true' : 'false'}
@@ -1068,7 +1083,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급요청</strong>은 채취 조갑부위 선택 + 환자 생년월일이 모두 입력돼야 가능하며(생년월일 미입력 시 발급요청 불가 — 고객 정보에서 먼저 입력), 발급요청 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급요청은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급요청할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급요청</strong>은 채취 조갑부위 선택 + 환자 생년월일 + 담당 치료사 배정이 모두 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력 / 치료사 미배정 시 접수·체크인에서 먼저 지정), 발급요청 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급요청은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급요청할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
