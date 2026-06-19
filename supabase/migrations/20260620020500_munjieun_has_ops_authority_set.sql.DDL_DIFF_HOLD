@@ -3,7 +3,15 @@
 --    .DDL_DIFF_HOLD suffix → db push 대상 아님. supervisor DDL-diff 게이트(ADDITIVE+flag set, 대표게이트 면제 autonomy §3.1) 통과 후 수동 실행.
 --
 -- ════════════════════════════════════════════════════════════════════════
--- 왜 옵션 A 인가 (dev-foot AC1 번들해시 검증 결론, 2026-06-20 02:00 KST):
+-- ⚠️ STALE-CORRECTION (2026-06-20 02:10 KST): 아래 "옵션 A만이 복구경로/재배포 불필요" 결론은
+--    02:00 Vercel STALL 가정下 산출됨. 그 후 Vercel un-stall → 라이브 번들 index-CjZ9qst9.js
+--    (last-modified 17:07:56GMT)의 canEditClinicMgmt 가 director escape(옵션 B, b0de7b3a) 포함
+--    = `has_ops_authority‖admin‖director`. ⇒ 문지은(director) lock-out 은 옵션 B 라이브로 *이미 복구*.
+--    본 DML(옵션 A)은 더 이상 emergency 복구가 아니라 **converge step**(additive 마이그 landing + flag set
+--    후 director escape 1줄 제거 → EDIT=has_ops_authority 단독 모델)으로만 의미. supervisor DDL-diff 게이트
+--    통과 후 적용. 아래 본문은 history 보존용(stall 시점 추론).
+-- ════════════════════════════════════════════════════════════════════════
+-- 왜 옵션 A 인가 (dev-foot AC1 번들해시 검증 결론, 2026-06-20 02:00 KST · STALL 가정下, 위 보정 참조):
 --   prod 라이브 번들 index-BvHlKg4G.js 의 canEditClinicMgmt 가 has_ops_authority 를 *읽는다*:
 --     canEditClinicMgmt(t) = t.has_ops_authority===true ? true : t.role==="admin"
 --   ⇒ ROLE-MATRIX has_ops_authority-aware FE 게이트가 이미 prod live (last-modified 23:01 KST 6/19).
