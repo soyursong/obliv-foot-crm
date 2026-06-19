@@ -75,17 +75,54 @@ export function canViewRrn(role: UserRole): boolean {
   return RRN_VIEW_ROLES.includes(role);
 }
 
-// T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW (문지은 대표원장 C0ATE5P6JTH, ts 1781859275):
-//   진료관리/진료대시보드(의사 영역)의 수정·편집·생성·삭제(write)는 director(원장)+admin 만.
-//   조회(read)는 전직원 유지(STAFF-OPEN 무회귀) — 이 헬퍼는 write 게이트 전용.
-//   ★MedicalChartPanel.tsx:293 DIRECTOR_ROLES=['director','admin'] 패턴과 동일 집합 SSOT(재사용).
-//   Phase A(AC-2): 진료관리 탭 중 RLS write 가 이미 {director,manager,admin} 인 탭(상병명·묶음상병·처방세트·
-//     묶음처방·경과분석)에 적용 → manager 제거(노출 축소). director 는 해당 RLS 에 旣존이라 무회귀.
-//   Phase B(AC-3, data-architect CONSULT GO 후): RLS write 가 {admin,manager} 인 surface(빠른처방·슈퍼상용구·
-//     진료차트 상용구·소견서 상용구·서류 템플릿·진료세트·급여여부)는 RLS 에 director 부재 → FE 에서 director grant 시
-//     저장이 RLS 거부됨. 따라서 그 surface 는 RLS 갱신과 함께 Phase B 에서 이 헬퍼로 전환(현재 Phase A 는 admin-only 축소).
-export const CLINIC_MGMT_WRITE_ROLES: UserRole[] = ['director', 'admin'];
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260619-foot-ROLE-MATRIX-3TIER-RBAC — 운영최고권한(has_ops_authority) 2축 분리
+//   DA branch B(n17u pre-GO): 임상 role(director=대표원장·봉직의) ⟂ 운영권한(계정·통계·매출 + 진료관리 수정).
+//   single-role + boolean flag 로 표현(enum 무변경, full RBAC 테이블 REJECT).
+// ─────────────────────────────────────────────────────────────────────────────
 
-export function canEditClinicMgmt(role: UserRole | null | undefined): boolean {
-  return !!role && CLINIC_MGMT_WRITE_ROLES.includes(role);
+/** 권한 판정용 최소 프로필 구조 (UserProfile 또는 그 부분집합). */
+export interface OpsAuthSubject {
+  role?: UserRole | null;
+  has_ops_authority?: boolean | null;
+}
+
+/**
+ * 운영최고권한 보유 여부 (계정관리·통계·매출 + 진료관리 수정 게이트의 단일 판정).
+ *   - has_ops_authority === true            → 보유 (대표원장·총괄 등 명시 flag)
+ *   - role === 'admin'                       → 보유 (시스템 슈퍼유저 escape — ★lock-out 가드 AC-4★)
+ *   - role === 'manager'                     → 보유 (지점장·총괄실장 = 운영 role-implied)
+ *   - role === 'director' (flag 無)          → ✗ (봉직의 = 진료만, 운영최고권한 無) — flag 의 핵심 disambiguation
+ *   - 그 외                                   → ✗
+ *
+ * ★lock-out-safe: DB 컬럼/역배정 적용 전(현재 전원 admin)엔 admin escape 로 전원 통과 = inert.
+ *   역배정(admin→non-admin) apply 시점에 게이트가 비로소 실효된다.
+ */
+export function hasOpsAuthority(subject: OpsAuthSubject | null | undefined): boolean {
+  if (!subject) return false;
+  if (subject.has_ops_authority === true) return true;
+  return subject.role === 'admin' || subject.role === 'manager';
+}
+
+/**
+ * 진료관리(ClinicManagement) 수정(write) 권한.
+ *   확정 모델: VIEW=전직원(STAFF-OPEN 유지) / EDIT=대표원장(has_ops_authority=true) 단독.
+ *   predicate = admin || has_ops_authority — ★admin escape 로 lock-out 가드(AC-4) 충족★.
+ *     · 현재(전원 admin) → 전원 edit 유지 = 무회귀·무 lock-out.
+ *     · 역배정 후 → flag 보유자(대표원장) + system admin 만 edit. 봉직의(director,flag無)·일반직원 → read-only.
+ *   ★supersedes T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW 의 ['director','admin'] 집합.
+ *     director(봉직의)를 자동 포함하던 모델 → has_ops_authority 로 대표원장만 분리(s3hn 확정).
+ *     prod director=0 이라 이 전환은 무회귀(현 영향 0).
+ *   ※ 진료관리 EDIT 모델이 admin/has_ops_authority 단독이므로 manager(role-implied ops)는 진료관리 수정 대상 아님 →
+ *     hasOpsAuthority 를 직접 쓰지 않고 전용 술어로 분리(manager 진료관리 수정 부여 방지).
+ */
+export const CLINIC_MGMT_WRITE_ROLES: UserRole[] = ['director', 'admin']; // legacy 참조 호환(직접 사용 비권장)
+
+export function canEditClinicMgmt(subject: OpsAuthSubject | UserRole | null | undefined): boolean {
+  // 하위호환: 과거 호출부가 role 문자열을 넘길 수 있음(점진 전환). 문자열이면 role 로 래핑.
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  if (!s) return false;
+  if (s.has_ops_authority === true) return true;
+  return s.role === 'admin';
 }

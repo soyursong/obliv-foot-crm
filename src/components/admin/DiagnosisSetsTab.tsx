@@ -397,7 +397,8 @@ function SortableDxSetRow({
 export default function DiagnosisSetsTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
-  const canEdit = canEditClinicMgmt(profile?.role);
+  // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: profile 전달(has_ops_authority 반영).
+  const canEdit = canEditClinicMgmt(profile);
 
   const qc = useQueryClient();
   const { data: master = [] } = useDxMaster(clinicId);

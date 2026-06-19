@@ -1,0 +1,42 @@
+-- T-20260619-foot-ROLE-MATRIX-3TIER-RBAC — has_ops_authority(운영최고권한) ADDITIVE flag
+-- ⚠️ DO NOT APPLY: 다음 2게이트 통과 전까지 미적용. .DDL_DIFF_HOLD suffix → db push 대상 아님(레포 convention).
+--   (1) supervisor DDL-diff 게이트(대표게이트는 면제 — ADDITIVE + DA n17u pre-GO, autonomy §3.1)
+--   (2) lock-out 가드: 본 컬럼 적용 + 역배정 맵(reporter name→role confirm) apply 전엔 FE predicate가 binding되어도
+--       전원 admin 상태라 admin escape로 무력(=inert). 적용·역배정 후 게이트가 실효된다.
+--
+-- 배경 (DA branch B, n17u pre-GO):
+--   reporter(문지은 대표원장) nafn 3문 답변(MSG-20260619-210119-s3hn):
+--     ① 봉직의 = 현재 無·곧 채용 예정 → 임상(director/doctor) ⟂ 운영(has_ops_authority) 2축 분리 필요
+--     ② 진료관리 = 직원 조회 그대로(STAFF-OPEN 무회귀) / 수정만 대표원장 단독
+--     ③ '어드민 별도' = 운영최고권한(계정·통계·매출 = cross_crm §12-3 EXCL-3)을 진료역할과 분리
+--   → enum 무변경 / full 직무×권한 RBAC 테이블 도입 안 함(DA REJECT) / single-role + boolean flag로 2축 표현.
+--
+-- 컬럼 정의:
+--   user_profiles.has_ops_authority boolean NOT NULL DEFAULT false
+--   = "이 사용자가 운영최고권한(계정관리·통계·매출 + 진료관리 수정)을 갖는가".
+--   임상 role(director=대표원장/봉직의)과 직교 — 대표원장=director+true, 봉직의=director+false(진료만).
+--   clinic-scoped 운영권한 의미(user_profiles.clinic_id 와 함께 해석). cross-CRM 무충돌(foot-local additive).
+--
+-- 역배정(별도 DML, reporter name→role 맵 confirm 후):
+--   문지은 대표원장: admin→director + has_ops_authority=true  (MUNJIEUN-ROLE-DIRECTOR B2 정합)
+--   총괄 김주연:     admin→manager  + has_ops_authority=true  (운영 유지, 진료의 아님)
+--   미래 봉직의:     (director)     + has_ops_authority=false (진료만)
+--   system/test(devs·김승현 대표·QA): 현행 admin 유지(또는 제외) — admin은 escape로 전 게이트 통과(시스템 슈퍼유저).
+--   ⚠️ 본 마이그는 컬럼 추가만. 실인물 role/flag 변경 DML은 confirm 후 별도 파일.
+
+BEGIN;
+
+ALTER TABLE public.user_profiles
+  ADD COLUMN IF NOT EXISTS has_ops_authority boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.user_profiles.has_ops_authority IS
+  'T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한(계정·통계·매출 + 진료관리 수정) ADDITIVE flag. 임상 role과 직교. 대표원장=true / 봉직의=false. clinic-scoped.';
+
+COMMIT;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- ROLLBACK (적용 후 되돌릴 때만 실행)
+-- ════════════════════════════════════════════════════════════════════════
+-- BEGIN;
+--   ALTER TABLE public.user_profiles DROP COLUMN IF EXISTS has_ops_authority;
+-- COMMIT;
