@@ -306,9 +306,12 @@ function SortableQuickRxRow({ btn, canEdit, delPending, onEdit, onDelete }: Sort
 // Component
 // ---------------------------------------------------------------------------
 export default function QuickRxButtonsTab() {
-  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용.
+  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
+  //   ★quick_rx_buttons RLS write = {admin,manager}(director 부재) → FE 에서 director grant 시 RLS 거부.
+  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS, CONSULT GO 후) RLS 와 동시.
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  const canEdit = profile?.role === 'admin';
   const qc = useQueryClient();
   const { data: buttons = [], isLoading } = useQuickRxButtons();
   const { data: sets = [] } = useActivePrescriptionSets();

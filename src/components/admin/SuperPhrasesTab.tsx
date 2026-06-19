@@ -316,7 +316,10 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
 // ---------------------------------------------------------------------------
 export default function SuperPhrasesTab() {
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
+  //   ★super_phrases(phrase_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
+  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
+  const canEdit = profile?.role === 'admin';
   const clinicId = (profile as { clinic_id?: string } | null)?.clinic_id ?? null;
   const { data: phrases = [], isLoading, isError } = useSuperPhrases();
   const upsert = useUpsertSuper();

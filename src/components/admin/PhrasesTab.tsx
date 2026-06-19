@@ -215,7 +215,15 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   // T-20260603-foot-RX-PERMMENU-PARITY: 직원(consultant/coordinator/therapist)은 탭 열람 가능하나 읽기 전용.
   // CRUD는 admin/manager 전용 (Services·Staff write-guard 패턴).
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 이 컴포넌트는 두 surface 가 공유 재사용.
+  //   ① 진료관리(ClinicManagement, lockedType='medical_chart') = 의사 영역 → write = director+admin 로 제한(게이트 대상).
+  //   ② 상용구관리(Services, lockedType='pen_chart'|'customer_chart') = 직원 영역(§11.1 비대상) → 旣존 {admin,manager} 무변경.
+  //   ★진료차트 상용구(phrase_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
+  //   따라서 medical_chart surface 도 Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
+  const isMedchartSurface = lockedType === 'medical_chart';
+  const canEdit = isMedchartSurface
+    ? profile?.role === 'admin'
+    : (profile?.role === 'admin' || profile?.role === 'manager');
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
   const del = useDeletePhrase();

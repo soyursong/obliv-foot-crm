@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +52,8 @@ import {
   type FolderDrug,
 } from '@/lib/drugFolders';
 
-const FOLDER_MANAGE_ROLES = ['director', 'manager', 'admin'] as const;
+// T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 처방세트(폴더) 관리 write = director+admin.
+//   manager 제거(축소). drug_folders RLS write 旣존 {director,manager,admin} → director 무회귀. canEditClinicMgmt 재사용.
 
 interface RxCodeResult {
   id: string;
@@ -131,11 +133,12 @@ function DrugRowMoreMenu({ onDelete, disabled }: { onDelete: () => void; disable
 
 export default function DrugFoldersTab() {
   const { profile } = useAuth();
-  const canEdit =
-    !!profile?.role && (FOLDER_MANAGE_ROLES as readonly string[]).includes(profile.role);
-  // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 편집 권한 = admin/manager.
-  //   구 InsuranceStatusTab UI 게이트(canWrite) 그대로 계승(AC-2/AC-3 무회귀). RLS(is_admin_or_manager)와 이중 가드.
-  const canManageInsurance = profile?.role === 'admin' || profile?.role === 'manager';
+  const canEdit = canEditClinicMgmt(profile?.role);
+  // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 편집 권한.
+  //   T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 통일 방향.
+  //   ★급여여부 RLS(is_admin_or_manager)에 director 부재 → FE 에서 director grant 시 저장이 RLS 거부됨.
+  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS, CONSULT GO 후) RLS 와 동시.
+  const canManageInsurance = profile?.role === 'admin';
   const qc = useQueryClient();
 
   const { data: folders = [], isLoading: foldersLoading } = useDrugFolders();

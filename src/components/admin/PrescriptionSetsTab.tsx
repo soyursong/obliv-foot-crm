@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -729,12 +730,12 @@ function TagEditorFields({
 // ---------------------------------------------------------------------------
 export default function PrescriptionSetsTab() {
   // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 권한 보유 role만.
-  // T-20260603-foot-RX-CHART-FOLLOWUP2 #8-2(문지은 대표원장): 처방세트 관리(등록/수정/삭제)
-  //   권한 = 의사(director)/총괄(manager)/관리자(admin)급. director 누락 → 대표원장 본인이
-  //   처방세트를 관리하지 못하던 갭 해소. QuickRxBar 의 DOCTOR_ROLES 와 동일 집합.
-  const RX_SET_MANAGE_ROLES = ['director', 'manager', 'admin'] as const;
+  // T-20260603-foot-RX-CHART-FOLLOWUP2 #8-2(문지은 대표원장): 처방세트 관리(등록/수정/삭제) 권한.
+  //   T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 통일
+  //   (manager 제거 = 노출 축소). prescription_sets RLS write 旣존 {admin,manager,director} → director 무회귀.
+  //   → 공통 헬퍼 canEditClinicMgmt 재사용.
   const { profile } = useAuth();
-  const canEdit = !!profile?.role && (RX_SET_MANAGE_ROLES as readonly string[]).includes(profile.role);
+  const canEdit = canEditClinicMgmt(profile?.role);
   const { data: sets = [], isLoading } = usePrescriptionSets();
   const upsert = useUpsertSet();
   const del = useDeleteSet();
