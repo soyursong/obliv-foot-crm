@@ -108,6 +108,9 @@ import { maybeAutoAssign } from '@/lib/autoAssign';
 // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 완료 슬롯 이동 하드차단.
 import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
+// T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 미수 배지 (소스=footBilling outstanding SSOT 재사용)
+import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
+import { OutstandingDueBadge } from '@/components/PkgOutstandingBadge';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
 import { useOrientation } from '@/hooks/useOrientation';
@@ -131,6 +134,10 @@ const PkgHolderCtx = createContext<Set<string>>(new Set());
 
 /** ALT(올트) 활성 고객 customer_id 집합 (T-20260522-foot-ALT-BADGE) */
 const AltHolderCtx = createContext<Set<string>>(new Set());
+
+/** 고객 customer_id → 미수금 Map (T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN)
+ *  소스 = loadCustomerOutstanding(SSOT). DraggableCard·통합시간표 카드가 useContext로 읽어 빨강 '미수' 배지 표시. */
+const OutstandingMapCtx = createContext<Map<string, CustomerOutstanding>>(new Map());
 
 /** T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 남은 check_in_id 집합 → amber 깜빡임 */
 const TimerAlertCtx = createContext<Set<string>>(new Set());
@@ -406,6 +413,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260522-foot-ALT-BADGE: ALT 활성 여부
   const altHolderSet = useContext(AltHolderCtx);
   const isAlt = !!(checkIn.customer_id && altHolderSet.has(checkIn.customer_id));
+  // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지
+  const outstandingMap = useContext(OutstandingMapCtx);
+  const outstandingData = checkIn.customer_id ? outstandingMap.get(checkIn.customer_id) : undefined;
   // T-20260522-foot-LASER-TIMER AC-3 / T-20260523 보강: amber(warn) + red(expire)
   const timerAlertSet = useContext(TimerAlertCtx);
   const timerExpiredSet = useContext(TimerExpiredCtx);
@@ -586,6 +596,8 @@ const DraggableCard = memo(function DraggableCard({
           {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           )}
+          {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
+          <OutstandingDueBadge data={outstandingData} />
           {hasPkg && (
             <span
               data-testid="pkg-holder-badge"
@@ -746,6 +758,8 @@ const DraggableCard = memo(function DraggableCard({
         {checkIn.visit_type === 'new' && (
           <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
+        {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
+        <OutstandingDueBadge data={outstandingData} />
         {hasPkg && (
           <span
             data-testid="pkg-holder-badge"
@@ -1427,6 +1441,9 @@ function TimelineCheckInCard({
   // T-20260514-foot-CHART-NO-VISIBLE: AC-1 타임라인 카드 차트번호 상시 표시
   const timelineChartMap = useContext(ChartNumberMapCtx);
   const timelineChartNum = checkIn.customer_id ? timelineChartMap.get(checkIn.customer_id) : undefined;
+  // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지
+  const timelineOutstandingMap = useContext(OutstandingMapCtx);
+  const timelineOutstanding = checkIn.customer_id ? timelineOutstandingMap.get(checkIn.customer_id) : undefined;
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
@@ -1483,6 +1500,8 @@ function TimelineCheckInCard({
       {timelineChartNum && (
         <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
       )}
+      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지 */}
+      <OutstandingDueBadge data={timelineOutstanding} />
       {/* T-20260530-foot-WALKIN-TIMETABLE: 워크인 배지 (예약 없는 당일 접수) */}
       {isWalkIn && (
         <span
@@ -1638,6 +1657,9 @@ function DraggableBox1Card({
   const tail = (reservation.customer_phone ?? '').replace(/\D/g, '').slice(-4) || '????';
   // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 미내원 예약 → 명단 유지 + 배지
   const isNoShow = reservation.status === 'noshow';
+  // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지
+  const box1OutstandingMap = useContext(OutstandingMapCtx);
+  const box1Outstanding = reservation.customer_id ? box1OutstandingMap.get(reservation.customer_id) : undefined;
   return (
     <div
       ref={setNodeRef}
@@ -1672,6 +1694,8 @@ function DraggableBox1Card({
       <span className="shrink-0 bg-gray-200 text-gray-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation)}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
+      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지 */}
+      <OutstandingDueBadge data={box1Outstanding} />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260519-foot-FIRSTVISIT-CHECKIN AC-1: 접수 버튼 — DnD와 분리 위해 onPointerDown stopPropagation */}
@@ -1725,6 +1749,9 @@ function DraggableBox2ResvCard({
   const resvPhoneTail = phoneTailSuffix(reservation.customer_phone);
   // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 재진 미내원 예약 → 명단 유지 + 배지
   const isNoShow = reservation.status === 'noshow';
+  // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지
+  const box2OutstandingMap = useContext(OutstandingMapCtx);
+  const box2Outstanding = reservation.customer_id ? box2OutstandingMap.get(reservation.customer_id) : undefined;
   return (
     <div
       ref={setNodeRef}
@@ -1761,6 +1788,8 @@ function DraggableBox2ResvCard({
       data-noshow={isNoShow ? 'true' : undefined}
     >
       <span className="truncate text-gray-800">{cardDisplayName(reservation)}</span>
+      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지 */}
+      <OutstandingDueBadge data={box2Outstanding} />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
@@ -3069,6 +3098,8 @@ export default function Dashboard() {
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
   // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합
   const [altHolderSet, setAltHolderSet] = useState<Set<string>>(new Set());
+  // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 고객 customer_id → 미수금 Map (소스=footBilling SSOT)
+  const [outstandingMap, setOutstandingMap] = useState<Map<string, CustomerOutstanding>>(new Map());
   // T-20260522-foot-LASER-TIMER AC-3/5: 활성 타이머 맵 checkInId → endsAt
   const [activeTimersMap, setActiveTimersMap] = useState<Map<string, Date>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
@@ -4107,6 +4138,24 @@ export default function Dashboard() {
   useEffect(() => {
     fetchMyAssignedRooms();
   }, [fetchMyAssignedRooms]);
+
+  // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 화면에 표시되는 고객(칸반 체크인 + 통합시간표
+  //   예약/셀프접수)의 customer_id 를 모아 미수금 Map 일괄 조회(카드별 N+1 방지).
+  //   산출은 footBilling.loadCustomerOutstanding(SSOT) 재사용 — 신규 산출 로직/쿼리 없음.
+  //   rows/예약/체크인 변경 시 재조회 → 결제완료로 outstanding 0 전환 시 배지 자동 소거.
+  useEffect(() => {
+    if (!clinic) { setOutstandingMap(new Map()); return; }
+    const ids = new Set<string>();
+    for (const r of rows) if (r.customer_id) ids.add(r.customer_id);
+    for (const ci of selfCheckIns) if (ci.customer_id) ids.add(ci.customer_id);
+    for (const rv of timelineReservations) if (rv.customer_id) ids.add(rv.customer_id);
+    if (ids.size === 0) { setOutstandingMap(new Map()); return; }
+    let cancelled = false;
+    loadCustomerOutstanding([...ids], clinic.id)
+      .then((m) => { if (!cancelled) setOutstandingMap(m); })
+      .catch(() => { if (!cancelled) setOutstandingMap(new Map()); });
+    return () => { cancelled = true; };
+  }, [clinic, rows, selfCheckIns, timelineReservations]);
 
   // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: rows 변경 시 수납대기 pending 금액 갱신
   useEffect(() => {
@@ -6765,6 +6814,7 @@ export default function Dashboard() {
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
+      <OutstandingMapCtx.Provider value={outstandingMap}>
       {/* T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) + red(expire) 2단계 */}
       <TimerAlertCtx.Provider value={timerAlertSet}>
       <TimerExpiredCtx.Provider value={timerExpiredSet}>
@@ -6949,6 +6999,7 @@ export default function Dashboard() {
       </ConsentMapCtx.Provider>
       </TimerExpiredCtx.Provider>
       </TimerAlertCtx.Provider>
+      </OutstandingMapCtx.Provider>
       </AltHolderCtx.Provider>
       </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>

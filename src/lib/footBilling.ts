@@ -100,6 +100,16 @@ export interface CustomerOutstanding {
   duePackageId: string | null;
 }
 
+/**
+ * T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 미수(빨강) 배지 노출 조건 predicate.
+ * 산출은 loadCustomerOutstanding 결과(SSOT) 재사용 — 신규 산출 로직 없음.
+ * 패키지 잔금 또는 진료비 잔금 중 하나라도 0보다 크면 미수(true).
+ */
+export function hasOutstandingDue(data?: CustomerOutstanding | null): boolean {
+  if (!data) return false;
+  return (data.packageDue ?? 0) > 0 || (data.consultationDue ?? 0) > 0;
+}
+
 /** 고객 id 목록 → 고객별 패키지/진료비 미수금 Map. clinic 스코프 한정. */
 export async function loadCustomerOutstanding(
   customerIds: string[],
