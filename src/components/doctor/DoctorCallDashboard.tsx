@@ -1472,8 +1472,22 @@ function CompletedRow({
                   />
                 </RxPopover>
               </>
+            ) : checkIn.customer_id ? (
+              /* T-20260616-foot-DISCHARGED-DASH-RX-CHART-ACCESS A안 (문지은 대표원장 CONFIRM MSG-20260620-023304):
+                 "잠금유지하면서 차트는 열리게 해줘. 직접 차트 열어서 수정만 가능하게(귀가완료환자 기준)."
+                 귀가·미처방 '-'(데드텍스트, 찾아 들어가야 하던 동선) → 1클릭 진료차트(서랍) 오픈 진입점.
+                 처방 작성/수정은 차트 내부에서만 — 대시보드 인플레이스 처방 mutate(QuickRxBar apply) 미노출 유지(귀가 잠금 무회귀). */
+              <button
+                type="button"
+                onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                data-testid="doctor-completed-no-rx"
+                title="귀가 환자 — 처방은 차트에서 수정 (클릭 시 진료차트 열림)"
+                className="text-[13px] text-gray-300 underline-offset-2 transition-colors cursor-pointer hover:text-indigo-600 hover:underline"
+              >
+                -
+              </button>
             ) : (
-              /* T-20260612-WAITELAPSED-POLISH AC-7: 귀가·미처방 표기를 '-' 로 축약. */
+              /* customer_id 결측(차트 진입 불가) — 종전 정적 '-' 유지. */
               <span className="text-[13px] text-gray-300" data-testid="doctor-completed-no-rx">-</span>
             )}
           </div>
@@ -1496,17 +1510,33 @@ function CompletedRow({
               {clinicalPreview}
             </button>
           ) : discharged ? (
-            /* T-20260616-foot-DISCHARGED-DASH-RX-TOGGLE-READONLY (AC-1/AC-2/AC-3):
-               귀가(discharged) 환자는 임상경과 작성 진입(editable input) 차단 — 빈값은 클릭 불가 readonly '—'(텍스트).
-               clinicalPreview 있으면 위 분기에서 read-only 펼침(AC-2)으로 확인. 작성·수정은 차트(이름 클릭)에서.
-               ⚠ 원내잔류(!discharged)는 아래 button 분기 그대로 — 작성 흐름 무회귀(AC-4). 회색+cursor default+hover 제거(AC-3). */
-            <span
-              data-testid="doctor-completed-clinical-empty-readonly"
-              title="귀가 환자의 임상경과는 차트(이름 클릭)에서 확인하세요"
-              className="cursor-default select-none text-[15px] font-medium text-gray-300"
-            >
-              —
-            </span>
+            /* T-20260616-foot-DISCHARGED-DASH-RX-CHART-ACCESS A안 (문지은 대표원장 CONFIRM MSG-20260620-023304,
+               supersede TOGGLE-READONLY S1 readonly-span): "잠금유지하면서 차트는 열리게 해줘."
+               귀가 빈값 임상경과 '—'(데드 readonly) → 1클릭 진료차트(서랍) 오픈 진입점.
+               ★ 인플레이스 작성(setShowClinical → MedicalChartPanel embed editable)은 여전히 차단 —
+                 클릭은 onOpenChart('full')만 호출(setShowClinical 미사용). 인라인 편집행은 showClinical && !discharged 게이트 무접촉(아래).
+               작성·수정은 풀차트 서랍(별도 surface) 안에서만. clinicalPreview 있으면 위 분기 read-only 펼침으로 확인.
+               ⚠ 원내잔류(!discharged)는 아래 button 분기 그대로 — 작성 흐름 무회귀(AC-4). */
+            checkIn.customer_id ? (
+              <button
+                type="button"
+                onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                data-testid="doctor-completed-clinical-empty-chart-btn"
+                title="귀가 환자 — 임상경과는 차트에서 작성/수정 (클릭 시 진료차트 열림)"
+                className="text-[15px] font-medium text-gray-300 underline-offset-2 transition-colors cursor-pointer hover:text-indigo-600 hover:underline"
+              >
+                —
+              </button>
+            ) : (
+              /* customer_id 결측(차트 진입 불가) — 종전 readonly '—' 유지(클릭 불가). */
+              <span
+                data-testid="doctor-completed-clinical-empty-readonly"
+                title="귀가 환자의 임상경과는 차트에서 확인하세요"
+                className="cursor-default select-none text-[15px] font-medium text-gray-300"
+              >
+                —
+              </span>
+            )
           ) : (
             <button
               type="button"
