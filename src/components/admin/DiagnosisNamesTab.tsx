@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,10 +123,10 @@ const ALL_LABEL = '전체목록';
 // 좌측 "전체목록" 노드의 droppable/select 키 (uuid 와 충돌 없는 sentinel)
 const ALL_KEY = '__all__';
 
-// 상병 관리(CRUD)·폴더 관리·배치 권한 = 관리권한 role.
-//   현장 "어드민만 관리"의 코드 매핑 — 피드백 출처 대표원장(director)을 잠그지 않도록
-//   DrugFoldersTab(FOLDER_MANAGE_ROLES)·기존 탭과 동일하게 director 포함.
-const DX_MANAGE_ROLES = ['director', 'manager', 'admin'] as const;
+// 상병 관리(CRUD)·폴더 관리·배치 권한 = 진료관리 write 권한(director+admin).
+//   T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write 를 director+admin 로 통일
+//   (manager 제거 = 노출 축소). 상병 테이블(services) RLS write 는 旣존 {director,manager,admin} 이라
+//   director 무회귀 + manager FE-제거는 FE-stricter(안전). → 공통 헬퍼 canEditClinicMgmt 재사용.
 
 // ---------------------------------------------------------------------------
 // Hooks — 상병 마스터(services)
@@ -711,7 +712,7 @@ function KcdComboBox({
 export default function DiagnosisNamesTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
-  const canManage = !!profile?.role && (DX_MANAGE_ROLES as readonly string[]).includes(profile.role);
+  const canManage = canEditClinicMgmt(profile?.role);
 
   const { data: items = [], isLoading } = useDiagnoses(clinicId);
   const { data: folders = [], isLoading: foldersLoading } = useDiagnosisFolders(clinicId);

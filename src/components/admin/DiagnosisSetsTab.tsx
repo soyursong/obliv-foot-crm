@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,8 +92,9 @@ const EMPTY_FORM: SetForm = {
   items: [],
 };
 
-// 묶음상병 관리(CRUD) 권한 = 처방세트/상병명 관리와 동일 (의사/총괄/관리자)
-const DX_SET_MANAGE_ROLES = ['director', 'manager', 'admin'] as const;
+// 묶음상병 관리(CRUD) 권한 = 진료관리 write(director+admin).
+//   T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): manager 제거(축소) → canEditClinicMgmt 재사용.
+//   diagnosis_sets RLS write 旣존 {director,manager,admin} → director 무회귀.
 
 // AC-2/AC-3 정렬: 즐겨찾기 우선 → sort_order(DnD) → name ASC(미드래그 기본).
 function compareSets(a: DiagnosisSet, b: DiagnosisSet): number {
@@ -395,7 +397,7 @@ function SortableDxSetRow({
 export default function DiagnosisSetsTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
-  const canEdit = !!profile?.role && (DX_SET_MANAGE_ROLES as readonly string[]).includes(profile.role);
+  const canEdit = canEditClinicMgmt(profile?.role);
 
   const qc = useQueryClient();
   const { data: master = [] } = useDxMaster(clinicId);

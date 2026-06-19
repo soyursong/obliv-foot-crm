@@ -74,3 +74,18 @@ export const RRN_VIEW_ROLES: UserRole[] = ['admin', 'manager', 'director'];
 export function canViewRrn(role: UserRole): boolean {
   return RRN_VIEW_ROLES.includes(role);
 }
+
+// T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW (문지은 대표원장 C0ATE5P6JTH, ts 1781859275):
+//   진료관리/진료대시보드(의사 영역)의 수정·편집·생성·삭제(write)는 director(원장)+admin 만.
+//   조회(read)는 전직원 유지(STAFF-OPEN 무회귀) — 이 헬퍼는 write 게이트 전용.
+//   ★MedicalChartPanel.tsx:293 DIRECTOR_ROLES=['director','admin'] 패턴과 동일 집합 SSOT(재사용).
+//   Phase A(AC-2): 진료관리 탭 중 RLS write 가 이미 {director,manager,admin} 인 탭(상병명·묶음상병·처방세트·
+//     묶음처방·경과분석)에 적용 → manager 제거(노출 축소). director 는 해당 RLS 에 旣존이라 무회귀.
+//   Phase B(AC-3, data-architect CONSULT GO 후): RLS write 가 {admin,manager} 인 surface(빠른처방·슈퍼상용구·
+//     진료차트 상용구·소견서 상용구·서류 템플릿·진료세트·급여여부)는 RLS 에 director 부재 → FE 에서 director grant 시
+//     저장이 RLS 거부됨. 따라서 그 surface 는 RLS 갱신과 함께 Phase B 에서 이 헬퍼로 전환(현재 Phase A 는 admin-only 축소).
+export const CLINIC_MGMT_WRITE_ROLES: UserRole[] = ['director', 'admin'];
+
+export function canEditClinicMgmt(role: UserRole | null | undefined): boolean {
+  return !!role && CLINIC_MGMT_WRITE_ROLES.includes(role);
+}

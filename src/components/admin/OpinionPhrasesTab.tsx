@@ -592,8 +592,11 @@ function CsvImportDialog({
 export default function OpinionPhrasesTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
-  // AC-1: write 는 admin/manager 전용(form_templates_admin_all RLS 일치). 그 외 role 은 읽기 전용.
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
+  //   ★소견서 상용구(form_templates) RLS write = form_templates_admin_all(is_admin_or_manager, director 부재)
+  //   → FE 에서 director grant 시 RLS 거부. Phase A 는 노출 축소만(manager 제거 → admin-only).
+  //   director 추가는 Phase B(AC-3 RLS, CONSULT GO 후) RLS 와 동시.
+  const canEdit = profile?.role === 'admin';
 
   const { data: tpl, isLoading } = useOpinionTemplateRow(clinicId);
   const saveMut = useSaveOpinionSections(clinicId);

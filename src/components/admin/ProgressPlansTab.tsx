@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,7 +93,9 @@ const EMPTY_FORM: PlanForm = {
 export default function ProgressPlansTab() {
   const clinic = useClinic();
   const { profile } = useAuth();
-  const canWrite = ['admin', 'manager', 'director'].includes(profile?.role ?? '');
+  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin(manager 제거·축소).
+  //   progress_plans RLS write 旣존 {admin,manager,director} → director 무회귀. canEditClinicMgmt 재사용.
+  const canWrite = canEditClinicMgmt(profile?.role);
 
   const [plans, setPlans] = useState<ProgressPlan[]>([]);
   const [loading, setLoading] = useState(true);
