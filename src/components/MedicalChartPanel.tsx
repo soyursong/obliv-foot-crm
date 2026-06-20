@@ -53,7 +53,7 @@ import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, EyeOff, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Plus, Search, Sparkles, Stethoscope, Trash2, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
@@ -112,6 +112,12 @@ interface MedicalChart {
   updated_at: string;
   // doctor_memo: chart_doctor_memos에서 merge (director/admin 전용)
   doctor_memo?: string | null;
+  // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY (Phase B): soft-delete(무효화) — 의료법 §22-3.
+  //   컬럼 부재(마이그 미적용) 환경에선 undefined → 기능 자동 비활성(runtime 스키마 게이트).
+  is_deleted?: boolean | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
 }
 
 // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 선택지(활성 clinic_doctors)
@@ -589,6 +595,17 @@ export default function MedicalChartPanel({
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY (Phase B): 진료차트 soft-delete(무효화) 상태.
+  //   softDeleteEnabled = 런타임 스키마 게이트. medical_charts 에 is_deleted 컬럼이 실제로 존재할 때만 true.
+  //   (마이그 단계1·2 미적용 환경에서 .select('*') 가 is_deleted 키를 반환하지 않으면 false → 삭제 UI 전면 비노출.
+  //    FE 가 DB보다 먼저 배포돼도 깨지지 않게 하는 방어막.)
+  const [softDeleteEnabled, setSoftDeleteEnabled] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);                  // 삭제된 차트 보기 토글(director/admin)
+  const [deletedCharts, setDeletedCharts] = useState<MedicalChart[]>([]); // soft-delete 된 차트(목록 기본 숨김)
+  const [deleteTarget, setDeleteTarget] = useState<MedicalChart | null>(null); // 삭제 확인 다이얼로그 대상
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   // T-20260613-foot-REFRESH-BANNER-AUTOLO (AC-3 dirty-guard, blocking):
   //   자동 새로고침 배너(UpdateBanner)가 진료차트 작성 중에 무방비로 발화하면 데이터 유실.
   //   진료차트는 의료법상 진료의 NOT NULL 강제(handleSave 가드)로 미완 차트를 임의 저장(flush)
@@ -815,6 +832,10 @@ export default function MedicalChartPanel({
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
       const rawCharts: MedicalChart[] = chartsRes.data || [];
+      // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY (Phase B): 런타임 스키마 게이트.
+      //   .select('*') 결과행에 is_deleted 키가 있으면(=마이그 적용됨) soft-delete 기능 활성화.
+      //   컬럼 부재 시 키가 없어 false → 삭제 UI 전면 비노출(FE 선배포 안전).
+      setSoftDeleteEnabled(rawCharts.length > 0 && Object.prototype.hasOwnProperty.call(rawCharts[0], 'is_deleted'));
       // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG: 상용구 — 유형 무관 전체 노출 + 진료차트 우선 안정정렬.
       //   레거시 행(phrase_type null)은 pen_chart 로 간주. AC-2: 조회 실패(error)와 빈 목록을 구분.
       setPhraseLoadError(!!phrasesRes?.error);
@@ -861,6 +882,7 @@ export default function MedicalChartPanel({
       setClinicDoctors((clinicDoctorsRes?.data as ClinicDoctorOption[]) ?? []);
 
       // director면 chart_doctor_memos merge
+      let merged: MedicalChart[] = rawCharts;
       if (isDirector && rawCharts.length > 0) {
         const chartIds = rawCharts.map((c: MedicalChart) => c.id);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -872,10 +894,13 @@ export default function MedicalChartPanel({
         (memos || []).forEach((m: { medical_chart_id: string; memo: string }) => {
           memoMap[m.medical_chart_id] = m.memo;
         });
-        setCharts(rawCharts.map((c: MedicalChart) => ({ ...c, doctor_memo: memoMap[c.id] ?? null })));
-      } else {
-        setCharts(rawCharts);
+        merged = rawCharts.map((c: MedicalChart) => ({ ...c, doctor_memo: memoMap[c.id] ?? null }));
       }
+      // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY (Phase B): soft-delete 분리.
+      //   활성 차트만 charts(기존 모든 로직=타임라인/저장/today-latch/네비 대상)에 유지 → 무회귀.
+      //   삭제된 차트는 deletedCharts 로 분리(목록 기본 숨김, 관리자 "삭제된 차트 보기" 토글로만 조회).
+      setCharts(merged.filter((c) => !c.is_deleted));
+      setDeletedCharts(merged.filter((c) => !!c.is_deleted));
       // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: charts 서버조회 성공 반영 완료 → today-차트 자동선택 허용.
       //   (성공 경로에서만 true. 실패 시 false 유지 → 빈 charts 로 today-차트 자동선택이 굳지 않음)
       chartsLoadedRef.current = true;
@@ -1211,7 +1236,21 @@ export default function MedicalChartPanel({
           .insert(payload)
           .select('id')
           .maybeSingle();
-        if (error) throw error;
+        if (error) {
+          // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-2 §B-2 (a)안 (DB 강제 동일일 1차트):
+          //   partial UNIQUE index(uix_mc_customer_clinic_date) 충돌(23505) = 같은날 같은 환자 차트가 이미 존재.
+          //   현행 today-latch(append) 가 정상 동작하면 INSERT 경로 자체가 안 타지만, 경합/우회로 INSERT 가 발생해도
+          //   DB가 우발 중복(T-20260611 재발)을 최종 차단한다. 사용자에겐 "기존 차트 이어쓰기"로 자연 유도하고 재조회한다.
+          //   (마이그 미적용 환경엔 index 자체가 없어 23505 미발생 → 본 분기는 무해한 no-op)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((error as any)?.code === '23505') {
+            toast.error('이미 오늘 차트가 있습니다 — 기존 차트에서 이어서 편집해 주세요');
+            loadData(); // 활성 today-차트 재로드 → today-latch 가 기존 차트를 자동 선택(append 동선 복귀)
+            setSaving(false);
+            return;
+          }
+          throw error;
+        }
         chartId = data?.id ?? null;
         if (chartId) setSelectedChartId(chartId);
       }
@@ -1275,6 +1314,53 @@ export default function MedicalChartPanel({
       toast.error(`저장 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── 진료차트 soft-delete (무효화) ────────────────────────────────────────────────
+  // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1 (의료법 §22-3): hard-delete 금지.
+  //   UPDATE is_deleted=true → 목록 숨김(데이터·결제/처방 연동 보존). director/admin 한정(isDirector 게이트).
+  //   DB BEFORE UPDATE 트리거가 operation='DELETE' 로 자동 감사(수행자·일시·원본 보존).
+  const handleConfirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    if (!softDeleteEnabled) {
+      toast.error('삭제 기능이 아직 활성화되지 않았습니다 (DB 반영 대기) — 관리자에게 문의하세요');
+      return;
+    }
+    if (!isDirector) { toast.error('삭제 권한이 없습니다 (원장/관리자 전용)'); return; }
+    if (target.id.startsWith('__dummy__')) { toast.error('더미 데이터는 삭제할 수 없습니다'); return; }
+    setDeleting(true);
+    try {
+      // 삭제 수행자 auth.uid()(법적 진실원천은 audit_log.changed_by, deleted_by 는 보조 기록).
+      let uid: string | null = null;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: u } = await (supabase as any).auth.getUser();
+        uid = u?.user?.id ?? null;
+      } catch { /* best-effort */ }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('medical_charts')
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: uid,
+          delete_reason: deleteReason.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', target.id);
+      if (error) throw error;
+      toast.success('진료 기록을 삭제했습니다 (법적 보존을 위해 기록은 유지됩니다)');
+      // 삭제한 차트가 현재 선택돼 있으면 선택 해제(새 기록 폼으로)
+      if (selectedChartId === target.id) { setSelectedChartId(null); setEditMode(false); }
+      setDeleteTarget(null);
+      setDeleteReason('');
+      loadData();
+    } catch (err: unknown) {
+      toast.error(`삭제 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1836,8 +1922,17 @@ export default function MedicalChartPanel({
     },
   ];
   // 실데이터 없을 때만 더미 표시
-  const displayCharts = charts.length > 0 ? charts : DUMMY_CHARTS;
-  const isDummyMode = charts.length === 0;
+  // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: "삭제된 차트 보기"(director/admin) ON 이면
+  //   활성 차트 + 삭제 차트를 visit_date 최신순으로 병합 표기(삭제분은 엔트리에서 시각 구분 + 읽기전용).
+  const activeCharts = charts;
+  const displayCharts = activeCharts.length > 0 || (showDeleted && deletedCharts.length > 0)
+    ? (showDeleted
+        ? [...activeCharts, ...deletedCharts].sort((a, b) =>
+            (b.visit_date || '').localeCompare(a.visit_date || '') ||
+            (b.created_at || '').localeCompare(a.created_at || ''))
+        : activeCharts)
+    : DUMMY_CHARTS;
+  const isDummyMode = activeCharts.length === 0 && !(showDeleted && deletedCharts.length > 0);
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 필터 적용 (OR 로직)
   // T-20260609-foot-MEDCHART-SOAK-REFINE item2 (문지은 대표원장 field-soak 버그):
@@ -2748,6 +2843,24 @@ export default function MedicalChartPanel({
                       <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
                     )}
                   </span>
+                  {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: "삭제된 차트 보기" 토글(director/admin 한정).
+                      softDeleteEnabled(런타임 스키마 게이트) + 삭제된 차트가 있을 때만 노출. */}
+                  {isDirector && softDeleteEnabled && deletedCharts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleted((v) => !v)}
+                      className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium border transition-colors ${
+                        showDeleted
+                          ? 'bg-red-50 border-red-300 text-red-700'
+                          : 'bg-muted/40 border-border text-muted-foreground hover:bg-muted'
+                      }`}
+                      data-testid="toggle-show-deleted-charts"
+                      aria-pressed={showDeleted}
+                    >
+                      <EyeOff className="h-2.5 w-2.5" />
+                      {showDeleted ? `삭제된 차트 숨기기 (${deletedCharts.length})` : `삭제된 차트 보기 (${deletedCharts.length})`}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
@@ -2818,6 +2931,10 @@ export default function MedicalChartPanel({
                                 {isDummyEntry && (
                                   <span className="text-[9px] text-yellow-600 font-bold shrink-0">더미</span>
                                 )}
+                                {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY AC-1: soft-delete 행 배지(원장/관리자 '삭제된 차트 보기' 시에만 노출) */}
+                                {chart.is_deleted && (
+                                  <span className="text-[9px] text-red-600 font-bold shrink-0 bg-red-50 border border-red-200 rounded px-1" data-testid="timeline-deleted-badge">삭제됨</span>
+                                )}
                                 {/* AC-9: 진료의(작성자) 우측정렬 — 한 줄. 펼침 상세의 중복 표기(구 timeline-expanded-recorder)는 제거. */}
                                 {recorder && (
                                   <span className="ml-auto text-[9px] text-muted-foreground truncate min-w-0 text-right pl-1" data-testid="timeline-recorder">
@@ -2851,6 +2968,21 @@ export default function MedicalChartPanel({
                               })()}
                             </button>
                           </div>
+                          {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: 진료차트 삭제(무효화) 버튼.
+                              director/admin 한정(isDirector) + 더미·이미삭제행 제외 + softDeleteEnabled(런타임 스키마 게이트).
+                              soft-delete만(의료법 §22-3 hard-delete 금지) — 확인 다이얼로그를 거쳐 handleConfirmDelete 실행. */}
+                          {isDirector && softDeleteEnabled && !isDummyEntry && !chart.is_deleted && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(chart); setDeleteReason(''); }}
+                              className="px-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors flex items-center shrink-0"
+                              aria-label="진료 기록 삭제"
+                              title="진료 기록 삭제(무효화) — 법적 보존을 위해 기록은 유지됩니다"
+                              data-testid={`chart-delete-${chart.id}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
                           {/* 아코디언 토글 ▾ 버튼 (AC-8: 미리보기 클릭과 동일 동작) */}
                           <button
                             type="button"
@@ -4295,6 +4427,62 @@ export default function MedicalChartPanel({
             </div>
           </div>
         </div>
+      )}
+
+      {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: 진료차트 삭제(무효화) 확인 다이얼로그.
+          soft-delete(의료법 §22-3) — 사유 입력(선택) 후 handleConfirmDelete. director/admin 한정. */}
+      {deleteTarget && createPortal(
+        <div
+          className="fixed inset-0 z-[320] flex items-center justify-center bg-black/40 p-4"
+          data-testid="chart-delete-confirm"
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !deleting) { setDeleteTarget(null); setDeleteReason(''); } }}
+        >
+          <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-red-600" />
+              <p className="text-sm font-semibold text-gray-800">진료 기록 삭제</p>
+            </div>
+            <p className="mt-2 text-[13px] text-gray-600">
+              <span className="font-medium text-gray-900">{fmtDateFull(deleteTarget.visit_date)}</span> 진료 기록을 삭제하시겠어요?
+            </p>
+            <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              법적 보존을 위해 기록은 삭제되지 않고 보관되며, 목록에서만 숨겨집니다(원장/관리자만 조회 가능).
+            </p>
+            <div className="mt-3">
+              <label className="text-[11px] font-medium text-gray-700">삭제 사유 (선택)</label>
+              <Textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="예: 중복 입력, 오기재 등"
+                rows={2}
+                className="mt-1 text-xs"
+                data-testid="chart-delete-reason"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => { setDeleteTarget(null); setDeleteReason(''); }}
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                data-testid="chart-delete-cancel"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleConfirmDelete}
+                className="inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                data-testid="chart-delete-confirm-ok"
+              >
+                {deleting && <Loader2 className="h-3 w-3 animate-spin" />}
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
     </>,
