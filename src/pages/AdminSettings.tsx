@@ -52,6 +52,7 @@ import {
 import type { Clinic, CheckIn } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
 import { normalizeToE164 } from '@/lib/phone';
+import { isStaffUnlockRole } from '@/lib/permissions';
 import { formatPhone } from '@/lib/format';
 import SendSmsDialog from '@/components/SendSmsDialog';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -229,14 +230,20 @@ export default function AdminSettings() {
   const role      = profile?.role ?? '';
   const isAdmin   = role === 'admin';
   const isManager = role === 'manager';
+  // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ③: 메시지 설정 — 3역할(consultant/coordinator/therapist) 일괄 해제.
+  //   ⓪ 연결 설정(Solapi 자격증명)은 adminOnly 유지(clinics write=is_admin_or_manager·column-scope 불가 → DEFERRED).
+  //   ⑦ 셀프접수 QR 다운로드(read-only)는 3역할 개방. 그 외 섹션은 PERM_MATRIX.messaging(旣 전직원 개방, MSGSETTINGS-STAFF-ACCESS)과 정합.
+  const isUnlock  = isStaffUnlockRole(role);
 
   // ── 권한 가드 ────────────────────────────────────────────────────────────────
+  //   기존 가드(admin/manager/director only)는 nav/route/PERM_MATRIX.messaging(전직원 개방)과 모순된 잔존 제약이었음 →
+  //   STAFF_UNLOCK_ROLES(6역할)로 정합(3역할 입장 허용). part_lead/staff 는 본 티켓 범위 외(현 상태 유지).
   useEffect(() => {
     if (!profile) return;
-    if (!['admin', 'manager', 'director'].includes(role)) {
+    if (!isUnlock) {
       navigate('/admin', { replace: true });
     }
-  }, [profile, role, navigate]);
+  }, [profile, isUnlock, navigate]);
 
   // ── 데이터 로드 ───────────────────────────────────────────────────────────────
   const loadCapability = useCallback(async (cid: string) => {
@@ -341,8 +348,10 @@ export default function AdminSettings() {
     );
   }
 
+  // ⓪ 연결설정(adminOnly): admin 한정 유지(Solapi 자격증명 write=clinics RLS DEFERRED).
+  // ⑦ QR(mgrPlus): read-only 다운로드 → 3역할(isUnlock) 개방.
   const visibleSections = SECTIONS.filter(
-    (s) => (!s.adminOnly || isAdmin) && (!s.mgrPlus || isAdmin || isManager),
+    (s) => (!s.adminOnly || isAdmin) && (!s.mgrPlus || isAdmin || isManager || isUnlock),
   );
 
   return (
@@ -424,7 +433,7 @@ export default function AdminSettings() {
               onRefresh={() => loadOptOuts(clinic.id)}
             />
           )}
-          {activeSection === '7_selfcheckin_qr' && (isAdmin || isManager) && (
+          {activeSection === '7_selfcheckin_qr' && (isAdmin || isManager || isUnlock) && (
             <SectionSelfCheckinQR clinic={clinic} />
           )}
         </div>

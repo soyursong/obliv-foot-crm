@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments } from '@/lib/footBilling';
@@ -43,9 +44,12 @@ export default function Packages() {
   const clinic = useClinic();
   const { profile } = useAuth();
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 패키지 관리 parity). admin 비제거(ADDITIVE).
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
-  // T-20260522-foot-STAFF-REEXPAND: consultant/coordinator=WRITE, therapist/staff/part_lead=READ-only (총괄 재허용)
-  const canWritePackage = ['admin', 'manager', 'consultant', 'coordinator'].includes(profile?.role ?? '');
+  // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ①: 신규생성/삭제/관리 = 3역할 일괄 해제(역할분기 제거, RX-PERMMENU-PARITY).
+  //   isAdmin(admin||director) → STAFF_UNLOCK_ROLES(6역할). 동반 RLS 마이그(packages_staff_unlock_6menu)와 FE=RLS 정합.
+  const isAdmin = isStaffUnlockRole(profile?.role);
+  // T-20260522-foot-STAFF-REEXPAND → T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ①: 회차소진/결제추가/환불/양도 therapist 포함 3역할 해제.
+  //   기존(admin/manager/consultant/coordinator) → STAFF_UNLOCK_ROLES(+director/therapist). package_payments_staff_unlock_6menu(therapist) 동반.
+  const canWritePackage = isStaffUnlockRole(profile?.role);
   const [filter, setFilter] = useState<FilterStatus>('active');
   const [rows, setRows] = useState<PackageListItem[]>([]);
   const [loading, setLoading] = useState(true);

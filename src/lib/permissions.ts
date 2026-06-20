@@ -30,6 +30,31 @@ export const ALL_STAFF_ROLES: UserRole[] = [
   'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff',
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-STAFF-PERM-UNLOCK-6MENU — 직원 3역할 6개 메뉴 권한 일괄 해제 role-set SSOT (1지점).
+//   현장(김주연 총괄, U0ATDB587PV) STAFF-SIDEBAR-RESTRICTION-AUDIT 후속 확정:
+//     상담실장(consultant)·코디네이터(coordinator)·치료사(therapist) 3역할에게
+//     ① 패키지 ② 일마감 ③ 메시지 ④ 직원·공간 ⑤ 서비스항목 ⑥ 고객관리(정보/민감/RRN조회) 막힌 기능 해제.
+//   원칙 = RX-PERMMENU-PARITY(commit aa687a8): "권한 풀린 메뉴는 역할분기 없이 동일 노출/동작."
+//   ★lock-out-safe: escape(admin/manager/director) 항상 포함 = 확대만(축소 0). floor(part_lead/staff/tm)은
+//     본 일괄해제 대상 아님(의도된 경계) — 단, 기존에 이미 가진 권한은 절대 회수하지 않음(아래 canEditCustomer 참조).
+//   ★FE union = RLS union 의무: ①②⑤⑥ write 는 prod RLS 가 admin/mgr/dir + (일부) consult/coord 한정이라
+//     therapist/3역할이 DB 에서 거부됨(특히 therapist). 동반 마이그(20260620120000_..._rls_additive)가
+//     동일 3역할 ADDITIVE 정책을 추가해 effective RLS write set = 이 6역할과 1:1 정합(DA CONSULT + supervisor DDL-diff).
+//   ★본 set 으로 풀지 않는 것(DEFERRED — 보안 경계, 별 DA 결정 필요):
+//     ③ 연결설정(Solapi 자격증명, clinics write=is_admin_or_manager·column-scope 불가) → adminOnly 유지.
+//     ④ 직원 계정관리(user_profiles insert/delete=admin only = 권한상승) + 공간정보 편집(clinics write) → 현행 유지.
+//     (메뉴 노출·조회·QR 다운로드 read-only 는 본 해제에 포함.)
+export const STAFF_UNLOCK_ROLES: UserRole[] = [
+  'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist',
+];
+
+/** 6개 메뉴 일괄 해제 대상 역할인지(escape 포함 6역할). null/undefined 안전 기본값 false. */
+export function isStaffUnlockRole(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return STAFF_UNLOCK_ROLES.includes(role);
+}
+
 // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → dashboard/reservations/customers/stats 만 허용.
 //   ⚠️ ALL_STAFF_ROLES 에는 tm 을 넣지 않는다 — ALL_STAFF_ROLES 는 manual_sms_send 의 EF(send-notification)
 //   allowedRoles 와 role 패리티를 이루는 SSOT 이고, tm 은 SMS 발송 권한(AC6 미포함, 임의 권한 부여 금지)이
@@ -100,14 +125,22 @@ export function canAccess(subjectOrRole: AccessSubject, key: PermKey): boolean {
 }
 
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B / DA CONSULT-REPLY MSG-20260618-185650-arwz):
-//   주민번호(RRN) "값 조회" 권한 = prod rrn_decrypt 게이트1(is_admin_or_manager) 미러 = admin/manager/director.
-//   ★FE-only 안내문 게이트★ — rrn_decrypt RPC 권한(DB)은 변경하지 않음(PHI 무변경).
-//   A1(전직원 복원)·A2(역할 한정 복원)는 대표 PHI 게이트 통과 전까지 HOLD(migration .PHI_GATE_HOLD).
-//   목적: 권한 없는 직원이 복호화 null(빈 값)을 보고 "저장 안 됨"으로 오해하는 것 방지
-//        — '미입력' 대신 '조회 권한 없음' 표기. 저장(rrn_encrypt)은 별도 권한이라 영향 없음.
-export const RRN_VIEW_ROLES: UserRole[] = ['admin', 'manager', 'director'];
+//   주민번호(RRN) "값 조회" 권한. rrn_decrypt RPC 게이트1 미러.
+// ★T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑥ — A2(역할 한정 복원) 적용★
+//   결정 이력:
+//     · CORRECTION ndoc(MSG-20260620-113604) = "RRN NOTOUCH(admin/manager/director 유지)".
+//     · ★CORRECTION o4u4(MSG-20260620-114645) = ndoc supersede★ — 대표(김승현) "다열어줘"
+//       (MSG-20260620-114217-cac9, DM ts 1781923282.667609) → phi_sub_gate_status=approved.
+//     · DA-20260618-foot-STAFF-CHART2-RRN-NOSAVE CONSULT-REPLY: A1(전직원) 불허 / A2(역할한정)=대표게이트+업무근거 조건부 허용.
+//     · DA CONSULT-REPLY GO_WITH_CONDITIONS(MSG-20260620-131852-hbbh): phi_access_log canonical + audit INSERT 예외격리.
+//   A2 = 기존(admin/manager/director) + consultant/coordinator/therapist (= STAFF_UNLOCK_ROLES). part_lead/staff/tm 미포함(A1 전직원복원 아님).
+//   ★FE union = rrn_decrypt 게이트1 union 의무: 동반 PHI 마이그(20260620120100_rrn_decrypt_a2_role_restore)가
+//     rrn_decrypt 게이트1을 동일 3역할로 확대 + phi_access_log 조회이력 append(AC-4 audit 무회귀 — 현 prod audit 전무라 net-new).
+//   목적: 권한 직원이 복호화 값을 조회. 권한 없는 직원은 '조회 권한 없음' 표기(복호 null = '미입력' 오해 방지). 저장(rrn_encrypt)은 별도 권한.
+export const RRN_VIEW_ROLES: UserRole[] = [...STAFF_UNLOCK_ROLES];
 
-export function canViewRrn(role: UserRole): boolean {
+export function canViewRrn(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
   return RRN_VIEW_ROLES.includes(role);
 }
 

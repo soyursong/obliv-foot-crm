@@ -1,0 +1,92 @@
+-- T-20260620-foot-STAFF-PERM-UNLOCK-6MENU — 직원 3역할(consultant/coordinator/therapist) write RLS ADDITIVE 확장
+-- ⚠️ DRAFT / DO NOT APPLY: data-architect CONSULT(ADDITIVE) GO + supervisor DDL-diff 통과 전까지 미적용.
+--    .DDL_DIFF_HOLD suffix = db push 대상 아님(레포 convention). FE(STAFF_UNLOCK_ROLES) 와 ★동반 landing★ 의무.
+--
+-- 근거: 6메뉴 write 경로 RLS 전수 조사(scripts/T-20260620-foot-STAFF-PERM-UNLOCK-6MENU_rlscheck*.mjs) 결과
+--   거의 모든 write 가 is_admin_or_manager(admin/manager/director) 또는 consultant/coordinator 한정 → 3역할
+--   (특히 therapist)·일마감/서비스 write 가 RLS 에서 거부됨. FE 만 풀면 lock-out-in-disguise.
+-- 원칙: ADDITIVE only. DROP 0, 기존 role 제거 0. 기존 정책은 그대로 두고 3역할용 정책만 신규 추가.
+--   helper: current_user_role() = user_profiles.role (STABLE SECURITY DEFINER). 기존 정책들과 동일 패턴 미러.
+--
+-- ★본 파일이 포함하는 것(저위험·금전이나 기존 역할분리 패턴 내 확장):
+--   ② daily_closings(일마감 write)  ⑤ services(서비스항목 write)  ① packages/package_payments(therapist)
+--   ⑥ customers(therapist update)
+-- ★본 파일이 포함하지 않는 것(DA 결정 필요 — 아래 [DEFERRED] 참조):
+--   ③ clinics(연결설정 = 자격증명 포함 broad write)  ④ user_profiles(계정관리 = 권한상승)  ⑥ rrn_decrypt(PHI/A2)
+
+BEGIN;
+
+-- ── ② 일마감: daily_closings write 3역할 (clinic-scoped, 기존 read 정책 패턴 미러) ──
+DROP POLICY IF EXISTS daily_closings_staff_unlock_6menu ON public.daily_closings;
+CREATE POLICY daily_closings_staff_unlock_6menu ON public.daily_closings
+  FOR ALL TO authenticated
+  USING (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist'])
+         AND clinic_id = current_user_clinic_id())
+  WITH CHECK (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist'])
+         AND clinic_id = current_user_clinic_id());
+COMMENT ON POLICY daily_closings_staff_unlock_6menu ON public.daily_closings IS
+  'T-20260620-foot-STAFF-PERM-UNLOCK-6MENU: 일마감 작성/확정/수정/수기 — 3역할 ADDITIVE(admin/manager 기존 유지).';
+
+-- ── ⑤ 서비스항목: services write 3역할 (기존 services_admin_all=is_admin_or_manager 패턴 미러, clinic predicate 없음) ──
+DROP POLICY IF EXISTS services_staff_unlock_6menu ON public.services;
+CREATE POLICY services_staff_unlock_6menu ON public.services
+  FOR ALL TO authenticated
+  USING (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist']))
+  WITH CHECK (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist']));
+COMMENT ON POLICY services_staff_unlock_6menu ON public.services IS
+  'T-20260620-foot-STAFF-PERM-UNLOCK-6MENU: 서비스항목 신규/편집/삭제/정렬 — 3역할 ADDITIVE. 진료관리/상용구는 별 surface(불변).';
+
+-- ── ① 패키지: packages write+삭제 3역할(therapist 신규 + 삭제 3역할). 기존 packages_update/insert(consult/coord) 유지 ──
+DROP POLICY IF EXISTS packages_staff_unlock_6menu ON public.packages;
+CREATE POLICY packages_staff_unlock_6menu ON public.packages
+  FOR ALL TO authenticated
+  USING (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist']))
+  WITH CHECK (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist']));
+COMMENT ON POLICY packages_staff_unlock_6menu ON public.packages IS
+  'T-20260620-foot-STAFF-PERM-UNLOCK-6MENU: 패키지 신규/수정/양도/환불/삭제 — 3역할 ADDITIVE(therapist 신규 포함). 금전경로.';
+
+-- ── ① 패키지 결제/환불: package_payments write 3역할(therapist 신규). 기존 write(admin/mgr/consult/coord) 유지 ──
+DROP POLICY IF EXISTS package_payments_staff_unlock_6menu ON public.package_payments;
+CREATE POLICY package_payments_staff_unlock_6menu ON public.package_payments
+  FOR ALL TO authenticated
+  USING (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist']))
+  WITH CHECK (current_user_role() = ANY (ARRAY['consultant','coordinator','therapist']));
+COMMENT ON POLICY package_payments_staff_unlock_6menu ON public.package_payments IS
+  'T-20260620-foot-STAFF-PERM-UNLOCK-6MENU: 결제추가/환불 — 3역할 ADDITIVE(therapist 신규). 금전경로.';
+-- ※ 회차소진(package_sessions)은 package_sessions_write 에 therapist 旣포함 → 신규 정책 불필요.
+
+-- ── ⑥ 고객 민감정보/정보 수정: customers UPDATE therapist (clinic-scoped, 기존 customers_*_update 패턴 미러) ──
+--    ※ consultant/coordinator 는 customers_consult_update/customers_coord_update 로 旣허용 → therapist 만 신규.
+--    ※ 삭제(DELETE)는 본 정책 미포함 = canDeleteCustomer(admin/director) 불변. UPDATE 한정.
+DROP POLICY IF EXISTS customers_therap_update_6menu ON public.customers;
+CREATE POLICY customers_therap_update_6menu ON public.customers
+  FOR UPDATE TO authenticated
+  USING (current_user_role() = 'therapist' AND clinic_id = current_user_clinic_id())
+  WITH CHECK (current_user_role() = 'therapist' AND clinic_id = current_user_clinic_id());
+COMMENT ON POLICY customers_therap_update_6menu ON public.customers IS
+  'T-20260620-foot-STAFF-PERM-UNLOCK-6MENU: 고객정보/민감정보 수정 — therapist UPDATE ADDITIVE(consult/coord 旣허용).';
+
+COMMIT;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- [DEFERRED — data-architect 결정 필요. 본 파일에 미포함]
+--   ③ clinics (연결설정/Solapi 자격증명): clinics_admin_all=is_admin_or_manager. 3역할 ALL write 부여는
+--      clinics 의 다수 민감 컬럼 동시 노출 → column-scope 불가(RLS 한계). 자격증명을 floor staff 에 쓰기허용
+--      해도 되는지 = 데이터/보안 정책 판단. (reporter 명시 요청이나 awareness 권고.)
+--   ④ user_profiles (직원 계정 추가/수정/삭제): user_profiles_admin_all + insert_admin(admin only) +
+--      delete_admin(admin only). 3역할에 write 부여 = 계정 생성·승인·role 변경 권한 = ★권한상승(privilege
+--      escalation)★. floor staff 가 본인을 admin 으로 승격 가능 → 명시 confirm 없이 부여 금지.
+--   ⑥ rrn_decrypt (주민번호 복호): phi_sub_gate(대표 승인됨). A2 역할한정 복원은 별 PHI 마이그
+--      (20260620120100_rrn_decrypt_a2_role_restore.sql.PHI_GATE_HOLD) + audit-log 무회귀 검증(현 부재) 선결.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- ROLLBACK (본 추가 정책 5종 제거 — 기존 정책은 건드리지 않았으므로 원복 불필요)
+-- ════════════════════════════════════════════════════════════════════════════
+-- BEGIN;
+-- DROP POLICY IF EXISTS daily_closings_staff_unlock_6menu  ON public.daily_closings;
+-- DROP POLICY IF EXISTS services_staff_unlock_6menu        ON public.services;
+-- DROP POLICY IF EXISTS packages_staff_unlock_6menu        ON public.packages;
+-- DROP POLICY IF EXISTS package_payments_staff_unlock_6menu ON public.package_payments;
+-- DROP POLICY IF EXISTS customers_therap_update_6menu      ON public.customers;
+-- COMMIT;

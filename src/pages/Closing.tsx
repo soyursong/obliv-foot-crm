@@ -22,6 +22,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { isStaffUnlockRole } from '@/lib/permissions';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
@@ -214,14 +215,13 @@ export default function Closing() {
   const location = useLocation();
   const qc = useQueryClient();
   // T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 뷰 전용
-  // 임시저장·마감 확정·재오픈·수기수정 버튼은 admin/manager만 표시
+  // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ②: 임시저장·마감확정·재오픈·수기수정·수기매출 원본보기 = 3역할 일괄 해제.
+  //   isAdminOrManager(admin||manager) → STAFF_UNLOCK_ROLES(6역할). 동반 RLS 마이그(daily_closings_staff_unlock_6menu)와 FE=RLS 정합.
+  //   (변수명 isAdminOrManager 유지 — 마감 쓰기 게이트 의미. canRefund 는 旣 3역할 포함이라 이 set 의 부분집합.)
   const { profile } = useAuth();
-  const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
-  // T-20260525-foot-ROLE-PERM-CUSTOM AC-4: 환불 처리 — admin/manager + consultant/coordinator/therapist
-  const canRefund = isAdminOrManager
-    || profile?.role === 'consultant'
-    || profile?.role === 'coordinator'
-    || profile?.role === 'therapist';
+  const isAdminOrManager = isStaffUnlockRole(profile?.role);
+  // T-20260525-foot-ROLE-PERM-CUSTOM AC-4 → 6MENU ②: 환불 처리도 동일 6역할 set(기존 admin/manager/consultant/coordinator/therapist 포함, +director).
+  const canRefund = isAdminOrManager;
 
   // T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태를 URL hash로 persist
   // 브라우저 새로고침(F5) 시 현재 탭(summary/payments) 유지

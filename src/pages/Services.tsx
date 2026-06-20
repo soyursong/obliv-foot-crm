@@ -38,7 +38,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 // T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE: 상용구 관리 노출 게이트(봉직의/일반의사 비노출, 대표원장 유지).
-import { canViewPhraseManagement } from '@/lib/permissions';
+import { canViewPhraseManagement, isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -233,7 +233,11 @@ export default function Services() {
   const clinic = useClinic();
   const { profile } = useAuth();
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 서비스관리 write parity). admin 비제거(ADDITIVE).
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
+  // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑤: 서비스 항목 신규/편집/삭제/정렬(관리) = 3역할 일괄 해제.
+  //   isAdmin(admin||director) → STAFF_UNLOCK_ROLES(6역할). 동반 RLS 마이그(services_staff_unlock_6menu)와 FE=RLS 정합.
+  //   ★C3 leak 금지: 이 isAdmin 은 '서비스 목록' CRUD 만 게이트. 진료관리(canViewClinicMgmt/canEditClinicMgmt)·
+  //     상용구(canViewPhrases)는 별 술어로 분리·불변 — 서비스항목 해제가 의사영역으로 새지 않음(경계 보존).
+  const isAdmin = isStaffUnlockRole(profile?.role);
 
   // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: top-level 서브탭 (서비스 목록 / 상용구관리 / 진료관리)
   // T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN: 진료관리 = 서비스 목록과 동일 role(직원 포함) 개방.

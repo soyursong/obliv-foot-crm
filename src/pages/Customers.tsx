@@ -41,7 +41,7 @@ import { useChart } from '@/lib/chartContext';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 우클릭 [문자] parity — 기존 SMS 발송 경로(SendSmsDialog) 재사용
 import SendSmsDialog from '@/components/SendSmsDialog';
-import { canAccess } from '@/lib/permissions';
+import { canAccess, isStaffUnlockRole } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -175,7 +175,10 @@ export default function Customers() {
   const { profile } = useAuth();
   // T-20260520-foot-STAFF-CUSTOMER-UPDATE: isAdmin → 역할별 권한 분리 (isAdmin 제거됨)
   // staff/part_lead도 customers UPDATE 가능 (RLS: customers_staff_update)
-  const canEditCustomer = ['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead'].includes(profile?.role ?? '');
+  // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑥: 고객정보 수정 — therapist 누락분 해제(3역할 전체 보장).
+  //   ★ADDITIVE only: 기존 staff/part_lead 절대 회수 금지(lock-out 0). isStaffUnlockRole(6역할: +director/therapist) ∪ {staff,part_lead}.
+  //   동반 RLS 마이그(customers_therap_update_6menu = therapist UPDATE). consult/coord 는 customers_*_update 旣허용.
+  const canEditCustomer = isStaffUnlockRole(profile?.role) || ['staff', 'part_lead'].includes(profile?.role ?? '');
   // 삭제는 admin / T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director(대표원장). customers RLS=is_admin_or_manager(director 포함)이라 FOR ALL(DELETE) 이미 director 허용 → RLS/감사로그 영향 0. admin 비제거.
   const canDeleteCustomer = profile?.role === 'admin' || profile?.role === 'director';
   // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기는 PII(전화·생년월일) 포함 → admin/manager 한정(노출+실행 동시 게이팅).
@@ -753,6 +756,8 @@ export default function Customers() {
 
       {/* T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 폐지 → 수정 전용 다이얼로그 */}
       {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: canEditSensitive — staff/part_lead는 민감 컬럼 readonly */}
+      {/* T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑥: 민감정보(여권번호 등) 수정 — therapist 포함 3역할 해제.
+          기존(admin/manager/consultant/coordinator) → STAFF_UNLOCK_ROLES(+director/therapist). 회수 0(staff/part_lead는 본래 readonly 유지). */}
       <EditCustomerDialog
         customer={editingCustomer}
         onOpenChange={(o) => { if (!o) setEditingCustomer(null); }}
@@ -760,7 +765,7 @@ export default function Customers() {
           setEditingCustomer(null);
           runSearch(query, page);
         }}
-        canEditSensitive={['admin', 'manager', 'consultant', 'coordinator'].includes(profile?.role ?? '')}
+        canEditSensitive={isStaffUnlockRole(profile?.role)}
       />
 
       <CreateCustomerDialog
