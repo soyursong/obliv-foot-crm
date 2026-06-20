@@ -309,6 +309,12 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
 //     끌어올리지 않음). 각 슬롯이 자기 minHeight floor 위에서 독립 성장.
 const SLOT_COLUMN_HEIGHT = '420px';
 
+// T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-4: 수납대기 슬롯 scoped 높이 override.
+//   T-20260615 HEIGHT-UNIFY(전 슬롯 420px floor)를 수납대기 슬롯에 한해 의도적으로 키운다(현장 김주연 총괄 요청).
+//   다른 슬롯(치료대기·치료실·레이저실·완료)은 SLOT_COLUMN_HEIGHT(420px) floor 유지 → 전역 통일 규칙 불변.
+//   max(560px, calc(...)) 로 작은 화면에서도 420 floor 보다 항상 크고, 큰 화면에서 뷰포트에 맞춰 더 길어진다.
+const PAYMENT_WAITING_COLUMN_HEIGHT = 'max(560px, calc(100vh - 170px))';
+
 // ── 그룹 정렬 핸들용 SortableGroupItem ────────────────────────────────────────
 function SortableGroupItem({
   id,
@@ -3156,6 +3162,17 @@ export default function Dashboard() {
     }
     return m;
   }, [timelineReservations]);
+  // T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-2: 완료 슬롯 정시그룹 펼침 상태(기본 전부 접힘).
+  //   Set<"HH"> — 펼친 시간대만 보관. 기본 빈 Set = 모두 collapsed.
+  const [expandedDoneHours, setExpandedDoneHours] = useState<Set<string>>(() => new Set());
+  const toggleDoneHour = useCallback((hourKey: string) => {
+    setExpandedDoneHours((prev) => {
+      const next = new Set(prev);
+      if (next.has(hourKey)) next.delete(hourKey);
+      else next.add(hourKey);
+      return next;
+    });
+  }, []);
   const calendarRef = useRef<HTMLDivElement>(null);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
@@ -6000,6 +6017,28 @@ export default function Dashboard() {
   const pendingTotal = Array.from(pendingServiceMap.values()).reduce((s, v) => s + v, 0);
   const doneTotal = (byStatus['done'] ?? []).reduce((s, ci) => s + (dayPayments.get(ci.id) ?? 0), 0);
 
+  // T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-2: 완료 슬롯을 예약시간 '정시(hour) 버킷'으로 그룹.
+  //   key = "HH"(예약시간 hour). 10:30 예약 → "10" 그룹(정시 묶기). 예약 없는 walk-in 은 checked_in_at 시(hour) 폴백,
+  //   둘 다 없으면 '--'(시간미상). 완료 처리시각이 아닌 예약시간 기준(티켓 AC-2 명시).
+  const doneHourGroups = useMemo<Array<[string, CheckIn[]]>>(() => {
+    const list = byStatus['done'] ?? [];
+    const map = new Map<string, CheckIn[]>();
+    for (const ci of list) {
+      const rt = ci.reservation_id ? resvTimeMap.get(ci.reservation_id) : null;
+      let hourKey: string;
+      if (rt && rt.length >= 2) {
+        hourKey = rt.slice(0, 2); // "10:30:00" → "10"
+      } else if (ci.checked_in_at) {
+        hourKey = format(new Date(ci.checked_in_at), 'HH');
+      } else {
+        hourKey = '--';
+      }
+      if (!map.has(hourKey)) map.set(hourKey, []);
+      map.get(hourKey)!.push(ci);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [byStatus, resvTimeMap]);
+
   const examRooms = roomsByType['examination'] ?? [];
   const consultRooms = roomsByType['consultation'] ?? [];
   const treatmentRooms = roomsByType['treatment'] ?? [];
@@ -6367,7 +6406,9 @@ export default function Dashboard() {
       }
       case 'desk_section':
         return (
-          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
+          // T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-4/AC-5: 완료 슬롯은 desk_section 에서 분리(우측 단독, renderDoneColumn).
+          //   desk_section 은 이제 수납대기 단독 → wrapper minHeight 를 PAYMENT_WAITING_COLUMN_HEIGHT(scoped override)로 키운다.
+          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ minHeight: PAYMENT_WAITING_COLUMN_HEIGHT }}>
             <DroppableColumn
               id="payment_waiting"
               label="수납대기"
@@ -6404,44 +6445,6 @@ export default function Dashboard() {
                   </button>
                 </div>
               ))}
-            </DroppableColumn>
-            <DroppableColumn
-              id="done"
-              label="완료"
-              count={doneCount}
-              // REVERSAL: 수납대기와 동일 — grow+naturalGrow 로 카드 누적 시 자연 성장.
-              className="grow shrink-0"
-              naturalGrow
-              highlight="text-emerald-700"
-              subtitle={
-                doneTotal > 0 ? (
-                  <div className="text-xs font-semibold text-emerald-700 tabular-nums">
-                    {formatAmount(doneTotal)}
-                  </div>
-                ) : undefined
-              }
-            >
-              {(byStatus['done'] ?? []).map((ci) => {
-                const paid = dayPayments.get(ci.id);
-                return (
-                  <div key={ci.id}>
-                    <DraggableCard
-                      checkIn={ci}
-                      compact
-                      stageStart={getStageStart(ci)}
-                      packageLabel={getPkgLabel(ci)}
-                      onClick={() => handleCardClick(ci)}
-                      onContextMenu={(e) => handleCardContext(ci, e)}
-                    />
-                    {/* T-20260514-foot-C2-PAYMENT-SYNC AC-2: 원 단위 실제 금액 (만원 반올림 → formatAmount) */}
-                    {paid != null && paid > 0 && (
-                      <div className="mt-0.5 px-1 text-xs text-emerald-700 font-medium text-right tabular-nums">
-                        {formatAmount(paid)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
             </DroppableColumn>
           </div>
         );
@@ -6542,6 +6545,79 @@ export default function Dashboard() {
       </DroppableColumn>
     </div>
   ), [laserWaiting, healerWaiting, getStageStart, getPkgLabel, handleCardClick, handleCardContext]);
+
+  // T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT: 완료 슬롯 = 대시보드 우측 단독 컬럼.
+  //   AC-1: 성함만 보이는 회색 초소형 칩(풀카드 대신). 칩 클릭 → handleCardClick(기존 상세/팝업) → 정보 접근 유지.
+  //   AC-2: 정시(hour) 그룹 헤더 + 기본 접힘(collapsed) + 헤더 클릭 시 칩 가로 wrap 펼침. 헤더에 인원수.
+  //   AC-5: 칸반 흐름 마지막이 아닌 우측 단독 컬럼으로 분리(렌더 위치는 호출부). 드롭 타깃 id="done" 유지 → 드래그 이동 정상.
+  //   ⚠ MEDLAW22-B-GATE(완료 이동 하드차단) 불간섭 — 이동 후 '표시'만 변경.
+  const renderDoneColumn = useCallback(() => (
+    <div
+      key="done_col"
+      data-testid="slot-col-done"
+      className="w-44 shrink-0 flex flex-col"
+      style={{ minHeight: SLOT_COLUMN_HEIGHT }}
+    >
+      <DroppableColumn
+        id="done"
+        label="완료"
+        count={doneCount}
+        className="grow shrink-0"
+        naturalGrow
+        highlight="text-emerald-700"
+        subtitle={
+          doneTotal > 0 ? (
+            <div className="text-xs font-semibold text-emerald-700 tabular-nums">
+              {formatAmount(doneTotal)}
+            </div>
+          ) : undefined
+        }
+      >
+        {doneHourGroups.length > 0 && (
+          <div className="space-y-1" data-testid="done-hour-groups">
+            {doneHourGroups.map(([hourKey, cis]) => {
+              const expanded = expandedDoneHours.has(hourKey);
+              const hourLabel = hourKey === '--' ? '시간미상' : `${Number(hourKey)}시`;
+              return (
+                <div key={hourKey} data-testid={`done-hour-group-${hourKey}`}>
+                  <button
+                    type="button"
+                    data-testid={`done-hour-header-${hourKey}`}
+                    onClick={() => toggleDoneHour(hourKey)}
+                    aria-expanded={expanded}
+                    className="w-full flex items-center justify-between gap-1 rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200 transition"
+                  >
+                    <span className="flex items-center gap-1 min-w-0">
+                      <ChevronDown className={cn('h-3 w-3 shrink-0 text-gray-400 transition-transform', !expanded && '-rotate-90')} />
+                      <span className="truncate">{hourLabel}</span>
+                    </span>
+                    <span className="shrink-0 text-gray-500 tabular-nums">{cis.length}</span>
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 flex flex-wrap gap-1 px-0.5" data-testid={`done-hour-chips-${hourKey}`}>
+                      {cis.map((ci) => (
+                        <button
+                          key={ci.id}
+                          type="button"
+                          data-testid="done-name-chip"
+                          onClick={() => handleCardClick(ci)}
+                          onContextMenu={(e) => handleCardContext(ci, e)}
+                          title={ci.customer_name}
+                          className="max-w-[5.5rem] truncate rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-xs text-gray-700 hover:bg-gray-100 transition"
+                        >
+                          {ci.customer_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DroppableColumn>
+    </div>
+  ), [doneCount, doneTotal, doneHourGroups, expandedDoneHours, toggleDoneHour, handleCardClick, handleCardContext]);
 
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
   return (
@@ -6924,6 +7000,8 @@ export default function Dashboard() {
                         {renderKanbanGroup(gid)}
                       </SortableGroupItem>
                     ))}
+                    {/* T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-5: 완료 슬롯은 정렬 대상이 아닌 우측 고정 단독 컬럼(SortableContext 비참여). */}
+                    {renderDoneColumn()}
                   </div>
                 </SortableContext>
               </DndContext>
@@ -6975,6 +7053,8 @@ export default function Dashboard() {
 
                   return renderKanbanGroup(gid);
                 })}
+                {/* T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-5: 완료 슬롯 = 우측 단독 컬럼(칸반 흐름 마지막 고정). */}
+                {renderDoneColumn()}
               </div>
             )}
           </div>
