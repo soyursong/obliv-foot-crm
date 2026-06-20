@@ -1545,6 +1545,8 @@ export default function Reservations() {
                 {(viewMode === 'week' ? weekDays : [selectedDay]).map((d, i) => (
                   <th
                     key={d.toISOString()}
+                    // T-20260617-foot-RESVMGMT-COMPACT AC-1: 요일·날짜 헤더는 압축 대상 제외(미변경) — 회귀가드 testid.
+                    data-testid="resv-day-header"
                     className={cn(
                       // T-20260615-foot-RESVMGMT-REFIX-8 AC6: 요일·일자 헤더 중앙정렬 + 폰트 확대(text-xs→text-sm, font-semibold).
                       'border-b border-r p-2 text-center text-sm font-semibold overflow-hidden', // T-20260522-foot-RESV-CAL-COLWIDTH: overflow-hidden → table-fixed 시 텍스트 셀 밖 넘침 방지
@@ -1594,7 +1596,8 @@ export default function Reservations() {
                       {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 */}
                       <td
                         data-testid="resv-time-col-cell"
-                        className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground sticky left-0 bg-background z-10"
+                        // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 압축 — 시간축 셀 패딩/폰트 축소(py-1.5→py-0.5, text-xs→text-[11px]). 헤더(thead)는 미변경.
+                        className="w-20 border-b border-r py-0.5 text-center text-[11px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
                         <div>{time}</div>
                         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 MSG-...gkj2 옵션2 '일자×시간 매트릭스'):
@@ -1623,7 +1626,8 @@ export default function Reservations() {
                           <td
                             key={d.toISOString() + time}
                             className={cn(
-                              'h-12 border-b border-r p-1 align-top transition-colors',
+                              // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 높이/패딩 압축(h-12→h-8, p-1→p-0.5) — 절반 밀도, 한 화면 예약건 최대 노출.
+                              'h-8 border-b border-r p-0.5 align-top transition-colors',
                               !allowed && 'bg-gray-50',
                               full && !isDragOver && 'bg-red-50',
                               isDragOver && allowed && !full && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
@@ -1660,7 +1664,7 @@ export default function Reservations() {
                             }}
                           >
                             {allowed && (
-                              <div className="flex h-full w-full min-w-0 flex-col gap-1 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 / T-20260612-WEEKCAL: 카드 간 여백 gap-0.5→gap-1 */}
+                              <div className="flex h-full w-full min-w-0 flex-col gap-0.5 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 카드 간 여백 압축 gap-1→gap-0.5(절반 밀도) */}
 
                                 {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 옵션2 '일자×시간 매트릭스'):
                                     좌측 시간축 '날짜 합산'(5FIX AC2/a921cef) supersede → 각 (날짜×시간) 셀에 per-cell 건수 분포 표기.
@@ -1741,7 +1745,7 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
-                                      'w-full overflow-hidden rounded-md border px-2 py-1 text-xs leading-snug shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260612-WEEKCAL(3번): 패딩 px-1.5 py-0.5→px-2 py-1, rounded→rounded-md, leading-tight→leading-snug, shadow-sm 추가(롱래CRM 카드 가독성·여백)
+                                      'w-full overflow-hidden rounded-md border px-1.5 py-0.5 text-[11px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 높이·패딩·폰트 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px], leading-snug→leading-tight) 절반 밀도
 
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
@@ -1855,7 +1859,7 @@ export default function Reservations() {
                                       })()}
                                     </div>
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
-                                    <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 */}
+                                    <div className="flex min-w-0 items-center gap-1 overflow-hidden text-[10px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] */}
                                       {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',

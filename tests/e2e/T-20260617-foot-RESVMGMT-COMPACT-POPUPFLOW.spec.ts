@@ -1,17 +1,28 @@
 /**
  * E2E spec — T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW
- * 예약관리 (+) 신규 예약 팝업 — 2-f(초/재진 토글 제거·초진 자동) + 2-e(라벨 리네이밍)
+ * 예약관리 캘린더 압축(AC-1, 시나리오1) + (+) 신규 예약 팝업 2-f/2-e
  *
- * ※ 본 스펙 범위 = 이 세션에서 구현한 CORRECTION(MSG-20260617-133645-fteb) 분만 검증.
+ * ※ 본 스펙 범위:
+ *   - [시나리오1 / AC-1] 캘린더 컴팩트화: 시간 슬롯 row 높이·예약 박스 패딩/폰트 압축(절반 밀도).
+ *     단 요일·날짜 헤더(resv-day-header)는 압축 대상 제외 → text-sm(14px) 미변경 회귀가드.
  *   - 2-f: 신규 고객 직접 등록(manualNew) 경로는 무조건 초진 → 초/재진 유형 토글 미노출, visit_type='new' 고정.
  *   - 2-e: 신규 고객 항목명 "신규 예약" / 버튼명 "신규 예약 생성".
  *   - 기존 고객(loadedMatch) 검색 경로는 재진 가능 → 유형 토글 유지(회귀가드).
- *   item1 캘린더 압축 + 2-a/2-b/2-c/2-d(2버튼 진입·필드 이동)는 별도 작업(미구현) → 본 스펙 비대상.
+ *   AC-2/3/4(2버튼 진입·필드 이동)는 후속 시퀀싱 → 본 스펙 비대상.
  *
  * 데이터/clinic 미준비 시 graceful skip.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
+
+/** computed font-size(px 정수) 반환. 요소 없으면 null. */
+async function fontSizePx(page: Page, testid: string): Promise<number | null> {
+  const el = page.getByTestId(testid).first();
+  if (!(await el.count())) return null;
+  const fs = await el.evaluate((n) => getComputedStyle(n as Element).fontSize);
+  const m = /([\d.]+)px/.exec(fs);
+  return m ? Math.round(parseFloat(m[1])) : null;
+}
 
 /** 예약관리 → 상단 '새 예약' 클릭 → new-mode 팝업(빈 상태) 오픈. 성공 시 true. */
 async function openNewModePopup(page: Page): Promise<boolean> {
@@ -23,6 +34,50 @@ async function openNewModePopup(page: Page): Promise<boolean> {
   // 빈 상태(검색 미선택) 패널 노출 = new-mode 진입 성공
   return page.getByTestId('popup-newmode-empty').isVisible({ timeout: 5_000 }).catch(() => false);
 }
+
+test.describe('T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW — 시나리오1 캘린더 압축(AC-1)', () => {
+  test.beforeEach(async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) test.skip(true, 'Login failed');
+  });
+
+  test('AC-1: 시간 슬롯 row·예약 박스가 압축 렌더, 요일·날짜 헤더는 미변경', async ({ page }) => {
+    await page.goto('/admin/reservations');
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // 타임테이블(시간 슬롯 row) 마운트 대기
+    const firstSlotCell = page.getByTestId('resv-time-col-cell').first();
+    if (!(await firstSlotCell.isVisible({ timeout: 8_000 }).catch(() => false))) {
+      test.skip(true, '타임테이블 미렌더(clinic/영업시간 미확정)');
+    }
+
+    // (a) 압축 적용 증거: 시간축 body 셀 폰트 = 11px (압축 전 text-xs=12px → text-[11px]=11px)
+    const bodyTimeFs = await fontSizePx(page, 'resv-time-col-cell');
+    expect(bodyTimeFs).not.toBeNull();
+    expect(bodyTimeFs!).toBeLessThanOrEqual(11);
+
+    // (b) 예약 박스(카드) 압축: 카드 폰트 = 11px(text-xs=12px → text-[11px]=11px). row 높이는
+    //     카드 수에 종속(시드 데이터 밀집)이라 비결정적 → 카드 computed 폰트로 박스 압축을 결정론적 검증.
+    //     카드 부재(빈 캘린더) 시 graceful skip(데이터 의존).
+    const card = page.locator('[data-testid^="resv-card-"]').first();
+    if (await card.count()) {
+      const cardFs = await card.evaluate((n) => getComputedStyle(n as Element).fontSize);
+      const m = /([\d.]+)px/.exec(cardFs);
+      expect(m).not.toBeNull();
+      expect(Math.round(parseFloat(m![1]))).toBeLessThanOrEqual(11);
+    }
+    // 슬롯 row 자체는 존재(타임테이블 렌더) 확인
+    expect(await page.getByTestId('resv-slot-row').count()).toBeGreaterThan(0);
+
+    // (c) 회귀가드: 요일·날짜 헤더는 압축 대상 제외 → text-sm(14px) 유지(미변경)
+    const headerFs = await fontSizePx(page, 'resv-day-header');
+    if (headerFs !== null) {
+      expect(headerFs).toBeGreaterThanOrEqual(14);
+      // 헤더가 body 슬롯 셀보다 큼(압축 비대상 확인)
+      expect(headerFs).toBeGreaterThan(bodyTimeFs!);
+    }
+  });
+});
 
 test.describe('T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW — 신규 예약 팝업 2-f/2-e', () => {
   test.beforeEach(async ({ page }) => {
