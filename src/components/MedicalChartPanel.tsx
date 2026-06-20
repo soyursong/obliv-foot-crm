@@ -48,7 +48,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
-import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
@@ -480,7 +479,7 @@ export default function MedicalChartPanel({
   singleLine = false,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
-  const navigate = useNavigate();
+  // T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: navigate/useNavigate 제거 — 관리화면 지름길 버튼 삭제로 미사용.
   const { profile } = useAuth();
   // AC-9: 현재 로그인 의사 표시명 (이름 > 이메일 > 폴백)
   const currentUserName = profile?.name ?? currentUserEmail ?? '알 수 없음';
@@ -1787,22 +1786,9 @@ export default function MedicalChartPanel({
     setFormRx(prev => prev.map((it, i) => (i === idx ? { ...it, count: v } : it)));
   }
 
-  // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
-
-  // T-20260606-foot-RX-PANEL-UX-5FIX AC-5: 관리화면 진입 시 해당 탭 pre-select.
-  //   각 우측 패널 버튼이 대응 탭(?tab=)을 넘겨 진료관리(ClinicManagement)가 그 탭으로 바로 열림.
-  // T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 어드민성 관리 도구가 진료 도구 → '진료관리'로 분리됨에 따라
-  //   진입 경로를 /admin/doctor-tools → /admin/clinic-management 로 이전(관리 도구 위치 단일화).
-  function handleNavigateToAdmin(tab?: 'super_phrases' | 'phrases' | 'prescriptions') {
-    onOpenChange(false);
-    // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '상용구'(phrases)는 '서비스관리 > 상용구관리' 서브탭으로 이전됨.
-    //   직원(consultant 등)도 접근 가능한 /admin/services 로 라우팅(슈퍼상용구·묶음처방은 진료관리 잔류).
-    if (tab === 'phrases') {
-      navigate('/admin/services?tab=phrases');
-      return;
-    }
-    navigate(tab ? `/admin/clinic-management?tab=${tab}` : '/admin/clinic-management');
-  }
+  // T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: handleNavigateToAdmin 제거 — 진료차트 우측 패널의
+  //   관리화면 지름길 버튼 3종(처방세트/상용구/슈퍼상용구) 전원 삭제에 따라 미사용. 관리화면 진입은
+  //   사이드바(서비스관리 → 진료관리 서브탭) 단일 경로로 일원화(문원장 요청: 차트는 원장 전용 공간).
 
   // T-20260527-foot-TREATMEMO-CHART-MERGE: loadTreatMemos 제거 — loadData()에 통합됨
   // (customer_treatment_memos 쿼리가 loadData Promise.all에 포함)
@@ -3918,17 +3904,8 @@ export default function MedicalChartPanel({
                   {/* 처방세트 탭 */}
                   {rightTab === 'rx' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-rx-content">
-                      {/* 편집 바로가기 (AC-2) — RX-PANEL-UX-5FIX AC-5: 처방세트 탭 pre-select */}
-                      <button
-                        type="button"
-                        onClick={() => handleNavigateToAdmin('prescriptions')}
-                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
-                        data-testid="rx-set-edit-btn"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                        처방세트 관리 화면으로
-                      </button>
-
+                      {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 처방세트 관리화면 지름길 버튼 제거
+                          (문원장 요청 — 차트는 원장 전용, 관리화면 진입은 사이드바로만). 처방세트 선택→폼 삽입 기능은 유지. */}
                       {/* T-20260603-foot-RX-CHART-ENHANCE AC-5 (구 RX-MODULE-8REQ #5/AC-5-1): 약품 마스터(prescription_codes) 검색 →
                           단건 처방내역 추가. 내부 마스터 대상(외부연동 없음). code_source='custom'(자체·카피약) 우선 노출. */}
                       <div className="rounded-lg border bg-card p-2 space-y-1.5" data-testid="rx-search-box">
@@ -4041,16 +4018,8 @@ export default function MedicalChartPanel({
                   {/* 상용구 탭 */}
                   {rightTab === 'phrase' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-phrase-content">
-                      {/* 편집 바로가기 (AC-2) */}
-                      <button
-                        type="button"
-                        onClick={() => handleNavigateToAdmin('phrases')}
-                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
-                        data-testid="phrase-edit-btn"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                        상용구 관리 화면으로
-                      </button>
+                      {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 상용구 관리화면 지름길 버튼 제거
+                          (문원장 요청 — 차트는 원장 전용). 상용구 선택→임상경과 삽입 기능은 유지. */}
 
                       <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
                         항목을 누르면 우측에 ✓ 버튼이 나타납니다 — 눌러서 임상경과에 삽입
@@ -4124,16 +4093,8 @@ export default function MedicalChartPanel({
                   {/* 슈퍼상용구 탭 (T-20260603-foot-RX-SUPER-PHRASE) — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
                   {rightTab === 'super' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-super-content">
-                      {/* 편집 바로가기 */}
-                      <button
-                        type="button"
-                        onClick={() => handleNavigateToAdmin('super_phrases')}
-                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
-                        data-testid="super-phrase-edit-btn"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                        슈퍼상용구 관리 화면으로
-                      </button>
+                      {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
+                          (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
 
                       <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
                         클릭하면 진단명·임상경과·처방내역에 일괄 적용됩니다
