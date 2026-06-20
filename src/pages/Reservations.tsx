@@ -1851,11 +1851,9 @@ export default function Reservations() {
                                           {chartNoBadge(resvChartMap.get(r.customer_id))}
                                         </span>
                                       )}
-                                      {r.customer_id && noshowByCustomer[r.customer_id] ? (
-                                        <Badge variant="destructive" className="h-4 px-1 text-xs">
-                                          노쇼 {noshowByCustomer[r.customer_id]}
-                                        </Badge>
-                                      ) : null}
+                                      {/* T-20260620-foot-RESVMGMT-NOSHOW-BADGE-DEDUP: 차트번호 옆 "노쇼 N회" destructive 배지 제거
+                                          (상태줄 STATUS_LABEL '노쇼'와 중복). noshowByCustomer state/fetch는 ReservationDetailPopup
+                                          noshowCount prop(L~2065)에서 여전히 사용하므로 유지. */}
                                       {/* T-20260527-foot-TREATMENT-CYCLE-ALERT AC-2/AC-3:
                                           치료 회차 배지 + 6배수 진료필요 배지 */}
                                       {r.customer_id && r.status !== 'cancelled' && (() => {
