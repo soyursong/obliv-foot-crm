@@ -21,7 +21,8 @@ import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBil
 import { PkgOutstandingBadge } from '@/components/PkgOutstandingBadge';
 // T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL(REOPEN): 수동 새 체크인이 대기슬롯 직행 시
 //   신규 balanced 자동배정 엔진 연결(기존엔 레거시 assign_consultant_atomic/assigned_staff_id만 → 치료사 자동배정 누락).
-import { maybeAutoAssign } from '@/lib/autoAssign';
+// T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: INSERT 시점 consultant 자동세팅도 assignment_actions(SSOT) 로그.
+import { maybeAutoAssign, logAssignment, deriveConsultAxis } from '@/lib/autoAssign';
 import type { CheckInStatus, Reservation, VisitType } from '@/lib/types';
 
 interface Props {
@@ -322,6 +323,40 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     //   레거시 consultant 오토필(위)과 비충돌 — 치료사(therapist_id)는 별도 컬럼. 초진(receiving)은 비-트리거.
     if (insertedRow?.id && (newStatus === 'consult_waiting' || newStatus === 'treatment_waiting')) {
       void maybeAutoAssign(insertedRow.id, newStatus, null);
+    }
+
+    // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1 [RC=B 기록경로 불일치]: INSERT 시점에 직접 세팅된
+    //   consultant_id(초진=assign_consultant_atomic 균등 / 재진=customers.assigned_staff_id 담당실장)는
+    //   기존엔 assignment_actions 로그 없이 check_ins에만 기록 → '직원별 당월 누적'(assignment_actions SSOT 집계)에서
+    //   누락됐다. 위 maybeAutoAssign 은 consultant_id 가 이미 set 이라 멱등 skip(consult 로그 안 남김),
+    //   초진(receiving)은 아예 비-트리거. → 여기서 consult 자동배정을 정본(assignment_actions)에 함께 남겨 집계 정합.
+    //   (서버이관 SERVERSIDE-REVIEW 와 무모순: 정본 경로=assignment_actions 로 통일.)
+    //   best-effort·비차단(void). 재진 axis='returning'(균등 제외=재진 칼럼 카운트), 초진/체험=consult 축 파생.
+    if (insertedRow?.id && consultantId) {
+      const assignedConsultantId = consultantId;
+      const insertedId = insertedRow.id;
+      void (async () => {
+        let axis = 'returning';
+        if (visitType !== 'returning') {
+          const { data: axCust } = await supabase
+            .from('customers')
+            .select('visit_type, lead_source, visit_route')
+            .eq('id', customerId ?? '')
+            .maybeSingle();
+          axis = deriveConsultAxis(
+            (axCust as { visit_type?: string | null; lead_source?: string | null; visit_route?: string | null } | null) ?? {},
+          );
+        }
+        await logAssignment({
+          clinicId,
+          checkInId: insertedId,
+          actionType: 'auto_assign',
+          role: 'consult',
+          axis,
+          toStaffId: assignedConsultantId,
+          createdBy: null,
+        });
+      })();
     }
 
     if (effectiveLinkedReservation) {
