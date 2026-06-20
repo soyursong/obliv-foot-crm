@@ -140,6 +140,10 @@ export default defineConfig({
         //   ★CRITICAL 회귀가드 = 영수증 업로드 write 경로(package_payments.insert + paid_amount update) 보존
         //   + 표시 필터(feePayments/directPkgPayments/pkgPayments) + readOnly 뷰어 (정적 소스 가드, auth 불요)
         '**/T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE.spec.ts',
+        // T-20260620-foot-CHART2-PAYMENT-MISU-HISTORY: 수납내역 탭 [미수이력] 섹션 ADDITIVE 추가 (DISPLAY-ONLY).
+        //   발생(packages)+납부(package_payments) 시계열 + 유형 레이블(패키지 잔금/진료비 미수, AC#5) +
+        //   열[날짜|유형|금액|처리상태](AC#6). ★회귀가드 = RESTRUCTURE 필터/뷰어 보존 + SSOT 재사용 + §4-A 합산금지.
+        '**/T-20260620-foot-CHART2-PAYMENT-MISU-HISTORY.spec.ts',
         // T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE: 더미생성 visit_type 을 고객 SSOT 에서 파생
         //   (resolveVisitType 불변식 — reservation.visit_type === customers.visit_type, 순수 함수, auth 불요)
         '**/T-20260617-foot-DUMMYRESV-VISITTYPE-INACTIVE.spec.ts',
