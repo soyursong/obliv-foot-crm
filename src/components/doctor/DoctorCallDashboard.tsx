@@ -420,9 +420,13 @@ export default function DoctorCallDashboard() {
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartVariant, setMedicalChartVariant] = useState<'full' | 'clinical'>('clinical');
-  const openTreatmentChart = (customerId: string, variant: 'full' | 'clinical' = 'clinical') => {
+  // T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2 (문지은 대표원장): 귀가완료(discharged) 환자 차트는 진입은 유지하되 완전 읽기전용.
+  //   호출자(CompletedRow)가 discharged=true 일 때 readOnly=true 로 차트를 열어 [수정] 진입·입력·저장 전부 잠금. 비귀가(원내잔류)는 false(무회귀).
+  const [medicalChartReadOnly, setMedicalChartReadOnly] = useState(false);
+  const openTreatmentChart = (customerId: string, variant: 'full' | 'clinical' = 'clinical', readOnly = false) => {
     setMedicalChartCustomerId(customerId);
     setMedicalChartVariant(variant);
+    setMedicalChartReadOnly(readOnly);
     setMedicalChartOpen(true);
   };
 
@@ -833,6 +837,8 @@ export default function DoctorCallDashboard() {
           if (!v) {
             setMedicalChartOpen(false);
             setMedicalChartCustomerId(null);
+            // T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 닫을 때 readOnly 초기화(다음 환자 차트가 잔여 잠금 상속 방지).
+            setMedicalChartReadOnly(false);
           }
         }}
         customerId={medicalChartCustomerId}
@@ -840,6 +846,8 @@ export default function DoctorCallDashboard() {
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
         variant={medicalChartVariant}
+        /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 귀가완료 환자는 차트 진입 후에도 수정 불가(완전 readonly). 비귀가는 false(무회귀). */
+        readOnly={medicalChartReadOnly}
         // T-20260609-foot-MEDDASH-MINIMAL-TABLE AC-5: clinical 미니멀 drawer 내 '본 차트 열기' →
         //   같은 환자/같은 패널 인스턴스 유지하며 variant만 'full' 전환(작성 중 임상경과 보존, AC-6 2단 레이아웃 그대로).
         onOpenFull={() => setMedicalChartVariant('full')}
@@ -907,7 +915,7 @@ function CallFeedRow({
   currentUserEmail: string | null;
   /** T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3: 끝 임상경과 칼럼 최신 1줄 미리보기(없으면 null). */
   clinicalPreview: string | null;
-  onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
+  onOpenChart: (customerId: string, variant?: 'full' | 'clinical', readOnly?: boolean) => void;
   /** T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 '서류' 클릭 → 서류 발급 허브 오픈. */
   onOpenDocs: (checkIn: CheckIn) => void;
   onRefresh: () => void;
@@ -1269,7 +1277,7 @@ function CompletedRow({
   currentUserEmail: string | null;
   /** T-20260612-foot-DOCDASH-11FIX AC-11: 최신 임상경과 1줄 미리보기(없으면 null). */
   clinicalPreview: string | null;
-  onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
+  onOpenChart: (customerId: string, variant?: 'full' | 'clinical', readOnly?: boolean) => void;
   /** T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 '서류' 클릭 → 서류 발급 허브 오픈. */
   onOpenDocs: (checkIn: CheckIn) => void;
   onRefresh: () => void;
@@ -1356,7 +1364,8 @@ function CompletedRow({
             <VisitBadge visitType={checkIn.visit_type} />
             <button
               type="button"
-              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2/AC-8: 이름 클릭 차트 진입 유지(무회귀) + 귀가완료는 readonly 로 오픈. */
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full', discharged)}
               disabled={!checkIn.customer_id}
               data-testid="doctor-completed-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
@@ -1424,7 +1433,8 @@ function CompletedRow({
                 checkInStatus={checkIn.status}
                 checkedInAt={checkIn.checked_in_at}
                 checkInFlag={checkIn.status_flag}
-                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 귀가완료는 차트 열기 시 readonly. */
+                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full', discharged)}
                 surface="doctor_call_dashboard"
                 customerId={checkIn.customer_id}
                 plainText
@@ -1480,9 +1490,10 @@ function CompletedRow({
                  처방 작성/수정은 차트 내부에서만 — 대시보드 인플레이스 처방 mutate(QuickRxBar apply) 미노출 유지(귀가 잠금 무회귀). */
               <button
                 type="button"
-                onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 귀가완료 환자 차트는 readonly 로 오픈(수정 불가). */
+                onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full', discharged)}
                 data-testid="doctor-completed-no-rx"
-                title="귀가 환자 — 처방은 차트에서 수정 (클릭 시 진료차트 열림)"
+                title="귀가 환자 — 처방은 차트에서 확인 (클릭 시 진료차트 열림, 읽기전용)"
                 className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
               >
                 <FileText className="h-3 w-3" />
@@ -1523,9 +1534,10 @@ function CompletedRow({
               /* ★ MSG-20260620-023610-702z(planner CLARIFY): 데드 '—' invisible click → 명시 '차트 열기' 버튼/링크. */
               <button
                 type="button"
-                onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 귀가완료 환자 차트는 readonly 로 오픈(작성/수정 불가, 확인 전용). */
+                onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full', discharged)}
                 data-testid="doctor-completed-clinical-empty-chart-btn"
-                title="귀가 환자 — 임상경과는 차트에서 작성/수정 (클릭 시 진료차트 열림)"
+                title="귀가 환자 — 임상경과는 차트에서 확인 (클릭 시 진료차트 열림, 읽기전용)"
                 className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
               >
                 <FileText className="h-3 w-3" />

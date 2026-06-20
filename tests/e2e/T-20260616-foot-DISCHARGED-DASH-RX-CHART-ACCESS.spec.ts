@@ -61,9 +61,11 @@ test.describe('S1 귀가 행 1클릭 차트오픈', () => {
     // 귀가 미처방 진입점 testid 유지(no-rx), 단 이제 <button onClick=onOpenChart>.
     expect(block).toContain('data-testid="doctor-completed-no-rx"');
     const idx = block.indexOf('data-testid="doctor-completed-no-rx"');
-    const scope = block.slice(idx - 260, idx + 120);
+    const scope = block.slice(idx - 260, idx + 160);
     // 클릭 시 진료차트('full') 오픈 — 데드텍스트(클릭 불가)가 아님.
-    expect(scope).toContain('onOpenChart(checkIn.customer_id, \'full\')');
+    // ★ T-20260620-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2 supersede: 진입점(1클릭 차트오픈)은 유지하되,
+    //   귀가완료는 readonly 로 열도록 3번째 인자(discharged) 전달 — '차트 열어 수정' → '차트에서도 수정 불가'.
+    expect(scope).toContain('onOpenChart(checkIn.customer_id, \'full\', discharged)');
     // 인플레이스 처방 작성(QuickRxBar 컴포넌트)을 이 진입점에서 렌더하지 않는다.
     expect(scope).not.toContain('<QuickRxBar');
     expect(scope).not.toContain('setShowRx');
@@ -75,7 +77,8 @@ test.describe('S1 귀가 행 1클릭 차트오픈', () => {
     expect(block).toContain('data-testid="doctor-completed-clinical-empty-chart-btn"');
     const idx = block.indexOf('doctor-completed-clinical-empty-chart-btn');
     const scope = block.slice(idx - 240, idx + 160);
-    expect(scope).toContain('onOpenChart(checkIn.customer_id, \'full\')');
+    // ★ T-20260620 축2 supersede: 진입점 유지 + 귀가완료 readonly(discharged) 전달.
+    expect(scope).toContain('onOpenChart(checkIn.customer_id, \'full\', discharged)');
     // 차트오픈만 — 인플레이스 작성 토글(setShowClinical) 미사용.
     expect(scope).not.toContain('setShowClinical');
   });
