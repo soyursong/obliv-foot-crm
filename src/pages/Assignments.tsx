@@ -88,6 +88,11 @@ export default function Assignments() {
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [customers, setCustomers] = useState<Map<string, CustomerLite>>(new Map());
   const [actions, setActions] = useState<AssignmentAction[]>([]);
+  // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: 당월 누적 '배정/재진' 카운트의 정본 = check_ins(내구 상태).
+  //   audit 로그(assignment_actions)는 toss/당김 집계·방식표시용. 자동+수동 모두 check_ins.{role}_id 에
+  //   확정 기록되므로, 집계를 그 공통 정본 경로로 통합하면 audit 로그 유실/지연과 무관하게 정확(1건당 1회).
+  const [monthCheckIns, setMonthCheckIns] = useState<CheckIn[]>([]);
+  const [monthCustomers, setMonthCustomers] = useState<Map<string, CustomerLite>>(new Map());
   const [slotEnter, setSlotEnter] = useState<Map<string, string>>(new Map());
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,6 +109,10 @@ export default function Assignments() {
     fromStaffId: string | null;
   } | null>(null);
   const [tossReason, setTossReason] = useState('');
+  // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-2: 재배정 방식(미배정/수동변경) + 수동 선택 담당.
+  //   랜덤 자동재배정 제거 — 반드시 명시 선택. 기본값 = 'reassign'(수동 변경).
+  const [tossMode, setTossMode] = useState<'reassign' | 'unassign'>('reassign');
+  const [tossToStaffId, setTossToStaffId] = useState<string>('');
 
   const staffName = useCallback(
     (id: string | null): string => {
@@ -164,13 +173,45 @@ export default function Assignments() {
       }
       setCustomers(custMap);
 
-      // 5) 당월 assignment_actions (균등/토스/당김 카운트 SSOT)
+      // 5) 당월 assignment_actions (토스 N건·당김 N건·금일 배분 '방식' 표시 SSOT)
+      //    배정/재진 누적 카운트의 정본은 check_ins(아래 5b) — audit 로그는 toss/당김·방식용.
       const { data: actRows } = await supabase
         .from('assignment_actions')
         .select('*')
         .eq('clinic_id', clinic.id)
         .gte('created_at', monthStart);
       setActions((actRows ?? []) as AssignmentAction[]);
+
+      // 5b) 당월 check_ins 전체 (배정 누적 카운트 + 금일 배분 이력 정본 — done/cancelled 포함)
+      //     T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1/AC-3: 자동·수동 배정 모두 여기 consultant_id/
+      //     therapist_id 에 확정 기록되므로, 이 경로로 집계하면 audit 유실과 무관하게 정확.
+      const { data: monthCiRows } = await supabase
+        .from('check_ins')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .gte('checked_in_at', monthStart)
+        .order('checked_in_at', { ascending: true });
+      const monthCi = (monthCiRows ?? []) as CheckIn[];
+      setMonthCheckIns(monthCi);
+
+      // 5c) 당월 check_ins customers (상담 축 파생용) — 오늘분 custMap 의 상위집합
+      const monthCustIds = Array.from(
+        new Set(monthCi.map((c) => c.customer_id).filter(Boolean)),
+      ) as string[];
+      const monthCustMap = new Map<string, CustomerLite>();
+      if (monthCustIds.length > 0) {
+        // .in() 대용량 분할 (PostgREST URL 길이 한계 회피)
+        const CHUNK = 200;
+        for (let i = 0; i < monthCustIds.length; i += CHUNK) {
+          const slice = monthCustIds.slice(i, i + CHUNK);
+          const { data: rows } = await supabase
+            .from('customers')
+            .select('id, visit_type, lead_source, visit_route')
+            .in('id', slice);
+          for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
+        }
+      }
+      setMonthCustomers(monthCustMap);
 
       // 6) 슬롯 진입 시각(당김 10분+ 판정) — 대기 상태로의 최신 transition
       const ciIds = ci.map((c) => c.id);
@@ -226,6 +267,24 @@ export default function Assignments() {
     pulled: number; // 당김 받은 사람 +1
   }
 
+  // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: 배정(균등)/재진 = check_ins(정본) 카운트.
+  //   상담축: 고객 visit_type='returning' → 재진, else 균등. 치료축: 항상 균등(재진 축 미해당).
+  //   토스/당김 = assignment_actions(audit) 카운트(from/to 기준). → 자동·수동 모두 정확 반영.
+  const monthAxisOf = useCallback(
+    (ci: CheckIn, role: AssignmentRole): string => {
+      if (role === 'consult') {
+        const cu = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
+        return deriveConsultAxis({
+          visit_type: cu?.visit_type ?? ci.visit_type,
+          lead_source: cu?.lead_source,
+          visit_route: cu?.visit_route,
+        });
+      }
+      return deriveTherapyAxis(ci);
+    },
+    [monthCustomers],
+  );
+
   const staffStats = useMemo<StaffStat[]>(() => {
     const byId = new Map<string, StaffStat>();
     const ensure = (s: Staff): StaffStat => {
@@ -240,38 +299,90 @@ export default function Assignments() {
     for (const s of staff) {
       if (s.role === 'consultant' || s.role === 'therapist') ensure(s);
     }
+    // 배정/재진 — check_ins 정본(자동+수동 공통, 1건당 1회 / 역할별 분리)
+    for (const ci of monthCheckIns) {
+      if (ci.consultant_id) {
+        const s = staff.find((x) => x.id === ci.consultant_id);
+        if (s && s.role === 'consultant') {
+          const st = ensure(s);
+          if (monthAxisOf(ci, 'consult') === 'returning') st.returning += 1;
+          else st.assigned += 1;
+        }
+      }
+      if (ci.therapist_id) {
+        const s = staff.find((x) => x.id === ci.therapist_id);
+        if (s && s.role === 'therapist') {
+          const st = ensure(s);
+          if (monthAxisOf(ci, 'therapy') === 'returning') st.returning += 1;
+          else st.assigned += 1;
+        }
+      }
+    }
+    // 토스 N건(넘긴 사람) / 당김 N건(받은 사람) — assignment_actions audit
     for (const a of actions) {
-      // 토스 N건(넘긴 사람)
       if (a.action_type === 'toss' && a.from_staff_id) {
         const s = staff.find((x) => x.id === a.from_staff_id);
         if (s) ensure(s).tossGiven += 1;
       }
-      // 당김 N건(받은 사람)
       if (a.action_type === 'pull_in' && a.to_staff_id) {
         const s = staff.find((x) => x.id === a.to_staff_id);
         if (s) ensure(s).pulled += 1;
-      }
-      // 배정(받은 사람) — auto_assign/manual/pull_in (토스 받음도 포함되나 별도 toss 카운터는 from 기준)
-      if (
-        (a.action_type === 'auto_assign' ||
-          a.action_type === 'manual' ||
-          a.action_type === 'pull_in' ||
-          a.action_type === 'toss') &&
-        a.to_staff_id
-      ) {
-        const s = staff.find((x) => x.id === a.to_staff_id);
-        if (s) {
-          const st = ensure(s);
-          if (a.axis === 'returning') st.returning += 1;
-          else st.assigned += 1;
-        }
       }
     }
     const wantRole = activeTab === 'consult' ? 'consultant' : 'therapist';
     return Array.from(byId.values())
       .filter((st) => st.staff.role === wantRole)
       .sort((x, y) => y.assigned - x.assigned);
-  }, [staff, actions, activeTab]);
+  }, [staff, actions, monthCheckIns, monthAxisOf, activeTab]);
+
+  // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
+  interface TodayDistRow {
+    id: string;
+    customerName: string;
+    role: AssignmentRole;
+    staffId: string | null;
+    method: string; // 자동 | 수동 | 토스 | 당김 | —
+    at: string; // ISO (action created_at 우선, 없으면 checked_in_at)
+  }
+  const todayDistribution = useMemo<TodayDistRow[]>(() => {
+    const todayIso = todaySeoulISODate();
+    // ISO 포맷 혼재(+00:00 / Z / +09:00) → 문자열 비교 금지, epoch(ms)로 비교.
+    const todayStartMs = new Date(`${todayIso}T00:00:00+09:00`).getTime();
+    const METHOD_KO: Record<string, string> = {
+      auto_assign: '자동',
+      manual: '수동',
+      toss: '토스',
+      pull_in: '당김',
+    };
+    // check_in_id+role → 최신 action (created_at desc)
+    const latestAct = new Map<string, AssignmentAction>();
+    for (const a of actions) {
+      if (!a.check_in_id || new Date(a.created_at).getTime() < todayStartMs) continue;
+      const key = `${a.check_in_id}:${a.role}`;
+      const prev = latestAct.get(key);
+      if (!prev || a.created_at > prev.created_at) latestAct.set(key, a);
+    }
+    const rows: TodayDistRow[] = [];
+    for (const ci of monthCheckIns) {
+      if (!ci.checked_in_at || new Date(ci.checked_in_at).getTime() < todayStartMs) continue;
+      const push = (role: AssignmentRole, staffId: string | null) => {
+        if (!staffId) return;
+        if (role !== activeTab) return;
+        const act = latestAct.get(`${ci.id}:${role}`);
+        rows.push({
+          id: `${ci.id}:${role}`,
+          customerName: ci.customer_name ?? '—',
+          role,
+          staffId,
+          method: act ? (METHOD_KO[act.action_type] ?? '—') : '—',
+          at: act?.created_at ?? ci.checked_in_at!,
+        });
+      };
+      push('consult', ci.consultant_id);
+      push('therapy', ci.therapist_id);
+    }
+    return rows.sort((a, b) => b.at.localeCompare(a.at));
+  }, [monthCheckIns, actions, activeTab]);
 
   // ── 당김 후보(상담대기 10분+ 또는 미배정) ────────────────────────────────────
   const pullCandidates = useMemo(() => {
@@ -296,12 +407,18 @@ export default function Assignments() {
     const fromStaffId = role === 'consult' ? ci.consultant_id : ci.therapist_id;
     setTossTarget({ checkIn: ci, role, axis: axisOf(ci, role), fromStaffId });
     setTossReason('');
+    setTossMode('reassign'); // AC-2: 기본 수동 변경(랜덤 아님)
+    setTossToStaffId('');
   };
 
   const confirmToss = async () => {
     if (!tossTarget || !clinic) return;
     if (!tossReason.trim()) {
       toast.error('토스 사유를 입력해주세요.');
+      return;
+    }
+    if (tossMode === 'reassign' && !tossToStaffId) {
+      toast.error('재배정할 담당자를 선택해주세요.');
       return;
     }
     setBusy(true);
@@ -311,12 +428,18 @@ export default function Assignments() {
       role: tossTarget.role,
       axis: tossTarget.axis,
       fromStaffId: tossTarget.fromStaffId,
+      mode: tossMode,
+      toStaffId: tossMode === 'reassign' ? tossToStaffId : null,
       reason: tossReason,
       createdBy: profile?.id ?? null,
     });
     setBusy(false);
     if (res.ok) {
-      toast.success(`토스 완료 → ${staffName(res.toStaffId ?? null)}`);
+      toast.success(
+        tossMode === 'unassign'
+          ? '토스 완료 — 미배정으로 되돌렸습니다.'
+          : `토스 완료 → ${staffName(res.toStaffId ?? null)}`,
+      );
       setTossTarget(null);
       void load();
     } else {
@@ -628,6 +751,58 @@ export default function Assignments() {
         </CardContent>
       </Card>
 
+      {/* ③-0 금일 배분 이력 (AC-3, read-only) — 당월 누적 상단. 오늘 배정된 건(고객/담당/방식/시각) */}
+      <Card data-testid="assignments-today-distribution-card">
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm">
+            금일 배분 이력{' '}
+            <span className="text-xs font-normal text-muted-foreground">
+              (오늘 {activeTab === 'consult' ? '상담' : '치료'} 배정 {todayDistribution.length}건 · 표시 전용)
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="max-h-[28vh] overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">고객</th>
+                  <th className="px-2 py-2 text-left font-medium">담당</th>
+                  <th className="px-2 py-2 text-left font-medium">방식</th>
+                  <th className="px-2 py-2 text-right font-medium">시각</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayDistribution.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                      오늘 배분된 건이 없습니다.
+                    </td>
+                  </tr>
+                )}
+                {todayDistribution.map((r) => (
+                  <tr key={r.id} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium">{r.customerName}</td>
+                    <td className="px-2 py-2">{staffName(r.staffId)}</td>
+                    <td className="px-2 py-2">
+                      <Badge
+                        variant={r.method === '자동' ? 'teal' : r.method === '—' ? 'outline' : 'secondary'}
+                        className="font-normal"
+                      >
+                        {r.method}
+                      </Badge>
+                    </td>
+                    <td className="px-2 py-2 text-right text-muted-foreground">
+                      {r.at ? new Date(r.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ③ 직원별 당월 누적 */}
       <Card data-testid="assignments-monthly-card">
         <CardHeader className="py-3">
@@ -692,22 +867,96 @@ export default function Assignments() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">
-              토스 사유 <span className="text-destructive">*</span>
-            </label>
-            <Textarea
-              value={tossReason}
-              onChange={(e) => setTossReason(e.target.value)}
-              placeholder="예) 신규 상담 진행 중이라 받을 수 없음"
-              rows={3}
-            />
+          <div className="space-y-4">
+            {/* AC-2: 재배정 방식 — 미배정 / 담당 변경(수동 선택). 랜덤 자동배정 제거. */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">재배정 방식</label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={tossMode === 'reassign' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setTossMode('reassign')}
+                  data-testid="toss-mode-reassign"
+                >
+                  {tossTarget?.role === 'consult' ? '상담사' : '치료사'} 변경
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={tossMode === 'unassign' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => {
+                    setTossMode('unassign');
+                    setTossToStaffId('');
+                  }}
+                  data-testid="toss-mode-unassign"
+                >
+                  미배정
+                </Button>
+              </div>
+            </div>
+
+            {/* '변경' 선택 시 당일 출근 담당 목록(STAFF-ATTENDANCE consume·read) 수동 지정 */}
+            {tossMode === 'reassign' && tossTarget && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">
+                  {tossTarget.role === 'consult' ? '상담사' : '치료사'} 선택{' '}
+                  <span className="text-destructive">*</span>{' '}
+                  <span className="font-normal">(오늘 출근)</span>
+                </label>
+                <select
+                  className="w-full rounded border bg-background px-2 py-1.5 text-sm"
+                  value={tossToStaffId}
+                  onChange={(e) => setTossToStaffId(e.target.value)}
+                  disabled={busy}
+                  data-testid="toss-staff-select"
+                >
+                  <option value="" disabled>
+                    담당 선택
+                  </option>
+                  {poolFor(tossTarget.role)
+                    .filter((s) => s.id !== tossTarget.fromStaffId)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {(s.display_name ?? s.name).trim()}
+                      </option>
+                    ))}
+                </select>
+                {poolFor(tossTarget.role).filter((s) => s.id !== tossTarget.fromStaffId).length === 0 && (
+                  <p className="text-xs text-amber-600">
+                    오늘 출근한 다른 {tossTarget.role === 'consult' ? '상담사' : '치료사'}가 없습니다. 미배정으로
+                    되돌릴 수 있습니다.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                토스 사유 <span className="text-destructive">*</span>
+              </label>
+              <Textarea
+                value={tossReason}
+                onChange={(e) => setTossReason(e.target.value)}
+                placeholder="예) 신규 상담 진행 중이라 받을 수 없음"
+                rows={3}
+                data-testid="toss-reason-input"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTossTarget(null)} disabled={busy}>
               취소
             </Button>
-            <Button onClick={() => void confirmToss()} disabled={busy || !tossReason.trim()}>
+            <Button
+              onClick={() => void confirmToss()}
+              disabled={
+                busy || !tossReason.trim() || (tossMode === 'reassign' && !tossToStaffId)
+              }
+              data-testid="toss-confirm-btn"
+            >
               토스 확정
             </Button>
           </DialogFooter>

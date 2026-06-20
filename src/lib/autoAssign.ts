@@ -383,8 +383,13 @@ export async function maybeAutoAssign(
 // ── 토스(push) ────────────────────────────────────────────────────────────────
 
 /**
- * 토스 — 현재 담당을 무효화하고 다음 후보(least-loaded)로 재배정. 사유 필수(시나리오4).
+ * 토스 — 현재 담당을 명시적으로 재지정하거나 미배정으로 되돌림. 사유 필수(시나리오4).
+ * T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-2: 랜덤 자동재배정 제거 — 호출측이 mode를 명시한다.
+ *   mode='reassign' → toStaffId(당일 출근 목록에서 수동 선택)로 재배정.
+ *   mode='unassign' → 담당 없음(NULL)으로 풀에 되돌림.
  * 토스 N건은 넘긴 사람(fromStaffId) 기준 +1 로 집계(별도 카운터 = assignment_actions count).
+ * 결과는 check_ins.consultant_id/therapist_id(기존 경로) 반영 + assignment_actions(toss)에
+ * 사유·이전(from)/이후(to) 담당 기록.
  */
 export async function tossAssignment(opts: {
   checkInId: string;
@@ -392,28 +397,25 @@ export async function tossAssignment(opts: {
   role: AssignmentRole;
   axis: string | null;
   fromStaffId: string | null;
+  /** 'reassign'=수동 지정 / 'unassign'=미배정으로 되돌림 (랜덤 기본값 없음, AC-2) */
+  mode: 'reassign' | 'unassign';
+  /** mode='reassign' 시 필수 — 당일 출근 목록에서 수동 선택한 담당 staff id */
+  toStaffId?: string | null;
   reason: string;
   createdBy?: string | null;
-}): Promise<{ ok: boolean; toStaffId?: string; message?: string }> {
+}): Promise<{ ok: boolean; toStaffId?: string | null; message?: string }> {
   if (!opts.reason || !opts.reason.trim()) {
     return { ok: false, message: '토스 사유를 입력해주세요.' };
   }
+  const next: string | null = opts.mode === 'unassign' ? null : (opts.toStaffId ?? null);
+  if (opts.mode === 'reassign' && !next) {
+    return { ok: false, message: '재배정할 담당자를 선택해주세요.' };
+  }
+  if (opts.mode === 'reassign' && next === opts.fromStaffId) {
+    return { ok: false, message: '현재 담당과 다른 담당자를 선택해주세요.' };
+  }
   try {
     const assignedCol = opts.role === 'consult' ? 'consultant_id' : 'therapist_id';
-    const targetRole = ROLE_STAFF_ROLE[opts.role];
-    const staff = await fetchActiveStaff(opts.clinicId);
-    const workingIds = await fetchTodayWorkingStaffIds(opts.clinicId, staff);
-    const actions = await fetchMonthActions(opts.clinicId);
-    const axis = opts.axis ?? 'main';
-    const load = computeLoad(actions, opts.role, axis, todaySeoulISODate());
-    // 넘긴 사람 제외한 후보 풀에서 least-loaded
-    const pool = staff
-      .filter((s) => s.role === targetRole && workingIds.has(s.id) && s.id !== opts.fromStaffId)
-      .map((s) => s.id);
-    const next = pickLeastLoaded(pool, load);
-    if (!next) {
-      return { ok: false, message: '재배정할 출근 담당자가 없습니다.' };
-    }
     const { error } = await supabase
       .from('check_ins')
       .update({ [assignedCol]: next })
@@ -426,7 +428,7 @@ export async function tossAssignment(opts: {
       role: opts.role,
       axis: opts.axis,
       fromStaffId: opts.fromStaffId,
-      toStaffId: next,
+      toStaffId: next, // unassign 시 null (미배정 기록)
       reason: opts.reason.trim(),
       createdBy: opts.createdBy ?? null,
     });
