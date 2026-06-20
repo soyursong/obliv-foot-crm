@@ -115,7 +115,9 @@ test.describe('S2 — 재진 축 처리', () => {
   });
 
   test('통합 뷰 — 재진 카운트는 균등(assigned)과 분리 집계', () => {
-    expect(PAGE_CODE).toMatch(/axis === 'returning'.*st\.returning \+= 1/s);
+    // T-20260620 refine: staffStats 집계 정본을 assignment_actions→check_ins(monthAxisOf)로 이관.
+    // 재진 축은 여전히 균등(assigned)과 분리된 returning 필드로 카운트.
+    expect(PAGE_CODE).toMatch(/=== 'returning'\) st\.returning \+= 1/);
     expect(PAGE_CODE).toContain('returning:'); // StaffStat 별도 필드
   });
 });
@@ -140,7 +142,8 @@ test.describe('S4 — 토스(handoff push)', () => {
   });
 
   test('UI: 사유 빈값이면 토스 확정 비활성 + 에러 토스트', () => {
-    expect(PAGE_CODE).toContain('disabled={busy || !tossReason.trim()}');
+    // T-20260620 refine: 확정 버튼 disabled 에 사유 외 재배정 담당 미선택(reassign) 조건도 추가됨.
+    expect(PAGE_CODE).toMatch(/busy \|\| !tossReason\.trim\(\)/);
     expect(PAGE_CODE).toMatch(/if \(!tossReason\.trim\(\)\)/);
     expect(PAGE_CODE).toContain("toast.error('토스 사유를 입력해주세요.')");
   });
@@ -150,8 +153,16 @@ test.describe('S4 — 토스(handoff push)', () => {
   });
 
   test('토스는 넘긴 사람 제외한 풀에서 재배정', () => {
-    expect(ENGINE_CODE).toMatch(/s\.id !== opts\.fromStaffId/);
-    expect(ENGINE_CODE).toMatch(/action_type === 'toss'/);
+    // T-20260620 refine: 토스 재배정이 엔진 랜덤(least-loaded)에서 UI 수동 선택으로 변경.
+    //   넘긴 사람 제외 풀 필터는 이제 PAGE 의 toss-staff-select 후보에서 적용된다.
+    expect(PAGE_CODE).toMatch(/s\.id !== tossTarget\.fromStaffId/);
+    expect(PAGE_CODE).toContain('data-testid="toss-staff-select"');
+    // 엔진 토스는 명시 mode(reassign|unassign) 기반 — 랜덤 pickLeastLoaded 미사용.
+    const tossBlock = ENGINE_CODE.slice(ENGINE_CODE.indexOf('export async function tossAssignment'));
+    const tossOnly = tossBlock.slice(0, tossBlock.indexOf('export async function pullAssignment'));
+    expect(tossOnly).toMatch(/mode: 'reassign' \| 'unassign'/);
+    expect(tossOnly).not.toMatch(/pickLeastLoaded/);
+    expect(ENGINE_CODE).toMatch(/actionType: 'toss'/);
   });
 });
 
