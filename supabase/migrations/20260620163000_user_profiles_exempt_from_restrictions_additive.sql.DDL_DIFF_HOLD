@@ -1,0 +1,52 @@
+-- T-20260620-foot-SUPERADMIN-EXEMPT — exempt_from_restrictions(상시예외 영속화) ADDITIVE flag
+-- ⚠️ DO NOT APPLY: supervisor DDL-diff 게이트 통과 전까지 미적용. .DDL_DIFF_HOLD suffix → db push 대상 아님(레포 convention).
+--
+-- 출처: DA CONSULT-REPLY MSG-20260620-162917-aw39 (DA-20260620-FOOT-SUPERADMIN-EXEMPT) — 판정 GO(ADDITIVE).
+--   계약 반영 완료: schema_registry user_profiles 등재 + cross_crm_data_contract §12-3 invariant 추가.
+--   cross-CRM 후보 표준: 타 parity CRM 채택 시 동일 컬럼명(exempt_from_restrictions), divergence 금지.
+--
+-- 배경 (reporter = 김주연 총괄, user_profiles.id=ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12):
+--   role 변경·신규 제한 토글에도 생존하는 '상시예외' 요구. admin-escape 는 예외를 role='admin'에 결합 →
+--   role 강등 시 예외 소실. 결합을 끊으려면 ADDITIVE 컬럼이 정당(DA Q1).
+--
+-- 컬럼 정의:
+--   user_profiles.exempt_from_restrictions boolean NOT NULL DEFAULT false
+--   = "이 사용자가 메뉴/권한 '제한 토글'(§12 EXCL-3 회수 + 향후 신규 제한)의 적용에서 제외되는가".
+--   ★grant 아님(DA Q2): 신규 메뉴/의사·진료 publish 부여 안 함 — 역할이 이미 가진 접근의 '제거 방지'만.
+--     ∴ 본 flag 는 grant 가 아니라 'negative-protection'. 네이밍이 의미를 정확히 담음(is_super_admin REJECT).
+--   has_ops_authority(positive ABILITY)와 직교 축 → 별 컬럼 유지(통합 금지, least-privilege·AC-6).
+--
+-- 평가층 (DA Q2):
+--   FE/PERM_MATRIX(§12-5 ① SSOT, canAccess)에서만 평가. 3-게이트(PERM_MATRIX·RoleGuard·NAV)는 PERM_MATRIX 파생 자동 정합.
+--   ★불변(면제 아님): PHI audit(phi_access_log)·RRN 가드(AC-5)·승인 게이트·clinic 스코프 우회 X.
+--   ★RLS-층 defer(DA): 현 위협모델 = 향후 FE 메뉴 제한 오더 → FE-층 exempt 로 충족. 역할 강등 후 DB-층 생존까지
+--     원하면 §12-4 EXCL RLS 술어에 exempt 주입(PHI surface 변경) → 재CONSULT/CONVENE 게이트. 본 마이그는 RLS 불변.
+--
+-- ★supervisor 효율 권고(DA): has_ops_authority(20260619220000_..._additive.sql.DDL_DIFF_HOLD)도 동일하게
+--   user_profiles ADDITIVE NOT NULL default false pending 이므로, 두 ADD COLUMN 을 동일 DDL-diff 리뷰 배치에
+--   co-locate 하면 게이트 1회로 축소(컬럼은 별개 유지). 적용 순서/배치는 supervisor 판단.
+--
+-- 게이트: ADDITIVE only + supervisor DDL-diff 게이트 + dry-run + rollback 동반.
+
+BEGIN;
+
+ALTER TABLE public.user_profiles
+  ADD COLUMN IF NOT EXISTS exempt_from_restrictions boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.user_profiles.exempt_from_restrictions IS
+  'T-20260620-foot-SUPERADMIN-EXEMPT: 상시예외 영속화 ADDITIVE flag. true=메뉴/권한 제한 토글(§12 EXCL-3 회수+향후 신규 제한) 적용 제외. grant 아님(제거 방지만). has_ops_authority와 직교. FE/PERM_MATRIX(canAccess)에서만 평가. PHI/RRN/승인/clinic 스코프 우회 X.';
+
+COMMIT;
+
+-- 적용 후 검증 (컬럼 존재 + 전원 default false):
+--   SELECT column_name, data_type, is_nullable, column_default
+--     FROM information_schema.columns
+--    WHERE table_schema='public' AND table_name='user_profiles' AND column_name='exempt_from_restrictions';
+--   SELECT count(*) FROM public.user_profiles WHERE exempt_from_restrictions = true;  -- backfill DML 전 = 0
+
+-- ════════════════════════════════════════════════════════════════════════
+-- ROLLBACK (적용 후 되돌릴 때만 실행)
+-- ════════════════════════════════════════════════════════════════════════
+-- BEGIN;
+--   ALTER TABLE public.user_profiles DROP COLUMN IF EXISTS exempt_from_restrictions;
+-- COMMIT;

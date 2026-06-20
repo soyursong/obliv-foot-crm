@@ -179,7 +179,8 @@ export default function Customers() {
   // 삭제는 admin / T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director(대표원장). customers RLS=is_admin_or_manager(director 포함)이라 FOR ALL(DELETE) 이미 director 허용 → RLS/감사로그 영향 0. admin 비제거.
   const canDeleteCustomer = profile?.role === 'admin' || profile?.role === 'director';
   // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기는 PII(전화·생년월일) 포함 → admin/manager 한정(노출+실행 동시 게이팅).
-  const canExportCustomers = canAccess(profile?.role ?? '', 'customer_export');
+  // T-20260620-foot-SUPERADMIN-EXEMPT: profile(subject) 전달 → exempt_from_restrictions honor(상시예외 시 customer_export 보존). role 문자열 대신 subject.
+  const canExportCustomers = canAccess(profile, 'customer_export');
   const [query, setQuery] = useState('');
   // T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 드롭다운 필터.
   // '' = 전체(필터해제), '__unassigned__' = 미지정(assigned_staff_id IS NULL), 그 외 = staff.id 일치.
@@ -208,7 +209,7 @@ export default function Customers() {
   // T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 우클릭 [문자] → 기존 SendSmsDialog 경로 재사용(신규 발송 로직 없음).
   // 게이트는 canon SSOT인 manual_sms_send 권한(CustomerQuickMenu/Dashboard/Reservations 동일) — 미충족 시 onSendSms 미전달로 항목 미노출.
   const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
-  const canSendSms = canAccess(profile?.role ?? '', 'manual_sms_send');
+  const canSendSms = canAccess(profile, 'manual_sms_send');
   // Customer → CheckIn 어댑터: SendSmsDialog는 customer_id로 phone을 SSOT refetch하므로 식별 필드만 채우면 충분
   // (resvAsCheckIn(Reservations.tsx) 패턴 미러). 가짜 체크인 행이므로 id에 cust- 접두.
   const customerAsCheckIn = useCallback((c: Customer): CheckIn => ({

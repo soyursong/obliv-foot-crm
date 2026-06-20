@@ -7180,7 +7180,7 @@ export default function Dashboard() {
         onOpenPayment={handleOpenPaymentFromMenu}
         /* T-20260606-foot-CTXMENU-SMS-SEND: admin/manager 한정 노출(미허용 시 onSendSms 미전달 → 항목 숨김) */
         onSendSms={
-          canAccess(profile?.role ?? '', 'manual_sms_send')
+          canAccess(profile, 'manual_sms_send')  /* T-20260620-foot-SUPERADMIN-EXEMPT: subject 전달(exempt honor) */
             ? (ci) => setSmsTarget(ci)
             : undefined
         }
@@ -7213,7 +7213,7 @@ export default function Dashboard() {
         reservationActionLabel="예약상세"
         /* 문자 — admin/manager(onSendSms 제공 시)만 노출. ci는 resvAsCheckIn 어댑터(customer_id로 phone SSOT refetch). */
         onSendSms={
-          canAccess(profile?.role ?? '', 'manual_sms_send')
+          canAccess(profile, 'manual_sms_send')  /* T-20260620-foot-SUPERADMIN-EXEMPT: subject 전달(exempt honor) */
             ? (ci) => { setResvContextMenu(null); setSmsTarget(ci); }
             : undefined
         }
