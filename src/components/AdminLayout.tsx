@@ -108,7 +108,8 @@ const NAV_ITEMS: {
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
   // T-20260605-foot-HANDOVER-BOARD: 현장 명칭 "직원 근무 캘린더"(원장 듀티 로스터와 분리된 독립 메뉴).
   // AC-5: 전 직원 노출 (roles 미지정). 인수인계 작성/조회가 이 캘린더 안에서 이뤄짐.
-  { to: '/admin/handover', label: '직원 근무 캘린더', icon: ClipboardCheck },
+  // T-20260621-foot-DUTYCAL-MENU-RELABEL: 사이드바 메뉴 표시 라벨만 '직원 근무 캘린더'→'근무 캘린더'. route/icon/노출 role 무변경.
+  { to: '/admin/handover', label: '근무 캘린더', icon: ClipboardCheck },
   // T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰(자동배정 조회 + 토스/당김/수동).
   //   nav roles = App.tsx assignments route RoleGuard 와 패리티 SSOT(메뉴 보이는데 route 튕김 차단).
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: director(대표원장) nav-parity OR-추가. App.tsx route RoleGuard 와 동일 집합 SSOT 유지. admin 비제거.

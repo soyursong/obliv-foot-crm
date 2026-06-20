@@ -35,8 +35,9 @@ test.describe('T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE', () => {
   /**
    * AC-1: 최상위 [직원 근무 캘린더] 메뉴(/admin/handover)가 사이드바 최상위에 존재.
    */
-  test('AC-1 — 최상위 [직원 근무 캘린더] 메뉴(/admin/handover) 존재', () => {
-    expect(adminLayoutSrc).toMatch(/to:\s*'\/admin\/handover',\s*label:\s*'직원 근무 캘린더'/);
+  test('AC-1 — 최상위 [근무 캘린더] 메뉴(/admin/handover) 존재', () => {
+    // T-20260621-foot-DUTYCAL-MENU-RELABEL: 라벨 직원 근무 캘린더→근무 캘린더
+    expect(adminLayoutSrc).toMatch(/to:\s*'\/admin\/handover',\s*label:\s*'근무 캘린더'/);
   });
 
   /**
@@ -45,9 +46,10 @@ test.describe('T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE', () => {
   test('AC-1 — DutyRosterTab 흡수 (Handover.tsx 에서 import·렌더)', () => {
     expect(handoverSrc).toContain("import { DutyRosterTab } from '@/components/DutyRosterTab'");
     expect(handoverSrc).toContain('<DutyRosterTab clinic={clinic} />');
-    // 상단 탭 스트립 + 원장 근무표 탭 트리거 존재
+    // 상단 탭 스트립 + 의사(구 원장 근무표) 탭 트리거 존재
+    // T-20260621-foot-DUTYCAL-MENU-RELABEL: 탭 라벨 원장 근무표→의사 (value/testid 무변경)
     expect(handoverSrc).toContain('data-testid="handover-tab-duty"');
-    expect(handoverSrc).toContain('원장 근무표');
+    expect(handoverSrc).toMatch(/data-testid="handover-tab-duty"[\s\S]*?의사\s*<\/TabsTrigger>/);
     expect(handoverSrc).toContain('data-testid="handover-duty-pane"');
   });
 
