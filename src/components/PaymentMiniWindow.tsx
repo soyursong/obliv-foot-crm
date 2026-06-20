@@ -1908,10 +1908,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           </DialogTitle>
         </DialogHeader>
 
-        {/* T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금(잔금) 안내 배너 (읽기 전용)
-            미수금 있는 고객 결제 미니창 진입 시 담당자가 즉시 인지하도록 표면화.
-            ★ 표시 전용 — payments 쓰기 경로/일마감 집계 불변. PKG-OUTSTANDING-BALANCE SSOT 산출값 그대로.
-            §4-A: 패키지 잔금/진료비 잔금 각각 별도 표기(단일 합산 금지). */}
+        {/* T-20260620-foot-PMW-OUTSTANDING-PREFILL / MISU-PMW-CHART2 AC-1(B안): 미수금 자동 표시 배너 (읽기 전용)
+            미수금 있는 고객 결제 미니창 진입 시 담당자가 즉시 인지하도록 자동 표면화.
+            ★ 표시 전용 — payments 쓰기 경로/일마감 집계 불변. PKG-OUTSTANDING-BALANCE SSOT(loadCustomerOutstanding) 산출값 그대로.
+            §4-A: 패키지 잔금 / 진료비 미수 각각 따로 한 줄씩(단일 합산 금지). */}
         {hasOutstandingDue(customerOutstanding) && (
           <div
             className="px-5 py-2 border-b shrink-0 bg-red-50 flex flex-wrap items-center gap-x-4 gap-y-1"
@@ -1930,7 +1930,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             )}
             {(customerOutstanding?.consultationDue ?? 0) > 0 && (
               <span className="text-xs text-gray-700">
-                진료비 잔금 <span className="opacity-60">(별도)</span>{' '}
+                {/* T-20260620-foot-MISU-PMW-CHART2 §4-A: 라벨 '진료비 미수'로 통일(확정 스펙·CHART2 미수이력 일치). 패키지 잔금과 별도 줄. */}
+                진료비 미수 <span className="opacity-60">(별도)</span>{' '}
                 <span className="font-bold text-amber-600 tabular-nums" data-testid="pmw-outstanding-consultation">
                   {formatAmount(customerOutstanding!.consultationDue)}
                 </span>
