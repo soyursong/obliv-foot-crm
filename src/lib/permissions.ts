@@ -76,6 +76,25 @@ export function canViewRrn(role: UserRole): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-PHRASE-STAFF-PERM-BLOCKED — 직원영역 편집(상용구·수가세트) role-set SSOT (1지점).
+//   현장(김주연 총괄, U0ATDB587PV) "직원들이 메인으로 쓰는 곳" → 전직원(8역할, tm 제외) inclusive.
+//   AREA-SEPARATION 모델 표(직원영역 customer/pen_chart = '직원 편집 가능')를 실현.
+//   ★기존 admin/manager 게이트(RX-PERMMENU-PARITY)가 director·일반 직원(consultant/coordinator/
+//     therapist/part_lead/staff)을 collateral 배제 → 본 set 으로 확대(축소 아님, lock-out 0).
+//   ★대상 surface 별 영속화 차이(RC, T-20260620-foot-PHRASE-STAFF-PERM-BLOCKED AC-0):
+//      · 수가세트(fee_set_templates) RLS=auth_all(true/true) → 이 set 만으로 FE+DB 즉시 동작(Phase 1, 본 배포).
+//      · 상용구(phrase_templates) RLS write=IN('admin','manager') → 이 set 으로 FE 만 풀면 staff write 가
+//        RLS 에서 거부(lock-out-in-disguise) → Phase 2(phrase_templates RLS 확대, DA CONSULT) 동반 필요.
+//        ∴ PhrasesTab(상용구 펜/고객차트) 게이트는 RLS 확대 landing 전까지 admin||manager 유지(별 티켓 FOLLOWUP).
+//   tm 제외: STAFF-ROLE-TM-ADD 최소권한(4메뉴) — tm 은 서비스/상용구관리 surface 미접근. ALL_STAFF_ROLES 재사용.
+export const STAFF_AREA_EDIT_ROLES: UserRole[] = [...ALL_STAFF_ROLES];
+
+export function canEditStaffArea(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return STAFF_AREA_EDIT_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE — 균검사지(KOH) '발급요청' 권한 대상(WHO)
 //   reporter(풋센터 C0ATE5P6JTH, U0ATDB587PV) 직접 확정: "발급버튼 = 직원들이 처리하는 정상 항목".
 //   상담실장(consultant) · 코디네이터(coordinator) · 치료사(therapist) 3역할 + 의사(director) 전부 부여.
