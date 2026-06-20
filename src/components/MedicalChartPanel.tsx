@@ -52,7 +52,7 @@ import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Pill, Search, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Lock, Pill, Search, Trash2, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
@@ -1610,8 +1610,10 @@ export default function MedicalChartPanel({
   //   ※ 텍스트 약명매칭 금지 — prescription_code_id 기준만. (오탐 차단 / 의료안전)
   async function addRxItems(items: PrescriptionItem[], successMsg?: string) {
     // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 읽기전용(저장된 차트·미편집) 상태에선 처방 적재 차단.
+    // T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 호출자 강제 readOnly(귀가완료 환자 차트)는 [수정] 진입 자체가 없으므로
+    //   안내 문구를 분기(편집 진입 유도 X → 읽기전용 고지).
     if (isReadOnly) {
-      toast.error('[수정] 버튼을 눌러 편집 모드로 전환한 뒤 처방을 추가하세요');
+      toast.error(readOnly ? '읽기전용 차트예요 — 처방을 추가할 수 없어요' : '[수정] 버튼을 눌러 편집 모드로 전환한 뒤 처방을 추가하세요');
       return;
     }
     // #8-1b(role 게이트): 부원장(vice_director)은 prescription_code_id 없는 자유텍스트 처방 추가 금지.
@@ -3857,7 +3859,19 @@ export default function MedicalChartPanel({
 
                   {/* 저장/수정 버튼 — AC-4: 저장된 차트는 [수정]으로 편집모드 진입 후에만 저장 가능(실수 방지) */}
                   <div className="flex gap-3 pt-2 pb-4 border-t">
-                    {isReadOnly && !selectedChartId?.startsWith('__dummy__') ? (
+                    {readOnly ? (
+                      /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2 (문지은 대표원장): 귀가완료(discharged) 환자 차트 = 완전 읽기전용.
+                         호출자(진료대시보드)가 readOnly=true 강제 → [수정] 진입 버튼 자체를 숨겨 '수정 불가'를 명시(입력·저장·처방적재는 isReadOnly로 이미 잠김).
+                         ⚠ readOnly 는 full variant 에서 본 경로(귀가 차트)만 사용 → 타 호출자 무회귀. */
+                      <div
+                        className="flex-1 h-12 flex items-center justify-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 text-sm font-medium text-gray-400"
+                        data-testid="medical-chart-readonly-locked"
+                        title="귀가완료 환자의 차트는 읽기전용이에요 — 수정할 수 없어요"
+                      >
+                        <Lock className="h-4 w-4" />
+                        읽기전용 — 수정할 수 없어요
+                      </div>
+                    ) : isReadOnly && !selectedChartId?.startsWith('__dummy__') ? (
                       <Button
                         size="lg"
                         className="flex-1 h-12 text-base bg-amber-500 hover:bg-amber-600 text-white"
