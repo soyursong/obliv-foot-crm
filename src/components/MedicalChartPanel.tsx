@@ -52,7 +52,7 @@ import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, EyeOff, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Plus, Search, Sparkles, Stethoscope, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, Loader2, Pill, Search, Trash2, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
@@ -2127,7 +2127,6 @@ export default function MedicalChartPanel({
                     className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
                     data-testid="clinical-mini-super-option"
                   >
-                    <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <div className="text-xs font-medium truncate">{sp.name}</div>
                       <div className="text-[10px] text-muted-foreground line-clamp-1">
@@ -2340,7 +2339,6 @@ export default function MedicalChartPanel({
                     className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
                     data-testid="clinical-singleline-super-option"
                   >
-                    <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <div className="text-xs font-medium truncate">{sp.name}</div>
                       <div className="text-[10px] text-muted-foreground line-clamp-1">
@@ -2494,7 +2492,6 @@ export default function MedicalChartPanel({
         {/* ── 헤더 ─────────────────────────────────────────────────────────────── */}
         <div className="flex-none flex items-center justify-between px-5 py-3 border-b bg-background shadow-sm">
           <div className="flex items-center gap-3">
-            <Stethoscope className="h-4 w-4 text-teal-600 shrink-0" />
             <span className="text-base font-bold text-teal-700">
               {variant === 'clinical' ? '빠른 임상경과' : '진료차트'}
             </span>
@@ -2525,7 +2522,6 @@ export default function MedicalChartPanel({
               data-testid="current-doctor-name"
               title="현재 로그인 의사"
             >
-              <Stethoscope className="h-3.5 w-3.5" />
               {currentUserName}
             </span>
             {/* T-20260609-foot-MEDDASH-MINIMAL-TABLE AC-5: clinical 미니멀 drawer → 전체 진료차트 승격.
@@ -2539,7 +2535,6 @@ export default function MedicalChartPanel({
                 className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
                 title="전체 진료차트(타임라인·진단·치료·처방·진료메모) 열기"
               >
-                <FileText className="h-3.5 w-3.5" />
                 본 차트 열기
               </button>
             )}
@@ -2585,7 +2580,6 @@ export default function MedicalChartPanel({
                     }`}
                     data-testid="medical-chart-new-btn"
                   >
-                    <Plus className="h-3.5 w-3.5" />
                     새 기록
                   </button>
                 </div>
@@ -2822,7 +2816,6 @@ export default function MedicalChartPanel({
                     className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 uppercase tracking-wide"
                     title="이 패널은 '진료 경과'만 시간순으로 모읍니다 — 진료메모·치료메모·처방. 항목을 클릭하면 우측 폼에서 편집합니다. ▸ 상담기록은 우측 '📋 상담' 탭에 있습니다. ▸ 우측 '방문이력'은 방문(체크인) 단위 읽기전용 뷰입니다."
                   >
-                    <Stethoscope className="h-3 w-3" />
                     {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-7: 라벨에서 '타임라인' 단어 제거 → '진료경과'. */}
                     진료경과
                     {isDummyMode && (
@@ -2843,7 +2836,6 @@ export default function MedicalChartPanel({
                       data-testid="toggle-show-deleted-charts"
                       aria-pressed={showDeleted}
                     >
-                      <EyeOff className="h-2.5 w-2.5" />
                       {showDeleted ? `삭제된 차트 숨기기 (${deletedCharts.length})` : `삭제된 차트 보기 (${deletedCharts.length})`}
                     </button>
                   )}
@@ -3067,7 +3059,7 @@ export default function MedicalChartPanel({
                             {notable && (
                               <div className="mt-0.5">
                                 <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
-                                  ⚠ 특이사항 감지
+                                  특이사항 감지
                                 </span>
                               </div>
                             )}
@@ -3504,7 +3496,6 @@ export default function MedicalChartPanel({
                                     data-testid="treat-memo-history-toggle"
                                     aria-expanded={treatMemoHistoryOpen}
                                   >
-                                    <History className="h-2.5 w-2.5" />
                                     이전 이력 보기 ({previous.length}) {treatMemoHistoryOpen ? '접기' : ''}
                                     <ChevronDown className={`h-2.5 w-2.5 transition-transform ${treatMemoHistoryOpen ? 'rotate-180' : ''}`} />
                                   </button>
@@ -3633,7 +3624,6 @@ export default function MedicalChartPanel({
                                     className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
                                     data-testid="phrase-autocomplete-super-option"
                                   >
-                                    <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
                                     <div className="min-w-0">
                                       <div className="text-xs font-medium truncate">{sp.name}</div>
                                       <div className="text-[10px] text-muted-foreground line-clamp-1">
@@ -3741,7 +3731,6 @@ export default function MedicalChartPanel({
                         if (!recName || recName === selectedChart.signing_doctor_name) return null;
                         return (
                           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground italic" data-testid="chart-recorder">
-                            <Stethoscope className="h-3 w-3 text-teal-600" />
                             작성{' '}
                             <span className="font-semibold not-italic text-teal-700">
                               {recName}
@@ -3794,7 +3783,6 @@ export default function MedicalChartPanel({
                         onClick={() => setEditMode(true)}
                         data-testid="medical-chart-edit-btn"
                       >
-                        <Edit2 className="h-4 w-4 mr-2" />
                         수정
                       </Button>
                     ) : (
@@ -3853,10 +3841,10 @@ export default function MedicalChartPanel({
                   {/* 상단 행: 처방세트 / 상용구 / 슈퍼상용구 (T-20260603-foot-RX-SUPER-PHRASE) */}
                   <div className="flex border-b border-border/30">
                     {([
-                      { key: 'rx', icon: <FlaskConical className="h-3 w-3" />, label: '처방세트' },
-                      { key: 'phrase', icon: <BookOpen className="h-3 w-3" />, label: '상용구' },
-                      { key: 'super', icon: <Sparkles className="h-3 w-3" />, label: '슈퍼상용구' },
-                    ] as const).map(({ key, icon, label }) => (
+                      { key: 'rx', label: '처방세트' },
+                      { key: 'phrase', label: '상용구' },
+                      { key: 'super', label: '슈퍼상용구' },
+                    ] as const).map(({ key, label }) => (
                       <button
                         key={key}
                         type="button"
@@ -3868,7 +3856,7 @@ export default function MedicalChartPanel({
                         }`}
                         data-testid={`right-panel-tab-${key}`}
                       >
-                        {icon}{label}
+                        {label}
                       </button>
                     ))}
                   </div>
@@ -3877,10 +3865,10 @@ export default function MedicalChartPanel({
                        T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 추가 — A안) */}
                   <div className="flex">
                     {([
-                      { key: 'visit_hist', icon: <History className="h-3 w-3" />, label: '방문이력' },
-                      { key: 'images', icon: <Camera className="h-3 w-3" />, label: '진료이미지' },
-                      { key: 'consult', icon: <span className="text-[11px] leading-none">📋</span>, label: '상담' },
-                    ] as const).map(({ key, icon, label }) => (
+                      { key: 'visit_hist', label: '방문이력' },
+                      { key: 'images', label: '진료이미지' },
+                      { key: 'consult', label: '상담' },
+                    ] as const).map(({ key, label }) => (
                       <button
                         key={key}
                         type="button"
@@ -3892,7 +3880,7 @@ export default function MedicalChartPanel({
                         }`}
                         data-testid={`right-panel-tab-${key}`}
                       >
-                        {icon}{label}
+                        {label}
                       </button>
                     ))}
                   </div>
@@ -3972,14 +3960,12 @@ export default function MedicalChartPanel({
 
                       {/* 약품 폴더 (AC-R3: 개별 약품 분류 탐색기 / AC-R5: 단일·다중 추가) */}
                       <div className="flex items-center gap-1.5 px-1 pt-2" data-testid="drug-folder-section-header">
-                        <FolderTree className="h-3.5 w-3.5 text-teal-600" />
                         <span className="text-[11px] font-semibold text-foreground">처방세트</span>
                       </div>
                       <DrugFolderTree onAdd={addRxFromCodes} disabled={gateChecking} />
 
                       {/* 묶음처방 (AC-R4: 이름+약 묶음 프리셋 = 코드 prescription_sets) */}
                       <div className="flex items-center gap-1.5 px-1 pt-2" data-testid="rx-set-section-header">
-                        <Pill className="h-3.5 w-3.5 text-teal-600" />
                         <span className="text-[11px] font-semibold text-foreground">묶음처방</span>
                       </div>
 
@@ -4122,7 +4108,6 @@ export default function MedicalChartPanel({
                             data-testid="super-phrase-option"
                           >
                             <div className="flex items-center gap-1.5 font-medium text-xs">
-                              <Sparkles className="h-3 w-3 text-teal-600 shrink-0" />
                               {sp.name}
                             </div>
                             <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
@@ -4277,7 +4262,6 @@ export default function MedicalChartPanel({
         >
           <div className="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border-b border-red-100">
-              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
               <div className="font-semibold text-sm text-red-700">금기증 확인이 필요합니다</div>
             </div>
             <div className="px-4 py-3 space-y-2 max-h-[50vh] overflow-y-auto">
@@ -4350,7 +4334,6 @@ export default function MedicalChartPanel({
         >
           <div className="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border-b border-amber-100">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
               <div className="font-semibold text-sm text-amber-700">금기증 조회 실패</div>
             </div>
             <div className="px-4 py-3 space-y-2">
@@ -4401,7 +4384,6 @@ export default function MedicalChartPanel({
         >
           <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2">
-              <Trash2 className="h-4 w-4 text-red-600" />
               <p className="text-sm font-semibold text-gray-800">진료 기록 삭제</p>
             </div>
             <p className="mt-2 text-[13px] text-gray-600">
