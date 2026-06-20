@@ -5538,6 +5538,161 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   readOnly
                 />
               </div>
+
+              {/* ── T-20260620-foot-CHART2-PAYMENT-MISU-HISTORY: 미수이력 ────────────
+                  미수금 발생(패키지/진료비 obligation)·납부(package_payments) 이벤트 시계열.
+                  ★ADDITIVE/표시-only — RESTRUCTURE(feePayments·directPkgPayments·뷰어) 로직 불변,
+                    별도 섹션으로만 추가. 신규 쿼리·write·스키마 0 (packages/pkgPayments state 재사용).
+                  ★데이터 소스(§3-2 확정): '발생'=packages.total_amount(패키지 잔금)/consultation_fee(진료비 미수)
+                    obligation @ created_at, '납부'=package_payments 행 @ created_at(fee_kind로 유형 분리).
+                  ★잔금/미수 정의·합산금지(§4-A): PKG-OUTSTANDING-BALANCE SSOT(computeOutstanding/
+                    netPaidFromPayments) 그대로. 패키지/진료비 별도 — 단일 '총미수' 합산표기 안 함. */}
+              {(() => {
+                type MisuEvent = {
+                  ts: number;           // 정렬키 (created_at epoch)
+                  dateLabel: string;
+                  pkgName: string;
+                  feeLabel: '패키지 잔금' | '진료비 미수';
+                  amount: number;
+                  // 처리 상태(AC#6: 미수/납부완료 등 이벤트 상태)
+                  statusLabel: string;
+                  statusTone: 'due' | 'paid' | 'over' | 'pay' | 'refund';
+                  methodHint?: string;
+                };
+                const events: MisuEvent[] = [];
+                // 현재 미수 요약(§4-A: 패키지/진료비 별도 합산, 임의 단일합산 금지)
+                let curPackageDue = 0;
+                let curConsultDue = 0;
+
+                for (const p of packages) {
+                  if (p.status === 'cancelled') continue; // 취소 패키지는 미수 의무 소멸 → 이력 제외
+                  const rows = pkgPayments.filter((pp) => pp.package_id === p.id);
+                  const pkgTotal = p.total_amount ?? 0;
+                  const consultTotal = p.consultation_fee ?? 0;
+                  const pkgDue = computeOutstanding(pkgTotal, netPaidFromPayments(rows, 'package'));
+                  const consultDue = computeOutstanding(consultTotal, netPaidFromPayments(rows, 'consultation'));
+                  if (pkgDue > 0) curPackageDue += pkgDue;
+                  if (consultDue > 0) curConsultDue += consultDue;
+                  const occTs = new Date(p.created_at).getTime();
+
+                  // 발생 이벤트 — 패키지 잔금(obligation = total_amount)
+                  if (pkgTotal > 0) {
+                    const st = balanceStatus(pkgDue);
+                    events.push({
+                      ts: occTs,
+                      dateLabel: format(new Date(p.created_at), 'yyyy-MM-dd'),
+                      pkgName: p.package_name,
+                      feeLabel: '패키지 잔금',
+                      amount: pkgTotal,
+                      statusLabel: st === 'due' ? '미수 발생' : st === 'over' ? '발생→과수' : '발생→완납',
+                      statusTone: st === 'due' ? 'due' : st === 'over' ? 'over' : 'paid',
+                    });
+                  }
+                  // 발생 이벤트 — 진료비 미수(obligation = consultation_fee, §4-A 별도)
+                  if (consultTotal > 0) {
+                    const st = balanceStatus(consultDue);
+                    events.push({
+                      ts: occTs,
+                      dateLabel: format(new Date(p.created_at), 'yyyy-MM-dd'),
+                      pkgName: p.package_name,
+                      feeLabel: '진료비 미수',
+                      amount: consultTotal,
+                      statusLabel: st === 'due' ? '미수 발생' : st === 'over' ? '발생→과수' : '발생→완납',
+                      statusTone: st === 'due' ? 'due' : st === 'over' ? 'over' : 'paid',
+                    });
+                  }
+                  // 납부 이벤트 — package_payments 행(fee_kind로 유형 분리)
+                  for (const pay of rows) {
+                    const isRefund = pay.payment_type === 'refund';
+                    events.push({
+                      ts: new Date(pay.created_at).getTime(),
+                      dateLabel: format(new Date(pay.created_at), 'yyyy-MM-dd HH:mm'),
+                      pkgName: p.package_name,
+                      feeLabel: (pay.fee_kind ?? 'package') === 'consultation' ? '진료비 미수' : '패키지 잔금',
+                      amount: pay.amount,
+                      statusLabel: isRefund ? '환불' : '납부완료',
+                      statusTone: isRefund ? 'refund' : 'pay',
+                      methodHint: METHOD_KO[pay.method] ?? pay.method,
+                    });
+                  }
+                }
+                // 시간순 정렬(오름차순). 동시각이면 발생→납부 순(amount 큰 obligation 먼저는 무의미하므로 ts만)
+                events.sort((a, b) => a.ts - b.ts);
+
+                const toneCls: Record<MisuEvent['statusTone'], string> = {
+                  due: 'text-red-600',
+                  over: 'text-amber-600',
+                  paid: 'text-emerald-600',
+                  pay: 'text-emerald-600',
+                  refund: 'text-red-600',
+                };
+
+                return (
+                  <div className="rounded-lg border bg-white p-3 text-xs" data-testid="misu-history-section">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      미수이력
+                    </div>
+                    {/* 현재 미수 요약 — 패키지/진료비 별도(§4-A: 단일 총미수 합산표기 금지) */}
+                    {(curPackageDue > 0 || curConsultDue > 0) && (
+                      <div
+                        className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-[11px]"
+                        data-testid="misu-current-summary"
+                      >
+                        <span className="text-muted-foreground">
+                          현재 패키지 잔금:{' '}
+                          <span className={cn('font-semibold tabular-nums', curPackageDue > 0 ? 'text-red-600' : 'text-emerald-600')}>
+                            {formatAmount(curPackageDue)}
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          현재 진료비 미수:{' '}
+                          <span className={cn('font-semibold tabular-nums', curConsultDue > 0 ? 'text-red-600' : 'text-emerald-600')}>
+                            {formatAmount(curConsultDue)}
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    {events.length === 0 ? (
+                      <div className="text-muted-foreground py-2" data-testid="misu-history-empty">미수 이력 없음</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse" data-testid="misu-history-table">
+                          <thead>
+                            <tr className="bg-muted/30 text-muted-foreground">
+                              <th className="text-left px-2 py-1.5 font-medium border-b">날짜</th>
+                              <th className="text-left px-2 py-1.5 font-medium border-b">유형</th>
+                              <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
+                              <th className="text-left px-2 py-1.5 font-medium border-b">처리 상태</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {events.map((ev, i) => (
+                              <tr key={`${ev.ts}-${ev.feeLabel}-${i}`} className="border-b border-muted/20 hover:bg-muted/10">
+                                <td className="px-2 py-1.5 tabular-nums text-muted-foreground whitespace-nowrap">{ev.dateLabel}</td>
+                                <td className="px-2 py-1.5">
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn('text-[10px]', ev.feeLabel === '진료비 미수' ? 'bg-slate-100 text-slate-700' : 'bg-teal-100 text-teal-700')}
+                                  >
+                                    {ev.feeLabel}
+                                  </Badge>
+                                  <div className="text-[10px] text-muted-foreground/70 mt-0.5 max-w-[120px] truncate">{ev.pkgName}</div>
+                                </td>
+                                <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', ev.statusTone === 'refund' && 'text-red-600')}>
+                                  {ev.statusTone === 'refund' ? '-' : ''}{formatAmount(ev.amount)}
+                                  {ev.methodHint && <span className="ml-1 text-[10px] text-muted-foreground/60">{ev.methodHint}</span>}
+                                </td>
+                                <td className={cn('px-2 py-1.5 font-medium', toneCls[ev.statusTone])}>{ev.statusLabel}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             );
           })()}
