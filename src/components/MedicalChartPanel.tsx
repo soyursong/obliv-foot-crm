@@ -3310,8 +3310,9 @@ export default function MedicalChartPanel({
                         <table className="w-full text-xs table-fixed">
                           <thead className="text-muted-foreground/70">
                             <tr>
-                              {/* AC3: 약이름(용량) 컬럼 — 폭 미지정(table-fixed에서 나머지 가용 폭 전부 흡수) */}
-                              <th className="text-center px-3 py-1 font-medium">약이름 (용량)</th>
+                              {/* AC3: 약이름(용량) 컬럼 — 폭 미지정(table-fixed에서 나머지 가용 폭 전부 흡수)
+                                  T-20260620-foot-RXTABLE-ALIGN-DIVIDER-ZEBRA AC-1 (문지은 대표원장 직접지시): 약이름 헤더 좌측정렬 — 데이터 셀(td 기본 left)과 일치. (선행 RXTABLE-PRESCRIPTION-ALIGN AC1의 전체 가운데정렬을 약이름 헤더만 override) */}
+                              <th className="text-left px-3 py-1 font-medium">약이름 (용량)</th>
                               {/* AC5: 용법/횟수/일수 균등 폭(동일 w-16) + AC1 가운데정렬 */}
                               <th className="text-center px-2 py-1 font-medium w-16">용법</th>
                               <th className="text-center px-2 py-1 font-medium w-16">횟수</th>
