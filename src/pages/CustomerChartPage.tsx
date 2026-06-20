@@ -6261,7 +6261,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               <div className="space-y-0.5">
                                 {usedSessions.map((s) => (
                                   <div key={s.id} className="group flex items-center gap-1.5 text-[10px] rounded px-0.5 hover:bg-muted/30 transition">
-                                    <span className="text-muted-foreground w-5 tabular-nums shrink-0">{s.session_number}회</span>
+                                    {/* T-20260620-foot-PKGTREATMENT-ROUND-COL-WIDTH: 치료이력 회차 열 너비 — 두 자리 회차("10회"~"99회") 줄바꿈 차단. eb54f5df(사용이력) 처방 미러링: w-5(20px) → min-w-[2.4rem] + whitespace-nowrap */}
+                                    <span className="text-muted-foreground min-w-[2.4rem] tabular-nums shrink-0 whitespace-nowrap">{s.session_number}회</span>
                                     <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
                                     <span className="text-muted-foreground shrink-0">{s.session_date}</span>
                                     {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
@@ -6308,7 +6309,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               <div className="space-y-0.5">
                                 {deletedSessions.map((s) => (
                                   <div key={s.id} className="group flex items-center gap-1.5 text-[10px] rounded px-0.5 hover:bg-red-100/50 transition">
-                                    <span className="text-red-300 w-5 tabular-nums shrink-0 line-through">{s.session_number}회</span>
+                                    <span className="text-red-300 min-w-[2.4rem] tabular-nums shrink-0 whitespace-nowrap line-through">{s.session_number}회</span>
                                     <span className="rounded bg-red-100/60 text-red-500 px-1 shrink-0 line-through">{TREAT_KO[s.session_type] ?? s.session_type}</span>
                                     <span className="text-red-300 shrink-0 line-through">{s.session_date}</span>
                                     {s.staff_name && <span className="text-red-400 truncate line-through">{s.staff_name}</span>}
