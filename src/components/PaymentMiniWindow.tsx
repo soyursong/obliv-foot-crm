@@ -60,6 +60,7 @@ import {
   FALLBACK_TEMPLATES,
   INSURANCE_FALLBACK_TEMPLATES,
   FORM_META,
+  orderDocList,
   getTemplateImageUrl,
   type FormTemplate,
   type FieldMapEntry,
@@ -2648,8 +2649,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               </p>
               {/* T-20260522-foot-INS-DOC-PRINT: foot-service + insurance 카테고리 분리 렌더링 */}
               <div className="flex flex-col gap-1" data-testid="doc-template-list">
-                {templates
-                  .filter((t) => t.category !== 'insurance')
+                {/* T-20260620-foot-DOCLIST-ORDER-10: 확정 10종만 + 확정 순서 (SSOT) */}
+                {orderDocList(templates.filter((t) => t.category !== 'insurance'))
                   .map((tpl) => {
                     const meta = FORM_META[tpl.form_key];
                     const isSelected = selectedDocKeys.has(tpl.form_key);
@@ -2675,16 +2676,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     );
                   })}
 
-                {/* 보험서류 구분선 */}
-                {templates.some((t) => t.category === 'insurance') && (
+                {/* 보험서류 구분선 — T-20260620-foot-DOCLIST-ORDER-10: 10종에 보험서류 없음 → orderDocList 필터로 섹션 비표시 */}
+                {orderDocList(templates.filter((t) => t.category === 'insurance')).length > 0 && (
                   <>
                     <div className="flex items-center gap-1 pt-1 pb-0.5">
                       <div className="flex-1 border-t border-blue-200" />
                       <span className="text-[9px] text-blue-500 font-semibold px-1">보험서류</span>
                       <div className="flex-1 border-t border-blue-200" />
                     </div>
-                    {templates
-                      .filter((t) => t.category === 'insurance')
+                    {orderDocList(templates.filter((t) => t.category === 'insurance'))
                       .map((tpl) => {
                         const meta = FORM_META[tpl.form_key];
                         const isSelected = selectedDocKeys.has(tpl.form_key);

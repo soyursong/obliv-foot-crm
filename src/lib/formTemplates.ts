@@ -969,3 +969,49 @@ export const DOC_PANEL_HIDDEN_FORM_KEYS: ReadonlyArray<string> = [
   'refund_consent',
   'ins_claim_form',
 ];
+
+// ─── 서류 출력 목록 확정 10종 SSOT (T-20260620-foot-DOCLIST-ORDER-10) ───
+
+/**
+ * 결제미니창(PaymentMiniWindow) + 1/2번 차트 서류출력(DocumentPrintPanel) 두 화면이 공유하는
+ * 서류 출력 목록의 **확정 진열 순서 + 표시 집합(SSOT)**.
+ *
+ * 김주연 총괄 확정(v2, 2026-06-20): 두 화면 서류 출력 목록은 아래 10종**만**, 이 순서대로 표시.
+ * - 배열 인덱스 = 위→아래 진열 순서.
+ * - 이 배열에 없는 기존 서류 타입(payment_cert/diag_opinion_v2/opinion_doc 등)은 **목록 비표시**.
+ *   → 제거 = FE 목록 필터일 뿐, DB row·서류 생성/발행 RPC·published 트리거 미접촉(db_change=false).
+ *   → 이미 발행된 서류 데이터·발행 이력은 보존(목록에서만 안 보임).
+ *
+ * 운영 DB form_templates 실측(2026-06-20) 기준 form_key 매핑 확정:
+ *   1.진료비영수증=bill_receipt  2.진료비세부내역서=bill_detail  3.KOH균검사결과지=koh_result
+ *   4.소견서=diag_opinion  5.진단서=diagnosis  6.진료확인서=treat_confirm
+ *   7.진료의뢰서=referral_letter  8.통원확인서=visit_confirm  9.진료기록사본=medical_record_request
+ *   10.처방전=rx_standard
+ */
+export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
+  'bill_receipt',           // 1. 진료비영수증
+  'bill_detail',            // 2. 진료비세부내역서
+  'koh_result',             // 3. KOH균검사결과지
+  'diag_opinion',           // 4. 소견서
+  'diagnosis',              // 5. 진단서
+  'treat_confirm',          // 6. 진료확인서
+  'referral_letter',        // 7. 진료의뢰서
+  'visit_confirm',          // 8. 통원확인서
+  'medical_record_request', // 9. 진료기록사본
+  'rx_standard',            // 10. 처방전
+];
+
+/**
+ * 서류 템플릿 배열을 DOCLIST_ORDER_10 기준으로 **필터(10종만) + 정렬(확정 순서)** 한다.
+ * 두 화면(PaymentMiniWindow·DocumentPrintPanel)이 동일 결과를 얻도록 단일 함수로 공유.
+ * - 10종 외 form_key는 제외(표시 집합 축소).
+ * - 발행/바인딩 로직은 호출부에서 원본 templates를 그대로 사용하므로 무영향(표시 진열만 변경).
+ */
+export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
+  return tpls
+    .filter((t) => DOCLIST_ORDER_10.includes(t.form_key))
+    .sort(
+      (a, b) =>
+        DOCLIST_ORDER_10.indexOf(a.form_key) - DOCLIST_ORDER_10.indexOf(b.form_key),
+    );
+}
