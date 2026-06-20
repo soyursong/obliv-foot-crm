@@ -52,7 +52,7 @@ import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, Loader2, Pill, Search, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Pill, Search, Trash2, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,10 @@ import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge } from '@/li
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
+// T-20260620-foot-CHART-DOCISSUE-BTN: 진료차트 '서류 발급하기' 진입점 — 진료대시보드 서류아이콘과 동일 팝업 재사용.
+//   신규 팝업 제작 금지(AC-3 기존 발급 로직 그대로) → 기존 DoctorDocsHubDialog(소견서/서류발급/검사결과지 허브) 그대로 import.
+import DoctorDocsHubDialog from '@/components/doctor/DoctorDocsHubDialog';
+import type { CheckIn } from '@/lib/types';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
 // T-20260606-foot-RX-SET-REDESIGN AC-R3/R5: 약품 폴더 탐색기(개별 약품 트리). 묶음처방(set)과 별개 축.
@@ -562,6 +566,55 @@ export default function MedicalChartPanel({
   // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 입력은 자동완성/이력 datalist 폐지 →
   //   DiagnosisFolderPicker(폴더 탐색 + 원장별 즐겨찾기) 선택전용으로 전환. 별도 상태 불요(picker 자체조회).
   //   저장값은 순수 상병명(formDx) — medical_charts.diagnosis 저장경로 무변경.
+
+  // ── T-20260620-foot-CHART-DOCISSUE-BTN: '서류 발급하기' 진입점 ──────────────
+  //   진료차트는 customerId 기준이라 CheckIn 컨텍스트가 없음(대시보드는 행에 이미 CheckIn 보유).
+  //   버튼 클릭 시 당일 KST check_in 1건을 customer_id+clinic_id 로 조회해 docsCheckIn 에 채운 뒤
+  //   기존 DoctorDocsHubDialog 를 연다(신규 팝업 0, 발급 로직은 허브 내부 그대로).
+  //   AC-4: 오늘 체크인 없는 환자는 발급 컨텍스트 부재 → 팝업을 열지 않고 안내 토스트(엉뚱한 환자 X).
+  const [docsCheckIn, setDocsCheckIn] = useState<CheckIn | null>(null);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [docsFetching, setDocsFetching] = useState(false);
+  const openDocsHub = useCallback(async () => {
+    if (!customerId || !clinicId) {
+      toast.error('환자 정보가 없어 서류 발급을 진행할 수 없습니다.');
+      return;
+    }
+    setDocsFetching(true);
+    try {
+      const today = todaySeoulISODate();
+      // 진료대시보드 CALL_SELECT 와 동일 형태(customers embed 포함) — DoctorDocsHubDialog 가 요구하는
+      //   id/customer_id/customer_name/visit_type/checked_in_at + customers(chart_number,birth_date) 충족.
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select(
+          'id, customer_id, customer_name, visit_type, status, status_flag, ' +
+            'checked_in_at, completed_at, treatment_kind, treatment_category, ' +
+            'prescription_status, prescription_items, queue_number, ' +
+            'customers!customer_id(chart_number, birth_date)',
+        )
+        .eq('customer_id', customerId)
+        .eq('clinic_id', clinicId)
+        .gte('checked_in_at', `${today}T00:00:00+09:00`)
+        .lte('checked_in_at', `${today}T23:59:59+09:00`)
+        .neq('status', 'cancelled')
+        .order('checked_in_at', { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      const row = (data ?? [])[0] as unknown as CheckIn | undefined;
+      if (!row) {
+        toast.error('오늘 내원(체크인) 기록이 없어 서류 발급을 진행할 수 없습니다. 진료대시보드에서 발급해 주세요.');
+        return;
+      }
+      setDocsCheckIn(row);
+      setDocsOpen(true);
+    } catch (e) {
+      console.error('[CHART-DOCISSUE-BTN] check_in fetch 실패', e);
+      toast.error('서류 발급 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setDocsFetching(false);
+    }
+  }, [customerId, clinicId]);
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -2582,6 +2635,22 @@ export default function MedicalChartPanel({
                   >
                     새 기록
                   </button>
+                  {/* T-20260620-foot-CHART-DOCISSUE-BTN: 새 기록 칸 아래 '서류 발급하기' 버튼.
+                      클릭 → 당일 check_in 조회 후 진료대시보드 서류아이콘과 동일한 DoctorDocsHubDialog 오픈(기존 팝업 재사용). */}
+                  <button
+                    type="button"
+                    onClick={() => void openDocsHub()}
+                    disabled={docsFetching}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-teal-300 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
+                    data-testid="medical-chart-docissue-btn"
+                  >
+                    {docsFetching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                    서류 발급하기
+                  </button>
                 </div>
 
                 {/* T-20260603-foot-CHART-SPECIAL-NOTE: ⑤ 특이사항 공용 누적칸 (환자 단위, 날짜 분기 없음)
@@ -4440,6 +4509,21 @@ export default function MedicalChartPanel({
         </div>,
         document.body,
       )}
+
+      {/* T-20260620-foot-CHART-DOCISSUE-BTN: 진료대시보드 서류아이콘과 동일 서류발급 허브(기존 컴포넌트 재사용).
+          checkIn 은 버튼 클릭 시 당일 조회로 채워짐(오늘 체크인 없으면 열리지 않음 → docsCheckIn null 유지). */}
+      <DoctorDocsHubDialog
+        checkIn={docsCheckIn}
+        open={docsOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setDocsOpen(false);
+            setDocsCheckIn(null);
+          }
+        }}
+        clinicId={clinicId}
+        profile={profile}
+      />
 
     </>,
     document.body,
