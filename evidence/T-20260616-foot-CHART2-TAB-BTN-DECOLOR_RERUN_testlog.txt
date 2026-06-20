@@ -1,0 +1,4 @@
+  ✓  1 [setup] › tests/auth.setup.ts:30:1 › authenticate (1.0s)
+[decolor] sheetOpened=true consoleErrors=0 :: 
+  ✓  2 [desktop-chrome] › tests/e2e/T-20260616-foot-CHART2-TAB-BTN-DECOLOR.render.spec.ts:45:1 › decolor render evidence: 고객차트 탭/버튼 모노톤 (7.6s)
+  2 passed (14.3s)
