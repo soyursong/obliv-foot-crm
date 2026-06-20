@@ -1,6 +1,7 @@
 -- T-20260620-foot-STAFF-PERM-UNLOCK-6MENU — 직원 3역할(consultant/coordinator/therapist) write RLS ADDITIVE 확장
--- ⚠️ DRAFT / DO NOT APPLY: data-architect CONSULT(ADDITIVE) GO + supervisor DDL-diff 통과 전까지 미적용.
---    .DDL_DIFF_HOLD suffix = db push 대상 아님(레포 convention). FE(STAFF_UNLOCK_ROLES) 와 ★동반 landing★ 의무.
+-- ✅ supervisor DDL-diff 재검토 제출 (rls_missing fix, 2026-06-21). upstream 게이트 통과: data-architect CONSULT(ADDITIVE) GO.
+--    ★apply 게이트: supervisor DDL-diff GO 후 dev-foot 직접 apply + FE(STAFF_UNLOCK_ROLES)와 ★동반 landing★ 의무.
+--    (직전 .DDL_DIFF_HOLD suffix 는 supervisor 정적 스캔에서 RLS 미인식 → rls_missing 유발 → .sql 로 제출.)
 --
 -- 근거: 6메뉴 write 경로 RLS 전수 조사(scripts/T-20260620-foot-STAFF-PERM-UNLOCK-6MENU_rlscheck*.mjs) 결과
 --   거의 모든 write 가 is_admin_or_manager(admin/manager/director) 또는 consultant/coordinator 한정 → 3역할

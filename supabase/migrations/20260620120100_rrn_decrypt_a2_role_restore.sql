@@ -1,7 +1,8 @@
 -- T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑥ — rrn_decrypt 게이트1 A2(역할 한정 복원) + PHI 조회 audit-log 신설
--- ⚠️ DRAFT / DO NOT APPLY: phi_sub_gate=approved(대표 승인) + ★DA CONSULT GO_WITH_CONDITIONS 수신★
---    (MSG-20260620-131852-hbbh). 신규 테이블 DDL → supervisor DDL-diff 통과 전까지 미적용. .PHI_GATE_HOLD
---    suffix = db push 대상 아님. FE(RRN_VIEW_ROLES 3역할) 와 ★동반 landing★ 의무(FE union = rrn_decrypt 게이트1 union).
+-- ✅ supervisor DDL-diff 재검토 제출 (rls_missing fix, 2026-06-21). upstream 게이트 통과: phi_sub_gate=approved(대표 김승현 승인)
+--    + ★DA CONSULT GO_WITH_CONDITIONS★(MSG-20260620-131852-hbbh). 신규 테이블 DDL(phi_access_log)+SECURITY DEFINER 함수 변경.
+--    ★apply 게이트: supervisor DDL-diff GO 후 dev-foot 직접 apply + FE(RRN_VIEW_ROLES 3역할)와 ★동반 landing★ 의무(FE union = rrn_decrypt 게이트1 union).
+--    (직전 .PHI_GATE_HOLD suffix 는 supervisor 정적 스캔 미인식 → .sql 로 제출.)
 --
 -- 결정 이력(scope 정정):
 --   · CORRECTION ndoc(MSG-20260620-113604, 11:36) = "RRN NOTOUCH(admin/manager/director 유지)" 지시.
