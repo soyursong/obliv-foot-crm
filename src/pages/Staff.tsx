@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
-import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power, ClipboardList, Building2 } from 'lucide-react';
-import { DutyRosterTab } from '@/components/DutyRosterTab';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, Settings, X, PowerOff, Power, ClipboardList, Building2 } from 'lucide-react';
+// T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: DutyRosterTab(근무캘린더) 탭 제거로 import 삭제 — /admin/handover 로 이관
 import { ReservationRegistrarTab } from '@/components/ReservationRegistrarTab';
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 페이지를 '원장정보' 탭으로 임베드.
 //   기존 /admin/clinic-settings 콘텐츠(병원 기본정보 + 원장 CRUD + 직인) 컴포넌트 그대로 재사용 → 기능/필드/저장 동작 보존(회귀0).
@@ -59,7 +59,8 @@ interface RoomAssignmentRow {
 
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 직접 진입(리다이렉트/북마크)로 열 수 있는 탭 화이트리스트.
 //   /admin/clinic-settings → /admin/staff?tab=clinic-info 리다이렉트가 이 탭을 자동 선택.
-const VALID_INITIAL_TABS = new Set(['duty', 'staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
+// T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더'(duty=원장 근무표) 탭은 최상위 [직원 근무 캘린더](/admin/handover)로 승격·흡수됨 → 여기서 제거(중복 노출 방지). 나머지 탭은 유지.
+const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
 
 export default function StaffPage() {
   const { profile } = useAuth();
@@ -68,8 +69,9 @@ export default function StaffPage() {
   // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → duty).
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
+  // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 기본 탭 duty→staff (근무캘린더 탭 승격·흡수 제거). ?tab=duty 진입은 무효 → staff fallback.
   const [tab, setTab] = useState(
-    requestedTab && VALID_INITIAL_TABS.has(requestedTab) ? requestedTab : 'duty',
+    requestedTab && VALID_INITIAL_TABS.has(requestedTab) ? requestedTab : 'staff',
   );
 
   const { data: clinic, refetch: refetchClinic } = useQuery<Clinic | null>({
@@ -82,9 +84,7 @@ export default function StaffPage() {
     <div className="h-full overflow-auto space-y-4 p-4 md:p-6">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="duty">
-            <CalendarDays className="mr-1 h-4 w-4" /> 근무캘린더
-          </TabsTrigger>
+          {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더' 탭 제거 — 최상위 [직원 근무 캘린더]로 승격·흡수 */}
           <TabsTrigger value="staff">
             <UserCog className="mr-1 h-4 w-4" /> 직원
           </TabsTrigger>
@@ -108,7 +108,7 @@ export default function StaffPage() {
             </TabsTrigger>
           )}
         </TabsList>
-        <TabsContent value="duty">{clinic && <DutyRosterTab clinic={clinic} />}</TabsContent>
+        {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: duty TabsContent 제거 — 원장 근무표는 /admin/handover 로 이관 */}
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
         <TabsContent value="rooms">{clinic && <RoomTab clinic={clinic} />}</TabsContent>
         {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 페이지를 그대로 임베드(자체 데이터 로드/저장 보존). */}
