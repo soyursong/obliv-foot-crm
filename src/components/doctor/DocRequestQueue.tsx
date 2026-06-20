@@ -132,7 +132,8 @@ export default function DocRequestQueue() {
                     <td className="px-2 py-1.5 tabular-nums whitespace-nowrap text-foreground/90">{birthYearAgeDisplay(r.birthDate) || '—'}</td>
                     <td className="px-2 py-1.5 font-mono whitespace-nowrap text-foreground/90">{r.chartNo ? chartNoDisplay(r.chartNo) : '—'}</td>
                     <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80"><span className="block truncate" title={snap?.treatment ?? ''}>{snap?.treatment || '—'}</span></td>
-                    <td className="px-2 py-1.5 text-muted-foreground">—</td>
+                    {/* 처방내역 ← medical_charts.prescription_items (AC-2, T-...-DOC-REQUEST-INTEGRATION) */}
+                    <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80" data-testid="docreq-cell-rx"><span className="block truncate" title={snap?.prescription ?? ''}>{snap?.prescription || '—'}</span></td>
                     <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80"><span className="block truncate" title={snap?.progress ?? ''}>{snap?.progress || '—'}</span></td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">{docTypeLabel(r.docType)}</span>

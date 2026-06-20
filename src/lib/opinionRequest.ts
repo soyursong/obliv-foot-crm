@@ -15,6 +15,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { OPINION_SECTIONS, type OpinionSection } from '@/components/doctor/OpinionDocTab';
+import { formatRxItemToken } from '@/lib/rxTooltip';
 
 // 서류종류 2종 (AC-6) — 진단서 / 소견서.
 export type OpinionDocType = 'diagnosis' | 'opinion';
@@ -215,11 +216,23 @@ export function useResolveOpinionRequest(clinicId: string | null) {
   });
 }
 
-// ─── 큐 행 임상 컬럼(오늘시술/임상경과) — 최근 medical_chart 스냅샷 (read-only, 방어적) ──
-//   AC-11 9컬럼 중 오늘시술/임상경과 보조표시. 조회 실패/컬럼부재여도 큐는 깨지지 않음(빈 맵 폴백).
+// ─── 큐 행 임상 컬럼(오늘시술/처방내역/임상경과) — 최근 medical_chart 스냅샷 (read-only, 방어적) ──
+//   AC-11 9컬럼 중 오늘시술/처방내역/임상경과 보조표시. 조회 실패/컬럼부재여도 큐는 깨지지 않음(빈 맵 폴백).
+//   T-20260620-foot-CHART2-DOC-REQUEST-INTEGRATION (AC-2): 처방내역=medical_charts.prescription_items(JSONB)
+//     기존 컬럼 ADDITIVE read — 신규 DDL/조인 없음. formatRxItemToken(referralAutoLoad와 동일 패턴) 재사용.
 export interface ClinicalSnap {
-  treatment: string | null;   // 오늘시술 ← treatment_record
-  progress: string | null;    // 임상경과 ← chief_complaint || diagnosis
+  treatment: string | null;     // 오늘시술 ← treatment_record
+  prescription: string | null;  // 처방내역 ← prescription_items(JSONB) 요약
+  progress: string | null;      // 임상경과 ← chief_complaint || diagnosis
+}
+
+// prescription_items(JSONB 배열) → 약물명 토큰 요약(', ' 구분, 테이블셀 1줄용). 빈/결측 시 null.
+function summarizeRxItems(items: unknown): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const tokens = items
+    .map((it) => formatRxItemToken(it).trim())
+    .filter((s) => s.length > 0 && s !== '(이름 미입력)');
+  return tokens.length > 0 ? tokens.join(', ') : null;
 }
 export function useQueueClinicalSnaps(clinicId: string | null, customerIds: string[]) {
   const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
@@ -233,7 +246,7 @@ export function useQueueClinicalSnaps(clinicId: string | null, customerIds: stri
         const ids = key.split(',');
         const { data, error } = await supabase
           .from('medical_charts')
-          .select('customer_id, treatment_record, chief_complaint, diagnosis, visit_date, created_at')
+          .select('customer_id, treatment_record, prescription_items, chief_complaint, diagnosis, visit_date, created_at')
           .eq('clinic_id', clinicId)
           .in('customer_id', ids)
           .order('visit_date', { ascending: false })
@@ -244,6 +257,7 @@ export function useQueueClinicalSnaps(clinicId: string | null, customerIds: stri
           if (!cid || out[cid]) continue; // 최신 1건만(정렬 우선)
           out[cid] = {
             treatment: (raw['treatment_record'] as string | null) || null,
+            prescription: summarizeRxItems(raw['prescription_items']),
             progress: ((raw['chief_complaint'] as string | null) || (raw['diagnosis'] as string | null)) || null,
           };
         }
