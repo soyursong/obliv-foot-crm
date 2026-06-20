@@ -12,7 +12,7 @@
 //     bulk UI는 제거 — 1클릭 즉시삽입으로 단순화. (묶음처방 다중약 일괄삽입은 별 컴포넌트가 유지)
 
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Folder, FolderOpen, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 // T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part D): 약 hover → 약 정보(설명) 라운드박스 툴팁.
@@ -106,11 +106,6 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           ) : (
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          )}
-          {isCollapsed ? (
-            <Folder className="h-3.5 w-3.5 text-teal-600 shrink-0" />
-          ) : (
-            <FolderOpen className="h-3.5 w-3.5 text-teal-600 shrink-0" />
           )}
           <span
             className="text-xs font-semibold text-foreground truncate flex-1 text-left"
