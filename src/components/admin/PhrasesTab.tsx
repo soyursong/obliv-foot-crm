@@ -101,6 +101,23 @@ const CATEGORY_LABELS: Record<string, string> = {
   general: '일반',
 };
 
+// T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-1 (김주연 총괄 U0ATDB587PV):
+//   고객차트(customer_chart) surface 전용 분류 — 예약/상담/치료.
+//   ★NO-DDL: phrase_type CHECK 불변. 기존 free-text `category` 컬럼 재사용 —
+//     customer_chart row 의 category 에 'reservation'|'consult'|'treatment' 저장(미지정=기본 버킷).
+//   소비 지점(2번차트 3구역[상세] 예약/상담/치료메모, CustomerChartPage)이 이 분류로 필터.
+const CUSTCHART_CATEGORY_LABELS: Record<string, string> = {
+  reservation: '예약',
+  consult: '상담',
+  treatment: '치료',
+};
+
+// 펜/진료 + 고객차트 라벨 통합 조회용 (surface 무관 행 배지 표기 — 키 충돌 없음).
+const MERGED_CATEGORY_LABELS: Record<string, string> = {
+  ...CATEGORY_LABELS,
+  ...CUSTCHART_CATEGORY_LABELS,
+};
+
 // AC-1: 사이드 메뉴용 카테고리 목록 (전체 포함)
 const SIDE_MENU_CATS = [
   { key: 'all', label: '전체' },
@@ -108,6 +125,14 @@ const SIDE_MENU_CATS = [
   { key: 'prescription', label: '처방' },
   { key: 'document', label: '원장님' },
   { key: 'general', label: '일반' },
+] as const;
+
+// T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-2: 고객차트 surface 전용 사이드 메뉴 [전체/예약/상담/치료].
+const CUSTCHART_SIDE_MENU_CATS = [
+  { key: 'all', label: '전체' },
+  { key: 'reservation', label: '예약' },
+  { key: 'consult', label: '상담' },
+  { key: 'treatment', label: '치료' },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -242,11 +267,22 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   const [filterPhraseType, setFilterPhraseType] = useState<string>('all');
   // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: lockedType 지정 시 해당 type 으로 강제 고정.
   const effectivePhraseType = lockedType ?? filterPhraseType;
+  // T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-2: 고객차트 surface 면 사이드 분류 = [전체/예약/상담/치료].
+  //   그 외(펜/진료/혼합) = 기존 [전체/차팅/처방/원장님/일반] 그대로.
+  const isCustchartView = effectivePhraseType === 'customer_chart';
+  const sideMenuCats = isCustchartView ? CUSTCHART_SIDE_MENU_CATS : SIDE_MENU_CATS;
 
   function openAdd() {
     setEditing(null);
     // lockedType surface 에서 추가하면 그 type 으로 자동 저장 (세그먼트 선택 UI 없음).
-    setForm({ ...EMPTY_FORM, phrase_type: lockedType ?? EMPTY_FORM.phrase_type });
+    // T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-2/시나리오1: 고객차트 surface 에서
+    //   특정 분류(예약/상담/치료) 탭을 보고 있을 때 '추가'하면 그 분류로 기본 선택(전체에선 '예약').
+    //   ★펜/진료차트(비 customer_chart) 동작은 무변경(EMPTY_FORM.category='charting' 유지) — AC-4 무회귀.
+    const defaultCategory =
+      lockedType === 'customer_chart'
+        ? (filterCat !== 'all' ? filterCat : 'reservation')
+        : EMPTY_FORM.category;
+    setForm({ ...EMPTY_FORM, category: defaultCategory, phrase_type: lockedType ?? EMPTY_FORM.phrase_type });
     setOpen(true);
   }
 
@@ -355,7 +391,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
               <button
                 key={t}
                 type="button"
-                onClick={() => setFilterPhraseType(t)}
+                onClick={() => { setFilterPhraseType(t); setFilterCat('all'); }}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   filterPhraseType === t
                     ? 'bg-background shadow-sm text-teal-700 font-semibold'
@@ -388,7 +424,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
           className="w-20 flex-shrink-0 border-r bg-muted/10 flex flex-col"
           data-testid="phrase-category-sidebar"
         >
-          {SIDE_MENU_CATS.map(({ key, label }) => {
+          {sideMenuCats.map(({ key, label }) => {
             // T-20260608-foot-PHRASE-PEN-MED-SPLIT: 활성 phrase_type 기준 카운트(펜차트/진료차트 분리 정합)
             const count =
               key === 'all'
@@ -441,7 +477,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
-                        {CATEGORY_LABELS[p.category] ?? p.category}
+                        {MERGED_CATEGORY_LABELS[p.category] ?? p.category}
                       </Badge>
                       {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 배지 */}
                       <Badge
@@ -566,15 +602,30 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
               <div>
                 <Label className="text-xs">카테고리</Label>
                 {/* Dialog 내부 portal 충돌 방지 — native select 사용 */}
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
+                {/* T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-1/AC-2:
+                    고객차트(customer_chart) 유형이면 [예약/상담/치료], 그 외는 기존 [차팅/처방/원장님/일반].
+                    편집 중인 상용구의 현재 category 가 옵션에 없으면(레거시·미분류) 그 값을 보존 옵션으로 노출 → 무손실. */}
+                {(() => {
+                  const dialogCatLabels =
+                    form.phrase_type === 'customer_chart' ? CUSTCHART_CATEGORY_LABELS : CATEGORY_LABELS;
+                  const hasCurrent = Object.prototype.hasOwnProperty.call(dialogCatLabels, form.category);
+                  return (
+                    <select
+                      value={form.category}
+                      onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                      className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    >
+                      {!hasCurrent && form.category && (
+                        <option value={form.category}>
+                          {MERGED_CATEGORY_LABELS[form.category] ?? `${form.category} (미분류)`}
+                        </option>
+                      )}
+                      {Object.entries(dialogCatLabels).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  );
+                })()}
               </div>
               <div>
                 <Label className="text-xs">정렬 순서</Label>
