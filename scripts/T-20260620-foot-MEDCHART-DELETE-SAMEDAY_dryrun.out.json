@@ -1,0 +1,61 @@
+{
+  "hasSoft": false,
+  "total": "75",
+  "surplus": 3,
+  "groups": [
+    {
+      "customer_id": "8c0c157c-5def-4662-aa58-5e06b6f4c68a",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "visit_date": "2026-06-10T15:00:00.000Z",
+      "n": 2,
+      "ids": [
+        "ca4d1d7f-d5ef-4ce6-b85e-962cd18a3a49",
+        "2b47470d-22c9-4e72-a66e-4c978d31e525"
+      ],
+      "created_ats": [
+        "2026-06-11T07:08:52.672Z",
+        "2026-06-11T07:09:08.390Z"
+      ],
+      "authors": [
+        "문지은",
+        "문지은"
+      ]
+    },
+    {
+      "customer_id": "de5436a5-40b0-4ef5-8f30-c3a677f33391",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "visit_date": "2026-06-09T15:00:00.000Z",
+      "n": 2,
+      "ids": [
+        "cad6c886-cf14-4540-a725-a795407dee1d",
+        "029886ae-5e3c-434f-99ad-7eec23e2c5d1"
+      ],
+      "created_ats": [
+        "2026-06-10T04:11:38.854Z",
+        "2026-06-10T13:41:18.558Z"
+      ],
+      "authors": [
+        "문지은",
+        "문지은"
+      ]
+    },
+    {
+      "customer_id": "3f7b1572-4501-44ca-b5a2-34411fd339d6",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "visit_date": "2026-05-24T15:00:00.000Z",
+      "n": 2,
+      "ids": [
+        "38ab3b9e-aaee-442b-a160-ccd71a9a2f91",
+        "4ec7cf1b-669a-42b7-96a8-a5e24927c350"
+      ],
+      "created_ats": [
+        "2026-05-25T11:51:30.277Z",
+        "2026-05-25T11:51:40.620Z"
+      ],
+      "authors": [
+        "?",
+        "?"
+      ]
+    }
+  ]
+}
