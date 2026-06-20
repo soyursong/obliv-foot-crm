@@ -478,11 +478,12 @@ export default function Handover() {
         <div className="shrink-0 border-b bg-white px-4 pt-2" data-testid="handover-top-tabs">
           <Tabs value={topTab} onValueChange={(v) => setTopTab(v as 'handover' | 'duty')}>
             <TabsList>
+              {/* T-20260621-foot-DUTYCAL-MENU-RELABEL: 탭 표시 라벨만 인수인계→직원 / 원장 근무표→의사. value/data-testid/권한 가드 무변경. */}
               <TabsTrigger value="handover" data-testid="handover-tab-board">
-                <ClipboardCheck className="mr-1 h-4 w-4" /> 인수인계
+                <ClipboardCheck className="mr-1 h-4 w-4" /> 직원
               </TabsTrigger>
               <TabsTrigger value="duty" data-testid="handover-tab-duty">
-                <CalendarDays className="mr-1 h-4 w-4" /> 원장 근무표
+                <CalendarDays className="mr-1 h-4 w-4" /> 의사
               </TabsTrigger>
             </TabsList>
           </Tabs>

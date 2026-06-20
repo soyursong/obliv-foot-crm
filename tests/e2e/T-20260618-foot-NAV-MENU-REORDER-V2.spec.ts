@@ -21,7 +21,7 @@ const NAV_ITEMS_EXPECTED = [
   { index: 2,  to: '/admin/customers',       label: '고객관리' },
   { index: 3,  to: '/admin/doctor-tools',    label: '진료 대시보드' },
   { index: 4,  to: '/admin/services',        label: '서비스관리' },
-  { index: 5,  to: '/admin/handover',        label: '직원 근무 캘린더' },
+  { index: 5,  to: '/admin/handover',        label: '근무 캘린더' }, // T-20260621-foot-DUTYCAL-MENU-RELABEL: 직원 근무 캘린더→근무 캘린더
   { index: 6,  to: '/admin/assignments',     label: '상담·치료사 배정' },
   { index: 7,  to: '/admin/treatment-table', label: '치료 테이블' },
   { index: 8,  to: '/admin/settings',        label: '메시지 설정' },
@@ -63,7 +63,7 @@ test.describe('T-20260618-foot-NAV-MENU-REORDER-V2', () => {
     expect(labels[2]).toBe('고객관리');
     expect(labels[3]).toBe('진료 대시보드');
     expect(labels[4]).toBe('서비스관리');
-    expect(labels[5]).toBe('직원 근무 캘린더');
+    expect(labels[5]).toBe('근무 캘린더'); // T-20260621-foot-DUTYCAL-MENU-RELABEL
     expect(labels[6]).toBe('상담·치료사 배정');
     expect(labels[7]).toBe('치료 테이블');
     expect(labels[8]).toBe('메시지 설정');
