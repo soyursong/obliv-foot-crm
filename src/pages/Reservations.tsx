@@ -1597,7 +1597,8 @@ export default function Reservations() {
                       <td
                         data-testid="resv-time-col-cell"
                         // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 압축 — 시간축 셀 패딩/폰트 축소(py-1.5→py-0.5, text-xs→text-[11px]). 헤더(thead)는 미변경.
-                        className="w-20 border-b border-r py-0.5 text-center text-[11px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
+                        // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 2차 절반 압축 — 시간축 셀 폰트/패딩 추가 축소(py-0.5→py-0, text-[11px]→text-[10px]). thead 헤더(AC-2)는 미변경.
+                className="w-20 border-b border-r py-0 text-center text-[10px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
                         <div>{time}</div>
                         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 MSG-...gkj2 옵션2 '일자×시간 매트릭스'):
@@ -1627,7 +1628,8 @@ export default function Reservations() {
                             key={d.toISOString() + time}
                             className={cn(
                               // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 높이/패딩 압축(h-12→h-8, p-1→p-0.5) — 절반 밀도, 한 화면 예약건 최대 노출.
-                              'h-8 border-b border-r p-0.5 align-top transition-colors',
+                              // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 2차 절반 압축 — 빈 슬롯 최소높이 추가 축소(h-8→h-4, p-0.5→px-0.5 py-0) → 빈 행 32px→16px(~50%). 카드 있는 셀은 카드 높이로 자연 확장(align-top).
+                              'h-4 border-b border-r px-0.5 py-0 align-top transition-colors',
                               !allowed && 'bg-gray-50',
                               full && !isDragOver && 'bg-red-50',
                               isDragOver && allowed && !full && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
@@ -1745,7 +1747,7 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
-                                      'w-full overflow-hidden rounded-md border px-1.5 py-0.5 text-[11px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 높이·패딩·폰트 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px], leading-snug→leading-tight) 절반 밀도
+                                      'w-full overflow-hidden rounded border px-1 py-0 text-[10px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축 — 카드 padding/폰트 추가 축소(px-1.5 py-0.5→px-1 py-0, text-[11px]→text-[10px], rounded-md→rounded). 정보 항목 전부 유지(밀도만 압축, ellipsis 허용)
 
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
@@ -1859,7 +1861,7 @@ export default function Reservations() {
                                       })()}
                                     </div>
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
-                                    <div className="flex min-w-0 items-center gap-1 overflow-hidden text-[10px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] */}
+                                    <div className="flex min-w-0 items-center gap-0.5 overflow-hidden text-[9px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: text-[10px]→text-[9px], gap-1→gap-0.5 */}
                                       {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',
@@ -1875,7 +1877,7 @@ export default function Reservations() {
                                     {/* T-20260515-foot-INLINE-RESV AC-4: 예약메모 한눈에 표시 */}
                                     {r.booking_memo && (
                                       <div
-                                        className="truncate text-[10px] text-amber-600"
+                                        className="truncate text-[9px] text-amber-600"
                                         title={r.booking_memo}
                                       >
                                         📝 {r.booking_memo}
@@ -1944,8 +1946,9 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
+                                      // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 빈 슬롯 (+)버튼 최소높이 압축(min-h-[24px]→min-h-[16px], h-5→h-4) → 빈 행 밀도 ~2배. 클릭/터치 영역 유지(Plus 아이콘 중앙).
                                       'flex items-center justify-center rounded border border-dashed border-muted-foreground/30 text-muted-foreground/50 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600 transition',
-                                      list.length === 0 ? 'flex-1 min-h-[24px]' : 'h-5 w-full mt-0.5',
+                                      list.length === 0 ? 'flex-1 min-h-[16px]' : 'h-4 w-full mt-0.5',
                                     )}
                                   >
                                     <Plus className="h-3 w-3" />
