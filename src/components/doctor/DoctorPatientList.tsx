@@ -24,7 +24,8 @@ import {
   IN_CLINIC_GATE_CODE,
 } from '@/lib/rxMutationGuard';
 import { isInClinic } from '@/lib/status';
-import { useChart } from '@/lib/chartContext';
+// T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-2: 진료대시보드 이름 클릭은 진료차트(MedicalChartPanel)
+//   직접오픈으로 전환됨 → useChart().openChart(2번차트 서랍) 미사용. 다른 진입점(고객관리 등)의 CHART-LOCK 게이트웨이는 무영향.
 import { formatRxConfirmedSummary, normalizeRxItem } from '@/lib/rxTooltip';
 // T-20260617-foot-DOCDASH-DOCLIST-5FIX B2-3: 진료완료목록 뷰어 re-skin으로 방 칼럼 제거 →
 //   getAssignedSlotName(치료실 파생) 미사용 → import 제거. *_room 컬럼 SELECT/스키마는 무변경.
@@ -228,9 +229,14 @@ function formatISOToKoLabel(iso: string): string {
 // T-20260606-foot-RX-PATIENT-LIST-DATENAV: 조회 날짜를 파라미터화(기본=오늘 KST).
 //   ※ '해당 의사' 귀속 필터는 미적용 — check_ins 에 doctor 귀속 컬럼(doctor_id 등)이 없어
 //     로그인 의사 기준 분기 불가. 임의 매핑 신설 금지(planner 선결) → 클리닉 단위 일자 조회 유지.
-function usePatientsByDate(clinicId: string | null, dateISO: string) {
+// T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-1: 과거 날짜(isPast) 진료환자목록 소실 수정.
+//   RC = RXLIST-RENAME-DOCTORCALL-FILTER(L290~) 진료콜 명단 멤버십 필터가 과거날짜(전원 귀가=dark_gray,
+//   명단 이탈)를 전부 제거 → 빈 목록. 진료콜 명단은 '오늘 진료 대상'을 좁히는 운영 필터이므로 과거 이력
+//   조회에는 부적절. → isPast면 멤버십 필터 skip하고 그날 non-cancelled 체크인(=받은 치료 이력) 전체 표시.
+//   오늘/미래는 기존 필터 유지(회귀 0). isPast를 queryKey에 포함해 캐시 분리.
+function usePatientsByDate(clinicId: string | null, dateISO: string, isPast = false) {
   return useQuery({
-    queryKey: ['quick_rx_patient_list', clinicId, dateISO],
+    queryKey: ['quick_rx_patient_list', clinicId, dateISO, isPast],
     enabled: !!clinicId,
     queryFn: async () => {
       if (!clinicId) return [];
@@ -287,6 +293,9 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
       //   → 진료콜 명단에 한 번도 오르지 않은 행, 귀가(status='done'→status_flag='dark_gray', 명단 이탈) 행은 제외.
       //   '표시 대상 행만 축소' — 행별 처방 배지/요약/확정 등 표시 로직은 무변경(회귀 0).
       //   빈 명단(0건) 엣지: filter 결과 [] → 하단 빈 상태 정상 렌더(크래시 없음).
+      //   T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-1: 과거 날짜는 진료콜 명단 멤버십 필터를 적용하지
+      //     않고 그날 non-cancelled 체크인 전체(받은 치료 이력)를 표시 → 과거날짜 목록 소실 해소.
+      if (isPast) return mapped;
       return mapped.filter(
         (row) =>
           row.status_flag === 'purple' ||
@@ -847,8 +856,22 @@ export default function DoctorPatientList() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
-  // LOGIC-LOCK: L-004 — 차트 접근은 useChart() 경유만. 귀가 환자 처방취소 차단 시 '차트에서 수정' 진입.
-  const { openChart } = useChart();
+
+  // T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-2: 진료대시보드 이름 클릭 → '무조건 진료차트'.
+  //   RC = 기존 onOpenChart가 useChart().openChart(customerId)(=2번차트 서랍/고객차트)로 라우팅 →
+  //   현장 기대(진단/경과/처방 진료차트)와 어긋남. 형제 DoctorCallDashboard는 RX-CHART-FOLLOWUP3 C-1에서
+  //   진료차트(MedicalChartPanel) 직접오픈으로 정정됐으나 본 목록만 누락(CHART-OPEN-ENTRYPOINT-UNIFY 결함클래스 재발).
+  //   → DoctorCallDashboard와 동일하게 로컬 상태 MedicalChartPanel 직접오픈으로 이식.
+  //   ※ AC-3: 본 변경은 진료대시보드 진료환자목록 진입점만 정정 — 고객관리 등 다른 진입점의
+  //     useChart().openChart(2번차트 서랍, CHART-LOCK) 동선은 무접촉(회귀 0).
+  const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
+  const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+  const [medicalChartVariant, setMedicalChartVariant] = useState<'full' | 'clinical'>('full');
+  const openTreatmentChart = (customerId: string, variant: 'full' | 'clinical' = 'full') => {
+    setMedicalChartCustomerId(customerId);
+    setMedicalChartVariant(variant);
+    setMedicalChartOpen(true);
+  };
 
   // T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1: 기본 조회 날짜 = 오늘(KST). AC-2: < > 로 전/후 이동.
   const todayISO = todaySeoulISODate();
@@ -858,7 +881,8 @@ export default function DoctorPatientList() {
   //   ISO 'YYYY-MM-DD' 사전식 비교 = 캘린더 비교(타임존 무관). 미래(다음날) 조회는 과거 아님 → 현행 유지.
   const isPast = selectedDate < todayISO;
 
-  const { data: patients = [], isLoading, refetch } = usePatientsByDate(clinicId, selectedDate);
+  // T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-1: isPast 전달 → 과거날짜 진료콜 멤버십 필터 skip.
+  const { data: patients = [], isLoading, refetch } = usePatientsByDate(clinicId, selectedDate, isPast);
 
   // T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER: 그 날짜의 진료의 귀속 인덱스(read-only).
   const { data: signingIdx } = useSigningDoctorsByDate(clinicId, selectedDate);
@@ -1082,7 +1106,7 @@ export default function DoctorPatientList() {
               doctorMode={doctorMode}
               role={profile?.role ?? ''}
               onRefresh={() => refetch()}
-              onOpenChart={row.customer_id ? () => openChart(row.customer_id as string) : undefined}
+              onOpenChart={row.customer_id ? () => openTreatmentChart(row.customer_id as string, 'full') : undefined}
               isPast={isPast}
               clinicId={clinicId}
               currentUserEmail={profile?.email ?? null}
@@ -1099,6 +1123,24 @@ export default function DoctorPatientList() {
         <p>• {doctorMode ? '원장 모드: 버튼 클릭 시 바로 확정 처리됩니다.' : '치료사 모드: 버튼 클릭 시 임시(pending) 상태로 저장되고, 원장 확인 후 확정됩니다.'}</p>
         <p>• 임시(⚠) 상태인 행은 노란 테두리로 표시됩니다.</p>
       </div>
+
+      {/* T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-2: 진료차트(MedicalChartPanel) — 이름 클릭 시 직접 오픈.
+          DoctorCallDashboard(RX-CHART-FOLLOWUP3 C-1)와 동일 패턴·동일 medical_charts 소스. 부모 단일 렌더(행 누수 0). */}
+      <MedicalChartPanel
+        open={medicalChartOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setMedicalChartOpen(false);
+            setMedicalChartCustomerId(null);
+          }
+        }}
+        customerId={medicalChartCustomerId}
+        clinicId={clinicId ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
+        variant={medicalChartVariant}
+        onOpenFull={() => setMedicalChartVariant('full')}
+      />
     </div>
   );
 }
