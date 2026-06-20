@@ -40,6 +40,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { canIssueKoh } from '@/lib/permissions';
 import { todaySeoulISODate, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/input';
@@ -587,6 +588,13 @@ export default function KohReportTab() {
   const isDoctor = profile?.role === 'director';
   const pubNoun = isDoctor ? '발급' : '발급요청';
 
+  // ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE: 발급(발급요청) 노출/활성 대상(WHO) ──
+  //   reporter(C0ATE5P6JTH) 확정 — 발급요청 권한 = 상담실장/코디네이터/치료사 3역할 + 의사(director).
+  //   ★supersedes KOH-ISSUE-PERMISSION-SPEC AC-2 'isDoctor 전용(직원 미노출)'★ — 이제 canIssue 로 노출/활성 게이트.
+  //   라벨(발급하기/발급요청)·동작은 무변경: isDoctor 는 라벨 분기에만 계속 사용(publishBtnLabel/pubNoun).
+  //   비대상 역할(part_lead/staff/admin·manager/tm 등)은 canIssue=false → 발급 버튼·선택 컬럼 미노출(회귀 가드).
+  const canIssue = canIssueKoh(profile?.role ?? '');
+
   const [ym, setYm] = useState<string>(currentYearMonthSeoul());
   const [query, setQuery] = useState('');
   const isCurrentMonth = ym === currentYearMonthSeoul();
@@ -829,11 +837,11 @@ export default function KohReportTab() {
         <div className="flex items-center gap-2">
           {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
               발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행.
-              ── T-20260620-foot-KOH-ISSUE-PERMISSION-SPEC AC-2 ──
-              진료대시보드(의사화면)에는 의사(발급하기)만 노출. 발급은 director 전용 액션이므로
-              일괄발급 버튼은 isDoctor 한정 렌더(직원의 '발급요청'은 2번차트 KohRequestToggle 동선으로 분리됨).
-              직원이 진료대시보드 진입(전체 공개) 시 발급 액션 미노출 = 직원기능 비노출(NO-STAFF-FN 방향). */}
-          {isDoctor && (
+              ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE (supersedes KOH-ISSUE-PERMISSION-SPEC AC-2) ──
+              일괄발급(요청) 버튼 = canIssue(상담실장/코디네이터/치료사 3역할 + 의사). reporter 확정
+              '발급버튼=직원이 처리하는 정상 항목' → 직원에게도 노출(라벨은 isDoctor 분기로 '일괄발급요청').
+              비대상 역할(canIssue=false)에는 미노출(회귀 가드, 시나리오5). */}
+          {canIssue && (
           <Button
             size="sm"
             className="h-8 gap-1 bg-neutral-800 px-2.5 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
@@ -875,9 +883,9 @@ export default function KohReportTab() {
             <thead>
               {/* KOHSHEET-RENEWAL §B: 6컬럼 + LIFECYCLE: 선택(일괄발행)·상태(active/inactive)·발행 */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                {/* T-20260620-foot-KOH-ISSUE-PERMISSION-SPEC AC-2: 선택(일괄발급) 컬럼 = director 전용.
-                    일괄발급은 의사 액션이므로 비-director(직원)에겐 선택 컬럼 자체 미노출(헤더·셀 동일 게이트로 정합). */}
-                {isDoctor && (
+                {/* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE: 선택(일괄발급요청) 컬럼 = canIssue(3역할+의사).
+                    헤더·셀 동일 게이트로 정합. 비대상 역할(canIssue=false)에겐 선택 컬럼 자체 미노출. */}
+                {canIssue && (
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">
                   {/* AC-3: 전체선택(발행가능 행만 대상) */}
                   <input
@@ -915,8 +923,8 @@ export default function KohReportTab() {
                   data-koh-active={r.koh_requested ? 'true' : 'false'}
                 >
                   {/* AC-3: 행 선택(일괄발행) — 발행가능(조갑부위 있고 미발행)일 때만 활성.
-                      KOH-ISSUE-PERMISSION-SPEC AC-2: director 전용(헤더 선택 컬럼과 동일 게이트). */}
-                  {isDoctor && (
+                      KOH-ISSUE-ROLE-GRANT-3ROLE: canIssue(3역할+의사, 헤더 선택 컬럼과 동일 게이트). */}
+                  {canIssue && (
                   <td className="px-1.5 py-1 text-center" data-testid="koh-cell-select">
                     <input
                       type="checkbox"
@@ -1051,10 +1059,11 @@ export default function KohReportTab() {
                       >
                         💾 발행완료
                       </button>
-                    ) : isDoctor ? (
-                      /* T-20260620-foot-KOH-ISSUE-PERMISSION-SPEC AC-2: 발급(발급하기)은 director 전용 액션.
-                         비-director(직원)는 진료대시보드에서 발급 액션 미노출(직원기능 비노출). 직원 발급요청은
-                         2번차트 KohRequestToggle 동선으로 분리. 발행완료 행 보기(viewer)는 전 역할 공통 유지(읽기). */
+                    ) : canIssue ? (
+                      /* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE (supersedes KOH-ISSUE-PERMISSION-SPEC AC-2):
+                         발급(요청) 버튼 = canIssue(상담실장/코디네이터/치료사 3역할 + 의사). reporter 확정.
+                         라벨은 publishBtnLabel(isDoctor='발급하기' / 직원='발급요청')로 분기 — 동작은 역할무관 동일.
+                         비대상 역할(canIssue=false)은 미노출. 발행완료 행 보기(viewer)는 전 역할 공통 유지(읽기). */
                       <Button
                         size="sm"
                         variant={rowPublishable ? 'default' : 'outline'}

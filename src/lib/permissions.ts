@@ -76,6 +76,21 @@ export function canViewRrn(role: UserRole): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE — 균검사지(KOH) '발급요청' 권한 대상(WHO)
+//   reporter(풋센터 C0ATE5P6JTH, U0ATDB587PV) 직접 확정: "발급버튼 = 직원들이 처리하는 정상 항목".
+//   상담실장(consultant) · 코디네이터(coordinator) · 치료사(therapist) 3역할 + 의사(director) 전부 부여.
+//   ★supersedes KOH-ISSUE-PERMISSION-SPEC '발급=director 전용(직원 미노출)' narrowing — 주연총괄 컨펌 게이트 종료.
+//   ※ 라벨 분기(의사='발급하기' / 직원='발급요청')는 KohReportTab isDoctor 유지 — 본 키는 노출/활성 대상(WHO)만 확정.
+//      '발급하기' 최종확정 의미·실제 동작(publish_koh_result RPC)은 역할무관 동일 — 2단계 승인 워크플로 아님(무변경).
+//   ※ 3역할 외(part_lead/staff/admin·manager 비임상/tm 등)에는 발급(발급요청) 버튼 미노출(회귀 가드, 시나리오5).
+//      admin/manager 는 임상 발급 주체가 아니므로 본 집합에 미포함(현장 확정 3역할 + director 한정).
+export const KOH_ISSUE_ROLES: UserRole[] = ['director', 'consultant', 'coordinator', 'therapist'];
+
+export function canIssueKoh(role: UserRole): boolean {
+  return KOH_ISSUE_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC — 운영최고권한(has_ops_authority) 2축 분리
 //   DA branch B(n17u pre-GO): 임상 role(director=대표원장·봉직의) ⟂ 운영권한(계정·통계·매출 + 진료관리 수정).
 //   single-role + boolean flag 로 표현(enum 무변경, full RBAC 테이블 REJECT).
