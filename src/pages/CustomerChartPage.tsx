@@ -297,8 +297,9 @@ function CustomerStorageImageSection({
 
   const accentMap = {
     blue:   { header: 'bg-slate-50 border-slate-200 text-slate-800', dot: 'bg-slate-500', btn: 'text-slate-700 border-slate-200 hover:bg-slate-50' },
-    green:  { header: 'bg-green-50 border-green-200 text-green-800', dot: 'bg-green-500', btn: 'text-green-700 border-green-200 hover:bg-green-50' },
-    orange: { header: 'bg-amber-50 border-amber-200 text-amber-800', dot: 'bg-amber-500', btn: 'text-amber-700 border-amber-200 hover:bg-amber-50' },
+    // T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 업로드 섹션 장식 유채색(녹/노랑) → 모노톤 slate (blue→slate 형제 정합, HEX-BLUE-PURGE)
+    green:  { header: 'bg-slate-50 border-slate-200 text-slate-800', dot: 'bg-slate-500', btn: 'text-slate-700 border-slate-200 hover:bg-slate-50' },
+    orange: { header: 'bg-slate-50 border-slate-200 text-slate-800', dot: 'bg-slate-500', btn: 'text-slate-700 border-slate-200 hover:bg-slate-50' },
   };
   const ac = accentMap[accent];
 
@@ -542,14 +543,15 @@ function ReceiptUploadSection({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-green-50 border-green-200 text-green-800">
+      {/* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 결제영수증 장식 녹 → 모노톤 slate */}
+      <div className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-slate-50 border-slate-200 text-slate-800">
         <span className="text-xs font-semibold flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full shrink-0 bg-green-500" />
+          <span className="h-2 w-2 rounded-full shrink-0 bg-slate-500" />
           결제영수증
         </span>
         <label className="cursor-pointer">
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
-          <span className="inline-flex items-center gap-1 text-xs border rounded px-2 py-0.5 bg-white transition cursor-pointer text-green-700 border-green-200 hover:bg-green-50">
+          <span className="inline-flex items-center gap-1 text-xs border rounded px-2 py-0.5 bg-white transition cursor-pointer text-slate-700 border-slate-200 hover:bg-slate-50">
             <Upload className="h-3 w-3" />
             {uploading ? '중…' : '추가'}
           </span>
@@ -4449,7 +4451,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               setResvMiniForm({ date: '', startTime: '', memo: '', designatedTherapistId: '' });
               setOpenResvMiniPopup(true);
             }}
-            className="rounded px-2 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-500 transition flex items-center gap-1"
+            /* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: [예약하기] 장식 녹(emerald) → 모노톤 화이트 pill (다크 헤더 대비·primary CTA 강조 유지, ACTIONBTN 정합) */
+            className="rounded px-2 py-1 text-xs bg-white text-neutral-900 hover:bg-neutral-100 transition flex items-center gap-1 font-medium"
             data-testid="btn-chart-make-reservation"
           >
             <CalendarPlus className="h-3.5 w-3.5" /> 예약하기
@@ -5142,7 +5145,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         type="button"
                         data-testid="btn-open-medical-chart"
                         onClick={() => setMedicalChartOpen(true)}
-                        className="flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
+                        /* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 진료차트 탭 장식 녹(emerald) → 모노톤 slate (탭 가독성·구분 유지) */
+                        className="flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold"
                       >
                         <Stethoscope className="h-3.5 w-3.5" />
                         진료차트
@@ -5520,8 +5524,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE (요청 #2): 업로드 버튼 제거 → read-only 뷰어.
                   업로드는 상담내역>결제영수증(ReceiptUploadSection write 경로)에서만 — §3 하드가드 준수. */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-green-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                {/* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 영수증 사진 장식 녹 → 모노톤 slate */}
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-slate-500" />
                   영수증 사진
                 </div>
                 <CustomerStorageImageSection
@@ -5918,7 +5923,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       {packages.some((p) => p.status === 'active') && (
                         <button
                           onClick={() => setOpenPackageAddon(true)}
-                          className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 transition"
+                          /* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: +항목추가 장식 녹 → 모노톤 neutral outline (ACTIONBTN 정합) */
+                          className="inline-flex items-center gap-1 rounded border border-neutral-300 bg-neutral-50 px-2 py-1 text-[10px] font-medium text-neutral-700 hover:bg-neutral-100 transition"
                         >
                           <Plus className="h-3 w-3" /> 항목 추가
                         </button>
@@ -6374,8 +6380,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   단일회차/진료비 건은 제외(스펙 §4-1). ★DISPLAY-ONLY: 표시 필터만, write·집계 불변. */}
               {pkgPayments.filter((p) => p.memo === '영수증 업로드').length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs">
-                  <div className="flex items-center gap-1.5 font-semibold text-green-800 mb-2">
-                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                  {/* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 결제영수증 영역 정합 — 장식 녹 → 모노톤 slate */}
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-slate-500" />
                     영수증 연결 수납내역
                   </div>
                   <div className="space-y-1">
@@ -6401,8 +6408,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="space-y-3">
               {/* 경과분석지 업로드 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-orange-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-orange-500" />
+                {/* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 경과분석지 장식 노랑 → 모노톤 slate */}
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-slate-500" />
                   경과분석지
                 </div>
                 <CustomerStorageImageSection customerId={customer.id} prefix="progress" label="경과분석지 업로드" accent="orange" />
