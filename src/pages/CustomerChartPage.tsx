@@ -2248,7 +2248,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   //   2번차트(고객차트) 3구역[상세] 예약·상담·치료메모 입력부는 고객차트 surface(phrase_type='customer_chart') 상용구를 호출.
   //   기존 category='general'(phrase_type 무격리, 펜차트/진료차트 general 혼입)에서 customer_chart 전용으로 전환 → surface 격리.
   //   ※ 기존 general 상용구를 고객차트로 옮기는 backfill은 별건(datafix) — 현장은 [상용구(고객차트)]에서 신규 등록.
-  const [customerChartPhrases, setCustomerChartPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
+  // T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK: category(예약=reservation/상담=consult/치료=treatment) 동반 로드 → 탭별 필터.
+  const [customerChartPhrases, setCustomerChartPhrases] = useState<{ id: number; name: string; content: string; category: string | null }[]>([]);
   // T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [작성]/[내용보기] 다이얼로그 상태
   const [consentDialogFormType, setConsentDialogFormType] = useState<FormType | null>(null);
   // T-20260520-foot-PENCHART-VIEW-SPLIT: 그룹3 발건강 질문지 추가
@@ -2379,12 +2380,30 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   useEffect(() => {
     supabase
       .from('phrase_templates')
-      .select('id, name, content')
+      .select('id, name, content, category')
       .eq('phrase_type', 'customer_chart')
       .eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => { if (data) setCustomerChartPhrases(data); });
   }, []);
+
+  // T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: 3구역[상세] 탭별 상용구 필터.
+  //   예약 탭 → category='reservation', 상담 → 'consult', 치료메모 → 'treatment'.
+  //   ★미분류(3코드 외 = 레거시/'전체'에서 등록) 은 모든 탭에 노출 → 기존 데이터 무손실·무회귀(시나리오3).
+  //   분류된 상용구는 해당 탭에서만 노출 = 분류 격리(시나리오2).
+  const custchartPhrasesByTab = useMemo(() => {
+    const CLASSIFIED = new Set(['reservation', 'consult', 'treatment']);
+    const pick = (want: string) =>
+      customerChartPhrases.filter((p) => {
+        const c = p.category ?? '';
+        return !CLASSIFIED.has(c) || c === want;
+      });
+    return {
+      '예약': pick('reservation'),
+      '상담': pick('consult'),
+      '치료메모': pick('treatment'),
+    } as Record<'예약' | '상담' | '치료메모', typeof customerChartPhrases>;
+  }, [customerChartPhrases]);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -7523,12 +7542,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* 예약 탭 — 고객메모 + 기타메모 + 저장 */}
             {resvDetailTab === '예약' && (
               <div className="p-2 space-y-2">
-                {/* CS-AC-3: 고객차트 상용구 — 고객메모에 삽입 */}
-                {customerChartPhrases.length > 0 && (
+                {/* CS-AC-3: 고객차트 상용구 — 고객메모에 삽입.
+                    T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '예약' 분류 + 미분류만 노출. */}
+                {custchartPhrasesByTab['예약'].length > 0 && (
                   <div>
                     <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
                     <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-예약">
-                      {customerChartPhrases.map(phrase => (
+                      {custchartPhrasesByTab['예약'].map(phrase => (
                         <button
                           key={phrase.id}
                           type="button"
@@ -7650,12 +7670,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </div>
                 </div>
 
-                {/* 상용구 — C23-PHRASE-LINK / CS-AC-3: 고객차트 surface(customer_chart) 상용구 → 상담메모 삽입 */}
-                {customerChartPhrases.length > 0 && (
+                {/* 상용구 — C23-PHRASE-LINK / CS-AC-3: 고객차트 surface(customer_chart) 상용구 → 상담메모 삽입.
+                    T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '상담' 분류 + 미분류만 노출. */}
+                {custchartPhrasesByTab['상담'].length > 0 && (
                   <div>
                     <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
                     <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-상담">
-                      {customerChartPhrases.map(phrase => (
+                      {custchartPhrasesByTab['상담'].map(phrase => (
                         <button
                           key={phrase.id}
                           type="button"
@@ -7700,12 +7721,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김 */}
                 {!treatmentMemoUnavailable && (
                   <>
-                    {/* CS-AC-3: 고객차트 상용구 — 새 치료메모에 삽입 */}
-                    {customerChartPhrases.length > 0 && (
+                    {/* CS-AC-3: 고객차트 상용구 — 새 치료메모에 삽입.
+                        T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '치료' 분류 + 미분류만 노출. */}
+                    {custchartPhrasesByTab['치료메모'].length > 0 && (
                       <div>
                         <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
                         <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-치료메모">
-                          {customerChartPhrases.map(phrase => (
+                          {custchartPhrasesByTab['치료메모'].map(phrase => (
                             <button
                               key={phrase.id}
                               type="button"
