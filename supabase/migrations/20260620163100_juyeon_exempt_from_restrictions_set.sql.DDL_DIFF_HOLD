@@ -1,0 +1,32 @@
+-- T-20260620-foot-SUPERADMIN-EXEMPT — 상시예외 backfill DML (김주연 총괄 exempt_from_restrictions=true)
+-- ⚠️ DO NOT APPLY 단독: 반드시 선행 20260620163000_user_profiles_exempt_from_restrictions_additive.sql 적용 후 실행.
+--    .DDL_DIFF_HOLD suffix → db push 대상 아님. supervisor DDL-diff 게이트 통과 후 수동 실행.
+--
+-- 출처: DA CONSULT-REPLY MSG-20260620-162917-aw39 (Q2 backfill).
+--   ★PK id 기준 1행 — 코드 내 email/id 하드코딩 아님(FE/perm 로직은 flag 만 읽음 → 단일유저 하드코딩 0 제약 충족).
+--   향후 추가 예외 = 본 DML 패턴으로 flag UPDATE, 앱 코드 무변경.
+--
+-- 대상: 김주연 총괄 (user_profiles.id=ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12, 현재 role='admin').
+--   현재 admin → 이미 전 운영 메뉴 통과(inert). flag 의 실효는 향후 role 변경/신규 제한 토글 적용 시 발현(durability).
+--
+-- ★불변: exempt 는 의사/진료 publish·PHI·RRN·승인·clinic 스코프 우회 X(grant 아님).
+
+BEGIN;
+
+-- 단건 가드: PK id 기준 idempotent UPDATE(이미 true 면 no-op).
+UPDATE public.user_profiles
+   SET exempt_from_restrictions = true
+ WHERE id = 'ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12'
+   AND exempt_from_restrictions = false;
+
+-- 적용 후 검증 (1행, exempt_from_restrictions=true 여야):
+--   SELECT id, role, exempt_from_restrictions, updated_at FROM public.user_profiles WHERE id='ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12';
+
+COMMIT;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- ROLLBACK (예외 회수 시에만)
+-- ════════════════════════════════════════════════════════════════════════
+-- BEGIN;
+--   UPDATE public.user_profiles SET exempt_from_restrictions = false WHERE id='ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12';
+-- COMMIT;

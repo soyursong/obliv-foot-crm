@@ -59,7 +59,43 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   customer_export: ['admin', 'manager', 'director'],
 };
 
-export function canAccess(role: UserRole, key: PermKey): boolean {
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-SUPERADMIN-EXEMPT — 상시예외 영속화(exempt_from_restrictions)
+//   DA CONSULT-REPLY MSG-20260620-162917-aw39 (GO, ADDITIVE 컬럼 user_profiles.exempt_from_restrictions).
+//   reporter(김주연 총괄, id ee67fc6b-…-70d12): role 변경·신규 제한 토글에도 생존하는 상시예외 요구.
+//   ★진짜 durability = 중앙 게이트(canAccess)가 flag 를 honor 하는 것 — flag 존재만으론 부족(Q1).
+//     ∴ 모든 '제한 토글'은 canAccess(=PERM_MATRIX SSOT, §12-5 ①) 경유 의무. 우회 토글은 flag 도 무력.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 권한 판정용 subject(또는 role 문자열) 공용 타입 — canAccess 하위호환 오버로드. */
+export type AccessSubject = UserRole | OpsAuthSubject | null | undefined;
+
+/**
+ * 상시예외(exempt_from_restrictions) 보유 여부.
+ *   true = 메뉴/권한 '제한 토글'(§12 EXCL-3 회수 및 향후 신규 제한)의 적용 제외.
+ *   ★grant 아님: 신규 메뉴 부여 없음 — 역할이 이미 가진 접근의 '제거 방지'만.
+ *   ★불변(면제 아님): PHI audit·RRN 가드·승인 게이트·clinic 스코프·의사/진료 publish 는 우회 X
+ *     (이들은 canAccess 비경유 별 게이트 — isDoctorRole/canPublish/canViewRrn 등 → AC-6 자동 안전).
+ */
+export function isExemptFromRestrictions(subject: OpsAuthSubject | null | undefined): boolean {
+  return !!subject && subject.exempt_from_restrictions === true;
+}
+
+/**
+ * 운영 메뉴(PermKey) 접근 판정 — '제한 토글' 평가의 단일 SSOT.
+ *   하위호환: role 문자열 또는 subject(UserProfile/OpsAuthSubject) 모두 허용.
+ *     · role 문자열을 넘기면 exempt 미고려(과거 호출부 호환) — exempt honor 하려면 subject 를 넘길 것.
+ *   exempt 단락: exempt_from_restrictions=true → 제한 토글 우회(역할이 잃을 메뉴 보존).
+ *     ★운영 메뉴 surface(PermKey) 한정 — 의사/진료 publish 는 canAccess 비경유라 영향 0(grant 경로 절대 미적용).
+ */
+export function canAccess(subjectOrRole: AccessSubject, key: PermKey): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subjectOrRole === 'string' ? { role: subjectOrRole } : subjectOrRole;
+  if (!s) return false;
+  // 상시예외: 제한 토글 평가 단락(운영 메뉴 한정). grant 아님 — 의사/진료 publish 미경유.
+  if (isExemptFromRestrictions(s)) return true;
+  const role = s.role;
+  if (!role) return false;
   return PERM_MATRIX[key].includes(role);
 }
 
@@ -145,6 +181,8 @@ export function canIssueKoh(role: UserRole): boolean {
 export interface OpsAuthSubject {
   role?: UserRole | null;
   has_ops_authority?: boolean | null;
+  // T-20260620-foot-SUPERADMIN-EXEMPT: 상시예외 flag(제한 토글 적용 제외). has_ops_authority(positive)와 직교 축(negative-protection).
+  exempt_from_restrictions?: boolean | null;
 }
 
 /**

@@ -2059,7 +2059,7 @@ export default function Reservations() {
         /* T-20260611-foot-RESV-CTXMENU-SMS-MISSING: CANONICAL 5항목 中 '문자' 복원.
            admin/manager(manual_sms_send 권한) 한정 노출 — 미허용 시 onSendSms 미전달 → 항목 숨김. */
         onSendSms={
-          canAccess(profile?.role ?? '', 'manual_sms_send')
+          canAccess(profile, 'manual_sms_send')  /* T-20260620-foot-SUPERADMIN-EXEMPT: subject 전달(exempt honor) */
             ? (ci) => { setResvContextMenu(null); setSmsTarget(ci); }
             : undefined
         }

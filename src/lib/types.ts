@@ -526,6 +526,12 @@ export interface UserProfile {
   //   ⚠️ DB 컬럼은 마이그(20260619220000_..._has_ops_authority_additive.sql.DDL_DIFF_HOLD) 적용 전까지 부재 →
   //      profile.has_ops_authority 는 undefined. 그동안 모든 ops-authority predicate는 admin escape로만 통과(inert·lock-out-safe).
   has_ops_authority?: boolean | null;
+  // T-20260620-foot-SUPERADMIN-EXEMPT (DA CONSULT-REPLY MSG-20260620-162917-aw39, DA-20260620-FOOT-SUPERADMIN-EXEMPT):
+  //   상시예외 영속화 ADDITIVE flag. true = '제한 토글'(§12 EXCL-3 회수 + 향후 신규 제한)의 적용 제외.
+  //   ★grant 아님 — 역할이 이미 가진 접근의 '제거 방지'만. 신규 메뉴/의사·진료 publish 부여 안 함(AC-6 자동 안전).
+  //   has_ops_authority(positive ABILITY)와 직교 축(negative-protection) → 별 컬럼(통합 금지, least-privilege).
+  //   ⚠️ DB 컬럼은 마이그(..._exempt_from_restrictions_additive.sql.DDL_DIFF_HOLD) 적용 전까지 부재 → undefined(=false 취급, inert).
+  exempt_from_restrictions?: boolean | null;
 }
 
 
