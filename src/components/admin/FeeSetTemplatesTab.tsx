@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { canEditStaffArea } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -308,8 +309,11 @@ const EMPTY_FORM: FormState = {
 
 export default function FeeSetTemplatesTab() {
   // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  // T-20260620-foot-PHRASE-STAFF-PERM-BLOCKED: 직원영역 수가세트 편집을 직원 role 까지 확대(권한 확대, lock-out 0).
+  //   김주연 총괄 "직원들이 메인으로 씀" — STAFF_AREA_EDIT_ROLES(전직원 8역할, tm 제외) 1지점 SSOT.
+  //   fee_set_templates RLS=auth_all 라 FE 게이트 확대만으로 staff write 즉시 동작(NO-DDL).
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  const canEdit = canEditStaffArea(profile?.role);
   const clinicId = useClinicId();
   const { data: templates = [], isLoading } = useFeeSetTemplates(clinicId);
   const { data: services = [] } = useServices(clinicId);
