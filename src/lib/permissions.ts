@@ -157,15 +157,16 @@ export function canEditStaffAreaPhrase(role: UserRole | null | undefined): boole
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE — 균검사지(KOH) '발급요청' 권한 대상(WHO)
-//   reporter(풋센터 C0ATE5P6JTH, U0ATDB587PV) 직접 확정: "발급버튼 = 직원들이 처리하는 정상 항목".
-//   상담실장(consultant) · 코디네이터(coordinator) · 치료사(therapist) 3역할 + 의사(director) 전부 부여.
-//   ★supersedes KOH-ISSUE-PERMISSION-SPEC '발급=director 전용(직원 미노출)' narrowing — 주연총괄 컨펌 게이트 종료.
-//   ※ 라벨 분기(의사='발급하기' / 직원='발급요청')는 KohReportTab isDoctor 유지 — 본 키는 노출/활성 대상(WHO)만 확정.
-//      '발급하기' 최종확정 의미·실제 동작(publish_koh_result RPC)은 역할무관 동일 — 2단계 승인 워크플로 아님(무변경).
-//   ※ 3역할 외(part_lead/staff/admin·manager 비임상/tm 등)에는 발급(발급요청) 버튼 미노출(회귀 가드, 시나리오5).
-//      admin/manager 는 임상 발급 주체가 아니므로 본 집합에 미포함(현장 확정 3역할 + director 한정).
-export const KOH_ISSUE_ROLES: UserRole[] = ['director', 'consultant', 'coordinator', 'therapist'];
+// T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE — 균검사지(KOH) 발급 권한 대상(WHO) = 전직군(8역할)
+//   reporter(문지은 대표원장, U0ALGAAAJAV, 풋센터 C0ATE5P6JTH) 직접 지시: "발급하기 권한 다 풀어줘 모든 직군 가능"
+//   (ts=1781932348.900389 "아니, 발급하기 권한 싹 풀어줘" — 직전 봇 라벨분기 제안 명시 거부).
+//   ★supersedes GRANT-3ROLE(4역할) — /admin/doctor-tools 라우트 가드 roles 목록과 동일하게 전8역할로 확장.
+//     additive 추가 4역할 = admin / manager / technician / part_lead (기존 director/consultant/coordinator/therapist 위).
+//   ★라벨분기 제거 — KohReportTab 의 역할별 라벨(의사='발급하기'/직원='발급요청')은 superseded.
+//     이제 director 포함 전8역할 모두 단일 '발급하기'(일괄 '일괄발급하기'). '발급요청' 라벨 폐기.
+//   ★발급 실행(publish_koh_result RPC) 서버측 게이트 = is_approved_user() — director 강제 없음(전 승인직원 실행 가능).
+//     본 FE 게이트(노출/활성)만 전8역할로 확장하면 RPC 와 정합(NO-DDL, RC 확인 완료).
+export const KOH_ISSUE_ROLES: UserRole[] = ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'technician', 'part_lead'];
 
 export function canIssueKoh(role: UserRole): boolean {
   return KOH_ISSUE_ROLES.includes(role);

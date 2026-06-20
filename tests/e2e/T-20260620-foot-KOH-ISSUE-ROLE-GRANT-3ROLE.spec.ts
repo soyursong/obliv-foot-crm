@@ -1,4 +1,9 @@
 /**
+ * ⚠️ SUPERSEDED (2026-06-20, T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE) — describe.skip.
+ *   reporter(문지은 대표원장) 직접 지시 "권한 다 풀어줘 모든 직군 가능"으로 발급 권한이 4역할→전8역할로 확장되고
+ *   라벨분기('발급요청')가 제거(전직군 '발급하기')됨. 본 스펙의 4역할 집합·'발급요청' 라벨·비대상(part_lead/admin/
+ *   manager/technician) 단언은 모두 superseded → ALLROLE.spec.ts 가 인계. 제거된 가정 단언 방지 위해 skip.
+ *
  * E2E spec — T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE
  * 균검사지(KOH) '발급요청' 권한 확정 — 상담실장/코디네이터/치료사 3역할 + 의사(director).
  *
@@ -39,7 +44,8 @@ const GRANTED_STAFF = ['consultant', 'coordinator', 'therapist']; // 3역할(rep
 const NON_TARGET_ROLES = ['part_lead', 'staff', 'admin', 'manager', 'technician', 'tm'];
 
 // ===========================================================================
-test.describe('T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE', () => {
+// SUPERSEDED by KOH-ISSUE-ROLE-GRANT-ALLROLE (전8역할 + 라벨분기 제거) — skip 유지.
+test.describe.skip('T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE', () => {
   // ── 시나리오 1·2·3: 상담실장/코디네이터/치료사 — 발급요청 노출/활성/클릭 ──
   test('S1-S3: 상담실장/코디네이터/치료사 3역할은 발급요청 버튼 노출(미발행 행)', () => {
     for (const role of GRANTED_STAFF) {

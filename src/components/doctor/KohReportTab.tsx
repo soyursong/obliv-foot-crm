@@ -1,8 +1,8 @@
 // KohReportTab — 균검사지(KOH 진균검사) 명단 리포트 탭
 // Ticket: T-20260611-foot-KOH-REPORT-TAB (Phase 1) + T-20260612-foot-KOH-REPORT-PHASE15 (Phase 1.5)
 //         + T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR (균검사지 6컬럼 재정의 + 조갑부위 multi-select)
-//         + T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE (발급버튼 라벨 역할분기: 의사=발급하기/일괄발급하기,
-//           그 외=발급요청/일괄발급요청. FE-only 표기 분기, 신규 컬럼/상태 0. 본문 isDoctor/pubNoun 참조.)
+//         + T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE (발급 권한=전직군 8역할 + 라벨분기 제거: 전직군 단일
+//           '발급하기'. reporter=문지은 대표원장 '권한 다 풀어줘'. KOHBTN-ROLE-LABEL 라벨분기 superseded.)
 //
 // KOH(수산화칼륨) 진균검사를 시행한 환자 명단을 '검사일'(월 단위) 기준으로 조회한다.
 // 컬럼(KOHSHEET-RENEWAL §B, 6컬럼 통일): 이름 · 생년 · 차트 · 검사일(날짜만) · 조갑부위 · 진료의
@@ -577,22 +577,17 @@ export default function KohReportTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
-  // ── T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE: 발급 버튼 라벨 역할별 분기 ──
-  //   의사(원장=director)는 본인이 직접 발급하는 주체 → '발급하기/일괄발급하기'.
-  //   그 외 직원(치료사 등)은 원장에게 검사결과 발급을 요청하는 동선(현행) → '발급요청/일괄발급요청'.
-  //   ★FE-only 표기 분기★ — 신규 컬럼/상태/role 신설 0(L25 금지). 실제 동작(publish_koh_result RPC)은
-  //   역할 무관 동일 — '치료사 발급요청→의사 발급' 2단계 승인 워크플로 아님(AC-4 1차가정 확정,
-  //   RC: 티켓이 치료사를 '(현행)'으로 명시 = 치료사 동작 무변경 → 요청상태 영속화 불필요).
-  //   director = 풋센터 유일 physician role(UserRole/StaffRole). 치료사 분기 문자열은 旣값과 byte-identical(회귀0).
-  //   pubNoun = confirm/toast 문장용 동사 명사. 버튼 라벨(발급하기/일괄발급하기)은 return 직전 별도 변수.
-  const isDoctor = profile?.role === 'director';
-  const pubNoun = isDoctor ? '발급' : '발급요청';
+  // ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 라벨분기 제거 — 전직군 단일 '발급하기' ──
+  //   reporter(문지은 대표원장, U0ALGAAAJAV) 직접 지시 "발급하기 권한 싹 풀어줘"로 KOHBTN-ROLE-LABEL-VALIDGATE
+  //   라벨분기(의사='발급하기'/직원='발급요청', f600d896)를 제거. director 포함 전8역할 단일 '발급하기'.
+  //   '발급요청'·'일괄발급요청' 라벨/문구는 폐기 — pubNoun 도 전직군 '발급'으로 통일(confirm/toast 문장용).
+  //   실제 동작(publish_koh_result RPC, 서버측 게이트=is_approved_user)은 역할 무관 동일(무변경).
+  const pubNoun = '발급';
 
-  // ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE: 발급(발급요청) 노출/활성 대상(WHO) ──
-  //   reporter(C0ATE5P6JTH) 확정 — 발급요청 권한 = 상담실장/코디네이터/치료사 3역할 + 의사(director).
-  //   ★supersedes KOH-ISSUE-PERMISSION-SPEC AC-2 'isDoctor 전용(직원 미노출)'★ — 이제 canIssue 로 노출/활성 게이트.
-  //   라벨(발급하기/발급요청)·동작은 무변경: isDoctor 는 라벨 분기에만 계속 사용(publishBtnLabel/pubNoun).
-  //   비대상 역할(part_lead/staff/admin·manager/tm 등)은 canIssue=false → 발급 버튼·선택 컬럼 미노출(회귀 가드).
+  // ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 발급 버튼 노출/활성 대상(WHO) = 전직군(8역할) ──
+  //   reporter(문지은 대표원장, U0ALGAAAJAV) 직접 지시 "권한 다 풀어줘 모든 직군 가능" → KOH_ISSUE_ROLES 전8역할.
+  //   ★supersedes GRANT-3ROLE(4역할)·KOH-ISSUE-PERMISSION-SPEC(director 전용)★ — canIssue 로 노출/활성 게이트.
+  //   라벨 분기는 제거됨(전직군 '발급하기'). canIssue 는 /admin/doctor-tools 라우트 가드 8역할과 동일 집합.
   const canIssue = canIssueKoh(profile?.role ?? '');
 
   const [ym, setYm] = useState<string>(currentYearMonthSeoul());
@@ -757,15 +752,13 @@ export default function KohReportTab() {
     });
   };
 
-  // KOHBTN-ROLE-LABEL: 버튼 라벨(역할 분기). 치료사 분기는 旣 라벨과 동일 문자열(회귀0).
-  //   단건=발급하기/발급요청. 일괄(0건 선택)=일괄발급하기/일괄발급요청. 일괄(N건 선택)='선택 N건 일괄{발급|발급요청}'.
-  const publishBtnLabel = isDoctor ? '발급하기' : '발급요청';
+  // KOH-ISSUE-ROLE-GRANT-ALLROLE: 버튼 라벨 = 전직군 단일 '발급하기'(역할 분기 제거).
+  //   단건='발급하기'. 일괄(0건 선택)='일괄발급하기'. 일괄(N건 선택)='선택 N건 일괄발급'.
+  const publishBtnLabel = '발급하기';
   const bulkPublishBtnLabel =
     selectedCount > 0
       ? `선택 ${selectedCount}건 일괄${pubNoun}`
-      : isDoctor
-        ? '일괄발급하기'
-        : '일괄발급요청';
+      : '일괄발급하기';
 
   return (
     <div className="space-y-4">
@@ -837,10 +830,9 @@ export default function KohReportTab() {
         <div className="flex items-center gap-2">
           {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
               발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행.
-              ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE (supersedes KOH-ISSUE-PERMISSION-SPEC AC-2) ──
-              일괄발급(요청) 버튼 = canIssue(상담실장/코디네이터/치료사 3역할 + 의사). reporter 확정
-              '발급버튼=직원이 처리하는 정상 항목' → 직원에게도 노출(라벨은 isDoctor 분기로 '일괄발급요청').
-              비대상 역할(canIssue=false)에는 미노출(회귀 가드, 시나리오5). */}
+              ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE (supersedes GRANT-3ROLE) ──
+              일괄발급 버튼 = canIssue(전직군 8역할). reporter(문지은 대표원장) 확정 '권한 다 풀어줘'.
+              라벨분기 제거 → 전직군 단일 '일괄발급하기'. canIssue=false(tm 등)만 미노출(회귀 가드). */}
           {canIssue && (
           <Button
             size="sm"
@@ -883,8 +875,8 @@ export default function KohReportTab() {
             <thead>
               {/* KOHSHEET-RENEWAL §B: 6컬럼 + LIFECYCLE: 선택(일괄발행)·상태(active/inactive)·발행 */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                {/* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE: 선택(일괄발급요청) 컬럼 = canIssue(3역할+의사).
-                    헤더·셀 동일 게이트로 정합. 비대상 역할(canIssue=false)에겐 선택 컬럼 자체 미노출. */}
+                {/* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 선택(일괄발급) 컬럼 = canIssue(전직군 8역할).
+                    헤더·셀 동일 게이트로 정합. 비대상 역할(canIssue=false, tm 등)에겐 선택 컬럼 자체 미노출. */}
                 {canIssue && (
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">
                   {/* AC-3: 전체선택(발행가능 행만 대상) */}
@@ -962,14 +954,14 @@ export default function KohReportTab() {
                     )}
                   </td>
                   {/* 4FIX 이슈1(생년): AC-0 선조사 = 바인딩 정상이나 prod birth_date NULL 다수(데이터 부재).
-                      생년 누락 시 '미입력' 경고 배지 — 발급요청 차단(이슈3) 사유를 명단에서 바로 인지. */}
+                      생년 누락 시 '미입력' 경고 배지 — 발급 차단(이슈3) 사유를 명단에서 바로 인지. */}
                   <td className="px-1.5 py-1 tabular-nums text-foreground/90 whitespace-nowrap" data-testid="koh-cell-birth">
                     {r.birth_date ? (
                       formatBirthDate(r.birth_date)
                     ) : (
                       <span
                         className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
-                        title="생년월일 미입력 — 고객 정보에서 입력해야 발급요청 가능"
+                        title="생년월일 미입력 — 고객 정보에서 입력해야 발급 가능"
                         data-testid="koh-birth-missing"
                       >
                         미입력
@@ -1060,10 +1052,10 @@ export default function KohReportTab() {
                         💾 발행완료
                       </button>
                     ) : canIssue ? (
-                      /* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE (supersedes KOH-ISSUE-PERMISSION-SPEC AC-2):
-                         발급(요청) 버튼 = canIssue(상담실장/코디네이터/치료사 3역할 + 의사). reporter 확정.
-                         라벨은 publishBtnLabel(isDoctor='발급하기' / 직원='발급요청')로 분기 — 동작은 역할무관 동일.
-                         비대상 역할(canIssue=false)은 미노출. 발행완료 행 보기(viewer)는 전 역할 공통 유지(읽기). */
+                      /* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE (supersedes GRANT-3ROLE):
+                         발급 버튼 = canIssue(전직군 8역할). reporter(문지은 대표원장) '권한 다 풀어줘' 확정.
+                         라벨분기 제거 → publishBtnLabel='발급하기'(전직군 단일) — 동작은 역할무관 동일.
+                         비대상 역할(canIssue=false, tm 등)은 미노출. 발행완료 행 보기(viewer)는 전 역할 공통(읽기). */
                       <Button
                         size="sm"
                         variant={rowPublishable ? 'default' : 'outline'}
@@ -1076,8 +1068,8 @@ export default function KohReportTab() {
                         // SINGLESEL-2FIX(이슈1): 발행 불가 상태도 탭 가능하게(disabled 제거) — 태블릿 hover 부재로
                         //   사유가 안 보여 '먹통'으로 보였음. 탭 시 handlePublish 가 사유 toast 노출. busy 상태만 비활성.
                         disabled={publishKoh.isPending || bulkPublishing}
-                        // 4FIX 이슈3: 발행 불가 사유(조갑부위/생년 누락)를 title 로 명시. 4FIX 이슈4: '발행'→'발급요청'.
-                        //   KOHBTN-ROLE-LABEL: title 도 pubNoun 동일치환(의사='발급', 그 외='발급요청'). 치료사 회귀0.
+                        // 4FIX 이슈3: 발행 불가 사유(조갑부위/생년 누락)를 title 로 명시.
+                        //   ALLROLE: title 도 pubNoun('발급')으로 전직군 통일(라벨분기 제거).
                         //   ★AC-3 회귀방지★: 의사 view에서 비검증 행은 outline(비활성처럼) 표시하되 disabled 는 busy 한정 유지 —
                         //     탭 시 handlePublish 가 사유 toast 노출(태블릿 hover 부재 대응, SINGLESEL-2FIX 이슈1 보존).
                         title={
@@ -1108,7 +1100,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급요청</strong>은 채취 조갑부위 선택 + 환자 생년월일 + 담당 치료사 배정이 모두 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력 / 치료사 미배정 시 접수·체크인에서 먼저 지정), 발급요청 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급요청은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급요청할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급하기</strong>는 채취 조갑부위 선택 + 환자 생년월일 + 담당 치료사 배정이 모두 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력 / 치료사 미배정 시 접수·체크인에서 먼저 지정), 발급 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}

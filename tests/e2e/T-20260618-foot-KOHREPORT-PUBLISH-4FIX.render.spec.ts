@@ -20,10 +20,11 @@ test('render: 4FIX 발급요청 라벨 + 생년 미입력 배지 + 발행완료 
   const rowCount = await rows.count();
 
   if (rowCount > 0) {
-    // 이슈4: 미발행 행 발급요청 버튼 라벨 확인(있으면).
+    // 이슈4: 미발행 행 발급 버튼 라벨 확인(있으면).
+    //   ※ T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 라벨분기 제거 → 전직군 단일 '발급하기'(旣 '발급요청' superseded).
     const publishBtn = page.getByTestId('koh-publish-btn').first();
     if (await publishBtn.count() > 0) {
-      await expect(publishBtn).toHaveText(/발급요청/);
+      await expect(publishBtn).toHaveText(/발급하기/);
     }
     // 이슈1: 생년 미입력 배지(prod NULL 다수 예상) — 존재 시 텍스트 확인.
     const missing = page.getByTestId('koh-birth-missing').first();
