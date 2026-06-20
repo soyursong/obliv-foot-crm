@@ -196,3 +196,53 @@ export function canEditClinicMgmt(subject: OpsAuthSubject | UserRole | null | un
   if (s.role === 'director') return true;
   return false;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE — 서비스관리>상용구관리 메뉴 가시성 게이트.
+//   확정 스펙(김주연 총괄, slack ts 1781924207.232909 = 옵션2/A안):
+//     "봉직의만 비노출, 대표원장은 그대로 — 일반 의사 계정은 안 보이고 문지은 원장님은 계속 이용 가능
+//      (앞으로 의사 더 추가돼도 자동 적용)".
+//   ※ 이전 'B안=모든 의사 비노출'(ts 1781922312 오해석) 폐기 — 그건 오전 c619eee8 무단배포 lock-out →
+//     abcf9efd revert 한 변경과 동일. 대표원장(director) lock-out 절대 금지.
+//
+//   ★role 실측(2026-06-20 user_profiles, n=41): admin11·consultant4·coordinator7·director1(문지은)·
+//     manager1·staff2·therapist12·tm3. 의사 role = director 1명(=대표원장 문지은)뿐, 봉직의/일반의사 role
+//     아직 미존재 → 당장 비노출되는 사람 0(스펙대로). has_ops_authority 컬럼 미적재(DDL_DIFF_HOLD) →
+//     hasOpsAuthority({role:'director'})=false. ∴ director escape 필수(없으면 문지은 lock-out = 오전 incident 재현).
+
+/** 임상 의사 role 집합. 향후 봉직의/일반의사 role 신설 시 여기에 append 하면 상용구관리에서 자동 비노출(AC-4).
+ *  ★단일유저 하드코딩(uid==문지은) 금지 — role 기반. 현재는 director(대표원장 포함) 1종뿐. */
+export const DOCTOR_ROLES: UserRole[] = ['director'];
+
+/**
+ * 대표원장(운영최고권한 의사) 여부 — 상용구관리 escape 술어.
+ *   - has_ops_authority === true → 대표원장(명시 flag, 컬럼 적재 후 권위)
+ *   - role === 'director'         → 대표원장(★stopgap escape, canEditClinicMgmt 와 동일 패턴).
+ *       현재 director = 문지은 1명(=대표원장)뿐 + has_ops_authority 컬럼 미적재라 functionally 동일·lock-out-safe.
+ *   ★컬럼 적재 + 문지은 has_ops_authority=true set 후, 봉직의(director,flag無)를 분리하려면 이 director fallback 제거.
+ */
+function isLeadDoctor(subject: OpsAuthSubject | null | undefined): boolean {
+  if (!subject) return false;
+  if (subject.has_ops_authority === true) return true;
+  return subject.role === 'director';
+}
+
+/**
+ * 서비스관리>상용구관리(상용구·수가세트) 서브탭 노출 여부.
+ *   true  = 노출 — 대표원장(director/운영최고권한) + 전 직원(admin/manager/consultant/coordinator/therapist/staff/…)
+ *   false = 비노출 — 봉직의/일반의사(대표원장 아닌 의사 role). 현재 해당 계정 0.
+ *   ★lock-out 가드: 대표원장(현재 문지은, role='director')은 isLeadDoctor 로 항상 통과.
+ */
+export function canViewPhraseMgmt(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  if (!s || !s.role) return false;
+  // 대표원장(운영최고권한) → 항상 노출 (lock-out 가드 — 오전 incident 재현 방지)
+  if (isLeadDoctor(s)) return true;
+  // 봉직의/일반의사(대표원장 아닌 의사 role) → 비노출
+  if (DOCTOR_ROLES.includes(s.role)) return false;
+  // 그 외 전 직원 → 그대로 노출(무회귀)
+  return true;
+}

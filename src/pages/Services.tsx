@@ -40,6 +40,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { canViewPhraseMgmt } from '@/lib/permissions';
 import type { Service } from '@/lib/types';
 
 // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: 진료관리 서브탭 — 기존 /admin/clinic-management 페이지 재사용(이동만).
@@ -238,6 +239,11 @@ export default function Services() {
   //   route RoleGuard로 이미 게이트된 페이지이므로 로그인 프로필이 있으면 노출(직원 포함). 게이팅 제거.
   const canViewClinicMgmt = !!profile?.role;
 
+  // T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE (옵션2/A안, 김주연 총괄 ts 1781924207): 상용구관리 서브탭은
+  //   봉직의/일반의사(대표원장 아닌 의사 role)에게 비노출. 대표원장(director/운영최고권한, 현재 문지은) + 전 직원은 유지.
+  //   현재 봉직의 role 미존재 → 당장 비노출되는 계정 0(무회귀). 향후 봉직의 추가 시 DOCTOR_ROLES 기준 자동 적용(AC-4).
+  const canViewPhrases = canViewPhraseMgmt(profile);
+
   // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: ?tab=phrases / ?tab=fee_set_templates 딥링크 호환(AC-4).
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -259,12 +265,13 @@ export default function Services() {
   }, [tabParam]);
 
   // 권한 박탈/역할 변경 등으로 가시성을 잃은 경우 서비스 탭으로 강제 복귀(렌더 가드 보강).
-  // 상용구관리(phrases)는 서비스 목록과 동일 role(직원 포함)이라 별도 게이트 없음(AC-3).
+  // T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE: 상용구관리(phrases)는 봉직의/일반의사에게 비노출 →
+  //   딥링크(?tab=phrases)·잔존 state 로 진입해도 canViewPhrases 가 false 면 'services' 로 강제 복귀(Route Guard, AC-3).
   const effectiveTopTab: TopTab =
     topTab === 'clinic'
       ? canViewClinicMgmt ? 'clinic' : 'services'
       : topTab === 'phrases'
-      ? 'phrases'
+      ? canViewPhrases ? 'phrases' : 'services'
       : 'services';
 
   const [rows, setRows] = useState<Service[]>([]);
@@ -541,22 +548,25 @@ export default function Services() {
             서비스 목록
           </button>
           {/* T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-1): 상용구관리 — 서비스 목록 바로 옆.
-              AC-3: 서비스 목록과 동일 role(직원 포함) 노출 — 별도 게이트 없음. */}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={effectiveTopTab === 'phrases'}
-            data-testid="svc-top-tab-phrases"
-            onClick={() => setTopTab('phrases')}
-            className={cn(
-              'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
-              effectiveTopTab === 'phrases'
-                ? 'border-teal-600 text-teal-700'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            상용구관리
-          </button>
+              T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE: 봉직의/일반의사(대표원장 아닌 의사) 비노출 + Route Guard.
+              대표원장(director/운영최고권한) + 전 직원은 그대로 노출(canViewPhrases). */}
+          {canViewPhrases && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveTopTab === 'phrases'}
+              data-testid="svc-top-tab-phrases"
+              onClick={() => setTopTab('phrases')}
+              className={cn(
+                'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
+                effectiveTopTab === 'phrases'
+                  ? 'border-teal-600 text-teal-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              상용구관리
+            </button>
+          )}
           {canViewClinicMgmt && (
             <button
               type="button"
