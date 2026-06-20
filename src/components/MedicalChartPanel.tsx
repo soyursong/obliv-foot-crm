@@ -3096,14 +3096,26 @@ export default function MedicalChartPanel({
 
                   {/* 타이틀 */}
                   <div className="flex items-center gap-2 pb-1.5 border-b flex-wrap">
-                    <span className="text-sm font-semibold text-teal-700" data-testid="medical-chart-form-title">
+                    <span className="text-sm font-semibold text-teal-700 whitespace-nowrap" data-testid="medical-chart-form-title">
                       {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-10 (버그): 뷰 모드(읽기전용)에서도
                           "수정" 라벨이 상시 표시되던 상태관리 버그 수정. 저장된 차트는 진입 시 editMode=false(읽기전용) →
                           이때는 "수정" 미표시. [수정] 버튼으로 editMode 진입(=!isReadOnly)했을 때만 "수정" 노출.
                           더미는 기존대로 [더미]. 저장/취소(selectChart)로 editMode=false 복귀 시 자동으로 라벨 사라짐. */}
-                      {selectedChartId
-                        ? `진료 기록 ${selectedChartId.startsWith('__dummy__') ? '[더미] ' : (!isReadOnly ? '수정 ' : '')}— ${fmtDateFull(formDate)}`
-                        : '새 진료 기록'}
+                      {/* T-20260620-foot-MEDCHART-HEADER-NAV-LAYOUT-STABLE (문지은 대표원장):
+                          회차(←/→) 이동 시 좌측 타이틀 폭이 매번 바뀌어 헤더가 가로로 흔들리던 문제(AC-2).
+                          RC(AC-0): 날짜 텍스트 `yyyy년 M월 d일 (EEE)`가 월/일 1~2자리에 따라 content-fit으로
+                            늘었다 줄었다 → 타이틀 span 폭 변동 → 형제 회차 네비 div(↓)가 좌우로 밀림.
+                          FIX(AC-1): 날짜 부분을 고정 min-width inline-block(좌측 정렬)로 분리 → 짧은 날짜는
+                            우측 여백으로 흡수, 폭 불변. 최장 케이스("2026년 12월 30일 (수)" ≈ 9.5rem)를
+                            10rem로 수용해 truncate/overflow 없음. 데이터·회차 로직 무변경(표시 폭만). */}
+                      {selectedChartId ? (
+                        <>
+                          {`진료 기록 ${selectedChartId.startsWith('__dummy__') ? '[더미] ' : (!isReadOnly ? '수정 ' : '')}— `}
+                          <span className="inline-block min-w-[10rem]" data-testid="medical-chart-form-title-date">
+                            {fmtDateFull(formDate)}
+                          </span>
+                        </>
+                      ) : '새 진료 기록'}
                     </span>
                     {/* T-20260526-foot-NAV-ARROW-DUMMY: 방문 레코드 간 좌/우 화살표 네비게이션 (AC-2/3) */}
                     {selectedChartId && chartsIdx >= 0 && (
