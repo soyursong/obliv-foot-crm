@@ -238,19 +238,12 @@ export default function Services() {
   //   route RoleGuard로 이미 게이트된 페이지이므로 로그인 프로필이 있으면 노출(직원 포함). 게이팅 제거.
   const canViewClinicMgmt = !!profile?.role;
 
-  // T-20260620-foot-PHRASE-AREA-SEPARATION-AUDIT AC-4: 상용구관리 서브탭(펜차트/고객차트/수가세트 = 직원영역)
-  //   접근권한 = 직원만, 의사(director) 제외. "직원 업무" 원칙 — director 진입점 숨김(NO-DDL FE 게이트).
-  //   ⚠ surface 단위 분리: 진료관리(의사영역 medical_chart) 상용구는 별도 surface(ClinicManagement>상용구(진료차트))로
-  //   canViewClinicMgmt=!!profile?.role 경유 director 편집 유지(AC-3). 본 게이트는 직원영역 상용구관리 서브탭만 닫음 → lock-out 없음.
-  const canViewPhraseMgmt = !!profile?.role && profile.role !== 'director';
-
   // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: ?tab=phrases / ?tab=fee_set_templates 딥링크 호환(AC-4).
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const isPhraseParam = !!tabParam && PHRASE_TAB_PARAMS.includes(tabParam);
 
-  // AC-4: director 딥링크(?tab=phrases)는 상용구관리(직원영역) 자격 없음 → services 로 폴백.
-  const [topTab, setTopTab] = useState<TopTab>(isPhraseParam && canViewPhraseMgmt ? 'phrases' : 'services');
+  const [topTab, setTopTab] = useState<TopTab>(isPhraseParam ? 'phrases' : 'services');
   // 상용구관리 내부 탭 (상용구 / 수가세트). 딥링크 fee_set_templates 도착 시 pre-select.
   const [phraseTab, setPhraseTab] = useState<PhraseTab>(
     isPhraseParam ? (tabParam as PhraseTab) : 'phrases',
@@ -258,13 +251,12 @@ export default function Services() {
 
   // 딥링크 param 변동 시 상용구관리 서브탭 + 내부 탭 동기화(AC-4).
   useEffect(() => {
-    // AC-4: director 는 상용구관리(직원영역) 진입 자격 없음 → 딥링크 무시.
-    if (isPhraseParam && canViewPhraseMgmt) {
+    if (isPhraseParam) {
       setTopTab('phrases');
       setPhraseTab(tabParam as PhraseTab);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabParam, canViewPhraseMgmt]);
+  }, [tabParam]);
 
   // 권한 박탈/역할 변경 등으로 가시성을 잃은 경우 서비스 탭으로 강제 복귀(렌더 가드 보강).
   // 상용구관리(phrases)는 서비스 목록과 동일 role(직원 포함)이라 별도 게이트 없음(AC-3).
@@ -272,8 +264,7 @@ export default function Services() {
     topTab === 'clinic'
       ? canViewClinicMgmt ? 'clinic' : 'services'
       : topTab === 'phrases'
-      // AC-4: director 등 자격 박탈 시 services 폴백(렌더 가드 보강).
-      ? canViewPhraseMgmt ? 'phrases' : 'services'
+      ? 'phrases'
       : 'services';
 
   const [rows, setRows] = useState<Service[]>([]);
@@ -550,25 +541,22 @@ export default function Services() {
             서비스 목록
           </button>
           {/* T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-1): 상용구관리 — 서비스 목록 바로 옆.
-              T-20260620-foot-PHRASE-AREA-SEPARATION-AUDIT AC-4: 직원영역 — 직원만 노출, 의사(director) 제외.
-              진료관리(의사영역 medical_chart) 상용구는 진료관리 서브탭으로 director 편집 유지(surface 분리). */}
-          {canViewPhraseMgmt && (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={effectiveTopTab === 'phrases'}
-              data-testid="svc-top-tab-phrases"
-              onClick={() => setTopTab('phrases')}
-              className={cn(
-                'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
-                effectiveTopTab === 'phrases'
-                  ? 'border-teal-600 text-teal-700'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              상용구관리
-            </button>
-          )}
+              AC-3: 서비스 목록과 동일 role(직원 포함) 노출 — 별도 게이트 없음. */}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={effectiveTopTab === 'phrases'}
+            data-testid="svc-top-tab-phrases"
+            onClick={() => setTopTab('phrases')}
+            className={cn(
+              'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
+              effectiveTopTab === 'phrases'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            상용구관리
+          </button>
           {canViewClinicMgmt && (
             <button
               type="button"
