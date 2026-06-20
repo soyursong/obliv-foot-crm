@@ -95,6 +95,32 @@ export function canEditStaffArea(role: UserRole | null | undefined): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-STAFFPHRASE-EDIT-UNLOCK AC-2/AC-3 — 상용구(펜차트/고객차트) 직원 편집 role-set.
+//   현장(김주연 총괄, U0ATDB587PV): "상용구(펜차트)·상용구(고객차트) 직원이 메인으로 쓰는데 편집 막힘" → 직원 개방.
+//   ★수가세트(canEditStaffArea = ALL_STAFF_ROLES incl director)와 분리된 별 set인 이유:
+//     phrase_templates 는 director(의사) 편집권을 본 티켓에서 변경 금지(현행=admin||manager 만 가능, director 불가).
+//     PHRASE-AREA-SEPARATION-AUDIT AC-4(human_pending, '상용구관리탭 의사 제외 범위') 미결 → director 포함은
+//     그 사람결정 선점이므로 금지. 따라서 director 제외(= ALL_STAFF_ROLES − director).
+//   ★FE set = {admin, manager, consultant, coordinator, therapist, part_lead, staff} (7역할).
+//     RLS 측은 2-policy ADDITIVE 로 동일 effective set 표현:
+//       · 기존 admin_write_phrase_templates  = {admin, manager} (모든 phrase_type, 무변경)
+//       · 신규 staff_write_staffarea_phrases = {consultant, coordinator, therapist, part_lead, staff}
+//                                              (pen_chart/customer_chart 만, phrase_type 가드)
+//     → FE union = RLS union (= 7역할). medical_chart write = {admin, manager} 불변(의사영역 보호).
+//   ★role 실측(2026-06-20, user_profiles active): consultant4·coordinator7·therapist10·staff2 사용중,
+//     part_lead0(enum 유효·future-proof). enum 밖 직원 role 0 → lock-out 없음. tm/technician 제외(현장 미해당).
+//   tm 제외: STAFF-ROLE-TM-ADD 최소권한(4메뉴). technician: 실데이터 0·DA set 미포함 → 제외.
+export const PHRASE_STAFFAREA_EDIT_ROLES: UserRole[] = ALL_STAFF_ROLES.filter(
+  (r) => r !== 'director',
+);
+
+/** 상용구관리(펜차트/고객차트) 편집 가능 여부. medical_chart(의사영역)에는 쓰지 말 것(admin-only 유지). */
+export function canEditStaffAreaPhrase(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return PHRASE_STAFFAREA_EDIT_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260620-foot-KOH-ISSUE-ROLE-GRANT-3ROLE — 균검사지(KOH) '발급요청' 권한 대상(WHO)
 //   reporter(풋센터 C0ATE5P6JTH, U0ATDB587PV) 직접 확정: "발급버튼 = 직원들이 처리하는 정상 항목".
 //   상담실장(consultant) · 코디네이터(coordinator) · 치료사(therapist) 3역할 + 의사(director) 전부 부여.

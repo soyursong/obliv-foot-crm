@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditStaffAreaPhrase } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -216,14 +217,18 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   // CRUD는 admin/manager 전용 (Services·Staff write-guard 패턴).
   const { profile } = useAuth();
   // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 이 컴포넌트는 두 surface 가 공유 재사용.
-  //   ① 진료관리(ClinicManagement, lockedType='medical_chart') = 의사 영역 → write = director+admin 로 제한(게이트 대상).
-  //   ② 상용구관리(Services, lockedType='pen_chart'|'customer_chart') = 직원 영역(§11.1 비대상) → 旣존 {admin,manager} 무변경.
-  //   ★진료차트 상용구(phrase_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
-  //   따라서 medical_chart surface 도 Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
+  //   ① 진료관리(ClinicManagement, lockedType='medical_chart') = 의사 영역 → write = admin-only(게이트 대상, 무변경).
+  //   ② 상용구관리(Services, lockedType='pen_chart'|'customer_chart') = 직원 영역.
+  // T-20260620-foot-STAFFPHRASE-EDIT-UNLOCK AC-2(김주연 총괄 U0ATDB587PV): ②(펜/고객차트)를 직원 편집 개방.
+  //   기존 {admin,manager} → PHRASE_STAFFAREA_EDIT_ROLES(= ALL_STAFF_ROLES − director, 7역할)로 확대.
+  //   ★director 제외(현행 유지) — PHRASE-AREA-SEPARATION-AUDIT AC-4(human_pending) 사람결정 선점 금지.
+  //   ★medical_chart surface(의사영역)는 admin-only 절대 무변경(AC-5 회귀 0).
+  //   서버측: phrase_templates RLS 2-policy ADDITIVE(admin_write{admin,manager} + 신규 staff_write{5역할,
+  //     pen/customer 가드}) = FE set 과 동일 effective. (migration 20260620_phrase_templates_staff_write_staffarea)
   const isMedchartSurface = lockedType === 'medical_chart';
   const canEdit = isMedchartSurface
     ? profile?.role === 'admin'
-    : (profile?.role === 'admin' || profile?.role === 'manager');
+    : canEditStaffAreaPhrase(profile?.role);
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
   const del = useDeletePhrase();
