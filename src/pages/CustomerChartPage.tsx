@@ -6254,118 +6254,136 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   CHECKLIST-REMOVE로 personal_checklist form_templates soft-delete 완료.
                   발건강 질문지(그룹3)가 동일 내용을 대체하므로 중복 표시 제거. ── */}
 
-              {/* ── 그룹2: 환불 / 비급여 동의서 — AC-R1/R2: 합본 기준 단일 상태 ── */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
+              {/* ── T-20260620-foot-CHART2-CONSULT-TAB-LAYOUT-3SECTION ──────────────
+                  상담내역 탭 3섹션 박스 레이아웃 (김주연 총괄 명시 재정의):
+                    1줄: 환불/비급여 동의서(좌) · 발건강 질문지(우) — 나란히 한 줄
+                    2줄: 소견서 & 진단서 요청 (placeholder, 기능=OPINION-SELECT-BOX-LINK 별도티켓)
+                    3줄: 결제영수증
+                  AC-2: 펜차트 작성 진입 버튼 제거(VIEW-SPLIT 제거정책 유지·재확인) →
+                        읽기전용 '내용보기'만 노출. 작성 경로 신설/부활 금지. ── */}
+
+              {/* ── 1줄: 환불/비급여 동의서(좌) · 발건강 질문지(우) 나란히 ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="consult-section-forms">
+
+                {/* 좌: 환불 / 비급여 동의서 — AC-R1/R2: 합본 기준 단일 상태 */}
+                <div className="rounded-lg border bg-white p-3 text-xs flex flex-col" data-testid="consult-box-refund">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-slate-500" />
+                    환불 / 비급여 동의서
+                  </div>
+                  {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
+                  {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions refund_consent 포함 */}
+                  {(() => {
+                    const hasOld = consentEntries.some((c) => c.form_type === 'non_covered') || consentEntries.some((c) => c.form_type === 'refund');
+                    const hasNew = submissionEntries.some((s) => s.template_key === 'refund_consent');
+                    const done = hasOld || hasNew;
+                    const dateStr = (() => {
+                      if (hasNew) {
+                        const newest = submissionEntries.filter((s) => s.template_key === 'refund_consent')[0];
+                        const d = newest?.printed_at ?? newest?.signed_at;
+                        return d ? format(new Date(d), 'MM-dd') : null;
+                      }
+                      const dateEntry = consentEntries.find((c) => c.form_type === 'non_covered') ?? consentEntries.find((c) => c.form_type === 'refund');
+                      return dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
+                    })();
+                    return (
+                      <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-slate-50' : 'bg-gray-50'}`}>
+                        <span className={done ? 'text-slate-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
+                        <span className={done ? 'text-slate-700 font-medium' : 'text-muted-foreground'}>합본 양식 (환불 + 비급여)</span>
+                        {done && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
+                      </div>
+                    );
+                  })()}
+                  {/* AC-2: 펜차트 작성 진입 제거 — 읽기전용 '내용보기'만 노출 */}
+                  <div className="mt-auto pt-1">
+                    <button
+                      type="button"
+                      data-testid="refund-view-btn"
+                      onClick={() => {
+                        const hasNew = submissionEntries.some((s) => s.template_key === 'refund_consent');
+                        const hasOld = consentEntries.some((c) => c.form_type === 'refund') || consentEntries.some((c) => c.form_type === 'non_covered');
+                        if (!hasNew && !hasOld) return;
+                        void openSubmissionViewer(2, customer.id);
+                        setViewDocGroup(2);
+                      }}
+                      disabled={
+                        !submissionEntries.some((s) => s.template_key === 'refund_consent') &&
+                        !consentEntries.some((c) => c.form_type === 'refund') &&
+                        !consentEntries.some((c) => c.form_type === 'non_covered')
+                      }
+                      className="w-full rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    >내용보기</button>
+                  </div>
+                </div>
+
+                {/* 우: 발건강 질문지 — T-20260520-foot-PENCHART-VIEW-SPLIT */}
+                <div className="rounded-lg border bg-white p-3 text-xs flex flex-col" data-testid="consult-box-healthq">
+                  <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-teal-500" />
+                    발건강 질문지
+                  </div>
+                  {/* T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성(health_q_results)도
+                      [내용보기] 활성화 대상에 포함. 기존엔 펜차트(form_submissions)만 인식해
+                      자가작성 제출 고객은 버튼이 영구 비활성이었음(근본원인). */}
+                  {(() => {
+                    const hasPenHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
+                    const hasSelfHQ = healthQResults.length > 0;
+                    const hasHQ = hasPenHQ || hasSelfHQ;
+                    const dateStr = (() => {
+                      if (!hasHQ) return null;
+                      const penNewest = submissionEntries.filter((s) => s.template_key?.startsWith('health_questionnaire_'))[0];
+                      const penDate = penNewest?.printed_at ?? penNewest?.signed_at ?? null;
+                      const selfDate = healthQResults[0]?.submitted_at ?? null;
+                      // 둘 중 최신
+                      const d = [penDate, selfDate].filter(Boolean).sort().reverse()[0];
+                      return d ? format(new Date(d), 'MM-dd') : null;
+                    })();
+                    return (
+                      <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                        <span className={hasHQ ? 'text-teal-600' : 'text-gray-300'}>{hasHQ ? '✓' : '○'}</span>
+                        <span className={hasHQ ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
+                          발건강 질문지 (일반 / 어르신용){hasSelfHQ && !hasPenHQ ? ' · 자가작성' : ''}
+                        </span>
+                        {hasHQ && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
+                      </div>
+                    );
+                  })()}
+                  {/* AC-2/AC-3: 펜차트 작성 진입 제거 — 현행 HEALTHQ-VIEWER(in-modal) '내용보기'만 노출 */}
+                  <div className="mt-auto pt-1">
+                    <button
+                      type="button"
+                      data-testid="healthq-view-btn"
+                      onClick={() => {
+                        const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) || healthQResults.length > 0;
+                        if (!hasHQ) return;
+                        // 펜차트 PNG(form_submissions)가 있으면 함께 로드, 없으면 빈 배열 → 자가작성만 표시
+                        void openSubmissionViewer(3, customer.id);
+                        setViewDocGroup(3);
+                      }}
+                      disabled={!submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) && healthQResults.length === 0}
+                      className="w-full rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    >내용보기</button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* ── 2줄: 소견서 & 진단서 요청 (placeholder) ──
+                  AC-4: 박스 placeholder 배치. 소견서 선택박스 연동·실장 선택 저장 기능은
+                  별도티켓 T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK 에서 구현. ── */}
+              <div className="rounded-lg border bg-white p-3 text-xs" data-testid="consult-section-opinion">
                 <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-slate-500" />
-                  환불 / 비급여 동의서
+                  소견서 &amp; 진단서 요청
                 </div>
-                {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
-                {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions refund_consent 포함 */}
-                {(() => {
-                  const hasOld = consentEntries.some((c) => c.form_type === 'non_covered') || consentEntries.some((c) => c.form_type === 'refund');
-                  const hasNew = submissionEntries.some((s) => s.template_key === 'refund_consent');
-                  const done = hasOld || hasNew;
-                  const dateStr = (() => {
-                    if (hasNew) {
-                      const newest = submissionEntries.filter((s) => s.template_key === 'refund_consent')[0];
-                      const d = newest?.printed_at ?? newest?.signed_at;
-                      return d ? format(new Date(d), 'MM-dd') : null;
-                    }
-                    const dateEntry = consentEntries.find((c) => c.form_type === 'non_covered') ?? consentEntries.find((c) => c.form_type === 'refund');
-                    return dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
-                  })();
-                  return (
-                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-slate-50' : 'bg-gray-50'}`}>
-                      <span className={done ? 'text-slate-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
-                      <span className={done ? 'text-slate-700 font-medium' : 'text-muted-foreground'}>합본 양식 (환불 + 비급여)</span>
-                      {done && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
-                    </div>
-                  );
-                })()}
-                {/* T-20260520-foot-PENCHART-VIEW-SPLIT AC-5: [작성] → 펜차트 탭 이동 (B안 브릿지) */}
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => { handleClinicalTab('pen_chart'); }}
-                    className="flex-1 rounded border border-slate-200 bg-slate-50 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-100 transition"
-                    title="펜차트 탭에서 작성"
-                  >펜차트에서 작성</button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const hasNew = submissionEntries.some((s) => s.template_key === 'refund_consent');
-                      const hasOld = consentEntries.some((c) => c.form_type === 'refund') || consentEntries.some((c) => c.form_type === 'non_covered');
-                      if (!hasNew && !hasOld) return;
-                      void openSubmissionViewer(2, customer.id);
-                      setViewDocGroup(2);
-                    }}
-                    disabled={
-                      !submissionEntries.some((s) => s.template_key === 'refund_consent') &&
-                      !consentEntries.some((c) => c.form_type === 'refund') &&
-                      !consentEntries.some((c) => c.form_type === 'non_covered')
-                    }
-                    className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                  >내용보기</button>
+                <div className="flex items-center gap-2 rounded bg-gray-50 px-2 py-2 text-muted-foreground">
+                  <span className="text-gray-300">○</span>
+                  <span>소견서·진단서 요청 기능 준비 중</span>
                 </div>
               </div>
 
-              {/* ── 그룹3: 발건강 질문지 — T-20260520-foot-PENCHART-VIEW-SPLIT ── */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-teal-500" />
-                  발건강 질문지
-                </div>
-                {/* T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성(health_q_results)도
-                    [내용보기] 활성화 대상에 포함. 기존엔 펜차트(form_submissions)만 인식해
-                    자가작성 제출 고객은 버튼이 영구 비활성이었음(근본원인). */}
-                {(() => {
-                  const hasPenHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
-                  const hasSelfHQ = healthQResults.length > 0;
-                  const hasHQ = hasPenHQ || hasSelfHQ;
-                  const dateStr = (() => {
-                    if (!hasHQ) return null;
-                    const penNewest = submissionEntries.filter((s) => s.template_key?.startsWith('health_questionnaire_'))[0];
-                    const penDate = penNewest?.printed_at ?? penNewest?.signed_at ?? null;
-                    const selfDate = healthQResults[0]?.submitted_at ?? null;
-                    // 둘 중 최신
-                    const d = [penDate, selfDate].filter(Boolean).sort().reverse()[0];
-                    return d ? format(new Date(d), 'MM-dd') : null;
-                  })();
-                  return (
-                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                      <span className={hasHQ ? 'text-teal-600' : 'text-gray-300'}>{hasHQ ? '✓' : '○'}</span>
-                      <span className={hasHQ ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
-                        발건강 질문지 (일반 / 어르신용){hasSelfHQ && !hasPenHQ ? ' · 자가작성' : ''}
-                      </span>
-                      {hasHQ && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
-                    </div>
-                  );
-                })()}
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => { handleClinicalTab('pen_chart'); }}
-                    className="flex-1 rounded border border-teal-200 bg-teal-50 py-1 text-[10px] font-medium text-teal-600 hover:bg-teal-100 transition"
-                    title="펜차트 탭에서 작성"
-                  >펜차트에서 작성</button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) || healthQResults.length > 0;
-                      if (!hasHQ) return;
-                      // 펜차트 PNG(form_submissions)가 있으면 함께 로드, 없으면 빈 배열 → 자가작성만 표시
-                      void openSubmissionViewer(3, customer.id);
-                      setViewDocGroup(3);
-                    }}
-                    disabled={!submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) && healthQResults.length === 0}
-                    className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                  >내용보기</button>
-                </div>
-              </div>
-
-              {/* ── 결제영수증 (AC-4: 기존 기능 유지 + 자동 매출 산정 이미 도입됨) ── */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
+              {/* ── 3줄: 결제영수증 (AC-4: 기존 결제영수증 보기 동선 wiring 유지) ── */}
+              <div className="rounded-lg border bg-white p-3 text-xs" data-testid="consult-section-receipt">
                 <ReceiptUploadSection
                   customerId={customer.id}
                   clinicId={customer.clinic_id}
