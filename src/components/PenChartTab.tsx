@@ -2505,23 +2505,23 @@ export function PenChartTab({
             >
               <ChevronLeft className="h-3.5 w-3.5" /> {popupMode ? '닫기' : '목록으로'}
             </button>
-            <span className="text-sm font-bold text-purple-800">양식 선택</span>
+            <span className="text-sm font-bold text-neutral-800">양식 선택</span>
           </div>
           <div className="grid gap-3">
             {/* 펜차트 (캔버스 필기) */}
             <button
               onClick={() => handleSelectTemplate(penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE)}
-              className="flex items-center gap-3 rounded-lg border-2 border-purple-200 bg-purple-50 p-4 text-left hover:border-purple-400 hover:bg-purple-100 transition"
+              className="flex items-center gap-3 rounded-lg border-2 border-neutral-200 bg-neutral-100 p-4 text-left hover:border-neutral-400 hover:bg-neutral-200 transition"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-200">
-                <FileText className="h-5 w-5 text-purple-700" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-200">
+                <FileText className="h-5 w-5 text-neutral-700" />
               </div>
               <div>
                 {/* T-20260523-foot-PENCHART-INSURANCE (AC-3): 선택 패널 명칭 동적 — [보험차트] */}
-                <div className="font-semibold text-purple-800 text-sm">
+                <div className="font-semibold text-neutral-800 text-sm">
                   {(penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE).name_ko}
                 </div>
-                <div className="text-xs text-purple-600 mt-0.5">PDF 양식 위에 태블릿/마우스로 직접 필기</div>
+                <div className="text-xs text-neutral-500 mt-0.5">PDF 양식 위에 태블릿/마우스로 직접 필기</div>
               </div>
             </button>
 
@@ -2605,7 +2605,7 @@ export function PenChartTab({
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               activeTool === 'pen'
-                ? 'bg-purple-100 border-purple-400 text-purple-700'
+                ? 'bg-neutral-200 border-neutral-400 text-neutral-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
           >
@@ -2949,7 +2949,7 @@ export function PenChartTab({
             {/* 저장 */}
             <Button
               size="sm"
-              className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
+              className="h-7 text-[11px] px-3 bg-neutral-800 hover:bg-neutral-900"
               // T-20260610-foot-PENCHART-6FIX-REFIX A: 저장 버튼 탭 시 textarea blur가 먼저 commit하면
               //   handleDrawSave 인라인 흡수와 이중 commit → 가드 set으로 blur는 보류, 저장 흡수만 단일 commit.
               onPointerDown={() => { textBtnHandlingRef.current = true; }}
@@ -3269,7 +3269,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                 }}
                 onPointerDown={(e) => e.stopPropagation()} // 오버레이 클릭이 캔버스로 전파되지 않도록
               >
-                <div className="text-[11px] text-purple-700 font-semibold mb-1.5 flex items-center gap-1">
+                <div className="text-[11px] text-neutral-700 font-semibold mb-1.5 flex items-center gap-1">
                   <TextCursorInput className="h-3 w-3" /> 텍스트 입력
                 </div>
                 <textarea
@@ -3290,7 +3290,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                     flushTextInput(false);
                   }}
                   placeholder={'텍스트 입력\n(Enter: 삽입 / Shift+Enter: 줄바꿈)'}
-                  className="w-full resize-none text-xs border border-gray-200 rounded p-1.5 outline-none focus:border-purple-400"
+                  className="w-full resize-none text-xs border border-gray-200 rounded p-1.5 outline-none focus:border-neutral-400"
                   style={{ minHeight: 64 }}
                   data-testid="penchart-text-input"
                 />
@@ -3299,7 +3299,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                     // onPointerDown: blur보다 먼저 발화 → 가드 set → textarea onBlur가 commit을 버튼에 위임
                     onPointerDown={() => { textBtnHandlingRef.current = true; }}
                     onClick={() => { flushTextInput(false); textBtnHandlingRef.current = false; }}
-                    className="flex-1 rounded bg-purple-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-purple-700 transition"
+                    className="flex-1 rounded bg-neutral-800 px-2 py-1 text-[11px] font-medium text-white hover:bg-neutral-900 transition"
                     data-testid="penchart-text-confirm"
                   >
                     삽입
@@ -3373,13 +3373,13 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
     <div className="space-y-3">
       <div className="rounded-lg border bg-white p-3 text-xs">
         <div className="flex items-center justify-between mb-3">
-          <span className="flex items-center gap-1.5 font-bold text-purple-800">
-            <span className="h-2 w-2 rounded-full bg-purple-500" />
+          <span className="flex items-center gap-1.5 font-bold text-neutral-800">
+            <span className="h-2 w-2 rounded-full bg-neutral-500" />
             보험차트 — 양식 작성
           </span>
           <Button
             size="sm"
-            className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
+            className="h-7 text-[11px] px-3 bg-neutral-800 hover:bg-neutral-900"
             onClick={() => {
               // T-20260528-foot-PENCHART-NEWWIN: window.open 별도 창으로 전환
               // iPad Safari popup blocker: window.open을 click handler 안에서 동기 호출 필수
@@ -3401,7 +3401,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
 
         {/* 양식 종류 뱃지 */}
         <div className="mb-2 flex flex-wrap gap-1.5">
-          <span className="rounded bg-purple-50 border border-purple-100 px-2 py-0.5 text-[11px] text-purple-700">
+          <span className="rounded bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-700">
             📝 펜차트 (필기)
           </span>
           <span className="rounded bg-teal-50 border border-teal-100 px-2 py-0.5 text-[11px] text-teal-700">
@@ -3427,8 +3427,8 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                 className={cn(
                   'relative rounded border cursor-pointer overflow-hidden',
                   selectedChart?.name === chart.name
-                    ? 'border-purple-400 ring-1 ring-purple-300'
-                    : 'border-gray-200 hover:border-purple-300',
+                    ? 'border-neutral-400 ring-1 ring-neutral-300'
+                    : 'border-gray-200 hover:border-neutral-300',
                 )}
                 onClick={() => setSelectedChart(chart.name === selectedChart?.name ? null : chart)}
               >
