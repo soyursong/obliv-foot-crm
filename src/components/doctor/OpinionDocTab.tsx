@@ -419,6 +419,14 @@ export function OpinionEditorDialog({
   clinicId,
   profile,
   clinicHeader,
+  // T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK (AC-10): 진료대시보드 서류작성 큐에서
+  //   원장이 '작성하기'로 열 때 실장이 고른 항목을 미리 선택(prefill) + 실장 요청 메모를 참고패널로 노출.
+  //   ★authoring 경계(AC-4): prefill 은 '출발점'일 뿐, 발행은 원장 publish_opinion_doc RPC 게이트 그대로.
+  initialSelectedKeys,
+  initialDocType,
+  staffRequestMemo,
+  requestId,
+  onPublished,
 }: {
   visitor: VisitorRow | null;
   open: boolean;
@@ -426,6 +434,11 @@ export function OpinionEditorDialog({
   clinicId: string | null;
   profile: UserProfile | null;
   clinicHeader: ClinicHeader | null;
+  initialSelectedKeys?: string[];
+  initialDocType?: 'diagnosis' | 'opinion';
+  staffRequestMemo?: string | null;
+  requestId?: string | null;
+  onPublished?: (publishedId: string) => void;
 }) {
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -437,6 +450,10 @@ export function OpinionEditorDialog({
   //   ⚠ QuickRxBar.isDoctor(director|admin|manager, Rx취소용)와 의도적으로 다름 — 재사용 금지.
   //   DB publish_opinion_doc RPC 가 is_doctor_role() 로 hard-enforce → FE 도 동일해야 admin/manager dead-button 방지.
   const canPublish = ['director', 'doctor'].includes(profile?.role ?? '');
+
+  // AC-6/12: 서류종류 라벨(진단서/소견서) — 큐에서 열리면 실장이 고른 doc_type, 아니면 소견서(기본).
+  const docTitle = initialDocType === 'diagnosis' ? '진단서' : '소견서';
+  const staffMemo = (staffRequestMemo ?? '').trim();
 
   // opinion_doc 템플릿(form_templates: templateId + field_map 옵션 그리드) + clinic_doctors + 발행 이력.
   const { data: tpl } = useOpinionTemplate(clinicId);
@@ -467,26 +484,6 @@ export function OpinionEditorDialog({
     return (doctors.find((d) => d.is_default) ?? doctors[0]).id;
   }, [doctors, signingIds]);
 
-  // 팝업이 새 환자로 열릴 때마다 editor 초기화(직전 환자 잔상 방지).
-  const visitorId = visitor?.id ?? null;
-  const [boundTo, setBoundTo] = useState<string | null>(null);
-  if (open && visitorId !== boundTo) {
-    setBoundTo(visitorId);
-    setText('');
-    setSelected(new Set());
-    setDoctorId(defaultDoctorId);
-    setDoctorTouched(false);
-    setChartOpen(false);
-  }
-
-  // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
-  useEffect(() => {
-    if (!open || doctorTouched) return;
-    const signed = doctors.find((d) => signingIds.has(d.id));
-    if (signed && signed.id !== doctorId) setDoctorId(signed.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, doctorTouched, doctors, visitSigning]);
-
   // 옵션 그리드 = form_templates(opinion_doc).field_map.sections 우선, 없으면 하드코드 OPINION_SECTIONS(empty-safe).
   const sections: OpinionSection[] = useMemo(
     () => (dbSections.length > 0 ? dbSections : OPINION_SECTIONS),
@@ -499,6 +496,46 @@ export function OpinionEditorDialog({
     for (const s of sections) for (const o of s.options) m.set(o.key, o.label);
     return m;
   }, [sections]);
+
+  // AC-10 prefill: 옵션 key → 자동삽입 문구 맵(초기 본문 합성용).
+  const phraseByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of sections) for (const o of s.options) m.set(o.key, o.phrase);
+    return m;
+  }, [sections]);
+
+  // 팝업이 새 환자/요청으로 열릴 때마다 editor 초기화(직전 잔상 방지).
+  //   AC-10: 큐('작성하기')로 열린 경우 initialSelectedKeys 를 미리 선택 + 해당 문구를 본문에 합성(출발점).
+  const visitorId = visitor?.id ?? null;
+  const bindKey = `${visitorId ?? ''}|${requestId ?? ''}`;
+  const [boundTo, setBoundTo] = useState<string | null>(null);
+  if (open && bindKey !== boundTo) {
+    setBoundTo(bindKey);
+    const keys = (initialSelectedKeys ?? []).filter((k) => phraseByKey.has(k));
+    if (keys.length > 0) {
+      let t = '';
+      for (const k of keys) {
+        const phrase = phraseByKey.get(k);
+        if (phrase) t = togglePhraseInText(t, phrase);
+      }
+      setText(t);
+      setSelected(new Set(keys));
+    } else {
+      setText('');
+      setSelected(new Set());
+    }
+    setDoctorId(defaultDoctorId);
+    setDoctorTouched(false);
+    setChartOpen(false);
+  }
+
+  // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
+  useEffect(() => {
+    if (!open || doctorTouched) return;
+    const signed = doctors.find((d) => signingIds.has(d.id));
+    if (signed && signed.id !== doctorId) setDoctorId(signed.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, doctorTouched, doctors, visitSigning]);
 
   const handleOptionClick = (opt: OpinionOption) => {
     setText((prev) => togglePhraseInText(prev, opt.phrase));
@@ -542,7 +579,7 @@ export function OpinionEditorDialog({
       selectedKeys.map((k) => labelByKey.get(k)).filter(Boolean).join(', ') || null;
 
     try {
-      await publishMut.mutateAsync({
+      const result = await publishMut.mutateAsync({
         checkInId: visitor.id,
         customerId: visitor.customer_id,
         chartNo: visitor.chart_number,
@@ -553,9 +590,11 @@ export function OpinionEditorDialog({
         doctorName: issuer.issuedByName,
         doctorLicenseNo: issuer.issuedByLicenseNo,
       });
-      toast.success('소견서가 발행되었습니다.');
+      toast.success(`${docTitle}가 발행되었습니다.`);
       setText('');
       setSelected(new Set());
+      // AC-3/10: 큐('작성하기')에서 열린 발행이면 해당 요청을 처리완료로 닫도록 콜백 통지.
+      if (onPublished && result?.id) onPublished(String(result.id));
     } catch (e) {
       toast.error(`발행 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
     }
@@ -646,7 +685,7 @@ export function OpinionEditorDialog({
         <DialogTitle className="flex items-center justify-between gap-3 pr-7">
           <span className="flex shrink-0 items-center gap-2">
             <FileText className="h-5 w-5 text-teal-600" />
-            <span className="text-lg font-bold text-foreground" data-testid="opinion-doc-title">소견서</span>
+            <span className="text-lg font-bold text-foreground" data-testid="opinion-doc-title">{docTitle}</span>
           </span>
           {visitor && (
             <span className="flex min-w-0 items-center gap-1.5 text-sm font-normal text-muted-foreground" data-testid="opinion-header-patient">
@@ -706,6 +745,12 @@ export function OpinionEditorDialog({
 
             {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
             <div className="flex flex-col gap-2">
+              {/* AC-3/10 참고 패널: 실장(데스크)이 보낸 요청 메모 — '참고용'만(authoring 경계 AC-4). */}
+              {staffMemo && (
+                <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-[11px] text-teal-800" data-testid="opinion-staff-request-memo">
+                  <span className="font-semibold">실장 요청(참고)</span> · {staffMemo}
+                </div>
+              )}
               {/* ② 안내문구 제거 — 라벨만 유지 */}
               <label className="text-xs font-medium text-muted-foreground" htmlFor="opinion-editor-text">
                 소견 내용

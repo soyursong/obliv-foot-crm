@@ -64,6 +64,8 @@ import { ChecklistForm } from '@/components/forms/ChecklistForm';
 import { ConsentForm } from '@/components/forms/ConsentForm';
 // T-20260527-foot-MEDCHART-TAB-REAPPEAR: 고객차트 내 진료차트 탭 버튼 — MedicalChartPanel 직접 열기
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+// T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK: 상담내역 탭 '소견서/진단서 요청' 인라인 박스(실장영역)
+import OpinionRequestBox from '@/components/consult/OpinionRequestBox';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -6523,19 +6525,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
               </div>
 
-              {/* ── 2줄: 소견서 & 진단서 요청 (placeholder) ──
-                  AC-4: 박스 placeholder 배치. 소견서 선택박스 연동·실장 선택 저장 기능은
-                  별도티켓 T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK 에서 구현. ── */}
-              <div className="rounded-lg border bg-white p-3 text-xs" data-testid="consult-section-opinion">
-                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-slate-500" />
-                  소견서 &amp; 진단서 요청
-                </div>
-                <div className="flex items-center gap-2 rounded bg-gray-50 px-2 py-2 text-muted-foreground">
-                  <span className="text-gray-300">○</span>
-                  <span>소견서·진단서 요청 기능 준비 중</span>
-                </div>
-              </div>
+              {/* ── 2줄: 소견서 & 진단서 요청 (T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK) ──
+                  실장이 서류종류(진단서/소견서)+해당항목+메모를 골라 '발행 요청' → 진료 대시보드 서류작성 큐(원장).
+                  ★authoring 경계(AC-4): 실장=요청/참고만, 발행 본문작성은 원장 전용. ── */}
+              <OpinionRequestBox
+                customerId={customer.id}
+                clinicId={customer.clinic_id}
+                patientName={customer.name}
+                chartNo={customer.chart_number?.toString() ?? null}
+                birthDate={customer.birth_date ?? null}
+                issuedBy={currentUserStaffId}
+                requestedByName={profile?.name ?? ''}
+              />
 
               {/* ── 3줄: 결제영수증 (AC-4: 기존 결제영수증 보기 동선 wiring 유지) ── */}
               <div className="rounded-lg border bg-white p-3 text-xs" data-testid="consult-section-receipt">

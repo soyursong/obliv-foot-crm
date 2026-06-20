@@ -21,6 +21,8 @@ import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
 import KohReportTab from '@/components/doctor/KohReportTab';
 // T-20260616-foot-OPINION-DOC-FEATURE (Phase 1): 소견서 — 균검사지 '옆' 신규 탭(금일 내방객 + 소견서 작성 팝업)
 import OpinionDocTab from '@/components/doctor/OpinionDocTab';
+// T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK (AC-9/11/12): 서류작성 큐 — 데스크 발행요청(실장→원장)
+import DocRequestQueue from '@/components/doctor/DocRequestQueue';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Users, Stethoscope, FlaskConical, FileText } from 'lucide-react';
 
@@ -36,7 +38,7 @@ export default function DoctorTools() {
         {/* T-20260609-foot-DOCDASH-LABEL-RX-REFINE item1: 헤더 라벨 오기 교정('진료 도구'→'진료대시보드') */}
         <h1 className="text-lg font-bold">진료대시보드</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          진료 알림판 · 진료 환자 목록 · 균검사지(KOH) · 소견서를 확인합니다.
+          진료 알림판 · 진료 환자 목록 · 균검사지(KOH) · 서류작성을 확인합니다.
         </p>
       </div>
 
@@ -59,10 +61,12 @@ export default function DoctorTools() {
             <FlaskConical className="h-3.5 w-3.5" />
             균검사지
           </TabsTrigger>
-          {/* 소견서 — 균검사지 '옆' 신규 탭 (T-20260616-foot-OPINION-DOC-FEATURE Phase 1) */}
+          {/* 서류작성 — 균검사지 '옆' 탭. T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK AC-12:
+              '소견서' → '서류작성' 탭명 변경(데스크 발행요청 큐 + 금일 내방객 소견서 작성 통합).
+              value/data-testid 보존(E2E·탭 상태키 무변경). */}
           <TabsTrigger value="opinion_doc" className="gap-1.5" data-testid="tab-opinion-doc">
             <FileText className="h-3.5 w-3.5" />
-            소견서
+            서류작성
           </TabsTrigger>
         </TabsList>
 
@@ -79,7 +83,12 @@ export default function DoctorTools() {
         </TabsContent>
 
         <TabsContent value="opinion_doc">
-          <OpinionDocTab />
+          {/* AC-9/11: 데스크(실장) 발행요청 큐(9컬럼+작성하기) — 상단. */}
+          <DocRequestQueue />
+          {/* 금일 내방객 소견서 작성(원장 자발) — 기존 동선 보존(AC-5 회귀0). */}
+          <div className="mt-6 border-t pt-5">
+            <OpinionDocTab />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
