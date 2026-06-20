@@ -1,4 +1,11 @@
 /**
+ * ⚠️ SUPERSEDED (2026-06-20, T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE) — describe.skip.
+ *   본 스펙이 검증하던 라벨 역할분기(director='발급하기' / 그 외='발급요청')는 reporter(문지은 대표원장)
+ *   직접 지시 "발급하기 권한 싹 풀어줘"로 제거됨 → 전직군 단일 '발급하기'(KOHBTN deploy-hold, 미배포).
+ *   라벨 통일 검증은 T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE.spec.ts 가 인계.
+ *   발급 검증게이트(rowPublishable/canPublish/variant/disabled) 회귀는 KOHREPORT-PUBLISH-4FIX +
+ *   PUBLISH-BTN-REVERIFY-GATE 스펙이 계속 커버. 본 스펙은 제거된 분기 가정을 더 이상 단언하지 않도록 skip.
+ *
  * E2E spec — T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE
  * 진료대시보드(DoctorTools) 균검사지 탭 — KOH 발급버튼 라벨 역할별 분기 + 의사 view 검증게이트.
  * reporter: 문지은 대표원장. 부모 동거: 4FIX(deployed) · SINGLESEL-2FIX(field-soak).
@@ -66,7 +73,8 @@ const ROW_NO_NAIL: KohRowLite = { nailCount: 0, birth: '1990-01-01', published: 
 const ROW_NO_BIRTH: KohRowLite = { nailCount: 1, birth: null, published: false };
 
 // ===========================================================================
-test.describe('T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE', () => {
+// SUPERSEDED by KOH-ISSUE-ROLE-GRANT-ALLROLE (라벨분기 제거) — skip 유지(제거된 분기 단언 방지).
+test.describe.skip('T-20260618-foot-KOHBTN-ROLE-LABEL-VALIDGATE', () => {
   // ── S1 라벨 역할 분기 ──
   test('S1a: 단건 버튼 — 의사=발급하기, 치료사=발급요청', () => {
     expect(publishBtnLabelOf('director')).toBe('발급하기');
