@@ -147,6 +147,7 @@ type CanonicalCreateInput = {
   memo?: string | null;
   booking_memo?: string | null;
   visit_route?: string | null;
+  registrar_id?: string | null; // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약등록자(예약행 컬럼 기존)
   referral_name?: string | null;
   linked_package_id?: string | null;
   preferred_therapist_id?: string | null; // 재진 치료사(역동기화 대상)
@@ -238,6 +239,10 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 캘린더 직접예약 시점에 저장.
     is_healer_intent: input.is_healer_intent ?? false,
     referral_source: (input.visit_type === 'new' && input.visit_route) ? input.visit_route : null,
+    // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로/예약등록자를 예약행에 직접 영속(편집경로 popup L928 과 동일 컬럼).
+    //   기존 컬럼(reservations.visit_route / registrar_id) — 신규 스키마 0. 미전달(다른 생성경로)이면 null 로 무해.
+    visit_route: input.visit_route ?? null,
+    registrar_id: input.registrar_id ?? null,
     ...(input.visit_type === 'returning' ? { preferred_therapist_id: input.preferred_therapist_id || null } : {}),
     // ③ 경과체크 — 패키지 연결 시 체크포인트 도달 여부 저장 (원본 save() 동일 시맨틱)
     ...(input.linked_package_id ? {
@@ -991,6 +996,9 @@ export default function Reservations() {
       date: string;
       time: string;
       visit_type: VisitType;
+      // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 신규 예약 생성 시 예약경로/예약등록자 영속(컬럼·마스터 기존, 신규 스키마 0).
+      visit_route?: string | null;
+      registrar_id?: string | null;
     }): Promise<{ ok: boolean; reason?: string; message?: string }> => {
       if (!clinic) return { ok: false, reason: 'error', message: '클리닉 정보를 불러오지 못했습니다.' };
       // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 팝업이 customerId=null(시스템에 없는 신규 고객)을 넘기면
@@ -1054,6 +1062,9 @@ export default function Reservations() {
         date: params.date,
         time: params.time,
         visit_type: params.visit_type,
+        // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로/예약등록자 → 예약행 영속(컬럼 기존, 신규 스키마 0).
+        visit_route: params.visit_route ?? null,
+        registrar_id: params.registrar_id ?? null,
         maxPerSlot: slotMaxFor(params.time),
         changedBy,
         authorName: profile?.name ?? '',
