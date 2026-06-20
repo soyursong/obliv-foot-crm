@@ -60,8 +60,16 @@ import {
   type HandoverChecklistItem,
   type HandoverNote,
 } from '@/lib/handover';
+// T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 원장 근무표(듀티 로스터) 흡수 — 스케줄 관리 동선 1곳 일원화
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DutyRosterTab } from '@/components/DutyRosterTab';
 
 const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
+
+// T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 원장 근무표(DutyRosterTab) 가시성 = 이동 전 직원·공간 메뉴 노출 role 그대로.
+//   (AdminLayout NAV /admin/staff roles = admin/manager/director/consultant/coordinator/therapist)
+//   AC-3 권한 가드 보존: part_lead/staff/tm 에게 새로 노출 금지. 흡수해도 동일 role 게이트 유지.
+const DUTY_ROSTER_ROLES = ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] as const;
 
 /** 편집 다이얼로그용 임시 체크리스트 항목 (id 없는 신규 포함) */
 interface DraftChecklistItem {
@@ -74,6 +82,11 @@ interface DraftChecklistItem {
 export default function Handover() {
   const clinic = useClinic();
   const { profile } = useAuth();
+
+  // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 상단 탭 — 인수인계(기존) / 원장 근무표(흡수).
+  //   원장 근무표 탭은 DUTY_ROSTER_ROLES 한정 노출(AC-3). 권한 없으면 탭 자체를 숨겨 동선 1곳 유지.
+  const canSeeDutyRoster = !!(profile?.role && (DUTY_ROSTER_ROLES as readonly string[]).includes(profile.role));
+  const [topTab, setTopTab] = useState<'handover' | 'duty'>('handover');
 
   const [view, setView] = useState<CalendarView>('month'); // AC-2: 기본 월별
   const [anchor, setAnchor] = useState<Date>(new Date());
@@ -459,6 +472,38 @@ export default function Handover() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 상단 탭 스트립 — 인수인계 / 원장 근무표.
+          원장 근무표 탭은 권한(DUTY_ROSTER_ROLES) 있을 때만 노출(AC-3 권한 가드 보존). */}
+      {canSeeDutyRoster && (
+        <div className="shrink-0 border-b bg-white px-4 pt-2" data-testid="handover-top-tabs">
+          <Tabs value={topTab} onValueChange={(v) => setTopTab(v as 'handover' | 'duty')}>
+            <TabsList>
+              <TabsTrigger value="handover" data-testid="handover-tab-board">
+                <ClipboardCheck className="mr-1 h-4 w-4" /> 인수인계
+              </TabsTrigger>
+              <TabsTrigger value="duty" data-testid="handover-tab-duty">
+                <CalendarDays className="mr-1 h-4 w-4" /> 원장 근무표
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+      )}
+
+      {/* 원장 근무표(흡수) — 권한 보유 + 선택 시에만 렌더 */}
+      {canSeeDutyRoster && topTab === 'duty' && (
+        <div className="flex-1 min-h-0 overflow-auto p-4" data-testid="handover-duty-pane">
+          {clinic && <DutyRosterTab clinic={clinic} />}
+        </div>
+      )}
+
+      {/* 인수인계 게시판(기존) — duty 탭 선택 시 언마운트 않고 숨김(로드 상태 보존) */}
+      <div
+        className={
+          canSeeDutyRoster && topTab === 'duty'
+            ? 'hidden'
+            : 'flex flex-1 min-h-0 flex-col'
+        }
+      >
       {/* 헤더 */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white/80 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -848,6 +893,8 @@ export default function Handover() {
           </div>
         </DialogContent>
       </Dialog>
+      </div>
+      {/* /T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE 인수인계 본문 래퍼 끝 */}
     </div>
   );
 }
