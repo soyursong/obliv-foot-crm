@@ -235,3 +235,52 @@ export function canEditClinicMgmt(subject: OpsAuthSubject | UserRole | null | un
   if (s.role === 'director') return true;
   return false;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE — 서비스관리>상용구 관리 노출 게이트
+//   확정 스펙(김주연 총괄, slack ts 1781924207.232909, 옵션2/A안):
+//     "봉직의/일반의사만 비노출, 대표원장(문지은 원장님)은 그대로 이용 가능."
+//   ★봉직의/일반의사 = 의사 role(director) 중 '운영최고권한이 없는' 계정.
+//     대표원장 = 의사 role + 운영최고권한(has_ops_authority) → 노출 유지.
+//   ★UserRole enum 에 '봉직의'/'doctor' 별도 값 없음 — 의사 role = 'director' 단일.
+//     봉직의 vs 대표원장 구분축 = has_ops_authority flag (T-20260619-foot-ROLE-MATRIX-3TIER-RBAC).
+//   ★single-user 하드코딩(uid==문지은) 금지 — role/flag 기반이라 향후 봉직의 채용 시 자동 적용(AC-4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 의사(임상) role 집합 — 상용구 관리 노출 게이트 평가 대상. 그 외 직군은 평가 없이 노출(AC-5). */
+export const PHRASE_GATE_DOCTOR_ROLES: UserRole[] = ['director', 'doctor'];
+
+/**
+ * 서비스관리>상용구 관리(서브탭 + ?tab=phrases 딥링크) 노출 가능 여부.
+ *   - 비의사 직군(admin/manager/consultant/coordinator/therapist/part_lead/staff/technician/tm) → 노출(AC-5, 무회귀).
+ *   - 운영최고권한(대표원장, has_ops_authority=true 또는 admin/manager role-implied) → 노출(AC-2).
+ *   - 봉직의/일반의사(의사 role 중 운영최고권한 없는 계정) → 비노출(AC-1).
+ *   - 향후 봉직의 채용 시 role/flag 기반으로 자동 비노출(AC-4) — single-user 하드코딩 아님.
+ *
+ * ★lock-out 가드(AC 가드레일, 오전 c619eee8 incident 재현 금지):
+ *   has_ops_authority 컬럼 미적재(DDL_DIFF_HOLD) 동안 대표원장(문지은, role='director')도
+ *   hasOpsAuthority=false 로 평가됨. canEditClinicMgmt 와 동일 사유로 director escape stopgap 적용 →
+ *   prod director=문지은 1명뿐(봉직의 미고용)이라 director escape = 무회귀·무부작용. 봉직의가 없으니
+ *   '당장 비노출되는 의사'는 0(= 티켓 field_summary "지금 막히는 분 없음"과 정합).
+ */
+export function canViewPhraseManagement(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  if (!s) return false;
+  const role = s.role;
+  if (!role) return false;
+  // AC-5: 비의사 직군 전원 노출(무회귀). 의사 role(director)만 게이트 평가.
+  if (!PHRASE_GATE_DOCTOR_ROLES.includes(role)) return true;
+  // AC-2: 운영최고권한(대표원장) → 노출 유지.
+  if (hasOpsAuthority(s)) return true;
+  // ── STOPGAP (canEditClinicMgmt 동일 사유, T-20260620-foot-MUNJIEUN-CLINICMGMT-LOCKOUT) ──
+  //   has_ops_authority 컬럼 미적재 → 대표원장(문지은, role='director')도 hasOpsAuthority=false.
+  //   prod director=문지은 1명뿐(봉직의 미고용) → director escape 로 대표원장 lock-out 방지(가드레일).
+  //   ★마이그(20260619220000_..._has_ops_authority_additive.sql) landing + 문지은 has_ops_authority=true
+  //     set 후 이 1줄 제거 → 봉직의(director,flag無) 자동 비노출(AC-4) 실효. (canEditClinicMgmt 와 동시 수렴)★
+  if (role === 'director') return true;
+  // AC-1: 그 외 의사 role(향후 'doctor' 등) 중 운영최고권한 없는 계정 → 비노출.
+  return false;
+}
