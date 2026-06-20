@@ -67,6 +67,7 @@ import {
   getTemplateImageUrl,
   canAccessFormTemplate,
   DOC_PANEL_HIDDEN_FORM_KEYS,
+  orderDocList,
   type FieldMapEntry,
   type FormSubmission,
   type FormTemplate,
@@ -488,14 +489,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   const visibleTemplates = templates.filter(
     (t) => !DOC_PANEL_HIDDEN_FORM_KEYS.includes(t.form_key),
   );
-  const defaultTemplates = visibleTemplates.filter(
-    (t) => FORM_META[t.form_key]?.print_preset === 'default',
-  );
-  // T-20260522-foot-INS-DOC-PRINT: insurance 카테고리 전용 섹션 분리
-  const insuranceTemplates = visibleTemplates.filter((t) => t.category === 'insurance');
-  const optionalTemplates = visibleTemplates.filter(
-    (t) => FORM_META[t.form_key]?.print_preset !== 'default' && t.category !== 'insurance',
-  );
+  // T-20260620-foot-DOCLIST-ORDER-10: 결제미니창과 동일한 확정 10종 + 확정 순서로 단일 평면 목록.
+  //   기존 기본/별도요청/보험 3섹션 분기 → 단일 리스트로 통합(두 화면 순서·항목수 일치).
+  //   진료비 영수증 재발급 카드(insurance_receipts 기반)는 서류 발행 목록과 별개 유틸 → 하단 보존.
+  const docListTemplates = orderDocList(visibleTemplates);
 
   // ── 선택 토글 ──
   const toggleSelect = (formKey: string) => {
@@ -1028,71 +1025,26 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
         )}
       </div>
 
-      {/* 기본 서류 섹션 — 진료비 영수증 카드 포함 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) */}
-      {defaultTemplates.length > 0 && (
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-            기본 서류
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {defaultTemplates.map((tpl) => {
-              const meta = FORM_META[tpl.form_key];
-              const hasCoords = tpl.field_map.length > 0;
-              const accessible = canAccess(tpl);
-              const isSelected = selectedKeys.has(tpl.form_key);
-              const submissionCount = submissions.filter(
-                (s) => s.template_id === tpl.id && s.status !== 'voided',
-              ).length;
-              return (
-                <div
-                  key={tpl.id}
-                  className={`
-                    relative rounded-lg border p-2.5 text-xs transition-all select-none
-                    ${accessible ? 'cursor-pointer hover:shadow-md hover:border-teal-300' : 'opacity-50 cursor-not-allowed'}
-                    ${isSelected ? 'ring-2 ring-teal-400 border-teal-400' : ''}
-                    ${meta?.color ?? 'bg-gray-50 border-gray-200'}
-                  `}
-                  onClick={() => {
-                    if (!accessible) return;
-                    toggleSelect(tpl.form_key);
-                  }}
-                >
-                  <div className="absolute top-1.5 right-1.5 text-teal-500">
-                    {accessible && (isSelected ? (
-                      <CheckSquare className="h-3.5 w-3.5" />
-                    ) : (
-                      <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
-                    ))}
-                  </div>
-                  <div className="flex items-start justify-between pr-5">
-                    <span className="text-base">{meta?.icon ?? '📄'}</span>
-                    {submissionCount > 0 && (
-                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                        {submissionCount}건
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="mt-1 font-semibold text-foreground">{tpl.name_ko}</div>
-                  <div className="text-muted-foreground text-[11px] mt-0.5 line-clamp-1">
-                    {meta?.description ?? tpl.template_format.toUpperCase()}
-                  </div>
-                  {!hasCoords && (
-                    <div className="text-[10px] text-amber-500 mt-1">좌표 미설정</div>
-                  )}
-                  <button
-                    className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (accessible) handleSelectTemplate(tpl);
-                    }}
-                  >
-                    상세 발행 →
-                  </button>
-                </div>
-              );
-            })}
+      {/* T-20260620-foot-DOCLIST-ORDER-10: 서류 출력 — 결제미니창과 동일 확정 10종/순서 단일 목록 */}
+      {docListTemplates.length > 0 && (
+        <TemplateSection
+          title="서류 출력"
+          templates={docListTemplates}
+          submissions={submissions}
+          selectedKeys={selectedKeys}
+          canAccess={canAccess}
+          onToggle={toggleSelect}
+          onCardClick={handleSelectTemplate}
+        />
+      )}
 
-            {/* 진료비 영수증 카드 — T-20260519-foot-RECEIPT-REISSUE: 결제 데이터 체크박스 + 재발급 추가 */}
+      {/* 진료비 영수증 재발급 — insurance_receipts 기반 결제 재발급 유틸(서류 출력 목록과 별개, T-20260519) */}
+      <div className="space-y-1.5">
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+          진료비 영수증 재발급
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {/* 진료비 영수증 카드 — T-20260519-foot-RECEIPT-REISSUE: 결제 데이터 체크박스 + 재발급 추가 */}
             <div className="relative rounded-lg border p-2.5 text-xs space-y-1.5 bg-amber-50 border-amber-200">
               {/* 헤더 */}
               <div className="flex items-start justify-between">
@@ -1209,33 +1161,6 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             </div>
           </div>
         </div>
-      )}
-
-      {/* 별도 요청 서류 섹션 */}
-      {optionalTemplates.length > 0 && (
-        <TemplateSection
-          title="별도 요청 서류"
-          templates={optionalTemplates}
-          submissions={submissions}
-          selectedKeys={selectedKeys}
-          canAccess={canAccess}
-          onToggle={toggleSelect}
-          onCardClick={handleSelectTemplate}
-        />
-      )}
-
-      {/* 보험서류 섹션 — T-20260522-foot-INS-DOC-PRINT */}
-      {insuranceTemplates.length > 0 && (
-        <TemplateSection
-          title="보험서류"
-          templates={insuranceTemplates}
-          submissions={submissions}
-          selectedKeys={selectedKeys}
-          canAccess={canAccess}
-          onToggle={toggleSelect}
-          onCardClick={handleSelectTemplate}
-        />
-      )}
 
       {/* 발행 이력 */}
       {submissions.length > 0 && (
