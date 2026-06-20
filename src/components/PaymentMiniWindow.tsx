@@ -74,7 +74,16 @@ import {
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260608-foot-DOC-PATH12-SYNC: 세금/급여 분류·코드항목 판별을 4경로 공유 SSOT(footBilling)로 일원화.
 //   (PMW 로컬 정의 → 공유 모듈 이전. DocumentPrintPanel(PATH-1/2/3)이 동일 로직 재사용 → 드리프트 차단.)
-import { type TaxClass, COVERED_GRADES, getTaxClass, isCodeItem } from '@/lib/footBilling';
+import {
+  type TaxClass,
+  COVERED_GRADES,
+  getTaxClass,
+  isCodeItem,
+  // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금(잔금) 산출은 PKG-OUTSTANDING-BALANCE SSOT 재사용 (신규 쿼리/산출 금지).
+  loadCustomerOutstanding,
+  hasOutstandingDue,
+  type CustomerOutstanding,
+} from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE: 의료법 제22조 — 급여 방문 진료기록 미작성 시 수납/완료 하드차단.
 import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
@@ -602,6 +611,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
 
+  // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 고객 미수금(잔금) — PKG-OUTSTANDING-BALANCE SSOT 산출값.
+  //   결제 미니창 진입 시 미수금을 표면화(읽기전용)해 담당자가 즉시 인지하도록 한다.
+  //   ★ 표시 전용 — payments 쓰기 경로/집계 불변. 패키지/진료비 잔금은 §4-A 따라 각각 별도 표기(합산 금지).
+  const [customerOutstanding, setCustomerOutstanding] = useState<CustomerOutstanding | null>(null);
+
   // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 하드차단(버튼 비활성 + 배너).
   //   저장(saved) 후 DB 평가(evaluateMedicalRecordGate). 비급여·기록보유 시 false(무영향).
   const [medGateBlocked, setMedGateBlocked] = useState(false);
@@ -701,6 +715,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setRxItemDosages({});
     // T-20260526-foot-COPAY-MINI-BUG: 리셋
     setCustomerInsuranceGrade(null);
+    // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금 리셋
+    setCustomerOutstanding(null);
     // T-20260526-foot-PMW-SIDE-MENU-FEAT: 리셋
     setMenuOrder({});
 
@@ -714,6 +730,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .then(({ data }) => {
           setCustomerInsuranceGrade((data?.insurance_grade ?? null) as InsuranceGrade | null);
         });
+    }
+
+    // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 고객 미수금(잔금) 비동기 로드.
+    //   PKG-OUTSTANDING-BALANCE SSOT(loadCustomerOutstanding) 재사용 — 신규 쿼리/산출 없음.
+    //   실패해도 결제 동선은 그대로(표시 전용, best-effort).
+    if (checkIn.customer_id && checkIn.clinic_id) {
+      const custId = checkIn.customer_id;
+      loadCustomerOutstanding([custId], checkIn.clinic_id)
+        .then((map) => setCustomerOutstanding(map.get(custId) ?? null))
+        .catch(() => setCustomerOutstanding(null));
     }
 
     Promise.all([
@@ -1880,6 +1906,37 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             )}
           </DialogTitle>
         </DialogHeader>
+
+        {/* T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금(잔금) 안내 배너 (읽기 전용)
+            미수금 있는 고객 결제 미니창 진입 시 담당자가 즉시 인지하도록 표면화.
+            ★ 표시 전용 — payments 쓰기 경로/일마감 집계 불변. PKG-OUTSTANDING-BALANCE SSOT 산출값 그대로.
+            §4-A: 패키지 잔금/진료비 잔금 각각 별도 표기(단일 합산 금지). */}
+        {hasOutstandingDue(customerOutstanding) && (
+          <div
+            className="px-5 py-2 border-b shrink-0 bg-red-50 flex flex-wrap items-center gap-x-4 gap-y-1"
+            data-testid="pmw-outstanding-banner"
+          >
+            <span className="text-xs font-semibold text-red-700 flex items-center gap-1">
+              미수금
+            </span>
+            {(customerOutstanding?.packageDue ?? 0) > 0 && (
+              <span className="text-xs text-gray-700">
+                패키지 잔금{' '}
+                <span className="font-bold text-red-600 tabular-nums" data-testid="pmw-outstanding-package">
+                  {formatAmount(customerOutstanding!.packageDue)}
+                </span>
+              </span>
+            )}
+            {(customerOutstanding?.consultationDue ?? 0) > 0 && (
+              <span className="text-xs text-gray-700">
+                진료비 잔금 <span className="opacity-60">(별도)</span>{' '}
+                <span className="font-bold text-amber-600 tabular-nums" data-testid="pmw-outstanding-consultation">
+                  {formatAmount(customerOutstanding!.consultationDue)}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
 
         {/* 본문 3구역: Zone1(좌메뉴+코드) / Zone2(중산정) / Zone3(우서류+패키지)
             모바일(<sm): flex-col 세로 스택 + overflow-y-auto
