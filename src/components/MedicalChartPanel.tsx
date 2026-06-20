@@ -668,6 +668,9 @@ export default function MedicalChartPanel({
   // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemosLoaded/Loading 제거 (loadData 통합으로 불필요)
   const [treatMemos, setTreatMemos] = useState<TreatmentMemoEntry[]>([]);
+  // T-20260620-foot-MEDCHART-MEMO-HISTORY-SPLIT-PRINTOMIT (문지은 대표원장): 치료메모 이전 이력 분리(기본 접힘).
+  //   AC-1 기본=현재(최신) 메모만 / AC-2 '이전 이력 보기' 토글 / AC-4 GUARD: MEMO-HISTORY(5/20) 데이터·열람 보존(표시 기본값만 변경).
+  const [treatMemoHistoryOpen, setTreatMemoHistoryOpen] = useState(false);
   const [visitHistory, setVisitHistory] = useState<VisitHistoryEntry[]>([]);
   // T-20260609-foot-VISITLOG-EMPTYROW-HIDE: 렌더 전용 필터 — 진료종류·치료메모·진료메모가 모두 빈
   // 방문(체크인) 행은 표시하지 않는다. 원본 visitHistory(쿼리/정렬/그룹핑)는 무변경.
@@ -3346,7 +3349,12 @@ export default function MedicalChartPanel({
                             seen.add(sig);
                             return true;
                           });
-                          return uniqMemos.map((memo) => (
+                          // T-20260620-foot-MEDCHART-MEMO-HISTORY-SPLIT-PRINTOMIT (문지은 대표원장):
+                          //   treatMemos는 created_at DESC(최신순) → uniqMemos[0] = 현재(최신) 메모, 나머지 = 이전 이력.
+                          //   AC-1 기본 표시 = 현재 메모만(이전 '(이전 기록)' 블록 접힘).
+                          //   AC-2 '이전 이력 보기' 토글로 이전 메모 타임라인 노출(기본 접힘, 펼치면 MEMO-HISTORY 데이터 그대로 read).
+                          //   AC-4 GUARD: 데이터·누적로직·열람 무변경(표시 기본값만) — 5/20 MEMO-HISTORY 비파괴.
+                          const renderMemo = (memo: typeof uniqMemos[number]) => (
                             <div
                               key={memo.id}
                               className="border-l-2 border-blue-300 pl-2 py-0.5"
@@ -3360,7 +3368,36 @@ export default function MedicalChartPanel({
                               {/* AC-3: 본문 — 테두리/배경 없이 텍스트만 */}
                               <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-snug break-words">{memo.content}</p>
                             </div>
-                          ));
+                          );
+                          const current = uniqMemos[0];
+                          const previous = uniqMemos.slice(1);
+                          return (
+                            <>
+                              {/* AC-1: 현재(최신) 메모만 기본 노출 */}
+                              {current && renderMemo(current)}
+                              {/* AC-2: 이전 이력 분리(기본 접힘 토글) — AC-3: 출력(인쇄)에선 제외(print:hidden) */}
+                              {previous.length > 0 && (
+                                <div className="print:hidden" data-testid="treat-memo-history-block">
+                                  <button
+                                    type="button"
+                                    onClick={() => setTreatMemoHistoryOpen((o) => !o)}
+                                    className="mt-0.5 inline-flex items-center gap-0.5 text-[9px] text-muted-foreground hover:text-foreground transition-colors"
+                                    data-testid="treat-memo-history-toggle"
+                                    aria-expanded={treatMemoHistoryOpen}
+                                  >
+                                    <History className="h-2.5 w-2.5" />
+                                    이전 이력 보기 ({previous.length}) {treatMemoHistoryOpen ? '접기' : ''}
+                                    <ChevronDown className={`h-2.5 w-2.5 transition-transform ${treatMemoHistoryOpen ? 'rotate-180' : ''}`} />
+                                  </button>
+                                  {treatMemoHistoryOpen && (
+                                    <div className="space-y-1 mt-1" data-testid="treat-memo-history-list">
+                                      {previous.map(renderMemo)}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          );
                         })()}
                       </div>
                     ) : (
@@ -3599,7 +3636,9 @@ export default function MedicalChartPanel({
                           별도 isAdmin 결선 없이 (isDirector || isAdmin) 의도 충족. 일반 스태프/직원 미표시. insert 로직 무변경.
                           T-20260614-foot-MEDCHART-AUDIT-NOISE-VISIBILITY: 생성('(없음)→X') 행은 표시에서 제외(visibleSignerAudit). */}
                       {visibleSignerAudit.length > 0 && isDirector && (
-                        <div className="w-full max-w-md text-right">
+                        /* T-20260620-foot-MEDCHART-MEMO-HISTORY-SPLIT-PRINTOMIT AC-3: 진료의 변경이력 블록은
+                           인쇄/출력 화면에서 제외(print:hidden). 화면 열람(원장/어드민 토글)은 무변경. */
+                        <div className="w-full max-w-md text-right print:hidden">
                           <button
                             type="button"
                             onClick={() => setSignerAuditOpen((v) => !v)}
