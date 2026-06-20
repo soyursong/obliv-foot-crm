@@ -559,9 +559,6 @@ export default function Customers() {
               {rangeFrom}–{rangeTo}
             </span>
           )}
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            클릭=간편차트(1번) / 우클릭=고객차트(2번)
-          </span>
         </div>
         <div className="flex items-center gap-2">
           {/* T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기(CSV). admin/manager만 노출(PII 게이팅).
@@ -671,7 +668,6 @@ export default function Customers() {
                         data-testid="open-chart-btn"
                         onClick={(e) => { e.stopPropagation(); openChart(c.id); }}
                         className="rounded p-1.5 hover:bg-teal-50 transition"
-                        title="2번차트(미니홈피) 열기"
                       >
                         <ExternalLink className="h-3.5 w-3.5 text-teal-600" />
                       </button>
