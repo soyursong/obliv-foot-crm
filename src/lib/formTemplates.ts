@@ -1002,10 +1002,28 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
 ];
 
 /**
- * 서류 템플릿 배열을 DOCLIST_ORDER_10 기준으로 **필터(10종만) + 정렬(확정 순서)** 한다.
+ * T-20260621-foot-DOCLABEL-RENAME-11: 서류 출력 목록 **표시 라벨(name_ko) override**.
+ * 김주연 총괄 확정 — 두 화면(결제미니창·서류출력)의 목록 라벨 2건만 표시명을 교체한다.
+ *   bill_detail: 진료비내역서   → 진료비세부내역서
+ *   koh_result:  검사결과 보고서 → KOH균검사결과지
+ * 표시 라벨만 바꾼다. form_key(식별자)·필터/정렬·발행/바인딩·template_type·published 트리거 전부 불변.
+ * - DB form_templates.name_ko 원본은 미접촉(FE 표시 override). 인쇄 출력물 본문 제목(법정 별지 제1호
+ *   "진료비 세부산정내역", KOH 인쇄 헤더 `<h1>검사결과 보고서</h1>` = doctor 영역 공유 surface)은 본 티켓
+ *   범위 밖이라 미접촉 — 여기서는 두 화면 목록 라벨에 한정된다.
+ * - override 적용 지점을 공유 함수 orderDocList 한 곳으로 고정 → 두 화면 자동 동일, 의료 게이트 surface 무영향
+ *   (orderDocList는 PaymentMiniWindow·DocumentPrintPanel 두 화면에서만 호출).
+ */
+export const DOCLIST_LABEL_OVERRIDE: Readonly<Record<string, string>> = {
+  bill_detail: '진료비세부내역서',
+  koh_result: 'KOH균검사결과지',
+};
+
+/**
+ * 서류 템플릿 배열을 DOCLIST_ORDER_10 기준으로 **필터(10종만) + 정렬(확정 순서) + 표시 라벨 override** 한다.
  * 두 화면(PaymentMiniWindow·DocumentPrintPanel)이 동일 결과를 얻도록 단일 함수로 공유.
  * - 10종 외 form_key는 제외(표시 집합 축소).
  * - 발행/바인딩 로직은 호출부에서 원본 templates를 그대로 사용하므로 무영향(표시 진열만 변경).
+ * - name_ko 필드가 있는 항목에 한해 DOCLIST_LABEL_OVERRIDE 로 표시명만 치환(form_key 불변).
  */
 export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
   return tpls
@@ -1013,5 +1031,9 @@ export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
     .sort(
       (a, b) =>
         DOCLIST_ORDER_10.indexOf(a.form_key) - DOCLIST_ORDER_10.indexOf(b.form_key),
-    );
+    )
+    .map((t) => {
+      const override = DOCLIST_LABEL_OVERRIDE[t.form_key];
+      return override && 'name_ko' in t ? ({ ...t, name_ko: override } as T) : t;
+    });
 }

@@ -121,14 +121,27 @@ test('시나리오2: 보험서류(ins_claim_form)는 10종에 없음 → 두 화
 // ── 시나리오 3: 회귀 가드 — 출력 내용·발행 데이터 불변 ──────────────────────────
 
 test('시나리오3: orderDocList — 원본 template 객체 불변(필드 보존, 발행/바인딩 무영향)', () => {
+  // T-20260621-foot-DOCLABEL-RENAME-11: bill_detail/koh_result 는 표시 라벨(name_ko) override 대상 →
+  //   새 객체로 복제되지만 form_key 및 name_ko 외 모든 필드는 원본 보존(발행/바인딩 무영향).
+  //   나머지 8종은 원본 참조 그대로(zero-copy).
+  const LABEL_OVERRIDDEN = new Set(['bill_detail', 'koh_result']);
   const input = VISIBLE_DB_TEMPLATES.slice();
   const result = orderDocList(input);
   // 원본 배열 미변형
   expect(input.map((t) => t.form_key)).toEqual(VISIBLE_DB_TEMPLATES.map((t) => t.form_key));
-  // 남은 10종 객체는 원본 참조 그대로(필드 손상 없음) → 발행/바인딩 로직 무영향
   for (const t of result) {
     const origin = VISIBLE_DB_TEMPLATES.find((o) => o.form_key === t.form_key)!;
-    expect(t).toBe(origin);
+    if (LABEL_OVERRIDDEN.has(t.form_key)) {
+      // 라벨 override: 새 객체, name_ko만 달라지고 그 외 필드는 원본과 동일
+      expect(t).not.toBe(origin);
+      expect(t.name_ko).not.toBe(origin.name_ko);
+      const { name_ko: _n1, ...restNew } = t;
+      const { name_ko: _n2, ...restOrigin } = origin;
+      expect(restNew).toEqual(restOrigin);
+    } else {
+      // 비-override 8종: 원본 참조 그대로(필드 손상 없음) → 발행/바인딩 로직 무영향
+      expect(t).toBe(origin);
+    }
   }
 });
 
