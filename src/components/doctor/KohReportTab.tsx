@@ -87,6 +87,44 @@ export function formatBirthDate(birth: string | null | undefined): string {
 }
 
 /**
+ * 생년(만나이) 표시 — T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-6).
+ *   진료대시보드 균검사지 명단의 '생년(만나이)' 컬럼. 생년월일 전체가 아니라 '생년 + (만 N세)'.
+ *   예) '1990-03-15' + 오늘(2026-06-21) → '1990 (36세)'.
+ *   만나이 = 오늘(KST, todayISO) 연도 − 생년, 단 올해 생일 미경과면 −1. 결측 '—'.
+ *   10자리(YYYY-MM-DD) 정규 + 6자리(YYMMDD) 방어 파싱(formatBirthKo 세기 규칙 동일).
+ */
+export function formatBirthYearWithAge(
+  birth: string | null | undefined,
+  todayISO: string,
+): string {
+  if (!birth) return '—';
+  const s = String(birth).trim();
+  let by: number, bm: number, bd: number;
+  const m10 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m10) {
+    by = parseInt(m10[1], 10);
+    bm = parseInt(m10[2], 10);
+    bd = parseInt(m10[3], 10);
+  } else {
+    const m6 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+    if (!m6) return s || '—';
+    const yy = parseInt(m6[1], 10);
+    by = parseInt((yy >= 0 && yy <= 26 ? '20' : '19') + m6[1], 10);
+    bm = parseInt(m6[2], 10);
+    bd = parseInt(m6[3], 10);
+  }
+  const tm = todayISO.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!tm) return String(by);
+  const ty = parseInt(tm[1], 10);
+  const tmo = parseInt(tm[2], 10);
+  const td = parseInt(tm[3], 10);
+  let age = ty - by;
+  if (tmo < bm || (tmo === bm && td < bd)) age -= 1;
+  if (age < 0) return String(by); // 미래 생년 등 방어 — 나이 음수면 생년만
+  return `${by} (${age}세)`;
+}
+
+/**
  * 결과지 표기용 생년월일 — 대표원장 양식 'YYYY년 MM월 DD일'.
  *   T-20260617-foot-KOHGEN-HTMLPORT (AC①): DB DATE(YYYY-MM-DD) 정규 경로 + 6자리(YYMMDD) 방어 파싱.
  *   6자리 세기 추정 = 00~26 → 20xx, 그 외 → 19xx(대표원장 HTML formatBirth 규칙 동일). 결측 ''.
@@ -146,6 +184,26 @@ export function sortNailSites(sites: NailSite[]): NailSite[] {
 export function formatNailSites(sites: NailSite[] | null | undefined): string {
   if (!sites || sites.length === 0) return '—';
   return sortNailSites(sites).map(formatNailSite).join(', ');
+}
+
+/**
+ * 컴팩트 표기(2글자) — T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (§B, AC-2).
+ *   진료대시보드 명단 '채취조갑' 컬럼 전용. 'Rt 1지 조갑' → 'R1', 'Lt 5지 조갑' → 'L5'.
+ *   R/L(대문자) + 발가락번호(1~5) = 정확히 2글자. '조갑'·'지'·공백 등 부가문자 제거.
+ *   ⚠ policy_superseded: PHASE15 canon 풀표기(formatNailSite)는 발급문서 본문 등 타 surface 보존.
+ *      본 헬퍼는 진료대시보드 명단 컬럼 표시에 한정(전역 supersede 아님).
+ */
+export function formatNailSiteShort(site: NailSite): string {
+  return `${site.side === 'Rt' ? 'R' : 'L'}${site.toe}`;
+}
+
+/**
+ * 배열 → 컴팩트 표기(첫 부위만). 단일선택(SINGLESEL)이라 통상 1건, 레거시 다중값은 정렬 후 sites[0].
+ *   빈/결측 = '—'. (DB 저장 shape·RPC 무변경 — 표시변환만, 신규 스키마 0.)
+ */
+export function formatNailSitesShort(sites: NailSite[] | null | undefined): string {
+  if (!sites || sites.length === 0) return '—';
+  return formatNailSiteShort(sortNailSites(sites)[0]);
 }
 
 /** jsonb(unknown) → NailSite[] 방어적 파싱. closed-enum(Rt/Lt, 1-5) 외 원소는 버림. */
@@ -873,7 +931,9 @@ export default function KohReportTab() {
         <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">
           <table className="w-full text-sm">
             <thead>
-              {/* KOHSHEET-RENEWAL §B: 6컬럼 + LIFECYCLE: 선택(일괄발행)·상태(active/inactive)·발행 */}
+              {/* T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-1/AC-8): 7컬럼 고정 —
+                  이름·생년(만나이)·차트번호·채취조갑·진료의·상태·발행. 검사일 컬럼 제거(월별 조회 필터는 유지).
+                  + LIFECYCLE: 선택(일괄발행) 컬럼은 canIssue 게이트로 맨 앞 유지(데이터 7컬럼과 별개). */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 {/* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 선택(일괄발급) 컬럼 = canIssue(전직군 8역할).
                     헤더·셀 동일 게이트로 정합. 비대상 역할(canIssue=false, tm 등)에겐 선택 컬럼 자체 미노출. */}
@@ -892,10 +952,9 @@ export default function KohReportTab() {
                 </th>
                 )}
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">이름</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">검사일</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">조갑부위</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년(만나이)</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트번호</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">채취조갑</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">진료의</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">상태</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">발행</th>
@@ -957,7 +1016,8 @@ export default function KohReportTab() {
                       생년 누락 시 '미입력' 경고 배지 — 발급 차단(이슈3) 사유를 명단에서 바로 인지. */}
                   <td className="px-1.5 py-1 tabular-nums text-foreground/90 whitespace-nowrap" data-testid="koh-cell-birth">
                     {r.birth_date ? (
-                      formatBirthDate(r.birth_date)
+                      // AC-6: '생년 + (만 N세)' 표기(예 1990 (36세)). 만나이=오늘(KST) 기준 생일 경과 계산.
+                      formatBirthYearWithAge(r.birth_date, todayISO)
                     ) : (
                       <span
                         className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
@@ -971,10 +1031,8 @@ export default function KohReportTab() {
                   <td className="px-1.5 py-1 font-mono text-foreground/90 whitespace-nowrap" data-testid="koh-cell-chart">
                     {r.chart_number || '—'}
                   </td>
-                  {/* KOHSHEET-RENEWAL §B2: 검사일 = 날짜만(시간 제거). */}
-                  <td className="px-1.5 py-1 tabular-nums text-muted-foreground whitespace-nowrap" data-testid="koh-cell-examdate">
-                    {formatExamDate(r.created_at)}
-                  </td>
+                  {/* T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-8): 검사일 컬럼 제거.
+                      월별 조회(useKohReport ym 범위 필터)는 유지 — 표시 컬럼만 제거. */}
                   {/* PHASE15(A): 발톱부위 + NAILSYNC(AC2/AC3): 치료부위 프리필.
                       AC3 가드 — 균검사지=원장 시술 판단 근거. 조갑부위(koh_nail_sites)가 비어있을 때만
                       치료부위(treatment_sites)로 프리필. 원장이 한 번이라도 입력/저장(nail_sites 非빈)하면
@@ -987,12 +1045,14 @@ export default function KohReportTab() {
                       <td className="px-1.5 py-1" data-testid="koh-cell-nailsite">
                         <div className="space-y-1.5">
                           <span
-                            className={`flex items-center gap-1 text-xs font-medium ${
+                            className={`flex items-center gap-1 text-xs font-semibold tabular-nums ${
                               effective.length > 0 ? 'text-foreground' : 'text-muted-foreground/60'
                             }`}
                             data-testid="koh-nailsite-text"
+                            title={effective.length > 0 ? formatNailSites(effective) : undefined}
                           >
-                            {formatNailSites(effective)}
+                            {/* AC-2(§B): 컴팩트 'R1'(2글자) 표기. 풀표기(formatNailSites)는 title 툴팁으로 보존. */}
+                            {formatNailSitesShort(effective)}
                             {prefilled && (
                               <span
                                 className="shrink-0 rounded bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700"

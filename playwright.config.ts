@@ -154,6 +154,9 @@ export default defineConfig({
         //   (소견서/서류발급/KOH 허브). visitorFromCheckIn 매핑·단일 Dialog 불변식 순수 로직 + 재사용·무회귀
         //   소스 정적 가드(불변 트리거·L-006·기존 탭 병행 보존). auth 불요.
         '**/T-20260617-foot-DOCFORM-POPUP-OVERHAUL.spec.ts',
+        // T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT: 균검사지 진료대시보드 명단 7컬럼(AC-1/AC-8) +
+        //   채취조갑 컴팩트 'R1' 2글자(AC-2/§B) + 생년(만나이)(AC-6) — 표시변환 순수 로직 모사(신규 스키마 0, auth 불요)
+        '**/T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
