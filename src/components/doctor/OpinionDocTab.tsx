@@ -295,6 +295,8 @@ export interface PublishedOpinionRow {
   issued_by_name: string;
   issued_by_license_no: string | null;
   issued_at: string;
+  /** 서류종류 — 발행 시점 field_data.doc_type. 미존재(legacy 발행본)는 '소견서'(opinion)로 폴백. */
+  doc_type: 'opinion' | 'diagnosis';
 }
 function usePublishedOpinions(clinicId: string | null, customerId: string | null, templateId: string | null) {
   return useQuery<PublishedOpinionRow[]>({
@@ -321,6 +323,7 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
           issued_by_license_no: (fd['doctor_license_no'] as string | null) ?? null,
           // 표시·인쇄는 seoulISODate(timestamptz) 경유 → created_at(정규 tz) 사용. field_data.published_at 는 KST 스냅샷 보존.
           issued_at: String(r['created_at'] ?? ''),
+          doc_type: fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion',
         };
       });
     },
@@ -338,6 +341,8 @@ export interface PublishOpinionInput {
   doctorId: string | null;          // clinic_doctors.id (진료의 provenance)
   doctorName: string;
   doctorLicenseNo: string | null;
+  // T-20260620-foot-MEDDOC-DESK-PRINTONLY: 서류종류(소견서/진단서) 스냅샷 — 데스크 서류출력 게이트 식별키.
+  docType: 'opinion' | 'diagnosis';
 }
 // 발행 = publish_opinion_doc RPC(form_submissions published insert, append-only). 비가역=published 트리거(C1).
 function usePublishOpinion(clinicId: string | null) {
@@ -354,6 +359,9 @@ function usePublishOpinion(clinicId: string | null) {
           doctor_license_no: input.doctorLicenseNo,
           issued_by_doctor_id: input.doctorId,
           chart_no: input.chartNo,
+          // T-20260620-foot-MEDDOC-DESK-PRINTONLY: 서류종류 스냅샷(JSONB ADDITIVE, NO-DDL).
+          //   데스크 서류출력(소견서/진단서)이 이 발행본으로 출력 버튼 활성화 게이트를 식별.
+          doc_type: input.docType,
         },
       });
       if (error) throw error;
@@ -589,6 +597,7 @@ export function OpinionEditorDialog({
         doctorId: issuer.issuedBy,
         doctorName: issuer.issuedByName,
         doctorLicenseNo: issuer.issuedByLicenseNo,
+        docType: initialDocType === 'diagnosis' ? 'diagnosis' : 'opinion',
       });
       toast.success(`${docTitle}가 발행되었습니다.`);
       setText('');
@@ -611,6 +620,7 @@ export function OpinionEditorDialog({
       clinicName: clinicHeader?.name ?? null,
       clinicAddress: clinicHeader?.address ?? null,
       clinicPhone: clinicHeader?.phone ?? null,
+      formKey: row.doc_type === 'diagnosis' ? 'diagnosis' : 'diag_opinion',
     });
     if (!ok) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   };

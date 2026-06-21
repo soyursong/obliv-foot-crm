@@ -59,6 +59,15 @@ import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
+// T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
+import { useClinicHeader } from '@/components/doctor/OpinionDocTab';
+import {
+  useAuthoredMedDocs,
+  printAuthoredMedDoc,
+  isGatedMedDoc,
+  medDocFormKeyToDocType,
+  type AuthoredMedDoc,
+} from '@/lib/medDocPrintGate';
 import {
   DEFAULT_PRESET_KEYS,
   FALLBACK_TEMPLATES,
@@ -493,6 +502,28 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   //   기존 기본/별도요청/보험 3섹션 분기 → 단일 리스트로 통합(두 화면 순서·항목수 일치).
   //   진료비 영수증 재발급 카드(insurance_receipts 기반)는 서류 발행 목록과 별개 유틸 → 하단 보존.
   const docListTemplates = orderDocList(visibleTemplates);
+
+  // ── T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED (B안) ──
+  //   소견서(diag_opinion)·진단서(diagnosis) = 원장 발행본(opinion_doc, status='published')만 출력.
+  //   원장 미작성 = 출력 카드 비활성(disabled). 작성 완료 = 활성 → 발행본 그대로 인쇄(데스크 본문 작성 불가).
+  //   나머지 8종은 무게이트. 원장 작성 동선(OpinionDocTab)은 무관 → lock-out 위험 0.
+  const { data: authoredMedDocs } = useAuthoredMedDocs(checkIn.clinic_id, checkIn.customer_id);
+  const { data: medDocClinicHeader } = useClinicHeader(checkIn.clinic_id);
+  const medDocGate = (formKey: string): MedDocGateInfo => {
+    if (!isGatedMedDoc(formKey)) return null;
+    const docType = medDocFormKeyToDocType(formKey);
+    const doc: AuthoredMedDoc | undefined = authoredMedDocs?.byType?.[docType];
+    return {
+      authored: !!doc,
+      onPrint: () => {
+        const ok = printAuthoredMedDoc(formKey, doc, {
+          patientName: checkIn.customer_name ?? null,
+          clinicHeader: medDocClinicHeader ?? null,
+        });
+        if (!ok) toast.error('팝업이 차단되었거나 발행본을 불러올 수 없습니다.');
+      },
+    };
+  };
 
   // ── 선택 토글 ──
   const toggleSelect = (formKey: string) => {
@@ -1035,6 +1066,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           canAccess={canAccess}
           onToggle={toggleSelect}
           onCardClick={handleSelectTemplate}
+          medDocGate={medDocGate}
         />
       )}
 
@@ -1281,6 +1313,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
 
 // ─── 섹션 컴포넌트 ───
 
+// T-20260620-foot-MEDDOC-DESK-PRINTONLY: 소견서·진단서 게이트 디스크립터.
+//   null = 무게이트(기존 동작). { authored, onPrint } = 게이트 대상(원장 발행본 출력만).
+export type MedDocGateInfo = { authored: boolean; onPrint: () => void } | null;
+
 function TemplateSection({
   title,
   templates,
@@ -1289,6 +1325,7 @@ function TemplateSection({
   canAccess,
   onToggle,
   onCardClick,
+  medDocGate,
 }: {
   title: string;
   templates: FormTemplate[];
@@ -1297,6 +1334,8 @@ function TemplateSection({
   canAccess: (t: FormTemplate) => boolean;
   onToggle: (key: string) => void;
   onCardClick: (t: FormTemplate) => void;
+  /** T-20260620-foot-MEDDOC-DESK-PRINTONLY: form_key별 의료서류 출력 게이트. 미지정 시 무게이트. */
+  medDocGate?: (formKey: string) => MedDocGateInfo;
 }) {
   return (
     <div className="space-y-1.5">
@@ -1313,23 +1352,38 @@ function TemplateSection({
             (s) => s.template_id === tpl.id && s.status !== 'voided',
           ).length;
 
+          // T-20260620-foot-MEDDOC-DESK-PRINTONLY (B안): 소견서·진단서 게이트.
+          //   gate ≠ null 인 카드는 체크박스/일괄선택/자유작성(IssueDialog) 동선을 쓰지 않는다.
+          //   - 원장 미작성(!authored) = disabled(출력 불가, '원장 작성 필요' 안내).
+          //   - 작성 완료(authored) = 카드 클릭 → 발행본 그대로 인쇄(데스크 본문 작성 경로 없음).
+          const gate = medDocGate?.(tpl.form_key) ?? null;
+          const isGated = gate !== null;
+          const clickable = accessible && (!isGated || gate.authored);
+
           return (
             <div
               key={tpl.id}
+              data-testid={`docprint-card-${tpl.form_key}`}
+              data-gated={isGated ? 'true' : undefined}
+              data-authored={isGated ? (gate.authored ? 'true' : 'false') : undefined}
               className={`
                 relative rounded-lg border p-2.5 text-xs transition-all select-none
-                ${accessible ? 'cursor-pointer hover:shadow-md hover:border-teal-300' : 'opacity-50 cursor-not-allowed'}
-                ${isSelected ? 'ring-2 ring-teal-400 border-teal-400' : ''}
+                ${clickable ? 'cursor-pointer hover:shadow-md hover:border-teal-300' : 'opacity-50 cursor-not-allowed'}
+                ${isSelected && !isGated ? 'ring-2 ring-teal-400 border-teal-400' : ''}
                 ${meta?.color ?? 'bg-gray-50 border-gray-200'}
               `}
               onClick={() => {
+                if (isGated) {
+                  if (gate.authored) gate.onPrint();
+                  return;
+                }
                 if (!accessible) return;
                 onToggle(tpl.form_key);
               }}
             >
-              {/* 체크박스 표시 */}
+              {/* 체크박스 표시 — 게이트 대상은 일괄선택 비대상(체크박스 미표시) */}
               <div className="absolute top-1.5 right-1.5 text-teal-500">
-                {accessible &&
+                {accessible && !isGated &&
                   (isSelected ? (
                     <CheckSquare className="h-3.5 w-3.5" />
                   ) : (
@@ -1349,20 +1403,42 @@ function TemplateSection({
               <div className="text-muted-foreground text-[11px] mt-0.5 line-clamp-1">
                 {meta?.description ?? tpl.template_format.toUpperCase()}
               </div>
-              {!hasCoords && (
+              {!hasCoords && !isGated && (
                 <div className="text-[10px] text-amber-500 mt-1">좌표 미설정</div>
               )}
 
-              {/* 상세 발행 버튼 (카드 내부) */}
-              <button
-                className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (accessible) onCardClick(tpl);
-                }}
-              >
-                상세 발행 →
-              </button>
+              {isGated ? (
+                gate.authored ? (
+                  <button
+                    className="mt-2 w-full text-[10px] font-semibold text-teal-600 hover:underline text-left"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      gate.onPrint();
+                    }}
+                    data-testid={`docprint-meddoc-print-${tpl.form_key}`}
+                  >
+                    원장 작성 완료 · 출력 →
+                  </button>
+                ) : (
+                  <div
+                    className="mt-2 w-full text-[10px] text-muted-foreground/80 text-left"
+                    data-testid={`docprint-meddoc-locked-${tpl.form_key}`}
+                  >
+                    🔒 원장 작성 필요 (작성 전 출력 불가)
+                  </div>
+                )
+              ) : (
+                /* 상세 발행 버튼 (카드 내부) — 무게이트 서류 */
+                <button
+                  className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (accessible) onCardClick(tpl);
+                  }}
+                >
+                  상세 발행 →
+                </button>
+              )}
             </div>
           );
         })}
