@@ -1,5 +1,5 @@
 -- T-20260620-foot-SUPERADMIN-EXEMPT — exempt_from_restrictions(상시예외 영속화) ADDITIVE flag
--- ⚠️ DO NOT APPLY: supervisor DDL-diff 게이트 통과 전까지 미적용. .DDL_DIFF_HOLD suffix → db push 대상 아님(레포 convention).
+-- ✅ APPLIED 2026-06-21 (prod rxlomoozakkjesdqjtvd) — supervisor FIX-REQUEST MSG-20260621-115605-rbwm, DDL-diff 게이트 통과 후 un-hold.
 --
 -- 출처: DA CONSULT-REPLY MSG-20260620-162917-aw39 (DA-20260620-FOOT-SUPERADMIN-EXEMPT) — 판정 GO(ADDITIVE).
 --   계약 반영 완료: schema_registry user_profiles 등재 + cross_crm_data_contract §12-3 invariant 추가.
