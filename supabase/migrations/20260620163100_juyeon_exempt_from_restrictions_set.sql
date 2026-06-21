@@ -1,6 +1,5 @@
 -- T-20260620-foot-SUPERADMIN-EXEMPT — 상시예외 backfill DML (김주연 총괄 exempt_from_restrictions=true)
--- ⚠️ DO NOT APPLY 단독: 반드시 선행 20260620163000_user_profiles_exempt_from_restrictions_additive.sql 적용 후 실행.
---    .DDL_DIFF_HOLD suffix → db push 대상 아님. supervisor DDL-diff 게이트 통과 후 수동 실행.
+-- ✅ APPLIED 2026-06-21 (prod) — 선행 ADDITIVE 직후 실행. supervisor FIX-REQUEST MSG-20260621-115605-rbwm.
 --
 -- 출처: DA CONSULT-REPLY MSG-20260620-162917-aw39 (Q2 backfill).
 --   ★PK id 기준 1행 — 코드 내 email/id 하드코딩 아님(FE/perm 로직은 flag 만 읽음 → 단일유저 하드코딩 0 제약 충족).
