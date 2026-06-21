@@ -73,6 +73,14 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+// T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
+import { useClinicHeader } from '@/components/doctor/OpinionDocTab';
+import {
+  useAuthoredMedDocs,
+  printAuthoredMedDoc,
+  isGatedMedDoc,
+  medDocFormKeyToDocType,
+} from '@/lib/medDocPrintGate';
 // T-20260608-foot-DOC-PATH12-SYNC: 세금/급여 분류·코드항목 판별을 4경로 공유 SSOT(footBilling)로 일원화.
 //   (PMW 로컬 정의 → 공유 모듈 이전. DocumentPrintPanel(PATH-1/2/3)이 동일 로직 재사용 → 드리프트 차단.)
 import {
@@ -1596,6 +1604,29 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
   };
 
+  // ── T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED (B안) ──
+  //   소견서(diag_opinion)·진단서(diagnosis) = 원장 발행본(opinion_doc, published)만 출력.
+  //   원장 미작성 = 버튼 비활성(disabled). 작성 완료 = 클릭 시 발행본 그대로 인쇄(일괄선택/자유작성 비대상).
+  const { data: medDocAuthored } = useAuthoredMedDocs(
+    checkIn?.clinic_id ?? null,
+    checkIn?.customer_id ?? null,
+  );
+  const { data: medDocClinicHeader } = useClinicHeader(checkIn?.clinic_id ?? null);
+  const medDocGate = (formKey: string): { authored: boolean; onPrint: () => void } | null => {
+    if (!isGatedMedDoc(formKey)) return null;
+    const doc = medDocAuthored?.byType?.[medDocFormKeyToDocType(formKey)];
+    return {
+      authored: !!doc,
+      onPrint: () => {
+        const ok = printAuthoredMedDoc(formKey, doc, {
+          patientName: checkIn?.customer_name ?? null,
+          clinicHeader: medDocClinicHeader ?? null,
+        });
+        if (!ok) toast.error('팝업이 차단되었거나 발행본을 불러올 수 없습니다.');
+      },
+    };
+  };
+
   // ── [출력] — PAY-SLOT-MOVE: 출력만, 슬롯 이동 없음 ─────────────────────────
   // T-20260517-foot-DOC-CODE-INSERT: HTML 템플릿 렌더링 + 상병코드/처방약 자동 주입
   const handleDocPrint = async () => {
@@ -2655,6 +2686,36 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   .map((tpl) => {
                     const meta = FORM_META[tpl.form_key];
                     const isSelected = selectedDocKeys.has(tpl.form_key);
+                    // T-20260620-foot-MEDDOC-DESK-PRINTONLY (B안): 소견서·진단서 게이트.
+                    //   gate ≠ null = 일괄선택/자유작성 비대상. 미작성=disabled, 작성완료=클릭 시 발행본 출력.
+                    const gate = medDocGate(tpl.form_key);
+                    if (gate) {
+                      const locked = !gate.authored;
+                      return (
+                        <button
+                          key={tpl.form_key}
+                          onClick={() => { if (gate.authored) gate.onPrint(); }}
+                          disabled={locked}
+                          title={locked ? '원장이 작성한 내용이 있어야 출력할 수 있습니다.' : '원장 발행본 출력'}
+                          className={cn(
+                            'flex items-center gap-1.5 rounded border px-2 py-2.5 sm:py-1 text-xs font-medium transition-all text-left w-full min-h-[44px] sm:min-h-0',
+                            locked
+                              ? 'bg-gray-50 text-muted-foreground/60 border-gray-200 cursor-not-allowed'
+                              : 'bg-white text-teal-700 border-teal-300 hover:bg-teal-50',
+                          )}
+                          data-testid={`doc-meddoc-${tpl.form_key}`}
+                          data-authored={gate.authored ? 'true' : 'false'}
+                        >
+                          <span className="shrink-0">{locked ? '🔒' : '🖨️'}</span>
+                          <span className="truncate">
+                            {meta?.icon ?? '📄'} {tpl.name_ko}
+                            <span className="ml-1 text-[10px] opacity-80">
+                              {locked ? '(원장 작성 필요)' : '(출력)'}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    }
                     return (
                       <button
                         key={tpl.form_key}
