@@ -8,12 +8,16 @@
  *   S3 채취조갑 배열 표기(SINGLESEL) — formatNailSitesShort: 빈=‘—’, 단일, 레거시 다중→정렬 후 sites[0].
  *   S4 생년(만나이)(AC-6) — formatBirthYearWithAge: '1990-03-15' @2026-06-21 → '1990 (36세)', 생일 미경과 −1.
  *   S5 엣지 — 6자리(YYMMDD) 방어 파싱, 결측 '—', 미래생년 방어.
+ *   S6 용어통일(AC-9, clyw ①) — KOH 균검사지 surface 사용자 노출 문자열에 '발톱'/'발가락' 0건('조갑'으로 통일) 회귀 가드.
  *
  * 스타일: in-page 순수 로직 시뮬레이션 — 구현 정본(KohReportTab 헬퍼)을 모사해 회귀를 잡는다.
  *   DB·RPC 무변경(koh_nail_sites jsonb 재사용 = 표시변환만, 신규 스키마 0).
  *   ⚠ 입력 컴포넌트 교체(§B-INPUT/AC-7)는 sub_gate(input_method_confirm) HOLD → 본 spec 범위 외(토글 보존).
  */
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
 // ── 정본 모사: NailSite 타입/정렬 (KohReportTab.tsx) ───────────────────────────
 type NailSide = 'Rt' | 'Lt';
@@ -157,5 +161,46 @@ test.describe('S5 엣지', () => {
 
   test('파싱 불가 문자열 — 원본 폴백', () => {
     expect(formatBirthYearWithAge('미상', '2026-06-21')).toBe('미상');
+  });
+});
+
+// ── S6: 용어통일(AC-9, clyw ①) — KOH 균검사지 surface '조갑' 통일 회귀 가드 ────────
+// reporter(문지은 대표원장) clyw ① 용어통일: 균검사지 surface 사용자 노출 문자열은 '조갑'으로 통일.
+// '발톱'/'발가락'은 의사 노출 라벨·toast·툴팁·안내문에서 0건이어야 한다(FE 스키마0).
+// 정본 모사: 단일원소 canonical 풀표기(formatNailSite) — KohReportTab.formatNailSite.
+test.describe('S6 용어통일(AC-9)', () => {
+  const formatNailSite = (s: NailSite): string => `${s.side} ${s.toe}지 조갑`;
+
+  test('canonical 풀표기 = "Rt 1지 조갑"(조갑 사용, 발톱/발가락 금지)', () => {
+    const out = formatNailSite({ side: 'Rt', toe: 1 });
+    expect(out).toBe('Rt 1지 조갑');
+    expect(out).toContain('조갑');
+    expect(out).not.toContain('발톱');
+    expect(out).not.toContain('발가락');
+  });
+
+  test('컬럼 라벨에 발톱/발가락 잔존 0 — 채취조갑으로 통일', () => {
+    const DATA_COLUMNS = ['이름', '생년(만나이)', '차트번호', '채취조갑', '진료의', '상태', '발행'];
+    const joined = DATA_COLUMNS.join('|');
+    expect(joined).not.toContain('발톱');
+    expect(joined).not.toContain('발가락');
+    expect(joined).toContain('채취조갑');
+  });
+
+  // 소스 정합 가드 — KohReportTab.tsx 본문(주석 제외)에 발톱/발가락 사용자 노출 0.
+  test('KohReportTab 소스 — 비주석 라인에 발톱/발가락 0건', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const srcPath = resolve(here, '../../src/components/doctor/KohReportTab.tsx');
+    const src = readFileSync(srcPath, 'utf8');
+    const offenders: string[] = [];
+    for (const raw of src.split('\n')) {
+      const line = raw.trim();
+      // 라인 주석·블록 주석 마커·JSDoc 라인 제외(표시 레이어 한정 — 주석은 SSOT 정렬로 별도 처리)
+      if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*')) continue;
+      // 인라인 // 주석 뒤쪽 절단
+      const codePart = line.split('//')[0];
+      if (/발톱|발가락/.test(codePart)) offenders.push(line);
+    }
+    expect(offenders, `발톱/발가락 사용자 노출 잔존:\n${offenders.join('\n')}`).toHaveLength(0);
   });
 });

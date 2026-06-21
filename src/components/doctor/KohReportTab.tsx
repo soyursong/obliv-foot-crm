@@ -6,7 +6,7 @@
 //
 // KOH(수산화칼륨) 진균검사를 시행한 환자 명단을 '검사일'(월 단위) 기준으로 조회한다.
 // 컬럼(KOHSHEET-RENEWAL §B, 6컬럼 통일): 이름 · 생년 · 차트 · 검사일(날짜만) · 조갑부위 · 진료의
-//   ※ Phase 1.5(PHASE15, 3중 게이트 ALL GO): 발톱부위(입력) + 당일의사명(조인) 추가.
+//   ※ Phase 1.5(PHASE15, 3중 게이트 ALL GO): 조갑부위(입력) + 당일의사명(조인) 추가.
 //   ※ KOHSHEET-RENEWAL: 검사일 시간 제거(날짜만, B2) + 조갑부위 입력 단일→복수선택 완화(C2).
 //
 // === KOHSHEET-RENEWAL (T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR) ===
@@ -18,7 +18,7 @@
 //     旣 저장된 레거시 다중값 행 파괴/마이그 없음 — 표시 보존, 발행 시 sites[0]만 사용.
 //
 // === Phase 1.5 (T-20260612-foot-KOH-REPORT-PHASE15) ===
-//  A. 발톱부위 = check_in_services.koh_nail_sites jsonb. 원소 {side:Rt|Lt, toe:1-5}.
+//  A. 조갑부위 = check_in_services.koh_nail_sites jsonb. 원소 {side:Rt|Lt, toe:1-5}.
 //     입력 위젯 = (KOHSHEET-RENEWAL C 로 대체) 좌발 L1~L5 | 우발 R1~R5 다중선택 토글.
 //     쓰기 = RPC set_koh_nail_sites (check_in_services UPDATE RLS=consultant+ 우회, 승인 사용자 누구나).
 //     DB엔 구조만 저장 — 표시문자열은 FE 파생(formatNailSite: 'Rt 1지 조갑').
@@ -160,7 +160,7 @@ export function formatExamDate(createdAt: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// 발톱부위(KOH 검사부위) — T-20260612-foot-KOH-REPORT-PHASE15 (A).
+// 조갑부위(KOH 검사부위) — T-20260612-foot-KOH-REPORT-PHASE15 (A).
 //   원소 = {side:'Rt'|'Lt', toe:1-5}. DB엔 구조만 저장(표시문자열 저장 금지) → 아래 render 는 FE 파생.
 // ---------------------------------------------------------------------------
 export type NailSide = 'Rt' | 'Lt';
@@ -268,14 +268,14 @@ export function isKohExamEligible(createdAt: string | null | undefined, todayISO
 // Types
 // ---------------------------------------------------------------------------
 export interface KohRow {
-  id: string;                    // check_in_services.id (= KOH 검사 인스턴스, 발톱부위 귀속 키)
+  id: string;                    // check_in_services.id (= KOH 검사 인스턴스, 조갑부위 귀속 키)
   service_name: string;
   created_at: string;            // 검사일(UTC timestamptz)
   customer_id: string | null;    // PHASE15(B): 당일의사 조인 키(+visit_date)
   customer_name: string;         // 표기명 — customers.name 우선, fallback check_ins.customer_name
   birth_date: string | null;     // 생년월일
   chart_number: string | null;   // 차트번호
-  nail_sites: NailSite[];        // PHASE15(A): 발톱부위(koh_nail_sites jsonb 파생)
+  nail_sites: NailSite[];        // PHASE15(A): 조갑부위(koh_nail_sites jsonb 파생)
   treatment_sites: NailSite[];   // NAILSYNC(AC1): 치료부위(treatment_memo.foot_site → L→Lt/R→Rt 정규화 미러)
   koh_requested: boolean;        // LIFECYCLE(AC-1/AC-2): KOH 신청 플래그. true=active(신청)/false=inactive(미신청·취소)
   therapist_id: string | null;   // PUBLISH-BTN-REVERIFY-GATE(AC-4): 배정 치료사(check_ins.therapist_id, read-only). 발급 enable-gate '치료사 배정됨' 판정용 — 신규 스키마 0(기존 컬럼).
@@ -313,10 +313,10 @@ function useKohReport(clinicId: string | null, ym: string) {
       const startBound = `${ym}-01T00:00:00+09:00`;
       const endBound = `${shiftYearMonth(ym, 1)}-01T00:00:00+09:00`;
 
-      // PHASE15: koh_nail_sites(발톱부위) + check_ins.customer_id(당일의사 조인키) 추가.
+      // PHASE15: koh_nail_sites(조갑부위) + check_ins.customer_id(당일의사 조인키) 추가.
       //   ⚠ FE-DB 순서 안전장치: koh_nail_sites 컬럼이 아직 없으면(마이그 적용 전 prod 도달 시)
       //     select 가 42703(컬럼없음)으로 실패 → 기존 Phase1 탭이 깨진다. column-missing 감지 시
-      //     koh_nail_sites 제외 select 로 1회 폴백(발톱부위는 빈값). 마이그 적용 후 자동 활성.
+      //     koh_nail_sites 제외 select 로 1회 폴백(조갑부위는 빈값). 마이그 적용 후 자동 활성.
       // NAILSYNC(AC1/AC2): check_ins.treatment_memo 동봉 → 치료부위(foot_site) 미러 소스.
       //   treatment_memo 는 既존 jsonb 컬럼(신규 컬럼 0). 균검사지에서 치료부위 선택분을 프리필.
       // LIFECYCLE(AC-1/AC-2): koh_requested(신청 플래그) 추가. koh_nail_sites 와 동일 column-missing 폴백 대상.
@@ -428,7 +428,7 @@ function doctorNameForRow(r: KohRow, doctorMap: Map<string, Set<string>> | undef
 }
 
 // ---------------------------------------------------------------------------
-// 발톱부위 저장 — T-20260612-foot-KOH-REPORT-PHASE15 (A). RPC set_koh_nail_sites.
+// 조갑부위 저장 — T-20260612-foot-KOH-REPORT-PHASE15 (A). RPC set_koh_nail_sites.
 //   check_in_services UPDATE RLS(consultant+) 우회 — 승인 사용자 누구나(치료사 포함) 한 필드만 쓰기.
 // ---------------------------------------------------------------------------
 function useSaveNailSites(clinicId: string | null, ym: string) {
@@ -545,7 +545,7 @@ function usePublishKoh(clinicId: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// 발톱부위 입력 위젯 — T-20260617-foot-KOHGEN-PUBLISH-SINGLESEL-2FIX (이슈2, 단일선택).
+// 조갑부위 입력 위젯 — T-20260617-foot-KOHGEN-PUBLISH-SINGLESEL-2FIX (이슈2, 단일선택).
 //   ※ reporter(문지은 대표원장) 직접 재정의 — KOHSHEET-RENEWAL §C 다중선택(multi)은 superseded.
 //   레이아웃: [좌발] L1 L2 L3 L4 L5  │(구분선)│  [우발] R1 R2 R3 R4 R5  + '조갑' 고정.
 //   단일선택: 각 버튼 = 라디오형 토글. 다른 부위 누르면 기존 해제 후 새 부위 1개만. 같은 부위 다시 누르면 해제(빈배열).
@@ -666,7 +666,7 @@ export default function KohReportTab() {
   };
 
   const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, ym);
-  // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only). PHASE15(A): 발톱부위 저장 mutation.
+  // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only). PHASE15(A): 조갑부위 저장 mutation.
   const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, ym);
   const saveNailSites = useSaveNailSites(clinicId, ym);
 
@@ -1033,7 +1033,7 @@ export default function KohReportTab() {
                   </td>
                   {/* T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-8): 검사일 컬럼 제거.
                       월별 조회(useKohReport ym 범위 필터)는 유지 — 표시 컬럼만 제거. */}
-                  {/* PHASE15(A): 발톱부위 + NAILSYNC(AC2/AC3): 치료부위 프리필.
+                  {/* PHASE15(A): 조갑부위 + NAILSYNC(AC2/AC3): 치료부위 프리필.
                       AC3 가드 — 균검사지=원장 시술 판단 근거. 조갑부위(koh_nail_sites)가 비어있을 때만
                       치료부위(treatment_sites)로 프리필. 원장이 한 번이라도 입력/저장(nail_sites 非빈)하면
                       그 값이 SSOT가 되어 치료부위 변경이 silent 덮어쓰기 못 함(단방향, AC4).
