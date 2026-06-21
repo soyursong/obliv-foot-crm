@@ -336,51 +336,10 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <table style="margin-top:4px;">
-    <tbody>
-      <tr>
-        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
-        <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
-        <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
-        <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
-      </tr>
-      <tr>
-        <td style="min-height:20px;">{{diag_code_1}}</td>
-        <td>{{diag_name_1}}</td>
-        <td>{{diag_flag_1}}</td>
-      </tr>
-      <tr>
-        <td style="min-height:20px;">{{diag_code_2}}</td>
-        <td>{{diag_name_2}}</td>
-        <td>{{diag_flag_2}}</td>
-      </tr>
-      <tr style="{{diag_row_3_style}}">
-        <td style="min-height:20px;">{{diag_code_3}}</td>
-        <td>{{diag_name_3}}</td>
-        <td>{{diag_flag_3}}</td>
-      </tr>
-      <tr style="{{diag_row_4_style}}">
-        <td style="min-height:20px;">{{diag_code_4}}</td>
-        <td>{{diag_name_4}}</td>
-        <td>{{diag_flag_4}}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div style="display:flex; border:1px solid #000; border-top:none; gap:0;">
-    <div style="border-right:1px solid #000; padding:4px 10px; display:flex; align-items:center; gap:6px;">
-      <span class="circle circle-filled"></span>
-      <span style="font-size:9pt;">임상적추정</span>
-    </div>
-    <div style="border-right:1px solid #000; padding:4px 10px; display:flex; align-items:center; gap:6px;">
-      <span class="circle"></span>
-      <span style="font-size:9pt;">최 종 진 단</span>
-    </div>
-    <div style="padding:4px 10px; display:flex; align-items:center; gap:6px;">
-      <span class="circle"></span>
-      <span style="font-size:9pt;">임상적진단</span>
-    </div>
-  </div>
+  <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 상병(병명)·진단분류 비노출.
+       현장 요청(김주연 총괄, 2026-06-22) — 진료확인서에서 상병명 항목을 화면·인쇄 모두 미표시.
+       병명(상병코드·상병명·특정기호) 테이블 + 진단확신도 분류 표시줄 제거.
+       diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->
 
   <table style="margin-top:4px;">
     <tbody>
@@ -419,10 +378,8 @@ ${COMMON_STYLE}
 
   <table style="margin-top:4px;">
     <tbody>
-      <tr>
-        <td style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; line-height:1.7;">향후<br>치료<br>의견</td>
-        <td style="min-height:60px;" class="large-area">{{treatment_opinion}}</td>
-      </tr>
+      <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
+           현장 요청(김주연 총괄) — 진료확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
       <tr>
         <td style="background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
         <td>{{purpose}}</td>
@@ -508,51 +465,10 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <table style="margin-top:4px;">
-    <tbody>
-      <tr>
-        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
-        <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
-        <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
-        <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
-      </tr>
-      <tr>
-        <td>{{diag_code_1}}</td>
-        <td>{{diag_name_1}}</td>
-        <td>{{diag_flag_1}}</td>
-      </tr>
-      <tr>
-        <td>{{diag_code_2}}</td>
-        <td>{{diag_name_2}}</td>
-        <td>{{diag_flag_2}}</td>
-      </tr>
-      <tr style="{{diag_row_3_style}}">
-        <td>{{diag_code_3}}</td>
-        <td>{{diag_name_3}}</td>
-        <td>{{diag_flag_3}}</td>
-      </tr>
-      <tr style="{{diag_row_4_style}}">
-        <td>{{diag_code_4}}</td>
-        <td>{{diag_name_4}}</td>
-        <td>{{diag_flag_4}}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div style="display:flex; border:1px solid #000; border-top:none;">
-    <div style="border-right:1px solid #000; padding:4px 10px; display:flex; align-items:center; gap:6px;">
-      <span class="circle circle-filled"></span>
-      <span style="font-size:9pt;">임상적추정</span>
-    </div>
-    <div style="border-right:1px solid #000; padding:4px 10px; display:flex; align-items:center; gap:6px;">
-      <span class="circle"></span>
-      <span style="font-size:9pt;">최 종 진 단</span>
-    </div>
-    <div style="padding:4px 10px; display:flex; align-items:center; gap:6px;">
-      <span class="circle"></span>
-      <span style="font-size:9pt;">임상적진단</span>
-    </div>
-  </div>
+  <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 상병(병명)·진단분류 비노출.
+       현장 요청(김주연 총괄, 2026-06-22) — 통원확인서에서 상병명 항목을 화면·인쇄 모두 미표시.
+       병명(상병코드·상병명·특정기호) 테이블 + 진단확신도 분류 표시줄 제거.
+       diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->
 
   <table style="margin-top:4px;">
     <tbody>
@@ -591,10 +507,8 @@ ${COMMON_STYLE}
 
   <table style="margin-top:4px;">
     <tbody>
-      <tr>
-        <td style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; line-height:1.7;">향후<br>치료<br>의견</td>
-        <td style="min-height:60px;" class="large-area">{{treatment_opinion}}</td>
-      </tr>
+      <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
+           현장 요청(김주연 총괄) — 통원확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
       <tr>
         <td style="background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
         <td>{{purpose}}</td>
