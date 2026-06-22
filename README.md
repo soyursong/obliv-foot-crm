@@ -31,8 +31,17 @@ npm run dev    # localhost:8082
 git push origin main
   → GitHub Actions (ci-push.yml): TypeCheck + Build + Critical-Flow E2E
   → Vercel: main 브랜치 webhook → 자동 빌드 & 배포
-  → https://obliv-foot-crm.vercel.app
+  → https://obliv-foot-crm.vercel.app   ← 정본(canonical) 라이브 URL
 ```
+
+> ✅ **배포 검증·현장 안내는 반드시 `https://obliv-foot-crm.vercel.app` 단일 정본 URL로만 한다.**
+> 배포 완료 확인(번들 해시·버전 등)은 이 URL 기준. 다른 호스트로 검증하면 분기된 빌드를 볼 수 있어 오인 위험.
+
+> ⚠️ **`obliv-foot-crm.pages.dev` (Cloudflare Pages) — 사용 금지(검증·현장 안내 모두).**
+> 동일 GitHub 레포를 소스로 자동 빌드되는 **별개의 독립 파이프라인**으로, Vercel 정본과 **청크 해시가 다른 분기 빌드**를 서빙한다(2026-06-22 TRIAGE 확인, MSG-20260622-224519-j4gb). "어디서 보느냐에 따라 결과가 다른" 구조적 혼란의 원인.
+> 파이프라인 최종 처분(폐쇄/리다이렉트 vs 공식 문서화)은 supervisor 인프라 결정 대기 — `T-20260622-foot-PAGESDEV-PIPELINE-DECISION` (R2). 결정 전까지 이 호스트는 어떤 용도로도 참조하지 않는다.
+>
+> ※ 참고: `foot-checkin.pages.dev` 는 별개의 **의도된** 셀프체크인 전용 앱(`soyursong/foot-checkin`)으로, 위 ghost CRM 파이프라인과 무관하다.
 
 > ⚠️ Lovable 프로젝트는 2026-04-30 GitHub Disconnect 완료. 향후 Lovable에서 변경 시 이 레포에 반영되지 않음.
 
