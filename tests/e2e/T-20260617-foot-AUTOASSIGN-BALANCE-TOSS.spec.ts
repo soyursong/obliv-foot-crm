@@ -192,7 +192,8 @@ test.describe('S5 — 당김(pull)', () => {
 
 // ── S6: 통합 뷰 [상담·치료사 배정] + 라우트/네비 패리티 ──────────────────────────
 test.describe('S6 — 통합 뷰 + 라우트·네비 패리티', () => {
-  const ROLES = ['admin', 'manager', 'consultant', 'coordinator', 'therapist'];
+  // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: director(대표원장) nav+route 동시 OR-추가 → parity SSOT 집합.
+  const ROLES = ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'];
 
   test('사이드바 라벨 = "상담·치료사 배정" → /admin/assignments', () => {
     expect(NAV).toMatch(/to: '\/admin\/assignments', label: '상담·치료사 배정'/);
@@ -201,9 +202,9 @@ test.describe('S6 — 통합 뷰 + 라우트·네비 패리티', () => {
   test('nav roles === route RoleGuard roles (NAV-BOUNCE 차단 패리티)', () => {
     // nav
     for (const r of ROLES) expect(NAV).toContain(`'${r}'`);
-    expect(NAV).toMatch(/assignments'[\s\S]*?roles: \['admin', 'manager', 'consultant', 'coordinator', 'therapist'\]/);
+    expect(NAV).toMatch(/assignments'[\s\S]*?roles: \['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'\]/);
     // route
-    expect(APP).toMatch(/path="assignments" element=\{<RoleGuard roles=\{\['admin', 'manager', 'consultant', 'coordinator', 'therapist'\]\}><Assignments/);
+    expect(APP).toMatch(/path="assignments" element=\{<RoleGuard roles=\{\['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'\]\}><Assignments/);
   });
 
   test('통합 뷰 3섹션 — 오늘 배정 현황 / 당김 후보 / 직원별 당월 누적', () => {
