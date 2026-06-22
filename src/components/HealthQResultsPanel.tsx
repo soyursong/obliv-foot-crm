@@ -311,7 +311,8 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
             size="sm"
             onClick={handleCreateToken}
             disabled={tokenLoading}
-            className="gap-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-xs h-9 px-3"
+            /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 모노톤 미드그레이(#666, 기입/생성 secondary) */
+            className="gap-1.5 bg-[#666666] hover:bg-[#757575] text-white text-xs h-9 px-3"
           >
             <Plus className="h-3.5 w-3.5" />
             링크 생성

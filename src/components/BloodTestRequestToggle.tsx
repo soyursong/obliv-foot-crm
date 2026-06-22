@@ -8,9 +8,19 @@
 //
 // KOH 와의 차이: 피검사는 전용 service_name 이 없으므로 service_name 필터 없이
 //   "가장 최근 내원의 서비스 행 전체"를 타겟으로 잡는다(KohRequestToggle 의 KOH service 필터만 제거).
-//   → 내원(서비스) 기록 있는 환자에게 노출. 결과지/목록탭/발행 RPC 없음(AC-4, 범위 밖).
 //
-// 스키마: blood_test_requested 는 ADDITIVE(DEFAULT false). 마이그 미적용 prod 도달 시 select 42703 → 폴백(미노출).
+// === T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST (AC-4): 노출 게이트 KOH 정합 ===
+//   [RC] 본 토글은 8d30bf64(2026-06-17 KOH 1:1 미러) 이후 갱신 없음. 그 사이 KohRequestToggle 은
+//     4a9368a1(KOHTOGGLE-NOTRENDER: 재방문 시 토글 소멸 RC) + d97d8a35(KOH-BUTTON-ALL-CH: 체크인 전원 노출)
+//     두 차례 게이트가 hasCheckIn(check_ins 직접 조회) 기반으로 교정됐으나, 피검사는 구(舊) svcs.length===0
+//     게이트에 잔류 → svcs 임베드 쿼리(check_in_services!inner check_ins)가 비거나 에러나면 미노출.
+//     현장 제보 "있다 없다 함 → 전체 안 보임"(MSG-aw1b)이 정확히 KOH 가 이미 고친 NOTRENDER 증상.
+//   [FIX] 노출 게이트를 KOH 와 동일하게 hasCheckIn(체크인 내원 존재)로 전환 → svcs 쿼리 결과와 독립.
+//     상태(anyOn)·쓰기(set_blood_test_requested)는 기존 svcs 기반 유지(서버 RPC/스키마 추가 없음, db_change=false).
+//     svcs 비어있을 때 ON 시도 → 안내 토스트(무행위 silent 방지). 신규 행 생성은 본 스코프 밖(KOH request RPC 미보유).
+//   결과지/목록탭/발행 RPC 없음(AC-4 원티켓 범위 밖).
+//
+// 스키마: blood_test_requested 는 ADDITIVE(DEFAULT false). 마이그 미적용 prod 도달 시 select 42703 → 폴백.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
@@ -71,6 +81,27 @@ function useBloodServicesForCustomer(customerId: string | null | undefined) {
   });
 }
 
+// T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST (AC-4): 노출 게이트 — KohRequestToggle 의 useHasCheckIn 동형.
+//   customer 의 non-cancelled 내원 존재 여부(check_ins 직접 조회, svcs 임베드와 독립). 2번차트 환자는 사실상 항상 true.
+function useHasCheckIn(customerId: string | null | undefined) {
+  return useQuery<boolean>({
+    queryKey: ['blood_has_checkin', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      if (!customerId) return false;
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('id')
+        .eq('customer_id', customerId)
+        .neq('status', 'cancelled')
+        .limit(1);
+      if (error) throw error;
+      return (data?.length ?? 0) > 0;
+    },
+    staleTime: 30_000,
+  });
+}
+
 export default function BloodTestRequestToggle({
   customerId,
 }: {
@@ -78,6 +109,7 @@ export default function BloodTestRequestToggle({
 }) {
   const qc = useQueryClient();
   const { data: target, isLoading } = useBloodServicesForCustomer(customerId);
+  const { data: hasCheckIn, isLoading: ciLoading } = useHasCheckIn(customerId);
   const svcs = target?.svcs ?? [];
 
   const anyOn = svcs.some((s) => s.blood_test_requested);
@@ -102,8 +134,17 @@ export default function BloodTestRequestToggle({
     },
   });
 
-  // 내원(서비스) 기록 없음(또는 로딩 중) → 미노출(기록할 진료 레코드가 있어야 신청 가능).
-  if (!customerId || isLoading || svcs.length === 0) return null;
+  // AC-4: 노출 게이트 KOH 정합 — 체크인 내원 있는 환자 전원 노출(svcs 쿼리 결과·이력 무관). 로딩/내원없음 → 미노출.
+  if (!customerId || isLoading || ciLoading || !hasCheckIn) return null;
+
+  // svcs 없음(내원에 서비스 행 0) → 토글은 노출하되 ON 시 쓸 대상 행이 없으므로 신청 불가 안내.
+  const handleToggle = (next: boolean) => {
+    if (svcs.length === 0) {
+      toast.error('신청할 진료 서비스 내역이 없습니다. 내원·서비스 등록 후 다시 시도해주세요.');
+      return;
+    }
+    mutation.mutate(next);
+  };
 
   return (
     <div
@@ -117,7 +158,7 @@ export default function BloodTestRequestToggle({
       ) : (
         <Switch
           checked={anyOn}
-          onCheckedChange={(v) => mutation.mutate(v)}
+          onCheckedChange={handleToggle}
           disabled={mutation.isPending}
           aria-label="피검사 신청"
           data-testid="blood-test-request-switch"
