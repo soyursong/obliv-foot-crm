@@ -2641,10 +2641,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
   const [editingMemoText, setEditingMemoText] = useState('');
   const [savingEditMemo, setSavingEditMemo] = useState(false);
-  // T-20260526-foot-VISIT-HIST-FILTER: 방문이력 펼침/접기 + 메모유형 필터
+  // T-20260526-foot-VISIT-HIST-FILTER: 방문이력 펼침/접기
+  // T-20260622-foot-CHART2-UICLEAN-4FIX 요청6: 메모유형 필터(치료메모/진료메모/특이사항) 제거 — '전체 펼치기'만 유지.
   const [visitHistAllExpanded, setVisitHistAllExpanded] = useState(false);
   const [visitHistExpandedIds, setVisitHistExpandedIds] = useState<Set<string>>(new Set());
-  const [visitHistFilters, setVisitHistFilters] = useState<Set<string>>(new Set());
   // C21-RESIDENT-ID: 주민번호 입력/표시
   // T-20260511-foot-SSN-SAVE-BUG: 앞6자리 plain + 뒷7자리 masked (2-split input)
   const [editingRrn, setEditingRrn] = useState(false);
@@ -6175,16 +6175,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   return { ci, memoTypes, treatDetails, doctorNote };
                 });
 
-                // ── 필터 적용 (AC-3: 복합 선택, AC-4: 전체 해제 시 복원)
-                const filtered = visitHistFilters.size === 0
-                  ? visitsWithTypes
-                  : visitsWithTypes.filter(({ memoTypes }) =>
-                      Array.from(visitHistFilters).some((f) => memoTypes.has(f))
-                    );
+                // T-20260622-foot-CHART2-UICLEAN-4FIX 요청6: 메모유형 필터 제거 → 전체 표시.
+                const filtered = visitsWithTypes;
 
                 return (
                   <div className="space-y-2 text-xs" data-testid="visit-history-panel">
-                    {/* ── 컨트롤 바: 전체 펼치기/접기 + 필터 칩 (AC-1, AC-2) */}
+                    {/* ── 컨트롤 바: 전체 펼치기/접기 (AC-1) */}
+                    {/* T-20260622-foot-CHART2-UICLEAN-4FIX 요청6: 메모유형 필터칩 3개(치료메모/진료메모/특이사항)·전체해제·카운트 제거. '전체 펼치기'만 유지. */}
                     <div className="flex flex-wrap items-center gap-2 pb-1">
                       {/* 전체 펼치기/접기 토글 (AC-1) */}
                       <button
@@ -6205,60 +6202,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         }
                         {visitHistAllExpanded ? '전체 접기' : '전체 펼치기'}
                       </button>
-
-                      {/* 메모 유형 필터 칩 (AC-2, AC-3) */}
-                      {(['치료메모', '진료메모', '특이사항'] as const).map((type) => {
-                        const active = visitHistFilters.has(type);
-                        return (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => {
-                              setVisitHistFilters((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(type)) next.delete(type); else next.add(type);
-                                return next;
-                              });
-                            }}
-                            className={cn(
-                              'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition',
-                              active
-                                ? 'border-teal-500 bg-teal-500 text-white'
-                                : 'border-gray-300 bg-white text-gray-600 hover:border-teal-400 hover:text-teal-700',
-                            )}
-                            data-testid={`visit-hist-filter-${type}`}
-                          >
-                            {type}
-                          </button>
-                        );
-                      })}
-
-                      {/* 필터 전체 해제 (AC-4) */}
-                      {visitHistFilters.size > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setVisitHistFilters(new Set())}
-                          className="text-[10px] text-muted-foreground hover:text-destructive transition"
-                          data-testid="visit-hist-filter-clear"
-                        >
-                          전체 해제
-                        </button>
-                      )}
-
-                      {/* 필터 결과 카운트 */}
-                      {visitHistFilters.size > 0 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {filtered.length}/{checkInHistory.length}건
-                        </span>
-                      )}
                     </div>
 
                     {/* ── 방문이력 카드 목록 */}
                     {filtered.length === 0 ? (
                       <div className="rounded-lg border border-dashed py-8 text-center text-muted-foreground" data-testid="visit-hist-empty">
-                        {visitHistFilters.size > 0
-                          ? '해당 메모 유형의 방문 기록이 없습니다'
-                          : '방문 기록 없음'}
+                        방문 기록 없음
                       </div>
                     ) : (
                       <div className="space-y-1.5">
@@ -7158,23 +7107,40 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               취소
                             </button>
                           </div>
-                        ) : (
+                        ) : r.booking_memo ? (
+                          /* 메모 있음 → 텍스트 + 연필(수정). 클릭 시 편집폼. */
                           <button
                             type="button"
                             data-testid="resv-memo-display"
                             onClick={() => setEditingResvMemoId(r.id)}
                             className="group w-full flex items-center gap-1 h-5 rounded px-1.5 text-left hover:bg-muted/40 transition"
                           >
-                            <span className={cn('flex-1 truncate text-[10px]', r.booking_memo ? 'text-gray-600' : 'text-gray-300')}>
-                              {r.booking_memo || '예약메모 추가'}
+                            <span className="flex-1 truncate text-[10px] text-gray-600">
+                              {r.booking_memo}
                             </span>
                             <Pencil className="h-3 w-3 shrink-0 text-gray-400 group-hover:text-teal-600" />
                           </button>
+                        ) : (
+                          /* T-20260622-foot-CHART2-UICLEAN-4FIX 요청8b: 메모 없으면 '예약메모 추가' 고정 입력칸 제거.
+                             연필(수정) 아이콘만 노출 → 클릭 시에만 입력칸 생성. */
+                          <div className="flex items-center px-1.5">
+                            <button
+                              type="button"
+                              data-testid="resv-memo-add-icon"
+                              aria-label="예약메모 추가"
+                              onClick={() => setEditingResvMemoId(r.id)}
+                              className="inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:text-teal-600 hover:bg-muted/40 transition"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          </div>
                         )}
-                        {/* T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 (공유 컴포넌트) */}
+                        {/* T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 (공유 컴포넌트)
+                            T-20260622-foot-CHART2-UICLEAN-4FIX 요청8a: 이력 없으면 칸 숨김. */}
                         <ReservationAuditLogPanel
                           reservationId={r.id}
                           compact
+                          hideWhenEmpty
                         />
                       </div>
                     ))}
@@ -7193,7 +7159,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <span className="h-2 w-2 rounded-full bg-teal-500" />
                     KOH균검사
                   </span>
-                  <span className="text-[10px] text-teal-600">1번↔2번차트 쌍방연동</span>
+                  {/* T-20260622-foot-CHART2-UICLEAN-4FIX 요청7: 검사결과 탭 상단 차트연동 안내문구 제거 */}
                 </div>
                 <CustomerStorageImageSection
                   customerId={customer.id}
