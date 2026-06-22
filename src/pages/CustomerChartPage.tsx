@@ -95,6 +95,38 @@ interface NotificationLog {
   error_message: string | null;
 }
 
+// T-20260622-foot-CHART2-STAYMSG-TAB-LAYOUT 요청10-2: 발송 실패 에러 한글화.
+//   notification_logs.error_message 는 send-notification Edge Fn 이 적재하는 자유문자열
+//   (영문 사유 문구 또는 source 프리픽스 + Solapi errorMessage). 서버 응답값은 불변,
+//   클라이언트 표시 시점에만 한글로 매핑한다(표시 전용 매핑 테이블).
+//   미정의 코드는 "발송 실패(원본코드)" fallback 으로 원본을 괄호 병기.
+const NOTI_ERROR_KO_MAP: { match: RegExp; ko: string }[] = [
+  { match: /messaging disabled/i,                 ko: '메시지 발송 기능 꺼짐' },
+  { match: /no recipient phone|no recipient/i,    ko: '수신 번호 없음' },
+  { match: /sms_opt_in\s*=\s*false/i,             ko: '문자 수신 미동의' },
+  { match: /opt_?out/i,                           ko: '수신거부 고객' },
+  { match: /no template( found)?/i,               ko: '메시지 템플릿 없음' },
+  { match: /vault or sender not configured/i,     ko: '발신 설정 미완료' },
+  { match: /vault secret missing/i,               ko: '발신 인증정보 누락' },
+  { match: /outside business hours/i,             ko: '영업시간 외 발송 제한' },
+  { match: /화이트리스트 미등록|whitelist/i,        ko: '발신번호 미등록(승인 필요)' },
+  { match: /invalid (phone|number)/i,             ko: '잘못된 수신 번호' },
+  { match: /insufficient|not enough balance/i,    ko: '발송 잔액 부족' },
+  { match: /blocked( number)?/i,                  ko: '발송 차단 번호' },
+];
+
+/** 발송 실패 에러 원본 → 한글 표시 문구. 미정의 시 "발송 실패(원본)" fallback. */
+function koNotiError(raw: string | null | undefined): string | null {
+  if (!raw || !raw.trim()) return null;
+  const text = raw.trim();
+  // source 프리픽스("resv_confirm: opt_out") 제거 후 본문도 함께 매칭
+  const body = text.includes(':') ? (text.split(':').slice(1).join(':').trim() || text) : text;
+  for (const { match, ko } of NOTI_ERROR_KO_MAP) {
+    if (match.test(text) || match.test(body)) return ko;
+  }
+  return `발송 실패(${text})`;
+}
+
 interface Payment {
   id: string;
   check_in_id: string | null;
@@ -7240,6 +7272,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <div className="text-[11px] text-muted-foreground">
                       방문건별 각 슬롯(상담실·치료실 등)에 머문 시간입니다. 슬롯 이동 시각(전이 로그) 기준 산출.
                     </div>
+                    {/* T-20260622 요청9: 일자별 카드를 한 행 2개 그리드 배치(홀수면 마지막 칸 빈칸·좌측정렬·정렬순서 유지) */}
+                    <div className="grid grid-cols-2 gap-3 items-start" data-testid="slot-dwell-grid">
                     {visits.map((ci) => {
                       const segs = (byCheckIn.get(ci.id) ?? []).slice().sort((a, b) => a.seq - b.seq);
                       // T-20260603-foot-SLOT-DWELL-LIVE-TICK: 진행중(is_current) 세그먼트는 now 기준 라이브 경과,
@@ -7304,15 +7338,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </div>
                       );
                     })}
+                    </div>{/* /slot-dwell-grid */}
                   </div>
                 );
               })()}
 
               {/* History: 메시지 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-5) */}
               {chartTabGroup === 'history' && chartTab === 'messages' && (
-            <div className="space-y-3">
+            <div className="space-y-2">{/* T-20260622 요청10-1: 발송이력 탭 컴팩트화(섹션 간격 축소) */}
               {/* 메시지 수동 입력 */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
+              <div className="rounded-lg border bg-white p-2.5 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-slate-500" />
                   문자 이력 등록
@@ -7367,7 +7402,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </div>
 
               {/* T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs) */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
+              <div className="rounded-lg border bg-white p-2.5 text-xs">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-1.5 font-semibold text-teal-700">
                     <MessageSquare className="h-3.5 w-3.5" />
@@ -7390,7 +7425,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     자동 SMS 발송 이력 없음
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">{/* T-20260622 요청10-1: 항목 간격 컴팩트화 */}
                     {notificationLogs.map((log) => {
                       const statusColor =
                         log.status === 'sent' ? 'text-teal-700 bg-teal-50 border-teal-200' :
@@ -7413,9 +7448,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         pending:  '대기',
                         cancelled:'취소',
                       };
+                      // T-20260622 요청10-2: 발송 실패/미발송 사유 한글화(표시 전용). 성공(sent)은 사유 미표시.
+                      const koErr = log.status === 'sent' ? null : koNotiError(log.error_message);
                       return (
-                        <div key={log.id} className="rounded border border-gray-100 bg-gray-50 px-2.5 py-2 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
+                        <div key={log.id} data-testid="noti-log-item" className="rounded border border-gray-100 bg-gray-50 px-2 py-1.5 space-y-0.5">
+                          {/* T-20260622 요청10-3: 실패 사유를 항목 헤더에 인라인 표기(별도 줄 제거) */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-medium text-foreground">
                               {eventLabel[log.event_type] || log.event_type}
                             </span>
@@ -7425,17 +7463,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${statusColor}`}>
                               {statusLabel[log.status] || log.status}
                             </span>
+                            {koErr && (
+                              <span data-testid="noti-log-error" className="text-[10px] text-red-600 font-medium">
+                                {koErr}
+                              </span>
+                            )}
                             <span className="ml-auto tabular-nums text-[10px] text-muted-foreground/70">
                               {format(new Date(log.sent_at || log.created_at), 'MM-dd HH:mm')}
                             </span>
                           </div>
                           {log.body_rendered && (
-                            <p className="text-[11px] text-gray-700 bg-white/70 rounded p-1.5 whitespace-pre-wrap leading-snug border border-gray-100">
+                            <p className="text-[11px] text-gray-700 bg-white/70 rounded p-1 whitespace-pre-wrap leading-snug border border-gray-100">
                               {log.body_rendered}
                             </p>
-                          )}
-                          {log.error_message && (
-                            <p className="text-[10px] text-red-500">{log.error_message}</p>
                           )}
                         </div>
                       );
@@ -7444,21 +7484,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 )}
               </div>
 
-              {/* 메시지 이력 목록 (수동 기록) */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
+              {/* 메시지 이력 목록 (수동 기록) — T-20260622 요청10-1 컴팩트화 */}
+              <div className="rounded-lg border bg-white p-2.5 text-xs">
                 <div className="flex items-center gap-1.5 font-semibold text-muted-foreground mb-2">
                   <MessageSquare className="h-3.5 w-3.5" />
                   수동 문자 기록
                 </div>
                 {messageLogs.length === 0 ? (
-                  <div className="py-4 text-center text-muted-foreground border border-dashed rounded">
+                  <div className="py-3 text-center text-muted-foreground border border-dashed rounded text-[11px]">
                     문자 발송 이력 없음
                   </div>
                 ) : (
                   <div className="space-y-1">
                     {messageLogs.map((msg) => (
-                      <div key={msg.id} className="rounded border border-gray-100 bg-gray-50 px-2.5 py-2 space-y-0.5">
-                        <div className="flex items-center gap-2">
+                      <div key={msg.id} data-testid="msg-log-item" className="rounded border border-gray-100 bg-gray-50 px-2 py-1.5 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="tabular-nums text-muted-foreground">
                             {format(new Date(msg.sent_at), 'MM-dd HH:mm')}
                           </span>
