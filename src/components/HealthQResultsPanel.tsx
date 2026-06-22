@@ -29,25 +29,6 @@ export interface HQResult {
   created_at:   string;
 }
 
-// T-20260603-foot-CHART2-QR-REOPEN: 이미 발급된 셀프접수(health-q) 토큰 재조회용
-interface HQTokenRow {
-  token:      string;
-  form_type:  string;
-  used_at:    string | null;
-  expires_at: string;
-  created_at: string;
-}
-
-type ReopenStatus = 'active' | 'used' | 'expired' | 'none';
-
-/** 토큰 행 → 재표시 상태 판정 (클라이언트 read-only, mutating 없음) */
-function tokenStatus(tok: HQTokenRow | null): ReopenStatus {
-  if (!tok) return 'none';
-  if (tok.used_at) return 'used';
-  if (new Date(tok.expires_at).getTime() < Date.now()) return 'expired';
-  return 'active';
-}
-
 interface Props {
   customerId: string;
   clinicId:   string;
@@ -202,10 +183,6 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
   const [formType,     setFormType]     = useState<'general' | 'senior'>('general');
   // T-20260603-foot-HEALTHQ-SELFLINK-QR-VIEW: 발급된 링크 QR 모달 (데스크 즉시 응대)
   const [qrOpen,       setQrOpen]       = useState(false);
-  // T-20260603-foot-CHART2-QR-REOPEN: 이미 발급된 셀프접수 QR 다시보기 (재발급 없이 재표시)
-  const [reopenTok,    setReopenTok]    = useState<HQTokenRow | null>(null);
-  const [reopenLoading,setReopenLoading]= useState(true);
-  const [reopenQrOpen, setReopenQrOpen] = useState(false);
 
   // ── 결과 로드 ──────────────────────────────────────────────────────────────
   const loadResults = useCallback(async () => {
@@ -222,24 +199,6 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
   }, [customerId, clinicId]);
 
   useEffect(() => { loadResults(); }, [loadResults]);
-
-  // ── 기존 발급 토큰 로드 (셀프접수 QR 다시보기) ──────────────────────────────
-  // read-only: health_q_tokens 는 직원 clinic SELECT RLS 보유. 가장 최근 1건만 조회.
-  const loadReopenToken = useCallback(async () => {
-    setReopenLoading(true);
-    const { data, error } = await supabase
-      .from('health_q_tokens')
-      .select('token, form_type, used_at, expires_at, created_at')
-      .eq('customer_id', customerId)
-      .eq('clinic_id', clinicId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    setReopenTok(!error && data ? (data as HQTokenRow) : null);
-    setReopenLoading(false);
-  }, [customerId, clinicId]);
-
-  useEffect(() => { loadReopenToken(); }, [loadReopenToken]);
 
   // ── 토큰 발급 ──────────────────────────────────────────────────────────────
   const handleCreateToken = useCallback(async () => {
@@ -258,14 +217,12 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
       if (!res.success) throw new Error(res.error ?? '토큰 생성 실패');
       const url = `${window.location.origin}/health-q/${res.token}`;
       setGeneratedUrl(url);
-      // 방금 발급한 토큰이 '다시보기' 섹션에도 활성 상태로 반영되도록 갱신
-      loadReopenToken();
     } catch (e) {
       toast.error(`링크 생성 실패: ${(e as Error).message}`);
     } finally {
       setTokenLoading(false);
     }
-  }, [customerId, clinicId, formType, checkInId, loadReopenToken]);
+  }, [customerId, clinicId, formType, checkInId]);
 
   const handleCopy = useCallback(async () => {
     if (!generatedUrl) return;
@@ -286,11 +243,11 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { loadResults(); loadReopenToken(); }}
-          disabled={loading || reopenLoading}
+          onClick={() => { loadResults(); }}
+          disabled={loading}
           className="h-7 px-2"
         >
-          <RefreshCw className={cn('h-3.5 w-3.5', (loading || reopenLoading) && 'animate-spin')} />
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
         </Button>
       </div>
 
@@ -350,74 +307,15 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
         )}
       </div>
 
-      {/* ── 셀프접수 QR 다시보기 (T-20260603-foot-CHART2-QR-REOPEN) ─────────────── */}
-      {/* 이미 발급된 토큰을 재발급 없이 데스크 화면에서 다시 표시. read-only 3분기. */}
-      {!reopenLoading && (() => {
-        const status = tokenStatus(reopenTok);
-        return (
-          <div
-            className="rounded-xl border border-teal-100 bg-white p-3 space-y-2"
-            data-testid="healthq-reopen-section"
-            data-reopen-status={status}
-          >
-            <p className="text-xs font-medium text-teal-700">셀프접수 QR 다시보기</p>
-
-            {/* 분기 1: 활성 토큰 → QR 재렌더 버튼 */}
-            {status === 'active' && reopenTok && (
-              <div className="space-y-2">
-                <p className="text-[11px] text-gray-500">
-                  발급된 QR이 아직 유효합니다. 고객이 QR을 놓쳤다면 데스크 화면에서 다시 보여주세요.
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setReopenQrOpen(true)}
-                  className="gap-1.5 h-8 px-3 text-xs border-teal-300"
-                  data-testid="healthq-reopen-qr-btn"
-                >
-                  <QrCode className="h-3.5 w-3.5" />
-                  QR 다시보기
-                </Button>
-              </div>
-            )}
-
-            {/* 분기 2: 이미 사용(작성 완료) */}
-            {status === 'used' && (
-              <p className="text-[11px] text-gray-500" data-testid="healthq-reopen-status">
-                이미 작성 완료된 QR입니다. (재작성이 필요하면 위 ‘링크 생성’으로 새 QR을 발급하세요.)
-              </p>
-            )}
-
-            {/* 분기 3: 만료 또는 미발급 → 안내만 (재발급은 기존 ‘링크 생성’ 컨트롤) */}
-            {(status === 'expired' || status === 'none') && (
-              <p className="text-[11px] text-gray-500" data-testid="healthq-reopen-status">
-                {status === 'expired'
-                  ? 'QR이 만료되었습니다 — 위 ‘링크 생성’으로 재발급하세요.'
-                  : '발급된 QR이 없습니다 — 위 ‘링크 생성’으로 발급하세요.'}
-              </p>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* QR 모달 — 공통 QrViewModal 재사용 (CHART2-QR-REOPEN 과 동일 컴포넌트) */}
+      {/* QR 모달 — 공통 QrViewModal 재사용 */}
+      {/* T-20260622-foot-CHART2-UICLEAN-4FIX 요청5: 하단 QR 재표시 섹션 + 그 모달 제거
+          (상단 진입 버튼과 중복). QR 진입점은 상단 1개만 유지. */}
       {generatedUrl && (
         <QrViewModal
           open={qrOpen}
           onOpenChange={setQrOpen}
           url={generatedUrl}
           title="발건강질문지 자가작성 링크"
-          caption="고객 휴대폰으로 이 QR을 스캔하면 자가작성 화면이 열립니다."
-        />
-      )}
-
-      {/* 다시보기 QR 모달 — 기존 활성 토큰을 재발급 없이 클라이언트 재렌더 */}
-      {tokenStatus(reopenTok) === 'active' && reopenTok && (
-        <QrViewModal
-          open={reopenQrOpen}
-          onOpenChange={setReopenQrOpen}
-          url={`${window.location.origin}/health-q/${reopenTok.token}`}
-          title="셀프접수 QR (다시보기)"
           caption="고객 휴대폰으로 이 QR을 스캔하면 자가작성 화면이 열립니다."
         />
       )}

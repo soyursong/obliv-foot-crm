@@ -11,6 +11,12 @@ interface ReservationAuditLogPanelProps {
   reservationId: string | null | undefined;
   /** compact=true 면 최대 3건만 표시 후 "…N건 더 있음" */
   compact?: boolean;
+  /**
+   * T-20260622-foot-CHART2-UICLEAN-4FIX 요청8a: hideWhenEmpty=true 면 변경 이력 0건일 때
+   * 칸 자체를 숨김(null 반환). 미설정 시 기존대로 "변경 이력이 없습니다" 표시.
+   * (단일 공유 컴포넌트 유지 — 화면별 분리 구현 아님)
+   */
+  hideWhenEmpty?: boolean;
 }
 
 /**
@@ -24,10 +30,13 @@ interface ReservationAuditLogPanelProps {
 export function ReservationAuditLogPanel({
   reservationId,
   compact = false,
+  hideWhenEmpty = false,
 }: ReservationAuditLogPanelProps) {
   const { logs, loading } = useReservationAuditLog(reservationId);
 
   if (loading) {
+    // T-20260622-foot-CHART2-UICLEAN-4FIX 요청8a: hideWhenEmpty 모드는 로딩 중에도 칸을 차지하지 않음.
+    if (hideWhenEmpty) return null;
     return (
       <div className="text-[10px] text-muted-foreground py-0.5">이력 조회 중…</div>
     );
@@ -36,6 +45,8 @@ export function ReservationAuditLogPanel({
   const displayLogs = compact ? logs.slice(0, 3) : logs;
 
   if (displayLogs.length === 0) {
+    // T-20260622-foot-CHART2-UICLEAN-4FIX 요청8a: 이력 없으면 칸 숨김(이력 ≥1건일 때만 표시).
+    if (hideWhenEmpty) return null;
     return (
       <div className="text-[10px] text-muted-foreground italic">
         변경 이력이 없습니다
