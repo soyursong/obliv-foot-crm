@@ -50,6 +50,7 @@ import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean } from
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
 import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
+import { useNhisLookup } from '@/hooks/useNhisLookup';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
@@ -2504,6 +2505,52 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [chartTabGroup, setChartTabGroup] = useState<'clinical' | 'history'>('clinical');
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
+
+  // ── T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE ──────────────────────────
+  // 건강보험 조회 3구역 정리: 자격조회 trigger 를 1구역(좌측 '건보 조회')으로 일원화하고,
+  // 2구역(NhisLookupPanel)은 동일 controller 의 결과만 표시(결과뷰, A안).
+  // 조회 성공 → 등급 갱신 → insuranceGradeRefreshKey++ → 3구역(Chart2InsuranceCalcPanel) 자동산정 연쇄.
+  // 셀프접수 동의(또는 차트 동의 토글)로 hira_consent=true 가 되면 자동 트리거(scaffold).
+  const nhisOnGradeUpdated = useCallback(() => {
+    // 조회 결과 반영된 customers 최신값 재조회 → 로컬 상태 갱신
+    setCustomer((prev) => {
+      if (!prev) return prev;
+      supabase
+        .from('customers')
+        .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
+        .eq('id', prev.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setCustomer((p) => (p ? { ...p, ...data } : p));
+        });
+      return prev;
+    });
+    // 3구역 자동산정 연쇄 트리거 (트리거 소스 1구역으로 전환돼도 끊김 0)
+    setInsuranceGradeRefreshKey((k) => k + 1);
+  }, []);
+
+  const nhis = useNhisLookup(
+    customer?.id ?? '',
+    customer?.clinic_id ?? '',
+    customer?.hira_consent ?? false,
+    { onGradeUpdated: nhisOnGradeUpdated },
+  );
+  const { performLookup: nhisPerformLookup } = nhis;
+
+  // 셀프접수 동의 → 자격조회 자동 트리거 (scaffold).
+  //  - 셀프접수에서 hira_consent=true 로 저장된 고객 차트 진입 시 1회 자동 조회.
+  //  - 차트에서 '건강보험조회' 동의를 켜는 순간(saveCustomerField 가 로컬 상태 갱신)에도 본 effect 가 재발화.
+  //  - API 미연동 현행: graceful(미연동 안내) 표시. silent 로 토스트 억제.
+  //  - API 연동 완료 시: 동의 즉시 실제 자격조회가 자동 실행되는 연결 지점이 됨.
+  const hiraAutoTriggeredRef = useRef<string | null>(null);
+  useEffect(() => {
+    const cid = customer?.id;
+    if (!cid) return;
+    if (!(customer?.hira_consent ?? false)) return;        // 미동의면 트리거 안 함
+    if (hiraAutoTriggeredRef.current === cid) return;       // 고객당 1회만
+    hiraAutoTriggeredRef.current = cid;
+    void nhisPerformLookup(false, { silent: true });
+  }, [customer?.id, customer?.hira_consent, nhisPerformLookup]);
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingAddress 제거 — 항상 활성화
   const [addressText, setAddressText] = useState('');
@@ -5056,24 +5103,33 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
                 {/* ②-b 건강보험 조회 — C2-HIRA-CONSENT.
                     T-20260609-foot-CHART-CONSENT-ALIGN-SMS AC-3: 동의 Y/N 토글은 위 '개인정보 동의' 섹션(건강보험조회)으로 통합(SSOT 단일화).
-                    이 행은 NHIS 조회 버튼만 유지(이중 노출 방지). 조회 버튼은 hira_consent=true일 때만 활성. */}
+                    T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE: 1구역 = 자격조회 단일 진입점.
+                      '조회' 버튼 클릭 = 2구역과 동일한 실시간 자격조회 로직(nhis.performLookup) 실행.
+                      결과는 2구역(NhisLookupPanel) 에 표시. API 미연동 현행: 미연동 안내 + 외부링크(2구역).
+                      API 연동 완료 시 동일 진입점에서 자동 조회되도록 연결(훅). */}
                 <tr>
                   <td className={LC}>건보 조회</td>
                   <td className={VC} colSpan={3}>
                     <div className="flex items-center gap-3">
-                      {/* 조회 버튼 — 건강보험조회 동의(hira_consent) Y일 때만 활성 */}
+                      {/* 조회 버튼 — 건강보험조회 동의(hira_consent) Y일 때만 활성. 클릭 시 실시간 자격조회 트리거 */}
                       <button
                         type="button"
-                        onClick={() => window.open('https://medicare.nhis.or.kr/portal/refer/selectReferInq.do', '_blank')}
-                        disabled={!(customer.hira_consent ?? false)}
+                        onClick={() => { void nhisPerformLookup(false); }}
+                        disabled={!(customer.hira_consent ?? false) || nhis.loading}
+                        title={
+                          !(customer.hira_consent ?? false)
+                            ? '건강보험조회 동의(Y) 후 조회할 수 있습니다'
+                            : '건보공단 실시간 자격조회 (결과는 우측 자격등급 패널에 표시)'
+                        }
                         className={cn(
                           'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
                           customer.hira_consent
                             ? 'border-slate-400 bg-slate-50 text-slate-700 hover:bg-slate-100 cursor-pointer'
                             : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
+                          nhis.loading && 'opacity-60 cursor-wait',
                         )}
                       >
-                        조회
+                        {nhis.loading ? '조회 중…' : '조회'}
                       </button>
                       {customer.hira_consent && customer.hira_consent_at && (
                         <span className="text-[10px] text-teal-600">
@@ -7560,22 +7616,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </a>
               </div>
             </div>
-            {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 Native API 자격조회 */}
+            {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 Native API 자격조회 (2구역)
+                T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (A안): 트리거 버튼 제거(hideTrigger),
+                  결과뷰만 유지. 자격조회 트리거는 1구역으로 일원화 — 동일 controller(nhis) 공유. */}
             <NhisLookupPanel
               customerId={customer.id}
               clinicId={customer.clinic_id}
               hiraConsent={customer.hira_consent ?? false}
-              onGradeUpdated={() => {
-                supabase
-                  .from('customers')
-                  .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
-                  .eq('id', customer.id)
-                  .maybeSingle()
-                  .then(({ data }) => {
-                    if (data) setCustomer((prev) => prev ? { ...prev, ...data } : prev);
-                  });
-                setInsuranceGradeRefreshKey((k) => k + 1);
-              }}
+              controller={nhis}
+              hideTrigger
             />
             <InsuranceGradeSelect
               customerId={customer.id}
