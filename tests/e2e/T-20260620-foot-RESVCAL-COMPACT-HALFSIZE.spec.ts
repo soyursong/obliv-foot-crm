@@ -43,18 +43,21 @@ test.describe('T-20260620-foot-RESVCAL-COMPACT-HALFSIZE — 시나리오1 압축
       test.skip(true, '타임테이블 미렌더(clinic/영업시간 미확정)');
     }
 
-    // (a) AC-1 증거: 시간축 body 셀 폰트 = 10px (1차 text-[11px]=11px → 2차 text-[10px]=10px)
+    // (a) 시간축 body 셀 폰트 — 압축 대상이나 헤더보다 작음(본문만 압축).
+    //     ⚠ T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP 정정: HALFSIZE의 9~10px 과압축이
+    //        "내용이 사라졌다"는 현장 체감을 유발 → 폰트는 11~12px(읽히는 최소)로 복원하고
+    //        밀도는 padding/height로 달성. 따라서 본 가드는 '≤10px'가 아니라 '헤더보다 작음(≤13)'으로 완화.
     const bodyTimeFs = await fontSizePx(page, 'resv-time-col-cell');
     expect(bodyTimeFs).not.toBeNull();
-    expect(bodyTimeFs!).toBeLessThanOrEqual(10);
+    expect(bodyTimeFs!).toBeLessThanOrEqual(13);
 
-    // (b) AC-1 증거: 예약 박스(카드) 폰트 = 10px(2차 압축). 데이터 의존 → 카드 부재 시 skip-soft.
+    // (b) 예약 박스(카드) 폰트 — CONTENT-KEEP 정정 후 읽히는 최소(≥11px). 데이터 의존 → 카드 부재 시 skip-soft.
     const card = page.locator('[data-testid^="resv-card-"]').first();
     if (await card.count()) {
       const cardFs = await card.evaluate((n) => getComputedStyle(n as Element).fontSize);
       const m = /([\d.]+)px/.exec(cardFs);
       expect(m).not.toBeNull();
-      expect(Math.round(parseFloat(m![1]))).toBeLessThanOrEqual(10);
+      expect(Math.round(parseFloat(m![1]))).toBeGreaterThanOrEqual(11);
     }
 
     // 슬롯 row 자체는 존재(타임테이블 렌더)

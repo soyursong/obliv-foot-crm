@@ -1619,7 +1619,8 @@ export default function Reservations() {
                         data-testid="resv-time-col-cell"
                         // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 압축 — 시간축 셀 패딩/폰트 축소(py-1.5→py-0.5, text-xs→text-[11px]). 헤더(thead)는 미변경.
                         // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 2차 절반 압축 — 시간축 셀 폰트/패딩 추가 축소(py-0.5→py-0, text-[11px]→text-[10px]). thead 헤더(AC-2)는 미변경.
-                className="w-20 border-b border-r py-0 text-center text-[10px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
+                        // T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-2: 가독성 복원 — 시간축 라벨 폰트 text-[10px]→text-[11px](밀도는 py-0 유지). 압축은 패딩/높이로, 폰트는 읽히는 최소(11~12px).
+                className="w-20 border-b border-r py-0 text-center text-[11px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
                         {/* T-20260620-foot-RESVCAL-HOURLY-GROUPING: 시간축 라벨 = 정시(HH:00). 반시(HH:30)는 이 그룹에 흡수. */}
                         <div>{bucket.label}</div>
@@ -1788,7 +1789,7 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
-                                      'w-full overflow-hidden rounded border px-1 py-0 text-[10px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축 — 카드 padding/폰트 추가 축소(px-1.5 py-0.5→px-1 py-0, text-[11px]→text-[10px], rounded-md→rounded). 정보 항목 전부 유지(밀도만 압축, ellipsis 허용)
+                                      'w-full overflow-hidden rounded border px-1 py-0 text-[11px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축(text-[11px]→text-[10px]) / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-1·AC-2: 가독성 복원 — 카드 본문 폰트 text-[10px]→text-[11px](읽히는 최소). 정보항목 전부 유지(삭제 0), 압축은 padding(px-1 py-0)·leading-tight·셀높이로만 달성, 넘치면 ellipsis
 
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
@@ -1863,7 +1864,7 @@ export default function Reservations() {
                                         return (
                                           <>
                                             <span
-                                              className="text-[9px] font-mono tabular-nums text-gray-400 leading-none"
+                                              className="text-[10px] font-mono tabular-nums text-gray-400 leading-none"
                                               data-testid={`cycle-count-${r.id}`}
                                               title={`누적 완료 ${completed}회 · 이번 예약 ${nextCycle}회차`}
                                             >
@@ -1900,7 +1901,7 @@ export default function Reservations() {
                                       })()}
                                     </div>
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
-                                    <div className="flex min-w-0 items-center gap-0.5 overflow-hidden text-[9px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: text-[10px]→text-[9px], gap-1→gap-0.5 */}
+                                    <div className="flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: text-[10px]→text-[9px] / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-2: 가독성 복원 text-[9px]→text-[10px] (방문유형·상태·전화뒷4자리 전부 유지) */}
                                       {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',
@@ -1916,7 +1917,7 @@ export default function Reservations() {
                                     {/* T-20260515-foot-INLINE-RESV AC-4: 예약메모 한눈에 표시 */}
                                     {r.booking_memo && (
                                       <div
-                                        className="truncate text-[9px] text-amber-600"
+                                        className="truncate text-[10px] text-amber-600"
                                         title={r.booking_memo}
                                       >
                                         📝 {r.booking_memo}
@@ -1932,7 +1933,7 @@ export default function Reservations() {
                                         className={cn(
                                           'inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1 font-medium text-teal-800 leading-none py-0.5 mt-0.5',
                                           // 경과분석 뷰에서는 회차를 더 또렷하게(약간 큰 글자 + 굵게)
-                                          filterProgress ? 'text-[10px] font-semibold' : 'text-[9px]',
+                                          filterProgress ? 'text-[10px] font-semibold' : 'text-[10px]',
                                         )}
                                         data-testid={`progress-badge-${r.id}`}
                                         title={`${r.progress_check_label ?? '경과분석'} — 경과분석 체크포인트`}
@@ -1946,7 +1947,7 @@ export default function Reservations() {
                                         재진=차트 담당자 자동연동 / 첫방문(assigned_staff_id NULL)=미렌더(공란, AC2). 결손 안전(AC4). */}
                                     {r.customer_id && resvAssignedStaffMap.get(r.customer_id) && (
                                       <div
-                                        className="truncate text-right text-[9px] text-teal-700 leading-none mt-0.5"
+                                        className="truncate text-right text-[10px] text-teal-700 leading-none mt-0.5"
                                         data-testid={`assigned-staff-tag-${r.id}`}
                                         title={`담당자 ${resvAssignedStaffMap.get(r.customer_id)}`}
                                       >
@@ -1957,7 +1958,7 @@ export default function Reservations() {
                                         정상·취소됨 박스 모두 적용. 미지정 시 빈칸(미렌더, 에러 없음). */}
                                     {r.registrar_name && (
                                       <div
-                                        className="truncate text-right text-[9px] text-muted-foreground leading-none mt-0.5"
+                                        className="truncate text-right text-[10px] text-muted-foreground leading-none mt-0.5"
                                         data-testid={`registrar-tag-${r.id}`}
                                         title={`예약등록자 ${r.registrar_name}`}
                                       >
