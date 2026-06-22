@@ -34,9 +34,8 @@ import { cn } from '@/lib/utils';
 // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER: resvKind 단일 소스화(중복 구현 금지).
 //   기존 로컬 resvKind 정의 → 공유 lib(resvSlotAgg)로 이관. 예약상세팝업 시간대 패널과 동일 분류규칙 공유.
 import { resvKind, type ResvKind } from '@/lib/resvSlotAgg';
-// T-20260620-foot-RESVCAL-HOURLY-GROUPING: 캘린더 시간축 정시(HH:00) 그룹핑 — 표시 레이어 전용.
-//   30분 라인 제거 + 반시(HH:30) 예약을 정시 그룹에 흡수. 데이터/입력 슬롯 로직 무변경.
-import { buildHourBuckets } from '@/lib/resvHourBucket';
+// T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 그룹핑 REVERT(예약관리 캘린더는 30분 슬롯 복원).
+//   buildHourBuckets import 제거 — gridSlots(30분) 직접 사용으로 환원.
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
@@ -434,16 +433,14 @@ export default function Reservations() {
     [clinic, viewMode, selectedDay],
   );
 
-  // T-20260620-foot-RESVCAL-HOURLY-GROUPING: 정시(HH) 그룹 — tbody 행 = 정시 1행(반시 흡수).
-  //   gridSlots(30분 단위) 위에 표시 레이어로만 얹는 그룹핑. 데이터/입력 슬롯(gridSlots) 자체는 불변.
-  const hourBuckets = useMemo(() => buildHourBuckets(gridSlots), [gridSlots]);
-
   // 현재 시각 슬롯 ('HH:mm', slot_interval 단위 내림) — 행 ref 타깃 키
+  // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 버킷(hourBuckets/currentHourKey) 제거 →
+  //   예약관리 캘린더는 30분 단위 슬롯(gridSlots) 행으로 복원. (총괄: 정시 묶기는 진료대시보드 한정.)
   const currentH = now.getHours();
   const currentM = now.getMinutes();
-  // T-20260620-foot-RESVCAL-HOURLY-GROUPING: 정시 그룹 행 ref 타깃 = 현재 정시('HH').
-  //   (그룹핑 이전 slot_interval 내림 currentSlot 은 정시 행 매칭으로 대체 — 행이 정시 단위라 분 내림 불필요.)
-  const currentHourKey = String(currentH).padStart(2, '0');
+  const slotInterval = clinic?.slot_interval ?? 30;
+  const flooredM = Math.floor(currentM / slotInterval) * slotInterval;
+  const currentSlot = `${String(currentH).padStart(2, '0')}:${String(flooredM).padStart(2, '0')}`;
 
   // AC-5: 오늘이 현재 뷰에 보일 때만 자동 스크롤 (day=선택일이 오늘 / week=이번 주가 오늘 포함)
   const isTodayInView =
@@ -1602,17 +1599,16 @@ export default function Reservations() {
               {clinic &&
                 /* T-20260609-foot-RESV-LIVE-AUTOSCROLL: 인라인 generateSlots → gridSlots 단일 소스 사용
                    (day view: 선택일 close_time / week view: clinic.close_time = 평일 최대, 토요일 열은 allowed=false로 그레이아웃)
-                   T-20260620-foot-RESVCAL-HOURLY-GROUPING: tbody 행 = 정시(HH) 그룹(반시 흡수). gridSlots(30분) → hourBuckets.
-                   각 행은 해당 정시의 member 슬롯(HH:00·HH:30) 예약을 한 칸에 쌓아 표시 → 세로길이 최소화. 데이터 불변. */
-                hourBuckets.map(
-                  (bucket) => (
+                   T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 버킷 REVERT — tbody 행 = 30분 단위 슬롯(gridSlots).
+                   10:30 등 반시 예약은 다시 독립 행에 표시(정시 흡수 철회). 컴팩트 압축(COMPACT-HALFSIZE/CONTENT-KEEP className)은 그대로 유지. */
+                gridSlots.map(
+                  (time) => (
                     <tr
-                      key={bucket.hour}
+                      key={time}
                       // T-20260609-foot-RESV-LIVE-AUTOSCROLL: 현재 슬롯 행 ref + 클램핑 폴백용 testid
-                      // T-20260620-foot-RESVCAL-HOURLY-GROUPING: 현재 정시 그룹 행에 ref 부착(HH 일치).
-                      ref={bucket.hour === currentHourKey ? currentSlotRef : undefined}
+                      ref={time === currentSlot ? currentSlotRef : undefined}
                       data-testid="resv-slot-row"
-                      data-slot-time={bucket.label}
+                      data-slot-time={time}
                     >
                       {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 */}
                       <td
@@ -1622,51 +1618,35 @@ export default function Reservations() {
                         // T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-2: 가독성 복원 — 시간축 라벨 폰트 text-[10px]→text-[11px](밀도는 py-0 유지). 압축은 패딩/높이로, 폰트는 읽히는 최소(11~12px).
                 className="w-20 border-b border-r py-0 text-center text-[11px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
-                        {/* T-20260620-foot-RESVCAL-HOURLY-GROUPING: 시간축 라벨 = 정시(HH:00). 반시(HH:30)는 이 그룹에 흡수. */}
-                        <div>{bucket.label}</div>
+                        {/* T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: 시간축 라벨 = 30분 단위 슬롯(HH:00·HH:30). 정시 그룹 라벨(bucket.label) 철회. */}
+                        <div>{time}</div>
                         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 MSG-...gkj2 옵션2 '일자×시간 매트릭스'):
                             좌측 시간축의 '보이는 날짜 전체 합산'(5FIX AC2/a921cef per-time sum) supersede 확정 →
                             건수 분포를 각 (날짜×시간) 셀에 per-cell 표기로 이동(아래 cell-kind-count-*). 시간축 라벨은 시간만. */}
                       </td>
                       {(viewMode === 'week' ? weekDays : [selectedDay]).map((d) => {
+                        // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: 30분 슬롯 단위 셀 — 정시 그룹(memberSlots/primarySlot/bucketMax) 철회.
+                        //   각 셀 = 단일 30분 슬롯(time). 예약 입력/이동/클립보드/full/정원은 모두 이 슬롯(time) 기준.
+                        const allowed = slotsFor(d).includes(time);
                         const dateStr = format(d, 'yyyy-MM-dd');
-                        // T-20260620-foot-RESVCAL-HOURLY-GROUPING: 표시 토큰(data-slot-time/testid)·display 라벨 전용 = 정시(HH:00).
-                        //   ⚠ 실제 예약 입력/저장 시각은 항상 member 슬롯(아래 primarySlot/memberSlots) 사용 — slot 로직 불변.
-                        const time = bucket.label;
-                        // 이 정시 그룹에 흡수되는 실제 슬롯들 중, 해당 요일 영업시간 내 슬롯만 = allowedSlots.
-                        const memberSlots = bucket.memberSlots;
-                        const allowedSlots = memberSlots.filter((s) => slotsFor(d).includes(s));
-                        const allowed = allowedSlots.length > 0;
-                        // T-20260620-foot-RESVCAL-HOURLY-GROUPING: 정시 그룹 = member 슬롯 예약을 합쳐 한 칸에 쌓음.
-                        //   정렬: 실제 시각 오름차순 → 동일 시각 내 초진→재진→힐러(KIND_ORDER). (예: 10:00초·10:00재·10:30초)
-                        //   예약 누락 0: 각 예약은 자신의 슬롯이 속한 정시 그룹에 정확히 1회 귀속.
-                        const list = memberSlots
-                          .flatMap((s) => resvByKey[`${dateStr}_${s}`] ?? [])
-                          .sort(
-                            (a, b) =>
-                              (a.reservation_time < b.reservation_time
-                                ? -1
-                                : a.reservation_time > b.reservation_time
-                                  ? 1
-                                  : 0) || KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)],
-                          );
-                        // 용량: member 슬롯별 slotMaxFor/활성건수 합산(slotMaxFor·slotActiveCount 자체는 불변, 호출만 합산).
-                        const bucketMax = memberSlots.reduce((acc, s) => acc + slotMaxFor(s), 0);
-                        const activeCount = memberSlots.reduce((acc, s) => acc + slotActiveCount(dateStr, s), 0);
-                        // 그룹 full = 영업 가능한 member 슬롯이 전부 마감(빈 슬롯이 하나라도 있으면 추가 예약 가능).
-                        const full = allowed && allowedSlots.every((s) => isSlotFull(dateStr, s));
-                        // 예약 입력/이동 대표 슬롯 = 영업 가능 member 중 첫 비마감 슬롯(없으면 첫 member). 실제 시각으로 저장.
-                        const primarySlot = allowedSlots.find((s) => !isSlotFull(dateStr, s)) ?? allowedSlots[0] ?? memberSlots[0];
-                        const cellKey = `${dateStr}_${bucket.hour}`;
+                        const key = `${dateStr}_${time}`;
+                        // T-20260611-foot-RESVCAL-DISPLAY-REWORK item6: 동일 시간대 정렬 초진→재진→힐러.
+                        //   Array.sort는 stable → 동일 유형 내 기존(시간) 순서 보존.
+                        const list = [...(resvByKey[key] ?? [])].sort(
+                          (a, b) => KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)],
+                        );
+                        const full = isSlotFull(dateStr, time);
+                        const activeCount = slotActiveCount(dateStr, time);
+                        const cellKey = `${dateStr}_${time}`;
                         const isDragOver = dropTarget === cellKey;
-                        // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 타겟 슬롯 하이라이트(정시 그룹 = 대표 슬롯 기준).
+                        // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 타겟 슬롯 하이라이트
                         const isClipboardTarget =
                           !!clipboard &&
                           clipboardTarget?.date === dateStr &&
-                          clipboardTarget?.time === primarySlot;
+                          clipboardTarget?.time === time;
                         return (
                           <td
-                            key={d.toISOString() + bucket.hour}
+                            key={d.toISOString() + time}
                             className={cn(
                               // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 높이/패딩 압축(h-12→h-8, p-1→p-0.5) — 절반 밀도, 한 화면 예약건 최대 노출.
                               // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 2차 절반 압축 — 빈 슬롯 최소높이 추가 축소(h-8→h-4, p-0.5→px-0.5 py-0) → 빈 행 32px→16px(~50%). 카드 있는 셀은 카드 높이로 자연 확장(align-top).
@@ -1679,7 +1659,7 @@ export default function Reservations() {
                             )}
                             onDragOver={(e) => { if (allowed) { e.preventDefault(); setDropTarget(cellKey); } }}
                             onDragLeave={() => setDropTarget(null)}
-                            onDrop={(e) => { if (allowed) handleDrop(e, dateStr, primarySlot); }}
+                            onDrop={(e) => { if (allowed) handleDrop(e, dateStr, time); }}
                             // T-20260615-foot-RESVPOPUP-3BUG AC3 (BUG-3): 빈 슬롯 우클릭 → (+) 버튼과 동일하게
                             //   예약상세 팝업 new-mode 오픈(openNewSlot). 기존엔 빈 슬롯에 우클릭 핸들러가 없어 (+) 경로와
                             //   동작 불일치(현장 질의 "두 진입경로가 왜 다름?"). 예약 카드 우클릭은 카드 자체 onContextMenu 가
@@ -1689,13 +1669,13 @@ export default function Reservations() {
                             onContextMenu={(e) => {
                               if (allowed && !filterProgress && !full && !clipboard) {
                                 e.preventDefault();
-                                openNewSlot(d, primarySlot);
+                                openNewSlot(d, time);
                               }
                             }}
                             onClick={() => {
                               // T-20260515-foot-RESV-BOX-INTERACT: AC-1 빈 영역 클릭 → 선택 해제
                               if (clipboard && allowed) {
-                                setClipboardTarget({ date: dateStr, time: primarySlot });
+                                setClipboardTarget({ date: dateStr, time });
                               } else if (!clipboard) {
                                 // 카드 클릭 미완료 타이머도 취소
                                 if (clickTimerRef.current) {
@@ -1714,7 +1694,7 @@ export default function Reservations() {
                                     이 셀(dateStr×time)의 활성(취소 제외) 예약을 초/재/HL 분류 집계 = "10시 2건" 식 시간대별 분포.
                                     집계 시맨틱(resvKind·cancelled 제외)은 제거된 시간축 합산과 동일 — 차원만 per-day로 분리. */}
                                 {(() => {
-                                  // T-20260620-foot-RESVCAL-HOURLY-GROUPING: per-cell 카운트 = 정시 그룹 합산(member 슬롯 union = list).
+                                  // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: per-cell 카운트 = 단일 30분 슬롯(time) 예약(list = resvByKey[key]).
                                   let n = 0, rr = 0, h = 0;
                                   for (const r of list) {
                                     if (r.status === 'cancelled') continue;
@@ -1979,11 +1959,11 @@ export default function Reservations() {
                                     data-testid={`slot-plus-${dateStr}-${time}`}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      // T-20260620-foot-RESVCAL-HOURLY-GROUPING: 정시 그룹 (+) → 대표 슬롯(첫 비마감 member)의 실제 시각으로 생성.
+                                      // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: 30분 슬롯 (+) → 해당 슬롯(time) 실제 시각으로 생성.
                                       if (clipboard) {
-                                        setClipboardTarget({ date: dateStr, time: primarySlot });
+                                        setClipboardTarget({ date: dateStr, time });
                                       } else {
-                                        openNewSlot(d, primarySlot);
+                                        openNewSlot(d, time);
                                       }
                                     }}
                                     className={cn(
@@ -2003,8 +1983,8 @@ export default function Reservations() {
                                     full ? 'text-red-500 font-medium' : 'text-muted-foreground',
                                   )}>
                                     {/* T-20260525-foot-TIMETABLE-POST16-SLOT: 16:00 이후 /10, 이전 /12
-                                        T-20260620-foot-RESVCAL-HOURLY-GROUPING: 정시 그룹 = member 슬롯 정원 합산(bucketMax). */}
-                                    {activeCount}/{bucketMax}
+                                        T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: 30분 슬롯 정원 = slotMaxFor(time)(정시 그룹 합산 bucketMax 철회). */}
+                                    {activeCount}/{slotMaxFor(time)}
                                   </span>
                                 )}
                               </div>
