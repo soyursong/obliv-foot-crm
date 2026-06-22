@@ -1,0 +1,43 @@
+/**
+ * T-20260620-foot-JUYEON-ACCOUNT-FULL-PERM — RESTORE (incident fix)
+ * 사고: 앞선 grant 스크립트의 .upsert() (INSERT..ON CONFLICT DO UPDATE SET role=EXCLUDED.role)가
+ *   user_profiles BEFORE-INSERT 기본값 트리거에 의해 EXCLUDED.role='staff'/approved=false 로 오염 →
+ *   juyeon(기존 admin) 이 staff/approved=false 로 강등됨.
+ * 복구: 순수 .update() (INSERT 경로 미경유 → BEFORE-INSERT 트리거 미발화, BEFORE-UPDATE self_guard는
+ *   service_role(auth.uid()=null) 에서 no-op) 로 role=admin/approved=true 직접 복원.
+ *
+ * 실행: DRY_RUN=false node scripts/..._restore.mjs
+ */
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
+const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const AUTH_ID = 'ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12';
+const DRY_RUN = process.env.DRY_RUN !== 'false';
+
+const svc = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+async function main() {
+  console.log(`=== JUYEON RESTORE → admin (DRY_RUN=${DRY_RUN}) ===`);
+  const { data: before } = await svc.from('user_profiles')
+    .select('id,email,name,role,approved,active,clinic_id').eq('id', AUTH_ID).single();
+  console.log('BEFORE:', JSON.stringify(before));
+
+  if (DRY_RUN) { console.log('[DRY_RUN] .update({role:admin, approved:true, active:true}) 예정. DRY_RUN=false 로 실행.'); return; }
+
+  const { error } = await svc.from('user_profiles')
+    .update({ role: 'admin', approved: true, active: true })
+    .eq('id', AUTH_ID);
+  if (error) { console.error('update error:', error.message); process.exit(1); }
+
+  const { data: after } = await svc.from('user_profiles')
+    .select('id,email,name,role,approved,active,clinic_id').eq('id', AUTH_ID).single();
+  console.log('AFTER :', JSON.stringify(after));
+  if (after.role === 'admin' && after.approved === true && after.active === true) {
+    console.log('\n✅ RESTORE OK — juyeon admin/approved/active 복원 완료.');
+  } else {
+    console.error('\n❌ RESTORE 실패 — 여전히 role=' + after.role + ' approved=' + after.approved + '. 트리거 추가 분석 필요.');
+    process.exit(3);
+  }
+}
+main().catch(e => { console.error(e); process.exit(1); });

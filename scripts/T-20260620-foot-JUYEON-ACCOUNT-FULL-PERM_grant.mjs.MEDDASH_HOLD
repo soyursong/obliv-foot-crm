@@ -1,0 +1,91 @@
+/**
+ * T-20260620-foot-JUYEON-ACCOUNT-FULL-PERM — 김주연 총괄 전체 메뉴 접근권한 부여 (실행용)
+ *
+ * 선확인(precheck) 결과:
+ *   - auth.users 존재: id=ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12 (juyeon@medibuilder.com, "주연총괄")
+ *   - user_profiles 없음 → /admin 진입 시 profile=null → 모든 role-gate 메뉴 숨김(진료 대시보드 포함 검수 불가).
+ *
+ * 해법: user_profiles 한 행 추가(role='admin'). 단일유저 하드코딩 아님 — 계정 role 데이터.
+ *   - /admin 메뉴 접근의 단일 진실원천 = user_profiles.role. admin은 NAV_ITEMS 전 항목 roles에 포함 →
+ *     전체 메뉴(통계·매출집계·계정관리·진료 대시보드 등) 노출. requiresOpsAuthority 분기는 director 한정이라 admin 무관.
+ *   - 회귀 0 (BLOCKING 게이트 보존):
+ *       · MUNJIEUN-LOCKOUT(canEditClinicMgmt) 코드 미변경.
+ *       · 직원·의사 영역분리(AdminLayout/RoleGuard) 코드 미변경.
+ *       · 소견서 원장전용: canPublish=['director','doctor'] / SQL is_doctor_role()=director|doctor.
+ *         admin 미포함 → 김주연은 소견서 탭 '열람'만 가능, '발행' 불가 → 원장전용 보존.
+ *   - DB-0(DDL 없음): 신규 행 INSERT(=additive data)만. 스키마 변경·신규 컬럼 없음.
+ *   - admin = 비임상직 → staff row 생성 skip (admin_register_user RPC 정책 준수).
+ *
+ * 실행: DRY_RUN=false node scripts/T-20260620-foot-JUYEON-ACCOUNT-FULL-PERM_grant.mjs
+ *   - DRY_RUN 기본 true (조회만). DRY_RUN=false 일 때만 실제 upsert.
+ *   - 가역(ROLLBACK): user_profiles WHERE id='ee67fc6b-...' 행 삭제 또는 active=false.
+ */
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
+const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+
+const FOOT_ORIGIN_CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // jongno-foot (오블리브의원 서울 오리진점)
+const EMAIL = 'juyeon@medibuilder.com';
+const AUTH_ID = 'ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12'; // precheck 확정
+const NAME = '김주연';
+const DRY_RUN = process.env.DRY_RUN !== 'false';
+
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+async function main() {
+  console.log(`=== 김주연 총괄 admin grant (DRY_RUN=${DRY_RUN}) ===`);
+
+  // 1. auth 계정 재확인 (재실행 안전성)
+  const { data: list } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const user = (list?.users || []).find(u => (u.email || '').toLowerCase() === EMAIL);
+  if (!user) { console.error('ABORT: auth 계정 미발견. precheck 재확인 필요.'); process.exit(2); }
+  if (user.id !== AUTH_ID) { console.error(`ABORT: auth id 불일치 (expected ${AUTH_ID}, got ${user.id}).`); process.exit(2); }
+  console.log('auth 계정 확인:', user.id, user.email);
+
+  // 2. 기존 profile 확인
+  const { data: existing } = await supabase
+    .from('user_profiles')
+    .select('id, email, name, role, clinic_id, active, approved')
+    .eq('id', user.id)
+    .maybeSingle();
+  console.log('기존 user_profiles:', existing ? JSON.stringify(existing) : 'NONE');
+
+  if (DRY_RUN) {
+    console.log('[DRY_RUN] upsert payload:', JSON.stringify({
+      id: user.id, email: EMAIL, name: NAME, role: 'admin',
+      clinic_id: FOOT_ORIGIN_CLINIC_ID, approved: true, active: true,
+    }, null, 2));
+    console.log('[DRY_RUN] 실제 적용하려면 DRY_RUN=false 로 재실행.');
+    return;
+  }
+
+  // 3. upsert (role=admin)
+  const { error: ue } = await supabase
+    .from('user_profiles')
+    .upsert({
+      id: user.id,
+      email: EMAIL,
+      name: NAME,
+      role: 'admin',
+      clinic_id: FOOT_ORIGIN_CLINIC_ID,
+      approved: true,
+      active: true,
+    }, { onConflict: 'id' });
+  if (ue) { console.error('user_profiles upsert error:', ue.message); process.exit(1); }
+  console.log('user_profiles upsert OK (role=admin, clinic=jongno-foot)');
+
+  // 4. 검증
+  const { data: verify } = await supabase
+    .from('user_profiles')
+    .select('id, email, name, role, clinic_id, active, approved')
+    .eq('id', user.id)
+    .single();
+  console.log('VERIFY:', JSON.stringify(verify, null, 2));
+
+  console.log('\n=== 완료 ===');
+  console.log('김주연 총괄 admin 활성. /admin 전체 메뉴 접근 가능(진료 대시보드 검수 포함).');
+  console.log('ROLLBACK: DELETE FROM user_profiles WHERE id=\'' + user.id + '\';  (또는 active=false)');
+}
+
+main().catch(e => { console.error(e); process.exit(1); });
