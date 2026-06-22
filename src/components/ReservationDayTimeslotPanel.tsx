@@ -168,7 +168,8 @@ function TimeslotLine({
       <span className="font-semibold tabular-nums text-foreground w-11 flex-shrink-0">{time}</span>
       <span className="text-muted-foreground">—</span>
       <span className="flex items-center gap-1.5 flex-wrap">
-        <KindChip dotClass="bg-emerald-500" label="초진" value={counts.n} />
+        {/* T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 dot emerald → sage (재진 파랑·힐러 노랑 유지) */}
+        <KindChip dotClass="bg-sage-500" label="초진" value={counts.n} />
         <span className="text-border">/</span>
         <KindChip dotClass="bg-blue-500" label="재진" value={counts.r} />
         <span className="text-border">/</span>

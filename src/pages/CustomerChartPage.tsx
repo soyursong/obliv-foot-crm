@@ -5030,9 +5030,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       return verified ? (
                         <span
                           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                          style={{ backgroundColor: '#DCFCE7', color: '#15803D', border: '1.5px solid #BBF7D0' }}
+                          // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: green-100/700/200/500 → 세이지(sage-100/700/200/500).
+                          style={{ backgroundColor: '#E7EDD9', color: '#52603C', border: '1.5px solid #D3DEBE' }}
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-sage-500 inline-block" />
                           신분증 확인 완료
                         </span>
                       ) : (

@@ -104,11 +104,12 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, compactDe
     setVisible(true);
   }, []);
 
-  // 표시 정보 계산 — 초진(파란) / 재진(초록) 2종 / 체험 배지 미표시 (AC-4)
+  // 표시 정보 계산 — 초진(파란) / 재진(세이지) 2종 / 체험 배지 미표시 (AC-4)
+  // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 재진 emerald → sage (초진 파랑 유지 → 의미구분 보존)
   const visitType = checkIn.visit_type;
   const visitLabel = visitType === 'new' ? '초진' : visitType === 'returning' ? '재진' : null;
   const visitColor =
-    visitType === 'new' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800';
+    visitType === 'new' ? 'bg-blue-100 text-blue-800' : 'bg-sage-100 text-sage-800';
 
   const age = calcAge(details?.birth_date ?? null);
   const genderLabel =
