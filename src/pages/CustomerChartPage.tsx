@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
@@ -4462,6 +4462,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           </Badge>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          {/* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-3: [예약하기] 좌측 차트 전체저장 버튼.
+              "저장 후 닫기"가 쓰는 통합 저장(handleInfoPanelSave) 1:1 재사용 — 신규 write-path/스키마 없음(db_change=false).
+              항상 클릭 가능(저장 중에만 비활성), 성공/실패 토스트는 handleInfoPanelSave 내장. */}
+          <button
+            onClick={() => handleInfoPanelSave()}
+            disabled={savingInfoPanel}
+            className="rounded px-2 py-1 text-xs bg-white text-neutral-900 hover:bg-neutral-100 transition flex items-center gap-1 font-medium disabled:opacity-50"
+            data-testid="btn-chart-save-all"
+          >
+            <Save className="h-3.5 w-3.5" /> {savingInfoPanel ? '저장 중…' : '저장'}
+          </button>
           {/* T-20260615-foot-CHART2-RESVBTN-POPUP-NONAV (현장 승인: 김주연 총괄): 2번차트 [예약하기] → navigate 대신 예약 미니팝업 오버레이.
               차트 닫지 않고(navigate X) 현 환자 컨텍스트로 예약. 기존 openResvMiniPopup 자산 재사용. */}
           {/* LOGIC-LOCK: L-002 (부분 supersede) — 2번차트 surface 한정 예외: [예약하기] = 팝업 오버레이(navigate X, 차트 유지).
@@ -7585,7 +7596,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="button"
                   onClick={saveResvDetail}
                   disabled={savingResvDetail}
-                  className="w-full rounded bg-neutral-800 text-white py-1.5 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
+                  /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 차콜(#333, 저장 primary) */
+                  className="w-full rounded bg-[#333333] text-white py-1.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
                 >
                   {savingResvDetail ? '저장 중…' : '저장'}
                 </button>
@@ -7702,7 +7714,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="button"
                   onClick={saveConsultation}
                   disabled={savingConsultation}
-                  className="w-full rounded bg-neutral-800 text-white py-1.5 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
+                  /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 차콜(#333, 저장 primary) */
+                  className="w-full rounded bg-[#333333] text-white py-1.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
                 >
                   {savingConsultation ? '저장 중…' : '저장'}
                 </button>
@@ -7754,7 +7767,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       type="button"
                       onClick={saveNewTreatmentMemo}
                       disabled={savingNewMemo || !newMemoText.trim()}
-                      className="w-full rounded bg-neutral-800 text-white py-1.5 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
+                      /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 모노톤 미드그레이(#666, 추가/기입 secondary) */
+                      className="w-full rounded bg-[#666666] text-white py-1.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
                     >
                       {savingNewMemo ? '저장 중…' : '메모 추가'}
                     </button>

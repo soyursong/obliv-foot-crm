@@ -2647,37 +2647,29 @@ export function PenChartTab({
                 <button
                   key={tpl.id}
                   onClick={() => handleSelectTemplate(tpl)}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg border-2 p-4 text-left transition',
-                    isSenior
-                      ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-400 hover:bg-emerald-100'
-                      : 'border-teal-200 bg-teal-50 hover:border-teal-400 hover:bg-teal-100',
-                  )}
+                  /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-1: 어르신용 카드 emerald→teal(일반 형제 정합, 유채색 제거) */
+                  className="flex items-center gap-3 rounded-lg border-2 border-teal-200 bg-teal-50 p-4 text-left hover:border-teal-400 hover:bg-teal-100 transition"
                 >
-                  <div className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-full',
-                    isSenior ? 'bg-emerald-200' : 'bg-teal-200',
-                  )}>
-                    <ClipboardList className={cn('h-5 w-5', isSenior ? 'text-emerald-700' : 'text-teal-700')} />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-200">
+                    <ClipboardList className="h-5 w-5 text-teal-700" />
                   </div>
                   <div>
-                    <div className={cn('font-semibold text-sm', isSenior ? 'text-emerald-800' : 'text-teal-800')}>
+                    <div className="font-semibold text-sm text-teal-800">
                       {tpl.name_ko}
                     </div>
-                    <div className={cn('text-xs mt-0.5', isSenior ? 'text-emerald-600' : 'text-teal-600')}>
+                    <div className="text-xs mt-0.5 text-teal-600">
                       {isSenior
                         ? '발건강 질문지 (어르신용) — 태블릿펜으로 직접 기입'
                         : '발건강 질문지 — 태블릿펜으로 직접 기입 후 저장'}
                     </div>
                   </div>
                   {isSenior && (
-                    <span className="ml-auto rounded-full bg-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                    <span className="ml-auto rounded-full bg-teal-200 px-2 py-0.5 text-[10px] font-bold text-teal-800">
                       어르신용
                     </span>
                   )}
                   <span className={cn(
-                    'rounded-full px-2 py-0.5 text-[10px] font-bold',
-                    isSenior ? 'bg-emerald-100 text-emerald-700' : 'bg-teal-100 text-teal-700',
+                    'rounded-full px-2 py-0.5 text-[10px] font-bold bg-teal-100 text-teal-700',
                     isSenior ? '' : 'ml-auto',
                   )}>
                     PDF 양식
@@ -2690,16 +2682,17 @@ export function PenChartTab({
             {refundConsentTemplate && (
               <button
                 onClick={() => handleSelectTemplate(refundConsentTemplate)}
-                className="flex items-center gap-3 rounded-lg border-2 border-rose-200 bg-rose-50 p-4 text-left hover:border-rose-400 hover:bg-rose-100 transition"
+                /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-1: 환불/비급여 카드 rose→neutral(유채색 제거) */
+                className="flex items-center gap-3 rounded-lg border-2 border-neutral-200 bg-neutral-50 p-4 text-left hover:border-neutral-400 hover:bg-neutral-100 transition"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-200">
-                  <FileText className="h-5 w-5 text-rose-700" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-200">
+                  <FileText className="h-5 w-5 text-neutral-700" />
                 </div>
                 <div>
-                  <div className="font-semibold text-rose-800 text-sm">환불/비급여 동의서</div>
-                  <div className="text-xs text-rose-600 mt-0.5">환불·비급여 동의 PDF 원본 (3p) — 태블릿펜으로 직접 기입 + 서명</div>
+                  <div className="font-semibold text-neutral-800 text-sm">환불/비급여 동의서</div>
+                  <div className="text-xs text-neutral-600 mt-0.5">환불·비급여 동의 PDF 원본 (3p) — 태블릿펜으로 직접 기입 + 서명</div>
                 </div>
-                <span className="ml-auto rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
                   3페이지
                 </span>
               </button>
@@ -3495,7 +3488,8 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
           </span>
           <Button
             size="sm"
-            className="h-7 text-[11px] px-3 bg-neutral-800 hover:bg-neutral-900"
+            /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 모노톤 미드그레이(#666, 기입/생성 secondary) */
+            className="h-7 text-[11px] px-3 bg-[#666666] hover:bg-[#757575]"
             onClick={() => {
               // T-20260528-foot-PENCHART-NEWWIN: window.open 별도 창으로 전환
               // iPad Safari popup blocker: window.open을 click handler 안에서 동기 호출 필수
@@ -3523,10 +3517,11 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
           <span className="rounded bg-teal-50 border border-teal-100 px-2 py-0.5 text-[11px] text-teal-700">
             📋 발건강 질문지 (일반)
           </span>
-          <span className="rounded bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
+          {/* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-1: 잔여 유채색 모노톤화 — 어르신용 emerald→teal(일반 형제 정합), 환불 rose→neutral */}
+          <span className="rounded bg-teal-50 border border-teal-100 px-2 py-0.5 text-[11px] text-teal-700">
             📋 발건강 질문지 (어르신용)
           </span>
-          <span className="rounded bg-rose-50 border border-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+          <span className="rounded bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-700">
             📋 환불/비급여 동의서 (3p)
           </span>
         </div>
