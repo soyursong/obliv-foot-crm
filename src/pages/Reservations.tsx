@@ -61,7 +61,8 @@ let _clipboardTargetBackup: { date: string; time: string } | null = null;
 
 const STATUS_STYLE: Record<Reservation['status'], string> = {
   confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
-  checked_in: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 체크인 상태 emerald → sage
+  checked_in: 'bg-sage-100 text-sage-700 border-sage-200',
   cancelled: 'bg-gray-100 text-gray-500 border-gray-200',
   noshow: 'bg-red-100 text-red-700 border-red-200',
 };
@@ -74,16 +75,17 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
 const KIND_ORDER: Record<ResvKind, number> = { new: 0, returning: 1, healer: 2, other: 3 };
 // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (3번): 예약카드 색상박스 전면 재작업.
 //   롱래CRM 스타일 — 좌측 4px 컬러 액센트 + 풀 파스텔 배경 + 동일 톤 보더로 카드 경계 또렷.
-//   색상 코딩 유지: 초진=초록(emerald) / 재진=파랑(blue) / 힐러(HL)=노랑(yellow).
+//   색상 코딩 유지: 초진=세이지(sage) / 재진=파랑(blue) / 힐러(HL)=노랑(yellow).
+//   T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 emerald → sage (재진 파랑·힐러 노랑 유지 → 의미구분 보존)
 const KIND_CARD_STYLE: Record<ResvKind, string> = {
-  new: 'border-l-4 border-l-emerald-400 border-emerald-200/80 bg-emerald-50',
+  new: 'border-l-4 border-l-sage-400 border-sage-200/80 bg-sage-50',
   returning: 'border-l-4 border-l-blue-400 border-blue-200/80 bg-blue-50',
   healer: 'border-l-4 border-l-yellow-400 border-yellow-200/80 bg-yellow-50',
   other: 'border-l-4 border-l-amber-400 border-amber-200/80 bg-amber-50',
 };
 // item1/2: 헤더·슬롯 카운트 점 색상 (유형별)
 const KIND_DOT: Record<ResvKind, string> = {
-  new: 'bg-emerald-500',
+  new: 'bg-sage-500', // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 dot emerald → sage
   returning: 'bg-blue-500',
   healer: 'bg-yellow-400',
   other: 'bg-amber-500',
@@ -1585,7 +1587,7 @@ export default function Reservations() {
                           className="mt-1 flex flex-wrap items-center justify-center gap-1 text-[10px] font-medium leading-none"
                         >
                           <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
-                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">초 {c.n}</span>
+                          <span className="inline-flex items-center rounded-full bg-sage-100 px-1.5 py-0.5 text-sage-700">초 {c.n}</span>
                           <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">재 {c.r}</span>
                           {c.h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700">HL {c.h}</span>}
                         </div>
@@ -1709,7 +1711,7 @@ export default function Reservations() {
                                       data-testid={`cell-kind-count-${dateStr}-${time}`}
                                       className="flex flex-wrap items-center gap-0.5 text-[9px] font-medium leading-none"
                                     >
-                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-emerald-100 px-1 py-0.5 text-emerald-700">초 {n}</span>}
+                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-sage-100 px-1 py-0.5 text-sage-700">초 {n}</span>}
                                       {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
                                       {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
                                     </div>

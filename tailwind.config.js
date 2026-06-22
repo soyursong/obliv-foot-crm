@@ -34,6 +34,25 @@ export default {
           900: "#2E2823",
           950: "#252525", // Black
         },
+        // ── T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR (김주연 총괄) ──
+        // 풋센터 녹색(emerald/green) 의미색 → 세이지 톤 교체. 기준 앵커 #C2CDB0(RGB 194,205,176)=sage-300.
+        // 산발 하드코딩 지양 → 단일 토큰. green-100/700/200/500 대응 슬롯을 sage 스케일로 매핑.
+        // WCAG AA 검증: text=sage-700(#52603C) on white 6.58:1 / on sage-100 5.49:1 (AA 본문 ≥4.5 ✓).
+        // ⚠ 적용 범위: 초진(new)·checked_in·returning 등 visit-type/status 녹색 칩에 한정.
+        //   일반 success 아이콘(체크/토글/focus ring emerald)·치료사 info 패널은 비대상(무차별 교체 금지).
+        //   파랑(재진/일부 초진)·노랑(힐러)은 비종속 — 의미구분 톤차는 hue(blue) + sage로 보존.
+        sage: {
+          50:  "#F3F6EC", // 연한 틴트 면(배지 bg) — green-50 대응
+          100: "#E7EDD9", // 배지 bg — green-100 대응
+          200: "#D3DEBE", // 보더 — green-200 대응
+          300: "#C2CDB0", // 앵커(기준 스와치)
+          400: "#A7B68B", // 좌측 강조 보더
+          500: "#8A9B6A", // dot(진한 세이지) — green-500 대응
+          600: "#6E7E50",
+          700: "#52603C", // 텍스트(가독 진한 세이지, AA) — green-700 대응
+          800: "#3D472D", // 강조 텍스트 — green-800 대응
+          900: "#2B331F",
+        },
         border: "var(--border)",
         input: "var(--input)",
         ring: "var(--ring)",

@@ -67,7 +67,8 @@ const STATUS_LABEL: Record<Reservation['status'], string> = {
 
 const VISIT_TYPE_BADGE_CLASS: Record<string, string> = {
   new: 'bg-blue-100 text-blue-700',
-  returning: 'bg-emerald-100 text-emerald-700',
+  // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 재진 emerald → sage (초진 파랑·체험 amber 유지)
+  returning: 'bg-sage-100 text-sage-700',
   experience: 'bg-amber-100 text-amber-700',
 };
 
