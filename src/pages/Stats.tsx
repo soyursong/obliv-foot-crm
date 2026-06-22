@@ -20,6 +20,9 @@ import {
   type TmAggregateData,
   type StatsRangePreset,
 } from '@/lib/stats';
+import { downloadConsultantSalesReport } from '@/lib/consultantSalesExport';
+import { toast } from '@/lib/toast';
+import { Download } from 'lucide-react';
 import RevenueSection from '@/components/stats/RevenueSection';
 import CategorySection from '@/components/stats/CategorySection';
 import ConsultantSection from '@/components/stats/ConsultantSection';
@@ -132,6 +135,25 @@ export default function Stats() {
     ? resolveRange(preset, customFrom, customTo)
     : { from: '', to: '' };
 
+  // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE:
+  // 매출통계 탭 일간매출보고 다운로드 (실장별 매출/상담건수/객단가 + 총 매출액).
+  // 데이터 소스 = 이미 로드된 consultants(foot_stats_consultant RPC).
+  // AGG 다운로드 경로(Sales.tsx fetchSalesRawRows)와 코드/데이터 완전 분리.
+  const handleExportSalesReport = () => {
+    if (loading) return;
+    if (consultants.length === 0) {
+      toast.info('해당 기간에 실장별 매출 내역이 없습니다.');
+      return;
+    }
+    try {
+      downloadConsultantSalesReport(consultants, rangeFrom, rangeTo);
+      toast.success(`일간매출보고 다운로드 완료 (실장 ${consultants.length}명)`);
+    } catch (e) {
+      console.error('[Stats] 일간매출보고 다운로드 실패', e);
+      toast.error('다운로드 중 오류가 발생했습니다.');
+    }
+  };
+
   return (
     <div className="h-full flex flex-col gap-6 p-6 overflow-auto">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -193,6 +215,19 @@ export default function Stats() {
                 className="border rounded px-2 py-1"
               />
             </div>
+          )}
+
+          {/* T-20260622: 매출통계 탭 일간매출보고 다운로드 (매출집계 메뉴와 별개로 이 탭에도 제공) */}
+          {tab === 'revenue' && (
+            <button
+              onClick={handleExportSalesReport}
+              disabled={loading}
+              data-testid="stats-revenue-export"
+              className="flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              일간매출보고 다운로드
+            </button>
           )}
         </div>
       </header>
