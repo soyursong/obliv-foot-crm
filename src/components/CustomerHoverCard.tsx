@@ -148,9 +148,11 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, compactDe
           // T-20260615-foot-RESVMGMT-REFIX-8 AC7: 성함 검정 통일(예약카드 상태별 텍스트색 상속 차단). compact=예약/대시보드 카드 트리거.
           // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN AC-1/AC-2: 예약 캘린더 2단 카드(compactDense)는
           //   성함 text-sm(14px)→text-xs(12px) 한 단계 축소 + block(min-w-0 트리거 폭 안에서 truncate ellipsis 실동작).
+          // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 슬롯 셀이 좌우 2열 그리드가 되며 카드 폭이 더 좁아짐(성함 축소 허용)
+          //   → 성함 한 단계 더 축소 text-xs(12px)→text-[11px]. 본문(11px)과 동일, ping-pong 바닥(≥11px) 유지.
           //   Dashboard 등 compact-only 카드는 기존 text-sm 유지.
           compact
-            ? cn('font-bold truncate text-gray-900', compactDense ? 'block min-w-0 text-xs' : 'text-sm')
+            ? cn('font-bold truncate text-gray-900', compactDense ? 'block min-w-0 text-[11px]' : 'text-sm')
             : 'text-base font-bold',
         )}
         title={onClick ? '클릭 → 고객차트 열기 · 우클릭/롱프레스 → 메뉴 · 호버 → 간단정보' : '우클릭/롱프레스 → 고객차트·예약 · 호버 → 간단정보'}

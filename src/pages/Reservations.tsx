@@ -1723,17 +1723,18 @@ export default function Reservations() {
                                 {/* T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name === 로그인 표시명 NAME-MATCH.
                                     경과분석 필터와 AND 결합. read-only 표시 필터 — 슬롯 용량/카운트 산식(full 판정)은 불변. */}
                                 {(() => {
-                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER: 슬롯 내 카드 = 타입별 2단·각 2열 그리드.
-                                  //   1단(상단)=초진(new) / 2단(하단)=재진(returning)+힐러(healer)+기타(other).
-                                  //   각 단 grid-cols-2(한 줄 2건), 단 내 정렬 = 예약 시각(reservation_time) 순.
-                                  //   단일 그룹만 존재 시 해당 단만 렌더(빈 단 미렌더). 카드 누락 0(visible 전수 귀속).
-                                  //   불변: 카드 내용·필드, KIND_CARD_STYLE 컬러, 클릭/hover/우클릭, COMPACT-CONTENT-KEEP 압축 레이어.
+                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안 정본 — 김주연 총괄 MSG-...-9osx): 각 시간 슬롯 셀 *내부*를 좌우 2열 그리드.
+                                  //   왼쪽 열(colNew)=초진(new) / 오른쪽 열(colRest)=재진(returning)+힐러(healer)+기타(other) 전수.
+                                  //   각 열은 위→아래로 독립 세로 쌓기(flex-col). 카드 수 > 1쌍이면 그리드 행이 카드 수만큼 늘어남.
+                                  //   (취소된 B안=2줄 Row 가로 전부 나열 ❌ / 페이지 상하·좌우 구역 분리 ❌ — 어디까지나 슬롯 셀 내부 2열.)
+                                  //   열 내 정렬 = 예약 시각(reservation_time) 순. 단일 그룹이면 채워진 열만, 좌우 2열 트랙은 항상 유지(정렬 불깨짐).
+                                  //   카드 누락 0(visible 전수 귀속). 불변: 카드 내용·필드, KIND_CARD_STYLE 컬러, 클릭/hover/우클릭, COMPACT-CONTENT-KEEP(828893f3) 압축 레이어.
                                   const visible = (filterProgress ? list.filter(r => r.progress_check_required) : list)
                                     .filter((r) => !filterMine || (myDisplayName !== '' && (r.registrar_name ?? '').trim() === myDisplayName));
                                   const byTime = (a: Reservation, b: Reservation) =>
                                     a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
-                                  const tierNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);
-                                  const tierRest = visible.filter((r) => resvKind(r) !== 'new').sort(byTime);
+                                  const colNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);     // 왼쪽 열 = 초진
+                                  const colRest = visible.filter((r) => resvKind(r) !== 'new').sort(byTime);    // 오른쪽 열 = 재진+힐러(+기타)
                                   const renderCard = (r: Reservation) => (
                                   <div
                                     key={r.id}
@@ -1779,7 +1780,8 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
-                                      'w-full overflow-hidden rounded border px-1 py-0 text-[11px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축(text-[11px]→text-[10px]) / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-1·AC-2: 가독성 복원 — 카드 본문 폰트 text-[10px]→text-[11px](읽히는 최소). 정보항목 전부 유지(삭제 0), 압축은 padding(px-1 py-0)·leading-tight·셀높이로만 달성, 넘치면 ellipsis
+                                      // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 카드는 열(flex-col) 안에서 w-full(열폭 채움)+min-w-0(좁은 열폭 truncate 흡수). 세로 쌓기이므로 flex-1 금지.
+                                      'min-w-0 w-full overflow-hidden rounded border px-1 py-0 text-[11px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축(text-[11px]→text-[10px]) / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-1·AC-2: 가독성 복원 — 카드 본문 폰트 text-[10px]→text-[11px](읽히는 최소). 정보항목 전부 유지(삭제 0), 압축은 padding(px-1 py-0)·leading-tight·셀높이로만 달성, 넘치면 ellipsis
 
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
@@ -1963,26 +1965,27 @@ export default function Reservations() {
                                     )}
                                   </div>
                                   );
-                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER: 2단 렌더 — 빈 단은 미렌더. grid-cols-2=한 줄 2건(Tailwind minmax(0,1fr)로 카드 셀폭 수축).
+                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 좌우 2열 그리드. 카드가 하나도 없으면 그리드 자체 미렌더(빈 슬롯 유지).
+                                  //   왼쪽 열=초진(colNew) / 오른쪽 열=재진+힐러(colRest), 각 열 flex-col 세로 쌓기(예약 시각 순). 2열 트랙은 항상 유지 → 단일 그룹이어도 좌/우 정렬 불깨짐.
+                                  if (colNew.length === 0 && colRest.length === 0) return null;
                                   return (
-                                    <>
-                                      {tierNew.length > 0 && (
-                                        <div
-                                          data-testid={`resv-tier-new-${dateStr}-${time}`}
-                                          className="grid grid-cols-2 gap-0.5"
-                                        >
-                                          {tierNew.map(renderCard)}
-                                        </div>
-                                      )}
-                                      {tierRest.length > 0 && (
-                                        <div
-                                          data-testid={`resv-tier-rest-${dateStr}-${time}`}
-                                          className="grid grid-cols-2 gap-0.5"
-                                        >
-                                          {tierRest.map(renderCard)}
-                                        </div>
-                                      )}
-                                    </>
+                                    <div
+                                      data-testid={`resv-typecols-${dateStr}-${time}`}
+                                      className="grid grid-cols-2 gap-0.5 items-start"
+                                    >
+                                      <div
+                                        data-testid={`resv-col-new-${dateStr}-${time}`}
+                                        className="flex flex-col gap-0.5 min-w-0"
+                                      >
+                                        {colNew.map(renderCard)}
+                                      </div>
+                                      <div
+                                        data-testid={`resv-col-rest-${dateStr}-${time}`}
+                                        className="flex flex-col gap-0.5 min-w-0"
+                                      >
+                                        {colRest.map(renderCard)}
+                                      </div>
+                                    </div>
                                   );
                                 })()}
                                 {/* T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치' 버튼 제거(현장 불필요).
