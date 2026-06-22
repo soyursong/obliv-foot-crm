@@ -141,6 +141,291 @@ interface TreatmentMemoEntry {
   updated_at: string;
 }
 
+// T-20260622-foot-CHART2-MEMO-HISTORY (item4): 예약메모/상담메모 히스토리화 공용 hook.
+// 치료메모(customer_treatment_memos) 패턴 복제 — 신규 테이블 customer_reservation_memos / customer_consult_memos 전용.
+// 기존 단일필드(customers.customer_memo / tm_memo)는 보존(ADDITIVE) + lazy-migration(첫 항목으로 이관, 원본 컬럼 미삭제).
+function useMemoHistory(opts: {
+  table: 'customer_reservation_memos' | 'customer_consult_memos';
+  customerId: string | null;
+  clinicId: string | null;
+  active: boolean;                  // 탭 선택 시 lazy load
+  authorEmail: string | null;
+  authorName: string | null;
+  migrationContent: string | null;  // 기존 단일필드 값 (없으면 migration 생략)
+  migrationAuthorName: string | null;
+}) {
+  const { table, customerId, clinicId, active, authorEmail, authorName, migrationContent, migrationAuthorName } = opts;
+  const SELECT = 'id, content, created_by, created_by_name, created_at, updated_at';
+  const [memos, setMemos] = useState<TreatmentMemoEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [latest, setLatest] = useState<{ content: string; created_at: string } | null>(null);
+  const [newText, setNewText] = useState('');
+  const [savingNew, setSavingNew] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const isTableMissing = (error: { message?: string; code?: string }) =>
+    !!error.message?.includes('schema cache') ||
+    !!error.message?.includes(table) ||
+    error.code === 'PGRST205';
+
+  // customer 변경 시 reset
+  useEffect(() => {
+    setMemos([]); setLoaded(false); setUnavailable(false);
+    setNewText(''); setEditingId(null); setEditingText('');
+  }, [customerId]);
+
+  // lazy load (탭 진입 시) + lazy-migration
+  const load = useCallback(async () => {
+    if (!customerId) return;
+    const { data, error } = await supabase
+      .from(table).select(SELECT)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      if (isTableMissing(error as { message?: string; code?: string })) setUnavailable(true);
+      else console.warn(`[MemoHistory:${table}] load error:`, error.message);
+      setLoaded(true);
+      return;
+    }
+    let items = (data ?? []) as TreatmentMemoEntry[];
+    if (items.length === 0 && migrationContent && migrationContent.trim() && clinicId) {
+      const { data: inserted } = await supabase
+        .from(table)
+        .insert({
+          customer_id: customerId,
+          clinic_id: clinicId,
+          content: migrationContent.trim(),
+          created_by: null,
+          created_by_name: migrationAuthorName || '(이전 기록)',
+        })
+        .select(SELECT).single();
+      if (inserted) items = [inserted as TreatmentMemoEntry];
+    }
+    setMemos(items);
+    setLoaded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, clinicId, table, migrationContent, migrationAuthorName]);
+
+  useEffect(() => {
+    if (active && !loaded && customerId) load();
+  }, [active, loaded, customerId, load]);
+
+  // 요약블록용 최신 1건 eager 로드 (탭 진입 무관). 미존재 시 migration source로 fallback(표시 연속성).
+  useEffect(() => {
+    if (!customerId) { setLatest(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from(table).select('content, created_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(1).maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setLatest(migrationContent && migrationContent.trim()
+          ? { content: migrationContent, created_at: '' } : null);
+        return;
+      }
+      setLatest({ content: data.content as string, created_at: data.created_at as string });
+    })();
+    return () => { cancelled = true; };
+  }, [customerId, table, migrationContent]);
+
+  // 목록 로드/변경 시 최신 동기화
+  useEffect(() => {
+    if (loaded && memos.length > 0) setLatest({ content: memos[0].content, created_at: memos[0].created_at });
+  }, [memos, loaded]);
+
+  const saveNew = async () => {
+    if (!customerId || !clinicId || !newText.trim()) return;
+    setSavingNew(true);
+    const { data, error } = await supabase
+      .from(table)
+      .insert({
+        customer_id: customerId,
+        clinic_id: clinicId,
+        content: newText.trim(),
+        created_by: authorEmail,
+        created_by_name: authorName,
+      })
+      .select(SELECT).single();
+    setSavingNew(false);
+    if (error) {
+      if (isTableMissing(error as { message?: string; code?: string })) {
+        toast.error('메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
+        setUnavailable(true);
+      } else toast.error(`저장 실패: ${error.message}`);
+      return;
+    }
+    if (data) setMemos(prev => [data as TreatmentMemoEntry, ...prev]);
+    setNewText('');
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editingText.trim()) return;
+    setSavingEdit(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from(table)
+      .update({ content: editingText.trim(), updated_at: now })
+      .eq('id', editingId);
+    setSavingEdit(false);
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    setMemos(prev => prev.map(m => m.id === editingId ? { ...m, content: editingText.trim(), updated_at: now } : m));
+    setEditingId(null); setEditingText('');
+  };
+
+  const remove = async (id: string) => {
+    if (!window.confirm('메모를 삭제하시겠습니까?')) return;
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    setMemos(prev => prev.filter(m => m.id !== id));
+  };
+
+  return {
+    memos, loaded, unavailable, latest,
+    newText, setNewText, savingNew, saveNew,
+    editingId, setEditingId, editingText, setEditingText, savingEdit, saveEdit, remove,
+  };
+}
+type MemoHistoryHook = ReturnType<typeof useMemoHistory>;
+
+// T-20260622-foot-CHART2-MEMO-HISTORY (item4): 예약/상담 메모 이력 패널 (치료메모 탭 UI 복제).
+function MemoHistoryPanel({
+  hook, phrases, profileEmail, testidPrefix,
+  addLabel = '새 메모 추가', addBtnLabel = '메모 추가',
+  historyLabel = '메모 이력', emptyLabel = '아직 메모가 없습니다', placeholder = '메모를 입력하세요…',
+}: {
+  hook: MemoHistoryHook;
+  phrases: { id: number; name: string; content: string }[];
+  profileEmail: string | null | undefined;
+  testidPrefix: string;
+  addLabel?: string; addBtnLabel?: string; historyLabel?: string; emptyLabel?: string; placeholder?: string;
+}) {
+  return (
+    <div className="space-y-2">
+      {hook.unavailable && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 text-center">
+          메모 기능 준비 중입니다. 잠시 후 다시 이용해주세요.
+        </div>
+      )}
+      {!hook.unavailable && (
+        <>
+          {phrases.length > 0 && (
+            <div>
+              <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
+              <div className="flex flex-wrap gap-1" data-testid={`custchart-phrases-${testidPrefix}`}>
+                {phrases.map(phrase => (
+                  <button
+                    key={phrase.id}
+                    type="button"
+                    onClick={() => hook.setNewText(hook.newText ? `${hook.newText} ${phrase.content}` : phrase.content)}
+                    className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
+                  >
+                    {phrase.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="block text-[11px] text-muted-foreground mb-0.5">{addLabel}</label>
+            <Textarea
+              value={hook.newText}
+              onChange={(e) => hook.setNewText(e.target.value)}
+              rows={3}
+              placeholder={placeholder}
+              className="text-[11px] resize-none"
+              data-testid={`${testidPrefix}-new-input`}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={hook.saveNew}
+            disabled={hook.savingNew || !hook.newText.trim()}
+            className="w-full rounded bg-[#333333] text-white py-1.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
+            data-testid={`${testidPrefix}-add-btn`}
+          >
+            {hook.savingNew ? '저장 중…' : addBtnLabel}
+          </button>
+        </>
+      )}
+
+      {!hook.loaded ? (
+        <div className="text-[11px] text-muted-foreground text-center py-2">불러오는 중…</div>
+      ) : hook.memos.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground text-center py-3">{emptyLabel}</div>
+      ) : (
+        <div className="space-y-1.5 mt-1" data-testid={`${testidPrefix}-history`}>
+          <label className="block text-[11px] font-semibold text-[#2d2d2d]">{historyLabel}</label>
+          {hook.memos.map((memo) => (
+            <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
+              {hook.editingId === memo.id ? (
+                <>
+                  <Textarea
+                    value={hook.editingText}
+                    onChange={(e) => hook.setEditingText(e.target.value)}
+                    rows={3}
+                    className="text-[11px] resize-none"
+                    autoFocus
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={hook.saveEdit}
+                      disabled={hook.savingEdit || !hook.editingText.trim()}
+                      className="flex-1 rounded bg-neutral-800 text-white py-1 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
+                    >
+                      {hook.savingEdit ? '저장 중…' : '수정 저장'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { hook.setEditingId(null); hook.setEditingText(''); }}
+                      className="px-2 rounded border border-gray-300 text-[11px] hover:bg-gray-100 transition"
+                    >
+                      취소
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{memo.content}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground">
+                      {memo.created_by_name ?? '알 수 없음'}{memo.created_at ? ` · ${format(new Date(memo.created_at), 'yyyy-MM-dd HH:mm', { locale: ko })}` : ''}
+                    </span>
+                    {memo.created_by && memo.created_by === profileEmail && (
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { hook.setEditingId(memo.id); hook.setEditingText(memo.content); }}
+                          className="text-[10px] text-teal-600 hover:underline"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => hook.remove(memo.id)}
+                          className="text-[10px] text-red-500 hover:underline"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // T-20260523-foot-LASER-TIMER (위치이동 FIX-20260525): 2번차트 3구역 상세 탭 상단 타이머
 interface TimerRecord {
   id: string;
@@ -2248,10 +2533,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     memo: '', etcMemo: '',
   });
   const [savingResvDetail, setSavingResvDetail] = useState(false);
-  // C23-DETAIL-SIMPLIFY: 상담탭 상태
+  // C23-DETAIL-SIMPLIFY: 상담탭 상태 (담당자 선택 — assigned_staff_id 동기화).
+  // T-20260622-foot-CHART2-MEMO-HISTORY: consultationMemo/savingConsultation 제거 → consultMemoHistory 훅으로 이관.
   const [consultationStaffId, setConsultationStaffId] = useState('');
-  const [consultationMemo, setConsultationMemo] = useState('');
-  const [savingConsultation, setSavingConsultation] = useState(false);
   // C23-PHRASE-LINK: 3구역[상세] 상용구.
   // T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU CS-AC-3 (cross-party 확정):
   //   2번차트(고객차트) 3구역[상세] 예약·상담·치료메모 입력부는 고객차트 surface(phrase_type='customer_chart') 상용구를 호출.
@@ -2416,6 +2700,35 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     } as Record<'예약' | '상담' | '치료메모', typeof customerChartPhrases>;
   }, [customerChartPhrases]);
 
+  // T-20260622-foot-CHART2-MEMO-HISTORY (item4): 예약메모/상담메모 히스토리화.
+  // 예약메모 = customers.customer_memo(단일필드) → customer_reservation_memos(누적). lazy-migration 첫 항목으로 이관(원본 보존).
+  const reservationMemoHistory = useMemoHistory({
+    table: 'customer_reservation_memos',
+    customerId: customer?.id ?? null,
+    clinicId: customer?.clinic_id ?? null,
+    active: resvDetailTab === '예약',
+    authorEmail: profile?.email ?? null,
+    authorName: profile?.name ?? null,
+    migrationContent: customer?.customer_memo ?? null,
+    migrationAuthorName: '(이전 기록)',
+  });
+  // 상담메모 = customers.tm_memo(단일필드, '[담당: name]' prefix) → customer_consult_memos(누적).
+  // DA §4: prefix 파싱 가능 시 created_by_name 채우고, 파싱 실패해도 원문 유실 금지(content에 보존).
+  const tmRaw = customer?.tm_memo ?? null;
+  const tmMatch = tmRaw ? tmRaw.match(/^\[담당:\s*([^\]]+)\]\s*([\s\S]*)$/) : null;
+  const consultMigContent = tmMatch ? (tmMatch[2].trim() || tmRaw) : tmRaw;
+  const consultMigName = tmMatch ? tmMatch[1].trim() : null;
+  const consultMemoHistory = useMemoHistory({
+    table: 'customer_consult_memos',
+    customerId: customer?.id ?? null,
+    clinicId: customer?.clinic_id ?? null,
+    active: resvDetailTab === '상담',
+    authorEmail: profile?.email ?? null,
+    authorName: profile?.name ?? null,
+    migrationContent: consultMigContent,
+    migrationAuthorName: consultMigName,
+  });
+
   useEffect(() => {
     if (!customerId || !profile) return;
     setLoading(true);
@@ -2441,7 +2754,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         memo: (custData as Customer).customer_memo ?? '',
         etcMemo: (custData as Customer).memo ?? '',
       });
-      setConsultationMemo((custData as Customer).tm_memo ?? '');
       // AC-6 쌍방연동: consultationStaffId 초기값을 Zone 1 assigned_staff_id 와 동기화
       setConsultationStaffId((custData as Customer).assigned_staff_id ?? '');
       // T-20260522-foot-ALT-BADGE: ALT 초기값 로드 (S2)
@@ -3479,18 +3791,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // C23-DETAIL-SIMPLIFY: 예약 탭 저장 (고객메모 + 기타메모)
+  // T-20260622-foot-CHART2-MEMO-HISTORY (item4): 예약메모(customer_memo)는 히스토리(customer_reservation_memos)로 이관됨.
+  // 이 저장은 '기타메모'(customers.memo)만 처리. customer_memo는 보존(여기서 더 이상 덮어쓰지 않음).
   const saveResvDetail = async () => {
     if (!customer) return;
     setSavingResvDetail(true);
     const { error } = await supabase.from('customers').update({
-      customer_memo: resvDetailForm.memo || null,
       memo: resvDetailForm.etcMemo || null,
     }).eq('id', customer.id);
     setSavingResvDetail(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? {
       ...prev,
-      customer_memo: resvDetailForm.memo || null,
       memo: resvDetailForm.etcMemo || null,
     } : prev);
     // AC-8 쌍방연동 — 1번차트에 변경 알림
@@ -3609,20 +3921,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // C23-DETAIL-SIMPLIFY: 상담 탭 저장
-  const saveConsultation = async () => {
-    if (!customer) return;
-    setSavingConsultation(true);
-    const staffName = staffList.find(s => s.id === consultationStaffId)?.name ?? '';
-    const newTmMemo = staffName
-      ? `[담당: ${staffName}] ${consultationMemo}`.trim()
-      : consultationMemo.trim();
-    const { error } = await supabase.from('customers').update({
-      tm_memo: newTmMemo || null,
-    }).eq('id', customer.id);
-    setSavingConsultation(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    setCustomer((prev) => prev ? { ...prev, tm_memo: newTmMemo || null } : prev);
-  };
+  // T-20260622-foot-CHART2-MEMO-HISTORY (item4): 상담메모(tm_memo) 단일필드 저장 제거 → customer_consult_memos 히스토리(consultMemoHistory)로 이관.
+  // 담당자(consultationStaffId) 선택은 assigned_staff_id로 별도 저장(드롭다운 onChange)되어 유지됨.
 
   // T-20260522-foot-ALT-BADGE: ALT 토글 저장 (S2 AC-5,6,7 + S4 AC-11)
   const saveAlt = async (newStatus: boolean) => {
@@ -7590,36 +7890,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* 예약 탭 — 고객메모 + 기타메모 + 저장 */}
             {resvDetailTab === '예약' && (
               <div className="p-2 space-y-2">
-                {/* CS-AC-3: 고객차트 상용구 — 고객메모에 삽입.
-                    T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '예약' 분류 + 미분류만 노출. */}
-                {custchartPhrasesByTab['예약'].length > 0 && (
-                  <div>
-                    <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
-                    <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-예약">
-                      {custchartPhrasesByTab['예약'].map(phrase => (
-                        <button
-                          key={phrase.id}
-                          type="button"
-                          onClick={() => setResvDetailForm((f) => ({ ...f, memo: f.memo ? `${f.memo} ${phrase.content}` : phrase.content }))}
-                          className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
-                        >
-                          {phrase.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-[11px] text-muted-foreground mb-0.5">고객메모</label>
-                  <Textarea
-                    value={resvDetailForm.memo}
-                    onChange={(e) => setResvDetailForm((f) => ({ ...f, memo: e.target.value }))}
-                    placeholder="고객 관련 메모"
-                    rows={3}
-                    className="text-[11px] resize-none"
-                  />
-                </div>
-                <div>
+                {/* T-20260622-foot-CHART2-MEMO-HISTORY (item4): 예약메모(=고객메모) 히스토리 누적.
+                    상용구는 새 예약메모 입력란에 삽입. 치료메모와 동일 패턴. */}
+                <MemoHistoryPanel
+                  hook={reservationMemoHistory}
+                  phrases={custchartPhrasesByTab['예약']}
+                  profileEmail={profile?.email}
+                  testidPrefix="resv-memo"
+                  addLabel="새 예약메모 추가"
+                  addBtnLabel="예약메모 추가"
+                  historyLabel="예약메모 이력"
+                  emptyLabel="아직 예약메모가 없습니다"
+                  placeholder="예약·고객 관련 메모를 입력하세요…"
+                />
+                {/* 기타메모(customers.memo) — 단일필드 유지(히스토리화 대상 아님) */}
+                <div className="pt-1 border-t border-gray-100">
                   <label className="block text-[11px] text-muted-foreground mb-0.5">기타메모</label>
                   <Textarea
                     value={resvDetailForm.etcMemo}
@@ -7628,16 +7913,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     rows={2}
                     className="text-[11px] resize-none"
                   />
+                  <button
+                    type="button"
+                    onClick={saveResvDetail}
+                    disabled={savingResvDetail}
+                    className="mt-1.5 w-full rounded bg-[#666666] text-white py-1.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
+                    data-testid="etc-memo-save-btn"
+                  >
+                    {savingResvDetail ? '저장 중…' : '기타메모 저장'}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={saveResvDetail}
-                  disabled={savingResvDetail}
-                  /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 차콜(#333, 저장 primary) */
-                  className="w-full rounded bg-[#333333] text-white py-1.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
-                >
-                  {savingResvDetail ? '저장 중…' : '저장'}
-                </button>
               </div>
             )}
 
@@ -7719,43 +8004,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </div>
                 </div>
 
-                {/* 상용구 — C23-PHRASE-LINK / CS-AC-3: 고객차트 surface(customer_chart) 상용구 → 상담메모 삽입.
-                    T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '상담' 분류 + 미분류만 노출. */}
-                {custchartPhrasesByTab['상담'].length > 0 && (
-                  <div>
-                    <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
-                    <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-상담">
-                      {custchartPhrasesByTab['상담'].map(phrase => (
-                        <button
-                          key={phrase.id}
-                          type="button"
-                          onClick={() => setConsultationMemo(prev => prev ? `${prev} ${phrase.content}` : phrase.content)}
-                          className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
-                        >
-                          {phrase.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-[11px] text-muted-foreground mb-0.5">상담메모</label>
-                  <Textarea
-                    value={consultationMemo}
-                    onChange={(e) => setConsultationMemo(e.target.value)}
-                    rows={8}
-                    className="text-[11px] resize-none"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={saveConsultation}
-                  disabled={savingConsultation}
-                  /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 차콜(#333, 저장 primary) */
-                  className="w-full rounded bg-[#333333] text-white py-1.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
-                >
-                  {savingConsultation ? '저장 중…' : '저장'}
-                </button>
+                {/* T-20260622-foot-CHART2-MEMO-HISTORY (item4): 상담메모 히스토리 누적.
+                    상용구는 새 상담메모 입력란에 삽입. 담당자/ALT는 위에서 유지. 치료메모와 동일 패턴. */}
+                <MemoHistoryPanel
+                  hook={consultMemoHistory}
+                  phrases={custchartPhrasesByTab['상담']}
+                  profileEmail={profile?.email}
+                  testidPrefix="consult-memo"
+                  addLabel="새 상담메모 추가"
+                  addBtnLabel="상담메모 추가"
+                  historyLabel="상담메모 이력"
+                  emptyLabel="아직 상담메모가 없습니다"
+                  placeholder="상담 내용·보험·성향 등을 입력하세요…"
+                />
               </div>
             )}
 
@@ -7886,14 +8147,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           </div>
 
           {/* T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 메모 요약 — [수납 통계] 상단으로 이동.
-              예약메모(customer_memo)·상담메모(tm_memo)·치료메모(customer_treatment_memos 최신1건) 각 최신 1건만, 스크롤 없이 요약. */}
-          {(customer.customer_memo || customer.tm_memo || latestTreatmentMemo?.content) && (
+              T-20260622-foot-CHART2-MEMO-HISTORY item4: 예약/상담메모도 히스토리화 → 각 히스토리 최신 1건 표시.
+              히스토리 미존재(미migration) 시 hook.latest가 기존 단일필드 값으로 fallback(표시 연속성). 각 최신 1건만, 스크롤 없이 요약. */}
+          {(reservationMemoHistory.latest?.content || consultMemoHistory.latest?.content || latestTreatmentMemo?.content) && (
             <div className="border-b border-gray-200 px-3 py-2" data-testid="memo-summary-block">
               <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5">메모 요약</div>
               <div className="space-y-1.5">
                 {[
-                  { label: '예약메모', content: customer.customer_memo },
-                  { label: '상담메모', content: customer.tm_memo },
+                  { label: '예약메모', content: reservationMemoHistory.latest?.content ?? null },
+                  { label: '상담메모', content: consultMemoHistory.latest?.content ?? null },
                   { label: '치료메모', content: latestTreatmentMemo?.content ?? null },
                 ].filter(m => m.content).map(m => (
                   <div key={m.label} data-testid={`memo-summary-${m.label}`}>
