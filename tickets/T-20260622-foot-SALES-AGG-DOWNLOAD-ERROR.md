@@ -16,9 +16,10 @@ risk_level: GO (2/5 — package_payments 조회 셀렉트 1건 교정. 단건 pa
 deploy_ready: true
 deploy-ready-by: agent-fdd-dev-foot
 deploy-ready-at: 2026-06-22
-deploy_commit: 83f0a3a6
-commit_sha: 83f0a3a6
+deploy_commit: 5ce17f25
+commit_sha: 5ce17f25
 qa_fix_phase2: 83f0a3a6 — E2E 실행환경 정리(상대경로 goto + storageState 오버라이드 제거). desktop-chrome 3 passed. test-only, 소스 무변경. fix는 a6932f06 유지.
+qa_fix_phase2_v2: 5ce17f25 — supervisor QA spec_fail_new(sales-export-btn 미발견 click 타임아웃) 대응. (1) /login 리다이렉트 auth 가드 (2) export 버튼 visible 15s 명시 대기 후 click. 느린 QA 호스트의 SalesFilterBar 지연 마운트 + storageState 유실 회귀 차단. test-only, 소스 무변경. desktop-chrome 3 passed 재확인.
 ---
 
 # T-20260622-foot-SALES-AGG-DOWNLOAD-ERROR — 매출집계 엑셀 다운로드 오류
