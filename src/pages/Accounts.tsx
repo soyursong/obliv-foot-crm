@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { toast } from '@/lib/toast';
-import { Check, Copy, KeyRound, Shield, UserPlus, UserX } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, KeyRound, Shield, UserPlus, UserX, X } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
@@ -67,6 +67,9 @@ export default function Accounts() {
   const [inviteStaffId, setInviteStaffId] = useState<string>(''); // '' = auto/none
   const [inviteBusy, setInviteBusy] = useState(false);
 
+  // 비활성 계정 섹션 접기/펼치기 (순수 FE 상태, 기본 접힘)
+  const [showInactive, setShowInactive] = useState(false);
+
   // 비번 리셋 모달
   const [resetUser, setResetUser] = useState<UserProfile | null>(null);
   const [resetPw, setResetPw] = useState('');
@@ -112,6 +115,20 @@ export default function Accounts() {
       .eq('id', u.id);
     if (error) { toast.error(error.message); return; }
     toast.success(next ? '승인됨' : '승인 취소됨');
+    fetchUsers();
+  };
+
+  // 가입 거절 (비파괴): 미승인 계정을 active=false 로 내려 승인 대기 목록에서 제거.
+  // 행 삭제 대신 기존 admin_toggle_user_active RPC 재사용 → 데이터 보존 + auth 고아 없음 + staff 동기화 안전.
+  // pending 필터(!approved && active)에 의해 거절건(!approved && !active)은 모든 섹션에서 사라진다.
+  const rejectPending = async (u: UserProfile) => {
+    if (!window.confirm(`${u.name ?? u.email}의 가입을 거절할까요? 거절하면 승인 대기 목록에서 사라집니다.`)) return;
+    const { error } = await supabase.rpc('admin_toggle_user_active', {
+      target_user_id: u.id,
+      set_active: false,
+    });
+    if (error) { toast.error(`거절 실패: ${error.message}`); return; }
+    toast.success('가입을 거절했어요');
     fetchUsers();
   };
 
@@ -251,9 +268,12 @@ export default function Accounts() {
     fetchUsers();
   };
 
-  const pending = users.filter((u) => !u.approved);
+  // 승인 대기 = 미승인 + active(신규 가입 기본값). 거절건(!approved && !active)은 어느 섹션에도 노출되지 않음.
+  const pending = users.filter((u) => !u.approved && u.active);
   const active = users.filter((u) => u.approved && u.active);
   const inactive = users.filter((u) => u.approved && !u.active);
+  // 화면에 보이는 계정 합계 (거절된 ghost 행은 제외)
+  const visibleCount = pending.length + active.length + inactive.length;
 
   // 등록 모달: 임상직일 때 매핑 가능한 staff (user_id NULL + active)
   const availableStaff = useMemo(() => {
@@ -266,7 +286,7 @@ export default function Accounts() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">계정 관리</h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">{users.length}명</span>
+          <span className="text-xs text-muted-foreground">{visibleCount}명</span>
           <Button size="sm" onClick={() => setInviteOpen(true)} className="gap-1">
             <UserPlus className="h-3.5 w-3.5" /> 직원 등록
           </Button>
@@ -292,6 +312,14 @@ export default function Accounts() {
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => toggleApproval(u)}>
                       <Check className="mr-1 h-3.5 w-3.5" /> 승인
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:text-red-700"
+                      onClick={() => rejectPending(u)}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" /> 거절
                     </Button>
                   </div>
                 </div>
@@ -359,8 +387,21 @@ export default function Accounts() {
       {inactive.length > 0 && (
         <Card className="border-gray-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">비활성 계정 ({inactive.length})</CardTitle>
+            <button
+              type="button"
+              onClick={() => setShowInactive((v) => !v)}
+              className="flex w-full items-center justify-between text-left"
+              aria-expanded={showInactive}
+            >
+              <CardTitle className="text-sm text-muted-foreground">비활성 계정 ({inactive.length})</CardTitle>
+              {showInactive ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
           </CardHeader>
+          {showInactive && (
           <CardContent>
             <div className="space-y-2">
               {inactive.map((u) => (
@@ -376,6 +417,7 @@ export default function Accounts() {
               ))}
             </div>
           </CardContent>
+          )}
         </Card>
       )}
 
