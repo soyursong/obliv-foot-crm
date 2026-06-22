@@ -27,8 +27,15 @@
  *
  * T-20260522-foot-PENCHART-TOOL-UX (P2):
  *   AC-1: 펜 quadratic bezier 스무딩 → 글씨 인식 개선 (lastMidRef 추적)
- *   AC-2: 지우개 — placedItems 미삭제 (드로잉 레이어 스트로크만)
- *   AC-3: 화이트 — placedItems hit-test 삭제 (상용구 포함 전체)
+ *   AC-2: 지우개 — placedItems 미삭제 (드로잉 레이어 스트로크만)  ※SUPERSEDED ↓
+ *   AC-3: 화이트 — placedItems hit-test 삭제 (상용구 포함 전체)     ※SUPERSEDED ↓
+ *
+ * T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL (P2) — 위 V3 AC-2/3 레이어 재정의:
+ *   AC-2: 지우개 = 사용자 드로잉 전담 — 펜/형광펜(draw 레이어 clearRect) + 텍스트(placedItem type='text' hit-test 삭제).
+ *   AC-3: 화이트 = 상용구 전담 — boilerplate placedItem hit-test 삭제만. 배경 양식(bgCanvas)은 destination-out으로 보존.
+ *         (지우개↔화이트 대상 레이어 분리: 텍스트는 지우개, 상용구는 화이트.)
+ *   AC-1: 저장 차트 '수정' 버튼 — editingChart 배경 재오픈 + 동일 path upsert(신규행 0) + form_submissions 재insert 스킵.
+ *   AC-4: 펜차트 양식 우상단 '담당실장'→'담당자' 라벨 오버라이드(drawPenChartLabelOverride).
  *   AC-4: 텍스트 — 저장 후 이동·삭제 (PlacedItemOverlay 기존 구현)
  *   AC-5: 형광펜 — globalAlpha 0.20 (기존 구현)
  *   AC-6: T상용구 패널 헤더 중복 라벨 제거
@@ -316,6 +323,27 @@ function drawPenChartAutofillInline(
   ctx.restore();
 }
 
+// ── [보험차트] 라벨 오버라이드 — "담당실장" → "담당자" (T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL AC-4) ──
+// pen_chart_form.png(우측상단)에 "담당실장 :" 라벨이 구워져 있어 이미지 교체 없이 bgCanvas 위에 덮어쓴다.
+// 좌표 근거(PIL 픽셀 정밀 스캔, natural 1588×2245 → canvas 794×1123, scale=0.5):
+//   "담당실장 :" natural x=1106~1235 y=172~198 / 색상 ≈(46,46,46) → canvas x=553~617.5 y=86~99
+//   "담당의 :"  natural 콜론 우측끝 x≈1235 → canvas x≈617.5 (두 라벨 콜론 우측정렬)
+// → 기존 라벨을 흰 박스로 덮고 "담당자 :"를 동일 콜론 위치(우측정렬)·동일 라인에 재출력.
+// bgCanvas는 handleDrawSave에서 합성되므로(L2275) 화면+저장본 모두 "담당자"로 반영된다.
+function drawPenChartLabelOverride(ctx: CanvasRenderingContext2D) {
+  ctx.save();
+  // 1) 기존 "담당실장 :" 라벨 영역을 양식 배경색(흰색)으로 마스킹 (위 "담당의 :" y=64~77 / 아래 DATE 박스 미접촉)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(545, 81, 80, 23); // x 545~625, y 81~104
+  // 2) "담당자 :" 재출력 — 콜론을 담당의와 동일 x=618에 우측정렬, baseline=99 (원 라벨 하단)
+  ctx.fillStyle = '#2e2e2e';
+  ctx.font = '18px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('담당자 :', 618, 99);
+  ctx.restore();
+}
+
 /**
  * T-20260522-foot-PENCHART-TOOLS-V2 AC-1:
  * scaleX/scaleY — bg canvas가 naturalWidth×naturalHeight 기준일 때 좌표 보정
@@ -355,7 +383,8 @@ const HIGHLIGHT_COLORS = [
 ];
 
 // T-20260522-foot-PENCHART-TOOLS-V3: 도구 모드 통합 타입
-// white: 배경색(흰색) 덮어쓰기 도구 — source-over white fill (지우개와 달리 bg도 덮음)
+// white: 상용구 지우개 — destination-out 으로 draw 레이어 투명화 + placedItems(상용구) hit-test 삭제.
+//   배경 양식(bgCanvas)은 보존(T-20260622 AC-3). ※구 주석 "source-over white fill, bg 덮음"은 stale(실코드는 destination-out).
 // boilerplate-placing: 상용구 삽입 대기 (캔버스 클릭 시 상용구 배치)
 // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select — 선택/이동 모드.
 //   이 모드에서만 placedItem 오버레이가 interactive(pointerEvents auto) → 드래그·선택·삭제.
@@ -752,6 +781,10 @@ export function PenChartTab({
   const [saving, setSaving] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
+  // T-20260622-foot-PENCHART-EDITBTN: 수정 모드 — 저장된 차트를 배경으로 다시 열어 이어 편집.
+  //   set이면 (1) bg = 해당 차트 PNG (양식+기존필기 합성본), (2) 저장 시 동일 path upsert(신규행 0),
+  //   (3) form_submissions 재insert 스킵(기존 행 canvas_file 유지). null이면 신규 작성 흐름.
+  const [editingChart, setEditingChart] = useState<SavedChart | null>(null);
   // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #5: [고정](chartLocked) 토글 제거.
   //   STROKE-LAG(deployed)가 드로잉 도구(pen/highlight/eraser/white) 활성 시 touchAction:'none'을
   //   자동 적용 → 고정 토글의 "드로잉 중 스크롤 차단" 목적을 이미 대체. 비드로잉 도구(text/상용구/select)는
@@ -805,6 +838,9 @@ export function PenChartTab({
   const strokeRectRef = useRef<DOMRect | null>(null);
   // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 획 경로 — onPointerUp에서 한 번만 hit-test
   const whiteStrokePathRef = useRef<Array<{ x: number; y: number }>>([]);
+  // T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL AC-2: 지우개 획 경로 — onPointerUp에서 text placedItem hit-test.
+  //   지우개 = 사용자 드로잉(펜/형광펜=draw 레이어 clearRect + 텍스트=placedItem 삭제). 상용구는 미관여(화이트 전담).
+  const eraserStrokePathRef = useRef<Array<{ x: number; y: number }>>([]);
   // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: mirror refs for native pointermove (React 18 scheduler bypass)
   // React 18 concurrent mode는 pointermove를 MessageChannel tick으로 스케줄링 → 4-16ms 추가 지연.
   // native addEventListener는 브라우저 이벤트 루프에서 동기 발화 → 지연 최소화.
@@ -879,6 +915,8 @@ export function PenChartTab({
   // 매 onPointerUp 후 rAF에서 캡처 → onPointerDown 시 이미 준비된 ImageData를 stack에 적재 (sync 없음)
   const pendingUndoDataRef = useRef<ImageData | null>(null);
   const pendingUndoRafRef  = useRef<number | null>(null);
+  // T-20260622-foot-PENCHART-EDITBTN: 저장 핸들러(handleDrawSave) closure stale 방지용 미러 ref.
+  const editingChartRef    = useRef<SavedChart | null>(null);
 
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
 
@@ -890,6 +928,7 @@ export function PenChartTab({
   penSizeRef.current        = penSize;
   highlightColorRef.current = highlightColor;
   highlightAlphaRef.current = highlightAlpha; // #3: 형광펜 농도 → native handler 동기화
+  editingChartRef.current   = editingChart;   // T-20260622-foot-PENCHART-EDITBTN: 저장 시 최신 수정대상 보장
   // T-20260610-foot-PENCHART-6FIX-REFIX A: 매 렌더 동기화 → flushTextInput(stable)이 최신 입력값 읽음
   textInputPosRef.current   = textInputPos;
   textInputValueRef.current = textInputValue;
@@ -1197,8 +1236,10 @@ export function PenChartTab({
         const last = lastPosRef.current ?? pos;
 
         if (tool === 'eraser') {
-          // V3 AC-3: 드로잉 레이어만 clearRect → bg 보존, placedItems 미삭제
+          // 펜/형광펜(draw 레이어)만 clearRect → bg(양식)·상용구 보존.
+          // T-20260622 AC-2: 텍스트 placedItem 삭제는 onPointerUp hit-test에서 1회(경로 누적).
           ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
+          eraserStrokePathRef.current.push(pos);
         } else if (tool === 'white') {
           ctx.beginPath();
           ctx.moveTo(last.x, last.y);
@@ -1274,7 +1315,11 @@ export function PenChartTab({
     ctx.fillRect(0, 0, CANVAS_W, canvasH);   // 이미지 로드 전 흰 배경 표시
 
     let bgUrl: string | null = null;
-    if (activeDrawTemplate && (
+    if (editingChart) {
+      // T-20260622-foot-PENCHART-EDITBTN: 수정 모드 — 저장된 차트 PNG(양식+기존필기 합성본)를 배경으로.
+      //   양식 템플릿을 별도로 깔지 않음(이중 양식 방지). 사용자는 이 위에 이어서 필기/지우개/화이트.
+      bgUrl = editingChart.url;
+    } else if (activeDrawTemplate && (
       isHealthQFormKey(activeDrawTemplate.form_key) ||
       isPdfOverlayFormKey(activeDrawTemplate.form_key) ||
       // T-20260522-foot-PENCHART-HIRES-FORM: 개인정보+체크리스트 PNG 배경 직접 로드
@@ -1424,8 +1469,9 @@ export function PenChartTab({
         setBgImgLoadError(false);
         // T-20260523-foot-PENCHART-FORM-AUTOFILL: positions 기반 범용 자동채움
         // bgCanvas가 CANVAS_W×canvasH 논리이므로 scaleX/scaleY=1 (CSS 좌표 그대로)
-        if (autofillDataRef.current) {
-          const fk = activeDrawTemplate?.form_key ?? '';
+        const fk = activeDrawTemplate?.form_key ?? '';
+        // T-20260622-foot-PENCHART-EDITBTN: 수정 모드는 저장본(autofill 이미 합성됨)을 bg로 쓰므로 재출력 스킵(중복방지).
+        if (autofillDataRef.current && !editingChart) {
           if (isRefundConsentKey(fk)) {
             // 환불동의서: page 1 (차트번호·환자이름) + page 3 (날짜 분리 배치)
             // AC-R5: P1 좌표 재보정 + P3 날짜 년/월/일 분리 우측정렬
@@ -1439,10 +1485,15 @@ export function PenChartTab({
             drawPenChartAutofillInline(ctx, autofillDataRef.current);
           }
         }
+        // T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL AC-4: 보험차트 "담당실장"→"담당자" 라벨 오버라이드.
+        //   신규/수정 공통 적용(수정 시 구 양식의 "담당실장"도 재저장 시 "담당자"로 교정). pen_chart 전용 좌표.
+        if (fk === 'pen_chart') {
+          drawPenChartLabelOverride(ctx);
+        }
       };
       img.src = bgUrl;
     }
-  }, [templateImgUrl, activeDrawTemplate]);
+  }, [templateImgUrl, activeDrawTemplate, editingChart]);
 
   /** 드로잉 레이어 초기화: 투명 배경 — 지우개 clearRect → bgCanvas 노출
    * T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0:
@@ -2058,9 +2109,11 @@ export function PenChartTab({
     if (!ctx) return;
 
     if (activeTool === 'eraser') {
-      // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존, placedItems 미삭제
+      // 펜/형광펜(draw 레이어)만 clearRect → bg(양식)·상용구 보존.
+      // T-20260622 AC-2: 텍스트 placedItem 삭제는 onPointerUp hit-test(시작점부터 경로 누적).
       const sz = penSize * 4;
       ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
+      eraserStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'white') {
       // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #4: 화이트 시작점 — destination-out(지움)으로 draw 레이어만
       //   투명화 → 하단 양식 보존. placedItems hit-test 삭제는 onPointerUp 유지. (save/restore로 GCO 격리)
@@ -2120,22 +2173,40 @@ export function PenChartTab({
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: strokeRect 캐시 해제
     strokeRectRef.current = null;
 
+    // placedItem hit-test 헬퍼 — 획 경로가 아이템 박스와 교차하면 true.
+    const pathHitsItem = (path: Array<{ x: number; y: number }>, item: PlacedItem, sz: number) => {
+      const lineH = item.fontSize + 6;
+      const lines = item.text.split('\n');
+      const itemH = lines.length * lineH + 8;
+      const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
+      return path.some(({ x, y }) =>
+        x + sz > item.x && x - sz < item.x + itemW &&
+        y + sz > item.y && y - sz < item.y + itemH
+      );
+    };
+
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 hit-test — 획 종료 시 1회만 실행
     // (onPointerMove에서 매 이벤트마다 setPlacedItems 호출 제거 → React re-render 억제)
+    // T-20260622 AC-3: 화이트는 '상용구'(boilerplate)만 삭제. 텍스트는 지우개(AC-2) 전담 → 대상 레이어 구분.
+    //   배경 양식(bgCanvas)은 destination-out이 draw 레이어만 투명화하므로 보존(불변).
     if (activeTool === 'white' && whiteStrokePathRef.current.length > 0) {
       const wsz = penSize * 4;
       const path = whiteStrokePathRef.current;
-      setPlacedItems((prev) => prev.filter((item) => {
-        const lineH = item.fontSize + 6;
-        const lines = item.text.split('\n');
-        const itemH = lines.length * lineH + 8;
-        const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
-        return !path.some(({ x, y }) =>
-          x + wsz > item.x && x - wsz < item.x + itemW &&
-          y + wsz > item.y && y - wsz < item.y + itemH
-        );
-      }));
+      setPlacedItems((prev) => prev.filter((item) =>
+        !(item.type === 'boilerplate' && pathHitsItem(path, item, wsz))
+      ));
       whiteStrokePathRef.current = [];
+    }
+
+    // T-20260622 AC-2: 지우개 도구 hit-test — '텍스트' placedItem 삭제(펜/형광펜은 native move clearRect로 이미 처리).
+    //   상용구(boilerplate)는 미관여(화이트 전담). 배경 양식 미관여.
+    if (activeTool === 'eraser' && eraserStrokePathRef.current.length > 0) {
+      const esz = penSize * 4;
+      const path = eraserStrokePathRef.current;
+      setPlacedItems((prev) => prev.filter((item) =>
+        !(item.type === 'text' && pathHitsItem(path, item, esz))
+      ));
+      eraserStrokePathRef.current = [];
     }
 
     const canvas = canvasRef.current;
@@ -2295,9 +2366,14 @@ export function PenChartTab({
         // T-20260522-foot-PENCHART-HIRES-FORM: pc_sr_ = senior, pc_ = general
         prefix = `pc_${activeDrawTemplate.form_key === 'personal_checklist_senior' ? 'sr_' : ''}`;
       }
-      const fileName = `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
+      // T-20260622-foot-PENCHART-EDITBTN AC-1: 수정 모드면 기존 파일명 그대로 덮어쓰기(신규 행 0).
+      //   neutral path/fileName + upsert:true → 저장소 동일 객체 갱신. 신규면 종전대로 새 파일.
+      const editTarget = editingChartRef.current;
+      const fileName = editTarget
+        ? editTarget.name
+        : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
       const path = `${storagePath}/${fileName}`;
-      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: false });
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: !!editTarget });
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
 
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
@@ -2305,7 +2381,9 @@ export function PenChartTab({
       // T-20260522-foot-PENCHART-HIRES-FORM: 개인정보+체크리스트 form_submissions 연동
       const isPCL = activeDrawTemplate && isPersonalChecklistKey(activeDrawTemplate.form_key);
 
-      if ((isPC || isHQ || isPCL) && activeDrawTemplate) {
+      // T-20260622-foot-PENCHART-EDITBTN AC-1: 수정 저장은 기존 form_submissions 행(canvas_file=fileName 동일)을
+      //   그대로 두고 이미지만 갱신 → 재insert 시 상담내역 중복 행 발생하므로 스킵.
+      if ((isPC || isHQ || isPCL) && activeDrawTemplate && !editTarget) {
         // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 UI 제거 → signature_base64 항상 null
         const signatureBase64 = null;
         const now = new Date().toISOString();
@@ -2344,6 +2422,7 @@ export function PenChartTab({
       setTextInputPos(null);
       setTextInputValue('');
       setActiveDrawTemplate(null);
+      setEditingChart(null); // T-20260622-foot-PENCHART-EDITBTN: 수정 세션 종료
       setMode('list');
 
       // T-20260528-foot-PENCHART-POPUP: 팝업 모드 — 저장 후 부모 창 갱신 + 팝업 닫기
@@ -2375,6 +2454,41 @@ export function PenChartTab({
     if (error) toast.error(`삭제 실패: ${error.message}`);
     if (selectedChart?.name === chart.name) setSelectedChart(null);
     await loadSavedCharts();
+  };
+
+  // ── 수정 ─────────────────────────────────────────────────────────────
+  // T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL AC-1:
+  //   저장된 차트를 편집 모드(draw)로 다시 연다. 파일명 prefix로 원 양식(form_key)을 복원해
+  //   캔버스 치수(canvasH)를 맞추고, 배경은 저장본 PNG(양식+기존필기 합성본)로 깐다(editingChart).
+  //   사용자는 그 위에 이어서 필기/지우개/화이트 → 저장 시 동일 path 덮어쓰기(handleDrawSave).
+  const formKeyFromFileName = (name: string): string => {
+    if (name.startsWith('hq_sr_')) return 'health_questionnaire_senior';
+    if (name.startsWith('hq_'))    return 'health_questionnaire_general';
+    if (name.startsWith('rc_'))    return 'refund_consent';
+    if (name.startsWith('pc_sr_')) return 'personal_checklist_senior';
+    if (name.startsWith('pc_'))    return 'personal_checklist_general';
+    return 'pen_chart';
+  };
+  const handleEditChart = (chart: SavedChart) => {
+    const fk = formKeyFromFileName(chart.name);
+    // 원 양식 템플릿(로드된 것 우선)으로 form_key/치수 복원. 배경은 editingChart.url로 강제 오버라이드되므로
+    // template_path 자체는 사용되지 않지만, form_key 기반 canvasH·도구 분기·라벨오버라이드 판정에 필요.
+    let tpl: Template;
+    if (fk === 'pen_chart') {
+      tpl = penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE;
+    } else if (fk === 'refund_consent') {
+      tpl = refundConsentTemplate ?? BUILTIN_REFUND_CONSENT;
+    } else if (isHealthQFormKey(fk)) {
+      tpl = healthQTemplates.find((t) => t.form_key === fk)
+        ?? (fk === 'health_questionnaire_senior' ? BUILTIN_HEALTH_Q_SENIOR : BUILTIN_HEALTH_Q_GENERAL);
+    } else {
+      // personal_checklist_* — 로드 목록에 없으므로 form_key만 갖춘 합성 템플릿(배경은 저장본이라 무관).
+      tpl = { id: `edit-${fk}`, name_ko: '(수정)', template_path: chart.url, template_format: 'png', form_key: fk };
+    }
+    setSelectedChart(null);
+    setEditingChart(chart);
+    setActiveDrawTemplate(tpl);
+    setMode('draw');
   };
 
   // ── 상용구 선택 ──────────────────────────────────────────────────────
@@ -2484,6 +2598,7 @@ export function PenChartTab({
           if (!open) {
             if (mode === 'draw' && hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
             setActiveDrawTemplate(null);
+            setEditingChart(null); // T-20260622-foot-PENCHART-EDITBTN: 수정 취소 시 세션 종료
             // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드에서 닫기 → 창 닫기
             if (popupMode) { window.close(); return; }
             setMode('list');
@@ -2624,7 +2739,7 @@ export function PenChartTab({
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
-          {/* 화이트 — 초기 굵기 3, source-over 흰색 덮어쓰기 (배경 포함 전 레이어) */}
+          {/* 화이트 — 초기 굵기 3. T-20260622 AC-3: 상용구/필기를 지우되 배경 양식은 보존(destination-out + 상용구 hit-test 삭제) */}
           <button
             onClick={() => switchTool(isWhite ? 'pen' : 'white')}
             className={cn(
@@ -2633,7 +2748,7 @@ export function PenChartTab({
                 ? 'bg-slate-200 border-slate-500 text-slate-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="화이트 — 흰색으로 덮어쓰기 (배경 포함 전 레이어)"
+            title="화이트 — 상용구를 지웁니다 (배경 양식은 보존)"
           >
             <Paintbrush className="h-3.5 w-3.5" />
             <span>화이트</span>
@@ -2939,6 +3054,7 @@ export function PenChartTab({
               onClick={() => {
                 if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
                 setActiveDrawTemplate(null);
+                setEditingChart(null); // T-20260622-foot-PENCHART-EDITBTN: 수정 취소 시 세션 종료
                 // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드에서 취소 → 창 닫기
                 if (popupMode) { window.close(); return; }
                 setMode('list');
@@ -3448,12 +3564,25 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                       download={chart.name}
                       onClick={(e) => e.stopPropagation()}
                       className="text-white/80 hover:text-white"
+                      title="내려받기"
+                      data-testid={`penchart-download-${chart.name}`}
                     >
                       <Download className="h-3 w-3" />
                     </a>
+                    {/* T-20260622-foot-PENCHART-EDITBTN AC-1: 수정 — 저장된 차트를 편집 모드로 다시 열기 */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEditChart(chart); }}
+                      className="text-white/80 hover:text-white"
+                      title="수정"
+                      data-testid={`penchart-edit-${chart.name}`}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(chart); }}
                       className="text-red-300 hover:text-red-100"
+                      title="삭제"
+                      data-testid={`penchart-delete-${chart.name}`}
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
