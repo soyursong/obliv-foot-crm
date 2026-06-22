@@ -54,7 +54,11 @@ async function setup(page: Page, opts: { countdown: number; savedNoticeMs?: numb
 }
 
 const loadCount = (page: Page) =>
-  page.evaluate(() => Number(sessionStorage.getItem('__loadCount') || '0'));
+  page
+    .evaluate(() => Number(sessionStorage.getItem('__loadCount') || '0'))
+    // reload 발화 순간 page.evaluate 가 'execution context destroyed'(navigation)로 던질 수 있다.
+    // expect.poll 이 그 예외로 중단되지 않도록 -1(불일치 sentinel)로 흡수 → 다음 polling에서 정상값을 읽는다.
+    .catch(() => -1);
 
 const banner = (page: Page) => page.getByTestId('app-update-banner');
 const reloadBtn = (page: Page) => page.getByTestId('app-update-reload');
@@ -86,7 +90,10 @@ test('AC-2/시나리오1: 카운트다운 종료 시 버튼 없이 자동 새로
 
 // ── 시나리오 1 (AC-3a): flushable dirty → 자동 저장 후 "자동 저장됨" → 새로고침 ──
 test('AC-3a/시나리오1: 저장 경로 보유(flushable) → 자동 저장 후 새로고침', async ({ page }) => {
-  await setup(page, { countdown: 30, savedNoticeMs: 400 }); // 자동만료 방지 → 버튼으로 트리거
+  // 자동만료 방지(countdown 30) → 버튼으로 트리거.
+  // savedNoticeMs 1200: flush 직후 "자동 저장됨"이 reload 전에 안정적으로 관측되도록 여유를 둔다
+  //   (400ms는 toBeVisible 폴링이 잡기 전에 reload가 발화해 saved-notice/loadCount poll과 경합).
+  await setup(page, { countdown: 30, savedNoticeMs: 1200 });
   await mockNewVersion(page);
   await page.goto('/');
   await expect(banner(page)).toBeVisible({ timeout: 8000 });
