@@ -57,6 +57,8 @@ import { supabase } from '@/lib/supabase';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
+// T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
+import { buildDocSerial } from '@/lib/docSerial';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
@@ -1518,6 +1520,11 @@ function IssueDialog({
   const [editingAmountStr, setEditingAmountStr] = useState('');
   // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 용량/용법/투약일수 (rx_standard 전용)
   const [rxItemDosages, setRxItemDosages] = useState<Record<string, { unit_dose: string; daily_freq: string; total_days: string }>>({});
+  // T-20260622-foot-DOCSERIAL-AUTOGEN: 연번호 자동 생성용 — 실제 차트번호(F-XXXX)와 발급순번.
+  //   seq = 동일 환자+동일 서류종류(template)+동일 발급일 form_submissions count + 1 (read-only).
+  //   미리보기는 INSERT 안 함 → 반복 호출에도 seq 불변(idempotent). null = 아직 산출 전 → 발번 보류.
+  const [serialChartNo, setSerialChartNo] = useState<string | null>(null);
+  const [serialSeq, setSerialSeq] = useState<number | null>(null);
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: service_charges 새로고침 공통 헬퍼
   // T-20260525-foot-INS-FIELD-BIND: category_label 추가 — 상병코드 식별용
@@ -1666,6 +1673,44 @@ function IssueDialog({
       setAddServiceOpen(false);
     };
   }, [open, checkIn, dutyDoctors]);
+
+  // T-20260622-foot-DOCSERIAL-AUTOGEN: 연번호 자동 생성 소스 (read-only). 다이얼로그 오픈 시 1회.
+  //   ① 차트번호(F-XXXX) — customers.chart_number (autobind record_no 의 임시 slice 대신 실제값).
+  //   ② 발급순번 — 동일 환자+동일 서류종류(template_id)+동일 발급일 form_submissions count + 1.
+  //   미리보기/출력 반복으로 순번이 꼬이지 않도록 INSERT 전 count 만 읽는다(idempotent).
+  //   created_at(KST) 으로 당일 판정 — 기존 코드의 format(new Date(),…) 로컬 tz 처리와 정합.
+  useEffect(() => {
+    if (!open || !checkIn.customer_id) {
+      setSerialChartNo(null);
+      setSerialSeq(null);
+      return;
+    }
+    let cancelled = false;
+    const todayKey = format(new Date(), 'yyyyMMdd');
+    Promise.all([
+      supabase
+        .from('customers')
+        .select('chart_number')
+        .eq('id', checkIn.customer_id)
+        .maybeSingle(),
+      supabase
+        .from('form_submissions')
+        .select('created_at')
+        .eq('customer_id', checkIn.customer_id)
+        .eq('template_id', template.id),
+    ]).then(([custRes, subRes]) => {
+      if (cancelled) return;
+      const chartNo = (custRes.data?.chart_number as string | null | undefined) ?? null;
+      setSerialChartNo(chartNo && String(chartNo).trim() ? String(chartNo).trim() : null);
+      // 당일(KST) 발급 이력만 카운트 → 다음 발급순번 = count + 1
+      const issuedToday = (subRes.data ?? []).filter((r) => {
+        const ca = (r as { created_at?: string | null }).created_at;
+        return ca ? format(new Date(ca), 'yyyyMMdd') === todayKey : false;
+      }).length;
+      setSerialSeq(issuedToday + 1);
+    });
+    return () => { cancelled = true; };
+  }, [open, checkIn.customer_id, template.id]);
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
   const handleDeleteItem = async (id: string) => {
@@ -1885,7 +1930,25 @@ function IssueDialog({
       applyBillingFallback(base, footFb.liveBillingValues);
     }
 
-    // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)
+    // T-20260622-foot-DOCSERIAL-AUTOGEN: 등록번호(차트번호)/연번호 자동 생성.
+    //   등록번호(record_no) = 실제 차트번호(F-XXXX). 임시값(customer_id.slice) 대신 customers.chart_number 우선.
+    //   연번호(visit_no) = {prefix}-{발급일YYYYMMDD}-{차트번호}-{발급순번2자리} (예: VC-20260622-F-4302-01).
+    //   prefix/차트번호/순번 중 하나라도 없으면(미등록 form_key·미발번·count 진행 중) 발번 보류 →
+    //   기존 fallback 유지(임시값 fabrication 금지, 회귀0).
+    if (serialChartNo && !base.record_no) {
+      base.record_no = serialChartNo;
+    }
+    const docSerial = buildDocSerial({
+      formKey: template.form_key,
+      chartNo: serialChartNo, // 실제 차트번호(F-XXXX)만 — 미발번이면 발번 보류(slice 임시값 미사용)
+      dateYYYYMMDD: format(new Date(), 'yyyyMMdd'),
+      seq: serialSeq,
+    });
+    if (docSerial) {
+      base.visit_no = docSerial;
+    }
+
+    // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자) — 위 자동 발번이 보류된 경우의 최종 fallback
     if (!base.record_no) {
       base.record_no = checkIn.customer_id?.slice(0, 8) ?? '';
     }
@@ -1894,7 +1957,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, serialSeq]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
