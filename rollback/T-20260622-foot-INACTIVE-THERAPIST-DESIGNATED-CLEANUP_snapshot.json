@@ -1,0 +1,13 @@
+{
+  "ticket": "T-20260622-foot-INACTIVE-THERAPIST-DESIGNATED-CLEANUP",
+  "baek_id": "6df79a63-6812-4a02-b9d4-19d6c1b6ca2c",
+  "today": "2026-06-22",
+  "captured_at": "2026-06-22T17:35:30.111Z",
+  "affected": {
+    "customers.designated_therapist_id": [
+      "3f7b1572-4501-44ca-b5a2-34411fd339d6"
+    ],
+    "reservations.preferred_therapist_id": [],
+    "check_ins.therapist_id": []
+  }
+}
