@@ -66,15 +66,17 @@ interface RoomLog {
 
 // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → 동선 트래커에서 삭제.
 // (과거 heated_laser 동선 로그는 매핑 누락으로 표시 생략 — 시술기록은 session_type 기반이라 무영향)
-type TrackedSlotType = '상담실' | '치료실' | '레이저실';
-// 슬롯 표시 순서 (상담실 → 치료실 → 레이저실)
-const TRACKED_SLOT_ORDER: TrackedSlotType[] = ['상담실', '치료실', '레이저실'];
+// T-20260623-foot-CHECKIN-LASER-SLOT-LABEL: 레이저 시술도 물리 공간은 '치료실'(별도 레이저실 없음).
+//   '레이저실' 슬롯 제거 → laser/treatment 모두 '치료실'로 병합 표시 (DB room_type='laser'는 불변).
+type TrackedSlotType = '상담실' | '치료실';
+// 슬롯 표시 순서 (상담실 → 치료실)
+const TRACKED_SLOT_ORDER: TrackedSlotType[] = ['상담실', '치료실'];
 
 /** room_type → TrackedSlotType 매핑 (check_in_room_logs.room_type 기반) */
 const ROOM_TYPE_TO_SLOT: Partial<Record<string, TrackedSlotType>> = {
   consultation: '상담실',
   treatment: '치료실',
-  laser: '레이저실',
+  laser: '치료실', // 레이저 시술 물리 공간 = 치료실 (treatment와 병합, last-room-wins)
 };
 function logDateStr(isoStr: string): string {
   return new Date(isoStr).toLocaleDateString('ko-KR', {
@@ -986,7 +988,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260522-foot-CHART1-TRIM AC-3: 금일 이동이력 제거 — dailySlotSummary만 사용
 
   // T-20260522-foot-SPACE-AUTOROUTE: 금일 동선 — check_in_room_logs 기반 슬롯별 마지막 위치 (last-room-wins)
-  // T-20260522-foot-CHART1-TRIM AC-4: 치료실·레이저실 항상 표시 (logs 없어도 "—" 표기)
+  // T-20260522-foot-CHART1-TRIM AC-4: 상담실·치료실 항상 표시 (logs 없어도 "—" 표기)
+  //   T-20260623-foot-CHECKIN-LASER-SLOT-LABEL: 레이저실 슬롯 제거 — laser room_type은 치료실로 병합.
   const dailySlotSummary = useMemo(() => {
     const today = todaySeoulStr();
     const todayLogs = roomLogs.filter((l) => logDateStr(l.logged_at) === today);
