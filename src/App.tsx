@@ -251,6 +251,11 @@ function App() {
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>
 
+              {/* T-20260617-foot-DOCFORM-POPUP-OVERHAUL (QA fix MSG-20260622-160527): 진료대시보드 라우트 정본은
+                  /admin/doctor-tools. 하지만 /doctor-tools 직접 진입(QA·외부 딥링크·북마크) 시 하단 catch-all(*)에
+                  먹혀 /admin(메인 대시보드)으로 redirect → 진료대시보드 화면 요소 미노출(QA insufficient_verification 원인).
+                  clinic-settings 패턴 동일하게 top-level alias redirect로 정본 라우트로 흡수. 라우팅 전용(컨텐츠/권한 불변). */}
+              <Route path="/doctor-tools" element={<Navigate to="/admin/doctor-tools" replace />} />
               <Route path="/" element={<Navigate to="/admin" replace />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>
