@@ -27,6 +27,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = (rel: string) => readFileSync(join(HERE, '../../src', rel), 'utf-8');
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 const QRX = () => SRC('components/doctor/QuickRxBar.tsx');
+// T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: ColumnExpandPopover 가 DoctorCallDashboard 로컬 정의 → 공유 모듈로 추출됨.
+//   팝오버 내부 구현(폭계산·portal·mousedown)은 본 모듈에서, DoctorCallDashboard 는 import·사용을 검증.
+const POP = () => SRC('components/doctor/ColumnExpandPopover.tsx');
 
 // 특정 <colgroup> 블록에서 w-[N%] 폭 순서를 뽑는다.
 function colWidths(block: string): number[] {
@@ -129,18 +132,24 @@ test.describe('AC-2 PARADIGM — 임상경과 펼침: 컬럼앵커 드롭다운 
   });
 
   test('GUARD 비가림: ColumnExpandPopover 폭=앵커 셀(컬럼) 폭, portal fixed, mousedown 바깥클릭 닫힘', () => {
-    const s = DASH();
     // 컬럼앵커 팝오버 단일 컴포넌트로 리워크(신규 토글 난립 0).
-    expect(s).toContain('function ColumnExpandPopover');
+    //   T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 공유 모듈로 추출 — 내부 구현은 POP(), 소비는 DASH() 가 검증.
+    const p = POP();
+    expect(p).toContain('export function ColumnExpandPopover');
     // 폭 = 앵커 셀(컬럼) 폭 → 가로로 다른 컬럼 침범 0(비가림 보장).
-    expect(s).toContain('const width = Math.min(r.width');
+    expect(p).toContain('const width = Math.min(r.width');
     // body portal + position fixed (행을 밀지 않음).
-    expect(s).toContain('position: \'fixed\'');
-    expect(s).toContain('document.body');
+    expect(p).toContain('position: \'fixed\'');
+    expect(p).toContain('document.body');
     // 바깥클릭 닫힘 = CHART-CLINICAL-CLICKOUTSIDE mousedown 패턴 재사용.
-    expect(s).toContain('mousedown');
+    expect(p).toContain('mousedown');
     // 길면 컬럼 폭 안에서 세로 스크롤.
-    expect(s).toContain('overflow-y-auto');
+    expect(p).toContain('overflow-y-auto');
+    // DoctorCallDashboard 는 공유 컴포넌트를 import·사용(로컬 재정의 없음).
+    const s = DASH();
+    expect(s).toContain("from '@/components/doctor/ColumnExpandPopover'");
+    expect(s).toContain('<ColumnExpandPopover');
+    expect(s).not.toContain('function ColumnExpandPopover(');
   });
 });
 

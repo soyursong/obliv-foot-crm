@@ -104,7 +104,9 @@ test.describe('S3 임상경과 본문 우선 재분배 + AC-2/AC-3 회귀 0', ()
     // table-fixed 유지(폭 hard 제약 근거).
     expect(s).toContain('table-fixed');
     // 컬럼앵커 펼침 팝오버·앵커 ref 보존.
-    expect(s).toContain('function ColumnExpandPopover');
+    //   T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: ColumnExpandPopover 공유 모듈로 추출 → import·사용으로 검증(로컬 정의 없음).
+    expect(s).toContain("from '@/components/doctor/ColumnExpandPopover'");
+    expect(s).toContain('<ColumnExpandPopover');
     expect(s).toContain('anchorRef={rxCellRef}');
     expect(s).toContain('anchorRef={clinicalCellRef}');
     expect(s).toContain('doctor-call-rx-expand-pop');
