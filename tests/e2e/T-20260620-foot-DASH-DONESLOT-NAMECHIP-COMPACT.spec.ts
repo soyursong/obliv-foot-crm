@@ -150,7 +150,11 @@ test.describe('T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT — 완료 슬롯 
     await expect(page.getByRole('dialog').filter({ hasText: myName }).first()).toBeVisible({ timeout: 10_000 });
   });
 
-  test('S-5: AC-4 — 수납대기 컬럼 높이가 완료 컬럼보다 확대됨', async ({ page }) => {
+  // SUPERSEDED by T-20260622-foot-DASH-PAYMENT-WAITING-EMPTY-HEIGHT (2026-06-22):
+  //   원 S-5(AC-4)는 수납대기 scoped 높이 확대(PAYMENT_WAITING_COLUMN_HEIGHT=max(560px,…))를 가드했으나,
+  //   김주연 총괄 후속 결정으로 빈 상태 과성장이 회귀로 판정 → 전 슬롯 baseline 통일(420px floor)로 반전.
+  //   신 가드는 T-20260622 spec 으로 이관. 여기서는 빈 상태 동일 높이만 회귀 확인.
+  test('S-5: [SUPERSEDED→통일] 수납대기 빈 상태 높이 = 완료 동일 baseline(과성장 없음)', async ({ page }) => {
     await gotoDashboard(page);
     const desk = page.locator('[data-testid="slot-col-desk"]').first();
     const done = page.locator('[data-testid="slot-col-done"]').first();
@@ -160,8 +164,8 @@ test.describe('T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT — 완료 슬롯 
     const doneBox = await done.boundingBox();
     expect(deskBox).not.toBeNull();
     expect(doneBox).not.toBeNull();
-    // 완료 슬롯은 접힘 상태(짧음) + 수납대기는 scoped 높이 확대 → 명확히 더 큼
-    expect(deskBox!.height).toBeGreaterThan(doneBox!.height + 80);
+    // T-20260622: 빈 상태 baseline 통일 → 수납대기가 완료보다 과성장하지 않는다(둘 다 420px floor, ±tol).
+    expect(Math.abs(deskBox!.height - doneBox!.height)).toBeLessThanOrEqual(40);
   });
 
   test('S-6: AC-3 회귀 — 치료대기 풀카드(checkin-card) 정상 렌더', async ({ page }) => {

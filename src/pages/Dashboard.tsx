@@ -309,11 +309,9 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
 //     끌어올리지 않음). 각 슬롯이 자기 minHeight floor 위에서 독립 성장.
 const SLOT_COLUMN_HEIGHT = '420px';
 
-// T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-4: 수납대기 슬롯 scoped 높이 override.
-//   T-20260615 HEIGHT-UNIFY(전 슬롯 420px floor)를 수납대기 슬롯에 한해 의도적으로 키운다(현장 김주연 총괄 요청).
-//   다른 슬롯(치료대기·치료실·레이저실·완료)은 SLOT_COLUMN_HEIGHT(420px) floor 유지 → 전역 통일 규칙 불변.
-//   max(560px, calc(...)) 로 작은 화면에서도 420 floor 보다 항상 크고, 큰 화면에서 뷰포트에 맞춰 더 길어진다.
-const PAYMENT_WAITING_COLUMN_HEIGHT = 'max(560px, calc(100vh - 170px))';
+// T-20260622-foot-DASH-PAYMENT-WAITING-EMPTY-HEIGHT: 수납대기 scoped override(PAYMENT_WAITING_COLUMN_HEIGHT,
+//   T-20260620 도입 max(560px,calc(100vh-170px)))는 빈 상태 과성장 회귀를 유발해 제거. 수납대기도 SLOT_COLUMN_HEIGHT(420px)
+//   floor 로 통일 복귀 → 전 슬롯 빈 상태 동일 높이. naturalGrow 로 카드 추가 시 자연 성장은 유지.
 
 // ── 그룹 정렬 핸들용 SortableGroupItem ────────────────────────────────────────
 function SortableGroupItem({
@@ -6407,8 +6405,11 @@ export default function Dashboard() {
       case 'desk_section':
         return (
           // T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-4/AC-5: 완료 슬롯은 desk_section 에서 분리(우측 단독, renderDoneColumn).
-          //   desk_section 은 이제 수납대기 단독 → wrapper minHeight 를 PAYMENT_WAITING_COLUMN_HEIGHT(scoped override)로 키운다.
-          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ minHeight: PAYMENT_WAITING_COLUMN_HEIGHT }}>
+          //   desk_section 은 이제 수납대기 단독.
+          // T-20260622-foot-DASH-PAYMENT-WAITING-EMPTY-HEIGHT: T-20260620 의 scoped override(PAYMENT_WAITING_COLUMN_HEIGHT,
+          //   max(560px,…))는 빈 상태에서 done/laser(420px floor)보다 과성장하는 회귀를 유발 → SLOT_COLUMN_HEIGHT 로 통일 복귀.
+          //   빈 상태 baseline = 완료·레이저실 동일(AC-1). naturalGrow(아래 DroppableColumn)는 유지 → 카드 추가 시 자연 성장(AC-2).
+          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
             <DroppableColumn
               id="payment_waiting"
               label="수납대기"
