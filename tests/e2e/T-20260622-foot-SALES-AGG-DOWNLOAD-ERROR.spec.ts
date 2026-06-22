@@ -33,12 +33,24 @@ test.describe('매출집계 엑셀 다운로드 오류 회귀', () => {
     await page.goto(SALES_URL);
     await page.waitForLoadState('networkidle');
 
+    // 인증 가드: storageState 유실/만료로 /login 리다이렉트 되면 sales-export-btn 이
+    // 영영 렌더되지 않아 click 타임아웃(=과거 QA 실패 표면). 명확한 사유로 조기 실패시킨다.
+    expect(
+      page.url(),
+      'storageState 유실로 /login 리다이렉트 — auth.setup(setup project) 선행 확인',
+    ).not.toContain('/login');
+
+    // 느린 QA 호스트에서 networkidle 직후 SalesFilterBar 가 아직 마운트 안 됐을 수 있음
+    // (actionTimeout 10s 내 미발견 → click 타임아웃 회귀). 버튼 가시화를 명시적으로 대기.
+    const exportBtn = page.getByTestId('sales-export-btn');
+    await expect(exportBtn).toBeVisible({ timeout: 15_000 });
+
     // 다운로드 이벤트(성공 시) 또는 토스트(빈데이터/오류) 중 하나를 기다림
     const downloadPromise = page
       .waitForEvent('download', { timeout: 8000 })
       .catch(() => null);
 
-    await page.getByTestId('sales-export-btn').click();
+    await exportBtn.click();
 
     // 핵심 단언: 오류 토스트가 뜨면 실패 (PGRST201/42703 회귀 표면)
     await expect(page.getByText(ERROR_TOAST)).not.toBeVisible({ timeout: 6000 });
