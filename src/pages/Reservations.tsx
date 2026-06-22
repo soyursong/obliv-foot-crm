@@ -1794,7 +1794,7 @@ export default function Reservations() {
                                       clipboard?.resv.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
                                     )}
                                   >
-                                    <div className="flex min-w-0 items-center gap-1">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 이름·배지 행 수축 허용 */}
+                                    <div className="flex min-w-0 items-center gap-1 overflow-hidden">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 이름·배지 행 수축 허용 / T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN AC-2: overflow-hidden → 2단 좁은 폭에서 성함 ellipsis 클립 경계 */}
                                       {/* T-20260515-foot-RESV-CTX-HOVER: hover 팝업 + 우클릭 컨텍스트 메뉴
                                           취소된 예약 / 미연결 고객은 기존 plain span 유지 */}
                                       {r.customer_id && r.status !== 'cancelled' ? (
@@ -1803,6 +1803,9 @@ export default function Reservations() {
                                           checkIn={resvAsCheckIn(r)}
                                           reservationTime={r.reservation_time}
                                           compact
+                                          // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: 2단(2열) 캘린더 카드 = 고밀도.
+                                          //   성함 text-sm→text-xs 축소 + 좁은 폭에서 ellipsis 실동작(박스 깨짐·넘침 0).
+                                          compactDense
                                           onContextMenu={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
@@ -1815,6 +1818,9 @@ export default function Reservations() {
                                           className={cn(
                                             // T-20260615-foot-RESVMGMT-REFIX-8 AC7: 성함 컬러 검정 통일(상태별 카드색 상속 차단).
                                             'font-semibold text-gray-900',
+                                            // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN AC-2: 취소/미연결 성함도 2단 좁은 폭에서
+                                            //   박스 넘침 없이 ellipsis로 흡수(block+min-w-0+truncate). 폰트는 카드 본문(text-[11px]) 상속.
+                                            'block min-w-0 max-w-full truncate',
                                             r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
                                             r.status === 'cancelled' && 'line-through',
                                           )}

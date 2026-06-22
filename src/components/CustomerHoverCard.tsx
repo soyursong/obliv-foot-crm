@@ -43,13 +43,17 @@ interface Props {
   reservationTime?: string | null;
   /** compact 카드용 스타일 */
   compact?: boolean;
+  /** T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: 예약관리 캘린더 2단(2열) 전용 고밀도 성함.
+   *  compact && compactDense → 성함 폰트 text-sm(14px)→text-xs(12px) 축소 + 실제 ellipsis(block+min-w-0).
+   *  Dashboard 등 compactDense 미지정 카드는 기존 text-sm 유지(영향 없음). */
+  compactDense?: boolean;
   /** 우클릭 핸들러 (부모에서 주입) */
   onContextMenu?: (e: React.MouseEvent) => void;
   /** T-20260525-foot-RSVMGMT-CHART-OPEN: 클릭 → 1·2번 차트 열림 (예약관리 진입점) */
   onClick?: () => void;
 }
 
-export function CustomerHoverCard({ checkIn, reservationTime, compact, onContextMenu, onClick }: Props) {
+export function CustomerHoverCard({ checkIn, reservationTime, compact, compactDense, onContextMenu, onClick }: Props) {
   const [visible, setVisible] = useState(false);
   const [details, setDetails] = useState<CustomerDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -126,8 +130,10 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
 
   return (
     <span
-      className="relative"
-      style={{ display: 'inline-block' }}
+      // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: compactDense일 때 트리거를 block+min-w-0로 →
+      //   flex row 안에서 가용폭까지 수축, 내부 성함 span의 truncate(ellipsis)가 실제 동작.
+      className={cn('relative', compactDense && 'block min-w-0 max-w-full')}
+      style={{ display: compactDense ? 'block' : 'inline-block' }}
       onMouseEnter={handleMouseEnter}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -140,7 +146,12 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
           'hover:underline decoration-dotted underline-offset-2',
           onClick ? 'cursor-pointer' : 'cursor-context-menu',
           // T-20260615-foot-RESVMGMT-REFIX-8 AC7: 성함 검정 통일(예약카드 상태별 텍스트색 상속 차단). compact=예약/대시보드 카드 트리거.
-          compact ? 'font-bold text-sm truncate text-gray-900' : 'text-base font-bold',
+          // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN AC-1/AC-2: 예약 캘린더 2단 카드(compactDense)는
+          //   성함 text-sm(14px)→text-xs(12px) 한 단계 축소 + block(min-w-0 트리거 폭 안에서 truncate ellipsis 실동작).
+          //   Dashboard 등 compact-only 카드는 기존 text-sm 유지.
+          compact
+            ? cn('font-bold truncate text-gray-900', compactDense ? 'block min-w-0 text-xs' : 'text-sm')
+            : 'text-base font-bold',
         )}
         title={onClick ? '클릭 → 고객차트 열기 · 우클릭/롱프레스 → 메뉴 · 호버 → 간단정보' : '우클릭/롱프레스 → 고객차트·예약 · 호버 → 간단정보'}
         onContextMenu={onContextMenu}
