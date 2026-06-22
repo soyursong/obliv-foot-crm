@@ -3549,29 +3549,33 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                   className="w-full object-cover"
                   style={{ maxHeight: 200 }}
                 />
-                <div className="absolute bottom-0 left-0 right-0 bg-black/40 text-white text-[10px] px-1.5 py-1 flex items-center justify-between">
-                  <span>
+                {/* T-20260622-foot-EDITBTN-NOTVISIBLE-FOLLOWUP: '수정 버튼 안 보임' 재발 해소.
+                    수정버튼은 무조건 렌더되나 반투명바 위 12px 무라벨 아이콘이라 식별난 → 텍스트 라벨 + 대비 강화. presentation only. */}
+                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-1 flex items-center justify-between gap-1">
+                  <span className="truncate">
                     {chart.uploadedAt ? format(new Date(chart.uploadedAt), 'MM-dd HH:mm') : chart.name}
                   </span>
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
                     <a
                       href={chart.url}
                       download={chart.name}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-white/80 hover:text-white"
+                      className="text-white/90 hover:text-white"
                       title="내려받기"
                       data-testid={`penchart-download-${chart.name}`}
                     >
-                      <Download className="h-3 w-3" />
+                      <Download className="h-3.5 w-3.5" />
                     </a>
-                    {/* T-20260622-foot-PENCHART-EDITBTN AC-1: 수정 — 저장된 차트를 편집 모드로 다시 열기 */}
+                    {/* T-20260622-foot-PENCHART-EDITBTN AC-1: 수정 — 저장된 차트를 편집 모드로 다시 열기
+                        FOLLOWUP: 아이콘+'수정' 텍스트 라벨 pill 로 시인성 확보 */}
                     <button
                       onClick={(e) => { e.stopPropagation(); handleEditChart(chart); }}
-                      className="text-white/80 hover:text-white"
+                      className="flex items-center gap-0.5 rounded bg-white/20 hover:bg-white/35 px-1 py-0.5 font-medium leading-none"
                       title="수정"
                       data-testid={`penchart-edit-${chart.name}`}
                     >
                       <Pencil className="h-3 w-3" />
+                      <span>수정</span>
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(chart); }}
@@ -3579,7 +3583,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                       title="삭제"
                       data-testid={`penchart-delete-${chart.name}`}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
