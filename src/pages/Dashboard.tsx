@@ -104,7 +104,7 @@ import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 슬롯 진입 시 상담사/치료사 자동배정(best-effort)
-import { maybeAutoAssign } from '@/lib/autoAssign';
+import { maybeAutoAssign, logRealAssignment } from '@/lib/autoAssign';
 // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 완료 슬롯 이동 하드차단.
 import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -4647,9 +4647,22 @@ export default function Dashboard() {
       if (moveOrder !== null) patch.sort_order = moveOrder;
 
       const roomAssignment = assignments.find((a) => a.room_name === roomName);
+      // T-20260622-foot-AUTOASSIGN-IMBYEOL-SKEW-FIX: 방 배정으로 담당이 바뀌는지 사전 캡처(부하기록용)
+      let dragAssignRole: 'consult' | 'therapy' | null = null;
+      let dragAssignTo: string | null = null;
+      let dragAssignFrom: string | null = null;
       if (roomAssignment?.staff_id) {
-        if (roomType === 'consultation') patch.consultant_id = roomAssignment.staff_id;
-        else if (roomType === 'treatment') patch.therapist_id = roomAssignment.staff_id;
+        if (roomType === 'consultation') {
+          patch.consultant_id = roomAssignment.staff_id;
+          dragAssignRole = 'consult';
+          dragAssignTo = roomAssignment.staff_id;
+          dragAssignFrom = row.consultant_id ?? null;
+        } else if (roomType === 'treatment') {
+          patch.therapist_id = roomAssignment.staff_id;
+          dragAssignRole = 'therapy';
+          dragAssignTo = roomAssignment.staff_id;
+          dragAssignFrom = row.therapist_id ?? null;
+        }
       }
 
       const res = await saveCheckInMove(row.id, patch);
@@ -4657,6 +4670,25 @@ export default function Dashboard() {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(res.message ?? '이동 실패');
         return;
+      }
+      // T-20260622-foot-AUTOASSIGN-IMBYEOL-SKEW-FIX: 드래그-방 배정도 부하 SSOT(assignment_actions)에
+      //   기록 → computeLoad 가 실부하 인식(전원0 오판 제거) → 신규·비지정 영역 균등 복원.
+      //   best-effort·멱등(담당 변화 시에만), 배정 동선 비차단.
+      if (dragAssignRole && dragAssignTo && dragAssignTo !== dragAssignFrom) {
+        void logRealAssignment({
+          checkIn: {
+            id: row.id,
+            clinic_id: row.clinic_id,
+            customer_id: row.customer_id,
+            treatment_kind: row.treatment_kind,
+            treatment_category: row.treatment_category,
+            status_flag: row.status_flag,
+          },
+          role: dragAssignRole,
+          toStaffId: dragAssignTo,
+          fromStaffId: dragAssignFrom,
+          createdBy: profile?.id ?? null,
+        });
       }
       if (row.status !== newStatus) {
         const now = new Date().toISOString();

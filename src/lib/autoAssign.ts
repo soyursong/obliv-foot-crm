@@ -515,3 +515,77 @@ export async function manualAssign(opts: {
     return { ok: false, message: String(e) };
   }
 }
+
+// ── 실배정 부하 기록(SSOT 공백 보강) ──────────────────────────────────────────
+
+/**
+ * 자동배정 엔진 밖에서 일어나는 실배정(드래그-방 배정·결제담당 지정 등)을
+ * assignment_actions(manual)에 사후 기록한다. check_ins 의 담당자 컬럼은 이미
+ * 호출측에서 set 된 뒤(=현재상태) 이력만 추가하는 append-only 보강.
+ *
+ * 배경(T-20260622-foot-AUTOASSIGN-IMBYEOL-SKEW-FIX): 실배정 대부분이 자동배정
+ * 엔진을 거치지 않아 assignment_actions 가 사실상 비어 있었고, computeLoad 가
+ * 전원 0부하로 오판 → 균등 selection 무력화(임별 쏠림 증폭). 본 함수로 SSOT
+ * 공백을 메워 신규·비지정 영역의 월 균등이 실제 부하를 인식하게 한다.
+ *
+ * 정책/구조 변경 없음(A안): computeLoad·우선순위·집계 로직은 그대로.
+ * 멱등·best-effort: 담당 변화 없으면(=같은 사람) skip, 실패해도 throw 안 함.
+ *
+ * @param checkIn  배정 대상 check_in(축 파생용 treatment_kind/status_flag + customer_id)
+ * @param toStaffId 새로 배정된 담당 staff id
+ * @param fromStaffId 직전 담당(있으면) — 변화 판정·이력용
+ */
+export async function logRealAssignment(opts: {
+  checkIn: {
+    id: string;
+    clinic_id: string;
+    customer_id?: string | null;
+    treatment_kind?: string | null;
+    treatment_category?: string | null;
+    status_flag?: string | null;
+  };
+  role: AssignmentRole;
+  toStaffId: string | null;
+  fromStaffId?: string | null;
+  createdBy?: string | null;
+}): Promise<void> {
+  try {
+    if (!opts.toStaffId) return; // 미배정(해제)은 부하 기록 대상 아님
+    // 담당 변화 없음(이미 같은 사람) → 중복 부하 기록 방지
+    if (opts.toStaffId === (opts.fromStaffId ?? null)) return;
+
+    // 축 파생: 치료=check_in 필드만으로 산출 / 상담=customer 보조조회(best-effort)
+    let axis: string;
+    if (opts.role === 'therapy') {
+      axis = deriveTherapyAxis(opts.checkIn);
+    } else {
+      let customer: {
+        visit_type?: string | null;
+        lead_source?: string | null;
+        visit_route?: string | null;
+      } | null = null;
+      if (opts.checkIn.customer_id) {
+        const { data } = await supabase
+          .from('customers')
+          .select('visit_type, lead_source, visit_route')
+          .eq('id', opts.checkIn.customer_id)
+          .maybeSingle();
+        customer = data ?? null;
+      }
+      axis = deriveConsultAxis(customer ?? {});
+    }
+
+    await logAssignment({
+      clinicId: opts.checkIn.clinic_id,
+      checkInId: opts.checkIn.id,
+      actionType: 'manual',
+      role: opts.role,
+      axis,
+      fromStaffId: opts.fromStaffId ?? null,
+      toStaffId: opts.toStaffId,
+      createdBy: opts.createdBy ?? null,
+    });
+  } catch (e) {
+    console.warn('[autoAssign] logRealAssignment failed:', e);
+  }
+}
