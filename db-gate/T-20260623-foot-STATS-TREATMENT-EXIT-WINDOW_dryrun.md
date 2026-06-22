@@ -22,9 +22,14 @@
 - ✅ **롤백 정합**: ROLLBACK 후 laser-end 수치(11/9.9/11) 정확 원복 → rollback.sql 신뢰.
 
 ## 게이트 상태 (티켓 L59-64, "4개 모두 통과 후에만 적용")
-- AC1 product(김주연 B) — ✅ MSG-20260623-082814-wrfs
+- AC1 product(김주연 B) — ✅ RESOLVED, status approved (NEW-TASK MSG-20260623-083433-dijv, confirm MSG-20260623-082814-wrfs)
 - AC2 DA CONSULT — ✅ 사전 종결 MSG-20260623-032609-hs8z
-- AC3 구현+dry-run — ✅ 본 증거 (PROD 미적용, .GATE_HOLD 박제)
-- AC4 supervisor DDL-diff — ⏳ 대기
-- AC5 필드 숫자변동 사전고지(responder→김주연, 적용일·"평균치료시간 약 2.5~4배↑=치료실 전체 체류 포착, 정의 개선" 문구) — ⏳ 대기
+- AC3 구현+dry-run — ✅ 본 증거 (B 확정 후 2026-06-23 재검증: 11→14 / 9.9→43.9 / desig 12·168 불변 동일 재현, PROD 미적용 .GATE_HOLD 유지)
+- AC4 supervisor DDL-diff — ▶ 자료 준비 완료 (`_ac4_ddldiff.md`), supervisor 검증 대기
+- AC5 필드 숫자변동 사전고지(responder→김주연, 적용일·"평균치료시간 약 4배↑=치료실 전체 체류 포착, 정의 개선" 문구) — ⏳ planner 핸드오프 (사전고지 트리거 요청)
 - → AC4+AC5 통과 후 dev-foot가 `.GATE_HOLD` 제거 → `--apply` → 커밋 → status:deployed. supervisor AC4 drift 0 검증.
+
+## ★ AC5 PROD apply HARD GATE
+실제 PROD COMMIT 직전 김주연 총괄 confirm 필수. **사전고지 confirm 전 PROD COMMIT 금지.**
+숫자변동 고지값(dry-run 실측): 평균치료시간 9.9→43.9분(약 4.4배↑), treatment_count +3(11→14), windowable↑.
+(coverage 실측치 14.7→37.3분과 절대값 상이 = 측정창·표본 범위 차이. 현장 고지는 "약 4배 수준↑, 정의 개선(치료실 전체 체류 포착)"으로.)
