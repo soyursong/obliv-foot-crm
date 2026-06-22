@@ -81,7 +81,8 @@ test.describe('S1 — 상담대기 진입 자동배정 + 균등 sublogic', () =>
   });
 
   test('Dashboard 슬롯 진입 훅에서 maybeAutoAssign 호출(상담대기/치료대기)', () => {
-    expect(DASH).toContain("import { maybeAutoAssign }");
+    // T-20260622-foot-AUTOASSIGN-IMBYEOL-SKEW-FIX: import 에 logRealAssignment 동반 추가됨 → named import 존재만 검증.
+    expect(DASH).toMatch(/import \{[^}]*\bmaybeAutoAssign\b[^}]*\} from '@\/lib\/autoAssign'/);
     expect(DASH).toMatch(/maybeAutoAssign\(row\.id, newStatus/);
     expect(DASH).toMatch(/newStatus === 'consult_waiting' \|\| newStatus === 'treatment_waiting'/);
   });
