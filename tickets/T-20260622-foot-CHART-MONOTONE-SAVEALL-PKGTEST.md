@@ -17,8 +17,8 @@ build: pass
 spec: tests/e2e/T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST.spec.ts (20 pass)
 qa_result: self-pass-pending-supervisor
 commit: d124f885
-stage_done: [AC1-residual-color-mono, AC2-saveinput-btn-mono, AC3-chart-save-all, AC4-bloodtest-gate-hasCheckIn, build, spec-20pass]
-stage_pending: [supervisor-QA, 갤탭-실기기-confirm, AC1-screenshot-position-confirm]
+stage_done: [AC1-residual-color-mono, AC2-saveinput-btn-mono, AC3-chart-save-all, AC4-bloodtest-gate-hasCheckIn, build, spec-20pass, AC1-screenshot-position-confirm]
+stage_pending: [supervisor-QA, 갤탭-실기기-confirm]
 medical_gate: not-applicable
 medical_gate_rationale: >
   surface = src/pages/CustomerChartPage.tsx (SMART DOCTOR 고객정보 = 2번차트/고객차트).
@@ -37,8 +37,10 @@ medical_gate_rationale: >
 - 환불/비급여 chip/card: rose → neutral
 - 양식선택 dialog 카드 emerald/rose 제거
 - src/components/PenChartTab.tsx + 양식 chip/card
-- ⚠ **참고 스크린샷 MQ 미전달** → pure-black/잔여 유채색 소스 스캔 기반 선착수.
-  스크린샷 회수 후 **위치 정합 확인은 pending**(responder 회수 중 → planner FOLLOWUP `ac1_screenshot_pending`).
+- ⚠ 참고 스크린샷 4장 MQ 지연전달(planner MSG-200026) → **위치 정합 검증 완료(2026-06-22, 정합 OK·누락 0건)**.
+  SS3(110000 양식선택 dialog)·SS4(110001 상단툴바 chip) 어르신용 emerald→teal + 환불/비급여 rose→neutral 전부 d124f885 커버.
+  SS2(105959)=AC-2 black버튼·SS1(105958)=AC-4 피검사 게이트로 동일커밋 커버. 추가 보정 패치 불필요.
+  잔여 관찰(스코프外): L2889/2896 선택/이동 드로잉툴 active emerald = 4장 미지목·드로잉캔버스 affordance → 별건 인지.
 
 ## AC-2 — 2구역·3구역 완전검정 저장·기입 버튼 → 모노톤
 - 저장 = primary 차콜 #333
