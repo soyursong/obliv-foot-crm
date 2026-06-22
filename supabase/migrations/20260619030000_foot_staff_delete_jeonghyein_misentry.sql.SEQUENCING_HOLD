@@ -1,0 +1,125 @@
+-- ============================================================
+-- T-20260619-foot-STAFF-DELETE-JEONGHYEIN (확정방식 ①재배정 후 삭제)
+-- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm)
+-- 작성: dev-foot / 2026-06-19 (재작성 2026-06-22)
+-- 롤백: 20260619030000_foot_staff_delete_jeonghyein_misentry.rollback.sql
+--
+-- ⚠️⚠️ 실행 보류(SEQUENCING_HOLD) — 파일 확장자 .SEQUENCING_HOLD 로 마이그 러너 제외 ⚠️⚠️
+--   사유: sequencing_dep = T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX 가
+--         현재 deploy-ready(미배포). 김주연 총괄 지시(ts 1782096306.016729)
+--         "이전[배포] 후 삭제" → STATS(010000→020000) prod 배포 완료 후에만 본 030000 착수.
+--         STATS deployed 확인(board/supervisor bus) 후 .SEQUENCING_HOLD 제거 → 적용.
+--   confirm: 김주연 총괄(2026-06-22) — 정혜인 staff 연결 FK 3건을 정연주 실장으로
+--            이전(재배정) 후 정혜인 계정 물리 DELETE.
+--
+-- ── 처리방식 (구버전 깡DELETE 폐기 → 재배정+DELETE atomic) ────
+--   (1) 정연주 staff_id 단건 보장 (email=joo4442@naver.com, clinic 74967aea, role=consultant)
+--   (2) UPDATE customers.assigned_staff_id  정혜인 → 정연주
+--   (3) UPDATE room_assignments.staff_id    정혜인 → 정연주 (staff_name 동기화='정연주')
+--   (4) 정혜인 잔여 FK 동적 재확인(pg_constraint 순회) = 0건 검증 → DELETE staff (행수=1)
+--
+-- ── 안전 설계 (재배정 후에도 자기-차단 유지) ─────────────────
+--   · 단일 행 보장: 대상 정혜인 id+clinic+name+role 정확히 1행, 이관 정연주 email+clinic 정확히 1행.
+--     0/2건↑이면 RAISE EXCEPTION → 트랜잭션 전체 롤백(동명이인 방어).
+--   · 카탈로그 기반 FK precheck: 재배정 후 staff 를 참조하는 "모든" FK(향후 추가분 포함, 19 FK)에
+--     대해 정혜인 id 참조 수를 동적 count. 하나라도 >0 이면 RAISE EXCEPTION (부분삭제·CASCADE 0).
+--   · 삭제 행수=1 검증.
+--   · 롤백용 affected PK 캡처: 재배정 직전 affected customers/room_assignments PK 를
+--     RAISE NOTICE 로 단일 라인 출력(JSON). 실행 시 operator 가 캡처 → rollback 변수에 주입.
+--
+-- ── DB 변경 성격 (게이트 판정) ─────────────────────────────
+--   DDL 아님. customers/room_assignments FK UPDATE 3건 + staff 1행 DELETE (DML).
+--   신규 컬럼/테이블/enum 0. data-architect CONSULT 불요. supervisor DML-diff 게이트.
+-- ============================================================
+
+BEGIN;
+
+DO $$
+DECLARE
+  v_target    uuid := '5f141f76-7f72-4560-8a67-bbcdf4938cad';  -- 정혜인 (미입사 레코드)
+  v_clinic    uuid := '74967aea-a60b-4da3-a0e7-9c997a930bc8';  -- 오블리브 풋센터 종로
+  v_name      text := '정혜인';
+  v_role      text := 'consultant';
+  v_to_email  text := 'joo4442@naver.com';                     -- 이관 대상 = 정연주
+  v_to        uuid;
+  v_count     int;
+  v_total     int := 0;
+  v_refs      text := '';
+  v_cust_pks  uuid[];
+  v_ra_pks    uuid[];
+  r           record;
+BEGIN
+  -- (1a) 대상(정혜인) 단일 행 보장 (동명이인/오삭제 방어)
+  SELECT count(*) INTO v_count
+  FROM staff
+  WHERE id = v_target AND clinic_id = v_clinic AND name = v_name AND role = v_role;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'JEONGHYEIN-DELETE ABORT: 대상 staff 단일 특정 실패 (matched=%, expected 1).', v_count;
+  END IF;
+
+  -- (1b) 이관 대상(정연주) 단일 행 특정 (email + clinic, 동명이인 가드)
+  SELECT id INTO v_to
+  FROM staff
+  WHERE clinic_id = v_clinic AND lower(email) = lower(v_to_email)
+  LIMIT 2;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count <> 1 OR v_to IS NULL THEN
+    RAISE EXCEPTION 'JEONGHYEIN-REASSIGN ABORT: 이관대상(정연주 %) 단건 특정 실패 (matched=%, expected 1).', v_to_email, v_count;
+  END IF;
+  IF v_to = v_target THEN
+    RAISE EXCEPTION 'JEONGHYEIN-REASSIGN ABORT: 이관대상=대상 동일(self). 중단.';
+  END IF;
+
+  -- (1c) 롤백 스냅샷용 affected PK 캡처 (재배정 직전)
+  SELECT array_agg(id) INTO v_cust_pks
+  FROM customers WHERE assigned_staff_id = v_target;
+  SELECT array_agg(id) INTO v_ra_pks
+  FROM room_assignments WHERE staff_id = v_target;
+  RAISE NOTICE 'JEONGHYEIN-ROLLBACK-SNAPSHOT customers_pks=% room_assignments_pks=% (-> rollback 변수에 주입)', v_cust_pks, v_ra_pks;
+
+  -- (2) customers.assigned_staff_id 재배정 (ON DELETE SET NULL 였던 1건)
+  UPDATE customers SET assigned_staff_id = v_to WHERE assigned_staff_id = v_target;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RAISE NOTICE 'JEONGHYEIN-REASSIGN customers: % rows -> 정연주(%)', v_count, v_to;
+
+  -- (3) room_assignments.staff_id 재배정 + staff_name 동기화 (RESTRICT 였던 2건)
+  UPDATE room_assignments SET staff_id = v_to, staff_name = '정연주' WHERE staff_id = v_target;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RAISE NOTICE 'JEONGHYEIN-REASSIGN room_assignments: % rows -> 정연주(%)', v_count, v_to;
+
+  -- (4a) 카탈로그 기반 FK precheck — 재배정 후 정혜인 참조 0 검증 (모든 FK 동적 순회)
+  FOR r IN
+    SELECT rel.relname AS child_table, att.attname AS child_col
+    FROM pg_constraint con
+    JOIN pg_class rel  ON rel.oid  = con.conrelid
+    JOIN pg_class frel ON frel.oid = con.confrelid
+    JOIN unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+    JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+    WHERE con.contype = 'f'
+      AND frel.relname = 'staff'
+      AND frel.relnamespace = 'public'::regnamespace
+  LOOP
+    EXECUTE format('SELECT count(*) FROM public.%I WHERE %I = $1', r.child_table, r.child_col)
+      INTO v_count USING v_target;
+    IF v_count > 0 THEN
+      v_total := v_total + v_count;
+      v_refs  := v_refs || format(' %s.%s=%s;', r.child_table, r.child_col, v_count);
+    END IF;
+  END LOOP;
+
+  IF v_total > 0 THEN
+    RAISE EXCEPTION 'JEONGHYEIN-DELETE ABORT: 재배정 후에도 FK 참조 %건 잔존 — 물리 삭제 차단(CASCADE 금지). 참조:%', v_total, v_refs;
+  END IF;
+
+  -- (4b) 물리 삭제 (참조 0건일 때만 도달) + 행수 검증
+  DELETE FROM staff
+  WHERE id = v_target AND clinic_id = v_clinic AND name = v_name;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'JEONGHYEIN-DELETE ABORT: 삭제 행수=% (expected 1). 롤백.', v_count;
+  END IF;
+
+  RAISE NOTICE 'JEONGHYEIN-DELETE OK: FK 3건 정연주 재배정 + staff 1행 물리 삭제 (id=%).', v_target;
+END $$;
+
+COMMIT;
