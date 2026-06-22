@@ -737,6 +737,24 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
         .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
         .eq('check_in_id', checkIn.id);
 
+      // T-20260611-foot-BILLDETAIL-CONSULTFEE-COPAY-REWORK: bill_detail 항목·합계 SSOT 를
+      //   check_in_services(영수증 bill_receipt 와 동일 grandTotal)로 통일. service_charges 는 진찰료
+      //   (AA154/AA254)·레이저 등 가격항목을 누락한 불완전 부분집합인 차트가 존재(박민석 bd814f22) →
+      //   bill_detail 직결 시 진찰료 행 누락 + 합계 0/불일치. check_in_services 우선, service_charges 직결은
+      //   미기록 구(舊) 데이터 폴백(무파괴). 상병코드 주입은 기존대로 service_charges 우선 유지(items SSOT 와 독립).
+      // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: state 비면 print 시점 fresh 조회로 결정적 폴백.
+      const fbStaleBatch = footBillingItems.length > 0;
+      const fbItemsBatch = fbStaleBatch
+        ? footBillingItems
+        : await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
+      const fbGradeBatch = fbStaleBatch
+        ? customerInsuranceGrade
+        : await loadCustomerInsuranceGrade(checkIn.customer_id);
+      const fbBatch = fbItemsBatch.length > 0 ? computeFootBilling(fbItemsBatch, fbGradeBatch) : null;
+      const needsItems = selectedTemplates.some(
+        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
+      );
+
       if (chargeItems && chargeItems.length > 0) {
         const mappedItems = chargeItems.map((c) => {
           const svc = Array.isArray(c.service) ? c.service[0] : c.service;
@@ -773,23 +791,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
         autoValues['diag_extra_codes_html'] = batchExtraCodes.length > 0
           ? batchExtraCodes.map((c) => `<br>${c}`).join('') : '';
 
-        // T-20260520-foot-PRINT-FORM-BIND: bill_detail/rx_standard 항목 주입 (기존)
-        const needsItems = selectedTemplates.some(
-          (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
-        );
         if (needsItems) {
-          const billItems = mappedItems.map((item) => ({
-            category: item.is_insurance_covered ? '이학요법료' : '기타',
-            date: autoValues.visit_date ?? '',
-            code: item.service_code ?? item.hira_code ?? '',
-            name: item.name,
-            amount: item.amount,
-            count: 1,
-            days: 1,
-            is_insurance_covered: item.is_insurance_covered,
-            copayment_amount: item.copayment_amount ?? undefined,
-          }));
-          autoValues.items_html = buildBillDetailItemsHtml(billItems);
+          // rx_standard 항목 — service_charges 기반(기존 동작 유지).
           const rxItems = mappedItems.map((item) => ({
             name: item.name,
             unit_dose: '1',
@@ -799,75 +802,68 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             method: '',
           }));
           autoValues.rx_items_html = buildRxItemsHtml(rxItems);
-          const total = mappedItems.reduce((s, item) => s + item.amount, 0);
-          autoValues.total_amount = formatAmount(total);
-          const nonCoveredTotal = mappedItems
-            .filter((i) => !i.is_insurance_covered)
-            .reduce((s, i) => s + i.amount, 0);
-          autoValues.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
-          autoValues.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
-          autoValues.subtotal_amount = autoValues.total_amount;
-          // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/3: 진료비계산서/보험청구서 비급여·공단부담금 보강.
-          //   비급여 라이브 합계가 subtotal_noncovered/total_noncovered에만 들어가고 템플릿이 읽는
-          //   {{non_covered}}/{{insurance_covered}}/{{copayment}}에는 안 들어가던 키 불일치 누락 해소.
-          const liveCopay = mappedItems
-            .filter((i) => i.is_insurance_covered)
-            .reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
-          const liveInsCovered = mappedItems
-            .filter((i) => i.is_insurance_covered)
-            .reduce((s, i) => s + (i.amount - (i.copayment_amount ?? 0)), 0);
-          applyBillingFallback(autoValues, {
-            insuranceCovered: liveInsCovered,
-            copayment: liveCopay,
-            nonCovered: nonCoveredTotal,
-          });
-        }
-      } else {
-        // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING 근인 수정:
-        //   폴백 소스(check_in_services=footBillingItems · 건보등급=customerInsuranceGrade)를 비동기 load()가
-        //   채우는 React state에 의존하던 구조가 회귀 근인. 재발급 모달은 load()가 templates(L432)를 먼저 set →
-        //   서류 목록이 보이는 순간 사용자가 [발행] 클릭 가능하나, 빌링 폴백 소스는 그 뒤 await(L443~466)에서 set →
-        //   load() 완료 전 발행 시 state가 빈 채 폴백 미발동. service_charges 미기록 케이스(=당일 PATH-4(결제 미니창)로
-        //   정상 출력한 서류는 service_charges를 안 씀)에서 항목·금액 전부 공란 출력. service_charges는 위(L686)에서
-        //   fresh 조회인데 check_in_services만 state 의존이던 비대칭이 핵심.
-        //   → state가 비었으면 print 시점에 fresh 조회해 결정적 폴백(무파괴: 이미 로드됐으면 state 재사용 → 기존 동작 동일).
-        const fbStale = footBillingItems.length > 0;
-        const fbItems = fbStale
-          ? footBillingItems
-          : await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
-        const fbGrade = fbStale
-          ? customerInsuranceGrade
-          : await loadCustomerInsuranceGrade(checkIn.customer_id);
-        const needsItems = selectedTemplates.some(
-          (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
-        );
-        if (fbItems.length > 0) {
-          // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 경로 → PMW(PATH-4)와 동일하게
-          //   check_in_services(수기조정 반영분) 기반으로 빌링·항목 폴백. (PMW handleDocPrint L1468~1498 1:1)
-          const fb = computeFootBilling(fbItems, fbGrade);
-          applyBillingFallback(autoValues, fb.liveBillingValues);
-          if (needsItems) {
-            // T-20260609-foot-DOCFORM-3FIX 이슈1: copayInfo 전달 → per-item 본인부담금/공단부담금 채움
-            const billItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '', {
-              insuranceGrade: fbGrade,
-              copaymentTotal: fb.copaymentTotal,
-            });
+          // bill_detail items: SSOT(check_in_services) 우선. fbBatch 없을 때만 service_charges 직결 폴백.
+          if (!fbBatch) {
+            const billItems = mappedItems.map((item) => ({
+              category: item.is_insurance_covered ? '이학요법료' : '기타',
+              date: autoValues.visit_date ?? '',
+              code: item.service_code ?? item.hira_code ?? '',
+              name: item.name,
+              amount: item.amount,
+              count: 1,
+              days: 1,
+              is_insurance_covered: item.is_insurance_covered,
+              copayment_amount: item.copayment_amount ?? undefined,
+            }));
             autoValues.items_html = buildBillDetailItemsHtml(billItems);
-            autoValues.rx_items_html = buildRxItemsHtml([]);
-            if (fb.grandTotal > 0) {
-              autoValues.total_amount = formatAmount(fb.grandTotal);
-              autoValues.subtotal_amount = formatAmount(fb.grandTotal);
-            }
-            if (fb.nonCoveredTotal > 0) {
-              autoValues.subtotal_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
-              autoValues.total_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
-            }
+            const total = mappedItems.reduce((s, item) => s + item.amount, 0);
+            autoValues.total_amount = formatAmount(total);
+            const nonCoveredTotal = mappedItems
+              .filter((i) => !i.is_insurance_covered)
+              .reduce((s, i) => s + i.amount, 0);
+            autoValues.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+            autoValues.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+            autoValues.subtotal_amount = autoValues.total_amount;
+            // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/3: 계산서/청구서 비급여·공단부담금 보강.
+            const liveCopay = mappedItems
+              .filter((i) => i.is_insurance_covered)
+              .reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
+            const liveInsCovered = mappedItems
+              .filter((i) => i.is_insurance_covered)
+              .reduce((s, i) => s + (i.amount - (i.copayment_amount ?? 0)), 0);
+            applyBillingFallback(autoValues, {
+              insuranceCovered: liveInsCovered,
+              copayment: liveCopay,
+              nonCovered: nonCoveredTotal,
+            });
           }
-        } else if (needsItems) {
-          // chargeItems·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
-          autoValues.items_html = buildBillDetailItemsHtml([]);
-          autoValues.rx_items_html = buildRxItemsHtml([]);
         }
+      }
+
+      // bill_detail 항목·합계: check_in_services SSOT (영수증과 동일 grandTotal). chargeItems 유무 무관하게 우선.
+      //   T-20260608-foot-DOC-PATH12-SYNC + 0cbbdc2 copayInfo 비례배분(진찰료 포함 급여 본인/공단) 재사용.
+      if (fbBatch) {
+        applyBillingFallback(autoValues, fbBatch.liveBillingValues);
+        if (needsItems) {
+          const billItems = buildFootBillDetailItems(fbBatch.pricingItems, autoValues.visit_date ?? '', {
+            insuranceGrade: fbGradeBatch,
+            copaymentTotal: fbBatch.copaymentTotal,
+          });
+          autoValues.items_html = buildBillDetailItemsHtml(billItems);
+          if (autoValues.rx_items_html == null) autoValues.rx_items_html = buildRxItemsHtml([]);
+          if (fbBatch.grandTotal > 0) {
+            autoValues.total_amount = formatAmount(fbBatch.grandTotal);
+            autoValues.subtotal_amount = formatAmount(fbBatch.grandTotal);
+          }
+          if (fbBatch.nonCoveredTotal > 0) {
+            autoValues.subtotal_noncovered = fbBatch.nonCoveredTotal.toLocaleString('ko-KR');
+            autoValues.total_noncovered = fbBatch.nonCoveredTotal.toLocaleString('ko-KR');
+          }
+        }
+      } else if (needsItems && !(chargeItems && chargeItems.length > 0)) {
+        // service_charges·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
+        autoValues.items_html = buildBillDetailItemsHtml([]);
+        autoValues.rx_items_html = buildRxItemsHtml([]);
       }
 
       const htmlTemplates = selectedTemplates.filter((t) => t.template_format === 'html' || isHtmlTemplate(t.form_key));
@@ -1761,16 +1757,36 @@ function IssueDialog({
       base.total_amount = formatAmount(computedTotal);
     }
 
-    // T-20260608-foot-DOC-PATH12-SYNC: service_charges(serviceItems) 미기록 경로의 폴백 빌링.
-    //   PMW(PATH-4)와 동일하게 check_in_services(수기조정 반영분)로 산출. serviceItems 가 있으면
-    //   기존 동작을 그대로 두고(무파괴), 비었을 때만 이 폴백을 쓴다.
-    const footFb = (serviceItems.length === 0 && footBillingItems.length > 0)
+    // T-20260611-foot-BILLDETAIL-CONSULTFEE-COPAY-REWORK: bill_detail 라인아이템 SSOT 를
+    //   check_in_services(=영수증 bill_receipt 와 동일 SSOT, computeFootBilling.grandTotal)로 통일.
+    //   RC(박민석 bd814f22): service_charges(보험 copay 산출 감사로그)가 진찰료(AA154/AA254)·레이저 등
+    //   '가격 항목'을 누락한 불완전 부분집합인 차트가 존재 → Path A(serviceItems=service_charges 직결)로
+    //   bill_detail 을 그리면 진찰료 행이 통째로 빠지고, computedTotal(service_charges 부분합=0)이
+    //   total_amount 를 0 으로 덮어 영수증 합계와 불일치(증상: 진찰료 누락 + 공단/본인 공란 + 합계 부족).
+    //   영수증(bill_receipt)은 이미 RECEIPT-LASER-MISSING(T-20260609)에서 check_in_services grandTotal 로
+    //   통일됨 → bill_detail 도 동일 SSOT 를 쓰면 진찰료 포함 전 가격항목이 표기되고 합계가 자동 정합(AC-1/4).
+    //   copayInfo 비례배분으로 급여 본인/공단 컬럼을 채운다(AC-2/3, 0cbbdc2 로직 그대로 재사용=AC-5).
+    //   무파괴: check_in_services 미기록 구(舊) 데이터에서만 service_charges 직결로 폴백.
+    const footFb = footBillingItems.length > 0
       ? computeFootBilling(footBillingItems, customerInsuranceGrade)
       : null;
 
     // bill_detail HTML 양식: 서비스 항목 rows 주입
-    // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 추가 — 급여 본인부담금 열 표시
-    if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
+    if (template.form_key === 'bill_detail' && footFb) {
+      // SSOT = check_in_services: 진찰료 포함 전체 가격항목 + 급여 분류 + copay 비례배분(per-item 본인/공단).
+      const billItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '', {
+        insuranceGrade: customerInsuranceGrade,
+        copaymentTotal: footFb.copaymentTotal,
+      });
+      base.items_html = buildBillDetailItemsHtml(billItems);
+      // 합계 = 영수증과 동일 SSOT(grandTotal). computedTotal(service_charges 부분합)이 0/부족으로 덮지 않도록 명시.
+      if (footFb.grandTotal > 0) base.total_amount = formatAmount(footFb.grandTotal);
+      base.subtotal_amount = base.total_amount;
+      base.subtotal_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
+      base.total_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
+    } else if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
+      // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(기존 동작 보존).
+      // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 로 급여 본인부담금 열 표시.
       const billItems = serviceItems.map((item) => ({
         category: item.is_insurance_covered ? '이학요법료' : '기타',
         date: base.visit_date ?? '',
@@ -1782,10 +1798,8 @@ function IssueDialog({
         is_insurance_covered: item.is_insurance_covered,
         copayment_amount: item.copayment_amount ?? undefined,
       }));
-      // T-20260616-foot-DOCFORM-3FIX-REGRESSION 회귀 RC: Path A(service_charges 직결)는 0cbbdc2
-      //   의 per-item 본인부담금 배분 미적용 → 급여 본인/공단 컬럼 공란 잔존(박민석 케이스).
-      //   covered 항목 전체가 copayment_amount 미설정일 때만 등급기준 집계 copaymentTotal 을
-      //   비례배분해 채운다(무파괴: DB 값 있으면 미개입). 합계 = 진료비계산서 {{copayment}} 정합.
+      // T-20260616-foot-DOCFORM-3FIX-REGRESSION: service_charges 직결 경로의 급여 본인/공단 공란 보강
+      //   (DB 값 있으면 미개입, 무보험 등급은 분리 불가로 미개입).
       fillBillItemCopayment(billItems, customerInsuranceGrade);
       base.items_html = buildBillDetailItemsHtml(billItems);
       const nonCoveredTotal = billItems
@@ -1794,20 +1808,6 @@ function IssueDialog({
       base.subtotal_amount = base.total_amount;
       base.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
       base.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
-    } else if (template.form_key === 'bill_detail' && footFb) {
-      // T-20260608-foot-DOC-PATH12-SYNC: check_in_services 폴백 (PMW handleDocPrint L1479~1497 1:1)
-      // T-20260609-foot-DOCFORM-3FIX 이슈1: copayInfo 전달 → per-item 본인부담금/공단부담금 채움
-      const billItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '', {
-        insuranceGrade: customerInsuranceGrade,
-        copaymentTotal: footFb.copaymentTotal,
-      });
-      base.items_html = buildBillDetailItemsHtml(billItems);
-      if (computedTotal === null && footFb.grandTotal > 0) {
-        base.total_amount = formatAmount(footFb.grandTotal);
-      }
-      base.subtotal_amount = base.total_amount;
-      base.subtotal_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
-      base.total_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
     } else if (template.form_key === 'bill_detail') {
       base.items_html = buildBillDetailItemsHtml([]);
       base.subtotal_amount = base.total_amount;
