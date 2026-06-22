@@ -192,6 +192,12 @@ function snapToCursorModifier({
 /** T-20260514-foot-CHART-NO-VISIBLE: 칸반·타임라인 카드 차트번호 상시 표시 (AC-1) */
 const ChartNumberMapCtx = createContext<Map<string, string>>(new Map());
 
+// ── 본인 staff id 컨텍스트 (A안: "내 담당" 배지) ──────────────────────────────
+/** T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (A안): 로그인 사용자의 staff.id.
+ *  카드의 consultant_id/therapist_id 가 이 값과 같으면 본인 담당 → "내 담당" 배지.
+ *  role 무관(staff.user_id = profile.id 매칭) — 상담사/치료사 전 역할 커버. */
+const MyStaffIdCtx = createContext<string | null>(null);
+
 interface RoomAssignment {
   id: string;
   clinic_id: string;
@@ -448,6 +454,11 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
   const slotName = getAssignedSlotName(checkIn);
 
+  // T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (A안): 본인 담당 카드 판정 ("내 담당" 배지)
+  const myStaffId = useContext(MyStaffIdCtx);
+  const isMine = !!myStaffId &&
+    (checkIn.consultant_id === myStaffId || checkIn.therapist_id === myStaffId);
+
   if (compact) {
     return (
       <div
@@ -597,6 +608,15 @@ const DraggableCard = memo(function DraggableCard({
         {/* T-20260522-foot-PKG-BOX-INDICATOR: 패키지 보유 배지 + 초진 딱지 동시 표시 가능 */}
         {/* T-20260522-foot-ALT-BADGE: ALT 배지 (메탈릭 실버) */}
         <div className="mt-0.5 flex items-center gap-0.5 flex-wrap">
+          {/* T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (A안): 본인 담당 카드 "내 담당" 배지(파랑) */}
+          {isMine && (
+            <span
+              data-testid="my-assignment-badge"
+              className="inline-flex items-center bg-blue-500 text-white text-[9px] px-1 py-px rounded font-semibold"
+            >
+              내 담당
+            </span>
+          )}
           {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           )}
@@ -759,6 +779,15 @@ const DraggableCard = memo(function DraggableCard({
       {/* T-20260522-foot-PKG-BOX-INDICATOR: 패키지 보유 배지 + 초진 딱지 나란히 */}
       {/* T-20260522-foot-ALT-BADGE: ALT 배지 (메탈릭 실버) */}
       <div className="mt-0.5 flex items-center gap-0.5 flex-wrap">
+        {/* T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (A안): 본인 담당 카드 "내 담당" 배지(파랑) */}
+        {isMine && (
+          <span
+            data-testid="my-assignment-badge"
+            className="inline-flex items-center bg-blue-500 text-white text-[9px] px-1 py-px rounded font-semibold"
+          >
+            내 담당
+          </span>
+        )}
         {checkIn.visit_type === 'new' && (
           <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
@@ -3053,6 +3082,10 @@ export default function Dashboard() {
   const [myAssignedRoomNames, setMyAssignedRoomNames] = useState<Set<string>>(new Set());
   // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-4: 현재 사용자의 staff.id (staff 권한 방 필터링용)
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
+  // T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (A안): "내 담당" 배지용 본인 staff.id.
+  //   myStaffId(위)는 role==='staff' 한정(방 토글 권한용)이라 상담사/치료사(별도 role) 미커버 →
+  //   배지엔 role 무관 매칭(staff.user_id=profile.id)의 별도 state 사용.
+  const [myAssignStaffId, setMyAssignStaffId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<CheckIn | null>(null);
   const [openNew, setOpenNew] = useState(false);
@@ -4058,6 +4091,23 @@ export default function Dashboard() {
       .maybeSingle();
     setMyStaffId((data as { id: string } | null)?.id ?? null);
   }, [profile]);
+
+  // T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (A안): role 무관 본인 staff.id 조회 ("내 담당" 배지)
+  useEffect(() => {
+    if (!profile || !clinic) { setMyAssignStaffId(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('clinic_id', clinic.id)
+        .eq('user_id', profile.id)
+        .eq('active', true)
+        .maybeSingle();
+      if (!cancelled) setMyAssignStaffId((data as { id: string } | null)?.id ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [profile, clinic]);
 
   // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6/AC-9: staff 담당 방 이름 집합 조회
   // room_assignments에서 본인(myStaffId) 담당 방을 가져와 canToggleRoom + isMyRoom 하이라이트에 사용
@@ -6918,6 +6968,7 @@ export default function Dashboard() {
           DraggableCard는 TickCtx 구독으로 10s마다 elapsed time 갱신.
           setDragging 변경 시에는 tick 값이 변하지 않으므로 카드 body 재실행 없음. */}
       <TickCtx.Provider value={tick}>
+      <MyStaffIdCtx.Provider value={myAssignStaffId}>
       <ChartNumberMapCtx.Provider value={todayCustomerChartMap}>
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
@@ -7118,6 +7169,7 @@ export default function Dashboard() {
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
       </ChartNumberMapCtx.Provider>
+      </MyStaffIdCtx.Provider>
       </TickCtx.Provider>
 
       {/* T-20260524-foot-TIMETABLE-TIME-CONFIRM: 시간 변경 확인 다이얼로그
