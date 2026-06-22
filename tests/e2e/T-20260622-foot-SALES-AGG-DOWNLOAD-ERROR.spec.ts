@@ -15,11 +15,18 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL ?? 'http://localhost:5173';
+// 네비게이션은 상대경로로 — playwright.config.ts 의 baseURL(http://localhost:8089)
+// + 자동 기동 webServer 를 그대로 사용한다. (과거 'http://localhost:5173' 하드코딩이
+//  config baseURL/webServer 를 우회해 net::ERR_CONNECTION_REFUSED 유발 → 회귀 차단)
+// BASE_URL env 가 주어지면(예: prod soak) 절대 URL 로 override 가능.
+const BASE_URL = process.env.BASE_URL ?? '';
 const SALES_URL = `${BASE_URL}/admin/sales`;
 const ERROR_TOAST = '다운로드 중 오류가 발생했습니다.';
 
-test.use({ storageState: 'playwright/.auth/user.json' });
+// 인증은 desktop-chrome 프로젝트의 storageState(<repo>/.auth/user.json, auth.setup 이
+// 매 run 갱신)를 그대로 상속한다. (과거 'playwright/.auth/user.json' 오버라이드는 28바이트
+//  빈 세션 stub 을 가리켜 /admin/sales 가 /login 으로 리다이렉트 → sales-export-btn 미발견.
+//  경로 drift 회귀 차단을 위해 spec 레벨 storageState 오버라이드를 제거.)
 
 test.describe('매출집계 엑셀 다운로드 오류 회귀', () => {
   test('엑셀 다운로드 클릭 → 오류 토스트 미발생(성공/빈데이터만)', async ({ page }) => {
