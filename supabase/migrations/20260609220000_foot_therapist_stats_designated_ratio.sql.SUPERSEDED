@@ -1,3 +1,9 @@
+-- ⛔ SUPERSEDED (T-20260622-foot-STATS-MIGRATION-DRIFT-2PHANTOM, 2026-06-23) — 적용 금지.
+--   PROD 미적용 phantom 이었고, roster 도입(20260622120000) 이전 정의라 원형 재적용 시
+--   AC3/AC4(roster 단일소스·재직 치료사 한정)를 회귀시킨다. 지정치료사 비율 기능은
+--   20260623120000_foot_therapist_stats_designated_on_roster.sql 가 현 roster 정의 위에 재구성해 흡수함.
+--   근거: db-gate/T-20260622-foot-STATS-MIGRATION-DRIFT-2PHANTOM_triage.md
+-- ───────────────────────────────────────────────────────────────────────────
 -- T-20260607-foot-CHECKIN-DESIGNATED-FLAG — 치료사 통계 '지정치료사 비율' 활성화 (옵션 B 확정)
 -- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm)
 -- 작성: dev-foot / 2026-06-09

@@ -1,3 +1,10 @@
+-- ⛔ GATE_HOLD (T-20260622-foot-STATS-MIGRATION-DRIFT-2PHANTOM, 2026-06-23) — 그대로 적용 금지.
+--   PROD 미적용 phantom. 측정창 종료를 레이저진입→치료실퇴실(from_status='preconditioning')로 바꾸는 변경 =
+--   **집계 숫자 이동**(비즈로직). 적용은 (a) data-architect CONSULT (b) supervisor DDL-diff
+--   (c) 필드(김주연 총괄) 숫자변동 사전고지 게이트 통과 후에만. 또한 roster 도입 이전 정의라
+--   재구현 시 현 roster(20260623120000) 베이스 위에 측정창만 정정해야 함(원형 재적용 시 AC3/AC4 회귀).
+--   별도 게이트 티켓으로 분리 — planner FOLLOWUP 통지함. 근거: db-gate/T-...-2PHANTOM_triage.md
+-- ───────────────────────────────────────────────────────────────────────────
 -- T-20260607-foot-THERAPIST-STATS-V2 — SPEC-CORRECTION: 측정 종료조건 정정 (치료실 퇴실 ts)
 -- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm)
 -- 작성: dev-foot / 2026-06-12
