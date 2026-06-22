@@ -26,6 +26,10 @@ export interface ConsultantRow {
   ticketing_count: number;
   package_count: number;
   avg_amount: number;
+  // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE: 실장별 총 매출액(SUM(rev)).
+  // 리포터 모델 = 객단가(avg_amount) ÷ 상담건수 의 1차값. RPC foot_stats_consultant 가 반환.
+  // 옵셔널: 구버전 RPC(total_amount 미반환) 배포 타이밍 대비 fallback(avg×건수) 가능하게.
+  total_amount?: number;
 }
 
 export interface NoshowReturningRow {

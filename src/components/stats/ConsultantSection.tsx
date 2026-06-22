@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatAmount } from '@/lib/format';
 import type { ConsultantRow } from '@/lib/stats';
+import { consultantRevenue } from '@/lib/consultantSalesExport';
 
 interface Props {
   rows: ConsultantRow[];
   loading: boolean;
 }
 
-type SortKey = 'name' | 'ticketing' | 'conversion' | 'avg';
+type SortKey = 'name' | 'ticketing' | 'conversion' | 'total' | 'avg';
 
 export default function ConsultantSection({ rows, loading }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('ticketing');
@@ -19,6 +20,8 @@ export default function ConsultantSection({ rows, loading }: Props) {
       rows.map((r) => ({
         ...r,
         conversion: r.ticketing_count > 0 ? (r.package_count / r.ticketing_count) * 100 : 0,
+        // T-20260622: 실장별 총 매출액 (RPC total_amount, 미반환 시 객단가×건수 역산)
+        revenue: consultantRevenue(r),
       })),
     [rows],
   );
@@ -31,6 +34,7 @@ export default function ConsultantSection({ rows, loading }: Props) {
         case 'name':       diff = a.name.localeCompare(b.name); break;
         case 'ticketing':  diff = a.ticketing_count - b.ticketing_count; break;
         case 'conversion': diff = a.conversion - b.conversion; break;
+        case 'total':      diff = a.revenue - b.revenue; break;
         case 'avg':        diff = a.avg_amount - b.avg_amount; break;
       }
       return sortAsc ? diff : -diff;
@@ -81,6 +85,11 @@ export default function ConsultantSection({ rows, loading }: Props) {
                       </button>
                     </th>
                     <th className="pb-2 font-medium text-right">
+                      <button onClick={() => setSort('total')} className="hover:text-foreground">
+                        총 매출액{arrow('total')}
+                      </button>
+                    </th>
+                    <th className="pb-2 font-medium text-right">
                       <button onClick={() => setSort('avg')} className="hover:text-foreground">
                         객단가{arrow('avg')}
                       </button>
@@ -95,6 +104,9 @@ export default function ConsultantSection({ rows, loading }: Props) {
                       <td className="py-2 text-right tabular-nums">
                         {r.ticketing_count > 0 ? `${r.conversion.toFixed(1)}%` : '-'}
                         <span className="text-xs text-muted-foreground ml-1">({r.package_count})</span>
+                      </td>
+                      <td className="py-2 text-right tabular-nums font-semibold text-teal-700">
+                        {formatAmount(r.revenue)}
                       </td>
                       <td className="py-2 text-right tabular-nums font-medium">
                         {formatAmount(r.avg_amount)}
