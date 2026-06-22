@@ -702,6 +702,8 @@ export function PenChartTab({
   onFormSubmissionSaved,
   // T-20260528-foot-PENCHART-NEWWIN: 별도 팝업 창 모드 — list 없이 select→draw→저장→닫기
   popupMode = false,
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 팝업창으로 수정 진입 시 대상 차트 파일명.
+  editChartName,
 }: {
   customerId: string;
   clinicId: string;
@@ -727,6 +729,12 @@ export function PenChartTab({
    * true → list 모드 없이 select 에서 시작, 저장 후 BroadcastChannel 브로드캐스트 + window.close()
    */
   popupMode?: boolean;
+  /**
+   * T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 별도 팝업창에서 기존 차트 '수정' 진입 시
+   * 대상 차트의 storage 파일명. popupMode + 이 값이 있으면 savedCharts 로드 완료 후
+   * 해당 차트를 찾아 자동으로 편집(draw) 모드로 연다. 없으면 신규작성 흐름(select).
+   */
+  editChartName?: string;
 }) {
   const { profile } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -917,6 +925,8 @@ export function PenChartTab({
   const pendingUndoRafRef  = useRef<number | null>(null);
   // T-20260622-foot-PENCHART-EDITBTN: 저장 핸들러(handleDrawSave) closure stale 방지용 미러 ref.
   const editingChartRef    = useRef<SavedChart | null>(null);
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 팝업창 수정 자동진입 1회 가드(savedCharts 재로드 시 재진입 방지).
+  const editAutoOpenedRef  = useRef(false);
 
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
 
@@ -1031,6 +1041,27 @@ export function PenChartTab({
     loadSavedCharts();
     loadTemplates();
   }, [loadSavedCharts, loadTemplates]);
+
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 팝업창 수정 자동진입.
+  //   /penchart-editor?editChart=<파일명> 으로 열린 팝업(popupMode)에서 savedCharts 로드 완료 후
+  //   대상 차트를 찾아 자동으로 편집(draw) 모드로 연다. 1회만(ref 가드) — 저장 후 목록 재로드 시 재진입 방지.
+  //   대상을 못 찾으면(이미 삭제 등) 토스트 후 신규작성(select) 흐름 유지 — 무음실패 제거(AC-1).
+  useEffect(() => {
+    if (!popupMode || !editChartName || editAutoOpenedRef.current) return;
+    if (savedCharts.length === 0) return; // 로드 전 — 다음 렌더 대기
+    const target = savedCharts.find((c) => c.name === editChartName);
+    if (target) {
+      console.log('[DIAG-EDITBTN] 팝업 자동 수정 진입', editChartName);
+      editAutoOpenedRef.current = true;
+      openEditInline(target);
+    } else {
+      console.warn('[DIAG-EDITBTN] 팝업 수정 대상 차트 없음', editChartName, savedCharts.map((c) => c.name));
+      editAutoOpenedRef.current = true;
+      toast.error('수정할 차트를 찾을 수 없습니다. 새로 작성해 주세요.');
+    }
+    // openEditInline 은 매 렌더 재생성되는 비-메모 클로저라 deps 제외(ref 가드로 1회 보장).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [popupMode, editChartName, savedCharts]);
 
   // T-20260528-foot-PENCHART-POPUP: 팝업 창 저장 완료 시 목록 자동 갱신
   // BroadcastChannel('penchart-update') + localStorage storage 이벤트 이중 폴백
@@ -2478,7 +2509,12 @@ export function PenChartTab({
   //   저장된 차트를 편집 모드(draw)로 다시 연다. 파일명 prefix로 원 양식(form_key)을 복원해
   //   캔버스 치수(canvasH)를 맞추고, 배경은 저장본 PNG(양식+기존필기 합성본)로 깐다(editingChart).
   //   사용자는 그 위에 이어서 필기/지우개/화이트 → 저장 시 동일 path 덮어쓰기(handleDrawSave).
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-1: null-safe 가드.
+  //   chart.name 이 비거나(undefined/null/'') 인 비정상 입력에서도 .startsWith 예외 없이
+  //   안전한 fallback('pen_chart')을 반환 → handleEditChart 첫 줄에서 throw 되어
+  //   setEditingChart/setMode 전부 스킵되는 "무음 무반응" 경로를 원천 차단한다.
   const formKeyFromFileName = (name: string): string => {
+    if (!name || typeof name !== 'string') return 'pen_chart';
     if (name.startsWith('hq_sr_')) return 'health_questionnaire_senior';
     if (name.startsWith('hq_'))    return 'health_questionnaire_general';
     if (name.startsWith('rc_'))    return 'refund_consent';
@@ -2486,7 +2522,11 @@ export function PenChartTab({
     if (name.startsWith('pc_'))    return 'personal_checklist_general';
     return 'pen_chart';
   };
-  const handleEditChart = (chart: SavedChart) => {
+
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-1: 인라인 편집 진입(저장본 배경 + draw 모드).
+  //   기존 handleEditChart 본문을 추출 — 팝업창(NEWWIN) 내부 및 팝업차단 fallback에서 재사용.
+  //   form_key 로 캔버스 치수/도구 분기를 복원하고, 배경은 editingChart.url(저장본 PNG)로 깐다.
+  const openEditInline = (chart: SavedChart) => {
     const fk = formKeyFromFileName(chart.name);
     // 원 양식 템플릿(로드된 것 우선)으로 form_key/치수 복원. 배경은 editingChart.url로 강제 오버라이드되므로
     // template_path 자체는 사용되지 않지만, form_key 기반 canvasH·도구 분기·라벨오버라이드 판정에 필요.
@@ -2506,6 +2546,46 @@ export function PenChartTab({
     setEditingChart(chart);
     setActiveDrawTemplate(tpl);
     setMode('draw');
+  };
+
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 신규작성과 수정 동선 1경로 일관(NEWWIN).
+  //   [RC] 신규작성은 window.open('/penchart-editor') 별도 팝업창 — 갤탭 현장 검증된 경로.
+  //        수정은 임베드 컨텍스트에서 인라인 setMode('draw') 라 동선이 갈라져 있었고,
+  //        임베드 Dialog 렌더 경로의 미세 결함 시 "클릭→아무 반응 없음"(화면전환0+에러0)으로 발현.
+  //   → 수정도 신규와 동일하게 별도 팝업창(/penchart-editor?editChart=<파일명>)으로 보낸다.
+  //     팝업 내부 PenChartTab(popupMode)이 editChartName 으로 해당 차트를 찾아 openEditInline → draw.
+  //   AC-1: try/catch + [DIAG-EDITBTN] 로그 + 실패 시 토스트로 무음실패 제거.
+  const handleEditChart = (chart: SavedChart) => {
+    try {
+      console.log('[DIAG-EDITBTN] handleEditChart 진입', { name: chart?.name, popupMode });
+      if (!chart?.name) {
+        toast.error('수정할 차트 정보를 찾을 수 없습니다.');
+        console.warn('[DIAG-EDITBTN] chart.name 누락 — 중단', chart);
+        return;
+      }
+      // 이미 별도 창(popupMode) 안이면 인라인 진입(재귀 팝업 방지).
+      if (popupMode) {
+        openEditInline(chart);
+        return;
+      }
+      // 임베드 컨텍스트: 신규작성과 동일하게 별도 팝업창으로 수정 진입.
+      // iPad/갤탭 Safari popup blocker 대응 — window.open 을 click handler 안에서 동기 호출.
+      const params = new URLSearchParams({ customerId, clinicId });
+      if (checkInId) params.set('checkInId', checkInId);
+      params.set('editChart', chart.name);
+      const url = `/penchart-editor?${params.toString()}`;
+      const popup = window.open(url, `penchart-${customerId}`, 'width=1200,height=900,scrollbars=yes,resizable=yes');
+      if (!popup) {
+        // 팝업 차단(갤탭 엄격 모드 등) → 인라인 fallback (무음실패 방지)
+        console.warn('[DIAG-EDITBTN] 팝업 차단 → 인라인 fallback');
+        toast.warning('팝업이 차단되어 현재 화면에서 수정 창을 엽니다.\n(주소창 팝업 허용 후 재시도하면 별도 창으로 열립니다.)');
+        openEditInline(chart);
+      }
+    } catch (err) {
+      // AC-1: 잔존 예외도 반드시 사용자에게 노출 — silent-fail 제거.
+      console.error('[DIAG-EDITBTN] handleEditChart 실패:', err);
+      toast.error(`수정 창을 여는 중 오류: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
+    }
   };
 
   // ── 상용구 선택 ──────────────────────────────────────────────────────

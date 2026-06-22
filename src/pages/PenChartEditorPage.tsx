@@ -26,6 +26,9 @@ export default function PenChartEditorPage() {
   const customerId = searchParams.get('customerId') ?? '';
   const clinicIdParam = searchParams.get('clinicId') ?? '';
   const checkInId = searchParams.get('checkInId') ?? undefined;
+  // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 기존 차트 '수정' 진입 시 대상 파일명.
+  //   있으면 PenChartTab(popupMode)이 savedCharts 로드 후 해당 차트를 편집(draw) 모드로 자동 오픈.
+  const editChart = searchParams.get('editChart') ?? undefined;
 
   const [customer, setCustomer] = useState<CustomerSnap | null>(null);
   const [rrnFull, setRrnFull] = useState<string | null | undefined>(undefined); // undefined=로드전
@@ -114,6 +117,7 @@ export default function PenChartEditorPage() {
         customerChartNumber={customer.chart_number?.toString() ?? undefined}
         customerRrn={rrnFull ?? undefined}
         popupMode
+        editChartName={editChart}
       />
     </div>
   );
