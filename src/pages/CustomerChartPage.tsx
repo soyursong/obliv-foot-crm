@@ -122,6 +122,15 @@ interface PackagePayment {
   fee_kind?: string | null;
 }
 
+// T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item2: 상세 탭 표시 라벨 매핑.
+// 내부 식별자('예약'/'상담'/'치료메모')는 불변, 화면 표시 문구만 변경.
+const RESV_DETAIL_TAB_LABELS: Record<'예약' | '상담' | '치료메모', string> = {
+  '예약': '예약메모',
+  '상담': '상담메모',
+  '치료메모': '치료메모',
+};
+const resvDetailTabLabel = (tab: '예약' | '상담' | '치료메모') => RESV_DETAIL_TAB_LABELS[tab];
+
 // T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 항목
 interface TreatmentMemoEntry {
   id: string;
@@ -2262,6 +2271,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [treatmentMemosLoaded, setTreatmentMemosLoaded] = useState(false);
   // AC-3 (T-20260520-foot-MEMO-SAVE-ERR): 테이블 미존재 시 graceful fallback 플래그
   const [treatmentMemoUnavailable, setTreatmentMemoUnavailable] = useState(false);
+  // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 수납통계 상단 요약블록용 — 치료메모 최신 1건(eager, 탭 진입 무관).
+  const [latestTreatmentMemo, setLatestTreatmentMemo] = useState<{ content: string; created_at: string } | null>(null);
   const [newMemoText, setNewMemoText] = useState('');
   const [savingNewMemo, setSavingNewMemo] = useState(false);
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
@@ -2439,6 +2450,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // T-20260520-foot-MEMO-HISTORY: 메모 히스토리는 lazy load (탭 진입 시 로드)
       setTreatmentMemos([]);
       setTreatmentMemosLoaded(false);
+      // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 요약블록용 치료메모 최신 1건 reset (eager 로드는 별도 useEffect)
+      setLatestTreatmentMemo(null);
 
       // T-20260522-foot-PERF-TUNING OPT-5: staff 2쿼리 → 1쿼리 + 클라이언트 분기
       // + staff / 6 main data / 2 checklist 전체 병렬 실행 (이전: staff → 6 main → N RPC → sessions → checklists)
@@ -3704,6 +3717,33 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       loadTreatmentMemos();
     }
   }, [resvDetailTab, treatmentMemosLoaded, customer, loadTreatmentMemos]);
+
+  // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 요약블록용 치료메모 최신 1건 eager 로드 (탭 진입 무관).
+  // customer 변경 시 1회. customer_treatment_memos 미존재 시 graceful(null).
+  useEffect(() => {
+    if (!customer) { setLatestTreatmentMemo(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('customer_treatment_memos')
+        .select('content, created_at')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) { setLatestTreatmentMemo(null); return; }
+      setLatestTreatmentMemo(data ? { content: data.content as string, created_at: data.created_at as string } : null);
+    })();
+    return () => { cancelled = true; };
+  }, [customer]);
+
+  // 치료메모 탭에서 새 메모 추가/수정 시 요약블록도 즉시 동기화 (treatmentMemos[0] = 최신)
+  useEffect(() => {
+    if (treatmentMemosLoaded && treatmentMemos.length > 0) {
+      setLatestTreatmentMemo({ content: treatmentMemos[0].content, created_at: treatmentMemos[0].created_at });
+    }
+  }, [treatmentMemos, treatmentMemosLoaded]);
 
   // 새 메모 저장
   const saveNewTreatmentMemo = async () => {
@@ -7267,13 +7307,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             );
           })()}
 
-          {/* 상담메모 */}
-          {customer.tm_memo && (
-            <div className="border-b border-gray-200 px-3 py-2">
-              <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1">상담메모</div>
-              <div className="text-xs text-gray-700 whitespace-pre-wrap line-clamp-6">{customer.tm_memo}</div>
-            </div>
-          )}
+          {/* T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 상담메모 고정블록은 [수납 통계] 상단의 '메모 요약'으로 이동.
+              (기존 지정치료사 위 고정 제거 — 아래 수납통계 상단 통합 요약블록으로 대체) */}
 
           {/* T-20260615-foot-CHART2-TABS-RESVTAB-DWELLSWAP AC-1: 2구역 예약내역 패널은 [예약내역] 탭(clinical)으로 이동. 여기서 제거. */}
 
@@ -7531,12 +7566,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </div>
             )}
 
-            {/* 탭 */}
+            {/* 탭 — T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item2: 표시 라벨만 변경(예약→예약메모/상담→상담메모/치료메모 유지).
+                ⚠ 내부 식별자(resvDetailTab 값 '예약'/'상담'/'치료메모') 및 category 키(reservation/consult/treatment)는 불변. */}
             <div className="flex border-b border-gray-200">
               {(['예약', '상담', '치료메모'] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
+                  data-testid={`resvdetail-tab-${tab}`}
                   onClick={() => setResvDetailTab(tab)}
                   className={cn(
                     'flex-1 px-2 min-h-[44px] text-[11px] font-medium border-r border-gray-200 last:border-r-0 transition flex items-center justify-center',
@@ -7545,7 +7582,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       : 'bg-[#f8fafc] text-[#475569] hover:bg-white/70',
                   )}
                 >
-                  {tab}
+                  {resvDetailTabLabel(tab)}
                 </button>
               ))}
             </div>
@@ -7847,6 +7884,26 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </div>
             )}
           </div>
+
+          {/* T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 메모 요약 — [수납 통계] 상단으로 이동.
+              예약메모(customer_memo)·상담메모(tm_memo)·치료메모(customer_treatment_memos 최신1건) 각 최신 1건만, 스크롤 없이 요약. */}
+          {(customer.customer_memo || customer.tm_memo || latestTreatmentMemo?.content) && (
+            <div className="border-b border-gray-200 px-3 py-2" data-testid="memo-summary-block">
+              <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5">메모 요약</div>
+              <div className="space-y-1.5">
+                {[
+                  { label: '예약메모', content: customer.customer_memo },
+                  { label: '상담메모', content: customer.tm_memo },
+                  { label: '치료메모', content: latestTreatmentMemo?.content ?? null },
+                ].filter(m => m.content).map(m => (
+                  <div key={m.label} data-testid={`memo-summary-${m.label}`}>
+                    <div className="text-[10px] font-semibold text-teal-700 mb-0.5">{m.label}</div>
+                    <div className="text-[11px] text-gray-700 whitespace-pre-wrap line-clamp-2">{m.content}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 수납 통계 — C2-REMOVE-PKG-STATS: 패키지 항목 삭제 */}
           <div className="px-3 py-2">
