@@ -247,6 +247,9 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     //   기존 컬럼(reservations.visit_route / registrar_id) — 신규 스키마 0. 미전달(다른 생성경로)이면 null 로 무해.
     visit_route: input.visit_route ?? null,
     registrar_id: input.registrar_id ?? null,
+    // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 담당자=생성 계정. 캘린더 생성경로에서 created_by(로그인 auth uid) 명시 보장.
+    //   created_by 는 stats.ts TM 귀속 SSOT이기도 함 → 생성 시 1회만 기록(이후 불변, 수정자는 updated_by 별도).
+    created_by: input.changedBy,
     ...(input.visit_type === 'returning' ? { preferred_therapist_id: input.preferred_therapist_id || null } : {}),
     // ③ 경과체크 — 패키지 연결 시 체크포인트 도달 여부 저장 (원본 save() 동일 시맨틱)
     ...(input.linked_package_id ? {
@@ -351,10 +354,12 @@ export default function Reservations() {
   const [filterMine, setFilterMine] = useState(false);
   // T-20260514-foot-CHART-NO-VISIBLE: AC-2 예약관리 차트번호 컬럼 (customer_id → chart_number)
   const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
-  // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 예약카드 '담당자' 표시.
-  //   customer_id → 고객 차트(차트2)의 assigned_staff_id가 가리키는 직원 이름. 재진=차트 담당자 자동연동,
-  //   첫방문(assigned_staff_id NULL)=미표시(공란). read-only 파생 — 신규 컬럼 없음.
-  const [resvAssignedStaffMap, setResvAssignedStaffMap] = useState<Map<string, string>>(new Map());
+  // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 예약관리 '담당자' = 예약 잡은 계정.
+  //   reservation_id → COALESCE(updated_by, created_by)(auth uid) → user_profiles.name.
+  //   생성=created_by, 일자/시간 변경 등 UPDATE=updated_by overwrite → 마지막 수정 계정으로 표시 갱신(AC2).
+  //   미상(둘 다 NULL=과거 예약) 시 미표시(AC5). ★SCOPE: 예약관리 표시 한정 — 2번차트/고객 목록·상세의
+  //   customers.assigned_staff_id(차트 담당자) 의미는 불변(회귀0, CUSTOMER-STAFF-AUTOLINK 유지).
+  const [resvBookerMap, setResvBookerMap] = useState<Map<string, string>>(new Map());
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
@@ -616,6 +621,35 @@ export default function Reservations() {
     setRows(list);
     setLoading(false);
 
+    // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1/AC2): 예약관리 담당자 = 예약 잡은 계정.
+    //   각 예약의 COALESCE(updated_by, created_by)(auth uid) → user_profiles.name resolve.
+    //   워크인(customer_id NULL) 예약도 포함 → list 전체 기준(customerIds 블록 밖). 결손(둘 다 NULL=과거) 시 미표시(AC5).
+    {
+      const bookerUidByResv = new Map<string, string>(); // reservation_id → auth uid
+      for (const r of list) {
+        const uid = (r.updated_by ?? r.created_by ?? '').trim();
+        if (uid) bookerUidByResv.set(r.id, uid);
+      }
+      const bookerUids = Array.from(new Set(bookerUidByResv.values()));
+      const bookerM = new Map<string, string>(); // reservation_id → name
+      if (bookerUids.length > 0) {
+        const { data: upRows } = await supabase
+          .from('user_profiles')
+          .select('id, name')
+          .in('id', bookerUids);
+        const nameByUid = new Map<string, string>();
+        for (const u of (upRows ?? []) as { id: string; name: string | null }[]) {
+          const nm = (u.name ?? '').trim();
+          if (nm) nameByUid.set(u.id, nm);
+        }
+        for (const [resvId, uid] of bookerUidByResv) {
+          const nm = nameByUid.get(uid);
+          if (nm) bookerM.set(resvId, nm);
+        }
+      }
+      setResvBookerMap(bookerM);
+    }
+
     // 노쇼 이력 집계
     const customerIds = Array.from(
       new Set(list.map((r) => r.customer_id).filter((x): x is string => !!x)),
@@ -634,41 +668,18 @@ export default function Reservations() {
       setNoshowByCustomer(counts);
 
       // T-20260514-foot-CHART-NO-VISIBLE: AC-2 차트번호 컬럼용 사전 로드
-      // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 동 배치에 assigned_staff_id 추가 로드 → 예약카드 담당자 표시.
+      // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: 예약관리 담당자 표시가 차트 담당자(assigned_staff_id)에서
+      //   '예약 잡은 계정'(booker)으로 교체됨(위 setResvBookerMap) → 여기선 chart_number만 로드(assigned_staff_id 미사용).
+      //   ★SCOPE: customers.assigned_staff_id 자체는 미변경 — 2번차트/고객 목록·상세의 담당자 의미 불변(회귀0).
       const { data: chartData } = await supabase
         .from('customers')
-        .select('id, chart_number, assigned_staff_id')
+        .select('id, chart_number')
         .in('id', customerIds);
       const chartM = new Map<string, string>();
-      const custAssignedStaff = new Map<string, string>(); // customer_id → staff_id
-      for (const c of (chartData ?? []) as { id: string; chart_number: string | null; assigned_staff_id: string | null }[]) {
+      for (const c of (chartData ?? []) as { id: string; chart_number: string | null }[]) {
         if (c.chart_number) chartM.set(c.id, c.chart_number);
-        if (c.assigned_staff_id) custAssignedStaff.set(c.id, c.assigned_staff_id);
       }
       setResvChartMap(chartM);
-
-      // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 staff_id → 이름 resolve.
-      //   active 필터 없이 조회(비활성·과거 담당자도 이름 표시 — raw UUID/공백 노출 방지). 결손 시 미표시(AC4).
-      const staffIds = Array.from(new Set(custAssignedStaff.values()));
-      const assignedM = new Map<string, string>(); // customer_id → staff name
-      if (staffIds.length > 0) {
-        // T-20260618-foot-STAFF-DISPLAYNAME-SELECT-400: staff.display_name 컬럼 DB 미존재(STAFF-NAME-UNIFY 타입만, 미마이그) →
-        //   select 포함 시 PostgREST 400(42703) → staffRows=null → 담당자명 무음 미표시. select는 name만, UI는 ||name fallback 유지.
-        const { data: staffRows } = await supabase
-          .from('staff')
-          .select('id, name')
-          .eq('clinic_id', clinic.id)
-          .in('id', staffIds);
-        const staffNameById = new Map<string, string>();
-        for (const s of (staffRows ?? []) as { id: string; name: string | null; display_name: string | null }[]) {
-          staffNameById.set(s.id, (s.display_name || s.name || '').trim());
-        }
-        for (const [custId, staffId] of custAssignedStaff) {
-          const nm = staffNameById.get(staffId);
-          if (nm) assignedM.set(custId, nm);
-        }
-      }
-      setResvAssignedStaffMap(assignedM);
 
       // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1/AC-4:
       // 고객별 완료 치료 회차 수를 단일 RPC로 배치 집계 (N+1 방지)
@@ -708,7 +719,7 @@ export default function Reservations() {
     } else {
       setNoshowByCustomer({});
       setResvChartMap(new Map());
-      setResvAssignedStaffMap(new Map());
+      // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: resvBookerMap 은 customerIds 블록 밖(list 전체)에서 항상 설정 → 여기서 리셋 불요.
       setTreatmentCycleMap(new Map());
       setNextHealerByCustomer({});
     }
@@ -828,6 +839,8 @@ export default function Reservations() {
               memo: srcRow.memo,
               booking_memo: srcRow.booking_memo,
               status: 'confirmed',
+              // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 복사 생성도 담당자=생성 계정.
+              created_by: changedBy,
             })
             .select('id')
             .single();
@@ -869,7 +882,8 @@ export default function Reservations() {
           );
           const { error: moveErr } = await supabase
             .from('reservations')
-            .update({ reservation_date: target.date, reservation_time: target.time })
+            // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC2): 일자/시간 변경 → 담당자=마지막 수정 계정 overwrite.
+            .update({ reservation_date: target.date, reservation_time: target.time, updated_by: changedBy })
             .eq('id', cb.resv.id);
           if (moveErr) {
             setRows((prev) =>
@@ -1118,7 +1132,8 @@ export default function Reservations() {
 
     const { error } = await supabase
       .from('reservations')
-      .update({ reservation_date: newDate, reservation_time: newTime })
+      // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC2): 일자/시간 변경(드래그) → 담당자=마지막 수정 계정 overwrite.
+      .update({ reservation_date: newDate, reservation_time: newTime, updated_by: changedBy })
       .eq('id', reservationId);
     if (error) {
       // 실패 시 롤백
@@ -1913,6 +1928,18 @@ export default function Reservations() {
                                           · ···{maskPhoneTail(r.customer_phone)}
                                         </span>
                                       )}
+                                      {/* T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1·AC3·AC4): 담당자=예약 잡은 계정.
+                                          연락처(전화) 옆 같은 라인 + '@담당자명' 표기. 미상(과거예약 등) 시 미렌더(AC5).
+                                          ★SCOPE: 예약관리 표시 한정 — 차트 담당자(customers.assigned_staff_id) 불변. */}
+                                      {resvBookerMap.get(r.id) && (
+                                        <span
+                                          className="truncate text-teal-700"
+                                          data-testid={`assigned-staff-tag-${r.id}`}
+                                          title={`담당자 ${resvBookerMap.get(r.id)}`}
+                                        >
+                                          · @{resvBookerMap.get(r.id)}
+                                        </span>
+                                      )}
                                     </div>
                                     {/* T-20260515-foot-INLINE-RESV AC-4: 예약메모 한눈에 표시 */}
                                     {r.booking_memo && (
@@ -1943,17 +1970,8 @@ export default function Reservations() {
                                         <span className="opacity-70">체크포인트</span>
                                       </div>
                                     )}
-                                    {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자(고객 차트 assigned_staff) 표시.
-                                        재진=차트 담당자 자동연동 / 첫방문(assigned_staff_id NULL)=미렌더(공란, AC2). 결손 안전(AC4). */}
-                                    {r.customer_id && resvAssignedStaffMap.get(r.customer_id) && (
-                                      <div
-                                        className="truncate text-right text-[10px] text-teal-700 leading-none mt-0.5"
-                                        data-testid={`assigned-staff-tag-${r.id}`}
-                                        title={`담당자 ${resvAssignedStaffMap.get(r.customer_id)}`}
-                                      >
-                                        담당 {resvAssignedStaffMap.get(r.customer_id)}
-                                      </div>
-                                    )}
+                                    {/* T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: 담당자 표시는 위 상태줄(연락처 옆 @담당자명)로 이동.
+                                        기존 차트 담당자(customers.assigned_staff_id) 기준 표시 제거 — 예약관리 한정 SCOPE. */}
                                     {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS AC-5: 우측 하단 @예약등록자.
                                         정상·취소됨 박스 모두 적용. 미지정 시 빈칸(미렌더, 에러 없음). */}
                                     {r.registrar_name && (
@@ -2639,6 +2657,8 @@ function ReservationEditor({
         // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 수정 시에도 토글 반영.
         is_healer_intent: state.is_healer_intent ?? false,
         referral_source: (state.visit_type === 'new' && state.visit_route) ? state.visit_route : null,
+        // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC2): 예약 수정(일자 변경 포함) → 담당자=마지막 수정 계정 overwrite.
+        updated_by: changedBy,
         ...(state.visit_type === 'returning' ? { preferred_therapist_id: overrideTherapistId || null } : {}),
       };
 

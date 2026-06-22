@@ -68,20 +68,24 @@ test.describe('T-20260614 CUSTOMER-STAFF-AUTOLINK — 결선 (소스 무결성)'
 
   test('가드: staffNameMap 은 role/active 필터 없이 clinic 전체 로드 (비활성·director 담당자도 이름 resolve)', () => {
     // 전체 staff 이름 맵 로드 — .in('role', ...) / active 필터가 이 맵 로드에 없어야 함
-    expect(CUST_PAGE).toMatch(/from\('staff'\)[\s\S]{0,160}select\('id, name, display_name'\)[\s\S]{0,80}eq\('clinic_id', clinic\.id\)/);
+    // T-20260618-foot-STAFF-DISPLAYNAME-SELECT-400 정합: display_name 컬럼 DB 미존재 → select 는 'id, name' 만(회귀 정합).
+    expect(CUST_PAGE).toMatch(/from\('staff'\)[\s\S]{0,160}select\('id, name'\)[\s\S]{0,80}eq\('clinic_id', clinic\.id\)/);
   });
 
-  test('AC1/AC3: 예약 카드 담당자 = customer assigned_staff → resvAssignedStaffMap', () => {
-    expect(RESV_PAGE).toContain('resvAssignedStaffMap');
-    // 카드 렌더: customer_id 있고 맵에 담당자 이름이 있을 때만 표시(재진), 없으면 미렌더(첫방문/결손)
-    expect(RESV_PAGE).toMatch(/r\.customer_id\s*&&\s*resvAssignedStaffMap\.get\(r\.customer_id\)/);
+  // ⚠ SUPERSEDED by T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI:
+  //   예약 카드(예약관리 surface)의 '담당자' 표시 기준이 차트 담당자(customers.assigned_staff_id)에서
+  //   '예약 잡은 계정'(COALESCE(updated_by, created_by) → user_profiles.name)으로 재정의됨(reporter=김주연 총괄 policy_superseded).
+  //   따라서 예약 카드에서 resvAssignedStaffMap·customers.assigned_staff_id 사용은 제거됨. 신규 동작은 BOOKER spec에서 검증.
+  test('SUPERSEDED: 예약 카드 담당자는 더이상 resvAssignedStaffMap(차트 담당자)을 쓰지 않음', () => {
+    expect(RESV_PAGE).not.toContain('resvAssignedStaffMap');
+    // assigned-staff-tag testid 는 BOOKER UI 가 승계(연락처 옆 @담당자명) — 존재는 하되 booker 소스 기반
     expect(RESV_PAGE).toMatch(/data-testid=\{`assigned-staff-tag-\$\{r\.id\}`\}/);
   });
 
-  test('AC1: 예약 fetchWeek 가 customers.assigned_staff_id 배치 로드 + 이름 resolve', () => {
-    expect(RESV_PAGE).toMatch(/select\('id, chart_number, assigned_staff_id'\)/);
-    // staff 이름 resolve (active 필터 없이 — raw UUID 노출 방지)
-    expect(RESV_PAGE).toMatch(/from\('staff'\)[\s\S]{0,240}\.in\('id', staffIds\)/);
+  test('SCOPE 가드: 예약 fetchWeek 가 customers.assigned_staff_id 를 더이상 로드하지 않음(예약관리 한정 재정의)', () => {
+    // 차트번호(chart_number)만 로드 — assigned_staff_id 는 제거(예약 surface 한정). 고객 목록/차트2 surface 의 의미는 불변.
+    expect(RESV_PAGE).toMatch(/select\('id, chart_number'\)/);
+    expect(RESV_PAGE).not.toMatch(/select\('id, chart_number, assigned_staff_id'\)/);
   });
 
   test('AC3: 고객 상세(차트2) 담당자 드롭다운 旣구현 (assigned_staff_id 바인딩)', () => {
