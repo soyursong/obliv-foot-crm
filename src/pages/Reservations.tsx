@@ -1722,9 +1722,19 @@ export default function Reservations() {
                                     환자만 노출. PROGRESS-CHECKPOINT 태그 로직 그대로 재사용 — read-only 필터, 신설 없음. */}
                                 {/* T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name === 로그인 표시명 NAME-MATCH.
                                     경과분석 필터와 AND 결합. read-only 표시 필터 — 슬롯 용량/카운트 산식(full 판정)은 불변. */}
-                                {(filterProgress ? list.filter(r => r.progress_check_required) : list)
-                                  .filter((r) => !filterMine || (myDisplayName !== '' && (r.registrar_name ?? '').trim() === myDisplayName))
-                                  .map((r) => (
+                                {(() => {
+                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER: 슬롯 내 카드 = 타입별 2단·각 2열 그리드.
+                                  //   1단(상단)=초진(new) / 2단(하단)=재진(returning)+힐러(healer)+기타(other).
+                                  //   각 단 grid-cols-2(한 줄 2건), 단 내 정렬 = 예약 시각(reservation_time) 순.
+                                  //   단일 그룹만 존재 시 해당 단만 렌더(빈 단 미렌더). 카드 누락 0(visible 전수 귀속).
+                                  //   불변: 카드 내용·필드, KIND_CARD_STYLE 컬러, 클릭/hover/우클릭, COMPACT-CONTENT-KEEP 압축 레이어.
+                                  const visible = (filterProgress ? list.filter(r => r.progress_check_required) : list)
+                                    .filter((r) => !filterMine || (myDisplayName !== '' && (r.registrar_name ?? '').trim() === myDisplayName));
+                                  const byTime = (a: Reservation, b: Reservation) =>
+                                    a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
+                                  const tierNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);
+                                  const tierRest = visible.filter((r) => resvKind(r) !== 'new').sort(byTime);
+                                  const renderCard = (r: Reservation) => (
                                   <div
                                     key={r.id}
                                     data-testid={`resv-card-${r.id}`}
@@ -1946,7 +1956,29 @@ export default function Reservations() {
                                       </div>
                                     )}
                                   </div>
-                                ))}
+                                  );
+                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER: 2단 렌더 — 빈 단은 미렌더. grid-cols-2=한 줄 2건(Tailwind minmax(0,1fr)로 카드 셀폭 수축).
+                                  return (
+                                    <>
+                                      {tierNew.length > 0 && (
+                                        <div
+                                          data-testid={`resv-tier-new-${dateStr}-${time}`}
+                                          className="grid grid-cols-2 gap-0.5"
+                                        >
+                                          {tierNew.map(renderCard)}
+                                        </div>
+                                      )}
+                                      {tierRest.length > 0 && (
+                                        <div
+                                          data-testid={`resv-tier-rest-${dateStr}-${time}`}
+                                          className="grid grid-cols-2 gap-0.5"
+                                        >
+                                          {tierRest.map(renderCard)}
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                                 {/* T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치' 버튼 제거(현장 불필요).
                                     이전 BATCH-CHECKIN-LEAK 가드 블록 + batchCheckIn 호출 동반 삭제. */}
                                 {/* T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2 (+)예약생성 제거:
