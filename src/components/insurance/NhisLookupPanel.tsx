@@ -2,6 +2,11 @@
  * NhisLookupPanel — 건보공단 수진자 자격조회 Native 렌더링
  *
  * T-20260515-foot-KENBO-API-NATIVE
+ * T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE:
+ *   조회 로직을 useNhisLookup 훅으로 분리. 본 패널은 controller 주입 시 외부 상태를 표시(2구역 결과뷰),
+ *   미주입 시 내부 훅으로 단독 동작(기존 CheckInDetailSheet 사용처 — 변동 없음).
+ *   - controller prop: 1구역(트리거)과 공유하는 자격조회 상태. 트리거 일원화.
+ *   - hideTrigger prop: true 면 '자격조회'/'갱신' 버튼 숨김 → 결과 표시 전용(A안 2구역).
  *
  * AC-2: Edge Function 호출 → CRM 내 자격등급/본인부담률/적용일 직접 렌더링
  * AC-3: API 장애 시 graceful degradation (에러 메시지 + 외부 링크 fallback)
@@ -13,170 +18,47 @@
  *   - NHIS_API_URL / NHIS_API_KEY / NHIS_FACILITY_CODE 환경변수 설정 필요
  */
 
-import { useState } from 'react';
 import { ExternalLink, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
-import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
-import { INSURANCE_GRADE_LABELS, type InsuranceGrade } from '@/lib/insurance';
-import { updateInsuranceGrade } from '@/hooks/useInsurance';
-
-const NHIS_EXTERNAL_URL = 'https://medicare.nhis.or.kr/portal/refer/selectReferInq.do';
-/** 캐시 유효 시간: 4시간 (ms) */
-const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
-
-interface LookupResult {
-  grade: InsuranceGrade;
-  copayment_rate: number | null;
-  effective_date: string | null;
-}
-
-interface NhisErrorCode {
-  error: string;
-  fallback_url?: string;
-  detail?: string;
-}
-
-interface CacheEntry {
-  result: LookupResult;
-  ts: number;
-}
-
-function getCacheKey(customerId: string) {
-  return `nhis_lookup_v1_${customerId}`;
-}
-
-function readCache(customerId: string): LookupResult | null {
-  try {
-    const raw = sessionStorage.getItem(getCacheKey(customerId));
-    if (!raw) return null;
-    const entry: CacheEntry = JSON.parse(raw);
-    if (Date.now() - entry.ts > CACHE_TTL_MS) {
-      sessionStorage.removeItem(getCacheKey(customerId));
-      return null;
-    }
-    return entry.result;
-  } catch {
-    return null;
-  }
-}
-
-function writeCache(customerId: string, result: LookupResult) {
-  try {
-    const entry: CacheEntry = { result, ts: Date.now() };
-    sessionStorage.setItem(getCacheKey(customerId), JSON.stringify(entry));
-  } catch {
-    // sessionStorage 쓰기 실패는 무시 (캐시 기능만 비활성)
-  }
-}
-
-function clearCache(customerId: string) {
-  try {
-    sessionStorage.removeItem(getCacheKey(customerId));
-  } catch {
-    // ignore
-  }
-}
+import { INSURANCE_GRADE_LABELS } from '@/lib/insurance';
+import {
+  NHIS_EXTERNAL_URL,
+  useNhisLookup,
+  type NhisLookupController,
+} from '@/hooks/useNhisLookup';
 
 interface Props {
   customerId: string;
   clinicId: string;
   hiraConsent: boolean;
-  /** 조회 완료 후 부모 컴포넌트에 등급 변경 알림 */
+  /** 조회 완료 후 부모 컴포넌트에 등급 변경 알림 (내부 훅 모드에서만 사용) */
   onGradeUpdated?: () => void;
+  /**
+   * 외부에서 주입한 자격조회 controller.
+   * 제공 시 내부 훅 대신 이 상태를 표시 — 1구역(트리거)과 동일 상태 공유(2구역 결과뷰).
+   */
+  controller?: NhisLookupController;
+  /**
+   * true 면 '자격조회'/'갱신' 트리거 버튼을 숨김.
+   * 2구역 A안: 트리거는 1구역으로 일원화하고 여기서는 결과만 표시.
+   */
+  hideTrigger?: boolean;
 }
 
-export function NhisLookupPanel({ customerId, clinicId: _clinicId, hiraConsent, onGradeUpdated }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<LookupResult | null>(() => readCache(customerId));
-  const [error, setError] = useState<{ message: string; showFallback: boolean } | null>(null);
-  const [cachedAt, setCachedAt] = useState<string | null>(null);
-
-  const performLookup = async (forceRefresh = false) => {
-    if (!hiraConsent) {
-      toast.warning('건보 조회 동의가 필요합니다. 조회동의를 Y로 설정해 주세요.');
-      return;
-    }
-
-    // 캐시 확인 (강제 갱신 아닐 때)
-    if (!forceRefresh) {
-      const cached = readCache(customerId);
-      if (cached) {
-        setResult(cached);
-        setError(null);
-        return;
-      }
-    } else {
-      clearCache(customerId);
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Supabase Edge Function 호출
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        throw new Error('로그인 세션이 만료되었습니다.');
-      }
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-      const fnUrl = `${supabaseUrl}/functions/v1/nhis-lookup`;
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000); // 12s UI timeout
-
-      const res = await fetch(fnUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-        },
-        body: JSON.stringify({ customer_id: customerId }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-      const json: LookupResult | NhisErrorCode = await res.json();
-
-      if (!res.ok) {
-        const errJson = json as NhisErrorCode;
-        const showFallback = !!errJson.fallback_url;
-        const message = resolveErrorMessage(errJson.error, errJson.detail);
-        setError({ message, showFallback });
-        return;
-      }
-
-      const lookupResult = json as LookupResult;
-      setResult(lookupResult);
-      writeCache(customerId, lookupResult);
-      setCachedAt(new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
-
-      // 조회 성공 시 customers.insurance_grade 자동 갱신 (source: hira_lookup)
-      if (lookupResult.grade && lookupResult.grade !== 'unverified') {
-        const memo = lookupResult.effective_date
-          ? `건보공단 API 자동조회 · 적용일 ${lookupResult.effective_date}`
-          : '건보공단 API 자동조회';
-        await updateInsuranceGrade(customerId, lookupResult.grade, 'hira_lookup', memo);
-        onGradeUpdated?.();
-        toast.success('자격등급이 건보공단 API 조회 결과로 갱신되었습니다.');
-      }
-    } catch (err) {
-      const isAbort = err instanceof DOMException && err.name === 'AbortError';
-      setError({
-        message: isAbort
-          ? '건보 자격조회 일시 불가 — 응답 시간 초과'
-          : `건보 자격조회 일시 불가 — ${String(err)}`,
-        showFallback: true,
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+export function NhisLookupPanel({
+  customerId,
+  clinicId,
+  hiraConsent,
+  onGradeUpdated,
+  controller,
+  hideTrigger = false,
+}: Props) {
+  // controller 미주입 시 내부 훅으로 단독 동작 (기존 사용처 호환).
+  // 주의: hooks 규칙상 항상 호출하되, controller 가 있으면 그 값을 우선 사용.
+  const internal = useNhisLookup(customerId, clinicId, hiraConsent, { onGradeUpdated });
+  const { loading, result, error, cachedAt, performLookup } = controller ?? internal;
 
   const gradeLabel = result?.grade
     ? INSURANCE_GRADE_LABELS[result.grade] ?? result.grade
@@ -194,40 +76,51 @@ export function NhisLookupPanel({ customerId, clinicId: _clinicId, hiraConsent, 
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {result && (
-            <button
+        {/* 트리거 버튼 — hideTrigger(2구역 A안)면 숨김. 트리거는 1구역으로 일원화. */}
+        {!hideTrigger && (
+          <div className="flex items-center gap-1.5">
+            {result && (
+              <button
+                type="button"
+                onClick={() => performLookup(true)}
+                disabled={loading}
+                title="다시 조회"
+                className="inline-flex items-center gap-0.5 rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[10px] text-neutral-700 hover:bg-neutral-100 transition disabled:opacity-50"
+              >
+                <RefreshCw className={cn('h-2.5 w-2.5', loading && 'animate-spin')} />
+                갱신
+              </button>
+            )}
+            <Button
               type="button"
-              onClick={() => performLookup(true)}
-              disabled={loading}
-              title="다시 조회"
-              className="inline-flex items-center gap-0.5 rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[10px] text-neutral-700 hover:bg-neutral-100 transition disabled:opacity-50"
+              size="sm"
+              onClick={() => performLookup(false)}
+              disabled={loading || !hiraConsent}
+              className={cn(
+                'h-7 px-3 text-[11px]',
+                !hiraConsent && 'opacity-50 cursor-not-allowed',
+              )}
+              title={!hiraConsent ? '건보 조회 동의가 필요합니다' : '건보공단 API로 자격 조회'}
             >
-              <RefreshCw className={cn('h-2.5 w-2.5', loading && 'animate-spin')} />
-              갱신
-            </button>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => performLookup(false)}
-            disabled={loading || !hiraConsent}
-            className={cn(
-              'h-7 px-3 text-[11px]',
-              !hiraConsent && 'opacity-50 cursor-not-allowed',
-            )}
-            title={!hiraConsent ? '건보 조회 동의가 필요합니다' : '건보공단 API로 자격 조회'}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                조회 중…
-              </>
-            ) : (
-              '자격조회'
-            )}
-          </Button>
-        </div>
+              {loading ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  조회 중…
+                </>
+              ) : (
+                '자격조회'
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* hideTrigger 모드(2구역)에서 로딩 표시 — 1구역 트리거로 조회 진행 중 */}
+        {hideTrigger && loading && (
+          <span className="inline-flex items-center gap-1 text-[10px] text-blue-600">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            조회 중…
+          </span>
+        )}
       </div>
 
       {/* 조회 결과 */}
@@ -298,20 +191,4 @@ export function NhisLookupPanel({ customerId, clinicId: _clinicId, hiraConsent, 
       )}
     </div>
   );
-}
-
-/** 에러코드 → 사용자 메시지 변환 */
-function resolveErrorMessage(code: string | undefined, detail?: string): string {
-  switch (code) {
-    case 'RRN_MISSING':
-      return '주민등록번호가 입력되지 않았습니다. 고객 차트에서 주민번호를 먼저 입력해 주세요.';
-    case 'NHIS_NOT_CONFIGURED':
-      return '건보 자격조회 API가 아직 연동되지 않았습니다. 외부 조회 링크를 이용해 주세요.';
-    case 'NHIS_API_ERROR':
-      return `건보 자격조회 일시 불가 — 외부 조회 링크를 이용해 주세요.${detail ? ` (${detail.slice(0, 80)})` : ''}`;
-    case 'UNAUTHORIZED':
-      return '인증이 필요합니다. 다시 로그인해 주세요.';
-    default:
-      return `건보 자격조회 일시 불가 — 외부 조회 링크를 이용해 주세요.${detail ? ` (${detail.slice(0, 80)})` : ''}`;
-  }
 }

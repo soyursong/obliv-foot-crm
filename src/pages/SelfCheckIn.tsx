@@ -1251,6 +1251,11 @@ export default function SelfCheckIn() {
             newCustomerPayload.hira_consent = insuranceConsent;
             // T-20260602-foot-CONSENT-TIMESTAMP-COLS 패턴: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
             newCustomerPayload.hira_consent_at = insuranceConsent ? new Date().toISOString() : null;
+            // T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (scaffold): 셀프접수 동의 = 자격조회 자동 트리거.
+            //   여기서 hira_consent=true 로 저장되면, 이후 해당 고객 차트(2번차트) 진입 시
+            //   CustomerChartPage 의 hira 자동 트리거 effect 가 1구역 자격조회를 자동 실행한다.
+            //   (셀프접수 단계에서는 신규 customer.id 발급 직후라 별도 즉시 호출 없이 동의 데이터만 저장 —
+            //    API 연동 완료 시 이 저장 시점에 자격조회 호출을 연결하는 지점이 됨.)
           }
         }
 
