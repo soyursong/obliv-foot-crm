@@ -202,7 +202,8 @@ interface PkgPaymentRawRow {
   memo: string | null;
   created_at: string;
   packages: {
-    name: string | null;
+    // 실제 컬럼명은 package_name (packages.name 컬럼 없음 — 42703 회귀 방지)
+    package_name: string | null;
     customers: {
       name: string | null;
       chart_number: string | null;
@@ -239,13 +240,16 @@ async function fetchSalesRawRows(
     .lte('accounting_date', to);
 
   // ── 패키지 결제 ──────────────────────────────────────────
+  // packages↔customers 는 FK 2개(packages_customer_id_fkey=구매자,
+  //   packages_transferred_to_fkey=양도대상)로 임베드 모호(PGRST201) → 구매자 FK 명시.
+  // 시술/상품명은 packages.package_name (packages.name 컬럼 없음 — 42703 방지).
   const pkgRes = await supabase
     .from('package_payments')
     .select(`
       id, accounting_date, origin_tx_date, payment_type,
       amount, method, tax_type, appr_info, exclude_tax_report,
       parent_payment_id, memo, created_at,
-      packages(name, customers(name, chart_number))
+      packages(package_name, customers:customers!packages_customer_id_fkey(name, chart_number))
     `)
     .eq('clinic_id', clinicId)
     .gte('accounting_date', from)
@@ -315,7 +319,7 @@ async function fetchSalesRawRows(
       '진료구분': '',
       '상병코드': '',
       '시술코드': 'PKG',
-      '시술/상품명': p.packages?.name ?? '패키지',
+      '시술/상품명': p.packages?.package_name ?? '패키지',
       '담당의사': '',
       '담당치료사': '',
       '세금속성': p.tax_type ?? '',
