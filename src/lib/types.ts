@@ -579,6 +579,12 @@ export interface Reservation {
   /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 성함 스냅샷(고객박스 @표시·이력 안정). */
   registrar_name?: string | null;
   created_by: string | null;
+  /** T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: 마지막 수정 계정(auth uid). 일자/시간 변경 등 UPDATE 시 overwrite.
+   *  담당자 표시 = COALESCE(updated_by, created_by). created_by(생성자=TM 귀속)는 불변 유지.
+   *  ⚠ 의미 축(DA CONSULT-REPLY MSG-20260622-215701-p402 조건3): updated_by 는 **audit/last-modifier 축**
+   *  (= "예약을 마지막으로 생성/수정한 계정", 운영 audit)이며, 계약 §6-6[5]의 비즈니스 owner 배정 축
+   *  (assigned_staff/p_owner_staff_id, 도파민 round-robin)과는 별개다. UI엔 '담당자'로 표기하되 의미는 audit. */
+  updated_by?: string | null;
   created_at: string;
   updated_at: string;
   /** T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 — 치료사 수동 설정, 예약 당일 대시보드 HL(노랑) 자동 표시 후 false로 리셋 (1회성) */
