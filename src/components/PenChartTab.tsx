@@ -1318,7 +1318,12 @@ export function PenChartTab({
     if (editingChart) {
       // T-20260622-foot-PENCHART-EDITBTN: 수정 모드 — 저장된 차트 PNG(양식+기존필기 합성본)를 배경으로.
       //   양식 템플릿을 별도로 깔지 않음(이중 양식 방지). 사용자는 이 위에 이어서 필기/지우개/화이트.
-      bgUrl = editingChart.url;
+      // T-20260622-foot-PENCHART-EDIT-NOACTION RC: 리스트/미리보기 <img>(아래 L3547/L3609)가 동일
+      //   signed URL을 crossOrigin 없이 먼저 캐시(non-CORS) → 여기 crossOrigin='anonymous'(L1344) 재요청이
+      //   갤탭 WebView에서 그 캐시를 재사용하면 bgCanvas가 CORS-taint → 저장 시 toDataURL() SecurityError로
+      //   "수정 후 저장 무반응"이 발생한다. cb 쿼리로 캐시 키를 분리해 항상 CORS-clean 응답을 받아 taint를
+      //   원천 차단한다(서명 URL 토큰 검증엔 무영향 — 기존 onerror 재시도 L1353과 동일 근거).
+      bgUrl = `${editingChart.url}${editingChart.url.includes('?') ? '&' : '?'}cb=edit${Date.now()}`;
     } else if (activeDrawTemplate && (
       isHealthQFormKey(activeDrawTemplate.form_key) ||
       isPdfOverlayFormKey(activeDrawTemplate.form_key) ||
@@ -2439,6 +2444,18 @@ export function PenChartTab({
         } catch { /* 무시 */ }
         setTimeout(() => window.close(), 150);
       }
+    } catch (saveErr) {
+      // T-20260622-foot-PENCHART-EDIT-NOACTION: 기존엔 catch가 없어(try/finally) 저장 중 예외가 무반응으로
+      //   사라졌다 — 특히 수정 모드에서 bgCanvas CORS-taint 시 toDataURL()이 SecurityError를 던지면
+      //   업로드·목록갱신·모드복귀가 모두 스킵되고 토스트조차 없어 "수정이 안 됨"으로 보였다(본 티켓 RC).
+      //   FIX A/B가 taint를 원천 차단하지만, 잔존 예외도 반드시 사용자에게 노출해 silent-fail을 제거한다.
+      console.error('[PenChartTab] handleDrawSave 실패:', saveErr);
+      const isSecErr = saveErr instanceof Error && saveErr.name === 'SecurityError';
+      toast.error(
+        isSecErr
+          ? '저장 실패: 배경 이미지 보안(CORS) 오류로 캔버스를 내보낼 수 없습니다. 화면 새로고침 후 다시 시도해주세요.'
+          : `저장 실패: ${saveErr instanceof Error ? saveErr.message : '알 수 없는 오류'}`,
+      );
     } finally {
       // T-20260610-foot-PENCHART-6FIX-REFIX A: 저장 가드 리셋(onBlur 미발화 시 잔류 방지)
       textBtnHandlingRef.current = false;
@@ -3544,6 +3561,9 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                 onClick={() => setSelectedChart(chart.name === selectedChart?.name ? null : chart)}
               >
                 <img
+                  /* T-20260622-foot-PENCHART-EDIT-NOACTION: 수정 배경 로더(crossOrigin='anonymous')와 동일
+                     캐시 파티션을 쓰도록 CORS-clean으로 적재 → non-CORS 캐시 오염→편집 bgCanvas taint 차단 */
+                  crossOrigin="anonymous"
                   src={chart.url}
                   alt={chart.name}
                   className="w-full object-cover"
@@ -3606,7 +3626,8 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
               닫기
             </button>
           </div>
-          <img src={selectedChart.url} alt="펜차트" className="w-full rounded border" />
+          {/* T-20260622-foot-PENCHART-EDIT-NOACTION: 수정 배경 로더와 동일 CORS-clean 캐시 적재(taint 차단) */}
+          <img crossOrigin="anonymous" src={selectedChart.url} alt="펜차트" className="w-full rounded border" />
         </div>
       )}
 
