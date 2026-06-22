@@ -22,12 +22,13 @@
  *   RATIO-TUNE([4,7,6,9,8,9,6,12,34,5])
  *   → STATNAME-WIDEN-CENTER(상태7→8·이름6→7·임상경과34→32)
  *   → WAITDONE-ALIGN(완료=대기 글자그대로 동일 colgroup)
- *   → NAME-EMOJI-CLINICAL-3FIX item2('차트' 칼럼 6% 제거: 10칼럼→9칼럼, 임상경과 32→38)
+ *   → NAME-EMOJI-CLINICAL-3FIX item2('차트' 칼럼 6% 제거: 10col→9col, 임상경과 32→38)
  *   → RX-DISPLAY-REVAMP item3(처방 12→18 ×1.5, 임상경과 38→32)
- * 배포 정본(commit aa2e7819) 실측 = 9칼럼 [4,8,7,9,8,9,18,32,5] 합100 (feed==completed).
- *   ⇒ 가설A: 합100 & 시각정상 → 기대값을 deployed truth 로 갱신. ×0.75/×0.50 비율·idx8 임상경과 단언은
- *      supersede 되어 제거. 불변 invariant(합100 / 임상경과 본문우선 최대폭 / 양테이블 정합)만 유지.
- *   순서(9칼럼): 방·상태·이름·생년(만나이)·차트번호·오늘시술·처방·임상경과·시간.
+ *   → ELAPSED-CLINICAL-3FIX AC-1('시간' 칼럼 5% 제거: 9col→8col, 임상경과 32→37)
+ * 배포 정본(commit e73ce0ec) 실측 = 8칼럼 [4,8,7,9,8,9,18,37] 합100 (feed==completed).
+ *   ⇒ 확정: ELAPSED-CLINICAL-3FIX supersede. 합100 & 시각정상 → 기대값을 deployed truth 로 갱신.
+ *      ×0.75/×0.50 비율 단언은 supersede 되어 제거. 불변 invariant(합100 / 임상경과 본문우선 최대폭 / 양테이블 정합)만 유지.
+ *   순서(8칼럼): 방·상태·이름·생년(만나이)·차트번호·오늘시술·처방·임상경과.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -47,17 +48,18 @@ function colgroupAfter(s: string, anchor: string): number[] {
   const cgEnd = s.indexOf('</colgroup>', cgStart);
   return colWidths(s.slice(cgStart, cgEnd));
 }
-// 배포 정본(commit aa2e7819) 실측 truth — feed==completed, 9칼럼, 합100.
-//   순서: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과·시간.
-const TRUTH = [4, 8, 7, 9, 8, 9, 18, 32, 5];
+// STALE-RECONCILE T-20260622: 배포정본 supersede 출처 = T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX(시간칼럼 제거, 32→37). 9→8칼럼.
+// 배포 정본(commit e73ce0ec) 실측 truth — feed==completed, 8칼럼, 합100.
+//   순서: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과.
+const TRUTH = [4, 8, 7, 9, 8, 9, 18, 37];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 1 — 현장 클릭: 호출(대기) 테이블 환자행 — 배포정본 colgroup 회귀 고정
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('S1 호출 테이블 — 배포정본 9칼럼 colgroup + 합 100', () => {
-  test('feed colgroup: 배포정본 [4,8,7,9,8,9,18,32,5] · 합 100 · 임상경과 최대', () => {
+test.describe('S1 호출 테이블 — 배포정본 8칼럼 colgroup + 합 100', () => {
+  test('feed colgroup: 배포정본 [4,8,7,9,8,9,18,37] · 합 100 · 임상경과 최대', () => {
     const w = colgroupAfter(DASH(), 'doctor-call-feed-table');
-    // STALE-RECONCILE 가설A: RATIO-TUNE 10칼럼 비율모델 supersede(헤더 참조) → deployed truth 로 갱신.
+    // STALE-RECONCILE: RATIO-TUNE 10칼럼 비율모델 supersede(헤더 참조) → deployed truth 로 갱신.
     expect(w).toEqual(TRUTH);
     // table-fixed 합 100% hard 제약(불변 invariant).
     expect(w.reduce((a, b) => a + b, 0)).toBe(100);
@@ -70,7 +72,7 @@ test.describe('S1 호출 테이블 — 배포정본 9칼럼 colgroup + 합 100',
 // 시나리오 2 — 현장 클릭: 진료 완료 테이블 환자행 — 대기와 글자그대로 동일(WAITDONE-ALIGN)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('S2 완료 테이블 — 대기와 동일 colgroup + 합 100', () => {
-  test('completed colgroup: 대기와 동일 [4,8,7,9,8,9,18,32,5] · 합 100', () => {
+  test('completed colgroup: 대기와 동일 [4,8,7,9,8,9,18,37] · 합 100', () => {
     const w = colgroupAfter(DASH(), 'doctor-completed-table');
     expect(w).toEqual(TRUTH);
     expect(w.reduce((a, b) => a + b, 0)).toBe(100);
@@ -91,7 +93,7 @@ test.describe('S3 임상경과 본문 우선 재분배 + AC-2/AC-3 회귀 0', ()
     // STALE-RECONCILE: '차트' 칼럼 제거(10→9col)로 임상경과 인덱스 8→7 이동. idx7 = 임상경과.
     expect(feed[7]).toBe(Math.max(...feed));
     expect(cmpl[7]).toBe(Math.max(...cmpl));
-    // 임상경과(32) > 처방(idx6=18) — 본문 우선 재분배 유지.
+    // 임상경과(37) > 처방(idx6=18) — 본문 우선 재분배 유지.
     expect(feed[7]).toBeGreaterThan(feed[6]);
     expect(cmpl[7]).toBeGreaterThan(cmpl[6]);
     // 불변 컬럼(생년·차트번호·오늘시술) feed/cmpl 동일하게 보존.

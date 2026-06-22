@@ -46,13 +46,14 @@ function colgroupAfter(s: string, anchor: string): number[] {
 // 시나리오 1 — 컬럼폭: 식별군 ≤ 절반, 본문(처방·임상경과) 넓게
 // ─────────────────────────────────────────────────────────────────────────────
 // ⚠ STALE-RECONCILE (T-20260615-foot-DOCDASH-COLGROUP-E2E-STALE-RECONCILE, 가설A):
-//   EXPAND-QUICKEDIT 배포본([5,9,11,9,8,9,6,24,14,5]/[5,10,12,9,8,9,6,25,16]) 이후 5개 후속 티켓이
+//   EXPAND-QUICKEDIT 배포본([5,9,11,9,8,9,6,24,14,5]/[5,10,12,9,8,9,6,25,16]) 이후 후속 티켓이
 //   B colgroup 을 '합법' 진화시킴: RATIO-TUNE → STATNAME-WIDEN-CENTER → WAITDONE-ALIGN →
 //   NAME-EMOJI-CLINICAL-3FIX('차트' 칼럼 제거 10→9col) → RX-DISPLAY-REVAMP(처방×1.5).
-//   배포 정본(commit aa2e7819) 실측 = 9칼럼 [4,8,7,9,8,9,18,32,5] 합100 (feed==completed).
+// STALE-RECONCILE T-20260622: 배포정본 supersede 출처 = T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX(시간칼럼 제거, 32→37). 9→8칼럼.
+//   배포 정본(commit e73ce0ec) 실측 = 8칼럼 [4,8,7,9,8,9,18,37] 합100 (feed==completed).
 //   합100 & 시각정상 → 기대값을 deployed truth 로 갱신. AC-1 '처방 최대' 는 본문우선 재분배로
 //   임상경과 최대로 supersede. 식별군≤50% invariant 는 유지.
-const TRUTH = [4, 8, 7, 9, 8, 9, 18, 32, 5]; // 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과·시간
+const TRUTH = [4, 8, 7, 9, 8, 9, 18, 37]; // 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과
 test.describe('AC-1 컬럼폭 — 식별군 ≤50%, 본문 확대', () => {
   test('대기(호출) colgroup: 식별군 합 36(≤50) · 임상경과 최대 · 합 100', () => {
     const widths = colgroupAfter(DASH(), 'doctor-call-feed-table');
@@ -68,14 +69,14 @@ test.describe('AC-1 컬럼폭 — 식별군 ≤50%, 본문 확대', () => {
     expect(widths.reduce((a, b) => a + b, 0)).toBe(100);
   });
 
-  test('완료 colgroup: 대기와 동일 9칼럼 · 임상경과32 최대 · 합 100', () => {
+  test('완료 colgroup: 대기와 동일 8칼럼 · 임상경과37 최대 · 합 100', () => {
     const widths = colgroupAfter(DASH(), 'doctor-completed-table');
     expect(widths).toEqual(TRUTH);
     const idGroup = widths.slice(0, 5).reduce((a, b) => a + b, 0);
     expect(idGroup).toBe(36);
     expect(idGroup).toBeLessThanOrEqual(50);
     expect(100 - idGroup).toBeGreaterThanOrEqual(50);
-    expect(widths[7]).toBe(32);
+    expect(widths[7]).toBe(Math.max(...widths));
     expect(widths.reduce((a, b) => a + b, 0)).toBe(100);
     // WAITDONE-ALIGN: 완료 colgroup == 대기 colgroup.
     expect(widths).toEqual(colgroupAfter(DASH(), 'doctor-call-feed-table'));
