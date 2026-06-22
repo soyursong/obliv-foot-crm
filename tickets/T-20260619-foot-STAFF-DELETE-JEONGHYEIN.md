@@ -7,14 +7,15 @@ domain: foot
 created_at: 2026-06-19
 owner: agent-fdd-dev-foot
 requester: 김주연 총괄 (입사 이력 없는 인원 명시적 실삭제 요청)
-approved_by: planner NEW-TASK MSG-20260619-080120-m9ao
-build_ok: n/a (DB DML 단건, FE 코드 변경 없음)
-spec_added: n/a
-db_changed: false (hard-delete 보류 — 마이그 .FK_PRECHECK_HOLD 미배포 유지)
-data_architect_consult: 불요 — staff 단건 DELETE(DML). 신규 컬럼·테이블·enum 0.
-blocked_reason: FK precheck 3건 잔존 → hard-delete 게이트 step4 보류
-followup: planner FOLLOWUP (reporter 처리방식 확정 요청)
-risk_level: HOLD (hard-delete 차단. CASCADE 금지)
+approved_by: planner NEW-TASK MSG-20260619-080120-m9ao / 재개 MSG-20260622-115722-usxx (확정방식 ①재배정 후 삭제)
+build_ok: n/a (DB DML, FE 코드 변경 없음)
+spec_added: n/a (마이그 spec 재작성 완료 ac0f3506)
+db_changed: false (실행 보류 — 마이그 .SEQUENCING_HOLD 미실행 유지)
+data_architect_consult: 불요 — staff 단건 DELETE + FK 3건 UPDATE(DML). 신규 컬럼·테이블·enum 0.
+blocked_reason: sequencing_dep=T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX deploy-ready(미배포). "이전[배포] 후 삭제" 지시 → STATS prod 배포 완료 후 착수.
+followup: planner FOLLOWUP (STATS 배포 완료 알림 시 .SEQUENCING_HOLD 제거 → 실행)
+risk_level: HOLD-SEQUENCING (FK precheck 재배정으로 0 달성. 실행은 STATS 배포 게이트 대기)
+spec_status: ready (2026-06-22 030000 마이그 재배정+DELETE atomic 재작성, 실행 보류)
 ---
 
 # T-20260619-foot-STAFF-DELETE-JEONGHYEIN — 정혜인 staff 실삭제 (보류)
