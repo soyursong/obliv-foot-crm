@@ -19,7 +19,19 @@ export function useClinic(): Clinic | null {
     let alive = true;
     const load = (force = false) => {
       getClinic(force ? { force: true } : undefined)
-        .then((c) => { if (alive) setClinic(c); })
+        // T-20260622-foot-LOADING-FLICKER-TRIAGE RC 수정:
+        //   focus/visibility 시 force 재조회는 매번 새 객체 reference 를 반환한다.
+        //   다수 화면(통계·예약·대시보드 등)이 `clinic` 객체를 data-fetch useEffect 의존성에
+        //   넣어두어, 내용이 동일해도 reference 변경만으로 effect 가 재실행 → setLoading(true)
+        //   → 전체 로딩 화면으로 깜빡임("숨바꼭질"). 다른 탭/채팅 보고 복귀할 때마다 재현.
+        //   → 내용이 실제로 바뀐 경우에만 새 reference 로 교체(stable identity). LASER-TIMER
+        //     설정 반영 의도는 보존(값이 바뀌면 reference 도 바뀌어 소비처가 갱신됨).
+        .then((c) => {
+          if (!alive) return;
+          setClinic((prev) =>
+            prev && JSON.stringify(prev) === JSON.stringify(c) ? prev : c,
+          );
+        })
         .catch(() => { if (alive) setClinic((prev) => prev ?? null); });
     };
     load();
