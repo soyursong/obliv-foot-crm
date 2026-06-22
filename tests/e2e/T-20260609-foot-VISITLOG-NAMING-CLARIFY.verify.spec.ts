@@ -10,9 +10,15 @@
  *
  * 대상(기본 prod, env로 override):
  *   VERIFY_BASE_URL  (기본 https://obliv-foot-crm.vercel.app)
- *   VERIFY_CUSTOMER_ID (기본 5bc95429-aae4-40b3-98d4-91a42535c393 = prod 실존 고객 F-1485)
+ *   VERIFY_CUSTOMER_ID (선택. 미지정/미존재 시 QA 세션으로 접근 가능한 실존 고객을 런타임 자동 선택)
  *   TEST_EMAIL / TEST_PASSWORD (기본 test@medibuilder.com / TestPass2026! — auth.setup과 동일)
  *   VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (.env 로드)
+ *
+ * NOTE(2026-06-22, T-20260609 re-fix #4): 고정 고객 ID(5bc95429…, F-1485)가 prod 에서
+ *   삭제/RLS 스코프 아웃되어 NULL → "고객 정보를 찾을 수 없습니다" 렌더 → customer null →
+ *   진료차트 자동오픈 effect(`if(!customer) return`)가 bail → drawer 미오픈으로 spec_fail.
+ *   고정 ID 부패(rot)에 의한 QA 위양성을 막기 위해 "접근 가능한 실존 고객"을 런타임에
+ *   자동 해석한다. 코드(presentation/deep-link) 무변경 — verify spec 자체 복원력만 강화.
  *
  * 실행:
  *   # prod 배포본 직접 검증 (dev 서버 불요)
@@ -27,8 +33,8 @@ import { createClient } from '@supabase/supabase-js';
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const BASE_URL = process.env.VERIFY_BASE_URL ?? 'https://obliv-foot-crm.vercel.app';
-const CUSTOMER_ID =
-  process.env.VERIFY_CUSTOMER_ID ?? '5bc95429-aae4-40b3-98d4-91a42535c393';
+// 고정 ID는 선택 힌트일 뿐. 미존재 시 런타임에 접근 가능한 실존 고객으로 대체(아래 §1.5).
+const PREFERRED_CUSTOMER_ID = process.env.VERIFY_CUSTOMER_ID ?? '';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
@@ -53,6 +59,37 @@ test.describe('VISITLOG-NAMING-CLARIFY · prod 라이브 "방문이력" 노출 (
     expect(error, `QA 계정 로그인 실패: ${error?.message ?? ''}`).toBeNull();
     expect(data.session, 'QA 세션 미발급').toBeTruthy();
     const session = data.session!;
+
+    // 1.5) 검증에 쓸 "접근 가능한 실존 고객" 해석 (고정 ID 부패 방지)
+    //   - 우선 PREFERRED_CUSTOMER_ID 가 QA 세션으로 실제 조회되면 그대로 사용.
+    //   - 미지정/미존재(삭제·RLS 스코프 아웃)면 접근 가능한 첫 고객으로 자동 대체.
+    let customerId = '';
+    if (PREFERRED_CUSTOMER_ID) {
+      const { data: pref } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('id', PREFERRED_CUSTOMER_ID)
+        .maybeSingle();
+      if (pref?.id) customerId = pref.id;
+    }
+    if (!customerId) {
+      const { data: anyCust, error: anyErr } = await supabase
+        .from('customers')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      expect(anyErr, `접근 가능한 고객 조회 실패: ${anyErr?.message ?? ''}`).toBeNull();
+      expect(anyCust?.id, 'QA 세션으로 접근 가능한 고객이 0건 — 계정/RLS 점검 필요').toBeTruthy();
+      customerId = anyCust!.id;
+    }
+    const CUSTOMER_ID = customerId;
+    console.log(
+      `[VISITLOG-VERIFY] resolved customer=${CUSTOMER_ID}` +
+        (PREFERRED_CUSTOMER_ID && CUSTOMER_ID !== PREFERRED_CUSTOMER_ID
+          ? ` (preferred ${PREFERRED_CUSTOMER_ID} 미존재 → 자동 대체)`
+          : ''),
+    );
 
     // 2) 대상 origin 으로 진입 후 Supabase JS 세션을 localStorage 에 주입
     //    키 형식: sb-{ref}-auth-token
