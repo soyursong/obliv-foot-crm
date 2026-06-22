@@ -1,4 +1,5 @@
 # FDD Signals — obliv-foot-crm
+| 2026-06-22 18:30 | supervisor | qa-pass + deployed | T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN 처방내역 테이블 정렬·정리(약이름 left, 용법·횟수·일수 center, 도트/용량라벨 제거, 숫자전용). | 9418e907 | T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN |
 | 2026-06-22 18:26 | supervisor | qa-pass + deployed | T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER 진료환자목록에 서명한 의사별 필터 드롭다운 추가(전체/의사별/미서명). | 9bb69459 | T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER |
 | 2026-06-22 18:15 | supervisor | qa-pass + deployed | T-20260615-foot-MEDCHART-MEMO-WIDTH-25P 진료차트 의료진메모/치료메모 우측 컬럼 20%→25% 확대(좌 flex-[4]→[3]) 반영. | 731fbde8 | T-20260615-foot-MEDCHART-MEMO-WIDTH-25P |
 | 2026-06-22 16:07 | supervisor | qa-pass + deployed | T-20260620-foot-RXTABLE-ALIGN-DIVIDER-ZEBRA 약이름(용량) 헤더 text-center→text-left 정렬 일치(AC-1, presentation only). | 83f0a3a6 | T-20260620-foot-RXTABLE-ALIGN-DIVIDER-ZEBRA |
@@ -4004,3 +4005,4 @@ ref: T-20260512-foot-TREATMENT-SET
 
 | 2026-06-22 17:40 | dev-foot | deploy-ready | T-20260622-foot-PENCHART-EDIT-NOACTION: 펜차트 '수정' 저장 무반응 RC=CORS taint→toDataURL SecurityError(catch 부재 silent-fail). FIX A(편집 bg cb 캐시키 분리)+B(리스트/미리보기 img crossOrigin)+C(handleDrawSave catch 토스트). AC-0=(c) save-path, gate-free storage PNG(form_submissions 미관여). 731fbde8. 신규 9/9+회귀 16/16 PASS. DB변경: 없음 |
 | 2026-06-22 18:20 | dev-foot | deploy-ready | T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN: spec_fail_regression 처리. 코드 원복 거부(약이름 헤더 text-left는 후행 T-20260620 AC-1 deployed·confirmed supersede + §11.1 의료 confirm 게이트 부재) → stale 스펙 AC1을 현 canon으로 정합. spec 11/11 PASS. 의료 surface 코드 무변경. DB변경:없음. commit 9418e907 |
+| 2026-06-22 18:50 | dev-foot | verify-no-defect | T-20260622-foot-RESV-LIVE-AUTOSCROLL-REGRESSION: 실시간반영+자동스크롤 2축 회귀 검증. 코드 결함 미발견 — (A)자동스크롤 블록·(B)realtime 구독 모두 잔존+정상. 강화 E2E 5 passed(prod Supabase): 실제 scrollTop=614/674 착지 + 외부 INSERT/UPDATE 무새로고침 자동반영 + 재진입 무중복(AC7). 제품 코드 무변경(추정패치·AC5/AC2 위반 회피), 회귀가드 spec만 push(6e8358f5). 갤탭 실기기 현장 재확인 요청 → planner FOLLOWUP. DB변경: 없음 |
