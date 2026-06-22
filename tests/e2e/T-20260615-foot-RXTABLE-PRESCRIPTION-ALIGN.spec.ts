@@ -58,18 +58,22 @@ test.describe('(A) AC6 rxFreqCore 용법 코어 추출', () => {
 // (B) 소스 정적 검증 — AC1~AC6 + 회귀 가드
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('(B) 소스 정적 검증', () => {
-  test('AC1: 컬럼 헤더 4종(약이름/용법/횟수/일수) 전부 text-center', () => {
+  // ⚠ AC1 SUPERSEDE: 본 티켓 AC1(헤더 전부 가운데정렬)은 약이름(용량) 헤더에 한해
+  //   T-20260620-foot-RXTABLE-ALIGN-DIVIDER-ZEBRA AC-1(문지은 대표원장 직접지시)이 supersede.
+  //   약이름 헤더만 text-center→text-left 재지정(데이터 셀 좌측정렬과 일치, 2026-06-22 prod 배포·confirmed).
+  //   용법/횟수/일수 3종은 text-center 유지. → 현 canon(약이름=left / 나머지=center)으로 정합.
+  test('AC1: 약이름 헤더 text-left(T-20260620 supersede, 데이터셀 일치) + 용법/횟수/일수 text-center', () => {
     const src = PANEL();
     // 처방내역 테이블 thead 블록 추출
     const headStart = src.indexOf('<table className="w-full text-xs table-fixed">');
     expect(headStart).toBeGreaterThan(0);
     const headBlock = src.slice(headStart, headStart + 900);
-    expect(headBlock).toMatch(/text-center px-3 py-1 font-medium">약이름 \(용량\)</);
+    expect(headBlock).toMatch(/text-left px-3 py-1 font-medium">약이름 \(용량\)</);
     expect(headBlock).toMatch(/text-center px-2 py-1 font-medium w-16">용법</);
     expect(headBlock).toMatch(/text-center px-2 py-1 font-medium w-16">횟수</);
     expect(headBlock).toMatch(/text-center px-2 py-1 font-medium w-16">일수</);
-    // 좌측정렬(text-left) 헤더 잔존 금지
-    expect(headBlock).not.toMatch(/text-left[^>]*>약이름/);
+    // 약이름 헤더가 text-center로 회귀하지 않도록 가드(T-20260620 AC-1 보존)
+    expect(headBlock).not.toMatch(/text-center px-3 py-1 font-medium">약이름/);
   });
 
   test('AC2: 좌측 투여경로 색상 도트(rx-route-dot) + 도트 헬퍼 제거', () => {
@@ -212,8 +216,9 @@ test.describe('(C) 라이브 렌더 — ref_image 4약 6 demand 시각 검증', 
     await expect(page.locator('[data-testid^="rx-route-dot-"]')).toHaveCount(0);
     // AC4: dosage 입력/용량 라벨 없음 (이 테이블에서)
     await expect(page.locator('[data-testid^="rx-dosage-"]')).toHaveCount(0);
-    // AC1: 헤더 가운데정렬
-    for (const h of ['약이름 (용량)', '용법', '횟수', '일수']) {
+    // AC1: 헤더 정렬 — 약이름(용량)=text-left(T-20260620 AC-1 supersede, 데이터셀 일치), 용법/횟수/일수=text-center
+    await expect(table.locator('thead th', { hasText: '약이름 (용량)' })).toHaveClass(/text-left/);
+    for (const h of ['용법', '횟수', '일수']) {
       await expect(table.locator('thead th', { hasText: h })).toHaveClass(/text-center/);
     }
     // AC6: 용법 셀 숫자/범위 코어 (1일 3회→3, 2~3회→2~3, 1~2회→1~2, 1회→1)
