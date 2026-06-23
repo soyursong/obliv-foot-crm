@@ -44,6 +44,7 @@ import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import type { VisitType } from '@/lib/types';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
 import BundleRxTagBar from './BundleRxTagBar';
+import PastHistoryTab from './PastHistoryTab';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
@@ -78,6 +79,9 @@ interface DocumentTemplate {
 
 interface DoctorCheckInFields {
   id: string;
+  // T-20260623-foot-DOCCHART-PASTHX-TAB: 과거력 탭 자동 prefill·확정 조회용 (read-only embed).
+  customer_id: string | null;
+  clinic_id: string | null;
   doctor_note: string | null;
   prescription_items: PrescriptionItem[];
   document_content: string | null;
@@ -155,7 +159,7 @@ function useDoctorFields(checkInId: string | null) {
       const { data, error } = await supabase
         .from('check_ins')
         .select(
-          'id, doctor_note, prescription_items, document_content, doctor_confirm_charting, doctor_confirm_prescription, doctor_confirm_document, doctor_confirmed_at, healer_laser_confirm, prescription_status',
+          'id, customer_id, clinic_id, doctor_note, prescription_items, document_content, doctor_confirm_charting, doctor_confirm_prescription, doctor_confirm_document, doctor_confirmed_at, healer_laser_confirm, prescription_status',
         )
         .eq('id', checkInId)
         .maybeSingle();
@@ -539,6 +543,10 @@ export default function DoctorTreatmentPanel({
 }: DoctorTreatmentPanelProps) {
   const { profile } = useAuth();
   const doctorMode = isDoctor(profile?.role ?? '');
+  // T-20260623-foot-DOCCHART-PASTHX-TAB (AC-4 §확인-3 a): 과거력 편집=실장(manager)·대표원장(director)·admin.
+  //   그 외(봉직의 등)=조회. RLS role-gate 보강 전 FE guard(차단 아님 — DA CONSULT-REPLY).
+  const canEditPastHx =
+    profile?.role === 'manager' || profile?.role === 'director' || profile?.role === 'admin';
   const { data: fields, isLoading } = useDoctorFields(checkInId);
   const save = useSaveDoctorFields(checkInId);
 
@@ -793,7 +801,7 @@ export default function DoctorTreatmentPanel({
       </div>
 
       <Tabs defaultValue="charting" className="w-full">
-        <TabsList className="w-full grid grid-cols-3">
+        <TabsList className="w-full grid grid-cols-4">
           <TabsTrigger value="charting" className="text-xs" data-testid="doctor-tab-charting">
             차팅
             {confirmed.doctor_confirm_charting && (
@@ -811,6 +819,10 @@ export default function DoctorTreatmentPanel({
             {confirmed.doctor_confirm_document && (
               <CheckCircle2 className="h-3 w-3 ml-1 text-green-600" />
             )}
+          </TabsTrigger>
+          {/* T-20260623-foot-DOCCHART-PASTHX-TAB: 과거력 (발건강 질문지 자동 prefill + 실장 확정) */}
+          <TabsTrigger value="pasthx" className="text-xs" data-testid="doctor-tab-pasthx">
+            과거력
           </TabsTrigger>
         </TabsList>
 
@@ -1137,6 +1149,15 @@ export default function DoctorTreatmentPanel({
               testId="document-confirm-done"
             />
           )}
+        </TabsContent>
+
+        {/* ── Tab 4: 과거력 (T-20260623-foot-DOCCHART-PASTHX-TAB) ── */}
+        <TabsContent value="pasthx" className="space-y-3 pt-3">
+          <PastHistoryTab
+            customerId={fields?.customer_id ?? null}
+            clinicId={fields?.clinic_id ?? profile?.clinic_id ?? null}
+            canEdit={canEditPastHx}
+          />
         </TabsContent>
       </Tabs>
 
