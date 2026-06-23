@@ -18,7 +18,7 @@
  * @see T-20260423-foot-DOC-PRINT-SPEC
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import {
   FileText,
@@ -1021,6 +1021,128 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     </div>
   ) : null;
 
+  // T-20260623-foot-DOCOUTPUT-DUP-ITEM-REMOVE: 제거된 컬러카드의 3기능을
+  //   '진료비 계산서·영수증'(bill_receipt) 행의 "영수증 관리" 펼침 패널로 이관.
+  //   insurance_receipts·RPC·핸들러(handleReceiptReissue/printInvoice/deleteInvoice/setInvoiceOpen) 그대로 재사용 — 기능손실 0.
+  const receiptManagePanel = (
+    <div className="rounded-md border border-gray-200 bg-gray-50/70 p-2.5 text-xs space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-muted-foreground">진료비 영수증 관리</span>
+        {invoiceDocs.length > 0 && (
+          <Badge variant="secondary" className="text-[10px] px-1 py-0">
+            {invoiceDocs.length}건
+          </Badge>
+        )}
+      </div>
+
+      {/* ① 결제기록 기반 재발급 (handleReceiptReissue) */}
+      <div className="space-y-1">
+        <div className="text-[10px] text-muted-foreground">결제기록 재발급</div>
+        {paymentItems.length === 0 ? (
+          <div className="text-[10px] text-muted-foreground py-0.5">
+            이 방문의 결제 내역이 없습니다.
+          </div>
+        ) : (
+          paymentItems.map((pay) => {
+            const isSel = selectedPaymentIds.has(pay.id);
+            const methodLabel =
+              pay.method === 'card' ? '카드' :
+              pay.method === 'cash' ? '현금' :
+              pay.method === 'transfer' ? '이체' : (pay.method ?? '');
+            return (
+              <div
+                key={pay.id}
+                className={`flex items-center gap-1.5 rounded border px-2 py-1.5 cursor-pointer select-none transition-all
+                  ${isSel ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-gray-200 bg-white hover:border-teal-200'}`}
+                onClick={() => togglePayment(pay.id)}
+              >
+                <span className="text-teal-500 shrink-0">
+                  {isSel ? (
+                    <CheckSquare className="h-3.5 w-3.5" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-foreground">{formatAmount(pay.amount)}</span>
+                    {methodLabel && (
+                      <Badge variant="outline" className="text-[9px] px-1 h-3.5 border-amber-300 text-amber-700">
+                        {methodLabel}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {format(new Date(pay.created_at), 'MM/dd HH:mm')}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {selectedPaymentIds.size > 0 && (
+          <button
+            className="mt-1 w-full flex items-center justify-center gap-1 rounded border border-teal-400 bg-teal-50 py-1.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50 transition-all"
+            onClick={handleReceiptReissue}
+            disabled={receiptReissuePrinting}
+            data-testid="docprint-receipt-reissue-btn"
+          >
+            <Printer className="h-3 w-3" />
+            {receiptReissuePrinting ? '출력 중…' : `재발급 (${selectedPaymentIds.size}건)`}
+          </button>
+        )}
+      </div>
+
+      {/* ② 기존 등록 영수증 보기·출력·삭제 (insurance_receipts) — 태블릿 도달성 위해 액션 상시 노출 */}
+      {invoiceDocs.length > 0 && (
+        <div className="space-y-1 pt-1 border-t border-gray-200">
+          <div className="text-[10px] text-muted-foreground">등록 영수증</div>
+          {invoiceDocs.map((doc) => (
+            <div key={doc.id} className="flex items-center justify-between rounded border bg-white px-2 py-1.5">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <Badge variant="outline" className="text-[10px] px-1 h-4 border-amber-300 text-amber-700">영수증</Badge>
+                  {doc.receipt_no && <span className="text-muted-foreground text-[10px]">#{doc.receipt_no}</span>}
+                  <span className="text-muted-foreground text-[10px]">{format(new Date(doc.issue_date), 'MM/dd')}</span>
+                </div>
+                <div className="text-[10px] mt-0.5 text-muted-foreground">
+                  납부 <span className="font-semibold text-foreground">{formatAmount(doc.paid_amount)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  onClick={() => printInvoice(doc)}
+                  className="h-7 w-7 flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
+                  title="영수증 출력"
+                  data-testid="docprint-receipt-print-btn"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => deleteInvoice(doc.id)}
+                  className="h-7 w-7 flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                  title="영수증 삭제"
+                  data-testid="docprint-receipt-delete-btn"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ③ 금액 직접 입력 + PDF 업로드 수기 등록 (InvoiceDialog) */}
+      <button
+        className="mt-1 w-full text-[11px] text-teal-600 hover:underline text-left flex items-center gap-0.5"
+        onClick={() => setInvoiceOpen(true)}
+        data-testid="docprint-receipt-manual-register-btn"
+      >
+        <Plus className="h-2.5 w-2.5" /> 금액 직접 입력·PDF 등록 →
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       {/* 헤더 */}
@@ -1110,132 +1232,13 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           onToggle={toggleSelect}
           onCardClick={handleSelectTemplate}
           medDocGate={medDocGate}
+          renderRowExtra={(formKey) => (formKey === 'bill_receipt' ? receiptManagePanel : null)}
         />
       )}
 
-      {/* 진료비 영수증 재발급 — insurance_receipts 기반 결제 재발급 유틸(서류 출력 목록과 별개, T-20260519) */}
-      <div className="space-y-1.5">
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-          진료비 영수증 재발급
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {/* 진료비 영수증 카드 — T-20260519-foot-RECEIPT-REISSUE: 결제 데이터 체크박스 + 재발급 추가 */}
-            <div className="relative rounded-lg border p-2.5 text-xs space-y-1.5 bg-amber-50 border-amber-200">
-              {/* 헤더 */}
-              <div className="flex items-start justify-between">
-                <span className="text-base">🧾</span>
-                {invoiceDocs.length > 0 && (
-                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                    {invoiceDocs.length}건
-                  </Badge>
-                )}
-              </div>
-              <div className="font-semibold text-foreground">진료비 영수증</div>
-
-              {/* ── 결제 데이터 체크박스 목록 (T-20260519-foot-RECEIPT-REISSUE) ── */}
-              <div className="mt-1 space-y-1">
-                {paymentItems.length === 0 ? (
-                  <div className="text-[10px] text-muted-foreground py-1">
-                    이 방문의 결제 내역이 없습니다.
-                  </div>
-                ) : (
-                  paymentItems.map((pay) => {
-                    const isSel = selectedPaymentIds.has(pay.id);
-                    const methodLabel =
-                      pay.method === 'card' ? '카드' :
-                      pay.method === 'cash' ? '현금' :
-                      pay.method === 'transfer' ? '이체' : (pay.method ?? '');
-                    return (
-                      <div
-                        key={pay.id}
-                        className={`flex items-center gap-1.5 rounded border px-2 py-1.5 cursor-pointer select-none transition-all
-                          ${isSel ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-gray-200 bg-white hover:border-teal-200'}`}
-                        onClick={() => togglePayment(pay.id)}
-                      >
-                        <span className="text-teal-500 shrink-0">
-                          {isSel ? (
-                            <CheckSquare className="h-3.5 w-3.5" />
-                          ) : (
-                            <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
-                          )}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1">
-                            <span className="font-semibold text-foreground">{formatAmount(pay.amount)}</span>
-                            {methodLabel && (
-                              <Badge variant="outline" className="text-[9px] px-1 h-3.5 border-amber-300 text-amber-700">
-                                {methodLabel}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            {format(new Date(pay.created_at), 'MM/dd HH:mm')}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* 재발급 버튼 — 1건 이상 선택 시 활성화 */}
-              {selectedPaymentIds.size > 0 && (
-                <button
-                  className="mt-1 w-full flex items-center justify-center gap-1 rounded border border-teal-400 bg-teal-50 py-1.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50 transition-all"
-                  onClick={handleReceiptReissue}
-                  disabled={receiptReissuePrinting}
-                >
-                  <Printer className="h-3 w-3" />
-                  {receiptReissuePrinting ? '출력 중…' : `재발급 (${selectedPaymentIds.size}건)`}
-                </button>
-              )}
-
-              {/* 기존 발급 이력 (insurance_receipts 기반) */}
-              {invoiceDocs.length > 0 && (
-                <div className="space-y-1 pt-1 border-t border-amber-200 mt-1">
-                  <div className="text-[10px] text-muted-foreground">기존 등록 영수증</div>
-                  {invoiceDocs.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between rounded border bg-white px-2 py-1.5 group">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <Badge variant="outline" className="text-[10px] px-1 h-4 border-amber-300 text-amber-700">영수증</Badge>
-                          {doc.receipt_no && <span className="text-muted-foreground text-[10px]">#{doc.receipt_no}</span>}
-                          <span className="text-muted-foreground text-[10px]">{format(new Date(doc.issue_date), 'MM/dd')}</span>
-                        </div>
-                        <div className="text-[10px] mt-0.5 text-muted-foreground">
-                          납부 <span className="font-semibold text-foreground">{formatAmount(doc.paid_amount)}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          onClick={() => printInvoice(doc)}
-                          className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
-                          title="영수증 출력"
-                        >
-                          <Printer className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => deleteInvoice(doc.id)}
-                          className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* +등록 버튼 — 기존 금액 직접 입력 방식 유지 (AC-4) */}
-              <button
-                className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left flex items-center gap-0.5"
-                onClick={() => setInvoiceOpen(true)}
-              >
-                <Plus className="h-2.5 w-2.5" /> 등록 →
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* T-20260623-foot-DOCOUTPUT-DUP-ITEM-REMOVE: 하단 "진료비 영수증 재발급" 컬러카드 블록 제거.
+          3개 고유기능(①결제기록 재발급 ②등록영수증 보기·출력·삭제 ③금액수기+PDF 수기등록)은
+          상단 "서류 출력" 목록의 '진료비 계산서·영수증'(bill_receipt) 행 → "영수증 관리" 펼침으로 이관(receiptManagePanel). */}
 
       {/* 발행 이력 — T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달(historyAtTop)에서는 상단으로 이동했으므로 여기선 미렌더 */}
       {!historyAtTop && historyBlock}
@@ -1336,6 +1339,7 @@ function TemplateSection({
   onToggle,
   onCardClick,
   medDocGate,
+  renderRowExtra,
 }: {
   title: string;
   templates: FormTemplate[];
@@ -1346,7 +1350,11 @@ function TemplateSection({
   onCardClick: (t: FormTemplate) => void;
   /** T-20260620-foot-MEDDOC-DESK-PRINTONLY: form_key별 의료서류 출력 게이트. 미지정 시 무게이트. */
   medDocGate?: (formKey: string) => MedDocGateInfo;
+  /** T-20260623-foot-DOCOUTPUT-DUP-ITEM-REMOVE: 특정 행(예: bill_receipt) 하단에 펼쳐지는 부가 패널(영수증 관리). null이면 토글 미표시. */
+  renderRowExtra?: (formKey: string) => ReactNode;
 }) {
+  // 행별 부가 패널(영수증 관리) 펼침 상태 — 한 번에 하나만 펼침.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   return (
     <div className="space-y-1.5">
       <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
@@ -1373,9 +1381,14 @@ function TemplateSection({
           const isGated = gate !== null;
           const clickable = accessible && (!isGated || gate.authored);
 
+          // T-20260623-foot-DOCOUTPUT-DUP-ITEM-REMOVE: 행 하단 펼침 패널(영수증 관리).
+          //   게이트 행은 부가 패널을 붙이지 않는다(소견서·진단서 등).
+          const rowExtra = !isGated ? (renderRowExtra?.(tpl.form_key) ?? null) : null;
+          const isExpanded = expandedKey === tpl.form_key;
+
           return (
+            <div key={tpl.id} className="space-y-1">
             <div
-              key={tpl.id}
               data-testid={`docprint-card-${tpl.form_key}`}
               data-gated={isGated ? 'true' : undefined}
               data-authored={isGated ? (gate.authored ? 'true' : 'false') : undefined}
@@ -1430,6 +1443,21 @@ function TemplateSection({
                 <span className="text-[10px] text-amber-500 shrink-0">좌표 미설정</span>
               )}
 
+              {/* T-20260623-foot-DOCOUTPUT-DUP-ITEM-REMOVE: 영수증 관리 펼침 토글 (rowExtra 보유 행만, 예: 진료비 계산서·영수증) */}
+              {rowExtra && (
+                <button
+                  className={`shrink-0 text-[10px] font-semibold hover:underline px-1 ${isSelected ? 'text-white' : 'text-teal-600'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedKey(isExpanded ? null : tpl.form_key);
+                  }}
+                  data-testid={`docprint-receipt-manage-toggle-${tpl.form_key}`}
+                  aria-expanded={isExpanded}
+                >
+                  영수증 관리 {isExpanded ? '▲' : '▾'}
+                </button>
+              )}
+
               {/* 우측 액션 — 게이트: 출력/작성필요 안내 / 무게이트: 상세 발행 진입 */}
               {isGated ? (
                 gate.authored ? (
@@ -1463,6 +1491,12 @@ function TemplateSection({
                   상세 발행 →
                 </button>
               )}
+            </div>
+
+            {/* 펼침 부가 패널 — 영수증 관리(결제기록 재발급 / 등록영수증 보기·출력·삭제 / 수기 등록) */}
+            {isExpanded && rowExtra && (
+              <div data-testid={`docprint-row-extra-${tpl.form_key}`}>{rowExtra}</div>
+            )}
             </div>
           );
         })}
