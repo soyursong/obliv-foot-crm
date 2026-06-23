@@ -84,23 +84,17 @@ export function aggregateByTimeSlot(rows: SlotAggInput[]): Array<{ time: string;
 }
 
 /**
- * summarizeKinds 반환 — 유효합계(n/r/h/o/total) + 상태 버킷(취소·노쇼·제외) 별도 카운트.
- * T-20260623-foot-RESVMGMT-EXPORT-CANCEL-EXCL-NOSHOW: 김주연 총괄 피드백 — 취소/제외/노쇼 별도 노출.
- *   ⚠️ 이중 산식 금지: 유효합계(n/r/h/o/total)는 종전 의미 *불변*(노쇼 포함·취소/제외 제외) → TIMETABLE-VISITCOUNT
- *      소비자(.n/.r/.h)는 영향 없음. cancelled/noshow/excluded 는 분모 변경 없는 *순수 부가* 버킷.
+ * summarizeKinds 반환 — 유효합계(n/r/h/o/total) + 상태 버킷(취소·노쇼) 별도 카운트.
+ * T-20260623-foot-RESVMGMT-EXPORT-CANCEL-EXCL-NOSHOW: 김주연 총괄 (A)안 확정 — '제외(excluded)'는
+ *   풋센터 예약 시스템에 없는 분류 → 완전 제거. 상태 버킷은 취소·노쇼 2종만.
+ *   ⚠️ 이중 산식 금지: 유효합계(n/r/h/o/total)는 종전 의미 *불변*(노쇼 포함·취소 제외) → TIMETABLE-VISITCOUNT
+ *      소비자(.n/.r/.h)는 영향 없음. cancelled/noshow 는 분모 변경 없는 *순수 부가* 버킷.
  */
 export interface KindSummary extends SlotKindCount {
   /** 취소(status='cancelled') 별도 버킷 — 유효합계(total)에서 *제외*된 건수. */
   cancelled: number;
   /** 노쇼(status='noshow') 별도 버킷 — 유효합계(total)에 *포함*되며 별도 노출용 카운트(parent 81행 결정: 노쇼 포함). */
   noshow: number;
-  /**
-   * 제외 별도 버킷 — reservations 스키마(initial_schema L118 CHECK: confirmed/checked_in/cancelled/noshow)에
-   * '제외(excluded)' 에 대응하는 status/플래그가 *부재*. 매핑 확정 전까지 0.
-   * T-20260623-…-EXPORT-CANCEL-EXCL-NOSHOW: 김주연 총괄 1줄 확인 대기(FOLLOWUP excluded_status_mapping).
-   * 확정 시 아래 summarizeKinds 의 분기 1줄만 수정하면 됨.
-   */
-  excluded: number;
 }
 
 /**
@@ -110,19 +104,17 @@ export interface KindSummary extends SlotKindCount {
  * - 표기 컨벤션(T-20260623-foot-RESVMGMT-DAILY-RESV-EXPORT, T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 공용):
  *     초진 = n · 재진 = r + h · 재진 세부 HL = h(힐러) · PD = r(비힐러 재진).
  *   이 함수가 두 surface(예약관리 내려받기 · 통합시간표 헤더 카운트)의 단일 산식이다.
- * - 상태 버킷(cancelled/noshow/excluded): 유효합계 분모는 불변. 취소/제외는 합계에서 빠지고 노쇼는 포함(별도 카운트만).
+ * - 상태 버킷(cancelled/noshow): 유효합계 분모는 불변. 취소는 합계에서 빠지고 노쇼는 포함(별도 카운트만).
  * @param rows 한 일자(또는 임의 범위)의 예약 행 목록. status 'cancelled' 는 유효합계에서 제외.
  */
 export function summarizeKinds(rows: Array<ResvKindInput & { status?: string | null }>): KindSummary {
-  const acc: KindSummary = { n: 0, r: 0, h: 0, o: 0, total: 0, cancelled: 0, noshow: 0, excluded: 0 };
+  const acc: KindSummary = { n: 0, r: 0, h: 0, o: 0, total: 0, cancelled: 0, noshow: 0 };
   for (const row of rows) {
     // 취소(cancelled): 유효합계 제외 + 별도 버킷 카운트.
     if (row.status === 'cancelled') {
       acc.cancelled += 1;
       continue;
     }
-    // 제외(excluded): 현 스키마에 대응 status 부재 → 매핑 확정 시 여기에 분기 추가(확정 전 no-op).
-    //   예) if (row.status === '<확정값>') { acc.excluded += 1; continue; }
     // 노쇼(noshow): 유효합계 포함(분모 불변) + 별도 버킷 카운트.
     if (row.status === 'noshow') acc.noshow += 1;
     const kind = resvKind(row);

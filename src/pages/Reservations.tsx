@@ -766,11 +766,10 @@ export default function Reservations() {
     const pd = s.r;             // 재진 세부 — PD(비힐러 재진)
     const jae = hl + pd;        // 재진 = HL + PD
     const etc = s.o;            // 기타(예약없이 방문/체험 등)
-    // T-20260623-foot-RESVMGMT-EXPORT-CANCEL-EXCL-NOSHOW: 김주연 총괄 — 취소/제외/노쇼 별도 버킷(분모 불변).
-    //   취소=cancelled(합계 제외) · 노쇼=noshow(합계 *포함*, 별도 카운트만) · 제외=매핑 확정 대기(현 스키마 0).
+    // T-20260623-foot-RESVMGMT-EXPORT-CANCEL-EXCL-NOSHOW: 김주연 총괄 (A)안 확정 — '제외'는 풋센터 예약 시스템에 없는 분류 → 완전 제거.
+    //   상태 별도 버킷: 취소=cancelled(합계 제외) · 노쇼=noshow(합계 *포함*, 별도 카운트만). 분모 불변.
     const cancelled = s.cancelled;
     const noshow = s.noshow;
-    const excluded = s.excluded;
 
     // CSV (UTF-8 BOM — 한글 Excel 인코딩 보존, opinionPhraseCsv 패턴 재사용).
     const lines: string[] = [
@@ -783,11 +782,10 @@ export default function Reservations() {
     ];
     if (etc > 0) lines.push(`기타(체험 등),${etc}`);
     lines.push(`합계(초진+재진),${cho + jae}`);
-    // 상태 별도 집계 블록(하단) — 유효합계와 분리. 취소·제외는 합계 밖, 노쇼는 합계 포함분의 부가 카운트.
+    // 상태 별도 집계 블록(하단) — 유효합계와 분리. 취소는 합계 밖, 노쇼는 합계 포함분의 부가 카운트.
     lines.push('');
     lines.push('상태별 집계,건수');
     lines.push(`취소,${cancelled}`);
-    lines.push(`제외,${excluded}`);
     lines.push(`노쇼,${noshow}`);
     const csv = lines.join('\r\n');
     const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' });
@@ -800,7 +798,7 @@ export default function Reservations() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    toast.success(`당일 예약: 초진 ${cho} · 재진 ${jae}(HL ${hl}, PD ${pd}) / 취소 ${cancelled} · 제외 ${excluded} · 노쇼 ${noshow} 내려받기 완료`);
+    toast.success(`당일 예약: 초진 ${cho} · 재진 ${jae}(HL ${hl}, PD ${pd}) / 취소 ${cancelled} · 노쇼 ${noshow} 내려받기 완료`);
   }, [clinic]);
 
   // 마운트/주간전환 자동로드. StrictMode 이중 마운트 + 동일 파라미터 재렌더 시
