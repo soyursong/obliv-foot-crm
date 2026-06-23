@@ -1348,7 +1348,8 @@ const RX_STANDARD_HTML = `
         <td></td>
         <td></td>
         <td style="background:#f8f8f8; text-align:center;">E-mail&nbsp;주소</td>
-        <td></td>
+        <!-- T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 의료기관 E-mail = 병원(기관) 이메일 자동 바인딩. 미입력 시 빈칸. -->
+        <td>{{clinic_email}}</td>
       </tr>
     </tbody>
   </table>

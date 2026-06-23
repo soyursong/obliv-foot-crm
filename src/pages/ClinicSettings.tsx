@@ -72,6 +72,7 @@ export default function ClinicSettings() {
     business_no: '',
     established_date: '',
     nhis_code: '',
+    email: '',
   });
   const [clinicSaving, setClinicSaving] = useState(false);
 
@@ -95,7 +96,7 @@ export default function ClinicSettings() {
     const [{ data: clinicData }, { data: doctorData }] = await Promise.all([
       supabase
         .from('clinics')
-        .select('id, name, address, phone, fax, business_no, established_date, nhis_code')
+        .select('id, name, address, phone, fax, business_no, established_date, nhis_code, email')
         .eq('id', clinic.id)
         .maybeSingle(),
       supabase
@@ -116,6 +117,7 @@ export default function ClinicSettings() {
         business_no: clinicData.business_no ?? '',
         established_date: clinicData.established_date ?? '',
         nhis_code: clinicData.nhis_code ?? '',
+        email: clinicData.email ?? '',
       });
     }
 
@@ -182,6 +184,7 @@ export default function ClinicSettings() {
           business_no: clinicForm.business_no.trim() || null,
           established_date: clinicForm.established_date || null,
           nhis_code: clinicForm.nhis_code.trim() || null,
+          email: clinicForm.email.trim() || null,
         })
         .eq('id', clinic.id);
 
@@ -410,6 +413,19 @@ export default function ClinicSettings() {
               onChange={(e) => setClinicForm((p) => ({ ...p, established_date: e.target.value }))}
               disabled={!canEdit}
             />
+          </div>
+
+          {/* T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 병원(기관) 이메일 — 처방전 E-mail 주소 자동 연동 */}
+          <div className="space-y-1">
+            <Label className="text-xs">병원 이메일</Label>
+            <Input
+              type="email"
+              value={clinicForm.email}
+              onChange={(e) => setClinicForm((p) => ({ ...p, email: e.target.value }))}
+              placeholder="clinic@oblivseoul.kr"
+              disabled={!canEdit}
+            />
+            <p className="text-[11px] text-muted-foreground">처방전 서류의 의료기관 E-mail 주소 칸에 자동으로 들어갑니다.</p>
           </div>
         </div>
 
