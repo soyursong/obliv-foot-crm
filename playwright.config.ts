@@ -160,6 +160,10 @@ export default defineConfig({
         // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (Phase 1a 엔진): 금기증 복수선택 조합 +
         //   간염 B(C) 치환 순수 함수. MD §3-3 워크드 예시 1:1 + 0/1/2/3개 경계 (auth/CSV 불요).
         '**/T-20260623-foot-DOCGEN-CONTRAIND-COMBINE.spec.ts',
+        // T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ: 소견서 체크박스 ← 발건강 질문지 자동 pre-check 매핑
+        //   (computeAutoCheckedKeys) + '간염보균자' 옵션 추가. 정본 로직 1:1 모사 + 소스 라벨 동기화 가드
+        //   (HealthQMobilePage 상수 ↔ HEALTHQ_AUTOCHECK_MAP, TabletChecklistPage 무관 가드). auth 불요.
+        '**/T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

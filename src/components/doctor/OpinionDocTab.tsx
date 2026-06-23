@@ -114,6 +114,47 @@ export function togglePhraseInText(text: string, phrase: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ (AC-1) — 소견서 옵션 ← 발건강 질문지 자동 pre-check 매핑.
+//   환자가 모바일/키오스크로 미리 작성한 health_q_results.form_data 의 medical_history(string[])·medications(string[])
+//   를 읽어 아래 매핑대로 소견서 체크박스를 미리 체크(QR입력 뱃지). 의사가 수동 해제 가능, 최종 확정은 의사(발행 게이트).
+//   ★ 값(라벨)은 HealthQMobilePage.tsx 의 MEDICAL_HISTORY_OPTIONS / MEDICATION_OPTIONS 와 정확히 일치해야 함 —
+//      질문지 라벨 변경 시 여기도 동기화 필수.
+//   pregnant/preparing_pregnancy: 질문지는 '임신중 또는 임신준비중' 단일 옵션 → §확인-1 A안(둘 다 pre-check).
+//   hbv_carrier: AC-2 로 질문지에 '간염보균자' 추가 → 활성.
+// ---------------------------------------------------------------------------
+export const HEALTHQ_AUTOCHECK_MAP: Record<string, { medical_history?: string[]; medications?: string[] }> = {
+  diabetes:            { medical_history: ['당뇨'] },
+  liver_disease:       { medical_history: ['간질환'] },
+  hyperlipidemia:      { medical_history: ['고지혈증'], medications: ['콜레스테롤약'] },
+  immune_disease:      { medical_history: ['자가면역질환'] },
+  thyroid_med:         { medical_history: ['갑상선질환'] },
+  gi_disorder:         { medical_history: ['위장장애·역류성식도염'] },
+  pregnant:            { medical_history: ['임신중 또는 임신준비중'] },
+  preparing_pregnancy: { medical_history: ['임신중 또는 임신준비중'] },
+  psychiatric_med:     { medications: ['정신과약'] },
+  bp_med:              { medications: ['혈압약'] },
+  cardio_med:          { medications: ['협심증약'] },
+  on_chemo:            { medications: ['항암제'] },
+  hbv_carrier:         { medical_history: ['간염보균자'] },
+};
+
+// form_data(health_q_results) → 자동 체크 대상 소견서 옵션 key 목록. 질문지 없음/매칭 0 → 빈 배열(수동 모드).
+export function computeAutoCheckedKeys(formData: Record<string, unknown> | null | undefined): string[] {
+  if (!formData) return [];
+  const toStrArr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.map((x) => String(x)) : [];
+  const mh = toStrArr(formData['medical_history']);
+  const meds = toStrArr(formData['medications']);
+  const keys: string[] = [];
+  for (const [key, rule] of Object.entries(HEALTHQ_AUTOCHECK_MAP)) {
+    const hitMH = (rule.medical_history ?? []).some((v) => mh.includes(v));
+    const hitMed = (rule.medications ?? []).some((v) => meds.includes(v));
+    if (hitMH || hitMed) keys.push(key);
+  }
+  return keys;
+}
+
+// ---------------------------------------------------------------------------
 // 금일 내방객 조회 — check_ins 당일(KST) + customers 조인(차트/생년). read-only.
 //   DoctorCallDashboard.useDoctorCallFeed 의 KST 바운드 컨벤션과 동일. cancelled 제외.
 // ---------------------------------------------------------------------------
@@ -415,6 +456,32 @@ function useVisitSigningDoctors(clinicId: string | null, customerId: string | nu
 }
 
 // ---------------------------------------------------------------------------
+// T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ (AC-1) — 그 환자의 최신 발건강 질문지(form_data) read-only 조회.
+//   submitted_at 최신 1건. 없으면 null(자동화 스킵=수동 모드). HealthQResultsPanel.loadResults 조회 컨벤션 재사용.
+// ---------------------------------------------------------------------------
+function useLatestHealthQ(clinicId: string | null, customerId: string | null) {
+  return useQuery<Record<string, unknown> | null>({
+    queryKey: ['opinion_latest_healthq', clinicId, customerId],
+    enabled: !!clinicId && !!customerId,
+    queryFn: async () => {
+      if (!clinicId || !customerId) return null;
+      const { data, error } = await supabase
+        .from('health_q_results')
+        .select('form_data, submitted_at')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .order('submitted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      const row = (data ?? null) as { form_data?: Record<string, unknown> } | null;
+      return row?.form_data ?? null;
+    },
+    staleTime: 30_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 소견서 작성 팝업 — F0BAETELCTF 옵션 그리드 + editor.
 //   옵션 클릭 → phrase 자동삽입(toggle). editor = textarea(수기수정 SSOT).
 // ---------------------------------------------------------------------------
@@ -450,6 +517,9 @@ export function OpinionEditorDialog({
 }) {
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // AC-1: 발건강 질문지에서 자동 pre-check 된 키(QR입력 뱃지 표기용). 의사가 토글하면 해당 키 제거(의사확인).
+  const [autoChecked, setAutoChecked] = useState<Set<string>>(new Set());
+  const [healthQAppliedFor, setHealthQAppliedFor] = useState<string | null>(null); // 자동체크 적용한 bindKey(오픈당 1회)
   const [doctorId, setDoctorId] = useState<string>(''); // clinic_doctors.id ('' = 미선택→profile 명의)
   const [doctorTouched, setDoctorTouched] = useState(false); // 발행자를 사용자가 수동 변경했는지(자동 기본값 덮어쓰기 방지)
   const [chartOpen, setChartOpen] = useState(false);         // ① 헤더 환자명 클릭 → 진료차트 drawer
@@ -478,6 +548,9 @@ export function OpinionEditorDialog({
   // ③ 그 내원(customer_id + visit_date=내원일 KST)의 진료 본 의사 — 발행자 일치 게이트용(read-only).
   const visitDate = visitor?.checked_in_at ? seoulISODate(visitor.checked_in_at) : null;
   const { data: visitSigning } = useVisitSigningDoctors(clinicId, visitor?.customer_id ?? null, visitDate);
+
+  // AC-1: 그 환자의 최신 발건강 질문지(read-only) — 자동 pre-check 소스.
+  const { data: healthQData, isLoading: hqLoading } = useLatestHealthQ(clinicId, visitor?.customer_id ?? null);
   const signingIds = useMemo(() => visitSigning?.ids ?? new Set<string>(), [visitSigning]);
   const signingNames = visitSigning?.names ?? [];
   const hasSigningInfo = signingIds.size > 0; // 진료의 정보 존재 여부(없으면 fallback=경고 후 허용)
@@ -532,6 +605,7 @@ export function OpinionEditorDialog({
       setText('');
       setSelected(new Set());
     }
+    setAutoChecked(new Set()); // AC-1: 새 환자/요청 바인딩 시 자동체크 뱃지 초기화(자동체크는 아래 effect 가 적용)
     setDoctorId(defaultDoctorId);
     setDoctorTouched(false);
     setChartOpen(false);
@@ -545,12 +619,47 @@ export function OpinionEditorDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, doctorTouched, doctors, visitSigning]);
 
+  // AC-1: 발건강 질문지 자동 pre-check — 질문지 로드 완료 후 오픈당 1회 적용.
+  //   매핑된 옵션 중 아직 선택되지 않은 것을 추가 선택 + 문구 삽입 + QR입력 뱃지(autoChecked) 표기.
+  //   질문지 없음/매칭 0 → 스킵(수동 모드 그대로, 에러 없음 = AC-1.4). 큐 prefill 과는 상보(이미 선택된 키는 무변경).
+  //   바인딩 블록(위)이 text/selected 를 먼저 리셋한 뒤 이 effect 가 적용 → 직전 잔상 없음.
+  useEffect(() => {
+    if (!open || hqLoading) return;
+    if (healthQAppliedFor === bindKey) return; // 이번 오픈에 이미 적용
+    const autoKeys = computeAutoCheckedKeys(healthQData ?? null).filter((k) => phraseByKey.has(k));
+    setHealthQAppliedFor(bindKey);
+    if (autoKeys.length === 0) return; // 질문지 없음/매칭 0 → 수동 모드
+    const newKeys = autoKeys.filter((k) => !selected.has(k));
+    if (newKeys.length > 0) {
+      let t = text;
+      for (const k of newKeys) {
+        const phrase = phraseByKey.get(k);
+        if (phrase) t = togglePhraseInText(t, phrase);
+      }
+      setText(t);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const k of newKeys) next.add(k);
+        return next;
+      });
+    }
+    setAutoChecked(new Set(autoKeys)); // 이미 선택돼 있던 키도 QR입력 뱃지 표기
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, bindKey, hqLoading, healthQData, phraseByKey, healthQAppliedFor]);
+
   const handleOptionClick = (opt: OpinionOption) => {
     setText((prev) => togglePhraseInText(prev, opt.phrase));
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(opt.key)) next.delete(opt.key);
       else next.add(opt.key);
+      return next;
+    });
+    // AC-1.3: 의사가 수동 변경한 항목은 QR입력 뱃지 제거(=의사확인). 자동체크 흔적 제거.
+    setAutoChecked((prev) => {
+      if (!prev.has(opt.key)) return prev;
+      const next = new Set(prev);
+      next.delete(opt.key);
       return next;
     });
   };
@@ -730,21 +839,34 @@ export function OpinionEditorDialog({
                   <div className="grid grid-cols-2 gap-1.5">
                     {section.options.map((opt) => {
                       const active = selected.has(opt.key);
+                      // AC-1.2: 자동 pre-check(아직 의사 미확인) = amber 강조 + QR입력 뱃지로 시각 구분.
+                      const fromQR = active && autoChecked.has(opt.key);
                       return (
                         <button
                           key={opt.key}
                           type="button"
                           onClick={() => handleOptionClick(opt)}
                           aria-pressed={active}
-                          title={opt.phrase}
+                          title={fromQR ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)` : opt.phrase}
                           data-testid={`opinion-opt-${opt.key}`}
-                          className={`rounded-md border px-2 py-2 text-xs font-medium transition ${
-                            active
-                              ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
-                              : 'border-input bg-background text-foreground hover:bg-accent'
+                          data-autocheck={fromQR ? 'qr' : undefined}
+                          className={`relative rounded-md border px-2 py-2 text-xs font-medium transition ${
+                            fromQR
+                              ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
+                              : active
+                                ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
+                                : 'border-input bg-background text-foreground hover:bg-accent'
                           }`}
                         >
                           {opt.label}
+                          {fromQR && (
+                            <span
+                              className="ml-1 inline-block rounded bg-amber-200 px-1 py-px text-[9px] font-semibold leading-none text-amber-900 align-middle"
+                              data-testid={`opinion-qr-badge-${opt.key}`}
+                            >
+                              QR입력
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -759,6 +881,12 @@ export function OpinionEditorDialog({
               {staffMemo && (
                 <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-[11px] text-teal-800" data-testid="opinion-staff-request-memo">
                   <span className="font-semibold">실장 요청(참고)</span> · {staffMemo}
+                </div>
+              )}
+              {/* AC-1.2: 자동 pre-check 안내 — 발건강 질문지에서 미리 채운 항목(QR입력) 확인 유도. */}
+              {autoChecked.size > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-[11px] text-amber-800" data-testid="opinion-autocheck-hint">
+                  <span className="font-semibold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
                 </div>
               )}
               {/* ② 안내문구 제거 — 라벨만 유지 */}

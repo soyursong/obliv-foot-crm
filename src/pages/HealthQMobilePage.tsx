@@ -92,8 +92,12 @@ const FOOT_PAIN_LEVEL_OPTIONS = [
 
 // ── 3번 나의 건강 상태 (다중) — OQ1 해소 최종 11항(없음 토글 별도) ──────────────
 // T-20260602-foot-HEALTHQ-CONTENT-ADD: '임신중 또는 임신준비중' 선택지 추가
+// T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ (AC-2): '간염보균자' 항목 추가(간질환 옆 그룹핑).
+//   §확인-2 단일 라벨 채택 — B형/C형 세분은 CONTRAIND-COMBINE(substituteHepatitisType)에서 치환.
+//   ⚠ 이 라벨('간염보균자')은 소견서 자동연동 매핑(OpinionDocTab HEALTHQ_AUTOCHECK_MAP.hbv_carrier)의
+//      정확 일치 키 — 변경 시 양쪽 동기화 필수.
 const MEDICAL_HISTORY_OPTIONS = [
-  '당뇨', '고혈압', '간질환', '고지혈증', '심장질환', '자가면역질환',
+  '당뇨', '고혈압', '간질환', '간염보균자', '고지혈증', '심장질환', '자가면역질환',
   '갑상선질환', '우울증·공황장애', '위장장애·역류성식도염', '임신중 또는 임신준비중', '기타',
 ];
 
