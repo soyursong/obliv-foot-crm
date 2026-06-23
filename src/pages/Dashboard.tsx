@@ -856,6 +856,51 @@ const DraggableCard = memo(function DraggableCard({
   prev.pkgLabelCompact === next.pkgLabelCompact
 );
 
+// T-20260623-foot-DASH-DONESLOT-BATCHEDIT-MOVE-REGRESSION: 완료 슬롯 칩 draggable 복구.
+//   78167b2b(DASH-DONESLOT-NAMECHIP-COMPACT)에서 완료 카드를 성함칩 plain <button>으로 바꾸며
+//   useDraggable 이 빠져 완료 환자를 다른 슬롯(치료대기·수납대기 등)으로 드래그 이동할 수 없게 된
+//   회귀를 수정한다. 칩 비주얼(성함만·회색·초소형)과 정시그룹/우측단독 컬럼 레이아웃은 그대로 두고
+//   useDraggable(data:{checkIn})만 재부착 → 기존 handleDragEnd 가 그대로 status/room 이동을 처리.
+//   클릭(상세) vs 드래그 구분은 상위 DndContext sensors 의 distance(mouse 3 / touch 5px) constraint 가
+//   담당하므로 onClick(handleCardClick)·onContextMenu 와 드래그가 충돌 없이 공존한다.
+const DraggableDoneChip = memo(function DraggableDoneChip({
+  checkIn,
+  onClick,
+  onContextMenu,
+}: {
+  checkIn: CheckIn;
+  onClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: checkIn.id,
+    data: { checkIn },
+  });
+  const style: React.CSSProperties = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    opacity: isDragging ? 0.3 : 1,
+    touchAction: 'none',
+    willChange: isDragging ? 'transform' : undefined,
+  };
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      type="button"
+      data-testid="done-name-chip"
+      data-checkin-id={checkIn.id}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu?.(e); }}
+      title={`${checkIn.customer_name} · 드래그=이동`}
+      className="max-w-[5.5rem] cursor-grab touch-none truncate rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-xs text-gray-700 hover:bg-gray-100 transition active:cursor-grabbing"
+    >
+      {checkIn.customer_name}
+    </button>
+  );
+}, (prev, next) => prev.checkIn === next.checkIn);
+
 function DroppableColumn({
   id,
   label,
@@ -6732,18 +6777,15 @@ export default function Dashboard() {
                   </button>
                   {expanded && (
                     <div className="mt-1 flex flex-wrap gap-1 px-0.5" data-testid={`done-hour-chips-${hourKey}`}>
+                      {/* T-20260623-foot-DASH-DONESLOT-BATCHEDIT-MOVE-REGRESSION: 칩을 draggable 로 복구
+                          (성함칩 비주얼 유지 + useDraggable 재부착) → 완료 환자 다른 슬롯 이동 회귀 해소. */}
                       {cis.map((ci) => (
-                        <button
+                        <DraggableDoneChip
                           key={ci.id}
-                          type="button"
-                          data-testid="done-name-chip"
+                          checkIn={ci}
                           onClick={() => handleCardClick(ci)}
                           onContextMenu={(e) => handleCardContext(ci, e)}
-                          title={ci.customer_name}
-                          className="max-w-[5.5rem] truncate rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-xs text-gray-700 hover:bg-gray-100 transition"
-                        >
-                          {ci.customer_name}
-                        </button>
+                        />
                       ))}
                     </div>
                   )}
