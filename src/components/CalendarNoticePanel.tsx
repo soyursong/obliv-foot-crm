@@ -31,11 +31,14 @@ import {
   Pin,
   Plus,
   Trash2,
+  Users,
   X,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
+import { fetchActiveStaff, fetchTodayWorkingStaffIds } from '@/lib/autoAssign';
+import type { StaffRole } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
@@ -58,6 +61,25 @@ interface Notice {
 }
 
 const WEEK_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/**
+ * 근무캘린더 섹션 파트 ↔ staff.role 매핑
+ * (T-20260623-foot-DASH-WORKSTAFF-ROSTER-SECTION)
+ *
+ * staff 테이블 role = StaffRole = director|consultant|coordinator|therapist|technician.
+ *   - 의사 = director (StaffRole 에 'doctor'/'manager' 값 없음 → 원장=director 단일)
+ *   - 실장 = consultant (상담실장). staff 테이블엔 manager(총괄실장) role 자체가 없으므로
+ *            티켓 §확인필요2 의 consultant vs manager 충돌은 staff 테이블 한정 무의미 → consultant 확정.
+ *   - 코디 = coordinator
+ *   - 치료 = therapist
+ *   - technician(장비명) = 사람이 아닌 장비 → 4파트 어디에도 미매핑(표시 제외).
+ */
+const ROSTER_PARTS: { label: string; roles: StaffRole[] }[] = [
+  { label: '의사', roles: ['director'] },
+  { label: '실장', roles: ['consultant'] },
+  { label: '코디', roles: ['coordinator'] },
+  { label: '치료', roles: ['therapist'] },
+];
 
 export default function CalendarNoticePanel() {
   const clinic = useClinic();
@@ -88,6 +110,14 @@ export default function CalendarNoticePanel() {
   // ── 공지사항 상태 ─────────────────────────────────────────────────────────
   const [notices, setNotices] = useState<Notice[]>([]);
   const [noticeLoading, setNoticeLoading] = useState(true);
+
+  // ── 근무캘린더(금일 출근 직원 파트별 명단) 상태 ─────────────────────────────
+  //   T-20260623-foot-DASH-WORKSTAFF-ROSTER-SECTION.
+  //   데이터 소스 = 공유 accessor fetchTodayWorkingStaffIds(현 duty-sheet-read EF) 경유만.
+  //   ★신규 시트 직접 호출 금지(AC3) — SSOT source-swap(T-20260618-...-ATTENDANCE-SSOT-CRM,
+  //     시트→staff_attendance 전환) 시 자동 전파되도록 accessor 단일 소비.
+  const [rosterParts, setRosterParts] = useState<{ label: string; names: string[] }[] | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(true);
 
   // ── 모바일 접힘 상태 (T-20260514-foot-MOBILE-CAL-COLLAPSE) ────────────────
   const [isMobile, setIsMobile] = useState<boolean>(
@@ -137,6 +167,38 @@ export default function CalendarNoticePanel() {
   }, [clinic]);
 
   useEffect(() => { fetchNotices(); }, [fetchNotices]);
+
+  // ── 근무캘린더 fetch (금일 출근 직원) ──────────────────────────────────────
+  //   graceful(AC4): 시트/EF 실패 시 accessor 내부에서 빈 Set 반환(throw 없음) + 본 effect try/catch.
+  //   섹션만 "정보 없음"/로딩 표시하고 달력·공지 렌더에는 영향 0.
+  useEffect(() => {
+    let cancelled = false;
+    const clinicId = clinic?.id;
+    if (!clinicId) return;
+    setRosterLoading(true);
+    (async () => {
+      try {
+        const staffList = await fetchActiveStaff(clinicId);
+        // ★공유 accessor 경유(AC3) — staffList 를 넘겨 staff fetch 1회로 재사용.
+        const workingIds = await fetchTodayWorkingStaffIds(clinicId, staffList);
+        const working = staffList.filter((s) => workingIds.has(s.id));
+        const parts = ROSTER_PARTS.map((p) => ({
+          label: p.label,
+          names: working
+            .filter((s) => p.roles.includes(s.role))
+            .map((s) => (s.display_name ?? s.name ?? '').trim())
+            .filter(Boolean),
+        }));
+        if (!cancelled) setRosterParts(parts);
+      } catch (e) {
+        console.warn('[CalendarNoticePanel] 근무캘린더 로드 실패:', e);
+        if (!cancelled) setRosterParts(null);
+      } finally {
+        if (!cancelled) setRosterLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clinic?.id]);
 
   // ── 미니 캘린더 날짜 배열 ─────────────────────────────────────────────────
   const calendarDays = eachDayOfInterval({
@@ -418,6 +480,52 @@ export default function CalendarNoticePanel() {
             );
           })}
         </div>
+      </div>
+
+      {/* ── 근무캘린더 (금일 출근 직원 파트별 명단) ─────────────────────────────
+          T-20260623-foot-DASH-WORKSTAFF-ROSTER-SECTION — 달력 섹션과 공지사항 섹션 사이.
+          파트(의사/실장/코디/치료)별 그룹핑. 한 줄 max 4명, 5명+ 는 flex-wrap 자연 줄내림. */}
+      <div className="shrink-0 border-b px-3 py-2.5" data-testid="duty-roster-section">
+        <div className="mb-2 flex items-center gap-1.5">
+          <Users className="h-3.5 w-3.5 text-teal-600" />
+          <span className="text-xs font-semibold">근무캘린더</span>
+          <span className="text-[10px] text-muted-foreground">금일 출근</span>
+        </div>
+        {rosterLoading ? (
+          <div className="py-2 text-center text-[11px] text-muted-foreground" data-testid="roster-loading">
+            불러오는 중…
+          </div>
+        ) : !rosterParts || rosterParts.every((p) => p.names.length === 0) ? (
+          <div className="py-2 text-center text-[11px] text-muted-foreground" data-testid="roster-empty">
+            금일 출근 정보가 없습니다
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {rosterParts.map((p) => (
+              <div
+                key={p.label}
+                className="flex items-start gap-1.5 text-[11px]"
+                data-testid={`roster-part-${p.label}`}
+              >
+                <span className="w-7 shrink-0 pt-0.5 font-semibold text-muted-foreground">{p.label}</span>
+                <div className="flex flex-wrap gap-1">
+                  {p.names.length === 0 ? (
+                    <span className="pt-0.5 text-muted-foreground/50">–</span>
+                  ) : (
+                    p.names.map((nm, i) => (
+                      <span
+                        key={`${nm}-${i}`}
+                        className="inline-flex items-center rounded bg-teal-50 px-1.5 py-0.5 font-medium text-teal-800"
+                      >
+                        {nm}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── 공지사항 영역 ───────────────────────────────────────────────────── */}
