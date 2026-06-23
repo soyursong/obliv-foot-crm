@@ -33,11 +33,85 @@ export interface ContraindTemplate {
 }
 
 /**
- * 템플릿 레지스트리 — CSV(`서류상용구_양식_20260623.csv`) 도착 시 결선.
- * 현재는 Phase 1a(엔진 선착수)라 비어 있다. CSV → TS 상수 변환 시 여기에 24종 금기증 +
- * 표준 진단서 원문/우선순위를 채운다.
+ * 템플릿 레지스트리 — 기본값(빈 맵).
+ *
+ * ★ 데이터소스 결정② (2026-06-23 MSG-6e2x, 문지은 대표원장 옵션B 확정):
+ *   상용구 원문 소스 = 별도 CSV가 **아니라** 기존 `form_templates(form_key='opinion_doc')`
+ *   `.field_map.sections` jsonb (원장이 직접 최신 문구로 유지, READ-ONLY).
+ *   → 실 결선은 정적 상수가 아니라 `buildContraindTemplates(sections)` 로 런타임 빌드한다.
+ *   이 상수는 sections 미로딩(폴백)·테스트 기본값 용도로만 비워 둔다.
  */
 export const CONTRAIND_TEMPLATES: Record<string, ContraindTemplate> = {};
+
+// ---------------------------------------------------------------------------
+// 데이터소스 결선 — form_templates(opinion_doc).field_map.sections → 엔진 템플릿 맵.
+//   결정②/옵션B(MSG-6e2x): 원문 소스 = 기존 jsonb. DB 변경 0 (READ-ONLY).
+//   엔진 계약 (selectedKeys, templates)→string 고정이라 source만 교체 = rework 0.
+// ---------------------------------------------------------------------------
+
+/** form_templates(opinion_doc).field_map.sections 의 옵션 한 건 (OpinionOption 미러). */
+export interface OpinionSourceOption {
+  /** UI 가 선택값(selectedKeys)으로 넘기는 안정 식별자 (예: 'hyperlipidemia'). */
+  key: string;
+  /** 버튼 표기(현장 한국어 라벨, 예: '고지혈증'). 우선순위표 매핑의 브리지. */
+  label: string;
+  /** 자동삽입 원문(body). 원장이 form_templates 에 유지하는 최신 문구. */
+  phrase: string;
+}
+export interface OpinionSourceSection {
+  title: string;
+  options: OpinionSourceOption[];
+}
+
+/**
+ * 라벨 정규화 — 모든 공백 제거.
+ * 사유: 엔진 `CONTRAIND_PRIORITY` 키는 무공백 한국어('경구약복용후위장장애')인데,
+ *   form_templates 옵션 라벨은 공백 포함('경구약복용후 위장장애')일 수 있다.
+ *   라벨(한국어)이 두 키 공간(영문 option.key ↔ 한국어 우선순위 키)의 유일한 브리지.
+ */
+export function normalizeContraindLabel(label: string): string {
+  return (label ?? '').replace(/\s+/g, '');
+}
+
+/**
+ * form_templates(opinion_doc).field_map.sections → 조합 엔진 템플릿 맵 빌드.
+ *
+ * - map key  = option.key   (UI selectedKeys 와 동일 키 공간 — 영문 안정 식별자)
+ * - body     = option.phrase (원장 유지 최신 원문)
+ * - priority = CONTRAIND_PRIORITY[normalize(option.label)] (MD §4 우선순위표).
+ *              미등재 라벨(예: 진단서 단일선택 옵션 '경구약 O')은 큰 fallback 값 →
+ *              정렬 영향 최소(진단서는 단일선택이라 우선순위 무의미).
+ *
+ * 호출측(UI, item 2)은 이 맵을 combineDiagnoses 두 번째 인자로 주입한다.
+ * sections 가 null/빈 배열이면 빈 맵 반환(empty-safe — 폴백 OPINION_SECTIONS 처리는 호출측).
+ *
+ * @param sections form_templates 에서 로드한 섹션 배열(없으면 폴백 섹션을 호출측이 전달)
+ * @returns key→ContraindTemplate 맵
+ */
+export function buildContraindTemplates(
+  sections: OpinionSourceSection[] | null | undefined,
+): Record<string, ContraindTemplate> {
+  const map: Record<string, ContraindTemplate> = {};
+  if (!Array.isArray(sections)) return map;
+
+  // 우선순위표 미등재 옵션은 1000+ 순차값 — 등재 옵션(1~24) 뒤로 안정 정렬.
+  let fallbackSeq = 1000;
+  for (const section of sections) {
+    const options = section?.options;
+    if (!Array.isArray(options)) continue;
+    for (const opt of options) {
+      if (!opt?.key) continue;
+      const norm = normalizeContraindLabel(opt.label);
+      const priority = CONTRAIND_PRIORITY[norm] ?? fallbackSeq++;
+      map[opt.key] = {
+        key: opt.key,
+        priority,
+        body: opt.phrase ?? '',
+      };
+    }
+  }
+  return map;
+}
 
 /**
  * MD §4 우선순위표(1~24). CSV "우선순위" 컬럼의 정본. 원문(body)은 CSV 대기.
