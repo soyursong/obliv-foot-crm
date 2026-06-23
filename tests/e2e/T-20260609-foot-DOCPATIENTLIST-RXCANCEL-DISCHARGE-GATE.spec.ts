@@ -125,11 +125,13 @@ test.describe('S3 AC3 — inClinicRxGate SSOT 재사용', () => {
 // S4 — AC2: 차트 진입 동선 + DoctorPatientList 배선 / 무회귀 가드
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('S4 AC2 — 차트 진입 동선 + 배선/무회귀', () => {
-  test('DoctorPatientList 가 게이트 컨텍스트 + 차트 진입(useChart.openChart) 전달', () => {
+  test('DoctorPatientList 가 게이트 컨텍스트 + 차트 진입(openTreatmentChart) 전달', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // 차트 진입 LOGIC-LOCK L-004 준수(useChart 경유)
-    expect(src).toContain("import { useChart } from '@/lib/chartContext'");
-    expect(src).toMatch(/openChart\s*\(/);
+    // 차트 진입 단일 게이트웨이(L-004 의도 보존). T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-2
+    //   (문지은 대표원장 confirm): useChart().openChart(2번차트 서랍/고객차트) → 로컬 진료차트 직접오픈
+    //   (openTreatmentChart)으로 라우팅 타깃 정정. 다른 진입점 useChart 동선 무접촉(AC-3).
+    expect(src).toMatch(/const openTreatmentChart = \(customerId: string/);
+    expect(src).toMatch(/openTreatmentChart\s*\(/);
     // RxConfirmedSummary 에 status/checkedInAt/onOpenChart 전달
     expect(src).toContain('checkInStatus={row.status}');
     expect(src).toContain('checkedInAt={row.checked_in_at}');
