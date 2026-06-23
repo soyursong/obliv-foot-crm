@@ -654,36 +654,40 @@ export function ReservationDetailPopup({
                       />
                     </div>
                     {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로 / 예약등록자 — 연락처 입력칸 하단 배치.
-                        필드·마스터는 REGISTRAR-ROUTE-FIELDS(deployed) 재사용(위치만 이동, 신규 스키마 0). */}
-                    <div className="flex items-center gap-2 text-xs">
-                      <Label htmlFor="newmode-visit-route" className="w-12 shrink-0 text-muted-foreground">예약경로</Label>
-                      <Select value={visitRoute || '__none__'} onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}>
-                        <SelectTrigger id="newmode-visit-route" className="h-9 flex-1 text-sm" data-testid="newmode-visit-route-select">
-                          <SelectValue placeholder="예약경로 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                          {VISIT_ROUTE_OPTIONS.map((opt) => (
-                            <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Label htmlFor="newmode-registrar" className="w-12 shrink-0 text-muted-foreground">예약등록자</Label>
-                      <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}>
-                        <SelectTrigger id="newmode-registrar" className="h-9 flex-1 text-sm" data-testid="newmode-registrar-select">
-                          <SelectValue placeholder="예약등록자 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                          {registrars.map((r) => (
-                            <SelectItem key={r.id} value={r.id} className="text-xs">
-                              {r.group_name ? `[${r.group_name}] ${r.name}` : r.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        필드·마스터는 REGISTRAR-ROUTE-FIELDS(deployed) 재사용(위치만 이동, 신규 스키마 0).
+                        T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [9]: 두 필드 자동줄바꿈 제거 → 한 줄(2칸 grid) 컴팩트 표기.
+                          라벨을 셀렉트 위 작은 캡션으로 올려 가로폭 절약(태블릿 좁은 폭에서도 1행 유지). */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <Label htmlFor="newmode-visit-route" className="text-[10px] text-muted-foreground">예약경로</Label>
+                        <Select value={visitRoute || '__none__'} onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}>
+                          <SelectTrigger id="newmode-visit-route" className="h-9 w-full text-sm" data-testid="newmode-visit-route-select">
+                            <SelectValue placeholder="예약경로 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                            {VISIT_ROUTE_OPTIONS.map((opt) => (
+                              <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <Label htmlFor="newmode-registrar" className="text-[10px] text-muted-foreground">예약등록자</Label>
+                        <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}>
+                          <SelectTrigger id="newmode-registrar" className="h-9 w-full text-sm" data-testid="newmode-registrar-select">
+                            <SelectValue placeholder="예약등록자 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                            {registrars.map((r) => (
+                              <SelectItem key={r.id} value={r.id} className="text-xs">
+                                {r.group_name ? `[${r.group_name}] ${r.name}` : r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 )}
