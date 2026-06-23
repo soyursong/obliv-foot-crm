@@ -1,15 +1,16 @@
 ---
 id: T-20260623-foot-PKGTAB-BLOODTEST-NOSVCROW-DECISION
 domain: foot
-status: awaiting-da-consult
-deploy-ready: false
+status: deploy-ready
+deploy-ready: true
 db_change: true
 build_ok: true
 spec_added: tests/e2e/T-20260623-foot-PKGTAB-BLOODTEST-NOSVCROW-DECISION.spec.ts
 summary: "피검사 단독 검사신청 차단 해소(A안: KOH 패턴 미러) — request_blood_test_for_customer RPC 신규 + svcs.length===0 차단 게이트 제거"
 migration: supabase/migrations/20260623160000_blood_request_for_customer.sql
 rollback_sql: supabase/migrations/20260623160000_blood_request_for_customer.rollback.sql
-da_consult: pending (RPC 마이그 prod 배포 게이트 — 자동생성 행 청구·통계 이중계상 확인)
+da_consult: "GO (2026-06-23, MSG-l2hk): ADDITIVE CONFIRMED, 청구/통계 이중계상 SAFE(매출=payments-driven, price=0 placeholder 매출 미진입). 필수조건 (a)미러 INSERT price=0/original_price=0/is_package_session=false 고정 ✓(mig L85-86, KOH L99~105 동형) (b)롤백=KOH 패턴 미러 orphan placeholder 참조쿼리 blood_test_requested=true AND price=0 ✓ (c)prod 배포는 supervisor DDL-diff 후"
+remaining_gate: "supervisor DDL-diff (잔여 유일 게이트). FE+RPC paired 배포 필수 — FE 가 신규 RPC 호출하므로 RPC 미적용 prod 단독 FE 배포 금지. 대표 게이트 면제(ADDITIVE+승인패턴 미러, autonomy §3.1)."
 priority: P1
 created_at: 2026-06-23
 deployed_at: ""
@@ -41,10 +42,16 @@ deployed_at: ""
 
 ## 게이트
 - FE(게이트 제거)는 즉시 착수 — 코드 완료.
-- **RPC 마이그 prod 배포는 data-architect CONSULT GO 후** (자동생성 행 청구·통계 이중계상 확인 중).
-  ADDITIVE+승인패턴 미러 → 대표 게이트 면제, supervisor DDL-diff만.
+- **RPC 마이그 prod 배포는 data-architect CONSULT GO 후** → ✅ **GO 완료(2026-06-23, MSG-l2hk)**. ADDITIVE CONFIRMED, 청구/통계 이중계상 SAFE(매출=payments-driven, price=0 placeholder 매출 미진입, AC-4 충족). 게이트#2 통과.
+  ADDITIVE+승인패턴 미러 → 대표 게이트 면제, **잔여 = supervisor DDL-diff만**.
 - **FE+RPC paired 배포 필수**: FE 가 신규 RPC 를 호출하므로 RPC 미적용 prod 에 FE 만 배포 시 토글 깨짐(RPC 부재 에러).
-  → 본 티켓은 DA CONSULT GO 전까지 deploy-ready=false 유지. 마이그는 dev-foot 직접 실행(대시보드 수동 금지).
+  → CONSULT GO 수신으로 deploy-ready=true 전환(2026-06-23). 마이그는 dev-foot 직접 실행(대시보드 수동 금지). supervisor DDL-diff 후 paired 배포.
+
+## CONSULT GO 필수조건 충족 (2026-06-23 MSG-l2hk)
+- **(a) 미러 INSERT 불변식** ✅: mig L85-86 `price=0, original_price=0, is_package_session=false` 고정 — request_koh_for_customer L99~105 동형. (피검사 차이: service_id=NULL, service_name='혈액검사(피검사)' — 전용 카탈로그 부재)
+- **(b) 롤백 마이그 = KOH 패턴 미러** ✅: rollback.sql — DROP FUNCTION + orphan placeholder 참조쿼리 `WHERE blood_test_requested=true AND price=0` (실행 안 함, 데이터 보존 = KOH 롤백 동형).
+- **(c) 배포 순서** ✅ 준수: FE 게이트 제거 旣 commit(8fcde2dd), RPC 마이그 prod 배포는 supervisor DDL-diff 후.
+- Known-limit(single_paid fan-out)=KOH 旣부담 구조성질, 본 미러 신규위험 아님 → 별도 stats-RPC 후속(본 건 scope 밖).
 
 ## 검증
 - build OK (tsc + vite).
