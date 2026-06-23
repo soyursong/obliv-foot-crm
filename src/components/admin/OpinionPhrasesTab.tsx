@@ -50,13 +50,19 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import {
   Loader2,
   Plus,
   Pencil,
   Trash2,
   Save,
   FileText,
-  FolderPlus,
   Download,
   Upload,
   History,
@@ -290,53 +296,76 @@ function genOptionKey(existing: Set<string>): string {
 }
 
 // ---------------------------------------------------------------------------
-// 옵션 추가/수정 다이얼로그 — label(버튼이름) + phrase(자동삽입 멘트).
+// 소견서상용구 통합 다이얼로그 (T-20260623 FLAT-TABLE-UNIFIED-ADD)
+//   서류종류(section.title 동적 Select) + 명칭(label) + 내용(phrase) 을 한 다이얼로그에서.
+//   추가/수정 공용 — 수정 시 서류종류 변경하면 다른 section 으로 이동(AC-3).
 // ---------------------------------------------------------------------------
-function OptionDialog({
+function PhraseDialog({
   open,
   onOpenChange,
   initial,
-  sectionTitle,
+  defaultSection,
+  sectionTitles,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  initial: { label: string; phrase: string } | null;
-  sectionTitle: string;
-  onSubmit: (label: string, phrase: string) => void;
+  initial: { sectionTitle: string; label: string; phrase: string } | null; // null = 추가
+  defaultSection: string; // 추가 모드 기본 서류종류
+  sectionTitles: string[]; // 선택 가능한 서류종류(진단서/금기증 등 — section.title 동적 파생)
+  onSubmit: (sectionTitle: string, label: string, phrase: string) => void;
 }) {
+  const [section, setSection] = useState('');
   const [label, setLabel] = useState('');
   const [phrase, setPhrase] = useState('');
   const [bound, setBound] = useState<string | null>(null);
 
   // 다이얼로그가 새 대상으로 열릴 때마다 입력 초기화.
-  const sig = open ? `${sectionTitle}|${initial?.label ?? '__new__'}|${initial?.phrase ?? ''}` : null;
+  const sig = open
+    ? `${initial ? 'edit' : 'add'}|${initial?.sectionTitle ?? defaultSection}|${initial?.label ?? ''}|${initial?.phrase ?? ''}`
+    : null;
   if (open && sig !== bound) {
     setBound(sig);
+    setSection(initial?.sectionTitle ?? defaultSection ?? sectionTitles[0] ?? '');
     setLabel(initial?.label ?? '');
     setPhrase(initial?.phrase ?? '');
   }
 
   const handleSubmit = () => {
-    if (!label.trim()) return toast.error('버튼 이름을 입력해주세요.');
-    if (!phrase.trim()) return toast.error('자동삽입 멘트를 입력해주세요.');
-    onSubmit(label.trim(), phrase.trim());
+    if (!section) return toast.error('서류 종류를 선택해주세요.');
+    if (!label.trim()) return toast.error('명칭을 입력해주세요.');
+    if (!phrase.trim()) return toast.error('내용을 입력해주세요.');
+    onSubmit(section, label.trim(), phrase.trim());
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="opinion-phrase-option-dialog">
+      <DialogContent className="max-w-lg" data-testid="opinion-phrase-dialog">
         <DialogHeader>
-          <DialogTitle>
-            {initial ? '버튼 수정' : '버튼 추가'}
-            <span className="ml-2 text-sm font-normal text-muted-foreground">· {sectionTitle}</span>
-          </DialogTitle>
+          <DialogTitle>{initial ? '소견서상용구 수정' : '소견서상용구 추가'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
             <Label className="text-xs">
-              버튼 이름 * <span className="text-muted-foreground font-normal">— 소견서 화면에 표시될 버튼 글자</span>
+              서류 종류 * <span className="text-muted-foreground font-normal">— 진단서 / 금기증</span>
+            </Label>
+            <Select value={section} onValueChange={setSection}>
+              <SelectTrigger className="mt-1" data-testid="opinion-phrase-section-select">
+                <SelectValue placeholder="서류 종류 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {sectionTitles.map((t) => (
+                  <SelectItem key={t} value={t} data-testid="opinion-phrase-section-select-item">
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">
+              명칭 * <span className="text-muted-foreground font-normal">— 소견서 화면에 표시될 버튼 글자</span>
             </Label>
             <Input
               value={label}
@@ -348,7 +377,7 @@ function OptionDialog({
           </div>
           <div>
             <Label className="text-xs">
-              자동삽입 멘트 * <span className="text-muted-foreground font-normal">— 버튼을 누르면 소견 내용에 들어갈 문장</span>
+              내용 * <span className="text-muted-foreground font-normal">— 버튼을 누르면 소견 내용에 들어갈 문장</span>
             </Label>
             <Textarea
               value={phrase}
@@ -361,60 +390,9 @@ function OptionDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-          <Button onClick={handleSubmit} data-testid="opinion-phrase-option-save">
+          <Button onClick={handleSubmit} data-testid="opinion-phrase-dialog-save">
             확인
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 섹션 추가/이름변경 다이얼로그 (AC-6).
-// ---------------------------------------------------------------------------
-function SectionTitleDialog({
-  open,
-  onOpenChange,
-  initialTitle,
-  onSubmit,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  initialTitle: string | null; // null = 신규 섹션
-  onSubmit: (title: string) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [bound, setBound] = useState<string | null>(null);
-  const sig = open ? (initialTitle ?? '__new__') : null;
-  if (open && sig !== bound) {
-    setBound(sig);
-    setTitle(initialTitle ?? '');
-  }
-  const handleSubmit = () => {
-    if (!title.trim()) return toast.error('섹션 이름을 입력해주세요.');
-    onSubmit(title.trim());
-    onOpenChange(false);
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" data-testid="opinion-phrase-section-dialog">
-        <DialogHeader>
-          <DialogTitle>{initialTitle ? '섹션 이름 변경' : '섹션 추가'}</DialogTitle>
-        </DialogHeader>
-        <div>
-          <Label className="text-xs">섹션 이름 *</Label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="예) 진단서 · 금기증"
-            className="mt-1"
-            data-testid="opinion-phrase-section-input"
-          />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-          <Button onClick={handleSubmit} data-testid="opinion-phrase-section-save">확인</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -633,13 +611,13 @@ export default function OpinionPhrasesTab() {
     setDraft(JSON.parse(JSON.stringify(serverSections)));
   }
 
-  // 옵션 다이얼로그 상태.
-  const [optDialog, setOptDialog] = useState<{
-    sectionIdx: number;
-    optIdx: number | null; // null = 추가
-  } | null>(null);
-  // 섹션 다이얼로그 상태.
-  const [secDialog, setSecDialog] = useState<{ idx: number | null } | null>(null); // idx null = 추가
+  // 통합 다이얼로그 상태 (T-20260623 FLAT-TABLE-UNIFIED-ADD).
+  //   mode='add' = 신규 추가 / mode='edit' = sectionIdx·optIdx 대상 수정(서류종류 변경 시 이동).
+  const [phraseDialog, setPhraseDialog] = useState<
+    | { mode: 'add' }
+    | { mode: 'edit'; sectionIdx: number; optIdx: number }
+    | null
+  >(null);
 
   const allKeys = useMemo(() => {
     const s = new Set<string>();
@@ -647,20 +625,40 @@ export default function OpinionPhrasesTab() {
     return s;
   }, [draft]);
 
+  // 서류종류 선택지 = 현행 section.title 동적 파생(빈 제목·중복 제외, 기존 순서 유지).
+  const sectionTitles = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of draft) {
+      const t = s.title.trim();
+      if (t && !seen.has(t)) { seen.add(t); out.push(t); }
+    }
+    return out;
+  }, [draft]);
+
   const markDirty = () => setDirty(true);
 
-  // ── 옵션 CRUD (AC-2) ──
-  const submitOption = (label: string, phrase: string) => {
-    if (!optDialog) return;
-    const { sectionIdx, optIdx } = optDialog;
+  // ── 통합 추가/수정 (AC-2/AC-3) — submitOption + 섹션 선택(이동) 로직 재사용 ──
+  const submitPhrase = (targetTitle: string, label: string, phrase: string) => {
     setDraft((prev) => {
       const next = prev.map((s) => ({ ...s, options: [...s.options] }));
-      if (optIdx === null) {
-        const key = genOptionKey(allKeys);
-        next[sectionIdx].options.push({ key, label, phrase });
+      const targetIdx = next.findIndex((s) => s.title.trim() === targetTitle.trim());
+      if (targetIdx === -1) return prev; // 선택지는 항상 기존 섹션에서 파생 — 도달 불가.
+      if (phraseDialog?.mode === 'edit') {
+        const { sectionIdx, optIdx } = phraseDialog;
+        const cur = next[sectionIdx]?.options[optIdx];
+        if (!cur) return prev;
+        if (sectionIdx === targetIdx) {
+          // 같은 서류종류 — 제자리 수정.
+          next[sectionIdx].options[optIdx] = { ...cur, label, phrase };
+        } else {
+          // 서류종류 변경 — 기존 섹션에서 제거 후 대상 섹션으로 이동(key 보존).
+          next[sectionIdx].options.splice(optIdx, 1);
+          next[targetIdx].options.push({ ...cur, label, phrase });
+        }
       } else {
-        const cur = next[sectionIdx].options[optIdx];
-        next[sectionIdx].options[optIdx] = { ...cur, label, phrase };
+        const key = genOptionKey(allKeys);
+        next[targetIdx].options.push({ key, label, phrase });
       }
       return next;
     });
@@ -668,7 +666,7 @@ export default function OpinionPhrasesTab() {
   };
 
   const deleteOption = (sectionIdx: number, optIdx: number, label: string) => {
-    if (!confirm(`"${label}" 버튼을 삭제할까요?`)) return;
+    if (!confirm(`"${label}" 상용구를 삭제할까요?`)) return;
     setDraft((prev) => {
       const next = prev.map((s) => ({ ...s, options: [...s.options] }));
       next[sectionIdx].options.splice(optIdx, 1);
@@ -677,29 +675,12 @@ export default function OpinionPhrasesTab() {
     markDirty();
   };
 
-  // ── 섹션 CRUD (AC-6) ──
-  const submitSection = (title: string) => {
-    if (!secDialog) return;
-    const { idx } = secDialog;
-    setDraft((prev) => {
-      if (idx === null) return [...prev, { title, options: [] }];
-      return prev.map((s, i) => (i === idx ? { ...s, title } : s));
-    });
-    markDirty();
-  };
-
-  const deleteSection = (idx: number, title: string, optCount: number) => {
-    if (!confirm(`"${title}" 섹션을 삭제할까요?${optCount > 0 ? ` (버튼 ${optCount}개 포함)` : ''}`)) return;
-    setDraft((prev) => prev.filter((_, i) => i !== idx));
-    markDirty();
-  };
-
   // ── 저장 (AC-3) ──
   const handleSave = async () => {
     if (!tpl) return;
     // 빈 섹션 제목 방지(읽기 파서가 빈 title 섹션을 버리므로 사전 차단).
     if (draft.some((s) => !s.title.trim())) {
-      toast.error('이름이 비어있는 섹션이 있습니다. 섹션 이름을 입력해주세요.');
+      toast.error('이름이 비어있는 서류 종류가 있습니다.');
       return;
     }
     await saveMut.mutateAsync({
@@ -750,6 +731,23 @@ export default function OpinionPhrasesTab() {
     .map((section, sIdx) => ({ section, sIdx }))
     .filter(({ section }) => sectionFilter === '__all__' || section.title === sectionFilter);
 
+  // 평면 테이블 행(AC-1) — 진단서 → 금기증(기존 section order) 순으로 flatten.
+  //   sIdx/oIdx(절대 draft 인덱스)를 보존해 수정/삭제 핸들러가 정확히 대상을 가리킨다.
+  const flatRows = visibleSections.flatMap(({ section, sIdx }) =>
+    section.options.map((opt, oIdx) => ({
+      opt,
+      sIdx,
+      oIdx,
+      sectionTitle: section.title,
+    })),
+  );
+
+  // 추가 다이얼로그 기본 서류종류 — 필터 적용 중이면 해당 종류, 아니면 첫 종류.
+  const defaultSection =
+    sectionFilter !== '__all__' && sectionTitles.includes(sectionFilter)
+      ? sectionFilter
+      : sectionTitles[0] ?? '';
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -793,14 +791,16 @@ export default function OpinionPhrasesTab() {
               <Upload className="mr-1 h-3.5 w-3.5" />
               CSV 업로드
             </Button>
+            {/* AC-2: 단일 "소견서상용구 추가" 버튼 — 서류종류·명칭·내용 한 다이얼로그에서 */}
             <Button
-              variant="outline"
               size="sm"
-              onClick={() => setSecDialog({ idx: null })}
-              data-testid="opinion-phrase-add-section"
+              onClick={() => setPhraseDialog({ mode: 'add' })}
+              disabled={sectionTitles.length === 0}
+              data-testid="opinion-phrase-add"
+              className="bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"
             >
-              <FolderPlus className="mr-1 h-3.5 w-3.5" />
-              섹션 추가
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              소견서상용구 추가
             </Button>
             {dirty && (
               <Button variant="ghost" size="sm" onClick={handleReset} data-testid="opinion-phrase-reset">
@@ -868,150 +868,102 @@ export default function OpinionPhrasesTab() {
         </p>
       )}
 
-      {/* 섹션 목록 */}
-      {draft.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          등록된 상용구 섹션이 없습니다.
-          {canEdit && '  [섹션 추가]로 시작하세요.'}
+      {/* 평면 테이블 (AC-1) — 서류종류 | 명칭 | 내용 | 액션 */}
+      {flatRows.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground" data-testid="opinion-phrase-empty">
+          등록된 소견서 상용구가 없습니다.
+          {canEdit && '  [소견서상용구 추가]로 시작하세요.'}
         </div>
       ) : (
-        <div className="space-y-4">
-          {visibleSections.map(({ section, sIdx }) => (
-            <div key={sIdx} className="rounded-lg border bg-card" data-testid="opinion-phrase-section">
-              {/* 섹션 헤더 */}
-              <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
-                <span className="text-sm font-semibold" data-testid="opinion-phrase-section-title">
-                  {section.title || <span className="text-destructive">(이름 없음)</span>}
-                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">버튼 {section.options.length}개</span>
-                </span>
-                {canEdit && (
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="섹션 이름 변경"
-                      onClick={() => setSecDialog({ idx: sIdx })}
-                      data-testid="opinion-phrase-section-edit"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      title="섹션 삭제"
-                      onClick={() => deleteSection(sIdx, section.title, section.options.length)}
-                      data-testid="opinion-phrase-section-delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              {/* 옵션 목록 */}
-              <div className="divide-y divide-border/50">
-                {section.options.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                    이 섹션에 버튼이 없습니다.
-                  </p>
-                ) : (
-                  section.options.map((opt, oIdx) => (
-                    <div
-                      key={opt.key}
-                      className="flex items-start justify-between gap-2 px-3 py-2 hover:bg-muted/20"
-                      data-testid="opinion-phrase-option"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <span className="inline-block rounded border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700" data-testid="opinion-phrase-option-label">
-                          {opt.label}
-                        </span>
-                        <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground" data-testid="opinion-phrase-option-phrase">
-                          {opt.phrase}
-                        </p>
-                        {/* AC-5: 버튼별 최신 업데이트 시각 */}
-                        {phraseMeta[opt.key]?.last_updated_at && (
-                          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground/70" data-testid="opinion-phrase-option-updated">
-                            <History className="h-2.5 w-2.5" />
-                            최신 업데이트: {fmtKst(phraseMeta[opt.key]?.last_updated_at)}
-                            {phraseMeta[opt.key]?.updated_by ? ` · ${phraseMeta[opt.key]?.updated_by}` : ''}
-                          </p>
-                        )}
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full text-left text-sm" data-testid="opinion-phrase-table">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="w-28 px-3 py-2 font-medium">서류 종류</th>
+                <th className="w-44 px-3 py-2 font-medium">명칭</th>
+                <th className="px-3 py-2 font-medium">내용</th>
+                {canEdit && <th className="w-20 px-3 py-2 text-right font-medium">액션</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {flatRows.map(({ opt, sIdx, oIdx, sectionTitle }) => (
+                <tr key={opt.key} className="align-top hover:bg-muted/20" data-testid="opinion-phrase-row">
+                  <td className="px-3 py-2" data-testid="opinion-phrase-row-section">
+                    <span className="inline-block rounded bg-muted px-2 py-0.5 text-xs font-medium text-foreground/80">
+                      {sectionTitle || <span className="text-destructive">(없음)</span>}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2" data-testid="opinion-phrase-row-label">
+                    <span className="inline-block rounded border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+                      {opt.label}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground" data-testid="opinion-phrase-row-phrase">
+                    <p className="line-clamp-2 whitespace-pre-wrap" title={opt.phrase}>
+                      {opt.phrase}
+                    </p>
+                    {/* AC-5: 버튼별 최신 업데이트 시각(보존) */}
+                    {phraseMeta[opt.key]?.last_updated_at && (
+                      <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground/70" data-testid="opinion-phrase-option-updated">
+                        <History className="h-2.5 w-2.5" />
+                        최신 업데이트: {fmtKst(phraseMeta[opt.key]?.last_updated_at)}
+                        {phraseMeta[opt.key]?.updated_by ? ` · ${phraseMeta[opt.key]?.updated_by}` : ''}
+                      </p>
+                    )}
+                  </td>
+                  {canEdit && (
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="수정"
+                          onClick={() => setPhraseDialog({ mode: 'edit', sectionIdx: sIdx, optIdx: oIdx })}
+                          data-testid="opinion-phrase-row-edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          title="삭제"
+                          onClick={() => deleteOption(sIdx, oIdx, opt.label)}
+                          data-testid="opinion-phrase-row-delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                      {canEdit && (
-                        <div className="flex shrink-0 items-center gap-0.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => setOptDialog({ sectionIdx: sIdx, optIdx: oIdx })}
-                            data-testid="opinion-phrase-option-edit"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
-                            onClick={() => deleteOption(sIdx, oIdx, opt.label)}
-                            data-testid="opinion-phrase-option-delete"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* 옵션 추가 */}
-              {canEdit && (
-                <div className="border-t px-3 py-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-teal-600 hover:text-teal-700"
-                    onClick={() => setOptDialog({ sectionIdx: sIdx, optIdx: null })}
-                    data-testid="opinion-phrase-add-option"
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" />
-                    버튼 추가
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 여기서 만든 버튼은 진료 &gt; 소견서 작성 화면 왼쪽에 그대로 나타납니다. 버튼을 누르면 [자동삽입 멘트]가 소견 내용에 들어가며, 원장님이 자유롭게 수정할 수 있습니다. 변경 후 반드시 [저장]을 눌러야 소견서 화면에 반영됩니다.
+        ※ 여기서 만든 상용구는 진료 &gt; 소견서 작성 화면 왼쪽에 그대로 나타납니다. 버튼을 누르면 [내용]이 소견 내용에 들어가며, 원장님이 자유롭게 수정할 수 있습니다. 변경 후 반드시 [저장]을 눌러야 소견서 화면에 반영됩니다.
       </p>
 
-      {/* 옵션 다이얼로그 */}
-      <OptionDialog
-        open={!!optDialog}
-        onOpenChange={(v) => { if (!v) setOptDialog(null); }}
+      {/* 통합 추가/수정 다이얼로그 (AC-2/AC-3) */}
+      <PhraseDialog
+        open={!!phraseDialog}
+        onOpenChange={(v) => { if (!v) setPhraseDialog(null); }}
         initial={
-          optDialog && optDialog.optIdx !== null
+          phraseDialog?.mode === 'edit'
             ? {
-                label: draft[optDialog.sectionIdx]?.options[optDialog.optIdx]?.label ?? '',
-                phrase: draft[optDialog.sectionIdx]?.options[optDialog.optIdx]?.phrase ?? '',
+                sectionTitle: draft[phraseDialog.sectionIdx]?.title ?? '',
+                label: draft[phraseDialog.sectionIdx]?.options[phraseDialog.optIdx]?.label ?? '',
+                phrase: draft[phraseDialog.sectionIdx]?.options[phraseDialog.optIdx]?.phrase ?? '',
               }
             : null
         }
-        sectionTitle={optDialog ? (draft[optDialog.sectionIdx]?.title ?? '') : ''}
-        onSubmit={submitOption}
-      />
-
-      {/* 섹션 다이얼로그 */}
-      <SectionTitleDialog
-        open={!!secDialog}
-        onOpenChange={(v) => { if (!v) setSecDialog(null); }}
-        initialTitle={secDialog && secDialog.idx !== null ? (draft[secDialog.idx]?.title ?? '') : null}
-        onSubmit={submitSection}
+        defaultSection={defaultSection}
+        sectionTitles={sectionTitles}
+        onSubmit={submitPhrase}
       />
 
       {/* AC-4 CSV 대량입력 다이얼로그 */}
