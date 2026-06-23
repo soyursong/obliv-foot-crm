@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;font-family:-apple-system,"Apple SD Gothic Neo",sans-serif}
+body{margin:0;padding:26px;background:#FAFAFA;color:#252525}
+h1{font-size:19px;margin:0 0 4px}
+.sub{font-size:12.5px;color:#6E6353;margin:0 0 20px;line-height:1.55;max-width:1380px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start}
+.col{background:#fff;border:1px solid #E5E5E5;border-radius:14px;padding:14px}
+.col.current{border:2px solid #D4D4D4}
+.col .title{font-size:14.5px;font-weight:700;margin:0 0 1px}
+.col .anchor{font-size:11px;color:#9D917A;margin:0 0 12px;font-family:monospace}
+
+/* ── 미니 2번차트 렌더 ── */
+.chart{border:1px solid #cfcfcf;border-radius:9px;overflow:hidden;font-size:11px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.c-header{display:flex;align-items:center;gap:6px;padding:7px 9px;color:#fff}
+.c-header .brand{font-size:11px;font-weight:700;letter-spacing:-.2px}
+.c-pill{border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:600}
+.c-vt{border-radius:9999px;padding:1px 7px;font-size:9.5px;font-weight:700;margin-left:1px}
+.c-btns{margin-left:auto;display:flex;gap:4px}
+.c-btn{background:#fff;border-radius:4px;padding:2px 7px;font-size:9.5px;font-weight:600;color:#1f1f1f}
+.c-btn.ghost{color:#fff;background:rgba(255,255,255,.14)}
+.c-section{display:flex;align-items:center;gap:8px;padding:5px 9px;border-bottom:1px solid}
+.c-section .s-title{font-size:10.5px;font-weight:700}
+.c-section .s-meta{font-size:10px}
+.c-section .s-meta strong{font-weight:700}
+.c-body{background:#fff;padding:0}
+.row{display:flex;border-bottom:1px solid}
+.lc{width:62px;flex:0 0 62px;padding:5px 7px;font-size:10px;font-weight:600;border-right:1px solid}
+.vc{padding:5px 7px;font-size:10.5px;color:#222}
+.badges{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;background:#fff}
+.bdg{border-radius:9999px;padding:2px 9px;font-size:10px;font-weight:600}
+.cta{display:inline-flex;align-items:center;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:600;border:1px solid;margin:0 9px 9px}
+
+.swatches{display:flex;gap:3px;margin-top:12px}
+.sw{width:100%;height:22px;border-radius:4px;border:1px solid rgba(0,0,0,.06)}
+.note{font-size:10px;color:#9D917A;margin-top:9px;line-height:1.5}
+</style></head><body>
+<h1>풋센터 CRM · 2번차트(고객정보 차트) — 은은한 모노톤 후보 (T-20260623-CHART2-MONOTONE-3MOCKUP)</h1>
+<p class="sub">맨왼쪽 = <b>현재</b>(다크 헤더 #2d2d2d + 슬레이트블루 바 #e2e8f0 + 청록 teal 강조). 현장 피드백 = "레이아웃 컬러가 아쉽다 → 좀 더 은은한 모노톤으로". 후보 3종은 슬레이트블루·teal 포인트를 <b>그레이/뉴트럴/베이지 단색 계열</b>로 통일. 같은 화면요소(헤더·서브헤더 바·정보표 라벨/값·상태 배지·예약하기 버튼)에 동일 적용. 글자색은 가독성(WCAG AA) 위해 진한 단계 사용. 신분증 빨강 등 의미색은 본 후보 범위 밖(불변).<br><b>※ 참고:</b> 1번차트는 따뜻한 파스텔 그린(#DCEDC8)으로 이미 적용됨 → 본 건이 확정되면 1번=그린 / 2번=모노톤으로 두 차트 톤이 분리됩니다.</p>
+<div class="grid" id="grid"></div>
+
+<script>
+// 슬롯: pageBg / headerBg / pill(헤더 이름칸) / vtBadge / sectionBar / sectionText / accent(강조 숫자·CTA) / labelBg / labelText / divider / badgeBg / badgeText / scale[]
+const palettes = [
+  { key:'current', cls:'current', title:'현재', anchor:'다크+슬레이트+teal',
+    pageBg:'#e8e8e8', headerBg:'#2d2d2d', pill:'rgba(255,255,255,.20)', vtBg:'#0f766e', vtText:'#fff',
+    sectionBar:'#e2e8f0', sectionText:'#2d2d2d', accent:'#0f766e',
+    labelBg:'#f8fafc', labelText:'#475569', divider:'#e5e7eb',
+    badgeBg:'#ccfbf1', badgeText:'#0f766e',
+    scale:['#f8fafc','#e2e8f0','#cbd5e1','#94a3b8','#0f766e','#2d2d2d'],
+    note:'청록(teal) 포인트 + 슬레이트블루 바가 다소 차갑고 튄다는 피드백.' },
+
+  { key:'opt1', cls:'', title:'① 웜그레이 베이지', anchor:'warm greige · 따뜻',
+    pageBg:'#ECE9E3', headerBg:'#3A352E', pill:'rgba(255,255,255,.18)', vtBg:'#6F6048', vtText:'#fff',
+    sectionBar:'#E6E0D5', sectionText:'#3A352E', accent:'#6F6048',
+    labelBg:'#F4F1EB', labelText:'#6B6253', divider:'#D9D2C6',
+    badgeBg:'#E6E0D5', badgeText:'#5F543F',
+    scale:['#F4F1EB','#E6E0D5','#D9D2C6','#C4B89F','#8A7B60','#3A352E'],
+    note:'베이지·웜그레이 단색. 따뜻하고 차분. 우드/네일·풋케어 무드와 친화.' },
+
+  { key:'opt2', cls:'', title:'② 쿨 뉴트럴 그레이', anchor:'cool neutral · 깔끔',
+    pageBg:'#ECEDEE', headerBg:'#2E3133', pill:'rgba(255,255,255,.18)', vtBg:'#51585D', vtText:'#fff',
+    sectionBar:'#E4E6E8', sectionText:'#2E3133', accent:'#51585D',
+    labelBg:'#F4F5F6', labelText:'#5C6166', divider:'#D9DCDF',
+    badgeBg:'#E4E6E8', badgeText:'#4A5054',
+    scale:['#F4F5F6','#E4E6E8','#D2D6D9','#A8AEB3','#5C6166','#2E3133'],
+    note:'순수 무채색 그레이. 가장 군더더기 없고 의료/차트 화면다운 깔끔함.' },
+
+  { key:'opt3', cls:'', title:'③ 소프트 차콜+아이보리', anchor:'charcoal · ivory · 대비',
+    pageBg:'#F2EFE8', headerBg:'#32302C', pill:'rgba(255,255,255,.16)', vtBg:'#6E6354', vtText:'#fff',
+    sectionBar:'#EAE5DB', sectionText:'#32302C', accent:'#6E6354',
+    labelBg:'#F7F3EB', labelText:'#6E665A', divider:'#DED7C9',
+    badgeBg:'#EAE5DB', badgeText:'#5A5142',
+    scale:['#F7F3EB','#EAE5DB','#DED7C9','#C7BBA3','#6E6354','#32302C'],
+    note:'밝은 아이보리 배경 + 차분한 차콜 헤더. 대비가 또렷해 정보 구분이 선명.' },
+];
+
+function chart(p){
+  const sw = p.scale.map(c=>`<div class="sw" style="background:${c}" title="${c}"></div>`).join('');
+  return `
+  <div class="col ${p.cls}">
+    <div class="title">${p.title}</div>
+    <div class="anchor">${p.anchor}</div>
+    <div class="chart" style="background:${p.pageBg};padding:7px">
+      <div style="border-radius:7px;overflow:hidden;border:1px solid ${p.divider}">
+        <div class="c-header" style="background:${p.headerBg}">
+          <span class="brand">SMART DOCTOR · 고객정보</span>
+          <span class="c-pill" style="background:${p.pill};color:#fff">김O라</span>
+          <span class="c-vt" style="background:${p.vtBg};color:${p.vtText}">신환</span>
+          <span class="c-btns"><span class="c-btn">저장</span><span class="c-btn ghost">인쇄</span></span>
+        </div>
+        <div class="c-section" style="background:${p.sectionBar};border-color:${p.divider}">
+          <span class="s-title" style="color:${p.sectionText}">고객정보</span>
+          <span class="s-meta" style="color:${p.labelText}">방문 <strong style="color:${p.accent}">3회</strong> · 결제 <strong style="color:${p.accent}">1,250,000</strong> · 패키지 <strong style="color:${p.accent}">2건</strong></span>
+        </div>
+        <div class="c-body">
+          <div class="row" style="border-color:${p.divider}">
+            <div class="lc" style="background:${p.labelBg};color:${p.labelText};border-color:${p.divider}">이름</div>
+            <div class="vc">김O라</div>
+          </div>
+          <div class="row" style="border-color:${p.divider}">
+            <div class="lc" style="background:${p.labelBg};color:${p.labelText};border-color:${p.divider}">연락처</div>
+            <div class="vc">010-1234-5678</div>
+          </div>
+          <div class="row" style="border-color:${p.divider}">
+            <div class="lc" style="background:${p.labelBg};color:${p.labelText};border-color:${p.divider}">차트번호</div>
+            <div class="vc">F-1024</div>
+          </div>
+        </div>
+        <div class="badges">
+          <span class="bdg" style="background:${p.badgeBg};color:${p.badgeText}">체크인</span>
+          <span class="bdg" style="background:${p.badgeBg};color:${p.badgeText}">재진</span>
+          <span class="bdg" style="background:${p.badgeBg};color:${p.badgeText}">패키지 잔여 6회</span>
+        </div>
+        <span class="cta" style="color:${p.accent};border-color:${p.accent};background:#fff">＋ 예약하기</span>
+      </div>
+    </div>
+    <div class="swatches">${sw}</div>
+    <div class="note">${p.note}</div>
+  </div>`;
+}
+document.getElementById('grid').innerHTML = palettes.map(chart).join('');
+</script>
+</body></html>
