@@ -166,7 +166,7 @@ export interface Customer {
   // C2 tickets
   hira_consent?: boolean | null;        // 건강보험 조회 동의 Y/N (C2-HIRA-CONSENT)
   hira_consent_at?: string | null;      // 건강보험 조회 동의 일시
-  visit_route?: 'TM' | '워크인' | '인바운드' | '지인소개' | null; // 방문경로 대분류 (C2-VISIT-ROUTE)
+  visit_route?: VisitRoute | null; // 방문경로 대분류 (C2-VISIT-ROUTE) — W2-DB: 네이버·인콜 ADD
   referral_name?: string | null;          // 소개자 성함 (방문경로='지인소개' 시) — T-20260515-foot-REFERRAL-NAME
   visit_route_detail?: string | null;     // 방문경로 소분류(유입경로) — T-20260609-foot-SELFCHECKIN-LEADSRC-UI-VISITPATH. 자유 TEXT (SNS_인스타그램/검색_네이버/지인소개_{성함}/제휴기타 …)
   // C23-DETAIL-SIMPLIFY
@@ -580,13 +580,17 @@ export interface Reservation {
   service_id: string | null;
   memo: string | null;
   booking_memo: string | null;              // 예약메모 (예약 경로 확인용) — T-20260504-foot-MEMO-RESTRUCTURE
+  /** T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB: 간략메모(초진 주증상 — 발톱무좀/내성발톱 선택 또는 직접입력).
+   *  CRM-local 임상 메타. booking_memo(예약메모)와 별개 칸. cue_card·통계·리드 집계 영향 0. */
+  brief_note?: string | null;
   status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
   cancelled_at: string | null;             // 취소 일시 — T-20260515-foot-RESV-CANCEL
   cancel_reason: string | null;            // 취소 사유 — T-20260515-foot-RESV-CANCEL
   cancelled_by: string | null;             // 취소 처리 staff user_id — T-20260525-foot-RESV-CANCEL-CTX
   referral_source: string | null;
-  /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로(방문경로 대분류). customers.visit_route enum 재사용 SSOT. */
-  visit_route?: 'TM' | '워크인' | '인바운드' | '지인소개' | null;
+  /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로(방문경로 대분류). customers.visit_route enum 재사용 SSOT.
+   *  W2-DB: 네이버·인콜 ADD(B안: legacy 인바운드 존치). */
+  visit_route?: VisitRoute | null;
   /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 마스터 FK(reservation_registrars). */
   registrar_id?: string | null;
   /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 성함 스냅샷(고객박스 @표시·이력 안정). */
@@ -642,12 +646,29 @@ export interface ReservationRegistrar {
 }
 
 /**
- * T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 방문경로(예약경로) 대분류 옵션 SSOT.
- * customers.visit_route / reservations.visit_route CHECK 제약과 동일 4값.
- * ⚠ 신규 enum 신설 금지 — 2번차트 방문경로 드롭다운과 동일 항목 재사용(SelfCheckIn/신규예약 editor/예약상세 팝업 공용).
+ * T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS / T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB(item8):
+ * 방문경로(예약경로) 대분류 옵션 SSOT — 신규 등록 선택지 5종.
+ * customers.visit_route / reservations.visit_route CHECK 제약(W2-DB: TM/워크인/인바운드/지인소개/네이버/인콜)과 정합.
+ * ⚠ B안(비파괴): 신규 등록 드롭다운은 5종(TM/네이버/인콜/워크인/지인소개)만 노출.
+ *    legacy '인바운드'는 CHECK·표시에는 허용하되 드롭다운 기본 노출에서 제외(visitRouteOptionsFor 로 동적 보존).
+ * ⚠ 이름충돌 경고(DA CONSULT-REPLY igq8): foot.visit_route '네이버'(네이버예약/플레이스 수기 inbound)
+ *    ≠ cue_cards.media_source='naver'(도파민 paid). silver/route_std 매핑: '네이버'→naver / '인콜'→inbound / legacy '인바운드'→inbound.
  */
-export const VISIT_ROUTE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개'] as const;
-export type VisitRoute = (typeof VISIT_ROUTE_OPTIONS)[number];
+export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인콜', '워크인', '지인소개'] as const;
+/** 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용). */
+export const VISIT_ROUTE_LEGACY = ['인바운드'] as const;
+export type VisitRoute = (typeof VISIT_ROUTE_OPTIONS)[number] | (typeof VISIT_ROUTE_LEGACY)[number];
+
+/**
+ * 드롭다운 옵션 계산: 신규 5종 + 현재값이 legacy('인바운드' 등 5종 밖)면 그 값을 보존 항목으로 추가.
+ * → legacy '인바운드' 예약을 편집해도 드롭다운에서 현재값이 빈칸이 되지 않고 그대로 선택·표시(B안 보존).
+ */
+export function visitRouteOptionsFor(current?: string | null): string[] {
+  const base = [...VISIT_ROUTE_OPTIONS] as string[];
+  const cur = (current ?? '').trim();
+  if (cur && !base.includes(cur)) return [...base, cur];
+  return base;
+}
 
 /** 예약등록자 마스터 그룹 라벨 순서 (드롭다운 그룹 헤더용). */
 export const REGISTRAR_GROUPS = ['원내', 'TM'] as const;

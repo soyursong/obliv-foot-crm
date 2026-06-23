@@ -45,7 +45,7 @@ import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslot
 // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 활성패키지/치료내역 = 2번차트 패키지탭 양식(read-only) 재사용
 import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/PackageTicketReadonlyList';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
-import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
+import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor } from '@/lib/types';
 
 // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins 재진판정용 타입.
 //   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용).
@@ -116,7 +116,13 @@ type CreateReservationParams = {
   //   컬럼(reservations.visit_route / registrar_id)·마스터(reservation_registrars)는 기존(REGISTRAR-ROUTE-FIELDS deployed) — 신규 스키마 0.
   visit_route?: string | null;
   registrar_id?: string | null;
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note) + 예약메모(booking_memo).
+  brief_note?: string | null;
+  booking_memo?: string | null;
 };
+
+// T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 초진 간략메모 빠른선택 칩(발톱무좀/내성발톱) + 직접입력.
+const BRIEF_NOTE_QUICK = ['발톱무좀', '내성발톱'] as const;
 
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────
 
@@ -205,6 +211,9 @@ export function ReservationDetailPopup({
   const [manualNew, setManualNew] = useState(false);   // true = 직접 등록 모드(검색 미선택 대신)
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState(''); // 하이픈 표시(formatPhoneInput) — parent 가 E.164 정규화
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note, 발톱무좀/내성발톱 선택 또는 직접입력) + 예약메모(booking_memo).
+  const [briefNote, setBriefNote] = useState('');
+  const [newBookingMemo, setNewBookingMemo] = useState('');
 
   // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-2/AC-3: (+) 예약 생성 팝업 진입동선 재구성.
   //   빈 상태 = [신규 고객 등록]/[기존 고객 예약] 2버튼만(구 상시 검색창 + 직접등록 혼재 동선 제거).
@@ -375,6 +384,9 @@ export function ReservationDetailPopup({
       setExistingSearch(false);
       setVisitRoute('');
       setRegistrarId('');
+      // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 매 진입 클린 리셋(stale 차단).
+      setBriefNote('');
+      setNewBookingMemo('');
     }
   }, [newMode, initialDate, initialTime]);
 
@@ -622,7 +634,7 @@ export function ReservationDetailPopup({
                       <button
                         type="button"
                         className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                        onClick={() => { setManualNew(false); setNewCustName(''); setNewCustPhone(''); setVisitRoute(''); setRegistrarId(''); }}
+                        onClick={() => { setManualNew(false); setNewCustName(''); setNewCustPhone(''); setVisitRoute(''); setRegistrarId(''); setBriefNote(''); setNewBookingMemo(''); }}
                         data-testid="btn-newmode-manual-cancel"
                       >
                         ← 처음으로
@@ -688,6 +700,54 @@ export function ReservationDetailPopup({
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(초진 주증상) — 발톱무좀/내성발톱 빠른선택 + 직접입력.
+                        reservations.brief_note(W2 전용 컬럼). 예약메모(booking_memo)와 별개 칸(오버로드 금지). */}
+                    <div className="flex flex-col gap-1 text-xs">
+                      <Label htmlFor="newmode-brief-note" className="text-[10px] text-muted-foreground">간략메모</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {BRIEF_NOTE_QUICK.map((label) => {
+                          const active = briefNote.trim() === label;
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setBriefNote((prev) => (prev.trim() === label ? '' : label))}
+                              className={cn(
+                                'h-8 rounded-md border px-3 text-sm font-medium transition-colors',
+                                active
+                                  ? 'border-teal-600 bg-teal-100 text-teal-700'
+                                  : 'border-input bg-background hover:bg-muted',
+                              )}
+                              data-testid={`newmode-brief-quick-${label}`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input
+                        id="newmode-brief-note"
+                        type="text"
+                        value={briefNote}
+                        onChange={(e) => setBriefNote(e.target.value)}
+                        placeholder="발톱무좀 · 내성발톱 또는 직접입력"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        data-testid="newmode-brief-note-input"
+                      />
+                    </div>
+                    {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item10): 예약메모(booking_memo) — 간략메모와 별개 칸. */}
+                    <div className="flex flex-col gap-1 text-xs">
+                      <Label htmlFor="newmode-booking-memo" className="text-[10px] text-muted-foreground">예약메모</Label>
+                      <input
+                        id="newmode-booking-memo"
+                        type="text"
+                        value={newBookingMemo}
+                        onChange={(e) => setNewBookingMemo(e.target.value)}
+                        placeholder="예약 관련 메모 (선택)"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        data-testid="newmode-booking-memo-input"
+                      />
                     </div>
                   </div>
                 )}
@@ -1120,6 +1180,9 @@ export function ReservationDetailPopup({
       // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 신규 고객 등록 시 입력한 예약경로/예약등록자 영속(컬럼·마스터 기존).
       visit_route: visitRoute || null,
       registrar_id: registrarId || null,
+      // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 + 예약메모 영속.
+      brief_note: briefNote.trim() || null,
+      booking_memo: newBookingMemo.trim() || null,
     });
     setCreatingResv(false);
     if (!res.ok) {
@@ -1139,6 +1202,9 @@ export function ReservationDetailPopup({
     setExistingSearch(false);
     setVisitRoute('');
     setRegistrarId('');
+    // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 클린 리셋.
+    setBriefNote('');
+    setNewBookingMemo('');
     onChanged();
   };
 
@@ -1379,7 +1445,8 @@ export function ReservationDetailPopup({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                        {VISIT_ROUTE_OPTIONS.map((opt) => (
+                        {/* W2-DB(item8): 신규 5종 + legacy 인바운드 현재값 보존(visitRouteOptionsFor) */}
+                        {visitRouteOptionsFor(visitRoute).map((opt) => (
                           <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
                         ))}
                       </SelectContent>
