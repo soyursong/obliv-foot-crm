@@ -68,6 +68,8 @@ export interface AutoBindContext {
     nhis_code?: string | null;
     business_no?: string | null;
     established_date?: string | null;
+    // T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 병원(기관) 이메일 — 환자 이메일과 별개
+    email?: string | null;
   } | null;
   doctor?: string | null;
   /** T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 매칭된 원장 상세 정보 */
@@ -261,6 +263,9 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     // T-20260601-foot-DOC-PRINT-8FIX AC-3①: 처방전 전화칸 옆 팩스 중복 제거용 — 팩스 없는 순수 전화번호.
     // clinic_phone(=전화/FAX 조합)은 "전화 및 팩스" 라벨 양식 전용 유지.
     clinic_phone_only: ctx.clinic?.phone ? formatPhone(ctx.clinic.phone) : '',
+    // T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 처방전 의료기관 블록 E-mail 주소 자동 바인딩.
+    //   병원(기관) 이메일 — 환자 이메일(patient_email)과 별개. 미입력 시 빈칸(회귀 방지).
+    clinic_email: ctx.clinic?.email ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 차트번호 (record_no fallback)
     record_no: ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 진단 코드·명칭
@@ -440,7 +445,7 @@ export async function loadAutoBindContext(
   // T-20260520-foot-PRINT-FORM-BIND: 클리닉 정보 확장 (nhis_code, fax 추가)
   const { data: clinicData } = await supabase
     .from('clinics')
-    .select('name, address, phone, fax, nhis_code, business_no, established_date')
+    .select('name, address, phone, fax, nhis_code, business_no, established_date, email')
     .eq('id', checkIn.clinic_id)
     .maybeSingle();
 
