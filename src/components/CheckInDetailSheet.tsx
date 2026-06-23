@@ -1249,7 +1249,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   {latestCheckIn.visit_type === 'new' ? (
                     <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700">초진</span>
                   ) : (
-                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">재진</span>
+                    /* T-20260623-PASTEL-RETUNE: 1번차트 잔존 녹색(재진 emerald)→sage, 2번차트 재진=sage 정합 */
+                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-sage-100 text-sage-700">재진</span>
                   )}
                 </>
               ) : (
@@ -1580,7 +1581,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   초진
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 shrink-0">
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-sage-100 text-sage-700 shrink-0">{/* T-20260623-PASTEL-RETUNE: 1번차트 잔존 녹색(재진 emerald)→sage */}
                   재진
                 </span>
               )}
