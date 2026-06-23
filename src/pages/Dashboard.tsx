@@ -132,6 +132,9 @@ const ChecklistDoneCtx = createContext<Set<string>>(new Set());
 /** 활성 패키지 보유 고객 customer_id 집합 (잔여>0) (T-20260522-foot-PKG-BOX-INDICATOR) */
 const PkgHolderCtx = createContext<Set<string>>(new Set());
 
+/** 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 고객 customer_id 집합 (T-20260623-foot-PKGBOX-PODOLOGE-BADGE) */
+const PodologeHolderCtx = createContext<Set<string>>(new Set());
+
 /** ALT(올트) 활성 고객 customer_id 집합 (T-20260522-foot-ALT-BADGE) */
 const AltHolderCtx = createContext<Set<string>>(new Set());
 
@@ -420,6 +423,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260522-foot-PKG-BOX-INDICATOR: 활성 패키지 보유 여부
   const pkgHolderSet = useContext(PkgHolderCtx);
   const hasPkg = !!(checkIn.customer_id && pkgHolderSet.has(checkIn.customer_id));
+  // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 여부
+  const podologeHolderSet = useContext(PodologeHolderCtx);
+  const hasPodologe = !!(checkIn.customer_id && podologeHolderSet.has(checkIn.customer_id));
   // T-20260522-foot-ALT-BADGE: ALT 활성 여부
   const altHolderSet = useContext(AltHolderCtx);
   const isAlt = !!(checkIn.customer_id && altHolderSet.has(checkIn.customer_id));
@@ -631,6 +637,15 @@ const DraggableCard = memo(function DraggableCard({
               패키지
             </span>
           )}
+          {/* T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 포돌로게 회차 보유 식별 배지 */}
+          {hasPodologe && (
+            <span
+              data-testid="podologe-holder-badge"
+              className="inline-flex items-center bg-orange-100 text-orange-700 text-[9px] px-0.5 py-px rounded font-bold"
+            >
+              PD
+            </span>
+          )}
           {isAlt && (
             <span
               data-testid="alt-badge"
@@ -800,6 +815,15 @@ const DraggableCard = memo(function DraggableCard({
           >
             <Package className="h-2 w-2" />
             패키지
+          </span>
+        )}
+        {/* T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 포돌로게 회차 보유 식별 배지 */}
+        {hasPodologe && (
+          <span
+            data-testid="podologe-holder-badge"
+            className="inline-flex items-center bg-orange-100 text-orange-700 text-[9px] px-0.5 py-px rounded font-bold"
+          >
+            PD
           </span>
         )}
         {isAlt && (
@@ -3133,6 +3157,8 @@ export default function Dashboard() {
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
+  // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 고객 ID 집합
+  const [podologeHolderSet, setPodologeHolderSet] = useState<Set<string>>(new Set());
   // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합
   const [altHolderSet, setAltHolderSet] = useState<Set<string>>(new Set());
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 고객 customer_id → 미수금 Map (소스=footBilling SSOT)
@@ -4012,10 +4038,10 @@ export default function Dashboard() {
     if (!clinic) return;
     const { data: pkgs } = await supabase
       .from('packages')
-      .select('id, customer_id, package_name, total_sessions')
+      .select('id, customer_id, package_name, total_sessions, podologe_sessions')
       .eq('clinic_id', clinic.id)
       .eq('status', 'active');
-    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); return; }
+    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); setPodologeHolderSet(new Set()); return; }
 
     const pkgIds = pkgs.map((p: { id: string }) => p.id);
     // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: 활성 패키지가 누적(클리닉당 수백건)되면
@@ -4038,15 +4064,19 @@ export default function Dashboard() {
     const map = new Map<string, PackageLabel>();
     // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0 고객 ID 집합 (배치 조인, 추가 DB 쿼리 없음)
     const holderSet = new Set<string>();
-    for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number }[]) {
+    // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 고객 ID 집합 (추가 DB 쿼리 없음)
+    const podologeSet = new Set<string>();
+    for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number; podologe_sessions: number | null }[]) {
       const used = usedMap.get(p.id) ?? 0;
       const remaining = Math.max(0, p.total_sessions - used);
       // T-20260617-foot-PKGBOX-USED-FORMAT: used 보존 → 회차 번호 표기(N=used+1)
       map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions, used });
       if (remaining > 0) holderSet.add(p.customer_id);
+      if ((p.podologe_sessions ?? 0) > 0) podologeSet.add(p.customer_id);
     }
     setPkgMap(map);
     setPkgHolderSet(holderSet);
+    setPodologeHolderSet(podologeSet);
   }, [clinic]);
 
   // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합 조회
@@ -6973,6 +7003,7 @@ export default function Dashboard() {
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
+      <PodologeHolderCtx.Provider value={podologeHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
       <OutstandingMapCtx.Provider value={outstandingMap}>
       {/* T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) + red(expire) 2단계 */}
@@ -7165,6 +7196,7 @@ export default function Dashboard() {
       </TimerAlertCtx.Provider>
       </OutstandingMapCtx.Provider>
       </AltHolderCtx.Provider>
+      </PodologeHolderCtx.Provider>
       </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
