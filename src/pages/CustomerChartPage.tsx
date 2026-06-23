@@ -356,7 +356,7 @@ function MemoHistoryPanel({
                     key={phrase.id}
                     type="button"
                     onClick={() => hook.setNewText(hook.newText ? `${hook.newText} ${phrase.content}` : phrase.content)}
-                    className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
+                    className="rounded border border-sage-200 bg-sage-50 px-1.5 py-0.5 text-[10px] text-sage-700 hover:bg-sage-100 transition"
                   >
                     {phrase.name}
                   </button>
@@ -393,7 +393,7 @@ function MemoHistoryPanel({
         <div className="text-[11px] text-muted-foreground text-center py-3">{emptyLabel}</div>
       ) : (
         <div className="space-y-1.5 mt-1" data-testid={`${testidPrefix}-history`}>
-          <label className="block text-[11px] font-semibold text-[#2d2d2d]">{historyLabel}</label>
+          <label className="block text-[11px] font-semibold text-[#51585D]">{historyLabel}</label>
           {hook.memos.map((memo) => (
             <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
               {hook.editingId === memo.id ? (
@@ -435,7 +435,7 @@ function MemoHistoryPanel({
                         <button
                           type="button"
                           onClick={() => { hook.setEditingId(memo.id); hook.setEditingText(memo.content); }}
-                          className="text-[10px] text-teal-600 hover:underline"
+                          className="text-[10px] text-sage-600 hover:underline"
                         >
                           수정
                         </button>
@@ -943,7 +943,7 @@ function ReceiptUploadSection({
                   ) : (
                     <div
                       data-testid="receipt-package-label"
-                      className="rounded bg-teal-50 px-2 py-1 text-[11px] text-teal-800 truncate"
+                      className="rounded bg-sage-50 px-2 py-1 text-[11px] text-sage-800 truncate"
                     >
                       {activePkgs[0].name}
                     </div>
@@ -984,7 +984,7 @@ function ReceiptUploadSection({
                       className={cn(
                         'flex-1 py-1 text-xs rounded border transition',
                         amountDlg.method === m
-                          ? 'bg-teal-600 text-white border-teal-600'
+                          ? 'bg-sage-600 text-white border-sage-600'
                           : 'bg-white border-gray-200 hover:bg-gray-50',
                       )}
                     >
@@ -1005,7 +1005,7 @@ function ReceiptUploadSection({
               </Button>
               <Button
                 size="sm"
-                className="flex-1 bg-teal-600 hover:bg-teal-700"
+                className="flex-1 bg-sage-600 hover:bg-sage-700"
                 onClick={handlePaymentConfirm}
                 disabled={activePkgs.length === 0}
                 data-testid="receipt-payment-submit"
@@ -1755,8 +1755,8 @@ function TreatmentImagesSection({
   return (
     <div className="space-y-1.5">
       {/* 업로드 바 */}
-      <div className="flex items-center justify-between rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5">
-        <span className="text-xs text-teal-800 font-medium">일자별 이미지 이력</span>
+      <div className="flex items-center justify-between rounded border border-sage-200 bg-sage-50 px-2.5 py-1.5">
+        <span className="text-xs text-sage-800 font-medium">일자별 이미지 이력</span>
         <div className="flex items-center gap-1.5">
           {/* T-20260601-foot-CHART-IMG-VIEWER-UX 이슈3: 선택 다운로드 모드 (AC-3) */}
           {items.length > 0 && (
@@ -1773,7 +1773,7 @@ function TreatmentImagesSection({
                     : selectedPaths.size > 4 ? '비교는 최대 4장까지'
                     : '선택 이미지 비교'
                   }
-                  className="inline-flex items-center gap-1 text-xs border border-teal-400 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition disabled:opacity-50"
+                  className="inline-flex items-center gap-1 text-xs border border-sage-400 rounded px-2 py-0.5 bg-white text-sage-700 hover:bg-sage-100 transition disabled:opacity-50"
                 >
                   <Columns2 className="h-3 w-3" />
                   비교 ({selectedPaths.size})
@@ -1799,7 +1799,7 @@ function TreatmentImagesSection({
               <button
                 type="button"
                 onClick={() => setSelectMode(true)}
-                className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition"
+                className="inline-flex items-center gap-1 text-xs border border-sage-200 rounded px-2 py-0.5 bg-white text-sage-700 hover:bg-sage-100 transition"
               >
                 <Check className="h-3 w-3" />
                 선택
@@ -1820,7 +1820,7 @@ function TreatmentImagesSection({
             type="button"
             onClick={() => setUploadTypeDialogOpen(true)}
             disabled={uploading}
-            className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1 text-xs border border-sage-200 rounded px-2 py-0.5 bg-white text-sage-700 hover:bg-sage-100 transition cursor-pointer disabled:opacity-50"
           >
             <Upload className="h-3 w-3" />
             {uploading ? '업로드 중…' : '업로드'}
@@ -1884,7 +1884,7 @@ function TreatmentImagesSection({
                         type="button"
                         onClick={() => downloadImages(orderedItems)}
                         disabled={downloading}
-                        className="inline-flex items-center gap-1 text-[11px] border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition disabled:opacity-50"
+                        className="inline-flex items-center gap-1 text-[11px] border border-sage-200 rounded px-2 py-0.5 bg-white text-sage-700 hover:bg-sage-100 transition disabled:opacity-50"
                       >
                         {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                         전체 다운로드 ({orderedItems.length})
@@ -1908,7 +1908,7 @@ function TreatmentImagesSection({
                                     data-testid="treat-img-thumb"
                                     className={cn(
                                       'w-full h-full object-cover rounded border cursor-pointer',
-                                      selectMode && selected && 'ring-2 ring-teal-500',
+                                      selectMode && selected && 'ring-2 ring-sage-500',
                                     )}
                                     onClick={() => {
                                       // T-20260601-foot-CHART-IMG-VIEWER-UX: 선택 모드면 토글, 아니면 라이트박스 (이슈2/3)
@@ -1921,7 +1921,7 @@ function TreatmentImagesSection({
                                     <div
                                       className={cn(
                                         'absolute top-0.5 left-0.5 h-5 w-5 flex items-center justify-center rounded border shadow pointer-events-none',
-                                        selected ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white/80 border-gray-300',
+                                        selected ? 'bg-sage-600 border-sage-600 text-white' : 'bg-white/80 border-gray-300',
                                       )}
                                     >
                                       {selected && <Check className="h-3 w-3" />}
@@ -2056,13 +2056,13 @@ function TreatmentImagesSection({
           ) : uploadProgress ? (
             /* ── 업로드 진행 중 (AC-4) ── */
             <div className="flex flex-col items-center justify-center flex-1 gap-6 p-8">
-              <Loader2 className="h-12 w-12 text-teal-400 animate-spin" />
+              <Loader2 className="h-12 w-12 text-sage-400 animate-spin" />
               <p className="text-white text-lg font-semibold">
                 업로드 중… {uploadProgress.done} / {uploadProgress.total}
               </p>
               <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-teal-500 rounded-full transition-all duration-300"
+                  className="h-full bg-sage-500 rounded-full transition-all duration-300"
                   style={{ width: `${(uploadProgress.done / uploadProgress.total) * 100}%` }}
                 />
               </div>
@@ -2197,7 +2197,7 @@ function TreatmentImagesSection({
                 <button
                   onClick={uploadCaptured}
                   disabled={capturedBlobs.length === 0}
-                  className="text-sm font-semibold transition min-w-[64px] text-right disabled:text-gray-600 text-teal-400 hover:text-teal-300 disabled:cursor-not-allowed"
+                  className="text-sm font-semibold transition min-w-[64px] text-right disabled:text-gray-600 text-sage-400 hover:text-sage-300 disabled:cursor-not-allowed"
                 >
                   완료 ({capturedBlobs.length})
                 </button>
@@ -2284,7 +2284,7 @@ function TreatmentImagesSection({
                   type="button"
                   onClick={() => downloadImages([cur])}
                   disabled={downloading}
-                  className="inline-flex items-center gap-1 text-sm rounded px-3 py-1.5 bg-teal-600 hover:bg-teal-700 transition disabled:opacity-50"
+                  className="inline-flex items-center gap-1 text-sm rounded px-3 py-1.5 bg-sage-600 hover:bg-sage-700 transition disabled:opacity-50"
                   title="이 이미지 다운로드"
                 >
                   {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -4862,14 +4862,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   /* ── 공통 셀 스타일 (tailwind concat 대체) ── */
-  const LC = 'bg-[#f8fafc] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#475569] whitespace-nowrap text-[11px] w-[90px] shrink-0';
+  const LC = 'bg-[#F4F5F6] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#5C6166] whitespace-nowrap text-[11px] w-[90px] shrink-0';
   const VC = 'border-b border-gray-200 px-2 py-1.5 text-xs';
 
   return (
-    <div className="min-h-screen bg-[#e8e8e8] flex flex-col">
+    <div className="min-h-screen bg-[#ECEDEE] flex flex-col">
 
       {/* ── 헤더 (전능CRM 스타일) ─────────────────────────────────────── */}
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-[#2d2d2d] px-3 py-1.5 text-white shadow shrink-0">
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-[#2E3133] px-3 py-1.5 text-white shadow shrink-0">
         <span className="text-sm font-bold tracking-tight">SMART DOCTOR — 고객정보</span>
         <div className="flex items-center gap-2 ml-2 text-xs">
           <span className="bg-white/20 rounded px-2 py-0.5 font-semibold">{customer.name}</span>
@@ -4930,17 +4930,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="flex flex-col overflow-hidden border-r border-gray-400 bg-white" style={{ width: '60%', minWidth: 0 }}>
 
           {/* 패널 서브헤더 — T-20260510-foot-C21-SAVE-UNIFY: 통합 저장 버튼 */}
-          <div className="flex items-center gap-3 bg-[#e2e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-            <span className="text-[11px] font-semibold text-[#2d2d2d]">고객정보</span>
+          <div className="flex items-center gap-3 bg-[#E4E6E8] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#51585D]">고객정보</span>
             <span className="text-[11px] text-muted-foreground">
-              방문 <strong className="text-teal-700">{visits.length}회</strong>
-              {' · '}결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
-              {' · '}패키지 <strong className="text-teal-700">{packages.length}건</strong>
+              방문 <strong className="text-sage-700">{visits.length}회</strong>
+              {' · '}결제 <strong className="text-sage-700">{formatAmount(totalPaid)}</strong>
+              {' · '}패키지 <strong className="text-sage-700">{packages.length}건</strong>
             </span>
             <Button
               size="sm"
               data-testid="chart-info-save-btn"
-              className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
+              className="ml-auto h-6 text-[11px] px-3 bg-sage-600 hover:bg-sage-700"
               onClick={() => handleInfoPanelSave()}
               disabled={savingInfoPanel || !isDirty}
             >
@@ -4948,7 +4948,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </Button>
             {/* T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: 자동저장 인디케이터 */}
             {showAutoSaved && (
-              <span className="text-[10px] text-teal-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
+              <span className="text-[10px] text-sage-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
             )}
           </div>
 
@@ -4987,7 +4987,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           type="text"
                           inputMode="numeric"
                           autoComplete="off"
-                          className="font-mono text-sm h-7 w-20 border border-teal-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          className="font-mono text-sm h-7 w-20 border border-sage-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-sage-400"
                           value={rrnFront}
                           onChange={(e) => handleRrnFrontInput(e.target.value)}
                           placeholder="000000"
@@ -5004,7 +5004,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           type="password"
                           inputMode="numeric"
                           autoComplete="new-password"
-                          className="font-mono text-sm h-7 w-24 border border-teal-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          className="font-mono text-sm h-7 w-24 border border-sage-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-sage-400"
                           value={rrnBack}
                           onChange={(e) => handleRrnBackInput(e.target.value)}
                           placeholder="0000000"
@@ -5018,7 +5018,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           type="button"
                           onClick={saveRrn}
                           disabled={rrnFront.length + rrnBack.length < 13}
-                          className="text-[11px] px-2 py-0.5 rounded border border-teal-400 text-teal-600 hover:bg-teal-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="text-[11px] px-2 py-0.5 rounded border border-sage-400 text-sage-600 hover:bg-sage-50 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           저장
                         </button>
@@ -5132,7 +5132,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         {nhis.loading ? '조회 중…' : '조회'}
                       </button>
                       {customer.hira_consent && customer.hira_consent_at && (
-                        <span className="text-[10px] text-teal-600">
+                        <span className="text-[10px] text-sage-600">
                           동의 {format(new Date(customer.hira_consent_at), 'MM-dd HH:mm')}
                         </span>
                       )}
@@ -5200,7 +5200,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           onChange={(e) => { setPhoneText(formatPhoneInput(e.target.value)); setIsDirty(true); }}
                           autoFocus
                           placeholder="010-1234-5678"
-                          className="h-5 w-[110px] text-[11px] rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
+                          className="h-5 w-[110px] text-[11px] rounded border border-sage-400 px-1.5 focus:outline-none focus:border-sage-600"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') savePhone();
                             if (e.key === 'Escape') { setEditingPhone(false); setPhoneText(customer.phone ?? ''); }
@@ -5218,7 +5218,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
-                        <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline text-[11px]">{formatPhone(customer.phone) || '미등록'}</a>
+                        <a href={`tel:${customer.phone}`} className="font-medium text-sage-700 hover:underline text-[11px]">{formatPhone(customer.phone) || '미등록'}</a>
                         <button
                           type="button"
                           onClick={() => { setPhoneText(customer.phone ?? ''); setEditingPhone(true); }}
@@ -5246,11 +5246,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         >
                           <span className={cn(
                             'h-3 w-3 border rounded flex items-center justify-center transition-colors',
-                            checked ? 'bg-teal-600 border-teal-600' : 'border-gray-400 bg-white',
+                            checked ? 'bg-sage-600 border-sage-600' : 'border-gray-400 bg-white',
                           )}>
                             {checked && <Check className="h-2 w-2 text-white" strokeWidth={3.5} />}
                           </span>
-                          <span className={cn('text-[11px]', checked ? 'font-medium text-teal-700' : 'text-gray-600')}>{label}</span>
+                          <span className={cn('text-[11px]', checked ? 'font-medium text-sage-700' : 'text-gray-600')}>{label}</span>
                         </button>
                       ))}
                     </div>
@@ -5269,7 +5269,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       value={emailText}
                       onChange={(e) => { setEmailText(e.target.value); setIsDirty(true); }}
                       placeholder="example@email.com"
-                      className="h-5 w-full text-[11px] rounded border border-gray-300 px-1.5 focus:outline-none focus:border-teal-500 bg-white"
+                      className="h-5 w-full text-[11px] rounded border border-gray-300 px-1.5 focus:outline-none focus:border-sage-500 bg-white"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') saveEmail();
                       }}
@@ -5286,7 +5286,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       value={passportText}
                       onChange={(e) => { setPassportText(e.target.value.toUpperCase()); setIsDirty(true); }}
                       placeholder="예: M12345678"
-                      className="h-5 w-full text-[11px] font-mono rounded border border-gray-300 px-1.5 focus:outline-none focus:border-teal-500 bg-white uppercase"
+                      className="h-5 w-full text-[11px] font-mono rounded border border-gray-300 px-1.5 focus:outline-none focus:border-sage-500 bg-white uppercase"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') savePassport();
                       }}
@@ -5307,7 +5307,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       }}
                       disabled={savingField}
                       className={cn(
-                        'rounded border px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white transition',
+                        'rounded border px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white transition',
                         customer.customer_grade === '일반' || !customer.customer_grade
                           ? 'border-gray-300 text-gray-700'
                           : customer.customer_grade === '1단계'
@@ -5340,7 +5340,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         placeholder="12345"
                         maxLength={5}
                         inputMode="numeric"
-                        className="w-20 h-5 text-[11px] font-mono rounded border border-gray-300 px-1.5 focus:outline-none focus:border-teal-500"
+                        className="w-20 h-5 text-[11px] font-mono rounded border border-gray-300 px-1.5 focus:outline-none focus:border-sage-500"
                       />
                       <button
                         onClick={openKakaoPostcode}
@@ -5395,7 +5395,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         setConsultationStaffId(e.target.value); // AC-6 쌍방연동
                       }}
                       disabled={savingField}
-                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
                     >
                       <option value="">— 선택 —</option>
                       {/* C2-MANAGER-PAYMENT-MAP v3: 담당자 드롭다운에서만 role='director'(원장) 제외 — DB 비활성 금지, 코드 레벨 필터 */}
@@ -5427,7 +5427,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         saveCustomerField({ visit_route: val || null });
                       }}
                       disabled={savingField}
-                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
                     >
                       <option value="">— 선택 —</option>
                       <option value="TM">TM</option>
@@ -5452,7 +5452,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           setIsDirty(true);
                         }}
                         placeholder="예: 홍길동"
-                        className="rounded border border-gray-300 px-2 py-0.5 text-[11px] w-full focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                        className="rounded border border-gray-300 px-2 py-0.5 text-[11px] w-full focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
                       />
                     </td>
                   </tr>
@@ -5492,27 +5492,27 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* ─ 패키지 구매항목 요약 — T-20260510-foot-C21-PKG-ITEM-DETAIL ─ */}
             {/* T-20260520-foot-PKG-ZERO-HIDE: remaining_count===0 패키지 비노출 (FE 필터, DB 삭제 아님) */}
             {packages.filter((p) => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length > 0 && (
-              <div className="border-t border-gray-200 bg-teal-50/40 px-3 py-2 space-y-1.5 text-[11px]">
-                <div className="font-semibold text-teal-800 flex items-center gap-1">
+              <div className="border-t border-gray-200 bg-sage-50/40 px-3 py-2 space-y-1.5 text-[11px]">
+                <div className="font-semibold text-sage-800 flex items-center gap-1">
                   <PackageIcon className="h-3.5 w-3.5" /> 활성 패키지
                 </div>
                 {packages.filter((p) => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).map((p) => {
                   const rem = p.remaining;
                   return (
-                    <div key={p.id} className="rounded border border-teal-200 bg-white px-2 py-1.5 space-y-1">
+                    <div key={p.id} className="rounded border border-sage-200 bg-white px-2 py-1.5 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-teal-900 truncate">{p.package_name}</span>
+                        <span className="font-semibold text-sage-900 truncate">{p.package_name}</span>
                         <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{p.contract_date}</span>
                       </div>
                       {rem && (
                         /* T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술명/총/사용/잔여 테이블 */
                         <table className="w-full border-collapse text-[10px]">
                           <thead>
-                            <tr className="text-muted-foreground border-b border-teal-100">
+                            <tr className="text-muted-foreground border-b border-sage-100">
                               <th className="text-left pb-0.5 font-medium">시술</th>
                               <th className="text-center pb-0.5 font-medium">총</th>
                               <th className="text-center pb-0.5 font-medium">사용</th>
-                              <th className="text-center pb-0.5 font-medium text-teal-700">잔여</th>
+                              <th className="text-center pb-0.5 font-medium text-sage-700">잔여</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -5521,7 +5521,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="py-0.5">비가열</td>
                                 <td className="text-center py-0.5">{p.unheated_sessions}회</td>
                                 <td className="text-center py-0.5">{(p.unheated_sessions ?? 0) - rem.unheated}회</td>
-                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.unheated}회</td>
+                                <td className="text-center py-0.5 font-semibold text-sage-700">{rem.unheated}회</td>
                               </tr>
                             )}
                             {(p.heated_sessions ?? 0) > 0 && (
@@ -5529,7 +5529,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="py-0.5">가열</td>
                                 <td className="text-center py-0.5">{p.heated_sessions}회</td>
                                 <td className="text-center py-0.5">{(p.heated_sessions ?? 0) - rem.heated}회</td>
-                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.heated}회</td>
+                                <td className="text-center py-0.5 font-semibold text-sage-700">{rem.heated}회</td>
                               </tr>
                             )}
                             {(p.podologe_sessions ?? 0) > 0 && (
@@ -5537,7 +5537,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="py-0.5">포돌로게</td>
                                 <td className="text-center py-0.5">{p.podologe_sessions}회</td>
                                 <td className="text-center py-0.5">{(p.podologe_sessions ?? 0) - (rem.podologe ?? 0)}회</td>
-                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.podologe ?? 0}회</td>
+                                <td className="text-center py-0.5 font-semibold text-sage-700">{rem.podologe ?? 0}회</td>
                               </tr>
                             )}
                             {(p.iv_sessions ?? 0) > 0 && (
@@ -5545,7 +5545,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="py-0.5">수액</td>
                                 <td className="text-center py-0.5">{p.iv_sessions}회</td>
                                 <td className="text-center py-0.5">{(p.iv_sessions ?? 0) - rem.iv}회</td>
-                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.iv}회</td>
+                                <td className="text-center py-0.5 font-semibold text-sage-700">{rem.iv}회</td>
                               </tr>
                             )}
                             {/* T-20260522-foot-PKG-TRIAL: 체험권 잔여 0이면 비노출 */}
@@ -5554,7 +5554,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="py-0.5">체험권</td>
                                 <td className="text-center py-0.5">{p.trial_sessions}회</td>
                                 <td className="text-center py-0.5">{(p.trial_sessions ?? 0) - (rem.trial ?? 0)}회</td>
-                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.trial ?? 0}회</td>
+                                <td className="text-center py-0.5 font-semibold text-sage-700">{rem.trial ?? 0}회</td>
                               </tr>
                             )}
                             {/* T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목 */}
@@ -5563,12 +5563,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="py-0.5">Re:Born</td>
                                 <td className="text-center py-0.5">{p.reborn_sessions}회</td>
                                 <td className="text-center py-0.5">{(p.reborn_sessions ?? 0) - (rem.reborn ?? 0)}회</td>
-                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.reborn ?? 0}회</td>
+                                <td className="text-center py-0.5 font-semibold text-sage-700">{rem.reborn ?? 0}회</td>
                               </tr>
                             )}
-                            <tr className="border-t border-teal-100">
+                            <tr className="border-t border-sage-100">
                               <td colSpan={3} className="pt-1 text-muted-foreground">전체 잔여</td>
-                              <td className="text-center pt-1 font-bold text-teal-700">{rem.total_remaining}회</td>
+                              <td className="text-center pt-1 font-bold text-sage-700">{rem.total_remaining}회</td>
                             </tr>
                           </tbody>
                         </table>
@@ -5583,7 +5583,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
             {/* T-20260522-foot-REFUND-HIST-TAB AC-3: flex 균등 배치 (좌측 쏠림 해소) */}
             <div data-testid="chart-tab-clinical" className="border-t-2 border-gray-300 shrink-0">
-              <div className="flex bg-[#e2e8f0]">
+              <div className="flex bg-[#E4E6E8]">
                 {CLINICAL_TABS.map(({ key, label }) => (
                   <Fragment key={key}>
                     <button
@@ -5592,8 +5592,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       className={cn(
                         'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                         chartTabGroup === 'clinical' && chartTab === key
-                          ? 'bg-white text-teal-700 font-semibold shadow-sm'
-                          : 'text-[#475569] hover:bg-white/60',
+                          ? 'bg-white text-sage-700 font-semibold shadow-sm'
+                          : 'text-[#5C6166] hover:bg-white/60',
                       )}
                     >
                       {label}
@@ -5621,7 +5621,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* ─ 탭 열 2 (이력 탭) ─────────────────────────────────────── */}
             {/* T-20260522-foot-REFUND-HIST-TAB AC-3: flex 균등 배치 (좌측 쏠림 해소) */}
             <div data-testid="chart-tab-history" className="border-b border-gray-300 shrink-0">
-              <div className="flex bg-[#f1f5f9]">
+              <div className="flex bg-[#F4F5F6]">
                 {HISTORY_TABS.map(({ key, label }) => (
                   <button
                     key={key}
@@ -5630,8 +5630,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     className={cn(
                       'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'history' && chartTab === key
-                        ? 'bg-white text-teal-700 font-semibold shadow-sm'
-                        : 'text-[#475569] hover:bg-white/60',
+                        ? 'bg-white text-sage-700 font-semibold shadow-sm'
+                        : 'text-[#5C6166] hover:bg-white/60',
                     )}
                   >
                     {label}
@@ -5670,11 +5670,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함 ⚠️', '4': '매우심함 🚨' };
                 const hasAlert = d.has_allergy || (!d.medications_none && (d.medications ?? []).length > 0) || (d.medical_history ?? []).length > 0;
                 return (
-                  <div data-testid="checklist-summary" className={`rounded-lg border p-3 text-xs ${hasAlert ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
-                    <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
-                      <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  <div data-testid="checklist-summary" className={`rounded-lg border p-3 text-xs ${hasAlert ? 'bg-amber-50 border-amber-200' : 'bg-sage-50 border-sage-200'}`}>
+                    <div className="flex items-center gap-1.5 font-bold text-sage-800 mb-2">
+                      <span className="h-2 w-2 rounded-full bg-sage-500" />
                       원장 핵심 요약
-                      <span className="text-[10px] font-normal text-teal-600 ml-1">최신 체크리스트 기준</span>
+                      <span className="text-[10px] font-normal text-sage-600 ml-1">최신 체크리스트 기준</span>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                       {d.has_allergy && (d.allergy_types ?? []).length > 0 && (
@@ -5749,7 +5749,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     };
                     const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함', '4': '매우 심함' };
                     return (
-                      <div key={cl.id} className="rounded border border-teal-100 bg-teal-50/30 px-3 py-2 space-y-1.5">
+                      <div key={cl.id} className="rounded border border-sage-100 bg-sage-50/30 px-3 py-2 space-y-1.5">
                         <div className="flex items-center justify-between">
                           <Badge variant="teal" className="text-[10px]">✓ 체크리스트 완료</Badge>
                           <span className="text-muted-foreground tabular-nums">
@@ -6134,7 +6134,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="px-2 py-1.5">
                                   <Badge
                                     variant="secondary"
-                                    className={cn('text-[10px]', ev.feeLabel === '진료비 미수' ? 'bg-slate-100 text-slate-700' : 'bg-teal-100 text-teal-700')}
+                                    className={cn('text-[10px]', ev.feeLabel === '진료비 미수' ? 'bg-slate-100 text-slate-700' : 'bg-sage-100 text-sage-700')}
                                   >
                                     {ev.feeLabel}
                                   </Badge>
@@ -6193,7 +6193,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             next ? new Set(checkInHistory.map((ci) => ci.id)) : new Set(),
                           );
                         }}
-                        className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                        className="inline-flex items-center gap-1 rounded border border-sage-300 bg-sage-50 px-2 py-1 text-[11px] font-medium text-sage-700 hover:bg-sage-100 transition"
                         data-testid="visit-hist-fold-all-btn"
                       >
                         {visitHistAllExpanded
@@ -6297,7 +6297,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition shrink-0',
                                     isCancelled
                                       ? 'border-muted text-muted-foreground cursor-not-allowed'
-                                      : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100',
+                                      : 'border-sage-300 bg-sage-50 text-sage-700 hover:bg-sage-100',
                                   )}
                                 >
                                   <FileText className="h-3 w-3" />
@@ -6496,7 +6496,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       )}
                       <button
                         onClick={() => setOpenPackagePurchase(true)}
-                        className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                        className="inline-flex items-center gap-1 rounded border border-sage-300 bg-sage-50 px-2 py-1 text-[10px] font-medium text-sage-700 hover:bg-sage-100 transition"
                       >
                         <Plus className="h-3 w-3" /> 구입 티켓 추가
                       </button>
@@ -6533,7 +6533,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           {/* 패키지 헤더 — T-20260511-foot-C21-PKG-TICKET-DATE: 발행일자 추가 */}
                           {/* T-20260522-foot-PKG-EDIT-DEL: 수정/삭제 버튼 추가 */}
                           <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
-                            <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
+                            <span className="text-xs font-semibold text-sage-800">{p.package_name}</span>
                             <div className="flex items-center gap-1.5 shrink-0 ml-1">
                               {(p.contract_date || p.created_at) && (
                                 <span className="text-[10px] text-muted-foreground tabular-nums">
@@ -6543,7 +6543,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 </span>
                               )}
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                                p.status === 'active' ? 'bg-teal-100 text-teal-700' :
+                                p.status === 'active' ? 'bg-sage-100 text-sage-700' :
                                 p.status === 'refunded' ? 'bg-red-100 text-red-700' :
                                 'bg-muted text-muted-foreground'
                               }`}>
@@ -6574,7 +6574,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                         reborn_unit_price: String(p.reborn_unit_price ?? 0),
                                       });
                                     }}
-                                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-teal-100 text-teal-600 transition"
+                                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-sage-100 text-sage-600 transition"
                                   >
                                     <Pencil className="h-3 w-3" />
                                   </button>
@@ -6624,7 +6624,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             return (
                               <div className="px-3 py-1 text-[10px] text-muted-foreground border-b border-muted/10 space-y-0.5">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span>패키지 금액: <span className="font-semibold text-teal-700 tabular-nums">{formatAmount(p.total_amount)}</span></span>
+                                  <span>패키지 금액: <span className="font-semibold text-sage-700 tabular-nums">{formatAmount(p.total_amount)}</span></span>
                                   <span className="tabular-nums">잔금 {balanceChip(pkgSt, pkgDue)}</span>
                                 </div>
                                 {showConsult && (
@@ -6645,7 +6645,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                   <th className="text-left px-3 py-1 font-medium text-[10px]">시술명</th>
                                   <th className="text-right px-2 py-1 font-medium text-[10px]">수가(회당)</th>
                                   <th className="text-center px-2 py-1 font-medium text-[10px]">총 횟수</th>
-                                  <th className="text-center px-2 py-1 font-medium text-[10px] text-teal-700">사용</th>
+                                  <th className="text-center px-2 py-1 font-medium text-[10px] text-sage-700">사용</th>
                                   <th className="text-center px-2 py-1 font-medium text-[10px] text-orange-600">잔여</th>
                                 </tr>
                               </thead>
@@ -6655,7 +6655,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     <td className="px-3 py-1.5 font-medium text-[11px]">{row.label}</td>
                                     <td className="px-2 py-1.5 text-right tabular-nums text-[11px]">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
                                     <td className="px-2 py-1.5 text-center text-[11px]">{row.qty}회</td>
-                                    <td className="px-2 py-1.5 text-center font-semibold text-teal-700 text-[11px]">{row.used}회</td>
+                                    <td className="px-2 py-1.5 text-center font-semibold text-sage-700 text-[11px]">{row.used}회</td>
                                     <td className="px-2 py-1.5 text-center font-semibold text-orange-600 text-[11px]">{row.qty - row.used}회</td>
                                   </tr>
                                 ))}
@@ -6673,7 +6673,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     <span className="text-muted-foreground min-w-[2.4rem] tabular-nums shrink-0 whitespace-nowrap">{s.session_number}회</span>
                                     <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
                                     <span className="text-muted-foreground shrink-0">{s.session_date}</span>
-                                    {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
+                                    {s.staff_name && <span className="text-sage-600 truncate">{s.staff_name}</span>}
                                     {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director' || profile?.role === 'consultant') && (
                                       <span className="ml-auto hidden group-hover:flex items-center gap-0.5 shrink-0">
                                         {/* 수정 버튼 — consultant 포함 (package_sessions_consult_update RLS 허용) */}
@@ -6687,7 +6687,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                               therapistId: s.performed_by ?? '',
                                             });
                                           }}
-                                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-teal-100 text-teal-600"
+                                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-sage-100 text-sage-600"
                                           title="수정"
                                         >
                                           <Pencil className="h-3 w-3" />
@@ -6724,7 +6724,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     <button
                                       type="button"
                                       onClick={() => restoreSession(s)}
-                                      className="ml-auto flex items-center gap-0.5 shrink-0 h-5 px-1.5 rounded bg-white border border-teal-200 hover:bg-teal-50 text-teal-600 font-medium transition"
+                                      className="ml-auto flex items-center gap-0.5 shrink-0 h-5 px-1.5 rounded bg-white border border-sage-200 hover:bg-sage-50 text-sage-600 font-medium transition"
                                       title="복원"
                                     >
                                       <RotateCcw className="h-3 w-3" /> 복원
@@ -6749,12 +6749,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* 진료이미지 — Storage 기반 업로드/삭제/출력 (쌍방연동) */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="flex items-center gap-1.5 font-bold text-teal-800">
-                    <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  <span className="flex items-center gap-1.5 font-bold text-sage-800">
+                    <span className="h-2 w-2 rounded-full bg-sage-500" />
                     진료이미지
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-teal-600">1번↔2번차트 쌍방연동</span>
+                    <span className="text-[10px] text-sage-600">1번↔2번차트 쌍방연동</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -6769,7 +6769,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         const firstImg = w.document.querySelector('img');
                         if (firstImg) { firstImg.onload = () => w.print(); } else { setTimeout(() => w.print(), 600); }
                       }}
-                      className="inline-flex items-center gap-1 rounded border border-teal-200 bg-white px-2 py-0.5 text-[10px] text-teal-700 hover:bg-teal-50 transition"
+                      className="inline-flex items-center gap-1 rounded border border-sage-200 bg-white px-2 py-0.5 text-[10px] text-sage-700 hover:bg-sage-50 transition"
                     >
                       <Printer className="h-3 w-3" /> 출력
                     </button>
@@ -6884,8 +6884,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
                 {/* 우: 발건강 질문지 — T-20260520-foot-PENCHART-VIEW-SPLIT */}
                 <div className="rounded-lg border bg-white p-3 text-xs flex flex-col" data-testid="consult-box-healthq">
-                  <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
-                    <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  <div className="flex items-center gap-1.5 font-bold text-sage-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-sage-500" />
                     발건강 질문지
                   </div>
                   {/* T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성(health_q_results)도
@@ -6905,9 +6905,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       return d ? format(new Date(d), 'MM-dd') : null;
                     })();
                     return (
-                      <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                        <span className={hasHQ ? 'text-teal-600' : 'text-gray-300'}>{hasHQ ? '✓' : '○'}</span>
-                        <span className={hasHQ ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
+                      <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-sage-50' : 'bg-gray-50'}`}>
+                        <span className={hasHQ ? 'text-sage-600' : 'text-gray-300'}>{hasHQ ? '✓' : '○'}</span>
+                        <span className={hasHQ ? 'text-sage-700 font-medium' : 'text-muted-foreground'}>
                           발건강 질문지 (일반 / 어르신용){hasSelfHQ && !hasPenHQ ? ' · 자가작성' : ''}
                         </span>
                         {hasHQ && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
@@ -7024,7 +7024,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="space-y-3" data-testid="reservations-tab-content">
               {/* AC-2: 2구역에 있던 '최근 방문'을 예약내역 탭으로 이동(중복 제거). 콘텐츠 동등. */}
               <div className="rounded-lg border bg-white p-3 text-xs" data-testid="resv-tab-last-visit">
-                <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1">최근 방문</div>
+                <div className="text-[11px] font-semibold text-[#51585D] mb-1">최근 방문</div>
                 <div className="text-xs text-gray-700">
                   {latestCheckIn
                     ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
@@ -7033,7 +7033,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </div>
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-[11px] font-semibold text-[#2d2d2d]">예약내역</div>
+                  <div className="text-[11px] font-semibold text-[#51585D]">예약내역</div>
                   {/* T-20260515-foot-INLINE-RESV: 다음 예약 → 인라인 예약 패널 (페이지 이동 없음) */}
                   <button
                     type="button"
@@ -7043,7 +7043,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       setInlineResvSlotMap({});
                       setInlineResvOpen(true);
                     }}
-                    className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                    className="inline-flex items-center gap-1 rounded border border-sage-300 bg-sage-50 px-1.5 py-0.5 text-[10px] font-medium text-sage-700 hover:bg-sage-100 transition"
                     data-testid="btn-next-reservation"
                   >
                     <Plus className="h-3 w-3" /> 다음 예약
@@ -7088,7 +7088,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 await saveResvMemo(r.id);
                               }}
                               placeholder="예약메모 추가"
-                              className="flex-1 h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
+                              className="flex-1 h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-sage-400 bg-white text-gray-600 placeholder:text-gray-300"
                             />
                             <button
                               type="button"
@@ -7118,7 +7118,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             <span className="flex-1 truncate text-[10px] text-gray-600">
                               {r.booking_memo}
                             </span>
-                            <Pencil className="h-3 w-3 shrink-0 text-gray-400 group-hover:text-teal-600" />
+                            <Pencil className="h-3 w-3 shrink-0 text-gray-400 group-hover:text-sage-600" />
                           </button>
                         ) : (
                           /* T-20260622-foot-CHART2-UICLEAN-4FIX 요청8b: 메모 없으면 '예약메모 추가' 고정 입력칸 제거.
@@ -7129,7 +7129,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               data-testid="resv-memo-add-icon"
                               aria-label="예약메모 추가"
                               onClick={() => setEditingResvMemoId(r.id)}
-                              className="inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:text-teal-600 hover:bg-muted/40 transition"
+                              className="inline-flex items-center justify-center h-5 w-5 rounded text-gray-400 hover:text-sage-600 hover:bg-muted/40 transition"
                             >
                               <Pencil className="h-3 w-3" />
                             </button>
@@ -7155,8 +7155,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="space-y-3">
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="flex items-center gap-1.5 font-bold text-teal-800">
-                    <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  <span className="flex items-center gap-1.5 font-bold text-sage-800">
+                    <span className="h-2 w-2 rounded-full bg-sage-500" />
                     KOH균검사
                   </span>
                   {/* T-20260622-foot-CHART2-UICLEAN-4FIX 요청7: 검사결과 탭 상단 차트연동 안내문구 제거 */}
@@ -7311,7 +7311,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       const totalSec = segs.reduce((sum, s) => sum + effSec(s), 0);
                       return (
                         <div key={ci.id} className="rounded-lg border bg-white p-3 text-xs" data-testid="slot-dwell-visit">
-                          <div className="flex items-center gap-1.5 font-bold text-teal-700 mb-2">
+                          <div className="flex items-center gap-1.5 font-bold text-sage-700 mb-2">
                             <Timer className="h-3.5 w-3.5" />
                             {format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}
                             <span className="ml-auto text-[10px] font-medium text-muted-foreground">
@@ -7330,7 +7330,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               {Array.from(agg.entries()).map(([status, sec]) => (
                                 <tr key={status} className="border-b border-muted/20">
                                   <td className="px-2 py-1.5">{STATUS_KO[status as keyof typeof STATUS_KO] ?? status}</td>
-                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-teal-700">{formatDwell(sec)}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-sage-700">{formatDwell(sec)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -7427,11 +7427,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs) */}
               <div className="rounded-lg border bg-white p-2.5 text-xs">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5 font-semibold text-teal-700">
+                  <div className="flex items-center gap-1.5 font-semibold text-sage-700">
                     <MessageSquare className="h-3.5 w-3.5" />
                     자동 SMS 발송 이력
                     {notificationLogs.length > 0 && (
-                      <span className="ml-1 text-[10px] bg-teal-100 text-teal-700 rounded-full px-1.5 py-0.5">
+                      <span className="ml-1 text-[10px] bg-sage-100 text-sage-700 rounded-full px-1.5 py-0.5">
                         {notificationLogs.length}
                       </span>
                     )}
@@ -7451,7 +7451,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <div className="space-y-1">{/* T-20260622 요청10-1: 항목 간격 컴팩트화 */}
                     {notificationLogs.map((log) => {
                       const statusColor =
-                        log.status === 'sent' ? 'text-teal-700 bg-teal-50 border-teal-200' :
+                        log.status === 'sent' ? 'text-sage-700 bg-sage-50 border-sage-200' :
                         log.status === 'failed' ? 'text-red-600 bg-red-50 border-red-200' :
                         log.status === 'opt_out' ? 'text-orange-600 bg-orange-50 border-orange-200' :
                         log.status === 'skipped' ? 'text-gray-500 bg-gray-50 border-gray-200' :
@@ -7533,7 +7533,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           </Badge>
                           <Badge
                             variant={msg.status === 'failed' ? 'destructive' : msg.status === 'pending' ? 'secondary' : 'outline'}
-                            className={cn('text-[10px]', msg.status === 'sent' && 'text-teal-700 border-teal-300')}
+                            className={cn('text-[10px]', msg.status === 'sent' && 'text-sage-700 border-sage-300')}
                           >
                             {msg.status === 'sent' ? '발송완료' : msg.status === 'failed' ? '실패' : '대기'}
                           </Badge>
@@ -7563,20 +7563,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="flex flex-col overflow-y-auto bg-white" style={{ width: '40%' }}>
 
           {/* 패널 서브헤더 */}
-          <div className="bg-[#e2e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-            <span className="text-[11px] font-semibold text-[#2d2d2d]">건강보험 · 예약 정보</span>
+          <div className="bg-[#E4E6E8] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#51585D]">건강보험 · 예약 정보</span>
           </div>
 
           {/* 건보 조회 + 자격등급 */}
           <div className="border-b border-gray-200 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#2d2d2d]">건강보험 자격등급</span>
+              <span className="text-xs font-semibold text-[#51585D]">건강보험 자격등급</span>
               <div className="flex items-center gap-1.5">
                 <a
                   href="https://medicare.nhis.or.kr/portal/refer/selectReferInq.do"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                  className="inline-flex items-center gap-1 rounded border border-sage-300 bg-sage-50 px-2 py-1 text-[11px] font-medium text-sage-700 hover:bg-sage-100 transition"
                 >
                   <ExternalLink className="h-3 w-3" /> 외부조회
                 </a>
@@ -7671,7 +7671,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {/* T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 드롭다운 (최근방문↔회차차감 사이) */}
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-[11px] font-semibold text-[#2d2d2d] flex items-center gap-1">
+              <div className="text-[11px] font-semibold text-[#51585D] flex items-center gap-1">
                 지정 치료사
                 {/* AC-R1 (2026-05-23): 자동 선택 배지 제거 — 수기 선택 방식 */}
               </div>
@@ -7697,9 +7697,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 — 복구 T-20260510-foot-C22-SECTION-MERGE regression fix */}
           {/* T-20260521-foot-PKG-ZONE2-HIDE: remaining_count===0 패키지 비노출 (FE 필터, DB 삭제 아님) */}
           <div className="border-b border-gray-200 px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5 flex items-center gap-1">
+            <div className="text-[11px] font-semibold text-[#51585D] mb-1.5 flex items-center gap-1">
               회차 차감
-              <span className="text-[9px] font-normal bg-teal-100 text-teal-700 rounded px-1 py-0.5">치료사 기입</span>
+              <span className="text-[9px] font-normal bg-sage-100 text-sage-700 rounded px-1 py-0.5">치료사 기입</span>
               {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0 && (
                 <span className="ml-1 text-[10px] font-normal text-amber-500">— 활성 패키지 없음</span>
               )}
@@ -7712,7 +7712,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <select
                     value={c22DeductForm.packageId}
                     onChange={(e) => setC22DeductForm(f => ({ ...f, packageId: e.target.value }))}
-                    className={`w-full h-6 rounded border px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white ${
+                    className={`w-full h-6 rounded border px-1 text-[10px] focus:outline-none focus:border-sage-500 bg-white ${
                       c22DeductForm.packageId === '' ? 'border-red-400 text-gray-400' : 'border-gray-300 text-gray-900'
                     }`}
                   >
@@ -7730,7 +7730,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     type="date"
                     value={c22DeductForm.sessionDate}
                     onChange={(e) => setC22DeductForm(f => ({ ...f, sessionDate: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500"
+                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-sage-500"
                   />
                 </div>
                 <div>
@@ -7739,7 +7739,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     data-testid="deduct-therapist-select"
                     value={c22DeductForm.therapistId}
                     onChange={(e) => setC22DeductForm(f => ({ ...f, therapistId: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
+                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-sage-500 bg-white"
                   >
                     <option value="">선택</option>
                     {therapistList.map(t => (
@@ -7752,7 +7752,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <select
                     value={c22DeductForm.treatmentType}
                     onChange={(e) => setC22DeductForm(f => ({ ...f, treatmentType: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
+                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-sage-500 bg-white"
                   >
                     <option value="heated_laser">가열</option>
                     <option value="unheated_laser">비가열</option>
@@ -7816,8 +7816,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
           {/* C23-DETAIL-SIMPLIFY: 상세 패널 (2-3) */}
           <div className="border-b border-gray-200">
-            <div className="bg-[#e2e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-              <span className="text-[11px] font-semibold text-[#2d2d2d]">상세</span>
+            <div className="bg-[#E4E6E8] border-b border-gray-300 px-3 py-1 shrink-0">
+              <span className="text-[11px] font-semibold text-[#51585D]">상세</span>
             </div>
 
             {/* T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): [상세] 탭 상단 — 탭 선택 무관하게 항상 표시 */}
@@ -7934,8 +7934,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   className={cn(
                     'flex-1 px-2 min-h-[44px] text-[11px] font-medium border-r border-gray-200 last:border-r-0 transition flex items-center justify-center',
                     resvDetailTab === tab
-                      ? 'bg-white text-teal-700 font-semibold'
-                      : 'bg-[#f8fafc] text-[#475569] hover:bg-white/70',
+                      ? 'bg-white text-sage-700 font-semibold'
+                      : 'bg-[#F4F5F6] text-[#5C6166] hover:bg-white/70',
                   )}
                 >
                   {resvDetailTabLabel(tab)}
@@ -7993,7 +7993,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       setConsultationStaffId(e.target.value);
                       saveCustomerField({ assigned_staff_id: e.target.value || null }); // AC-6 쌍방연동
                     }}
-                    className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-teal-500 bg-white"
+                    className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-sage-500 bg-white"
                   >
                     <option value="">— 실장 선택 —</option>
                     {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
@@ -8054,7 +8054,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       onChange={(e) => setAltDetail(e.target.value)}
                       rows={2}
                       placeholder="예: 5회차까지 진행, 보험 반려됨"
-                      className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] resize-none focus:outline-none focus:border-teal-500"
+                      className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] resize-none focus:outline-none focus:border-sage-500"
                       data-testid="alt-detail-input"
                     />
                   </div>
@@ -8099,7 +8099,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               key={phrase.id}
                               type="button"
                               onClick={() => setNewMemoText(prev => prev ? `${prev} ${phrase.content}` : phrase.content)}
-                              className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
+                              className="rounded border border-sage-200 bg-sage-50 px-1.5 py-0.5 text-[10px] text-sage-700 hover:bg-sage-100 transition"
                             >
                               {phrase.name}
                             </button>
@@ -8136,7 +8136,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <div className="text-[11px] text-muted-foreground text-center py-3">아직 치료메모가 없습니다</div>
                 ) : (
                   <div className="space-y-1.5 mt-1">
-                    <label className="block text-[11px] font-semibold text-[#2d2d2d]">메모 이력</label>
+                    <label className="block text-[11px] font-semibold text-[#51585D]">메모 이력</label>
                     {treatmentMemos.map((memo) => (
                       <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
                         {editingMemoId === memo.id ? (
@@ -8178,7 +8178,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                   <button
                                     type="button"
                                     onClick={() => { setEditingMemoId(memo.id); setEditingMemoText(memo.content); }}
-                                    className="text-[10px] text-teal-600 hover:underline"
+                                    className="text-[10px] text-sage-600 hover:underline"
                                   >
                                     수정
                                   </button>
@@ -8207,7 +8207,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               히스토리 미존재(미migration) 시 hook.latest가 기존 단일필드 값으로 fallback(표시 연속성). 각 최신 1건만, 스크롤 없이 요약. */}
           {(reservationMemoHistory.latest?.content || consultMemoHistory.latest?.content || latestTreatmentMemo?.content) && (
             <div className="border-b border-gray-200 px-3 py-2" data-testid="memo-summary-block">
-              <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5">메모 요약</div>
+              <div className="text-[11px] font-semibold text-[#51585D] mb-1.5">메모 요약</div>
               <div className="space-y-1.5">
                 {[
                   { label: '예약메모', content: reservationMemoHistory.latest?.content ?? null },
@@ -8215,7 +8215,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   { label: '치료메모', content: latestTreatmentMemo?.content ?? null },
                 ].filter(m => m.content).map(m => (
                   <div key={m.label} data-testid={`memo-summary-${m.label}`}>
-                    <div className="text-[10px] font-semibold text-teal-700 mb-0.5">{m.label}</div>
+                    <div className="text-[10px] font-semibold text-sage-700 mb-0.5">{m.label}</div>
                     <div className="text-[11px] text-gray-700 whitespace-pre-wrap line-clamp-2">{m.content}</div>
                   </div>
                 ))}
@@ -8225,15 +8225,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
           {/* 수납 통계 — C2-REMOVE-PKG-STATS: 패키지 항목 삭제 */}
           <div className="px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5">수납 통계</div>
+            <div className="text-[11px] font-semibold text-[#51585D] mb-1.5">수납 통계</div>
             <div className="space-y-1 text-[11px]">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">총 방문</span>
-                <strong className="text-teal-700">{visits.length}회</strong>
+                <strong className="text-sage-700">{visits.length}회</strong>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">총 결제</span>
-                <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
+                <strong className="text-sage-700">{formatAmount(totalPaid)}</strong>
               </div>
               {/* 패키지 항목 삭제 — C2-REMOVE-PKG-STATS */}
             </div>
@@ -8248,7 +8248,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" data-testid="resv-mini-popup">
           <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-[360px] p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#2d2d2d]">예약 등록 — {customer.name}</h3>
+              <h3 className="text-sm font-semibold text-[#51585D]">예약 등록 — {customer.name}</h3>
               <button onClick={() => setOpenResvMiniPopup(false)} className="p-1 rounded hover:bg-muted text-muted-foreground">
                 <X className="h-4 w-4" />
               </button>
@@ -8258,7 +8258,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <label className="block text-muted-foreground mb-0.5">예약일자 <span className="text-red-500">*</span></label>
                 <input type="date" value={resvMiniForm.date}
                   onChange={(e) => setResvMiniForm((f) => ({ ...f, date: e.target.value }))}
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500" />
               </div>
               {/* T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 (30분 단위, 평일 20시/토 18시까지) */}
               <div>
@@ -8266,7 +8266,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={resvMiniForm.startTime}
                   onChange={(e) => setResvMiniForm((f) => ({ ...f, startTime: e.target.value }))}
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500 bg-white"
                 >
                   <option value="">시간 선택</option>
                   {miniPopupSlots.length > 0
@@ -8295,7 +8295,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* T-20260524-foot-DESIG-BIDIRECT AC-1: 지정 치료사 참고 표시 + AC-2: 변경 선택 */}
               <div>
                 {customer.designated_therapist_id && (
-                  <div className="text-[10px] text-teal-600 mb-0.5">
+                  <div className="text-[10px] text-sage-600 mb-0.5">
                     현재 지정 치료사: {therapistList.find(t => t.id === customer.designated_therapist_id)?.name ?? '-'}
                   </div>
                 )}
@@ -8303,7 +8303,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={resvMiniForm.designatedTherapistId}
                   onChange={(e) => setResvMiniForm(f => ({ ...f, designatedTherapistId: e.target.value }))}
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500 bg-white"
                   data-testid="resv-mini-designated-therapist"
                 >
                   <option value="">— 변경 없음</option>
@@ -8315,7 +8315,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
             <div className="flex gap-2 pt-1">
               <Button
-                className="flex-1 bg-teal-600 hover:bg-teal-700 h-8 text-xs"
+                className="flex-1 bg-sage-600 hover:bg-sage-700 h-8 text-xs"
                 onClick={saveResvMini}
                 disabled={savingResvMini}
               >
@@ -8334,7 +8334,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-[340px] p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#2d2d2d]">예약 수정</h3>
+              <h3 className="text-sm font-semibold text-[#51585D]">예약 수정</h3>
               <button onClick={() => setEditResvId(null)} className="p-1 rounded hover:bg-muted text-muted-foreground">
                 <X className="h-4 w-4" />
               </button>
@@ -8344,7 +8344,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <label className="block text-muted-foreground mb-0.5">예약일자 *</label>
                 <input type="date" value={editResvForm.date}
                   onChange={(e) => setEditResvForm(f => ({ ...f, date: e.target.value }))}
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500" />
               </div>
               {/* T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 (30분 단위, 평일 20시/토 18시까지) */}
               <div>
@@ -8352,7 +8352,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={editResvForm.startTime}
                   onChange={(e) => setEditResvForm(f => ({ ...f, startTime: e.target.value }))}
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500 bg-white"
                 >
                   <option value="">시간 선택</option>
                   {editResvSlots.length > 0
@@ -8378,7 +8378,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {editResvForm.visitType === 'returning' && (
                 <div>
                   {customer?.designated_therapist_id && (
-                    <div className="text-[10px] text-teal-600 mb-0.5">
+                    <div className="text-[10px] text-sage-600 mb-0.5">
                       현재 지정 치료사: {therapistList.find(t => t.id === customer?.designated_therapist_id)?.name ?? '-'}
                     </div>
                   )}
@@ -8386,7 +8386,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <select
                     value={editResvForm.therapistId}
                     onChange={(e) => setEditResvForm(f => ({ ...f, therapistId: e.target.value }))}
-                    className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                    className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500 bg-white"
                     data-testid="edit-resv-designated-therapist"
                   >
                     <option value="">— 변경 없음</option>
@@ -8398,7 +8398,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               )}
             </div>
             <div className="flex gap-2 pt-1">
-              <Button className="flex-1 bg-teal-600 hover:bg-teal-700 h-8 text-xs"
+              <Button className="flex-1 bg-sage-600 hover:bg-sage-700 h-8 text-xs"
                 onClick={saveEditResv} disabled={savingEditResv}>
                 {savingEditResv ? '저장 중…' : '수정 저장'}
               </Button>
@@ -8419,7 +8419,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#2d2d2d]">다음 예약 — {customer.name}</h3>
+              <h3 className="text-sm font-semibold text-[#51585D]">다음 예약 — {customer.name}</h3>
               <button
                 type="button"
                 onClick={() => setInlineResvOpen(false)}
@@ -8438,7 +8438,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   value={inlineResvDate}
                   min={format(new Date(), 'yyyy-MM-dd')}
                   onChange={(e) => setInlineResvDate(e.target.value)}
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                   data-testid="inline-resv-date"
                 />
               </div>
@@ -8449,14 +8449,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   value={inlineResvMemo}
                   onChange={(e) => setInlineResvMemo(e.target.value)}
                   placeholder="예약 관련 메모"
-                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
               </div>
             </div>
             {/* T-20260524-foot-DESIG-BIDIRECT AC-1: 지정 치료사 참고 + AC-2: 수기 변경 */}
             <div>
               {customer.designated_therapist_id && (
-                <div className="text-[10px] text-teal-600 mb-0.5">
+                <div className="text-[10px] text-sage-600 mb-0.5">
                   현재 지정 치료사: {therapistList.find(t => t.id === customer.designated_therapist_id)?.name ?? '-'}
                 </div>
               )}
@@ -8464,7 +8464,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               <select
                 value={inlineResvTherapistId}
                 onChange={(e) => setInlineResvTherapistId(e.target.value)}
-                className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500 bg-white"
                 data-testid="inline-resv-designated-therapist"
               >
                 <option value="">— 변경 없음</option>
@@ -8474,7 +8474,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </select>
             </div>
             <div>
-              <div className="text-[11px] font-semibold text-[#2d2d2d] mb-1.5 flex items-center gap-2">
+              <div className="text-[11px] font-semibold text-[#51585D] mb-1.5 flex items-center gap-2">
                 시간대별 예약 현황
                 <span className="text-[10px] font-normal text-muted-foreground">
                   ○ 빈 슬롯 클릭 시 예약 등록 · ● 예약됨
@@ -8497,7 +8497,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         className={cn(
                           'rounded border px-2 py-1 text-xs',
                           count === 0
-                            ? 'border-dashed border-teal-200 bg-teal-50/30 hover:bg-teal-50 hover:border-teal-400 transition'
+                            ? 'border-dashed border-sage-200 bg-sage-50/30 hover:bg-sage-50 hover:border-sage-400 transition'
                             : isFull
                               ? 'border-red-200 bg-red-50/40'
                               : 'border-slate-100 bg-slate-50/20',
@@ -8517,7 +8517,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               type="button"
                               onClick={() => saveInlineResv(time)}
                               disabled={savingInlineResv}
-                              className="ml-auto text-[10px] font-medium text-teal-700 hover:underline disabled:opacity-50"
+                              className="ml-auto text-[10px] font-medium text-sage-700 hover:underline disabled:opacity-50"
                               data-testid={`slot-${time}`}
                             >
                               ○ {count === 0 ? '빈 슬롯 · 예약' : '추가 예약'}
@@ -8560,14 +8560,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl w-80 p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-teal-800 text-sm">회차 차감</div>
+              <div className="font-semibold text-sage-800 text-sm">회차 차감</div>
               <button type="button" onClick={() => setUseSessionDlg(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="text-xs text-muted-foreground">
               패키지: <span className="font-medium text-gray-800">{useSessionDlg.packageName}</span>
-              &nbsp;· <span className="text-teal-700 font-semibold">{useSessionDlg.nextSession}회차</span>
+              &nbsp;· <span className="text-sage-700 font-semibold">{useSessionDlg.nextSession}회차</span>
             </div>
             <div className="space-y-3">
               <div>
@@ -8577,7 +8577,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={sessionDlgForm.therapistId}
                   onChange={(e) => setSessionDlgForm((f) => ({ ...f, therapistId: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 >
                   <option value="">— 치료사 선택 —</option>
                   {therapistList.length > 0 ? therapistList.map((t) => (
@@ -8593,7 +8593,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="date"
                   value={sessionDlgForm.sessionDate}
                   onChange={(e) => setSessionDlgForm((f) => ({ ...f, sessionDate: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
               </div>
               <div>
@@ -8601,7 +8601,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={sessionDlgForm.sessionType}
                   onChange={(e) => setSessionDlgForm((f) => ({ ...f, sessionType: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 >
                   <option value="heated_laser">가열 레이저</option>
                   <option value="unheated_laser">비가열 레이저</option>
@@ -8616,7 +8616,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
             <div className="flex gap-2 pt-1">
               <Button
-                className="flex-1 bg-teal-600 hover:bg-teal-700 h-9 text-xs"
+                className="flex-1 bg-sage-600 hover:bg-sage-700 h-9 text-xs"
                 onClick={saveUseSession}
                 disabled={savingSession || !sessionDlgForm.therapistId}
               >
@@ -8635,7 +8635,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl w-80 p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-teal-800 text-sm">시술내역 수정</div>
+              <div className="font-semibold text-sage-800 text-sm">시술내역 수정</div>
               <button type="button" onClick={() => setEditSessionDlg(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-4 w-4" />
               </button>
@@ -8649,7 +8649,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={editSessionForm.sessionType}
                   onChange={(e) => setEditSessionForm((f) => ({ ...f, sessionType: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 >
                   <option value="heated_laser">가열 레이저</option>
                   <option value="unheated_laser">비가열 레이저</option>
@@ -8668,7 +8668,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="date"
                   value={editSessionForm.sessionDate}
                   onChange={(e) => setEditSessionForm((f) => ({ ...f, sessionDate: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
               </div>
               <div>
@@ -8678,7 +8678,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <select
                   value={editSessionForm.therapistId}
                   onChange={(e) => setEditSessionForm((f) => ({ ...f, therapistId: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 >
                   <option value="">— 치료사 선택 —</option>
                   {therapistList.length > 0 ? therapistList.map((t) => (
@@ -8691,7 +8691,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
             <div className="flex gap-2 pt-1">
               <Button
-                className="flex-1 bg-teal-600 hover:bg-teal-700 h-9 text-xs"
+                className="flex-1 bg-sage-600 hover:bg-sage-700 h-9 text-xs"
                 onClick={saveEditSession}
                 disabled={savingEditSession || !editSessionForm.therapistId}
               >
@@ -8710,7 +8710,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl w-96 p-5 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-teal-800 text-sm">패키지 수정</div>
+              <div className="font-semibold text-sage-800 text-sm">패키지 수정</div>
               <button type="button" onClick={() => setEditPkgDlg(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-4 w-4" />
               </button>
@@ -8733,7 +8733,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="text"
                   value={editPkgForm.package_name}
                   onChange={(e) => setEditPkgForm((f) => ({ ...f, package_name: e.target.value }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
               </div>
               {/* 총금액 */}
@@ -8742,7 +8742,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <AmountInput
                   value={editPkgForm.total_amount}
                   onChange={(raw) => setEditPkgForm((f) => ({ ...f, total_amount: raw }))}
-                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
               </div>
               {/* 시술별 횟수·수가 */}
@@ -8762,7 +8762,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       min={0}
                       value={editPkgForm[sessKey]}
                       onChange={(e) => setEditPkgForm((f) => ({ ...f, [sessKey]: e.target.value }))}
-                      className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                      className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                     />
                   </div>
                   <div>
@@ -8770,7 +8770,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <AmountInput
                       value={editPkgForm[priceKey]}
                       onChange={(raw) => setEditPkgForm((f) => ({ ...f, [priceKey]: raw }))}
-                      className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                      className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                     />
                   </div>
                 </div>
@@ -8778,7 +8778,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
             <div className="flex gap-2 pt-1">
               <Button
-                className="flex-1 bg-teal-600 hover:bg-teal-700 h-9 text-xs"
+                className="flex-1 bg-sage-600 hover:bg-sage-700 h-9 text-xs"
                 onClick={saveEditPkg}
                 disabled={savingEditPkg}
               >
@@ -8924,7 +8924,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           href={img.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[10px] text-teal-600 hover:underline ml-2"
+                          className="text-[10px] text-sage-600 hover:underline ml-2"
                         >
                           원본 보기
                         </a>
@@ -8943,14 +8943,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {viewDocGroup === 1 && (
                 <>
                   {consentEntries.filter((c) => c.form_type === 'privacy').map((c, i) => (
-                    <div key={i} className="rounded-lg border bg-teal-50 p-3">
-                      <div className="font-semibold text-teal-800 mb-1">개인정보 동의서 (이전 방식)</div>
+                    <div key={i} className="rounded-lg border bg-sage-50 p-3">
+                      <div className="font-semibold text-sage-800 mb-1">개인정보 동의서 (이전 방식)</div>
                       <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
                     </div>
                   ))}
                   {checklistEntries.length > 0 && (
-                    <div className="rounded-lg border bg-teal-50 p-3">
-                      <div className="font-semibold text-teal-800 mb-1">사전 체크리스트 (이전 방식)</div>
+                    <div className="rounded-lg border bg-sage-50 p-3">
+                      <div className="font-semibold text-sage-800 mb-1">사전 체크리스트 (이전 방식)</div>
                       <div className="text-muted-foreground">
                         {checklistEntries[0].completed_at
                           ? format(new Date(checklistEntries[0].completed_at), 'yyyy-MM-dd HH:mm')
@@ -8994,7 +8994,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   {healthQResults.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
-                        <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-sage-400" />
                         자가작성 제출 ({healthQResults.length}건)
                       </div>
                       {healthQResults.map((r) => (
@@ -9032,10 +9032,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 disabled={dupDeductBusy}
                 onClick={handleDupChangeTherapistOnly}
                 data-testid="dup-deduct-change-therapist"
-                className="w-full text-left rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 px-3 py-2.5 transition disabled:opacity-50"
+                className="w-full text-left rounded-lg border border-sage-300 bg-sage-50 hover:bg-sage-100 px-3 py-2.5 transition disabled:opacity-50"
               >
-                <div className="font-semibold text-teal-800">① 담당 치료사만 변경</div>
-                <div className="text-[11px] text-teal-700 mt-0.5">
+                <div className="font-semibold text-sage-800">① 담당 치료사만 변경</div>
+                <div className="text-[11px] text-sage-700 mt-0.5">
                   당일 다른 치료사가 전담 — 회차 추가 차감 없이 담당만
                   <b> {therapistList.find(t => t.id === dupDeductModal.therapistId)?.name ?? '선택 치료사'}</b>(으)로 변경
                 </div>
@@ -9384,7 +9384,7 @@ function PackagePurchaseFromTemplateDialog({
                   className={cn2(
                     'h-9 rounded-md border px-3 text-sm font-medium transition',
                     selectedTemplateId === t.id
-                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      ? 'border-sage-600 bg-sage-50 text-sage-700'
                       : 'border-gray-200 hover:bg-gray-50',
                   )}
                 >
@@ -9396,7 +9396,7 @@ function PackagePurchaseFromTemplateDialog({
                 className={cn2(
                   'h-9 rounded-md border px-3 text-sm font-medium transition',
                   selectedTemplateId === 'custom'
-                    ? 'border-teal-600 bg-teal-50 text-teal-700'
+                    ? 'border-sage-600 bg-sage-50 text-sage-700'
                     : 'border-gray-200 hover:bg-gray-50',
                 )}
               >
@@ -9415,7 +9415,7 @@ function PackagePurchaseFromTemplateDialog({
               value={packageName}
               onChange={(e) => setPackageName(e.target.value)}
               placeholder="패키지명"
-              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
             />
           </div>
 
@@ -9428,7 +9428,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={heated}
                   onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9436,7 +9436,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={heatedUnitPrice}
                   onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="flex items-end">
@@ -9444,7 +9444,7 @@ function PackagePurchaseFromTemplateDialog({
                   onClick={() => setHeatedUpgrade(!heatedUpgrade)}
                   className={cn2(
                     'h-9 w-full rounded-md border text-xs font-medium px-1.5 transition',
-                    heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-gray-200 hover:bg-gray-50',
+                    heatedUpgrade ? 'border-sage-600 bg-sage-50 text-sage-700' : 'border-gray-200 hover:bg-gray-50',
                   )}
                 >
                   {heatedUpgrade ? '✓ ' : ''}6000샷 +5만
@@ -9454,7 +9454,7 @@ function PackagePurchaseFromTemplateDialog({
             {heated > 0 && heatedUnitPrice > 0 && (
               <div className="text-xs text-gray-400 text-right">
                 소계: {formatAmount(heated * heatedUnitPrice)}
-                {heatedUpgrade && <span className="ml-1 text-teal-600">+50,000</span>}
+                {heatedUpgrade && <span className="ml-1 text-sage-600">+50,000</span>}
               </div>
             )}
           </div>
@@ -9468,7 +9468,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={unheated}
                   onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9476,7 +9476,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={unheatedUnitPrice}
                   onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="flex items-end">
@@ -9484,7 +9484,7 @@ function PackagePurchaseFromTemplateDialog({
                   onClick={() => setUnheatedUpgrade(!unheatedUpgrade)}
                   className={cn2(
                     'h-9 w-full rounded-md border text-xs font-medium px-1.5 transition',
-                    unheatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-gray-200 hover:bg-gray-50',
+                    unheatedUpgrade ? 'border-sage-600 bg-sage-50 text-sage-700' : 'border-gray-200 hover:bg-gray-50',
                   )}
                 >
                   {unheatedUpgrade ? '✓ ' : ''}AF +4만
@@ -9494,7 +9494,7 @@ function PackagePurchaseFromTemplateDialog({
             {unheated > 0 && unheatedUnitPrice > 0 && (
               <div className="text-xs text-gray-400 text-right">
                 소계: {formatAmount(unheated * unheatedUnitPrice)}
-                {unheatedUpgrade && <span className="ml-1 text-teal-600">+40,000</span>}
+                {unheatedUpgrade && <span className="ml-1 text-sage-600">+40,000</span>}
               </div>
             )}
           </div>
@@ -9508,7 +9508,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={podologe}
                   onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9516,7 +9516,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={podologeUnitPrice}
                   onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -9534,7 +9534,7 @@ function PackagePurchaseFromTemplateDialog({
                 <select
                   value={ivCompany}
                   onChange={(e) => setIvCompany(e.target.value)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                  className="w-full h-9 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500 bg-white"
                 >
                   <option value="">— 선택 —</option>
                   <option value="재생">재생</option>
@@ -9552,7 +9552,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={iv}
                   onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9560,7 +9560,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={ivUnitPrice}
                   onChange={(raw) => setIvUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -9578,7 +9578,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={trial}
                   onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9586,7 +9586,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={trialUnitPrice}
                   onChange={(raw) => setTrialUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -9604,7 +9604,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={reborn}
                   onChange={(e) => setReborn(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9612,7 +9612,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={rebornUnitPrice}
                   onChange={(raw) => setRebornUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -9627,7 +9627,7 @@ function PackagePurchaseFromTemplateDialog({
             <input
               type="number" min={0} value={precon}
               onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
-              className="w-28 h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+              className="w-28 h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
             />
           </div>
 
@@ -9658,11 +9658,11 @@ function PackagePurchaseFromTemplateDialog({
             ].filter(Boolean) as { label: string; count: number; unitPrice: number; subtotal: number }[];
             if (previewRows.length === 0) return null;
             return (
-              <div className="rounded-lg border border-teal-100 bg-teal-50/30 overflow-hidden">
-                <div className="px-3 py-1.5 bg-teal-50 border-b border-teal-100 text-xs font-semibold text-teal-800">구성 항목 요약</div>
+              <div className="rounded-lg border border-sage-100 bg-sage-50/30 overflow-hidden">
+                <div className="px-3 py-1.5 bg-sage-50 border-b border-sage-100 text-xs font-semibold text-sage-800">구성 항목 요약</div>
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="text-gray-500 border-b border-teal-100 bg-white/60">
+                    <tr className="text-gray-500 border-b border-sage-100 bg-white/60">
                       <th className="text-left px-3 py-1 font-medium">시술명</th>
                       <th className="text-center px-2 py-1 font-medium">회수</th>
                       <th className="text-right px-2 py-1 font-medium">수가(회당)</th>
@@ -9671,11 +9671,11 @@ function PackagePurchaseFromTemplateDialog({
                   </thead>
                   <tbody>
                     {previewRows.map((row) => (
-                      <tr key={row.label} className="border-b border-teal-50 last:border-b-0">
-                        <td className="px-3 py-1 font-medium text-teal-900">{row.label}</td>
+                      <tr key={row.label} className="border-b border-sage-50 last:border-b-0">
+                        <td className="px-3 py-1 font-medium text-sage-900">{row.label}</td>
                         <td className="px-2 py-1 text-center">{row.count}회</td>
                         <td className="px-2 py-1 text-right tabular-nums">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
-                        <td className="px-3 py-1 text-right tabular-nums font-semibold text-teal-700">{row.subtotal > 0 ? formatAmount(row.subtotal) : '-'}</td>
+                        <td className="px-3 py-1 text-right tabular-nums font-semibold text-sage-700">{row.subtotal > 0 ? formatAmount(row.subtotal) : '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -9685,9 +9685,9 @@ function PackagePurchaseFromTemplateDialog({
           })()}
 
           {/* 패키지 총 금액 (항목별 자동합산 + 수기수정) */}
-          <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
+          <div className="rounded-lg border border-sage-200 bg-sage-50/40 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-teal-800">패키지 총 금액</span>
+              <span className="text-xs font-semibold text-sage-800">패키지 총 금액</span>
               <button
                 onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
                 className={`text-xs rounded border px-2 py-0.5 transition ${
@@ -9701,10 +9701,10 @@ function PackagePurchaseFromTemplateDialog({
               <AmountInput
                 value={manualTotal}
                 onChange={(raw) => setManualTotal(Number(raw) || 0)}
-                className="w-full h-10 rounded-md border border-teal-300 px-3 text-lg font-bold text-teal-700 focus:outline-none"
+                className="w-full h-10 rounded-md border border-sage-300 px-3 text-lg font-bold text-sage-700 focus:outline-none"
               />
             ) : (
-              <div className="text-xl font-bold text-teal-700">
+              <div className="text-xl font-bold text-sage-700">
                 {formatAmount(grandTotal)}
                 <span className="ml-2 text-xs text-gray-400 font-normal">
                   (항목 자동합산{upgradeSurcharge > 0 ? ` + 업그레이드 ${formatAmount(upgradeSurcharge)}` : ''})
@@ -9722,7 +9722,7 @@ function PackagePurchaseFromTemplateDialog({
             <AmountInput
               value={consultationFee}
               onChange={(raw) => setConsultationFee(Number(raw) || 0)}
-              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
             />
             <div className="text-xs text-gray-400">진료비는 패키지 금액에 합산되지 않고, 결제·잔금이 따로 관리됩니다.</div>
           </div>
@@ -9735,7 +9735,7 @@ function PackagePurchaseFromTemplateDialog({
               onChange={(e) => setMemo(e.target.value)}
               rows={2}
               placeholder="메모"
-              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500 resize-none"
             />
           </div>
         </div>
@@ -9752,7 +9752,7 @@ function PackagePurchaseFromTemplateDialog({
           <button
             disabled={submitting || totalSessions === 0}
             onClick={submitWithTemplate}
-            className="h-8 rounded border border-teal-300 bg-teal-50 px-3 text-xs font-medium text-teal-700 hover:bg-teal-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-8 rounded border border-sage-300 bg-sage-50 px-3 text-xs font-medium text-sage-700 hover:bg-sage-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
           </button>
@@ -9927,7 +9927,7 @@ function PackageAddonDialog({
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-teal-800">{p.package_name}</span>
+                    <span className="font-semibold text-sage-800">{p.package_name}</span>
                     <span className="text-muted-foreground">{formatAmount(p.total_amount)}</span>
                   </div>
                   <div className="text-muted-foreground mt-0.5">
@@ -9963,7 +9963,7 @@ function PackageAddonDialog({
                     <div className="space-y-1">
                       <div className="text-[10px] text-muted-foreground">
                         수가 (회당)
-                        {(selectedPkg.heated_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.heated_unit_price ?? 0)}</span>}
+                        {(selectedPkg.heated_sessions ?? 0) > 0 && <span className="ml-1 text-sage-600">기존: {formatAmount(selectedPkg.heated_unit_price ?? 0)}</span>}
                       </div>
                       <AmountInput value={heatedUnitPrice}
                         onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)} />
@@ -9972,7 +9972,7 @@ function PackageAddonDialog({
                   {heated > 0 && (
                     <div className="text-xs text-muted-foreground text-right">
                       소계: {formatAmount(heated * heatedUnitPrice)}
-                      <span className="ml-2 text-teal-600">
+                      <span className="ml-2 text-sage-600">
                         기존 {selectedPkg.heated_sessions ?? 0}회 → {(selectedPkg.heated_sessions ?? 0) + heated}회
                       </span>
                     </div>
@@ -9991,7 +9991,7 @@ function PackageAddonDialog({
                     <div className="space-y-1">
                       <div className="text-[10px] text-muted-foreground">
                         수가 (회당)
-                        {(selectedPkg.unheated_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.unheated_unit_price ?? 0)}</span>}
+                        {(selectedPkg.unheated_sessions ?? 0) > 0 && <span className="ml-1 text-sage-600">기존: {formatAmount(selectedPkg.unheated_unit_price ?? 0)}</span>}
                       </div>
                       <AmountInput value={unheatedUnitPrice}
                         onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)} />
@@ -10000,7 +10000,7 @@ function PackageAddonDialog({
                   {unheated > 0 && (
                     <div className="text-xs text-muted-foreground text-right">
                       소계: {formatAmount(unheated * unheatedUnitPrice)}
-                      <span className="ml-2 text-teal-600">
+                      <span className="ml-2 text-sage-600">
                         기존 {selectedPkg.unheated_sessions ?? 0}회 → {(selectedPkg.unheated_sessions ?? 0) + unheated}회
                       </span>
                     </div>
@@ -10014,7 +10014,7 @@ function PackageAddonDialog({
                     <div className="space-y-1">
                       <div className="text-[10px] text-muted-foreground">수액명</div>
                       <select value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
-                        className="w-full h-9 rounded-md border border-input px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-teal-500">
+                        className="w-full h-9 rounded-md border border-input px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-sage-500">
                         <option value="">— 선택 —</option>
                         <option value="재생">재생</option>
                         <option value="항염">항염</option>
@@ -10034,7 +10034,7 @@ function PackageAddonDialog({
                     <div className="space-y-1">
                       <div className="text-[10px] text-muted-foreground">
                         수가 (회당)
-                        {(selectedPkg.iv_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.iv_unit_price ?? 0)}</span>}
+                        {(selectedPkg.iv_sessions ?? 0) > 0 && <span className="ml-1 text-sage-600">기존: {formatAmount(selectedPkg.iv_unit_price ?? 0)}</span>}
                       </div>
                       <AmountInput value={ivUnitPrice}
                         onChange={(raw) => setIvUnitPrice(Number(raw) || 0)} />
@@ -10043,7 +10043,7 @@ function PackageAddonDialog({
                   {iv > 0 && (
                     <div className="text-xs text-muted-foreground text-right">
                       소계: {formatAmount(iv * ivUnitPrice)}
-                      <span className="ml-2 text-teal-600">
+                      <span className="ml-2 text-sage-600">
                         기존 {selectedPkg.iv_sessions ?? 0}회 → {(selectedPkg.iv_sessions ?? 0) + iv}회
                       </span>
                     </div>
@@ -10062,7 +10062,7 @@ function PackageAddonDialog({
                     <div className="space-y-1">
                       <div className="text-[10px] text-muted-foreground">
                         수가 (회당)
-                        {(selectedPkg.podologe_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.podologe_unit_price ?? 0)}</span>}
+                        {(selectedPkg.podologe_sessions ?? 0) > 0 && <span className="ml-1 text-sage-600">기존: {formatAmount(selectedPkg.podologe_unit_price ?? 0)}</span>}
                       </div>
                       <AmountInput value={podologeUnitPrice}
                         onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)} />
@@ -10071,7 +10071,7 @@ function PackageAddonDialog({
                   {podologe > 0 && (
                     <div className="text-xs text-muted-foreground text-right">
                       소계: {formatAmount(podologe * podologeUnitPrice)}
-                      <span className="ml-2 text-teal-600">
+                      <span className="ml-2 text-sage-600">
                         기존 {selectedPkg.podologe_sessions ?? 0}회 → {(selectedPkg.podologe_sessions ?? 0) + podologe}회
                       </span>
                     </div>
@@ -10090,7 +10090,7 @@ function PackageAddonDialog({
                     <div className="space-y-1">
                       <div className="text-[10px] text-muted-foreground">
                         수가 (회당)
-                        {(selectedPkg.reborn_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.reborn_unit_price ?? 0)}</span>}
+                        {(selectedPkg.reborn_sessions ?? 0) > 0 && <span className="ml-1 text-sage-600">기존: {formatAmount(selectedPkg.reborn_unit_price ?? 0)}</span>}
                       </div>
                       <AmountInput value={rebornUnitPrice}
                         onChange={(raw) => setRebornUnitPrice(Number(raw) || 0)} />
@@ -10099,7 +10099,7 @@ function PackageAddonDialog({
                   {reborn > 0 && (
                     <div className="text-xs text-muted-foreground text-right">
                       소계: {formatAmount(reborn * rebornUnitPrice)}
-                      <span className="ml-2 text-teal-600">
+                      <span className="ml-2 text-sage-600">
                         기존 {selectedPkg.reborn_sessions ?? 0}회 → {(selectedPkg.reborn_sessions ?? 0) + reborn}회
                       </span>
                     </div>
