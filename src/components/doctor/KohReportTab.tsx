@@ -418,6 +418,42 @@ function useKohSigningDoctorsByMonth(clinicId: string | null, ym: string) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// 생년월일 서버 파생 fallback — T-20260623-foot-KOHDOC-BIRTHDATE-FROM-RRN-FALLBACK.
+//   customers.birth_date NULL 다수(윤민희 등 prod) → hard-block 으로 균검사지 발행 불가 환자 실발생.
+//   이미 prod 배포된 fn_customer_birthdates RPC(birth_date 우선, NULL이면 rrn 세기코드 파생, migration
+//   20260613120000) 파생값을 FE fallback 으로 적용. DB 무변경·read-only·REUSE.
+//   PHI: birth_date_display(파생 표시값)만 수신 — 평문 RRN 은 클라에 미노출(Customers.loadCustomerStats 동일 패턴).
+//   청크 IN(URL 길이 한계 회피, Customers.tsx L141 미러). RPC 실패는 fallback 미적용(정규 경로 유지·비차단).
+// ---------------------------------------------------------------------------
+const BIRTH_CHUNK = 200;
+function useKohBirthdates(clinicId: string | null, rows: KohRow[]) {
+  // 명단 행의 customer_id 고유집합(정렬) — queryKey 안정화 + 중복 호출 방지.
+  const ids = useMemo(
+    () => [...new Set(rows.map((r) => r.customer_id).filter((v): v is string => !!v))].sort(),
+    [rows],
+  );
+  return useQuery<Map<string, string>>({
+    queryKey: ['koh_birthdates', clinicId, ids],
+    enabled: !!clinicId && ids.length > 0,
+    queryFn: async () => {
+      const birthMap = new Map<string, string>();
+      if (!clinicId || ids.length === 0) return birthMap;
+      for (let i = 0; i < ids.length; i += BIRTH_CHUNK) {
+        const chunk = ids.slice(i, i + BIRTH_CHUNK);
+        const { data, error } = await supabase.rpc('fn_customer_birthdates', { p_clinic_id: clinicId, p_ids: chunk });
+        if (error) continue; // RPC 실패 청크는 건너뜀 — 정규 birth_date 경로 유지(발행 흐름 비차단).
+        for (const row of (data ?? []) as { customer_id: string; birth_date_display: string | null }[]) {
+          if (row.birth_date_display) birthMap.set(row.customer_id, row.birth_date_display);
+        }
+      }
+      return birthMap;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
 /** 행 → 당일 진료의명. customer_id + 검사일(KST) 조인. 없으면 '미정'(unsigned). 합집합 가나다순. */
 function doctorNameForRow(r: KohRow, doctorMap: Map<string, Set<string>> | undefined): string {
   if (!r.customer_id) return '미정';
@@ -503,7 +539,7 @@ function usePublishedKoh(clinicId: string | null) {
  *   검사결과 라인(KOH mount Hyphae/Yeast)은 양식 고정값(AC-3 동일결과) → 템플릿 HTML에 고정, 여기 미포함.
  *   검체번호(specimen_no) = RPC 자동채번 K+YYMMDD-폰뒷4(T-20260616-KOH-SPECIMENNO-FORMAT). FE 빈값은 RPC override.
  */
-export function buildKohFieldData(r: KohRow, doctorName: string): Record<string, string> {
+export function buildKohFieldData(r: KohRow, doctorName: string, birthOverride?: string | null): Record<string, string> {
   // SINGLESEL-2FIX(이슈2): 조갑부위 = 단일선택. 신규 입력은 ≤1건이지만,
   //   旣 저장된 레거시 다중값 행은 파괴/마이그 없이 보존하되 '발행 시 sites[0]만' 사용(planner 지시).
   //   formatNailSites 는 정렬 후 join → slice(0,1)로 첫 부위(정렬 기준 좌발 우선)만 검체종류에 기재.
@@ -513,7 +549,9 @@ export function buildKohFieldData(r: KohRow, doctorName: string): Record<string,
     patient_name: r.customer_name === '—' ? '' : r.customer_name,
     chart_number: r.chart_number ?? '',
     // HTMLPORT(AC①): 대표원장 양식 'YYYY년 MM월 DD일'(6자리 방어 파싱 포함).
-    birth_date: formatBirthKo(r.birth_date),
+    // BIRTHDATE-FROM-RRN-FALLBACK(AC①/AC③): 정규 birth_date 우선, NULL이면 파생값(birthOverride).
+    //   정규값이 있으면 birthOverride 가 와도 r.birth_date 가 먼저 — 파생값이 정규값 미덮음(회귀0).
+    birth_date: formatBirthKo(r.birth_date || birthOverride || null),
     remark: '',
     collected_date: formatDocDate(r.created_at),
     requested_date: formatDocDate(r.created_at),
@@ -668,6 +706,10 @@ export default function KohReportTab() {
   const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, ym);
   // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only). PHASE15(A): 조갑부위 저장 mutation.
   const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, ym);
+  // BIRTHDATE-FROM-RRN-FALLBACK: 생년월일 서버 파생 인덱스(customer_id → birth_date_display). read-only.
+  const { data: birthMap } = useKohBirthdates(clinicId, rows);
+  /** 행의 유효 생년 — 정규 birth_date 우선, NULL이면 RRN 파생값. 둘 다 결측이면 null(AC-2 hard-block 보존). */
+  const effectiveBirth = (r: KohRow): string | null => r.birth_date || (r.customer_id ? birthMap?.get(r.customer_id) ?? null : null);
   const saveNailSites = useSaveNailSites(clinicId, ym);
 
   // LIFECYCLE(AC-3/AC-4/AC-5): 발행 인덱스 + 발행 mutation + 일괄선택.
@@ -687,7 +729,8 @@ export default function KohReportTab() {
    *  발행 차단. 2FIX 이슈1(발행불가도 탭 가능 + 사유 toast) 위에 hard-block 강화(policy_superseded).
    *  AC-4(reporter 명시): "이미 치료사가 선택해서 정보 완비된 건만 발급 활성" → therapist_id(check_ins, read-only) AND.
    *  미배정 사유는 button title + handlePublish toast 로 발견성 보존(KOHBTN AC-3 회귀 방지). */
-  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!r.birth_date && !!r.therapist_id && !isPublished(r.id);
+  //  BIRTHDATE-FROM-RRN-FALLBACK(AC①): 생년 게이트는 effectiveBirth(정규 birth_date || RRN 파생값) 기준.
+  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!effectiveBirth(r) && !!r.therapist_id && !isPublished(r.id);
 
   // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
   //   SINGLESEL-2FIX(이슈1): 발행 불가 시 silent return 금지 — 태블릿엔 hover 툴팁이 없어 버튼이
@@ -705,7 +748,8 @@ export default function KohReportTab() {
     // 4FIX 이슈3(hard-block, 의료문서 정확성): 환자 생년월일 누락 시 발행 차단.
     //   AC-0 선조사: customers.birth_date NULL 다수(윤민희 등) → 생년 없는 결과보고서 발행 금지.
     //   2FIX 사유 toast 패턴 재사용 — 다음 행동(고객정보 생년월일 입력) 안내.
-    if (!r.birth_date) {
+    //   BIRTHDATE-FROM-RRN-FALLBACK(AC②): 정규 birth_date 와 RRN 파생값이 둘 다 결측일 때만 차단(hard-block 보존).
+    if (!effectiveBirth(r)) {
       toast.error(`환자 생년월일 정보가 없어 ${pubNoun}할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.`);
       return;
     }
@@ -716,7 +760,7 @@ export default function KohReportTab() {
     }
     if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     const doctorName = doctorNameForRow(r, doctorMap);
-    const fieldData = buildKohFieldData(r, doctorName);
+    const fieldData = buildKohFieldData(r, doctorName, effectiveBirth(r));
     try {
       const res = await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
       toast.success(`${pubNoun} 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
@@ -745,7 +789,7 @@ export default function KohReportTab() {
     for (const r of targets) {
       try {
         const doctorName = doctorNameForRow(r, doctorMap);
-        await publishKoh.mutateAsync({ serviceId: r.id, fieldData: buildKohFieldData(r, doctorName) });
+        await publishKoh.mutateAsync({ serviceId: r.id, fieldData: buildKohFieldData(r, doctorName, effectiveBirth(r)) });
         ok += 1;
       } catch {
         fail += 1;
@@ -1015,9 +1059,10 @@ export default function KohReportTab() {
                   {/* 4FIX 이슈1(생년): AC-0 선조사 = 바인딩 정상이나 prod birth_date NULL 다수(데이터 부재).
                       생년 누락 시 '미입력' 경고 배지 — 발급 차단(이슈3) 사유를 명단에서 바로 인지. */}
                   <td className="px-1.5 py-1 tabular-nums text-foreground/90 whitespace-nowrap" data-testid="koh-cell-birth">
-                    {r.birth_date ? (
+                    {effectiveBirth(r) ? (
                       // AC-6: '생년 + (만 N세)' 표기(예 1990 (36세)). 만나이=오늘(KST) 기준 생일 경과 계산.
-                      formatBirthYearWithAge(r.birth_date, todayISO)
+                      // BIRTHDATE-FROM-RRN-FALLBACK(AC①): 정규 birth_date 결측 시 RRN 파생값으로 명단 생년 표기.
+                      formatBirthYearWithAge(effectiveBirth(r), todayISO)
                     ) : (
                       <span
                         className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
@@ -1137,7 +1182,7 @@ export default function KohReportTab() {
                             ? `검사결과 보고서 ${pubNoun}(비가역)`
                             : r.nail_sites.length === 0
                               ? `채취 조갑부위를 먼저 선택해야 ${pubNoun}할 수 있습니다 (눌러서 안내 보기)`
-                              : !r.birth_date
+                              : !effectiveBirth(r)
                                 ? `환자 생년월일 미입력 — ${pubNoun} 불가 (눌러서 안내 보기)`
                                 : !r.therapist_id
                                   ? `담당 치료사 미배정 — ${pubNoun} 불가 (눌러서 안내 보기)`
