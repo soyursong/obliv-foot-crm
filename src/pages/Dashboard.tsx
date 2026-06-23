@@ -2198,6 +2198,17 @@ function DashboardTimeline({
     ? Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort()
     : slots;
 
+  // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청1:
+  //   통합시간표 금일 총 방문 예정 수 — 초진/재진 카운트. slotMap(이미 cancelled 제외·
+  //   noshow 유지·워크인 포함·effVisitType 분류 완료)에서 파생 → 타임라인 표시분과 정확히 일치.
+  //   초진 = newBox1(셀프접수 전) + newBox2Ci(체크인). 재진 = retBox2Resv(예약) + retBox2Ci(체크인).
+  let timelineNewVisitTotal = 0;
+  let timelineReturningVisitTotal = 0;
+  for (const sd of Object.values(slotMap)) {
+    timelineNewVisitTotal += sd.newBox1.length + sd.newBox2Ci.length;
+    timelineReturningVisitTotal += sd.retBox2Resv.length + sd.retBox2Ci.length;
+  }
+
   // ── T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL ─────────────────────────────────
   // AC-1/AC-3: 현재 시각으로 스크롤. 현재 슬롯 행이 있으면 뷰포트 중앙으로,
   // 영업시간 외 등 그리드 범위 밖이면 가장 가까운 가장자리(첫/마지막 행)로 클램핑.
@@ -2264,8 +2275,26 @@ function DashboardTimeline({
       {/* T-20260510-foot-DASH-DUAL-HSCROLL: sticky 제거 → shrink-0으로 교체 (스크롤 컨테이너 밖이므로 sticky 불필요) */}
       {/* T-20260522-foot-TIMETABLE-FOLD: 접기 버튼 추가 */}
       <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 shrink-0 flex items-center justify-between gap-1">
-        <span className="flex items-center gap-1">
-          <Clock className="h-3 w-3" /> 통합 시간표
+        <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" /> 통합 시간표
+          </span>
+          {/* T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청1:
+              금일 총 방문 예정 수 — 초진(파란)/재진(초록) 배지. visit_type별 카운트. */}
+          <span
+            className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-[9px] font-bold text-blue-700"
+            data-testid="timeline-newvisit-count"
+            title="금일 초진 방문 예정 수"
+          >
+            초진 {timelineNewVisitTotal}
+          </span>
+          <span
+            className="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-bold text-emerald-700"
+            data-testid="timeline-returningvisit-count"
+            title="금일 재진 방문 예정 수"
+          >
+            재진 {timelineReturningVisitTotal}
+          </span>
         </span>
         <span className="flex items-center gap-0.5">
           {/* T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-3: 지금 시간으로 이동 (오늘·시간표 뷰에서만) */}
@@ -3207,6 +3236,11 @@ export default function Dashboard() {
   //   최신 transitioned_at. stageStartMap(임의 to_status 최신, 위치라벨용)과 의도적으로 분리 — 의미·소비처가 다름
   //   (stageStartMap 회귀 금지). fetchStageStarts의 *동일 fetch*에서 additive로 파생(라운드트립 추가 없음).
   const [callEntryMap, setCallEntryMap] = useState<Map<string, string>>(new Map());
+  // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2(완료 일일 누적):
+  //   당일 done 으로 전이된 적이 있는 check_in_id 집합. fetchStageStarts 의 동일 fetch에서 파생(추가 라운드트립 없음).
+  //   현재 status 가 done 에서 되돌려져도(상태 재전환) 집합에서 빠지지 않으므로 "완료 후 줄지 않는" 누적 카운트 보장.
+  //   현재 byStatus['done'] 와 union 하여 최종 완료 카운트 산출(자정 KST 리셋 = dateStr 변경 시 재fetch).
+  const [doneEverSet, setDoneEverSet] = useState<Set<string>>(new Set());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
@@ -4077,14 +4111,18 @@ export default function Dashboard() {
     //   (purple/yellow는 flag라 transition row가 통상 없으나, 향후 호환 위해 set에 포함 — 없으면 자연 미반영.)
     //   ※ stageStartMap(map, 임의 to_status 최신·위치라벨용)은 회귀 금지라 '최신' 유지 — callEntry만 '최초'로 분리.
     const callEntry = new Map<string, string>();
+    // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2: 당일 done 전이 이력 집합(누적 완료).
+    const doneEver = new Set<string>();
     for (const t of (data ?? []) as { check_in_id: string; to_status: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
       if (t.to_status === 'healer_waiting' || t.to_status === 'purple' || t.to_status === 'yellow') {
         callEntry.set(t.check_in_id, t.transitioned_at); // desc 순회 + 무조건 덮어쓰기 → 최종값=최초(가장 이른) 진입.
       }
+      if (t.to_status === 'done') doneEver.add(t.check_in_id);
     }
     setStageStartMap(map);
     setCallEntryMap(callEntry);
+    setDoneEverSet(doneEver);
   }, [clinic, dateStr]);
 
   const fetchPackageLabels = useCallback(async () => {
@@ -6145,7 +6183,22 @@ export default function Dashboard() {
   }, [isPast, profile, myAssignedRoomNames]);
 
   const doneCount = (byStatus['done'] ?? []).length;
-  const totalActive = filtered.filter((r) => r.status !== 'done').length;
+
+  // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2: status bar 4항목 [초진·재진·수납대기·완료].
+  //   해석=상호배타(권장안, salvage ★): 4항목 합 = 금일 체크인 전체(중복 0).
+  //   - 완료(누적) = byStatus['done'](현재 done) ∪ doneEverSet(당일 done 전이 이력) → 되돌려도 줄지 않음(AC-3).
+  //   - 수납대기 = 현재 status payment_waiting (실시간, AC-4).
+  //   - 초진/재진 = 완료(누적)·수납대기를 제외한 진행 환자를 visit_type별로(재진=returning, 그 외=초진).
+  //     실시간 byStatus(filtered) 기반이라 체크인·상태전환 시 즉시 갱신(AC-4).
+  const doneCumulativeIds = new Set<string>(doneEverSet);
+  for (const ci of byStatus['done'] ?? []) doneCumulativeIds.add(ci.id);
+  const statusDoneCount = doneCumulativeIds.size;
+  const statusPaymentWaitingCount = (byStatus['payment_waiting'] ?? []).length;
+  const activeNonTerminal = filtered.filter(
+    (r) => r.status !== 'done' && r.status !== 'payment_waiting' && !doneCumulativeIds.has(r.id),
+  );
+  const statusNewCount = activeNonTerminal.filter((r) => r.visit_type !== 'returning').length;
+  const statusReturningCount = activeNonTerminal.filter((r) => r.visit_type === 'returning').length;
 
   // T-20260506-foot-SELFCHECKIN-MERGE: 1박스 원칙
   // 이미 체크인 레코드가 연결된 예약(reservation_id 매칭)은 칸반 슬롯·타임라인에서 숨김
@@ -6846,10 +6899,16 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>진행 <strong className="text-foreground">{totalActive}</strong></span>
+          {/* T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2:
+              진행 현황 4항목 [초진·재진·수납대기·완료]. 완료는 일일 누적(AC-3). */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="dashboard-statusbar-4item">
+            <span>초진 <strong className="text-blue-700">{statusNewCount}</strong></span>
             <span>·</span>
-            <span>완료 <strong className="text-emerald-700">{doneCount}</strong></span>
+            <span>재진 <strong className="text-emerald-700">{statusReturningCount}</strong></span>
+            <span>·</span>
+            <span>수납대기 <strong className="text-amber-700">{statusPaymentWaitingCount}</strong></span>
+            <span>·</span>
+            <span>완료 <strong className="text-foreground">{statusDoneCount}</strong></span>
           </div>
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
