@@ -1340,7 +1340,10 @@ function TemplateSection({
       <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
         {title}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      {/* T-20260623-foot-DOCOUTPUT-COLORBOX-SIMPLIFY: 서류별 대형 컬러박스 카드 그리드 →
+          결제미니창(PaymentMiniWindow Zone3)과 동일한 체크박스 1줄 행 리스트로 통일.
+          서류 종류·순서·발행 로직·"상세 발행" 진입·게이트(소견서·진단서) 동작은 모두 보존(표현만 변경). */}
+      <div className="flex flex-col gap-1" data-testid="docprint-doc-list">
         {templates.map((tpl) => {
           const meta = FORM_META[tpl.form_key];
           const hasCoords = tpl.field_map.length > 0;
@@ -1351,9 +1354,9 @@ function TemplateSection({
           ).length;
 
           // T-20260620-foot-MEDDOC-DESK-PRINTONLY (B안): 소견서·진단서 게이트.
-          //   gate ≠ null 인 카드는 체크박스/일괄선택/자유작성(IssueDialog) 동선을 쓰지 않는다.
+          //   gate ≠ null 인 행은 체크박스/일괄선택/자유작성(IssueDialog) 동선을 쓰지 않는다.
           //   - 원장 미작성(!authored) = disabled(출력 불가, '원장 작성 필요' 안내).
-          //   - 작성 완료(authored) = 카드 클릭 → 발행본 그대로 인쇄(데스크 본문 작성 경로 없음).
+          //   - 작성 완료(authored) = 행 클릭 → 발행본 그대로 인쇄(데스크 본문 작성 경로 없음).
           const gate = medDocGate?.(tpl.form_key) ?? null;
           const isGated = gate !== null;
           const clickable = accessible && (!isGated || gate.authored);
@@ -1365,10 +1368,17 @@ function TemplateSection({
               data-gated={isGated ? 'true' : undefined}
               data-authored={isGated ? (gate.authored ? 'true' : 'false') : undefined}
               className={`
-                relative rounded-lg border p-2.5 text-xs transition-all select-none
-                ${clickable ? 'cursor-pointer hover:shadow-md hover:border-teal-300' : 'opacity-50 cursor-not-allowed'}
-                ${isSelected && !isGated ? 'ring-2 ring-teal-400 border-teal-400' : ''}
-                ${meta?.color ?? 'bg-gray-50 border-gray-200'}
+                flex items-center gap-1.5 rounded border px-2 py-2.5 sm:py-1.5 text-xs font-medium transition-all select-none w-full min-h-[44px] sm:min-h-0
+                ${clickable ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}
+                ${
+                  isGated
+                    ? gate.authored
+                      ? 'bg-white text-teal-700 border-teal-300 hover:bg-teal-50'
+                      : 'bg-gray-50 text-muted-foreground/60 border-gray-200'
+                    : isSelected
+                      ? 'bg-teal-600 text-white border-teal-600'
+                      : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700'
+                }
               `}
               onClick={() => {
                 if (isGated) {
@@ -1379,36 +1389,40 @@ function TemplateSection({
                 onToggle(tpl.form_key);
               }}
             >
-              {/* 체크박스 표시 — 게이트 대상은 일괄선택 비대상(체크박스 미표시) */}
-              <div className="absolute top-1.5 right-1.5 text-teal-500">
-                {accessible && !isGated &&
-                  (isSelected ? (
+              {/* 좌측 상태 아이콘 — 무게이트: 체크박스 / 게이트: 🔒(미작성)·🖨️(작성완료) */}
+              <span className="shrink-0">
+                {isGated ? (
+                  <span>{gate.authored ? '🖨️' : '🔒'}</span>
+                ) : accessible ? (
+                  isSelected ? (
                     <CheckSquare className="h-3.5 w-3.5" />
                   ) : (
                     <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
-                  ))}
-              </div>
+                  )
+                ) : null}
+              </span>
 
-              <div className="flex items-start justify-between pr-5">
-                <span className="text-base">{meta?.icon ?? '📄'}</span>
-                {submissionCount > 0 && (
-                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                    {submissionCount}건
-                  </Badge>
-                )}
-              </div>
-              <div className="mt-1 font-semibold text-foreground">{tpl.name_ko}</div>
-              <div className="text-muted-foreground text-[11px] mt-0.5 line-clamp-1">
-                {meta?.description ?? tpl.template_format.toUpperCase()}
-              </div>
-              {!hasCoords && !isGated && (
-                <div className="text-[10px] text-amber-500 mt-1">좌표 미설정</div>
+              {/* 서류 아이콘 + 이름 (1줄) */}
+              <span className="shrink-0">{meta?.icon ?? '📄'}</span>
+              <span className="truncate flex-1">{tpl.name_ko}</span>
+
+              {/* 발행 이력 건수 배지 (인라인) */}
+              {submissionCount > 0 && (
+                <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">
+                  {submissionCount}건
+                </Badge>
               )}
 
+              {/* 좌표 미설정 경고 (무게이트만) */}
+              {!hasCoords && !isGated && (
+                <span className="text-[10px] text-amber-500 shrink-0">좌표 미설정</span>
+              )}
+
+              {/* 우측 액션 — 게이트: 출력/작성필요 안내 / 무게이트: 상세 발행 진입 */}
               {isGated ? (
                 gate.authored ? (
                   <button
-                    className="mt-2 w-full text-[10px] font-semibold text-teal-600 hover:underline text-left"
+                    className="shrink-0 text-[10px] font-semibold text-teal-600 hover:underline px-1"
                     onClick={(e) => {
                       e.stopPropagation();
                       gate.onPrint();
@@ -1418,17 +1432,17 @@ function TemplateSection({
                     원장 작성 완료 · 출력 →
                   </button>
                 ) : (
-                  <div
-                    className="mt-2 w-full text-[10px] text-muted-foreground/80 text-left"
+                  <span
+                    className="shrink-0 text-[10px] text-muted-foreground/80 px-1"
                     data-testid={`docprint-meddoc-locked-${tpl.form_key}`}
                   >
-                    🔒 원장 작성 필요 (작성 전 출력 불가)
-                  </div>
+                    원장 작성 필요
+                  </span>
                 )
               ) : (
-                /* 상세 발행 버튼 (카드 내부) — 무게이트 서류 */
+                /* 상세 발행 버튼 (행 우측) — 무게이트 서류 */
                 <button
-                  className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left"
+                  className={`shrink-0 text-[10px] font-semibold hover:underline px-1 ${isSelected ? 'text-white' : 'text-teal-600'}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (accessible) onCardClick(tpl);
