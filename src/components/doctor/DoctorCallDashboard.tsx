@@ -28,6 +28,7 @@ import {
   Loader2,
   Hand,
   FileText,
+  FilePen,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -39,6 +40,10 @@ import { useAuth } from '@/lib/auth';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260617-foot-DOCFORM-POPUP-OVERHAUL Phase 1 (AC-1): 행 → 서류 발급 허브(소견서·서류발급·검사결과지) 직접 진입.
 import DoctorDocsHubDialog from '@/components/doctor/DoctorDocsHubDialog';
+// T-20260622-foot-MEDDOC-DASHBOARD-BADGE: 데스크(실장)→원장 소견서·진단서 발행요청 큐를 진료 알림판 상시뷰에도 노출.
+//   데이터 경로 불변(useOpinionRequestQueue/DocRequestQueue 재사용). 서류작성 탭에만 있던 표시 위치 갭 보완.
+import DocRequestQueue from '@/components/doctor/DocRequestQueue';
+import { useOpinionRequestQueue } from '@/lib/opinionRequest';
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 컬럼-앵커 펼침 팝오버 공유 추출(서류작성 큐와 표현 공유, 중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { cn } from '@/lib/utils';
@@ -350,6 +355,9 @@ export default function DoctorCallDashboard() {
 
   const queryClient = useQueryClient();
   const { data: rows = [], isLoading, refetch } = useDoctorCallFeed(clinicId);
+  // T-20260622-foot-MEDDOC-DASHBOARD-BADGE: 소견서·진단서 처리대기 건수(상단 뱃지용).
+  //   동일 queryKey['opinion_request_queue'] → 하단 <DocRequestQueue embedded> 와 react-query 캐시 공유(중복 조회 없음).
+  const { data: docRequests = [] } = useOpinionRequestQueue(clinicId);
   // T-20260612-foot-DOCDASH-11FIX AC-11: 진료완료 환자 임상경과 미리보기 맵(customer_id → 최신 1줄).
   // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-3: 인라인 임상경과 저장 직후 미리보기 칼럼 즉시 반영용 refetch.
   const { data: clinicalMap, refetch: refetchClinical } = useCompletedClinicalProgress(clinicId);
@@ -551,6 +559,37 @@ export default function DoctorCallDashboard() {
           )}
         </div>
       </div>
+
+      {/* 소견서·진단서 처리대기 — T-20260622-foot-MEDDOC-DASHBOARD-BADGE.
+          데스크(실장)에서 보낸 발행요청이 '서류작성' 탭에만 표시되어 의사 상시뷰(진료 알림판)에서 못 보던 갭 보완.
+          useOpinionRequestQueue/DocRequestQueue 재사용(데이터 경로 불변, embedded 로 내부 헤더만 숨김). */}
+      <section
+        className="rounded-lg border border-teal-100 bg-teal-50/30 p-3"
+        data-testid="docdash-meddoc-queue"
+      >
+        <div className="flex flex-wrap items-center gap-2 px-1 py-1">
+          <FilePen className="h-4 w-4 text-teal-600" />
+          <span className="text-sm font-semibold text-gray-800">소견서·진단서</span>
+          {docRequests.length > 0 ? (
+            <span
+              className="rounded-full bg-teal-600 px-2.5 py-0.5 text-xs font-semibold text-white"
+              data-testid="docdash-meddoc-pending-badge"
+            >
+              처리대기 {docRequests.length}건
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground" data-testid="docdash-meddoc-pending-none">
+              처리대기 없음
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 px-1 text-xs text-muted-foreground">
+          데스크(실장)에서 보낸 소견서·진단서 발행 요청입니다. [작성하기]를 누르면 선택 항목이 미리 채워진 발행 창이 열립니다.
+        </p>
+        <div className="mt-2">
+          <DocRequestQueue embedded />
+        </div>
+      </section>
 
       {/* 진료 대기중 — T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-2(제목)·AC-3(테두리 제거, flat) */}
       <section className="bg-white" data-testid="doctor-call-feed">
