@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
@@ -49,7 +49,6 @@ import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean } from
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
-import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 import { useNhisLookup } from '@/hooks/useNhisLookup';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
@@ -2506,10 +2505,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
 
-  // ── T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE ──────────────────────────
-  // 건강보험 조회 3구역 정리: 자격조회 trigger 를 1구역(좌측 '건보 조회')으로 일원화하고,
-  // 2구역(NhisLookupPanel)은 동일 controller 의 결과만 표시(결과뷰, A안).
-  // 조회 성공 → 등급 갱신 → insuranceGradeRefreshKey++ → 3구역(Chart2InsuranceCalcPanel) 자동산정 연쇄.
+  // ── T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (재정의 — SUPERSEDES A안) ──
+  // 건강보험 조회 3구역 정리: 자격조회 trigger 를 1구역(좌측 '건보 조회')으로 일원화.
+  // 2구역(NhisLookupPanel 패널 + 외부조회 링크)은 전체 제거됨 — 별도 결과뷰 없음.
+  // 조회 성공 → 등급 갱신 → InsuranceGradeSelect 반영 + insuranceGradeRefreshKey++ →
+  //   3구역(Chart2InsuranceCalcPanel) 급여 자동산정 연쇄(끊김 0).
+  // 조회 실패/미연동 → nhis.error 를 1구역 동선 인라인으로 최소 노출.
   // 셀프접수 동의(또는 차트 동의 토글)로 hira_consent=true 가 되면 자동 트리거(scaffold).
   const nhisOnGradeUpdated = useCallback(() => {
     // 조회 결과 반영된 customers 최신값 재조회 → 로컬 상태 갱신
@@ -5106,36 +5107,45 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 {/* ②-b 건강보험 조회 — C2-HIRA-CONSENT.
                     T-20260609-foot-CHART-CONSENT-ALIGN-SMS AC-3: 동의 Y/N 토글은 위 '개인정보 동의' 섹션(건강보험조회)으로 통합(SSOT 단일화).
                     T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE: 1구역 = 자격조회 단일 진입점.
-                      '조회' 버튼 클릭 = 2구역과 동일한 실시간 자격조회 로직(nhis.performLookup) 실행.
-                      결과는 2구역(NhisLookupPanel) 에 표시. API 미연동 현행: 미연동 안내 + 외부링크(2구역).
+                      '조회' 버튼 클릭 = 실시간 자격조회 로직(nhis.performLookup) 실행.
+                      (재정의) 2구역 결과뷰 제거됨 → 성공 시 등급은 우측 '건강보험 자격등급'(InsuranceGradeSelect)에
+                      반영되고 3구역 급여 자동산정으로 연쇄. 실패/미연동 안내는 아래 인라인으로 최소 노출.
                       API 연동 완료 시 동일 진입점에서 자동 조회되도록 연결(훅). */}
                 <tr>
                   <td className={LC}>건보 조회</td>
                   <td className={VC} colSpan={3}>
-                    <div className="flex items-center gap-3">
-                      {/* 조회 버튼 — 건강보험조회 동의(hira_consent) Y일 때만 활성. 클릭 시 실시간 자격조회 트리거 */}
-                      <button
-                        type="button"
-                        onClick={() => { void nhisPerformLookup(false); }}
-                        disabled={!(customer.hira_consent ?? false) || nhis.loading}
-                        title={
-                          !(customer.hira_consent ?? false)
-                            ? '건강보험조회 동의(Y) 후 조회할 수 있습니다'
-                            : '건보공단 실시간 자격조회 (결과는 우측 자격등급 패널에 표시)'
-                        }
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
-                          customer.hira_consent
-                            ? 'border-slate-400 bg-slate-50 text-slate-700 hover:bg-slate-100 cursor-pointer'
-                            : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
-                          nhis.loading && 'opacity-60 cursor-wait',
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-3">
+                        {/* 조회 버튼 — 건강보험조회 동의(hira_consent) Y일 때만 활성. 클릭 시 실시간 자격조회 트리거 */}
+                        <button
+                          type="button"
+                          onClick={() => { void nhisPerformLookup(false); }}
+                          disabled={!(customer.hira_consent ?? false) || nhis.loading}
+                          title={
+                            !(customer.hira_consent ?? false)
+                              ? '건강보험조회 동의(Y) 후 조회할 수 있습니다'
+                              : '건보공단 실시간 자격조회 (성공 시 우측 건강보험 자격등급에 반영)'
+                          }
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
+                            customer.hira_consent
+                              ? 'border-slate-400 bg-slate-50 text-slate-700 hover:bg-slate-100 cursor-pointer'
+                              : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
+                            nhis.loading && 'opacity-60 cursor-wait',
+                          )}
+                        >
+                          {nhis.loading ? '조회 중…' : '조회'}
+                        </button>
+                        {customer.hira_consent && customer.hira_consent_at && (
+                          <span className="text-[10px] text-sage-600">
+                            동의 {format(new Date(customer.hira_consent_at), 'MM-dd HH:mm')}
+                          </span>
                         )}
-                      >
-                        {nhis.loading ? '조회 중…' : '조회'}
-                      </button>
-                      {customer.hira_consent && customer.hira_consent_at && (
-                        <span className="text-[10px] text-sage-600">
-                          동의 {format(new Date(customer.hira_consent_at), 'MM-dd HH:mm')}
+                      </div>
+                      {/* 1구역 동선 내 최소 노출: 자격조회 실패/미연동 안내 (2구역 결과뷰 제거 대체). */}
+                      {nhis.error && (
+                        <span className="text-[10px] leading-snug text-red-600">
+                          {nhis.error.message}
                         </span>
                       )}
                     </div>
@@ -7569,31 +7579,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <span className="text-[11px] font-semibold text-[#51585D]">건강보험 · 예약 정보</span>
           </div>
 
-          {/* 건보 조회 + 자격등급 */}
+          {/* 건보 자격등급 + 급여 자동산정
+              T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (재정의 — SUPERSEDES A안, 2026-06-23 김주연 총괄
+                "아예 이 구역을 없애달라고 한거야"): 2구역('건보공단 실시간 자격조회' 패널 + '외부조회' 링크)
+                전체 섹션을 제거. 자격조회 트리거·진입점은 1구역(좌측 '건보 조회')으로 일원화.
+                조회 성공 시 등급은 아래 InsuranceGradeSelect(자격등급)에 반영되고, 3구역 급여 자동산정으로
+                연쇄(insuranceGradeRefreshKey++). 결과값은 InsuranceGradeSelect 가 곧 노출 지점이므로
+                별도 2구역 결과뷰 없이 제거. 1구역 클릭 시 에러/안내는 1구역 동선 내 인라인으로 최소 노출. */}
           <div className="border-b border-gray-200 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-[#51585D]">건강보험 자격등급</span>
-              <div className="flex items-center gap-1.5">
-                <a
-                  href="https://medicare.nhis.or.kr/portal/refer/selectReferInq.do"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded border border-sage-300 bg-sage-50 px-2 py-1 text-[11px] font-medium text-sage-700 hover:bg-sage-100 transition"
-                >
-                  <ExternalLink className="h-3 w-3" /> 외부조회
-                </a>
-              </div>
             </div>
-            {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 Native API 자격조회 (2구역)
-                T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (A안): 트리거 버튼 제거(hideTrigger),
-                  결과뷰만 유지. 자격조회 트리거는 1구역으로 일원화 — 동일 controller(nhis) 공유. */}
-            <NhisLookupPanel
-              customerId={customer.id}
-              clinicId={customer.clinic_id}
-              hiraConsent={customer.hira_consent ?? false}
-              controller={nhis}
-              hideTrigger
-            />
             <InsuranceGradeSelect
               customerId={customer.id}
               editable
