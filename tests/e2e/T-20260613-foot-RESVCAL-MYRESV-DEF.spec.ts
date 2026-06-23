@@ -60,16 +60,22 @@ test.describe('T-20260613 RESVCAL-MYRESV-DEF — NAME-MATCH 로직 (소스 무�
     expect(RESV_PAGE).toMatch(/myDisplayName\s*=\s*\(profile\?\.name\s*\?\?\s*''\)\.trim\(\)/);
   });
 
-  test('AC1/AC2: 필터 키 = registrar_name === myDisplayName (NAME-MATCH 문자열)', () => {
-    // filterMine 상태 + 렌더 단계 NAME-MATCH 필터
+  test('AC1/AC2: 필터 키 = registrar_name === mineTarget(본인 또는 선택 담당자) (NAME-MATCH 문자열)', () => {
+    // filterMine 상태 + 렌더 단계 NAME-MATCH 필터.
+    // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: 기준값이 myDisplayName 단일 → mineTarget(본인|선택담당자)로 확장.
     expect(RESV_PAGE).toContain('filterMine');
     expect(RESV_PAGE).toMatch(
-      /!filterMine\s*\|\|\s*\(myDisplayName\s*!==\s*''\s*&&\s*\(r\.registrar_name\s*\?\?\s*''\)\.trim\(\)\s*===\s*myDisplayName\)/,
+      /const mineTarget = filterAssignee !== ''\s*\?\s*filterAssignee\s*:\s*myDisplayName/,
+    );
+    expect(RESV_PAGE).toMatch(
+      /!filterMine\s*\|\|\s*\(mineTarget\s*!==\s*''\s*&&\s*\(r\.registrar_name\s*\?\?\s*''\)\.trim\(\)\s*===\s*mineTarget\)/,
     );
   });
 
   test('AC1: 드롭다운 onChange 가 filterMine 토글 (mine ↔ all)', () => {
-    expect(RESV_PAGE).toMatch(/setFilterMine\(e\.target\.value\s*===\s*'mine'\)/);
+    // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: 핸들러가 const mine = ... → setFilterMine(mine) 형태로 확장.
+    expect(RESV_PAGE).toMatch(/const mine = e\.target\.value\s*===\s*'mine'/);
+    expect(RESV_PAGE).toContain('setFilterMine(mine)');
   });
 
   test('AC3: 동명이인 수용이 동작 주석에 명시', () => {
@@ -79,7 +85,7 @@ test.describe('T-20260613 RESVCAL-MYRESV-DEF — NAME-MATCH 로직 (소스 무�
   test('AC4: 경과분석 필터와 AND 결합 — 전체 옵션은 기존 list 동작 유지', () => {
     // filterProgress 분기 뒤에 .filter(내예약) 가 체이닝되어 전체(filterMine=false)일 때 무영향
     expect(RESV_PAGE).toMatch(
-      /\(filterProgress\s*\?\s*list\.filter\(r => r\.progress_check_required\)\s*:\s*list\)[\s\S]{0,160}\.filter\(\(r\) =>\s*!filterMine/,
+      /\(filterProgress\s*\?\s*list\.filter\(r => r\.progress_check_required\)\s*:\s*list\)[\s\S]{0,200}\.filter\(\(r\) =>\s*!filterMine/,
     );
   });
 

@@ -353,6 +353,12 @@ export default function Reservations() {
   //   NAME-MATCH(문자열) 매칭이며 FK/auth.uid 신원 매핑 아님. ⚠ 동명이인 시 동명 registrar 예약이 함께
   //   보일 수 있으나 현장이 '이름 기준'을 명시 선택해 수용(AC3). created_by/auth 매핑 데이터 티켓 불요.
   const [filterMine, setFilterMine] = useState(false);
+  // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: '내 예약' 모드에서 담당자(예약등록자) 선택 드롭다운.
+  //   '' = 본인(myDisplayName) 기준(현행 NAME-MATCH 유지). 특정 담당자명 선택 → 그 registrar_name 기준 필터.
+  //   옵션 소스 = reservation_registrars(예약등록자 마스터, active) — registrar_name 스냅샷과 동일 소스라 NAME-MATCH 정합.
+  //   DB 변경 0(read-only). 1차 권한 정책: 전체 staff 선택 허용(시나리오2 reporter 확인 대상).
+  const [filterAssignee, setFilterAssignee] = useState('');
+  const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
   // T-20260514-foot-CHART-NO-VISIBLE: AC-2 예약관리 차트번호 컬럼 (customer_id → chart_number)
   const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
   // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 예약관리 '담당자' = 예약 잡은 계정.
@@ -1102,6 +1108,29 @@ export default function Reservations() {
     [clinic, changedBy, profile?.name],
   );
 
+  // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: 담당자 선택 드롭 옵션 로드(예약등록자 마스터).
+  //   ReservationDetailPopup 의 registrars 로더와 동일 소스(reservation_registrars, active) — 신규 스키마/테이블 0.
+  //   이름(string)만 추출·중복 제거·정렬. registrar_name(스냅샷)과 동일 master라 NAME-MATCH 필터 정합.
+  useEffect(() => {
+    if (!clinic) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('reservation_registrars')
+        .select('name')
+        .eq('clinic_id', clinic.id)
+        .eq('active', true)
+        .order('group_name', { ascending: true })
+        .order('sort_order', { ascending: true });
+      if (cancelled || error || !data) return;
+      const names = Array.from(
+        new Set((data as { name: string }[]).map((r) => (r.name ?? '').trim()).filter(Boolean)),
+      );
+      setAssigneeOptions(names);
+    })();
+    return () => { cancelled = true; };
+  }, [clinic]);
+
   // T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치(일괄 체크인)' 기능 제거 — 현장 불필요 판정(김주연 총괄).
   //   batchCheckIn 핸들러 + 슬롯 하단 '일괄 배치' 버튼 동반 제거. batch_checkin RPC는 DB에 잔존(타 호출 없음, 무해).
 
@@ -1471,12 +1500,35 @@ export default function Reservations() {
             data-testid="myresv-filter"
             aria-label="내 예약 필터"
             value={filterMine ? 'mine' : 'all'}
-            onChange={(e) => setFilterMine(e.target.value === 'mine')}
+            onChange={(e) => {
+              const mine = e.target.value === 'mine';
+              setFilterMine(mine);
+              // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: 전체예약 복귀 시 담당자 선택 초기화(본인).
+              if (!mine) setFilterAssignee('');
+            }}
             className="h-9 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
           >
             <option value="all">전체 예약</option>
             <option value="mine">내 예약</option>
           </select>
+          {/* T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: '내 예약' 선택 시에만 담당자 선택 드롭 노출.
+              기본값('')=로그인 본인(현행 NAME-MATCH 유지) + 다른 담당자 선택 시 그 담당자 기준 조회. */}
+          {filterMine && (
+            <select
+              data-testid="myresv-assignee-filter"
+              aria-label="담당자 선택"
+              value={filterAssignee}
+              onChange={(e) => setFilterAssignee(e.target.value)}
+              className="h-9 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
+            >
+              <option value="">{myDisplayName ? `본인 (${myDisplayName})` : '본인'}</option>
+              {assigneeOptions
+                .filter((n) => n !== myDisplayName)
+                .map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+            </select>
+          )}
         </div>
         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: 우측 컨트롤 순서를 '새 예약 → 경과분석 → 일간/주간'으로 재배치. */}
         <div className="flex items-center gap-2">
@@ -1747,8 +1799,10 @@ export default function Reservations() {
                                   //   (취소된 B안=2줄 Row 가로 전부 나열 ❌ / 페이지 상하·좌우 구역 분리 ❌ — 어디까지나 슬롯 셀 내부 2열.)
                                   //   열 내 정렬 = 예약 시각(reservation_time) 순. 단일 그룹이면 채워진 열만, 좌우 2열 트랙은 항상 유지(정렬 불깨짐).
                                   //   카드 누락 0(visible 전수 귀속). 불변: 카드 내용·필드, KIND_CARD_STYLE 컬러, 클릭/hover/우클릭, COMPACT-CONTENT-KEEP(828893f3) 압축 레이어.
+                                  // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: '내 예약' 기준 담당자 = filterAssignee 선택값(없으면 본인 myDisplayName).
+                                  const mineTarget = filterAssignee !== '' ? filterAssignee : myDisplayName;
                                   const visible = (filterProgress ? list.filter(r => r.progress_check_required) : list)
-                                    .filter((r) => !filterMine || (myDisplayName !== '' && (r.registrar_name ?? '').trim() === myDisplayName));
+                                    .filter((r) => !filterMine || (mineTarget !== '' && (r.registrar_name ?? '').trim() === mineTarget));
                                   const byTime = (a: Reservation, b: Reservation) =>
                                     a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
                                   const colNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);     // 왼쪽 열 = 초진
