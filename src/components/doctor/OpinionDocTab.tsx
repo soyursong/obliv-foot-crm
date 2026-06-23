@@ -62,6 +62,12 @@ export interface OpinionOption {
   key: string;
   label: string;
   phrase: string;
+  // T-20260623-foot-OPINIONPHRASE-REVISION-NOTE-COLUMN (문지은 대표원장):
+  //   reporter 가 수기로 남기는 '수정기록' 메모(무엇을/언제/왜 고쳤는지). 상용구 관리 화면 전용 메타.
+  //   ★소견서 작성 화면(phrase 실소비처)에는 노출/삽입되지 않음 — 버튼 클릭 삽입은 phrase 만.
+  //   ★ADDITIVE jsonb 키 — 기존 option(필드 없음)은 undefined → 빈값 안전 렌더(backward-compat).
+  //   ⚠ field_map.phrase_meta[key].last_updated_at(자동 타임스탬프)와 별개 — 이건 수기 메모.
+  revisionNote?: string;
 }
 export interface OpinionSection {
   title: string;
@@ -238,7 +244,10 @@ export function parseOpinionSections(fieldMap: unknown): OpinionSection[] {
         typeof opt['label'] === 'string' &&
         typeof opt['phrase'] === 'string'
       ) {
-        options.push({ key: opt['key'] as string, label: opt['label'] as string, phrase: opt['phrase'] as string });
+        const parsed: OpinionOption = { key: opt['key'] as string, label: opt['label'] as string, phrase: opt['phrase'] as string };
+        // T-20260623 REVISION-NOTE-COLUMN: ADDITIVE '수정기록' 보존(read→write round-trip 유실 방지).
+        if (typeof opt['revisionNote'] === 'string') parsed.revisionNote = opt['revisionNote'] as string;
+        options.push(parsed);
       }
     }
     if (title && options.length > 0) out.push({ title, options });
