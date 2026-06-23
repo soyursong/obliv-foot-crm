@@ -33,6 +33,18 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate, seoulISODate, birthYearAgeDisplay, chartNoDisplay } from '@/lib/format';
+// T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (item2): 금기증 복수선택 조합 + 플레이스홀더 치환 합성 계층.
+import { buildContraindTemplates } from '@/lib/contraindicationCombine';
+import type { HepatitisType } from '@/lib/contraindicationCombine';
+import {
+  composeOpinionDoc,
+  buildContraindKeySet,
+  classifySelection,
+  needsHepatitisType,
+  needsOralXReason,
+  needsDate,
+  ORAL_X_DEFAULT_REASON,
+} from '@/lib/opinionDocCompose';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import type { UserProfile } from '@/lib/types';
@@ -501,6 +513,9 @@ export function OpinionEditorDialog({
   initialDocType,
   staffRequestMemo,
   requestId,
+  // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (B-1): 실장이 2번차트 서류요청에서 고른 날짜(YYYY-MM-DD).
+  //   없으면 오늘(KST) 기본값. `[날짜]` 치환 + 작성창 날짜 입력칸 초기값.
+  initialDate,
   onPublished,
 }: {
   visitor: VisitorRow | null;
@@ -513,10 +528,17 @@ export function OpinionEditorDialog({
   initialDocType?: 'diagnosis' | 'opinion';
   staffRequestMemo?: string | null;
   requestId?: string | null;
+  initialDate?: string | null;
   onPublished?: (publishedId: string) => void;
 }) {
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (item2): 조합 합성 controlled state.
+  //   editor 본문은 선택/플레이스홀더에서 자동 합성하되, 원장이 직접 수정하면(textTouched) 자동합성 중단(AC-4 SSOT).
+  const [textTouched, setTextTouched] = useState(false);
+  const [hepatitisType, setHepatitisType] = useState<HepatitisType | null>(null); // 간염 B/C 드롭다운(미선택=null)
+  const [oralXReason, setOralXReason] = useState('');   // 경구약X 사유(괄호 치환, 빈값=원문 보존)
+  const [docDate, setDocDate] = useState<string>('');   // 서류 날짜 YYYY-MM-DD ([날짜] 치환)
   // AC-1: 발건강 질문지에서 자동 pre-check 된 키(QR입력 뱃지 표기용). 의사가 토글하면 해당 키 제거(의사확인).
   const [autoChecked, setAutoChecked] = useState<Set<string>>(new Set());
   const [healthQAppliedFor, setHealthQAppliedFor] = useState<string | null>(null); // 자동체크 적용한 bindKey(오픈당 1회)
@@ -585,6 +607,35 @@ export function OpinionEditorDialog({
     return m;
   }, [sections]);
 
+  // ── item2 조합 합성 ──────────────────────────────────────────────────────────
+  // 금기증 그룹 key 집합(복수선택·조합 대상). 그 외(진단서 표준)는 단일배타.
+  const contraindKeySet = useMemo(() => buildContraindKeySet(sections), [sections]);
+  // 검출용 원문 맵(치환 前 raw) — `B(C)`·경구약X 괄호·`[날짜]` 마커 유무 판정.
+  const detectTemplates = useMemo(() => buildContraindTemplates(sections), [sections]);
+  const selectedKeysArr = useMemo(() => [...selected], [selected]);
+  // 선택 그룹 분리(진단서 단일 / 금기증 복수) — 버튼 배타 disable 판정.
+  const { diagnosisKeys: selDiagnosis, contraindKeys: selContraind } = useMemo(
+    () => classifySelection(selectedKeysArr, contraindKeySet),
+    [selectedKeysArr, contraindKeySet],
+  );
+  const hasDiagnosis = selDiagnosis.length > 0;
+  const hasContraind = selContraind.length > 0;
+  // 플레이스홀더 부가 UI 노출 여부 — 선택된 원문에 실제 마커가 있을 때만(data-driven).
+  const showHepatitis = useMemo(() => needsHepatitisType(selectedKeysArr, detectTemplates), [selectedKeysArr, detectTemplates]);
+  const showOralXReason = useMemo(() => needsOralXReason(selectedKeysArr, detectTemplates), [selectedKeysArr, detectTemplates]);
+  const showDate = useMemo(() => needsDate(selectedKeysArr, detectTemplates), [selectedKeysArr, detectTemplates]);
+  // 합성 본문(MD §B 치환순서 + §3 조합). editor SSOT 의 출발점.
+  const composedText = useMemo(
+    () => composeOpinionDoc({
+      sections,
+      selectedKeys: selectedKeysArr,
+      hepatitisType,
+      oralXReason,
+      dateISO: docDate,
+    }),
+    [sections, selectedKeysArr, hepatitisType, oralXReason, docDate],
+  );
+
   // 팝업이 새 환자/요청으로 열릴 때마다 editor 초기화(직전 잔상 방지).
   //   AC-10: 큐('작성하기')로 열린 경우 initialSelectedKeys 를 미리 선택 + 해당 문구를 본문에 합성(출발점).
   const visitorId = visitor?.id ?? null;
@@ -592,24 +643,27 @@ export function OpinionEditorDialog({
   const [boundTo, setBoundTo] = useState<string | null>(null);
   if (open && bindKey !== boundTo) {
     setBoundTo(bindKey);
+    // AC-10: 큐('작성하기')로 열린 경우 실장이 고른 항목을 미리 선택. 본문은 compose effect 가 합성(item2).
     const keys = (initialSelectedKeys ?? []).filter((k) => phraseByKey.has(k));
-    if (keys.length > 0) {
-      let t = '';
-      for (const k of keys) {
-        const phrase = phraseByKey.get(k);
-        if (phrase) t = togglePhraseInText(t, phrase);
-      }
-      setText(t);
-      setSelected(new Set(keys));
-    } else {
-      setText('');
-      setSelected(new Set());
-    }
+    setSelected(new Set(keys));
+    // 플레이스홀더 입력 초기화 — 날짜는 실장 요청날짜(initialDate) 또는 오늘(KST) 기본값(B-1 LOCK).
+    setHepatitisType(null);
+    setOralXReason('');
+    setDocDate(initialDate || todaySeoulISODate());
+    setTextTouched(false); // 새 바인딩 → 자동합성 허용(직전 잔상 방지)
     setAutoChecked(new Set()); // AC-1: 새 환자/요청 바인딩 시 자동체크 뱃지 초기화(자동체크는 아래 effect 가 적용)
     setDoctorId(defaultDoctorId);
     setDoctorTouched(false);
     setChartOpen(false);
   }
+
+  // item2: 선택/플레이스홀더 변화 → 본문 자동 합성. 원장이 직접 수정(textTouched)하면 덮어쓰지 않음(AC-4 SSOT).
+  useEffect(() => {
+    if (!open) return;
+    if (textTouched) return;
+    setText(composedText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, composedText, textTouched]);
 
   // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
   useEffect(() => {
@@ -629,14 +683,11 @@ export function OpinionEditorDialog({
     const autoKeys = computeAutoCheckedKeys(healthQData ?? null).filter((k) => phraseByKey.has(k));
     setHealthQAppliedFor(bindKey);
     if (autoKeys.length === 0) return; // 질문지 없음/매칭 0 → 수동 모드
-    const newKeys = autoKeys.filter((k) => !selected.has(k));
-    if (newKeys.length > 0) {
-      let t = text;
-      for (const k of newKeys) {
-        const phrase = phraseByKey.get(k);
-        if (phrase) t = togglePhraseInText(t, phrase);
-      }
-      setText(t);
+    // item2: 자동체크는 선택 set 에만 반영 — 본문은 compose effect 가 합성(직접 토글 합성 제거).
+    //   ★ 진단서가 이미 선택된(단일배타) 상태면 금기증 자동추가가 모드를 깨므로 스킵(배타 보존).
+    const newKeys = autoKeys.filter((k) => !selected.has(k) && contraindKeySet.has(k));
+    const blockedByDiagnosis = [...selected].some((k) => !contraindKeySet.has(k));
+    if (newKeys.length > 0 && !blockedByDiagnosis) {
       setSelected((prev) => {
         const next = new Set(prev);
         for (const k of newKeys) next.add(k);
@@ -647,14 +698,28 @@ export function OpinionEditorDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bindKey, hqLoading, healthQData, phraseByKey, healthQAppliedFor]);
 
+  // item2 P1-1: 진단서(표준)=단일배타 / 금기증=복수선택.
+  //   - 금기증 클릭 → 토글(복수).
+  //   - 진단서 클릭 → 이미 선택이면 해제, 아니면 그 1개만(다른 선택 전부 해제 = 단일배타).
+  //   선택이 바뀌면 textTouched 해제 → 본문 재합성(조합 출력 = 선택 반영).
   const handleOptionClick = (opt: OpinionOption) => {
-    setText((prev) => togglePhraseInText(prev, opt.phrase));
+    const isContraind = contraindKeySet.has(opt.key);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(opt.key)) next.delete(opt.key);
-      else next.add(opt.key);
+      if (isContraind) {
+        if (next.has(opt.key)) next.delete(opt.key);
+        else next.add(opt.key);
+      } else {
+        if (next.has(opt.key)) {
+          next.delete(opt.key);
+        } else {
+          next.clear();
+          next.add(opt.key);
+        }
+      }
       return next;
     });
+    setTextTouched(false); // 선택 변경 → 자동 재합성
     // AC-1.3: 의사가 수동 변경한 항목은 QR입력 뱃지 제거(=의사확인). 자동체크 흔적 제거.
     setAutoChecked((prev) => {
       if (!prev.has(opt.key)) return prev;
@@ -839,6 +904,13 @@ export function OpinionEditorDialog({
                   <div className="grid grid-cols-2 gap-1.5">
                     {section.options.map((opt) => {
                       const active = selected.has(opt.key);
+                      const isContraindOpt = contraindKeySet.has(opt.key);
+                      // item2 P1-1 단일배타: 진단서 선택 시 그 1개 외 전부 비활성 / 금기증 선택 시 진단서 비활성.
+                      const disabled = hasDiagnosis
+                        ? !active
+                        : hasContraind
+                          ? !isContraindOpt
+                          : false;
                       // AC-1.2: 자동 pre-check(아직 의사 미확인) = amber 강조 + QR입력 뱃지로 시각 구분.
                       const fromQR = active && autoChecked.has(opt.key);
                       return (
@@ -846,11 +918,20 @@ export function OpinionEditorDialog({
                           key={opt.key}
                           type="button"
                           onClick={() => handleOptionClick(opt)}
+                          disabled={disabled}
                           aria-pressed={active}
-                          title={fromQR ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)` : opt.phrase}
+                          title={
+                            disabled
+                              ? hasDiagnosis
+                                ? '진단서(표준)는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
+                                : '금기증을 선택 중입니다. 진단서(표준)는 함께 선택할 수 없습니다.'
+                              : fromQR
+                                ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)`
+                                : opt.phrase
+                          }
                           data-testid={`opinion-opt-${opt.key}`}
                           data-autocheck={fromQR ? 'qr' : undefined}
-                          className={`relative rounded-md border px-2 py-2 text-xs font-medium transition ${
+                          className={`relative rounded-md border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
                             fromQR
                               ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
                               : active
@@ -889,14 +970,81 @@ export function OpinionEditorDialog({
                   <span className="font-semibold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
                 </div>
               )}
-              {/* ② 안내문구 제거 — 라벨만 유지 */}
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="opinion-editor-text">
-                소견 내용
-              </label>
+              {/* item2 플레이스홀더 변형 셀렉터 — 선택한 항목 원문에 마커가 있을 때만 노출(금기증/진단서 선택 종속). */}
+              {(showDate || showHepatitis || showOralXReason) && (
+                <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-2" data-testid="opinion-placeholder-controls">
+                  {/* B-1 날짜: [날짜] → YYYY년 MM월 DD일. 기본값=실장 요청날짜/오늘. */}
+                  {showDate && (
+                    <div className="flex items-center gap-2">
+                      <label className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground" htmlFor="opinion-doc-date">서류 날짜</label>
+                      <input
+                        id="opinion-doc-date"
+                        type="date"
+                        value={docDate}
+                        onChange={(e) => { setDocDate(e.target.value); setTextTouched(false); }}
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                        data-testid="opinion-date-input"
+                      />
+                    </div>
+                  )}
+                  {/* §C 간염 B/C 드롭다운: B(C) → B형/C형 전체치환. */}
+                  {showHepatitis && (
+                    <div className="flex items-center gap-2">
+                      <label className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground" htmlFor="opinion-hepatitis">간염 타입</label>
+                      <select
+                        id="opinion-hepatitis"
+                        value={hepatitisType ?? ''}
+                        onChange={(e) => { setHepatitisType((e.target.value || null) as HepatitisType | null); setTextTouched(false); }}
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                        data-testid="opinion-hepatitis-select"
+                      >
+                        <option value="">간염 타입 선택</option>
+                        <option value="B">B형 간염</option>
+                        <option value="C">C형 간염</option>
+                      </select>
+                    </div>
+                  )}
+                  {/* §B-2 경구약X 사유: 괄호 안 사유 입력 → 본문 치환(대괄호 제거). */}
+                  {showOralXReason && (
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-medium text-muted-foreground" htmlFor="opinion-oralx-reason">경구약 복용 사유</label>
+                      <input
+                        id="opinion-oralx-reason"
+                        type="text"
+                        value={oralXReason}
+                        onChange={(e) => { setOralXReason(e.target.value); setTextTouched(false); }}
+                        placeholder={ORAL_X_DEFAULT_REASON}
+                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                        data-testid="opinion-oralx-reason-input"
+                      />
+                      <p className="text-[10px] text-blue-600" data-testid="opinion-oralx-preview">
+                        {(oralXReason.trim() || ORAL_X_DEFAULT_REASON)}으로 항진균제 복용이 불가하여…
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* ② 라벨 + 자동합성/수기수정 안내 */}
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="opinion-editor-text">
+                  소견 내용
+                </label>
+                {textTouched && (
+                  <button
+                    type="button"
+                    onClick={() => { setTextTouched(false); setText(composedText); }}
+                    className="text-[10px] font-medium text-teal-700 underline-offset-2 hover:underline"
+                    data-testid="opinion-regenerate-btn"
+                    title="선택한 항목 기준으로 본문을 다시 자동 합성합니다(수기 수정 내용은 사라집니다)."
+                  >
+                    문구 재생성
+                  </button>
+                )}
+              </div>
               <Textarea
                 id="opinion-editor-text"
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => { setText(e.target.value); setTextTouched(true); }}
                 placeholder="좌측 옵션을 눌러 문구를 삽입하거나 직접 입력하세요."
                 className="min-h-[36vh] flex-1 text-sm leading-relaxed"
                 data-testid="opinion-editor"

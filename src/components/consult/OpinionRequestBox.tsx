@@ -8,6 +8,7 @@
 //   본 박스는 form_submissions status='draft'(요청 메타) 만 생성한다. 발행(published)·본문작성 UI 없음.
 
 import { useMemo, useState } from 'react';
+import { todaySeoulISODate } from '@/lib/format';
 import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
 import {
   OPINION_DOC_TYPES,
@@ -42,6 +43,8 @@ export default function OpinionRequestBox({
   const [docType, setDocType] = useState<OpinionDocType>('opinion');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [memo, setMemo] = useState('');
+  // B-1 LOCK(MSG-r0uw): 서류 날짜 선택 — 기본값 당일(KST). 원장 작성창 `[날짜]` 치환 초기값으로 전달.
+  const [requestDate, setRequestDate] = useState<string>(() => todaySeoulISODate());
 
   const { data: templateId = null } = useOpinionDocTemplateId(clinicId);
   const createMut = useCreateOpinionRequest(clinicId);
@@ -66,6 +69,7 @@ export default function OpinionRequestBox({
     setSelected(new Set());
     setMemo('');
     setDocType('opinion');
+    setRequestDate(todaySeoulISODate());
   };
 
   const handleRequest = async () => {
@@ -89,6 +93,7 @@ export default function OpinionRequestBox({
         issuedBy,
         requestedByName,
         templateId,
+        requestDate,
       });
       if (res.hasCheckIn) {
         toast.success(`${docTypeLabel(docType)} 발행 요청을 원장님께 보냈습니다.`);
@@ -140,6 +145,18 @@ export default function OpinionRequestBox({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* B-1 LOCK(MSG-r0uw): 서류 날짜 — 기본값 당일(KST). 원장 작성창 `[날짜]` 치환 초기값으로 전달. */}
+      <div className="mb-2 flex items-center gap-1.5">
+        <span className="text-[10px] font-medium text-muted-foreground">서류 날짜</span>
+        <input
+          type="date"
+          value={requestDate}
+          onChange={(e) => setRequestDate(e.target.value)}
+          data-testid="opinion-req-date"
+          className="rounded-md border px-2 py-1 text-[11px] text-foreground"
+        />
       </div>
 
       {/* AC-7: 해당항목 옵션 그리드(진단서/금기증) — 다중 토글 */}
