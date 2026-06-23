@@ -5590,7 +5590,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       type="button"
                       onClick={() => handleClinicalTab(key)}
                       className={cn(
-                        'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
+                        'flex-1 justify-center min-h-[32px] py-1 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                         chartTabGroup === 'clinical' && chartTab === key
                           ? 'bg-white text-sage-700 font-semibold shadow-sm'
                           : 'text-[#5C6166] hover:bg-white/60',
@@ -5607,7 +5607,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         data-testid="btn-open-medical-chart"
                         onClick={() => setMedicalChartOpen(true)}
                         /* T-20260616-foot-CHART2-TAB-BTN-DECOLOR: 진료차트 탭 장식 녹(emerald) → 모노톤 slate (탭 가독성·구분 유지) */
-                        className="flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold"
+                        className="flex-1 justify-center min-h-[32px] py-1 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold"
                       >
                         <Stethoscope className="h-3.5 w-3.5" />
                         진료차트
@@ -5628,7 +5628,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     type="button"
                     onClick={() => handleHistoryTab(key)}
                     className={cn(
-                      'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
+                      'flex-1 justify-center min-h-[32px] py-1 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'history' && chartTab === key
                         ? 'bg-white text-sage-700 font-semibold shadow-sm'
                         : 'text-[#5C6166] hover:bg-white/60',
@@ -6210,11 +6210,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         방문 기록 없음
                       </div>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1">
                         {filtered.map(({ ci, memoTypes, treatDetails, doctorNote }) => {
                           const isCancelled = ci.status === 'cancelled';
                           const dateStr = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
                           const timeStr = format(new Date(ci.checked_in_at), 'HH:mm');
+                          // T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ②: 귀가시간 = '완료' 상태전환 timestamp(completed_at).
+                          //   신규 집계/DB컬럼 없음 — 기존 check_ins.completed_at 그대로 노출. 소스 없으면 '-'(임의 추정 금지).
+                          const departedStr = ci.completed_at ? format(new Date(ci.completed_at), 'HH:mm') : '-';
                           const treatContent = ci.treatment_kind ?? (ci.consultation_done ? '상담' : '');
                           const ciSubs = submissionEntries.filter((s) => s.check_in_id === ci.id);
                           const isExpanded = visitHistExpandedIds.has(ci.id);
@@ -6234,10 +6237,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               )}
                               data-testid="visit-hist-card"
                             >
-                              {/* 카드 헤더 — 클릭 시 펼침/접기 (AC-1) */}
+                              {/* 카드 헤더 — 클릭 시 펼침/접기 (AC-1)
+                                  T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ②: 컬럼 재정의(방문일자·접수시간·귀가시간·서류재발급) + 타이트(px/py 축소). */}
                               <button
                                 type="button"
-                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 rounded-lg transition"
+                                className="w-full flex items-center gap-2 px-2.5 py-1 text-left hover:bg-muted/30 rounded-lg transition"
                                 onClick={() => {
                                   setVisitHistExpandedIds((prev) => {
                                     const next = new Set(prev);
@@ -6261,32 +6265,28 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                   }
                                 </span>
 
-                                {/* 날짜·시간 */}
+                                {/* 방문일자 */}
                                 <span className={cn('tabular-nums shrink-0 font-medium', isCancelled && 'line-through text-muted-foreground')}>
                                   {dateStr}
                                 </span>
-                                <span className="tabular-nums shrink-0 text-muted-foreground">{timeStr}</span>
+
+                                {/* 접수시간 */}
+                                <span className="tabular-nums shrink-0 text-muted-foreground" data-testid="visit-hist-checkin-time">
+                                  <span className="text-[9px] text-muted-foreground/70 mr-0.5">접수</span>{timeStr}
+                                </span>
+
+                                {/* 귀가시간 (= 완료 상태전환 timestamp) */}
+                                <span className="tabular-nums shrink-0 text-muted-foreground" data-testid="visit-hist-departed-time">
+                                  <span className="text-[9px] text-muted-foreground/70 mr-0.5">귀가</span>{departedStr}
+                                </span>
 
                                 {/* 취소 배지 */}
                                 {isCancelled && (
                                   <Badge variant="destructive" className="text-[9px] px-1 py-0">취소</Badge>
                                 )}
 
-                                {/* 시술명 */}
+                                {/* 시술명 (잔여 폭) */}
                                 <span className="flex-1 truncate text-gray-700">{treatContent || '—'}</span>
-
-                                {/* 메모 유형 배지 (AC-2) */}
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {hasTreatMemo && (
-                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-700">치료</span>
-                                  )}
-                                  {hasDoctorNote && (
-                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-700">진료</span>
-                                  )}
-                                  {hasSpecial && (
-                                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-700 font-semibold">특이</span>
-                                  )}
-                                </div>
 
                                 {/* 서류 재발급 버튼 (AC-5: 기존 CRUD 무영향) */}
                                 <button
@@ -6304,25 +6304,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                   서류 재발급
                                 </button>
                               </button>
-
-                              {/* 접힌 상태에도 서류 목록 표시 */}
-                              {!isExpanded && ciSubs.length > 0 && (
-                                <div className="flex flex-wrap gap-1 px-3 pb-2">
-                                  {ciSubs.map((s, i) => {
-                                    const meta = s.template_key ? FORM_META[s.template_key] : undefined;
-                                    const label = meta?.description ?? s.template_key ?? '서류';
-                                    return (
-                                      <span
-                                        key={i}
-                                        className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
-                                      >
-                                        <Printer className="h-2.5 w-2.5 shrink-0" />
-                                        {label}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                              {/* T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ②: 접힌 상태 하단 프린터아이콘+발행서류 줄 삭제(표시 제거).
+                                  출력 기능은 위 '서류 재발급' 버튼 동선 + 펼침 상세 '발급 서류'로 유지. */}
 
                               {/* 확장 영역 (AC-1: 펼침 시 상세 메모 노출) */}
                               {isExpanded && (
@@ -6446,6 +6429,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         checkIn={docReissueCheckIn}
                         onUpdated={() => {}}
                         altStatus={altStatus}
+                        historyAtTop
                       />
                     </div>
                   </div>

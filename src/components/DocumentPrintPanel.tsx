@@ -136,6 +136,9 @@ interface Props {
   onUpdated: () => void;
   /** T-20260522-foot-ALT-BADGE: ALT 활성 여부 — 레이저코드 삽입 차단 (AC-12) */
   altStatus?: boolean;
+  /** T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달 전용 레이아웃.
+   *  true 시 [발행 이력]을 패널 상단으로 이동 + 2단(2열) 진열. 미지정(false) 시 기존 위치/1열 유지(타 surface 무영향). */
+  historyAtTop?: boolean;
 }
 
 // T-20260522-foot-ALT-BADGE AC-12: 레이저 관련 서비스 판별 — category OR name 기반
@@ -351,7 +354,7 @@ ${pages.join('\n')}
 
 // ─── 메인 컴포넌트 ───
 
-export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Props) {
+export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false }: Props) {
   const { profile } = useAuth();
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
@@ -979,6 +982,45 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   const usingFallback = templates.length > 0 && templates[0].id.startsWith('fallback-');
   const selectedCount = selectedKeys.size;
 
+  // T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 발행 이력 블록 — 위치(상단/원위치)·열수(2열/1열)를
+  //   historyAtTop prop으로 분기. 항목 렌더/onClick(템플릿 재선택) 로직은 동일(DOCOUTPUT 행리스트 무영향).
+  const historyBlock = submissions.length > 0 ? (
+    <div className="space-y-1.5">
+      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+        <Clock className="h-3 w-3" /> 발행 이력
+      </span>
+      <div className={historyAtTop ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5'}>
+        {submissions.map((sub) => {
+          const tpl = templates.find((t) => t.id === sub.template_id);
+          return (
+            <div
+              key={sub.id}
+              className="flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted/40"
+              onClick={() => {
+                const t = templates.find((tt) => tt.id === sub.template_id);
+                if (t) handleSelectTemplate(t);
+              }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span>{FORM_META[tpl?.form_key ?? '']?.icon ?? '📄'}</span>
+                <span className="font-medium truncate">{tpl?.name_ko ?? '알 수 없는 양식'}</span>
+                <Badge
+                  variant={sub.status === 'printed' ? 'default' : 'outline'}
+                  className="text-[10px] px-1 shrink-0"
+                >
+                  {sub.status === 'printed' ? '출력' : sub.status === 'voided' ? '무효' : '임시'}
+                </Badge>
+              </div>
+              <span className="text-muted-foreground shrink-0">
+                {format(new Date(sub.created_at), 'MM/dd HH:mm')}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-3">
       {/* 헤더 */}
@@ -994,6 +1036,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           )}
         </div>
       </div>
+
+      {/* T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달 — 발행 이력을 상단(2열)으로 노출 */}
+      {historyAtTop && historyBlock}
 
       {/* 근무원장님 배너 (T-20260502-foot-DUTY-ROSTER) */}
       {dutyDoctors.length > 0 ? (
@@ -1192,41 +1237,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           </div>
         </div>
 
-      {/* 발행 이력 */}
-      {submissions.length > 0 && (
-        <div className="space-y-1.5">
-          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-            <Clock className="h-3 w-3" /> 발행 이력
-          </span>
-          {submissions.map((sub) => {
-            const tpl = templates.find((t) => t.id === sub.template_id);
-            return (
-              <div
-                key={sub.id}
-                className="flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted/40"
-                onClick={() => {
-                  const t = templates.find((tt) => tt.id === sub.template_id);
-                  if (t) handleSelectTemplate(t);
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <span>{FORM_META[tpl?.form_key ?? '']?.icon ?? '📄'}</span>
-                  <span className="font-medium">{tpl?.name_ko ?? '알 수 없는 양식'}</span>
-                  <Badge
-                    variant={sub.status === 'printed' ? 'default' : 'outline'}
-                    className="text-[10px] px-1"
-                  >
-                    {sub.status === 'printed' ? '출력' : sub.status === 'voided' ? '무효' : '임시'}
-                  </Badge>
-                </div>
-                <span className="text-muted-foreground">
-                  {format(new Date(sub.created_at), 'MM/dd HH:mm')}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* 발행 이력 — T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달(historyAtTop)에서는 상단으로 이동했으므로 여기선 미렌더 */}
+      {!historyAtTop && historyBlock}
 
       {/* 배치 출력: 복수 원장님 선택 다이얼로그 */}
       <Dialog open={batchDoctorPickOpen} onOpenChange={setBatchDoctorPickOpen}>
