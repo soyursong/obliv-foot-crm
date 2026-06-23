@@ -641,7 +641,7 @@ const DraggableCard = memo(function DraggableCard({
           {hasPodologe && (
             <span
               data-testid="podologe-holder-badge"
-              className="inline-flex items-center bg-orange-100 text-orange-700 text-[9px] px-0.5 py-px rounded font-bold"
+              className="inline-flex items-center bg-pink-100 text-pink-700 text-[9px] px-0.5 py-px rounded font-bold"
             >
               PD
             </span>
@@ -821,7 +821,7 @@ const DraggableCard = memo(function DraggableCard({
         {hasPodologe && (
           <span
             data-testid="podologe-holder-badge"
-            className="inline-flex items-center bg-orange-100 text-orange-700 text-[9px] px-0.5 py-px rounded font-bold"
+            className="inline-flex items-center bg-pink-100 text-pink-700 text-[9px] px-0.5 py-px rounded font-bold"
           >
             PD
           </span>
