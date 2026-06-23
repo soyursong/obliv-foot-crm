@@ -1,7 +1,7 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. openChart/ChartContext.Provider/CustomerChartSheet 단일 구현. 변경 시 현장 승인 필수
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ChartContext } from '@/lib/chartContext';
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import {
@@ -160,6 +160,12 @@ function isNavItemVisible(
 
 export default function AdminLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [5]: 사이드바 근무 달력(CalendarNoticePanel) 노출을
+  //   대시보드(/admin) + 예약관리(/admin/reservations) 2개 화면으로 한정. 그 외 화면은 미노출.
+  //   ⚠ 풋센터 앱 한정 — 타 CRM(피부/도수) 확산 금지. SIDEBAR-DUTYCAL-PROMOTE(field-soak) 동작 보존: 가시성 차분만(전면 재배치 X).
+  const showSidebarCalendar =
+    location.pathname === '/admin' || location.pathname === '/admin/reservations';
   const { profile, signOut } = useAuth();
   const clinic = useClinic();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -596,7 +602,8 @@ export default function AdminLayout() {
             T-20260510-foot-CALENDAR-NOTICE AC v4: 좌측 CalendarNoticePanel 고정 (우측→좌측 이동). */}
         {/* T-20260514-foot-MOBILE-CAL-COLLAPSE: 모바일에서 flex-col, PC에서 flex-row */}
         <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
-          <CalendarNoticePanel />
+          {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [5]: 대시보드/예약관리에서만 노출 */}
+          {showSidebarCalendar && <CalendarNoticePanel />}
           {/* T-20260510-foot-DASH-DUAL-HSCROLL v2: min-w-0 추가 — row-flex 내 flex-1 아이템
               min-width:auto로 Dashboard 칸반 폭만큼 팽창 → overflow-hidden이 무력화됨.
               min-w-0 추가 시 overflow-hidden이 정상 동작 → Dashboard 내용이 이 div 안에 갇힘. */}

@@ -339,7 +339,9 @@ export default function Reservations() {
   const selfWriteUntilRef = useRef(0);
   // T-20260515-foot-RESV-BOX-INTERACT: AC-4 단일클릭/더블클릭 300ms 디바운스 타이머
   const clickTimerRef = useRef<{ resvId: string; timerId: ReturnType<typeof setTimeout> } | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [1-a]: 예약관리 진입 기본값 주간→일간.
+  // ⚠ default view만 변경 — 격자 구조/시간 가로배열(1-b)은 WAVE3 별도, 무변경.
+  const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
   );
@@ -1939,6 +1941,16 @@ export default function Reservations() {
                                         <CustomerHoverCard
                                           checkIn={resvAsCheckIn(r)}
                                           reservationTime={r.reservation_time}
+                                          // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [4]: 예약 hover 새 레이아웃.
+                                          //   등록자=resvBookerMap(예약 잡은 계정명, 예 'admin') / 예약일시 / 방문경로 / 풀번호 / 간략메모(W2)/ 예약메모.
+                                          //   brief_note(간략메모)는 WAVE2 컬럼 → 미존재(undefined)이므로 해당 줄 자동 생략.
+                                          reservationInfo={{
+                                            registrarLabel: resvBookerMap.get(r.id) ?? null,
+                                            reservationDate: r.reservation_date,
+                                            visitRoute: r.visit_route ?? r.referral_source ?? null,
+                                            bookingMemo: r.booking_memo ?? null,
+                                            briefNote: null,
+                                          }}
                                           compact
                                           // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: 2단(2열) 캘린더 카드 = 고밀도.
                                           //   성함 text-sm→text-xs 축소 + 좁은 폭에서 ellipsis 실동작(박스 깨짐·넘침 0).

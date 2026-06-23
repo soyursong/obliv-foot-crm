@@ -34,7 +34,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { fetchActiveStaff, fetchTodayWorkingStaffIds } from '@/lib/autoAssign';
@@ -84,7 +84,13 @@ const ROSTER_PARTS: { label: string; roles: StaffRole[] }[] = [
 export default function CalendarNoticePanel() {
   const clinic = useClinic();
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile } = useAuth();
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]/[7]: 달력 날짜 클릭 동작은 화면별로 분기.
+  //   대시보드(/admin)=[6] 페이지 이동 없이 ?date= 만 갱신(Dashboard가 인라인 현황 렌더) + 달력 접힘 없음.
+  //   예약관리(/admin/reservations)=[7] 해당 날짜 예약현황 이동 + 달력 자동접힘 제거(펼친 상태 유지).
+  const onDashboard = location.pathname === '/admin';
+  const onReservations = location.pathname === '/admin/reservations';
 
   // ── 작성자 staff.id 역조회 (T-20260530-foot-NOTICE-CREATEDBY-BACKFILL) ─────
   // created_by FK → staff(id). profile.id(=auth.uid())는 staff.user_id 경유 매핑.
@@ -143,6 +149,12 @@ export default function CalendarNoticePanel() {
   //   상태(pc-cal-bar)로 시작. 마지막 상태 기억(localStorage) 로직 없음 → 매 진입·새로고침
   //   마다 항상 접힘으로 시작하는 게 의도. 사용자는 펼치기 버튼으로 즉시 펼칠 수 있음.
   const [pcCollapsed, setPcCollapsed] = useState<boolean>(true);
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [7]: CALENDAR-DEFAULT-COLLAPSED 예약관리 한정 반전.
+  //   예약관리 진입 시 달력을 펼친 상태로 시작(날짜 클릭 시 펼침 유지와 일관). 대시보드 등 기타 화면은
+  //   기존 '접힘 기본'(CALENDAR-DEFAULT-COLLAPSED) 유지 → 강제 접힘은 하지 않음(사용자가 [6]용으로 펼친 상태 보존).
+  useEffect(() => {
+    if (onReservations) setPcCollapsed(false);
+  }, [onReservations]);
 
   // ── 공지 폼 상태 ──────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
@@ -425,15 +437,25 @@ export default function CalendarNoticePanel() {
                 key={dateKey}
                 onClick={() => {
                   setSelectedDate(isSelected ? null : day);
-                  // AC-7: 날짜 클릭 → 예약관리 해당 주 이동
+                  const dateStr = format(day, 'yyyy-MM-dd');
                   // T-20260517-foot-MINICAL-REGRESS: location.state → URL ?date= 로 변경
                   //   state 방식은 이미 마운트된 Reservations 에서 재클릭 시 불안정 + 새로고침 소실.
                   //   URL param으로 전환하면 searchParams 변경 → useEffect 확실히 트리거됨.
-                  // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수
-                  navigate(`/admin/reservations?date=${format(day, 'yyyy-MM-dd')}`);
-                  // AC-3: 날짜 선택 → 달력 자동 접힘 (모바일 + PC 공통)
-                  if (isMobile) setMobileCollapsed(true);
-                  else setPcCollapsed(true);
+                  // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수.
+                  //   T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB(reporter code-start confirm MSG-j2ez):
+                  if (onDashboard) {
+                    // [6] 대시보드: 예약관리로 이동하지 않고 같은 화면 ?date= 만 갱신 → Dashboard 하단 인라인 현황.
+                    //   달력 자동접힘도 하지 않음(현황을 보면서 다른 날짜 비교 가능).
+                    navigate(`/admin?date=${dateStr}`, { replace: true });
+                  } else {
+                    // [7] 예약관리(및 기타 레거시 경로): 해당 날짜 예약현황으로 이동.
+                    navigate(`/admin/reservations?date=${dateStr}`);
+                    // [7] 예약관리에서는 자동접힘 제거(펼친 상태 유지). 그 외 경로(레거시)에서만 기존 자동접힘 유지.
+                    if (!onReservations) {
+                      if (isMobile) setMobileCollapsed(true);
+                      else setPcCollapsed(true);
+                    }
+                  }
                 }}
                 className={cn(
                   'w-full py-1 text-[11px] font-medium rounded-full transition-colors leading-none aspect-square flex items-center justify-center',

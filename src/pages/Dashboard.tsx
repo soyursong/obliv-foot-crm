@@ -83,6 +83,9 @@ import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatie
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import DoctorCallListBar from '@/components/DoctorCallListBar';
+// T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 대시보드 달력 날짜 클릭 → 페이지 이동 없이
+//   하단 인라인 현황(근무스케줄+인수인계) 표시. CalendarNoticePanel이 /admin?date=YYYY-MM-DD 로 네비게이트.
+import DashboardDateDetail from '@/components/DashboardDateDetail';
 import { PaymentDialog } from '@/components/PaymentDialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
@@ -3076,6 +3079,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const clinic = useClinic();
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 사이드바 달력에서 날짜 클릭(대시보드 한정) 시
+  //   CalendarNoticePanel이 /admin?date=YYYY-MM-DD 로 네비게이트 → 이 param 존재 시 하단 인라인
+  //   현황 패널을 띄운다. 페이지 이동·대시보드 본문 date state 변경 없음(현황 미리보기 전용).
+  const dateDetailParam = new URLSearchParams(location.search).get('date');
   const [date, setDate] = useState<Date>(() => new Date());
   // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-A 근본 하드닝):
   //   24/7 접수 태블릿이 자정을 넘기면 마운트 시점 new Date()로 잡힌 date가 '어제'로 stale 고정된다.
@@ -7478,6 +7485,16 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 사이드바 달력 날짜 클릭 시 하단 인라인 현황.
+          flex-col 루트의 마지막 자식 → shrink-0 + max-h-[38vh]로 본문 아래에 부착(본문 스크롤 영향 0).
+          닫기(onClose) 시 ?date= 제거(=대시보드 기본 화면 복귀). */}
+      {dateDetailParam && (
+        <DashboardDateDetail
+          dateStr={dateDetailParam}
+          clinicId={clinic?.id}
+          onClose={() => navigate('/admin', { replace: true })}
+        />
+      )}
     </div>
   );
 }

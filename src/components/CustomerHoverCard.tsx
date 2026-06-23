@@ -37,10 +37,31 @@ function calcAge(birthDate: string | null): number | null {
   return age >= 0 ? age : null;
 }
 
+/**
+ * T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [4]: 예약 hover 간략정보 구성.
+ * 이 prop이 주어지면(예약관리 캘린더 카드) 새 spec 레이아웃을 렌더:
+ *   제목줄 `등록자: 예약일시` / 고객성함 | 방문경로 / 연락처(풀번호) / 간략메모 / 예약메모.
+ * 미지정 surface(대시보드 등)는 기존 레거시 레이아웃(차트#·예약시간·고객메모·치료메모) 유지 → 회귀 0.
+ */
+interface HoverReservationInfo {
+  /** 등록자 = 예약 잡은 계정명(resvBookerMap, 예: 'admin'). 없으면 제목줄에서 생략. */
+  registrarLabel?: string | null;
+  /** 예약일 (YYYY-MM-DD) */
+  reservationDate?: string | null;
+  /** 방문경로(예약경로 대분류) — reservations.visit_route */
+  visitRoute?: string | null;
+  /** 예약메모 — reservations.booking_memo */
+  bookingMemo?: string | null;
+  /** 간략메모 — brief_note. WAVE 2 컬럼 추가 예정 → 그 전까지 undefined/null이면 해당 줄 생략(에러/공백행 금지). */
+  briefNote?: string | null;
+}
+
 interface Props {
   checkIn: CheckIn;
   /** 예약 시간 (HH:MM:SS 또는 HH:MM) — reservation.reservation_time */
   reservationTime?: string | null;
+  /** T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [4]: 주어지면 예약 hover 새 레이아웃. */
+  reservationInfo?: HoverReservationInfo;
   /** compact 카드용 스타일 */
   compact?: boolean;
   /** T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: 예약관리 캘린더 2단(2열) 전용 고밀도 성함.
@@ -53,7 +74,7 @@ interface Props {
   onClick?: () => void;
 }
 
-export function CustomerHoverCard({ checkIn, reservationTime, compact, compactDense, onContextMenu, onClick }: Props) {
+export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, compact, compactDense, onContextMenu, onClick }: Props) {
   const [visible, setVisible] = useState(false);
   const [details, setDetails] = useState<CustomerDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -193,6 +214,82 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, compactDe
           onMouseDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
+          {reservationInfo ? (
+            // ══ T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [4]: 예약 hover 새 레이아웃 ══
+            //   제목줄 `등록자: 예약일시` / 고객성함 | 방문경로 / 연락처(풀번호) / 간략메모 / 예약메모.
+            <>
+              {/* ── 제목줄: 등록자: 예약일시 (등록자 없으면 일시만) ── */}
+              <div className="flex items-center gap-1.5 text-gray-800">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-teal-500" />
+                <span className="font-semibold tabular-nums">
+                  {reservationInfo.registrarLabel
+                    ? `${reservationInfo.registrarLabel}: `
+                    : ''}
+                  {reservationInfo.reservationDate ?? ''}
+                  {reservationTime ? ` ${reservationTime.slice(0, 5)}` : ''}
+                </span>
+              </div>
+
+              <div className="border-t border-gray-100" />
+
+              {/* ── 고객성함 | 방문경로 ── */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-gray-900 text-sm">{checkIn.customer_name}</span>
+                {reservationInfo.visitRoute && (
+                  <>
+                    <span className="text-gray-300">|</span>
+                    <span className="text-gray-600">{reservationInfo.visitRoute}</span>
+                  </>
+                )}
+              </div>
+
+              {/* ── 연락처 (풀번호 — 마스킹 없음) ── */}
+              {checkIn.customer_phone ? (
+                <div className="flex items-center gap-1.5 text-gray-600">
+                  <Phone className="h-3.5 w-3.5 shrink-0 text-teal-500" />
+                  <span className="tabular-nums">{formatPhone(checkIn.customer_phone)}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-gray-400">
+                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                  <span>번호 없음</span>
+                </div>
+              )}
+
+              {/* ── 간략메모(brief_note) — WAVE2 컬럼 추가 전까지 값 없으면 줄 자체 생략(에러/공백행 금지) ── */}
+              {reservationInfo.briefNote?.trim() && (
+                <>
+                  <div className="border-t border-gray-100" />
+                  <div className="flex items-start gap-1.5">
+                    <FileText className="h-3.5 w-3.5 shrink-0 mt-0.5 text-teal-500" />
+                    <div className="flex-1">
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">
+                        간략메모
+                      </div>
+                      <p className="text-gray-700 leading-relaxed line-clamp-4">{reservationInfo.briefNote.trim()}</p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── 예약메모 ── */}
+              <div className="border-t border-gray-100" />
+              <div className="flex items-start gap-1.5">
+                <FileText className="h-3.5 w-3.5 shrink-0 mt-0.5 text-emerald-500" />
+                <div className="flex-1">
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">
+                    예약메모
+                  </div>
+                  {reservationInfo.bookingMemo?.trim() ? (
+                    <p className="text-gray-700 leading-relaxed line-clamp-4">{reservationInfo.bookingMemo.trim()}</p>
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+          <>
           {/* ── 헤더: 차트번호 + 성함(성별/나이) + 초진/재진 ── */}
           <div className="flex flex-wrap items-center gap-1.5">
             {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
@@ -267,6 +364,8 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, compactDe
               )}
             </div>
           </div>
+          </>
+          )}
         </div>,
         document.body,
       )}
