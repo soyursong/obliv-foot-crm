@@ -32,6 +32,10 @@ import { ChartSheetCloseCtx, ChartSheetSaveRegistryCtx, ChartSheetMarkCleanCtx, 
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
+// T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part B: 차트 미저장 입력 시 헤더 자동 새로고침 카운트다운을 일시정지(무손실)
+import { setDirty } from '@/lib/dashboardRefreshBus';
+
+const CHART_DIRTY_KEY = 'customer-chart';
 
 const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
 
@@ -56,9 +60,13 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
   // 차트 재오픈(customerId 변경) 시 dirty/확인창 리셋
   useEffect(() => {
     dirtyRef.current = false;
+    setDirty(CHART_DIRTY_KEY, false); // Part B: 새 차트는 clean으로 시작 → 카운트다운 보류 해제
     setShowCloseConfirm(false);
     setSavingClose(false);
   }, [customerId]);
+
+  // Part B: 차트 언마운트(닫힘 포함) 시 dirty 신호 해제 — 닫힌 차트가 카운트다운을 무한 보류시키지 않게
+  useEffect(() => () => { setDirty(CHART_DIRTY_KEY, false); }, []);
 
   // T-20260609-foot-CHART2-SAVE-CLOSE-BTN AC-2/AC-3: 저장 후 닫기
   //  - 본문 저장 버튼과 동일한 핸들러(handleInfoPanelSave) 호출 → 성공 시 닫기, 실패 시 유지(내용 보존)
@@ -115,7 +123,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
   // T-20260611-foot-CHART2-SAVE-DIRTY-RESET AC-1: 본문 저장 성공 시 기존 dirty 가드를 clean으로 리셋.
   //  - 신규 dirty 메커니즘 X — onInput proxy가 쓰는 dirtyRef를 그대로 끈다(= baseline을 방금 저장값으로 갱신).
   //  - 이후 추가 입력이 발생하면 onInput이 다시 dirtyRef=true로 올려 가드 재노출(AC-2).
-  const markChartClean = () => { dirtyRef.current = false; };
+  const markChartClean = () => { dirtyRef.current = false; setDirty(CHART_DIRTY_KEY, false); };
 
   // 백드롭/요청 닫기 — dirty면 확인, 아니면 즉시 닫기
   const requestClose = () => {
@@ -145,7 +153,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
         aria-label="고객차트"
         data-testid="customer-chart-sheet"
         // T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 하위 입력 이벤트로 dirty 추적
-        onInput={() => { dirtyRef.current = true; }}
+        onInput={() => { dirtyRef.current = true; setDirty(CHART_DIRTY_KEY, true); }}
         className="fixed right-0 top-0 z-[70] h-full w-[95vw] sm:w-[88vw] max-w-5xl bg-background shadow-lg flex flex-col outline-none animate-in slide-in-from-right duration-300"
       >
         {/* 닫기 버튼 헤더 — flex-shrink-0: 스크롤 영역 밖, 항상 visible */}

@@ -32,6 +32,7 @@ import {
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 // T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (B안): 상단 자동배정 알림 종
 import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
+import DashboardRefreshCountdown from '@/components/DashboardRefreshCountdown';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatPhone, chartNoBadge } from '@/lib/format';
@@ -530,6 +531,8 @@ export default function AdminLayout() {
                 대체 진입 가능 — 유일 진입점 아니므로 제거 안전. L-002 원칙(클릭 시 full page 전환)은 잔존 진입점에 그대로 유지. */}
           {/* T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (B안): 자동배정 알림 종 (전 사용자 공유) */}
           <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
+          {/* T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part B: 종 아이콘 옆 1분 자동 새로고침 카운트다운(무손실) */}
+          <DashboardRefreshCountdown />
           <div className="relative">
             <button
               onClick={() => { setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50); }}
