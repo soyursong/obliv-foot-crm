@@ -600,14 +600,21 @@ function PatientRow({
 
         {/* ④ 이름 — 고정 너비(글자수 변동 무관, 폭 5rem 보존), 초과 시 truncate.
             T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전.
-            item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
-        <span
-          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
-          title={row.customer_name}
+            item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900.
+            T-20260623-foot-DOCDASH-PATIENTNAME-CHART-DRAWER (문지은 대표원장): 이름 클릭 → 진료차트 서랍(MedicalChartPanel) 직접오픈.
+              형제 DoctorCallDashboard(doctor-call-name-chart-btn) 동선과 통일 — onOpenChart=openTreatmentChart(full) 旣 배선 재사용(신규 drawer 스택 신설 0).
+              ⚠ 회귀0: 펼치기 토글(임상경과 인라인, embed clinical)·귀가 readonly 게이트는 무접촉. data-testid="patient-name"/text-left 보존(기존 스펙 호환).
+              isPast(이력) 모드는 행 전체가 이미 onOpenChart 버튼 → 이 today 분기에서만 이름 버튼화(중첩 버튼 방지). */}
+        <button
+          type="button"
+          onClick={onOpenChart}
+          disabled={!onOpenChart}
+          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900 underline-offset-2 transition-colors hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline disabled:hover:text-gray-900"
+          title={onOpenChart ? `${row.customer_name} — 이름 클릭, 진료차트 열기 (서랍)` : row.customer_name}
           data-testid="patient-name"
         >
           {row.customer_name}
-        </span>
+        </button>
 
         {/* ⑤ 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼(폭 4.5rem 보존). 미발번은 '(미발번)'(빈칸 금지).
             item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
