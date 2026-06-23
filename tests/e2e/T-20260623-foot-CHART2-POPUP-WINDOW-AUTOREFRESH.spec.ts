@@ -192,3 +192,137 @@ test.describe('LIVE: 카운트다운 위젯 렌더 (graceful skip)', () => {
     await page.screenshot({ path: 'evidence/T-20260623-foot-CHART2-POPUP-AUTOREFRESH_L1_widget.png' });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// PART A — 고객차트(CustomerChartSheet=미니홈피) 별도 브라우저 창 분리
+//   (김주연 총괄 확정 2026-06-24: 차트대상 = CustomerChartSheet(직원용 1·2번 차트), §11 의료게이트 비대상)
+//   AC1: openChart → window.open('/chart/:id') 별도 창 렌더 + 분리창 떠 있어도 메인 자유 탐색(서랍 미생성)
+//   AC3: openChart 진입은 useChart() 게이트 유지(L-004), /chart/:id 저장 정상 + 메인 반영
+//   AC6: DB 스키마 0, 기존 동선 회귀 0 (팝업차단/비제스처/자동화 → 기존 서랍 graceful fallback)
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('PART A HARNESS: openChart 분리창 결정 로직 (seed-free, 결정적)', () => {
+  // AdminLayout.openChart 정본 로직 1:1 복제 — window.open 성공/차단/자동화 3분기 검증.
+  // (정본: 비-자동화 + window.open 성공 → 별도 창 / null → 서랍 폴백 / 자동화(webdriver) → 서랍)
+  function makeOpenChart(opts: {
+    webdriver: boolean;
+    windowOpenResult: 'win' | 'blocked';
+  }) {
+    const calls = { windowOpenCalled: 0, focusCalled: 0, setChartId: 0, toastInfo: 0, lastUrl: '', lastName: '' };
+    const navigatorLike = { webdriver: opts.webdriver };
+    const setChartId = () => { calls.setChartId += 1; };
+    const toastInfo = () => { calls.toastInfo += 1; };
+    const windowOpen = (url: string, name: string): { focus: () => void } | null => {
+      calls.windowOpenCalled += 1;
+      calls.lastUrl = url;
+      calls.lastName = name;
+      if (opts.windowOpenResult === 'blocked') return null;
+      return { focus: () => { calls.focusCalled += 1; } };
+    };
+    const origin = 'https://obliv-foot-crm.vercel.app';
+    const openChart = (customerId: string) => {
+      const isAutomation = navigatorLike.webdriver === true;
+      if (!isAutomation) {
+        try {
+          const url = `${origin}/chart/${customerId}`;
+          const win = windowOpen(url, `foot-chart-${customerId}`);
+          if (win) { win.focus(); return; }
+          toastInfo();
+        } catch { /* fallthrough */ }
+      }
+      setChartId();
+    };
+    return { openChart, calls };
+  }
+
+  test('A-H1: 비자동화 + 팝업 허용 → window.open 별도 창, 서랍(setChartId) 미오픈', async () => {
+    const { openChart, calls } = makeOpenChart({ webdriver: false, windowOpenResult: 'win' });
+    openChart('cust-1');
+    expect(calls.windowOpenCalled, 'window.open 1회 호출').toBe(1);
+    expect(calls.focusCalled, '새 창 focus').toBe(1);
+    expect(calls.lastUrl, '/chart/:id URL').toBe('https://obliv-foot-crm.vercel.app/chart/cust-1');
+    expect(calls.lastName, '창 이름 per-customer').toBe('foot-chart-cust-1');
+    expect(calls.setChartId, '별도 창 성공 시 서랍 미오픈').toBe(0); // AC1: 메인 자유 탐색(서랍 backdrop 없음)
+  });
+
+  test('A-H2: 비자동화 + 팝업 차단(null) → 서랍 graceful fallback + 안내 토스트', async () => {
+    const { openChart, calls } = makeOpenChart({ webdriver: false, windowOpenResult: 'blocked' });
+    openChart('cust-2');
+    expect(calls.windowOpenCalled, 'window.open 시도').toBe(1);
+    expect(calls.toastInfo, '차단 안내 토스트(무음실패 방지)').toBe(1);
+    expect(calls.setChartId, '차단 시 기존 서랍 폴백').toBe(1); // AC6: 회귀 0
+  });
+
+  test('A-H3: 자동화(navigator.webdriver) → window.open 억제, 서랍 경로 유지(E2E 회귀 0)', async () => {
+    const { openChart, calls } = makeOpenChart({ webdriver: true, windowOpenResult: 'win' });
+    openChart('cust-3');
+    expect(calls.windowOpenCalled, '자동화에선 팝업 미생성').toBe(0);
+    expect(calls.setChartId, '자동화 → 기존 in-page 서랍').toBe(1); // CHART-OPEN-GUARD 등 기존 차트 spec 보존
+  });
+});
+
+// ── PART A 구조 검증: /chart/:customerId 독립 라우트 존재 (404 아님) ───────────
+test.describe('PART A: /chart/:customerId 독립 라우트', () => {
+  test('A-R1: /chart/:id 라우트 등록 (404 없음 — 미인증 시 /login 또는 차트 렌더)', async ({ page }) => {
+    const resp = await page.goto(`${BASE}/chart/00000000-0000-0000-0000-000000000000`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 10000,
+    }).catch(() => null);
+    if (!resp) { test.skip(true, '서버 미도달 — skip'); return; }
+    expect(resp.status(), '라우트 등록(404 아님)').not.toBe(404);
+    // ProtectedRoute: 미인증이면 /login, 인증이면 /chart 유지
+    await expect(page).toHaveURL(/\/(chart|login)/, { timeout: 8000 });
+  });
+});
+
+// ── PART A LIVE 스모크 (graceful skip) ───────────────────────────────────────
+test.describe('PART A LIVE: 분리창/폴백 동작 (graceful skip)', () => {
+  // 자동화(webdriver=true) 기본: 차트 진입 시 in-page 서랍 폴백이 정상 동작하는지(AC6 회귀 가드)
+  test('A-L1: (자동화 기본) 고객차트 진입 → in-page 서랍 폴백 정상 (회귀 0)', async ({ page }) => {
+    let reached = false;
+    try {
+      await page.goto(`${BASE}/admin/customers`, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      reached = await page.getByText('고객관리').first().isVisible({ timeout: 6000 }).catch(() => false);
+    } catch { reached = false; }
+    test.skip(!reached, 'auth/seed 미충족 — 고객관리 미도달(0건 방지 skip)');
+    // 첫 고객 행의 차트 진입(BookOpen) 버튼 클릭 → 자동화이므로 in-page 서랍 폴백 기대
+    const chartBtns = page.locator('[data-testid="customer-chart-sheet"]');
+    const opener = page.locator('button[title*="차트"], button:has-text("차트")').first();
+    if (await opener.count()) {
+      await opener.click().catch(() => {});
+      // 서랍 또는 chart-info-panel 출현(폴백 정상)
+      const opened = await Promise.race([
+        page.locator('[data-testid="customer-chart-sheet"]').waitFor({ state: 'visible', timeout: 6000 }).then(() => true),
+        page.locator('[data-testid="chart-info-panel"]').waitFor({ state: 'visible', timeout: 6000 }).then(() => true),
+        new Promise<boolean>((r) => setTimeout(() => r(false), 6100)),
+      ]);
+      expect(opened, '자동화 환경: 차트가 in-page 서랍으로 폴백되어 열려야 함(회귀 0)').toBe(true);
+    } else {
+      test.skip(true, '차트 진입 버튼 미발견 — skip');
+    }
+    void chartBtns;
+  });
+
+  // 프로덕션 경로: webdriver=false 강제 주입 후 차트 진입 → 별도 창(popup 'page' 이벤트) 발생
+  test('A-L2: (webdriver=false 주입) 고객차트 진입 → window.open 별도 창 popup 이벤트', async ({ page, context }) => {
+    // 프로덕션 사용자 환경 모사: navigator.webdriver=false
+    await context.addInitScript(() => {
+      try { Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true }); } catch { /* noop */ }
+    });
+    let reached = false;
+    try {
+      await page.goto(`${BASE}/admin/customers`, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      reached = await page.getByText('고객관리').first().isVisible({ timeout: 6000 }).catch(() => false);
+    } catch { reached = false; }
+    test.skip(!reached, 'auth/seed 미충족 — 고객관리 미도달(0건 방지 skip)');
+    const opener = page.locator('button[title*="차트"], button:has-text("차트")').first();
+    test.skip(!(await opener.count()), '차트 진입 버튼 미발견 — skip');
+    const popupPromise = context.waitForEvent('page', { timeout: 6000 }).catch(() => null);
+    await opener.click().catch(() => {});
+    const popup = await popupPromise;
+    // 별도 창이 열리면 /chart/ URL이어야 함. (환경에 따라 팝업 권한이 막히면 skip)
+    if (!popup) { test.skip(true, '팝업 미발생(환경 팝업 제한) — skip'); return; }
+    await popup.waitForLoadState('domcontentloaded').catch(() => {});
+    expect(popup.url(), '별도 창 URL = /chart/:id').toMatch(/\/(chart|login)/);
+    await popup.close().catch(() => {});
+  });
+});

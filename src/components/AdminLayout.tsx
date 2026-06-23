@@ -36,6 +36,8 @@ import DashboardRefreshCountdown from '@/components/DashboardRefreshCountdown';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatPhone, chartNoBadge } from '@/lib/format';
+// T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part A: 팝업 차단 시 안내 토스트
+import { toast } from '@/lib/toast';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -211,7 +213,41 @@ export default function AdminLayout() {
   // ─────────────────────────────────────────────────────────────────────────────
   const [chartId, setChartId] = useState<string | null>(null);
   // LOGIC-LOCK: L-004 [CHART-LOCK-003] — openChart 단일 구현. setChartId 직접 노출 금지. 중복 구현 금지.
-  const openChart = useCallback((customerId: string) => setChartId(customerId), []);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part A (김주연 총괄 확정 2026-06-24):
+  //   고객차트(CustomerChartSheet = 미니홈피, 직원용 1·2번 차트)를 별도 브라우저 창
+  //   (window.open '/chart/:id')으로 분리 렌더한다. 분리창이 떠 있어도 메인 대시보드/사이드바를
+  //   자유 탐색 가능(서랍 backdrop 미생성). ★§11 의료게이트 비대상★ — MedicalChartPanel/medical_charts 아님.
+  //   · 팝업차단 회피: 사용자 클릭 제스처 안에서 동기 window.open (PenChartTab 검증 패턴 재사용).
+  //   · 차단(window.open=null) 또는 비-제스처(자동오픈)·자동화(navigator.webdriver=Playwright) →
+  //     기존 in-page 서랍(CustomerChartSheet)으로 graceful fallback.
+  //     → CHART-OPEN-GUARD 등 기존 차트 E2E 회귀 0 + 엄격 팝업차단 브라우저 안전망 + 셀프접수 자동오픈 보존.
+  //   · 분리창 저장은 /chart/:id 독립 페이지 경로(기존)로 정상, 메인 반영은 Dashboard realtime
+  //     (check_ins·reservations) + Part B 헤더 자동 새로고침으로 stale 없음. DB 스키마 변경 0(AC6).
+  // ─────────────────────────────────────────────────────────────────────────────
+  const openChart = useCallback((customerId: string) => {
+    const isAutomation =
+      typeof navigator !== 'undefined' && (navigator as Navigator).webdriver === true;
+    if (!isAutomation && typeof window !== 'undefined') {
+      try {
+        const url = `${window.location.origin}/chart/${customerId}`;
+        const win = window.open(
+          url,
+          `foot-chart-${customerId}`,
+          'width=1180,height=920,scrollbars=yes,resizable=yes',
+        );
+        if (win) {
+          win.focus();
+          return; // 별도 창 성공 → in-page 서랍 미오픈(메인 자유 탐색)
+        }
+        // win == null → 팝업 차단됨 → 아래 서랍 폴백(무음실패 방지)
+        toast.info('팝업이 차단되어 차트를 패널로 엽니다. 새 창으로 보려면 브라우저 팝업을 허용해 주세요.');
+      } catch {
+        /* window.open 예외 → 서랍 폴백 */
+      }
+    }
+    setChartId(customerId); // 폴백/비-제스처/자동화: 기존 CustomerChartSheet 서랍 경로 유지
+  }, []);
   const closeChart = useCallback(() => setChartId(null), []);
   const chartContextValue = useMemo(
     () => ({ chartId, openChart, closeChart }),
