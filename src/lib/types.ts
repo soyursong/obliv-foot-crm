@@ -114,6 +114,7 @@ export interface Customer {
   visit_type: 'new' | 'returning';
   memo: string | null;
   customer_memo: string | null;             // 고객 메모 (성향·특이사항·주차 등) — T-20260504-foot-MEMO-RESTRUCTURE
+  customer_note?: string | null;            // 2번차트 1구역 고객메모 (직접수정·non-history) — T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD
   lead_source: LeadSource | string | null;  // 유입 경로
   tm_memo: string | null;                   // 상담 메모 (보험/상담내용/성향)
   referrer_id: string | null;               // 추천인 고객 ID (optional FK)
