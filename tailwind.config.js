@@ -34,26 +34,27 @@ export default {
           900: "#2E2823",
           950: "#252525", // Black
         },
-        // ── T-20260623-foot-GREEN-PASTEL-RETUNE (김주연 총괄, 2026-06-23) ──
-        // T-0622 sage(#C2CDB0)가 "별로" → 더 은은·세련된 파스텔로 재튜닝. 총괄 preview pick ③ = 따뜻한 파스텔 그린.
-        // 픽 앵커 #DCEDC8 = sage-100(배지/칩 bg = 픽 색 그대로). 동일 토큰 1곳 교체 → sage 적용 전 지점 일괄 전환.
-        // WCAG AA 검증(파스텔이라 글자 진하게): text=sage-700(#556E32) on white 5.73:1 / on sage-100 4.64:1 /
-        //   on sage-50 5.18:1 (AA 본문 ≥4.5 ✓). text=sage-800(#43562A) on sage-100 6.53:1.
-        //   ※ sage-700은 sage-200 위(3.92)에서만 AA 미달이나, 코드상 text-700은 bg-100 위에서만 사용 → 실사용 AA 0건 미달.
-        // ⚠ 적용 범위: 초진(new)·checked_in·returning 등 visit-type/status 녹색 칩에 한정.
-        //   일반 success 아이콘(체크/토글/focus ring emerald)·치료사 info 패널·before/after(시술후 emerald)는 비대상.
-        //   파랑(재진/일부 초진)·노랑(힐러)은 비종속 / status.ts 칸반 11단계 의미색은 carve-out(미접촉).
+        // ── T-20260623-foot-CHART2-MONOTONE-3MOCKUP Phase2 (김주연 총괄, 2026-06-23) ──
+        // 파스텔 그린(GREEN-PASTEL-RETUNE)이 "쓸데없는 컬러" → 총괄 directive "1·2번 차트 전부 통일감 있게, 담백하게".
+        // pick ② 쿨 뉴트럴 그레이로 통일. sage 토큰을 그린 램프 → 쿨 뉴트럴 그레이 램프로 교체(토큰명 유지·값만 그레이화).
+        // 동일 토큰 1곳 교체 → 1번차트(고객정보·예약관리 등 sage 적용 전 지점) 일괄 그레이 전환. 2번차트(CustomerChartPage)는
+        // teal-* → sage-*로 같은 토큰을 공유해 두 차트가 동일 톤이 됨(= 통일).
+        // ② 앵커: sage-100=#E4E6E8(배지/칩 bg·sectionBar) / sage-700=#51585D(accent·본문 텍스트) / sage-900=#2E3133(headerBg).
+        // WCAG AA(쿨 뉴트럴 그레이): text=sage-700(#51585D) on white 7.3:1 / on sage-100(#E4E6E8) 5.76:1 (본문 ≥4.5 ✓).
+        //   text=sage-600(#5C6166) on white 6.3:1 ✓ / white on sage-600 button 6.3:1·sage-700 7.3:1 ✓.
+        // ⚠ 불변 의미색(carve-out): 신분증 빨강·error / status.ts 칸반 11단계 의미색 / Badge variant 의미색(신환·kakao 등)
+        //   / before-after emerald·success emerald 는 본 통일 범위 밖(미접촉). 통일 = 장식성 컬러 제거이지 의미색 제거 아님.
         sage: {
-          50:  "#EFF6E4", // 연한 틴트 면(초진 카드 bg) — green-50 대응
-          100: "#DCEDC8", // 배지/칩 bg = 총괄 pick ③ 앵커 #DCEDC8 — green-100 대응
-          200: "#C8DDA9", // 보더 — green-200 대응
-          300: "#B4CD8A",
-          400: "#9CBA6B", // 좌측 강조 보더
-          500: "#83A451", // dot(진한 파스텔 그린) — green-500 대응
-          600: "#6B883F",
-          700: "#556E32", // 텍스트(가독 위해 진한 파스텔 그린, AA) — green-700 대응
-          800: "#43562A", // 강조 텍스트 — green-800 대응
-          900: "#333F1F",
+          50:  "#F4F5F6", // 연한 틴트 면(카드 bg) = ② labelBg
+          100: "#E4E6E8", // 배지/칩 bg·sectionBar = ② 앵커 #E4E6E8
+          200: "#D3D6D9", // 보더
+          300: "#BCC0C4",
+          400: "#9CA1A6", // 좌측 강조 보더/라이트 dot
+          500: "#767C81", // dot
+          600: "#5C6166", // = ② labelText (AA)
+          700: "#51585D", // 본문/활성 텍스트·accent = ② accent (AA)
+          800: "#4A5054", // 강조 텍스트 = ② badge text (AA)
+          900: "#2E3133", // 다크 면 = ② headerBg
         },
         border: "var(--border)",
         input: "var(--input)",
