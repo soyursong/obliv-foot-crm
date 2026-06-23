@@ -78,14 +78,15 @@ const KIND_ORDER: Record<ResvKind, number> = { new: 0, returning: 1, healer: 2, 
 //   색상 코딩 유지: 초진=세이지(sage) / 재진=파랑(blue) / 힐러(HL)=노랑(yellow).
 //   T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 emerald → sage (재진 파랑·힐러 노랑 유지 → 의미구분 보존)
 const KIND_CARD_STYLE: Record<ResvKind, string> = {
-  new: 'border-l-4 border-l-sage-400 border-sage-200/80 bg-sage-50',
+  // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 초진 카드는 ② 그레이 통일에서 제외 → 파스텔 그린(#DCEDC8) 유지(firstvisit 토큰).
+  new: 'border-l-4 border-l-firstvisit-400 border-firstvisit-200/80 bg-firstvisit-50',
   returning: 'border-l-4 border-l-blue-400 border-blue-200/80 bg-blue-50',
   healer: 'border-l-4 border-l-yellow-400 border-yellow-200/80 bg-yellow-50',
   other: 'border-l-4 border-l-amber-400 border-amber-200/80 bg-amber-50',
 };
 // item1/2: 헤더·슬롯 카운트 점 색상 (유형별)
 const KIND_DOT: Record<ResvKind, string> = {
-  new: 'bg-sage-500', // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 dot emerald → sage
+  new: 'bg-firstvisit-500', // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 초진 dot 파스텔 그린 유지(firstvisit)
   returning: 'bg-blue-500',
   healer: 'bg-yellow-400',
   other: 'bg-amber-500',
@@ -1602,7 +1603,7 @@ export default function Reservations() {
                           className="mt-1 flex flex-wrap items-center justify-center gap-1 text-[10px] font-medium leading-none"
                         >
                           <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
-                          <span className="inline-flex items-center rounded-full bg-sage-100 px-1.5 py-0.5 text-sage-700">초 {c.n}</span>
+                          <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">초 {c.n}</span>
                           <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">재 {c.r}</span>
                           {c.h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700">HL {c.h}</span>}
                         </div>
@@ -1726,7 +1727,7 @@ export default function Reservations() {
                                       data-testid={`cell-kind-count-${dateStr}-${time}`}
                                       className="flex flex-wrap items-center gap-0.5 text-[9px] font-medium leading-none"
                                     >
-                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-sage-100 px-1 py-0.5 text-sage-700">초 {n}</span>}
+                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1 py-0.5 text-firstvisit-700">초 {n}</span>}
                                       {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
                                       {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
                                     </div>

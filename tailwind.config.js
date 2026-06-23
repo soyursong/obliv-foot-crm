@@ -56,6 +56,23 @@ export default {
           800: "#4A5054", // 강조 텍스트 = ② badge text (AA)
           900: "#2E3133", // 다크 면 = ② headerBg
         },
+        // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: ② 쿨뉴트럴그레이 통일에서 제외되는
+        //   기능적 의미 강조색(파스텔 그린 #DCEDC8) 전용 램프. 총괄 directive("예약관리/신분증 확인/초진 딱지에는
+        //   파스텔 그린 적용") → sage(그레이)와 분리된 별도 토큰이라 통일에도 그린 유지.
+        //   값 = T-20260623-foot-GREEN-PASTEL-RETUNE 그린 램프(③ #DCEDC8 앵커, AA).
+        //   적용처: 예약관리 초진 카드/보더/dot·"초 N" 칩 / 신분증 확인완료 배지 dot. (그 외는 sage 그레이 유지)
+        firstvisit: {
+          50:  "#EFF6E4", // 초진 카드 bg
+          100: "#DCEDC8", // 배지/칩 bg = ③ 앵커 #DCEDC8
+          200: "#C8DDA9", // 보더
+          300: "#B4CD8A",
+          400: "#9CBA6B", // 좌측 강조 보더
+          500: "#83A451", // dot(진한 파스텔 그린)
+          600: "#6B883F",
+          700: "#556E32", // 텍스트(AA)
+          800: "#43562A",
+          900: "#333F1F",
+        },
         border: "var(--border)",
         input: "var(--input)",
         ring: "var(--ring)",
