@@ -156,6 +156,7 @@ type CanonicalCreateInput = {
   brief_note?: string | null;
   visit_route?: string | null;
   registrar_id?: string | null; // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약등록자(예약행 컬럼 기존)
+  registrar_name?: string | null; // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 표시 스냅샷(생성 시 영속)
   referral_name?: string | null;
   linked_package_id?: string | null;
   preferred_therapist_id?: string | null; // 재진 치료사(역동기화 대상)
@@ -253,6 +254,10 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     //   기존 컬럼(reservations.visit_route / registrar_id) — 신규 스키마 0. 미전달(다른 생성경로)이면 null 로 무해.
     visit_route: input.visit_route ?? null,
     registrar_id: input.registrar_id ?? null,
+    // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 이름 스냅샷도 생성 시 영속.
+    //   기존 컬럼(reservations.registrar_name) — 신규 스키마 0. 편집경로(popup saveRouteAndRegistrar)와 동일 컬럼.
+    //   ⚠ 감사용 created_by/updated_by 와 별개의 표시·선택 값 — 감사추적 불변(AC3).
+    registrar_name: input.registrar_name ?? null,
     // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 담당자=생성 계정. 캘린더 생성경로에서 created_by(로그인 auth uid) 명시 보장.
     //   created_by 는 stats.ts TM 귀속 SSOT이기도 함 → 생성 시 1회만 기록(이후 불변, 수정자는 updated_by 별도).
     created_by: input.changedBy,
@@ -1130,6 +1135,8 @@ export default function Reservations() {
       // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 신규 예약 생성 시 예약경로/예약등록자 영속(컬럼·마스터 기존, 신규 스키마 0).
       visit_route?: string | null;
       registrar_id?: string | null;
+      // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 이름 스냅샷(default/수기선택 반영).
+      registrar_name?: string | null;
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note) + 예약메모(booking_memo).
       brief_note?: string | null;
       booking_memo?: string | null;
@@ -1199,6 +1206,8 @@ export default function Reservations() {
         // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로/예약등록자 → 예약행 영속(컬럼 기존, 신규 스키마 0).
         visit_route: params.visit_route ?? null,
         registrar_id: params.registrar_id ?? null,
+        // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 이름 스냅샷 위임.
+        registrar_name: params.registrar_name ?? null,
         // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 + 예약메모 영속.
         brief_note: params.brief_note ?? null,
         booking_memo: params.booking_memo ?? null,

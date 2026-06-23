@@ -5,7 +5,7 @@
 // T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE: 초진 [체크인 전환] 구 정보입력 폼(주민번호+건보동의서) 제거
 //   → 초진도 재진처럼 폼 없이 바로 doCheckIn. 주민번호/동의서 수집은 펜차트로 일원화(정책: RRN-FIELD-REMOVE/CHECKIN-CONSENT-REMOVE).
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
@@ -116,6 +116,10 @@ type CreateReservationParams = {
   //   컬럼(reservations.visit_route / registrar_id)·마스터(reservation_registrars)는 기존(REGISTRAR-ROUTE-FIELDS deployed) — 신규 스키마 0.
   visit_route?: string | null;
   registrar_id?: string | null;
+  // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 표시 스냅샷(registrar_name).
+  //   편집경로(saveRouteAndRegistrar)는 이미 스냅샷을 쓰는데 생성경로는 registrar_id 만 써서 @태그/'내 예약'
+  //   필터(registrar_name 기준)에 신규 예약이 안 잡히던 갭 보강 — default 선택값이 실제로 반영되도록 함께 영속.
+  registrar_name?: string | null;
   // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note) + 예약메모(booking_memo).
   brief_note?: string | null;
   booking_memo?: string | null;
@@ -494,6 +498,30 @@ export function ReservationDetailPopup({
       });
     return () => { cancelled = true; };
   }, [newMode, clinicId]);
+
+  // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE (김주연 총괄):
+  //   "드롭 선택 박스 유지 / 접속한 계정 기준 기본값 / 수기 변경 허용".
+  //   예약등록자 드롭(registrar_id, reservation_registrars 마스터)의 default = 로그인 계정 표시명(authorName)과
+  //   이름이 일치하는 활성 예약등록자. 드롭은 그대로 유지 → 사용자가 다른 값으로 수기 변경 가능(AC1/AC2).
+  //   ⚠ registrar_id/registrar_name 은 '표시·선택용' 값 — 감사용 created_by/updated_by(booker)와 분리.
+  //     default·수기 override 는 registrar 스냅샷만 바꾸고 감사추적(누가 실제 생성)은 보존(AC3).
+  //   SCOPE: 신규 등록 폼(new-mode)에만 적용 — 편집(기존 예약)은 저장값을 그대로 로드(회귀 0, AC4).
+  //   1회 가드: 팝업 재오픈(newMode/reservation 전환)마다 1번만. 이후 사용자가 '미지정'으로 되돌려도 재주입 안 함.
+  const registrarDefaultAppliedRef = useRef(false);
+  useEffect(() => {
+    registrarDefaultAppliedRef.current = false;
+  }, [newMode, reservation?.id]);
+  useEffect(() => {
+    if (!newMode) return;                              // 신규 폼 전용(편집 미적용)
+    if (registrarDefaultAppliedRef.current) return;    // 이미 1회 적용됨
+    if (registrars.length === 0) return;               // 마스터 로드 대기
+    registrarDefaultAppliedRef.current = true;         // 가드 확정(이후 수기변경 보존)
+    const me = (authorName ?? '').replace(/\s+/g, '');
+    if (!me) return;                                   // 로그인 표시명 없음 → 미지정 유지(graceful)
+    if (registrarId !== '') return;                    // 이미 선택값 있으면 default 미적용
+    const match = registrars.find((r) => r.name.replace(/\s+/g, '') === me);
+    if (match) setRegistrarId(match.id);               // 일치 시 자동주입(없으면 미지정 유지)
+  }, [newMode, registrars, authorName, registrarId]);
 
   // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC4: 담당자(assigned_staff_id) 이름 resolve.
   //   clinic staff 목록(allStaff)에 있으면 그 이름, 없으면(타클리닉/삭제/비활성 누락) id 1건 직접 조회.
@@ -1180,6 +1208,9 @@ export function ReservationDetailPopup({
       // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 신규 고객 등록 시 입력한 예약경로/예약등록자 영속(컬럼·마스터 기존).
       visit_route: visitRoute || null,
       registrar_id: registrarId || null,
+      // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 선택된 예약등록자 이름 스냅샷 동봉.
+      //   편집경로(saveRouteAndRegistrar L1105)와 동일 시맨틱 — 마스터 리네임/삭제돼도 @표시·필터 안정.
+      registrar_name: registrars.find((r) => r.id === registrarId)?.name ?? null,
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 + 예약메모 영속.
       brief_note: briefNote.trim() || null,
       booking_memo: newBookingMemo.trim() || null,
