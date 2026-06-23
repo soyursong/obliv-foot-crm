@@ -157,8 +157,10 @@ interface PackagePayment {
 
 // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item2: 상세 탭 표시 라벨 매핑.
 // 내부 식별자('예약'/'상담'/'치료메모')는 불변, 화면 표시 문구만 변경.
+// T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD item2: 3구역 상세 '예약메모' 표시 라벨 → '고객메모'.
+//   reporter(김주연 총괄) ② 3구역 상세 = history 형태(MEMO-HISTORY). 표시문구만 변경, 내부 식별자('예약')·category 키(reservation) 불변.
 const RESV_DETAIL_TAB_LABELS: Record<'예약' | '상담' | '치료메모', string> = {
-  '예약': '예약메모',
+  '예약': '고객메모',
   '상담': '상담메모',
   '치료메모': '치료메모',
 };
@@ -2562,6 +2564,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingEmail/editingPassport 제거 — 항상 활성화
   const [emailText, setEmailText] = useState('');
   const [passportText, setPassportText] = useState('');
+  // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모(직접수정·non-history, customers.customer_note)
+  const [customerNoteText, setCustomerNoteText] = useState('');
   // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 로컬 상태 (optimistic update)
   const [referralNameText, setReferralNameText] = useState('');
   // T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 출력용 URL 목록
@@ -2829,6 +2833,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setAddressDetailText((custData as Customer).address_detail ?? '');
       setEmailText((custData as Customer).customer_email ?? '');
       setPassportText((custData as Customer).passport_number ?? '');
+      // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 현재값 로드
+      setCustomerNoteText((custData as Customer).customer_note ?? '');
       setReferralNameText((custData as Customer).referral_name ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
       // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
@@ -3250,6 +3256,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // 이메일 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail 제거)
   const saveEmail = async () => {
     await saveCustomerField({ customer_email: emailText.trim() || null });
+  };
+
+  // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 저장 (직접수정·non-history → 현재값 덮어쓰기)
+  const saveCustomerNote = async () => {
+    await saveCustomerField({ customer_note: customerNoteText.trim() || null });
+    toast.success('고객메모 저장됨');
   };
 
   // 여권번호 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingPassport 제거)
@@ -5496,6 +5508,31 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       authorName={profile?.name ?? ''}
                       compact
                     />
+                  </td>
+                </tr>
+
+                {/* ⑭ 고객메모 — T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD:
+                    예약메모 하단 직접수정 칸. 이력 누적 아님(현재값 단일 유지·수정). customers.customer_note(신규 컬럼, MEMO-HISTORY customer_memo와 무간섭). */}
+                <tr>
+                  <td className={cn(LC, 'align-top pt-2')}>고객메모</td>
+                  <td className={VC} colSpan={3}>
+                    <Textarea
+                      data-testid="chart-customer-note-input"
+                      value={customerNoteText}
+                      onChange={(e) => setCustomerNoteText(e.target.value)}
+                      placeholder="고객 성향·특이사항 등 (직접 입력·수정)"
+                      rows={2}
+                      className="text-[11px] resize-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveCustomerNote}
+                      disabled={savingField}
+                      data-testid="chart-customer-note-save-btn"
+                      className="mt-1 w-full rounded bg-[#666666] text-white py-1 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
+                    >
+                      {savingField ? '저장 중…' : '고객메모 저장'}
+                    </button>
                   </td>
                 </tr>
 
@@ -7956,11 +7993,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   phrases={custchartPhrasesByTab['예약']}
                   profileEmail={profile?.email}
                   testidPrefix="resv-memo"
-                  addLabel="새 예약메모 추가"
-                  addBtnLabel="예약메모 추가"
-                  historyLabel="예약메모 이력"
-                  emptyLabel="아직 예약메모가 없습니다"
-                  placeholder="예약·고객 관련 메모를 입력하세요…"
+                  addLabel="새 고객메모 추가"
+                  addBtnLabel="고객메모 추가"
+                  historyLabel="고객메모 이력"
+                  emptyLabel="아직 고객메모가 없습니다"
+                  placeholder="고객 관련 메모를 입력하세요…"
                 />
                 {/* 기타메모(customers.memo) — 단일필드 유지(히스토리화 대상 아님) */}
                 <div className="pt-1 border-t border-gray-100">
@@ -8213,7 +8250,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               <div className="text-[11px] font-semibold text-[#51585D] mb-1.5">메모 요약</div>
               <div className="space-y-1.5">
                 {[
-                  { label: '예약메모', content: reservationMemoHistory.latest?.content ?? null },
+                  { label: '고객메모', content: reservationMemoHistory.latest?.content ?? null },
                   { label: '상담메모', content: consultMemoHistory.latest?.content ?? null },
                   { label: '치료메모', content: latestTreatmentMemo?.content ?? null },
                 ].filter(m => m.content).map(m => (
