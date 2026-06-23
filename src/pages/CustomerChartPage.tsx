@@ -2743,6 +2743,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [savingMessage, setSavingMessage] = useState(false);
   // T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs)
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
+  // T-20260623-foot-CHART2-MSGTAB-COMPACT-FOLD: 발송 완료 이력(자동SMS+수동기록) 접기/펼치기 (기본 접힘, 클라이언트 UI state)
+  const [msgSentHistoryOpen, setMsgSentHistoryOpen] = useState(false);
 
   // T-20260522-foot-ALT-BADGE: ALT 토글 상태 (S2)
   const [altStatus, setAltStatus] = useState(false);
@@ -7352,10 +7354,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
               {/* History: 메시지 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-5) */}
               {chartTabGroup === 'history' && chartTab === 'messages' && (
-            <div className="space-y-2">{/* T-20260622 요청10-1: 발송이력 탭 컴팩트화(섹션 간격 축소) */}
-              {/* 메시지 수동 입력 */}
-              <div className="rounded-lg border bg-white p-2.5 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+            <div className="space-y-1.5">{/* T-20260623-foot-CHART2-MSGTAB-COMPACT-FOLD: 발송이력 탭 추가 컴팩트화(섹션 간격 축소) */}
+              {/* 메시지 수동 입력 — 신규 입력 폼, 상시 노출(접기 대상 아님) */}
+              <div className="rounded-lg border bg-white p-2 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1.5">
                   <span className="h-2 w-2 rounded-full bg-slate-500" />
                   문자 이력 등록
                 </div>
@@ -7408,9 +7410,24 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </div>
               </div>
 
+              {/* T-20260623-foot-CHART2-MSGTAB-COMPACT-FOLD: 발송 완료된 내용(자동SMS+수동기록) 접기/펼치기. 기본 접힘. */}
+              <button
+                type="button"
+                data-testid="msg-sent-history-toggle"
+                onClick={() => setMsgSentHistoryOpen((v) => !v)}
+                className="w-full flex items-center gap-1.5 rounded-lg border bg-slate-50 hover:bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors"
+              >
+                {msgSentHistoryOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <span>발송 완료된 내용</span>
+                <span className="ml-1 text-[10px] bg-slate-200 text-slate-700 rounded-full px-1.5 py-0.5 tabular-nums">
+                  {notificationLogs.length + messageLogs.length}건
+                </span>
+              </button>
+
+              {msgSentHistoryOpen && (<>
               {/* T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs) */}
-              <div className="rounded-lg border bg-white p-2.5 text-xs">
-                <div className="flex items-center justify-between mb-2">
+              <div className="rounded-lg border bg-white p-2 text-xs">
+                <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5 font-semibold text-sage-700">
                     <MessageSquare className="h-3.5 w-3.5" />
                     자동 SMS 발송 이력
@@ -7491,9 +7508,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 )}
               </div>
 
-              {/* 메시지 이력 목록 (수동 기록) — T-20260622 요청10-1 컴팩트화 */}
-              <div className="rounded-lg border bg-white p-2.5 text-xs">
-                <div className="flex items-center gap-1.5 font-semibold text-muted-foreground mb-2">
+              {/* 메시지 이력 목록 (수동 기록) — T-20260623-foot-CHART2-MSGTAB-COMPACT-FOLD 컴팩트화 */}
+              <div className="rounded-lg border bg-white p-2 text-xs">
+                <div className="flex items-center gap-1.5 font-semibold text-muted-foreground mb-1.5">
                   <MessageSquare className="h-3.5 w-3.5" />
                   수동 문자 기록
                 </div>
@@ -7534,6 +7551,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </div>
                 )}
               </div>
+              </>)}{/* /msgSentHistoryOpen */}
             </div>
           )}
 
