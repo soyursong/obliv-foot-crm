@@ -20,9 +20,12 @@ import { test, expect } from '@playwright/test';
 import {
   combineDiagnoses,
   substituteHepatitisType,
+  buildContraindTemplates,
+  normalizeContraindLabel,
   CONTRAIND_LAST_SENTENCE,
   CONTRAIND_PRIORITY,
   type ContraindTemplate,
+  type OpinionSourceSection,
 } from '../../src/lib/contraindicationCombine';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,4 +166,98 @@ test('AC-5c: 치환은 조합 前 — 치환 후 조합 결과에 B(C) 잔존 0'
   expect(result.includes('B(C)')).toBe(false);
   expect(result.includes('C형 보균 상태로')).toBe(true);
   expect(result.endsWith(LAST)).toBe(true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-6: 데이터소스 결선 — buildContraindTemplates (결정②/옵션B, MSG-6e2x)
+//   form_templates(opinion_doc).field_map.sections → 엔진 템플릿 맵.
+//   키 공간 브리지: option.key(영문) ↔ CONTRAIND_PRIORITY(무공백 한국어)는 라벨로 연결.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 실제 OPINION_SECTIONS(form_templates opinion_doc 폴백)의 금기증 24종 라벨 — 키 브리지 정합 검증용.
+// (OpinionDocTab.tsx OPINION_SECTIONS 금기증 라벨 1:1 미러. 라벨 변경 시 본 배열도 동기화.)
+const 금기증_24_LABELS: ReadonlyArray<string> = [
+  '고지혈증', '위장장애', '경구약 효과미비', '경구약복용후 위장장애', '혈압약', '심혈관약',
+  '간질환', '간염보균자', '신장질환', '통풍약', '갑상선약', '남성 탈모약', '여성 탈모약',
+  '항정신과약', '항암중', '항암 후 추적', '임신준비중', '임신중', '수유중', '파일럿',
+  '운전기사', '면역질환', '당뇨', '소아',
+];
+
+test('AC-6a: normalizeContraindLabel — 공백 제거(우선순위표 키 공간 정합)', () => {
+  expect(normalizeContraindLabel('경구약복용후 위장장애')).toBe('경구약복용후위장장애');
+  expect(normalizeContraindLabel('항암 후 추적')).toBe('항암후추적');
+  expect(normalizeContraindLabel('남성 탈모약')).toBe('남성탈모약');
+  expect(normalizeContraindLabel('고지혈증')).toBe('고지혈증');
+});
+
+test('AC-6b: 금기증 24종 라벨 전부 우선순위표(1~24)에 매핑(누락 0)', () => {
+  // 라벨 브리지가 깨지면(공백/오타) priority 가 fallback 으로 떨어져 조합 정렬이 망가진다.
+  const unmapped = 금기증_24_LABELS.filter(
+    (label) => CONTRAIND_PRIORITY[normalizeContraindLabel(label)] === undefined,
+  );
+  expect(unmapped).toEqual([]);
+  expect(금기증_24_LABELS.length).toBe(24);
+});
+
+test('AC-6c: buildContraindTemplates — sections → key(영문)→{priority,body} 맵', () => {
+  const sections: OpinionSourceSection[] = [
+    {
+      title: '진단서',
+      // 우선순위표 미등재(단일선택) → fallback priority(1000+), 정렬 영향 최소
+      options: [
+        { key: 'oral_o', label: '경구약 O', phrase: '경구약 복용이 가능한 상태로 확인됩니다.' },
+        { key: 'oral_x', label: '경구약 X', phrase: '경구약 복용이 어려운 상태로 확인됩니다.' },
+      ],
+    },
+    {
+      title: '금기증',
+      options: [
+        { key: 'hyperlipidemia', label: '고지혈증', phrase: BODY_고지혈증 },
+        { key: 'gi_disorder', label: '위장장애', phrase: BODY_위장장애 },
+        { key: 'bp_med', label: '혈압약', phrase: BODY_혈압약 },
+        // 공백 포함 라벨도 정규화로 우선순위 매핑되는지
+        { key: 'gi_after_oral', label: '경구약복용후 위장장애', phrase: '경구약 복용 후 위장장애.' },
+      ],
+    },
+  ];
+  const map = buildContraindTemplates(sections);
+
+  // map 은 option.key(영문)로 키잉 — UI selectedKeys 와 동일 공간
+  expect(map['hyperlipidemia'].priority).toBe(CONTRAIND_PRIORITY['고지혈증']); // 1
+  expect(map['gi_disorder'].priority).toBe(CONTRAIND_PRIORITY['위장장애']); // 2
+  expect(map['bp_med'].priority).toBe(CONTRAIND_PRIORITY['혈압약']); // 3
+  expect(map['gi_after_oral'].priority).toBe(CONTRAIND_PRIORITY['경구약복용후위장장애']); // 13
+  // body = phrase 원문 그대로
+  expect(map['hyperlipidemia'].body).toBe(BODY_고지혈증);
+  // 진단서 단일선택 옵션은 fallback priority(>=1000)
+  expect(map['oral_o'].priority).toBeGreaterThanOrEqual(1000);
+  expect(map['oral_x'].priority).toBeGreaterThanOrEqual(1000);
+});
+
+test('AC-6d: 결선 맵으로 combineDiagnoses 정상 동작 — rework 0 (계약 고정)', () => {
+  const sections: OpinionSourceSection[] = [
+    {
+      title: '금기증',
+      options: [
+        // 입력 순서를 우선순위와 뒤바꿔도 정렬되어야 함
+        { key: 'bp_med', label: '혈압약', phrase: BODY_혈압약 },
+        { key: 'hyperlipidemia', label: '고지혈증', phrase: BODY_고지혈증 },
+        { key: 'gi_disorder', label: '위장장애', phrase: BODY_위장장애 },
+      ],
+    },
+  ];
+  const map = buildContraindTemplates(sections);
+  // option.key(영문)로 선택 — Phase 1a 워크드 예시와 동일 결과(우선순위 1<2<3 정렬)
+  const result = combineDiagnoses(['bp_med', 'hyperlipidemia', 'gi_disorder'], map);
+  const expected = `${고지혈증_첫} ${위장장애_중간} ${혈압약_마지막}`;
+  expect(result).toBe(expected);
+  expect(result.split(LAST).length - 1).toBe(1); // 향후문장 1회만
+});
+
+test('AC-6e: empty-safe — null/빈 sections → 빈 맵', () => {
+  expect(buildContraindTemplates(null)).toEqual({});
+  expect(buildContraindTemplates(undefined)).toEqual({});
+  expect(buildContraindTemplates([])).toEqual({});
+  // 옵션 없는 섹션도 스킵
+  expect(buildContraindTemplates([{ title: '금기증', options: [] }])).toEqual({});
 });
