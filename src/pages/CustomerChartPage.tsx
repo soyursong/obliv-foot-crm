@@ -5080,10 +5080,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       return verified ? (
                         <span
                           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                          // T-20260623-foot-GREEN-PASTEL-RETUNE: sage 토큰 파스텔 그린 재튜닝과 동기화(sage-100/700/200 = #DCEDC8/#556E32/#C8DDA9).
+                          // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 신분증 확인완료 배지는 ② 그레이 통일에서 제외 → 파스텔 그린(#DCEDC8) 유지.
                           style={{ backgroundColor: '#DCEDC8', color: '#556E32', border: '1.5px solid #C8DDA9' }}
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-sage-500 inline-block" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-firstvisit-500 inline-block" />
                           신분증 확인 완료
                         </span>
                       ) : (
