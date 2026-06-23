@@ -9,8 +9,9 @@ spec_added: tests/e2e/T-20260623-foot-PKGTAB-BLOODTEST-NOSVCROW-DECISION.spec.ts
 summary: "피검사 단독 검사신청 차단 해소(A안: KOH 패턴 미러) — request_blood_test_for_customer RPC 신규 + svcs.length===0 차단 게이트 제거"
 migration: supabase/migrations/20260623160000_blood_request_for_customer.sql
 rollback_sql: supabase/migrations/20260623160000_blood_request_for_customer.rollback.sql
-da_consult: "GO (2026-06-23, MSG-l2hk): ADDITIVE CONFIRMED, 청구/통계 이중계상 SAFE(매출=payments-driven, price=0 placeholder 매출 미진입). 필수조건 (a)미러 INSERT price=0/original_price=0/is_package_session=false 고정 ✓(mig L85-86, KOH L99~105 동형) (b)롤백=KOH 패턴 미러 orphan placeholder 참조쿼리 blood_test_requested=true AND price=0 ✓ (c)prod 배포는 supervisor DDL-diff 후"
-remaining_gate: "supervisor DDL-diff (잔여 유일 게이트). FE+RPC paired 배포 필수 — FE 가 신규 RPC 호출하므로 RPC 미적용 prod 단독 FE 배포 금지. 대표 게이트 면제(ADDITIVE+승인패턴 미러, autonomy §3.1)."
+da_consult: "GO (2026-06-23, MSG-l2hk + 재확인 MSG-20260623-170457-nf9z DA-20260623-FOOT-BLOODREQ-MARKER): ADDITIVE CONFIRMED, 이중계상 NO(매출=payment-anchored: Closing payments+package_payments / SalesTreatmentTab price 비율안분 분자=0 / SalesPatientTab=payments row count, price=0·service_id=NULL 마커는 매출·패키지·결제건수 비귀속). 잔여리스크=표시계층 한정(시술 '건수'형 집계에 마커행 보일 수 있음=KOH 동일 旣노출, 별도 IMPROVE 후속). 필수조건 (a)미러 INSERT price=0/original_price=0/is_package_session=false 고정 ✓ (b)롤백=KOH 패턴 미러 ✓ (c)prod 배포는 supervisor DDL-diff 후"
+probe_status: "PASS (2026-06-23, TX-rollback, prod 무변경) — scripts/probe_20260623160000_blood_request_txrollback.mjs / evidence db-gate/..._probe.md. RPC 정의·SECDEF·authenticated EXEC + 시나리오A(보유 ON/OFF)/B(서비스없음 ON 신규INSERT price=0·is_package_session=false·service_id=NULL / OFF no-op)/멱등/권한게이트(42501) 16 assert 全 PASS. probe 후 prod RPC 여전히 부재 확인(누수 없음)."
+remaining_gate: "supervisor DDL-diff (잔여 유일 게이트). ⚠URGENT: FE(8fcde2dd) 旣 origin/main 배포 + prod RPC 부재 확인(2026-06-23 probe) → 현재 prod 피검사 토글 깨짐(RPC 미존재 호출 에러). paired 갭이 FE 측에서 이미 발생 — RPC prod 적용이 곧 복구. supervisor DDL-diff GO 즉시 dev-foot apply(scripts/apply_20260623160000_*.mjs) 필요. 대표 게이트 면제(ADDITIVE+승인패턴 미러, autonomy §3.1)."
 priority: P1
 created_at: 2026-06-23
 deployed_at: ""
