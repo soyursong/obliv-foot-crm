@@ -13,7 +13,7 @@
  *   기존 발신/상태머신/집계 로직은 변경하지 않고 표시만 추가(회귀 0).
  * 실시간: check_ins postgres_changes 구독 → refetch (3초 내 반영, AC-1).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -48,7 +48,7 @@ import { useOpinionRequestQueue } from '@/lib/opinionRequest';
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { todaySeoulISODate, chartNoDisplay, birthYearAgeDisplay } from '@/lib/format';
+import { todaySeoulISODate, chartNoDisplay, birthYearAgeDisplay, seoulHHMM } from '@/lib/format';
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 import {
   loadMute,
@@ -488,6 +488,30 @@ export default function DoctorCallDashboard() {
     [completedPatients, completedFilter],
   );
 
+  // T-20260622-foot-DOCDASH-DONE-HOURLY-GROUPING (김주연 총괄 요청 / 문지은 대표원장 컨펌): 진료 완료 섹션을
+  //   '진료 완료 처리 시각'의 정시(HH:00) 단위 그룹으로 묶어 표시. 10:30 완료건 → '10시' 그룹.
+  //   기준 시각 = completed_at ?? getCallTime(ci) (정렬키와 동일 — pink 원내잔류는 completed_at 미발생 → 콜시각 폴백).
+  //   ⚠ FE presentation only: 저장된 실제 완료/진료 시각은 불변. 행/상세에는 실제 시각 그대로(그룹 헤더만 추가).
+  //   filteredCompleted 는 완료시각 내림차순 정렬 → 그룹도 최신 정시 상단. indexByHour 로 비연속 동일정시도 한 그룹 흡수(무결성 AC-4).
+  const completedHourGroups = useMemo(() => {
+    const groups: { hour: number; label: string; items: typeof filteredCompleted }[] = [];
+    const indexByHour = new Map<number, number>();
+    for (const ci of filteredCompleted) {
+      const t = ci.completed_at ?? getCallTime(ci);
+      const hhStr = seoulHHMM(t).slice(0, 2); // Asia/Seoul 정시 (HH)
+      const hh = Number(hhStr);
+      const key = Number.isNaN(hh) ? -1 : hh;
+      let idx = indexByHour.get(key);
+      if (idx === undefined) {
+        idx = groups.length;
+        indexByHour.set(key, idx);
+        groups.push({ hour: key, label: key < 0 ? '시각 미상' : `${key}시`, items: [] });
+      }
+      groups[idx].items.push(ci);
+    }
+    return groups;
+  }, [filteredCompleted]);
+
   // 소리 + 브라우저 알림 (신규 호출 감지). 앱레벨 알림 OFF면 OS배너/토스트 생략(소리는 muted 별도).
   useDoctorCallNotifier(activeCalls, { muted, notifyEnabled });
 
@@ -755,22 +779,41 @@ export default function DoctorCallDashboard() {
                   <th className="px-1.5 py-1">임상경과</th>
                 </tr>
               </thead>
+              {/* T-20260622-foot-DOCDASH-DONE-HOURLY-GROUPING: 완료건을 완료 처리시각 정시(HH:00) 그룹 헤더로 묶어 표시.
+                  그룹 헤더행(colSpan 전폭) + 그룹내 CompletedRow 들. 행/상세 시각·로직은 무변경(presentation only). */}
               <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
-                {filteredCompleted.map((ci) => (
-                  <CompletedRow
-                    key={ci.id}
-                    checkIn={ci}
-                    doctorMode={doctorMode}
-                    role={profile?.role ?? ''}
-                    clinicId={clinicId ?? ''}
-                    currentUserEmail={profile?.email ?? null}
-                    clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
-                    onOpenChart={openTreatmentChart}
-                    onOpenDocs={openDocsHub}
-                    onRefresh={() => void refetch()}
-                    /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 저장 본문으로 미리보기 optimistic 0지연 반영 + 백그라운드 정합. */
-                    onClinicalSaved={(saved) => applyClinicalOptimistic(ci.customer_id, saved)}
-                  />
+                {completedHourGroups.map((group) => (
+                  <Fragment key={group.hour}>
+                    <tr
+                      className="bg-gray-50/80"
+                      data-testid="doctor-completed-hour-group"
+                      data-hour={group.hour}
+                    >
+                      <td
+                        colSpan={DOCDASH_COMPLETED_COLSPAN}
+                        className="px-3 py-1.5 text-left text-[13px] font-semibold text-gray-700"
+                      >
+                        {group.label}
+                        <span className="ml-1.5 font-normal text-gray-400">({group.items.length}명)</span>
+                      </td>
+                    </tr>
+                    {group.items.map((ci) => (
+                      <CompletedRow
+                        key={ci.id}
+                        checkIn={ci}
+                        doctorMode={doctorMode}
+                        role={profile?.role ?? ''}
+                        clinicId={clinicId ?? ''}
+                        currentUserEmail={profile?.email ?? null}
+                        clinicalPreview={ci.customer_id ? clinicalMap?.get(ci.customer_id) ?? null : null}
+                        onOpenChart={openTreatmentChart}
+                        onOpenDocs={openDocsHub}
+                        onRefresh={() => void refetch()}
+                        /* T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-POLISH AC-3: 저장 본문으로 미리보기 optimistic 0지연 반영 + 백그라운드 정합. */
+                        onClinicalSaved={(saved) => applyClinicalOptimistic(ci.customer_id, saved)}
+                      />
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
