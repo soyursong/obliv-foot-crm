@@ -68,6 +68,9 @@ export interface CreateOpinionRequestInput {
   issuedBy: string;              // staff.id (NOT NULL). 빈 값이면 차단.
   requestedByName: string;       // 표기용 스냅샷(실장 이름)
   templateId: string | null;     // opinion_doc template (provenance, nullable)
+  // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (B-1 LOCK): 실장이 2번차트 서류요청에서 고른 서류 날짜(YYYY-MM-DD).
+  //   기본값=당일. 원장 작성창에서 `[날짜]` 치환 초기값으로 전달.
+  requestDate: string;
 }
 
 export function useCreateOpinionRequest(clinicId: string | null) {
@@ -101,6 +104,7 @@ export function useCreateOpinionRequest(clinicId: string | null) {
         birth_date: input.birthDate ?? '',
         requested_by_name: input.requestedByName ?? '',
         requested_at: requestedAt,
+        request_date: input.requestDate ?? '',   // B-1: 서류 날짜(YYYY-MM-DD), 원장 `[날짜]` 치환 초기값.
       };
 
       const row: Record<string, unknown> = {
@@ -141,6 +145,8 @@ export interface OpinionRequestRow {
   requestedByName: string;
   requestedAt: string;
   createdAt: string;
+  /** B-1: 실장이 고른 서류 날짜(YYYY-MM-DD). 없으면 ''(원장 작성창에서 오늘 기본값). */
+  requestDate: string;
 }
 
 export function useOpinionRequestQueue(clinicId: string | null) {
@@ -176,6 +182,7 @@ export function useOpinionRequestQueue(clinicId: string | null) {
           requestedByName: String(fd['requested_by_name'] ?? ''),
           requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
           createdAt: String(r['created_at'] ?? ''),
+          requestDate: String(fd['request_date'] ?? ''),
         }));
       return rows;
     },
