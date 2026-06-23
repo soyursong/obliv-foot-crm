@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: 50dd87bf
+commit_sha: a10391bc
 created: 2026-06-10
 assignee: dev-foot
 reporter: 문지은(대표원장)
@@ -51,3 +51,12 @@ AC-0 STEP1 확인: 351dd72·497672b 모두 origin/main 포함(`git branch -r --c
 - `npm run build` OK. DB 변경 없음.
 
 commit: 0a370b2 (main → Vercel 자동)
+
+## QA FIX-REQUEST 대응 (MSG-20260623-173938, supervisor)
+- supervisor 보고 3건(S3/R2/R3 `!isVisitDone` 가드 정합)은 본 spec에 **이미 50dd87bf에서 `(?:!isVisitDone && )?` 관용 반영 + origin/main push 완료** → 현 HEAD에서 EXPAND-COURSE spec **14/14 PASS**. (supervisor는 50dd87bf 미동기 checkout에서 QA 추정.)
+- 회귀 재검에서 형제 spec 3건이 추가 실패 발견 → **이후 티켓의 정당 소스 진화를 옛 패턴으로 박제한 stale 가드**:
+  - 차트 진입: `useChart().openChart`(2번차트 서랍) → `openTreatmentChart`(진료차트 직접오픈). T-20260621-DOCDASH-PASTDATE-CHARTROUTE BUG-2, 문지은 대표원장 confirm.
+  - grid: 8트랙(DASHCOL-REALIGN) → 7트랙(DOCLIST-5FIX B2-3/B2-4), 문지은 대표원장 confirm.
+- 조치: 형제 stale 가드 2종(QUICKRX-CHARTBTN / RXCANCEL-DISCHARGE-GATE)을 현 SSOT 소스에 정합. **소스 무변경(spec-only) → 의료 confirm 게이트 비해당**.
+- 검증: EXPAND-COURSE + QUICKRX-CHARTBTN + RXCANCEL **36/36 PASS**, `npm run build` OK.
+- commit: a10391bc (main → Vercel 자동)
