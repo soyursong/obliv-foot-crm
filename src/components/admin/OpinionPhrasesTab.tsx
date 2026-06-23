@@ -310,32 +310,36 @@ function PhraseDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  initial: { sectionTitle: string; label: string; phrase: string } | null; // null = 추가
+  initial: { sectionTitle: string; label: string; phrase: string; revisionNote: string } | null; // null = 추가
   defaultSection: string; // 추가 모드 기본 서류종류
   sectionTitles: string[]; // 선택 가능한 서류종류(진단서/금기증 등 — section.title 동적 파생)
-  onSubmit: (sectionTitle: string, label: string, phrase: string) => void;
+  onSubmit: (sectionTitle: string, label: string, phrase: string, revisionNote: string) => void;
 }) {
   const [section, setSection] = useState('');
   const [label, setLabel] = useState('');
   const [phrase, setPhrase] = useState('');
+  // T-20260623 REVISION-NOTE-COLUMN: '수정기록' 입력(선택). 내용(phrase)과 분리 — 소비처 미노출.
+  const [revisionNote, setRevisionNote] = useState('');
   const [bound, setBound] = useState<string | null>(null);
 
   // 다이얼로그가 새 대상으로 열릴 때마다 입력 초기화.
   const sig = open
-    ? `${initial ? 'edit' : 'add'}|${initial?.sectionTitle ?? defaultSection}|${initial?.label ?? ''}|${initial?.phrase ?? ''}`
+    ? `${initial ? 'edit' : 'add'}|${initial?.sectionTitle ?? defaultSection}|${initial?.label ?? ''}|${initial?.phrase ?? ''}|${initial?.revisionNote ?? ''}`
     : null;
   if (open && sig !== bound) {
     setBound(sig);
     setSection(initial?.sectionTitle ?? defaultSection ?? sectionTitles[0] ?? '');
     setLabel(initial?.label ?? '');
     setPhrase(initial?.phrase ?? '');
+    setRevisionNote(initial?.revisionNote ?? '');
   }
 
   const handleSubmit = () => {
     if (!section) return toast.error('서류 종류를 선택해주세요.');
     if (!label.trim()) return toast.error('명칭을 입력해주세요.');
     if (!phrase.trim()) return toast.error('내용을 입력해주세요.');
-    onSubmit(section, label.trim(), phrase.trim());
+    // 수정기록은 선택 입력 — 미입력 허용(명칭/내용만 필수).
+    onSubmit(section, label.trim(), phrase.trim(), revisionNote.trim());
     onOpenChange(false);
   };
 
@@ -385,6 +389,18 @@ function PhraseDialog({
               placeholder="예) 경구약 복용이 가능한 상태로 확인됩니다."
               className="mt-1 min-h-[100px] text-sm"
               data-testid="opinion-phrase-phrase-input"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">
+              수정기록 <span className="text-muted-foreground font-normal">— 무엇을 언제 왜 고쳤는지 메모 (선택). 내용 문구에 같이 적지 마세요.</span>
+            </Label>
+            <Textarea
+              value={revisionNote}
+              onChange={(e) => setRevisionNote(e.target.value)}
+              placeholder="예) 2026-06-23 신규 등록 / 문구 표현 수정"
+              className="mt-1 min-h-[60px] text-sm"
+              data-testid="opinion-phrase-revision-note-input"
             />
           </div>
         </div>
@@ -639,7 +655,7 @@ export default function OpinionPhrasesTab() {
   const markDirty = () => setDirty(true);
 
   // ── 통합 추가/수정 (AC-2/AC-3) — submitOption + 섹션 선택(이동) 로직 재사용 ──
-  const submitPhrase = (targetTitle: string, label: string, phrase: string) => {
+  const submitPhrase = (targetTitle: string, label: string, phrase: string, revisionNote: string) => {
     setDraft((prev) => {
       const next = prev.map((s) => ({ ...s, options: [...s.options] }));
       const targetIdx = next.findIndex((s) => s.title.trim() === targetTitle.trim());
@@ -649,16 +665,16 @@ export default function OpinionPhrasesTab() {
         const cur = next[sectionIdx]?.options[optIdx];
         if (!cur) return prev;
         if (sectionIdx === targetIdx) {
-          // 같은 서류종류 — 제자리 수정.
-          next[sectionIdx].options[optIdx] = { ...cur, label, phrase };
+          // 같은 서류종류 — 제자리 수정. revisionNote(수정기록) 분리 저장.
+          next[sectionIdx].options[optIdx] = { ...cur, label, phrase, revisionNote };
         } else {
           // 서류종류 변경 — 기존 섹션에서 제거 후 대상 섹션으로 이동(key 보존).
           next[sectionIdx].options.splice(optIdx, 1);
-          next[targetIdx].options.push({ ...cur, label, phrase });
+          next[targetIdx].options.push({ ...cur, label, phrase, revisionNote });
         }
       } else {
         const key = genOptionKey(allKeys);
-        next[targetIdx].options.push({ key, label, phrase });
+        next[targetIdx].options.push({ key, label, phrase, revisionNote });
       }
       return next;
     });
@@ -882,6 +898,7 @@ export default function OpinionPhrasesTab() {
                 <th className="w-28 px-3 py-2 font-medium">서류 종류</th>
                 <th className="w-44 px-3 py-2 font-medium">명칭</th>
                 <th className="px-3 py-2 font-medium">내용</th>
+                <th className="w-48 px-3 py-2 font-medium">수정기록</th>
                 {canEdit && <th className="w-20 px-3 py-2 text-right font-medium">액션</th>}
               </tr>
             </thead>
@@ -909,6 +926,16 @@ export default function OpinionPhrasesTab() {
                         최신 업데이트: {fmtKst(phraseMeta[opt.key]?.last_updated_at)}
                         {phraseMeta[opt.key]?.updated_by ? ` · ${phraseMeta[opt.key]?.updated_by}` : ''}
                       </p>
+                    )}
+                  </td>
+                  {/* T-20260623 REVISION-NOTE-COLUMN: 수기 수정기록 — 내용(phrase)과 분리 표시 */}
+                  <td className="px-3 py-2 text-xs text-muted-foreground" data-testid="opinion-phrase-row-revision-note">
+                    {opt.revisionNote ? (
+                      <p className="line-clamp-3 whitespace-pre-wrap" title={opt.revisionNote}>
+                        {opt.revisionNote}
+                      </p>
+                    ) : (
+                      <span className="text-muted-foreground/40">—</span>
                     )}
                   </td>
                   {canEdit && (
@@ -958,6 +985,7 @@ export default function OpinionPhrasesTab() {
                 sectionTitle: draft[phraseDialog.sectionIdx]?.title ?? '',
                 label: draft[phraseDialog.sectionIdx]?.options[phraseDialog.optIdx]?.label ?? '',
                 phrase: draft[phraseDialog.sectionIdx]?.options[phraseDialog.optIdx]?.phrase ?? '',
+                revisionNote: draft[phraseDialog.sectionIdx]?.options[phraseDialog.optIdx]?.revisionNote ?? '',
               }
             : null
         }
