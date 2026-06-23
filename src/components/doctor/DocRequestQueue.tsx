@@ -5,6 +5,10 @@
 //
 // ★authoring 경계(AC-4, BLOCKING): 본 큐는 요청(draft) 표시 + 원장이 '작성하기'로 발행창을 여는 진입점일 뿐.
 //   발행 본문 작성·확정은 OpinionEditorDialog → publish_opinion_doc RPC(is_doctor_role 게이트)로만 — 큐는 발행하지 않는다.
+//
+// T-20260622-foot-MEDDOC-DASHBOARD-BADGE: embedded prop — 진료 알림판(DoctorCallDashboard) 상시뷰에 재사용 시
+//   상위 섹션이 자체 '소견서·진단서 처리대기 N건' 헤더/뱃지를 그리므로 내부 헤더 블록을 숨겨 중복 제거.
+//   default(false) = 서류작성 탭 기존 동선 그대로(회귀 0). 데이터 경로·테이블·필터 불변.
 
 import { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -28,7 +32,7 @@ import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { Button } from '@/components/ui/button';
 import { Loader2, FilePen, Sparkles, Inbox } from 'lucide-react';
 
-export default function DocRequestQueue() {
+export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
@@ -75,22 +79,24 @@ export default function DocRequestQueue() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="flex items-center gap-1.5 text-sm font-medium">
-            <FilePen className="h-4 w-4 text-teal-600" />
-            서류작성 요청
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            데스크(실장)에서 보낸 소견서·진단서 발행 요청입니다. [작성하기]를 누르면 선택 항목이 미리 채워진 발행 창이 열립니다.
-          </p>
+      {!embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-medium">
+              <FilePen className="h-4 w-4 text-teal-600" />
+              서류작성 요청
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              데스크(실장)에서 보낸 소견서·진단서 발행 요청입니다. [작성하기]를 누르면 선택 항목이 미리 채워진 발행 창이 열립니다.
+            </p>
+          </div>
+          {rows.length > 0 && (
+            <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700" data-testid="docreq-count">
+              대기 {rows.length}건
+            </span>
+          )}
         </div>
-        {rows.length > 0 && (
-          <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700" data-testid="docreq-count">
-            대기 {rows.length}건
-          </span>
-        )}
-      </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-10">
