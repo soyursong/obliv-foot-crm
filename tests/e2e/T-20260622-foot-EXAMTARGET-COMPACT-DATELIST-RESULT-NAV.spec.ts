@@ -77,7 +77,7 @@ test.describe('T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV', () => {
   });
 
   // ── AC-3 검사결과 생성(DISCOVERY 게이트) ────────────────────────────────────
-  test('AC-3: KOH 결과 = 별도 저장모델 재사용(신청 boolean 비재사용), 혈액검사 = 준비중 비활성', () => {
+  test('AC-3: KOH 결과 = 별도 저장모델 재사용(신청 boolean 비재사용), 혈액검사 = 결과지 업로드/보기 활성', () => {
     const b = sectionB();
     // KOH 결과 = 신청 boolean 이 아닌 별도 저장모델(form_submissions koh_result) read
     expect(b).toContain("queryKey: ['koh_published', clinicId]");
@@ -87,10 +87,13 @@ test.describe('T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV', () => {
     expect(b).toContain('data-testid="exam-koh-result-view"');
     expect(b).toContain('data-testid="exam-koh-result-new"');
     expect(b).toContain("navigate('/admin/doctor-tools')");
-    // 혈액검사 결과 = 저장모델 부재 → 준비중 비활성(신규 백엔드 0)
-    expect(b).toContain('data-testid="exam-blood-result-new"');
-    expect(b).toContain('disabled');
-    expect(b).toMatch(/준비\s*중/);
+    // 혈액검사 결과 = B안 파일보관 활성(BLOODTEST-RESULT-PUBLISH-BACKEND): 0건=업로드 / ≥1건=보기
+    //   기존 '준비중' 비활성 회귀가드(다시 disabled '준비중' 으로 되돌아가지 않음)
+    expect(b).toContain('data-testid="exam-blood-result-upload"');
+    expect(b).toContain('data-testid="exam-blood-result-view"');
+    expect(b).toContain('<BloodResultDialog');
+    expect(b).not.toContain('data-testid="exam-blood-result-new"');
+    expect(b).not.toContain('결과(준비중)');
   });
 
   test('AC-3 NO-DDL: 본 섹션 read-only — insert/update/publish RPC 직접 호출 0', () => {
@@ -135,7 +138,7 @@ test.describe('T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV', () => {
  *
  * [시나리오2] 검사결과
  *   1. 균검사 신청 행: 발행본=결과 보기(KohResultDialog), 미발행=결과 생성(균검사 보고서 이동)
- *   2. 피검사 신청 행: '결과(준비중)' 비활성 — 결과 저장모델 부재(총괄 confirm 후 후속)
+ *   2. 피검사 신청 행: '결과지 업로드'(미등록) / '결과지 보기 (N)'(등록됨) 활성 — B안 파일보관(BLOODTEST-RESULT-PUBLISH-BACKEND)
  *
  * [시나리오3] 이름 인터랙션
  *   1. 이름 좌클릭 → 2번차트 열림
