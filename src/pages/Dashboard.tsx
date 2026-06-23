@@ -79,6 +79,7 @@ import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSu
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
+import { subscribeRefresh } from '@/lib/dashboardRefreshBus';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
@@ -4419,6 +4420,22 @@ export default function Dashboard() {
       supabase.removeChannel(channel);
     };
   }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchRooms]);
+
+  // T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part B: 상단 종 옆 카운트다운(또는 수동 클릭)이
+  //   요청하는 데이터 새로고침을 구독. ★전체 페이지 reload가 아니라 데이터 fetch 재실행만(폼 state 보존=무손실 AC5).
+  //   미저장 입력 중에는 카운트다운이 일시정지하므로 여기까지 호출이 오지 않음(수동 클릭만 예외 — 사용자 명시 동작).
+  useEffect(() => {
+    if (!clinic) return;
+    const unsub = subscribeRefresh(() => {
+      fetchCheckIns();
+      fetchSelfCheckIns();
+      fetchStageStarts();
+      fetchAssignments();
+      fetchTimelineReservations();
+      fetchRooms();
+    });
+    return unsub;
+  }, [clinic, fetchCheckIns, fetchSelfCheckIns, fetchStageStarts, fetchAssignments, fetchTimelineReservations, fetchRooms]);
 
   // T-20260522-foot-LASER-TIMER AC-5: timer_records Realtime 구독 + 초기 로드
   useEffect(() => {
