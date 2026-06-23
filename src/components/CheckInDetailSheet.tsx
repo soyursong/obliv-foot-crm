@@ -1656,11 +1656,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <ExternalLink className="h-4 w-4" />
                 고객차트
               </Button>
+              {/* T-20260623-PASTEL-RETUNE: 1번차트 잔존 녹색(진료차트 버튼 emerald) → sage 파스텔. 고객차트=teal 유지로 두 버튼 구분 보존 */}
               {onOpenMedicalChart && (checkIn.customer_id || resolvedCustomerId) && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 gap-2 border-emerald-400 text-emerald-700 hover:bg-emerald-50 text-sm h-11"
+                  className="flex-1 gap-2 border-sage-400 text-sage-700 hover:bg-sage-50 text-sm h-11"
                   onClick={() => {
                     const cid = checkIn.customer_id || resolvedCustomerId;
                     if (cid) onOpenMedicalChart(cid);

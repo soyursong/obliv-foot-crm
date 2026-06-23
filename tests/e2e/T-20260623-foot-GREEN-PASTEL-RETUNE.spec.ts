@@ -8,8 +8,8 @@ import { join } from 'node:path';
  * T-0622 sage(#C2CDB0)가 "별로" → 더 은은·세련된 파스텔로 재튜닝. dev-foot preview 3종 → 총괄 pick ③.
  *  - 픽 앵커 #DCEDC8 = sage-100 (배지/칩 bg = 픽 색 그대로). 동일 토큰 1곳 교체로 sage 적용 전 지점 일괄 전환.
  *  - WCAG AA(파스텔이라 글자 진하게): text=sage-700(#556E32) on white 5.73:1 / on sage-100 4.64:1 / on sage-50 5.18:1.
- *  - 추가 스코프(총괄): 1번차트(CheckInDetailSheet) 잔존 녹색(재진 emerald) → sage (2번차트 재진=sage 정합).
- *  - carve-out 불변: 빨강(신분증 필요)·status.ts 칸반 의미색·before/after(시술후 emerald)·진료차트 버튼 미접촉.
+ *  - 추가 스코프(총괄 "1번차트 녹색 전수 체크"): 1번차트(CheckInDetailSheet) 잔존 녹색(재진 emerald + 진료차트 버튼 emerald) → sage. 고객차트=teal 유지로 두 버튼 구분 보존.
+ *  - carve-out 불변: 빨강(신분증 필요)·status.ts 칸반 의미색·before/after(시술후 emerald, 의미구분)·고객차트 버튼(teal 브랜드)·수납패널(teal 브랜드) 미접촉.
  *
  * 본 spec 은 auth 불요(정적 소스 가드 + 컴파일 CSS 가드). 단일 토큰(tailwind 'sage') 재튜닝 검증.
  */
@@ -70,6 +70,15 @@ test.describe('GREEN-PASTEL-RETUNE — 추가 스코프: 1번차트(CheckInDetai
 
   test('before/after(시술후 emerald)는 미접촉 — 2번차트와 정합(무차별 교체 금지)', () => {
     expect(checkin).toMatch(/after:\s*'bg-emerald-100 text-emerald-700'/);
+  });
+
+  test('진료차트 버튼 잔존 녹색 emerald → sage (총괄 1번차트 녹색 전수 체크)', () => {
+    // 진료차트 버튼이 sage 파스텔로 전환
+    expect(checkin).toMatch(/border-sage-400 text-sage-700 hover:bg-sage-50/);
+    // 구 emerald 버튼 스타일 제거
+    expect(checkin).not.toMatch(/border-emerald-400 text-emerald-700 hover:bg-emerald-50/);
+    // 고객차트 버튼은 teal 브랜드 유지(두 버튼 구분 보존)
+    expect(checkin).toMatch(/border-teal-400 text-teal-700 hover:bg-teal-50/);
   });
 });
 
