@@ -14,6 +14,7 @@ import KohRequestToggle from '@/components/KohRequestToggle';
 import BloodTestRequestToggle from '@/components/BloodTestRequestToggle';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
+import PatientResultFiles from '@/components/PatientResultFiles';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
 import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
@@ -7157,12 +7158,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </span>
                   {/* T-20260622-foot-CHART2-UICLEAN-4FIX 요청7: 검사결과 탭 상단 차트연동 안내문구 제거 */}
                 </div>
-                <CustomerStorageImageSection
+                {/* T-20260623-foot-CHART2-KOH-BLOODRESULT-STYLE-UPLOAD: 사진 업로드(photos 버킷, 이미지 전용) →
+                    피검사(혈액검사) 결과지와 동일한 폼(PatientResultFiles, documents 버킷 + patient_file_records,
+                    kind='koh_result')으로 통일. PDF·JPG·PNG 다중 업로드 + 목록/보기/다운로드/삭제. */}
+                <PatientResultFiles
                   customerId={customer.id}
-                  prefix="koh-results"
-                  label="KOH균검사 결과 업로드"
-                  accent="green"
-                  accept="image/*"
+                  kind="koh_result"
+                  prefix="koh_result"
+                  noun="KOH균검사 결과지"
+                  accent="emerald"
+                  testidPrefix="koh-result"
                 />
               </div>
               {/* AC-4: 진료대시보드 균검사지에서 발행된 검사결과 보고서 자동 표시(읽기전용·비가역) */}
