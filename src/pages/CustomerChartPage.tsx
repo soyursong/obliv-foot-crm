@@ -5077,8 +5077,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       return verified ? (
                         <span
                           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                          // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: green-100/700/200/500 → 세이지(sage-100/700/200/500).
-                          style={{ backgroundColor: '#E7EDD9', color: '#52603C', border: '1.5px solid #D3DEBE' }}
+                          // T-20260623-foot-GREEN-PASTEL-RETUNE: sage 토큰 파스텔 그린 재튜닝과 동기화(sage-100/700/200 = #DCEDC8/#556E32/#C8DDA9).
+                          style={{ backgroundColor: '#DCEDC8', color: '#556E32', border: '1.5px solid #C8DDA9' }}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-sage-500 inline-block" />
                           신분증 확인 완료
