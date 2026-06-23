@@ -214,11 +214,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const hasCashPayment = !isSplit ? method === 'cash' : splitCash > 0;
   // 현재 결제 총액
   const totalPayment = isSplit ? splitCard + splitCash : amount;
-  // AC-5(A): package_payments CHECK ❌ membership 제외 — UI 레벨 필터
-  // 패키지 모드에서는 membership 버튼 숨김 (card/cash/transfer 3종만 노출)
-  const visibleMethodOptions = paymentMode === 'package'
-    ? METHOD_OPTIONS.filter((m) => m.value !== 'membership')
-    : METHOD_OPTIONS;
+  // T-20260623-foot-PAYMINI-DESK-SETTLE ④a: 결제수단에서 [패키지](membership) 버튼 제거 — 단건·패키지 모드 모두.
+  //   현장 김주연 총괄 지시(2026-06-23, 스샷). 결제수단은 카드/현금/이체 3종만 노출.
+  //   ⚠ 상단 [패키지 결제] 모드 토글(paymentMode)은 유지 → 패키지 결제 기능 자체는 보존(비파괴).
+  //   audit(policy_superseded): 이 [패키지] 결제수단 버튼은 5/22 T-20260522-foot-PAY-DROPDOWN-LONGRE(대표 김승현)
+  //     에서 추가된 항목 → button-only 제거(기능 전체 제거 아님). 기존 AC-5(A) 패키지모드 membership 숨김을 전 모드로 확장.
+  const visibleMethodOptions = METHOD_OPTIONS.filter((m) => m.value !== 'membership');
 
   // T-20260523-foot-PKG-TMPL-LINK: 템플릿 선택 시 금액 자동 세팅 (total_price 기준)
   const handleSelectTemplate = (id: string) => {
