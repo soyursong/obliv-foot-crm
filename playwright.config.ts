@@ -157,6 +157,9 @@ export default defineConfig({
         // T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT: 균검사지 진료대시보드 명단 7컬럼(AC-1/AC-8) +
         //   채취조갑 컴팩트 'R1' 2글자(AC-2/§B) + 생년(만나이)(AC-6) — 표시변환 순수 로직 모사(신규 스키마 0, auth 불요)
         '**/T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT.spec.ts',
+        // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (Phase 1a 엔진): 금기증 복수선택 조합 +
+        //   간염 B(C) 치환 순수 함수. MD §3-3 워크드 예시 1:1 + 0/1/2/3개 경계 (auth/CSV 불요).
+        '**/T-20260623-foot-DOCGEN-CONTRAIND-COMBINE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
