@@ -82,3 +82,26 @@ export function aggregateByTimeSlot(rows: SlotAggInput[]): Array<{ time: string;
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([time, counts]) => ({ time, counts }));
 }
+
+/**
+ * 일자(또는 임의 범위) 예약 목록을 시간대 무관 유형 합계로 집계.
+ * - 산식 = resvKind 단일 소스 재사용(이중 산식 금지). aggregateByTimeSlot 과 동일 분류·취소제외 규칙.
+ * - n=초진(new) / r=재진(returning, 비힐러) / h=힐러(HL) / o=기타(선체험 등).
+ * - 표기 컨벤션(T-20260623-foot-RESVMGMT-DAILY-RESV-EXPORT, T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 공용):
+ *     초진 = n · 재진 = r + h · 재진 세부 HL = h(힐러) · PD = r(비힐러 재진).
+ *   이 함수가 두 surface(예약관리 내려받기 · 통합시간표 헤더 카운트)의 단일 산식이다.
+ * @param rows 한 일자(또는 임의 범위)의 예약 행 목록. status 'cancelled' 는 제외.
+ */
+export function summarizeKinds(rows: Array<ResvKindInput & { status?: string | null }>): SlotKindCount {
+  const acc: SlotKindCount = { n: 0, r: 0, h: 0, o: 0, total: 0 };
+  for (const row of rows) {
+    if (row.status === 'cancelled') continue;
+    const kind = resvKind(row);
+    if (kind === 'new') acc.n += 1;
+    else if (kind === 'returning') acc.r += 1;
+    else if (kind === 'healer') acc.h += 1;
+    else acc.o += 1;
+    acc.total += 1;
+  }
+  return acc;
+}
