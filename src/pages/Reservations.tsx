@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Loader2, Plus, TrendingUp, User, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, Plus, TrendingUp, User, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,7 +33,7 @@ import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER: resvKind 단일 소스화(중복 구현 금지).
 //   기존 로컬 resvKind 정의 → 공유 lib(resvSlotAgg)로 이관. 예약상세팝업 시간대 패널과 동일 분류규칙 공유.
-import { resvKind, type ResvKind } from '@/lib/resvSlotAgg';
+import { resvKind, summarizeKinds, type ResvKind } from '@/lib/resvSlotAgg';
 // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 그룹핑 REVERT(예약관리 캘린더는 30분 슬롯 복원).
 //   buildHourBuckets import 제거 — gridSlots(30분) 직접 사용으로 환원.
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -740,6 +740,55 @@ export default function Reservations() {
       setLoading(false);
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
+
+  // T-20260623-foot-RESVMGMT-DAILY-RESV-EXPORT: '전체예약' 옆 내려받기 — 당일(KST) 예약 현황 요약.
+  //   집계 산식 = @/lib/resvSlotAgg.summarizeKinds 단일 소스 재사용(resvKind). TIMETABLE-VISITCOUNT 와 동일 SSOT(이중 산식 금지).
+  //   표기: 초진 = n · 재진 = r+h(HL=힐러 h · PD=비힐러 재진 r). 전체 기준(담당자/필터 무관, '전체예약' 의미).
+  //   당일 = 실제 오늘(KST). 현재 뷰(주간/일간/선택일)와 무관하게 오늘자만 별도 조회 → 뷰 상태 의존성 제거.
+  const handleDownloadDaySummary = useCallback(async () => {
+    if (!clinic) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('clinic_id', clinic.id)
+      .eq('reservation_date', today);
+    if (error) {
+      toast.error('당일 예약 현황을 불러오지 못했습니다.');
+      return;
+    }
+    const list = await stripSimulationRows((data ?? []) as Reservation[]);
+    const s = summarizeKinds(list as unknown as Array<{ visit_type: string; is_healer_intent?: boolean | null; healer_flag?: boolean | null; status?: string | null }>);
+    const cho = s.n;            // 초진
+    const hl = s.h;             // 재진 세부 — HL(힐러)
+    const pd = s.r;             // 재진 세부 — PD(비힐러 재진)
+    const jae = hl + pd;        // 재진 = HL + PD
+    const etc = s.o;            // 기타(예약없이 방문/체험 등)
+
+    // CSV (UTF-8 BOM — 한글 Excel 인코딩 보존, opinionPhraseCsv 패턴 재사용).
+    const lines: string[] = [
+      `당일 예약 현황,${today}`,
+      '구분,건수',
+      `초진,${cho}`,
+      `재진,${jae}`,
+      `  HL(힐러),${hl}`,
+      `  PD(재진),${pd}`,
+    ];
+    if (etc > 0) lines.push(`기타(체험 등),${etc}`);
+    lines.push(`합계(초진+재진),${cho + jae}`);
+    const csv = lines.join('\r\n');
+    const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `예약현황_${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast.success(`당일 예약: 초진 ${cho} · 재진 ${jae}(HL ${hl}, PD ${pd}) 내려받기 완료`);
+  }, [clinic]);
 
   // 마운트/주간전환 자동로드. StrictMode 이중 마운트 + 동일 파라미터 재렌더 시
   // fetchWeek 중복 실행을 key 기준으로 차단 (AC-4: get_treatment_cycle_counts 단일 호출).
@@ -1529,6 +1578,20 @@ export default function Reservations() {
                 ))}
             </select>
           )}
+          {/* T-20260623-foot-RESVMGMT-DAILY-RESV-EXPORT: '전체예약' 옆 내려받기 — 당일(KST) 예약 현황 요약(초진 N / 재진 N(HL N, PD N)).
+              산식 = summarizeKinds 단일 소스(TIMETABLE-VISITCOUNT 와 동일 SSOT). 전체 기준(필터 무관). */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="day-summary-download"
+            onClick={handleDownloadDaySummary}
+            title="당일 예약 현황 내려받기 (초진/재진·HL/PD)"
+            className="h-9 gap-1.5 border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+          >
+            <Download className="h-3.5 w-3.5" />
+            내려받기
+          </Button>
         </div>
         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: 우측 컨트롤 순서를 '새 예약 → 경과분석 → 일간/주간'으로 재배치. */}
         <div className="flex items-center gap-2">
