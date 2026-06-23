@@ -463,7 +463,13 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId, e
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!sending) onOpenChange(v); }}>
-      <DialogContent className="max-w-md">
+      {/* T-20260623-foot-DASH-CTXMENU-SCHEDSEND-OVERFLOW:
+          다이얼로그 본문(수신박스+440px textarea+이미지+발송방식)이 뷰포트보다 길어
+          중앙 정렬(-translate-y-1/2) 시 상·하단이 화면 밖으로 짤림.
+          특히 [예약 발송] 선택 시 '발송 일시' picker 블록이 세로 전개되며 하단 푸터(발송 버튼)가
+          화면 아래로 사라짐(갤탭 세로 공간 제한). max-h-[90vh]+overflow-y-auto 로 뷰포트 내부 보장
+          → 어느 위치에서 열어도 전체 항목(발송 버튼 포함) 스크롤로 도달 가능(AC2). 순수 CSS, 동작 불변. */}
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5 text-teal-600" />
