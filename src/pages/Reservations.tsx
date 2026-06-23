@@ -44,7 +44,7 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { useChart } from '@/lib/chartContext';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
-import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
+import { visitRouteOptionsFor } from '@/lib/types';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 // T-20260516-foot-RESV-DETAIL-POPUP: 4분할 예약 상세 팝업
 import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
@@ -151,6 +151,9 @@ type CanonicalCreateInput = {
   service_id?: string | null;
   memo?: string | null;
   booking_memo?: string | null;
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(초진 주증상 — 발톱무좀/내성발톱 선택 또는 직접입력).
+  //   reservations.brief_note (W2 신규 컬럼). booking_memo(예약메모)와 별개 칸. CRM-local 임상 메타.
+  brief_note?: string | null;
   visit_route?: string | null;
   registrar_id?: string | null; // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약등록자(예약행 컬럼 기존)
   referral_name?: string | null;
@@ -241,6 +244,8 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     service_id: input.service_id || null,
     memo: input.memo?.trim() || null,
     booking_memo: input.booking_memo?.trim() || null,
+    // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 영속(전용 컬럼, memo 오버로드 금지).
+    brief_note: input.brief_note?.trim() || null,
     // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 캘린더 직접예약 시점에 저장.
     is_healer_intent: input.is_healer_intent ?? false,
     referral_source: (input.visit_type === 'new' && input.visit_route) ? input.visit_route : null,
@@ -381,6 +386,10 @@ export default function Reservations() {
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
   const [treatmentCycleMap, setTreatmentCycleMap] = useState<Map<string, number>>(new Map());
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): 고객별 활성 패키지 진행률(사용/총) — 재진 카드 "패키지 N/N".
+  //   used = package_sessions status='used' count, total = packages.total_sessions. 다중 활성 시 최신(created_at desc) 1건.
+  //   read-only 집계(스키마 무변경 → data-architect CONSULT 면제).
+  const [pkgProgressMap, setPkgProgressMap] = useState<Map<string, { used: number; total: number }>>(new Map());
   // T-20260611-foot-HEALER-DEDUCT-LINK: 고객별 '다음 예약이 힐러' read-only 표시.
   //   값 = 가장 이른 예정(미래) 힐러 예약 datetime 키(`${date} ${time}`). 차감 트랜잭션 무접촉.
   const [nextHealerByCustomer, setNextHealerByCustomer] = useState<Record<string, string>>({});
@@ -702,6 +711,40 @@ export default function Reservations() {
       }
       setTreatmentCycleMap(cycleM);
 
+      // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): 재진 카드 "패키지 N/N" — 고객별 활성 패키지 진행률 배치 집계.
+      //   1) 활성 패키지(고객당 최신 1건) total_sessions, 2) 그 패키지의 used 회차 count → customer_id 맵.
+      //   read-only(스키마 무변경). 다중 활성 패키지 시 최신(created_at desc) 1건만 카드에 표기(혼동 방지).
+      const pkgM = new Map<string, { used: number; total: number }>();
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('id, customer_id, total_sessions, created_at')
+        .in('customer_id', customerIds)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+      const activePkgByCustomer = new Map<string, { id: string; total: number }>();
+      for (const p of (pkgData ?? []) as { id: string; customer_id: string; total_sessions: number | null }[]) {
+        // order desc → 고객별 첫 등장(=최신)만 채택
+        if (!activePkgByCustomer.has(p.customer_id)) {
+          activePkgByCustomer.set(p.customer_id, { id: p.id, total: p.total_sessions ?? 0 });
+        }
+      }
+      const activePkgIds = Array.from(activePkgByCustomer.values()).map((v) => v.id);
+      const usedByPkg = new Map<string, number>();
+      if (activePkgIds.length > 0) {
+        const { data: usedData } = await supabase
+          .from('package_sessions')
+          .select('package_id')
+          .in('package_id', activePkgIds)
+          .eq('status', 'used');
+        for (const s of (usedData ?? []) as { package_id: string }[]) {
+          usedByPkg.set(s.package_id, (usedByPkg.get(s.package_id) ?? 0) + 1);
+        }
+      }
+      for (const [custId, { id, total }] of activePkgByCustomer) {
+        pkgM.set(custId, { used: usedByPkg.get(id) ?? 0, total });
+      }
+      setPkgProgressMap(pkgM);
+
       // T-20260611-foot-HEALER-DEDUCT-LINK: 고객별 '다음 예약이 힐러' read-only 집계.
       //   미래(>= today) 힐러(healer_flag) 예약 중 가장 이른 1건 datetime을 보관 → 카드에서
       //   현재 슬롯보다 미래일 때만 '다음 힐러' indicator 노출. DB read-only, 차감 무접촉.
@@ -730,6 +773,7 @@ export default function Reservations() {
       setResvChartMap(new Map());
       // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: resvBookerMap 은 customerIds 블록 밖(list 전체)에서 항상 설정 → 여기서 리셋 불요.
       setTreatmentCycleMap(new Map());
+      setPkgProgressMap(new Map());
       setNextHealerByCustomer({});
     }
     } catch (e) {
@@ -1086,6 +1130,9 @@ export default function Reservations() {
       // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 신규 예약 생성 시 예약경로/예약등록자 영속(컬럼·마스터 기존, 신규 스키마 0).
       visit_route?: string | null;
       registrar_id?: string | null;
+      // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note) + 예약메모(booking_memo).
+      brief_note?: string | null;
+      booking_memo?: string | null;
     }): Promise<{ ok: boolean; reason?: string; message?: string }> => {
       if (!clinic) return { ok: false, reason: 'error', message: '클리닉 정보를 불러오지 못했습니다.' };
       // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 팝업이 customerId=null(시스템에 없는 신규 고객)을 넘기면
@@ -1152,6 +1199,9 @@ export default function Reservations() {
         // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로/예약등록자 → 예약행 영속(컬럼 기존, 신규 스키마 0).
         visit_route: params.visit_route ?? null,
         registrar_id: params.registrar_id ?? null,
+        // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 + 예약메모 영속.
+        brief_note: params.brief_note ?? null,
+        booking_memo: params.booking_memo ?? null,
         maxPerSlot: slotMaxFor(params.time),
         changedBy,
         authorName: profile?.name ?? '',
@@ -1952,13 +2002,13 @@ export default function Reservations() {
                                           reservationTime={r.reservation_time}
                                           // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [4]: 예약 hover 새 레이아웃.
                                           //   등록자=resvBookerMap(예약 잡은 계정명, 예 'admin') / 예약일시 / 방문경로 / 풀번호 / 간략메모(W2)/ 예약메모.
-                                          //   brief_note(간략메모)는 WAVE2 컬럼 → 미존재(undefined)이므로 해당 줄 자동 생략.
+                                          // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): brief_note(간략메모) 컬럼 배선 — 값 있으면 hover에 표기, 없으면 줄 자동 생략.
                                           reservationInfo={{
                                             registrarLabel: resvBookerMap.get(r.id) ?? null,
                                             reservationDate: r.reservation_date,
                                             visitRoute: r.visit_route ?? r.referral_source ?? null,
                                             bookingMemo: r.booking_memo ?? null,
-                                            briefNote: null,
+                                            briefNote: r.brief_note ?? null,
                                           }}
                                           compact
                                           // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: 2단(2열) 캘린더 카드 = 고밀도.
@@ -2053,7 +2103,41 @@ export default function Reservations() {
                                           </Badge>
                                         );
                                       })()}
+                                      {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): 초진 카드 예약경로 배지(우상단).
+                                          r.visit_route(없으면 referral_source) 있을 때만 표기. ml-auto로 행 우측 정렬. */}
+                                      {resvKind(r) === 'new' && r.status !== 'cancelled' && (r.visit_route ?? r.referral_source) && (
+                                        <span
+                                          className="ml-auto shrink-0 rounded border border-gray-300 bg-gray-100 px-1 text-[9px] font-medium leading-tight text-gray-600"
+                                          data-testid={`resv-route-badge-${r.id}`}
+                                          title={`예약경로 ${r.visit_route ?? r.referral_source}`}
+                                        >
+                                          {r.visit_route ?? r.referral_source}
+                                        </span>
+                                      )}
                                     </div>
+                                    {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): 초진=간략메모 / 재진=패키지 N/N 인라인 라인(값 있을 때만, 없으면 줄 생략). */}
+                                    {r.status !== 'cancelled' && resvKind(r) === 'new' && r.brief_note?.trim() && (
+                                      <div
+                                        className="truncate text-[10px] leading-tight text-gray-700"
+                                        data-testid={`resv-brief-${r.id}`}
+                                        title={r.brief_note.trim()}
+                                      >
+                                        {r.brief_note.trim()}
+                                      </div>
+                                    )}
+                                    {r.status !== 'cancelled' && resvKind(r) !== 'new' && r.customer_id && (() => {
+                                      const pg = pkgProgressMap.get(r.customer_id);
+                                      if (!pg || !pg.total) return null;
+                                      return (
+                                        <div
+                                          className="truncate text-[10px] font-medium leading-tight text-blue-700"
+                                          data-testid={`resv-pkg-progress-${r.id}`}
+                                          title={`패키지 ${pg.used}/${pg.total} 회차`}
+                                        >
+                                          패키지 {pg.used}/{pg.total}
+                                        </div>
+                                      );
+                                    })()}
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
                                     <div className="flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: text-[10px]→text-[9px] / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-2: 가독성 복원 text-[9px]→text-[10px] (방문유형·상태·전화뒷4자리 전부 유지) */}
                                       {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
@@ -3350,8 +3434,9 @@ function ReservationEditor({
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">— 선택 안 함 —</option>
-                {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 방문경로 옵션 SSOT(VISIT_ROUTE_OPTIONS) 재사용 */}
-                {VISIT_ROUTE_OPTIONS.map((opt) => (
+                {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 방문경로 옵션 SSOT 재사용.
+                    W2-DB(item8): 신규 5종(TM/네이버/인콜/워크인/지인소개) + legacy 인바운드 현재값 보존. */}
+                {visitRouteOptionsFor(state.visit_route).map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
