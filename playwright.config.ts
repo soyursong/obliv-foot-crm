@@ -168,6 +168,9 @@ export default defineConfig({
         //   (computeAutoCheckedKeys) + '간염보균자' 옵션 추가. 정본 로직 1:1 모사 + 소스 라벨 동기화 가드
         //   (HealthQMobilePage 상수 ↔ HEALTHQ_AUTOCHECK_MAP, TabletChecklistPage 무관 가드). auth 불요.
         '**/T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ.spec.ts',
+        // T-20260623-foot-DOCCHART-PASTHX-TAB: 의사 진료차트 '과거력' 탭 — 발건강 질문지 자동 (-/+) prefill
+        //   (pastHistory 순수 함수) + 실장 더블체크·확정(append-only) + 마이그/RLS/결선 정적 미러 가드. auth 불요.
+        '**/T-20260623-foot-DOCCHART-PASTHX-TAB.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

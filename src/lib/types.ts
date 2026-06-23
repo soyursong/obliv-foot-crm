@@ -535,6 +535,18 @@ export interface UserProfile {
   exempt_from_restrictions?: boolean | null;
 }
 
+/** T-20260623-foot-DOCCHART-PASTHX-TAB: 의사 진료차트 '과거력' 확정 이력 (append-only).
+ *  발건강 질문지(read-only)에서 자동 prefill → 실장 더블체크·확정값만 저장. 최신 confirmed_at 1건 read. */
+export interface PatientPastHistory {
+  id: string;
+  clinic_id: string;
+  customer_id: string;
+  lines: Record<string, '+' | '-'>;  // 라인별 (-/+) 상태 (pastHistory.PastHxLines)
+  comment: string | null;            // 실장 자유 코멘트
+  confirmed_by: string | null;
+  confirmed_at: string;
+}
+
 
 /** T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력 (append-only)
  *  T-20260520-foot-RESV-MEMO-WALKIN: reservation_id nullable + customer_id 추가
