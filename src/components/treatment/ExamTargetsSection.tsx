@@ -10,8 +10,9 @@
 //   AC-3 검사신청→검사결과(신규생성) — ⚠ DISCOVERY 게이트(총괄 confirm 전까지 신규 백엔드 0).
 //     · KOH    : 결과 저장모델 존재(form_submissions form_key='koh_result') → 발행본 '결과 보기'(KohResultDialog),
 //                미발행 '결과 생성'(균검사 보고서 surface 재사용). 신청 boolean 과 분리된 별도 저장. ✓
-//     · 혈액검사: 결과 저장모델 부재 → 신청 boolean 재사용 금지(요구사항). 별도 저장모델 신설 필요 →
-//                data-architect CONSULT + responder 경유 1안 UX 총괄 confirm 후 후속. 현재 '결과(준비중)' 비활성.
+//     · 혈액검사: 결과 저장모델 부재 → 신청 boolean 재사용 금지(요구사항). 별도 저장모델 신설 →
+//                T-20260622-foot-BLOODTEST-RESULT-PUBLISH-BACKEND(B안 파일보관): patient_file_records 메타 +
+//                documents 버킷 결과지 파일. '결과지 업로드'(0건) / '결과지 보기 (N)'(≥1건). DA GO 후 활성화.
 //   AC-4 우클릭 = 기존 CRM 컨텍스트 메뉴 그대로(부모 nameInteraction.onContextMenu 위임, 신규 정의 0).
 //   AC-5 좌클릭 = 2번차트 오픈(부모 nameInteraction.onLeftClick → useChart, 재사용).
 //
@@ -20,7 +21,7 @@
 // 방어성: koh_requested/blood_test_requested 는 ADDITIVE(마이그 미적용 prod 42703) → 폴백 빈 목록.
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -30,7 +31,8 @@ import { chartNoBadge, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import KohResultDialog from '@/components/KohResultDialog';
-import { Loader2, FlaskConical, Droplet, ClipboardList, FilePlus2, FileText, CalendarDays } from 'lucide-react';
+import BloodResultDialog from '@/components/BloodResultDialog';
+import { Loader2, FlaskConical, Droplet, ClipboardList, FilePlus2, FileText, CalendarDays, Upload } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
 // AC-2: 일자별 리스트 윈도(검사신청일 기준 직전 N일). 검사결과는 수일 뒤 회신되므로 단일일 → 2주 윈도.
@@ -193,6 +195,36 @@ function usePublishedKohMap(clinicId: string | null | undefined) {
   });
 }
 
+// 혈액검사 결과지 인덱스(customer_id → 등록 건수). patient_file_records(kind='blood_result') read-only.
+//   '결과지 업로드'(0건) vs '결과지 보기'(≥1건) 라벨 분기 + 발행본 read-after-write(invalidate 공유 키).
+//   방어성: 테이블 미적용 prod(42P01/42703) → 빈 Map 폴백(섹션 무파손).
+function useBloodResultCounts(clinicId: string | null | undefined) {
+  return useQuery<Map<string, number>>({
+    queryKey: ['blood_result_counts', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      const map = new Map<string, number>();
+      if (!clinicId) return map;
+      const { data, error } = await supabase
+        .from('patient_file_records')
+        .select('customer_id')
+        .eq('clinic_id', clinicId)
+        .eq('kind', 'blood_result');
+      if (error) {
+        if (/patient_file_records|relation|42P01|42703/.test(error.message ?? '')) return map;
+        throw error;
+      }
+      for (const r of (data ?? []) as Array<{ customer_id: string }>) {
+        const cid = String(r.customer_id ?? '');
+        if (cid) map.set(cid, (map.get(cid) ?? 0) + 1);
+      }
+      return map;
+    },
+    refetchInterval: 60_000,
+    staleTime: 15_000,
+  });
+}
+
 // 검사 박스 — 신청(●, 활성색) / 미신청(○, 회색). AC-1: py 축소(밀도↑), 폰트 11px 유지(가독).
 function ExamBadge({
   label,
@@ -239,9 +271,13 @@ interface Props {
 export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data: groups = [], isLoading, isError, error } = useExamTargets(clinic?.id, date);
   const { data: publishedKoh } = usePublishedKohMap(clinic?.id);
+  const { data: bloodResultCounts } = useBloodResultCounts(clinic?.id);
   const [viewFieldData, setViewFieldData] = useState<Record<string, unknown> | null>(null);
+  // 혈액검사 결과지 업로드/보기 다이얼로그 타겟(환자). null=닫힘.
+  const [bloodTarget, setBloodTarget] = useState<{ id: string; name: string } | null>(null);
 
   const totalCount = groups.reduce((sum, g) => sum + g.rows.length, 0);
   const today = seoulISODate(new Date());
@@ -257,6 +293,8 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const renderRow = (r: ExamTargetRow, idx: number) => {
     const kohFd = r.kohServiceId ? publishedKoh?.get(r.kohServiceId) : undefined;
     const kohPublished = !!kohFd;
+    const bloodResultCount = bloodResultCounts?.get(r.customerId) ?? 0;
+    const hasBloodResult = bloodResultCount > 0;
     return (
       <tr
         key={`${r.customerId}-${r.requestDate}`}
@@ -315,21 +353,32 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
                   </Button>
                 ))}
             </div>
-            {/* 피검사 — 결과 생성 백엔드 부재(AC-3 DISCOVERY): '준비중' 비활성 */}
+            {/* 피검사 — 결과지 업로드(B안 파일보관). 등록 0건=업로드 / ≥1건=보기. T-...-BLOODTEST-RESULT-PUBLISH-BACKEND */}
             <div className="flex items-center gap-1.5" data-testid="exam-blood-group">
               <ExamBadge label="피검사" active={r.bloodRequested} tone="rose" testid="exam-blood-badge" />
-              {r.bloodRequested && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 gap-1 px-1.5 text-[11px]"
-                  data-testid="exam-blood-result-new"
-                  disabled
-                  title="혈액검사 결과 생성 동선 준비 중(개발 협의)"
-                >
-                  <FilePlus2 className="h-3 w-3" /> 결과(준비중)
-                </Button>
-              )}
+              {r.bloodRequested &&
+                (hasBloodResult ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 gap-1 px-1.5 text-[11px]"
+                    data-testid="exam-blood-result-view"
+                    onClick={() => setBloodTarget({ id: r.customerId, name: r.customerName })}
+                    title="등록된 혈액검사 결과지 보기"
+                  >
+                    <FileText className="h-3 w-3" /> 결과지 보기 ({bloodResultCount})
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="h-6 gap-1 px-1.5 text-[11px] bg-rose-600 text-white hover:bg-rose-700"
+                    data-testid="exam-blood-result-upload"
+                    onClick={() => setBloodTarget({ id: r.customerId, name: r.customerName })}
+                    title="혈액검사 결과지 업로드(PDF·JPG·PNG)"
+                  >
+                    <Upload className="h-3 w-3" /> 결과지 업로드
+                  </Button>
+                ))}
             </div>
           </div>
         </td>
@@ -424,6 +473,22 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
         onOpenChange={(v) => { if (!v) setViewFieldData(null); }}
         fieldData={viewFieldData}
       />
+
+      {/* 혈액검사 결과지 업로드/보기 — B안 파일보관(patient_file_records). */}
+      {bloodTarget && (
+        <BloodResultDialog
+          open={bloodTarget !== null}
+          onOpenChange={(v) => {
+            if (!v) {
+              setBloodTarget(null);
+              // 업로드/삭제 반영 — 라벨(업로드↔보기) 갱신을 위해 카운트 재조회.
+              qc.invalidateQueries({ queryKey: ['blood_result_counts', clinic?.id] });
+            }
+          }}
+          customerId={bloodTarget.id}
+          customerName={bloodTarget.name}
+        />
+      )}
     </div>
   );
 }
