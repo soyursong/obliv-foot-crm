@@ -10,6 +10,9 @@
 import { useMemo, useState } from 'react';
 import { todaySeoulISODate } from '@/lib/format';
 import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
+// T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (P1-1): 진단서 단일배타 / 금기증 복수 selection rule
+//   — 원장 작성창(OpinionDocTab)과 동일 엔진 재사용(일관성).
+import { buildContraindKeySet, classifySelection } from '@/lib/opinionDocCompose';
 import {
   OPINION_DOC_TYPES,
   type OpinionDocType,
@@ -56,11 +59,36 @@ export default function OpinionRequestBox({
     [queue, customerId],
   );
 
-  const toggle = (key: string) => {
+  // ── P1-1 selection rule ─────────────────────────────────────────────────────
+  // 금기증 그룹 key 집합(복수선택 대상). 그 외(진단서 표준)는 단일배타.
+  const contraindKeySet = useMemo(() => buildContraindKeySet(OPINION_SECTIONS), []);
+  // 선택 그룹 분리(진단서 단일 / 금기증 복수) — 버튼 배타 disable 판정.
+  const { diagnosisKeys: selDiagnosis, contraindKeys: selContraind } = useMemo(
+    () => classifySelection([...selected], contraindKeySet),
+    [selected, contraindKeySet],
+  );
+  const hasDiagnosis = selDiagnosis.length > 0;
+  const hasContraind = selContraind.length > 0;
+
+  // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (P1-1): 진단서(표준)=단일배타 / 금기증=복수선택.
+  //   {진단서 1개 단독} XOR {금기증 N개} — 두 그룹 동시선택 불가(원장 작성창 OpinionDocTab 과 동일 rule).
+  //   - 금기증 클릭 → 토글(복수).
+  //   - 진단서 클릭 → 이미 선택이면 해제, 아니면 그 1개만(다른 선택 전부 해제 = 단일배타).
+  const handleOptionClick = (key: string) => {
+    const isContraind = contraindKeySet.has(key);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (isContraind) {
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+      } else {
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.clear();
+          next.add(key);
+        }
+      }
       return next;
     });
   };
@@ -159,7 +187,7 @@ export default function OpinionRequestBox({
         />
       </div>
 
-      {/* AC-7: 해당항목 옵션 그리드(진단서/금기증) — 다중 토글 */}
+      {/* AC-7: 해당항목 옵션 그리드(진단서/금기증) — P1-1: 진단서 단일배타 XOR 금기증 복수선택 */}
       <div className="mb-2 max-h-[34vh] space-y-2 overflow-y-auto rounded-md border bg-muted/10 p-2" data-testid="opinion-req-options">
         {OPINION_SECTIONS.map((section) => (
           <div key={section.title}>
@@ -167,15 +195,29 @@ export default function OpinionRequestBox({
             <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">
               {section.options.map((opt) => {
                 const active = selected.has(opt.key);
+                const isContraindOpt = contraindKeySet.has(opt.key);
+                // P1-1 단일배타: 진단서 선택 시 그 1개 외 전부 비활성 / 금기증 선택 시 진단서 비활성.
+                const disabled = hasDiagnosis
+                  ? !active
+                  : hasContraind
+                    ? !isContraindOpt
+                    : false;
                 return (
                   <button
                     key={opt.key}
                     type="button"
-                    onClick={() => toggle(opt.key)}
+                    onClick={() => handleOptionClick(opt.key)}
+                    disabled={disabled}
                     aria-pressed={active}
-                    title={opt.label}
+                    title={
+                      disabled
+                        ? hasDiagnosis
+                          ? '진단서는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
+                          : '금기증을 선택 중입니다. 진단서는 함께 선택할 수 없습니다.'
+                        : opt.label
+                    }
                     data-testid={`opinion-req-opt-${opt.key}`}
-                    className={`truncate rounded border px-1.5 py-1.5 text-[10px] font-medium transition ${
+                    className={`truncate rounded border px-1.5 py-1.5 text-[10px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
                       active
                         ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
                         : 'border-input bg-background text-foreground hover:bg-accent'
