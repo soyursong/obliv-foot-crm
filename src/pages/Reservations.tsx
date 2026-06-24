@@ -1858,7 +1858,7 @@ export default function Reservations() {
                 {/* 시간 격자: 각 시간 = 가로 한 줄에 배열된 컬럼. 컬럼 상단=시간 헤더(가로 일렬),
                     그 아래로 예약을 클릭 없이 상시 세로 진열(TIMEGRID-VERTICAL).
                     세로축 그루핑(치료사/공간) 없음(C5) — 세로는 그 시간의 예약 누적뿐. */}
-                <div data-testid="resv-day-xaxis" className="flex h-full flex-1 gap-2 overflow-x-auto pb-2">
+                <div data-testid="resv-day-xaxis" className="flex h-full flex-1 gap-1.5 overflow-x-auto pb-2">
                   {daySlots.length === 0 ? (
                     <div className="text-sm text-muted-foreground">영업 시간 슬롯이 없습니다.</div>
                   ) : (
@@ -1878,7 +1878,9 @@ export default function Reservations() {
                           onDragLeave={() => setDropTarget(null)}
                           onDrop={(e) => handleDrop(e, dateStr, time)}
                           className={cn(
-                            'flex w-[200px] min-w-[200px] flex-col rounded-lg border bg-background',
+                            // T-20260624-foot-TIMEGRID-COMPACT-DENSITY: field-soak 정제 — 시간 컬럼 너비 200px→132px(컴팩트·촘촘히).
+                            //   고객 카드는 w-full(컬럼 추종) + 기존 일간 카드 토큰(px-2 py-1 text-[12px]) 그대로 → 박스 사이즈 SSOT 유지(임의 신규 사이즈 발명 없음).
+                            'flex w-[132px] min-w-[132px] flex-col rounded-lg border bg-background',
                             'border-border',
                             full && 'border-red-200',
                             isNow && 'ring-1 ring-amber-400',
@@ -1918,7 +1920,7 @@ export default function Reservations() {
                             )}
                           </div>
                           {/* 세로 진열 영역 — 그 시간의 예약을 클릭 없이 세로로 누적. */}
-                          <div data-testid={`resv-day-col-cards-${time}`} className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-1.5">
+                          <div data-testid={`resv-day-col-cards-${time}`} className="flex flex-1 flex-col gap-1 overflow-y-auto p-1">
                             {list.length === 0 ? (
                               <div className="py-2 text-center text-[10px] text-muted-foreground/40">·</div>
                             ) : (
