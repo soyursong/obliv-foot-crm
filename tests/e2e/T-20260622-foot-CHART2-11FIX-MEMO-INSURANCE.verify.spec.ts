@@ -2,7 +2,7 @@
  * T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE — [QA 검증 전용] 2번차트 상세 메모 라벨/요약 블록
  *
  * 검증 대상:
- *   item2 — 상세 탭 표시 라벨: '예약'→'예약메모', '상담'→'상담메모', '치료메모' 유지.
+ *   item2 — 상세 탭 표시 라벨: '예약'→'고객메모'(CUSTMEMO-RENAME 반영), '상담'→'상담메모', '치료메모' 유지.
  *           (내부 식별자/category 키 불변, 표시 문구만 변경)
  *   item3 — 상담메모 고정블록을 [수납 통계] 상단의 '메모 요약'으로 이동.
  *           예약/상담/치료메모 각 최신 1건만 라벨과 함께 표시(스크롤 없음).
@@ -28,7 +28,7 @@ const TEST_PASSWORD =
   process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? 'TestPass2026!';
 
 test.describe('CHART2-11FIX · 2번차트 상세 메모 라벨/요약 (QA 검증 경로)', () => {
-  test('item2 라벨(예약메모/상담메모/치료메모) + item3 메모 요약 블록 노출', async ({ page }) => {
+  test('item2 라벨(고객메모/상담메모/치료메모) + item3 메모 요약 블록 노출', async ({ page }) => {
     test.skip(
       !SUPABASE_URL || !SUPABASE_ANON_KEY,
       'VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY 가 .env 에 없음 — QA 세션 발급 불가',
@@ -96,7 +96,7 @@ test.describe('CHART2-11FIX · 2번차트 상세 메모 라벨/요약 (QA 검증
     const consultTab = page.getByTestId('resvdetail-tab-상담');
     const treatTab = page.getByTestId('resvdetail-tab-치료메모');
     await expect(resvTab).toBeVisible({ timeout: 20_000 });
-    await expect(resvTab).toHaveText('예약메모');       // '예약' 아님
+    await expect(resvTab).toHaveText('고객메모');       // '예약' 아님 (CUSTMEMO-RENAME: 예약메모→고객메모)
     await expect(consultTab).toHaveText('상담메모');     // '상담' 아님
     await expect(treatTab).toHaveText('치료메모');       // 유지
 
