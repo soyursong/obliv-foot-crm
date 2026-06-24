@@ -762,15 +762,12 @@ export default function KohReportTab() {
     const doctorName = doctorNameForRow(r, doctorMap);
     const fieldData = buildKohFieldData(r, doctorName, effectiveBirth(r));
     try {
-      const res = await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
-      toast.success(`${pubNoun} 완료 — 의뢰번호 ${res?.request_no ?? ''}`);
-      // HTMLPORT: 결과지 미리보기 다이얼로그(출력/복사/저장 PNG). 자동채번 의뢰번호·검체번호 병합.
-      //   의뢰기관·담당의·면허는 템플릿 고정값(대표원장 양식) → 여기서 주입 불필요.
-      setPreviewData({
-        ...fieldData,
-        request_no: res?.request_no ?? '',
-        specimen_no: res?.specimen_no ?? fieldData.specimen_no ?? '',
-      });
+      await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
+      // KOHREPORT-PUBLISH-TOAST: 발행 성공 직후 자동 미리보기 팝업(setPreviewData) 제거 → 토스트 피드백으로 교체.
+      //   reporter(문지은 대표원장) 요구 — 발급 클릭마다 뜨던 확인/미리보기 다이얼로그가 동선 방해.
+      //   미리보기는 발행완료 행의 '💾 발행완료' 버튼(보기, line ~1152)으로 사용자가 의도적으로 열도록 보존(절대 제거 금지).
+      //   문구 = {환자명} {차트번호} 발행완료. 자동 소멸 toast.success(sonner 재사용).
+      toast.success([r.customer_name, r.chart_number].filter(Boolean).join(' ') + ' 발행완료');
     } catch (e) {
       toast.error(`발행 실패: ${(e as Error).message}`);
     }
