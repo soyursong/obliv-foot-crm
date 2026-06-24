@@ -249,8 +249,24 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
     //   rx-temp-save-btn(handleSaveRx → prescription_items 영속)으로 고정해 결정론화.
     const saveBtn = page.getByTestId('rx-temp-save-btn');
     await expect(saveBtn).toBeEnabled();
+
+    // ⚠ 저장 완료 대기는 PATCH 응답 커밋으로 결정화한다(QA-FIX 2026-06-25, RC: 네비게이션-abort).
+    //   기존 `toBeEnabled()` 재단언은 비결정적이었다: 버튼이 `disabled={save.isPending}` 인데
+    //   click 직후 isPending=true 리렌더가 일어나기 전 폴링이 "enabled" 를 즉시 관찰 → 단언이 ~200ms 만에
+    //   통과 → 직후 page.goto(재진입)가 아직 in-flight 인 check_ins PATCH 를 abort → prescription_items
+    //   미커밋 → 재진입 0행(trace 상 PATCH status=-1 로 확인). DB write 자체는 정상(admin RLS ALL).
+    //   → click 직전 PATCH 응답 대기(waitForResponse)를 걸어 "서버 커밋 완료" 를 본 뒤에만 재진입한다.
+    //     update() 는 .select() 없이 204 를 반환하므로 status<300(ok) 으로 판정.
+    const savePatch = page.waitForResponse(
+      (r) =>
+        r.url().includes('/rest/v1/check_ins') &&
+        r.request().method() === 'PATCH' &&
+        r.status() < 300,
+      { timeout: 15_000 },
+    );
     await saveBtn.click();
-    await expect(saveBtn).toBeEnabled({ timeout: 15_000 }); // 저장 완료(isPending 해제) 대기
+    await savePatch; // 서버 커밋 확정(navigation-abort 방지)
+    await expect(saveBtn).toBeEnabled({ timeout: 15_000 }); // isPending 해제(낙관적 마무리)
 
     // 재진입 → DB 영속 확인 (2행 복원)
     //   ⚠ 재진입 후 처방행은 패널 마운트 시 check_in.prescription_items 를 비동기 fetch(L165)해 채운다.
