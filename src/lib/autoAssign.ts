@@ -114,6 +114,57 @@ export async function fetchTodayWorkingStaffIds(
   return ids;
 }
 
+/**
+ * 오늘(KST) '임시 off'(자동배정 임시제외) staff id 집합.
+ * T-20260624-foot-ASSIGN-STAFF-TEMP-OFF: 출근(workingIds)은 유지하되 자동배정 후보풀에서만 제외.
+ *   row 존재 = 오늘 제외, 삭제 = 복귀. work_date 는 KST date(서버 default 와 동일 캐스트)로 판정.
+ *   격리는 RLS(부모 staff join-via-parent)가 담당 → 별도 clinic 필터 불요(staff_id 전역유니크).
+ *   장애 시 graceful: 빈 set 반환(제외 0 = 자동배정 동선 막지 않음).
+ */
+export async function fetchTodayTempOffStaffIds(): Promise<Set<string>> {
+  const today = todaySeoulISODate(); // YYYY-MM-DD (KST)
+  try {
+    const { data } = await supabase
+      .from('staff_temp_off')
+      .select('staff_id')
+      .eq('work_date', today);
+    return new Set<string>((data ?? []).map((r) => (r as { staff_id: string }).staff_id));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+/**
+ * 직원 '임시 off' 토글. on=true → 오늘(KST) row upsert(제외), false → delete(복귀).
+ * 멱등: upsert(staff_id, work_date PK) / delete idempotent. 성공 여부 boolean.
+ */
+export async function setStaffTempOff(
+  staffId: string,
+  on: boolean,
+  createdBy: string | null = null,
+): Promise<boolean> {
+  const today = todaySeoulISODate(); // KST date — 서버 default 와 동일 산출(UTC 자정 drift 방어)
+  try {
+    if (on) {
+      const { error } = await supabase
+        .from('staff_temp_off')
+        .upsert(
+          { staff_id: staffId, work_date: today, created_by: createdBy },
+          { onConflict: 'staff_id,work_date' },
+        );
+      return !error;
+    }
+    const { error } = await supabase
+      .from('staff_temp_off')
+      .delete()
+      .eq('staff_id', staffId)
+      .eq('work_date', today);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /** 이번 달(KST) assignment_actions 전체 — 균등/토스/당김 카운트 파생 SSOT */
 export async function fetchMonthActions(clinicId: string): Promise<AssignmentAction[]> {
   const today = todaySeoulISODate(); // YYYY-MM-DD
@@ -316,21 +367,23 @@ export async function maybeAutoAssign(
       ? deriveConsultAxis(customer ?? {})
       : deriveTherapyAxis(checkIn);
 
-    // 3) 후보 풀(당일 출근 + 역할)
+    // 3) 후보 풀(당일 출근 + 역할 − 임시 off)
+    //    T-20260624-foot-ASSIGN-STAFF-TEMP-OFF: 출근(workingIds)은 유지하되 '임시 off' 직원은 후보 제외.
     const staff = await fetchActiveStaff(checkIn.clinic_id);
     const workingIds = await fetchTodayWorkingStaffIds(checkIn.clinic_id, staff);
+    const tempOff = await fetchTodayTempOffStaffIds();
     const targetRole = ROLE_STAFF_ROLE[role];
     const pool = staff
-      .filter((s) => s.role === targetRole && workingIds.has(s.id))
+      .filter((s) => s.role === targetRole && workingIds.has(s.id) && !tempOff.has(s.id))
       .map((s) => s.id);
 
-    // 4) 0순위 — 지정 담당 우선(당일 출근 시)
+    // 4) 0순위 — 지정 담당 우선(당일 출근 + 임시 off 아님 시). 임시 off 면 fallback(least-loaded).
     const designatedId = role === 'consult'
       ? (customer?.assigned_consultant_id ?? null)
       : (customer?.designated_therapist_id ?? null);
 
     let chosen: string | null = null;
-    if (designatedId && workingIds.has(designatedId)) {
+    if (designatedId && workingIds.has(designatedId) && !tempOff.has(designatedId)) {
       chosen = designatedId;
     } else {
       // 5) 1순위 — 월 균등 least-loaded (재진은 균등 무관하게 풀에서 최소 선택)
@@ -344,7 +397,7 @@ export async function maybeAutoAssign(
       // staff=[](과거 display_name 400 사고) / 시트 read 실패 시에도 조용히 빠져 진단이 어려웠음
       // (T-20260618-foot-AUTOASSIGN-RUN-FAIL: RC=staff=[]). 무엇이 비었는지 1줄 남겨 가시화.
       console.warn(
-        `[autoAssign] no-assign(${role}): staff=${staff.length} working=${workingIds.size} pool=${pool.length}` +
+        `[autoAssign] no-assign(${role}): staff=${staff.length} working=${workingIds.size} tempOff=${tempOff.size} pool=${pool.length}` +
           (staff.length === 0 ? ' ⚠staff공집합' : pool.length === 0 ? ' ⚠출근후보공집합' : ''),
       );
       return { assigned: false };

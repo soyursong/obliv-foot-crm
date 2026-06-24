@@ -28,6 +28,8 @@ import {
   manualAssign,
   maybeAutoAssign,
   fetchTodayWorkingStaffIds,
+  fetchTodayTempOffStaffIds,
+  setStaffTempOff,
 } from '@/lib/autoAssign';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -85,6 +87,10 @@ export default function Assignments() {
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [workingIds, setWorkingIds] = useState<Set<string>>(new Set());
+  // T-20260624-foot-ASSIGN-STAFF-TEMP-OFF: 오늘(KST) '임시 off' staff id 집합(자동배정 후보 제외 셋).
+  //   출근(workingIds)·녹색 동그라미는 건드리지 않음 — 후보풀 필터(poolFor)에서만 차감.
+  const [tempOff, setTempOff] = useState<Set<string>>(new Set());
+  const [tempOffBusy, setTempOffBusy] = useState<Set<string>>(new Set()); // 토글 중복클릭 가드
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [customers, setCustomers] = useState<Map<string, CustomerLite>>(new Map());
   const [actions, setActions] = useState<AssignmentAction[]>([]);
@@ -149,6 +155,10 @@ export default function Assignments() {
       // 2) 당일 출근자 (구글시트 근무 캘린더 read)
       const working = await fetchTodayWorkingStaffIds(clinic.id, staffList);
       setWorkingIds(working);
+
+      // 2b) 오늘(KST) '임시 off' 제외 셋 (T-20260624-foot-ASSIGN-STAFF-TEMP-OFF)
+      const off = await fetchTodayTempOffStaffIds();
+      setTempOff(off);
 
       // 3) 오늘 원내 체크인 (done/cancelled 제외)
       const { data: ciRows } = await supabase
@@ -241,6 +251,61 @@ export default function Assignments() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // T-20260624-foot-ASSIGN-STAFF-TEMP-OFF AC4: 다중 운영자 동기화 — staff_temp_off Realtime 구독.
+  //   한 단말에서 토글 → 다른 운영자 화면의 제외 셋(=자동배정 후보)도 즉시 갱신. 오늘(KST) 셋만 재조회.
+  useEffect(() => {
+    if (!clinic) return;
+    const ch = supabase
+      .channel(`staff_temp_off:${clinic.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'staff_temp_off' },
+        () => {
+          void fetchTodayTempOffStaffIds().then(setTempOff);
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [clinic]);
+
+  // ── 임시 off 토글 ────────────────────────────────────────────────────────────
+  // 출근(녹색 동그라미)은 유지, 자동배정 후보풀에서만 제외/복귀. row 존재=제외, 삭제=복귀.
+  const toggleTempOff = useCallback(
+    async (staffId: string) => {
+      if (tempOffBusy.has(staffId)) return;
+      const turningOn = !tempOff.has(staffId);
+      setTempOffBusy((prev) => new Set(prev).add(staffId));
+      // 낙관적 갱신
+      setTempOff((prev) => {
+        const next = new Set(prev);
+        if (turningOn) next.add(staffId);
+        else next.delete(staffId);
+        return next;
+      });
+      const ok = await setStaffTempOff(staffId, turningOn, profile?.id ?? null);
+      if (!ok) {
+        // 롤백
+        setTempOff((prev) => {
+          const next = new Set(prev);
+          if (turningOn) next.delete(staffId);
+          else next.add(staffId);
+          return next;
+        });
+        toast.error('임시 off 변경에 실패했습니다. 다시 시도해주세요.');
+      } else {
+        toast.success(turningOn ? '자동배정에서 제외했습니다 (출근 유지)' : '자동배정에 다시 포함했습니다');
+      }
+      setTempOffBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(staffId);
+        return next;
+      });
+    },
+    [tempOff, tempOffBusy, profile?.id],
+  );
 
   // ── 축 파생 헬퍼 ───────────────────────────────────────────────────────────
   const axisOf = useCallback(
@@ -543,9 +608,10 @@ export default function Assignments() {
   const poolFor = useCallback(
     (role: AssignmentRole): Staff[] => {
       const target = role === 'consult' ? 'consultant' : 'therapist';
-      return staff.filter((s) => s.role === target && workingIds.has(s.id));
+      // T-20260624-foot-ASSIGN-STAFF-TEMP-OFF: 출근자 중 '임시 off' 제외 = 자동배정/수동 후보.
+      return staff.filter((s) => s.role === target && workingIds.has(s.id) && !tempOff.has(s.id));
     },
-    [staff, workingIds],
+    [staff, workingIds, tempOff],
   );
 
   // ── 렌더 ──────────────────────────────────────────────────────────────────────
@@ -833,10 +899,39 @@ export default function Assignments() {
                 {staffStats.map((st) => (
                   <tr key={st.staff.id} className="border-b last:border-0 hover:bg-muted/20">
                     <td className="px-3 py-2 font-medium">
-                      {(st.staff.display_name ?? st.staff.name).trim()}
-                      {workingIds.has(st.staff.id) && (
-                        <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" title="출근" />
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <span>{(st.staff.display_name ?? st.staff.name).trim()}</span>
+                        {workingIds.has(st.staff.id) && (
+                          <span
+                            className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500"
+                            title="출근"
+                          />
+                        )}
+                        {/* T-20260624-foot-ASSIGN-STAFF-TEMP-OFF: 출근자에게만 '임시 off' 토글.
+                            출근(동그라미)은 유지, 자동배정 후보에서만 제외/복귀. */}
+                        {workingIds.has(st.staff.id) && (
+                          <button
+                            type="button"
+                            data-testid={`temp-off-toggle-${st.staff.id}`}
+                            disabled={tempOffBusy.has(st.staff.id)}
+                            onClick={() => void toggleTempOff(st.staff.id)}
+                            aria-pressed={tempOff.has(st.staff.id)}
+                            title={
+                              tempOff.has(st.staff.id)
+                                ? '임시 off 상태 — 클릭 시 자동배정 복귀'
+                                : '클릭 시 자동배정에서 잠시 제외 (출근 유지)'
+                            }
+                            className={
+                              'ml-0.5 rounded-md border px-2 py-1 text-[11px] font-medium leading-none transition-colors disabled:opacity-50 ' +
+                              (tempOff.has(st.staff.id)
+                                ? 'border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                : 'border-border bg-muted text-muted-foreground hover:bg-muted/70')
+                            }
+                          >
+                            {tempOff.has(st.staff.id) ? '복귀' : '임시 off'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-2 text-muted-foreground">
                       {st.staff.role === 'consultant' ? '상담사' : '치료사'}
