@@ -197,8 +197,15 @@ function useUpsertSet(clinicId: string | null) {
       // 1) 세트 행 upsert → setId 확보
       let setId = id;
       if (id) {
-        const { error } = await sb.from('diagnosis_sets').update(setPayload).eq('id', id);
+        // T-20260624-foot-BUNDLERX-ICON-NOAPPLY (AC-0): .select() 로 0행 RLS no-op 검출 → throw.
+        const { data, error } = await sb
+          .from('diagnosis_sets')
+          .update(setPayload)
+          .eq('id', id)
+          .select('id');
         if (error) throw error;
+        if (!data || data.length === 0)
+          throw new Error('수정 권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.');
       } else {
         const { data, error } = await sb
           .from('diagnosis_sets')
