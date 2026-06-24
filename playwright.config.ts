@@ -171,6 +171,9 @@ export default defineConfig({
         // T-20260623-foot-DOCCHART-PASTHX-TAB: 의사 진료차트 '과거력' 탭 — 발건강 질문지 자동 (-/+) prefill
         //   (pastHistory 순수 함수) + 실장 더블체크·확정(append-only) + 마이그/RLS/결선 정적 미러 가드. auth 불요.
         '**/T-20260623-foot-DOCCHART-PASTHX-TAB.spec.ts',
+        // T-20260624-foot-BUNDLERX-ICON-NOAPPLY (part2/AC-0): 처방세트·태그·묶음상병 저장 mutation 의
+        //   .select() + 0행 throw 가드 — RLS 0행 silent no-op 의 false-positive 성공토스트 차단 (소스 정적, auth 불요)
+        '**/T-20260624-foot-BUNDLERX-ICON-NOAPPLY.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

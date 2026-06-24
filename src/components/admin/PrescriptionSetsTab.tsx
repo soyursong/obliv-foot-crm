@@ -184,11 +184,21 @@ function useUpsertSet() {
         updated_at: new Date().toISOString(),
       };
       if (id) {
-        const { error } = await supabase.from('prescription_sets').update(payload).eq('id', id);
+        // T-20260624-foot-BUNDLERX-ICON-NOAPPLY (AC-0): .select() 로 영향 행 회수 →
+        //   RLS 필터로 0행이 되면 error:null 이라도 throw(silent no-op = false-positive 성공토스트 차단).
+        const { data, error } = await supabase
+          .from('prescription_sets')
+          .update(payload)
+          .eq('id', id)
+          .select('id');
         if (error) throw error;
+        if (!data || data.length === 0)
+          throw new Error('수정 권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.');
       } else {
-        const { error } = await supabase.from('prescription_sets').insert(payload);
+        const { data, error } = await supabase.from('prescription_sets').insert(payload).select('id');
         if (error) throw error;
+        if (!data || data.length === 0)
+          throw new Error('저장 권한이 없어요. 새 처방세트가 생성되지 않았습니다.');
       }
     },
     onSuccess: () => {
@@ -222,8 +232,15 @@ function useUpdateSetTagMeta() {
         hide_name: !!meta.hide_name,
         updated_at: new Date().toISOString(),
       };
-      const { error } = await supabase.from('prescription_sets').update(payload).eq('id', id);
+      // T-20260624-foot-BUNDLERX-ICON-NOAPPLY (AC-0): .select() 로 0행 RLS no-op 검출 → throw.
+      const { data, error } = await supabase
+        .from('prescription_sets')
+        .update(payload)
+        .eq('id', id)
+        .select('id');
       if (error) throw error;
+      if (!data || data.length === 0)
+        throw new Error('태그를 저장할 권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['prescription_sets'] });
