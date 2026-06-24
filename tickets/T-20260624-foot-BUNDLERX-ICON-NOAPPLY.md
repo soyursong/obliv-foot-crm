@@ -52,3 +52,20 @@ RLS 권한 추가(part1)와 무관하게, 권한이 없을 때 거짓 성공 대
 ## 잔여 (part1, 본 티켓 외)
 - prescription_sets / diagnosis_sets UPDATE·INSERT RLS 에 director role additive 추가.
 - sibling 진료관리 테이블 RBAC 일관성 점검(DA 회신 포함 요청됨).
+
+## part3 — planner #1(필터)·#3b(IconRenderer) 가설 검증 (MSG-20260624-215254-z70x)
+planner NEW-TASK 의 1순위 가설(아이콘만 넣고 색 미지정 → BundleRxTagBar L56 필터에서 제외 → "적용 안됨")을
+코드증거로 검증한 결과 **현 코드에서는 발생하지 않음** → 필터 완화/정책 변경 불필요. 근거:
+
+- **#1 필터 가설 배제**: 저장 레이어(`useUpsertSet` L178, `useUpdateSetTagMeta` L230)가
+  `tag_color: hasTag ? (form.tag_color || DEFAULT_RX_TAG_COLOR) : null` — 아이콘 OR 라벨이 있으면
+  (`hasTag`) 색 미선택이라도 **DEFAULT_RX_TAG_COLOR('slate') 를 강제**한다(T-20260617 OVERHAUL 에서 정착,
+  당시 icon-only hide_name 태그 색 null 회귀를 이미 수정). 즉 planner 정책분기 (b)안(아이콘 추가 시 기본색
+  부여)이 이미 구현돼 있어, 색 null 인 icon-only 행이 생성되지 않음 → 필터에서 제외되는 케이스 없음.
+- **#3b IconRenderer 미인식 배제**: `DRUG_ICON_OPTIONS = ICON_OPTIONS.filter(drug)` 부분집합이고
+  `IconRenderer` 는 superset `ICON_OPTIONS` 를 검색 + 미지값 `Pill` 폴백 → picker 로 고른 모든 아이콘이 렌더됨.
+  저장 picker(PrescriptionSetsTab)와 진료화면 칩(BundleRxTagBar)이 동일 IconRenderer SSOT 사용.
+- **실제 RC = 저장 미persist(#3a)** = part1(director RLS)+part2(FE 0행 throw) 로 이미 해소.
+
+→ 정책분기 보고 불필요(현 (b)안 유지가 정답), 필터/렌더 코드 변경 0. 회귀가드 spec 4건 신설(총 10 PASS).
+build OK(vite 4.59s, tsc 0). db-change 없음.
