@@ -53,17 +53,17 @@ test.describe('PROCMENU-RX-UNIFY item2/3 — 소스 구조 불변식', () => {
     expect(rxBlock![0]).not.toMatch(/>\s*처방세트\s*</);
   });
 
-  test('item3: 빠른처방 탭 라벨이 "빠른처방" (구 "빠른처방 버튼" 제거, testid 보존)', () => {
-    const block = src.match(/value="quick_rx"[\s\S]{0,200}?<\/TabsTrigger>/);
-    expect(block, 'quick_rx TabsTrigger 블록').not.toBeNull();
-    expect(block![0]).toContain('data-testid="tab-quick-rx"');
-    expect(block![0]).toMatch(/>\s*빠른처방\s*</);
-    expect(block![0]).not.toContain('빠른처방 버튼');
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: 빠른처방 전용 서브탭 retire(묶음처방 태그로 일원화).
+  //   구 item3(빠른처방 탭 라벨 검증)은 서브탭 제거로 무효 → 부재 락인으로 전환(문지은 대표원장 MSG-ol3p).
+  test('item3 [Part F retire]: 빠른처방 전용 서브탭(quick_rx) 제거됨', () => {
+    expect(src).not.toContain('value="quick_rx"');
+    expect(src).not.toContain('data-testid="tab-quick-rx"');
+    expect(src).not.toContain('<QuickRxButtonsTab');
   });
 });
 
 // ── 브라우저 렌더 검증 (권한자 환경, 비대상 역할이면 skip) ──────────────────────────
-test('렌더: /clinic-management — 처방세트 옆 묶음처방 병렬 노출 + 빠른처방 라벨', async ({ page }) => {
+test('렌더: /clinic-management — 처방세트 옆 묶음처방 병렬 노출 + 빠른처방 서브탭 부재(Part F)', async ({ page }) => {
   await page.goto('/clinic-management');
   const drugTab = page.getByTestId('tab-drug-folders');
   if ((await drugTab.count()) === 0) {
@@ -73,10 +73,8 @@ test('렌더: /clinic-management — 처방세트 옆 묶음처방 병렬 노출
   // item2: 처방세트 + 묶음처방 두 탭 동시 노출(병렬 공존)
   await expect(drugTab).toContainText('처방세트');
   await expect(page.getByTestId('tab-prescription-sets-legacy')).toContainText('묶음처방');
-  // item3: 빠른처방 탭 라벨이 '빠른처방' (정확 일치, '버튼' 미포함)
-  const quickTab = page.getByTestId('tab-quick-rx');
-  await expect(quickTab).toContainText('빠른처방');
-  await expect(quickTab).not.toContainText('빠른처방 버튼');
+  // Part F: 빠른처방 전용 서브탭 retire — DOM 에서 부재(묶음처방 태그로 일원화)
+  await expect(page.getByTestId('tab-quick-rx')).toHaveCount(0);
   // 무회귀: 묶음처방 탭 클릭 시 prescription_sets 관리 화면(PrescriptionSetsTab) 렌더
   await page.getByTestId('tab-prescription-sets-legacy').click();
   await expect(page.getByText('묶음처방', { exact: false }).first()).toBeVisible({ timeout: 10_000 });

@@ -53,19 +53,21 @@ test.describe('DXTOOL-MENU-REORG — 소스 구조 불변식', () => {
     expect(breaks.length).toBe(2);
   });
 
-  test('Stage A: 행1 순서 = 상병명 관리 → 처방세트(drug_folders) → 묶음처방(prescriptions) → 빠른처방 → 금기증', () => {
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: '빠른처방'(quick_rx) 서브탭 retire →
+  //   행1 순서에서 빠른처방 제거. 묶음처방 태그로 일원화(문지은 대표원장 MSG-ol3p).
+  test('Stage A: 행1 순서 = 상병명 관리 → 처방세트(drug_folders) → 묶음처방(prescriptions) → 금기증 (빠른처방 retire)', () => {
     const iDiag = src.indexOf('value="diagnosis_names"');
     const iDrug = src.indexOf('value="drug_folders"');
     const iRxSet = src.indexOf('value="prescriptions"');
-    const iQuick = src.indexOf('value="quick_rx"');
     const iContra = src.indexOf('value="contraindications"');
     const iBreak1 = src.indexOf('basis-full h-0');
-    [iDiag, iDrug, iRxSet, iQuick, iContra, iBreak1].forEach((i) => expect(i).toBeGreaterThan(-1));
-    // 행1 트리거가 모두 첫 행 경계(div) 이전에 위치 + 묶음처방이 처방세트 바로 옆(처방세트와 빠른처방 사이)
+    [iDiag, iDrug, iRxSet, iContra, iBreak1].forEach((i) => expect(i).toBeGreaterThan(-1));
+    // Part F 락인: 빠른처방 탭 트리거(value="quick_rx") 부재
+    expect(src).not.toContain('value="quick_rx"');
+    // 행1 트리거가 모두 첫 행 경계(div) 이전에 위치 + 묶음처방이 처방세트 바로 옆(직후)
     expect(iDiag).toBeLessThan(iDrug);
     expect(iDrug).toBeLessThan(iRxSet); // item2: 묶음처방은 처방세트 '옆'(직후)
-    expect(iRxSet).toBeLessThan(iQuick);
-    expect(iQuick).toBeLessThan(iContra);
+    expect(iRxSet).toBeLessThan(iContra);
     expect(iContra).toBeLessThan(iBreak1);
   });
 

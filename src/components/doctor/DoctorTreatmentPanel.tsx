@@ -42,7 +42,10 @@ import {
 } from 'lucide-react';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import type { VisitType } from '@/lib/types';
-import QuickRxBar, { isDoctor } from './QuickRxBar';
+// T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part E (REPLACE): 처방 탭의 빠른처방 버튼(QuickRxBar) surface를
+//   묶음처방 태그(BundleRxTagBar)로 대체 — coexist 폐지. QuickRxBar 컴포넌트 자체·quick_rx_buttons 데이터는 보존
+//   (다른 surface 사용처/물리데이터 미접촉). isDoctor 유틸만 잔류 import.
+import { isDoctor } from './QuickRxBar';
 import BundleRxTagBar from './BundleRxTagBar';
 import PastHistoryTab from './PastHistoryTab';
 import { useAuth } from '@/lib/auth';
@@ -920,22 +923,10 @@ export default function DoctorTreatmentPanel({
         {/* ── Tab 2: 처방 ── */}
         <TabsContent value="prescription" className="space-y-3 pt-3">
 
-          {/* ── T-20260512-foot-QUICK-RX-BUTTON: 빠른처방 버튼 바 ── */}
-          {!confirmed.doctor_confirm_prescription && (
-            <QuickRxBar
-              doctorMode={doctorMode}
-              role={profile?.role ?? ''}
-              onSelectItems={(items) => {
-                // 콜백 모드: 처방 목록에 추가 (DB는 부모가 저장)
-                setRxItems((prev) => {
-                  const existingNames = new Set(prev.map((i) => i.name));
-                  const newItems = items.filter((i) => !existingNames.has(i.name));
-                  return [...prev, ...newItems];
-                });
-              }}
-              className="rounded-lg border border-dashed border-teal-200 bg-teal-50/30 p-2"
-            />
-          )}
+          {/* ── T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part E (REPLACE):
+              기존 빠른처방 버튼 바(QuickRxBar, T-20260512-foot-QUICK-RX-BUTTON)를 묶음처방 태그(BundleRxTagBar)로 대체.
+              문지은 대표원장 직접지시(MSG-20260624-215554-ol3p): "빠른처방은 그냥 삭제, 묶음처방 아이콘이 대체".
+              → 처방 탭에서 QuickRxBar surface 제거, 아래 BundleRxTagBar 가 그 자리를 차지(태그 클릭=빠른처방 트리거 보존, TAG-QUICKTRIGGER AC-3). ──*/}
 
           {/* ── T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER AC-3: 묶음처방 태그 = 빠른처방 트리거 ──
               태그 칩 탭 → 그 묶음 약물을 처방 목록에 즉시 추가(A안). 동일 dedup 삽입 패턴 재사용. */}
@@ -1017,6 +1008,7 @@ export default function DoctorTreatmentPanel({
                 onClick={handleSaveRx}
                 disabled={save.isPending}
                 className="flex-1"
+                data-testid="rx-temp-save-btn"
               >
                 {save.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
                 임시 저장
