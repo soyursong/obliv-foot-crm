@@ -41,7 +41,8 @@ test.describe('W3-HORIZONTAL [S1] 일간 보기 시간 가로(x축) 배열', () 
     await gotoReservations(page);
 
     // 일간 토글 보장(기본값이 일간이지만 명시적으로 일간 클릭)
-    const dayToggle = page.getByRole('button', { name: /^일(간)?$/ }).first();
+    // 뷰 토글은 정확히 "일간"(미니 "일" 버튼과 구분 — 느슨한 정규식 .first()는 엉뚱한 버튼 매칭).
+    const dayToggle = page.getByRole('button', { name: '일간', exact: true });
     if ((await dayToggle.count()) > 0) {
       await dayToggle.click().catch(() => {});
       await page.waitForTimeout(300);
@@ -60,7 +61,9 @@ test.describe('W3-HORIZONTAL [S1] 일간 보기 시간 가로(x축) 배열', () 
     expect(await page.locator('[data-testid="resv-slot-row"]').count()).toBe(0);
   });
 
-  test('시간 셀 클릭 → 해당 시간 예약 한 줄 나열 영역 노출(C4)', async ({ page }) => {
+  // ⚠ C4("클릭 → 한 줄 나열")는 T-20260624-foot-RESVMGMT-DAILY-TIMEGRID-VERTICAL 로 SUPERSEDED.
+  //   클릭-투-리빌 폐기 → 상시 세로 진열 격자. 회귀 가드는 신규 spec(TIMEGRID-VERTICAL) S1 참조.
+  test('[SUPERSEDED] 클릭-투-리빌 상세 영역 제거 확인(상시 세로 진열로 교체)', async ({ page }) => {
     await gotoReservations(page);
 
     const horizontal = page.locator('[data-testid="resv-day-horizontal"]');
@@ -69,25 +72,10 @@ test.describe('W3-HORIZONTAL [S1] 일간 보기 시간 가로(x축) 배열', () 
       '일간 가로 뷰 미렌더 — skip',
     );
 
-    const hslots = page.locator('[data-testid^="resv-day-hslot-"]');
-    test.skip((await hslots.count()) === 0, '시간 셀 없음 — skip');
-
-    // 첫 시간 셀 클릭 → 선택 시간 상세(한 줄 나열) 영역 노출
-    await hslots.first().click();
-    await page.waitForTimeout(300);
-    await expect(page.locator('[data-testid="resv-day-slot-detail"]')).toBeVisible();
-    // 예약 카드 컨테이너는 flex-row(한 줄 나열). 예약 있으면 cards 컨테이너 노출, 없으면 안내문 — 둘 중 하나는 항상.
-    const cards = page.locator('[data-testid="resv-day-slot-cards"]');
-    const detail = page.locator('[data-testid="resv-day-slot-detail"]');
-    const hasCards = (await cards.count()) > 0;
-    if (hasCards) {
-      // 한 줄 나열: 카드 컨테이너가 flex-row 클래스 보유
-      const cls = (await cards.getAttribute('class')) ?? '';
-      expect(cls).toContain('flex-row');
-    } else {
-      // 예약 없는 시간 — 안내문 또는 상세 영역만 노출(회귀 가드: 영역 자체는 살아있음)
-      await expect(detail).toBeVisible();
-    }
+    // C4 폐기: 클릭 시 등장하던 단일 상세 영역(resv-day-slot-detail)은 더 이상 없어야 한다.
+    expect(await page.locator('[data-testid="resv-day-slot-detail"]').count()).toBe(0);
+    // 대체: 각 시간 컬럼 아래 상시 세로 진열 컨테이너가 존재.
+    expect(await page.locator('[data-testid^="resv-day-col-cards-"]').count()).toBeGreaterThan(0);
   });
 });
 
@@ -95,13 +83,13 @@ test.describe('W3-HORIZONTAL [S2] 주간 보기 회귀 가드', () => {
   test('주간 전환 시 현행 <table>(시간 행) 유지 + 가로 x축 미적용', async ({ page }) => {
     await gotoReservations(page);
 
-    const weekToggle = page.getByRole('button', { name: /^주(간)?$/ }).first();
+    // 뷰 토글은 정확히 "주간"(미니 "주" 버튼과 구분).
+    const weekToggle = page.getByRole('button', { name: '주간', exact: true });
     test.skip((await weekToggle.count()) === 0, '주간 토글 미발견 — skip');
     await weekToggle.click();
-    await page.waitForTimeout(500);
 
-    // 주간 보기 = 현행: 가로 x축(resv-day-horizontal) 미노출
-    expect(await page.locator('[data-testid="resv-day-horizontal"]').count()).toBe(0);
+    // 주간 보기 = 현행: 가로 x축(resv-day-horizontal) 미노출 (auto-retry)
+    await expect(page.locator('[data-testid="resv-day-horizontal"]')).toHaveCount(0);
     // 주간 보기 = 현행: 세로 시간 행 table 노출(데이터 의존이므로 graceful)
     const slotRows = page.locator('[data-testid="resv-slot-row"]');
     const tableShell = page.locator('[data-testid="resv-timetable-scroll"] table');
