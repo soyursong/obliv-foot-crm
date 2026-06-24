@@ -51,6 +51,12 @@ interface Props {
    * - 'neutral': 예약상세 팝업 통일 — 컬러 텍스트 제거, 전체 흐름과 동일한 기본 색상.
    */
   tone?: 'amber' | 'neutral';
+  /**
+   * T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-1: 입력부 레이아웃을 2번차트 1구역 고객메모와 동일하게 통일.
+   * - false(기본): 기존 동작(textarea + 우측 teal [추가] 버튼 side-by-side).
+   * - true: 라벨/버튼 우측 상단 컴팩트 회색([추가]) + textarea 하단 full-width — 고객메모 칸과 한 세트 정렬.
+   */
+  unifyInput?: boolean;
 }
 
 // T-20260522-foot-ALT-BADGE AC-10: 고정 정렬 — is_pinned 먼저(pinned_at DESC), 나머지 created_at DESC
@@ -74,6 +80,7 @@ export function ReservationMemoTimeline({
   compact = false,
   onAdded,
   tone = 'amber',
+  unifyInput = false,
 }: Props) {
   const [items, setItems] = useState<MemoHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,33 +260,65 @@ export function ReservationMemoTimeline({
       )}
 
       {/* 새 메모 입력 */}
-      <div className="flex gap-1.5 items-start pt-1">
-        <Textarea
-          ref={textareaRef}
-          value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              addMemo();
-            }
-          }}
-          placeholder="새 메모 입력 (Ctrl+Enter로 추가)"
-          rows={2}
-          className="text-xs flex-1"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 px-2 text-xs border-teal-300 text-teal-700 hover:bg-teal-50 shrink-0"
-          onClick={addMemo}
-          disabled={submitting || !inputVal.trim() || !effectiveKey}
-          data-testid="memo-add-btn"
-        >
-          <MessageSquarePlus className="h-3.5 w-3.5 mr-0.5" />
-          추가
-        </Button>
-      </div>
+      {unifyInput ? (
+        /* T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-1: 1구역 고객메모 칸과 동일 레이아웃·톤.
+           우측 상단 컴팩트 회색 [추가] 버튼 + 하단 full-width textarea(text-[11px]). 노란색/teal 제거. */
+        <div className="pt-1">
+          <div className="flex items-center justify-end mb-1">
+            <button
+              type="button"
+              onClick={addMemo}
+              disabled={submitting || !inputVal.trim() || !effectiveKey}
+              data-testid="memo-add-btn"
+              className="rounded bg-[#666666] text-white px-2.5 py-0.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
+            >
+              {submitting ? '저장 중…' : '추가'}
+            </button>
+          </div>
+          <Textarea
+            ref={textareaRef}
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                addMemo();
+              }
+            }}
+            placeholder="새 메모 입력 (Ctrl+Enter로 추가)"
+            rows={2}
+            className="text-[11px] resize-none"
+          />
+        </div>
+      ) : (
+        <div className="flex gap-1.5 items-start pt-1">
+          <Textarea
+            ref={textareaRef}
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                addMemo();
+              }
+            }}
+            placeholder="새 메모 입력 (Ctrl+Enter로 추가)"
+            rows={2}
+            className="text-xs flex-1"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-2 text-xs border-teal-300 text-teal-700 hover:bg-teal-50 shrink-0"
+            onClick={addMemo}
+            disabled={submitting || !inputVal.trim() || !effectiveKey}
+            data-testid="memo-add-btn"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5 mr-0.5" />
+            추가
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

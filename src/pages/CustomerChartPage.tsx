@@ -333,12 +333,17 @@ function MemoHistoryPanel({
   hook, phrases, profileEmail, testidPrefix,
   addLabel = '새 메모 추가', addBtnLabel = '메모 추가',
   historyLabel = '메모 이력', emptyLabel = '아직 메모가 없습니다', placeholder = '메모를 입력하세요…',
+  inputRows = 3, hideHistory = false,
 }: {
   hook: MemoHistoryHook;
   phrases: { id: number; name: string; content: string }[];
   profileEmail: string | null | undefined;
   testidPrefix: string;
   addLabel?: string; addBtnLabel?: string; historyLabel?: string; emptyLabel?: string; placeholder?: string;
+  // T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-2: 입력칸 높이(rows). 상담메모 2.5배 확장용(기본 3 → 8).
+  inputRows?: number;
+  // AC-3: 중간 이력 표시영역 숨김(데이터/저장 hook은 유지 — 표시만 제거). 고객메모 요약 중복 제거용.
+  hideHistory?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -384,7 +389,7 @@ function MemoHistoryPanel({
             <Textarea
               value={hook.newText}
               onChange={(e) => hook.setNewText(e.target.value)}
-              rows={3}
+              rows={inputRows}
               placeholder={placeholder}
               className="text-[11px] resize-none"
               data-testid={`${testidPrefix}-new-input`}
@@ -393,7 +398,8 @@ function MemoHistoryPanel({
         </>
       )}
 
-      {!hook.loaded ? (
+      {/* T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-3: hideHistory=true면 중간 이력 표시영역 숨김(hook 데이터·저장은 유지). */}
+      {hideHistory ? null : !hook.loaded ? (
         <div className="text-[11px] text-muted-foreground text-center py-2">불러오는 중…</div>
       ) : hook.memos.length === 0 ? (
         <div className="text-[11px] text-muted-foreground text-center py-3">{emptyLabel}</div>
@@ -5500,7 +5506,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
                 {/* ⑫ 예약메모 삭제됨 — AC-6: 예약메모는 2번차트 1구역(예약내역 패널)에서만 표시 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
 
-                {/* ⑬ 예약메모 — T-20260516-foot-C2Z1-MEMO-SYNC(정본): reservation_memo_history append-only 연동 */}
+                {/* ⑬ 예약메모 — T-20260516-foot-C2Z1-MEMO-SYNC(정본): reservation_memo_history append-only 연동
+                    T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-1: 노란색(amber) 제거 + 하단 고객메모 칸과 레이아웃 통일. */}
                 <tr>
                   <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
@@ -5511,6 +5518,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       clinicId={customer?.clinic_id ?? ''}
                       authorName={profile?.name ?? ''}
                       compact
+                      tone="neutral"
+                      unifyInput
                     />
                   </td>
                 </tr>
@@ -8002,10 +8011,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   profileEmail={profile?.email}
                   testidPrefix="resv-memo"
                   addLabel="새 고객메모 추가"
-                  addBtnLabel="고객메모 추가"
+                  addBtnLabel="추가"
                   historyLabel="고객메모 이력"
                   emptyLabel="아직 고객메모가 없습니다"
                   placeholder="고객 관련 메모를 입력하세요…"
+                  hideHistory
                 />
                 {/* 기타메모(customers.memo) — 단일필드 유지(히스토리화 대상 아님) */}
                 <div className="pt-1 border-t border-gray-100">
@@ -8124,6 +8134,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   historyLabel="상담메모 이력"
                   emptyLabel="아직 상담메모가 없습니다"
                   placeholder="상담 내용·보험·성향 등을 입력하세요…"
+                  inputRows={8}
                 />
               </div>
             )}
@@ -8161,10 +8172,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     )}
                     <div>
                       <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
+                      {/* T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-2: 치료메모 기입칸 2.5배(rows 3→8) */}
                       <Textarea
                         value={newMemoText}
                         onChange={(e) => setNewMemoText(e.target.value)}
-                        rows={3}
+                        rows={8}
                         placeholder="치료 메모를 입력하세요…"
                         className="text-[11px] resize-none"
                       />
