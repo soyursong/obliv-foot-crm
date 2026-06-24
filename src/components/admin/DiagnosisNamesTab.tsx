@@ -175,9 +175,20 @@ function useUpsertDx(clinicId: string | null) {
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      const { error } = id
-        ? await sb.from('services').update(payload).eq('id', id)
-        : await sb.from('services').insert({
+      // T-20260624-foot-SERVICES-DIRECTOR-RLS-CHECK (AC-4): .select('id') 로 영향 행 회수 →
+      //   RLS 필터로 0행이 되면 error:null 이라도 throw(silent no-op = 거짓 '저장됐어요' 토스트 차단).
+      //   ※ services write RLS = is_admin_or_manager()(admin/manager/director) → director 포함(분기 a, 무변경).
+      //     편집 게이트 canEditClinicMgmt(admin/director) ⊆ RLS write set 이라 현 silent-deny 경로 0 이나,
+      //     향후 역할/RLS drift 대비 방어(부모 BUNDLERX-ICON-NOAPPLY part2 패턴 미러).
+      if (id) {
+        const { data, error } = await sb.from('services').update(payload).eq('id', id).select('id');
+        if (error) throw error;
+        if (!data || data.length === 0)
+          throw new Error('수정 권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.');
+      } else {
+        const { data, error } = await sb
+          .from('services')
+          .insert({
             // 신규 상병 = services 행. category/category_label='상병', 단가 0(진단코드, 비매출).
             ...payload,
             clinic_id: clinicId,
@@ -186,8 +197,12 @@ function useUpsertDx(clinicId: string | null) {
             price: 0,
             vat_type: 'none',
             service_type: 'single',
-          });
-      if (error) throw error;
+          })
+          .select('id');
+        if (error) throw error;
+        if (!data || data.length === 0)
+          throw new Error('저장 권한이 없어요. 새 상병명이 생성되지 않았습니다.');
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['diagnosis_master'] });
@@ -202,8 +217,11 @@ function useDeleteDx() {
   return useMutation({
     mutationFn: async (id: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from('services').delete().eq('id', id);
+      // T-20260624-foot-SERVICES-DIRECTOR-RLS-CHECK (AC-4): 삭제도 .select('id') 0행 검출 → 거짓 '삭제됐어요' 차단.
+      const { data, error } = await (supabase as any).from('services').delete().eq('id', id).select('id');
       if (error) throw error;
+      if (!data || data.length === 0)
+        throw new Error('삭제 권한이 없거나 대상을 찾지 못했어요. 삭제된 내용이 없습니다.');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['diagnosis_master'] });
