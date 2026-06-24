@@ -811,18 +811,18 @@ export function OpinionEditorDialog({
   // 발행 이력 테이블(우측 단 + 직원뷰 공용) — 각 행 [저장(PDF)] [인쇄] 모두 printOpinionDoc(브라우저 인쇄대화상자=PDF저장/인쇄) 경로.
   const historyPanel = (
     <div className="flex min-h-0 flex-col rounded-md border bg-muted/20" data-testid="opinion-published">
-      <p className="border-b px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">발행 이력 / 서류 출력</p>
+      <p className="border-b px-2 py-1.5 text-base font-bold text-foreground">발행 이력 / 서류 출력</p>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {pubLoading ? (
           <div className="flex justify-center py-4">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : published.length === 0 ? (
-          <p className="py-2 text-center text-[11px] text-muted-foreground/70" data-testid="opinion-published-empty">
+          <p className="py-2 text-center text-sm text-muted-foreground" data-testid="opinion-published-empty">
             아직 발행된 소견서가 없습니다.
           </p>
         ) : (
-          <table className="w-full text-[11px]" data-testid="opinion-published-table">
+          <table className="w-full text-xs" data-testid="opinion-published-table">
             <thead>
               <tr className="border-b text-left text-muted-foreground">
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">발행일시</th>
@@ -844,7 +844,7 @@ export function OpinionEditorDialog({
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 shrink-0 gap-1 px-2 text-[10px]"
+                        className="h-6 shrink-0 gap-1 px-2 text-[11px]"
                         onClick={() => handlePrint(row)}
                         data-testid="opinion-save-pdf-btn"
                         title="브라우저 인쇄 대화상자에서 'PDF로 저장'을 선택하세요."
@@ -854,7 +854,7 @@ export function OpinionEditorDialog({
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 shrink-0 gap-1 px-2 text-[10px]"
+                        className="h-6 shrink-0 gap-1 px-2 text-[11px]"
                         onClick={() => handlePrint(row)}
                         data-testid="opinion-print-btn"
                       >
@@ -969,14 +969,14 @@ export function OpinionEditorDialog({
             <div className="flex flex-col gap-2">
               {/* AC-3/10 참고 패널: 실장(데스크)이 보낸 요청 메모 — '참고용'만(authoring 경계 AC-4). */}
               {staffMemo && (
-                <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-[11px] text-teal-800" data-testid="opinion-staff-request-memo">
-                  <span className="font-semibold">실장 요청(참고)</span> · {staffMemo}
+                <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-sm text-teal-900" data-testid="opinion-staff-request-memo">
+                  <span className="font-bold">실장 요청(참고)</span> · {staffMemo}
                 </div>
               )}
               {/* AC-1.2: 자동 pre-check 안내 — 발건강 질문지에서 미리 채운 항목(QR입력) 확인 유도. */}
               {autoChecked.size > 0 && (
-                <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-[11px] text-amber-800" data-testid="opinion-autocheck-hint">
-                  <span className="font-semibold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
+                <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-sm text-amber-900" data-testid="opinion-autocheck-hint">
+                  <span className="font-bold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
                 </div>
               )}
               {/* item2 플레이스홀더 변형 셀렉터 — 선택한 항목 원문에 마커가 있을 때만 노출(금기증/진단서 선택 종속). */}
@@ -985,13 +985,13 @@ export function OpinionEditorDialog({
                   {/* B-1 날짜: [날짜] → YYYY년 MM월 DD일. 기본값=실장 요청날짜/오늘. */}
                   {showDate && (
                     <div className="flex items-center gap-2">
-                      <label className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground" htmlFor="opinion-doc-date">서류 날짜</label>
+                      <label className="w-20 shrink-0 text-sm font-semibold text-foreground" htmlFor="opinion-doc-date">서류 날짜</label>
                       <input
                         id="opinion-doc-date"
                         type="date"
                         value={docDate}
                         onChange={(e) => { setDocDate(e.target.value); setTextTouched(false); }}
-                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                         data-testid="opinion-date-input"
                       />
                     </div>
@@ -999,12 +999,12 @@ export function OpinionEditorDialog({
                   {/* §C 간염 B/C 드롭다운: B(C) → B형/C형 전체치환. */}
                   {showHepatitis && (
                     <div className="flex items-center gap-2">
-                      <label className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground" htmlFor="opinion-hepatitis">간염 타입</label>
+                      <label className="w-20 shrink-0 text-sm font-semibold text-foreground" htmlFor="opinion-hepatitis">간염 타입</label>
                       <select
                         id="opinion-hepatitis"
                         value={hepatitisType ?? ''}
                         onChange={(e) => { setHepatitisType((e.target.value || null) as HepatitisType | null); setTextTouched(false); }}
-                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                         data-testid="opinion-hepatitis-select"
                       >
                         <option value="">간염 타입 선택</option>
@@ -1016,17 +1016,17 @@ export function OpinionEditorDialog({
                   {/* §B-2 경구약X 사유: 괄호 안 사유 입력 → 본문 치환(대괄호 제거). */}
                   {showOralXReason && (
                     <div className="space-y-1">
-                      <label className="block text-[11px] font-medium text-muted-foreground" htmlFor="opinion-oralx-reason">경구약 복용 사유</label>
+                      <label className="block text-sm font-semibold text-foreground" htmlFor="opinion-oralx-reason">경구약 복용 사유</label>
                       <input
                         id="opinion-oralx-reason"
                         type="text"
                         value={oralXReason}
                         onChange={(e) => { setOralXReason(e.target.value); setTextTouched(false); }}
                         placeholder={ORAL_X_DEFAULT_REASON}
-                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
                         data-testid="opinion-oralx-reason-input"
                       />
-                      <p className="text-[10px] text-blue-600" data-testid="opinion-oralx-preview">
+                      <p className="text-sm text-blue-600" data-testid="opinion-oralx-preview">
                         {(oralXReason.trim() || ORAL_X_DEFAULT_REASON)}으로 항진균제 복용이 불가하여…
                       </p>
                     </div>
@@ -1035,14 +1035,14 @@ export function OpinionEditorDialog({
               )}
               {/* ② 라벨 + 자동합성/수기수정 안내 */}
               <div className="flex items-center justify-between gap-2">
-                <label className="text-xs font-medium text-muted-foreground" htmlFor="opinion-editor-text">
+                <label className="text-base font-bold text-foreground" htmlFor="opinion-editor-text">
                   소견 내용
                 </label>
                 {textTouched && (
                   <button
                     type="button"
                     onClick={() => { setTextTouched(false); setText(composedText); }}
-                    className="text-[10px] font-medium text-teal-700 underline-offset-2 hover:underline"
+                    className="text-xs font-medium text-teal-700 underline-offset-2 hover:underline"
                     data-testid="opinion-regenerate-btn"
                     title="선택한 항목 기준으로 본문을 다시 자동 합성합니다(수기 수정 내용은 사라집니다)."
                   >
@@ -1062,14 +1062,14 @@ export function OpinionEditorDialog({
               {/* ③ 발행자(진료의) 선택 + 진료 본 의사 일치 게이트 */}
               {doctors.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <label className="whitespace-nowrap text-xs font-medium text-muted-foreground" htmlFor="opinion-doctor">
+                  <label className="whitespace-nowrap text-sm font-semibold text-foreground" htmlFor="opinion-doctor">
                     발행자(진료의)
                   </label>
                   <select
                     id="opinion-doctor"
                     value={doctorId}
                     onChange={(e) => { setDoctorId(e.target.value); setDoctorTouched(true); }}
-                    className={`h-8 flex-1 rounded-md border bg-background px-2 text-xs ${
+                    className={`h-8 flex-1 rounded-md border bg-background px-2 text-sm ${
                       hasSigningInfo && !issuerMatchesSigning ? 'border-red-400' : 'border-input'
                     }`}
                     data-testid="opinion-doctor-select"
@@ -1086,13 +1086,13 @@ export function OpinionEditorDialog({
 
               {/* ③ 불일치 사유 안내 */}
               {hasSigningInfo && !issuerMatchesSigning && (
-                <p className="rounded-md border border-red-200 bg-red-50/60 px-2 py-1 text-[11px] text-red-600" data-testid="opinion-doctor-mismatch">
+                <p className="rounded-md border border-red-200 bg-red-50/60 px-2 py-1 text-sm text-red-700" data-testid="opinion-doctor-mismatch">
                   진료 본 의사({signingNames.join(', ') || '확인 필요'})와 발행자가 일치해야 발행할 수 있습니다.
                 </p>
               )}
 
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-muted-foreground/70">
+                <span className="text-sm text-muted-foreground">
                   ※ 발행 후에는 수정·취소할 수 없습니다(의무기록·비가역).
                 </span>
                 <Button
@@ -1119,7 +1119,7 @@ export function OpinionEditorDialog({
         ) : (
           /* ⑥ 직원(비의사) 출력전용 뷰 — editor/발행자/발행하기 숨김, 발행이력에서 저장(PDF)·인쇄만. */
           <div className="space-y-2" data-testid="opinion-staff-view">
-            <p className="rounded-md border border-amber-200 bg-amber-50/60 px-2 py-1.5 text-[11px] text-amber-700">
+            <p className="rounded-md border border-amber-200 bg-amber-50/60 px-2 py-1.5 text-sm text-amber-800">
               ※ 소견서 발행은 원장(의료진) 권한입니다. 직원은 발행된 서류의 저장(PDF)·인쇄만 가능합니다.
             </p>
             <div className="flex max-h-[60vh] flex-col">{historyPanel}</div>
