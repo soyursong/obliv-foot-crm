@@ -638,6 +638,7 @@ export function RxConfirmedSummary({
   role,
   onToggleExpand,
   expanded = false,
+  editableBodyClick = false,
 }: {
   checkInId: string | undefined;
   /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
@@ -698,6 +699,13 @@ export function RxConfirmedSummary({
   onToggleExpand?: () => void;
   /** split 모드 본문 버튼 aria-expanded 상태(부모 펼침 state 미러). */
   expanded?: boolean;
+  /**
+   * T-20260624-foot-DOCDASH-RXCLIN-DISCHARGE-PREVIEW-EDIT-GATE (문지은 대표원장):
+   * 귀가전(원내잔류)은 본문(처방완료 + 약요약) 클릭 = 읽기 펼침이 아니라 '빠른수정 드롭다운'을 즉시 연다(그 자리에서 수정·저장).
+   * 단 cancellable(원내잔류·의사) 일 때만 적용 — 귀가완료(blockedByGate)는 prop 무시하고 종전 읽기 펼침(onToggleExpand) 유지(안전게이트 무회귀).
+   * 미지정(기본 false) 소비처는 종전 읽기 펼침 동작 그대로.
+   */
+  editableBodyClick?: boolean;
 }) {
   const { profile } = useAuth();
   const cancelAuditCtx: RxAuditCtx = {
@@ -821,17 +829,37 @@ export function RxConfirmedSummary({
         data-rx-cancel-blocked={blockedByGate ? 'true' : undefined}
         data-block-reason={blockedByGate ? gate?.reason ?? '' : undefined}
       >
-        {/* 본문 — 처방완료 + 약요약. 클릭=펼침(읽기). 약요약 없으면 비활성(펼칠 내용 없음). */}
+        {/* 본문 — 처방완료 + 약요약.
+            · 귀가완료(blockedByGate): 클릭=읽기 펼침(onToggleExpand) — 안전게이트 무회귀.
+            · 귀가전(원내잔류, editableBodyClick && cancellable): 클릭=빠른수정 드롭다운 즉시 오픈(그 자리 수정·저장).
+              (T-20260624-foot-DOCDASH-RXCLIN-DISCHARGE-PREVIEW-EDIT-GATE, 문지은 대표원장)
+            · 그 외(기본): 클릭=읽기 펼침. 약요약 없으면 비활성(펼칠 내용 없음). */}
         <button
           type="button"
-          onClick={() => onToggleExpand?.()}
-          disabled={!canExpand}
+          onClick={() => {
+            if (editableBodyClick && cancellable) {
+              // 귀가전(원내잔류): 본문 클릭 → 빠른수정 팝오버(편집 가능 드롭다운). 연필 menu 와 동일 surface 재사용.
+              setMenuPos(null);
+              setEditPos((cur) => (cur ? null : anchorBelow(pencilRef.current ?? btnRef.current, 260)));
+            } else {
+              onToggleExpand?.();
+            }
+          }}
+          disabled={editableBodyClick && cancellable ? false : !canExpand}
           data-testid="rx-confirmed-done"
-          aria-expanded={!!expanded}
-          title={canExpand ? '클릭하면 처방 전체가 펼쳐져요' : label}
+          aria-expanded={editableBodyClick && cancellable ? editPos !== null : !!expanded}
+          title={
+            editableBodyClick && cancellable
+              ? '클릭하면 처방을 바로 수정할 수 있어요'
+              : canExpand
+                ? '클릭하면 처방 전체가 펼쳐져요'
+                : label
+          }
           className={cn(
             'flex min-w-0 items-center gap-1 bg-transparent p-0 text-left text-[13px] transition',
-            canExpand ? 'cursor-pointer hover:underline underline-offset-2' : 'cursor-default',
+            (editableBodyClick && cancellable) || canExpand
+              ? 'cursor-pointer hover:underline underline-offset-2'
+              : 'cursor-default',
           )}
         >
           {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item1(문지은 대표원장): '처방완료' 텍스트 제거 →

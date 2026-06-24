@@ -1435,6 +1435,10 @@ function CompletedRow({
                 role={role}
                 onToggleExpand={() => setExpandRx((v) => !v)}
                 expanded={expandRx}
+                /* T-20260624-foot-DOCDASH-RXCLIN-DISCHARGE-PREVIEW-EDIT-GATE (문지은 대표원장):
+                   귀가전(원내잔류, !discharged) = 본문 클릭 시 읽기 펼침이 아니라 빠른수정 드롭다운(그 자리 수정·저장).
+                   귀가완료(discharged) = false → 종전 읽기 전용 펼침 유지(안전게이트 무회귀). */
+                editableBodyClick={!discharged}
               />
             ) : !discharged ? (
               <>
@@ -1503,12 +1507,19 @@ function CompletedRow({
             T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item3: 빈값 '—' 클릭=인라인 임상경과 편집창 열기(showClinical) + 진한톤. (완료 행도 진료 알림판=작성 흐름이라 빈값 작성 진입 정상 — DoctorPatientList 완료 읽기전용 게이트와 무관) */}
         <td ref={clinicalCellRef} className="px-1.5 py-1 text-center" data-testid="doctor-completed-clinical-cell">
           {clinicalPreview ? (
+            /* T-20260624-foot-DOCDASH-RXCLIN-DISCHARGE-PREVIEW-EDIT-GATE (문지은 대표원장):
+               미리보기(truncate)는 양쪽 동일. 클릭 시 귀가상태로 분기.
+               · 귀가완료(discharged): setExpandClinical → 셀 아래 read-only 전체보기 펼침(편집 위젯 없음, 안전게이트 무회귀).
+               · 귀가전(원내잔류, !discharged): setShowClinical(true) → 행 아래 인라인 임상경과 편집창(그 자리 수정·저장). */
             <button
               type="button"
-              onClick={() => setExpandClinical((v) => !v)}
-              aria-expanded={expandClinical}
+              onClick={() => {
+                if (discharged) setExpandClinical((v) => !v);
+                else if (checkIn.customer_id) setShowClinical(true);
+              }}
+              aria-expanded={discharged ? expandClinical : showClinical}
               data-testid="doctor-completed-clinical-expand-btn"
-              title="클릭하면 전체 내용이 펼쳐져요"
+              title={discharged ? '클릭하면 전체 내용이 펼쳐져요 (읽기 전용)' : '클릭하면 임상경과를 바로 수정할 수 있어요'}
               className="block w-full max-w-full truncate text-center text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
             >
               {clinicalPreview}
