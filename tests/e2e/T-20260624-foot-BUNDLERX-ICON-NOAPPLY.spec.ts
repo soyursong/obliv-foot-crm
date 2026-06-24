@@ -29,6 +29,8 @@ const stripComments = (s: string) =>
 
 const RX_TAB = read('src/components/admin/PrescriptionSetsTab.tsx');
 const DX_TAB = read('src/components/admin/DiagnosisSetsTab.tsx');
+const TAG_BAR = read('src/components/doctor/BundleRxTagBar.tsx');
+const QUICK_RX = read('src/components/admin/QuickRxButtonsTab.tsx');
 
 // ── AC-0: useUpsertSet (처방세트) — UPDATE/INSERT 둘 다 0행 검출 ──────────────
 test.describe('처방세트 저장 — 0행 silent no-op throw (AC-0)', () => {
@@ -76,5 +78,45 @@ test.describe('묶음상병 저장 — 0행 throw (AC-0 sibling 일관성)', () 
   test('useUpsertSet UPDATE 는 .select() + 0행 throw', () => {
     expect(code).toMatch(/\.update\(setPayload\)\s*\.eq\('id', id\)\s*\.select\('id'\)/);
     expect(code).toContain('if (!data || data.length === 0)');
+  });
+});
+
+// ── 아이콘 노출 회귀가드 (planner #1 필터 / #3b IconRenderer 가설 검증) ─────────
+//   "아이콘 넣었는데 적용 안됨"의 후보 RC 2개를 코드증거로 배제·고정.
+//   #1: icon-only(색 미선택) 저장 시 tag_color 가 null 이 되면 BundleRxTagBar 필터(L56)
+//       에서 제외돼 칩이 안 보임 → 저장 레이어가 hasTag 일 때 DEFAULT 색을 강제해야 한다(정책 (b)안).
+//   #3b: 저장 picker 아이콘 식별자를 IconRenderer 가 인식 못 하면 아이콘이 안 그려짐 →
+//        DRUG_ICON_OPTIONS ⊆ ICON_OPTIONS, IconRenderer 는 superset 검색해야 한다.
+test.describe('아이콘 노출 회귀가드 (planner #1 필터 / #3b IconRenderer)', () => {
+  const rx = stripComments(RX_TAB);
+
+  test('#1: 아이콘/라벨 있으면(hasTag) 색 미선택이라도 기본색 강제 — 색 null 칩 방지', () => {
+    // useUpsertSet · useUpdateSetTagMeta 둘 다 hasTag 시 (form/meta.tag_color || DEFAULT_RX_TAG_COLOR).
+    const matches = rx.match(/hasTag \? \([\w.]+\.tag_color \|\| DEFAULT_RX_TAG_COLOR\) : null/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+    // hasTag 정의에 아이콘이 포함돼야 icon-only 태그가 색을 받는다.
+    expect(rx).toMatch(/hasTag = label !== '' \|\| iconV?\.?\.?.*!== ''|icon\.trim\(\) !== ''/);
+  });
+
+  test('#1: BundleRxTagBar 필터는 (색 있음) && (라벨 or 아이콘) — icon-only+색 통과', () => {
+    const bar = stripComments(TAG_BAR);
+    // tag_color 가 있고 (라벨 트림 or 아이콘 트림) 인 칩만 노출.
+    expect(bar).toMatch(/!!b\.tag_color && \(!!\(b\.tag_label && b\.tag_label\.trim\(\)\) \|\| !!\(b\.icon && b\.icon\.trim\(\)\)\)/);
+    // 서버 쿼리는 라벨 OR 아이콘으로 넓게 — icon-only 태그를 누락하지 않음.
+    expect(bar).toContain(".or('tag_label.not.is.null,icon.not.is.null')");
+  });
+
+  test('#3b: IconRenderer 는 superset(ICON_OPTIONS) 검색, picker=DRUG_ICON_OPTIONS 부분집합', () => {
+    const qr = stripComments(QUICK_RX);
+    // picker 후보는 ICON_OPTIONS 의 drug 필터 부분집합 → IconRenderer 가 모두 인식.
+    expect(qr).toMatch(/DRUG_ICON_OPTIONS = ICON_OPTIONS\.filter\(\(o\) => o\.drug\)/);
+    expect(qr).toMatch(/function IconRenderer[\s\S]*?ICON_OPTIONS\.find\(\(o\) => o\.value === icon\)/);
+    // 미지값도 Pill 폴백 — 빈 렌더(아이콘 미표시) 없음.
+    expect(qr).toMatch(/found\?\.Icon \?\? Pill/);
+  });
+
+  test('#3b: PrescriptionSetsTab picker 와 BundleRxTagBar 렌더가 동일 IconRenderer SSOT', () => {
+    expect(RX_TAB).toContain("import { DRUG_ICON_OPTIONS, IconRenderer } from '@/components/admin/QuickRxButtonsTab'");
+    expect(TAG_BAR).toContain("import { IconRenderer } from '@/components/admin/QuickRxButtonsTab'");
   });
 });
