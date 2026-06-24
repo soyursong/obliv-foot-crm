@@ -31,13 +31,15 @@ import DiagnosisNamesTab from '@/components/admin/DiagnosisNamesTab';
 import DiagnosisSetsTab from '@/components/admin/DiagnosisSetsTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
-import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
+// T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F (RETIRE): 빠른처방 전용 서브탭 제거 →
+//   QuickRxButtonsTab import 폐지(빠른처방 기능은 묶음처방 태그로 일원화). 단 QuickRxButtonsTab 컴포넌트
+//   파일·quick_rx_buttons 데이터는 물리 보존(문지은 대표원장 UI만 삭제 지시, §5-5). ?tab=quick_rx 는 prescriptions(묶음처방)로 redirect.
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 관리 별도 탭(InsuranceStatusTab) 제거 →
 //   처방세트(drug_folders)>전체보기 우측 단 인라인 편집 + HIRA 동기화로 통합. ?tab=insurance_status 는 drug_folders 로 redirect.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
+import { Pill, FileText, Layers, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -57,7 +59,14 @@ export default function ClinicManagement() {
   // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 관리 탭 제거 → 처방세트(drug_folders)로 흡수.
   //   구 딥링크/북마크(?tab=insurance_status) 호환: drug_folders 로 정규화(같은 페이지 내 탭 이동, redirect 불요).
   const rawRequestedTab = searchParams.get('tab');
-  const requestedTab = rawRequestedTab === 'insurance_status' ? 'drug_folders' : rawRequestedTab;
+  // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: 빠른처방 서브탭 retire →
+  //   구 딥링크/북마크(?tab=quick_rx) 호환: 대체 surface 인 묶음처방(prescriptions) 탭으로 정규화.
+  const requestedTab =
+    rawRequestedTab === 'insurance_status'
+      ? 'drug_folders'
+      : rawRequestedTab === 'quick_rx'
+        ? 'prescriptions'
+        : rawRequestedTab;
 
   // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-4): 상용구·수가세트는 '서비스관리 > 상용구관리'로 이전됨.
   //   구 딥링크(/admin/clinic-management?tab=phrases|fee_set_templates)·북마크 호환을 위해 새 위치로 redirect.
@@ -81,7 +90,7 @@ export default function ClinicManagement() {
     'diagnosis_sets',
     'treatment_sets',
     'documents',
-    'quick_rx',
+    // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: 'quick_rx' 서브탭 retire(묶음처방 태그로 일원화).
     'progress_plans',
     ...(isAdmin ? ['contraindications'] : []),
     // 급여여부(insurance_status)는 별도 탭 제거 → drug_folders 로 흡수(위 requestedTab 정규화로 호환).
@@ -108,7 +117,8 @@ export default function ClinicManagement() {
         {/* 진료관리 도구 3행 재배치 — T-20260607-foot-DXTOOL-MENU-REORG (문지은 대표원장 C0ATE5P6JTH)
             "다음 줄"=시각 행 분리. flex-wrap 자연 줄바꿈에 의존하지 않고 basis-full 빈 div 로 행 경계를 명시 강제. */}
         <TabsList className="mb-4 flex w-full flex-wrap h-auto gap-1">
-          {/* ── 행 1: 상병명 관리 · 묶음상병 · 처방세트 · 묶음처방 · 빠른처방 · 금기증 관리 · 급여여부 관리 ── */}
+          {/* ── 행 1: 상병명 관리 · 묶음상병 · 처방세트 · 묶음처방 · 금기증 관리 ──
+              T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: '빠른처방' 서브탭 제거(묶음처방 태그로 일원화). */}
           {/* AC-1: 상병명 관리 — services.category_label='상병' 단일 SSOT (서비스관리와 동기화) */}
           <TabsTrigger value="diagnosis_names" className="gap-1.5" data-testid="tab-diagnosis-names">
             <ClipboardList className="h-3.5 w-3.5" />
@@ -134,10 +144,8 @@ export default function ClinicManagement() {
             <Pill className="h-3.5 w-3.5" />
             묶음처방
           </TabsTrigger>
-          <TabsTrigger value="quick_rx" className="gap-1.5" data-testid="tab-quick-rx">
-            <Zap className="h-3.5 w-3.5" />
-            빠른처방
-          </TabsTrigger>
+          {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: '빠른처방'(quick_rx) 서브탭 retire.
+              빠른처방 기능은 묶음처방 태그로 일원화 — 별도 진입 탭 제거(문지은 대표원장 MSG-ol3p). */}
           {/* 금기증 관리 — admin 한정 노출 (admin-write RLS와 일치) */}
           {isAdmin && (
             <TabsTrigger value="contraindications" className="gap-1.5" data-testid="tab-contraindications">
@@ -205,9 +213,7 @@ export default function ClinicManagement() {
         <TabsContent value="drug_folders">
           <DrugFoldersTab />
         </TabsContent>
-        <TabsContent value="quick_rx">
-          <QuickRxButtonsTab />
-        </TabsContent>
+        {/* T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: quick_rx 패널(QuickRxButtonsTab) retire. */}
         {isAdmin && (
           <TabsContent value="contraindications">
             <ContraindicationsTab />

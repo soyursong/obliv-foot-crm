@@ -1,25 +1,29 @@
 /**
  * E2E spec — T-20260601-foot-RX-QUICKBAR-ACCUMULATE
- * 진료차트(DoctorTreatmentPanel) 처방 탭 빠른처방(QuickRxBar) 버튼 누적 버그 수정
+ * 진료차트(DoctorTreatmentPanel) 처방 탭 빠른삽입 항목 누적 버그 수정
+ *
+ * ⚠ T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part E (REPLACE, 2026-06-24 문지은 대표원장):
+ *   처방 탭의 빠른처방 버튼 바(QuickRxBar)가 묶음처방 태그(BundleRxTagBar)로 대체됨.
+ *   본 누적 버그(아래)는 처방 탭 부모(DoctorTreatmentPanel)의 setRxItems 콜백 로직이라 surface 교체와 무관하게 유지 —
+ *   따라서 본 spec 을 QuickRxBar 버튼 클릭 → BundleRxTagBar 태그 칩 클릭으로 retarget(동일 누적/dedup 경로 검증).
  *
  * 배경: CheckInDetailSheet → DoctorTreatmentPanel(진료 중/examination) 처방 탭의
- *   빠른처방 버튼(QuickRxBar) onSelectItems 콜백이 setRxItems append 직후
- *   `setFieldsSynced(false)` 를 호출 → 다음 렌더에서 최초 동기화 블록(L573)이 재실행되어
- *   방금 누적한 (미저장) 항목이 DB 상태로 리셋 → 누적 소실.
- *   수정: DoctorTreatmentPanel.tsx 빠른처방 onSelectItems 콜백 내 `setFieldsSynced(false)` 제거.
+ *   빠른삽입 onSelectItems 콜백이 setRxItems append 직후 `setFieldsSynced(false)` 를 호출 →
+ *   다음 렌더에서 최초 동기화 블록이 재실행되어 방금 누적한 (미저장) 항목이 DB 상태로 리셋 → 누적 소실.
+ *   수정: DoctorTreatmentPanel.tsx 빠른삽입 onSelectItems 콜백 내 `setFieldsSynced(false)` 제거.
  *   (FE only, db_change:false. 최초 1회 동기화 블록 !fieldsSynced 은 유지 → 환자 전환 회귀 없음)
  *
  *   ※ T-20260601-foot-RX-SET-ACCUMULATE(MedicalChartPanel)와 별개 surface — 중복 아님.
- *     본 건은 DoctorTreatmentPanel 처방 탭 QuickRxBar 경로.
+ *     본 건은 DoctorTreatmentPanel 처방 탭 빠른삽입(현 BundleRxTagBar) 경로.
  *
  * 검증 전략: 라이브 데이터 의존(skip) 회피 — SUPABASE_SERVICE_ROLE_KEY 로 beforeAll 에서
- *   고객 2건 + prescription_sets 2건(A 약1개 / B 약1개) + quick_rx_buttons 2개 +
+ *   고객 2건 + prescription_sets 2건(A 약1개 / B 약1개, 태그 부여 → BundleRxTagBar 칩 노출) +
  *   check_in 2건(P1: examination·처방 빈 상태 / P2: examination·DB에 처방 1건 선존재)을
- *   결정론적으로 seed → 대시보드 칸반 카드 클릭 → 진료 패널 처방 탭 → 빠른처방 버튼 누적 검증.
+ *   결정론적으로 seed → 대시보드 칸반 카드 클릭 → 진료 패널 처방 탭 → 묶음처방 태그 칩 누적 검증.
  *   afterAll 정리. SERVICE_KEY 없으면 환경 skip.
  *
- * AC-1: 빠른처방 버튼 클릭 시 항목 추가
- * AC-2: 다른 버튼 이어 클릭 시 기존 항목 위에 누적 (덮어쓰기 X) — 핵심 버그
+ * AC-1: 묶음처방 태그 칩 클릭 시 항목 추가
+ * AC-2: 다른 태그 이어 클릭 시 기존 항목 위에 누적 (덮어쓰기 X) — 핵심 버그
  * AC-3: 동일 name 중복 추가 안 됨 (기존 필터 유지)
  * AC-4: 확정/저장 후 목록 유지 · DB 영속
  * AC-5: 다른 환자 전환/재진입 시 그 환자 DB 목록으로 정상 표시 (최초 동기화 회귀 없음)
@@ -38,8 +42,9 @@ const CUST1_NAME = `E2E빠른처방A${SUFFIX}`; // 빈 상태 → 누적 검증
 const CUST2_NAME = `E2E빠른처방B${SUFFIX}`; // DB 선존재 → 동기화 회귀 검증
 const SET_A_NAME = `E2E빠른세트A${SUFFIX}`;
 const SET_B_NAME = `E2E빠른세트B${SUFFIX}`;
-const BTN_A_NAME = `빠처A${SUFFIX}`;
-const BTN_B_NAME = `빠처B${SUFFIX}`;
+// Part E retarget: 묶음처방 태그 라벨(BundleRxTagBar 칩에 노출). tag_color 부여돼야 칩 렌더.
+const TAG_A_LABEL = `빠처A${SUFFIX}`;
+const TAG_B_LABEL = `빠처B${SUFFIX}`;
 const A_DRUG = `E2EQA약_${SUFFIX}`;
 const B_DRUG = `E2EQB약_${SUFFIX}`;
 const PRESEED_DRUG = `E2E선존재약_${SUFFIX}`; // P2 가 DB에 미리 들고 있는 처방
@@ -54,8 +59,6 @@ interface SeedIds {
   cust2Id: string;
   setAId: number;
   setBId: number;
-  btnAId: string;
-  btnBId: string;
   checkIn1Id: string;
   checkIn2Id: string;
 }
@@ -74,31 +77,57 @@ async function openTreatmentRxTab(page: Page, customerName: string): Promise<voi
   await card.waitFor({ state: 'visible', timeout: 15_000 });
   await card.click();
 
-  // ── QA-FIX(phase2): Dashboard.handleCardClick 은 진료 패널(CheckInDetailSheet, z-50)과
+  // ── QA-FIX(phase3): Dashboard.openChartFor 는 진료 패널(CheckInDetailSheet, z-50)과
   //    함께 2번차트(CustomerChartSheet, z-70)를 동시에 연다. 2번차트가 진료 패널 위를 덮어
-  //    그 로딩 오버레이("차트 불러오는 중…")가 처방 탭 클릭 포인터를 가로막아 timeout 발생.
+  //    그 로딩 오버레이("불러오는 중...")가 처방 탭 클릭 포인터를 가로막아 timeout 발생.
   //    → 진료 패널을 조작하기 전에 2번차트를 ESC 로 닫고(닫힘 완료까지 대기) 오버레이를 제거한다.
   //    CustomerChartSheet 의 ESC 핸들러는 document capture 단계 + stopPropagation 이고,
   //    CheckInDetailSheet(Radix Sheet)의 ESC 는 bubble 단계 → capture 가 먼저 stopPropagation
   //    하므로 ESC 는 2번차트만 닫고 진료 패널은 유지된다. (닫기 버튼은 CustomerChartPage 헤더에
   //    가려 actionable 하지 않으므로 사용하지 않음)
+  //
+  //    ⚠ 재오픈 race(phase3 보강): CheckInDetailSheet 는 resolvedCustomerId 비동기 해석 완료 시점에
+  //    openChart 를 자동 호출(설계 — 모든 슬롯 2번차트 자동오픈, CheckInDetailSheet L574/L595). 따라서
+  //    차트 로드가 끝나기 전에 ESC 로 닫으면 직후 해석 완료로 차트가 재오픈돼 처방 탭 클릭을 다시 가로막는다.
+  //    → (a) 차트 콘텐츠 로드 완료("불러오는 중..." 소멸)를 먼저 기다려 자동오픈 deps 를 안정화한 뒤,
+  //       (b) ESC 로 닫고, (c) 닫힘이 1.2초 유지(재오픈 없음)될 때까지 반복 확인한다.
   const chartSheet = page.getByTestId('customer-chart-sheet');
   try {
     await chartSheet.waitFor({ state: 'visible', timeout: 5_000 });
   } catch {
     // 미연결 고객 등 2번차트가 안 열린 케이스 — 무시하고 진행
   }
-  if (await chartSheet.count()) {
-    await page.keyboard.press('Escape');
-    await expect(chartSheet).toBeHidden({ timeout: 10_000 });
+  if ((await chartSheet.count()) > 0) {
+    // (a) 차트 콘텐츠 로드 완료 대기 — resolvedCustomerId 비동기 해석/자동오픈 deps 안정화.
+    //     로딩 오버레이가 사라지면 차트가 완전 마운트됨 = 이후 자동 재오픈 트리거 없음.
+    await chartSheet
+      .getByText('불러오는 중...', { exact: true })
+      .waitFor({ state: 'hidden', timeout: 15_000 })
+      .catch(() => { /* 오버레이가 이미 없거나 미검출 — 진행 */ });
+    // (b)+(c) ESC 닫기 → 닫힘이 1.2초 유지되는지 확인(재오픈 race 통과). 최대 6회.
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press('Escape');
+      try {
+        await expect(chartSheet).toBeHidden({ timeout: 3_000 });
+      } catch {
+        // 아직 핸들러 미부착/로딩 중 — 잠시 후 재시도
+        await page.waitForTimeout(400);
+        continue;
+      }
+      // 닫힘 확인됨 — 1.2초간 재오픈(자동오픈 race) 없는지 감시
+      await page.waitForTimeout(1200);
+      if ((await chartSheet.count()) === 0) break;
+    }
   }
+  await expect(chartSheet).toHaveCount(0);
 
   // 진료 패널 마운트 (status=examination)
   await expect(page.getByTestId('doctor-treatment-panel')).toBeVisible({ timeout: 10_000 });
   const rxTab = page.getByTestId('doctor-tab-prescription');
   await rxTab.scrollIntoViewIfNeeded();
   await rxTab.click();
-  await expect(page.getByTestId('quick-rx-bar')).toBeVisible({ timeout: 10_000 });
+  // Part E: 빠른삽입 surface 가 QuickRxBar → BundleRxTagBar(묶음처방 태그 칩) 로 교체됨.
+  await expect(page.getByTestId('bundle-rx-tag-bar')).toBeVisible({ timeout: 10_000 });
 }
 
 /** 진료 패널 처방내역 행 (DoctorTreatmentPanel 의 prescription-item-row) */
@@ -106,8 +135,9 @@ function rxRows(page: Page) {
   return page.getByTestId('prescription-item-row');
 }
 
-function quickBtn(page: Page, name: string) {
-  return page.getByTestId(`quick-rx-btn-${name}`);
+/** 묶음처방 태그 칩 — testid=bundle-rx-tag-{prescription_set id}. */
+function bundleTag(page: Page, setId: number) {
+  return page.getByTestId(`bundle-rx-tag-${setId}`);
 }
 
 test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 버튼 누적', () => {
@@ -131,25 +161,15 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
       .select('id').single();
     if (c2Err || !c2) throw new Error(`customer2 seed 실패: ${c2Err?.message}`);
 
-    // 처방세트 2건 (각 약 1개)
+    // 처방세트 2건 (각 약 1개) — Part E: 태그(tag_label+tag_color) 부여 → BundleRxTagBar 칩으로 노출.
     const { data: setA, error: aErr } = await admin.from('prescription_sets')
-      .insert({ name: SET_A_NAME, items: [mkItem(A_DRUG)], is_active: true, sort_order: 9101 })
+      .insert({ name: SET_A_NAME, items: [mkItem(A_DRUG)], is_active: true, sort_order: 9101, tag_label: TAG_A_LABEL, tag_color: 'teal' })
       .select('id').single();
     if (aErr || !setA) throw new Error(`prescription_set A seed 실패: ${aErr?.message}`);
     const { data: setB, error: bErr } = await admin.from('prescription_sets')
-      .insert({ name: SET_B_NAME, items: [mkItem(B_DRUG)], is_active: true, sort_order: 9102 })
+      .insert({ name: SET_B_NAME, items: [mkItem(B_DRUG)], is_active: true, sort_order: 9102, tag_label: TAG_B_LABEL, tag_color: 'sky' })
       .select('id').single();
     if (bErr || !setB) throw new Error(`prescription_set B seed 실패: ${bErr?.message}`);
-
-    // 빠른처방 버튼 2개
-    const { data: btnA, error: baErr } = await admin.from('quick_rx_buttons')
-      .insert({ name: BTN_A_NAME, icon: 'Pill', prescription_set_id: setA.id, sort_order: 9101, is_active: true })
-      .select('id').single();
-    if (baErr || !btnA) throw new Error(`quick_rx_button A seed 실패: ${baErr?.message}`);
-    const { data: btnB, error: bbErr } = await admin.from('quick_rx_buttons')
-      .insert({ name: BTN_B_NAME, icon: 'Pill', prescription_set_id: setB.id, sort_order: 9102, is_active: true })
-      .select('id').single();
-    if (bbErr || !btnB) throw new Error(`quick_rx_button B seed 실패: ${bbErr?.message}`);
 
     // check_in 2건 (status=examination → DoctorTreatmentPanel 마운트)
     const { data: ci1, error: ci1Err } = await admin.from('check_ins')
@@ -174,16 +194,14 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
     seed = {
       clinicId, cust1Id: c1.id as string, cust2Id: c2.id as string,
       setAId: setA.id as number, setBId: setB.id as number,
-      btnAId: btnA.id as string, btnBId: btnB.id as string,
       checkIn1Id: ci1.id as string, checkIn2Id: ci2.id as string,
     };
   });
 
-  // ── cleanup: check_in → button → set → customer · best-effort ─────────────────
+  // ── cleanup: check_in → set → customer · best-effort ──────────────────────────
   test.afterAll(async () => {
     if (!admin || !seed) return;
     await admin.from('check_ins').delete().in('id', [seed.checkIn1Id, seed.checkIn2Id]);
-    await admin.from('quick_rx_buttons').delete().in('id', [seed.btnAId, seed.btnBId]);
     await admin.from('prescription_sets').delete().in('id', [seed.setAId, seed.setBId]);
     await admin.from('customers').delete().in('id', [seed.cust1Id, seed.cust2Id]);
   });
@@ -195,46 +213,50 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
   });
 
   // ── AC-1/AC-2/AC-3: 시나리오 1(누적) + 시나리오 2(중복 엣지) ──────────────────
-  test('AC-1/2/3: 빠른처방 A 클릭 → B 클릭 → A 유지된 채 B 누적 (덮어쓰기 X) + 동일 버튼 중복 X', async ({ page }) => {
+  test('AC-1/2/3: 묶음처방 태그 A 클릭 → B 클릭 → A 유지된 채 B 누적 (덮어쓰기 X) + 동일 태그 중복 X', async ({ page }) => {
     await openTreatmentRxTab(page, CUST1_NAME);
 
-    // AC-1: 빠른처방 A 클릭 → 1행 추가
-    await quickBtn(page, BTN_A_NAME).click();
+    // AC-1: 묶음처방 태그 A 클릭 → 1행 추가
+    await bundleTag(page, seed!.setAId).click();
     await expect(rxRows(page)).toHaveCount(1);
-    // ⚠ locator 스코프: 약명은 처방행(prescription-item-row) 외에 빠른처방 hover 툴팁
-    //   (quick-rx-tooltip-*, QUICKRX-HOVER-TOOLTIP)에도 노출 → bare getByText 는 strict 위반.
-    //   처방행으로 한정해 누적 실체만 단언한다.
+    // 처방행으로 한정해 누적 실체만 단언한다(약명이 다른 영역에도 노출될 수 있으므로 strict 회피).
     await expect(rxRows(page).filter({ hasText: A_DRUG })).toHaveCount(1);
 
     // AC-2(핵심 버그): B 이어 클릭 → A 사라지지 않고 누적 (2행). 버그 시 setFieldsSynced(false) 로 DB(빈) 리셋되어 0~1행.
-    await quickBtn(page, BTN_B_NAME).click();
+    await bundleTag(page, seed!.setBId).click();
     await expect(rxRows(page)).toHaveCount(2);
     await expect(rxRows(page).filter({ hasText: A_DRUG })).toHaveCount(1); // A 보존
     await expect(rxRows(page).filter({ hasText: B_DRUG })).toHaveCount(1); // B 누적
 
-    // AC-3: 동일 버튼 A 재클릭 → name 중복 필터로 추가 안 됨 (여전히 2행)
-    await quickBtn(page, BTN_A_NAME).click();
+    // AC-3: 동일 태그 A 재클릭 → name 중복 필터로 추가 안 됨 (여전히 2행)
+    await bundleTag(page, seed!.setAId).click();
     await expect(rxRows(page)).toHaveCount(2);
   });
 
   // ── AC-4: 저장 → 재진입 후 누적 항목 유지 · DB 영속 ────────────────────────────
-  test('AC-4: 빠른처방 A+B 누적 → 임시 저장 → 재진입 시 2행 유지', async ({ page }) => {
+  test('AC-4: 묶음처방 태그 A+B 누적 → 임시 저장 → 재진입 시 2행 유지', async ({ page }) => {
     await openTreatmentRxTab(page, CUST1_NAME);
 
-    await quickBtn(page, BTN_A_NAME).click();
+    await bundleTag(page, seed!.setAId).click();
     await expect(rxRows(page)).toHaveCount(1); // A 누적 확인 후 B 클릭(연속 클릭 레이스 방지)
-    await quickBtn(page, BTN_B_NAME).click();
+    await bundleTag(page, seed!.setBId).click();
     await expect(rxRows(page)).toHaveCount(2);
 
-    // 처방 임시 저장
-    const saveBtn = page.getByRole('button', { name: '임시 저장' }).first();
+    // 처방 임시 저장 — ⚠ 처방 탭 전용 저장 버튼(testid)을 정확히 타게팅한다.
+    //   진료 패널엔 '임시 저장' 버튼이 탭별로 3개(차팅/처방/서류) 존재 → getByRole(name).first() 는
+    //   탭 전환 타이밍에 차팅 탭 버튼(handleSaveNote=doctor_note 저장)을 잡아 prescription_items 가
+    //   영속되지 않는 race 가 있었다(재진입 0행 재현, baseline 에서도 간헐 실패). 처방 탭 저장은
+    //   rx-temp-save-btn(handleSaveRx → prescription_items 영속)으로 고정해 결정론화.
+    const saveBtn = page.getByTestId('rx-temp-save-btn');
     await expect(saveBtn).toBeEnabled();
     await saveBtn.click();
     await expect(saveBtn).toBeEnabled({ timeout: 15_000 }); // 저장 완료(isPending 해제) 대기
 
     // 재진입 → DB 영속 확인 (2행 복원)
+    //   ⚠ 재진입 후 처방행은 패널 마운트 시 check_in.prescription_items 를 비동기 fetch(L165)해 채운다.
+    //   풀 스위트 부하에서 이 fetch 가 기본 5초 단언 타임아웃을 넘길 수 있어 15초로 확장(영속 자체는 정상).
     await openTreatmentRxTab(page, CUST1_NAME);
-    await expect(rxRows(page)).toHaveCount(2);
+    await expect(rxRows(page)).toHaveCount(2, { timeout: 15_000 });
     await expect(rxRows(page).filter({ hasText: A_DRUG })).toHaveCount(1);
     await expect(rxRows(page).filter({ hasText: B_DRUG })).toHaveCount(1);
   });
