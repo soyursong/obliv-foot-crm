@@ -212,8 +212,8 @@ export default function OpinionRequestBox({
                     title={
                       disabled
                         ? hasDiagnosis
-                          ? '진단서는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
-                          : '금기증을 선택 중입니다. 진단서는 함께 선택할 수 없습니다.'
+                          ? '진단서(표준)는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
+                          : '금기증을 선택 중입니다. 진단서(표준)는 함께 선택할 수 없습니다.'
                         : opt.label
                     }
                     data-testid={`opinion-req-opt-${opt.key}`}
