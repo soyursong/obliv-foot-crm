@@ -52,7 +52,9 @@ function bytesToKb(b: number | null) {
   return `${Math.round(b / 1024)} KB`;
 }
 
-type Accent = 'rose' | 'emerald';
+// T-20260624-foot-CHART2-SAVEBTN-COMPACT-KOH-TONE (AC2): 'slate' 추가 — 쿨그레이 모노톤.
+//   rose/emerald(결과유형 색구분)는 보존. KOH 호출부만 accent='slate'로 교체해 모노톤 정합.
+type Accent = 'rose' | 'emerald' | 'slate';
 
 const ACCENT_MAP: Record<Accent, { box: string; btn: string }> = {
   rose: {
@@ -62,6 +64,10 @@ const ACCENT_MAP: Record<Accent, { box: string; btn: string }> = {
   emerald: {
     box: 'border-emerald-200 bg-emerald-50/50',
     btn: 'bg-emerald-600 text-white hover:bg-emerald-700',
+  },
+  slate: {
+    box: 'border-slate-200 bg-slate-50/60',
+    btn: 'bg-slate-600 text-white hover:bg-slate-700',
   },
 };
 
