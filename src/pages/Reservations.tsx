@@ -403,6 +403,9 @@ export default function Reservations() {
   // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 클립보드 (Ctrl+C/X/V)
   // AC-5 재오픈 fix: 모듈 레벨 백업에서 초기화 → remount 후에도 클립보드 유지
   const [selectedResvId, setSelectedResvId] = useState<string | null>(null);
+  // T-20260623-foot-RESVMGMT-OVERHAUL2-W3-HORIZONTAL [1-b]: 일간 보기 가로(x축) 시간 배열 — 선택된 시간 셀(클릭 시 해당 시간 예약 한 줄 나열).
+  //   주간 보기는 현행 유지(이 상태 미사용). 부모 OVERHAUL-2-PLAN C4/C5/Q1: x축=시간, y축 비움(치료사/공간 그루핑 코드 작성 금지), 색상 유지.
+  const [selectedDaySlot, setSelectedDaySlot] = useState<string | null>(null);
   const [clipboard, setClipboardState] = useState<{ resv: Reservation; mode: 'copy' | 'cut' } | null>(() => _clipboardBackup);
   const [clipboardTarget, setClipboardTargetState] = useState<{ date: string; time: string } | null>(() => _clipboardTargetBackup);
   const setClipboard = useCallback((val: { resv: Reservation; mode: 'copy' | 'cut' } | null) => {
@@ -1749,6 +1752,197 @@ export default function Reservations() {
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
           </div>
+        ) : viewMode === 'day' ? (
+          /* T-20260623-foot-RESVMGMT-OVERHAUL2-W3-HORIZONTAL [1-b]: 일간 보기 — 시간 가로(x축) 배열 전면 재설계.
+             부모 OVERHAUL-2-PLAN C4/C5/Q1 확정 spec:
+               · 가로축 = 시간(10:00 / 10:30 …). 특정 시간 셀 클릭 → 해당 시간 예약을 한 줄로 나열(C4).
+               · 세로축 = 비워둠. 치료사/공간 그루핑 코드 작성 금지(C5).
+               · 색상 유지(초진=그린 / 재진=하늘 / 힐러=노랑) — KIND_CARD_STYLE/KIND_DOT 재사용.
+             reconcile(착수): 6/22 좌우2열 그리드(d14cf555)·30분 슬롯 행은 아래 '주간 보기 <table>' 한정으로 격리.
+               일간은 시간축 가로 펼침(reporter 1급)을 1급으로 채택 — 자족 레이아웃. 주간 <table> 경로는 불변(회귀가드). */
+          (() => {
+            const dateStr = format(selectedDay, 'yyyy-MM-dd');
+            const daySlots = slotsFor(selectedDay);
+            const mineTarget = filterAssignee !== '' ? filterAssignee : myDisplayName;
+            const slotList = (time: string) => {
+              const key = `${dateStr}_${time}`;
+              return [...(resvByKey[key] ?? [])]
+                .filter((r) => !filterProgress || r.progress_check_required)
+                .filter((r) => !filterMine || (mineTarget !== '' && (r.registrar_name ?? '').trim() === mineTarget))
+                .sort((a, b) => {
+                  const ko = KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)];
+                  if (ko !== 0) return ko;
+                  return a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
+                });
+            };
+            const kindCounts = (time: string) => {
+              let n = 0, rr = 0, h = 0;
+              for (const r of slotList(time)) {
+                if (r.status === 'cancelled') continue;
+                const k = resvKind(r);
+                if (k === 'new') n += 1; else if (k === 'returning') rr += 1; else if (k === 'healer') h += 1;
+              }
+              return { n, rr, h };
+            };
+            // 활성(선택) 시간 셀: 사용자가 클릭한 슬롯 우선 → 영업시간 밖/미선택이면 기본값(오늘이면 현재슬롯 → 예약 있는 첫 슬롯 → 첫 슬롯).
+            const activeSlot =
+              selectedDaySlot && daySlots.includes(selectedDaySlot)
+                ? selectedDaySlot
+                : isSameDay(selectedDay, now) && daySlots.includes(currentSlot)
+                  ? currentSlot
+                  : (daySlots.find((t) => slotList(t).some((r) => r.status !== 'cancelled')) ?? daySlots[0] ?? null);
+            const activeList = activeSlot ? slotList(activeSlot) : [];
+
+            const renderDayCard = (r: Reservation) => (
+              <div
+                key={r.id}
+                data-testid={`resv-card-${r.id}`}
+                draggable={r.status === 'confirmed'}
+                onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
+                onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
+                onContextMenu={(e) => {
+                  if (r.customer_id) { e.preventDefault(); e.stopPropagation(); setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } }); }
+                }}
+                className={cn(
+                  // C4 한 줄 나열용 고정폭 카드. 색상은 KIND_CARD_STYLE(초진=그린/재진=하늘/힐러=노랑) 유지.
+                  'w-[190px] min-w-0 overflow-hidden rounded border px-2 py-1 text-[12px] leading-tight shadow-sm transition-opacity',
+                  r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
+                  draggedId === r.id && 'opacity-40',
+                  STATUS_STYLE[r.status],
+                  KIND_CARD_STYLE[resvKind(r)],
+                  r.status === 'checked_in' && draggedId !== r.id && 'opacity-60',
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                  {r.customer_id && r.status !== 'cancelled' ? (
+                    <CustomerHoverCard
+                      checkIn={resvAsCheckIn(r)}
+                      reservationTime={r.reservation_time}
+                      reservationInfo={{
+                        registrarLabel: resvBookerMap.get(r.id) ?? null,
+                        reservationDate: r.reservation_date,
+                        visitRoute: r.visit_route ?? r.referral_source ?? null,
+                        bookingMemo: r.booking_memo ?? null,
+                        briefNote: r.brief_note ?? null,
+                      }}
+                      compact
+                      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } }); }}
+                      onClick={() => handleResvOpenChart(resvAsCheckIn(r))}
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        'block min-w-0 max-w-full truncate font-semibold text-gray-900',
+                        r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
+                        r.status === 'cancelled' && 'line-through',
+                      )}
+                      onClick={(e) => { if (!r.customer_id) return; e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
+                    >
+                      {r.customer_name}
+                    </span>
+                  )}
+                  {r.status === 'cancelled' && (
+                    <span className="rounded bg-gray-200 px-0.5 text-[9px] leading-none text-gray-500">취소됨</span>
+                  )}
+                </div>
+                <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] opacity-80">
+                  <span className={cn('inline-block h-1.5 w-1.5 rounded-full', KIND_DOT[resvKind(r)])} />
+                  {resvKind(r) === 'healer' ? '힐러' : VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
+                  {r.customer_phone && (
+                    <span className="text-muted-foreground">· ···{maskPhoneTail(r.customer_phone)}</span>
+                  )}
+                </div>
+                {resvBookerMap.get(r.id) && (
+                  <div className="truncate text-[10px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
+                    @{resvBookerMap.get(r.id)}
+                  </div>
+                )}
+              </div>
+            );
+
+            return (
+              <div data-testid="resv-day-horizontal" className="flex h-full flex-col gap-3 p-3">
+                {/* 가로(x축) 시간 셀 스트립 — 세로축 비움(C5: 치료사/공간 그루핑 없음). flex-wrap으로 좌→우 시간 순 배열. */}
+                <div data-testid="resv-day-xaxis" className="flex flex-wrap content-start gap-1.5">
+                  {daySlots.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">영업 시간 슬롯이 없습니다.</div>
+                  ) : (
+                    daySlots.map((time) => {
+                      const { n, rr, h } = kindCounts(time);
+                      const total = n + rr + h;
+                      const full = isSlotFull(dateStr, time);
+                      const isActive = time === activeSlot;
+                      const isNow = isSameDay(selectedDay, now) && time === currentSlot;
+                      const isDragOver = dropTarget === `${dateStr}_${time}`;
+                      return (
+                        <button
+                          key={time}
+                          type="button"
+                          data-testid={`resv-day-hslot-${time}`}
+                          data-slot-time={time}
+                          onClick={() => setSelectedDaySlot(time)}
+                          onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
+                          onDragLeave={() => setDropTarget(null)}
+                          onDrop={(e) => handleDrop(e, dateStr, time)}
+                          className={cn(
+                            'flex min-h-[44px] min-w-[64px] flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-1 text-center transition-colors',
+                            isActive
+                              ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-400'
+                              : 'border-border bg-background hover:border-teal-300 hover:bg-teal-50/50',
+                            full && !isActive && 'border-red-200 bg-red-50',
+                            isNow && !isActive && 'ring-1 ring-amber-400',
+                            isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
+                          )}
+                        >
+                          <span className={cn('text-xs font-semibold tabular-nums', isActive ? 'text-teal-700' : 'text-foreground')}>{time}</span>
+                          {total > 0 ? (
+                            <span className="flex flex-wrap items-center justify-center gap-0.5 text-[9px] font-medium leading-none">
+                              {n > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1 py-0.5 text-firstvisit-700">초 {n}</span>}
+                              {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
+                              {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-muted-foreground/40">·</span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* 선택 시간 → 예약 한 줄 나열(C4). 세로축 비움 — 단순 가로 flex(wrap) 나열. */}
+                <div data-testid="resv-day-slot-detail" className="flex-1 overflow-auto rounded-lg border bg-muted/20 p-3">
+                  {!activeSlot ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">시간을 선택하세요.</div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold tabular-nums text-teal-700">{activeSlot}</span>
+                        <span className="text-xs text-muted-foreground">예약 {activeList.filter((r) => r.status !== 'cancelled').length}건</span>
+                        {!isSlotFull(dateStr, activeSlot) && !filterProgress && (
+                          <button
+                            type="button"
+                            data-testid={`resv-day-slot-plus-${activeSlot}`}
+                            onClick={() => openNewSlot(selectedDay, activeSlot)}
+                            className="inline-flex items-center gap-0.5 rounded border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[11px] text-muted-foreground transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
+                          >
+                            <Plus className="h-3 w-3" /> 예약
+                          </button>
+                        )}
+                      </div>
+                      {activeList.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">해당 시간 예약이 없습니다.</div>
+                      ) : (
+                        <div data-testid="resv-day-slot-cards" className="flex flex-row flex-wrap gap-2">
+                          {activeList.map(renderDayCard)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()
         ) : (
           <table className="w-full min-w-[800px] table-fixed border-collapse text-sm">{/* T-20260515-foot-RESPONSIVE-SHELL: min-w 추가 → 모바일 수평 스크롤 활성화 / T-20260522-foot-RESV-CAL-COLWIDTH: table-fixed → 6칸 균등 배분, min-w 700→800px (시간축80+6×120) */}
             <thead className="sticky top-0 z-10 bg-muted/60">
