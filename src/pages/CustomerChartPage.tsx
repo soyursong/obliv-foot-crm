@@ -218,6 +218,7 @@ function useMemoHistory(opts: {
     const { data, error } = await supabase
       .from(table).select(SELECT)
       .eq('customer_id', customerId)
+      .is('deleted_at', null)   // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: soft-delete 숨김
       .order('created_at', { ascending: false });
     if (error) {
       if (isTableMissing(error as { message?: string; code?: string })) setUnavailable(true);
@@ -256,6 +257,7 @@ function useMemoHistory(opts: {
       const { data, error } = await supabase
         .from(table).select('content, created_at')
         .eq('customer_id', customerId)
+        .is('deleted_at', null)   // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: soft-delete 제외
         .order('created_at', { ascending: false })
         .limit(1).maybeSingle();
       if (cancelled) return;
@@ -313,9 +315,13 @@ function useMemoHistory(opts: {
     setEditingId(null); setEditingText('');
   };
 
+  // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: hard-delete → soft-delete(deleted_at 마킹). 기록 보존(의료법).
   const remove = async (id: string) => {
-    if (!window.confirm('메모를 삭제하시겠습니까?')) return;
-    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (!window.confirm('이 메모를 삭제하시겠습니까?\n(기록 보존을 위해 목록에서만 숨겨지며 데이터는 남습니다)')) return;
+    const { error } = await supabase
+      .from(table)
+      .update({ deleted_at: new Date().toISOString(), deleted_by: authorEmail })
+      .eq('id', id);
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     setMemos(prev => prev.filter(m => m.id !== id));
   };
@@ -333,7 +339,7 @@ function MemoHistoryPanel({
   hook, phrases, profileEmail, testidPrefix,
   addLabel = '새 메모 추가', addBtnLabel = '메모 추가',
   historyLabel = '메모 이력', emptyLabel = '아직 메모가 없습니다', placeholder = '메모를 입력하세요…',
-  inputRows = 3, hideHistory = false,
+  inputRows = 3, hideHistory = false, canManageAll = false,
 }: {
   hook: MemoHistoryHook;
   phrases: { id: number; name: string; content: string }[];
@@ -344,6 +350,8 @@ function MemoHistoryPanel({
   inputRows?: number;
   // AC-3: 중간 이력 표시영역 숨김(데이터/저장 hook은 유지 — 표시만 제거). 고객메모 요약 중복 제거용.
   hideHistory?: boolean;
+  // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: admin/manager/director면 타인 작성·이전기록 메모도 수정·삭제 가능.
+  canManageAll?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -442,7 +450,7 @@ function MemoHistoryPanel({
                     <span className="text-[10px] text-muted-foreground">
                       {memo.created_by_name ?? '알 수 없음'}{memo.created_at ? ` · ${format(new Date(memo.created_at), 'yyyy-MM-dd HH:mm', { locale: ko })}` : ''}
                     </span>
-                    {memo.created_by && memo.created_by === profileEmail && (
+                    {(canManageAll || (memo.created_by && memo.created_by === profileEmail)) && (
                       <div className="flex gap-1.5">
                         <button
                           type="button"
@@ -3351,6 +3359,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     [latestCheckIn],
   );
   const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant';
+  // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: 메모 전체관리 권한 — admin/manager/director는 타인 작성·이전기록 메모도 수정·삭제.
+  const canManageMemo = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
   const saveTreatmentToes = useCallback(
     async (next: FootSite[]) => {
       const ci = latestCheckIn;
@@ -4069,6 +4079,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .from('customer_treatment_memos')
       .select('id, content, created_by, created_by_name, created_at, updated_at')
       .eq('customer_id', customer.id)
+      .is('deleted_at', null)   // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: soft-delete 숨김
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -4133,6 +4144,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .from('customer_treatment_memos')
         .select('content, created_at')
         .eq('customer_id', customer.id)
+        .is('deleted_at', null)   // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: soft-delete 제외
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -4204,12 +4216,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setEditingMemoText('');
   };
 
-  // 메모 삭제 (본인 작성분)
+  // 메모 삭제 — T-20260624-foot-CHART2-MEMO-EDIT-DELETE: hard-delete → soft-delete(의료법 §22-3/§40 진료기록 보존).
+  //   치료메모는 진료기록 → 물리삭제 금지. deleted_at 마킹으로 목록에서만 숨김(데이터 보존).
   const deleteTreatmentMemo = async (id: string) => {
-    if (!window.confirm('메모를 삭제하시겠습니까?')) return;
+    if (!window.confirm('이 치료메모를 삭제하시겠습니까?\n(진료기록 보존을 위해 목록에서만 숨겨지며 기록은 남습니다)')) return;
     const { error } = await supabase
       .from('customer_treatment_memos')
-      .delete()
+      .update({ deleted_at: new Date().toISOString(), deleted_by: profile?.email ?? null })
       .eq('id', id);
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     setTreatmentMemos(prev => prev.filter(m => m.id !== id));
@@ -8016,6 +8029,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   emptyLabel="아직 고객메모가 없습니다"
                   placeholder="고객 관련 메모를 입력하세요…"
                   hideHistory
+                  canManageAll={canManageMemo}
                 />
                 {/* 기타메모(customers.memo) — 단일필드 유지(히스토리화 대상 아님) */}
                 <div className="pt-1 border-t border-gray-100">
@@ -8135,6 +8149,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   emptyLabel="아직 상담메모가 없습니다"
                   placeholder="상담 내용·보험·성향 등을 입력하세요…"
                   inputRows={8}
+                  canManageAll={canManageMemo}
                 />
               </div>
             )}
@@ -8237,7 +8252,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               <span className="text-[10px] text-muted-foreground">
                                 {memo.created_by_name ?? '알 수 없음'} · {format(new Date(memo.created_at), 'yyyy-MM-dd HH:mm', { locale: ko })}
                               </span>
-                              {memo.created_by && memo.created_by === profile?.email && (
+                              {(canManageMemo || (memo.created_by && memo.created_by === profile?.email)) && (
                                 <div className="flex gap-1.5">
                                   <button
                                     type="button"

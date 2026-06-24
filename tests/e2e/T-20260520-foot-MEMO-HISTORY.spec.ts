@@ -112,10 +112,12 @@ test('AC-4: saveTreatmentMemoEdit — eq(id) 본인 건만 UPDATE', () => {
   expect(src).toContain('.eq(\'id\', editingMemoId)');
 });
 
-test('AC-4: deleteTreatmentMemo — eq(id) 본인 건만 DELETE', () => {
+// NOTE: T-20260624-foot-CHART2-MEMO-EDIT-DELETE 에서 hard-delete → soft-delete(deleted_at) 전환(의료법 §22-3/§40 진료기록 보존).
+//       삭제 권한도 본인 한정 → admin/manager/director 전체관리로 확대. 아래는 갱신된 동작 검증.
+test('AC-4: deleteTreatmentMemo — soft-delete(deleted_at) + eq(id)', () => {
   const src = fs.readFileSync(CHART_PAGE_PATH, 'utf-8');
   expect(src).toContain('const deleteTreatmentMemo');
-  expect(src).toContain(".delete()");
+  expect(src).toContain('deleted_at:');
   expect(src).toContain(".eq('id', id)");
 });
 
