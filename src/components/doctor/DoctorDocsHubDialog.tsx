@@ -94,7 +94,7 @@ export default function DoctorDocsHubDialog({
           if (!v) onOpenChange(false);
         }}
       >
-        <DialogContent className="max-w-md" data-testid="docs-hub-dialog">
+        <DialogContent className="max-w-lg" data-testid="docs-hub-dialog">
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-teal-600" />
             서류 발급
@@ -103,7 +103,7 @@ export default function DoctorDocsHubDialog({
           <p className="-mt-1 text-xs text-muted-foreground">
             진료대시보드에서 바로 소견서·진단서·검사결과지를 작성·발급할 수 있어요.
           </p>
-          <div className="mt-2 flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-3">
             <HubButton
               testId="docs-hub-opinion"
               icon={<FileSignature className="h-4 w-4 text-teal-600" />}
@@ -199,14 +199,14 @@ function HubButton({
       type="button"
       onClick={onClick}
       data-testid={testId}
-      className="flex items-center gap-3 rounded-lg border border-input bg-background px-3 py-2.5 text-left transition hover:border-teal-400 hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-teal-500"
+      className="flex items-start gap-3 rounded-lg border border-input bg-background px-4 py-3.5 text-left transition hover:border-teal-400 hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-teal-500"
     >
-      <span className="shrink-0">{icon}</span>
+      <span className="mt-0.5 shrink-0">{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">{title}</span>
-        <span className="block text-[11px] text-muted-foreground">{desc}</span>
+        <span className="block text-sm font-medium leading-snug text-foreground">{title}</span>
+        <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{desc}</span>
       </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
     </button>
   );
 }
