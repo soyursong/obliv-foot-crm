@@ -366,8 +366,21 @@ function MemoHistoryPanel({
               </div>
             </div>
           )}
+          {/* T-20260624-foot-CHART2-SAVEBTN-COMPACT-KOH-TONE (AC1):
+              full-width 막대 → 라벨 우측 끝 컴팩트 추가 버튼. 동작·disabled·라벨 동일. */}
           <div>
-            <label className="block text-[11px] text-muted-foreground mb-0.5">{addLabel}</label>
+            <div className="flex items-center justify-between mb-0.5">
+              <label className="text-[11px] text-muted-foreground">{addLabel}</label>
+              <button
+                type="button"
+                onClick={hook.saveNew}
+                disabled={hook.savingNew || !hook.newText.trim()}
+                className="rounded bg-[#333333] text-white px-2.5 py-0.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
+                data-testid={`${testidPrefix}-add-btn`}
+              >
+                {hook.savingNew ? '저장 중…' : addBtnLabel}
+              </button>
+            </div>
             <Textarea
               value={hook.newText}
               onChange={(e) => hook.setNewText(e.target.value)}
@@ -377,15 +390,6 @@ function MemoHistoryPanel({
               data-testid={`${testidPrefix}-new-input`}
             />
           </div>
-          <button
-            type="button"
-            onClick={hook.saveNew}
-            disabled={hook.savingNew || !hook.newText.trim()}
-            className="w-full rounded bg-[#333333] text-white py-1.5 text-[11px] font-medium hover:bg-[#454545] transition disabled:opacity-50"
-            data-testid={`${testidPrefix}-add-btn`}
-          >
-            {hook.savingNew ? '저장 중…' : addBtnLabel}
-          </button>
         </>
       )}
 
@@ -5516,6 +5520,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <tr>
                   <td className={cn(LC, 'align-top pt-2')}>고객메모</td>
                   <td className={VC} colSpan={3}>
+                    {/* T-20260624-foot-CHART2-SAVEBTN-COMPACT-KOH-TONE (AC1):
+                        full-width 막대 → 라벨 우측 끝 컴팩트 [저장] 버튼. 동작·토스트 동일. */}
+                    <div className="flex items-center justify-end mb-1">
+                      <button
+                        type="button"
+                        onClick={saveCustomerNote}
+                        disabled={savingField}
+                        data-testid="chart-customer-note-save-btn"
+                        className="rounded bg-[#666666] text-white px-2.5 py-0.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
+                      >
+                        {savingField ? '저장 중…' : '저장'}
+                      </button>
+                    </div>
                     <Textarea
                       data-testid="chart-customer-note-input"
                       value={customerNoteText}
@@ -5524,15 +5541,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       rows={2}
                       className="text-[11px] resize-none"
                     />
-                    <button
-                      type="button"
-                      onClick={saveCustomerNote}
-                      disabled={savingField}
-                      data-testid="chart-customer-note-save-btn"
-                      className="mt-1 w-full rounded bg-[#666666] text-white py-1 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
-                    >
-                      {savingField ? '저장 중…' : '고객메모 저장'}
-                    </button>
                   </td>
                 </tr>
 
@@ -7203,7 +7211,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   kind="koh_result"
                   prefix="koh_result"
                   noun="KOH균검사 결과지"
-                  accent="emerald"
+                  accent="slate"
                   testidPrefix="koh-result"
                 />
               </div>
@@ -8001,7 +8009,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 />
                 {/* 기타메모(customers.memo) — 단일필드 유지(히스토리화 대상 아님) */}
                 <div className="pt-1 border-t border-gray-100">
-                  <label className="block text-[11px] text-muted-foreground mb-0.5">기타메모</label>
+                  {/* T-20260624-foot-CHART2-SAVEBTN-COMPACT-KOH-TONE (AC1):
+                      라벨 우측 끝 컴팩트 [저장] 버튼. 동작·토스트 동일. */}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-[11px] text-muted-foreground">기타메모</label>
+                    <button
+                      type="button"
+                      onClick={saveResvDetail}
+                      disabled={savingResvDetail}
+                      className="rounded bg-[#666666] text-white px-2.5 py-0.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
+                      data-testid="etc-memo-save-btn"
+                    >
+                      {savingResvDetail ? '저장 중…' : '저장'}
+                    </button>
+                  </div>
                   <Textarea
                     value={resvDetailForm.etcMemo}
                     onChange={(e) => setResvDetailForm((f) => ({ ...f, etcMemo: e.target.value }))}
@@ -8009,15 +8030,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     rows={2}
                     className="text-[11px] resize-none"
                   />
-                  <button
-                    type="button"
-                    onClick={saveResvDetail}
-                    disabled={savingResvDetail}
-                    className="mt-1.5 w-full rounded bg-[#666666] text-white py-1.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
-                    data-testid="etc-memo-save-btn"
-                  >
-                    {savingResvDetail ? '저장 중…' : '기타메모 저장'}
-                  </button>
                 </div>
               </div>
             )}
