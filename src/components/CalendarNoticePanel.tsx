@@ -23,6 +23,7 @@ import { ko } from 'date-fns/locale';
 import {
   Bell,
   CalendarDays,
+  ClipboardCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -37,7 +38,9 @@ import {
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
-import { fetchActiveStaff, fetchTodayWorkingStaffIds } from '@/lib/autoAssign';
+import { fetchActiveStaff } from '@/lib/autoAssign';
+import { fetchAttendeesByDate } from '@/lib/dutySheet';
+import { partLabel, partBadgeClass, type HandoverNote } from '@/lib/handover';
 import type { StaffRole } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -124,6 +127,9 @@ export default function CalendarNoticePanel() {
   //     시트→staff_attendance 전환) 시 자동 전파되도록 accessor 단일 소비.
   const [rosterParts, setRosterParts] = useState<{ label: string; names: string[] }[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(true);
+  // ── 인수인계(선택 날짜) 상태 — T-20260624-foot-DASH-DUTYCAL-DATE-REACTIVE AC2 ──
+  const [handoverNotes, setHandoverNotes] = useState<HandoverNote[]>([]);
+  const [handoverLoading, setHandoverLoading] = useState(true);
 
   // ── 모바일 접힘 상태 (T-20260514-foot-MOBILE-CAL-COLLAPSE) ────────────────
   const [isMobile, setIsMobile] = useState<boolean>(
@@ -180,24 +186,40 @@ export default function CalendarNoticePanel() {
 
   useEffect(() => { fetchNotices(); }, [fetchNotices]);
 
-  // ── 근무캘린더 fetch (금일 출근 직원) ──────────────────────────────────────
-  //   graceful(AC4): 시트/EF 실패 시 accessor 내부에서 빈 Set 반환(throw 없음) + 본 effect try/catch.
-  //   섹션만 "정보 없음"/로딩 표시하고 달력·공지 렌더에는 영향 0.
+  // ── 근무캘린더 fetch (선택 날짜 출근 직원 + 인수인계) ────────────────────────
+  //   T-20260624-foot-DASH-DUTYCAL-DATE-REACTIVE: today-fixed → 달력 선택 날짜에 반응.
+  //   ★데이터 소스 = 하단 현황패널(DashboardDateDetail)과 동일 date-param accessor 재사용(AC4):
+  //     근무 = fetchAttendeesByDate(duty-sheet-read EF, 기존) + fetchActiveStaff(staff, 기존).
+  //     인수인계 = handover_notes(기존 테이블) target_date 필터 + handover_checklist_items 조인.
+  //   신규 시트 직접 호출/EF 0 — SSOT source-swap(T-20260618-...-ATTENDANCE-SSOT-CRM,
+  //     시트→staff_attendance 전환) 시 동일 accessor 단일 소비로 자동 전파(split-brain 0).
+  //   기본값(미선택/첫 진입)=오늘(AC3). graceful(AC5): 실패 시 섹션만 빈칸·로딩, 달력·공지 정상 렌더.
   useEffect(() => {
     let cancelled = false;
     const clinicId = clinic?.id;
     if (!clinicId) return;
+    const targetDate = selectedDate ?? new Date();
+    const dateStr = format(targetDate, 'yyyy-MM-dd');
     setRosterLoading(true);
+    setHandoverLoading(true);
     (async () => {
+      // ── 근무 (graceful) ── 하단 현황패널과 동일 규칙: 시트의 해당 날짜 명단 ∩ 활성 staff → role 그룹핑.
       try {
         const staffList = await fetchActiveStaff(clinicId);
-        // ★공유 accessor 경유(AC3) — staffList 를 넘겨 staff fetch 1회로 재사용.
-        const workingIds = await fetchTodayWorkingStaffIds(clinicId, staffList);
-        const working = staffList.filter((s) => workingIds.has(s.id));
+        const byDate = await fetchAttendeesByDate(
+          undefined,
+          staffList.map((s) => s.name).filter(Boolean),
+        );
+        const attendeeNames = new Set((byDate[dateStr] ?? []).map((n) => n.trim()));
         const parts = ROSTER_PARTS.map((p) => ({
           label: p.label,
-          names: working
-            .filter((s) => p.roles.includes(s.role))
+          names: staffList
+            .filter(
+              (s) =>
+                p.roles.includes(s.role) &&
+                (attendeeNames.has((s.display_name ?? s.name ?? '').trim()) ||
+                  attendeeNames.has((s.name ?? '').trim())),
+            )
             .map((s) => (s.display_name ?? s.name ?? '').trim())
             .filter(Boolean),
         }));
@@ -208,9 +230,26 @@ export default function CalendarNoticePanel() {
       } finally {
         if (!cancelled) setRosterLoading(false);
       }
+      // ── 인수인계 (graceful) ── 하단 현황패널과 동일 쿼리(handover_notes target_date).
+      try {
+        const { data } = await supabase
+          .from('handover_notes')
+          .select('*, handover_checklist_items(*)')
+          .eq('clinic_id', clinicId)
+          .eq('target_date', dateStr)
+          .order('created_at', { ascending: true });
+        const rows = (data ?? []) as HandoverNote[];
+        rows.forEach((n) => n.handover_checklist_items?.sort((a, b) => a.sort_order - b.sort_order));
+        if (!cancelled) setHandoverNotes(rows);
+      } catch (e) {
+        console.warn('[CalendarNoticePanel] 인수인계 로드 실패:', e);
+        if (!cancelled) setHandoverNotes([]);
+      } finally {
+        if (!cancelled) setHandoverLoading(false);
+      }
     })();
     return () => { cancelled = true; };
-  }, [clinic?.id]);
+  }, [clinic?.id, selectedDate]);
 
   // ── 미니 캘린더 날짜 배열 ─────────────────────────────────────────────────
   const calendarDays = eachDayOfInterval({
@@ -435,6 +474,7 @@ export default function CalendarNoticePanel() {
             return (
               <button
                 key={dateKey}
+                data-testid={`cal-day-${dateKey}`}
                 onClick={() => {
                   setSelectedDate(isSelected ? null : day);
                   const dateStr = format(day, 'yyyy-MM-dd');
@@ -504,14 +544,20 @@ export default function CalendarNoticePanel() {
         </div>
       </div>
 
-      {/* ── 근무캘린더 (금일 출근 직원 파트별 명단) ─────────────────────────────
+      {/* ── 근무캘린더 (선택 날짜 출근 직원 파트별 명단 + 인수인계) ──────────────────
           T-20260623-foot-DASH-WORKSTAFF-ROSTER-SECTION — 달력 섹션과 공지사항 섹션 사이.
+          T-20260624-foot-DASH-DUTYCAL-DATE-REACTIVE — 달력에서 날짜 클릭 시 이 고정 섹션 자체가
+            클릭한 날짜의 명단으로 변동(today 고정 X) + 해당 날짜 인수인계 동반 표시.
           파트(의사/실장/코디/치료)별 그룹핑. 한 줄 max 4명, 5명+ 는 flex-wrap 자연 줄내림. */}
       <div className="shrink-0 border-b px-3 py-2.5" data-testid="duty-roster-section">
         <div className="mb-2 flex items-center gap-1.5">
           <Users className="h-3.5 w-3.5 text-teal-600" />
           <span className="text-xs font-semibold">근무캘린더</span>
-          <span className="text-[10px] text-muted-foreground">금일 출근</span>
+          <span className="text-[10px] text-muted-foreground" data-testid="duty-roster-date-label">
+            {!selectedDate || isSameDay(selectedDate, new Date())
+              ? '금일 출근'
+              : `${format(selectedDate, 'M월 d일 (E)', { locale: ko })} 출근`}
+          </span>
         </div>
         {rosterLoading ? (
           <div className="py-2 text-center text-[11px] text-muted-foreground" data-testid="roster-loading">
@@ -519,7 +565,9 @@ export default function CalendarNoticePanel() {
           </div>
         ) : !rosterParts || rosterParts.every((p) => p.names.length === 0) ? (
           <div className="py-2 text-center text-[11px] text-muted-foreground" data-testid="roster-empty">
-            금일 출근 정보가 없습니다
+            {!selectedDate || isSameDay(selectedDate, new Date())
+              ? '금일 출근 정보가 없습니다'
+              : '근무 정보가 없습니다'}
           </div>
         ) : (
           <div className="space-y-1">
@@ -548,6 +596,54 @@ export default function CalendarNoticePanel() {
             ))}
           </div>
         )}
+
+        {/* ── 인수인계 (선택 날짜) — T-20260624-foot-DASH-DUTYCAL-DATE-REACTIVE AC2 ──
+            근무 명단 바로 아래 동반 표시. 하단 현황패널(DashboardDateDetail)과 동일 데이터·문구. */}
+        <div className="mt-2.5 border-t pt-2" data-testid="duty-roster-handover">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <ClipboardCheck className="h-3.5 w-3.5 text-teal-600" />
+            <span className="text-xs font-semibold">인수인계</span>
+          </div>
+          {handoverLoading ? (
+            <div className="py-1.5 text-[11px] text-muted-foreground" data-testid="handover-loading">
+              불러오는 중…
+            </div>
+          ) : handoverNotes.length === 0 ? (
+            <div className="py-1.5 text-[11px] text-muted-foreground" data-testid="handover-empty">
+              인수인계가 없습니다
+            </div>
+          ) : (
+            <div className="space-y-1.5" data-testid="handover-list">
+              {handoverNotes.map((n) => (
+                <div key={n.id} className="rounded-lg border bg-white p-2 shadow-sm">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', partBadgeClass(n.part_code))}>
+                      {partLabel(n.part_code)}
+                    </span>
+                    {n.author_name && (
+                      <span className="text-[10px] text-muted-foreground">{n.author_name}</span>
+                    )}
+                  </div>
+                  {n.memo && (
+                    <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-gray-700">{n.memo}</p>
+                  )}
+                  {n.handover_checklist_items && n.handover_checklist_items.length > 0 && (
+                    <ul className="mt-1 space-y-0.5">
+                      {n.handover_checklist_items.map((c) => (
+                        <li key={c.id} className="flex items-center gap-1 text-[11px]">
+                          <span className={cn('text-xs', c.is_checked ? 'text-emerald-600' : 'text-muted-foreground')}>
+                            {c.is_checked ? '☑' : '☐'}
+                          </span>
+                          <span className={cn(c.is_checked && 'text-muted-foreground line-through')}>{c.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── 공지사항 영역 ───────────────────────────────────────────────────── */}
