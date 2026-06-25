@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;font-family:-apple-system,"Apple SD Gothic Neo",sans-serif}
+body{margin:0;padding:26px;background:#FAFAFA;color:#252525}
+h1{font-size:21px;margin:0 0 4px}
+.sub{font-size:13px;color:#6E6353;margin:0 0 6px;line-height:1.55}
+.legend{font-size:12px;color:#444;margin:0 0 18px;padding:8px 12px;background:#fff;border:1px solid #E5E5E5;border-radius:10px}
+.legend b{color:#1565C0}.legend .g{color:#2E7D32}.legend .y{color:#B7791F}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start}
+.col{background:#fff;border:1px solid #E5E5E5;border-radius:14px;padding:16px}
+.col.current{border:2px dashed #D4A4A4;background:#FFFCFC}
+.col h2{font-size:15px;margin:0 0 1px}
+.col .tone{font-size:11.5px;color:#9D917A;margin:0 0 12px}
+.swrow{display:flex;gap:6px;margin-bottom:16px}
+.sw{flex:1;border-radius:7px;border:1px solid rgba(0,0,0,.07);padding:7px 4px;text-align:center}
+.sw .nm{font-size:10px;font-weight:700;margin-bottom:3px}
+.sw .hx{font-size:8.5px;font-family:monospace;color:#666}
+.seclbl{font-size:11px;color:#9D917A;margin:14px 0 7px;font-weight:600;border-bottom:1px solid #EEE;padding-bottom:3px}
+/* 대시보드 배지 */
+.dashrow{display:flex;gap:7px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:3px 9px;font-size:12px;font-weight:700}
+.dot{height:7px;width:7px;border-radius:9999px;display:inline-block}
+/* 예약 custbox (90px 컬럼 카드 모사, 확대 표시) */
+.cards{display:flex;flex-direction:column;gap:7px}
+.card{border:1px solid;border-left-width:4px;border-radius:7px;padding:6px 8px}
+.card .nm{font-size:13px;font-weight:600;color:#1A1A1A;line-height:1.2}
+.card .memo{font-size:11px;color:#52525B;margin-top:2px;line-height:1.25}
+.card .meta{display:flex;align-items:center;gap:4px;font-size:10px;color:#71717A;margin-top:4px}
+.card .booker{font-size:10px;color:#0F766E;margin-top:2px}
+</style></head><body>
+<h1>풋센터 CRM — 초진/재진/힐러 색상 통일 파스텔 후보 (T-20260625-COLOR-CONVENTION-UNIFY)</h1>
+<p class="sub">문제: <b>대시보드</b>(초진=파랑/재진=초록)와 <b>예약관리</b>(초진=초록/재진=파랑)의 색이 서로 반대. 양쪽을 하나의 컨벤션으로 통일.</p>
+<div class="legend">목표 컨벤션(확정): &nbsp;<b>● 초진 = 파랑</b> &nbsp;·&nbsp; <span class="g">● 재진 = 초록</span> &nbsp;·&nbsp; <span class="y">● 힐러 = 노랑</span> &nbsp;|&nbsp; 톤 = <b>은은하고 잔잔한 파스텔</b> (현재 예약관리 진녹색/진파랑 → 파스텔로 교체). 같은 색요소를 대시보드 배지 + 예약관리 고객박스에 동일 적용. 성함·메모 가독성(WCAG AA) 확인용 텍스트 포함.</div>
+<div class="grid">
+
+<!-- 현재 (반전 상태) -->
+<div class="col current"><h2>현재 (반전·불일치)</h2><p class="tone">대시보드와 예약관리 색이 반대</p>
+<div class="swrow">
+  <div class="sw" style="background:#DBEAFE"><div class="nm" style="color:#1565C0">초진</div><div class="hx">대시=파랑<br>예약=초록</div></div>
+  <div class="sw" style="background:#DCEDC8"><div class="nm" style="color:#2E7D32">재진</div><div class="hx">대시=초록<br>예약=파랑</div></div>
+  <div class="sw" style="background:#FEF9C3"><div class="nm" style="color:#B7791F">힐러</div><div class="hx">노랑</div></div>
+</div>
+<div class="seclbl">대시보드 배지</div>
+<div class="dashrow">
+  <span class="badge" style="background:#DBEAFE;color:#1565C0"><span class="dot" style="background:#3B82F6"></span>초진</span>
+  <span class="badge" style="background:#DCEDC8;color:#2E7D32"><span class="dot" style="background:#4CAF50"></span>재진</span>
+</div>
+<div class="seclbl">예약관리 고객박스 (초진이 초록 ← 반전!)</div>
+<div class="cards">
+  <div class="card" style="background:#F3F6EC;border-color:#D3DEBE;border-left-color:#A7B68B"><div class="nm">김초진</div><div class="memo">발톱무좀 상담</div><div class="meta"><span class="dot" style="background:#8A9B6A"></span>예약확정</div></div>
+  <div class="card" style="background:#EFF6FF;border-color:#BFDBFE;border-left-color:#60A5FA"><div class="nm">이재진</div><div class="memo">패키지 3/10</div><div class="meta"><span class="dot" style="background:#3B82F6"></span>예약확정</div></div>
+  <div class="card" style="background:#FEFCE8;border-color:#FEF08A;border-left-color:#FACC15"><div class="nm">박힐러</div><div class="memo">힐러 케어</div><div class="meta"><span class="dot" style="background:#EAB308"></span>예약확정</div></div>
+</div>
+</div>
+
+<!-- 후보 ① 맑은 파스텔 -->
+<div class="col"><h2>① 맑은 파스텔</h2><p class="tone">산뜻·또렷 (Material light)</p>
+<div class="swrow">
+  <div class="sw" style="background:#E3F2FD"><div class="nm" style="color:#1565C0">초진 파랑</div><div class="hx">#E3F2FD</div></div>
+  <div class="sw" style="background:#E8F5E9"><div class="nm" style="color:#2E7D32">재진 초록</div><div class="hx">#E8F5E9</div></div>
+  <div class="sw" style="background:#FFFDE7"><div class="nm" style="color:#B7791F">힐러 노랑</div><div class="hx">#FFFDE7</div></div>
+</div>
+<div class="seclbl">대시보드 배지</div>
+<div class="dashrow">
+  <span class="badge" style="background:#E3F2FD;color:#1565C0"><span class="dot" style="background:#2196F3"></span>초진</span>
+  <span class="badge" style="background:#E8F5E9;color:#2E7D32"><span class="dot" style="background:#43A047"></span>재진</span>
+  <span class="badge" style="background:#FFFDE7;color:#B7791F"><span class="dot" style="background:#FBC02D"></span>힐러</span>
+</div>
+<div class="seclbl">예약관리 고객박스</div>
+<div class="cards">
+  <div class="card" style="background:#E3F2FD;border-color:#BBDEFB;border-left-color:#64B5F6"><div class="nm">김초진</div><div class="memo">발톱무좀 상담</div><div class="meta"><span class="dot" style="background:#2196F3"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#E8F5E9;border-color:#C8E6C9;border-left-color:#81C784"><div class="nm">이재진</div><div class="memo">패키지 3/10</div><div class="meta"><span class="dot" style="background:#43A047"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#FFFDE7;border-color:#FFF59D;border-left-color:#FFEE58"><div class="nm">박힐러</div><div class="memo">힐러 케어</div><div class="meta"><span class="dot" style="background:#FBC02D"></span>예약확정 · @데스크</div></div>
+</div>
+</div>
+
+<!-- 후보 ② 은은 뮤트 파스텔 -->
+<div class="col"><h2>② 은은 뮤트 파스텔</h2><p class="tone">잔잔·차분 (낮은 채도)</p>
+<div class="swrow">
+  <div class="sw" style="background:#EDF2F7"><div class="nm" style="color:#2F557E">초진 파랑</div><div class="hx">#EDF2F7</div></div>
+  <div class="sw" style="background:#EEF3E9"><div class="nm" style="color:#46662F">재진 초록</div><div class="hx">#EEF3E9</div></div>
+  <div class="sw" style="background:#F8F3E4"><div class="nm" style="color:#7A5E1C">힐러 노랑</div><div class="hx">#F8F3E4</div></div>
+</div>
+<div class="seclbl">대시보드 배지</div>
+<div class="dashrow">
+  <span class="badge" style="background:#EDF2F7;color:#2F557E"><span class="dot" style="background:#6E92BC"></span>초진</span>
+  <span class="badge" style="background:#EEF3E9;color:#46662F"><span class="dot" style="background:#7FA063"></span>재진</span>
+  <span class="badge" style="background:#F8F3E4;color:#7A5E1C"><span class="dot" style="background:#BBA052"></span>힐러</span>
+</div>
+<div class="seclbl">예약관리 고객박스</div>
+<div class="cards">
+  <div class="card" style="background:#EDF2F7;border-color:#CBD9E8;border-left-color:#9DB8D6"><div class="nm">김초진</div><div class="memo">발톱무좀 상담</div><div class="meta"><span class="dot" style="background:#6E92BC"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#EEF3E9;border-color:#D3E0C7;border-left-color:#ABC596"><div class="nm">이재진</div><div class="memo">패키지 3/10</div><div class="meta"><span class="dot" style="background:#7FA063"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#F8F3E4;border-color:#E9DCB8;border-left-color:#D8C384"><div class="nm">박힐러</div><div class="memo">힐러 케어</div><div class="meta"><span class="dot" style="background:#BBA052"></span>예약확정 · @데스크</div></div>
+</div>
+</div>
+
+<!-- 후보 ③ 따뜻 파스텔 -->
+<div class="col"><h2>③ 따뜻 파스텔</h2><p class="tone">소프트 (재진=기존 #DCEDC8 계승)</p>
+<div class="swrow">
+  <div class="sw" style="background:#E6EEF6"><div class="nm" style="color:#2C5586">초진 파랑</div><div class="hx">#E6EEF6</div></div>
+  <div class="sw" style="background:#F1F6E9"><div class="nm" style="color:#4F7A2E">재진 초록</div><div class="hx">#DCEDC8</div></div>
+  <div class="sw" style="background:#FDF7E3"><div class="nm" style="color:#876A22">힐러 노랑</div><div class="hx">#FDF7E3</div></div>
+</div>
+<div class="seclbl">대시보드 배지</div>
+<div class="dashrow">
+  <span class="badge" style="background:#E6EEF6;color:#2C5586"><span class="dot" style="background:#5E8CBE"></span>초진</span>
+  <span class="badge" style="background:#F1F6E9;color:#4F7A2E"><span class="dot" style="background:#97BD66"></span>재진</span>
+  <span class="badge" style="background:#FDF7E3;color:#876A22"><span class="dot" style="background:#CDB058"></span>힐러</span>
+</div>
+<div class="seclbl">예약관리 고객박스</div>
+<div class="cards">
+  <div class="card" style="background:#E6EEF6;border-color:#C6D8EB;border-left-color:#94B6D8"><div class="nm">김초진</div><div class="memo">발톱무좀 상담</div><div class="meta"><span class="dot" style="background:#5E8CBE"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#F1F6E9;border-color:#DCEDC8;border-left-color:#BCD89B"><div class="nm">이재진</div><div class="memo">패키지 3/10</div><div class="meta"><span class="dot" style="background:#97BD66"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#FDF7E3;border-color:#F2E4B5;border-left-color:#E6CF83"><div class="nm">박힐러</div><div class="memo">힐러 케어</div><div class="meta"><span class="dot" style="background:#CDB058"></span>예약확정 · @데스크</div></div>
+</div>
+</div>
+
+</div>
+<p class="sub" style="margin-top:18px;font-size:11.5px;color:#888">※ 가독성 체크: 모든 후보의 카드 배경은 파스텔 최연한(50단계)이라 성함(진회색 #1A1A1A)·메모(#52525B)는 WCAG AA 충족. 배지/점은 진한 단계(500~700)로 채도 확보. &nbsp;|&nbsp; 1차=후보 선택용 이미지(코드 미반영). 선택 후 2차에서 단일 색상 토큰으로 양쪽 화면 통일.</p>
+</body></html>
