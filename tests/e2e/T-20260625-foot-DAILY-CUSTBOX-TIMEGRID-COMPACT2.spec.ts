@@ -5,12 +5,12 @@
  *
  * 확정 spec(MSG-20260625-101647-ao5s):
  *   · 시간 컬럼(칸) 너비 추가 축소: 132px → 90px(한 화면 더 많은 시간 칸). 컬럼 간 gap 1.5→1.
- *   · 고객(예약) 박스·글자 전체 축소: 카드 px-2 py-1 text-[12px] → px-1 py-0.5 text-[9px], 메타/담당자 라인 text-[10px]→text-[8px].
+ *   · 고객(예약) 박스·글자 전체 축소: 카드 px-2 py-1 text-[12px] → px-1 py-0.5 text-[8px](현장 확정 8px), 메타/담당자 라인 text-[10px]→text-[7px].
  *   · 헤더 컴팩트: min-h 40→32, 시간라벨 text-xs→text-[10px], 뱃지 text-[9px]→text-[8px].
  *   · 회귀 가드: 격자 구조/세로 진열/색상코드/세로축 무그루핑(C5)/주간 보기 전부 불변.
  *
  * 현장 클릭 시나리오 → E2E:
- *   [S1] 2차 컴팩트 격자 렌더: 컬럼 너비 w-[90px] + 카드 토큰 축소(px-1 py-0.5 text-[9px]) + 색상 유지.
+ *   [S1] 2차 컴팩트 격자 렌더: 컬럼 너비 w-[90px] + 카드 토큰 축소(px-1 py-0.5 text-[8px]) + 색상 유지.
  *   [S2] 회귀 가드: 주간 보기 미영향 + 다건 세로 누적 카드 텍스트 잘림·깨짐 없음(overflow-hidden/truncate).
  *
  * 데이터 없는 환경에서는 구조 검증으로 graceful skip.
@@ -76,7 +76,7 @@ test.describe('COMPACT2 [S1] 2차 컴팩트 격자 렌더', () => {
     expect(cardColCls).toContain('flex-col'); // 세로 누적 유지
   });
 
-  test('고객 카드 박스·글자 전체 축소(px-1 py-0.5 text-[9px] w-full) + KIND 색상 유지', async ({ page }) => {
+  test('고객 카드 박스·글자 전체 축소(px-1 py-0.5 text-[8px] w-full) + KIND 색상 유지', async ({ page }) => {
     await gotoReservations(page);
     await enterDayView(page);
 
@@ -95,9 +95,10 @@ test.describe('COMPACT2 [S1] 2차 컴팩트 격자 렌더', () => {
     expect(cls).toContain('w-full');
     expect(cls).toContain('px-1');
     expect(cls).toContain('py-0.5');
-    expect(cls).toContain('text-[9px]');
-    // 이전 더 큰 토큰 잔존 금지
+    expect(cls).toContain('text-[8px]');
+    // 이전 더 큰 토큰 잔존 금지(12px/9px 미세 언더슛 포함)
     expect(cls).not.toContain('text-[12px]');
+    expect(cls).not.toContain('text-[9px]');
     // 색상 코드(초진 그린/재진 하늘/힐러 노랑) 유지
     let colored = 0;
     for (let i = 0; i < Math.min(cardCount, 10); i++) {
