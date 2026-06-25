@@ -154,6 +154,8 @@ export interface Customer {
   customer_grade?: '일반' | '1단계' | '2단계' | '3단계' | null;
   customer_email?: string | null;       // 고객 이메일
   passport_number?: string | null;      // 여권번호 (외국인)
+  nationality_code?: string | null;     // 국적 ISO alpha-3 (예: KOR) — T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT (마이그 후 활성)
+  foreign_doc_expiry?: string | null;   // 외국인 신분서류(여권/체류) 만료일 DATE — T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT (마이그 후 활성)
   postal_code?: string | null;          // 우편번호 (5자리)
   assigned_staff_role?: '데스크' | '상담실장' | null; // 담당자 구분 (레거시)
   assigned_staff_id?: string | null;    // 담당 직원 FK (C2-STAFF-DROPDOWN)
