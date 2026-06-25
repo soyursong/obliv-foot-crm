@@ -103,4 +103,12 @@ GRANT EXECUTE ON FUNCTION fn_health_q_validate_token(TEXT) TO anon, authenticate
 -- ─── 3. lang 컬럼 제거 ───────────────────────────────────────────────────────
 ALTER TABLE health_q_tokens DROP COLUMN IF EXISTS lang;
 
+-- ─── 4. health_q_results COMMENT 원복 ────────────────────────────────────────
+COMMENT ON TABLE health_q_results IS
+  'T-20260529-foot-HEALTH-Q-MOBILE: 고객이 모바일로 제출한 발건강질문지 구조화 데이터.
+   form_data JSONB: {symptoms, nail_locations, pain_duration, pain_severity,
+                     medical_history, medications, allergies, prior_conditions,
+                     family_history, visit_purpose, referral_source}.
+   storage_path: documents 버킷 JSON 경로 (optional 백업).';
+
 SELECT pg_notify('pgrst', 'reload schema');

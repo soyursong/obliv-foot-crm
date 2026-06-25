@@ -122,7 +122,7 @@ const VISIT_PURPOSE_OPTIONS = [
   { value: '발각질케어', en: 'Foot callus care', flow: 'callus'   as const },
 ];
 
-// 발각질케어 신규 1번 — 발 고민 증상 (복수). 기존 symptoms 키 재사용(value=한국어 canonical)
+// 발각질케어 신규 1번 — 발 고민 증상 (복수). DA 신규 키 foot_concern_symptoms(value=한국어 canonical=stable 코드)
 const CALLUS_SYMPTOM_OPTIONS = [
   '발뒤꿈치', '발바닥 전체', '발가락 사이', '가려움증',
   '건조함', '티눈·사마귀', '발톱 청결 문제', '발냄새',
@@ -223,10 +223,11 @@ interface HealthQData {
   visit_frequency:        string;
   has_private_insurance:  string;   // '예' | '아니오'
   insurance_company:      string;
-  // T-20260625-foot-FOREIGN-HEALTHQ-EN: 영문 모드 내원목적 + 발각질 알레르기 (기존 후방호환 키 재사용)
+  // T-20260625-foot-FOREIGN-HEALTHQ-EN: 영문 모드 내원목적 + 발각질 신규 3문항 (DA 키 규약)
   visit_purpose:          string;   // '발톱무좀' | '내성발톱' | '발각질케어'
+  foot_concern_symptoms:  string[]; // 발각질 Q1 — 발 고민 증상 (신규 키, symptoms 와 별개)
   has_allergy:            boolean | null;  // 발각질 Q2 — null=미선택
-  allergy_other:          string;          // 발각질 Q2 — 알레르기 종류 기입
+  allergies:              string;          // 발각질 Q2 — 알레르기 종류 기입 (DA 명시 키)
 }
 
 const emptyData = (): HealthQData => ({
@@ -248,8 +249,9 @@ const emptyData = (): HealthQData => ({
   has_private_insurance:  '',
   insurance_company:      '',
   visit_purpose:          '',
+  foot_concern_symptoms:  [],
   has_allergy:            null,
-  allergy_other:          '',
+  allergies:              '',
 });
 
 type PageStep = 'loading' | 'error' | 'form' | 'submitting' | 'done' | 'already_used';
@@ -390,13 +392,20 @@ export default function HealthQMobilePage() {
     try {
       let storagePath: string | null = null;
 
+      // DA Q2 #4: form_data 에 _lang 메타키 동봉(self-describing — token join 끊겨도 응답 언어 보존).
+      // 저장값은 언어중립 canonical(한국어 stable 코드), _lang 는 답변 설문 표시언어 메타만.
+      const formData = {
+        ...data,
+        _lang: info.lang === 'en' ? 'en' : 'ko',
+      };
+
       // documents 버킷에 JSON 백업 (optional — 실패해도 제출 계속)
       try {
         const payload = {
           form_type:     info.form_type,
           title:         '발건강질문지',
           customer_name: info.customer_name,
-          data,
+          data:          formData,
           submitted_at:  new Date().toISOString(),
         };
         const ts   = Date.now();
@@ -414,7 +423,7 @@ export default function HealthQMobilePage() {
 
       const { data: result, error } = await anonClient.rpc('fn_health_q_submit', {
         p_token:        token,
-        p_form_data:    data as unknown as Record<string, unknown>,
+        p_form_data:    formData as unknown as Record<string, unknown>,
         p_storage_path: storagePath,
       });
 
@@ -659,15 +668,15 @@ export default function HealthQMobilePage() {
         {/* ── [영문 전용] 발각질케어 신규 3문항 ────────────────────────────────── */}
         {isCallus && (
           <>
-            {/* Callus Q1 — 발 고민 증상 (복수). symptoms 키 재사용 */}
+            {/* Callus Q1 — 발 고민 증상 (복수). DA 신규 키 foot_concern_symptoms (symptoms 와 별개) */}
             <section className="space-y-4 rounded-2xl p-4"
               style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
               <SectionHeader num={2} title="Foot concerns" sub="Select all that apply" />
               <div className="flex flex-wrap gap-2">
                 {CALLUS_SYMPTOM_OPTIONS.map((opt) => (
                   <BigBtn key={opt}
-                    active={d.symptoms.includes(opt)}
-                    onClick={() => set('symptoms', toggle(d.symptoms, opt))}
+                    active={d.foot_concern_symptoms.includes(opt)}
+                    onClick={() => set('foot_concern_symptoms', toggle(d.foot_concern_symptoms, opt))}
                     color="teal"
                   >
                     {optL(opt)}
@@ -676,7 +685,7 @@ export default function HealthQMobilePage() {
               </div>
             </section>
 
-            {/* Callus Q2 — 알레르기 여부 (has_allergy boolean + allergy_other 동적) */}
+            {/* Callus Q2 — 알레르기 여부 (has_allergy boolean + allergies 동적, DA 명시 키) */}
             <section className="space-y-4 rounded-2xl p-4"
               style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
               <SectionHeader num={3} title="Allergies" sub="Do you have any allergies?" />
@@ -690,15 +699,15 @@ export default function HealthQMobilePage() {
                 </BigBtn>
                 <BigBtn full
                   active={d.has_allergy === false}
-                  onClick={() => { set('has_allergy', false); set('allergy_other', ''); }}
+                  onClick={() => { set('has_allergy', false); set('allergies', ''); }}
                   color="teal"
                 >
                   No
                 </BigBtn>
               </div>
               {d.has_allergy === true && (
-                <input type="text" value={d.allergy_other}
-                  onChange={(e) => set('allergy_other', e.target.value)}
+                <input type="text" value={d.allergies}
+                  onChange={(e) => set('allergies', e.target.value)}
                   placeholder="Please specify your allergies"
                   className="w-full rounded-xl border px-4 py-3 text-base outline-none"
                   style={{ borderColor: C.border, color: C.dark, minHeight: 44 }} />

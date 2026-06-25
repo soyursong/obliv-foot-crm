@@ -3,7 +3,7 @@
  *
  * 검증 대상 (HealthQMobilePage 영문 분기):
  *   S1) 발각질케어(Foot callus care) → 신규 3문항 렌더 + 알레르기 Yes 시 입력칸 동적 노출
- *       + 제출 payload(form_data)에 visit_purpose/symptoms/has_allergy/allergy_other 정상 적재
+ *       + 제출 payload(form_data)에 visit_purpose/foot_concern_symptoms/has_allergy/allergies/_lang 정상 적재 (DA 확정 키)
  *   S2) 발톱무좀(Nail fungus) → 기존 발건강 질문지 "영문" 렌더 (한국어 하드코딩 제거 확인)
  *   S3) 무회귀 — lang 미지정(ko) → 기존 한국어 문진 정상 동작 + 내원목적 단계 미노출
  *
@@ -96,13 +96,17 @@ test.describe('T-20260625-foot-FOREIGN-HEALTHQ-EN', () => {
     await page.getByRole('button', { name: '✓ Submit' }).click();
     await expect(page.getByText('All done!')).toBeVisible();
 
-    // 제출 payload(form_data) 계약 검증
+    // 제출 payload(form_data) 계약 검증 — DA 확정 키(언어중립 canonical 코드)
     const form = (captured.body?.p_form_data ?? {}) as Record<string, unknown>;
     expect(form.visit_purpose).toBe('발각질케어');
-    expect(form.symptoms).toEqual(expect.arrayContaining(['발뒤꿈치', '건조함']));
+    // 발 고민 증상 = 신규 키 foot_concern_symptoms (표준 symptoms 와 별개), KO canonical 코드
+    expect(form.foot_concern_symptoms).toEqual(expect.arrayContaining(['발뒤꿈치', '건조함']));
     expect(form.has_allergy).toBe(true);
-    expect(form.allergy_other).toBe('Penicillin');
+    // 알레르기 상세 = DA 명시 키 allergies (재사용)
+    expect(form.allergies).toBe('Penicillin');
     expect(form.medications).toEqual(expect.arrayContaining(['당뇨약']));
+    // _lang 메타키 동봉 (self-describing)
+    expect(form._lang).toBe('en');
   });
 
   test('S2: 발톱무좀 — 기존 발건강 질문지 영문 렌더 (한국어 하드코딩 제거)', async ({ page }) => {
