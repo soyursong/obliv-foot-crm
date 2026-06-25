@@ -224,8 +224,10 @@ export default function DocumentTemplatesTab() {
   // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
   //   ★서류 템플릿(document_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
   //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
+  // T-20260625-foot-CLINICMGMT-3TAB-DIRECTOR-RBAC: 대표원장(director) 서류 템플릿 편집 불가 hotfix. FE escape 추가.
+  //   ★stopgap: RLS(admin_write_document_templates) director 는 a75cf28f 旣추가 — has_ops_authority 적재 시 일괄 제거.
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin';
+  const canEdit = profile?.role === 'admin' || profile?.role === 'director';
   const { data: templates = [], isLoading } = useDocumentTemplates();
   const upsert = useUpsertDoc();
   const del = useDeleteDoc();
