@@ -81,14 +81,15 @@ const KIND_CARD_STYLE: Record<ResvKind, string> = {
   // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 초진 카드는 ② 그레이 통일에서 제외 → 파스텔 그린(#DCEDC8) 유지(firstvisit 토큰).
   new: 'border-l-4 border-l-firstvisit-400 border-firstvisit-200/80 bg-firstvisit-50',
   returning: 'border-l-4 border-l-blue-400 border-blue-200/80 bg-blue-50',
-  healer: 'border-l-4 border-l-yellow-400 border-yellow-200/80 bg-yellow-50',
+  // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE A안: 힐러 노랑 = healer 전용 토큰(#FFFDE7 carve-out, AC6). 의미색 yellow와 분리.
+  healer: 'border-l-4 border-l-healer-400 border-healer-200/80 bg-healer-50',
   other: 'border-l-4 border-l-amber-400 border-amber-200/80 bg-amber-50',
 };
 // item1/2: 헤더·슬롯 카운트 점 색상 (유형별)
 const KIND_DOT: Record<ResvKind, string> = {
   new: 'bg-firstvisit-500', // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 초진 dot 파스텔 그린 유지(firstvisit)
   returning: 'bg-blue-500',
-  healer: 'bg-yellow-400',
+  healer: 'bg-healer-500', // T-20260625-WARMPASTEL A안: 힐러 dot 골드 액센트 #FBC02D(healer 토큰)
   other: 'bg-amber-500',
 };
 
