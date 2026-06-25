@@ -1820,6 +1820,10 @@ export default function Reservations() {
                         briefNote: r.brief_note ?? null,
                       }}
                       compact
+                      // T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 일간 TIMEGRID 고객박스 성함 폰트 축소 요청.
+                      //   기존 compact-only → 성함 text-sm(14px)인데 COMPACT2 카드 본문은 8px → 성함만 과대.
+                      //   compactDense 추가 → 성함 text-[11px](ping-pong 바닥 ≥11px 유지) + block/min-w-0 truncate(좁은 90px칸 ellipsis 실동작).
+                      compactDense
                       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } }); }}
                       onClick={() => handleResvOpenChart(resvAsCheckIn(r))}
                     />

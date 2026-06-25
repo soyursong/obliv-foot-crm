@@ -101,4 +101,17 @@ test.describe('T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY', () => {
     // COMPACT2 90px 칸 회귀가드(±2px 허용). 폰트 슬림으로 칸 폭이 커지지 않아야 한다.
     expect(box.width).toBeLessThanOrEqual(92 + 2);
   });
+
+  // ── 시나리오 3-b: 일간 고객박스 성함 폰트 축소(text-sm 14px → ≤11px) ──
+  test('AC-3b: 일간 고객박스 성함 폰트가 14px 미만(≤11px)으로 축소됐다', async ({ page }) => {
+    // 일간 TIMEGRID 컬럼(resv-day-col) 안의 성함 트리거(호버 가능)만 대상.
+    const dayName = page.locator('[data-testid^="resv-day-col-"] span[title*="호버"]').first();
+    if ((await dayName.count()) === 0) { test.skip(); return; }
+    if (!(await dayName.isVisible({ timeout: 2000 }).catch(() => false))) { test.skip(); return; }
+    const fontSizePx = await dayName.evaluate((el) =>
+      parseFloat(getComputedStyle(el as HTMLElement).fontSize)
+    );
+    // compactDense=text-[11px]. 기존 compact-only(text-sm=14px) 대비 축소 — ≤11.5px(반올림 여유).
+    expect(fontSizePx).toBeLessThanOrEqual(11.5);
+  });
 });
