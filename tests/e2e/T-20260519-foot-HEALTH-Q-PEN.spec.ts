@@ -45,8 +45,10 @@ test.describe('T-20260519-HEALTH-Q-PEN — 발건강 질문지 PDF 캔버스', (
     return false;
   }
 
-  // ─── AC-1: 양식 선택 화면에 발건강 질문지 버튼 표시 ───────────────────────
-  test('AC-1: 양식 선택 화면 — 발건강 질문지 2종 버튼 표시', async ({ page }) => {
+  // ─── AC-1: 양식 선택 화면에 발건강 질문지(일반) 버튼 표시 ─────────────────
+  //   T-20260625-foot-PENCHART-HEALTHQ-SENIOR-TO-FOREIGN: 어르신용 선택지 제거.
+  //   일반만 노출 / 어르신용 미노출. (외국인용은 자가작성 패널 토큰 발급 동선에서 노출)
+  test('AC-1: 양식 선택 화면 — 발건강 질문지(일반) 표시, 어르신용 미노출', async ({ page }) => {
     const ok = await navigateToPenChartTab(page);
     if (!ok) test.skip(true, '펜차트 탭 진입 불가');
 
@@ -61,10 +63,10 @@ test.describe('T-20260519-HEALTH-Q-PEN — 발건강 질문지 PDF 캔버스', (
       page.locator('button:has-text("발건강 질문지 (일반)"), button:has-text("발건강 질문지")').first()
     ).toBeVisible({ timeout: 5_000 });
 
-    // 발건강 질문지 (어르신용) 버튼 표시 확인
+    // 어르신용 선택 카드 미노출 확인 (제거됨 — SENIOR-TO-FOREIGN AC-1)
     await expect(
-      page.locator('button:has-text("어르신용"), button:has-text("발건강 질문지 (어르신")').first()
-    ).toBeVisible({ timeout: 5_000 });
+      page.locator('button:has-text("발건강 질문지 (어르신")')
+    ).toHaveCount(0);
   });
 
   // ─── AC-2: 발건강 질문지 클릭 → draw 모드 + 캔버스 렌더링 ─────────────────

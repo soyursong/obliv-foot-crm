@@ -1006,9 +1006,11 @@ export function PenChartTab({
       .from('form_templates')
       .select('id, name_ko, template_path, template_format, form_key')
       .eq('clinic_id', clinicId)
+      // T-20260625-foot-PENCHART-HEALTHQ-SENIOR-TO-FOREIGN: 양식 선택기에서 어르신용(senior) 제거.
+      //   선택 경로에서만 제외 — 조회/편집 경로(getCanvasHeightForForm·BUILTIN_HEALTH_Q_SENIOR·기존 hq_sr_ 차트)는 보존(AC-2).
       .in('form_key', [
         'pen_chart',
-        'health_questionnaire_general', 'health_questionnaire_senior',
+        'health_questionnaire_general',
         'refund_consent',
       ])
       .eq('active', true)
@@ -1019,11 +1021,12 @@ export function PenChartTab({
       const healthQs  = (data as Template[]).filter((t) => t.form_key.startsWith('health_questionnaire_'));
       const refundConsent = (data as Template[]).find((t) => t.form_key === 'refund_consent');
       setPenChartTemplate(penChart ?? BUILTIN_PEN_CHART_TEMPLATE);
-      setHealthQTemplates(healthQs.length > 0 ? healthQs : [BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
+      // SENIOR-TO-FOREIGN: fallback 배열에서 어르신용 제외 (DB 무응답 시에도 선택지 미노출)
+      setHealthQTemplates(healthQs.length > 0 ? healthQs : [BUILTIN_HEALTH_Q_GENERAL]);
       setRefundConsentTemplate(refundConsent ?? BUILTIN_REFUND_CONSENT);
     } else {
       setPenChartTemplate(BUILTIN_PEN_CHART_TEMPLATE);
-      setHealthQTemplates([BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
+      setHealthQTemplates([BUILTIN_HEALTH_Q_GENERAL]);
       setRefundConsentTemplate(BUILTIN_REFUND_CONSENT);
     }
 
