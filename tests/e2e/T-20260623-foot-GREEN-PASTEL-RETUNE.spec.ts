@@ -12,6 +12,12 @@ import { join } from 'node:path';
  *  - carve-out 불변: 빨강(신분증 필요)·status.ts 칸반 의미색·before/after(시술후 emerald, 의미구분)·고객차트 버튼(teal 브랜드)·수납패널(teal 브랜드) 미접촉.
  *
  * 본 spec 은 auth 불요(정적 소스 가드 + 컴파일 CSS 가드). 단일 토큰(tailwind 'sage') 재튜닝 검증.
+ *
+ * ⚠ SUPERSEDED (T-20260625-foot-COLOR-WARMPASTEL-DESATURATE):
+ *   본 spec 은 그린이 'sage' 토큰(앵커 #DCEDC8)·dot 'bg-sage-500' 이던 시절 기준이다. 이후 CHART2-MONOTONE
+ *   redesign 으로 sage→그레이 재배치 + 그린→'firstvisit' 토큰 분리되어, 본 spec 의 sage-green 단언은
+ *   현 코드와 불일치(다중 redesign 으로 이미 red). 현 색 체계 권위 spec = T-20260625-...-WARMPASTEL-DESATURATE.
+ *   → 본 describe 들은 .skip 로 보존(이력/역참조용). 재활성화 금지(토큰 layout 변경됨).
  */
 
 const ROOT = process.cwd();
@@ -19,7 +25,7 @@ const tw = readFileSync(join(ROOT, 'tailwind.config.js'), 'utf8');
 const chart = readFileSync(join(ROOT, 'src', 'pages', 'CustomerChartPage.tsx'), 'utf8');
 const checkin = readFileSync(join(ROOT, 'src', 'components', 'CheckInDetailSheet.tsx'), 'utf8');
 
-test.describe('GREEN-PASTEL-RETUNE — tailwind sage 토큰 파스텔 재튜닝(단일 SSOT)', () => {
+test.describe.skip('GREEN-PASTEL-RETUNE — tailwind sage 토큰 파스텔 재튜닝(단일 SSOT)', () => {
   test('sage 스케일이 ③ 파스텔 그린(앵커 #DCEDC8=sage-100)으로 재튜닝됐다', () => {
     expect(tw).toMatch(/\bsage:\s*\{/);
     expect(tw).toMatch(/50:\s*"#EFF6E4"/i);   // 초진 카드 bg
@@ -38,7 +44,7 @@ test.describe('GREEN-PASTEL-RETUNE — tailwind sage 토큰 파스텔 재튜닝(
   });
 });
 
-test.describe('GREEN-PASTEL-RETUNE — 2번차트 신분증 확인완료 배지 인라인 hex 동기화', () => {
+test.describe.skip('GREEN-PASTEL-RETUNE — 2번차트 신분증 확인완료 배지 인라인 hex 동기화', () => {
   test('확인 완료 배지 인라인 hex가 새 sage(#DCEDC8/#556E32/#C8DDA9)로 교체됐다', () => {
     expect(chart).toMatch(/backgroundColor:\s*'#DCEDC8',\s*color:\s*'#556E32',\s*border:\s*'1\.5px solid #C8DDA9'/);
     expect(chart).toMatch(/rounded-full bg-sage-500 inline-block/);
@@ -53,7 +59,7 @@ test.describe('GREEN-PASTEL-RETUNE — 2번차트 신분증 확인완료 배지 
   });
 });
 
-test.describe('GREEN-PASTEL-RETUNE — 추가 스코프: 1번차트(CheckInDetailSheet) 잔존 녹색', () => {
+test.describe.skip('GREEN-PASTEL-RETUNE — 추가 스코프: 1번차트(CheckInDetailSheet) 잔존 녹색', () => {
   test('재진 배지(2곳) emerald → sage (2번차트 재진=sage 정합)', () => {
     const sageJaejin = (checkin.match(/bg-sage-100 text-sage-700">재진|bg-sage-100 text-sage-700 shrink-0">/g) ?? []).length;
     // 인라인(작은 칩) + SheetTitle(성함 옆) 2곳
@@ -82,7 +88,7 @@ test.describe('GREEN-PASTEL-RETUNE — 추가 스코프: 1번차트(CheckInDetai
   });
 });
 
-test.describe('GREEN-PASTEL-RETUNE — 컴파일 CSS 가드(빌드 산출물 JIT)', () => {
+test.describe.skip('GREEN-PASTEL-RETUNE — 컴파일 CSS 가드(빌드 산출물 JIT)', () => {
   test('빌드 CSS 에 새 sage hex(rgb)가 반영된다', () => {
     const distAssets = join(ROOT, 'dist', 'assets');
     if (!existsSync(distAssets)) test.skip(true, 'dist 미존재(빌드 전) — 정적 소스 가드로 대체');

@@ -5116,8 +5116,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       return verified ? (
                         <span
                           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                          // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 신분증 확인완료 배지는 ② 그레이 통일에서 제외 → 파스텔 그린(#DCEDC8) 유지.
-                          style={{ backgroundColor: '#DCEDC8', color: '#556E32', border: '1.5px solid #C8DDA9' }}
+                          // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 신분증 확인완료 배지는 ② 그레이 통일에서 제외 → 파스텔 그린 유지.
+                          // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE: 따듯 파스텔 — firstvisit 앵커 채도 ~20%↓(묵직한 sage). #DCEDC8→#DCE9CC / #556E32→#546838 / #C8DDA9→#C7D8AE.
+                          style={{ backgroundColor: '#DCE9CC', color: '#546838', border: '1.5px solid #C7D8AE' }}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-firstvisit-500 inline-block" />
                           신분증 확인 완료
