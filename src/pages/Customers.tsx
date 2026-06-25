@@ -51,9 +51,6 @@ import { normalizeToE164 } from '@/lib/phone';
 //   (엑셀 .xlsx 내보내기는 후속 — customerExport.ts 유지)
 import { downloadCustomerCsv, customerCsvFilename, type CustomerCsvRow } from '@/lib/customerCsv';
 import type { CheckIn, Customer, LeadSource } from '@/lib/types';
-// T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT: 외국인 정보(국적/여권번호/만료일) + 여권 스캔 (derm 이식)
-import ForeignInfoSection, { type ForeignInfoValue } from '@/components/ForeignInfoSection';
-import type { MrzResult } from '@/lib/mrz';
 
 interface CustomerStats {
   visit_count: number;
@@ -883,10 +880,6 @@ function EditCustomerDialog({
   const [passportNumber, setPassportNumber] = useState('');
   const [postalCode, setPostalCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT: 국적/만료일 (여권번호는 기존 passportNumber 재사용)
-  const [nationalityCode, setNationalityCode] = useState('');
-  const [docExpiry, setDocExpiry] = useState('');
-  const [foreignOpen, setForeignOpen] = useState(false);
 
   useEffect(() => {
     if (customer) {
@@ -903,20 +896,8 @@ function EditCustomerDialog({
       setCustomerEmail(customer.customer_email ?? '');
       setPassportNumber(customer.passport_number ?? '');
       setPostalCode(customer.postal_code ?? '');
-      setNationalityCode(customer.nationality_code ?? '');
-      setDocExpiry(customer.foreign_doc_expiry ?? '');
-      // 기존 외국인 정보가 있으면 섹션 펼쳐서 노출
-      setForeignOpen(!!(customer.is_foreign || customer.passport_number || customer.nationality_code || customer.foreign_doc_expiry));
     }
   }, [customer]);
-
-  // 여권 스캔 결과 → 생년월일 반영. MRZ ISO(yyyy-mm-dd) → 풋 birthDate(YYMMDD).
-  const handleScanResult = useCallback((result: MrzResult) => {
-    if (result.birthDate) {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(result.birthDate);
-      if (m) setBirthDate(`${m[1].slice(2)}${m[2]}${m[3]}`);
-    }
-  }, []);
 
   const save = async () => {
     if (!customer) return;
@@ -943,10 +924,6 @@ function EditCustomerDialog({
         customer_email: customerEmail.trim() || null,
         passport_number: passportNumber.trim() || null,
         postal_code: postalCode.trim() || null,
-        // T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT (마이그 적용 후 활성). is_foreign는 다운그레이드 금지(기존값 OR 신규 입력).
-        nationality_code: nationalityCode.trim() || null,
-        foreign_doc_expiry: docExpiry.trim() || null,
-        is_foreign: customer.is_foreign || !!(nationalityCode.trim() || passportNumber.trim() || docExpiry.trim()),
       })
       .eq('id', customer.id);
     if (error) {
@@ -1034,20 +1011,23 @@ function EditCustomerDialog({
               placeholder="example@email.com"
             />
           </div>
-          {/* 외국인 정보(국적/여권번호/만료일) + 여권 스캔 — T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT */}
-          {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead는 민감정보 열람 전용(canEditSensitive=false) */}
-          <ForeignInfoSection
-            value={{ nationalityCode, passportNumber, docExpiry }}
-            onChange={(next) => {
-              if (next.nationalityCode !== undefined) setNationalityCode(next.nationalityCode);
-              if (next.passportNumber !== undefined) setPassportNumber(next.passportNumber);
-              if (next.docExpiry !== undefined) setDocExpiry(next.docExpiry);
-            }}
-            open={foreignOpen}
-            onOpenChange={setForeignOpen}
-            canEdit={canEditSensitive}
-            onScanResult={handleScanResult}
-          />
+          {/* 여권번호 — T-20260508-foot-CUST-FORM-REVAMP */}
+          {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead는 여권번호 readonly */}
+          <div className="space-y-1.5">
+            <Label>여권번호 <span className="text-xs text-muted-foreground font-normal">(외국인){!canEditSensitive && ' — 열람 전용'}</span></Label>
+            {canEditSensitive ? (
+              <Input
+                value={passportNumber}
+                onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
+                placeholder="예: M12345678"
+                className="font-mono"
+              />
+            ) : (
+              <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground font-mono select-all">
+                {passportNumber || '—'}
+              </div>
+            )}
+          </div>
           {/* 우편번호 — T-20260508-foot-CUST-FORM-REVAMP */}
           <div className="space-y-1.5">
             <Label>우편번호</Label>
@@ -1151,9 +1131,6 @@ function CreateCustomerDialog({
   const [submitting, setSubmitting] = useState(false);
   // 인라인 자동검색으로 선택된 기존 고객 (중복 등록 방지)
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
-  // T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT: 외국인 정보(국적/여권번호/만료일)
-  const [foreignInfo, setForeignInfo] = useState<ForeignInfoValue>({ nationalityCode: '', passportNumber: '', docExpiry: '' });
-  const [foreignOpen, setForeignOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -1166,18 +1143,8 @@ function CreateCustomerDialog({
       setReferrerSuggestions([]);
       setReferrerId(null);
       setSelectedExistingId(null);
-      setForeignInfo({ nationalityCode: '', passportNumber: '', docExpiry: '' });
-      setForeignOpen(false);
     }
   }, [open]);
-
-  // 여권 스캔 결과 → 부모-소관 필드(생년월일) 반영. MRZ ISO(yyyy-mm-dd) → 풋 birthDate(YYMMDD).
-  const handleScanResult = useCallback((result: MrzResult) => {
-    if (result.birthDate) {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(result.birthDate);
-      if (m) setBirthDate(`${m[1].slice(2)}${m[2]}${m[3]}`);
-    }
-  }, []);
 
   // 기존 고객 선택 시 폼 자동 채움
   const handleExistingSelect = useCallback((p: PatientMatch) => {
@@ -1218,11 +1185,6 @@ function CreateCustomerDialog({
       return;
     }
     setSubmitting(true);
-    // T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT: 외국인 정보 입력 시 is_foreign 자동 true.
-    const natCode = foreignInfo.nationalityCode.trim();
-    const passportNum = foreignInfo.passportNumber.trim();
-    const docExpiry = foreignInfo.docExpiry.trim();
-    const isForeign = !!(natCode || passportNum || docExpiry);
     const { error } = await supabase.from('customers').insert({
       clinic_id: clinicId,
       name: name.trim(),
@@ -1232,11 +1194,6 @@ function CreateCustomerDialog({
       memo: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
-      // 외국인 정보 (마이그 20260625_foreign_info_port 적용 후 활성)
-      is_foreign: isForeign,
-      passport_number: passportNum || null,
-      nationality_code: natCode || null,
-      foreign_doc_expiry: docExpiry || null,
     });
     setSubmitting(false);
     if (error) {
@@ -1301,14 +1258,6 @@ function CreateCustomerDialog({
             </div>
             {/* 차트번호: DB 트리거 자동생성 — 등록 후 F-XXXX 자동 부여 */}
           </div>
-          {/* 외국인 정보 — T-20260625-foot-PASSPORT-FOREIGN-INFO-PORT */}
-          <ForeignInfoSection
-            value={foreignInfo}
-            onChange={(next) => setForeignInfo((prev) => ({ ...prev, ...next }))}
-            open={foreignOpen}
-            onOpenChange={setForeignOpen}
-            onScanResult={handleScanResult}
-          />
           <div className="space-y-1.5">
             <Label>메모</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} />
