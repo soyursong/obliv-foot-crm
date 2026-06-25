@@ -462,14 +462,11 @@ function PrescriptionView({
           className="flex items-center gap-2 rounded border px-3 py-2 text-xs bg-muted/30"
           data-testid="prescription-item-row"
         >
-          {/* T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (REOPEN, 문지은 대표원장):
-              구 '{name} {dosage} {route} {frequency} {days}일' 흩뿌린 raw text(엉망) →
-              SSOT formatRxItemToken '약물명 1/3/2'(1회량/1일횟수/총일수) 단일 토큰. route 는 부가 칩으로 보존. */}
+          {/* T-20260625-foot-RXPANEL-DISPLAY-ROUTE-NOTES-REMOVE (문지은 대표원장):
+              SSOT formatRxItemToken '약물명 1/3/2'(1회량/1일횟수/총일수) 단일 토큰만 노출.
+              route(투여경로)·notes(설명/메모) 표시 span 제거 — item.route/item.notes 데이터는 보존(표시만 제거).
+              supersedes T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX('route 부가 칩 보존'을 동일 reporter가 명시 번복). */}
           <span className="font-medium break-words" data-testid="prescription-item-token">{formatRxItemToken(item)}</span>
-          {item.route && <span className="text-muted-foreground text-[10px] shrink-0">{item.route}</span>}
-          {item.notes && (
-            <span className="text-muted-foreground text-[10px] ml-auto">{item.notes}</span>
-          )}
           {!confirmed && (
             <button
               type="button"
