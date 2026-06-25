@@ -12,9 +12,10 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { birthYearAgeDisplay, chartNoDisplay } from '@/lib/format';
+import { birthYearAgeDisplay, chartNoDisplay, seoulHHMM } from '@/lib/format';
 import {
   useOpinionRequestQueue,
+  usePublishedOpinionRequests,
   useResolveOpinionRequest,
   useQueueClinicalSnaps,
   buildOptionLabelMap,
@@ -30,17 +31,23 @@ import {
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속(미리보기 셀 클릭→컬럼-앵커 드롭다운 전문). 공유 컴포넌트 재사용(중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { Button } from '@/components/ui/button';
-import { Loader2, FilePen, Sparkles, Inbox } from 'lucide-react';
+import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2 } from 'lucide-react';
 
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
   const { data: rows = [], isLoading, isError, error } = useOpinionRequestQueue(clinicId);
+  // T-20260625-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 발행 완료 환자를 목록에서 제거하지 않고 '서류 완료' 그룹으로 유지.
+  const { data: completedRows = [] } = usePublishedOpinionRequests(clinicId);
   const { data: clinicHeader = null } = useClinicHeader(clinicId);
   const resolveMut = useResolveOpinionRequest(clinicId);
 
-  const customerIds = useMemo(() => rows.map((r) => r.customerId).filter(Boolean) as string[], [rows]);
+  // 작업 대상 + 완료 그룹 환자 모두의 임상 스냅(표준 컬럼 정상 표시, AC-5).
+  const customerIds = useMemo(
+    () => [...rows, ...completedRows].map((r) => r.customerId).filter(Boolean) as string[],
+    [rows, completedRows],
+  );
   const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, customerIds);
   const labelMap = useMemo(() => buildOptionLabelMap(), []);
 
@@ -106,44 +113,52 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-8 text-center text-sm text-red-600">
           조회 중 오류가 발생했습니다. {(error as Error)?.message ?? ''}
         </div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && completedRows.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground" data-testid="docreq-empty">
           <Inbox className="h-6 w-6 text-muted-foreground/50" />
           데스크에서 보낸 발행 요청이 없습니다.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border" data-testid="docreq-table">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">이름</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">생년(만나이)</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">차트번호</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">오늘시술</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">처방내역</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">임상경과</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap">서류종류</th>
-                <th className="px-2 py-1.5 font-medium">해당항목</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap text-center">발행</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <DocRequestRow
-                  key={r.id}
-                  r={r}
-                  snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
-                  itemLabels={labelsOf(r.selectedKeys)}
+        <>
+          {/* (상단) 작업 대상 — 작성 전/진행 중 요청. 기존 동작 무회귀(AC-1). */}
+          {rows.length > 0 && (
+            <div className="overflow-x-auto rounded-lg border" data-testid="docreq-table">
+              <DocReqTable
+                rows={rows}
+                variant="pending"
+                clinicalSnaps={clinicalSnaps}
+                labelsOf={labelsOf}
+                onWrite={openWrite}
+              />
+            </div>
+          )}
+
+          {/* (하단) 서류 완료 — 발행 완료 환자를 목록에서 제거하지 않고 그룹으로 유지(AC-2). */}
+          {completedRows.length > 0 && (
+            <div className="space-y-1.5" data-testid="docreq-completed-section">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                서류 완료
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700" data-testid="docreq-completed-count">
+                  {completedRows.length}건
+                </span>
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-muted bg-muted/10" data-testid="docreq-completed-table">
+                <DocReqTable
+                  rows={completedRows}
+                  variant="done"
+                  clinicalSnaps={clinicalSnaps}
+                  labelsOf={labelsOf}
                   onWrite={openWrite}
                 />
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 데스크에서 보낸 요청 목록입니다. [작성하기]를 누르면 실장이 고른 항목이 미리 선택된 발행 창이 열리며, 내용을 확인·수정한 뒤 원장님이 직접 발행합니다(발행은 원장 권한). 발행이 완료되면 해당 요청은 목록에서 사라집니다.
+        ※ 데스크에서 보낸 요청 목록입니다. [작성하기]를 누르면 실장이 고른 항목이 미리 선택된 발행 창이 열리며, 내용을 확인·수정한 뒤 원장님이 직접 발행합니다(발행은 원장 권한). 발행이 완료되면 해당 요청은 아래 <b>서류 완료</b> 칸으로 이동해 같은 화면에 계속 표시됩니다(당일 기준).
       </p>
 
       {/* AC-10: prefill 발행창 — initialSelectedKeys/docType/staffMemo 전달, 발행 성공 시 요청 resolve(큐 제거). */}
@@ -165,6 +180,54 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   );
 }
 
+// ─── 9컬럼 테이블 (작업 대상 / 서류 완료 공용) ───────────────────────────────
+//   T-20260625-foot-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 헤더 1벌만 유지(drift 방지)하고
+//   variant 로 대기('pending')·완료('done') 그룹 모두 렌더. 완료 그룹은 발행 버튼/반짝효과 없이 read-only.
+//   (container <div data-testid>·스타일은 호출부 소유 — testid 정적 가드 보존)
+function DocReqTable({
+  rows,
+  variant,
+  clinicalSnaps,
+  labelsOf,
+  onWrite,
+}: {
+  rows: OpinionRequestRow[];
+  variant: 'pending' | 'done';
+  clinicalSnaps: Record<string, ClinicalSnap>;
+  labelsOf: (keys: string[]) => string;
+  onWrite: (r: OpinionRequestRow) => void;
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">이름</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">생년(만나이)</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">차트번호</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">오늘시술</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">처방내역</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">임상경과</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">서류종류</th>
+          <th className="px-2 py-1.5 font-medium">해당항목</th>
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap text-center">발행</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <DocRequestRow
+            key={r.id}
+            r={r}
+            variant={variant}
+            snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
+            itemLabels={labelsOf(r.selectedKeys)}
+            onWrite={onWrite}
+          />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // ─── 서류요청 큐 1행 ─────────────────────────────────────────────────────────
 //   T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속.
 //     셀은 '최신 1줄 미리보기'(truncate)이고, 클릭하면 셀 바로 아래 컬럼-앵커 드롭다운(ColumnExpandPopover)으로
@@ -172,11 +235,13 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
 //   내용 없으면('—') 비클릭(드롭다운 없음). 행 자체 ref/state 소유(DoctorCallDashboard CompletedRow 패턴).
 function DocRequestRow({
   r,
+  variant = 'pending',
   snap,
   itemLabels,
   onWrite,
 }: {
   r: OpinionRequestRow;
+  variant?: 'pending' | 'done';
   snap: ClinicalSnap | undefined;
   itemLabels: string;
   onWrite: (r: OpinionRequestRow) => void;
@@ -188,11 +253,15 @@ function DocRequestRow({
 
   const rx = snap?.prescription || null;
   const progress = snap?.progress || null;
+  const isDone = variant === 'done';
 
   return (
     <>
-    <tr className="border-b last:border-0 align-top transition hover:bg-accent/30" data-testid="docreq-row">
-      <td className="px-2 py-1.5 whitespace-nowrap font-semibold text-foreground" data-testid="docreq-cell-name">
+    <tr
+      className={`border-b last:border-0 align-top transition hover:bg-accent/30 ${isDone ? 'text-muted-foreground' : ''}`}
+      data-testid={isDone ? 'docreq-completed-row' : 'docreq-row'}
+    >
+      <td className={`px-2 py-1.5 whitespace-nowrap font-semibold ${isDone ? 'text-foreground/70' : 'text-foreground'}`} data-testid="docreq-cell-name">
         {r.patientName}
         {r.requestedByName && (
           <span className="ml-1 text-[10px] font-normal text-muted-foreground">· 요청 {r.requestedByName}</span>
@@ -235,20 +304,32 @@ function DocRequestRow({
         )}
       </td>
       <td className="px-2 py-1.5 text-center whitespace-nowrap">
-        {/* AC-9 반짝효과: 신규 요청 시각화. AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). */}
-        <span className="relative inline-flex">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-md bg-teal-400/40" aria-hidden />
-          <Button
-            size="sm"
-            className="relative h-7 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
-            onClick={() => onWrite(r)}
-            data-testid="docreq-write-btn"
+        {isDone ? (
+          /* 서류 완료 그룹 — read-only. 작성하기/반짝효과/내원확인 제거, 발행 완료 뱃지(+발행 시각)만. */
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+            data-testid="docreq-done-badge"
           >
-            <Sparkles className="h-3 w-3" /> 작성하기
-          </Button>
-        </span>
-        {!r.checkInId && (
-          <span className="mt-0.5 block text-[9px] text-amber-600" title="내원 이력이 없어 발행 전 내원 확인이 필요합니다.">내원확인 필요</span>
+            <CheckCircle2 className="h-3 w-3" /> 발행 완료{r.resolvedAt ? ` · ${seoulHHMM(r.resolvedAt)}` : ''}
+          </span>
+        ) : (
+          <>
+            {/* AC-9 반짝효과: 신규 요청 시각화. AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). */}
+            <span className="relative inline-flex">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-md bg-teal-400/40" aria-hidden />
+              <Button
+                size="sm"
+                className="relative h-7 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
+                onClick={() => onWrite(r)}
+                data-testid="docreq-write-btn"
+              >
+                <Sparkles className="h-3 w-3" /> 작성하기
+              </Button>
+            </span>
+            {!r.checkInId && (
+              <span className="mt-0.5 block text-[9px] text-amber-600" title="내원 이력이 없어 발행 전 내원 확인이 필요합니다.">내원확인 필요</span>
+            )}
+          </>
         )}
       </td>
     </tr>

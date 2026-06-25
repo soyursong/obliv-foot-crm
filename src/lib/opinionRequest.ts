@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { OPINION_SECTIONS, type OpinionSection } from '@/components/doctor/OpinionDocTab';
 import { formatRxItemToken } from '@/lib/rxTooltip';
+import { todaySeoulISODate, seoulISODate } from '@/lib/format';
 
 // 서류종류 2종 (AC-6) — 진단서 / 소견서.
 export type OpinionDocType = 'diagnosis' | 'opinion';
@@ -147,6 +148,8 @@ export interface OpinionRequestRow {
   createdAt: string;
   /** B-1: 실장이 고른 서류 날짜(YYYY-MM-DD). 없으면 ''(원장 작성창에서 오늘 기본값). */
   requestDate: string;
+  /** T-20260625-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 발행 완료 시각(field_data.resolved_at, ISO). 대기 큐 행은 undefined. */
+  resolvedAt?: string;
 }
 
 export function useOpinionRequestQueue(clinicId: string | null) {
@@ -184,6 +187,66 @@ export function useOpinionRequestQueue(clinicId: string | null) {
           createdAt: String(r['created_at'] ?? ''),
           requestDate: String(fd['request_date'] ?? ''),
         }));
+      return rows;
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
+// ─── 진료대시보드 '서류 완료' 그룹 (T-20260625-foot-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER) ──
+//   원장이 발행을 마치면 useResolveOpinionRequest 가 draft → status='voided' + field_data.resolved_reason='published'
+//   로 전환한다(L196~). 그 완료 row 를 read-only 로 다시 읽어 '서류 완료' 서브헤더 그룹에 표시(목록에서 사라지지 않게).
+//   ★read-only 표시 전용: authoring/publish 경로(publish_opinion_doc RPC·OpinionEditorDialog) 일절 미접촉.
+//   ★스키마 변경 0: 이미 적재되는 field_data.resolved_reason/resolved_at 만 read.
+//   ★cancelled(요청취소) 제외: '서류 완료' = resolved_reason='published' 만(흡수 그라운딩 준수).
+//   ★day-scoped: 진료대시보드는 당일 뷰 → resolved_at(KST) 이 오늘인 발행 건만. created_at 2일 lookback 으로
+//     자정 넘겨 발행된 어제-요청-오늘-완료 건까지 포섭한 뒤 resolved_at KST==today 로 정밀 필터.
+export function usePublishedOpinionRequests(clinicId: string | null) {
+  return useQuery<OpinionRequestRow[]>({
+    queryKey: ['opinion_request_published', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      if (!clinicId) return [];
+      const today = todaySeoulISODate();
+      // created_at 하한(2일 lookback) — voided 누적 무한 조회 방지 + 자정 교차 발행 포섭.
+      const lookbackStart = seoulISODate(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, customer_id, check_in_id, field_data, created_at')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'voided')
+        .gte('created_at', `${lookbackStart}T00:00:00+09:00`)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const rows = ((data ?? []) as Array<Record<string, unknown>>)
+        .map((r) => ({ r, fd: (r['field_data'] ?? {}) as Record<string, unknown> }))
+        // 같은 서류작성 큐(staff_consult)에서 발행 완료된 건만. cancelled(요청취소) 제외.
+        .filter(({ fd }) => fd['request_origin'] === 'staff_consult')
+        .filter(({ fd }) => fd['resolved_reason'] === 'published')
+        // 당일(KST) 발행 건만 — day-scoped 뷰.
+        .filter(({ fd }) => {
+          const ra = fd['resolved_at'];
+          return typeof ra === 'string' && !!ra && seoulISODate(ra) === today;
+        })
+        .map(({ r, fd }) => ({
+          id: String(r['id']),
+          customerId: (r['customer_id'] as string | null) ?? null,
+          checkInId: (r['check_in_id'] as string | null) ?? null,
+          docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+          selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
+          staffMemo: String(fd['staff_memo'] ?? ''),
+          patientName: String(fd['patient_name'] ?? '—'),
+          chartNo: (fd['chart_no'] as string | null) || null,
+          birthDate: (fd['birth_date'] as string | null) || null,
+          requestedByName: String(fd['requested_by_name'] ?? ''),
+          requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
+          createdAt: String(r['created_at'] ?? ''),
+          requestDate: String(fd['request_date'] ?? ''),
+          resolvedAt: String(fd['resolved_at'] ?? ''),
+        }))
+        // 최근 발행 순(resolved_at desc) — created_at 정렬과 무관하게 완료시각 기준 재정렬.
+        .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
       return rows;
     },
     refetchInterval: 30_000,
