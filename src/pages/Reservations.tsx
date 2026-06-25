@@ -1798,8 +1798,8 @@ export default function Reservations() {
                 }}
                 className={cn(
                   // TIMEGRID-VERTICAL: 컬럼 폭에 맞춘 세로 진열 카드(full-width). 색상은 KIND_CARD_STYLE(초진=그린/재진=하늘/힐러=노랑) 유지.
-                  // COMPACT2(2단계): 칸 90px화에 맞춰 카드 패딩·폰트 축소(px-2 py-1→px-1 py-0.5, text-[12px]→text-[9px]). 색상/구조 불변.
-                  'w-full min-w-0 overflow-hidden rounded border px-1 py-0.5 text-[9px] leading-tight shadow-sm transition-opacity',
+                  // COMPACT2(2단계, 김주연 총괄 확정 8px): 칸 90px화에 맞춰 카드 패딩·폰트 축소(px-2 py-1→px-1 py-0.5, text-[12px]→text-[8px]). 색상/구조 불변. 8px=가독성 하한 → leading-tight+truncate로 깨짐 방지.
+                  'w-full min-w-0 overflow-hidden rounded border px-1 py-0.5 text-[8px] leading-tight shadow-sm transition-opacity',
                   r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                   draggedId === r.id && 'opacity-40',
                   STATUS_STYLE[r.status],
@@ -1839,7 +1839,7 @@ export default function Reservations() {
                     <span className="rounded bg-gray-200 px-0.5 text-[8px] leading-none text-gray-500">취소됨</span>
                   )}
                 </div>
-                <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[8px] opacity-80">
+                <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                   <span className={cn('inline-block h-1.5 w-1.5 rounded-full', KIND_DOT[resvKind(r)])} />
                   {resvKind(r) === 'healer' ? '힐러' : VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
                   {r.customer_phone && (
@@ -1847,7 +1847,7 @@ export default function Reservations() {
                   )}
                 </div>
                 {resvBookerMap.get(r.id) && (
-                  <div className="truncate text-[8px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
+                  <div className="truncate text-[7px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
                     @{resvBookerMap.get(r.id)}
                   </div>
                 )}
