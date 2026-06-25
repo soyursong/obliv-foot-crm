@@ -1,7 +1,15 @@
 # T-20260625-foot-OPINIONDOC-PHRASE-LITERAL-ESCAPE — AC-0/AC-1 evidence (DB게이트용)
 
-> 상태: **의료 confirm 게이트 대기 + supervisor DB게이트 대기** (AC-1 apply 미실행, AC-2 FE 미수정)
-> 영역: 진료관리(소견서/진단서) → §11 medical_confirm_gate 대상. 티켓 frontmatter 게이트 필드 부재 → planner FOLLOWUP `medical_confirm_pending` 발행함.
+> 상태(2026-06-25 갱신): **의료 confirm 게이트 confirmed(planner MSG-20260625-115005) + AC-2 FE 구현·커밋·push 완료** / **AC-1 apply는 supervisor DB게이트 대기(미실행)**
+> 영역: 진료관리(소견서/진단서) → §11 medical_confirm_gate 대상. confirm_status=confirmed(self-request, reporter=문지은 대표원장 본인).
+>
+> ## AC-2 구현 완료 (2026-06-25)
+> - `src/lib/htmlFormTemplates.ts`: `normalizePhraseText()` 신규 export + `bindHtmlTemplate`가 escape 전 경유.
+>   - 리터럴 `\n`/`\r\n`/`\t`(백슬래시 escape) → 실제 제어문자 → 이후 `/\n/g→<br>` 매칭.
+>   - HTML 엔티티(lt/gt/quot/#39/amp) 디코드 후 escape 단계가 단일 인코딩 → 이중 `&amp;lt;` 차단. 멱등.
+> - `src/lib/opinionDocCompose.ts`: editor 본문(SSOT) 합성 최종 출력에도 `normalizePhraseText` 적용 → 작성창 textarea 리터럴 `\n` 0건.
+> - spec: `tests/e2e/T-20260625-foot-OPINIONDOC-PHRASE-LITERAL-ESCAPE.spec.ts` 7 case PASS (리터럴개행→<br> / &lt;이중인코딩방지 / R&D멱등 / _html보존 / compose개행 / 구현가드).
+> - 빌드 OK. bindHtmlTemplate 직접 import하는 기존 spec 회귀 점검 → 신규 실패 0건(stash 비교로 사전실패 5건 확인, 전부 템플릿콘텐츠·별건).
 
 ## AC-0 트리아지 (READ-ONLY, 확정)
 스크립트: `scripts/...PHRASE-LITERAL-ESCAPE_ac0_scan.mjs` (form_templates 전수 29 template 스캔)

@@ -25,6 +25,7 @@ import {
   type HepatitisType,
   type OpinionSourceSection,
 } from '@/lib/contraindicationCombine';
+import { normalizePhraseText } from '@/lib/htmlFormTemplates';
 
 // ── 플레이스홀더 마커 (MD §1/§2) ──────────────────────────────────────────────
 /** MD §1 날짜 플레이스홀더 리터럴. */
@@ -208,5 +209,8 @@ export function composeOpinionDoc(input: ComposeInput): string {
   text = substituteOralXReason(text, oralXReason);
   // ⑤ 임신중 조갑진균증 = 무처리(scope 제외).
 
-  return text;
+  // T-20260625-foot-OPINIONDOC-PHRASE-LITERAL-ESCAPE (AC-2): editor textarea(SSOT) 주입 직전
+  // phrase 원문에 박힌 리터럴 `\n`(2글자)을 실제 개행으로 정규화 → 작성창에서 줄바꿈 정상 반영.
+  // (AC-1 데이터 정정 적용 前·field_data·CONTRAIND 신규 phrase까지 render 무관 범용 방어)
+  return normalizePhraseText(text);
 }
