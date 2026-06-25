@@ -185,9 +185,10 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
   const [loading,      setLoading]      = useState(true);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
-  const [formType,     setFormType]     = useState<'general' | 'senior'>('general');
-  // T-20260625-foot-FOREIGN-HEALTHQ-EN: 외국인 전용 영문 설문지 링크 발급
-  const [lang,         setLang]         = useState<'ko' | 'en'>('ko');
+  // T-20260625-foot-PENCHART-HEALTHQ-SENIOR-TO-FOREIGN: 양식 변형 [일반 / 외국인용].
+  //   어르신용(senior) 발급 선택지 제거. 외국인용 = FOREIGN-HEALTHQ-EN(lang='en') flow 재사용.
+  //   일반 → form_type='general' + lang='ko' / 외국인용 → form_type='general' + lang='en'.
+  const [variant,      setVariant]      = useState<'general' | 'foreign'>('general');
   // T-20260603-foot-HEALTHQ-SELFLINK-QR-VIEW: 발급된 링크 QR 모달 (데스크 즉시 응대)
   const [qrOpen,       setQrOpen]       = useState(false);
 
@@ -215,10 +216,10 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
       const { data: result, error } = await supabase.rpc('fn_health_q_create_token', {
         p_customer_id:  customerId,
         p_clinic_id:    clinicId,
-        p_form_type:    formType,
+        p_form_type:    'general',
         p_check_in_id:  checkInId ?? null,
         p_expires_days: 7,
-        p_lang:         lang,
+        p_lang:         variant === 'foreign' ? 'en' : 'ko',
       });
       if (error) throw new Error(error.message);
       const res = result as { success: boolean; token?: string; error?: string };
@@ -230,7 +231,7 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
     } finally {
       setTokenLoading(false);
     }
-  }, [customerId, clinicId, formType, checkInId, lang]);
+  }, [customerId, clinicId, variant, checkInId]);
 
   const handleCopy = useCallback(async () => {
     if (!generatedUrl) return;
@@ -263,24 +264,16 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
       <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-3 space-y-3">
         <p className="text-xs font-medium text-teal-700">고객용 링크 발급 (모바일 자가작성)</p>
         <div className="flex gap-2">
-          {/* 양식 선택 */}
+          {/* T-20260625-foot-PENCHART-HEALTHQ-SENIOR-TO-FOREIGN: 양식 변형 [일반 / 외국인용].
+              어르신용 제거. 외국인용 = 영문 설문(lang='en') 재사용. */}
           <select
-            value={formType}
-            onChange={(e) => setFormType(e.target.value as 'general' | 'senior')}
+            value={variant}
+            onChange={(e) => setVariant(e.target.value as 'general' | 'foreign')}
             className="flex-1 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-teal-400"
+            data-testid="healthq-variant-select"
           >
-            <option value="general">일반용</option>
-            <option value="senior">어르신용</option>
-          </select>
-          {/* T-20260625-foot-FOREIGN-HEALTHQ-EN: 언어 (외국인 = 영문) */}
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value as 'ko' | 'en')}
-            className="flex-1 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-teal-400"
-            data-testid="healthq-lang-select"
-          >
-            <option value="ko">한국어</option>
-            <option value="en">English (외국인)</option>
+            <option value="general">일반</option>
+            <option value="foreign">외국인용 (English)</option>
           </select>
           <Button
             size="sm"
