@@ -27,6 +27,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
 import { normalizeToE164, phoneCanonDigits } from '@/lib/phone';
 import { todaySeoulISODate, nowSeoulHHMM } from '@/lib/format';
+import ForeignStayAddressInput from '@/components/ForeignStayAddressInput';
 
 // 셀프체크인 전용 Supabase 클라이언트 (anon, 세션 없음)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -175,6 +176,19 @@ const T: Record<Lang, {
   reservationNowBadge: string;
   // OQ1(가정 A): 셀프접수 페이지 URL QR
   scanToPhoneCaption: string;
+  // T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW: 외국인 전용(English 분기) 추가 항목
+  emailLabel: string;
+  emailPlaceholder: string;
+  contactEitherHint: string;        // 워크인 외국인: 연락처 or 이메일 택1 안내
+  stayAddressLabel: string;
+  stayAddressPlaceholder: string;
+  stayAddressDetailLabel: string;
+  stayAddressDetailPlaceholder: string;
+  stayManualToggle: string;
+  stayManualHint: string;
+  foreignConsentTitle: string;      // §C 동의서 제목
+  foreignConsentItems: string[];    // §C 동의서 본문(항목별)
+  foreignConsentCheckbox: string;   // §C 동의 체크 레이블
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
@@ -282,6 +296,24 @@ const T: Record<Lang, {
     reservationListBack: '← 돌아가기',
     reservationNowBadge: '지금',
     scanToPhoneCaption: 'QR을 스캔해 휴대폰으로 접수할 수 있어요',
+    // T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW (외국인 전용 — 한국어 흐름에선 미사용, 폴백용)
+    emailLabel: '이메일',
+    emailPlaceholder: 'name@example.com',
+    contactEitherHint: '연락처 또는 이메일 중 하나 이상 입력해주세요',
+    stayAddressLabel: '국내 체류지 (숙소/주소)',
+    stayAddressPlaceholder: '숙소명 또는 주소 검색',
+    stayAddressDetailLabel: '상세주소',
+    stayAddressDetailPlaceholder: '동·호수·층 등',
+    stayManualToggle: '주소 직접 입력',
+    stayManualHint: '체류지 주소를 직접 입력해주세요.',
+    foreignConsentTitle: '외국인 환자 개인정보 수집·이용 동의',
+    foreignConsentItems: [
+      '본 의원은 진료 접수, 환자 본인 확인, 진료기록 관리 및 관련 행정업무를 위해 아래 정보를 수집·이용합니다.',
+      '수집항목 : 성명 / 생년월일 / 국적 / 연락처 / 여권번호(또는 외국인등록번호) / 국내 체류지(선택)',
+      '보유기간 : 관련 법령에 따른 보존기간까지 보관',
+      '귀하는 개인정보 수집·이용에 대한 동의를 거부할 권리가 있으나, 필수정보 미제공 시 진료 접수가 제한될 수 있습니다.',
+    ],
+    foreignConsentCheckbox: '개인정보 수집·이용에 동의합니다 (필수)',
   },
   en: {
     selfCheckIn: 'Self Check-In',
@@ -388,6 +420,24 @@ const T: Record<Lang, {
     reservationListBack: '← Back',
     reservationNowBadge: 'Now',
     scanToPhoneCaption: 'Scan the QR to check in on your phone',
+    // T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW (foreign-patient flow)
+    emailLabel: 'Email',
+    emailPlaceholder: 'name@example.com',
+    contactEitherHint: 'Enter at least one: phone number or email',
+    stayAddressLabel: 'Stay in Korea (Hotel / Address)',
+    stayAddressPlaceholder: 'Search hotel or address',
+    stayAddressDetailLabel: 'Address Detail',
+    stayAddressDetailPlaceholder: 'Room / floor / building',
+    stayManualToggle: 'Enter address manually',
+    stayManualHint: 'Type your stay address directly.',
+    foreignConsentTitle: 'Consent to Collection & Use of Personal Information (Foreign Patients)',
+    foreignConsentItems: [
+      'This clinic collects and uses the information below for reception, identity verification, medical record management, and related administrative tasks.',
+      'Items collected: name / date of birth / nationality / contact / passport number (or foreign registration number) / domestic stay address (optional)',
+      'Retention: stored until the end of the period required by relevant laws',
+      'You have the right to refuse consent; however, reception may be limited if required information is not provided.',
+    ],
+    foreignConsentCheckbox: 'I consent to the collection and use of my personal information (required)',
   },
 };
 
@@ -589,6 +639,9 @@ export default function SelfCheckIn() {
   const [step, setStep] = useState<Step>('input');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  // T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW: 외국인 워크인 연락수단(이메일) — phone or email 택1.
+  //   저장 = customers.customer_email (⚠ 기관 email 아님). DA Q3: nullable 재사용, FE 강제.
+  const [customerEmail, setCustomerEmail] = useState('');
 
   // ── 방문유형 2단계 (T-20260517-foot-CHECKIN-2STEP) ──
   const [reservationType, setReservationType] = useState<ReservationType | null>(null);
@@ -696,6 +749,7 @@ export default function SelfCheckIn() {
     setStep('input');
     setName('');
     setPhone('');
+    setCustomerEmail(''); // T-20260625-FOREIGN-SELFCHECKIN
     setReservationType(null);
     setVisitType('new');
     setWalkInModalOpen(false);
@@ -981,17 +1035,26 @@ export default function SelfCheckIn() {
   // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인만 유입경로 수집
   const showLeadSource = reservationType === 'walkin';
 
+  // ── T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW: 외국인 흐름 = English 선택 시 자동 진입(별도 QR/버튼 無) ──
+  const isForeign = lang === 'en';
+  const phoneFilled = phone.replace(/\D/g, '').length >= 10;
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim());
+  // 외국인 워크인: 연락처 또는 이메일 택1 최소1개(DA Q3 — FE 강제, DB CHECK 금지). 내국인: 연락처 필수.
+  const contactComplete = isForeign ? (phoneFilled || emailValid) : phoneFilled;
+
   const canSubmit =
     name.trim().length >= 1 &&
-    phone.replace(/\D/g, '').length >= 10 &&
+    contactComplete &&
     visitTypeComplete &&
     (!showLeadSource || leadSourceComplete);
 
   // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 완료 여부 ──
+  // T-20260625-FOREIGN: 외국인은 주민번호 미수집(여권=PASSPORT-PORT) → RRN 게이트 면제.
+  //   동의서(§C)는 외국인이면 예약/워크인 모두 필수.
   const personalInfoComplete =
-    extractBirthDate(rrn) !== null &&
+    (isForeign || extractBirthDate(rrn) !== null) &&
     address.trim().length >= 2 &&
-    (reservationType !== 'walkin' || privacyConsent); // 워크인만 동의서 필수
+    ((reservationType !== 'walkin' && !isForeign) || privacyConsent);
 
   // ── T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 검색(다음/카카오 postcode) ──
   // CustomerChartPage.openKakaoPostcode 패턴 재사용. 선택 시 우편번호+기본주소 자동기입.
@@ -1208,12 +1271,21 @@ export default function SelfCheckIn() {
           sms_opt_in: smsOptIn,
           sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
         };
+        // T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW: 외국인 연락수단 이메일(customer_email) — 입력 시 갱신(신규/재진 공통).
+        //   ⚠ customer_email = 환자 이메일(기관 email 아님, DA Q3 MUST).
+        if (isForeign && customerEmail.trim()) existingUpdate.customer_email = customerEmail.trim();
         // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 초진 기존 고객 주소 갱신 → 2번차트 연동
         // 빈 값으로 기존 주소를 덮어쓰지 않도록 입력값이 있을 때만 병합.
         if (visitType === 'new') {
           if (address.trim()) existingUpdate.address = address.trim();
           if (postalCode.trim()) existingUpdate.postal_code = postalCode.trim();
           if (addressDetail.trim()) existingUpdate.address_detail = addressDetail.trim();
+          // T-20260625-FOREIGN: 외국인 동의(§C) 영속화 — 예약 기존고객 초진 경로(개인정보 화면 노출분).
+          //   동의(true)→privacy_consent_at=now(), 미동의→NULL (CONSENT-TIMESTAMP 패턴).
+          if (isForeign) {
+            existingUpdate.privacy_consent = privacyConsent;
+            existingUpdate.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
+          }
         }
         await anonClient
           .from('customers')
@@ -1224,14 +1296,17 @@ export default function SelfCheckIn() {
         // T-20260617 (AC-1 ①): ambiguousLink(성함+연락처 동시중복) 일 땐 신규 생성도 보류 → customerId NULL 유지.
         const newCustomerPayload: Record<string, unknown> = {
           clinic_id: clinicId,
+          // T-20260625-FOREIGN: 외국인 워크인은 연락처 대신 이메일만 입력 가능 → phone 빈값이면 null(컬럼 nullable, DA Q3).
+          phone: phoneStored || null,
           name: name.trim(),
-          phone: phoneStored,
           visit_type: visitType === 'new' ? 'new' : 'returning',
           // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 저장
           sms_opt_in: smsOptIn,
           // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
           sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
         };
+        // T-20260625-FOREIGN: 외국인 연락수단 이메일(customer_email = 환자 이메일, 기관 email 아님).
+        if (isForeign && customerEmail.trim()) newCustomerPayload.customer_email = customerEmail.trim();
         if (visitType === 'new') {
           const bd = extractBirthDate(rrn);
           if (bd) newCustomerPayload.birth_date = bd;
@@ -1239,6 +1314,11 @@ export default function SelfCheckIn() {
           // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 + 상세주소 → 2번차트 연동
           if (postalCode.trim()) newCustomerPayload.postal_code = postalCode.trim();
           if (addressDetail.trim()) newCustomerPayload.address_detail = addressDetail.trim();
+          // T-20260625-FOREIGN: 외국인 예약(YES)·신규 경로 동의(§C) 영속화 — 워크인 블록과 중복 회피(reserved만).
+          if (isForeign && reservationType !== 'walkin') {
+            newCustomerPayload.privacy_consent = privacyConsent;
+            newCustomerPayload.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
+          }
           if (reservationType === 'walkin') {
             newCustomerPayload.privacy_consent = privacyConsent;
             // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
@@ -1248,9 +1328,12 @@ export default function SelfCheckIn() {
             //   전용)이라 write-path RPC 가 실패하면(시그니처 불일치 PGRST202 등) hira 동의가 영구 유실됐다.
             //   privacy_consent 와 동일 단일 패턴으로 선저장해 RPC 가용성과 무관하게 보관의무 충족
             //   (이후 RPC UPDATE 가 멱등 재확정). sibling foot-checkin(kiosk) e7a8494 와 동일 경로.
-            newCustomerPayload.hira_consent = insuranceConsent;
-            // T-20260602-foot-CONSENT-TIMESTAMP-COLS 패턴: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
-            newCustomerPayload.hira_consent_at = insuranceConsent ? new Date().toISOString() : null;
+            // T-20260625-FOREIGN: 외국인은 국내 건강보험 비대상 → hira_consent 미저장(insuranceConsent 기본 true 오염 방지).
+            if (!isForeign) {
+              newCustomerPayload.hira_consent = insuranceConsent;
+              // T-20260602-foot-CONSENT-TIMESTAMP-COLS 패턴: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
+              newCustomerPayload.hira_consent_at = insuranceConsent ? new Date().toISOString() : null;
+            }
             // T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (scaffold): 셀프접수 동의 = 자격조회 자동 트리거.
             //   여기서 hira_consent=true 로 저장되면, 이후 해당 고객 차트(2번차트) 진입 시
             //   CustomerChartPage 의 hira 자동 트리거 effect 가 1구역 자격조회를 자동 실행한다.
@@ -1524,8 +1607,10 @@ export default function SelfCheckIn() {
             p_clinic_id:         clinicId,
             p_birth_date:        extractBirthDate(rrn) ?? null,
             p_address:           address.trim() || null,
-            p_privacy_consent:   reservationType === 'walkin' ? privacyConsent : null,
-            p_insurance_consent: insuranceConsent || null, // AC-7: true 시만 전달
+            // T-20260625-FOREIGN: 외국인은 워크인/예약 모두 §C 동의 필수 → 동의값 전달(멱등 재확정).
+            p_privacy_consent:   (reservationType === 'walkin' || isForeign) ? privacyConsent : null,
+            // T-20260625-FOREIGN: 외국인은 국내 건강보험 비대상 → hira 동의 미전달(NULL=유지).
+            p_insurance_consent: isForeign ? null : (insuranceConsent || null), // AC-7: true 시만 전달
             // T-20260609 수정2: 워크인 동선만 방문경로 대분류(워크인)+소분류(유입경로) 전달
             p_visit_route:        reservationType === 'walkin' ? '워크인' : null,
             p_visit_route_detail: reservationType === 'walkin' ? visitRouteDetail : null,
@@ -1554,10 +1639,15 @@ export default function SelfCheckIn() {
 
         // (5) 발건강질문지 QR 토큰 생성
         try {
-          const { data: tokenResult } = await anonClient.rpc('fn_selfcheckin_create_health_q_token', {
+          // T-20260625-FOREIGN: 외국인(English) → 영문 발건강질문지 토큰(lang='en') 발급.
+          //   p_lang 은 마이그 20260625150000(함수 3-arg 확장) 적용 후 동작. 마이그 미적용 구간 방어:
+          //   내국인(ko)은 p_lang 미전달 → 기존 2-arg 함수와 후방호환 유지(QR 무회귀). 외국인만 p_lang 전달.
+          const tokenArgs: Record<string, unknown> = {
             p_check_in_id: newCheckInId,
             p_clinic_id:   clinicId,
-          });
+          };
+          if (isForeign) tokenArgs.p_lang = 'en';
+          const { data: tokenResult } = await anonClient.rpc('fn_selfcheckin_create_health_q_token', tokenArgs);
           const tokenRes = tokenResult as { success: boolean; token?: string } | null;
           if (tokenRes?.success && tokenRes.token) {
             setHealthQToken(tokenRes.token);
@@ -1585,6 +1675,7 @@ export default function SelfCheckIn() {
     <button
       type="button"
       onClick={() => setLang((l) => (l === 'ko' ? 'en' : 'ko'))}
+      data-testid="lang-toggle"
       className="fixed right-4 top-4 z-50 flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold shadow-md transition active:scale-95"
       style={{
         backgroundColor: C.cream,
@@ -1985,7 +2076,9 @@ export default function SelfCheckIn() {
               </div>
             )}
 
-            {/* 주민번호 입력 — RRN NumPad */}
+            {/* 주민번호 입력 — RRN NumPad.
+                T-20260625-FOREIGN: 외국인은 주민번호 미수집(여권 = PASSPORT-PORT 번들) → 숨김. */}
+            {!isForeign && (
             <div className="space-y-2">
               <label className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
                 {t.rrnLabel}
@@ -2016,9 +2109,25 @@ export default function SelfCheckIn() {
                 clearLabel={t.clearAll}
               />
             </div>
+            )}
 
-            {/* 주소 입력 — T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1:
-                우편번호 검색(자동기입) + 기본주소 + 상세주소칸 */}
+            {/* T-20260625-FOREIGN: 외국인 = 국내 체류지(숙소) 검색 위젯(카카오 로컬). 내국인 = 우편번호 검색. */}
+            {isForeign ? (
+              <ForeignStayAddressInput
+                address={address}
+                onAddressChange={setAddress}
+                addressDetail={addressDetail}
+                onAddressDetailChange={setAddressDetail}
+                searchLabel={t.stayAddressLabel}
+                searchPlaceholder={t.stayAddressPlaceholder}
+                detailLabel={t.stayAddressDetailLabel}
+                detailPlaceholder={t.stayAddressDetailPlaceholder}
+                manualToggleLabel={t.stayManualToggle}
+                manualHint={t.stayManualHint}
+              />
+            ) : (
+            /* 주소 입력 — T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1:
+                우편번호 검색(자동기입) + 기본주소 + 상세주소칸 */
             <div className="space-y-1.5">
               <label
                 htmlFor="pi-address"
@@ -2104,9 +2213,10 @@ export default function SelfCheckIn() {
                 data-testid="pi-address-detail-input"
               />
             </div>
+            )}
 
-            {/* 개인정보 동의 — 워크인(AC-5)만 필수 표시 */}
-            {reservationType === 'walkin' && (
+            {/* 개인정보 동의 — 워크인(AC-5) 또는 외국인(§C, T-20260625) 필수 표시 */}
+            {(reservationType === 'walkin' || isForeign) && (
               <label
                 htmlFor="pi-consent"
                 className="flex items-start gap-3 cursor-pointer select-none rounded-xl p-4"
@@ -2123,12 +2233,14 @@ export default function SelfCheckIn() {
                   data-testid="pi-consent-checkbox"
                 />
                 <span className="text-sm leading-relaxed font-medium" style={{ color: C.dark }}>
-                  {t.privacyConsentLabel}
+                  {isForeign ? t.foreignConsentCheckbox : t.privacyConsentLabel}
                 </span>
               </label>
             )}
 
-            {/* AC-7: 건강보험 조회 동의 — 초진 전체(예약+워크인) 표시, 선택사항 */}
+            {/* AC-7: 건강보험 조회 동의 — 초진 전체(예약+워크인) 표시, 선택사항.
+                T-20260625-FOREIGN: 외국인은 국내 건강보험 비대상 → 숨김. */}
+            {!isForeign && (
             <label
               htmlFor="pi-insurance-consent"
               className="flex items-start gap-3 cursor-pointer select-none rounded-xl p-4"
@@ -2153,9 +2265,32 @@ export default function SelfCheckIn() {
                 </span>
               </div>
             </label>
+            )}
 
-            {/* T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2:
-                동의서 본문 — '쭉 연결' 대신 항목별(수집항목/수집목적/보유기간) 줄바꿈 정렬 */}
+            {/* 동의서 본문.
+                T-20260625-FOREIGN: 외국인(English) = §C 외국인 환자 개인정보 동의 전문.
+                내국인 = 기존 개인정보 + 건강보험 항목별 정렬(AC-2). */}
+            {isForeign ? (
+            <div
+              className="rounded-xl p-4 space-y-2"
+              style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
+              data-testid="pi-consent-detail-foreign"
+            >
+              <p className="text-sm font-semibold" style={{ color: C.dark }}>
+                {t.foreignConsentTitle}
+              </p>
+              <ul className="space-y-1.5">
+                {t.foreignConsentItems.map((line, i) => (
+                  <li key={`foreign-consent-${i}`} className="flex gap-1.5 text-xs leading-relaxed" style={{ color: C.muted }}>
+                    <span aria-hidden="true" className="select-none">•</span>
+                    <span className="flex-1">{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            ) : (
+            /* T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2:
+                동의서 본문 — '쭉 연결' 대신 항목별(수집항목/수집목적/보유기간) 줄바꿈 정렬 */
             <div
               className="rounded-xl p-4 space-y-3"
               style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
@@ -2190,6 +2325,7 @@ export default function SelfCheckIn() {
                 </ul>
               </div>
             </div>
+            )}
 
             {/* 버튼 영역 */}
             <div className="flex gap-3 pt-2">
@@ -2271,8 +2407,9 @@ export default function SelfCheckIn() {
               <span className="font-semibold" style={{ color: C.dark }}>{name.trim()}</span>
             </div>
             <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
-              <span style={{ color: C.muted }}>{t.contact}</span>
-              <span className="font-semibold" style={{ color: C.dark }}>{phone}</span>
+              {/* T-20260625-FOREIGN: 외국인 연락처 미입력 시 이메일 표기 */}
+              <span style={{ color: C.muted }}>{phone ? t.contact : t.emailLabel}</span>
+              <span className="font-semibold" style={{ color: C.dark }}>{phone || customerEmail.trim()}</span>
             </div>
             {/* T-20260529: 초진인 경우 주민번호(앞6자리)+주소 표시 */}
             {visitType === 'new' && rrn && (
@@ -2488,6 +2625,46 @@ export default function SelfCheckIn() {
               onClear={handleNumPadClear}
               clearLabel={t.clearAll}
             />
+
+            {/* T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW: 외국인(English) — 연락처 or 이메일 택1 */}
+            {isForeign && (
+              <div className="space-y-1.5 pt-1" data-testid="foreign-email-block">
+                <label
+                  htmlFor="sc-email"
+                  className="block text-sm font-medium tracking-wide"
+                  style={{ color: C.medium }}
+                >
+                  {t.emailLabel}
+                </label>
+                <input
+                  id="sc-email"
+                  type="email"
+                  inputMode="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder={t.emailPlaceholder}
+                  autoComplete="off"
+                  className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
+                  style={{
+                    border: `1.5px solid ${customerEmail.trim() ? C.borderActive : C.border}`,
+                    backgroundColor: 'white',
+                    color: C.dark,
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = C.borderActive;
+                    e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = customerEmail.trim() ? C.borderActive : C.border;
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                  data-testid="foreign-email-input"
+                />
+                <p className="text-xs" style={{ color: C.muted }} data-testid="foreign-contact-hint">
+                  {t.contactEitherHint}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 방문유형 — 2단계 (T-20260517-foot-CHECKIN-2STEP) */}
