@@ -250,9 +250,12 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   //   ★medical_chart surface(의사영역)는 admin-only 절대 무변경(AC-5 회귀 0).
   //   서버측: phrase_templates RLS 2-policy ADDITIVE(admin_write{admin,manager} + 신규 staff_write{5역할,
   //     pen/customer 가드}) = FE set 과 동일 effective. (migration 20260620_phrase_templates_staff_write_staffarea)
+  // T-20260625-foot-CLINICMGMT-3TAB-DIRECTOR-RBAC: 대표원장(director) 진료차트 상용구 편집 불가 hotfix.
+  //   ★medchart surface(의사영역)에만 director escape 추가. 직원영역(canEditStaffAreaPhrase)은 무변경.
+  //   ★stopgap: RLS(admin_write_phrase_templates) director 는 a75cf28f 旣추가 — has_ops_authority 적재 시 일괄 제거.
   const isMedchartSurface = lockedType === 'medical_chart';
   const canEdit = isMedchartSurface
-    ? profile?.role === 'admin'
+    ? profile?.role === 'admin' || profile?.role === 'director'
     : canEditStaffAreaPhrase(profile?.role);
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
