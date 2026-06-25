@@ -160,6 +160,7 @@ export interface Customer {
   nationality_id?: number | null;       // 국적 FK → nationalities.id
   foreigner_registration_number?: string | null; // 외국인등록번호 (RRN 동급 PHI)
   foreign_doc_expiry?: string | null;   // 여권/체류 만료일 (DATE)
+  language?: string | null;             // 환자 선호 언어 BCP-47 코드(ko/en/ja/zh-CN/zh-TW). T-20260625-foot-FOREIGN-LANG-SAVE
   postal_code?: string | null;          // 우편번호 (5자리)
   assigned_staff_role?: '데스크' | '상담실장' | null; // 담당자 구분 (레거시)
   assigned_staff_id?: string | null;    // 담당 직원 FK (C2-STAFF-DROPDOWN)

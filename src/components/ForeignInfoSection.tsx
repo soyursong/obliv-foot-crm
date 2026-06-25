@@ -17,12 +17,16 @@ import {
 } from '@/components/ui/select';
 import { countryCodeToFlag } from '@/lib/flag';
 import { useNationalities } from '@/hooks/useNationalities';
+import { LANGUAGE_OPTIONS, nationalityCodeToLanguage } from '@/lib/foreign';
 
 const NONE = '__none__';
+const LANG_NONE = '__none__';
 
 export interface ForeignInfoValue {
   /** nationalities.id (문자열, 미선택은 빈 문자열) */
   nationalityId: string;
+  /** 환자 선호 언어 — BCP-47 코드(ko/en/ja/zh-CN/zh-TW …), 미선택은 빈 문자열. customers.language 에 저장. */
+  language: string;
   /** 여권 영문 성(Surname) */
   passportLastName: string;
   /** 여권 영문 이름(Given names) */
@@ -54,7 +58,18 @@ export default function ForeignInfoSection({ value, onChange, canEdit = true }: 
         <Label>국적</Label>
         <Select
           value={value.nationalityId || NONE}
-          onValueChange={(v) => onChange({ nationalityId: v === NONE ? '' : v })}
+          onValueChange={(v) => {
+            const nextId = v === NONE ? '' : v;
+            const patch: Partial<ForeignInfoValue> = { nationalityId: nextId };
+            // T-20260625-foot-FOREIGN-LANG-SAVE: 국적 선택 시 언어 '제안'.
+            //   DA(MSG-...-2prw): 초기/NULL일 때만 채우는 default. 수동 입력값은 last-write-wins로 유지(덮어쓰기 금지).
+            if (nextId && !value.language) {
+              const nat = nationalities.find((n) => String(n.id) === nextId);
+              const lang = nationalityCodeToLanguage(nat?.code);
+              if (lang) patch.language = lang;
+            }
+            onChange(patch);
+          }}
         >
           <SelectTrigger data-testid="foreign-nationality">
             <SelectValue placeholder="국적 선택" />
@@ -69,6 +84,27 @@ export default function ForeignInfoSection({ value, onChange, canEdit = true }: 
                 </SelectItem>
               );
             })}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* 언어 — 국적 선택 시 자동 제안(수동 변경 우선). customers.language(BCP-47) 저장 */}
+      <div className="space-y-1.5">
+        <Label>언어</Label>
+        <Select
+          value={value.language || LANG_NONE}
+          onValueChange={(v) => onChange({ language: v === LANG_NONE ? '' : v })}
+        >
+          <SelectTrigger data-testid="foreign-language">
+            <SelectValue placeholder="언어 선택" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={LANG_NONE}>선택 안 함</SelectItem>
+            {LANGUAGE_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

@@ -883,7 +883,7 @@ function EditCustomerDialog({
   const [submitting, setSubmitting] = useState(false);
   // T-20260625-foot-PASSPORT-PORT: 외국인 정보 (여권번호 포함 — passportNumber는 foreignInfo로 통합)
   const [foreignInfo, setForeignInfo] = useState<ForeignInfoValue>({
-    nationalityId: '', passportLastName: '', passportFirstName: '',
+    nationalityId: '', language: '', passportLastName: '', passportFirstName: '',
     passportNumber: '', foreignerRegNumber: '', docExpiry: '',
   });
 
@@ -903,6 +903,7 @@ function EditCustomerDialog({
       setPostalCode(customer.postal_code ?? '');
       setForeignInfo({
         nationalityId: customer.nationality_id != null ? String(customer.nationality_id) : '',
+        language: customer.language ?? '',
         passportLastName: customer.passport_last_name ?? '',
         passportFirstName: customer.passport_first_name ?? '',
         passportNumber: customer.passport_number ?? '',
@@ -941,6 +942,8 @@ function EditCustomerDialog({
         passport_last_name: foreignInfo.passportLastName.trim() || null,
         passport_first_name: foreignInfo.passportFirstName.trim() || null,
         nationality_id: foreignInfo.nationalityId ? Number(foreignInfo.nationalityId) : null,
+        // T-20260625-foot-FOREIGN-LANG-SAVE: 환자 선호 언어(BCP-47 코드) 저장
+        language: foreignInfo.language.trim() || null,
         foreigner_registration_number: foreignInfo.foreignerRegNumber.trim() || null,
         foreign_doc_expiry: foreignInfo.docExpiry.trim() || null,
         is_foreign: customer.is_foreign || !!(
@@ -1147,7 +1150,7 @@ function CreateCustomerDialog({
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
   // T-20260625-foot-PASSPORT-PORT: 외국인 정보(국적/여권 영문명/여권번호/외국인등록번호/만료일)
   const [foreignInfo, setForeignInfo] = useState<ForeignInfoValue>({
-    nationalityId: '', passportLastName: '', passportFirstName: '',
+    nationalityId: '', language: '', passportLastName: '', passportFirstName: '',
     passportNumber: '', foreignerRegNumber: '', docExpiry: '',
   });
 
@@ -1163,7 +1166,7 @@ function CreateCustomerDialog({
       setReferrerId(null);
       setSelectedExistingId(null);
       setForeignInfo({
-        nationalityId: '', passportLastName: '', passportFirstName: '',
+        nationalityId: '', language: '', passportLastName: '', passportFirstName: '',
         passportNumber: '', foreignerRegNumber: '', docExpiry: '',
       });
     }
@@ -1222,6 +1225,8 @@ function CreateCustomerDialog({
       passport_last_name: foreignInfo.passportLastName.trim() || null,
       passport_first_name: foreignInfo.passportFirstName.trim() || null,
       nationality_id: foreignInfo.nationalityId ? Number(foreignInfo.nationalityId) : null,
+      // T-20260625-foot-FOREIGN-LANG-SAVE: 환자 선호 언어(BCP-47 코드) 저장
+      language: foreignInfo.language.trim() || null,
       foreigner_registration_number: foreignInfo.foreignerRegNumber.trim() || null,
       foreign_doc_expiry: foreignInfo.docExpiry.trim() || null,
       is_foreign: !!(
