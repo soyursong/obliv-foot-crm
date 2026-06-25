@@ -27,7 +27,7 @@
 //   원장이 editor 에서 수기 수정하므로 기본 문구는 출발점일 뿐(AC-4). 임의 임상 단정 회피 — 라벨 기반 중립 문장.
 //   form_templates(form_key='opinion_doc').field_map.sections 가 있으면 그 그리드를 우선 사용(없으면 이 하드코드).
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -43,6 +43,7 @@ import {
   needsHepatitisType,
   needsOralXReason,
   needsDate,
+  isContraindSection,
   ORAL_X_DEFAULT_REASON,
 } from '@/lib/opinionDocCompose';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
@@ -62,6 +63,10 @@ export interface OpinionOption {
   key: string;
   label: string;
   phrase: string;
+  // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT — 조합 우선순위 명시값(선택, ADDITIVE).
+  //   대분류-소분류 도입으로 표시 라벨을 짧게 바꾼 항목은 CONTRAIND_PRIORITY[label] 매핑이 깨지므로
+  //   여기서 우선순위를 고정한다(표시순서 ≠ 조합우선순위 분리). 미지정 = 기존 라벨매핑 폴백(현행).
+  priority?: number;
   // T-20260623-foot-OPINIONPHRASE-REVISION-NOTE-COLUMN (문지은 대표원장):
   //   reporter 가 수기로 남기는 '수정기록' 메모(무엇을/언제/왜 고쳤는지). 상용구 관리 화면 전용 메타.
   //   ★소견서 작성 화면(phrase 실소비처)에는 노출/삽입되지 않음 — 버튼 클릭 삽입은 phrase 만.
@@ -86,33 +91,65 @@ export const OPINION_SECTIONS: OpinionSection[] = [
   },
   {
     title: '금기증',
+    // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT — 항목 재정렬(현장 4×5 row-major 순서) + 신규항목.
+    //   ★문지은 대표원장 confirm(2026-06-25, ts 1782360775.473999): 전부 비파괴.
+    //     - 기존 key 전부 보존(병합X·제거X). 탈모약 남/여 2키 유지(소분류 표시), 면역질환 유지.
+    //     - 신규: 고령자(elderly) + 간질환 소분류 3개(간기능 이상/검사 이상/상시 음주). phrase=dev 초안(원장 문구 확정 FOLLOWUP, 착수 비차단).
+    //   ★표시순서(이 배열) ≠ 조합우선순위(CONTRAIND_PRIORITY, COMBINE 티켓 SSOT). 라벨을 짧게 바꾼 항목은
+    //     priority 를 명시해 조합 출력순서 회귀를 막는다(상세는 OpinionOption.priority 주석).
+    //   ★대분류-소분류 펼침 표시는 CONTRAIND_DISPLAY_GROUPS(아래) 기반 — 데이터는 flat 유지(선택/조합/스냅샷 회귀 0).
     options: [
-      { key: 'hyperlipidemia', label: '고지혈증', phrase: '고지혈증 관련 사항을 확인하였습니다.' },
+      // 행1: 위장장애 | 경구약(효과미비/복용후위장장애) | 간염보균자 | 당뇨
       { key: 'gi_disorder', label: '위장장애', phrase: '위장장애 관련 사항을 확인하였습니다.' },
-      { key: 'oral_ineffective', label: '경구약 효과미비', phrase: '경구약 복용 효과가 미비하여 추가 조치를 고려합니다.' },
-      { key: 'gi_after_oral', label: '경구약복용후 위장장애', phrase: '경구약 복용 후 위장장애가 확인됩니다.' },
-      { key: 'bp_med', label: '혈압약', phrase: '혈압약 복용 이력을 확인하였습니다.' },
-      { key: 'cardio_med', label: '심혈관약', phrase: '심혈관계 약물 복용 이력을 확인하였습니다.' },
-      { key: 'liver_disease', label: '간질환', phrase: '간질환 관련 사항을 확인하였습니다.' },
+      { key: 'oral_ineffective', label: '효과미비', phrase: '경구약 복용 효과가 미비하여 추가 조치를 고려합니다.', priority: 24 },
+      { key: 'gi_after_oral', label: '복용 후 위장장애', phrase: '경구약 복용 후 위장장애가 확인됩니다.', priority: 13 },
       { key: 'hbv_carrier', label: '간염보균자', phrase: '간염 보균 여부를 확인하였습니다.' },
+      { key: 'diabetes', label: '당뇨', phrase: '당뇨 관련 사항을 확인하였습니다.' },
+      // 행2: 혈압약 | 고지혈증 | 심혈관약 | 간질환(전반/간기능이상/간기능검사이상/상시음주)
+      { key: 'bp_med', label: '혈압약', phrase: '혈압약 복용 이력을 확인하였습니다.' },
+      { key: 'hyperlipidemia', label: '고지혈증', phrase: '고지혈증 관련 사항을 확인하였습니다.' },
+      { key: 'cardio_med', label: '심혈관약', phrase: '심혈관계 약물 복용 이력을 확인하였습니다.' },
+      { key: 'liver_disease', label: '간질환(전반)', phrase: '간질환 관련 사항을 확인하였습니다.', priority: 12 },
+      // 신규(원장 confirm #3, 조합 포함) — phrase=dev 초안(원장 최종문구 FOLLOWUP). priority=간질환(12) 뒤 인접.
+      { key: 'liver_func_abnormal', label: '간기능 이상', phrase: '간기능 이상 소견이 확인되어 투약 시 주의가 필요합니다.', priority: 25 },
+      { key: 'liver_func_test_abnormal', label: '간기능 검사 이상', phrase: '간기능 검사 수치 이상이 확인되어 투약 시 주의가 필요합니다.', priority: 26 },
+      { key: 'regular_drinking', label: '상시 음주', phrase: '상시 음주력이 확인되어 투약 시 주의가 필요합니다.', priority: 27 },
+      // 행3: 신장질환 | 통풍약 | 갑상선약 | 항정신과약
       { key: 'kidney_disease', label: '신장질환', phrase: '신장질환 관련 사항을 확인하였습니다.' },
       { key: 'gout_med', label: '통풍약', phrase: '통풍약 복용 이력을 확인하였습니다.' },
       { key: 'thyroid_med', label: '갑상선약', phrase: '갑상선약 복용 이력을 확인하였습니다.' },
-      { key: 'male_hairloss_med', label: '남성 탈모약', phrase: '남성 탈모약 복용 이력을 확인하였습니다.' },
-      { key: 'female_hairloss_med', label: '여성 탈모약', phrase: '여성 탈모약 복용 이력을 확인하였습니다.' },
       { key: 'psychiatric_med', label: '항정신과약', phrase: '항정신과 약물 복용 이력을 확인하였습니다.' },
+      // 행4: 탈모약(남성/여성) | 항암중 | 항암 후 추적 | 임신(준비중/임신중/수유중)
+      { key: 'male_hairloss_med', label: '남성', phrase: '남성 탈모약 복용 이력을 확인하였습니다.', priority: 9 },
+      { key: 'female_hairloss_med', label: '여성', phrase: '여성 탈모약 복용 이력을 확인하였습니다.', priority: 10 },
       { key: 'on_chemo', label: '항암중', phrase: '항암 치료 중인 상태를 확인하였습니다.' },
       { key: 'post_chemo_followup', label: '항암 후 추적', phrase: '항암 치료 후 추적 관찰 중임을 확인하였습니다.' },
       { key: 'preparing_pregnancy', label: '임신준비중', phrase: '임신 준비 중인 상태를 확인하였습니다.' },
       { key: 'pregnant', label: '임신중', phrase: '임신 중인 상태를 확인하였습니다.' },
       { key: 'breastfeeding', label: '수유중', phrase: '수유 중인 상태를 확인하였습니다.' },
-      { key: 'pilot', label: '파일럿', phrase: '항공 종사자(파일럿) 직군임을 확인하였습니다.' },
-      { key: 'driver', label: '운전기사', phrase: '운전 직군임을 확인하였습니다.' },
-      { key: 'immune_disease', label: '면역질환', phrase: '면역질환 관련 사항을 확인하였습니다.' },
-      { key: 'diabetes', label: '당뇨', phrase: '당뇨 관련 사항을 확인하였습니다.' },
+      // 행5: 고령자(신규) | 소아 | 운전기사 | 파일럿
+      { key: 'elderly', label: '고령자', phrase: '고령으로 인한 신중한 투약 및 경과 관찰이 필요한 상태로 확인됩니다.', priority: 28 },
       { key: 'pediatric', label: '소아', phrase: '소아 환자임을 확인하였습니다.' },
+      { key: 'driver', label: '운전기사', phrase: '운전 직군임을 확인하였습니다.' },
+      { key: 'pilot', label: '파일럿', phrase: '항공 종사자(파일럿) 직군임을 확인하였습니다.' },
+      // 면역질환 — 원장 confirm #2: 제거X 유지(HEALTHQ 자동체크·priority 21 고아화 방지).
+      { key: 'immune_disease', label: '면역질환', phrase: '면역질환 관련 사항을 확인하였습니다.' },
     ],
   },
+];
+
+// ---------------------------------------------------------------------------
+// T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT — 금기증 대분류-소분류 표시 그룹.
+//   ★표시 전용(presentation-only): 데이터(section.options)는 flat 유지 → buildContraindKeySet/조합엔진/
+//     스냅샷/상담요청박스/상용구관리 등 모든 flat 소비자 회귀 0. 그리드에서만 소분류를 대분류로 접는다.
+//   ★key 기반 매핑이라 FE 상수·DB override(form_templates) 양쪽에서 동일하게 동작(키 일치 시).
+//   간염보균자(hbv_carrier)는 그룹 아님 — B/C형 소분류는 기존 간염타입 드롭다운(substituteHepatitisType)으로 유지(회귀 금지).
+// ---------------------------------------------------------------------------
+export const CONTRAIND_DISPLAY_GROUPS: { label: string; keys: string[] }[] = [
+  { label: '경구약', keys: ['oral_ineffective', 'gi_after_oral'] },
+  { label: '간질환', keys: ['liver_disease', 'liver_func_abnormal', 'liver_func_test_abnormal', 'regular_drinking'] },
+  { label: '탈모약', keys: ['male_hairloss_med', 'female_hairloss_med'] },
+  { label: '임신', keys: ['preparing_pregnancy', 'pregnant', 'breastfeeding'] },
 ];
 
 // ---------------------------------------------------------------------------
@@ -247,6 +284,9 @@ export function parseOpinionSections(fieldMap: unknown): OpinionSection[] {
         const parsed: OpinionOption = { key: opt['key'] as string, label: opt['label'] as string, phrase: opt['phrase'] as string };
         // T-20260623 REVISION-NOTE-COLUMN: ADDITIVE '수정기록' 보존(read→write round-trip 유실 방지).
         if (typeof opt['revisionNote'] === 'string') parsed.revisionNote = opt['revisionNote'] as string;
+        // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT: ADDITIVE priority 보존(표시순서≠조합우선순위 디커플링).
+        //   DB override 라운드트립·OpinionPhrasesTab 편집(...cur 스프레드) 시 우선순위 유실 방지 → 조합 출력순서 회귀 0.
+        if (typeof opt['priority'] === 'number') parsed.priority = opt['priority'] as number;
         options.push(parsed);
       }
     }
@@ -554,6 +594,9 @@ export function OpinionEditorDialog({
   const [doctorId, setDoctorId] = useState<string>(''); // clinic_doctors.id ('' = 미선택→profile 명의)
   const [doctorTouched, setDoctorTouched] = useState(false); // 발행자를 사용자가 수동 변경했는지(자동 기본값 덮어쓰기 방지)
   const [chartOpen, setChartOpen] = useState(false);         // ① 헤더 환자명 클릭 → 진료차트 drawer
+  // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT: 금기증 대분류 펼침(표시 전용) 상태.
+  //   사용자 토글 OR 소분류 중 선택된 항목 존재 시 펼침(선택 가려짐 방지) — isGroupOpen 으로 합성.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // 발행 게이트(C2, DA ruling B): is_doctor_role = director|doctor 만(의료법 §17 진료의 전속).
   //   ⚠ QuickRxBar.isDoctor(director|admin|manager, Rx취소용)와 의도적으로 다름 — 재사용 금지.
@@ -616,6 +659,13 @@ export function OpinionEditorDialog({
     return m;
   }, [sections]);
 
+  // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT: 소분류 key → 대분류 label 매핑(표시 전용).
+  const groupOfKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of CONTRAIND_DISPLAY_GROUPS) for (const k of g.keys) m.set(k, g.label);
+    return m;
+  }, []);
+
   // ── item2 조합 합성 ──────────────────────────────────────────────────────────
   // 금기증 그룹 key 집합(복수선택·조합 대상). 그 외(진단서 표준)는 단일배타.
   const contraindKeySet = useMemo(() => buildContraindKeySet(sections), [sections]);
@@ -664,6 +714,7 @@ export function OpinionEditorDialog({
     setDoctorId(defaultDoctorId);
     setDoctorTouched(false);
     setChartOpen(false);
+    setExpandedGroups(new Set()); // 금기증 대분류 펼침 초기화(선택된 소분류는 isGroupOpen 이 자동 펼침)
   }
 
   // item2: 선택/플레이스홀더 변화 → 본문 자동 합성. 원장이 직접 수정(textTouched)하면 덮어쓰지 않음(AC-4 SSOT).
@@ -880,6 +931,113 @@ export function OpinionEditorDialog({
     </div>
   );
 
+  // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT — 옵션 버튼 렌더러(leaf·소분류 공용).
+  //   기존 인라인 버튼 마크업을 그대로 추출(회귀 0). child=true 면 소분류(대분류 펼침 내부) 스타일.
+  const renderOptBtn = (opt: OpinionOption, child = false) => {
+    const active = selected.has(opt.key);
+    const isContraindOpt = contraindKeySet.has(opt.key);
+    const disabled = hasDiagnosis ? !active : hasContraind ? !isContraindOpt : false;
+    const fromQR = active && autoChecked.has(opt.key);
+    return (
+      <button
+        key={opt.key}
+        type="button"
+        onClick={() => handleOptionClick(opt)}
+        disabled={disabled}
+        aria-pressed={active}
+        title={
+          disabled
+            ? hasDiagnosis
+              ? '진단서(표준)는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
+              : '금기증을 선택 중입니다. 진단서(표준)는 함께 선택할 수 없습니다.'
+            : fromQR
+              ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)`
+              : opt.phrase
+        }
+        data-testid={`opinion-opt-${opt.key}`}
+        data-autocheck={fromQR ? 'qr' : undefined}
+        className={`relative rounded-md border ${child ? 'px-2 py-1.5' : 'px-2 py-2'} text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+          fromQR
+            ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
+            : active
+              ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
+              : 'border-input bg-background text-foreground hover:bg-accent'
+        }`}
+      >
+        {opt.label}
+        {fromQR && (
+          <span
+            className="ml-1 inline-block rounded bg-amber-200 px-1 py-px text-[9px] font-semibold leading-none text-amber-900 align-middle"
+            data-testid={`opinion-qr-badge-${opt.key}`}
+          >
+            QR입력
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  // 금기증 섹션 그리드 — 소분류는 대분류로 접어 row-major 순서로 표시(데이터 flat 유지).
+  //   대분류 헤더 클릭=펼침/접기. 펼침 조건 = 사용자 토글 OR 소분류 중 선택 존재(선택 가려짐 방지).
+  const renderContraindSection = (section: OpinionSection) => {
+    const emitted = new Set<string>();
+    const cells: ReactNode[] = [];
+    for (const opt of section.options) {
+      const groupLabel = groupOfKey.get(opt.key);
+      if (groupLabel) {
+        if (emitted.has(groupLabel)) continue; // 같은 그룹의 나머지 소분류 → 헤더 셀에 흡수.
+        emitted.add(groupLabel);
+        const group = CONTRAIND_DISPLAY_GROUPS.find((g) => g.label === groupLabel)!;
+        const groupOpts = group.keys
+          .map((k) => section.options.find((o) => o.key === k))
+          .filter((o): o is OpinionOption => !!o);
+        const selectedCount = groupOpts.filter((o) => selected.has(o.key)).length;
+        const open = expandedGroups.has(groupLabel) || selectedCount > 0;
+        cells.push(
+          <div key={`grp-${groupLabel}`} className="rounded-md border border-input bg-background">
+            <button
+              type="button"
+              onClick={() =>
+                setExpandedGroups((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(groupLabel)) next.delete(groupLabel);
+                  else next.add(groupLabel);
+                  return next;
+                })
+              }
+              aria-expanded={open}
+              data-testid={`opinion-group-${groupLabel}`}
+              className={`flex w-full items-center justify-between gap-1 px-2 py-2 text-xs font-semibold transition hover:bg-accent ${
+                selectedCount > 0 ? 'text-teal-700' : 'text-foreground'
+              }`}
+            >
+              <span className="flex items-center gap-1">
+                {groupLabel}
+                {selectedCount > 0 && (
+                  <span
+                    className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-600 px-1 text-[9px] font-bold leading-none text-white"
+                    data-testid={`opinion-group-count-${groupLabel}`}
+                  >
+                    {selectedCount}
+                  </span>
+                )}
+              </span>
+              <span className="text-[10px] text-muted-foreground">{open ? '▾' : '▸'}</span>
+            </button>
+            {open && (
+              <div className="grid grid-cols-1 gap-1 border-t border-dashed border-input/70 p-1.5" data-testid={`opinion-group-body-${groupLabel}`}>
+                {groupOpts.map((o) => renderOptBtn(o, true))}
+              </div>
+            )}
+          </div>,
+        );
+      } else {
+        cells.push(renderOptBtn(opt));
+      }
+    }
+    return <div className="grid grid-cols-2 items-start gap-1.5">{cells}</div>;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={canPublish ? 'max-w-5xl' : 'max-w-2xl'} data-testid="opinion-dialog">
@@ -919,57 +1077,14 @@ export function OpinionEditorDialog({
               {sections.map((section) => (
                 <div key={section.title}>
                   <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {section.options.map((opt) => {
-                      const active = selected.has(opt.key);
-                      const isContraindOpt = contraindKeySet.has(opt.key);
-                      // item2 P1-1 단일배타: 진단서 선택 시 그 1개 외 전부 비활성 / 금기증 선택 시 진단서 비활성.
-                      const disabled = hasDiagnosis
-                        ? !active
-                        : hasContraind
-                          ? !isContraindOpt
-                          : false;
-                      // AC-1.2: 자동 pre-check(아직 의사 미확인) = amber 강조 + QR입력 뱃지로 시각 구분.
-                      const fromQR = active && autoChecked.has(opt.key);
-                      return (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => handleOptionClick(opt)}
-                          disabled={disabled}
-                          aria-pressed={active}
-                          title={
-                            disabled
-                              ? hasDiagnosis
-                                ? '진단서(표준)는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
-                                : '금기증을 선택 중입니다. 진단서(표준)는 함께 선택할 수 없습니다.'
-                              : fromQR
-                                ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)`
-                                : opt.phrase
-                          }
-                          data-testid={`opinion-opt-${opt.key}`}
-                          data-autocheck={fromQR ? 'qr' : undefined}
-                          className={`relative rounded-md border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                            fromQR
-                              ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
-                              : active
-                                ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
-                                : 'border-input bg-background text-foreground hover:bg-accent'
-                          }`}
-                        >
-                          {opt.label}
-                          {fromQR && (
-                            <span
-                              className="ml-1 inline-block rounded bg-amber-200 px-1 py-px text-[9px] font-semibold leading-none text-amber-900 align-middle"
-                              data-testid={`opinion-qr-badge-${opt.key}`}
-                            >
-                              QR입력
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* 금기증=대분류-소분류 그리드(재정렬) / 그 외(진단서)=기존 flat 그리드. */}
+                  {isContraindSection(section.title) ? (
+                    renderContraindSection(section)
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {section.options.map((opt) => renderOptBtn(opt))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

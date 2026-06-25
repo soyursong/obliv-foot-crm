@@ -57,6 +57,13 @@ export interface OpinionSourceOption {
   label: string;
   /** 자동삽입 원문(body). 원장이 form_templates 에 유지하는 최신 문구. */
   phrase: string;
+  /**
+   * T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT — 조합 우선순위 명시값(선택).
+   *   ★표시순서 ≠ 조합우선순위 분리(COMBINE 티켓 SSOT 보존): 대분류-소분류 도입으로 표시 라벨을
+   *     짧게 바꾼 항목(예: '효과미비', '남성')은 CONTRAIND_PRIORITY[normalize(label)] 매핑이 깨진다.
+   *     이때 이 필드로 우선순위를 직접 고정 → 조합 출력순서 회귀 0. 미지정이면 기존 라벨매핑 폴백(=현행).
+   */
+  priority?: number;
 }
 export interface OpinionSourceSection {
   title: string;
@@ -102,7 +109,9 @@ export function buildContraindTemplates(
     for (const opt of options) {
       if (!opt?.key) continue;
       const norm = normalizeContraindLabel(opt.label);
-      const priority = CONTRAIND_PRIORITY[norm] ?? fallbackSeq++;
+      // 우선순위 해석 순서: ① 옵션 명시 priority(표시라벨 디커플링) → ② 라벨매핑(현행) → ③ 폴백seq.
+      const priority =
+        (typeof opt.priority === 'number' ? opt.priority : CONTRAIND_PRIORITY[norm]) ?? fallbackSeq++;
       map[opt.key] = {
         key: opt.key,
         priority,
