@@ -174,6 +174,12 @@ export default defineConfig({
         // T-20260624-foot-BUNDLERX-ICON-NOAPPLY (part2/AC-0): 처방세트·태그·묶음상병 저장 mutation 의
         //   .select() + 0행 throw 가드 — RLS 0행 silent no-op 의 false-positive 성공토스트 차단 (소스 정적, auth 불요)
         '**/T-20260624-foot-BUNDLERX-ICON-NOAPPLY.spec.ts',
+        // T-20260625-foot-FOREIGN-LANG-SAVE: 국적 자동연결 언어값 customers.language 저장.
+        //   국적→언어 매핑·LANGUAGE_OPTIONS 값셋은 src/lib/foreign 직접 import 로 실제 동작 단언 +
+        //   폼 배선(언어셀렉트·NULL-가드 자동제안·등록/수정 양경로 nullable 저장)·마이그 ADDITIVE 정적 가드.
+        //   (이전 desktop-chrome 自체로그인 spec 은 포트 5173↔8089 불일치+seed hold 로 전 케이스 skip →
+        //    insufficient_verification NO-GO. unit 으로 재작성해 skip 0·결정론 확보.) auth/webServer 불요.
+        '**/T-20260625-foot-FOREIGN-LANG-SAVE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
