@@ -752,6 +752,15 @@ export function OpinionEditorDialog({
       toast.error('환자 정보를 확인할 수 없어 발행할 수 없습니다.');
       return;
     }
+    // T-20260625-foot-OPINIONDOC-UUID-EMPTYSTRING-SAVEFAIL (AC-2, 필수 FK 차단):
+    //   발행 RPC publish_opinion_doc(p_check_in_id uuid)는 내방(check_in) uuid 가 필수 — clinic/customer 해석 앵커.
+    //   내방 이력이 없는 요청(예: 데스크 서류요청 큐에서 check_in 없는 환자)은 visitor.id 가 ''(빈 문자열)로 들어와
+    //   PostgREST 가 ''→uuid 캐스팅에 실패('invalid input syntax for type uuid: ""')하며 발행 전면 차단됨.
+    //   → 빈 값이면 RPC 호출 전에 발급 차단 + 안내(null 정규화 대상 아님, 필수 FK).
+    if (!visitor.id || !visitor.id.trim()) {
+      toast.error('내방(체크인) 기록이 없어 발행할 수 없습니다. 환자 체크인(접수) 후 다시 시도해주세요.');
+      return;
+    }
     const body = text.trim();
     if (!body) {
       toast.error('소견 내용을 입력해주세요.');
