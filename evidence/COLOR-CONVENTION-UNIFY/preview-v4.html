@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;font-family:-apple-system,"Apple SD Gothic Neo",sans-serif}
+body{margin:0;padding:26px;background:#FAF8F4;color:#252525}
+h1{font-size:21px;margin:0 0 4px}
+.sub{font-size:13px;color:#6E6353;margin:0 0 6px;line-height:1.55}
+.legend{font-size:12px;color:#444;margin:0 0 18px;padding:8px 12px;background:#fff;border:1px solid #E5E5E5;border-radius:10px}
+.legend b{color:#3A6491}.legend .g{color:#4A7038}.legend .y{color:#9A7A18}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;align-items:start}
+.col{background:#fff;border:1px solid #E5E5E5;border-radius:14px;padding:18px}
+.col.pick{border:2px solid #FFD54F}
+.col h2{font-size:15px;margin:0 0 1px}
+.col .tone{font-size:11.5px;color:#9D917A;margin:0 0 12px}
+.swrow{display:flex;gap:8px;margin-bottom:16px}
+.sw{flex:1;border-radius:8px;border:1px solid rgba(0,0,0,.07);padding:8px 4px;text-align:center}
+.sw.hl{border:2px solid #FFD54F}
+.sw .nm{font-size:10.5px;font-weight:700;margin-bottom:3px}
+.sw .hx{font-size:9px;font-family:monospace;color:#666}
+.seclbl{font-size:11px;color:#9D917A;margin:14px 0 7px;font-weight:600;border-bottom:1px solid #EEE;padding-bottom:3px}
+.dashrow{display:flex;gap:7px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:3px 9px;font-size:12px;font-weight:700}
+.dot{height:7px;width:7px;border-radius:9999px;display:inline-block}
+.cards{display:flex;flex-direction:column;gap:7px}
+.card{border:1px solid;border-left-width:4px;border-radius:7px;padding:7px 9px}
+.card .nm{font-size:13px;font-weight:600;color:#1A1A1A;line-height:1.2}
+.card .memo{font-size:11px;color:#52525B;margin-top:2px;line-height:1.25}
+.card .meta{display:flex;align-items:center;gap:4px;font-size:10px;color:#71717A;margin-top:4px}
+.hlmark{display:inline-block;font-size:10px;font-weight:700;color:#9A7A18;background:#FFFDE7;border:1px solid #FFEE58;border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+</style></head><body>
+<h1>풋센터 CRM — 색상 통일 <b>최종 시안 v4 (힐러 노랑 = #FFFDE7 확정)</b> · T-20260625-COLOR-CONVENTION-UNIFY</h1>
+<p class="sub">총괄 요청 반영: <b>힐러(노랑) = ①맑은 파스텔의 옅고 맑은 라이트 옐로우 <span style="color:#9A7A18">#FFFDE7</span></b> 로 확정(v3의 #FCF4C2보다 더 옅고 맑음). 초진(파랑)·재진(초록)은 v3 <b>따듯 파스텔</b> 베이스 유지. ⑨/⑩ 아직 미선택이라 힐러 #FFFDE7를 <b>양안 위에 동일하게 얹어</b> 제시 — 이번 목적은 힐러 톤 확인.</p>
+<div class="legend">컨벤션: &nbsp;<b>● 초진 = 파랑(따듯 파스텔)</b> &nbsp;·&nbsp; <span class="g">● 재진 = 초록(따듯 파스텔)</span> &nbsp;·&nbsp; <span class="y">● 힐러 = 노랑 #FFFDE7(맑은 라이트 옐로우)</span> &nbsp;|&nbsp; 적용 범위 = <b>대시보드 배지 + 예약관리 고객박스</b> 양쪽 동일. 성함(#1A1A1A)·메모(#52525B) 가독성 WCAG AA 확인.</div>
+<div class="grid">
+
+<!-- ⑨ 따듯 파스텔 A + 힐러 #FFFDE7 -->
+<div class="col pick"><h2>⑨ 따듯 파스텔 A <span class="hlmark">힐러 #FFFDE7</span></h2><p class="tone">초진 #EBEFF5 / 재진 #EDF1E4 / 힐러 #FFFDE7</p>
+<div class="swrow">
+  <div class="sw" style="background:#EBEFF5"><div class="nm" style="color:#45587A">초진 파랑</div><div class="hx">#EBEFF5</div></div>
+  <div class="sw" style="background:#EDF1E4"><div class="nm" style="color:#566A3D">재진 초록</div><div class="hx">#EDF1E4</div></div>
+  <div class="sw hl" style="background:#FFFDE7"><div class="nm" style="color:#9A7A18">힐러 노랑</div><div class="hx">#FFFDE7</div></div>
+</div>
+<div class="seclbl">대시보드 배지</div>
+<div class="dashrow">
+  <span class="badge" style="background:#E4EAF3;color:#45587A"><span class="dot" style="background:#90A2C2"></span>초진</span>
+  <span class="badge" style="background:#E7EEDA;color:#566A3D"><span class="dot" style="background:#A0B57E"></span>재진</span>
+  <span class="badge" style="background:#FFFDE7;color:#B7791F"><span class="dot" style="background:#FBC02D"></span>힐러</span>
+</div>
+<div class="seclbl">예약관리 고객박스</div>
+<div class="cards">
+  <div class="card" style="background:#EBEFF5;border-color:#D2DBEA;border-left-color:#A6B6D4"><div class="nm">김초진</div><div class="memo">발톱무좀 상담</div><div class="meta"><span class="dot" style="background:#90A2C2"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#EDF1E4;border-color:#D7E0C4;border-left-color:#AFC38C"><div class="nm">이재진</div><div class="memo">패키지 3/10</div><div class="meta"><span class="dot" style="background:#A0B57E"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#FFFDE7;border-color:#FFF59D;border-left-color:#FFEE58"><div class="nm">박힐러</div><div class="memo">힐러 케어</div><div class="meta"><span class="dot" style="background:#FBC02D"></span>예약확정 · @데스크</div></div>
+</div>
+</div>
+
+<!-- ⑩ 따듯 파스텔 B + 힐러 #FFFDE7 -->
+<div class="col pick"><h2>⑩ 따듯 파스텔 B <span class="hlmark">힐러 #FFFDE7</span></h2><p class="tone">초진 #E5EBF3 / 재진 #E8EFDC / 힐러 #FFFDE7</p>
+<div class="swrow">
+  <div class="sw" style="background:#E5EBF3"><div class="nm" style="color:#3F5478">초진 파랑</div><div class="hx">#E5EBF3</div></div>
+  <div class="sw" style="background:#E8EFDC"><div class="nm" style="color:#4E6536">재진 초록</div><div class="hx">#E8EFDC</div></div>
+  <div class="sw hl" style="background:#FFFDE7"><div class="nm" style="color:#9A7A18">힐러 노랑</div><div class="hx">#FFFDE7</div></div>
+</div>
+<div class="seclbl">대시보드 배지</div>
+<div class="dashrow">
+  <span class="badge" style="background:#DDE5F1;color:#3F5478"><span class="dot" style="background:#849ABF"></span>초진</span>
+  <span class="badge" style="background:#E1EAD0;color:#4E6536"><span class="dot" style="background:#97AE72"></span>재진</span>
+  <span class="badge" style="background:#FFFDE7;color:#B7791F"><span class="dot" style="background:#FBC02D"></span>힐러</span>
+</div>
+<div class="seclbl">예약관리 고객박스</div>
+<div class="cards">
+  <div class="card" style="background:#E5EBF3;border-color:#C8D4E7;border-left-color:#9AACCF"><div class="nm">김초진</div><div class="memo">발톱무좀 상담</div><div class="meta"><span class="dot" style="background:#849ABF"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#E8EFDC;border-color:#D0DCBA;border-left-color:#A4BA80"><div class="nm">이재진</div><div class="memo">패키지 3/10</div><div class="meta"><span class="dot" style="background:#97AE72"></span>예약확정 · @데스크</div></div>
+  <div class="card" style="background:#FFFDE7;border-color:#FFF59D;border-left-color:#FFEE58"><div class="nm">박힐러</div><div class="memo">힐러 케어</div><div class="meta"><span class="dot" style="background:#FBC02D"></span>예약확정 · @데스크</div></div>
+</div>
+</div>
+
+</div>
+<p class="sub" style="margin-top:18px;font-size:11.5px;color:#888">※ <b>힐러 노랑 = #FFFDE7</b> (배지 배경 #FFFDE7 · 글자 #B7791F · 점 #FBC02D / 고객박스 배경 #FFFDE7 · 테두리 #FFF59D · 왼쪽 컬러바 #FFEE58). 초진·재진은 v3 따듯 파스텔(⑨/⑩) 그대로. 옅어진 힐러 배경에서도 성함(#1A1A1A)·메모(#52525B)·배지·점 식별 OK(WCAG AA). &nbsp;|&nbsp; design_candidate(코드 미반영). 힐러 톤 OK 확인 시 단일 색상 토큰으로 대시보드·예약관리 양쪽 통일 구현(T-20260625-foot-COLOR-WARMPASTEL-DESATURATE 승계).</p>
+</body></html>
