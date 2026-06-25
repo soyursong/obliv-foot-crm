@@ -169,11 +169,12 @@ function TimeslotLine({
       <span className="text-muted-foreground">—</span>
       <span className="flex items-center gap-1.5 flex-wrap">
         {/* T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 dot emerald → sage (재진 파랑·힐러 노랑 유지) */}
+        {/* T-20260625-foot-COLOR-WARMPASTEL-DESATURATE A안: 힐러 dot → healer 전용 토큰(#FBC02D, #FFFDE7 carve-out) */}
         <KindChip dotClass="bg-sage-500" label="초진" value={counts.n} />
         <span className="text-border">/</span>
         <KindChip dotClass="bg-blue-500" label="재진" value={counts.r} />
         <span className="text-border">/</span>
-        <KindChip dotClass="bg-yellow-400" label="힐러" value={counts.h} />
+        <KindChip dotClass="bg-healer-500" label="힐러" value={counts.h} />
         {counts.o > 0 && (
           <>
             <span className="text-border">/</span>

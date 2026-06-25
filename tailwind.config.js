@@ -62,52 +62,70 @@ export default {
         //   값 = T-20260623-foot-GREEN-PASTEL-RETUNE 그린 램프(③ #DCEDC8 앵커, AA).
         //   적용처: 예약관리 초진 카드/보더/dot·"초 N" 칩 / 신분증 확인완료 배지 dot. (그 외는 sage 그레이 유지)
         // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE (김주연 총괄, 2026-06-25):
-        //   "맑은 파스텔에서 파랑/초록만 채도 조금 더 빼줘 — 따듯 파스텔 정도". firstvisit 초록 램프 전체를
-        //   채도 ~20%↓(명도·색상 유지)로 더 묵직한 sage 방향 재튜닝. 앵커 #DCEDC8→#DCE9CC.
+        //   A안 현장 최종확정("웅 A로 진행ㄱㄱ", ts 1782386838.450949) = color-convention v4 시안 ⑨ 따듯 파스텔 A.
+        //   firstvisit(초진/재진 초록 토큰) 램프를 A안 초록(따듯 파스텔 A: 카드 bg #EDF1E4 / 배지 bg #E7EEDA /
+        //   보더 #D7E0C4 / 좌측바 #AFC38C / dot #A0B57E / 텍스트 #566A3D)으로 확정. 7f45fda2(앵커 #DCE9CC) → A안.
         //   carve-out 불변(미접촉): status.ts 칸반 teal / error 빨강 / success·재진 emerald / Badge variant 의미색.
-        //   WCAG AA 보존: fv-700(#546838) on white 6.15:1 / on fv-100(#DCE9CC) 4.85:1 ✓.
+        //   WCAG AA 보존: fv-700(#566A3D) on white ≈5.98:1 ✓.
         firstvisit: {
-          50:  "#EFF4E6", // 초진 카드 bg
-          100: "#DCE9CC", // 배지/칩 bg = 따듯 sage 앵커(구 #DCEDC8 채도↓)
-          200: "#C7D8AE", // 보더
-          300: "#B2C691",
-          400: "#9AB273", // 좌측 강조 보더
-          500: "#819C59", // dot(묵직한 sage 그린)
-          600: "#6A8146",
-          700: "#546838", // 텍스트(AA)
-          800: "#42522E",
-          900: "#323C22",
+          50:  "#EDF1E4", // 초진 카드 bg = A안 ⑨
+          100: "#E7EEDA", // 배지/칩 bg = A안 ⑨
+          200: "#D7E0C4", // 보더 = A안 ⑨
+          300: "#C3D1A8",
+          400: "#AFC38C", // 좌측 강조 보더 = A안 ⑨
+          500: "#A0B57E", // dot = A안 ⑨
+          600: "#7B8F5D",
+          700: "#566A3D", // 텍스트(AA) = A안 ⑨
+          800: "#45562F",
+          900: "#353F24",
         },
-        // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE: blue(재진·info)·sky(의사 대시보드) 램프를
-        //   Tailwind 기본값에서 채도 ~18%↓(명도·색상 유지)로 따듯 파스텔화. 동일 토큰 소스 1곳 override →
-        //   전 화면 blue/sky 사용처 일괄 적용(재진 bg-blue-50/100·border-blue-200·text-blue-700,
-        //   의사 대시보드 bg-sky-50·border-sky-200·text-sky-700 포함). 명도 불변이라 WCAG 대비 보존.
-        //   초진=파랑·재진=초록 역할 매핑 불변(톤만 변경).
+        // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE: A안 확정 — blue(재진·info)·sky(의사 대시보드) 램프를
+        //   A안 파랑(따듯 파스텔 A: 카드 bg #EBEFF5 / 배지 bg #E4EAF3 / 보더 #D2DBEA / 좌측바 #A6B6D4 /
+        //   dot #90A2C2 / 텍스트 #45587A)으로 확정. 동일 토큰 소스 1곳 override → 전 화면 blue/sky 일괄
+        //   (재진 bg-blue-50/100·border-blue-200·text-blue-700 / 의사 대시보드 bg-sky-50·border-sky-200·text-sky-700).
+        //   초진=파랑·재진=초록 역할 매핑 불변(톤만 변경). WCAG AA 보존: blue-700(#45587A) on white ≈7.1:1 ✓.
         blue: {
-          50:  "#F0F6FE",
-          100: "#DEEAFB",
-          200: "#C5DCF8",
-          300: "#9DC6F3",
-          400: "#6EA6EC",
-          500: "#4C86E5",
-          600: "#376AD9",
-          700: "#2E56C7",
-          800: "#2B47A2",
-          900: "#283F80",
-          950: "#1C284F",
+          50:  "#EBEFF5",
+          100: "#E4EAF3",
+          200: "#D2DBEA",
+          300: "#BCC8DF",
+          400: "#A6B6D4",
+          500: "#90A2C2",
+          600: "#6A7D9E",
+          700: "#45587A",
+          800: "#384863",
+          900: "#2C384E",
+          950: "#1B2230",
         },
+        // sky(의사 대시보드 파랑) = A안 파랑으로 blue와 동일 톤 통일(따듯 파스텔 A).
         sky: {
-          50:  "#F1F9FE",
-          100: "#E3F1FB",
-          200: "#C0E4F7",
-          300: "#88CFF1",
-          400: "#49B6E7",
-          500: "#229ED5",
-          600: "#147EB5",
-          700: "#116593",
-          800: "#12567A",
-          900: "#154865",
-          950: "#0E2E43",
+          50:  "#EBEFF5",
+          100: "#E4EAF3",
+          200: "#D2DBEA",
+          300: "#BCC8DF",
+          400: "#A6B6D4",
+          500: "#90A2C2",
+          600: "#6A7D9E",
+          700: "#45587A",
+          800: "#384863",
+          900: "#2C384E",
+          950: "#1B2230",
+        },
+        // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE A안 carve-out: healer(힐러 노랑) 전용 토큰.
+        //   AC6 = 힐러는 채도 하향 대상 제외(맑은 파스텔 유지). A안 확정 = bg #FFFDE7 / 보더 #FFF59D /
+        //   좌측바 #FFEE58 / dot #FBC02D / 텍스트 #B7791F. 전역 yellow(경고·미확정 등 의미색)와 분리한
+        //   힐러 전용 토큰 → 예약 고객박스 healer 카드·힐러 dot 만 이 토큰을 사용(의미색 yellow 미접촉).
+        healer: {
+          50:  "#FFFDE7", // 카드/배지 bg = A안 (맑은 라이트 옐로우)
+          100: "#FFF7C2",
+          200: "#FFF59D", // 보더 = A안
+          300: "#FFF179",
+          400: "#FFEE58", // 좌측 강조 보더 = A안
+          500: "#FBC02D", // dot(골드 액센트) = A안
+          600: "#E0A018",
+          700: "#B7791F", // 텍스트 = A안
+          800: "#936014",
+          900: "#6E480F",
         },
         border: "var(--border)",
         input: "var(--input)",
