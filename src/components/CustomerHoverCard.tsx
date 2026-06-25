@@ -203,8 +203,12 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
           data-testid="customer-hover-card"
           style={{
             position: 'fixed',
-            left: Math.min(cardPos.x, window.innerWidth - 280),
-            top: Math.min(cardPos.y, window.innerHeight - 260),
+            // T-20260625-foot-RESV-HOVERCARD-CLIP-EDGEGUARD: 4변 경계가드.
+            //   기존엔 우/하 상한(Math.min)만 있어 커서가 좌상단(헤더/사이드바 인접)일 때 팝업이 가려짐.
+            //   상/좌 하한 8px 마진 추가 → clamp(v, 8, max). createPortal(document.body)+zIndex:9999로
+            //   stacking context는 이미 무력화돼 있어 위치 클램프만으로 가림 0 달성.
+            left: Math.max(8, Math.min(cardPos.x, window.innerWidth - 280)),
+            top: Math.max(8, Math.min(cardPos.y, window.innerHeight - 260)),
             zIndex: 9999,
           }}
           className="w-64 rounded-xl border border-gray-200 bg-white shadow-2xl p-3.5 space-y-2 text-xs"
