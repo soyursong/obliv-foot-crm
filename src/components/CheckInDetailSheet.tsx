@@ -1311,7 +1311,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   value={customerMemo}
                   onChange={(e) => setCustomerMemo(e.target.value)}
                   placeholder="고객 성향, 특이사항, 주차 정보 등"
-                  rows={2}
+                  rows={8}
                   className="text-xs"
                 />
                 <Button
@@ -1333,7 +1333,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   value={etcMemo}
                   onChange={(e) => setEtcMemo(e.target.value)}
                   placeholder="기타 참고사항"
-                  rows={2}
+                  rows={8}
                   className="text-xs"
                 />
                 <Button
@@ -1929,7 +1929,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       value={customerMemo}
                       onChange={(e) => setCustomerMemo(e.target.value)}
                       placeholder="고객 성향, 특이사항, 주차 정보 등"
-                      rows={2}
+                      rows={8}
                       className="text-xs"
                     />
                     <Button
@@ -1953,7 +1953,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       value={etcMemo}
                       onChange={(e) => setEtcMemo(e.target.value)}
                       placeholder="기타 참고사항"
-                      rows={2}
+                      rows={8}
                       className="text-xs"
                     />
                     <Button
