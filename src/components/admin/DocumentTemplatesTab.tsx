@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -221,11 +222,11 @@ function SubcategoryField({
 // ---------------------------------------------------------------------------
 export default function DocumentTemplatesTab() {
   // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용.
-  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
-  //   ★서류 템플릿(document_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
-  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
+  // T-20260625-foot-PHRASE-TEMPLATE-CRUD-FAIL: Phase B 완료 — 진료관리 write = canEditClinicMgmt SSOT 술어로 전환.
+  //   문지은 대표원장(admin→director swap) 이 서류템플릿 CRUD 전면 불가. FE(admin-only)+RLS({admin,manager}) 양쪽 director 누락.
+  //   본 변경 = FE 측. RLS 는 20260625113000_phrase_template_director_write_rls.sql 과 ★combined-deploy★.
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin';
+  const canEdit = canEditClinicMgmt(profile);
   const { data: templates = [], isLoading } = useDocumentTemplates();
   const upsert = useUpsertDoc();
   const del = useDeleteDoc();
