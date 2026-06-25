@@ -28,7 +28,7 @@ import {
   WEEK_DAYS_KO,
 } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, maskPhoneTail, chartNoBadge } from '@/lib/format';
+import { formatPhone, chartNoBadge } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER: resvKind 단일 소스화(중복 구현 금지).
@@ -1839,12 +1839,13 @@ export default function Reservations() {
                     <span className="rounded bg-gray-200 px-0.5 text-[8px] leading-none text-gray-500">취소됨</span>
                   )}
                 </div>
+                {/* T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 고객박스 표시필드 슬림화([성함/간략메모/예약등록자]).
+                    · 초진/재진 텍스트 제거 — 박스 배경 컬러(KIND_CARD_STYLE)로 이미 구분(컬러 점 KIND_DOT은 유지).
+                    · 연락처(전화 뒷4자리) 제거 → 간략정보(hover)에 풀번호 노출(이관 완료).
+                    예약 상태(STATUS_LABEL)는 운영 신호로 유지. */}
                 <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                   <span className={cn('inline-block h-1.5 w-1.5 rounded-full', KIND_DOT[resvKind(r)])} />
-                  {resvKind(r) === 'healer' ? '힐러' : VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
-                  {r.customer_phone && (
-                    <span className="text-muted-foreground">· ···{maskPhoneTail(r.customer_phone)}</span>
-                  )}
+                  {STATUS_LABEL[r.status]}
                 </div>
                 {resvBookerMap.get(r.id) && (
                   <div className="truncate text-[7px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
@@ -2337,16 +2338,14 @@ export default function Reservations() {
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
                                     <div className="flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: text-[10px]→text-[9px] / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-2: 가독성 복원 text-[9px]→text-[10px] (방문유형·상태·전화뒷4자리 전부 유지) */}
                                       {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
+                                      {/* T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 고객박스 슬림화 —
+                                          초진/재진 텍스트 제거(박스 컬러로 구분, 컬러 점 유지) + 연락처(전화 뒷4자리) 제거(간략정보 hover로 이관).
+                                          예약 상태(STATUS_LABEL)·담당자(@booker)는 운영 신호로 유지. */}
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',
                                         KIND_DOT[resvKind(r)],
                                       )} />
-                                      {resvKind(r) === 'healer' ? '힐러' : VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
-                                      {r.customer_phone && (
-                                        <span className="text-muted-foreground">
-                                          · ···{maskPhoneTail(r.customer_phone)}
-                                        </span>
-                                      )}
+                                      {STATUS_LABEL[r.status]}
                                       {/* T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1·AC3·AC4): 담당자=예약 잡은 계정.
                                           연락처(전화) 옆 같은 라인 + '@담당자명' 표기. 미상(과거예약 등) 시 미렌더(AC5).
                                           ★SCOPE: 예약관리 표시 한정 — 차트 담당자(customers.assigned_staff_id) 불변. */}
