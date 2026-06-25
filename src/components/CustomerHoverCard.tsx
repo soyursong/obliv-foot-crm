@@ -186,10 +186,15 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
         }}
       >
         {checkIn.customer_name?.trim() || '이름없음'}
-        {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 트리거에도 차트번호 인접(hover 전 embed, hover 후 fetch 우선) */}
-        <span className="ml-1 font-mono text-[11px] font-normal text-teal-600">
-          {chartNoBadge(details?.chart_number ?? checkIn.customers?.chart_number ?? null)}
-        </span>
+        {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 트리거에도 차트번호 인접(hover 전 embed, hover 후 fetch 우선)
+            T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 예약관리 고객박스(reservationInfo 주어진 surface)는 차트번호를
+            박스에서 제거 → 간략정보(hover) 이관(아래 reservationInfo 분기 헤더에 차트번호 표기). 단독노출 0은 hover로 보장.
+            대시보드 등 reservationInfo 미지정 surface는 기존대로 트리거 인접 차트번호 유지(회귀 0). */}
+        {!reservationInfo && (
+          <span className="ml-1 font-mono text-[11px] font-normal text-teal-600">
+            {chartNoBadge(details?.chart_number ?? checkIn.customers?.chart_number ?? null)}
+          </span>
+        )}
       </span>
 
       {/* 호버 팝업 — position:fixed + document.body 포털.
@@ -236,8 +241,13 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
 
               <div className="border-t border-gray-100" />
 
-              {/* ── 고객성함 | 방문경로 ── */}
+              {/* ── 차트번호 + 고객성함 | 방문경로 ──
+                  T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 차트번호를 고객박스에서 제거하고 간략정보(hover)로 이관.
+                  미발번도 명시(레거시 분기와 동일 배지 스타일) → 환자명 단독노출 0 보장. */}
               <div className="flex flex-wrap items-center gap-1.5">
+                <span className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold border ${(details?.chart_number ?? checkIn.customers?.chart_number) ? 'bg-teal-50 text-teal-700 border-teal-100' : 'bg-muted text-muted-foreground border-border'}`}>
+                  {chartNoBadge(details?.chart_number ?? checkIn.customers?.chart_number ?? null)}
+                </span>
                 <span className="font-bold text-gray-900 text-sm">{checkIn.customer_name}</span>
                 {reservationInfo.visitRoute && (
                   <>
