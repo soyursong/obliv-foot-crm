@@ -51,6 +51,8 @@ import { normalizeToE164 } from '@/lib/phone';
 //   (엑셀 .xlsx 내보내기는 후속 — customerExport.ts 유지)
 import { downloadCustomerCsv, customerCsvFilename, type CustomerCsvRow } from '@/lib/customerCsv';
 import type { CheckIn, Customer, LeadSource } from '@/lib/types';
+// T-20260625-foot-PASSPORT-PORT: 외국인 정보(국적/여권 영문명/여권번호/외국인등록번호/만료일) — derm 이식
+import ForeignInfoSection, { type ForeignInfoValue } from '@/components/ForeignInfoSection';
 
 interface CustomerStats {
   visit_count: number;
@@ -877,9 +879,13 @@ function EditCustomerDialog({
   // T-20260508-foot-CUST-FORM-REVAMP: 신규 필드
   const [customerGrade, setCustomerGrade] = useState<string>('일반');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [passportNumber, setPassportNumber] = useState('');
   const [postalCode, setPostalCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260625-foot-PASSPORT-PORT: 외국인 정보 (여권번호 포함 — passportNumber는 foreignInfo로 통합)
+  const [foreignInfo, setForeignInfo] = useState<ForeignInfoValue>({
+    nationalityId: '', passportLastName: '', passportFirstName: '',
+    passportNumber: '', foreignerRegNumber: '', docExpiry: '',
+  });
 
   useEffect(() => {
     if (customer) {
@@ -894,8 +900,15 @@ function EditCustomerDialog({
       setReferrerName(customer.referrer_name ?? '');
       setCustomerGrade(customer.customer_grade ?? '일반');
       setCustomerEmail(customer.customer_email ?? '');
-      setPassportNumber(customer.passport_number ?? '');
       setPostalCode(customer.postal_code ?? '');
+      setForeignInfo({
+        nationalityId: customer.nationality_id != null ? String(customer.nationality_id) : '',
+        passportLastName: customer.passport_last_name ?? '',
+        passportFirstName: customer.passport_first_name ?? '',
+        passportNumber: customer.passport_number ?? '',
+        foreignerRegNumber: customer.foreigner_registration_number ?? '',
+        docExpiry: customer.foreign_doc_expiry ?? '',
+      });
     }
   }, [customer]);
 
@@ -922,8 +935,19 @@ function EditCustomerDialog({
         // T-20260508-foot-CUST-FORM-REVAMP
         customer_grade: customerGrade || '일반',
         customer_email: customerEmail.trim() || null,
-        passport_number: passportNumber.trim() || null,
         postal_code: postalCode.trim() || null,
+        // T-20260625-foot-PASSPORT-PORT: 외국인 정보. is_foreign는 다운그레이드 금지(기존값 OR 신규 입력).
+        passport_number: foreignInfo.passportNumber.trim() || null,
+        passport_last_name: foreignInfo.passportLastName.trim() || null,
+        passport_first_name: foreignInfo.passportFirstName.trim() || null,
+        nationality_id: foreignInfo.nationalityId ? Number(foreignInfo.nationalityId) : null,
+        foreigner_registration_number: foreignInfo.foreignerRegNumber.trim() || null,
+        foreign_doc_expiry: foreignInfo.docExpiry.trim() || null,
+        is_foreign: customer.is_foreign || !!(
+          foreignInfo.nationalityId || foreignInfo.passportNumber.trim() ||
+          foreignInfo.passportLastName.trim() || foreignInfo.passportFirstName.trim() ||
+          foreignInfo.foreignerRegNumber.trim() || foreignInfo.docExpiry.trim()
+        ),
       })
       .eq('id', customer.id);
     if (error) {
@@ -1011,23 +1035,13 @@ function EditCustomerDialog({
               placeholder="example@email.com"
             />
           </div>
-          {/* 여권번호 — T-20260508-foot-CUST-FORM-REVAMP */}
-          {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead는 여권번호 readonly */}
-          <div className="space-y-1.5">
-            <Label>여권번호 <span className="text-xs text-muted-foreground font-normal">(외국인){!canEditSensitive && ' — 열람 전용'}</span></Label>
-            {canEditSensitive ? (
-              <Input
-                value={passportNumber}
-                onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
-                placeholder="예: M12345678"
-                className="font-mono"
-              />
-            ) : (
-              <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground font-mono select-all">
-                {passportNumber || '—'}
-              </div>
-            )}
-          </div>
+          {/* 외국인 정보(국적/여권 영문명/여권번호/외국인등록번호/만료일) — T-20260625-foot-PASSPORT-PORT */}
+          {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead는 민감정보(여권번호·외국인등록번호) 열람 전용 */}
+          <ForeignInfoSection
+            value={foreignInfo}
+            onChange={(next) => setForeignInfo((prev) => ({ ...prev, ...next }))}
+            canEdit={canEditSensitive}
+          />
           {/* 우편번호 — T-20260508-foot-CUST-FORM-REVAMP */}
           <div className="space-y-1.5">
             <Label>우편번호</Label>
@@ -1131,6 +1145,11 @@ function CreateCustomerDialog({
   const [submitting, setSubmitting] = useState(false);
   // 인라인 자동검색으로 선택된 기존 고객 (중복 등록 방지)
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
+  // T-20260625-foot-PASSPORT-PORT: 외국인 정보(국적/여권 영문명/여권번호/외국인등록번호/만료일)
+  const [foreignInfo, setForeignInfo] = useState<ForeignInfoValue>({
+    nationalityId: '', passportLastName: '', passportFirstName: '',
+    passportNumber: '', foreignerRegNumber: '', docExpiry: '',
+  });
 
   useEffect(() => {
     if (open) {
@@ -1143,6 +1162,10 @@ function CreateCustomerDialog({
       setReferrerSuggestions([]);
       setReferrerId(null);
       setSelectedExistingId(null);
+      setForeignInfo({
+        nationalityId: '', passportLastName: '', passportFirstName: '',
+        passportNumber: '', foreignerRegNumber: '', docExpiry: '',
+      });
     }
   }, [open]);
 
@@ -1194,6 +1217,18 @@ function CreateCustomerDialog({
       memo: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
+      // T-20260625-foot-PASSPORT-PORT: 외국인 정보. 하나라도 입력 시 is_foreign 자동 true.
+      passport_number: foreignInfo.passportNumber.trim() || null,
+      passport_last_name: foreignInfo.passportLastName.trim() || null,
+      passport_first_name: foreignInfo.passportFirstName.trim() || null,
+      nationality_id: foreignInfo.nationalityId ? Number(foreignInfo.nationalityId) : null,
+      foreigner_registration_number: foreignInfo.foreignerRegNumber.trim() || null,
+      foreign_doc_expiry: foreignInfo.docExpiry.trim() || null,
+      is_foreign: !!(
+        foreignInfo.nationalityId || foreignInfo.passportNumber.trim() ||
+        foreignInfo.passportLastName.trim() || foreignInfo.passportFirstName.trim() ||
+        foreignInfo.foreignerRegNumber.trim() || foreignInfo.docExpiry.trim()
+      ),
     });
     setSubmitting(false);
     if (error) {
@@ -1258,6 +1293,11 @@ function CreateCustomerDialog({
             </div>
             {/* 차트번호: DB 트리거 자동생성 — 등록 후 F-XXXX 자동 부여 */}
           </div>
+          {/* 외국인 정보 — T-20260625-foot-PASSPORT-PORT */}
+          <ForeignInfoSection
+            value={foreignInfo}
+            onChange={(next) => setForeignInfo((prev) => ({ ...prev, ...next }))}
+          />
           <div className="space-y-1.5">
             <Label>메모</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} />
