@@ -180,6 +180,10 @@ export default defineConfig({
         //   (이전 desktop-chrome 自체로그인 spec 은 포트 5173↔8089 불일치+seed hold 로 전 케이스 skip →
         //    insufficient_verification NO-GO. unit 으로 재작성해 skip 0·결정론 확보.) auth/webServer 불요.
         '**/T-20260625-foot-FOREIGN-LANG-SAVE.spec.ts',
+        // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT: 소견서 금기증 21셀 행우선 재정렬 +
+        //   대분류-소분류 표시그룹(경구약/간질환/탈모약/임신). 비파괴(24+4키 보존)·표시순서≠조합우선순위
+        //   (priority? 가산필드)·간염 B(C) 드롭다운 회귀無 정적/순수함수 단언. auth 불요.
+        '**/T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
