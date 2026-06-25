@@ -1911,6 +1911,33 @@ export function getHtmlTemplate(formKey: string): string | null {
 }
 
 /**
+ * T-20260625-foot-OPINIONDOC-PHRASE-LITERAL-ESCAPE (AC-2, 필수):
+ * 양식 바인딩 직전 phrase/필드 텍스트 정규화 — 이중인코딩·리터럴 개행 재발 방지.
+ *
+ * 두 가지 유입을 render 시점에 무해화한다(데이터 정정 AC-1과 별개로 모든 surface 방어):
+ *  1) 리터럴 `\n`(백슬래시+n 2글자) / `\r\n` / `\t` → 실제 제어문자. 이후 escape 단계의
+ *     `/\n/g → <br>`가 매칭되어 줄바꿈이 렌더된다. (regex가 실제 0x0A만 매칭하던 한계 보완)
+ *  2) 이미 HTML 엔티티가 박힌 텍스트(`&lt;` 등)를 raw로 디코드한 뒤 escape 단계가 단일
+ *     인코딩하도록 함. 디코드 없이 escape하면 `&`→`&amp;`로 `&lt;`가 `&amp;lt;`가 되어
+ *     브라우저에 `&lt;`가 그대로 보이는 이중인코딩 발생.
+ *
+ * 디코드 순서: lt/gt/quot/#39 먼저, `&amp;` 마지막 — escape의 정확한 역순이라 멱등.
+ * 예) plain `&lt;`(엔티티) → `<` → escape → `&lt;`(브라우저에 `<` 표시)
+ *     plain `R&D` → 변화없음 → escape → `R&amp;D`(브라우저에 `R&D` 표시)
+ */
+export function normalizePhraseText(raw: string): string {
+  return raw
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/**
  * HTML 템플릿의 `{{key}}` 플레이스홀더를 fieldValues로 치환.
  * 값이 없는 키는 빈 문자열로 치환.
  * HTML injection 방지: 신뢰된 내부 데이터만 주입.
@@ -1925,8 +1952,9 @@ export function bindHtmlTemplate(
     // _html 접미사 키(items_html, rx_items_html 등)는 내부 생성 HTML → 이스케이프 생략
     // T-20260520-foot-PRINT-FORM-BIND: items_html/rx_items_html raw 렌더링 버그 수정
     if (key.endsWith('_html')) return val;
+    // T-20260625 AC-2: escape 전 정규화 (리터럴 개행→실제 개행, 엔티티 디코드→단일 인코딩)
     // 그 외 필드: 기본 HTML 이스케이프 (XSS 방지)
-    return val
+    return normalizePhraseText(val)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
