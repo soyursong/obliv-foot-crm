@@ -379,7 +379,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           문지은 대표원장(MSG-20260615-001650): "묶음처방에 숫자까지 넣어서 저장하고 처방할때 진료의가 수동 조정 가능."
           저장값은 default일 뿐 잠금 아님 — 적용(처방 흡수) 시 진료의가 use-time 수동 조정 가능(AC-3, MedicalChartPanel formRx).
           투여경로·용법(frequency)은 여전히 등록화면 미노출(use-time 입력 유지) — NAMEDESC AC2-2 중 route/frequency 금지만 존속. */}
-      <div className="col-span-4">
+      <div className="col-span-5">
         <Label className="text-[10px] flex items-center gap-1">
           {RX_COL.name} *
           {linked && (
@@ -458,7 +458,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
         />
       </div>
       {/* AC-2: 일수(days) baked default — 정수. use-time 수동 조정 가능. */}
-      <div className="col-span-1">
+      <div className="col-span-2">
         <Label className="text-[10px]">{RX_COL.days}</Label>
         <Input
           type="number"
@@ -474,17 +474,9 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           data-testid="rx-set-item-days-input"
         />
       </div>
-      {/* 설명(notes) — 상세 관리화면 限 노출(공식문서·미니멀목록 금지, AC-4). 투여경로/용법(frequency) 입력칸은 제거(값은 보존). */}
-      <div className="col-span-2">
-        <Label className="text-[10px]">설명</Label>
-        <Input
-          value={item.notes}
-          onChange={(e) => onChange(idx, 'notes', e.target.value)}
-          placeholder="분류·메모"
-          className="h-7 text-xs mt-0.5"
-          data-testid="rx-set-item-notes-input"
-        />
-      </div>
+      {/* T-20260625-foot-BUNDLERX-DRUGROW-MEMO-REMOVE (AC-1): 묶음처방 약 항목 행 = 약이름+숫자3종(용량/횟수/일수)만.
+          설명(notes) 입력칸 제거 — 메모는 처방세트(약품폴더 DrugFoldersTab '설명' 인라인)에서 등록.
+          (AC-2) items[].notes 필드는 보존(DROP 0) — 기존 저장값은 onChange 미경유로 유실 없이 그대로 upsert. */}
       <div className="col-span-1 flex items-end">
         <Button
           variant="ghost"

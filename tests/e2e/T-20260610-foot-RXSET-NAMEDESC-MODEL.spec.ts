@@ -32,13 +32,18 @@ const AUDIT = 'supabase/ops/rxset_namedesc_dryrun_audit_20260613.sql';
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-2: 세트 등록 = [이름+용량] / [설명] 2필드. route/용법/횟수/일수 입력칸 제거.
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC2-1: ItemRow 에 용량(dosage)·설명(notes) 입력칸 존재 — 2필드 모델', () => {
+// ⚠ SUPERSEDED (surface narrow) by T-20260625-foot-BUNDLERX-DRUGROW-MEMO-REMOVE (2026-06-25):
+//   동일 reporter(문지은 대표원장)가 Q2 LOCK '설명 노출 = 세트 관리·입력 상세화면 限 허용' 의 surface 범위를
+//   "묶음처방 약 항목 행은 설명-허용 surface에서 제외"로 명시 narrow. → 묶음처방 ItemRow(RxSetItemRow)에서
+//   설명(notes) 입력칸 제거(약이름+숫자3종만). notes 필드 자체는 보존(DROP 0, AC2-3 유지).
+//   "메모는 처방세트(약품폴더 DrugFoldersTab '설명' 인라인)에서 등록"이라는 NAMEDESC 핵심 정의는 유지·강화됨.
+//   notes-input 부재 단언은 BUNDLERX-DRUGROW-MEMO-REMOVE.spec.ts 소관.
+test('AC2-1(narrowed): ItemRow 에 약품명·용량 입력칸 존재 — 설명(notes) 입력칸은 제거(MEMO-REMOVE supersede)', () => {
   const src = read(RXSET);
   expect(src).toContain('rx-set-item-name-input');     // 약품명(검색 드롭다운)
   expect(src).toContain('rx-set-item-dosage-input');   // 용량
-  expect(src).toContain('rx-set-item-notes-input');    // 설명
-  // 설명 라벨로 노출(비고→설명 relabel)
-  expect(src).toContain('>설명</Label>');
+  // 설명(notes) 입력칸은 묶음처방 약 항목 행에서 제거됨 — 메모는 처방세트(약품폴더)에서 등록.
+  expect(src).not.toContain('rx-set-item-notes-input');
 });
 
 // ⚠ PARTIAL SUPERSEDED by T-20260614-foot-BUNDLERX-BUILDER-RESTRUCTURE (2026-06-15):
