@@ -18,13 +18,15 @@
 --   supabase db push --file supabase/migrations/20260625120000_health_q_lang.sql
 
 -- ─── 1. health_q_tokens.lang (ADDITIVE) ──────────────────────────────────────
+-- DA 확정(Q1): DB CHECK 없음 — 앱레벨 LANGUAGE_OPTIONS 5코드(ko/en/ja/zh-CN/zh-TW) 검증.
+--   (customers.language / derm 선례와 통일. 향후 다국어 확장 시 DDL 변경 불요)
 ALTER TABLE health_q_tokens
-  ADD COLUMN IF NOT EXISTS lang TEXT NOT NULL DEFAULT 'ko'
-    CHECK (lang IN ('ko', 'en'));
+  ADD COLUMN IF NOT EXISTS lang TEXT NOT NULL DEFAULT 'ko';
 
 COMMENT ON COLUMN health_q_tokens.lang IS
-  'T-20260625-foot-FOREIGN-HEALTHQ-EN: 설문지 표시 언어. ko(기본)|en(외국인 전용 영문).
-   외국인 셀프접수 흐름에서 en 토큰 발급 → HealthQMobilePage 영문 분기 렌더.';
+  'T-20260625-foot-FOREIGN-HEALTHQ-EN: 설문지 표시 언어 스냅샷. ko(기본)|en|ja|zh-CN|zh-TW.
+   발급 시점 freeze(customers.language 파생, 발급 후 불변). DB CHECK 없음 — 앱레벨 검증.
+   외국인 셀프접수/직원 발급 시 en 토큰 → HealthQMobilePage 영문 분기 렌더.';
 
 -- ─── 2. fn_health_q_validate_token (lang 반환 추가) ──────────────────────────
 CREATE OR REPLACE FUNCTION fn_health_q_validate_token(p_token TEXT)
@@ -95,8 +97,10 @@ DECLARE
   v_new_id    UUID;
   v_lang      TEXT;
 BEGIN
-  -- lang 정규화 (허용값 외 → ko)
-  v_lang := CASE WHEN p_lang = 'en' THEN 'en' ELSE 'ko' END;
+  -- lang: 명시 override(p_lang) 우선, 빈값/NULL → ko. 허용 코드 검증은 앱레벨(FE).
+  -- (DA Q1: customers.language COALESCE 자동상속은 customers.language 컬럼 신설=FOREIGN-LANG-SAVE
+  --  배포 후 별도 배선 — 현재 미존재 컬럼 참조 시 create_token 전체 깨짐 방지 위해 override만 사용)
+  v_lang := COALESCE(NULLIF(p_lang, ''), 'ko');
 
   -- 직원 권한 확인
   SELECT id INTO v_staff_id
@@ -146,6 +150,23 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION fn_health_q_create_token(UUID, UUID, TEXT, UUID, INT, TEXT) TO authenticated;
+
+-- ─── 4. health_q_results form_data 키 사전 갱신 (DA Q2 #3 의무) ───────────────
+-- 외국인 발각질케어 신규 문항 키 등록 (form_data JSONB ADDITIVE, DDL 0):
+--   foot_concern_symptoms (array, 신규)  — 발 고민 증상 (callus 전용). symptoms 와 별개 키.
+--   allergies            (string, 재사용) — 알레르기 종류 기입 (has_allergy=true 시).
+--   medications          (array, 재사용)  — 기존 4번 복용약 재사용.
+--   _lang                (string, meta)   — 답변 설문 언어(self-describing, token join 끊겨도 보존).
+COMMENT ON TABLE health_q_results IS
+  'T-20260529-foot-HEALTH-Q-MOBILE: 고객이 모바일로 제출한 발건강질문지 구조화 데이터.
+   form_data JSONB(공통): {symptoms, symptoms_other, nail_treatment_history, nail_treatment_methods,
+                     symptom_onset, family_history_type, foot_pain_level,
+                     medical_history, medical_history_other, medications, medications_other,
+                     treatment_start_timing, visit_frequency, has_private_insurance, insurance_company}.
+   form_data JSONB(외국인 발각질, T-20260625-FOREIGN-HEALTHQ-EN): {visit_purpose, foot_concern_symptoms[],
+                     has_allergy(bool), allergies(string), medications[], _lang}.
+   저장값=언어중립 canonical(KO 라벨=시스템 stable 코드, EN/KO 동일 직렬화).
+   storage_path: documents 버킷 JSON 경로 (optional 백업).';
 
 -- ─── PostgREST schema cache 강제 reload ──────────────────────────────────────
 SELECT pg_notify('pgrst', 'reload schema');
