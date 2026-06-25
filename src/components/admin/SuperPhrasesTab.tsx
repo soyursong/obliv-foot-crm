@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -316,10 +317,12 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
 // ---------------------------------------------------------------------------
 export default function SuperPhrasesTab() {
   const { profile } = useAuth();
-  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
-  //   ★super_phrases(phrase_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
-  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
-  const canEdit = profile?.role === 'admin';
+  // T-20260625-foot-PHRASE-TEMPLATE-CRUD-FAIL: Phase B 완료 — 진료관리 write = canEditClinicMgmt SSOT 술어로 전환.
+  //   문지은 대표원장(admin→director swap) 이 super_phrases CRUD 전면 불가 → RC: FE canEdit(admin-only) + RLS({admin,manager})
+  //   양쪽 director 누락. 본 변경 = FE 측(admin-only → canEditClinicMgmt: admin|director|has_ops_authority).
+  //   RLS 측은 20260625113000_phrase_template_director_write_rls.sql 과 ★combined-deploy★ (둘 중 하나만 가면 거짓성공/버튼부재).
+  //   director escape 는 has_ops_authority 적재 전 stopgap(canEditClinicMgmt 내부 주석) — 수렴 시 동시 정리.
+  const canEdit = canEditClinicMgmt(profile);
   const clinicId = (profile as { clinic_id?: string } | null)?.clinic_id ?? null;
   const { data: phrases = [], isLoading, isError } = useSuperPhrases();
   const upsert = useUpsertSuper();

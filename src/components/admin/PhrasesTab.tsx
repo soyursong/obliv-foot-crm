@@ -12,7 +12,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { canEditStaffAreaPhrase } from '@/lib/permissions';
+import { canEditStaffAreaPhrase, canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -247,12 +247,13 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   // T-20260620-foot-STAFFPHRASE-EDIT-UNLOCK AC-2(김주연 총괄 U0ATDB587PV): ②(펜/고객차트)를 직원 편집 개방.
   //   기존 {admin,manager} → PHRASE_STAFFAREA_EDIT_ROLES(= ALL_STAFF_ROLES − director, 7역할)로 확대.
   //   ★director 제외(현행 유지) — PHRASE-AREA-SEPARATION-AUDIT AC-4(human_pending) 사람결정 선점 금지.
-  //   ★medical_chart surface(의사영역)는 admin-only 절대 무변경(AC-5 회귀 0).
-  //   서버측: phrase_templates RLS 2-policy ADDITIVE(admin_write{admin,manager} + 신규 staff_write{5역할,
-  //     pen/customer 가드}) = FE set 과 동일 effective. (migration 20260620_phrase_templates_staff_write_staffarea)
+  //   ★medical_chart surface(의사영역) write = canEditClinicMgmt SSOT 술어(admin|director|has_ops_authority).
+  //   T-20260625-foot-PHRASE-TEMPLATE-CRUD-FAIL: Phase B 완료 — 의사영역만 admin-only → canEditClinicMgmt 전환
+  //     (문지은 대표원장 admin→director swap 후 진료차트 상용구 CRUD 전면 불가 해소). RLS(admin_write_phrase_templates
+  //     director 추가, 20260625113000)와 ★combined-deploy★. ②직원영역(staffarea) 분기는 무변경(human_pending AC-4 선점 금지).
   const isMedchartSurface = lockedType === 'medical_chart';
   const canEdit = isMedchartSurface
-    ? profile?.role === 'admin'
+    ? canEditClinicMgmt(profile)
     : canEditStaffAreaPhrase(profile?.role);
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
