@@ -1798,7 +1798,8 @@ export default function Reservations() {
                 }}
                 className={cn(
                   // TIMEGRID-VERTICAL: 컬럼 폭에 맞춘 세로 진열 카드(full-width). 색상은 KIND_CARD_STYLE(초진=그린/재진=하늘/힐러=노랑) 유지.
-                  'w-full min-w-0 overflow-hidden rounded border px-2 py-1 text-[12px] leading-tight shadow-sm transition-opacity',
+                  // COMPACT2(2단계): 칸 90px화에 맞춰 카드 패딩·폰트 축소(px-2 py-1→px-1 py-0.5, text-[12px]→text-[9px]). 색상/구조 불변.
+                  'w-full min-w-0 overflow-hidden rounded border px-1 py-0.5 text-[9px] leading-tight shadow-sm transition-opacity',
                   r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                   draggedId === r.id && 'opacity-40',
                   STATUS_STYLE[r.status],
@@ -1835,10 +1836,10 @@ export default function Reservations() {
                     </span>
                   )}
                   {r.status === 'cancelled' && (
-                    <span className="rounded bg-gray-200 px-0.5 text-[9px] leading-none text-gray-500">취소됨</span>
+                    <span className="rounded bg-gray-200 px-0.5 text-[8px] leading-none text-gray-500">취소됨</span>
                   )}
                 </div>
-                <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] opacity-80">
+                <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[8px] opacity-80">
                   <span className={cn('inline-block h-1.5 w-1.5 rounded-full', KIND_DOT[resvKind(r)])} />
                   {resvKind(r) === 'healer' ? '힐러' : VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
                   {r.customer_phone && (
@@ -1846,7 +1847,7 @@ export default function Reservations() {
                   )}
                 </div>
                 {resvBookerMap.get(r.id) && (
-                  <div className="truncate text-[10px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
+                  <div className="truncate text-[8px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
                     @{resvBookerMap.get(r.id)}
                   </div>
                 )}
@@ -1858,7 +1859,7 @@ export default function Reservations() {
                 {/* 시간 격자: 각 시간 = 가로 한 줄에 배열된 컬럼. 컬럼 상단=시간 헤더(가로 일렬),
                     그 아래로 예약을 클릭 없이 상시 세로 진열(TIMEGRID-VERTICAL).
                     세로축 그루핑(치료사/공간) 없음(C5) — 세로는 그 시간의 예약 누적뿐. */}
-                <div data-testid="resv-day-xaxis" className="flex h-full flex-1 gap-1.5 overflow-x-auto pb-2">
+                <div data-testid="resv-day-xaxis" className="flex h-full flex-1 gap-1 overflow-x-auto pb-2">
                   {daySlots.length === 0 ? (
                     <div className="text-sm text-muted-foreground">영업 시간 슬롯이 없습니다.</div>
                   ) : (
@@ -1879,8 +1880,8 @@ export default function Reservations() {
                           onDrop={(e) => handleDrop(e, dateStr, time)}
                           className={cn(
                             // T-20260624-foot-TIMEGRID-COMPACT-DENSITY: field-soak 정제 — 시간 컬럼 너비 200px→132px(컴팩트·촘촘히).
-                            //   고객 카드는 w-full(컬럼 추종) + 기존 일간 카드 토큰(px-2 py-1 text-[12px]) 그대로 → 박스 사이즈 SSOT 유지(임의 신규 사이즈 발명 없음).
-                            'flex w-[132px] min-w-[132px] flex-col rounded-lg border bg-background',
+                            // T-20260625-foot-...COMPACT2(2단계, 김주연 총괄 확정): 132px→90px 추가 압축(한 화면 더 많은 시간 칸). 카드 w-full(컬럼 추종)이라 폭만 변경.
+                            'flex w-[90px] min-w-[90px] flex-col rounded-lg border bg-background',
                             'border-border',
                             full && 'border-red-200',
                             isNow && 'ring-1 ring-amber-400',
@@ -1892,18 +1893,18 @@ export default function Reservations() {
                             data-testid={`resv-day-hslot-${time}`}
                             data-slot-time={time}
                             className={cn(
-                              'sticky top-0 z-10 flex min-h-[40px] items-center justify-between gap-1 rounded-t-lg border-b bg-muted/40 px-2 py-1',
+                              'sticky top-0 z-10 flex min-h-[32px] items-center justify-between gap-0.5 rounded-t-lg border-b bg-muted/40 px-1 py-0.5',
                               isNow && 'bg-amber-50',
                               full && 'bg-red-50',
                             )}
                           >
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-semibold tabular-nums text-foreground">{time}</span>
+                            <div className="flex min-w-0 items-center gap-0.5">
+                              <span className="text-[10px] font-semibold tabular-nums text-foreground">{time}</span>
                               {total > 0 ? (
-                                <span className="flex flex-wrap items-center gap-0.5 text-[9px] font-medium leading-none">
-                                  {n > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1 py-0.5 text-firstvisit-700">초 {n}</span>}
-                                  {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
-                                  {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
+                                <span className="flex flex-wrap items-center gap-0.5 text-[8px] font-medium leading-none">
+                                  {n > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-0.5 py-0.5 text-firstvisit-700">초 {n}</span>}
+                                  {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-0.5 py-0.5 text-blue-700">재 {rr}</span>}
+                                  {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-0.5 py-0.5 text-yellow-700">HL {h}</span>}
                                 </span>
                               ) : null}
                             </div>
