@@ -25,7 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
-import { normalizeToE164, phoneCanonDigits } from '@/lib/phone';
+import { normalizeToE164 } from '@/lib/phone';
 import { todaySeoulISODate, nowSeoulHHMM } from '@/lib/format';
 import ForeignStayAddressInput from '@/components/ForeignStayAddressInput';
 
@@ -920,40 +920,17 @@ export default function SelfCheckIn() {
     if (reservationCheckedRef.current === digits) return;
     reservationCheckedRef.current = digits;
 
-    const phoneE164 = normalizeToE164(phone);
-    // KST '오늘' — toISOString()은 UTC 기준이라 00:00~08:59 KST에 전날을 반환하는 버그.
-    // 중앙 헬퍼(en-CA + Asia/Seoul)로 통일 (T-20260602-foot-RESVLIST-CRM-SYNC-EMPTY).
-    const today = todaySeoulISODate();
-
     (async () => {
       try {
-        let reservation = null;
-        if (phoneE164) {
-          const { data } = await anonClient
-            .from('reservations')
-            .select('reservation_time, visit_type')
-            .eq('clinic_id', clinicId)
-            .eq('customer_phone', phoneE164)
-            .eq('reservation_date', today)
-            .eq('status', 'confirmed')
-            .order('reservation_time', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          reservation = data;
-        }
-        if (!reservation && phoneE164 && digits !== phoneE164) {
-          const { data } = await anonClient
-            .from('reservations')
-            .select('reservation_time, visit_type')
-            .eq('clinic_id', clinicId)
-            .eq('customer_phone', digits)
-            .eq('reservation_date', today)
-            .eq('status', 'confirmed')
-            .order('reservation_time', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          reservation = data;
-        }
+        // ── T-20260627-ANON-RLS-PHASE2B(2b 컷오버): reservations 직접 SELECT 2종 → RPC 1콜 ──
+        //   fn_selfcheckin_reservation_banner 가 clinic 스코프 + 오늘(KST) + status='confirmed'
+        //   + 연락처 digit 완전일치를 내부 처리(zero-PII: 시간/방문유형만 반환). 포맷 변종 비교 불요.
+        const { data: bannerRows } = await anonClient.rpc('fn_selfcheckin_reservation_banner', {
+          p_clinic_id: clinicId,
+          p_phone: phone,
+        });
+        const reservation =
+          (bannerRows as Array<{ reservation_time: string; visit_type: string }> | null)?.[0] ?? null;
 
         if (reservation) {
           const timeStr = (reservation.reservation_time as string).slice(0, 5);
@@ -1261,170 +1238,67 @@ export default function SelfCheckIn() {
       const phoneE164 = normalizeToE164(phone);
       const phoneStored = phoneE164 ?? phoneDigits;
 
-      // ── 고객 해소: 복합키(성함 AND 연락처) — T-20260617-foot-CHECKIN-CHART-LINK-3KEY AC-1 ① ──
-      //   기존엔 phone 단독(3-format)으로 조회 → 연락처 중복 시 동명이인/타 고객('문자테스트')을 임의
-      //   1건 연결해 체크인 오배정(6/17 김사비→문자테스트 재발). 키오스크 셀프접수는 환자가 차트번호를
-      //   입력하지 않으므로 성함+연락처 2키가 최강(확정 스펙 reframe — 차트번호 1급 키 AC-7 은 스태프
-      //   컨텍스트 전용). 성함=eq 정확매칭 + 연락처는 canonical(포맷 무관)로 비교.
-      //   · 정확히 1건 → 자동 연결 / 0건 → 신규 INSERT / 2건+ → 임의연결 금지(미연결, 현장 재해소).
-      let existing: { id: string } | null = null;
+      // ── 고객 해소: 복합키(성함 AND 연락처) — T-20260627-ANON-RLS-PHASE2B Gate B 컷오버 ──
+      //   2b(anon SELECT/INSERT...RETURNING 제거) 대비: customers 직접 SELECT/UPDATE/INSERT 경로를
+      //   SECURITY DEFINER RPC fn_selfcheckin_upsert_customer_resolve_v2 1콜로 통합.
+      //   RPC 가 서버 권위로: 복합키[성함 AND 연락처 canonical] 매칭 → 1건 linked(멱등 UPDATE) /
+      //   0건 created(INSERT) / 2건+ ambiguous(자동연결·신규생성 동시 보류, customer_id NULL).
+      //   (gap#1 오배정 6/17 김사비→문자테스트 해소 — 동명이인+연락처중복 임의연결 차단.)
+      //   분기 판단(외국인/워크인/신규)은 FE 유지 — 전달할 값만 계산해 넘기고 RPC 는 멱등 persist.
       let ambiguousLink = false; // 성함+연락처 동시중복 → 자동연결/신규생성 모두 보류
-      const trimmedName = name.trim();
-      const inputPhoneCanon = phoneCanonDigits(phoneStored);
-      if (trimmedName && inputPhoneCanon) {
-        const { data: nameMatches } = await anonClient
-          .from('customers')
-          .select('id, phone')
-          .eq('clinic_id', clinicId)
-          .eq('name', trimmedName)
-          .limit(10);
-        const matched = ((nameMatches ?? []) as Array<{ id: string; phone: string | null }>)
-          .filter((c) => phoneCanonDigits(c.phone) === inputPhoneCanon);
-        if (matched.length === 1) {
-          existing = { id: matched[0].id };
-        } else if (matched.length > 1) {
-          // 성함+연락처 동시중복 = 어느 차트가 본인인지 시스템이 단정 불가 → 임의연결 금지.
-          // customerId NULL 유지 → check_in 은 denormalized 성함/연락처만 기록(미연결). 대시보드에서 재해소.
-          ambiguousLink = true;
-        }
+      const isNewVisit = visitType === 'new';
+      // 동의/이메일 수집 게이트(원본 분기 보존 — RPC 재파생 금지):
+      //   privacy: 초진 & (외국인 또는 워크인) / hira: 초진 & 워크인 & 내국인 / email: 외국인 & 입력
+      const collectPrivacy = isNewVisit && (isForeign || reservationType === 'walkin');
+      const collectHira = isNewVisit && reservationType === 'walkin' && !isForeign;
+      const emailParam = isForeign && customerEmail.trim() ? customerEmail.trim() : null;
+      const { data: resolveRows, error: resolveErr } = await anonClient.rpc(
+        'fn_selfcheckin_upsert_customer_resolve_v2',
+        {
+          p_clinic_id: clinicId,
+          p_name: name.trim(),
+          // 외국인 워크인은 연락처 대신 이메일만 가능 → phone 빈값이면 null(컬럼 nullable).
+          p_phone: phoneStored || null,
+          p_visit_type: visitType === 'new' ? 'new' : 'returning',
+          p_sms_opt_in: smsOptIn,
+          p_birth_date: isNewVisit ? extractBirthDate(rrn) ?? null : null,
+          p_address: isNewVisit && address.trim() ? address.trim() : null,
+          p_postal_code: isNewVisit && postalCode.trim() ? postalCode.trim() : null,
+          p_address_detail: isNewVisit && addressDetail.trim() ? addressDetail.trim() : null,
+          // ⚠ customer_email = 환자 이메일(기관 email 아님, DA Q3 MUST).
+          p_customer_email: emailParam,
+          p_privacy_consent: collectPrivacy ? privacyConsent : null,
+          // 외국인은 국내 건강보험 비대상 → hira 미전달(NULL=유지).
+          p_hira_consent: collectHira ? insuranceConsent : null,
+        },
+      );
+      if (resolveErr) {
+        throw new Error(`고객 등록 실패: ${resolveErr.message}`);
       }
-
-      if (existing) {
-        customerId = existing.id as string;
-        // T-20260525-foot-MESSAGING-V1 AC-5: 기존 고객 sms_opt_in 업데이트 (anon RLS 없으면 silent fail)
-        // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
-        const existingUpdate: Record<string, unknown> = {
-          sms_opt_in: smsOptIn,
-          sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
-        };
-        // T-20260625-foot-FOREIGN-SELFCHECKIN-FLOW: 외국인 연락수단 이메일(customer_email) — 입력 시 갱신(신규/재진 공통).
-        //   ⚠ customer_email = 환자 이메일(기관 email 아님, DA Q3 MUST).
-        if (isForeign && customerEmail.trim()) existingUpdate.customer_email = customerEmail.trim();
-        // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 초진 기존 고객 주소 갱신 → 2번차트 연동
-        // 빈 값으로 기존 주소를 덮어쓰지 않도록 입력값이 있을 때만 병합.
-        if (visitType === 'new') {
-          if (address.trim()) existingUpdate.address = address.trim();
-          if (postalCode.trim()) existingUpdate.postal_code = postalCode.trim();
-          if (addressDetail.trim()) existingUpdate.address_detail = addressDetail.trim();
-          // T-20260625-FOREIGN: 외국인 동의(§C) 영속화 — 예약 기존고객 초진 경로(개인정보 화면 노출분).
-          //   동의(true)→privacy_consent_at=now(), 미동의→NULL (CONSENT-TIMESTAMP 패턴).
-          if (isForeign) {
-            existingUpdate.privacy_consent = privacyConsent;
-            existingUpdate.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
-          }
-        }
-        await anonClient
-          .from('customers')
-          .update(existingUpdate)
-          .eq('id', customerId);
-      } else if (!ambiguousLink) {
-        // T-20260529: 워크인 신규 고객 INSERT 시 birth_date, address, privacy_consent 포함
-        // T-20260617 (AC-1 ①): ambiguousLink(성함+연락처 동시중복) 일 땐 신규 생성도 보류 → customerId NULL 유지.
-        const newCustomerPayload: Record<string, unknown> = {
-          clinic_id: clinicId,
-          // T-20260625-FOREIGN: 외국인 워크인은 연락처 대신 이메일만 입력 가능 → phone 빈값이면 null(컬럼 nullable, DA Q3).
-          phone: phoneStored || null,
-          name: name.trim(),
-          visit_type: visitType === 'new' ? 'new' : 'returning',
-          // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 저장
-          sms_opt_in: smsOptIn,
-          // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
-          sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
-        };
-        // T-20260625-FOREIGN: 외국인 연락수단 이메일(customer_email = 환자 이메일, 기관 email 아님).
-        if (isForeign && customerEmail.trim()) newCustomerPayload.customer_email = customerEmail.trim();
-        if (visitType === 'new') {
-          const bd = extractBirthDate(rrn);
-          if (bd) newCustomerPayload.birth_date = bd;
-          if (address.trim()) newCustomerPayload.address = address.trim();
-          // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 + 상세주소 → 2번차트 연동
-          if (postalCode.trim()) newCustomerPayload.postal_code = postalCode.trim();
-          if (addressDetail.trim()) newCustomerPayload.address_detail = addressDetail.trim();
-          // T-20260625-FOREIGN: 외국인 예약(YES)·신규 경로 동의(§C) 영속화 — 워크인 블록과 중복 회피(reserved만).
-          if (isForeign && reservationType !== 'walkin') {
-            newCustomerPayload.privacy_consent = privacyConsent;
-            newCustomerPayload.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
-          }
-          if (reservationType === 'walkin') {
-            newCustomerPayload.privacy_consent = privacyConsent;
-            // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
-            newCustomerPayload.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
-            // T-20260611-foot-WALKIN-CHART-HIRA-CONSENT-NOTSAVED AC-1/AC-3: 워크인 신규 INSERT 경로에서도
-            //   hira_consent 직접 선저장. 기존엔 hira_consent 가 INSERT 누락(RPC fn_selfcheckin_update_personal_info
-            //   전용)이라 write-path RPC 가 실패하면(시그니처 불일치 PGRST202 등) hira 동의가 영구 유실됐다.
-            //   privacy_consent 와 동일 단일 패턴으로 선저장해 RPC 가용성과 무관하게 보관의무 충족
-            //   (이후 RPC UPDATE 가 멱등 재확정). sibling foot-checkin(kiosk) e7a8494 와 동일 경로.
-            // T-20260625-FOREIGN: 외국인은 국내 건강보험 비대상 → hira_consent 미저장(insuranceConsent 기본 true 오염 방지).
-            if (!isForeign) {
-              newCustomerPayload.hira_consent = insuranceConsent;
-              // T-20260602-foot-CONSENT-TIMESTAMP-COLS 패턴: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
-              newCustomerPayload.hira_consent_at = insuranceConsent ? new Date().toISOString() : null;
-            }
-            // T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE (scaffold): 셀프접수 동의 = 자격조회 자동 트리거.
-            //   여기서 hira_consent=true 로 저장되면, 이후 해당 고객 차트(2번차트) 진입 시
-            //   CustomerChartPage 의 hira 자동 트리거 effect 가 1구역 자격조회를 자동 실행한다.
-            //   (셀프접수 단계에서는 신규 customer.id 발급 직후라 별도 즉시 호출 없이 동의 데이터만 저장 —
-            //    API 연동 완료 시 이 저장 시점에 자격조회 호출을 연결하는 지점이 됨.)
-          }
-          // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23).
-          //   초진 신규 INSERT 경로(워크인 신규 / 외국인 예약 신규) 공통 — RPC 가용성과 무관하게 선저장(보관의무).
-          //   hira_consent 와 동일 단일 패턴 — 이후 RPC UPDATE 가 멱등 재확정. consent_version=foot-2026-06 고정.
-          newCustomerPayload.consent_sensitive = consentSensitive;
-          newCustomerPayload.consent_agreed_at = consentSensitive ? new Date().toISOString() : null;
-          newCustomerPayload.consent_version   = consentSensitive ? 'foot-2026-06' : null;
-        }
-
-        const { data: created, error: cErr } = await anonClient
-          .from('customers')
-          .insert(newCustomerPayload)
-          .select('id')
-          .single();
-        if (cErr) {
-          if (cErr.code === '23505') {
-            // T-20260617 (AC-1 ①): 중복(23505) 재조회도 복합키(성함 AND 연락처 canonical)로 — phone 단독 금지.
-            const { data: retryRows } = await anonClient
-              .from('customers')
-              .select('id, phone')
-              .eq('clinic_id', clinicId)
-              .eq('name', trimmedName)
-              .limit(10);
-            const retryMatched = ((retryRows ?? []) as Array<{ id: string; phone: string | null }>)
-              .filter((c) => phoneCanonDigits(c.phone) === inputPhoneCanon);
-            if (retryMatched.length === 1) {
-              customerId = retryMatched[0].id;
-            } else {
-              throw new Error(`고객 등록 실패 (중복 확인 불가): ${cErr.message}`);
-            }
-          } else {
-            throw new Error(`고객 등록 실패: ${cErr.message}`);
-          }
-        } else if (created) {
-          customerId = (created as { id: string }).id;
-        }
+      const resolved =
+        (resolveRows as Array<{ customer_id: string | null; link_status: string }> | null)?.[0] ?? null;
+      if (resolved?.link_status === 'ambiguous') {
+        // customerId NULL 유지 → check_in 은 denormalized 성함/연락처만 기록(미연결). 대시보드에서 재해소.
+        ambiguousLink = true;
+      } else if (resolved?.customer_id) {
+        customerId = resolved.customer_id;
       }
 
       // ── T-20260506-foot-SELFCHECKIN-MERGE: 예약 merge 로직 ────────────────
       // KST '오늘' — toISOString()(UTC)은 +09:00 범위와 조합 시 새벽에 전날 범위를 만들어 오매칭.
       const todayDate = todaySeoulISODate();
-      const todayStart = `${todayDate}T00:00:00+09:00`;
-      const todayEnd = `${todayDate}T23:59:59+09:00`;
 
-      // (1) 당일 기존 체크인 중복 방지
+      // (1) 당일 기존 체크인 중복 방지 — T-20260627-ANON-RLS-PHASE2B(2b): check_ins 직접 SELECT → RPC.
+      //   fn_selfcheckin_existing_checkin_today 가 clinic 스코프 + 오늘(KST) 을 내부 처리.
       if (customerId) {
-        const { data: existingCi } = await anonClient
-          .from('check_ins')
-          .select('id, queue_number')
-          .eq('clinic_id', clinicId)
-          .eq('customer_id', customerId)
-          .gte('checked_in_at', todayStart)
-          .lte('checked_in_at', todayEnd)
-          .order('checked_in_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
+        const { data: existingRows } = await anonClient.rpc('fn_selfcheckin_existing_checkin_today', {
+          p_clinic_id: clinicId,
+          p_customer_id: customerId,
+        });
+        const existingCi =
+          (existingRows as Array<{ id: string; queue_number: number | null }> | null)?.[0] ?? null;
         if (existingCi) {
-          const ci = existingCi as { id: string; queue_number?: number | null };
-          setQueueNumber(ci.queue_number ?? null);
+          setQueueNumber(existingCi.queue_number ?? null);
           // T-20260529: 기존 체크인이 있으면 done으로 직행 (QR 재발급 없음)
           setStep('done');
           setSubmitting(false);
@@ -1432,111 +1306,34 @@ export default function SelfCheckIn() {
         }
       }
 
-      // (2) 당일 예약 매칭
+      // (2) 당일 예약 매칭 — T-20260627-ANON-RLS-PHASE2B(2b): reservations 직접 SELECT 다종 → RPC 1콜.
+      //   fn_selfcheckin_match_reservation: customer_id 우선 → 연락처 digit 완전일치 順 (clinic·오늘·confirmed).
+      //   ★ Fallback B(고객명 단독 매칭)는 RPC 미포팅 — §16-3 ④ 이름단독 폴백 금지(enumeration 차단).
+      //     의도된 보안 발산이며 회귀 아님(둘 다 제공 동선의 narrowing 만 허용, OR-widening 불가).
       let matchedReservationId: string | null = null;
       try {
-        if (customerId) {
-          const { data: resvById } = await anonClient
-            .from('reservations')
-            .select('id')
-            .eq('clinic_id', clinicId)
-            .eq('customer_id', customerId)
-            .eq('reservation_date', todayDate)
-            .eq('status', 'confirmed')
-            .order('reservation_time', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (resvById) matchedReservationId = (resvById as { id: string }).id;
-        }
-
-        if (!matchedReservationId) {
-          const d = phoneDigits;
-          const phoneFormatted =
-            d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` :
-            d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : null;
-          const phonesToTry = [...new Set(
-            [phoneStored, phoneE164, phoneDigits, phoneFormatted].filter(Boolean) as string[]
-          )];
-          for (const ph of phonesToTry) {
-            const { data: resvByPhone } = await anonClient
-              .from('reservations')
-              .select('id')
-              .eq('clinic_id', clinicId)
-              .eq('customer_phone', ph)
-              .eq('reservation_date', todayDate)
-              .eq('status', 'confirmed')
-              .order('reservation_time', { ascending: true })
-              .limit(1)
-              .maybeSingle();
-            if (resvByPhone) {
-              matchedReservationId = (resvByPhone as { id: string }).id;
-              break;
-            }
-          }
-        }
-
-        // Fallback A: digits-only 비교 (E164 정규화 포함)
-        // 원인 2 수정 (T-20260529-foot-RESV-FLAG-NOSAVE):
-        //   '+821012345678'.replace(/\D/g,'') = '821012345678' (E164 prefix)
-        //   ≠ phoneDigits '01012345678' → 폴백 실패.
-        //   normalizeToE164() 적용으로 양측 정규화 후 비교.
-        if (!matchedReservationId && phoneDigits.length >= 10) {
-          const { data: allResv } = await anonClient
-            .from('reservations')
-            .select('id, customer_phone')
-            .eq('clinic_id', clinicId)
-            .eq('reservation_date', todayDate)
-            .eq('status', 'confirmed');
-          if (allResv) {
-            const digitsMatch = (allResv as { id: string; customer_phone: string | null }[]).find(
-              (r) => {
-                const rPhone = r.customer_phone ?? '';
-                // 1) 정규화된 E164 비교
-                const rE164 = normalizeToE164(rPhone);
-                if (rE164 && phoneE164 && rE164 === phoneE164) return true;
-                // 2) 끝자리 8자리 비교 (마지막 안전망)
-                const rDigits = rPhone.replace(/\D/g, '');
-                return rDigits.length >= 8 && rDigits.endsWith(phoneDigits.slice(-8));
-              },
-            );
-            if (digitsMatch) matchedReservationId = digitsMatch.id;
-          }
-        }
-
-        // Fallback B: 고객명 비교 (reservationType='reserved' 전용)
-        // 원인 3 수정 (T-20260529-foot-RESV-FLAG-NOSAVE):
-        //   "예약했어요"를 명시적으로 선택했으나 전화번호 포맷 불일치로 모든 폰 폴백 실패 시
-        //   고객명으로 한 번 더 시도.
-        if (!matchedReservationId && reservationType === 'reserved' && name.trim().length >= 1) {
-          const { data: resvByName } = await anonClient
-            .from('reservations')
-            .select('id')
-            .eq('clinic_id', clinicId)
-            .eq('customer_name', name.trim())
-            .eq('reservation_date', todayDate)
-            .eq('status', 'confirmed')
-            .order('reservation_time', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (resvByName) matchedReservationId = (resvByName as { id: string }).id;
-        }
+        const { data: matchedId } = await anonClient.rpc('fn_selfcheckin_match_reservation', {
+          p_clinic_id: clinicId,
+          p_customer_id: customerId,
+          p_phone: phoneStored,
+          p_name: name.trim(),
+        });
+        if (matchedId) matchedReservationId = matchedId as string;
       } catch {
         // 예약 조회 실패 → 신규 접수로 처리
       }
 
-      // (2.5) 예약에 연결된 기존 체크인 확인
+      // (2.5) 예약에 연결된 기존 체크인 확인 — T-20260627-ANON-RLS-PHASE2B(2b): check_ins 직접 SELECT → RPC.
       if (matchedReservationId) {
         try {
-          const { data: linkedCi } = await anonClient
-            .from('check_ins')
-            .select('id, queue_number')
-            .eq('clinic_id', clinicId)
-            .eq('reservation_id', matchedReservationId)
-            .neq('status', 'cancelled')
-            .maybeSingle();
+          const { data: linkedRows } = await anonClient.rpc('fn_selfcheckin_linked_checkin', {
+            p_clinic_id: clinicId,
+            p_reservation_id: matchedReservationId,
+          });
+          const linkedCi =
+            (linkedRows as Array<{ id: string; queue_number: number | null }> | null)?.[0] ?? null;
           if (linkedCi) {
-            const lci = linkedCi as { id: string; queue_number?: number | null };
-            setQueueNumber(lci.queue_number ?? null);
+            setQueueNumber(linkedCi.queue_number ?? null);
             setStep('done');
             setSubmitting(false);
             return;
@@ -1567,25 +1364,27 @@ export default function SelfCheckIn() {
       if (visitRouteDetail) notesParts.visit_route_detail = visitRouteDetail;
       const notesPayload = Object.keys(notesParts).length > 0 ? notesParts : null;
 
-      // T-20260529: check_in INSERT — .select('id').single() 으로 ID 반환
-      const { data: ciInsertData, error: ciErr } = await anonClient.from('check_ins').insert({
-        clinic_id: clinicId,
-        customer_id: customerId,
-        customer_name: name.trim(),
-        customer_phone: phoneStored,
-        visit_type: visitType,
-        // T-20260602-foot-CHECKIN-RECEIVING-SLOT:
-        //   재진→치료대기 직행 / 초진→[접수중](발건강질문지 작성 중) / 그 외(예약없이방문)→상담대기 직행
-        //   초진은 설문 저장(fn_health_q_submit) 시 receiving→consult_waiting 자동 전이.
-        status: visitType === 'returning'
-          ? 'treatment_waiting'
-          : visitType === 'new'
-            ? 'receiving'
-            : 'consult_waiting',
-        queue_number: queue,
-        notes: notesPayload,
-        reservation_id: matchedReservationId,
-      }).select('id').single();
+      // T-20260627-ANON-RLS-PHASE2B(2b): check_ins INSERT...RETURNING 직접 경로 → fn_selfcheckin_create_check_in RPC.
+      //   2b 에서 anon SELECT 제거 시 .insert().select('id') 가 42501(RETURNING=read) → RPC 로 id 반환.
+      //   RPC 가 status 화이트리스트(registered/treatment_waiting/consult_waiting/receiving)·clinic 스코프 강제.
+      // T-20260602-foot-CHECKIN-RECEIVING-SLOT:
+      //   재진→치료대기 직행 / 초진→[접수중](발건강질문지 작성 중) / 그 외(예약없이방문)→상담대기 직행
+      const ciStatus = visitType === 'returning'
+        ? 'treatment_waiting'
+        : visitType === 'new'
+          ? 'receiving'
+          : 'consult_waiting';
+      const { data: ciInsertData, error: ciErr } = await anonClient.rpc('fn_selfcheckin_create_check_in', {
+        p_clinic_id: clinicId,
+        p_customer_id: customerId,
+        p_customer_name: name.trim(),
+        p_customer_phone: phoneStored,
+        p_visit_type: visitType,
+        p_status: ciStatus,
+        p_queue_number: queue,
+        p_notes: notesPayload,
+        p_reservation_id: matchedReservationId,
+      });
 
       if (ciErr) {
         // T-20260529-foot-RESV-CHECKIN-NOSAVE AC-4:
@@ -1601,9 +1400,12 @@ export default function SelfCheckIn() {
         return;
       }
 
-      const newCheckInId = (ciInsertData as { id: string } | null)?.id ?? null;
+      // fn_selfcheckin_create_check_in RETURNS UUID → data 가 check_in id(string) 직접.
+      const newCheckInId = (ciInsertData as string | null) ?? null;
 
       // (3) 매칭된 예약 → checked_in 상태 업데이트
+      //   write-path(UPDATE, no RETURNING) — 2b(anon SELECT revoke) 무관. anon UPDATE 정책은 2c 게이트까지 보존
+      //   (20260615180000 revoke 파일 §15 주석: SELECT=2b / INSERT·UPDATE=2c 분리). 본 컷오버 범위 밖.
       if (matchedReservationId) {
         try {
           await anonClient
