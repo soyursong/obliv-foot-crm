@@ -111,10 +111,13 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
   const sigRef = useRef<SignatureCanvas>(null);
   const [submitting, setSubmitting] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  // T-20260615-foot-CONSENT-SENSITIVE: 개인정보 동의서(privacy)에 민감정보 별도 동의 (개보법 §23)
+  const [consentSensitiveAgreed, setConsentSensitiveAgreed] = useState(false);
 
   useEffect(() => {
     if (open) {
       setAgreed(false);
+      setConsentSensitiveAgreed(false);
       setTimeout(() => sigRef.current?.clear(), 100);
     }
   }, [open]);
@@ -128,6 +131,11 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
     }
     if (!agreed) {
       toast.error('동의 체크를 해주세요');
+      return;
+    }
+    // T-20260615-foot-CONSENT-SENSITIVE: 개인정보 동의서에 민감정보 별도 동의 필수 (개보법 §23)
+    if (formType === 'privacy' && !consentSensitiveAgreed) {
+      toast.error('민감정보(건강·진료정보) 동의를 체크해주세요 (개보법 §23 필수)');
       return;
     }
 
@@ -158,6 +166,11 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
         content: FORM_CONTENT[formType],
         customer_name: checkIn.customer_name,
         signed_date: new Date().toISOString(),
+        // T-20260615-foot-CONSENT-SENSITIVE: 개인정보 동의서에 민감정보 동의 증빙 (개보법 §23)
+        ...(formType === 'privacy' ? {
+          consent_sensitive_agreed: true,
+          consent_version: 'foot-2026-06',
+        } : {}),
       },
       signature_url: urlData?.signedUrl ?? fileName,
       signed_at: new Date().toISOString(),
@@ -199,6 +212,23 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
             <span>위 내용을 모두 읽고 이해하였으며, 이에 동의합니다.</span>
           </label>
 
+          {/* T-20260615-foot-CONSENT-SENSITIVE: 개인정보 동의서에 민감정보 별도 동의 (개보법 §23 필수) */}
+          {formType === 'privacy' && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="consent-sensitive-agreed-label">
+              <input
+                type="checkbox"
+                checked={consentSensitiveAgreed}
+                onChange={(e) => setConsentSensitiveAgreed(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+                data-testid="consent-sensitive-agreed-checkbox"
+              />
+              <span className="font-medium">
+                민감정보(건강·진료정보) 수집·이용에 동의합니다{' '}
+                <span className="font-normal text-muted-foreground">(필수 — 개보법 §23)</span>
+              </span>
+            </label>
+          )}
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>서명</Label>
@@ -234,7 +264,10 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button onClick={handleSign} disabled={submitting || !agreed}>
+          <Button
+            onClick={handleSign}
+            disabled={submitting || !agreed || (formType === 'privacy' && !consentSensitiveAgreed)}
+          >
             {submitting ? '처리 중…' : '서명 완료'}
           </Button>
         </DialogFooter>
