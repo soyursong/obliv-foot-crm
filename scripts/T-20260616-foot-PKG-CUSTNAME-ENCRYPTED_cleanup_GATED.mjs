@@ -7,11 +7,16 @@
 //            (2) 단일 트랜잭션 · NO-ACTION 자식 → packages → customers 의존순서.
 //            (3) 삭제대상 = epoch명(`[0-9]{10}`) AND clinic=jongno-foot 한정.
 //            (4) 한글 실고객명은 매칭 안 됨(오탐 0 검증식 포함).
-//   롤백: 백업 스키마 cleanup_bak_<ts> 에서 INSERT 복원 (스크립트 출력에 안내).
+//   롤백: 백업 스키마 cleanup_bak_<ts> + 실행 시 명시적 롤백 SQL 파일
+//         (scripts/rollback_cleanup_bak_<ts>.sql) 산출 → 백업스키마 유실 대비 durable artifact.
+//         FK 순서 비의존(트리거 비활성 복원 패턴, pg_dump 표준). db-gate 항목#4 충족.
+//   대상필터(#2 정당화): name ~ '[0-9]{10}' AND clinic=jongno-foot 는 의도된 협소 가드 —
+//         E2E 픽스처는 항상 epoch(10+자리 ms)명을 생성하고, 실고객명(한글/영문)은 절대 매칭 안 됨.
+//         넓히면 오탐 위험↑이므로 고정 유지가 안전. 오탐가드(L36)로 실측 0건 강제.
 // 실행:  node scripts/..._cleanup_GATED.mjs            # DRY-RUN
 //        CONFIRM=1 node scripts/..._cleanup_GATED.mjs  # 실제 백업+삭제 (gate 후)
-import pg from 'pg'; import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url'; import { dirname, resolve } from 'node:path';
+import pg from 'pg'; import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url'; import { dirname, resolve, join } from 'node:path';
 let P=process.env.SUPABASE_DB_PASSWORD;
 // .env 경로는 스크립트 위치(<repo>/scripts/) 기준 repo root 에서 해석 — 머신/홈 경로 비의존.
 // (2026-06-28 M3 Ultra 교체로 repo 가 ~/Documents/GitHub → ~/GitHub 이동, 하드코딩 경로 깨짐)
@@ -46,6 +51,7 @@ if(!CONFIRM){
     try{const {rows}=await c.query(`SELECT count(*) n FROM ${t} WHERE ${col} IN (${C})`);console.log(`  ${t}.${col}: ${rows[0].n}`);}catch(e){console.log(`  ${t}: skip(${e.code})`);}
   }
   console.log('\n[DRY-RUN] 삭제 미수행. gate 후 CONFIRM=1 로 재실행.');
+  console.log('[롤백 SQL] CONFIRM=1 실행 시 백업 직후 scripts/rollback_cleanup_bak_<ts>.sql 산출 — 삭제 전 durable 복구 artifact 보장(db-gate 항목#4).');
   await c.end(); process.exit(0);
 }
 
@@ -75,6 +81,26 @@ try{
   }
   console.log('백업 완료.');
 
+  // ── 롤백 SQL artifact 산출 (삭제 전, durable) ───────────────────────────────
+  // 백업 스키마에 실제 생성된 테이블만 대상. FK 순서 비의존 — 복원 트랜잭션 내
+  // 트리거(=FK 검사) 비활성 후 일괄 INSERT, 재활성 (pg_dump 표준 복원 패턴).
+  const {rows:bakTbls}=await c.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='${BAK}' ORDER BY (table_name='customers') DESC, (table_name='packages') DESC, table_name`);
+  const tnames = bakTbls.map(r=>r.table_name);
+  const rb = [
+    `-- ROLLBACK for ${BAK} (T-20260616-foot-PKG-CUSTNAME-ENCRYPTED)`,
+    `-- 사용: psql "$DATABASE_URL" -f <this file>   (백업 스키마 ${BAK} 존재 시에만 유효)`,
+    `BEGIN;`,
+    ...tnames.map(t=>`ALTER TABLE public.${t} DISABLE TRIGGER ALL;`),
+    ...tnames.map(t=>`INSERT INTO public.${t} SELECT * FROM ${BAK}.${t} ON CONFLICT DO NOTHING;`),
+    ...tnames.map(t=>`ALTER TABLE public.${t} ENABLE TRIGGER ALL;`),
+    `COMMIT;`,
+    `-- 복원 검증: SELECT count(*) FROM public.customers WHERE id IN (SELECT id FROM ${BAK}.customers);`,
+    ``,
+  ].join('\n');
+  const rbPath = join(__dir, `rollback_${BAK}.sql`);
+  writeFileSync(rbPath, rb, 'utf8');
+  console.log(`롤백 SQL 산출: ${rbPath} (대상 ${tnames.length}개 테이블)`);
+
   // 삭제 1) check_ins (customer 또는 대상 package 참조) — NO ACTION
   await c.query(`DELETE FROM check_ins WHERE customer_id IN (${C}) OR package_id IN (SELECT id FROM packages WHERE customer_id IN (${C}))`);
   // 삭제 2) 기타 NO ACTION customer 자식
@@ -96,7 +122,7 @@ try{
   console.log(`정리 후 jongno-foot active packages: ${pkgChk[0].n}건`);
 
   await c.query('COMMIT');
-  console.log(`✅ 정리 완료. 롤백 source = 스키마 ${BAK}`);
+  console.log(`✅ 정리 완료. 롤백 source = 스키마 ${BAK} + SQL 파일 ${rbPath}`);
 }catch(e){
   await c.query('ROLLBACK');
   console.error('❌ 실패 → ROLLBACK:', e.message);
