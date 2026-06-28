@@ -25,6 +25,10 @@ import HiraInsuranceSyncPanel from '@/components/admin/HiraInsuranceSyncPanel';
 //   이미 구현 — 신규 로직 0, 컴포넌트 재배치(재사용)만. 기존 top-level 묶음처방 탭(value=prescriptions)도 보존(삭제·치환 금지).
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 import { insuranceStatusLabel, type InsuranceStatus } from '@/lib/prescriptionGate';
+// T-20260629-foot-RXSET-DRUG-EXTDB-VERIFY (AC-2/AC-4): 약 외부 공식DB(HIRA) 검증 배지.
+//   외부 호출 0 · 신규 스키마 0 — prescription_codes 출처 필드(code_source·claim_code)로 판정(presentational).
+import DrugVerifyBadge from '@/components/doctor/DrugVerifyBadge';
+import { computeDrugVerifyVerdict } from '@/lib/drugVerification';
 import {
   BadgeCheck,
   Check,
@@ -718,6 +722,14 @@ export default function DrugFoldersTab() {
                                   )}
                                 </>
                               )}
+                              {/* T-20260629-foot-RXSET-DRUG-EXTDB-VERIFY (AC-4): 외부 공식DB(HIRA) 검증 배지.
+                                  verified(코드확인)/unverified(미확인)/pending(대조전·기본숨김). 표시 전용 — 저장 비차단(AC-6).
+                                  detail = 내부 코드값(탭/hover 시 "내부값 vs 외부 공식DB" 대조 안내). */}
+                              <DrugVerifyBadge
+                                verdict={computeDrugVerifyVerdict(d)}
+                                detail={`내부 코드: ${d.claim_code}`}
+                                testId="drug-folder-viewall-verify-badge"
+                              />
                             </div>
                           </td>
                           <td className="px-2 py-1.5">
@@ -923,6 +935,12 @@ export default function DrugFoldersTab() {
                           {code.code_source === 'custom' && (
                             <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
                           )}
+                          {/* T-20260629-foot-RXSET-DRUG-EXTDB-VERIFY (AC-4): 검색 결과 외부DB 검증 배지(표시 전용·비차단). */}
+                          <DrugVerifyBadge
+                            verdict={computeDrugVerifyVerdict(code)}
+                            detail={`내부 코드: ${code.claim_code}`}
+                            testId="drug-folder-search-verify-badge"
+                          />
                         </div>
                         <div className="text-[10px] text-muted-foreground pl-4">
                           <span className="font-mono">{code.claim_code}</span>

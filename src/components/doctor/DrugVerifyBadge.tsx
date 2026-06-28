@@ -23,6 +23,8 @@ interface DrugVerifyBadgeProps {
   showPending?: boolean;
   /** 성분 2차축 부가표기 노출 여부. 기본 true. */
   showIngredient?: boolean;
+  /** 1차 툴팁에 덧붙일 상세(예: 내부 코드값) — 현장 "내부값 vs 외부 공식DB" 대조 안내(탭/hover). */
+  detail?: string;
   className?: string;
   /** 테스트 식별자. */
   testId?: string;
@@ -38,6 +40,7 @@ export default function DrugVerifyBadge({
   verdict,
   showPending = false,
   showIngredient = true,
+  detail,
   className,
   testId = 'drug-verify-badge',
 }: DrugVerifyBadgeProps) {
@@ -46,6 +49,8 @@ export default function DrugVerifyBadge({
 
   const meta = describeVerifyStatus(verdict.status);
   const ing = showIngredient ? describeIngredient(verdict.ingredient) : null;
+  // 1차 툴팁 + (있으면) 내부값 대조 상세를 줄바꿈으로 결합 — 탭/hover 시 "내부 코드" 노출.
+  const title = detail && detail.trim() !== '' ? `${meta.tooltip}\n${detail.trim()}` : meta.tooltip;
 
   // 성분 2차축은 1차 배지 색을 바꾸지 않고, 옆에 작은 점으로만 부가표기(설계 §3).
   return (
@@ -53,7 +58,7 @@ export default function DrugVerifyBadge({
       className={cn('inline-flex items-center gap-1 align-middle', className)}
       data-testid={testId}
       data-verify-status={verdict.status}
-      title={meta.tooltip}
+      title={title}
     >
       <Badge variant={meta.variant} className="gap-0.5">
         {meta.mark && <span aria-hidden>{meta.mark}</span>}
