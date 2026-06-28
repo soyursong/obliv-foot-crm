@@ -40,3 +40,19 @@ supabase/.temp/
 
 # dedupe dry-run 산출물 (PII 포함 — git 커밋 금지)
 scripts/out/
+
+# === PHI / real-patient dump 재유입 차단 (T-20260628-ops-PHI-IN-GIT-AUDIT, DA codify) ===
+# 실환자 backup/backfill/rollback/dryrun 덤프는 git 추적 금지 — 오프-git 보관만.
+*_backup.json
+*dryrun*.json
+*backfill*.sql
+*backfill*.json
+*backfill*.csv
+backup_test_customers_*/
+phone_backfill_dbraw/
+
+# 위 패턴이 못 잡는 1회성 ticket-named PHI 덤프 (exact path 차단)
+db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage1_inventory.json
+db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage1_tiered.json
+evidence/T-20260606-foot-D1-TESTDATA-CLEANUP_phase0_profile.json
+migration_packages/T-20260531-data-JONGNOFOOT-MIGRATE-HFQ-TO-FOOT/migrate.sql
