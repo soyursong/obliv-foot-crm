@@ -90,6 +90,39 @@ export function classifySelection(
   return { diagnosisKeys, contraindKeys };
 }
 
+/**
+ * 서류 발행 배타 규칙 prefill 가드 — T-20260629-foot-OPINIONDOC-PREFILL-EXCLUSIVE-GUARD (AC-1).
+ *
+ * 진단서(단일배타) ⊕ 금기증(복수) — 두 그룹은 동시선택 불가(원장 작성창 불변식, 문지은 대표원장 지적).
+ * P1-1(배타 disable) 도입 이전에 만들어진 큐 데이터(form_submissions status='draft')의 selected_keys 에
+ * 진단서 키 + 금기증 키가 혼합되어 있으면, prefill 이 검증 없이 그대로 setSelected 하여 원장 작성창에
+ * '둘 다 눌러진' 위반 상태가 렌더된다. 본 가드는 prefill 진입점에서 배타 규칙을 재적용해 그 상태를 차단한다.
+ *
+ * 정책(우선 그룹만 유지, 타 그룹 clear):
+ *   - 혼합(진단서+금기증) → preferDocType 으로 어느 그룹을 살릴지 결정(staff 가 고른 서류종류 = 결정적 tie-break).
+ *       · preferDocType='diagnosis'(진단서) → 진단서 그룹 유지(단일배타 → 첫 1개), 금기증 clear.
+ *       · 그 외(opinion/소견서/미지정)        → 금기증 그룹 유지(복수), 진단서 clear.
+ *   - 진단서 단독(혼합 아님)이 2개 이상 → 단일배타로 첫 1개만 유지('진단서 1종 단독' 규칙).
+ *   - 금기증 단독 → 복수 그대로.
+ *
+ * 결과 불변식: 반환 keys 에는 진단서·금기증이 **절대 동시에** 존재하지 않으며, 진단서는 최대 1개다.
+ */
+export function applyPrefillExclusivity(
+  keys: string[],
+  contraindKeySet: Set<string>,
+  preferDocType?: 'diagnosis' | 'opinion' | null,
+): string[] {
+  const { diagnosisKeys, contraindKeys } = classifySelection(keys, contraindKeySet);
+  const mixed = diagnosisKeys.length > 0 && contraindKeys.length > 0;
+  if (mixed) {
+    // 우선 그룹만 유지 — 진단서는 단일배타(첫 1개), 금기증은 복수.
+    return preferDocType === 'diagnosis' ? diagnosisKeys.slice(0, 1) : contraindKeys;
+  }
+  // 혼합 아님 — 그룹 내 규칙만 적용.
+  if (diagnosisKeys.length > 0) return diagnosisKeys.slice(0, 1); // 진단서 단일배타
+  return contraindKeys; // 금기증 복수 or 빈 배열
+}
+
 /** 선택된 원문 모음 (검출용). 누락 key 는 빈 문자열 스킵. */
 function selectedBodies(
   selectedKeys: string[],
