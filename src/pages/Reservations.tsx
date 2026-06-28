@@ -65,7 +65,7 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
   // T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 체크인 상태 emerald → sage
   checked_in: 'bg-sage-100 text-sage-700 border-sage-200',
   cancelled: 'bg-gray-100 text-gray-500 border-gray-200',
-  noshow: 'bg-red-100 text-red-700 border-red-200',
+  no_show: 'bg-red-100 text-red-700 border-red-200',
 };
 
 // T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 예약 카드 유형별 배경색
@@ -98,7 +98,7 @@ const STATUS_LABEL: Record<Reservation['status'], string> = {
   confirmed: '예약',
   checked_in: '체크인',
   cancelled: '취소',
-  noshow: '노쇼',
+  no_show: '노쇼',
 };
 
 // AC-1: 예약수정 모달 시간 선택 드롭다운 — 07:00~22:00, 30분 단위
@@ -642,9 +642,9 @@ export default function Reservations() {
       selfWriteUntilRef.current = Date.now() + 2500;
       await supabase
         .from('reservations')
-        .update({ status: 'noshow' })
+        .update({ status: 'no_show' })
         .in('id', pastConfirmed.map((r) => r.id));
-      for (const r of pastConfirmed) r.status = 'noshow';
+      for (const r of pastConfirmed) r.status = 'no_show';
     }
 
     setRows(list);
@@ -688,7 +688,7 @@ export default function Reservations() {
         .from('reservations')
         .select('customer_id')
         .in('customer_id', customerIds)
-        .eq('status', 'noshow');
+        .eq('status', 'no_show');
       const counts: Record<string, number> = {};
       for (const row of nsData ?? []) {
         const id = (row as { customer_id: string | null }).customer_id;

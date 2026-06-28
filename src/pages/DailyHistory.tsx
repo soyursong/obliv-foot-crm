@@ -553,8 +553,8 @@ export default function DailyHistory() {
                           </Badge>
                         </td>
                         <td className="py-2">
-                          <Badge className={r.status === 'noshow' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}>
-                            {r.status === 'noshow' ? '노쇼' : r.status === 'confirmed' ? '미내원' : r.status}
+                          <Badge className={r.status === 'no_show' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}>
+                            {r.status === 'no_show' ? '노쇼' : r.status === 'confirmed' ? '미내원' : r.status}
                           </Badge>
                         </td>
                       </tr>

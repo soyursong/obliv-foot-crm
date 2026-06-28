@@ -83,9 +83,9 @@ export function ReservationContextMenu({ reservation, position, onClose, onCance
       <button
         data-testid="resv-ctx-cancel-btn"
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition text-left disabled:opacity-40 disabled:cursor-not-allowed"
-        disabled={reservation.status === 'cancelled' || reservation.status === 'noshow'}
+        disabled={reservation.status === 'cancelled' || reservation.status === 'no_show'}
         onClick={() => {
-          if (reservation.status === 'cancelled' || reservation.status === 'noshow') return;
+          if (reservation.status === 'cancelled' || reservation.status === 'no_show') return;
           onCancelReservation(reservation);
           onClose();
         }}

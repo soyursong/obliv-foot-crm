@@ -50,7 +50,7 @@ export interface SlotKindCount {
 /** 집계 입력에 필요한 최소 구조. */
 export interface SlotAggInput extends ResvKindInput {
   reservation_time: string; // 'HH:mm:ss' 또는 'HH:mm'
-  status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
+  status: 'confirmed' | 'checked_in' | 'cancelled' | 'no_show';
 }
 
 /** 시간 문자열을 'HH:mm' 슬롯 키로 정규화. */
@@ -93,7 +93,7 @@ export function aggregateByTimeSlot(rows: SlotAggInput[]): Array<{ time: string;
 export interface KindSummary extends SlotKindCount {
   /** 취소(status='cancelled') 별도 버킷 — 유효합계(total)에서 *제외*된 건수. */
   cancelled: number;
-  /** 노쇼(status='noshow') 별도 버킷 — 유효합계(total)에 *포함*되며 별도 노출용 카운트(parent 81행 결정: 노쇼 포함). */
+  /** 노쇼(status='no_show') 별도 버킷 — 유효합계(total)에 *포함*되며 별도 노출용 카운트(parent 81행 결정: 노쇼 포함). */
   noshow: number;
 }
 
@@ -116,7 +116,7 @@ export function summarizeKinds(rows: Array<ResvKindInput & { status?: string | n
       continue;
     }
     // 노쇼(noshow): 유효합계 포함(분모 불변) + 별도 버킷 카운트.
-    if (row.status === 'noshow') acc.noshow += 1;
+    if (row.status === 'no_show') acc.noshow += 1;
     const kind = resvKind(row);
     if (kind === 'new') acc.n += 1;
     else if (kind === 'returning') acc.r += 1;

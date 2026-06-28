@@ -62,7 +62,7 @@ const STATUS_LABEL: Record<Reservation['status'], string> = {
   confirmed: '예약',
   checked_in: '체크인',
   cancelled: '취소',
-  noshow: '노쇼',
+  no_show: '노쇼',
 };
 
 const VISIT_TYPE_BADGE_CLASS: Record<string, string> = {
@@ -1789,7 +1789,7 @@ export function ReservationDetailPopup({
                       disabled={busy}
                       onClick={() => {
                         if (window.confirm(`${reservation.customer_name}님을 노쇼 처리하시겠습니까?`))
-                          setStatus('noshow');
+                          setStatus('no_show');
                       }}
                     >
                       노쇼
@@ -1805,7 +1805,7 @@ export function ReservationDetailPopup({
                     </Button>
                   </>
                 )}
-                {(reservation.status === 'cancelled' || reservation.status === 'noshow') && (
+                {(reservation.status === 'cancelled' || reservation.status === 'no_show') && (
                   <Button
                     size="sm"
                     variant="outline"

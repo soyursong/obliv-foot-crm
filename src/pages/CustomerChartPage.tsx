@@ -4544,7 +4544,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (!customer) return;
     const today = format(new Date(), 'yyyy-MM-dd');
     const nextResv = reservations
-      .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
+      .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'no_show')
       .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
 
     if (!nextResv) {
@@ -7846,7 +7846,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {(() => {
                 const today = format(new Date(), 'yyyy-MM-dd');
                 const nextResv = reservations
-                  .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
+                  .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'no_show')
                   .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
                 // isActive: 다음 예약(오늘 제외) healer_flag OR pending_healer_flag 중 하나라도 켜진 상태
                 const isActive = !!nextResv?.healer_flag || !!customer.pending_healer_flag;

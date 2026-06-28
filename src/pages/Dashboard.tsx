@@ -1763,7 +1763,7 @@ function DraggableBox1Card({
   });
   const tail = (reservation.customer_phone ?? '').replace(/\D/g, '').slice(-4) || '????';
   // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 미내원 예약 → 명단 유지 + 배지
-  const isNoShow = reservation.status === 'noshow';
+  const isNoShow = reservation.status === 'no_show';
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지
   const box1OutstandingMap = useContext(OutstandingMapCtx);
   const box1Outstanding = reservation.customer_id ? box1OutstandingMap.get(reservation.customer_id) : undefined;
@@ -1855,7 +1855,7 @@ function DraggableBox2ResvCard({
   // 결측/4자리 미만 → suffix 미렌더(빈 suffix 금지), 차트번호 fallback 없음 → 성함만 표기.
   const resvPhoneTail = phoneTailSuffix(reservation.customer_phone);
   // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 재진 미내원 예약 → 명단 유지 + 배지
-  const isNoShow = reservation.status === 'noshow';
+  const isNoShow = reservation.status === 'no_show';
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지
   const box2OutstandingMap = useContext(OutstandingMapCtx);
   const box2Outstanding = reservation.customer_id ? box2OutstandingMap.get(reservation.customer_id) : undefined;
@@ -2102,14 +2102,14 @@ function DashboardTimeline({
   // T-20260530-foot-WALKIN-TIMETABLE: 워크인 체크인 ID 집합 (예약 미매칭) → 'W' 배지 표시 기준
   const walkInCiIdSet = new Set<string>();
   // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 예약에 매칭된 체크인 ID 집합 → 체크인 카드 노쇼 배지 기준
-  //   (예약 카드는 render 시 r.status === 'noshow' 직접 판정. 체크인 카드는 ci에 status 부재 → 별도 set)
+  //   (예약 카드는 render 시 r.status === 'no_show' 직접 판정. 체크인 카드는 ci에 status 부재 → 별도 set)
   const noshowCiIdSet = new Set<string>();
 
   // 예약 처리 (cancelled 제외. noshow 는 유지하고 배지로 구분 — T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST)
   for (const r of reservations) {
     if (r.status === 'cancelled') continue;
-    // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리(status='noshow') 후에도 슬롯을 명단에 유지
-    const isNoShow = r.status === 'noshow';
+    // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리(status='no_show') 후에도 슬롯을 명단에 유지
+    const isNoShow = r.status === 'no_show';
     const slot = resvToSlot(r.reservation_time);
     const sd = ensure(slot);
 
