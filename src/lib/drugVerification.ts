@@ -100,3 +100,67 @@ export function verdictNeedsHumanCheck(verdict: DrugVerifyVerdict | null | undef
   if (describeVerifyStatus(verdict.status).needsHumanCheck) return true;
   return verdict.ingredient === 'mismatch';
 }
+
+// ---------------------------------------------------------------------------
+// 검증 판정 산출(AC-2 매칭로직) — 외부 공식소스(HIRA) 출처 기반.
+//   ⚠️ 외부 API 런타임 호출 0 · 신규 DB 스키마 0. prescription_codes 에 이미 있는 출처 필드
+//      (code_source · claim_code · insurance_status_source)만으로 판정한다.
+//      검증결과 영속 캐시(AC-3) · 식약처 성분축(2차) · HIRA 명칭 인덱스 적재는 후속 트랙(직렬화).
+//
+//   판정 근거(외부 공식DB 출처 = source-of-truth):
+//     · insurance_status_source='hira' → 월배치가 약제급여목록(외부 공식)에 코드 positively 매칭 → verified
+//     · code_source='official'(실코드)  → HIRA 의약품표준코드 master 출처 코드 보유 → verified
+//     · code_source='custom' / LEGACY  → 자체 입력약(외부 공식DB 미수록) → unverified(사람확인)
+//     · 그 외 / 판정불가                → pending(대조전, graceful degrade — 에러 아님)
+//   ※ 'partial'(상품명만 대조)은 HIRA 명칭 인덱스 적재(후속 트랙) 후 산출 — 현재는 미발생.
+//   ※ 검증 실패(unverified)는 저장/처방을 차단하지 않는다 — 표시 전용(AC-6 비차단).
+// ---------------------------------------------------------------------------
+
+/** 검증 판정 입력 — prescription_codes 출처 필드의 부분집합(읽기). DB row 전체 아님. */
+export interface DrugVerifyInput {
+  claim_code?: string | null;
+  /** 'official'(HIRA 표준코드 master 출처) | 'custom'(자체 입력약). */
+  code_source?: string | null;
+  /** 'hira'(월배치 급여목록 매칭) | 'manual' | null. 없으면 code_source 로 판정. */
+  insurance_status_source?: string | null;
+}
+
+/** 자체/이관 placeholder 코드 형태(실 HIRA 코드 아님 — LEGACY-/HIRA-STD-/HIRA- 접두). */
+const PLACEHOLDER_CODE_RE = /^(LEGACY|HIRA-STD|HIRA)[-_]/i;
+
+/** 코드가 외부 공식(HIRA) 실코드인가(placeholder 아님). */
+export function isExternalOfficialCode(
+  claimCode: string | null | undefined,
+  codeSource: string | null | undefined,
+): boolean {
+  const code = (claimCode ?? '').trim();
+  if (code === '') return false;
+  if (PLACEHOLDER_CODE_RE.test(code)) return false;
+  return (codeSource ?? '').trim().toLowerCase() === 'official';
+}
+
+/**
+ * 약 1건의 외부DB 검증 판정 산출(presentational). DB row/enum 아님.
+ * 외부 호출 0 · 신규 스키마 0 — 기존 출처 필드만으로 결정.
+ */
+export function computeDrugVerifyVerdict(
+  input: DrugVerifyInput | null | undefined,
+): DrugVerifyVerdict | null {
+  if (!input) return null;
+  const codeSource = (input.code_source ?? '').trim().toLowerCase();
+  const insSource = (input.insurance_status_source ?? '').trim().toLowerCase();
+  const claim = (input.claim_code ?? '').trim();
+  const isPlaceholder = claim !== '' && PLACEHOLDER_CODE_RE.test(claim);
+
+  // 외부 공식 급여목록(HIRA)에 월배치가 positively 매칭한 코드 → 코드확인.
+  if (insSource === 'hira') return { status: 'verified' };
+
+  // HIRA 의약품표준코드 master 출처의 실코드 보유 → 코드확인.
+  if (isExternalOfficialCode(claim, codeSource)) return { status: 'verified' };
+
+  // 자체 입력약(custom) 또는 placeholder 코드 → 외부 공식DB 미확인(사람확인 필요).
+  if (codeSource === 'custom' || isPlaceholder) return { status: 'unverified' };
+
+  // 출처 불명·데이터 부족 → 대조전(에러 아님, AC-5 graceful degrade).
+  return { status: 'pending' };
+}
