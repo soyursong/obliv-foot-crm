@@ -25,9 +25,15 @@ import {
 } from '@/lib/opinionRequest';
 import {
   OpinionEditorDialog,
+  OPINION_SECTIONS,
   useClinicHeader,
   type VisitorRow,
 } from '@/components/doctor/OpinionDocTab';
+// T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX (복문 a): 큐 목록 '해당항목' 표시를 배타규칙으로 정규화.
+//   과거(P1-1 배타 disable 도입 이전) 큐 draft 의 selected_keys 에 진단서+금기증이 혼합돼 있으면,
+//   해당항목 셀이 위반 조합을 그대로 '제안'처럼 노출한다(★대표원장 지적: "요청서류에 로직 깨는 서류가 제안돼있다").
+//   → applyPrefillExclusivity 로 표시 키를 정규화 = '작성하기'로 열릴 prefill 과 정확히 동일한 키만 노출(표시≡prefill).
+import { buildContraindKeySet, applyPrefillExclusivity } from '@/lib/opinionDocCompose';
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속(미리보기 셀 클릭→컬럼-앵커 드롭다운 전문). 공유 컴포넌트 재사용(중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { Button } from '@/components/ui/button';
@@ -84,6 +90,14 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   const labelsOf = (keys: string[]) =>
     keys.map((k) => labelMap.get(k)).filter(Boolean).join(', ');
 
+  // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX (복문 a): 금기증 그룹 key 집합(라벨맵과 동일 소스=OPINION_SECTIONS).
+  const contraindKeySet = useMemo(() => buildContraindKeySet(OPINION_SECTIONS), []);
+  // 행 단위 '해당항목' 라벨 — 배타 정규화 후 라벨링(혼합 큐 → 진단서 단일 ⊕ 금기증 복수 중 docType 우선 그룹만).
+  //   정상 요청(진단서 단독 / 금기증 복수)은 정규화가 무변경 → 회귀 0. 혼합 레거시만 위반 조합 노출 차단.
+  //   r.docType 을 preferDocType 으로 전달 → 표시 키가 '작성하기' prefill(initialDocType=r.docType)과 완전 일치.
+  const itemLabelsForRow = (r: OpinionRequestRow) =>
+    labelsOf(applyPrefillExclusivity(r.selectedKeys, contraindKeySet, r.docType));
+
   return (
     <div className="space-y-4">
       {!embedded && (
@@ -127,7 +141,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                 rows={rows}
                 variant="pending"
                 clinicalSnaps={clinicalSnaps}
-                labelsOf={labelsOf}
+                itemLabelsForRow={itemLabelsForRow}
                 onWrite={openWrite}
               />
             </div>
@@ -148,7 +162,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   rows={completedRows}
                   variant="done"
                   clinicalSnaps={clinicalSnaps}
-                  labelsOf={labelsOf}
+                  itemLabelsForRow={itemLabelsForRow}
                   onWrite={openWrite}
                 />
               </div>
@@ -188,13 +202,14 @@ function DocReqTable({
   rows,
   variant,
   clinicalSnaps,
-  labelsOf,
+  itemLabelsForRow,
   onWrite,
 }: {
   rows: OpinionRequestRow[];
   variant: 'pending' | 'done';
   clinicalSnaps: Record<string, ClinicalSnap>;
-  labelsOf: (keys: string[]) => string;
+  // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX: 행 단위 배타 정규화 라벨(혼합 큐 위반 조합 표시 차단).
+  itemLabelsForRow: (r: OpinionRequestRow) => string;
   onWrite: (r: OpinionRequestRow) => void;
 }) {
   return (
@@ -219,7 +234,7 @@ function DocReqTable({
             r={r}
             variant={variant}
             snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
-            itemLabels={labelsOf(r.selectedKeys)}
+            itemLabels={itemLabelsForRow(r)}
             onWrite={onWrite}
           />
         ))}
