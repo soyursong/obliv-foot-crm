@@ -20,6 +20,10 @@ import { toast } from '@/lib/toast';
 // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 인라인 편집(우측 단) + HIRA 동기화(AC-5 이전처).
 import InsuranceStatusPanel, { INSURANCE_STATUS_STYLE } from '@/components/admin/InsuranceStatusPanel';
 import HiraInsuranceSyncPanel from '@/components/admin/HiraInsuranceSyncPanel';
+// T-20260629-foot-RXSET-BUNDLERX-TAB-UNIFY: 처방세트 화면 안에 '묶음처방' 서브탭 적층.
+//   묶음처방(prescription_sets) 좌측 전체 약 목록 + 묶음처방 추가 동선은 PrescriptionSetsTab(CREATE-FLOW-OVERHAUL 2-pane)이
+//   이미 구현 — 신규 로직 0, 컴포넌트 재배치(재사용)만. 기존 top-level 묶음처방 탭(value=prescriptions)도 보존(삭제·치환 금지).
+import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 import { insuranceStatusLabel, type InsuranceStatus } from '@/lib/prescriptionGate';
 import {
   BadgeCheck,
@@ -164,7 +168,8 @@ export default function DrugFoldersTab() {
   //   §0.3 krhg 확정: 패널 상단 서브탭 [폴더 선택]/[전체보기] 분리. 폴더 뷰 동작 회귀 0.
   //   [전체보기] = 전 폴더 약 통합 테이블뷰 + 행 체크박스 다중선택 → 일괄 삭제
   //     (= 기존 단건 삭제 로직 useUnassignDrug 재사용 = 분류 해제, 약 마스터는 보존).
-  const [subTab, setSubTab] = useState<'folder' | 'all'>('folder');
+  // T-20260629-foot-RXSET-BUNDLERX-TAB-UNIFY: 'bundle'(묶음처방) 적층. 기본값 'folder' 유지(기존 동작 보존).
+  const [subTab, setSubTab] = useState<'folder' | 'all' | 'bundle'>('folder');
   const [selectedDrugIds, setSelectedDrugIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE (AC-1): 전체보기 우측 단 급여여부 편집 대상(단건 선택).
@@ -546,7 +551,29 @@ export default function DrugFoldersTab() {
         >
           전체보기
         </button>
+        {/* T-20260629-foot-RXSET-BUNDLERX-TAB-UNIFY: '묶음처방' 서브탭 적층(기존 탭 보존).
+            content = PrescriptionSetsTab(좌측 전체 약 목록+검색 → 묶음처방 추가). 신규 로직 없음. */}
+        <button
+          type="button"
+          onClick={() => setSubTab('bundle')}
+          className={`px-3 py-1.5 text-xs font-medium -mb-px border-b-2 transition-colors ${
+            subTab === 'bundle'
+              ? 'border-teal-500 text-teal-700'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          data-testid="drug-folder-subtab-bundle"
+        >
+          묶음처방
+        </button>
       </div>
+
+      {/* T-20260629-foot-RXSET-BUNDLERX-TAB-UNIFY: 묶음처방 서브탭 = PrescriptionSetsTab 재사용(재배치).
+          좌측 전체 약 목록(검색)+약 선택→묶음처방 추가 동선이 그 컴포넌트에 이미 존재. subTab==='bundle'일 때만 마운트. */}
+      {subTab === 'bundle' && (
+        <div data-testid="drug-folder-bundle">
+          <PrescriptionSetsTab />
+        </div>
+      )}
 
       {/* ── Part B: 전체보기 = 전 폴더 약 통합 테이블뷰 + 체크박스 다중 삭제 ───────────────────
           T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 기존 미사용 우측 단을 활용해 2-pane 구성.
