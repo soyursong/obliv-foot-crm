@@ -1,0 +1,36 @@
+{
+  "captured": "2026-06-28T19:01:26.997Z",
+  "restore_hint": "복원: 각 pc_id 에 service_id 를 다시 set (UPDATE prescription_codes SET service_id=<svc> WHERE id=<pc>)",
+  "rows": [
+    {
+      "pc_id": "676ceca0-23f0-4d33-a362-1af04770b564",
+      "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+      "prior_service_id": "37264ae8-40ae-4251-a72b-9fed34a48788",
+      "svc_name": "대웅푸루나졸정150밀리그람(플루코나졸)"
+    },
+    {
+      "pc_id": "1774b3c3-0ecd-49b6-85f0-8b39dfe67c20",
+      "name_ko": "바르토벤 외용액 4ml(에피나코나졸)",
+      "prior_service_id": "c812b085-2ce6-4aa7-af93-8e372f81a7ca",
+      "svc_name": "바르토벤외용액 4mL(에피나코나졸)"
+    },
+    {
+      "pc_id": "bce07aed-e428-4165-ae3d-e1a64622a686",
+      "name_ko": "바르토벤 외용액 8ml(에피나코나졸)",
+      "prior_service_id": "7122d133-27dc-4dd8-aab5-324e3a3dd2ac",
+      "svc_name": "바르토벤외용액 8mL(에피나코나졸)"
+    },
+    {
+      "pc_id": "5642ca63-f580-406e-a2ba-602c66e87d02",
+      "name_ko": "주블리아외용액 4ml(에피나코나졸)",
+      "prior_service_id": "9992337f-17d6-44e2-9f95-1a4cece40666",
+      "svc_name": "주블리아외용액 4ml(에피나코나졸)"
+    },
+    {
+      "pc_id": "be87fd12-6954-4ac4-9093-4a4dde7028f6",
+      "name_ko": "주블리아 외용액 8ml(에피나코나졸)",
+      "prior_service_id": "57f3d494-bff0-4588-8d19-ac7bd73b820a",
+      "svc_name": "주블리아외용액 8mL(에피나코나졸)"
+    }
+  ]
+}
