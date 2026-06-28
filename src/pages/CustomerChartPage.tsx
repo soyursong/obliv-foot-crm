@@ -67,6 +67,7 @@ import { ConsentForm } from '@/components/forms/ConsentForm';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK: 상담내역 탭 '소견서/진단서 요청' 인라인 박스(실장영역)
 import OpinionRequestBox from '@/components/consult/OpinionRequestBox';
+import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -3868,6 +3869,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       booking_memo: resvMiniForm.memo || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
+      // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 미니예약(재진 동선) = 어드민 수기 → manual.
+      created_via: RESERVATION_CREATED_VIA.MANUAL,
       // T-20260524-foot-DESIG-BIDIRECT AC-3: preferred_therapist_id = 선택된 지정치료사 또는 기존 지정치료사
       preferred_therapist_id: resvMiniForm.designatedTherapistId || customer.designated_therapist_id || null,
     }).select('id').single();
@@ -4771,6 +4774,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       booking_memo: inlineResvMemo.trim() || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
+      // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 인라인 슬롯예약(재진 동선) = 어드민 수기 → manual.
+      created_via: RESERVATION_CREATED_VIA.MANUAL,
       // T-20260524-foot-THERAPIST-BISYNC: 선택된 치료사 저장 (AC-2)
       preferred_therapist_id: inlineResvTherapistId || null,
     }).select('id').single();
