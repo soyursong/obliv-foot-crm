@@ -41,6 +41,11 @@ import { supabase } from '@/lib/supabase';
 
 interface Props {
   customerId: string | null;
+  // T-20260629-foot-CONSULTTAB-DATE-FILTER-UX (B안, 문지은 대표원장 2026-06-29 03:09):
+  //   진료차트에서 선택한 차트의 날짜(visit_date, yyyy-MM-dd). 제공 시 해당 날짜의 상담기록 그룹을
+  //   목록 최상단으로 끌어올린다. 조회 범위는 그대로(전체 check_ins) — 필터링이 아니라 정렬 우선순위만 변경.
+  //   미지정/해당일 기록 없음이면 기존 전체 이력·정렬 그대로(빈 강조 블록 X).
+  selectedDate?: string | null;
 }
 
 interface ConsultRecord {
@@ -63,6 +68,8 @@ interface DateGroup {
   label: string; // 표시용 (yyyy.MM.dd (EEE))
   items: ConsultRecord[];
   hasNew: boolean;
+  // T-20260629-foot-CONSULTTAB-DATE-FILTER-UX: 진료차트 선택일과 일치 → 최상단 정렬·헤더 배지.
+  isSelected: boolean;
 }
 
 function fmtDate(s: string): string {
@@ -106,7 +113,7 @@ function treatmentSummary(r: ConsultRecord): string {
   return parts.join(' · ');
 }
 
-export default function ConsultRecordTab({ customerId }: Props) {
+export default function ConsultRecordTab({ customerId, selectedDate }: Props) {
   const [records, setRecords] = useState<ConsultRecord[]>([]);
   const [consultNames, setConsultNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -183,6 +190,9 @@ export default function ConsultRecordTab({ customerId }: Props) {
   }, [customerId, loaded, loadRecords]);
 
   // T-FIRSTVISIT-CHARTLIST-UX(1+2): records → 날짜 그룹핑 + 양방향 정렬 (클라이언트 상태).
+  // T-20260629-foot-CONSULTTAB-DATE-FILTER-UX: 진료차트 선택일(selectedKey) 그룹을 최상단으로.
+  //   조회 범위·건수 무변경(필터링 아님) — 그룹 정렬 우선순위만 선택일 먼저, 나머지는 기존 정렬 유지.
+  const selectedKey = selectedDate ? dateKey(selectedDate) : null;
   const groups: DateGroup[] = useMemo(() => {
     const map = new Map<string, ConsultRecord[]>();
     for (const r of records) {
@@ -200,10 +210,18 @@ export default function ConsultRecordTab({ customerId }: Props) {
         .slice()
         .sort((a, b) => cmp(a.checked_in_at, b.checked_in_at)),
       hasNew: items.some((i) => i.visit_type === 'new'),
+      isSelected: selectedKey != null && key === selectedKey,
     }));
-    out.sort((a, b) => cmp(a.key, b.key));
+    out.sort((a, b) => {
+      // 선택일 그룹 최상단 고정(존재할 때만). 나머지는 기존 날짜 정렬(sortAsc) 유지.
+      if (selectedKey) {
+        if (a.key === selectedKey && b.key !== selectedKey) return -1;
+        if (b.key === selectedKey && a.key !== selectedKey) return 1;
+      }
+      return cmp(a.key, b.key);
+    });
     return out;
-  }, [records, sortAsc]);
+  }, [records, sortAsc, selectedKey]);
 
   function toggleDate(key: string) {
     setCollapsedDates((prev) => {
@@ -240,8 +258,13 @@ export default function ConsultRecordTab({ customerId }: Props) {
   return (
     <div className="p-3 space-y-2" data-testid="right-panel-consult-content">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold text-muted-foreground">
-          상담 기록 (읽기전용)
+        {/* T-20260629-foot-CONSULTTAB-DATE-FILTER-UX: 탭명 "상담기록"→"전체 상담 이력"(B안).
+            누적 전체 이력임을 사용자가 인지하도록 명시 — 선택일만이 아니라 모든 방문 상담 노출. */}
+        <span
+          className="text-[10px] font-semibold text-muted-foreground"
+          data-testid="consult-record-tab-title"
+        >
+          전체 상담 이력 (읽기전용)
         </span>
         <div className="flex items-center gap-1.5">
           {/* T-FIRSTVISIT-CHARTLIST-UX(1): 날짜 정렬 양방향 토글 */}
@@ -305,7 +328,11 @@ export default function ConsultRecordTab({ customerId }: Props) {
           {groups.map((g) => {
             const collapsed = collapsedDates.has(g.key);
             return (
-              <div key={g.key} data-testid="consult-date-group">
+              <div
+                key={g.key}
+                data-testid="consult-date-group"
+                data-selected-date={g.isSelected ? 'true' : undefined}
+              >
                 {/* T-FIRSTVISIT-CHARTLIST-UX(2): 날짜 그룹 헤더 (클릭 → 접기/펼치기)
                     T-20260608-foot-MEDCHART-PANEL-CLARITY AC-2: chevron 의미 명시 (title/aria-label) */}
                 <button
@@ -326,6 +353,17 @@ export default function ConsultRecordTab({ customerId }: Props) {
                     <span className="text-[11px] font-semibold text-foreground tabular-nums">
                       {g.label}
                     </span>
+                    {/* T-20260629-foot-CONSULTTAB-DATE-FILTER-UX: 진료차트 선택일과 일치한 그룹 표식
+                        (최상단 고정 이유를 사용자가 인지). 선택일에 기록 없으면 이 배지도 안 뜸. */}
+                    {g.isSelected && (
+                      <span
+                        className="rounded-full border border-teal-300 bg-teal-100 px-1.5 py-0 text-[8px] font-semibold text-teal-700"
+                        data-testid="consult-selected-date-badge"
+                        title="진료차트에서 선택한 날짜의 상담기록"
+                      >
+                        선택한 날짜
+                      </span>
+                    )}
                     {/* 그룹 내 초진 포함 시 헤더에도 ⭐ */}
                     {g.hasNew && (
                       <span

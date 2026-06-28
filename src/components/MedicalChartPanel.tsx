@@ -4335,7 +4335,13 @@ export default function MedicalChartPanel({
                   {/* ── T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 (A안 — 서랍에서 이식) ─────
                       check_ins 상담단계 기록 읽기전용. 탭 전환만으로 좌측 진료폼 입력은 유지된다. */}
                   {rightTab === 'consult' && (
-                    <ConsultRecordTab customerId={customerId} />
+                    // T-20260629-foot-CONSULTTAB-DATE-FILTER-UX (B안, 문지은 대표원장):
+                    //   선택한 차트의 날짜(visit_date)를 넘겨 해당일 상담기록 그룹을 최상단으로.
+                    //   미선택(신규 작성 등)이면 null → 기존 전체 이력·정렬 그대로.
+                    <ConsultRecordTab
+                      customerId={customerId}
+                      selectedDate={selectedChart?.visit_date ?? null}
+                    />
                   )}
                 </div>
                 {/* T-20260605-foot-RX-PHRASE-CLICK-INSERT: 하단 일괄 '삽입' 버튼 제거 — 행 내 ✓ 즉시삽입으로 단일화 */}
