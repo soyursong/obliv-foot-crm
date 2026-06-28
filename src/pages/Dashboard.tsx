@@ -118,6 +118,7 @@ import { OutstandingDueBadge } from '@/components/PkgOutstandingBadge';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
 import { useOrientation } from '@/hooks/useOrientation';
+import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
 
 
 type TabKey = 'all' | 'new' | 'returning';
@@ -2948,6 +2949,8 @@ function QuickReservationDialog({
       booking_memo: form.booking_memo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
       status: 'confirmed',
       created_by: createdBy,
+      // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 대시보드 즉석 예약생성 = 수기 → manual.
+      created_via: RESERVATION_CREATED_VIA.MANUAL,
     });
     setSaving(false);
     if (error) { toast.error('예약 생성 실패: ' + error.message); return; }

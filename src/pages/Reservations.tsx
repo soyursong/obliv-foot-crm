@@ -53,6 +53,7 @@ import { ReservationCancelModal } from '@/components/ReservationCancelModal';
 // T-20260611-foot-RESV-CTXMENU-SMS-MISSING: 예약관리 우클릭 메뉴 '문자' 항목 복원(Dashboard.tsx 정본 미러)
 import SendSmsDialog from '@/components/SendSmsDialog';
 import { canAccess } from '@/lib/permissions';
+import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
 
 // AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
 // (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
@@ -262,6 +263,8 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 담당자=생성 계정. 캘린더 생성경로에서 created_by(로그인 auth uid) 명시 보장.
     //   created_by 는 stats.ts TM 귀속 SSOT이기도 함 → 생성 시 1회만 기록(이후 불변, 수정자는 updated_by 별도).
     created_by: input.changedBy,
+    // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 어드민 캘린더 직접예약(신규/재진 공통) = 수기 생성경로 → manual.
+    created_via: RESERVATION_CREATED_VIA.MANUAL,
     ...(input.visit_type === 'returning' ? { preferred_therapist_id: input.preferred_therapist_id || null } : {}),
     // ③ 경과체크 — 패키지 연결 시 체크포인트 도달 여부 저장 (원본 save() 동일 시맨틱)
     ...(input.linked_package_id ? {
@@ -960,6 +963,8 @@ export default function Reservations() {
               status: 'confirmed',
               // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 복사 생성도 담당자=생성 계정.
               created_by: changedBy,
+              // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 어드민 복사 생성 = 수기 → manual.
+              created_via: RESERVATION_CREATED_VIA.MANUAL,
             })
             .select('id')
             .single();

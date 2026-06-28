@@ -316,10 +316,20 @@ Deno.serve(async (req) => {
     const scheduledDate = scheduledAt.substring(0, 10);   // "2026-05-25"
     const scheduledTime = scheduledAt.substring(11, 19);  // "14:30:00"
 
+    // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 인입 예약 생성경로(created_via) 적재.
+    //   canonical enum v1.1 9값과 정합. source_system 채널 → created_via 정합 매핑,
+    //   미지/기본값은 dopamine(본 EF=도파민 인입 경로). ★별칭 금지(admin/phone/walk-in 미사용).
+    const CREATED_VIA_BY_SOURCE: Record<string, string> = {
+      dopamine: 'dopamine', aicc: 'aicc', naver: 'naver',
+      meta: 'meta', kakao: 'kakao', inbound: 'inbound',
+    };
+    const createdVia = CREATED_VIA_BY_SOURCE[(sourceSystem ?? 'dopamine').toLowerCase()] ?? 'dopamine';
+
     const rsvPayload: Record<string, unknown> = {
       customer_id:      customerId,
       clinic_id:        clinicId,                          // DB 조회 결과 직접 할당 (조건부 아님)
       source_system:    sourceSystem ?? 'dopamine',
+      created_via:      createdVia,                        // 생성경로 (enum v1.1 정합)
       external_id:      externalId,
       reservation_date: scheduledDate,                     // 결함 1: DATE NOT NULL 충족
       reservation_time: scheduledTime,                     // 결함 2: TIME NOT NULL 충족
