@@ -198,13 +198,24 @@ Deno.serve(async (req) => {
       return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
     }
 
-    // ── AC-4: Customer upsert (phone_e164 기준) ────────────────────────────
+    // ── AC-4: Customer upsert (clinic_id + phone_e164 기준) ─────────────────
+    // B-8 (T-20260627-foot-INGEST-CLINIC-SCOPED-LOOKUP):
+    //   고객조회에 clinic_id 술어 추가. customers UNIQUE = (clinic_id, phone digits)
+    //   이므로 phone 단독 조회는 멀티지점(jongno-foot 1,391명 + songdo-foot)에서
+    //   동일 phone 양 지점 동시 존재 시 다중행→maybeSingle 에러→무시→오삽입 경로로
+    //   500을 유발. clinic_id 스코핑으로 0/1행을 보장하고, 조회 에러를 명시 처리한다.
     let customerId: string;
-    const { data: existingCustomer } = await admin
+    const { data: existingCustomer, error: custLookupErr } = await admin
       .from('customers')
       .select('id')
+      .eq('clinic_id', clinicId)
       .eq('phone', phoneE164)
       .maybeSingle();
+
+    if (custLookupErr) {
+      console.error('[reservation-ingest] customer lookup DB error:', custLookupErr.message);
+      return json({ ok: false, error: 'INTERNAL', detail: `customer lookup failed: ${custLookupErr.message}` }, 500);
+    }
 
     if (existingCustomer) {
       customerId = existingCustomer.id as string;
@@ -246,13 +257,17 @@ Deno.serve(async (req) => {
       if (custErr || !newCustomer) {
         // 중복 phone race condition 처리
         if (custErr?.code === '23505') {
-          const { data: raceCustomer } = await admin
+          // B-8: race-condition 재조회도 clinic_id 스코핑 (UNIQUE = clinic_id+phone).
+          //   phone 단독 .single() 은 양지점 동시존재 시 다중행→throw 였음. clinic_id로
+          //   0/1행 보장 + .maybeSingle() 로 0행 시에도 throw 대신 명시 분기.
+          const { data: raceCustomer, error: raceLookupErr } = await admin
             .from('customers')
             .select('id')
+            .eq('clinic_id', clinicId)
             .eq('phone', phoneE164)
-            .single();
-          if (!raceCustomer) {
-            return json({ ok: false, error: 'INTERNAL', detail: `customer race-condition: ${custErr.message}` }, 500);
+            .maybeSingle();
+          if (raceLookupErr || !raceCustomer) {
+            return json({ ok: false, error: 'INTERNAL', detail: `customer race-condition: ${raceLookupErr?.message ?? custErr.message}` }, 500);
           }
           customerId = raceCustomer.id as string;
         } else {
