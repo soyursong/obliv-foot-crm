@@ -38,7 +38,9 @@ test('AC-1: 패널 상단 서브탭 2개([폴더 선택]/[전체보기]) 신설,
   expect(src).toContain('폴더 선택');
   expect(src).toContain('전체보기');
   // 서브탭 상태 + 기본값 folder
-  expect(src).toContain("useState<'folder' | 'all'>('folder')");
+  //   T-20260629-foot-RXSET-BUNDLERX-TAB-UNIFY: '묶음처방' 서브탭 적층으로 union 이 additive 확장됨
+  //   ('folder' | 'all' → 'folder' | 'all' | 'bundle'). 기본값 'folder'(기존 동작 보존)·기존 멤버는 불변.
+  expect(src).toMatch(/useState<'folder' \| 'all'( \| 'bundle')?>\('folder'\)/);
 });
 
 test('AC-1-2: 기존 폴더 그리드는 folder 서브탭에서만 렌더(회귀 0 — 화면 분리)', () => {
