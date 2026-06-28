@@ -22,7 +22,7 @@ interface TimeslotRow {
   // AC4: 운영 DB 미배포 시 fallback 컬럼셋엔 부재 → optional. resvKind 가 undefined graceful 처리.
   is_healer_intent?: boolean | null;
   healer_flag: boolean | null;
-  status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
+  status: 'confirmed' | 'checked_in' | 'cancelled' | 'no_show';
 }
 
 export function ReservationDayTimeslotPanel({

@@ -594,7 +594,7 @@ export interface Reservation {
   /** T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB: 간략메모(초진 주증상 — 발톱무좀/내성발톱 선택 또는 직접입력).
    *  CRM-local 임상 메타. booking_memo(예약메모)와 별개 칸. cue_card·통계·리드 집계 영향 0. */
   brief_note?: string | null;
-  status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
+  status: 'confirmed' | 'checked_in' | 'cancelled' | 'no_show';
   cancelled_at: string | null;             // 취소 일시 — T-20260515-foot-RESV-CANCEL
   cancel_reason: string | null;            // 취소 사유 — T-20260515-foot-RESV-CANCEL
   cancelled_by: string | null;             // 취소 처리 staff user_id — T-20260525-foot-RESV-CANCEL-CTX

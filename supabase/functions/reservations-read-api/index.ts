@@ -209,13 +209,13 @@ Deno.serve(async (req) => {
   }
 
   // AC-7: status 허용값 검증 (422)
-  const VALID_STATUSES = new Set(['all', 'confirmed', 'checked_in', 'cancelled', 'noshow']);
+  const VALID_STATUSES = new Set(['all', 'confirmed', 'checked_in', 'cancelled', 'no_show']);
   if (statusFilter !== undefined && statusFilter !== '' && statusFilter !== 'all') {
     if (!VALID_STATUSES.has(statusFilter)) {
       return json({
         ok: false,
         error: 'INVALID_VALUE',
-        detail: `status '${statusFilter}' must be one of: all, confirmed, checked_in, cancelled, noshow`,
+        detail: `status '${statusFilter}' must be one of: all, confirmed, checked_in, cancelled, no_show`,
       }, 422);
     }
   }
