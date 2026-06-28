@@ -4,7 +4,12 @@
  * 인증 불필요 (anon). TV/태블릿 풀스크린. 읽기 전용.
  * 당일 체크인 목록을 대기번호 순으로 표시. Realtime 구독.
  *
- * 정책: 개인정보 보호를 위해 이름은 마스킹 (김○수).
+ * 데이터 경로 (T-20260628-foot-WAITING-REALTIME / cross_crm_data_contract §16-3a):
+ *   anon 은 base check_ins 를 직접 SELECT 하지 않는다. zero-PII sanitized projection
+ *   테이블 `waiting_board` 를 SELECT + postgres_changes 구독한다. 성함 마스킹·terminal
+ *   제외는 서버측 sync 트리거(SECURITY DEFINER)에서 적용되어, 전화/실명 등 PII 는
+ *   projection 컬럼 자체에 부재(존재 0 = 노출 0). 본 화면은 마스킹 산출(display_name)을
+ *   그대로 렌더하며 클라이언트 재마스킹에 의존하지 않는다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -20,45 +25,43 @@ const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+/**
+ * waiting_board projection 행 (zero-PII). `room` 은 현재 status 에 대응하는 방 값(라벨
+ * prefix 는 roomGuidance 에서 부여). `display_name` 은 DB 에서 마스킹된 산출(원본 성함 부재).
+ */
 interface WaitingRow {
   id: string;
   queue_number: number | null;
-  customer_name: string | null;
+  display_name: string | null;
   status: CheckInStatus;
   checked_in_at: string;
-  examination_room: string | null;
-  consultation_room: string | null;
-  treatment_room: string | null;
-  laser_room: string | null;
+  room: string | null;
 }
 
-/** 현재 상태에 맞는 룸 안내 문구 반환 */
+/** 현재 상태에 맞는 룸 안내 문구 반환 (방 값은 projection room 컬럼, prefix 만 status 별 부여) */
 function roomGuidance(row: WaitingRow): string | null {
+  if (!row.room) return null;
   const { status } = row;
   if (status === 'examination' || status === 'exam_waiting') {
-    return row.examination_room ? `진료실 ${row.examination_room}` : null;
+    return `진료실 ${row.room}`;
   }
   if (status === 'consultation' || status === 'consult_waiting') {
-    return row.consultation_room ? `상담실 ${row.consultation_room}` : null;
+    return `상담실 ${row.room}`;
   }
   if (status === 'preconditioning' || status === 'treatment_waiting') {
-    return row.treatment_room ? `치료실 ${row.treatment_room}` : null;
+    return `치료실 ${row.room}`;
   }
   if (status === 'laser') {
-    return row.laser_room ? `레이저실 ${row.laser_room}` : null;
+    return `레이저실 ${row.room}`;
   }
   return null;
 }
 
 const DONE_STATUSES: CheckInStatus[] = ['done', 'cancelled'];
 
-// 김도마 → 김○마, 홍길동 → 홍○동, 이준 → 이○
-function maskName(name: string | null): string {
-  if (!name) return '—';
-  const trimmed = name.trim();
-  if (trimmed.length <= 1) return trimmed;
-  if (trimmed.length === 2) return `${trimmed[0]}○`;
-  return `${trimmed[0]}○${trimmed.slice(-1)}`;
+// 성함 표시: projection 의 마스킹 산출(display_name)을 그대로 사용. 없으면 '—'.
+function showName(name: string | null): string {
+  return name && name.trim() ? name : '—';
 }
 
 /* STATUS_COLOR, CALLED_STATUSES → @/lib/status 공유 상수 사용 */
@@ -113,8 +116,8 @@ export default function Waiting() {
     const start = `${today}T00:00:00+09:00`;
     const end = `${today}T23:59:59+09:00`;
     const { data } = await anonClient
-      .from('check_ins')
-      .select('id, queue_number, customer_name, status, checked_in_at, examination_room, consultation_room, treatment_room, laser_room')
+      .from('waiting_board')
+      .select('id, queue_number, display_name, status, checked_in_at, room')
       .eq('clinic_id', clinicId)
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
@@ -145,7 +148,7 @@ export default function Waiting() {
       .channel(`waiting_${clinicId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'check_ins', filter: `clinic_id=eq.${clinicId}` },
+        { event: '*', schema: 'public', table: 'waiting_board', filter: `clinic_id=eq.${clinicId}` },
         () => fetchRows(),
       )
       .subscribe();
@@ -215,10 +218,11 @@ export default function Waiting() {
     );
   }
 
+  // projection(waiting_board)은 terminal(done/cancelled) 행을 투영하지 않음 → 현재 큐만.
+  // DONE_STATUSES 필터는 방어적으로 유지(정상 경로에선 해당 행 부재).
   const active = rows.filter((r) => !DONE_STATUSES.includes(r.status));
   const called = active.filter((r) => CALLED_STATUSES.includes(r.status));
   const waiting = active.filter((r) => !CALLED_STATUSES.includes(r.status));
-  const doneCount = rows.filter((r) => r.status === 'done').length;
 
   return (
     <div className="flex min-h-dvh flex-col bg-gradient-to-b from-teal-50 to-white p-6">
@@ -226,13 +230,11 @@ export default function Waiting() {
         <div>
           <h1 className="text-3xl font-bold text-teal-700">{clinicName}</h1>
           <p className="text-gray-500">현재 대기 현황</p>
-          {/* 오늘 통계 */}
+          {/* 현재 큐 통계 (projection = 현재 대기/진행 인원만, 완료는 비집계) */}
           <div className="mt-1.5 flex gap-3 text-sm text-gray-600">
-            <span>총 접수: <strong className="text-gray-800">{rows.length}명</strong></span>
+            <span>현재 인원: <strong className="text-gray-800">{active.length}명</strong></span>
             <span className="text-gray-300">|</span>
             <span>진행 중: <strong className="text-emerald-700">{called.length}명</strong></span>
-            <span className="text-gray-300">|</span>
-            <span>완료: <strong className="text-gray-500">{doneCount}명</strong></span>
           </div>
         </div>
         <div className="flex items-start gap-3">
@@ -324,7 +326,7 @@ function CalledCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
       </div>
       <div className="mt-2 flex items-center justify-between">
         <span className="text-lg font-bold text-gray-800">
-          {maskName(r.customer_name)}
+          {showName(r.display_name)}
         </span>
         <span className="text-sm text-gray-400">
           {elapsedLabel(mins)}
@@ -360,7 +362,7 @@ function WaitingCard({ row: r, now: _now, position }: { row: WaitingRow; now: Da
       </div>
       <div className="mt-1.5 flex items-center justify-between">
         <span className="text-base font-semibold text-gray-700">
-          {maskName(r.customer_name)}
+          {showName(r.display_name)}
         </span>
         <span className="text-xs tabular-nums text-gray-400">
           {elapsedLabel(mins)}
