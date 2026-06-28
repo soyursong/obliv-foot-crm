@@ -29,12 +29,19 @@
  *     "reservation": {
  *       "scheduled_at": "2026-05-25T14:30:00+09:00",
  *       "slot_type": "new_consult",
+ *       "service_code": "FC-PDL-01",          ← optional. 발톱/풋 service 태깅 (services.service_code)
  *       "memo": "도파민 TM 상담 메모",
  *       "campaign_id": "...",
  *       "adset_id": "...",
  *       "ad_id": "..."
  *     }
  *   }
+ *
+ * ── service_id 태깅 (T-20260627-foot-INGEST-SERVICE-TAG / B-9) ────
+ *   reservation.service_code (도파민이 운반한 발톱 product 코드, 예: FC006/FC007 류)
+ *   → services.service_code DB 조회(clinic 스코프) → reservations.service_id 착지.
+ *   OPTIONAL·best-effort: 필드 미존재 시 종전대로 service_id NULL(비-발톱 회귀 0).
+ *   코드 미매칭 시 ingest 실패 아님 — 경고 로그 + service_id NULL (FK 위반 500 방지).
  *
  * ── Response ────────────────────────────────────────────────────
  *   200 정상:       { ok: true, reservation_id: "<uuid>", applied: true }
@@ -152,6 +159,7 @@ Deno.serve(async (req) => {
   const gender            = customer['gender']             as string | undefined;
   const consentMarketing  = customer['consent_marketing']  as boolean | undefined;
   const slotType          = reservation['slot_type']       as string | undefined;
+  const serviceCode       = reservation['service_code']    as string | undefined;
   const memo              = reservation['memo']            as string | undefined;
   const campaignId        = reservation['campaign_id']     as string | undefined;
   const adsetId           = reservation['adset_id']        as string | undefined;
@@ -182,6 +190,30 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'CLINIC_NOT_FOUND', reason: `clinic_slug '${clinicSlug}' not found` }, 422);
     }
     const clinicId = clinicRow.id as string;
+
+    // ── B-9 (T-20260627-foot-INGEST-SERVICE-TAG): service_code → service_id ──────
+    //   도파민이 운반한 발톱 product 코드(reservation.service_code, 예: FC006/FC007 류)를
+    //   풋 service 카탈로그(services.service_code, clinic 스코프)로 해석해 service_id 확보.
+    //   설계 원칙(회귀 0 우선):
+    //     - service_code 미존재 → 종전 동작(service_id NULL). 비-발톱/워크인 회귀 0.
+    //     - 코드 미매칭/조회에러 → ingest 실패 아님(best-effort). 경고 로그 후 NULL.
+    //       (services.id를 직접 받지 않고 DB 조회로만 채워 FK 위반 500 경로를 원천 차단.)
+    let serviceId: string | null = null;
+    if (serviceCode && typeof serviceCode === 'string' && serviceCode.trim() !== '') {
+      const { data: svcRow, error: svcLookupErr } = await admin
+        .from('services')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('service_code', serviceCode.trim())
+        .maybeSingle();
+      if (svcLookupErr) {
+        console.warn(`[reservation-ingest] service_code '${serviceCode}' lookup error (non-fatal): ${svcLookupErr.message} — service_id NULL`);
+      } else if (!svcRow) {
+        console.warn(`[reservation-ingest] service_code '${serviceCode}' not found in services (clinic ${clinicId}) — service_id NULL`);
+      } else {
+        serviceId = svcRow.id as string;
+      }
+    }
 
     // ── AC-5: 중복 체크 먼저 ─────────────────────────────────────────────────
     // UNIQUE partial index (source_system IS NOT NULL AND external_id IS NOT NULL)
@@ -295,6 +327,8 @@ Deno.serve(async (req) => {
       status:           'confirmed',
       // slot_type 컬럼 없음 → visit_type 으로 매핑 (결함 5 수정)
       ...(slotType ? { visit_type: slotType === 'new_consult' ? 'new' : 'returning' } : {}),
+      // B-9: 해석된 service_id 만 착지(null이면 미삽입 → 컬럼 DEFAULT NULL 유지, 회귀 0)
+      ...(serviceId ? { service_id: serviceId } : {}),
       ...(memo     ? { memo } : {}),
       // campaign_id/adset_id/ad_id 는 customers 컬럼 — reservations에서 제거 (결함 5 수정)
     };
@@ -325,7 +359,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'INTERNAL', detail: 'reservation insert returned no data' }, 500);
     }
 
-    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId} clinic_slug=${clinicSlug} clinic_id=${clinicId}`);
+    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId} clinic_slug=${clinicSlug} clinic_id=${clinicId} service_code=${serviceCode ?? '-'} service_id=${serviceId ?? '-'}`);
     return json({ ok: true, reservation_id: newRsv.id, applied: true });
 
   } catch (err) {
