@@ -1,0 +1,105 @@
+{
+  "generated": "2026-06-28T18:59:47.835Z",
+  "pairs": [
+    {
+      "svc": {
+        "id": "37264ae8-40ae-4251-a72b-9fed34a48788",
+        "name": "대웅푸루나졸정150밀리그람(플루코나졸)",
+        "hira_code": null,
+        "service_code": "641601050",
+        "hira_category": null
+      },
+      "pc": {
+        "id": "676ceca0-23f0-4d33-a362-1af04770b564",
+        "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+        "claim_code": "LEGACY-12d7730e32e8",
+        "ingredient_code": null,
+        "classification": "내복약",
+        "manufacturer": null,
+        "code_source": "custom"
+      },
+      "codeVerdict": "CODE_ONE_SIDE",
+      "codeReason": "한쪽만 코드 존재 svc=641601050 / pc=∅"
+    },
+    {
+      "svc": {
+        "id": "c812b085-2ce6-4aa7-af93-8e372f81a7ca",
+        "name": "바르토벤외용액 4mL(에피나코나졸)",
+        "hira_code": null,
+        "service_code": "57001771",
+        "hira_category": null
+      },
+      "pc": {
+        "id": "1774b3c3-0ecd-49b6-85f0-8b39dfe67c20",
+        "name_ko": "바르토벤 외용액 4ml(에피나코나졸)",
+        "claim_code": "LEGACY-1bb57c2e4782",
+        "ingredient_code": null,
+        "classification": "내복약",
+        "manufacturer": null,
+        "code_source": "custom"
+      },
+      "codeVerdict": "CODE_ONE_SIDE",
+      "codeReason": "한쪽만 코드 존재 svc=57001771 / pc=∅"
+    },
+    {
+      "svc": {
+        "id": "7122d133-27dc-4dd8-aab5-324e3a3dd2ac",
+        "name": "바르토벤외용액 8mL(에피나코나졸)",
+        "hira_code": null,
+        "service_code": "57001772",
+        "hira_category": null
+      },
+      "pc": {
+        "id": "bce07aed-e428-4165-ae3d-e1a64622a686",
+        "name_ko": "바르토벤 외용액 8ml(에피나코나졸)",
+        "claim_code": "LEGACY-5d19d9727ef4",
+        "ingredient_code": null,
+        "classification": "내복약",
+        "manufacturer": null,
+        "code_source": "custom"
+      },
+      "codeVerdict": "CODE_ONE_SIDE",
+      "codeReason": "한쪽만 코드 존재 svc=57001772 / pc=∅"
+    },
+    {
+      "svc": {
+        "id": "9992337f-17d6-44e2-9f95-1a4cece40666",
+        "name": "주블리아외용액 4ml(에피나코나졸)",
+        "hira_code": null,
+        "service_code": "642507391",
+        "hira_category": null
+      },
+      "pc": {
+        "id": "5642ca63-f580-406e-a2ba-602c66e87d02",
+        "name_ko": "주블리아외용액 4ml(에피나코나졸)",
+        "claim_code": "LEGACY-ce36618a71d0",
+        "ingredient_code": null,
+        "classification": "내복약",
+        "manufacturer": null,
+        "code_source": "custom"
+      },
+      "codeVerdict": "CODE_ONE_SIDE",
+      "codeReason": "한쪽만 코드 존재 svc=642507391 / pc=∅"
+    },
+    {
+      "svc": {
+        "id": "57f3d494-bff0-4588-8d19-ac7bd73b820a",
+        "name": "주블리아외용액 8mL(에피나코나졸)",
+        "hira_code": null,
+        "service_code": "642507551",
+        "hira_category": null
+      },
+      "pc": {
+        "id": "be87fd12-6954-4ac4-9093-4a4dde7028f6",
+        "name_ko": "주블리아 외용액 8ml(에피나코나졸)",
+        "claim_code": "LEGACY-e11452cf9200",
+        "ingredient_code": null,
+        "classification": "내복약",
+        "manufacturer": null,
+        "code_source": "custom"
+      },
+      "codeVerdict": "CODE_ONE_SIDE",
+      "codeReason": "한쪽만 코드 존재 svc=642507551 / pc=∅"
+    }
+  ]
+}
