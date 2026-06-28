@@ -56,3 +56,10 @@ db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage1_inventory.json
 db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage1_tiered.json
 evidence/T-20260606-foot-D1-TESTDATA-CLEANUP_phase0_profile.json
 migration_packages/T-20260531-data-JONGNOFOOT-MIGRATE-HFQ-TO-FOOT/migrate.sql
+
+# Phase A-2 추가 차단 (supervisor REDACT Phase A-2 / audit §1.B 과소포착분 — roster/regression/inventory/dry_run)
+db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage1_roster.md
+evidence/T-20260606-foot-D1-TESTDATA-CLEANUP_phase05_regression.json
+evidence/T-20260607-CHECKIN-DUP-NULL_ac1_inventory.json
+evidence/T-20260607-CHECKIN-DUP-NULL_ac1_inventory.md
+migration_packages/T-20260531-data-JONGNOFOOT-MIGRATE-HFQ-TO-FOOT/AC7_dry_run_report.md
