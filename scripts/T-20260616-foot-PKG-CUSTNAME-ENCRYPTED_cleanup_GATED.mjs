@@ -27,6 +27,10 @@ for(const ep of ENV_CANDIDATES){
 }
 if(!P){ console.error('❌ SUPABASE_DB_PASSWORD 미해석 — .env 없음 + env var 미설정. 중단.'); process.exit(1); }
 const CONFIRM = process.env.CONFIRM === '1';
+// 의무기록 immutability 우회 — 기본 OFF. supervisor GO 후에만 =1. 픽스처 1명(단계이동_<epoch>)이
+// status='published' form_submission 1건 보유 → form_submissions_published_immutable_guard(ERR 42501)이
+// 삭제 차단. =1 시 named 트리거를 픽스처-한정 DELETE 구간에서만 scoped 비활성→재활성(실환자 의무기록 무영향).
+const MEDREC_BYPASS = process.env.ALLOW_MEDREC_IMMUTABLE_BYPASS === '1';
 const c=new pg.Client({host:'aws-1-ap-southeast-1.pooler.supabase.com',port:5432,database:'postgres',user:'postgres.rxlomoozakkjesdqjtvd',password:P,ssl:{rejectUnauthorized:false}});
 await c.connect();
 
@@ -101,12 +105,33 @@ try{
   writeFileSync(rbPath, rb, 'utf8');
   console.log(`롤백 SQL 산출: ${rbPath} (대상 ${tnames.length}개 테이블)`);
 
-  // 삭제 1) check_ins (customer 또는 대상 package 참조) — NO ACTION
-  await c.query(`DELETE FROM check_ins WHERE customer_id IN (${C}) OR package_id IN (SELECT id FROM packages WHERE customer_id IN (${C}))`);
-  // 삭제 2) 기타 NO ACTION customer 자식
-  for(const t of ['payments','reservations','medical_charts','package_payments','checklists','consent_forms','form_submissions','insurance_documents','insurance_receipts','payment_code_claims','prescriptions','service_charges']){
+  // ── 삭제 순서 교정 (2026-06-28): check_ins 에 NO ACTION FK 를 가진 자식(package_sessions·
+  //    form_submissions)이 타깃 check_ins 를 참조 → check_ins 를 자식보다 먼저 지우면 FK 위반.
+  //    db-gate dep 목록엔 check_in_id FK 경로가 없어 잠복했던 순서버그. 타깃집합(C)·삭제대상 161·
+  //    안전장치 불변, 순서만 교정. 실측: package_sessions 4·form_submissions 11 (둘 다 타깃 소속, 부수영향 0).
+  const TGT_CI = `SELECT id FROM check_ins WHERE customer_id IN (${C}) OR package_id IN (SELECT id FROM packages WHERE customer_id IN (${C}))`;
+  // 삭제 0) package_sessions.check_in_id (NO ACTION·nullable) 언링크 — 타깃 패키지 소속분은 이후 packages CASCADE 로 삭제됨. 부수영향 0(전부 타깃 패키지).
+  await c.query(`UPDATE package_sessions SET check_in_id=NULL WHERE check_in_id IN (${TGT_CI})`);
+  // 삭제 1) check_ins NO ACTION customer 자식 먼저 (form_submissions 는 의무기록 트리거 때문에 별도 블록)
+  for(const t of ['payments','reservations','medical_charts','package_payments','checklists','consent_forms','insurance_documents','insurance_receipts','payment_code_claims','prescriptions','service_charges']){
     try{ await c.query(`DELETE FROM ${t} WHERE customer_id IN (${C})`); }catch(e){ console.log(`  del skip ${t}: ${e.code}`); }
   }
+  // 삭제 1a) form_submissions (check_ins NO ACTION FK 보유 → check_ins 보다 먼저). 의무기록 immutability 처리:
+  //   픽스처 1명이 status='published' 1건 보유 → 트리거(42501)가 차단. MEDREC_BYPASS=1(supervisor GO) 시에만
+  //   named 트리거를 이 픽스처-한정 DELETE 구간에서 scoped 비활성→재활성. WHERE 가 C/TGT_CI 한정이라 실환자 의무기록 무영향.
+  if(MEDREC_BYPASS){
+    await c.query(`ALTER TABLE form_submissions DISABLE TRIGGER trg_form_submissions_published_immutable`);
+    console.log('  [MEDREC_BYPASS=1] form_submissions immutable 트리거 scoped 비활성 (픽스처 한정).');
+  }
+  await c.query(`DELETE FROM form_submissions WHERE customer_id IN (${C})`);
+  // 1a-방어) 타깃 check_ins 참조 잔여 form_submissions(off-customer) — 현재 0, 방어적.
+  await c.query(`DELETE FROM form_submissions WHERE check_in_id IN (${TGT_CI})`);
+  if(MEDREC_BYPASS){
+    await c.query(`ALTER TABLE form_submissions ENABLE TRIGGER trg_form_submissions_published_immutable`);
+    console.log('  [MEDREC_BYPASS=1] form_submissions immutable 트리거 재활성.');
+  }
+  // 삭제 2) check_ins (이제 NO ACTION 참조 0; CASCADE/SET NULL 자식 자동 처리)
+  await c.query(`DELETE FROM check_ins WHERE customer_id IN (${C}) OR package_id IN (SELECT id FROM packages WHERE customer_id IN (${C}))`);
   // 삭제 3) packages 자기참조 끊기 후 삭제 (package_sessions/package_payments CASCADE)
   await c.query(`UPDATE packages SET transferred_to=NULL WHERE transferred_to IN (SELECT id FROM packages WHERE customer_id IN (${C}))`);
   await c.query(`UPDATE packages SET transferred_from=NULL WHERE transferred_from IN (SELECT id FROM packages WHERE customer_id IN (${C}))`);
