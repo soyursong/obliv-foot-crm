@@ -40,6 +40,7 @@ import {
   composeOpinionDoc,
   buildContraindKeySet,
   classifySelection,
+  applyPrefillExclusivity,
   needsHepatitisType,
   needsOralXReason,
   needsDate,
@@ -703,7 +704,13 @@ export function OpinionEditorDialog({
   if (open && bindKey !== boundTo) {
     setBoundTo(bindKey);
     // AC-10: 큐('작성하기')로 열린 경우 실장이 고른 항목을 미리 선택. 본문은 compose effect 가 합성(item2).
-    const keys = (initialSelectedKeys ?? []).filter((k) => phraseByKey.has(k));
+    const rawKeys = (initialSelectedKeys ?? []).filter((k) => phraseByKey.has(k));
+    // T-20260629-foot-OPINIONDOC-PREFILL-EXCLUSIVE-GUARD (AC-1): prefill 배타 재적용.
+    //   P1-1 도입 이전 큐 데이터(form_submissions draft)에 진단서+금기증이 혼합된 selected_keys 가 있으면
+    //   검증 없이 그대로 setSelected 되어 원장 작성창에 '둘 다 눌러진' 위반 상태가 렌더된다(★대표원장 지적).
+    //   → 배타 규칙(진단서 단일 ⊕ 금기증 복수)을 prefill 에서 재적용: docType 우선 그룹만 유지, 타 그룹 clear.
+    //   불변식: 작성창에 진단서·금기증이 절대 동시에 눌러지지 않음. 이후 handleOptionClick/autoCheck 도 동일 배타 유지.
+    const keys = applyPrefillExclusivity(rawKeys, contraindKeySet, initialDocType ?? null);
     setSelected(new Set(keys));
     // 플레이스홀더 입력 초기화 — 날짜는 실장 요청날짜(initialDate) 또는 오늘(KST) 기본값(B-1 LOCK).
     setHepatitisType(null);
