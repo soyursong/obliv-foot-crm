@@ -149,6 +149,10 @@ const T: Record<Lang, {
   // AC-7: 건강보험 조회 동의
   insuranceConsentLabel: string;
   insuranceConsentNote: string;
+  // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23)
+  consentSensitiveLabel: string;
+  consentSensitiveTitle: string;
+  consentSensitiveItems: string[];
   // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2: 동의서 본문 항목별 정렬
   consentPrivacyTitle: string;
   consentPrivacyItems: string[];
@@ -262,6 +266,14 @@ const T: Record<Lang, {
     // AC-7: 건강보험 조회 동의
     insuranceConsentLabel: '건강보험 자격조회에 동의합니다 (선택)',
     insuranceConsentNote: '동의 시 건강보험 급여 적용을 위한 자격 조회가 가능합니다.',
+    // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23)
+    consentSensitiveLabel: '민감정보(건강·진료정보) 수집·이용에 동의합니다 (필수, 개보법 §23)',
+    consentSensitiveTitle: '민감정보(건강·진료정보) 수집·이용 동의 (필수)',
+    consentSensitiveItems: [
+      '수집항목 : 건강정보, 진료기록, 상병명, 처방내역 등 민감 의료정보',
+      '수집목적 : 발건강 케어 및 시술 서비스 제공, 진료 이력 관리',
+      '보유기간 : 관련 법령(의료법 §22 등)에 따른 보관 기간 동안 보유',
+    ],
     // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2: 동의서 본문 항목별 정렬
     consentPrivacyTitle: '개인정보 수집·이용 동의 (필수)',
     consentPrivacyItems: [
@@ -386,6 +398,14 @@ const T: Record<Lang, {
     // AC-7: insurance consent
     insuranceConsentLabel: 'I consent to health insurance eligibility inquiry (optional)',
     insuranceConsentNote: 'Consent allows us to check your health insurance eligibility for coverage.',
+    // T-20260615-foot-CONSENT-SENSITIVE: sensitive (health/medical) info separate consent (PIPA §23)
+    consentSensitiveLabel: 'I consent to the collection of sensitive health/medical information (required)',
+    consentSensitiveTitle: 'Consent to Collection and Use of Sensitive Information (Required)',
+    consentSensitiveItems: [
+      'Items collected: Health info, medical records, diagnosis, prescription history, and other sensitive medical info',
+      'Purpose: Providing foot-health care and treatment services, managing treatment history',
+      'Retention: Retained for the period required by applicable law (Medical Service Act §22, etc.)',
+    ],
     // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2: itemized consent body
     consentPrivacyTitle: 'Consent to Collection and Use of Personal Information (Required)',
     consentPrivacyItems: [
@@ -679,6 +699,9 @@ export default function SelfCheckIn() {
   // AC-7: 건강보험 조회 동의 (→ customers.hira_consent)
   // T-20260603 AC2: 건강보험 동의 기본 체크(true). 기록 로직 불변.
   const [insuranceConsent, setInsuranceConsent] = useState(true);
+  // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23).
+  //   초진 동선에서만 노출. 기본 체크(true) — 폼 캡처 시점에 TRUE 기록(DB default 는 FALSE 고수).
+  const [consentSensitive, setConsentSensitive] = useState(true);
   // 발건강질문지 QR 토큰
   const [healthQToken, setHealthQToken] = useState<string | null>(null);
   // QR 화면 카운트다운
@@ -768,6 +791,7 @@ export default function SelfCheckIn() {
     // T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-4: SMS 선택동의도 기본 체크(true)로 통일.
     setPrivacyConsent(true);
     setInsuranceConsent(true); // AC-7
+    setConsentSensitive(true); // T-20260615-foot-CONSENT-SENSITIVE: 민감정보 동의 기본값 복구
     setSmsOptIn(true);
     setHealthQToken(null);
     setQrCountdown(QR_SCREEN_SECONDS);
@@ -1054,7 +1078,9 @@ export default function SelfCheckIn() {
   const personalInfoComplete =
     (isForeign || extractBirthDate(rrn) !== null) &&
     address.trim().length >= 2 &&
-    ((reservationType !== 'walkin' && !isForeign) || privacyConsent);
+    ((reservationType !== 'walkin' && !isForeign) || privacyConsent) &&
+    // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 동의는 초진 전체 필수(개보법 §23).
+    consentSensitive;
 
   // ── T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 검색(다음/카카오 postcode) ──
   // CustomerChartPage.openKakaoPostcode 패턴 재사용. 선택 시 우편번호+기본주소 자동기입.
@@ -1340,6 +1366,12 @@ export default function SelfCheckIn() {
             //   (셀프접수 단계에서는 신규 customer.id 발급 직후라 별도 즉시 호출 없이 동의 데이터만 저장 —
             //    API 연동 완료 시 이 저장 시점에 자격조회 호출을 연결하는 지점이 됨.)
           }
+          // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23).
+          //   초진 신규 INSERT 경로(워크인 신규 / 외국인 예약 신규) 공통 — RPC 가용성과 무관하게 선저장(보관의무).
+          //   hira_consent 와 동일 단일 패턴 — 이후 RPC UPDATE 가 멱등 재확정. consent_version=foot-2026-06 고정.
+          newCustomerPayload.consent_sensitive = consentSensitive;
+          newCustomerPayload.consent_agreed_at = consentSensitive ? new Date().toISOString() : null;
+          newCustomerPayload.consent_version   = consentSensitive ? 'foot-2026-06' : null;
         }
 
         const { data: created, error: cErr } = await anonClient
@@ -1614,6 +1646,12 @@ export default function SelfCheckIn() {
             // T-20260609 수정2: 워크인 동선만 방문경로 대분류(워크인)+소분류(유입경로) 전달
             p_visit_route:        reservationType === 'walkin' ? '워크인' : null,
             p_visit_route_detail: reservationType === 'walkin' ? visitRouteDetail : null,
+            // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23).
+            //   초진 전체(내국인/외국인·워크인/예약) 공통 전달. RPC 가 FALSE→TRUE 시에만 갱신 +
+            //   consent_agreed_at/consent_version 을 COALESCE 로 최초기록 보존(멱등 재확정 안전).
+            p_consent_sensitive:  consentSensitive,
+            p_consent_agreed_at:  consentSensitive ? new Date().toISOString() : null,
+            p_consent_version:    consentSensitive ? 'foot-2026-06' : null,
           });
           // T-20260611-foot-WALKIN-CHART-HIRA-CONSENT-NOTSAVED AC-2: silent-fail 표면화.
           //   기존 빈 catch{} 가 RPC 시그니처 불일치(PGRST202 등)를 삼켜, hira/주소/동의 미저장 버그가
@@ -2266,6 +2304,48 @@ export default function SelfCheckIn() {
               </div>
             </label>
             )}
+
+            {/* T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (필수, 개보법 §23).
+                초진 전체(내국인/외국인·워크인/예약) 공통 노출 — 미체크 시 빨강 테두리로 필수 고지.
+                기존 동의 블록에 항목 추가(별도 페이지 신설 없음 — 고객 동선 최소화). */}
+            <label
+              htmlFor="pi-consent-sensitive"
+              className="flex items-start gap-3 cursor-pointer select-none rounded-xl p-4"
+              style={{ backgroundColor: C.bannerBg, border: `1.5px solid ${consentSensitive ? C.bannerBorder : '#e53e3e'}` }}
+              data-testid="pi-consent-sensitive-label"
+            >
+              <input
+                id="pi-consent-sensitive"
+                type="checkbox"
+                checked={consentSensitive}
+                onChange={(e) => setConsentSensitive(e.target.checked)}
+                className="mt-0.5 h-6 w-6 flex-shrink-0 rounded"
+                style={{ accentColor: C.primary }}
+                data-testid="pi-consent-sensitive-checkbox"
+              />
+              <span className="text-sm leading-relaxed font-medium" style={{ color: C.dark }}>
+                {t.consentSensitiveLabel}
+              </span>
+            </label>
+
+            {/* 민감정보 수집·이용 동의 상세 고지 */}
+            <div
+              className="rounded-xl p-4 space-y-1"
+              style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
+              data-testid="pi-consent-sensitive-detail"
+            >
+              <p className="text-sm font-semibold" style={{ color: C.dark }}>
+                {t.consentSensitiveTitle}
+              </p>
+              <ul className="space-y-1">
+                {t.consentSensitiveItems.map((line, i) => (
+                  <li key={`sensitive-${i}`} className="flex gap-1.5 text-xs leading-relaxed" style={{ color: C.muted }}>
+                    <span aria-hidden="true" className="select-none">•</span>
+                    <span className="flex-1">{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
             {/* 동의서 본문.
                 T-20260625-FOREIGN: 외국인(English) = §C 외국인 환자 개인정보 동의 전문.

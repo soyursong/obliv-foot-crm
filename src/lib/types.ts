@@ -173,6 +173,10 @@ export interface Customer {
   // C2 tickets
   hira_consent?: boolean | null;        // 건강보험 조회 동의 Y/N (C2-HIRA-CONSENT)
   hira_consent_at?: string | null;      // 건강보험 조회 동의 일시
+  // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 별도 동의 (개보법 §23)
+  consent_sensitive?: boolean | null;   // 민감정보 수집·이용 동의 (DB default FALSE — 폼 캡처 시 TRUE)
+  consent_agreed_at?: string | null;    // 민감정보 동의셋 증빙 시각 (최초 기록 후 불변)
+  consent_version?: string | null;      // 동의 항목셋 버전 (foot-2026-06 고정)
   visit_route?: VisitRoute | null; // 방문경로 대분류 (C2-VISIT-ROUTE) — W2-DB: 네이버·인콜 ADD
   referral_name?: string | null;          // 소개자 성함 (방문경로='지인소개' 시) — T-20260515-foot-REFERRAL-NAME
   visit_route_detail?: string | null;     // 방문경로 소분류(유입경로) — T-20260609-foot-SELFCHECKIN-LEADSRC-UI-VISITPATH. 자유 TEXT (SNS_인스타그램/검색_네이버/지인소개_{성함}/제휴기타 …)
