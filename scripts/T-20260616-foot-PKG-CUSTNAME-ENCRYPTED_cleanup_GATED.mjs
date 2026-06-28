@@ -11,8 +11,16 @@
 // 실행:  node scripts/..._cleanup_GATED.mjs            # DRY-RUN
 //        CONFIRM=1 node scripts/..._cleanup_GATED.mjs  # 실제 백업+삭제 (gate 후)
 import pg from 'pg'; import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url'; import { dirname, resolve } from 'node:path';
 let P=process.env.SUPABASE_DB_PASSWORD;
-for(const l of readFileSync(process.env.HOME+'/Documents/GitHub/obliv-foot-crm/.env','utf8').split('\n')){const m=l.match(/^SUPABASE_DB_PASSWORD=(.*)$/);if(m)P=m[1].trim();}
+// .env 경로는 스크립트 위치(<repo>/scripts/) 기준 repo root 에서 해석 — 머신/홈 경로 비의존.
+// (2026-06-28 M3 Ultra 교체로 repo 가 ~/Documents/GitHub → ~/GitHub 이동, 하드코딩 경로 깨짐)
+const __dir=dirname(fileURLToPath(import.meta.url));
+const ENV_CANDIDATES=[resolve(__dir,'..','.env'), process.env.HOME+'/GitHub/obliv-foot-crm/.env', process.env.HOME+'/Documents/GitHub/obliv-foot-crm/.env'];
+for(const ep of ENV_CANDIDATES){
+  try{ for(const l of readFileSync(ep,'utf8').split('\n')){const m=l.match(/^SUPABASE_DB_PASSWORD=(.*)$/);if(m)P=m[1].trim();} break; }catch(e){ /* try next */ }
+}
+if(!P){ console.error('❌ SUPABASE_DB_PASSWORD 미해석 — .env 없음 + env var 미설정. 중단.'); process.exit(1); }
 const CONFIRM = process.env.CONFIRM === '1';
 const c=new pg.Client({host:'aws-1-ap-southeast-1.pooler.supabase.com',port:5432,database:'postgres',user:'postgres.rxlomoozakkjesdqjtvd',password:P,ssl:{rejectUnauthorized:false}});
 await c.connect();
