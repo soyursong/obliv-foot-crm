@@ -31,15 +31,26 @@ const CONFIRM = process.env.CONFIRM === '1';
 // status='published' form_submission 1건 보유 → form_submissions_published_immutable_guard(ERR 42501)이
 // 삭제 차단. =1 시 named 트리거를 픽스처-한정 DELETE 구간에서만 scoped 비활성→재활성(실환자 의무기록 무영향).
 const MEDREC_BYPASS = process.env.ALLOW_MEDREC_IMMUTABLE_BYPASS === '1';
+// ── 옵션 B (supervisor A/B 결정) — 기본 OFF ─────────────────────────────────────
+// =1 시: status='published' form_submission(=발행 의무기록)을 보유한 픽스처 1명
+//   (단계이동_<epoch>)을 삭제대상 집합 C 에서 제외 → 160명만 삭제. 의무기록 immutable
+//   트리거를 전혀 건드리지 않는 보수 경로(invariant 보존). 잔존 1명은 epoch명 테스트더미라
+//   AC1(실고객 패키지탭 정상노출)에 영향 0. A(BYPASS=1, 161전체)와 상호배타 — 둘 다 켜지면 B 우선.
+const EXCLUDE_MEDREC = process.env.EXCLUDE_PUBLISHED_MEDREC === '1';
 const c=new pg.Client({host:'aws-1-ap-southeast-1.pooler.supabase.com',port:5432,database:'postgres',user:'postgres.rxlomoozakkjesdqjtvd',password:P,ssl:{rejectUnauthorized:false}});
 await c.connect();
 
 const {rows:cl}=await c.query(`SELECT id FROM clinics WHERE slug='jongno-foot'`);
 const JID=cl[0].id;
-// 삭제대상 customer 집합 정의 (CTE 로 모든 쿼리에서 재사용)
-const C = `SELECT id FROM customers WHERE clinic_id='${JID}' AND name ~ '[0-9]{10}'`;
+// 삭제대상 customer 집합 정의 (모든 쿼리에서 재사용)
+// 기본(A/DRY-RUN): epoch명 + jongno-foot 전체(161, db-gate'd 파라미터, byte-identical).
+// 옵션 B(EXCLUDE_MEDREC=1): 발행 의무기록 보유 픽스처 제외(160) — scope 축소(strictly 보수적).
+const C = EXCLUDE_MEDREC
+  ? `SELECT id FROM customers cu WHERE clinic_id='${JID}' AND name ~ '[0-9]{10}' AND NOT EXISTS (SELECT 1 FROM form_submissions fs WHERE fs.customer_id=cu.id AND fs.status='published')`
+  : `SELECT id FROM customers WHERE clinic_id='${JID}' AND name ~ '[0-9]{10}'`;
 
-console.log(`MODE: ${CONFIRM?'⚠ DESTRUCTIVE (CONFIRM=1)':'DRY-RUN (읽기전용)'}`);
+const MODE_LABEL = EXCLUDE_MEDREC ? 'B(160·의무기록 픽스처 제외)' : (MEDREC_BYPASS ? 'A(161·bypass)' : '기본(161)');
+console.log(`MODE: ${CONFIRM?'⚠ DESTRUCTIVE (CONFIRM=1)':'DRY-RUN (읽기전용)'} · 타깃셋=${MODE_LABEL}`);
 
 // 오탐 안전성 — 삭제대상 중 한글 "성씨 2~4자 단독" 패턴(실고객 의심) 0건 확인
 const {rows:sus}=await c.query(`SELECT count(*) n FROM customers WHERE clinic_id='${JID}' AND name ~ '[0-9]{10}' AND name ~ '^[가-힣]{2,4}$'`);
@@ -140,9 +151,10 @@ try{
   const {rowCount}=await c.query(`DELETE FROM customers WHERE id IN (SELECT id FROM ${BAK}.customers)`);
   console.log(`customers 삭제: ${rowCount}명`);
 
-  // 검증
-  const {rows:chk}=await c.query(`SELECT count(*) n FROM customers WHERE clinic_id='${JID}' AND name ~ '[0-9]{10}'`);
-  if(Number(chk[0].n)!==0) throw new Error(`잔존 ${chk[0].n}건 — 롤백`);
+  // 검증 — 타깃셋 C 가 0건 남았는지 확인(A=161·B=160 양 모드 정확). B 모드의 제외 픽스처는
+  //   여전히 epoch명을 갖지만 C 밖이므로 잔존이 정상 → raw 패턴이 아닌 C 멤버십으로 검증.
+  const {rows:chk}=await c.query(`SELECT count(*) n FROM customers WHERE id IN (${C})`);
+  if(Number(chk[0].n)!==0) throw new Error(`타깃셋 잔존 ${chk[0].n}건 — 롤백`);
   const {rows:pkgChk}=await c.query(`SELECT count(*) n FROM packages WHERE clinic_id='${JID}' AND status='active'`);
   console.log(`정리 후 jongno-foot active packages: ${pkgChk[0].n}건`);
 
