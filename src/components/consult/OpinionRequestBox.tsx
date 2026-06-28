@@ -12,7 +12,7 @@ import { todaySeoulISODate } from '@/lib/format';
 import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
 // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (P1-1): 진단서 단일배타 / 금기증 복수 selection rule
 //   — 원장 작성창(OpinionDocTab)과 동일 엔진 재사용(일관성).
-import { buildContraindKeySet, classifySelection } from '@/lib/opinionDocCompose';
+import { buildContraindKeySet, classifySelection, applyPrefillExclusivity } from '@/lib/opinionDocCompose';
 import {
   OPINION_DOC_TYPES,
   type OpinionDocType,
@@ -109,6 +109,10 @@ export default function OpinionRequestBox({
       toast.error('요청할 항목을 1개 이상 선택해주세요.');
       return;
     }
+    // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX (§3 제출 시점 가드): 선택 UI(handleOptionClick+disabled)가
+    //   이미 배타를 유지하므로 정상 흐름에선 무변경(no-op)이나, 어떤 경로로든 진단서+금기증 혼합이 state 에 섞이면
+    //   persist 직전 배타 규칙을 재적용해 '깨진 조합'이 큐 draft 로 저장되는 일을 원천 차단(향후 prefill/목록 오염 방지).
+    const cleanKeys = applyPrefillExclusivity([...selected], contraindKeySet, docType);
     try {
       const res = await createMut.mutateAsync({
         customerId,
@@ -116,7 +120,7 @@ export default function OpinionRequestBox({
         chartNo,
         birthDate,
         docType,
-        selectedKeys: [...selected],
+        selectedKeys: cleanKeys,
         staffMemo: memo.trim(),
         issuedBy,
         requestedByName,
