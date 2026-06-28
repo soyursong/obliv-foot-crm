@@ -3,7 +3,18 @@
 -- 근거: planner ACK(MSG-20260629-015543-dz31) — resolve_v3(consent_sensitive 갭) additive 승인.
 --   §3.1 ADDITIVE → CEO게이트 면제, supervisor DDL-diff 단일 게이트.
 --   판정: 순수 컬럼-동등 가산(반환 데이터를 consent 플래그로 게이팅하지 않음 → 정책 의미 불변).
---   → data-architect CONSULT 추가 불요(dz31 단서 충족). lh9k verdict(_resolve_v2 ADDITIVE) 패턴 연장.
+--   ★ data-architect CONSULT-REPLY(MSG-20260629-015212-m449 / DA-20260629-foot-ANON-CONSENT-WRITE):
+--     판정 GO(동의-write 시맨틱 이견 0) + ADDITIVE 제약 5종. SSOT codify=cross_crm_data_contract §16-3b(v1.15.3).
+--     근거: §16-3 line1147/v1.15.2 upsert_customer consent nullable ADDITIVE 멱등 persist(COALESCE) 패턴의
+--           foot 셀프체크인 직역 = divergence 0. lh9k(_resolve_v2 ADDITIVE) verdict 패턴 연장.
+--   ── 제약 5종 정합(본 함수 충족 매핑) ──
+--     [1·HARD 원자성] sensitive=true write 는 agreed_at+version 항상 동반(COALESCE 기본 now()/'foot-2026-06'),
+--                     단일 함수 트랜잭션 — 부분적재 0 (개보법 §23 입증책임).
+--     [2 COALESCE 보존] 미동봉 NULL 이 기존동의 미덮어씀. sensitive 자동clear 없음(철회 동선 無 → COALESCE-NULL 미표현).
+--     [3 별개축] consent_sensitive ≠ privacy_consent ≠ hira_consent — 동의항목별 1컬럼 유지(오버로드 0).
+--     [4 보상통제 무변경] write-only·반환 customer_id+link_status(zero-PII)·clinic+성함+canonical phone 정확매칭 —
+--                          §16-3 ④ read 측 노출 미확대.
+--     [5 컬럼 재사용] consent_* 3컬럼 = 20260629120000 소유 기존컬럼(신규 컬럼/enum 0) = ADDITIVE 정합.
 --
 -- 갭: _resolve_v2(20260628160000)는 privacy/hira 동의는 멱등 persist 하나
 --   T-20260615-foot-CONSENT-SENSITIVE(개보법 §23)의 민감정보 동의 3컬럼을 미반영.
