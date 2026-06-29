@@ -1,5 +1,5 @@
-# obliv-foot-crm — Supabase project ID will be set after project creation
-project_id = "REPLACE_WITH_NEW_PROJECT_ID"
+# obliv-foot-crm — foot Supabase project (prod ref rxlomoozakkjesdqjtvd)
+project_id = "rxlomoozakkjesdqjtvd"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Edge Function 게이트웨이 설정
