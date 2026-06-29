@@ -587,12 +587,16 @@ export default function Customers() {
         </div>
       </div>
 
+      {/* T-20260629-foot-CUSTLIST-MEMO-REMOVE-COMPACT:
+          ① 고객메모 컬럼 제거(11열→10열). customer_memo 데이터·고객상세(EditCustomerDialog)·CSV는 존속 — 목록 표시만 숨김.
+          ② 남은 10열 너비 컴팩트화 — 실제 글자수 기준 w-* 고정 + 패딩 축소(px-4→px-2),
+             whitespace-nowrap/truncate로 넘침 방지(잔여 컬럼 강제 확장 차단). w-full 제거로 표 가로폭 축소. */}
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
-        <table className="w-full text-sm">
+        <table className="text-sm">
           <thead className="bg-muted/60 text-xs text-muted-foreground">
             <tr>
               {/* T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 전체선택 체크박스 */}
-              <th className="w-10 px-3 py-2 text-center font-medium">
+              <th className="w-9 px-2 py-1.5 text-center font-medium">
                 <input
                   type="checkbox"
                   data-testid="cust-select-all"
@@ -603,17 +607,16 @@ export default function Customers() {
                   onChange={toggleSelectAll}
                 />
               </th>
-              <th className="px-4 py-2 text-left font-medium">이름</th>
-              <th className="px-4 py-2 text-left font-medium">전화번호</th>
-              <th className="px-4 py-2 text-left font-medium">생년월일</th>
-              <th className="px-4 py-2 text-left font-medium">차트번호</th>
+              <th className="w-[116px] px-2 py-1.5 text-left font-medium">이름</th>
+              <th className="w-[116px] px-2 py-1.5 text-left font-medium">전화번호</th>
+              <th className="w-[100px] px-2 py-1.5 text-left font-medium">생년월일</th>
+              <th className="w-[96px] px-2 py-1.5 text-left font-medium">차트번호</th>
               {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 컬럼 — 차트(차트2) assigned_staff 자동연동 표시 */}
-              <th className="px-4 py-2 text-left font-medium">담당자</th>
-              <th className="px-4 py-2 text-right font-medium">방문</th>
-              <th className="px-4 py-2 text-left font-medium">최종 방문</th>
-              <th className="px-4 py-2 text-right font-medium">결제액</th>
-              <th className="px-4 py-2 text-left font-medium">고객메모</th>
-              <th className="px-4 py-2 text-center font-medium">관리</th>
+              <th className="w-[80px] px-2 py-1.5 text-left font-medium">담당자</th>
+              <th className="w-[52px] px-2 py-1.5 text-right font-medium">방문</th>
+              <th className="w-[104px] px-2 py-1.5 text-left font-medium">최종 방문</th>
+              <th className="w-[92px] px-2 py-1.5 text-right font-medium">결제액</th>
+              <th className="w-[84px] px-2 py-1.5 text-center font-medium">관리</th>
             </tr>
           </thead>
           <tbody>
@@ -627,7 +630,8 @@ export default function Customers() {
                   className="cursor-pointer border-t hover:bg-teal-50/40 h-11"
                 >
                   {/* T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 행 선택 체크박스 (행 클릭/차트열기 동선과 분리) */}
-                  <td className="w-10 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                  {/* T-20260629-foot-CUSTLIST-MEMO-REMOVE-COMPACT: 패딩 축소(px-4→px-2) + 텍스트 nowrap·truncate(넘침 방지). */}
+                  <td className="w-9 px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       data-testid="cust-row-check"
@@ -637,37 +641,34 @@ export default function Customers() {
                       onChange={() => toggleRow(c.id)}
                     />
                   </td>
-                  <td className="px-4 py-2 font-medium">
+                  <td className="px-2 py-1.5 font-medium">
                     <span className="flex items-center gap-1.5">
-                      {c.name}
-                      {stats?.has_package && <Badge variant="teal" className="text-[10px] px-1 py-0">PKG</Badge>}
+                      <span className="truncate">{c.name}</span>
+                      {stats?.has_package && <Badge variant="teal" className="shrink-0 text-[10px] px-1 py-0">PKG</Badge>}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{formatPhone(c.phone)}</td>
+                  <td className="px-2 py-1.5 text-muted-foreground whitespace-nowrap">{formatPhone(c.phone)}</td>
                   {/* T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 서버 파생 YYYY-MM-DD 우선,
                       없으면 birth_date 컬럼 휴리스틱 fallback, 그래도 없으면 '-' */}
-                  <td className="px-4 py-2 text-muted-foreground tabular-nums" data-testid="cust-birthdate">
+                  <td className="px-2 py-1.5 text-muted-foreground tabular-nums whitespace-nowrap" data-testid="cust-birthdate">
                     {birthMap.get(c.id) ?? (birthDateYMD(c.birth_date) || '-')}
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{c.chart_number ?? '-'}</td>
+                  <td className="px-2 py-1.5 text-muted-foreground truncate" data-testid="cust-chart-number">{c.chart_number ?? '-'}</td>
                   {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 — 차트2 assigned_staff_id → 이름.
                       재진=자동연동 표시 / 첫방문(NULL)·결손=공란('-') 안전표시(AC2/AC4). */}
-                  <td className="px-4 py-2 text-muted-foreground" data-testid="cust-assigned-staff">
+                  <td className="px-2 py-1.5 text-muted-foreground truncate" data-testid="cust-assigned-staff">
                     {(c.assigned_staff_id && staffNameMap.get(c.assigned_staff_id)) || '-'}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
-                  <td className="px-4 py-2 text-muted-foreground">
+                  <td className="px-2 py-1.5 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
+                  <td className="px-2 py-1.5 text-muted-foreground whitespace-nowrap tabular-nums">
                     {stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '-'}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                  <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground whitespace-nowrap">
                     {stats?.total_revenue ? formatAmount(stats.total_revenue) : '-'}
                   </td>
-                  <td className="max-w-[200px] truncate px-4 py-2 text-muted-foreground">
-                    {/* T-20260504-foot-MEMO-RESTRUCTURE: customer_memo 표시 */}
-                    {c.customer_memo ?? ''}
-                  </td>
+                  {/* T-20260629-foot-CUSTLIST-MEMO-REMOVE-COMPACT: 고객메모 셀 제거(목록 표시만). 데이터·상세화면 존속. */}
                   {/* 관리 열: 차트보기(모든 역할) + 수정(staff 이상) + 삭제(admin만) */}
-                  <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         data-testid="open-chart-btn"
@@ -703,7 +704,7 @@ export default function Customers() {
             })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={10} className="px-2 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
