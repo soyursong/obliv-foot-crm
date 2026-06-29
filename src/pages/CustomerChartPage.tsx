@@ -3454,7 +3454,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
       // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 분기
       // T-20260522-foot-CUST-REG-LOGOUT: 401 시 refreshSession() 후 1회 재시도 추가
-      if (editingRrn) {
+      if (editingRrn && rrnBack.length === 0) {
+        // T-20260629-foot-RRN-EDIT-WIPE-FIX: [수정] 진입(앞자리 prefill) 후 뒷자리 미입력 = 실제 수정 안 함.
+        //   기존 암호값을 빈/부분값으로 덮어쓰지 않고 그대로 보존 + 편집모드만 종료 (rrn_encrypt 미호출).
+        setEditingRrn(false);
+        setRrnFront('');
+        setRrnBack('');
+        setRrnText('');
+      } else if (editingRrn) {
         const digits = (rrnFront + rrnBack).replace(/\D/g, '');
         if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return false; }
 
@@ -5081,7 +5088,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </span>
                         <button
                           type="button"
-                          onClick={() => { setRrnFront(''); setRrnBack(''); setEditingRrn(true); setIsDirty(true); }}
+                          // T-20260629-foot-RRN-EDIT-WIPE-FIX: [수정] 진입 시 앞 6자리(생년월일)는 기존 등록값으로 prefill,
+                          //   뒷자리만 빈칸으로 둔다. (기존 버그: setRrnFront('') 로 앞자리까지 000000 초기화 → 등록값 소실·빈값 덮어쓰기 위험)
+                          //   뒷자리 평문은 마스킹 정책상 prefill 불가 → 빈칸 유지가 정책 내 최선(취소 시 rrnMasked 보존, 저장은 13자리 가드).
+                          onClick={() => {
+                            const front = rrnMasked ? rrnMasked.split('-')[0].replace(/\D/g, '').slice(0, 6) : '';
+                            setRrnFront(front); setRrnBack(''); setEditingRrn(true); setIsDirty(true);
+                          }}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
                         >
                           {rrnMasked ? '수정' : '입력'}

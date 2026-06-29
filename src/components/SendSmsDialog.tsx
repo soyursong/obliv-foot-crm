@@ -85,6 +85,11 @@ const EVENT_LABELS: Record<string, string> = {
 /** 예약 없는 고객의 {날짜}/{시간} placeholder — 편집 가능 상태로 채워둠 (AC-3) */
 const NO_RESV_PLACEHOLDER = '(예약 없음)';
 
+/** T-20260629-foot-SMS-TEMPLATE-NEWDRAFT-ADD: '새로 작성하기' 가상 옵션 sentinel.
+ *  실제 템플릿 id 와 충돌하지 않는 예약 문자열(UUID/event_type 과 겹치지 않음). 선택 시 빈 본문 편집기로 진입.
+ *  원본 템플릿 목록·발송 RPC 불변, 1회성 자유 작성만 추가. */
+const BLANK_DRAFT_ID = '__new_draft__';
+
 /** 치환 변수 컨텍스트 — 자동발송 send-notification EF 의 renderTemplate vars 와 동일 키. */
 interface SubstVars {
   고객명: string;
@@ -327,6 +332,13 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId, e
     (id: string) => {
       setSelectedId(id);
       setConfirmStep(false);
+      // T-20260629-foot-SMS-TEMPLATE-NEWDRAFT-ADD: '새로 작성하기' → 빈 본문 편집기로 진입(1회성 자유 작성·발송).
+      //   원본 템플릿/이미지 미적용. 즉석 첨부 파일은 유지(아래 일반 분기와 동일 규칙).
+      if (id === BLANK_DRAFT_ID) {
+        setBody('');
+        if (!imageFile) { setImagePath(null); setImagePreview(null); }
+        return;
+      }
       const tmpl = templates.find((t) => t.id === id);
       if (tmpl) setBody(renderTemplate(tmpl.body, vars));
       // 즉석 첨부 파일은 유지하되, 템플릿 자체 첨부 이미지가 있으면 자동 첨부(즉석 파일 없을 때만).
@@ -527,6 +539,8 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId, e
               onChange={(e) => handleSelect(e.target.value)}
             >
               <option value="">— 템플릿을 선택하세요 —</option>
+              {/* T-20260629-foot-SMS-TEMPLATE-NEWDRAFT-ADD: 정해진 템플릿 없이 즉석 작성 진입점 */}
+              <option value={BLANK_DRAFT_ID}>+ 새로 작성하기</option>
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>
                   {(EVENT_LABELS[t.event_type] ?? t.event_type)}
