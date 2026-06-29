@@ -5218,10 +5218,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           disabled={!latestCheckIn}
                           title={latestCheckIn ? '클릭하면 신분증 확인 완료 처리' : '내원 기록이 없어 수동 처리 불가 (주민번호 저장 시 자동 처리)'}
                           onClick={() => { if (latestCheckIn) markIdVerified(); }}
-                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70"
-                          style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', border: '1.5px solid #FECACA' }}
+                          // T-20260629-foot-CHART2-RRN-IDBADGE-PASTEL-SHRINK: 진한레드→파스텔(bg-red-100/text-red-400) + 절반 사이즈(text-xs·py-0.5·px-1.5·gap-1·font-medium). 표시/숨김 로직(rrn 미입력 조건) 불변, className만 교체.
+                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70 bg-red-100 text-red-400 border border-red-200"
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block animate-pulse" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-300 inline-block animate-pulse" />
                           신분증 확인 필요
                         </button>
                       );
