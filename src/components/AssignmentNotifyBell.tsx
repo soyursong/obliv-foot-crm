@@ -5,7 +5,8 @@
 //
 // ── 데이터 (신규 스키마 0) ──────────────────────────────────────────────────
 //   기존 assignment_actions(자동배정 SSOT, T-20260617-foot-AUTOASSIGN-BALANCE-TOSS) 재사용.
-//   고객명 = check_ins.customer_name(denorm) / 담당자명 = staff.display_name ?? name.
+//   고객명 = check_ins.customer_name(denorm) / 담당자명 = staff.name.
+//   ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그) → select 금지(400). name만 조회.
 //   읽음 상태 = 사용자별 localStorage(읽은 action id Set). DB 컬럼/테이블 추가 없음.
 //
 // ── 읽음 정책 (시나리오3 명시) ──────────────────────────────────────────────
@@ -94,15 +95,16 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
       const checkInIds = [...new Set(actions.map((a) => a.check_in_id).filter(Boolean) as string[])];
       const [staffRes, ciRes] = await Promise.all([
         staffIds.length
-          ? supabase.from('staff').select('id, name, display_name').in('id', staffIds)
-          : Promise.resolve({ data: [] as { id: string; name: string; display_name: string | null }[] }),
+          ? supabase.from('staff').select('id, name').in('id', staffIds)
+          : Promise.resolve({ data: [] as { id: string; name: string }[] }),
         checkInIds.length
           ? supabase.from('check_ins').select('id, customer_name').in('id', checkInIds)
           : Promise.resolve({ data: [] as { id: string; customer_name: string }[] }),
       ]);
       const staffMap = new Map<string, string>();
-      for (const s of (staffRes.data ?? []) as { id: string; name: string; display_name: string | null }[]) {
-        staffMap.set(s.id, (s.display_name ?? s.name ?? '').trim() || '담당자');
+      for (const s of (staffRes.data ?? []) as { id: string; name: string }[]) {
+        // AC-2: 실제 담당자 이름(name) 노출. name이 null/빈 값일 때만 '담당자' 폴백.
+        staffMap.set(s.id, (s.name ?? '').trim() || '담당자');
       }
       const ciMap = new Map<string, string>();
       for (const c of (ciRes.data ?? []) as { id: string; customer_name: string }[]) {
