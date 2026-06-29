@@ -1,2 +1,16 @@
 # obliv-foot-crm — Supabase project ID will be set after project creation
 project_id = "REPLACE_WITH_NEW_PROJECT_ID"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Edge Function 게이트웨이 설정
+#
+# T-20260629-foot-INGEST-EF-401-VERIFYJWT (P0 hotfix):
+#   도파민 outbound POST는 X-Callback-Secret(=DOPAMINE_CALLBACK_SECRET) 헤더로
+#   인증한다(Supabase JWT 아님). 게이트웨이 기본값 verify_jwt=true 가 EF 코드
+#   도달 전 'Missing authorization header'(401)로 거부 → 풋 예약 prod 저장 매번 실패.
+#   verify_jwt=false 로 게이트웨이 JWT 검사를 끄고, 인증은 EF 코드 내부
+#   X-Callback-Secret 검증(index.ts §AC-2, secret 불일치/누락 → 401 UNAUTHORIZED)에
+#   위임한다. → 게이트웨이 우회로 secret 검증이 인증의 단일 관문이 되므로 unauth hole 없음.
+# ─────────────────────────────────────────────────────────────────────────────
+[functions.reservation-ingest-from-dopamine]
+verify_jwt = false
