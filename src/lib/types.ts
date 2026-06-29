@@ -299,6 +299,12 @@ export interface Staff {
   created_at: string;
   updated_at?: string;
   user_id?: string | null;
+  /**
+   * T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER: 자동배정 기본순번(round-robin).
+   * (clinic_id, role) 그룹 내 정렬 키. NULL=미지정(name 정렬로 후순위 + random tie-break).
+   * 읽기경로=autoAssign.pickLeastLoaded 3순위 tie-break(월균등 primary 비파괴). admin이 UPDATE로 편집.
+   */
+  assign_sort_order?: number | null;
 }
 
 // ── 자동배정 (T-20260617-foot-AUTOASSIGN-BALANCE-TOSS) ─────────────────────────

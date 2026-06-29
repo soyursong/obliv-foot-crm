@@ -10,7 +10,7 @@
  *  자동배정 자체는 Dashboard 슬롯 진입 훅(maybeAutoAssign)에서 수행. 본 화면은 조회 + 토스/당김/수동.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, Hand, RefreshCw, Users } from 'lucide-react';
+import { ArrowRightLeft, Hand, RefreshCw, Users, ListOrdered, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
@@ -83,6 +83,12 @@ interface CustomerLite {
 export default function Assignments() {
   const clinic = useClinic();
   const { profile } = useAuth();
+
+  // T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER: 기본순번 편집 권한 = admin/manager/director
+  //   (staff 테이블 RLS=is_admin_or_manager(director 포함)와 정합). 그 외 역할은 버튼 비노출 + save 가드.
+  const canEditRotation =
+    profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+  const [rotationOpen, setRotationOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -649,12 +655,34 @@ export default function Assignments() {
           >
             미배정 일괄 자동배정{unassignedNow.length > 0 ? ` (${unassignedNow.length})` : ''}
           </Button>
+          {canEditRotation && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setRotationOpen(true)}
+              disabled={loading || busy}
+              data-testid="rotation-order-open-btn"
+            >
+              <ListOrdered className="mr-1 h-3.5 w-3.5" />
+              배정 순번 설정
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || busy}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             새로고침
           </Button>
         </div>
       </div>
+
+      {/* T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER: 자동배정 기본순번 편집(admin) */}
+      {canEditRotation && rotationOpen && clinic && (
+        <RotationOrderDialog
+          clinicId={clinic.id}
+          canEdit={canEditRotation}
+          onClose={() => setRotationOpen(false)}
+          onSaved={() => { setRotationOpen(false); void load(); }}
+        />
+      )}
 
       {/* [상담]/[치료] 탭 — 같은 화면 내 파트별 분리 (active 탭 기준 role 필터) */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AssignmentRole)}>
@@ -1062,5 +1090,189 @@ export default function Assignments() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ── 배정 기본순번 편집(admin) ────────────────────────────────────────────────
+// T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER
+//   상담(consultant)/치료(therapist) 파트별 active staff 를 동적 로드(입·퇴사 자동반영),
+//   ↑/↓ 로 순서 편집 후 저장 시 staff.assign_sort_order = 위치(1-based) 일괄 UPDATE.
+//   자동배정(pickLeastLoaded 3순위)이 저장 즉시 새 배정부터 반영(기배정 소급 X).
+//   ⚠ assign_sort_order 컬럼 미적용 시 조회 error → 안내만 표시(배정 동선엔 무영향).
+interface RotaStaff { id: string; name: string; }
+
+function RotationOrderDialog({
+  clinicId,
+  canEdit,
+  onClose,
+  onSaved,
+}: {
+  clinicId: string;
+  canEdit: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [colMissing, setColMissing] = useState(false);
+  const [consult, setConsult] = useState<RotaStaff[]>([]);
+  const [therapy, setTherapy] = useState<RotaStaff[]>([]);
+
+  const loadOrder = useCallback(async () => {
+    setLoading(true);
+    // 별도 조회(메인 staff 로드와 분리) — 컬럼 미존재 시 graceful.
+    const { data, error } = await supabase
+      .from('staff')
+      .select('id, name, role, assign_sort_order')
+      .eq('clinic_id', clinicId)
+      .eq('active', true)
+      .in('role', ['consultant', 'therapist']);
+    if (error) {
+      setColMissing(true);
+      setLoading(false);
+      return;
+    }
+    type Row = { id: string; name: string; role: string; assign_sort_order: number | null };
+    const rows = (data ?? []) as Row[];
+    const BIG = Number.MAX_SAFE_INTEGER;
+    const sortFn = (a: Row, b: Row) =>
+      (a.assign_sort_order ?? BIG) - (b.assign_sort_order ?? BIG) ||
+      a.name.localeCompare(b.name, 'ko');
+    setConsult(rows.filter((r) => r.role === 'consultant').sort(sortFn).map((r) => ({ id: r.id, name: r.name })));
+    setTherapy(rows.filter((r) => r.role === 'therapist').sort(sortFn).map((r) => ({ id: r.id, name: r.name })));
+    setColMissing(false);
+    setLoading(false);
+  }, [clinicId]);
+
+  useEffect(() => { void loadOrder(); }, [loadOrder]);
+
+  const move = (
+    list: RotaStaff[],
+    setList: (v: RotaStaff[]) => void,
+    idx: number,
+    dir: -1 | 1,
+  ) => {
+    const next = idx + dir;
+    if (next < 0 || next >= list.length) return;
+    const copy = [...list];
+    [copy[idx], copy[next]] = [copy[next], copy[idx]];
+    setList(copy);
+  };
+
+  const save = async () => {
+    if (!canEdit) return;
+    setSaving(true);
+    try {
+      const ordered = [
+        ...consult.map((s, i) => ({ id: s.id, ord: i + 1 })),
+        ...therapy.map((s, i) => ({ id: s.id, ord: i + 1 })),
+      ];
+      // 파트별 1-based 순번 일괄 UPDATE. 멱등 — 동일 값 재저장 안전.
+      const results = await Promise.all(
+        ordered.map((o) =>
+          supabase.from('staff').update({ assign_sort_order: o.ord }).eq('id', o.id),
+        ),
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        toast.error(`순번 저장 실패: ${failed.error.message}`);
+        setSaving(false);
+        return;
+      }
+      toast.success('배정 순번을 저장했습니다 (새 배정부터 반영)');
+      onSaved();
+    } catch (e) {
+      toast.error(`순번 저장 실패: ${String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderList = (
+    title: string,
+    list: RotaStaff[],
+    setList: (v: RotaStaff[]) => void,
+    testid: string,
+  ) => (
+    <div className="flex-1 min-w-0" data-testid={`rotation-part-${testid}`}>
+      <p className="mb-2 text-sm font-semibold">{title} <span className="text-xs text-muted-foreground">({list.length}명)</span></p>
+      <div className="space-y-1.5">
+        {list.length === 0 && (
+          <p className="px-2 py-3 text-xs text-muted-foreground">등록된 직원이 없습니다.</p>
+        )}
+        {list.map((s, i) => (
+          <div
+            key={s.id}
+            className="flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2"
+            data-testid={`rotation-row-${testid}-${i}`}
+          >
+            <Badge variant="outline" className="shrink-0 tabular-nums">{i + 1}</Badge>
+            <span className="flex-1 truncate text-sm" data-testid={`rotation-name-${testid}-${i}`}>{s.name}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9"
+              disabled={!canEdit || saving || i === 0}
+              onClick={() => move(list, setList, i, -1)}
+              data-testid={`rotation-up-${testid}-${i}`}
+              aria-label="위로"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9"
+              disabled={!canEdit || saving || i === list.length - 1}
+              onClick={() => move(list, setList, i, 1)}
+              data-testid={`rotation-down-${testid}-${i}`}
+              aria-label="아래로"
+            >
+              <ArrowDown className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl" data-testid="rotation-order-dialog">
+        <DialogHeader>
+          <DialogTitle>자동배정 기본순번 설정</DialogTitle>
+          <DialogDescription>
+            ↑/↓ 로 순서를 바꾼 뒤 저장하세요. 휴무·임시 off 직원은 자동으로 건너뛰고 다음 순번으로 배정됩니다.
+            저장 후 새 배정부터 반영됩니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : colMissing ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            순번 컬럼이 아직 적용되지 않았습니다. 잠시 후 다시 시도해주세요.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-6 md:flex-row">
+            {renderList('상담 파트', consult, setConsult, 'consult')}
+            {renderList('치료 파트', therapy, setTherapy, 'therapy')}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>닫기</Button>
+          <Button
+            onClick={() => void save()}
+            disabled={!canEdit || saving || loading || colMissing}
+            data-testid="rotation-save-btn"
+          >
+            {saving ? '저장 중…' : '순번 저장'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

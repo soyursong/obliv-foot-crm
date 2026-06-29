@@ -165,6 +165,33 @@ export async function setStaffTempOff(
   }
 }
 
+/**
+ * (clinic_id, role) 자동배정 기본순번 맵 — T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER.
+ *   staff.assign_sort_order(ADDITIVE) 를 별도 조회. key=staffId, value=순번(작을수록 우선).
+ *
+ * ⚠ 사고 방지(T-20260618-foot-ASSIGN-STAFF-EMPTY-HOTFIX 교훈): 신규 컬럼을 fetchActiveStaff 의
+ *   메인 select 에 넣으면 컬럼 미적용(마이그레이션 전) 시 PostgREST 42703 → staff=[] → 배정 전면 마비.
+ *   → 순번은 독립 함수로 분리하고 어떤 오류든 빈 맵 반환(graceful). 빈 맵이면 pickLeastLoaded 가
+ *   기존 random tie-break 로 자연 fallback → 자동배정 동선은 절대 막히지 않는다(컬럼 적용 전 배포 안전).
+ */
+export async function fetchAssignSortOrder(clinicId: string): Promise<Map<string, number>> {
+  try {
+    const { data, error } = await supabase
+      .from('staff')
+      .select('id, assign_sort_order')
+      .eq('clinic_id', clinicId)
+      .eq('active', true);
+    if (error) return new Map(); // 컬럼 미존재(42703) 등 — graceful 빈 맵
+    const m = new Map<string, number>();
+    for (const r of (data ?? []) as { id: string; assign_sort_order: number | null }[]) {
+      if (r.assign_sort_order != null) m.set(r.id, r.assign_sort_order);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
 /** 이번 달(KST) assignment_actions 전체 — 균등/토스/당김 카운트 파생 SSOT */
 export async function fetchMonthActions(clinicId: string): Promise<AssignmentAction[]> {
   const today = todaySeoulISODate(); // YYYY-MM-DD
@@ -246,22 +273,35 @@ export function computeLoad(
 // ── least-loaded 선택 ─────────────────────────────────────────────────────────
 
 /**
- * 균등 우선순위(질문②): ① 이달 동일 축 배정 최소 → ② 당일 배정 최소 → ③ 랜덤.
- * @param candidates 후보 staff id 목록(이미 당일 출근 + 역할 필터됨)
+ * 균등 우선순위: ① 이달 동일 축 배정 최소 → ② 당일 배정 최소 → ③ 기본순번(round-robin) → ④ 랜덤.
+ *
+ * T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER (Option B, 비파괴 확장):
+ *   기존 3순위 '랜덤'을 '기본순번(assign_sort_order)'으로 격상하고 랜덤은 4순위로 강등.
+ *   - 월초 전원 0건 → ①② 동률 → 순번 1번부터 배정(현장 AC 시나리오1 충족).
+ *   - 배정될수록 ①(월 누적)이 올라가 다음 순번으로 자연 순환 = round-robin. 월균등 primary 비파괴.
+ *   - 휴무/임시 off 직원은 호출 전 후보 풀에서 이미 제외(skip) → 자동으로 다음 순번 차례.
+ *   - 순번 미지정(NULL)·동순번은 BIG 로 후순위 + 랜덤 tie-break(기존 동작 보존).
+ *
+ * @param candidates 후보 staff id 목록(이미 당일 출근 + 역할 − 임시off 필터됨)
+ * @param load 부하 카운트
+ * @param order (선택) staffId→기본순번 맵. 미전달/빈 맵이면 기존 random tie-break 로 동작(하위호환).
  */
 export function pickLeastLoaded(
   candidates: string[],
   load: LoadCounts,
+  order?: Map<string, number>,
 ): string | null {
   if (candidates.length === 0) return null;
+  const NO_ORDER = Number.MAX_SAFE_INTEGER; // 순번 미지정 = 후순위
   const scored = candidates.map((id) => ({
     id,
     monthly: load.monthlyByAxis.get(id) ?? 0,
     today: load.todayNet.get(id) ?? 0,
+    ord: order?.get(id) ?? NO_ORDER,
     rnd: Math.random(),
   }));
   scored.sort((a, b) =>
-    a.monthly - b.monthly || a.today - b.today || a.rnd - b.rnd,
+    a.monthly - b.monthly || a.today - b.today || a.ord - b.ord || a.rnd - b.rnd,
   );
   return scored[0].id;
 }
@@ -387,9 +427,11 @@ export async function maybeAutoAssign(
       chosen = designatedId;
     } else {
       // 5) 1순위 — 월 균등 least-loaded (재진은 균등 무관하게 풀에서 최소 선택)
+      //    T-20260629 ROTATION: 동률 시 기본순번(assign_sort_order)으로 round-robin tie-break.
       const actions = await fetchMonthActions(checkIn.clinic_id);
       const load = computeLoad(actions, role, axis, todaySeoulISODate());
-      chosen = pickLeastLoaded(pool, load);
+      const order = await fetchAssignSortOrder(checkIn.clinic_id);
+      chosen = pickLeastLoaded(pool, load, order);
     }
 
     if (!chosen) {
