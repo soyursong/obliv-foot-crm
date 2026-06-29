@@ -49,6 +49,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260625-foot-COLOR-CONVENTION-UNIFY-CANDIDATES: A안 색상 컨벤션(초진 파랑·재진 초록·힐러 노랑)
+        //   4 surface 전면 적용 — 카드·dot·칩·배지·팝업의 토큰 매핑 + carve-out(칸반 teal/error 빨강/재진 emerald) 보존
+        //   소스 정적 가드. 신규색 0(tailwind 旣정의 토큰 재사용). 실 색상 렌더는 supervisor field-soak. auth 불요.
+        '**/T-20260625-foot-COLOR-CONVENTION-UNIFY-CANDIDATES.spec.ts',
         '**/T-20260520-foot-PRINT-FORM-BIND.spec.ts',
         '**/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts',
         '**/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts',
