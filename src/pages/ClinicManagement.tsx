@@ -30,7 +30,9 @@ import DiagnosisNamesTab from '@/components/admin/DiagnosisNamesTab';
 // T-20260608-foot-DX-BUNDLE-SET (AC-1): 묶음상병(여러 상병을 한 세트로 묶어 진료차트 일괄 적용) 관리
 import DiagnosisSetsTab from '@/components/admin/DiagnosisSetsTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
-import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
+// T-20260629-foot-TREATMENTSET-TAB-REMOVE (문지은 대표원장 confirm 2026-06-29): 진료관리 '진료세트' 탭 제거.
+//   TreatmentSetsTab 컴포넌트 파일·treatment_sets/treatment_set_items DB 테이블·데이터는 물리 보존(UI 진입만 제거).
+//   import 폐지 + 탭/패널/딥링크 라우팅 제거. ?tab=treatment_sets 는 기본 탭(diagnosis_names)으로 정규화.
 // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F (RETIRE): 빠른처방 전용 서브탭 제거 →
 //   QuickRxButtonsTab import 폐지(빠른처방 기능은 묶음처방 태그로 일원화). 단 QuickRxButtonsTab 컴포넌트
 //   파일·quick_rx_buttons 데이터는 물리 보존(문지은 대표원장 UI만 삭제 지시, §5-5). ?tab=quick_rx 는 prescriptions(묶음처방)로 redirect.
@@ -39,7 +41,7 @@ import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 관리 별도 탭(InsuranceStatusTab) 제거 →
 //   처방세트(drug_folders)>전체보기 우측 단 인라인 편집 + HIRA 동기화로 통합. ?tab=insurance_status 는 drug_folders 로 redirect.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Pill, FileText, Layers, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
+import { Pill, FileText, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -61,12 +63,16 @@ export default function ClinicManagement() {
   const rawRequestedTab = searchParams.get('tab');
   // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: 빠른처방 서브탭 retire →
   //   구 딥링크/북마크(?tab=quick_rx) 호환: 대체 surface 인 묶음처방(prescriptions) 탭으로 정규화.
+  // T-20260629-foot-TREATMENTSET-TAB-REMOVE: '진료세트'(treatment_sets) 탭 제거 →
+  //   구 딥링크/북마크(?tab=treatment_sets) 호환: 진료관리 기본 탭(diagnosis_names)으로 정규화(white screen·JS 에러 0).
   const requestedTab =
     rawRequestedTab === 'insurance_status'
       ? 'drug_folders'
       : rawRequestedTab === 'quick_rx'
         ? 'prescriptions'
-        : rawRequestedTab;
+        : rawRequestedTab === 'treatment_sets'
+          ? 'diagnosis_names'
+          : rawRequestedTab;
 
   // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-4): 상용구·수가세트는 '서비스관리 > 상용구관리'로 이전됨.
   //   구 딥링크(/admin/clinic-management?tab=phrases|fee_set_templates)·북마크 호환을 위해 새 위치로 redirect.
@@ -88,7 +94,7 @@ export default function ClinicManagement() {
     'drug_folders',
     'diagnosis_names',
     'diagnosis_sets',
-    'treatment_sets',
+    // T-20260629-foot-TREATMENTSET-TAB-REMOVE: 'treatment_sets' 제거(딥링크는 위 requestedTab 정규화로 기본 탭 호환).
     'documents',
     // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: 'quick_rx' 서브탭 retire(묶음처방 태그로 일원화).
     'progress_plans',
@@ -109,7 +115,7 @@ export default function ClinicManagement() {
       <div>
         <h1 className="text-lg font-bold">진료관리</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          처방세트·진료세트·상병·서류 템플릿 등 진료 관련 항목을 관리합니다.
+          처방세트·상병·서류 템플릿 등 진료 관련 항목을 관리합니다.
         </p>
       </div>
 
@@ -190,12 +196,9 @@ export default function ClinicManagement() {
           {/* 행 경계 2→3 */}
           <div className="basis-full h-0" aria-hidden="true" />
 
-          {/* ── 행 3: 진료세트 · 경과분석 플랜 ──
-              T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '수가세트'(fee_set_templates) → 서비스관리>상용구관리 로 이전. */}
-          <TabsTrigger value="treatment_sets" className="gap-1.5" data-testid="tab-treatment-sets">
-            <Layers className="h-3.5 w-3.5" />
-            진료세트
-          </TabsTrigger>
+          {/* ── 행 3: 경과분석 플랜 ──
+              T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '수가세트'(fee_set_templates) → 서비스관리>상용구관리 로 이전.
+              T-20260629-foot-TREATMENTSET-TAB-REMOVE: '진료세트'(treatment_sets) 탭 제거(문지은 대표원장 confirm). */}
           <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
             <TrendingUp className="h-3.5 w-3.5" />
             경과분석 플랜
@@ -238,9 +241,7 @@ export default function ClinicManagement() {
           <DocumentTemplatesTab />
         </TabsContent>
         {/* 행 3 */}
-        <TabsContent value="treatment_sets">
-          <TreatmentSetsTab />
-        </TabsContent>
+        {/* T-20260629-foot-TREATMENTSET-TAB-REMOVE: '진료세트'(treatment_sets) TabsContent 제거(문지은 대표원장 confirm). 컴포넌트·DB 보존. */}
         {/* '수가세트'(fee_set_templates) TabsContent 는 서비스관리>상용구관리로 이전(T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT). */}
         <TabsContent value="progress_plans">
           <ProgressPlansTab />

@@ -7,11 +7,16 @@
  * AC-5c: 선택하면 코드 + 설명 자동 입력
  * AC-5d: 상병코드 쪽 [+ 추가]도 상병코드 목록에서 선택 가능
  * AC-5e: 수동 입력 유지 (catalog에 없는 코드 직접 입력)
+ *
+ * ⚠️ RETIRED — T-20260629-foot-TREATMENTSET-TAB-REMOVE (문지은 대표원장 confirm 2026-06-29):
+ *   진료관리에서 '진료세트' 탭 UI 진입이 제거되어 본 시나리오(tab-treatment-sets 진입)는 더 이상 도달 불가.
+ *   TreatmentSetsTab 컴포넌트·treatment_set(_items) DB 데이터는 물리 보존이므로 spec 파일은 역참조용으로 남기되
+ *   describe.skip 으로 비활성화한다. 탭 제거 회귀 가드는 T-20260629-foot-TREATMENTSET-TAB-REMOVE.spec.ts 가 담당.
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
 
-test.describe('T-20260512-foot-TREATMENT-SET v2 — 코드 검색/선택 드롭다운', () => {
+test.describe.skip('T-20260512-foot-TREATMENT-SET v2 — 코드 검색/선택 드롭다운 (RETIRED: TAB-REMOVE)', () => {
   test.beforeEach(async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) test.skip(true, 'Login failed');
