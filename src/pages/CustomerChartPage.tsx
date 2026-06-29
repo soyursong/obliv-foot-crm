@@ -5219,10 +5219,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           disabled={!latestCheckIn}
                           title={latestCheckIn ? '클릭하면 신분증 확인 완료 처리' : '내원 기록이 없어 수동 처리 불가 (주민번호 저장 시 자동 처리)'}
                           onClick={() => { if (latestCheckIn) markIdVerified(); }}
-                          // T-20260629-foot-CHART2-IDVERIFY-PASTEL-SHRINK: 진한레드→파스텔 핑크/로즈(bg-rose-100/text-rose-400/border-rose-200) + 절반 사이즈(text-xs·py-0.5·px-1.5·gap-1·font-medium). 표시/숨김 로직(rrn 미입력 조건) 불변, className만 교체.
-                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70 bg-rose-100 text-rose-400 border border-rose-200"
+                          // T-20260629-foot-RRN-VERIFY-BADGE-PASTEL-SHRINK: 추가 톤다운 — 로즈→파스텔 핑크(bg-pink-100/text-pink-400/border-pink-200, 저채도). 사이즈는 이미 절반 목표치(text-xs·py-0.5·px-1.5·gap-1·font-medium) 도달 → 유지. 표시/숨김 로직(rrn 미입력 조건)·텍스트 불변, className만 교체.
+                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70 bg-pink-100 text-pink-400 border border-pink-200"
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-rose-300 inline-block animate-pulse" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-pink-300 inline-block animate-pulse" />
                           신분증 확인 필요
                         </button>
                       );
