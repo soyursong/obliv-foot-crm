@@ -5622,7 +5622,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       clinicId={customer?.clinic_id ?? ''}
                       authorName={profile?.name ?? ''}
                       compact
-                      tone="neutral"
                       unifyInput
                     />
                   </td>

@@ -62,13 +62,14 @@ export function CustomerColumnMemo({
 
   return (
     <div className="space-y-2">
-      {/* 누적 항목 리스트 (예약메모 amber 카드 chrome 미러링 — 컬럼-backed라 시각·작성자 메타는 없음) */}
+      {/* 누적 항목 리스트 — 예약메모 카드 chrome 미러링 (쿨그레이 모노톤, 컬럼-backed라 시각·작성자 메타는 없음).
+          T-20260629-foot-CHART1-FORMAT-UNIFY AC-3: amber(노란색) → border-border bg-card 모노톤 통일. */}
       {items.length > 0 ? (
         <div className="space-y-1.5">
           {displayItems.map((content, i) => (
             <div
               key={i}
-              className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs"
+              className="rounded border border-border bg-card px-2 py-1.5 text-xs"
               data-testid="memo-item"
             >
               <span className="whitespace-pre-wrap text-gray-800">{content}</span>

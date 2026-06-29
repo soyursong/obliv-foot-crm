@@ -563,6 +563,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
+    // T-20260629-foot-CHART1-FORMAT-UNIFY AC-1: 고객 전환 시 이전 생년월일 잔상 방지
+    setBirthDateDisplay(null);
     // T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 고객/체크인 전환 시 dirty·확인창 리셋
     dirtyRef.current = false;
     setShowCloseConfirm(false);
@@ -808,6 +810,20 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
+    }
+    // T-20260629-foot-CHART1-FORMAT-UNIFY AC-1: 대시보드(checkIn) 1번차트도 생년월일 표기 — 고객관리(customerMode)와 동일 RPC 파생.
+    // PHI: rrn 복호화는 RPC(fn_customer_birthdates) 서버측만, birth_date_display(YYYY-MM-DD)만 수신. 신규 컬럼·DDL 0.
+    const birthCustomerId = checkIn.customer_id ?? custData?.id ?? null;
+    if (birthCustomerId) {
+      supabase
+        .rpc('fn_customer_birthdates', { p_clinic_id: checkIn.clinic_id, p_ids: [birthCustomerId] })
+        .then(({ data, error }) => {
+          if (error) { setBirthDateDisplay(null); return; }
+          const row = (data ?? [])[0] as { birth_date_display: string | null } | undefined;
+          setBirthDateDisplay(row?.birth_date_display ?? null);
+        });
+    } else {
+      setBirthDateDisplay(null);
     }
     // T-20260516-foot-CHART-UNIFORM-LOCK AC-2: 예약메모 표시 균일화 — 4단계 폴백
     // 3단계(reservation_id → customer_id → phone) 실패 시 custData.id로 최신 예약 재탐색
@@ -1208,19 +1224,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       <Sheet open={true} onOpenChange={(o) => { if (!o) requestClose(); }}>
         <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
           <SheetHeader>
+            {/* T-20260629-foot-CHART1-FORMAT-UNIFY AC-2: 헤더 단독 고객차트 버튼 → 대시보드(checkIn) 기준
+                [고객차트][진료차트] 2버튼 행으로 통일(아래 본문). 헤더는 성함만. */}
             <div className="flex items-center justify-between gap-2">
               <SheetTitle className="flex items-center gap-2 flex-1 flex-wrap">
                 {customerMode.customerName}
               </SheetTitle>
-              {/* T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용 */}
-              <Button
-                size="sm"
-                className="gap-1 h-8 text-xs bg-teal-600 hover:bg-teal-700 shrink-0"
-                onClick={() => openChart(customerMode.customerId)}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                고객차트(2번)
-              </Button>
             </div>
           </SheetHeader>
 
@@ -1263,6 +1272,31 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 </>
               ) : (
                 <span className="text-xs text-muted-foreground italic">방문 이력 없음</span>
+              )}
+            </div>
+
+            {/* T-20260629-foot-CHART1-FORMAT-UNIFY AC-2: 고객차트/진료차트 버튼 구성을 대시보드(checkIn) 1번차트와 동일 통일.
+                기존 헤더 단독 고객차트 버튼 → [고객차트][진료차트] 2버튼 행(동일 outline/teal·sage 구성). 기능 회귀 0. */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
+                onClick={() => openChart(customerMode.customerId)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                고객차트
+              </Button>
+              {onOpenMedicalChart && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 gap-2 border-sage-400 text-sage-700 hover:bg-sage-50 text-sm h-11"
+                  onClick={() => onOpenMedicalChart(customerMode.customerId)}
+                >
+                  <Stethoscope className="h-4 w-4" />
+                  진료차트
+                </Button>
               )}
             </div>
 
@@ -1593,6 +1627,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 ({mins}분)
               </span>
             </span>
+          </div>
+
+          {/* T-20260629-foot-CHART1-FORMAT-UNIFY AC-1: 생년월일(YYYY-MM-DD) — 고객관리(customerMode) 1번차트와 동일 항목·양식 통일.
+              PHI: rrn 평문/뒷자리 미노출, 서버 RPC 파생값만 표시. 미등록 시 "생년월일 미등록". */}
+          <div className="flex items-center gap-1 text-sm text-muted-foreground" data-testid="cust-detail-birthdate">
+            <Calendar className="h-3.5 w-3.5" />
+            <span className="tabular-nums">{birthDateDisplay ?? '생년월일 미등록'}</span>
           </div>
 
           {/* T-20260515-foot-MEDICAL-CHART-V1 AC-7: [고객차트] [진료차트] 버튼 나란히 */}

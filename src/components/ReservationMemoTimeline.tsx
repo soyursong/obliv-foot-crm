@@ -46,11 +46,10 @@ interface Props {
   /** 삽입 성공 후 외부 상태 동기화 콜백 (optional) */
   onAdded?: () => void;
   /**
-   * T-20260615-foot-RESVPOPUP-DETAIL-8FIX AC7: 비고정 메모 색상 톤.
-   * - 'amber'(기본): 기존 동작(주황 박스) — 타 4개 서피스 호환 유지.
-   * - 'neutral': 예약상세 팝업 통일 — 컬러 텍스트 제거, 전체 흐름과 동일한 기본 색상.
+   * T-20260615-foot-RESVPOPUP-DETAIL-8FIX AC7 → T-20260629-foot-CHART1-FORMAT-UNIFY AC-3:
+   * 비고정 메모 톤은 쿨그레이 모노톤(border-border bg-card)으로 전면 통일. amber(주황) 분기 폐지 —
+   * 노란색 완전 제거(총괄 지시 MSG-20260629-170324). tone prop 제거(모든 서피스 단일 모노톤).
    */
-  tone?: 'amber' | 'neutral';
   /**
    * T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-1: 입력부 레이아웃을 2번차트 1구역 고객메모와 동일하게 통일.
    * - false(기본): 기존 동작(textarea + 우측 teal [추가] 버튼 side-by-side).
@@ -79,7 +78,6 @@ export function ReservationMemoTimeline({
   authorName,
   compact = false,
   onAdded,
-  tone = 'amber',
   unifyInput = false,
 }: Props) {
   const [items, setItems] = useState<MemoHistoryItem[]>([]);
@@ -206,15 +204,13 @@ export function ReservationMemoTimeline({
               className={`rounded border px-2 py-1.5 text-xs ${
                 item.is_pinned
                   ? 'border-teal-300 bg-teal-50'
-                  : tone === 'neutral'
-                    ? 'border-border bg-card'
-                    : 'border-amber-200 bg-amber-50'
+                  : 'border-border bg-card'
               }`}
               data-testid={item.is_pinned ? 'memo-pinned' : 'memo-item'}
             >
               <div className="flex items-start justify-between gap-1">
                 <div className="flex-1 min-w-0">
-                  <span className={`font-medium tabular-nums mr-1 ${item.is_pinned ? 'text-teal-700' : tone === 'neutral' ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                  <span className={`font-medium tabular-nums mr-1 ${item.is_pinned ? 'text-teal-700' : 'text-muted-foreground'}`}>
                     {item.is_pinned && (
                       <Pin className="inline h-3 w-3 mr-0.5 text-teal-600 shrink-0" />
                     )}
