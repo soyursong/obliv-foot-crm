@@ -2425,6 +2425,28 @@ interface SlotDwellSeg {
   is_current: boolean;
 }
 
+// T-20260629-foot-CHART2-DWELL-ROOMNUM: 체류시간 항목에 머문 방 번호(코드) 표기.
+//   데이터 소스 결정(Phase1): status_transitions.room_id 는 FE가 미기록(항상 NULL)이라 사용 불가 →
+//   실제 방 데이터는 check_in_room_logs.assigned_room(=rooms.name, 현장 코드 C{N}/L{N}/상담실{N} 그대로).
+//   FE-only 시간창 매칭으로 세그먼트별 방을 해석(신규 스키마/RPC 변경 없음 → 옵션 B).
+interface DwellRoomLog {
+  check_in_id: string;
+  assigned_room: string; // rooms.name = 현장 코드(C{N}/L{N}/상담실{N})
+  room_type: string;     // 'consultation' | 'treatment' | 'laser' | 'examination'
+  logged_at: string;
+}
+
+// 체류 세그먼트 status → 방배정 로그 room_type 매핑 (방을 점유하는 상태만; 대기/완료 등은 방 없음 → 타입만).
+const DWELL_STATUS_TO_ROOM_TYPE: Record<string, string> = {
+  consultation: 'consultation',
+  examination: 'examination',
+  preconditioning: 'treatment', // 치료실
+  laser: 'laser',
+};
+// 전이 로그(status_transitions)와 방배정 로그(check_in_room_logs)는 같은 동선 전환 시점에 별도 INSERT 되므로
+// logged_at ≈ entered_at. INSERT 순서 오차를 흡수하는 시간창 허용오차(±90초).
+const DWELL_ROOM_MATCH_TOL_MS = 90 * 1000;
+
 // 체류시간(초) → "1시간 23분" / "12분 5초" / "45초" 한글 포맷 (천단위·Asia/Seoul UX 일관)
 function formatDwell(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -2481,6 +2503,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [slotDwell, setSlotDwell] = useState<SlotDwellSeg[]>([]);
   const [slotDwellLoading, setSlotDwellLoading] = useState(false);
   const [slotDwellLoaded, setSlotDwellLoaded] = useState(false);
+  // T-20260629-foot-CHART2-DWELL-ROOMNUM: 체류 세그먼트별 방 번호 표기용 방배정 로그(check_in_room_logs)
+  const [dwellRoomLogs, setDwellRoomLogs] = useState<DwellRoomLog[]>([]);
   // T-20260603-foot-SLOT-DWELL-LIVE-TICK: 진행중(is_current) 세그먼트 경과시간 실시간 카운트용 now 틱
   const [slotDwellNowMs, setSlotDwellNowMs] = useState(() => Date.now());
   // T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 대상 체크인
@@ -2956,6 +2980,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // T-20260602-foot-SLOT-DWELL-TIME (B안): 방문이력 갱신 시 체류시간 재로딩 트리거
       setSlotDwellLoaded(false);
       setSlotDwell([]);
+      // T-20260629-foot-CHART2-DWELL-ROOMNUM: 방 번호 표기 데이터도 동반 리셋(slotDwellLoaded 게이트와 함께 재로딩)
+      setDwellRoomLogs([]);
 
       const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
       setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; checklist_data: Record<string, unknown> }[]);
@@ -4742,12 +4768,25 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setSlotDwellLoading(true);
     (async () => {
       const { data, error } = await supabase.rpc('fn_check_in_slot_dwell', { p_check_in_ids: ids });
+      // T-20260629-foot-CHART2-DWELL-ROOMNUM: 방 번호 표기용 방배정 로그 동시 로드(read-only, clinic RLS).
+      //   실패해도 체류시간 자체는 표시 — 방 번호만 생략(타입만, AC-3 graceful fallback).
+      const { data: roomLogData, error: roomLogErr } = await supabase
+        .from('check_in_room_logs')
+        .select('check_in_id, assigned_room, room_type, logged_at')
+        .in('check_in_id', ids)
+        .order('logged_at', { ascending: true });
       if (cancelled) return; // 더 새로운 실행이 인계 — 그 실행이 loading 상태를 소유
       if (error) {
         toast.error('체류시간 조회 실패: ' + error.message);
         setSlotDwell([]);
       } else {
         setSlotDwell((data ?? []) as SlotDwellSeg[]);
+      }
+      if (roomLogErr) {
+        console.error('[CHART2-DWELL-ROOMNUM] check_in_room_logs 로드 실패:', roomLogErr.message);
+        setDwellRoomLogs([]);
+      } else {
+        setDwellRoomLogs((roomLogData ?? []) as DwellRoomLog[]);
       }
       setSlotDwellLoaded(true);
       setSlotDwellLoading(false);
@@ -7371,6 +7410,36 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     </div>
                   );
                 }
+                // T-20260629-foot-CHART2-DWELL-ROOMNUM: 방배정 로그를 방문건별로 묶고, 세그먼트별 머문 방(코드)을 해석.
+                //   status_transitions.room_id 미기록 → check_in_room_logs.assigned_room 을 시간창(±90초) 매칭.
+                //   매칭 실패/방 없는 상태(대기 등) → null 반환 → 타입만 표시(AC-3 graceful fallback, 기존 동작 동일).
+                const dwellLogsByCheckIn = new Map<string, DwellRoomLog[]>();
+                for (const l of dwellRoomLogs) {
+                  const arr = dwellLogsByCheckIn.get(l.check_in_id) ?? [];
+                  arr.push(l);
+                  dwellLogsByCheckIn.set(l.check_in_id, arr);
+                }
+                const resolveDwellRoom = (ciId: string, seg: SlotDwellSeg): string | null => {
+                  const rt = DWELL_STATUS_TO_ROOM_TYPE[seg.status];
+                  if (!rt) return null;
+                  const logs = (dwellLogsByCheckIn.get(ciId) ?? []).filter((l) => l.room_type === rt);
+                  if (logs.length === 0) return null;
+                  const entered = new Date(seg.entered_at).getTime();
+                  const exited = new Date(seg.exited_at).getTime();
+                  // 1순위: 세그먼트 구간(±TOL) 내 배정 로그
+                  const within = logs.filter((l) => {
+                    const t = new Date(l.logged_at).getTime();
+                    return t >= entered - DWELL_ROOM_MATCH_TOL_MS && t <= exited + DWELL_ROOM_MATCH_TOL_MS;
+                  });
+                  // 2순위(폴백): 이전 상태에서 이미 배정돼 그대로 점유 중인 방 → 구간 종료 이전 마지막 배정
+                  const pool = within.length > 0
+                    ? within
+                    : logs.filter((l) => new Date(l.logged_at).getTime() <= exited + DWELL_ROOM_MATCH_TOL_MS);
+                  if (pool.length === 0) return null;
+                  return pool.reduce((a, b) =>
+                    (new Date(a.logged_at).getTime() >= new Date(b.logged_at).getTime() ? a : b),
+                  ).assigned_room || null;
+                };
                 return (
                   // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-2: 체류시간 콘텐츠 스크롤을 이 탭 영역으로 재한정.
                   //   max-h + overflow-y-auto → 좌측 패널 전체(고객정보)·우측 2구역으로 스크롤이 번지지 않고 박스 내부에서만 스크롤.
@@ -7393,8 +7462,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           ? Math.max(0, (slotDwellNowMs - new Date(s.entered_at).getTime()) / 1000)
                           : s.duration_seconds;
                       // 슬롯(상태)별 누적 집계 (AC-1: 진행중 포함 시 라이브)
-                      const agg = new Map<string, number>();
-                      for (const s of segs) agg.set(s.status, (agg.get(s.status) ?? 0) + effSec(s));
+                      // T-20260629-foot-CHART2-DWELL-ROOMNUM: (status, 방코드) 단위 집계 →
+                      //   같은 타입의 다른 방(예: L1, L2)을 거쳤으면 각각 별 행으로 구분(시나리오1-4).
+                      //   방 미상이면 room=null → 키가 기존 status 단독과 동일(NUL 접미) → 회귀 0(AC-2).
+                      const agg = new Map<string, { status: string; room: string | null; sec: number }>();
+                      for (const s of segs) {
+                        const room = resolveDwellRoom(ci.id, s);
+                        const key = `${s.status} ${room ?? ''}`;
+                        const cur = agg.get(key);
+                        if (cur) cur.sec += effSec(s);
+                        else agg.set(key, { status: s.status, room, sec: effSec(s) });
+                      }
                       const totalSec = segs.reduce((sum, s) => sum + effSec(s), 0);
                       return (
                         <div key={ci.id} className="rounded-lg border bg-white p-3 text-xs" data-testid="slot-dwell-visit">
@@ -7409,15 +7487,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           <table className="w-full border-collapse">
                             <thead>
                               <tr className="bg-muted/30 text-muted-foreground">
-                                <th className="text-left px-2 py-1.5 font-medium border-b">슬롯</th>
+                                <th className="text-left px-2 py-1.5 font-medium border-b">슬롯 · 방</th>
                                 <th className="text-right px-2 py-1.5 font-medium border-b">체류시간</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {Array.from(agg.entries()).map(([status, sec]) => (
-                                <tr key={status} className="border-b border-muted/20">
-                                  <td className="px-2 py-1.5">{STATUS_KO[status as keyof typeof STATUS_KO] ?? status}</td>
-                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-sage-700">{formatDwell(sec)}</td>
+                              {/* T-20260629-foot-CHART2-DWELL-ROOMNUM: 슬롯 타입 + 머문 방 코드(C{N}/L{N}/상담실{N}) 표기. 방 미상이면 타입만(AC-3). */}
+                              {Array.from(agg.entries()).map(([key, row]) => (
+                                <tr key={key} className="border-b border-muted/20">
+                                  <td className="px-2 py-1.5">
+                                    {STATUS_KO[row.status as keyof typeof STATUS_KO] ?? row.status}
+                                    {row.room && (
+                                      <span className="ml-1 font-semibold text-sage-700" data-testid="slot-dwell-room">{row.room}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-sage-700">{formatDwell(row.sec)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -7427,7 +7511,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             <div className="mt-2 pt-2 border-t border-muted/30">
                               <div className="text-[10px] text-muted-foreground mb-1">시간순 동선</div>
                               <div className="flex flex-wrap gap-1">
-                                {segs.map((s) => (
+                                {segs.map((s) => {
+                                  // T-20260629-foot-CHART2-DWELL-ROOMNUM: 동선 칩에도 머문 방 코드 표기(있을 때만)
+                                  const room = resolveDwellRoom(ci.id, s);
+                                  return (
                                   <span
                                     key={s.seq}
                                     className={cn(
@@ -7438,10 +7525,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     )}
                                   >
                                     {STATUS_KO[s.status as keyof typeof STATUS_KO] ?? s.status}
+                                    {room && <span className="font-semibold">{room}</span>}
                                     <span className="tabular-nums">{formatDwell(effSec(s))}</span>
                                     {s.is_current && <span className="text-emerald-600">(진행중)</span>}
                                   </span>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
