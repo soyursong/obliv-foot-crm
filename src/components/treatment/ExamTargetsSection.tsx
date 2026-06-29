@@ -32,7 +32,7 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import KohResultDialog from '@/components/KohResultDialog';
 import BloodResultDialog from '@/components/BloodResultDialog';
-import { Loader2, FlaskConical, Droplet, ClipboardList, FilePlus2, FileText, CalendarDays, Upload } from 'lucide-react';
+import { Loader2, FlaskConical, Droplet, ClipboardList, FilePlus2, FileText, CalendarDays, Upload, ChevronRight, ChevronDown } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
 // AC-2: 일자별 리스트 윈도(검사신청일 기준 직전 N일). 검사결과는 수일 뒤 회신되므로 단일일 → 2주 윈도.
@@ -278,6 +278,17 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const [viewFieldData, setViewFieldData] = useState<Record<string, unknown> | null>(null);
   // 혈액검사 결과지 업로드/보기 다이얼로그 타겟(환자). null=닫힘.
   const [bloodTarget, setBloodTarget] = useState<{ id: string; name: string } | null>(null);
+  // T-20260629-foot-TREATBL-COLLAPSE-TOGGLE: 날짜 그룹 아코디언. 펼쳐진 그룹 키(날짜) 집합.
+  //   초기값 = 빈 Set → 전 그룹 접힘(▶). 화면 재진입 시 컴포넌트 remount → 자동 접힘 복귀(AC-2/시나리오2-3).
+  //   그룹 독립 토글(AC-5) — 한 그룹 변경이 다른 그룹에 영향 없음.
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const toggleGroup = (d: string) =>
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d);
+      else next.add(d);
+      return next;
+    });
 
   const totalCount = groups.reduce((sum, g) => sum + g.rows.length, 0);
   const today = seoulISODate(new Date());
@@ -428,42 +439,68 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {/* AC-2: 일자별 그룹 — 각 그룹 = 날짜 헤더 바 + 해당 일자 명단 테이블 */}
-          {groups.map((g) => (
-            <div
-              key={g.date}
-              className="overflow-hidden rounded-lg border bg-background"
-              data-testid="exam-date-group"
-              data-date={g.date}
-            >
-              <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-2.5 py-1.5">
-                <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
-                  <CalendarDays className="h-3.5 w-3.5 text-teal-600" />
-                  {dateLabel(g.date)}
-                  {g.date === today && (
-                    <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                      오늘
-                    </span>
-                  )}
-                </span>
-                <span className="text-[11px] font-medium text-muted-foreground" data-testid="exam-date-group-count">
-                  {g.rows.length}명
-                </span>
+          {/* AC-2: 일자별 그룹 — 각 그룹 = 날짜 헤더 바(아코디언 토글) + 펼침 시 해당 일자 명단 테이블 */}
+          {groups.map((g) => {
+            const isOpen = expandedDates.has(g.date);
+            return (
+              <div
+                key={g.date}
+                className="overflow-hidden rounded-lg border bg-background"
+                data-testid="exam-date-group"
+                data-date={g.date}
+                data-state={isOpen ? 'expanded' : 'collapsed'}
+              >
+                {/* AC-3: 헤더 클릭 = 펼침/접힘 토글. 좌측 chevron(▶ 접힘 / ▼ 펼침). */}
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 border-b bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/60"
+                  data-testid="exam-date-group-header"
+                  aria-expanded={isOpen}
+                  onClick={() => toggleGroup(g.date)}
+                >
+                  <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
+                    {isOpen ? (
+                      <ChevronDown
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        data-testid="exam-date-group-chevron"
+                        data-open="true"
+                      />
+                    ) : (
+                      <ChevronRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        data-testid="exam-date-group-chevron"
+                        data-open="false"
+                      />
+                    )}
+                    <CalendarDays className="h-3.5 w-3.5 text-teal-600" />
+                    {dateLabel(g.date)}
+                    {g.date === today && (
+                      <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        오늘
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[11px] font-medium text-muted-foreground" data-testid="exam-date-group-count">
+                    {g.rows.length}명
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="overflow-x-auto" data-testid="exam-targets-table">
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="border-b bg-muted/20 text-left text-[11px] font-semibold text-muted-foreground">
+                          <th className="px-2 py-1 whitespace-nowrap">#</th>
+                          <th className="px-2 py-1 whitespace-nowrap">환자</th>
+                          <th className="px-2 py-1 whitespace-nowrap">신청 검사 &amp; 검사결과</th>
+                        </tr>
+                      </thead>
+                      <tbody>{g.rows.map((r, idx) => renderRow(r, idx))}</tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-              <div className="overflow-x-auto" data-testid="exam-targets-table">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b bg-muted/20 text-left text-[11px] font-semibold text-muted-foreground">
-                      <th className="px-2 py-1 whitespace-nowrap">#</th>
-                      <th className="px-2 py-1 whitespace-nowrap">환자</th>
-                      <th className="px-2 py-1 whitespace-nowrap">신청 검사 &amp; 검사결과</th>
-                    </tr>
-                  </thead>
-                  <tbody>{g.rows.map((r, idx) => renderRow(r, idx))}</tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
