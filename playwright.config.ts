@@ -184,6 +184,11 @@ export default defineConfig({
         //   대분류-소분류 표시그룹(경구약/간질환/탈모약/임신). 비파괴(24+4키 보존)·표시순서≠조합우선순위
         //   (priority? 가산필드)·간염 B(C) 드롭다운 회귀無 정적/순수함수 단언. auth 불요.
         '**/T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT.spec.ts',
+        // T-20260629-foot-STAFFCAL-CROSSMONTH-SCHEDULE: 직원 근무 캘린더 월경계 교차 주(6/28~7/4)
+        //   직원 스케줄 0건 미표시 — dutySheet 파서가 날짜 행의 '다음 달' 라벨('7월')을 헤더로
+        //   오인해 그 주를 통째 누락하던 버그. parseMonthHeader 가드(날짜 행≥3 → 헤더 제외) 회귀
+        //   방지. 실측 시트 구조 모사 CSV 로 파서 직접 단언(순수 함수, auth/CSV fetch 불요).
+        '**/T-20260629-foot-STAFFCAL-CROSSMONTH-SCHEDULE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

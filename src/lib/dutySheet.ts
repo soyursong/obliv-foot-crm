@@ -119,6 +119,16 @@ function dayColumnsOf(row: string[]): Array<{ col: number; day: number }> {
 function parseMonthHeader(
   row: string[],
 ): { year?: number; month?: number; team?: string } | null {
+  // ── 월경계 교차 주(straddling week) 가드 (T-20260629-foot-STAFFCAL-CROSSMONTH-SCHEDULE) ──
+  //   시트는 "매 달 3주차 다음 달 스케줄 삽입" 규칙상, 월이 바뀌는 날짜 행
+  //   (예: 29,30,1,2,3,4,5)의 빈 칼럼에 '7월' 같은 '다음 달' 라벨 셀을 함께 넣는다.
+  //   이 라벨 때문에 날짜 행이 'N월' 매칭으로 헤더로 오인되면, 해당 주 date row 가
+  //   header 로 소비(continue)되어 그 주 출근자(in-month 6/29·6/30 + overflow 7/1~)
+  //   전체가 후보에서 누락된다(=straddling week 통째 공백). 날짜 행(요일별 일자 ≥3개)은
+  //   'N월' 주석 셀이 있어도 헤더가 아니다 → 날짜 행으로 처리하도록 헤더 판정에서 제외.
+  //   (월 롤오버는 resolveRowDates 가 행 내부에서 직접 처리하므로 라벨 무시해도 정합)
+  if (dayColumnsOf(row).length >= 3) return null;
+
   let month: number | undefined;
   let year: number | undefined;
   let team: string | undefined;
