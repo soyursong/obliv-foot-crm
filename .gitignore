@@ -63,3 +63,4 @@ evidence/T-20260606-foot-D1-TESTDATA-CLEANUP_phase05_regression.json
 evidence/T-20260607-CHECKIN-DUP-NULL_ac1_inventory.json
 evidence/T-20260607-CHECKIN-DUP-NULL_ac1_inventory.md
 migration_packages/T-20260531-data-JONGNOFOOT-MIGRATE-HFQ-TO-FOOT/AC7_dry_run_report.md
+.env*

@@ -236,33 +236,17 @@ test.describe('T-20260526-foot-PROGRESS-CHECKPOINT — 경과분석 플랜 탭 (
 
   // ─────────────────────────────────────────────────────────────────────────────
   // T6: Phase 2 — 예약현황 경과분석 필터 버튼 (AC-4)
+  //   T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 예약관리 경과분석 ON/OFF 토글/뷰 완전 제거 →
+  //   치료테이블 [경과분석] 탭으로 이관(RELOCATE 스펙이 신규 동선 소유). 본 T6은 '예약관리에서 토글 부재' 회귀 가드로 전환.
   // ─────────────────────────────────────────────────────────────────────────────
-  test('T6: 예약현황 경과분석 필터 버튼 렌더링 + 토글 ON/OFF', async ({ page }) => {
+  test('T6: 예약현황 경과분석 필터 버튼은 제거됨(치료테이블 탭으로 이관)', async ({ page }) => {
     await page.goto('/admin/reservations');
     await page.waitForLoadState('networkidle');
 
-    // 필터 버튼 존재
+    // 토글 버튼은 더 이상 예약관리에 없어야 함(이관 완료)
     const filterBtn = page.locator('[data-testid="progress-filter-btn"]');
-    await expect(filterBtn).toBeVisible({ timeout: 10_000 });
-    console.log('[T6-AC-4] 경과분석 필터 버튼 렌더링 PASS');
-
-    // 초기 OFF — "ON" 텍스트 없어야 함
-    const initialText = await filterBtn.textContent();
-    expect(initialText).not.toContain('ON');
-
-    // 클릭 → ON
-    await filterBtn.click();
-    await page.waitForTimeout(300);
-    const onText = await filterBtn.textContent();
-    expect(onText).toContain('ON');
-    console.log('[T6-AC-4] 필터 ON 확인 PASS');
-
-    // 다시 클릭 → OFF
-    await filterBtn.click();
-    await page.waitForTimeout(300);
-    const offText = await filterBtn.textContent();
-    expect(offText).not.toContain('ON');
-    console.log('[T6-AC-4] 필터 OFF 확인 PASS');
+    await expect(filterBtn).toHaveCount(0);
+    console.log('[T6-RELOCATE] 예약관리 경과분석 토글 부재 확인 PASS');
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -18,11 +18,12 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import DoctorHistorySection from '@/components/treatment/DoctorHistorySection';
 import ExamTargetsSection from '@/components/treatment/ExamTargetsSection';
+import ProgressTargetsSection from '@/components/treatment/ProgressTargetsSection';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import SendSmsDialog from '@/components/SendSmsDialog';
@@ -33,7 +34,10 @@ import { canAccess } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import type { CheckIn } from '@/lib/types';
 
-type SectionTab = 'history' | 'exam';
+// T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 치료테이블 탭 = ①진료 환자 이력 ②균검사&피검사 대상자 ③경과분석(본 신규).
+//   ④경과분석 플랜(TAB-MOVE-TREATTABLE, 문지은 대표원장 confirm 대기)은 confirm 해소 후 맨 뒤(④)에 독립 랜딩 → 자리를 맨 뒤로 비워둔 탭 구조.
+//   명칭 구분: ③='경과분석'(오늘 대상자 확인) / ④='경과분석 플랜'(설정). 혼동 금지.
+type SectionTab = 'history' | 'exam' | 'progress';
 
 /** D. 이름 우클릭 컨텍스트 메뉴 타깃(섹션이 보유한 최소 고객 정보). */
 export interface NameCtxTarget {
@@ -177,6 +181,11 @@ export default function TreatmentTable() {
             <ClipboardList className="size-3.5 mr-1.5" />
             균검사 &amp; 피검사 대상자
           </TabsTrigger>
+          {/* T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: ③경과분석(당일 대상자 리스트). 기존 2탭 뒤. */}
+          <TabsTrigger value="progress" data-testid="tab-progress-targets">
+            <TrendingUp className="size-3.5 mr-1.5" />
+            경과분석
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="mt-0">
@@ -184,6 +193,9 @@ export default function TreatmentTable() {
         </TabsContent>
         <TabsContent value="exam" className="mt-0">
           <ExamTargetsSection date={date} nameInteraction={nameInteraction} />
+        </TabsContent>
+        <TabsContent value="progress" className="mt-0">
+          <ProgressTargetsSection date={date} nameInteraction={nameInteraction} />
         </TabsContent>
       </Tabs>
 

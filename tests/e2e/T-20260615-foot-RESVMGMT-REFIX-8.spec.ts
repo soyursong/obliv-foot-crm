@@ -36,22 +36,30 @@ const RESV_POPUP = fs.readFileSync(path.resolve('src/components/ReservationDetai
 // AC1 — 상단 컨트롤 재구성: 내예약 토글→이번주 옆 이동 + 새예약→경과분석→뷰토글 순
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC1: 상단 컨트롤 재배치', () => {
+  // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 우측 그룹의 경과분석 토글 제거(치료테이블 이관) →
+  //   순서 앵커를 경과분석 버튼 대신 좌측 기간그룹의 '새 예약'(우측 그룹 시작) / 뷰토글(setViewMode)로 전환.
   test('AC1-1: 내예약 select(myresv-filter)가 "이번 주" 버튼 직후(좌측 기간 그룹)로 이동', () => {
     const idxThisWeek = RESV_PAGE.indexOf("viewMode === 'week' ? '이번 주' : '오늘'");
     const idxMyResv = RESV_PAGE.indexOf('data-testid="myresv-filter"');
-    const idxProgressBtn = RESV_PAGE.indexOf('data-testid="progress-filter-btn"');
+    // '새 예약' 텍스트는 상단 주석에도 등장 → 실제 버튼 JSX(<Plus/> + 새 예약)로 앵커링(주석 오매칭 방지).
+    const idxNew = RESV_PAGE.search(/<Plus className="h-3\.5 w-3\.5" \/>\s*새 예약/);
     expect(idxThisWeek, '"이번 주" 토글 텍스트 누락').toBeGreaterThan(-1);
     expect(idxMyResv, 'myresv-filter 누락').toBeGreaterThan(-1);
-    // 내예약 select가 '이번 주' 직후, 그리고 경과분석 버튼보다 *앞*(좌측 그룹)에 위치
+    expect(idxNew, '"새 예약" 버튼 누락').toBeGreaterThan(-1);
+    // 내예약 select가 '이번 주' 직후(좌측 기간 그룹), 그리고 우측 그룹 시작('새 예약')보다 *앞*에 위치
     expect(idxMyResv, '내예약 select가 "이번 주"보다 앞 — 이동 미반영').toBeGreaterThan(idxThisWeek);
-    expect(idxMyResv, '내예약 select가 경과분석 버튼 뒤 — 우측 그룹 잔존(이동 미반영)').toBeLessThan(idxProgressBtn);
+    expect(idxMyResv, '내예약 select가 "새 예약"(우측 그룹) 뒤 — 좌측 그룹 이동 미반영').toBeLessThan(idxNew);
   });
 
-  test('AC1-2: 우측 그룹 순서 = 새 예약 → 경과분석 (새예약이 경과분석보다 앞)', () => {
-    const idxNew = RESV_PAGE.indexOf('새 예약');
-    const idxProgressBtn = RESV_PAGE.indexOf('data-testid="progress-filter-btn"');
+  test('AC1-2: 우측 그룹 순서 = 새 예약 → 일간/주간 뷰토글 (경과분석 토글은 RELOCATE로 제거)', () => {
+    // '새 예약' 텍스트는 상단 주석에도 등장 → 실제 버튼 JSX(<Plus/> + 새 예약)로 앵커링(주석 오매칭 방지).
+    const idxNew = RESV_PAGE.search(/<Plus className="h-3\.5 w-3\.5" \/>\s*새 예약/);
+    const idxViewToggle = RESV_PAGE.indexOf("setViewMode('day')");
     expect(idxNew, '"새 예약" 버튼 누락').toBeGreaterThan(-1);
-    expect(idxNew, '새 예약이 경과분석보다 뒤 — 순서 재배치 미반영').toBeLessThan(idxProgressBtn);
+    expect(idxViewToggle, '일간/주간 뷰토글 누락').toBeGreaterThan(-1);
+    expect(idxNew, '새 예약이 뷰토글보다 뒤 — 순서 재배치 미반영').toBeLessThan(idxViewToggle);
+    // 경과분석 토글은 예약관리에서 제거됨(치료테이블 [경과분석] 탭으로 이관)
+    expect(RESV_PAGE, '경과분석 토글이 예약관리에 잔존').not.toContain('data-testid="progress-filter-btn"');
   });
 
   test('AC1-3: AC1 의도 주석으로 추적성 확보', () => {
