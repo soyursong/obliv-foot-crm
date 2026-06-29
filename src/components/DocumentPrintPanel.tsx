@@ -270,7 +270,10 @@ function buildPageHtml(
   // T-20260601-foot-DOC-PRINT-8FIX REOPEN2 AC-1: 이미지(좌표 오버레이) 양식 경로의 우하단 고정
   //   도장 오버레이 제거 — 직인은 doctor_seal_html로 일원화. (HTML 양식은 위에서 분기되어
   //   여기 도달하지 않음. bottom:52px 오버레이 클래스를 전 출력경로에서 전수 소거 — planner #2.)
-  return `<div class="page">
+  // T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 레거시 IMG-오버레이 마커(page-img). 이 양식은
+  //   field_map x/y 가 A4 전폭(210mm) page 기준 px 라 콘텐츠박스 축소 시 좌표 어긋남 → openBatchPrintWindow
+  //   에서 page-img 감지 시 기존 @page margin:0 / .page 210×297mm 전폭 모델을 그대로 유지(불변).
+  return `<div class="page page-img">
   <img src="${imgUrl}" alt="${template.name_ko}" />
   ${overlayHtml}
 </div>`;
@@ -285,16 +288,24 @@ function openBatchPrintWindow(
   title: string,
   forceLandscape = false,
 ): Window | null {
-  // AC-5: 진료비세부산정내역 landscape 전용 — @page size 분기
-  const pageRule = forceLandscape
-    ? '@page { size: A4 landscape; margin: 0; }'
-    : '@page { size: A4 portrait; margin: 0; }';
-  const pageWidth  = forceLandscape ? '297mm' : '210mm';
-  const pageHeight = forceLandscape ? '210mm' : '297mm';
-  const html = `<!DOCTYPE html><html><head>
-<meta charset="utf-8">
-<title>${title}</title>
-<style>
+  // T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 출력물 중앙·여백 배치 전면 재검토.
+  //   [근본원인] 직전 모델은 .page 를 A4 전폭(210/297mm) full-bleed + @page margin:0 으로 깔고 양식(form-wrap)을
+  //   margin:auto 로 CSS 중앙정렬했다. 그러나 실제 프린트 엔진은 전폭 page 가 인쇄가능영역(기본여백 적용 시
+  //   ~190mm)을 초과하면 페이지 전체를 좌상단 앵커로 shrink-to-fit 축소 → 현장이 본 "위·좌측 쏠림 + 하단 공백".
+  //   [수정] 중앙배치를 프린트 엔진의 @page 물리 여백이 직접 수행하게 한다. @page margin:12mm 10mm →
+  //   콘텐츠박스(A4-여백 = 190×273 / 277×186mm)가 엔진에 의해 시트 중앙에 배치되고, 박스가 인쇄가능영역
+  //   안에 들어와 축소 자체가 사라진다(좌우 10mm·상하 12mm 대칭). 양식 wrap 은 이 박스를 채운다(자체 page 여백 0).
+  //   [IMG-오버레이 격리] field_map px 좌표가 210mm page 기준인 레거시(page-img)는 좌표 어긋남 방지를 위해
+  //   기존 @page margin:0 / 전폭 .page 모델을 그대로 유지(불변).
+  const isLegacyImg = pages.some((p) => p.includes('page-img'));
+  let styleBlock: string;
+  if (isLegacyImg) {
+    const pageRule = forceLandscape
+      ? '@page { size: A4 landscape; margin: 0; }'
+      : '@page { size: A4 portrait; margin: 0; }';
+    const pageWidth  = forceLandscape ? '297mm' : '210mm';
+    const pageHeight = forceLandscape ? '210mm' : '297mm';
+    styleBlock = `
   ${pageRule}
   body { margin: 0; padding: 0; }
   .page {
@@ -304,21 +315,39 @@ function openBatchPrintWindow(
     overflow: hidden;
     page-break-after: always;
   }
-  .page-landscape {
-    width: 297mm;
-    min-height: 210mm;
-  }
-  .page img:first-child {
+  .page-landscape { width: 297mm; min-height: 210mm; }
+  .page img:first-child { width: 100%; height: 100%; object-fit: contain; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page:last-child { page-break-after: avoid; }
+  }`;
+  } else {
+    // HTML 양식(L-006 12종) — 프린트 엔진 @page 물리 여백으로 중앙 배치(축소 없음).
+    const pageRule = forceLandscape
+      ? '@page { size: A4 landscape; margin: 12mm 10mm; }'
+      : '@page { size: A4 portrait; margin: 12mm 10mm; }';
+    const minH = forceLandscape ? '186mm' : '273mm'; // A4 short side - @page 상하여백(24mm)
+    styleBlock = `
+  ${pageRule}
+  html, body { margin: 0; padding: 0; }
+  .page {
+    position: relative;
     width: 100%;
-    height: 100%;
-    object-fit: contain;
+    min-height: ${minH};
+    overflow: visible;
+    page-break-after: always;
   }
+  .page-landscape { width: 100%; min-height: 186mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* AC-1: 마지막 페이지 빈 페이지 방지 */
     .page:last-child { page-break-after: avoid; }
+  }`;
   }
-</style>
+  const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>${styleBlock}</style>
 </head><body>
 ${pages.join('\n')}
 </body></html>`;

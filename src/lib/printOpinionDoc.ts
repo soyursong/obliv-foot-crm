@@ -73,12 +73,13 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   const win = window.open('', '_blank', 'width=820,height=1000');
   if (!win) return false;
   win.document.open();
-  // T-20260629-foot-DOCPRINT-CENTER-ALIGN: 이 raw 인쇄 경로는 .page 래퍼가 없어 @page 미선언 시
-  //   브라우저 축소맞춤(shrink-to-fit)이 양식을 좌·상단으로 쏠리게 한다. openBatchPrintWindow 와 동일하게
-  //   @page margin:0 을 선언해 A4 전면 기준으로 정렬(양식 form-wrap 의 margin:12mm auto 가 여백을 균형 배분).
+  // T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 이 raw 인쇄 경로(소견서/진단서 발행본 데스크 출력)도
+  //   openBatchPrintWindow 와 동일한 "@page 물리 여백 = 엔진 중앙배치" 모델로 통일한다.
+  //   @page margin:12mm 10mm → form-wrap(COMMON_STYLE @media print 에서 margin:0 auto, 190×273mm)이
+  //   콘텐츠박스를 채우고, 엔진이 시트 중앙(좌우 10mm·상하 12mm)으로 배치 → 축소맞춤 좌상단 쏠림 제거.
   win.document.write(
     `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>` +
-      `<style>@page { size: A4 portrait; margin: 0; } body { margin: 0; padding: 0; }</style></head><body>${html}` +
+      `<style>@page { size: A4 portrait; margin: 12mm 10mm; } html, body { margin: 0; padding: 0; }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();

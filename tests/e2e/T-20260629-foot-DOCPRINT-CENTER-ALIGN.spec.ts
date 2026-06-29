@@ -13,9 +13,12 @@
  * AC-2: 하단 여백 확보 (하단 > 5mm, page 초과/클립 없음)
  * AC-3: 좌우 여백 대칭(중앙정렬) + 단일 페이지 적합 + 가로 page 미초과
  *
- * 실제 인쇄 경로(window.open + window.print)는 헤드리스 재현 불가 → 양식 HTML 을 print 미디어
- * 에뮬레이션으로 setContent 하여 wrap 콘텐츠 영역(외부위치 + 내부 padding)의 여백을 단위 측정.
- * 전면 채움 모델에서 시각 여백 = 내부 padding 이므로 getComputedStyle padding 을 합산해 측정한다.
+ * ⚠ 모델 진화(T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT 가 본 티켓을 정밀화·대체):
+ *   직전 모델(form-wrap margin:12mm auto + .page 전폭 210mm)은 양식을 body 안에서만 측정해 CSS상 중앙
+ *   이라 PASS 했으나, 실제 프린트 엔진의 @page 물리 여백/shrink-to-fit 을 시뮬 못 해 현장 좌상단 쏠림을
+ *   놓쳤다. 현재 모델은 중앙배치를 "프린트 엔진의 @page margin(12mm 10mm)"이 직접 수행 → 본 가드도
+ *   엔진-충실 측정(인쇄 시트 전체 안쪽 padding=@page 여백 물리 재현, 콘텐츠박스 안에 양식)을 사용한다.
+ *   상세 가드·소스 introspection 은 DOCOUTPUT-PRINT-CENTER-LAYOUT.spec.ts.
  */
 import { test, expect } from '@playwright/test';
 import { getHtmlTemplate, bindHtmlTemplate } from '../../src/lib/htmlFormTemplates';
@@ -51,45 +54,53 @@ async function measureForm(page: import('@playwright/test').Page, formKey: strin
   expect(raw, `${formKey} 템플릿 존재`).toBeTruthy();
   const formHtml = bindHtmlTemplate(raw as string, SAMPLE);
 
-  const pageWmm = orient === 'landscape' ? 297 : 210;
-  const pageHmm = orient === 'landscape' ? 210 : 297;
-  const vw = Math.round(pageWmm * 96 / 25.4);
-  const vh = Math.round(pageHmm * 96 / 25.4);
-  const pxPerMm = vw / pageWmm;
+  const sheetWmm = orient === 'landscape' ? 297 : 210;
+  const sheetHmm = orient === 'landscape' ? 210 : 297;
+  const vw = Math.round(sheetWmm * 96 / 25.4);
+  const vh = Math.round(sheetHmm * 96 / 25.4);
+  const pxPerMm = vw / sheetWmm;
+  // 인쇄창 @page margin(12mm 10mm) — DocumentPrintPanel/printOpinionDoc 와 동일
+  const mTB = 12, mLR = 10;
+  const boxWmm = sheetWmm - 2 * mLR, boxHmm = sheetHmm - 2 * mTB;
 
   await page.setViewportSize({ width: vw, height: vh });
   await page.emulateMedia({ media: 'print' });
-  await page.setContent(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"></head><body>${formHtml}</body></html>`, { waitUntil: 'networkidle' });
+  // 엔진-충실: @page 여백을 시트(전체 A4) 안쪽 padding 으로 물리 재현 → 콘텐츠박스(.page)에 양식.
+  const pageCls = orient === 'landscape' ? 'page page-landscape' : 'page';
+  await page.setContent(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><style>
+    html, body { margin: 0; padding: 0; }
+    .sheet { box-sizing: border-box; width: ${sheetWmm}mm; min-height: ${sheetHmm}mm; padding: ${mTB}mm ${mLR}mm; background:#fff; }
+    .page { position: relative; width: 100%; min-height: ${boxHmm}mm; overflow: visible; }
+    .page-landscape { width: 100%; min-height: 186mm; }
+  </style></head><body><div class="sheet"><div class="${pageCls}">${formHtml}</div></div></body></html>`, { waitUntil: 'networkidle' });
 
   const m = await page.evaluate(() => {
-    const wrap = document.querySelector('.form-wrap, .bill-wrap, .rx-wrap, .br-wrap') as HTMLElement;
-    const wr = wrap.getBoundingClientRect();
-    const cs = getComputedStyle(wrap);
-    const pl = parseFloat(cs.paddingLeft), pr = parseFloat(cs.paddingRight);
-    const pt = parseFloat(cs.paddingTop), pb = parseFloat(cs.paddingBottom);
+    const sheet = (document.querySelector('.sheet') as HTMLElement);
+    const sr = sheet.getBoundingClientRect();
+    const wr = (document.querySelector('.form-wrap, .bill-wrap, .rx-wrap, .br-wrap') as HTMLElement).getBoundingClientRect();
     return {
-      cLeft: wr.left + pl, cRight: wr.right - pr, cTop: wr.top + pt, cBottom: wr.bottom - pb,
-      wrapW: wr.width, scrollH: document.body.scrollHeight,
+      left: wr.left - sr.left, right: sr.right - wr.right, top: wr.top - sr.top, bottom: sr.bottom - wr.bottom,
+      wrapW: wr.width, scrollH: sheet.scrollHeight,
     };
   });
 
-  const leftMm = m.cLeft / pxPerMm;
-  const rightMm = (vw - m.cRight) / pxPerMm;
-  const topMm = m.cTop / pxPerMm;
-  const bottomMm = (vh - m.cBottom) / pxPerMm;
+  const leftMm = m.left / pxPerMm;
+  const rightMm = m.right / pxPerMm;
+  const topMm = m.top / pxPerMm;
+  const bottomMm = m.bottom / pxPerMm;
   const wrapWmm = m.wrapW / pxPerMm;
   const contentMm = m.scrollH / pxPerMm;
   const tag = `[${formKey}/${orient}] 좌${leftMm.toFixed(1)}/우${rightMm.toFixed(1)}/상${topMm.toFixed(1)}/하${bottomMm.toFixed(1)}mm wrap${wrapWmm.toFixed(1)}mm`;
 
-  // AC-1: 좌/상단 쏠림 없음
+  // AC-1: 좌/상단 쏠림 없음 (시트 전체 기준 물리 여백)
   expect(leftMm, `${tag} 좌 여백>5mm(좌측 쏠림 방지)`).toBeGreaterThan(5);
   expect(topMm, `${tag} 상 여백>5mm(상단 쏠림 방지)`).toBeGreaterThan(5);
-  // AC-2: 하단 여백 확보 + 콘텐츠 page 미초과(클립/2페이지 방지)
+  // AC-2: 하단 여백 확보 + 콘텐츠 시트 미초과(클립/2페이지 방지)
   expect(bottomMm, `${tag} 하 여백>5mm`).toBeGreaterThan(5);
-  expect(contentMm, `${tag} 단일 페이지(콘텐츠≤page)`).toBeLessThanOrEqual(pageHmm + 2);
-  // AC-3: 좌우 대칭(중앙정렬) + 가로 page 미초과(축소 유발 없음)
+  expect(contentMm, `${tag} 단일 페이지(콘텐츠≤시트)`).toBeLessThanOrEqual(sheetHmm + 2);
+  // AC-3: 좌우 대칭(중앙정렬) + 콘텐츠박스 미초과(축소 유발 없음)
   expect(Math.abs(leftMm - rightMm), `${tag} 좌우 대칭`).toBeLessThan(3);
-  expect(wrapWmm, `${tag} 가로 page 미초과`).toBeLessThanOrEqual(pageWmm + 0.5);
+  expect(wrapWmm, `${tag} 콘텐츠박스 미초과`).toBeLessThanOrEqual(boxWmm + 0.5);
 }
 
 test.describe('T-20260629-foot-DOCPRINT-CENTER-ALIGN — 전 서류 인쇄 정렬/여백 균형', () => {
