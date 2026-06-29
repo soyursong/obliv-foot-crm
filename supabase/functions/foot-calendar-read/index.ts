@@ -19,7 +19,7 @@
  *   clinic_slug  string  (필수) clinics.slug — 풋 지점 (AC-5 clinic 스코프)
  *   date_from    string  (필수) YYYY-MM-DD (reservation_date >=)
  *   date_to      string  (필수) YYYY-MM-DD (reservation_date <=)
- *   status       string  (선택) 'all' | 'confirmed' | 'checked_in' | 'cancelled' | 'noshow'
+ *   status       string  (선택) 'all' | 'confirmed' | 'checked_in' | 'cancelled' | 'no_show'  (legacy 'noshow' 입력은 'no_show'로 정규화)
  *   page_size    number  (선택) 최대 결과 수 (default 200, max 500)
  *   caller       string  (선택) 감사 로그용 호출자 식별 (예: 'dopamine')
  *
@@ -74,7 +74,11 @@ function normalizeSlug(slug: string): string {
   return SLUG_ALIAS[slug] ?? slug;
 }
 
-const VALID_STATUSES = new Set(['all', 'confirmed', 'checked_in', 'cancelled', 'noshow']);
+// reservations.status canonical = 'no_show' (T-20260629-foot-NOSHOW-CANONICAL, 875행 백필).
+//   legacy 'noshow'(언더스코어 없음) 입력은 canonical 로 정규화 — RPC 필터(r.status = p_status)는
+//   라이브 DB 의 'no_show' 와 동등비교되어야 매칭됨(미정규화 시 no-show 필터 0건 매칭 버그).
+const VALID_STATUSES = new Set(['all', 'confirmed', 'checked_in', 'cancelled', 'no_show']);
+const STATUS_ALIAS: Record<string, string> = { 'noshow': 'no_show' };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 Deno.serve(async (req) => {
@@ -128,10 +132,11 @@ Deno.serve(async (req) => {
   // status 허용값 (422)
   let statusFilter: string | null = null;
   if (statusRaw !== undefined && statusRaw !== '' && statusRaw !== 'all') {
-    if (!VALID_STATUSES.has(statusRaw)) {
-      return json({ ok: false, error: 'INVALID_VALUE', detail: `status '${statusRaw}' must be one of: all, confirmed, checked_in, cancelled, noshow` }, 422);
+    const normalizedStatus = STATUS_ALIAS[statusRaw] ?? statusRaw;
+    if (!VALID_STATUSES.has(normalizedStatus)) {
+      return json({ ok: false, error: 'INVALID_VALUE', detail: `status '${statusRaw}' must be one of: all, confirmed, checked_in, cancelled, no_show` }, 422);
     }
-    statusFilter = statusRaw;
+    statusFilter = normalizedStatus;
   }
 
   // page_size
