@@ -553,6 +553,12 @@ export default function CalendarNoticePanel() {
           T-20260624-foot-DASH-DUTYCAL-DATE-REACTIVE — 달력에서 날짜 클릭 시 이 고정 섹션 자체가
             클릭한 날짜의 명단으로 변동(today 고정 X) + 해당 날짜 인수인계 동반 표시.
           파트(의사/실장/코디/치료)별 그룹핑. 한 줄 max 4명, 5명+ 는 flex-wrap 자연 줄내림. */}
+      {/* T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2: 대시보드(/admin)에서는
+          이 상시표시 근무캘린더+인수인계 섹션이 day-click 시 하단 인라인 현황(DashboardDateDetail)과
+          동일 데이터·문구로 중복 노출됨(현장 김주연 총괄 피드백). → 대시보드에서만 숨김.
+          예약관리(/admin/reservations)에는 DashboardDateDetail이 없어 중복이 아니므로 유지.
+          ⚠ day-click(DASHCAL: DashboardDateDetail) 기능은 일절 건드리지 않음(보존). */}
+      {!onDashboard && (
       <div className="shrink-0 border-b px-3 py-2.5" data-testid="duty-roster-section">
         <div className="mb-2 flex items-center gap-1.5">
           <Users className="h-3.5 w-3.5 text-teal-600" />
@@ -649,6 +655,7 @@ export default function CalendarNoticePanel() {
           )}
         </div>
       </div>
+      )}
 
       {/* ── 공지사항 영역 ───────────────────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0">
