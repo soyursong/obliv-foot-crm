@@ -65,6 +65,8 @@ const Notices = lazyWithRetry(() => import('@/pages/Notices'));
 // T-20260605-foot-HANDOVER-BOARD: 파트별 인수인계 게시판(캘린더) — 전 직원 작성/조회
 const Handover = lazyWithRetry(() => import('@/pages/Handover'));
 const Sales = lazyWithRetry(() => import('@/pages/Sales'));
+// T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI 표준 청구명세서 export
+const EdiExport = lazyWithRetry(() => import('@/pages/EdiExport'));
 // T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰(자동배정 조회 + 토스/당김/수동)
 const Assignments = lazyWithRetry(() => import('@/pages/Assignments'));
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: ClinicSettings는 더 이상 독립 라우트가 아니라
@@ -237,6 +239,8 @@ function App() {
                 {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 — AC-6 미노출 유지 / T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 매출 열람 정합). payments RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. */}
                 {/* T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 has_ops_authority 필요(봉직의 매출 배제). nav requiresOpsAuthority 패리티. */}
                 <Route path="sales" element={<RoleGuard roles={['admin', 'manager', 'director']} requireOpsAuthority><Sales /></RoleGuard>} />
+                {/* T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI(심평원 표준 청구명세서 export). 청구/금융·PHI → admin/manager/director. */}
+                <Route path="edi-export" element={<RoleGuard roles={['admin', 'manager', 'director']}><EdiExport /></RoleGuard>} />
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
                 {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 메뉴를 [직원·공간](Staff)
                     내부 '원장정보' 탭으로 편입(김주연 총괄). 이 라우트는 북마크/하드링크 404 방지용
