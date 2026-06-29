@@ -25,7 +25,7 @@ const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 // CI(ci-push.yml)는 secrets 를 TEST_USER_EMAIL / TEST_USER_PASSWORD 로 주입한다.
 // 로컬은 TEST_EMAIL / TEST_PASSWORD 관례를 쓴다. 둘 다 수용 + 기본값 폴백.
 const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? 'TestPass2026!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 setup('authenticate', async ({ page }) => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {

@@ -25,7 +25,7 @@ const OUT = '_handoff/qa_screenshots/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const ANON = process.env.VITE_SUPABASE_ANON_KEY;
 const EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
+const PASSWORD = process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 fs.mkdirSync(OUT, { recursive: true });
 const log = (...a) => console.log('[qa-shot]', ...a);

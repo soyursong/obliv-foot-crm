@@ -21,7 +21,7 @@ const PROD = 'https://obliv-foot-crm.vercel.app';
 const SUPABASE_URL = env.VITE_SUPABASE_URL;
 const ANON = env.VITE_SUPABASE_ANON_KEY;
 const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 const WITH_DATA = 'ac1b22a6-3529-4d31-a4ae-444367c2f72f'; // 장예지, RPC 109행
 const NO_DATA   = '30962e3e-2d67-498b-8de7-36d18226de1a'; // 체크인 0건

@@ -86,7 +86,7 @@ test.describe('B-4 계정 관리 (foot-048)', () => {
   test('admin_reset_user_password RPC 시그니처 확인', async () => {
     const { error } = await service.rpc('admin_reset_user_password', {
       target_user_id: '00000000-0000-0000-0000-000000000000',
-      new_password: 'TempPass123!',
+      new_password: (process.env.TEST_PASSWORD || (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })()),
     });
     if (error?.message.match(/Could not find the function/i)) {
       throw new Error(`admin_reset_user_password RPC 미존재: ${error.message}`);

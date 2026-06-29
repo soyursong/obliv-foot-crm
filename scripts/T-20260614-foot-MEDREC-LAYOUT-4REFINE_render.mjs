@@ -14,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 const TARGET_URL = (process.env.TARGET_URL ?? 'http://localhost:8089').replace(/\/$/, '');
 const SHOT = path.join(__dirname, '..', 'evidence', `T-20260614-foot-MEDREC-LAYOUT-4REFINE_AC4_singlerow.png`);
 

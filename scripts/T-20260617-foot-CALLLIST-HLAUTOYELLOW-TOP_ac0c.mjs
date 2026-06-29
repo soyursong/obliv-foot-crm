@@ -3,7 +3,7 @@
  *        healer_waiting 전이 시각이 다른 active 환자 대비 어디에 정렬되는지(상단/하단) 시뮬레이션. */
 import { createClient } from '@supabase/supabase-js';
 const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',
+  (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),
   { auth: { persistSession: false } });
 
 // HL자동노랑 정의: status_flag='yellow' AND status_flag_history에 yellow 진입 엔트리 없음(=벌크/SSOT우회)

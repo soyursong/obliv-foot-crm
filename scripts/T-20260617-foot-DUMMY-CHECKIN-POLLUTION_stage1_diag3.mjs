@@ -1,6 +1,6 @@
 /** Stage1 diag3 — 10:08 배치 check_ins 30건 정밀 격리 + 식별키 확정 (READ-ONLY) */
 import { createClient } from '@supabase/supabase-js';
-const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',{auth:{persistSession:false}});
+const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',(process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),{auth:{persistSession:false}});
 const CLINIC='74967aea-a60b-4da3-a0e7-9c997a930bc8';
 const T=ts=>ts?new Date(new Date(ts).getTime()+9*3600*1000).toISOString().slice(0,19).replace('T',' '):null;
 async function main(){

@@ -1,7 +1,7 @@
 /** AC-0b — 문제 케이스(김민경) 전체 status_transitions 여정 + 전이 로그 구조 정밀 확인 (READ-ONLY) */
 import { createClient } from '@supabase/supabase-js';
 const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',
+  (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),
   { auth: { persistSession: false } });
 
 // 김민경 (yellow + preconditioning) 풀 레코드

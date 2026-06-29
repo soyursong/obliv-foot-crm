@@ -26,7 +26,7 @@ import { test, expect } from '@playwright/test';
 async function loginAsAdmin(page: import('@playwright/test').Page) {
   await page.goto('/login');
   await page.getByLabel(/이메일/).fill(process.env.TEST_EMAIL ?? 'test@obliv.kr');
-  await page.getByLabel(/비밀번호/).fill(process.env.TEST_PASSWORD ?? 'test1234!');
+  await page.getByLabel(/비밀번호/).fill(process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_USER_PASSWORD env required (no plaintext fallback)'); })());
   await page.getByRole('button', { name: /로그인/ }).click();
   await page.waitForURL(/\/(dashboard|waiting)/, { timeout: 15_000 });
 }

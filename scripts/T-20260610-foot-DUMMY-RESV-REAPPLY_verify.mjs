@@ -1,6 +1,6 @@
 /** REAPPLY VERIFY — AC-1/AC-2/AC-3 data-level: admin filter path 생존 + 명단 parity + NULL/visit_type */
 import { createClient } from '@supabase/supabase-js';
-const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',{auth:{persistSession:false}});
+const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',(process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),{auth:{persistSession:false}});
 const C='74967aea-a60b-4da3-a0e7-9c997a930bc8';const D='2026-06-10';const M='[TEST-DUMMY 20260610-REAPPLY]';
 
 // admin/self-checkin 공통 원천: reservations (date+clinic 전체)

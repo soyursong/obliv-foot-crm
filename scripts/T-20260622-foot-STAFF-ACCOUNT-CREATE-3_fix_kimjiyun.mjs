@@ -22,9 +22,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const TARGET_EMAIL = 'faceofangel9999@gmail.com';
-const TEMP_PASSWORD = 'Foot@2026!'; // foot 신규계정 SOP 임시 비번 — 최초 로그인 후 변경 안내
+const TEMP_PASSWORD = (process.env.STAFF_TEMP_PASSWORD || (() => { throw new Error('STAFF_TEMP_PASSWORD env required (no plaintext fallback)'); })()); // foot 신규계정 SOP 임시 비번 — 최초 로그인 후 변경 안내
 const DRY_RUN = process.env.DRY_RUN !== 'false';
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });

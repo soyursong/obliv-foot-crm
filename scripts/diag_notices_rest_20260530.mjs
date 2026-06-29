@@ -3,7 +3,7 @@
  * FK 제약은 role과 무관하게 강제되므로 service_role insert로 FK 위반 재현 가능.
  */
 const URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SR = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SR = (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const h = { apikey: SR, Authorization: `Bearer ${SR}`, 'Content-Type': 'application/json' };
 
 async function g(path) {

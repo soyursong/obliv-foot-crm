@@ -15,7 +15,7 @@ const SQL = readFileSync(
 
 const client = new Client({
   host: 'aws-1-ap-southeast-1.pooler.supabase.com', port: 5432, database: 'postgres',
-  user: 'postgres.rxlomoozakkjesdqjtvd', password: 'bQpgC6tYfXhp@Hr', ssl: { rejectUnauthorized: false },
+  user: 'postgres.rxlomoozakkjesdqjtvd', password: (process.env.SUPABASE_DB_PASSWORD || (() => { throw new Error('SUPABASE_DB_PASSWORD env required (no plaintext fallback)'); })()), ssl: { rejectUnauthorized: false },
 });
 
 console.log('🚀 save_room_assignments payload-scoped DELETE 적용 (REOPEN)');

@@ -32,7 +32,8 @@ if (!chromium) { console.error('playwright_not_found'); process.exit(3); }
 const arg = (k, d) => process.argv.slice(2).find(a => a.startsWith(`--${k}=`))?.split('=').slice(1).join('=') ?? d;
 const url = arg('url', 'https://obliv-foot-crm.vercel.app');
 const email = arg('email', 'test@medibuilder.com');
-const password = arg('password', 'TestPass2026!');
+const password = arg('password', process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD);
+if (!password) { console.error('TEST_PASSWORD env (or --password=) required — no plaintext fallback'); process.exit(2); }
 const origin = new URL(url).origin;
 
 const ts = new Date().toISOString().replace(/[:.]/g, '-');

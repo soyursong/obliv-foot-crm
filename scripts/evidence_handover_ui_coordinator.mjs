@@ -40,7 +40,7 @@ const shot = async (page, name) => { const p = path.join(OUT_DIR, `${name}.png`)
 
 const admin = createClient(SUPA_URL, SERVICE, { auth: { persistSession: false } });
 const email = `qa.handover.ui.${Date.now()}@medibuilder-qa.local`;
-const password = 'QaHandover2026!';
+const password = (process.env.QA_HANDOVER_PASSWORD || (() => { throw new Error('QA_HANDOVER_PASSWORD env required (no plaintext fallback)'); })());
 let userId = null;
 let pass = true;
 const fail = (m) => { pass = false; log(`  ❌ ${m}`); };

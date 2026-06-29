@@ -17,7 +17,7 @@ const SITE = 'https://obliv-foot-crm.vercel.app';
 const SB = env.VITE_SUPABASE_URL;
 const ANON = env.VITE_SUPABASE_ANON_KEY;
 const EMAIL = env.TEST_EMAIL || env.TEST_USER_EMAIL || 'test@medibuilder.com';
-const PW = env.TEST_PASSWORD || env.TEST_USER_PASSWORD || 'TestPass2026!';
+const PW = env.TEST_PASSWORD || env.TEST_USER_PASSWORD || (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 const ref = new URL(SB).hostname.split('.')[0];
 const storageKey = `sb-${ref}-auth-token`;
 

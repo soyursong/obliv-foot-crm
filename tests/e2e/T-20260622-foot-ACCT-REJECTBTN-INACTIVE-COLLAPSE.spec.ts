@@ -41,7 +41,7 @@ async function seedAccount(opts: { approved: boolean; active: boolean }): Promis
   const name = `${MARKER}-${ts}`;
   const { data: created, error: authErr } = await service.auth.admin.createUser({
     email,
-    password: 'SeedPass2026!',
+    password: (process.env.SEED_PASSWORD || (() => { throw new Error('SEED_PASSWORD env required (no plaintext fallback)'); })()),
     email_confirm: true,
   });
   if (authErr || !created.user) {

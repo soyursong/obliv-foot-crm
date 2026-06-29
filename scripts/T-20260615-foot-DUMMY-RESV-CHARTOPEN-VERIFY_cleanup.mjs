@@ -8,7 +8,7 @@
  * ⚠ 실데이터는 created_by/phone 마커 불일치로 영향 없음.
  */
 import { createClient } from '@supabase/supabase-js';
-const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',{auth:{persistSession:false}});
+const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',(process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),{auth:{persistSession:false}});
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 const DATE = '2026-06-15';
 const CREATED_BY = 'TEST-20260615';

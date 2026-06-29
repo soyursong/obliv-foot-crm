@@ -29,9 +29,9 @@ import { createClient } from '@supabase/supabase-js';
 // 설정
 // ─────────────────────────────────────────────
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const CLINIC_SLUG = 'jongno-foot';
-const DEFAULT_PASSWORD = 'Foot@2026!'; // 임시 PW — 최초 로그인 후 개인 변경 안내 (기존 풋 신규계정 SOP)
+const DEFAULT_PASSWORD = (process.env.STAFF_TEMP_PASSWORD || (() => { throw new Error('STAFF_TEMP_PASSWORD env required (no plaintext fallback)'); })()); // 임시 PW — 최초 로그인 후 개인 변경 안내 (기존 풋 신규계정 SOP)
 const DRY_RUN = process.env.DRY_RUN !== 'false'; // 기본값: true
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {

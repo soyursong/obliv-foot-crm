@@ -23,7 +23,7 @@ const PREFERRED_CUSTOMER_ID = process.env.VERIFY_CUSTOMER_ID ?? '';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? 'TestPass2026!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 test.describe('CHART2-MEMO-HISTORY · 예약/상담메모 히스토리화 (QA 검증 경로)', () => {
   test('예약메모·상담메모 누적(history) 동작 + 요약블록 반영', async ({ page }) => {
