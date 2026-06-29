@@ -73,8 +73,12 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   const win = window.open('', '_blank', 'width=820,height=1000');
   if (!win) return false;
   win.document.open();
+  // T-20260629-foot-DOCPRINT-CENTER-ALIGN: 이 raw 인쇄 경로는 .page 래퍼가 없어 @page 미선언 시
+  //   브라우저 축소맞춤(shrink-to-fit)이 양식을 좌·상단으로 쏠리게 한다. openBatchPrintWindow 와 동일하게
+  //   @page margin:0 을 선언해 A4 전면 기준으로 정렬(양식 form-wrap 의 margin:12mm auto 가 여백을 균형 배분).
   win.document.write(
-    `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title></head><body>${html}` +
+    `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>` +
+      `<style>@page { size: A4 portrait; margin: 0; } body { margin: 0; padding: 0; }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();
