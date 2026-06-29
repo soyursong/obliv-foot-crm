@@ -58,7 +58,7 @@ import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
-import { buildDocSerial } from '@/lib/docSerial';
+import { buildDocSerial, docSerialPrefix } from '@/lib/docSerial';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
@@ -1613,7 +1613,9 @@ function IssueDialog({
   //   seq = C(무리셋 통산): 클리닉 전역 form_submissions count + 1 (날짜·서류종류·환자 무관, read-only).
   //   미리보기는 INSERT 안 함 → 반복 호출에도 seq 불변(idempotent). null = 아직 산출 전 → 발번 보류.
   const [serialChartNo, setSerialChartNo] = useState<string | null>(null);
-  const [serialSeq, setSerialSeq] = useState<number | null>(null);
+  // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 발급순번(serialSeq) FE 상태 제거.
+  //   발번 권위 = DB RPC issue_foot_doc_serial (출력 확정 시 선점, handlePrint). 미리보기는 미발번.
+  //   출력 확정 시 RPC 가 반환한 seq 를 인쇄본 visit_no 에 주입(아래 issuedVisitNo).
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: service_charges 새로고침 공통 헬퍼
   // T-20260525-foot-INS-FIELD-BIND: category_label 추가 — 상병코드 식별용
@@ -1763,39 +1765,29 @@ function IssueDialog({
     };
   }, [open, checkIn, dutyDoctors]);
 
-  // T-20260622-foot-DOC-SERIAL-AUTOGEN: 연번호 자동 생성 소스 (read-only). 다이얼로그 오픈 시 1회.
-  //   ① 차트번호(F-XXXX) — customers.chart_number (autobind record_no 의 임시 slice 대신 실제값).
-  //   ② 발급순번 — C(무리셋 통산): 날짜·서류종류·환자 무관 클리닉 전역 form_submissions count + 1.
-  //      (FIX 2026-06-29 김주연 총괄 MSG-20260629-202802-cyn1 — 이전 '당일·환자·서류종류' 파티션 제거.)
-  //   미리보기/출력 반복으로 순번이 꼬이지 않도록 INSERT 전 count 만 읽는다(idempotent, AC-4 재출력=불변).
-  //   실 출력(INSERT) 후 닫고 재오픈 시 전역 count+1 → '신규 교부=통산 +1'(전체 연번호 유일).
-  //   count(head:true) 로 행 전송 없이 집계 — 대량 이력에도 경량.
+  // T-20260622-foot-DOC-SERIAL-AUTOGEN / T-20260630-foot-SERIAL-RPC-FE-REWIRE:
+  //   연번호 자동 생성 소스 (read-only). 다이얼로그 오픈 시 1회. 차트번호(F-XXXX)만 미리 로드한다.
+  //   ⚠ FE count+1 발번 폐기(REWIRE): 발급순번은 더 이상 미리보기에서 count 로 추정하지 않는다.
+  //     발번 권위 = DB RPC issue_foot_doc_serial(clinic_id, form_submission_id) — 출력 확정 시 선점(handlePrint).
+  //     (count+1 은 유니크 제약이 없어 동시발번 시 동일 seq 가능 + 비-연번호 행까지 분모에 셈 → 폐기.
+  //      HARDEN: doc_serial_seq INT 컬럼 + UNIQUE(clinic_id, doc_serial_seq) + RPC MAX+1 gapless 로 대체.)
+  //   미리보기 visit_no 는 미발번(빈 값) — 출력 확정 시 RPC 가 인쇄본에 실 연번호 주입.
   useEffect(() => {
     if (!open || !checkIn.customer_id) {
       setSerialChartNo(null);
-      setSerialSeq(null);
       return;
     }
     let cancelled = false;
-    Promise.all([
-      supabase
-        .from('customers')
-        .select('chart_number')
-        .eq('id', checkIn.customer_id)
-        .maybeSingle(),
-      // C(무리셋 통산): 클리닉 전역 발행 건수 = 다음 발급순번 - 1. 날짜·서류종류·환자 파티션 없음.
-      supabase
-        .from('form_submissions')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinic_id', checkIn.clinic_id),
-    ]).then(([custRes, cntRes]) => {
-      if (cancelled) return;
-      const chartNo = (custRes.data?.chart_number as string | null | undefined) ?? null;
-      setSerialChartNo(chartNo && String(chartNo).trim() ? String(chartNo).trim() : null);
-      // 전역 통산 카운터 → 다음 발급순번 = 전역 count + 1 (리셋 없음)
-      const total = cntRes.count ?? 0;
-      setSerialSeq(total + 1);
-    });
+    supabase
+      .from('customers')
+      .select('chart_number')
+      .eq('id', checkIn.customer_id)
+      .maybeSingle()
+      .then((custRes) => {
+        if (cancelled) return;
+        const chartNo = (custRes.data?.chart_number as string | null | undefined) ?? null;
+        setSerialChartNo(chartNo && String(chartNo).trim() ? String(chartNo).trim() : null);
+      });
     return () => { cancelled = true; };
   }, [open, checkIn.customer_id, checkIn.clinic_id]);
 
@@ -2025,26 +2017,27 @@ function IssueDialog({
     if (serialChartNo && !base.record_no) {
       base.record_no = serialChartNo;
     }
-    const docSerial = buildDocSerial({
-      formKey: template.form_key,
-      chartNo: serialChartNo, // 실제 차트번호(F-XXXX)만 — 미발번이면 발번 보류(slice 임시값 미사용)
-      dateYYYYMMDD: format(new Date(), 'yyyyMMdd'),
-      seq: serialSeq,
-    });
-    if (docSerial) {
-      base.visit_no = docSerial;
+    // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 연번호 발급순번 미리보기 발번 제거.
+    //   연번호 발번은 출력 확정 시 DB RPC(issue_foot_doc_serial) — 미리보기엔 숫자 미표기.
+    //   연번호 대상(prefix 매핑 + 차트번호 보유) 양식은 미발번(빈 값) 상태로 두고, handlePrint 가
+    //   RPC 반환 seq 로 인쇄본 visit_no 를 주입한다(buildDocSerial — 포맷 {prefix}-{YYYYMMDD}-{chart}-{NN} 불변).
+    //   ⚠ 비-연번호 양식(미등록 form_key·차트번호 미발번)은 기존 fallback(checkIn.id slice) 그대로 — 회귀0.
+    const serialEligible = !!docSerialPrefix(template.form_key) && !!serialChartNo;
+    if (serialEligible) {
+      base.visit_no = ''; // 미리보기 미발번 — 출력 확정 시 RPC 주입(아래 record_no fallback 에 안 걸리도록 명시 공란)
     }
 
-    // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자) — 위 자동 발번이 보류된 경우의 최종 fallback
+    // 등록번호 기본값 (없으면 checkIn.id 앞 8자)
     if (!base.record_no) {
       base.record_no = checkIn.customer_id?.slice(0, 8) ?? '';
     }
-    if (!base.visit_no) {
+    // 연번호 fallback: 비-연번호 양식만(serialEligible 은 출력 시 RPC 발번 → 빈 값 유지).
+    if (!serialEligible && !base.visit_no) {
       base.visit_no = checkIn.id.slice(0, 8) ?? '';
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, serialSeq]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -2158,17 +2151,20 @@ function IssueDialog({
     setPreviewOpen(true);
   }, [template]);
 
-  const printJpg = useCallback(() => {
+  // T-20260630-foot-SERIAL-RPC-FE-REWIRE: valuesOverride 파라미터 — 출력 확정 시 RPC 발번된 visit_no 가
+  //   주입된 finalValues 로 인쇄(미주입 시 allValues = 미리보기값). 인쇄본에만 실 연번호가 찍힘.
+  const printJpg = useCallback((valuesOverride?: Record<string, string>) => {
+    const values = valuesOverride ?? allValues;
     // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식 분기
     if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
       // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
       const isLandscape = template.form_key === 'bill_detail';
       const pages = template.form_key === 'rx_standard'
         ? [
-            buildHtmlPageHtml(template, allValues, '약국보관용'),
-            buildHtmlPageHtml(template, allValues, '환자보관용'),
+            buildHtmlPageHtml(template, values, '약국보관용'),
+            buildHtmlPageHtml(template, values, '환자보관용'),
           ]
-        : [buildHtmlPageHtml(template, allValues)];
+        : [buildHtmlPageHtml(template, values)];
       const w = openBatchPrintWindow(pages, `${template.name_ko} — ${checkIn.customer_name}`, isLandscape);
       if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
       return;
@@ -2178,12 +2174,13 @@ function IssueDialog({
       toast.error('양식 이미지를 찾을 수 없습니다');
       return;
     }
-    const pageHtml = buildPageHtml(template, allValues, imgUrl);
+    const pageHtml = buildPageHtml(template, values, imgUrl);
     const w = openBatchPrintWindow([pageHtml], `${template.name_ko} — ${checkIn.customer_name}`);
     if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   }, [template, allValues, checkIn.customer_name]);
 
-  const printPdf = useCallback(async () => {
+  const printPdf = useCallback(async (valuesOverride?: Record<string, string>) => {
+    const values = valuesOverride ?? allValues;
     const pdfUrl = getTemplateImageUrl(template.form_key);
     if (!pdfUrl) {
       toast.error('PDF 양식을 찾을 수 없습니다');
@@ -2199,7 +2196,7 @@ function IssueDialog({
 
       if (template.field_map.length > 0) {
         for (const f of template.field_map) {
-          const val = allValues[f.key] ?? '';
+          const val = values[f.key] ?? '';
           if (!val) continue;
           page.drawText(val, {
             x: f.x,
@@ -2231,31 +2228,73 @@ function IssueDialog({
     setSaving(true);
     const isFallback = template.id.startsWith('fallback-');
 
+    // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 출력 확정 시 발번 경로 = DB RPC(issue_foot_doc_serial).
+    //   인쇄에 사용할 최종 필드값. 연번호 대상 양식은 INSERT 후 RPC seq 로 visit_no 를 덮어 인쇄/기록한다.
+    let printValues: Record<string, string> = allValues;
+    const serialEligible = !!docSerialPrefix(template.form_key) && !!serialChartNo;
+
     // staffId: issued_by = staff.id (≠ user_profiles.id). 미조회 시 로그 생략하고 출력은 계속.
     if (!isFallback && staffId) {
-      const { error } = await supabase.from('form_submissions').insert({
-        clinic_id: checkIn.clinic_id,
-        template_id: template.id,
-        check_in_id: checkIn.id,
-        customer_id: checkIn.customer_id,
-        issued_by: staffId,
-        field_data: allValues,
-        diagnosis_codes: manualValues.diagnosis_ko ? [manualValues.diagnosis_ko] : null,
-        status: 'printed',
-        printed_at: new Date().toISOString(),
-      });
-      if (error) {
-        toast.error(`발행 기록 저장 실패: ${error.message}`);
+      // INSERT 후 행 id 확보 → RPC 발번의 멱등 키(form_submission_id).
+      const { data: inserted, error } = await supabase
+        .from('form_submissions')
+        .insert({
+          clinic_id: checkIn.clinic_id,
+          template_id: template.id,
+          check_in_id: checkIn.id,
+          customer_id: checkIn.customer_id,
+          issued_by: staffId,
+          field_data: allValues, // 미리보기값(연번호 대상이면 visit_no 빈 값) — 아래 RPC 후 갱신
+          diagnosis_codes: manualValues.diagnosis_ko ? [manualValues.diagnosis_ko] : null,
+          status: 'printed',
+          printed_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+      if (error || !inserted?.id) {
+        toast.error(`발행 기록 저장 실패: ${error?.message ?? '행 생성 실패'}`);
         setSaving(false);
         return;
+      }
+
+      // 연번호 대상 양식: RPC 로 발급순번 선점(멱등) → visit_no 문자열 조립 → field_data 갱신.
+      //   ⚠ 발번대장 무결성 우선: RPC 실패 시 가짜 번호를 만들지 않는다(visit_no 공란 유지 + 경고).
+      if (serialEligible) {
+        const { data: seq, error: rpcErr } = await supabase.rpc('issue_foot_doc_serial', {
+          p_clinic_id: checkIn.clinic_id,
+          p_form_submission_id: inserted.id,
+        });
+        if (!rpcErr && typeof seq === 'number') {
+          const docSerial = buildDocSerial({
+            formKey: template.form_key,
+            chartNo: serialChartNo, // 실제 차트번호(F-XXXX)
+            dateYYYYMMDD: format(new Date(), 'yyyyMMdd'),
+            seq, // RPC 발번 권위값(통산 gapless)
+          });
+          if (docSerial) {
+            printValues = { ...allValues, visit_no: docSerial };
+            // 인쇄본·발행이력 일치: field_data.visit_no 를 RPC 값으로 갱신(doc_serial_seq 는 RPC 가 이미 기록).
+            const { error: updErr } = await supabase
+              .from('form_submissions')
+              .update({ field_data: printValues })
+              .eq('id', inserted.id);
+            if (updErr) {
+              // 컬럼(doc_serial_seq)은 이미 발번됨 → 번호 자체는 확정. 표시 문자열 갱신만 실패.
+              toast.error(`연번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+            }
+          }
+        } else {
+          // 발번 실패: 발번대장 무결성 우선 — 가짜 번호 미기록(visit_no 공란). 재출력으로 재발번 가능.
+          toast.error('연번호 발번 실패 — 잠시 후 재출력해 주세요.');
+        }
       }
     }
 
     if (template.template_format === 'pdf') {
-      await printPdf();
+      await printPdf(printValues);
     } else {
       // html 포함 모든 비-PDF는 printJpg (내부에서 html 분기 처리)
-      printJpg();
+      printJpg(printValues);
     }
 
     setSaving(false);
