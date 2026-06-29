@@ -67,6 +67,9 @@ const FIELD_LABELS: Record<string, string> = {
   // ── 외국인 발각질케어 신규 문항 (T-20260625-foot-FOREIGN-HEALTHQ-EN) ──
   foot_concern_symptoms:  '발 고민 증상',
   allergies:              '알레르기 상세',
+  // ── 자가작성 신규 항목 2종 (T-20260629-foot-HEALTHQ-SELF-ADD-2Q) ──
+  pedicure_removed:       '패디큐어 제거 유무',
+  prone_30min_ok:         '30분 이상 엎드려 시술 가능',
   // ── 후방호환 (구 제출분) ──
   visit_purpose:          '방문 목적',
   has_allergy:            '알레르기',
@@ -112,6 +115,8 @@ function extractDisplayFields(data: Record<string, unknown>) {
     'treatment_start_timing', 'visit_frequency', 'has_private_insurance', 'insurance_company',
     // 외국인 발각질케어 신규 문항 (foot_concern_symptoms = 발 고민 증상, allergies = 알레르기 상세)
     'visit_purpose', 'foot_concern_symptoms', 'has_allergy', 'allergies',
+    // 자가작성 신규 항목 2종 (T-20260629-foot-HEALTHQ-SELF-ADD-2Q)
+    'pedicure_removed', 'prone_30min_ok',
     // 후방호환 (구 제출분 key — 제거된 방문목적/알레르기/방문경로 + 구 통증·시술)
     'allergy_types', 'allergy_other', 'referral_source',
     'nail_locations', 'pain_duration', 'pain_severity', 'prior_treatment', 'prior_conditions', 'family_history',
