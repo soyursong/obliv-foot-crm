@@ -723,14 +723,14 @@ export default function KohReportTab() {
 
   /** 발행 여부 — published 인덱스에 koh_service_id(=row.id) 존재. */
   const isPublished = (id: string) => publishedMap?.has(id) ?? false;
-  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) + 환자 생년월일 있고(4FIX 이슈3, hard-block)
-   *  + 담당 치료사 배정됨(PUBLISH-BTN-REVERIFY-GATE AC-4) + 아직 미발행.
+  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) + 환자 생년월일 있고(4FIX 이슈3, hard-block) + 아직 미발행.
    *  4FIX 이슈3(의료문서 정확성): AC-0 선조사 결과 윤민희 등 prod birth_date NULL 다수 → 생년 누락 상태
    *  발행 차단. 2FIX 이슈1(발행불가도 탭 가능 + 사유 toast) 위에 hard-block 강화(policy_superseded).
-   *  AC-4(reporter 명시): "이미 치료사가 선택해서 정보 완비된 건만 발급 활성" → therapist_id(check_ins, read-only) AND.
-   *  미배정 사유는 button title + handlePublish toast 로 발견성 보존(KOHBTN AC-3 회귀 방지). */
+   *  BACTCHECK-PUBLISH-THERAPIST(AC-1, 문지은 대표원장 2026-06-29 A안): 담당 치료사 배정 조건(therapist_id) 제거.
+   *    → PUBLISH-BTN-REVERIFY-GATE AC-4(치료사 필수)를 정책 owner 본인이 철회. 치료사 미배정(박민석류)도 즉시 발행 가능.
+   *    게이트는 nail_sites + 생년월일 둘만 남김(누락 시에만 차단). */
   //  BIRTHDATE-FROM-RRN-FALLBACK(AC①): 생년 게이트는 effectiveBirth(정규 birth_date || RRN 파생값) 기준.
-  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!effectiveBirth(r) && !!r.therapist_id && !isPublished(r.id);
+  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!effectiveBirth(r) && !isPublished(r.id);
 
   // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
   //   SINGLESEL-2FIX(이슈1): 발행 불가 시 silent return 금지 — 태블릿엔 hover 툴팁이 없어 버튼이
@@ -753,11 +753,8 @@ export default function KohReportTab() {
       toast.error(`환자 생년월일 정보가 없어 ${pubNoun}할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.`);
       return;
     }
-    // PUBLISH-BTN-REVERIFY-GATE(AC-4): 담당 치료사 미배정 시 발급 차단 + 사유 toast(태블릿 hover 부재 대응, KOHBTN AC-3 발견성 보존).
-    if (!r.therapist_id) {
-      toast.error(`담당 치료사가 배정되지 않아 ${pubNoun}할 수 없습니다. 접수/체크인에서 담당 치료사를 먼저 지정해주세요.`);
-      return;
-    }
+    // BACTCHECK-PUBLISH-THERAPIST(AC-2, 문지은 대표원장 2026-06-29 A안): 담당 치료사 미배정 차단 분기 제거.
+    //   PUBLISH-BTN-REVERIFY-GATE AC-4(therapist 필수)를 정책 owner 본인이 철회 — 치료사 미배정도 발행 가능.
     if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
     const doctorName = doctorNameForRow(r, doctorMap);
     const fieldData = buildKohFieldData(r, doctorName, effectiveBirth(r));
@@ -1181,9 +1178,7 @@ export default function KohReportTab() {
                               ? `채취 조갑부위를 먼저 선택해야 ${pubNoun}할 수 있습니다 (눌러서 안내 보기)`
                               : !effectiveBirth(r)
                                 ? `환자 생년월일 미입력 — ${pubNoun} 불가 (눌러서 안내 보기)`
-                                : !r.therapist_id
-                                  ? `담당 치료사 미배정 — ${pubNoun} 불가 (눌러서 안내 보기)`
-                                  : `${pubNoun} 불가 (눌러서 안내 보기)`
+                                : `${pubNoun} 불가 (눌러서 안내 보기)`
                         }
                         data-testid="koh-publish-btn"
                         data-publishable={rowPublishable ? 'true' : 'false'}
@@ -1202,7 +1197,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급하기</strong>는 채취 조갑부위 선택 + 환자 생년월일 + 담당 치료사 배정이 모두 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력 / 치료사 미배정 시 접수·체크인에서 먼저 지정), 발급 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급하기</strong>는 채취 조갑부위 선택 + 환자 생년월일이 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력), 발급 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}

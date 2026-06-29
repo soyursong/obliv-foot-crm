@@ -1,5 +1,11 @@
 /**
- * E2E spec — T-20260619-foot-PUBLISH-BTN-REVERIFY-GATE (AC-4)
+ * ⚠️ SUPERSEDED (2026-06-29) — T-20260629-foot-BACTCHECK-PUBLISH-THERAPIST
+ *   이 spec의 핵심 단언(AC-4: 치료사 배정 필수 게이트)은 정책 owner(문지은 대표원장) 본인이
+ *   A안으로 명시 철회했습니다(2026-06-29 20:22 KST). 현행 정본 = BACTCHECK spec.
+ *   본 파일의 'S2 치료사 게이트' 단언은 철회된 정책을 모사하므로 거짓 앵커가 됩니다 → test.describe.skip 처리.
+ *   회귀 검증은 T-20260629-foot-BACTCHECK-PUBLISH-THERAPIST.spec.ts 가 단일 정본으로 대체합니다.
+ *
+ * E2E spec — T-20260619-foot-PUBLISH-BTN-REVERIFY-GATE (AC-4) [HISTORICAL]
  * 진료대시보드(DoctorTools) 균검사지 탭 = KohReportTab — 발급 활성화(enable-gate)에 '치료사 배정' 조건 추가.
  * reporter: 문지은 대표원장. "발가락도 이미 치료사가 선택해서 정보 완벽하게 조건 있는것들만 발급하기 활성화되어야함".
  *
@@ -57,7 +63,8 @@ const ROW_NO_NAIL: KohRowLite = { nailCount: 0, birth: '1990-01-01', therapistId
 const ROW_PUBLISHED: KohRowLite = { nailCount: 1, birth: '1990-01-01', therapistId: 't-1', published: true };
 
 // ===========================================================================
-test.describe('T-20260619-foot-PUBLISH-BTN-REVERIFY-GATE (AC-4 치료사 배정 게이트)', () => {
+// SUPERSEDED by BACTCHECK-PUBLISH-THERAPIST (치료사 필수 게이트 철회) — skip 유지(역사 보존).
+test.describe.skip('T-20260619-foot-PUBLISH-BTN-REVERIFY-GATE (AC-4 치료사 배정 게이트) [SUPERSEDED]', () => {
   // ── S2 치료사 배정 게이트 ──
   test('S2a: 조갑부위+생년+치료사배정+미발행 모두 충족 행만 발급 활성', () => {
     expect(canPublish(ROW_OK)).toBe(true);
