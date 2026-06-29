@@ -137,16 +137,23 @@ test('AC3: 올바른 X-Callback-Secret POST → 2xx + reservation_id (멱등 재
       'secret 주입 시 실행되며, 미주입 시 시나리오1(도파민 UI→push→foot) 실 write 로 cross-service 검증(supervisor).',
   );
 
-  const externalId = 'e2e-verifyjwt-ac3-fixture'; // 고정 멱등키 — 재실행 누적 0
+  // external_id 는 reservations.external_id(uuid 컬럼) 와 정합해야 한다 — 도파민은 cue_card_id(UUID)를 전송.
+  //   비-UUID 문자열은 'invalid input syntax for type uuid' 로 reservation insert 가 500 (auth 통과 후 write 단계 실패).
+  //   고정 UUID 로 멱등키 유지(재실행 시 applied:false → prod 누적 0). dev-foot 가 deno 로컬 serve + prod DB 로 실측 검증함.
+  const externalId = 'e2e0a3c3-0000-4000-8000-00000000ac03';
+  // 픽스처 스윕 정합(global-teardown cleanupAll → 잔존 0):
+  //   - customers: name ilike 'qa-res-%' 로 스윕 (EF 는 customer.memo 를 세팅하지 않으므로 name 접두가 유일 키).
+  //   - reservations: memo == '[QA-FIXTURE]' (정확 일치) 로 스윕. EF rsvPayload 에 customer_name 이 없어
+  //     customer_name 접두 스윕은 미적용 → memo 가 정확히 MARKER 여야 한다.
   const payload = {
     source_system: 'dopamine',
     external_id: externalId,
     clinic_slug: 'jongno-foot',
-    customer: { phone_e164: '+821099990000', name: 'E2E-AC3-FIXTURE' },
+    customer: { phone_e164: '+821099990000', name: 'qa-res-verifyjwt-ac3' },
     reservation: {
       scheduled_at: '2026-12-31T23:30:00+09:00',
       slot_type: 'new_consult',
-      memo: 'T-20260629-foot-INGEST-EF-401-VERIFYJWT AC3 fixture',
+      memo: '[QA-FIXTURE]', // MARKER 정확 일치 — global-teardown 이 reservation 을 스윕하도록
     },
   };
   const headers = { 'Content-Type': 'application/json', 'X-Callback-Secret': secret! };
