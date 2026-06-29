@@ -156,11 +156,15 @@ export default function CalendarNoticePanel() {
   //   마다 항상 접힘으로 시작하는 게 의도. 사용자는 펼치기 버튼으로 즉시 펼칠 수 있음.
   const [pcCollapsed, setPcCollapsed] = useState<boolean>(true);
   // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [7]: CALENDAR-DEFAULT-COLLAPSED 예약관리 한정 반전.
-  //   예약관리 진입 시 달력을 펼친 상태로 시작(날짜 클릭 시 펼침 유지와 일관). 대시보드 등 기타 화면은
-  //   기존 '접힘 기본'(CALENDAR-DEFAULT-COLLAPSED) 유지 → 강제 접힘은 하지 않음(사용자가 [6]용으로 펼친 상태 보존).
+  //   예약관리 진입 시 달력을 펼친 상태로 시작(날짜 클릭 시 펼침 유지와 일관).
+  // T-20260629-foot-CALENDAR-SCOPE-DASH-RESV-ONLY (QA FIX, AC2): 대시보드(/admin)도 펼친 상태로 시작.
+  //   본 패널은 SCOPE-DASH-RESV-ONLY 이후 showSidebarCalendar 로 '대시보드·예약관리' 2개 화면에서만 렌더되므로,
+  //   두 화면 공히 달력/공지가 보여야 AC2·AC3 충족. 이전엔 onReservations 만 펼쳐 대시보드는 pc-cal-bar(접힘)
+  //   strip만 떠 '공지사항' 미노출 → QA phase2 FAIL(text=공지사항 count 0). 라인 92-93 주석('대시보드 … 달력
+  //   접힘 없음') 의도와도 정합. 접기 토글은 보존(사용자 수동 접기 가능) — 기본 시작 상태만 펼침.
   useEffect(() => {
-    if (onReservations) setPcCollapsed(false);
-  }, [onReservations]);
+    if (onReservations || onDashboard) setPcCollapsed(false);
+  }, [onReservations, onDashboard]);
 
   // ── 공지 폼 상태 ──────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
