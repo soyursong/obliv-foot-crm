@@ -108,16 +108,22 @@ const COMMON_STYLE = `
     .large-area { min-height: 60px; }
     /* T-20260515-foot-FORM-ONELINE-RX: 라벨 셀 한줄 정렬 — background:#f8f8f8 셀 전체 적용 */
     td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
-    /* T-20260629-foot-DOCPRINT-CENTER-ALIGN: 전 양식 인쇄 정렬 통일(표현 레이어만, 구조/데이터/발행로직 불변).
-       증상: 출력물이 상단·좌측으로 쏠리고 하단 여백 과다.
-       원인: form-wrap 이 인쇄 page(@page margin:0 인 .page 210×297mm) 안에서 margin:0 → 상단 0mm 밀착,
-             min-height:267mm 라 하단에 ~30mm 빈 띠. (raw 경로 printOpinionDoc 는 @page 부재로 축소맞춤까지.)
-       수정: margin:12mm auto(상·하 12mm·좌우 자동 중앙) + min-height:273mm(=297-24)로 page 를 균형 있게 채움.
-             width 는 190mm(<page 210mm) 유지 → 좌우 10mm 대칭 여백(좌측 쏠림 방지). @page 는 인쇄창 래퍼
-             (openBatchPrintWindow 등)가 margin:0 으로 소유 → 템플릿에서 선언하지 않는다(중복·landscape 충돌 방지). */
+    /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 출력물 중앙·여백 배치 전면 재검토(표현 레이어만 — 구조/데이터/발행로직 불변).
+       증상(현장 박장군님): 출력해보니 전체적으로 중앙배치 안 됨 — 위·좌측 쏠림 + 아래 공간 과다.
+       근본원인: 직전 CENTER-ALIGN 은 form-wrap 을 margin:12mm auto 로 .page(210mm) 안에서 CSS상 중앙
+                 정렬했으나, 인쇄창 .page 가 A4 전폭(210mm) full-bleed + @page margin:0 이라 실제 프린트
+                 엔진이 인쇄가능영역(기본여백 적용 시 ~190mm)을 초과 → shrink-to-fit 으로 페이지 전체를
+                 좌상단 앵커로 축소 → 좌·상단 쏠림 + 하단 빈 띠가 잔존(헤드리스 하니스는 @page 여백/축소를
+                 물리 시뮬 못 해 이 갭을 놓침).
+       수정: 중앙배치를 CSS margin 이 아니라 "프린트 엔진의 @page 물리 여백"이 직접 수행하도록 모델 전환.
+             인쇄창(openBatchPrintWindow)·raw 경로(printOpinionDoc)가 @page margin:12mm 10mm 를 소유 →
+             콘텐츠박스(A4-여백 = 190×273mm)가 엔진에 의해 물리적으로 중앙 배치(좌우 10mm·상하 12mm 대칭,
+             축소 없음). form-wrap 은 콘텐츠박스를 채우므로 자체 page 여백을 갖지 않는다(margin:0 auto — auto 는
+             박스가 미세하게 넓을 때의 좌우 중앙 belt). min-height:273mm(=297-24) 유지 → 단일 페이지·넘침/잘림 없음.
+             @page 는 인쇄창 래퍼가 소유 → 템플릿에서 선언하지 않음(중복·landscape 충돌 방지). */
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .form-wrap { width: 190mm; min-height: 273mm; padding: 6mm 8mm; margin: 12mm auto; }
+      .form-wrap { width: 190mm; min-height: 273mm; padding: 6mm 8mm; margin: 0 auto; }
       td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
     }
   </style>
@@ -748,10 +754,11 @@ ${COMMON_STYLE}
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
   @media print {
-    /* T-20260629-foot-DOCPRINT-CENTER-ALIGN: 가로(A4 landscape) page(.page-landscape 297×210mm) 내
-       상·하 12mm + 좌우 자동 중앙 배치로 쏠림/하단 과다여백 보정. @page 는 래퍼(forceLandscape)가 소유 →
-       템플릿 미선언(LOGIC: PRINT-FORM-BIND/DOC-PRINT-UNIFY 가드와 정합). */
-    .bill-wrap { width: 272mm; min-height: 186mm; padding: 4mm 6mm; margin: 12mm auto; overflow: hidden; }
+    /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
+       콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
+       (margin:0 auto — auto 좌우 belt). 직전엔 margin:12mm auto + .page-landscape 가 전폭(297mm) full-bleed →
+       엔진 shrink-to-fit 좌상단 앵커로 쏠림 잔존. @page 는 래퍼(forceLandscape)가 소유 → 템플릿 미선언. */
+    .bill-wrap { width: 272mm; min-height: 186mm; padding: 4mm 6mm; margin: 0 auto; overflow: hidden; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
@@ -999,7 +1006,7 @@ ${COMMON_STYLE}
 
 const REFERRAL_LETTER_HTML = `
 ${COMMON_STYLE}
-<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm + margin:0 auto 로 A4(210mm) 중앙 배치 + 좌우 11mm 여백 확보(프린터 unprintable edge clipping 제거) --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; min-height:273mm; margin:12mm auto;"><!-- T-20260611-foot-REFERRAL-FORM-CENTER-CLIP: 좌우(margin auto)와 동일 논리로 상하 12mm 여백 추가(0→12mm). form-wrap이 page 최상단(top 0mm)에 붙어 프린터 unprintable 상단영역이 제목을 자르던 상단 짤림 제거 + 하단 18mm 클리어런스 확보. 의뢰서 한정 변경. -->
+<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm 로 콘텐츠박스(190mm) 내 좌우 1mm 여백 + 프린터 unprintable edge clipping 회피 --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; min-height:273mm; margin:0 auto;"><!-- T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 상·하 여백은 인쇄창 @page margin(12mm)이 엔진 차원에서 소유 → 인라인 margin:12mm auto → 0 auto(이중여백/콘텐츠 초과 방지). 좌우 188mm/auto 는 콘텐츠박스 내 중앙 belt 로 유지. -->
   <div style="border-bottom:1px solid #000; padding:10px 14px 8px;">
     <div class="title" style="font-size:18pt; letter-spacing:14px; padding:8px 0 6px;">진 료 의 뢰 서</div>
   </div>
@@ -1305,10 +1312,10 @@ const RX_STANDARD_HTML = `
   .rx-wrap td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
   .rx-wrap td[style*="background:#f0f0f0"] { white-space: nowrap; }
   @media print {
-    /* T-20260629-foot-DOCPRINT-CENTER-ALIGN: page 내 상·하 12mm + 좌우 자동 중앙 배치로 통일.
-       @page(A4 portrait, margin:0) 는 래퍼가 소유하나 본 처방전 양식은 'A4 portrait' 식별이 필요해 유지. */
-    @page { size: A4 portrait; margin: 0; }
-    .rx-wrap { width: 190mm; min-height: 273mm; padding: 5mm 8mm; margin: 12mm auto; }
+    /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 인쇄창 @page margin:12mm 10mm 가 콘텐츠박스를 엔진
+       차원에서 중앙 배치 → rx-wrap 은 박스를 채움(margin:0 auto). 직전의 템플릿-레벨 @page margin:0 선언은
+       래퍼 @page(margin:12mm 10mm)를 덮어써 처방전만 shrink-to-fit 쏠림 재발 → 제거(@page=인쇄창 래퍼 단일 소유). */
+    .rx-wrap { width: 190mm; min-height: 273mm; padding: 5mm 8mm; margin: 0 auto; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rx-wrap td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
   }
@@ -1529,8 +1536,9 @@ const BILL_RECEIPT_HTML = `
   .br-sign-box { border: 1px solid #000; width: 60px; height: 26px; display: inline-block; }
   .br-notice { font-size: 7.5pt; color: #333; margin-top: 8px; line-height: 1.5; }
   @media print {
-    /* T-20260629-foot-DOCPRINT-CENTER-ALIGN: page 내 상·하 12mm + 좌우 자동 중앙 배치로 통일. @page=래퍼 소유. */
-    .br-wrap { width: 190mm; min-height: 273mm; padding: 6mm 8mm; margin: 12mm auto; }
+    /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 인쇄창 @page margin:12mm 10mm 가 콘텐츠박스를 엔진
+       차원에서 중앙 배치 → br-wrap 은 박스를 채움(margin:0 auto). @page=인쇄창 래퍼 단일 소유. */
+    .br-wrap { width: 190mm; min-height: 273mm; padding: 6mm 8mm; margin: 0 auto; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>

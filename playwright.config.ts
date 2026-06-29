@@ -193,6 +193,10 @@ export default defineConfig({
         //   오인해 그 주를 통째 누락하던 버그. parseMonthHeader 가드(날짜 행≥3 → 헤더 제외) 회귀
         //   방지. 실측 시트 구조 모사 CSV 로 파서 직접 단언(순수 함수, auth/CSV fetch 불요).
         '**/T-20260629-foot-STAFFCAL-CROSSMONTH-SCHEDULE.spec.ts',
+        // T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 출력물 중앙·여백 배치 전면 재검토 — 프린트 엔진
+        //   @page 물리 여백 중앙배치 모델(엔진-충실 측정 + 메커니즘 소스 가드). 직전 CENTER-ALIGN 정밀화.
+        '**/T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT.spec.ts',
+        '**/T-20260629-foot-DOCPRINT-CENTER-ALIGN.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
