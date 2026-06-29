@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
 import { generateSlots } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, chartNoBadge } from '@/lib/format';
+import { formatPhone, formatPhoneInput, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -604,7 +604,7 @@ export function ReservationDetailPopup({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="inline-flex shrink-0 items-center rounded-full bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold text-white" data-testid="newmode-visittype-badge">재진</span>
-                      <span className="text-sm font-semibold text-teal-800 truncate">{loadedMatch!.name}</span>
+                      <span className="text-[11px] font-medium text-teal-700">기존 고객 불러옴</span>
                       {/* AC7: 진행중 패키지(최신 active 1건) N/N — loadZone1Data 선로드 자산 재사용(자동로드). */}
                       {(() => {
                         const activePkg = packages[0];
@@ -636,6 +636,40 @@ export function ReservationDetailPopup({
                   >
                     다시 입력
                   </button>
+                </div>
+                {/* T-20260629-foot-RESVCREATE-CUSTAUTOLOAD AC3: 선택 시 자동 채워진 성함·연락처를 '수정 가능' plain input 으로 노출.
+                    읽기전용 강제 금지(오입력 정정용). 신원(loadedMatch.id)은 선택값 고정 — 값 편집은 이 예약의 표기 스냅샷만 갱신.
+                    생년월일(loadedMatch.birth_date)은 식별 보조용 read-only 표시(예약 생성에 별도 입력칸 없음). */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Label htmlFor="newmode-existing-name" className="w-12 shrink-0 text-muted-foreground">성함</Label>
+                    <input
+                      id="newmode-existing-name"
+                      type="text"
+                      value={newCustName}
+                      onChange={(e) => setNewCustName(e.target.value)}
+                      className="h-9 flex-1 min-w-0 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      data-testid="newmode-existing-name-input"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <Label htmlFor="newmode-existing-phone" className="w-12 shrink-0 text-muted-foreground">연락처</Label>
+                    <input
+                      id="newmode-existing-phone"
+                      type="text"
+                      inputMode="numeric"
+                      value={newCustPhone}
+                      onChange={(e) => setNewCustPhone(formatPhoneInput(e.target.value))}
+                      className="h-9 flex-1 min-w-0 rounded-md border border-input bg-background px-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+                      data-testid="newmode-existing-phone-input"
+                    />
+                  </div>
+                  {loadedMatch!.birth_date && (
+                    <div className="flex items-center gap-2 text-xs" data-testid="newmode-existing-birth">
+                      <span className="w-12 shrink-0 text-muted-foreground">생년월일</span>
+                      <span className="text-sm text-teal-800 tabular-nums">{loadedMatch!.birth_date}</span>
+                    </div>
+                  )}
                 </div>
                 {/* 패키지·치료이력(2번차트 양식 read-only) — loadZone1Data 로 선로드됨 */}
                 <div className="rounded-lg border border-border/50 bg-card/70 px-2.5 py-2" data-testid="popup-newmode-pkg-history">
@@ -788,7 +822,9 @@ export function ReservationDetailPopup({
                 creatingResv ||
                 !pickedDate ||
                 // 신규(미매칭) 모드는 성함+연락처 미입력 시 생성 차단(빈 고객 INSERT 방지).
-                (!loadedMatch && (!newCustName.trim() || !newCustPhone.trim()))
+                // T-20260629-foot-RESVCREATE-CUSTAUTOLOAD AC3: 재진(매칭)도 성함이 비면 차단 — 단 연락처는
+                //   신원이 customer id 로 고정되므로 빈값 허용(연락처 없는 기존 고객도 예약 가능).
+                (loadedMatch ? !newCustName.trim() : (!newCustName.trim() || !newCustPhone.trim()))
               }
               onClick={submitNewReservation}
               data-testid="btn-newmode-create-entry"
@@ -1078,11 +1114,16 @@ export function ReservationDetailPopup({
     setLoadedMatch(p);
     // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 기존 고객을 검색 선택하면 직접 등록 모드 해제(stale 입력 차단).
     setManualNew(false);
-    setNewCustName('');
-    setNewCustPhone('');
+    // T-20260629-foot-RESVCREATE-CUSTAUTOLOAD AC3: 후보 선택 시 예약 입력 필드(이름·연락처)를 자동 populate(비우지 않음).
+    //   채워진 값은 그대로 수정 가능(읽기전용 강제 금지) — 신규예약 모달 재진 카드에서 plain input 으로 편집 노출.
+    //   phone 은 formatPhoneInput 으로 하이픈 표시(+82 E.164 → 010 정규화 포함). 신원(loadedMatch.id)은 선택값 고정.
+    setNewCustName(p.name ?? '');
+    setNewCustPhone(p.phone ? formatPhoneInput(p.phone) : '');
     // T-20260614-foot-RESVPOPUP-AC2-NEWMODE: B 로드 시 new-mode 입력 기본값 리셋(초/재 재진 기본).
     setNewResvVisitType('returning');
-    setNewResvTime('10:00');
+    // T-20260629-foot-RESVCREATE-CUSTAUTOLOAD: 통합 모달(new-mode)은 진입 시 주입된 날짜·시간 readOnly 유지 —
+    //   고객 선택이 그 슬롯 시간을 10:00 으로 덮어쓰지 않도록 보존(헤더 검색창=big-modal 경로만 기본 10:00).
+    if (!newMode) setNewResvTime('10:00');
     loadZone1Data(p.id);
   }
 
@@ -1124,12 +1165,14 @@ export function ReservationDetailPopup({
       toast.error('예약 시간을 선택하세요.');
       return;
     }
-    const targetName = loadedMatch ? loadedMatch.name : manualName;
+    // T-20260629-foot-RESVCREATE-CUSTAUTOLOAD AC3: 자동 채움 값이 수정됐을 수 있음 → 편집된 newCust* 우선(빈값이면 매칭값 fallback).
+    //   신원(customerId=loadedMatch.id)은 선택 고정 — 편집은 이 예약의 표기(name/phone) 스냅샷에만 반영(고객 마스터 무변경, 🔒L-002).
+    const targetName = loadedMatch ? (newCustName.trim() || loadedMatch.name) : manualName;
     setCreatingResv(true);
     const res = await onCreateReservation({
       customerId: loadedMatch ? loadedMatch.id : null,
       name: targetName,
-      phone: loadedMatch ? (loadedMatch.phone ?? null) : manualPhone,
+      phone: loadedMatch ? (newCustPhone.trim() || loadedMatch.phone || null) : manualPhone,
       date: format(pickedDate, 'yyyy-MM-dd'),
       time: newResvTime,
       // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-f: 신규 고객 직접 등록(manualNew)은 무조건 초진(new) 고정 — race-safe guard.
