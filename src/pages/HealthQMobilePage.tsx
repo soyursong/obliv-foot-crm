@@ -128,6 +128,24 @@ const CALLUS_SYMPTOM_OPTIONS = [
   '건조함', '티눈·사마귀', '발톱 청결 문제', '발냄새',
 ];
 
+// ── T-20260629-foot-HEALTHQ-SELF-ADD-2Q: 자가작성 신규 항목 2종 ────────────────────
+// 항목 A — 패디큐어 제거 유무 (국문 + 영문 전체 양식).
+//   value=한국어 canonical(차트 표시 무회귀) + en 라벨 명시.
+//   ⚠ 공유 EN_LABELS는 '없음'→'None' 매핑이라 Yes/No 항목엔 못 씀 → 전용 en 라벨 사용.
+const PEDICURE_REMOVED_OPTIONS = [
+  { value: '있음', en: 'Yes' },
+  { value: '없음', en: 'No' },
+];
+// 항목 B — 30분 이상 엎드려 시술 가능 여부 (외국인 폼 전용).
+//   영문 카피=임시번역(현장 확정 전 — planner FOLLOWUP 발행).
+//   ⚠ 노출범위: 현장 표현 "발 각질케어만 해당"이나 graft 노트/CANCELLATION 지침대로
+//   '우선 외국인 폼 상시 노출(isEn)'로 1차 구현. 각질케어(isCallus) 한정 조건부 노출 가능성은 후속.
+//   ↳ 조건부로 좁힐 경우: 아래 렌더 게이트 `isEn` → `isCallus` 로 교체하면 됨.
+const PRONE_30MIN_OPTIONS = [
+  { value: '가능',   en: 'Possible' },
+  { value: '불가능', en: 'Not possible' },
+];
+
 // 옵션 값(한국어 canonical) → 영문 라벨. 누락 시 원본 value 폴백.
 const EN_LABELS: Record<string, string> = {
   // 1번 발 관련 증상
@@ -228,6 +246,9 @@ interface HealthQData {
   foot_concern_symptoms:  string[]; // 발각질 Q1 — 발 고민 증상 (신규 키, symptoms 와 별개)
   has_allergy:            boolean | null;  // 발각질 Q2 — null=미선택
   allergies:              string;          // 발각질 Q2 — 알레르기 종류 기입 (DA 명시 키)
+  // T-20260629-foot-HEALTHQ-SELF-ADD-2Q: 자가작성 신규 항목 2종 (JSONB form_data 키 추가, 스키마 무변경)
+  pedicure_removed:       string;   // 항목A — '있음' | '없음' (국문 + 영문 전체 양식)
+  prone_30min_ok:         string;   // 항목B — '가능' | '불가능' (외국인 폼 전용, 국문 비노출)
 }
 
 const emptyData = (): HealthQData => ({
@@ -252,6 +273,8 @@ const emptyData = (): HealthQData => ({
   foot_concern_symptoms:  [],
   has_allergy:            null,
   allergies:              '',
+  pedicure_removed:       '',
+  prone_30min_ok:         '',
 });
 
 type PageStep = 'loading' | 'error' | 'form' | 'submitting' | 'done' | 'already_used';
@@ -949,6 +972,56 @@ export default function HealthQMobilePage() {
           </div>
         </section>
         </>
+        )}
+
+        {/* ── 추가 확인 사항 (T-20260629-foot-HEALTHQ-SELF-ADD-2Q) ───────────────── */}
+        {/* 항목A 패디큐어 제거 유무 = 국문 + 영문 전체(purposeChosen 시 모든 flow 1회 노출).
+            항목B 엎드려 시술 가능 여부 = 외국인 폼 전용(isEn) — 국문 비노출. */}
+        {purposeChosen && (
+          <section className="space-y-5 rounded-2xl p-4"
+            style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
+            <SectionHeader num={isCallus ? 5 : 6}
+              title={tt('추가 확인 사항', 'Additional questions')}
+              sub={tt('각 항목에서 하나씩 선택해주세요', 'Select one for each item')} />
+
+            {/* 항목 A — 패디큐어 제거 유무 (국문 + 영문 전체) */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium" style={{ color: C.dark }}>
+                {tt('패디큐어 제거 유무', 'Pedicure removal status')}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {PEDICURE_REMOVED_OPTIONS.map((opt) => (
+                  <BigBtn key={opt.value} full
+                    active={d.pedicure_removed === opt.value}
+                    onClick={() => set('pedicure_removed', d.pedicure_removed === opt.value ? '' : opt.value)}
+                    color="teal"
+                  >
+                    {isEn ? opt.en : opt.value}
+                  </BigBtn>
+                ))}
+              </div>
+            </div>
+
+            {/* 항목 B — 30분 이상 엎드려 시술 가능 여부 (외국인 폼 전용 / 국문 비노출) */}
+            {isEn && (
+              <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+                <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>
+                  Can you lie face down for 30+ minutes during the treatment?
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {PRONE_30MIN_OPTIONS.map((opt) => (
+                    <BigBtn key={opt.value} full
+                      active={d.prone_30min_ok === opt.value}
+                      onClick={() => set('prone_30min_ok', d.prone_30min_ok === opt.value ? '' : opt.value)}
+                      color="teal"
+                    >
+                      {opt.en}
+                    </BigBtn>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
         )}
 
         <p className="text-center text-xs pb-4" style={{ color: C.mutedText }}>

@@ -84,8 +84,11 @@ test.describe('T-20260625-foot-FOREIGN-HEALTHQ-EN', () => {
     await page.getByRole('button', { name: 'Dryness' }).click();
 
     // Q2 알레르기 — 입력칸은 Yes 전엔 숨김
+    // (T-20260629-foot-HEALTHQ-SELF-ADD-2Q: 항목A 패디큐어 Yes/No 추가로 'Yes' 중복 →
+    //  Allergies 섹션으로 스코프하여 명확화)
     await expect(page.getByPlaceholder('Please specify your allergies')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Yes', exact: true }).click();
+    const allergySec = page.locator('section').filter({ hasText: 'Allergies' });
+    await allergySec.getByRole('button', { name: 'Yes', exact: true }).click();
     await expect(page.getByPlaceholder('Please specify your allergies')).toBeVisible();
     await page.getByPlaceholder('Please specify your allergies').fill('Penicillin');
 
