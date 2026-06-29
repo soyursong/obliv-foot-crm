@@ -57,7 +57,10 @@ printf '    body: %s\n' "$(cat /tmp/_ingest_c.txt)"
 # ── AC3 positive: 올바른 secret → 2xx + reservation_id (secret 주입 시만) ──
 if [ -n "$SECRET" ]; then
   note "AC3: 올바른 X-Callback-Secret POST → 2xx + reservation_id (멱등키 고정)"
-  AC3_BODY='{"source_system":"dopamine","external_id":"smoke-verifyjwt-ac3","clinic_slug":"jongno-foot","customer":{"phone_e164":"+821099990000","name":"SMOKE-AC3"},"reservation":{"scheduled_at":"2026-12-31T23:30:00+09:00","slot_type":"new_consult","memo":"verifyjwt smoke AC3"}}'
+  # external_id 는 reservations.external_id(uuid 컬럼) 정합 — 비-UUID 는 'invalid input syntax for type uuid' 500.
+  #   고정 UUID 로 멱등(재실행 applied:false, 누적 0). 픽스처 스윕 정합: name 'qa-res-%' + memo '[QA-FIXTURE]'(정확 일치)
+  #   → playwright global-teardown cleanupAll 이 customers/reservations 전수 스윕(잔존 0).
+  AC3_BODY='{"source_system":"dopamine","external_id":"e2e0a3c3-0000-4000-8000-00000000ac03","clinic_slug":"jongno-foot","customer":{"phone_e164":"+821099990000","name":"qa-res-verifyjwt-ac3"},"reservation":{"scheduled_at":"2026-12-31T23:30:00+09:00","slot_type":"new_consult","memo":"[QA-FIXTURE]"}}'
   RESP=$(curl -s -o /tmp/_ingest_d.txt -w '%{http_code}' -X POST "$EF_URL" -H 'Content-Type: application/json' -H "X-Callback-Secret: $SECRET" -d "$AC3_BODY")
   if [ "${RESP:0:1}" = "2" ]; then printf '  \033[32mPASS\033[0m valid-secret → %s\n' "$RESP"; PASS=$((PASS+1)); else printf '  \033[31mFAIL\033[0m valid-secret (got %s)\n' "$RESP"; FAIL=$((FAIL+1)); fi
   printf '    body: %s\n' "$(cat /tmp/_ingest_d.txt)"
