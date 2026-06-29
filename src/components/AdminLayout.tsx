@@ -31,8 +31,9 @@ import {
   FileText,
 } from 'lucide-react';
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
-// T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (B안): 상단 자동배정 알림 종
-import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
+// T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림(AssignmentNotifyBell)을 전역 헤더에서 제거 →
+//   예약관리/대시보드(체크인) 페이지의 날짜선택 옆으로 이동(현장 김주연 총괄: 헤더 위치 가시성 낮음).
+//   배치/렌더는 각 페이지가 소유 — 헤더에선 import·렌더 모두 제거(중복 노출 차단).
 import DashboardRefreshCountdown from '@/components/DashboardRefreshCountdown';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -565,9 +566,8 @@ export default function AdminLayout() {
             </button>
             <span className="text-sm font-semibold">{clinic?.name ?? '풋센터 종로'}</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">{today}</span>
-            {/* T-20260629-foot-ASSIGN-ALERT-MARQUEE AC-1: 담당자 배정 알림을 위치(지점명)+날짜 선택 바로 옆으로 이동
-                (기존 우측 끝 → 시선 동선 안으로). 노출 조건·내용 동일 — 컴포넌트 자체는 불변, 배치만 변경. */}
-            <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
+            {/* T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림을 헤더에서 제거 →
+                예약관리(Reservations)·대시보드(Dashboard) 날짜선택 옆으로 이전. 헤더 중복 노출 차단. */}
           </div>
           <div className="flex items-center gap-2">
             {/* T-20260611-foot-TOPBAR-RESV-BTN-REMOVE: 헤더 전역 예약 생성 버튼 제거 (김주연 총괄 요청).
