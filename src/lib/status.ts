@@ -159,16 +159,18 @@ export function staffRoleSortIndex(role: StaffRole | string | null | undefined):
  *   상담(consultant) → 로즈 / 코디(coordinator) → 노랑 / 치료(therapist) → 초록
  *   그 외 역할(director·technician 등) → 중립 fallback.
  *   (T-20260611-foot-HANDOVER-ATTENDEE-PARTCOLOR: 상담 sky→rose, 김주연 총괄 요청)
+ *   (T-20260629-foot-HANDOVER-COMPACT-PASTEL: 채도↓ 파스텔 톤 — bg-*-100/text-*-800 →
+ *    bg-*-50/text-*-700/border-*-200. 파트별 색 구분(rose/yellow/green/indigo) 유지.)
  */
 export const STAFF_ROLE_CARD_CLASS: Record<string, string> = {
-  consultant: 'bg-rose-100 text-rose-800 border-rose-300',
-  coordinator: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  therapist: 'bg-green-100 text-green-800 border-green-300',
+  consultant: 'bg-rose-50 text-rose-700 border-rose-200',
+  coordinator: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+  therapist: 'bg-green-50 text-green-700 border-green-200',
 };
 
 /** 역할별 이름 칩 클래스 조회 (미매칭 역할 → 중립색 fallback) */
 export function staffRoleCardClass(role: string): string {
-  return STAFF_ROLE_CARD_CLASS[role] ?? 'bg-slate-100 text-slate-700 border-slate-300';
+  return STAFF_ROLE_CARD_CLASS[role] ?? 'bg-slate-50 text-slate-600 border-slate-200';
 }
 
 /** 계정 역할 한글 라벨 (user_profiles role — StaffRole 상위집합) */
