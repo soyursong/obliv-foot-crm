@@ -32,10 +32,11 @@ interface Props {
   onCreated?: () => void;
 }
 
+// T-20260629-foot-CHECKIN-EXPERIENCE-BTN-REMOVE — 김주연 총괄 A안 confirm(선체험 접수 운영 종료)
+// UI 버튼만 제거(초진/재진 2종). visit_type 슬롯/DB/타입 union 'experience'는 보존(5/14 ROLLBACK 이력).
 const VISIT_CHOICES: { value: VisitType; label: string }[] = [
   { value: 'new', label: '초진' },
   { value: 'returning', label: '재진' },
-  { value: 'experience', label: '선체험' },
 ];
 
 export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Props) {
@@ -497,7 +498,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
 
           <div className="space-y-1.5">
             <Label>유형</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {VISIT_CHOICES.map((c) => (
                 <button
                   key={c.value}
