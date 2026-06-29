@@ -5204,9 +5204,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       const verified = flag === false || (flag !== true && !!rrnMasked);
                       return verified ? (
                         <span
-                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
                           // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 신분증 확인완료 배지는 ② 그레이 통일에서 제외 → 파스텔 그린 유지.
                           // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE A안 확정: firstvisit 앵커 = A안 ⑨ 따듯 파스텔 A. 배지 bg=fv-100(#E7EEDA) / 텍스트=fv-700(#566A3D) / 보더=fv-200(#D7E0C4).
+                          // T-20260629-foot-CHART2-IDVERIFY-PASTEL-SHRINK: 절반 사이즈(px-1.5·py-0.5·gap-1·font-medium)로 축소. 파스텔 그린 색(firstvisit) 불변, 표시 조건·텍스트 불변.
+                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium"
                           style={{ backgroundColor: '#E7EEDA', color: '#566A3D', border: '1.5px solid #D7E0C4' }}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-firstvisit-500 inline-block" />
@@ -5218,10 +5219,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           disabled={!latestCheckIn}
                           title={latestCheckIn ? '클릭하면 신분증 확인 완료 처리' : '내원 기록이 없어 수동 처리 불가 (주민번호 저장 시 자동 처리)'}
                           onClick={() => { if (latestCheckIn) markIdVerified(); }}
-                          // T-20260629-foot-CHART2-RRN-IDBADGE-PASTEL-SHRINK: 진한레드→파스텔(bg-red-100/text-red-400) + 절반 사이즈(text-xs·py-0.5·px-1.5·gap-1·font-medium). 표시/숨김 로직(rrn 미입력 조건) 불변, className만 교체.
-                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70 bg-red-100 text-red-400 border border-red-200"
+                          // T-20260629-foot-CHART2-IDVERIFY-PASTEL-SHRINK: 진한레드→파스텔 핑크/로즈(bg-rose-100/text-rose-400/border-rose-200) + 절반 사이즈(text-xs·py-0.5·px-1.5·gap-1·font-medium). 표시/숨김 로직(rrn 미입력 조건) 불변, className만 교체.
+                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70 bg-rose-100 text-rose-400 border border-rose-200"
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-red-300 inline-block animate-pulse" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-300 inline-block animate-pulse" />
                           신분증 확인 필요
                         </button>
                       );
