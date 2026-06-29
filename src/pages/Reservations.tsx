@@ -1694,8 +1694,9 @@ export default function Reservations() {
             /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2): (+) → 예약상세 팝업 new-mode 오픈.
                별도 폼/ReservationEditor 모달 스폰 폐기. 생성은 팝업 → handleCreateReservationFromPopup
                → 단일소스 createReservationCanonical 위임(L-002 개정). */
-            /* AC3: 상단 '새 예약'은 prefill 없이 빈 진입(기존 동작) — initial 클리어 후 new-mode. */
-            onClick={() => { setNewReservationInitial(null); setNewReservationMode(true); }}
+            /* T-20260629-foot-NEWRESV-UNIFIED-MODAL AC9: 목록 [새 예약]도 캘린더 (+)와 동일 통합 모달.
+               모달 내 날짜picker 제거(AC2) → 클릭 셀이 없는 목록 진입은 현재 보는 날짜(selectedDay) + 기본시간(10:00) 주입. */
+            onClick={() => { setNewReservationInitial({ date: format(selectedDay, 'yyyy-MM-dd'), time: '10:00' }); setNewReservationMode(true); }}
             className="gap-1.5"
           >
             <Plus className="h-3.5 w-3.5" />
