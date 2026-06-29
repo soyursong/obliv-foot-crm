@@ -599,7 +599,11 @@ export default function Reservations() {
       return prevStr === dateParam ? prev : parsed;
     });
     setWeekStart(startOfWeek(new Date(`${dateParam}T00:00:00`), { weekStartsOn: 1 }));
-    setViewMode('week');
+    // T-20260629-foot-RESVCAL-DAYCLICK-EXPAND-STAY (항목7) × DAILY-DEFAULT-HORIZ (항목1):
+    //   달력 일자 클릭 시 '해당 일자 예약현황으로 이동' = 그 날짜의 *일간(day)* 현황으로 이동.
+    //   (구: 'week' 강제 — 일간 기본값(항목1)을 매 달력클릭마다 주간으로 되돌려 6/25 개편2탄 daily-centric
+    //    의도와 충돌. weekStart 는 위에서 갱신해두므로 사용자가 수동 주간 전환 시 해당 주가 그대로 노출.)
+    setViewMode('day');
   }, [dateParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchWeek = useCallback(async () => {
