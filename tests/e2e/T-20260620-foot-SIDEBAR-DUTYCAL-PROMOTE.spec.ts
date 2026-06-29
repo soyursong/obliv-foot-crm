@@ -46,11 +46,9 @@ test.describe('T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE', () => {
   test('AC-1 — DutyRosterTab 흡수 (Handover.tsx 에서 import·렌더)', () => {
     expect(handoverSrc).toContain("import { DutyRosterTab } from '@/components/DutyRosterTab'");
     expect(handoverSrc).toContain('<DutyRosterTab clinic={clinic} />');
-    // 상단 탭 스트립 + 의사(구 원장 근무표) 탭 트리거 존재
-    // T-20260621-foot-DUTYCAL-MENU-RELABEL: 탭 라벨 원장 근무표→의사 (value/testid 무변경)
+    // [SUPERSEDED by T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL]
+    //   탭 통합(단일 스크롤) — handover-tab-duty 식별자는 섹션으로 보존, 탭 pane(handover-duty-pane)은 제거.
     expect(handoverSrc).toContain('data-testid="handover-tab-duty"');
-    expect(handoverSrc).toMatch(/data-testid="handover-tab-duty"[\s\S]*?의사\s*<\/TabsTrigger>/);
-    expect(handoverSrc).toContain('data-testid="handover-duty-pane"');
   });
 
   /**
@@ -98,9 +96,10 @@ test.describe('T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE', () => {
     for (const role of NEWLY_FORBIDDEN_ROLES) {
       expect(rolesLiteral).not.toContain(`'${role}'`);
     }
-    // 탭/패인 렌더가 canSeeDutyRoster 게이트 뒤에 있음
+    // 의사 근무표 섹션 렌더가 canSeeDutyRoster 게이트 뒤에 있음
+    //   [SUPERSEDED by T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL] topTab 제거 → canSeeDutyRoster && clinic 게이트로 섹션 렌더.
     expect(handoverSrc).toContain('canSeeDutyRoster');
-    expect(handoverSrc).toMatch(/canSeeDutyRoster && topTab === 'duty'/);
+    expect(handoverSrc).toMatch(/canSeeDutyRoster && clinic/);
   });
 
   /**
@@ -134,11 +133,9 @@ test.describe('T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE', () => {
     await page.click('button[type="submit"]');
     await page.waitForURL('/admin');
 
-    // 최상위 [직원 근무 캘린더] 메뉴 진입
+    // 최상위 [근무 캘린더] 메뉴 진입 → [SUPERSEDED] 단일 스크롤: 의사 근무표 섹션이 상단에 표시.
     await page.goto('/admin/handover');
-    await expect(page.getByTestId('handover-top-tabs')).toBeVisible();
-    // 원장 근무표 탭 클릭 → DutyRosterTab pane 표시
-    await page.getByTestId('handover-tab-duty').click();
-    await expect(page.getByTestId('handover-duty-pane')).toBeVisible();
+    await expect(page.getByTestId('handover-tab-duty')).toBeVisible();
+    await expect(page.getByTestId('handover-tab-board')).toBeVisible();
   });
 });

@@ -35,17 +35,17 @@ test.describe('T-20260621-foot-DUTYCAL-MENU-RELABEL', () => {
     expect(adminLayoutSrc).not.toMatch(/label:\s*'직원 근무 캘린더'/);
   });
 
-  /** AC-2: 탭 표시 라벨 '직원'/'의사' (value/data-testid 식별자 무변경). */
-  test('AC-2 — 탭 라벨 인수인계→직원 / 원장 근무표→의사 (식별자 유지)', () => {
-    // 표시 라벨 교체
-    expect(handoverSrc).toMatch(/data-testid="handover-tab-board"[\s\S]*?직원\s*<\/TabsTrigger>/);
-    expect(handoverSrc).toMatch(/data-testid="handover-tab-duty"[\s\S]*?의사\s*<\/TabsTrigger>/);
-    // 구 탭 라벨이 탭 트리거에서 미노출 (TabsTrigger 내 텍스트)
-    expect(handoverSrc).not.toMatch(/h-4 w-4" \/> 인수인계\s*<\/TabsTrigger>/);
-    expect(handoverSrc).not.toMatch(/h-4 w-4" \/> 원장 근무표\s*<\/TabsTrigger>/);
-    // 식별자(value/data-testid) 보존
-    expect(handoverSrc).toContain('value="handover" data-testid="handover-tab-board"');
-    expect(handoverSrc).toContain('value="duty" data-testid="handover-tab-duty"');
+  /** AC-2: [SUPERSEDED by T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL]
+   *  RELABEL 의 '직원'/'의사' 라벨은 탭 통합(단일 스크롤) 이후 섹션 식별자로 이관됨.
+   *  탭 트리거(TabsTrigger)는 제거 — 식별자(handover-tab-board/handover-tab-duty)는 섹션으로 보존. */
+  test('AC-2 — 직원/의사 식별자 보존 (탭 통합 후 섹션으로 이관)', () => {
+    // 탭 식별자가 섹션 data-testid 로 살아있음(E2E 회귀 보존)
+    expect(handoverSrc).toContain('data-testid="handover-tab-board"');
+    expect(handoverSrc).toContain('data-testid="handover-tab-duty"');
+    // 의사 근무표 섹션 헤더 라벨 노출
+    expect(handoverSrc).toContain('의사 근무표');
+    // 탭 UI(TabsTrigger) 는 통합으로 제거됨
+    expect(handoverSrc).not.toContain('TabsTrigger');
   });
 
   /** AC-3: 권한 가드 보존 — 의사 탭은 canSeeDutyRoster(6역할) 게이트 유지. */

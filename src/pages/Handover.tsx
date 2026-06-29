@@ -60,8 +60,8 @@ import {
   type HandoverChecklistItem,
   type HandoverNote,
 } from '@/lib/handover';
-// T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 원장 근무표(듀티 로스터) 흡수 — 스케줄 관리 동선 1곳 일원화
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+// T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE → T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL:
+//   원장 근무표(듀티 로스터) 흡수 후 의사·직원 탭 통합 → 단일 스크롤. Tabs 의존 제거, DutyRosterTab 만 사용.
 import { DutyRosterTab } from '@/components/DutyRosterTab';
 
 const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
@@ -83,10 +83,9 @@ export default function Handover() {
   const clinic = useClinic();
   const { profile } = useAuth();
 
-  // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 상단 탭 — 인수인계(기존) / 원장 근무표(흡수).
-  //   원장 근무표 탭은 DUTY_ROSTER_ROLES 한정 노출(AC-3). 권한 없으면 탭 자체를 숨겨 동선 1곳 유지.
+  // T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL: 의사 근무표 = 단일 스크롤 상단 섹션(탭 제거).
+  //   권한 가드 보존 — DUTY_ROSTER_ROLES 없는 role 에겐 섹션 자체를 렌더하지 않음(AC-4).
   const canSeeDutyRoster = !!(profile?.role && (DUTY_ROSTER_ROLES as readonly string[]).includes(profile.role));
-  const [topTab, setTopTab] = useState<'handover' | 'duty'>('handover');
 
   const [view, setView] = useState<CalendarView>('month'); // AC-2: 기본 월별
   const [anchor, setAnchor] = useState<Date>(new Date());
@@ -471,40 +470,34 @@ export default function Handover() {
   }, [view, anchor, selectedDate]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 상단 탭 스트립 — 인수인계 / 원장 근무표.
-          원장 근무표 탭은 권한(DUTY_ROSTER_ROLES) 있을 때만 노출(AC-3 권한 가드 보존). */}
+    // T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL: 의사·직원 2탭 → 단일 스크롤 뷰.
+    //   외곽 컨테이너 단일 스크롤(overflow-y-auto)에 [의사 근무표] → [구분선] → [인수인계(직원)] 세로 적층.
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto" data-testid="handover-scroll-root">
+      {/* ── 상단 섹션: 의사 근무표(DutyRosterTab) ──
+          권한 가드(DUTY_ROSTER_ROLES) 보존 — 권한 없는 role 에게 새로 노출 금지(AC-4).
+          data-testid="handover-tab-duty": 구 탭 식별자를 섹션으로 위치 이동(E2E 회귀 보존). */}
+      {canSeeDutyRoster && clinic && (
+        <section className="shrink-0 p-4" data-testid="handover-tab-duty">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-teal-600" />
+            <h2 className="text-base font-semibold">의사 근무표</h2>
+            <span className="hidden text-xs text-muted-foreground sm:inline">· 원장 근무 캘린더</span>
+          </div>
+          <DutyRosterTab clinic={clinic} />
+        </section>
+      )}
+
+      {/* ── 구분선(divider) — 두 섹션 시각 분리(AC-3) ── */}
       {canSeeDutyRoster && (
-        <div className="shrink-0 border-b bg-white px-4 pt-2" data-testid="handover-top-tabs">
-          <Tabs value={topTab} onValueChange={(v) => setTopTab(v as 'handover' | 'duty')}>
-            <TabsList>
-              {/* T-20260621-foot-DUTYCAL-MENU-RELABEL: 탭 표시 라벨만 인수인계→직원 / 원장 근무표→의사. value/data-testid/권한 가드 무변경. */}
-              <TabsTrigger value="handover" data-testid="handover-tab-board">
-                <ClipboardCheck className="mr-1 h-4 w-4" /> 직원
-              </TabsTrigger>
-              <TabsTrigger value="duty" data-testid="handover-tab-duty">
-                <CalendarDays className="mr-1 h-4 w-4" /> 의사
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <div
+          className="shrink-0 border-t-8 border-muted/70"
+          data-testid="handover-section-divider"
+        />
       )}
 
-      {/* 원장 근무표(흡수) — 권한 보유 + 선택 시에만 렌더 */}
-      {canSeeDutyRoster && topTab === 'duty' && (
-        <div className="flex-1 min-h-0 overflow-auto p-4" data-testid="handover-duty-pane">
-          {clinic && <DutyRosterTab clinic={clinic} />}
-        </div>
-      )}
-
-      {/* 인수인계 게시판(기존) — duty 탭 선택 시 언마운트 않고 숨김(로드 상태 보존) */}
-      <div
-        className={
-          canSeeDutyRoster && topTab === 'duty'
-            ? 'hidden'
-            : 'flex flex-1 min-h-0 flex-col'
-        }
-      >
+      {/* ── 하단 섹션: 인수인계 게시판(직원 캘린더) — 기존 그대로 ──
+          data-testid="handover-tab-board": 구 탭 식별자를 섹션으로 위치 이동(E2E 회귀 보존). */}
+      <section className="flex flex-col" data-testid="handover-tab-board">
       {/* 헤더 */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white/80 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -614,8 +607,8 @@ export default function Handover() {
         ))}
       </div>
 
-      {/* 본문 */}
-      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-4 gap-4 lg:flex-row">
+      {/* 본문 — T-20260629-…-TAB-MERGE-SCROLL: 외곽 단일 스크롤이 관장(내부 flex-1/min-h-0/overflow 제거). */}
+      <div className="flex flex-col p-4 gap-4 lg:flex-row">
         {/* 캘린더 영역 */}
         <div className="lg:flex-1 lg:min-w-0">
           {view === 'month' && (
@@ -894,8 +887,8 @@ export default function Handover() {
           </div>
         </DialogContent>
       </Dialog>
-      </div>
-      {/* /T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE 인수인계 본문 래퍼 끝 */}
+      </section>
+      {/* /T-20260629-foot-HANDOVER-TAB-MERGE-SCROLL 단일 스크롤 뷰 끝 */}
     </div>
   );
 }
