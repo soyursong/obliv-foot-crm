@@ -809,7 +809,8 @@ const DraggableCard = memo(function DraggableCard({
           </span>
         )}
         {checkIn.visit_type === 'new' && (
-          <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
+          /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진=파랑(blue). 구 yellow 하드코드 → A안 파랑 통일 */
+          <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
         {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
         <OutstandingDueBadge data={outstandingData} />
@@ -1566,12 +1567,11 @@ function TimelineCheckInCard({
     ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow-dim)' } : {}),
   };
 
-  // 2번 박스 활성화 스타일: 방문유형 구분 — T-20260615-foot-THEME-MONO-REFINE-3AREA AC1
-  // 초진=노랑/재진=초록 의미색(배경 채도) 제거 → 모노톤. 구분은 텍스트(초 배지)+보더 두께로만.
-  //   초진 = 흰 배경 + 진한 보더(gray-400), 재진 = 옅은 회색 배경(gray-50) + 옅은 보더(gray-300).
+  // 통합시간표 체크인 카드 방문유형 구분 — T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 추가 scope)
+  //   T-20260615 무채색 SUPERSEDED → A안 컬러 복귀. 초진=파랑(blue) / 재진=초록(firstvisit).
   const box2Cls = visitType === 'returning'
-    ? 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-    : 'border-gray-400 bg-white hover:bg-gray-100';
+    ? 'border-firstvisit-200 bg-firstvisit-50 hover:bg-firstvisit-100'
+    : 'border-blue-200 bg-blue-50 hover:bg-blue-100';
 
   return (
     <div
@@ -1598,7 +1598,8 @@ function TimelineCheckInCard({
       }}
     >
       {showBadge && (
-        <span className="shrink-0 bg-gray-300 text-gray-800 text-[9px] px-0.5 rounded leading-tight font-bold">
+        /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진 배지 무채색 → 파랑(blue) */
+        <span className="shrink-0 bg-blue-100 text-blue-700 text-[9px] px-0.5 rounded leading-tight font-bold">
           초
         </span>
       )}
@@ -1783,9 +1784,9 @@ function DraggableBox1Card({
       {...attributes}
       {...listeners}
       className={cn(
-        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 초진 노랑 → 모노톤 (흰 배경+진한 보더)
-        'flex items-center gap-1 rounded border border-gray-400 bg-white px-2 py-1 text-[10px] w-full select-none',
-        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-gray-100 hover:border-gray-500 transition' : 'cursor-default',
+        // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 초진=파랑(blue). T-20260615 무채색 SUPERSEDED.
+        'flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] w-full select-none',
+        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-blue-100 hover:border-blue-300 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
       onContextMenu={(e) => {
@@ -1798,7 +1799,8 @@ function DraggableBox1Card({
       data-testid="box1-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
-      <span className="shrink-0 bg-gray-200 text-gray-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+      {/* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진 배지 무채색 → 파랑(blue) */}
+      <span className="shrink-0 bg-blue-100 text-blue-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation)}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지 */}
@@ -1875,9 +1877,9 @@ function DraggableBox2ResvCard({
       {...attributes}
       {...listeners}
       className={cn(
-        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 재진 초록 → 모노톤 (옅은 회색 배경+보더)
-        'flex items-center gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
-        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-gray-100 hover:border-gray-400 transition' : 'cursor-default',
+        // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 재진=초록(firstvisit). T-20260615 무채색 SUPERSEDED.
+        'flex items-center gap-1 rounded border border-firstvisit-200 bg-firstvisit-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
+        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-firstvisit-100 hover:border-firstvisit-300 transition' : 'cursor-default',
         // T-20260516-foot-HEALER-RESV-BTN AC-10: healer_flag=true인 재진 예약 → 노란색 깜빡 border
         reservation.healer_flag && 'healer-blink',
       )}
@@ -2290,7 +2292,9 @@ function DashboardTimeline({
             초진 {timelineNewVisitTotal}
           </span>
           <span
-            className="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-bold text-emerald-700"
+            /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 재진=초록(firstvisit #EDF1E4).
+               구 raw emerald → firstvisit 토큰. '재진 N' 배지 제거 아니라 A안 초록 적용(총괄 final 명시). 초진 배지는 旣 blue 정합. */
+            className="inline-flex items-center rounded bg-firstvisit-100 px-1 py-0.5 text-[9px] font-bold text-firstvisit-700"
             data-testid="timeline-returningvisit-count"
             title="금일 재진 방문 예정 수"
           >
@@ -2462,16 +2466,16 @@ function DashboardTimeline({
         ) : (
           /* ── 기존 시간표 뷰 ─────────────────────────────────────────────── */
           <>
-        {/* 컬럼 헤더 — 초진/재진: T-20260615-foot-THEME-MONO-REFINE-3AREA AC1 모노톤
-             초진=옅은 회색 헤더(gray-100)+초 배지, 재진=더 옅은 회색(gray-50). 텍스트로 구분. */}
+        {/* 컬럼 헤더 — 초진/재진: T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope)
+             T-20260615 무채색 SUPERSEDED → A안 컬러 복귀. 초진=파랑(blue) 헤더+초 배지, 재진=초록(firstvisit) 헤더. */}
         <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b sticky top-0 z-10 bg-white">
           {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-20 — 코너 셀(시간 헤더)도 좌측 고정 */}
           <div className="py-1 border-r bg-gray-50 sticky left-0 z-20" data-testid="timeline-time-col" />
-          <div className="py-1 text-[9px] font-bold text-gray-700 text-center border-r bg-gray-100 flex items-center justify-center gap-0.5">
-            <span className="bg-gray-200 text-gray-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+          <div className="py-1 text-[9px] font-bold text-blue-700 text-center border-r bg-blue-100 flex items-center justify-center gap-0.5">
+            <span className="bg-blue-200 text-blue-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
             초진
           </div>
-          <div className="py-1 text-[9px] font-bold text-gray-600 text-center bg-gray-50">
+          <div className="py-1 text-[9px] font-bold text-firstvisit-700 text-center bg-firstvisit-50">
             재진
           </div>
         </div>
@@ -2613,8 +2617,8 @@ function DashboardTimeline({
                       ? 'bg-teal-50/20'
                       : isInactiveZone
                         ? 'bg-neutral-100/50'
-                        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 초진 노랑 배경 틴트 제거(채도0)
-                        : newCnt > 0 ? 'bg-gray-50/60' : '',
+                        // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 초진=파랑 배경 틴트(blue, T-20260615 무채색 SUPERSEDED)
+                        : newCnt > 0 ? 'bg-blue-50/60' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot })}
                   title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
@@ -2657,8 +2661,8 @@ function DashboardTimeline({
                       ? 'bg-teal-50/20'
                       : isInactiveZone
                         ? 'bg-neutral-100/50'
-                        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 재진 초록 배경 틴트 제거(채도0)
-                        : retCnt > 0 ? 'bg-gray-50/40' : '',
+                        // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 재진=초록 배경 틴트(firstvisit, T-20260615 무채색 SUPERSEDED)
+                        : retCnt > 0 ? 'bg-firstvisit-50/50' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
                   title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"
@@ -6912,7 +6916,8 @@ export default function Dashboard() {
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="dashboard-statusbar-4item">
             <span>초진 <strong className="text-blue-700">{statusNewCount}</strong></span>
             <span>·</span>
-            <span>재진 <strong className="text-emerald-700">{statusReturningCount}</strong></span>
+            {/* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 재진=초록(firstvisit). 구 raw emerald → A안 초록 통일 */}
+            <span>재진 <strong className="text-firstvisit-700">{statusReturningCount}</strong></span>
             <span>·</span>
             <span>수납대기 <strong className="text-amber-700">{statusPaymentWaitingCount}</strong></span>
             <span>·</span>
