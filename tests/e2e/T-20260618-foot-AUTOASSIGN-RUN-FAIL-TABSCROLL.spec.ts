@@ -112,13 +112,14 @@ test('A-4: maybeAutoAssign 가 chosen 없을 때(공집합) 진단 console.warn 
 // ─────────────────────────────────────────────────────────────────────────────
 // [B] 탭 항목 스크롤 — 3개 카드 컨테이너 max-h + overflow-auto, thead sticky 고정
 // ─────────────────────────────────────────────────────────────────────────────
-test('B-1: 배정 목록 컨테이너 3곳 모두 max-h + overflow-auto (목록만 스크롤)', () => {
+test('B-1: 배정 목록 컨테이너 max-h + overflow-auto (목록만 스크롤)', () => {
   const src = read(PAGE);
   const scrollers = src.match(/max-h-\[\d+vh\]\s+overflow-auto/g) ?? [];
-  // 오늘배정 + 당김후보 + 직원누적 = 3
-  expect(scrollers.length).toBe(3);
+  // T-20260629-foot-ASSIGNMONTHLY-SCROLL-REMOVE: '직원별 당월 누적' 카드는 스크롤 제거(전체 펼침) →
+  //   32vh 스크롤러 2→1 로 감소. 오늘배정(42vh) + 당김후보(32vh) 은 스크롤 유지.
+  expect(scrollers.length).toBeGreaterThanOrEqual(2);
   expect(src).toContain('max-h-[42vh] overflow-auto'); // 오늘 배정 현황(주 목록)
-  expect((src.match(/max-h-\[32vh\] overflow-auto/g) ?? []).length).toBe(2);
+  expect((src.match(/max-h-\[32vh\] overflow-auto/g) ?? []).length).toBe(1);
 });
 
 test('B-2: thead 가 sticky top-0 + 불투명 배경(스크롤 시 헤더 고정·비침 방지)', () => {
