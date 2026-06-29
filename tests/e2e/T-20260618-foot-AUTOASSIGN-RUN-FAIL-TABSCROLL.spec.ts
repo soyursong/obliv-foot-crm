@@ -51,11 +51,15 @@ function staffSelects(src: string): string[] {
 test('A-1: autoAssign.fetchActiveStaff staff select 에 display_name 미포함(400→staff[]→풀공집합 차단)', () => {
   const selects = staffSelects(read(AUTOASSIGN));
   expect(selects.length).toBeGreaterThan(0);
-  for (const sel of selects) {
-    expect(sel).not.toContain('display_name');
-    expect(sel).toContain('role'); // 후보풀 필터 필수
-    expect(sel).toContain('name'); // 출근자 이름 매칭 필수
-  }
+  // (1) RC 가드(불변): 어떤 staff select 도 display_name 재유입 금지.
+  //   미마이그 컬럼 → PostgREST 400 → staff=[] → 출근자 매칭·배정 풀 전부 공집합. 모든 select 에 적용.
+  for (const sel of selects) expect(sel).not.toContain('display_name');
+  // (2) 후보풀 select 보존: fetchActiveStaff 의 메인 select 는 role(풀 필터)+name(출근자 이름 매칭) 필수.
+  //   ── stale 갱신(T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER) ──
+  //   assign_sort_order 전용 narrow select(fetchAssignSortOrder)가 ADDITIVE·graceful 로 분리되어
+  //   이제 모든 staff select 가 role/name 을 갖지 않음. '모든 select' 단언은 stale → '후보풀 select 존재'로 견고화.
+  const poolSelect = selects.find((s) => s.includes('role') && s.includes('name'));
+  expect(poolSelect, 'fetchActiveStaff 후보풀 select(role+name) 미발견 — 출근자 매칭·풀 필터 불가').toBeTruthy();
 });
 
 test('A-2: Assignments.tsx staff select 에 display_name 미포함', () => {
@@ -69,7 +73,9 @@ test('A-2: Assignments.tsx staff select 에 display_name 미포함', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test('A-3: Dashboard 가 상담대기/치료대기 진입 시 maybeAutoAssign 호출(트리거 보존)', () => {
   const src = read(DASH);
-  expect(src).toContain("import { maybeAutoAssign }");
+  // import 존재 보존 — 동일 모듈 co-import(logRealAssignment 등) 허용.
+  //   stale 갱신: import 가 `{ maybeAutoAssign, logRealAssignment }` 로 확장되어 정확일치 단언이 깨짐 → 토큰 단위 매칭.
+  expect(src).toMatch(/import\s*\{[^}]*\bmaybeAutoAssign\b[^}]*\}\s*from\s*'@\/lib\/autoAssign'/);
   // 상태전이 훅(두 경로) + 셀프접수 INSERT 훅
   expect(src).toMatch(/maybeAutoAssign\(row\.id, newStatus/);
   expect(src).toMatch(/maybeAutoAssign\(ci\.id, newStatus/);
@@ -89,7 +95,9 @@ test('A-5a: Dashboard.doCheckInForReservation 가 대기슬롯 직행 시 maybeA
 
 test('A-5b: NewCheckInDialog.proceedCheckIn 가 balanced 엔진(maybeAutoAssign) 연결', () => {
   const src = read(NEWDIALOG);
-  expect(src).toContain("import { maybeAutoAssign }");
+  // import 존재 보존 — co-import(logAssignment·deriveConsultAxis 등) 허용.
+  //   stale 갱신: import 가 `{ maybeAutoAssign, logAssignment, deriveConsultAxis }` 로 확장 → 정확일치 단언 깨짐 → 토큰 매칭.
+  expect(src).toMatch(/import\s*\{[^}]*\bmaybeAutoAssign\b[^}]*\}\s*from\s*'@\/lib\/autoAssign'/);
   // 생성 직후 inserted id 로 대기슬롯(consult/treatment)일 때 호출
   expect(src).toMatch(/maybeAutoAssign\(insertedRow\.id, newStatus/);
   // id 회수를 위해 insert 가 .select('id').single() 로 바뀌었는지(미회수 시 호출 불가)
