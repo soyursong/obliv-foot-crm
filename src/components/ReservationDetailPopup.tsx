@@ -523,6 +523,18 @@ export function ReservationDetailPopup({
     if (match) setRegistrarId(match.id);               // 일치 시 자동주입(없으면 미지정 유지)
   }, [newMode, registrars, authorName, registrarId]);
 
+  // T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL: 예약등록자 Select 선택값(SingleValue) 표기 resolver.
+  //   Base UI Select.Value 는 children(render-fn) 미제공 시 raw value(=registrar_id UUID)를 그대로 렌더.
+  //   드롭다운 '목록' option 은 정상(이름)인데, 닫힌 트리거의 '선택값'만 UUID 로 노출되던 버그(신규 예약 모달 보고).
+  //   → 4FIX(담당자 드롭) 와 동일 패턴: value→이름 직접 해석(아이템 lazy 등록 타이밍 무관, UUID 절대 비노출).
+  //   표기 = 목록과 동일 라벨 포맷([group] name = [TM]/[원내] prefix 유지). 저장값(registrar_id)은 무변경(표시 전용).
+  const resolveRegistrarLabel = (val: string) => {
+    if (!val || val === '__none__') return '예약등록자 선택';
+    const reg = registrars.find((r) => r.id === val);
+    if (!reg) return '예약등록자 선택';           // 마스터 미로드/삭제 → placeholder graceful (UUID 비노출)
+    return reg.group_name ? `[${reg.group_name}] ${reg.name}` : reg.name;
+  };
+
   // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC4: 담당자(assigned_staff_id) 이름 resolve.
   //   clinic staff 목록(allStaff)에 있으면 그 이름, 없으면(타클리닉/삭제/비활성 누락) id 1건 직접 조회.
   //   어느 경우에도 raw UUID 가 Select 트리거에 노출되지 않도록 보장.
@@ -716,7 +728,10 @@ export function ReservationDetailPopup({
                         <Label htmlFor="newmode-registrar" className="text-[10px] text-muted-foreground">예약등록자</Label>
                         <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}>
                           <SelectTrigger id="newmode-registrar" className="h-9 w-full text-sm" data-testid="newmode-registrar-select">
-                            <SelectValue placeholder="예약등록자 선택" />
+                            {/* T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL: 선택값을 value→이름으로 직접 해석(UUID 비노출). */}
+                            <SelectValue placeholder="예약등록자 선택">
+                              {(val) => resolveRegistrarLabel(val)}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
@@ -1490,7 +1505,10 @@ export function ReservationDetailPopup({
                       onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
                     >
                       <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
-                        <SelectValue placeholder="예약등록자 선택" />
+                        {/* T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL AC5(재사용처): 선택값 value→이름 해석(UUID 비노출). */}
+                        <SelectValue placeholder="예약등록자 선택">
+                          {(val) => resolveRegistrarLabel(val)}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
