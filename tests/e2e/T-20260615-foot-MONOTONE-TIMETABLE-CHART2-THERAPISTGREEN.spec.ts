@@ -29,8 +29,9 @@ const chart = readFileSync(join(ROOT, 'src', 'pages', 'CustomerChartPage.tsx'), 
 const status = readFileSync(join(ROOT, 'src', 'lib', 'status.ts'), 'utf8');
 
 // ── 통합시간표 전용 슬롯 카드 구간만 슬라이스 (칸반·기타 영역 오탐 방지) ──
+//   T-20260625-foot-COLOR-CONVENTION-UNIFY: 앵커 코멘트 텍스트가 A안 적용으로 갱신됨 → 슬라이스 시작 마커 동기화.
 function sliceTimeline(src: string): string {
-  const start = src.indexOf('// 2번 박스 활성화 스타일');
+  const start = src.indexOf('// 통합시간표 체크인 카드 방문유형 구분');
   const end = src.indexOf('{/* ── AC-7: 아코디언 패널');
   expect(start).toBeGreaterThan(0);
   expect(end).toBeGreaterThan(start);
@@ -38,22 +39,15 @@ function sliceTimeline(src: string): string {
 }
 
 test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드 (auth 불요)', () => {
-  test('item1: 통합시간표 슬롯 카드/헤더 초진 노랑·재진 초록 배경 채도 제거', () => {
-    const seg = sliceTimeline(dashboard).replace(
-      /text-yellow-700 bg-yellow-100 border border-yellow-300/g,
-      '<<HEALER_CARVEOUT>>',
-    );
-    // 초진 노랑 누수 0
-    expect(seg).not.toMatch(/bg-yellow-50\b/);
-    expect(seg).not.toMatch(/border-yellow-(300|400|500)\b/);
-    expect(seg).not.toMatch(/text-yellow-(700|800|900)\b/);
-    // 재진 초록 누수 0
-    expect(seg).not.toMatch(/bg-green-50\b/);
-    expect(seg).not.toMatch(/border-green-(300|400)\b/);
-    expect(seg).not.toMatch(/text-green-(600|700|900)\b/);
-    // 모노톤 대체 클래스 실제 적용
-    expect(seg).toMatch(/border-gray-400 bg-white/);   // 초진 카드
-    expect(seg).toMatch(/border-gray-300 bg-gray-50/); // 재진 카드
+  // ⚠ SUPERSEDED 2026-06-29 by T-20260625-foot-COLOR-CONVENTION-UNIFY-CANDIDATES (총괄 김주연 final, A안 확정).
+  //   통합시간표 무채색(MONO) 결정 → A안 컬러(초진=파랑/재진=초록)로 총괄 본인 override.
+  //   item1 은 무채색 단언 → A안 컬러 단언으로 전환(forward guard). item2/item3 은 본 supersede와 무관(유지).
+  test('item1 [SUPERSEDED→A안]: 통합시간표 슬롯 카드/헤더가 A안 컬러(초진=blue / 재진=firstvisit)로 복귀했다', () => {
+    const seg = sliceTimeline(dashboard);
+    expect(seg, '통합시간표 초진 A안 파랑(blue) 미적용').toMatch(/bg-blue-50\b/);
+    expect(seg, '통합시간표 재진 A안 초록(firstvisit) 미적용').toMatch(/bg-firstvisit-50\b/);
+    expect(seg, '체크인 카드 재진이 구 무채색(gray-50)으로 회귀')
+      .not.toContain("'border-gray-300 bg-gray-50 hover:bg-gray-100'");
   });
 
   test('item2: 2번 차트(CustomerChartPage) 장식성 다색 → slate 모노톤 (carve-out 외 잔존 0)', () => {

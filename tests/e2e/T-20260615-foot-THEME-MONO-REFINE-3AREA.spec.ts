@@ -29,9 +29,10 @@ const chart = readFileSync(join(ROOT, 'src', 'pages', 'CustomerChartPage.tsx'), 
 const status = readFileSync(join(ROOT, 'src', 'lib', 'status.ts'), 'utf8');
 
 // ── 통합시간표 전용 슬롯 카드 구간만 슬라이스 (칸반·기타 영역 오탐 방지) ──
-//   DashboardTimeline 의 슬롯 카드/헤더 컴포넌트는 box2Cls(L~1373) ~ 재진 컬럼 렌더(L~2445) 구간.
+//   DashboardTimeline 의 슬롯 카드/헤더 컴포넌트 구간.
+//   T-20260625-foot-COLOR-CONVENTION-UNIFY: 앵커 코멘트 텍스트가 A안 적용으로 갱신됨 → 슬라이스 시작 마커 동기화.
 function sliceTimeline(src: string): string {
-  const start = src.indexOf('// 2번 박스 활성화 스타일');
+  const start = src.indexOf('// 통합시간표 체크인 카드 방문유형 구분');
   const end = src.indexOf('{/* ── AC-7: 아코디언 패널');
   expect(start).toBeGreaterThan(0);
   expect(end).toBeGreaterThan(start);
@@ -39,25 +40,17 @@ function sliceTimeline(src: string): string {
 }
 
 test.describe('THEME-MONO-REFINE-3AREA — 정적 소스 가드 (auth 불요)', () => {
-  test('AC1: 통합시간표 슬롯 카드/헤더에서 초진 노랑·재진 초록 배경 채도가 제거됐다', () => {
-    // carve-out 라인(힐러 노란 배지)은 별도 테스트로 검증 → no-yellow 단언에서 제외
-    const seg = sliceTimeline(dashboard).replace(
-      /text-yellow-700 bg-yellow-100 border border-yellow-300/g,
-      '<<HEALER_CARVEOUT>>',
-    );
-    // 초진 노랑(yellow) 슬롯 배경/보더/텍스트 누수 0 — 잔존 시 실패
-    expect(seg).not.toMatch(/bg-yellow-50\b/);
-    expect(seg).not.toMatch(/border-yellow-(300|400|500)\b/);
-    expect(seg).not.toMatch(/text-yellow-(700|800|900)\b/);
-    expect(seg).not.toMatch(/bg-yellow-(200|300|500|600|700)\b/);
-    // 재진 초록(green) 슬롯 배경/보더/텍스트 누수 0
-    expect(seg).not.toMatch(/bg-green-50\b/);
-    expect(seg).not.toMatch(/border-green-(300|400)\b/);
-    expect(seg).not.toMatch(/text-green-(600|700|900)\b/);
-    expect(seg).not.toMatch(/bg-green-(500|600|700)\b/);
-    // 모노톤 대체 클래스가 실제로 들어갔다
-    expect(seg).toMatch(/border-gray-400 bg-white/);   // 초진 카드
-    expect(seg).toMatch(/border-gray-300 bg-gray-50/); // 재진 카드
+  // ⚠ SUPERSEDED 2026-06-29 by T-20260625-foot-COLOR-CONVENTION-UNIFY-CANDIDATES (총괄 김주연 final, A안 확정).
+  //   통합시간표 슬롯 무채색(MONO) 결정은 총괄 본인이 A안 컬러(초진=파랑/재진=초록)로 명시 override.
+  //   본 AC1 은 무채색 단언 → A안 컬러 단언으로 전환(forward guard). 무채색 회귀 시 실패.
+  test('AC1 [SUPERSEDED→A안]: 통합시간표 슬롯 카드/헤더가 A안 컬러(초진=blue / 재진=firstvisit)로 복귀했다', () => {
+    const seg = sliceTimeline(dashboard);
+    // A안 컬러가 실제로 적용됐다 — 초진=blue / 재진=firstvisit
+    expect(seg, '통합시간표 초진 A안 파랑(blue) 미적용').toMatch(/bg-blue-50\b/);
+    expect(seg, '통합시간표 재진 A안 초록(firstvisit) 미적용').toMatch(/bg-firstvisit-50\b/);
+    // 활성 카드가 구 무채색(gray-only) 으로 회귀하지 않았다 (active 컴포넌트 한정)
+    expect(seg, '체크인 카드 재진이 구 무채색(gray-50)으로 회귀')
+      .not.toContain("'border-gray-300 bg-gray-50 hover:bg-gray-100'");
   });
 
   test('AC1(carve-out): 힐러(healer) 노란 배지 의미색은 통합시간표 슬롯 내에서 보존된다', () => {
