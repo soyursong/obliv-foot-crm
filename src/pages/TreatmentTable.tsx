@@ -18,12 +18,15 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
+import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import DoctorHistorySection from '@/components/treatment/DoctorHistorySection';
 import ExamTargetsSection from '@/components/treatment/ExamTargetsSection';
 import ProgressTargetsSection from '@/components/treatment/ProgressTargetsSection';
+// T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: 진료관리에서 이식한 '경과분석 플랜'(설정) 탭 = ④번째(맨 뒤).
+//   ③경과분석(ProgressTargetsSection=오늘 대상자)과 별개 surface. 자체 useClinic 사용(props 불요). 컴포넌트·DB 동일.
+import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import SendSmsDialog from '@/components/SendSmsDialog';
@@ -34,10 +37,10 @@ import { canAccess } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import type { CheckIn } from '@/lib/types';
 
-// T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 치료테이블 탭 = ①진료 환자 이력 ②균검사&피검사 대상자 ③경과분석(본 신규).
-//   ④경과분석 플랜(TAB-MOVE-TREATTABLE, 문지은 대표원장 confirm 대기)은 confirm 해소 후 맨 뒤(④)에 독립 랜딩 → 자리를 맨 뒤로 비워둔 탭 구조.
+// T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 치료테이블 탭 = ①진료 환자 이력 ②균검사&피검사 대상자 ③경과분석.
+// T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정, 진료관리에서 이식) = 맨 뒤. confirm 해소(문지은 대표원장 2026-06-29) → 랜딩.
 //   명칭 구분: ③='경과분석'(오늘 대상자 확인) / ④='경과분석 플랜'(설정). 혼동 금지.
-type SectionTab = 'history' | 'exam' | 'progress';
+type SectionTab = 'history' | 'exam' | 'progress' | 'plan';
 
 /** D. 이름 우클릭 컨텍스트 메뉴 타깃(섹션이 보유한 최소 고객 정보). */
 export interface NameCtxTarget {
@@ -186,6 +189,12 @@ export default function TreatmentTable() {
             <TrendingUp className="size-3.5 mr-1.5" />
             경과분석
           </TabsTrigger>
+          {/* T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정, 진료관리에서 이식). 맨 뒤.
+              ③경과분석(오늘 대상자)과 명칭 구분 — 본 탭은 회차tier별 체크포인트 설정(ProgressPlansTab). */}
+          <TabsTrigger value="plan" data-testid="tab-progress-plans">
+            <Settings2 className="size-3.5 mr-1.5" />
+            경과분석 플랜
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="mt-0">
@@ -196,6 +205,11 @@ export default function TreatmentTable() {
         </TabsContent>
         <TabsContent value="progress" className="mt-0">
           <ProgressTargetsSection date={date} nameInteraction={nameInteraction} />
+        </TabsContent>
+        {/* T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정). 진료관리에서 이식 — 기능 동일.
+            ProgressPlansTab 는 useClinic 자체 사용(date/nameInteraction 불요) — 회차tier별 체크포인트 CRUD. */}
+        <TabsContent value="plan" className="mt-0">
+          <ProgressPlansTab />
         </TabsContent>
       </Tabs>
 

@@ -36,12 +36,14 @@ import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F (RETIRE): 빠른처방 전용 서브탭 제거 →
 //   QuickRxButtonsTab import 폐지(빠른처방 기능은 묶음처방 태그로 일원화). 단 QuickRxButtonsTab 컴포넌트
 //   파일·quick_rx_buttons 데이터는 물리 보존(문지은 대표원장 UI만 삭제 지시, §5-5). ?tab=quick_rx 는 prescriptions(묶음처방)로 redirect.
-import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
+// T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE (문지은 대표원장 confirm 2026-06-29): '경과분석 플랜' 탭을
+//   진료관리(의사 전용)에서 제거하고 치료테이블(/admin/treatment-table) ④번째 탭으로 이식. import 폐지(dead import 클린업).
+//   ProgressPlansTab 컴포넌트 파일·package_progress_plans DB는 물리 보존 — 렌더 위치만 이동.
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 관리 별도 탭(InsuranceStatusTab) 제거 →
 //   처방세트(drug_folders)>전체보기 우측 단 인라인 편집 + HIRA 동기화로 통합. ?tab=insurance_status 는 drug_folders 로 redirect.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Pill, FileText, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
+import { Pill, FileText, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BookText, MessageSquareText } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -97,7 +99,7 @@ export default function ClinicManagement() {
     // T-20260629-foot-TREATMENTSET-TAB-REMOVE: 'treatment_sets' 제거(딥링크는 위 requestedTab 정규화로 기본 탭 호환).
     'documents',
     // T-20260617-foot-BUNDLERX-CREATE-FLOW-OVERHAUL Part F: 'quick_rx' 서브탭 retire(묶음처방 태그로 일원화).
-    'progress_plans',
+    // T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: 'progress_plans' 제거 → 치료테이블 ④탭으로 이식.
     ...(isAdmin ? ['contraindications'] : []),
     // 급여여부(insurance_status)는 별도 탭 제거 → drug_folders 로 흡수(위 requestedTab 정규화로 호환).
   ];
@@ -192,17 +194,8 @@ export default function ClinicManagement() {
             <FileText className="h-3.5 w-3.5" />
             서류 템플릿
           </TabsTrigger>
-
-          {/* 행 경계 2→3 */}
-          <div className="basis-full h-0" aria-hidden="true" />
-
-          {/* ── 행 3: 경과분석 플랜 ──
-              T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '수가세트'(fee_set_templates) → 서비스관리>상용구관리 로 이전.
-              T-20260629-foot-TREATMENTSET-TAB-REMOVE: '진료세트'(treatment_sets) 탭 제거(문지은 대표원장 confirm). */}
-          <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
-            <TrendingUp className="h-3.5 w-3.5" />
-            경과분석 플랜
-          </TabsTrigger>
+          {/* T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: '경과분석 플랜'(progress_plans) 탭 제거 →
+              치료테이블(/admin/treatment-table) ④탭으로 이식. 행 3·행 경계 2→3 동반 제거(빈 행 정리). */}
         </TabsList>
 
         {/* 패널 순서는 TabsList 행 순서와 맞춤(value 매칭이라 기능엔 무영향). */}
@@ -240,12 +233,8 @@ export default function ClinicManagement() {
         <TabsContent value="documents">
           <DocumentTemplatesTab />
         </TabsContent>
-        {/* 행 3 */}
-        {/* T-20260629-foot-TREATMENTSET-TAB-REMOVE: '진료세트'(treatment_sets) TabsContent 제거(문지은 대표원장 confirm). 컴포넌트·DB 보존. */}
-        {/* '수가세트'(fee_set_templates) TabsContent 는 서비스관리>상용구관리로 이전(T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT). */}
-        <TabsContent value="progress_plans">
-          <ProgressPlansTab />
-        </TabsContent>
+        {/* T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: '경과분석 플랜'(progress_plans) TabsContent 제거 →
+            치료테이블(/admin/treatment-table) ④탭으로 이식. ProgressPlansTab 컴포넌트·DB 보존(렌더 위치만 이동). */}
         {/* 묶음처방 (prescription_sets) — 영구 보존(별도 유지). '처방세트'(drug_folders)와 별개 기능. */}
         <TabsContent value="prescriptions">
           <PrescriptionSetsTab />
