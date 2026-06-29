@@ -16,7 +16,7 @@
 //   기존 Supabase realtime 채널 패턴 재사용(assignment_actions INSERT 구독).
 //   realtime 미발화 환경 대비 15초 폴링 fallback(티켓 허용). 오늘(KST) 발생분만 집계.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, CheckCheck, X } from 'lucide-react';
+import { Bell, CheckCheck, Megaphone, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -158,10 +158,23 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
-  const unreadCount = useMemo(
-    () => notifs.filter((n) => !readIds.has(n.id)).length,
+  const unreadNotifs = useMemo(
+    () => notifs.filter((n) => !readIds.has(n.id)),
     [notifs, readIds],
   );
+  const unreadCount = unreadNotifs.length;
+
+  // ── 전광판(마키) 텍스트 — 미읽음 배정 내역을 한 줄로 이어붙임 (AC-2) ─────────────
+  //   reduced-motion 폴백에서도 의미가 전달되도록 머리에 요약(N건)을 둔다.
+  const marqueeText = useMemo(() => {
+    if (unreadCount === 0) return '';
+    const head = `담당자 배정 알림 ${unreadCount}건`;
+    const items = unreadNotifs
+      .slice(0, 10)
+      .map((n) => `${n.customerName} → ${n.staffName} 배정`)
+      .join('  ·  ');
+    return items ? `${head}  ·  ${items}` : head;
+  }, [unreadCount, unreadNotifs]);
 
   const markRead = useCallback(
     (id: string) => {
@@ -185,7 +198,30 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
   }, [notifs, profile?.id]);
 
   return (
-    <div className="relative" ref={wrapRef}>
+    <div className="relative flex items-center gap-1.5" ref={wrapRef}>
+      {/* T-20260629-foot-ASSIGN-ALERT-MARQUEE AC-2/AC-3: 미읽음 배정 알림이 있을 때만(상시 X)
+          전광판(마키) 스트립을 노출. 클릭 시 종 드롭다운 토글(노출 내용 동일).
+          순수 CSS animation(tailwind keyframes) — 신규 npm 패키지 0.
+          prefers-reduced-motion: motion-safe:* 변형으로 흐름/글로우 미적용 + motion-reduce:truncate 정적 강조 폴백. */}
+      {unreadCount > 0 && (
+        <button
+          type="button"
+          data-testid="assign-notify-marquee"
+          onClick={() => setOpen((v) => !v)}
+          title="담당자 배정 알림 — 클릭하여 상세 보기"
+          aria-label={`담당자 배정 알림 ${unreadCount}건`}
+          className="flex min-h-[36px] max-w-[150px] items-center gap-1.5 overflow-hidden rounded-full border-2 border-amber-400 bg-amber-50 py-1 pl-2 pr-2.5 text-amber-800 transition hover:bg-amber-100 motion-safe:animate-alert-glow sm:max-w-[260px] md:max-w-[360px]"
+        >
+          <Megaphone className="h-4 w-4 shrink-0 text-amber-600 motion-safe:animate-pulse-hand" />
+          <span className="min-w-0 flex-1 overflow-hidden">
+            <span className="flex w-max whitespace-nowrap text-xs font-semibold motion-safe:animate-marquee motion-reduce:w-full motion-reduce:truncate">
+              <span>{marqueeText}</span>
+              {/* seamless loop용 복제본 — reduced-motion 시 숨김 */}
+              <span aria-hidden className="pl-12 motion-reduce:hidden">{marqueeText}</span>
+            </span>
+          </span>
+        </button>
+      )}
       <button
         type="button"
         data-testid="assign-notify-bell"
@@ -208,7 +244,7 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
       {open && (
         <div
           data-testid="assign-notify-panel"
-          className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border bg-background shadow-lg"
+          className="absolute left-0 top-full z-50 mt-1 w-80 rounded-lg border bg-background shadow-lg"
         >
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-sm font-semibold">자동배정 알림</span>

@@ -560,13 +560,16 @@ export default function AdminLayout() {
             </button>
             <span className="text-sm font-semibold">{clinic?.name ?? '풋센터 종로'}</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">{today}</span>
+            {/* T-20260629-foot-ASSIGN-ALERT-MARQUEE AC-1: 담당자 배정 알림을 위치(지점명)+날짜 선택 바로 옆으로 이동
+                (기존 우측 끝 → 시선 동선 안으로). 노출 조건·내용 동일 — 컴포넌트 자체는 불변, 배치만 변경. */}
+            <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
           </div>
           <div className="flex items-center gap-2">
             {/* T-20260611-foot-TOPBAR-RESV-BTN-REMOVE: 헤더 전역 예약 생성 버튼 제거 (김주연 총괄 요청).
                 예약 등록은 예약관리 페이지 '새 예약' 버튼 / 고객관리·대시보드·차트 컨텍스트 메뉴 / 캘린더 날짜 클릭으로
                 대체 진입 가능 — 유일 진입점 아니므로 제거 안전. L-002 원칙(클릭 시 full page 전환)은 잔존 진입점에 그대로 유지. */}
-          {/* T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (B안): 자동배정 알림 종 (전 사용자 공유) */}
-          <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
+          {/* T-20260622-foot-AUTOASSIGN-BADGE-NOTIFY (B안): 자동배정 알림 종 — T-20260629-foot-ASSIGN-ALERT-MARQUEE로
+              위치+날짜 선택 옆(헤더 좌측)으로 이동. 우측 그룹에선 제거. */}
           {/* T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part B: 종 아이콘 옆 1분 자동 새로고침 카운트다운(무손실) */}
           <DashboardRefreshCountdown />
           <div className="relative">
