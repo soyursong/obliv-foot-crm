@@ -651,7 +651,7 @@ export default function Handover() {
             </Button>
           </div>
 
-          <div className="space-y-2" data-testid="handover-list">
+          <div className="space-y-1.5" data-testid="handover-list">
             {loading ? (
               <div className="py-8 text-center text-sm text-muted-foreground">불러오는 중…</div>
             ) : selectedNotes.length === 0 ? (
@@ -665,7 +665,8 @@ export default function Handover() {
                   key={n.id}
                   data-testid="handover-card"
                   data-part={n.part_code}
-                  className={`space-y-2 rounded-lg border p-3 shadow-sm ${partBoxClass(n.part_code)}`}
+                  // T-20260629-foot-HANDOVER-COMPACT-PASTEL: 카드 높이 축소 (space-y-2 p-3 → space-y-1.5 p-2.5)
+                  className={`space-y-1.5 rounded-lg border p-2.5 shadow-sm ${partBoxClass(n.part_code)}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span
@@ -759,18 +760,20 @@ export default function Handover() {
                 출근자 없음
               </span>
             ) : (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {selectedAttendees.map((a) => (
                   // 칩 배경을 역할별로 분기 (T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR)
+                  // T-20260629-foot-HANDOVER-COMPACT-PASTEL: small pill 화 (px-3 py-1.5 rounded-lg shadow
+                  //   → px-2 py-0.5 rounded-full, shadow 제거) — 같은 줄 3개→5개+ 배치.
                   <span
                     key={a.id}
                     data-testid="handover-selected-attendee-chip"
                     data-role={a.role ?? ''}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 shadow-sm ${staffRoleCardClass(a.role ?? '')}`}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${staffRoleCardClass(a.role ?? '')}`}
                   >
-                    <span className="text-sm font-semibold">{a.name}</span>
+                    <span className="text-xs font-semibold">{a.name}</span>
                     {a.role && (
-                      <span className="text-[11px] font-medium opacity-70">
+                      <span className="text-[10px] font-medium opacity-70">
                         {STAFF_ROLE_LABEL[a.role] ?? a.role}
                       </span>
                     )}

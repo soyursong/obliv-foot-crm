@@ -24,26 +24,28 @@ import { test, expect } from '@playwright/test';
 import { STAFF_ROLE_CARD_CLASS, STAFF_ROLE_ORDER, staffRoleCardClass } from '@/lib/status';
 
 test.describe('T-20260611-foot-HANDOVER-ATTENDEE-PARTCOLOR 상담칩 sky→rose', () => {
-  // ── S1. consultant = rose, sky 토큰 제거 ──────────────────────────────────
-  test('S1 상담 칩은 rose 색이며 sky 토큰이 없다', () => {
+  // ── S1. consultant = rose 계열, sky 토큰 제거 ─────────────────────────────
+  //   T-20260629-foot-HANDOVER-COMPACT-PASTEL: 채도↓ 파스텔 톤으로 전환
+  //   (bg-rose-100/text-rose-800 → bg-rose-50/text-rose-700). rose 계열·sky 부재 의도는 유지.
+  test('S1 상담 칩은 rose(파스텔) 색이며 sky 토큰이 없다', () => {
     const cls = staffRoleCardClass('consultant');
-    for (const c of ['bg-rose-100', 'text-rose-800', 'border-rose-300']) {
+    for (const c of ['bg-rose-50', 'text-rose-700', 'border-rose-200']) {
       expect(cls, `consultant 칩에 ${c}`).toContain(c);
     }
     expect(cls, 'consultant 칩에 sky 토큰 잔존 금지').not.toContain('sky');
     // 직접 매핑도 동일
-    expect(STAFF_ROLE_CARD_CLASS.consultant).toBe('bg-rose-100 text-rose-800 border-rose-300');
+    expect(STAFF_ROLE_CARD_CLASS.consultant).toBe('bg-rose-50 text-rose-700 border-rose-200');
   });
 
-  // ── S2. AC4 회귀가드 — 코디/치료 무회귀 ──────────────────────────────────
-  test('S2 코디=yellow / 치료=green 무회귀', () => {
-    expect(staffRoleCardClass('coordinator')).toBe('bg-yellow-100 text-yellow-800 border-yellow-300');
-    expect(staffRoleCardClass('therapist')).toBe('bg-green-100 text-green-800 border-green-300');
+  // ── S2. AC4 회귀가드 — 코디/치료 무회귀 (파스텔 톤) ───────────────────────
+  test('S2 코디=yellow / 치료=green 무회귀 (파스텔)', () => {
+    expect(staffRoleCardClass('coordinator')).toBe('bg-yellow-50 text-yellow-700 border-yellow-200');
+    expect(staffRoleCardClass('therapist')).toBe('bg-green-50 text-green-700 border-green-200');
   });
 
-  // ── S3. 미매칭 역할 → 중립 fallback 무회귀 ────────────────────────────────
+  // ── S3. 미매칭 역할 → 중립 fallback 무회귀 (파스텔) ───────────────────────
   test('S3 director·technician·미지정 → 중립 slate fallback', () => {
-    const fallback = 'bg-slate-100 text-slate-700 border-slate-300';
+    const fallback = 'bg-slate-50 text-slate-600 border-slate-200';
     for (const role of ['director', 'technician', '', 'unknown']) {
       expect(staffRoleCardClass(role), `role="${role}" fallback`).toBe(fallback);
     }
