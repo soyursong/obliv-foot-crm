@@ -18,3 +18,11 @@ revenue_insurance_split_spec v1.2 §2-2-1a 신설. NULL hira_score 분기에서 
 - 교훈: 라이브 회귀 신고 시 추정 패치 금지. (1)DB read-only 실측 (2)field_data 스냅샷 시계열 (3)렌더 assert 하니스 3종으로 데이터·바인딩·렌더 분리 진단 → 코드 무결 입증.
 - P0 격상은 명시 조건('전 서류 불능+데이터소실') 충족 시만. 미충족 → planner FOLLOWUP + 현장 실기 재확인 요청으로 클로저.
 - WIP 격리: 같은 render 파일에 타 티켓(DOCPRINT-CENTER-ALIGN) 미커밋 변경 존재 → 선택적 git add 로 내 진단증빙만 커밋, 타 작업 무손상.
+
+---
+## 2026-06-30 — T-20260629-foot-SERIAL-UNIQUE-HARDEN: 발번 모델 실측 (FOLLOWUP MSG-20260630-030104-2cqt)
+- **발견**: 서류 연번호(visit_no)는 **최상위 컬럼이 아니라 form_submissions.field_data(JSONB)의 키**다. 발번은 FE(DocumentPrintPanel)에서 count(clinic 전역)+1로 산출. **serial 컬럼/발번 RPC/SEQUENCE 모두 부재.**
+- **함의**: DA 권고 "복합 UNIQUE + retry RPC"는 기존 컬럼/RPC를 강화하는 게 아니라 **신설 + 발번 경로 FE→DB 이전 + FE 재배선**을 요구. db_only 단독으로 AC-1 달성 불가(컬럼만 추가하면 inert guard).
+- **prod 실측(AC-4)**: visit_no 보유 8행 전부 fallback id-slice(checkIn.id.slice(0,8)), autogen serial 미정착, fallback 중복 3군 존재 → visit_no 문자열 UNIQUE는 기존 데이터 충돌 + DA #1 silent-fail 양쪽으로 불가.
+- **교훈**: "유니크 제약 추가" 류 티켓은 *그 값이 실제로 어디에 어떤 grain으로 저장되는지* 코드+prod 실측이 선행. JSONB 내부 값에 대한 무결성 제약은 컬럼 승격이 전제.
+- 액션: planner FOLLOWUP로 (1)FE 페어링 (2)DA 신규컬럼+backfill 표면 재확인 요청. 권고 설계(doc_serial_seq 컬럼+row_number backfill+부분 UNIQUE CONCURRENTLY+retry RPC) 첨부. deploy-ready 보류.
