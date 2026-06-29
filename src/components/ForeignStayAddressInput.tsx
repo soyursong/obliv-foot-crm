@@ -14,7 +14,10 @@
 //   · 키 빌드타임 주입 계약: VITE_KAKAO_REST_API_KEY 미설정 시 Vite가 ''로 인라인 →
 //     아래 manualMode 초기값 true → 숙소검색 비활성·수기입력 fallback (정상 동작, 버그 아님).
 //   · 카카오 검색 활성화를 원하면 Vercel Production env에 VITE_KAKAO_REST_API_KEY 등록 후 재배포 필요.
-//     (2026-06-29 기준 prod env 미등록 → 현재 prod는 수기입력 모드로만 동작.)
+//     (2026-06-30 재검증: prod env 미등록 — `vercel env ls production` = FOOT_ORIGIN_SLUG/VITE_SUPABASE_URL/
+//      VITE_SUPABASE_ANON_KEY 3개만. prod 번들 SelfCheckIn-B9v1G5fd.js 에서 apiKey b="" 인라인 확인 →
+//      현재 prod는 수기입력 모드로만 동작. 로컬 .env.local 도 빈 값 선언으로 prod와 빌드타임 인라인 일치.
+//      OPTIONAL 키이므로 미등록은 graceful fallback이며 타 기능(예약/고객 자동완성 등) 동작과 무관.)
 //   · QA 번들 검증 시 주의: 본 컴포넌트는 SelfCheckIn 경유 **lazy chunk**(assets/SelfCheckIn-*.js)에
 //     번들된다. 진입 index 번들만 grep하면 kakao/KakaoAK/dapi.kakao.com 0건으로 보이나 false-signal.
 //     검증은 SelfCheckIn-*.js chunk를 직접 받아 grep. 키 주입 여부는 chunk 내 apiKey 인라인값
