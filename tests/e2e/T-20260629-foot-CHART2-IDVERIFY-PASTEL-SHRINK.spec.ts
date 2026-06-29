@@ -42,12 +42,13 @@ function doneBlock(): string {
   return SRC.slice(outerSpan, textIdx + text.length);
 }
 
-// ── 시나리오 1: 확인 필요 배지 = 파스텔 핑크/로즈 + 절반 ──
-test('AC1 확인 필요 배지 = 파스텔 로즈(bg-rose-100/text-rose-400/border-rose-200)', () => {
+// ── 시나리오 1: 확인 필요 배지 = 파스텔 핑크 + 절반 ──
+// NOTE: T-20260629-foot-RRN-VERIFY-BADGE-PASTEL-SHRINK 후속 추가 톤다운으로 로즈→파스텔 핑크 전환.
+test('AC1 확인 필요 배지 = 파스텔 핑크(bg-pink-100/text-pink-400/border-pink-200)', () => {
   const b = needBlock();
-  expect(b).toContain('bg-rose-100');
-  expect(b).toContain('text-rose-400');
-  expect(b).toContain('border-rose-200');
+  expect(b).toContain('bg-pink-100');
+  expect(b).toContain('text-pink-400');
+  expect(b).toContain('border-pink-200');
 });
 
 test('AC1 진한레드 하드코딩 제거 — #FEE2E2/#B91C1C/bg-red-500 미사용', () => {
