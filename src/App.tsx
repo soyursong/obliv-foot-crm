@@ -239,8 +239,11 @@ function App() {
                 {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 — AC-6 미노출 유지 / T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 매출 열람 정합). payments RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. */}
                 {/* T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 has_ops_authority 필요(봉직의 매출 배제). nav requiresOpsAuthority 패리티. */}
                 <Route path="sales" element={<RoleGuard roles={['admin', 'manager', 'director']} requireOpsAuthority><Sales /></RoleGuard>} />
-                {/* T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI(심평원 표준 청구명세서 export). 청구/금융·PHI → admin/manager/director. */}
-                <Route path="edi-export" element={<RoleGuard roles={['admin', 'manager', 'director']}><EdiExport /></RoleGuard>} />
+                {/* T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI(심평원 표준 청구명세서 export).
+                    QA fix MSG-20260629-222432(AC-8): DA 계약 "foot MVP=전원 open, 하드코딩 권한제한 금지"(edi_export_data_contract §AC-8) 준수
+                    → RoleGuard 제거(전직원 open, handover/notices 패턴). PHI/금융 보호는 RLS(clinic_id)·anon REVOKE·산출물 ref PII 미포함으로 유지.
+                    per-clinic configurable 권한(AC-8 long-term)은 권한설정 인프라 도입 시 후속. */}
+                <Route path="edi-export" element={<EdiExport />} />
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
                 {/* T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 메뉴를 [직원·공간](Staff)
                     내부 '원장정보' 탭으로 편입(김주연 총괄). 이 라우트는 북마크/하드링크 404 방지용
