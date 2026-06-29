@@ -24,7 +24,7 @@ import { formatAmount, chartNoBadge, chartNoDisplay } from '@/lib/format';
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
 import type { CheckIn, CheckInStatus, Reservation } from '@/lib/types';
-import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO, METHOD_KO } from '@/lib/status';
 import { elapsedLabel } from '@/lib/elapsed';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -71,7 +71,16 @@ type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled' | 'noshow';
 type VisitFilter = 'all' | 'new' | 'returning';
 type SortMode = 'queue' | 'time';
 
-/* STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO → @/lib/status 공유 상수 사용 */
+/* METHOD_KO → @/lib/status 공유 상수 사용 */
+/* T-20260629-foot-SIDEBAR-DAYHIST-COMPACT-MONOTONE:
+ * 일일 이력 화면 한정 모노톤(그레이스케일) 토큰. 공유 STATUS_COLOR/VISIT_TYPE_COLOR(타 화면 영향)
+ * 는 건드리지 않고 본 화면에서만 색을 제거한다. 상태 구분은 텍스트 라벨 + 채움 농도/굵기로 보존. */
+function statusMono(status: CheckInStatus): string {
+  if (status === 'cancelled') return 'bg-gray-50 text-gray-400 border border-gray-200';
+  if (status === 'done') return 'bg-gray-100 text-gray-600 border border-gray-200';
+  return 'bg-gray-200 text-gray-800 font-semibold border border-gray-300';
+}
+const VISIT_MONO = 'bg-gray-100 text-gray-700 border border-gray-200';
 
 /* ---------- helpers ---------- */
 
@@ -350,19 +359,19 @@ export default function DailyHistory() {
   }
 
   return (
-    <div className="h-full overflow-auto flex flex-col gap-6 p-6">
+    <div data-testid="daily-history-root" className="h-full overflow-auto flex flex-col gap-3 p-3">
       {/* ---- Header: Date picker ---- */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-lg font-bold">일일 이력</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon-sm" onClick={goPrev}>
-            <ChevronLeft className="size-4" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-sm font-bold">일일 이력</h1>
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="icon-sm" onClick={goPrev} className="size-7">
+            <ChevronLeft className="size-3.5" />
           </Button>
           <button
             onClick={goToday}
-            className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition"
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted transition"
           >
-            <Calendar className="size-4 text-teal-600" />
+            <Calendar className="size-3.5 text-gray-400" />
             <span>{dateLabel}</span>
           </button>
           <Button
@@ -370,11 +379,12 @@ export default function DailyHistory() {
             size="icon-sm"
             onClick={goNext}
             disabled={isToday}
+            className="size-7"
           >
-            <ChevronRight className="size-4" />
+            <ChevronRight className="size-3.5" />
           </Button>
           {!isToday && (
-            <Button variant="ghost" size="sm" onClick={goToday} className="text-teal-600">
+            <Button variant="ghost" size="sm" onClick={goToday} className="h-7 px-2 text-xs">
               오늘
             </Button>
           )}
@@ -382,55 +392,55 @@ export default function DailyHistory() {
       </div>
 
       {/* ---- Summary Cards (Row 1: 방문 통계) ---- */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">총 접수</CardTitle>
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none">총 접수</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summary.total}<span className="text-sm font-normal text-muted-foreground ml-1">건</span></div>
+          <CardContent className="p-2 pt-0">
+            <div className="text-base font-bold">{summary.total}<span className="text-[10px] font-normal text-muted-foreground ml-0.5">건</span></div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">신규 / 재진 / 체험</CardTitle>
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none">신규 / 재진 / 체험</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2 text-lg font-bold">
-              <span className="text-blue-600">{summary.byVisit.new}</span>
-              <span className="text-muted-foreground text-sm">/</span>
-              <span className="text-emerald-600">{summary.byVisit.returning}</span>
+          <CardContent className="p-2 pt-0">
+            <div className="flex items-baseline gap-1.5 text-sm font-bold">
+              <span className="text-foreground">{summary.byVisit.new}</span>
+              <span className="text-muted-foreground text-xs">/</span>
+              <span className="text-foreground">{summary.byVisit.returning}</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">완료 / 취소</CardTitle>
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none">완료 / 취소</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2 text-lg font-bold">
-              <span className="text-emerald-600">{summary.doneCount}</span>
-              <span className="text-muted-foreground text-sm">/</span>
-              <span className="text-red-500">{summary.cancelledCount}</span>
+          <CardContent className="p-2 pt-0">
+            <div className="flex items-baseline gap-1.5 text-sm font-bold">
+              <span className="text-foreground">{summary.doneCount}</span>
+              <span className="text-muted-foreground text-xs">/</span>
+              <span className="text-muted-foreground">{summary.cancelledCount}</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none flex items-center gap-1">
               <Clock className="size-3" />
               평균 소요시간
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+          <CardContent className="p-2 pt-0">
+            <div className="text-base font-bold">
               {summary.avgMinutes !== null ? (
                 elapsedLabel(summary.avgMinutes)
               ) : (
-                <span className="text-muted-foreground text-sm font-normal">데이터 없음</span>
+                <span className="text-muted-foreground text-xs font-normal">데이터 없음</span>
               )}
             </div>
           </CardContent>
@@ -438,21 +448,21 @@ export default function DailyHistory() {
       </div>
 
       {/* ---- Summary Cards (Row 2: 매출 + 운영 알림) ---- */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none flex items-center gap-1">
               <Banknote className="size-3" />
               일 매출
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">
+          <CardContent className="p-2 pt-0">
+            <div className="text-base font-bold tabular-nums">
               {formatAmount(revenueSummary.netTotal)}
-              <span className="text-sm font-normal text-muted-foreground ml-1">원</span>
+              <span className="text-[10px] font-normal text-muted-foreground ml-0.5">원</span>
             </div>
             {(revenueSummary.singleRefund > 0 || revenueSummary.pkgRefund > 0) && (
-              <p className="text-xs text-red-500 mt-1">
+              <p className="text-[10px] text-muted-foreground mt-0.5">
                 환불 -{formatAmount(revenueSummary.singleRefund + revenueSummary.pkgRefund)}
               </p>
             )}
@@ -460,52 +470,52 @@ export default function DailyHistory() {
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none flex items-center gap-1">
               <CreditCard className="size-3" />
               단건 / 패키지
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2 text-lg font-bold tabular-nums">
-              <span className="text-teal-600">{formatAmount(revenueSummary.singleTotal)}</span>
-              <span className="text-muted-foreground text-sm">/</span>
-              <span className="text-emerald-600">{formatAmount(revenueSummary.pkgTotal)}</span>
+          <CardContent className="p-2 pt-0">
+            <div className="flex items-baseline gap-1.5 text-sm font-bold tabular-nums">
+              <span className="text-foreground">{formatAmount(revenueSummary.singleTotal)}</span>
+              <span className="text-muted-foreground text-xs">/</span>
+              <span className="text-foreground">{formatAmount(revenueSummary.pkgTotal)}</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className={summary.unpaidCount > 0 ? 'border-amber-300 bg-amber-50/50' : ''}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+        <Card className={summary.unpaidCount > 0 ? 'border-gray-400 bg-gray-50' : ''}>
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none flex items-center gap-1">
               <AlertCircle className="size-3" />
               미결제
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${summary.unpaidCount > 0 ? 'text-amber-600' : ''}`}>
+          <CardContent className="p-2 pt-0">
+            <div className={`text-base font-bold ${summary.unpaidCount > 0 ? 'text-gray-900' : ''}`}>
               {summary.unpaidCount}
-              <span className="text-sm font-normal text-muted-foreground ml-1">건</span>
+              <span className="text-[10px] font-normal text-muted-foreground ml-0.5">건</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className={summary.noshowCount > 0 ? 'border-red-300 bg-red-50/50' : ''}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+        <Card className={summary.noshowCount > 0 ? 'border-gray-400 bg-gray-50' : ''}>
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground leading-none flex items-center gap-1">
               <UserX className="size-3" />
               추정 노쇼
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${summary.noshowCount > 0 ? 'text-red-500' : ''}`}>
+          <CardContent className="p-2 pt-0">
+            <div className={`text-base font-bold ${summary.noshowCount > 0 ? 'text-gray-900' : ''}`}>
               {summary.noshowCount}
-              <span className="text-sm font-normal text-muted-foreground ml-1">건</span>
+              <span className="text-[10px] font-normal text-muted-foreground ml-0.5">건</span>
             </div>
             {summary.noshowCount > 0 && (
               <button
                 onClick={() => setShowNoshow((v) => !v)}
-                className="text-xs text-red-500 underline mt-1 hover:text-red-700"
+                className="text-[10px] text-gray-600 underline mt-0.5 hover:text-gray-900"
               >
                 {showNoshow ? '닫기' : '상세 보기'}
               </button>
@@ -516,25 +526,25 @@ export default function DailyHistory() {
 
       {/* ---- 추정 노쇼 목록 (토글) ---- */}
       {showNoshow && unmatchedReservations.length > 0 && (
-        <Card className="border-red-200 bg-red-50/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-1.5 text-sm font-semibold text-red-600">
-              <UserX className="size-4" />
+        <Card className="border-gray-300 bg-gray-50">
+          <CardHeader className="p-2 pb-1">
+            <CardTitle className="flex items-center gap-1 text-xs font-semibold text-gray-700">
+              <UserX className="size-3.5" />
               미체크인 예약 (추정 노쇼) — {unmatchedReservations.length}건
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-2 pt-0">
             <div className="overflow-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 font-medium">예약 시간</th>
-                    <th className="pb-2 font-medium">고객명</th>
+                  <tr className="border-b text-left text-[10px] text-muted-foreground">
+                    <th className="pb-1 font-medium">예약 시간</th>
+                    <th className="pb-1 font-medium">고객명</th>
                     {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접 칼럼(분리 유지) */}
-                    <th className="pb-2 font-medium">차트번호</th>
-                    <th className="pb-2 font-medium">연락처</th>
-                    <th className="pb-2 font-medium">방문 유형</th>
-                    <th className="pb-2 font-medium">상태</th>
+                    <th className="pb-1 font-medium">차트번호</th>
+                    <th className="pb-1 font-medium">연락처</th>
+                    <th className="pb-1 font-medium">방문 유형</th>
+                    <th className="pb-1 font-medium">상태</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -542,18 +552,18 @@ export default function DailyHistory() {
                     .sort((a, b) => a.reservation_time.localeCompare(b.reservation_time))
                     .map((r) => (
                       <tr key={r.id} className="border-b last:border-0">
-                        <td className="py-2 tabular-nums">{r.reservation_time?.slice(0, 5)}</td>
-                        <td className="py-2 font-medium">{r.customer_name ?? '—'}</td>
+                        <td className="py-1 tabular-nums">{r.reservation_time?.slice(0, 5)}</td>
+                        <td className="py-1 font-medium">{r.customer_name ?? '—'}</td>
                         {/* T-20260612-foot-CHARTNO-B2-P2: 차트번호 인접 칼럼(미발번 명시) */}
-                        <td className="py-2 font-mono text-xs text-muted-foreground">{chartNoDisplay(r.customers?.chart_number ?? null)}</td>
-                        <td className="py-2 text-muted-foreground">{r.customer_phone ?? '—'}</td>
-                        <td className="py-2">
-                          <Badge className={VISIT_TYPE_COLOR[r.visit_type]}>
+                        <td className="py-1 font-mono text-[10px] text-muted-foreground">{chartNoDisplay(r.customers?.chart_number ?? null)}</td>
+                        <td className="py-1 text-muted-foreground">{r.customer_phone ?? '—'}</td>
+                        <td className="py-1">
+                          <Badge className={`${VISIT_MONO} text-[10px] px-1.5 py-0`}>
                             {VISIT_TYPE_KO[r.visit_type]}
                           </Badge>
                         </td>
-                        <td className="py-2">
-                          <Badge className={r.status === 'no_show' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}>
+                        <td className="py-1">
+                          <Badge className={r.status === 'no_show' ? 'bg-gray-200 text-gray-800 font-semibold border border-gray-300 text-[10px] px-1.5 py-0' : 'bg-gray-100 text-gray-500 border border-gray-200 text-[10px] px-1.5 py-0'}>
                             {r.status === 'no_show' ? '노쇼' : r.status === 'confirmed' ? '미내원' : r.status}
                           </Badge>
                         </td>
@@ -567,37 +577,37 @@ export default function DailyHistory() {
       )}
 
       {/* ---- Filters & Sort ---- */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterTab)}>
-            <TabsList>
-              <TabsTrigger value="all">
+            <TabsList className="h-7">
+              <TabsTrigger value="all" className="text-xs px-2 py-0.5">
                 <Filter className="mr-1 size-3" />
                 전체 ({summary.total})
               </TabsTrigger>
-              <TabsTrigger value="in_progress">
+              <TabsTrigger value="in_progress" className="text-xs px-2 py-0.5">
                 진행중 ({summary.total - summary.doneCount - summary.cancelledCount})
               </TabsTrigger>
-              <TabsTrigger value="done">
+              <TabsTrigger value="done" className="text-xs px-2 py-0.5">
                 완료 ({summary.doneCount})
               </TabsTrigger>
-              <TabsTrigger value="cancelled">
+              <TabsTrigger value="cancelled" className="text-xs px-2 py-0.5">
                 취소 ({summary.cancelledCount})
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
-          <Button variant="outline" size="sm" onClick={toggleSort}>
+          <Button variant="outline" size="sm" onClick={toggleSort} className="h-7 px-2 text-xs">
             <ArrowUpDown className="mr-1 size-3" />
             {sort === 'queue' ? '대기번호순' : '접수시간순'}
           </Button>
         </div>
 
         {/* 방문유형 필터 */}
-        <div className="flex items-center gap-2">
-          <User className="size-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">방문유형:</span>
-          <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <User className="size-3 text-muted-foreground" />
+          <span className="text-[11px] font-medium text-muted-foreground">방문유형:</span>
+          <div className="flex gap-1">
             {([
               { value: 'all' as VisitFilter, label: '전체' },
               { value: 'new' as VisitFilter, label: `초진 (${summary.byVisit.new})` },
@@ -606,14 +616,10 @@ export default function DailyHistory() {
               <button
                 key={opt.value}
                 onClick={() => setVisitFilter(opt.value)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
                   visitFilter === opt.value
-                    ? opt.value === 'new'
-                      ? 'bg-blue-100 text-blue-700'
-                      : opt.value === 'returning'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-gray-200 text-gray-800'
-                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                 }`}
               >
                 {opt.label}
@@ -625,60 +631,60 @@ export default function DailyHistory() {
 
       {/* ---- Timeline List ---- */}
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
           데이터 로딩 중...
         </div>
       ) : filteredCheckIns.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
-          <User className="mb-2 size-8 text-muted-foreground/40" />
+        <div className="flex flex-col items-center justify-center py-6 text-xs text-muted-foreground">
+          <User className="mb-1 size-5 text-muted-foreground/40" />
           해당 조건의 접수 내역이 없습니다.
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           {filteredCheckIns.map((ci) => {
             const expanded = expandedIds.has(ci.id);
             const ciTransitions = transitionMap.get(ci.id) ?? [];
             const elapsed = minutesBetween(ci.checked_in_at, ci.completed_at);
 
             return (
-              <Card key={ci.id} className="overflow-hidden">
+              <Card key={ci.id} data-testid="dayhist-ci-card" className="overflow-hidden">
                 {/* Main row */}
                 <button
                   onClick={() => toggleExpand(ci.id)}
-                  className="flex w-full items-center gap-3 p-4 text-left hover:bg-muted/50 transition"
+                  className="flex w-full items-center gap-2 p-2 text-left hover:bg-muted/50 transition"
                 >
                   {/* Expand indicator */}
                   <span className="shrink-0 text-muted-foreground">
                     {expanded ? (
-                      <ChevronDown className="size-4" />
+                      <ChevronDown className="size-3.5" />
                     ) : (
-                      <ChevronRightIcon className="size-4" />
+                      <ChevronRightIcon className="size-3.5" />
                     )}
                   </span>
 
                   {/* Queue number */}
-                  <span className="shrink-0 flex size-8 items-center justify-center rounded-full bg-teal-50 text-sm font-bold text-teal-700">
+                  <span className="shrink-0 flex size-6 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-700">
                     {ci.queue_number ?? '-'}
                   </span>
 
                   {/* Name + visit type */}
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <span className="truncate font-medium">{ci.customer_name}</span>
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium">{ci.customer_name}</span>
                     {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-                    <span className="shrink-0 font-mono text-xs text-teal-600">{chartNoBadge(ci.customers?.chart_number ?? null)}</span>
-                    <Badge className={VISIT_TYPE_COLOR[ci.visit_type]}>
+                    <span className="shrink-0 font-mono text-[10px] text-gray-500">{chartNoBadge(ci.customers?.chart_number ?? null)}</span>
+                    <Badge className={`${VISIT_MONO} text-[10px] px-1.5 py-0`}>
                       {VISIT_TYPE_KO[ci.visit_type]}
                     </Badge>
                   </div>
 
                   {/* Status badge */}
-                  <Badge className={STATUS_COLOR[ci.status]}>
+                  <Badge className={`${statusMono(ci.status)} text-[10px] px-1.5 py-0`}>
                     {STATUS_KO[ci.status]}
                   </Badge>
 
                   {/* Times */}
-                  <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">
-                    <span className="flex items-center gap-1">
+                  <div className="hidden shrink-0 items-center gap-2 text-[10px] text-muted-foreground sm:flex">
+                    <span className="flex items-center gap-0.5">
                       <Clock className="size-3" />
                       {formatTime(ci.checked_in_at)}
                     </span>
@@ -689,7 +695,7 @@ export default function DailyHistory() {
                       </>
                     )}
                     {elapsed !== null && (
-                      <span className="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700">
+                      <span className="rounded bg-gray-100 px-1 py-0 font-medium text-gray-700">
                         {elapsedLabel(elapsed)}
                       </span>
                     )}
@@ -697,8 +703,8 @@ export default function DailyHistory() {
                 </button>
 
                 {/* Mobile time row */}
-                <div className="flex items-center gap-3 border-t px-4 py-2 text-xs text-muted-foreground sm:hidden">
-                  <span className="flex items-center gap-1">
+                <div className="flex items-center gap-2 border-t px-2 py-1 text-[10px] text-muted-foreground sm:hidden">
+                  <span className="flex items-center gap-0.5">
                     <Clock className="size-3" />
                     접수 {formatTime(ci.checked_in_at)}
                   </span>
@@ -706,7 +712,7 @@ export default function DailyHistory() {
                     <span>완료 {formatTime(ci.completed_at)}</span>
                   )}
                   {elapsed !== null && (
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700">
+                    <span className="rounded bg-gray-100 px-1 py-0 font-medium text-gray-700">
                       {elapsedLabel(elapsed)}
                     </span>
                   )}
@@ -714,14 +720,14 @@ export default function DailyHistory() {
 
                 {/* Expanded: Status transitions + Payment details */}
                 {expanded && (
-                  <div className="border-t bg-muted/30 px-4 py-3">
+                  <div className="border-t bg-muted/30 px-2 py-2">
                     {/* Status transitions */}
                     {ciTransitions.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">상태 전환 기록이 없습니다.</p>
+                      <p className="text-[11px] text-muted-foreground">상태 전환 기록이 없습니다.</p>
                     ) : (
                       <div className="flex flex-col gap-1">
-                        <p className="mb-2 text-xs font-medium text-muted-foreground">상태 전환 이력</p>
-                        <div className="flex flex-wrap items-center gap-1 text-xs">
+                        <p className="mb-1 text-[11px] font-medium text-muted-foreground">상태 전환 이력</p>
+                        <div className="flex flex-wrap items-center gap-1 text-[11px]">
                           {ciTransitions.map((t, idx) => {
                             const prevTime =
                               idx === 0
@@ -734,7 +740,7 @@ export default function DailyHistory() {
                               <span key={t.id} className="flex items-center gap-1">
                                 {idx === 0 && (
                                   <>
-                                    <Badge className={`${STATUS_COLOR[t.from_status]} text-[10px] px-1.5 py-0`}>
+                                    <Badge className={`${statusMono(t.from_status)} text-[10px] px-1.5 py-0`}>
                                       {STATUS_KO[t.from_status]}
                                     </Badge>
                                   </>
@@ -745,7 +751,7 @@ export default function DailyHistory() {
                                     <span className="text-[10px] text-muted-foreground/70">({minsLabel})</span>
                                   )}{' '}
                                 </span>
-                                <Badge className={`${STATUS_COLOR[t.to_status]} text-[10px] px-1.5 py-0`}>
+                                <Badge className={`${statusMono(t.to_status)} text-[10px] px-1.5 py-0`}>
                                   {STATUS_KO[t.to_status]}
                                 </Badge>
                               </span>
@@ -754,14 +760,14 @@ export default function DailyHistory() {
                         </div>
 
                         {/* Transition detail table */}
-                        <div className="mt-3 overflow-auto">
-                          <table className="w-full text-xs">
+                        <div className="mt-2 overflow-auto">
+                          <table className="w-full text-[11px]">
                             <thead>
                               <tr className="border-b text-left text-[10px] text-muted-foreground">
-                                <th className="pb-1.5 font-medium">시각</th>
-                                <th className="pb-1.5 font-medium">변경 전</th>
-                                <th className="pb-1.5 font-medium">변경 후</th>
-                                <th className="pb-1.5 font-medium text-right">소요</th>
+                                <th className="pb-1 font-medium">시각</th>
+                                <th className="pb-1 font-medium">변경 전</th>
+                                <th className="pb-1 font-medium">변경 후</th>
+                                <th className="pb-1 font-medium text-right">소요</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -774,20 +780,20 @@ export default function DailyHistory() {
 
                                 return (
                                   <tr key={t.id} className="border-b last:border-0">
-                                    <td className="py-1.5 tabular-nums text-muted-foreground">
+                                    <td className="py-1 tabular-nums text-muted-foreground">
                                       {formatTime(t.transitioned_at)}
                                     </td>
-                                    <td className="py-1.5">
-                                      <Badge className={`${STATUS_COLOR[t.from_status]} text-[10px] px-1.5 py-0`}>
+                                    <td className="py-1">
+                                      <Badge className={`${statusMono(t.from_status)} text-[10px] px-1.5 py-0`}>
                                         {STATUS_KO[t.from_status]}
                                       </Badge>
                                     </td>
-                                    <td className="py-1.5">
-                                      <Badge className={`${STATUS_COLOR[t.to_status]} text-[10px] px-1.5 py-0`}>
+                                    <td className="py-1">
+                                      <Badge className={`${statusMono(t.to_status)} text-[10px] px-1.5 py-0`}>
                                         {STATUS_KO[t.to_status]}
                                       </Badge>
                                     </td>
-                                    <td className="py-1.5 text-right tabular-nums">
+                                    <td className="py-1 text-right tabular-nums">
                                       {mins !== null ? `${mins}분` : '-'}
                                     </td>
                                   </tr>
@@ -805,16 +811,16 @@ export default function DailyHistory() {
                       if (ciPayments.length === 0) {
                         if (PAID_EXPECTED_STATUSES.includes(ci.status) && !ci.package_id) {
                           return (
-                            <div className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                              <AlertCircle className="size-3.5" />
+                            <div className="mt-2 flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-[11px] font-medium text-gray-700">
+                              <AlertCircle className="size-3" />
                               <span>결제 기록 없음 (미결제)</span>
                             </div>
                           );
                         }
                         if (ci.package_id) {
                           return (
-                            <div className="mt-3 flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
-                              <CreditCard className="size-3.5" />
+                            <div className="mt-2 flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-[11px] text-gray-600">
+                              <CreditCard className="size-3" />
                               <span>패키지 결제 (회차 소진)</span>
                             </div>
                           );
@@ -826,8 +832,8 @@ export default function DailyHistory() {
                         0,
                       );
                       return (
-                        <div className="mt-3">
-                          <p className="mb-2 text-xs font-medium text-muted-foreground flex items-center gap-1">
+                        <div className="mt-2">
+                          <p className="mb-1 text-[11px] font-medium text-muted-foreground flex items-center gap-1">
                             <CreditCard className="size-3" />
                             결제 내역
                             <span className="ml-auto font-bold tabular-nums">
@@ -835,46 +841,46 @@ export default function DailyHistory() {
                             </span>
                           </p>
                           <div className="overflow-auto">
-                            <table className="w-full text-xs">
+                            <table className="w-full text-[11px]">
                               <thead>
                                 <tr className="border-b text-left text-[10px] text-muted-foreground">
-                                  <th className="pb-1.5 font-medium">시각</th>
-                                  <th className="pb-1.5 font-medium">방식</th>
-                                  <th className="pb-1.5 font-medium">유형</th>
-                                  <th className="pb-1.5 font-medium text-right">금액</th>
-                                  <th className="pb-1.5 font-medium">메모</th>
-                                  <th className="pb-1.5 font-medium text-right">작업</th>
+                                  <th className="pb-1 font-medium">시각</th>
+                                  <th className="pb-1 font-medium">방식</th>
+                                  <th className="pb-1 font-medium">유형</th>
+                                  <th className="pb-1 font-medium text-right">금액</th>
+                                  <th className="pb-1 font-medium">메모</th>
+                                  <th className="pb-1 font-medium text-right">작업</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {ciPayments.map((p) => (
                                   <tr key={p.id} className="border-b last:border-0">
-                                    <td className="py-1.5 tabular-nums text-muted-foreground">
+                                    <td className="py-1 tabular-nums text-muted-foreground">
                                       {formatTime(p.created_at)}
                                     </td>
-                                    <td className="py-1.5">{METHOD_KO[p.method] ?? p.method}</td>
-                                    <td className="py-1.5">
+                                    <td className="py-1">{METHOD_KO[p.method] ?? p.method}</td>
+                                    <td className="py-1">
                                       <Badge
                                         className={
                                           p.status === 'cancelled'
-                                            ? 'bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0'
+                                            ? 'bg-gray-50 text-gray-400 border border-gray-200 text-[10px] px-1.5 py-0'
                                             : p.payment_type === 'refund'
-                                              ? 'bg-red-100 text-red-600 text-[10px] px-1.5 py-0'
-                                              : 'bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0'
+                                              ? 'bg-gray-100 text-gray-600 border border-gray-200 text-[10px] px-1.5 py-0'
+                                              : 'bg-gray-200 text-gray-800 font-semibold border border-gray-300 text-[10px] px-1.5 py-0'
                                         }
                                       >
                                         {p.status === 'cancelled' ? '취소' : p.payment_type === 'refund' ? '환불' : '결제'}
                                       </Badge>
                                     </td>
-                                    <td className={`py-1.5 text-right tabular-nums font-medium ${p.status === 'cancelled' ? 'line-through text-muted-foreground' : ''}`}>
+                                    <td className={`py-1 text-right tabular-nums font-medium ${p.status === 'cancelled' ? 'line-through text-muted-foreground' : ''}`}>
                                       {p.payment_type === 'refund' ? '-' : ''}
                                       {formatAmount(p.amount)}
                                     </td>
-                                    <td className="py-1.5 text-muted-foreground truncate max-w-[100px]">
+                                    <td className="py-1 text-muted-foreground truncate max-w-[100px]">
                                       {p.memo || '—'}
                                     </td>
                                     {/* T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE */}
-                                    <td className="py-1.5 text-right">
+                                    <td className="py-1 text-right">
                                       <div className="flex items-center justify-end gap-0.5">
                                         {p.status !== 'cancelled' && (
                                           <button
@@ -882,7 +888,7 @@ export default function DailyHistory() {
                                             data-testid={`btn-edit-payment-${p.id}`}
                                             title="수납 수정"
                                             onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('edit'); }}
-                                            className="rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 transition"
+                                            className="rounded px-1 py-0.5 text-[10px] text-gray-600 hover:bg-gray-200 transition"
                                           >수정</button>
                                         )}
                                         {p.status !== 'cancelled' && (
@@ -891,7 +897,7 @@ export default function DailyHistory() {
                                             data-testid={`btn-cancel-payment-${p.id}`}
                                             title="수납 취소"
                                             onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('cancel'); }}
-                                            className="rounded px-1 py-0.5 text-[10px] text-amber-600 hover:bg-amber-50 transition"
+                                            className="rounded px-1 py-0.5 text-[10px] text-gray-500 hover:bg-gray-200 transition"
                                           >취소</button>
                                         )}
                                         <button
@@ -899,7 +905,7 @@ export default function DailyHistory() {
                                           data-testid={`btn-delete-payment-${p.id}`}
                                           title="수납 삭제"
                                           onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('delete'); }}
-                                          className="rounded px-1 py-0.5 text-[10px] text-red-500 hover:bg-red-50 transition"
+                                          className="rounded px-1 py-0.5 text-[10px] text-gray-700 font-medium hover:bg-gray-200 transition"
                                         >삭제</button>
                                         <PaymentAuditLogsPanel paymentId={p.id} />
                                       </div>
