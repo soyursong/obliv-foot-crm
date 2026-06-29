@@ -87,9 +87,10 @@ test.describe('S1 — 상담대기 진입 자동배정 + 균등 sublogic', () =>
     expect(DASH).toMatch(/newStatus === 'consult_waiting' \|\| newStatus === 'treatment_waiting'/);
   });
 
-  test('균등 sublogic(질문②): ① 이달 동일 축 최소 → ② 당일 최소 → ③ 랜덤', () => {
-    // pickLeastLoaded 정렬키 = monthly → today → rnd
-    expect(ENGINE_CODE).toMatch(/a\.monthly - b\.monthly \|\| a\.today - b\.today \|\| a\.rnd - b\.rnd/);
+  test('균등 sublogic: ① 이달 동일 축 최소 → ② 당일 최소 → ③ 기본순번 → ④ 랜덤 (T-20260629 ROTATION 확장)', () => {
+    // pickLeastLoaded 정렬키 = monthly → today → ord(기본순번) → rnd
+    //   T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER: 기존 3순위 랜덤을 기본순번으로 격상, 랜덤은 4순위.
+    expect(ENGINE_CODE).toMatch(/a\.monthly - b\.monthly \|\| a\.today - b\.today \|\| a\.ord - b\.ord \|\| a\.rnd - b\.rnd/);
   });
 
   test('후보 풀 = 당일 출근(구글시트 read) ∩ 역할 매칭', () => {
@@ -131,8 +132,9 @@ test.describe('S3 — 지정 담당 0순위 우선 + 휴무 fallback(least-loade
   });
 
   test('지정자 당일 출근 시에만 우선, 휴무면 균등 fallback', () => {
-    expect(ENGINE_CODE).toMatch(/if \(designatedId && workingIds\.has\(designatedId\)\)/);
-    expect(ENGINE_CODE).toMatch(/chosen = pickLeastLoaded\(pool, load\)/);
+    // T-20260624 temp-off: 지정자도 임시 off 면 fallback. T-20260629: fallback 시 기본순번(order) tie-break.
+    expect(ENGINE_CODE).toMatch(/if \(designatedId && workingIds\.has\(designatedId\) && !tempOff\.has\(designatedId\)\)/);
+    expect(ENGINE_CODE).toMatch(/chosen = pickLeastLoaded\(pool, load, order\)/);
   });
 });
 
