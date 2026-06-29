@@ -11,7 +11,7 @@
  * 대상(기본 prod, env로 override):
  *   VERIFY_BASE_URL  (기본 https://obliv-foot-crm.vercel.app)
  *   VERIFY_CUSTOMER_ID (선택. 미지정/미존재 시 QA 세션으로 접근 가능한 실존 고객을 런타임 자동 선택)
- *   TEST_EMAIL / TEST_PASSWORD (기본 test@medibuilder.com / TestPass2026! — auth.setup과 동일)
+ *   TEST_EMAIL / TEST_PASSWORD (기본 test@medibuilder.com / $TEST_PASSWORD — auth.setup과 동일)
  *   VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (.env 로드)
  *
  * NOTE(2026-06-22, T-20260609 re-fix #4): 고정 고객 ID(5bc95429…, F-1485)가 prod 에서

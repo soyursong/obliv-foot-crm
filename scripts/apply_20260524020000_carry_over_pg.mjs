@@ -10,7 +10,7 @@ const { Client } = pg;
 // host: aws-0-ap-northeast-2.pooler.supabase.com
 // port: 5432 (transaction) 또는 6543 (session)
 // user: postgres.rxlomoozakkjesdqjtvd
-// password: bQpgC6tYfXhp@Hr
+// password: $SUPABASE_DB_PASSWORD (env 주입)
 // Note: @ 퍼센트 인코딩 불필요 — 객체 방식 연결
 
 const client = new Client({

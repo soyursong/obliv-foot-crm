@@ -6,11 +6,15 @@
 import pkg from 'pg';
 const { Client } = pkg;
 
-// Supabase Direct DB URL (Session mode)
-// host: db.{project-ref}.supabase.co  port: 5432
-const DB_URL = 'postgresql://postgres:bQpgC6tYfXhp%40Hr@db.rxlomoozakkjesdqjtvd.supabase.co:5432/postgres';
+// Supabase Direct DB (Session mode) — host: db.{project-ref}.supabase.co  port: 5432
+// 자격증명 env 주입 (평문 fallback 금지 — 미설정 시 throw). T-20260629-foot-TESTCRED-FIXTURE-CLEAN
+const DB_PASSWORD = (process.env.SUPABASE_DB_PASSWORD || (() => { throw new Error('SUPABASE_DB_PASSWORD env required (no plaintext fallback)'); })());
 
-const client = new Client({ connectionString: DB_URL, ssl: { rejectUnauthorized: false } });
+const client = new Client({
+  host: 'db.rxlomoozakkjesdqjtvd.supabase.co', port: 5432,
+  database: 'postgres', user: 'postgres', password: DB_PASSWORD,
+  ssl: { rejectUnauthorized: false },
+});
 
 try {
   await client.connect();

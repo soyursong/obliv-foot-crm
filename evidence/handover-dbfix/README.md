@@ -44,7 +44,7 @@ node scripts/evidence_handover_ui_prod.mjs
 node scripts/evidence_handover_ui_coordinator.mjs
 ```
 
-- **QA 계정**: `test@medibuilder.com` / `TestPass2026!` (role=admin, 종로 풋센터)
+- **QA 계정**: `test@medibuilder.com` / `$TEST_PASSWORD` (role=admin, 종로 풋센터)
 - 스크립트가 로그인 세션을 주입하므로 supervisor는 별도 storageState 없이 즉시 실행 가능.
 - 모든 검증 데이터·임시계정은 종료 시 자동 삭제(실데이터 0건 유지).
 

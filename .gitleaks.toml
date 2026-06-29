@@ -28,6 +28,15 @@ description = "Hardcoded secret/token/api key assignment"
 regex = '''(?i)(secret|token|api[_-]?key|apikey)\s*[:=]\s*['"][^'"\n]{8,}['"]'''
 keywords = ["secret", "token", "apikey", "api_key", "api-key"]
 
+# DB 연결 URI 에 평문 비밀번호 임베드 (postgres://user:<PASS>@host) — keyword 인접 'password=' 없어
+# hardcoded-test-password 룰이 못 잡던 형태. T-20260629-foot-TESTCRED-FIXTURE-CLEAN Stage C 보강.
+# 비밀번호 segment 에 ${ } (템플릿 변수) 가 있으면 env 주입이므로 미탐(char class 가 ${} 배제).
+[[rules]]
+id = "db-connection-uri-password"
+description = "Database connection URI with embedded plaintext password (use env injection)"
+regex = '''(?i)postgres(ql)?://[^\s:'"@/]+:[^\s'"@/${}]{3,}@'''
+keywords = ["postgres://", "postgresql://"]
+
 [allowlist]
 description = "env 주입·플레이스홀더·필드명·타입속성은 허용"
 regexes = [

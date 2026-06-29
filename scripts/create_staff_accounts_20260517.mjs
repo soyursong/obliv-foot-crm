@@ -278,7 +278,7 @@ async function main() {
     ok('AC-4 충족: 기존 admin 계정 무변경 확인');
     ok('AC-5 충족: 이메일 중복 0건');
     log('');
-    log('✉️  비밀번호: Foot@2026! (임시 — 현장 배포 후 개인 변경 안내)');
+    log(`✉️  비밀번호: ${DEFAULT_PASSWORD} (임시 — 현장 배포 후 개인 변경 안내)`);
     log('🔗 CRM URL: https://obliv-foot-crm.vercel.app');
   }
   if (DRY_RUN) {
