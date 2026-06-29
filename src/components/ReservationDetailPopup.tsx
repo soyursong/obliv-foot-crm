@@ -1722,7 +1722,6 @@ export function ReservationDetailPopup({
                     reservationId={selectedResv.id}
                     clinicId={selectedResv.clinic_id}
                     authorName={authorName}
-                    tone="neutral"
                   />
                 ) : (
                   <div className="text-xs text-muted-foreground italic">예약 선택 필요</div>
