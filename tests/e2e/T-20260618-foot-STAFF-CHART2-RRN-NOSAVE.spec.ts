@@ -2,13 +2,15 @@
  * E2E spec — T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B / DA CONSULT-REPLY MSG-20260618-185650-arwz)
  * [2번차트] 주민번호 조회 권한 없는 직원에게 '미입력' 대신 '조회 권한 없음' 안내문 표기
  *
- * 배경: prod rrn_decrypt 게이트1 = is_admin_or_manager(admin/manager/director). 그 외 역할은
- *       주민번호가 저장돼 있어도 복호화 결과가 null → 기존 UI 가 '미입력'으로 표기 →
- *       "저장이 안 됐다"는 오해 발생(현장 보고). Option B = FE 안내문(PHI/DB 무변경).
- *       A1(전직원 복원)·A2(역할 한정 복원)는 대표 PHI 게이트 통과 전까지 HOLD.
+ * 배경: prod rrn_decrypt 게이트1 = A2 6역할(admin/manager/director/consultant/coordinator/therapist).
+ *       그 외 역할(part_lead/staff/tm)은 주민번호가 저장돼 있어도 복호화 결과가 null →
+ *       기존 UI 가 '미입력'으로 표기 → "저장이 안 됐다"는 오해 발생(현장 보고). Option B = FE 안내문(PHI/DB 무변경).
+ *       ※ 정책 갱신: 대표 '다 열어줘' 결정(T-20260620-foot-STAFF-PERM-UNLOCK-6MENU, rrn_decrypt A2,
+ *         deployed 2026-06-21 dd573763)으로 구 3역할(admin/manager/director) 게이트가 6역할로 superseded.
+ *         본 spec AC-1 은 신정책(6역할)으로 동기화됨(T-20260629-foot-CHART2-RRN-SPEC-ROLE-SYNC).
  *
- * AC-1(logic): canViewRrn 게이트가 prod rrn_decrypt 게이트(admin/manager/director)와 정확히 일치.
- *              consultant/coordinator/therapist/tm/staff/part_lead 는 false(=값 미조회).
+ * AC-1(logic): canViewRrn 게이트가 prod rrn_decrypt 게이트(A2 6역할 = STAFF_UNLOCK_ROLES)와 정확히 일치.
+ *              part_lead/staff/tm 는 false(=값 미조회 — A1 전직원복원 아님).
  * AC-2(UI 상호배타): 2번차트 주민번호 행은 'viewer 모드(값/미입력/수정·입력)'와
  *              'non-viewer 안내문(조회 권한 없음)'이 동시에 뜨지 않는다(오해 조합 차단).
  * AC-3(UI 핵심 회귀): non-viewer 안내문('조회 권한 없음')이 뜨면, 같은 행에 '미입력'이 없어야 한다
@@ -26,21 +28,24 @@ import { canViewRrn, RRN_VIEW_ROLES } from '../../src/lib/permissions';
 // AC-1: 순수 게이트 일치 (역할·데이터 무관, 항상 실행)
 // ─────────────────────────────────────────────────────────────────────────
 test.describe('T-20260618 RRN 조회 게이트 일치 (canViewRrn ↔ prod rrn_decrypt)', () => {
-  test('AC-1: 조회 가능 역할 = admin/manager/director 뿐', () => {
+  test('AC-1: 조회 가능 역할 = A2 6역할(admin/manager/director/consultant/coordinator/therapist)', () => {
+    // 신정책(rrn_decrypt A2) = STAFF_UNLOCK_ROLES 6역할 → 전부 true
     expect(canViewRrn('admin')).toBe(true);
     expect(canViewRrn('manager')).toBe(true);
     expect(canViewRrn('director')).toBe(true);
-    // prod is_admin_or_manager 에 미포함 → 값 미조회 (안내문 분기)
-    expect(canViewRrn('consultant')).toBe(false);
-    expect(canViewRrn('coordinator')).toBe(false);
-    expect(canViewRrn('therapist')).toBe(false);
+    expect(canViewRrn('consultant')).toBe(true);
+    expect(canViewRrn('coordinator')).toBe(true);
+    expect(canViewRrn('therapist')).toBe(true);
+    // A2 미포함(A1 전직원복원 아님) → 값 미조회 (안내문 분기)
     expect(canViewRrn('part_lead')).toBe(false);
     expect(canViewRrn('staff')).toBe(false);
     expect(canViewRrn('tm')).toBe(false);
     expect(canViewRrn('')).toBe(false);
-    // 집합 SSOT 가 admin/manager/director 정확히 3개
-    expect([...RRN_VIEW_ROLES].sort()).toEqual(['admin', 'director', 'manager']);
-    console.log('[AC-1] canViewRrn 게이트 = admin/manager/director 일치 OK');
+    // 집합 SSOT 가 A2 6역할 정확히 일치
+    expect([...RRN_VIEW_ROLES].sort()).toEqual(
+      ['admin', 'consultant', 'coordinator', 'director', 'manager', 'therapist'],
+    );
+    console.log('[AC-1] canViewRrn 게이트 = A2 6역할 일치 OK');
   });
 });
 
@@ -102,7 +107,7 @@ test.describe('T-20260618 2번차트 주민번호 표기 불변식', () => {
 
     const row = rrnRow(page);
     const notice = await row.getByText('조회 권한 없음', { exact: true }).count();
-    if (notice === 0) test.skip(true, '로그인 계정이 조회 가능 역할(admin/manager/director) — non-viewer 분기 미렌더');
+    if (notice === 0) test.skip(true, '로그인 계정이 조회 가능 역할(A2 6역할) — non-viewer 분기 미렌더');
 
     // 핵심 회귀: 권한 없는 직원에게 '미입력'(저장 안 됨 오해)을 노출하지 않는다.
     expect(await row.getByText('미입력', { exact: true }).count()).toBe(0);
