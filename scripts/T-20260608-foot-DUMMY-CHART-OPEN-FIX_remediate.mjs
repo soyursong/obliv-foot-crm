@@ -6,7 +6,7 @@
  * 가역: 재생성 = scripts/dummy_resv_20260609.mjs(단, 결함이므로 apply.mjs 패턴으로 대체 권장)
  */
 import { createClient } from '@supabase/supabase-js';
-const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co','***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',{auth:{persistSession:false}});
+const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',(process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),{auth:{persistSession:false}});
 const CLINIC='74967aea-a60b-4da3-a0e7-9c997a930bc8';
 const MARKER='test-dummy-20260609';
 const DRY = process.argv.includes('--dry');

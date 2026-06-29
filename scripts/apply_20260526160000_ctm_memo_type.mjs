@@ -13,7 +13,7 @@ const SQL = readFileSync(
   'utf8',
 );
 
-const SERVICE_KEY = '***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const PROJ_REF = 'rxlomoozakkjesdqjtvd';
 
 console.log('🚀 T-20260526-foot-VISIT-HIST-FILTER: memo_type 컬럼 추가');

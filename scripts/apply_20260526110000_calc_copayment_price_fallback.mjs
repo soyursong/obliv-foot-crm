@@ -14,7 +14,7 @@ const SQL = readFileSync(
 );
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_KEY  = '***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SERVICE_KEY  = (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const PROJ_REF = 'rxlomoozakkjesdqjtvd';
 
 console.log('🚀 AC-2: calc_copayment 함수 업데이트 (T-20260526-foot-COPAY-MINI-BUG)');

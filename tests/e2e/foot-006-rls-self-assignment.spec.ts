@@ -15,7 +15,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL!;
 const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 test.describe('B-1 RLS 자기배정 + anon 셀프체크인', () => {
   test('admin 토큰으로 staff 전체 SELECT 가능', async () => {

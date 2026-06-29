@@ -16,7 +16,7 @@ import fs from 'node:fs';
 
 const BASE = 'https://obliv-foot-crm.vercel.app';
 const EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
+const PASSWORD = process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 const CUSTOMER_ID = '8817fc08-0deb-4dc4-9c5e-b1793c89f8cf'; // 송유진
 const OUT = '/tmp/healthq_prod_evidence';
 fs.mkdirSync(OUT, { recursive: true });

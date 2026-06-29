@@ -32,7 +32,7 @@ const client = new pg.Client({
   port: 5432,
   database: 'postgres',
   user: 'postgres.rxlomoozakkjesdqjtvd',
-  password: 'bQpgC6tYfXhp@Hr',
+  password: (process.env.SUPABASE_DB_PASSWORD || (() => { throw new Error('SUPABASE_DB_PASSWORD env required (no plaintext fallback)'); })()),
   ssl: { rejectUnauthorized: false },
 });
 

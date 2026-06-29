@@ -28,7 +28,7 @@ async function loginIfNeeded(page: import('@playwright/test').Page) {
   const url = page.url();
   if (!url.includes('/login')) return;
   const email = process.env.TEST_USER_EMAIL ?? 'dev-foot-test@test.com';
-  const password = process.env.TEST_USER_PASSWORD ?? 'test1234!';
+  const password = process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_USER_PASSWORD env required (no plaintext fallback)'); })();
   await page.fill('input[type="email"]', email);
   await page.fill('input[type="password"]', password);
   await page.click('button[type="submit"]');

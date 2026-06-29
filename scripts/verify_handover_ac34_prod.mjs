@@ -33,7 +33,7 @@ const SUPA_URL = process.env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL;
 const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
 const TEST_EMAIL = process.env.TEST_EMAIL || 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD || 'TestPass2026!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD || (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 if (!DB_PASSWORD || !SUPA_URL || !ANON_KEY) {
   console.error('❌ 필요 env 누락 (SUPABASE_DB_PASSWORD / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)');
@@ -207,7 +207,7 @@ async function partC() {
   const admin = createClient(SUPA_URL, SERVICE_KEY, { auth: { persistSession: false } });
   const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // 종로 풋센터 (PART B 확인값)
   const email = `qa.handover.${Date.now()}@medibuilder-qa.local`;
-  const password = 'QaHandover2026!';
+  const password = (process.env.QA_HANDOVER_PASSWORD || (() => { throw new Error('QA_HANDOVER_PASSWORD env required (no plaintext fallback)'); })());
   let userId = null;
 
   try {

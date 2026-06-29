@@ -28,7 +28,7 @@ async function loginIfNeeded(page: import('@playwright/test').Page) {
   const loginInput = page.getByPlaceholder('이메일');
   if (await loginInput.isVisible({ timeout: 3000 }).catch(() => false)) {
     await loginInput.fill(process.env.TEST_EMAIL ?? 'test@test.com');
-    await page.getByPlaceholder('비밀번호').fill(process.env.TEST_PASSWORD ?? 'testpass');
+    await page.getByPlaceholder('비밀번호').fill(process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })());
     await page.getByRole('button', { name: '로그인' }).click();
     await page.waitForURL(/\/admin/, { timeout: 10000 });
   }

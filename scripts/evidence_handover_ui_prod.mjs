@@ -34,7 +34,7 @@ for (const l of fs.readFileSync('.env', 'utf8').split('\n')) {
 const SUPA_URL = env.VITE_SUPABASE_URL;
 const ANON = env.VITE_SUPABASE_ANON_KEY;
 const EMAIL = process.env.TEST_EMAIL || 'test@medibuilder.com';
-const PASS = process.env.TEST_PASSWORD || 'TestPass2026!';
+const PASS = process.env.TEST_PASSWORD || (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 const PROD = 'https://obliv-foot-crm.vercel.app';
 
 const OUT_DIR = path.join('evidence', 'handover-dbfix');

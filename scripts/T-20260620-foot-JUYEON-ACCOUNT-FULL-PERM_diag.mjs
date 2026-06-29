@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_ROLE_KEY = '***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const AUTH_ID = 'ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12';
 const ANON_KEY = (readFileSync(new URL('../.env', import.meta.url), 'utf8')
   .match(/VITE_SUPABASE_ANON_KEY=(\S+)/) || [])[1];

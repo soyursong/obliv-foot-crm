@@ -3,7 +3,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 const URL='https://rxlomoozakkjesdqjtvd.supabase.co';
-const KEY='***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const KEY=(process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })());
 const FOOT='74967aea-a60b-4da3-a0e7-9c997a930bc8';
 const sb=createClient(URL,KEY,{auth:{persistSession:false}});
 

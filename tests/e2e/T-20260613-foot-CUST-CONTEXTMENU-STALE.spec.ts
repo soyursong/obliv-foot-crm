@@ -20,7 +20,7 @@ import { test, expect } from '@playwright/test';
 
 const BASE = process.env.BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL ?? 'test-admin@obliv-foot.com';
-const ADMIN_PW = process.env.TEST_ADMIN_PW ?? 'testpassword';
+const ADMIN_PW = process.env.TEST_ADMIN_PW ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 /**
  * storageState(auth.setup) 인증을 기본으로 사용. 이미 인증돼 있으면 폼 로그인 생략,

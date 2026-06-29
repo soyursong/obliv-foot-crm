@@ -1,0 +1,50 @@
+# gitleaks config — obliv-foot-crm secret-scan
+# T-20260629-ops-TESTCRED-PLAINTEXT-LIVECRED Stage 3
+# 타 CRM 이식 가능: 이 파일 + .github/workflows/secret-scan.yml + scripts/secret-scan.sh 3종을 그대로 복사하면 됨.
+title = "obliv-foot-crm secret scan"
+
+# gitleaks 기본 룰셋(API 키/토큰/PEM 등) 상속
+[extend]
+useDefault = true
+
+# --- 커스텀 룰: 테스트 픽스처 평문 비밀번호 하드코딩 차단 ---
+# const PW = '...'; / LOGIN_PASS = "..."; / password = '...'; 등
+# process.env / placeholder('...', '<...>', '****') 는 allowlist 로 제외.
+[[rules]]
+id = "hardcoded-test-password"
+description = "Hardcoded plaintext password assignment (use process.env instead)"
+regex = '''(?i)(pass(word)?|pwd|\bpw\b|login_pass)\s*[:=]\s*['"][^'"\n]{3,}['"]'''
+keywords = ["pass", "pwd", "pw", "login_pass"]
+
+[[rules]]
+id = "env-fallback-plaintext-password"
+description = "Plaintext password as env fallback (process.env.X || 'pw' / ?? 'pw') — fallback is still a leak"
+regex = '''(?i)(pass(word)?|pwd|\bpw\b|login_pass).{0,60}(\|\||\?\?)\s*['"][^'"\n]{3,}['"]'''
+keywords = ["||", "??"]
+
+[[rules]]
+id = "hardcoded-secret-token"
+description = "Hardcoded secret/token/api key assignment"
+regex = '''(?i)(secret|token|api[_-]?key|apikey)\s*[:=]\s*['"][^'"\n]{8,}['"]'''
+keywords = ["secret", "token", "apikey", "api_key", "api-key"]
+
+[allowlist]
+description = "env 주입·플레이스홀더·필드명·타입속성은 허용"
+regexes = [
+  '''process\.env''',                       # env 주입 패턴
+  '''import\.meta\.env''',                   # vite env
+  '''Deno\.env''',                           # edge function env
+  '''type\s*=\s*["']password["']''',         # <input type="password">
+  '''["']password["']\s*[:,)]''',            # 필드명 리터럴 'password'
+  '''[:=]\s*['"](\.{2,}|<[^>]+>|\*{3,}|x{3,}|REPLACE|CHANGE_?ME|placeholder|example|your[_-])['"]''', # 플레이스홀더
+  '''\.fill\(''',                            # playwright .fill(pw)
+  '''\[AC[0-9-]''',                          # foot e2e 수용기준 로그 마커(console.log("[AC-3] ... PASS: ...")) — status 라벨 오탐 차단
+]
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''\.lock$''',
+  '''package-lock\.json$''',
+  '''(^|/)i18n(\.|/)''',          # 번역 사전 (UI 라벨 '비밀번호' 등은 자격증명 아님)
+  '''(^|/)locales?/''',
+]

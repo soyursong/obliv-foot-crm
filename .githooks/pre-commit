@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# pre-commit — secret-scan 게이트 (T-20260629-ops-TESTCRED-PLAINTEXT-LIVECRED Stage 3)
+# 활성화: git config core.hooksPath .githooks   (레포당 1회)
+set -euo pipefail
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/scripts/secret-scan.sh" staged

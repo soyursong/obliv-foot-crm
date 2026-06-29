@@ -9,7 +9,7 @@ const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // fallback: use service key from known location
-const KEY = SERVICE_KEY || '***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const KEY = SERVICE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })();
 
 const db = createClient(SUPABASE_URL, KEY, { auth: { persistSession: false } });
 

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co','***REMOVED-LEAKED-SERVICE-KEY******REMOVED-LEAKED-SERVICE-KEY***ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg',{auth:{persistSession:false}});
+const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',(process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),{auth:{persistSession:false}});
 const CLINIC='74967aea-a60b-4da3-a0e7-9c997a930bc8', DATE='2026-06-09';
 const { data: all } = await sb.from('reservations').select('id, reservation_time, visit_type, customer_name, customer_id, memo, created_by').eq('clinic_id',CLINIC).eq('reservation_date',DATE).order('reservation_time');
 console.log(`6/9 jongno 잔여 예약: ${all?.length}건`);

@@ -22,7 +22,7 @@ async function loginIfNeeded(page: import('@playwright/test').Page, email?: stri
   const loginInput = page.getByPlaceholder('이메일');
   if (await loginInput.isVisible({ timeout: 3000 }).catch(() => false)) {
     await loginInput.fill(email ?? process.env.TEST_EMAIL ?? 'test@test.com');
-    await page.getByPlaceholder('비밀번호').fill(password ?? process.env.TEST_PASSWORD ?? 'testpass');
+    await page.getByPlaceholder('비밀번호').fill(password ?? process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })());
     await page.getByRole('button', { name: '로그인' }).click();
     await page.waitForURL(/\/(dashboard|$)/, { timeout: 10000 });
   }
@@ -130,7 +130,7 @@ test('AC-2~4: 진단명/치료사차트 저장 후 타임라인 항목 표시', 
 
 test('AC-5: 비원장 계정 — 진료메모 영역 미표시', async ({ page }) => {
   const managerEmail = process.env.TEST_MANAGER_EMAIL ?? process.env.TEST_EMAIL ?? 'test@test.com';
-  const managerPass = process.env.TEST_MANAGER_PASSWORD ?? process.env.TEST_PASSWORD ?? 'testpass';
+  const managerPass = process.env.TEST_MANAGER_PASSWORD ?? process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
   await loginIfNeeded(page, managerEmail, managerPass);
   await page.goto(`${BASE_URL}/dashboard`);
   await page.waitForLoadState('networkidle', { timeout: 15000 });

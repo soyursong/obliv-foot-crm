@@ -25,7 +25,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
 const TEST_PASSWORD =
-  process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? 'TestPass2026!';
+  process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
 
 test.describe('CHART2-11FIX · 2번차트 상세 메모 라벨/요약 (QA 검증 경로)', () => {
   test('item2 라벨(고객메모/상담메모/치료메모) + item3 메모 요약 블록 노출', async ({ page }) => {
