@@ -647,18 +647,56 @@ export function ReservationDetailPopup({
                   // AC-3: 기존 고객 선택 시 예약상세(패키지·치료이력) 노출. RESVPOPUP-2ZONE 자산(PackageTicketReadonlyList) 재사용 — 신규 팝업 0.
                   <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-3 shadow-sm space-y-2.5" data-testid="popup-newmode-customer">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-teal-700">예약 대상(기존 고객)</div>
-                        <div className="text-sm font-semibold text-teal-800 truncate">{loadedMatch.name}</div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-medium text-teal-700">예약 대상(기존 고객·재진)</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-teal-800 truncate">{loadedMatch.name}</span>
+                          {/* T-20260629-foot-RESVCREATE-CUSTBOX-FIRST-REVISIT AC2/AC4/AC5: 재진 고객박스 = 성함 + 패키지 N/N.
+                              진행중 패키지(최신 active 1건) 진행회차/총회차. 산식·소스는 캘린더 재진카드(pkgProgressMap)·
+                              FIELDBATCH 활성패키지 양식과 동일: used = package_sessions status='used' count, total = total_sessions.
+                              loadZone1Data 가 packages/packageSessions 선로드 → 수동조회 불필요(AC4 자동로드). */}
+                          {(() => {
+                            const activePkg = packages[0];
+                            if (!activePkg) return null;
+                            const total = activePkg.total_sessions ?? 0;
+                            const used = packageSessions.filter(
+                              (s) => s.package_id === activePkg.id && s.status === 'used',
+                            ).length;
+                            return (
+                              <span
+                                data-testid="newmode-existing-pkg-nn"
+                                title={`패키지 ${used}/${total} 회차`}
+                                className="inline-flex shrink-0 items-center rounded bg-teal-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-teal-700"
+                              >
+                                패키지 {used}/{total}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </div>
                       <button
                         type="button"
                         className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
-                        onClick={() => { setLoadedMatch(null); setExistingSearch(true); setSearchValue(''); }}
+                        onClick={() => { setLoadedMatch(null); setExistingSearch(true); setSearchValue(''); setVisitRoute(''); }}
                         data-testid="btn-newmode-existing-research"
                       >
                         다시 검색
                       </button>
+                    </div>
+                    {/* T-20260629-foot-RESVCREATE-CUSTBOX-FIRST-REVISIT AC2: 재진 고객박스 예약경로 — 신규 고객 폼과 동일 필드(REGISTRAR-ROUTE-FIELDS 자산)·동일 visitRoute state·submitNewReservation 위임(L-002 보존). */}
+                    <div className="flex flex-col gap-0.5 text-xs">
+                      <Label htmlFor="newmode-existing-visit-route" className="text-[10px] text-muted-foreground">예약경로</Label>
+                      <Select value={visitRoute || '__none__'} onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}>
+                        <SelectTrigger id="newmode-existing-visit-route" className="h-9 w-full text-sm" data-testid="newmode-existing-visit-route-select">
+                          <SelectValue placeholder="예약경로 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                          {VISIT_ROUTE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     {/* 패키지·치료이력(2번차트 양식 read-only) — loadZone1Data 로 packages/packageSessions 선로드됨 */}
                     <div className="rounded-lg border border-border/50 bg-card/70 px-2.5 py-2" data-testid="popup-newmode-pkg-history">
