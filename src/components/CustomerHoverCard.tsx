@@ -177,7 +177,9 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
             ? cn('font-bold truncate text-gray-900', compactDense ? 'block min-w-0 text-[11px]' : 'text-sm')
             : 'text-base font-bold',
         )}
-        title={onClick ? '클릭 → 고객차트 열기 · 우클릭/롱프레스 → 메뉴 · 호버 → 간단정보' : '우클릭/롱프레스 → 고객차트·예약 · 호버 → 간단정보'}
+        // T-20260629-foot-RESVHOVER-HINT-PHRASE-REMOVE: 성함 hover 시 네이티브 title 툴팁이
+        //   간단정보 카드(포털)와 겹쳐 고객번호/메모를 가림 → 도움말 한 줄(title 속성)만 제거.
+        //   동작 무변경: onClick=고객차트, onContextMenu=메뉴, hover=간단정보 카드 모두 유지.
         onContextMenu={onContextMenu}
         onClick={(e) => {
           if (!onClick) return;
