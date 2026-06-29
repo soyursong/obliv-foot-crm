@@ -771,8 +771,10 @@ ${COMMON_STYLE}
     <thead>
       <tr>
         <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 등록번호·진료기간 칸 폭 확대 + 데이터 nowrap → 줄바꿈 제거(가로 양식, 폭 여유) -->
+        <!-- T-20260629-foot-BILLDETAIL-RRN-ADD: 주민등록번호 컬럼 추가(B안 확정, 총괄). {{patient_rrn}}=loadAutoBindContext rrn_decrypt 경로 재사용(신규 복호 없음). 가로 양식 폭 여유로 무회귀. -->
         <th style="width:104px;">환자등록번호</th>
         <th style="width:80px;">환자성명</th>
+        <th style="width:110px;">주민등록번호</th>
         <th style="width:150px;">진료기간</th>
         <th style="width:60px;">병실</th>
         <th style="width:70px;">환자구분</th>
@@ -783,6 +785,7 @@ ${COMMON_STYLE}
       <tr>
         <td style="white-space:nowrap;">{{record_no}}</td>
         <td>{{patient_name}}</td>
+        <td style="white-space:nowrap;">{{patient_rrn}}</td>
         <td style="white-space:nowrap;">{{visit_date}} ～ {{visit_date}}</td>
         <td>외래</td>
         <td>건강보험</td>
