@@ -4068,7 +4068,12 @@ export default function Dashboard() {
     const end = `${dateStr}T23:59:59+09:00`;
     // T-20260511-foot-SELFCHECKIN-CRM-SYNC: consult_waiting/treatment_waiting 포함
     // DASH-SLOT-REWORK-P0 이후 셀프접수는 registered가 아닌 consult_waiting/treatment_waiting으로 직행.
-    // 취소/완료 제외한 모든 활성 상태를 포함해야 타임라인 슬롯 매칭이 정상 동작.
+    // T-20260629-foot-TIMETABLE-DONE-PATIENT-VANISH: 'done'(완료)을 fetch에서 제외하면
+    //   새로고침/Realtime 재조회 시 완료 환자가 통합시간표에서 사라져 그날 기록이 소실됐다(현장 신고).
+    //   → 'done'은 fetch에 포함(취소만 제외)해 완료 환자도 잔존시킨다. 완료 건은 byStatus['done']로
+    //   라우팅되어 우측 [완료] 단독 컬럼(렌더링은 기존 renderDoneColumn)에만 표시되고, 활성 슬롯/정렬·
+    //   드래그·초과시간 알림(active 필터 4609에서 done 별도 제외)에는 영향 없다. 완료 카운트는 doneEverSet과
+    //   Set union(dedup)이라 중복 집계 없음. 조회 범위는 당일(checked_in_at gte/lte)로 한정 → 무한 누적 없음.
     const { data } = await supabase
       .from('check_ins')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
@@ -4076,7 +4081,7 @@ export default function Dashboard() {
       //   [치료사별] 탭 그룹핑 키 + "지정" 배지 판정
       .select('*, customers(name, chart_number, designated_therapist_id)')
       .eq('clinic_id', clinic.id)
-      .not('status', 'in', '("cancelled","done")')
+      .not('status', 'in', '("cancelled")')
       .in('visit_type', ['new', 'returning', 'experience'])
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
