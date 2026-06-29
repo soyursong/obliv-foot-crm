@@ -46,6 +46,10 @@ PAT='(pass(word)?|pwd|[^a-z]pw[^a-z]|login_pass)[[:space:]]*[:=][[:space:]]*['"'
 # ★ keyword→fallback 리터럴 거리를 .{0,60} 로 바운드 (.gitleaks.toml 룰과 동일). 무한 .* 면
 #   logLine("PASS", {... || "(gate-only)" }) 같은 무관 라인을 가로질러 매칭하는 오탐 발생.
 PAT_FALLBACK='(pass(word)?|pwd|[^a-z]pw[^a-z]|login_pass).{0,60}(\|\||\?\?)[[:space:]]*['"'"'"][^'"'"'"]{3,}['"'"'"]'
+# ★ DB 연결 URI 에 임베드된 평문 비번 (postgres://user:<PASS>@host) — keyword 인접 'password=' 없어
+#   PAT/PAT_FALLBACK 가 못 잡던 형태. T-20260629-foot-TESTCRED-FIXTURE-CLEAN Stage C 보강.
+#   비번 segment 에 $ { } (템플릿 변수) 배제 → env 주입 URL(`...:${pw}@`)은 미탐(오탐 방지).
+PAT_PGURL='postgres(ql)?://[^[:space:]:'"'"'"@/]+:[^[:space:]'"'"'"@/$\{\}]{3,}@'
 # 주의: process.env 는 ALLOW 에서 제외 — 폴백 평문을 가려선 안 됨. (순수 env 라인은 = 뒤가 quote 가 아니라 미탐)
 # 리터럴 = 본 스크립트/문서의 placeholder 토큰("literal" 한글) — placeholder/example 류와 동급 화이트리스트.
 # \[AC[0-9-] = foot e2e spec 의 수용기준 로그 마커 (console.log("[AC-3] ... PASS: ...")). status 라벨 PASS:/FAIL: 가
@@ -56,7 +60,7 @@ HITS=""
 for f in $FILES; do
   [ -f "$f" ] || continue
   case "$f" in node_modules/*|dist/*|*.lock|package-lock.json|*i18n.*|*/i18n/*|*/locale/*|*/locales/*) continue;; esac
-  m=$(grep -inE "$PAT|$PAT_FALLBACK" "$f" 2>/dev/null | grep -ivE "$ALLOW" || true)
+  m=$(grep -inE "$PAT|$PAT_FALLBACK|$PAT_PGURL" "$f" 2>/dev/null | grep -ivE "$ALLOW" || true)
   [ -n "$m" ] && HITS="${HITS}\n${f}:\n${m}\n"
 done
 

@@ -9,7 +9,7 @@
  * 자동 E2E(tests/e2e/T-20260522-foot-PKG-BOX-INDICATOR.spec.ts)는 동일 시드를
  *       beforeAll 에서 만들고 afterAll 에서 정리하므로 이 스크립트는 "사람 QA" 전용이다.
  *
- * 테스트 계정: test@medibuilder.com / TestPass2026!  (종로 풋센터)
+ * 테스트 계정: test@medibuilder.com / $TEST_PASSWORD  (종로 풋센터)
  *
  * 실행:  node --env-file=.env scripts/seed_pkg_box_indicator_qa.mjs
  * 정리:  node --env-file=.env scripts/seed_pkg_box_indicator_qa.mjs --rollback

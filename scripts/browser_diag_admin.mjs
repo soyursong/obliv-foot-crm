@@ -14,7 +14,7 @@
  *   supervisor 가 /admin 게이트 기능을 수동/자동 진단할 때 이 스크립트로 인증 전제를
  *   충족시키면 false browser_diag_fail 을 막을 수 있다.
  *
- * 테스트 계정: test@medibuilder.com / TestPass2026! (종로 풋센터)
+ * 테스트 계정: test@medibuilder.com / $TEST_PASSWORD (종로 풋센터)
  *
  * 실행(운영 번들 대상, 기본):
  *   node --env-file=.env scripts/browser_diag_admin.mjs

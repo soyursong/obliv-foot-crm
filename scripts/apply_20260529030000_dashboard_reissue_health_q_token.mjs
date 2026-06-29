@@ -16,17 +16,20 @@ const sql = readFileSync(
   'utf-8'
 );
 
-const DB_URLS = [
-  'postgresql://postgres:bQpgC6tYfXhp%40Hr@db.rxlomoozakkjesdqjtvd.supabase.co:5432/postgres',
-  'postgresql://postgres.rxlomoozakkjesdqjtvd:bQpgC6tYfXhp%40Hr@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
+// 자격증명 env 주입 (평문 fallback 금지 — 미설정 시 throw). T-20260629-foot-TESTCRED-FIXTURE-CLEAN
+const DB_PASSWORD = (process.env.SUPABASE_DB_PASSWORD || (() => { throw new Error('SUPABASE_DB_PASSWORD env required (no plaintext fallback)'); })());
+
+const DB_TARGETS = [
+  { host: 'db.rxlomoozakkjesdqjtvd.supabase.co', port: 5432, database: 'postgres', user: 'postgres', password: DB_PASSWORD, ssl: { rejectUnauthorized: false } },
+  { host: 'aws-0-ap-northeast-2.pooler.supabase.com', port: 5432, database: 'postgres', user: 'postgres.rxlomoozakkjesdqjtvd', password: DB_PASSWORD, ssl: { rejectUnauthorized: false } },
 ];
 
 let connected = false;
-for (const url of DB_URLS) {
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+for (const target of DB_TARGETS) {
+  const client = new Client(target);
   try {
     await client.connect();
-    console.log('✅ DB 연결 성공 →', url.split('@')[1]);
+    console.log('✅ DB 연결 성공 →', target.host);
     connected = true;
 
     await client.query(sql);
@@ -48,7 +51,7 @@ for (const url of DB_URLS) {
     await client.end();
     break;
   } catch (err) {
-    console.warn(`⚠️ 연결 실패 (${url.split('@')[1]}): ${err.message}`);
+    console.warn(`⚠️ 연결 실패 (${target.host}): ${err.message}`);
     await client.end().catch(() => {});
   }
 }

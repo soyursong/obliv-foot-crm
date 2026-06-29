@@ -120,7 +120,7 @@ PR-20260522-183034-auto-3ef53 (6h+ stale → ESCALATE) 접수 → 당일 구현 
 ### 권고
 
 - `/admin` 게이트 기능의 phase2 browser_diag 는 **인증 세션 주입 후** 수행 필수
-  (storageState `.auth/user.json` 또는 본 스크립트 또는 UI 로그인 test@medibuilder.com / TestPass2026!).
+  (storageState `.auth/user.json` 또는 본 스크립트 또는 UI 로그인 test@medibuilder.com / $TEST_PASSWORD).
 - selector 는 사이드바 nav 라벨 "대시보드"(active) 또는 E2E data-testid 사용 권장.
 
 - 코드/DB 변경 없음 (진단 + QA 헬퍼 스크립트 추가만). deploy-ready 유지.

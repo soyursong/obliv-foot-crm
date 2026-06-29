@@ -16,7 +16,7 @@
 // Usage:
 //   node scripts/T-20260611-foot-BILLDETAIL-CONSULTFEE-COPAY-REWORK_login_verify.mjs \
 //     [--url=https://obliv-foot-crm.vercel.app] \
-//     [--email=test@medibuilder.com] [--password=TestPass2026!]
+//     [--email=test@medibuilder.com] [--password=$TEST_PASSWORD]
 // Exit 0 = dashboard reached, 1 = failed.
 
 const PLAYWRIGHT_CANDIDATES = [
