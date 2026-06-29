@@ -21,8 +21,16 @@
  * 게이트 일치(AC-1)는 순수 함수 검증이라 역할·데이터와 무관하게 항상 결정적으로 통과/실패.
  */
 import { test, expect } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { loginAndWaitForDashboard } from '../helpers';
 import { canViewRrn, RRN_VIEW_ROLES } from '../../src/lib/permissions';
+
+const ROOT = process.cwd();
+const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+// 배포된 A2 게이트 + audit-log 마이그(deployed 2026-06-21 dd573763 동반)
+const RRN_DECRYPT_MIG =
+  'supabase/migrations/20260620120100_rrn_decrypt_a2_role_restore.sql';
 
 // ─────────────────────────────────────────────────────────────────────────
 // AC-1: 순수 게이트 일치 (역할·데이터 무관, 항상 실행)
@@ -46,6 +54,39 @@ test.describe('T-20260618 RRN 조회 게이트 일치 (canViewRrn ↔ prod rrn_d
       ['admin', 'consultant', 'coordinator', 'director', 'manager', 'therapist'],
     );
     console.log('[AC-1] canViewRrn 게이트 = A2 6역할 일치 OK');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUDIT no-regression (T-20260629-foot-CHART2-RRN-SPEC-ROLE-SYNC AC-2):
+//   RRN 복호(rrn_decrypt) 성공 시 phi_access_log 에 조회 이력 1행 append 가 배포 마이그에 유지됨을
+//   소스 레벨로 고정(무회귀). 향후 마이그 편집으로 audit INSERT 가 사라지면 이 블록이 FAIL.
+//   순수 파일 단언이라 역할·데이터·로그인과 무관하게 항상 결정적으로 실행(AC-1 과 동성격).
+//   ※ 프로덕션 코드/마이그 수정 아님 — 배포본을 fixture 로 읽어 불변식만 검증(ticket AC-4 준수).
+// ─────────────────────────────────────────────────────────────────────────
+test.describe('T-20260629 RRN 복호 audit 무회귀 (rrn_decrypt → phi_access_log)', () => {
+  test('AC-2: rrn_decrypt 복호 성공 경로에 phi_access_log audit INSERT(예외격리) 유지', () => {
+    expect(existsSync(join(ROOT, RRN_DECRYPT_MIG))).toBe(true);
+    const sql = read(RRN_DECRYPT_MIG);
+
+    // (1) canonical audit 테이블 phi_access_log 신설 유지 (DA C1 binding)
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS\s+public\.phi_access_log/);
+
+    // (2) rrn_decrypt 복호 성공 시 audit 1행 append 유지 — access_type='rrn_decrypt'
+    expect(sql).toMatch(/INSERT\s+INTO\s+public\.phi_access_log\b/);
+    expect(sql).toMatch(/'rrn_decrypt'/);
+
+    // (3) C2 (DA binding): audit INSERT 가 BEGIN…EXCEPTION WHEN OTHERS 로 예외격리 —
+    //     로깅 장애가 RRN 복호 READ 를 break 하지 않음(§2-6 PHI 무중단 > audit 적재).
+    //     INSERT 직후(같은 블록) EXCEPTION WHEN OTHERS 핸들러가 존재해야 한다.
+    expect(sql).toMatch(
+      /INSERT\s+INTO\s+public\.phi_access_log[\s\S]{0,240}EXCEPTION\s+WHEN\s+OTHERS/,
+    );
+
+    // (4) 게이트1(A2 6역할)과 audit 가 동일 함수 정의 안에 동거 — 복호 게이트 통과 후에만 적재.
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION\s+public\.rrn_decrypt/);
+
+    console.log('[AC-2] rrn_decrypt → phi_access_log audit INSERT(예외격리) 무회귀 OK');
   });
 });
 
