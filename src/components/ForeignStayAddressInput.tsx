@@ -9,6 +9,16 @@
 // 의존성 0 추가: 카카오 로컬은 REST fetch만 사용(SDK/위젯 npm 미설치).
 // API 키: import.meta.env.VITE_KAKAO_REST_API_KEY (없으면 자동 수기 입력 모드).
 //   ⚠ REST 키는 프론트 노출되므로 카카오 개발자콘솔에서 사용 도메인 제한 필수(무료 티어).
+//
+// ── ENV GUARD / 운영·QA 검증 노트 (T-20260629-foot-INGEST-EF-401-VERIFYJWT FIX) ──
+//   · 키 빌드타임 주입 계약: VITE_KAKAO_REST_API_KEY 미설정 시 Vite가 ''로 인라인 →
+//     아래 manualMode 초기값 true → 숙소검색 비활성·수기입력 fallback (정상 동작, 버그 아님).
+//   · 카카오 검색 활성화를 원하면 Vercel Production env에 VITE_KAKAO_REST_API_KEY 등록 후 재배포 필요.
+//     (2026-06-29 기준 prod env 미등록 → 현재 prod는 수기입력 모드로만 동작.)
+//   · QA 번들 검증 시 주의: 본 컴포넌트는 SelfCheckIn 경유 **lazy chunk**(assets/SelfCheckIn-*.js)에
+//     번들된다. 진입 index 번들만 grep하면 kakao/KakaoAK/dapi.kakao.com 0건으로 보이나 false-signal.
+//     검증은 SelfCheckIn-*.js chunk를 직접 받아 grep. 키 주입 여부는 chunk 내 apiKey 인라인값
+//     (미주입=빈문자열)으로 판별. data-search-ready="true|false"(아래 input) 로 런타임 확인 가능.
 
 import { useEffect, useId, useRef, useState } from 'react';
 
