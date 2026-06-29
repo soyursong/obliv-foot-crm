@@ -230,3 +230,4 @@
 
 | 2026-06-30 01:00 | supervisor | qa-pass + deployed | T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2 대시보드 상시 근무캘린더+인수인계 중복 블록 제거, 예약관리 유지·day-click 회귀가드 확인. | d3f908d0 | T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE |
 | 2026-06-30 01:12 | dev-foot | deploy-ready | T-20260629-foot-CHART2-IDVERIFY-PASTEL-SHRINK (canonical, RRN-IDBADGE-PASTEL-SHRINK superseded): 2번차트 신분증 확인 배지 2종 파스텔+절반. 확인필요→rose-100/400, 확인완료→firstvisit 그린 유지 크기만 절반. E2E 8 PASS. build OK. DB변경: 없음. commit 71a43063 |
+| 2026-06-29 20:05 | dev-foot | deploy-ready | T-20260629-foot-RRN-VERIFY-BADGE-PASTEL-SHRINK: '신분증 확인 필요' 배지 추가 톤다운(로즈→파스텔 핑크, className만). 사이즈는 절반 목표 기달성 유지. 빌드 OK, E2E 13 passed. DB변경: 없음. commit e7e1ac9f |
