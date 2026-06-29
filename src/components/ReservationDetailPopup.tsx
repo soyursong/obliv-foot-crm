@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
 import { generateSlots } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, formatPhoneInput, chartNoBadge } from '@/lib/format';
+import { formatPhone, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -126,7 +126,8 @@ type CreateReservationParams = {
 };
 
 // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 초진 간략메모 빠른선택 칩(발톱무좀/내성발톱) + 직접입력.
-const BRIEF_NOTE_QUICK = ['발톱무좀', '내성발톱'] as const;
+// T-20260629-foot-NEWRESV-UNIFIED-MODAL AC6(항목10 amendment): 간략메모 3종으로 확장 — 발각질케어 추가.
+const BRIEF_NOTE_QUICK = ['발톱무좀', '내성발톱', '발각질케어'] as const;
 
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────
 
@@ -219,10 +220,8 @@ export function ReservationDetailPopup({
   const [briefNote, setBriefNote] = useState('');
   const [newBookingMemo, setNewBookingMemo] = useState('');
 
-  // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-2/AC-3: (+) 예약 생성 팝업 진입동선 재구성.
-  //   빈 상태 = [신규 고객 등록]/[기존 고객 예약] 2버튼만(구 상시 검색창 + 직접등록 혼재 동선 제거).
-  //   existingSearch = [기존 고객 예약] 클릭 → 화면전환 없이 하단에 성함·연락처 검색칸 동적생성 → 선택 시 loadedMatch(패키지·치료이력) 노출.
-  const [existingSearch, setExistingSearch] = useState(false);
+  // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC1: (+) 진입동선 통합 — 구 [신규/기존] 2버튼·existingSearch 분기 제거.
+  //   통합 폼 직진(성함·연락처 입력 → 기존 매칭 시 재진 자동전환). 별도 진입상태 불필요.
 
   // 드롭다운 옵션 = 활성 consultant 만. (이름 resolve 는 비활성/타직군 포함 allStaff 전체로 — UUID 노출 방지)
   const consultants = allStaff.filter((s) => s.role === 'consultant' && s.active);
@@ -371,21 +370,24 @@ export function ReservationDetailPopup({
       setSearchValue('');
       // T-20260615-foot-RESVMGMT-REFIX-8 AC3: 빈슬롯 (+) 진입이면 클릭 슬롯의 날짜/시간 prefill,
       //   상단 '새 예약'(initial 미전달)이면 기존대로 빈 진입(null / '10:00'). 'yyyy-MM-dd' → 로컬 자정 Date(타임존 드리프트 0).
+      // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC2/AC9: 모달 내 날짜 캘린더/picker 제거 → 날짜는 진입 시 자동 주입(readOnly).
+      //   캘린더 (+) 셀 진입 = 클릭 슬롯 날짜, 상단/목록 [새 예약] 진입(initialDate 미전달) = 오늘 날짜 기본 주입(picker 부재 graceful).
       if (initialDate) {
         const [y, m, d] = initialDate.split('-').map(Number);
         setPickedDate(new Date(y, m - 1, d));
       } else {
-        setPickedDate(null);
+        const t = new Date();
+        setPickedDate(new Date(t.getFullYear(), t.getMonth(), t.getDate()));
       }
       setNewResvTime(initialTime || '10:00');
       setNewResvVisitType('returning');
       setCreatingResv(false);
-      // AC3-b: 직접 등록 입력도 매 진입 클린 리셋(stale 성함/연락처 잔존 차단).
-      setManualNew(false);
+      // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC1/AC4: 1차 팝업(신규/기존 선택) 제거 → 통합 폼 직진.
+      //   manualNew 기본 true(=신규 직접입력 폼 상시 노출). 성함·연락처 입력→기존고객 매칭 선택 시 loadedMatch(재진) 자동전환.
+      setManualNew(true);
       setNewCustName('');
       setNewCustPhone('');
-      // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-2/3/4: 진입동선·예약경로·예약등록자 클린 리셋(2버튼 빈상태 보장).
-      setExistingSearch(false);
+      // T-20260629-foot-NEWRESV-UNIFIED-MODAL: 예약경로·예약등록자 클린 리셋(통합 폼 빈상태 보장).
       setVisitRoute('');
       setRegistrarId('');
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 매 진입 클린 리셋(stale 차단).
@@ -566,359 +568,233 @@ export function ReservationDetailPopup({
   //   anchor 예약(A)이 없는 신규 진입. 별도 폼/화면 이동 폐기 — 이 팝업 안에서 검색→날짜→시간→초/재→생성 완결.
   //   메인 렌더(693~)는 reservation 에 깊게 결합 → 회귀 0 위해 손대지 않고, 격리된 compact 분기로 분리.
   //   🔒 L-002: 팝업 내 reservations.insert = 0 — submitNewReservation 이 onCreateReservation(parent 단일소스 함수)만 호출.
+  // ─── T-20260629-foot-NEWRESV-UNIFIED-MODAL (항목8·9·10 통합) ───
+  //   6/25 개편 2탄: (+)·[새 예약] 진입 시 1차 팝업(신규/기존·초/재진 선택) 제거 → 단일 통합 폼 직진(AC1).
+  //   날짜 캘린더/picker 제거 → 진입 시 자동 주입된 날짜·시간 readOnly 표시(AC2). 모달 더 컴팩트(AC5).
+  //   성함·연락처 입력 → 기존 기록 매칭(InlinePatientSearch, 재진판정 자산 재사용) 선택 시 loadedMatch(재진)·
+  //   미선택 시 신규(초진) 자동판별(AC4, L-002 보존 — 신규 판별 로직 0). 재진이면 진행중 패키지 N/N 자동로드(AC7).
+  //   🔒 L-002: 팝업 내 reservations.insert = 0 — submitNewReservation 이 onCreateReservation(parent 단일소스)만 호출.
   if (newMode && !reservation) {
     const effectiveClinicId = clinicId ?? undefined;
+    const isReturning = !!loadedMatch;
     return (
       <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
-        <DialogContent className="max-w-[560px] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
-            {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-2: 헤더 상시 검색창 제거.
-                진입은 본문 [신규 고객 등록]/[기존 고객 예약] 2버튼으로 단일화 — 검색은 [기존 고객 예약] 동선 안으로 이동. */}
-            <div className="flex items-start justify-between gap-3 pr-8">
+        {/* AC5: 컴팩트 — 폭 축소(560→440), 본문 여백 축소. */}
+        <DialogContent className="max-w-[440px] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-4 pb-2.5 border-b shrink-0">
+            <div className="flex items-center justify-between gap-3 pr-8">
               <DialogTitle className="text-base">신규 예약</DialogTitle>
+              {/* AC2: 진입 시 자동 주입된 날짜·시간 — readOnly(별도 캘린더/picker 없음). */}
+              <div className="flex items-center gap-2 text-xs tabular-nums" data-testid="newmode-datetime-readonly">
+                <span className="font-medium text-teal-800">
+                  {pickedDate ? format(pickedDate, 'M/d (E)', { locale: ko }) : '—'}
+                </span>
+                <span className="font-semibold text-teal-700">{newResvTime}</span>
+              </div>
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 min-h-0">
-            {!loadedMatch && !manualNew && !existingSearch ? (
-              // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-2: 진입 = [신규 고객 등록]/[기존 고객 예약] 2버튼만.
-              //   구 "검색창 + 시스템에 없는 신규 고객 직접 등록" 혼재 동선 제거 → 2버튼 단일 진입.
-              <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-center space-y-4" data-testid="popup-newmode-entry-choose">
-                <div className="text-sm text-muted-foreground">예약을 만들 고객을 선택하세요.</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-12 text-sm"
-                    onClick={() => {
-                      // 신규 고객 등록 = 신규 예약 = 무조건 초진(AC-6: 초/재진 토글 미노출, visit_type='new' 고정).
-                      setManualNew(true); setExistingSearch(false); setSearchValue(''); setNewResvVisitType('new');
-                    }}
-                    data-testid="btn-newmode-register-new"
-                  >
-                    신규 고객 등록
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-12 text-sm"
-                    disabled={!onCreateReservation || !effectiveClinicId}
-                    onClick={() => {
-                      // AC-3: 기존 고객 예약 → 화면전환 없이 하단 성함·연락처 검색칸 동적생성.
-                      setExistingSearch(true); setManualNew(false); setSearchValue('');
-                    }}
-                    data-testid="btn-newmode-existing-resv"
-                  >
-                    기존 고객 예약
-                  </Button>
-                </div>
-              </div>
-            ) : existingSearch && !loadedMatch ? (
-              // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-3: [기존 고객 예약] 동선 — 하단 성함·연락처 검색칸 동적생성.
-              //   입력 즉시 검색(InlinePatientSearch 'both') → 선택 시 handleSelectOtherCustomer → loadedMatch(아래 예약상세 패키지·치료이력).
-              <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-3 shadow-sm space-y-2.5" data-testid="popup-newmode-existing-search">
-                <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-medium text-teal-700">기존 고객 검색</div>
+          <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2.5 min-h-0">
+            {/* ── 고객 식별: 성함·연락처 입력 → 기존 기록 매칭 시 재진 자동전환 ── */}
+            {isReturning ? (
+              // AC4/AC7: 기존 고객 매칭 = 재진 자동판별. 패키지 N/N 자동로드 + 패키지·치료이력(read-only) 노출.
+              //   RESVPOPUP-2ZONE 자산(PackageTicketReadonlyList) 재사용 — 신규 컴포넌트 0.
+              <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3 py-2.5 shadow-sm space-y-2" data-testid="popup-newmode-customer">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold text-white" data-testid="newmode-visittype-badge">재진</span>
+                      <span className="text-sm font-semibold text-teal-800 truncate">{loadedMatch!.name}</span>
+                      {/* AC7: 진행중 패키지(최신 active 1건) N/N — loadZone1Data 선로드 자산 재사용(자동로드). */}
+                      {(() => {
+                        const activePkg = packages[0];
+                        if (!activePkg) return null;
+                        const total = activePkg.total_sessions ?? 0;
+                        const used = packageSessions.filter(
+                          (s) => s.package_id === activePkg.id && s.status === 'used',
+                        ).length;
+                        return (
+                          <span
+                            data-testid="newmode-existing-pkg-nn"
+                            title={`패키지 ${used}/${total} 회차`}
+                            className="inline-flex shrink-0 items-center rounded bg-teal-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-teal-700"
+                          >
+                            패키지 {used}/{total}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                    onClick={() => { setExistingSearch(false); setSearchValue(''); }}
-                    data-testid="btn-newmode-existing-back"
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
+                    onClick={() => {
+                      // 재진 해제 → 신규 직접입력 폼으로 복귀(manualNew=true: submit 가드 정합 보존).
+                      setLoadedMatch(null); setManualNew(true); setNewCustName(''); setNewCustPhone(''); setSearchValue('');
+                    }}
+                    data-testid="btn-newmode-existing-research"
                   >
-                    ← 처음으로
+                    다시 입력
                   </button>
                 </div>
-                <div className="text-xs text-muted-foreground">성함 또는 연락처로 검색해 고객을 선택하세요.</div>
-                {onCreateReservation && effectiveClinicId && (
-                  <InlinePatientSearch
-                    value={searchValue}
-                    onChange={setSearchValue}
-                    onSelect={handleSelectOtherCustomer}
-                    searchField="both"
-                    clinicId={effectiveClinicId}
-                    placeholder="이름 또는 연락처로 고객 검색"
-                    id="resv-popup-newmode-search"
-                  />
-                )}
+                {/* 패키지·치료이력(2번차트 양식 read-only) — loadZone1Data 로 선로드됨 */}
+                <div className="rounded-lg border border-border/50 bg-card/70 px-2.5 py-2" data-testid="popup-newmode-pkg-history">
+                  <div className="text-[10px] font-medium text-muted-foreground mb-1">패키지 · 치료이력</div>
+                  <PackageTicketReadonlyList packages={packages} sessions={packageSessions} />
+                </div>
               </div>
             ) : (
-              <>
-                {/* 신규예약 대상 — 검색 선택 고객(loadedMatch) 또는 직접 등록(manualNew: 성함+연락처 입력) */}
-                {loadedMatch ? (
-                  // AC-3: 기존 고객 선택 시 예약상세(패키지·치료이력) 노출. RESVPOPUP-2ZONE 자산(PackageTicketReadonlyList) 재사용 — 신규 팝업 0.
-                  <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-3 shadow-sm space-y-2.5" data-testid="popup-newmode-customer">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="text-[10px] font-medium text-teal-700">예약 대상(기존 고객·재진)</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-teal-800 truncate">{loadedMatch.name}</span>
-                          {/* T-20260629-foot-RESVCREATE-CUSTBOX-FIRST-REVISIT AC2/AC4/AC5: 재진 고객박스 = 성함 + 패키지 N/N.
-                              진행중 패키지(최신 active 1건) 진행회차/총회차. 산식·소스는 캘린더 재진카드(pkgProgressMap)·
-                              FIELDBATCH 활성패키지 양식과 동일: used = package_sessions status='used' count, total = total_sessions.
-                              loadZone1Data 가 packages/packageSessions 선로드 → 수동조회 불필요(AC4 자동로드). */}
-                          {(() => {
-                            const activePkg = packages[0];
-                            if (!activePkg) return null;
-                            const total = activePkg.total_sessions ?? 0;
-                            const used = packageSessions.filter(
-                              (s) => s.package_id === activePkg.id && s.status === 'used',
-                            ).length;
-                            return (
-                              <span
-                                data-testid="newmode-existing-pkg-nn"
-                                title={`패키지 ${used}/${total} 회차`}
-                                className="inline-flex shrink-0 items-center rounded bg-teal-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-teal-700"
-                              >
-                                패키지 {used}/{total}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
-                        onClick={() => { setLoadedMatch(null); setExistingSearch(true); setSearchValue(''); setVisitRoute(''); }}
-                        data-testid="btn-newmode-existing-research"
-                      >
-                        다시 검색
-                      </button>
-                    </div>
-                    {/* T-20260629-foot-RESVCREATE-CUSTBOX-FIRST-REVISIT AC2: 재진 고객박스 예약경로 — 신규 고객 폼과 동일 필드(REGISTRAR-ROUTE-FIELDS 자산)·동일 visitRoute state·submitNewReservation 위임(L-002 보존). */}
-                    <div className="flex flex-col gap-0.5 text-xs">
-                      <Label htmlFor="newmode-existing-visit-route" className="text-[10px] text-muted-foreground">예약경로</Label>
-                      <Select value={visitRoute || '__none__'} onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}>
-                        <SelectTrigger id="newmode-existing-visit-route" className="h-9 w-full text-sm" data-testid="newmode-existing-visit-route-select">
-                          <SelectValue placeholder="예약경로 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                          {VISIT_ROUTE_OPTIONS.map((opt) => (
-                            <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {/* 패키지·치료이력(2번차트 양식 read-only) — loadZone1Data 로 packages/packageSessions 선로드됨 */}
-                    <div className="rounded-lg border border-border/50 bg-card/70 px-2.5 py-2" data-testid="popup-newmode-pkg-history">
-                      <div className="text-[10px] font-medium text-muted-foreground mb-1">패키지 · 치료이력</div>
-                      <PackageTicketReadonlyList packages={packages} sessions={packageSessions} />
-                    </div>
-                  </div>
-                ) : (
-                  // 직접 등록(신규 고객) — 성함 + 연락처 + 예약경로/예약등록자(AC-4). 연락처는 기존 포맷터(하이픈), parent 가 E.164 정규화.
-                  <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-3 shadow-sm space-y-2.5" data-testid="popup-newmode-manual-form">
-                    <div className="flex items-center justify-between">
-                      <div className="text-[10px] font-medium text-teal-700">신규 고객 등록</div>
-                      <button
-                        type="button"
-                        className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                        onClick={() => { setManualNew(false); setNewCustName(''); setNewCustPhone(''); setVisitRoute(''); setRegistrarId(''); setBriefNote(''); setNewBookingMemo(''); }}
-                        data-testid="btn-newmode-manual-cancel"
-                      >
-                        ← 처음으로
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Label htmlFor="newmode-cust-name" className="w-12 shrink-0 text-muted-foreground">성함</Label>
-                      <input
-                        id="newmode-cust-name"
-                        type="text"
-                        value={newCustName}
-                        onChange={(e) => setNewCustName(e.target.value)}
-                        placeholder="고객 성함"
-                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        data-testid="newmode-cust-name-input"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Label htmlFor="newmode-cust-phone" className="w-12 shrink-0 text-muted-foreground">연락처</Label>
-                      <input
-                        id="newmode-cust-phone"
-                        type="tel"
-                        inputMode="numeric"
-                        value={newCustPhone}
-                        onChange={(e) => setNewCustPhone(formatPhoneInput(e.target.value))}
-                        placeholder="010-1234-5678"
-                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        data-testid="newmode-cust-phone-input"
-                      />
-                    </div>
-                    {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로 / 예약등록자 — 연락처 입력칸 하단 배치.
-                        필드·마스터는 REGISTRAR-ROUTE-FIELDS(deployed) 재사용(위치만 이동, 신규 스키마 0).
-                        T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [9]: 두 필드 자동줄바꿈 제거 → 한 줄(2칸 grid) 컴팩트 표기.
-                          라벨을 셀렉트 위 작은 캡션으로 올려 가로폭 절약(태블릿 좁은 폭에서도 1행 유지). */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <Label htmlFor="newmode-visit-route" className="text-[10px] text-muted-foreground">예약경로</Label>
-                        <Select value={visitRoute || '__none__'} onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}>
-                          <SelectTrigger id="newmode-visit-route" className="h-9 w-full text-sm" data-testid="newmode-visit-route-select">
-                            <SelectValue placeholder="예약경로 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                            {VISIT_ROUTE_OPTIONS.map((opt) => (
-                              <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <Label htmlFor="newmode-registrar" className="text-[10px] text-muted-foreground">예약등록자</Label>
-                        <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}>
-                          <SelectTrigger id="newmode-registrar" className="h-9 w-full text-sm" data-testid="newmode-registrar-select">
-                            {/* T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL: 선택값을 value→이름으로 직접 해석(UUID 비노출). */}
-                            <SelectValue placeholder="예약등록자 선택">
-                              {(val) => resolveRegistrarLabel(val)}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                            {registrars.map((r) => (
-                              <SelectItem key={r.id} value={r.id} className="text-xs">
-                                {r.group_name ? `[${r.group_name}] ${r.name}` : r.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(초진 주증상) — 발톱무좀/내성발톱 빠른선택 + 직접입력.
-                        reservations.brief_note(W2 전용 컬럼). 예약메모(booking_memo)와 별개 칸(오버로드 금지). */}
-                    <div className="flex flex-col gap-1 text-xs">
-                      <Label htmlFor="newmode-brief-note" className="text-[10px] text-muted-foreground">간략메모</Label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {BRIEF_NOTE_QUICK.map((label) => {
-                          const active = briefNote.trim() === label;
-                          return (
-                            <button
-                              key={label}
-                              type="button"
-                              onClick={() => setBriefNote((prev) => (prev.trim() === label ? '' : label))}
-                              className={cn(
-                                'h-8 rounded-md border px-3 text-sm font-medium transition-colors',
-                                active
-                                  ? 'border-teal-600 bg-teal-100 text-teal-700'
-                                  : 'border-input bg-background hover:bg-muted',
-                              )}
-                              data-testid={`newmode-brief-quick-${label}`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <input
-                        id="newmode-brief-note"
-                        type="text"
-                        value={briefNote}
-                        onChange={(e) => setBriefNote(e.target.value)}
-                        placeholder="발톱무좀 · 내성발톱 또는 직접입력"
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        data-testid="newmode-brief-note-input"
-                      />
-                    </div>
-                    {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item10): 예약메모(booking_memo) — 간략메모와 별개 칸. */}
-                    <div className="flex flex-col gap-1 text-xs">
-                      <Label htmlFor="newmode-booking-memo" className="text-[10px] text-muted-foreground">예약메모</Label>
-                      <input
-                        id="newmode-booking-memo"
-                        type="text"
-                        value={newBookingMemo}
-                        onChange={(e) => setNewBookingMemo(e.target.value)}
-                        placeholder="예약 관련 메모 (선택)"
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        data-testid="newmode-booking-memo-input"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* 예약 캘린더 — 날짜 선택 */}
-                <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm">
-                  <SectionHeader accent="teal">예약 캘린더</SectionHeader>
-                  <MiniMonthCalendar
-                    value={pickedDate}
-                    onSelect={(d) => setPickedDate((prev) => (prev && d.getTime() === prev.getTime() ? null : d))}
-                    markedDates={[]}
-                  />
-                  {effectiveClinicId && <ReservationDayTimeslotPanel date={pickedDate} clinicId={effectiveClinicId} />}
+              // AC4: 성함·연락처 입력 폼 — 기존 기록 매칭(InlinePatientSearch) 선택 시 재진 전환, 미매칭=신규(초진).
+              <div className="rounded-xl border border-teal-300 bg-teal-50/60 px-3 py-2.5 shadow-sm space-y-2" data-testid="popup-newmode-manual-form">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex shrink-0 items-center rounded-full bg-slate-500 px-1.5 py-0.5 text-[10px] font-semibold text-white" data-testid="newmode-visittype-badge">신규(초진)</span>
+                  <span className="text-[10px] text-muted-foreground">성함·연락처에 기존 기록 있으면 자동으로 재진 전환</span>
                 </div>
-
-                {/* 신규예약 만들기 폼 (메인 렌더의 new-mode 폼과 동일 입력·핸들러 재사용) */}
-                <div className="rounded-xl border border-teal-300 bg-teal-50/50 px-3.5 py-3 shadow-sm" data-testid="popup-newmode-form">
-                  {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-e: 신규 고객 등록 항목명 "신규 예약"(구 "신규 예약 만들기 - 신규고객"). 기존 고객(loadedMatch)은 대상자명 유지. */}
-                  <SectionHeader accent="teal">{loadedMatch ? `신규예약 만들기 — ${loadedMatch.name}` : '신규 예약'}</SectionHeader>
-                  <div className="space-y-2.5">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="w-12 shrink-0 text-muted-foreground">날짜</span>
-                      {pickedDate ? (
-                        <span className="font-medium text-teal-800">{format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko })}</span>
-                      ) : (
-                        <span className="font-medium text-amber-600">위 캘린더에서 날짜를 선택하세요</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Label htmlFor="newmode-time-entry" className="w-12 shrink-0 text-muted-foreground">시간</Label>
-                      <select
-                        id="newmode-time-entry"
-                        value={newResvTime}
-                        onChange={(e) => setNewResvTime(e.target.value)}
-                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        data-testid="newmode-time-select-entry"
-                      >
-                        {newResvTimeOptions.map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-f: 신규 고객 등록(manualNew)은 무조건 초진 →
-                        초/재진 토글 미노출(visit_type='new' 자동). 기존 고객(loadedMatch)은 재진 가능 → 토글 유지. */}
-                    {loadedMatch && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="w-12 shrink-0 text-muted-foreground">유형</span>
-                        <div className="grid flex-1 grid-cols-2 gap-2">
-                          {(['new', 'returning'] as const).map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              onClick={() => setNewResvVisitType(v)}
-                              className={cn(
-                                'h-9 rounded-md border text-sm font-medium',
-                                newResvVisitType === v
-                                  ? 'border-teal-600 bg-teal-50 text-teal-700'
-                                  : 'border-input hover:bg-muted',
-                              )}
-                              data-testid={`newmode-visit-${v}-entry`}
-                            >
-                              {VISIT_TYPE_KO[v]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      disabled={
-                        creatingResv ||
-                        !pickedDate ||
-                        // AC3-b: 직접 등록 모드는 성함+연락처 미입력 시 생성 차단(빈 고객 INSERT 방지).
-                        (!loadedMatch && manualNew && (!newCustName.trim() || !newCustPhone.trim()))
-                      }
-                      onClick={submitNewReservation}
-                      data-testid="btn-newmode-create-entry"
-                    >
-                      {/* T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW 2-e: 신규 고객 버튼명 "신규 예약 생성"(구 "신규 고객님 신규예약 생성"). 기존 고객은 대상자명 유지. */}
-                      {creatingResv ? '생성 중…' : loadedMatch ? `${loadedMatch.name}님 신규예약 생성` : '신규 예약 생성'}
-                    </Button>
+                {/* 성함 — InlinePatientSearch(name): 입력 시 기존 고객 후보 노출, 선택 시 재진 자동판별(handleSelectOtherCustomer). */}
+                <div className="flex items-center gap-2 text-xs">
+                  <Label htmlFor="newmode-cust-name" className="w-12 shrink-0 text-muted-foreground">성함</Label>
+                  <div className="flex-1 min-w-0">
+                    <InlinePatientSearch
+                      value={newCustName}
+                      onChange={setNewCustName}
+                      onSelect={handleSelectOtherCustomer}
+                      searchField="name"
+                      clinicId={effectiveClinicId}
+                      placeholder="고객 성함"
+                      id="newmode-cust-name"
+                    />
                   </div>
                 </div>
-              </>
+                {/* 연락처 — InlinePatientSearch(phone): 하이픈 자동포맷 + 기존 고객 매칭. parent 가 E.164 정규화. */}
+                <div className="flex items-center gap-2 text-xs">
+                  <Label htmlFor="newmode-cust-phone" className="w-12 shrink-0 text-muted-foreground">연락처</Label>
+                  <div className="flex-1 min-w-0">
+                    <InlinePatientSearch
+                      value={newCustPhone}
+                      onChange={setNewCustPhone}
+                      onSelect={handleSelectOtherCustomer}
+                      searchField="phone"
+                      clinicId={effectiveClinicId}
+                      placeholder="010-1234-5678"
+                      id="newmode-cust-phone"
+                      inputMode="numeric"
+                    />
+                  </div>
+                </div>
+              </div>
             )}
+
+            {/* AC5: 예약경로 / 예약등록자 — 한 줄(2칸 grid) 배치. REGISTRAR-ROUTE-FIELDS 자산 재사용(신규 스키마 0). */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <Label htmlFor="newmode-visit-route" className="text-[10px] text-muted-foreground">예약경로</Label>
+                <Select value={visitRoute || '__none__'} onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}>
+                  <SelectTrigger id="newmode-visit-route" className="h-9 w-full text-sm" data-testid="newmode-visit-route-select">
+                    <SelectValue placeholder="예약경로 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                    {/* AC3: 예약경로 = TM/네이버/인콜/워크인/지인소개(VISIT_ROUTE_OPTIONS, RESV-ROUTE-AUTOCLASS 정합). */}
+                    {VISIT_ROUTE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <Label htmlFor="newmode-registrar" className="text-[10px] text-muted-foreground">예약등록자</Label>
+                <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}>
+                  <SelectTrigger id="newmode-registrar" className="h-9 w-full text-sm" data-testid="newmode-registrar-select">
+                    {/* AC8: T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL — 선택값을 value→이름으로 해석(UUID 비노출). */}
+                    <SelectValue placeholder="예약등록자 선택">
+                      {(val) => resolveRegistrarLabel(val)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                    {registrars.map((r) => (
+                      <SelectItem key={r.id} value={r.id} className="text-xs">
+                        {r.group_name ? `[${r.group_name}] ${r.name}` : r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* AC6: 간략메모 — 발톱무좀/내성발톱/발각질케어 3종 체크박스 + 직접입력(brief_note). */}
+            <div className="flex flex-col gap-1 text-xs">
+              <Label htmlFor="newmode-brief-note" className="text-[10px] text-muted-foreground">간략메모</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {BRIEF_NOTE_QUICK.map((label) => {
+                  const active = briefNote.trim() === label;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setBriefNote((prev) => (prev.trim() === label ? '' : label))}
+                      className={cn(
+                        'h-8 rounded-md border px-3 text-sm font-medium transition-colors',
+                        active
+                          ? 'border-teal-600 bg-teal-100 text-teal-700'
+                          : 'border-input bg-background hover:bg-muted',
+                      )}
+                      data-testid={`newmode-brief-quick-${label}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <input
+                id="newmode-brief-note"
+                type="text"
+                value={briefNote}
+                onChange={(e) => setBriefNote(e.target.value)}
+                placeholder="발톱무좀 · 내성발톱 · 발각질케어 또는 직접입력"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                data-testid="newmode-brief-note-input"
+              />
+            </div>
+
+            {/* AC6: 예약메모(booking_memo) — 간략메모와 별개 칸. */}
+            <div className="flex flex-col gap-1 text-xs">
+              <Label htmlFor="newmode-booking-memo" className="text-[10px] text-muted-foreground">예약메모</Label>
+              <input
+                id="newmode-booking-memo"
+                type="text"
+                value={newBookingMemo}
+                onChange={(e) => setNewBookingMemo(e.target.value)}
+                placeholder="예약 관련 메모 (선택)"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                data-testid="newmode-booking-memo-input"
+              />
+            </div>
+
+            {/* AC2: 날짜·시간은 진입 시 자동 주입(readOnly) — 모달 내 캘린더/picker 없음. */}
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs" data-testid="newmode-datetime-row">
+              <span className="text-muted-foreground">예약일시</span>
+              <span className="font-medium text-teal-800 tabular-nums">
+                {pickedDate ? format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko }) : '—'} {newResvTime}
+              </span>
+            </div>
           </div>
 
-          <DialogFooter className="px-6 py-3 border-t shrink-0">
+          <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2">
             <Button variant="outline" size="sm" onClick={onClose}>닫기</Button>
+            <Button
+              size="sm"
+              disabled={
+                creatingResv ||
+                !pickedDate ||
+                // 신규(미매칭) 모드는 성함+연락처 미입력 시 생성 차단(빈 고객 INSERT 방지).
+                (!loadedMatch && (!newCustName.trim() || !newCustPhone.trim()))
+              }
+              onClick={submitNewReservation}
+              data-testid="btn-newmode-create-entry"
+            >
+              {creatingResv ? '생성 중…' : isReturning ? `${loadedMatch!.name}님 예약 생성` : '신규 예약 생성'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1282,8 +1158,7 @@ export function ReservationDetailPopup({
     setManualNew(false);
     setNewCustName('');
     setNewCustPhone('');
-    // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-2/3/4: 진입동선·예약경로·예약등록자 클린 리셋.
-    setExistingSearch(false);
+    // T-20260629-foot-NEWRESV-UNIFIED-MODAL: 예약경로·예약등록자 클린 리셋.
     setVisitRoute('');
     setRegistrarId('');
     // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 클린 리셋.
