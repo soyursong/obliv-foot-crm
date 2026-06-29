@@ -145,9 +145,10 @@ const NAV_ITEMS: {
   { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'director', 'part_lead', 'tm'], requiresOpsAuthority: true },
   // AC-6: 매출집계 미노출 유지 / MUNJIEUN B2①: +director. ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director flag 필요.
   { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager', 'director'], requiresOpsAuthority: true },
-  // T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI(심평원 표준 청구명세서 export). 청구/금융·PHI → admin/manager/director.
-  //   nav roles = route(App.tsx /admin/edi-export) roles 패리티(NAV-BOUNCE 차단). requiresOpsAuthority 없음(운영 청구 작업).
-  { to: '/admin/edi-export', label: '보험청구·EDI', icon: FileText, roles: ['admin', 'manager', 'director'] },
+  // T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI(심평원 표준 청구명세서 export).
+  //   QA fix MSG-20260629-222432(AC-8): DA 계약 "foot MVP=전원 open, 하드코딩 권한제한 금지" 준수 → roles 미지정(전직원, history/handover 패턴).
+  //   route(App.tsx /admin/edi-export) RoleGuard 제거와 패리티(메뉴 보임=route 통과, NAV-BOUNCE 차단). PHI/금융 보호=RLS(clinic_id)·anon REVOKE 유지.
+  { to: '/admin/edi-export', label: '보험청구·EDI', icon: FileText },
   // MUNJIEUN B2①: 계정관리 +director(대표원장 셀프 직원계정 운영). ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director flag 필요(봉직의 계정관리 배제).
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin', 'director'], requiresOpsAuthority: true },
 ];
