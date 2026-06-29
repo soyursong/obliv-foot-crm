@@ -741,16 +741,11 @@ export default function MedicalChartPanel({
   //   AC-1 기본=현재(최신) 메모만 / AC-2 '이전 이력 보기' 토글 / AC-4 GUARD: MEMO-HISTORY(5/20) 데이터·열람 보존(표시 기본값만 변경).
   const [treatMemoHistoryOpen, setTreatMemoHistoryOpen] = useState(false);
   const [visitHistory, setVisitHistory] = useState<VisitHistoryEntry[]>([]);
-  // T-20260609-foot-VISITLOG-EMPTYROW-HIDE: 렌더 전용 필터 — 진료종류·치료메모·진료메모가 모두 빈
-  // 방문(체크인) 행은 표시하지 않는다. 원본 visitHistory(쿼리/정렬/그룹핑)는 무변경.
-  const visibleVisitHistory = useMemo(
-    () =>
-      visitHistory.filter((ci) => {
-        const treatDetails = (ci.treatment_memo?.details ?? '').trim();
-        return !!ci.treatment_kind || !!treatDetails || !!ci.doctor_note?.trim();
-      }),
-    [visitHistory],
-  );
+  // T-20260630-foot-VISITLOG-CHECKIN-AS-VISIT: "접수 = 방문" (reporter 문지은 대표원장 직접 confirm, ts:1782772863.276119).
+  // 접수(check_ins) 레코드가 있으면 치료 내용(진료종류/치료메모/진료메모)이 없어도 방문이력 1행으로 표시한다.
+  // 구 정책 T-20260609-foot-VISITLOG-EMPTYROW-HIDE(빈-내용 행 숨김)의 empty-content 필터를 완화(policy_superseded).
+  // 전체 0건 empty state(아래 "이전 방문 기록이 없어요")는 유지. 원본 visitHistory(쿼리/정렬/limit 30)는 무변경.
+  const visibleVisitHistory = visitHistory;
   // T-20260614-foot-MEDCHART-AUDIT-NOISE-VISIBILITY: 진료의 "최초 지정(생성)" 이벤트는 변경이 아님 → 표시에서 제외.
   // 적재(medical_chart_signer_audit append-only, L1209)는 무변경 — 화면 필터만.
   // 실제 변경(old·new 둘 다 non-null & old≠new)만 노출. old가 null/빈값/'(없음)'이면 생성행으로 보고 숨김.
@@ -4254,6 +4249,8 @@ export default function MedicalChartPanel({
                             const treatDetails = (ci.treatment_memo?.details ?? '').trim();
                             const hasTreat = !!treatDetails;
                             const hasDoc = !!ci.doctor_note?.trim();
+                            // T-20260630-foot-VISITLOG-CHECKIN-AS-VISIT: 진료종류·치료메모·진료메모가 모두 빈 접수-only 행 → "접수" 표기.
+                            const isCheckinOnly = !ci.treatment_kind && !hasTreat && !hasDoc;
                             const isCancelled = ci.status === 'cancelled';
                             return (
                               <div
@@ -4285,7 +4282,9 @@ export default function MedicalChartPanel({
                                       <p className="text-[10px] text-gray-700 line-clamp-2 whitespace-pre-wrap mt-0.5">{ci.doctor_note}</p>
                                     </div>
                                   )}
-                                  {/* T-20260609-foot-VISITLOG-EMPTYROW-HIDE: 빈 행은 visibleVisitHistory 단계에서 제외되어 여기 도달 불가 */}
+                                  {isCheckinOnly && (
+                                    <p className="text-[11px] text-gray-400">접수</p>
+                                  )}
                                 </div>
                               </div>
                             );
