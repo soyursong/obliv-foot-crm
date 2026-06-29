@@ -415,7 +415,9 @@ test.describe('S07 PAYMENT-PACKAGE-INTEGRATED — DeskPaymentMenu 4버튼', () =
     if (custId) await client.from('customers').delete().eq('id', custId);
   });
 
-  test('S07: payment_waiting → DeskPaymentMenu 4버튼 렌더링', async ({ page }) => {
+  // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: DeskPaymentMenu('수납 처리' 카드)는 1번차트에서 제거됨.
+  //   S07 은 '4버튼 렌더' 단언에서 '제거 회귀 가드'로 rebase. (상세: T-20260629-...-REMOVE.spec.ts)
+  test('S07: payment_waiting → DeskPaymentMenu 제거 회귀 가드(미노출)', async ({ page }) => {
     if (!ciId) { test.skip(true, 'SERVICE_KEY 없음'); return; }
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) { test.skip(true, '로그인 실패'); return; }
@@ -429,14 +431,14 @@ test.describe('S07 PAYMENT-PACKAGE-INTEGRATED — DeskPaymentMenu 4버튼', () =
     await card.click();
     await page.waitForTimeout(800);
 
-    // DeskPaymentMenu 4버튼
-    await expect(page.locator('[data-testid="desk-payment-menu"]')).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator('[data-testid="desk-menu-session-deduct"]')).toBeVisible({ timeout: 2_000 });
-    await expect(page.locator('[data-testid="desk-menu-new-package"]')).toBeVisible({ timeout: 2_000 });
-    await expect(page.locator('[data-testid="desk-menu-single-payment"]')).toBeVisible({ timeout: 2_000 });
-    await expect(page.locator('[data-testid="desk-menu-insurance-doc"]')).toBeVisible({ timeout: 2_000 });
+    // DeskPaymentMenu + 하위 버튼은 더 이상 렌더되지 않아야 함
+    await expect(page.locator('[data-testid="desk-payment-menu"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="desk-menu-session-deduct"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="desk-menu-new-package"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="desk-menu-single-payment"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="desk-menu-insurance-doc"]')).toHaveCount(0);
 
-    await page.screenshot({ path: 'test-results/screenshots/STAB-S07-desk-menu.png' });
+    await page.screenshot({ path: 'test-results/screenshots/STAB-S07-desk-menu-removed.png' });
   });
 });
 

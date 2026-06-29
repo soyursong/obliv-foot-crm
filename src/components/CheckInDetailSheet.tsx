@@ -43,8 +43,7 @@ import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/componen
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
-// T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
-import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
+// T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 1번차트 건보공단 실시간 자격조회 row 제거 (NhisLookupPanel import 삭제)
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 
@@ -535,7 +534,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260522-foot-SPACE-AUTOROUTE: selectedRoom/assigningRoom/rooms/dailyRoomLog 제거 (수동배정 폐지)
   const [roomLogs, setRoomLogs] = useState<RoomLog[]>([]);
   // T-20260515-foot-KENBO-API-NATIVE: 고객 건보 조회 동의 여부
-  const [hiraConsent, setHiraConsent] = useState(false);
+  // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 row 제거로 hiraConsent state 삭제
   // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 고객 상세 생년월일(YYYY-MM-DD).
   // PHI: rrn 복호화는 RPC(fn_customer_birthdates) 서버측만, birth_date만 수신.
   const [birthDateDisplay, setBirthDateDisplay] = useState<string | null>(null);
@@ -658,7 +657,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       setCustomerMemo(custData?.customer_memo ?? '');
       setVisitRoute(custData?.visit_route ?? '');
       setEtcMemo(custData?.memo ?? '');
-      setHiraConsent(custData?.hira_consent ?? false);
+      // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
       // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 서버 파생 (birth_date 우선, 없으면 rrn 세기코드)
       supabase
         .rpc('fn_customer_birthdates', { p_clinic_id: clinicId, p_ids: [customerId] })
@@ -804,7 +803,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setCustomerMemo(custData?.customer_memo ?? '');
     setVisitRoute(custData?.visit_route ?? '');
     setEtcMemo(custData?.memo ?? '');
-    setHiraConsent(custData?.hira_consent ?? false);
+    // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
     // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
@@ -1279,14 +1278,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <option value="지인소개">지인소개</option>
                 </select>
               </div>
-              {/* T-20260523-foot-KENBO-UI-MOVE: 건보공단 자격조회 — 예약메모 바로 위 */}
-              {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 (customerMode) */}
-              <NhisLookupPanel
-                customerId={customerMode.customerId}
-                clinicId={customerMode.clinicId}
-                hiraConsent={hiraConsent}
-                onGradeUpdated={load}
-              />
+              {/* T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE AC-2: 건보공단 실시간 자격조회 row 제거 (customerMode) */}
               {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
               {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
               {/* T-20260521-foot-WALKIN-MEMO-GAP: customerMode 컨텍스트엔 checkInId 불필요 (customerId 항상 있음) */}
@@ -1536,31 +1528,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // ── Stage 감지 (4/30 표준 v2 기준) ──
   const isConsultStage =
     checkIn.status === 'consultation' || checkIn.status === 'consult_waiting';
-  const isDeskStage = checkIn.status === 'payment_waiting';
+  // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: '수납 처리' 카드(isDeskStage 게이트) 제거로 isDeskStage 삭제
 
-  /**
-   * 데스크 통합 메뉴에서 "패키지 회차 차감" 클릭 시:
-   * 잔여 회차가 있는 첫 번째 패키지를 자동 선택해 SessionUseInSheetDialog 오픈.
-   */
-  const openBestFitSessionUse = () => {
-    const pkg = packages.find((p) => {
-      const rem = pkgRemaining.get(p.id);
-      return rem && rem.total_remaining > 0;
-    });
-    if (!pkg) {
-      toast.error('잔여 회차가 없습니다');
-      return;
-    }
-    const rem = pkgRemaining.get(pkg.id)!;
-    const firstType = (
-      ['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const
-    ).find((t) => (rem[SESSION_TYPE_TO_REM_KEY[t]] as number) > 0) ?? ('unheated_laser' as SessionType);
-    setSessionUsePkg(pkg);
-    setSessionUseRemaining(rem);
-    setSessionUseType(firstType);
-    setSessionUseTreatmentIdx(-1); // 데스크 메뉴 진입: 특정 시술 항목과 연결하지 않음
-    setSessionUseOpen(true);
-  };
+  // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: '수납 처리' 카드 제거에 따라 전용 헬퍼 openBestFitSessionUse 삭제
+  //   (패키지 회차 차감은 진료차트(2번차트) C2-PKG-TICKET-TABLE + 고객관리 1번차트 '시술 항목 관리'에서 접근)
 
   return (
     <Sheet open={!!checkIn} onOpenChange={(o) => { if (!o) requestClose(); }}>
@@ -1739,21 +1710,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           {/* T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER AC-3: 방문경로/예약메모/고객메모/기타메모 블록은
               패키지 섹션 아래로 이동됨(섹션 순서 재정렬). 실제 렌더는 패키지 블록 직후 참조. */}
 
-          {/* ── [NEW] 데스크 통합 수납 메뉴 (payment_waiting 전용) ─ T-20260430-foot-DESK-PAYMENT-MENU ── */}
-          {isDeskStage && (
-            <>
-              <Separator />
-              <DeskPaymentMenu
-                packages={packages}
-                pkgRemaining={pkgRemaining}
-                onSinglePayment={() => onPayment(checkIn)}
-                onSessionUse={openBestFitSessionUse}
-                onScrollToDoc={() =>
-                  docPrintRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
-              />
-            </>
-          )}
+          {/* T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE AC-1: '수납 처리' 카드(패키지 회차 차감/진료비 결제/보험청구 서류) 제거.
+              결제는 하단 '결제 등록' 버튼, 회차 차감은 진료차트(2번차트), 보험청구 서류는 하단 '서류 발행' 패널에서 접근. */}
 
           {/* ── 패키지 생성은 고객차트(미니홈피창)에서 진행 (T-20260506-foot-CHART-SIMPLE-REVAMP) ── */}
           {/* T-20260522-foot-CHART1-TRIM AC-1: 패키지 잔여회차 요약 제거 (패키지 탭 중복) */}
@@ -1893,16 +1851,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     </select>
                   </div>
                 )}
-                {/* T-20260523-foot-KENBO-UI-MOVE: 건보공단 자격조회 — 예약메모 바로 위 */}
-                {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 */}
-                {checkIn.customer_id && (
-                  <NhisLookupPanel
-                    customerId={checkIn.customer_id}
-                    clinicId={checkIn.clinic_id}
-                    hiraConsent={hiraConsent}
-                    onGradeUpdated={load}
-                  />
-                )}
+                {/* T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE AC-2: 건보공단 실시간 자격조회 row 제거 (대시보드 1번차트) */}
                 {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
                 {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
                 {/* T-20260521-foot-WALKIN-MEMO-GAP: customer_id=null 수기 워크인에 checkInId 3순위 fallback */}
@@ -2177,113 +2126,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   );
 }
 
-// ─── 서브 컴포넌트: 데스크 통합 수납 메뉴 (payment_waiting 전용) ─────────────
-//   3가지 수납 작업을 한 화면에 통합
-//   1) 패키지 회차 차감  2) 진료비 결제  3) 보험청구 서류 발급
-
-interface DeskPaymentMenuProps {
-  packages: PackageType[];
-  pkgRemaining: Map<string, PackageRemaining>;
-  onSinglePayment: () => void;
-  onSessionUse: () => void;
-  onScrollToDoc: () => void;
-}
-
-function DeskPaymentMenu({
-  packages,
-  pkgRemaining,
-  onSinglePayment,
-  onSessionUse,
-  onScrollToDoc,
-}: DeskPaymentMenuProps) {
-  const hasActiveSessions = packages.some((pkg) => {
-    const rem = pkgRemaining.get(pkg.id);
-    return rem && rem.total_remaining > 0;
-  });
-
-  const menuItems = [
-    {
-      testid: 'desk-menu-session-deduct',
-      icon: <Package className="h-4 w-4 text-teal-600 shrink-0" />,
-      label: '패키지 회차 차감',
-      sub: hasActiveSessions ? '잔여 회차 소진 처리' : '잔여 없음',
-      borderColor: 'border-teal-300',
-      hoverBg: 'hover:bg-teal-50/80',
-      labelColor: 'text-teal-900',
-      subColor: 'text-teal-600',
-      disabled: !hasActiveSessions,
-      onClick: hasActiveSessions ? onSessionUse : undefined,
-    },
-    {
-      testid: 'desk-menu-single-payment',
-      icon: <CreditCard className="h-4 w-4 text-blue-600 shrink-0" />,
-      label: '진료비 결제',
-      sub: '현장 진료비 결제',
-      borderColor: 'border-blue-300',
-      hoverBg: 'hover:bg-blue-50/80',
-      labelColor: 'text-blue-900',
-      subColor: 'text-blue-600',
-      disabled: false,
-      onClick: onSinglePayment,
-    },
-    {
-      testid: 'desk-menu-insurance-doc',
-      icon: <FileText className="h-4 w-4 text-amber-600 shrink-0" />,
-      label: '보험청구 서류',
-      sub: '소견서·진단서 발급',
-      borderColor: 'border-amber-300',
-      hoverBg: 'hover:bg-amber-50/80',
-      labelColor: 'text-amber-900',
-      subColor: 'text-amber-600',
-      disabled: false,
-      onClick: onScrollToDoc,
-    },
-  ] as const;
-
-  return (
-    <div
-      data-testid="desk-payment-menu"
-      className="rounded-xl border-2 border-teal-500 bg-gradient-to-br from-teal-50 to-emerald-50 p-3 space-y-2.5 shadow-sm"
-    >
-      {/* 헤더 */}
-      <div className="flex items-center gap-2">
-        <CreditCard className="h-4 w-4 text-teal-700" />
-        <span className="text-sm font-bold text-teal-800">수납 처리</span>
-        <span className="ml-auto text-[11px] bg-teal-600 text-white rounded-full px-2 py-0.5 font-medium">
-          수납대기
-        </span>
-      </div>
-
-      {/* 3버튼 세로 목록 */}
-      <div className="grid grid-cols-1 gap-2">
-        {menuItems.map((item) => (
-          <button
-            key={item.testid}
-            data-testid={item.testid}
-            disabled={item.disabled}
-            onClick={item.onClick}
-            className={cn(
-              'rounded-xl border-2 bg-white p-3 text-left flex flex-col gap-1 transition min-h-[72px] shadow-sm',
-              item.disabled
-                ? 'border-gray-200 bg-gray-50/80 opacity-50 cursor-not-allowed'
-                : cn(item.borderColor, item.hoverBg, 'active:scale-[0.98] cursor-pointer'),
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              {item.icon}
-              <span className={cn('text-[11px] font-bold leading-tight', item.labelColor)}>
-                {item.label}
-              </span>
-            </div>
-            <span className={cn('text-[10px] leading-tight', item.subColor)}>
-              {item.sub}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
+// T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE AC-1: DeskPaymentMenu('수납 처리' 카드) 컴포넌트 제거.
+//   3개 하위 기능 진입점은 모두 다른 화면에 존재 — 결제(시트 하단 '결제 등록'), 회차 차감(진료차트 C2-PKG-TICKET-TABLE),
+//   보험청구 서류(시트 하단 '서류 발행' DocumentPrintPanel). 유일 진입점 아님 확인 후 제거.
 
 // ─── 서브 컴포넌트: 시술 선택 모달 ──────────────────────────────────────────
 
