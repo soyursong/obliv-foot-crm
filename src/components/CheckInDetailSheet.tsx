@@ -26,7 +26,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -46,6 +45,8 @@ import { useChart } from '@/lib/chartContext';
 // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 1번차트 건보공단 실시간 자격조회 row 제거 (NhisLookupPanel import 삭제)
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
+// T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: 고객메모/기타메모 인라인+[추가]+누적 통일
+import { CustomerColumnMemo } from '@/components/CustomerColumnMemo';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
@@ -1102,37 +1103,45 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
 
-  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (customers.customer_memo)
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customerMode fallback 추가
-  const saveCustomerMemo = async () => {
+  // T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: textarea+개별저장 → 인라인+[추가]+누적(append-only).
+  //   한 줄을 컬럼에 \n append 후 즉시 persist (예약메모와 동작 일관). DB 스키마 변경 없음.
+  const appendCustomerMemo = async (line: string) => {
     const customerId = checkIn?.customer_id ?? customerMode?.customerId;
     if (!customerId) return;
+    const base = customerMemo.trim();
+    const newValue = base ? `${base}\n${line}` : line;
     setSavingCustomerMemo(true);
     const { error } = await supabase
       .from('customers')
-      .update({ customer_memo: customerMemo.trim() || null })
+      .update({ customer_memo: newValue })
       .eq('id', customerId);
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }
-    toast.success('고객메모 저장됨');
+    setCustomerMemo(newValue);
+    toast.success('고객메모 추가됨');
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     // AC-8 쌍방연동 — 2번차트에 변경 알림
-    const customerId2 = checkIn?.customer_id ?? customerMode?.customerId;
-    if (customerId2) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customerId2, ts: Date.now() }));
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
 
-  // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모 저장 (customers.memo)
-  const saveEtcMemo = async () => {
+  // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모 (customers.memo)
+  // T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: 고객메모와 동일 — 인라인+[추가]+누적(append-only).
+  const appendEtcMemo = async (line: string) => {
     const customerId = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
     if (!customerId) return;
+    const base = etcMemo.trim();
+    const newValue = base ? `${base}\n${line}` : line;
     setSavingEtcMemo(true);
     const { error } = await supabase
       .from('customers')
-      .update({ memo: etcMemo.trim() || null })
+      .update({ memo: newValue })
       .eq('id', customerId);
     setSavingEtcMemo(false);
     if (error) { toast.error('기타메모 저장 실패'); return; }
-    toast.success('기타메모 저장됨');
+    setEtcMemo(newValue);
+    toast.success('기타메모 추가됨');
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
@@ -1294,49 +1303,33 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   compact
                 />
               </div>
-              {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
+              {/* ③ 고객메모 (customers.customer_memo) — T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: 인라인+[추가]+누적 통일 */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 고객메모
                 </Label>
-                <Textarea
+                <CustomerColumnMemo
                   value={customerMemo}
-                  onChange={(e) => setCustomerMemo(e.target.value)}
-                  placeholder="고객 성향, 특이사항, 주차 정보 등"
-                  rows={8}
-                  className="text-xs"
+                  onAppend={appendCustomerMemo}
+                  saving={savingCustomerMemo}
+                  disabled={!customerMode?.customerId}
+                  placeholder="고객 성향, 특이사항, 주차 정보 등 (Ctrl+Enter로 추가)"
+                  compact
                 />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                  onClick={saveCustomerMemo}
-                  disabled={savingCustomerMemo}
-                >
-                  {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
-                </Button>
               </div>
-              {/* ④ 기타메모 (customers.memo) — AC-6 추가 */}
+              {/* ④ 기타메모 (customers.memo) — T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: 인라인+[추가]+누적 통일 */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 기타메모
                 </Label>
-                <Textarea
+                <CustomerColumnMemo
                   value={etcMemo}
-                  onChange={(e) => setEtcMemo(e.target.value)}
-                  placeholder="기타 참고사항"
-                  rows={8}
-                  className="text-xs"
+                  onAppend={appendEtcMemo}
+                  saving={savingEtcMemo}
+                  disabled={!customerMode?.customerId}
+                  placeholder="기타 참고사항 (Ctrl+Enter로 추가)"
+                  compact
                 />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                  onClick={saveEtcMemo}
-                  disabled={savingEtcMemo}
-                >
-                  {savingEtcMemo ? '저장 중…' : '기타메모 저장'}
-                </Button>
               </div>
             </div>
 
@@ -1868,52 +1861,36 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     compact
                   />
                 </div>
-                {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
+                {/* ③ 고객메모 (customers.customer_memo) — T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: 인라인+[추가]+누적 통일 */}
                 {checkIn.customer_id && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                       <FileText className="h-3 w-3" /> 고객메모
                     </Label>
-                    <Textarea
+                    <CustomerColumnMemo
                       value={customerMemo}
-                      onChange={(e) => setCustomerMemo(e.target.value)}
-                      placeholder="고객 성향, 특이사항, 주차 정보 등"
-                      rows={8}
-                      className="text-xs"
+                      onAppend={appendCustomerMemo}
+                      saving={savingCustomerMemo}
+                      disabled={!checkIn.customer_id}
+                      placeholder="고객 성향, 특이사항, 주차 정보 등 (Ctrl+Enter로 추가)"
+                      compact
                     />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                      onClick={saveCustomerMemo}
-                      disabled={savingCustomerMemo}
-                    >
-                      {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
-                    </Button>
                   </div>
                 )}
-                {/* ④ 기타메모 (customers.memo) — AC-6 추가 */}
+                {/* ④ 기타메모 (customers.memo) — T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: 인라인+[추가]+누적 통일 */}
                 {checkIn.customer_id && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                       <FileText className="h-3 w-3" /> 기타메모
                     </Label>
-                    <Textarea
+                    <CustomerColumnMemo
                       value={etcMemo}
-                      onChange={(e) => setEtcMemo(e.target.value)}
-                      placeholder="기타 참고사항"
-                      rows={8}
-                      className="text-xs"
+                      onAppend={appendEtcMemo}
+                      saving={savingEtcMemo}
+                      disabled={!checkIn.customer_id}
+                      placeholder="기타 참고사항 (Ctrl+Enter로 추가)"
+                      compact
                     />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                      onClick={saveEtcMemo}
-                      disabled={savingEtcMemo}
-                    >
-                      {savingEtcMemo ? '저장 중…' : '기타메모 저장'}
-                    </Button>
                   </div>
                 )}
               </div>
