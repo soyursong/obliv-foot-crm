@@ -71,6 +71,9 @@ test.describe('T-20260615-foot-RESV-DWELL-LOADING-STUCK', () => {
     const src = readSrc();
     // COMPLEMENT 보증: 본 핫픽스는 fetchWeek 만 손대고 레이아웃/동선은 건드리지 않음.
     expect(src, 'AC8 인앱 차트 통일(window.open 제거) 유지').toContain('handleResvOpenChart(resvAsCheckIn(r))');
-    expect(src, 'AC1 경과분석 토글 유지').toContain('progress-filter-btn');
+    // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 토글(progress-filter-btn)은 예약관리에서 제거되어 치료테이블 [경과분석] 탭으로 이관.
+    //   본 핫픽스(fetchWeek try/catch/finally)와 무관 — 레이아웃 무변경 입증 앵커를 '일간/주간 뷰 토글'로 대체.
+    expect(src, '일간/주간 뷰 토글 레이아웃 유지').toContain("setViewMode('week')");
+    expect(src, '경과분석 토글은 예약관리에서 제거됨(치료테이블로 이관)').not.toContain('progress-filter-btn');
   });
 });

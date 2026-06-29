@@ -362,8 +362,9 @@ export default function Reservations() {
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [rows, setRows] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
-  // T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글
-  const [filterProgress, setFilterProgress] = useState(false);
+  // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 예약관리 경과분석 ON/OFF 필터 + 캘린더형 경과분석 뷰 완전 제거.
+  //   이전 filterProgress state/토글/필터 분기 회수 → 예약관리는 항상 전체 예약 표시(기존 OFF 동작 = 기본).
+  //   ⚠ progress_check_required 트리거/배지(읽기전용 표시)는 유지 — 치료테이블 [경과분석] 탭 데이터 소스.
   // T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' 필터.
   //   정의(reporter 확정): (나)=담당(registrar) 이름 기준 — registrar_name === 로그인 사용자 표시명(profile.name).
   //   NAME-MATCH(문자열) 매칭이며 FK/auth.uid 신원 매핑 아님. ⚠ 동명이인 시 동명 registrar 예약이 함께
@@ -1671,41 +1672,23 @@ export default function Reservations() {
             내려받기
           </Button>
         </div>
-        {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: 우측 컨트롤 순서를 '새 예약 → 경과분석 → 일간/주간'으로 재배치. */}
+        {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: 우측 컨트롤 순서를 '새 예약 → 일간/주간'으로 재배치.
+            T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 토글 제거 → 컨트롤은 '새 예약 → 일간/주간'. */}
         <div className="flex items-center gap-2">
-          {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결
-              T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2: 경과분석 뷰(조회 전용)에서는 예약생성 진입 숨김.
-              filterProgress OFF 복귀 시 즉시 재노출(영구 제거 아님). */}
-          {!filterProgress && (
-            <Button
-              size="sm"
-              /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2): (+) → 예약상세 팝업 new-mode 오픈.
-                 별도 폼/ReservationEditor 모달 스폰 폐기. 생성은 팝업 → handleCreateReservationFromPopup
-                 → 단일소스 createReservationCanonical 위임(L-002 개정). */
-              /* AC3: 상단 '새 예약'은 prefill 없이 빈 진입(기존 동작) — initial 클리어 후 new-mode. */
-              onClick={() => { setNewReservationInitial(null); setNewReservationMode(true); }}
-              className="gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              새 예약
-            </Button>
-          )}
-          {/* T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글 버튼 */}
-          <button
-            type="button"
-            data-testid="progress-filter-btn"
-            onClick={() => setFilterProgress(f => !f)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-md border px-3 h-9 text-xs font-medium transition-colors',
-              filterProgress
-                ? 'border-teal-500 bg-teal-600 text-white'
-                : 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100',
-            )}
+          {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결.
+              T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 뷰 제거 → '새 예약'은 항상 노출. */}
+          <Button
+            size="sm"
+            /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2): (+) → 예약상세 팝업 new-mode 오픈.
+               별도 폼/ReservationEditor 모달 스폰 폐기. 생성은 팝업 → handleCreateReservationFromPopup
+               → 단일소스 createReservationCanonical 위임(L-002 개정). */
+            /* AC3: 상단 '새 예약'은 prefill 없이 빈 진입(기존 동작) — initial 클리어 후 new-mode. */
+            onClick={() => { setNewReservationInitial(null); setNewReservationMode(true); }}
+            className="gap-1.5"
           >
-            <TrendingUp className="h-3.5 w-3.5" />
-            경과분석
-            {filterProgress && <span className="ml-0.5 opacity-70">ON</span>}
-          </button>
+            <Plus className="h-3.5 w-3.5" />
+            새 예약
+          </Button>
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
@@ -1772,7 +1755,6 @@ export default function Reservations() {
             const slotList = (time: string) => {
               const key = `${dateStr}_${time}`;
               return [...(resvByKey[key] ?? [])]
-                .filter((r) => !filterProgress || r.progress_check_required)
                 .filter((r) => !filterMine || (mineTarget !== '' && (r.registrar_name ?? '').trim() === mineTarget))
                 .sort((a, b) => {
                   const ko = KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)];
@@ -1919,7 +1901,7 @@ export default function Reservations() {
                                 </span>
                               ) : null}
                             </div>
-                            {!full && !filterProgress && (
+                            {!full && (
                               <button
                                 type="button"
                                 data-testid={`resv-day-slot-plus-${time}`}
@@ -2066,9 +2048,9 @@ export default function Reservations() {
                             //   동작 불일치(현장 질의 "두 진입경로가 왜 다름?"). 예약 카드 우클릭은 카드 자체 onContextMenu 가
                             //   stopPropagation 하므로 이 셀 핸들러로 버블되지 않음 → 카드=컨텍스트메뉴 / 빈슬롯=new-mode 유지.
                             //   🔒 L-002: 생성 capability·로직 불변(openNewSlot 재사용) — 진입 '배선'만 (+) 와 통일.
-                            //   가드는 (+) 버튼(아래 slot-plus)과 동일: allowed && !filterProgress && !full && 클립보드 없음.
+                            //   가드는 (+) 버튼(아래 slot-plus)과 동일: allowed && !full && 클립보드 없음.
                             onContextMenu={(e) => {
-                              if (allowed && !filterProgress && !full && !clipboard) {
+                              if (allowed && !full && !clipboard) {
                                 e.preventDefault();
                                 openNewSlot(d, time);
                               }
@@ -2117,12 +2099,9 @@ export default function Reservations() {
                                   );
                                 })()}
 
-                                {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시
-                                    T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §3 자동연동: 체크포인트 태그
-                                    (progress_check_required=TRUE, 예약 생성 시 plan.session_milestone 도달로 자동 부여)
-                                    환자만 노출. PROGRESS-CHECKPOINT 태그 로직 그대로 재사용 — read-only 필터, 신설 없음. */}
-                                {/* T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name === 로그인 표시명 NAME-MATCH.
-                                    경과분석 필터와 AND 결합. read-only 표시 필터 — 슬롯 용량/카운트 산식(full 판정)은 불변. */}
+                                {/* T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 필터(filterProgress) 제거 → 전체 예약 표시.
+                                    T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name === 로그인 표시명 NAME-MATCH.
+                                    read-only 표시 필터 — 슬롯 용량/카운트 산식(full 판정)은 불변. */}
                                 {(() => {
                                   // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안 정본 — 김주연 총괄 MSG-...-9osx): 각 시간 슬롯 셀 *내부*를 좌우 2열 그리드.
                                   //   왼쪽 열(colNew)=초진(new) / 오른쪽 열(colRest)=재진(returning)+힐러(healer)+기타(other) 전수.
@@ -2132,7 +2111,7 @@ export default function Reservations() {
                                   //   카드 누락 0(visible 전수 귀속). 불변: 카드 내용·필드, KIND_CARD_STYLE 컬러, 클릭/hover/우클릭, COMPACT-CONTENT-KEEP(828893f3) 압축 레이어.
                                   // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: '내 예약' 기준 담당자 = filterAssignee 선택값(없으면 본인 myDisplayName).
                                   const mineTarget = filterAssignee !== '' ? filterAssignee : myDisplayName;
-                                  const visible = (filterProgress ? list.filter(r => r.progress_check_required) : list)
+                                  const visible = list
                                     .filter((r) => !filterMine || (mineTarget !== '' && (r.registrar_name ?? '').trim() === mineTarget));
                                   const byTime = (a: Reservation, b: Reservation) =>
                                     a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
@@ -2387,8 +2366,8 @@ export default function Reservations() {
                                       <div
                                         className={cn(
                                           'inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1 font-medium text-teal-800 leading-none py-0.5 mt-0.5',
-                                          // 경과분석 뷰에서는 회차를 더 또렷하게(약간 큰 글자 + 굵게)
-                                          filterProgress ? 'text-[10px] font-semibold' : 'text-[10px]',
+                                          // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 뷰(filterProgress) 제거 → 기본(OFF) 표시로 고정. 배지(읽기전용 회차 표시)는 유지.
+                                          'text-[10px]',
                                         )}
                                         data-testid={`progress-badge-${r.id}`}
                                         title={`${r.progress_check_label ?? '경과분석'} — 경과분석 체크포인트`}
@@ -2438,12 +2417,9 @@ export default function Reservations() {
                                 })()}
                                 {/* T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치' 버튼 제거(현장 불필요).
                                     이전 BATCH-CHECKIN-LEAK 가드 블록 + batchCheckIn 호출 동반 삭제. */}
-                                {/* T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2 (+)예약생성 제거:
-                                    경과분석 뷰(filterProgress ON)는 조회 전용 → 슬롯 예약생성(+) 버튼 숨김.
-                                    BATCH-CHECKIN-LEAK 선례와 동일 가드(렌더만 차단, openNewSlot 로직 불변).
-                                    일반 달력(filterProgress OFF)은 기존대로 (+) 노출 — 유일 진입점 아님(상단 '새 예약'·
-                                    고객관리·대시보드·차트 등 보존). */}
-                                {!filterProgress && !full ? (
+                                {/* 빈 슬롯 (+) 예약생성 — full(마감) 아니면 노출.
+                                    T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 뷰(filterProgress) 제거 → (+)는 마감 여부로만 가드. */}
+                                {!full ? (
                                   <button
                                     data-testid={`slot-plus-${dateStr}-${time}`}
                                     onClick={(e) => {
