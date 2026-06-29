@@ -1580,8 +1580,8 @@ function IssueDialog({
   const [editingAmountStr, setEditingAmountStr] = useState('');
   // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 용량/용법/투약일수 (rx_standard 전용)
   const [rxItemDosages, setRxItemDosages] = useState<Record<string, { unit_dose: string; daily_freq: string; total_days: string }>>({});
-  // T-20260622-foot-DOCSERIAL-AUTOGEN: 연번호 자동 생성용 — 실제 차트번호(F-XXXX)와 발급순번.
-  //   seq = 동일 환자+동일 서류종류(template)+동일 발급일 form_submissions count + 1 (read-only).
+  // T-20260622-foot-DOC-SERIAL-AUTOGEN: 연번호 자동 생성용 — 실제 차트번호(F-XXXX)와 발급순번.
+  //   seq = C(무리셋 통산): 클리닉 전역 form_submissions count + 1 (날짜·서류종류·환자 무관, read-only).
   //   미리보기는 INSERT 안 함 → 반복 호출에도 seq 불변(idempotent). null = 아직 산출 전 → 발번 보류.
   const [serialChartNo, setSerialChartNo] = useState<string | null>(null);
   const [serialSeq, setSerialSeq] = useState<number | null>(null);
@@ -1734,11 +1734,13 @@ function IssueDialog({
     };
   }, [open, checkIn, dutyDoctors]);
 
-  // T-20260622-foot-DOCSERIAL-AUTOGEN: 연번호 자동 생성 소스 (read-only). 다이얼로그 오픈 시 1회.
+  // T-20260622-foot-DOC-SERIAL-AUTOGEN: 연번호 자동 생성 소스 (read-only). 다이얼로그 오픈 시 1회.
   //   ① 차트번호(F-XXXX) — customers.chart_number (autobind record_no 의 임시 slice 대신 실제값).
-  //   ② 발급순번 — 동일 환자+동일 서류종류(template_id)+동일 발급일 form_submissions count + 1.
-  //   미리보기/출력 반복으로 순번이 꼬이지 않도록 INSERT 전 count 만 읽는다(idempotent).
-  //   created_at(KST) 으로 당일 판정 — 기존 코드의 format(new Date(),…) 로컬 tz 처리와 정합.
+  //   ② 발급순번 — C(무리셋 통산): 날짜·서류종류·환자 무관 클리닉 전역 form_submissions count + 1.
+  //      (FIX 2026-06-29 김주연 총괄 MSG-20260629-202802-cyn1 — 이전 '당일·환자·서류종류' 파티션 제거.)
+  //   미리보기/출력 반복으로 순번이 꼬이지 않도록 INSERT 전 count 만 읽는다(idempotent, AC-4 재출력=불변).
+  //   실 출력(INSERT) 후 닫고 재오픈 시 전역 count+1 → '신규 교부=통산 +1'(전체 연번호 유일).
+  //   count(head:true) 로 행 전송 없이 집계 — 대량 이력에도 경량.
   useEffect(() => {
     if (!open || !checkIn.customer_id) {
       setSerialChartNo(null);
@@ -1746,31 +1748,27 @@ function IssueDialog({
       return;
     }
     let cancelled = false;
-    const todayKey = format(new Date(), 'yyyyMMdd');
     Promise.all([
       supabase
         .from('customers')
         .select('chart_number')
         .eq('id', checkIn.customer_id)
         .maybeSingle(),
+      // C(무리셋 통산): 클리닉 전역 발행 건수 = 다음 발급순번 - 1. 날짜·서류종류·환자 파티션 없음.
       supabase
         .from('form_submissions')
-        .select('created_at')
-        .eq('customer_id', checkIn.customer_id)
-        .eq('template_id', template.id),
-    ]).then(([custRes, subRes]) => {
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', checkIn.clinic_id),
+    ]).then(([custRes, cntRes]) => {
       if (cancelled) return;
       const chartNo = (custRes.data?.chart_number as string | null | undefined) ?? null;
       setSerialChartNo(chartNo && String(chartNo).trim() ? String(chartNo).trim() : null);
-      // 당일(KST) 발급 이력만 카운트 → 다음 발급순번 = count + 1
-      const issuedToday = (subRes.data ?? []).filter((r) => {
-        const ca = (r as { created_at?: string | null }).created_at;
-        return ca ? format(new Date(ca), 'yyyyMMdd') === todayKey : false;
-      }).length;
-      setSerialSeq(issuedToday + 1);
+      // 전역 통산 카운터 → 다음 발급순번 = 전역 count + 1 (리셋 없음)
+      const total = cntRes.count ?? 0;
+      setSerialSeq(total + 1);
     });
     return () => { cancelled = true; };
-  }, [open, checkIn.customer_id, template.id]);
+  }, [open, checkIn.customer_id, checkIn.clinic_id]);
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
   const handleDeleteItem = async (id: string) => {
