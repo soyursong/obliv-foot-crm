@@ -3378,6 +3378,38 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [latestCheckIn]);
 
+  // T-20260629-foot-RRN-SAVE-NOREFLECT: 주민번호 저장 후 "즉시 반영"을 서버 권위값으로 확정.
+  //   기존: rrn_encrypt 성공 시 입력값으로 낙관적 마스킹 표시(setRrnMasked) — DB 영속 여부와 무관하게 화면만 갱신.
+  //   문제(김진화 케이스): encrypt 가 에러 없이 미영속이어도 "저장된 듯" 보이거나, 표시 누락 시 저장성공/실패 진단 불가.
+  //   변경: 조회권한 사용자는 저장 직후 rrn_decrypt 로 DB 실제값을 재조회해 마스킹/전체값 세팅(쿼리 invalidate/상태 갱신 대체).
+  //         decrypt 가 13자리를 못 돌려주면 = 영속 실패 → 명시적 에러 토스트(데이터 유실 silent-fail 차단, AC-1).
+  //   PHI: 평문은 setRrnFull(펜차트 자동채움용, 기존 정책) 외 로깅/콘솔 노출 없음. 복호는 기존 rrn_decrypt RPC 경유.
+  //   반환: true=영속 확인(호출부에서 신분증 자동확인 진행), false=영속 실패(자동확인 보류).
+  const confirmRrnSaved = useCallback(
+    async (frontDigits: string, backDigits: string): Promise<boolean> => {
+      if (!customer) return false;
+      if (userCanViewRrn) {
+        const { data } = await supabase.rpc('rrn_decrypt', { customer_uuid: customer.id });
+        const s = data ? String(data).replace(/\D/g, '') : '';
+        if (s.length === 13) {
+          // 서버 권위값으로 즉시 반영 (새로고침 불필요)
+          setRrnMasked(s.slice(0, 6) + '-*******');
+          setRrnFull(s.slice(0, 6) + '-' + s.slice(6)); // AC-8: 펜차트 자동채움용 전체값
+          return true;
+        }
+        // encrypt 는 성공으로 보였으나 재조회 실패 = 미영속 → 데이터 유실 신호 (오해 방지: 낙관 표시 안 함)
+        toast.error('주민번호가 저장되지 않았습니다. 다시 시도해주세요.');
+        return false;
+      }
+      // 조회 권한 없음(staff): rrn_decrypt 항상 null(정책) → 세션 내 낙관 마스킹 유지
+      //   (새로고침 후엔 "조회 권한 없음" 표기 — STAFF-CHART2-RRN-NOSAVE 기존 정책 보존)
+      setRrnMasked(frontDigits + '-' + '*'.repeat(7));
+      setRrnFull(frontDigits + '-' + backDigits);
+      return true;
+    },
+    [customer?.id, userCanViewRrn], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   // T-20260615-foot-PKGTAB-TOE-RESTORE: 치료부위(발가락) 멀티선택 — 패키지 탭 상단 일러스트 원상 복원(3b6ab2f 제거분 역복원, 김주연 총괄).
   //   저장: latestCheckIn.treatment_memo.foot_sites jsonb 배열({side,toe}). 기존 treatment_memo 재사용(신규 컬럼 0, db_change:false).
   //   1번차트(CheckInDetailSheet)는 이 값을 읽어 조건부 read-only 표시 — "2번차트 패키지 탭 생성분만 연동".
@@ -3440,13 +3472,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           // 세션 갱신 성공 → 재시도
           const { error: retryErr } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
           if (!retryErr) {
-            setRrnMasked(rrnFront + '-' + '*'.repeat(7));
-            setRrnFull(rrnFront + '-' + rrnBack); // AC-8: 전체 표시 (펜차트 자동채움용)
             setEditingRrn(false);
             setRrnFront('');
             setRrnBack('');
             setRrnText('');
-            await markIdVerified(); // T-20260611-foot-CHART2-IDVERIFY: 유효 저장 → 자동 확인완료
+            // T-20260629-foot-RRN-SAVE-NOREFLECT: 서버 권위값 재조회로 즉시 반영(+영속 자가검증)
+            const persisted = await confirmRrnSaved(rrnFront, rrnBack);
+            if (persisted) await markIdVerified(); // 유효 영속 시에만 자동 신분증 확인완료
             return;
           }
           toast.error(`주민번호 저장 실패: ${retryErr.message}`);
@@ -3459,13 +3491,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       }
       return;
     }
-    setRrnMasked(rrnFront + '-' + '*'.repeat(7));
-    setRrnFull(rrnFront + '-' + rrnBack); // AC-8: 전체 표시 (펜차트 자동채움용)
     setEditingRrn(false);
     setRrnFront('');
     setRrnBack('');
     setRrnText('');
-    await markIdVerified(); // T-20260611-foot-CHART2-IDVERIFY: 유효 저장 → 자동 확인완료
+    // T-20260629-foot-RRN-SAVE-NOREFLECT: 낙관적 표시 → 서버 권위값 재조회로 즉시 반영(+영속 자가검증)
+    const persisted = await confirmRrnSaved(rrnFront, rrnBack);
+    if (persisted) await markIdVerified(); // 유효 영속 시에만 자동 신분증 확인완료
   };
 
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장
@@ -3522,13 +3554,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             return false;
           }
         }
-        setRrnMasked(rrnFront + '-' + '*'.repeat(7));
-        setRrnFull(rrnFront + '-' + rrnBack); // AC-8: 전체 표시 (펜차트 자동채움용)
         setEditingRrn(false);
         setRrnFront('');
         setRrnBack('');
         setRrnText('');
-        await markIdVerified(); // T-20260611-foot-CHART2-IDVERIFY: 유효 저장 → 자동 확인완료
+        // T-20260629-foot-RRN-SAVE-NOREFLECT: 낙관적 표시 → 서버 권위값 재조회로 즉시 반영(+영속 자가검증)
+        const rrnPersisted = await confirmRrnSaved(rrnFront, rrnBack);
+        if (rrnPersisted) await markIdVerified(); // 유효 영속 시에만 자동 신분증 확인완료
       }
       // 2) 나머지 필드 일괄 patch (address 제외 — T-20260516-foot-C21-SAVE-REGRESS)
       const patch: Partial<Customer> = {};
