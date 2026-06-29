@@ -3,10 +3,15 @@
 // 연번호 형식: {서류종류 prefix}-{발급일 YYYYMMDD}-{차트번호 F-XXXX}-{발급순번 2자리}
 //   예) VC-20260622-F-4302-01
 //
-// 발급순번 = 동일 환자 + 동일 서류종류(template) + 동일 발급일 scope 1씩 증가.
-//   form_submissions read-only count 쿼리로 산출 → DB 스키마 변경 0 (영속 컬럼 미사용).
-//   미리보기는 INSERT 하지 않으므로 반복 호출해도 seq 불변(idempotent). 실제 출력(form_submissions
-//   INSERT) 후 재오픈 시 count+1 → 다음 순번 부여.
+// 발급순번 = C(무리셋 통산) — 날짜·서류종류·환자 무관 단일 통산 카운터(클리닉 단위). 발번마다 +1, 리셋 없음.
+//   (확정: 김주연 총괄 2026-06-29 MSG-20260629-202802-cyn1 / FIX-REQUEST T-20260622-foot-DOC-SERIAL-AUTOGEN.
+//    이전 'A. 일별·환자·서류종류 리셋' 기각 → C 단일 통산으로 변경. 일별/파티션 리셋 로직 제거.)
+//   form_submissions read-only count(clinic 전역) 으로 산출 → DB 스키마 변경 0 (영속 컬럼/시퀀스 미사용).
+//   미리보기는 INSERT 하지 않으므로 반복 호출해도 seq 불변(idempotent, AC-4 '재출력=불변').
+//   실제 출력(form_submissions INSERT) 후 재오픈 시 전역 count+1 → '신규 교부=통산 +1'(전체 연번호 항상 유일).
+//   ⚠ 동시 발번 race: runtime count+1(approach b)는 유니크 제약이 없어 동시 INSERT 시 동일 seq 가능.
+//     단일 클리닉·순차 발행 환경에서 window 극소. 완전 보장은 DB 시퀀스+유니크 제약(approach a, ADDITIVE,
+//     data-architect CONSULT 게이트) 후속 필요 — 본 변경 범위 외(planner 비차단 FOLLOWUP).
 //
 // ⚠ 이 파일은 LOGIC-LOCK L-006 대상이 아니다(신규 파일). 단, DocumentPrintPanel 에서 호출하므로
 //   prefix 매핑/형식 변경 시 서류 출력 회귀 확인 필요.
