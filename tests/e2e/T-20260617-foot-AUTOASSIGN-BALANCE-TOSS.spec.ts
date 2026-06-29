@@ -169,9 +169,12 @@ test.describe('S4 — 토스(handoff push)', () => {
 
 // ── S5: 당김 (상담대기 10분+ 또는 미배정 · cascade 없음) ─────────────────────────
 test.describe('S5 — 당김(pull)', () => {
-  test('당김 후보 = 상담대기/치료대기 ∧ (미배정 ∨ 대기 10분+)', () => {
-    expect(PAGE_CODE).toContain('PULL_THRESHOLD_MIN = 10');
-    expect(PAGE_CODE).toMatch(/unassigned \|\| waitMin >= PULL_THRESHOLD_MIN/);
+  // T-20260629-foot-PULLCAND-ASSIGNED-EXCLUDE: 당김 후보 자격 = '미배정'만으로 강화.
+  //   (기존 'unassigned || waitMin>=10' → 배정됐어도 10분+면 잔존하던 버그 제거. 회귀 갱신.)
+  test('당김 후보 = 상담대기/치료대기 ∧ 미배정만 (배정 건 제외)', () => {
+    expect(PAGE_CODE).toContain('PULL_THRESHOLD_MIN = 10'); // amber 강조 표시용으로만 잔존
+    expect(PAGE_CODE).toMatch(/const eligible = unassigned;/);
+    expect(PAGE_CODE).not.toMatch(/eligible = unassigned \|\| waitMin >= PULL_THRESHOLD_MIN/);
   });
 
   test('당김 = 본인(myStaffId)에게 배정', () => {

@@ -55,7 +55,7 @@ const THERAPY_FLOW: CheckInStatus[] = [
   'laser',
 ];
 const PULL_WAIT_STATUSES: CheckInStatus[] = ['consult_waiting', 'treatment_waiting'];
-const PULL_THRESHOLD_MIN = 10; // o2k7: 상담대기 10분+ 또는 미배정
+const PULL_THRESHOLD_MIN = 10; // 미배정 대기 강조(amber) 임계. 당김 후보 자격 자체는 '미배정'만(PULLCAND-ASSIGNED-EXCLUDE)
 
 function activeRole(status: CheckInStatus): AssignmentRole | null {
   if (CONSULT_FLOW.includes(status)) return 'consult';
@@ -449,7 +449,11 @@ export default function Assignments() {
     return rows.sort((a, b) => b.at.localeCompare(a.at));
   }, [monthCheckIns, actions, activeTab]);
 
-  // ── 당김 후보(상담대기 10분+ 또는 미배정) ────────────────────────────────────
+  // ── 당김 후보(미배정 대기 건만) ──────────────────────────────────────────────
+  // T-20260629-foot-PULLCAND-ASSIGNED-EXCLUDE: 담당자가 배정되면(수동·자동·토스 무관)
+  //   당김 후보에서 즉시 제외. 후보 = assigned 가 NULL(미배정/대기)인 건만.
+  //   기존엔 'unassigned || waitMin>=10' 이어서 배정됐어도 10분+ 대기면 잔존(강혜인 962분 잔존 버그).
+  //   AC2/AC4: 배정 완료 건은 source 필터 단계에서 배제. waitMin 은 미배정 건의 대기시간 표시용으로만 유지.
   const pullCandidates = useMemo(() => {
     return checkIns
       .filter((ci) => PULL_WAIT_STATUSES.includes(ci.status))
@@ -459,7 +463,7 @@ export default function Assignments() {
         const enterIso = slotEnter.get(ci.id) ?? ci.checked_in_at;
         const waitMin = enterIso ? elapsedMinutes(enterIso) : 0;
         const unassigned = !assignedId;
-        const eligible = unassigned || waitMin >= PULL_THRESHOLD_MIN;
+        const eligible = unassigned; // 배정된 건(수동/자동/토스)은 당김 후보 아님
         return { ci, role, assignedId, waitMin, unassigned, eligible };
       })
       .filter((x) => x.eligible && x.role === activeTab)
@@ -757,7 +761,7 @@ export default function Assignments() {
       <Card>
         <CardHeader className="py-3">
           <CardTitle className="text-sm">
-            당김 후보 <span className="text-xs font-normal text-muted-foreground">(상담대기 10분+ 또는 미배정)</span>
+            당김 후보 <span className="text-xs font-normal text-muted-foreground">(미배정 대기 건 — 담당자 배정 시 자동 제외)</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
