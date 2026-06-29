@@ -150,13 +150,25 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">환자의<br>주민등록번호</td>
         <td>{{patient_rrn}}</td>
       </tr>
+      <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 주소·전화를 각각 전폭(colspan=3) 행으로 분리 → 긴 주소 단일 줄 확보 -->
       <tr>
         <td style="background:#f8f8f8;">환자의 주소</td>
-        <td colspan="2">{{patient_address}}</td>
-        <td style="white-space:nowrap;">전화번호&nbsp;&nbsp;{{patient_phone}}</td>
+        <td colspan="3">{{patient_address}}</td>
       </tr>
       <tr>
-        <td rowspan="5" style="background:#f8f8f8; text-align:center; vertical-align:middle; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
+        <td style="background:#f8f8f8; white-space:nowrap;">전화번호</td>
+        <td colspan="3">{{patient_phone}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 병명 블록을 환자정보 표와 분리.
+       이전: 동일 표 공유 → 상병명 칸이 위 행의 '연번호'(width:60) 컬럼에 묶여 좁아짐(긴 상병명 줄바꿈).
+       수정: 별도 표로 분리(소견서와 동일 구조) → 상병명 컬럼이 잔여 폭(~428px) 확보, 단일 줄 출력. -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; vertical-align:middle; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:100px;">상병코드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -312,8 +324,9 @@ ${COMMON_STYLE}
       <tr>
         <td style="width:70px; background:#f8f8f8;">병 록 번 호</td>
         <td style="width:140px;">{{record_no}}</td>
-        <td style="width:60px; background:#f8f8f8;"></td>
-        <td></td>
+        <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 연령을 빈 칸이던 1행으로 이동 → 주소 행을 전폭(colspan=3) 단일 줄 확보 -->
+        <td style="width:60px; background:#f8f8f8;">연 령</td>
+        <td style="white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">연 번 호</td>
@@ -324,8 +337,7 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
-        <td colspan="2">{{patient_address}}</td>
-        <td style="white-space:nowrap;">연령&nbsp;&nbsp;만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
+        <td colspan="3">{{patient_address}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
@@ -441,8 +453,9 @@ ${COMMON_STYLE}
       <tr>
         <td style="width:70px; background:#f8f8f8;">병 록 번 호</td>
         <td style="width:140px;">{{record_no}}</td>
-        <td style="width:30px;"></td>
-        <td></td>
+        <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 연령을 빈 칸이던 1행으로 이동 → 주소 행을 전폭(colspan=3) 단일 줄 확보 -->
+        <td style="width:60px; background:#f8f8f8;">연 령</td>
+        <td style="white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">연 번 호</td>
@@ -453,8 +466,7 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
-        <td colspan="2">{{patient_address}}</td>
-        <td style="white-space:nowrap;">연령&nbsp;만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
+        <td colspan="3">{{patient_address}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
@@ -585,12 +597,15 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">연령</td>
         <td>만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
+      <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 주소·연락처를 각각 전폭(colspan=3) 행으로 분리.
+           이전: 주소 칸이 한 컬럼(~140px)에 묶여 긴 주소 3줄 줄바꿈. 라벨/값 분리(8FIX AC-2)는 유지. -->
       <tr>
         <td style="background:#f8f8f8;">환자의 주소</td>
-        <td>{{patient_address}}</td>
-        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-2②③: 라벨/값 분리(타 서류 양식 통일) + 라벨 "환자 연락처" -->
+        <td colspan="3">{{patient_address}}</td>
+      </tr>
+      <tr>
         <td style="background:#f8f8f8; white-space:nowrap;">환자 연락처</td>
-        <td>{{patient_phone}}</td>
+        <td colspan="3">{{patient_phone}}</td>
       </tr>
     </tbody>
   </table>
@@ -748,9 +763,10 @@ ${COMMON_STYLE}
   <table style="margin-bottom:4px;">
     <thead>
       <tr>
-        <th style="width:80px;">환자등록번호</th>
+        <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 등록번호·진료기간 칸 폭 확대 + 데이터 nowrap → 줄바꿈 제거(가로 양식, 폭 여유) -->
+        <th style="width:104px;">환자등록번호</th>
         <th style="width:80px;">환자성명</th>
-        <th>진료기간</th>
+        <th style="width:150px;">진료기간</th>
         <th style="width:60px;">병실</th>
         <th style="width:70px;">환자구분</th>
         <th>비고</th>
@@ -758,9 +774,9 @@ ${COMMON_STYLE}
     </thead>
     <tbody>
       <tr>
-        <td>{{record_no}}</td>
+        <td style="white-space:nowrap;">{{record_no}}</td>
         <td>{{patient_name}}</td>
-        <td>{{visit_date}} ～ {{visit_date}}</td>
+        <td style="white-space:nowrap;">{{visit_date}} ～ {{visit_date}}</td>
         <td>외래</td>
         <td>건강보험</td>
         <td></td>
@@ -773,7 +789,7 @@ ${COMMON_STYLE}
     <thead>
       <tr>
         <th rowspan="2" style="width:55px;">항목</th>
-        <th rowspan="2" style="width:60px;">일자</th>
+        <th rowspan="2" style="width:72px;">일자</th>
         <th rowspan="2" style="width:60px;">코드</th>
         <th rowspan="2">명칭</th>
         <th rowspan="2" style="width:60px;">금액</th>
@@ -933,7 +949,8 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8; text-align:center;" colspan="2">사용목적</td>
-        <td colspan="2" style="text-align:center; font-size:8.5pt;">진료비 소득공제 신청용</td>
+        <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 좁은 월별표 colspan2 칸 내 줄바꿈 제거 — 폰트 축소 + nowrap -->
+        <td colspan="2" style="text-align:center; font-size:7pt; white-space:nowrap;">진료비 소득공제 신청용</td>
         <td style="background:#f8f8f8; text-align:center;">연간 합계액</td>
         <td style="text-align:right; font-weight:bold;">{{annual_total}}</td>
       </tr>
@@ -1673,11 +1690,14 @@ ${COMMON_STYLE}
         <td style="width:100px; background:#f8f8f8; text-align:center;">주민등록번호</td>
         <td>{{patient_rrn}}</td>
       </tr>
+      <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 연락처·주소를 각각 전폭(colspan=3) 행으로 분리 → 긴 주소 단일 줄 확보 -->
       <tr>
         <td style="background:#f8f8f8; text-align:center;">연&nbsp;&nbsp;락&nbsp;&nbsp;처</td>
-        <td>{{patient_phone}}</td>
+        <td colspan="3">{{patient_phone}}</td>
+      </tr>
+      <tr>
         <td style="background:#f8f8f8; text-align:center;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
-        <td>{{patient_address}}</td>
+        <td colspan="3">{{patient_address}}</td>
       </tr>
     </tbody>
   </table>
@@ -2019,8 +2039,8 @@ export function buildBillDetailItemsHtml(
           : '0';
       return `<tr>
         <td>${item.category ?? '기타'}</td>
-        <td style="font-size:7.5pt;">${item.date ?? ''}</td>
-        <td style="font-size:7.5pt;">${item.code ?? ''}</td>
+        <td style="font-size:7.5pt; white-space:nowrap;">${item.date ?? ''}</td>
+        <td style="font-size:7.5pt; white-space:nowrap;">${item.code ?? ''}</td>
         <td style="text-align:left;">${item.name}</td>
         <td class="num-cell">${amt}</td>
         <td class="num-cell">${count}</td>
