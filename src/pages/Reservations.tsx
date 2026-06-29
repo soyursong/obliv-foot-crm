@@ -69,29 +69,27 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
 };
 
 // T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 예약 카드 유형별 배경색
-//   T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진=파랑 / 재진=초록 / 힐러(HL)=노랑.
-//   (구 T-20260611 현장반전 초진초록/재진파랑 → A안으로 복귀, 전 surface 통일.)
+//   초진=초록 / 재진=파랑 / 힐러(HL)=노랑 (이전 초진=파랑/재진=초록에서 현장 요청으로 반전).
 //   힐러는 visit_type와 직교(healer_flag) → resvKind()로 우선 분류.
 //   resvKind / ResvKind 는 @/lib/resvSlotAgg 단일 소스에서 import(중복 구현 금지, TIMESLOT-PICKER).
 // item6: 동일 시간대 정렬 순서 초진 → 재진 → 힐러 → 기타
 const KIND_ORDER: Record<ResvKind, number> = { new: 0, returning: 1, healer: 2, other: 3 };
 // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (3번): 예약카드 색상박스 전면 재작업.
 //   롱래CRM 스타일 — 좌측 4px 컬러 액센트 + 풀 파스텔 배경 + 동일 톤 보더로 카드 경계 또렷.
-//   색상 코딩(T-20260625 A안 최신): 초진=파랑(blue) / 재진=초록(firstvisit) / 힐러(HL)=노랑(healer).
+//   색상 코딩 유지: 초진=세이지(sage) / 재진=파랑(blue) / 힐러(HL)=노랑(yellow).
+//   T-20260622-foot-GREEN-COLOR-SAGE-RECOLOR: 초진 emerald → sage (재진 파랑·힐러 노랑 유지 → 의미구분 보존)
 const KIND_CARD_STYLE: Record<ResvKind, string> = {
-  // T-20260625-foot-COLOR-CONVENTION-UNIFY (김주연 총괄 A안 확정, 6/25·6/27·6/29 재확인):
-  //   초진=파랑(blue) / 재진=초록(firstvisit) — 예약관리만 잔존하던 T-20260611 현장반전(초진초록/재진파랑)을
-  //   A안(초진파랑/재진초록)으로 복귀해 대시보드·팝업 등 타 surface와 통일. 신규색 0, 旣정의 토큰 재사용.
-  new: 'border-l-4 border-l-blue-400 border-blue-200/80 bg-blue-50',
-  returning: 'border-l-4 border-l-firstvisit-400 border-firstvisit-200/80 bg-firstvisit-50',
+  // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 초진 카드는 ② 그레이 통일에서 제외 → 파스텔 그린(#DCEDC8) 유지(firstvisit 토큰).
+  new: 'border-l-4 border-l-firstvisit-400 border-firstvisit-200/80 bg-firstvisit-50',
+  returning: 'border-l-4 border-l-blue-400 border-blue-200/80 bg-blue-50',
   // T-20260625-foot-COLOR-WARMPASTEL-DESATURATE A안: 힐러 노랑 = healer 전용 토큰(#FFFDE7 carve-out, AC6). 의미색 yellow와 분리.
   healer: 'border-l-4 border-l-healer-400 border-healer-200/80 bg-healer-50',
   other: 'border-l-4 border-l-amber-400 border-amber-200/80 bg-amber-50',
 };
 // item1/2: 헤더·슬롯 카운트 점 색상 (유형별)
 const KIND_DOT: Record<ResvKind, string> = {
-  new: 'bg-blue-500', // T-20260625-foot-COLOR-CONVENTION-UNIFY A안: 초진 dot 파랑(blue)
-  returning: 'bg-firstvisit-500', // T-20260625 A안: 재진 dot 초록(firstvisit)
+  new: 'bg-firstvisit-500', // T-20260623-foot-CHART2-MONOTONE-3MOCKUP carve-out: 초진 dot 파스텔 그린 유지(firstvisit)
+  returning: 'bg-blue-500',
   healer: 'bg-healer-500', // T-20260625-WARMPASTEL A안: 힐러 dot 골드 액센트 #FBC02D(healer 토큰)
   other: 'bg-amber-500',
 };
@@ -1915,9 +1913,9 @@ export default function Reservations() {
                               <span className="text-[10px] font-semibold tabular-nums text-foreground">{time}</span>
                               {total > 0 ? (
                                 <span className="flex flex-wrap items-center gap-0.5 text-[8px] font-medium leading-none">
-                                  {n > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-0.5 py-0.5 text-blue-700">초 {n}</span>}
-                                  {rr > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-0.5 py-0.5 text-firstvisit-700">재 {rr}</span>}
-                                  {h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-0.5 py-0.5 text-healer-700">HL {h}</span>}
+                                  {n > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-0.5 py-0.5 text-firstvisit-700">초 {n}</span>}
+                                  {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-0.5 py-0.5 text-blue-700">재 {rr}</span>}
+                                  {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-0.5 py-0.5 text-yellow-700">HL {h}</span>}
                                 </span>
                               ) : null}
                             </div>
@@ -1988,9 +1986,9 @@ export default function Reservations() {
                           className="mt-1 flex flex-wrap items-center justify-center gap-1 text-[10px] font-medium leading-none"
                         >
                           <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
-                          <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">초 {c.n}</span>
-                          <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">재 {c.r}</span>
-                          {c.h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-1.5 py-0.5 text-healer-700">HL {c.h}</span>}
+                          <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">초 {c.n}</span>
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">재 {c.r}</span>
+                          {c.h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700">HL {c.h}</span>}
                         </div>
                       );
                     })()}
@@ -2112,9 +2110,9 @@ export default function Reservations() {
                                       data-testid={`cell-kind-count-${dateStr}-${time}`}
                                       className="flex flex-wrap items-center gap-0.5 text-[9px] font-medium leading-none"
                                     >
-                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">초 {n}</span>}
-                                      {rr > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1 py-0.5 text-firstvisit-700">재 {rr}</span>}
-                                      {h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-1 py-0.5 text-healer-700">HL {h}</span>}
+                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1 py-0.5 text-firstvisit-700">초 {n}</span>}
+                                      {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
+                                      {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
                                     </div>
                                   );
                                 })()}

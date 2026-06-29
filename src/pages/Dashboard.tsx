@@ -809,8 +809,7 @@ const DraggableCard = memo(function DraggableCard({
           </span>
         )}
         {checkIn.visit_type === 'new' && (
-          /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진=파랑(blue). 구 yellow 하드코드 → A안 파랑 통일 */
-          <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
+          <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
         {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
         <OutstandingDueBadge data={outstandingData} />
