@@ -72,25 +72,16 @@ test.describe('T-20260629-foot-ASSIGN-ALERT-MARQUEE — 배정 알림 이동+전
     await cleanupSeededCheckin(service, seed);
   });
 
-  // ── S1: 헤더 좌측 — 지점명+날짜 바로 옆 인접 배치 + 패널 동일 동작 ────────────────
-  test('S1: 알림 종이 헤더 좌측(지점명+날짜) 옆에 위치하고 클릭 시 패널이 동일하게 열린다', async ({ page }) => {
+  // ── S1: [SUPERSEDED by T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE] ───────────
+  //   본 티켓은 알림을 '헤더 좌측'에 두었으나, 후속 MOVE 티켓이 '날짜선택 옆(페이지 본문)'으로 재이동.
+  //   헤더 위치 단언은 더 이상 유효하지 않으므로, 여기서는 '알림 종이 어디든 노출 + 클릭→패널'만 검증(불변 부분).
+  //   정확한 새 위치(날짜선택 옆) 검증은 STAFFASSIGN-ALERT-MOVE-MARQUEE.spec.ts 가 소유.
+  test('S1: 알림 종이 노출되고 클릭 시 패널이 동일하게 열린다 (위치 검증은 MOVE 티켓으로 이관)', async ({ page }) => {
     const ok = await gotoAdmin(page);
     expect(ok).toBeTruthy();
 
-    const header = page.locator('header').first();
-    const bell = header.getByTestId('assign-notify-bell');
+    const bell = page.getByTestId('assign-notify-bell');
     await expect(bell).toBeVisible();
-
-    // 좌측 그룹(지점명+날짜)에 인접 — 우측 컨트롤(고객 검색)보다 왼쪽에 위치함을 검증.
-    const searchBtn = header.getByRole('button', { name: /고객 검색/ });
-    const bellBox = await bell.boundingBox();
-    const searchBox = await searchBtn.boundingBox();
-    const headerBox = await header.boundingBox();
-    expect(bellBox && searchBox && headerBox).toBeTruthy();
-    // 알림이 우측 컨트롤(검색)보다 왼쪽 = 좌측 그룹 소속
-    expect(bellBox!.x).toBeLessThan(searchBox!.x);
-    // 헤더 우측 끝에 붙어있지 않음(과거 위치에서 벗어남)
-    expect(bellBox!.x + bellBox!.width).toBeLessThan(headerBox!.x + headerBox!.width - 100);
 
     // 클릭 → 동일 패널(내용 동일) 노출
     await bell.click();
@@ -154,8 +145,9 @@ test.describe('T-20260629-foot-ASSIGN-ALERT-MARQUEE — 배정 알림 이동+전
     await page.getByTestId('dash-date-prev').click();
     await page.getByTestId('dash-date-today').click(); // 오늘로 복귀
 
-    // 헤더가 가로 스크롤로 터지지 않음 — 종/대시보드 루트가 뷰포트 내에 존재
-    const bell = page.locator('header').first().getByTestId('assign-notify-bell');
+    // 가로 스크롤로 터지지 않음 — 종/대시보드 루트가 뷰포트 내에 존재
+    // (MOVE 티켓 이후 종은 헤더가 아닌 날짜선택 옆 본문에 있으므로 전역 testid로 조회)
+    const bell = page.getByTestId('assign-notify-bell');
     const bellBox = await bell.boundingBox();
     expect(bellBox).toBeTruthy();
     expect(bellBox!.x).toBeGreaterThanOrEqual(0);

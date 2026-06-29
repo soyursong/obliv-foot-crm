@@ -46,6 +46,8 @@ import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
 import { visitRouteOptionsFor } from '@/lib/types';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
+// T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림을 날짜선택 옆에 배치(헤더에서 이전)
+import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
 // T-20260516-foot-RESV-DETAIL-POPUP: 4분할 예약 상세 팝업
 import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
 // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달
@@ -1628,6 +1630,10 @@ export default function Reservations() {
           >
             {viewMode === 'week' ? '이번 주' : '오늘'}
           </Button>
+          {/* T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE [변경1]: 자동배정 알림을 날짜선택(좌측 < 날짜 > 오늘) 바로 오른쪽 옆에 배치.
+              헤더(AdminLayout)에서 이전 — 중복 노출 없음. 미읽음 0건이면 컴포넌트 내부에서 마키 스트립 미노출(상시 X).
+              애니메이션(마키 흐름 + amber 글로우/펄스, 1.5~1.6s 완만)은 컴포넌트 기존 정의 그대로 사용. */}
+          <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
           {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: '전체예약/내 예약' 토글을 '이번 주' 옆(기간 토글 영역)으로 이동.
               T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name(담당 이름) === 로그인 표시명(NAME-MATCH). 동작 불변. */}
           <select

@@ -198,11 +198,14 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
   }, [notifs, profile?.id]);
 
   return (
-    <div className="relative flex items-center gap-1.5" ref={wrapRef}>
+    <div className="relative flex min-w-0 shrink items-center gap-1.5" ref={wrapRef}>
       {/* T-20260629-foot-ASSIGN-ALERT-MARQUEE AC-2/AC-3: 미읽음 배정 알림이 있을 때만(상시 X)
           전광판(마키) 스트립을 노출. 클릭 시 종 드롭다운 토글(노출 내용 동일).
           순수 CSS animation(tailwind keyframes) — 신규 npm 패키지 0.
-          prefers-reduced-motion: motion-safe:* 변형으로 흐름/글로우 미적용 + motion-reduce:truncate 정적 강조 폴백. */}
+          prefers-reduced-motion: motion-safe:* 변형으로 흐름/글로우 미적용 + motion-reduce:truncate 정적 강조 폴백.
+          T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE [변경1 반응형]: 날짜선택 옆(혼잡한 대시보드 헤더)로 이동하며
+            max-width를 태블릿 보수적으로 조정 — md(태블릿 세로 ~768)는 sm 캡(170) 유지, lg/xl(가로·데스크탑)에서만 확장.
+            min-w-0 + shrink로 잔여 폭 부족 시 스트립이 밀려나지 않고 줄어들도록(마키=스크롤 티커라 내용 손실 없음). */}
       {unreadCount > 0 && (
         <button
           type="button"
@@ -210,7 +213,7 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
           onClick={() => setOpen((v) => !v)}
           title="담당자 배정 알림 — 클릭하여 상세 보기"
           aria-label={`담당자 배정 알림 ${unreadCount}건`}
-          className="flex min-h-[36px] max-w-[150px] items-center gap-1.5 overflow-hidden rounded-full border-2 border-amber-400 bg-amber-50 py-1 pl-2 pr-2.5 text-amber-800 transition hover:bg-amber-100 motion-safe:animate-alert-glow sm:max-w-[260px] md:max-w-[360px]"
+          className="flex min-h-[36px] min-w-0 shrink max-w-[120px] items-center gap-1.5 overflow-hidden rounded-full border-2 border-amber-400 bg-amber-50 py-1 pl-2 pr-2.5 text-amber-800 transition hover:bg-amber-100 motion-safe:animate-alert-glow sm:max-w-[170px] lg:max-w-[280px] xl:max-w-[360px]"
         >
           <Megaphone className="h-4 w-4 shrink-0 text-amber-600 motion-safe:animate-pulse-hand" />
           <span className="min-w-0 flex-1 overflow-hidden">

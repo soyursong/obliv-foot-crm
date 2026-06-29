@@ -87,6 +87,8 @@ import DoctorCallListBar from '@/components/DoctorCallListBar';
 // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 대시보드 달력 날짜 클릭 → 페이지 이동 없이
 //   하단 인라인 현황(근무스케줄+인수인계) 표시. CalendarNoticePanel이 /admin?date=YYYY-MM-DD 로 네비게이트.
 import DashboardDateDetail from '@/components/DashboardDateDetail';
+// T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림을 날짜선택 옆에 배치(헤더에서 이전)
+import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
 import { PaymentDialog } from '@/components/PaymentDialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
@@ -6906,6 +6908,10 @@ export default function Dashboard() {
               오늘로
             </Button>
           )}
+          {/* T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE [변경1]: 자동배정 알림을 날짜선택(< 날짜 > 오늘로) 바로 오른쪽 옆에 배치.
+              헤더(AdminLayout)에서 이전 — 중복 노출 없음. 미읽음 0건이면 마키 스트립 미노출.
+              애니메이션(마키 흐름 + amber 글로우/펄스, 1.5~1.6s 완만, reduced-motion 폴백)은 컴포넌트 기존 정의 그대로. */}
+          <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
           {/* T-20260613-foot-FIELDBATCH item6: 날짜 옆 "배정 carry-over (date)" 인디케이터 제거(현장 김주연 총괄 요청).
               공간배정 carry-over 데이터 적용 로직(fetchAssignments eff.hasToday 게이트)은 불변 — 시각 라벨만 삭제. */}
         </div>
