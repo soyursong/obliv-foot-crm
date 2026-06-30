@@ -22,7 +22,14 @@ import { PkgOutstandingBadge } from '@/components/PkgOutstandingBadge';
 // T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL(REOPEN): 수동 새 체크인이 대기슬롯 직행 시
 //   신규 balanced 자동배정 엔진 연결(기존엔 레거시 assign_consultant_atomic/assigned_staff_id만 → 치료사 자동배정 누락).
 // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: INSERT 시점 consultant 자동세팅도 assignment_actions(SSOT) 로그.
-import { maybeAutoAssign, logAssignment, deriveConsultAxis } from '@/lib/autoAssign';
+import {
+  maybeAutoAssign,
+  logAssignment,
+  deriveConsultAxis,
+  fetchTodayWorkingStaffIds,
+  fetchTodayTempOffStaffIds,
+  ASSIGN_SILENT_REASON,
+} from '@/lib/autoAssign';
 import type { CheckInStatus, Reservation, VisitType } from '@/lib/types';
 
 interface Props {
@@ -336,9 +343,10 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     if (insertedRow?.id && consultantId) {
       const assignedConsultantId = consultantId;
       const insertedId = insertedRow.id;
+      const isReturningVisit = visitType === 'returning';
       void (async () => {
         let axis = 'returning';
-        if (visitType !== 'returning') {
+        if (!isReturningVisit) {
           const { data: axCust } = await supabase
             .from('customers')
             .select('visit_type, lead_source, visit_route')
@@ -348,6 +356,26 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
             (axCust as { visit_type?: string | null; lead_source?: string | null; visit_route?: string | null } | null) ?? {},
           );
         }
+        // T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP:
+        //   재진 체크인의 상담사 = customers.assigned_staff_id(지정 담당 실장) autofill.
+        //   지정 담당이 '당일 정상출근'(근무캘린더 ∧ ¬임시off)일 때만 reason=sentinel → 알림 표시 억제(AC-1).
+        //   휴무·임시off·미지정·근태 판정 실패 → 미부여 → 알림 노출(AC-3 휴무 fallback / AC-5 보수적 default).
+        //   비재진(초진/체험)은 미부여 → 알림 기존대로 노출(AC-2/AC-4 회귀0).
+        //   ※ 비차단(IIFE) — 근태 read(구글시트 EF)는 체크인 토스트/닫힘 이후 best-effort 로만 수행.
+        let silentReason: string | null = null;
+        if (isReturningVisit && assignedConsultantId) {
+          try {
+            const [workingIds, tempOff] = await Promise.all([
+              fetchTodayWorkingStaffIds(clinicId),
+              fetchTodayTempOffStaffIds(),
+            ]);
+            if (workingIds.has(assignedConsultantId) && !tempOff.has(assignedConsultantId)) {
+              silentReason = ASSIGN_SILENT_REASON;
+            }
+          } catch {
+            silentReason = null; // 판정 실패 → 보수적으로 알림 노출
+          }
+        }
         await logAssignment({
           clinicId,
           checkInId: insertedId,
@@ -356,6 +384,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
           axis,
           toStaffId: assignedConsultantId,
           createdBy: null,
+          reason: silentReason,
         });
       })();
     }

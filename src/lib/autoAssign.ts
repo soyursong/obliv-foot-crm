@@ -32,6 +32,17 @@ import type {
   CheckInStatus,
 } from './types';
 
+/**
+ * T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP:
+ * 재진(returning) + 지정 담당자(0순위) 정상 배정 시 assignment_actions.reason 에 남기는 sentinel.
+ *  · 카운트/부하 집계 정합 영향 0 — 배정 누적 SSOT=check_ins(Assignments §5b), computeLoad/fetchMonthActions 는
+ *    reason 을 보지 않음 → ASSIGN-COUNT-TOSS-3FIX 보존(행은 그대로 INSERT, 표시만 억제).
+ *  · AssignmentNotifyBell 만 이 reason 행을 '담당자 배정 알림' 노출에서 제외(이미 지정 담당 → 배정 인지 불필요).
+ *  · 휴무·임시off·미지정·판정실패 → 지정담당 미선택(fallback) → sentinel 미부여 → 알림 노출(AC-3/AC-5 보수적 default).
+ * (DB 무변경 — reason 은 기존 컬럼. 신규 enum/컬럼 0.)
+ */
+export const ASSIGN_SILENT_REASON = 'silent_revisit_designated';
+
 // ── 축(axis) 파생 ─────────────────────────────────────────────────────────────
 
 /** 상담 축 라벨(집계 그룹키). 재진='returning'(균등 제외). 그 외 = TM/인바운드/워크인. */
@@ -423,8 +434,10 @@ export async function maybeAutoAssign(
       : (customer?.designated_therapist_id ?? null);
 
     let chosen: string | null = null;
+    let usedDesignated = false; // 0순위 지정 담당이 선택됐는가(fallback 아님) — 알림 suppress 판정용
     if (designatedId && workingIds.has(designatedId) && !tempOff.has(designatedId)) {
       chosen = designatedId;
+      usedDesignated = true;
     } else {
       // 5) 1순위 — 월 균등 least-loaded (재진은 균등 무관하게 풀에서 최소 선택)
       //    T-20260629 ROTATION: 동률 시 기본순번(assign_sort_order)으로 round-robin tie-break.
@@ -459,6 +472,11 @@ export async function maybeAutoAssign(
     }
 
     // 7) 로그
+    //    T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP: 재진 + 지정 담당(0순위) 정상 배정이면
+    //    reason=sentinel → 알림 표시만 억제(카운트/부하 집계는 reason 무관, 영향 0). fallback(휴무/미지정)
+    //    은 usedDesignated=false → 미부여 → 알림 노출(AC-3). 비재진은 회귀0(미부여).
+    const silentReason =
+      usedDesignated && customer?.visit_type === 'returning' ? ASSIGN_SILENT_REASON : null;
     await logAssignment({
       clinicId: checkIn.clinic_id,
       checkInId,
@@ -467,6 +485,7 @@ export async function maybeAutoAssign(
       axis,
       toStaffId: chosen,
       createdBy,
+      reason: silentReason,
     });
     return { assigned: true, staffId: chosen };
   } catch (e) {

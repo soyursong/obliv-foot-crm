@@ -22,6 +22,7 @@ import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate } from '@/lib/format';
+import { ASSIGN_SILENT_REASON } from '@/lib/autoAssign';
 import type { AssignmentAction } from '@/lib/types';
 
 interface AssignNotif {
@@ -79,13 +80,17 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
     try {
       const { data } = await supabase
         .from('assignment_actions')
-        .select('id, check_in_id, to_staff_id, created_at, action_type')
+        .select('id, check_in_id, to_staff_id, created_at, action_type, reason')
         .eq('clinic_id', clinicId)
         .eq('action_type', 'auto_assign')
         .gte('created_at', dayStart)
         .order('created_at', { ascending: false })
         .limit(50);
-      const actions = (data ?? []) as AssignmentAction[];
+      // T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP: 재진 지정담당 정상배정(sentinel reason)은
+      //   '담당자 배정 알림'에서 제외(이미 지정 담당 → 배정 인지 불필요). 그 외(초진/휴무 fallback 등)는 노출.
+      const actions = ((data ?? []) as AssignmentAction[]).filter(
+        (a) => a.reason !== ASSIGN_SILENT_REASON,
+      );
       if (actions.length === 0) {
         setNotifs([]);
         return;
@@ -139,8 +144,11 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'assignment_actions', filter: `clinic_id=eq.${clinicId}` },
         (payload) => {
-          const row = payload.new as { action_type?: string };
-          if (row?.action_type === 'auto_assign') fetchNotifs();
+          const row = payload.new as { action_type?: string; reason?: string | null };
+          // 재진 지정담당 정상배정(sentinel)은 알림 비대상 → 불필요한 refetch flash 방지.
+          if (row?.action_type === 'auto_assign' && row?.reason !== ASSIGN_SILENT_REASON) {
+            fetchNotifs();
+          }
         },
       )
       .subscribe();
