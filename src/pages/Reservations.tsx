@@ -1950,9 +1950,15 @@ export default function Reservations() {
                             // T-20260624-foot-TIMEGRID-COMPACT-DENSITY: field-soak 정제 — 시간 컬럼 너비 200px→132px(컴팩트·촘촘히).
                             // T-20260625-foot-...COMPACT2(2단계, 김주연 총괄 확정): 132px→90px 추가 압축(한 화면 더 많은 시간 칸). 카드 w-full(컬럼 추종)이라 폭만 변경.
                             'flex w-[90px] min-w-[90px] flex-col rounded-lg border bg-background',
-                            'border-border',
-                            full && 'border-red-200',
-                            isNow && 'ring-1 ring-amber-400',
+                            // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX:
+                            //   건1(클립): 기존 isNow 'ring-1 ring-amber-400'(box-shadow)은 부모 overflow-x-auto(→overflow-y auto 계산)에
+                            //     좌·하단이 짤림(10:00=첫 컬럼). ring → border(박스모델 내부)로 전환해 클립 근본 해소.
+                            //   건2(UX): 노랑 제거 → 실버 #BBBBBB border + 테두리 깜빡임(animate-live-border-pulse, motion-safe).
+                            //     reduced-motion 시 정적 실버 border 폴백. 힐러 #FFFDE7(healer 토큰)와 클래스 완전 분리 — 미접촉.
+                            isNow
+                              ? 'border-2 border-[#BBBBBB] motion-safe:animate-live-border-pulse'
+                              : 'border-border',
+                            full && !isNow && 'border-red-200',
                             isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
                           )}
                         >
@@ -1962,7 +1968,8 @@ export default function Reservations() {
                             data-slot-time={time}
                             className={cn(
                               'sticky top-0 z-10 flex min-h-[32px] items-center justify-between gap-0.5 rounded-t-lg border-b bg-muted/40 px-1 py-0.5',
-                              isNow && 'bg-amber-50',
+                              // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX 건2: 현재시각 헤더 노랑(bg-amber-50) → 실버(bg-slate-100).
+                              isNow && 'bg-slate-100',
                               full && 'bg-red-50',
                             )}
                           >

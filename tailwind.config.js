@@ -196,11 +196,20 @@ export default {
           "0%": { transform: "translateY(0)" },
           "100%": { transform: "translateY(-50%)" },
         },
+        // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX 건2:
+        //   예약관리 day-view '실시간 반영'(현재 시각 컬럼) 테두리 깜빡임. 노랑(ring-amber) → 실버 border 전환 후
+        //   border-color를 실버(#BBBBBB) ↔ 라이트실버(#E5E7EB) 로 blink. box-shadow가 아닌 border-color만
+        //   애니메이션 → 부모 overflow에 짤리지 않음(건1 클립 버그 동시 해소). 힐러 #FFFDE7 미접촉(yellow 무관).
+        "live-border-pulse": {
+          "0%, 100%": { borderColor: "#BBBBBB" },
+          "50%": { borderColor: "#E5E7EB" },
+        },
       },
       animation: {
         "pulse-hand": "pulse-hand 1.5s ease-in-out infinite",
         shake: "shake 0.9s ease-in-out infinite",
         "marquee-y": "marquee-y 9s linear infinite",
+        "live-border-pulse": "live-border-pulse 1.4s ease-in-out infinite",
       },
     },
   },
