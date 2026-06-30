@@ -1889,7 +1889,10 @@ export default function Reservations() {
                       className={cn(
                         'block min-w-0 max-w-full truncate font-semibold text-gray-900',
                         r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
-                        r.status === 'cancelled' && 'line-through',
+                        // T-20260630-foot-RESVMGMT-CANCELNAME-REGISTRANT-2FIX (1): 취소 행 이름 '축소' 효과 제거.
+                        //   취소 성함은 plain span 분기라 카드 본문(text-[8px]) 상속 → 활성 성함(CustomerHoverCard compactDense=text-[11px])보다 작아 보였음.
+                        //   취소 성함만 활성과 동일 text-[11px]로 고정(취소선·'취소됨' 배지 등 다른 취소 표기는 유지). 미연결-활성 등 다른 분기 폰트는 불변(AC-4).
+                        r.status === 'cancelled' && 'text-[11px] line-through',
                       )}
                       onClick={(e) => { if (!r.customer_id) return; e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
                     >
@@ -1904,15 +1907,18 @@ export default function Reservations() {
                     · 초진/재진 텍스트 제거 — 박스 배경 컬러(KIND_CARD_STYLE)로 이미 구분(컬러 점 KIND_DOT은 유지).
                     · 연락처(전화 뒷4자리) 제거 → 간략정보(hover)에 풀번호 노출(이관 완료).
                     예약 상태(STATUS_LABEL)는 운영 신호로 유지. */}
+                {/* T-20260630-foot-RESVMGMT-CANCELNAME-REGISTRANT-2FIX (2): 예약등록자(@registrar) 위치 — 예약 상태 '하단' → 상태 '우측 사이드'.
+                    기존: 상태줄 아래 별도 div로 등록자 표기(세로 적층). 변경: 같은 flex 행에서 좌=상태 / 우=등록자(ml-auto)로 나란히.
+                    값/노출조건 무변경(resvBookerMap 그대로, 이름 매핑 유지·UUID 회귀 없음). 좁은 90px 칸 가드 = 상태 shrink-0 + 등록자 min-w-0 truncate. */}
                 <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
-                  <span className={cn('inline-block h-1.5 w-1.5 rounded-full', KIND_DOT[resvKind(r)])} />
-                  {STATUS_LABEL[r.status]}
+                  <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
+                  <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
+                  {resvBookerMap.get(r.id) && (
+                    <span className="ml-auto min-w-0 truncate text-teal-700" title={`예약등록자 ${resvBookerMap.get(r.id)}`}>
+                      @{resvBookerMap.get(r.id)}
+                    </span>
+                  )}
                 </div>
-                {resvBookerMap.get(r.id) && (
-                  <div className="truncate text-[7px] text-teal-700" title={`담당자 ${resvBookerMap.get(r.id)}`}>
-                    @{resvBookerMap.get(r.id)}
-                  </div>
-                )}
               </div>
             );
 
