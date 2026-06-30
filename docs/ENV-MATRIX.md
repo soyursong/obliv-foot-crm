@@ -37,3 +37,15 @@
 ## 변경 이력
 - 2026-06-30: 신설. T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP QA phase1.5 env_missing
   false-positive(VITE_KAKAO_REST_API_KEY=OPTIONAL) 해소 근거. supervisor 게이트 OPTIONAL 예외 권위 소스.
+- 2026-07-01: **동일 false-positive 재발 기록** — T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP
+  QA phase1.5가 `VITE_KAKAO_REST_API_KEY` bundle grep NOT_FOUND을 env_missing 블로커로 재판정
+  (MSG-20260701-063954-1ox8). 본 문서 §22(OPTIONAL≠블로커)·§28(grep 구조적 0건=정상) 규약상
+  **블로커 아님**. PROD 재실측으로 graceful fallback 정상 동작 확정:
+    · `vercel env ls production` = FOOT_ORIGIN_SLUG / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY 3개만
+      (REQUIRED 3개 전부 등록, OPTIONAL 카카오키 미발급 = 설계상 정상).
+    · prod 번들 `assets/index-BDMQidPZ.js` + lazy chunk `assets/SelfCheckIn-Dnte6McY.js`
+      양쪽 모두 `VITE_KAKAO_REST_API_KEY` 변수명 0건(Vite 인라인 → 변수명 소거, §29 그대로).
+    · chunk 내 `apiKey` 인라인값 = `b=""`(빈 문자열) → `useState(!b)`=수기입력모드,
+      `data-search-ready="false"` 런타임 확정. 카카오검색 비활성·수기입력 fallback 정상.
+  → 카카오키는 본 티켓(coordinator write-RLS parity) surface와 **직교**. 키 발급은 사람 액션
+    (§33~35)이며 별건. supervisor phase1.5 env-matrix 게이트는 본 변수를 OPTIONAL 예외로 통과시켜야 함.
