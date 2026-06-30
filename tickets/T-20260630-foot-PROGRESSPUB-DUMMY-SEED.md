@@ -4,6 +4,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: n/a (데이터 시드 — supervisor 데이터 게이트 대기)
+deploy_commit: afd4cc4a
 deployed_at: n/a (prod 데이터 직접 시드 — Vercel 배포 무관, FE/앱 코드 변경 0)
 bundle_hash: n/a (앱 코드 변경 없음)
 db_change: "data-only — prod INSERT 21행(customers 3 + check_ins 6 + reservations 6 + medical_charts 6). DDL 0, 기존행 변경 0, backfill 0. db_change=false."
