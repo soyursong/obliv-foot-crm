@@ -130,6 +130,11 @@
 
 ---
 
-## 6. Migration B 초안 (★HOLD — DA GO 전 미적용, 진료확인서 제외)
+## 6. Migration B — ★ 적용 완료 (2026-06-30, 진료확인서 제외)
 
-> 실제 SQL은 `supabase/migrations/20260630_DRAFT_HOLD_form_service_backfill_migration_b.sql.txt` (`.txt` 확장 = 마이그 러너 비대상, 적용 차단). DA GO + reporter(진료확인서) 후 정식 `.sql`로 승격.
+> **적용 SQL**: `supabase/migrations/20260630140000_foot_docform_svc_reconcile_migration_b.sql` (라이브 적용 완료, Management API).
+> **게이트 클리어**: DA 'ADDITIVE→가격reconcile' 정식 재판정 = **GO 조건부 C1~C4** (DA-20260630-foot-DOCFORM-PRICE-RECONCILE.md, corroborate INFO MSG-20260630-102748-ecul) + reporter confirm(7oqz, 진료의뢰서 1행) + 대표게이트 면제·DDL-diff 불요(데이터 UPDATE).
+> **적용 전 라이브 실측 검증**: C1 forward-only(service_charges 스냅샷 보존, live price 역참조 아님) / C2 1행(id 78dd40fb) / C3 before=0 실측 / C4 비급여(is_insurance_covered=false·vat none).
+> **적용 결과**: 진료의뢰서 0→3,000 · 제증명 11행 등재(relabel 6 + free-4 INSERT + 진료의뢰서) · 진료기록사본1 pricing_tiers 인코딩 · form_templates 백필 11 link(treat_confirm 제외).
+> **HOLD 유지**: 진료확인서(가격 분기 10,000 vs 3,000) = reporter 재게이트 → 별도 후속 슬라이스. Q2/Q3 중복행 deactivate = DA 미승인 → 미적용(주석 유지).
+> **rollback**: `20260630140000_foot_docform_svc_reconcile_migration_b.rollback.sql` (forward-only — 과거 charge 무영향).
