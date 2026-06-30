@@ -1,0 +1,26 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TESTDATA-PURGE 삭제 후 종결 검증 (throttle-safe)  2026-06-30T06:17:30.482Z
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[AC6] 잔존 28 / 보존매칭 28 / 비보존잔존 0  ✅
+
+[AC5] orphan 스캔 (31개 FK경로): 총 0 ✅
+
+[AC4] 보존 28명 자식이력 카운트(무손상 — 0 이상 정상 존재):
+  reservations: 63
+  check_ins: 56
+  payments: 22
+  packages: 4
+  package_sessions: 13
+  form_submissions: 68
+  treatment_memos: 33
+  resv_memo_hist: 5
+  notif_logs: 112
+  status_transitions: 365
+
+=== 종결 판정 ===
+  AC6 잔존=28/보존=28: PASS
+  AC5 orphan 0: PASS
+  AC4 보존 자식이력 존재: PASS (위 카운트)
+
+POST_VERIFY_DONE
