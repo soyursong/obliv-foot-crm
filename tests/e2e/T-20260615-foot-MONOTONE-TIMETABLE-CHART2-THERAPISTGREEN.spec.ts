@@ -24,9 +24,11 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const dashboard = readFileSync(join(ROOT, 'src', 'pages', 'Dashboard.tsx'), 'utf8');
 const handover = readFileSync(join(ROOT, 'src', 'lib', 'handover.ts'), 'utf8');
-const handoverPage = readFileSync(join(ROOT, 'src', 'pages', 'Handover.tsx'), 'utf8');
 const chart = readFileSync(join(ROOT, 'src', 'pages', 'CustomerChartPage.tsx'), 'utf8');
 const status = readFileSync(join(ROOT, 'src', 'lib', 'status.ts'), 'utf8');
+// NOTE: Handover.tsx(인수인계) 직접 read 는 제거됨 — 치료사 필터 칩 UI 가 HANDOVER-PARTSONLY(88b4503a)로
+//   전면 폐지되어 'item3(핵심) 선택 칩 green 원복' 가드가 수명 종료(planner STALEGUARD-THERAPISTFILTERCHIP-DROP,
+//   Option A=삭제). '제거 상태' 회귀 보증은 HANDOVER-PARTSONLY S1(탭제거+직접렌더)이 소유 → 본 spec 중복 불가.
 
 // ── 통합시간표 전용 슬롯 카드 구간만 슬라이스 (칸반·기타 영역 오탐 방지) ──
 //   T-20260625-foot-COLOR-CONVENTION-UNIFY: 앵커 코멘트 텍스트가 A안 적용으로 갱신됨 → 슬라이스 시작 마커 동기화.
@@ -72,15 +74,11 @@ test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드
     expect(chart).toMatch(/bg-slate-/);
   });
 
-  test('item3(핵심): 치료사 필터 칩 선택 상태가 green 으로 원복됐다 (brown 누수 정정)', () => {
-    // 선택 칩에 치료사 전용 green 분기가 있다 — 타 role 은 bg-teal-600 유지
-    expect(handoverPage).toMatch(
-      /p\.code === 'therapist' \? 'bg-green-600 text-white' : 'bg-teal-600 text-white'/,
-    );
-    // 무분기 bg-teal-600(전 role 동일 brown) 잔존 0 — 잔존 시 brown 누수 재발
-    expect(handoverPage).not.toMatch(/partFilter === p\.code \? 'bg-teal-600 text-white'/);
-    expect(handoverPage).not.toMatch(/formPart === p\.code \? 'bg-teal-600 text-white'/);
-  });
+  // ⚠ DROPPED 2026-07-01 by T-20260701-foot-STALEGUARD-THERAPISTFILTERCHIP-DROP (planner Option A=가드 삭제).
+  //   기존 'item3(핵심): 치료사 필터 칩 선택 상태 green 원복' test 가 여기 있었음.
+  //   치료사 파트 필터 칩 UI 가 HANDOVER-PARTSONLY(deployed 88b4503a)로 전면 제거 → 가드 대상 소멸.
+  //   '제거 상태' 회귀 보증은 HANDOVER-PARTSONLY S1 이 소유(중복 불가)이므로 용도변경 없이 clean 삭제.
+  //   handoverPage(Handover.tsx) read 도 본 test 전용이었으므로 동반 제거(상단 NOTE 참조).
 
   // ⚠ SUPERSEDED 2026-06-30 by T-20260630-foot-HANDOVER-BOX-COMPACT-MONO (11:09 PUSH AC2,
   //   김주연 총괄 자기-override): handover 박스 배경 + 파트 배지(PART_BADGE_CLASS/PART_BOX_CLASS)를
