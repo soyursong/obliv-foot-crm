@@ -136,14 +136,14 @@ const PEDICURE_REMOVED_OPTIONS = [
   { value: '있음', en: 'Yes' },
   { value: '없음', en: 'No' },
 ];
-// 항목 B — 30분 이상 엎드려 시술 가능 여부 (외국인 폼 전용).
-//   영문 카피=임시번역(현장 확정 전 — planner FOLLOWUP 발행).
-//   ⚠ 노출범위: 현장 표현 "발 각질케어만 해당"이나 graft 노트/CANCELLATION 지침대로
-//   '우선 외국인 폼 상시 노출(isEn)'로 1차 구현. 각질케어(isCallus) 한정 조건부 노출 가능성은 후속.
-//   ↳ 조건부로 좁힐 경우: 아래 렌더 게이트 `isEn` → `isCallus` 로 교체하면 됨.
+// 항목 B — 30분 이상 엎드려 시술 가능 여부.
+//   T-20260629-foot-HEALTHQ-SELF-ADD-2Q REWORK(현장 김주연 총괄 확정):
+//   · 노출범위 B안 = 발각질케어(callus) 선택 시에만 조건부 노출 → 렌더 게이트 `isCallus`.
+//   · 영문 카피 현장 확정: 라벨 "...more than 30 minutes..." + 선택지 Possible/Not possible → Yes/No.
+//   ⚠ value=한국어 canonical(가능/불가능) 불변 — JSONB 저장값/차트 표시 무회귀. 표시 라벨(en)만 교체.
 const PRONE_30MIN_OPTIONS = [
-  { value: '가능',   en: 'Possible' },
-  { value: '불가능', en: 'Not possible' },
+  { value: '가능',   en: 'Yes' },
+  { value: '불가능', en: 'No' },
 ];
 
 // 옵션 값(한국어 canonical) → 영문 라벨. 누락 시 원본 value 폴백.
@@ -974,9 +974,10 @@ export default function HealthQMobilePage() {
         </>
         )}
 
-        {/* ── 추가 확인 사항 (T-20260629-foot-HEALTHQ-SELF-ADD-2Q) ───────────────── */}
+        {/* ── 추가 확인 사항 (T-20260629-foot-HEALTHQ-SELF-ADD-2Q REWORK) ────────── */}
         {/* 항목A 패디큐어 제거 유무 = 국문 + 영문 전체(purposeChosen 시 모든 flow 1회 노출).
-            항목B 엎드려 시술 가능 여부 = 외국인 폼 전용(isEn) — 국문 비노출. */}
+            항목B 엎드려 시술 가능 여부 = B안(현장 확정): 발각질케어(isCallus) 선택 시에만 노출.
+            미선택/다른 목적/국문 = 비노출. */}
         {purposeChosen && (
           <section className="space-y-5 rounded-2xl p-4"
             style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
@@ -987,7 +988,7 @@ export default function HealthQMobilePage() {
             {/* 항목 A — 패디큐어 제거 유무 (국문 + 영문 전체) */}
             <div className="space-y-2">
               <p className="text-sm font-medium" style={{ color: C.dark }}>
-                {tt('패디큐어 제거 유무', 'Pedicure removal status')}
+                {tt('패디큐어 제거 유무', 'Pedicure removed?')}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {PEDICURE_REMOVED_OPTIONS.map((opt) => (
@@ -1002,11 +1003,11 @@ export default function HealthQMobilePage() {
               </div>
             </div>
 
-            {/* 항목 B — 30분 이상 엎드려 시술 가능 여부 (외국인 폼 전용 / 국문 비노출) */}
-            {isEn && (
+            {/* 항목 B — 30분 이상 엎드려 시술 가능 여부 (B안: 발각질케어 선택 시에만 노출) */}
+            {isCallus && (
               <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
                 <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>
-                  Can you lie face down for 30+ minutes during the treatment?
+                  Can you lie face down for more than 30 minutes during the treatment?
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {PRONE_30MIN_OPTIONS.map((opt) => (
