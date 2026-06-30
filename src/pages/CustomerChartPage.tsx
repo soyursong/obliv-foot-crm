@@ -54,7 +54,7 @@ import { useNhisLookup } from '@/hooks/useNhisLookup';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
-import { ReservationMemoTimeline, insertReservationMemo, insertAltPinnedMemo } from '@/components/ReservationMemoTimeline';
+import { ReservationMemoTimeline, insertReservationMemo, insertAltPinnedMemo, type ReservationMemoTimelineHandle } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-3: 예약 변경 이력 패널
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
 // T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그
@@ -2776,6 +2776,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [deletingPkg, setDeletingPkg] = useState(false);
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
   const [savingInfoPanel, setSavingInfoPanel] = useState(false);
+  // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 예약메모 입력칸 미저장 내용을 상단 통합 저장 시 flush
+  const resvMemoRef = useRef<ReservationMemoTimelineHandle>(null);
   // T-20260519-foot-PRECHECKIN-CHART AC-3: 내원콜 방문 확인 로딩 상태
   const [confirmingVisit, setConfirmingVisit] = useState(false);
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
@@ -3303,11 +3305,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     await saveCustomerField({ customer_email: emailText.trim() || null });
   };
 
-  // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 저장 (직접수정·non-history → 현재값 덮어쓰기)
-  const saveCustomerNote = async () => {
-    await saveCustomerField({ customer_note: customerNoteText.trim() || null });
-    toast.success('고객메모 저장됨');
-  };
+  // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD → T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2:
+  //   1구역 고객메모 개별 저장 제거 → 상단 통합 저장(handleInfoPanelSave)이 customer_note 함께 저장. saveCustomerNote 폐지.
 
   // 여권번호 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingPassport 제거)
   const savePassport = async () => {
@@ -3453,6 +3452,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     const digits = (rrnFront + rrnBack).replace(/\D/g, '');
     if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
 
+    // T-20260629-foot-RRN-EDIT-WIPE-FIX (REOPEN P0, AC-1'): 기존 등록값과 동일하면 재암호화 생략(no-op 보존).
+    //   조회권한 사용자는 [수정] 진입 시 rrnFull 로 앞뒤가 prefill 되므로, 미수정 저장 = 동일값 → 덮어쓰기/유실 0.
+    //   (rrn_enc 는 13자리 rrn_encrypt 경로로만 write — 빈/부분값은 위 가드에서 이미 차단됨)
+    const origDigits = rrnFull ? rrnFull.replace(/\D/g, '') : '';
+    if (origDigits && digits === origDigits) {
+      setEditingRrn(false); setRrnFront(''); setRrnBack(''); setRrnText('');
+      return;
+    }
+
     // AC-4: 저장 전 세션 유효성 확인 — JWT 만료 선제 처리
     const { data: { session: currentSess } } = await supabase.auth.getSession();
     if (!currentSess) {
@@ -3512,9 +3520,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
       // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 분기
       // T-20260522-foot-CUST-REG-LOGOUT: 401 시 refreshSession() 후 1회 재시도 추가
-      if (editingRrn && rrnBack.length === 0) {
-        // T-20260629-foot-RRN-EDIT-WIPE-FIX: [수정] 진입(앞자리 prefill) 후 뒷자리 미입력 = 실제 수정 안 함.
-        //   기존 암호값을 빈/부분값으로 덮어쓰지 않고 그대로 보존 + 편집모드만 종료 (rrn_encrypt 미호출).
+      // T-20260629-foot-RRN-EDIT-WIPE-FIX (REOPEN P0, AC-1' 데이터 유실 차단·전 role):
+      //   미수정 저장 시 기존 암호값(backhalf) 무손상 보존 — rrn_encrypt 미호출. 두 경우 모두 no-op:
+      //   (a) 뒷자리 미입력(rrnBack 비어있음) = 실제 수정 안 함, (b) 기존 등록값과 동일(조회권한자 prefill 후 미수정).
+      const origRrnDigits = rrnFull ? rrnFull.replace(/\D/g, '') : '';
+      const curRrnDigits = (rrnFront + rrnBack).replace(/\D/g, '');
+      if (editingRrn && (rrnBack.length === 0 || (origRrnDigits && curRrnDigits === origRrnDigits))) {
         setEditingRrn(false);
         setRrnFront('');
         setRrnBack('');
@@ -3569,6 +3580,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       patch.passport_number = passportText.trim() || null;
       // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 통합 저장 (optimistic — saveCustomerField 직접 호출 제거)
       patch.referral_name = referralNameText.trim() || null;
+      // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 고객메모 개별 [저장] 버튼 제거 → 상단 통합 저장에 편입.
+      //   customers.customer_note 현재값 덮어쓰기(non-history). saveCustomerNote와 동일 write — 신규 저장 경로 X.
+      patch.customer_note = customerNoteText.trim() || null;
       if (editingPhone) {
         const digits = phoneText.replace(/\D/g, '');
         if (digits.length === 0) { toast.error('번호를 입력해주세요'); return false; }
@@ -3587,6 +3601,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           // return 제거 — address 저장 블록은 다른 필드 저장 결과와 독립 (T-20260516-foot-C21-SAVE-REGRESS AC-3)
         } else {
           setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+          // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 고객메모 통합저장 → 1번차트 쌍방연동(AC-8) ping 보존(구 saveCustomerNote 동작).
+          localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
         }
       }
       // 3) address 독립 저장 — 실패해도 다른 필드 저장 결과에 영향 없음 (T-20260516-foot-C21-SAVE-REGRESS)
@@ -3612,6 +3628,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       } catch (addrEx) {
         console.error('[C21-SAVE-REGRESS] address 예외 (다른 필드는 정상 저장됨):', addrEx);
         allOk = false; // T-20260609-CHART2-SAVE-CLOSE-BTN
+      }
+      // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 예약메모 입력칸 미저장 내용 flush(히스토리 append).
+      //   빈 입력=no-op(true). 실패 시 allOk=false → 미저장 가드 유지(내용 보존).
+      try {
+        const memoOk = await resvMemoRef.current?.flushPending();
+        if (memoOk === false) allOk = false;
+      } catch (memoEx) {
+        console.error('[CHART2-SAVEMERGE] 예약메모 flush 예외:', memoEx);
+        allOk = false;
       }
       // 4) 모든 편집 상태 닫기 + isDirty 리셋
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail/setEditingPassport/setEditingAddress 제거
@@ -4984,7 +5009,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   /* ── 공통 셀 스타일 (tailwind concat 대체) ── */
-  const LC = 'bg-[#F4F5F6] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#5C6166] whitespace-nowrap text-[11px] w-[90px] shrink-0';
+  // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC1: 차트 항목명(라벨) 텍스트 중앙정렬(text-center). 값(VC) 영역 정렬은 기존 유지.
+  const LC = 'bg-[#F4F5F6] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#5C6166] whitespace-nowrap text-[11px] w-[90px] shrink-0 text-center';
   const VC = 'border-b border-gray-200 px-2 py-1.5 text-xs';
 
   return (
@@ -5159,12 +5185,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </span>
                         <button
                           type="button"
-                          // T-20260629-foot-RRN-EDIT-WIPE-FIX: [수정] 진입 시 앞 6자리(생년월일)는 기존 등록값으로 prefill,
-                          //   뒷자리만 빈칸으로 둔다. (기존 버그: setRrnFront('') 로 앞자리까지 000000 초기화 → 등록값 소실·빈값 덮어쓰기 위험)
-                          //   뒷자리 평문은 마스킹 정책상 prefill 불가 → 빈칸 유지가 정책 내 최선(취소 시 rrnMasked 보존, 저장은 13자리 가드).
+                          // T-20260629-foot-RRN-EDIT-WIPE-FIX (REOPEN P0): [수정] 진입 시 기존 등록값 prefill.
+                          //   ★조회권한자(canViewRrn=admin/manager/director+consultant/coordinator/therapist, A2)는 이미 복호값(rrnFull)을
+                          //     세션 내 보유★ → 앞6 + 뒷7 모두 prefill(뒷자리는 password input=점 마스킹으로 표시, 신규 평문 노출 아님).
+                          //     ∴ "뒷자리 7자리 사라짐" 해소(AC-5) + 미수정 저장 시 동일값 → 덮어쓰기/유실 0(AC-1' no-op 가드와 이중 안전).
+                          //   복호값 없는 경우(rrnFull null: 게이트2 clinic 불일치 등)만 앞자리(rrnMasked)만 prefill·뒷자리 빈칸 fallback.
                           onClick={() => {
-                            const front = rrnMasked ? rrnMasked.split('-')[0].replace(/\D/g, '').slice(0, 6) : '';
-                            setRrnFront(front); setRrnBack(''); setEditingRrn(true); setIsDirty(true);
+                            if (rrnFull && /^\d{6}-?\d{7}$/.test(rrnFull.replace(/\s/g, ''))) {
+                              const d = rrnFull.replace(/\D/g, '');
+                              setRrnFront(d.slice(0, 6)); setRrnBack(d.slice(6, 13));
+                            } else {
+                              const front = rrnMasked ? rrnMasked.split('-')[0].replace(/\D/g, '').slice(0, 6) : '';
+                              setRrnFront(front); setRrnBack('');
+                            }
+                            setEditingRrn(true); setIsDirty(true);
                           }}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
                         >
@@ -5616,13 +5650,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
                     {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
+                    {/* T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST:
+                        AC2 hideAddButton(상단 통합저장이 flush) + ref / AC3 denseHistory / AC4 editable(수정·삭제) */}
                     <ReservationMemoTimeline
+                      ref={resvMemoRef}
                       reservationId={reservations[0]?.id}
                       customerId={customerId}
                       clinicId={customer?.clinic_id ?? ''}
                       authorName={profile?.name ?? ''}
                       compact
                       unifyInput
+                      hideAddButton
+                      denseHistory
+                      editable
                     />
                   </td>
                 </tr>
@@ -5632,24 +5672,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <tr>
                   <td className={cn(LC, 'align-top pt-2')}>고객메모</td>
                   <td className={VC} colSpan={3}>
-                    {/* T-20260624-foot-CHART2-SAVEBTN-COMPACT-KOH-TONE (AC1):
-                        full-width 막대 → 라벨 우측 끝 컴팩트 [저장] 버튼. 동작·토스트 동일. */}
-                    <div className="flex items-center justify-end mb-1">
-                      <button
-                        type="button"
-                        onClick={saveCustomerNote}
-                        disabled={savingField}
-                        data-testid="chart-customer-note-save-btn"
-                        className="rounded bg-[#666666] text-white px-2.5 py-0.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
-                      >
-                        {savingField ? '저장 중…' : '저장'}
-                      </button>
-                    </div>
+                    {/* T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2:
+                        개별 [저장] 버튼 제거 → 2번차트 상단 통합 [저장]이 customer_note 함께 저장(handleInfoPanelSave 편입).
+                        입력 시 isDirty=true → 상단 저장 활성 + 닫기 미저장 가드 동작. */}
                     <Textarea
                       data-testid="chart-customer-note-input"
                       value={customerNoteText}
-                      onChange={(e) => setCustomerNoteText(e.target.value)}
-                      placeholder="고객 성향·특이사항 등 (직접 입력·수정)"
+                      onChange={(e) => { setCustomerNoteText(e.target.value); setIsDirty(true); }}
+                      placeholder="고객 성향·특이사항 등 (직접 입력 · 상단 [저장]으로 저장)"
                       rows={2}
                       className="text-[11px] resize-none"
                     />
