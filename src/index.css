@@ -204,6 +204,11 @@
        셀프접수와 동일한 Pretendard로 실제 렌더하려면 var(--font-sans)를 직접 지정(같은 규칙
        후행 선언이 이김). 웹폰트 실패 시 토큰의 sans-serif fallback. */
     font-family: var(--font-sans);
+    /* T-20260630-foot-DOCFORM-POPUP-BACKDROP-SHAKE: 소견서/진단서 등 모달(@base-ui Dialog) 오픈 시
+       body scroll-lock(overflow:hidden) 으로 데스크탑 classic 스크롤바가 사라지며 가로폭이 점프 →
+       뒷화면 흔들림(layout shift). 스크롤바 gutter 를 상시 예약해 overflow 토글 시 폭 변화를 0으로 만든다.
+       overlay 스크롤바(macOS·갤탭 Android)에서는 시각적 no-op → 태블릿 인셋 부작용 없음. 전 모달 균일 적용. */
+    scrollbar-gutter: stable;
   }
 }
 

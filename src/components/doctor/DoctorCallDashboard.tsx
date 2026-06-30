@@ -17,11 +17,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Stethoscope,
-  Volume2,
-  VolumeX,
   Bell,
-  BellOff,
   Pill,
   MapPin,
   CheckCircle2,
@@ -523,7 +519,7 @@ export default function DoctorCallDashboard() {
       {/* 헤더 — 음소거 / 알림 권한 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Stethoscope className="h-5 w-5 text-red-600" />
+          {/* T-20260630-foot-DOCDASH-HEADER-ICONS-REMOVE: 헤더 아이콘 전부 제거(문지은 대표원장). 텍스트/카운트/기능 유지. */}
           <div>
             <p className="text-sm font-bold">진료부 통합 대시보드</p>
             <p className="text-xs text-muted-foreground">
@@ -545,7 +541,7 @@ export default function DoctorCallDashboard() {
             )}
             title={muted ? '소리 켜기' : '소리 끄기'}
           >
-            {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            {/* T-20260630-foot-DOCDASH-HEADER-ICONS-REMOVE: 아이콘 제거, 텍스트 라벨 유지 */}
             {muted ? '소리 켜기' : '소리 끄기'}
           </button>
           {/* 브라우저 알림 권한이 default(미요청)일 때만 권한 요청 버튼 */}
@@ -557,7 +553,7 @@ export default function DoctorCallDashboard() {
               className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 min-h-[40px] hover:bg-amber-100"
               title="브라우저 알림 켜기"
             >
-              <BellOff className="h-4 w-4" />
+              {/* T-20260630-foot-DOCDASH-HEADER-ICONS-REMOVE: 아이콘 제거, 텍스트 라벨 유지 */}
               알림 켜기
             </button>
           )}
@@ -577,7 +573,7 @@ export default function DoctorCallDashboard() {
                   : 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200',
               )}
             >
-              {notifyEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+              {/* T-20260630-foot-DOCDASH-HEADER-ICONS-REMOVE: 아이콘 제거, 텍스트 라벨 유지 */}
               {notifyEnabled ? '알림 끄기' : '알림 켜기'}
             </button>
           )}
