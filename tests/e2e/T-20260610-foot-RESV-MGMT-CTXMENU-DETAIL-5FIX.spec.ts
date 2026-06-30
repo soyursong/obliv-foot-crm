@@ -63,8 +63,14 @@ test.describe('시나리오1: 예약상세 항목명 + 팝업 오픈 (item3 / Q2
 // 시나리오 2 (item2) — 취소 vs 삭제 의미 구분 (라벨·확인문구)
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('시나리오2: 취소 vs 삭제 의미 구분 (item2)', () => {
-  test('AC2-1: 완전 삭제 확인문구 = 복구불가 경고 (CustomerQuickMenu)', () => {
-    expect(QUICK_MENU, '예약관리 삭제 확인문구에 복구불가 경고 없음').toContain(DELETE_CONFIRM);
+  // STALEGUARD-QUICKMENU-DELCONFIRM-DROP (T-20260701): CANONICAL(T-20260611-foot-CTXMENU-UNIFY-CANONICAL,
+  //   deployed fbb843b)이 reporter 권위로 모든 우클릭 surface에서 [완전 삭제]·삭제 confirm 제거 →
+  //   CustomerQuickMenu 의 삭제 confirm 진입점이 소멸. CANONICAL 스펙은 RESV/DASH/DETAIL_POPUP 만 읽고
+  //   CustomerQuickMenu.tsx 는 읽지 않아(AC3-1은 page-level 핸들러 와이어링만 가드) 컴포넌트-소스 부재
+  //   회귀를 직접 단언하지 않는다 → 본 1건만 .not.toContain 부재가드로 용도변경해 보존, 나머지 stale 2건 삭제.
+  test('AC2-1: CustomerQuickMenu 삭제 confirm 부재 — CANONICAL 우클릭 삭제항목 제거 회귀 가드', () => {
+    expect(QUICK_MENU, 'CustomerQuickMenu 에 삭제 confirm 문구 잔존(CANONICAL 삭제항목 제거 위반)')
+      .not.toContain(DELETE_CONFIRM);
   });
 
   test('AC2-2: 완전 삭제 확인문구 = 복구불가 경고 (ReservationContextMenu)', () => {
@@ -72,7 +78,8 @@ test.describe('시나리오2: 취소 vs 삭제 의미 구분 (item2)', () => {
   });
 
   test('AC2-3: 삭제 확인문구가 [예약 취소] 대안을 안내 (혼동 방지)', () => {
-    expect(QUICK_MENU).toContain('[예약 취소]를 쓰세요');
+    // STALEGUARD-QUICKMENU-DELCONFIRM-DROP: CustomerQuickMenu 단언은 CANONICAL 삭제항목 제거로 stale → 삭제.
+    //   ReservationContextMenu(타임라인)는 confirm 진입점 보존 → CANONICAL 정합 현존 단언으로 유지.
     expect(CTX_MENU).toContain('[예약 취소]를 쓰세요');
   });
 
@@ -104,9 +111,10 @@ test.describe('시나리오2: 취소 vs 삭제 의미 구분 (item2)', () => {
 // 시나리오 3 (item1) — 일관 매핑: 두 진입점이 동일 핸들러·동일 삭제문구
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('시나리오3: 일관 매핑 (item1)', () => {
-  test('AC3-1: 두 우클릭 메뉴의 삭제 확인문구가 글자 단위로 동일', () => {
+  test('AC3-1: 우클릭 메뉴 삭제 확인문구가 정본 형식과 글자 단위로 동일 (ReservationContextMenu)', () => {
+    // STALEGUARD-QUICKMENU-DELCONFIRM-DROP: CustomerQuickMenu 정본 매치는 CANONICAL 삭제항목 제거로 stale → 삭제.
+    //   삭제 confirm 을 보유한 ReservationContextMenu 의 정본 형식 회귀만 가드(현존·CANONICAL 정합).
     const re = /예약을 완전 삭제하시겠습니까\?\\n삭제하면 정보가 완전히 사라지며 복구할 수 없습니다\.\\n\(다시 올 고객이라면 \[예약 취소\]를 쓰세요\)/;
-    expect(QUICK_MENU, 'CustomerQuickMenu 삭제문구 정본 불일치').toMatch(re);
     expect(CTX_MENU, 'ReservationContextMenu 삭제문구 정본 불일치').toMatch(re);
   });
 
