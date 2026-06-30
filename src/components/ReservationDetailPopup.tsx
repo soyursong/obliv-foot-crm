@@ -123,6 +123,10 @@ type CreateReservationParams = {
   // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note) + 예약메모(booking_memo).
   brief_note?: string | null;
   booking_memo?: string | null;
+  // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX (김주연 총괄): 간략메모 [힐러] 칩 선택 시 힐러 의도 영속.
+  //   ⚠ brief_note(텍스트)와 직교한 플래그 — is_healer_intent(영속 컬럼, T-20260614 HEALER-RESV-CLASSIFY-DEF)
+  //   write-path(createReservationCanonical, 5699b54) 재사용. 신규 컬럼/저장경로 0(DB 무변경). 캘린더 resvKind→노란박스(#FFFDE7).
+  is_healer_intent?: boolean | null;
 };
 
 // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 초진 간략메모 빠른선택 칩(발톱무좀/내성발톱) + 직접입력.
@@ -219,6 +223,9 @@ export function ReservationDetailPopup({
   // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note, 발톱무좀/내성발톱 선택 또는 직접입력) + 예약메모(booking_memo).
   const [briefNote, setBriefNote] = useState('');
   const [newBookingMemo, setNewBookingMemo] = useState('');
+  // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 간략메모 [힐러] 칩 ON/OFF(영속 is_healer_intent).
+  //   brief_note(텍스트 3종)와 직교 — 동시 선택 가능(예: 발톱무좀 + 힐러). 신규 스키마 0(기존 컬럼·write-path 재사용).
+  const [isHealerIntent, setIsHealerIntent] = useState(false);
 
   // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC1: (+) 진입동선 통합 — 구 [신규/기존] 2버튼·existingSearch 분기 제거.
   //   통합 폼 직진(성함·연락처 입력 → 기존 매칭 시 재진 자동전환). 별도 진입상태 불필요.
@@ -757,7 +764,10 @@ export function ReservationDetailPopup({
               </div>
             </div>
 
-            {/* AC6: 간략메모 — 발톱무좀/내성발톱/발각질케어 3종 체크박스 + 직접입력(brief_note). */}
+            {/* AC6: 간략메모 — 발톱무좀/내성발톱/발각질케어 3종 체크박스 + 직접입력(brief_note).
+                T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX (김주연 총괄): 4번째 [힐러] 칩 추가.
+                  ⚠ 힐러 칩은 brief_note 텍스트가 아니라 is_healer_intent(영속 플래그) 토글 — 3종과 직교(동시선택 가능).
+                  ON 시 캘린더 resvKind()→healer 분류→노란박스(#FFFDE7, healer 토큰). 신규 색/토큰/컬럼 0. */}
             <div className="flex flex-col gap-1 text-xs">
               <Label htmlFor="newmode-brief-note" className="text-[10px] text-muted-foreground">간략메모</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -780,6 +790,21 @@ export function ReservationDetailPopup({
                     </button>
                   );
                 })}
+                {/* [힐러] 칩 — is_healer_intent 토글. active 시 healer 토큰(노랑)로 노란박스 연동 telegraph. */}
+                <button
+                  type="button"
+                  onClick={() => setIsHealerIntent((prev) => !prev)}
+                  aria-pressed={isHealerIntent}
+                  className={cn(
+                    'h-8 rounded-md border px-3 text-sm font-medium transition-colors',
+                    isHealerIntent
+                      ? 'border-healer-400 bg-healer-50 text-healer-700'
+                      : 'border-input bg-background hover:bg-muted',
+                  )}
+                  data-testid="newmode-brief-quick-힐러"
+                >
+                  힐러
+                </button>
               </div>
               <input
                 id="newmode-brief-note"
@@ -1187,6 +1212,8 @@ export function ReservationDetailPopup({
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 + 예약메모 영속.
       brief_note: briefNote.trim() || null,
       booking_memo: newBookingMemo.trim() || null,
+      // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩 → is_healer_intent(영속) 위임. parent createReservationCanonical 가 기존 write-path 로 저장.
+      is_healer_intent: isHealerIntent,
     });
     setCreatingResv(false);
     if (!res.ok) {
@@ -1208,6 +1235,8 @@ export function ReservationDetailPopup({
     // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 클린 리셋.
     setBriefNote('');
     setNewBookingMemo('');
+    // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩 클린 리셋(다음 신규예약에 잔존 금지).
+    setIsHealerIntent(false);
     onChanged();
   };
 
