@@ -63,7 +63,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate, searchServiceRxDrugs } from '@/lib/prescribableDrugs';
-import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
@@ -2552,10 +2552,9 @@ export default function MedicalChartPanel({
                 <span className="text-xs text-muted-foreground font-mono">{chartNoBadge(customer.chart_number)}</span>
                 <span className="text-xs text-muted-foreground">{formatPhone(customer.phone)}</span>
                 {customer.birth_date && (
-                  <span className="text-xs text-muted-foreground">
-                    {/^\d{6}$/.test(customer.birth_date)
-                      ? `${customer.birth_date.slice(0, 2)}/${customer.birth_date.slice(2, 4)}/${customer.birth_date.slice(4, 6)}`
-                      : customer.birth_date}
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {/* T-20260630-foot-CRM-BIRTHDATE-RRN-MEDICAL [D]: raw YY/MM/DD 인라인 slice → SSOT birthDateYMD(YYYY-MM-DD, 세기판별). 평문 rrn 미사용, 진료 로직 무변경. */}
+                    {birthDateYMD(customer.birth_date) || customer.birth_date}
                   </span>
                 )}
                 {/* T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트 ✋ 표시 — 확인됨 파란 고정 / 활성호출 미확인 pulse 대기. */}
