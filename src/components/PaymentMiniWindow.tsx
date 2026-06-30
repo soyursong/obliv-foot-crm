@@ -215,16 +215,26 @@ function draftKey(checkInId: string): string {
 // ── 인쇄 유틸 — iframe 방식 (PAY-SLOT-MOVE AC-4: 중복 창 제거) ───────────────
 
 // T-20260521-foot-DOC-PRINT-UNIFY PUSH: CSS를 DocumentPrintPanel openBatchPrintWindow와 동일하게 통일.
-// 경로 4 = 1순위 메인 출력 경로 — 레이아웃이 경로 1과 완전 동일해야 함.
+// 경로 4 = 1순위 메인 출력 경로 — 레이아웃이 경로 1(openBatchPrintWindow)과 완전 동일해야 함.
 // AC-5: forceLandscape=true 시 @page { size: A4 landscape } 적용 (진료비세부산정내역 전용).
+//
+// T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): [버그] 직전 DOCOUTPUT-PRINT-CENTER-LAYOUT 가
+//   openBatchPrintWindow(경로1)·printOpinionDoc 만 "@page 엔진 여백 중앙배치" 모델로 전환하고 본 buildPrintHtml
+//   (경로4=1순위)는 구 @page:0 / 전폭(210·297mm) full-bleed 모델로 방치 → 동일 form-wrap(margin:0 auto)이
+//   엔진 shrink-to-fit 으로 좌·상단 앵커 → 현장이 본 상단 쏠림. 두 경로가 "완전 동일" 해야 한다는 본 함수 계약 위반.
+//   [수정] openBatchPrintWindow 와 동일한 분기로 통일:
+//     - isLegacyImg(page-img 오버레이, field_map px 좌표가 210mm page 기준): @page:0 / 전폭 .page 유지(불변).
+//     - HTML 양식: @page margin:30mm 10mm 12mm(상단 +68px 하향) + 콘텐츠박스 minH(portrait 255 / landscape 168mm).
 function buildPrintHtml(pages: string[], title: string, forceLandscape = false): string {
-  // AC-5: 진료비세부산정내역 landscape 전용 — @page size 분기
-  const pageRule = forceLandscape
-    ? '@page { size: A4 landscape; margin: 0; }'
-    : '@page { size: A4 portrait; margin: 0; }';
-  const pageWidth  = forceLandscape ? '297mm' : '210mm';
-  const pageHeight = forceLandscape ? '210mm' : '297mm';
-  return `<!DOCTYPE html><html><head>
+  const isLegacyImg = pages.some((p) => p.includes('page-img'));
+  if (isLegacyImg) {
+    // IMG 오버레이 격리: field_map px 좌표가 210mm page 기준 → 전폭 full-bleed + @page:0 유지(좌표 불변).
+    const pageRule = forceLandscape
+      ? '@page { size: A4 landscape; margin: 0; }'
+      : '@page { size: A4 portrait; margin: 0; }';
+    const pageWidth  = forceLandscape ? '297mm' : '210mm';
+    const pageHeight = forceLandscape ? '210mm' : '297mm';
+    return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>${title}</title>
 <style>
   ${pageRule}
@@ -236,11 +246,33 @@ function buildPrintHtml(pages: string[], title: string, forceLandscape = false):
     overflow: hidden;
     page-break-after: always;
   }
-  .page-landscape {
-    width: 297mm;
-    min-height: 210mm;
-  }
+  .page-landscape { width: 297mm; min-height: 210mm; }
   .page img:first-child { width: 100%; height: 100%; object-fit: contain; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page:last-child { page-break-after: avoid; }
+  }
+</style>
+</head><body>${pages.join('\n')}</body></html>`;
+  }
+  // HTML 양식(L-006 12종) — 프린트 엔진 @page 물리 여백으로 중앙 배치 + 상단 30mm 하향(경로1과 동일).
+  const pageRule = forceLandscape
+    ? '@page { size: A4 landscape; margin: 30mm 10mm 12mm; }'
+    : '@page { size: A4 portrait; margin: 30mm 10mm 12mm; }';
+  const minH = forceLandscape ? '168mm' : '255mm'; // A4 short side - @page 상하여백(상30+하12=42mm)
+  return `<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>${title}</title>
+<style>
+  ${pageRule}
+  html, body { margin: 0; padding: 0; }
+  .page {
+    position: relative;
+    width: 100%;
+    min-height: ${minH};
+    overflow: visible;
+    page-break-after: always;
+  }
+  .page-landscape { width: 100%; min-height: 168mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page:last-child { page-break-after: avoid; }

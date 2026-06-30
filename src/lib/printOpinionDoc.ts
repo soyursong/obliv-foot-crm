@@ -75,11 +75,12 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   win.document.open();
   // T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 이 raw 인쇄 경로(소견서/진단서 발행본 데스크 출력)도
   //   openBatchPrintWindow 와 동일한 "@page 물리 여백 = 엔진 중앙배치" 모델로 통일한다.
-  //   @page margin:12mm 10mm → form-wrap(COMMON_STYLE @media print 에서 margin:0 auto, 190×273mm)이
-  //   콘텐츠박스를 채우고, 엔진이 시트 중앙(좌우 10mm·상하 12mm)으로 배치 → 축소맞춤 좌상단 쏠림 제거.
+  //   form-wrap(COMMON_STYLE @media print 에서 margin:0 auto)이 콘텐츠박스를 채우고 엔진이 시트에 물리 배치.
+  // T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 경로1·4와 동일하게 상단 margin 12mm→30mm 하향
+  //   (약 +68px ≈ 엔터 4~5줄). 하단 12mm 유지. 콘텐츠박스 255mm(=297-30-12) → 단일 페이지·넘침/잘림 없음.
   win.document.write(
     `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>` +
-      `<style>@page { size: A4 portrait; margin: 12mm 10mm; } html, body { margin: 0; padding: 0; }</style></head><body>${html}` +
+      `<style>@page { size: A4 portrait; margin: 30mm 10mm 12mm; } html, body { margin: 0; padding: 0; }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();
