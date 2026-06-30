@@ -319,9 +319,8 @@ ${COMMON_STYLE}
   <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
     <div style="flex:1"></div>
     <div class="title" style="flex:none; padding:0 20px;">진 료 확 인 서</div>
-    <div style="flex:1; display:flex; justify-content:flex-end;">
-      <div class="stamp-box">원부대조필<br>인</div>
-    </div>
+    <!-- T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE: 진료확인서 우측상단 '원부대조필인' 삭제(김주연 총괄). 빈 flex:1 유지 → 제목 중앙정렬 불변 -->
+    <div style="flex:1;"></div>
   </div>
   <!-- T-20260601-foot-DOC-PRINT-8FIX AC-5③: 상단 진단 비표시 안내 문구 제거됨 -->
 
@@ -522,9 +521,8 @@ ${COMMON_STYLE}
   <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
     <div style="flex:1"></div>
     <div class="title" style="flex:none; padding:0 20px;">통 원 확 인 서</div>
-    <div style="flex:1; display:flex; justify-content:flex-end;">
-      <div class="stamp-box">원부대조필<br>인</div>
-    </div>
+    <!-- T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE: 통원확인서 우측상단 '원부대조필인' 삭제(김주연 총괄). 빈 flex:1 유지 → 제목 중앙정렬 불변 -->
+    <div style="flex:1;"></div>
   </div>
 
   <table>
