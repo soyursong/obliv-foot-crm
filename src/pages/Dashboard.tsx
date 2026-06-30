@@ -1553,6 +1553,9 @@ function TimelineCheckInCard({
   // T-20260514-foot-CHART-NO-VISIBLE: AC-1 타임라인 카드 차트번호 상시 표시
   const timelineChartMap = useContext(ChartNumberMapCtx);
   const timelineChartNum = checkIn.customer_id ? timelineChartMap.get(checkIn.customer_id) : undefined;
+  // T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE REQ-2: 재진 체크인 카드를 초진 intake 박스와
+  //   동일 '성함/폰뒷4자리/미수유무' 구성으로 통일하기 위한 폰 뒷4자리 (E.164/010 모두 끝 4자리, presentation only).
+  const timelinePhoneTail = phoneTailSuffix(checkIn.customer_phone);
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지
   const timelineOutstandingMap = useContext(OutstandingMapCtx);
   const timelineOutstanding = checkIn.customer_id ? timelineOutstandingMap.get(checkIn.customer_id) : undefined;
@@ -1591,6 +1594,8 @@ function TimelineCheckInCard({
       )}
       title={`${cardDisplayName(checkIn)} — 드래그=다음단계 이동 · 클릭=상세`}
       data-testid="timeline-checkin-card"
+      // T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE: 초진/재진 식별자 표기 검증용(presentation 무영향)
+      data-visittype={visitType}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.();
@@ -1608,12 +1613,22 @@ function TimelineCheckInCard({
         </span>
       )}
       <span className={cn('truncate', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')}>{cardDisplayName(checkIn)}</span>
-      {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
-      {timelineChartNum && (
-        <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
+      {/* T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE REQ-1/REQ-2:
+          재진(returning) 체크인 카드 = 차트번호(#F-…) 제거 + 초진 intake 박스와 동일 '성함/폰뒷4/미수' 구성(폰 뒷4자리 표기).
+          초진(new) 카드는 T-20260514 차트번호 표기 무수정 (AC-5 회귀 금지 / scope_guard). */}
+      {visitType === 'returning' ? (
+        timelinePhoneTail && (
+          <span data-testid="timeline-phone-suffix" className="shrink-0 text-gray-500 font-mono text-[9px]">{timelinePhoneTail}</span>
+        )
+      ) : (
+        /* T-20260514-foot-CHART-NO-VISIBLE: 초진 차트번호 상시 표시 (무수정) */
+        timelineChartNum && (
+          <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
+        )
       )}
-      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지 */}
-      <OutstandingDueBadge data={timelineOutstanding} />
+      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지.
+          T-20260630 REQ-3: 재진 박스만 배지 축소(className override) — 초진(new) 무수정. */}
+      <OutstandingDueBadge data={timelineOutstanding} className={visitType === 'returning' ? 'text-[8px] px-0.5 py-0 leading-none' : undefined} />
       {/* T-20260530-foot-WALKIN-TIMETABLE: 워크인 배지 (예약 없는 당일 접수) */}
       {isWalkIn && (
         <span
@@ -1901,8 +1916,9 @@ function DraggableBox2ResvCard({
       data-noshow={isNoShow ? 'true' : undefined}
     >
       <span className="truncate text-gray-800">{cardDisplayName(reservation)}</span>
-      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지 */}
-      <OutstandingDueBadge data={box2Outstanding} />
+      {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
+          T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE REQ-3: 미수 딱지 축소(className override). */}
+      <OutstandingDueBadge data={box2Outstanding} className="text-[8px] px-0.5 py-0 leading-none" />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
