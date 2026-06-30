@@ -37,7 +37,7 @@ import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import DashboardRefreshCountdown from '@/components/DashboardRefreshCountdown';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatPhone, chartNoBadge } from '@/lib/format';
+import { formatPhone, chartNoBadge, birthDateYMD } from '@/lib/format';
 // T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part A: 팝업 차단 시 안내 토스트
 import { toast } from '@/lib/toast';
 import { useClinic } from '@/hooks/useClinic';
@@ -629,7 +629,8 @@ export default function AdminLayout() {
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">
                           {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
                           <span className={`rounded px-1.5 py-0 ${c.chart_number ? 'bg-teal-50 text-teal-700' : 'bg-muted text-muted-foreground'}`}>{chartNoBadge(c.chart_number)}</span>
-                          {c.birth_date && <span>{c.birth_date}</span>}
+                          {/* T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [A]: raw YYMMDD → SSOT birthDateYMD(YYYY-MM-DD, 세기판별). 평문 rrn 미사용. */}
+                          {birthDateYMD(c.birth_date) && <span>{birthDateYMD(c.birth_date)}</span>}
                           <span>{formatPhone(c.phone)}</span>
                         </span>
                       </button>

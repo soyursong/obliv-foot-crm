@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { FormModal } from './FormModal';
 import { SignaturePad, type SignaturePadHandle } from './SignaturePad';
 import { useDocumentUpload } from '@/hooks/useDocumentUpload';
-import { formatPhoneInput } from '@/lib/format';
+import { formatPhoneInput, birthDateYMD } from '@/lib/format';
 
 interface Props {
   open: boolean;
@@ -85,9 +85,18 @@ const MARKETING_TEXT = [
   '4. 본 동의는 선택이며 거부해도 시술 이용에 제한이 없습니다.',
 ];
 
+// T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C4]: defaultBirthDate(customers.birth_date=YYMMDD)를
+//   type="date" 입력(value=YYYY-MM-DD 요구)에 맞게 세기판별 정규화 → 자동 채움. 평문 rrn 미사용.
+//   이미 ISO(YYYY-MM-DD)면 그대로. 본 birth_date는 체크리스트 JSON 문서에만 저장(customers 컬럼 역기록 없음).
+const normBirthToISO = (b?: string): string => {
+  if (!b) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(b)) return b;
+  return birthDateYMD(b) || '';
+};
+
 const initial = (defaults: { name?: string; birth?: string; phone?: string }): ChecklistData => ({
   name: defaults.name ?? '',
-  birth_date: defaults.birth ?? '',
+  birth_date: normBirthToISO(defaults.birth),
   phone: defaults.phone ?? '',
   symptoms: [],
   symptoms_other: '',

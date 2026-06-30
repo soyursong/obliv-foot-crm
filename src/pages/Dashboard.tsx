@@ -75,7 +75,7 @@ import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
-import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
@@ -2983,12 +2983,8 @@ function QuickReservationDialog({
     onClose();
   };
 
-  /** 생년월일 포맷 (YYMMDD → YY/MM/DD) */
-  const formatBirthDisplay = (b: string | null): string => {
-    if (!b) return '';
-    if (/^\d{6}$/.test(b)) return `${b.slice(0, 2)}/${b.slice(2, 4)}/${b.slice(4, 6)}`;
-    return b;
-  };
+  /** 생년월일 표기 — T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C1]: SSOT birthDateYMD(YYYY-MM-DD, 세기판별)로 통일. 평문 rrn 미사용. */
+  const formatBirthDisplay = (b: string | null): string => birthDateYMD(b) || (b ?? '');
 
   const timeSlots = generateSlots('10:00', '20:00', 30);
 

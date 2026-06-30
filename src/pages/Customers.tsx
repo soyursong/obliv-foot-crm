@@ -994,6 +994,11 @@ function EditCustomerDialog({
                 placeholder="예: 900515"
                 maxLength={6}
               />
+              {/* T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C2]: YYMMDD 입력 시 세기판별 YYYY-MM-DD 미리보기(표기 전용).
+                  ⚠ DA canon §2: 저장값은 YYMMDD 유지 — 표시포맷 역기록 금지(selfcheckin 병합키 보호). */}
+              {birthDateYMD(birthDate) && (
+                <p className="text-xs text-teal-600 tabular-nums" data-testid="custform-birth-preview">{birthDateYMD(birthDate)}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>차트번호</Label>
@@ -1296,6 +1301,11 @@ function CreateCustomerDialog({
                 placeholder="예: 900515"
                 maxLength={6}
               />
+              {/* T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C2]: YYMMDD 입력 시 세기판별 YYYY-MM-DD 미리보기(표기 전용).
+                  ⚠ DA canon §2: 저장값은 YYMMDD 유지 — 표시포맷 역기록 금지(selfcheckin 병합키 보호). */}
+              {birthDateYMD(birthDate) && (
+                <p className="text-xs text-teal-600 tabular-nums" data-testid="custform-birth-preview">{birthDateYMD(birthDate)}</p>
+              )}
             </div>
             {/* 차트번호: DB 트리거 자동생성 — 등록 후 F-XXXX 자동 부여 */}
           </div>

@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom';
 import { Clock, FileText, Phone, Stethoscope } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
-import { formatPhone, chartNoBadge } from '@/lib/format';
+import { formatPhone, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CheckIn } from '@/lib/types';
 
@@ -21,19 +21,18 @@ interface CustomerDetails {
   memo: string | null;
 }
 
-/** 생년월일(YYMMDD) → 나이(한국식 만 나이) */
+/**
+ * 생년월일(YYMMDD) → 나이(한국식 만 나이).
+ * T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C5]: 세기판별을 SSOT birthDateYMD(YYYY-MM-DD)에 위임 —
+ * 로컬 세기 휴리스틱 중복 제거. 평문 rrn 미사용(birth_date 컬럼만 파싱).
+ */
 function calcAge(birthDate: string | null): number | null {
-  if (!birthDate || birthDate.length < 6) return null;
-  const yy = parseInt(birthDate.slice(0, 2), 10);
-  const mm = parseInt(birthDate.slice(2, 4), 10);
-  const dd = parseInt(birthDate.slice(4, 6), 10);
-  if (isNaN(yy) || isNaN(mm) || isNaN(dd)) return null;
-  const currentYear = new Date().getFullYear();
-  const century = yy <= currentYear % 100 ? 2000 : 1900;
-  const fullYear = century + yy;
+  const ymd = birthDateYMD(birthDate); // '' 또는 'YYYY-MM-DD'
+  if (!ymd) return null;
+  const [fullYear, mm, dd] = ymd.split('-').map((n) => parseInt(n, 10));
   const today = new Date();
-  let age = currentYear - fullYear;
-  if (new Date(currentYear, mm - 1, dd) > today) age--;
+  let age = today.getFullYear() - fullYear;
+  if (new Date(today.getFullYear(), mm - 1, dd) > today) age--;
   return age >= 0 ? age : null;
 }
 

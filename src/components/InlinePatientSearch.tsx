@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { formatPhoneInput, chartNoBadge } from '@/lib/format';
+import { formatPhoneInput, chartNoBadge, birthDateYMD } from '@/lib/format';
 
 export interface PatientMatch {
   id: string;
@@ -167,11 +167,8 @@ export function InlinePatientSearch({
     return d.length >= 4 ? `···${d.slice(-4)}` : phone;
   };
 
-  const formatBirth = (b: string | null): string | null => {
-    if (!b) return null;
-    if (/^\d{6}$/.test(b)) return `${b.slice(0, 2)}/${b.slice(2, 4)}/${b.slice(4, 6)}`;
-    return b;
-  };
+  // T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C3]: SSOT birthDateYMD(YYYY-MM-DD, 세기판별)로 통일. 평문 rrn 미사용.
+  const formatBirth = (b: string | null): string | null => birthDateYMD(b) || b;
 
   return (
     <div ref={wrapperRef} className="relative">
