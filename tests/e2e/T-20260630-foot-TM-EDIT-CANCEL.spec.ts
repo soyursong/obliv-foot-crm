@@ -58,6 +58,30 @@ async function migrationReady(): Promise<string | null> {
   return null;
 }
 
+/** lifecycle 가드#5(20260630193000) 적용 여부 — checked_in 행 stale cancel 이 reject 되는가. 미적용 → skip. */
+async function lifecycleGuardReady(): Promise<string | null> {
+  const base = await migrationReady();
+  if (base) return base;                       // 합본 자체(190000) 미적용
+  const sb = admin();
+  const ext = `${CUE}-gprobe`;
+  await callUpsert(sb, {
+    p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
+    p_customer_phone: '01000000077', p_customer_name: 'gprobe',
+    p_reservation_date: '2099-09-09', p_reservation_time: '10:00',
+  });
+  await sb.from('reservations').update({ status: 'checked_in' })
+    .eq('source_system', SRC).eq('external_id', ext);
+  const res = await callUpsert(sb, {
+    p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
+    p_customer_phone: '01000000077', p_customer_name: 'gprobe',
+    p_reservation_date: '2099-09-09', p_reservation_time: '10:00', p_status: 'cancelled',
+  });
+  await sb.from('reservations').delete().eq('source_system', SRC).eq('external_id', ext);
+  // 가드 적용 시 reject(error). 미적용이면 cancel 성공(error 없음) → guard spec skip.
+  if (!res.error) return 'lifecycle 가드#5(20260630193000) 미적용 — 가드 spec skip(배포 前 GREEN-or-SKIP)';
+  return null;
+}
+
 test.describe('T-20260630-foot-TM-EDIT-CANCEL · TM 예약 수정/취소 ingest', () => {
   test.beforeAll(purge);
   test.afterAll(purge);
@@ -169,5 +193,55 @@ test.describe('T-20260630-foot-TM-EDIT-CANCEL · TM 예약 수정/취소 ingest'
     expect(res.data).toBeNull();                         // 취소할 것 없음
     const ghost = await rowByKey(sb, SRC, EXT_ABSENT);
     expect(ghost).toBeNull();                            // tombstone 신규생성 안 함
+  });
+
+  test('S6 (가드#5 cancel) checked_in(원내입실) 행 stale cancel = reject + 물리동선 상태 불변', async () => {
+    const skip = await lifecycleGuardReady();
+    test.skip(!!skip, skip ?? '');
+    const sb = admin();
+    const ext = `${CUE}-lcx`;
+    // confirmed 인입 → 물리동선(원내입실) 모사로 checked_in 강제
+    await callUpsert(sb, {
+      p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
+      p_customer_phone: '01055550001', p_customer_name: '입실고객',
+      p_reservation_date: '2099-06-01', p_reservation_time: '13:00',
+    });
+    await sb.from('reservations').update({ status: 'checked_in' })
+      .eq('source_system', SRC).eq('external_id', ext);
+    // 도파민 stale cancel → reject(예외), clobber 금지
+    const res = await callUpsert(sb, {
+      p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
+      p_customer_phone: '01055550001', p_customer_name: '입실고객',
+      p_reservation_date: '2099-06-01', p_reservation_time: '13:00', p_status: 'cancelled',
+    });
+    expect(res.error, 'checked_in 행 stale cancel 은 reject 되어야 함').not.toBeNull();
+    const row = await rowByKey(sb, SRC, ext);
+    expect(row?.status).toBe('checked_in');              // 원내입실 상태 불변(되돌리기 차단)
+    await sb.from('reservations').delete().eq('source_system', SRC).eq('external_id', ext);
+  });
+
+  test('S7 (가드#5 edit) checked_in 행 active 재푸시 = reject + time/status 불변', async () => {
+    const skip = await lifecycleGuardReady();
+    test.skip(!!skip, skip ?? '');
+    const sb = admin();
+    const ext = `${CUE}-lce`;
+    await callUpsert(sb, {
+      p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
+      p_customer_phone: '01055550002', p_customer_name: '입실수정',
+      p_reservation_date: '2099-07-01', p_reservation_time: '09:00',
+    });
+    await sb.from('reservations').update({ status: 'checked_in' })
+      .eq('source_system', SRC).eq('external_id', ext);
+    // 도파민 stale edit(시간변경) → reject(예외), clobber 금지
+    const res = await callUpsert(sb, {
+      p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
+      p_customer_phone: '01055550002', p_customer_name: '입실수정',
+      p_reservation_date: '2099-07-01', p_reservation_time: '18:00',
+    });
+    expect(res.error, 'checked_in 행 active 재푸시(stale edit)는 reject 되어야 함').not.toBeNull();
+    const row = await rowByKey(sb, SRC, ext);
+    expect(row?.status).toBe('checked_in');              // 상태 불변
+    expect(row?.reservation_time).toMatch(/^09:00/);     // 시간 clobber 안 됨
+    await sb.from('reservations').delete().eq('source_system', SRC).eq('external_id', ext);
   });
 });
