@@ -66,6 +66,10 @@ export interface CreateOpinionRequestInput {
   docType: OpinionDocType;
   selectedKeys: string[];
   staffMemo: string;
+  // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안 AC6): 실장이 신설 '경구약 사유' 입력칸에
+  //   적은 텍스트. 원장 진단서 작성창에서 경구약X 괄호(`[…경구약 복용중]`) 치환값(oralXReason)으로 prefill.
+  //   빈 값이면 기존 동작 유지(원장이 직접 입력 / 괄호 보존). field_data.oral_med_reason(JSONB ADDITIVE).
+  oralMedReason: string;
   issuedBy: string;              // staff.id (NOT NULL). 빈 값이면 차단.
   requestedByName: string;       // 표기용 스냅샷(실장 이름)
   templateId: string | null;     // opinion_doc template (provenance, nullable)
@@ -100,6 +104,8 @@ export function useCreateOpinionRequest(clinicId: string | null) {
         doc_type: input.docType,
         selected_keys: input.selectedKeys,
         staff_memo: input.staffMemo ?? '',
+        // A안 AC6: 경구약 사유(원장 작성창 oralXReason prefill 소스). staff_memo 와 별개 전용 키(의미충돌 방지).
+        oral_med_reason: input.oralMedReason ?? '',
         patient_name: input.patientName,
         chart_no: input.chartNo ?? '',
         birth_date: input.birthDate ?? '',
@@ -140,6 +146,8 @@ export interface OpinionRequestRow {
   docType: OpinionDocType;
   selectedKeys: string[];
   staffMemo: string;
+  /** A안 AC6: 실장이 적은 경구약 사유. 없으면 ''(원장 작성창 oralXReason 빈값=기존 동작). */
+  oralMedReason: string;
   patientName: string;
   chartNo: string | null;
   birthDate: string | null;
@@ -179,6 +187,7 @@ export function useOpinionRequestQueue(clinicId: string | null) {
           docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
           selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
           staffMemo: String(fd['staff_memo'] ?? ''),
+          oralMedReason: String(fd['oral_med_reason'] ?? ''),
           patientName: String(fd['patient_name'] ?? '—'),
           chartNo: (fd['chart_no'] as string | null) || null,
           birthDate: (fd['birth_date'] as string | null) || null,
@@ -236,6 +245,7 @@ export function usePublishedOpinionRequests(clinicId: string | null) {
           docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
           selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
           staffMemo: String(fd['staff_memo'] ?? ''),
+          oralMedReason: String(fd['oral_med_reason'] ?? ''),
           patientName: String(fd['patient_name'] ?? '—'),
           chartNo: (fd['chart_no'] as string | null) || null,
           birthDate: (fd['birth_date'] as string | null) || null,

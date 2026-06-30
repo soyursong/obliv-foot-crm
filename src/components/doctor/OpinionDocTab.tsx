@@ -566,6 +566,9 @@ export function OpinionEditorDialog({
   // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (B-1): 실장이 2번차트 서류요청에서 고른 날짜(YYYY-MM-DD).
   //   없으면 오늘(KST) 기본값. `[날짜]` 치환 + 작성창 날짜 입력칸 초기값.
   initialDate,
+  // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안): 실장이 신설 '경구약 사유' 입력칸에 적은 텍스트.
+  //   경구약X 괄호(`[…경구약 복용중]`) 치환값(oralXReason) prefill 소스. 빈/없으면 기존 동작(원장 직접 입력/괄호 보존).
+  initialOralXReason,
   onPublished,
 }: {
   visitor: VisitorRow | null;
@@ -579,6 +582,7 @@ export function OpinionEditorDialog({
   staffRequestMemo?: string | null;
   requestId?: string | null;
   initialDate?: string | null;
+  initialOralXReason?: string | null;
   onPublished?: (publishedId: string) => void;
 }) {
   const [text, setText] = useState('');
@@ -714,7 +718,10 @@ export function OpinionEditorDialog({
     setSelected(new Set(keys));
     // 플레이스홀더 입력 초기화 — 날짜는 실장 요청날짜(initialDate) 또는 오늘(KST) 기본값(B-1 LOCK).
     setHepatitisType(null);
-    setOralXReason('');
+    // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안 AC1/AC2): 실장이 신설 '경구약 사유'에 적은
+    //   텍스트를 oralXReason 으로 prefill → composeOpinionDoc 가 `[…경구약 복용중]` 괄호를 그 값으로 치환(대괄호 제거)
+    //   + 작성창 경구약 미리보기(text-blue-600)에 파란글씨로 노출. 빈/없으면 '' = 기존 동작 유지(AC5).
+    setOralXReason((initialOralXReason ?? '').trim());
     setDocDate(initialDate || todaySeoulISODate());
     setTextTouched(false); // 새 바인딩 → 자동합성 허용(직전 잔상 방지)
     setAutoChecked(new Set()); // AC-1: 새 환자/요청 바인딩 시 자동체크 뱃지 초기화(자동체크는 아래 effect 가 적용)

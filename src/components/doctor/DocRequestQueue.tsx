@@ -187,6 +187,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         initialDocType={active?.docType ?? 'opinion'}
         staffRequestMemo={active?.staffMemo ?? null}
         initialDate={active?.requestDate ?? null}
+        initialOralXReason={active?.oralMedReason ?? null}
         requestId={active?.id ?? null}
         onPublished={handlePublished}
       />
