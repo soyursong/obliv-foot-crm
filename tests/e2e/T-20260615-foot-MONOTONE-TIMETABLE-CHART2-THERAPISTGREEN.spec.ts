@@ -50,8 +50,11 @@ test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드
       .not.toContain("'border-gray-300 bg-gray-50 hover:bg-gray-100'");
   });
 
+  // ⚠ SUPERSEDED(부분) 2026-06-29 by T-20260629-foot-CHART2-IDVERIFY-PASTEL-SHRINK (김주연 총괄, closed·배포).
+  //   동일 reporter(총괄)가 신분확인(RRN) 배지를 의도적으로 파스텔핑크화 → 해당 배지 리터럴만 carve-out 예외.
+  //   그 외 의도치 않은 장식다색(타 pink 포함) 회귀는 계속 차단.
   test('item2: 2번 차트(CustomerChartPage) 장식성 다색 → slate 모노톤 (carve-out 외 잔존 0)', () => {
-    // 장식성 무지개색(blue/indigo/sky/violet/purple/fuchsia/cyan/pink) 잔존 0 — 잔존 시 실패
+    // 장식성 무지개색(blue/indigo/sky/violet/purple/fuchsia/cyan) 잔존 0 — 잔존 시 실패
     expect(chart).not.toMatch(/\b(bg|text|border)-blue-\d/);
     expect(chart).not.toMatch(/\b(bg|text|border)-indigo-\d/);
     expect(chart).not.toMatch(/\b(bg|text|border)-sky-\d/);
@@ -59,7 +62,12 @@ test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드
     expect(chart).not.toMatch(/\b(bg|text|border)-purple-\d/);
     expect(chart).not.toMatch(/\b(bg|text|border)-fuchsia-\d/);
     expect(chart).not.toMatch(/\b(bg|text|border)-cyan-\d/);
-    expect(chart).not.toMatch(/\b(bg|text|border)-pink-\d/);
+    // pink 은 신분확인(RRN) 배지 파스텔핑크 carve-out 외 잔존 0 — 그 외 pink 잔존 시 실패
+    const ID_VERIFY_PINK_CARVEOUT = ['bg-pink-100', 'text-pink-400', 'border-pink-200', 'bg-pink-300'];
+    const pinkLeaks = (chart.match(/\b(?:bg|text|border)-pink-\d{2,3}/g) ?? []).filter(
+      (m) => !ID_VERIFY_PINK_CARVEOUT.includes(m),
+    );
+    expect(pinkLeaks, `신분확인 파스텔핑크 carve-out 외 pink 잔존: ${pinkLeaks.join(', ')}`).toEqual([]);
     // 모노톤 대체(slate) 실제 적용 증거
     expect(chart).toMatch(/bg-slate-/);
   });
@@ -89,8 +97,10 @@ test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드
     expect(handover).not.toMatch(/coordinator:\s*'bg-amber-/);
   });
 
+  // shade forward 2026-06-29 by T-20260629-foot-HANDOVER-COMPACT-PASTEL (deployed b4deac63):
+  //   출근자 치료사 칩 톤 경량화 green-100/800/300 → green-50/700/200. green 의미색 보존은 불변.
   test('item3(carve-out): 출근자 칩 therapist 의미색(green)은 status.ts 보존(범위 밖)', () => {
     // 출근자 치료사 배지 green 보존 — handover 파트 배지 무채색화와 무관(별 helper)
-    expect(status).toMatch(/therapist:\s*'bg-green-100 text-green-800 border-green-300'/);
+    expect(status).toMatch(/therapist:\s*'bg-green-50 text-green-700 border-green-200'/);
   });
 });
