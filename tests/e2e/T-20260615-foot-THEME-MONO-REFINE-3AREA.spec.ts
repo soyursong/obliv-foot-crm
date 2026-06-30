@@ -74,15 +74,24 @@ test.describe('THEME-MONO-REFINE-3AREA — 정적 소스 가드 (auth 불요)', 
     expect(handover).not.toMatch(/'치료사',\s*color:\s*'teal'/);
   });
 
+  // shade forward 2026-06-29 by T-20260629-foot-HANDOVER-COMPACT-PASTEL (deployed b4deac63):
+  //   출근자 치료사 칩 톤 경량화 green-100/800/300 → green-50/700/200. green 의미색 보존은 불변(carve-out 유지).
   test('AC3(carve-out): 출근자 칩 therapist 의미색(green)은 status.ts 에 그대로 보존', () => {
-    expect(status).toMatch(/therapist:\s*'bg-green-100 text-green-800 border-green-300'/);
+    expect(status).toMatch(/therapist:\s*'bg-green-50 text-green-700 border-green-200'/);
   });
 
-  test('AC2: 2번 차트(CustomerChartPage)에서 장식성 다색 계열이 0건이다 (→ slate)', () => {
-    const decorative = chart.match(
-      /(bg|text|border|ring|from|to|via|divide|outline|decoration|shadow|accent|caret|fill|stroke)-(purple|violet|indigo|sky|blue|cyan|fuchsia|pink)-[0-9]{2,3}/g,
-    );
-    expect(decorative).toBeNull();
+  // ⚠ SUPERSEDED(부분) 2026-06-29 by T-20260629-foot-CHART2-IDVERIFY-PASTEL-SHRINK (김주연 총괄, closed·배포).
+  //   동일 reporter(총괄)가 본 AC2(차트 모노)보다 14일 뒤 신분확인(RRN) 배지를 의도적으로 파스텔핑크화.
+  //   → 해당 배지 리터럴(bg-pink-100/text-pink-400/border-pink-200 + bg-pink-300 펄스dot)만 carve-out 예외.
+  //   그 외 의도치 않은 장식다색 회귀는 계속 차단(blanket 해제 금지·carve-out만).
+  test('AC2: 2번 차트(CustomerChartPage)에서 장식성 다색 계열이 0건이다 (→ slate, 신분확인 배지 파스텔핑크 carve-out 제외)', () => {
+    const ID_VERIFY_PINK_CARVEOUT = ['bg-pink-100', 'text-pink-400', 'border-pink-200', 'bg-pink-300'];
+    const decorative = (
+      chart.match(
+        /(bg|text|border|ring|from|to|via|divide|outline|decoration|shadow|accent|caret|fill|stroke)-(purple|violet|indigo|sky|blue|cyan|fuchsia|pink)-[0-9]{2,3}/g,
+      ) ?? []
+    ).filter((m) => !ID_VERIFY_PINK_CARVEOUT.includes(m));
+    expect(decorative, `신분확인 파스텔핑크 carve-out 외 장식다색 잔존: ${decorative.join(', ')}`).toEqual([]);
     // slate 모노톤이 실제로 적용됐다
     expect(chart).toMatch(/bg-slate-/);
   });
