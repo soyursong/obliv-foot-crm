@@ -1814,7 +1814,9 @@ export default function Reservations() {
                       checkIn={resvAsCheckIn(r)}
                       reservationTime={r.reservation_time}
                       reservationInfo={{
-                        registrarLabel: resvBookerMap.get(r.id) ?? null,
+                        // T-20260630-foot-RESVHOVER-REGISTRAR-NOT-BOOKER: hover '등록자:' 줄은 예약등록자(registrar_name 스냅샷) 우선.
+                        //   null(구버전 행·타경로)이면 기존 booker(resvBookerMap) fallback → 회귀 0. SoT: ReservationDetailPopup.tsx:508.
+                        registrarLabel: (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null,
                         reservationDate: r.reservation_date,
                         visitRoute: r.visit_route ?? r.referral_source ?? null,
                         bookingMemo: r.booking_memo ?? null,
@@ -2203,7 +2205,9 @@ export default function Reservations() {
                                           //   등록자=resvBookerMap(예약 잡은 계정명, 예 'admin') / 예약일시 / 방문경로 / 풀번호 / 간략메모(W2)/ 예약메모.
                                           // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): brief_note(간략메모) 컬럼 배선 — 값 있으면 hover에 표기, 없으면 줄 자동 생략.
                                           reservationInfo={{
-                                            registrarLabel: resvBookerMap.get(r.id) ?? null,
+                                            // T-20260630-foot-RESVHOVER-REGISTRAR-NOT-BOOKER: hover '등록자:' 줄은 예약등록자(registrar_name 스냅샷) 우선.
+                                            //   null(구버전 행·타경로)이면 기존 booker(resvBookerMap) fallback → 회귀 0. SoT: ReservationDetailPopup.tsx:508.
+                                            registrarLabel: (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null,
                                             reservationDate: r.reservation_date,
                                             visitRoute: r.visit_route ?? r.referral_source ?? null,
                                             bookingMemo: r.booking_memo ?? null,
