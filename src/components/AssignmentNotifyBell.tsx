@@ -233,7 +233,11 @@ export default function AssignmentNotifyBell({
           onClick={() => setOpen((v) => !v)}
           title="담당자 배정 알림 — 클릭하여 상세 보기"
           aria-label={`담당자 배정 알림 ${unreadCount}건`}
-          className="flex min-h-[24px] min-w-0 shrink max-w-[120px] items-center gap-1 overflow-hidden rounded-md border border-gray-300 bg-gray-100 py-0.5 pl-1.5 pr-2 text-gray-700 transition hover:bg-gray-200 sm:max-w-[170px] lg:max-w-[280px] xl:max-w-[360px]"
+          // T-20260701-foot-LIVESLOT-GLASS-APPLY surface B(대시보드 상단 전광판): v2 컨펌 시안 정식 적용.
+          //   반투명 유리 볼록(.live-glass-board: backdrop-blur + inset/outer box-shadow) + 연한 실버 테두리
+          //   (border-[#C7CDD4]) + 테두리 깜빡(live-border-pulse, 점등/소등 2위상). 볼록 box-shadow는 비애니메이션
+          //   → 소등 위상에서도 볼록감 유지. 힐러 노랑(#FFFDE7) 미접촉(무채색 실버). 기존 gray-100/300 대체.
+          className="live-glass-board flex min-h-[24px] min-w-0 shrink max-w-[120px] items-center gap-1 overflow-hidden rounded-md border-2 border-[#C7CDD4] py-0.5 pl-1.5 pr-2 text-gray-700 transition hover:brightness-[1.03] motion-safe:animate-live-border-pulse sm:max-w-[170px] lg:max-w-[280px] xl:max-w-[360px]"
         >
           <Megaphone className="h-3 w-3 shrink-0 text-gray-500" />
           {/* 세로 티커 창: 한 줄 높이(16px)만 보이고 라인이 위로 흐른다 */}
