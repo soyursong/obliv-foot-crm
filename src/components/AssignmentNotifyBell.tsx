@@ -183,16 +183,15 @@ export default function AssignmentNotifyBell({
   );
   const unreadCount = unreadNotifs.length;
 
-  // ── 전광판(마키) 텍스트 — 미읽음 배정 내역을 한 줄로 이어붙임 (AC-2) ─────────────
-  //   reduced-motion 폴백에서도 의미가 전달되도록 머리에 요약(N건)을 둔다.
-  const marqueeText = useMemo(() => {
-    if (unreadCount === 0) return '';
+  // ── 세로 전광판(마키-Y) 라인 — 미읽음 배정 내역을 '줄 단위'로 (AC-3) ─────────────
+  //   요약(N건)을 머리 줄에 둬 reduced-motion 정적 폴백에서도 의미가 전달되도록 한다.
+  const lines = useMemo(() => {
+    if (unreadCount === 0) return [] as string[];
     const head = `담당자 배정 알림 ${unreadCount}건`;
     const items = unreadNotifs
       .slice(0, 10)
-      .map((n) => `${n.customerName} → ${n.staffName} 배정`)
-      .join('  ·  ');
-    return items ? `${head}  ·  ${items}` : head;
+      .map((n) => `${n.customerName} → ${n.staffName} 배정`);
+    return [head, ...items];
   }, [unreadCount, unreadNotifs]);
 
   const markRead = useCallback(
@@ -218,13 +217,15 @@ export default function AssignmentNotifyBell({
 
   return (
     <div className="relative flex min-w-0 shrink items-center gap-1.5" ref={wrapRef}>
-      {/* T-20260629-foot-ASSIGN-ALERT-MARQUEE AC-2/AC-3: 미읽음 배정 알림이 있을 때만(상시 X)
-          전광판(마키) 스트립을 노출. 클릭 시 종 드롭다운 토글(노출 내용 동일).
+      {/* T-20260630-foot-ASSIGN-ALERT-COMPACT-MONO-VERTICAL: 미읽음 배정 알림이 있을 때만(상시 X)
+          전광판 스트립을 노출. 클릭 시 종 드롭다운 토글(노출 내용 동일 — 위치·내용·조건 무변경).
+          ▸ AC-1 컴팩트: 높이/패딩/폰트 축소(36→24px대, text-xs→[11px]) — '딱 알아볼 최소 크기'.
+          ▸ AC-2 모노톤: amber 강조색 전면 제거 → 그레이스케일 단색(border/bg/text 모두 gray).
+          ▸ AC-3 세로 흐름: 가로 marquee → '세로 마키-Y' 티커(라인 2벌 seamless, 위→아래 흐름).
           순수 CSS animation(tailwind keyframes) — 신규 npm 패키지 0.
-          prefers-reduced-motion: motion-safe:* 변형으로 흐름/글로우 미적용 + motion-reduce:truncate 정적 강조 폴백.
-          T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE [변경1 반응형]: 날짜선택 옆(혼잡한 대시보드 헤더)로 이동하며
-            max-width를 태블릿 보수적으로 조정 — md(태블릿 세로 ~768)는 sm 캡(170) 유지, lg/xl(가로·데스크탑)에서만 확장.
-            min-w-0 + shrink로 잔여 폭 부족 시 스트립이 밀려나지 않고 줄어들도록(마키=스크롤 티커라 내용 손실 없음). */}
+          prefers-reduced-motion: motion-safe:* 변형으로 흐름 미적용 + motion-reduce 정적 요약줄 폴백.
+          [반응형] 날짜선택 옆 배치 유지 — max-width 보수적 캡(md=sm 캡 유지, lg/xl 확장).
+            min-w-0 + shrink로 잔여 폭 부족 시 스트립이 줄어들도록(티커라 내용 손실 없음). */}
       {unreadCount > 0 && (
         <button
           type="button"
@@ -232,14 +233,21 @@ export default function AssignmentNotifyBell({
           onClick={() => setOpen((v) => !v)}
           title="담당자 배정 알림 — 클릭하여 상세 보기"
           aria-label={`담당자 배정 알림 ${unreadCount}건`}
-          className="flex min-h-[36px] min-w-0 shrink max-w-[120px] items-center gap-1.5 overflow-hidden rounded-full border-2 border-amber-400 bg-amber-50 py-1 pl-2 pr-2.5 text-amber-800 transition hover:bg-amber-100 motion-safe:animate-alert-glow sm:max-w-[170px] lg:max-w-[280px] xl:max-w-[360px]"
+          className="flex min-h-[24px] min-w-0 shrink max-w-[120px] items-center gap-1 overflow-hidden rounded-md border border-gray-300 bg-gray-100 py-0.5 pl-1.5 pr-2 text-gray-700 transition hover:bg-gray-200 sm:max-w-[170px] lg:max-w-[280px] xl:max-w-[360px]"
         >
-          <Megaphone className="h-4 w-4 shrink-0 text-amber-600 motion-safe:animate-pulse-hand" />
-          <span className="min-w-0 flex-1 overflow-hidden">
-            <span className="flex w-max whitespace-nowrap text-xs font-semibold motion-safe:animate-marquee motion-reduce:w-full motion-reduce:truncate">
-              <span>{marqueeText}</span>
-              {/* seamless loop용 복제본 — reduced-motion 시 숨김 */}
-              <span aria-hidden className="pl-12 motion-reduce:hidden">{marqueeText}</span>
+          <Megaphone className="h-3 w-3 shrink-0 text-gray-500" />
+          {/* 세로 티커 창: 한 줄 높이(16px)만 보이고 라인이 위로 흐른다 */}
+          <span className="relative block h-4 min-w-0 flex-1 overflow-hidden text-[11px] font-medium leading-4">
+            {/* reduced-motion 정적 폴백 — 요약(첫 줄)만 노출 */}
+            <span className="hidden truncate motion-reduce:block">{lines[0]}</span>
+            {/* 세로 마키-Y — 라인 2벌 seamless 흐름(motion-safe), reduced-motion 시 숨김 */}
+            <span className="flex flex-col motion-reduce:hidden motion-safe:animate-marquee-y">
+              {lines.map((t, i) => (
+                <span key={`a-${i}`} className="block h-4 truncate whitespace-nowrap">{t}</span>
+              ))}
+              {lines.map((t, i) => (
+                <span key={`b-${i}`} aria-hidden className="block h-4 truncate whitespace-nowrap">{t}</span>
+              ))}
             </span>
           </span>
         </button>

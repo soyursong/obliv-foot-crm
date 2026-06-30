@@ -188,24 +188,19 @@ export default {
           "60%": { transform: "rotate(-10deg)" },
           "80%": { transform: "rotate(8deg)" },
         },
-        // T-20260629-foot-ASSIGN-ALERT-MARQUEE AC-2: 담당자 배정 알림 전광판(마키).
-        //   복제 텍스트 2벌(seamless loop)을 -50% 만큼 좌측 이동 → 끊김 없는 흐름.
+        // T-20260630-foot-ASSIGN-ALERT-COMPACT-MONO-VERTICAL AC-3: 담당자 배정 알림 전광판 '세로' 흐름(마키-Y).
+        //   복제 라인 2벌(seamless loop)을 -50% 만큼 위로 이동 → 끊김 없는 세로 티커.
+        //   (이전 가로 marquee 키프레임 + amber alert-glow 글로우는 본 티켓에서 제거 — 모노톤·세로 전환, 잔재 0.)
         //   prefers-reduced-motion 환경에선 motion-safe: 변형으로 미적용(정적 폴백).
-        marquee: {
-          "0%": { transform: "translateX(0)" },
-          "100%": { transform: "translateX(-50%)" },
-        },
-        // 전광판 테두리 글로우(점멸 대체 — 시선 끌되 화면 일관성 유지).
-        "alert-glow": {
-          "0%, 100%": { boxShadow: "0 0 0 0 rgba(245,158,11,0)" },
-          "50%": { boxShadow: "0 0 0 4px rgba(245,158,11,0.30)" },
+        "marquee-y": {
+          "0%": { transform: "translateY(0)" },
+          "100%": { transform: "translateY(-50%)" },
         },
       },
       animation: {
         "pulse-hand": "pulse-hand 1.5s ease-in-out infinite",
         shake: "shake 0.9s ease-in-out infinite",
-        marquee: "marquee 12s linear infinite",
-        "alert-glow": "alert-glow 1.6s ease-in-out infinite",
+        "marquee-y": "marquee-y 9s linear infinite",
       },
     },
   },
