@@ -257,6 +257,11 @@ export function ReservationDetailPopup({
   const [routeSaving, setRouteSaving] = useState(false);
   // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: TM 역할은 예약등록자 드롭다운 read-only + 저장 차단.
   const isTmRole = currentUserRole === 'tm';
+  // T-20260630-foot-RESVPOPUP-DELBTN-HIDE-TMCODY: TM·코디네이터(coordinator) 역할은 푸터 [예약삭제] 버튼 미렌더(hidden, not disabled).
+  //   역할 소스 = profile?.role(useAuth) → currentUserRole prop(인접 TM-LOCK 티켓과 동일 경로). 'coordinator' = user_profiles.role 정본 enum(=코디/데스크).
+  //   ⚠ 삭제 버튼은 본래 isAdmin(role==='admin') 게이트라 tm/coordinator 는 이미 미노출 — 본 가드는 의도 명시 + isAdmin 의미 확장 대비 방어(회귀 0).
+  //   비대상(admin/manager/원장/consultant 등)은 현행 그대로. 서버측 RLS 강제는 OUT(별도 백로그).
+  const isCoordinatorRole = currentUserRole === 'coordinator';
 
   // ── 우상 선택 상태: 좌하에서 클릭 → selectedResvId 변경
   const [selectedResvId, setSelectedResvId] = useState<string | null>(null);
@@ -1857,7 +1862,10 @@ export function ReservationDetailPopup({
                     예약복원
                   </Button>
                 )}
-                {isAdmin && (
+                {/* T-20260630-foot-RESVPOPUP-DELBTN-HIDE-TMCODY: TM·코디네이터는 [예약삭제] 미렌더(hidden).
+                    isAdmin(role==='admin') 게이트 유지 + tm/coordinator 명시 제외 → AC①TM·②코디 미노출 / ③admin 정상노출(회귀0).
+                    미렌더 시에도 [닫기] ml-auto 우측정렬 유지 → 푸터 레이아웃 비깨짐(AC④). */}
+                {isAdmin && !isTmRole && !isCoordinatorRole && (
                   <Button variant="destructive" size="sm" disabled={busy} data-testid="btn-reservation-delete" onClick={deleteReservation}>
                     예약삭제
                   </Button>
