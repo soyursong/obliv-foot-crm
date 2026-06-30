@@ -6336,7 +6336,7 @@ export default function Dashboard() {
             {examRooms.length > 0 ? (
               <RoomSection
                 title="진료"
-                color="bg-violet-100 text-violet-800"
+                color="bg-muted/30 text-foreground"
                 rooms={examRooms}
                 roomType="examination"
                 checkIns={filtered}
@@ -6359,7 +6359,7 @@ export default function Dashboard() {
                 onDeleteSlot={handleDeleteSlot}
               />
             ) : (
-              <div className="flex items-center text-xs font-bold px-2 py-1 rounded-t-lg bg-violet-100 text-violet-800">
+              <div className="flex items-center text-xs font-bold px-2 py-1 rounded-t-lg bg-muted/30 text-foreground">
                 진료
                 {slotBatchEditMode && isToday && (
                   <button
@@ -6475,7 +6475,7 @@ export default function Dashboard() {
             {/* AC-2: 상담실1~N 슬롯 정상 유지 + 배치편집 잠금/삭제 오버레이 */}
             {consultRooms.length > 0 && (
               <div className="flex flex-col">
-                <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-blue-100 text-blue-800">
+                <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-muted/30 text-foreground">
                   상담실
                   <span className="ml-1.5 font-normal opacity-70">({consultRooms.length}실)</span>
                 </div>
@@ -6624,7 +6624,7 @@ export default function Dashboard() {
             <RoomSection
               fillHeight
               title="치료실"
-              color="bg-amber-100 text-amber-800"
+              color="bg-muted/30 text-foreground"
               rooms={treatmentRooms}
               roomType="treatment"
               checkIns={filtered}
@@ -6703,7 +6703,7 @@ export default function Dashboard() {
             <RoomSection
               fillHeight
               title="레이저실"
-              color="bg-rose-100 text-rose-800"
+              color="bg-muted/30 text-foreground"
               rooms={laserRooms}
               roomType="laser"
               checkIns={filtered}
