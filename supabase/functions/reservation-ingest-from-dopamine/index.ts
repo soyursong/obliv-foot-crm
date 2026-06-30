@@ -24,8 +24,7 @@
  *       "phone_e164": "+82102345...",      ← 비동행 필수. 동행(is_companion=true)은 무폰 수용(optional)
  *       "name": "홍길동",
  *       "customer_real_name": "동행루루",   ← optional. 동행명/본명 스냅샷(§4-2b 비키). 미동봉 시 동행은 name 폴백
- *       "birth_year": 1985,      // optional
- *       "gender": "F"            // optional
+ *       "gender": "F"            // optional. (birth_year 는 DA (C)DROP — 수신/적재하지 않음)
  *     },
  *     "reservation": {
  *       "scheduled_at": "2026-05-25T14:30:00+09:00",
@@ -185,8 +184,12 @@ Deno.serve(async (req) => {
   }
 
   // ── 선택 필드 추출 ─────────────────────────────────────────────────────────
-  const birthYear         = customer['birth_year']         as number | undefined;
   const gender            = customer['gender']             as string | undefined;
+  // T-20260630-foot-DOPAMINE-INGEST-BIRTHYEAR: birth_year = 비-SSOT (DA CONSULT-REPLY (C)DROP).
+  //   birth_year 는 cue_cards.age 역산 추정치(lossy ±1y)일 뿐 '생년' SSOT 아님. foot customers 의
+  //   생년 SSOT = birth_date(RRN 앞6자리 서버파생, 대표원장 컨펌). emit-side(dopamine push EF)가
+  //   birth_year emit-stop. ingest 는 키 동봉되더라도 무조건 무시(미추출·미적재) = (C)DROP "foot ingest 무시".
+  //   (이전 fail-fast 회귀 차단: customers.birth_year 컬럼 부재로 키 동봉 시 'column not found' 502 재발 방지.)
   // T-20260630-foot-CONSENT-MARKETING-COL-ROLLBACK: consent_marketing = 비-SSOT divergent 명칭
   //   (DA NO-GO as-named). 컬럼 DROP + 코드참조 동반 제거(가드B). 광고동의 canonical 거처=consent_ad.
   const slotType          = reservation['slot_type']       as string | undefined;
@@ -341,7 +344,7 @@ Deno.serve(async (req) => {
         .from('customers')
         .update({
           name,
-          ...(birthYear != null ? { birth_year: birthYear } : {}),
+          // birth_year: (C)DROP — 미적재 (T-20260630-foot-DOPAMINE-INGEST-BIRTHYEAR)
           ...(gender ? { gender } : {}),
           // campaign_id/adset_id/ad_id → customers 컬럼 (reservations 아님)
           ...(campaignId ? { campaign_id: campaignId } : {}),
@@ -356,7 +359,7 @@ Deno.serve(async (req) => {
         name,
         phone: phoneE164,
         clinic_id: clinicId,                          // DB 조회로 얻은 clinicId
-        ...(birthYear != null ? { birth_year: birthYear } : {}),
+        // birth_year: (C)DROP — 미적재 (T-20260630-foot-DOPAMINE-INGEST-BIRTHYEAR)
         ...(gender ? { gender } : {}),
         ...(campaignId ? { campaign_id: campaignId } : {}),
         ...(adsetId    ? { adset_id:    adsetId    } : {}),
