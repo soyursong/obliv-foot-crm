@@ -1235,44 +1235,51 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
 
           {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 하위 메모 입력 dirty 추적 */}
           <div className="mt-4 space-y-4" onInput={markDirty}>
-            {/* 차트번호 */}
-            {effectiveChartNumber && (
-              <div className="text-sm font-semibold text-teal-700">{effectiveChartNumber}</div>
-            )}
-            {/* 연락처 */}
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Phone className="h-3.5 w-3.5" />
-              {formatPhone(customerMode.customerPhone)}
-            </div>
-
-            {/* T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 자동 표기.
-                PHI: rrn 평문/뒷자리 미노출, 서버 RPC 파생값만 표시 */}
-            <div className="flex items-center gap-1 text-sm text-muted-foreground" data-testid="cust-detail-birthdate">
-              <Calendar className="h-3.5 w-3.5" />
-              <span className="tabular-nums">{birthDateDisplay ?? '생년월일 미등록'}</span>
-            </div>
-
-            {/* AC9: 접수 상태 표시 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-muted-foreground">최근 접수</span>
-              {latestCheckIn ? (
-                <>
-                  <Badge variant="outline" className="text-xs">
-                    {STATUS_KO[latestCheckIn.status as keyof typeof STATUS_KO] ?? latestCheckIn.status}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {format(new Date(latestCheckIn.checked_in_at), 'MM/dd HH:mm')}
-                  </span>
-                  {latestCheckIn.visit_type === 'new' ? (
-                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700">초진</span>
-                  ) : (
-                    /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 재진=초록(firstvisit). sage→A안 초록 통일 */
-                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-firstvisit-100 text-firstvisit-700">재진</span>
-                  )}
-                </>
-              ) : (
-                <span className="text-xs text-muted-foreground italic">방문 이력 없음</span>
+            {/* ── T-20260630-foot-SIDEBAR-LAYOUT-RRN-DOB 요청1: 고객관리 사이드바 식별정보 섹션
+                레이아웃 축소(폰트 ~절반 14→11px·아이콘 14→12px)·행간 촘촘(space-y-1)·
+                항목명/값 수평 중앙정렬(text-center, justify-center). 사이드바 한정 — 하위 메모/패키지/서류
+                위젯 미변경(회귀 0). 태블릿/모바일: SheetContent 폭(400/440px) 내 flex 중앙정렬이라 미파손. */}
+            <div className="space-y-1 text-center" data-testid="cust-info-section">
+              {/* 차트번호 */}
+              {effectiveChartNumber && (
+                <div className="text-[11px] font-semibold text-teal-700">{effectiveChartNumber}</div>
               )}
+              {/* 연락처 */}
+              <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
+                <Phone className="h-3 w-3 shrink-0" />
+                <span className="tabular-nums">{formatPhone(customerMode.customerPhone)}</span>
+              </div>
+
+              {/* T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 자동 표기.
+                  PHI: rrn 평문/뒷자리 미노출, 서버 RPC 파생값(fn_customer_birthdates)만 표시.
+                  T-20260630-foot-SIDEBAR-LAYOUT-RRN-DOB 요청2: 주민번호 보유 고객 생년월일 자동연동 — 본 surface 旣적용(RPC 재사용·신규 디코딩/컬럼 0). */}
+              <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground" data-testid="cust-detail-birthdate">
+                <Calendar className="h-3 w-3 shrink-0" />
+                <span className="tabular-nums">{birthDateDisplay ?? '생년월일 미등록'}</span>
+              </div>
+
+              {/* AC9: 접수 상태 표시 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
+              <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-muted-foreground">최근 접수</span>
+                {latestCheckIn ? (
+                  <>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {STATUS_KO[latestCheckIn.status as keyof typeof STATUS_KO] ?? latestCheckIn.status}
+                    </Badge>
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      {format(new Date(latestCheckIn.checked_in_at), 'MM/dd HH:mm')}
+                    </span>
+                    {latestCheckIn.visit_type === 'new' ? (
+                      <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700">초진</span>
+                    ) : (
+                      /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 재진=초록(firstvisit). sage→A안 초록 통일 */
+                      <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-firstvisit-100 text-firstvisit-700">재진</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground italic">방문 이력 없음</span>
+                )}
+              </div>
             </div>
 
             {/* T-20260629-foot-CHART1-FORMAT-UNIFY AC-2: 고객차트/진료차트 버튼 구성을 대시보드(checkIn) 1번차트와 동일 통일.
