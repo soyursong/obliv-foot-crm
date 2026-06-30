@@ -940,7 +940,10 @@ export function ReservationDetailPopup({
 
   // ── 액션: 완전 삭제
   const deleteReservation = async () => {
-    if (!window.confirm(`${reservation.customer_name}님 예약을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+    // T-20260701-foot-RESVPOPUP-DELCONFIRM-UNIFY: 우클릭 메뉴(ReservationContextMenu)·예약관리(CustomerQuickMenu)와
+    //   글자 단위로 동일한 삭제 확인 문구로 통일. '(다시 올 고객이라면 [예약 취소]를 쓰세요)' 넛지로 재방문 고객 오삭제 방지.
+    //   confirm 게이트·hard-delete 전이 로직은 무변경, 표시 문구만 교체. (재drift는 *-DELCONFIRM-UNIFY spec 의 3진입점 동일성 가드가 차단.)
+    if (!window.confirm('예약을 완전 삭제하시겠습니까?\n삭제하면 정보가 완전히 사라지며 복구할 수 없습니다.\n(다시 올 고객이라면 [예약 취소]를 쓰세요)')) return;
     setBusy(true);
     const { count } = await supabase
       .from('check_ins')
