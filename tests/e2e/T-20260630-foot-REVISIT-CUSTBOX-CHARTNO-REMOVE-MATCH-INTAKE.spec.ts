@@ -99,7 +99,9 @@ test.describe('T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE', () 
   });
 
   // ── S4: 재진 미수 배지 축소 + 미수 0 → 배지 없음 (AC-4) ──
-  test('S4: 재진 미수 배지가 축소 className(text-[8px])으로 렌더된다(AC-4)', async ({ page }) => {
+  // T-20260630-foot-DASH-REVISITBOX-CHARTNO-REMOVE-MISU-SHRINK 가 배지를 한 단계 더 축소
+  //   (text-[8px] → text-[7px], REVISIT_MISU_BADGE_CLS) → 본 회귀 기준도 7px 로 갱신.
+  test('S4: 재진 미수 배지가 축소 className(text-[7px])으로 렌더된다(AC-4)', async ({ page }) => {
     const badges = page.locator(`${RETURNING_CARD} [data-testid="outstanding-due-badge"]`)
       .or(page.locator(`[data-testid="box2-resv-card"] [data-testid="outstanding-due-badge"]`));
     const count = await badges.count();
@@ -109,9 +111,10 @@ test.describe('T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE', () 
     }
     for (let i = 0; i < Math.min(count, 8); i++) {
       const cls = (await badges.nth(i).getAttribute('class')) ?? '';
-      // REQ-3: 축소 — text-[8px] 적용(기존 text-[9px] 대비 작아짐)
-      expect(cls).toContain('text-[8px]');
+      // DASH-REVISITBOX AC-3: 더 축소 — text-[7px] 적용(기존 9px·8px 대비 작아짐)
+      expect(cls).toContain('text-[7px]');
       expect(cls).not.toContain('text-[9px]');
+      expect(cls).not.toContain('text-[8px]');
     }
   });
 

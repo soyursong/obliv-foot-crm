@@ -1523,6 +1523,13 @@ function NoShowBadge() {
   );
 }
 
+// T-20260630-foot-DASH-REVISITBOX-CHARTNO-REMOVE-MISU-SHRINK AC-3:
+//   재진 고객박스(통합시간표 체크인·예약) 미수 딱지를 초진 박스보다 더 작게 — 폰트 7px·패딩 1px·py 0.
+//   whitespace-nowrap = clip 가드("미수" 2글자 줄바꿈/잘림 방지). twMerge로 base(text-[9px] px-1 py-px) override.
+//   체크인 카드(line ~1631)·재진 예약 카드(line ~1935) 두 곳 공통 적용 → 분기 단일화(divergence 방지).
+//   초진(new)·진료비/패키지 잔금 칩(PkgOutstandingBadge)은 무수정 = 색컨벤션·레이아웃 무변경(AC-4).
+const REVISIT_MISU_BADGE_CLS = 'text-[7px] px-px py-0 leading-none whitespace-nowrap';
+
 function TimelineCheckInCard({
   checkIn,
   onClick,
@@ -1627,8 +1634,8 @@ function TimelineCheckInCard({
         )
       )}
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지.
-          T-20260630 REQ-3: 재진 박스만 배지 축소(className override) — 초진(new) 무수정. */}
-      <OutstandingDueBadge data={timelineOutstanding} className={visitType === 'returning' ? 'text-[8px] px-0.5 py-0 leading-none' : undefined} />
+          T-20260630 REQ-3 → DASH-REVISITBOX AC-3: 재진 박스만 배지 더 축소(REVISIT_MISU_BADGE_CLS) — 초진(new) 무수정. */}
+      <OutstandingDueBadge data={timelineOutstanding} className={visitType === 'returning' ? REVISIT_MISU_BADGE_CLS : undefined} />
       {/* T-20260530-foot-WALKIN-TIMETABLE: 워크인 배지 (예약 없는 당일 접수) */}
       {isWalkIn && (
         <span
@@ -1931,8 +1938,8 @@ function DraggableBox2ResvCard({
     >
       <span className="truncate text-gray-800">{cardDisplayName(reservation)}</span>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
-          T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE REQ-3: 미수 딱지 축소(className override). */}
-      <OutstandingDueBadge data={box2Outstanding} className="text-[8px] px-0.5 py-0 leading-none" />
+          REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
+      <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
