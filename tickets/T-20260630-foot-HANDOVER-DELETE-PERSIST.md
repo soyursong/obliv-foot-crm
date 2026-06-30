@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 qa_result: pending
-deploy_commit: pending (push 후 기입)
+deploy_commit: 34784101
 deployed_at: n/a (db_change:true — supervisor DDL-diff 게이트 통과 후 적용)
 bundle_hash: n/a (NOT yet verified on prod)
 db_change: true
