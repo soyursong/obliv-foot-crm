@@ -1,7 +1,7 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
-import { addDays, format, parseISO } from 'date-fns';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
@@ -46,7 +46,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
-import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean } from '@/lib/chartSheetContext';
+import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean, useChartSheetDock } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
@@ -2490,6 +2490,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const chartSheetClose = useChartSheetClose();
   // T-20260611-foot-CHART2-SAVE-DIRTY-RESET: 본문 저장 성공 시 Sheet 미저장 가드 clean 리셋 (독립 페이지 모드 no-op)
   const markChartClean = useChartSheetMarkClean();
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2 — 동선2]: in-page 서랍 모드에서 [다음예약] 시 차트 도킹 요청(별도 창/독립 페이지면 null)
+  const requestChartDock = useChartSheetDock();
+  const navigate = useNavigate();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
@@ -7218,14 +7221,32 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[11px] font-semibold text-[#51585D]">예약내역</div>
-                  {/* T-20260515-foot-INLINE-RESV: 다음 예약 → 인라인 예약 패널 (페이지 이동 없음) */}
+                  {/* T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2 확정 — 동선2]: [다음 예약] → 예약관리로 navigate + 차트 유지(도킹) + 슬롯클릭 prefill.
+                      김주연 총괄 최종결정(ts 1782819349.054839) 옵션 ①+③: 차트 닫지 않고 도킹(축소·드래그·뒤 클릭 통과) → 배경 예약판 슬롯 클릭 시 해당 고객 prefill.
+                      ▸별도 창 모드(window.opener 존재 = openChart의 window.open '/chart/:id') = 차트 창은 그대로 두고(이미 OS 창이라 드래그/리사이즈/뒤 클릭 가능) 메인 창(opener)을 예약관리로 보냄.
+                      ▸in-page 서랍 모드(Playwright/팝업차단 폴백) = 같은 창 navigate + requestChartDock()로 차트 도킹(backdrop pass-through).
+                      ▸L-002/L-004 LOGIC-LOCK variance = 현장 권위자 김주연 총괄 명시승인(ticket frontmatter logic_lock_variance). 인라인 예약 패널(구 INLINE-RESV)은 이 surface에서 대체됨. */}
                   <button
                     type="button"
                     onClick={() => {
-                      setInlineResvMemo('');
-                      setInlineResvDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
-                      setInlineResvSlotMap({});
-                      setInlineResvOpen(true);
+                      if (!customer?.id) { toast.info('고객 정보를 불러오는 중입니다'); return; }
+                      const prefillState = { prefillCustomerForSlot: { customer_id: customer.id, name: customer.name ?? '' } };
+                      // 별도 창(미니홈피)에서 열린 경우: 메인 창(opener)을 예약관리로 보내고 차트 창은 유지(드래그/리사이즈 native).
+                      const opener = typeof window !== 'undefined' ? window.opener : null;
+                      if (opener && !opener.closed) {
+                        try {
+                          opener.postMessage(
+                            { type: 'foot-prefill-slot', customer_id: customer.id, name: customer.name ?? '' },
+                            window.location.origin,
+                          );
+                          opener.focus();
+                          toast.success('예약관리 화면에서 원하는 시간 칸을 클릭하세요');
+                          return;
+                        } catch { /* postMessage 실패 시 아래 동일창 폴백 */ }
+                      }
+                      // in-page 서랍 모드: 같은 창에서 예약관리로 이동 + 차트 도킹(backdrop pass-through).
+                      navigate('/admin/reservations', { state: prefillState });
+                      requestChartDock?.();
                     }}
                     className="inline-flex items-center gap-1 rounded border border-sage-300 bg-sage-50 px-1.5 py-0.5 text-[10px] font-medium text-sage-700 hover:bg-sage-100 transition"
                     data-testid="btn-next-reservation"
