@@ -334,10 +334,11 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
             </span>
           </button>
         </td>
-        {/* C: 신청 상태 + 검사결과 동작 같은 줄(AC-3). 검사별 [상태 박스 | 결과 동작]. */}
+        {/* 검사별 [상태 박스 | 결과 동작]. T-20260630-KOHEXAM-RELOCATE-TXTABLE [3](재스펙 4q0l):
+            균검사·피검사를 한 줄에 섞지 말고 두 줄로 시각 분리(점선 구분). 가독성 우선(dev 재량). */}
         <td className="px-2 py-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {/* 균검사 */}
+          <div className="flex flex-col gap-1" data-testid="exam-result-stack">
+            {/* 균검사 줄 */}
             <div className="flex items-center gap-1.5" data-testid="exam-koh-group">
               <ExamBadge label="균검사" active={r.kohRequested} tone="teal" testid="exam-koh-badge" />
               {r.kohRequested &&
@@ -364,8 +365,12 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
                   </Button>
                 ))}
             </div>
-            {/* 피검사 — 결과지 업로드(B안 파일보관). 등록 0건=업로드 / ≥1건=보기. T-...-BLOODTEST-RESULT-PUBLISH-BACKEND */}
-            <div className="flex items-center gap-1.5" data-testid="exam-blood-group">
+            {/* 피검사 — 결과지 업로드(B안 파일보관). 등록 0건=업로드 / ≥1건=보기. T-...-BLOODTEST-RESULT-PUBLISH-BACKEND
+                [3] 균검사 줄과 점선으로 분리(두 줄 표기) — 한 줄에 섞여 보이지 않게. */}
+            <div
+              className="flex items-center gap-1.5 border-t border-dashed border-muted/70 pt-1"
+              data-testid="exam-blood-group"
+            >
               <ExamBadge label="피검사" active={r.bloodRequested} tone="rose" testid="exam-blood-badge" />
               {r.bloodRequested &&
                 (hasBloodResult ? (
