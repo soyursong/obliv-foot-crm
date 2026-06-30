@@ -77,24 +77,19 @@ export function partBadgeClass(code: string): string {
 
 /**
  * 파트 박스(인수인계 카드 섹션 컨테이너) tailwind 클래스 (bg + border).
- * T-20260609-foot-HANDOVER-PARTBOX-COLOR: 배지(PART_BADGE_CLASS)에만 색이 있고
- *   박스 섹션엔 색이 없어(흰 배경) 김주연 총괄 지적 → 박스에도 파트 색 적용.
- * 색값 SSOT 재사용(신규 색 도입 금지): partColor/PART_BADGE_CLASS 와 동일 색계열
- *   (consultant_lead=rose / coordinator=amber / therapist=green / 공통=indigo).
- *   T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: therapist teal→green 정정.
- * 박스는 배지보다 연한 톤(bg-*-50/border-*-200)으로 글자 가독성 유지.
- * 정적 매핑(literal class)이라 Tailwind JIT purge 안전.
+ * T-20260630-foot-HANDOVER-BOX-COMPACT-MONO: 김주연 총괄(동일 reporter) 자기-override.
+ *   직전 T-20260609-foot-HANDOVER-PARTBOX-COLOR(박스 배경 파트색 rose/amber/teal/indigo)을
+ *   policy_superseded → 전 파트 동일 모노톤(중립 단색)으로 회귀. 박스 배경/테두리에서
+ *   파트 색 구분을 제거하고, 파트 색 구분자는 상단 배지(PART_BADGE_CLASS)로 단일화.
+ *   → PART_BADGE_CLASS / NAMECARD 이름칩 색은 불변(범위 밖).
+ * 모노톤 단색: bg-slate-50 + border-slate-200 (배지·메모·체크리스트 텍스트 대비 유지, AC4).
+ * 정적 단일 클래스라 Tailwind JIT purge 안전 + 동적 클래스 없음.
  */
-export const PART_BOX_CLASS: Record<string, string> = {
-  '공통': 'bg-indigo-50 border-indigo-200',
-  consultant_lead: 'bg-rose-50 border-rose-200',
-  coordinator: 'bg-amber-50 border-amber-200',
-  // T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: teal→green
-  therapist: 'bg-green-50 border-green-200',
-};
+export const PART_BOX_MONO_CLASS = 'bg-slate-50 border-slate-200';
 
-export function partBoxClass(code: string): string {
-  return PART_BOX_CLASS[code] ?? 'bg-white border-slate-200';
+export function partBoxClass(_code: string): string {
+  // 모든 파트 동일 모노톤(파트별 분기 제거). _code 시그니처는 호출부 호환 위해 유지.
+  return PART_BOX_MONO_CLASS;
 }
 
 export type CalendarView = 'month' | 'week' | 'day';

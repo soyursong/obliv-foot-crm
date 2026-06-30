@@ -651,7 +651,7 @@ export default function Handover() {
             </Button>
           </div>
 
-          <div className="space-y-1.5" data-testid="handover-list">
+          <div className="space-y-1" data-testid="handover-list">
             {loading ? (
               <div className="py-8 text-center text-sm text-muted-foreground">불러오는 중…</div>
             ) : selectedNotes.length === 0 ? (
@@ -665,8 +665,8 @@ export default function Handover() {
                   key={n.id}
                   data-testid="handover-card"
                   data-part={n.part_code}
-                  // T-20260629-foot-HANDOVER-COMPACT-PASTEL: 카드 높이 축소 (space-y-2 p-3 → space-y-1.5 p-2.5)
-                  className={`space-y-1.5 rounded-lg border p-2.5 shadow-sm ${partBoxClass(n.part_code)}`}
+                  // T-20260630-foot-HANDOVER-BOX-COMPACT-MONO: 추가 컴팩트 + 모노톤 배경(partBoxClass).
+                  className={`space-y-1 rounded-lg border p-2 shadow-sm ${partBoxClass(n.part_code)}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span
