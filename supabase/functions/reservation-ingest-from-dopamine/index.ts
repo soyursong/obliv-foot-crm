@@ -31,11 +31,22 @@
  *       "slot_type": "new_consult",
  *       "service_code": "FC-PDL-01",          ← optional. 발톱/풋 service 태깅 (services.service_code)
  *       "memo": "도파민 TM 상담 메모",
+ *       "registrar_name": "김상담",            ← optional. 로그인 TM 표시 라벨(provenance 표시축)
+ *       "visit_route": "TM",                   ← optional. 방문경로(父 tier-1 push는 항상 'TM')
  *       "campaign_id": "...",
  *       "adset_id": "...",
  *       "ad_id": "..."
  *     }
  *   }
+ *
+ * ── registrar_name / visit_route 착지 (T-20260630-foot-INGEST-REGISTRAR-CREATEDBY) ──
+ *   RECONCILE-FINAL(DA-20260630-RESV-REGISTRAR-RECONCILE-FINAL §416 governing):
+ *   (a) created_via='dopamine' same write-path (旣존, 회귀 확인).
+ *   (b) registrar_name → reservation_registrars(group_name='TM'·clinic·active) name 조회 →
+ *       매칭 시 registrar_id(FK)+name 스냅샷, 무매칭 → registrar_id=NULL + '[도파민TM] {name}' 라벨.
+ *       ⛔ 방화벽: 표시 전용 — created_by/stats/인센티브 산식 절대 미승격. email/staff_id 매칭 금지(컬럼 부재).
+ *   (c) created_by = NULL graceful 유지(registrar→created_by 착지 WITHDRAWN, §416 이중계상).
+ *   (KEEP) visit_route='TM'(旣존 enum) — source_system='dopamine'과 직교 독립 set.
  *
  * ── service_id 태깅 (T-20260627-foot-INGEST-SERVICE-TAG / B-9) ────
  *   reservation.service_code (도파민이 운반한 발톱 product 코드, 예: FC006/FC007 류)
@@ -164,6 +175,12 @@ Deno.serve(async (req) => {
   const campaignId        = reservation['campaign_id']     as string | undefined;
   const adsetId           = reservation['adset_id']        as string | undefined;
   const adId              = reservation['ad_id']           as string | undefined;
+  // T-20260630-foot-INGEST-REGISTRAR-CREATEDBY (RECONCILE-FINAL §RE-SCOPE):
+  //   registrar_name = 도파민이 운반한 로그인 TM 표시 라벨(provenance 표시축). reservation 블록 동봉.
+  //   visit_route    = 방문경로(父 tier-1 push는 항상 'TM'). source_system='dopamine'과 직교 독립 set.
+  //   ⛔ registrar_email/created_by 착지는 WITHDRAWN(§416 이중계상) — 수신/해소하지 않는다.
+  const registrarName     = reservation['registrar_name']  as string | undefined;
+  const visitRoute        = reservation['visit_route']     as string | undefined;
 
   // ── Supabase service role client ──────────────────────────────────────────
   const supabaseUrl  = Deno.env.get('SUPABASE_URL')!;
@@ -214,6 +231,51 @@ Deno.serve(async (req) => {
         serviceId = svcRow.id as string;
       }
     }
+
+    // ── (b) registrar_name provenance 표시 (RECONCILE-FINAL AC2 / §RE-SCOPE) ───────
+    //   도파민이 운반한 registrar_name(로그인 TM 표시 라벨)을 풋 예약등록자 마스터로 해석.
+    //   ⛔ 방화벽(§416, 필수): registrar_id/registrar_name 은 순수 표시축 — created_by·
+    //      stats·집계·인센티브 산식으로 절대 승격하지 않는다(이중계상 방지의 핵심 격리).
+    //   ⚠ 매칭키 = name 뿐 — reservation_registrars 엔 email/staff_id 컬럼 부재(DA 정정-1).
+    //   해소 규칙(best-effort 표시축, ingest 비차단):
+    //     - reservation_registrars(clinic·group_name='TM'·active) name 매칭
+    //         → registrar_id(FK) + registrar_name(마스터 스냅샷) 착지
+    //     - 무매칭/조회에러 → registrar_id=NULL + registrar_name='[도파민TM] {name}' provenance 라벨 TEXT
+    //     - registrar_name 미수신 → 두 컬럼 미삽입(NULL 유지, 회귀 0)
+    let registrarId: string | null = null;
+    let registrarNameLanded: string | null = null;
+    if (registrarName && typeof registrarName === 'string' && registrarName.trim() !== '') {
+      const rn = registrarName.trim();
+      // .limit(1)+배열 수신: 동일 name 다중행(마스터에 UNIQUE 없음) 시 maybeSingle throw 회피.
+      const { data: regRows, error: regLookupErr } = await admin
+        .from('reservation_registrars')
+        .select('id, name')
+        .eq('clinic_id', clinicId)
+        .eq('group_name', 'TM')
+        .eq('active', true)
+        .eq('name', rn)
+        .order('sort_order', { ascending: true })
+        .limit(1);
+      const regRow = regRows && regRows.length > 0 ? regRows[0] : null;
+      if (regLookupErr) {
+        console.warn(`[reservation-ingest] registrar lookup error (non-fatal): ${regLookupErr.message} — provenance label fallback`);
+        registrarId = null;
+        registrarNameLanded = `[도파민TM] ${rn}`;
+      } else if (regRow) {
+        registrarId = regRow.id as string;
+        registrarNameLanded = (regRow.name as string) ?? rn;   // 마스터 리네임/삭제 대비 스냅샷
+      } else {
+        // 무매칭 → provenance 라벨(표시 전용, FK 미착지)
+        registrarId = null;
+        registrarNameLanded = `[도파민TM] ${rn}`;
+      }
+    }
+
+    // ── (KEEP) visit_route='TM' tier-1 (RECONCILE-FINAL AC3) ──────────────────────
+    //   수신 visit_route(父 tier-1 push는 항상 'TM')를 旣존 CHECK enum 검증 후 착지.
+    //   source_system='dopamine'과 직교 독립 set(서로 파생 금지). 비-enum 값/미수신 → 미삽입(회귀 0).
+    const VISIT_ROUTE_ENUM = ['TM', '워크인', '인바운드', '지인소개'];
+    const visitRouteLanded = (visitRoute && VISIT_ROUTE_ENUM.includes(visitRoute)) ? visitRoute : null;
 
     // ── AC-5: 중복 체크 먼저 ─────────────────────────────────────────────────
     // UNIQUE partial index (source_system IS NOT NULL AND external_id IS NOT NULL)
@@ -344,6 +406,13 @@ Deno.serve(async (req) => {
       // B-9: 해석된 service_id 만 착지(null이면 미삽입 → 컬럼 DEFAULT NULL 유지, 회귀 0)
       ...(serviceId ? { service_id: serviceId } : {}),
       ...(memo     ? { memo } : {}),
+      // T-20260630-foot-INGEST-REGISTRAR-CREATEDBY (RECONCILE-FINAL):
+      //   (b) registrar 표시축 — 해소된 FK(있을 때만) + 표시 라벨(매칭 스냅샷 or provenance).
+      //       ⛔ 방화벽: 표시 전용 — created_by/stats 미승격. created_by는 미삽입(NULL graceful, (c)).
+      //   (KEEP) visit_route='TM' — 旣존 enum, source_system='dopamine'(:335)과 직교 독립 set.
+      ...(registrarId         ? { registrar_id: registrarId }            : {}),
+      ...(registrarNameLanded ? { registrar_name: registrarNameLanded }  : {}),
+      ...(visitRouteLanded    ? { visit_route: visitRouteLanded }        : {}),
       // campaign_id/adset_id/ad_id 는 customers 컬럼 — reservations에서 제거 (결함 5 수정)
     };
 
@@ -373,7 +442,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'INTERNAL', detail: 'reservation insert returned no data' }, 500);
     }
 
-    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId} clinic_slug=${clinicSlug} clinic_id=${clinicId} service_code=${serviceCode ?? '-'} service_id=${serviceId ?? '-'}`);
+    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId} clinic_slug=${clinicSlug} clinic_id=${clinicId} service_code=${serviceCode ?? '-'} service_id=${serviceId ?? '-'} created_via=${createdVia} visit_route=${visitRouteLanded ?? '-'} registrar_id=${registrarId ?? '-'} registrar_name=${registrarNameLanded ?? '-'}`);
     return json({ ok: true, reservation_id: newRsv.id, applied: true });
 
   } catch (err) {
