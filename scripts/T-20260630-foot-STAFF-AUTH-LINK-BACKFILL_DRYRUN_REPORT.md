@@ -110,3 +110,31 @@
 
 ### 계약 반영 (DA)
 §2-1 'staff.user_id 신원-링크 표준' 명문화 fold: (i) 비-로그인/NONPERSON staff = expected-NULL(gap 아님) (ii) 신원-링크 backfill = 결정적 2-factor 또는 권위 현장확인 필수, 이름단독/속성추정 금지(CODY 선례 일반화). body/derm/scalp staff 공통 — planner 인지.
+
+---
+
+## 7. APPLY 단계 — 게이트 해소 + 최종 dry-run (2026-07-01, MSG-20260701-075432-1umw)
+
+**human_pending 해소 → approved.** 김주연 총괄 현장확인 수신(thread 1782859741.988249, "맞아"). DA Q4 허용 apply 조건(권위 현장확인 증거: 확인자·일시·매핑 건별) 충족. → targeted 단건 **2건만** apply 준비.
+
+### 확정 매핑 (룰 일괄 금지 — 쌍별 단건)
+| 이름 | role | active | staff_id | → user_profiles.id | 증거 |
+|------|------|--------|----------|--------------------|------|
+| 박민석 | coordinator | true | fd54a977-d203-44f6-91cb-0f1fce47dd97 | dad7dc00-dc99-41af-b5fc-42aa77a0bd9b | 김주연 총괄 현장확인(2026-07-01) |
+| 문지은 | director(대표원장) | true | b46abc6d-4a24-4776-b807-751b62f60fe3 | d343769a-493a-49c9-b718-4c92c6f5db9a | 총괄 확인 = director급 인지 갈음(면허·매출귀속 영향 인지) |
+
+### 최종 apply dry-run (`_apply_dryrun.mjs`, READ-ONLY prod write 0) — **ALL PASS**
+- A. WHERE 삼중가드(id IN(2) + user_id IS NULL + role) 매칭 **COUNT == 2** (기대 2 일치)
+- B. cross-contamination: 제안 user_id 2건 모두 타 staff 점유 **0**
+- C. user_profiles 실존 + name/clinic_id 정합 OK
+
+### 산출물
+- `_apply.sql` (FINAL): BEGIN; expect_rows 확인 + 쌍별 단건 UPDATE 2 + 사후 1:1 무중복 확인; COMMIT(게이트 후).
+- `_rollback.sql` (FINAL): 적용 staff_id 2건 한정 user_id→NULL (우리가 채운 값일 때만, 외부변경 보호).
+- `_postverify.mjs` (AC-4): (a) 2건 적재 회복 (b) cross-contamination 0 (c) 1:1 불변식.
+
+### 게이트 (현재)
+1. AC-2 DA CONSULT ✅ / AC-3 현장확인 ✅(김주연) / AC-1 추정0 ✅.
+2. **→ supervisor DB 게이트 의무** (PHI attribution = autonomy §3.1 면제 아님). DDL 무변경이나 PHI 귀속=보안속성.
+3. supervisor 승인 후 `_apply.sql` COMMIT → `_postverify.mjs` (AC-4) → deploy-ready.
+4. carve-out 불변: NONPERSON 30 / OCCUPIED 4 / 비활성 NAME_ONLY 2(→ ROSTER-DEDUP 별트랙) / NO_MATCH 6 = NULL 유지. auto backfill 순증 0.
