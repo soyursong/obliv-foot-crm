@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
 import { generateSlots } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, formatPhoneInput, chartNoBadge } from '@/lib/format';
+import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -667,7 +667,8 @@ export function ReservationDetailPopup({
                   {loadedMatch!.birth_date && (
                     <div className="flex items-center gap-2 text-xs" data-testid="newmode-existing-birth">
                       <span className="w-12 shrink-0 text-muted-foreground">생년월일</span>
-                      <span className="text-sm text-teal-800 tabular-nums">{loadedMatch!.birth_date}</span>
+                      {/* T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [B]: raw YYMMDD → SSOT birthDateYMD(YYYY-MM-DD). read-only 표기 통일. */}
+                      <span className="text-sm text-teal-800 tabular-nums">{birthDateYMD(loadedMatch!.birth_date) || loadedMatch!.birth_date}</span>
                     </div>
                   )}
                 </div>
