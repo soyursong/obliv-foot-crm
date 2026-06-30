@@ -366,7 +366,11 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
-    active: true,
+    // T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 레거시 단일 진료확인서 비활성(forward-only,
+    //   DB active=false 와 동일 상태). code/nocode 2폼으로 분리됨. DOCLIST_ORDER_10 화이트리스트에서도
+    //   제거되어 패널 미노출(3중표시 방지). 기존 발행문서(form_submissions 10건) 참조·재출력은
+    //   HTML_TEMPLATE_MAP.treat_confirm 보존으로 무손상.
+    active: false,
     sort_order: 40,
   },
   {
@@ -476,19 +480,33 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     active: true,
     sort_order: 60,
   },
+  // T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 진료확인서 2 발급폼 분리(html).
+  //   code = 코드·진단명 포함(상병 테이블 렌더, diag 자동주입) / nocode = 불포함(상병 미렌더).
+  //   field_map(수기입력 필드)은 두 폼 동일 — 상병(diag_*)은 service_charges 읽기 자동바인딩이라
+  //   수기 필드가 아님. 두 폼의 차이는 HTML 템플릿(상병 테이블 유무)뿐(htmlFormTemplates.ts).
   {
     id: 'fallback-treat-confirm-code',
     clinic_id: FOOT_CLINIC_ID,
     category: 'foot-service',
     form_key: 'treat_confirm_code',
     name_ko: '진료확인서(코드·진단명 포함)',
-    template_path: '/assets/forms/foot-service/진료확인서_코드포함.jpg',
-    template_format: 'jpg',
-    field_map: [],
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name',    label: '환자성명', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_rrn',     label: '주민번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_address', label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'visit_date',      label: '진료일',  type: 'date',      x: 0, y: 0 },
+      { key: 'issue_date',      label: '발행일',  type: 'date',      x: 0, y: 0 },
+      { key: 'clinic_name',     label: '의료기관',type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_address',  label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_phone',    label: '전화 및 팩스', type: 'text', x: 0, y: 0 },
+      { key: 'doctor_name',     label: '의사성명',type: 'text',      x: 0, y: 0 },
+    ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
-    sort_order: 70,
+    sort_order: 40,
   },
   {
     id: 'fallback-treat-confirm-nocode',
@@ -496,13 +514,23 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'treat_confirm_nocode',
     name_ko: '진료확인서(코드·진단명 불포함)',
-    template_path: '/assets/forms/foot-service/진료확인서_코드불포함.jpg',
-    template_format: 'jpg',
-    field_map: [],
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name',    label: '환자성명', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_rrn',     label: '주민번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_address', label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'visit_date',      label: '진료일',  type: 'date',      x: 0, y: 0 },
+      { key: 'issue_date',      label: '발행일',  type: 'date',      x: 0, y: 0 },
+      { key: 'clinic_name',     label: '의료기관',type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_address',  label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_phone',    label: '전화 및 팩스', type: 'text', x: 0, y: 0 },
+      { key: 'doctor_name',     label: '의사성명',type: 'text',      x: 0, y: 0 },
+    ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
-    sort_order: 80,
+    sort_order: 41,
   },
 
   // ── T-20260514-foot-DOC-4FORM-IMPL: 신규 4종 ──
@@ -994,7 +1022,12 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   'koh_result',             // 3. KOH균검사결과지
   'diag_opinion',           // 4. 소견서
   'diagnosis',              // 5. 진단서
-  'treat_confirm',          // 6. 진료확인서
+  // 6. 진료확인서 — T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 단일 'treat_confirm' →
+  //    2 발급폼 분리. code(코드·진단명 포함, 10,000) / nocode(불포함, 3,000) 두 버튼 노출.
+  //    레거시 'treat_confirm' 은 화이트리스트에서 제거(+ DB active=false) → 3중표시 방지.
+  //    동일 서류종류(진료확인서)의 표시변이 → doc-serial prefix 둘 다 VC 공유(docSerial.ts).
+  'treat_confirm_code',     // 6a. 진료확인서(코드·진단명 포함)
+  'treat_confirm_nocode',   // 6b. 진료확인서(코드·진단명 불포함)
   'referral_letter',        // 7. 진료의뢰서
   'visit_confirm',          // 8. 통원확인서
   'medical_record_request', // 9. 진료기록사본
