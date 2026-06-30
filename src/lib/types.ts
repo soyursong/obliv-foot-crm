@@ -687,5 +687,28 @@ export function visitRouteOptionsFor(current?: string | null): string[] {
   return base;
 }
 
+/**
+ * T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-1: 예약경로 표시 매핑(순수 read-only).
+ * 도파민→풋 ingest 예약(source_system='dopamine')은 visit_route 가 비어 있어도 예약상세에서 'TM'으로 표시한다.
+ * (신규 EF ingest 는 visit_route='TM' 착지하지만, visit_route 미수신/legacy 인입 건은 NULL → 표시 갭 보강.)
+ *
+ * ⚠ 구현 가드(티켓 §AC-1): 순수 display 매핑이다 — reservations.source_system / visit_route 컬럼을 *덮어쓰지 않는다*.
+ *    · source_system 'dopamine'→'TM' 직접 write 금지: 형제 INGEST-CUSTNAME-NULL-FIX backfill 이
+ *      source_system='dopamine' key 에 의존하고, Revenue Source Split SSOT 가 source_system='TM'을
+ *      광고 마커로 사용하므로 오귀속 위험.
+ *    · visit_route 도 본 매핑에서 파생 write 하지 않는다(직교 독립축). 표시만 한다.
+ *
+ * @returns 표시용 예약경로 라벨. 해당 없으면 '' (caller 가 '—'/'미지정' graceful 처리).
+ */
+export function resolveVisitRouteDisplay(
+  visitRoute?: string | null,
+  sourceSystem?: string | null,
+): string {
+  const vr = (visitRoute ?? '').trim();
+  if (vr) return vr;
+  if ((sourceSystem ?? '').trim() === 'dopamine') return 'TM';
+  return '';
+}
+
 /** 예약등록자 마스터 그룹 라벨 순서 (드롭다운 그룹 헤더용). */
 export const REGISTRAR_GROUPS = ['원내', 'TM'] as const;
