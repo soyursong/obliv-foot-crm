@@ -48,9 +48,6 @@ test.describe('T-20260605-foot-HANDOVER-BOARD 인수인계 게시판', () => {
     await page.getByTestId('handover-new-btn').click();
     await expect(page.getByTestId('handover-dialog')).toBeVisible({ timeout: 8_000 });
 
-    // 파트 "치료사" 선택
-    await page.getByTestId('handover-form-part-therapist').click();
-
     // 메모 입력
     const memo = `오후 3시 OO님 도수 추가 예약 인계 ${Date.now()}`;
     await page.getByTestId('handover-form-memo').fill(memo);
@@ -74,7 +71,7 @@ test.describe('T-20260605-foot-HANDOVER-BOARD 인수인계 게시판', () => {
       return;
     }
     await expect(card).toBeVisible();
-    await expect(card.getByText('치료사')).toBeVisible();
+    await expect(card.getByText('공통', { exact: true })).toBeVisible();
     await expect(card.getByText('베드 정리')).toBeVisible();
     await expect(card.getByText('차트 미작성건 확인')).toBeVisible();
 
@@ -113,23 +110,15 @@ test.describe('T-20260605-foot-HANDOVER-BOARD 인수인계 게시판', () => {
   });
 
   // ── S3. 파트 필터 ───────────────────────────────────────────────────────────
-  test('S3 파트 필터 전환 동작', async ({ page }) => {
+  test('S3 파트 필터 UI 제거 확인(SUPERSEDE)', async ({ page }) => {
     await gotoHandover(page);
 
-    // 필터 버튼 4종 노출
-    await expect(page.getByTestId('handover-part-all')).toBeVisible();
-    await expect(page.getByTestId('handover-part-consultant_lead')).toBeVisible();
-    await expect(page.getByTestId('handover-part-coordinator')).toBeVisible();
-    await expect(page.getByTestId('handover-part-therapist')).toBeVisible();
-
-    // 상담실장 필터 활성화
-    await page.getByTestId('handover-part-consultant_lead').click();
-    await expect(page.getByTestId('handover-part-consultant_lead')).toHaveClass(/bg-teal-600/);
-
-    // 전체 복귀
-    await page.getByTestId('handover-part-all').click();
-    await expect(page.getByTestId('handover-part-all')).toHaveClass(/bg-slate-700/);
-    console.log('[HANDOVER] S3 파트 필터 OK');
+    // T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO (SUPERSEDE): 파트 구분 탭/필터 UI 전부 제거됨.
+    //   기존 'S3 파트 필터' 단언(필터 4종 노출·전환)을 '필터 제거 확인'으로 forward-update.
+    await expect(page.getByTestId('handover-part-filter')).toHaveCount(0);
+    await expect(page.getByTestId('handover-part-all')).toHaveCount(0);
+    await expect(page.getByTestId('handover-part-therapist')).toHaveCount(0);
+    console.log('[HANDOVER] S3 파트 필터 UI 제거 확인(SUPERSEDE) OK');
   });
 
   // ── S4. 체크리스트 토글 영속화 ──────────────────────────────────────────────
@@ -140,7 +129,6 @@ test.describe('T-20260605-foot-HANDOVER-BOARD 인수인계 게시판', () => {
     // 체크리스트 1건짜리 인수인계 작성
     await page.getByTestId('handover-new-btn').click();
     await expect(page.getByTestId('handover-dialog')).toBeVisible();
-    await page.getByTestId('handover-form-part-coordinator').click();
     const memo = `토글영속 테스트 ${Date.now()}`;
     await page.getByTestId('handover-form-memo').fill(memo);
     await page.getByTestId('handover-form-item-input').fill('토글대상-베드 정리');

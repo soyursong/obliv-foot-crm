@@ -40,7 +40,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { todaySeoulISODate } from '@/lib/format';
-import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER, staffRoleCardClass } from '@/lib/status';
+import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER } from '@/lib/status';
 import { fetchAttendeesByDate } from '@/lib/dutySheet';
 import type { Staff } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
@@ -90,7 +90,6 @@ export default function Handover() {
   const [view, setView] = useState<CalendarView>('month'); // AC-2: 기본 월별
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [partFilter, setPartFilter] = useState<string>('all');
 
   const [notes, setNotes] = useState<HandoverNote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,11 +238,10 @@ export default function Handover() {
     fetchNotes();
   }, [fetchNotes]);
 
-  // ── 파트 필터 적용 ────────────────────────────────────────────────────────
-  const visibleNotes = useMemo(
-    () => (partFilter === 'all' ? notes : notes.filter((n) => n.part_code === partFilter)),
-    [notes, partFilter],
-  );
+  // ── T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO ──
+  //   파트 구분 탭/필터 UI 전부 제거 → 파트 무관 전체 노트를 그대로(공통) 표시.
+  //   part_code 데이터는 보존(삭제·필터 없음, 누락 0).
+  const visibleNotes = notes;
 
   /** 날짜별 인수인계 개수 (배지용) */
   const countByDate = useMemo(() => {
@@ -292,7 +290,8 @@ export default function Handover() {
   // ── 작성/수정 ─────────────────────────────────────────────────────────────
   const openNew = () => {
     setEditingId(null);
-    setFormPart(partFilter !== 'all' ? partFilter : PART_OPTIONS[0].code);
+    // 파트 구분 폐지 → 신규 인수인계는 항상 '공통'(PART_OPTIONS[0]) 으로 저장.
+    setFormPart(PART_OPTIONS[0].code);
     setFormMemo('');
     setFormItems([]);
     setNewItemLabel('');
@@ -520,7 +519,7 @@ export default function Handover() {
         <div className="flex items-center gap-2">
           <ClipboardCheck className="h-4 w-4 text-teal-600" />
           <h1 className="text-base font-semibold">직원 근무 캘린더</h1>
-          <span className="hidden text-xs text-muted-foreground sm:inline">· 파트별 인수인계</span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">· 인수인계</span>
         </div>
         <Button size="sm" onClick={openNew} className="gap-1" data-testid="handover-new-btn">
           <Plus className="h-3.5 w-3.5" /> 인수인계 작성
@@ -531,16 +530,18 @@ export default function Handover() {
           개선 전: 상단에 오늘 출근자 전체를 칩으로 나열(가독성·동선 불편).
           개선 후: 명단은 캘린더 셀(A안)·선택일 하단(B안)으로 분산. 상단은 슬림 요약만
           유지(같은 명단을 상단·셀 양쪽 풀 중복 나열 금지, AC-A1). */}
+      {/* T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO: 출근인원 박스 모노톤 통일.
+          teal 다색 배경·뱃지 → 회색(slate) 단일 톤. ASSIGN-ALERT-COMPACT-MONO-VERTICAL 톤과 일관. */}
       <div
-        className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-teal-50/60 px-4 py-2"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-slate-100/70 px-4 py-2"
         data-testid="handover-today-attendees"
       >
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-teal-800">
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
           <UserCheck className="h-4 w-4" />
           <span>오늘 출근</span>
         </div>
         <span
-          className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-600"
+          className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600"
           data-testid="handover-attendees-count"
         >
           {attendeesLoading ? '…' : `${todayCount}명`}
@@ -594,35 +595,10 @@ export default function Handover() {
         </div>
       </div>
 
-      {/* 파트 필터 */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b bg-white/60 px-4 py-2" data-testid="handover-part-filter">
-        <button
-          onClick={() => setPartFilter('all')}
-          data-testid="handover-part-all"
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-            partFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          전체
-        </button>
-        {PART_OPTIONS.map((p) => (
-          <button
-            key={p.code}
-            onClick={() => setPartFilter(p.code)}
-            data-testid={`handover-part-${p.code}`}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              // T-20260615-foot-MONOTONE-…-THERAPISTGREEN item3: 선택 상태 칩은 모든 part가 bg-teal-600 →
-              //   tailwind teal→warm-brown 램프 리맵으로 brown 렌더. 치료사는 role 의미색(green)이라
-              //   green 원복(출근자 치료사 배지 green 톤 일치). 타 role 칩은 불변(bg-teal-600 유지).
-              partFilter === p.code
-                ? (p.code === 'therapist' ? 'bg-green-600 text-white' : 'bg-teal-600 text-white')
-                : `${partBadgeClass(p.code)} hover:opacity-80`
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      {/* 파트 필터 — T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO:
+          파트 구분 탭/필터 UI(공통·상담실장·코디·치료사 + [전체]) 전부 제거.
+          탭 컨트롤 없이 인수인계 노트를 파트 무관 전체(공통)로 직접 렌더한다.
+          part_code 데이터는 보존 — 위 visibleNotes=notes 로 누락 없이 그대로 노출. */}
 
       {/* 본문 — T-20260629-…-TAB-MERGE-SCROLL: 외곽 단일 스크롤이 관장(내부 flex-1/min-h-0/overflow 제거). */}
       <div className="flex flex-col p-4 gap-4 lg:flex-row">
@@ -757,11 +733,12 @@ export default function Handover() {
           {/* ── 선택일 출근자 명단 (T-20260608-foot-HANDOVER-ATTENDEE-LAYOUT, B안) ──
               날짜 클릭 → 인수인계 목록 아래에 그날 출근자를 펼침. 데이터 없는 날=빈 문구. */}
           <div className="mt-4 border-t pt-3" data-testid="handover-selected-attendees">
-            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-teal-800">
+            {/* T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO: 출근자 박스 모노톤(teal→slate). */}
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
               <UserCheck className="h-4 w-4" />
               <span>{format(selectedDate, 'M월 d일 (EEE)', { locale: ko })} 출근자</span>
               <span
-                className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-600"
+                className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600"
                 data-testid="handover-selected-attendees-count"
               >
                 {attendeesLoading ? '…' : `${selectedAttendees.length}명`}
@@ -786,7 +763,9 @@ export default function Handover() {
                     key={a.id}
                     data-testid="handover-selected-attendee-chip"
                     data-role={a.role ?? ''}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${staffRoleCardClass(a.role ?? '')}`}
+                    // T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO: 출근자 칩 다색(역할별 rose/amber/green)
+                    //   → 회색 단일 모노톤. (역할 라벨 텍스트는 유지 — 색만 제거). data-role 은 E2E 회귀용 보존.
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-700"
                   >
                     <span className="text-xs font-semibold">{a.name}</span>
                     {a.role && (
@@ -813,28 +792,9 @@ export default function Handover() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* 파트 선택 */}
-            <div>
-              <Label className="text-xs">파트 <span className="text-red-500">*</span></Label>
-              <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="handover-form-part">
-                {PART_OPTIONS.map((p) => (
-                  <button
-                    key={p.code}
-                    type="button"
-                    onClick={() => setFormPart(p.code)}
-                    data-testid={`handover-form-part-${p.code}`}
-                    className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                      // T-20260615-foot-MONOTONE-…-THERAPISTGREEN item3: 치료사 선택 칩 green 원복(필터 칩과 동일 의미색)
-                      formPart === p.code
-                        ? (p.code === 'therapist' ? 'bg-green-600 text-white' : 'bg-teal-600 text-white')
-                        : `${partBadgeClass(p.code)} hover:opacity-80`
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* 파트 선택 — T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO:
+                파트 구분 폐지 → 작성 시 파트 선택 UI 제거. 신규 노트는 항상 '공통'(formPart 기본값)으로 저장.
+                기존 노트 수정 시 part_code 원값 보존(openEdit 가 n.part_code 유지). */}
 
             {/* 메모 */}
             <div>

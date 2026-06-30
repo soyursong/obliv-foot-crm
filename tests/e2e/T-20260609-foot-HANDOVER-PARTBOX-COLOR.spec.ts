@@ -47,12 +47,11 @@ test.describe('T-20260609-foot-HANDOVER-PARTBOX-COLOR 파트 박스 색 적용',
     // 오늘 날짜 셀 선택
     await page.getByTestId(`handover-day-${TODAY}`).click();
 
-    // 치료사(therapist) 파트로 작성
+    // 작성(파트 선택지 제거됨 → 항상 '공통'으로 저장)
     await page.getByTestId('handover-new-btn').click();
     await expect(page.getByTestId('handover-dialog')).toBeVisible({ timeout: 8_000 });
-    await page.getByTestId('handover-form-part-therapist').click();
 
-    const memo = `박스색 테스트 — 치료사 인계 ${Date.now()}`;
+    const memo = `박스색 테스트 — 인계 ${Date.now()}`;
     await page.getByTestId('handover-form-memo').fill(memo);
     await page.getByTestId('handover-form-save').click();
     await expect(page.getByTestId('handover-dialog')).toBeHidden({ timeout: 10_000 });
@@ -66,26 +65,27 @@ test.describe('T-20260609-foot-HANDOVER-PARTBOX-COLOR 파트 박스 색 적용',
     await expect(card).toBeVisible();
 
     // 박스(컨테이너)에 teal 연한 톤 배경/테두리 + 흰 배경 제거
-    await expect(card).toHaveAttribute('data-part', 'therapist');
+    await expect(card).toHaveAttribute('data-part', '공통');
     await expect(card).toHaveClass(/bg-teal-50/);
     await expect(card).toHaveClass(/border-teal-200/);
     await expect(card).not.toHaveClass(/bg-white/);
 
     // 배지 색값(teal-100/teal-700)은 그대로 유지(무회귀)
-    await expect(card.getByText('치료사', { exact: true })).toHaveClass(/bg-teal-100/);
-    console.log('[HANDOVER-PARTBOX] S1 치료사 박스 teal 톤 적용 OK');
+    await expect(card.getByText('공통', { exact: true })).toHaveClass(/bg-teal-100/);
+    console.log('[HANDOVER-PARTBOX] S1 박스 teal 톤 적용 OK');
   });
 
   // ── S2. 이름칩·작성/배지 무회귀 ────────────────────────────────────────────
   test('S2 이름칩(NAMECARD-ROLECOLOR)·파트 필터·작성 폼 무회귀', async ({ page }) => {
     await gotoHandover(page);
 
-    // 파트 필터 4종 + 전체 = 모두 노출(무회귀)
-    await expect(page.getByTestId('handover-part-all')).toBeVisible();
-    await expect(page.getByTestId('handover-part-공통')).toBeVisible();
-    await expect(page.getByTestId('handover-part-consultant_lead')).toBeVisible();
-    await expect(page.getByTestId('handover-part-coordinator')).toBeVisible();
-    await expect(page.getByTestId('handover-part-therapist')).toBeVisible();
+    // T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO (SUPERSEDE): 파트 필터 탭·작성폼 파트 선택지 전부 제거됨.
+    await expect(page.getByTestId('handover-part-filter')).toHaveCount(0);
+    await expect(page.getByTestId('handover-part-therapist')).toHaveCount(0);
+    await page.getByTestId('handover-new-btn').click();
+    await expect(page.getByTestId('handover-dialog')).toBeVisible();
+    await expect(page.getByTestId('handover-form-part')).toHaveCount(0);
+    await page.getByRole('button', { name: '취소' }).click();
 
     // 선택일 출근자 이름칩 — 존재 시 역할 칩 색(staffRoleCardClass) 무회귀 확인
     await page.getByTestId(`handover-day-${TODAY}`).click();
@@ -98,15 +98,6 @@ test.describe('T-20260609-foot-HANDOVER-PARTBOX-COLOR 파트 박스 색 적용',
     } else {
       console.log('[HANDOVER-PARTBOX] S2 선택일 출근자 없음 — 이름칩 무회귀 skip-log');
     }
-
-    // 작성 폼 4파트 선택지 무회귀
-    await page.getByTestId('handover-new-btn').click();
-    await expect(page.getByTestId('handover-dialog')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-공통')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-consultant_lead')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-coordinator')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-therapist')).toBeVisible();
-    await page.getByRole('button', { name: '취소' }).click();
 
     // 캘린더 3뷰 토글 무회귀
     await page.getByTestId('handover-view-week').click();

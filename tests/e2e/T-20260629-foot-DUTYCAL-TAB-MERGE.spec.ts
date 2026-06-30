@@ -64,7 +64,8 @@ test.describe('T-20260629-foot-DUTYCAL-TAB-MERGE', () => {
     expect(handoverSrc).toContain('data-testid="handover-new-btn"');
     expect(handoverSrc).toContain('data-testid="handover-list"');
     expect(handoverSrc).toContain('data-testid="handover-view-toggle"');
-    expect(handoverSrc).toContain('data-testid="handover-part-filter"');
+    // T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO: 파트 필터 탭 제거됨 → 부재 단언.
+    expect(handoverSrc).not.toContain('data-testid="handover-part-filter"');
     expect(handoverSrc).toContain('data-testid="handover-dialog"');
     // topTab 조건부 hidden 토글 잔재 없음(언제나 단일 렌더)
     expect(handoverSrc).not.toMatch(/topTab === 'duty'\s*\?\s*'hidden'/);
