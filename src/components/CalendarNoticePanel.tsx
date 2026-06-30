@@ -426,6 +426,15 @@ export default function CalendarNoticePanel() {
         )}
       </div>
 
+      {/* ── 패널 내부 단일 스크롤 영역 (T-20260630-foot-RESV-LEFTPANEL-SCROLL-CLIP) ──
+          좌측 패널 컨테이너 단일 스크롤. 미니캘린더 + 근무캘린더/인수인계 + 공지사항이
+          패널 높이를 넘으면 패널 내부에서 스크롤(overflow-y-auto)로 전부 도달.
+          flex-1 min-h-0 = aside(부모 row-flex stretch로 높이 확정된 flex-col)의 잔여 높이를
+          차지하며, 자식 콘텐츠가 넘칠 때만 스크롤(짧으면 스크롤바 없음 = auto, AC4).
+          이전엔 근무/인수인계 섹션이 shrink-0라 인수인계 항목 多 시 합산 높이가 aside를 넘어
+          aside overflow-hidden에 하단이 잘렸음(인수인계 클리핑, AC2). 데이터·조회 로직 무변경(AC3). */}
+      <div className="flex-1 min-h-0 overflow-y-auto" data-testid="panel-scroll-area">
+
       {/* ── 미니 캘린더 ────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b px-3 pt-3 pb-2">
         {/* 월 네비게이션 */}
@@ -658,7 +667,11 @@ export default function CalendarNoticePanel() {
       </div>
 
       {/* ── 공지사항 영역 ───────────────────────────────────────────────────── */}
-      <div className="flex flex-col flex-1 min-h-0">
+      {/* T-20260630-foot-RESV-LEFTPANEL-SCROLL-CLIP: 패널 단일 스크롤로 통합 —
+          이전 flex-1 min-h-0(+ 내부 overflow-y-auto)는 패널 내 독립 스크롤이라 위쪽
+          근무/인수인계 shrink-0 섹션이 길어지면 이 영역이 0으로 눌리고 상단이 잘렸음.
+          이제 패널 스크롤 영역 안에서 자연 흐름 → 전체가 하나의 스크롤로 도달. */}
+      <div className="flex flex-col">
         {/* 공지 헤더 */}
         <div className="shrink-0 flex items-center justify-between border-b px-3 py-2 bg-white/80">
           <div className="flex items-center gap-1.5">
@@ -682,8 +695,10 @@ export default function CalendarNoticePanel() {
           </Button>
         </div>
 
-        {/* 공지 폼 + 목록 — 단일 스크롤 영역 (T-20260512-foot-NOTICE-SCROLL) */}
-        <div className="flex-1 overflow-y-auto">
+        {/* 공지 폼 + 목록 — 패널 단일 스크롤로 흡수 (T-20260630-foot-RESV-LEFTPANEL-SCROLL-CLIP).
+            이전 내부 overflow-y-auto(T-20260512-foot-NOTICE-SCROLL)는 패널 스크롤 영역이 대체.
+            저장/취소 버튼은 패널 스크롤의 scrollIntoView로 여전히 도달(NOTICE-SCROLL AC 보존). */}
+        <div>
 
         {/* 공지 작성/수정 폼 */}
         {editingId !== null && (
@@ -816,8 +831,9 @@ export default function CalendarNoticePanel() {
             ))
           )}
         </div>
-        </div>{/* /단일 스크롤 영역 */}
-      </div>
+        </div>{/* /공지 폼+목록 */}
+      </div>{/* /공지사항 영역 */}
+      </div>{/* /패널 내부 단일 스크롤 영역 */}
     </aside>
   );
 }
