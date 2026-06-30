@@ -200,9 +200,12 @@ export default {
         //   예약관리 day-view '실시간 반영'(현재 시각 컬럼) 테두리 깜빡임. 노랑(ring-amber) → 실버 border 전환 후
         //   border-color를 실버(#BBBBBB) ↔ 라이트실버(#E5E7EB) 로 blink. box-shadow가 아닌 border-color만
         //   애니메이션 → 부모 overflow에 짤리지 않음(건1 클립 버그 동시 해소). 힐러 #FFFDE7 미접촉(yellow 무관).
+        // T-20260701-foot-LIVESLOT-GLASS-APPLY: v2 컨펌 — 실버 톤 lighten(명도↑/회색감↓).
+        //   기존 #BBBBBB↔#E5E7EB → 더 연한 실버 #C7CDD4↔#E8EAED. 깜빡(2위상=점등/소등) 동작 불변(회귀 0).
+        //   surface A(예약 슬롯)·B(대시보드 전광판) 공유 — 일관된 연한 실버 pulse.
         "live-border-pulse": {
-          "0%, 100%": { borderColor: "#BBBBBB" },
-          "50%": { borderColor: "#E5E7EB" },
+          "0%, 100%": { borderColor: "#C7CDD4" },
+          "50%": { borderColor: "#E8EAED" },
         },
       },
       animation: {

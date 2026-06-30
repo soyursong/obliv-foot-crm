@@ -2000,14 +2000,19 @@ export default function Reservations() {
                           className={cn(
                             // T-20260624-foot-TIMEGRID-COMPACT-DENSITY: field-soak 정제 — 시간 컬럼 너비 200px→132px(컴팩트·촘촘히).
                             // T-20260625-foot-...COMPACT2(2단계, 김주연 총괄 확정): 132px→90px 추가 압축(한 화면 더 많은 시간 칸). 카드 w-full(컬럼 추종)이라 폭만 변경.
-                            'flex w-[90px] min-w-[90px] flex-col rounded-lg border bg-background',
+                            'flex w-[90px] min-w-[90px] flex-col rounded-lg border',
                             // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX:
                             //   건1(클립): 기존 isNow 'ring-1 ring-amber-400'(box-shadow)은 부모 overflow-x-auto(→overflow-y auto 계산)에
                             //     좌·하단이 짤림(10:00=첫 컬럼). ring → border(박스모델 내부)로 전환해 클립 근본 해소.
-                            //   건2(UX): 노랑 제거 → 실버 #BBBBBB border + 테두리 깜빡임(animate-live-border-pulse, motion-safe).
+                            //   건2(UX): 노랑 제거 → 실버 border + 테두리 깜빡임(animate-live-border-pulse, motion-safe).
                             //     reduced-motion 시 정적 실버 border 폴백. 힐러 #FFFDE7(healer 토큰)와 클래스 완전 분리 — 미접촉.
+                            // T-20260701-foot-LIVESLOT-GLASS-APPLY surface A: v2 컨펌 시안 정식 적용 — SILVER-PULSE '위에' 누적.
+                            //   isNow 컬럼에 반투명 유리 볼록(.live-glass: backdrop-blur + inset 볼록 box-shadow, outer 미사용=클립 0)
+                            //   + 연한 실버 테두리(#BBBBBB→#C7CDD4 lighten). bg-background는 !isNow에만(isNow는 유리 반투명으로 뒤 비침).
+                            //   pulse/실버border 회귀 0 — border-2 + live-border-pulse 그대로 유지하고 유리만 얹음.
+                            !isNow && 'bg-background',
                             isNow
-                              ? 'border-2 border-[#BBBBBB] motion-safe:animate-live-border-pulse'
+                              ? 'live-glass border-2 border-[#C7CDD4] motion-safe:animate-live-border-pulse'
                               : 'border-border',
                             full && !isNow && 'border-red-200',
                             isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',

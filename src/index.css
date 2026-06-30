@@ -327,3 +327,39 @@
   max-height: calc(100dvh - 200px);   /* dvh 우선 (dynamic viewport, 주소바 제외) */
   overflow-y: auto;
 }
+
+/* ── T-20260701-foot-LIVESLOT-GLASS-APPLY: v2 컨펌 시안 — 반투명 유리 볼록 + 연한 실버 ──────
+   parent T-20260630-foot-LIVESLOT-GLASS-SILVER-MOCKUP(v2 컨펌 졸업)의 prod 정식 적용.
+   SILVER-PULSE-CLIPFIX(실버 border + live-border-pulse) '위에' 유리/볼록을 누적(별도 재구현 X).
+   힐러 노랑(#FFFDE7) 미접촉 — 무채색 실버/유리(명도·볼록)만으로 현재시각 구분.
+     · 회색 더 연하게: v2 실버 톤 lighten(#F6F7F8↔#C7CDD4).
+     · 유리 볼록 더 강하게: 상·좌 inset 하이라이트↑ / 하·우 inset 그림자 대비↑.
+   [surface A · 예약 슬롯] .live-glass — overflow-x 스크롤 컨테이너 내부라 CLIPFIX(좌·하단 클립) 회귀
+     방지 위해 outer drop-shadow 미사용. 볼록은 inset-only(박스 내부)로 표현 → 클립 0.
+   [surface B · 대시보드 전광판] .live-glass-board — 헤더 영역(클립 무관)이라 inset + outer 볼록 동시.
+   배경을 반투명(흰 ~40~60%)으로 두고 backdrop-filter:blur 로 뒤가 은은히 비침. */
+.live-glass {
+  background:
+    radial-gradient(120% 90% at 22% 8%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.62) 0%, rgba(244, 246, 248, 0.42) 48%, rgba(225, 229, 234, 0.4) 100%);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.98),   /* 상단 inset 하이라이트 ↑ */
+    inset 2px 0 3px rgba(255, 255, 255, 0.7),    /* 좌측 inset 하이라이트 ↑ */
+    inset 0 -4px 8px rgba(150, 160, 174, 0.46),  /* 하단 inset 그림자 대비 ↑ */
+    inset -3px 0 6px rgba(150, 160, 174, 0.3);   /* 우측 inset 그림자 ↑ */
+}
+.live-glass-board {
+  background:
+    radial-gradient(120% 120% at 18% 6%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 50%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.62) 0%, rgba(244, 246, 248, 0.44) 48%, rgba(225, 229, 234, 0.42) 100%);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.98),   /* 상단 inset 하이라이트 */
+    inset 0 -3px 6px rgba(150, 160, 174, 0.45),  /* 하단 inset 그림자 */
+    0 1px 0 rgba(255, 255, 255, 0.95),           /* 상단 테두리 하이라이트 */
+    0 8px 20px rgba(120, 131, 146, 0.3),         /* outer 볼록 드롭섀도 */
+    0 2px 6px rgba(120, 131, 146, 0.2);
+}
