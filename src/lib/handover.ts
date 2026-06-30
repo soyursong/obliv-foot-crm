@@ -62,17 +62,22 @@ export function partColor(code: string): string {
   return PART_OPTIONS.find((p) => p.code === code)?.color ?? 'slate';
 }
 
-/** 파트 배지 tailwind 클래스 (bg + text). 동적 클래스 안전화를 위해 정적 매핑 사용. */
-export const PART_BADGE_CLASS: Record<string, string> = {
-  '공통': 'bg-indigo-100 text-indigo-700',
-  consultant_lead: 'bg-rose-100 text-rose-700',
-  coordinator: 'bg-amber-100 text-amber-700',
-  // T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: teal→green (출근자 칩 green 정합 + brown 침범 정정)
-  therapist: 'bg-green-100 text-green-700',
-};
+/**
+ * 파트 배지 tailwind 클래스 (bg + text). 동적 클래스 안전화를 위해 정적 매핑 사용.
+ * T-20260630-foot-HANDOVER-BOX-COMPACT-MONO (11:09 PUSH AC2 정정, 김주연 총괄 2차 직접 재요청):
+ *   "배지도 무채색(모노톤)으로 통일" — 배지 라벨(공통/상담실장/코디/치료사 텍스트)은 유지하되
+ *   컬러(indigo/rose/amber/green)를 제거하고 전 파트 동일 무채색(slate) 단색으로 통일.
+ *   → 파트 구분은 배지 '텍스트'(partLabel)로. handover 박스 배경+배지 모두 모노톤.
+ *   이전 T-20260615-foot-THEME-MONO-REFINE-3AREA AC3(handover therapist 배지 green carve-out)을
+ *   동일 reporter 자기-override 로 supersede(handover 배지 한정). 출근자/이름칩(status.ts
+ *   STAFF_ROLE_CARD_CLASS green)·통합시간표 색은 범위 밖·불변.
+ *   slate-50 박스 위 대비 위해 배지는 한 단계 진한 slate-200/text-slate-700 (AC4).
+ */
+export const PART_BADGE_MONO_CLASS = 'bg-slate-200 text-slate-700';
 
-export function partBadgeClass(code: string): string {
-  return PART_BADGE_CLASS[code] ?? 'bg-slate-100 text-slate-700';
+export function partBadgeClass(_code: string): string {
+  // 전 파트 동일 무채색(파트별 색 분기 제거). _code 시그니처는 호출부 호환 위해 유지.
+  return PART_BADGE_MONO_CLASS;
 }
 
 /**
@@ -80,8 +85,8 @@ export function partBadgeClass(code: string): string {
  * T-20260630-foot-HANDOVER-BOX-COMPACT-MONO: 김주연 총괄(동일 reporter) 자기-override.
  *   직전 T-20260609-foot-HANDOVER-PARTBOX-COLOR(박스 배경 파트색 rose/amber/teal/indigo)을
  *   policy_superseded → 전 파트 동일 모노톤(중립 단색)으로 회귀. 박스 배경/테두리에서
- *   파트 색 구분을 제거하고, 파트 색 구분자는 상단 배지(PART_BADGE_CLASS)로 단일화.
- *   → PART_BADGE_CLASS / NAMECARD 이름칩 색은 불변(범위 밖).
+ *   파트 색 구분을 제거. (11:09 PUSH AC2 정정으로 상단 배지도 무채색화 → 파트 구분은
+ *   배지 '텍스트'(partLabel)로. NAMECARD 이름칩 색만 범위 밖·불변.)
  * 모노톤 단색: bg-slate-50 + border-slate-200 (배지·메모·체크리스트 텍스트 대비 유지, AC4).
  * 정적 단일 클래스라 Tailwind JIT purge 안전 + 동적 클래스 없음.
  */

@@ -74,18 +74,23 @@ test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드
     expect(handoverPage).not.toMatch(/formPart === p\.code \? 'bg-teal-600 text-white'/);
   });
 
-  test('item3(미선택 배지): handover 치료사 part 색 teal→green 정정', () => {
-    expect(handover).toMatch(/code:\s*'therapist',\s*label:\s*'치료사',\s*color:\s*'green'/);
-    expect(handover).toMatch(/therapist:\s*'bg-green-100 text-green-700'/);
-    expect(handover).toMatch(/therapist:\s*'bg-green-50 border-green-200'/);
-    expect(handover).not.toMatch(/therapist:\s*'bg-teal-/);
+  // ⚠ SUPERSEDED 2026-06-30 by T-20260630-foot-HANDOVER-BOX-COMPACT-MONO (11:09 PUSH AC2,
+  //   김주연 총괄 자기-override): handover 박스 배경 + 파트 배지(PART_BADGE_CLASS/PART_BOX_CLASS)를
+  //   전 파트 무채색(slate)으로 통일. therapist green carve-out(handover 배지/박스 한정)이 제거됨.
+  //   → 미선택 배지 색 단언을 무채색 단언으로 전환(forward guard). 색 누수 재발 시 실패.
+  //   단 선택 칩(item3 핵심 test)·출근자 칩(status.ts green)·통합시간표 색은 범위 밖·불변.
+  test('item3(미선택 배지)[SUPERSEDED→MONO]: handover 파트 배지/박스가 무채색(slate) 통일', () => {
+    // 배지·박스 모두 무채색 단일 클래스
+    expect(handover).toMatch(/PART_BADGE_MONO_CLASS = 'bg-slate-200 text-slate-700'/);
+    expect(handover).toMatch(/PART_BOX_MONO_CLASS = 'bg-slate-50 border-slate-200'/);
+    // handover 파트 배지/박스에서 파트색(green/rose/amber/teal) 리터럴 누수 0
+    expect(handover).not.toMatch(/therapist:\s*'bg-(green|teal)-/);
+    expect(handover).not.toMatch(/consultant_lead:\s*'bg-rose-/);
+    expect(handover).not.toMatch(/coordinator:\s*'bg-amber-/);
   });
 
-  test('item3(carve-out): 출근자 칩 therapist 의미색(green) status.ts 보존 + 타 role 칩 불변', () => {
-    // 출근자 치료사 배지 green 보존
+  test('item3(carve-out): 출근자 칩 therapist 의미색(green)은 status.ts 보존(범위 밖)', () => {
+    // 출근자 치료사 배지 green 보존 — handover 파트 배지 무채색화와 무관(별 helper)
     expect(status).toMatch(/therapist:\s*'bg-green-100 text-green-800 border-green-300'/);
-    // 타 role 미선택 배지 색 불변(상담실장 rose / 코디 amber)
-    expect(handover).toMatch(/consultant_lead:\s*'bg-rose-100 text-rose-700'/);
-    expect(handover).toMatch(/coordinator:\s*'bg-amber-100 text-amber-700'/);
   });
 });

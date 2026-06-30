@@ -63,12 +63,14 @@ test.describe('THEME-MONO-REFINE-3AREA — 정적 소스 가드 (auth 불요)', 
     expect(status).toMatch(/returning:\s*'bg-emerald-100 text-emerald-700'/);
   });
 
-  test('AC3: handover 치료사 part 색이 teal→green 으로 정정됐다', () => {
-    expect(handover).toMatch(/code:\s*'therapist',\s*label:\s*'치료사',\s*color:\s*'green'/);
-    expect(handover).toMatch(/therapist:\s*'bg-green-100 text-green-700'/);
-    expect(handover).toMatch(/therapist:\s*'bg-green-50 border-green-200'/);
-    // 구 teal 치료사 색 누수 0
-    expect(handover).not.toMatch(/therapist:\s*'bg-teal-/);
+  // ⚠ SUPERSEDED 2026-06-30 by T-20260630-foot-HANDOVER-BOX-COMPACT-MONO (11:09 PUSH AC2,
+  //   김주연 총괄 자기-override): handover 박스 배경 + 파트 배지를 전 파트 무채색(slate)으로 통일.
+  //   therapist green(배지/박스 한정) carve-out 제거 → 무채색 단언으로 전환(forward guard).
+  test('AC3 [SUPERSEDED→MONO]: handover 파트 배지/박스가 무채색(slate)으로 통일됐다', () => {
+    expect(handover).toMatch(/PART_BADGE_MONO_CLASS = 'bg-slate-200 text-slate-700'/);
+    expect(handover).toMatch(/PART_BOX_MONO_CLASS = 'bg-slate-50 border-slate-200'/);
+    // handover 파트 배지/박스에서 파트색(green/teal) 리터럴 누수 0
+    expect(handover).not.toMatch(/therapist:\s*'bg-(green|teal)-/);
     expect(handover).not.toMatch(/'치료사',\s*color:\s*'teal'/);
   });
 
