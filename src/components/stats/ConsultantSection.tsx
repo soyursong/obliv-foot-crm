@@ -31,7 +31,7 @@ export default function ConsultantSection({ rows, loading }: Props) {
     copy.sort((a, b) => {
       let diff = 0;
       switch (sortKey) {
-        case 'name':       diff = a.name.localeCompare(b.name); break;
+        case 'name':       diff = (a.name ?? '').localeCompare(b.name ?? ''); break;
         case 'ticketing':  diff = a.ticketing_count - b.ticketing_count; break;
         case 'conversion': diff = a.conversion - b.conversion; break;
         case 'total':      diff = a.revenue - b.revenue; break;
@@ -99,7 +99,7 @@ export default function ConsultantSection({ rows, loading }: Props) {
                 <tbody>
                   {sorted.map((r) => (
                     <tr key={r.consultant_id} className="border-b last:border-0">
-                      <td className="py-2 font-medium">{r.name}</td>
+                      <td className="py-2 font-medium">{r.name || '미지정'}</td>
                       <td className="py-2 text-right tabular-nums">{r.ticketing_count}</td>
                       <td className="py-2 text-right tabular-nums">
                         {r.ticketing_count > 0 ? `${r.conversion.toFixed(1)}%` : '-'}

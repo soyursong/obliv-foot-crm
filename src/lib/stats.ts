@@ -233,6 +233,10 @@ export interface TmResRow {
   created_by: string | null;          // user_profiles.id (TM)
   status: string;
   referral_source: string | null;
+  // T-20260630-foot-FOOTSTATS-COUNSELOR-NULL-DISPLAY (AC-1, read-only):
+  //   도파민 ingest 예약 마커. 상담사(created_by) NULL/미매칭 행의 provenance 라벨 파생에만 사용.
+  //   ⚠ 표시 전용 — 어떤 컬럼도 write 하지 않는다(NULL 유지 = 이중계상 방지 fail-closed).
+  source_system: string | null;
   customers?: { name: string | null; phone: string | null } | null;
 }
 
@@ -299,7 +303,7 @@ export async function fetchTmAggregate(
     return all;
   };
 
-  const resSelect = 'id, reservation_date, reservation_time, created_at, created_by, status, referral_source, customers(name, phone)';
+  const resSelect = 'id, reservation_date, reservation_time, created_at, created_by, status, referral_source, source_system, customers(name, phone)';
 
   const [registered, scheduled, visitedRaw, staffRows] = await Promise.all([
     // A: 예약등록건수 (created_at KST 경계 명시)
@@ -344,6 +348,39 @@ export async function fetchTmAggregate(
     visited: dedupVisited(visitedRaw),
     staffMap,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260630-foot-FOOTSTATS-COUNSELOR-NULL-DISPLAY (AC-1) — TM상담사(등록자) 표시 라벨
+//
+// 도파민-출처(source_system='dopamine') 풋 예약은 풋 상담 전이라 상담사(reservations.created_by)가
+// NULL인 게 설계상 정상(결함 아님). 통계 TM집계에서 이 NULL/미매칭 행을 바닥 '미지정'으로 뭉치면
+// "직원이 배정을 누락한 것"처럼 오인됨 → provenance 라벨로 분리해 graceful 표시한다.
+//
+// ⚠ 급소 가드 (DA-20260630-FOOTPUSH-COUNSELOR-ATTRIBUTION / verdict NO-SCHEMA-CHANGE_GO):
+//   본 함수는 순수 표시 라벨 파생이다 — created_by/consultant_id/cue_card owner 등 어떤 값도 write 하지 않는다.
+//   '미지정'을 도파민 TM staff_id/리드 owner로 자동 스탬프해 "고치는" 행위 금지
+//   (풋 상담사 인센티브 분모 오염 + 동일 매출 이중계상 + changed_by 네임스페이스 위반).
+//   NULL 유지가 곧 이중계상 방지(fail-closed).
+// ─────────────────────────────────────────────────────────────────────────
+export const TM_UNASSIGNED_LABEL = '미지정';
+export const TM_WALKIN_LABEL = '워크인';
+export const TM_DOPAMINE_LABEL = '도파민/TM 유입 (상담사 미배정)';
+
+/**
+ * 예약의 TM상담사(등록자) 표시 라벨을 파생한다 (순수·read-only).
+ * @param createdBy    reservations.created_by (user_profiles.id) 또는 null
+ * @param sourceSystem reservations.source_system ('dopamine' 마커 등) 또는 null
+ * @param staffName    createdBy 가 풋 직원에 매칭될 때의 이름(staffMap[uid]?.name) — 미매칭이면 null/undefined
+ */
+export function tmCounselorLabel(
+  createdBy: string | null | undefined,
+  sourceSystem: string | null | undefined,
+  staffName: string | null | undefined,
+): string {
+  if (createdBy && staffName) return staffName;            // 풋 직원이 등록 → 직원명
+  if ((sourceSystem ?? '').trim() === 'dopamine') return TM_DOPAMINE_LABEL; // 도파민 유입 → provenance
+  return TM_UNASSIGNED_LABEL;                              // 그 외 NULL/미매칭 → 미지정
 }
 
 /** 카테고리 코드 → 한국어 표시 */
