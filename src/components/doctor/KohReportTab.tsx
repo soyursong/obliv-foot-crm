@@ -79,6 +79,23 @@ export function formatYearMonthKo(ym: string): string {
   return `${y}년 ${m}월`;
 }
 
+// ---------------------------------------------------------------------------
+// 일별 보기 — 'YYYY-MM-DD' 날짜 이동/표기 (T-20260629-foot-KOHLIST-INACTIVE-PURGE-DAYMONTH-FILTER, AC-2/AC-3).
+//   월 이동(shiftYearMonth)과 동일하게 UTC 정오 기준 — DST/월경계 드리프트 없음.
+// ---------------------------------------------------------------------------
+/** 'YYYY-MM-DD' 에 deltaDays 더한 날짜(KST 캘린더 일자). */
+export function shiftISODate(iso: string, deltaDays: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d + deltaDays, 12, 0, 0));
+  return `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, '0')}-${String(base.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** 'YYYY-MM-DD' → 'YYYY년 M월 D일' 표기 */
+export function formatDateKo(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${y}년 ${m}월 ${d}일`;
+}
+
 /** 생년월일 표시 — DATE/timestamptz 어느 쪽이든 YYYY-MM-DD 10자리만, 결측 '—' */
 export function formatBirthDate(birth: string | null | undefined): string {
   if (!birth) return '—';
@@ -279,6 +296,25 @@ export interface KohRow {
   treatment_sites: NailSite[];   // NAILSYNC(AC1): 치료부위(treatment_memo.foot_site → L→Lt/R→Rt 정규화 미러)
   koh_requested: boolean;        // LIFECYCLE(AC-1/AC-2): KOH 신청 플래그. true=active(신청)/false=inactive(미신청·취소)
   therapist_id: string | null;   // PUBLISH-BTN-REVERIFY-GATE(AC-4): 배정 치료사(check_ins.therapist_id, read-only). 발급 enable-gate '치료사 배정됨' 판정용 — 신규 스키마 0(기존 컬럼).
+}
+
+// ---------------------------------------------------------------------------
+// 목록 표시 필터 — T-20260629-foot-KOHLIST-INACTIVE-PURGE-DAYMONTH-FILTER.
+//   (AC-1/AC-4) 비활성(미신청 = koh_requested false) 건은 기본 목록에서 제외. '비활성 포함' 토글 ON 시 전부 노출.
+//     ⚠ 표시 제외만 — DB DELETE 없음(레코드 100% 보존, 토글 OFF→ON 재조회 시 다시 보임).
+//   (AC-2/AC-3) 일별 보기 = 선택 일자(KST) 검사분만, 월별 보기 = 해당 월 전체(월 쿼리 그대로).
+// ---------------------------------------------------------------------------
+export type KohViewMode = 'day' | 'month';
+
+/** 비활성(미신청) 제외 — includeInactive=true면 전부 통과(표시 제외만, 데이터 보존). */
+export function filterKohActive<T extends { koh_requested: boolean }>(rows: T[], includeInactive: boolean): T[] {
+  return includeInactive ? rows : rows.filter((r) => r.koh_requested);
+}
+
+/** 일별 일자 매칭 — 검사일(created_at, UTC)의 KST 캘린더 일자 === selectedDate('YYYY-MM-DD'). */
+export function isKohOnSelectedDay(createdAt: string | null | undefined, selectedDate: string): boolean {
+  if (!createdAt) return false;
+  return seoulISODate(createdAt) === selectedDate;
 }
 
 // ---------------------------------------------------------------------------
@@ -686,10 +722,20 @@ export default function KohReportTab() {
   //   라벨 분기는 제거됨(전직군 '발급하기'). canIssue 는 /admin/doctor-tools 라우트 가드 8역할과 동일 집합.
   const canIssue = canIssueKoh(profile?.role ?? '');
 
+  // ── T-20260629-foot-KOHLIST-INACTIVE-PURGE-DAYMONTH-FILTER ──
+  //   (AC-2) 일별/월별 보기 토글 — 첫 진입 기본 = 일별(선택 일자 = 오늘).
+  //   (AC-1) 비활성(미신청) 포함 토글 — 기본 OFF(비활성 제외). 표시 제외만, DELETE 없음(AC-4).
+  const [viewMode, setViewMode] = useState<KohViewMode>('day');
+  const [selectedDate, setSelectedDate] = useState<string>(todaySeoulISODate());
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [ym, setYm] = useState<string>(currentYearMonthSeoul());
   const [query, setQuery] = useState('');
-  const isCurrentMonth = ym === currentYearMonthSeoul();
   const todayISO = todaySeoulISODate();
+  // 데이터 쿼리 기준 월 — 일별 보기면 선택 일자의 월, 월별 보기면 ym. (월 단위 1쿼리 후 일자 필터는 클라.)
+  const queryYm = viewMode === 'day' ? selectedDate.slice(0, 7) : ym;
+  const isCurrentMonth = ym === currentYearMonthSeoul();
+  const isToday = selectedDate === todayISO;
+  const periodLabel = viewMode === 'day' ? formatDateKo(selectedDate) : formatYearMonthKo(ym);
 
   // NAILSYNC(AC5): 균검사지 고객차트 열기 — DoctorCallDashboard.openTreatmentChart 패턴 이식.
   //   같은 MedicalChartPanel·같은 진입 동선(clinical 기본 + '본 차트 열기'로 full 전환).
@@ -703,14 +749,14 @@ export default function KohReportTab() {
     setMedicalChartOpen(true);
   };
 
-  const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, ym);
+  const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, queryYm);
   // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only). PHASE15(A): 조갑부위 저장 mutation.
-  const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, ym);
+  const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, queryYm);
   // BIRTHDATE-FROM-RRN-FALLBACK: 생년월일 서버 파생 인덱스(customer_id → birth_date_display). read-only.
   const { data: birthMap } = useKohBirthdates(clinicId, rows);
   /** 행의 유효 생년 — 정규 birth_date 우선, NULL이면 RRN 파생값. 둘 다 결측이면 null(AC-2 hard-block 보존). */
   const effectiveBirth = (r: KohRow): string | null => r.birth_date || (r.customer_id ? birthMap?.get(r.customer_id) ?? null : null);
-  const saveNailSites = useSaveNailSites(clinicId, ym);
+  const saveNailSites = useSaveNailSites(clinicId, queryYm);
 
   // LIFECYCLE(AC-3/AC-4/AC-5): 발행 인덱스 + 발행 mutation + 일괄선택.
   const { data: publishedMap } = usePublishedKoh(clinicId);
@@ -809,16 +855,25 @@ export default function KohReportTab() {
     [rows, todayISO],
   );
 
+  // KOHLIST-INACTIVE-PURGE-DAYMONTH-FILTER: 검색 전 단계 — (AC-1/AC-4) 비활성 제외 + (AC-2/AC-3) 일별/월별 범위.
+  //   비활성 제외는 표시 필터일 뿐 DB 미변경(데이터 보존). 일별=선택 일자 검사분만, 월별=eligible 월 전체.
+  const scopedRows = useMemo(() => {
+    const active = filterKohActive(eligibleRows, includeInactive);
+    return viewMode === 'day'
+      ? active.filter((r) => isKohOnSelectedDay(r.created_at, selectedDate))
+      : active;
+  }, [eligibleRows, includeInactive, viewMode, selectedDate]);
+
   // 이름/차트번호 클라이언트 검색(read-only). 공백 trim, 대소문자 무시.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return eligibleRows;
-    return eligibleRows.filter(
+    if (!q) return scopedRows;
+    return scopedRows.filter(
       (r) =>
         r.customer_name.toLowerCase().includes(q) ||
         (r.chart_number ?? '').toLowerCase().includes(q),
     );
-  }, [eligibleRows, query]);
+  }, [scopedRows, query]);
 
   // LIFECYCLE: 일괄발행 대상(발행가능=조갑부위+생년 있고 미발행) id 집합 — 전체선택 토글 근거.
   //   4FIX 이슈3: canPublish 와 동일 조건(생년 누락 행은 select-all 대상에서 제외).
@@ -866,47 +921,127 @@ export default function KohReportTab() {
             균검사지 — KOH 진균검사 명단
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KOH(진균) 검사 후 하루가 지난 환자 명단입니다. 검사일 기준 월별 조회(당일 검사분은 다음날 표시).
+            KOH(진균) 검사 후 하루가 지난 환자 명단입니다. 검사일 기준 일별/월별 조회(당일 검사분은 다음날 표시). 비활성(미신청) 건은 기본 제외됩니다.
           </p>
         </div>
 
-        <div className="flex items-center gap-1" data-testid="koh-month-nav">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={() => setYm((v) => shiftYearMonth(v, -1))}
-            aria-label="이전 달"
-            data-testid="koh-prev-month"
+        <div className="flex flex-wrap items-center gap-2">
+          {/* AC-2: 일별/월별 보기 토글 — 첫 진입 기본 = 일별. 기존 월 네비/검색 UI와 teal 톤 일관. */}
+          <div
+            className="inline-flex overflow-hidden rounded-md border"
+            role="group"
+            aria-label="보기 단위"
+            data-testid="koh-view-toggle"
           >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span
-            className="min-w-[88px] text-center text-sm font-semibold text-foreground"
-            data-testid="koh-month-label"
-          >
-            {formatYearMonthKo(ym)}
-          </span>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={() => setYm((v) => shiftYearMonth(v, 1))}
-            aria-label="다음 달"
-            data-testid="koh-next-month"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          {!isCurrentMonth && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-1 h-8 px-2 text-[11px]"
-              onClick={() => setYm(currentYearMonthSeoul())}
-              data-testid="koh-this-month"
+            <button
+              type="button"
+              onClick={() => setViewMode('day')}
+              className={`h-8 px-3 text-xs font-semibold transition ${
+                viewMode === 'day'
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-background text-muted-foreground hover:bg-accent'
+              }`}
+              aria-pressed={viewMode === 'day'}
+              data-testid="koh-view-day"
             >
-              이번 달
-            </Button>
+              일별
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('month')}
+              className={`h-8 border-l px-3 text-xs font-semibold transition ${
+                viewMode === 'month'
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-background text-muted-foreground hover:bg-accent'
+              }`}
+              aria-pressed={viewMode === 'month'}
+              data-testid="koh-view-month"
+            >
+              월별
+            </button>
+          </div>
+
+          {/* AC-3: 보기 단위에 맞춘 네비게이터 — 일별=일자 이동, 월별=월 이동. */}
+          {viewMode === 'day' ? (
+            <div className="flex items-center gap-1" data-testid="koh-day-nav">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={() => setSelectedDate((v) => shiftISODate(v, -1))}
+                aria-label="이전 날"
+                data-testid="koh-prev-day"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span
+                className="min-w-[120px] text-center text-sm font-semibold text-foreground"
+                data-testid="koh-day-label"
+              >
+                {formatDateKo(selectedDate)}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={() => setSelectedDate((v) => shiftISODate(v, 1))}
+                aria-label="다음 날"
+                data-testid="koh-next-day"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              {!isToday && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-1 h-8 px-2 text-[11px]"
+                  onClick={() => setSelectedDate(todayISO)}
+                  data-testid="koh-today"
+                >
+                  오늘
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1" data-testid="koh-month-nav">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={() => setYm((v) => shiftYearMonth(v, -1))}
+                aria-label="이전 달"
+                data-testid="koh-prev-month"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span
+                className="min-w-[88px] text-center text-sm font-semibold text-foreground"
+                data-testid="koh-month-label"
+              >
+                {formatYearMonthKo(ym)}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={() => setYm((v) => shiftYearMonth(v, 1))}
+                aria-label="다음 달"
+                data-testid="koh-next-month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              {!isCurrentMonth && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-1 h-8 px-2 text-[11px]"
+                  onClick={() => setYm(currentYearMonthSeoul())}
+                  data-testid="koh-this-month"
+                >
+                  이번 달
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -924,6 +1059,20 @@ export default function KohReportTab() {
           />
         </div>
         <div className="flex items-center gap-2">
+          {/* AC-1/AC-4: 비활성(미신청) 포함 보기 — 기본 OFF(비활성 제외). 표시 제외만, DB DELETE 없음(데이터 보존). */}
+          <label
+            className="inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground"
+            data-testid="koh-include-inactive-label"
+          >
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 cursor-pointer accent-teal-600"
+              checked={includeInactive}
+              onChange={(e) => setIncludeInactive(e.target.checked)}
+              data-testid="koh-include-inactive"
+            />
+            비활성 포함
+          </label>
           {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
               발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행.
               ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE (supersedes GRANT-3ROLE) ──
@@ -942,9 +1091,9 @@ export default function KohReportTab() {
           </Button>
           )}
           <span className="text-xs text-muted-foreground" data-testid="koh-count">
-            {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
-            {query.trim() && eligibleRows.length !== filtered.length && (
-              <span className="ml-1 text-muted-foreground/70">(전체 {eligibleRows.length}건 중)</span>
+            {periodLabel} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
+            {query.trim() && scopedRows.length !== filtered.length && (
+              <span className="ml-1 text-muted-foreground/70">(전체 {scopedRows.length}건 중)</span>
             )}
           </span>
         </div>
@@ -963,7 +1112,7 @@ export default function KohReportTab() {
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           {query.trim()
             ? '검색 결과가 없습니다.'
-            : `${formatYearMonthKo(ym)}에 검사 후 하루가 지난 KOH 진균검사 명단이 없습니다.`}
+            : `${periodLabel}에 검사 후 하루가 지난 KOH 진균검사 명단이 없습니다.${includeInactive ? '' : ' (비활성 건은 제외 — 보려면 "비활성 포함")'}`}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">
@@ -1197,7 +1346,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급하기</strong>는 채취 조갑부위 선택 + 환자 생년월일이 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력), 발급 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
+        ※ 검사일(시행일) 기준 명단입니다. 상단 <strong className="text-foreground/80">일별/월별</strong> 토글로 보기 단위를 바꿀 수 있으며(첫 진입은 일별), <strong className="text-foreground/80">비활성(미신청)</strong> 건은 기본 제외됩니다(목록에서만 숨김 — 삭제 아님, "비활성 포함"을 켜면 다시 표시). 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급하기</strong>는 채취 조갑부위 선택 + 환자 생년월일이 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력), 발급 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
