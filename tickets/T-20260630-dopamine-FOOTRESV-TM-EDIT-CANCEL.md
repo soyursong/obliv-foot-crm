@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 qa_result: pending
-deploy_commit: pending (push 후 기입)
+deploy_commit: bbc726cc
 deployed_at: 2026-06-30 (DB superset RPC 적용 완료 — supervisor DDL-diff + ①1행검증 게이트 대기)
 bundle_hash: n/a (DB-only RPC 변경 — FE 번들 무변경)
 db_change: true
