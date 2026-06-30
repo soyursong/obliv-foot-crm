@@ -710,5 +710,32 @@ export function resolveVisitRouteDisplay(
   return '';
 }
 
+/**
+ * T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-2: 예약등록자 provenance 표시 매핑(순수 read-only).
+ * 도파민→풋 ingest 예약(source_system='dopamine')은 풋 staff/registrar 마스터에 매칭되는 계정이 없을 수 있다.
+ * 이때 예약등록자 필드를 공란으로 두지 않고 도파민 출처 라벨로 채운다.
+ *
+ * ⛔ 구현 가드(티켓 §AC-2, DA-20260630-FOOTPUSH-COUNSELOR-ATTRIBUTION=NO-SCHEMA-CHANGE_GO):
+ *    · 도파민 TM 신원을 풋 `staff`/`reservation_registrars` 마스터 row 에 write/스탬프 절대 금지.
+ *      (user_profiles↔staff 매핑 부재 + 도파민은 풋 staff 미공급 → 임의 매칭 시 인센티브 분모 오염·이중계상 ★급소.)
+ *    · 순수 표시 라벨만 채운다. registrar_id 파생 write 0.
+ *
+ * 데이터 소스: EF(reservation-ingest-from-dopamine)가 이미 착지한 값.
+ *    - 매칭(EF (b)) → registrar_id(FK) + registrar_name(마스터 스냅샷) → 이 함수 미경유(편집 Select 정상 표시).
+ *    - 무매칭 → registrar_id=NULL + registrar_name='[도파민TM] {name}' provenance 라벨 → 그대로 표시.
+ *    - registrar_name 미보유(라벨 자체 없음) → source_system='dopamine' 마커로 '도파민 등록' 안전 폴백.
+ *
+ * @returns 표시용 예약등록자 provenance 라벨. 해당 없으면 '' (caller 가 '—'/'미지정'/편집 Select graceful 처리).
+ */
+export function resolveRegistrarDisplay(
+  registrarName?: string | null,
+  sourceSystem?: string | null,
+): string {
+  const name = (registrarName ?? '').trim();
+  if (name) return name;                                   // EF 착지 라벨('[도파민TM] {name}') 또는 마스터 스냅샷
+  if ((sourceSystem ?? '').trim() === 'dopamine') return '도파민 등록';  // 라벨 미보유 안전 폴백(공란 금지)
+  return '';
+}
+
 /** 예약등록자 마스터 그룹 라벨 순서 (드롭다운 그룹 헤더용). */
 export const REGISTRAR_GROUPS = ['원내', 'TM'] as const;
