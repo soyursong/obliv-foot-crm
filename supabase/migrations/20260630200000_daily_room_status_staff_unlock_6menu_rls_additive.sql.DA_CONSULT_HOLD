@@ -1,0 +1,43 @@
+-- T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP — Phase 2 잔여 ADDITIVE
+-- surface: daily_room_status (④직원·공간 '방 활성/비활성 토글', Staff.tsx handleRoomToggle)
+--
+-- RC(Phase1 실측): FE는 '직원·공간' 진입 5역할(admin/manager/consultant/coordinator/therapist)에게
+--   방 토글 버튼을 isAdmin 게이트 없이 노출(Staff.tsx L95 주석 + handleRoomToggle 무게이트)하나,
+--   PROD write RLS = {daily_room_status_admin_manager_write: is_admin_or_manager()={admin,manager,director}}
+--   ∪ {daily_room_status_staff_own_write: role='staff' ∧ 본인배정방} 뿐 → coordinator(및 consultant/therapist)
+--   토글 시 RLS 거부 = "토글 실패: ...row-level security". (6MENU read 우산이 write 짝을 못 풀어 잔여.)
+--
+-- 처방: 6MENU write 짝 정합 ADDITIVE 1정책. 선례 daily_closings_staff_unlock_6menu 와 1:1 동형
+--   (role∈{consultant,coordinator,therapist} ∧ clinic_id 격리). FE 노출 set = RLS write set 패리티 복원.
+--
+-- ★ADDITIVE-ONLY: 기존 2 write 정책(admin_manager_write, staff_own_write) 무변경·무삭제·무축소.
+--   admin/manager/director/staff(본인방) 전원 무회귀. 추가만(coordinator/consultant/therapist 확대).
+-- ★lock-out 0: 누구의 기존 권한도 회수하지 않음.
+-- ★clinic 격리 유지: clinic_id = current_user_clinic_id() (cross-clinic write 차단 — 기존 패턴 동일).
+-- ★scope: daily_room_status 는 당일 방 on/off 운영상태(비-PHI·비-금전). 신규 비즈로직/PHI 노출 0 → 대표게이트 면제(autonomy §3.1).
+--
+-- 게이트: data-architect CONSULT GO + supervisor DDL-diff 통과 후에만 .DA_CONSULT_HOLD 접미사 제거 → apply.
+-- rollback: 20260630200000_..._rls_additive.rollback.sql
+
+BEGIN;
+
+DROP POLICY IF EXISTS daily_room_status_staff_unlock_6menu ON public.daily_room_status;
+
+CREATE POLICY daily_room_status_staff_unlock_6menu
+  ON public.daily_room_status
+  AS PERMISSIVE
+  FOR ALL
+  TO authenticated
+  USING (
+    (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))
+    AND (clinic_id = current_user_clinic_id())
+  )
+  WITH CHECK (
+    (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))
+    AND (clinic_id = current_user_clinic_id())
+  );
+
+COMMENT ON POLICY daily_room_status_staff_unlock_6menu ON public.daily_room_status IS
+  'T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP: 6MENU ④직원·공간 방토글 write 짝. consultant/coordinator/therapist clinic-격리 ADDITIVE. daily_closings_staff_unlock_6menu 동형. 파괴변경 0.';
+
+COMMIT;
