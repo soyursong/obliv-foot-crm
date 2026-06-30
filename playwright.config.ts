@@ -207,6 +207,11 @@ export default defineConfig({
         //   삭제(총괄 김주연 P0). 진단서·소견서 stamp-box 유지(회귀 0) + 제목 중앙정렬 불변.
         //   템플릿 정적 가드 + getHtmlTemplate/bindHtmlTemplate 실 렌더 검증. page/auth 불요.
         '**/T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE.spec.ts',
+        // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안): 진단서 경구약 항목 — 실장 '경구약 사유'
+        //   전용 입력칸(field_data.oral_med_reason ADDITIVE) → 원장 작성창 oralXReason prefill(대괄호 제거) →
+        //   뷰어 파란글씨(text-blue-600)/서류 검정(printOpinionDoc plain). 순수 함수 + render-split 정적 회귀가드.
+        //   ★서류 출력 파란색 0 가드(파괴적 회귀 차단). auth/page 불요.
+        '**/T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

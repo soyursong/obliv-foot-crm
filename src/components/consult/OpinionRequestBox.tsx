@@ -26,6 +26,11 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, FileText, Send } from 'lucide-react';
 
+// T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안 AC6): '경구약 사유' 입력칸을 노출할
+//   경구약 관련 옵션 key 집합. 경구약X(진단서)·효과미비·복용후 위장장애(금기증) — 항진균제 복용불가 사유 입력 대상.
+//   (운영 DB 템플릿에서 `[…경구약 복용중]` 괄호가 어느 phrase에 있든, 원장 작성창 showOralXReason 이 최종 게이트.)
+const ORAL_MED_REASON_KEYS = new Set(['oral_x', 'oral_ineffective', 'gi_after_oral']);
+
 export default function OpinionRequestBox({
   customerId,
   clinicId,
@@ -46,6 +51,9 @@ export default function OpinionRequestBox({
   const [docType, setDocType] = useState<OpinionDocType>('opinion');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [memo, setMemo] = useState('');
+  // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안 AC6): 경구약 사유 전용 입력칸.
+  //   실장이 적은 사유 → form_submissions.field_data.oral_med_reason → 원장 작성창 oralXReason prefill(괄호 치환).
+  const [oralMedReason, setOralMedReason] = useState('');
   // B-1 LOCK(MSG-r0uw): 서류 날짜 선택 — 기본값 당일(KST). 원장 작성창 `[날짜]` 치환 초기값으로 전달.
   const [requestDate, setRequestDate] = useState<string>(() => todaySeoulISODate());
 
@@ -69,6 +77,14 @@ export default function OpinionRequestBox({
   );
   const hasDiagnosis = selDiagnosis.length > 0;
   const hasContraind = selContraind.length > 0;
+
+  // A안 AC6: '경구약 사유' 입력칸 노출 조건 — 경구약 관련 항목(경구약X·효과미비·복용후 위장장애)이 선택됐을 때만.
+  //   ★뷰어 파란글씨/대괄호 치환은 원장 작성창의 DB 템플릿 phrase(`[…경구약 복용중]`)가 SSOT — 이 입력은
+  //     원장 oralXReason prefill '소스'일 뿐. 미선택/미입력 시 기존 동작 유지(AC5).
+  const showOralMedReason = useMemo(
+    () => [...selected].some((k) => ORAL_MED_REASON_KEYS.has(k)),
+    [selected],
+  );
 
   // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (P1-1): 진단서(표준)=단일배타 / 금기증=복수선택.
   //   {진단서 1개 단독} XOR {금기증 N개} — 두 그룹 동시선택 불가(원장 작성창 OpinionDocTab 과 동일 rule).
@@ -96,6 +112,7 @@ export default function OpinionRequestBox({
   const reset = () => {
     setSelected(new Set());
     setMemo('');
+    setOralMedReason('');
     setDocType('opinion');
     setRequestDate(todaySeoulISODate());
   };
@@ -122,6 +139,8 @@ export default function OpinionRequestBox({
         docType,
         selectedKeys: cleanKeys,
         staffMemo: memo.trim(),
+        // A안 AC6: 경구약 관련 항목이 선택됐을 때만 사유 전달(아니면 빈값=기존 동작 AC5).
+        oralMedReason: showOralMedReason ? oralMedReason.trim() : '',
         issuedBy,
         requestedByName,
         templateId,
@@ -235,6 +254,23 @@ export default function OpinionRequestBox({
           </div>
         ))}
       </div>
+
+      {/* A안 AC6: 경구약 사유 전용 입력칸 — 경구약 관련 항목 선택 시 노출. 원장 진단서 작성창 경구약 항목에 자동 반영. */}
+      {showOralMedReason && (
+        <div className="mb-2 space-y-1 rounded-md border border-blue-200 bg-blue-50/50 p-2" data-testid="opinion-req-oralmed">
+          <label className="block text-[10px] font-semibold text-blue-800" htmlFor="opinion-req-oralmed-input">
+            경구약 사유 <span className="font-normal text-blue-600/80">(진단서 경구약 항목에 반영 — 예: 고혈압, 당뇨, 고지혈증으로 인한 경구약 복용중)</span>
+          </label>
+          <Textarea
+            id="opinion-req-oralmed-input"
+            value={oralMedReason}
+            onChange={(e) => setOralMedReason(e.target.value)}
+            placeholder="경구약 복용 사유를 입력하세요 (입력 시 진단서 경구약 항목이 이 내용으로 정확히 표시됩니다)"
+            className="min-h-[2.5rem] border-blue-200 bg-white text-[11px]"
+            data-testid="opinion-req-oralmed-input"
+          />
+        </div>
+      )}
 
       {/* 요청 메모(선택) */}
       <Textarea
