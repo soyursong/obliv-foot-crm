@@ -8,7 +8,9 @@
  *
  * ── 결과 요약 (2026-06-30 prod rxlomoozakkjesdqjtvd) ───────────────────────
  *   AC1) GREEN — customers.birth_year 컬럼 부재 확인. birth_year 키 부재 payload 정상 INSERT.
- *        (emit-stop 후 ingest 가 birth_year 미참조 → 09:42 'birth_year column not found' 502 해소)
+ *        ★ingest EF(index.ts) birth_year 추출·UPDATE·INSERT 참조 전량 제거(2026-07-01) →
+ *          payload 에 birth_year 동봉돼도 무조건 무시 = (C)DROP "foot ingest 무시" 강건화.
+ *          (emit-stop 의존 없이 'birth_year column not found' 502 재발 원천 차단)
  *   AC2) RED  — foot customers_gender_check 권위값 = (gender IS NULL OR gender IN ('M','F')) 대문자.
  *        대문자 'M'/'F'/null → PASS. 소문자 'm'/'f' → 23514 위반.
  *        dev-dopamine emit-side normalizeGender 가 소문자 'm'/'f' 산출 → foot constraint 위반.
