@@ -350,6 +350,11 @@ export default function Reservations() {
   //   라우팅하며 넘어온 예약상세 팝업 오픈 요청(location.state.openReservationDetail)을 1회만 소비하는 가드.
   //   openReservationFor(navStateConsumed)와 별도 ref — 서로 다른 동선이 같은 mount에서 간섭하지 않도록 분리.
   const navDetailConsumed = useRef(false);
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트(customer_id+고객명)를 navigation state로 받아
+  //   슬롯 클릭 시 신규예약 폼에 해당 고객을 자동 prefill(재진)하기 위한 1회 소비 가드 — 동선1·동선2 공용 수신부.
+  //   ⚠ defer-to-slot-click: 진입 즉시 폼을 열지 않고(openReservationFor 동선과 분리) pendingPrefillCustomer에
+  //   적재만 → 사용자가 빈 슬롯을 클릭(openNewSlot)할 때 비로소 prefill 신규폼이 뜬다.
+  const navPrefillConsumed = useRef(false);
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-4: 마운트 자동로드 중복 방지.
   // StrictMode 이중 마운트(dev) / 동일 파라미터 재렌더 시 fetchWeek 중복 실행 → RPC N+1 차단.
   const lastAutoFetchKeyRef = useRef<string | null>(null);
@@ -402,6 +407,10 @@ export default function Reservations() {
   // T-20260615-foot-RESVMGMT-REFIX-8 AC3 (planner GO): 빈슬롯 (+) → new-mode 진입 시 클릭 슬롯 날짜/시간 prefill 운반.
   //   상단 '새 예약' 버튼은 null 로 리셋(빈 진입). 팝업 close/changed 시에도 클리어.
   const [newReservationInitial, setNewReservationInitial] = useState<{ date: string; time: string } | null>(null);
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL: navigation state로 받은 고객을 슬롯 클릭 시 신규예약 폼에 자동 prefill 하기 위한
+  //   대기 컨텍스트(완전한 PatientMatch — 수신부에서 customers 조회로 연락처/차트번호 enrich). null = 일반 진입(빈 폼, AC4 회귀).
+  //   sticky: 페이지에 머무는 동안 유지(연속 예약), 다른 화면으로 navigate 시 remount로 자연 소거.
+  const [pendingPrefillCustomer, setPendingPrefillCustomer] = useState<PatientMatch | null>(null);
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
   const [treatmentCycleMap, setTreatmentCycleMap] = useState<Map<string, number>>(new Map());
@@ -580,6 +589,40 @@ export default function Reservations() {
     window.history.replaceState({}, '');
     setDetail(resv);
   }, [location.state]);
+
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트 → 슬롯클릭 pre-fill 수신부 코어(grid-robust).
+  //   동선1(대시보드 고객박스 우클릭 [예약상세])·동선2(2번차트 [다음예약])가 공통으로
+  //   navigate('/admin/reservations', { state: { prefillCustomerForSlot: { customer_id, name } } }) 로 넘겨준 고객을 소비.
+  //   ⚠ 주입 지점 = 구 DOM 슬롯카드 핸들러가 아닌 '신규예약 폼 opener(openNewSlot→new-mode 팝업 initialCustomer)' 레이어 →
+  //   슬롯 핸들러가 구 openNewSlot 이든 미래 격자 핸들러든 동일 폼 opener 경유로 prefill 생존(PLANNER DECISION-2 [2] (B)).
+  //   전달 데이터 = customer_id + 고객명(둘 다 旣존재 식별자, 신규 PII·스키마 0). 연락처/차트번호는 여기서 customers 조회로 enrich.
+  useEffect(() => {
+    if (navPrefillConsumed.current) return;
+    if (!clinic) return;
+    const state = location.state as {
+      prefillCustomerForSlot?: { customer_id: string; name: string };
+    } | null;
+    const ctx = state?.prefillCustomerForSlot;
+    if (!ctx?.customer_id) return;
+    navPrefillConsumed.current = true;
+    window.history.replaceState({}, '');
+    // customers 조회로 연락처/생년월일/차트번호 enrich → 완전한 PatientMatch 구성(폼 자동표시·재진 식별 보조).
+    supabase
+      .from('customers')
+      .select('id, name, phone, chart_number')
+      .eq('id', ctx.customer_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        const row = data as { id: string; name: string | null; phone: string | null; chart_number: string | null } | null;
+        setPendingPrefillCustomer({
+          id: ctx.customer_id,
+          name: row?.name ?? ctx.name ?? '',
+          phone: row?.phone ?? '',
+          birth_date: null,
+          chart_number: row?.chart_number ?? null,
+        });
+      });
+  }, [clinic, location.state]);
 
   // AC-7: 좌측 캘린더 날짜 클릭 → 해당 날짜 포함 주로 이동 (state 방식 — 레거시 호환)
   useEffect(() => {
@@ -2625,6 +2668,9 @@ export default function Reservations() {
         /* T-20260615-foot-RESVMGMT-REFIX-8 AC3: 빈슬롯 (+) 진입 시 클릭 슬롯 날짜/시간 prefill(상단 '새 예약'은 null). */
         initialDate={newReservationInitial?.date ?? null}
         initialTime={newReservationInitial?.time ?? null}
+        /* T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트로 진입(동선1·2) 시 슬롯클릭 new-mode 팝업에 해당 고객 자동 prefill.
+           null = 일반 진입(빈 신규폼, AC4 회귀). sticky pendingPrefillCustomer 라 연속 슬롯클릭에도 동일 고객 유지. */
+        initialCustomer={pendingPrefillCustomer}
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}

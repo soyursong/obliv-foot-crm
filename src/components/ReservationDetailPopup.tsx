@@ -149,6 +149,7 @@ export function ReservationDetailPopup({
   clinicId = null,
   initialDate = null,
   initialTime = null,
+  initialCustomer = null,
 }: {
   reservation: Reservation | null;
   noshowCount: number;
@@ -174,6 +175,10 @@ export function ReservationDetailPopup({
   //   생성 capability·affordance 는 팝업 new-mode 폼이 그대로 보존 — 진입 '배선'만 통일(구 ReservationEditor 스폰 폐기).
   initialDate?: string | null;   // 'yyyy-MM-dd'
   initialTime?: string | null;   // 'HH:mm'
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트로 진입(동선1 대시보드 고객박스 우클릭 / 동선2 2번차트 [다음예약]) →
+  //   new-mode 슬롯클릭 폼 오픈 시 이 고객을 자동 prefill(재진). null = 일반 빈 진입(회귀 0). parent 가 customers 조회로 enrich 한
+  //   완전한 PatientMatch 를 전달 → 팝업은 handleSelectOtherCustomer 와 동일 경로로 1번구역(고객정보·패키지·치료내역)까지 자동 로드.
+  initialCustomer?: PatientMatch | null;
 }) {
   // ── 액션 상태
   const [busy, setBusy] = useState(false);
@@ -389,19 +394,29 @@ export function ReservationDetailPopup({
       setNewResvTime(initialTime || '10:00');
       setNewResvVisitType('returning');
       setCreatingResv(false);
-      // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC1/AC4: 1차 팝업(신규/기존 선택) 제거 → 통합 폼 직진.
-      //   manualNew 기본 true(=신규 직접입력 폼 상시 노출). 성함·연락처 입력→기존고객 매칭 선택 시 loadedMatch(재진) 자동전환.
-      setManualNew(true);
-      setNewCustName('');
-      setNewCustPhone('');
       // T-20260629-foot-NEWRESV-UNIFIED-MODAL: 예약경로·예약등록자 클린 리셋(통합 폼 빈상태 보장).
       setVisitRoute('');
       setRegistrarId('');
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 매 진입 클린 리셋(stale 차단).
       setBriefNote('');
       setNewBookingMemo('');
+      // T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트로 진입(동선1·2)이면 해당 고객 자동 prefill(재진),
+      //   아니면 기존 빈 진입(검색창 활성, AC4 회귀 0). 고객 prefill 은 검색 선택과 동일 경로(handleSelectOtherCustomer)
+      //   재사용 → 1번구역(고객정보·패키지·치료내역) 자동 로드 + 이름·연락처 populate. 🔒 L-002: 생성 로직 무변경(인젝션 0).
+      if (initialCustomer) {
+        handleSelectOtherCustomer(initialCustomer);
+      } else {
+        // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC1/AC4: 1차 팝업(신규/기존 선택) 제거 → 통합 폼 직진.
+        //   manualNew 기본 true(=신규 직접입력 폼 상시 노출). 성함·연락처 입력→기존고객 매칭 선택 시 loadedMatch(재진) 자동전환.
+        setManualNew(true);
+        setNewCustName('');
+        setNewCustPhone('');
+      }
     }
-  }, [newMode, initialDate, initialTime]);
+    // handleSelectOtherCustomer 는 hoisted function 선언(매 렌더 재생성) → deps 포함 시 setState 루프.
+    //   initialCustomer/initialDate/initialTime/newMode 변화에만 재실행하면 충분(prefill 1회).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newMode, initialDate, initialTime, initialCustomer]);
 
   useEffect(() => {
     if (!reservation) {
