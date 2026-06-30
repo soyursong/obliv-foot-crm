@@ -48,7 +48,6 @@ test.describe('T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 박스 컴팩트+모노
     // 치료사(therapist) 파트로 작성 — 직전 spec 에선 teal 박스였던 파트
     await page.getByTestId('handover-new-btn').click();
     await expect(page.getByTestId('handover-dialog')).toBeVisible({ timeout: 8_000 });
-    await page.getByTestId('handover-form-part-therapist').click();
 
     const memo = `컴팩트모노 테스트 — 치료사 인계 ${Date.now()}`;
     await page.getByTestId('handover-form-memo').fill(memo);
@@ -62,7 +61,7 @@ test.describe('T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 박스 컴팩트+모노
       return;
     }
     await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute('data-part', 'therapist');
+    await expect(card).toHaveAttribute('data-part', '공통');
 
     // AC1: 박스 배경/테두리 = 모노톤(bg-slate-50/border-slate-200)
     await expect(card).toHaveClass(/bg-slate-50/);
@@ -80,7 +79,7 @@ test.describe('T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 박스 컴팩트+모노
     await expect(card).toHaveClass(/space-y-1(\s|$)/);
 
     // AC2(11:09 PUSH 정정): 파트 배지도 무채색(slate-200) 통일 — 라벨은 유지, 파트색 제거
-    const badge = card.getByText('치료사', { exact: true });
+    const badge = card.getByText('공통', { exact: true });
     await expect(badge).toBeVisible(); // 라벨(텍스트) 유지
     await expect(badge).toHaveClass(/bg-slate-200/);
     await expect(badge).not.toHaveClass(/bg-green-100/);
@@ -92,31 +91,24 @@ test.describe('T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 박스 컴팩트+모노
   test('S2 이름칩·배지·파트필터·작성폼·캘린더뷰 무회귀(AC5)', async ({ page }) => {
     await gotoHandover(page);
 
-    // 파트 필터 4종 + 전체(통합 합산) 무회귀
-    await expect(page.getByTestId('handover-part-all')).toBeVisible();
-    await expect(page.getByTestId('handover-part-공통')).toBeVisible();
-    await expect(page.getByTestId('handover-part-consultant_lead')).toBeVisible();
-    await expect(page.getByTestId('handover-part-coordinator')).toBeVisible();
-    await expect(page.getByTestId('handover-part-therapist')).toBeVisible();
+    // T-20260630-foot-HANDOVER-PARTSONLY-TOTAL-ATTEND-MONO (SUPERSEDE): 파트 필터 탭·작성폼 파트 선택지 제거됨.
+    await expect(page.getByTestId('handover-part-filter')).toHaveCount(0);
 
     // 선택일 출근자 이름칩 — 박스 작업과 무관하게 기존 클래스 유지(이름칩 색 불변)
     await page.getByTestId(`handover-day-${TODAY}`).click();
     const chips = page.getByTestId('handover-selected-attendee-chip');
     const chipCount = await chips.count();
     if (chipCount > 0) {
-      await expect(chips.first()).toHaveClass(/rounded-lg/);
+      await expect(chips.first()).toHaveClass(/rounded-full/);
       console.log(`[HANDOVER-COMPACT-MONO] S2 이름칩 ${chipCount}개 무회귀 확인`);
     } else {
       console.log('[HANDOVER-COMPACT-MONO] S2 선택일 출근자 없음 — 이름칩 무회귀 skip-log');
     }
 
-    // 작성 폼 4파트 선택지 무회귀
+    // 작성 폼 파트 선택지 제거됨(SUPERSEDE) — 폼 진입은 무회귀, 파트 피커 비노출
     await page.getByTestId('handover-new-btn').click();
     await expect(page.getByTestId('handover-dialog')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-공통')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-consultant_lead')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-coordinator')).toBeVisible();
-    await expect(page.getByTestId('handover-form-part-therapist')).toBeVisible();
+    await expect(page.getByTestId('handover-form-part')).toHaveCount(0);
     await page.getByRole('button', { name: '취소' }).click();
 
     // 캘린더 뷰 토글 무회귀(통합/주/월)

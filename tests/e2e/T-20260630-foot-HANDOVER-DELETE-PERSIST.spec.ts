@@ -37,7 +37,6 @@ async function createOwnCard(page: Page, memo: string): Promise<boolean> {
   await page.getByTestId(`handover-day-${TODAY}`).click();
   await page.getByTestId('handover-new-btn').click();
   await expect(page.getByTestId('handover-dialog')).toBeVisible({ timeout: 8_000 });
-  await page.getByTestId('handover-form-part-therapist').click();
   await page.getByTestId('handover-form-memo').fill(memo);
   await page.getByTestId('handover-form-save').click();
   await expect(page.getByTestId('handover-dialog')).toBeHidden({ timeout: 10_000 });
