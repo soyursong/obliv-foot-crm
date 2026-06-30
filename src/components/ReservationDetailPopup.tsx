@@ -45,7 +45,7 @@ import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslot
 // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 활성패키지/치료내역 = 2번차트 패키지탭 양식(read-only) 재사용
 import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/PackageTicketReadonlyList';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
-import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor, resolveVisitRouteDisplay } from '@/lib/types';
+import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor, resolveVisitRouteDisplay, resolveRegistrarDisplay } from '@/lib/types';
 
 // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins 재진판정용 타입.
 //   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용).
@@ -1523,27 +1523,41 @@ export function ReservationDetailPopup({
                   </div>
                   <div className="flex gap-2 min-w-0 items-center">
                     <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약등록자</span>
-                    {/* T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK AC-1: TM 역할은 기존 예약 예약등록자 disabled. */}
-                    <Select
-                      value={registrarId || '__none__'}
-                      onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
-                      disabled={isTmRole}
-                    >
-                      <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
-                        {/* T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL AC5(재사용처): 선택값 value→이름 해석(UUID 비노출). */}
-                        <SelectValue placeholder="예약등록자 선택">
-                          {(val) => resolveRegistrarLabel(val)}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                        {registrars.map((r) => (
-                          <SelectItem key={r.id} value={r.id} className="text-xs">
-                            {r.group_name} - {r.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-2: 도파민→풋 ingest 예약(source_system='dopamine')에
+                        매칭되는 풋 마스터가 없으면(registrar_id NULL) 편집 Select 대신 도파민 출처 라벨을 읽기전용 표시.
+                        ⛔ 가드: 도파민 TM 신원을 풋 staff/registrar 마스터에 write/스탬프 금지 — registrar_id 파생 0(순수 display).
+                           매칭 예약(registrar_id 有)은 기존 편집 Select 100% 불변(0-회귀). */}
+                    {reservation.source_system === 'dopamine' && !registrarId ? (
+                      <span
+                        className="flex-1 text-xs text-foreground/90 truncate"
+                        data-testid="popup-registrar-provenance"
+                        title="도파민 TM이 등록한 예약(출처 표시 — 풋 계정 미귀속)"
+                      >
+                        {resolveRegistrarDisplay(reservation.registrar_name, reservation.source_system) || '—'}
+                      </span>
+                    ) : (
+                      /* T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK AC-1: TM 역할은 기존 예약 예약등록자 disabled. */
+                      <Select
+                        value={registrarId || '__none__'}
+                        onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
+                        disabled={isTmRole}
+                      >
+                        <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
+                          {/* T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL AC5(재사용처): 선택값 value→이름 해석(UUID 비노출). */}
+                          <SelectValue placeholder="예약등록자 선택">
+                            {(val) => resolveRegistrarLabel(val)}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                          {registrars.map((r) => (
+                            <SelectItem key={r.id} value={r.id} className="text-xs">
+                              {r.group_name} - {r.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1688,7 +1702,9 @@ export function ReservationDetailPopup({
                           신규 담당자 드롭다운 신설 아님 — 예약상세의 예약 등록자(registrar_name 스냅샷)를 그대로 표시.
                           기존엔 '다른 예약 보기 중'(id !== anchor)일 때만 노출 → 본 예약(anchor) 상세에서도 항상 렌더.
                           데이터 소스 = AC7과 동일(registrar_name). AC7 DB검증 결과(write 무결·생성시 미수집)상 미할당 예약은 '—' graceful. */}
-                      <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
+                      {/* T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-2: 도파민 ingest 예약은 provenance 라벨/안전 폴백 표시.
+                          registrar_name(EF 착지 라벨) 우선, 미보유 시 source_system='dopamine'→'도파민 등록' (공란/오귀속 금지). */}
+                      <FieldRow label="예약등록자" value={resolveRegistrarDisplay(selectedResv.registrar_name, selectedResv.source_system) || '—'} />
                       {selectedResv.id !== reservation.id && (
                         // T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-1: 도파민 ingest 예약 'TM' 표시(순수 display).
                         <FieldRow label="예약경로" value={resolveVisitRouteDisplay(selectedResv.visit_route, selectedResv.source_system) || '—'} />
