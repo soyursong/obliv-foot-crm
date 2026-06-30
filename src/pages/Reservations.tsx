@@ -388,6 +388,11 @@ export default function Reservations() {
   //   미상(둘 다 NULL=과거 예약) 시 미표시(AC5). ★SCOPE: 예약관리 표시 한정 — 2번차트/고객 목록·상세의
   //   customers.assigned_staff_id(차트 담당자) 의미는 불변(회귀0, CUSTOMER-STAFF-AUTOLINK 유지).
   const [resvBookerMap, setResvBookerMap] = useState<Map<string, string>>(new Map());
+  // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모 SoT 배선.
+  //   예약상세 팝업의 '예약메모' 저장은 reservation_memo_history(append-only timeline)에 들어가고
+  //   reservations.booking_memo 컬럼은 생성시 초기메모만 갖는 부분 미러 → 추후 추가분이 hover에 미표시되던 버그.
+  //   reservation_id → '대표 메모 1줄'(pinned 우선, 없으면 최신 created_at) 맵. resvBookerMap 패턴 미러.
+  const [resvMemoMap, setResvMemoMap] = useState<Map<string, string>>(new Map());
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
@@ -686,6 +691,48 @@ export default function Reservations() {
         }
       }
       setResvBookerMap(bookerM);
+    }
+
+    // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모 hover 표시를 SoT(reservation_memo_history)로 배선.
+    //   기존 hover는 reservations.booking_memo(생성시 초기메모만 담기는 부분 미러)만 읽어, 예약상세 팝업
+    //   타임라인으로 추가/수정한 메모가 미표시되던 버그. list 전체 reservation_id 단일 배치 조회(.in) →
+    //   reservation_id별 대표 1줄(고정 우선 pinned_at DESC, 없으면 최신 created_at DESC; ReservationMemoTimeline
+    //   sortMemoItems와 동일 순서) 맵 구성. read-only, 스키마 무변경(N+1 없음 — 단일 쿼리).
+    {
+      const resvIds = list.map((r) => r.id);
+      const memoM = new Map<string, string>();
+      if (resvIds.length > 0) {
+        const { data: memoRows } = await supabase
+          .from('reservation_memo_history')
+          .select('reservation_id, content, is_pinned, pinned_at, created_at')
+          .in('reservation_id', resvIds);
+        // reservation_id별 후보 누적 후 대표 1건 선택(고정 우선, 그다음 최신).
+        const byResv = new Map<string, { content: string; is_pinned: boolean; pinned_at: string | null; created_at: string }[]>();
+        for (const m of (memoRows ?? []) as {
+          reservation_id: string | null;
+          content: string | null;
+          is_pinned: boolean | null;
+          pinned_at: string | null;
+          created_at: string;
+        }[]) {
+          const rid = m.reservation_id;
+          const text = (m.content ?? '').trim();
+          if (!rid || !text) continue;
+          const arr = byResv.get(rid) ?? [];
+          arr.push({ content: text, is_pinned: !!m.is_pinned, pinned_at: m.pinned_at, created_at: m.created_at });
+          byResv.set(rid, arr);
+        }
+        for (const [rid, arr] of byResv) {
+          const top = arr.sort((a, b) => {
+            // 고정 우선(pinned_at DESC), 비고정은 created_at DESC — sortMemoItems와 동일 우선순위.
+            if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+            if (a.is_pinned && b.is_pinned) return (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '');
+            return b.created_at.localeCompare(a.created_at);
+          })[0];
+          if (top) memoM.set(rid, top.content);
+        }
+      }
+      setResvMemoMap(memoM);
     }
 
     // 노쇼 이력 집계
@@ -1824,7 +1871,9 @@ export default function Reservations() {
                         registrarLabel: (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null,
                         reservationDate: r.reservation_date,
                         visitRoute: r.visit_route ?? r.referral_source ?? null,
-                        bookingMemo: r.booking_memo ?? null,
+                        // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모 SoT(reservation_memo_history) 우선.
+                        //   null(구버전 행·이력없음)이면 기존 booking_memo 컬럼 fallback → 회귀 0.
+                        bookingMemo: resvMemoMap.get(r.id) ?? r.booking_memo ?? null,
                         briefNote: r.brief_note ?? null,
                       }}
                       compact
@@ -2215,7 +2264,9 @@ export default function Reservations() {
                                             registrarLabel: (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null,
                                             reservationDate: r.reservation_date,
                                             visitRoute: r.visit_route ?? r.referral_source ?? null,
-                                            bookingMemo: r.booking_memo ?? null,
+                                            // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모 SoT(reservation_memo_history) 우선.
+                                            //   null(구버전 행·이력없음)이면 기존 booking_memo 컬럼 fallback → 회귀 0.
+                                            bookingMemo: resvMemoMap.get(r.id) ?? r.booking_memo ?? null,
                                             briefNote: r.brief_note ?? null,
                                           }}
                                           compact
@@ -2533,7 +2584,13 @@ export default function Reservations() {
         changedBy={changedBy}
         authorName={profile?.name ?? ''}
         isAdmin={profile?.role === 'admin'}
-        onClose={() => { setDetail(null); setNewReservationMode(false); setNewReservationInitial(null); }}
+        onClose={() => {
+          setDetail(null); setNewReservationMode(false); setNewReservationInitial(null);
+          // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모는 reservation_memo_history(타임라인)에 저장되며
+          //   reservations 테이블 realtime 채널을 트리거하지 않음 → 팝업에서 메모 추가 후 닫으면 hover용 resvMemoMap이
+          //   stale. 닫을 때 1회 동기화하여 새 예약메모가 달력뷰 hover에 즉시 반영되게 함(명시적 fetchWeek는 dedup 우회).
+          fetchWeek();
+        }}
         onEdit={openEdit}
         onChanged={() => {
           setDetail(null);
