@@ -1,0 +1,3443 @@
+{
+  "ticket": "T-20260629-foot-DUMMY-CHECKIN-RESV-LINK",
+  "path": "C",
+  "generated_for": "2026-06-30",
+  "apply": false,
+  "guard_ok": true,
+  "counts": {
+    "whitelist_customers": 75,
+    "charge_rows": 136,
+    "exclude_customers": 62,
+    "exclude_rows": 71
+  },
+  "whitelist": [
+    {
+      "id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "reason": "STAFF_총괄확인(김민경 83ab4fe1)",
+      "count": 15
+    },
+    {
+      "id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "reason": "STAFF_MATCH(박민석)",
+      "count": 11
+    },
+    {
+      "id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "reason": "STAFF_MATCH(장예지)",
+      "count": 10
+    },
+    {
+      "id": "da93b952-d629-4fa7-bf8f-526fbbfe1c67",
+      "name": "김지혜",
+      "reason": "STAFF_MATCH(김지혜)",
+      "count": 5
+    },
+    {
+      "id": "ae5d8c16-84fd-4a35-a97a-c947727b9184",
+      "name": "테스트_김환자",
+      "reason": "TESTNAME(테스트_김환자)",
+      "count": 4
+    },
+    {
+      "id": "d41e7a15-ec91-41f0-87fc-ad47eb30dfb9",
+      "name": "테스트_이환자",
+      "reason": "TESTNAME(테스트_이환자)",
+      "count": 4
+    },
+    {
+      "id": "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
+      "name": "김규리",
+      "reason": "STAFF_MATCH(김규리)",
+      "count": 4
+    },
+    {
+      "id": "bc2f5f76-02ab-47e0-a526-e35843bd1b79",
+      "name": "테스트_박환자",
+      "reason": "TESTNAME(테스트_박환자)",
+      "count": 3
+    },
+    {
+      "id": "1e867904-8f08-4212-9b2d-bbe652f74374",
+      "name": "빈혜린(원내촬영)",
+      "reason": "TESTNAME(빈혜린(원내촬영))",
+      "count": 3
+    },
+    {
+      "id": "8dc15419-5b44-4603-8589-513271fc5f8f",
+      "name": "김유리",
+      "reason": "STAFF_MATCH(김유리)",
+      "count": 3
+    },
+    {
+      "id": "124a2149-d723-4cdc-a3f3-6c7c2ce4044c",
+      "name": "테스트012",
+      "reason": "TESTNAME(테스트012)",
+      "count": 2
+    },
+    {
+      "id": "b0cb1738-ac4d-4bf5-8055-9a68a7d69d54",
+      "name": "테스트123",
+      "reason": "TESTNAME(테스트123)",
+      "count": 2
+    },
+    {
+      "id": "2e8b6192-1863-4fa2-855f-c3c840fee867",
+      "name": "김팔번",
+      "reason": "TESTNAME(김팔번)",
+      "count": 2
+    },
+    {
+      "id": "8b1342df-2a1e-4d87-9338-83c64a2dfeb8",
+      "name": "중간점검",
+      "reason": "TESTNAME(중간점검)",
+      "count": 2
+    },
+    {
+      "id": "7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4",
+      "name": "최다혜",
+      "reason": "STAFF_MATCH(최다혜)",
+      "count": 2
+    },
+    {
+      "id": "13301614-662c-4b5d-8237-096001ffaf62",
+      "name": "서류확인",
+      "reason": "TESTNAME(서류확인)",
+      "count": 2
+    },
+    {
+      "id": "c532a323-2ad6-4bed-ac8c-600364b3a6f5",
+      "name": "윤시하-테스트",
+      "reason": "TESTNAME(윤시하-테스트)",
+      "count": 2
+    },
+    {
+      "id": "cfe619d9-9405-4e74-8cfa-68687ac0f506",
+      "name": "설영우",
+      "reason": "TEST_MEMO",
+      "count": 2
+    },
+    {
+      "id": "31a1abf9-8be9-46f4-a55c-deeb852847a9",
+      "name": "강서연",
+      "reason": "TEST_MEMO",
+      "count": 2
+    },
+    {
+      "id": "028073a8-e943-4f4d-86ec-320040187fbf",
+      "name": "김칠번",
+      "reason": "TESTNAME(김칠번)",
+      "count": 1
+    },
+    {
+      "id": "166e830a-9936-4d9e-925a-784f3fde13c3",
+      "name": "[TEST-D1] 테스트환자02",
+      "reason": "TESTNAME([TEST-D1] 테스트환자02)",
+      "count": 1
+    },
+    {
+      "id": "69199539-9f9a-42dc-a87c-9fb27344fc91",
+      "name": "초진환자3",
+      "reason": "TESTNAME(초진환자3)",
+      "count": 1
+    },
+    {
+      "id": "dfe317c6-ea54-4977-b1f6-9c239a09980c",
+      "name": "초진환자2",
+      "reason": "TESTNAME(초진환자2)",
+      "count": 1
+    },
+    {
+      "id": "ec8f3eda-b2c6-451b-b6ed-f0d8a7392406",
+      "name": "김육번",
+      "reason": "TESTNAME(김육번)",
+      "count": 1
+    },
+    {
+      "id": "e7fc304c-ccf0-423b-befd-f062e9d1fd03",
+      "name": "테스트환자21",
+      "reason": "TESTNAME(테스트환자21)",
+      "count": 1
+    },
+    {
+      "id": "17b4bd8e-63e0-487e-a318-caac67fc1e52",
+      "name": "김일번",
+      "reason": "TESTNAME(김일번)",
+      "count": 1
+    },
+    {
+      "id": "f7174790-64fe-46de-a71d-d43ce0f367a4",
+      "name": "[TEST-D1] 테스트환자17",
+      "reason": "TESTNAME([TEST-D1] 테스트환자17)",
+      "count": 1
+    },
+    {
+      "id": "d1d9414d-a891-46f7-8621-0923fab29872",
+      "name": "초진환자1",
+      "reason": "TESTNAME(초진환자1)",
+      "count": 1
+    },
+    {
+      "id": "97439e28-d6c4-4f55-8890-cad25a506c41",
+      "name": "초진환자4",
+      "reason": "TESTNAME(초진환자4)",
+      "count": 1
+    },
+    {
+      "id": "822111bc-2cd9-4b83-8bfb-6fa78c61bc7a",
+      "name": "신정훈(테스트)",
+      "reason": "TESTNAME(신정훈(테스트))",
+      "count": 1
+    },
+    {
+      "id": "282f43b7-3e8f-492b-8064-db0fe2fc1f2d",
+      "name": "김테스트",
+      "reason": "TESTNAME(김테스트)",
+      "count": 1
+    },
+    {
+      "id": "ddeebd0e-cab9-48e4-b2d9-687ac6418728",
+      "name": "조선미",
+      "reason": "STAFF_MATCH(조선미)",
+      "count": 1
+    },
+    {
+      "id": "e0bfbc0e-2532-4b8e-ac92-30608e2de6c5",
+      "name": "TESTER01",
+      "reason": "TESTNAME(TESTER01)",
+      "count": 1
+    },
+    {
+      "id": "747286b0-045d-472d-ad87-3d49c42c40b5",
+      "name": "김이번",
+      "reason": "TESTNAME(김이번)",
+      "count": 1
+    },
+    {
+      "id": "8309856e-e3ab-47cc-8275-300e77e5709d",
+      "name": "강예린",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "467b62b9-954a-401f-b350-07f3f39ac3e8",
+      "name": "박소예-테스트",
+      "reason": "TESTNAME(박소예-테스트)",
+      "count": 1
+    },
+    {
+      "id": "93cc028d-9168-4d1f-a619-888c922508f9",
+      "name": "셀프접수테스트(워크인)",
+      "reason": "TESTNAME(셀프접수테스트(워크인))",
+      "count": 1
+    },
+    {
+      "id": "6a66329c-a212-4a1b-b2ba-cd32e786698b",
+      "name": "이서연",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "8ba2bbef-018e-4207-b2ab-196e18322437",
+      "name": "문자테스트",
+      "reason": "TESTNAME(문자테스트)",
+      "count": 1
+    },
+    {
+      "id": "c8b80c7d-8921-448e-a01e-dbe60dd02acd",
+      "name": "손가인",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "aa99bdcf-5fa6-4786-ab18-5b18efc872a7",
+      "name": "서은정",
+      "reason": "STAFF_MATCH(서은정)",
+      "count": 1
+    },
+    {
+      "id": "1d9ac1e5-c3a8-407d-9519-5532b6e6efd1",
+      "name": "김태윤",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "c99563bc-6840-431d-9ca4-032b15d31b90",
+      "name": "임별",
+      "reason": "STAFF_MATCH(임별)",
+      "count": 1
+    },
+    {
+      "id": "79459890-e25a-4e45-aa2a-c8dd63edbcad",
+      "name": "이하린",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "83dfc352-ae4d-43a6-9240-258a8845040a",
+      "name": "테스트0602",
+      "reason": "TESTNAME(테스트0602)",
+      "count": 1
+    },
+    {
+      "id": "9f15e6f6-3241-4787-b44b-d6e5faea2f04",
+      "name": "박준호",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "779e505d-6767-4752-8074-7330fcb9037f",
+      "name": "이나라",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "18b7f730-d358-4ce7-be2e-0460536c59ac",
+      "name": "정다은",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "0220e04f-3804-4e44-8fc4-683df578b7d3",
+      "name": "권준서",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "2da07b89-7a3f-451b-9553-b9ce66eebae6",
+      "name": "백성민",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "c5bf9438-4e18-440b-915f-50c3553ef68b",
+      "name": "박지우",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "4791f9bb-de1a-476a-b779-e17cdb4302bf",
+      "name": "최서진",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "d1d2c294-f9ad-4f5c-9be9-2543c00e314e",
+      "name": "서지후",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "90aeb8b7-dce1-48d2-87b1-ed75b0cdc025",
+      "name": "윤도현",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "64f869c5-39af-4392-ac45-2d2833117707",
+      "name": "노아름",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "87a37ff2-8c4f-479d-8af5-a9603632bbf4",
+      "name": "최수호",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "a97f7209-3cac-44a6-b5b8-d107757896b2",
+      "name": "장하람",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "e4aef5c4-5215-4f4b-8ed4-0bb831db7c54",
+      "name": "명지원",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "b38f7fb3-89a1-4509-b4e9-ea63fa732146",
+      "name": "김지훈",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "e902fd6d-d153-426f-a22f-c1a0de6ce3fd",
+      "name": "유채원",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "dba2a5c1-351d-4b68-87ee-8599a3a3d678",
+      "name": "김지윤",
+      "reason": "STAFF_MATCH(김지윤)",
+      "count": 1
+    },
+    {
+      "id": "a9bebe1a-a6b1-40b0-a9ce-088bc1cf4165",
+      "name": "국태리",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "8c0c157c-5def-4662-aa58-5e06b6f4c68a",
+      "name": "김민준",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "d91c163c-7d47-409f-aac3-8132c47838b1",
+      "name": "힐러4",
+      "reason": "TESTNAME(힐러4)",
+      "count": 1
+    },
+    {
+      "id": "defc4799-d550-4536-a930-256570824a0f",
+      "name": "배수빈",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "242ca3b6-4cbc-4b2a-95d6-b01a75532778",
+      "name": "힐러5",
+      "reason": "TESTNAME(힐러5)",
+      "count": 1
+    },
+    {
+      "id": "6b4aefd6-b1b3-469e-8d80-ed6e7fffe6e0",
+      "name": "고나윤",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "d1064e55-41c9-4b24-b137-6f6ef3db5c5a",
+      "name": "윤도현",
+      "reason": "TEST_MEMO",
+      "count": 1
+    },
+    {
+      "id": "462013c0-ba15-4678-8ba1-601ff06162a1",
+      "name": "힐러3",
+      "reason": "TESTNAME(힐러3)",
+      "count": 1
+    },
+    {
+      "id": "f3477dde-d348-4537-b1e2-10fc0b253d75",
+      "name": "배정테스트2",
+      "reason": "TESTNAME(배정테스트2)",
+      "count": 1
+    },
+    {
+      "id": "712e4fa3-5dec-429d-be9d-100c0e0b486e",
+      "name": "힐러1",
+      "reason": "TESTNAME(힐러1)",
+      "count": 1
+    },
+    {
+      "id": "d7254daa-f9cb-4baf-b069-f457e8d532b3",
+      "name": "힐러2",
+      "reason": "TESTNAME(힐러2)",
+      "count": 1
+    },
+    {
+      "id": "1bdfbc7e-893c-4d34-a69d-6aceff913907",
+      "name": "obliv",
+      "reason": "TESTNAME(obliv)",
+      "count": 1
+    },
+    {
+      "id": "8a450bbf-fab5-4ea7-8c97-11eed5f7db14",
+      "name": "배정테스트",
+      "reason": "TESTNAME(배정테스트)",
+      "count": 1
+    },
+    {
+      "id": "91cf486e-7398-4e58-b4c6-3062d903e5c8",
+      "name": "가나다라",
+      "reason": "TESTNAME(가나다라)",
+      "count": 1
+    }
+  ],
+  "exclude": [
+    {
+      "id": "2be865ff-6a9d-4666-892c-1cfd2d971199",
+      "name": "김사비",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 3
+    },
+    {
+      "id": "dd064755-e146-4cbc-b57f-1a06f3df24bb",
+      "name": "이시형",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 3
+    },
+    {
+      "id": "null",
+      "name": "?",
+      "reason": "NO_CUSTOMER_ROW",
+      "emptyCount": 2
+    },
+    {
+      "id": "830a1a84-b47a-49b7-9426-054f97dc80f8",
+      "name": "류복화",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 2
+    },
+    {
+      "id": "de5436a5-40b0-4ef5-8f30-c3a677f33391",
+      "name": "김상곤",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 2
+    },
+    {
+      "id": "9f9aaa07-f9e2-466b-961f-db52cdde1588",
+      "name": "장윤정",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 2
+    },
+    {
+      "id": "f192f3c9-bf6d-4924-92f7-303dba406da7",
+      "name": "동영배",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 2
+    },
+    {
+      "id": "054948a2-fc42-483b-bc98-2ad1a5727395",
+      "name": "양종필",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "56fb0aaa-6443-46cc-8df3-cfa90770da1e",
+      "name": "김창재",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "39604bce-215a-4c10-9b88-91eba69127cc",
+      "name": "珏성우",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "be764bbd-a35c-4d99-8a24-a85628e63790",
+      "name": "허다교",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "f8d6b8d0-189f-4ca1-b7c7-16e68307ddbe",
+      "name": "신정훈",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "7ccf4e13-1d95-4225-b325-d98a0974e283",
+      "name": "김수진",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "26f8cd68-e0ec-43cf-b31b-977dbee52b21",
+      "name": "ABC",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "1c9aa30f-0843-4c28-bfe5-d1e610051a35",
+      "name": "왕지현",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "9580f713-fec1-4f3c-8082-fd0a6766b7ce",
+      "name": "이정연",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "fcdcd44f-51f0-4dd0-87f9-9e6b2fd90f5b",
+      "name": "김승현",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "40ae55e7-bea1-4f5a-81e7-c3504e15a66e",
+      "name": "테스트_패키지환불1",
+      "reason": "EXCLUDE_REALPATIENT_MEMO(\"환불테스트고객\")",
+      "emptyCount": 1
+    },
+    {
+      "id": "ad1b935f-9989-435d-89e7-66938b3fd348",
+      "name": "김나영",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "a1ea6800-0b4a-49fc-ab45-cf9c501b02b5",
+      "name": "이영현",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "539dae70-748a-40ce-a51a-cf174c94dc6d",
+      "name": "수달",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "00a3d5b3-87a5-41e2-8321-104ea6f573ad",
+      "name": "파랑이",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "54a68aad-8600-47d6-86a6-0fe163558f98",
+      "name": "desk-147858",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "791a0564-9a39-4cd5-a546-92bdb80a93e3",
+      "name": "미나",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "abe705a9-576a-4dd6-ad6b-7767fd566082",
+      "name": "desk-040063",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "a468621e-2a43-492a-91db-9ce9149dd2be",
+      "name": "와사비",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "005027c3-1032-4597-8801-76b57e39545d",
+      "name": "너구리",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "6e545f1e-24ac-4e25-b1d2-5251fcd7c6af",
+      "name": "desk-438595",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "6d64c2fa-7174-4d79-b539-61ecd11ab5cb",
+      "name": "노랑이",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "a1e47476-925c-4968-b7c8-7ad72f1f6176",
+      "name": "초록이",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "fc07a627-184b-4f03-a23c-258e5fac2ab6",
+      "name": "빨강",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "d6ac526e-1323-48ea-ab6b-27eb5821753e",
+      "name": "desk-979151",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "53661ce0-5d3a-4da6-8459-121c36860d45",
+      "name": "김승현",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "177712f6-4ed8-4d29-9729-1d29d03a5a30",
+      "name": "수지",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "e4e4dc7e-afe3-43b2-9654-4cbfa290746f",
+      "name": "손효욱",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "1c6191d7-9f38-4c1d-a0b1-758ede9eb137",
+      "name": "강대성",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "65351f78-ffee-4a4a-a25d-503c716b8b1e",
+      "name": "김수연",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "3e26eb58-a5b7-4665-ba15-3cdea1c37d16",
+      "name": "신동환",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "65773c17-8f1a-4bd3-8d51-5704cecede98",
+      "name": "권지용",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "d709fba7-4f73-46a7-94f9-3de5e0fba761",
+      "name": "인피니트",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "d7482fe2-2e96-4d6f-9951-06f4f4fe64d3",
+      "name": "안주연",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "2f6a1413-511f-433e-8241-19a06c40f80b",
+      "name": "블랙핑크",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "a9c61bb7-c380-4119-9fdb-0c6239a05ef3",
+      "name": "가나다",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "430d2c75-fa4a-4c56-a2eb-c6825d12a681",
+      "name": "권진희",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "299b6535-e1f1-420a-bbc2-8f552a4e7487",
+      "name": "정명희",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "8ef1f602-5c89-4c50-b616-6a10695647af",
+      "name": "서호영",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "74869c38-75a1-4a73-ae97-08e665c7df90",
+      "name": "대표원장님",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "0e27bce7-8311-4c80-9a26-edbba0b4d9e1",
+      "name": "윤민희",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "1523ba8c-e264-4708-bfe4-34bb361cbb1c",
+      "name": "김진화",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "3ef801ea-936a-43bd-b9ca-56a6ced6b98f",
+      "name": "설연우",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "39c8cc36-0f7a-40ca-b589-d047f6680cb9",
+      "name": "신경애",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "7b32659c-d376-4956-9b26-549bf4b80e93",
+      "name": "이하나",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "0e1772f6-c672-4757-ad96-d2f02d8e0be2",
+      "name": "minkyeong",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "f5226db3-7091-48d9-8ec7-bb5860977578",
+      "name": "서지민",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "05e38933-3c6c-4bdf-8f1e-ec67afa266da",
+      "name": "주혜선",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "362663c7-bb77-4e33-9f17-05b94b3fd866",
+      "name": "박세진",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "3a0f9f28-a2f7-412f-826f-6ecd6c30731e",
+      "name": "정용현",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "b61077b8-f65b-45b3-9b4d-456998fe94ec",
+      "name": "최병운",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "f18728ed-e315-40d9-a804-ff560f3249fb",
+      "name": "황고은",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "e03227c8-9964-4f97-8458-631250dca607",
+      "name": "김연희",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "5b8f0aca-2bb6-482e-ba56-379956578183",
+      "name": "유예슬",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    },
+    {
+      "id": "c27aea87-a80c-4f29-9977-7fa72f0103ef",
+      "name": "조순덕",
+      "reason": "EXCLUDE_UNTAGGED(실환자 배제불가)",
+      "emptyCount": 1
+    }
+  ],
+  "before_image": [
+    {
+      "check_in_id": "198dd309-624f-4d78-8f9f-71a798d11af8",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-05-20",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "f5977132-2549-4270-929e-5514363ebce7",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "47d9115a-1952-4ae7-af21-4c00372c2871",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-05-24",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "53e84d1e-b181-4dd1-8cb1-59622340adb5",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-05-29",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "85411c18-49cb-4b91-8a68-61aa5656d6ca",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "bc7555a1-ecd2-4bf0-89da-00a624e76e22",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-05-27",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "6425a5c8-8fb7-46d6-a762-93d9922eeb48",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-02",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "e11e1603-b8b6-4cab-973b-bbe270db8990",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-06",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "207bf234-8851-4a38-8c56-c0191bea96b8",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-02",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "c02951a6-ce34-4e63-af79-e8806e06b4ce",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-10",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "f828488a-4988-4e56-a74a-6d1c13aca78d",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-08",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "40daf35b-a0af-4e2a-8322-4f63862cd350",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-12",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "3dde508a-c59d-4627-8290-c14fef2b53a0",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-24",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "9822d128-236b-4e77-b969-abe18c3a9a93",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-16",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "5f787c0f-9059-44da-b1f9-c7486ebdb27e",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "name": "김민경",
+      "date": "2026-06-26",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "e7c59d3a-3fd7-4d7c-a4ec-3c0257d23854",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "3bc3df13-3187-4fe4-ae39-552c33aa6d2e",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-05-22",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "cf38c45a-2170-4c3a-b5f4-ed43b3daeade",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-05-29",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d5e6169e-3df7-4852-ba8d-7d54e7dba047",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-05-27",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a5b975b4-ed9e-46bd-bb51-5b9e602cde09",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-05-26",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "bd814f22-efbd-41f7-94f6-9657df0cd882",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-06-09",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2873d1c0-ff88-4e9f-b907-de025a0e0a74",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a588a038-74d0-4640-b1ab-a176b7d819b9",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-06-10",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "68c1c903-e4e6-40e1-96da-df0c69e8c7c5",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-06-12",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a44287d9-80c6-44c6-bfcd-fc8e7bdfc814",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-06-15",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": {},
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "314d7d22-6e34-4973-bab3-d32f6b5351be",
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "name": "박민석",
+      "date": "2026-06-26",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "292af0a9-d63e-4cf7-83fa-f6018ef31686",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-08",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a9073a71-01bd-4708-aa42-e714f8198a0a",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-05-29",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "b273baa7-b390-409f-812e-892358e0b0e6",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-08",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "49de00e2-eff2-4f25-ad02-93aee0d13125",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-08",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2d2cb2d5-90b0-4604-ade2-51829ea3ebd0",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-10",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "49c2b194-eeac-4d12-a838-024422b3b7f5",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-10",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "4a6766af-dbaa-4744-bea5-3459c475179d",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-16",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "b70c2ac9-ce18-4bf7-83c7-08a80d68756a",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-25",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2a3246bf-6937-459a-a615-63dd1d48981e",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-26",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "81323461-0f79-4297-aec9-055fd463d4f4",
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "name": "장예지",
+      "date": "2026-06-24",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "13cc1e11-8ac1-4ff7-8eb6-7e198f37649c",
+      "customer_id": "da93b952-d629-4fa7-bf8f-526fbbfe1c67",
+      "name": "김지혜",
+      "date": "2026-06-09",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d82693c0-e3ab-4d96-83b7-e549ac2ce1cb",
+      "customer_id": "da93b952-d629-4fa7-bf8f-526fbbfe1c67",
+      "name": "김지혜",
+      "date": "2026-06-03",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "17e8853e-1a17-4bf6-bc56-87d6c29e0570",
+      "customer_id": "da93b952-d629-4fa7-bf8f-526fbbfe1c67",
+      "name": "김지혜",
+      "date": "2026-06-02",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "cbdb1be5-b107-4fb2-8804-80cabbb26579",
+      "customer_id": "da93b952-d629-4fa7-bf8f-526fbbfe1c67",
+      "name": "김지혜",
+      "date": "2026-06-20",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d04b27b2-70fe-4a92-8013-5b359c549208",
+      "customer_id": "da93b952-d629-4fa7-bf8f-526fbbfe1c67",
+      "name": "김지혜",
+      "date": "2026-06-27",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "e052a361-85bf-484b-b968-9d9199a3f32f",
+      "customer_id": "ae5d8c16-84fd-4a35-a97a-c947727b9184",
+      "name": "테스트_김환자",
+      "date": "2026-05-14",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "da0631a8-bd73-4da4-ae22-5303fc83f448",
+      "customer_id": "ae5d8c16-84fd-4a35-a97a-c947727b9184",
+      "name": "테스트_김환자",
+      "date": "2026-05-15",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "customer_id": "ae5d8c16-84fd-4a35-a97a-c947727b9184",
+      "name": "테스트_김환자",
+      "date": "2026-05-16",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "e1ea330b-ed63-4316-b759-f86dceb903df",
+      "customer_id": "ae5d8c16-84fd-4a35-a97a-c947727b9184",
+      "name": "테스트_김환자",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a0a0426b-0337-4463-a6a5-73e9147177b0",
+      "customer_id": "d41e7a15-ec91-41f0-87fc-ad47eb30dfb9",
+      "name": "테스트_이환자",
+      "date": "2026-05-14",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "4bcb512e-2d67-400e-bae0-3a7c7bc4e084",
+      "customer_id": "d41e7a15-ec91-41f0-87fc-ad47eb30dfb9",
+      "name": "테스트_이환자",
+      "date": "2026-05-16",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "customer_id": "d41e7a15-ec91-41f0-87fc-ad47eb30dfb9",
+      "name": "테스트_이환자",
+      "date": "2026-05-16",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "be10afc0-e7f4-4182-8cd4-fc43c21175cf",
+      "customer_id": "d41e7a15-ec91-41f0-87fc-ad47eb30dfb9",
+      "name": "테스트_이환자",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "fd1d3731-ef10-49e0-a4e3-8f8ae69508fa",
+      "customer_id": "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
+      "name": "김규리",
+      "date": "2026-05-30",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "09e7df72-f051-4abb-903a-ac8992d0a537",
+      "customer_id": "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
+      "name": "김규리",
+      "date": "2026-06-03",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "29cd4ad6-eb01-4f0b-a1c4-96576419b820",
+      "customer_id": "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
+      "name": "김규리",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "062d44a6-f71e-44cf-b2fe-d35c4e8b98f5",
+      "customer_id": "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
+      "name": "김규리",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "ac564354-8b94-485f-a7cd-34baebe18dc3",
+      "customer_id": "bc2f5f76-02ab-47e0-a526-e35843bd1b79",
+      "name": "테스트_박환자",
+      "date": "2026-05-15",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "customer_id": "bc2f5f76-02ab-47e0-a526-e35843bd1b79",
+      "name": "테스트_박환자",
+      "date": "2026-05-16",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "a811cee6-faac-4dcc-ba16-bbeb81d1484b",
+      "customer_id": "bc2f5f76-02ab-47e0-a526-e35843bd1b79",
+      "name": "테스트_박환자",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "60d017d7-f81c-4331-a872-b49418f992e6",
+      "customer_id": "1e867904-8f08-4212-9b2d-bbe652f74374",
+      "name": "빈혜린(원내촬영)",
+      "date": "2026-05-20",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "5cbcf6a5-8ce5-4a95-a6ea-eb64155c0cbe",
+      "customer_id": "1e867904-8f08-4212-9b2d-bbe652f74374",
+      "name": "빈혜린(원내촬영)",
+      "date": "2026-06-06",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2fc1ab99-25c1-4ed0-81e0-acb269e9702f",
+      "customer_id": "1e867904-8f08-4212-9b2d-bbe652f74374",
+      "name": "빈혜린(원내촬영)",
+      "date": "2026-06-02",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "69ebab53-ff2b-49cc-ace6-8c4ea2283a32",
+      "customer_id": "8dc15419-5b44-4603-8589-513271fc5f8f",
+      "name": "김유리",
+      "date": "2026-06-06",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "fd65f2d0-e1b4-458d-9825-2cefb5abda90",
+      "customer_id": "8dc15419-5b44-4603-8589-513271fc5f8f",
+      "name": "김유리",
+      "date": "2026-06-06",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "1b6ba413-1ca3-444c-bd34-41703d8bf4b7",
+      "customer_id": "8dc15419-5b44-4603-8589-513271fc5f8f",
+      "name": "김유리",
+      "date": "2026-06-02",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "3b18b074-c6a5-425c-98e8-bc052753df65",
+      "customer_id": "124a2149-d723-4cdc-a3f3-6c7c2ce4044c",
+      "name": "테스트012",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "565c3995-57f8-46cc-9e64-5acb0d55b739",
+      "customer_id": "124a2149-d723-4cdc-a3f3-6c7c2ce4044c",
+      "name": "테스트012",
+      "date": "2026-05-20",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d5c1c78b-5801-4775-a693-92757a19d6cf",
+      "customer_id": "b0cb1738-ac4d-4bf5-8055-9a68a7d69d54",
+      "name": "테스트123",
+      "date": "2026-05-19",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "dbec91d6-6fd1-4057-986a-6a13cd32127f",
+      "customer_id": "b0cb1738-ac4d-4bf5-8055-9a68a7d69d54",
+      "name": "테스트123",
+      "date": "2026-05-19",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "156a1d5c-c837-4206-af4d-0b0915173a00",
+      "customer_id": "2e8b6192-1863-4fa2-855f-c3c840fee867",
+      "name": "김팔번",
+      "date": "2026-05-08",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "94bdc9d8-f4d9-43ce-b391-d886533405fd",
+      "customer_id": "2e8b6192-1863-4fa2-855f-c3c840fee867",
+      "name": "김팔번",
+      "date": "2026-06-03",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "86d02cdd-7f98-4769-90d2-1c17d507b77c",
+      "customer_id": "8b1342df-2a1e-4d87-9338-83c64a2dfeb8",
+      "name": "중간점검",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d52ebb18-6cce-4dd8-ae17-d99ce3c2c888",
+      "customer_id": "8b1342df-2a1e-4d87-9338-83c64a2dfeb8",
+      "name": "중간점검",
+      "date": "2026-05-20",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "74f3e087-a045-4d83-877e-fa84a21b0a9a",
+      "customer_id": "7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4",
+      "name": "최다혜",
+      "date": "2026-05-30",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "44d70ee9-9564-4ff1-b997-19daed37d2c7",
+      "customer_id": "7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4",
+      "name": "최다혜",
+      "date": "2026-06-02",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "84ef1f1f-23d4-44bf-a75c-8c40d918e187",
+      "customer_id": "13301614-662c-4b5d-8237-096001ffaf62",
+      "name": "서류확인",
+      "date": "2026-06-10",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "b340b878-2868-4598-ae9b-fc0031bb3c52",
+      "customer_id": "13301614-662c-4b5d-8237-096001ffaf62",
+      "name": "서류확인",
+      "date": "2026-06-09",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d1282db8-340b-469f-97b4-01c4cf0f9175",
+      "customer_id": "c532a323-2ad6-4bed-ac8c-600364b3a6f5",
+      "name": "윤시하-테스트",
+      "date": "2026-06-05",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "ef0f07c5-2b5b-4964-a119-038f8ba29e42",
+      "customer_id": "c532a323-2ad6-4bed-ac8c-600364b3a6f5",
+      "name": "윤시하-테스트",
+      "date": "2026-06-18",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "59032be1-1d97-49f5-90d5-821d0542e28e",
+      "customer_id": "cfe619d9-9405-4e74-8cfa-68687ac0f506",
+      "name": "설영우",
+      "date": "2026-06-09",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "9bb428ef-01b1-4a14-bf6f-7da06424d29e",
+      "customer_id": "cfe619d9-9405-4e74-8cfa-68687ac0f506",
+      "name": "설영우",
+      "date": "2026-06-19",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": {
+          "foot_sites": [
+            {
+              "toe": 1,
+              "side": "L"
+            }
+          ]
+        },
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "f1f3e6cb-5c33-41c1-9f3a-8288bb74ff5f",
+      "customer_id": "31a1abf9-8be9-46f4-a55c-deeb852847a9",
+      "name": "강서연",
+      "date": "2026-06-15",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": {},
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "32582ed0-f304-481e-b62d-b7ddc646cafe",
+      "customer_id": "31a1abf9-8be9-46f4-a55c-deeb852847a9",
+      "name": "강서연",
+      "date": "2026-06-16",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "9a0867ee-1679-4731-838f-cb8d10974de7",
+      "customer_id": "028073a8-e943-4f4d-86ec-320040187fbf",
+      "name": "김칠번",
+      "date": "2026-05-08",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "bd6852aa-fc17-421f-aeee-087c06811253",
+      "customer_id": "166e830a-9936-4d9e-925a-784f3fde13c3",
+      "name": "[TEST-D1] 테스트환자02",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "8be143cd-0058-433a-a49c-e1c61a92e175",
+      "customer_id": "69199539-9f9a-42dc-a87c-9fb27344fc91",
+      "name": "초진환자3",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "943f932f-7ab7-4664-92ab-e39b3848d7df",
+      "customer_id": "dfe317c6-ea54-4977-b1f6-9c239a09980c",
+      "name": "초진환자2",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "512734aa-cb1c-4528-b4a2-0cdba93618d6",
+      "customer_id": "ec8f3eda-b2c6-451b-b6ed-f0d8a7392406",
+      "name": "김육번",
+      "date": "2026-05-18",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "4005528a-4dba-4ecf-98b4-a20aebe733ef",
+      "customer_id": "e7fc304c-ccf0-423b-befd-f062e9d1fd03",
+      "name": "테스트환자21",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "6d49822a-c2ec-4b50-a591-89229c8072d5",
+      "customer_id": "17b4bd8e-63e0-487e-a318-caac67fc1e52",
+      "name": "김일번",
+      "date": "2026-05-19",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "f52dfa13-3c04-4ac3-819c-b8c0775a803e",
+      "customer_id": "f7174790-64fe-46de-a71d-d43ce0f367a4",
+      "name": "[TEST-D1] 테스트환자17",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "3b9e4c7c-eb83-4b84-9ebe-897da4d199c7",
+      "customer_id": "d1d9414d-a891-46f7-8621-0923fab29872",
+      "name": "초진환자1",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "feb796e5-bc36-4ac2-b09e-0957b7093e08",
+      "customer_id": "97439e28-d6c4-4f55-8890-cad25a506c41",
+      "name": "초진환자4",
+      "date": "2026-05-21",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "07489b9c-e6b4-4a56-b638-2be9b946261a",
+      "customer_id": "822111bc-2cd9-4b83-8bfb-6fa78c61bc7a",
+      "name": "신정훈(테스트)",
+      "date": "2026-05-22",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "e59a9376-b69b-4e83-9c97-f9f5ab22cf6c",
+      "customer_id": "282f43b7-3e8f-492b-8064-db0fe2fc1f2d",
+      "name": "김테스트",
+      "date": "2026-05-22",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "89e9a00c-c0bf-46c9-9d87-f64e3d317666",
+      "customer_id": "ddeebd0e-cab9-48e4-b2d9-687ac6418728",
+      "name": "조선미",
+      "date": "2026-05-22",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "b50fe5e5-b223-46db-91a0-34a6dec20a7d",
+      "customer_id": "e0bfbc0e-2532-4b8e-ac92-30608e2de6c5",
+      "name": "TESTER01",
+      "date": "2026-06-29",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "da36cc8f-45c0-4ece-a382-096bb5ea77d2",
+      "customer_id": "747286b0-045d-472d-ad87-3d49c42c40b5",
+      "name": "김이번",
+      "date": "2026-05-22",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "0e95fb92-d53e-4f82-bfcd-c41f03df3b0d",
+      "customer_id": "8309856e-e3ab-47cc-8275-300e77e5709d",
+      "name": "강예린",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "974237a2-adb4-4d5b-adb9-21292e9f6a9b",
+      "customer_id": "467b62b9-954a-401f-b350-07f3f39ac3e8",
+      "name": "박소예-테스트",
+      "date": "2026-06-05",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "22f47363-708f-48f3-9396-1fb2c196bdbb",
+      "customer_id": "93cc028d-9168-4d1f-a619-888c922508f9",
+      "name": "셀프접수테스트(워크인)",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "f9d7b0ad-e4ad-4274-8bc3-3f13d2463281",
+      "customer_id": "6a66329c-a212-4a1b-b2ba-cd32e786698b",
+      "name": "이서연",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "29d4692c-880a-4f6e-b76e-f4112872121b",
+      "customer_id": "8ba2bbef-018e-4207-b2ab-196e18322437",
+      "name": "문자테스트",
+      "date": "2026-06-08",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "f36580c5-a295-414a-b9a3-5fb24621d4a0",
+      "customer_id": "c8b80c7d-8921-448e-a01e-dbe60dd02acd",
+      "name": "손가인",
+      "date": "2026-06-10",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "6af1089f-415e-4c48-8b43-b03813bc7985",
+      "customer_id": "aa99bdcf-5fa6-4786-ab18-5b18efc872a7",
+      "name": "서은정",
+      "date": "2026-06-03",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2ba8a190-ccaa-42f1-ba74-ae23b20c02ad",
+      "customer_id": "1d9ac1e5-c3a8-407d-9519-5532b6e6efd1",
+      "name": "김태윤",
+      "date": "2026-06-10",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "4b5fda2a-7dc6-40f5-8258-537588394b71",
+      "customer_id": "c99563bc-6840-431d-9ca4-032b15d31b90",
+      "name": "임별",
+      "date": "2026-06-02",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "22cba382-c42c-4e93-a0e5-64dce5506f3b",
+      "customer_id": "79459890-e25a-4e45-aa2a-c8dd63edbcad",
+      "name": "이하린",
+      "date": "2026-06-10",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "5504e999-01d4-43ce-9ac6-16eb792237f2",
+      "customer_id": "83dfc352-ae4d-43a6-9240-258a8845040a",
+      "name": "테스트0602",
+      "date": "2026-06-02",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "19a70dbc-510f-45d4-8dd3-a5e0d7cc7c69",
+      "customer_id": "9f15e6f6-3241-4787-b44b-d6e5faea2f04",
+      "name": "박준호",
+      "date": "2026-06-10",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "7fa62082-db22-497b-85b3-587d5f2521a5",
+      "customer_id": "779e505d-6767-4752-8074-7330fcb9037f",
+      "name": "이나라",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "ccf6da82-ca49-4773-b570-eb7775f8ba87",
+      "customer_id": "18b7f730-d358-4ce7-be2e-0460536c59ac",
+      "name": "정다은",
+      "date": "2026-06-11",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2a2e6de1-4e7c-4056-96a5-a2276fce352b",
+      "customer_id": "0220e04f-3804-4e44-8fc4-683df578b7d3",
+      "name": "권준서",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "259831e3-92dc-44a9-876b-50c02e5414d6",
+      "customer_id": "2da07b89-7a3f-451b-9553-b9ce66eebae6",
+      "name": "백성민",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "c6fbec6c-b47b-4fa7-9508-5ad8ff2900e7",
+      "customer_id": "c5bf9438-4e18-440b-915f-50c3553ef68b",
+      "name": "박지우",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "798e1c23-1b11-4b58-b4b6-f67b8e2a5525",
+      "customer_id": "4791f9bb-de1a-476a-b779-e17cdb4302bf",
+      "name": "최서진",
+      "date": "2026-06-10",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "2264c85f-0540-4329-86a6-33ae952ca781",
+      "customer_id": "d1d2c294-f9ad-4f5c-9be9-2543c00e314e",
+      "name": "서지후",
+      "date": "2026-06-10",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "8f0e48cf-0fb3-4e23-bdf0-8b4175c438fa",
+      "customer_id": "90aeb8b7-dce1-48d2-87b1-ed75b0cdc025",
+      "name": "윤도현",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "ef4469ab-48fa-4fb3-a8e6-fb4e8214e5a5",
+      "customer_id": "64f869c5-39af-4392-ac45-2d2833117707",
+      "name": "노아름",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "63dd9d5d-518a-4fa8-bae4-37ae4eef75df",
+      "customer_id": "87a37ff2-8c4f-479d-8af5-a9603632bbf4",
+      "name": "최수호",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "d40140e1-b394-4346-a2c4-5e97a842dcd2",
+      "customer_id": "a97f7209-3cac-44a6-b5b8-d107757896b2",
+      "name": "장하람",
+      "date": "2026-06-15",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "ef569a4a-5001-48c4-b3a3-fea1d41333bf",
+      "customer_id": "e4aef5c4-5215-4f4b-8ed4-0bb831db7c54",
+      "name": "명지원",
+      "date": "2026-06-12",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프리컨디셔닝",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프리컨디셔닝 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프리컨디셔닝 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "8fee9b60-5dad-4d40-97e7-0b2ad91d0c2b",
+      "customer_id": "b38f7fb3-89a1-4509-b4e9-ea63fa732146",
+      "name": "김지훈",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "6fc6c16d-8b6f-4122-94fb-676df6b83c2b",
+      "customer_id": "e902fd6d-d153-426f-a22f-c1a0de6ce3fd",
+      "name": "유채원",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "ec5ff4a1-2fa9-4a1f-b45b-fe4098bf66b0",
+      "customer_id": "dba2a5c1-351d-4b68-87ee-8599a3a3d678",
+      "name": "김지윤",
+      "date": "2026-06-12",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "cabb905a-6314-4c25-9cdf-fdaca9b4aaab",
+      "customer_id": "a9bebe1a-a6b1-40b0-a9ce-088bc1cf4165",
+      "name": "국태리",
+      "date": "2026-06-12",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "bc07b8e8-c445-4f7b-85e6-ab27d82d3296",
+      "customer_id": "8c0c157c-5def-4662-aa58-5e06b6f4c68a",
+      "name": "김민준",
+      "date": "2026-06-11",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "9a3c03f4-2668-4970-8e95-ae2768bf6a51",
+      "customer_id": "d91c163c-7d47-409f-aac3-8132c47838b1",
+      "name": "힐러4",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "df568f7c-9465-4860-b6e4-4db764009c61",
+      "customer_id": "defc4799-d550-4536-a930-256570824a0f",
+      "name": "배수빈",
+      "date": "2026-06-15",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "74d16491-dd9a-41d4-a696-6e05bac400c9",
+      "customer_id": "242ca3b6-4cbc-4b2a-95d6-b01a75532778",
+      "name": "힐러5",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "8776f6fe-15f4-40e6-92f7-108e8b336a0e",
+      "customer_id": "6b4aefd6-b1b3-469e-8d80-ed6e7fffe6e0",
+      "name": "고나윤",
+      "date": "2026-06-15",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "프컨+레이저",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 프컨+레이저 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 프컨+레이저 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "7c1b784e-3343-4464-9a90-73238602d7ab",
+      "customer_id": "d1064e55-41c9-4b24-b137-6f6ef3db5c5a",
+      "name": "윤도현",
+      "date": "2026-06-15",
+      "status": "cancelled",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": {
+          "foot_sites": [
+            {
+              "toe": 1,
+              "side": "L"
+            },
+            {
+              "toe": 1,
+              "side": "R"
+            }
+          ]
+        },
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "5df8a696-2c27-479c-b765-d4d9869d2bf5",
+      "customer_id": "462013c0-ba15-4678-8ba1-601ff06162a1",
+      "name": "힐러3",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "8721d61f-d2bc-435a-9e1a-9b1f2747981d",
+      "customer_id": "f3477dde-d348-4537-b1e2-10fc0b253d75",
+      "name": "배정테스트2",
+      "date": "2026-06-24",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "6b839084-a2fb-4cf5-874e-80d09450314d",
+      "customer_id": "712e4fa3-5dec-429d-be9d-100c0e0b486e",
+      "name": "힐러1",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": {},
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "4cd4667a-393c-48ab-a690-a19a66e8ec14",
+      "customer_id": "d7254daa-f9cb-4baf-b069-f457e8d532b3",
+      "name": "힐러2",
+      "date": "2026-06-17",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "823b7b02-b719-463b-a9ee-75b5ddecd071",
+      "customer_id": "1bdfbc7e-893c-4d34-a69d-6aceff913907",
+      "name": "obliv",
+      "date": "2026-06-25",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "02e9d698-5a44-4250-82ed-02d03d0c51ad",
+      "customer_id": "8a450bbf-fab5-4ea7-8c97-11eed5f7db14",
+      "name": "배정테스트",
+      "date": "2026-06-24",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    },
+    {
+      "check_in_id": "5d246acd-c0e0-4c23-8b86-166f6b2825fa",
+      "customer_id": "91cf486e-7398-4e58-b4c6-3062d903e5c8",
+      "name": "가나다라",
+      "date": "2026-06-26",
+      "status": "done",
+      "before": {
+        "treatment_kind": null,
+        "treatment_memo": null,
+        "doctor_note": null
+      },
+      "after": {
+        "treatment_kind": "상담",
+        "treatment_memo": {
+          "details": "테스트 데이터 — 상담 진행 기록(데모용)."
+        },
+        "doctor_note": "테스트 데이터 — 상담 경과(데모용)."
+      }
+    }
+  ]
+}
