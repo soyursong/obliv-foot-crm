@@ -148,7 +148,11 @@ test.describe('T-20260630-foot-TM-EDIT-CANCEL · TM 예약 수정/취소 ingest'
     expect(native?.status).toBe('confirmed');   // 타 source 행 절대 불변
   });
 
-  test('S4 (a①) active 재푸시 = mutable(time·memo) idempotent UPDATE, 단일행 유지', async () => {
+  test('S4 (a①) active 재푸시 = mutable(time) idempotent UPDATE, 단일행 유지', async () => {
+    // ★ 2026-07-01 갱신(T-20260630-FOOTRESV-MEMO-PUSH-DROP / DA SoT 재타겟):
+    //   reservations.memo 매핑 폐기(timeline-only). 예약메모 멱등/보존 검증은
+    //   reservation_memo_history 기준 → T-20260630-foot-FOOTRESV-MEMO-PUSH-DROP.spec.ts 로 이전.
+    //   본 S4 는 time·단일행 mutable UPDATE 만 검증(reservations.memo 단언 제거).
     const skip = await migrationReady();
     test.skip(!!skip, skip ?? '');
     const sb = admin();
@@ -159,7 +163,7 @@ test.describe('T-20260630-foot-TM-EDIT-CANCEL · TM 예약 수정/취소 ingest'
       p_reservation_date: '2099-04-01', p_reservation_time: '09:00', p_memo: '초기메모',
     });
     const first = await rowByKey(sb, SRC, ext);
-    // 시간/메모 변경 재푸시
+    // 시간 변경 재푸시
     await callUpsert(sb, {
       p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
       p_customer_phone: '01012340002', p_customer_name: '수정고객',
@@ -168,15 +172,6 @@ test.describe('T-20260630-foot-TM-EDIT-CANCEL · TM 예약 수정/취소 ingest'
     const second = await rowByKey(sb, SRC, ext);
     expect(second?.id).toBe(first?.id);                 // 단일행 유지(중복 생성 아님)
     expect(second?.reservation_time).toMatch(/^16:30/); // mutable 갱신
-    expect(second?.memo).toBe('시간변경됨');
-    // (b) preserve-on-NULL: memo 미동봉 재푸시 → 기존 보존
-    await callUpsert(sb, {
-      p_source_system: SRC, p_external_id: ext, p_clinic_slug: CLINIC_SLUG,
-      p_customer_phone: '01012340002', p_customer_name: '수정고객',
-      p_reservation_date: '2099-04-01', p_reservation_time: '16:30',
-    });
-    const third = await rowByKey(sb, SRC, ext);
-    expect(third?.memo).toBe('시간변경됨');             // NULL push 가 기존 메모 덮지 않음
     await sb.from('reservations').delete().eq('source_system', SRC).eq('external_id', ext);
   });
 
