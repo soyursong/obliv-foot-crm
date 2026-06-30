@@ -16,7 +16,10 @@
 -- ★clinic 격리 유지: clinic_id = current_user_clinic_id() (cross-clinic write 차단 — 기존 패턴 동일).
 -- ★scope: daily_room_status 는 당일 방 on/off 운영상태(비-PHI·비-금전). 신규 비즈로직/PHI 노출 0 → 대표게이트 면제(autonomy §3.1).
 --
--- 게이트: data-architect CONSULT GO + supervisor DDL-diff 통과 후에만 .DA_CONSULT_HOLD 접미사 제거 → apply.
+-- ✅ data-architect CONSULT GO 수신 (MSG-20260630-212502-c6av, 2026-06-30): ADDITIVE 1정책, write-RLS.
+--    근거 4점(role enum 정합 / ADDITIVE·lock-out 0 / 비-PHI·비-금전 / clinic 격리) + 선례 daily_closings 1:1 동형.
+--    GO 조건 A(USING≡WITH CHECK 술어 동일)·B(rls_guard 기존 2정책 잔존 단언)·C(헬퍼 재사용, 신규정의 0) 모두 충족.
+--    → .DA_CONSULT_HOLD 접미사 제거 (apply 게이트는 supervisor DDL-diff GO 후 dev-foot 직접 apply, FE 旣패리티).
 -- rollback: 20260630200000_..._rls_additive.rollback.sql
 
 BEGIN;
