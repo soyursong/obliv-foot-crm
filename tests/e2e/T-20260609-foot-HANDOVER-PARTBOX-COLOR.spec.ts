@@ -37,7 +37,11 @@ test.describe('T-20260609-foot-HANDOVER-PARTBOX-COLOR 파트 박스 색 적용',
   });
 
   // ── S1. 파트 박스에 파트 색 렌더 ───────────────────────────────────────────
-  test('S1 치료사 인수인계 박스에 teal 톤(bg-teal-50/border-teal-200) 적용', async ({ page }) => {
+  // ⚠ SUPERSEDED by T-20260630-foot-HANDOVER-BOX-COMPACT-MONO (동일 reporter 자기-override).
+  //   박스 배경 파트색(bg-teal-50 등)을 전 파트 동일 모노톤(bg-slate-50)으로 회귀시켰으므로
+  //   본 S1(파트색 박스 단언)은 더 이상 유효하지 않음 → skip. 모노톤 검증은 신규 spec 가
+  //   책임지고, 배지 색 무회귀는 본 spec S2 가 계속 보증한다.
+  test.skip('S1 치료사 인수인계 박스에 teal 톤(bg-teal-50/border-teal-200) 적용 [SUPERSEDED→MONO]', async ({ page }) => {
     await gotoHandover(page);
 
     // 오늘 날짜 셀 선택

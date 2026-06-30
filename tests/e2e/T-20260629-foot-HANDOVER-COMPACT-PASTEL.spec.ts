@@ -68,19 +68,24 @@ test.describe('T-20260629-foot-HANDOVER-COMPACT-PASTEL 컴팩트+파스텔', () 
   });
 
   // ── AC3. 인수인계 카드 높이 축소 ─────────────────────────────────────────
-  test('AC3 인수인계 카드 컴팩트 — space-y-1.5 p-2.5 (p-3 제거)', () => {
+  // ⚠ T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 가 한 단계 더 컴팩트화
+  //   (p-2.5→p-2, space-y-1.5→space-y-1, list space-y-1.5→space-y-1)하며 본 AC3 기대치 갱신.
+  //   "p-3/space-y-2 같은 큰 토큰 제거 + 더 작은 컴팩트 토큰" 의도는 그대로 보증.
+  test('AC3 인수인계 카드 컴팩트 — space-y-1 p-2 (p-3/p-2.5 제거)', () => {
     // handover-card 컨테이너 className 추출
     const m = HANDOVER_SRC.match(
-      /data-testid="handover-card"[\s\S]{0,200}?className=\{`([^`]+)`\}/,
+      /data-testid="handover-card"[\s\S]{0,300}?className=\{`([^`]+)`\}/,
     );
     expect(m, 'handover-card className 절을 찾을 수 없음').not.toBeNull();
     const cls = m![1];
-    expect(cls, '카드 패딩 축소 p-2.5').toContain('p-2.5');
+    expect(cls, '카드 패딩 축소 p-2').toMatch(/\bp-2\b/);
     expect(cls, '큰 패딩 p-3 제거').not.toMatch(/\bp-3\b/);
-    expect(cls, '카드 내부 간격 축소 space-y-1.5').toContain('space-y-1.5');
+    expect(cls, '직전 패딩 p-2.5 제거(추가 축소)').not.toMatch(/\bp-2\.5\b/);
+    expect(cls, '카드 내부 간격 축소 space-y-1').toMatch(/\bspace-y-1\b/);
     expect(cls, '큰 간격 space-y-2 제거').not.toMatch(/\bspace-y-2\b/);
-    // 리스트 컨테이너 간격도 축소
-    expect(HANDOVER_SRC).toMatch(/className="space-y-1\.5" data-testid="handover-list"/);
+    expect(cls, '직전 간격 space-y-1.5 제거(추가 축소)').not.toMatch(/\bspace-y-1\.5\b/);
+    // 리스트 컨테이너 간격도 축소(space-y-1)
+    expect(HANDOVER_SRC).toMatch(/className="space-y-1" data-testid="handover-list"/);
   });
 
   // ── AC4. 회귀가드 — 작성/삭제/수정 보존 ──────────────────────────────────
