@@ -105,6 +105,8 @@ import {
   fillBillItemCopayment,
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
+// T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
+import { DocFormSettingsDialog } from '@/components/DocFormSettingsDialog';
 
 // ─── 타입 ───
 
@@ -1586,6 +1588,10 @@ function IssueDialog({
     memo: '',
   });
   const [previewOpen, setPreviewOpen] = useState(false);
+  // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 오픈 상태 + 편집 3종(용도/발행일/비고) 오버라이드.
+  //   editOverrides 는 allValues 최종단에 병합 → 출력 바인딩 최우선 적용(기존 출력 플로우 무파괴, AC5).
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editOverrides, setEditOverrides] = useState<Record<string, string>>({});
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
   // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 다중 의사 선택
@@ -2040,8 +2046,14 @@ function IssueDialog({
       base.visit_no = checkIn.id.slice(0, 8) ?? '';
     }
 
+    // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.
+    //   빈 키는 덮지 않음(미편집 필드 무파괴) — 사용자가 명시 편집한 값만 출력 바인딩에 반영(AC3/AC5).
+    for (const [k, v] of Object.entries(editOverrides)) {
+      if (v != null && v !== '') base[k] = v;
+    }
+
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -2723,6 +2735,15 @@ function IssueDialog({
               <Printer className="h-3.5 w-3.5" />
               {!billingReady ? '불러오는 중…' : saving ? '발행 중…' : '인쇄'}
             </Button>
+            {/* T-20260629-foot-DOCPRINT-EDIT-BTN: [출력=인쇄] 옆 [수정] — 공통 설정/편집 팝업 진입(§2#4). */}
+            <Button
+              variant="outline"
+              className="gap-1"
+              onClick={() => setSettingsOpen(true)}
+              data-testid="docprint-edit-btn"
+            >
+              <Pencil className="h-3.5 w-3.5" /> 수정
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2732,6 +2753,30 @@ function IssueDialog({
         fieldValues={allValues}
         open={previewOpen}
         onOpenChange={setPreviewOpen}
+      />
+
+      {/* T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 설정/편집 팝업 (DOCFORM §2#4 canonical 공통 컴포넌트 재사용) */}
+      <DocFormSettingsDialog
+        template={template}
+        checkIn={checkIn}
+        staffId={staffId}
+        baseFieldData={allValues}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialValues={{
+          purpose: allValues.purpose ?? '',
+          issue_date: allValues.issue_date ?? '',
+          remarks: allValues.remarks ?? allValues.remark ?? '',
+        }}
+        onApplied={(edited) =>
+          setEditOverrides((prev) => ({
+            ...prev,
+            purpose: edited.purpose,
+            issue_date: edited.issue_date,
+            remarks: edited.remarks,
+            remark: edited.remarks, // {{remark}}(단수) 양식 동시 반영
+          }))
+        }
       />
     </>
   );
