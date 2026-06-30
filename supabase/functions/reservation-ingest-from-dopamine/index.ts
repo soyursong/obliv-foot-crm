@@ -327,6 +327,10 @@ Deno.serve(async (req) => {
 
     const rsvPayload: Record<string, unknown> = {
       customer_id:      customerId,
+      // T-20260630-foot-INGEST-CUSTNAME-NULL-FIX: 예약관리 목록 '이름없음' 수정.
+      //   reservations.customer_name denormalize 누락 → 목록 표시 NULL이었음.
+      //   비-도파민 예약은 이미 채워지는 旣존 컬럼 — 동일 denormalize 패턴 정합.
+      customer_name:    name,
       clinic_id:        clinicId,                          // DB 조회 결과 직접 할당 (조건부 아님)
       source_system:    sourceSystem ?? 'dopamine',
       created_via:      createdVia,                        // 생성경로 (enum v1.1 정합)
