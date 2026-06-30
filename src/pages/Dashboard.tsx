@@ -983,6 +983,13 @@ function DroppableColumn({
 // T-20260508-foot-DASH-SLOT-REMOVE: ReservationCard 삭제
 // (new_queue / returning_queue 칸반 열 제거로 더 이상 사용되지 않음)
 
+// T-20260630-foot-DASH-COUNTBOX-SIZE-MATCH-ROOMCARD: 우측 치료실 룸카드(C1~C10 = RoomSlot)의
+//   박스 크기·라벨 폰트를 SSOT 토큰으로 추출. 상단 카운트박스(전체/신규/재진)가 이 토큰을 그대로
+//   재사용해 룸카드와 동일 사이즈를 보장한다(하드코딩 중복 금지, AC-1/AC-3). 룸카드 자체 레이아웃
+//   불변(AC-4) — RoomSlot 도 동일 상수를 참조하므로 한 곳을 바꾸면 양쪽이 함께 움직인다.
+const ROOM_CARD_BOX_CLASS = 'rounded-lg border bg-white/60 p-1.5 min-h-[70px]'; // 룸카드 박스 크기 SSOT
+const ROOM_CARD_LABEL_FONT_CLASS = 'text-xs font-semibold'; // 룸카드 라벨(C1~C10) 폰트 SSOT
+
 function RoomSlot({
   roomName,
   roomType,
@@ -1040,7 +1047,8 @@ function RoomSlot({
       data-inactive={isInactive ? 'true' : undefined}
       data-my-room={isMyRoom ? 'true' : undefined}
       className={cn(
-        'rounded-lg border bg-white/60 p-1.5 min-h-[70px] transition-colors relative',
+        // T-20260630-foot-DASH-COUNTBOX-SIZE-MATCH-ROOMCARD: 박스 크기 SSOT 토큰 사용(룸카드 레이아웃 불변).
+        ROOM_CARD_BOX_CLASS, 'transition-colors relative',
         isInactive && 'opacity-50 bg-gray-100/60 border-dashed border-gray-300',
         !isInactive && isOver && !isFull && 'border-teal-400 bg-teal-50/50',
         !isInactive && isOver && isFull && 'border-red-400 bg-red-50/30 opacity-60',
@@ -1054,7 +1062,7 @@ function RoomSlot({
       )}
     >
       <div className="flex items-center justify-between px-1 mb-1 gap-1">
-        <span className={cn('text-xs font-semibold shrink-0', isInactive ? 'text-gray-400' : 'text-gray-600')}>
+        <span className={cn(ROOM_CARD_LABEL_FONT_CLASS, 'shrink-0', isInactive ? 'text-gray-400' : 'text-gray-600')}>
           {roomName}
           {/* T-20260520-foot-LASER-C5-COLOR: C5 원장실 라벨 — Staff.tsx와 동일 (AC-1) */}
           {isC5 && !isInactive && <span className="ml-1 text-[10px] text-purple-600 font-normal">원장실</span>}
@@ -6951,15 +6959,18 @@ export default function Dashboard() {
           {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-2: 탭 라벨에 'N건' 표기.
               기존 화면 보유 카운트(statusNewCount/statusReturningCount) 재사용 — 신규 fetch·집계 없음.
               전체 = 신규 + 재진(activeNonTerminal 합). 0건도 '0건'으로 정상 표기(NaN 방지). */}
-          {/* T-20260630-foot-DASH-STATBAR-SIZE-MATCH-BTN: 통계바(전체/신규/재진) 높이·폰트를 같은 행 '슬롯편집'/'배치 편집'
-              버튼(px-2 py-1 text-xs font-medium border ≈ 26px)에 맞춰 통일. 순수 presentation — 카운트 값·쿼리·로직 미접촉.
-              TabsList h-11(44px)→h-[26px]+p-0.5, TabsTrigger min-h-[44px]→h-full min-h-0(컨테이너 높이로 fill, py-0 px-2=버튼 동일).
-              font-medium은 버튼과 동일(기존 trigger 기본값 유지·명시). flex items-center 행이라 세로중앙 정렬은 자동. */}
+          {/* T-20260630-foot-DASH-COUNTBOX-SIZE-MATCH-BTN→ROOMCARD: 카운트박스(전체/신규/재진) 박스 크기·폰트를
+              우측 치료실 룸카드(C1~C10 = RoomSlot)와 동일 사이즈로 정렬(현장 김주연 총괄). 룸카드 SSOT 토큰
+              (ROOM_CARD_BOX_CLASS / ROOM_CARD_LABEL_FONT_CLASS)을 재사용 — 하드코딩 중복 금지(AC-1).
+              · TabsList: 트레이 시각 제거(bg-transparent p-0) + items-stretch gap-1.5 로 3박스 균등 높이, 룸카드 grid 갭(gap-1.5)과 동일.
+              · TabsTrigger ×3(AC-3 동일 적용): ROOM_CARD_BOX_CLASS(min-h-[70px] p-1.5 rounded-lg border bg-white/60)
+                + ROOM_CARD_LABEL_FONT_CLASS(text-xs font-semibold). twMerge로 trigger 기본값(px-3 py-1.5 text-sm font-medium rounded-md) 덮어씀.
+                선택 하이라이트(data-[selected])는 기존 trigger 기본값 유지. 카운트 값·쿼리·집계 미접촉(AC-4), DB 무변경. */}
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-            <TabsList className="h-[26px] p-0.5">
-              <TabsTrigger value="all" className="text-xs font-medium px-2 py-0 h-full min-h-0 whitespace-nowrap">전체 {statusNewCount + statusReturningCount}건</TabsTrigger>
-              <TabsTrigger value="new" className="text-xs font-medium px-2 py-0 h-full min-h-0 whitespace-nowrap">신규 {statusNewCount}건</TabsTrigger>
-              <TabsTrigger value="returning" className="text-xs font-medium px-2 py-0 h-full min-h-0 whitespace-nowrap">재진 {statusReturningCount}건</TabsTrigger>
+            <TabsList className="h-auto items-stretch gap-1.5 bg-transparent p-0">
+              <TabsTrigger value="all" className={cn(ROOM_CARD_BOX_CLASS, ROOM_CARD_LABEL_FONT_CLASS, 'whitespace-nowrap')}>전체 {statusNewCount + statusReturningCount}건</TabsTrigger>
+              <TabsTrigger value="new" className={cn(ROOM_CARD_BOX_CLASS, ROOM_CARD_LABEL_FONT_CLASS, 'whitespace-nowrap')}>신규 {statusNewCount}건</TabsTrigger>
+              <TabsTrigger value="returning" className={cn(ROOM_CARD_BOX_CLASS, ROOM_CARD_LABEL_FONT_CLASS, 'whitespace-nowrap')}>재진 {statusReturningCount}건</TabsTrigger>
             </TabsList>
           </Tabs>
 
