@@ -11,16 +11,27 @@
  *
  * DB 0 · 신규 외부 의존 0. dashboardRefreshBus 싱글톤 pub/sub만 사용.
  * 일시정지 vs 스킵: 권장(일시정지) 채택. 총괄 코멘트로 확정 시 즉시 정정 가능(주석 유지).
+ *
+ * T-20260630-foot-DASHTIMER-DEPLOYNOTIF-MERGE-SEARCHWIDTH (AC1 — 합체):
+ *  - 같은 슬롯에 '배포 알림(B)'을 단일 UI로 통합. 평소=⟳ 카운트다운 / 새 버전 감지 시=같은 자리가
+ *    '새로고침 안내'로 자동 전환되고 클릭 시 페이지 리로드.
+ *  - 배포 감지는 旣존 빌드버전 체크(useVersionCheck) 재사용 — 신규 감지 로직/폴링/API 추가 0.
+ *    UpdateBanner(하단 배너)의 강제/enforce 동작(DEPLOY-NOTIF-ENFORCE 소관)은 일절 미변경.
+ *  - 리로드 직전 미저장 입력(blocking)이 있으면 旣존 dirty-guard로 보류(무손실).
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { RefreshCw, PauseCircle } from 'lucide-react';
+import { RefreshCw, PauseCircle, ArrowUpCircle } from 'lucide-react';
 import { requestRefresh, anyDirty, subscribeDirty } from '@/lib/dashboardRefreshBus';
+import { useVersionCheck } from '@/hooks/useVersionCheck';
+import { collectDirty } from '@/lib/unsavedGuard';
 
 const REFRESH_PERIOD_SEC = 60;
 
 export default function DashboardRefreshCountdown() {
   const [secondsLeft, setSecondsLeft] = useState(REFRESH_PERIOD_SEC);
   const [paused, setPaused] = useState<boolean>(() => anyDirty());
+  // AC1: 旣존 빌드버전 체크 재사용 — 새 버전 감지 플래그만 소비(감지 로직 무변경)
+  const { updateAvailable } = useVersionCheck();
   // 1초 틱 인터벌이 최신 paused 값을 읽도록 ref 동기화(재구독 없이)
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
@@ -52,8 +63,35 @@ export default function DashboardRefreshCountdown() {
     setSecondsLeft(REFRESH_PERIOD_SEC);
   }, []);
 
+  // AC1 배포 감지 상태 클릭 = 페이지 리로드(새 번들 적용).
+  //  - 旣존 dirty-guard 재사용: 미저장 입력(blocking)이 있으면 보류(무손실). UpdateBanner의
+  //    강제/flush 로직(DEPLOY-NOTIF-ENFORCE 소관)은 건드리지 않고, 여기선 사용자 명시 클릭만 처리.
+  const handleDeployReload = useCallback(() => {
+    const { blocking } = collectDirty();
+    if (blocking.length > 0) return; // 작성 중 — reload 보류(title로 안내)
+    window.location.reload();
+  }, []);
+
   const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
   const ss = String(secondsLeft % 60).padStart(2, '0');
+
+  // ── AC1: 새 버전 감지 시 같은 슬롯이 '새로고침 안내'로 자동 전환(클릭=리로드) ──
+  if (updateAvailable) {
+    return (
+      <button
+        type="button"
+        onClick={handleDeployReload}
+        data-testid="dashboard-deploy-refresh"
+        aria-label="새 버전이 있습니다. 눌러서 새로고침하세요."
+        title="새 버전이 있어요 — 눌러서 새로고침 (작성 중인 내용이 있으면 저장 후)"
+        className="flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition min-h-[36px]"
+      >
+        <ArrowUpCircle className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">새 버전 · 새로고침</span>
+        <RefreshCw className="h-3.5 w-3.5 sm:hidden" aria-hidden="true" />
+      </button>
+    );
+  }
 
   return (
     <button
