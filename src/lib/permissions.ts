@@ -69,7 +69,16 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   closing:      [...ALL_STAFF_ROLES],
   stats:        ['admin', 'manager', 'director', 'part_lead', 'tm'],
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 접수/등록 운영 parity). admin 비제거(ADDITIVE).
-  register:     ['admin', 'manager', 'director'],
+  // T-20260630-foot-REGISTER-MENU-CODY-UNLOCK (COORD-PERM-UNLOCK ⑤): 접수/신규등록 동선 권한 3역할 ADDITIVE 확대.
+  //   role_scope EXPANDED→CONFIRMED(2026-06-30 김주연 총괄 ts:1782820093): coordinator 단독 → +consultant +therapist.
+  //   ★lock-out-safe: admin/manager/director 무회귀(확대만). ADDITIVE.
+  //   ⚠️ RC(dev-foot 2026-06-30): 이 PermKey 는 현재 UI 미소비(canAccess('register') 호출부 0). /register 라우트는
+  //     pre-login 셀프 회원가입(Login → /register)이라 in-app 사이드바 메뉴 아님. 실 신규등록 surface(Customers
+  //     '신규 고객' 버튼·Reservations new-mode)는 이미 3역할 노출(PERM_MATRIX.customers/reservations 포함). SSOT 정합·future-proof 목적.
+  //   ★FE union = RLS union 의무(NOTIF-TMPL drift 차단): customers/reservations/check_ins INSERT write-RLS 가
+  //     therapist(전부)·consultant(reservations INSERT) 미포함 → 동반 RLS ADDITIVE 마이그(20260630210000_..., DA CONSULT-HOLD)
+  //     로 effective write-set 정합 필요. da_gate=pending(DA GO + supervisor DDL-diff 후 dev-foot 직접 실행).
+  register:     ['admin', 'manager', 'director', 'coordinator', 'consultant', 'therapist'],
   // T-20260525-foot-MESSAGING-V1 + ROLE-PERM-CUSTOM 3차(coordinator/therapist) → T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할).
   //   ★tm 제외★: 박민지 팀장 C안(AC6, STAFF-ROLE-TM-ADD) tm=4메뉴 최소권한 고정 → messaging 미포함. ALL_STAFF_ROLES(tm 미포함) 재사용으로 구조적 보장.
   //   ⚠️ App.tsx settings RoleGuard 와 동일 집합 SSOT — 한쪽만 바꾸지 말 것.

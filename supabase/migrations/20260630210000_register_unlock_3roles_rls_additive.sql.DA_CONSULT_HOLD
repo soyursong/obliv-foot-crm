@@ -1,0 +1,64 @@
+-- T-20260630-foot-REGISTER-MENU-CODY-UNLOCK (COORD-PERM-UNLOCK ⑤): 접수/신규등록 write-RLS 3역할 ADDITIVE 정렬
+-- 요청: 김주연 총괄 (C0ATE5P6JTH, thread 1782816252.185759)
+--   role_scope EXPANDED→CONFIRMED(2026-06-30 ts:1782820093): coordinator 단독 → +consultant +therapist (3역할).
+--
+-- ★★ DA_CONSULT_HOLD ★★ — 이 파일은 data-architect CONSULT GO + supervisor DDL-diff 수신 전까지 실행 금지.
+--   GO 수신 후 suffix(.DA_CONSULT_HOLD) 제거 → dev-foot 직접 실행(learned: 'dev-foot DB 마이그레이션 직접 실행').
+-- rollback: see 20260630210000_register_unlock_3roles_rls_additive.rollback.sql
+--
+-- ── RC (dev-foot 2026-06-30) ─────────────────────────────────────────────────
+--   증상=메뉴 미노출 진단 결과: FE 메뉴/PermKey(register)는 미소비(canAccess('register') 호출부 0),
+--   실 신규등록 surface(Customers '신규 고객' 버튼 = 순수 customers INSERT, Reservations new-mode, Dashboard 접수)는
+--   이미 3역할 FE 노출(PERM_MATRIX.customers/reservations/dashboard 포함). ∴ 진짜 게이트 = write-RLS.
+--
+--   현 prod write-RLS 매트릭스 (20260615160000_rls_clinic_isolation_patient_tables.sql):
+--     | role        | customers INSERT          | reservations INSERT | check_ins INSERT |
+--     | coordinator | ✓ (is_coordinator_or_above)| ✓ (coord_all)       | ✓ (coord_insert) |
+--     | consultant  | ✓ (is_consultant_or_above) | ✗ (UPDATE만)        | ✓ (consult_insert)|
+--     | therapist   | ✗                          | ✗                   | ✗                |
+--   → therapist 신규등록 write 전면 차단, consultant 는 reservations INSERT 차단.
+--     메뉴만 풀고 이 RLS 미정합 시 NOTIF-TMPL 동형 drift(메뉴는 뜨나 저장 거부) 재발 → 본 마이그로 정합.
+--
+-- ── 수정 요지 ────────────────────────────────────────────────────────────────
+--   기존 정책 무변경(DROP 0, 회수 0). 신규 ADDITIVE INSERT 정책만 추가(OR 결합) → gap 역할 effective write-set 확대.
+--   대상 3역할 = ('coordinator','consultant','therapist'). coordinator/consultant 는 일부 표면 이미 보유(중복 OR=무해),
+--   명시 3역할로 의도 가독성 확보. therapist 가 실 net-new 수혜.
+--   ★INVARIANT 의무★: 모든 WITH CHECK 에 clinic_id = current_user_clinic_id() 결합 — clinic isolation 완화 절대 금지.
+--   ★ADDITIVE only★: admin/manager/director/기존 coordinator 권한 미회수. NO-DDL(컬럼·테이블·enum 무변경, 정책 추가만).
+--   ★is_approved_user() 게이트 유지★: 미승인 계정 차단(현 패턴 동일).
+-- ============================================================================
+
+BEGIN;
+
+-- customers INSERT — therapist net-new (coordinator/consultant 기존 customers_coord_insert 로 이미 허용).
+DROP POLICY IF EXISTS "customers_register_unlock_insert" ON public.customers;
+CREATE POLICY "customers_register_unlock_insert" ON public.customers
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    is_approved_user()
+    AND current_user_role() IN ('coordinator', 'consultant', 'therapist')
+    AND clinic_id = current_user_clinic_id()
+  );
+
+-- reservations INSERT — consultant/therapist net-new (coordinator 기존 reservations_coord_all 로 이미 허용).
+--   ⚠ FOR INSERT 한정(예약 생성). 기존 admin_all/coord_all(FOR ALL)·consult_update/staff_update(UPDATE) 무변경.
+DROP POLICY IF EXISTS "reservations_register_unlock_insert" ON public.reservations;
+CREATE POLICY "reservations_register_unlock_insert" ON public.reservations
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    is_approved_user()
+    AND current_user_role() IN ('coordinator', 'consultant', 'therapist')
+    AND clinic_id = current_user_clinic_id()
+  );
+
+-- check_ins INSERT — therapist net-new (coordinator/consultant 기존 coord_insert/consult_insert 로 이미 허용).
+DROP POLICY IF EXISTS "check_ins_register_unlock_insert" ON public.check_ins;
+CREATE POLICY "check_ins_register_unlock_insert" ON public.check_ins
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    is_approved_user()
+    AND current_user_role() IN ('coordinator', 'consultant', 'therapist')
+    AND clinic_id = current_user_clinic_id()
+  );
+
+COMMIT;
