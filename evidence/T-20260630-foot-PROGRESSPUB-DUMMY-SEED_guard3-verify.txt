@@ -1,0 +1,29 @@
+
+[1] 시드 고객 (is_simulation+MARKER): 3건
+    - 테스트경과01 67e6bb1f-329f-48b9-a1f2-6ae56d889708 +821000000701
+    - 테스트경과02 80d6f3cf-a687-45ee-93a4-e273a491623f +821000000702
+    - 테스트경과03 2af4b895-079a-488a-a228-05d52c028fc3 +821000000703
+
+[2] 경과분석 탭 오늘(2026-07-01) 대상 총 4건 / 이번 더미 3건 (≥3 기대):
+    - 테스트경과01 14:00:00 "6회 중간 경과분석" status=confirmed
+    - 테스트경과02 14:30:00 "10회 경과분석" status=confirmed
+    - 테스트경과03 15:00:00 "3개월차 경과분석" status=confirmed
+
+[3-A] 셀프접수 대기명단(오늘 check_ins): raw 4건, 이번 더미 raw 3건
+      → stripSimulationRows 적용 후 총 0건, 더미 누출 0건 (0 기대)
+      (raw 더미 check_in: 테스트경과01 done 2026-07-01T05:00:00+00:00 → 숨김=true)
+      (raw 더미 check_in: 테스트경과02 done 2026-07-01T05:30:00+00:00 → 숨김=true)
+      (raw 더미 check_in: 테스트경과03 done 2026-07-01T06:00:00+00:00 → 숨김=true)
+
+[4] 일마감 진행중경고(NOT done/cancelled/payment_waiting): 총 0건, 더미 누출 0건 (0 기대)
+
+[5] 일마감 미수(payment_waiting): 총 0건, 더미 누출 0건 (0 기대)
+
+[6] 일마감 시술통계(더미 check_in_services): 0건 (0 기대 — 시드 미삽입)
+
+[7] POLLUTION stage3 키(reservation_id IS NULL & checked_in_at=today) 매칭 더미 check_in: 3건
+     주: 오늘자 더미 check_in 은 reservation_id=NULL → POLLUTION stage3 DELETE 에 동시 회수될 수 있음(무해, 본건 cleanup 은 별도 MARKER 스코프). 과거일 check_in 은 비매칭.
+
+========================================
+가드3 종합: PASS ✅ (대기명단·일마감 누출 0건, 경과분석 탭 노출 OK)
+========================================
