@@ -32,13 +32,15 @@ function needBlock(): string {
   return SRC.slice(start, idx + anchor.length);
 }
 
-// ── 시나리오 1: 신분증 미확인 고객 차트를 열면 배지가 저채도 파스텔 핑크로 보인다 ──
-test('S1 확인 필요 배지 = 파스텔 핑크 톤다운(bg-pink-100/text-pink-400/border-pink-200)', () => {
+// ── 시나리오 1: 신분증 미확인 고객 차트를 열면 파스텔 핑크 색이 보인다 ──
+// supersedes_visual(T-20260701-foot-CHART2-IDVERIFY-DOT-ONLY): 박스 파스텔 핑크 배경 →
+//   무채색 glass/silver 박스 + 왼쪽 dot만 파스텔 핑크로 재정의. 색은 dot(bg-pink-300)에 계승.
+test('S1 확인 필요 배지 파스텔 핑크 색 계승 — dot(bg-pink-300)으로 이동(DOT-ONLY 재정의)', () => {
   const b = needBlock();
-  expect(b).toContain('bg-pink-100');
-  expect(b).toContain('text-pink-400');
-  expect(b).toContain('border-pink-200');
-  // 도트(●)도 핑크 톤 일치
+  // 박스 full-background 파스텔 핑크는 DOT-ONLY 로 제거됨
+  expect(b).not.toContain('bg-pink-100');
+  expect(b).not.toContain('text-pink-400');
+  // 색은 왼쪽 dot에 계승
   const block = SRC.slice(SRC.indexOf('신분증 확인 필요') - 800, SRC.indexOf('신분증 확인 필요'));
   expect(block).toContain('bg-pink-300');
 });
