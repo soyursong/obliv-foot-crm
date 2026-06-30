@@ -141,6 +141,7 @@ export function ReservationDetailPopup({
   changedBy,
   authorName,
   isAdmin,
+  currentUserRole,
   onClose,
   onEdit,
   onChanged,
@@ -156,6 +157,10 @@ export function ReservationDetailPopup({
   changedBy: string | null;
   authorName: string;
   isAdmin?: boolean;
+  // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: 로그인 계정 role. role==='tm'이면 예약등록자(registrar)
+  //   드롭다운 read-only(disabled) + 저장 시 registrar_id/registrar_name 변경 차단(통계 상담사 귀속 오염 방지).
+  //   admin/manager/consultant 등 타 역할은 기존대로 편집 가능(AC-3 회귀 게이트).
+  currentUserRole?: string;
   onClose: () => void;
   onEdit: (r: Reservation) => void;
   onChanged: () => void;
@@ -250,6 +255,8 @@ export function ReservationDetailPopup({
   const [visitRoute, setVisitRoute] = useState<string>('');      // '' = 미지정
   const [registrarId, setRegistrarId] = useState<string>('');    // '' = 미지정
   const [routeSaving, setRouteSaving] = useState(false);
+  // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: TM 역할은 예약등록자 드롭다운 read-only + 저장 차단.
+  const isTmRole = currentUserRole === 'tm';
 
   // ── 우상 선택 상태: 좌하에서 클릭 → selectedResvId 변경
   const [selectedResvId, setSelectedResvId] = useState<string | null>(null);
@@ -760,7 +767,8 @@ export function ReservationDetailPopup({
               </div>
               <div className="flex flex-col gap-0.5 min-w-0">
                 <Label htmlFor="newmode-registrar" className="text-[10px] text-muted-foreground">예약등록자</Label>
-                <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}>
+                {/* T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK AC-4: TM 역할은 신규 예약 모드에서도 예약등록자 disabled. */}
+                <Select value={registrarId || '__none__'} onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)} disabled={isTmRole}>
                   <SelectTrigger id="newmode-registrar" className="h-9 w-full text-sm" data-testid="newmode-registrar-select">
                     {/* AC8: T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL — 선택값을 value→이름으로 해석(UUID 비노출). */}
                     <SelectValue placeholder="예약등록자 선택">
@@ -1131,12 +1139,17 @@ export function ReservationDetailPopup({
   const saveRouteAndRegistrar = async () => {
     setRouteSaving(true);
     const reg = registrars.find((r) => r.id === registrarId) ?? null;
+    // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK AC-2: TM 역할은 registrar_id/registrar_name 변경을 DB에 쓰지 않음
+    //   (드롭다운 disabled UX 우회 방어). 예약경로(visit_route)는 정상 저장. admin/manager/consultant는 기존대로 전 필드 저장.
+    const registrarFields = isTmRole ? {} : {
+      registrar_id: registrarId === '' ? null : registrarId,
+      registrar_name: reg ? reg.name : null,
+    };
     const { error } = await supabase
       .from('reservations')
       .update({
         visit_route: visitRoute === '' ? null : visitRoute,
-        registrar_id: registrarId === '' ? null : registrarId,
-        registrar_name: reg ? reg.name : null,
+        ...registrarFields,
       })
       .eq('id', reservation.id);
     setRouteSaving(false);
@@ -1505,9 +1518,11 @@ export function ReservationDetailPopup({
                   </div>
                   <div className="flex gap-2 min-w-0 items-center">
                     <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약등록자</span>
+                    {/* T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK AC-1: TM 역할은 기존 예약 예약등록자 disabled. */}
                     <Select
                       value={registrarId || '__none__'}
                       onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
+                      disabled={isTmRole}
                     >
                       <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
                         {/* T-20260629-foot-NEWRESV-REGISTRANT-UUID-LABEL AC5(재사용처): 선택값 value→이름 해석(UUID 비노출). */}
