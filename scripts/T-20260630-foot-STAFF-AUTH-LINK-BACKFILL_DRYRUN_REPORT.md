@@ -71,3 +71,42 @@
 3. 확정 대상 발생 시: apply.sql(WHERE 삼중가드 `id IN(...)` + `user_id IS NULL` + role, 기대행수 박기) + rollback SQL → **supervisor DB 게이트** → 사후 검증(AC-4: created_by 적재 회복 + cross-contamination 0).
 
 > apply 보류 사유: AC-2(DA) + AC-3(사람) 미충족 + 현 시점 positive 대상 0. 비파괴(prod write 0) 유지.
+
+---
+
+## 6. DA CONSULT-REPLY 반영 (2026-07-01, MSG-20260701-034334-qxef) — AC-2 ✅
+
+**판정: 수정(reframe) + 부분-GO(현장확인 링크 한정).** dry-run 분석(4분류·자동 0건·전제 무효)을 DA가 전부 인정. AC-2 게이트 통과.
+
+- **대전제 확정**: `staff.user_id` = 편의 join 키 ❌ → auth 신원(PHI 귀속·감사) 링크. 오링크 1건 = PHI 귀속 오염. 매칭 바 = **결정적 2-factor OR 권위 현장확인**. 이름단독/속성추정 자동 backfill = 금지.
+- **reframe**: 'bulk backfill' → **'감독형 신원 정합(supervised identity reconciliation)'** — 소수 N·건별 증거.
+- **자동 알고리즘 backfill 순증 0 = 확정** → 자동 apply 경로 **영구 보류**.
+
+### Q1 — staff.email 부재 시 대체 positive 증거 (추정 0 유지)
+- 이름 단독 = 불충분(금지). name+clinic+role 삼중 = 여전히 속성추정 → '자동 링크' 증거 불인정, candidate 플래그까지만.
+- 인정하는 결정적 2-factor (name 일치 + 택1): **(a) 활동 수렴**(동일 operational 레코드가 staff_id actor 와 그 레코드 auth 소유 user_profiles.id 를 동시 보유 — 단, staff 프로비저닝이 단일 auth 신원에 결정적으로 묶일 때만; created_by/updated_by 역추적 단독 불가) / **(b) 권위 현장확인(Q4)**.
+- 둘 다 없으면 NULL 유지. 추론으로 채우지 말 것.
+
+### 클래스별 처분 (Q2/Q3/Q4)
+| class | 건수 | 처분 |
+|-------|------|------|
+| NONPERSON | 30 | **scope-out**. expected-NULL = 설계상 정상(결함 아님). 일일 정합성 감사 gap 재플래그 금지. CODY 'admin multi-clinic NULL=정상' 동형. (권고: staff.is_system/placeholder ADDITIVE 플래그 별 티켓 — 비차단) |
+| OCCUPIED | 4 | 링크 금지. 활성 staff 가 user_profiles 점유 → 비활성 중복행 링크 = stale grant/PHI 귀속 오염. **별도 dedup/비활성정리 티켓 분리**, NULL 유지·carve-out |
+| NAME_ONLY 비활성(김민경/정혜인) | 2 | dedup 경로. 이름일치만으로 링크 금지. '비활성행이 canonical/재활성' 명시 확인 시에만 예외 |
+| NAME_ONLY 활성 **박민석** | 1 | **부분-GO**. 김주연 confirm 시 링크 GO |
+| NAME_ONLY 활성 **문지은(대표원장)** | 1 | **부분-GO(민감)**. confirm + director급 인지(면허/매출귀속 영향) 동반 후 단건 |
+| NO_MATCH | 6 | NULL 유지 |
+| **auto backfill** | **0** | 순증 0 확정 |
+
+### Q4 — 허용 apply 조건 (현장확인 = email 보다 강한 positive 증거)
+- **증거 기록 의무**: 확인자(김주연)·일시·매핑(staff_id→user_profiles.id) **건별 기록** → targeted 단건 UPDATE(룰 일괄 금지).
+- 박민석(활성) → 김주연 confirm 시 GO. 문지은(대표원장) → confirm + director급 인지 후 단건.
+
+### 현재 게이트 / 다음 절차 (갱신)
+1. AC-2 DA CONSULT ✅ 완료(부분-GO).
+2. **apply 대기 = 현장확인 증거(김주연 confirm: 확인자·일시·매핑) 미확보** → 단건 apply 0 → prod write 0 유지.
+3. 증거 확보 시: apply.sql 쌍별 단건 UPDATE → supervisor DB 게이트 → 사후검증(AC-4). non-blocking P2.
+4. OCCUPIED 4 + 비활성 NAME_ONLY 2 = 별도 dedup 티켓으로 분리 요청(planner).
+
+### 계약 반영 (DA)
+§2-1 'staff.user_id 신원-링크 표준' 명문화 fold: (i) 비-로그인/NONPERSON staff = expected-NULL(gap 아님) (ii) 신원-링크 backfill = 결정적 2-factor 또는 권위 현장확인 필수, 이름단독/속성추정 금지(CODY 선례 일반화). body/derm/scalp staff 공통 — planner 인지.
