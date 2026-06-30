@@ -260,6 +260,24 @@ export default function AdminLayout() {
     [chartId, openChart, closeChart],
   );
 
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2 — 동선2 별도 창 핸드오프]:
+  //   2번차트가 별도 OS 창(window.open '/chart/:id')으로 열린 경우, 차트 창의 [다음예약]은 메인 창(opener)에
+  //   postMessage('foot-prefill-slot')를 보낸다. 메인 창(AdminLayout)이 이를 받아 예약관리로 navigate하며
+  //   동일한 prefillCustomerForSlot nav state(수신부 코어, d16f06de)를 실어 슬롯클릭 prefill을 연결한다.
+  //   ▸origin 검증으로 외부 메시지 차단. 차트 창은 그대로 유지(드래그/리사이즈 native) = Q2 옵션 ①+③ 충족.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as { type?: string; customer_id?: string; name?: string } | null;
+      if (!data || data.type !== 'foot-prefill-slot' || !data.customer_id) return;
+      navigate('/admin/reservations', {
+        state: { prefillCustomerForSlot: { customer_id: data.customer_id, name: data.name ?? '' } },
+      });
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [navigate]);
+
   useEffect(() => {
     if (!clinic) return;
     let cancelled = false;

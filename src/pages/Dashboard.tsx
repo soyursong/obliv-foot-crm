@@ -6036,35 +6036,25 @@ export default function Dashboard() {
     toast.info('체크인 후 수납이 가능합니다');
   }, []);
 
-  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC4: 대시보드 고객카드(체크인 큐) 우클릭 position-3 [예약상세] 핸들러.
-  //   §8 가드 / escape-hatch 결과: 고객카드 check_in.reservation_id 는 *항상* null 이 아님(예약-origin 체크인은 세팅됨,
-  //   워크인만 null — NewCheckInDialog.tsx:218 / SelfCheckIn.tsx:1049,1465). → "항상 예약 미연결" 조건 미충족 →
-  //   FOLLOWUP 불요, directive(B) 적용: 라벨=예약상세 통일 + 연결예약 존재 시 ReservationDetailPopup 오픈.
-  //   ⚠ L-002 LOGIC-LOCK 보존: reservation_id 없는(워크인) 카드는 신규예약 생성(handleNewReservation)으로 fallback —
-  //   생성 capability 삭제 0, 기능 손실 0. handleNewReservation 함수 자체는 미변경(라벨/배선만 통일).
-  const handleCardResvDetailOrCreate = useCallback(async (ci: CheckIn) => {
-    const resvId = ci.reservation_id;
-    if (!resvId) {
-      // 워크인 등 연결 예약 없음 → 신규 예약 생성 진입점 보존(L-002)
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL [Q1 확정 — 동선1 진입점 예약有/無 통일]: 대시보드 고객박스(체크인 큐 고객카드)
+  //   우클릭 [예약상세] → 예약有·예약無 고객 *모두 동일*하게 /admin/reservations navigate + prefillCustomerForSlot
+  //   (customer_id+고객명) → 사용자가 원하는 빈 슬롯을 직접 클릭하면 해당 고객 자동 prefill 신규예약 폼이 뜬다(defer-to-slot-click).
+  //   ▸기존 동작 둘 다 폐기(이 진입점 한정, 김주연 총괄 최종결정 ts 1782819349.054839, MSG-203752-bsw8):
+  //     (a)연결예약→ReservationDetailPopup 자동오픈 = navigate+slot-prefill 로 대체,
+  //     (b)워크인→즉시 10:00 editor 자동오픈(handleNewReservation) = 폐기 → 슬롯 직접선택으로 전환.
+  //   ▸prefill 주입 지점 = 구 DOM 슬롯카드 핸들러가 아닌 nav state → pending-prefill 컨텍스트 → 공유 폼 opener(Reservations 수신부, d16f06de) 레이어.
+  //   ▸L-002 LOGIC-LOCK variance(이 진입점에서 [예약상세]가 즉시 full editor/팝업 대신 defer-to-slot-click) = 현장 권위자 김주연 총괄 명시승인(frontmatter logic_lock_variance).
+  //   ▸customer_id 부재(드문 케이스: 미연결 워크인)만 기존 신규예약 생성 fallback 유지(prefill 불가 시 dead 메뉴 방지, 생성 capability 손실 0).
+  const handleCardResvDetailOrCreate = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) {
+      // 고객 식별자 부재 → prefill 대상 없음, 신규예약 생성 진입점 보존(L-002)
       handleNewReservation(ci);
       return;
     }
-    // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 연결 예약 존재 → 예약관리로 라우팅하며 정본 팝업 오픈.
-    //   대시보드 로컬 팝업 미사용(중복 마운트 제거). 타임라인 캐시 우선, 없으면 DB refetch(미래/타일자 예약 대응).
-    const cached = timelineReservations.find((r) => r.id === resvId);
-    if (cached) { navigate('/admin/reservations', { state: { openReservationDetail: cached } }); return; }
-    const { data, error } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('id', resvId)
-      .maybeSingle();
-    if (error || !data) {
-      // 예약 row 소실(취소-삭제 등) → 생성 진입점으로 안전 fallback (dead 메뉴 방지)
-      handleNewReservation(ci);
-      return;
-    }
-    navigate('/admin/reservations', { state: { openReservationDetail: data as Reservation } });
-  }, [timelineReservations, handleNewReservation, navigate]);
+    navigate('/admin/reservations', {
+      state: { prefillCustomerForSlot: { customer_id: ci.customer_id, name: ci.customer_name ?? '' } },
+    });
+  }, [handleNewReservation, navigate]);
 
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {

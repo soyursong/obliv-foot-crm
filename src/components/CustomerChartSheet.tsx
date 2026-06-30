@@ -25,10 +25,10 @@
  */
 // T-20260516-foot-CHART2-STATE-UNIFY: MemoryRouter 제거 — RR6.30 nested Router 금지
 // CustomerChartPage에 customerId prop 직접 주입으로 대체
-import { useEffect, useRef, useState, Suspense, lazy } from 'react';
+import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2 } from 'lucide-react';
-import { ChartSheetCloseCtx, ChartSheetSaveRegistryCtx, ChartSheetMarkCleanCtx, type ChartSaveFn } from '@/lib/chartSheetContext';
+import { Loader2, Maximize2 } from 'lucide-react';
+import { ChartSheetCloseCtx, ChartSheetSaveRegistryCtx, ChartSheetMarkCleanCtx, ChartSheetDockCtx, type ChartSaveFn } from '@/lib/chartSheetContext';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
@@ -57,12 +57,56 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
   const saveFnRef = useRef<ChartSaveFn | null>(null);
   const [savingClose, setSavingClose] = useState(false);
 
-  // 차트 재오픈(customerId 변경) 시 dirty/확인창 리셋
+  // T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2 — 동선2 차트 오버레이 = 옵션 ①+③]:
+  //   in-page 서랍 모드에서 [다음예약] 클릭 시 차트를 닫지 않고 '도킹' 모드로 전환한다.
+  //   - docked=true: 차트를 우측 상단 작은 플로팅 창으로 축소 + 헤더 드래그로 화면 한쪽 이동 + CSS resize로 크기 조절,
+  //     backdrop pointer-events 해제(pass-through) → 배경 예약판 빈 슬롯 클릭이 차트에 가로채이지 않고 동작.
+  //   - L-002('[예약하기]類=항상 full전환,예외없음') + L-004('차트 접근경로 잠금') LOGIC-LOCK variance =
+  //     현장 권위자 김주연 총괄 명시승인(ticket frontmatter logic_lock_variance, ts 1782819349.054839). 임의변경 아님.
+  const [docked, setDocked] = useState(false);
+  const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ active: boolean; offsetX: number; offsetY: number }>({ active: false, offsetX: 0, offsetY: 0 });
+
+  const requestDock = useCallback(() => setDocked(true), []);
+
+  const clampDockPos = useCallback((x: number, y: number) => {
+    const margin = 8;
+    const w = panelRef.current?.offsetWidth ?? 380;
+    const maxX = (typeof window !== 'undefined' ? window.innerWidth : 1280) - w - margin;
+    const maxY = (typeof window !== 'undefined' ? window.innerHeight : 800) - 48; // 헤더는 항상 잡히게 하단 여유
+    return { x: Math.max(margin, Math.min(x, Math.max(margin, maxX))), y: Math.max(margin, Math.min(y, Math.max(margin, maxY))) };
+  }, []);
+
+  const onDockPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!docked) return;
+    if ((e.target as HTMLElement).closest('button')) return; // 헤더 버튼 위에서는 드래그 시작 안 함(오발동 방지)
+    const el = panelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = { active: true, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* 미지원 무시 */ }
+  }, [docked]);
+
+  const onDockPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current.active) return;
+    e.preventDefault();
+    setDockPos(clampDockPos(e.clientX - dragRef.current.offsetX, e.clientY - dragRef.current.offsetY));
+  }, [clampDockPos]);
+
+  const onDockPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
+  }, []);
+
+  // 차트 재오픈(customerId 변경) 시 dirty/확인창/도킹 리셋
   useEffect(() => {
     dirtyRef.current = false;
     setDirty(CHART_DIRTY_KEY, false); // Part B: 새 차트는 clean으로 시작 → 카운트다운 보류 해제
     setShowCloseConfirm(false);
     setSavingClose(false);
+    setDocked(false);
+    setDockPos(null);
   }, [customerId]);
 
   // Part B: 차트 언마운트(닫힘 포함) 시 dirty 신호 해제 — 닫힌 차트가 카운트다운을 무한 보류시키지 않게
@@ -137,27 +181,64 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
   // LOGIC-LOCK: L-004 [CHART-LOCK-006] — createPortal 제거 금지. AdminLayout 외부에서 중복 마운트 절대 금지.
   return createPortal(
     <>
-      {/* 백드롭 — T-20260603-foot-CHART-UNSAVED-GUARD AC-1: dirty 시 확인 경유 */}
+      {/* 백드롭 — T-20260603-foot-CHART-UNSAVED-GUARD AC-1: dirty 시 확인 경유.
+          T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2]: docked 모드에서는 pointer-events 해제(pass-through) + 딤 제거
+          → 배경 예약판 빈 슬롯 클릭이 차트에 가로채이지 않고 동작(L-004 variance, 현장 승인). */}
       <div
-        className="fixed inset-0 z-[60] bg-black/40"
-        onClick={requestClose}
+        className={
+          docked
+            ? 'fixed inset-0 z-[60] pointer-events-none'
+            : 'fixed inset-0 z-[60] bg-black/40'
+        }
+        onClick={docked ? undefined : requestClose}
         data-testid="chart-backdrop"
+        data-docked={String(docked)}
         aria-hidden="true"
       />
-      {/* 슬라이드 패널 — flex-col: 닫기 버튼(고정) + 콘텐츠(스크롤) 분리 */}
+      {/* 슬라이드 패널 — flex-col: 닫기 버튼(고정) + 콘텐츠(스크롤) 분리.
+          T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2]: docked 모드 = 우측 상단 작은 플로팅 창(헤더 드래그 이동 + CSS resize 크기조절). */}
       <div
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
-        aria-modal="true"
+        aria-modal={docked ? undefined : 'true'}
         aria-label="고객차트"
         data-testid="customer-chart-sheet"
+        data-docked={String(docked)}
         // T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 하위 입력 이벤트로 dirty 추적
         onInput={() => { dirtyRef.current = true; setDirty(CHART_DIRTY_KEY, true); }}
-        className="fixed right-0 top-0 z-[70] h-full w-[95vw] sm:w-[88vw] max-w-5xl bg-background shadow-lg flex flex-col outline-none animate-in slide-in-from-right duration-300"
+        className={
+          docked
+            ? 'fixed z-[70] w-[380px] h-[60vh] min-w-[300px] min-h-[280px] max-w-[90vw] max-h-[90vh] bg-background border rounded-lg shadow-2xl flex flex-col outline-none overflow-hidden resize'
+            : 'fixed right-0 top-0 z-[70] h-full w-[95vw] sm:w-[88vw] max-w-5xl bg-background shadow-lg flex flex-col outline-none animate-in slide-in-from-right duration-300'
+        }
+        style={docked ? { left: dockPos?.x ?? undefined, top: dockPos?.y ?? 16, right: dockPos ? 'auto' : 16 } : undefined}
       >
-        {/* 닫기 버튼 헤더 — flex-shrink-0: 스크롤 영역 밖, 항상 visible */}
-        <div className="relative flex-shrink-0 h-10">
+        {/* 닫기 버튼 헤더 — flex-shrink-0: 스크롤 영역 밖, 항상 visible.
+            docked 모드에서는 이 헤더가 드래그 핸들(cursor-move) + 전체화면 복귀 버튼 노출. */}
+        <div
+          className={
+            docked
+              ? 'relative flex-shrink-0 h-10 cursor-move touch-none select-none bg-muted/40 border-b'
+              : 'relative flex-shrink-0 h-10'
+          }
+          data-testid="chart-sheet-header"
+          onPointerDown={onDockPointerDown}
+          onPointerMove={onDockPointerMove}
+          onPointerUp={onDockPointerUp}
+          onPointerCancel={onDockPointerUp}
+        >
+          {docked && (
+            <button
+              className="absolute right-10 top-2.5 z-10 rounded-md p-1 text-muted-foreground hover:bg-muted transition"
+              onClick={() => { setDocked(false); setDockPos(null); }}
+              aria-label="전체화면"
+              data-testid="chart-undock-btn"
+              type="button"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+          )}
           <button
             className="absolute right-3 top-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-muted transition"
             onClick={onClose}
@@ -174,6 +255,8 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
         <div className="flex-grow overflow-y-auto">
           {/* T-20260609-foot-CHART2-SAVE-CLOSE-BTN: 본문 저장 핸들러 등록 채널 제공 */}
           {/* T-20260611-foot-CHART2-SAVE-DIRTY-RESET: 저장 성공 시 dirty 가드 리셋 채널 제공 */}
+          {/* T-20260630-foot-RESV-CUSTCTX-PREFILL [Q2]: [다음예약] → 도킹 요청 채널 제공 */}
+          <ChartSheetDockCtx.Provider value={requestDock}>
           <ChartSheetSaveRegistryCtx.Provider value={saveFnRef}>
           <ChartSheetMarkCleanCtx.Provider value={markChartClean}>
           <ChartSheetCloseCtx.Provider value={onClose}>
@@ -190,6 +273,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
           </ChartSheetCloseCtx.Provider>
           </ChartSheetMarkCleanCtx.Provider>
           </ChartSheetSaveRegistryCtx.Provider>
+          </ChartSheetDockCtx.Provider>
         </div>
       </div>
 
