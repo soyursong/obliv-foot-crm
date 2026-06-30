@@ -7,7 +7,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { seoulISODate } from '@/lib/format';
-import type { TmAggregateData, TmResRow, TmCheckInRow } from '@/lib/stats';
+import {
+  tmCounselorLabel,
+  TM_UNASSIGNED_LABEL,
+  TM_WALKIN_LABEL,
+  type TmAggregateData,
+  type TmResRow,
+  type TmCheckInRow,
+} from '@/lib/stats';
 
 /**
  * T-20260610-foot-STATS-TM-AGGREGATE-TAB
@@ -32,8 +39,9 @@ interface Props {
 
 type KpiKey = 'registered' | 'scheduled' | 'visited';
 
-const UNASSIGNED = '미지정';
-const WALKIN = '워크인';
+// 라벨 SSOT = @/lib/stats (tmCounselorLabel + 상수). provenance 가드 주석은 그쪽에 위치.
+const UNASSIGNED = TM_UNASSIGNED_LABEL;
+const WALKIN = TM_WALKIN_LABEL;
 
 export default function TmAggregateSection({
   data,
@@ -67,9 +75,15 @@ export default function TmAggregateSection({
     return WALKIN; // 풋 check_ins엔 created_by 없음 → 매칭 예약 없으면 워크인
   };
 
-  const labelFor = (uid: string) => {
-    if (uid === UNASSIGNED || uid === WALKIN) return uid;
-    return staffMap[uid]?.name || UNASSIGNED;
+  // 표시 라벨(provenance-aware). 상담사(created_by)가 매칭되는 풋 직원이면 직원명,
+  // NULL/미매칭이면서 도파민 ingest 예약이면 도파민/TM 유입 라벨, 그 외 미지정.
+  // (필터용 tmOfRes/tmOfCheckIn 은 raw uid 유지 — onlyMine/TM팀만 의미 보존.)
+  const labelForRes = (r: TmResRow): string =>
+    tmCounselorLabel(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name);
+  const labelForCheckIn = (ci: TmCheckInRow): string => {
+    const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
+    if (!matched) return WALKIN;
+    return labelForRes(matched);
   };
   const isTm = (uid: string) => staffMap[uid]?.role === 'tm';
 
@@ -111,31 +125,19 @@ export default function TmAggregateSection({
     return { registered, scheduled, visited, visitRate };
   }, [tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited]);
 
-  // TM상담사별 집계 — 이름 기준 합산 + 내원율 (롱래 tmStats 차용)
+  // TM상담사별 집계 — 표시 라벨 기준 합산 + 내원율 (롱래 tmStats 차용)
+  // 표시 라벨(provenance-aware)로 직접 집계 → 같은 라벨끼리 병합.
   const tmStats = useMemo(() => {
     const map = new Map<string, { tm: string; registered: number; scheduled: number; visited: number }>();
     const ensure = (tm: string) => {
       if (!map.has(tm)) map.set(tm, { tm, registered: 0, scheduled: 0, visited: 0 });
       return map.get(tm)!;
     };
-    tmFilteredRegistered.forEach((r) => (ensure(tmOfRes(r)).registered += 1));
-    tmFilteredScheduled.forEach((r) => (ensure(tmOfRes(r)).scheduled += 1));
-    tmFilteredVisited.forEach((ci) => (ensure(tmOfCheckIn(ci)).visited += 1));
+    tmFilteredRegistered.forEach((r) => (ensure(labelForRes(r)).registered += 1));
+    tmFilteredScheduled.forEach((r) => (ensure(labelForRes(r)).scheduled += 1));
+    tmFilteredVisited.forEach((ci) => (ensure(labelForCheckIn(ci)).visited += 1));
 
-    // 이름 기준 합산(같은 이름으로 표시되는 항목 병합)
-    const nameMap = new Map<string, { tm: string; registered: number; scheduled: number; visited: number; visitRate: number }>();
-    Array.from(map.values()).forEach((r) => {
-      const displayName = labelFor(r.tm);
-      const ex = nameMap.get(displayName);
-      if (ex) {
-        ex.registered += r.registered;
-        ex.scheduled += r.scheduled;
-        ex.visited += r.visited;
-      } else {
-        nameMap.set(displayName, { tm: displayName, registered: r.registered, scheduled: r.scheduled, visited: r.visited, visitRate: 0 });
-      }
-    });
-    return Array.from(nameMap.values())
+    return Array.from(map.values())
       .map((r) => ({ ...r, visitRate: r.scheduled > 0 ? (r.visited / r.scheduled) * 100 : 0 }))
       .sort((a, b) => b.registered - a.registered);
   }, [tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited, staffMap, allResMap]);
@@ -174,7 +176,7 @@ export default function TmAggregateSection({
         visitDate: resIdToVisit.get(r.id) || '',
         name: info.name || '',
         phone: info.phone || '',
-        tm: labelFor(tmOfRes(r)),
+        tm: labelForRes(r),
         groupKey: kpiDetail === 'registered' ? regDate : r.reservation_date || '',
       };
     };
@@ -191,7 +193,7 @@ export default function TmAggregateSection({
         visitDate: visit,
         name: info.name || '',
         phone: '',
-        tm: labelFor(tmOfCheckIn(ci)),
+        tm: labelForCheckIn(ci),
         groupKey: visit,
       };
     };
