@@ -83,6 +83,7 @@ export default function ForeignStayAddressInput({
   manualHint,
 }: Props) {
   const fieldId = useId();
+  // env-matrix: OPTIONAL — 미주입(빈 값) 시 manualMode fallback. 운영 grep 0건 = 정상(docs/ENV-MATRIX.md).
   const apiKey = (import.meta.env.VITE_KAKAO_REST_API_KEY as string | undefined) ?? '';
   // manualMode: 수기 입력 강제(키 없음 · 호출 실패 · 사용자 선택)
   const [manualMode, setManualMode] = useState(!apiKey);
