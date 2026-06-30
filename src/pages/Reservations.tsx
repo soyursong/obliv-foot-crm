@@ -1157,6 +1157,8 @@ export default function Reservations() {
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모(brief_note) + 예약메모(booking_memo).
       brief_note?: string | null;
       booking_memo?: string | null;
+      // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩(is_healer_intent 영속) — 기존 write-path 위임. 신규 스키마 0.
+      is_healer_intent?: boolean | null;
     }): Promise<{ ok: boolean; reason?: string; message?: string }> => {
       if (!clinic) return { ok: false, reason: 'error', message: '클리닉 정보를 불러오지 못했습니다.' };
       // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 팝업이 customerId=null(시스템에 없는 신규 고객)을 넘기면
@@ -1228,6 +1230,9 @@ export default function Reservations() {
         // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모 + 예약메모 영속.
         brief_note: params.brief_note ?? null,
         booking_memo: params.booking_memo ?? null,
+        // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩(is_healer_intent) → 기존 write-path(payload L257) 위임.
+        //   미선택 시 false(=기존 동작 불변). 컬럼 미반영 DB 는 createReservationCanonical 의 PGRST204 내성화로 graceful.
+        is_healer_intent: params.is_healer_intent ?? false,
         maxPerSlot: slotMaxFor(params.time),
         changedBy,
         authorName: profile?.name ?? '',
