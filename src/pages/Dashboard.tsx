@@ -6010,19 +6010,11 @@ export default function Dashboard() {
     call_list_manual_order: null,
   }), [clinic?.id]);
 
-  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2: 타임라인 우클릭 [예약상세] → 예약상세 팝업(ReservationDetailPopup) 오픈.
-  //   ci.reservation_id 로 원본 Reservation 을 timelineReservations 에서 복원해 팝업 대상 세팅.
-  // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 타임라인 슬롯 카드 우클릭 [예약상세] →
-  //   대시보드 로컬 팝업을 띄우지 않고 예약관리(/admin/reservations)로 라우팅하며 정본 팝업을 연다.
-  //   ⚠ 정합: 대시보드/예약관리 두 곳에 팝업 인스턴스가 공존(중복 마운트)하면 POPUP-SYNC(field-soak)와
-  //   동기화가 깨질 수 있어, 클릭 원 예약 객체를 state로 넘겨 예약관리 정본 팝업(detail) 한 곳만 사용한다.
-  const handleResvOpenDetailFromCtx = useCallback((ci: CheckIn) => {
-    const resvId = ci.reservation_id;
-    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
-    const resv = timelineReservations.find((r) => r.id === resvId);
-    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
-    navigate('/admin/reservations', { state: { openReservationDetail: resv } });
-  }, [timelineReservations, navigate]);
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2 / RESV-DASH-CTXMENU-DETAIL-NAV (구):
+  //   타임라인 예약 박스 우클릭 [예약상세] → 예약관리 정본 팝업(openReservationDetail)으로 라우팅하던 핸들러.
+  // T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2: 예약 동선 통일로 이 진입점을 체크인 카드와 동일한
+  //   handleCardResvDetailOrCreate(고객 prefillCustomerForSlot nav)로 재배선 → 본 핸들러 retire(미사용 제거).
+  //   ⚠ 기존 'open-existing' 동선 복원이 현장에서 필요해지면 별도 메뉴 항목으로 재도입(fast-follow).
 
   // T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 타임라인 우클릭 [수납] → 연결된 check_in 의 결제 미니창.
   //   예약관리(handleResvOpenPayment)와 동일 — 체크인 전 예약은 "체크인 후 수납" 안내(가짜 check_in 결제 방지).
@@ -6052,6 +6044,8 @@ export default function Dashboard() {
   //   ▸prefill 주입 지점 = 구 DOM 슬롯카드 핸들러가 아닌 nav state → pending-prefill 컨텍스트 → 공유 폼 opener(Reservations 수신부, d16f06de) 레이어.
   //   ▸L-002 LOGIC-LOCK variance(이 진입점에서 [예약상세]가 즉시 full editor/팝업 대신 defer-to-slot-click) = 현장 권위자 김주연 총괄 명시승인(frontmatter logic_lock_variance).
   //   ▸customer_id 부재(드문 케이스: 미연결 워크인)만 기존 신규예약 생성 fallback 유지(prefill 불가 시 dead 메뉴 방지, 생성 capability 손실 0).
+  //   T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2: 체크인 카드뿐 아니라 예약 캘린더 카드(타임라인 예약 박스, resvAsCheckIn)
+  //   우클릭 [예약상세]도 이 핸들러를 공유 — 두 고객박스 동선 동일화(handleResvOpenDetailFromCtx retire).
   const handleCardResvDetailOrCreate = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) {
       // 고객 식별자 부재 → prefill 대상 없음, 신규예약 생성 진입점 보존(L-002)
@@ -7566,17 +7560,21 @@ export default function Dashboard() {
       {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC1/AC2/AC3: 타임라인 예약 박스 우클릭 메뉴를
           예약관리와 동일한 CustomerQuickMenu 5항목 [고객차트 → 진료차트 → 예약상세 → 수납 → 문자]로 통일.
           - 고객차트/진료차트: 기존 핸들러 재사용(handleOpenChart/handleOpenMedicalChart) — 고객카드 메뉴와 동작 동일.
-          - 예약상세: handleResvOpenDetailFromCtx → ReservationDetailPopup 오픈([예약하기] 라벨 미사용).
           - 수납: handleResvOpenPaymentFromCtx(연결 check_in 결제 미니창).
           - 문자: admin/manager 한정 SendSmsDialog 경로 재사용.
-          - [예약 취소]·[완전 삭제] 메뉴 항목 제거 → 둘 다 ReservationDetailPopup 내부 버튼에서만(메뉴 진입점 제거). */}
+          - [예약 취소]·[완전 삭제] 메뉴 항목 제거 → 둘 다 ReservationDetailPopup 내부 버튼에서만(메뉴 진입점 제거).
+          T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2 [예약 동선 통일]: 예약 캘린더 카드(타임라인 예약 박스)
+          [예약상세]를 체크인 카드와 *동일 동작*으로 통일 — 기존 예약상세 팝업 즉시 오픈(handleResvOpenDetailFromCtx)
+          대신 handleCardResvDetailOrCreate(고객 prefillCustomerForSlot nav)로 재배선. 김주연 총괄(C0ATE5P6JTH) 확정.
+          ⚠ 트레이드오프: 이 메뉴 [예약상세]의 '기존 예약 즉시 열람' 기능은 슬롯클릭-신규prefill 동선으로 대체됨
+          (열람은 예약 박스 클릭/예약관리에서 가능). 현장에서 열람 진입이 필요하다고 밝혀지면 별도 항목으로 복원(fast-follow). */}
       <CustomerQuickMenu
         checkIn={resvContextMenu ? resvAsCheckIn(resvContextMenu.reservation) : null}
         position={resvContextMenu?.pos ?? null}
         onClose={() => setResvContextMenu(null)}
         onOpenChart={handleOpenChart}
         onOpenMedicalChart={handleOpenMedicalChart}
-        onNewReservation={handleResvOpenDetailFromCtx}
+        onNewReservation={handleCardResvDetailOrCreate}
         onOpenPayment={handleResvOpenPaymentFromCtx}
         /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
         reservationActionLabel="예약상세"
