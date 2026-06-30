@@ -1269,7 +1269,9 @@ function RoomSection({
     //   자연 성장한다(shrink-0 → 콘텐츠 밑으로 안 줄어듦). 부모가 fixed→minHeight 로 바뀌어 h-full(100% of auto)은
     //   붕괴하므로 grow 채택. (flex-1=basis0 은 420 에 캡돼 성장 불가 → AC-NEW-3 위배라 부적합.)
     <div className={cn('flex flex-col', fillHeight && 'grow shrink-0')}>
-      <div className={cn('flex items-center text-xs font-bold px-2 py-1 rounded-t-lg', color)}>
+      {/* T-20260630-foot-DASH-ROOMHEADER-BORDER-RESTORE: 배경색 제거(BG-REMOVE) 후 사라진 섹션 구분선 복원.
+          무색(border-border=뉴트럴 회색) border-b-0 로 상단 헤더 프레임 → 본문(border border-t-0)과 연결. 배경 투명 유지·의미색 미접촉. */}
+      <div className={cn('flex items-center text-xs font-bold px-2 py-1 rounded-t-lg border border-b-0', color)}>
         {title}
         <span className="ml-1.5 font-normal opacity-70">
           ({rooms.length}실)
@@ -6359,7 +6361,8 @@ export default function Dashboard() {
                 onDeleteSlot={handleDeleteSlot}
               />
             ) : (
-              <div className="flex items-center text-xs font-bold px-2 py-1 rounded-t-lg bg-muted/30 text-foreground">
+              <div className="flex items-center text-xs font-bold px-2 py-1 rounded-lg border bg-muted/30 text-foreground">
+                {/* T-20260630-foot-DASH-ROOMHEADER-BORDER-RESTORE: examRooms 빈 상태(본문 없음)=자체 닫힌 무색 box */}
                 진료
                 {slotBatchEditMode && isToday && (
                   <button
@@ -6475,7 +6478,8 @@ export default function Dashboard() {
             {/* AC-2: 상담실1~N 슬롯 정상 유지 + 배치편집 잠금/삭제 오버레이 */}
             {consultRooms.length > 0 && (
               <div className="flex flex-col">
-                <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-muted/30 text-foreground">
+                {/* T-20260630-foot-DASH-ROOMHEADER-BORDER-RESTORE: 무색 border-b-0 헤더 프레임 → 본문(border border-t-0)과 연결 */}
+                <div className="text-xs font-bold px-2 py-1 rounded-t-lg border border-b-0 bg-muted/30 text-foreground">
                   상담실
                   <span className="ml-1.5 font-normal opacity-70">({consultRooms.length}실)</span>
                 </div>
