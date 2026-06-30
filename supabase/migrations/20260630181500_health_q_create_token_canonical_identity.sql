@@ -1,7 +1,12 @@
 -- T-20260630-foot-PENCHART-HEALTHQ-CODY-LINKPERM — 펜차트 발건강질문지 '링크 생성' 코디(coordinator) 실패
 --
--- ⚠️ DO NOT APPLY 자율 금지 — data-architect CONSULT(ADDITIVE 권한확대) GO + supervisor DDL-diff 게이트 후 적용.
---    (SECURITY DEFINER 함수의 인가 경계 변경 = PHI 토큰 발급 권한 확대 → §S2.4 데이터 정책 게이트)
+-- ✅ data-architect CONSULT GO 수신 (MSG-20260630-192615-6mts / DA-20260630-HEALTHQ-CANON-IDENTITY):
+--    "RPC INSERT경로 인가게이트 정규신원 전환 승인. ADDITIVE union=무회귀, 토큰본체 byte-identical, RLS 미접촉."
+--    조건(non-blocking) 2건 반영: (2) created_by best-effort NULL ACCEPTABLE → 후속 staff↔user_profiles
+--    링크 backfill 트래킹은 planner FOLLOWUP 경유. (3) 다지점 NULL clinic=any-clinic 가드 한 줄 반영(아래).
+-- ⚠️ 적용 게이트 = supervisor DDL-diff (아키텍트 미적용 경계 명시). 적용 전 supervisor DDL-diff·dry-run
+--    BEGIN..ROLLBACK 확인 그대로 진행. 적용 후 sample 1행 검증(미연결 coordinator 성공 + created_by NULL,
+--    연결 coordinator created_by=staff.id). (SECURITY DEFINER 인가경계 = PHI 토큰 발급 권한확대 → §S2.4 게이트)
 --
 -- ── 확정 RC (PROD READ-ONLY 실측, 2026-06-30) ──
 --   fn_health_q_create_token(6-arg) 의 인가 게이트만 "비정규" 신원 소스
@@ -71,8 +76,13 @@ BEGIN
   --   (1) 정규 신원(user_profiles): approved+active AND 본인 clinic — 미연결 coordinator 포함 전 직원.
   --   (2) 레거시(staff.user_id) 통과자 — 기존 권한 보존(admin/manager/원장 등).
   -- T-20260611-foot-SURVEY-ITEM-VISIBILITY-BY-ROLE 가 SELECT 정책에 적용한 정규화를 create 경로에 확장.
+  -- ★ DA CONSULT(MSG-20260630-192615-6mts) 조건(3) 가드: cross_crm_data_contract §2-2 상
+  --   user_profiles.clinic_id NULL = 다지점 권한(admin/manager) → current_user_clinic_id()=NULL.
+  --   다지점 actor 는 NULL=any-clinic 으로 허용(향후 다지점 admin 발급 대비). foot=단일clinic·대상=
+  --   coordinator(clinic-bound)라 현재 동작 무변(무해), 미래 다지점 발급만 canonical branch 로 통과.
   IF NOT (
-       (is_approved_user() AND p_clinic_id = current_user_clinic_id())
+       (is_approved_user()
+        AND (current_user_clinic_id() IS NULL OR p_clinic_id = current_user_clinic_id()))
        OR v_staff_id IS NOT NULL
      ) THEN
     RETURN jsonb_build_object('success', false, 'error', 'unauthorized');
