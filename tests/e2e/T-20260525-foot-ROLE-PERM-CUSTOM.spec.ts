@@ -67,9 +67,11 @@ test('AC-3 접수/신규등록(register) — 3역할 ADDITIVE 확대 반영', ()
 test('AC-3 PERM_MATRIX — consultant는 상위권한 전용 key에 접근 불가', () => {
   // 통계(stats)는 여전히 consultant 제외(admin/manager/director/tm 한정).
   expect(canAccess('consultant', 'stats')).toBe(false);
-  // 고객 리스트 내보내기(customer_export, PII 포함)는 admin/manager/director 한정 → consultant 제외 유지.
-  //   (register 는 T-20260630-foot-REGISTER-MENU-CODY-UNLOCK 로 consultant 에 확대되어 더 이상 제외 대상 아님.)
-  expect(canAccess('consultant', 'customer_export')).toBe(false);
+  // 고객 리스트 내보내기(customer_export)는 T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ④ (DA CONSULT-REPLY DA-20260701)로
+  //   consultant/coordinator/therapist 에 ADDITIVE 확대(김주연 총괄 role_scope CONFIRMED) + PII-egress audit sub-gate 동반.
+  //   → 더 이상 consultant 제외 대상 아님. (register 도 REGISTER-MENU-CODY-UNLOCK 로 확대된 선례와 동일.)
+  //   ★상위권한 전용 gate 회귀 검증은 stats(위)로 유지 — customer_export 는 확대 완료 surface.
+  expect(canAccess('consultant', 'customer_export')).toBe(true);
 });
 
 // ── AC-4: RLS 정합성 — A안은 DB 변경 없음, RLS 불변 확인 ─────────────────────
