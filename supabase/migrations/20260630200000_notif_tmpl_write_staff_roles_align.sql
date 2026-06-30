@@ -1,8 +1,18 @@
--- T-20260630-foot-NOTIF-TMPL-RLS-CODY-UNLOCK: notif_tmpl_write RLS 8역할 정렬 (DB ADDITIVE, NO-DDL)
+-- T-20260630-foot-NOTIF-TMPL-RLS-CODY-UNLOCK: 메시지설정 write RLS 8역할 정렬 (DB ADDITIVE, NO-DDL)
+--   대상 2테이블(messaging 모듈 동일 batch):
+--     ① notification_templates.notif_tmpl_write   (③메시지 > 템플릿 저장)
+--     ② notification_opt_outs.notif_optout_write   (③메시지 > 수신거부 저장)  ← 2026-07-01 합류
 -- 요청: 김주연 총괄 (C0ATE5P6JTH, thread 1782816252.185759)
---   현상: 코디네이터(coordinator) 계정으로 통합설정 > 메시지 > 템플릿 [저장] 클릭 시
+--   현상: 코디네이터(coordinator) 계정으로 통합설정 > 메시지 > 템플릿/수신거부 [저장] 클릭 시
 --         "저장 실패: 저장 권한 없음 — 역할을 확인하세요" 오류.
 -- rollback: see 20260630200000_notif_tmpl_write_staff_roles_align.rollback.sql
+--
+-- ── opt_outs 합류 근거 (T-20260630-foot-PHRASETMPL-CODY-WRITE-RLS FOLLOWUP, planner #2b) ──
+--   CODY-WRITE-PERM-PARITY-SWEEP Phase1 매트릭스에서 notification_opt_outs.notif_optout_write 도
+--   동일 GAP({admin,manager,director} only, FE messaging=ALL_STAFF_ROLES 와 drift) 으로 표기.
+--   본 migration 이 prod apply 전이므로 2차 DDL-diff 사이클 없이 同 batch 로 합류(planner 지시).
+--   ★opt_outs 역시 messaging 모듈(20260525030000) 동일 출처 — 0g0z batch(FE SSOT 1:1 정렬) 범위 내.
+--    DA/supervisor DDL-diff 게이트에서 opt_outs 합류분 최종 확인 요망.★
 --
 -- ── FE/DB 정렬 추적성 (DA 권고 가드) ─────────────────────────────────────────
 --   • T-20260611-foot-MSGSETTINGS-STAFF-ACCESS (FE 8역할 개방):
@@ -30,6 +40,25 @@ BEGIN;
 -- notif_tmpl_write: FOR ALL (insert/update/delete) — clinic_id isolation INVARIANT 유지 + allowlist 8역할 확대.
 DROP POLICY IF EXISTS notif_tmpl_write ON public.notification_templates;
 CREATE POLICY notif_tmpl_write ON public.notification_templates
+  FOR ALL
+  TO authenticated
+  USING (
+    clinic_id = public.get_user_clinic_id()
+    AND public.get_user_role() IN (
+      'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'
+    )
+  )
+  WITH CHECK (
+    clinic_id = public.get_user_clinic_id()
+    AND public.get_user_role() IN (
+      'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'
+    )
+  );
+
+-- notif_optout_write: FOR ALL — notif_tmpl_write 와 동일 패턴(clinic_id INVARIANT + allowlist 8역할).
+--   기존: get_user_role() IN ('admin','manager','director')  →  ADDITIVE 8역할(tm 제외).
+DROP POLICY IF EXISTS notif_optout_write ON public.notification_opt_outs;
+CREATE POLICY notif_optout_write ON public.notification_opt_outs
   FOR ALL
   TO authenticated
   USING (
