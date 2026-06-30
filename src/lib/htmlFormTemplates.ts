@@ -441,6 +441,79 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 진료확인서 2 발급폼 분리 (T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT) ───
+//
+// 단일 진료확인서(treat_confirm, 상병 비노출 = 2026-06-22 김주연 총괄 요청)를 발급폼 2개로 분리.
+//  · nocode(코드·진단명 불포함, 3,000) = 레거시 템플릿 그대로(상병 미렌더). TREAT_CONFIRM_HTML 재사용.
+//  · code(코드·진단명 포함, 10,000)     = 레거시 + 상병(병명) 테이블 + 진단확신도 분류 표시줄 복원.
+//    상병값(diag_code/diag_name)은 service_charges 상병항목에서 읽기 자동주입(autoBindContext, write 0).
+//
+// code 변형은 TREAT_CONFIRM_HTML 의 상병-비노출 주석 지점에 상병 테이블을 주입해 생성 →
+// 레이아웃(도장 위치·여백·치료기간·발행블록)은 단일 소스(TREAT_CONFIRM_HTML)로 유지·동기.
+// 단일템플릿은 diag 조건부 숨김 불가(상병 무조건 주입 or 무조건 숨김) → 별 템플릿 2개로 분기.
+
+/** code 변형 전용 상병(병명) 테이블 + 진단확신도 분류 표시줄 (구 진료확인서에서 복원) */
+const TREAT_CONFIRM_DISEASE_BLOCK = `
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
+        <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
+        <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
+        <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
+      </tr>
+      <tr>
+        <td style="min-height:20px;">{{diag_code_1}}</td>
+        <td>{{diag_name_1}}</td>
+        <td>{{diag_flag_1}}</td>
+      </tr>
+      <tr>
+        <td style="min-height:20px;">{{diag_code_2}}</td>
+        <td>{{diag_name_2}}</td>
+        <td>{{diag_flag_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td style="min-height:20px;">{{diag_code_3}}</td>
+        <td>{{diag_name_3}}</td>
+        <td>{{diag_flag_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td style="min-height:20px;">{{diag_code_4}}</td>
+        <td>{{diag_name_4}}</td>
+        <td>{{diag_flag_4}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="display:flex; border:1px solid #000; border-top:none; gap:0;">
+    <div style="border-right:1px solid #000; padding:4px 10px; display:flex; align-items:center; gap:6px;">
+      <span class="circle circle-filled"></span>
+      <span style="font-size:9pt;">임상적추정</span>
+    </div>
+    <div style="border-right:1px solid #000; padding:4px 10px; display:flex; align-items:center; gap:6px;">
+      <span class="circle"></span>
+      <span style="font-size:9pt;">최 종 진 단</span>
+    </div>
+    <div style="padding:4px 10px; display:flex; align-items:center; gap:6px;">
+      <span class="circle"></span>
+      <span style="font-size:9pt;">임상적진단</span>
+    </div>
+  </div>
+`;
+
+/** 진료확인서(코드·진단명 불포함) = 레거시 템플릿 그대로(상병 미렌더). */
+const TREAT_CONFIRM_NOCODE_HTML = TREAT_CONFIRM_HTML;
+
+/**
+ * 진료확인서(코드·진단명 포함) = 레거시 + 상병 테이블 복원.
+ * 상병-비노출 주석 직후(치료기간 테이블 앞)에 DISEASE_BLOCK 주입. 단일 anchor 치환으로 레이아웃 동기 유지.
+ */
+const TREAT_CONFIRM_CODE_HTML = TREAT_CONFIRM_HTML.replace(
+  '       diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->',
+  '       diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->\n' +
+    TREAT_CONFIRM_DISEASE_BLOCK,
+);
+
 // ─── 통원확인서 ───
 
 const VISIT_CONFIRM_HTML = `
@@ -1929,7 +2002,10 @@ const KOH_RESULT_HTML = `
 const HTML_TEMPLATE_MAP: Record<string, string> = {
   koh_result: KOH_RESULT_HTML,
   diagnosis: DIAGNOSIS_HTML,
-  treat_confirm: TREAT_CONFIRM_HTML,
+  treat_confirm: TREAT_CONFIRM_HTML,  // 레거시 단일(기존 발행문서 재출력 보존)
+  // T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 진료확인서 2 발급폼 분리
+  treat_confirm_code: TREAT_CONFIRM_CODE_HTML,      // 코드·진단명 포함(상병 테이블 렌더)
+  treat_confirm_nocode: TREAT_CONFIRM_NOCODE_HTML,  // 코드·진단명 불포함(상병 미렌더)
   visit_confirm: VISIT_CONFIRM_HTML,
   diag_opinion: DIAG_OPINION_HTML,
   bill_detail: BILL_DETAIL_HTML,

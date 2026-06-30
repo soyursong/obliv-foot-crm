@@ -58,7 +58,9 @@ const DB_TEMPLATES_OLD_LABELS: FormTemplate[] = [
   mockTpl('koh_result', '검사결과 보고서'),
   mockTpl('diag_opinion', '소견서'),
   mockTpl('diagnosis', '진단서'),
-  mockTpl('treat_confirm', '진료확인서'),
+  // T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: treat_confirm 단일 → code/nocode 2폼(레거시 DB active=false)
+  mockTpl('treat_confirm_code', '진료확인서(코드·진단명 포함)'),
+  mockTpl('treat_confirm_nocode', '진료확인서(코드·진단명 불포함)'),
   mockTpl('referral_letter', '진료의뢰서'),
   mockTpl('visit_confirm', '통원확인서'),
   mockTpl('medical_record_request', '의무기록사본발급신청서'),
@@ -112,10 +114,10 @@ test('시나리오2: override 매핑 SSOT — 정확히 2건(bill_detail/koh_res
 
 // ── 시나리오 3: 회귀 가드 — 순서·집합·필드 불변 ────────────────────────────────
 
-test('시나리오3: 순서·표시 집합(10종) parent §1 그대로 회귀 0', () => {
+test('시나리오3: 순서·표시 집합 parent §1 그대로 회귀 0 (SPLIT: 11항목)', () => {
   const result = orderDocList(DB_TEMPLATES_OLD_LABELS);
   expect(result.map((t) => t.form_key)).toEqual([...DOCLIST_ORDER_10]);
-  expect(result).toHaveLength(10);
+  expect(result).toHaveLength(DOCLIST_ORDER_10.length);
 });
 
 test('시나리오3: name_ko 외 필드 보존 — form_key 불변, 발행/바인딩 회귀 0', () => {

@@ -38,7 +38,12 @@ export const DOC_SERIAL_PREFIX: Readonly<Record<string, string>> = {
   koh_result: 'KOH',              // KOH균검사결과지
   diag_opinion: 'OPN',            // 소견서
   diagnosis: 'DIAG',              // 진단서
-  treat_confirm: 'VC',            // 진료확인서
+  treat_confirm: 'VC',            // 진료확인서 (레거시 단일 — 기존 발행문서 재출력 보존)
+  // T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 진료확인서 2 발급폼 분리.
+  //   code/nocode 는 동일 '서류종류(진료확인서)'의 표시변이 → prefix 둘 다 VC 공유.
+  //   11번째 서류종류 신설·발번 분기 금지(티켓 §5) → 같은 VC 통산열 사용.
+  treat_confirm_code: 'VC',       // 진료확인서(코드·진단명 포함)
+  treat_confirm_nocode: 'VC',     // 진료확인서(코드·진단명 불포함)
   referral_letter: 'REF',         // 진료의뢰서
   visit_confirm: 'AV',            // 통원확인서
   medical_record_request: 'MR',   // 진료기록사본
