@@ -323,10 +323,14 @@ function openBatchPrintWindow(
   }`;
   } else {
     // HTML 양식(L-006 12종) — 프린트 엔진 @page 물리 여백으로 중앙 배치(축소 없음).
+    // T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 현장 2차 — 출력물이 아직 위로 쏠림.
+    //   상단 @page margin 을 12mm→30mm(약 +68px ≈ 엔터 4~5줄) 로 키워 콘텐츠를 시트에서 더 아래로 배치.
+    //   하단은 12mm 유지(클립 방지). 콘텐츠박스 높이 = A4 - (상30+하12) → portrait 255mm / landscape 168mm.
+    //   min-height 동시 축소로 단일 페이지·넘침/잘림 없음 보장(AC-2 하단여백 + AC-5 동시충족).
     const pageRule = forceLandscape
-      ? '@page { size: A4 landscape; margin: 12mm 10mm; }'
-      : '@page { size: A4 portrait; margin: 12mm 10mm; }';
-    const minH = forceLandscape ? '186mm' : '273mm'; // A4 short side - @page 상하여백(24mm)
+      ? '@page { size: A4 landscape; margin: 30mm 10mm 12mm; }'
+      : '@page { size: A4 portrait; margin: 30mm 10mm 12mm; }';
+    const minH = forceLandscape ? '168mm' : '255mm'; // A4 short side - @page 상하여백(상30+하12=42mm)
     styleBlock = `
   ${pageRule}
   html, body { margin: 0; padding: 0; }
@@ -337,7 +341,7 @@ function openBatchPrintWindow(
     overflow: visible;
     page-break-after: always;
   }
-  .page-landscape { width: 100%; min-height: 186mm; }
+  .page-landscape { width: 100%; min-height: 168mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* AC-1: 마지막 페이지 빈 페이지 방지 */
