@@ -14,8 +14,11 @@ assignee: dev-foot
 owner: agent-fdd-dev-foot
 e2e_spec: tests/e2e/T-20260630-foot-TM-EDIT-CANCEL.spec.ts
 migration: supabase/migrations/20260630190000_foot_tm_edit_cancel_superset_rpc.sql
+migration_followup: supabase/migrations/20260630193000_foot_tm_edit_cancel_lifecycle_guard.sql  # DA 가드#5 보강(최종 권위 body)
 rollback_sql: supabase/migrations/20260630190000_foot_tm_edit_cancel_superset_rpc.rollback.sql
+rollback_sql_followup: supabase/migrations/20260630193000_foot_tm_edit_cancel_lifecycle_guard.rollback.sql
 apply_script: scripts/apply_20260630190000_foot_tm_edit_cancel_superset_rpc.mjs
+apply_script_followup: scripts/apply_20260630193000_foot_tm_edit_cancel_lifecycle_guard.mjs
 medical_confirm_gate: n/a (도파민 ingest RPC — 진료대시보드/진료관리 비대상)
 data_architect_consult: 면제 (본건 컬럼/테이블/enum 신규 0 = ADDITIVE 함수 분기. external_id TEXT·customer_real_name 은 c COMPANION-RESV-INSERT-FAIL 의 DA GO 자산 합본 carry — 신규정책 아님)
 ---
@@ -45,7 +48,18 @@ data_architect_consult: 면제 (본건 컬럼/테이블/enum 신규 0 = ADDITIVE
   - S1 cancel 전이+슬롯 release(동일 id 회신) / S2 재취소 no-op / S3 타 source 행 불변(split-brain 가드) / S4 active 재푸시 mutable UPDATE+단일행+memo preserve-on-NULL / S5 취소대상 부재 NULL no-op(tombstone 미생성).
 - 회귀 `T-20260630-foot-COMPANION-RESV-INSERT-FAIL.spec.ts` 5/5 GREEN(공유 RPC 무회귀).
 
+## 추가 구현 — DA 가드#5 (lifecycle 상태가드) 보강 · 20260630193000
+
+DA 결정(foot_resv_edit_cancel_da_decision_20260630.md) **Q2 가드#5**(물리동선 상태가드, dev-foot lane)이 190000 합본 body 에 누락 → 보강 migration `20260630193000_foot_tm_edit_cancel_lifecycle_guard.sql`(함수 body-only CREATE OR REPLACE, 컬럼 DDL 0, 완전 가역)로 추가. **이 migration 이 upsert_reservation_from_source 의 새 최종 권위 body**(190000 ⊊ 193000 strict superset).
+
+- **CANCEL**: 멱등키 행 status 선조회 → 부재=NULL no-op / 이미 cancelled=멱등 성공 no-op / **checked_in·done·no_show = reject**(P0001, HINT=LIFECYCLE_INVALID) / confirmed·reserved = cancelled 전이+슬롯 release.
+- **active 재푸시**: 멱등키 행이 **checked_in·done·no_show·cancelled = stale edit reject** / confirmed·reserved·신규 = 정상 mutable UPDATE.
+- 근거: 풋이 물리동선(check_in='checked_in'/done/no_show, 20260629150000 canonical status)으로 이미 진행시킨 예약을 도파민 stale edit/cancel 이 무음 clobber 금지(DA Q2-5). reject=PostgREST 400 → 도파민 reject UX(가드#4 와 동형).
+- self-mint scope(가드#3) 불변: 선조회 WHERE(source_system=p_source_system AND NOT NULL) → foot-native/NULL 미스코프 → 가드 발화 전 NULL no-op(split-brain 유지).
+- 검증: dry-run(BEGIN…ROLLBACK) HTTP201 green → 적용(HTTP201) → 함수 signature 17-arg 단일 + body `lifecycle-invalid`/`c_inflight_terminal` 확인 → **spec 7/7 GREEN**(S6 cancel reject+불변, S7 edit reject+time/status 불변 신규) + COMPANION 회귀 5/5 GREEN. 빌드 OK.
+
 ## 게이트 / 잔여
 - 대표게이트 면제(autonomy §3.1 ADDITIVE+DA GO). DA CONSULT 비대상(컬럼 신규0).
-- supervisor 잔여: DDL-diff(RPC body diff) + ①선결 1행검증. rollback SQL 동봉.
-- ⚠ 배포 순서: 본 합본이 같은 RPC 의 **최종 권위 body**. rpc17(20260630170000) 단독 재적용 또는 별도 (b) 마이그를 본 합본 이후 적용 금지(clobber). 본 합본 = (a)⊃(b)⊃(c) 최종.
+- supervisor 잔여: DDL-diff(RPC body diff — **190000 + 193000 합산이 최종 body**) + ①선결 1행검증. rollback SQL 2종 동봉.
+- ⚠ 배포 순서: **193000(가드#5 보강)이 같은 RPC 의 최종 권위 body**. 190000/rpc17(20260630170000) 단독 재적용 또는 별도 (b) 마이그를 193000 이후 적용 금지(clobber). 최종 = (a)⊃(b)⊃(c)+가드#5.
+- ⚠ 실 write E2E·prod cutover 는 부모 INSERT(T-20260630-foot-CUSTOMERS-CONSENT-MARKETING-COL) prod GREEN 후(§시퀀싱). 가드#5 적용 자체는 함수 보수화(reject 추가)로 blast-radius 0 → 선적용 안전.
