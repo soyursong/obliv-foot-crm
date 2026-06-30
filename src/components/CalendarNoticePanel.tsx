@@ -553,12 +553,13 @@ export default function CalendarNoticePanel() {
           T-20260624-foot-DASH-DUTYCAL-DATE-REACTIVE — 달력에서 날짜 클릭 시 이 고정 섹션 자체가
             클릭한 날짜의 명단으로 변동(today 고정 X) + 해당 날짜 인수인계 동반 표시.
           파트(의사/실장/코디/치료)별 그룹핑. 한 줄 max 4명, 5명+ 는 flex-wrap 자연 줄내림. */}
-      {/* T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2: 대시보드(/admin)에서는
-          이 상시표시 근무캘린더+인수인계 섹션이 day-click 시 하단 인라인 현황(DashboardDateDetail)과
-          동일 데이터·문구로 중복 노출됨(현장 김주연 총괄 피드백). → 대시보드에서만 숨김.
-          예약관리(/admin/reservations)에는 DashboardDateDetail이 없어 중복이 아니므로 유지.
-          ⚠ day-click(DASHCAL: DashboardDateDetail) 기능은 일절 건드리지 않음(보존). */}
-      {!onDashboard && (
+      {/* T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2 — 2026-06-30 P1 HOTFIX:
+          ⚠ 이 사이드바 근무캘린더+인수인계 섹션이 reporter(김주연 총괄)가 스크린샷에서
+          빨간박스로 지목한 '보존 대상'(=day-click 시 날짜별로 갱신되는 정상 현황)이다.
+          직전 배포(d3f908d0)는 (A)/(B) 매핑을 반대로 적용해 이 빨간박스 섹션을 {!onDashboard}로
+          숨겼다 → field-soak FAIL('파란박스 제거 요청했는데 빨간박스가 사라짐'). → 게이트 제거,
+          대시보드에서도 상시 보존. 제거 대상(파란박스=하단 인라인 DashboardDateDetail)은
+          Dashboard.tsx에서 별도로 제거한다. day-click 현황은 이 섹션(selectedDate 반응)이 담당. */}
       <div className="shrink-0 border-b px-3 py-2.5" data-testid="duty-roster-section">
         <div className="mb-2 flex items-center gap-1.5">
           <Users className="h-3.5 w-3.5 text-teal-600" />
@@ -655,7 +656,6 @@ export default function CalendarNoticePanel() {
           )}
         </div>
       </div>
-      )}
 
       {/* ── 공지사항 영역 ───────────────────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0">

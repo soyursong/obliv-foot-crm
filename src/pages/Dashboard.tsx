@@ -84,9 +84,9 @@ import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatie
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import DoctorCallListBar from '@/components/DoctorCallListBar';
-// T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 대시보드 달력 날짜 클릭 → 페이지 이동 없이
-//   하단 인라인 현황(근무스케줄+인수인계) 표시. CalendarNoticePanel이 /admin?date=YYYY-MM-DD 로 네비게이트.
-import DashboardDateDetail from '@/components/DashboardDateDetail';
+// T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2 (2026-06-30 HOTFIX):
+//   하단 인라인 현황(DashboardDateDetail = reporter 파란박스 지목 중복)을 대시보드에서 제거 →
+//   import 불요. day-click 현황은 사이드바 근무캘린더(CalendarNoticePanel)가 담당.
 // T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림을 날짜선택 옆에 배치(헤더에서 이전)
 import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
 import { PaymentDialog } from '@/components/PaymentDialog';
@@ -3163,10 +3163,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const clinic = useClinic();
-  // T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 사이드바 달력에서 날짜 클릭(대시보드 한정) 시
-  //   CalendarNoticePanel이 /admin?date=YYYY-MM-DD 로 네비게이트 → 이 param 존재 시 하단 인라인
-  //   현황 패널을 띄운다. 페이지 이동·대시보드 본문 date state 변경 없음(현황 미리보기 전용).
-  const dateDetailParam = new URLSearchParams(location.search).get('date');
+  // T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2 (2026-06-30 HOTFIX):
+  //   하단 인라인 현황(DashboardDateDetail)을 reporter 요청으로 제거 → ?date= 소비처 없음.
+  //   day-click 현황은 사이드바 근무캘린더(selectedDate 반응)가 담당. (구 T-20260623 [6] supersede)
   const [date, setDate] = useState<Date>(() => new Date());
   // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-A 근본 하드닝):
   //   24/7 접수 태블릿이 자정을 넘기면 마운트 시점 new Date()로 잡힌 date가 '어제'로 stale 고정된다.
@@ -7622,16 +7621,14 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W1-NODB [6]: 사이드바 달력 날짜 클릭 시 하단 인라인 현황.
-          flex-col 루트의 마지막 자식 → shrink-0 + max-h-[38vh]로 본문 아래에 부착(본문 스크롤 영향 0).
-          닫기(onClose) 시 ?date= 제거(=대시보드 기본 화면 복귀). */}
-      {dateDetailParam && (
-        <DashboardDateDetail
-          dateStr={dateDetailParam}
-          clinicId={clinic?.id}
-          onClose={() => navigate('/admin', { replace: true })}
-        />
-      )}
+      {/* T-20260629-foot-STAFFCAL-COMPACT-PASTEL-DASHDUP-REMOVE item2 — 2026-06-30 P1 HOTFIX:
+          ⚠ 이 하단 인라인 현황 패널(DashboardDateDetail)이 reporter(김주연 총괄)가 스크린샷에서
+          파란박스로 지목한 '제거 대상'(=사이드바 근무캘린더+인수인계와 동일 데이터·문구를 하단에
+          중복 노출)이다. 직전 배포(d3f908d0)가 매핑을 반대로 적용해 보존 대상(사이드바=빨간박스)을
+          숨기고 이 파란박스를 남겨 field-soak FAIL. → 이 하단 패널을 대시보드에서 제거한다.
+          day-click 현황 표시는 사이드바 근무캘린더(CalendarNoticePanel duty-roster-section,
+          selectedDate 반응)가 담당하므로 day-click 기능(AC-5)은 보존된다.
+          (이전 T-20260623 [6] 하단 인라인 현황을 reporter 요청으로 supersede.) */}
     </div>
   );
 }
