@@ -120,11 +120,18 @@ test.describe('시나리오3: 일관 매핑 (item1)', () => {
 
   test('AC3-2: 기존 보존 동작 — [완전 삭제]·[SMS/문자]·취소 항목 유지 (직렬화 회귀 가드)', () => {
     // CTXMENU-STALE-PHONE / SMS-SEND / HARDDELETE 등 선행 티켓 산출 보존.
+    // STALEGUARD-QUICKMENU-FALSEPASS-DROP (T-20260701, parent DELCONFIRM-DROP 同型 클로즈):
+    //   기존 QUICK_MENU.toContain('완전 삭제')/('예약 취소') 2건은 false-pass였음 — CANONICAL
+    //   (T-20260611-foot-CTXMENU-UNIFY-CANONICAL, deployed fbb843b)이 CustomerQuickMenu 의
+    //   [완전 삭제]·[예약 취소] 메뉴 항목을 제거했고, 실 렌더 항목은 고객차트/진료차트/예약액션/수납/문자뿐.
+    //   두 문자열은 CustomerQuickMenu.tsx 의 *주석*(이력 L4·L8, 제거고지 L148-150)에만 잔존해
+    //   toContain 이 주석-residual 로 GREEN 가장 → stale 청소(clean 삭제). 부재가드는 .not.toContain 으로
+    //   용도변경 불가(주석이 동일 문자열을 합법 보유 → 부재단언이 주석에 도로 결합). QuickMenu 삭제항목
+    //   부재는 부모 DELCONFIRM-DROP 의 AC2-1 .not.toContain(DELETE_CONFIRM)(L71-74)이 이미 가드.
+    //   CTX_MENU(타임라인)는 [완전 삭제]·[예약 취소] 실항목 보존 → 아래 현존 단언 유지.
     expect(CTX_MENU).toContain('완전 삭제');
     expect(CTX_MENU).toContain('SMS 보내기');
     expect(CTX_MENU).toContain('예약 취소');
-    expect(QUICK_MENU).toContain('완전 삭제');
-    expect(QUICK_MENU).toContain('예약 취소');
   });
 });
 
