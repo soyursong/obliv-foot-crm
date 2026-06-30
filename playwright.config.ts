@@ -203,6 +203,10 @@ export default defineConfig({
         //   정합 + 멱등 회귀 0 + AC-LIVE(컬럼無 신규 INSERT 201 & consent_marketing 동반 INSERT 거부).
         //   광고동의 canonical 거처 = consent_ad(consent_marketing 재추가 금지). page/auth 불요.
         '**/T-20260630-foot-CONSENT-MARKETING-COL-ROLLBACK.spec.ts',
+        // T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE: 진료확인서·통원확인서 2종 한정 우상단 '원부대조필인'
+        //   삭제(총괄 김주연 P0). 진단서·소견서 stamp-box 유지(회귀 0) + 제목 중앙정렬 불변.
+        //   템플릿 정적 가드 + getHtmlTemplate/bindHtmlTemplate 실 렌더 검증. page/auth 불요.
+        '**/T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
