@@ -1,0 +1,821 @@
+{
+  "closureTables": [
+    "check_ins",
+    "checklists",
+    "clinical_images",
+    "consent_forms",
+    "customer_consult_memos",
+    "customer_reservation_memos",
+    "customer_special_notes",
+    "customer_treatment_memos",
+    "form_submissions",
+    "health_q_results",
+    "health_q_tokens",
+    "insurance_claims",
+    "insurance_documents",
+    "insurance_receipts",
+    "message_logs",
+    "notification_logs",
+    "notification_opt_outs",
+    "package_payments",
+    "packages",
+    "patient_file_records",
+    "patient_past_history",
+    "patient_room_daily_log",
+    "payment_code_claims",
+    "payments",
+    "prescriptions",
+    "reservation_memo_history",
+    "reservations",
+    "service_charges",
+    "assignment_actions",
+    "check_in_room_logs",
+    "check_in_services",
+    "notifications",
+    "package_sessions",
+    "payment_audit_logs",
+    "receipt_ocr_results",
+    "status_transitions",
+    "timer_records",
+    "claim_items",
+    "edi_submissions",
+    "insurance_claim_diagnoses",
+    "claim_diagnoses",
+    "payment_reconciliation_log",
+    "redpay_raw_transactions",
+    "prescription_items",
+    "reservation_logs"
+  ],
+  "closureEdges": [
+    {
+      "cname": "check_ins_customer_id_fkey",
+      "child_table": "check_ins",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "checklists_customer_id_fkey",
+      "child_table": "checklists",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "clinical_images_customer_id_fkey",
+      "child_table": "clinical_images",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "consent_forms_customer_id_fkey",
+      "child_table": "consent_forms",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "customer_consult_memos_customer_id_fkey",
+      "child_table": "customer_consult_memos",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "customer_reservation_memos_customer_id_fkey",
+      "child_table": "customer_reservation_memos",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "customer_special_notes_customer_id_fkey",
+      "child_table": "customer_special_notes",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "customer_treatment_memos_customer_id_fkey",
+      "child_table": "customer_treatment_memos",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "customers_referrer_id_fkey",
+      "child_table": "customers",
+      "child_col": "referrer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "form_submissions_customer_id_fkey",
+      "child_table": "form_submissions",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "health_q_results_customer_id_fkey",
+      "child_table": "health_q_results",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "health_q_tokens_customer_id_fkey",
+      "child_table": "health_q_tokens",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "insurance_claims_customer_id_fkey",
+      "child_table": "insurance_claims",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "insurance_documents_customer_id_fkey",
+      "child_table": "insurance_documents",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "insurance_receipts_customer_id_fkey",
+      "child_table": "insurance_receipts",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "message_logs_customer_id_fkey",
+      "child_table": "message_logs",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "notification_logs_customer_id_fkey",
+      "child_table": "notification_logs",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "notification_opt_outs_customer_id_fkey",
+      "child_table": "notification_opt_outs",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "package_payments_customer_id_fkey",
+      "child_table": "package_payments",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "packages_customer_id_fkey",
+      "child_table": "packages",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "packages_transferred_to_fkey",
+      "child_table": "packages",
+      "child_col": "transferred_to",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "patient_file_records_customer_id_fkey",
+      "child_table": "patient_file_records",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "patient_past_history_customer_id_fkey",
+      "child_table": "patient_past_history",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "patient_room_daily_log_patient_id_fkey",
+      "child_table": "patient_room_daily_log",
+      "child_col": "patient_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "payment_code_claims_customer_id_fkey",
+      "child_table": "payment_code_claims",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "payments_customer_id_fkey",
+      "child_table": "payments",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "prescriptions_customer_id_fkey",
+      "child_table": "prescriptions",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "reservation_memo_history_customer_id_fkey",
+      "child_table": "reservation_memo_history",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "reservations_customer_id_fkey",
+      "child_table": "reservations",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "service_charges_customer_id_fkey",
+      "child_table": "service_charges",
+      "child_col": "customer_id",
+      "parent_table": "customers",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "assignment_actions_check_in_id_fkey",
+      "child_table": "assignment_actions",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "check_in_room_logs_check_in_id_fkey",
+      "child_table": "check_in_room_logs",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "check_in_services_check_in_id_fkey",
+      "child_table": "check_in_services",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "checklists_check_in_id_fkey",
+      "child_table": "checklists",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "clinical_images_check_in_id_fkey",
+      "child_table": "clinical_images",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "consent_forms_check_in_id_fkey",
+      "child_table": "consent_forms",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "form_submissions_check_in_id_fkey",
+      "child_table": "form_submissions",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "health_q_results_check_in_id_fkey",
+      "child_table": "health_q_results",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "health_q_tokens_check_in_id_fkey",
+      "child_table": "health_q_tokens",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "insurance_claims_check_in_id_fkey",
+      "child_table": "insurance_claims",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "insurance_documents_check_in_id_fkey",
+      "child_table": "insurance_documents",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "insurance_receipts_check_in_id_fkey",
+      "child_table": "insurance_receipts",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "notifications_check_in_id_fkey",
+      "child_table": "notifications",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "package_sessions_check_in_id_fkey",
+      "child_table": "package_sessions",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "payment_audit_logs_check_in_id_fkey",
+      "child_table": "payment_audit_logs",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "payment_code_claims_check_in_id_fkey",
+      "child_table": "payment_code_claims",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "payments_check_in_id_fkey",
+      "child_table": "payments",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "prescriptions_check_in_id_fkey",
+      "child_table": "prescriptions",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "receipt_ocr_results_check_in_id_fkey",
+      "child_table": "receipt_ocr_results",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "reservation_memo_history_check_in_id_fkey",
+      "child_table": "reservation_memo_history",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "service_charges_check_in_id_fkey",
+      "child_table": "service_charges",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "status_transitions_check_in_id_fkey",
+      "child_table": "status_transitions",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "timer_records_check_in_id_fkey",
+      "child_table": "timer_records",
+      "child_col": "check_in_id",
+      "parent_table": "check_ins",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "health_q_results_token_id_fkey",
+      "child_table": "health_q_results",
+      "child_col": "token_id",
+      "parent_table": "health_q_tokens",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "claim_items_claim_id_fkey",
+      "child_table": "claim_items",
+      "child_col": "claim_id",
+      "parent_table": "insurance_claims",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "edi_submissions_claim_id_fkey",
+      "child_table": "edi_submissions",
+      "child_col": "claim_id",
+      "parent_table": "insurance_claims",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "insurance_claim_diagnoses_claim_id_fkey",
+      "child_table": "insurance_claim_diagnoses",
+      "child_col": "claim_id",
+      "parent_table": "insurance_claims",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "claim_diagnoses_package_payment_id_fkey",
+      "child_table": "claim_diagnoses",
+      "child_col": "package_payment_id",
+      "parent_table": "package_payments",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "package_payments_parent_payment_id_fkey",
+      "child_table": "package_payments",
+      "child_col": "parent_payment_id",
+      "parent_table": "package_payments",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "check_ins_package_id_fkey",
+      "child_table": "check_ins",
+      "child_col": "package_id",
+      "parent_table": "packages",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "package_payments_package_id_fkey",
+      "child_table": "package_payments",
+      "child_col": "package_id",
+      "parent_table": "packages",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "package_sessions_package_id_fkey",
+      "child_table": "package_sessions",
+      "child_col": "package_id",
+      "parent_table": "packages",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "packages_transferred_from_fkey",
+      "child_table": "packages",
+      "child_col": "transferred_from",
+      "parent_table": "packages",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "claim_diagnoses_payment_id_fkey",
+      "child_table": "claim_diagnoses",
+      "child_col": "payment_id",
+      "parent_table": "payments",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "payment_reconciliation_log_payment_id_fkey",
+      "child_table": "payment_reconciliation_log",
+      "child_col": "payment_id",
+      "parent_table": "payments",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "payments_linked_payment_id_fkey",
+      "child_table": "payments",
+      "child_col": "linked_payment_id",
+      "parent_table": "payments",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "payments_parent_payment_id_fkey",
+      "child_table": "payments",
+      "child_col": "parent_payment_id",
+      "parent_table": "payments",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "redpay_raw_transactions_matched_payment_id_fkey",
+      "child_table": "redpay_raw_transactions",
+      "child_col": "matched_payment_id",
+      "parent_table": "payments",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "prescription_items_prescription_id_fkey",
+      "child_table": "prescription_items",
+      "child_col": "prescription_id",
+      "parent_table": "prescriptions",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "check_ins_reservation_id_fkey",
+      "child_table": "check_ins",
+      "child_col": "reservation_id",
+      "parent_table": "reservations",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "notification_logs_reservation_id_fkey",
+      "child_table": "notification_logs",
+      "child_col": "reservation_id",
+      "parent_table": "reservations",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "cname": "reservation_logs_reservation_id_fkey",
+      "child_table": "reservation_logs",
+      "child_col": "reservation_id",
+      "parent_table": "reservations",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "reservation_memo_history_reservation_id_fkey",
+      "child_table": "reservation_memo_history",
+      "child_col": "reservation_id",
+      "parent_table": "reservations",
+      "parent_col": "id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "cname": "check_in_services_package_session_id_fkey",
+      "child_table": "check_in_services",
+      "child_col": "package_session_id",
+      "parent_table": "package_sessions",
+      "parent_col": "id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "cname": "payment_reconciliation_log_raw_transaction_id_fkey",
+      "child_table": "payment_reconciliation_log",
+      "child_col": "raw_transaction_id",
+      "parent_table": "redpay_raw_transactions",
+      "parent_col": "id",
+      "on_delete": "SET NULL"
+    }
+  ],
+  "depth": {
+    "customers": 50,
+    "check_ins": 52,
+    "checklists": 52,
+    "clinical_images": 52,
+    "consent_forms": 52,
+    "customer_consult_memos": 50,
+    "customer_reservation_memos": 50,
+    "customer_special_notes": 50,
+    "customer_treatment_memos": 50,
+    "form_submissions": 52,
+    "health_q_results": 53,
+    "health_q_tokens": 52,
+    "insurance_claims": 52,
+    "insurance_documents": 52,
+    "insurance_receipts": 52,
+    "message_logs": 51,
+    "notification_logs": 52,
+    "notification_opt_outs": 51,
+    "package_payments": 52,
+    "packages": 52,
+    "patient_file_records": 51,
+    "patient_past_history": 51,
+    "patient_room_daily_log": 51,
+    "payment_code_claims": 52,
+    "payments": 102,
+    "prescriptions": 52,
+    "reservation_memo_history": 52,
+    "reservations": 51,
+    "service_charges": 52,
+    "assignment_actions": 52,
+    "check_in_room_logs": 52,
+    "check_in_services": 53,
+    "notifications": 52,
+    "package_sessions": 52,
+    "payment_audit_logs": 52,
+    "receipt_ocr_results": 52,
+    "status_transitions": 52,
+    "timer_records": 52,
+    "claim_items": 53,
+    "edi_submissions": 53,
+    "insurance_claim_diagnoses": 53,
+    "claim_diagnoses": 101,
+    "payment_reconciliation_log": 104,
+    "redpay_raw_transactions": 103,
+    "prescription_items": 53,
+    "reservation_logs": 52
+  },
+  "directCounts": {
+    "check_ins.customer_id": {
+      "n": 393,
+      "on_delete": "NO ACTION"
+    },
+    "checklists.customer_id": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "clinical_images.customer_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "consent_forms.customer_id": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "customer_consult_memos.customer_id": {
+      "n": 8,
+      "on_delete": "CASCADE"
+    },
+    "customer_reservation_memos.customer_id": {
+      "n": 7,
+      "on_delete": "CASCADE"
+    },
+    "customer_special_notes.customer_id": {
+      "n": 2,
+      "on_delete": "CASCADE"
+    },
+    "customer_treatment_memos.customer_id": {
+      "n": 48,
+      "on_delete": "CASCADE"
+    },
+    "customers.referrer_id": {
+      "n": 0,
+      "on_delete": "SET NULL"
+    },
+    "form_submissions.customer_id": {
+      "n": 143,
+      "on_delete": "NO ACTION"
+    },
+    "health_q_results.customer_id": {
+      "n": 40,
+      "on_delete": "CASCADE"
+    },
+    "health_q_tokens.customer_id": {
+      "n": 114,
+      "on_delete": "CASCADE"
+    },
+    "insurance_claims.customer_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "insurance_documents.customer_id": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "insurance_receipts.customer_id": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "message_logs.customer_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "notification_logs.customer_id": {
+      "n": 585,
+      "on_delete": "SET NULL"
+    },
+    "notification_opt_outs.customer_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "package_payments.customer_id": {
+      "n": 13,
+      "on_delete": "NO ACTION"
+    },
+    "packages.customer_id": {
+      "n": 105,
+      "on_delete": "NO ACTION"
+    },
+    "packages.transferred_to": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "patient_file_records.customer_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "patient_past_history.customer_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "patient_room_daily_log.patient_id": {
+      "n": 0,
+      "on_delete": "CASCADE"
+    },
+    "payment_code_claims.customer_id": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "payments.customer_id": {
+      "n": 119,
+      "on_delete": "NO ACTION"
+    },
+    "prescriptions.customer_id": {
+      "n": 0,
+      "on_delete": "NO ACTION"
+    },
+    "reservation_memo_history.customer_id": {
+      "n": 22,
+      "on_delete": "CASCADE"
+    },
+    "reservations.customer_id": {
+      "n": 475,
+      "on_delete": "NO ACTION"
+    },
+    "service_charges.customer_id": {
+      "n": 15,
+      "on_delete": "NO ACTION"
+    }
+  }
+}
