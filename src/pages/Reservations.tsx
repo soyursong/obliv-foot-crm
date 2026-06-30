@@ -2656,6 +2656,8 @@ export default function Reservations() {
         changedBy={changedBy}
         authorName={profile?.name ?? ''}
         isAdmin={profile?.role === 'admin'}
+        /* T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: role='tm'이면 팝업 내 예약등록자 드롭다운 read-only + 저장 차단. */
+        currentUserRole={profile?.role ?? ''}
         onClose={() => {
           setDetail(null); setNewReservationMode(false); setNewReservationInitial(null);
           // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모는 reservation_memo_history(타임라인)에 저장되며
