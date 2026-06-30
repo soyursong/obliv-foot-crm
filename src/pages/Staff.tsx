@@ -31,6 +31,9 @@ import {
 } from '@/components/ui/dialog';
 
 import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
+// T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 로스터 write 를 coordinator 에게 ADDITIVE 확대(DA GO MSG-…-2fre).
+//   canManageStaff(추가/관리 노출) + canManageStaffRow(원장행 차단) + assignableStaffRolesFor(role picker director 제외).
+import { canManageStaff, canManageStaffRow, assignableStaffRolesFor } from '@/lib/permissions';
 
 type Role = StaffRole;
 
@@ -136,7 +139,12 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
   const { profile } = useAuth();
   // admin 또는 manager 권한 모두 직원 관리 가능
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+  // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 추가/관리 권한을 canManageStaff(=admin/manager/director +coordinator)로 확대.
+  //   ★per-row 는 canManageStaffRow 로 원장(director) 행을 coordinator 에게서 차단(RLS role<>director USING 미러).
+  const role = profile?.role;
+  const canManage = canManageStaff(role);
+  // 추가/수정 폼 role picker — coordinator 는 'director' 제외(권한상승 가드 = RLS WITH CHECK 미러).
+  const assignableRoles = assignableStaffRolesFor(role, ROLE_ORDER);
 
   const [openCreate, setOpenCreate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -213,9 +221,14 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
             비활성 포함
           </label>
         </div>
-        <Button size="sm" onClick={() => setOpenCreate(true)}>
-          <Plus className="mr-1 h-4 w-4" /> 신규 직원
-        </Button>
+        {/* T-20260630-foot-STAFFCRUD-CODY-PERM: '신규 직원' 추가 = canManage(코디 포함) 만 노출.
+            기존엔 무게이트(전 직원 노출)였으나 RLS 가 비관리역할 INSERT 를 거부해 effectively 동작 0 →
+            게이트화로 lock-out-in-disguise 제거(실 권한 회수 0). */}
+        {canManage && (
+          <Button size="sm" onClick={() => setOpenCreate(true)}>
+            <Plus className="mr-1 h-4 w-4" /> 신규 직원
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -248,7 +261,8 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                       </Badge>
                     )}
                   </div>
-                  {isAdmin ? (
+                  {/* T-20260630-foot-STAFFCRUD-CODY-PERM: 행 단위 관리 게이트. coordinator 는 원장(director) 행 미노출(RLS USING role<>director 미러). */}
+                  {canManageStaffRow(role, s.role) ? (
                     <div className="flex items-center gap-1">
                       {s.active && (
                         <Button
@@ -323,12 +337,14 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
         onOpenChange={setOpenCreate}
         clinicId={clinic.id}
         onCreated={refresh}
+        assignableRoles={assignableRoles}
       />
 
       <EditStaffDialog
         target={editTarget}
         onClose={() => setEditTarget(null)}
         onSaved={refresh}
+        assignableRoles={assignableRoles}
       />
     </div>
   );
@@ -339,11 +355,14 @@ function CreateStaffDialog({
   onOpenChange,
   clinicId,
   onCreated,
+  assignableRoles,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   clinicId: string;
   onCreated: () => void;
+  // T-20260630-foot-STAFFCRUD-CODY-PERM: role picker 노출 role 한정(coordinator → director 제외).
+  assignableRoles: Role[];
 }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('therapist');
@@ -396,7 +415,7 @@ function CreateStaffDialog({
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
             >
-              {ROLE_ORDER.map((r) => (
+              {assignableRoles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABEL[r]}
                 </option>
@@ -424,10 +443,13 @@ function EditStaffDialog({
   target,
   onClose,
   onSaved,
+  assignableRoles,
 }: {
   target: Staff | null;
   onClose: () => void;
   onSaved: () => void;
+  // T-20260630-foot-STAFFCRUD-CODY-PERM: role picker 노출 role 한정(coordinator → director 제외).
+  assignableRoles: Role[];
 }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('therapist');
@@ -483,7 +505,7 @@ function EditStaffDialog({
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
             >
-              {ROLE_ORDER.map((r) => (
+              {assignableRoles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABEL[r]}
                 </option>

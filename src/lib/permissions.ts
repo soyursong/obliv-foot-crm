@@ -154,6 +154,53 @@ export function canViewRrn(role: UserRole | null | undefined): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260630-foot-STAFFCRUD-CODY-PERM — 근무자(staff 로스터) 추가/수정/비활성 write 권한 role-set (1지점).
+//   현장(김주연 총괄, U0ATDB587PV, 2026-06-30 16:50): 직원·공간 > 직원 탭 근무자 '추가/삭제'를 coordinator 에게도 ADDITIVE 허용.
+//   (T-20260620-foot-STAFF-PERM-UNLOCK-6MENU §④ DEFERRED 보류분의 실티켓.)
+//   ★DA CONSULT-REPLY MSG-20260701-024304-2fre = GO(ADDITIVE/저위험). 대표게이트 불요·CONVENE 불요(single-CRM foot).
+//   ★권한상승 무관(DA 코드검증): auth 권한 판정은 user_profiles.role(별 테이블, RLS current_user_role() source)이고
+//     staff 로스터 INSERT/UPDATE 로는 어떤 계정의 auth 권한도 못 바꾼다(staff.role enum 에 admin/manager 부재).
+//   ★FE union = RLS union 의무: 동반 마이그(20260630220000_staff_coordinator_crud_rls_additive)가
+//     coordinator INSERT/UPDATE(role<>'director', clinic_id=current_user_clinic_id()) ADDITIVE 정책 추가
+//     → effective write-set 1:1 정합. ★FE 단독 merge = lock-out-in-disguise 금지(반드시 마이그 동반 landing).
+export const STAFF_MANAGE_ROLES: UserRole[] = ['admin', 'manager', 'director', 'coordinator'];
+
+/** 근무자(staff 로스터) 추가/수정/비활성 가능 역할인지. null/undefined 안전 기본값 false. */
+export function canManageStaff(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return STAFF_MANAGE_ROLES.includes(role);
+}
+
+/**
+ * 행(개별 staff) 단위 관리 가능 여부 — RLS USING(role<>'director') 미러 + 이중 가드.
+ *   coordinator 는 원장(role='director') 행을 추가/수정/비활성 불가(권한상승 차단, 서버 RLS 와 이중).
+ *   admin/manager/director(운영진)는 전 행 관리.
+ */
+export function canManageStaffRow(
+  actorRole: UserRole | null | undefined,
+  targetStaffRole: string | null | undefined,
+): boolean {
+  if (!canManageStaff(actorRole)) return false;
+  if (actorRole === 'coordinator' && targetStaffRole === 'director') return false;
+  return true;
+}
+
+/**
+ * 근무자 추가/수정 폼의 역할 picker 에 노출할 role 목록 — assignableStaffRolesFor.
+ *   coordinator: 'director'(원장) 제외(RLS WITH CHECK role<>'director' 미러 → 서버거부 UX 방지 + 권한상승 차단).
+ *   admin/manager/director: 전 role.
+ *   ★DA 잔여확인(MSG-…-2fre): foot staff 폼은 name+role 만(license_no/PII 입력 필드 부재) →
+ *     assignableStaffRolesFor 밖 추가 노출 없음. role picker 만 본 함수로 한정하면 충분.
+ */
+export function assignableStaffRolesFor<T extends string>(
+  actorRole: UserRole | null | undefined,
+  allRoles: readonly T[],
+): T[] {
+  if (actorRole === 'coordinator') return allRoles.filter((r) => r !== 'director');
+  return [...allRoles];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260620-foot-PHRASE-STAFF-PERM-BLOCKED — 직원영역 편집(상용구·수가세트) role-set SSOT (1지점).
 //   현장(김주연 총괄, U0ATDB587PV) "직원들이 메인으로 쓰는 곳" → 전직원(8역할, tm 제외) inclusive.
 //   AREA-SEPARATION 모델 표(직원영역 customer/pen_chart = '직원 편집 가능')를 실현.
