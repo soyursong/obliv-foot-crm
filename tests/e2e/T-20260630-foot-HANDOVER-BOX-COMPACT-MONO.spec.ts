@@ -7,8 +7,9 @@
  * 배경(SUPERSEDE): 직전 T-20260609-foot-HANDOVER-PARTBOX-COLOR 의 '박스 배경 파트색'
  *   (PART_BOX_CLASS rose/amber/teal/indigo)을 동일 reporter 자기-override 로 모노톤 회귀.
  *   - 박스 배경/테두리 = 전 파트 동일 모노톤(bg-slate-50/border-slate-200).
- *   - 상단 파트 배지(PART_BADGE_CLASS)는 색 유지 = 불변(유일 파트 색 구분자).
- *   - 이름칩(NAMECARD: 상담 sky/코디 yellow/치료 green)도 불변(범위 밖).
+ *   - 상단 파트 배지 = 무채색(slate-200) 통일 — 라벨(텍스트)만 유지, 색 제거.
+ *       (11:09 PUSH AC2 정정: "배지도 모노톤으로 통일". 파트 구분=배지 텍스트.)
+ *   - 이름칩(NAMECARD: 상담 sky/코디 yellow/치료 green)은 불변(범위 밖).
  *   - 컴팩트: 박스 여백/간격 축소(p-2.5→p-2, space-y-1.5→space-y-1).
  *
  * 커버 시나리오:
@@ -37,8 +38,8 @@ test.describe('T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 박스 컴팩트+모노
     if (!ok) test.skip(true, 'Dashboard not loaded — auth 실패');
   });
 
-  // ── S1. 모노톤 배경 + 컴팩트 렌더 + 배지 색 잔존 ───────────────────────────
-  test('S1 치료사 박스 모노톤(slate) 배경 + 컴팩트 + 배지 green 잔존', async ({ page }) => {
+  // ── S1. 모노톤 배경 + 컴팩트 렌더 + 배지 무채색 ───────────────────────────
+  test('S1 치료사 박스+배지 모노톤(slate) + 컴팩트 + 라벨 유지', async ({ page }) => {
     await gotoHandover(page);
 
     // 오늘 날짜 셀 선택
@@ -78,9 +79,13 @@ test.describe('T-20260630-foot-HANDOVER-BOX-COMPACT-MONO 박스 컴팩트+모노
     await expect(card).toHaveClass(/(^|\s)p-2(\s|$)/);
     await expect(card).toHaveClass(/space-y-1(\s|$)/);
 
-    // AC2/AC4: 파트 배지 색값(green-100) 유지 = 모노톤 회귀에도 불변 + 텍스트 대비 유지
-    await expect(card.getByText('치료사', { exact: true })).toHaveClass(/bg-green-100/);
-    console.log('[HANDOVER-COMPACT-MONO] S1 모노톤+컴팩트+배지색 OK');
+    // AC2(11:09 PUSH 정정): 파트 배지도 무채색(slate-200) 통일 — 라벨은 유지, 파트색 제거
+    const badge = card.getByText('치료사', { exact: true });
+    await expect(badge).toBeVisible(); // 라벨(텍스트) 유지
+    await expect(badge).toHaveClass(/bg-slate-200/);
+    await expect(badge).not.toHaveClass(/bg-green-100/);
+    await expect(badge).not.toHaveClass(/bg-rose-100|bg-amber-100|bg-indigo-100|bg-teal-100/);
+    console.log('[HANDOVER-COMPACT-MONO] S1 박스+배지 모노톤+컴팩트 OK');
   });
 
   // ── S2. 이름칩/배지·필터·폼·캘린더 무회귀 ──────────────────────────────────

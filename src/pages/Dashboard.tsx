@@ -6217,10 +6217,10 @@ export default function Dashboard() {
   //   - 수납대기 = 현재 status payment_waiting (실시간, AC-4).
   //   - 초진/재진 = 완료(누적)·수납대기를 제외한 진행 환자를 visit_type별로(재진=returning, 그 외=초진).
   //     실시간 byStatus(filtered) 기반이라 체크인·상태전환 시 즉시 갱신(AC-4).
+  // T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-3: 상태바 4item 제거로 statusDoneCount/statusPaymentWaitingCount
+  //   표기 소비처가 사라짐 → 미사용 변수 정의 제거(unused 린트 방지). doneCumulativeIds는 activeNonTerminal 계산에 필수라 유지.
   const doneCumulativeIds = new Set<string>(doneEverSet);
   for (const ci of byStatus['done'] ?? []) doneCumulativeIds.add(ci.id);
-  const statusDoneCount = doneCumulativeIds.size;
-  const statusPaymentWaitingCount = (byStatus['payment_waiting'] ?? []).length;
   const activeNonTerminal = filtered.filter(
     (r) => r.status !== 'done' && r.status !== 'payment_waiting' && !doneCumulativeIds.has(r.id),
   );
@@ -6926,30 +6926,25 @@ export default function Dashboard() {
           {/* T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE [변경1]: 자동배정 알림을 날짜선택(< 날짜 > 오늘로) 바로 오른쪽 옆에 배치.
               헤더(AdminLayout)에서 이전 — 중복 노출 없음. 미읽음 0건이면 마키 스트립 미노출.
               애니메이션(마키 흐름 + amber 글로우/펄스, 1.5~1.6s 완만, reduced-motion 폴백)은 컴포넌트 기존 정의 그대로. */}
-          <AssignmentNotifyBell clinicId={clinic?.id ?? null} />
+          {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-1: 종 아이콘 제거 — 마키 스트립만 노출(클릭=드롭다운). */}
+          <AssignmentNotifyBell clinicId={clinic?.id ?? null} showBell={false} />
           {/* T-20260613-foot-FIELDBATCH item6: 날짜 옆 "배정 carry-over (date)" 인디케이터 제거(현장 김주연 총괄 요청).
               공간배정 carry-over 데이터 적용 로직(fetchAssignments eff.hasToday 게이트)은 불변 — 시각 라벨만 삭제. */}
         </div>
 
         <div className="flex items-center gap-3">
-          {/* T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2:
-              진행 현황 4항목 [초진·재진·수납대기·완료]. 완료는 일일 누적(AC-3). */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="dashboard-statusbar-4item">
-            <span>초진 <strong className="text-blue-700">{statusNewCount}</strong></span>
-            <span>·</span>
-            {/* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 재진=초록(firstvisit). 구 raw emerald → A안 초록 통일 */}
-            <span>재진 <strong className="text-firstvisit-700">{statusReturningCount}</strong></span>
-            <span>·</span>
-            <span>수납대기 <strong className="text-amber-700">{statusPaymentWaitingCount}</strong></span>
-            <span>·</span>
-            <span>완료 <strong className="text-foreground">{statusDoneCount}</strong></span>
-          </div>
+          {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-3: 좌측 '초진·재진·수납대기·완료' 상태바 제거(중복).
+              초진/재진 건수는 아래 '전체/신규/재진' 탭으로 통합 표기(AC-2). 수납대기/완료는 각 칸반 컬럼 헤더에 잔존.
+              T-20260623-STATUSBAR-4ITEM가 추가했던 블록을 본 티켓이 흡수. */}
 
+          {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-2: 탭 라벨에 'N건' 표기.
+              기존 화면 보유 카운트(statusNewCount/statusReturningCount) 재사용 — 신규 fetch·집계 없음.
+              전체 = 신규 + 재진(activeNonTerminal 합). 0건도 '0건'으로 정상 표기(NaN 방지). */}
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
             <TabsList className="h-11">
-              <TabsTrigger value="all" className="text-xs px-2.5 min-h-[44px]">전체</TabsTrigger>
-              <TabsTrigger value="new" className="text-xs px-2.5 min-h-[44px]">신규</TabsTrigger>
-              <TabsTrigger value="returning" className="text-xs px-2.5 min-h-[44px]">재진</TabsTrigger>
+              <TabsTrigger value="all" className="text-xs px-2.5 min-h-[44px] whitespace-nowrap">전체 {statusNewCount + statusReturningCount}건</TabsTrigger>
+              <TabsTrigger value="new" className="text-xs px-2.5 min-h-[44px] whitespace-nowrap">신규 {statusNewCount}건</TabsTrigger>
+              <TabsTrigger value="returning" className="text-xs px-2.5 min-h-[44px] whitespace-nowrap">재진 {statusReturningCount}건</TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -6988,7 +6983,8 @@ export default function Dashboard() {
             <button
               data-testid="slot-batch-edit-btn"
               className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition',
+                // T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-4: whitespace-nowrap+shrink-0로 2줄 줄바꿈 방지(1줄 유지)
+                'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition whitespace-nowrap shrink-0',
                 slotBatchEditMode
                   ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
                   : 'text-gray-600 hover:bg-gray-100 border-gray-200',
@@ -7027,7 +7023,8 @@ export default function Dashboard() {
               <button
                 onClick={handleLayoutEditToggle}
                 className={cn(
-                  'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition',
+                  // T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-4: 1줄 유지(줄바꿈 방지)
+                  'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition whitespace-nowrap shrink-0',
                   isLayoutEdit
                     ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
                     : 'text-gray-600 hover:bg-gray-100 border-gray-200',
@@ -7044,7 +7041,8 @@ export default function Dashboard() {
           <div ref={todaySearchWrapRef} className="relative">
             <button
               onClick={() => { setTodaySearchOpen((v) => !v); setTimeout(() => todaySearchRef.current?.focus(), 50); }}
-              className="flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs text-teal-700 hover:bg-teal-100 transition"
+              /* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-4: 1줄 유지(줄바꿈 방지) */
+              className="flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs text-teal-700 hover:bg-teal-100 transition whitespace-nowrap shrink-0"
               title="당일 예약 환자 검색 (이름·전화·차트번호)"
             >
               <Search className="h-3.5 w-3.5" />

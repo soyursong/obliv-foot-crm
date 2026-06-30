@@ -17,11 +17,13 @@
  * ── Request Body (§6-1) ─────────────────────────────────────────
  *   {
  *     "source_system": "dopamine",
- *     "external_id": "<cue_card_id UUID>",
+ *     "external_id": "<cue_card_id UUID 또는 동행 composite `{cue_card}#companion-N` text>",
+ *     "is_companion": false,                ← optional. true=동행(§444 명시 boolean only). T-20260630-COMPANION
  *     "clinic_slug": "jongno-foot",         ← 필수 (DB 조회용, {지점}-{도메인} 통일표기)
  *     "customer": {
- *       "phone_e164": "+82102345...",
+ *       "phone_e164": "+82102345...",      ← 비동행 필수. 동행(is_companion=true)은 무폰 수용(optional)
  *       "name": "홍길동",
+ *       "customer_real_name": "동행루루",   ← optional. 동행명/본명 스냅샷(§4-2b 비키). 미동봉 시 동행은 name 폴백
  *       "birth_year": 1985,      // optional
  *       "gender": "F"            // optional
  *     },
@@ -146,16 +148,34 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'MISSING_FIELD', detail: 'reservation object required' }, 400);
   }
 
+  // ── 동행(companion) discriminator (T-20260630-foot-COMPANION-RESV-INSERT-FAIL, §444) ──
+  //   ★ 명시 boolean only — 더미폰 토큰/이름유무 등 보조신호 판정 절대 금지(§444 국가코드 whack-a-mole 차단).
+  //   true → customers 링크 skip(customer_id=NULL, §52) + customer_real_name(동행명) 스냅샷 + 무폰 수용.
+  //   미동봉/false → 기존 비동행 경로 100% 불변(0-회귀). composite external_id(text)는 external_id TEXT 전환으로 수용.
+  const isCompanion =
+    body['is_companion'] === true ||
+    (!!customer && customer['is_companion'] === true) ||
+    (!!reservation && reservation['is_companion'] === true);
+
   // customer 필수 필드
   const phoneE164 = customer['phone_e164'] as string | undefined;
   const name      = customer['name']       as string | undefined;
-  if (!phoneE164 || !name) {
-    return json({ ok: false, error: 'MISSING_FIELD', detail: 'customer.phone_e164 and customer.name required' }, 400);
-  }
+  // 동행명 스냅샷(§4-2b 비키): 명시 customer_real_name 우선 → 동행이면 name 폴백.
+  const customerRealNameIn = customer['customer_real_name'] as string | undefined;
 
-  // AC-4: E.164 포맷 검증
-  if (!isE164(phoneE164)) {
-    return json({ ok: false, error: 'MISSING_FIELD', detail: `customer.phone_e164 '${phoneE164}' is not valid E.164` }, 400);
+  // 이름은 동행 포함 필수(표시명 복원 근거).
+  if (!name) {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'customer.name required' }, 400);
+  }
+  // 비동행만 phone_e164 필수 + E.164 검증. 동행(§444)은 무폰 수용.
+  if (!isCompanion) {
+    if (!phoneE164) {
+      return json({ ok: false, error: 'MISSING_FIELD', detail: 'customer.phone_e164 required (non-companion)' }, 400);
+    }
+    // AC-4: E.164 포맷 검증
+    if (!isE164(phoneE164)) {
+      return json({ ok: false, error: 'MISSING_FIELD', detail: `customer.phone_e164 '${phoneE164}' is not valid E.164` }, 400);
+    }
   }
 
   // reservation 필수 필드
@@ -298,7 +318,10 @@ Deno.serve(async (req) => {
     //   이므로 phone 단독 조회는 멀티지점(jongno-foot 1,391명 + songdo-foot)에서
     //   동일 phone 양 지점 동시 존재 시 다중행→maybeSingle 에러→무시→오삽입 경로로
     //   500을 유발. clinic_id 스코핑으로 0/1행을 보장하고, 조회 에러를 명시 처리한다.
-    let customerId: string;
+    // ── 동행(§444/§52): customers 링크·phone 역조회 절대 금지 → customer_id=NULL 착지. ──
+    //   비동행만 (clinic_id, phone) lookup/upsert (기존 경로 0-회귀). 동행은 아래 블록 전체 skip.
+    let customerId: string | null = null;
+    if (!isCompanion) {
     const { data: existingCustomer, error: custLookupErr } = await admin
       .from('customers')
       .select('id')
@@ -369,6 +392,7 @@ Deno.serve(async (req) => {
         customerId = newCustomer.id as string;
       }
     }
+    } // end if(!isCompanion) — 동행은 customerId=NULL 유지
 
     // ── AC-5: Reservation INSERT ─────────────────────────────────────────────
     // 결함 1/2: scheduledAt(ISO 8601) → reservation_date + reservation_time 분리
@@ -384,6 +408,14 @@ Deno.serve(async (req) => {
       meta: 'meta', kakao: 'kakao', inbound: 'inbound',
     };
     const createdVia = CREATED_VIA_BY_SOURCE[(sourceSystem ?? 'dopamine').toLowerCase()] ?? 'dopamine';
+
+    // ── 동행명/본명 스냅샷 (T-20260630-foot-COMPANION-RESV-INSERT-FAIL, §4-2b 비키) ──
+    //   명시 customer_real_name 우선 → 동행이면 name 폴백. 비동행 미동봉 → 미삽입(NULL, 0-회귀).
+    //   동행(customer_id=NULL, customers 행 부재)의 캘린더/목록 이름복원 1순위 폴백.
+    const customerRealName =
+      (customerRealNameIn && customerRealNameIn.trim() !== '')
+        ? customerRealNameIn.trim()
+        : (isCompanion ? name : undefined);
 
     const rsvPayload: Record<string, unknown> = {
       customer_id:      customerId,
@@ -411,6 +443,9 @@ Deno.serve(async (req) => {
       ...(registrarId         ? { registrar_id: registrarId }            : {}),
       ...(registrarNameLanded ? { registrar_name: registrarNameLanded }  : {}),
       ...(visitRouteLanded    ? { visit_route: visitRouteLanded }        : {}),
+      // T-20260630-foot-COMPANION-RESV-INSERT-FAIL (§4-2b): 동행명/본명 스냅샷(표시전용 폴백).
+      //   비키 — JOIN/dedup/귀속 미사용. 동행(customer_id=NULL) 이름복원 1순위. NULL=정상.
+      ...(customerRealName    ? { customer_real_name: customerRealName }  : {}),
       // campaign_id/adset_id/ad_id 는 customers 컬럼 — reservations에서 제거 (결함 5 수정)
     };
 
@@ -440,7 +475,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'INTERNAL', detail: 'reservation insert returned no data' }, 500);
     }
 
-    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId} clinic_slug=${clinicSlug} clinic_id=${clinicId} service_code=${serviceCode ?? '-'} service_id=${serviceId ?? '-'} created_via=${createdVia} visit_route=${visitRouteLanded ?? '-'} registrar_id=${registrarId ?? '-'} registrar_name=${registrarNameLanded ?? '-'}`);
+    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId ?? 'NULL'} is_companion=${isCompanion} customer_real_name=${customerRealName ?? '-'} clinic_slug=${clinicSlug} clinic_id=${clinicId} service_code=${serviceCode ?? '-'} service_id=${serviceId ?? '-'} created_via=${createdVia} visit_route=${visitRouteLanded ?? '-'} registrar_id=${registrarId ?? '-'} registrar_name=${registrarNameLanded ?? '-'}`);
     return json({ ok: true, reservation_id: newRsv.id, applied: true });
 
   } catch (err) {

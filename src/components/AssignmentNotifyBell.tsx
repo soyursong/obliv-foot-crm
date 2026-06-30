@@ -57,7 +57,16 @@ function persistReadIds(userId: string | null | undefined, ids: Set<string>) {
   }
 }
 
-export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | null }) {
+// T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-1: 대시보드 헤더에서 '종 아이콘' 제거 요청.
+//   마키 스트립(클릭=드롭다운 토글)이 이미 알림 진입점이라 종 버튼은 중복 → showBell={false}로 숨김.
+//   기본값 true 유지 → 예약관리(Reservations) 등 기존 사용처는 동작 불변(스코프 격리).
+export default function AssignmentNotifyBell({
+  clinicId,
+  showBell = true,
+}: {
+  clinicId: string | null;
+  showBell?: boolean;
+}) {
   const { profile } = useAuth();
   const [notifs, setNotifs] = useState<AssignNotif[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => loadReadIds(profile?.id));
@@ -235,24 +244,28 @@ export default function AssignmentNotifyBell({ clinicId }: { clinicId: string | 
           </span>
         </button>
       )}
-      <button
-        type="button"
-        data-testid="assign-notify-bell"
-        onClick={() => setOpen((v) => !v)}
-        className="relative flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border bg-muted/50 px-2 py-1.5 text-muted-foreground transition hover:bg-muted"
-        title="자동배정 알림"
-        aria-label={`자동배정 알림 ${unreadCount}건`}
-      >
-        <Bell className="h-4 w-4" />
-        {unreadCount > 0 && (
-          <span
-            data-testid="assign-notify-count"
-            className="absolute -right-1 -top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-tight text-white"
-          >
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
+      {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-1: 종(Bell) 버튼+미읽음 배지는 showBell일 때만.
+          대시보드(showBell={false})에선 마키만 노출 — 드롭다운은 마키 클릭으로 진입. */}
+      {showBell && (
+        <button
+          type="button"
+          data-testid="assign-notify-bell"
+          onClick={() => setOpen((v) => !v)}
+          className="relative flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border bg-muted/50 px-2 py-1.5 text-muted-foreground transition hover:bg-muted"
+          title="자동배정 알림"
+          aria-label={`자동배정 알림 ${unreadCount}건`}
+        >
+          <Bell className="h-4 w-4" />
+          {unreadCount > 0 && (
+            <span
+              data-testid="assign-notify-count"
+              className="absolute -right-1 -top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-tight text-white"
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {open && (
         <div
