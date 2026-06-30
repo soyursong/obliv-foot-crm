@@ -1822,6 +1822,20 @@ function DraggableBox1Card({
       <span className="shrink-0 bg-blue-100 text-blue-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation)}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
+      {/* T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW (김주연 총괄): 초진 예약 박스 '성함 폰뒷자리' → '성함 폰뒷자리 [간략메모]'.
+          - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
+          - 간략메모 미선택(빈값)이면 미렌더 → '미선택/재진은 기존 그대로' 보장.
+          - [힐러]는 brief_note 텍스트가 아니라 is_healer_intent 플래그(노란박스 #FFFDE7) → 여기 자동 비표기(AC4 중복 회피).
+          - AC2 clip 가드: max-w + truncate로 폭 넘침 방지(성함은 truncate로 우선 공간 확보). */}
+      {reservation.brief_note?.trim() && (
+        <span
+          className="shrink-0 max-w-[80px] truncate text-teal-700 font-medium text-[9px]"
+          title={reservation.brief_note.trim()}
+          data-testid="box1-brief-note"
+        >
+          [{reservation.brief_note.trim()}]
+        </span>
+      )}
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지 */}
       <OutstandingDueBadge data={box1Outstanding} />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
