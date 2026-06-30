@@ -83,7 +83,7 @@ test.describe('T-20260630-foot-HANDOVER-DELETE-PERSIST 삭제 영속성', () => 
 
   // ── S2. FE 핸들러 affected-rows 가드 소스 불변식(AC-2 silent 제거 금지) ───────
   test('S2 handleDelete 가 affected-rows(.select())를 검증해 silent 성공을 막는다', async () => {
-    const src = readFileSync(join(__dirname, '../../src/pages/Handover.tsx'), 'utf8');
+    const src = readFileSync(join(process.cwd(), 'src/pages/Handover.tsx'), 'utf8');
     const handler = src.slice(src.indexOf('const handleDelete'), src.indexOf('const handleDelete') + 1200);
     // delete 호출이 .select() 로 삭제 행을 회수해야 한다.
     expect(handler).toMatch(/\.delete\(\)[\s\S]*\.select\(/);
