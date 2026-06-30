@@ -6951,11 +6951,15 @@ export default function Dashboard() {
           {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-2: 탭 라벨에 'N건' 표기.
               기존 화면 보유 카운트(statusNewCount/statusReturningCount) 재사용 — 신규 fetch·집계 없음.
               전체 = 신규 + 재진(activeNonTerminal 합). 0건도 '0건'으로 정상 표기(NaN 방지). */}
+          {/* T-20260630-foot-DASH-STATBAR-SIZE-MATCH-BTN: 통계바(전체/신규/재진) 높이·폰트를 같은 행 '슬롯편집'/'배치 편집'
+              버튼(px-2 py-1 text-xs font-medium border ≈ 26px)에 맞춰 통일. 순수 presentation — 카운트 값·쿼리·로직 미접촉.
+              TabsList h-11(44px)→h-[26px]+p-0.5, TabsTrigger min-h-[44px]→h-full min-h-0(컨테이너 높이로 fill, py-0 px-2=버튼 동일).
+              font-medium은 버튼과 동일(기존 trigger 기본값 유지·명시). flex items-center 행이라 세로중앙 정렬은 자동. */}
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-            <TabsList className="h-11">
-              <TabsTrigger value="all" className="text-xs px-2.5 min-h-[44px] whitespace-nowrap">전체 {statusNewCount + statusReturningCount}건</TabsTrigger>
-              <TabsTrigger value="new" className="text-xs px-2.5 min-h-[44px] whitespace-nowrap">신규 {statusNewCount}건</TabsTrigger>
-              <TabsTrigger value="returning" className="text-xs px-2.5 min-h-[44px] whitespace-nowrap">재진 {statusReturningCount}건</TabsTrigger>
+            <TabsList className="h-[26px] p-0.5">
+              <TabsTrigger value="all" className="text-xs font-medium px-2 py-0 h-full min-h-0 whitespace-nowrap">전체 {statusNewCount + statusReturningCount}건</TabsTrigger>
+              <TabsTrigger value="new" className="text-xs font-medium px-2 py-0 h-full min-h-0 whitespace-nowrap">신규 {statusNewCount}건</TabsTrigger>
+              <TabsTrigger value="returning" className="text-xs font-medium px-2 py-0 h-full min-h-0 whitespace-nowrap">재진 {statusReturningCount}건</TabsTrigger>
             </TabsList>
           </Tabs>
 
