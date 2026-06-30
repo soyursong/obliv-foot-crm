@@ -6,9 +6,10 @@
  *   - CONFIRM_GO 미설정 → BEGIN ... (deletes) ... ROLLBACK : 행수만 집계, 실삭제 0.
  *   - CONFIRM_GO=YES    → BEGIN ... (deletes) ... COMMIT   : 실삭제.
  *
- * 선행 완료 필수: AC1 PASS(26/26), AC2 백업(~/foot-purge-backup-*) 무결성 PASS.
+ * 선행 완료 필수: AC1 PASS, AC2 백업(~/foot-purge-backup-*) 무결성 PASS.
  *
- * 삭제 범위: 보존 26 chart_number 제외 전체 customers(453) + 폐포 자식 전이 삭제.
+ * 삭제 범위: 보존 30 chart_number 제외 전체 customers(449) + 폐포 자식 전이 삭제.
+ * (1차 pass: 보존 28 실고객 + 거버넌스 유예 2 = 30, 삭제대상 449. published 의무기록 0건.)
  * 순서: 폐포 의존(자식→부모) 역위상. 단일 트랜잭션 → 실패 시 전량 롤백(원자성).
  * 실행: Supabase Management API (/database/query) 단일 multi-statement 트랜잭션.
  */
@@ -17,7 +18,8 @@ const TOKEN=process.env.SUPABASE_ACCESS_TOKEN||(()=>{throw new Error('SUPABASE_A
 const GO = process.env.CONFIRM_GO === 'YES';
 async function sql(q){const r=await fetch(`https://api.supabase.com/v1/projects/${PROJ_REF}/database/query`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${TOKEN}`},body:JSON.stringify({query:q})});const b=await r.json();if(!r.ok){console.error('SQL ERR',r.status,JSON.stringify(b).slice(0,500));throw new Error('SQL failed');}return b;}
 
-const PRESERVE=['F-1190','F-0155','F-0156','F-0154','F-0187','F-0158','F-0157','F-0455','F-1089','F-0896','F-0521','F-1236','F-1237','F-3904','F-4067','F-4271','F-4272','F-4273','F-4310','F-4328','F-4343','F-4344','F-4365','F-4391','F-4380','F-4421'];
+// 1차 pass preserve = 30 (보존 28: 실고객 26 + 김민경 F-0177·정명희 F-4270 / 거버넌스 유예 2: F-4323·F-4352 트리거우회 미승인 → 2차로 이연). 30 제외 = 삭제대상 449.
+const PRESERVE=['F-1190','F-0155','F-0156','F-0154','F-0187','F-0158','F-0157','F-0455','F-1089','F-0896','F-0521','F-1236','F-1237','F-3904','F-4067','F-4271','F-4272','F-4273','F-4310','F-4328','F-4343','F-4344','F-4365','F-4391','F-4380','F-4421','F-0177','F-4270','F-4323','F-4352'];
 const inList=PRESERVE.map(c=>`'${c}'`).join(',');
 const L=s=>console.log(s);
 
