@@ -2,7 +2,8 @@
 const PROJ_REF = 'rxlomoozakkjesdqjtvd';
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN || (() => { throw new Error('SUPABASE_ACCESS_TOKEN env required'); })();
 async function sql(q){const r=await fetch(`https://api.supabase.com/v1/projects/${PROJ_REF}/database/query`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${TOKEN}`},body:JSON.stringify({query:q})});const b=await r.json();if(!r.ok){console.error(JSON.stringify(b));throw new Error('SQL');}return b;}
-const PRESERVE=['F-1190','F-0155','F-0156','F-0154','F-0187','F-0158','F-0157','F-0455','F-1089','F-0896','F-0521','F-1236','F-1237','F-3904','F-4067','F-4271','F-4272','F-4273','F-4310','F-4328','F-4343','F-4344','F-4365','F-4391','F-4380','F-4421'];
+// 1차 pass preserve = 30 (보존 28 + 거버넌스 유예 2: F-4323/F-4352 트리거우회 미승인 → 1차 제외)
+const PRESERVE=['F-1190','F-0155','F-0156','F-0154','F-0187','F-0158','F-0157','F-0455','F-1089','F-0896','F-0521','F-1236','F-1237','F-3904','F-4067','F-4271','F-4272','F-4273','F-4310','F-4328','F-4343','F-4344','F-4365','F-4391','F-4380','F-4421','F-0177','F-4270','F-4323','F-4352'];
 const inList=PRESERVE.map(c=>`'${c}'`).join(',');
 const L=s=>console.log(s);
 
@@ -22,8 +23,8 @@ L('━'.repeat(60));
 L('AC3 dry-run 상위 집계  (READ-ONLY)  '+new Date().toISOString());
 L('━'.repeat(60));
 L(`  (a) customers 총수            : ${agg.total}`);
-L(`  (b) 보존 대상(26 매칭)         : ${agg.preserve_matched}  (distinct chart_number: ${agg.preserve_distinct})`);
-L(`  (c) 삭제 대상(보존26 제외 전체) : ${agg.delete_target}`);
+L(`  (b) 보존 대상(30 매칭)         : ${agg.preserve_matched}  (distinct chart_number: ${agg.preserve_distinct})`);
+L(`  (c) 삭제 대상(보존30 제외 전체) : ${agg.delete_target}`);
 L(`  (d) chart_number NULL          : ${agg.null_chartno}`);
 L(`      chart_number 중복(>1행)    : ${dups.length}종 ${dups.length?'→ '+dups.map(d=>`${d.chart_number}(${d.n})`).join(', '):''}`);
 L(`  검증: (b)+(c) = ${agg.preserve_matched+agg.delete_target} (=총수 ${agg.total} 와 ${agg.preserve_matched+agg.delete_target===agg.total?'일치 ✅':'불일치 ❌'})`);
