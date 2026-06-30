@@ -18,6 +18,9 @@ import { useClinic } from '@/hooks/useClinic';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
 import { Loader2, TrendingUp, CalendarDays } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
+// T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 경과분석 탭 상단 위젯 3종(요약 카드/회차 분포/최근 추이).
+//   당일 코호트 rows 를 read-only 로 재사용 + 자체 최근 14일 추이 집계. 기존 대상자 리스트는 그대로(4번째 섹션).
+import ProgressAnalyticsWidgets from '@/components/treatment/ProgressAnalyticsWidgets';
 
 interface ProgressTargetRow {
   reservationId: string;
@@ -112,7 +115,16 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   const isToday = date === today;
 
   return (
-    <div className="flex flex-col gap-2" data-testid="progress-targets-section">
+    <div className="flex flex-col gap-4" data-testid="progress-targets-section">
+      {/* T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 상단 위젯 3종(요약 카드/회차 분포/최근 추이) — read-only 집계. */}
+      <ProgressAnalyticsWidgets
+        date={date}
+        clinicId={clinic?.id}
+        cohortRows={rows}
+        cohortLoading={isLoading}
+      />
+
+      <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium">
@@ -227,6 +239,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
