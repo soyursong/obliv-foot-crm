@@ -578,12 +578,18 @@ export default function AdminLayout() {
           {/* T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part B: 종 아이콘 옆 1분 자동 새로고침 카운트다운(무손실) */}
           <DashboardRefreshCountdown />
           <div className="relative">
+            {/* T-20260630-foot-DASHTIMER-DEPLOYNOTIF-MERGE-SEARCHWIDTH:
+                AC2 — min-h-[36px]로 옆 타이머 박스와 세로높이 정렬.
+                AC3 — sm:w-72(≈2배)로 가로 확장 + whitespace-nowrap·justify-between으로 한 줄 유지(겹침/줄바꿈 0). */}
             <button
+              data-testid="dashboard-customer-search"
               onClick={() => { setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50); }}
-              className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition"
+              className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition min-h-[36px] whitespace-nowrap sm:w-72"
             >
-              <Search className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">고객 검색</span>
+              <span className="flex items-center gap-2">
+                <Search className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">고객 검색</span>
+              </span>
               <kbd className="hidden sm:inline rounded border bg-background px-1.5 text-[10px]">⌘K</kbd>
             </button>
             {searchOpen && (
