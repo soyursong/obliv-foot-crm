@@ -31,22 +31,42 @@ const BELL = fs.readFileSync(path.resolve('src/components/AssignmentNotifyBell.t
 // 라이브 렌더 — 상단 종(B안) 존재 + 패널 토글
 // ════════════════════════════════════════════════════════════════════════
 test.describe('T-20260622 AUTOASSIGN-BADGE-NOTIFY — 상단 알림 종 (라이브)', () => {
-  test('AC-B3/B4: 헤더에 알림 종 노출 + 클릭 시 패널 열림', async ({ page }) => {
+  // T-20260630-foot-BADGE-NOTIFY-STALE-MOUNT-ASSERT: 종 진입점 이전/재설계 반영.
+  //   06-29 T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE(b72c82bb): 종을 전역 헤더(AdminLayout)→대시보드로 이전.
+  //   06-30 T-20260630-foot-DASH-HEADER-DEDUP-COMPACT: 대시보드는 showBell={false} → 종 버튼 숨김, 마키 스트립이 진입점.
+  //   ∴ 대시보드 라이브 정본 = (a) 종 버튼(assign-notify-bell) 미노출(DEDUP-COMPACT S2와 정합),
+  //      (b) 미읽음 배정이 있을 때만 마키(assign-notify-marquee) 노출 → 클릭 시 패널 토글(showBell 무관, open 상태로 렌더).
+  //   클린 QA 픽스처(자동배정 0건)에선 마키도 미노출이라 상호작용 단계는 best-effort.
+  //   production 코드는 정본 — 본 수정은 stale 단언만 현재 진입점 설계에 동기화한다.
+  test('AC-B3/B4: 대시보드 종 버튼 미노출(정본) + 마키 존재 시 클릭→패널 토글', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) { test.skip(true, '로그인 실패 — 스킵'); return; }
 
-    const bell = page.getByTestId('assign-notify-bell');
-    await expect(bell).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(2000);
+
+    // (a) 대시보드 showBell={false} → 종 버튼은 노출되지 않는다(DEDUP-COMPACT 정본과 정합).
+    expect(
+      await page.getByTestId('assign-notify-bell').count(),
+      '대시보드에 종 버튼이 남아있음 (showBell={false} 위반)',
+    ).toBe(0);
+
+    // (b) 미읽음 배정 알림이 있을 때만 마키 진입점이 노출 → 있으면 클릭→패널 열림→"모두 읽음"(B5)→재클릭 닫힘.
+    const marquee = page.getByTestId('assign-notify-marquee');
+    if ((await marquee.count()) === 0) {
+      // 클린 QA 환경(자동배정 0건) — 진입점 미노출이 정상. 상호작용은 데이터 의존이라 best-effort skip.
+      return;
+    }
+    await expect(marquee).toBeVisible({ timeout: 5_000 });
 
     // 클릭 → 패널 열림 (고객→담당 내역 또는 빈 안내)
-    await bell.click();
+    await marquee.click();
     await expect(page.getByTestId('assign-notify-panel')).toBeVisible({ timeout: 5_000 });
 
     // "모두 읽음" 컨트롤 존재 (B5)
     await expect(page.getByTestId('assign-notify-readall')).toBeVisible();
 
     // 다시 클릭 → 닫힘
-    await bell.click();
+    await marquee.click();
     await expect(page.getByTestId('assign-notify-panel')).toHaveCount(0, { timeout: 5_000 });
   });
 });
@@ -84,9 +104,13 @@ test.describe('T-20260622 AUTOASSIGN-BADGE-NOTIFY — A안 배지 (소스 무결
 // 소스 무결성 — B안 알림 종 결선 (데이터·읽음·실시간)
 // ════════════════════════════════════════════════════════════════════════
 test.describe('T-20260622 AUTOASSIGN-BADGE-NOTIFY — B안 알림 (소스 무결성)', () => {
-  test('헤더(AdminLayout)에 종 마운트 + clinic 전달', () => {
-    expect(LAYOUT).toContain('AssignmentNotifyBell');
-    expect(LAYOUT).toMatch(/<AssignmentNotifyBell clinicId=\{clinic\?\.id \?\? null\} \/>/);
+  // T-20260630-foot-BADGE-NOTIFY-STALE-MOUNT-ASSERT: 종 마운트 위치를 정본(Dashboard)으로 동기화.
+  //   06-29 T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE(deployed b72c82bb)가 자동배정 알림 종을
+  //   전역 헤더(AdminLayout)→대시보드 날짜선택 옆으로 이전 → 헤더 마운트 단언은 stale(baseline 상시 실패).
+  //   production 코드는 정본이며, 본 수정은 테스트 단언만 현재 마운트 위치에 동기화한다.
+  test('대시보드(Dashboard)에 종 마운트 + clinic 전달', () => {
+    expect(DASH).toContain('AssignmentNotifyBell');
+    expect(DASH).toMatch(/<AssignmentNotifyBell clinicId=\{clinic\?\.id \?\? null\}/);
   });
 
   test('데이터 소스 = 기존 assignment_actions auto_assign (신규 스키마 0)', () => {
