@@ -474,10 +474,34 @@ export default function Customers() {
     [],
   );
 
+  // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ④ (DA CONSULT-REPLY DA-20260701):
+  //   PII-egress audit — export 성공 시 fn_log_customer_export(DEFINER RPC) 호출.
+  //   ★actor/role/clinic 은 서버파생(RPC 내부) — 클라이언트는 구조메타만 전달.
+  //   ★filter_context = 구조메타(필터 활성 bool)만. 검색어 원문(전화/이름) 절대 미전달(C1②).
+  //   ★best-effort: 감사기록 실패가 이미 완료된 다운로드를 막지 않음(DA Q2 skip-risk 명시·수용).
+  const logExportAudit = useCallback(
+    async (selectionMode: 'selected' | 'filter_all', count: number) => {
+      try {
+        await (supabase.rpc as any)('fn_log_customer_export', {
+          p_selection_mode: selectionMode,
+          p_selected_count: count,
+          p_filter_context: {
+            has_query: query.trim().length > 0,
+            has_staff_filter: staffFilter !== '',
+          },
+        });
+      } catch (e) {
+        // 감사기록 실패는 비차단(다운로드는 이미 완료). 콘솔 경고만.
+        console.warn('customer export audit log failed (non-blocking):', e);
+      }
+    },
+    [query, staffFilter],
+  );
+
   const handleExport = useCallback(async () => {
-    // 권한 게이트(실행): admin/manager만. 버튼은 미노출이지만 호출 경로 이중 방어.
+    // 권한 게이트(실행): customer_export 보유 역할만. 버튼은 미노출이지만 호출 경로 이중 방어.
     if (!canExportCustomers) {
-      toast.error('내보내기 권한이 없습니다 (관리자·매니저 전용)');
+      toast.error('내보내기 권한이 없습니다');
       return;
     }
     if (exporting || !clinic) return;
@@ -491,6 +515,7 @@ export default function Customers() {
       }
       const rows = targets.map((c) => toCsvRow(c, statsMap.get(c.id), birthMap));
       downloadCustomerCsv(rows, customerCsvFilename());
+      void logExportAudit('selected', rows.length);
       toast.success(`${rows.length}명 내보내기 완료`);
       return;
     }
@@ -522,12 +547,13 @@ export default function Customers() {
       );
       const rows = all.map((c) => toCsvRow(c, exStats.get(c.id), exBirth));
       downloadCustomerCsv(rows, customerCsvFilename());
+      void logExportAudit('filter_all', rows.length);
       const capped = all.length >= EXPORT_MAX;
       toast.success(`${rows.length}명 내보내기 완료${capped ? ` (상한 ${EXPORT_MAX}명)` : ''}`);
     } finally {
       setExporting(false);
     }
-  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow]);
+  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow, logExportAudit]);
 
   return (
     <div className="flex h-full flex-col p-6">

@@ -21,7 +21,7 @@ export type PermKey =
   | 'register'
   | 'messaging'      // T-20260525-foot-MESSAGING-V1: 통합 설정 > 메시지 → T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: 전직원(8역할) 개방, tm 제외
   | 'manual_sms_send'   // T-20260606-foot-CTXMENU-SMS-SEND: 대시보드 우클릭 [문자] 수동 1:1 발송 → T-20260608-foot-SMS-CTXMENU-ALLROLE: 전직원 확대
-  | 'customer_export';  // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 고객 리스트 내보내기(CSV). PII(전화·생년월일) 포함 → admin/manager 한정.
+  | 'customer_export';  // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 고객 리스트 내보내기(CSV). PII(전화·생년월일) 포함. → T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ④: 직원 3역할 ADDITIVE 확대 + export audit sub-gate.
 
 // T-20260608-foot-SMS-CTXMENU-ALLROLE: 전직원(8역할) 집합 SSOT.
 // FE PERM_MATRIX.manual_sms_send 와 EF send-notification allowedRoles(manual_send) 가
@@ -90,7 +90,13 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   //   내보내기 컬럼에 전화·생년월일 등 PII 포함 → 최소권한 원칙으로 admin/manager 한정(노출·실행 동시 게이팅).
   //   ★rrn(주민번호)은 어떤 권한이든 export 컬럼에서 영구 제외(customerCsv.ts 헤더에 부재).★
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director. CSV는 FE에서 이미 로드된 데이터로 생성(별도 RLS 없음) → RLS/감사로그 영향 0. rrn 영구 제외 불변. admin 비제거.
-  customer_export: ['admin', 'manager', 'director'],
+  // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ④ (DA CONSULT-REPLY DA-20260701, GO 조건부):
+  //   직원 3역할(coordinator·consultant·therapist) ADDITIVE 확대. role_scope CONFIRMED(2026-06-30 김주연 총괄 ts:1782820093).
+  //   ★전화번호·생년월일 bulk = RRN-class PHI 아님(birth_date=일반PII) → 6MENU RRN 대표게이트 bar 전이 안 됨(DA 판정).
+  //   ★PII-egress sub-gate: 권한확대 ≠ audit 면제 — export 실행 시 fn_log_customer_export(DEFINER RPC)로
+  //     who/when/row수/구조필터 감사기록(customer_export_audit, 마이그 20260701030000). actor/role/clinic 서버파생(위조불가).
+  //   ★rrn 영구 제외·admin/manager/director 무회귀(확대만). ADDITIVE.
+  customer_export: ['admin', 'manager', 'director', 'coordinator', 'consultant', 'therapist'],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

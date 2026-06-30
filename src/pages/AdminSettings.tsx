@@ -275,9 +275,11 @@ export default function AdminSettings() {
   //   읽기 UNION only — 데이터 이중화 없음. T-20260610 백필 과거분도 sms_opt_in=false라 자동 포함.
   const loadOptOuts = useCallback(async (cid: string) => {
     const [optRes, custRes] = await Promise.all([
+      // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ⑨: soft-delete 행 제외(deleted_at IS NULL 만 활성 수신거부).
       (supabase.from('notification_opt_outs') as any)
         .select('*')
         .eq('clinic_id', cid)
+        .is('deleted_at', null)
         .order('opted_out_at', { ascending: false }),
       (supabase.from('customers') as any)
         .select('id, name, phone, sms_opt_in, sms_opt_in_at, updated_at, created_at')
@@ -431,6 +433,7 @@ export default function AdminSettings() {
               clinicId={clinic.id}
               optOuts={optOuts}
               onRefresh={() => loadOptOuts(clinic.id)}
+              actorId={profile?.id ?? null}
             />
           )}
           {activeSection === '7_selfcheckin_qr' && (isAdmin || isManager || isUnlock) && (
@@ -1504,10 +1507,11 @@ function SectionHistory({ logs, onRefresh }: { logs: NotificationLog[]; onRefres
 // ⑥ 수신거부 명단
 // ══════════════════════════════════════════════════════════════════════════════
 
-function SectionOptOut({ clinicId, optOuts, onRefresh }: {
+function SectionOptOut({ clinicId, optOuts, onRefresh, actorId }: {
   clinicId: string;
   optOuts: OptOutRow[];
   onRefresh: () => void;
+  actorId: string | null;   // T-...-EXPORT-AUTOSEND ⑨: soft-delete deleted_by(현재 사용자 id).
 }) {
   const [newPhone, setNewPhone] = useState('');
   const [reason, setReason]     = useState('');
@@ -1533,10 +1537,18 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
   const handleRemove = async (row: OptOutRow) => {
     setRemoving(row.key);
     try {
-      // 1) 수동(notification_opt_outs) → DELETE
+      // 1) 수동(notification_opt_outs) → soft-delete (★T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ⑨, DA-20260701)
+      //    정보통신망법상 수신거부 의사 보존 의무 → hard-delete 금지. deleted_at/deleted_by 마킹(복구가능).
+      //    DB RLS 도 DELETE 경로 제거(마이그 20260701031000) — soft-delete UPDATE 만 허용.
       if (row.manualId) {
         const { error } = await (supabase.from('notification_opt_outs') as any)
-          .delete().eq('id', row.manualId);
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: actorId,
+            delete_reason: '관리자 해제',
+          })
+          .eq('id', row.manualId)
+          .is('deleted_at', null);
         if (error) throw error;
       }
       // 2) 셀프체크인/차트(customers.sms_opt_in=false) → sms_opt_in=true UPDATE (단건/동일번호 다행)
