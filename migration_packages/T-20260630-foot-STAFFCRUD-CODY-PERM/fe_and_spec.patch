@@ -1,0 +1,251 @@
+diff --git a/src/lib/permissions.ts b/src/lib/permissions.ts
+index c617e921..1beca4d9 100644
+--- a/src/lib/permissions.ts
++++ b/src/lib/permissions.ts
+@@ -1,6 +1,8 @@
+ // T-20260525-foot-MESSAGING-V1: 풋센터 권한 매트릭스
+ // 메시지 설정: T-20260611-foot-MSGSETTINGS-STAFF-ACCESS 로 전직원(8역할, tm 제외) 개방
+ 
++import type { StaffRole } from './types';
++
+ export type UserRole =
+   | 'admin'
+   | 'manager'
+@@ -55,6 +57,43 @@ export function isStaffUnlockRole(role: UserRole | null | undefined): boolean {
+   return STAFF_UNLOCK_ROLES.includes(role);
+ }
+ 
++// ─────────────────────────────────────────────────────────────────────────────
++// T-20260630-foot-STAFFCRUD-CODY-PERM — 근무자(staff 로스터) 추가/수정/삭제 권한 role-set (1지점).
++//   현장(김주연 총괄, U0ATDB587PV, #project-doai-crm-풋확장 2026-06-30): 직원·공간 > 직원 탭의
++//   근무자 '추가/삭제'를 coordinator 에게도 ADDITIVE 허용. (6MENU line172 [DEFERRED] §④의 실티켓.)
++//   ★RC(dev-foot 2026-06-30): 본 surface = staff 로스터 테이블(StaffPage>StaffTab) — 로그인 계정(user_profiles)이
++//     아님. staff.role enum = director/consultant/coordinator/therapist/technician (admin/manager 부재).
++//     ∴ staff 로스터 생성 ≠ 계정 생성 = 권한상승 경로 아님. user_profiles(계정관리)는 본건 미포함(admin-only 불변).
++//   ★기존 게이트 = isAdmin(admin/manager/director). coordinator 만 ADDITIVE 추가(consultant/therapist 미포함 = 요청 한정).
++//   ★권한상승 가드(guard1): coordinator 는 'director'(원장) 로스터 행을 생성/수정/비활성 불가
++//     (assignableStaffRolesFor + 동반 RLS WITH CHECK role<>'director' 이중). admin/manager/director 는 전 역할 가능(무회귀).
++//   ★FE union = RLS union 의무: staff write-RLS = staff_admin_all(is_admin_or_manager = admin/manager/director)이라
++//     coordinator 는 DB 에서 거부됨 → 동반 ADDITIVE 마이그(20260630220000_staff_coordinator_crud_rls_additive)로
++//     effective write-set 정합(coordinator INSERT/UPDATE, role<>'director', clinic-scoped). DA CONSULT GO + supervisor
++//     DDL-diff 후 FE↔DB ★동반 landing★ (FE 단독 merge = lock-out-in-disguise 금지).
++export const STAFF_CRUD_ROLES: UserRole[] = ['admin', 'manager', 'director', 'coordinator'];
++
++/** 근무자(staff 로스터) 추가/수정/삭제(비활성) 권한 보유 여부. null/undefined 안전 기본값 false. */
++export function canManageStaff(role: UserRole | null | undefined): boolean {
++  if (!role) return false;
++  return STAFF_CRUD_ROLES.includes(role);
++}
++
++/**
++ * 근무자 추가/수정 시 actor 가 배정 가능한 staff.role 옵션(권한상승 가드).
++ *   - admin/manager/director: 전 staff 역할(원장 포함) — 무회귀.
++ *   - coordinator: 'director'(원장) 제외 — 코디가 원장 로스터를 만들/바꿀 수 없음(guard1).
++ *   - 그 외: 빈 배열(쓰기 권한 없음 — UI 게이트로 도달 불가하나 방어적).
++ */
++export function assignableStaffRolesFor(
++  actorRole: UserRole | null | undefined,
++  allRoles: readonly StaffRole[],
++): StaffRole[] {
++  if (!actorRole || !canManageStaff(actorRole)) return [];
++  if (actorRole === 'coordinator') return allRoles.filter((r) => r !== 'director');
++  return [...allRoles];
++}
++
+ // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → dashboard/reservations/customers/stats 만 허용.
+ //   ⚠️ ALL_STAFF_ROLES 에는 tm 을 넣지 않는다 — ALL_STAFF_ROLES 는 manual_sms_send 의 EF(send-notification)
+ //   allowedRoles 와 role 패리티를 이루는 SSOT 이고, tm 은 SMS 발송 권한(AC6 미포함, 임의 권한 부여 금지)이
+diff --git a/src/pages/Staff.tsx b/src/pages/Staff.tsx
+index 5b4075b1..f66a4699 100644
+--- a/src/pages/Staff.tsx
++++ b/src/pages/Staff.tsx
+@@ -31,6 +31,8 @@ import {
+ } from '@/components/ui/dialog';
+ 
+ import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
++// T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 CRUD 권한 게이트 + 권한상승 가드(원장 배정 차단) SSOT.
++import { canManageStaff, assignableStaffRolesFor } from '@/lib/permissions';
+ 
+ type Role = StaffRole;
+ 
+@@ -136,7 +138,11 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
+   const { profile } = useAuth();
+   // admin 또는 manager 권한 모두 직원 관리 가능
+   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
+-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
++  // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 추가/수정/삭제 게이트를 canManageStaff(admin/manager/director +coordinator ADDITIVE)로 일원화.
++  //   ★기존 add 버튼은 게이트 부재(전 진입역할 노출)였으나 staff write-RLS 가 막아 lock-out-in-disguise 였음 → canManageStaff 로 정합 게이팅(coordinator 동반 RLS landing).
++  //   ★consultant/therapist 는 본 요청 미포함(요청 한정) → add/delete 미노출(무회귀: 어차피 RLS 거부였음).
++  const canCrudStaff = canManageStaff(profile?.role);
++  const actorRole = profile?.role;
+ 
+   const [openCreate, setOpenCreate] = useState(false);
+   const [showInactive, setShowInactive] = useState(false);
+@@ -213,9 +219,11 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
+             비활성 포함
+           </label>
+         </div>
+-        <Button size="sm" onClick={() => setOpenCreate(true)}>
+-          <Plus className="mr-1 h-4 w-4" /> 신규 직원
+-        </Button>
++        {canCrudStaff && (
++          <Button size="sm" onClick={() => setOpenCreate(true)}>
++            <Plus className="mr-1 h-4 w-4" /> 신규 직원
++          </Button>
++        )}
+       </div>
+ 
+       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+@@ -248,7 +256,8 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
+                       </Badge>
+                     )}
+                   </div>
+-                  {isAdmin ? (
++                  {/* T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 원장(director) 로스터 행 수정/비활성 불가(권한상승 차단). */}
++                  {canCrudStaff && !(actorRole === 'coordinator' && s.role === 'director') ? (
+                     <div className="flex items-center gap-1">
+                       {s.active && (
+                         <Button
+@@ -322,11 +331,13 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
+         open={openCreate}
+         onOpenChange={setOpenCreate}
+         clinicId={clinic.id}
++        actorRole={actorRole}
+         onCreated={refresh}
+       />
+ 
+       <EditStaffDialog
+         target={editTarget}
++        actorRole={actorRole}
+         onClose={() => setEditTarget(null)}
+         onSaved={refresh}
+       />
+@@ -338,16 +349,20 @@ function CreateStaffDialog({
+   open,
+   onOpenChange,
+   clinicId,
++  actorRole,
+   onCreated,
+ }: {
+   open: boolean;
+   onOpenChange: (v: boolean) => void;
+   clinicId: string;
++  actorRole: Role | string | null | undefined;
+   onCreated: () => void;
+ }) {
+   const [name, setName] = useState('');
+   const [role, setRole] = useState<Role>('therapist');
+   const [submitting, setSubmitting] = useState(false);
++  // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director'(원장) 배정 불가. admin/manager/director 는 전 역할.
++  const roleOptions = assignableStaffRolesFor(actorRole, ROLE_ORDER);
+ 
+   useEffect(() => {
+     if (!open) {
+@@ -396,7 +411,7 @@ function CreateStaffDialog({
+               value={role}
+               onChange={(e) => setRole(e.target.value as Role)}
+             >
+-              {ROLE_ORDER.map((r) => (
++              {roleOptions.map((r) => (
+                 <option key={r} value={r}>
+                   {ROLE_LABEL[r]}
+                 </option>
+@@ -422,16 +437,23 @@ function CreateStaffDialog({
+ // ============================================================
+ function EditStaffDialog({
+   target,
++  actorRole,
+   onClose,
+   onSaved,
+ }: {
+   target: Staff | null;
++  actorRole: Role | string | null | undefined;
+   onClose: () => void;
+   onSaved: () => void;
+ }) {
+   const [name, setName] = useState('');
+   const [role, setRole] = useState<Role>('therapist');
+   const [saving, setSaving] = useState(false);
++  // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director' 배정 불가. 단, 기존 행 역할이 옵션에 없으면(타역할 보존) 현재값 보존 표시.
++  const roleOptions = useMemo(() => {
++    const base = assignableStaffRolesFor(actorRole, ROLE_ORDER);
++    return target && !base.includes(target.role) ? [target.role, ...base] : base;
++  }, [actorRole, target]);
+ 
+   useEffect(() => {
+     if (target) {
+@@ -483,7 +505,7 @@ function EditStaffDialog({
+               value={role}
+               onChange={(e) => setRole(e.target.value as Role)}
+             >
+-              {ROLE_ORDER.map((r) => (
++              {roleOptions.map((r) => (
+                 <option key={r} value={r}>
+                   {ROLE_LABEL[r]}
+                 </option>
+diff --git a/tests/e2e/T-20260630-foot-STAFFCRUD-CODY-PERM.spec.ts b/tests/e2e/T-20260630-foot-STAFFCRUD-CODY-PERM.spec.ts
+new file mode 100644
+index 00000000..b89bd131
+--- /dev/null
++++ b/tests/e2e/T-20260630-foot-STAFFCRUD-CODY-PERM.spec.ts
+@@ -0,0 +1,60 @@
++// T-20260630-foot-STAFFCRUD-CODY-PERM — 근무자(staff 로스터) 추가/삭제 coordinator ADDITIVE 허용
++//   시나리오 4종: ① 코디 추가  ② 코디 삭제(비활성)  ③ admin 회귀  ④ 권한상승 차단(원장 배정 불가)
++//   게이트 SSOT = permissions.ts canManageStaff / assignableStaffRolesFor (FE union),
++//   동반 RLS = 20260630220000_staff_coordinator_crud_rls_additive (DB union, role<>director).
++
++import { test, expect } from '@playwright/test';
++import { canManageStaff, assignableStaffRolesFor, STAFF_CRUD_ROLES } from '../../src/lib/permissions';
++import { STAFF_ROLE_ORDER } from '../../src/lib/status';
++
++// ── ① 시나리오: 코디네이터 근무자 추가 가능 ──────────────────────────────────
++test('S1 coordinator 근무자 추가/삭제 게이트 통과(canManageStaff=true)', () => {
++  expect(canManageStaff('coordinator')).toBe(true);
++});
++
++// ── ② 시나리오: 코디 삭제(비활성) — 동일 게이트(add/edit/delete 일원화) ──────
++test('S2 coordinator 삭제(비활성)도 동일 canManageStaff 게이트', () => {
++  // FE: 추가버튼·행 edit/delete 모두 canManageStaff 단일 게이트 → coordinator true 면 삭제 노출.
++  expect(canManageStaff('coordinator')).toBe(true);
++  // 코디는 일반 staff 역할(원장 제외)은 추가/수정 대상으로 배정 가능.
++  const opts = assignableStaffRolesFor('coordinator', STAFF_ROLE_ORDER);
++  expect(opts).toContain('therapist');
++  expect(opts).toContain('consultant');
++  expect(opts).toContain('coordinator');
++  expect(opts).toContain('technician');
++});
++
++// ── ③ 시나리오: admin/manager/director 무회귀 ─────────────────────────────────
++test('S3 admin/manager/director 기존 동선 100% 유지(무회귀)', () => {
++  for (const role of ['admin', 'manager', 'director'] as const) {
++    expect(canManageStaff(role), `${role} must manage staff`).toBe(true);
++    // 상위 3역할은 원장(director) 포함 전 역할 배정 가능(무회귀).
++    const opts = assignableStaffRolesFor(role, STAFF_ROLE_ORDER);
++    expect(opts).toEqual([...STAFF_ROLE_ORDER]);
++    expect(opts).toContain('director');
++  }
++});
++
++// ── ④ 시나리오: 권한상승 차단 ────────────────────────────────────────────────
++test('S4 권한상승 차단: coordinator 는 원장(director) 배정 불가', () => {
++  const opts = assignableStaffRolesFor('coordinator', STAFF_ROLE_ORDER);
++  expect(opts).not.toContain('director'); // 코디가 원장 로스터 생성/승격 불가(서버 RLS 와 이중)
++});
++
++test('S4b 본 요청 외 역할(consultant/therapist/part_lead/staff/tm)에 add/delete 신설 금지', () => {
++  for (const role of ['consultant', 'therapist', 'part_lead', 'staff', 'tm'] as const) {
++    expect(canManageStaff(role), `${role} must NOT manage staff`).toBe(false);
++    expect(assignableStaffRolesFor(role, STAFF_ROLE_ORDER)).toEqual([]);
++  }
++});
++
++test('S4c STAFF_CRUD_ROLES SSOT = admin/manager/director/coordinator 정확히 4역할', () => {
++  expect([...STAFF_CRUD_ROLES].sort()).toEqual(['admin', 'coordinator', 'director', 'manager']);
++});
++
++// ── 방어: null/undefined 안전 ─────────────────────────────────────────────────
++test('S5 null/undefined role 안전(false / 빈 배열)', () => {
++  expect(canManageStaff(null)).toBe(false);
++  expect(canManageStaff(undefined)).toBe(false);
++  expect(assignableStaffRolesFor(null, STAFF_ROLE_ORDER)).toEqual([]);
++});
