@@ -79,15 +79,20 @@ test.describe('T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP — 정적 정합', 
     expect(m![1]).toContain("'coordinator'");
   });
 
-  test('제외3 잠금 무회귀(음성 가드): 통계 stats=coordinator 미포함 + register/customer_export 비확대', () => {
+  test('제외3 잠금 무회귀(음성 가드): 통계 stats + CSV export = coordinator 미포함(잠금 유지)', () => {
     const p = readRepo(PERMS);
-    // stats PermKey 에 coordinator 가 (본 우산으로) 추가되지 않았는지 — 잠금 유지
+    // 제외3 = 통계 / 매출집계 / 계정관리. PERM_MATRIX 로 표현되는 잠금 surface:
+    //   - stats(통계) PermKey 에 coordinator 가 (본 우산으로) 추가되지 않았는지 — 잠금 유지
     const stats = p.match(/stats:\s*\[([^\]]*)\]/);
     expect(stats).not.toBeNull();
     expect(stats![1]).not.toContain("'coordinator'");
-    // 계정관리(register)·CSV export 도 coordinator 비확대(제외 유지)
-    const reg = p.match(/register:\s*\[([^\]]*)\]/);
-    expect(reg![1]).not.toContain("'coordinator'");
+    //   - customer_export(고객 CSV·PII) coordinator 비확대(admin/manager/director 한정 유지)
+    const exp = p.match(/customer_export:\s*\[([^\]]*)\]/);
+    expect(exp).not.toBeNull();
+    expect(exp![1]).not.toContain("'coordinator'");
+    // ※ register(=접수/신규등록 동선) 는 제외3(계정관리)이 아님 — REGISTER-MENU-CODY-UNLOCK(2026-06-30
+    //   김주연 총괄 confirm)로 coordinator 旣개방됨. 계정관리(직원 계정 CRUD)는 staff/user_profiles surface 로
+    //   STAFFCRUD-CODY-PERM 티켓이 별도 관리(본 우산 미적용, AC6). 따라서 register 음성가드는 부적절 → 제거.
   });
 
   test('상위역할 무회귀(음성 가드): admin/manager/director 가 daily_room_status 기존 정책에서 유지', () => {
@@ -99,12 +104,16 @@ test.describe('T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP — 정적 정합', 
   });
 });
 
-// ── 라이브 RLS 성공 검증 — apply(접미사 제거) 후에만 실효. HOLD 상태면 skip. ──
-const APPLIED = !fs.existsSync(path.resolve(__dirname, '../../', MIG_BASE + '.DA_CONSULT_HOLD'))
+// ── 라이브 RLS 성공 검증 — 실 DB apply 후에만 실효. ──
+// 주의: 마이그 .sql 활성화(접미사 제거)는 supervisor 정적 DDL-diff 인식용이며, 실 PROD apply 와는 분리됨
+//   (선례 패턴: rename→DDL-diff GO→dev-foot 직접 apply). 따라서 파일 존재가 아니라 명시 env(RLS_APPLIED=1)로 게이트해
+//   DDL-diff 대기 구간(파일=.sql 이나 DB 미적용)에 라이브 테스트가 거짓 실행되지 않도록 한다.
+const APPLIED = process.env.RLS_APPLIED === '1'
+  && !fs.existsSync(path.resolve(__dirname, '../../', MIG_BASE + '.DA_CONSULT_HOLD'))
   && fs.existsSync(path.resolve(__dirname, '../../', MIG_BASE));
 
 test.describe('시나리오1 라이브: coordinator daily_room_status 토글 성공(apply 후 실효)', () => {
-  test.skip(!APPLIED, 'DA CONSULT GO + supervisor DDL-diff 후 마이그 apply 시점에 실효');
+  test.skip(!APPLIED, 'supervisor DDL-diff GO + 실 DB apply 후 RLS_APPLIED=1 로 실효');
   test('coordinator 계정 방 토글 → RLS 거부 없이 성공', async ({ page }) => {
     // apply 후 활성화: coordinator 로그인 → /admin/staff(직원·공간) → 방 토글 → toast 성공('비활성화됨'/'활성화됨')
     // RLS 차단 시 'row-level security'/'토글 실패' 노출 → 실패. (가드: 권한오류 문구 부재)
