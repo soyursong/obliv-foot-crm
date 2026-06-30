@@ -1982,7 +1982,6 @@ export default function Reservations() {
                     daySlots.map((time) => {
                       const list = slotList(time);
                       const { n, rr, h } = kindCounts(time);
-                      const total = n + rr + h;
                       const full = isSlotFull(dateStr, time);
                       const isNow = isSameDay(selectedDay, now) && time === currentSlot;
                       const isDragOver = dropTarget === `${dateStr}_${time}`;
@@ -2015,33 +2014,44 @@ export default function Reservations() {
                             data-testid={`resv-day-hslot-${time}`}
                             data-slot-time={time}
                             className={cn(
-                              'sticky top-0 z-10 flex min-h-[32px] items-center justify-between gap-0.5 rounded-t-lg border-b bg-muted/40 px-1 py-0.5',
+                              // T-20260630-foot-RESV-CAL-COUNT-LABEL: 헤더를 세로 2단(시간행 / 건수행)으로 — 건수 라벨을 시간 바로
+                              //   아래 full-width 한 줄에 배치(AC3: 좁은 90px 컬럼에서 좌우 분할 대신 전폭 사용 → overflow/줄넘침 방지).
+                              //   sticky·정렬·배경색(isNow 실버 / full 레드)은 불변. (+) 버튼은 시간행 우측 그대로(동선 무변경, AC5).
+                              'sticky top-0 z-10 flex min-h-[32px] flex-col justify-center gap-0.5 rounded-t-lg border-b bg-muted/40 px-1 py-0.5',
                               // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX 건2: 현재시각 헤더 노랑(bg-amber-50) → 실버(bg-slate-100).
                               isNow && 'bg-slate-100',
                               full && 'bg-red-50',
                             )}
                           >
-                            <div className="flex min-w-0 items-center gap-0.5">
-                              <span className="text-[10px] font-semibold tabular-nums text-foreground">{time}</span>
-                              {total > 0 ? (
-                                <span className="flex flex-wrap items-center gap-0.5 text-[8px] font-medium leading-none">
-                                  {n > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-0.5 py-0.5 text-blue-700">초 {n}</span>}
-                                  {rr > 0 && <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-0.5 py-0.5 text-firstvisit-700">재 {rr}</span>}
-                                  {h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-0.5 py-0.5 text-healer-700">HL {h}</span>}
-                                </span>
-                              ) : null}
+                            <div className="flex min-w-0 items-center justify-between gap-0.5">
+                              <span className="text-[10px] font-semibold tabular-nums leading-none text-foreground">{time}</span>
+                              {!full && (
+                                <button
+                                  type="button"
+                                  data-testid={`resv-day-slot-plus-${time}`}
+                                  onClick={() => openNewSlot(selectedDay, time)}
+                                  title="예약 추가"
+                                  className="inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-muted-foreground/40 px-1 py-0.5 text-[10px] text-muted-foreground transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              )}
                             </div>
-                            {!full && (
-                              <button
-                                type="button"
-                                data-testid={`resv-day-slot-plus-${time}`}
-                                onClick={() => openNewSlot(selectedDay, time)}
-                                title="예약 추가"
-                                className="inline-flex items-center gap-0.5 rounded border border-dashed border-muted-foreground/40 px-1 py-0.5 text-[10px] text-muted-foreground transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
-                              >
-                                <Plus className="h-3 w-3" />
-                              </button>
-                            )}
+                            {/* T-20260630-foot-RESV-CAL-COUNT-LABEL: 시간 바로 아래 한 줄 — 초/재/힐러 3종 건수 통일 표기.
+                                · AC1 부분표기 제거: 0 포함 항상 3종 노출(전 슬롯 일관). 例 "초2 · 재1 · 힐러0".
+                                · AC2 산식 = kindCounts(resvKind SSOT·취소 제외) — 이미 로드된 resvByKey 재사용(신규쿼리 없음).
+                                · AC3 90px 컬럼 대비 text-[8px] + whitespace-nowrap(줄넘침 X) + 전폭 행.
+                                · 색 = T-20260625-COLOR-CONVENTION-UNIFY A안: 초진 파랑 / 재진 초록(firstvisit) / 힐러 노랑(healer-700). 순서 초→재→힐러. */}
+                            <span
+                              data-testid={`resv-day-hslot-count-${time}`}
+                              className="flex items-center gap-0.5 whitespace-nowrap text-[8px] font-medium leading-none"
+                            >
+                              <span className="text-blue-700">초{n}</span>
+                              <span className="text-muted-foreground/40">·</span>
+                              <span className="text-firstvisit-700">재{rr}</span>
+                              <span className="text-muted-foreground/40">·</span>
+                              <span className="text-healer-700">힐러{h}</span>
+                            </span>
                           </div>
                           {/* 세로 진열 영역 — 그 시간의 예약을 클릭 없이 세로로 누적. */}
                           <div data-testid={`resv-day-col-cards-${time}`} className="flex flex-1 flex-col gap-1 overflow-y-auto p-1">
