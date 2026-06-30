@@ -45,7 +45,7 @@ import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslot
 // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 활성패키지/치료내역 = 2번차트 패키지탭 양식(read-only) 재사용
 import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/PackageTicketReadonlyList';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
-import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor } from '@/lib/types';
+import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor, resolveVisitRouteDisplay } from '@/lib/types';
 
 // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins 재진판정용 타입.
 //   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용).
@@ -1469,7 +1469,10 @@ export function ReservationDetailPopup({
                   <div className="flex gap-2 min-w-0 items-center">
                     <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약경로</span>
                     <Select
-                      value={visitRoute || '__none__'}
+                      // T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-1: 도파민→풋 ingest 예약은
+                      //   visit_route 미착지(legacy/미수신)여도 source_system='dopamine' 마커로 'TM' 표시.
+                      //   ⚠ 순수 display — state(visitRoute)·DB는 미변경(저장 시 사용자가 명시 선택한 값만 영속).
+                      value={resolveVisitRouteDisplay(visitRoute, reservation.source_system) || '__none__'}
                       onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}
                     >
                       <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-visit-route">
@@ -1477,8 +1480,9 @@ export function ReservationDetailPopup({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                        {/* W2-DB(item8): 신규 5종 + legacy 인바운드 현재값 보존(visitRouteOptionsFor) */}
-                        {visitRouteOptionsFor(visitRoute).map((opt) => (
+                        {/* W2-DB(item8): 신규 5종 + legacy 인바운드 현재값 보존(visitRouteOptionsFor).
+                            ROUTE-TM-REGISTRANT AC-1: 도파민 fallback('TM')도 옵션에 포함되도록 resolved 값 기준. */}
+                        {visitRouteOptionsFor(resolveVisitRouteDisplay(visitRoute, reservation.source_system)).map((opt) => (
                           <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1651,7 +1655,8 @@ export function ReservationDetailPopup({
                           데이터 소스 = AC7과 동일(registrar_name). AC7 DB검증 결과(write 무결·생성시 미수집)상 미할당 예약은 '—' graceful. */}
                       <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
                       {selectedResv.id !== reservation.id && (
-                        <FieldRow label="예약경로" value={selectedResv.visit_route ?? '—'} />
+                        // T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-1: 도파민 ingest 예약 'TM' 표시(순수 display).
+                        <FieldRow label="예약경로" value={resolveVisitRouteDisplay(selectedResv.visit_route, selectedResv.source_system) || '—'} />
                       )}
                     </>
                   ) : (
