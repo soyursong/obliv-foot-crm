@@ -7,9 +7,14 @@ import { join } from 'path';
  * supersedes: CHART2-RRN-IDBADGE-PASTEL-SHRINK, RRN-VERIFY-BADGE-PASTEL-SHRINK
  *
  * 2번 차트(고객정보) 주민번호 행 신분증 확인 배지 2종 — 파스텔 톤 + 절반 축소 (FE-only).
- * - 확인 필요(미입력) : 진한레드 → 파스텔 핑크/로즈 (bg-rose-100 text-rose-400 border-rose-200)
+ * - 확인 필요(미입력) : 진한레드 → 파스텔 핑크/로즈
  * - 확인 완료(검증후)  : 파스텔 그린(firstvisit 컨벤션) 유지, 크기만 절반
  * 두 배지 모두 폰트/패딩/아이콘(●) 약 50% 축소. 표시 조건·텍스트·위치·전환 로직 불변.
+ *
+ * ⚠ supersedes_visual: T-20260701-foot-CHART2-IDVERIFY-DOT-ONLY 가 본 건의 '박스 파스텔 배경'
+ *   시각 처리를 'dot-only(무채색 glass/silver 박스 + 왼쪽 dot만 색)'로 재정의했다.
+ *   → 배경 채색을 단언하던 AC1/AC2 두 케이스는 dot-only 현실로 갱신(파스텔 색은 dot에 계승).
+ *   절반 사이즈(AC3)·텍스트(AC4)·전환 로직(AC5)은 그대로 계승 → 회귀 가드 유지.
  *
  * 런타임 렌더는 인증·시드 환경 의존이 커서, 본 spec은 소스 정합 가드로
  * className 변경이 회귀 없이 유지되는지 검증한다 (현장 클릭 시나리오 1·2 변환).
@@ -43,12 +48,14 @@ function doneBlock(): string {
 }
 
 // ── 시나리오 1: 확인 필요 배지 = 파스텔 핑크 + 절반 ──
-// NOTE: T-20260629-foot-RRN-VERIFY-BADGE-PASTEL-SHRINK 후속 추가 톤다운으로 로즈→파스텔 핑크 전환.
-test('AC1 확인 필요 배지 = 파스텔 핑크(bg-pink-100/text-pink-400/border-pink-200)', () => {
+// supersedes_visual(DOT-ONLY): 박스 파스텔 핑크 배경 → 무채색 glass + 핑크 dot으로 재정의.
+// 파스텔 핑크 색은 dot(bg-pink-300)에 계승됨을 단언.
+test('AC1 확인 필요 배지 파스텔 핑크 색 계승 — dot(bg-pink-300)으로 이동(DOT-ONLY 재정의)', () => {
   const b = needBlock();
-  expect(b).toContain('bg-pink-100');
-  expect(b).toContain('text-pink-400');
-  expect(b).toContain('border-pink-200');
+  expect(b).toContain('bg-pink-300'); // 색은 dot에 계승
+  // 박스 full-background 파스텔 핑크는 DOT-ONLY 로 제거됨
+  expect(b).not.toContain('bg-pink-100');
+  expect(b).not.toContain('text-pink-400');
 });
 
 test('AC1 진한레드 하드코딩 제거 — #FEE2E2/#B91C1C/bg-red-500 미사용', () => {
@@ -69,11 +76,12 @@ test('AC3 확인 필요 배지 절반 사이즈 — px-1.5/py-0.5/font-medium, p
 });
 
 // ── 시나리오 2: 확인 완료 배지 = 파스텔 그린(firstvisit) + 절반 ──
-test('AC2 확인 완료 배지 = 파스텔 그린(firstvisit 컨벤션) 유지', () => {
+test('AC2 확인 완료 배지 파스텔 그린 색 계승 — dot(bg-firstvisit-500)으로 유지(DOT-ONLY 재정의)', () => {
   const b = doneBlock();
-  // firstvisit 파스텔 그린 토큰 유지 (진한 초록·새 팔레트 도입 아님)
-  expect(b).toContain('#E7EEDA');
+  // 파스텔 그린(firstvisit) 색은 dot에 계승 (진한 초록·새 팔레트 도입 아님)
   expect(b).toContain('bg-firstvisit-500');
+  // 박스 full-background(#E7EEDA)는 DOT-ONLY 로 제거됨
+  expect(b).not.toContain('#E7EEDA');
 });
 
 test('AC3 확인 완료 배지 절반 사이즈 — px-1.5/py-0.5/font-medium, px-2.5·py-1·font-semibold 제거', () => {
