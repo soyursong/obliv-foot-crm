@@ -197,11 +197,12 @@ export default defineConfig({
         //   @page 물리 여백 중앙배치 모델(엔진-충실 측정 + 메커니즘 소스 가드). 직전 CENTER-ALIGN 정밀화.
         '**/T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT.spec.ts',
         '**/T-20260629-foot-DOCPRINT-CENTER-ALIGN.spec.ts',
-        // T-20260630-foot-CUSTOMERS-CONSENT-MARKETING-COL: 풋 customers.consent_marketing 컬럼 부재
-        //   → 신규 고객 예약 INSERT 500 보정(ADDITIVE boolean nullable DEFAULT false, §6-1 계약 conformance).
-        //   EF 신규/기존 INSERT 페이로드 정적 가드 + 마이그 ADDITIVE 정합 + 롤백 + AC-LIVE 실 INSERT 201
-        //   (service role env 있을 때만; 센티넬 즉시 cleanup). page/auth 불요.
-        '**/T-20260630-foot-CUSTOMERS-CONSENT-MARKETING-COL.spec.ts',
+        // T-20260630-foot-CONSENT-MARKETING-COL-ROLLBACK: customers.consent_marketing DROP
+        //   (비-SSOT divergent 명칭 수렴복원, DA NO-GO as-named). 직전 ...CUSTOMERS-CONSENT-MARKETING-COL
+        //   (additive)을 retire 하고 rollback spec 으로 교체. EF 참조 제거 정적 가드(가드B) + DROP 마이그
+        //   정합 + 멱등 회귀 0 + AC-LIVE(컬럼無 신규 INSERT 201 & consent_marketing 동반 INSERT 거부).
+        //   광고동의 canonical 거처 = consent_ad(consent_marketing 재추가 금지). page/auth 불요.
+        '**/T-20260630-foot-CONSENT-MARKETING-COL-ROLLBACK.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

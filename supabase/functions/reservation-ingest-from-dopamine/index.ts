@@ -23,8 +23,7 @@
  *       "phone_e164": "+82102345...",
  *       "name": "홍길동",
  *       "birth_year": 1985,      // optional
- *       "gender": "F",           // optional
- *       "consent_marketing": true // optional
+ *       "gender": "F"            // optional
  *     },
  *     "reservation": {
  *       "scheduled_at": "2026-05-25T14:30:00+09:00",
@@ -168,7 +167,8 @@ Deno.serve(async (req) => {
   // ── 선택 필드 추출 ─────────────────────────────────────────────────────────
   const birthYear         = customer['birth_year']         as number | undefined;
   const gender            = customer['gender']             as string | undefined;
-  const consentMarketing  = customer['consent_marketing']  as boolean | undefined;
+  // T-20260630-foot-CONSENT-MARKETING-COL-ROLLBACK: consent_marketing = 비-SSOT divergent 명칭
+  //   (DA NO-GO as-named). 컬럼 DROP + 코드참조 동반 제거(가드B). 광고동의 canonical 거처=consent_ad.
   const slotType          = reservation['slot_type']       as string | undefined;
   const serviceCode       = reservation['service_code']    as string | undefined;
   const memo              = reservation['memo']            as string | undefined;
@@ -320,7 +320,6 @@ Deno.serve(async (req) => {
           name,
           ...(birthYear != null ? { birth_year: birthYear } : {}),
           ...(gender ? { gender } : {}),
-          ...(consentMarketing != null ? { consent_marketing: consentMarketing } : {}),
           // campaign_id/adset_id/ad_id → customers 컬럼 (reservations 아님)
           ...(campaignId ? { campaign_id: campaignId } : {}),
           ...(adsetId    ? { adset_id:    adsetId    } : {}),
@@ -336,7 +335,6 @@ Deno.serve(async (req) => {
         clinic_id: clinicId,                          // DB 조회로 얻은 clinicId
         ...(birthYear != null ? { birth_year: birthYear } : {}),
         ...(gender ? { gender } : {}),
-        ...(consentMarketing != null ? { consent_marketing: consentMarketing } : {}),
         ...(campaignId ? { campaign_id: campaignId } : {}),
         ...(adsetId    ? { adset_id:    adsetId    } : {}),
         ...(adId       ? { ad_id:       adId       } : {}),
