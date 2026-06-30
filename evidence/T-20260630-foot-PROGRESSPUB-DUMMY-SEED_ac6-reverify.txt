@@ -1,0 +1,66 @@
+============================================================
+T-20260630-foot-PROGRESSPUB-DUMMY-SEED — AC-6 재검증 증빙 (READ-ONLY SELECT)
+FIX-REQUEST MSG-20260701-003410-k9vi (2차) 대응 — 라이브 실측 재첨부
+실행: scripts/T-20260630-foot-PROGRESSPUB-DUMMY-SEED_evidence.mjs (write 0)
+DB: rxlomoozakkjesdqjtvd / clinic: jongno-foot (74967aea-...)
+============================================================
+
+[해소 경로 = (B)] today check_in 은 '발행=금일 check_in+chart' 전제로 진짜 필요 →
+  존치하되, 셀프접수 대기명단·일마감 더미 0건 유입을 라이브 SELECT 로 실증.
+
+──────────────────────────────────────────────────────────
+① 시드 check_ins 날짜 분포 (3환자×2 = 6건)
+──────────────────────────────────────────────────────────
+  테스트경과02 | 2026-05-20 (과거 baseline) | done | resv_id=NULL
+  테스트경과01 | 2026-06-03 (과거 baseline) | done | resv_id=NULL
+  테스트경과03 | 2026-06-17 (과거 baseline) | done | resv_id=NULL
+  테스트경과01 | 2026-07-01 (오늘)          | done | resv_id=NULL
+  테스트경과02 | 2026-07-01 (오늘)          | done | resv_id=NULL
+  테스트경과03 | 2026-07-01 (오늘)          | done | resv_id=NULL
+  → 과거 baseline 3 / 오늘(7/1) 3.  오늘분은 발행 전제(금일 check_in)로 의도 삽입.
+
+──────────────────────────────────────────────────────────
+② AC-6 핵심 — 더미 0건 유입 실증 (라이브 SELECT)
+──────────────────────────────────────────────────────────
+  ⓐ 예약 타임라인(reservations today, status≠cancelled):
+       raw 5건 / 더미 raw 3건 → stripSimulationRows 적용 후 더미 누출 = 0건 ✅
+  ⓑ 셀프접수 대기명단(check_ins today):
+       raw 4건 / 더미 raw 3건 → strip 후 더미 누출 = 0건 ✅  ← AC-6 #1
+  ⓒ 오늘 일마감 접수목록(Closing.tsx = check_ins-only, reservations 미참조):
+       진행중경고 누출 0건 / 미수(payment_waiting) 누출 0건 ✅  ← AC-6 #2
+       구조근거: Closing.tsx 데이터소스 = check_ins + daily_closings 집계뿐.
+                reservations 미조회 → 오늘 confirmed 예약이 일마감에 유입될 경로 부재.
+  ⓓ 경과분석 탭(의도 딜리버러블, sim 필터 없음):
+       총 4건 中 본 더미 3건 노출(기대 노출). 구동축 = reservations.progress_check_required=true
+       → '오늘 대상자'는 progress_check_required/체크포인트로 구동, today check_in 날짜에 비의존.
+         (∴ FIX-REQUEST (A) 관찰도 동시 충족: 탭 노출은 today check_in 에 의존 안 함.)
+
+  방어기제: stripSimulationRows(is_simulation=true & 비화이트리스트 EXPOSED 제거) = 애플리케이션
+            레벨 필터. POLLUTION 실측 교훈(is_simulation 단독 불충분 = DB 행은 보이는데 라이브 노출됨)을
+            FE 소스쿼리 단에서 직접 차단 → past-date 가드보다 강한 방어(과거/오늘 무관 전부 숨김).
+
+──────────────────────────────────────────────────────────
+③ POLLUTION(T-20260617-DUMMY-CHECKIN-POLLUTION) 정리키 비충돌 교차검증
+──────────────────────────────────────────────────────────
+  stage3 DELETE 키 = reservation_id IS NULL & status='registered'
+                     & created∈6/17 10:08 윈도 & checked_in_at::date(KST)=6/17
+  본 시드 매칭 = 0건.
+    - 시드 status=done (≠ 'registered') → status 불일치 → 비매칭
+    - 시드 날짜 5/20·6/03·6/17·7/01 (≠ 6/17 윈도) → 날짜 불일치 → 비매칭
+    - 본건 cleanup = is_simulation+MARKER 스코프 → stage3 키와 교집합 0. 양방향 비충돌.
+  주: 오늘자 더미 check_in 은 reservation_id=NULL 이라 stage3 '날짜=today' 변형키엔 걸릴 수 있으나
+      무해(테스트용 더미 동시회수). 본건 cleanup 은 MARKER 스코프로 독립.
+
+──────────────────────────────────────────────────────────
+④ [참고] 선행 잔존 단건 '테스트경과분석'(탭 4행째) cleanup 스코프 — 1줄 확인
+──────────────────────────────────────────────────────────
+  4행째 = 테스트경과분석 (memo='[TEST-DUMMY 경과분석발행 20260701]', is_simulation=true)
+   = superseded 티켓 PROGRESS-ANALYSIS-DUMMY-SEED 잔존분. is_simulation=true 라 대기명단/일마감
+     누출도 동일하게 0(stripSimulationRows 적용). 旣 본건 cleanup MARKER 와 memo 상이 → 미포함이었음.
+  → ★조치: canonical 티켓이므로 cleanup.sql 을 2 MARKER IN-스코프로 확장 →
+            경과분석 탭 4행(본 더미 3 + 잔존 1) 1발 전량 회수 보장. (AC-4 '전량 회수' 충족)
+
+============================================================
+종합: AC-6 PASS — 대기명단 0 / 일마감 0 / POLLUTION 비충돌 0. 탭 노출 3(의도).
+       cleanup = 2 MARKER 확장으로 잔존 1건까지 1발 회수.
+============================================================
