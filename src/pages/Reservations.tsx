@@ -409,7 +409,9 @@ export default function Reservations() {
   const [newReservationInitial, setNewReservationInitial] = useState<{ date: string; time: string } | null>(null);
   // T-20260630-foot-RESV-CUSTCTX-PREFILL: navigation state로 받은 고객을 슬롯 클릭 시 신규예약 폼에 자동 prefill 하기 위한
   //   대기 컨텍스트(완전한 PatientMatch — 수신부에서 customers 조회로 연락처/차트번호 enrich). null = 일반 진입(빈 폼, AC4 회귀).
-  //   sticky: 페이지에 머무는 동안 유지(연속 예약), 다른 화면으로 navigate 시 remount로 자연 소거.
+  //   T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC6 [1회성]: 슬롯 클릭으로 연 new-mode 팝업이 닫히면 소진
+  //   (onClose/onChanged에서 null). 이후 빈 슬롯 클릭은 빈 폼. (구 sticky '연속 예약' 동작 폐기 — 본 티켓이 상위 재정의.)
+  //   다른 화면으로 navigate 시에도 remount로 자연 소거.
   const [pendingPrefillCustomer, setPendingPrefillCustomer] = useState<PatientMatch | null>(null);
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
@@ -580,6 +582,8 @@ export default function Reservations() {
   //   ⚠ 정합: 대시보드에 별도 팝업 인스턴스를 두지 않고(중복 마운트 제거) 이 단일 정본 팝업(detail)만 사용 →
   //   POPUP-SYNC(field-soak) 와 동기화 깨짐 방지. 전체 Reservation 객체를 state로 전달받아 추가 fetch 없이
   //   라우팅 직후 깜빡임 없이 팝업이 열린 채로 보이게 한다(라우팅 unmount→재오픈 흐름을 사용자 무지각화).
+  //   T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2: 대시보드 예약 캘린더 카드 [예약상세]가 prefill 동선으로 전환되어
+  //   현재 openReservationDetail 을 navigate 하는 송신부는 없음(수신부는 defensive 유지 — 향후 open-existing 복원 시 재사용).
   useEffect(() => {
     if (navDetailConsumed.current) return;
     const state = location.state as { openReservationDetail?: Reservation } | null;
@@ -2660,6 +2664,10 @@ export default function Reservations() {
         currentUserRole={profile?.role ?? ''}
         onClose={() => {
           setDetail(null); setNewReservationMode(false); setNewReservationInitial(null);
+          // T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC6 [prefill 1회성]: prefill 고객으로 진입한 new-mode 팝업이
+          //   닫히면(저장 또는 취소) pendingPrefillCustomer 소진 → 다음 빈 슬롯 클릭은 빈 폼(시나리오3).
+          //   ★sticky(연속 예약) 동작 폐기: RESV-CUSTCTX-PREFILL Q1 sticky 결정을 본 티켓 AC6(1회성)이 상위 재정의.
+          setPendingPrefillCustomer(null);
           // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모는 reservation_memo_history(타임라인)에 저장되며
           //   reservations 테이블 realtime 채널을 트리거하지 않음 → 팝업에서 메모 추가 후 닫으면 hover용 resvMemoMap이
           //   stale. 닫을 때 1회 동기화하여 새 예약메모가 달력뷰 hover에 즉시 반영되게 함(명시적 fetchWeek는 dedup 우회).
@@ -2670,6 +2678,8 @@ export default function Reservations() {
           setDetail(null);
           setNewReservationMode(false);
           setNewReservationInitial(null);
+          // T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC6: 신규 예약 생성 완료 시에도 prefill 고객 소진(1회성).
+          setPendingPrefillCustomer(null);
           fetchWeek();
         }}
         /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 팝업 new-mode → 단일소스 생성 함수 위임(모달 스폰 폐기). */
@@ -2681,7 +2691,9 @@ export default function Reservations() {
         initialDate={newReservationInitial?.date ?? null}
         initialTime={newReservationInitial?.time ?? null}
         /* T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트로 진입(동선1·2) 시 슬롯클릭 new-mode 팝업에 해당 고객 자동 prefill.
-           null = 일반 진입(빈 신규폼, AC4 회귀). sticky pendingPrefillCustomer 라 연속 슬롯클릭에도 동일 고객 유지. */
+           null = 일반 진입(빈 신규폼, AC4 회귀).
+           T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC6 [1회성]: 슬롯 클릭으로 연 팝업이 닫히면(onClose/onChanged)
+           pendingPrefillCustomer 소진 → 이후 빈 슬롯 클릭은 빈 폼. (구 sticky '연속 슬롯클릭 동일 고객 유지' 폐기.) */
         initialCustomer={pendingPrefillCustomer}
       />
 
