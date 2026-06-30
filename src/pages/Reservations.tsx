@@ -1866,9 +1866,11 @@ export default function Reservations() {
                       checkIn={resvAsCheckIn(r)}
                       reservationTime={r.reservation_time}
                       reservationInfo={{
-                        // T-20260630-foot-RESVHOVER-REGISTRAR-NOT-BOOKER: hover '등록자:' 줄은 예약등록자(registrar_name 스냅샷) 우선.
-                        //   null(구버전 행·타경로)이면 기존 booker(resvBookerMap) fallback → 회귀 0. SoT: ReservationDetailPopup.tsx:508.
-                        registrarLabel: (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null,
+                        // T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH: 간략정보(hover) '등록자:' 줄 = 예약등록자(registrar_name 스냅샷) ONLY.
+                        //   booker(resvBookerMap=created_by) fallback 제거 — 예약등록자 미지정/타경로 행은 booker(예: 예약 잡은 계정 '김주연')를
+                        //   '등록자'로 오표기하던 게 현장 신고 미스매치 RC. 카드 우하단 @예약등록자 태그(L2470, registrar_name only, fallback 없음)와
+                        //   동일 소스로 통일 → 선택한 예약등록자만 표기. null이면 CustomerHoverCard가 등록자 라벨 생략(일시만).
+                        registrarLabel: r.registrar_name?.trim() || null,
                         reservationDate: r.reservation_date,
                         visitRoute: r.visit_route ?? r.referral_source ?? null,
                         // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모 SoT(reservation_memo_history) 우선.
@@ -1909,13 +1911,16 @@ export default function Reservations() {
                     예약 상태(STATUS_LABEL)는 운영 신호로 유지. */}
                 {/* T-20260630-foot-RESVMGMT-CANCELNAME-REGISTRANT-2FIX (2): 예약등록자(@registrar) 위치 — 예약 상태 '하단' → 상태 '우측 사이드'.
                     기존: 상태줄 아래 별도 div로 등록자 표기(세로 적층). 변경: 같은 flex 행에서 좌=상태 / 우=등록자(ml-auto)로 나란히.
-                    값/노출조건 무변경(resvBookerMap 그대로, 이름 매핑 유지·UUID 회귀 없음). 좁은 90px 칸 가드 = 상태 shrink-0 + 등록자 min-w-0 truncate. */}
+                    좁은 90px 칸 가드 = 상태 shrink-0 + 등록자 min-w-0 truncate.
+                    T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH: 데이터 소스 booker(resvBookerMap=created_by) → 예약등록자(registrar_name).
+                      라벨/의도는 줄곧 '예약등록자'였는데 소스만 booker(예약 잡은 계정)였던 게 현장 신고 미스매치 RC(예: 등록자 '김민경' 선택했는데 '@김주연' 표기).
+                      week 2열뷰 @예약등록자 태그(L2470, registrar_name only)·간략정보(hover)와 단일 소스로 통일. 미지정 행은 미렌더(fallback 없음). */}
                 <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                   <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
                   <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
-                  {resvBookerMap.get(r.id) && (
-                    <span className="ml-auto min-w-0 truncate text-teal-700" title={`예약등록자 ${resvBookerMap.get(r.id)}`}>
-                      @{resvBookerMap.get(r.id)}
+                  {r.registrar_name && (
+                    <span className="ml-auto min-w-0 truncate text-teal-700" title={`예약등록자 ${r.registrar_name}`}>
+                      @{r.registrar_name}
                     </span>
                   )}
                 </div>
@@ -2272,9 +2277,10 @@ export default function Reservations() {
                                           //   등록자=resvBookerMap(예약 잡은 계정명, 예 'admin') / 예약일시 / 방문경로 / 풀번호 / 간략메모(W2)/ 예약메모.
                                           // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): brief_note(간략메모) 컬럼 배선 — 값 있으면 hover에 표기, 없으면 줄 자동 생략.
                                           reservationInfo={{
-                                            // T-20260630-foot-RESVHOVER-REGISTRAR-NOT-BOOKER: hover '등록자:' 줄은 예약등록자(registrar_name 스냅샷) 우선.
-                                            //   null(구버전 행·타경로)이면 기존 booker(resvBookerMap) fallback → 회귀 0. SoT: ReservationDetailPopup.tsx:508.
-                                            registrarLabel: (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null,
+                                            // T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH: 간략정보(hover) '등록자:' 줄 = 예약등록자(registrar_name 스냅샷) ONLY.
+                                            //   booker(resvBookerMap=created_by) fallback 제거 — 카드 @예약등록자 태그(L2470)와 동일 소스로 통일.
+                                            //   미지정/타경로 행은 booker를 '등록자'로 오표기하지 않고 라벨 생략(일시만). RC: 카드 vs hover fallback 분기 불일치.
+                                            registrarLabel: r.registrar_name?.trim() || null,
                                             reservationDate: r.reservation_date,
                                             visitRoute: r.visit_route ?? r.referral_source ?? null,
                                             // T-20260630-foot-RESVHOVER-MEMO-NOT-SHOWN: 예약메모 SoT(reservation_memo_history) 우선.

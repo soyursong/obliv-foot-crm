@@ -422,9 +422,26 @@ export default function Handover() {
 
   const handleDelete = async (n: HandoverNote) => {
     if (!confirm('이 인수인계를 삭제하시겠습니까?')) return;
-    const { error } = await supabase.from('handover_notes').delete().eq('id', n.id);
+    // T-20260630-foot-HANDOVER-DELETE-PERSIST (AC-2: silent 제거 금지):
+    //   .select() 로 실제 삭제 행을 회수해 affected-rows 를 검증한다. RLS USING 절을
+    //   통과하지 못하면 Supabase delete 는 error 없이 0행을 반환(에러 아님)하므로,
+    //   error 만 검사하던 기존 코드는 0행 삭제를 '성공'으로 오인 → 낙관적 UI 제거 →
+    //   DB 잔존 → 새로고침 복구(현장 버그)였다. 이제 (a) error, (b) 0행 모두 실패로
+    //   처리하고 DB 진실로 재동기화(refetch)하여 절대 silent 제거하지 않는다.
+    const { data: deleted, error } = await supabase
+      .from('handover_notes')
+      .delete()
+      .eq('id', n.id)
+      .select('id');
     if (error) {
       toast.error('삭제 실패: ' + error.message);
+      await fetchNotes(); // DB 진실로 재동기화(낙관적 제거 방지)
+      return;
+    }
+    if (!deleted || deleted.length === 0) {
+      // RLS 차단 등으로 실제 삭제된 행이 없음 — silent 성공 처리 금지
+      toast.error('삭제 권한이 없거나 이미 삭제된 항목입니다.');
+      await fetchNotes(); // 화면을 DB 실제 상태로 복구
       return;
     }
     toast.confirm('삭제되었습니다');

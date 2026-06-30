@@ -15,8 +15,12 @@ import path from 'path';
  *   정본 컬럼 reservations.registrar_name(예약등록자 스냅샷, T-20260624 deployed, 기존) 존재.
  *   목록칩 @registrar_name 은 이미 이걸 씀. hover 만 booker였음.
  *
- * 수정(FE-only, 무 DDL): registrarLabel = (r.registrar_name?.trim() || null) ?? resvBookerMap.get(r.id) ?? null
- *   → registrar_name 우선, null이면 기존 booker fallback(구버전 행 회귀0).
+ * 수정(FE-only, 무 DDL): registrarLabel = registrar_name 우선.
+ *   ⚠ SUPERSEDED by T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH:
+ *     본 티켓은 'registrar_name 우선 + booker fallback' 부분교정이었으나, 후속 현장신고에서 fallback
+ *     자체(예약등록자 미지정/타경로 행이 booker '김주연'을 등록자로 오표기)가 미스매치 소스로 확정됨 →
+ *     registrarLabel = r.registrar_name?.trim() || null (booker fallback 완전 제거)로 완결.
+ *   아래 소스-무결성 단언은 후속 계약(registrar_name ONLY)으로 갱신 — 라이브 안전성 테스트는 그대로 유효.
  *
  * SoT: ReservationDetailPopup.tsx:508 — registrar_name=표시·선택용, booker(created_by)와 분리.
  *
@@ -66,25 +70,14 @@ test.describe('T-20260630 RESVHOVER-REGISTRAR-NOT-BOOKER — 라이브', () => {
 // 소스 무결성 — hover '등록자:' 줄 소스가 registrar_name 우선 + booker fallback
 // ════════════════════════════════════════════════════════════════════════
 test.describe('T-20260630 RESVHOVER-REGISTRAR-NOT-BOOKER — 결선 (소스 무결성)', () => {
-  test('AC-1/AC-2/AC-3: hover registrarLabel = registrar_name 우선 (booker 가 아님)', () => {
-    // 정본 = registrar_name(예약등록자 스냅샷). 골라 저장한 담당자가 그대로 표시되는 근거.
-    expect(RESV_PAGE).toMatch(
-      /registrarLabel:\s*\(r\.registrar_name\?\.trim\(\)\s*\|\|\s*null\)\s*\?\?\s*resvBookerMap\.get\(r\.id\)/,
-    );
-  });
-
-  test('AC-4(회귀): registrar_name null 이면 기존 booker(resvBookerMap) fallback — 구버전 행 회귀0', () => {
-    // ?? resvBookerMap.get(r.id) ?? null 체인으로 스냅샷 결손 시 안전 폴백.
-    const matches = RESV_PAGE.match(
-      /\(r\.registrar_name\?\.trim\(\)\s*\|\|\s*null\)\s*\?\?\s*resvBookerMap\.get\(r\.id\)\s*\?\?\s*null/g,
-    ) ?? [];
-    // 두 hover surface(일간 TIMEGRID + 2단 캘린더) 모두 교정 — 동일 라벨-데이터 정합.
+  test('AC-1/AC-2/AC-3 (SUPERSEDED→갱신): hover registrarLabel = registrar_name ONLY', () => {
+    // 정본 = registrar_name(예약등록자 스냅샷). booker fallback 은 STAFF-MISMATCH 후속에서 제거됨.
+    const matches = RESV_PAGE.match(/registrarLabel:\s*r\.registrar_name\?\.trim\(\)\s*\|\|\s*null,/g) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 
-  test('교정 완전성: hover registrarLabel 에 booker-only(resvBookerMap 단독) 잔존 없음', () => {
-    // 수정 전 패턴: `registrarLabel: resvBookerMap.get(r.id) ?? null` 이 남아있으면 안 됨.
-    expect(RESV_PAGE).not.toMatch(/registrarLabel:\s*resvBookerMap\.get\(r\.id\)\s*\?\?\s*null/);
+  test('교정 완전성(갱신): hover registrarLabel 에 booker(resvBookerMap) 잔존 0', () => {
+    expect(RESV_PAGE).not.toMatch(/registrarLabel:[^,]*resvBookerMap/);
   });
 
   test('AC-5(무회귀): 목록 칩은 그대로 @registrar_name 사용(불변)', () => {
