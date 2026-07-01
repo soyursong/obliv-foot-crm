@@ -92,14 +92,26 @@ test.describe('PHRASE-REORDER-CUSTCHART-MENU — CS-AC-1 메뉴 위치', () => {
 
 // ── CS-AC-3: 2번차트 3구역 연결 + 진료차트 패널 격리 ─────────────────────────────────
 test.describe('PHRASE-REORDER-CUSTCHART-MENU — CS-AC-3 2번차트 연결 + 격리', () => {
+  // T-20260701-foot-STALEGUARD forward-update: 예약·상담 구역이 공용 MemoHistoryPanel(testidPrefix)로 이관되며
+  //   testid 가 리터럴(custchart-phrases-예약/상담) → 템플릿(custchart-phrases-${testidPrefix}: resv-memo/consult-memo)로 바뀜.
+  //   커버리지는 이관이 아니라 동일 spec 내 유지 → 원 의도(3구역이 customer_chart 상용구를 sort_order 순 호출)를
+  //   현행 배선(분배맵 + 패널 phrases prop + testid)으로 갱신. 치료메모는 전용 렌더(리터럴 testid) 유지.
   test('CS-AC-3: CustomerChartPage 3구역[상세]가 customer_chart 상용구를 sort_order 순 호출', () => {
     const cc = read(CUST_CHART);
+    // customer_chart surface 상용구를 sort_order 오름차순 마운트 조회(순서변경 즉시 반영).
     expect(cc).toMatch(/\.eq\('phrase_type', 'customer_chart'\)/);
     expect(cc).toMatch(/\.order\('sort_order'\)/);
-    // 예약/상담/치료메모 3구역 모두 호출부 존재
-    expect(cc).toContain('data-testid="custchart-phrases-예약"');
-    expect(cc).toContain('data-testid="custchart-phrases-상담"');
-    expect(cc).toContain('data-testid="custchart-phrases-치료메모"');
+    // 조회한 customer_chart 상용구를 3구역(예약/상담/치료메모)으로 분배(T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK).
+    expect(cc).toContain("'예약': pick('reservation')");
+    expect(cc).toContain("'상담': pick('consult')");
+    expect(cc).toContain("'치료메모': pick('treatment')");
+    // 3구역 상용구 렌더 호출부 — 예약/상담은 공용 패널(testidPrefix), 치료메모는 전용 렌더.
+    expect(cc).toContain('data-testid={`custchart-phrases-${testidPrefix}`}'); // 공용 패널 상용구 컨테이너
+    expect(cc).toContain('testidPrefix="resv-memo"'); // 예약 구역 패널
+    expect(cc).toContain("phrases={custchartPhrasesByTab['예약']}"); // 예약 구역 → customer_chart(예약분배)
+    expect(cc).toContain('testidPrefix="consult-memo"'); // 상담 구역 패널
+    expect(cc).toContain("phrases={custchartPhrasesByTab['상담']}"); // 상담 구역 → customer_chart(상담분배)
+    expect(cc).toContain('data-testid="custchart-phrases-치료메모"'); // 치료메모 구역(리터럴 유지)
   });
 
   test('CS-AC-3: 진료차트 패널(MedicalChartPanel)은 customer_chart 를 배제(surface 격리)', () => {
