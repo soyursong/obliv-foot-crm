@@ -73,28 +73,23 @@ test.describe('T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE', () 
     }
   });
 
-  // ── S3: 초진 체크인 고객박스 #차트번호 표기 유지 (AC-5 회귀) ──
-  test('S3: 초진 체크인 고객박스 #차트번호 표기는 유지된다(AC-5 회귀 금지)', async ({ page }) => {
+  // ── S3: 초진 체크인 고객박스 식별자 (SUPERSEDED by T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY) ──
+  // 본 티켓 시점(6/30)엔 초진 체크인 카드가 #차트번호를 유지했으나(AC-5),
+  // T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY(김주연 총괄)로 초진도 재진과 동일하게 폰 뒷4자리로 통일됨.
+  // → 회귀 기준을 '초진 = #차트번호 없음 + 폰 뒷4자리'로 갱신(구 표기 재출현 방지). 상세 검증은 해당 티켓 spec.
+  test('S3: 초진 체크인 고객박스도 #차트번호 없음·폰 뒷4자리로 통일(SUPERSEDED→TIMETABLE-NEW-PHONE-UNIFY)', async ({ page }) => {
     const cards = page.locator(NEW_CARD);
     const count = await cards.count();
     if (count === 0) {
       test.skip(true, '오늘 초진 체크인 카드 없음 — 회귀 검증 스킵(데이터 의존)');
       return;
     }
-    // 초진 체크인 카드 중 차트번호 보유 고객이 1명 이상 있으면 #표기가 살아있어야 한다.
-    // (차트번호 미발번 고객은 표기 없음이 정상 → 전수 강제는 아님)
-    let anyChart = false;
     for (let i = 0; i < Math.min(count, 12); i++) {
-      const mono = cards.nth(i).locator('span.font-mono.text-teal-600').filter({ hasText: /^#/ });
-      if ((await mono.count()) > 0) {
-        const text = (await mono.first().textContent())?.trim() ?? '';
-        expect(text.startsWith('#')).toBeTruthy();
-        anyChart = true;
-      }
-    }
-    // 초진 카드가 있는데 단 하나도 차트번호가 없다면(예: 전원 미발번) 정보성 스킵
-    if (!anyChart) {
-      test.skip(true, '초진 체크인 카드에 차트번호 발번 고객 없음 — 회귀 표본 부족');
+      const card = cards.nth(i);
+      // 구 초진 #차트번호(teal font-mono) 재출현 금지
+      expect(await card.locator('span.font-mono.text-teal-600').count()).toBe(0);
+      const chartBadge = card.locator('span').filter({ hasText: /^#/ });
+      expect(await chartBadge.count()).toBe(0);
     }
   });
 
