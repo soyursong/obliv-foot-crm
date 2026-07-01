@@ -1,0 +1,90 @@
+{
+  "ticket": "T-20260701-foot-STAFF-ROSTER-DEDUP",
+  "scope": "#6 정혜인 reconcile (READ-ONLY)",
+  "generated_at": "2026-07-01T12:50:04.223Z",
+  "mode": "READ-ONLY dry-run (prod write 0)",
+  "mismatch1_row_state": {
+    "total_rows": 1,
+    "active_rows": 0,
+    "inactive_rows": 1,
+    "known_dup_id_present": true,
+    "rows": [
+      {
+        "id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+        "active": false,
+        "role": "consultant",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "user_id": null,
+        "created_at": "2026-04-23T23:28:49.947517+00:00",
+        "is_known_dup": true
+      }
+    ],
+    "verdict": "NO_ACTIVE_CANONICAL — 활성 정혜인 0행, 전부 비활성 (T-20260619 \"동명이인0\" 보고와 일치)"
+  },
+  "mismatch2_fk_retally": {
+    "target_staff_id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+    "fk_columns": [
+      {
+        "table": "duty_roster",
+        "column": "doctor_id",
+        "refs": 0
+      },
+      {
+        "table": "package_sessions",
+        "column": "performed_by",
+        "refs": 0
+      },
+      {
+        "table": "room_assignments",
+        "column": "staff_id",
+        "refs": 2
+      },
+      {
+        "table": "customers",
+        "column": "assigned_staff_id",
+        "refs": 0
+      }
+    ],
+    "fk_total_refs": 2,
+    "customers_match_detail": [],
+    "rc_of_discrepancy": "부모 ROSTER-DEDUP SCAN_TABLES 에 base customers 테이블 누락 → customers.assigned_staff_id 미집계(2건 보고). 본 재집계는 4개 FK 전수.",
+    "reconcile_vs_prior": {
+      "roster_dedup_reported": 2,
+      "t20260619_reported": 3,
+      "fresh_recount": 2
+    }
+  },
+  "mismatch3_reattribution_target": {
+    "rule": "FALLBACK_JEONGYEONJU",
+    "user_profile": null,
+    "staff_by_email_link": [],
+    "staff_by_name": [
+      {
+        "staff_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+        "active": true,
+        "role": "consultant",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "user_id": "3bd596ca-036b-423c-a4f6-3cbab8083133"
+      }
+    ],
+    "target": {
+      "staff_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+      "name": "정연주",
+      "role": "consultant",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    "ambiguous": false,
+    "note": "활성 정혜인 부재 → 정연주 활성 staff 1행 확정, 재귀속 대상"
+  },
+  "conclusion": {
+    "soft_delete_target_staff_id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+    "soft_delete_method": "soft-delete (active=false / deleted_at set) — hard-DELETE 금지 (의료법 §22 감사 trail, DA CONSULT MSG-20260701-212011-06ip)",
+    "expected_reattribution_rows": 2,
+    "reattribution_target_staff_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+    "reattribution_ambiguous": false,
+    "prod_writes": 0,
+    "ready_for_supervisor_gate": true,
+    "blocker": null
+  }
+}
