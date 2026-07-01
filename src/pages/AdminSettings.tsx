@@ -696,7 +696,7 @@ function SectionConnection({
           <Input
             value={smsDisplayName}
             onChange={(e) => setSmsDisplayName(e.target.value)}
-            placeholder="예: 오리진 (비우면 기관 정식명칭 사용)"
+            placeholder="예: 오리진"
             data-testid="sms-display-name-input"
           />
           <p className="text-xs text-muted-foreground">
@@ -1221,12 +1221,9 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
             ＋ 새 템플릿 추가
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          대시보드 우클릭 [문자] 발송 시 선택할 수 있는 자유 템플릿입니다. (약도 안내, 주차 안내 등)
-        </p>
         {customTemplates.length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            사용자 정의 템플릿이 없습니다. [＋ 새 템플릿 추가]로 만들 수 있습니다.
+            사용자 정의 템플릿이 없습니다.
           </div>
         ) : (
           customTemplates.map((tmpl) => (
@@ -1374,9 +1371,6 @@ function SectionManual({ clinicId }: { clinicId: string }) {
     <div className="max-w-xl space-y-4">
       <div>
         <h2 className="text-lg font-semibold">④ 수동 발송</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          고객을 검색해 문자를 발송합니다. 발송 방식(즉시 / 예약)을 선택할 수 있습니다.
-        </p>
       </div>
 
       <div className="space-y-2 rounded-lg border p-4">
@@ -1557,10 +1551,6 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
     <div className="max-w-2xl space-y-6">
       <div>
         <h2 className="text-lg font-semibold">⑥ 수신거부 명단</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          등록된 번호로는 어떤 발송도 차단됩니다. 수동으로 추가한 번호와 셀프접수·차트에서 문자수신을
-          거부한 고객이 함께 표시됩니다(별도 적재 없이 합산).
-        </p>
       </div>
       <div className="rounded-lg border p-4 space-y-3">
         <h3 className="text-sm font-semibold">번호 추가</h3>

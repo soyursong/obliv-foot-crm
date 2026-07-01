@@ -546,11 +546,11 @@ export default function Handover() {
         >
           {attendeesLoading ? '…' : `${todayCount}명`}
         </span>
-        <span className="text-xs text-muted-foreground" data-testid="handover-attendees-hint">
-          {attendeesLoading
-            ? '명단 불러오는 중…'
-            : '캘린더 날짜 셀과 아래 선택일 명단에서 출근자를 확인하세요'}
-        </span>
+        {attendeesLoading && (
+          <span className="text-xs text-muted-foreground" data-testid="handover-attendees-hint">
+            명단 불러오는 중…
+          </span>
+        )}
       </div>
 
       {/* 컨트롤 바: 뷰 토글 + 네비 + 파트 필터 */}
@@ -802,7 +802,7 @@ export default function Handover() {
               <Textarea
                 value={formMemo}
                 onChange={(e) => setFormMemo(e.target.value)}
-                placeholder="인계 내용을 입력하세요"
+                placeholder="인계 내용"
                 rows={3}
                 className="mt-1 text-sm"
                 data-testid="handover-form-memo"

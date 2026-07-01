@@ -2660,9 +2660,6 @@ function IssueDialog({
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-blue-600">
-                  선택한 의사의 면허번호·전문의자격번호·직인이 서류에 반영됩니다
-                </p>
               </div>
             )}
 

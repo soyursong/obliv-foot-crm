@@ -37,7 +37,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import type { Clinic, Staff } from '@/lib/types';
@@ -403,10 +402,6 @@ export function DutyRosterImportDialog({
             <UploadCloud className="h-5 w-5" />
             구글시트 근무 스케줄 불러오기
           </DialogTitle>
-          <DialogDescription>
-            구글시트를 .xlsx/.csv 로 내려받아 업로드하거나 셀을 복사해 붙여넣으세요. 달력형(행=직원,
-            열=날짜) 시트를 인식합니다. 미리보기 확인 후 <strong>삽입 확정</strong>을 눌러야 저장됩니다.
-          </DialogDescription>
         </DialogHeader>
 
         {/* 입력 모드 토글 */}
@@ -445,7 +440,7 @@ export function DutyRosterImportDialog({
               onChange={(e) => setPasteText(e.target.value)}
               rows={5}
               data-testid="duty-import-paste-textarea"
-              placeholder={'구글시트에서 범위를 복사해 붙여넣으세요 (탭/콤마 구분).'}
+              placeholder={'시트 범위 붙여넣기 (탭/콤마 구분)'}
               className="w-full rounded-md border p-2 text-sm font-mono"
             />
             <Button size="sm" variant="outline" data-testid="duty-import-parse-btn" onClick={onParsePaste}>

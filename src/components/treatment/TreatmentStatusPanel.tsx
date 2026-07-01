@@ -297,11 +297,6 @@ export default function TreatmentStatusPanel() {
     () => staffList.filter((s) => s.role === 'therapist'),
     [staffList],
   );
-  const directors = useMemo(
-    () => staffList.filter((s) => s.role === 'director'),
-    [staffList],
-  );
-
   // T-20260613-foot-TREATMENTTABLE-STAFFFILTER-DIRECTORONLY:
   // duty_roster가 출퇴근 import로 금일 출근 전 직원으로 확장되며 '당직 원장:' 배너가
   // 비-원장(상담실장·치료사 등)까지 노출하는 문제 차단. 배너/안내 표시 직전 staffMap의
@@ -591,19 +586,6 @@ export default function TreatmentStatusPanel() {
               </SelectContent>
             </Select>
           </div>
-
-          {/* 원장뷰 안내 */}
-          {view === 'doctor' && directors.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1">
-              <Stethoscope className="size-3" />
-              초진·체험 환자만 표시 (진찰실 경유)
-              {dutyDirectors.length > 0 && (
-                <span className="ml-1 font-medium">
-                  · 당직: {dutyDirectors.map((d) => d.staff?.name ?? '원장').join(', ')}
-                </span>
-              )}
-            </div>
-          )}
 
           {/* 필터 초기화 */}
           {(filterConsultantId !== 'all' || filterTherapistId !== 'all') && (
@@ -953,32 +935,6 @@ export default function TreatmentStatusPanel() {
         </div>
       )}
 
-      {/* 뷰별 안내 */}
-      <div className="text-xs text-muted-foreground mt-1">
-        {view === 'doctor' && (
-          <p>
-            💡 원장 뷰: 초진·체험 환자만 표시합니다. 차팅·처방은 원장 확인 후 업데이트됩니다.
-            진료원장 배정은 당직표 기준으로 표시됩니다.
-          </p>
-        )}
-        {view === 'consultant' && (
-          <p>
-            💡 실장 뷰: 담당 실장별 환자 현황·패키지·결제금액·다음 예약을 확인합니다.
-            "상담실장" 필터로 특정 실장 담당 환자만 볼 수 있습니다.
-          </p>
-        )}
-        {view === 'therapist' && (
-          <p>
-            💡 치료사 뷰: 담당 치료사별 시술 처치 현황을 확인합니다.
-            "치료사" 필터로 특정 치료사 담당 환자만 볼 수 있습니다.
-          </p>
-        )}
-        {view === 'all' && (
-          <p>
-            💡 전체 뷰: 당일 접수 전체 현황입니다. 담당 실장·치료사 필터를 함께 사용하세요.
-          </p>
-        )}
-      </div>
     </div>
   );
 }

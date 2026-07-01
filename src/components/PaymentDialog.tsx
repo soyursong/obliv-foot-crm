@@ -921,7 +921,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                             (총액 {formatAmount(customerPackage.total_amount)} ÷ {customerPackage.total_sessions}회)
                           </span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">금액은 직접 수정 가능합니다</p>
                       </div>
                     ) : (
                       <p className="text-muted-foreground text-xs">보유 패키지 없음 — 금액을 직접 입력하세요</p>
@@ -965,14 +964,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   </div>
                 )}
               </>
-            )}
-
-            {/* T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 카드 자동 매칭 안내 (입력 칸 제거)
-                대표 지시 2026-05-26 — 직원 입력 부담 최소화, 매처가 시간·금액으로 자동 매칭 */}
-            {((method === 'card' && !isSplit) || (isSplit && splitCard > 0)) && (
-              <p className="text-[10px] text-muted-foreground px-1" data-testid="card-auto-match-info">
-                결제 정보는 단말기 데이터와 시간·금액 기반으로 자동 매칭됩니다.
-              </p>
             )}
 
             {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-2: 과세/비과세 분리 */}

@@ -101,7 +101,7 @@ export function CustomerColumnMemo({
               handleAdd();
             }
           }}
-          placeholder={placeholder ?? '새 메모 입력 (Ctrl+Enter로 추가)'}
+          placeholder={placeholder ?? '새 메모 입력'}
           rows={2}
           className="text-xs flex-1"
         />

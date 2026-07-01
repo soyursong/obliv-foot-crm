@@ -317,11 +317,6 @@ export default function ProgressPlansTab() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold">경과분석 플랜 설정</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            패키지 회차수(예: 12회·24회·36회)별로 경과분석이 필요한 회차를 정의합니다.
-            <br />
-            패키지 이름과 무관하게 <span className="text-teal-600">회차수가 같은 모든 패키지</span>에 자동 적용됩니다.
-          </p>
         </div>
         <Button
           size="sm"
@@ -341,9 +336,6 @@ export default function ProgressPlansTab() {
       ) : plans.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-teal-200 bg-teal-50/30 p-10 text-center">
           <p className="text-sm font-medium text-teal-700">등록된 체크포인트가 없습니다</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            "체크포인트 추가" 버튼으로 회차수(tier)별 경과분석 회차를 설정하세요.
-          </p>
           <Button
             size="sm"
             className="mt-4 bg-neutral-800 hover:bg-neutral-900 text-white gap-1.5"
@@ -490,15 +482,6 @@ export default function ProgressPlansTab() {
         </div>
       )}
 
-      {/* 동작 안내 */}
-      <div className="rounded-lg border border-teal-200 bg-teal-50/40 px-4 py-3 text-xs text-teal-700">
-        <p className="font-semibold mb-0.5">회차수 기준 자동 적용</p>
-        <p className="text-teal-600">
-          예약에 패키지를 연결하면 그 패키지의 회차수(예: 12회)에 맞는 플랜이 자동 매칭됩니다.
-          진행 회차가 설정된 경과분석 회차에 도달하면 예약현황 카드에 배지가 표시됩니다.
-        </p>
-      </div>
-
       {/* 추가/수정 다이얼로그 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md" data-testid="progress-plan-dialog">
@@ -529,9 +512,6 @@ export default function ProgressPlansTab() {
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground">
-                회차수가 같은 모든 패키지(이름 무관)에 적용됩니다. 6의 배수.
-              </p>
             </div>
 
             {/* 회차 */}
@@ -573,17 +553,15 @@ export default function ProgressPlansTab() {
                 className="h-9 text-sm"
                 data-testid="label-input"
               />
-              <p className="text-[10px] text-muted-foreground">예약 카드·알림에 표시되는 이름</p>
             </div>
 
             {/* 알림 설정 */}
             <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground">알림 설정 (Phase 2 연동)</p>
+              <p className="text-xs font-semibold text-muted-foreground">알림 설정</p>
 
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium">스태프 인앱 알림</p>
-                  <p className="text-[10px] text-muted-foreground">예약 카드에 배지 표시</p>
                 </div>
                 <Switch
                   checked={form.notify_staff}
@@ -596,7 +574,6 @@ export default function ProgressPlansTab() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium">환자 SMS 발송</p>
-                  <p className="text-[10px] text-muted-foreground">Phase 2에서 활성화 예정</p>
                 </div>
                 <Switch
                   checked={form.notify_patient}
@@ -611,7 +588,6 @@ export default function ProgressPlansTab() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium">활성화</p>
-                <p className="text-[10px] text-muted-foreground">비활성 시 해당 회차 알림 비작동</p>
               </div>
               <Switch
                 checked={form.is_active}

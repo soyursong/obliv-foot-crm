@@ -339,7 +339,7 @@ type MemoHistoryHook = ReturnType<typeof useMemoHistory>;
 function MemoHistoryPanel({
   hook, phrases, profileEmail, testidPrefix,
   addLabel = '새 메모 추가', addBtnLabel = '메모 추가',
-  historyLabel = '메모 이력', emptyLabel = '아직 메모가 없습니다', placeholder = '메모를 입력하세요…',
+  historyLabel = '메모 이력', emptyLabel = '아직 메모가 없습니다', placeholder = '메모',
   inputRows = 3, hideHistory = false, canManageAll = false,
 }: {
   hook: MemoHistoryHook;
@@ -5549,7 +5549,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <Input
                         value={addressText}
                         onChange={(e) => { setAddressText(e.target.value); setIsDirty(true); }}
-                        placeholder="기본주소 (우편번호 검색 시 자동입력)"
+                        placeholder="기본주소"
                         className="h-6 text-xs"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') saveAddress();
@@ -5694,7 +5694,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       data-testid="chart-customer-note-input"
                       value={customerNoteText}
                       onChange={(e) => { setCustomerNoteText(e.target.value); setIsDirty(true); }}
-                      placeholder="고객 성향·특이사항 등 (직접 입력 · 상단 [저장]으로 저장)"
+                      placeholder="고객 성향·특이사항 등"
                       rows={2}
                       className="text-[11px] resize-none"
                     />
@@ -8236,7 +8236,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   addBtnLabel="추가"
                   historyLabel="고객메모 이력"
                   emptyLabel="아직 고객메모가 없습니다"
-                  placeholder="고객 관련 메모를 입력하세요…"
+                  placeholder="고객메모"
                   hideHistory
                   canManageAll={canManageMemo}
                 />
@@ -8356,7 +8356,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   addBtnLabel="상담메모 추가"
                   historyLabel="상담메모 이력"
                   emptyLabel="아직 상담메모가 없습니다"
-                  placeholder="상담 내용·보험·성향 등을 입력하세요…"
+                  placeholder="상담 내용·보험·성향 등"
                   inputRows={8}
                   canManageAll={canManageMemo}
                 />
@@ -8401,7 +8401,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         value={newMemoText}
                         onChange={(e) => setNewMemoText(e.target.value)}
                         rows={8}
-                        placeholder="치료 메모를 입력하세요…"
+                        placeholder="치료 메모"
                         className="text-[11px] resize-none"
                       />
                     </div>

@@ -172,11 +172,6 @@ export default function OpinionRequestBox({
         )}
       </div>
 
-      {/* 안내 — authoring 경계(AC-4): 선택=요청/참고, 발행=원장 */}
-      <p className="mb-2 rounded bg-gray-50 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-        원장님께 요청드릴 내용을 선택해 보내면, 원장님이 발행 시 참고합니다. <b>발행은 원장님만 가능</b>합니다.
-      </p>
-
       {/* AC-6: 서류종류 2종 (소견서 / 진단서) */}
       <div className="mb-2 flex items-center gap-1.5">
         <span className="text-[10px] font-medium text-muted-foreground">서류종류</span>
@@ -259,13 +254,13 @@ export default function OpinionRequestBox({
       {showOralMedReason && (
         <div className="mb-2 space-y-1 rounded-md border border-blue-200 bg-blue-50/50 p-2" data-testid="opinion-req-oralmed">
           <label className="block text-[10px] font-semibold text-blue-800" htmlFor="opinion-req-oralmed-input">
-            경구약 사유 <span className="font-normal text-blue-600/80">(진단서 경구약 항목에 반영 — 예: 고혈압, 당뇨, 고지혈증으로 인한 경구약 복용중)</span>
+            경구약 사유 <span className="font-normal text-blue-600/80">(예: 고혈압, 당뇨, 고지혈증으로 인한 경구약 복용중)</span>
           </label>
           <Textarea
             id="opinion-req-oralmed-input"
             value={oralMedReason}
             onChange={(e) => setOralMedReason(e.target.value)}
-            placeholder="경구약 복용 사유를 입력하세요 (입력 시 진단서 경구약 항목이 이 내용으로 정확히 표시됩니다)"
+            placeholder="경구약 복용 사유"
             className="min-h-[2.5rem] border-blue-200 bg-white text-[11px]"
             data-testid="opinion-req-oralmed-input"
           />
@@ -276,7 +271,7 @@ export default function OpinionRequestBox({
       <Textarea
         value={memo}
         onChange={(e) => setMemo(e.target.value)}
-        placeholder="원장님께 전달할 메모(선택) — 예: 보험 제출용으로 필요합니다."
+        placeholder="원장님께 전달할 메모(선택)"
         className="mb-2 min-h-[3rem] text-[11px]"
         data-testid="opinion-req-memo"
       />

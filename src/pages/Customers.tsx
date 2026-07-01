@@ -1104,7 +1104,7 @@ function EditCustomerDialog({
               value={tmMemo}
               onChange={(e) => setTmMemo(e.target.value)}
               rows={2}
-              placeholder="실비 보험사, 상한액, 고객 성향 등..."
+              placeholder="실비 보험사, 상한액, 고객 성향 등"
             />
           </div>
           {/* 내부메모 */}
@@ -1270,7 +1270,7 @@ function CreateCustomerDialog({
               clinicId={clinicId}
               selectedCustomerId={selectedExistingId}
               autoFocus
-              placeholder="이름 (2글자 이상 입력 시 기존 고객 자동 검색)"
+              placeholder="이름"
             />
           </div>
           <div className="space-y-1.5">
@@ -1287,7 +1287,7 @@ function CreateCustomerDialog({
               clinicId={clinicId}
               selectedCustomerId={selectedExistingId}
               inputMode="tel"
-              placeholder="전화번호 (4자리 이상 입력 시 자동 검색)"
+              placeholder="전화번호"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">

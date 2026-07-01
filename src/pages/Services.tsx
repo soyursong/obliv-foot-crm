@@ -746,18 +746,6 @@ export default function Services() {
             />
           </div>
 
-          {/* 재정렬 안내 (admin + 특정 탭 + 검색 없음) */}
-          {canReorder && (
-            <p className="mb-2 text-xs text-teal-600" data-testid="reorder-hint">
-              드래그 또는 ↑↓ 버튼으로 순서를 바꾸면 자동 저장됩니다.
-            </p>
-          )}
-          {isAdmin && activeTab !== '전체' && debouncedSearch && (
-            <p className="mb-2 text-xs text-amber-600">
-              검색 중에는 순서 변경이 비활성화됩니다.
-            </p>
-          )}
-
           {/* 서비스 목록 테이블 */}
           <div className="flex-1 overflow-auto rounded-lg border bg-background">
             {loading ? (

@@ -523,9 +523,7 @@ export default function TreatmentSetsTab() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-muted-foreground">
-            {sets.length}개 세트 · 진료비 산정 시 [세트 불러오기]로 코드 자동 입력
-          </p>
+          <p className="text-xs text-muted-foreground">{sets.length}개 세트</p>
         </div>
         {canEdit && (
           <Button
@@ -543,7 +541,7 @@ export default function TreatmentSetsTab() {
       {/* 목록 */}
       {sets.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          등록된 진료세트가 없습니다. [진료세트 추가]로 첫 세트를 만들어보세요.
+          등록된 진료세트가 없습니다.
         </div>
       ) : (
         <div className="space-y-2" data-testid="treatment-set-list">
@@ -651,7 +649,7 @@ export default function TreatmentSetsTab() {
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="초진-발톱무좀(대면/균검사/레이저)"
+                  placeholder="예) 초진-발톱무좀"
                   className="mt-1"
                   data-testid="treatment-set-name-input"
                 />
@@ -766,7 +764,7 @@ export default function TreatmentSetsTab() {
               <Textarea
                 value={form.memo}
                 onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
-                placeholder="세트 설명 또는 사용 시 주의사항"
+                placeholder="메모"
                 className="mt-1 text-xs resize-none"
                 rows={2}
               />

@@ -7250,12 +7250,6 @@ export default function Dashboard() {
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
           </div>
-        ) : isLayoutEdit ? (
-          /* ── 레이아웃 편집 모드: 그룹 드래그 정렬 ─────────────────────── */
-          <div className="mb-2 text-xs text-teal-700 font-medium px-1 py-0.5 bg-teal-50 rounded border border-teal-200 inline-flex items-center gap-1">
-            <LayoutGrid className="h-3.5 w-3.5" />
-            슬롯 그룹을 드래그하여 순서를 바꾸세요. 변경 사항은 자동 저장됩니다.
-          </div>
         ) : null}
         {!loading || rows.length > 0 ? (
           <div

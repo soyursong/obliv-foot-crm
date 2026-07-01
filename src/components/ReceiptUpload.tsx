@@ -439,12 +439,6 @@ export function ReceiptUpload({ onExtracted, clinicId, checkInId, className }: P
             )}
           </div>
 
-          {/* Phase 2a stub 안내 */}
-          {ocrState === 'idle' && (
-            <p className="text-[10px] text-muted-foreground/60 pl-0.5">
-              Phase 2a — OCR 서비스 연동 전, 인식 실패 시 텍스트 붙여넣기 사용
-            </p>
-          )}
         </div>
       )}
 
@@ -460,9 +454,6 @@ export function ReceiptUpload({ onExtracted, clinicId, checkInId, className }: P
 
         {showPastePanel && (
           <div className="mt-2 space-y-2 rounded-lg border bg-slate-50 p-3">
-            <p className="text-[11px] text-muted-foreground">
-              영수증 앱/카메라 OCR 결과 텍스트를 붙여넣으면 금액·결제수단을 자동으로 인식합니다.
-            </p>
             <Textarea
               value={pasteText}
               onChange={e => setPasteText(e.target.value)}

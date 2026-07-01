@@ -229,7 +229,7 @@ export default function Notices() {
               <Textarea
                 value={formContent}
                 onChange={(e) => setFormContent(e.target.value)}
-                placeholder="공지 내용을 입력하세요"
+                placeholder="공지 내용"
                 rows={4}
                 className="mt-1 text-sm"
               />

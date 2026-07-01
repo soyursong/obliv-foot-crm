@@ -3846,7 +3846,7 @@ function ReservationEditor({
               </>
             ) : (
               <>
-                <Label>예약메모 추가 <span className="text-muted-foreground font-normal text-xs">(저장 시 기록에 누적됨)</span></Label>
+                <Label>예약메모 추가</Label>
                 <Textarea
                   value={state.booking_memo ?? ''}
                   onChange={(e) => update('booking_memo', e.target.value)}

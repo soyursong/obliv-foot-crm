@@ -188,10 +188,6 @@ export function ReservationRegistrarTab({ clinic }: { clinic: Clinic }) {
     <div className="space-y-5" data-testid="registrar-tab">
       <div>
         <h2 className="text-base font-semibold text-teal-700">예약등록자 명단</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          예약상세 팝업 '예약등록자' 드롭다운에 노출되는 명단입니다. 추가·수정·비활성·정렬·삭제할 수 있어요.
-          (직원 계정과는 별개 운영 명단입니다.)
-        </p>
       </div>
 
       {/* 추가 폼 (admin/manager 전용) */}

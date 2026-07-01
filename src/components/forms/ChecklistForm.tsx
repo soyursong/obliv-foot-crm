@@ -200,7 +200,6 @@ export function ChecklistForm({
       open={open}
       onOpenChange={onOpenChange}
       title="사전 체크리스트 & 개인정보"
-      description="첫 방문 발 건강 질문지와 개인정보 수집·이용 동의서입니다."
       icon={<ClipboardCheck className="h-5 w-5 text-teal-600" />}
       submitLabel="작성 완료"
       onSubmit={handleSubmit}
@@ -356,7 +355,7 @@ export function ChecklistForm({
           <Textarea
             value={data.allergy_detail}
             onChange={(e) => setData((d) => ({ ...d, allergy_detail: e.target.value }))}
-            placeholder="알레르기 내역을 입력해주세요"
+            placeholder="알레르기 내역"
             rows={2}
             className="text-sm"
           />

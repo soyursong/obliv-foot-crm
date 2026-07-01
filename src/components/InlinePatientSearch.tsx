@@ -289,7 +289,7 @@ export function InlinePatientSearch({
               }}
               className="text-xs text-muted-foreground transition hover:text-foreground"
             >
-              + 새로 등록 (현재 입력값 사용)
+              + 새로 등록
             </button>
           </div>
         </div>

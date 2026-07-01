@@ -820,7 +820,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         <div
           data-testid="doctor-call-room-summary"
           className="flex items-center gap-1.5 px-3 py-1.5 border-b border-purple-100 bg-purple-50/40 overflow-x-auto"
-          title="진료순 방번호 — 원장님 한눈에"
+          title="진료순 방번호"
         >
           <MapPin className="h-3 w-3 text-purple-500 shrink-0" />
           <div className="flex items-center gap-1 flex-wrap">
@@ -1069,7 +1069,7 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
               disabled={reordering}
               data-testid="doctor-call-move-up"
               className="inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border border-purple-200 bg-white text-purple-500 hover:text-purple-700 hover:bg-purple-50 transition-colors disabled:opacity-40"
-              title="진료 순서 올리기 — 한 칸 위로 (공유 화면 반영)"
+              title="진료 순서 올리기"
             >
               <ArrowUp className="h-3.5 w-3.5" />
             </button>
@@ -1101,7 +1101,7 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
               onClick={onHide}
               data-testid="doctor-call-row-hide"
               className="inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border border-gray-200 bg-white text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors"
-              title="이 행 숨기기 — 신규로 다시 리스트업되면 자동으로 다시 표시"
+              title="이 행 숨기기"
             >
               <EyeOff className="h-3 w-3" />
             </button>

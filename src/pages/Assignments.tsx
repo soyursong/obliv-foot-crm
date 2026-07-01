@@ -1291,10 +1291,6 @@ function RotationOrderDialog({
       <DialogContent className="max-w-2xl" data-testid="rotation-order-dialog">
         <DialogHeader>
           <DialogTitle>자동배정 기본순번 설정</DialogTitle>
-          <DialogDescription>
-            <GripVertical className="inline h-3.5 w-3.5 align-text-bottom" /> 핸들을 끌어 순서를 바꾼 뒤 저장하세요. 휴무·임시 off 직원은 자동으로 건너뛰고 다음 순번으로 배정됩니다.
-            저장 후 새 배정부터 반영됩니다.
-          </DialogDescription>
         </DialogHeader>
 
         {loading ? (

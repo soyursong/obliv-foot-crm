@@ -811,7 +811,7 @@ export default function TabletChecklistPage() {
             <textarea
               value={d.prior_conditions}
               onChange={(e) => set('prior_conditions', e.target.value)}
-              placeholder="이전 발 관련 치료나 수술 경험이 있으면 적어주세요 (없으면 생략)"
+              placeholder="이전 치료·수술 경험"
               rows={3}
               className="w-full rounded-xl border px-4 py-3 text-base outline-none resize-none"
               style={{ borderColor: C.border, color: C.dark }}
@@ -823,7 +823,7 @@ export default function TabletChecklistPage() {
             <textarea
               value={d.family_history}
               onChange={(e) => set('family_history', e.target.value)}
-              placeholder="가족 중 당뇨, 혈관질환, 발 관련 질환이 있으면 적어주세요 (없으면 생략)"
+              placeholder="예: 당뇨, 혈관질환, 발 관련 질환"
               rows={2}
               className="w-full rounded-xl border px-4 py-3 text-base outline-none resize-none"
               style={{ borderColor: C.border, color: C.dark }}
