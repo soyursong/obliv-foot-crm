@@ -18,7 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, CalendarPlus, CreditCard, Download, ExternalLink, MessageSquare, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
+import { BookOpen, CalendarPlus, ChevronDown, CreditCard, Download, ExternalLink, MessageSquare, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1153,6 +1153,9 @@ function CreateCustomerDialog({
   const [submitting, setSubmitting] = useState(false);
   // 인라인 자동검색으로 선택된 기존 고객 (중복 등록 방지)
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
+  // T-20260701-foot-NEWPATIENT-REG-COMPACT: 선택/부가 필드(생년월일·외국인·메모·추천인) 접기 기본값.
+  //   AC1(필수만 표시)·AC4(스크롤 최소화). 값은 아래 state에 상시 보존되어 접힘/펼침과 무관하게 저장됨(AC3).
+  const [showOptional, setShowOptional] = useState(false);
   // T-20260625-foot-PASSPORT-PORT: 외국인 정보(국적/여권 영문명/여권번호/외국인등록번호/만료일)
   const [foreignInfo, setForeignInfo] = useState<ForeignInfoValue>({
     nationalityId: '', language: '', passportLastName: '', passportFirstName: '',
@@ -1170,6 +1173,7 @@ function CreateCustomerDialog({
       setReferrerSuggestions([]);
       setReferrerId(null);
       setSelectedExistingId(null);
+      setShowOptional(false);
       setForeignInfo({
         nationalityId: '', language: '', passportLastName: '', passportFirstName: '',
         passportNumber: '', foreignerRegNumber: '', docExpiry: '',
@@ -1290,6 +1294,20 @@ function CreateCustomerDialog({
               placeholder="전화번호"
             />
           </div>
+          {/* ── 선택 정보 접기 (T-20260701-foot-NEWPATIENT-REG-COMPACT AC1/AC4) ─────────
+              필수(이름·전화)만 기본 노출, 부가 필드는 접기. 값은 state에 상시 보존 → 접힘 상태로 저장해도 payload 무변경(AC3). */}
+          <button
+            type="button"
+            onClick={() => setShowOptional((v) => !v)}
+            aria-expanded={showOptional}
+            data-testid="custform-optional-toggle"
+            className="flex w-full items-center justify-between rounded-md border border-dashed border-input px-3 py-2.5 text-sm text-muted-foreground transition hover:bg-muted/50"
+          >
+            <span>선택 정보 <span className="text-xs">(생년월일·외국인·메모·추천인)</span></span>
+            <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${showOptional ? 'rotate-180' : ''}`} />
+          </button>
+          {showOptional && (
+          <div className="space-y-3" data-testid="custform-optional-body">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
               <Label>생년월일 <span className="text-xs text-muted-foreground font-normal">(YYMMDD)</span></Label>
@@ -1366,6 +1384,8 @@ function CreateCustomerDialog({
               </div>
             )}
           </div>
+          </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
