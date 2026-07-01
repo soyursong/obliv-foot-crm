@@ -10,7 +10,22 @@
  *  자동배정 자체는 Dashboard 슬롯 진입 훅(maybeAutoAssign)에서 수행. 본 화면은 조회 + 토스/당김/수동.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, Hand, RefreshCw, Users, ListOrdered, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import { ArrowRightLeft, Hand, RefreshCw, Users, ListOrdered, GripVertical, Loader2 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
@@ -1096,10 +1111,57 @@ export default function Assignments() {
 // ── 배정 기본순번 편집(admin) ────────────────────────────────────────────────
 // T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER
 //   상담(consultant)/치료(therapist) 파트별 active staff 를 동적 로드(입·퇴사 자동반영),
-//   ↑/↓ 로 순서 편집 후 저장 시 staff.assign_sort_order = 위치(1-based) 일괄 UPDATE.
+//   T-20260701-foot-ASSIGNORDER-ARROW-TO-DRAG: ↑/↓ 화살표 → @dnd-kit 드래그앤드롭(그룹 내 재정렬).
+//   그룹별 독립 DndContext 로 상담↔치료 교차 이동 차단. 저장 시 staff.assign_sort_order = 위치(1-based) 일괄 UPDATE.
+//   드래그는 로컬 순서만 바꾸고(기존 화살표와 동일), 실제 DB 반영은 [순번 저장] 버튼(저장경로 불변).
 //   자동배정(pickLeastLoaded 3순위)이 저장 즉시 새 배정부터 반영(기배정 소급 X).
 //   ⚠ assign_sort_order 컬럼 미적용 시 조회 error → 안내만 표시(배정 동선엔 무영향).
 interface RotaStaff { id: string; name: string; }
+
+// 드래그 가능한 순번 행 — QuickRxButtonsTab SortableQuickRxRow 패턴 미러(useSortable hook 규칙상 별도 컴포넌트).
+function SortableRotationRow({
+  staff, index, canEdit, testid,
+}: {
+  staff: RotaStaff;
+  index: number;
+  canEdit: boolean;
+  testid: string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: staff.id,
+    disabled: !canEdit,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={`flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 ${isDragging ? 'shadow-md ring-2 ring-primary/40' : ''}`}
+      data-testid={`rotation-row-${testid}-${index}`}
+    >
+      {/* 드래그 핸들 — admin/manager/director 전용, touch-none(태블릿 탭 오인식 방지) */}
+      {canEdit && (
+        <button
+          {...attributes}
+          {...listeners}
+          type="button"
+          tabIndex={-1}
+          className="flex items-center justify-center min-w-[32px] min-h-[32px] -ml-1 rounded text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+          title="드래그하여 순서 변경"
+          data-testid={`rotation-handle-${testid}-${index}`}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      <Badge variant="outline" className="shrink-0 tabular-nums">{index + 1}</Badge>
+      <span className="flex-1 truncate text-sm" data-testid={`rotation-name-${testid}-${index}`}>{staff.name}</span>
+    </div>
+  );
+}
 
 function RotationOrderDialog({
   clinicId,
@@ -1146,17 +1208,23 @@ function RotationOrderDialog({
 
   useEffect(() => { void loadOrder(); }, [loadOrder]);
 
-  const move = (
+  // activationConstraint distance 8 — 태블릿에서 탭(클릭)과 드래그 구분(CHART-TAP-DELAY 교훈).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
+  // 그룹 내 재정렬만 — 각 그룹이 독립 DndContext 라 교차 이동 불가. 로컬 순서만 변경(저장은 [순번 저장]).
+  const handleDragEnd = (
     list: RotaStaff[],
     setList: (v: RotaStaff[]) => void,
-    idx: number,
-    dir: -1 | 1,
-  ) => {
-    const next = idx + dir;
-    if (next < 0 || next >= list.length) return;
-    const copy = [...list];
-    [copy[idx], copy[next]] = [copy[next], copy[idx]];
-    setList(copy);
+  ) => (e: DragEndEvent) => {
+    if (!canEdit) return;
+    const { active, over } = e;
+    if (!over || String(active.id) === String(over.id)) return;
+    const oldIdx = list.findIndex((x) => x.id === String(active.id));
+    const newIdx = list.findIndex((x) => x.id === String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    setList(arrayMove(list, oldIdx, newIdx));
   };
 
   const save = async () => {
@@ -1196,43 +1264,25 @@ function RotationOrderDialog({
   ) => (
     <div className="flex-1 min-w-0" data-testid={`rotation-part-${testid}`}>
       <p className="mb-2 text-sm font-semibold">{title} <span className="text-xs text-muted-foreground">({list.length}명)</span></p>
-      <div className="space-y-1.5">
-        {list.length === 0 && (
-          <p className="px-2 py-3 text-xs text-muted-foreground">등록된 직원이 없습니다.</p>
-        )}
-        {list.map((s, i) => (
-          <div
-            key={s.id}
-            className="flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2"
-            data-testid={`rotation-row-${testid}-${i}`}
-          >
-            <Badge variant="outline" className="shrink-0 tabular-nums">{i + 1}</Badge>
-            <span className="flex-1 truncate text-sm" data-testid={`rotation-name-${testid}-${i}`}>{s.name}</span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9"
-              disabled={!canEdit || saving || i === 0}
-              onClick={() => move(list, setList, i, -1)}
-              data-testid={`rotation-up-${testid}-${i}`}
-              aria-label="위로"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9"
-              disabled={!canEdit || saving || i === list.length - 1}
-              onClick={() => move(list, setList, i, 1)}
-              data-testid={`rotation-down-${testid}-${i}`}
-              aria-label="아래로"
-            >
-              <ArrowDown className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
+      {list.length === 0 ? (
+        <p className="px-2 py-3 text-xs text-muted-foreground">등록된 직원이 없습니다.</p>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd(list, setList)}>
+          <SortableContext items={list.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1.5">
+              {list.map((s, i) => (
+                <SortableRotationRow
+                  key={s.id}
+                  staff={s}
+                  index={i}
+                  canEdit={canEdit && !saving}
+                  testid={testid}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
     </div>
   );
 
@@ -1242,7 +1292,7 @@ function RotationOrderDialog({
         <DialogHeader>
           <DialogTitle>자동배정 기본순번 설정</DialogTitle>
           <DialogDescription>
-            ↑/↓ 로 순서를 바꾼 뒤 저장하세요. 휴무·임시 off 직원은 자동으로 건너뛰고 다음 순번으로 배정됩니다.
+            <GripVertical className="inline h-3.5 w-3.5 align-text-bottom" /> 핸들을 끌어 순서를 바꾼 뒤 저장하세요. 휴무·임시 off 직원은 자동으로 건너뛰고 다음 순번으로 배정됩니다.
             저장 후 새 배정부터 반영됩니다.
           </DialogDescription>
         </DialogHeader>
