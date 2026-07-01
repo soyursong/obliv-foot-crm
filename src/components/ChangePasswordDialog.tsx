@@ -17,7 +17,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -110,9 +109,6 @@ export default function ChangePasswordDialog({ open, onOpenChange }: Props) {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>비밀번호 변경</DialogTitle>
-          <DialogDescription>
-            현재 비밀번호를 입력한 후 새 비밀번호를 설정하세요.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">

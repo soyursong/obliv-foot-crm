@@ -297,10 +297,6 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
               <span className="font-semibold">{deactivateTarget?.name}</span>{' '}
               직원을 비활성화하시겠습니까?
             </p>
-            <p className="text-muted-foreground">
-              비활성화된 직원은 공간 배정 목록에서 제외됩니다. 계정이 연동된 경우 로그인도 차단됩니다.
-              나중에 다시 활성화할 수 있습니다.
-            </p>
           </div>
           <DialogFooter>
             <Button

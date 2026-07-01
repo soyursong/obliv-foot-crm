@@ -1355,7 +1355,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   onAppend={appendCustomerMemo}
                   saving={savingCustomerMemo}
                   disabled={!customerMode?.customerId}
-                  placeholder="고객 성향, 특이사항, 주차 정보 등 (Ctrl+Enter로 추가)"
+                  placeholder="고객 성향, 특이사항, 주차 정보 등"
                   compact
                 />
               </div>
@@ -1369,7 +1369,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   onAppend={appendEtcMemo}
                   saving={savingEtcMemo}
                   disabled={!customerMode?.customerId}
-                  placeholder="기타 참고사항 (Ctrl+Enter로 추가)"
+                  placeholder="기타 참고사항"
                   compact
                 />
               </div>
@@ -1921,7 +1921,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       onAppend={appendCustomerMemo}
                       saving={savingCustomerMemo}
                       disabled={!checkIn.customer_id}
-                      placeholder="고객 성향, 특이사항, 주차 정보 등 (Ctrl+Enter로 추가)"
+                      placeholder="고객 성향, 특이사항, 주차 정보 등"
                       compact
                     />
                   </div>
@@ -1937,7 +1937,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       onAppend={appendEtcMemo}
                       saving={savingEtcMemo}
                       disabled={!checkIn.customer_id}
-                      placeholder="기타 참고사항 (Ctrl+Enter로 추가)"
+                      placeholder="기타 참고사항"
                       compact
                     />
                   </div>

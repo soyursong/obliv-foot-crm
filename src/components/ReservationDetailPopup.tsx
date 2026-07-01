@@ -717,7 +717,6 @@ export function ReservationDetailPopup({
               <div className="rounded-xl border border-teal-300 bg-teal-50/60 px-3 py-2.5 shadow-sm space-y-2" data-testid="popup-newmode-manual-form">
                 <div className="flex items-center justify-between">
                   <span className="inline-flex shrink-0 items-center rounded-full bg-slate-500 px-1.5 py-0.5 text-[10px] font-semibold text-white" data-testid="newmode-visittype-badge">신규(초진)</span>
-                  <span className="text-[10px] text-muted-foreground">성함·연락처에 기존 기록 있으면 자동으로 재진 전환</span>
                 </div>
                 {/* 성함 — InlinePatientSearch(name): 입력 시 기존 고객 후보 노출, 선택 시 재진 자동판별(handleSelectOtherCustomer). */}
                 <div className="flex items-center gap-2 text-xs">
@@ -839,7 +838,7 @@ export function ReservationDetailPopup({
                 type="text"
                 value={briefNote}
                 onChange={(e) => setBriefNote(e.target.value)}
-                placeholder="발톱무좀 · 내성발톱 · 발각질케어 또는 직접입력"
+                placeholder="발톱무좀 · 내성발톱 · 발각질케어"
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 data-testid="newmode-brief-note-input"
               />
@@ -853,7 +852,7 @@ export function ReservationDetailPopup({
                 type="text"
                 value={newBookingMemo}
                 onChange={(e) => setNewBookingMemo(e.target.value)}
-                placeholder="예약 관련 메모 (선택)"
+                placeholder="예약메모"
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 data-testid="newmode-booking-memo-input"
               />
@@ -1923,7 +1922,7 @@ export function ReservationDetailPopup({
                   id="cancel-reason-popup"
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
-                  placeholder="취소 사유를 입력하세요"
+                  placeholder="취소 사유"
                   rows={3}
                 />
               </div>

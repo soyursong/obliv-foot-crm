@@ -425,7 +425,6 @@ export default function ClinicSettings() {
               placeholder="clinic@oblivseoul.kr"
               disabled={!canEdit}
             />
-            <p className="text-[11px] text-muted-foreground">처방전 서류의 의료기관 E-mail 주소 칸에 자동으로 들어갑니다.</p>
           </div>
         </div>
 

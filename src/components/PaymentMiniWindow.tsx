@@ -2858,7 +2858,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       </div>
                     </div>
                   ))}
-                <p className="text-[9px] text-muted-foreground">미입력 시 기본값(1/1/7) 적용</p>
               </div>
             )}
 

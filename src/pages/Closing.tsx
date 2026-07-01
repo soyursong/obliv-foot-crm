@@ -1432,7 +1432,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               <Textarea
                 value={memo}
                 onChange={e => setMemo(e.target.value)}
-                placeholder="특이사항을 입력하세요"
+                placeholder="특이사항"
                 disabled={isClosed}
                 rows={3}
               />

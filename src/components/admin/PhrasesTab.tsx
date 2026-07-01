@@ -106,13 +106,6 @@ const PHRASE_TYPE_BADGE: Record<string, string> = {
   customer_chart: 'text-teal-700 border-teal-200 bg-teal-50',
 };
 
-// surface 별 안내 문구
-const PHRASE_TYPE_DESC: Record<string, string> = {
-  pen_chart: '진료메모/서류 입력용',
-  medical_chart: '진료차트(진료관리) 임상경과 입력용',
-  customer_chart: '고객차트(2번차트) 3구역[상세] 예약·상담·치료메모 입력용',
-};
-
 // AC-3: document '서류' → '원장님'
 const CATEGORY_LABELS: Record<string, string> = {
   charting: '차팅',
@@ -544,9 +537,6 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
             >
               {PHRASE_TYPE_LABELS[lockedType]} 상용구
             </Badge>
-            <span className="text-xs font-normal text-muted-foreground">
-              {PHRASE_TYPE_DESC[lockedType] ?? PHRASE_TYPE_DESC.pen_chart}
-            </span>
           </div>
         ) : (
           <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-0.5">
@@ -666,12 +656,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                   편집으로 type 변경 시 type 필터에서 빠져 다른 화면으로 자동 이동. */}
             {(!lockedType || editing) && (
               <div>
-                <Label className="text-xs font-semibold">
-                  상용구 유형{' '}
-                  <span className="text-muted-foreground font-normal text-[11px]">
-                    — 어디서 사용하는 상용구인지 선택
-                  </span>
-                </Label>
+                <Label className="text-xs font-semibold">상용구 유형</Label>
                 <div className="mt-1 flex flex-wrap gap-2">
                   {(['pen_chart', 'medical_chart', 'customer_chart'] as const).map((t) => (
                     <label key={t} className="flex items-center gap-1.5 cursor-pointer">
@@ -743,12 +728,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
             </div>
             {/* AC-4: 단축어 입력 필드 (T-20260526-foot-PHRASE-SLASH) */}
             <div>
-              <Label className="text-xs">
-                단축어{' '}
-                <span className="text-muted-foreground font-normal">
-                  — 텍스트 입력 시 <code className="bg-muted px-0.5 rounded text-[10px]">//단축어</code> 로 자동완성
-                </span>
-              </Label>
+              <Label className="text-xs">단축어</Label>
               <div className="mt-1 flex items-center gap-1">
                 <span className="text-sm text-muted-foreground select-none font-mono">//</span>
                 <Input
@@ -781,7 +761,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
               <Textarea
                 value={form.content}
                 onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                placeholder="진료 메모에 삽입될 내용을 입력하세요..."
+                placeholder="내용"
                 className="mt-1 min-h-[120px] text-sm resize-none"
                 data-testid="phrase-content-input"
               />

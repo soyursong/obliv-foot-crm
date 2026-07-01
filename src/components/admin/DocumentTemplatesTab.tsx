@@ -388,9 +388,6 @@ export default function DocumentTemplatesTab() {
                               <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap font-mono bg-muted/30 rounded px-2 py-1">
                                 {t.content.slice(0, 120)}{t.content.length > 120 ? '...' : ''}
                               </p>
-                              <p className="text-[10px] text-muted-foreground mt-1">
-                                변수: &#123;patient_name&#125;, &#123;birth_date&#125;, &#123;visit_date&#125;, &#123;clinic_name&#125;, &#123;doctor_name&#125;
-                              </p>
                             </div>
                             {canEdit && (
                               <div className="flex items-center gap-1 shrink-0">
@@ -436,7 +433,7 @@ export default function DocumentTemplatesTab() {
             {/* FOLLOWUP3 C-3: 위계 = '서류이름 > 하위분류' 단일 2단(중복 카테고리 제거). */}
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <Label className="text-xs">서류 이름 * <span className="text-muted-foreground">(카테고리1)</span></Label>
+                <Label className="text-xs">서류 이름 *</Label>
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -464,7 +461,7 @@ export default function DocumentTemplatesTab() {
             </div>
             <div>
               <Label className="text-xs">
-                하위분류 <span className="text-muted-foreground">(선택, 드롭다운)</span>
+                하위분류 <span className="text-muted-foreground">(선택)</span>
               </Label>
               <SubcategoryField
                 key={`${open}-${editing?.id ?? 'new'}`}
@@ -474,13 +471,11 @@ export default function DocumentTemplatesTab() {
               />
             </div>
             <div>
-              <Label className="text-xs">
-                템플릿 내용 * <span className="text-muted-foreground ml-1">(&#123;patient_name&#125; &#123;visit_date&#125; 등 변수 사용 가능)</span>
-              </Label>
+              <Label className="text-xs">템플릿 내용 *</Label>
               <Textarea
                 value={form.content}
                 onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                placeholder="서류 내용을 입력하세요..."
+                placeholder="서류 내용"
                 className="mt-1 min-h-[200px] text-sm font-mono resize-none"
                 data-testid="doc-template-content-input"
               />

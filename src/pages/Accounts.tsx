@@ -494,14 +494,8 @@ export default function Accounts() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-muted-foreground">
-                    임상직(상담/코디/치료/관리)은 staff 테이블과 연결됩니다. 미선택 시 동명·동역할 staff에 자동 매칭, 없으면 새 staff row를 생성합니다.
-                  </p>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                관리자가 직접 생성한 계정은 즉시 승인됩니다. 직원은 설정된 비밀번호로 로그인 후 변경하세요.
-              </p>
             </div>
             <DialogFooter>
               <Button variant="outline" disabled={inviteBusy} onClick={() => setInviteOpen(false)}>

@@ -433,15 +433,6 @@ export default function SuperPhrasesTab() {
 
   return (
     <div className="space-y-4">
-      {/* 안내 */}
-      <div className="rounded-lg border border-teal-200 bg-teal-50/50 px-3 py-2 text-[11px] text-teal-800 flex items-start gap-1.5">
-        <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-        <span>
-          진단명·임상경과·처방내역을 묶어 등록하면, 진료차트에서 한 번에 각 영역으로 일괄 적용됩니다.
-          세 항목 중 일부만 등록해도 됩니다 (빈 항목은 적용 시 건너뜁니다).
-        </span>
-      </div>
-
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{phrases.length}개 슈퍼상용구</span>
@@ -552,7 +543,6 @@ export default function SuperPhrasesTab() {
             <div>
               <Label className="text-xs flex items-center gap-1">
                 <Stethoscope className="h-3 w-3" /> 진단명 <span className="text-muted-foreground font-normal">(선택)</span>
-                <span className="text-[10px] text-teal-600 font-normal">· 등록 상병명 폴더 선택(코드 동반)</span>
               </Label>
               <div className="mt-1">
                 <DiagnosisFolderPicker
@@ -608,7 +598,7 @@ export default function SuperPhrasesTab() {
               <Textarea
                 value={form.clinical_progress}
                 onChange={(e) => setForm((f) => ({ ...f, clinical_progress: e.target.value }))}
-                placeholder="예) 초진 내원. 발톱 상태 확인. 보행 패턴 점검 완료. 처방 전 동의 완료."
+                placeholder="임상경과"
                 rows={8}
                 className="mt-1 min-h-[180px] text-sm resize-y"
                 data-testid="super-phrase-clinical-input"
@@ -642,7 +632,7 @@ export default function SuperPhrasesTab() {
               </div>
               {form.rx_items.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-3 text-[11px] text-muted-foreground text-center">
-                  처방내역 없음 — 필요 시 위 "묶음처방 불러오기"로 추가
+                  처방내역 없음
                 </div>
               ) : (
                 <div className="space-y-2">

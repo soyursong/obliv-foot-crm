@@ -384,9 +384,7 @@ export default function FeeSetTemplatesTab() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-muted-foreground">
-            {templates.length}개 세트 · 결제 미니창에서 [세트코드]로 수가항목 일괄 추가
-          </p>
+          <p className="text-xs text-muted-foreground">{templates.length}개 세트</p>
         </div>
         {canEdit && (
           <Button
@@ -404,11 +402,7 @@ export default function FeeSetTemplatesTab() {
       {/* 목록 */}
       {templates.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          등록된 수가세트가 없습니다. [수가세트 추가]로 첫 세트를 만들어보세요.
-          <div className="mt-3 text-xs space-y-0.5">
-            <p>예시: 초진/무좀 → 초진진찰료, 프리컨디셔닝, 진균증레이저, 균검사</p>
-            <p>예시: 재진/내성 → 재진, 단순처치1일, 원인제거, 포돌로게</p>
-          </div>
+          등록된 수가세트가 없습니다.
         </div>
       ) : (
         <div className="space-y-2" data-testid="fee-set-template-list">

@@ -428,7 +428,7 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
                 addMemo();
               }
             }}
-            placeholder={hideAddButton ? '새 메모 입력 (상단 [저장] 시 함께 저장 · Ctrl+Enter로 즉시 추가)' : '새 메모 입력 (Ctrl+Enter로 추가)'}
+            placeholder="새 메모 입력"
             rows={2}
             className="text-[11px] resize-none"
           />
@@ -445,7 +445,7 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
                 addMemo();
               }
             }}
-            placeholder="새 메모 입력 (Ctrl+Enter로 추가)"
+            placeholder="새 메모 입력"
             rows={2}
             className="text-xs flex-1"
           />
@@ -482,7 +482,7 @@ export function ReservationMemoInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={2}
-      placeholder="예약메모 (저장 시 기록에 추가됨)"
+      placeholder="예약메모"
       className="text-sm"
     />
   );

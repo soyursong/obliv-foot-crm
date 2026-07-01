@@ -162,7 +162,6 @@ export function ConsentForm({
       open={open}
       onOpenChange={onOpenChange}
       title="환불 & 비급여 동의서"
-      description="비급여 시술 안내와 환불 정책에 대한 동의서입니다."
       icon={<FileText className="h-5 w-5 text-teal-600" />}
       submitLabel="동의 및 서명 완료"
       onSubmit={handleSubmit}

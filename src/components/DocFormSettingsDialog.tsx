@@ -203,7 +203,7 @@ export function DocFormSettingsDialog({
             <Textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="서류에 표기할 세부 내용을 입력하세요"
+              placeholder="세부 내용"
               rows={3}
               className="text-sm"
               data-testid="docform-remarks-input"
