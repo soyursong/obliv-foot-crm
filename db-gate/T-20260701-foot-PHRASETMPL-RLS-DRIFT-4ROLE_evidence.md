@@ -76,3 +76,35 @@ apply.mjs 자동 **5-check 구조 검증**:
 - DB apply 경로는 Vercel FE 배포와 무관(관리 API 독립).
 - **cross-ticket**: sibling T-20260630-foot-PHRASETMPL-CODY-WRITE-RLS = **CLOSED(superseded)**, 20260701030000 apply 금지. MIGRATION-LEDGER-DRIFT-SWEEP: 92a95431/staff_write = **SUPERSEDED**(blind reconcile 재apply 금지, AC2 casualty 제외).
 - field_confirm = 전 역할 정합 완료 후 통합 1회(코디 계정 + 상용구관리 딥링크). HOLD_UNTIL_ALL_AC_DONE. **지금 현장 핑 금지.**
+
+---
+
+## ✅ PROD APPLY 실행 결과 (dev-foot, 2026-07-01T03:07:28Z / KST 12:07)
+- **트리거**: supervisor MSG-20260701-115923-6eb8 — DDL-diff 5-check PASS(ticket log 11:12) → PROD apply 지시.
+- **대상**: commit `a9081233` / migration `20260701040000_phrase_templates_staffarea_write_7role_unified.sql` (작업트리 == 커밋본, diff 0).
+- **경로**: `scripts/T-20260701-foot-PHRASETMPL-RLS-DRIFT-4ROLE_apply.mjs` — 관리 API(REF rxlomoozakkjesdqjtvd) 직접 forward apply. Vercel FE 배포와 독립.
+
+### pg_policies (DDL-diff AFTER, PROD 실측)
+| policy | cmd | roles | 가드 |
+|--------|-----|-------|------|
+| `admin_write_phrase_templates` | ALL | {admin,manager,director} | phrase_type 무가드 (무변경 ✅) |
+| `staff_read_phrase_templates` | SELECT | {authenticated} | USING true (무변경) |
+| `staffarea_write_phrases` | **ALL** | **{admin,manager,consultant,coordinator,therapist,part_lead,staff}** | phrase_type IN(pen_chart,customer_chart) **USING+WITH CHECK 양쪽** ✅ (신규) |
+
+### apply.mjs 자동 5-check = **ALL PASS**
+- ✅ ①role=7 정확 (7역할 전부 + director 부재)
+- ✅ ②USING 가드 + ②WITH CHECK 가드 (pen/customer, no medical) — 변조 hole 차단
+- ✅ ③admin_write_phrase_templates 무변경 {admin,manager,director}
+- ✅ ④sibling `coordinator_write_staffarea_phrases` 부재 (흡수·폐기)
+- ✅ ★shape(i) `staff_write_staffarea_phrases` 부재 (재apply 불사용)
+- ✅ ★coordinator 이중정책 부재 (단일정책에만 등장)
+
+### medical_chart write = 비-director 차단 (구조 전수검증, /tmp/medchart_block_verify.mjs)
+- medical_chart WRITE 허용 role 합집합 = **{admin,manager,director}** (변경 전과 동일, admin_write 경로 뿐).
+- 신규 staffarea 5역할(consultant,coordinator,therapist,part_lead,staff) 중 medical_chart write 가능 = **0건**.
+- `staffarea_write_phrases`는 phrase_type 가드로 medical_chart 전면 제외 → director-only OPINIONPHRASE 무회귀 ✅.
+- (토큰 기반 실사용자 침투테스트 = AC-4 supervisor 담당 범위 유지 — 본 apply는 구조/실측 검증까지 완료.)
+
+### 후속
+- field_confirm = **HOLD_UNTIL_ALL_AC_DONE 유지** — 현장 핑 미발송.
+- 롤백 준비: `supabase/migrations/20260701040000_...rollback.sql` (DROP POLICY staffarea_write_phrases → effective write {admin,manager,director} 원복).
