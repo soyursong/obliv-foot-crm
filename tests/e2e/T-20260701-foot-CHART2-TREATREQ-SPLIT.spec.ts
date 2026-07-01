@@ -32,30 +32,34 @@ const ENGINE_C = stripComments(read('src/lib/autoAssign.ts'));
 const MIG = read('supabase/migrations/20260701120000_foot_chart_treatment_requests.sql');
 const RB = read('supabase/migrations/20260701120000_foot_chart_treatment_requests.rollback.sql');
 
-// ── 2개 의미 축 (⭐뭉치지 말 것) ────────────────────────────────────────────────
+// ── 2개 의미 축 (⭐뭉치지 말 것, DA §7 + lpro 확정) ─────────────────────────────
 test.describe('2개 의미 축 — 코드 SSOT(treatmentRequestCodes)', () => {
-  test('5항목 코드가 SSOT 에 정확히 정의됨(podologue/ribbon/blood_test/koh_fungal_test/athlete_foot_pc_nl)', () => {
-    for (const c of ['podologue', 'ribbon', 'blood_test', 'koh_fungal_test', 'athlete_foot_pc_nl']) {
+  test('치료유형 코드가 session_type 공유 어휘(podologue/ribbon/preconditioning/unheated_laser)', () => {
+    for (const c of ['podologue', 'ribbon', 'preconditioning', 'unheated_laser']) {
       expect(CODES_C).toContain(`'${c}'`);
     }
+    // 발명 코드 athlete_foot_pc_nl 는 폐기(DA lpro 재분류) — 소스에 없어야 함
+    expect(CODES).not.toContain('athlete_foot_pc_nl');
   });
 
-  test('배정 필터 참여 = treatment 축(내성 podologue / 각질 ribbon)만', () => {
-    expect(CODES_C).toMatch(/podologue[\s\S]*?axis:\s*'treatment'/);
-    expect(CODES_C).toMatch(/ribbon[\s\S]*?axis:\s*'treatment'/);
-    expect(CODES_C).toMatch(/TREATMENT_AXIS_CODES[\s\S]*?axis === 'treatment'/);
+  test('배정 필터 참여 = treatment 축(내성 podologue / 각질 ribbon / 무좀 PC+NL)', () => {
+    expect(CODES_C).toMatch(/podologue_pd[\s\S]*?axis:\s*'treatment'[\s\S]*?codes:\s*\['podologue'\]/);
+    expect(CODES_C).toMatch(/ribbon_rb[\s\S]*?axis:\s*'treatment'[\s\S]*?codes:\s*\['ribbon'\]/);
+    // 무좀PC+NL = 치료유형 축(DA lpro), PC=preconditioning + NL=unheated_laser 조합
+    expect(CODES_C).toMatch(/athlete_foot[\s\S]*?axis:\s*'treatment'[\s\S]*?codes:\s*\['preconditioning', 'unheated_laser'\]/);
+    expect(CODES_C).toMatch(/export const TREATMENT_AXIS_CODES/);
+    expect(CODES_C).toMatch(/axis === 'treatment'[\s\S]*?flatMap\(\(i\) => i\.codes\)/);
   });
 
-  test('exam 축(피검사/KOH/무좀)은 배정 불참 — axis=exam 로 분류', () => {
-    expect(CODES_C).toMatch(/blood_test[\s\S]*?axis:\s*'exam'/);
-    expect(CODES_C).toMatch(/koh_fungal_test[\s\S]*?axis:\s*'exam'/);
-    expect(CODES_C).toMatch(/athlete_foot_pc_nl[\s\S]*?axis:\s*'exam'/);
+  test('exam 축(피검사/KOH)만 배정 불참 — axis=exam + codes 없음(chart_treatment_requests 미저장)', () => {
+    expect(CODES_C).toMatch(/blood_test[\s\S]*?axis:\s*'exam'[\s\S]*?codes:\s*\[\]/);
+    expect(CODES_C).toMatch(/koh_fungal_test[\s\S]*?axis:\s*'exam'[\s\S]*?codes:\s*\[\]/);
   });
 
-  test('피검사/KOH 는 既존 엔티티 위임(existingEntity=blood_flag/koh_flag), 무좀은 null(chart_treatment_requests)', () => {
+  test('피검사/KOH 는 既존 엔티티 위임(existingEntity=blood_flag/koh_flag), 치료유형 항목은 null', () => {
     expect(CODES_C).toMatch(/blood_test[\s\S]*?existingEntity:\s*'blood_flag'/);
     expect(CODES_C).toMatch(/koh_fungal_test[\s\S]*?existingEntity:\s*'koh_flag'/);
-    expect(CODES_C).toMatch(/athlete_foot_pc_nl[\s\S]*?existingEntity:\s*null/);
+    expect(CODES_C).toMatch(/podologue_pd[\s\S]*?existingEntity:\s*null/);
   });
 
   test('AC-7 코드 단일 정의처 — 자매 티켓 THERAPIST-SKILL 재사용 계약 명시(문서 계약)', () => {
@@ -105,9 +109,9 @@ test.describe('AC-2 — 5항목 체크박스 + chart_treatment_requests 저장',
     expect(MIG).toMatch(/source\s+text\s+NOT NULL DEFAULT 'manual' CHECK \(source IN \('manual', 'package_derived'\)\)/);
   });
 
-  test('재진입 상태 유지 — chart_treatment_requests 조회 후 codeSet 로 checked 판정', () => {
+  test('재진입 상태 유지 — chart_treatment_requests 조회 후 codeSet 로 checked 판정(복수코드=전부 present)', () => {
     expect(BOX_C).toMatch(/useTreatmentRequests\(checkInId\)/);
-    expect(BOX_C).toMatch(/codeSet\.has\(item\.code\)/);
+    expect(BOX_C).toMatch(/item\.codes\.every\(\(c\) => codeSet\.has\(c\)\)/);
   });
 });
 
