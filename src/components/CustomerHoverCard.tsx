@@ -43,7 +43,8 @@ function calcAge(birthDate: string | null): number | null {
  * 미지정 surface(대시보드 등)는 기존 레거시 레이아웃(차트#·예약시간·고객메모·치료메모) 유지 → 회귀 0.
  */
 interface HoverReservationInfo {
-  /** 등록자 = 예약등록자(registrar_name 스냅샷). booker(예약 입력 계정)와 분리(ReservationDetailPopup.tsx:508). registrar_name null이면 booker fallback. 없으면 제목줄에서 생략. */
+  /** 등록자 = 예약등록자(registrar_name 스냅샷) ONLY. booker(예약 입력 계정)와 분리(ReservationDetailPopup.tsx:508).
+   *  T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH: booker fallback 제거(호출부 registrar_name only) — 선택한 예약등록자만 표기. null이면 제목줄에서 등록자 라벨 생략(일시만). */
   registrarLabel?: string | null;
   /** 예약일 (YYYY-MM-DD) */
   reservationDate?: string | null;
