@@ -27,7 +27,17 @@ import type { NameInteraction } from '@/pages/TreatmentTable';
 //   클릭 동작은 placeholder(준비 중 안내 toast). DB 변경 0(DDL0) — 발행 이력/상태 컬럼 미추가.
 // T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 경과분석 탭 상단 위젯 3종(요약 카드/회차 분포/최근 추이).
 //   당일 코호트 rows 를 read-only 로 재사용 + 자체 최근 14일 추이 집계. 기존 대상자 리스트는 그대로(4번째 섹션).
-import ProgressAnalyticsWidgets from '@/components/treatment/ProgressAnalyticsWidgets';
+import ProgressAnalyticsWidgets, { parseProgressSession } from '@/components/treatment/ProgressAnalyticsWidgets';
+
+// T-20260701-foot-PROGRESS-LIST-ICON-LABEL-CLEAN: 경과분석 리스트 '회차' 표시 정리(FE-only, DDL0).
+//   회차 숫자는 기존 label(progress_check_label) 그대로 매핑 — 표시 문자열만 '{N}회차'로 통일.
+//   "N회 중간 경과분석" 등 부가 텍스트 제거. 숫자 추출 실패(레거시/비정형 label) 시 원본 label 폴백(무손실).
+function formatSessionLabel(label: string | null | undefined): string {
+  const n = parseProgressSession(label);
+  if (n != null) return `${n}회차`;
+  // 숫자 추출 실패: 비어있지 않은 원본은 그대로, 빈/공백/누락은 '경과분석' 폴백.
+  return label && label.trim() ? label : '경과분석';
+}
 
 interface ProgressTargetRow {
   reservationId: string;
@@ -308,10 +318,10 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                         </span>
                       </button>
                     </td>
+                    {/* T-20260701-foot-PROGRESS-LIST-ICON-LABEL-CLEAN: 항목 앞 아이콘(TrendingUp) 제거 + 레이블 '{N}회차' 통일. */}
                     <td className="px-2 py-1 whitespace-nowrap" data-testid="progress-label-cell">
-                      <span className="inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1.5 py-0.5 text-[11px] font-medium text-teal-800 leading-none">
-                        <TrendingUp className="h-2.5 w-2.5" />
-                        {r.label ?? '경과분석'}
+                      <span className="inline-flex items-center rounded border border-teal-300 bg-teal-100 px-1.5 py-0.5 text-[11px] font-medium text-teal-800 leading-none">
+                        {formatSessionLabel(r.label)}
                       </span>
                     </td>
                     <td className="px-2 py-1 tabular-nums whitespace-nowrap" data-testid="progress-time-cell">
