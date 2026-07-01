@@ -344,11 +344,13 @@
     linear-gradient(160deg, rgba(255, 255, 255, 0.62) 0%, rgba(244, 246, 248, 0.42) 48%, rgba(225, 229, 234, 0.4) 100%);
   -webkit-backdrop-filter: blur(7px);
   backdrop-filter: blur(7px);
+  /* T-20260701-foot-GLASS-SHADOW-SOFTEN: blur/spread 축소 + alpha 하향(더 연하게).
+     볼록 입체감(상·좌 하이라이트 / 하·우 그림자 방향)은 유지 — 강도만 하향(AC3). */
   box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.98),   /* 상단 inset 하이라이트 ↑ */
-    inset 2px 0 3px rgba(255, 255, 255, 0.7),    /* 좌측 inset 하이라이트 ↑ */
-    inset 0 -4px 8px rgba(150, 160, 174, 0.46),  /* 하단 inset 그림자 대비 ↑ */
-    inset -3px 0 6px rgba(150, 160, 174, 0.3);   /* 우측 inset 그림자 ↑ */
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지·강도↓) */
+    inset 1.5px 0 2px rgba(255, 255, 255, 0.55),  /* 좌측 inset 하이라이트(강도↓) */
+    inset 0 -2.5px 5px rgba(150, 160, 174, 0.3),  /* 하단 inset 그림자(볼록 유지·범위↓·연하게) */
+    inset -2px 0 4px rgba(150, 160, 174, 0.2);    /* 우측 inset 그림자(강도↓) */
 }
 .live-glass-board {
   background:
@@ -356,12 +358,14 @@
     linear-gradient(160deg, rgba(255, 255, 255, 0.62) 0%, rgba(244, 246, 248, 0.44) 48%, rgba(225, 229, 234, 0.42) 100%);
   -webkit-backdrop-filter: blur(7px);
   backdrop-filter: blur(7px);
+  /* T-20260701-foot-GLASS-SHADOW-SOFTEN: outer 드롭섀도 범위 좁힘(8/20→3/8) + alpha 하향.
+     inset 볼록(상단 하이라이트/하단 그림자)은 유지 — 강도만 하향(AC3). */
   box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.98),   /* 상단 inset 하이라이트 */
-    inset 0 -3px 6px rgba(150, 160, 174, 0.45),  /* 하단 inset 그림자 */
-    0 1px 0 rgba(255, 255, 255, 0.95),           /* 상단 테두리 하이라이트 */
-    0 8px 20px rgba(120, 131, 146, 0.3),         /* outer 볼록 드롭섀도 */
-    0 2px 6px rgba(120, 131, 146, 0.2);
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지) */
+    inset 0 -2px 4px rgba(150, 160, 174, 0.3),    /* 하단 inset 그림자(볼록 유지·강도↓) */
+    0 1px 0 rgba(255, 255, 255, 0.8),             /* 상단 테두리 하이라이트 */
+    0 3px 8px rgba(120, 131, 146, 0.16),          /* outer 볼록 드롭섀도(범위↓·연하게) */
+    0 1px 3px rgba(120, 131, 146, 0.1);
 }
 
 /* ── T-20260701-foot-CHART2-IDVERIFY-DOT-ONLY: 2번 차트 신분증 확인필요/완료 배지 ──────────────
@@ -375,8 +379,9 @@
     linear-gradient(160deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 246, 248, 0.5) 48%, rgba(225, 229, 234, 0.46) 100%);
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
+  /* T-20260701-foot-GLASS-SHADOW-SOFTEN: blur/spread 축소 + alpha 하향. 볼록감 유지·강도만↓(AC3). */
   box-shadow:
-    inset 0 1px 2px rgba(255, 255, 255, 0.98),   /* 상단 inset 하이라이트 */
-    inset 0 -2px 4px rgba(150, 160, 174, 0.4),   /* 하단 inset 그림자(볼록감) */
-    0 1px 2px rgba(120, 131, 146, 0.18);         /* 은은한 outer 볼록 */
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지) */
+    inset 0 -1.5px 3px rgba(150, 160, 174, 0.28), /* 하단 inset 그림자(볼록 유지·강도↓) */
+    0 1px 2px rgba(120, 131, 146, 0.12);          /* 은은한 outer 볼록(연하게) */
 }

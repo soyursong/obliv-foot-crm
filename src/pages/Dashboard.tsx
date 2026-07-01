@@ -7146,9 +7146,12 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* T-20260701-foot-GLASS-SHADOW-SOFTEN-PASTPOPUP-MONO 요청②:
+          과거날짜 조회 인디케이터 → 모노톤(무채색 회색) + ½ 컴팩트(px/py·텍스트·아이콘 축소).
+          컬러(amber) 제거 → gray 계열. 텍스트 잘림 없이 온전 표시(AC-B3). */}
       {isPast && (
-        <div className="mx-4 mt-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 flex items-center gap-2">
-          <Clock className="h-4 w-4 shrink-0" />
+        <div className="mx-4 mt-1.5 flex w-fit items-center gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs text-gray-600 whitespace-nowrap">
+          <Clock className="h-3 w-3 shrink-0" />
           과거 날짜 조회 중 — 읽기 전용
         </div>
       )}
