@@ -187,6 +187,7 @@ const T: Record<Lang, {
   addressOrEmailHint: string;       // T-20260630 ADDR-EMAIL-OPTIONAL: 주소 or 이메일 택1 안내
   stayAddressLabel: string;
   stayAddressPlaceholder: string;
+  staySearchBtn: string;            // T-20260630 ADDR-KAKAO-ENG: 카카오 팝업 주소검색 버튼
   stayAddressDetailLabel: string;
   stayAddressDetailPlaceholder: string;
   stayManualToggle: string;
@@ -315,11 +316,12 @@ const T: Record<Lang, {
     contactEitherHint: '연락처 또는 이메일 중 하나 이상 입력해주세요',
     addressOrEmailHint: '주소 또는 이메일 중 하나를 입력해주세요',
     stayAddressLabel: '국내 체류지 (숙소/주소)',
-    stayAddressPlaceholder: '숙소명 또는 주소 검색',
+    stayAddressPlaceholder: '주소검색 또는 직접 입력',
+    staySearchBtn: '주소검색',
     stayAddressDetailLabel: '상세주소',
     stayAddressDetailPlaceholder: '동·호수·층 등',
     stayManualToggle: '주소 직접 입력',
-    stayManualHint: '체류지 주소를 직접 입력해주세요.',
+    stayManualHint: '검색으로 찾지 못한 숙소는 위 칸에 직접 입력해주세요.',
     foreignConsentTitle: '외국인 환자 개인정보 수집·이용 동의',
     foreignConsentItems: [
       '본 의원은 진료 접수, 환자 본인 확인, 진료기록 관리 및 관련 행정업무를 위해 아래 정보를 수집·이용합니다.',
@@ -448,11 +450,12 @@ const T: Record<Lang, {
     contactEitherHint: 'Enter at least one: phone number or email',
     addressOrEmailHint: 'Please enter at least one: address or email',
     stayAddressLabel: 'Stay in Korea (Hotel / Address)',
-    stayAddressPlaceholder: 'Search hotel or address',
+    stayAddressPlaceholder: 'Search your accommodation address in Korea',
+    staySearchBtn: 'Search address',
     stayAddressDetailLabel: 'Address Detail',
     stayAddressDetailPlaceholder: 'Room / floor / building',
     stayManualToggle: 'Enter address manually',
-    stayManualHint: 'Type your stay address directly.',
+    stayManualHint: "Search by Korean name/address. If it's not found, type your address directly above.",
     foreignConsentTitle: 'Consent to Collection & Use of Personal Information (Foreign Patients)',
     foreignConsentItems: [
       'This clinic collects and uses the information below for reception, identity verification, medical record management, and related administrative tasks.',
@@ -1971,11 +1974,12 @@ export default function SelfCheckIn() {
                   onAddressChange={setAddress}
                   addressDetail={addressDetail}
                   onAddressDetailChange={setAddressDetail}
+                  onPostalCodeChange={setPostalCode}
                   searchLabel={t.stayAddressLabel}
+                  searchButtonLabel={t.staySearchBtn}
                   searchPlaceholder={t.stayAddressPlaceholder}
                   detailLabel={t.stayAddressDetailLabel}
                   detailPlaceholder={t.stayAddressDetailPlaceholder}
-                  manualToggleLabel={t.stayManualToggle}
                   manualHint={t.stayManualHint}
                 />
                 {/* T-20260630-foot-SELFCHECKIN-ADDR-EMAIL-OPTIONAL(AC3): 주소·이메일 둘 다 비면 택1 안내.
