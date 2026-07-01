@@ -337,7 +337,7 @@ export default function ClinicSettings() {
       </h1>
 
       {/* ── 섹션 A: 병원 기본정보 ── */}
-      <section className="rounded-lg border bg-card p-4 space-y-4">
+      <section className="rounded-lg border bg-card p-3 space-y-4">
         <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
           <Building2 className="h-4 w-4" /> 병원 기본정보
         </h2>
@@ -441,7 +441,7 @@ export default function ClinicSettings() {
       </section>
 
       {/* ── 섹션 B: 원장(의사) 정보 ── */}
-      <section className="rounded-lg border bg-card p-4 space-y-4">
+      <section className="rounded-lg border bg-card p-3 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
             <Stethoscope className="h-4 w-4" /> 원장(의사) 정보
