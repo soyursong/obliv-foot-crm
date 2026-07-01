@@ -36,16 +36,18 @@
 //   ⚠ service_code/hira_code 매칭 금지 — DX-KOH-01(미존재)·D6591/D2502001(비활성).
 //     실운영 서비스명 = '일반진균검사-KOH도말-조갑조직'(service_code=D620300HZ, active).
 
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+// T-20260630-foot-KOHEXAM-ISSUE-RELOCATE-TXTABLE [2]: 진료대시보드 균검사지 = READ-ONLY 축소.
+//   채취조갑 선택 위젯 + 발급하기/일괄발급/선택 컬럼을 제거하고, ①신청유무 ②채취부위(R1) ③발급여부만
+//   보여주는 읽기전용 리스트로 간략화. 발급 '동작'은 치료테이블(ExamTargetsSection)로 이전됨.
+//   ※ 발급 field_data 정본 헬퍼(buildKohFieldData 등)는 여기서 export 유지 — ExamTargetsSection 이 재사용(재구현 0).
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { canIssueKoh } from '@/lib/permissions';
 import { todaySeoulISODate, seoulISODate } from '@/lib/format';
-import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search, FileCheck2 } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import KohResultDialog from '@/components/KohResultDialog';
@@ -499,28 +501,8 @@ function doctorNameForRow(r: KohRow, doctorMap: Map<string, Set<string>> | undef
   return [...set].sort((a, b) => a.localeCompare(b, 'ko')).join(', ');
 }
 
-// ---------------------------------------------------------------------------
-// 조갑부위 저장 — T-20260612-foot-KOH-REPORT-PHASE15 (A). RPC set_koh_nail_sites.
-//   check_in_services UPDATE RLS(consultant+) 우회 — 승인 사용자 누구나(치료사 포함) 한 필드만 쓰기.
-// ---------------------------------------------------------------------------
-function useSaveNailSites(clinicId: string | null, ym: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ serviceId, sites }: { serviceId: string; sites: NailSite[] }) => {
-      const { error } = await supabase.rpc('set_koh_nail_sites', {
-        p_service_id: serviceId,
-        p_sites: sites,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['koh_report', clinicId, ym] });
-    },
-    onError: (e: Error) => {
-      toast.error(`조갑부위 저장 실패: ${e.message}`);
-    },
-  });
-}
+// RELOCATE[2]: 조갑부위 저장(useSaveNailSites) RPC 훅은 치료테이블(ExamTargetsSection)로 이전.
+//   진료대시보드 균검사지는 read-only 이므로 여기서는 조갑부위를 저장하지 않는다(표시만).
 
 // ---------------------------------------------------------------------------
 // 발행 결과지 인덱스 — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-3/AC-5).
@@ -596,111 +578,9 @@ export function buildKohFieldData(r: KohRow, doctorName: string, birthOverride?:
   };
 }
 
-// ---------------------------------------------------------------------------
-// 결과지 발행 mutation — T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4/AC-5).
-//   publish_koh_result RPC(비가역·자동채번·published insert). 성공 시 발행 인덱스 invalidate.
-//   반환 = {id, request_no, specimen_no}. 단건 발행 후 결과지 인쇄에 request_no 병합 사용.
-// ---------------------------------------------------------------------------
-function usePublishKoh(clinicId: string | null) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ serviceId, fieldData }: { serviceId: string; fieldData: Record<string, string> }) => {
-      const { data, error } = await supabase.rpc('publish_koh_result', {
-        p_check_in_service_id: serviceId,
-        p_field_data: fieldData,
-      });
-      if (error) throw error;
-      return data as { id: string; request_no: string; specimen_no: string };
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['koh_published', clinicId] });
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 조갑부위 입력 위젯 — T-20260617-foot-KOHGEN-PUBLISH-SINGLESEL-2FIX (이슈2, 단일선택).
-//   ※ reporter(문지은 대표원장) 직접 재정의 — KOHSHEET-RENEWAL §C 다중선택(multi)은 superseded.
-//   레이아웃: [좌발] L1 L2 L3 L4 L5  │(구분선)│  [우발] R1 R2 R3 R4 R5  + '조갑' 고정.
-//   단일선택: 각 버튼 = 라디오형 토글. 다른 부위 누르면 기존 해제 후 새 부위 1개만. 같은 부위 다시 누르면 해제(빈배열).
-//   onCommit 배열 = 최대 1개. L→Lt, R→Rt. 저장 shape = canon {side:Lt|Rt, toe:1-5}(표시문자열 저장 금지).
-//   旣 저장된 레거시 다중값 행은 파괴/마이그 없음 — 표시는 그대로(초기 current), 사용자가 누르는 순간 단일로 수렴.
-//   태블릿 동선 — 즉시 저장(별도 저장버튼 없음). 미선택 = 빈배열 저장(허용).
-//   ※ current(서버 SSOT) 를 로컬 미러 + useEffect 동기화 → 저장 왕복 중 즉시 반영 + 외부 갱신 흡수.
-// ---------------------------------------------------------------------------
-const TOES = [1, 2, 3, 4, 5] as const;
-
-/** 좌/우발 라벨(현장 표기) — Lt=좌발, Rt=우발. */
-const FEET: { side: NailSide; label: string; prefix: 'L' | 'R' }[] = [
-  { side: 'Lt', label: '좌발', prefix: 'L' },
-  { side: 'Rt', label: '우발', prefix: 'R' },
-];
-
-function NailSiteEditor({
-  current,
-  saving,
-  onCommit,
-}: {
-  current: NailSite[];
-  saving: boolean;
-  onCommit: (sites: NailSite[]) => void;
-}) {
-  // 로컬 미러 — 저장 왕복(invalidate→refetch) 전에도 토글이 즉시 반영. 외부 current 변경은 동기화.
-  const [sites, setSites] = useState<NailSite[]>(() => sortNailSites(current));
-  useEffect(() => {
-    setSites(sortNailSites(current));
-  }, [current]);
-
-  const has = (side: NailSide, toe: number) => sites.some((s) => s.side === side && s.toe === toe);
-  // 단일선택의 '선택됨' 강조 — sites 가 정확히 이 부위 1개일 때만 active(레거시 다중값은 수렴 전까지 다중 강조 허용).
-  const isOnly = (side: NailSide, toe: number) =>
-    sites.length === 1 && sites[0].side === side && sites[0].toe === toe;
-
-  // 토글(단일선택, SINGLESEL-2FIX) — 다른 부위 누르면 기존 전부 해제 후 그 부위 1개만.
-  //   현재 선택이 정확히 그 부위 1개면 다시 누른 것 → 해제(빈배열). onCommit 배열 = 최대 1개.
-  const toggle = (side: NailSide, toe: number) => {
-    const next: NailSite[] = isOnly(side, toe) ? [] : [{ side, toe }];
-    setSites(next);
-    onCommit(next);
-  };
-
-  const btn = (active: boolean) =>
-    `inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold transition disabled:opacity-50 ${
-      active
-        ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
-        : 'border-input bg-background text-foreground hover:bg-accent'
-    }`;
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5" data-testid="nail-site-editor">
-      {FEET.map((foot, idx) => (
-        <div key={foot.side} className="flex items-center gap-1">
-          {/* 좌/우발 사이 구분선 */}
-          {idx > 0 && <span className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden="true" />}
-          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{foot.label}</span>
-          <div className="flex gap-0.5" data-testid={`nail-foot-${foot.prefix}`}>
-            {TOES.map((t) => (
-              <button
-                key={`${foot.prefix}${t}`}
-                type="button"
-                disabled={saving}
-                onClick={() => toggle(foot.side, t)}
-                className={btn(has(foot.side, t))}
-                aria-pressed={has(foot.side, t)}
-                data-testid={`nail-${foot.prefix}${t}`}
-              >
-                {foot.prefix}{t}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      {/* '조갑' 고정 텍스트 */}
-      <span className="text-xs font-medium text-muted-foreground">조갑</span>
-      {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-    </div>
-  );
-}
+// RELOCATE[2]: 결과지 발행 mutation(usePublishKoh)·조갑부위 입력 위젯(NailSiteEditor)은
+//   치료테이블(ExamTargetsSection)로 이전. 진료대시보드 균검사지는 read-only 이므로 발급/입력 동작 없음.
+//   ※ buildKohFieldData(위)는 export 유지 — 치료테이블 발급이 정본 field_data 를 재사용(재구현 0).
 
 // ---------------------------------------------------------------------------
 // KohReportTab — Main
@@ -709,18 +589,8 @@ export default function KohReportTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
-  // ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 라벨분기 제거 — 전직군 단일 '발급하기' ──
-  //   reporter(문지은 대표원장, U0ALGAAAJAV) 직접 지시 "발급하기 권한 싹 풀어줘"로 KOHBTN-ROLE-LABEL-VALIDGATE
-  //   라벨분기(의사='발급하기'/직원='발급요청', f600d896)를 제거. director 포함 전8역할 단일 '발급하기'.
-  //   '발급요청'·'일괄발급요청' 라벨/문구는 폐기 — pubNoun 도 전직군 '발급'으로 통일(confirm/toast 문장용).
-  //   실제 동작(publish_koh_result RPC, 서버측 게이트=is_approved_user)은 역할 무관 동일(무변경).
-  const pubNoun = '발급';
-
-  // ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 발급 버튼 노출/활성 대상(WHO) = 전직군(8역할) ──
-  //   reporter(문지은 대표원장, U0ALGAAAJAV) 직접 지시 "권한 다 풀어줘 모든 직군 가능" → KOH_ISSUE_ROLES 전8역할.
-  //   ★supersedes GRANT-3ROLE(4역할)·KOH-ISSUE-PERMISSION-SPEC(director 전용)★ — canIssue 로 노출/활성 게이트.
-  //   라벨 분기는 제거됨(전직군 '발급하기'). canIssue 는 /admin/doctor-tools 라우트 가드 8역할과 동일 집합.
-  const canIssue = canIssueKoh(profile?.role ?? '');
+  // RELOCATE[2]: 발급 권한 게이트(canIssue)·발급 라벨(pubNoun)은 발급 동작이 치료테이블로 이전되며 제거.
+  //   진료대시보드 균검사지는 read-only(발급 액션 없음)이므로 발급 권한 판정이 불필요하다.
 
   // ── T-20260629-foot-KOHLIST-INACTIVE-PURGE-DAYMONTH-FILTER ──
   //   (AC-2) 일별/월별 보기 토글 — 첫 진입 기본 = 일별(선택 일자 = 오늘).
@@ -750,102 +620,18 @@ export default function KohReportTab() {
   };
 
   const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, queryYm);
-  // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only). PHASE15(A): 조갑부위 저장 mutation.
+  // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only) — 진료의 컬럼 표시.
   const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, queryYm);
-  // BIRTHDATE-FROM-RRN-FALLBACK: 생년월일 서버 파생 인덱스(customer_id → birth_date_display). read-only.
+  // BIRTHDATE-FROM-RRN-FALLBACK: 생년월일 서버 파생 인덱스(customer_id → birth_date_display). read-only 생년 표기.
   const { data: birthMap } = useKohBirthdates(clinicId, rows);
-  /** 행의 유효 생년 — 정규 birth_date 우선, NULL이면 RRN 파생값. 둘 다 결측이면 null(AC-2 hard-block 보존). */
+  /** 행의 유효 생년 — 정규 birth_date 우선, NULL이면 RRN 파생값. 둘 다 결측이면 null. (read-only 생년 표기용) */
   const effectiveBirth = (r: KohRow): string | null => r.birth_date || (r.customer_id ? birthMap?.get(r.customer_id) ?? null : null);
-  const saveNailSites = useSaveNailSites(clinicId, queryYm);
 
-  // LIFECYCLE(AC-3/AC-4/AC-5): 발행 인덱스 + 발행 mutation + 일괄선택.
+  // 발행 인덱스(read-only) — RELOCATE[2]: 발급여부(발행완료/미발행)만 표시. 발급 동작(publish/bulk/select)은 치료테이블로 이전.
   const { data: publishedMap } = usePublishedKoh(clinicId);
-  const publishKoh = usePublishKoh(clinicId);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkPublishing, setBulkPublishing] = useState(false);
 
-  // HTMLPORT: 결과지 미리보기/출력·복사·저장 다이얼로그. 발행 직후 + 발행완료 행 인쇄 진입점이 공유.
+  // HTMLPORT: 결과지 미리보기 다이얼로그 — 발행완료 행 '💾 발행완료' 버튼으로 결과보고서 보기(read).
   const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
-
-  /** 발행 여부 — published 인덱스에 koh_service_id(=row.id) 존재. */
-  const isPublished = (id: string) => publishedMap?.has(id) ?? false;
-  /** 발행 가능 — 채취 조갑부위(저장값) 있고(AC-3) + 환자 생년월일 있고(4FIX 이슈3, hard-block) + 아직 미발행.
-   *  4FIX 이슈3(의료문서 정확성): AC-0 선조사 결과 윤민희 등 prod birth_date NULL 다수 → 생년 누락 상태
-   *  발행 차단. 2FIX 이슈1(발행불가도 탭 가능 + 사유 toast) 위에 hard-block 강화(policy_superseded).
-   *  BACTCHECK-PUBLISH-THERAPIST(AC-1, 문지은 대표원장 2026-06-29 A안): 담당 치료사 배정 조건(therapist_id) 제거.
-   *    → PUBLISH-BTN-REVERIFY-GATE AC-4(치료사 필수)를 정책 owner 본인이 철회. 치료사 미배정(박민석류)도 즉시 발행 가능.
-   *    게이트는 nail_sites + 생년월일 둘만 남김(누락 시에만 차단). */
-  //  BIRTHDATE-FROM-RRN-FALLBACK(AC①): 생년 게이트는 effectiveBirth(정규 birth_date || RRN 파생값) 기준.
-  const canPublish = (r: KohRow) => r.nail_sites.length > 0 && !!effectiveBirth(r) && !isPublished(r.id);
-
-  // 단건 발행(AC-5 confirm 가드 — 비가역) → 성공 시 결과지 인쇄.
-  //   SINGLESEL-2FIX(이슈1): 발행 불가 시 silent return 금지 — 태블릿엔 hover 툴팁이 없어 버튼이
-  //   '먹통'으로 보였음(현장 "발행 버튼 동작 안 함" RC). 사유를 toast 로 명시해 다음 행동을 안내한다.
-  const handlePublish = async (r: KohRow) => {
-    if (isPublished(r.id)) return; // 이미 발행 — 발행완료 분기에서 버튼 자체가 없음(도달 불가 방어).
-    if (r.nail_sites.length === 0) {
-      toast.error(
-        r.treatment_sites.length > 0
-          ? `표시된 치료부위는 아직 저장되지 않았습니다. 조갑부위 버튼을 눌러 확정한 뒤 ${pubNoun}해주세요.`
-          : `채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 ${pubNoun}할 수 있습니다.`,
-      );
-      return;
-    }
-    // 4FIX 이슈3(hard-block, 의료문서 정확성): 환자 생년월일 누락 시 발행 차단.
-    //   AC-0 선조사: customers.birth_date NULL 다수(윤민희 등) → 생년 없는 결과보고서 발행 금지.
-    //   2FIX 사유 toast 패턴 재사용 — 다음 행동(고객정보 생년월일 입력) 안내.
-    //   BIRTHDATE-FROM-RRN-FALLBACK(AC②): 정규 birth_date 와 RRN 파생값이 둘 다 결측일 때만 차단(hard-block 보존).
-    if (!effectiveBirth(r)) {
-      toast.error(`환자 생년월일 정보가 없어 ${pubNoun}할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.`);
-      return;
-    }
-    // BACTCHECK-PUBLISH-THERAPIST(AC-2, 문지은 대표원장 2026-06-29 A안): 담당 치료사 미배정 차단 분기 제거.
-    //   PUBLISH-BTN-REVERIFY-GATE AC-4(therapist 필수)를 정책 owner 본인이 철회 — 치료사 미배정도 발행 가능.
-    if (!window.confirm(`${r.customer_name} 님의 검사결과 보고서를 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
-    const doctorName = doctorNameForRow(r, doctorMap);
-    const fieldData = buildKohFieldData(r, doctorName, effectiveBirth(r));
-    try {
-      await publishKoh.mutateAsync({ serviceId: r.id, fieldData });
-      // KOHREPORT-PUBLISH-TOAST: 발행 성공 직후 자동 미리보기 팝업(setPreviewData) 제거 → 토스트 피드백으로 교체.
-      //   reporter(문지은 대표원장) 요구 — 발급 클릭마다 뜨던 확인/미리보기 다이얼로그가 동선 방해.
-      //   미리보기는 발행완료 행의 '💾 발행완료' 버튼(보기, line ~1152)으로 사용자가 의도적으로 열도록 보존(절대 제거 금지).
-      //   문구 = {환자명} {차트번호} 발행완료. 자동 소멸 toast.success(sonner 재사용).
-      toast.success([r.customer_name, r.chart_number].filter(Boolean).join(' ') + ' 발행완료');
-    } catch (e) {
-      toast.error(`발행 실패: ${(e as Error).message}`);
-    }
-  };
-
-  // 일괄 발행(AC-3: 발행 동작만 일괄, 결과값 개별입력 없음) — 선택분 순차 발행. 인쇄는 미발화(다중 창 방지).
-  //   BULK-PUBLISH(AC-4 부분실패): 성공건은 발행완료로 자연 제외, 실패건은 선택 유지 → 재시도 가능. 전체 롤백 아님.
-  const handleBulkPublish = async () => {
-    const targets = filtered.filter((r) => selected.has(r.id) && canPublish(r));
-    if (targets.length === 0) return;
-    if (!window.confirm(`선택한 ${targets.length}건의 검사결과 보고서를 일괄 ${pubNoun}하시겠습니까?\n\n${pubNoun} 후에는 수정·취소할 수 없습니다(비가역).`)) return;
-    setBulkPublishing(true);
-    let ok = 0;
-    let fail = 0;
-    const failedIds = new Set<string>();
-    for (const r of targets) {
-      try {
-        const doctorName = doctorNameForRow(r, doctorMap);
-        await publishKoh.mutateAsync({ serviceId: r.id, fieldData: buildKohFieldData(r, doctorName, effectiveBirth(r)) });
-        ok += 1;
-      } catch {
-        fail += 1;
-        failedIds.add(r.id); // AC-4: 실패 건 식별 — 선택 유지해 재시도 가능하게.
-      }
-    }
-    setBulkPublishing(false);
-    // AC-4: 성공 건(+stale 선택)은 해제, 실패 건만 선택 유지(재시도). 성공 건은 published invalidate 로 발행완료 전이.
-    setSelected((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => { if (failedIds.has(id)) next.add(id); });
-      return next;
-    });
-    if (fail === 0) toast.success(`${ok}건 일괄 ${pubNoun} 완료`);
-    else toast.error(`${ok}건 ${pubNoun} 완료, ${fail}건 실패 — 실패 건은 선택 유지(재시도 가능)`);
-  };
 
   // T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3): +1일 경과(검사 다음날부터)만 노출.
   //   검사 당일(+1일 미경과) row 는 제외 — isKohExamEligible(검사일 KST < 오늘 KST).
@@ -875,41 +661,8 @@ export default function KohReportTab() {
     );
   }, [scopedRows, query]);
 
-  // LIFECYCLE: 일괄발행 대상(발행가능=조갑부위+생년 있고 미발행) id 집합 — 전체선택 토글 근거.
-  //   4FIX 이슈3: canPublish 와 동일 조건(생년 누락 행은 select-all 대상에서 제외).
-  const publishableIds = useMemo(
-    () => filtered.filter((r) => canPublish(r)).map((r) => r.id),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filtered, publishedMap],
-  );
-  const selectedCount = publishableIds.filter((id) => selected.has(id)).length;
-  const allSelected = publishableIds.length > 0 && selectedCount === publishableIds.length;
-  const toggleSelectAll = () => {
-    setSelected((prev) => {
-      if (publishableIds.every((id) => prev.has(id))) {
-        const next = new Set(prev);
-        publishableIds.forEach((id) => next.delete(id));
-        return next;
-      }
-      return new Set([...prev, ...publishableIds]);
-    });
-  };
-  const toggleSelectOne = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  // KOH-ISSUE-ROLE-GRANT-ALLROLE: 버튼 라벨 = 전직군 단일 '발급하기'(역할 분기 제거).
-  //   단건='발급하기'. 일괄(0건 선택)='일괄발급하기'. 일괄(N건 선택)='선택 N건 일괄발급'.
-  const publishBtnLabel = '발급하기';
-  const bulkPublishBtnLabel =
-    selectedCount > 0
-      ? `선택 ${selectedCount}건 일괄${pubNoun}`
-      : '일괄발급하기';
+  // RELOCATE[2]: 일괄발행 대상 집합·선택(select-all/one)·발급 라벨은 발급 동작이 치료테이블로 이전되며 제거.
+  //   진료대시보드 균검사지는 read-only 리스트(신청유무·채취부위·발급여부)만 보여준다.
 
   return (
     <div className="space-y-4">
@@ -921,7 +674,7 @@ export default function KohReportTab() {
             균검사지 — KOH 진균검사 명단
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KOH(진균) 검사 후 하루가 지난 환자 명단입니다. 검사일 기준 일별/월별 조회(당일 검사분은 다음날 표시). 비활성(미신청) 건은 기본 제외됩니다.
+            KOH(진균) 검사 후 하루가 지난 환자 명단입니다. 검사일 기준 일별/월별 조회(당일 검사분은 다음날 표시). 신청유무·채취부위·발급여부를 확인하는 <strong className="text-foreground/80">읽기전용</strong> 리스트입니다(채취조갑 선택·발급하기는 <strong className="text-foreground/80">치료 테이블</strong>의 ‘균검사 &amp; 피검사 대상자’에서). 비활성(미신청) 건은 기본 제외됩니다.
           </p>
         </div>
 
@@ -1073,23 +826,7 @@ export default function KohReportTab() {
             />
             비활성 포함
           </label>
-          {/* AC-2/AC-3(BULK-PUBLISH): 일괄발행 — 0건 선택 시 비활성(클릭 불가), 1건+ 선택 시 활성.
-              발행 동작만 일괄(결과값 개별입력 없음), 선택분(발행가능)만 발행.
-              ── T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE (supersedes GRANT-3ROLE) ──
-              일괄발급 버튼 = canIssue(전직군 8역할). reporter(문지은 대표원장) 확정 '권한 다 풀어줘'.
-              라벨분기 제거 → 전직군 단일 '일괄발급하기'. canIssue=false(tm 등)만 미노출(회귀 가드). */}
-          {canIssue && (
-          <Button
-            size="sm"
-            className="h-8 gap-1 bg-neutral-800 px-2.5 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
-            onClick={handleBulkPublish}
-            disabled={selectedCount === 0 || bulkPublishing || publishKoh.isPending}
-            data-testid="koh-bulk-publish"
-          >
-            {bulkPublishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-            {bulkPublishBtnLabel}
-          </Button>
-          )}
+          {/* RELOCATE[2]: 일괄발급(koh-bulk-publish) 버튼은 발급 동작이 치료테이블로 이전되며 제거(read-only). */}
           <span className="text-xs text-muted-foreground" data-testid="koh-count">
             {periodLabel} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
             {query.trim() && scopedRows.length !== filtered.length && (
@@ -1118,39 +855,21 @@ export default function KohReportTab() {
         <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">
           <table className="w-full text-sm">
             <thead>
-              {/* T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-1/AC-8): 7컬럼 고정 —
-                  이름·생년(만나이)·차트번호·채취조갑·진료의·상태·발행. 검사일 컬럼 제거(월별 조회 필터는 유지).
-                  + LIFECYCLE: 선택(일괄발행) 컬럼은 canIssue 게이트로 맨 앞 유지(데이터 7컬럼과 별개). */}
+              {/* RELOCATE[2]: read-only 리스트 — 이름·생년(만나이)·차트번호·채취부위·진료의·신청유무·발급여부.
+                  선택(일괄발행) 컬럼·채취조갑 입력 위젯·발급 버튼은 제거(발급 동작은 치료테이블로 이전). */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                {/* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE: 선택(일괄발급) 컬럼 = canIssue(전직군 8역할).
-                    헤더·셀 동일 게이트로 정합. 비대상 역할(canIssue=false, tm 등)에겐 선택 컬럼 자체 미노출. */}
-                {canIssue && (
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">
-                  {/* AC-3: 전체선택(발행가능 행만 대상) */}
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 cursor-pointer accent-teal-600 disabled:opacity-40"
-                    checked={allSelected}
-                    disabled={publishableIds.length === 0}
-                    onChange={toggleSelectAll}
-                    aria-label="전체 선택"
-                    data-testid="koh-select-all"
-                  />
-                </th>
-                )}
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">이름</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년(만나이)</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트번호</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">채취조갑</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">채취부위</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">진료의</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">상태</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">발행</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">신청유무</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap text-center">발급여부</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((r) => {
                 const published = publishedMap?.get(r.id);
-                const rowPublishable = canPublish(r);
                 return (
                 <tr
                   key={r.id}
@@ -1160,21 +879,6 @@ export default function KohReportTab() {
                   data-testid="koh-row"
                   data-koh-active={r.koh_requested ? 'true' : 'false'}
                 >
-                  {/* AC-3: 행 선택(일괄발행) — 발행가능(조갑부위 있고 미발행)일 때만 활성.
-                      KOH-ISSUE-ROLE-GRANT-3ROLE: canIssue(3역할+의사, 헤더 선택 컬럼과 동일 게이트). */}
-                  {canIssue && (
-                  <td className="px-1.5 py-1 text-center" data-testid="koh-cell-select">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 cursor-pointer accent-teal-600 disabled:opacity-30"
-                      checked={selected.has(r.id)}
-                      disabled={!rowPublishable}
-                      onChange={() => toggleSelectOne(r.id)}
-                      aria-label={`${r.customer_name} 선택`}
-                      data-testid="koh-row-select"
-                    />
-                  </td>
-                  )}
                   {/* NAILSYNC(AC5): 이름 클릭 → 고객차트(MedicalChartPanel) 열기. customer_id 없으면 비활성 텍스트. */}
                   <td
                     className="px-1.5 py-1 whitespace-nowrap max-w-[8rem]"
@@ -1219,46 +923,22 @@ export default function KohReportTab() {
                   <td className="px-1.5 py-1 font-mono text-foreground/90 whitespace-nowrap" data-testid="koh-cell-chart">
                     {r.chart_number || '—'}
                   </td>
-                  {/* T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-8): 검사일 컬럼 제거.
-                      월별 조회(useKohReport ym 범위 필터)는 유지 — 표시 컬럼만 제거. */}
-                  {/* PHASE15(A): 조갑부위 + NAILSYNC(AC2/AC3): 치료부위 프리필.
-                      AC3 가드 — 균검사지=원장 시술 판단 근거. 조갑부위(koh_nail_sites)가 비어있을 때만
-                      치료부위(treatment_sites)로 프리필. 원장이 한 번이라도 입력/저장(nail_sites 非빈)하면
-                      그 값이 SSOT가 되어 치료부위 변경이 silent 덮어쓰기 못 함(단방향, AC4).
-                      프리필은 표시·편집기 초기값 한정 — 자동 DB 쓰기 없음(원장 명시 토글 시에만 저장). */}
+                  {/* RELOCATE[2]: 채취부위 — READ-ONLY 표기(컴팩트 R1). NAILFMT 포맷 재사용(재구현 0).
+                      입력 위젯(NailSiteEditor)은 치료테이블로 이전 — 여기서는 저장값을 보기만 한다.
+                      저장값(nail_sites) 우선, 미저장이면 치료부위(treatment_sites) 참고 표기(수정 불가). */}
                   {(() => {
-                    const prefilled = r.nail_sites.length === 0 && r.treatment_sites.length > 0;
                     const effective = r.nail_sites.length > 0 ? r.nail_sites : r.treatment_sites;
                     return (
                       <td className="px-1.5 py-1" data-testid="koh-cell-nailsite">
-                        <div className="space-y-1.5">
-                          <span
-                            className={`flex items-center gap-1 text-xs font-semibold tabular-nums ${
-                              effective.length > 0 ? 'text-foreground' : 'text-muted-foreground/60'
-                            }`}
-                            data-testid="koh-nailsite-text"
-                            title={effective.length > 0 ? formatNailSites(effective) : undefined}
-                          >
-                            {/* AC-2(§B): 컴팩트 'R1'(2글자) 표기. 풀표기(formatNailSites)는 title 툴팁으로 보존. */}
-                            {formatNailSitesShort(effective)}
-                            {prefilled && (
-                              <span
-                                className="shrink-0 rounded bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700"
-                                title="고객차트에서 선택한 치료부위가 자동 표시됨(미저장). 버튼을 눌러 확정하세요."
-                                data-testid="koh-nailsite-prefill-badge"
-                              >
-                                치료부위
-                              </span>
-                            )}
-                          </span>
-                          <NailSiteEditor
-                            current={effective}
-                            saving={
-                              saveNailSites.isPending && saveNailSites.variables?.serviceId === r.id
-                            }
-                            onCommit={(sites) => saveNailSites.mutate({ serviceId: r.id, sites })}
-                          />
-                        </div>
+                        <span
+                          className={`flex items-center gap-1 text-xs font-semibold tabular-nums ${
+                            effective.length > 0 ? 'text-foreground' : 'text-muted-foreground/60'
+                          }`}
+                          data-testid="koh-nailsite-text"
+                          title={effective.length > 0 ? formatNailSites(effective) : undefined}
+                        >
+                          {formatNailSitesShort(effective)}
+                        </span>
                       </td>
                     );
                   })()}
@@ -1285,11 +965,10 @@ export default function KohReportTab() {
                       </span>
                     )}
                   </td>
-                  {/* AC-4/AC-5: 발행 — 미발행+조갑부위+생년 있을 때만 활성. 발행=비가역(완료 시 비활성). */}
+                  {/* RELOCATE[2]: 발급여부 — READ-ONLY. 발행완료 = '💾 발행완료'(클릭 시 결과보고서 보기, read),
+                      미발행 = '미발행' 텍스트. 발급하기/일괄발급 버튼은 치료테이블로 이전(여기서 발급 액션 없음). */}
                   <td className="px-1.5 py-1 text-center whitespace-nowrap" data-testid="koh-cell-publish">
                     {published ? (
-                      /* 4FIX 이슈2: 발행완료+보기 2버튼 → '💾 발행완료' 단일 버튼만. 클릭 시 보기(미리보기) 팝업.
-                         진입점만 단일화 — 기존 보기 팝업(KohResultDialog) 동일. */
                       <button
                         type="button"
                         onClick={() => setPreviewData(published.field_data)}
@@ -1299,42 +978,14 @@ export default function KohReportTab() {
                       >
                         💾 발행완료
                       </button>
-                    ) : canIssue ? (
-                      /* T-20260620-foot-KOH-ISSUE-ROLE-GRANT-ALLROLE (supersedes GRANT-3ROLE):
-                         발급 버튼 = canIssue(전직군 8역할). reporter(문지은 대표원장) '권한 다 풀어줘' 확정.
-                         라벨분기 제거 → publishBtnLabel='발급하기'(전직군 단일) — 동작은 역할무관 동일.
-                         비대상 역할(canIssue=false, tm 등)은 미노출. 발행완료 행 보기(viewer)는 전 역할 공통(읽기). */
-                      <Button
-                        size="sm"
-                        variant={rowPublishable ? 'default' : 'outline'}
-                        className={
-                          rowPublishable
-                            ? 'h-7 gap-1 bg-neutral-800 px-2 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40'
-                            : 'h-7 gap-1 px-2 text-[11px] text-muted-foreground disabled:opacity-40'
-                        }
-                        onClick={() => handlePublish(r)}
-                        // SINGLESEL-2FIX(이슈1): 발행 불가 상태도 탭 가능하게(disabled 제거) — 태블릿 hover 부재로
-                        //   사유가 안 보여 '먹통'으로 보였음. 탭 시 handlePublish 가 사유 toast 노출. busy 상태만 비활성.
-                        disabled={publishKoh.isPending || bulkPublishing}
-                        // 4FIX 이슈3: 발행 불가 사유(조갑부위/생년 누락)를 title 로 명시.
-                        //   ALLROLE: title 도 pubNoun('발급')으로 전직군 통일(라벨분기 제거).
-                        //   ★AC-3 회귀방지★: 의사 view에서 비검증 행은 outline(비활성처럼) 표시하되 disabled 는 busy 한정 유지 —
-                        //     탭 시 handlePublish 가 사유 toast 노출(태블릿 hover 부재 대응, SINGLESEL-2FIX 이슈1 보존).
-                        title={
-                          rowPublishable
-                            ? `검사결과 보고서 ${pubNoun}(비가역)`
-                            : r.nail_sites.length === 0
-                              ? `채취 조갑부위를 먼저 선택해야 ${pubNoun}할 수 있습니다 (눌러서 안내 보기)`
-                              : !effectiveBirth(r)
-                                ? `환자 생년월일 미입력 — ${pubNoun} 불가 (눌러서 안내 보기)`
-                                : `${pubNoun} 불가 (눌러서 안내 보기)`
-                        }
-                        data-testid="koh-publish-btn"
-                        data-publishable={rowPublishable ? 'true' : 'false'}
+                    ) : (
+                      <span
+                        className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                        data-testid="koh-unpublished"
                       >
-                        {publishBtnLabel}
-                      </Button>
-                    ) : null}
+                        미발행
+                      </span>
+                    )}
                   </td>
                 </tr>
                 );
@@ -1344,9 +995,9 @@ export default function KohReportTab() {
         </div>
       )}
 
-      {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
+      {/* 안내 — RELOCATE[2]: read-only 리스트(신청유무·채취부위·발급여부). 발급/입력은 치료테이블로 이전. */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 명단입니다. 상단 <strong className="text-foreground/80">일별/월별</strong> 토글로 보기 단위를 바꿀 수 있으며(첫 진입은 일별), <strong className="text-foreground/80">비활성(미신청)</strong> 건은 기본 제외됩니다(목록에서만 숨김 — 삭제 아님, "비활성 포함"을 켜면 다시 표시). 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 하나만 선택해 주세요(다시 누르면 해제, 다른 부위를 누르면 그 부위로 바뀝니다). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다. <strong className="text-foreground/80">상태</strong>는 2번차트 패키지 탭의 KOH 신청 토글(ON=신청/OFF=미신청·회색)을 따릅니다. <strong className="text-foreground/80">발급하기</strong>는 채취 조갑부위 선택 + 환자 생년월일이 갖춰져야 가능하며(생년월일 미입력 시 고객 정보에서 먼저 입력), 발급 시 검사결과 보고서가 생성되어 고객차트 검사결과 탭에 자동 표시됩니다. 발급은 취소·수정할 수 없습니다(비가역). 여러 건을 선택해 일괄 발급할 수 있습니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
+        ※ 검사일(시행일) 기준 <strong className="text-foreground/80">읽기전용</strong> 명단입니다. 상단 <strong className="text-foreground/80">일별/월별</strong> 토글로 보기 단위를 바꿀 수 있으며(첫 진입은 일별), <strong className="text-foreground/80">비활성(미신청)</strong> 건은 기본 제외됩니다(목록에서만 숨김 — 삭제 아님, "비활성 포함"을 켜면 다시 표시). 각 행은 <strong className="text-foreground/80">신청유무</strong>(2번차트 패키지 탭의 KOH 신청 토글 ON=신청/OFF=미신청·회색), <strong className="text-foreground/80">채취부위</strong>(치료 테이블에서 선택한 조갑부위, 예: R1), <strong className="text-foreground/80">발급여부</strong>(발행완료/미발행)를 보여줍니다. 환자 이름을 누르면 고객차트가 열리며, 진료의는 진료차트 서명 기준(미서명·차트없음은 '미정')입니다. <strong className="text-foreground/80">채취조갑 선택과 발급하기는 치료 테이블의 ‘균검사 &amp; 피검사 대상자’</strong>에서 진행합니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
       </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}

@@ -106,15 +106,25 @@ test.describe('S3 화면3 균검사지 테이블 밀도', () => {
     expect(src).toContain('whitespace-nowrap'); // 컬럼 줄바꿈 방지(타이트)
   });
 
-  test('AC-6 PHASE15 무접촉 — koh_nail_sites/RPC/조인/위젯 코드 보존', () => {
-    expect(src).toContain('set_koh_nail_sites'); // PHASE15 RPC 그대로
-    expect(src).toContain('koh_nail_sites'); // jsonb 컬럼 참조 그대로
-    expect(src).toContain('data-testid="nail-site-editor"'); // 발톱부위 입력 위젯
-    expect(src).toContain('signing_doctor_name'); // 당일의사 조인
-    // 6컬럼 read-only 헤더 보존
-    for (const col of ['환자이름', '생년월일', '차트번호', '검사일', '조갑부위', '당일 진료의사']) {
+  // ⚠ SUPERSEDED by T-20260630-foot-KOHEXAM-ISSUE-RELOCATE-TXTABLE [2] (문원장 confirm U0ALGAAAJAV):
+  //   균검사 '채취조갑 선택 위젯(nail-site-editor) + 발급/저장 RPC(set_koh_nail_sites)'는 치료테이블
+  //   (ExamTargetsSection)로 이전됨. 진료대시보드 KohReportTab 은 read-only 리스트로 축소.
+  //   → 본 테스트를 '입력 위젯·쓰기 RPC 는 KohReportTab 에 잔존 0(이전됨)' + 'read-only 조회 코드는 보존'
+  //     으로 재정의(밀도 압축과 무관하게 read-only 전환이 정본).
+  test('AC-6 read-only 이전(RELOCATE) — 입력 위젯·쓰기 RPC 이전 + read-only 조회/진료의 조인 보존', () => {
+    // 이전됨: 채취조갑 입력 위젯 + 조갑저장 쓰기 RPC 호출 은 KohReportTab 에 없어야 함(치료테이블로 이동).
+    //   ※ 'set_koh_nail_sites' 문자열은 이력 설명 주석에 남을 수 있어 실제 RPC '호출부'로 단언(주석 무관).
+    expect(src).not.toContain('data-testid="nail-site-editor"');
+    expect(src).not.toContain("rpc('set_koh_nail_sites'");
+    expect(src).not.toContain('publishKoh.mutateAsync'); // 발급 mutation 호출부도 이전됨(read-only)
+    // 보존: koh_nail_sites(조갑부위 read) + 진료의 조인(signing_doctor_name) 는 read-only 표기에 유지.
+    expect(src).toContain('koh_nail_sites'); // 채취부위 read-only 표기 소스
+    expect(src).toContain('signing_doctor_name'); // 진료의 조인(read-only)
+    // read-only 3항목(신청유무·채취부위·발급여부) 헤더 + 표기 헬퍼(NAILFMT 재사용) 보존.
+    for (const col of ['채취부위', '진료의', '신청유무', '발급여부']) {
       expect(src).toContain(col);
     }
+    expect(src).toContain('formatNailSitesShort'); // NAILFMT 컴팩트 포맷 재사용
   });
 });
 

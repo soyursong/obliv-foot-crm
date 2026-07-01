@@ -20,9 +20,8 @@
 //   KOHTEST-LIFECYCLE SSOT read-only 재사용 — 신규 스키마 0, ADDITIVE 소비.) 환자×검사신청일 = 1행.
 // 방어성: koh_requested/blood_test_requested 는 ADDITIVE(마이그 미적용 prod 42703) → 폴백 빈 목록.
 
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
@@ -32,7 +31,21 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import KohResultDialog from '@/components/KohResultDialog';
 import BloodResultDialog from '@/components/BloodResultDialog';
-import { Loader2, FlaskConical, Droplet, ClipboardList, FilePlus2, FileText, CalendarDays, Upload, ChevronRight, ChevronDown } from 'lucide-react';
+// T-20260630-foot-KOHEXAM-ISSUE-RELOCATE-TXTABLE [1]: 균검사 '채취조갑 선택 + 발급하기' 를
+//   진료대시보드(KohReportTab)에서 치료테이블(본 섹션)로 이전. 발급 '동작' 로직은 기존 SSOT 재사용 —
+//   순수 헬퍼(buildKohFieldData/포맷/파서)는 KohReportTab 에서 import(정본 유지, 재구현 0),
+//   조갑부위 저장(set_koh_nail_sites)·발급(publish_koh_result) RPC 도 동일 호출(중복발급 방지 idempotent 유지).
+import {
+  buildKohFieldData,
+  formatNailSites,
+  formatNailSitesShort,
+  parseNailSites,
+  sortNailSites,
+  type KohRow,
+  type NailSite,
+  type NailSide,
+} from '@/components/doctor/KohReportTab';
+import { Loader2, FlaskConical, Droplet, ClipboardList, FileText, CalendarDays, Upload, ChevronRight, ChevronDown, FileCheck2 } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
 // AC-2: 일자별 리스트 윈도(검사신청일 기준 직전 N일). 검사결과는 수일 뒤 회신되므로 단일일 → 2주 윈도.
@@ -43,9 +56,12 @@ interface ExamTargetRow {
   customerName: string;
   chartNumber: string | null;
   phone: string | null;
+  birthDate: string | null; // RELOCATE[1]: 발급 field_data 생년월일(정규 birth_date). 결측 시 RRN 파생 폴백.
   kohRequested: boolean;
   bloodRequested: boolean;
-  kohServiceId: string | null; // C: 발행본(koh_service_id) lookup 키
+  kohServiceId: string | null; // C: 발행본(koh_service_id) lookup 키 + RELOCATE[1] 조갑저장/발급 대상 서비스 id
+  kohNailSites: NailSite[]; // RELOCATE[1]: 채취조갑(koh_nail_sites) — 치료테이블에서 선택·발급.
+  kohCreatedAt: string | null; // RELOCATE[1]: KOH 검사일(created_at) — 발급 field_data 검체채취일/의뢰일.
   requestDate: string; // AC-2: 검사신청일(KST YYYY-MM-DD)
 }
 
@@ -68,8 +84,10 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
     queryFn: async () => {
       if (!clinicId) return [];
       const { startTs, endTs } = windowBounds(date);
+      // RELOCATE[1]: koh_nail_sites(조갑부위) + created_at(검사일) 추가 — 치료테이블 발급에 필요.
+      //   koh_nail_sites 는 ADDITIVE(마이그 20260612160000) — 미적용 prod 42703 → 아래 폴백 regex 로 흡수.
       const SEL =
-        'id, koh_requested, blood_test_requested, check_in_id, ' +
+        'id, koh_requested, blood_test_requested, koh_nail_sites, created_at, check_in_id, ' +
         'check_ins!inner(customer_id, customer_name, clinic_id, status, checked_in_at)';
       const { data, error } = await supabase
         .from('check_in_services')
@@ -81,7 +99,7 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
         .or('koh_requested.eq.true,blood_test_requested.eq.true');
       if (error) {
         // ADDITIVE 컬럼 미적용 prod(42703) → 빈 목록 폴백(페이지 무파손).
-        if (/koh_requested|blood_test_requested|42703/.test(error.message ?? '')) return [];
+        if (/koh_requested|blood_test_requested|koh_nail_sites|42703/.test(error.message ?? '')) return [];
         throw error;
       }
 
@@ -102,16 +120,24 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
         if (prev) {
           prev.kohRequested = prev.kohRequested || koh;
           prev.bloodRequested = prev.bloodRequested || blood;
-          if (koh && !prev.kohServiceId) prev.kohServiceId = svcId || null;
+          // RELOCATE[1]: KOH 서비스(신청)의 id·조갑부위·검사일을 함께 귀속(첫 KOH 서비스 기준).
+          if (koh && !prev.kohServiceId) {
+            prev.kohServiceId = svcId || null;
+            prev.kohNailSites = parseNailSites(raw['koh_nail_sites']);
+            prev.kohCreatedAt = raw['created_at'] ? String(raw['created_at']) : null;
+          }
         } else {
           map.set(key, {
             customerId: cid,
             customerName: String(ci['customer_name'] ?? '—'),
             chartNumber: null,
             phone: null,
+            birthDate: null,
             kohRequested: koh,
             bloodRequested: blood,
             kohServiceId: koh ? svcId || null : null,
+            kohNailSites: koh ? parseNailSites(raw['koh_nail_sites']) : [],
+            kohCreatedAt: koh && raw['created_at'] ? String(raw['created_at']) : null,
             requestDate: reqDate,
           });
         }
@@ -125,16 +151,17 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
         const ids = [...new Set(rows.map((r) => r.customerId))];
         const { data: custs } = await supabase
           .from('customers')
-          .select('id, chart_number, phone')
+          .select('id, chart_number, phone, birth_date')
           .in('id', ids);
-        const metaMap = new Map<string, { chart: string | null; phone: string | null }>();
-        for (const c of (custs ?? []) as Array<{ id: string; chart_number: string | null; phone: string | null }>) {
-          if (c.id) metaMap.set(c.id, { chart: c.chart_number ?? null, phone: c.phone ?? null });
+        const metaMap = new Map<string, { chart: string | null; phone: string | null; birth: string | null }>();
+        for (const c of (custs ?? []) as Array<{ id: string; chart_number: string | null; phone: string | null; birth_date: string | null }>) {
+          if (c.id) metaMap.set(c.id, { chart: c.chart_number ?? null, phone: c.phone ?? null, birth: c.birth_date ?? null });
         }
         for (const r of rows) {
           const meta = metaMap.get(r.customerId);
           r.chartNumber = meta?.chart ?? null;
           r.phone = meta?.phone ?? null;
+          r.birthDate = meta?.birth ?? null;
         }
       } catch {
         // 보강 실패 — 무시(이름·검사상태는 정상 표시).
@@ -225,6 +252,173 @@ function useBloodResultCounts(clinicId: string | null | undefined) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// RELOCATE[1]: 균검사 조갑부위 저장 + 발급 — 진료대시보드에서 치료테이블로 이전한 '동작' 로직.
+//   기존 SSOT RPC(set_koh_nail_sites / publish_koh_result) 동일 호출. 발급 후 진료대시보드
+//   읽기전용 리스트(KohReportTab: koh_published/koh_report 키)에 즉시 반영되도록 교차 invalidate.
+//   중복발급 방지 = 서버 RPC(publish_koh_result) idempotent + FE 발행완료 분기(버튼 자체 미노출) 이중.
+// ─────────────────────────────────────────────────────────────────────────────
+function useSaveKohNailSites() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ serviceId, sites }: { serviceId: string; sites: NailSite[] }) => {
+      const { error } = await supabase.rpc('set_koh_nail_sites', { p_service_id: serviceId, p_sites: sites });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['exam_targets'] });
+      qc.invalidateQueries({ queryKey: ['koh_report'] }); // 진료대시보드 균검사지 채취부위 read-only 동기화
+    },
+    onError: (e: Error) => toast.error(`조갑부위 저장 실패: ${e.message}`),
+  });
+}
+
+function usePublishKohFromTx(clinicId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ serviceId, fieldData }: { serviceId: string; fieldData: Record<string, string> }) => {
+      const { data, error } = await supabase.rpc('publish_koh_result', {
+        p_check_in_service_id: serviceId,
+        p_field_data: fieldData,
+      });
+      if (error) throw error;
+      return data as { id: string; request_no: string; specimen_no: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['koh_published', clinicId] }); // 양쪽 발급여부 read-after-write
+      qc.invalidateQueries({ queryKey: ['exam_targets'] });
+    },
+  });
+}
+
+// 생년월일 서버 파생 폴백(customers.birth_date NULL → RRN 세기코드 파생). KohReportTab.useKohBirthdates 미러.
+//   PHI: birth_date_display(표시값)만 수신 — 평문 RRN 미노출. RPC 실패 청크는 건너뜀(정규 경로 유지).
+function useExamBirthdates(clinicId: string | null | undefined, ids: string[]) {
+  return useQuery<Map<string, string>>({
+    queryKey: ['exam_koh_birthdates', clinicId, ids],
+    enabled: !!clinicId && ids.length > 0,
+    queryFn: async () => {
+      const birthMap = new Map<string, string>();
+      if (!clinicId || ids.length === 0) return birthMap;
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const { data, error } = await supabase.rpc('fn_customer_birthdates', { p_clinic_id: clinicId, p_ids: chunk });
+        if (error) continue;
+        for (const row of (data ?? []) as { customer_id: string; birth_date_display: string | null }[]) {
+          if (row.birth_date_display) birthMap.set(row.customer_id, row.birth_date_display);
+        }
+      }
+      return birthMap;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+// 당일 진료의명 인덱스(customer_id|visit_date → 진료의 Set). medical_charts.signing_doctor_name read-only.
+//   KohReportTab.useKohSigningDoctorsByMonth 미러 — 단, 치료테이블 윈도(직전 WINDOW_DAYS)에 맞춰 범위 조회.
+function useExamSigningDoctors(clinicId: string | null | undefined, date: string) {
+  return useQuery<Map<string, Set<string>>>({
+    queryKey: ['exam_koh_doctors', clinicId, date],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      const map = new Map<string, Set<string>>();
+      if (!clinicId) return map;
+      const { start } = windowBounds(date);
+      // visit_date(DATE) 사전식 범위 [start, date]. 검사결과 회신 지연 대비 윈도 그대로.
+      const { data, error } = await supabase
+        .from('medical_charts')
+        .select('customer_id, visit_date, signing_doctor_name')
+        .eq('clinic_id', clinicId)
+        .gte('visit_date', start)
+        .lte('visit_date', date);
+      if (error) throw error;
+      for (const raw of (data ?? []) as Array<{ customer_id: string | null; visit_date: string | null; signing_doctor_name: string | null }>) {
+        const cid = raw.customer_id;
+        const vd = raw.visit_date;
+        const nm = (raw.signing_doctor_name ?? '').trim();
+        if (!cid || !vd || !nm) continue;
+        const dkey = `${cid}|${vd.slice(0, 10)}`;
+        let set = map.get(dkey);
+        if (!set) { set = new Set(); map.set(dkey, set); }
+        set.add(nm);
+      }
+      return map;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+/** 행 → 당일 진료의명(customer_id + KOH 검사일 KST). 없으면 '미정'. 합집합 가나다순. */
+function examDoctorName(r: ExamTargetRow, doctorMap: Map<string, Set<string>> | undefined): string {
+  if (!r.customerId || !r.kohCreatedAt) return '미정';
+  const set = doctorMap?.get(`${r.customerId}|${seoulISODate(r.kohCreatedAt)}`);
+  if (!set || set.size === 0) return '미정';
+  return [...set].sort((a, b) => a.localeCompare(b, 'ko')).join(', ');
+}
+
+// 조갑부위 입력 위젯(단일선택) — KohReportTab NailSiteEditor 이식(SINGLESEL-2FIX 규칙 동일).
+//   좌발 L1~L5 | 우발 R1~R5 라디오형 토글. 같은 부위 재탭=해제, 다른 부위=교체. 즉시 저장(태블릿 동선).
+const TOES = [1, 2, 3, 4, 5] as const;
+const FEET: { side: NailSide; label: string; prefix: 'L' | 'R' }[] = [
+  { side: 'Lt', label: '좌발', prefix: 'L' },
+  { side: 'Rt', label: '우발', prefix: 'R' },
+];
+function NailSiteEditor({
+  current,
+  saving,
+  onCommit,
+}: {
+  current: NailSite[];
+  saving: boolean;
+  onCommit: (sites: NailSite[]) => void;
+}) {
+  const [sites, setSites] = useState<NailSite[]>(() => sortNailSites(current));
+  useEffect(() => {
+    setSites(sortNailSites(current));
+  }, [current]);
+  const has = (side: NailSide, toe: number) => sites.some((s) => s.side === side && s.toe === toe);
+  const isOnly = (side: NailSide, toe: number) =>
+    sites.length === 1 && sites[0].side === side && sites[0].toe === toe;
+  const toggle = (side: NailSide, toe: number) => {
+    const next: NailSite[] = isOnly(side, toe) ? [] : [{ side, toe }];
+    setSites(next);
+    onCommit(next);
+  };
+  const btn = (active: boolean) =>
+    `inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold transition disabled:opacity-50 ${
+      active ? 'border-teal-600 bg-teal-600 text-white shadow-sm' : 'border-input bg-background text-foreground hover:bg-accent'
+    }`;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-testid="exam-nail-site-editor">
+      {FEET.map((foot, idx) => (
+        <div key={foot.side} className="flex items-center gap-1">
+          {idx > 0 && <span className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden="true" />}
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{foot.label}</span>
+          <div className="flex gap-0.5" data-testid={`exam-nail-foot-${foot.prefix}`}>
+            {TOES.map((t) => (
+              <button
+                key={`${foot.prefix}${t}`}
+                type="button"
+                disabled={saving}
+                onClick={() => toggle(foot.side, t)}
+                className={btn(has(foot.side, t))}
+                aria-pressed={has(foot.side, t)}
+                data-testid={`exam-nail-${foot.prefix}${t}`}
+              >
+                {foot.prefix}{t}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <span className="text-xs font-medium text-muted-foreground">조갑</span>
+      {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+    </div>
+  );
+}
+
 // 검사 박스 — 신청(●, 활성색) / 미신청(○, 회색). AC-1: py 축소(밀도↑), 폰트 11px 유지(가독).
 function ExamBadge({
   label,
@@ -270,11 +464,21 @@ interface Props {
 
 export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: groups = [], isLoading, isError, error } = useExamTargets(clinic?.id, date);
   const { data: publishedKoh } = usePublishedKohMap(clinic?.id);
   const { data: bloodResultCounts } = useBloodResultCounts(clinic?.id);
+  // RELOCATE[1]: 균검사 조갑저장·발급 + 발급 field_data 조인(진료의/생년 폴백).
+  const saveNailSites = useSaveKohNailSites();
+  const publishKoh = usePublishKohFromTx(clinic?.id);
+  const { data: doctorMap } = useExamSigningDoctors(clinic?.id, date);
+  const kohCustomerIds = useMemo(
+    () => [...new Set(groups.flatMap((g) => g.rows).filter((r) => r.kohRequested).map((r) => r.customerId))].sort(),
+    [groups],
+  );
+  const { data: birthMap } = useExamBirthdates(clinic?.id, kohCustomerIds);
+  /** 유효 생년 — 정규 birth_date 우선, 결측 시 RRN 파생값. */
+  const effectiveBirth = (r: ExamTargetRow): string | null => r.birthDate || (r.customerId ? birthMap?.get(r.customerId) ?? null : null);
   const [viewFieldData, setViewFieldData] = useState<Record<string, unknown> | null>(null);
   // 혈액검사 결과지 업로드/보기 다이얼로그 타겟(환자). null=닫힘.
   const [bloodTarget, setBloodTarget] = useState<{ id: string; name: string } | null>(null);
@@ -294,10 +498,44 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const today = seoulISODate(new Date());
   const { start } = windowBounds(date);
 
-  // C: 미발행 KOH 결과 생성 — 기존 발행 surface(균검사 보고서) 재사용 안내(인라인 publish UX 는 AC-3 pending).
-  const goGenerateKoh = () => {
-    toast('균검사 보고서(의사 도구)에서 결과를 생성·발행하세요.');
-    navigate('/admin/doctor-tools');
+  // RELOCATE[1]: 균검사지 발급 — 진료대시보드(KohReportTab.handlePublish)에서 이전한 발급 동선.
+  //   기존 로직 재사용: 조갑부위(nail_sites) + 생년월일 게이트 → buildKohFieldData → publish_koh_result RPC.
+  //   중복발급 방지: 발행완료(kohPublished) 행은 버튼 미노출(도달 불가 방어) + 서버 RPC idempotent.
+  //   태블릿 hover 부재 대응(SINGLESEL-2FIX): 발급 불가 시 silent return 금지 — 사유 toast 로 다음 행동 안내.
+  const handleKohPublish = async (r: ExamTargetRow) => {
+    if (!r.kohServiceId) return;
+    if (r.kohServiceId && publishedKoh?.has(r.kohServiceId)) return; // 이미 발급 — 방어.
+    if (r.kohNailSites.length === 0) {
+      toast.error('채취 조갑부위를 먼저 선택(좌발/우발 버튼 클릭)해야 발급할 수 있습니다.');
+      return;
+    }
+    if (!effectiveBirth(r)) {
+      toast.error('환자 생년월일 정보가 없어 발급할 수 없습니다. 고객 정보에서 생년월일을 먼저 입력해주세요.');
+      return;
+    }
+    if (!window.confirm(`${r.customerName} 님의 검사결과 보고서를 발급하시겠습니까?\n\n발급 후에는 수정·취소할 수 없습니다(비가역).`)) return;
+    const doctorName = examDoctorName(r, doctorMap);
+    // buildKohFieldData(정본) 재사용을 위해 KohRow 형태로 구성(발급에 필요한 필드만 유효).
+    const kohRow: KohRow = {
+      id: r.kohServiceId,
+      service_name: '',
+      created_at: r.kohCreatedAt ?? '',
+      customer_id: r.customerId,
+      customer_name: r.customerName,
+      birth_date: r.birthDate,
+      chart_number: r.chartNumber,
+      nail_sites: r.kohNailSites,
+      treatment_sites: [],
+      koh_requested: r.kohRequested,
+      therapist_id: null,
+    };
+    const fieldData = buildKohFieldData(kohRow, doctorName, effectiveBirth(r));
+    try {
+      await publishKoh.mutateAsync({ serviceId: r.kohServiceId, fieldData });
+      toast.success([r.customerName, r.chartNumber].filter(Boolean).join(' ') + ' 발급완료');
+    } catch (e) {
+      toast.error(`발급 실패: ${(e as Error).message}`);
+    }
   };
 
   // 한 환자 행 렌더(그룹 공통).
@@ -306,6 +544,8 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
     const kohPublished = !!kohFd;
     const bloodResultCount = bloodResultCounts?.get(r.customerId) ?? 0;
     const hasBloodResult = bloodResultCount > 0;
+    const kohNailText = formatNailSitesShort(r.kohNailSites); // 컴팩트 표기(R1), 결측 '—'
+    const kohSaving = saveNailSites.isPending && saveNailSites.variables?.serviceId === r.kohServiceId;
     return (
       <tr
         key={`${r.customerId}-${r.requestDate}`}
@@ -338,32 +578,65 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
             균검사·피검사를 한 줄에 섞지 말고 두 줄로 시각 분리(점선 구분). 가독성 우선(dev 재량). */}
         <td className="px-2 py-1">
           <div className="flex flex-col gap-1" data-testid="exam-result-stack">
-            {/* 균검사 줄 */}
-            <div className="flex items-center gap-1.5" data-testid="exam-koh-group">
-              <ExamBadge label="균검사" active={r.kohRequested} tone="teal" testid="exam-koh-badge" />
-              {r.kohRequested &&
-                (kohPublished ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 gap-1 px-1.5 text-[11px]"
-                    data-testid="exam-koh-result-view"
-                    onClick={() => setViewFieldData(kohFd!)}
-                    title="발행된 균검사 결과 보기"
-                  >
-                    <FileText className="h-3 w-3" /> 결과 보기
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    className="h-6 gap-1 px-1.5 text-[11px] bg-teal-600 text-white hover:bg-teal-700"
-                    data-testid="exam-koh-result-new"
-                    onClick={goGenerateKoh}
-                    title="균검사 결과 생성(균검사 보고서로 이동)"
-                  >
-                    <FilePlus2 className="h-3 w-3" /> 결과 생성
-                  </Button>
-                ))}
+            {/* 균검사 줄 — RELOCATE[1]: 채취조갑 선택 + 발급하기(진료대시보드→치료테이블 이전).
+                발행완료=결과 보기(read) / 미발행+신청=조갑부위 선택 위젯 + 발급하기 버튼. */}
+            <div className="flex flex-col gap-1" data-testid="exam-koh-group">
+              <div className="flex items-center gap-1.5">
+                <ExamBadge label="균검사" active={r.kohRequested} tone="teal" testid="exam-koh-badge" />
+                {r.kohRequested &&
+                  (kohPublished ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 gap-1 px-1.5 text-[11px]"
+                      data-testid="exam-koh-result-view"
+                      onClick={() => setViewFieldData(kohFd!)}
+                      title="발행된 균검사 결과 보기"
+                    >
+                      <FileText className="h-3 w-3" /> 결과 보기
+                    </Button>
+                  ) : (
+                    <>
+                      {/* 채취부위 요약(R1) — 저장값 read. 발급 전 확인용. */}
+                      <span
+                        className={`text-[11px] font-semibold tabular-nums ${
+                          r.kohNailSites.length > 0 ? 'text-foreground' : 'text-muted-foreground/60'
+                        }`}
+                        data-testid="exam-koh-nail-text"
+                        title={r.kohNailSites.length > 0 ? formatNailSites(r.kohNailSites) : undefined}
+                      >
+                        {kohNailText}
+                      </span>
+                      <Button
+                        size="sm"
+                        className="h-6 gap-1 px-1.5 text-[11px] bg-neutral-800 text-white hover:bg-neutral-900 disabled:opacity-40"
+                        data-testid="exam-koh-issue-btn"
+                        onClick={() => handleKohPublish(r)}
+                        disabled={publishKoh.isPending}
+                        data-publishable={r.kohNailSites.length > 0 && !!effectiveBirth(r) ? 'true' : 'false'}
+                        title={
+                          r.kohNailSites.length === 0
+                            ? '채취 조갑부위를 먼저 선택해야 발급할 수 있습니다 (눌러서 안내 보기)'
+                            : !effectiveBirth(r)
+                              ? '환자 생년월일 미입력 — 발급 불가 (눌러서 안내 보기)'
+                              : '검사결과 보고서 발급(비가역)'
+                        }
+                      >
+                        <FileCheck2 className="h-3 w-3" /> 발급하기
+                      </Button>
+                    </>
+                  ))}
+              </div>
+              {/* 채취조갑 선택 위젯 — 신청 + 미발행 상태에서만(발행 후 비가역). */}
+              {r.kohRequested && !kohPublished && (
+                <NailSiteEditor
+                  current={r.kohNailSites}
+                  saving={kohSaving}
+                  onCommit={(sites) => {
+                    if (r.kohServiceId) saveNailSites.mutate({ serviceId: r.kohServiceId, sites });
+                  }}
+                />
+              )}
             </div>
             {/* 피검사 — 결과지 업로드(B안 파일보관). 등록 0건=업로드 / ≥1건=보기. T-...-BLOODTEST-RESULT-PUBLISH-BACKEND
                 [3] 균검사 줄과 점선으로 분리(두 줄 표기) — 한 줄에 섞여 보이지 않게. */}
