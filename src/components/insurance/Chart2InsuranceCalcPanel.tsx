@@ -201,14 +201,14 @@ export function Chart2InsuranceCalcPanel({
     <div className="rounded-lg border border-teal-200 bg-teal-50/30 mt-2">
       {/* 헤더 */}
       <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-teal-100">
-        <ShieldCheck className="h-3 w-3 text-teal-600 shrink-0" />
+        <ShieldCheck className="h-3 w-3 text-neutral-600 shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] font-semibold text-teal-800">
+          <span className="text-[10px] font-semibold text-neutral-700">
             급여 진료비 자동산정
           </span>
           {/* T-20260512: 진료세트 이름 표시 */}
           {activeSetName && (
-            <span className="ml-1.5 text-[9px] text-teal-600 font-normal">
+            <span className="ml-1.5 text-[9px] text-neutral-500 font-normal">
               ({activeSetName})
             </span>
           )}
@@ -243,12 +243,12 @@ export function Chart2InsuranceCalcPanel({
 
         {/* T-20260512: 필터 모드에서 매칭 서비스 없으면 안내 */}
         {hasFilter && filteredServices.length === 0 && servicesLoaded && (
-          <div className="rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-800">
+          <div className="rounded bg-neutral-100 px-2 py-1 text-[10px] text-neutral-700">
             <div className="flex items-center gap-1">
               <Syringe className="h-2.5 w-2.5 shrink-0" />
               세트의 삽입코드와 일치하는 급여 서비스가 없습니다.
             </div>
-            <div className="text-[9px] mt-0.5 text-amber-600">
+            <div className="text-[9px] mt-0.5 text-neutral-500">
               서비스 관리에서 service_code를 확인하세요.
             </div>
           </div>
@@ -256,7 +256,7 @@ export function Chart2InsuranceCalcPanel({
 
         {/* 등급 미확인 안내 */}
         {isUnverified && filteredServices.length > 0 && (
-          <div className="rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-800">
+          <div className="rounded bg-neutral-100 px-2 py-1 text-[10px] text-neutral-700">
             ⚠ 등급 미확인 — <strong>일반(30%)</strong> 기본 적용
           </div>
         )}
@@ -289,7 +289,7 @@ export function Chart2InsuranceCalcPanel({
                       <span className="text-muted-foreground">
                         수가 {formatAmount(r.base_amount)}
                       </span>
-                      <span className="font-semibold text-teal-700">
+                      <span className="font-semibold text-neutral-800">
                         본인 {formatAmount(r.copayment_amount)}
                       </span>
                     </div>
@@ -317,7 +317,7 @@ export function Chart2InsuranceCalcPanel({
             </div>
             <div className="flex justify-between text-[11px] font-semibold border-t border-teal-100 pt-0.5 mt-0.5">
               <span>본인 부담 합계</span>
-              <span className="tabular-nums text-teal-700">{formatAmount(totals.copay)}</span>
+              <span className="tabular-nums text-neutral-800">{formatAmount(totals.copay)}</span>
             </div>
             {verifiedAt && (
               <div className="text-[9px] text-muted-foreground pt-0.5">

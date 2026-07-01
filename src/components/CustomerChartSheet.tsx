@@ -310,7 +310,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
               data-testid="chart-save-close-btn"
               disabled={savingClose}
               onClick={handleSaveAndClose}
-              className="bg-teal-600 hover:bg-teal-700"
+              className="bg-neutral-800 hover:bg-neutral-900"
             >
               {savingClose && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {savingClose ? '저장 중…' : '저장 후 닫기'}

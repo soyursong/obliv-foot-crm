@@ -5983,7 +5983,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         {d.family_history && <div><span className="text-muted-foreground">가족력: </span>{d.family_history}</div>}
                         {d.referral_source && <div><span className="text-muted-foreground">방문경로: </span>{d.referral_source}</div>}
                         <div className="flex gap-2 pt-0.5">
-                          {d.agree_privacy && <Badge variant="outline" className="text-[9px] text-teal-600 border-teal-300">개인정보동의</Badge>}
+                          {d.agree_privacy && <Badge variant="outline" className="text-[9px] text-neutral-600 border-neutral-300">개인정보동의</Badge>}
                           {d.agree_marketing && <Badge variant="outline" className="text-[9px] text-emerald-600 border-emerald-300">마케팅동의</Badge>}
                         </div>
                       </div>

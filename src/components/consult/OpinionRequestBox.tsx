@@ -166,7 +166,7 @@ export default function OpinionRequestBox({
           소견서 &amp; 진단서 요청
         </div>
         {openForCustomer.length > 0 && (
-          <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700" data-testid="opinion-req-pending-badge">
+          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-600" data-testid="opinion-req-pending-badge">
             처리 대기 {openForCustomer.length}건
           </span>
         )}
@@ -189,7 +189,7 @@ export default function OpinionRequestBox({
               aria-pressed={docType === t.value}
               data-testid={`opinion-req-doctype-${t.value}`}
               className={`rounded px-2.5 py-1 text-[11px] font-medium transition ${
-                docType === t.value ? 'bg-teal-600 text-white shadow-sm' : 'text-foreground hover:bg-accent'
+                docType === t.value ? 'bg-neutral-800 text-white shadow-sm' : 'text-foreground hover:bg-accent'
               }`}
             >
               {t.label}
@@ -242,7 +242,7 @@ export default function OpinionRequestBox({
                     data-testid={`opinion-req-opt-${opt.key}`}
                     className={`truncate rounded border px-1.5 py-1.5 text-[10px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
                       active
-                        ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
+                        ? 'border-neutral-800 bg-neutral-800 text-white shadow-sm'
                         : 'border-input bg-background text-foreground hover:bg-accent'
                     }`}
                   >
@@ -287,7 +287,7 @@ export default function OpinionRequestBox({
         </span>
         <Button
           size="sm"
-          className="h-8 gap-1 bg-teal-600 px-3 text-[11px] text-white hover:bg-teal-700 disabled:opacity-40"
+          className="h-8 gap-1 bg-neutral-800 px-3 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
           disabled={createMut.isPending || selected.size === 0 || !issuedBy}
           onClick={handleRequest}
           data-testid="opinion-req-submit"
@@ -301,12 +301,12 @@ export default function OpinionRequestBox({
       {openForCustomer.length > 0 && (
         <div className="mt-2 space-y-1 border-t pt-2" data-testid="opinion-req-pending-list">
           {openForCustomer.map((q) => (
-            <div key={q.id} className="flex items-center gap-1.5 rounded bg-teal-50/50 px-2 py-1 text-[10px] text-teal-800">
+            <div key={q.id} className="flex items-center gap-1.5 rounded bg-neutral-100/60 px-2 py-1 text-[10px] text-neutral-700">
               <FileText className="h-3 w-3 shrink-0" />
               <span className="font-medium">{docTypeLabel(q.docType)}</span>
-              <span className="text-teal-700/80">· 해당항목 {q.selectedKeys.length}개</span>
-              {q.staffMemo && <span className="truncate text-teal-700/70" title={q.staffMemo}>· {q.staffMemo}</span>}
-              <span className="ml-auto shrink-0 text-teal-600/70">원장 발행 대기</span>
+              <span className="text-neutral-500">· 해당항목 {q.selectedKeys.length}개</span>
+              {q.staffMemo && <span className="truncate text-neutral-500" title={q.staffMemo}>· {q.staffMemo}</span>}
+              <span className="ml-auto shrink-0 text-neutral-500">원장 발행 대기</span>
             </div>
           ))}
         </div>
