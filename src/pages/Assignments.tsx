@@ -10,7 +10,7 @@
  *  자동배정 자체는 Dashboard 슬롯 진입 훅(maybeAutoAssign)에서 수행. 본 화면은 조회 + 토스/당김/수동.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, Hand, RefreshCw, Users, ListOrdered, GripVertical, Loader2 } from 'lucide-react';
+import { ArrowRightLeft, Hand, RefreshCw, Users, ListOrdered, GripVertical, Loader2, Check } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -31,6 +31,7 @@ import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate } from '@/lib/format';
+import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
 import { toast } from '@/lib/toast';
@@ -1133,18 +1134,26 @@ export default function Assignments() {
 interface RotaStaff { id: string; name: string; }
 
 // 드래그 가능한 순번 행 — QuickRxButtonsTab SortableQuickRxRow 패턴 미러(useSortable hook 규칙상 별도 컴포넌트).
+//   T-20260701-foot-THERAPIST-SKILL-CAPABILITY-ASSIGN: 치료 파트 행에 가능 시술(프리컨디셔닝/포돌로게/리본)
+//   체크박스 3개 embed. caps != null 일 때만 노출(상담 파트는 미노출). 저장 백엔드 = therapist_capabilities(DA 질의A (ii)).
 function SortableRotationRow({
-  staff, index, canEdit, testid,
+  staff, index, canEdit, testid, caps, onToggleCap, capDisabled,
 }: {
   staff: RotaStaff;
   index: number;
   canEdit: boolean;
   testid: string;
+  /** 이 치료사의 현재 capability 코드 집합. undefined = capability UI 미노출(상담 파트). */
+  caps?: Set<string>;
+  onToggleCap?: (code: string) => void;
+  /** capability 소스 부재(테이블 미적용) 등으로 체크박스 비활성. */
+  capDisabled?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: staff.id,
     disabled: !canEdit,
   });
+  const showCaps = caps !== undefined;
   return (
     <div
       ref={setNodeRef}
@@ -1154,25 +1163,65 @@ function SortableRotationRow({
         opacity: isDragging ? 0.4 : 1,
         zIndex: isDragging ? 10 : undefined,
       }}
-      className={`flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 ${isDragging ? 'shadow-md ring-2 ring-primary/40' : ''}`}
+      className={`rounded-lg border bg-muted/20 px-3 py-2 ${isDragging ? 'shadow-md ring-2 ring-primary/40' : ''}`}
       data-testid={`rotation-row-${testid}-${index}`}
     >
-      {/* 드래그 핸들 — admin/manager/director 전용, touch-none(태블릿 탭 오인식 방지) */}
-      {canEdit && (
-        <button
-          {...attributes}
-          {...listeners}
-          type="button"
-          tabIndex={-1}
-          className="flex items-center justify-center min-w-[32px] min-h-[32px] -ml-1 rounded text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
-          title="드래그하여 순서 변경"
-          data-testid={`rotation-handle-${testid}-${index}`}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
+      <div className="flex items-center gap-2">
+        {/* 드래그 핸들 — admin/manager/director 전용, touch-none(태블릿 탭 오인식 방지) */}
+        {canEdit && (
+          <button
+            {...attributes}
+            {...listeners}
+            type="button"
+            tabIndex={-1}
+            className="flex items-center justify-center min-w-[32px] min-h-[32px] -ml-1 rounded text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+            title="드래그하여 순서 변경"
+            data-testid={`rotation-handle-${testid}-${index}`}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+        <Badge variant="outline" className="shrink-0 tabular-nums">{index + 1}</Badge>
+        <span className="flex-1 truncate text-sm" data-testid={`rotation-name-${testid}-${index}`}>{staff.name}</span>
+      </div>
+
+      {/* 가능 시술 capability 체크박스(치료 파트만) — 태블릿 큰 터치 타깃(min-h 44). */}
+      {showCaps && (
+        <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`rotation-caps-${testid}-${index}`}>
+          {GATED_CAPABILITY_ITEMS.map((item) => {
+            const checked = !!caps?.has(item.code);
+            return (
+              <button
+                key={item.code}
+                type="button"
+                disabled={!canEdit || !!capDisabled}
+                onClick={() => onToggleCap?.(item.code)}
+                data-testid={`rotation-cap-${testid}-${index}-${item.code}`}
+                data-checked={checked}
+                aria-pressed={checked}
+                className={[
+                  'flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left transition',
+                  'min-h-[40px] text-[12px] font-medium',
+                  checked
+                    ? 'border-teal-400 bg-teal-50 text-teal-800'
+                    : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50',
+                  (!canEdit || capDisabled) ? 'cursor-not-allowed opacity-60' : '',
+                ].join(' ')}
+              >
+                <span
+                  className={[
+                    'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                    checked ? 'border-teal-500 bg-teal-500 text-white' : 'border-neutral-300 bg-white',
+                  ].join(' ')}
+                >
+                  {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                </span>
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
       )}
-      <Badge variant="outline" className="shrink-0 tabular-nums">{index + 1}</Badge>
-      <span className="flex-1 truncate text-sm" data-testid={`rotation-name-${testid}-${index}`}>{staff.name}</span>
     </div>
   );
 }
@@ -1188,11 +1237,17 @@ function RotationOrderDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [colMissing, setColMissing] = useState(false);
   const [consult, setConsult] = useState<RotaStaff[]>([]);
   const [therapy, setTherapy] = useState<RotaStaff[]>([]);
+  // T-20260701-foot-THERAPIST-SKILL-CAPABILITY-ASSIGN: 치료사별 가능 시술 capability.
+  //   caps=현재 편집 상태, capBaseline=로드 시점(저장 delta 산출용). staffId → capability_code Set.
+  const [caps, setCaps] = useState<Map<string, Set<string>>>(new Map());
+  const [capBaseline, setCapBaseline] = useState<Map<string, Set<string>>>(new Map());
+  const [capMissing, setCapMissing] = useState(false); // therapist_capabilities 테이블 부재 → 체크박스 비활성
 
   const loadOrder = useCallback(async () => {
     setLoading(true);
@@ -1214,9 +1269,34 @@ function RotationOrderDialog({
     const sortFn = (a: Row, b: Row) =>
       (a.assign_sort_order ?? BIG) - (b.assign_sort_order ?? BIG) ||
       a.name.localeCompare(b.name, 'ko');
+    const therapistRows = rows.filter((r) => r.role === 'therapist').sort(sortFn);
     setConsult(rows.filter((r) => r.role === 'consultant').sort(sortFn).map((r) => ({ id: r.id, name: r.name })));
-    setTherapy(rows.filter((r) => r.role === 'therapist').sort(sortFn).map((r) => ({ id: r.id, name: r.name })));
+    setTherapy(therapistRows.map((r) => ({ id: r.id, name: r.name })));
     setColMissing(false);
+
+    // capability 로드(graceful) — therapist_capabilities 부재 시 체크박스 비활성만, 순번 편집엔 무영향.
+    const therapistIds = therapistRows.map((r) => r.id);
+    const capMap = new Map<string, Set<string>>();
+    therapistIds.forEach((id) => capMap.set(id, new Set()));
+    if (therapistIds.length > 0) {
+      const { data: capRows, error: capErr } = await supabase
+        .from('therapist_capabilities')
+        .select('staff_id, capability_code')
+        .in('staff_id', therapistIds);
+      if (capErr) {
+        setCapMissing(true);
+      } else {
+        setCapMissing(false);
+        for (const r of (capRows ?? []) as { staff_id: string; capability_code: string }[]) {
+          if (!capMap.has(r.staff_id)) capMap.set(r.staff_id, new Set());
+          capMap.get(r.staff_id)!.add(r.capability_code);
+        }
+      }
+    }
+    // 편집 상태·baseline 을 독립 복제(delta 비교용).
+    const clone = (m: Map<string, Set<string>>) => new Map([...m].map(([k, v]) => [k, new Set(v)] as const));
+    setCaps(clone(capMap));
+    setCapBaseline(clone(capMap));
     setLoading(false);
   }, [clinicId]);
 
@@ -1241,6 +1321,19 @@ function RotationOrderDialog({
     setList(arrayMove(list, oldIdx, newIdx));
   };
 
+  // capability 체크 토글(치료 파트) — 로컬 상태만 변경, 실제 반영은 [순번 저장].
+  const toggleCap = (staffId: string, code: string) => {
+    if (!canEdit || capMissing) return;
+    setCaps((prev) => {
+      const next = new Map([...prev].map(([k, v]) => [k, new Set(v)] as const));
+      const set = next.get(staffId) ?? new Set<string>();
+      if (set.has(code)) set.delete(code);
+      else set.add(code);
+      next.set(staffId, set);
+      return next;
+    });
+  };
+
   const save = async () => {
     if (!canEdit) return;
     setSaving(true);
@@ -1261,7 +1354,49 @@ function RotationOrderDialog({
         setSaving(false);
         return;
       }
-      toast.success('배정 순번을 저장했습니다 (새 배정부터 반영)');
+
+      // ── capability 저장(delta) — 체크 신설=insert / 언체크=delete. baseline 대비 변경분만.
+      //    THERAPIST-SKILL AC-1: 저장 = therapist_capabilities 행 upsert/delete(현장 체크박스 불변).
+      if (!capMissing) {
+        const inserts: { staff_id: string; capability_code: string; clinic_id: string; created_by: string | null }[] = [];
+        const deletes: { staff_id: string; code: string }[] = [];
+        const allowed = new Set(GATED_CAPABILITY_CODES);
+        for (const s of therapy) {
+          const cur = caps.get(s.id) ?? new Set<string>();
+          const base = capBaseline.get(s.id) ?? new Set<string>();
+          for (const code of cur) {
+            if (allowed.has(code) && !base.has(code)) {
+              inserts.push({ staff_id: s.id, capability_code: code, clinic_id: clinicId, created_by: profile?.id ?? null });
+            }
+          }
+          for (const code of base) {
+            if (!cur.has(code)) deletes.push({ staff_id: s.id, code });
+          }
+        }
+        const capOps: PromiseLike<{ error: unknown }>[] = [];
+        if (inserts.length > 0) {
+          capOps.push(
+            supabase.from('therapist_capabilities')
+              .upsert(inserts, { onConflict: 'staff_id,capability_code' }),
+          );
+        }
+        for (const d of deletes) {
+          capOps.push(
+            supabase.from('therapist_capabilities')
+              .delete().eq('staff_id', d.staff_id).eq('capability_code', d.code),
+          );
+        }
+        const capResults = await Promise.all(capOps);
+        const capFailed = capResults.find((r) => r.error);
+        if (capFailed?.error) {
+          const msg = (capFailed.error as { message?: string })?.message ?? String(capFailed.error);
+          toast.error(`가능 시술 저장 실패: ${msg}`);
+          setSaving(false);
+          return;
+        }
+      }
+
+      toast.success('배정 순번·가능 시술을 저장했습니다 (새 배정부터 반영)');
       onSaved();
     } catch (e) {
       toast.error(`순번 저장 실패: ${String(e)}`);
@@ -1275,9 +1410,16 @@ function RotationOrderDialog({
     list: RotaStaff[],
     setList: (v: RotaStaff[]) => void,
     testid: string,
+    withCaps = false, // 치료 파트만 true → 가능 시술 체크박스 노출
   ) => (
     <div className="flex-1 min-w-0" data-testid={`rotation-part-${testid}`}>
       <p className="mb-1.5 text-sm font-semibold">{title} <span className="text-xs text-muted-foreground">({list.length}명)</span></p>
+      {withCaps && (
+        <p className="mb-2 text-[11px] text-muted-foreground" data-testid="rotation-caps-hint">
+          치료사별 가능 시술을 체크하면 금일 치료유형에 맞는 치료사에게만 자동배정됩니다.
+          {capMissing && ' (가능 시술 설정은 잠시 후 이용 가능합니다.)'}
+        </p>
+      )}
       {list.length === 0 ? (
         <p className="px-2 py-2 text-xs text-muted-foreground">등록된 직원이 없습니다.</p>
       ) : (
@@ -1291,6 +1433,9 @@ function RotationOrderDialog({
                   index={i}
                   canEdit={canEdit && !saving}
                   testid={testid}
+                  caps={withCaps ? (caps.get(s.id) ?? new Set<string>()) : undefined}
+                  onToggleCap={withCaps ? (code) => toggleCap(s.id, code) : undefined}
+                  capDisabled={capMissing}
                 />
               ))}
             </div>
@@ -1318,7 +1463,7 @@ function RotationOrderDialog({
         ) : (
           <div className="flex flex-col gap-3 md:flex-row">
             {renderList('상담 파트', consult, setConsult, 'consult')}
-            {renderList('치료 파트', therapy, setTherapy, 'therapy')}
+            {renderList('치료 파트', therapy, setTherapy, 'therapy', true)}
           </div>
         )}
 

@@ -77,6 +77,35 @@ export const TREATMENT_REQUEST_BY_KEY: Record<string, TreatmentRequestItem> =
   Object.fromEntries(TREATMENT_REQUEST_ITEMS.map((i) => [i.key, i]));
 
 /**
+ * ── 치료사 capability gate 집합(T-20260701-foot-THERAPIST-SKILL-CAPABILITY-ASSIGN) ──
+ *   '자동배정 기본순번 설정' 화면에서 각 치료사가 체크하는 수행 가능 시술 3항목 = gated 치료유형.
+ *   저장 = therapist_capabilities(staff_id × capability_code) 행 upsert/delete(현장 3 체크박스, DA 질의A (ii)).
+ *
+ *   ⚠ 배정 필터의 required_caps = { 환자 금일 치료유형 코드 } ∩ 이 집합 (DA 질의B SINGLE 확정).
+ *      NL(unheated_laser)은 체크박스 부재 = gate 스킬 아님 → 이 집합에서 제외.
+ *      ⇒ 무좀PC+NL(codes=[preconditioning, unheated_laser]) ∩ gated = {preconditioning} = SINGLE.
+ *         (자매 dev-foot '복수({preconditioning,unheated_laser} 둘 다 요구)' = 버그, required_caps 규칙으로 정정.)
+ *   코드 문자열은 session_type 정본 어휘 공유(신규 enum 신설 0). package_sessions.session_type CHECK 는
+ *   자매티켓 CHART2-TREATREQ-SPLIT 마이그에서 podologue/ribbon/preconditioning 확정(재사용).
+ */
+export interface CapabilityGateItem {
+  /** DB capability_code = session_type 정본 어휘 */
+  code: string;
+  /** 화면 라벨(현장 3항목) */
+  label: string;
+}
+
+export const GATED_CAPABILITY_ITEMS: readonly CapabilityGateItem[] = [
+  { code: 'preconditioning', label: '프리컨디셔닝' },
+  { code: 'podologue',       label: '포돌로게' },
+  { code: 'ribbon',          label: '리본' },
+] as const;
+
+/** 배정 required_caps 교집합 대상 = gated 치료유형 코드 집합. */
+export const GATED_CAPABILITY_CODES: readonly string[] =
+  GATED_CAPABILITY_ITEMS.map((i) => i.code);
+
+/**
  * package_sessions.session_type → 치료신청 treatment 코드 매핑(재진 패키지 파생 스냅샷용, AC-3).
  *   패키지가 보유한 시술유형 중 치료신청 5항목과 겹치는 것만 자동반영한다.
  *   podologue(포돌로게)=내성(PD). laser/iv/trial/reborn 은 치료신청 항목 아님 → 미반영.

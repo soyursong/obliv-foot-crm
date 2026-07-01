@@ -24,6 +24,7 @@
 import { supabase } from './supabase';
 import { fetchTodayAttendeeNames, DUTY_SHEET_GIDS } from './dutySheet';
 import { todaySeoulISODate } from './format';
+import { GATED_CAPABILITY_CODES } from './treatmentRequestCodes';
 import type {
   AssignmentRole,
   AssignmentActionType,
@@ -423,22 +424,27 @@ export async function logAssignment(input: LogInput): Promise<void> {
   }
 }
 
-// ── 치료신청 capability 필터(AC-5) ────────────────────────────────────────────
+// ── 치료사 capability 필터(THERAPIST-SKILL AC-4·AC-6) ─────────────────────────
 
 /**
- * T-20260701-foot-CHART2-TREATREQ-SPLIT (AC-5): 초진 치료사 배정 후보를 치료신청(treatment 축)으로 좁힌다.
- *   후보 = { 치료사 : capability_codes ⊇ (환자 금일 치료신청 중 request_axis='treatment' subset) }.
- *   · 배정 필터는 '5항목'이 아니라 treatment subset(내성 podologue/각질 ribbon)만. exam 축(피검사/KOH/무좀) 불참.
- *   · 초진(visit_type='new') 한정 — 재진은 필터 없음(기존 동선 보존).
+ * T-20260701-foot-THERAPIST-SKILL-CAPABILITY-ASSIGN (AC-6): 초진 치료사 배정 후보를 금일 치료유형 capability 로 좁힌다.
+ *   required_caps(환자) = { 환자 금일 치료유형 코드 } ∩ { preconditioning, podologue, ribbon }
+ *   배정 후보         = { 치료사 : therapist_capabilities(staff_id) ⊇ required_caps }
  *
- * ── 정합 계약(자매 티켓 T-20260701-foot-THERAPIST-SKILL-CAPABILITY-ASSIGN) ──
- *   capability 소스 = staff_treatment_capabilities(staff_id uuid, treatment_code text). 코드 어휘는
- *   treatmentRequestCodes.TREATMENT_AXIS_CODES / package_sessions.session_type 공유 SSOT(podologue/ribbon).
- *   ⚠ 이 테이블은 THERAPIST-SKILL 티켓이 생성·적재한다(현장 confirm 대기). 아직 없다.
+ * ── ⚠ DA GO_WARN 정정(질의B, MSG-20260701-175504-8mjx) — SINGLE 확정 ──
+ *   자매 CHART2-TREATREQ-SPLIT 구현은 치료신청 treatment 코드 전체(need)를 그대로 요구(복수)했으나,
+ *   무좀PC+NL=[preconditioning, unheated_laser] 중 NL 은 치료사 체크박스 부재 = 어떤 치료사도 보유 불가
+ *   → 무좀 환자 전원 상시 탈락→매번 fallback→필터 무효 = 버그. gated 집합(체크박스 3항목)과 교집합해
+ *   required_caps 를 만들면 무좀→{preconditioning} SINGLE. (need ∩ gated. NL 은 gate 스킬 아님.)
+ *   내성PD→{podologue} · 각질RB→{ribbon} · 피검사/KOH/무좀단독-NL→required_caps=∅ → 필터 미적용(전체 후보).
  *
- * ── graceful(회귀 0 보증) ──
- *   ① 초진 아님 / 치료신청 미저장 / capability 테이블 부재 → 필터 무동작(전체 pool 반환) = 기존 동작.
- *   ② capability 있으나 subset 충족 후보 공집합 → fallback(전체 pool + 경고, THERAPIST-SKILL AC-3).
+ * ── 저장 형상(DA 질의A (ii)) ──
+ *   capability 소스 = therapist_capabilities(staff_id uuid, capability_code text). 코드 어휘 = session_type 정본
+ *   gated subset(treatmentRequestCodes.GATED_CAPABILITY_CODES 공유 SSOT). 행 present=수행가능/absent=불가.
+ *
+ * ── graceful(회귀 0 보증, AC-3 fallback) ──
+ *   ① 초진 아님 / 치료신청 미저장 / required_caps=∅ / capability 테이블 부재 → 필터 무동작(전체 pool) = 기존 동작.
+ *   ② capability 있으나 ⊇ 충족 후보 공집합 → fallback(전체 pool + 경고, AC-3: 완전제외 X).
  *   어떤 오류도 throw 안 함 — 배정 동선을 절대 막지 않는다.
  */
 export async function filterTherapistPoolByTreatmentCapability(
@@ -458,32 +464,36 @@ export async function filterTherapistPoolByTreatmentCapability(
       .eq('request_axis', 'treatment');
     if (reqErr) return pool; // 테이블 부재(42P01) 등 → 필터 없음
     const need = [...new Set((reqData ?? []).map((r) => (r as { request_code: string }).request_code))];
-    if (need.length === 0) return pool; // 치료신청 없음 → 필터 없음
 
-    // 2) 후보 치료사 capability (staff_treatment_capabilities, graceful)
+    // required_caps = 금일 치료유형 코드 ∩ gated(체크박스 3항목). NL(unheated_laser) 등 non-gate 코드는 제외(SINGLE).
+    const gated = new Set(GATED_CAPABILITY_CODES);
+    const requiredCaps = need.filter((c) => gated.has(c));
+    if (requiredCaps.length === 0) return pool; // 무좀단독-NL/피검사/KOH/치료신청없음 → 필터 미적용(전체 후보)
+
+    // 2) 후보 치료사 capability (therapist_capabilities, graceful)
     const { data: capData, error: capErr } = await supabase
-      .from('staff_treatment_capabilities')
-      .select('staff_id, treatment_code')
+      .from('therapist_capabilities')
+      .select('staff_id, capability_code')
       .in('staff_id', pool);
     if (capErr) {
-      // capability 소스 부재/미적용 → fallback(전체 후보). THERAPIST-SKILL 적재 전 안전.
-      console.warn('[autoAssign] capability 소스 없음 → 치료신청 필터 skip(전체 후보):', capErr.message);
+      // capability 소스 부재/미적용(42P01 등) → fallback(전체 후보). 테이블 적재 전/롤백 후 안전.
+      console.warn('[autoAssign] capability 소스 없음 → 치료유형 필터 skip(전체 후보):', capErr.message);
       return pool;
     }
     const capMap = new Map<string, Set<string>>();
-    for (const r of (capData ?? []) as { staff_id: string; treatment_code: string }[]) {
+    for (const r of (capData ?? []) as { staff_id: string; capability_code: string }[]) {
       if (!capMap.has(r.staff_id)) capMap.set(r.staff_id, new Set());
-      capMap.get(r.staff_id)!.add(r.treatment_code);
+      capMap.get(r.staff_id)!.add(r.capability_code);
     }
-    // 3) subset ⊇ 필터
+    // 3) ⊇ 필터 — therapist_capabilities(staff_id) 가 required_caps 를 모두 포함하는 치료사만 후보.
     const filtered = pool.filter((id) => {
       const caps = capMap.get(id);
-      return !!caps && need.every((c) => caps.has(c));
+      return !!caps && requiredCaps.every((c) => caps.has(c));
     });
     if (filtered.length === 0) {
-      // capability 있으나 수행 가능자 없음 → fallback(전체 후보 + 경고). 배정 동선 유지.
+      // capability 있으나 수행 가능자 없음 → fallback(전체 후보 + 경고). 배정 동선 유지(AC-3 완전제외 X).
       console.warn(
-        `[autoAssign] 치료신청 필터 fallback: 필요코드=[${need.join(',')}] 수행가능 치료사 0 → 전체 후보로 배정(THERAPIST-SKILL AC-3).`,
+        `[autoAssign] 치료유형 필터 fallback: required_caps=[${requiredCaps.join(',')}] 수행가능 치료사 0 → 전체 후보로 배정(THERAPIST-SKILL AC-3).`,
       );
       return pool;
     }
