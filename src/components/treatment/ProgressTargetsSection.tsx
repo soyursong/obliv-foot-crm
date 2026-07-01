@@ -10,14 +10,21 @@
 //   이름 인터랙션: 좌클릭=2번차트(부모 nameInteraction.onLeftClick→useChart), 우클릭=CRM 컨텍스트 메뉴(부모 onContextMenu) — ExamTargetsSection 과 동일 재사용.
 //   방어성: progress_check_required/label 미적용 prod(42703/PGRST204) → 빈 목록 폴백(섹션 무파손). ExamTargetsSection 선례 동일.
 
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
-import { Loader2, TrendingUp, CalendarDays } from 'lucide-react';
+import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { toast } from '@/lib/toast';
 import type { NameInteraction } from '@/pages/TreatmentTable';
+// T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 경과분석 리스트에 발행 관련 버튼 2종 UI 배치.
+//   ① 개별 '발행하기'(row별) ② 상단 '일괄처리' + row 체크박스(다건 선택·전체선택·선택개수).
+//   Phase 1 = UI/선택상태 관리까지. 실제 서류 발행 로직/문서 생성은 Phase 2(문원장님 서류양식 수령 후).
+//   클릭 동작은 placeholder(준비 중 안내 toast). DB 변경 0(DDL0) — 발행 이력/상태 컬럼 미추가.
 // T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 경과분석 탭 상단 위젯 3종(요약 카드/회차 분포/최근 추이).
 //   당일 코호트 rows 를 read-only 로 재사용 + 자체 최근 14일 추이 집계. 기존 대상자 리스트는 그대로(4번째 섹션).
 import ProgressAnalyticsWidgets from '@/components/treatment/ProgressAnalyticsWidgets';
@@ -114,6 +121,47 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   const today = seoulISODate(new Date());
   const isToday = date === today;
 
+  // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
+  //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const rowIds = useMemo(() => rows.map((r) => r.reservationId), [rows]);
+  // 현재 rows 에 존재하는 선택만 유효 개수로 카운트(코호트 변경 후 stale 선택 제외).
+  const selectedCount = useMemo(
+    () => rowIds.filter((id) => selectedIds.has(id)).length,
+    [rowIds, selectedIds],
+  );
+  const allSelected = rowIds.length > 0 && selectedCount === rowIds.length;
+
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      // 전부 선택돼 있으면 해제, 아니면 현재 rows 전체 선택.
+      if (rowIds.length > 0 && rowIds.every((id) => prev.has(id))) return new Set();
+      return new Set(rowIds);
+    });
+  };
+
+  // Phase 1 placeholder — 실제 발행 로직은 Phase 2(서류양식 pending). 클릭 시 준비 중 안내만.
+  const handleIssueOne = (row: ProgressTargetRow) => {
+    toast.confirm(`'${row.customerName}' 발행 기능은 준비 중입니다. (서류 양식 준비 후 제공)`);
+  };
+
+  const handleBulkIssue = () => {
+    if (selectedCount === 0) {
+      toast.warning('먼저 발행할 환자를 선택해 주세요.');
+      return;
+    }
+    toast.confirm(`선택한 ${selectedCount}명 일괄 발행 기능은 준비 중입니다. (서류 양식 준비 후 제공)`);
+  };
+
   return (
     <div className="flex flex-col gap-4" data-testid="progress-targets-section">
       {/* T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 상단 위젯 3종(요약 카드/회차 분포/최근 추이) — read-only 집계. */}
@@ -137,12 +185,34 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
           </p>
         </div>
         {rows.length > 0 && (
-          <span
-            className="shrink-0 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
-            data-testid="progress-targets-count"
-          >
-            대상 {rows.length}명
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 상단 일괄처리 툴바(선택 개수 + 일괄처리 버튼). */}
+            {selectedCount > 0 && (
+              <span
+                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-700"
+                data-testid="progress-bulk-selected-count"
+              >
+                선택 {selectedCount}명
+              </span>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleBulkIssue}
+              disabled={selectedCount === 0}
+              data-testid="progress-bulk-action-btn"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              일괄처리
+            </Button>
+            <span
+              className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
+              data-testid="progress-targets-count"
+            >
+              대상 {rows.length}명
+            </span>
+          </div>
         )}
       </div>
 
@@ -182,11 +252,24 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="border-b bg-muted/20 text-left text-[11px] font-semibold text-muted-foreground">
+                  {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 전체선택 체크박스 */}
+                  <th className="px-2 py-1 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="전체선택"
+                      data-testid="progress-selectall-checkbox"
+                    />
+                  </th>
                   <th className="px-2 py-1 whitespace-nowrap">#</th>
                   <th className="px-2 py-1 whitespace-nowrap">환자</th>
                   <th className="px-2 py-1 whitespace-nowrap">회차</th>
                   <th className="px-2 py-1 whitespace-nowrap">예약시간</th>
                   <th className="px-2 py-1 whitespace-nowrap">담당자</th>
+                  {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행 열 */}
+                  <th className="px-2 py-1 whitespace-nowrap text-right">발행</th>
                 </tr>
               </thead>
               <tbody>
@@ -196,6 +279,17 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     className="border-b last:border-0 transition-colors hover:bg-muted/30"
                     data-testid="progress-targets-row"
                   >
+                    {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: row 선택 체크박스 */}
+                    <td className="px-2 py-1">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                        checked={selectedIds.has(r.reservationId)}
+                        onChange={() => toggleRow(r.reservationId)}
+                        aria-label={`${r.customerName} 선택`}
+                        data-testid="progress-row-checkbox"
+                      />
+                    </td>
                     <td className="px-2 py-1 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
                     <td className="px-2 py-1 font-medium whitespace-nowrap">
                       {/* 좌클릭=2번차트 / 우클릭=CRM 컨텍스트 메뉴 (부모 nameInteraction 재사용) */}
@@ -231,6 +325,19 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     </td>
                     <td className="px-2 py-1 whitespace-nowrap text-muted-foreground" data-testid="progress-registrar-cell">
                       {r.registrarName ? `@${r.registrarName}` : '—'}
+                    </td>
+                    {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행하기 버튼(placeholder). */}
+                    <td className="px-2 py-1 whitespace-nowrap text-right">
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleIssueOne(r)}
+                        data-testid="progress-issue-btn"
+                      >
+                        <FileUp className="h-3 w-3" />
+                        발행하기
+                      </Button>
                     </td>
                   </tr>
                 ))}
