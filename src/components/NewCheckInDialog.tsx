@@ -406,7 +406,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
 
         {/* 오늘 예약 목록 */}
         {todayReservations.length > 0 && !linkedReservation && (
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">오늘 예약 ({todayReservations.length}건)</Label>
             <div className="max-h-40 overflow-y-auto space-y-1">
               {todayReservations.map((r) => (
@@ -475,9 +475,9 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           {/* 이름 — 인라인 자동검색 */}
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Label htmlFor="ci-name">이름</Label>
             <InlinePatientSearch
               id="ci-name"
@@ -499,7 +499,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
           </div>
 
           {/* 전화번호 — 인라인 자동검색 */}
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Label htmlFor="ci-phone">전화번호</Label>
             <InlinePatientSearch
               id="ci-phone"
@@ -518,7 +518,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Label>유형</Label>
             <div className="grid grid-cols-2 gap-2">
               {VISIT_CHOICES.map((c) => (
