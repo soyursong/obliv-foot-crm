@@ -114,23 +114,23 @@ test.describe('PHRASE-REORDER-CUSTCHART-MENU — CS-AC-3 2번차트 연결 + 격
 test.describe('PHRASE-REORDER-CUSTCHART-MENU — CS-AC-4 순서변경', () => {
   const pt = read(PHRASES_TAB);
 
-  test('CS-AC-4: ↑↓ 순서변경 버튼 + sort_order 일괄 UPDATE 경로 존재', () => {
-    expect(pt).toContain('data-testid="phrase-move-up-btn"');
-    expect(pt).toContain('data-testid="phrase-move-down-btn"');
-    expect(pt).toContain("handleMove(p.id, 'up')");
-    expect(pt).toContain("handleMove(p.id, 'down')");
-    expect(pt).toContain('disabled={idx === 0 || reorder.isPending}');
-    expect(pt).toContain('disabled={idx === displayed.length - 1 || reorder.isPending}');
+  // T-20260701-foot-REORDER-ARROW-TO-DRAG: ↑↓ 화살표 → 잡아끌기(드래그)로 교체됨. 저장경로(useReorderPhrases)는 불변.
+  test('CS-AC-4: 순서변경(드래그 핸들) + sort_order 일괄 UPDATE 경로 존재', () => {
+    expect(pt).toContain('data-testid="phrase-drag-handle"');
+    expect(pt).toContain('handleDragEnd');
     expect(pt).toContain('function useReorderPhrases()');
     expect(pt).toMatch(/\.update\(\{\s*sort_order:\s*u\.sort_order/);
     expect(pt).toMatch(/\.order\('sort_order',\s*\{\s*ascending:\s*true\s*\}\)/);
+    // 화살표 UI 는 완전 제거
+    expect(pt).not.toContain('phrase-move-up-btn');
+    expect(pt).not.toContain('phrase-move-down-btn');
   });
 
-  test('CS-AC-4: handleMove 는 typeFiltered 기준 재부여 + 변경행만 UPDATE', () => {
-    expect(pt).toContain('function handleMove(phraseId: number');
-    expect(pt).toContain('const full = [...typeFiltered]');
+  test('CS-AC-4: handleDragEnd 는 typeFiltered 기준 재부여 + 변경행만 UPDATE', () => {
+    expect(pt).toContain('async function handleDragEnd');
+    expect(pt).toContain('const nextTypeOrder = [...typeFiltered]');
     expect(pt).toContain('sort_order: (i + 1) * 10');
-    expect(pt).toContain('cur.sort_order !== u.sort_order');
+    expect(pt).toContain('prevOrder.get(p.id) !== p.sort_order');
   });
 
   test('회귀 가드: 추가/편집·단축어 중복경고·삭제 동선 불변', () => {
@@ -170,7 +170,9 @@ test.describe('PHRASE-REORDER-CUSTCHART-MENU — 브라우저 렌더', () => {
     await expect(page.getByTestId('phrase-locked-type-medical_chart')).toBeVisible({ timeout: 10_000 });
   });
 
-  test('렌더-③: 펜차트 surface 에서 ↑↓ 순서변경 노출 + 클릭 후 첫 행 변경(2건+)', async ({ page }) => {
+  // T-20260701-foot-REORDER-ARROW-TO-DRAG: ↑↓ 화살표 제거 → 드래그 핸들 노출 검증으로 전환.
+  //   (브라우저 실제 drag 시뮬은 dnd-kit 센서 특성상 flaky → 핸들 노출 + 화살표 부재만 확정 검증)
+  test('렌더-③: 펜차트 surface 에서 드래그 핸들 노출 + 화살표 버튼 부재', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) { test.skip(true, 'Login failed'); return; }
     await page.goto('/admin/services?tab=phrases');
@@ -181,13 +183,8 @@ test.describe('PHRASE-REORDER-CUSTCHART-MENU — 브라우저 렌더', () => {
     const items = page.getByTestId('phrase-item');
     const cnt = await items.count();
     if (cnt === 0) { test.skip(true, '펜차트 상용구 0건'); return; }
-    await expect(page.getByTestId('phrase-move-down-btn').first()).toBeVisible();
-    await expect(page.getByTestId('phrase-move-up-btn').first()).toBeDisabled();
-    if (cnt < 2) { test.skip(true, '재정렬 검증엔 2건+ 필요'); return; }
-    const firstBefore = (await items.first().textContent())?.trim() ?? '';
-    await page.getByTestId('phrase-move-down-btn').first().click();
-    await page.waitForTimeout(1200);
-    const firstAfter = (await items.first().textContent())?.trim() ?? '';
-    expect(firstAfter).not.toBe(firstBefore);
+    await expect(page.getByTestId('phrase-drag-handle').first()).toBeVisible();
+    await expect(page.getByTestId('phrase-move-down-btn')).toHaveCount(0);
+    await expect(page.getByTestId('phrase-move-up-btn')).toHaveCount(0);
   });
 });

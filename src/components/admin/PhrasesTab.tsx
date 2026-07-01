@@ -9,7 +9,7 @@
 // T-20260526-foot-MEDCHART-SYNC:
 //   phrase_type 분리: pen_chart(펜차트) / medical_chart(진료차트) 구분 관리
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { canEditStaffAreaPhrase } from '@/lib/permissions';
@@ -28,7 +28,27 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, GripVertical } from 'lucide-react';
+// T-20260701-foot-REORDER-ARROW-TO-DRAG: 행 ↑↓ 화살표 순서변경 → @dnd-kit 잡아끌기(드래그)로 통일.
+//   참조 패턴 = QuickRxButtonsTab SortableQuickRxRow (드롭 시 sort_order 일괄저장 + 낙관반영 + 실패롤백).
+//   신규 패키지 0 — @dnd-kit(core/sortable/utilities) 旣설치. sort_order 저장경로(useReorderPhrases) 불변.
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -225,6 +245,112 @@ function useReorderPhrases() {
 }
 
 // ---------------------------------------------------------------------------
+// T-20260701-foot-REORDER-ARROW-TO-DRAG: 정렬 가능한 상용구 행 (useSortable — hook 규칙상 별도 컴포넌트).
+//   좌측 GripVertical 핸들을 잡아 끌어 순서 변경. 기존 ↑↓ 버튼 제거(편집/삭제 액션만 유지).
+//   태블릿 탭 오인식 방지 touch-none. 관리권한 없으면 핸들 비노출 + useSortable disabled.
+// ---------------------------------------------------------------------------
+interface SortablePhraseRowProps {
+  p: PhraseTemplate;
+  canEdit: boolean;
+  delPending: boolean;
+  onEdit: (p: PhraseTemplate) => void;
+  onDelete: (id: number, name: string) => void;
+}
+
+function SortablePhraseRow({ p, canEdit, delPending, onEdit, onDelete }: SortablePhraseRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: p.id,
+    disabled: !canEdit,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={`flex items-center justify-between px-3 py-1.5 gap-2 hover:bg-muted/20 transition-colors ${isDragging ? 'bg-card shadow-md' : ''}`}
+      data-testid="phrase-item"
+    >
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        {/* 드래그 핸들 — 관리권한 전용 */}
+        {canEdit && (
+          <button
+            {...attributes}
+            {...listeners}
+            type="button"
+            tabIndex={-1}
+            className="flex items-center justify-center min-w-[24px] min-h-[24px] -ml-1 rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+            title="드래그하여 순서 변경"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="phrase-drag-handle"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
+              {MERGED_CATEGORY_LABELS[p.category] ?? p.category}
+            </Badge>
+            {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 배지 */}
+            <Badge
+              variant="outline"
+              className={`text-[9px] h-4 px-1 shrink-0 ${PHRASE_TYPE_BADGE[p.phrase_type ?? 'pen_chart'] ?? PHRASE_TYPE_BADGE.pen_chart}`}
+            >
+              {PHRASE_TYPE_LABELS[p.phrase_type ?? 'pen_chart']}
+            </Badge>
+            <span
+              className={`text-xs font-medium truncate ${
+                !p.is_active ? 'text-muted-foreground line-through' : ''
+              }`}
+            >
+              {p.name}
+            </span>
+            {p.shortcut_key && (
+              <Badge variant="outline" className="text-[10px] py-0 px-1 shrink-0 font-mono text-teal-600 border-teal-200">
+                //{p.shortcut_key}
+              </Badge>
+            )}
+            {!p.is_active && (
+              <Badge variant="outline" className="text-[10px] py-0 shrink-0">비활성</Badge>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground line-clamp-1 whitespace-pre-wrap mt-0.5 pl-0.5">
+            {p.content}
+          </p>
+        </div>
+      </div>
+      {canEdit && (
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => onEdit(p)}
+            data-testid="phrase-edit-btn"
+          >
+            <Pencil className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-destructive hover:text-destructive"
+            onClick={() => onDelete(p.id, p.name)}
+            disabled={delPending}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT:
@@ -258,6 +384,20 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   const upsert = useUpsertPhrase();
   const del = useDeletePhrase();
   const reorder = useReorderPhrases();
+
+  // T-20260701-foot-REORDER-ARROW-TO-DRAG: DnD 정렬용 로컬 미러(낙관적 반영). 저장 중엔 서버캐시로 덮지 않음.
+  const [localPhrases, setLocalPhrases] = useState<PhraseTemplate[]>([]);
+  const savingRef = useRef(false);
+  useEffect(() => {
+    if (savingRef.current) return;
+    setLocalPhrases(phrases);
+  }, [phrases]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+  );
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PhraseTemplate | null>(null);
@@ -323,38 +463,61 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
     del.mutate(id);
   }
 
-  // T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-1: ↑↓ 순서변경.
-  //   화면에 보이는 displayed 의 인접 행과 자리 교환하되, sort_order 는 같은 유형 전체(typeFiltered)
-  //   기준으로 재부여(10 간격) — 카테고리 필터가 걸려 있어도 유형 전역 순서가 일관되게 유지된다.
-  //   소비부는 유형별로 sort_order 오름차순 조회하므로 펜/고객차트 입력 노출순서에 즉시 반영.
-  function handleMove(phraseId: number, dir: 'up' | 'down') {
-    const dispIdx = displayed.findIndex((p) => p.id === phraseId);
-    if (dispIdx < 0) return;
-    const neighbor = displayed[dir === 'up' ? dispIdx - 1 : dispIdx + 1];
-    if (!neighbor) return; // 경계(맨 위/아래)
-    // typeFiltered 는 query 의 sort_order 오름차순을 보존 → 유형 전역 순서의 진실 원천.
-    const full = [...typeFiltered];
-    const a = full.findIndex((p) => p.id === phraseId);
-    const b = full.findIndex((p) => p.id === neighbor.id);
-    if (a < 0 || b < 0) return;
-    [full[a], full[b]] = [full[b], full[a]];
-    const updates = full
-      .map((p, i) => ({ id: p.id, sort_order: (i + 1) * 10 }))
-      .filter((u) => {
-        const cur = full.find((p) => p.id === u.id);
-        return cur && cur.sort_order !== u.sort_order;
-      });
-    if (updates.length === 0) return;
-    reorder.mutate(updates);
-  }
-
   // T-20260526-foot-MEDCHART-SYNC: phrase_type + category 복합 필터
   // T-20260608-foot-PHRASE-PEN-MED-SPLIT: phrase_type 활성 시 좌측 카테고리 카운트도 용도별로 산출
   //   (펜차트/진료차트 분리는 phrase_type 컬럼으로 이미 존재 — 무DB. 좌측 사이드 카운트만 type 미반영 버그였음)
-  const typeFiltered = phrases.filter(
+  // T-20260701-foot-REORDER-ARROW-TO-DRAG: 표시 목록은 낙관적 로컬미러(localPhrases)에서 파생.
+  const typeFiltered = localPhrases.filter(
     (p) => effectivePhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === effectivePhraseType,
   );
   const displayed = typeFiltered.filter((p) => filterCat === 'all' || p.category === filterCat);
+
+  // T-20260701-foot-REORDER-ARROW-TO-DRAG: ↑↓ 화살표 → 잡아끌기(드래그) 순서변경.
+  //   화면 목록(displayed, 카테고리 필터 반영)을 arrayMove 로 재배치하되, sort_order 는 같은 유형 전체
+  //   (typeFiltered) 기준 10 간격 재부여 — 카테고리 필터가 걸려 있어도 유형 전역 순서 일관성 유지(AC-6).
+  //   필터로 화면에서 빠진 행은 유형 전역 순서상 제자리 고정(displayed 가 차지한 슬롯에만 새 순서 주입).
+  //   소비부(PenChartTab·MedicalChartPanel·DoctorTreatmentPanel 등)는 유형별 sort_order 오름차순 조회라 즉시 반영.
+  async function handleDragEnd(e: DragEndEvent) {
+    if (!canEdit) return;
+    const { active, over } = e;
+    if (!over || String(active.id) === String(over.id)) return;
+    const activeId = Number(active.id);
+    const overId = Number(over.id);
+    const fromDisp = displayed.findIndex((p) => p.id === activeId);
+    const toDisp = displayed.findIndex((p) => p.id === overId);
+    if (fromDisp === -1 || toDisp === -1) return;
+
+    // (1) 화면 목록 재배치 → (2) 유형 전역 순서에 주입(displayed 슬롯만 갱신, 그 외 제자리).
+    const newDisplayed = arrayMove(displayed, fromDisp, toDisp);
+    const dispIds = new Set(displayed.map((p) => p.id));
+    const nextTypeOrder = [...typeFiltered];
+    let k = 0;
+    for (let i = 0; i < nextTypeOrder.length; i++) {
+      if (dispIds.has(nextTypeOrder[i].id)) nextTypeOrder[i] = newDisplayed[k++];
+    }
+    // (3) 유형 전역 10 간격 재번호 → 변경분만 DB 반영.
+    const renumbered = nextTypeOrder.map((p, i) => ({ ...p, sort_order: (i + 1) * 10 }));
+    const prevOrder = new Map(typeFiltered.map((p) => [p.id, p.sort_order]));
+    const updates = renumbered
+      .filter((p) => prevOrder.get(p.id) !== p.sort_order)
+      .map((p) => ({ id: p.id, sort_order: p.sort_order }));
+    if (updates.length === 0) return;
+
+    // (4) 낙관적 반영 — 전체 배열의 이 유형 슬롯에 renumbered 주입(타 유형 위치 불변). 실패 시 snapshot 롤백.
+    const snapshot = localPhrases;
+    const typeIds = new Set(typeFiltered.map((p) => p.id));
+    const nextFull = [...localPhrases];
+    let j = 0;
+    for (let i = 0; i < nextFull.length; i++) {
+      if (typeIds.has(nextFull[i].id)) nextFull[i] = renumbered[j++];
+    }
+    setLocalPhrases(nextFull);
+    savingRef.current = true;
+    reorder.mutate(updates, {
+      onError: () => setLocalPhrases(snapshot), // useReorderPhrases.onError 가 토스트 담당
+      onSettled: () => { savingRef.current = false; },
+    });
+  }
 
   if (isLoading)
     return (
@@ -467,94 +630,24 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
             </div>
           ) : (
             // AC-2: 컴팩트 리스트 — py-3→py-1.5, space-y-2→divide-y
-            <div data-testid="phrase-list" className="divide-y divide-border/40">
-              {displayed.map((p, idx) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between px-3 py-1.5 gap-2 hover:bg-muted/20 transition-colors"
-                  data-testid="phrase-item"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
-                        {MERGED_CATEGORY_LABELS[p.category] ?? p.category}
-                      </Badge>
-                      {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 배지 */}
-                      <Badge
-                        variant="outline"
-                        className={`text-[9px] h-4 px-1 shrink-0 ${PHRASE_TYPE_BADGE[p.phrase_type ?? 'pen_chart'] ?? PHRASE_TYPE_BADGE.pen_chart}`}
-                      >
-                        {PHRASE_TYPE_LABELS[p.phrase_type ?? 'pen_chart']}
-                      </Badge>
-                      <span
-                        className={`text-xs font-medium truncate ${
-                          !p.is_active ? 'text-muted-foreground line-through' : ''
-                        }`}
-                      >
-                        {p.name}
-                      </span>
-                      {p.shortcut_key && (
-                        <Badge variant="outline" className="text-[10px] py-0 px-1 shrink-0 font-mono text-teal-600 border-teal-200">
-                          //{p.shortcut_key}
-                        </Badge>
-                      )}
-                      {!p.is_active && (
-                        <Badge variant="outline" className="text-[10px] py-0 shrink-0">비활성</Badge>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground line-clamp-1 whitespace-pre-wrap mt-0.5 pl-0.5">
-                      {p.content}
-                    </p>
-                  </div>
-                  {canEdit && (
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      {/* T-20260618-foot-PHRASE-REORDER-CUSTCHART-MENU AC-1: ↑↓ 순서변경.
-                          경계(맨 위/아래)에서 비활성. reorder 진행 중 전체 비활성(중복 클릭 방지). */}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground hover:text-teal-600"
-                        onClick={() => handleMove(p.id, 'up')}
-                        disabled={idx === 0 || reorder.isPending}
-                        title="위로"
-                        data-testid="phrase-move-up-btn"
-                      >
-                        <ChevronUp className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground hover:text-teal-600"
-                        onClick={() => handleMove(p.id, 'down')}
-                        disabled={idx === displayed.length - 1 || reorder.isPending}
-                        title="아래로"
-                        data-testid="phrase-move-down-btn"
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => openEdit(p)}
-                        data-testid="phrase-edit-btn"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(p.id, p.name)}
-                        disabled={del.isPending}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
+            // T-20260701-foot-REORDER-ARROW-TO-DRAG: ↑↓ 화살표 제거 → 좌측 GripVertical 핸들 잡아끌기 순서변경.
+            //   SortableContext items = 현재 화면(displayed) — 같은 화면 내에서만 재정렬(카테고리/유형 간 이동 아님).
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={displayed.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+                <div data-testid="phrase-list" className="divide-y divide-border/40">
+                  {displayed.map((p) => (
+                    <SortablePhraseRow
+                      key={p.id}
+                      p={p}
+                      canEdit={canEdit}
+                      delPending={del.isPending}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </div>

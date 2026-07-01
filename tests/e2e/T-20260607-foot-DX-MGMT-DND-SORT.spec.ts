@@ -56,12 +56,14 @@ test('드래그 중 시각 피드백(isDragging → opacity, DragOverlay)', () =
   expect(src).toContain('DragOverlay');
 });
 
-// ── 재정의: 폴더 순서 = ▲▼ 버튼(형제 sort_order 교체) ──
-test('폴더 순서 조정 = ▲▼ 버튼(형제 sort_order 교체)', () => {
+// ── 재정의: 폴더 순서 = 드래그(형제 sort_order 재번호) ──
+//   T-20260701-foot-REORDER-ARROW-TO-DRAG: ▲▼ 버튼 → GripVertical 잡아끌기로 교체(형제 레벨만).
+test('폴더 순서 조정 = 드래그 핸들(형제 sort_order 재번호)', () => {
   const src = read(TAB);
-  expect(src).toContain('handleMoveFolder');
-  expect(src).toContain('dx-folder-move-up');
-  expect(src).toContain('dx-folder-move-down');
+  expect(src).toContain('handleFolderReorder');
+  expect(src).toContain('dx-folder-drag-handle');
+  expect(src).not.toContain('dx-folder-move-up');
+  expect(src).not.toContain('dx-folder-move-down');
 });
 
 // ── 보존: 관리권한 게이트 ──

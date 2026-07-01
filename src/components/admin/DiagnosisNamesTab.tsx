@@ -46,8 +46,6 @@ import {
   Check,
   X,
   Inbox,
-  ChevronUp,
-  ChevronDown,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -82,6 +80,7 @@ import {
   useDeleteDiagnosisFolder,
   useAssignDiagnosisToFolder,
   useReorderDiagnoses,
+  type DiagnosisFolder,
   type DiagnosisFolderNode,
 } from '@/lib/diagnosisFolders';
 import {
@@ -418,12 +417,9 @@ interface FolderNodeProps {
   count: number;
   selectedKey: string;
   canManage: boolean;
-  isFirst: boolean;
-  isLast: boolean;
   editingId: string | null;
   editValue: string;
   renamePending: boolean;
-  movePending: boolean;
   onSelect: (id: string) => void;
   onStartRename: (node: DiagnosisFolderNode) => void;
   onEditChange: (v: string) => void;
@@ -431,19 +427,23 @@ interface FolderNodeProps {
   onRenameCancel: () => void;
   onAddChild: (parentId: string) => void;
   onDelete: (node: DiagnosisFolderNode) => void;
-  onMove: (node: DiagnosisFolderNode, dir: -1 | 1) => void;
   countOf: (folderId: string) => number;
 }
 
+// T-20260701-foot-REORDER-ARROW-TO-DRAG: 형제 폴더 ↑↓ 화살표 순서변경 → GripVertical 잡아끌기(드래그)로 교체.
+//   useSortable = 드래그(형제 순서변경) + 드롭(우측 상병 항목 폴더배치) 겸용(旣존 useDroppable 대체, 같은 id).
+//   형제 SortableContext 안에서만 재정렬 → 부모/계층 이동은 신규 도입하지 않음(handleDragEnd 가 형제 여부 재확인).
 function FolderNode(props: FolderNodeProps) {
   const {
-    node, count, selectedKey, canManage, isFirst, isLast,
-    editingId, editValue, renamePending, movePending,
+    node, count, selectedKey, canManage,
+    editingId, editValue, renamePending,
     onSelect, onStartRename, onEditChange, onRenameSubmit, onRenameCancel,
-    onAddChild, onDelete, onMove, countOf,
+    onAddChild, onDelete, countOf,
   } = props;
 
-  const { setNodeRef, isOver } = useDroppable({ id: node.id });
+  const {
+    setNodeRef, attributes, listeners, transform, transition, isDragging, isOver,
+  } = useSortable({ id: node.id, disabled: !canManage });
   const isSelected = selectedKey === node.id;
   const isEditing = editingId === node.id;
   const indent = { marginLeft: `${node.depth * 14}px` };
@@ -492,16 +492,17 @@ function FolderNode(props: FolderNodeProps) {
         </div>
         {node.children.length > 0 && (
           <div className="mt-0.5 space-y-0.5">
-            {node.children.map((child, i) => (
-              <FolderNode
-                key={child.id}
-                {...props}
-                node={child}
-                count={countOf(child.id)}
-                isFirst={i === 0}
-                isLast={i === node.children.length - 1}
-              />
-            ))}
+            {/* T-20260701-foot-REORDER-ARROW-TO-DRAG: 하위 형제 폴더 그룹 = 독립 SortableContext(형제끼리만 재정렬). */}
+            <SortableContext items={node.children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              {node.children.map((child) => (
+                <FolderNode
+                  key={child.id}
+                  {...props}
+                  node={child}
+                  count={countOf(child.id)}
+                />
+              ))}
+            </SortableContext>
           </div>
         )}
       </div>
@@ -512,10 +513,16 @@ function FolderNode(props: FolderNodeProps) {
     <div data-testid="dx-folder-node" data-folder-id={node.id} data-selected={isSelected ? 'true' : 'false'}>
       <div
         ref={setNodeRef}
-        style={indent}
+        style={{
+          ...indent,
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.5 : 1,
+          zIndex: isDragging ? 30 : undefined,
+        }}
         className={`group flex items-center gap-1 rounded-md px-2 py-2 cursor-pointer select-none border ${
           isSelected ? 'bg-teal-50 text-teal-900 ring-1 ring-teal-200 border-teal-200' : 'border-transparent hover:bg-muted/60'
-        } ${isOver ? 'ring-2 ring-teal-400 bg-teal-50' : ''}`}
+        } ${isOver ? 'ring-2 ring-teal-400 bg-teal-50' : ''} ${isDragging ? 'shadow-md bg-card' : ''}`}
         onClick={() => onSelect(node.id)}
         onDoubleClick={() => canManage && onStartRename(node)}
         onContextMenu={(e) => {
@@ -535,6 +542,21 @@ function FolderNode(props: FolderNodeProps) {
           }
         }}
       >
+        {/* T-20260701-foot-REORDER-ARROW-TO-DRAG: 드래그 핸들 — 잡아끌어 형제 폴더 순서변경. 태블릿 탭 오인식 방지 touch-none. */}
+        {canManage && (
+          <button
+            {...attributes}
+            {...listeners}
+            type="button"
+            tabIndex={-1}
+            className="flex items-center justify-center min-w-[22px] min-h-[22px] -ml-1 rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+            title="드래그하여 순서 변경"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="dx-folder-drag-handle"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
         {isSelected ? (
           <FolderOpen className="h-3.5 w-3.5 shrink-0 text-teal-600" />
         ) : (
@@ -544,25 +566,6 @@ function FolderNode(props: FolderNodeProps) {
         <span className="text-[13px] font-semibold truncate flex-1" data-testid="dx-folder-name">{node.name}</span>
         {canManage && (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-            {/* 순서 ▲▼ — 형제 내 sort_order 교체 (AC-3) */}
-            <Button
-              variant="ghost" size="icon"
-              className="h-6 w-6 text-muted-foreground/60 hover:text-teal-600 disabled:opacity-20"
-              title="위로" disabled={isFirst || movePending}
-              onClick={(e) => { e.stopPropagation(); onMove(node, -1); }}
-              data-testid="dx-folder-move-up"
-            >
-              <ChevronUp className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost" size="icon"
-              className="h-6 w-6 text-muted-foreground/60 hover:text-teal-600 disabled:opacity-20"
-              title="아래로" disabled={isLast || movePending}
-              onClick={(e) => { e.stopPropagation(); onMove(node, 1); }}
-              data-testid="dx-folder-move-down"
-            >
-              <ChevronDown className="h-3 w-3" />
-            </Button>
             <Button
               variant="ghost" size="icon"
               className="h-6 w-6 text-muted-foreground/60 hover:text-teal-600"
@@ -597,16 +600,17 @@ function FolderNode(props: FolderNodeProps) {
       </div>
       {node.children.length > 0 && (
         <div className="mt-0.5 space-y-0.5">
-          {node.children.map((child, i) => (
-            <FolderNode
-              key={child.id}
-              {...props}
-              node={child}
-              count={countOf(child.id)}
-              isFirst={i === 0}
-              isLast={i === node.children.length - 1}
-            />
-          ))}
+          {/* T-20260701-foot-REORDER-ARROW-TO-DRAG: 하위 형제 폴더 그룹 = 독립 SortableContext(형제끼리만 재정렬). */}
+          <SortableContext items={node.children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+            {node.children.map((child) => (
+              <FolderNode
+                key={child.id}
+                {...props}
+                node={child}
+                count={countOf(child.id)}
+              />
+            ))}
+          </SortableContext>
         </div>
       )}
     </div>
@@ -833,6 +837,19 @@ export default function DiagnosisNamesTab() {
   //   closestCenter 그대로(AC-3 회귀가드). T-...-DIAGNAMES-REORDER-FOLDER-CAPTURE.
   const dxCollisionDetection = useCallback(
     (args: Parameters<typeof closestCenter>[0]) => {
+      // T-20260701-foot-REORDER-ARROW-TO-DRAG: 폴더 노드를 끄는 중이면 후보를 폴더 노드로 한정
+      //   (우측 상병 항목·전체목록이 최근접으로 오판돼 폴더가 상병 위로 끌려가는 회귀 차단).
+      const activeId = String(args.active?.id ?? '');
+      if (activeId !== ALL_KEY && folderIdSet.has(activeId)) {
+        const filtered = {
+          ...args,
+          droppableContainers: args.droppableContainers.filter((c) => {
+            const id = String(c.id);
+            return id !== ALL_KEY && folderIdSet.has(id);
+          }),
+        };
+        return closestCenter(filtered);
+      }
       if (reorderActive) {
         const filtered = {
           ...args,
@@ -986,20 +1003,26 @@ export default function DiagnosisNamesTab() {
     return flat.map((f) => ({ ...f, children: [], depth: 0 }));
   };
 
-  // 순서 ▲▼ — 형제 내 인접 폴더와 sort_order 교체 (AC-3)
-  async function handleMoveFolder(node: DiagnosisFolderNode, dir: -1 | 1) {
+  // T-20260701-foot-REORDER-ARROW-TO-DRAG: ▲▼ 인접 교환 → 드래그 재배치.
+  //   형제 그룹을 arrayMove 후 0,10,20… 재번호 → 값이 바뀐 폴더만 sort_order PATCH(무DB 스키마변경).
+  //   폴더는 useDiagnosisFolders 쿼리가 정본 → 성공 시 invalidate 로 반영, 실패 시 쿼리 불변 = 원위치 스냅백(롤백).
+  //   ★형제 레벨만: activeId/overId 가 같은 부모일 때만 호출됨(handleDragEnd 가드). 부모/계층 이동 없음.
+  async function handleFolderReorder(node: DiagnosisFolder, overId: string) {
     if (!canManage) return;
     const sibs = siblingsAt(node.parent_id ?? null);
-    const idx = sibs.findIndex((s) => s.id === node.id);
-    const swapIdx = idx + dir;
-    if (idx === -1 || swapIdx < 0 || swapIdx >= sibs.length) return;
-    const a = sibs[idx];
-    const b = sibs[swapIdx];
+    const from = sibs.findIndex((s) => s.id === node.id);
+    const to = sibs.findIndex((s) => s.id === overId);
+    if (from === -1 || to === -1 || from === to) return;
+    const reordered = arrayMove(sibs, from, to);
+    const updates = reordered
+      .map((f, idx) => ({ id: f.id, sort_order: idx * 10, prev: f.sort_order ?? null }))
+      .filter((u) => u.prev !== u.sort_order)
+      .map(({ id, sort_order }) => ({ id, sort_order }));
+    if (updates.length === 0) return;
     try {
-      await Promise.all([
-        updateFolder.mutateAsync({ id: a.id, sort_order: b.sort_order }),
-        updateFolder.mutateAsync({ id: b.id, sort_order: a.sort_order }),
-      ]);
+      await Promise.all(
+        updates.map((u) => updateFolder.mutateAsync({ id: u.id, sort_order: u.sort_order })),
+      );
     } catch (e) {
       toast.error(`순서 변경 실패: ${(e as Error).message}`);
     }
@@ -1016,6 +1039,17 @@ export default function DiagnosisNamesTab() {
     const serviceId = String(active.id);
     const overKey = String(over.id);
     if (serviceId === overKey) return; // 제자리
+
+    // T-20260701-foot-REORDER-ARROW-TO-DRAG: 드래그 대상이 폴더 노드면 → 형제 폴더 순서변경.
+    //   같은 부모(형제)일 때만 재정렬. 다른 부모/전체목록 위 드롭은 무시(계층/부모 이동 신규도입 금지).
+    const activeFolder = folders.find((f) => f.id === serviceId);
+    if (activeFolder) {
+      const overFolder = folders.find((f) => f.id === overKey);
+      if (!overFolder) return; // 폴더가 아닌 대상 → 무시
+      if ((activeFolder.parent_id ?? null) !== (overFolder.parent_id ?? null)) return; // 다른 부모 → 무시
+      handleFolderReorder(activeFolder, overKey);
+      return;
+    }
 
     const item = items.find((d) => d.id === serviceId);
     if (!item) return;
@@ -1142,30 +1176,29 @@ export default function DiagnosisNamesTab() {
               </div>
             ) : (
               <div className="space-y-0.5" data-testid="dx-folder-list">
-                {rootNodes.map((node, i) => (
-                  <FolderNode
-                    key={node.id}
-                    node={node}
-                    count={countOf(node.id)}
-                    selectedKey={selectedKey}
-                    canManage={canManage}
-                    isFirst={i === 0}
-                    isLast={i === rootNodes.length - 1}
-                    editingId={editingId}
-                    editValue={editValue}
-                    renamePending={updateFolder.isPending}
-                    movePending={updateFolder.isPending}
-                    onSelect={setSelectedKey}
-                    onStartRename={startRename}
-                    onEditChange={setEditValue}
-                    onRenameSubmit={submitRename}
-                    onRenameCancel={cancelRename}
-                    onAddChild={handleAddChild}
-                    onDelete={handleDeleteFolder}
-                    onMove={handleMoveFolder}
-                    countOf={countOf}
-                  />
-                ))}
+                {/* T-20260701-foot-REORDER-ARROW-TO-DRAG: 루트 형제 폴더 그룹 = SortableContext(형제끼리만 드래그 재정렬). */}
+                <SortableContext items={rootNodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+                  {rootNodes.map((node) => (
+                    <FolderNode
+                      key={node.id}
+                      node={node}
+                      count={countOf(node.id)}
+                      selectedKey={selectedKey}
+                      canManage={canManage}
+                      editingId={editingId}
+                      editValue={editValue}
+                      renamePending={updateFolder.isPending}
+                      onSelect={setSelectedKey}
+                      onStartRename={startRename}
+                      onEditChange={setEditValue}
+                      onRenameSubmit={submitRename}
+                      onRenameCancel={cancelRename}
+                      onAddChild={handleAddChild}
+                      onDelete={handleDeleteFolder}
+                      countOf={countOf}
+                    />
+                  ))}
+                </SortableContext>
               </div>
             )}
           </aside>

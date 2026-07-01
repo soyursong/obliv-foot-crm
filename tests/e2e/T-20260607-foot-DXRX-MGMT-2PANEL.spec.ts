@@ -86,10 +86,11 @@ test('AC-3: 폴더 생성(루트/하위)·수정·삭제 CRUD 엔티티 훅', ()
   expect(src).toContain('dx-folder-new-root-input');
   expect(src).toContain('dx-folder-add-child');
   expect(src).toContain('dx-folder-delete-btn');
-  // 폴더 순서 조정(▲▼ — 형제 sort_order 교체)
-  expect(src).toContain('handleMoveFolder');
-  expect(src).toContain('dx-folder-move-up');
-  expect(src).toContain('dx-folder-move-down');
+  // 폴더 순서 조정 — T-20260701-foot-REORDER-ARROW-TO-DRAG: ▲▼ → 드래그 핸들(형제 sort_order 재번호)
+  expect(src).toContain('handleFolderReorder');
+  expect(src).toContain('dx-folder-drag-handle');
+  expect(src).not.toContain('dx-folder-move-up');
+  expect(src).not.toContain('dx-folder-move-down');
 });
 
 test('AC-3: 폴더 인라인 rename — 빈이름·형제중복 차단, 소속 항목 FK 유지(name만 UPDATE)', () => {
