@@ -58,8 +58,10 @@ test.describe('감지·분류 — 지정자 fallback 사유', () => {
 // ── reason 태그 기록 (AC-1) ────────────────────────────────────────────────────
 test.describe('reason 태그 — assignment_actions 에 구조화 기록', () => {
   test('fallback 이면 buildDesignatedFallbackReason 로 reason 태그 기록', () => {
+    // T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP: reason 결정이 순수 함수 resolveAssignReason(SSOT)로
+    //   추출됨(삼항 → if 분기). fallback→태그 매핑 intent 는 그대로 보존(치료사 오인 민원 경고 유지).
     expect(ENGINE_CODE).toMatch(
-      /designatedFallback\s*\?\s*buildDesignatedFallbackReason\(designatedFallback\.kind, designatedFallback\.staffName\)/,
+      /if \(designatedFallback\) \{\s*return buildDesignatedFallbackReason\(designatedFallback\.kind, designatedFallback\.staffName\)/,
     );
   });
 
@@ -69,11 +71,16 @@ test.describe('reason 태그 — assignment_actions 에 구조화 기록', () =>
     expect(ENGINE_CODE).toMatch(/export function parseDesignatedFallbackReason/);
   });
 
-  test('fallback reason 은 재진 sentinel(ASSIGN_SILENT_REASON)과 상호배타 — 알림 suppress 안됨', () => {
-    // fallback ⇒ usedDesignated=false 이므로 sentinel 조건과 동시성립 불가(삼항 분기로 배타).
-    expect(ENGINE_CODE).toMatch(
-      /designatedFallback[\s\S]*?:\s*usedDesignated && customer\?\.visit_type === 'returning'[\s\S]*?ASSIGN_SILENT_REASON/,
-    );
+  test('fallback reason 은 치료사(therapy) 경로에선 sentinel 과 상호배타 — 알림 suppress 안됨(SHEET-MATCH-GUARD 유지)', () => {
+    // T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP (B→A supersede):
+    //   ★재진 '상담(consult)' fallback 은 이제 sentinel(알림 완전 제외) — resolveAssignReason 최우선 분기.
+    //   그러나 '치료사(therapy)' 및 비-재진 fallback 은 종전대로 fallback 태그(알림 노출) — SHEET-MATCH-GUARD 의도 보존.
+    //   순수 함수 SSOT 구조로 검증: (1) consult+재진 → 최우선 sentinel, (2) 그 외 fallback → 태그, (3) 치료사 지정 sentinel 유지.
+    expect(ENGINE_CODE).toMatch(/if \(role === 'consult' && isReturning\) return ASSIGN_SILENT_REASON/); // (1) B→A 상담 전 구간
+    expect(ENGINE_CODE).toMatch(/if \(designatedFallback\) \{\s*return buildDesignatedFallbackReason/);   // (2) 치료사 등 fallback 태그(노출)
+    expect(ENGINE_CODE).toMatch(/if \(usedDesignated && isReturning\) return ASSIGN_SILENT_REASON/);      // (3) 재진 치료사 지정 sentinel 유지
+    // maybeAutoAssign 은 이 SSOT 를 그대로 사용(중복 로직 제거).
+    expect(ENGINE_CODE).toMatch(/const reason = resolveAssignReason\(\{/);
   });
 });
 

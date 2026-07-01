@@ -26,9 +26,7 @@ import {
   maybeAutoAssign,
   logAssignment,
   deriveConsultAxis,
-  fetchTodayWorkingStaffIds,
-  fetchTodayTempOffStaffIds,
-  ASSIGN_SILENT_REASON,
+  resolveAssignReason,
 } from '@/lib/autoAssign';
 import type { CheckInStatus, Reservation, VisitType } from '@/lib/types';
 
@@ -356,26 +354,21 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
             (axCust as { visit_type?: string | null; lead_source?: string | null; visit_route?: string | null } | null) ?? {},
           );
         }
-        // T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP:
+        // T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP (B→A, supersedes #1 REVISIT-CHECKIN-AUTOASSIGN-SKIP):
         //   재진 체크인의 상담사 = customers.assigned_staff_id(지정 담당 실장) autofill.
-        //   지정 담당이 '당일 정상출근'(근무캘린더 ∧ ¬임시off)일 때만 reason=sentinel → 알림 표시 억제(AC-1).
-        //   휴무·임시off·미지정·근태 판정 실패 → 미부여 → 알림 노출(AC-3 휴무 fallback / AC-5 보수적 default).
-        //   비재진(초진/체험)은 미부여 → 알림 기존대로 노출(AC-2/AC-4 회귀0).
-        //   ※ 비차단(IIFE) — 근태 read(구글시트 EF)는 체크인 토스트/닫힘 이후 best-effort 로만 수행.
-        let silentReason: string | null = null;
-        if (isReturningVisit && assignedConsultantId) {
-          try {
-            const [workingIds, tempOff] = await Promise.all([
-              fetchTodayWorkingStaffIds(clinicId),
-              fetchTodayTempOffStaffIds(),
-            ]);
-            if (workingIds.has(assignedConsultantId) && !tempOff.has(assignedConsultantId)) {
-              silentReason = ASSIGN_SILENT_REASON;
-            }
-          } catch {
-            silentReason = null; // 판정 실패 → 보수적으로 알림 노출
-          }
-        }
+        //   재진(consult)이면 담당 상담사 지정 유무·휴무·미지정 전 조합에서 상담 배정 알림을 완전 제외한다
+        //   → 재진이면 reason=sentinel 무조건 부여(근태 조회 불요). #1 의 '당일 정상출근' 조건 제거.
+        //   비재진(초진/체험)은 미부여 → 알림 기존대로 노출(AC-3 회귀0). 치료사 경로는 이 블록과 무관(role='consult').
+        //   상담사 자동배정(logAssignment) 로직 자체는 유지 — 알림만 suppress(AC-5).
+        //   reason 결정은 autoAssign 과 동일 SSOT(resolveAssignReason): 재진 consult → sentinel, 비재진 → null.
+        const silentReason: string | null = assignedConsultantId
+          ? resolveAssignReason({
+              role: 'consult',
+              visitType: isReturningVisit ? 'returning' : 'new',
+              usedDesignated: false,
+              designatedFallback: null,
+            })
+          : null;
         await logAssignment({
           clinicId,
           checkInId: insertedId,
