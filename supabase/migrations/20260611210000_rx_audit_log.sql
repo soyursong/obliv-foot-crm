@@ -66,3 +66,8 @@ create policy "rx_audit_log_select" on public.rx_audit_log
   );
 
 -- UPDATE/DELETE 정책 없음 → append-only(감사 무결성). service_role 만 정리 가능.
+
+-- §12-6 defense-in-depth 백스톱 (DA grant-audit 권고 / T-20260701 Stage B1):
+--   RLS(1차) + anon 테이블권한 명시 REVOKE(2차). 신규 PHI 감사테이블 → anon 정당동선 0.
+--   per-table 명시 REVOKE only(§15-3): ALTER DEFAULT PRIVILEGES·보상 GRANT 없음. 멱등.
+revoke all on public.rx_audit_log from anon;
