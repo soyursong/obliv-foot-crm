@@ -1557,9 +1557,9 @@ function TimelineCheckInCard({
   const visitType = checkIn.visit_type as 'new' | 'returning';
   // T-20260509-foot-SLOT-CARD-STYLE: 흰색 큰박스 — 레이저실·치료실 카드와 동일 스타일
   const showBadge = visitType === 'new';
-  // T-20260514-foot-CHART-NO-VISIBLE: AC-1 타임라인 카드 차트번호 상시 표시
-  const timelineChartMap = useContext(ChartNumberMapCtx);
-  const timelineChartNum = checkIn.customer_id ? timelineChartMap.get(checkIn.customer_id) : undefined;
+  // T-20260514-foot-CHART-NO-VISIBLE: 초진 타임라인 카드 차트번호 표시는
+  //   T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY에서 폰뒷4자리로 통일되며 제거됨(ChartNumberMapCtx 소비 종료).
+  //   차트번호 표시는 예약관리/칸반 등 타 surface에 유지(격리) — 본 컴포넌트에선 미사용.
   // T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE REQ-2: 재진 체크인 카드를 초진 intake 박스와
   //   동일 '성함/폰뒷4자리/미수유무' 구성으로 통일하기 위한 폰 뒷4자리 (E.164/010 모두 끝 4자리, presentation only).
   const timelinePhoneTail = phoneTailSuffix(checkIn.customer_phone);
@@ -1620,18 +1620,12 @@ function TimelineCheckInCard({
         </span>
       )}
       <span className={cn('truncate', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')}>{cardDisplayName(checkIn)}</span>
-      {/* T-20260630-foot-REVISIT-CUSTBOX-CHARTNO-REMOVE-MATCH-INTAKE REQ-1/REQ-2:
-          재진(returning) 체크인 카드 = 차트번호(#F-…) 제거 + 초진 intake 박스와 동일 '성함/폰뒷4/미수' 구성(폰 뒷4자리 표기).
-          초진(new) 카드는 T-20260514 차트번호 표기 무수정 (AC-5 회귀 금지 / scope_guard). */}
-      {visitType === 'returning' ? (
-        timelinePhoneTail && (
-          <span data-testid="timeline-phone-suffix" className="shrink-0 text-gray-500 font-mono text-[9px]">{timelinePhoneTail}</span>
-        )
-      ) : (
-        /* T-20260514-foot-CHART-NO-VISIBLE: 초진 차트번호 상시 표시 (무수정) */
-        timelineChartNum && (
-          <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
-        )
+      {/* T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY: 통합시간표 초진(new)/재진(returning) 체크인 카드 식별자를
+          폰번호 뒷4자리로 통일(김주연 총괄). 초진 차트번호(#RF-…) 표기 제거 → 재진과 동일 '폰 뒷4자리' 포맷.
+          (선행: T-20260630-REVISIT-CUSTBOX 재진 통일 → 본 건으로 초진 통일 마무리. presentation only, DB 무변경.
+          예약관리/칸반 차트번호 표시(CHART-NO-VISIBLE AC-1/AC-2)와는 격리 — 통합시간표 체크인 카드에 한정.) */}
+      {timelinePhoneTail && (
+        <span data-testid="timeline-phone-suffix" className="shrink-0 text-gray-500 font-mono text-[9px]">{timelinePhoneTail}</span>
       )}
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지.
           T-20260630 REQ-3 → DASH-REVISITBOX AC-3: 재진 박스만 배지 더 축소(REVISIT_MISU_BADGE_CLS) — 초진(new) 무수정. */}
