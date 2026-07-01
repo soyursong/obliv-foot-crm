@@ -93,7 +93,7 @@ export default function Packages() {
   }, [rows, query]);
 
   return (
-    <div className="flex h-full flex-col p-6">
+    <div className="flex h-full flex-col p-4">
       {/* T-20260615-foot-PKGPAGE-SITESELECTOR-REMOVE: 상단 치료부위(발톱) 선택 블록 제거(표시만). PKGTAB-TOENAIL-ILLUST supersede. */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterStatus)}>

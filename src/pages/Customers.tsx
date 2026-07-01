@@ -529,7 +529,7 @@ export default function Customers() {
   }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow]);
 
   return (
-    <div className="flex h-full flex-col p-6">
+    <div className="flex h-full flex-col p-4">
       <div className="mb-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <div className="relative w-96">
