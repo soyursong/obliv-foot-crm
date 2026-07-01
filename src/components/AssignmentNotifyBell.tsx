@@ -22,7 +22,11 @@ import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate } from '@/lib/format';
-import { ASSIGN_SILENT_REASON } from '@/lib/autoAssign';
+import {
+  ASSIGN_SILENT_REASON,
+  parseDesignatedFallbackReason,
+  type DesignatedFallbackKind,
+} from '@/lib/autoAssign';
 import type { AssignmentAction } from '@/lib/types';
 
 interface AssignNotif {
@@ -30,6 +34,19 @@ interface AssignNotif {
   customerName: string;
   staffName: string;
   createdAt: string;
+  // T-20260701-foot-DESIGNATED-STAFF-SHEET-MATCH-GUARD: 지정자 fallback(균등배정) 운영자 힌트.
+  fallback?: { kind: DesignatedFallbackKind; staffName: string } | null;
+}
+
+/**
+ * 지정자 fallback 힌트 문구(운영자용). 원인(시트 미매칭 vs 임시off)을 구분해 노출.
+ * T-20260701-foot-DESIGNATED-STAFF-SHEET-MATCH-GUARD.
+ */
+function fallbackHintText(fb: { kind: DesignatedFallbackKind; staffName: string }): string {
+  const who = fb.staffName ? `지정 ${fb.staffName}` : '지정 담당자';
+  return fb.kind === 'not_in_working_ids'
+    ? `⚠ ${who} 근무목록 미매칭 → 균등배정 (근무캘린더·이름표기 확인)`
+    : `⚠ ${who} 임시휴무 → 균등배정`;
 }
 
 const POLL_MS = 15_000;
@@ -129,6 +146,8 @@ export default function AssignmentNotifyBell({
         customerName: (a.check_in_id ? ciMap.get(a.check_in_id) : null) ?? '고객',
         staffName: (a.to_staff_id ? staffMap.get(a.to_staff_id) : null) ?? '담당자',
         createdAt: a.created_at,
+        // 지정자 fallback 사유 태그(reason)를 파싱해 운영자 힌트로 표면화(T-20260701-DESIGNATED-STAFF-SHEET-MATCH-GUARD).
+        fallback: parseDesignatedFallbackReason(a.reason),
       }));
       setNotifs(next);
       // 읽음 set 정리: 더 이상 보이지 않는(어제분 등) id 는 가지치기
@@ -190,7 +209,8 @@ export default function AssignmentNotifyBell({
     const head = `담당자 배정 알림 ${unreadCount}건`;
     const items = unreadNotifs
       .slice(0, 10)
-      .map((n) => `${n.customerName} → ${n.staffName} 배정`);
+      // 지정자 fallback 건은 균등배정 원인을 마키 라인에 바로 노출(운영자 인지, 회귀0: 비-fallback은 기존 포맷 유지).
+      .map((n) => (n.fallback ? `${n.customerName} · ${fallbackHintText(n.fallback)}` : `${n.customerName} → ${n.staffName} 배정`));
     return [head, ...items];
   }, [unreadCount, unreadNotifs]);
 
@@ -336,6 +356,17 @@ export default function AssignmentNotifyBell({
                       <span className="text-muted-foreground"> 고객 → </span>
                       <span className="font-medium text-blue-700">{n.staffName}</span>
                       <span className="text-muted-foreground"> 배정됨</span>
+                      {/* T-20260701-foot-DESIGNATED-STAFF-SHEET-MATCH-GUARD: 지정자 fallback(균등배정) 원인 힌트.
+                          '지정치료사인데 왜 균등배정?' 오인 민원의 원인(시트 미매칭 vs 임시off)을 운영자가 구분. */}
+                      {n.fallback && (
+                        <span
+                          data-testid="assign-notify-fallback-hint"
+                          data-fallback-kind={n.fallback.kind}
+                          className="mt-0.5 block text-[11px] font-medium text-amber-700"
+                        >
+                          {fallbackHintText(n.fallback)}
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                       {(() => {
