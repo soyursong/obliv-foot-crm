@@ -8,9 +8,10 @@ import { PenChartTab } from '@/components/PenChartTab';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
-// T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-1): 패키지 탭 치료부위 우측 상단 KOH ON/OFF 토글
-import KohRequestToggle from '@/components/KohRequestToggle';
-import BloodTestRequestToggle from '@/components/BloodTestRequestToggle';
+// T-20260701-foot-CHART2-TREATREQ-SPLIT: 패키지 섹션 [치료신청] 박스(5항목 체크박스). 치료부위 박스와 병렬.
+//   피검사/KOH 는 이 박스 체크박스로 이관(既존 KohRequestToggle/BloodTestRequestToggle 상태 공유 → 별도 토글 제거).
+import TreatmentRequestBox from '@/components/TreatmentRequestBox';
+import { PACKAGE_SESSION_TYPE_TO_REQUEST_CODE } from '@/lib/treatmentRequestCodes';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
 import PatientResultFiles from '@/components/PatientResultFiles';
@@ -3419,6 +3420,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     [latestCheckIn],
   );
   const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant';
+  // T-20260701-foot-CHART2-TREATREQ-SPLIT (AC-3): 재진 치료신청 자동 파생 소스.
+  //   active 패키지가 보유한 시술유형 중 치료신청 5항목과 겹치는 코드만(현재 podologue). 스냅샷 1회.
+  const packageDerivedCodes = useMemo<string[]>(() => {
+    const codes = new Set<string>();
+    for (const p of packages) {
+      if (p.status !== 'active') continue;
+      if ((p.podologe_sessions ?? 0) > 0) codes.add(PACKAGE_SESSION_TYPE_TO_REQUEST_CODE.podologue);
+      // ribbon 은 아직 패키지 시술유형 컬럼 없음(향후 확장) → 파생 없음.
+    }
+    return [...codes];
+  }, [packages]);
   // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: 메모 전체관리 권한 — admin/manager/director는 타인 작성·이전기록 메모도 수정·삭제.
   const canManageMemo = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
   const saveTreatmentToes = useCallback(
@@ -6642,28 +6654,34 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* History: 패키지 — T-20260510-foot-C22-SECTION-MERGE: 치료플랜 요약 제거, 티켓 상세만 표시 */}
               {chartTabGroup === 'history' && chartTab === 'packages' && (
             <div className="space-y-3">
-              {/* T-20260615-foot-PKGTAB-TOE-RESTORE: 치료부위 발가락 일러스트 원상 복원(김주연 총괄, 3b6ab2f 제거분 역복원).
-                  패키지명 조건 없이 패키지 탭 상단에 항상 고정 노출. 양발 발가락 10개 멀티선택.
-                  저장: latestCheckIn.treatment_memo.foot_sites(신규 컬럼 0). 1번차트는 이 값 read-only 연동. */}
-              <div className="relative rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
-                {/* AC-1: 치료부위 우측 상단 KOH 균검사 ON/OFF 토글 — KOH 검사 이력 있는 환자에게 노출.
-                    T-20260616-foot-KOHTOGGLE-NOTRENDER: latestCheckIn(단일 최근 내원) 키잉 시 재방문 환자에게서 토글 소멸.
-                    customerId 로 전환 → KOH 보유 가장 최근 내원을 컴포넌트 내부에서 타겟팅(재방문 무관 노출). */}
-                {/* AC-1: KOH 토글 + 바로 하단 피검사 토글(T-20260615-foot-BLOODTEST-TOGGLE-ADD). 우측 상단 세로 스택. */}
-                <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-1.5">
-                  <KohRequestToggle customerId={customer?.id ?? null} />
-                  <BloodTestRequestToggle customerId={customer?.id ?? null} />
+              {/* T-20260701-foot-CHART2-TREATREQ-SPLIT (AC-1): 패키지 섹션 [치료부위] / [치료신청] 2박스 병렬 분리.
+                  치료부위 박스 = FootToeIllustration(회귀 0). 치료신청 박스 = 5항목 체크박스(신규).
+                  피검사/KOH 토글은 치료신청 박스 체크박스로 이관(상태 공유) → 치료부위 박스에서 제거. */}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {/* [치료부위] — T-20260615-foot-PKGTAB-TOE-RESTORE 원상 유지(발가락 10개 멀티선택).
+                    저장: latestCheckIn.treatment_memo.foot_sites. 1번차트는 이 값 read-only 연동. */}
+                <div className="relative rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
+                  <FootToeIllustration
+                    value={treatmentToes}
+                    onChange={canEditToes ? saveTreatmentToes : undefined}
+                    readOnly={!canEditToes}
+                  />
+                  {!latestCheckIn && canEditToes && (
+                    <p className="mt-1 text-[11px] text-amber-600" data-testid="pkg-tab-toe-nocheckin">
+                      ※ 내원(체크인) 기록이 있어야 치료부위를 저장할 수 있습니다.
+                    </p>
+                  )}
                 </div>
-                <FootToeIllustration
-                  value={treatmentToes}
-                  onChange={canEditToes ? saveTreatmentToes : undefined}
-                  readOnly={!canEditToes}
+                {/* [치료신청] — 신규. 피검사/KOH 는 既존 리스트업 RPC 위임(중복 저장소 없음). */}
+                <TreatmentRequestBox
+                  customerId={customer?.id ?? null}
+                  checkInId={latestCheckIn?.id ?? null}
+                  clinicId={customer?.clinic_id ?? null}
+                  visitType={customer?.visit_type ?? null}
+                  canEdit={canEditToes}
+                  createdBy={profile?.id ?? null}
+                  packageDerivedCodes={packageDerivedCodes}
                 />
-                {!latestCheckIn && canEditToes && (
-                  <p className="mt-1 text-[11px] text-amber-600" data-testid="pkg-tab-toe-nocheckin">
-                    ※ 내원(체크인) 기록이 있어야 치료부위를 저장할 수 있습니다.
-                  </p>
-                )}
               </div>
               {/* 구매 패키지(티켓) 상세 — T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술별 상세표시 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
