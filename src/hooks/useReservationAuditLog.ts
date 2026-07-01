@@ -34,7 +34,7 @@ function fmtMD(dateStr: string, timeStr: string): string {
   try {
     const iso = `${dateStr}T${timeStr.slice(0, 5)}:00`;
     const d = parseISO(iso);
-    return `${format(d, 'M/dd')} ${format(d, 'HH:mm')}`;
+    return `${format(d, 'M.dd')} ${format(d, 'HH:mm')}`;
   } catch {
     return `${dateStr} ${timeStr.slice(0, 5)}`;
   }
@@ -42,7 +42,7 @@ function fmtMD(dateStr: string, timeStr: string): string {
 
 function buildLabel(log: RawLog): string {
   // "변경 처리 시각" — created_at 기준
-  const processedAt = format(parseISO(log.created_at), 'M/dd HH:mm');
+  const processedAt = format(parseISO(log.created_at), 'M.dd HH:mm');
 
   if (log.action === 'create') {
     // AC-1: "5/22 14:00 신규 예약 (5/22 09:38)"

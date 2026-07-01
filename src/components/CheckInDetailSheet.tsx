@@ -30,7 +30,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
+import { formatAmount, formatPhone, formatDateTimeDots, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
@@ -1268,7 +1268,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       {STATUS_KO[latestCheckIn.status as keyof typeof STATUS_KO] ?? latestCheckIn.status}
                     </Badge>
                     <span className="text-[6px] text-muted-foreground tabular-nums">
-                      {format(new Date(latestCheckIn.checked_in_at), 'MM/dd HH:mm')}
+                      {formatDateTimeDots(latestCheckIn.checked_in_at)}
                     </span>
                     {latestCheckIn.visit_type === 'new' ? (
                       <span className="inline-flex items-center rounded-full px-1 py-0 text-[6px] font-semibold bg-blue-100 text-blue-700">초진</span>

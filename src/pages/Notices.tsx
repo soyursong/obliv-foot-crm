@@ -6,7 +6,6 @@
  * notices 테이블 (migration: 20260511000010_notices.sql)
  */
 import { useCallback, useEffect, useState } from 'react';
-import { format } from 'date-fns';
 import { Bell, Pencil, Pin, Plus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
@@ -17,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/lib/toast';
+import { formatDateTimeDots } from '@/lib/format';
 
 interface Notice {
   id: string;
@@ -297,7 +297,7 @@ export default function Notices() {
                 <p className="text-xs text-gray-600 whitespace-pre-wrap line-clamp-4">{n.content}</p>
               )}
               <p className="text-[11px] text-muted-foreground">
-                {format(new Date(n.created_at), 'yyyy-MM-dd HH:mm')}
+                {formatDateTimeDots(n.created_at)}
               </p>
             </div>
           ))

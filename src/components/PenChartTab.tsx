@@ -51,7 +51,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { format } from 'date-fns';
+import { formatDateTimeDots } from '@/lib/format';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
@@ -3656,7 +3656,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                     수정버튼은 무조건 렌더되나 반투명바 위 12px 무라벨 아이콘이라 식별난 → 텍스트 라벨 + 대비 강화. presentation only. */}
                 <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-1 flex items-center justify-between gap-1">
                   <span className="truncate">
-                    {chart.uploadedAt ? format(new Date(chart.uploadedAt), 'MM-dd HH:mm') : chart.name}
+                    {chart.uploadedAt ? formatDateTimeDots(chart.uploadedAt) : chart.name}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <a
@@ -3702,7 +3702,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-muted-foreground">
               {selectedChart.uploadedAt
-                ? format(new Date(selectedChart.uploadedAt), 'yyyy-MM-dd HH:mm')
+                ? formatDateTimeDots(selectedChart.uploadedAt)
                 : selectedChart.name}
             </span>
             <button onClick={() => setSelectedChart(null)} className="text-xs text-muted-foreground hover:text-foreground">

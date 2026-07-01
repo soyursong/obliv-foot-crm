@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
 import { generateSlots } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD } from '@/lib/format';
+import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -621,7 +621,7 @@ export function ReservationDetailPopup({
               {/* AC2: 진입 시 자동 주입된 날짜·시간 — readOnly(별도 캘린더/picker 없음). */}
               <div className="flex items-center gap-2 text-xs tabular-nums" data-testid="newmode-datetime-readonly">
                 <span className="font-medium text-teal-800">
-                  {pickedDate ? format(pickedDate, 'M/d (E)', { locale: ko }) : '—'}
+                  {pickedDate ? format(pickedDate, 'M.d (E)', { locale: ko }) : '—'}
                 </span>
                 <span className="font-semibold text-teal-700">{newResvTime}</span>
               </div>
@@ -863,7 +863,7 @@ export function ReservationDetailPopup({
             <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs" data-testid="newmode-datetime-row">
               <span className="text-muted-foreground">예약일시</span>
               <span className="font-medium text-teal-800 tabular-nums">
-                {pickedDate ? format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko }) : '—'} {newResvTime}
+                {pickedDate ? format(pickedDate, 'yyyy.MM.dd (E)', { locale: ko }) : '—'} {newResvTime}
               </span>
             </div>
           </div>
@@ -1309,7 +1309,7 @@ export function ReservationDetailPopup({
                   <Badge variant="destructive" className="text-xs">노쇼 {noshowCount}회</Badge>
                 )}
                 <span className="text-sm font-normal text-muted-foreground">
-                  {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)}
+                  {formatDateDots(reservation.reservation_date)} {reservation.reservation_time.slice(0, 5)}
                 </span>
               </DialogTitle>
               {/* AC3: 헤더 우상단 고객 검색창 (이름 또는 연락처). graceful: onCreateReservation 미전달 시 숨김 */}
@@ -1623,7 +1623,7 @@ export function ReservationDetailPopup({
                     <div className="flex items-center gap-2 text-xs">
                       <span className="w-12 shrink-0 text-muted-foreground">날짜</span>
                       {pickedDate ? (
-                        <span className="font-medium text-teal-800">{format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko })}</span>
+                        <span className="font-medium text-teal-800">{format(pickedDate, 'yyyy.MM.dd (E)', { locale: ko })}</span>
                       ) : (
                         <span className="font-medium text-amber-600">위 캘린더에서 날짜를 선택하세요</span>
                       )}
@@ -1692,11 +1692,11 @@ export function ReservationDetailPopup({
                 <div className="space-y-1 text-xs">
                   <FieldRow
                     label="선택 일자"
-                    value={pickedDate ? format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko }) : '미선택'}
+                    value={pickedDate ? format(pickedDate, 'yyyy.MM.dd (E)', { locale: ko }) : '미선택'}
                   />
                   {selectedResv ? (
                     <>
-                      <FieldRow label="예약 일자" value={selectedResv.reservation_date} />
+                      <FieldRow label="예약 일자" value={formatDateDots(selectedResv.reservation_date)} />
                       <FieldRow label="시작 시간" value={selectedResv.reservation_time.slice(0, 5)} />
                       {/* AC5a: '소요 시간' 행 제거(현장 요청) */}
                       {/* AC5b: 과거 내원 이력 존재 시 '재진' 자동 표기(표시 전용, DB 무변경) */}
@@ -1772,7 +1772,7 @@ export function ReservationDetailPopup({
                           {/* AC6: 내용이 카드 밖으로 넘치던 문제 — min-w-0/truncate + 배지 shrink-0 으로 박스 안에 가둠 */}
                           <div className="flex items-center justify-between gap-1 min-w-0">
                             <span className="font-medium tabular-nums truncate min-w-0">
-                              {r.reservation_date} {r.reservation_time.slice(0, 5)}
+                              {formatDateDots(r.reservation_date)} {r.reservation_time.slice(0, 5)}
                             </span>
                             <span
                               className={cn(
@@ -1912,7 +1912,7 @@ export function ReservationDetailPopup({
             </DialogHeader>
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)} 예약을
+                {formatDateDots(reservation.reservation_date)} {reservation.reservation_time.slice(0, 5)} 예약을
                 취소합니다. 취소된 예약은 목록에 기록으로 남습니다.
               </p>
               <div className="space-y-1.5">

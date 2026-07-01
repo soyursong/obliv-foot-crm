@@ -10,6 +10,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { formatDateTimeDots } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2,
@@ -76,7 +77,7 @@ export default function HiraInsuranceSyncPanel({ canWrite }: HiraInsuranceSyncPa
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="insurance-sync-last">
           <Clock className="h-3 w-3" />
           {lastApply?.finished_at
-            ? `마지막 동기화 ${new Date(lastApply.finished_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
+            ? `마지막 동기화 ${formatDateTimeDots(lastApply.finished_at)}`
             : '동기화 이력 없음'}
         </span>
       </div>
@@ -117,7 +118,7 @@ export default function HiraInsuranceSyncPanel({ canWrite }: HiraInsuranceSyncPa
                   {run.mode === 'apply' ? '적용' : '시뮬'}
                 </Badge>
                 <span className="text-muted-foreground shrink-0">
-                  {new Date(run.started_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {formatDateTimeDots(run.started_at)}
                 </span>
                 {run.source_period && <span className="text-[10px] text-muted-foreground shrink-0">{run.source_period}</span>}
                 <span className="ml-auto text-right text-[10px] text-muted-foreground truncate">

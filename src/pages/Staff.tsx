@@ -927,7 +927,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="min-w-[180px] text-center text-sm font-medium">
-                {format(weekDays[0], 'M/d', { locale: ko })} ~ {format(weekDays[5], 'M/d')}
+                {format(weekDays[0], 'M.d', { locale: ko })} ~ {format(weekDays[5], 'M.d')}
               </span>
               <Button variant="outline" size="icon-sm" onClick={() => setWeekStart((w) => addDays(w, 7))}>
                 <ChevronRight className="h-4 w-4" />
@@ -1054,7 +1054,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                 <th className="w-24 border-b border-r py-2 text-left px-2 text-xs font-medium text-muted-foreground">공간</th>
                 {weekDays.map((d) => (
                   <th key={d.toISOString()} className="border-b border-r py-2 px-2 text-center text-xs font-medium">
-                    {format(d, 'EEE M/d', { locale: ko })}
+                    {format(d, 'EEE M.d', { locale: ko })}
                   </th>
                 ))}
               </tr>

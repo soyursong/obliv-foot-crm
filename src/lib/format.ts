@@ -133,6 +133,39 @@ export function todaySeoulStr(): string {
 }
 
 /**
+ * T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE (xcrm LEAD T-20260630-derm-DATEFMT-XCRM-YMD-RELATIVE-PURGE)
+ * 화면 표시 날짜 SSOT 포매터 — 'YYYY.MM.DD'(점 구분·2자리 zero-pad). 하이픈/슬래시/상대표기 0 정책(AC-1).
+ *  - 'YYYY-MM-DD' 순수 날짜 문자열(예약일·계약일·생년 등)은 tz 연산 없이 구분자만 점으로 치환(날짜 drift 방지).
+ *  - 그 외(timestamptz/ISO/Date/number)는 서울(KST) 기준 날짜로 환산 후 점 표기.
+ *  - null/빈값/파싱불가 → '' (호출부가 '-' 등 자체 표기). presentation only — 저장값·정렬·쿼리 무관(AC-6).
+ */
+export function formatDateDots(input: string | number | Date | null | undefined): string {
+  if (input === null || input === undefined || input === '') return '';
+  if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    return input.replace(/-/g, '.');
+  }
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '.');
+}
+
+/**
+ * T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE: 날짜+시각 표시 SSOT — 'YYYY.MM.DD HH:mm'(서울 기준, 24h).
+ * 결제이력·차트·문서 등 timestamptz 노출 surface의 단일 포매터. null/빈값/파싱불가 → ''.
+ * presentation only — 저장값·정렬·쿼리 무관(AC-6).
+ */
+export function formatDateTimeDots(input: string | number | Date | null | undefined): string {
+  if (input === null || input === undefined || input === '') return '';
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '.');
+  const time = d.toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  return `${date} ${time}`;
+}
+
+/**
  * T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 환자명↔차트번호 무조건 세트 표시 헬퍼.
  * 환자명이 노출되는 모든 surface에서 차트번호를 항상 인접 표시(동명이인 오인=의료안전).
  * 미발번(null/빈값)이면 환자명 단독 노출 금지 → '(미발번)' 명시(AC3).
@@ -188,10 +221,11 @@ export function birthYearAgeDisplay(birth_date: string | null | undefined): stri
 }
 
 /**
- * T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 YYMMDD → 'YYYY-MM-DD' 표기.
+ * T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 YYMMDD → 'YYYY.MM.DD' 표기.
  * 클라이언트 fallback 전용 — 서버 RPC fn_customer_birthdates(세기코드 정확)가 없거나
  * birth_date 컬럼만 있을 때 사용. 세기는 휴리스틱(YY ≤ 현재연도 2자리 → 2000년대, 아니면 1900년대).
  * presentation only. 파싱 불가/결측이면 '' (호출부가 '-' 표기). rrn 미사용(평문 디코딩 없음).
+ * T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE(AC-1): 구분자 하이픈→점(YYYY.MM.DD)으로 통일.
  */
 export function birthDateYMD(birth_date: string | null | undefined): string {
   if (!birth_date) return '';
@@ -204,5 +238,5 @@ export function birthDateYMD(birth_date: string | null | undefined): string {
   if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
   const curYY = new Date().getFullYear() % 100;
   const fullYear = yy <= curYY ? 2000 + yy : 1900 + yy;
-  return `${fullYear}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`;
+  return `${fullYear}.${digits.slice(2, 4)}.${digits.slice(4, 6)}`;
 }

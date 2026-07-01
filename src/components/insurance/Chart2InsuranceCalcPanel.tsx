@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Hash, ShieldCheck, Syringe } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, formatDateDots } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { useInsuranceGrade, calcCopaymentBatch } from '@/hooks/useInsurance';
 import {
@@ -321,7 +321,7 @@ export function Chart2InsuranceCalcPanel({
             </div>
             {verifiedAt && (
               <div className="text-[9px] text-muted-foreground pt-0.5">
-                ※ 등급 검증일 {verifiedAt.slice(0, 10)} 기준
+                ※ 등급 검증일 {formatDateDots(verifiedAt)} 기준
               </div>
             )}
           </div>

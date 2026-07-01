@@ -8,8 +8,7 @@
 //     - 시술내역(차감 기록): 회차 · 시술명 · 날짜 · 담당자
 //   ⚠ read-only — 추가/수정/삭제 버튼·다이얼로그 0 (팝업 chart2 read-only 관례). 신규 양식 발명 금지(2번차트 복제).
 import { useState } from 'react';
-import { format } from 'date-fns';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, formatDateDots } from '@/lib/format';
 import type { Package } from '@/lib/types';
 
 // T-20260619-foot-RESVPOPUP-DETAIL-REVERIFY-4FIX AC2-2(B안): 시술내역 기본 표시 건수.
@@ -95,7 +94,7 @@ export function PackageTicketReadonlyList({
                   <span className="text-[10px] text-muted-foreground tabular-nums">
                     {p.contract_date
                       ? p.contract_date.slice(0, 10)
-                      : format(new Date(p.created_at), 'yyyy-MM-dd')}
+                      : formatDateDots(p.created_at)}
                   </span>
                 )}
                 <span

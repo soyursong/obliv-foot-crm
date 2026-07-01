@@ -12,6 +12,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { formatDateTimeDots } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -201,7 +202,7 @@ export default function InsuranceStatusPanel({
         <div className="flex items-center justify-between pt-1">
           <p className="text-[10px] text-muted-foreground">
             {current?.insurance_status_updated_at
-              ? `최근 변경: ${new Date(current.insurance_status_updated_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
+              ? `최근 변경: ${formatDateTimeDots(current.insurance_status_updated_at)}`
               : '변경 이력 없음'}
             {current?.insurance_status_source ? ` · 출처 ${current.insurance_status_source}` : ''}
           </p>

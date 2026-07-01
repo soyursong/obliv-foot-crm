@@ -24,7 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount, parseAmount, formatDateTimeDots } from '@/lib/format';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
 type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
@@ -506,7 +506,7 @@ export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsP
                 {ACTION_KO[log.action] ?? log.action}
               </span>
               <span className="text-muted-foreground">
-                {new Date(log.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
+                {formatDateTimeDots(log.created_at)}
               </span>
               {log.actor && (
                 <span className="text-muted-foreground">— {log.actor}</span>

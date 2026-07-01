@@ -11,12 +11,12 @@
 //   단건/일반 텍스트 메모(customers.customer_memo)에는 고정 기능 없음
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { format } from 'date-fns';
 import { MessageSquarePlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { formatDateTimeDots } from '@/lib/format';
 
 // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 상단 통합 [저장]이 예약메모 입력칸의 미저장 내용을
 // 새 히스토리 행으로 flush 할 수 있도록 노출하는 imperative handle. 입력이 비어 있으면 no-op(true).
@@ -299,7 +299,7 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
                     {item.is_pinned && (
                       <Pin className="inline h-3 w-3 mr-0.5 text-teal-600 shrink-0" />
                     )}
-                    [{format(new Date(item.created_at), 'MM/dd HH:mm')}
+                    [{formatDateTimeDots(item.created_at)}
                     {item.created_by_name ? ` ${item.created_by_name}` : ''}]
                   </span>
                   {/* AC4: 수정 모드면 인라인 편집, 아니면 내용 표시 */}
