@@ -9,6 +9,10 @@
  *
  * 검증 방식: 정적 소스/코드 SSOT 불변식(라이브 env·인증·시드 비의존, autoAssign 엔진·아키텍처 dominant 패턴).
  *   현장 시나리오 1~4(초진 저장/검사 리스트업/재진 자동/초진 배정필터)를 코드 계약으로 고정한다.
+ *
+ * AC-8 (2026-07-01 현장확정 w8e1 / FIX-REQUEST MSG-20260701-163902): 치료신청 박스는 방문유형(초진/재진)
+ *   조건 없이 항상 렌더 = 차트구성 기본값 고정. 초진/재진 분기는 '배정 필터(AC-5)'·'값 채우기(AC-3 파생)'에만
+ *   적용되고 박스 노출·저장 grain 과 무관. 시나리오3(재진 2번차트에서도 박스 렌더)을 코드 계약으로 고정한다.
  */
 
 import { test, expect } from '@playwright/test';
@@ -193,6 +197,52 @@ test.describe('AC-5 — 초진 치료신청 배정 필터(treatment subset만)',
 
   test('정본 우선순위(지정 0순위→월균등→기본순번) 회귀0 — pickLeastLoaded(pool, load, order) 유지', () => {
     expect(ENGINE_C).toMatch(/chosen = pickLeastLoaded\(pool, load, order\)/);
+  });
+});
+
+// ── AC-8 치료신청 박스 렌더 무조건화 (방문유형 무관, 초진/재진 전체 노출) ──────────
+test.describe('AC-8 — 치료신청 박스 방문유형 무관 무조건 렌더(w8e1 확정 / FIX-REQUEST)', () => {
+  // 시나리오3: 재진 2번차트에서도 초진과 동일하게 박스 표시.
+  // 마운트 가드는 '패키지 탭 선택(history×packages)'뿐 — visit_type 게이트 없음.
+  const MOUNT_BLOCK = (() => {
+    // 패키지 탭 grid 가드 → <TreatmentRequestBox 마운트 지점 사이 JSX 창(window) 추출.
+    const gridIdx = CHART_C.indexOf('grid grid-cols-1 gap-3 md:grid-cols-2');
+    const boxIdx = CHART_C.indexOf('<TreatmentRequestBox', gridIdx);
+    return gridIdx >= 0 && boxIdx > gridIdx ? CHART_C.slice(gridIdx, boxIdx) : '';
+  })();
+
+  test('마운트 창이 실제로 추출됨(grid 가드 → TreatmentRequestBox)', () => {
+    expect(MOUNT_BLOCK.length).toBeGreaterThan(0);
+    expect(CHART_C).toMatch(/<TreatmentRequestBox/);
+  });
+
+  test('박스 마운트에 방문유형(초진/재진) 게이트 없음 — visit_type/visitType 조건부 렌더 부재', () => {
+    // grid 가드와 박스 사이에 어떤 방문유형 조건부 렌더도 없어야 함(초진 전용 게이트 금지).
+    expect(MOUNT_BLOCK).not.toMatch(/visit_type\s*===/);
+    expect(MOUNT_BLOCK).not.toMatch(/visitType\s*===/);
+    expect(MOUNT_BLOCK).not.toMatch(/visit_type\s*!==/);
+    expect(MOUNT_BLOCK).not.toMatch(/visitType\s*!==/);
+    // visitType prop 전달은 배정/파생용 — 그 자체가 렌더 게이트가 아님(마운트 창 밖).
+  });
+
+  test('박스 컴포넌트 본문에 방문유형 조기 반환(early-return null) 게이트 없음', () => {
+    // 재진(returning)이라 해서 null 을 반환해 박스를 숨기는 경로가 없어야 함.
+    expect(BOX_C).not.toMatch(/visitType[\s\S]{0,40}return null/);
+    expect(BOX_C).not.toMatch(/visit_type[\s\S]{0,40}return null/);
+    // 렌더는 항상 치료신청 섹션 div 로 도달.
+    expect(BOX_C).toMatch(/return \([\s\S]*?data-testid="pkg-tab-treatreq-section"/);
+  });
+
+  test('5항목 렌더가 방문유형으로 필터되지 않음 — TREATMENT_REQUEST_ITEMS.map 무조건', () => {
+    // map 앞단에 visit 기반 .filter 가 끼면 재진에서 항목이 사라질 수 있음 → 금지.
+    expect(BOX_C).toMatch(/TREATMENT_REQUEST_ITEMS\.map/);
+    expect(BOX_C).not.toMatch(/TREATMENT_REQUEST_ITEMS[\s\S]{0,60}\.filter\([^)]*visit/i);
+  });
+
+  test('AC-3/AC-5 불변 — 방문유형 분기는 값 채우기(package_derived)·배정 필터에만 잔존', () => {
+    // 렌더 무조건화 후에도 파생 스냅샷은 재진 한정, 배정 필터는 초진 한정(소비 규칙) 유지.
+    expect(BOX_C).toMatch(/visitType !== 'returning'/);          // AC-3 파생 스냅샷 게이트(값 채우기)
+    expect(ENGINE_C).toMatch(/if \(visitType !== 'new'\) return pool/); // AC-5 배정 필터 초진 한정(소비)
   });
 });
 
