@@ -176,13 +176,16 @@ test.describe('AC-5 — 초진 치료신청 배정 필터(treatment subset만)',
     expect(ENGINE_C).toMatch(/if \(visitType !== 'new'\) return pool/);
   });
 
-  test('capability subset ⊇ 필터 — capability_codes ⊇ 환자 treatment subset', () => {
-    expect(ENGINE_C).toMatch(/need\.every\(\(c\) => caps\.has\(c\)\)/);
-    expect(ENGINE_C).toContain('staff_treatment_capabilities');
+  test('capability subset ⊇ 필터 — capability_codes ⊇ required_caps (THERAPIST-SKILL DA 정정: required_caps, therapist_capabilities)', () => {
+    // ⚠ DA GO_WARN 정정(SINGLE) — 자매 THERAPIST-SKILL 티켓이 '복수(need 전체)'→required_caps 규칙으로 교체.
+    //    소스 테이블도 staff_treatment_capabilities → therapist_capabilities(DA 질의A (ii))로 확정.
+    expect(ENGINE_C).toMatch(/requiredCaps\.every\(\(c\) => caps\.has\(c\)\)/);
+    expect(ENGINE_C).toContain('therapist_capabilities');
+    expect(ENGINE_C).not.toContain('staff_treatment_capabilities');
   });
 
-  test('graceful 회귀0 — capability 소스 부재/치료신청 없음 → 전체 pool(기존 동작)', () => {
-    expect(ENGINE_C).toMatch(/if \(need\.length === 0\) return pool/);
+  test('graceful 회귀0 — capability 소스 부재/required_caps=∅ → 전체 pool(기존 동작)', () => {
+    expect(ENGINE_C).toMatch(/if \(requiredCaps\.length === 0\) return pool/);
     expect(ENGINE_C).toMatch(/capability 소스 없음[\s\S]*?return pool/);
   });
 
