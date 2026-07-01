@@ -1144,7 +1144,6 @@ function CallFeedRow({
               onClick={() => setExpandClinical((v) => !v)}
               aria-expanded={expandClinical}
               data-testid="doctor-call-clinical-expand-btn"
-              title="클릭하면 전체 내용이 펼쳐져요"
               className="block w-full max-w-full truncate text-center text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
             >
               {clinicalPreview}
@@ -1156,7 +1155,6 @@ function CallFeedRow({
               disabled={!checkIn.customer_id}
               aria-expanded={showClinical}
               data-testid="doctor-call-clinical-empty-btn"
-              title="클릭하면 임상경과를 작성할 수 있어요"
               className="text-[15px] font-medium text-gray-500 underline-offset-2 transition-colors hover:text-gray-800 hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline cursor-pointer"
             >
               —
@@ -1515,7 +1513,6 @@ function CompletedRow({
               }}
               aria-expanded={discharged ? expandClinical : showClinical}
               data-testid="doctor-completed-clinical-expand-btn"
-              title={discharged ? '클릭하면 전체 내용이 펼쳐져요 (읽기 전용)' : '클릭하면 임상경과를 바로 수정할 수 있어요'}
               className="block w-full max-w-full truncate text-center text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
             >
               {clinicalPreview}
@@ -1558,7 +1555,6 @@ function CompletedRow({
               disabled={!checkIn.customer_id}
               aria-expanded={showClinical}
               data-testid="doctor-completed-clinical-empty-btn"
-              title="클릭하면 임상경과를 작성할 수 있어요"
               className="text-[15px] font-medium text-gray-500 underline-offset-2 transition-colors hover:text-gray-800 hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline cursor-pointer"
             >
               —

@@ -487,7 +487,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="상병명·코드 검색 (등록된 상병만) — 클릭 시 누적 추가"
+              placeholder="상병명·코드 검색"
               className="w-full bg-transparent text-sm outline-none placeholder:text-gray-300"
               data-testid="dx-picker-search"
             />
@@ -554,7 +554,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
             {grouped.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 {master.length === 0
-                  ? '등록된 상병명이 없습니다. 진료도구 → 상병명 관리에서 등록하세요.'
+                  ? '등록된 상병명이 없습니다.'
                   : '검색 결과가 없습니다.'}
               </div>
             ) : (

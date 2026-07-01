@@ -394,7 +394,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
             value={item.name}
             onChange={(e) => handleNameChange(e.target.value)}
             onFocus={() => { setOpen(true); runSearch(item.name); }}
-            placeholder="처방약 목록에서 선택 (이름·코드 검색)"
+            placeholder="약 이름·코드 검색"
             className="h-7 text-xs pl-6"
             data-testid="rx-set-item-name-input"
             autoComplete="off"

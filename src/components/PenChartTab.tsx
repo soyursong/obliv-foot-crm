@@ -2736,7 +2736,6 @@ export function PenChartTab({
                 <div className="font-semibold text-neutral-800 text-sm">
                   {(penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE).name_ko}
                 </div>
-                <div className="text-xs text-neutral-500 mt-0.5">PDF 양식 위에 태블릿/마우스로 직접 필기</div>
               </div>
             </button>
 
@@ -2759,8 +2758,8 @@ export function PenChartTab({
                     </div>
                     <div className="text-xs mt-0.5 text-teal-600">
                       {isSenior
-                        ? '발건강 질문지 (어르신용) — 태블릿펜으로 직접 기입'
-                        : '발건강 질문지 — 태블릿펜으로 직접 기입 후 저장'}
+                        ? '발건강 질문지 (어르신용)'
+                        : '발건강 질문지'}
                     </div>
                   </div>
                   {isSenior && (
@@ -2790,7 +2789,7 @@ export function PenChartTab({
                 </div>
                 <div>
                   <div className="font-semibold text-neutral-800 text-sm">환불/비급여 동의서</div>
-                  <div className="text-xs text-neutral-600 mt-0.5">환불·비급여 동의 PDF 원본 (3p) — 태블릿펜으로 직접 기입 + 서명</div>
+                  <div className="text-xs text-neutral-600 mt-0.5">환불·비급여 동의서 (3p)</div>
                 </div>
                 <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
                   3페이지
@@ -2827,7 +2826,7 @@ export function PenChartTab({
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               isEraser ? 'bg-orange-100 border-orange-400 text-orange-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="드로잉 레이어만 지움 — 배경 양식 보존"
+            title="지우개"
           >
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
@@ -2841,7 +2840,7 @@ export function PenChartTab({
                 ? 'bg-slate-200 border-slate-500 text-slate-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="화이트 — 상용구를 지웁니다 (배경 양식은 보존)"
+            title="화이트"
           >
             <Paintbrush className="h-3.5 w-3.5" />
             <span>화이트</span>
@@ -2858,7 +2857,7 @@ export function PenChartTab({
                 ? 'bg-blue-100 border-blue-400 text-blue-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="텍스트 도구 — 캔버스를 클릭해 타자 입력 후 드래그·삭제"
+            title="텍스트 도구"
           >
             <TextCursorInput className="h-3.5 w-3.5" />
             <span>텍스트</span>
@@ -2876,7 +2875,7 @@ export function PenChartTab({
                 ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="형광펜 — 반투명 두꺼운 선 (투명도 20%, 지우개로 지울 수 있음)"
+            title="형광펜"
           >
             <Highlighter className="h-3.5 w-3.5" />
             <span>형광펜</span>
@@ -2892,7 +2891,7 @@ export function PenChartTab({
                 ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="선택/이동 — 배치된 상용구·텍스트를 드래그·선택·삭제 (드로잉 도구에서는 상용구 위에 바로 필기됩니다)"
+            title="선택/이동"
           >
             <Move className="h-3.5 w-3.5" />
             <span>선택/이동</span>
@@ -2914,7 +2913,7 @@ export function PenChartTab({
                   ? 'bg-teal-100 border-teal-400 text-teal-700'
                   : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
               )}
-              title="상용구 — 드래그·삭제·다중선택 지원"
+              title="상용구"
               data-testid="phrase-library-btn"
             >
               <BookOpen className="h-3.5 w-3.5" />
@@ -3245,11 +3244,6 @@ export function PenChartTab({
           )}
 
           {/* 선택/이동 — 옵션 없음, 안내만 */}
-          {isSelectTool && (
-            <span className="text-muted-foreground" data-testid="subpanel-select-hint">
-              배치된 텍스트·상용구를 드래그해 이동하거나, 선택 후 삭제하세요.
-            </span>
-          )}
         </div>
 
         {/* 스크롤 콘텐츠 (#5: chartLocked 제거 → 항상 overflow-auto) */}
@@ -3498,7 +3492,7 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                     if (textBtnHandlingRef.current) { textBtnHandlingRef.current = false; return; }
                     flushTextInput(false);
                   }}
-                  placeholder={'텍스트 입력\n(Enter: 삽입 / Shift+Enter: 줄바꿈)'}
+                  placeholder={'텍스트'}
                   className="w-full resize-none text-xs border border-gray-200 rounded p-1.5 outline-none focus:border-neutral-400"
                   style={{ minHeight: 64 }}
                   data-testid="penchart-text-input"

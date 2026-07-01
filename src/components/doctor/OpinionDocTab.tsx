@@ -1192,7 +1192,7 @@ export function OpinionEditorDialog({
                 id="opinion-editor-text"
                 value={text}
                 onChange={(e) => { setText(e.target.value); setTextTouched(true); }}
-                placeholder="좌측 옵션을 눌러 문구를 삽입하거나 직접 입력하세요."
+                placeholder=""
                 className="min-h-[36vh] flex-1 text-sm leading-relaxed"
                 data-testid="opinion-editor"
               />
@@ -1316,9 +1316,6 @@ export default function OpinionDocTab() {
             <ClipboardList className="h-4 w-4 text-teal-600" />
             소견서 — 금일 내방객
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            오늘 내원한 고객 명단입니다. 고객을 누르면 소견서 작성 창이 열립니다.
-          </p>
         </div>
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1401,9 +1398,6 @@ export default function OpinionDocTab() {
         </div>
       )}
 
-      <p className="text-[11px] text-muted-foreground/70">
-        ※ 금일(오늘) 내원 고객 명단입니다. 고객 이름 또는 작성 버튼을 누르면 소견서 작성 창이 열립니다. 옵션 버튼을 누르면 문구가 자동으로 삽입되며(다시 누르면 해제), 원장님이 내용을 자유롭게 수정할 수 있습니다. 내용을 확인한 뒤 [발행하기]를 누르면 소견서가 발행되며(발행 후 수정·취소 불가), 발행 이력에서 [저장(PDF)]·[인쇄]로 서류를 출력할 수 있습니다.
-      </p>
 
       <OpinionEditorDialog
         visitor={activeVisitor}
