@@ -37,7 +37,8 @@ async function gotoReservations(page: import('@playwright/test').Page) {
   await page.waitForLoadState('networkidle');
 }
 
-test.describe('TIMEGRID-VERTICAL [S1] 일간 격자 — 가로 시간 헤더 + 상시 세로 진열', () => {
+// [SUPERSEDED by 7ADJ ③] 가로 시간헤더+세로진열 → 시간 행 × 초진/재진 열 엑셀 격자로 교체 → skip.
+test.describe.skip('TIMEGRID-VERTICAL [S1] 일간 격자 (SUPERSEDED 7ADJ grid)', () => {
   test('일간 진입 시 가로 시간 컬럼 헤더 + 클릭 없이 세로 진열 영역 렌더', async ({ page }) => {
     await gotoReservations(page);
 
@@ -125,7 +126,8 @@ test.describe('TIMEGRID-VERTICAL [S2] 주간 보기 회귀 가드', () => {
   });
 });
 
-test.describe('TIMEGRID-VERTICAL [S3] 빈 시간대', () => {
+// [SUPERSEDED by 7ADJ ③] 빈 시간대 수평 컬럼 검증 → 격자 셀로 교체 → skip.
+test.describe.skip('TIMEGRID-VERTICAL [S3] 빈 시간대 (SUPERSEDED 7ADJ grid)', () => {
   test('예약 없는 시간 컬럼도 빈 컬럼으로 표시(에러·깨짐 없음)', async ({ page }) => {
     await gotoReservations(page);
     const horizontal = page.locator('[data-testid="resv-day-horizontal"]');

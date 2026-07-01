@@ -36,7 +36,8 @@ async function gotoReservations(page: import('@playwright/test').Page) {
   await page.waitForLoadState('networkidle');
 }
 
-test.describe('W3-HORIZONTAL [S1] 일간 보기 시간 가로(x축) 배열', () => {
+// [SUPERSEDED by 7ADJ ③] 시간 가로(x축) 배열 → 시간 행(y축) 엑셀 격자로 교체 → skip.
+test.describe.skip('W3-HORIZONTAL [S1] 일간 보기 시간 가로 배열 (SUPERSEDED 7ADJ grid)', () => {
   test('일간 진입 시 가로 x축 시간 스트립 렌더(세로 table 미사용)', async ({ page }) => {
     await gotoReservations(page);
 

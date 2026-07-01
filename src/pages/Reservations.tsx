@@ -1690,8 +1690,10 @@ export default function Reservations() {
   }, [rows, changedBy]);
 
   return (
-    <div className="flex h-full flex-col p-6">
-      <div className="mb-4 flex items-center justify-between gap-4">
+    /* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ①: 상단 배너 구간 컴팩트화 —
+       페이지 외곽 여백 p-6→px-4 py-2(세로 여백 ≈절반) + 헤더 mb-4→mb-2 로 전체 레이아웃 상향(격자 가시영역 확대). */
+    <div className="flex h-full flex-col px-4 py-2">
+      <div className="mb-2 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -1745,7 +1747,7 @@ export default function Reservations() {
               // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: 전체예약 복귀 시 담당자 선택 초기화(본인).
               if (!mine) setFilterAssignee('');
             }}
-            className="h-9 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
+            className="h-8 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
           >
             <option value="all">전체 예약</option>
             <option value="mine">내 예약</option>
@@ -1758,7 +1760,7 @@ export default function Reservations() {
               aria-label="담당자 선택"
               value={filterAssignee}
               onChange={(e) => setFilterAssignee(e.target.value)}
-              className="h-9 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
+              className="h-8 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
             >
               <option value="">{myDisplayName ? `본인 (${myDisplayName})` : '본인'}</option>
               {assigneeOptions
@@ -1777,7 +1779,7 @@ export default function Reservations() {
             data-testid="day-summary-download"
             onClick={handleDownloadDaySummary}
             title="당일 예약 현황 내려받기 (초진/재진·HL/PD)"
-            className="h-9 gap-1.5 border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+            className="h-8 gap-1.5 border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
           >
             <Download className="h-3.5 w-3.5" />
             내려받기
@@ -1786,31 +1788,20 @@ export default function Reservations() {
         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: 우측 컨트롤 순서를 '새 예약 → 일간/주간'으로 재배치.
             T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 토글 제거 → 컨트롤은 '새 예약 → 일간/주간'. */}
         <div className="flex items-center gap-2">
-          {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결.
-              T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 뷰 제거 → '새 예약'은 항상 노출. */}
-          <Button
-            size="sm"
-            /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2): (+) → 예약상세 팝업 new-mode 오픈.
-               별도 폼/ReservationEditor 모달 스폰 폐기. 생성은 팝업 → handleCreateReservationFromPopup
-               → 단일소스 createReservationCanonical 위임(L-002 개정). */
-            /* T-20260629-foot-NEWRESV-UNIFIED-MODAL AC9: 목록 [새 예약]도 캘린더 (+)와 동일 통합 모달.
-               모달 내 날짜picker 제거(AC2) → 클릭 셀이 없는 목록 진입은 현재 보는 날짜(selectedDay) + 기본시간(10:00) 주입. */
-            onClick={() => { setNewReservationInitial({ date: format(selectedDay, 'yyyy-MM-dd'), time: '10:00' }); setNewReservationMode(true); }}
-            className="gap-1.5"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            새 예약
-          </Button>
+          {/* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ②: 우측 상단 [+새 예약] 버튼 제거.
+              신규예약 진입은 항목③ 격자 빈 칸 클릭(handleGridCellCreate → openNewSlot)으로 일원화.
+              (openNewSlot 경유 유지 = CUSTCTX-PREFILL initialCustomer 분기 보존, §dependency 가드) */}
+          {/* T-20260630-...7ADJ ①: 일간/주간 토글 min-h-[44px]→min-h-[34px](배너 세로폭 축소). 태블릿 탭 타깃은 34px+좌우 px-3 로 확보. */}
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
-              className={cn('px-3 min-h-[44px] text-xs font-medium transition flex items-center', viewMode === 'day' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
+              className={cn('px-3 min-h-[34px] text-xs font-medium transition flex items-center', viewMode === 'day' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
             >
               일간
             </button>
             <button
               onClick={() => setViewMode('week')}
-              className={cn('px-3 min-h-[44px] text-xs font-medium transition flex items-center', viewMode === 'week' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
+              className={cn('px-3 min-h-[34px] text-xs font-medium transition flex items-center', viewMode === 'week' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
             >
               주간
             </button>
@@ -1893,6 +1884,10 @@ export default function Reservations() {
                 draggable={r.status === 'confirmed'}
                 onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
                 onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
+                // T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑦: 고객박스 1번 클릭 → 선택(selectedResvId).
+                //   선택 후 Ctrl+X/C/V 로 잘라내기/복사/붙여넣기(주간캘린더와 동일 키보드 핸들러 재사용, L1000~).
+                //   stopPropagation → 셀 onClick(빈칸 신규예약 생성)로 버블 차단(카드 클릭이 신규예약을 트리거하지 않음).
+                onClick={(e) => { e.stopPropagation(); setSelectedResvId(r.id); }}
                 onContextMenu={(e) => {
                   if (r.customer_id) { e.preventDefault(); e.stopPropagation(); setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } }); }
                 }}
@@ -1905,8 +1900,26 @@ export default function Reservations() {
                   STATUS_STYLE[r.status],
                   KIND_CARD_STYLE[resvKind(r)],
                   r.status === 'checked_in' && draggedId !== r.id && 'opacity-60',
+                  // T-20260630-...7ADJ ⑥: 취소건 = 회색+음각(inset/눌린) → 육안 구분. '취소됨' 텍스트·이름 취소선은 제거(아래).
+                  //   KIND_CARD_STYLE 컬러 배경을 회색으로 override + shadow-inner(내부 그림자=눌린 효과). hover 툴팁은 취소건 plain-span 분기라 이미 미노출.
+                  r.status === 'cancelled' && 'border-gray-300 bg-gray-200 text-gray-500 shadow-inner',
+                  // T-20260630-...7ADJ ⑦: 선택/클립보드 시각 피드백(주간뷰 renderCard와 동일 규칙).
+                  selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
+                  clipboard?.resv.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
+                  clipboard?.resv.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
                 )}
               >
+                {/* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑤: 간략메모(brief_note)를 고객 정보 '상단 위'에 표기.
+                    메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방, AC5). 취소건은 미표기(음각 최소화). */}
+                {r.status !== 'cancelled' && r.brief_note?.trim() && (
+                  <div
+                    className="mb-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600"
+                    data-testid={`resv-day-brief-${r.id}`}
+                    title={r.brief_note.trim()}
+                  >
+                    {r.brief_note.trim()}
+                  </div>
+                )}
                 <div className="flex min-w-0 items-center gap-1 overflow-hidden">
                   {r.customer_id && r.status !== 'cancelled' ? (
                     <CustomerHoverCard
@@ -1938,19 +1951,16 @@ export default function Reservations() {
                       className={cn(
                         'block min-w-0 max-w-full truncate font-semibold text-gray-900',
                         r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
-                        // T-20260630-foot-RESVMGMT-CANCELNAME-REGISTRANT-2FIX (1): 취소 행 이름 '축소' 효과 제거.
-                        //   취소 성함은 plain span 분기라 카드 본문(text-[8px]) 상속 → 활성 성함(CustomerHoverCard compactDense=text-[11px])보다 작아 보였음.
-                        //   취소 성함만 활성과 동일 text-[11px]로 고정(취소선·'취소됨' 배지 등 다른 취소 표기는 유지). 미연결-활성 등 다른 분기 폰트는 불변(AC-4).
-                        r.status === 'cancelled' && 'text-[11px] line-through',
+                        // T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑥: 취소 이름 '취소선(line-through)' 제거.
+                        //   취소 구분은 카드 회색+음각(shadow-inner)으로 대체. 취소 성함 폰트는 활성과 동일 text-[11px] 유지(축소 안 함).
+                        r.status === 'cancelled' && 'text-[11px]',
                       )}
                       onClick={(e) => { if (!r.customer_id) return; e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
                     >
                       {r.customer_name}
                     </span>
                   )}
-                  {r.status === 'cancelled' && (
-                    <span className="rounded bg-gray-200 px-0.5 text-[8px] leading-none text-gray-500">취소됨</span>
-                  )}
+                  {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                 </div>
                 {/* T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 고객박스 표시필드 슬림화([성함/간략메모/예약등록자]).
                     · 초진/재진 텍스트 제거 — 박스 배경 컬러(KIND_CARD_STYLE)로 이미 구분(컬러 점 KIND_DOT은 유지).
@@ -1975,106 +1985,134 @@ export default function Reservations() {
             );
 
             return (
-              <div data-testid="resv-day-horizontal" className="flex h-full flex-col p-3">
-                {/* 시간 격자: 각 시간 = 가로 한 줄에 배열된 컬럼. 컬럼 상단=시간 헤더(가로 일렬),
-                    그 아래로 예약을 클릭 없이 상시 세로 진열(TIMEGRID-VERTICAL).
-                    세로축 그루핑(치료사/공간) 없음(C5) — 세로는 그 시간의 예약 누적뿐. */}
-                <div data-testid="resv-day-xaxis" className="flex h-full flex-1 gap-1 overflow-x-auto pb-2">
-                  {daySlots.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">영업 시간 슬롯이 없습니다.</div>
-                  ) : (
-                    daySlots.map((time) => {
-                      const list = slotList(time);
-                      const { n, rr, h } = kindCounts(time);
-                      const full = isSlotFull(dateStr, time);
-                      const isNow = isSameDay(selectedDay, now) && time === currentSlot;
-                      const isDragOver = dropTarget === `${dateStr}_${time}`;
-                      return (
+              /* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ③: 일간 뷰 — 슬롯 카드(가로 컬럼) → 대시보드 통합 시간표식 엑셀 격자.
+                 시간(행) × 구분(열: 초진/재진) grid-cols-[64px_1fr_1fr]. 대시보드 통합시간표(grid-cols-[2.5rem_1fr_1fr]) 패턴 이식.
+                 빈 칸 클릭 → 신규예약(handleCellCreate → openNewSlot). ★ openNewSlot 경유 유지 =
+                 CUSTCTX-PREFILL(pendingPrefillCustomer→initialCustomer) 분기 보존(§dependency 가드, 폼 opener 우회 금지).
+                 write 경로 무변경(생성=createReservationCanonical, 이동=handleDrop/클립보드 기존 RPC). */
+              <div data-testid="resv-day-horizontal" className="flex h-full flex-col">
+                {/* 헤더 행 (sticky) — 시간 | 초진 | 재진. 대시보드 통합시간표 3컬럼과 동형. */}
+                <div
+                  data-testid="resv-day-xaxis"
+                  className="sticky top-0 z-20 grid grid-cols-[64px_1fr_1fr] border-b bg-muted/60 text-center text-xs font-semibold"
+                >
+                  <div className="px-1 py-1.5 text-muted-foreground">시간</div>
+                  <div className="border-l px-1 py-1.5 text-blue-700">초진</div>
+                  <div className="border-l px-1 py-1.5 text-firstvisit-700">재진</div>
+                </div>
+                {daySlots.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">영업 시간 슬롯이 없습니다.</div>
+                ) : (
+                  daySlots.map((time) => {
+                    const list = slotList(time);
+                    const { n, rr, h } = kindCounts(time);
+                    const full = isSlotFull(dateStr, time);
+                    const isNow = isSameDay(selectedDay, now) && time === currentSlot;
+                    const isDragOver = dropTarget === `${dateStr}_${time}`;
+                    // 구분(열) 분류: 초진(new) / 재진(returning·healer·other) — 대시보드 통합시간표 2컬럼과 동일 규칙.
+                    const newCards = list.filter((r) => resvKind(r) === 'new');
+                    const restCards = list.filter((r) => resvKind(r) !== 'new');
+                    // 빈 칸 클릭 동선: 클립보드 대기 중이면 붙여넣기 타깃 지정(⑦), 아니면 신규예약(openNewSlot, ③).
+                    const handleCellCreate = () => {
+                      if (clipboard) { if (!full) setClipboardTarget({ date: dateStr, time }); return; }
+                      if (!full) openNewSlot(selectedDay, time);
+                    };
+                    const cellCommon = cn(
+                      // 태블릿 탭 타깃 확보(min-h-[44px]) + 빈영역 클릭 어포던스. 카드는 stopPropagation 이라 카드 클릭이 셀 생성 트리거 안 함.
+                      'min-h-[44px] border-l p-1 space-y-1 align-top transition-colors',
+                      full && 'cursor-not-allowed',
+                      !full && !clipboard && 'cursor-pointer hover:bg-teal-50/40',
+                      !full && clipboard && 'cursor-copy hover:bg-teal-50/60',
+                      isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
+                    );
+                    return (
+                      <div
+                        key={time}
+                        data-testid={`resv-day-col-${time}`}
+                        data-slot-time={time}
+                        // 현재시각 행 자동 스크롤 타깃(주간뷰 currentSlotRef 재사용). div 이지만 scrollIntoView 만 사용 → 타입 캐스팅.
+                        ref={(el) => { if (isNow) (currentSlotRef as unknown as { current: HTMLElement | null }).current = el; }}
+                        className={cn(
+                          'grid grid-cols-[64px_1fr_1fr] border-b',
+                          !isNow && 'bg-background',
+                          // T-20260630-...LIVEINDICATOR-SILVER-PULSE + T-20260701-...LIVESLOT-GLASS-APPLY 재적용(신 격자 행 위):
+                          //   현재시각 행 = 유리 볼록(live-glass) + 연한 실버 테두리(#C7CDD4) + 테두리 깜빡임(motion-safe). isNow는 유리 반투명이라 bg-background 미적용(뒤 비침).
+                          isNow && 'live-glass border-y-2 border-[#C7CDD4] motion-safe:animate-live-border-pulse',
+                          full && !isNow && 'bg-red-50/40',
+                        )}
+                      >
+                        {/* 시간 라벨 셀 — ④ 중앙정렬 + 폰트 1.5배(현재 10px → 15px). 아래 초/재/힐 건수(CAL-COUNT-LABEL 재적용). */}
                         <div
-                          key={time}
-                          data-testid={`resv-day-col-${time}`}
+                          data-testid={`resv-day-hslot-${time}`}
                           data-slot-time={time}
+                          className={cn(
+                            'flex flex-col items-center justify-center gap-0.5 px-1 py-1 text-center',
+                            isNow && 'bg-slate-100',
+                            full && 'bg-red-50',
+                          )}
+                        >
+                          <span className="text-center text-[15px] font-semibold tabular-nums leading-none text-foreground">{time}</span>
+                          <span
+                            data-testid={`resv-day-hslot-count-${time}`}
+                            className="flex items-center justify-center gap-0.5 whitespace-nowrap text-[8px] font-medium leading-none"
+                          >
+                            <span className="text-blue-700">초{n}</span>
+                            <span className="text-muted-foreground/40">·</span>
+                            <span className="text-firstvisit-700">재{rr}</span>
+                            <span className="text-muted-foreground/40">·</span>
+                            <span className="text-healer-700">힐러{h}</span>
+                          </span>
+                        </div>
+                        {/* 초진 칸 — 빈영역 클릭 시 신규예약 */}
+                        <div
+                          data-testid={`resv-day-cell-new-${time}`}
+                          onClick={handleCellCreate}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
                           onDragLeave={() => setDropTarget(null)}
                           onDrop={(e) => handleDrop(e, dateStr, time)}
-                          className={cn(
-                            // T-20260624-foot-TIMEGRID-COMPACT-DENSITY: field-soak 정제 — 시간 컬럼 너비 200px→132px(컴팩트·촘촘히).
-                            // T-20260625-foot-...COMPACT2(2단계, 김주연 총괄 확정): 132px→90px 추가 압축(한 화면 더 많은 시간 칸). 카드 w-full(컬럼 추종)이라 폭만 변경.
-                            'flex w-[90px] min-w-[90px] flex-col rounded-lg border',
-                            // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX:
-                            //   건1(클립): 기존 isNow 'ring-1 ring-amber-400'(box-shadow)은 부모 overflow-x-auto(→overflow-y auto 계산)에
-                            //     좌·하단이 짤림(10:00=첫 컬럼). ring → border(박스모델 내부)로 전환해 클립 근본 해소.
-                            //   건2(UX): 노랑 제거 → 실버 border + 테두리 깜빡임(animate-live-border-pulse, motion-safe).
-                            //     reduced-motion 시 정적 실버 border 폴백. 힐러 #FFFDE7(healer 토큰)와 클래스 완전 분리 — 미접촉.
-                            // T-20260701-foot-LIVESLOT-GLASS-APPLY surface A: v2 컨펌 시안 정식 적용 — SILVER-PULSE '위에' 누적.
-                            //   isNow 컬럼에 반투명 유리 볼록(.live-glass: backdrop-blur + inset 볼록 box-shadow, outer 미사용=클립 0)
-                            //   + 연한 실버 테두리(#BBBBBB→#C7CDD4 lighten). bg-background는 !isNow에만(isNow는 유리 반투명으로 뒤 비침).
-                            //   pulse/실버border 회귀 0 — border-2 + live-border-pulse 그대로 유지하고 유리만 얹음.
-                            !isNow && 'bg-background',
-                            isNow
-                              ? 'live-glass border-2 border-[#C7CDD4] motion-safe:animate-live-border-pulse'
-                              : 'border-border',
-                            full && !isNow && 'border-red-200',
-                            isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
-                          )}
+                          title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
+                          className={cellCommon}
                         >
-                          {/* 시간 헤더(컬럼 상단, 가로 한 줄에 정렬). 클릭 없음 — 상시 표시. */}
-                          <div
-                            data-testid={`resv-day-hslot-${time}`}
-                            data-slot-time={time}
-                            className={cn(
-                              // T-20260630-foot-RESV-CAL-COUNT-LABEL: 헤더를 세로 2단(시간행 / 건수행)으로 — 건수 라벨을 시간 바로
-                              //   아래 full-width 한 줄에 배치(AC3: 좁은 90px 컬럼에서 좌우 분할 대신 전폭 사용 → overflow/줄넘침 방지).
-                              //   sticky·정렬·배경색(isNow 실버 / full 레드)은 불변. (+) 버튼은 시간행 우측 그대로(동선 무변경, AC5).
-                              'sticky top-0 z-10 flex min-h-[32px] flex-col justify-center gap-0.5 rounded-t-lg border-b bg-muted/40 px-1 py-0.5',
-                              // T-20260630-foot-RESVMGMT-LIVEINDICATOR-SILVER-PULSE-CLIPFIX 건2: 현재시각 헤더 노랑(bg-amber-50) → 실버(bg-slate-100).
-                              isNow && 'bg-slate-100',
-                              full && 'bg-red-50',
-                            )}
-                          >
-                            <div className="flex min-w-0 items-center justify-between gap-0.5">
-                              <span className="text-[10px] font-semibold tabular-nums leading-none text-foreground">{time}</span>
-                              {!full && (
-                                <button
-                                  type="button"
-                                  data-testid={`resv-day-slot-plus-${time}`}
-                                  onClick={() => openNewSlot(selectedDay, time)}
-                                  title="예약 추가"
-                                  className="inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-muted-foreground/40 px-1 py-0.5 text-[10px] text-muted-foreground transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                </button>
-                              )}
-                            </div>
-                            {/* T-20260630-foot-RESV-CAL-COUNT-LABEL: 시간 바로 아래 한 줄 — 초/재/힐러 3종 건수 통일 표기.
-                                · AC1 부분표기 제거: 0 포함 항상 3종 노출(전 슬롯 일관). 例 "초2 · 재1 · 힐러0".
-                                · AC2 산식 = kindCounts(resvKind SSOT·취소 제외) — 이미 로드된 resvByKey 재사용(신규쿼리 없음).
-                                · AC3 90px 컬럼 대비 text-[8px] + whitespace-nowrap(줄넘침 X) + 전폭 행.
-                                · 색 = T-20260625-COLOR-CONVENTION-UNIFY A안: 초진 파랑 / 재진 초록(firstvisit) / 힐러 노랑(healer-700). 순서 초→재→힐러. */}
-                            <span
-                              data-testid={`resv-day-hslot-count-${time}`}
-                              className="flex items-center gap-0.5 whitespace-nowrap text-[8px] font-medium leading-none"
+                          {newCards.map(renderDayCard)}
+                          {newCards.length === 0 && !full && (
+                            <button
+                              type="button"
+                              data-testid={`resv-day-slot-plus-${time}`}
+                              onClick={(e) => { e.stopPropagation(); handleCellCreate(); }}
+                              title={clipboard ? '붙여넣기 위치 지정' : '초진 신규예약'}
+                              className="flex w-full items-center justify-center rounded border border-dashed border-muted-foreground/30 py-1 text-muted-foreground/50 transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
                             >
-                              <span className="text-blue-700">초{n}</span>
-                              <span className="text-muted-foreground/40">·</span>
-                              <span className="text-firstvisit-700">재{rr}</span>
-                              <span className="text-muted-foreground/40">·</span>
-                              <span className="text-healer-700">힐러{h}</span>
-                            </span>
-                          </div>
-                          {/* 세로 진열 영역 — 그 시간의 예약을 클릭 없이 세로로 누적. */}
-                          <div data-testid={`resv-day-col-cards-${time}`} className="flex flex-1 flex-col gap-1 overflow-y-auto p-1">
-                            {list.length === 0 ? (
-                              <div className="py-2 text-center text-[10px] text-muted-foreground/40">·</div>
-                            ) : (
-                              list.map(renderDayCard)
-                            )}
-                          </div>
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                        {/* 재진 칸 (재진·힐러·기타) — 빈영역 클릭 시 신규예약. data-testid=resv-day-col-cards-{time}(하위호환) */}
+                        <div
+                          data-testid={`resv-day-col-cards-${time}`}
+                          onClick={handleCellCreate}
+                          onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
+                          onDragLeave={() => setDropTarget(null)}
+                          onDrop={(e) => handleDrop(e, dateStr, time)}
+                          title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
+                          className={cellCommon}
+                        >
+                          {restCards.map(renderDayCard)}
+                          {restCards.length === 0 && !full && (
+                            <button
+                              type="button"
+                              data-testid={`resv-day-slot-plus-ret-${time}`}
+                              onClick={(e) => { e.stopPropagation(); handleCellCreate(); }}
+                              title={clipboard ? '붙여넣기 위치 지정' : '재진 신규예약'}
+                              className="flex w-full items-center justify-center rounded border border-dashed border-muted-foreground/20 py-1 text-muted-foreground/40 transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             );
           })()
@@ -2321,6 +2359,8 @@ export default function Reservations() {
                                       KIND_CARD_STYLE[resvKind(r)],
                                       // AC-3: 내원완료(checked_in) → 희미하게, 미내원(confirmed) → 진하게 (T-20260514-foot-CHECKIN-AUTO-STAGE)
                                       r.status === 'checked_in' && draggedId !== r.id && 'opacity-50',
+                                      // T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑥: 주간뷰도 취소건 시각처리 통일 — 회색+음각(shadow-inner). '취소됨' 텍스트·취소선 제거(아래).
+                                      r.status === 'cancelled' && 'border-gray-300 bg-gray-200 text-gray-500 shadow-inner',
                                       // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 시각적 피드백
                                       selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
                                       clipboard?.resv.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
@@ -2370,7 +2410,7 @@ export default function Reservations() {
                                             //   박스 넘침 없이 ellipsis로 흡수(block+min-w-0+truncate). 폰트는 카드 본문(text-[11px]) 상속.
                                             'block min-w-0 max-w-full truncate',
                                             r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
-                                            r.status === 'cancelled' && 'line-through',
+                                            // T-20260630-...7ADJ ⑥: 취소 이름 취소선(line-through) 제거 → 회색+음각(shadow-inner, 컨테이너)으로 대체.
                                           )}
                                           onClick={(e) => {
                                             if (!r.customer_id) return;
@@ -2383,10 +2423,7 @@ export default function Reservations() {
                                           {r.customer_name}
                                         </span>
                                       )}
-                                      {/* T-20260515-foot-RESV-CANCEL: 취소됨 배지 */}
-                                      {r.status === 'cancelled' && (
-                                        <span className="text-[9px] bg-gray-200 text-gray-500 rounded px-0.5 leading-none">취소됨</span>
-                                      )}
+                                      {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                                       {/* T-20260514-foot-CHART-NO-VISIBLE / T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 등록환자(customer_id)면 차트번호 항상 표시(미발번도 명시)
                                           T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): 활성 카드는 CustomerHoverCard 트리거가
                                           이미 차트번호를 인접 표기 → 여기서 중복 배지 제거. 취소건(plain span 분기, hovercard 미사용)에만

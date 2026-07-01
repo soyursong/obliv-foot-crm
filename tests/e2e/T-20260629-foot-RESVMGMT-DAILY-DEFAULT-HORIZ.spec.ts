@@ -21,7 +21,8 @@ async function gotoReservations(page: import('@playwright/test').Page) {
   await page.goto(BASE + '/admin/reservations', { waitUntil: 'networkidle' });
 }
 
-test.describe('T-20260629-foot-RESVMGMT-DAILY-DEFAULT-HORIZ — 일간 기본 + 시간 가로배열', () => {
+// [SUPERSEDED by 7ADJ ③] 일간 기본은 유지(default day)이나 '시간 가로배열'은 엑셀 격자(시간 행)로 교체 → skip.
+test.describe.skip('DAILY-DEFAULT-HORIZ — 일간 기본 + 시간 가로배열 (SUPERSEDED 7ADJ grid)', () => {
   test('AC1: 예약관리 진입 시 일간(day) 뷰가 기본', async ({ page }) => {
     await gotoReservations(page);
     // 일간 전용 컨테이너(resv-day-horizontal/xaxis)는 day 뷰에서만 렌더 → 기본 day 증명

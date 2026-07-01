@@ -39,8 +39,9 @@ test.describe('T-20260630-foot-RESVMGMT-CANCELNAME-REGISTRANT-2FIX — 취소이
     await page.waitForLoadState('networkidle');
   });
 
-  // S1 — AC-1: 취소 성함 축소 효과 제거 (line-through 성함이 text-[11px])
-  test('S1: 취소(line-through) 성함 span 은 활성과 동일 text-[11px] (축소 8px 잔재 0)', async ({ page }) => {
+  // S1 — [SUPERSEDED by T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑥] 취소 이름 취소선(line-through) 자체를 제거(회색+음각 대체).
+  //   line-through 성함이 더 이상 존재하지 않으므로 '취소선 성함의 폰트' 검증 전제가 무효 → skip.
+  test.skip('S1: 취소(line-through) 성함 span 은 활성과 동일 text-[11px] (SUPERSEDED 7ADJ ⑥)', async ({ page }) => {
     const grid = page.getByTestId('resv-day-horizontal');
     await expect(grid).toBeVisible({ timeout: 8000 });
 
