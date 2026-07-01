@@ -10,9 +10,13 @@
 import { useMemo, useState } from 'react';
 import { todaySeoulISODate } from '@/lib/format';
 import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
-// T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (P1-1): 진단서 단일배타 / 금기증 복수 selection rule
-//   — 원장 작성창(OpinionDocTab)과 동일 엔진 재사용(일관성).
-import { buildContraindKeySet, classifySelection, applyPrefillExclusivity } from '@/lib/opinionDocCompose';
+// T-20260701-foot-STAFFREQ-DOCTYPE-DUP-RULE (A안, 김주연 총괄 U0ATDB587PV 확정): 실장 요청서 중복선택 규칙을
+//   상단 서류종류(docType) 버튼 기준으로 게이트한다.
+//     · [소견서] docType 활성 → 화면 전체 항목 복수 선택(진단서섹션·금기증섹션 자유 토글). 기존 '금기증 복수' 무회귀.
+//     · [진단서] docType 활성 → 진단서 항목 + 금기증 항목 통틀어 딱 1개(전역 라디오). 새 선택 시 직전 선택 자동 해제.
+//   ★기존 배타 상태머신(진단서 단일 ⊕ 금기증 복수, DOCREQ-DIAGCERT-CONTRA-MUTEX 3b66735b)은 공유 엔진
+//     (opinionDocCompose.ts)에 그대로 두고(원장 작성창 OpinionDocTab 무회귀), 본 실장 요청 박스의 '선택 규칙'만
+//     docType 게이트로 재정의(policy_superseded: 금기증 복수는 [소견서] docType 에서만 유지).
 import {
   OPINION_DOC_TYPES,
   type OpinionDocType,
@@ -49,6 +53,8 @@ export default function OpinionRequestBox({
   requestedByName: string;       // 표기 스냅샷(요청 직원명)
 }) {
   const [docType, setDocType] = useState<OpinionDocType>('opinion');
+  // A안 게이트 축: [진단서] docType = 전역 라디오(통틀어 1개) / [소견서] docType = 전역 복수.
+  const isDiagnosisMode = docType === 'diagnosis';
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [memo, setMemo] = useState('');
   // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안 AC6): 경구약 사유 전용 입력칸.
@@ -67,17 +73,6 @@ export default function OpinionRequestBox({
     [queue, customerId],
   );
 
-  // ── P1-1 selection rule ─────────────────────────────────────────────────────
-  // 금기증 그룹 key 집합(복수선택 대상). 그 외(진단서 표준)는 단일배타.
-  const contraindKeySet = useMemo(() => buildContraindKeySet(OPINION_SECTIONS), []);
-  // 선택 그룹 분리(진단서 단일 / 금기증 복수) — 버튼 배타 disable 판정.
-  const { diagnosisKeys: selDiagnosis, contraindKeys: selContraind } = useMemo(
-    () => classifySelection([...selected], contraindKeySet),
-    [selected, contraindKeySet],
-  );
-  const hasDiagnosis = selDiagnosis.length > 0;
-  const hasContraind = selContraind.length > 0;
-
   // A안 AC6: '경구약 사유' 입력칸 노출 조건 — 경구약 관련 항목(경구약X·효과미비·복용후 위장장애)이 선택됐을 때만.
   //   ★뷰어 파란글씨/대괄호 치환은 원장 작성창의 DB 템플릿 phrase(`[…경구약 복용중]`)가 SSOT — 이 입력은
   //     원장 oralXReason prefill '소스'일 뿐. 미선택/미입력 시 기존 동작 유지(AC5).
@@ -86,27 +81,35 @@ export default function OpinionRequestBox({
     [selected],
   );
 
-  // T-20260623-foot-DOCGEN-CONTRAIND-COMBINE (P1-1): 진단서(표준)=단일배타 / 금기증=복수선택.
-  //   {진단서 1개 단독} XOR {금기증 N개} — 두 그룹 동시선택 불가(원장 작성창 OpinionDocTab 과 동일 rule).
-  //   - 금기증 클릭 → 토글(복수).
-  //   - 진단서 클릭 → 이미 선택이면 해제, 아니면 그 1개만(다른 선택 전부 해제 = 단일배타).
+  // T-20260701-foot-STAFFREQ-DOCTYPE-DUP-RULE (A안, AC-1/2): 서류종류(docType) 게이트 선택 규칙.
+  //   - [소견서] docType → 전역 복수: 항목 자유 토글(진단서섹션·금기증섹션 구분 없이 여러 개 유지).
+  //   - [진단서] docType → 전역 라디오: 재클릭이면 해제, 새 클릭이면 그 1개만(직전 선택 전부 해제).
+  //     ⇒ 진단서 항목 + 금기증 항목을 '통틀어' 딱 1개(AC-2 라디오식).
   const handleOptionClick = (key: string) => {
-    const isContraind = contraindKeySet.has(key);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (isContraind) {
-        if (next.has(key)) next.delete(key);
-        else next.add(key);
-      } else {
+      if (isDiagnosisMode) {
         if (next.has(key)) {
           next.delete(key);
         } else {
           next.clear();
           next.add(key);
         }
+      } else {
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
       }
       return next;
     });
+  };
+
+  // 서류종류 전환 — [진단서]로 바꿀 때 이전 복수 선택이 남아 있으면 라디오 불변식(≤1)을 위해 첫 1개만 유지.
+  //   ([소견서]로 바꿀 땐 복수 허용이므로 선택 유지.)
+  const handleDocTypeChange = (next: OpinionDocType) => {
+    setDocType(next);
+    if (next === 'diagnosis') {
+      setSelected((prev) => (prev.size > 1 ? new Set([[...prev][0]]) : prev));
+    }
   };
 
   const reset = () => {
@@ -126,10 +129,10 @@ export default function OpinionRequestBox({
       toast.error('요청할 항목을 1개 이상 선택해주세요.');
       return;
     }
-    // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX (§3 제출 시점 가드): 선택 UI(handleOptionClick+disabled)가
-    //   이미 배타를 유지하므로 정상 흐름에선 무변경(no-op)이나, 어떤 경로로든 진단서+금기증 혼합이 state 에 섞이면
-    //   persist 직전 배타 규칙을 재적용해 '깨진 조합'이 큐 draft 로 저장되는 일을 원천 차단(향후 prefill/목록 오염 방지).
-    const cleanKeys = applyPrefillExclusivity([...selected], contraindKeySet, docType);
+    // T-20260701-foot-STAFFREQ-DOCTYPE-DUP-RULE (A안, 제출 시점 가드): docType 게이트를 persist 직전 재적용.
+    //   - [진단서] docType → 전역 라디오 불변식(≤1). 선택 UI가 이미 1개로 유지하지만 방어적으로 첫 1개만 저장.
+    //   - [소견서] docType → 전역 복수: 선택 그대로 저장(금기증 복수 무회귀 + 소견서 복수).
+    const cleanKeys = isDiagnosisMode ? [...selected].slice(0, 1) : [...selected];
     try {
       const res = await createMut.mutateAsync({
         customerId,
@@ -180,7 +183,7 @@ export default function OpinionRequestBox({
             <button
               key={t.value}
               type="button"
-              onClick={() => setDocType(t.value)}
+              onClick={() => handleDocTypeChange(t.value)}
               aria-pressed={docType === t.value}
               data-testid={`opinion-req-doctype-${t.value}`}
               className={`rounded px-2.5 py-1 text-[11px] font-medium transition ${
@@ -205,7 +208,13 @@ export default function OpinionRequestBox({
         />
       </div>
 
-      {/* AC-7: 해당항목 옵션 그리드(진단서/금기증) — P1-1: 진단서 단일배타 XOR 금기증 복수선택 */}
+      {/* AC-7: 해당항목 옵션 그리드 — A안(STAFFREQ-DOCTYPE-DUP-RULE): 선택 규칙은 상단 서류종류(docType) 게이트가 결정.
+          [소견서]=전역 복수 / [진단서]=전역 라디오(통틀어 1개). 항목별 disable 없음(클릭이 곧 토글/라디오 교체). */}
+      <div className="mb-1 text-[10px] font-medium text-muted-foreground" data-testid="opinion-req-select-hint">
+        {isDiagnosisMode
+          ? '진단서: 항목 1개만 선택할 수 있어요(새 항목을 고르면 이전 선택은 해제됩니다).'
+          : '소견서: 항목을 여러 개 함께 선택할 수 있어요.'}
+      </div>
       <div className="mb-2 max-h-[34vh] space-y-2 overflow-y-auto rounded-md border bg-muted/10 p-2" data-testid="opinion-req-options">
         {OPINION_SECTIONS.map((section) => (
           <div key={section.title}>
@@ -213,29 +222,15 @@ export default function OpinionRequestBox({
             <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">
               {section.options.map((opt) => {
                 const active = selected.has(opt.key);
-                const isContraindOpt = contraindKeySet.has(opt.key);
-                // P1-1 단일배타: 진단서 선택 시 그 1개 외 전부 비활성 / 금기증 선택 시 진단서 비활성.
-                const disabled = hasDiagnosis
-                  ? !active
-                  : hasContraind
-                    ? !isContraindOpt
-                    : false;
                 return (
                   <button
                     key={opt.key}
                     type="button"
                     onClick={() => handleOptionClick(opt.key)}
-                    disabled={disabled}
                     aria-pressed={active}
-                    title={
-                      disabled
-                        ? hasDiagnosis
-                          ? '진단서(표준)는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
-                          : '금기증을 선택 중입니다. 진단서(표준)는 함께 선택할 수 없습니다.'
-                        : opt.label
-                    }
+                    title={opt.label}
                     data-testid={`opinion-req-opt-${opt.key}`}
-                    className={`truncate rounded border px-1.5 py-1.5 text-[10px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`truncate rounded border px-1.5 py-1.5 text-[10px] font-medium transition ${
                       active
                         ? 'border-neutral-800 bg-neutral-800 text-white shadow-sm'
                         : 'border-input bg-background text-foreground hover:bg-accent'

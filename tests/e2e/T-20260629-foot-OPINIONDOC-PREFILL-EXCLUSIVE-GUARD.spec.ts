@@ -164,14 +164,19 @@ test.describe('OPINIONDOC-PREFILL-EXCLUSIVE-GUARD', () => {
     expect(src).toMatch(/diagnosisKeys\.slice\(0,\s*1\)/);
   });
 
-  // ── S6 AC-2: 실장 요청화면 배타 disable = native <button disabled>(모바일/갤탭 안전) ──
-  test('S6 OpinionRequestBox 배타 disable 이 native button disabled 속성(모바일/터치 차단 보장)', () => {
+  // ── S6 [REDEFINED — T-20260701-foot-STAFFREQ-DOCTYPE-DUP-RULE, A안] ──
+  //   실장 요청화면의 섹션 배타 disable 은 policy_superseded → docType 게이트로 재정의.
+  //   갤탭/터치 안전은 이제 '항목별 disable' 이 아니라 'docType 라디오/복수 분기'가 클릭 시 즉시 상태를 조정해 보장.
+  //   (원장 작성창 prefill 배타 가드 S1~S5 는 무회귀 — 그대로 유지.)
+  test('S6 OpinionRequestBox — docType 게이트(라디오/복수) 로 재정의(섹션 배타 disable 제거 회귀 가드)', () => {
     const src = read(REQUEST_BOX);
-    // 배타 판정 — 진단서 선택 시 그 외 disable / 금기증 선택 시 진단서 disable.
-    expect(src).toMatch(/const disabled = hasDiagnosis/);
-    // ★native <button> 의 disabled 속성으로 차단(시각 opacity 가 아니라 브라우저 레벨 이벤트 차단 → 모바일/갤탭 동일).
-    expect(src).toMatch(/<button[\s\S]*?disabled=\{disabled\}/);
-    // onClick 은 동일 button — disabled 면 native 로 발화 안 함(터치 포함).
+    // docType 게이트 축 — 진단서 라디오(clear→add) + 소견서 복수(toggle).
+    expect(src).toContain('isDiagnosisMode');
+    expect(src).toMatch(/isDiagnosisMode[\s\S]*next\.clear\(\)/);
+    // 옵션 버튼 클릭 배선 유지(갤탭 큰 버튼).
     expect(src).toMatch(/onClick=\{\(\) => handleOptionClick\(opt\.key\)\}/);
+    // ★회귀 가드: 실장 박스에 옛 섹션 배타 disable 이 더 이상 없음.
+    expect(src).not.toMatch(/const disabled = hasDiagnosis/);
+    expect(src).not.toContain('applyPrefillExclusivity');
   });
 });
