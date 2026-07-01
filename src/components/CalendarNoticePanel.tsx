@@ -513,7 +513,8 @@ export default function CalendarNoticePanel() {
                 className={cn(
                   'w-full py-1 text-[11px] font-medium rounded-full transition-colors leading-none aspect-square flex items-center justify-center',
                   !isCurrentMonth && 'opacity-25',
-                  isSelected && 'bg-teal-600 text-white',
+                  // T-20260701-foot-DASH-SCREENSHOT-GLASS-APPLY: 선택 날짜 칩 — 컨펌 v2 유리 볼록+연한 실버로 통일(.live-glass-board 그대로).
+                  isSelected && 'live-glass-board border border-[#C7CDD4] text-gray-800 font-semibold',
                   !isSelected && isInWeek && 'bg-teal-100',
                   !isSelected && !isInWeek && isToday && 'bg-teal-100 text-teal-800 font-bold',
                   !isSelected && !isToday && dow === 0 && isCurrentMonth && 'text-red-500',
@@ -545,8 +546,9 @@ export default function CalendarNoticePanel() {
                 onClick={() => handleViewMode(mode)}
                 className={cn(
                   'flex-1 rounded py-1 text-[10px] font-semibold transition-colors',
+                  // T-20260701-foot-DASH-SCREENSHOT-GLASS-APPLY: 뷰모드(당일/일/주/월) 활성 버튼 — 유리 볼록+연한 실버 통일(.live-glass-board 그대로).
                   viewMode === mode
-                    ? 'bg-teal-600 text-white'
+                    ? 'live-glass-board border border-[#C7CDD4] text-gray-700'
                     : 'bg-muted/60 text-muted-foreground hover:bg-teal-50 hover:text-teal-700',
                 )}
               >
