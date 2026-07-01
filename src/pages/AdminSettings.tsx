@@ -53,7 +53,7 @@ import type { Clinic, CheckIn } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
 import { normalizeToE164 } from '@/lib/phone';
 import { isStaffUnlockRole } from '@/lib/permissions';
-import { formatPhone } from '@/lib/format';
+import { formatPhone, formatDateDots, formatDateTimeDots } from '@/lib/format';
 import SendSmsDialog from '@/components/SendSmsDialog';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import {
@@ -1481,7 +1481,7 @@ function SectionHistory({ logs, onRefresh }: { logs: NotificationLog[]; onRefres
                 return (
                   <tr key={log.id} className="border-b last:border-0">
                     <td className="px-4 py-2 text-xs whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
+                      {formatDateTimeDots(log.created_at)}
                     </td>
                     <td className="px-4 py-2 text-xs">{EVENT_TYPE_LABELS[log.event_type] ?? log.event_type}</td>
                     <td className="px-4 py-2 text-xs uppercase">{log.channel}</td>
@@ -1604,7 +1604,7 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
                   </td>
                   <td className="px-4 py-2 text-xs text-muted-foreground">
                     {row.registeredAt
-                      ? new Date(row.registeredAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
+                      ? formatDateDots(row.registeredAt)
                       : '—'}
                   </td>
                   <td className="px-4 py-2 text-xs text-muted-foreground">{row.reason ?? '—'}</td>

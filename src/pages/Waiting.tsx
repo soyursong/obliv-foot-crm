@@ -17,6 +17,7 @@ import { createClient } from '@supabase/supabase-js';
 import { STATUS_KO, STATUS_COLOR, CALLED_STATUSES } from '@/lib/status';
 import { playCheckInBeep } from '@/lib/audio';
 import { elapsedMinutes, elapsedLabel } from '@/lib/elapsed';
+import { formatDateDots } from '@/lib/format';
 import type { CheckInStatus } from '@/lib/types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -261,7 +262,7 @@ export default function Waiting() {
             <div className="text-2xl font-bold tabular-nums text-gray-800">
               {now.getHours().toString().padStart(2, '0')}:{now.getMinutes().toString().padStart(2, '0')}
             </div>
-            <div className="text-sm text-gray-500">{today}</div>
+            <div className="text-sm text-gray-500">{formatDateDots(today)}</div>
           </div>
         </div>
       </header>

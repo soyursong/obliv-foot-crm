@@ -18,7 +18,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
 import { BookOpen, CalendarPlus, CreditCard, Download, ExternalLink, MessageSquare, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -45,7 +44,7 @@ import { canAccess, isStaffUnlockRole } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, formatPhone, birthDateYMD } from '@/lib/format';
+import { formatAmount, formatPhone, birthDateYMD, formatDateDots } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 리스트 내보내기 CSV(무의존). PHI(rrn) 영구 제외, admin/manager 게이팅.
 //   (엑셀 .xlsx 내보내기는 후속 — customerExport.ts 유지)
@@ -467,7 +466,7 @@ export default function Customers() {
       생년월일: bMap.get(c.id) ?? (birthDateYMD(c.birth_date) || ''),
       차트번호: c.chart_number ?? '',
       방문횟수: stats?.visit_count ?? 0,
-      최종방문: stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '',
+      최종방문: stats?.last_visit ? formatDateDots(stats.last_visit) : '',
       결제액: stats?.total_revenue ?? 0,
       고객메모: c.customer_memo ?? '',
     }),
@@ -661,7 +660,7 @@ export default function Customers() {
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
                   <td className="px-2 py-1.5 text-muted-foreground whitespace-nowrap tabular-nums">
-                    {stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '-'}
+                    {stats?.last_visit ? formatDateDots(stats.last_visit) : '-'}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground whitespace-nowrap">
                     {stats?.total_revenue ? formatAmount(stats.total_revenue) : '-'}

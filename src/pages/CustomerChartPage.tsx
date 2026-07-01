@@ -2,7 +2,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
@@ -22,7 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
 import { canViewRrn } from '@/lib/permissions';
-import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay } from '@/lib/format';
+import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay, formatDateDots, formatDateTimeDots } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO, staffRoleSortIndex } from '@/lib/status';
 import { cn } from '@/lib/utils';
@@ -449,7 +448,7 @@ function MemoHistoryPanel({
                   <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{memo.content}</p>
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-muted-foreground">
-                      {memo.created_by_name ?? '알 수 없음'}{memo.created_at ? ` · ${format(new Date(memo.created_at), 'yyyy-MM-dd HH:mm', { locale: ko })}` : ''}
+                      {memo.created_by_name ?? '알 수 없음'}{memo.created_at ? ` · ${formatDateTimeDots(memo.created_at)}` : ''}
                     </span>
                     {(canManageAll || (memo.created_by && memo.created_by === profileEmail)) && (
                       <div className="flex gap-1.5">
@@ -4657,7 +4656,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .eq('id', nextResv.id);
       if (flagError) { toast.error(`힐러 플래그 저장 실패: ${flagError.message}`); return; }
       setReservations(prev => prev.map(r => r.id === nextResv.id ? { ...r, healer_flag: true } : r));
-      toast.success(`회차 차감 + 다음 예약(${nextResv.reservation_date}) 힐러 플래그 설정 완료`);
+      toast.success(`회차 차감 + 다음 예약(${formatDateDots(nextResv.reservation_date)}) 힐러 플래그 설정 완료`);
     }
   };
 
@@ -5303,7 +5302,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </button>
                         {customer.hira_consent && customer.hira_consent_at && (
                           <span className="text-[10px] text-sage-600">
-                            동의 {format(new Date(customer.hira_consent_at), 'MM-dd HH:mm')}
+                            동의 {formatDateTimeDots(customer.hira_consent_at)}
                           </span>
                         )}
                       </div>
@@ -5706,7 +5705,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <div key={p.id} className="rounded border border-sage-200 bg-white px-2 py-1.5 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-sage-900 truncate">{p.package_name}</span>
-                        <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{p.contract_date}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{formatDateDots(p.contract_date)}</span>
                       </div>
                       {rem && (
                         /* T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술명/총/사용/잔여 테이블 */
@@ -5957,7 +5956,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <div className="flex items-center justify-between">
                           <Badge variant="teal" className="text-[10px]">✓ 체크리스트 완료</Badge>
                           <span className="text-muted-foreground tabular-nums">
-                            {cl.completed_at ? format(new Date(cl.completed_at), 'yyyy-MM-dd HH:mm') : '-'}
+                            {cl.completed_at ? formatDateTimeDots(cl.completed_at) : '-'}
                           </span>
                         </div>
                         {(d.symptoms ?? []).length > 0 && <div><span className="text-muted-foreground">증상: </span>{(d.symptoms ?? []).join(', ')}</div>}
@@ -5990,7 +5989,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
                       <span className="flex items-center gap-1.5">
                         <Badge variant="teal" className="text-[10px]">서명완료</Badge>
-                        <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd')}</span>
+                        <span className="text-muted-foreground">{formatDateDots(c.signed_at)}</span>
                       </span>
                     </div>
                   ))}
@@ -6010,7 +6009,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   {prescriptions.map((rx) => (
                     <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
                       <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                        <span>{format(new Date(rx.prescribed_at), 'yyyy-MM-dd')}</span>
+                        <span>{formatDateDots(rx.prescribed_at)}</span>
                         {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
                       </div>
                       {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
@@ -6051,7 +6050,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <span>{label}</span>
                         <span className="text-muted-foreground flex items-center gap-1">
                           <Printer className="h-3 w-3" />
-                          {tsStr ? format(new Date(tsStr), 'MM-dd HH:mm') : '-'}
+                          {tsStr ? formatDateTimeDots(tsStr) : '-'}
                         </span>
                       </div>
                     );
@@ -6105,7 +6104,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               className="border-b border-muted/20 hover:bg-muted/10 cursor-pointer select-none"
                               onClick={() => setExpandedPaymentId(prev => prev === p.id ? null : p.id)}
                             >
-                              <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
+                              <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{formatDateTimeDots(p.created_at)}</td>
                               <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
                                 {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
                               </td>
@@ -6165,7 +6164,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <tbody>
                         {directPkgPayments.map((p) => (
                           <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
-                            <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
+                            <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{formatDateTimeDots(p.created_at)}</td>
                             <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
                               {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
                             </td>
@@ -6245,7 +6244,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     const st = balanceStatus(pkgDue);
                     events.push({
                       ts: occTs,
-                      dateLabel: format(new Date(p.created_at), 'yyyy-MM-dd'),
+                      dateLabel: formatDateDots(p.created_at),
                       pkgName: p.package_name,
                       feeLabel: '패키지 잔금',
                       amount: pkgTotal,
@@ -6258,7 +6257,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     const st = balanceStatus(consultDue);
                     events.push({
                       ts: occTs,
-                      dateLabel: format(new Date(p.created_at), 'yyyy-MM-dd'),
+                      dateLabel: formatDateDots(p.created_at),
                       pkgName: p.package_name,
                       feeLabel: '진료비 미수',
                       amount: consultTotal,
@@ -6271,7 +6270,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     const isRefund = pay.payment_type === 'refund';
                     events.push({
                       ts: new Date(pay.created_at).getTime(),
-                      dateLabel: format(new Date(pay.created_at), 'yyyy-MM-dd HH:mm'),
+                      dateLabel: formatDateTimeDots(pay.created_at),
                       pkgName: p.package_name,
                       feeLabel: (pay.fee_kind ?? 'package') === 'consultation' ? '진료비 미수' : '패키지 잔금',
                       amount: pay.amount,
@@ -6417,7 +6416,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <div className="space-y-1">
                         {filtered.map(({ ci, memoTypes, treatDetails, doctorNote }) => {
                           const isCancelled = ci.status === 'cancelled';
-                          const dateStr = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
+                          const dateStr = formatDateDots(ci.checked_in_at);
                           const timeStr = format(new Date(ci.checked_in_at), 'HH:mm');
                           // T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ②: 귀가시간 = '완료' 상태전환 timestamp(completed_at).
                           //   신규 집계/DB컬럼 없음 — 기존 check_ins.completed_at 그대로 노출. 소스 없으면 '-'(임의 추정 금지).
@@ -6581,7 +6580,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                             <span
                                               key={i}
                                               className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
-                                              title={`발급: ${s.printed_at || s.signed_at ? format(new Date((s.printed_at ?? s.signed_at)!), 'yyyy-MM-dd HH:mm') : '-'}`}
+                                              title={`발급: ${s.printed_at || s.signed_at ? formatDateTimeDots((s.printed_at ?? s.signed_at)!) : '-'}`}
                                             >
                                               <Printer className="h-2.5 w-2.5 shrink-0" />
                                               {label}
@@ -6619,7 +6618,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   >
                     <div className="flex items-center justify-between border-b px-4 py-3">
                       <div className="font-semibold text-sm">
-                        서류 재발급 — {format(new Date(docReissueCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')}
+                        서류 재발급 — {formatDateTimeDots(docReissueCheckIn.checked_in_at)}
                       </div>
                       <button
                         onClick={() => setDocReissueCheckIn(null)}
@@ -6726,8 +6725,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               {(p.contract_date || p.created_at) && (
                                 <span className="text-[10px] text-muted-foreground tabular-nums">
                                   {p.contract_date
-                                    ? p.contract_date.slice(0, 10)
-                                    : format(new Date(p.created_at), 'yyyy-MM-dd')}
+                                    ? formatDateDots(p.contract_date)
+                                    : formatDateDots(p.created_at)}
                                 </span>
                               )}
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
@@ -6980,7 +6979,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
                       .map((ci) => (
                         <div key={ci.id}>
-                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd')}</div>
+                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">{formatDateDots(ci.checked_in_at)}</div>
                           <div className="grid grid-cols-3 gap-1">
                             {(ci.treatment_photos ?? []).map((url, idx) => (
                               <img
@@ -7035,10 +7034,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       if (hasNew) {
                         const newest = submissionEntries.filter((s) => s.template_key === 'refund_consent')[0];
                         const d = newest?.printed_at ?? newest?.signed_at;
-                        return d ? format(new Date(d), 'MM-dd') : null;
+                        return d ? formatDateDots(d) : null;
                       }
                       const dateEntry = consentEntries.find((c) => c.form_type === 'non_covered') ?? consentEntries.find((c) => c.form_type === 'refund');
-                      return dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
+                      return dateEntry ? formatDateDots(dateEntry.signed_at) : null;
                     })();
                     return (
                       <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-slate-50' : 'bg-gray-50'}`}>
@@ -7090,7 +7089,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       const selfDate = healthQResults[0]?.submitted_at ?? null;
                       // 둘 중 최신
                       const d = [penDate, selfDate].filter(Boolean).sort().reverse()[0];
-                      return d ? format(new Date(d), 'MM-dd') : null;
+                      return d ? formatDateDots(d) : null;
                     })();
                     return (
                       <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-sage-50' : 'bg-gray-50'}`}>
@@ -7161,7 +7160,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       .filter((p) => p.memo === '영수증 업로드')
                       .map((p) => (
                         <div key={p.id} className="flex items-center gap-2 rounded bg-green-50 px-2 py-1">
-                          <span className="text-muted-foreground tabular-nums">{format(new Date(p.created_at), 'MM-dd HH:mm')}</span>
+                          <span className="text-muted-foreground tabular-nums">{formatDateTimeDots(p.created_at)}</span>
                           <span className="font-semibold text-green-700">{formatAmount(p.amount)}</span>
                           {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
                           <span className="text-muted-foreground">{METHOD_KO[p.method] ?? p.method}</span>
@@ -7215,7 +7214,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <div className="text-[11px] font-semibold text-[#51585D] mb-1">최근 방문</div>
                 <div className="text-xs text-gray-700">
                   {latestCheckIn
-                    ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
+                    ? formatDateTimeDots(latestCheckIn.checked_in_at)
                     : '방문 이력 없음'}
                 </div>
               </div>
@@ -7277,7 +7276,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           }}
                           className="w-full flex items-center text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
                         >
-                          <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                          <span className="text-gray-700">{formatDateDots(r.reservation_date)} {r.reservation_time.slice(0, 5)}</span>
                         </button>
                         {/* T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-1: 항상 열린 입력창 → 표시(텍스트+✏️)↔편집폼 토글.
                             저장 로직·데이터모델 불변 — saveResvMemo 가 기존 append-only RPC 그대로 호출(표시·토글만). */}
@@ -7448,7 +7447,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             <tbody>
                               {allRefunds.map((r) => (
                                 <tr key={r.id} className="border-b border-muted/20 hover:bg-red-50/40 bg-red-50/20">
-                                  <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(r.created_at), 'MM-dd HH:mm')}</td>
+                                  <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{formatDateTimeDots(r.created_at)}</td>
                                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-red-600">-{formatAmount(r.amount)}</td>
                                   {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
                                   <td className="px-2 py-1.5">{METHOD_KO[r.method] ?? r.method}</td>
@@ -7562,7 +7561,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <div key={ci.id} className="rounded-lg border bg-white p-3 text-xs" data-testid="slot-dwell-visit">
                           <div className="flex items-center gap-1.5 font-bold text-sage-700 mb-2">
                             <Timer className="h-3.5 w-3.5" />
-                            {format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}
+                            {formatDateTimeDots(ci.checked_in_at)}
                             <span className="ml-auto text-[10px] font-medium text-muted-foreground">
                               총 원내 체류 {formatDwell(totalSec)}
                             </span>
@@ -7767,7 +7766,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               </span>
                             )}
                             <span className="ml-auto tabular-nums text-[10px] text-muted-foreground/70">
-                              {format(new Date(log.sent_at || log.created_at), 'MM-dd HH:mm')}
+                              {formatDateTimeDots(log.sent_at || log.created_at)}
                             </span>
                           </div>
                           {log.body_rendered && (
@@ -7798,7 +7797,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <div key={msg.id} data-testid="msg-log-item" className="rounded border border-gray-100 bg-gray-50 px-2 py-1.5 space-y-0.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="tabular-nums text-muted-foreground">
-                            {format(new Date(msg.sent_at), 'MM-dd HH:mm')}
+                            {formatDateTimeDots(msg.sent_at)}
                           </span>
                           <Badge
                             variant={msg.message_type === 'kakao' ? 'teal' : msg.message_type === 'sms' ? 'secondary' : 'outline'}
@@ -8442,7 +8441,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{memo.content}</p>
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] text-muted-foreground">
-                                {memo.created_by_name ?? '알 수 없음'} · {format(new Date(memo.created_at), 'yyyy-MM-dd HH:mm', { locale: ko })}
+                                {memo.created_by_name ?? '알 수 없음'} · {formatDateTimeDots(memo.created_at)}
                               </span>
                               {(canManageMemo || (memo.created_by && memo.created_by === profile?.email)) && (
                                 <div className="flex gap-1.5">
@@ -9188,7 +9187,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <span className="font-medium text-[11px] text-gray-700">{img.label}</span>
                         {img.date && (
                           <span className="text-[10px] text-muted-foreground">
-                            {format(new Date(img.date), 'yyyy-MM-dd HH:mm')}
+                            {formatDateTimeDots(img.date)}
                           </span>
                         )}
                         <a
@@ -9216,7 +9215,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   {consentEntries.filter((c) => c.form_type === 'privacy').map((c, i) => (
                     <div key={i} className="rounded-lg border bg-sage-50 p-3">
                       <div className="font-semibold text-sage-800 mb-1">개인정보 동의서 (이전 방식)</div>
-                      <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
+                      <div className="text-muted-foreground">{formatDateTimeDots(c.signed_at)} 서명 완료</div>
                     </div>
                   ))}
                   {checklistEntries.length > 0 && (
@@ -9224,7 +9223,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <div className="font-semibold text-sage-800 mb-1">사전 체크리스트 (이전 방식)</div>
                       <div className="text-muted-foreground">
                         {checklistEntries[0].completed_at
-                          ? format(new Date(checklistEntries[0].completed_at), 'yyyy-MM-dd HH:mm')
+                          ? formatDateTimeDots(checklistEntries[0].completed_at)
                           : '날짜 미기록'}{' '}작성 완료
                       </div>
                     </div>
@@ -9244,7 +9243,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     consentEntries.filter((c) => c.form_type === fType).map((c, i) => (
                       <div key={`${fType}-${i}`} className="rounded-lg border bg-slate-50 p-3">
                         <div className="font-semibold text-slate-800 mb-1">{FORM_TITLES[fType]} (이전 방식)</div>
-                        <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
+                        <div className="text-muted-foreground">{formatDateTimeDots(c.signed_at)} 서명 완료</div>
                       </div>
                     ))
                   )}

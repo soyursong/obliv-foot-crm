@@ -13,12 +13,12 @@
 // ext/mime 게이트: pdf/jpg/png 만 허용(FE 검증) — DB mime CHECK 와 정합.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { format } from 'date-fns';
 import { Download, Eye, FileText, Image as ImageIcon, Upload, Loader2, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useDocumentUpload } from '@/hooks/useDocumentUpload';
 import { toast } from '@/lib/toast';
+import { formatDateTimeDots } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -282,7 +282,7 @@ export default function PatientResultFiles({
                 <div className="min-w-0">
                   <div className="truncate font-medium">{r.file_name}</div>
                   <div className="tabular-nums text-muted-foreground">
-                    {format(new Date(r.created_at), 'yyyy-MM-dd HH:mm')}
+                    {formatDateTimeDots(r.created_at)}
                     <span className="ml-1.5">· {bytesToKb(r.file_size)}</span>
                     <Badge variant="outline" className="ml-1.5 px-1 py-0 text-[9px] uppercase">
                       {(r.file_name.split('.').pop() ?? '').toUpperCase()}

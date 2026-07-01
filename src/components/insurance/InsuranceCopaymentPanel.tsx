@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, formatDateDots } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { useInsuranceGrade, calcCopaymentBatch } from '@/hooks/useInsurance';
 import {
@@ -374,7 +374,7 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
               {calcLoading && <div className="text-[11px] text-muted-foreground">산출 중…</div>}
               {verifiedAt && (
                 <div className="text-[10px] text-muted-foreground">
-                  ※ 등급 검증일 {verifiedAt.slice(0, 10)} 기준
+                  ※ 등급 검증일 {formatDateDots(verifiedAt)} 기준
                 </div>
               )}
             </div>

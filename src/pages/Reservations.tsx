@@ -2102,7 +2102,7 @@ export default function Reservations() {
                     )}
                   >
                     {/* AC6: 요일·일자 한 줄 중앙 배치. 키운 글자(text-sm font-semibold)로 가독성 확보. */}
-                    {WEEK_DAYS_KO[i]} {format(d, 'M/d')}
+                    {WEEK_DAYS_KO[i]} {format(d, 'M.d')}
                     {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜 헤더 총건수 요약.
                         T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC1 (REDEFINITION (a)): HL을 총건수에 포함(초+재+힐러).
                         HL 칩(HL N)은 별도 유지 — 합산+별도표기 병존. nji4 'HL 제외' supersede. */}

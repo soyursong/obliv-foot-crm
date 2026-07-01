@@ -10,7 +10,8 @@ export function elapsedMMSS(iso: string): string {
 }
 
 export function elapsedLabel(mins: number): string {
-  if (mins < 1) return '방금';
+  // T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE(AC-2): 상대표기(방금) 제거 → 절대 의미(1분 미만) 표기.
+  if (mins < 1) return '1분 미만';
   if (mins < 60) return `${mins}분`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;

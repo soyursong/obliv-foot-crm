@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import { formatDateDots } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -96,7 +96,7 @@ export function InsuranceGradeSelect({ customerId, onChanged, editable = true }:
             )}
             {verifiedAt && (
               <span className="text-[11px] text-muted-foreground">
-                · {format(new Date(verifiedAt), 'yyyy-MM-dd')}
+                · {formatDateDots(verifiedAt)}
               </span>
             )}
             {stale && (

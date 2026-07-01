@@ -244,7 +244,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
         <CardHeader className="pb-2 pt-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             <UserCheck className="h-4 w-4" />
-            오늘({format(new Date(), 'M/d(EEE)', { locale: ko })}) 근무 원장님
+            오늘({format(new Date(), 'M.d (EEE)', { locale: ko })}) 근무 원장님
           </CardTitle>
         </CardHeader>
         <CardContent className="pb-3">
@@ -291,8 +291,8 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-[160px] text-center text-sm font-medium">
-            {format(weekDays[0], 'M/d', { locale: ko })} ~{' '}
-            {format(weekDays[5], 'M/d(EEE)', { locale: ko })}
+            {format(weekDays[0], 'M.d', { locale: ko })} ~{' '}
+            {format(weekDays[5], 'M.d (EEE)', { locale: ko })}
           </span>
           <Button
             variant="outline"
@@ -366,7 +366,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                       {format(d, 'EEE', { locale: ko })}
                       <br />
                       <span className={isToday ? 'font-bold' : ''}>
-                        {format(d, 'M/d')}
+                        {format(d, 'M.d')}
                       </span>
                     </th>
                   );

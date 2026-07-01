@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
 import { Layers, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -21,7 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM } from '@/lib/format';
+import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, formatDateTimeDots } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
@@ -1487,7 +1486,7 @@ function PackageDetailSheet({
               {pkgPayments.length === 0 && <div className="py-3 text-center text-xs text-muted-foreground">결제 없음</div>}
               {pkgPayments.map((p) => (
                 <div key={p.id} className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs">
-                  <span>{format(new Date(p.created_at), 'yyyy-MM-dd HH:mm')}</span>
+                  <span>{formatDateTimeDots(p.created_at)}</span>
                   <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
                     {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)} · {methodLabel(p.method)}
                   </span>

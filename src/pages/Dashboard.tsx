@@ -75,7 +75,7 @@ import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
-import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge, birthDateYMD } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
@@ -573,7 +573,7 @@ const DraggableCard = memo(function DraggableCard({
             data-testid="consent-badge-refund"
             className="mt-0.5 text-[10px] text-emerald-600 truncate"
           >
-            ✓ 환불동의서 ({format(new Date(consentEntry.refundAt), 'M/d')})
+            ✓ 환불동의서 ({formatDateDots(consentEntry.refundAt)})
           </div>
         )}
         {/* T-20260512-foot-CUSTOMER-BOX-COMPACT-V2: 시간행 text-[10px] 축소, Clock h-2 */}
@@ -770,7 +770,7 @@ const DraggableCard = memo(function DraggableCard({
           data-testid="consent-badge-refund"
           className="mt-0.5 text-[10px] text-emerald-600 truncate"
         >
-          ✓ 환불동의서 ({format(new Date(consentEntry.refundAt), 'M/d')})
+          ✓ 환불동의서 ({formatDateDots(consentEntry.refundAt)})
           {consentEntry.nonCoveredAt && (
             <span className="ml-1">· 비급여확인</span>
           )}
