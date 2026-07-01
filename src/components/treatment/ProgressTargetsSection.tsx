@@ -164,14 +164,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
 
   return (
     <div className="flex flex-col gap-4" data-testid="progress-targets-section">
-      {/* T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 상단 위젯 3종(요약 카드/회차 분포/최근 추이) — read-only 집계. */}
-      <ProgressAnalyticsWidgets
-        date={date}
-        clinicId={clinic?.id}
-        cohortRows={rows}
-        cohortLoading={isLoading}
-      />
-
+      {/* T-20260701-foot-PROGRESSLIST-TOP-REORDER: 경과분석 대상자 '리스트'를 화면 최상단으로 이동(위젯보다 위).
+          위젯/표 섹션(ProgressAnalyticsWidgets)은 제거하지 않고 리스트 아래에 그대로 유지. 순수 렌더 순서 변경(DDL 0). */}
       <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <div>
@@ -347,6 +341,15 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         </div>
       )}
       </div>
+
+      {/* T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 상단 위젯 3종(요약 카드/회차 분포/최근 추이) — read-only 집계.
+          T-20260701-foot-PROGRESSLIST-TOP-REORDER: 리스트 최상단화에 따라 위젯/표는 리스트 아래로 이동(제거 아님, 순서만). */}
+      <ProgressAnalyticsWidgets
+        date={date}
+        clinicId={clinic?.id}
+        cohortRows={rows}
+        cohortLoading={isLoading}
+      />
     </div>
   );
 }
