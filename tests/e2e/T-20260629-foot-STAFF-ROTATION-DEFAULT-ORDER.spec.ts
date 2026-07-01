@@ -120,15 +120,18 @@ test.describe('S3 — admin 순번 변경', () => {
     expect(src).toMatch(/if \(!canEdit\) return;/);
   });
 
-  test('순번 편집 UI: 상담/치료 파트별 ↑/↓ 정렬 + 저장 버튼', () => {
+  // T-20260701-foot-ASSIGNORDER-ARROW-TO-DRAG: ↑/↓ → @dnd-kit 드래그앤드롭으로 교체(회귀 갱신).
+  test('순번 편집 UI: 상담/치료 파트별 드래그 정렬 + 저장 버튼', () => {
     const src = read(PAGE);
     expect(src).toContain('data-testid="rotation-order-dialog"');
     expect(src).toContain('data-testid="rotation-save-btn"');
     expect(src).toMatch(/rotation-part-\$\{testid\}/); // 파트별 컨테이너 testid(consult/therapy 인자로 렌더)
     expect(src).toMatch(/renderList\('상담 파트', consult, setConsult, 'consult'\)/);
     expect(src).toMatch(/renderList\('치료 파트', therapy, setTherapy, 'therapy'\)/);
-    expect(src).toMatch(/rotation-up-\$\{testid\}/);
-    expect(src).toMatch(/rotation-down-\$\{testid\}/);
+    // 화살표 제거 → 드래그 핸들로 교체
+    expect(src).toMatch(/rotation-handle-\$\{testid\}/);
+    expect(src).not.toMatch(/rotation-up-\$\{testid\}/);
+    expect(src).not.toMatch(/rotation-down-\$\{testid\}/);
   });
 
   test('저장 = staff.assign_sort_order 위치(1-based) 일괄 UPDATE (즉시 반영, 기배정 소급X)', () => {
