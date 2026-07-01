@@ -38,6 +38,7 @@ import type { CheckIn, CheckInStatus, Staff, AssignmentAction, AssignmentRole } 
 import {
   deriveConsultAxis,
   deriveTherapyAxis,
+  isReturningAxis,
   tossAssignment,
   pullAssignment,
   manualAssign,
@@ -759,25 +760,38 @@ export default function Assignments() {
                         </Badge>
                       </td>
                       <td className="px-2 py-2">
-                        <select
-                          className="rounded border bg-background px-1.5 py-1 text-xs"
-                          value={assignedId ?? ''}
-                          disabled={busy}
-                          onChange={(e) => void doManual(ci, role, e.target.value)}
-                        >
-                          <option value="" disabled>
-                            미배정
-                          </option>
-                          {poolFor(role).map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {(s.display_name ?? s.name).trim()}
+                        {role === 'consult' && isReturningAxis(axis) ? (
+                          // T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE (AC-1): 재진 상담 실장 배정 칸 숨김 → 치료사 배정만.
+                          //   재진 판정 SSOT = isReturningAxis(axisOf→deriveConsultAxis) — autoAssign·NewCheckInDialog 와 동일 소스(AC-4).
+                          //   치료(therapy) 탭·초진(신규) 상담은 불변(select 정상 노출, AC-2).
+                          <span
+                            data-testid={`assign-consult-hidden-${ci.id}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            재진 — 상담 배정 없음
+                          </span>
+                        ) : (
+                          <select
+                            data-testid={role === 'consult' ? `assign-consult-select-${ci.id}` : undefined}
+                            className="rounded border bg-background px-1.5 py-1 text-xs"
+                            value={assignedId ?? ''}
+                            disabled={busy}
+                            onChange={(e) => void doManual(ci, role, e.target.value)}
+                          >
+                            <option value="" disabled>
+                              미배정
                             </option>
-                          ))}
-                          {/* 출근 풀에 없지만 현재 배정된 사람 보존 노출 */}
-                          {assignedId && !poolFor(role).some((s) => s.id === assignedId) && (
-                            <option value={assignedId}>{staffName(assignedId)} (비출근)</option>
-                          )}
-                        </select>
+                            {poolFor(role).map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {(s.display_name ?? s.name).trim()}
+                              </option>
+                            ))}
+                            {/* 출근 풀에 없지만 현재 배정된 사람 보존 노출 */}
+                            {assignedId && !poolFor(role).some((s) => s.id === assignedId) && (
+                              <option value={assignedId}>{staffName(assignedId)} (비출근)</option>
+                            )}
+                          </select>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-right">
                         <Button
