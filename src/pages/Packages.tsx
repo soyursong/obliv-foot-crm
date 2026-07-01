@@ -1006,37 +1006,7 @@ function PackageCreateDialog({
               placeholder="패키지명" />
           </div>
 
-          {/* 가열 레이저 */}
-          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-            <div className="text-xs font-semibold text-muted-foreground">가열 레이저</div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">회수</Label>
-                <Input type="number" min={0} value={heated}
-                  onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">수가 (회당)</Label>
-                <AmountInput value={heatedUnitPrice}
-                  onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)} />
-              </div>
-              <div className="flex items-end pb-0.5">
-                <button
-                  onClick={() => setHeatedUpgrade(!heatedUpgrade)}
-                  className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
-                    heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
-                >
-                  {heatedUpgrade ? '✓ ' : ''}6000샷 업그레이드
-                </button>
-              </div>
-            </div>
-            {heated > 0 && heatedUnitPrice > 0 && (
-              <div className="text-xs text-muted-foreground text-right">
-                소계: {formatAmount(heated * heatedUnitPrice)}
-              </div>
-            )}
-          </div>
-
+          {/* T-20260701-foot-PKGADD-NONHEAT-DEFAULT: 패키지 추가 화면 기본 오픈을 비가열 우선으로 — 비가열 레이저를 가열보다 먼저 노출 */}
           {/* 비가열 레이저 */}
           <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
             <div className="text-xs font-semibold text-muted-foreground">비가열 레이저</div>
@@ -1064,6 +1034,37 @@ function PackageCreateDialog({
             {unheated > 0 && unheatedUnitPrice > 0 && (
               <div className="text-xs text-muted-foreground text-right">
                 소계: {formatAmount(unheated * unheatedUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 가열 레이저 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={heated}
+                  onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <AmountInput value={heatedUnitPrice}
+                  onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)} />
+              </div>
+              <div className="flex items-end pb-0.5">
+                <button
+                  onClick={() => setHeatedUpgrade(!heatedUpgrade)}
+                  className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
+                    heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
+                >
+                  {heatedUpgrade ? '✓ ' : ''}6000샷 업그레이드
+                </button>
+              </div>
+            </div>
+            {heated > 0 && heatedUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(heated * heatedUnitPrice)}
               </div>
             )}
           </div>
@@ -1174,11 +1175,12 @@ function PackageCreateDialog({
           {/* T-20260511-foot-PKG-DYNAMIC-TABLE: 기입된 항목만 표시하는 동적 요약 표 */}
           {(() => {
             const previewRows = [
-              heated > 0 || heatedUnitPrice > 0
-                ? { label: '가열 레이저', count: heated, unitPrice: heatedUnitPrice, subtotal: heated * heatedUnitPrice }
-                : null,
+              // T-20260701-foot-PKGADD-NONHEAT-DEFAULT: 요약표도 입력 섹션과 동일하게 비가열 우선 노출
               unheated > 0 || unheatedUnitPrice > 0
                 ? { label: '비가열 레이저', count: unheated, unitPrice: unheatedUnitPrice, subtotal: unheated * unheatedUnitPrice }
+                : null,
+              heated > 0 || heatedUnitPrice > 0
+                ? { label: '가열 레이저', count: heated, unitPrice: heatedUnitPrice, subtotal: heated * heatedUnitPrice }
                 : null,
               podologe > 0 || podologeUnitPrice > 0
                 ? { label: '포돌로게', count: podologe, unitPrice: podologeUnitPrice, subtotal: podologe * podologeUnitPrice }
