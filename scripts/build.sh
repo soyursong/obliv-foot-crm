@@ -61,6 +61,26 @@ case "${1:-}" in
   --bg|--background)   MODE="bg";     DEADLINE="${2:-45}" ;;
   --status)            MODE="status" ;;
   --wait)              MODE="wait";   DEADLINE="${2:-45}" ;;
+  ''|*[!0-9]*)         MODE="sync" ;;   # no arg / non-numeric → legacy sync (npm run build:verify)
+  *)
+    # FIX (2026-07-01 T-20260701-foot-RESVGRID-TIMEAXIS-EXCELCELL FIX-REQUEST):
+    #   A PURELY-NUMERIC first arg (e.g. `build.sh 120`) is the supervisor QA
+    #   harness invocation. Historically this ran SYNCHRONOUS in the foreground,
+    #   so under parallel-worktree CPU contention the harness's ~50s foreground
+    #   safety ceiling externally SIGTERM-killed build.sh's process group → the
+    #   child `npm run build` died ("Terminated: 15") → a recurring FALSE
+    #   build_fail (the build itself passes in ~20s; verified clean cold).
+    #
+    #   The kill-safe `--bg` detached path (T-20260616, commit 471f2191) already
+    #   solves this but only when the caller opts in. Every prior FIX-REQUEST in
+    #   this class recurred because the supervisor kept calling the legacy sync
+    #   form. So: AUTO-ROUTE the numeric-arg form to the detached path. The
+    #   numeric value is carried as the detached build timeout (floored to 240s);
+    #   the foreground poll deadline stays sub-ceiling (45s). The build now runs
+    #   in its own session (os.setsid) and survives the foreground kill, and the
+    #   command ALWAYS returns a clean RESULT: OK|FAIL|RUNNING inside the window.
+    #   `npm run build:verify` (no numeric arg) is unaffected — still sync.
+    MODE="bg"; DEADLINE=45 ;;
 esac
 
 # For sync mode the (possibly numeric) first arg is the requested timeout.
