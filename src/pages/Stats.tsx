@@ -155,7 +155,7 @@ export default function Stats() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 p-6 overflow-auto">
+    <div className="h-full flex flex-col gap-4 p-4 overflow-auto">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold">통계 대시보드</h1>

@@ -1137,7 +1137,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
   // 렌더
   // ──────────────────────────────────────────────────────────
   return (
-    <div className="h-full overflow-auto space-y-4 p-4 md:p-6">
+    <div className="h-full overflow-auto space-y-4 p-4">
       {/* 헤더 */}
       <div className="flex items-end justify-between">
         <div className="flex items-end gap-3">

@@ -608,7 +608,7 @@ export default function Services() {
         </div>
       ) : effectiveTopTab === 'phrases' ? (
         // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: 상용구관리 서브탭 — 상용구 + 수가세트(이동만, 기능 불변, AC-2).
-        <div className="flex-1 min-h-0 overflow-auto p-4 md:p-6" data-testid="svc-phrase-panel">
+        <div className="flex-1 min-h-0 overflow-auto p-4" data-testid="svc-phrase-panel">
           <div className="mb-3">
             <h1 className="text-lg font-bold">상용구관리</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -666,7 +666,7 @@ export default function Services() {
   // 클로저로 기존 상태/핸들러를 그대로 사용. (서브탭 편입에 따른 래핑만, 로직 무변경)
   function renderServiceCatalog() {
     return (
-    <div className="flex flex-1 flex-col min-h-0 p-6">
+    <div className="flex flex-1 flex-col min-h-0 p-4">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold">서비스 관리</h1>
         <div className="flex items-center gap-2">

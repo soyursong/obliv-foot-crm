@@ -81,7 +81,7 @@ export default function StaffPage() {
   });
 
   return (
-    <div className="h-full overflow-auto space-y-4 p-4 md:p-6">
+    <div className="h-full overflow-auto space-y-4 p-4">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더' 탭 제거 — 최상위 [직원 근무 캘린더]로 승격·흡수 */}
