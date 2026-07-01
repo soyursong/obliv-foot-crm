@@ -571,6 +571,12 @@ export async function maybeAutoAssign(
       ? deriveConsultAxis(customer ?? {})
       : deriveTherapyAxis(checkIn);
 
+    // T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE (AC-3): 재진(returning) 상담(consult) 자동배정 skip.
+    //   접수/배정 화면에서 상담 실장 배정 칸을 숨기므로(AC-1), 숨긴 슬롯에 백그라운드 상담 배정이 발생하지 않도록 no-op.
+    //   재진 판정 SSOT = isReturningAxis(deriveConsultAxis) — REVISIT-CHECKIN-AUTOASSIGN-SKIP·UI(Assignments)와 동일 소스(AC-4).
+    //   치료사(therapy)는 불변(재진도 치료사 배정 유지, AC-2). 초진/체험 상담은 기존대로 배정(회귀0).
+    if (role === 'consult' && isReturningAxis(axis)) return { assigned: false };
+
     // 3) 후보 풀(당일 출근 + 역할 − 임시 off)
     //    T-20260624-foot-ASSIGN-STAFF-TEMP-OFF: 출근(workingIds)은 유지하되 '임시 off' 직원은 후보 제외.
     const staff = await fetchActiveStaff(checkIn.clinic_id);

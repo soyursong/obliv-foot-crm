@@ -280,18 +280,12 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     let consultantId: string | null = null;
     if (visitType === 'new') {
       consultantId = await autoAssignConsultant(clinicId);
-    } else if (visitType === 'returning' && customerId) {
-      // T-20260520-foot-REVISIT-CONSULTANT-AUTOFILL
-      // AC-1: 재진 체크인 시 customers.assigned_staff_id → consultant_id 자동 세팅
-      // AC-2: assigned_staff_id NULL → consultantId null 유지 (기존 동작)
-      // AC-3: INSERT 시점에만 세팅 — UPDATE 이후 수동 변경은 덮어쓰지 않음
-      const { data: cust } = await supabase
-        .from('customers')
-        .select('assigned_staff_id')
-        .eq('id', customerId)
-        .maybeSingle();
-      consultantId = (cust?.assigned_staff_id as string | null) ?? null;
     }
+    // T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE (AC-3): 재진(returning) 상담 실장 오토필 폐지.
+    //   구 T-20260520-REVISIT-CONSULTANT-AUTOFILL 은 재진 체크인 시 customers.assigned_staff_id → consultant_id 를
+    //   자동세팅했으나, 재진은 상담 실장 배정 칸 자체를 숨기므로(접수/배정 화면, AC-1) 배경 배정도 발생시키지 않는다.
+    //   → 재진 consultantId=null 유지(AC-3 빈 값). 치료사 배정은 불변(재진=treatment_waiting 직행 후 maybeAutoAssign therapy).
+    //   초진(new)은 위 autoAssignConsultant 로 상담 배정 유지(회귀0). 판정 SSOT = visitType==='returning'(autoAssign 동일, AC-4).
 
     // AC-1/AC-2: 재진 → 치료대기, 체험(예약없이방문) → 상담대기 (T-20260514-foot-CHECKIN-AUTO-STAGE)
     // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 셀프접수 초진 동선(SelfCheckIn receiving)과 통일.
