@@ -11,14 +11,16 @@
 --   {heated_laser, unheated_laser, iv, preconditioning, podologue, trial, reborn} 이다.
 --   → 'podologue' 는 이미 존재. 본 티켓의 ADDITIVE 델타는 'ribbon' 단 1개.
 --
--- ── 5항목 = 2개 의미 축(DA §7, 하나로 뭉치지 말 것) ──
---   치료유형(treatment) 축 [배정 필터 O]: 내성(PD)=`podologue`(既존) · 각질(RB)=`ribbon`(본 마이그 신규)
---   검사요청(exam)     축 [배정 필터 X]: 피검사=`blood_test` · KOH균검사=`koh_fungal_test`
---                                        → 既존 리스트업 엔티티(check_in_services.blood_test_requested/
---                                          koh_requested + request_*_for_customer RPC)에 write. session_type 아님.
---   무좀PC+NL          축 [배정 필터 X]: `athlete_foot_pc_nl` — dev-foot 그라운딩 결과 처방(PC)+네일락(NL)
---                                        도메인(무좀세트/PrescriptionSets), 치료사 hands-on 시술 아님 →
---                                        非치료(exam=listup only) 축. session_type CHECK 에 넣지 않음(범주 오염 방지).
+-- ── 5항목 = 2개 의미 축(DA §7 + 후속 lpro 확정, 하나로 뭉치지 말 것) ──
+--   치료유형(treatment) 축 [배정 필터 O] → chart_treatment_requests(axis='treatment'), session_type 공유 어휘:
+--     · 내성(PD)  = podologue                       (既존 session_type)
+--     · 각질(RB)  = ribbon                          (본 마이그 신규 CHECK 확장)
+--     · 무좀PC+NL = preconditioning + unheated_laser (✅DA lpro: PC=preconditioning, NL=unheated_laser 既존코드 조합,
+--                                                     신규 enum 0. 배정 필터 참여 = preconditioning capability.)
+--   검사요청(exam) 축 [배정 필터 X] → chart_treatment_requests 미저장(DA lpro AC-4, 既존 플래그가 단일 SSOT):
+--     · 피검사    = check_in_services.blood_test_requested(bool) + request_blood_test_for_customer RPC
+--     · KOH균검사 = check_in_services.koh_requested(bool)        + request_koh_for_customer      RPC
+--     (session_type 아님. CHECK 에 넣지 말 것 = 범주 오염 방지. request_axis='exam' 행도 안 씀 = 연동 끊김·중복 0.)
 --
 -- [A] 신규 소형 정규화 테이블 chart_treatment_requests — grain=(check_in_id)×request_code 1행.
 --     request_axis 로 두 의미 축 분리(배정=axis='treatment'만, 리스트업=axis='exam'만 read).
