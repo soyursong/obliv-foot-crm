@@ -1,3 +1,9 @@
+-- ★★★ SUPERSEDED — DO NOT APPLY ★★★
+-- T-20260701-foot-PHRASETMPL-RLS-DRIFT-4ROLE · DA CONSULT-REPLY MSG-20260701-102354-f5k2 (DA-20260701-PHRASETMPL-RLS-DRIFT)
+-- coordinator 는 5역할 정책 staff_write_staffarea_phrases(20260620120000) 에 흡수됨 → 본 단일-role 정책 apply 금지(이중정책 방지).
+-- sibling 미apply 상태라 DROP 불요 = ADDITIVE 무결. 파일은 .SUPERSEDED 로 마이그 glob(*.sql) 제외 → 원천 차단.
+-- 이력 보존용으로만 잔존. planner: sibling 티켓 T-20260630-foot-PHRASETMPL-CODY-WRITE-RLS = superseded(흡수) 클로즈.
+--
 -- T-20260630-foot-PHRASETMPL-CODY-WRITE-RLS — 상용구(펜/고객차트) coordinator write 개방 (RLS ADDITIVE)
 --
 -- 현장(김주연 총괄, U0ATDB587PV / coordinator 계정 기준, #풋센터 C0ATE5P6JTH):
