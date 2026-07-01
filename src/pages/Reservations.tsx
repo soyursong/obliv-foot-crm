@@ -1,5 +1,5 @@
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -517,9 +517,10 @@ export default function Reservations() {
   const toMin = (s: string) => parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
   const scrollToNow = useCallback(() => {
     if (!isTodayInView) return;
-    // 1순위: 현재 슬롯 행 (정확한 시각 위치)
+    // 1순위: 현재 슬롯 (정확한 시각 위치). block=세로(주간 <table> 행) / inline=가로(일간 전치 격자의 시간 컬럼) 동시 센터링.
+    //   T-20260701-foot-RESVGRID-TIMEAXIS-EXCELCELL: 일간뷰 시간축을 가로로 전치 → 현재시각이 컬럼이 되므로 inline:'center' 추가.
     if (currentSlotRef.current) {
-      currentSlotRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      currentSlotRef.current.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
       return;
     }
     // 폴백: 현재 슬롯 행 없음(영업시간 외) → 첫/마지막 행으로 클램핑
@@ -1985,73 +1986,49 @@ export default function Reservations() {
             );
 
             return (
-              /* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ③: 일간 뷰 — 슬롯 카드(가로 컬럼) → 대시보드 통합 시간표식 엑셀 격자.
-                 시간(행) × 구분(열: 초진/재진) grid-cols-[64px_1fr_1fr]. 대시보드 통합시간표(grid-cols-[2.5rem_1fr_1fr]) 패턴 이식.
-                 빈 칸 클릭 → 신규예약(handleCellCreate → openNewSlot). ★ openNewSlot 경유 유지 =
-                 CUSTCTX-PREFILL(pendingPrefillCustomer→initialCustomer) 분기 보존(§dependency 가드, 폼 opener 우회 금지).
-                 write 경로 무변경(생성=createReservationCanonical, 이동=handleDrop/클립보드 기존 RPC). */
-              <div data-testid="resv-day-horizontal" className="flex h-full flex-col">
-                {/* 헤더 행 (sticky) — 시간 | 초진 | 재진. 대시보드 통합시간표 3컬럼과 동형. */}
-                <div
-                  data-testid="resv-day-xaxis"
-                  className="sticky top-0 z-20 grid grid-cols-[64px_1fr_1fr] border-b bg-muted/60 text-center text-xs font-semibold"
-                >
-                  <div className="px-1 py-1.5 text-muted-foreground">시간</div>
-                  <div className="border-l px-1 py-1.5 text-blue-700">초진</div>
-                  <div className="border-l px-1 py-1.5 text-firstvisit-700">재진</div>
-                </div>
+              /* T-20260701-foot-RESVGRID-TIMEAXIS-EXCELCELL — 총괄(김주연) 스크린샷 SSOT 지시로 격자 축 전치 + 입력방식 전환.
+                 ① 시간축 세로→가로 복원: 시간(10:00·10:30…)을 상단 가로 헤더(좌→우), 초진/재진(치료사축)을 세로 좌측 행으로(AC1/AC2).
+                 ② (+)버튼 제거→엑셀식 빈칸 직접입력: 각 칸의 (+) 버튼 삭제, 빈 칸을 바로 클릭하면 그 시간·구분으로 신규예약 진입(AC3/AC4).
+                 단일 CSS grid(행=헤더/초진/재진, 열=구분라벨+시간N). 카드 렌더(renderDayCard)·클립보드·drag-drop·live-glass·건수라벨 전부 불변 — 축 방향과 트리거 위치만 전치.
+                 ★ openNewSlot 경유 유지 = CUSTCTX-PREFILL(pendingPrefillCustomer→initialCustomer) 분기 보존(§dependency 가드, 폼 opener 우회 금지).
+                 write 경로 무변경(생성=createReservationCanonical, 이동=handleDrop/클립보드 기존 RPC). 7ADJ/OVERHAUL의 '세로=시간' 전제를 본 티켓이 supersede. */
+              <div data-testid="resv-day-horizontal" className="w-max min-w-full">
                 {daySlots.length === 0 ? (
                   <div className="p-4 text-sm text-muted-foreground">영업 시간 슬롯이 없습니다.</div>
                 ) : (
-                  daySlots.map((time) => {
-                    const list = slotList(time);
-                    const { n, rr, h } = kindCounts(time);
-                    const full = isSlotFull(dateStr, time);
-                    const isNow = isSameDay(selectedDay, now) && time === currentSlot;
-                    const isDragOver = dropTarget === `${dateStr}_${time}`;
-                    // 구분(열) 분류: 초진(new) / 재진(returning·healer·other) — 대시보드 통합시간표 2컬럼과 동일 규칙.
-                    const newCards = list.filter((r) => resvKind(r) === 'new');
-                    const restCards = list.filter((r) => resvKind(r) !== 'new');
-                    // 빈 칸 클릭 동선: 클립보드 대기 중이면 붙여넣기 타깃 지정(⑦), 아니면 신규예약(openNewSlot, ③).
-                    const handleCellCreate = () => {
-                      if (clipboard) { if (!full) setClipboardTarget({ date: dateStr, time }); return; }
-                      if (!full) openNewSlot(selectedDay, time);
-                    };
-                    const cellCommon = cn(
-                      // 태블릿 탭 타깃 확보(min-h-[44px]) + 빈영역 클릭 어포던스. 카드는 stopPropagation 이라 카드 클릭이 셀 생성 트리거 안 함.
-                      'min-h-[44px] border-l p-1 space-y-1 align-top transition-colors',
-                      full && 'cursor-not-allowed',
-                      !full && !clipboard && 'cursor-pointer hover:bg-teal-50/40',
-                      !full && clipboard && 'cursor-copy hover:bg-teal-50/60',
-                      isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
-                    );
-                    return (
-                      <div
-                        key={time}
-                        data-testid={`resv-day-col-${time}`}
-                        data-slot-time={time}
-                        // 현재시각 행 자동 스크롤 타깃(주간뷰 currentSlotRef 재사용). div 이지만 scrollIntoView 만 사용 → 타입 캐스팅.
-                        ref={(el) => { if (isNow) (currentSlotRef as unknown as { current: HTMLElement | null }).current = el; }}
-                        className={cn(
-                          'grid grid-cols-[64px_1fr_1fr] border-b',
-                          !isNow && 'bg-background',
-                          // T-20260630-...LIVEINDICATOR-SILVER-PULSE + T-20260701-...LIVESLOT-GLASS-APPLY 재적용(신 격자 행 위):
-                          //   현재시각 행 = 유리 볼록(live-glass) + 연한 실버 테두리(#C7CDD4) + 테두리 깜빡임(motion-safe). isNow는 유리 반투명이라 bg-background 미적용(뒤 비침).
-                          isNow && 'live-glass border-y-2 border-[#C7CDD4] motion-safe:animate-live-border-pulse',
-                          full && !isNow && 'bg-red-50/40',
-                        )}
-                      >
-                        {/* 시간 라벨 셀 — ④ 중앙정렬 + 폰트 1.5배(현재 10px → 15px). 아래 초/재/힐 건수(CAL-COUNT-LABEL 재적용). */}
+                  <div
+                    data-testid="resv-day-xaxis"
+                    className="grid text-center text-xs"
+                    style={{ gridTemplateColumns: `72px repeat(${daySlots.length}, 112px)` }}
+                  >
+                    {/* 좌상단 코너(구분＼시간) — sticky 교차 고정 */}
+                    <div
+                      data-testid="resv-day-corner"
+                      className="sticky left-0 top-0 z-30 flex items-center justify-center border-b border-r bg-muted/80 px-1 py-1.5 text-[11px] font-semibold text-muted-foreground"
+                    >
+                      구분＼시간
+                    </div>
+                    {/* ── 상단 가로 헤더: 시간 컬럼(좌→우) — AC1. 시간 라벨 중앙정렬·15px + 초/재/힐 건수(CAL-COUNT-LABEL 유지). ── */}
+                    {daySlots.map((time) => {
+                      const { n, rr, h } = kindCounts(time);
+                      const full = isSlotFull(dateStr, time);
+                      const isNow = isSameDay(selectedDay, now) && time === currentSlot;
+                      return (
                         <div
+                          key={`hdr-${time}`}
                           data-testid={`resv-day-hslot-${time}`}
                           data-slot-time={time}
+                          // 현재시각 = 이제 '컬럼'. 자동 스크롤 타깃을 현재시각 헤더 셀에 부착(scrollToNow inline:'center' 로 가로 센터링).
+                          ref={(el) => { if (isNow) (currentSlotRef as unknown as { current: HTMLElement | null }).current = el; }}
                           className={cn(
-                            'flex flex-col items-center justify-center gap-0.5 px-1 py-1 text-center',
-                            isNow && 'bg-slate-100',
-                            full && 'bg-red-50',
+                            'sticky top-0 z-20 flex flex-col items-center justify-center gap-0.5 border-b border-l px-1 py-1 text-center',
+                            !isNow && 'bg-muted/60',
+                            // 현재시각 컬럼 = 유리 볼록(live-glass) + 연한 실버 테두리 + 깜빡임(motion-safe). 전치로 세로 강조 → border-x.
+                            isNow && 'live-glass border-x-2 border-[#C7CDD4] motion-safe:animate-live-border-pulse',
+                            full && !isNow && 'bg-red-50',
                           )}
                         >
-                          <span className="text-center text-[15px] font-semibold tabular-nums leading-none text-foreground">{time}</span>
+                          <span className="text-[15px] font-semibold tabular-nums leading-none text-foreground">{time}</span>
                           <span
                             data-testid={`resv-day-hslot-count-${time}`}
                             className="flex items-center justify-center gap-0.5 whitespace-nowrap text-[8px] font-medium leading-none"
@@ -2063,55 +2040,65 @@ export default function Reservations() {
                             <span className="text-healer-700">힐러{h}</span>
                           </span>
                         </div>
-                        {/* 초진 칸 — 빈영역 클릭 시 신규예약 */}
+                      );
+                    })}
+                    {/* ── 세로축 = 초진/재진(치료사축) — AC2. 각 행 = 시간 컬럼별 셀. (+)버튼 제거, 빈 칸 직접 클릭 = 신규예약(AC3/AC4). ── */}
+                    {(['new', 'rest'] as const).map((rowKind) => (
+                      <Fragment key={rowKind}>
+                        {/* 좌측 행 라벨(초진/재진) — sticky left 고정 */}
                         <div
-                          data-testid={`resv-day-cell-new-${time}`}
-                          onClick={handleCellCreate}
-                          onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
-                          onDragLeave={() => setDropTarget(null)}
-                          onDrop={(e) => handleDrop(e, dateStr, time)}
-                          title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
-                          className={cellCommon}
-                        >
-                          {newCards.map(renderDayCard)}
-                          {newCards.length === 0 && !full && (
-                            <button
-                              type="button"
-                              data-testid={`resv-day-slot-plus-${time}`}
-                              onClick={(e) => { e.stopPropagation(); handleCellCreate(); }}
-                              title={clipboard ? '붙여넣기 위치 지정' : '초진 신규예약'}
-                              className="flex w-full items-center justify-center rounded border border-dashed border-muted-foreground/30 py-1 text-muted-foreground/50 transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
+                          data-testid={`resv-day-rowlabel-${rowKind}`}
+                          className={cn(
+                            'sticky left-0 z-10 flex items-center justify-center border-b border-r bg-muted/60 px-1 py-2 text-xs font-semibold',
+                            rowKind === 'new' ? 'text-blue-700' : 'text-firstvisit-700',
                           )}
-                        </div>
-                        {/* 재진 칸 (재진·힐러·기타) — 빈영역 클릭 시 신규예약. data-testid=resv-day-col-cards-{time}(하위호환) */}
-                        <div
-                          data-testid={`resv-day-col-cards-${time}`}
-                          onClick={handleCellCreate}
-                          onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
-                          onDragLeave={() => setDropTarget(null)}
-                          onDrop={(e) => handleDrop(e, dateStr, time)}
-                          title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
-                          className={cellCommon}
                         >
-                          {restCards.map(renderDayCard)}
-                          {restCards.length === 0 && !full && (
-                            <button
-                              type="button"
-                              data-testid={`resv-day-slot-plus-ret-${time}`}
-                              onClick={(e) => { e.stopPropagation(); handleCellCreate(); }}
-                              title={clipboard ? '붙여넣기 위치 지정' : '재진 신규예약'}
-                              className="flex w-full items-center justify-center rounded border border-dashed border-muted-foreground/20 py-1 text-muted-foreground/40 transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          )}
+                          {rowKind === 'new' ? '초진' : '재진'}
                         </div>
-                      </div>
-                    );
-                  })
+                        {daySlots.map((time) => {
+                          const list = slotList(time);
+                          const full = isSlotFull(dateStr, time);
+                          const isNow = isSameDay(selectedDay, now) && time === currentSlot;
+                          const isDragOver = dropTarget === `${dateStr}_${time}`;
+                          // 구분(행) 분류: 초진(new) / 재진(returning·healer·other) — 대시보드 통합시간표 2구분과 동일 규칙.
+                          const cards = rowKind === 'new'
+                            ? list.filter((r) => resvKind(r) === 'new')
+                            : list.filter((r) => resvKind(r) !== 'new');
+                          // 빈 칸 클릭 동선: 클립보드 대기 중이면 붙여넣기 타깃 지정(⑦), 아니면 신규예약(openNewSlot). openNewSlot 경유 유지 = CUSTCTX-PREFILL 분기 보존.
+                          const handleCellCreate = () => {
+                            if (clipboard) { if (!full) setClipboardTarget({ date: dateStr, time }); return; }
+                            if (!full) openNewSlot(selectedDay, time);
+                          };
+                          return (
+                            <div
+                              key={`${rowKind}-${time}`}
+                              // 하위호환 testid 유지: 초진 셀=resv-day-cell-new-{time} / 재진 셀=resv-day-col-cards-{time}.
+                              data-testid={rowKind === 'new' ? `resv-day-cell-new-${time}` : `resv-day-col-cards-${time}`}
+                              data-slot-time={time}
+                              onClick={handleCellCreate}
+                              onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
+                              onDragLeave={() => setDropTarget(null)}
+                              onDrop={(e) => handleDrop(e, dateStr, time)}
+                              title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
+                              className={cn(
+                                // 엑셀식 셀: 빈영역 전체가 클릭 어포던스(별도 (+) 버튼 없음). 태블릿 탭 타깃 min-h-[56px].
+                                'min-h-[56px] space-y-1 border-b border-l p-1 align-top transition-colors',
+                                !isNow && 'bg-background',
+                                isNow && 'live-glass border-x-2 border-[#C7CDD4]',
+                                full && !isNow && 'bg-red-50/40',
+                                full && 'cursor-not-allowed',
+                                !full && !clipboard && 'cursor-pointer hover:bg-teal-50/40',
+                                !full && clipboard && 'cursor-copy hover:bg-teal-50/60',
+                                isDragOver && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
+                              )}
+                            >
+                              {cards.map(renderDayCard)}
+                            </div>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </div>
                 )}
               </div>
             );
