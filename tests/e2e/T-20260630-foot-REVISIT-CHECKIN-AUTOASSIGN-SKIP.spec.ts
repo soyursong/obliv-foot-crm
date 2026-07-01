@@ -8,10 +8,12 @@
  * 설계: 배정행(assignment_actions)은 그대로 INSERT(카운트 SSOT=check_ins, ASSIGN-COUNT-TOSS-3FIX 보존)하되
  *   재진+지정담당 정상배정만 reason=sentinel('silent_revisit_designated') → AssignmentNotifyBell 노출에서 제외.
  *
- * 검증(현장 클릭 시나리오 3종 + 회귀 전수):
- *  S1 (AC-1): 재진 지정담당 정상배정(reason=sentinel) → 알림(전광판/종 배지)에 미노출.
+ * 검증(현장 클릭 시나리오 + 회귀 전수):
+ *  S1 [폐기 — T-20260701-foot-REVISIT-SKIP-SPEC-MARQUEE-REFRESH]: 06-29 종→마키 이전으로 진입점 소멸 +
+ *      S3/FULLSKIP Part B S1 과 커버리지 중복 → 폐기(하단 폐기 사유 주석 참조).
  *  S2 (AC-2/AC-4): 신규/워크인 배정(reason=null) → 알림 노출(회귀0).
  *  S3 (AC-3): 재진 휴무 fallback(reason=null) → 알림 노출 + sentinel 행은 표시만 제외(혼재 시 정상행만 노출).
+ *              진입점을 마키(전광판) 클릭으로 재정합(06-29 종 이전 반영).
  *  S4 (회귀): sentinel 행도 assignment_actions 에는 그대로 존재(카운트 정합 보존).
  *
  * 비파괴: 시드(check_in + assignment_actions)는 종료 후 전량 회수.
@@ -85,30 +87,18 @@ test.describe('T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP — 재진 담당
     for (const s of seeds) await cleanupSeededCheckin(service, s);
   });
 
-  // ── S1 (AC-1): 재진 지정담당 정상배정(sentinel) → 알림 미노출 ─────────────────────
-  test('S1: 재진 지정담당 정상배정(reason=sentinel)만 있으면 전광판/배지가 노출되지 않는다', async ({ page }) => {
-    const seed = await seedTodayActiveCheckin(service, clinicId);
-    expect(seed).not.toBeNull();
-    seeds.push(seed!);
-    actionIds.push(await insertAction(clinicId, seed!.checkInId, staffId, ASSIGN_SILENT_REASON));
-
-    const ok = await gotoAdmin(page);
-    expect(ok).toBeTruthy();
-
-    // 종 자체는 상시 노출(컴포넌트 불변). AC-1 의 핵심 주장 = sentinel 배정행이 '알림에 나타나지 않는다'.
-    //   ※ marquee 전역 hidden 단언은 공유 테스트DB의 타 미읽음 행에 취약 → 'sentinel 고객 부재'로 직접 검증.
-    //   ※ 시드 체크인 성함은 대시보드 칸반 카드에도 뜨므로 반드시 '패널/전광판 내부'로 스코프.
-    await expect(page.getByTestId('assign-notify-bell')).toBeVisible();
-
-    const panel = page.getByTestId('assign-notify-panel');
-    await page.getByTestId('assign-notify-bell').click();
-    await expect(panel).toBeVisible();
-    // 패널·알림 항목 어디에도 sentinel 고객(재진 지정담당 정상배정)은 없음.
-    await expect(panel.getByText(seed!.name, { exact: false })).toHaveCount(0);
-    await expect(
-      panel.getByTestId('assign-notify-item').filter({ hasText: seed!.name }),
-    ).toHaveCount(0);
-  });
+  // ── S1: 폐기(T-20260701-foot-REVISIT-SKIP-SPEC-MARQUEE-REFRESH) ─────────────────
+  //   [폐기 사유]
+  //   원 S1 의도 = '재진 지정담당 정상배정(sentinel)만 있으면 알림 미노출'을 대시보드 종(assign-notify-bell)
+  //   +패널을 열어 sentinel 고객 부재로 검증. 그러나 T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE(deployed
+  //   06-29)가 배정 알림 종을 대시보드에서 제거(showBell={false}, 마키/전광판으로 진입점 이전)하면서
+  //   assign-notify-bell 이 대시보드에 더는 렌더되지 않아 진입점이 소멸 → 본 케이스가 stale 로 사전 실패했다.
+  //   진입점을 마키(assign-notify-marquee)로 재정합하려면 마키가 뜨도록 대조용 null-reason 행을 동반 시드해야
+  //   하는데, 그 형태는 아래 S3(혼재: normal 노출·sentinel 제외) 및 신규 spec
+  //   T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP Part B S1(대조 초진행 동반·마키/패널에서 sentinel 제외)
+  //   과 커버리지가 완전히 중복된다. 또한 sentinel 단독 시드는 unreadCount=0 → 마키 자체가 렌더되지 않아
+  //   '단독 미노출'을 robust 하게 단언할 진입점이 없다(원 코드도 marquee 전역 hidden 단언을 공유 DB 취약성으로
+  //   회피했음). → 중복·비검증가능 → 폐기. sentinel 억제 커버리지는 S3 + FULLSKIP Part B S1 이 유지한다.
 
   // ── S2 (AC-2/AC-4): 신규/워크인 배정(reason=null) → 알림 노출(회귀0) ───────────────
   test('S2: 일반 배정(reason=null)은 전광판/배지가 정상 노출된다(초진·워크인 회귀0)', async ({ page }) => {
@@ -143,11 +133,15 @@ test.describe('T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP — 재진 담당
     await expect(marquee).toBeVisible({ timeout: 20_000 });
     // 일반(휴무 fallback) 고객은 노출.
     await expect(marquee).toContainText(normalSeed!.name);
+    // sentinel(재진 지정담당) 고객은 전광판에서도 제외.
+    await expect(marquee).not.toContainText(silentSeed!.name);
 
     // 패널: 정상행만 노출, sentinel 고객은 제외.
+    //   ※ T-20260701-foot-REVISIT-SKIP-SPEC-MARQUEE-REFRESH: 06-29 종 이전(showBell={false})으로
+    //     대시보드에 assign-notify-bell 이 없다 → 패널 진입점을 마키(전광판) 클릭으로 재정합(FULLSKIP 패턴).
     //   ※ 성함은 칸반 카드에도 뜨므로 '패널 내부'로 스코프하여 검사.
     const panel = page.getByTestId('assign-notify-panel');
-    await page.getByTestId('assign-notify-bell').click();
+    await marquee.click();
     await expect(panel).toBeVisible();
     await expect(panel.getByText(normalSeed!.name, { exact: false }).first()).toBeVisible();
     await expect(panel.getByText(silentSeed!.name, { exact: false })).toHaveCount(0);
