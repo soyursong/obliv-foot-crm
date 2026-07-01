@@ -388,6 +388,77 @@ export async function logAssignment(input: LogInput): Promise<void> {
   }
 }
 
+// ── 치료신청 capability 필터(AC-5) ────────────────────────────────────────────
+
+/**
+ * T-20260701-foot-CHART2-TREATREQ-SPLIT (AC-5): 초진 치료사 배정 후보를 치료신청(treatment 축)으로 좁힌다.
+ *   후보 = { 치료사 : capability_codes ⊇ (환자 금일 치료신청 중 request_axis='treatment' subset) }.
+ *   · 배정 필터는 '5항목'이 아니라 treatment subset(내성 podologue/각질 ribbon)만. exam 축(피검사/KOH/무좀) 불참.
+ *   · 초진(visit_type='new') 한정 — 재진은 필터 없음(기존 동선 보존).
+ *
+ * ── 정합 계약(자매 티켓 T-20260701-foot-THERAPIST-SKILL-CAPABILITY-ASSIGN) ──
+ *   capability 소스 = staff_treatment_capabilities(staff_id uuid, treatment_code text). 코드 어휘는
+ *   treatmentRequestCodes.TREATMENT_AXIS_CODES / package_sessions.session_type 공유 SSOT(podologue/ribbon).
+ *   ⚠ 이 테이블은 THERAPIST-SKILL 티켓이 생성·적재한다(현장 confirm 대기). 아직 없다.
+ *
+ * ── graceful(회귀 0 보증) ──
+ *   ① 초진 아님 / 치료신청 미저장 / capability 테이블 부재 → 필터 무동작(전체 pool 반환) = 기존 동작.
+ *   ② capability 있으나 subset 충족 후보 공집합 → fallback(전체 pool + 경고, THERAPIST-SKILL AC-3).
+ *   어떤 오류도 throw 안 함 — 배정 동선을 절대 막지 않는다.
+ */
+export async function filterTherapistPoolByTreatmentCapability(
+  pool: string[],
+  checkInId: string,
+  visitType: string | null | undefined,
+): Promise<string[]> {
+  try {
+    if (pool.length === 0) return pool;
+    if (visitType !== 'new') return pool; // 초진 한정(소비 규칙)
+
+    // 1) 금일 치료신청 treatment subset (chart_treatment_requests, graceful)
+    const { data: reqData, error: reqErr } = await supabase
+      .from('chart_treatment_requests')
+      .select('request_code, request_axis')
+      .eq('check_in_id', checkInId)
+      .eq('request_axis', 'treatment');
+    if (reqErr) return pool; // 테이블 부재(42P01) 등 → 필터 없음
+    const need = [...new Set((reqData ?? []).map((r) => (r as { request_code: string }).request_code))];
+    if (need.length === 0) return pool; // 치료신청 없음 → 필터 없음
+
+    // 2) 후보 치료사 capability (staff_treatment_capabilities, graceful)
+    const { data: capData, error: capErr } = await supabase
+      .from('staff_treatment_capabilities')
+      .select('staff_id, treatment_code')
+      .in('staff_id', pool);
+    if (capErr) {
+      // capability 소스 부재/미적용 → fallback(전체 후보). THERAPIST-SKILL 적재 전 안전.
+      console.warn('[autoAssign] capability 소스 없음 → 치료신청 필터 skip(전체 후보):', capErr.message);
+      return pool;
+    }
+    const capMap = new Map<string, Set<string>>();
+    for (const r of (capData ?? []) as { staff_id: string; treatment_code: string }[]) {
+      if (!capMap.has(r.staff_id)) capMap.set(r.staff_id, new Set());
+      capMap.get(r.staff_id)!.add(r.treatment_code);
+    }
+    // 3) subset ⊇ 필터
+    const filtered = pool.filter((id) => {
+      const caps = capMap.get(id);
+      return !!caps && need.every((c) => caps.has(c));
+    });
+    if (filtered.length === 0) {
+      // capability 있으나 수행 가능자 없음 → fallback(전체 후보 + 경고). 배정 동선 유지.
+      console.warn(
+        `[autoAssign] 치료신청 필터 fallback: 필요코드=[${need.join(',')}] 수행가능 치료사 0 → 전체 후보로 배정(THERAPIST-SKILL AC-3).`,
+      );
+      return pool;
+    }
+    return filtered;
+  } catch (e) {
+    console.warn('[autoAssign] filterTherapistPoolByTreatmentCapability 실패 → 전체 후보:', e);
+    return pool;
+  }
+}
+
 // ── 자동배정 메인 ─────────────────────────────────────────────────────────────
 
 interface CheckInLite {
@@ -471,9 +542,15 @@ export async function maybeAutoAssign(
     const workingIds = await fetchTodayWorkingStaffIds(checkIn.clinic_id, staff);
     const tempOff = await fetchTodayTempOffStaffIds();
     const targetRole = ROLE_STAFF_ROLE[role];
-    const pool = staff
+    let pool = staff
       .filter((s) => s.role === targetRole && workingIds.has(s.id) && !tempOff.has(s.id))
       .map((s) => s.id);
+
+    // AC-5(초진 한정): 치료사 배정 후보를 치료신청(treatment 축) capability 로 좁힌다.
+    //   graceful — 초진 아님/치료신청 없음/capability 소스 부재 시 무동작(전체 pool, 회귀 0).
+    if (role === 'therapy') {
+      pool = await filterTherapistPoolByTreatmentCapability(pool, checkInId, customer?.visit_type ?? null);
+    }
 
     // 4) 0순위 — 지정 담당 우선(당일 출근 + 임시 off 아님 시). 임시 off 면 fallback(least-loaded).
     const designatedId = role === 'consult'
