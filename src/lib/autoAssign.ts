@@ -33,12 +33,15 @@ import type {
 } from './types';
 
 /**
- * T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP:
- * 재진(returning) + 지정 담당자(0순위) 정상 배정 시 assignment_actions.reason 에 남기는 sentinel.
+ * T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP → T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP (B→A):
+ * 재진(returning) '상담(consult)' 배정 시 assignment_actions.reason 에 남기는 sentinel.
  *  · 카운트/부하 집계 정합 영향 0 — 배정 누적 SSOT=check_ins(Assignments §5b), computeLoad/fetchMonthActions 는
  *    reason 을 보지 않음 → ASSIGN-COUNT-TOSS-3FIX 보존(행은 그대로 INSERT, 표시만 억제).
- *  · AssignmentNotifyBell 만 이 reason 행을 '담당자 배정 알림' 노출에서 제외(이미 지정 담당 → 배정 인지 불필요).
- *  · 휴무·임시off·미지정·판정실패 → 지정담당 미선택(fallback) → sentinel 미부여 → 알림 노출(AC-3/AC-5 보수적 default).
+ *  · AssignmentNotifyBell 만 이 reason 행을 '담당자 배정 알림' 노출에서 제외.
+ *  · FULLSKIP(B→A): 재진 consult 는 담당 상담사 지정 유무·휴무·미지정 전 조합에서 무조건 sentinel → 상담 배정 알림 완전 제외.
+ *    (구 #1 의 '지정 담당 정상배정만' 조건 제거. 휴무·미지정 fallback 알림(B)도 이제 억제.)
+ *  · 단 role='consult' 에만 적용 — 치료사(therapy) 배정은 불변(AC-2): 지정 fallback 경고·usedDesignated sentinel 유지.
+ *  · 비재진(초진/워크인)은 미부여 → 알림 기존대로 노출(AC-3 회귀0).
  * (DB 무변경 — reason 은 기존 컬럼. 신규 enum/컬럼 0.)
  */
 export const ASSIGN_SILENT_REASON = 'silent_revisit_designated';
@@ -80,6 +83,38 @@ export function parseDesignatedFallbackReason(
   const staffName = rest.slice(sep + 1).trim();
   if (kind !== 'not_in_working_ids' && kind !== 'temp_off') return null;
   return { kind, staffName };
+}
+
+/**
+ * T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP (B→A) — assignment_actions.reason 결정 단일 소스(SSOT).
+ *   두 write 경로(maybeAutoAssign / NewCheckInDialog 재진 autofill)가 이 함수 하나로 sentinel 을 판정한다.
+ *
+ *   규칙(우선순위):
+ *   1) 재진(returning) '상담(consult)' → 담당 상담사 지정 유무·휴무·미지정 전 조합에서 항상 sentinel
+ *      → 상담 배정 알림 완전 제외(B→A). #1 의 '지정 담당 정상배정만' 조건을 제거한 완결.
+ *   2) 지정 fallback(휴무/시트미매칭) → fallback 사유 태그(SHEET-MATCH-GUARD 운영자 경고). ※치료사 경로 불변(AC-2).
+ *   3) 재진 '치료사(therapy)' 지정 정상배정 → sentinel 유지(AC-2 불변).
+ *   4) 그 외(초진/워크인 등) → null(알림 기존대로 노출, AC-3 회귀0).
+ *   (DB 무변경 — reason 은 기존 자유텍스트 컬럼. 신규 enum/컬럼 0.)
+ */
+export function resolveAssignReason(params: {
+  role: 'consult' | 'therapy';
+  visitType?: string | null;
+  usedDesignated: boolean;
+  designatedFallback?: { kind: DesignatedFallbackKind; staffName: string | null } | null;
+}): string | null {
+  const { role, visitType, usedDesignated, designatedFallback } = params;
+  const isReturning = visitType === 'returning';
+  // (1) 재진 상담 배정 알림 완전 제외 — fallback/미지정 여부와 무관하게 최우선.
+  if (role === 'consult' && isReturning) return ASSIGN_SILENT_REASON;
+  // (2) 지정 fallback 경고 태그(치료사 등 비-재진consult 경로 보존).
+  if (designatedFallback) {
+    return buildDesignatedFallbackReason(designatedFallback.kind, designatedFallback.staffName);
+  }
+  // (3) 재진 치료사 지정 정상배정 sentinel 유지(AC-2 영향 0).
+  if (usedDesignated && isReturning) return ASSIGN_SILENT_REASON;
+  // (4) 초진/워크인 등 → 알림 노출.
+  return null;
 }
 
 // ── 축(axis) 파생 ─────────────────────────────────────────────────────────────
@@ -636,11 +671,14 @@ export async function maybeAutoAssign(
     //    은 usedDesignated=false → 미부여 → 알림 노출(AC-3). 비재진은 회귀0(미부여).
     //    T-20260701-DESIGNATED-STAFF-SHEET-MATCH-GUARD: 지정자 fallback 이면 사유 태그를 남긴다.
     //    fallback ⇒ usedDesignated=false 이므로 sentinel 과 상호배타(한 배정에 둘 다일 수 없음).
-    const reason = designatedFallback
-      ? buildDesignatedFallbackReason(designatedFallback.kind, designatedFallback.staffName)
-      : usedDesignated && customer?.visit_type === 'returning'
-        ? ASSIGN_SILENT_REASON
-        : null;
+    //    T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP (B→A): reason 결정은 resolveAssignReason SSOT 단일 소스.
+    //      재진 consult → 지정 유무·휴무·미지정 전 조합 sentinel(알림 완전 제외). 치료사(therapy) 경로 불변(AC-2).
+    const reason = resolveAssignReason({
+      role,
+      visitType: customer?.visit_type ?? null,
+      usedDesignated,
+      designatedFallback,
+    });
     await logAssignment({
       clinicId: checkIn.clinic_id,
       checkInId,
