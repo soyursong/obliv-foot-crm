@@ -1,6 +1,8 @@
 // T-20260525-foot-MESSAGING-V1: 풋센터 권한 매트릭스
 // 메시지 설정: T-20260611-foot-MSGSETTINGS-STAFF-ACCESS 로 전직원(8역할, tm 제외) 개방
 
+import type { StaffRole } from './types';
+
 export type UserRole =
   | 'admin'
   | 'manager'
@@ -53,6 +55,43 @@ export const STAFF_UNLOCK_ROLES: UserRole[] = [
 export function isStaffUnlockRole(role: UserRole | null | undefined): boolean {
   if (!role) return false;
   return STAFF_UNLOCK_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260630-foot-STAFFCRUD-CODY-PERM — 근무자(staff 로스터) 추가/수정/삭제 권한 role-set (1지점).
+//   현장(김주연 총괄, U0ATDB587PV, #project-doai-crm-풋확장 2026-06-30): 직원·공간 > 직원 탭의
+//   근무자 '추가/삭제'를 coordinator 에게도 ADDITIVE 허용. (6MENU line172 [DEFERRED] §④의 실티켓.)
+//   ★RC(dev-foot 2026-06-30): 본 surface = staff 로스터 테이블(StaffPage>StaffTab) — 로그인 계정(user_profiles)이
+//     아님. staff.role enum = director/consultant/coordinator/therapist/technician (admin/manager 부재).
+//     ∴ staff 로스터 생성 ≠ 계정 생성 = 권한상승 경로 아님. user_profiles(계정관리)는 본건 미포함(admin-only 불변).
+//   ★기존 게이트 = isAdmin(admin/manager/director). coordinator 만 ADDITIVE 추가(consultant/therapist 미포함 = 요청 한정).
+//   ★권한상승 가드(guard1): coordinator 는 'director'(원장) 로스터 행을 생성/수정/비활성 불가
+//     (assignableStaffRolesFor + 동반 RLS WITH CHECK role<>'director' 이중). admin/manager/director 는 전 역할 가능(무회귀).
+//   ★FE union = RLS union 의무: staff write-RLS = staff_admin_all(is_admin_or_manager = admin/manager/director)이라
+//     coordinator 는 DB 에서 거부됨 → 동반 ADDITIVE 마이그(20260630220000_staff_coordinator_crud_rls_additive)로
+//     effective write-set 정합(coordinator INSERT/UPDATE, role<>'director', clinic-scoped). DA CONSULT GO + supervisor
+//     DDL-diff 후 FE↔DB ★동반 landing★ (FE 단독 merge = lock-out-in-disguise 금지).
+export const STAFF_CRUD_ROLES: UserRole[] = ['admin', 'manager', 'director', 'coordinator'];
+
+/** 근무자(staff 로스터) 추가/수정/삭제(비활성) 권한 보유 여부. null/undefined 안전 기본값 false. */
+export function canManageStaff(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return STAFF_CRUD_ROLES.includes(role);
+}
+
+/**
+ * 근무자 추가/수정 시 actor 가 배정 가능한 staff.role 옵션(권한상승 가드).
+ *   - admin/manager/director: 전 staff 역할(원장 포함) — 무회귀.
+ *   - coordinator: 'director'(원장) 제외 — 코디가 원장 로스터를 만들/바꿀 수 없음(guard1).
+ *   - 그 외: 빈 배열(쓰기 권한 없음 — UI 게이트로 도달 불가하나 방어적).
+ */
+export function assignableStaffRolesFor(
+  actorRole: UserRole | null | undefined,
+  allRoles: readonly StaffRole[],
+): StaffRole[] {
+  if (!actorRole || !canManageStaff(actorRole)) return [];
+  if (actorRole === 'coordinator') return allRoles.filter((r) => r !== 'director');
+  return [...allRoles];
 }
 
 // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → dashboard/reservations/customers/stats 만 허용.
