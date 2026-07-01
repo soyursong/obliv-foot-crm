@@ -344,24 +344,31 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
           등록된 원장님이 없습니다. 직원 탭에서 원장님(director)을 추가하세요.
         </div>
       ) : (
-        <div className="overflow-auto rounded-lg border bg-background">
+        // T-20260701-foot-DOCROSTER-VCOMPACT-SIDEGAP-NAMEONLY: (2) 표 옆 여백 확보 —
+        //   스크롤 컨테이너 좌우 내부 여백(px-2)으로 표와 테두리 사이 숨 확보(세로는 미증가).
+        <div className="overflow-auto rounded-lg border bg-background px-2">
           {/* T-20260701-foot-DOCROSTER-COLWIDTH-COMPACT: 각 칸 너비를 내용 기준으로 타이트하게.
               w-full 제거(내용 기반 auto-width — 열이 컨테이너 폭에 균등분산돼 넓어지던 것 해소) +
               고정폭 w-28 제거 + 셀 좌우여백 축소(px-3/px-2 → px-1.5). whitespace-nowrap 유지로 잘림 0.
-              표시내용·데이터·토글 로직 무변경(레이아웃만). */}
-          <table className="border-collapse text-sm">
+              표시내용·데이터·토글 로직 무변경(레이아웃만).
+              VCOMPACT: (1) 세로 컴팩트 — th py-1.5→py-1, 이름 td py-1→py-0.5, 셀 버튼 h-10→h-8.
+              (3) 헤더 '원장님' 라벨 제거 → 좌상단 코너 공란(본문은 이미 의사 이름만 표시). */}
+          <table data-testid="duty-roster-grid" className="border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-muted/70">
               <tr>
-                <th className="border-b border-r px-1.5 py-1.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">
-                  원장님
-                </th>
+                <th
+                  data-testid="duty-roster-name-col"
+                  className="border-b border-r px-1.5 py-1 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                  aria-label="의사"
+                />
+
                 {weekDays.map((d) => {
                   const ds = format(d, 'yyyy-MM-dd');
                   const isToday = ds === today;
                   return (
                     <th
                       key={ds}
-                      className={`border-b border-r px-1.5 py-1.5 text-center text-xs font-semibold whitespace-nowrap ${
+                      className={`border-b border-r px-1.5 py-1 text-center text-xs font-semibold whitespace-nowrap ${
                         isToday
                           ? 'bg-teal-100 text-teal-800'
                           : 'text-muted-foreground'
@@ -380,7 +387,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
             <tbody>
               {directors.map((doctor) => (
                 <tr key={doctor.id}>
-                  <td className="border-b border-r px-1.5 py-1 text-sm font-medium whitespace-nowrap">
+                  <td className="border-b border-r px-1.5 py-0.5 text-sm font-medium whitespace-nowrap">
                     {doctor.name}
                   </td>
                   {weekDays.map((d) => {
@@ -398,7 +405,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                       >
                         <button
                           className={`
-                            h-10 w-full min-w-[3rem] rounded-md border px-1.5 text-xs font-medium transition-all
+                            h-8 w-full min-w-[3rem] rounded-md border px-1.5 text-xs font-medium transition-all
                             ${
                               rtype
                                 ? ROSTER_TYPE_COLOR[rtype] +
