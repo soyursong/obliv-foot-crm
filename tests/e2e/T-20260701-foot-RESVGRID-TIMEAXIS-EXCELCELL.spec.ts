@@ -21,9 +21,14 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+// 네비게이션은 상대경로로 → playwright.config.ts 의 baseURL(http://localhost:8089, storageState 인증)
+// 을 그대로 상속. 과거 여기서 절대 URL(localhost:5173)을 하드코딩해 webServer(8089)와 불일치 →
+// net::ERR_CONNECTION_REFUSED 로 전 케이스 실패했다(T-...-EXCELCELL FIX-REQUEST). 형제 스펙
+// (T-20260513-foot-PHONE-*.spec.ts)의 정본 패턴 = page.goto('/admin/reservations') 상대경로에 정렬.
 
 async function loginIfNeeded(page: import('@playwright/test').Page) {
+  // desktop-chrome 프로젝트는 storageState(.auth/user.json)로 이미 로그인됨 → 통상 no-op.
+  // 로그인 화면이 뜨는 예외 상황에서만 방어적으로 로그인.
   const loginInput = page.getByPlaceholder('이메일');
   if (await loginInput.isVisible({ timeout: 3000 }).catch(() => false)) {
     await loginInput.fill(process.env.TEST_EMAIL ?? 'test@test.com');
@@ -34,9 +39,9 @@ async function loginIfNeeded(page: import('@playwright/test').Page) {
 }
 
 async function gotoReservations(page: import('@playwright/test').Page) {
-  await page.goto(`${BASE_URL}/admin/reservations`);
+  await page.goto('/admin/reservations');
   await loginIfNeeded(page);
-  await page.goto(`${BASE_URL}/admin/reservations`);
+  await page.goto('/admin/reservations');
   await page.waitForLoadState('networkidle');
 }
 
