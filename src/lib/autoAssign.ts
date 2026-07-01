@@ -43,6 +43,45 @@ import type {
  */
 export const ASSIGN_SILENT_REASON = 'silent_revisit_designated';
 
+/**
+ * T-20260701-foot-DESIGNATED-STAFF-SHEET-MATCH-GUARD (배정 로직 무변경 · 관찰/경고 레이어):
+ * 지정 담당(0순위)이 존재하나 당일 근무 미매칭(구글시트 이름매칭 실패/미출근) 또는 임시off 로
+ * fallback(균등배정)된 케이스의 '이유'를 assignment_actions.reason 에 구조화 태그로 남긴다.
+ *   형식: `designated_fallback:{kind}:{staffName}`
+ *     kind = not_in_working_ids (근무목록 미매칭 — 시트/이름표기 확인 필요)
+ *          | temp_off          (운영자가 임시휴무 토글 — 원인 명확)
+ *   · reason 은 카운트/부하 집계 비참조(computeLoad/fetchMonthActions 는 reason 무관) → 집계 영향 0.
+ *   · 재진 sentinel(ASSIGN_SILENT_REASON)과 상호배타(fallback ⇒ usedDesignated=false) →
+ *     AssignmentNotifyBell 의 sentinel suppress 에 걸리지 않음 → 알림 노출 유지(AC-1/AC-2, 운영자 인지).
+ *   · '지정치료사인데 왜 균등배정?' 오인 민원의 원인(시트미매칭 vs 임시off)을 운영자가 구분해 보게 함.
+ * (DB 무변경 — reason 은 기존 자유텍스트 컬럼. 신규 enum/컬럼 0.)
+ */
+export const DESIGNATED_FALLBACK_PREFIX = 'designated_fallback';
+export type DesignatedFallbackKind = 'not_in_working_ids' | 'temp_off';
+
+/** fallback 사유 태그 문자열 생성. 구분자(: 개행) 충돌 방지 위해 이름을 sanitize. */
+export function buildDesignatedFallbackReason(
+  kind: DesignatedFallbackKind,
+  staffName: string | null,
+): string {
+  const nm = (staffName ?? '').replace(/[:\r\n]/g, ' ').trim();
+  return `${DESIGNATED_FALLBACK_PREFIX}:${kind}:${nm}`;
+}
+
+/** fallback 사유 태그 파싱. 태그가 아니면 null(일반 배정/재진 sentinel/토스 사유 등과 무충돌). */
+export function parseDesignatedFallbackReason(
+  reason: string | null | undefined,
+): { kind: DesignatedFallbackKind; staffName: string } | null {
+  if (!reason || !reason.startsWith(`${DESIGNATED_FALLBACK_PREFIX}:`)) return null;
+  const rest = reason.slice(DESIGNATED_FALLBACK_PREFIX.length + 1);
+  const sep = rest.indexOf(':');
+  if (sep < 0) return null;
+  const kind = rest.slice(0, sep);
+  const staffName = rest.slice(sep + 1).trim();
+  if (kind !== 'not_in_working_ids' && kind !== 'temp_off') return null;
+  return { kind, staffName };
+}
+
 // ── 축(axis) 파생 ─────────────────────────────────────────────────────────────
 
 /** 상담 축 라벨(집계 그룹키). 재진='returning'(균등 제외). 그 외 = TM/인바운드/워크인. */
@@ -375,7 +414,15 @@ export async function maybeAutoAssign(
   checkInId: string,
   newStatus: CheckInStatus,
   createdBy: string | null = null,
-): Promise<{ assigned: boolean; staffId?: string }> {
+): Promise<{
+  assigned: boolean;
+  staffId?: string;
+  /**
+   * T-20260701-DESIGNATED-STAFF-SHEET-MATCH-GUARD: 지정 담당이 있었으나 근무 미매칭/임시off 로
+   * fallback(균등배정)된 경우의 사유(운영자 힌트용). 배정 결과 자체는 변경 없음.
+   */
+  designatedFallback?: { kind: DesignatedFallbackKind; staffName: string | null };
+}> {
   const role: AssignmentRole | null =
     newStatus === 'consult_waiting' ? 'consult'
     : newStatus === 'treatment_waiting' ? 'therapy'
@@ -433,12 +480,47 @@ export async function maybeAutoAssign(
       ? (customer?.assigned_consultant_id ?? null)
       : (customer?.designated_therapist_id ?? null);
 
+    // ── O2 병기(정합의존, T-20260701-DESIGNATED-STAFF-SHEET-MATCH-GUARD) ──────────
+    //   지정 선택은 role 재검증 없이 designated_therapist_id=치료사 / assigned_consultant_id=실장
+    //   데이터 정합을 전제한다. 지정자 staff.role 이 필드 의미와 어긋난 데이터면 '로그로만' 표면화한다.
+    //   배정 로직·결과는 절대 변경하지 않는다(관찰 전용).
+    if (designatedId) {
+      const dStaff = staff.find((s) => s.id === designatedId);
+      const expectedRole = ROLE_STAFF_ROLE[role]; // consult→consultant / therapy→therapist
+      if (dStaff && dStaff.role !== expectedRole) {
+        console.warn(
+          `[autoAssign] O2 role mismatch: 지정자 ${dStaff.name ?? '?'}(${designatedId}) role='${dStaff.role}' ` +
+            `이나 ${role} 필드(${role === 'consult' ? 'assigned_consultant_id' : 'designated_therapist_id'})는 ` +
+            `'${expectedRole}' 를 기대함 — 데이터 정합 확인 필요(배정 로직 무변경).`,
+        );
+      }
+    }
+
     let chosen: string | null = null;
     let usedDesignated = false; // 0순위 지정 담당이 선택됐는가(fallback 아님) — 알림 suppress 판정용
+    // 지정자는 있으나 0순위 미발동(근무 미매칭/임시off)으로 fallback 된 경우의 사유(운영자 힌트/로그용).
+    let designatedFallback: { kind: DesignatedFallbackKind; staffName: string | null } | null = null;
     if (designatedId && workingIds.has(designatedId) && !tempOff.has(designatedId)) {
       chosen = designatedId;
       usedDesignated = true;
     } else {
+      // 4-b) 지정자가 존재하나 fallback 으로 빠진 케이스 감지·분류(배정 결과 무변경).
+      //   not_in_working_ids: 당일 근무목록 미매칭 = 구글시트 이름매칭 실패/미출근(시트·이름표기 확인).
+      //   temp_off          : 근무목록엔 있으나 운영자가 임시휴무 토글(원인 명확).
+      if (designatedId) {
+        const dName = staff.find((s) => s.id === designatedId)?.name ?? null;
+        const kind: DesignatedFallbackKind = !workingIds.has(designatedId)
+          ? 'not_in_working_ids'
+          : 'temp_off';
+        designatedFallback = { kind, staffName: dName };
+        console.warn(
+          `[autoAssign] designated fallback(${role}): designatedId=${designatedId} name=${dName ?? '?'} ` +
+            `reason=${kind} — 지정 0순위 미발동, 균등배정으로 대체(배정 결과 무변경). ` +
+            (kind === 'not_in_working_ids'
+              ? '구글시트 근무목록 미매칭(이름표기/시트 확인).'
+              : '임시휴무 토글됨.'),
+        );
+      }
       // 5) 1순위 — 월 균등 least-loaded (재진은 균등 무관하게 풀에서 최소 선택)
       //    T-20260629 ROTATION: 동률 시 기본순번(assign_sort_order)으로 round-robin tie-break.
       const actions = await fetchMonthActions(checkIn.clinic_id);
@@ -475,8 +557,13 @@ export async function maybeAutoAssign(
     //    T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP: 재진 + 지정 담당(0순위) 정상 배정이면
     //    reason=sentinel → 알림 표시만 억제(카운트/부하 집계는 reason 무관, 영향 0). fallback(휴무/미지정)
     //    은 usedDesignated=false → 미부여 → 알림 노출(AC-3). 비재진은 회귀0(미부여).
-    const silentReason =
-      usedDesignated && customer?.visit_type === 'returning' ? ASSIGN_SILENT_REASON : null;
+    //    T-20260701-DESIGNATED-STAFF-SHEET-MATCH-GUARD: 지정자 fallback 이면 사유 태그를 남긴다.
+    //    fallback ⇒ usedDesignated=false 이므로 sentinel 과 상호배타(한 배정에 둘 다일 수 없음).
+    const reason = designatedFallback
+      ? buildDesignatedFallbackReason(designatedFallback.kind, designatedFallback.staffName)
+      : usedDesignated && customer?.visit_type === 'returning'
+        ? ASSIGN_SILENT_REASON
+        : null;
     await logAssignment({
       clinicId: checkIn.clinic_id,
       checkInId,
@@ -485,9 +572,13 @@ export async function maybeAutoAssign(
       axis,
       toStaffId: chosen,
       createdBy,
-      reason: silentReason,
+      reason,
     });
-    return { assigned: true, staffId: chosen };
+    return {
+      assigned: true,
+      staffId: chosen,
+      designatedFallback: designatedFallback ?? undefined,
+    };
   } catch (e) {
     console.warn('[autoAssign] maybeAutoAssign failed:', e);
     return { assigned: false };
