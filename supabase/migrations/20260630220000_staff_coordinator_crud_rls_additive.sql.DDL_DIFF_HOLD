@@ -3,9 +3,17 @@
 --   직원·공간 > 직원 탭의 근무자 '추가/삭제'를 coordinator 에게도 ADDITIVE 허용.
 --   (T-20260620-foot-STAFF-PERM-UNLOCK-6MENU line172 [DEFERRED] §④ 보류분의 실티켓.)
 --
--- ★★ DA_CONSULT_HOLD ★★ — 이 파일은 data-architect CONSULT GO + supervisor DDL-diff 수신 전까지 실행 금지.
---   GO 수신 후 suffix(.DA_CONSULT_HOLD) 제거 → dev-foot 직접 실행(learned: 'dev-foot DB 마이그레이션 직접 실행')
---   + FE(permissions.ts canManageStaff / Staff.tsx) 와 ★동반 landing★ 의무. FE 단독 merge = lock-out-in-disguise 금지.
+-- ★★ DDL_DIFF_HOLD ★★ — DA CONSULT GO 수신 완료(2026-07-01), 남은 게이트 = supervisor DDL-diff.
+--   ✓ DA CONSULT-REPLY MSG-20260701-024304-2fre = GO(ADDITIVE/저위험 확정, 대표게이트 불요·CONVENE 불요·single-CRM foot).
+--     근거: 무권한상승 CONFIRMED(auth 판정 source=user_profiles.role, staff write 권한 무관) / ADDITIVE CONFIRMED(staff_admin_all 무변경,
+--     coordinator permissive 2종 OR-결합 신규, DROP 0) / role<>director 가드 INSERT WITH CHECK + UPDATE USING+WITH CHECK 양쪽 /
+--     cross-clinic 차단(clinic_id=current_user_clinic_id() UPDATE USING+WITH CHECK 양쪽) / hard DELETE 미부여(soft=UPDATE active).
+--   → 남은 절차: supervisor DDL-diff(특히 clinic_id WITH CHECK 양쪽·role<>director 양쪽 재확인) →
+--     suffix(.DDL_DIFF_HOLD) 제거 → dev-foot 직접 실행(learned: 'dev-foot DB 마이그레이션 직접 실행')
+--     + FE(permissions.ts canManageStaff / Staff.tsx) 와 ★동반 landing★ 의무. FE 단독 merge = lock-out-in-disguise 금지.
+--   [DA 잔여 1건, 비차단] RLS 컬럼제한 불가 → coordinator UPDATE 가 non-director·동clinic 행 전체컬럼 write 허용('active만'은 FE강제).
+--     supervisor 와 택1: (a) BEFORE UPDATE 트리거로 coordinator write 를 active(+필수컬럼)로 한정, 또는 (b) 로스터매니저 범위 수용+문서화.
+--     ※ FE 측 dev-foot 확인 완료: foot staff 폼 = name+role 만(license_no/PII 부재), role picker = assignableStaffRolesFor 한정(director 제외).
 -- rollback: see 20260630220000_staff_coordinator_crud_rls_additive.rollback.sql
 --
 -- ── RC (dev-foot 2026-06-30) ─────────────────────────────────────────────────
