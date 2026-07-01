@@ -25,9 +25,17 @@ const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 // CI(ci-push.yml)는 secrets 를 TEST_USER_EMAIL / TEST_USER_PASSWORD 로 주입한다.
 // 로컬은 TEST_EMAIL / TEST_PASSWORD 관례를 쓴다. 둘 다 수용 + 기본값 폴백.
 const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
+// ⚠ 평문 폴백 없음(보안 유지). 단, throw 는 "모듈 로드"가 아니라 "setup 이 실제로 실행될 때"로 지연한다.
+//   배경(FIX-REQUEST MSG-20260701-204705-zyhy): 모듈-로드 시 throw 하면 `npx playwright test <file>` 무-project
+//   실행 시 Playwright 수집(collection) 단계가 auth.setup.ts 를 import 하며 즉시 터진다. 그 결과 setup 이
+//   pruning 될 auth-불요 unit 스펙까지 한 번에 실패한다(.env.local 없는 QA 워크트리). throw 를 setup 본문으로
+//   지연하면 import 는 항상 성공 → setup 이 정말 돌 때만 가드가 작동(보안 property 동일 유지).
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? '';
 
 setup('authenticate', async ({ page }) => {
+  if (!TEST_PASSWORD) {
+    throw new Error('TEST_PASSWORD env required (no plaintext fallback)');
+  }
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY 가 .env에 없습니다.');
   }

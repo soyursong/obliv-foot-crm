@@ -49,6 +49,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT: 유리 outer 그림자 완화 + 과거날짜 배너 컴팩트.
+        //   순수 CSS/JSX 시각 조정 → box-shadow 값·배너 유틸 클래스 정적 소스 가드. auth.setup 우회(TEST_PASSWORD 불요).
+        //   실 렌더는 supervisor 갤탭 field-soak. (FIX-REQUEST MSG-20260701-204705-zyhy: QA 워크트리 .env.local 부재 대응)
+        '**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts',
         // T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE: 날짜 표시 YYYY.MM.DD SSOT 포매터 유닛 + 소스 grep 잔존0 가드 (auth·server 불요)
         '**/T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE.spec.ts',
         // T-20260625-foot-COLOR-CONVENTION-UNIFY-CANDIDATES: A안 색상 컨벤션(초진 파랑·재진 초록·힐러 노랑)
@@ -231,6 +235,10 @@ export default defineConfig({
         storageState: AUTH_FILE,
       },
       dependencies: ['setup'],
+      // 순수 정적 소스 가드(unit 프로젝트 전용)는 desktop-chrome 에서 제외 — auth.setup 의존을
+      // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
+      // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
+      testIgnore: ['**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts'],
     },
     {
       name: 'tablet',
