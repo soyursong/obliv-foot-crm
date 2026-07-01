@@ -695,7 +695,7 @@ export default function DoctorTreatmentPanel({
   const handleDocTemplateSelect = useCallback((content: string) => {
     setDocContent(content);
     setDocExpanded(true);
-    toast.success('서류 템플릿이 불러와졌어요. 내용을 확인하고 수정하세요.');
+    toast.success('서류 템플릿을 불러왔어요.');
   }, []);
 
   // 진료 메모 저장
@@ -849,10 +849,10 @@ export default function DoctorTreatmentPanel({
               onBlur={() => { setTimeout(() => setNoteSlashVisible(false), 200); }}
               placeholder={
                 visitType === 'new'
-                  ? '초진 내원. 주증상: 발톱 __. 기저질환: 없음... (//단축어 자동완성)'
+                  ? '초진'
                   : visitType === 'returning'
-                  ? '재진 내원. 이전 시술 경과 확인... (//단축어 자동완성)'
-                  : '체험 내원. 시술 설명 및 체험 진행... (//단축어 자동완성)'
+                  ? '재진'
+                  : '체험'
               }
               className="text-sm min-h-[140px] resize-none"
               disabled={confirmed.doctor_confirm_charting}
@@ -1074,7 +1074,7 @@ export default function DoctorTreatmentPanel({
               value={docContent}
               onChange={handleDocChange}
               onBlur={() => { setTimeout(() => setDocSlashVisible(false), 200); }}
-              placeholder="서류 내용 — 템플릿을 불러오거나 직접 입력하세요... (//단축어 자동완성)"
+              placeholder="서류 내용"
               className="text-xs min-h-[180px] resize-none font-mono"
               disabled={confirmed.doctor_confirm_document}
               data-testid="doc-content-textarea"

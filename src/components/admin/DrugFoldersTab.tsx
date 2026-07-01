@@ -800,7 +800,6 @@ export default function DrugFoldersTab() {
                                 onDoubleClick={() => startEditDesc(d)}
                                 onClick={() => startEditDesc(d)}
                                 className="w-full text-left text-[11px] truncate rounded px-1 py-0.5 hover:bg-teal-50/60 hover:ring-1 hover:ring-teal-200"
-                                title="더블클릭 또는 클릭하면 설명을 입력할 수 있어요"
                                 data-testid="drug-folder-viewall-desc-trigger"
                               >
                                 {d.description && d.description.trim() !== '' ? (
@@ -909,7 +908,7 @@ export default function DrugFoldersTab() {
                 <Input
                   value={drugQuery}
                   onChange={(e) => setDrugQuery(e.target.value)}
-                  placeholder="약품명·보험코드 검색 → 클릭하면 이 폴더로 분류"
+                  placeholder="약품명·코드 검색"
                   className="h-8 text-xs pl-7"
                   data-testid="drug-folder-assign-search"
                 />

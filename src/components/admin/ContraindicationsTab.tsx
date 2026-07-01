@@ -518,8 +518,7 @@ export default function ContraindicationsTab() {
           <div className="space-y-3">
             <div>
               <Label className="text-xs">
-                심각도{' '}
-                <span className="text-muted-foreground font-normal text-[11px]">— 선택 (미지정 가능)</span>
+                심각도
               </Label>
               {/* AC-3 드롭다운 제거 → 버튼 토글 (주의 / 금기 2값). 같은 버튼 재클릭 = 해제(미지정). */}
               <div className="mt-1 flex gap-2" data-testid="contra-severity-toggle">

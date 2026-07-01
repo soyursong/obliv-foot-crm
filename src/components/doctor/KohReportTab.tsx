@@ -674,7 +674,7 @@ export default function KohReportTab() {
             균검사지 — KOH 진균검사 명단
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KOH(진균) 검사 후 하루가 지난 환자 명단입니다. 검사일 기준 일별/월별 조회(당일 검사분은 다음날 표시). 신청유무·채취부위·발급여부를 확인하는 <strong className="text-foreground/80">읽기전용</strong> 리스트입니다(채취조갑 선택·발급하기는 <strong className="text-foreground/80">치료 테이블</strong>의 ‘균검사 &amp; 피검사 대상자’에서). 비활성(미신청) 건은 기본 제외됩니다.
+            KOH 진균검사 명단 (읽기전용)
           </p>
         </div>
 
@@ -995,10 +995,6 @@ export default function KohReportTab() {
         </div>
       )}
 
-      {/* 안내 — RELOCATE[2]: read-only 리스트(신청유무·채취부위·발급여부). 발급/입력은 치료테이블로 이전. */}
-      <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 <strong className="text-foreground/80">읽기전용</strong> 명단입니다. 상단 <strong className="text-foreground/80">일별/월별</strong> 토글로 보기 단위를 바꿀 수 있으며(첫 진입은 일별), <strong className="text-foreground/80">비활성(미신청)</strong> 건은 기본 제외됩니다(목록에서만 숨김 — 삭제 아님, "비활성 포함"을 켜면 다시 표시). 각 행은 <strong className="text-foreground/80">신청유무</strong>(2번차트 패키지 탭의 KOH 신청 토글 ON=신청/OFF=미신청·회색), <strong className="text-foreground/80">채취부위</strong>(치료 테이블에서 선택한 조갑부위, 예: R1), <strong className="text-foreground/80">발급여부</strong>(발행완료/미발행)를 보여줍니다. 환자 이름을 누르면 고객차트가 열리며, 진료의는 진료차트 서명 기준(미서명·차트없음은 '미정')입니다. <strong className="text-foreground/80">채취조갑 선택과 발급하기는 치료 테이블의 ‘균검사 &amp; 피검사 대상자’</strong>에서 진행합니다. 발급 완료된 행은 <strong className="text-foreground/80">💾 발행완료</strong> 버튼을 누르면 결과보고서를 다시 볼 수 있습니다.
-      </p>
 
       {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
       <MedicalChartPanel

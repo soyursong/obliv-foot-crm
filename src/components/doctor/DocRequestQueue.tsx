@@ -107,9 +107,6 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
               <FilePen className="h-4 w-4 text-teal-600" />
               서류작성 요청
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              데스크(실장)에서 보낸 소견서·진단서 발행 요청입니다. [작성하기]를 누르면 선택 항목이 미리 채워진 발행 창이 열립니다.
-            </p>
           </div>
           {rows.length > 0 && (
             <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700" data-testid="docreq-count">
@@ -172,7 +169,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       )}
 
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 데스크에서 보낸 요청 목록입니다. [작성하기]를 누르면 실장이 고른 항목이 미리 선택된 발행 창이 열리며, 내용을 확인·수정한 뒤 원장님이 직접 발행합니다(발행은 원장 권한). 발행이 완료되면 해당 요청은 아래 <b>서류 완료</b> 칸으로 이동해 같은 화면에 계속 표시됩니다(당일 기준).
+        ※ 발행 후 "서류 완료" 그룹으로 이동합니다.
       </p>
 
       {/* AC-10: prefill 발행창 — initialSelectedKeys/docType/staffMemo 전달, 발행 성공 시 요청 resolve(큐 제거). */}
@@ -293,7 +290,6 @@ function DocRequestRow({
         className={`px-2 py-1.5 max-w-[10rem] text-foreground/80 ${rx ? 'cursor-pointer hover:text-teal-700' : ''}`}
         data-testid="docreq-cell-rx"
         onClick={rx ? () => setExpandRx((v) => !v) : undefined}
-        title={rx ? '클릭하면 처방 전문을 펼쳐 봅니다.' : undefined}
       >
         <span className="block truncate">{rx || '—'}</span>
       </td>
@@ -304,7 +300,6 @@ function DocRequestRow({
         className={`px-2 py-1.5 max-w-[10rem] text-foreground/80 ${progress ? 'cursor-pointer hover:text-teal-700' : ''}`}
         data-testid="docreq-cell-clinical"
         onClick={progress ? () => setExpandClinical((v) => !v) : undefined}
-        title={progress ? '클릭하면 임상경과 전문을 펼쳐 봅니다.' : undefined}
       >
         <span className="block truncate">{progress || '—'}</span>
       </td>

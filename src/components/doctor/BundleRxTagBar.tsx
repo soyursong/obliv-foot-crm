@@ -143,7 +143,6 @@ export default function BundleRxTagBar({ doctorMode, role, onSelectItems, classN
               data-testid={`bundle-rx-tag-${b.id}`}
               data-hide-name={b.hide_name ? 'true' : 'false'}
               aria-label={`묶음처방 태그 ${accName}`}
-              title={`${b.name} — 탭하면 약이 처방 목록에 추가돼요`}
               className={cn(
                 'inline-flex min-h-[36px] items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm transition active:scale-[0.97] hover:brightness-95',
                 tagChipClass(b.tag_color),

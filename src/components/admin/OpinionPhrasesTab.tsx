@@ -352,7 +352,7 @@ function PhraseDialog({
         <div className="space-y-3">
           <div>
             <Label className="text-xs">
-              서류 종류 * <span className="text-muted-foreground font-normal">— 진단서 / 금기증</span>
+              서류 종류 *
             </Label>
             <Select value={section} onValueChange={setSection}>
               <SelectTrigger className="mt-1" data-testid="opinion-phrase-section-select">
@@ -369,7 +369,7 @@ function PhraseDialog({
           </div>
           <div>
             <Label className="text-xs">
-              명칭 * <span className="text-muted-foreground font-normal">— 소견서 화면에 표시될 버튼 글자</span>
+              명칭 *
             </Label>
             <Input
               value={label}
@@ -381,7 +381,7 @@ function PhraseDialog({
           </div>
           <div>
             <Label className="text-xs">
-              내용 * <span className="text-muted-foreground font-normal">— 버튼을 누르면 소견 내용에 들어갈 문장</span>
+              내용 *
             </Label>
             <Textarea
               value={phrase}
@@ -393,7 +393,7 @@ function PhraseDialog({
           </div>
           <div>
             <Label className="text-xs">
-              수정기록 <span className="text-muted-foreground font-normal">— 무엇을 언제 왜 고쳤는지 메모 (선택). 내용 문구에 같이 적지 마세요.</span>
+              수정기록
             </Label>
             <Textarea
               value={revisionNote}

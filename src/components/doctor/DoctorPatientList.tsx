@@ -1123,14 +1123,6 @@ export default function DoctorPatientList() {
         </div>
       )}
 
-      {/* 사용 안내 */}
-      <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground space-y-0.5">
-        <p className="font-medium text-foreground/60">사용 방법</p>
-        <p>• 환자 행 오른쪽 화살표를 눌러 빠른처방 버튼을 펼치세요.</p>
-        <p>• {doctorMode ? '원장 모드: 버튼 클릭 시 바로 확정 처리됩니다.' : '치료사 모드: 버튼 클릭 시 임시(pending) 상태로 저장되고, 원장 확인 후 확정됩니다.'}</p>
-        <p>• 임시(⚠) 상태인 행은 노란 테두리로 표시됩니다.</p>
-      </div>
-
       {/* T-20260621-foot-DOCDASH-PASTDATE-CHARTROUTE BUG-2: 진료차트(MedicalChartPanel) — 이름 클릭 시 직접 오픈.
           DoctorCallDashboard(RX-CHART-FOLLOWUP3 C-1)와 동일 패턴·동일 medical_charts 소스. 부모 단일 렌더(행 누수 0). */}
       <MedicalChartPanel

@@ -37,9 +37,6 @@ export default function DoctorTools() {
       <div>
         {/* T-20260609-foot-DOCDASH-LABEL-RX-REFINE item1: 헤더 라벨 오기 교정('진료 도구'→'진료대시보드') */}
         <h1 className="text-lg font-bold">진료대시보드</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          진료 알림판 · 진료 환자 목록 · 균검사지(KOH) · 서류작성을 확인합니다.
-        </p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

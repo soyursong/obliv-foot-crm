@@ -2143,7 +2143,7 @@ export default function MedicalChartPanel({
               onChange={handleClinicalChange}
               onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
               readOnly={isReadOnly}
-              placeholder="임상경과를 입력하세요"
+              placeholder="임상경과"
               rows={embed ? 9 : 14}
               className={cn(
                 'text-sm resize-y placeholder:text-gray-300',
@@ -2279,7 +2279,7 @@ export default function MedicalChartPanel({
                 onClick={() => setEditingSingleDoctor(true)}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-xs transition-colors hover:border-teal-300 hover:bg-teal-50"
                 data-testid="clinical-singleline-doctor-label"
-                title="진료의 변경 — 클릭하여 의사 선택"
+                title="진료의 변경"
                 aria-label="진료의 변경"
               >
                 <span className="font-medium text-gray-700">진료의 {selectedSingleDoctor.name}</span>
@@ -2784,7 +2784,7 @@ export default function MedicalChartPanel({
                               if (!specialNoteSaving && specialNoteInput.trim()) addSpecialNote();
                             }
                           }}
-                          placeholder="특이사항 입력 후 Enter"
+                          placeholder="특이사항"
                           disabled={specialNoteSaving}
                           autoFocus
                           className="h-7 text-[11px] border-0 border-b border-gray-200 rounded-none bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:border-gray-900 placeholder:text-muted-foreground/40"
@@ -2879,7 +2879,6 @@ export default function MedicalChartPanel({
                 <div className="flex-none px-2 pt-2 pb-1">
                   <span
                     className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 uppercase tracking-wide"
-                    title="이 패널은 '진료 경과'만 시간순으로 모읍니다 — 진료메모·치료메모·처방. 항목을 클릭하면 우측 폼에서 편집합니다. ▸ 상담기록은 우측 '📋 상담' 탭에 있습니다. ▸ 우측 '방문이력'은 방문(체크인) 단위 읽기전용 뷰입니다."
                   >
                     {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-7: 라벨에서 '타임라인' 단어 제거 → '진료경과'. */}
                     진료경과
@@ -3505,7 +3504,7 @@ export default function MedicalChartPanel({
                       value={formTx}
                       readOnly
                       disabled
-                      placeholder="치료사가 기록한 내용이 여기 표시됩니다"
+                      placeholder="치료사 기록"
                       rows={formTx ? 7 : 2}
                       className={`text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100 ${formTx ? 'min-h-[8rem]' : 'min-h-0'}`}
                       data-testid="medical-chart-treatment"
@@ -3624,7 +3623,7 @@ export default function MedicalChartPanel({
                         onChange={handleClinicalChange}
                         onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
                         readOnly={isReadOnly}
-                        placeholder="임상경과를 입력하세요"
+                        placeholder="임상경과"
                         rows={13}
                         className={`text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="medical-chart-clinical"
@@ -3757,7 +3756,7 @@ export default function MedicalChartPanel({
                         value={formMemo}
                         onChange={(e) => setFormMemo(e.target.value)}
                         readOnly={isReadOnly}
-                        placeholder="의료진 전용 메모 — 타 스태프 미노출"
+                        placeholder="의료진 전용 메모"
                         className={`flex-1 text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="doctor-memo-input"
                       />
@@ -4082,8 +4081,7 @@ export default function MedicalChartPanel({
                         }
                         emptyMessage={
                           <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="rx-set-empty">
-                            등록된 처방세트 없음<br />
-                            <span className="text-[10px]">위 버튼으로 추가하세요</span>
+                            등록된 처방세트 없음
                           </div>
                         }
                       />
@@ -4096,10 +4094,6 @@ export default function MedicalChartPanel({
                       {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 상용구 관리화면 지름길 버튼 제거
                           (문원장 요청 — 차트는 원장 전용). 상용구 선택→임상경과 삽입 기능은 유지. */}
 
-                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
-                        항목을 누르면 우측에 ✓ 버튼이 나타납니다 — 눌러서 임상경과에 삽입
-                      </div>
-
                       {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
                       {phraseLoadError ? (
                         <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="phrase-load-error">
@@ -4108,8 +4102,7 @@ export default function MedicalChartPanel({
                         </div>
                       ) : phraseTemplates.length === 0 ? (
                         <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="phrase-empty">
-                          등록된 상용구 없음<br />
-                          <span className="text-[10px]">위 버튼으로 추가하세요</span>
+                          등록된 상용구 없음
                         </div>
                       ) : (
                         // T-20260606-foot-RX-PANEL-UX-5FIX AC-3: 진료차트/펜차트 그룹 분리.
@@ -4171,10 +4164,6 @@ export default function MedicalChartPanel({
                       {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
                           (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
 
-                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
-                        클릭하면 진단명·임상경과·처방내역에 일괄 적용됩니다
-                      </div>
-
                       {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
                       {superLoadError ? (
                         <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="super-phrase-load-error">
@@ -4183,8 +4172,7 @@ export default function MedicalChartPanel({
                         </div>
                       ) : superPhrases.length === 0 ? (
                         <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="super-phrase-empty">
-                          등록된 슈퍼상용구 없음<br />
-                          <span className="text-[10px]">위 버튼으로 추가하세요</span>
+                          등록된 슈퍼상용구 없음
                         </div>
                       ) : (
                         superPhrases.map(sp => (
@@ -4224,7 +4212,6 @@ export default function MedicalChartPanel({
                       {/* T-20260608-foot-MEDCHART-PANEL-CLARITY AC-1: 좌측 '경과 타임라인'과 구분되는 설명 */}
                       <span
                         className="text-[10px] font-semibold text-muted-foreground"
-                        title="방문(체크인) 단위 진료 기록을 읽기전용으로 보여줍니다. ↔ 좌측 '경과 타임라인'은 진료차트 회차 기록(편집 가능)입니다."
                       >
                         방문이력 (읽기전용)
                       </span>

@@ -83,8 +83,7 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
         className="rounded-lg border border-dashed p-3 text-[11px] text-muted-foreground text-center"
         data-testid="drug-folder-empty"
       >
-        등록된 처방세트 없음<br />
-        <span className="text-[10px]">관리 화면에서 폴더를 만들고 약품을 분류하세요</span>
+        등록된 처방세트 없음
       </div>
     );
   }
