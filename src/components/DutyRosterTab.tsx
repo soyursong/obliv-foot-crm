@@ -345,10 +345,14 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
         </div>
       ) : (
         <div className="overflow-auto rounded-lg border bg-background">
-          <table className="w-full border-collapse text-sm">
+          {/* T-20260701-foot-DOCROSTER-COLWIDTH-COMPACT: 각 칸 너비를 내용 기준으로 타이트하게.
+              w-full 제거(내용 기반 auto-width — 열이 컨테이너 폭에 균등분산돼 넓어지던 것 해소) +
+              고정폭 w-28 제거 + 셀 좌우여백 축소(px-3/px-2 → px-1.5). whitespace-nowrap 유지로 잘림 0.
+              표시내용·데이터·토글 로직 무변경(레이아웃만). */}
+          <table className="border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-muted/70">
               <tr>
-                <th className="w-28 border-b border-r px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                <th className="border-b border-r px-1.5 py-1.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">
                   원장님
                 </th>
                 {weekDays.map((d) => {
@@ -357,7 +361,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                   return (
                     <th
                       key={ds}
-                      className={`border-b border-r px-2 py-2.5 text-center text-xs font-semibold ${
+                      className={`border-b border-r px-1.5 py-1.5 text-center text-xs font-semibold whitespace-nowrap ${
                         isToday
                           ? 'bg-teal-100 text-teal-800'
                           : 'text-muted-foreground'
@@ -376,7 +380,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
             <tbody>
               {directors.map((doctor) => (
                 <tr key={doctor.id}>
-                  <td className="border-b border-r px-3 py-2 text-sm font-medium whitespace-nowrap">
+                  <td className="border-b border-r px-1.5 py-1 text-sm font-medium whitespace-nowrap">
                     {doctor.name}
                   </td>
                   {weekDays.map((d) => {
@@ -388,13 +392,13 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                     return (
                       <td
                         key={ds}
-                        className={`border-b border-r p-1 text-center ${
+                        className={`border-b border-r p-0.5 text-center ${
                           isToday ? 'bg-teal-50/60' : ''
                         }`}
                       >
                         <button
                           className={`
-                            h-10 w-full rounded-md border text-xs font-medium transition-all
+                            h-10 w-full min-w-[3rem] rounded-md border px-1.5 text-xs font-medium transition-all
                             ${
                               rtype
                                 ? ROSTER_TYPE_COLOR[rtype] +
