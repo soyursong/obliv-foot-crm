@@ -355,7 +355,7 @@ export default function CalendarNoticePanel() {
         aria-label="달력 펼치기"
       >
         <div className="flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-teal-600" />
+          <CalendarDays className="h-4 w-4 text-gray-500" />
           <span className="text-sm font-semibold">
             {/* T-20260606-foot-CALENDAR-COLLAPSE-PARENS: 접힘 상태 라벨 괄호 제거.
                 'M월 d일 (E)'(→"6월 6일 (토)") 의 리터럴 괄호를 빼 "6월 6일 토" 로 표기.
@@ -385,7 +385,7 @@ export default function CalendarNoticePanel() {
           className="p-1.5 rounded hover:bg-muted text-muted-foreground"
           aria-label="달력 펼치기"
         >
-          <ChevronRight className="h-4 w-4 text-teal-600" />
+          <ChevronRight className="h-4 w-4 text-gray-500" />
         </button>
       </aside>
     );
@@ -400,7 +400,7 @@ export default function CalendarNoticePanel() {
     >
       {/* 패널 헤더 */}
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5 bg-white/80">
-        <CalendarDays className="h-4 w-4 text-teal-600" />
+        <CalendarDays className="h-4 w-4 text-gray-500" />
         <span className="text-sm font-semibold">달력</span>
         {/* AC-1: PC 접기 토글 버튼 (T-20260516-foot-PC-CAL-COLLAPSE) */}
         {!isMobile && (
@@ -515,8 +515,8 @@ export default function CalendarNoticePanel() {
                   !isCurrentMonth && 'opacity-25',
                   // T-20260701-foot-DASH-SCREENSHOT-GLASS-APPLY: 선택 날짜 칩 — 컨펌 v2 유리 볼록+연한 실버로 통일(.live-glass-board 그대로).
                   isSelected && 'live-glass-board border border-[#C7CDD4] text-gray-800 font-semibold',
-                  !isSelected && isInWeek && 'bg-teal-100',
-                  !isSelected && !isInWeek && isToday && 'bg-teal-100 text-teal-800 font-bold',
+                  !isSelected && isInWeek && 'bg-gray-100',
+                  !isSelected && !isInWeek && isToday && 'bg-gray-100 text-gray-700 font-bold',
                   !isSelected && !isToday && dow === 0 && isCurrentMonth && 'text-red-500',
                   !isSelected && !isToday && dow === 6 && isCurrentMonth && 'text-blue-500',
                   !isSelected && !isToday && isCurrentMonth && dow > 0 && dow < 6 && 'text-foreground',
@@ -531,7 +531,7 @@ export default function CalendarNoticePanel() {
 
         {/* 선택된 날짜 표시 */}
         {selectedDate && (
-          <div className="mt-2 text-center text-[11px] text-teal-700 font-medium">
+          <div className="mt-2 text-center text-[11px] text-gray-600 font-medium">
             {format(selectedDate, 'M월 d일 (E)', { locale: ko })}
           </div>
         )}
@@ -549,7 +549,7 @@ export default function CalendarNoticePanel() {
                   // T-20260701-foot-DASH-SCREENSHOT-GLASS-APPLY: 뷰모드(당일/일/주/월) 활성 버튼 — 유리 볼록+연한 실버 통일(.live-glass-board 그대로).
                   viewMode === mode
                     ? 'live-glass-board border border-[#C7CDD4] text-gray-700'
-                    : 'bg-muted/60 text-muted-foreground hover:bg-teal-50 hover:text-teal-700',
+                    : 'bg-muted/60 text-muted-foreground hover:bg-gray-100 hover:text-gray-600',
                 )}
               >
                 {label}
@@ -573,7 +573,7 @@ export default function CalendarNoticePanel() {
           Dashboard.tsx에서 별도로 제거한다. day-click 현황은 이 섹션(selectedDate 반응)이 담당. */}
       <div className="shrink-0 border-b px-3 py-2.5" data-testid="duty-roster-section">
         <div className="mb-2 flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-teal-600" />
+          <Users className="h-3.5 w-3.5 text-gray-500" />
           <span className="text-xs font-semibold">근무캘린더</span>
           <span className="text-[10px] text-muted-foreground" data-testid="duty-roster-date-label">
             {!selectedDate || isSameDay(selectedDate, new Date())
@@ -607,7 +607,7 @@ export default function CalendarNoticePanel() {
                     p.names.map((nm, i) => (
                       <span
                         key={`${nm}-${i}`}
-                        className="inline-flex items-center rounded bg-teal-50 px-1.5 py-0.5 font-medium text-teal-800"
+                        className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700"
                       >
                         {nm}
                       </span>
@@ -623,7 +623,7 @@ export default function CalendarNoticePanel() {
             근무 명단 바로 아래 동반 표시. 하단 현황패널(DashboardDateDetail)과 동일 데이터·문구. */}
         <div className="mt-2.5 border-t pt-2" data-testid="duty-roster-handover">
           <div className="mb-1.5 flex items-center gap-1.5">
-            <ClipboardCheck className="h-3.5 w-3.5 text-teal-600" />
+            <ClipboardCheck className="h-3.5 w-3.5 text-gray-500" />
             <span className="text-xs font-semibold">인수인계</span>
           </div>
           {handoverLoading ? (
@@ -677,11 +677,11 @@ export default function CalendarNoticePanel() {
         {/* 공지 헤더 */}
         <div className="shrink-0 flex items-center justify-between border-b px-3 py-2 bg-white/80">
           <div className="flex items-center gap-1.5">
-            <Bell className="h-3.5 w-3.5 text-teal-600" />
+            <Bell className="h-3.5 w-3.5 text-gray-500" />
             <span className="text-xs font-semibold">공지사항</span>
             <NavLink
               to="/admin/notices"
-              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-gray-600"
               title="공지사항 전체 보기"
             >
               <ExternalLink className="h-3 w-3" />
@@ -704,9 +704,9 @@ export default function CalendarNoticePanel() {
 
         {/* 공지 작성/수정 폼 */}
         {editingId !== null && (
-          <div className="border-b bg-teal-50/60 px-3 py-2.5 space-y-2">
+          <div className="border-b bg-gray-100/60 px-3 py-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-teal-800">
+              <span className="text-xs font-semibold text-gray-700">
                 {editingId === 'new' ? '새 공지 작성' : '공지 수정'}
               </span>
               <button
@@ -737,7 +737,7 @@ export default function CalendarNoticePanel() {
                   id="panel-pin-check"
                   checked={formPinned}
                   onChange={(e) => setFormPinned(e.target.checked)}
-                  className="h-3 w-3 accent-teal-600"
+                  className="h-3 w-3 accent-gray-500"
                 />
                 <label
                   htmlFor="panel-pin-check"
@@ -783,13 +783,13 @@ export default function CalendarNoticePanel() {
                 key={n.id}
                 className={cn(
                   'rounded-lg border bg-white p-2 space-y-1 shadow-sm',
-                  n.is_pinned && 'border-teal-300 bg-teal-50/40',
+                  n.is_pinned && 'border-gray-300 bg-gray-100/40',
                 )}
               >
                 <div className="flex items-start justify-between gap-1">
                   <div className="flex items-center gap-1 min-w-0">
                     {n.is_pinned && (
-                      <Pin className="h-3 w-3 shrink-0 text-teal-600 fill-teal-600" />
+                      <Pin className="h-3 w-3 shrink-0 text-gray-500 fill-gray-500" />
                     )}
                     <span className="text-xs font-semibold truncate leading-tight">
                       {n.title}
@@ -798,16 +798,16 @@ export default function CalendarNoticePanel() {
                   <div className="flex items-center gap-0.5 shrink-0">
                     <button
                       onClick={() => handleTogglePin(n)}
-                      className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
+                      className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-gray-600"
                       title={n.is_pinned ? '핀 해제' : '상단 고정'}
                     >
                       <Pin
-                        className={cn('h-3 w-3', n.is_pinned && 'fill-teal-600 text-teal-600')}
+                        className={cn('h-3 w-3', n.is_pinned && 'fill-gray-500 text-gray-500')}
                       />
                     </button>
                     <button
                       onClick={() => openEdit(n)}
-                      className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
+                      className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-gray-600"
                       title="수정"
                     >
                       <Pencil className="h-3 w-3" />
