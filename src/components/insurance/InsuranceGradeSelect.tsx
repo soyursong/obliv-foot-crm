@@ -139,7 +139,7 @@ export function InsuranceGradeSelect({ customerId, onChanged, editable = true }:
                   className={cn(
                     'h-10 rounded-md border px-2 text-xs font-medium transition',
                     draftGrade === g
-                      ? 'border-teal-600 bg-teal-100 text-teal-800'
+                      ? 'border-neutral-400 bg-neutral-100 text-neutral-800'
                       : 'border-input bg-background hover:bg-muted',
                   )}
                 >
@@ -161,7 +161,7 @@ export function InsuranceGradeSelect({ customerId, onChanged, editable = true }:
                   className={cn(
                     'h-10 rounded-md border px-2 text-xs font-medium transition',
                     draftSource === s
-                      ? 'border-emerald-600 bg-emerald-100 text-emerald-800'
+                      ? 'border-neutral-400 bg-neutral-100 text-neutral-800'
                       : 'border-input bg-background hover:bg-muted',
                   )}
                 >
