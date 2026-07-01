@@ -31,6 +31,8 @@ import {
 } from '@/components/ui/dialog';
 
 import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
+// T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 CRUD 권한 게이트 + 권한상승 가드(원장 배정 차단) SSOT.
+import { canManageStaff, assignableStaffRolesFor } from '@/lib/permissions';
 
 type Role = StaffRole;
 
@@ -136,7 +138,11 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
   const { profile } = useAuth();
   // admin 또는 manager 권한 모두 직원 관리 가능
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+  // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 추가/수정/삭제 게이트를 canManageStaff(admin/manager/director +coordinator ADDITIVE)로 일원화.
+  //   ★기존 add 버튼은 게이트 부재(전 진입역할 노출)였으나 staff write-RLS 가 막아 lock-out-in-disguise 였음 → canManageStaff 로 정합 게이팅(coordinator 동반 RLS landing).
+  //   ★consultant/therapist 는 본 요청 미포함(요청 한정) → add/delete 미노출(무회귀: 어차피 RLS 거부였음).
+  const canCrudStaff = canManageStaff(profile?.role);
+  const actorRole = profile?.role;
 
   const [openCreate, setOpenCreate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -213,9 +219,11 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
             비활성 포함
           </label>
         </div>
-        <Button size="sm" onClick={() => setOpenCreate(true)}>
-          <Plus className="mr-1 h-4 w-4" /> 신규 직원
-        </Button>
+        {canCrudStaff && (
+          <Button size="sm" onClick={() => setOpenCreate(true)}>
+            <Plus className="mr-1 h-4 w-4" /> 신규 직원
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -248,7 +256,8 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                       </Badge>
                     )}
                   </div>
-                  {isAdmin ? (
+                  {/* T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 원장(director) 로스터 행 수정/비활성 불가(권한상승 차단). */}
+                  {canCrudStaff && !(actorRole === 'coordinator' && s.role === 'director') ? (
                     <div className="flex items-center gap-1">
                       {s.active && (
                         <Button
@@ -318,11 +327,13 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
         open={openCreate}
         onOpenChange={setOpenCreate}
         clinicId={clinic.id}
+        actorRole={actorRole}
         onCreated={refresh}
       />
 
       <EditStaffDialog
         target={editTarget}
+        actorRole={actorRole}
         onClose={() => setEditTarget(null)}
         onSaved={refresh}
       />
@@ -334,16 +345,20 @@ function CreateStaffDialog({
   open,
   onOpenChange,
   clinicId,
+  actorRole,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   clinicId: string;
+  actorRole: Role | string | null | undefined;
   onCreated: () => void;
 }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('therapist');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director'(원장) 배정 불가. admin/manager/director 는 전 역할.
+  const roleOptions = assignableStaffRolesFor(actorRole, ROLE_ORDER);
 
   useEffect(() => {
     if (!open) {
@@ -392,7 +407,7 @@ function CreateStaffDialog({
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
             >
-              {ROLE_ORDER.map((r) => (
+              {roleOptions.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABEL[r]}
                 </option>
@@ -418,16 +433,23 @@ function CreateStaffDialog({
 // ============================================================
 function EditStaffDialog({
   target,
+  actorRole,
   onClose,
   onSaved,
 }: {
   target: Staff | null;
+  actorRole: Role | string | null | undefined;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('therapist');
   const [saving, setSaving] = useState(false);
+  // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director' 배정 불가. 단, 기존 행 역할이 옵션에 없으면(타역할 보존) 현재값 보존 표시.
+  const roleOptions = useMemo(() => {
+    const base = assignableStaffRolesFor(actorRole, ROLE_ORDER);
+    return target && !base.includes(target.role) ? [target.role, ...base] : base;
+  }, [actorRole, target]);
 
   useEffect(() => {
     if (target) {
@@ -479,7 +501,7 @@ function EditStaffDialog({
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
             >
-              {ROLE_ORDER.map((r) => (
+              {roleOptions.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABEL[r]}
                 </option>
