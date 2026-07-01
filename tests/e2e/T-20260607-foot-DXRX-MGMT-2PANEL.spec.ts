@@ -36,13 +36,18 @@ test('AC-1: 2패널 grid(좌 폴더관리 / 우 상병항목) 렌더', () => {
 });
 
 // ── AC-2: 등록 폼에서 폴더 필드 제거 + 항목→폴더 드래그앤드롭 배치 ──
-test('AC-2: 항목 등록 폼에 폴더 입력 필드 없음 (DnD 단일·이동버튼 제거)', () => {
+// T-20260701-foot-STALEGUARD forward-update: 자유타이핑 상병명/코드 입력(dx-name-input/dx-code-input)은
+//   T-20260611-foot-DIAG-KCD-BUNDLE-LOCKDOWN 으로 KCD 공식목록 검색+클릭 단일 입력(dx-kcd-search)에 이관됨.
+//   원 AC-2 의도(등록 폼에 폴더 입력 필드 없음 = 배치는 DnD 전담)는 그대로 유지하며 현행 입력수단으로 갱신.
+test('AC-2: 항목 등록 폼에 폴더 입력 필드 없음 (KCD 검색클릭 단일 입력)', () => {
   const src = read(TAB);
-  // 등록 폼 필드 = 상병명/상병코드/활성화만. 폴더 입력/선택 필드·datalist 제거.
-  expect(src).toContain('dx-name-input');
-  expect(src).toContain('dx-code-input');
-  expect(src).not.toContain('dx-folder-input'); // 폴더 입력 필드 제거(AC-2)
-  expect(src).not.toContain('dx-folder-suggestions'); // 폴더 자동완성 datalist 제거
+  // 등록 폼 필드 = KCD검색(명칭+코드 확정) + 활성화. 폴더 입력/선택 필드·datalist 없음.
+  expect(src).toContain('dx-kcd-search'); // KCD 검색 입력(명칭+코드 확정)
+  expect(src).toContain('dx-kcd-selected'); // 선택된 KCD(코드+명칭) 확정 표기
+  expect(src).not.toContain('dx-name-input'); // 구 자유타이핑 상병명 입력 제거(KCD-LOCKDOWN)
+  expect(src).not.toContain('dx-code-input'); // 구 자유타이핑 코드 입력 제거(KCD-LOCKDOWN)
+  expect(src).not.toContain('dx-folder-input'); // 폴더 입력 필드 없음(AC-2 원의도)
+  expect(src).not.toContain('dx-folder-suggestions'); // 폴더 자동완성 datalist 없음
 });
 
 test('AC-2: 우측 항목 = useDraggable / 좌측 폴더·미분류 = useDroppable (크로스패널 DnD)', () => {
@@ -132,10 +137,15 @@ test('AC-5: 선택 폴더 → 우측이 해당 폴더 소속 항목으로 필터
 });
 
 // ── AC-6: 관리권한 외 read-only ──
-test('AC-6: 관리권한(director/manager/admin) 외 role 은 폴더 관리·배치 조작 불가', () => {
+// T-20260701-foot-STALEGUARD forward-update: 로컬 DX_MANAGE_ROLES 리터럴은
+//   T-20260619-foot-ROLE-MATRIX-3TIER-RBAC 로 공통 헬퍼 canEditClinicMgmt(profile)(@/lib/permissions)에 이관됨.
+//   원 AC-6 의도(관리권한 외 role 은 폴더 관리·배치 조작 불가)는 유지하되, 판정 소스를 현행 헬퍼로 갱신.
+//   역할집합은 헬퍼가 SSOT(진료관리 write 권한: admin/director/has_ops_authority) — 헬퍼 사용 경로를 정적 단언.
+test('AC-6: 관리권한(canEditClinicMgmt) 외 role 은 폴더 관리·배치 조작 불가', () => {
   const src = read(TAB);
-  expect(src).toContain("DX_MANAGE_ROLES = ['director', 'manager', 'admin']");
-  expect(src).toContain('canManage');
+  expect(src).toContain('canEditClinicMgmt'); // 공통 권한 헬퍼 사용(로컬 역할 리터럴 대체)
+  expect(src).toContain('const canManage = canEditClinicMgmt(profile)'); // 관리권한 = 헬퍼 판정
+  expect(src).not.toContain('DX_MANAGE_ROLES'); // 로컬 역할 리터럴 제거(헬퍼로 이관)
   // 비관리 role → 드래그 소스 비활성(useDraggable disabled) + 폴더 조작 버튼 비노출
   expect(src).toContain('disabled: !canManage');
   // DnD 배치도 관리권한 가드
