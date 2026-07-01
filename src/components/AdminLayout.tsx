@@ -399,7 +399,9 @@ export default function AdminLayout() {
               <span className="flex-1">{item.label}</span>
               {showBadge && (
                 <span
-                  className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0 text-[10px] font-semibold text-white min-w-[18px]"
+                  // T-20260701-foot-DASH-SCREENSHOT-GLASS-APPLY: 결제대기 뱃지 — 컨펌 v2 유리 볼록+연한 실버로 통일.
+                  //   LIVESLOT-GLASS-APPLY(.live-glass-board) 그대로 재사용(신규 스타일 X). live 아님 → pulse 미적용(정적 유리).
+                  className="inline-flex items-center justify-center rounded-full live-glass-board border border-[#C7CDD4] px-1.5 py-0 text-[10px] font-semibold text-gray-700 min-w-[18px]"
                   title={`결제대기 ${paymentWaitingCount}건`}
                 >
                   {paymentWaitingCount}
@@ -504,7 +506,8 @@ export default function AdminLayout() {
                     <span className="flex-1">{item.label}</span>
                     {showBadge && (
                       <span
-                        className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0 text-[10px] font-semibold text-white min-w-[18px]"
+                        // T-20260701-foot-DASH-SCREENSHOT-GLASS-APPLY: 결제대기 뱃지 유리 볼록+연한 실버 통일(.live-glass-board 재사용).
+                        className="inline-flex items-center justify-center rounded-full live-glass-board border border-[#C7CDD4] px-1.5 py-0 text-[10px] font-semibold text-gray-700 min-w-[18px]"
                         title={`결제대기 ${paymentWaitingCount}건`}
                       >
                         {paymentWaitingCount}
