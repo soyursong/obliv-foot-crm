@@ -6,6 +6,21 @@
 /** 예약 유형 분류 키. 힐러(healer_flag)는 visit_type 과 직교 → 우선 분류. */
 export type ResvKind = 'new' | 'returning' | 'healer' | 'other';
 
+/**
+ * T-20260701-foot-RESVAXIS-HEALER-RIBBON: 리본(각질) 분류 SSOT.
+ *   힐러(is_healer_intent 플래그)와 달리, 리본은 간략메모(brief_note) 텍스트의 [발각질케어] 칩으로 식별한다.
+ *   초/재/힐러 유형(resvKind)과 *직교* — 재진+발각질 예약은 재진에도 리본에도 각각 잡힌다(독립 카운터).
+ *   ⚠️ 중복 구현 금지: 예약격자 헤더 리본 카운트는 반드시 이 predicate 를 통한다(힐러 시맨틱과 동일 원칙).
+ */
+export const RIBBON_BRIEF_KEYWORD = '발각질'; // 간략메모 칩 '발각질케어' 및 자유입력 변형 포괄
+/** 격자 헤더 배지 라벨. field-soak 총괄 재확인 게이트 — 기본값=간략메모 칩 라벨 계열('발각질'), 반대 시 '리본'으로 1줄 교체. */
+export const RIBBON_BADGE_LABEL = '발각질';
+
+/** 간략메모(brief_note)가 리본(발각질케어) 칩인지 판정. 취소 제외 등 상위 규칙은 호출측이 적용. */
+export function isRibbonBrief(brief_note?: string | null): boolean {
+  return !!brief_note && brief_note.includes(RIBBON_BRIEF_KEYWORD);
+}
+
 /** 분류 입력에 필요한 최소 구조(타입 결합도 최소화).
  *  visit_type 은 string 으로 수용 — 'experience'(선체험) 등 new/returning 외 값은 'other'로 분류(원본 동작 동일).
  *  T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): is_healer_intent(영속) 추가 — 분류 SSOT. */
