@@ -42,7 +42,8 @@ export function DialogContent({
         className={cn(
           isFullscreen
             ? 'fixed inset-0 z-[90] w-full h-full max-w-none rounded-none p-0 bg-transparent'
-            : 'fixed left-1/2 top-1/2 z-[90] -translate-x-1/2 -translate-y-1/2 w-full max-w-lg rounded-xl border bg-background p-6 shadow-lg',
+            : // 컴팩트 기본값 (T-20260701-foot-NEWSECTION-COMPACT-DEFAULT): 신규 다이얼로그/생성폼 p-6→p-4
+              'fixed left-1/2 top-1/2 z-[90] -translate-x-1/2 -translate-y-1/2 w-full max-w-lg rounded-xl border bg-background p-4 shadow-lg',
           'focus:outline-none',
           'data-[open]:animate-in data-[closed]:animate-out data-[open]:fade-in-0 data-[closed]:fade-out-0',
           !isFullscreen && 'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',
@@ -62,7 +63,7 @@ export function DialogContent({
 }
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1.5 mb-4', className)} {...props} />;
+  return <div className={cn('flex flex-col gap-1.5 mb-3', className)} {...props} />;
 }
 
 export function DialogTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
@@ -83,7 +84,7 @@ export function DialogDescription({ className, ...props }: React.HTMLAttributes<
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('mt-4 flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2', className)}
+      className={cn('mt-3 flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2', className)}
       {...props}
     />
   );

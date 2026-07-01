@@ -625,7 +625,7 @@ function SectionConnection({
         </p>
       </div>
 
-      <div className="rounded-lg border p-4 space-y-4">
+      <div className="rounded-lg border p-3 space-y-4">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">메시지 발송 활성화</span>
           <Switch checked={enabled} onCheckedChange={setEnabled} />
@@ -711,7 +711,7 @@ function SectionConnection({
       </div>
 
       {/* 연결 테스트 */}
-      <div className="rounded-lg border p-4 space-y-3">
+      <div className="rounded-lg border p-3 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold">연결 테스트</h3>
@@ -799,7 +799,7 @@ function SectionChannels({ capability }: { capability: MessagingCapability | nul
         {channels.map((ch) => {
           const active = isFullyActive(ch);
           return (
-            <div key={ch.name} className="rounded-lg border p-4 flex items-start gap-4">
+            <div key={ch.name} className="rounded-lg border p-3 flex items-start gap-4">
               <div className={`w-3 h-3 rounded-full mt-1 shrink-0 ${active ? 'bg-green-500' : 'bg-gray-300'}`} />
               <div className="flex-1">
                 <div className="flex items-center gap-2">
@@ -1192,7 +1192,7 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
         {eventTypes.map((et) => {
           const tmpl = getTemplate(et);
           return (
-            <div key={et} className="rounded-lg border p-4 space-y-2">
+            <div key={et} className="rounded-lg border p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-sm">{EVENT_TYPE_LABELS[et]}</span>
                 <Button size="sm" variant="outline" onClick={() => openEdit(tmpl ?? null, et)}>
@@ -1227,7 +1227,7 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
           </div>
         ) : (
           customTemplates.map((tmpl) => (
-            <div key={tmpl.id} data-testid="custom-tmpl-row" className="rounded-lg border p-4 space-y-2">
+            <div key={tmpl.id} data-testid="custom-tmpl-row" className="rounded-lg border p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-sm truncate flex items-center gap-1.5">
                   {tmpl.event_type}
@@ -1373,7 +1373,7 @@ function SectionManual({ clinicId }: { clinicId: string }) {
         <h2 className="text-lg font-semibold">④ 수동 발송</h2>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-4">
+      <div className="space-y-2 rounded-lg border p-3">
         <label className="text-xs font-medium text-muted-foreground">고객 검색 (이름)</label>
         <InlinePatientSearch
           value={query}
@@ -1552,7 +1552,7 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
       <div>
         <h2 className="text-lg font-semibold">⑥ 수신거부 명단</h2>
       </div>
-      <div className="rounded-lg border p-4 space-y-3">
+      <div className="rounded-lg border p-3 space-y-3">
         <h3 className="text-sm font-semibold">번호 추가</h3>
         <div className="flex gap-2">
           <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="01012345678" className="flex-1" />
@@ -1750,7 +1750,7 @@ function SectionSelfCheckinQR({ clinic }: { clinic: Clinic }) {
         </p>
       </div>
 
-      <div className="rounded-lg border p-4 space-y-4">
+      <div className="rounded-lg border p-3 space-y-4">
         <div className="flex flex-col items-center gap-3">
           <div className="rounded-lg border bg-white p-3">
             <img

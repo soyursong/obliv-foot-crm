@@ -308,7 +308,7 @@ function CalledCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
   const room = roomGuidance(r);
   return (
     <div
-      className="animate-pulse-subtle rounded-2xl border-2 border-emerald-400 bg-white p-4 shadow-sm"
+      className="animate-pulse-subtle rounded-2xl border-2 border-emerald-400 bg-white p-3 shadow-sm"
       style={{
         animation: 'pulse-subtle 2s ease-in-out infinite',
       }}
@@ -348,7 +348,7 @@ function CalledCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
 function WaitingCard({ row: r, now: _now, position }: { row: WaitingRow; now: Date; position: number }) {
   const mins = elapsedMinutes(r.checked_in_at);
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm">
+    <div className="rounded-xl border bg-white p-3 shadow-sm">
       <div className="flex items-center justify-between">
         <span className="text-2xl font-bold text-gray-700 tabular-nums">
           #{r.queue_number ?? '—'}
