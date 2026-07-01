@@ -44,7 +44,8 @@ async function enterDayView(page: import('@playwright/test').Page) {
   }
 }
 
-test.describe('COMPACT2 [S1] 2차 컴팩트 격자 렌더', () => {
+// [SUPERSEDED by T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ③] 일간 수평 컬럼(w-[90px])→엑셀 격자로 substrate 교체. S1(수평 밀도) 무효 → skip.
+test.describe.skip('COMPACT2 [S1] 2차 컴팩트 격자 렌더 (SUPERSEDED 7ADJ grid)', () => {
   test('일간 시간 컬럼이 90px 너비(w-[90px])로 추가 축소 + 가로 헤더/세로 진열 유지', async ({ page }) => {
     await gotoReservations(page);
     await enterDayView(page);
