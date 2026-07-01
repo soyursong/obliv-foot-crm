@@ -214,6 +214,9 @@ export default defineConfig({
         //   뷰어 파란글씨(text-blue-600)/서류 검정(printOpinionDoc plain). 순수 함수 + render-split 정적 회귀가드.
         //   ★서류 출력 파란색 0 가드(파괴적 회귀 차단). auth/page 불요.
         '**/T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK.spec.ts',
+        // T-20260701-foot-ASSIGNORDER-COMPACT-LAYOUT: RotationOrderDialog 컨테이너 여백 컴팩트(밀도만)
+        //   + 드래그/저장경로/권한 불변 회귀가드. 순수 소스 정적 단언(page/auth 불요).
+        '**/T-20260701-foot-ASSIGNORDER-COMPACT-LAYOUT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

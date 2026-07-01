@@ -1263,13 +1263,13 @@ function RotationOrderDialog({
     testid: string,
   ) => (
     <div className="flex-1 min-w-0" data-testid={`rotation-part-${testid}`}>
-      <p className="mb-2 text-sm font-semibold">{title} <span className="text-xs text-muted-foreground">({list.length}명)</span></p>
+      <p className="mb-1.5 text-sm font-semibold">{title} <span className="text-xs text-muted-foreground">({list.length}명)</span></p>
       {list.length === 0 ? (
-        <p className="px-2 py-3 text-xs text-muted-foreground">등록된 직원이 없습니다.</p>
+        <p className="px-2 py-2 text-xs text-muted-foreground">등록된 직원이 없습니다.</p>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd(list, setList)}>
           <SortableContext items={list.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {list.map((s, i) => (
                 <SortableRotationRow
                   key={s.id}
@@ -1294,7 +1294,7 @@ function RotationOrderDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="flex justify-center py-8">
+          <div className="flex justify-center py-6">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : colMissing ? (
@@ -1302,7 +1302,7 @@ function RotationOrderDialog({
             순번 컬럼이 아직 적용되지 않았습니다. 잠시 후 다시 시도해주세요.
           </p>
         ) : (
-          <div className="flex flex-col gap-6 md:flex-row">
+          <div className="flex flex-col gap-3 md:flex-row">
             {renderList('상담 파트', consult, setConsult, 'consult')}
             {renderList('치료 파트', therapy, setTherapy, 'therapy')}
           </div>
