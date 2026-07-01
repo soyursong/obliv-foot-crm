@@ -33,7 +33,7 @@ import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER: resvKind 단일 소스화(중복 구현 금지).
 //   기존 로컬 resvKind 정의 → 공유 lib(resvSlotAgg)로 이관. 예약상세팝업 시간대 패널과 동일 분류규칙 공유.
-import { resvKind, summarizeKinds, type ResvKind } from '@/lib/resvSlotAgg';
+import { resvKind, summarizeKinds, isRibbonBrief, RIBBON_BADGE_LABEL, type ResvKind } from '@/lib/resvSlotAgg';
 // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 그룹핑 REVERT(예약관리 캘린더는 30분 슬롯 복원).
 //   buildHourBuckets import 제거 — gridSlots(30분) 직접 사용으로 환원.
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -1171,14 +1171,16 @@ export default function Reservations() {
   // T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜별 유형 카운트 (취소 제외).
   //   총건수 = 초진(new) + 재진(returning)만. 힐러(HL)는 별도 표기, 총합 제외.
   const dayKindCounts = useMemo(() => {
-    const m = new Map<string, { n: number; r: number; h: number }>();
+    // T-20260701-foot-RESVAXIS-HEALER-RIBBON: 주간 요일 헤더에도 리본(발각질) 카운트 추가(AC4 일간/주간 일관).
+    const m = new Map<string, { n: number; r: number; h: number; ribbon: number }>();
     for (const row of rows) {
       if (row.status === 'cancelled') continue;
       const kind = resvKind(row);
-      const cur = m.get(row.reservation_date) ?? { n: 0, r: 0, h: 0 };
+      const cur = m.get(row.reservation_date) ?? { n: 0, r: 0, h: 0, ribbon: 0 };
       if (kind === 'new') cur.n += 1;
       else if (kind === 'returning') cur.r += 1;
       else if (kind === 'healer') cur.h += 1;
+      if (isRibbonBrief(row.brief_note)) cur.ribbon += 1;
       m.set(row.reservation_date, cur);
     }
     return m;
@@ -1867,13 +1869,16 @@ export default function Reservations() {
                 });
             };
             const kindCounts = (time: string) => {
-              let n = 0, rr = 0, h = 0;
+              // T-20260701-foot-RESVAXIS-HEALER-RIBBON: 리본(발각질) 카운트 추가. 힐러와 동일 규칙(취소 제외)·
+              //   리본은 간략메모 [발각질케어] 칩 기준(isRibbonBrief) → 초/재/힐러 유형과 직교(독립 카운터).
+              let n = 0, rr = 0, h = 0, ribbon = 0;
               for (const r of slotList(time)) {
                 if (r.status === 'cancelled') continue;
                 const k = resvKind(r);
                 if (k === 'new') n += 1; else if (k === 'returning') rr += 1; else if (k === 'healer') h += 1;
+                if (isRibbonBrief(r.brief_note)) ribbon += 1;
               }
-              return { n, rr, h };
+              return { n, rr, h, ribbon };
             };
             // T-20260624-foot-RESVMGMT-DAILY-TIMEGRID-VERTICAL: C4(클릭→한 줄 나열) 폐기.
             //   시간은 가로 한 줄(컬럼 헤더)로 유지하되, 각 시간 컬럼 아래로 예약을 클릭 없이 상시 세로 진열.
@@ -2010,7 +2015,7 @@ export default function Reservations() {
                     </div>
                     {/* ── 상단 가로 헤더: 시간 컬럼(좌→우) — AC1. 시간 라벨 중앙정렬·15px + 초/재/힐 건수(CAL-COUNT-LABEL 유지). ── */}
                     {daySlots.map((time) => {
-                      const { n, rr, h } = kindCounts(time);
+                      const { n, rr, h, ribbon } = kindCounts(time);
                       const full = isSlotFull(dateStr, time);
                       const isNow = isSameDay(selectedDay, now) && time === currentSlot;
                       return (
@@ -2038,6 +2043,9 @@ export default function Reservations() {
                             <span className="text-firstvisit-700">재{rr}</span>
                             <span className="text-muted-foreground/40">·</span>
                             <span className="text-healer-700">힐러{h}</span>
+                            {/* T-20260701-foot-RESVAXIS-HEALER-RIBBON: 리본(발각질) 카운트 추가 — 힐러 뒤. 라벨은 field-soak 재확인(RIBBON_BADGE_LABEL). */}
+                            <span className="text-muted-foreground/40">·</span>
+                            <span className="text-rose-700">{RIBBON_BADGE_LABEL}{ribbon}</span>
                           </span>
                         </div>
                       );
@@ -2133,7 +2141,7 @@ export default function Reservations() {
                         HL 칩(HL N)은 별도 유지 — 합산+별도표기 병존. nji4 'HL 제외' supersede. */}
                     {(() => {
                       const c = dayKindCounts.get(format(d, 'yyyy-MM-dd'));
-                      if (!c || (c.n === 0 && c.r === 0 && c.h === 0)) return null;
+                      if (!c || (c.n === 0 && c.r === 0 && c.h === 0 && c.ribbon === 0)) return null;
                       return (
                         // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (2번): 요일 헤더 건수 칩/뱃지형 재디자인.
                         //   초진=초록/재진=파랑/HL=노랑 칩으로 색상 코딩 일관. 총건수(초+재)는 앞에 굵게.
@@ -2145,6 +2153,8 @@ export default function Reservations() {
                           <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">초 {c.n}</span>
                           <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">재 {c.r}</span>
                           {c.h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-1.5 py-0.5 text-healer-700">HL {c.h}</span>}
+                          {/* T-20260701-foot-RESVAXIS-HEALER-RIBBON: 리본(발각질) 칩 — 힐러 뒤. 라벨 field-soak 재확인(RIBBON_BADGE_LABEL). */}
+                          {c.ribbon > 0 && <span className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">{RIBBON_BADGE_LABEL} {c.ribbon}</span>}
                         </div>
                       );
                     })()}
