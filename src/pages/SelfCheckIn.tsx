@@ -184,6 +184,7 @@ const T: Record<Lang, {
   emailLabel: string;
   emailPlaceholder: string;
   contactEitherHint: string;        // 워크인 외국인: 연락처 or 이메일 택1 안내
+  addressOrEmailHint: string;       // T-20260630 ADDR-EMAIL-OPTIONAL: 주소 or 이메일 택1 안내
   stayAddressLabel: string;
   stayAddressPlaceholder: string;
   stayAddressDetailLabel: string;
@@ -312,6 +313,7 @@ const T: Record<Lang, {
     emailLabel: '이메일',
     emailPlaceholder: 'name@example.com',
     contactEitherHint: '연락처 또는 이메일 중 하나 이상 입력해주세요',
+    addressOrEmailHint: '주소 또는 이메일 중 하나를 입력해주세요',
     stayAddressLabel: '국내 체류지 (숙소/주소)',
     stayAddressPlaceholder: '숙소명 또는 주소 검색',
     stayAddressDetailLabel: '상세주소',
@@ -444,6 +446,7 @@ const T: Record<Lang, {
     emailLabel: 'Email',
     emailPlaceholder: 'name@example.com',
     contactEitherHint: 'Enter at least one: phone number or email',
+    addressOrEmailHint: 'Please enter at least one: address or email',
     stayAddressLabel: 'Stay in Korea (Hotel / Address)',
     stayAddressPlaceholder: 'Search hotel or address',
     stayAddressDetailLabel: 'Address Detail',
@@ -1043,6 +1046,14 @@ export default function SelfCheckIn() {
   // 외국인 워크인: 연락처 또는 이메일 택1 최소1개(DA Q3 — FE 강제, DB CHECK 금지). 내국인: 연락처 필수.
   const contactComplete = isForeign ? (phoneFilled || emailValid) : phoneFilled;
 
+  // ── T-20260630-foot-SELFCHECKIN-ADDR-EMAIL-OPTIONAL: 주소·이메일 택1(at-least-one, A안) ──
+  //   현장(김주연 총괄) 요청 — 외국인은 숙소 주소가 없고 이메일만 있는 경우 등 대응.
+  //   주소·이메일 둘 다 선택필드로 완화하되 최소 1개 충족을 요구. 이메일 입력칸은 외국인(English)
+  //   흐름에만 노출되므로 내국인은 이메일 대체가 없어 주소가 사실상 필수(기존 동작 그대로 보존).
+  //   RPC(fn_selfcheckin_upsert_customer_resolve_v2)는 p_address/p_customer_email 모두 NULL 수용 → DB변경 없음.
+  const addressFilled = address.trim().length >= 2;
+  const addressOrEmailComplete = isForeign ? (addressFilled || emailValid) : addressFilled;
+
   const canSubmit =
     name.trim().length >= 1 &&
     contactComplete &&
@@ -1054,7 +1065,8 @@ export default function SelfCheckIn() {
   //   동의서(§C)는 외국인이면 예약/워크인 모두 필수.
   const personalInfoComplete =
     (isForeign || extractBirthDate(rrn) !== null) &&
-    address.trim().length >= 2 &&
+    // T-20260630-foot-SELFCHECKIN-ADDR-EMAIL-OPTIONAL: 주소 단독 필수 → 주소·이메일 택1(최소1개).
+    addressOrEmailComplete &&
     ((reservationType !== 'walkin' && !isForeign) || privacyConsent) &&
     // T-20260615-foot-CONSENT-SENSITIVE: 민감정보(건강·진료정보) 동의는 초진 전체 필수(개보법 §23).
     consentSensitive;
@@ -1953,18 +1965,27 @@ export default function SelfCheckIn() {
 
             {/* T-20260625-FOREIGN: 외국인 = 국내 체류지(숙소) 검색 위젯(카카오 로컬). 내국인 = 우편번호 검색. */}
             {isForeign ? (
-              <ForeignStayAddressInput
-                address={address}
-                onAddressChange={setAddress}
-                addressDetail={addressDetail}
-                onAddressDetailChange={setAddressDetail}
-                searchLabel={t.stayAddressLabel}
-                searchPlaceholder={t.stayAddressPlaceholder}
-                detailLabel={t.stayAddressDetailLabel}
-                detailPlaceholder={t.stayAddressDetailPlaceholder}
-                manualToggleLabel={t.stayManualToggle}
-                manualHint={t.stayManualHint}
-              />
+              <div className="space-y-1.5">
+                <ForeignStayAddressInput
+                  address={address}
+                  onAddressChange={setAddress}
+                  addressDetail={addressDetail}
+                  onAddressDetailChange={setAddressDetail}
+                  searchLabel={t.stayAddressLabel}
+                  searchPlaceholder={t.stayAddressPlaceholder}
+                  detailLabel={t.stayAddressDetailLabel}
+                  detailPlaceholder={t.stayAddressDetailPlaceholder}
+                  manualToggleLabel={t.stayManualToggle}
+                  manualHint={t.stayManualHint}
+                />
+                {/* T-20260630-foot-SELFCHECKIN-ADDR-EMAIL-OPTIONAL(AC3): 주소·이메일 둘 다 비면 택1 안내.
+                    이메일은 이전 단계(input)에서 입력 → emailValid 로 반영됨. */}
+                {!addressFilled && !emailValid && (
+                  <p className="text-xs" style={{ color: C.medium }} data-testid="addr-email-hint">
+                    {t.addressOrEmailHint}
+                  </p>
+                )}
+              </div>
             ) : (
             /* 주소 입력 — T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1:
                 우편번호 검색(자동기입) + 기본주소 + 상세주소칸 */
