@@ -358,14 +358,15 @@
     linear-gradient(160deg, rgba(255, 255, 255, 0.62) 0%, rgba(244, 246, 248, 0.44) 48%, rgba(225, 229, 234, 0.42) 100%);
   -webkit-backdrop-filter: blur(7px);
   backdrop-filter: blur(7px);
-  /* T-20260701-foot-GLASS-SHADOW-SOFTEN: outer 드롭섀도 범위 좁힘(8/20→3/8) + alpha 하향.
-     inset 볼록(상단 하이라이트/하단 그림자)은 유지 — 강도만 하향(AC3). */
+  /* T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT (유리축 3차 refine, reporter-driven):
+     총괄 실물 확인 후 후속 — 바깥으로 드리우는 outer drop-shadow만 추가 축소(범위↓·alpha↓).
+     ⚠ inset 볼록(상단 하이라이트/하단 그림자)·gradient·backdrop-filter는 무접촉 유지 — 볼록 회귀 금지. */
   box-shadow:
-    inset 0 1.5px 2px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지) */
-    inset 0 -2px 4px rgba(150, 160, 174, 0.3),    /* 하단 inset 그림자(볼록 유지·강도↓) */
-    0 1px 0 rgba(255, 255, 255, 0.8),             /* 상단 테두리 하이라이트 */
-    0 3px 8px rgba(120, 131, 146, 0.16),          /* outer 볼록 드롭섀도(범위↓·연하게) */
-    0 1px 3px rgba(120, 131, 146, 0.1);
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지·무변경) */
+    inset 0 -2px 4px rgba(150, 160, 174, 0.3),    /* 하단 inset 그림자(볼록 유지·무변경) */
+    0 1px 0 rgba(255, 255, 255, 0.8),             /* 상단 테두리 하이라이트(엣지·무변경) */
+    0 2px 5px rgba(120, 131, 146, 0.09),          /* outer 드롭섀도(3/8→2/5, alpha 0.16→0.09) */
+    0 1px 2px rgba(120, 131, 146, 0.05);          /* outer 드롭섀도(3→2, alpha 0.1→0.05) */
 }
 
 /* ── T-20260701-foot-CHART2-IDVERIFY-DOT-ONLY: 2번 차트 신분증 확인필요/완료 배지 ──────────────
@@ -379,9 +380,10 @@
     linear-gradient(160deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 246, 248, 0.5) 48%, rgba(225, 229, 234, 0.46) 100%);
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
-  /* T-20260701-foot-GLASS-SHADOW-SOFTEN: blur/spread 축소 + alpha 하향. 볼록감 유지·강도만↓(AC3). */
+  /* T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT (유리축 3차 refine):
+     outer drop-shadow만 추가 축소. inset 볼록·gradient·blur 무접촉 유지(볼록 회귀 금지). */
   box-shadow:
-    inset 0 1px 1.5px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지) */
-    inset 0 -1.5px 3px rgba(150, 160, 174, 0.28), /* 하단 inset 그림자(볼록 유지·강도↓) */
-    0 1px 2px rgba(120, 131, 146, 0.12);          /* 은은한 outer 볼록(연하게) */
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.85),  /* 상단 inset 하이라이트(볼록 유지·무변경) */
+    inset 0 -1.5px 3px rgba(150, 160, 174, 0.28), /* 하단 inset 그림자(볼록 유지·무변경) */
+    0 1px 1.5px rgba(120, 131, 146, 0.07);        /* 은은한 outer(2→1.5, alpha 0.12→0.07) */
 }
