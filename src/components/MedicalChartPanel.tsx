@@ -1904,71 +1904,21 @@ export default function MedicalChartPanel({
 
   if (!open) return null;
 
-  // T-20260526-foot-NAV-ARROW-DUMMY (AC-4): 실데이터 없을 때 노란테두리 더미 5건 표시
-  const DUMMY_CHARTS: MedicalChart[] = [
-    {
-      id: '__dummy__1', customer_id: customerId || '', clinic_id: clinicId || '',
-      visit_date: '2026-05-20', chief_complaint: null,
-      diagnosis: '내성발톱 — 더미 샘플 ①',
-      treatment_record: '레이저 시술 15분 (테스트용 데이터)',
-      materials_used: null, treatment_result: null,
-      clinical_progress: '1회차 시술 후 경과 양호 — 더미 샘플',
-      prescription_items: null, created_by: null,
-      created_at: '2026-05-20T10:00:00+09:00', updated_at: '2026-05-20T10:00:00+09:00',
-    },
-    {
-      id: '__dummy__2', customer_id: customerId || '', clinic_id: clinicId || '',
-      visit_date: '2026-05-13', chief_complaint: null,
-      diagnosis: '족저근막염 — 더미 샘플 ②',
-      treatment_record: '물리치료 20분 (테스트용 데이터)',
-      materials_used: null, treatment_result: null,
-      clinical_progress: '2회차 통증 30% 감소 — 더미 샘플',
-      prescription_items: null, created_by: null,
-      created_at: '2026-05-13T14:00:00+09:00', updated_at: '2026-05-13T14:00:00+09:00',
-    },
-    {
-      id: '__dummy__3', customer_id: customerId || '', clinic_id: clinicId || '',
-      visit_date: '2026-05-06', chief_complaint: null,
-      diagnosis: '무좀 (백선) — 더미 샘플 ③',
-      treatment_record: '레이저 + 연고 처방 (테스트용 데이터)',
-      materials_used: null, treatment_result: null,
-      clinical_progress: '진균 감소 확인 — 더미 샘플',
-      prescription_items: null, created_by: null,
-      created_at: '2026-05-06T11:00:00+09:00', updated_at: '2026-05-06T11:00:00+09:00',
-    },
-    {
-      id: '__dummy__4', customer_id: customerId || '', clinic_id: clinicId || '',
-      visit_date: '2026-04-29', chief_complaint: null,
-      diagnosis: '굳은살 제거 — 더미 샘플 ④',
-      treatment_record: '기계적 제거 10분 (테스트용 데이터)',
-      materials_used: null, treatment_result: null,
-      clinical_progress: '굳은살 80% 제거 완료 — 더미 샘플',
-      prescription_items: null, created_by: null,
-      created_at: '2026-04-29T15:00:00+09:00', updated_at: '2026-04-29T15:00:00+09:00',
-    },
-    {
-      id: '__dummy__5', customer_id: customerId || '', clinic_id: clinicId || '',
-      visit_date: '2026-04-22', chief_complaint: null,
-      diagnosis: '티눈 — 더미 샘플 ⑤',
-      treatment_record: '티눈 제거술 (테스트용 데이터)',
-      materials_used: null, treatment_result: null,
-      clinical_progress: '초진 — 티눈 확인 및 계획 수립 — 더미 샘플',
-      prescription_items: null, created_by: null,
-      created_at: '2026-04-22T09:00:00+09:00', updated_at: '2026-04-22T09:00:00+09:00',
-    },
-  ];
-  // 실데이터 없을 때만 더미 표시
+  // T-20260702-foot-MEDCHART-PROGRESS-DUMMY-UNHARDCODE: 하드코딩 더미 5건 완전 제거(구 NAV-ARROW-DUMMY).
+  //   기존엔 실차트 0건 환자에게 고정 더미(모든 환자 동일 diagnosis/clinical_progress 텍스트)를 렌더 →
+  //   "환자를 바꿔 열어도 진료경과가 같은 고정 텍스트"로 표시되던 버그. 진료경과 read 경로만 손봄(쓰기·저장 무변경).
+  //   이제 실데이터 없으면 빈 목록 + 빈 상태 placeholder(아래 medchart-empty-state) 노출. 목데이터/상수 잔존 0.
+  //   진료경과 본문은 loadData의 medical_charts fetch(customer_id·clinic_id·visit_date 기준)가 환자·방문별로 채운다.
   // T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: "삭제된 차트 보기"(director/admin) ON 이면
   //   활성 차트 + 삭제 차트를 visit_date 최신순으로 병합 표기(삭제분은 엔트리에서 시각 구분 + 읽기전용).
   const activeCharts = charts;
-  const displayCharts = activeCharts.length > 0 || (showDeleted && deletedCharts.length > 0)
-    ? (showDeleted
-        ? [...activeCharts, ...deletedCharts].sort((a, b) =>
-            (b.visit_date || '').localeCompare(a.visit_date || '') ||
-            (b.created_at || '').localeCompare(a.created_at || ''))
-        : activeCharts)
-    : DUMMY_CHARTS;
-  const isDummyMode = activeCharts.length === 0 && !(showDeleted && deletedCharts.length > 0);
+  const displayCharts = showDeleted && deletedCharts.length > 0
+    ? [...activeCharts, ...deletedCharts].sort((a, b) =>
+        (b.visit_date || '').localeCompare(a.visit_date || '') ||
+        (b.created_at || '').localeCompare(a.created_at || ''))
+    : activeCharts;
+  // 실데이터(활성/삭제) 0건 = 빈 상태(더미 아님). placeholder만 노출.
+  const isEmptyState = displayCharts.length === 0;
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 필터 적용 (OR 로직)
   // T-20260609-foot-MEDCHART-SOAK-REFINE item2 (문지은 대표원장 field-soak 버그):
@@ -2881,10 +2831,8 @@ export default function MedicalChartPanel({
                     className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 uppercase tracking-wide"
                   >
                     {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-7: 라벨에서 '타임라인' 단어 제거 → '진료경과'. */}
+                    {/* T-20260702-foot-MEDCHART-PROGRESS-DUMMY-UNHARDCODE: [더미] 배지 제거(더미 모드 폐지). */}
                     진료경과
-                    {isDummyMode && (
-                      <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
-                    )}
                   </span>
                   {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: "삭제된 차트 보기" 토글(director/admin 한정).
                       softDeleteEnabled(런타임 스키마 게이트) + 삭제된 차트가 있을 때만 노출. */}
@@ -2906,10 +2854,15 @@ export default function MedicalChartPanel({
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
-                  {/* 더미 모드 배너 */}
-                  {isDummyMode && (
-                    <div className="mx-2 mb-1 rounded border-2 border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] text-yellow-800 font-semibold">
-                      실데이터 없음 — 더미 샘플 표시 중
+                  {/* T-20260702-foot-MEDCHART-PROGRESS-DUMMY-UNHARDCODE: 더미 배너 폐지 → 빈 상태 placeholder.
+                      진료경과 기록이 없는 환자는 고정 더미 대신 안내 placeholder만 노출(환자·방문별 실데이터는
+                      medical_charts fetch가 채우며, 없으면 빈 상태). */}
+                  {isEmptyState && (
+                    <div
+                      className="mx-2 my-3 rounded border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center text-[11px] text-gray-500"
+                      data-testid="medchart-empty-state"
+                    >
+                      아직 진료 기록이 없습니다.<br />우측에서 진료경과를 작성해 주세요.
                     </div>
                   )}
 
@@ -3217,14 +3170,7 @@ export default function MedicalChartPanel({
                         </button>
                       </div>
                     )}
-                    {isDummyMode && selectedChartId?.startsWith('__dummy__') && (
-                      <span
-                        className="text-[10px] text-yellow-700 font-semibold px-1.5 rounded"
-                        style={{ border: '2px solid yellow' }}
-                      >
-                        더미 — 저장 불가
-                      </span>
-                    )}
+                    {/* T-20260702-foot-MEDCHART-PROGRESS-DUMMY-UNHARDCODE: '더미 — 저장 불가' 배지 제거(더미 폐지). */}
                     {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 기록자(작성자) 표시는 상단 '로그인 계정 인디케이터'
                         오인을 피해 본문 하단 서명 위치로 이동(아래 진료메모 다음 서명 블록 참조). 상단 미표시. */}
                   </div>
