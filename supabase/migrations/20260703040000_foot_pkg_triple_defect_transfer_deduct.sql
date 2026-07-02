@@ -215,3 +215,10 @@ COMMENT ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB
   IS '선수금차감 회차 소진(멱등, 초과차감 방지). 수납확정 시 package_sessions insert → 잔여 정확 차감. T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT';
 
 GRANT EXECUTE ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB) TO authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PostgREST 스키마 캐시 리로드 (신규 FUNCTION 2개를 RPC 엔드포인트로 즉시 노출)
+-- cross_crm_data_contract.md §23 / docs/PGRST-SCHEMA-RELOAD-HYGIENE-CONVENTION.md 준수.
+-- 이 라인 부재 시 신규 RPC 가 schema cache 에 미등재 → PGRST202(함수 미발견)로 E2E 실패.
+-- ─────────────────────────────────────────────────────────────────────────────
+NOTIFY pgrst, 'reload schema';
