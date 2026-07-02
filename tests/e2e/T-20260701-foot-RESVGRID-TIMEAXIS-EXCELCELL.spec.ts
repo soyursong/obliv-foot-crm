@@ -87,24 +87,27 @@ test.describe('TIMEAXIS-EXCELCELL AC1 — 시간대 상단 가로 헤더', () =>
   });
 });
 
-// AC2: 초진/재진 세로 좌측 행
-test.describe('TIMEAXIS-EXCELCELL AC2 — 초진/재진 세로 좌측 행', () => {
-  test('좌측 행 라벨(초진/재진)이 세로로 배치 + 초진이 재진 위', async ({ page }) => {
+// AC2: 세로축 4행(초진/재진/힐러/리본) 세로 좌측 행
+//   T-20260702-foot-RESVGRID-4ROW-BODYSPLIT supersede: 세로축이 new/rest 2행 → 초진/재진/힐러/리본 4개 물리 행으로 분할.
+test.describe('TIMEAXIS-EXCELCELL AC2 — 세로축 4행(초진/재진/힐러/리본) 좌측 행', () => {
+  test('좌측 행 라벨 4종이 세로로 위→아래(초진→재진→힐러→리본) 배치', async ({ page }) => {
     await gotoReservations(page);
     await enterDayView(page);
     test.skip(!(await dayGridReady(page)), '일간 격자 미렌더 — skip');
 
-    const newLabel = page.getByTestId('resv-day-rowlabel-new');
-    const restLabel = page.getByTestId('resv-day-rowlabel-rest');
-    await expect(newLabel).toBeVisible();
-    await expect(restLabel).toBeVisible();
-    await expect(newLabel).toHaveText('초진');
-    await expect(restLabel).toHaveText('재진');
+    const labels = ['new', 'returning', 'healer', 'ribbon'].map((k) => page.getByTestId(`resv-day-rowlabel-${k}`));
+    for (const lb of labels) await expect(lb).toBeVisible();
+    await expect(labels[0]).toContainText('초진');
+    await expect(labels[1]).toContainText('재진');
+    await expect(labels[2]).toContainText('힐러');
+    await expect(labels[3]).toContainText('리본');
 
-    // 세로 배치: 초진 라벨이 재진 라벨보다 위(y 좌표 작음).
-    const bn = await newLabel.boundingBox();
-    const br = await restLabel.boundingBox();
-    if (bn && br) expect(bn.y).toBeLessThan(br.y);
+    // 세로 배치: 초진→재진→힐러→리본 순으로 y 좌표 증가(위→아래).
+    const boxes = await Promise.all(labels.map((lb) => lb.boundingBox()));
+    for (let i = 0; i + 1 < boxes.length; i++) {
+      const a = boxes[i], b = boxes[i + 1];
+      if (a && b) expect(a.y).toBeLessThan(b.y);
+    }
   });
 });
 
@@ -127,8 +130,8 @@ test.describe('TIMEAXIS-EXCELCELL AC4 — 빈 칸 직접 클릭 신규예약(엑
     await enterDayView(page);
     test.skip(!(await dayGridReady(page)), '일간 격자 미렌더 — skip');
 
-    // 빈(정원 미달·클립보드 없음) 셀만 신규예약 진입. 초진/재진 셀 공통 title 로 식별.
-    const emptyCell = page.locator('[data-testid^="resv-day-cell-new-"][title="빈 칸 클릭 → 신규예약"], [data-testid^="resv-day-col-cards-"][title="빈 칸 클릭 → 신규예약"]').first();
+    // 빈(정원 미달·클립보드 없음) 셀만 신규예약 진입. 4행(초진/재진/힐러/리본) 셀 공통 testid prefix + title 로 식별.
+    const emptyCell = page.locator('[data-testid^="resv-day-cell-"][title="빈 칸 클릭 → 신규예약"]').first();
     test.skip((await emptyCell.count()) === 0, '빈 칸 없음(전 슬롯 마감/미데이터) — skip');
     await emptyCell.click();
 
@@ -149,12 +152,11 @@ test.describe('TIMEAXIS-EXCELCELL AC5 — 기존 예약 카드 렌더(회귀 없
     const cnt = await cards.count();
     test.skip(cnt === 0, '당일 예약 없음 — 렌더 회귀 검증 skip');
 
-    // 각 카드는 초진(resv-day-cell-new-*) 또는 재진(resv-day-col-cards-*) 셀 하위에 위치.
+    // 각 카드는 4행(초진/재진/힐러/리본) 셀(resv-day-cell-*) 하위에 위치.
     const firstCard = cards.first();
     await expect(firstCard).toBeVisible();
-    const inNewCell = (await firstCard.locator('xpath=ancestor::*[starts-with(@data-testid,"resv-day-cell-new-")]').count()) > 0;
-    const inRestCell = (await firstCard.locator('xpath=ancestor::*[starts-with(@data-testid,"resv-day-col-cards-")]').count()) > 0;
-    expect(inNewCell || inRestCell).toBeTruthy();
+    const inGridCell = (await firstCard.locator('xpath=ancestor::*[starts-with(@data-testid,"resv-day-cell-")]').count()) > 0;
+    expect(inGridCell).toBeTruthy();
   });
 });
 

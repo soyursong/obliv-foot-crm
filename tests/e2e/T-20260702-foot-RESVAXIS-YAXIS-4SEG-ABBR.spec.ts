@@ -69,8 +69,9 @@ test.describe('AC1: 일간 세로축 좌측 행 라벨 — 4분류 full 열거',
     expect(RESV_PAGE, '재진 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.returning.full}');
     expect(RESV_PAGE, '힐러 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.healer.full}');
     expect(RESV_PAGE, '리본(발각질) 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.ribbon.full}');
-    // rest 행 라벨에 재진/힐러/리본 순서 열거 → 세로축 위(초진)→아래(리본) 4분류로 읽힘
-    expect(RESV_PAGE, '세로축 rowlabel testid 회귀').toContain('data-testid={`resv-day-rowlabel-${rowKind}`}');
+    // T-20260702-foot-RESVGRID-4ROW-BODYSPLIT supersede: 세로축이 4개 물리 행(초진/재진/힐러/리본)으로 분할됨 →
+    //   rowlabel testid 는 row.kind(4행 각각) 로 렌더. full 라벨 4종은 DAY_ROW_KINDS 구성으로 세로축에 위→아래 표기.
+    expect(RESV_PAGE, '세로축 rowlabel testid 회귀').toContain('data-testid={`resv-day-rowlabel-${row.kind}`}');
   });
 });
 
