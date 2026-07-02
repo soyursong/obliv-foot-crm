@@ -20,7 +20,7 @@
 //   KOHTEST-LIFECYCLE SSOT read-only 재사용 — 신규 스키마 0, ADDITIVE 소비.) 환자×검사신청일 = 1행.
 // 방어성: koh_requested/blood_test_requested 는 ADDITIVE(마이그 미적용 prod 42703) → 폴백 빈 목록.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -483,8 +483,10 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   // 혈액검사 결과지 업로드/보기 다이얼로그 타겟(환자). null=닫힘.
   const [bloodTarget, setBloodTarget] = useState<{ id: string; name: string } | null>(null);
   // T-20260629-foot-TREATBL-COLLAPSE-TOGGLE: 날짜 그룹 아코디언. 펼쳐진 그룹 키(날짜) 집합.
-  //   초기값 = 빈 Set → 전 그룹 접힘(▶). 화면 재진입 시 컴포넌트 remount → 자동 접힘 복귀(AC-2/시나리오2-3).
-  //   그룹 독립 토글(AC-5) — 한 그룹 변경이 다른 그룹에 영향 없음.
+  //   그룹 독립 토글 — 한 그룹 변경이 다른 그룹에 영향 없음.
+  // T-20260702-KOHTARGET-TODAY-EXPAND-DESCRM AC-1: 초기값 = 빈 Set 이나, groups 최초 로드 시점에
+  //   '오늘(당일, KST)' 날짜 묶음만 기본 펼침. 과거 날짜는 접힘으로 시작(치료사는 매일 '오늘 것'만 봄).
+  //   아래 useEffect 가 최초 1회만 오늘을 펼침 → 사용자가 오늘을 접거나 과거를 펼친 뒤에는 재간섭 없음.
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const toggleGroup = (d: string) =>
     setExpandedDates((prev) => {
@@ -496,7 +498,19 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
 
   const totalCount = groups.reduce((sum, g) => sum + g.rows.length, 0);
   const today = seoulISODate(new Date());
-  const { start } = windowBounds(date);
+
+  // T-20260702-KOHTARGET-TODAY-EXPAND-DESCRM AC-1: groups 최초 로드 시 '오늘' 묶음만 기본 펼침.
+  //   오늘 신청 0건(오늘 그룹 없음) → 강제로 다른 날짜를 펼치지 않음(전부 접힘 유지) [정책: supervisor 리뷰 명시].
+  //   ref 가드로 최초 1회만 — 이후 사용자 토글(오늘 접기/과거 펼치기)을 덮어쓰지 않음.
+  const didInitExpandRef = useRef(false);
+  useEffect(() => {
+    if (didInitExpandRef.current) return;
+    if (groups.length === 0) return; // 아직 미로드 — 초기화 보류
+    didInitExpandRef.current = true;
+    if (groups.some((g) => g.date === today)) {
+      setExpandedDates(new Set([today]));
+    }
+  }, [groups, today]);
 
   // RELOCATE[1]: 균검사지 발급 — 진료대시보드(KohReportTab.handlePublish)에서 이전한 발급 동선.
   //   기존 로직 재사용: 조갑부위(nail_sites) + 생년월일 게이트 → buildKohFieldData → publish_koh_result RPC.
@@ -679,14 +693,11 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
     <div className="flex flex-col gap-2" data-testid="exam-targets-section">
       <div className="flex items-center justify-between gap-2">
         <div>
+          {/* T-20260702-KOHTARGET-TODAY-EXPAND-DESCRM AC-2: 요청하지 않은 기능 설명 안내문구 전체 제거
+              (기존 '검사신청일 기준 …~… 동안 …활성(●)…' 정적 안내 삭제). 집계·필터·표기 로직은 불변. */}
           <p className="flex items-center gap-1.5 text-sm font-medium">
             <ClipboardList className="h-4 w-4 text-teal-600" />
             균검사 &amp; 피검사 대상자
-          </p>
-          {/* AC-2: 일자별 윈도 안내(검사신청일 기준 최근 N일) */}
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            검사신청일 기준 {dateLabel(start)} ~ {dateLabel(date)} 동안 균검사·피검사를 신청한 환자를
-            일자별로 묶어 보여줍니다. 신청한 검사만 활성(●)으로 표시됩니다.
           </p>
         </div>
         {totalCount > 0 && (
