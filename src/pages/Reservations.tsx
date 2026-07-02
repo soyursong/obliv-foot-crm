@@ -33,7 +33,7 @@ import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER: resvKind 단일 소스화(중복 구현 금지).
 //   기존 로컬 resvKind 정의 → 공유 lib(resvSlotAgg)로 이관. 예약상세팝업 시간대 패널과 동일 분류규칙 공유.
-import { resvKind, summarizeKinds, isRibbonBrief, RIBBON_BADGE_LABEL, type ResvKind } from '@/lib/resvSlotAgg';
+import { resvKind, summarizeKinds, isRibbonBrief, KIND_AXIS_LABELS, type ResvKind } from '@/lib/resvSlotAgg';
 // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 그룹핑 REVERT(예약관리 캘린더는 30분 슬롯 복원).
 //   buildHourBuckets import 제거 — gridSlots(30분) 직접 사용으로 환원.
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -2034,18 +2034,19 @@ export default function Reservations() {
                           )}
                         >
                           <span className="text-[15px] font-semibold tabular-nums leading-none text-foreground">{time}</span>
+                          {/* T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR A2: 시간 표시 '밑에' 세로축 4분류 축약(초-재-힐-리) 컴팩트 표기.
+                              KIND_AXIS_LABELS.abbr SSOT(순서·정합=세로축 4분류와 동일). 힐러→힐 / 리본(발각질)→리. */}
                           <span
                             data-testid={`resv-day-hslot-count-${time}`}
                             className="flex items-center justify-center gap-0.5 whitespace-nowrap text-[8px] font-medium leading-none"
                           >
-                            <span className="text-blue-700">초{n}</span>
+                            <span className="text-blue-700">{KIND_AXIS_LABELS.new.abbr}{n}</span>
                             <span className="text-muted-foreground/40">·</span>
-                            <span className="text-firstvisit-700">재{rr}</span>
+                            <span className="text-firstvisit-700">{KIND_AXIS_LABELS.returning.abbr}{rr}</span>
                             <span className="text-muted-foreground/40">·</span>
-                            <span className="text-healer-700">힐러{h}</span>
-                            {/* T-20260701-foot-RESVAXIS-HEALER-RIBBON: 리본(발각질) 카운트 추가 — 힐러 뒤. 라벨은 field-soak 재확인(RIBBON_BADGE_LABEL). */}
+                            <span className="text-healer-700">{KIND_AXIS_LABELS.healer.abbr}{h}</span>
                             <span className="text-muted-foreground/40">·</span>
-                            <span className="text-rose-700">{RIBBON_BADGE_LABEL}{ribbon}</span>
+                            <span className="text-rose-700">{KIND_AXIS_LABELS.ribbon.abbr}{ribbon}</span>
                           </span>
                         </div>
                       );
@@ -2053,15 +2054,33 @@ export default function Reservations() {
                     {/* ── 세로축 = 초진/재진(치료사축) — AC2. 각 행 = 시간 컬럼별 셀. (+)버튼 제거, 빈 칸 직접 클릭 = 신규예약(AC3/AC4). ── */}
                     {(['new', 'rest'] as const).map((rowKind) => (
                       <Fragment key={rowKind}>
-                        {/* 좌측 행 라벨(초진/재진) — sticky left 고정 */}
+                        {/* T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR A1: 세로축 라벨을 4분류(초진/재진/힐러/리본(발각질))로 확정 표기.
+                            물리 카드행은 new/rest 2행 유지(축 좌표 재정의 아님·ADDITIVE) — rest 행 라벨에 재진/힐러/리본(발각질)
+                            하위분류를 색상점과 함께 열거해 세로축이 위→아래로 초진·재진·힐러·리본(발각질) 4개로 읽히게 함.
+                            (힐러=is_healer_intent, 리본=간략메모 발각질 칩. 둘 다 rest 행에 표시되는 분류 → 라벨 열거는 참조용, 카드 배치 규칙 불변.) */}
                         <div
                           data-testid={`resv-day-rowlabel-${rowKind}`}
                           className={cn(
-                            'sticky left-0 z-10 flex items-center justify-center border-b border-r bg-muted/60 px-1 py-2 text-xs font-semibold',
-                            rowKind === 'new' ? 'text-blue-700' : 'text-firstvisit-700',
+                            'sticky left-0 z-10 flex flex-col items-center justify-center gap-1 border-b border-r bg-muted/60 px-1 py-2 text-xs font-semibold',
                           )}
                         >
-                          {rowKind === 'new' ? '초진' : '재진'}
+                          {rowKind === 'new' ? (
+                            <span className="flex items-center gap-1 text-blue-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />{KIND_AXIS_LABELS.new.full}
+                            </span>
+                          ) : (
+                            <>
+                              <span className="flex items-center gap-1 text-firstvisit-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-firstvisit-500" />{KIND_AXIS_LABELS.returning.full}
+                              </span>
+                              <span className="flex items-center gap-1 text-healer-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-healer-500" />{KIND_AXIS_LABELS.healer.full}
+                              </span>
+                              <span className="flex items-center gap-1 whitespace-nowrap text-rose-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{KIND_AXIS_LABELS.ribbon.full}
+                              </span>
+                            </>
+                          )}
                         </div>
                         {daySlots.map((time) => {
                           const list = slotList(time);
@@ -2150,11 +2169,11 @@ export default function Reservations() {
                           className="mt-1 flex flex-wrap items-center justify-center gap-1 text-[10px] font-medium leading-none"
                         >
                           <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
-                          <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">초 {c.n}</span>
-                          <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">재 {c.r}</span>
-                          {c.h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-1.5 py-0.5 text-healer-700">HL {c.h}</span>}
-                          {/* T-20260701-foot-RESVAXIS-HEALER-RIBBON: 리본(발각질) 칩 — 힐러 뒤. 라벨 field-soak 재확인(RIBBON_BADGE_LABEL). */}
-                          {c.ribbon > 0 && <span className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">{RIBBON_BADGE_LABEL} {c.ribbon}</span>}
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">{KIND_AXIS_LABELS.new.abbr} {c.n}</span>
+                          <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">{KIND_AXIS_LABELS.returning.abbr} {c.r}</span>
+                          {/* T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR A3: 주간 요일 헤더도 초-재-힐-리 정합(HL→힐). 리본 칩은 full 라벨(리본(발각질))로 렌더(AC2). */}
+                          {c.h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-1.5 py-0.5 text-healer-700">{KIND_AXIS_LABELS.healer.abbr} {c.h}</span>}
+                          {c.ribbon > 0 && <span className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}</span>}
                         </div>
                       );
                     })()}

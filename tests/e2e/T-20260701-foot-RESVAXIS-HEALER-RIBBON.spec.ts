@@ -63,10 +63,11 @@ test.describe('AC2: 일간 격자 시간칸 헤더 — 리본 카운트 + 배지
   });
 
   test('AC2-2: 헤더 배지에 힐러(회귀 유지) + 리본 span 병존', () => {
-    // 힐러 배지 회귀 방지 (AC2 회귀 없음)
-    expect(RESV_PAGE, '힐러 헤더 배지 회귀').toContain('<span className="text-healer-700">힐러{h}</span>');
-    // 리본 배지 신규 — RIBBON_BADGE_LABEL + ribbon
-    expect(RESV_PAGE, '리본 헤더 배지 누락').toContain('{RIBBON_BADGE_LABEL}{ribbon}');
+    // T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR SUPERSEDE: 시간칸 밑 라벨이 축약(초-재-힐-리)로 변경됨.
+    //   힐러 배지 → KIND_AXIS_LABELS.healer.abbr('힐') / 리본 배지 → KIND_AXIS_LABELS.ribbon.abbr('리').
+    //   회귀 핵심(리본 span 병존·힐러 span 유지)은 KIND_AXIS_LABELS 참조로 확인.
+    expect(RESV_PAGE, '힐러 헤더 배지 회귀').toContain('text-healer-700">{KIND_AXIS_LABELS.healer.abbr}{h}');
+    expect(RESV_PAGE, '리본 헤더 배지 누락').toContain('text-rose-700">{KIND_AXIS_LABELS.ribbon.abbr}{ribbon}');
     expect(RESV_PAGE, '헤더 badge destructure ribbon 누락').toContain('const { n, rr, h, ribbon } = kindCounts(time)');
   });
 });
@@ -80,9 +81,11 @@ test.describe('AC4: 주간 요일 헤더 — 리본 카운트 일관 반영', ()
     expect(RESV_PAGE, 'dayKindCounts ribbon 집계 누락').toContain('if (isRibbonBrief(row.brief_note)) cur.ribbon += 1');
   });
 
-  test('AC4-2: 주간 배지 — 힐러(HL) 회귀 유지 + 리본 칩 병존', () => {
-    expect(RESV_PAGE, '주간 HL 배지 회귀').toContain('HL {c.h}');
-    expect(RESV_PAGE, '주간 리본 배지 누락').toContain('{RIBBON_BADGE_LABEL} {c.ribbon}');
+  test('AC4-2: 주간 배지 — 힐러(힐) 회귀 유지 + 리본 칩 병존', () => {
+    // T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR SUPERSEDE: 주간 요일 헤더도 초-재-힐-리 정합(HL→힐).
+    //   리본 칩은 full 라벨(KIND_AXIS_LABELS.ribbon.full = '리본(발각질)')로 렌더.
+    expect(RESV_PAGE, '주간 힐 배지 회귀').toContain('{KIND_AXIS_LABELS.healer.abbr} {c.h}');
+    expect(RESV_PAGE, '주간 리본 배지 누락').toContain('{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}');
     // 빈 요약 가드에 ribbon 포함(리본만 있는 날도 배지 노출)
     expect(RESV_PAGE, '빈 요약 가드 ribbon 미포함')
       .toContain('c.n === 0 && c.r === 0 && c.h === 0 && c.ribbon === 0');
