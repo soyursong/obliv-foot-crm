@@ -1,10 +1,15 @@
 -- T-20260629-foot-SERIAL-UNIQUE-HARDEN — 서류 연번호 동시발번 중복 차단 (ADDITIVE)
 -- 페어: T-20260630-foot-SERIAL-RPC-FE-REWIRE (FE 발번 경로 FE-count → DB RPC 이전, 동일 릴리스 번들)
 -- DA re-CONSULT GO: CONSULT-REPLY MSG-20260630-031213-s2cc (DA-20260630-FOOT-SERIAL-UNIQUE-2, 2026-06-30 03:12 KST)
---   = ADDITIVE 유지 + GO(조건부). 1차 l3a3('기존 serial 컬럼 UNIQUE' 전제) supersede — 본 회신이 게이트 근거.
+--   = ADDITIVE 유지 + GO(조건부). 1차 l3a3('기존 serial 컬럼 UNIQUE' 전제) supersede.
 --   4요소 surface(ADD COLUMN nullable / backfill 신규컬럼만 / partial unique CONCURRENTLY / 신규 RPC)
---   파괴요소0·기존행 mutation0·clean rollback. 단일 CRM(foot) 국소 → CONVENE·대표 게이트 불요(autonomy §3.1),
---   supervisor DDL-diff 게이트로 충분.
+--   파괴요소0·기존행 mutation0·clean rollback. 단일 CRM(foot) 국소 → CONVENE·대표 게이트 불요(autonomy §3.1).
+-- ★최종 정본 DA re-CONSULT#3-AMENDMENT: CONSULT-REPLY MSG-20260702-173946-fdqy
+--   (DA-20260702-FOOT-SERIAL-LEAVENULL-4, 2026-07-02 17:39 KST) = leave-NULL 채택.
+--   OPT1(guard 화이트리스트)·OPT4(side-table) 모두 supersede — guard 무접촉. backfill 을 non-published 한정으로
+--   교정(published 7행 seq NULL 잔존) + assert 재정의(MAX=발번행수 NOT NULL). 의료 immutable guard 무수정 →
+--   의료 게이트 불요·비차단, 대표 게이트 불요. 남은 게이트 = supervisor DDL-diff(leave-NULL spec 확인).
+--   SSOT: foot_serial_immutable_whitelist_da_decision_20260702.md §re-CONSULT#3-AMENDMENT.
 -- 게이트: supervisor DDL-diff (마지막 게이트). 본 파일 = 트랜잭션 가능한 DDL/backfill/RPC 부분.
 --   ⚠ partial UNIQUE INDEX CONCURRENTLY 는 트랜잭션 밖 실행 필수 → 별도 파일:
 --      20260630120001_foot_doc_serial_seq_unique_idx.sql (본 파일 COMMIT·backfill·중복0 검증 후 실행)
@@ -15,8 +20,10 @@
 --   ① RPC 멱등성: 멱등 키 = form_submission_id. 이미 doc_serial_seq 있으면 기존값 반환(신규 발번 금지).
 --   ② 발번 직렬화: RPC 진입부 pg_advisory_xact_lock(hashtext(clinic_id)) — clinic별 직렬화로 충돌-재시도 제거.
 --      bounded loop 5회는 최종 안전망으로 유지.
---   ③ 백필 분모: 전체 form_submissions(clinic_id) WHERE 필터 없음 → MAX=현 count → 다음 발번 연속.
---      마이그 직후 MAX(doc_serial_seq)=count(*) per-clinic assert + 중복0 assert 포함.
+--   ③ 백필 분모(★LEAVENULL-4 재정의): non-published form_submissions(clinic_id) 만 backfill →
+--      published 행은 seq NULL 잔존(의료 immutable guard 회피). MAX(doc_serial_seq)=count(발번행 NOT NULL)
+--      per-clinic assert(재정의) + 중복0 assert 포함. RPC 발번식 MAX+1(committed·NULL 제외)이라 NULL 행이
+--      다음 발번 점프/충돌 유발 안 함(발번 연속성 보존). 근거: DA-20260702-FOOT-SERIAL-LEAVENULL-4(fdqy).
 --   ④ CONCURRENTLY 안전: 본 파일(backfill+중복0 검증) COMMIT 후 별도 파일에서 인덱스 생성 + indisvalid 검증.
 --   ⑤ 권위 선언: authoritative = doc_serial_seq(INT). visit_no 문자열 = 파생·표시용(legacy 동결).
 --
@@ -35,15 +42,20 @@ ALTER TABLE form_submissions
 COMMENT ON COLUMN form_submissions.doc_serial_seq IS
   'T-20260629-foot-SERIAL-UNIQUE-HARDEN: 서류 발급순번(통산, 무리셋) authoritative 소스(INT). 발번 파티션=(clinic_id) 단독. issue_foot_doc_serial() RPC 가 MAX+1·committed 행만(gapless)·advisory lock 직렬화로 발번. NULL=미발번(비-연번호 서류). UNIQUE(clinic_id, doc_serial_seq) WHERE NOT NULL 로 동시발번 중복0 보장. visit_no(field_data JSONB) 문자열은 파생·표시용(legacy 동결) — datalake/집계는 본 컬럼을 권위 소스로 읽을 것(visit_no 파싱 의존 제거 로드맵).';
 
--- ── 2. backfill: per-clinic row_number (의무③ — 무필터 전체 행, MAX=현 count 연속성 보존) ──
---  ⚠ WHERE 필터 없음(visit_no 보유 행만 백필 금지). FE count()가 전체 행을 셌으므로 전체 백필 →
---    MAX=현 count → 다음 RPC 발번이 count+1 로 연속(점프/충돌 없음).
---  ⚠ ordering(created_at,id)은 과거 print 순서와 1:1일 필요 없음(검수①: legacy 문자열=동결 아티팩트).
---    per-clinic 유니크 + MAX=count 두 조건만 만족하면 정합.
+-- ── 2. backfill: per-clinic row_number — ★LEAVENULL-4: non-published 한정★ ──────────────
+--  ⚠ re-CONSULT#3-AMENDMENT(DA-20260702-FOOT-SERIAL-LEAVENULL-4, MSG-20260702-173946-fdqy):
+--    published 행은 의료 immutable guard(trg_form_submissions_published_immutable, OLD.status='published'
+--    → 컬럼불문 42501 차단)에 걸려 backfill UPDATE 불가 → published 행 doc_serial_seq 는 NULL로 남긴다.
+--    (published = serial 레짐 이전 legacy 동결문서, seq NULL = 역사적 마이그 아티팩트, 향후 발생불가.
+--     레짐 = forward 중복차단이지 전역사 소급 아님 → 미등록 계약상 정당. Q2 leave-NULL=PRIMARY.)
+--  ⚠ ranked 도 non-published 위에서 계산 → seq 가 1..N gapless(published 갭 없음) → MAX=count(non-null) 정합.
+--  ⚠ RPC 발번식 = MAX+1(committed·NULL 제외) 이므로 published NULL 행이 다음 발번 점프/충돌 유발 안 함
+--    (원 무필터 취지=발번 연속성 보존). ordering(created_at,id)은 legacy print 순서와 1:1일 필요 없음(동결).
 WITH ranked AS (
   SELECT id,
          row_number() OVER (PARTITION BY clinic_id ORDER BY created_at NULLS LAST, id) AS rn
     FROM form_submissions
+   WHERE status IS DISTINCT FROM 'published'   -- ★published 제외(guard 42501 회피) → seq NULL 잔존
 )
 UPDATE form_submissions fs
    SET doc_serial_seq = ranked.rn
@@ -51,20 +63,25 @@ UPDATE form_submissions fs
  WHERE fs.id = ranked.id
    AND fs.doc_serial_seq IS NULL;  -- 멱등 재적용 안전(이미 발번된 행 보존)
 
--- ── 3. assert: MAX(doc_serial_seq)=count(*) per clinic + 중복0 (의무③·④ 전제) ─────────────
+-- ── 3. assert: ★LEAVENULL-4 재정의★ MAX(doc_serial_seq)=count(발번행=NOT NULL) per clinic + 중복0 ─────
+--  ⚠ 원 assert(MAX=count(*))는 전체행이 발번 전제 → published 7행 NULL 잔존과 충돌.
+--    LEAVENULL-4: MAX(doc_serial_seq) = COUNT(*) FILTER(WHERE doc_serial_seq IS NOT NULL) per-clinic 로 재정의.
+--    published 행 seq=NULL 잔존 허용(발번 대상에서 제외). COALESCE 로 전량-NULL clinic(0=0) 안전.
 DO $$
 DECLARE
   r RECORD;
 BEGIN
-  -- 3-a. per-clinic MAX = count(*) (백필 분모 검증)
+  -- 3-a. per-clinic MAX = 발번행수(doc_serial_seq NOT NULL) (백필 분모 검증, non-published gapless 확인)
   FOR r IN
-    SELECT clinic_id, MAX(doc_serial_seq) AS mx, COUNT(*) AS cnt
+    SELECT clinic_id,
+           COALESCE(MAX(doc_serial_seq), 0) AS mx,
+           COUNT(*) FILTER (WHERE doc_serial_seq IS NOT NULL) AS issued_cnt
       FROM form_submissions
      GROUP BY clinic_id
   LOOP
-    IF r.mx IS DISTINCT FROM r.cnt THEN
-      RAISE EXCEPTION 'backfill assert FAILED: clinic % MAX(doc_serial_seq)=% != count(*)=% (백필 분모 불일치)',
-        r.clinic_id, r.mx, r.cnt;
+    IF r.mx IS DISTINCT FROM r.issued_cnt THEN
+      RAISE EXCEPTION 'backfill assert FAILED: clinic % MAX(doc_serial_seq)=% != 발번행수(NOT NULL)=% (LEAVENULL-4 분모 불일치·gap 존재)',
+        r.clinic_id, r.mx, r.issued_cnt;
     END IF;
   END LOOP;
 
@@ -78,7 +95,7 @@ BEGIN
     RAISE EXCEPTION 'backfill assert FAILED: 중복 (clinic_id, doc_serial_seq) 존재 → 인덱스 생성 금지';
   END IF;
 
-  RAISE NOTICE 'doc_serial_seq backfill assert PASS (MAX=count per-clinic, 중복0)';
+  RAISE NOTICE 'doc_serial_seq backfill assert PASS (LEAVENULL-4: MAX=발번행수(NOT NULL) per-clinic, published seq NULL 잔존 허용, 중복0)';
 END $$;
 
 -- ── 4. RPC: issue_foot_doc_serial(clinic_id, form_submission_id) ──────────────────────
@@ -166,7 +183,10 @@ COMMIT;
 -- 검증 쿼리 (apply 후 수동 확인):
 --   SELECT column_name FROM information_schema.columns
 --     WHERE table_name='form_submissions' AND column_name='doc_serial_seq';          -- 1행
---   SELECT clinic_id, MAX(doc_serial_seq), count(*) FROM form_submissions GROUP BY clinic_id;  -- MAX=count
+--   SELECT clinic_id, COALESCE(MAX(doc_serial_seq),0) AS mx,
+--          COUNT(*) FILTER (WHERE doc_serial_seq IS NOT NULL) AS issued
+--     FROM form_submissions GROUP BY clinic_id;  -- ★LEAVENULL-4: mx=issued (published seq NULL 제외)
+--   SELECT status, count(*), count(doc_serial_seq) FROM form_submissions GROUP BY status;  -- published: seq 전량 NULL 기대
 --   SELECT proname FROM pg_proc WHERE proname='issue_foot_doc_serial';               -- 1행
 --   -- 멱등 검증(임의 form_submission_id 로 2회 호출 → 동일값):
 --   --   SELECT issue_foot_doc_serial('<clinic>','<fs_id>');  -- 2회 동일 반환
