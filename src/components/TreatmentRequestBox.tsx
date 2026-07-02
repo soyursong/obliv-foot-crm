@@ -234,13 +234,14 @@ export default function TreatmentRequestBox({
   };
 
   return (
-    <div className="rounded-lg border bg-white p-3" data-testid="pkg-tab-treatreq-section">
-      <div className="mb-2 flex items-center gap-1.5">
+    <div className="rounded-lg border bg-white p-2" data-testid="pkg-tab-treatreq-section">
+      <div className="mb-1.5 flex items-center gap-1.5">
         <ClipboardList className="h-4 w-4 text-teal-600" />
         <span className="text-xs font-semibold text-muted-foreground">치료신청</span>
         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-600" />}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" data-testid="treatreq-checkbox-grid">
+      {/* T-20260702-CHART2-TREATREQ-COMPACT-ONELINE: 한 줄에 하나씩(1항목/행) 세로 스택 + 컴팩트 여백. 기존 2~3열 grid 폐기. */}
+      <div className="flex flex-col gap-1" data-testid="treatreq-checkbox-grid">
         {TREATMENT_REQUEST_ITEMS.map((item) => {
           const checked = isChecked(item);
           const derived = isDerived(item);
@@ -254,8 +255,8 @@ export default function TreatmentRequestBox({
               data-checked={checked}
               aria-pressed={checked}
               className={[
-                'flex items-center justify-between gap-1.5 rounded-lg border px-3 py-2.5 text-left transition',
-                'min-h-[44px] text-[13px] font-medium', // 태블릿 큰 터치 타깃
+                'flex w-full items-center justify-between gap-1.5 rounded-md border px-2.5 py-1.5 text-left transition',
+                'min-h-[36px] text-[13px] font-medium', // 컴팩트 세로 스택(1항목/행) — 태블릿 터치 유지
                 checked
                   ? 'border-teal-400 bg-teal-50 text-teal-800'
                   : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50',
