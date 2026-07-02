@@ -98,6 +98,32 @@ const KIND_DOT: Record<ResvKind, string> = {
   other: 'bg-amber-500',
 };
 
+// ─── T-20260702-foot-RESVGRID-4ROW-BODYSPLIT: 일간 격자 세로축 4행 물리 분할 ─────────────
+//   부모 YAXIS-4SEG(d230ec50)는 세로축 좌측 '라벨만' 4분류로 표기했으나(카드행은 new/rest 2행),
+//   총괄 피드백("칸을 4줄로 해달라고")대로 각 시간 열(column)을 초진/재진/힐러/리본(발각질)
+//   4개 동등 높이 행(row)으로 실제 분할한다(엑셀 매트릭스). 각 행 = 단일 분류 셀.
+//   ⚠ 분류 소스는 신규 없음 — resvKind(초/재/힐러; visit_type+is_healer_intent SSOT) + isRibbonBrief(간략메모 발각질 칩).
+export type DayRowKind = 'new' | 'returning' | 'healer' | 'ribbon';
+/**
+ * 카드 1건을 4개 물리 행 중 정확히 1곳에 귀속(파티션). 카운터(kindCounts)는 힐러/리본을 직교로 이중집계하지만,
+ * 물리 배치는 카드당 1행이어야 하므로 우선순위를 둔다: 리본(간략메모 발각질) 최우선(row4 전용) →
+ * 그 외 resvKind 로 초진(row1)/힐러(row3)/재진·기타(row2). 이 파티션의 합집합 = 전체 slotList(회귀 시 카드 누락 0).
+ */
+function dayRowOf(r: { visit_type: string; is_healer_intent?: boolean | null; healer_flag?: boolean | null; brief_note?: string | null }): DayRowKind {
+  if (isRibbonBrief(r.brief_note)) return 'ribbon';
+  const k = resvKind(r);
+  if (k === 'new') return 'new';
+  if (k === 'healer') return 'healer';
+  return 'returning'; // 재진(returning) + 기타(other, 선체험 등) — 구 'rest' 행의 비힐러·비리본 잔여
+}
+/** 4행 렌더 구성(위→아래 순서 = 세로축 4분류). label/색상점/텍스트색은 세로축 라벨 SSOT와 정합. */
+const DAY_ROW_KINDS: ReadonlyArray<{ kind: DayRowKind; label: string; dotCls: string; textCls: string }> = [
+  { kind: 'new', label: KIND_AXIS_LABELS.new.full, dotCls: 'bg-blue-500', textCls: 'text-blue-700' },
+  { kind: 'returning', label: KIND_AXIS_LABELS.returning.full, dotCls: 'bg-firstvisit-500', textCls: 'text-firstvisit-700' },
+  { kind: 'healer', label: KIND_AXIS_LABELS.healer.full, dotCls: 'bg-healer-500', textCls: 'text-healer-700' },
+  { kind: 'ribbon', label: KIND_AXIS_LABELS.ribbon.full, dotCls: 'bg-rose-500', textCls: 'text-rose-700' },
+];
+
 const STATUS_LABEL: Record<Reservation['status'], string> = {
   confirmed: '예약',
   checked_in: '체크인',
@@ -2051,46 +2077,27 @@ export default function Reservations() {
                         </div>
                       );
                     })}
-                    {/* ── 세로축 = 초진/재진(치료사축) — AC2. 각 행 = 시간 컬럼별 셀. (+)버튼 제거, 빈 칸 직접 클릭 = 신규예약(AC3/AC4). ── */}
-                    {(['new', 'rest'] as const).map((rowKind) => (
-                      <Fragment key={rowKind}>
-                        {/* T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR A1: 세로축 라벨을 4분류(초진/재진/힐러/리본(발각질))로 확정 표기.
-                            물리 카드행은 new/rest 2행 유지(축 좌표 재정의 아님·ADDITIVE) — rest 행 라벨에 재진/힐러/리본(발각질)
-                            하위분류를 색상점과 함께 열거해 세로축이 위→아래로 초진·재진·힐러·리본(발각질) 4개로 읽히게 함.
-                            (힐러=is_healer_intent, 리본=간략메모 발각질 칩. 둘 다 rest 행에 표시되는 분류 → 라벨 열거는 참조용, 카드 배치 규칙 불변.) */}
+                    {/* ── T-20260702-foot-RESVGRID-4ROW-BODYSPLIT: 세로축 = 초진/재진/힐러/리본(발각질) 4개 물리 행 분할 — AC1/AC2/AC3.
+                        부모 YAXIS-4SEG(라벨-only)를 실제 격자 분할로 보정("칸을 4줄로"): 각 시간 열이 위→아래 4개 동등높이 행으로 나뉨.
+                        각 행 = 단일 분류 셀(카드 = dayRowOf 파티션으로 정확히 1행 귀속). (+)버튼 없음·빈칸 직접입력·클립보드·drag-drop·live-glass 전부 substrate(RESVGRID-TIMEAXIS) 유지 — 축 개수만 2→4행. ── */}
+                    {DAY_ROW_KINDS.map((row) => (
+                      <Fragment key={row.kind}>
+                        {/* 좌측 행 라벨 = 색상점 + full 라벨(초진/재진/힐러/리본(발각질)). 4행 각각 단일 분류 — sticky left 고정. */}
                         <div
-                          data-testid={`resv-day-rowlabel-${rowKind}`}
-                          className={cn(
-                            'sticky left-0 z-10 flex flex-col items-center justify-center gap-1 border-b border-r bg-muted/60 px-1 py-2 text-xs font-semibold',
-                          )}
+                          data-testid={`resv-day-rowlabel-${row.kind}`}
+                          className="sticky left-0 z-10 flex items-center justify-center gap-1 whitespace-nowrap border-b border-r bg-muted/60 px-1 py-2 text-xs font-semibold"
                         >
-                          {rowKind === 'new' ? (
-                            <span className="flex items-center gap-1 text-blue-700">
-                              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />{KIND_AXIS_LABELS.new.full}
-                            </span>
-                          ) : (
-                            <>
-                              <span className="flex items-center gap-1 text-firstvisit-700">
-                                <span className="h-1.5 w-1.5 rounded-full bg-firstvisit-500" />{KIND_AXIS_LABELS.returning.full}
-                              </span>
-                              <span className="flex items-center gap-1 text-healer-700">
-                                <span className="h-1.5 w-1.5 rounded-full bg-healer-500" />{KIND_AXIS_LABELS.healer.full}
-                              </span>
-                              <span className="flex items-center gap-1 whitespace-nowrap text-rose-700">
-                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{KIND_AXIS_LABELS.ribbon.full}
-                              </span>
-                            </>
-                          )}
+                          <span className={cn('flex items-center gap-1', row.textCls)}>
+                            <span className={cn('h-1.5 w-1.5 rounded-full', row.dotCls)} />{row.label}
+                          </span>
                         </div>
                         {daySlots.map((time) => {
                           const list = slotList(time);
                           const full = isSlotFull(dateStr, time);
                           const isNow = isSameDay(selectedDay, now) && time === currentSlot;
                           const isDragOver = dropTarget === `${dateStr}_${time}`;
-                          // 구분(행) 분류: 초진(new) / 재진(returning·healer·other) — 대시보드 통합시간표 2구분과 동일 규칙.
-                          const cards = rowKind === 'new'
-                            ? list.filter((r) => resvKind(r) === 'new')
-                            : list.filter((r) => resvKind(r) !== 'new');
+                          // 4행 분할: 각 카드는 dayRowOf 로 정확히 1개 행(초진/재진/힐러/리본)에 귀속. 리본 우선 → 초진/힐러/재진·기타.
+                          const cards = list.filter((r) => dayRowOf(r) === row.kind);
                           // 빈 칸 클릭 동선: 클립보드 대기 중이면 붙여넣기 타깃 지정(⑦), 아니면 신규예약(openNewSlot). openNewSlot 경유 유지 = CUSTCTX-PREFILL 분기 보존.
                           const handleCellCreate = () => {
                             if (clipboard) { if (!full) setClipboardTarget({ date: dateStr, time }); return; }
@@ -2098,9 +2105,9 @@ export default function Reservations() {
                           };
                           return (
                             <div
-                              key={`${rowKind}-${time}`}
-                              // 하위호환 testid 유지: 초진 셀=resv-day-cell-new-{time} / 재진 셀=resv-day-col-cards-{time}.
-                              data-testid={rowKind === 'new' ? `resv-day-cell-new-${time}` : `resv-day-col-cards-${time}`}
+                              key={`${row.kind}-${time}`}
+                              // 4행 셀 testid: 초진 셀=resv-day-cell-new-{time}(하위호환) / 재진·힐러·리본=resv-day-cell-{kind}-{time}. (time,kind)당 유일.
+                              data-testid={`resv-day-cell-${row.kind}-${time}`}
                               data-slot-time={time}
                               onClick={handleCellCreate}
                               onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
@@ -2108,7 +2115,7 @@ export default function Reservations() {
                               onDrop={(e) => handleDrop(e, dateStr, time)}
                               title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
                               className={cn(
-                                // 엑셀식 셀: 빈영역 전체가 클릭 어포던스(별도 (+) 버튼 없음). 태블릿 탭 타깃 min-h-[56px].
+                                // 엑셀식 셀: 빈영역 전체가 클릭 어포던스(별도 (+) 버튼 없음). 4행 동등 높이 baseline = min-h-[56px](태블릿 탭 타깃).
                                 'min-h-[56px] space-y-1 border-b border-l p-1 align-top transition-colors',
                                 !isNow && 'bg-background',
                                 isNow && 'live-glass border-x-2 border-[#C7CDD4]',
