@@ -1941,17 +1941,9 @@ export default function Reservations() {
                   clipboard?.resv.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
                 )}
               >
-                {/* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑤: 간략메모(brief_note)를 고객 정보 '상단 위'에 표기.
-                    메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방, AC5). 취소건은 미표기(음각 최소화). */}
-                {r.status !== 'cancelled' && r.brief_note?.trim() && (
-                  <div
-                    className="mb-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600"
-                    data-testid={`resv-day-brief-${r.id}`}
-                    title={r.brief_note.trim()}
-                  >
-                    {r.brief_note.trim()}
-                  </div>
-                )}
+                {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 고객 성함 '위→아래'로 재배치.
+                    부모 7ADJ⑤ 는 메모를 성함 상단에 뒀으나, 총괄(김주연) 현장 요청으로 표시순서를 [성함]→[간략메모]로 변경(성함 바로 아래).
+                    성함 flex 행 렌더 → 아래 간략메모 블록(mt-0.5) 순서. 취소건은 미표기(음각 최소화) 유지. */}
                 <div className="flex min-w-0 items-center gap-1 overflow-hidden">
                   {r.customer_id && r.status !== 'cancelled' ? (
                     <CustomerHoverCard
@@ -1994,6 +1986,17 @@ export default function Reservations() {
                   )}
                   {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                 </div>
+                {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 성함 '바로 아래'에 표기(재배치).
+                    메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방). 취소건은 미표기. mb-0.5→mt-0.5(성함과의 간격). */}
+                {r.status !== 'cancelled' && r.brief_note?.trim() && (
+                  <div
+                    className="mt-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600"
+                    data-testid={`resv-day-brief-${r.id}`}
+                    title={r.brief_note.trim()}
+                  >
+                    {r.brief_note.trim()}
+                  </div>
+                )}
                 {/* T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 고객박스 표시필드 슬림화([성함/간략메모/예약등록자]).
                     · 초진/재진 텍스트 제거 — 박스 배경 컬러(KIND_CARD_STYLE)로 이미 구분(컬러 점 KIND_DOT은 유지).
                     · 연락처(전화 뒷4자리) 제거 → 간략정보(hover)에 풀번호 노출(이관 완료).
@@ -2116,7 +2119,9 @@ export default function Reservations() {
                               title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
                               className={cn(
                                 // 엑셀식 셀: 빈영역 전체가 클릭 어포던스(별도 (+) 버튼 없음). 4행 동등 높이 baseline = min-h-[56px](태블릿 탭 타깃).
-                                'min-h-[56px] space-y-1 border-b border-l p-1 align-top transition-colors',
+                                // T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ①: 고객박스 주변 여백 확대(p-1→px-2 py-1.5) → 빈공간 클릭영역 확보.
+                                //   가로 여백(px-2=8px) 위주 확대로 빈칸 클릭 어포던스↑, 세로(py-1.5=6px)는 소폭만 늘려 4행 매트릭스 세로밀림/스크롤 억제(RESVGRID-4ROW-BODYSPLIT 구조 유지). min-h-[56px] 불변.
+                                'min-h-[56px] space-y-1 border-b border-l px-2 py-1.5 align-top transition-colors',
                                 !isNow && 'bg-background',
                                 isNow && 'live-glass border-x-2 border-[#C7CDD4]',
                                 full && !isNow && 'bg-red-50/40',
