@@ -22,7 +22,7 @@ import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Download, Loader2, Plus, TrendingUp, User, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+// T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY: Badge 카드 사용처(진료필요/다음힐러) 제거로 미사용 → import 정리.
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -565,6 +565,10 @@ export default function Reservations() {
   // T-20260611-foot-HEALER-DEDUCT-LINK: 고객별 '다음 예약이 힐러' read-only 표시.
   //   값 = 가장 이른 예정(미래) 힐러 예약 datetime 키(`${date} ${time}`). 차감 트랜잭션 무접촉.
   const [nextHealerByCustomer, setNextHealerByCustomer] = useState<Record<string, string>>({});
+  // T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY: 아래 4개 맵은 주/일 고객박스 표시(회차·다음힐러·booker·패키지N/N)에서 제거됐으나
+  //   fetch 파이프라인은 유지 — (1) 총괄 confirm '유지'로 오면 패키지N/N 즉시 롤백(pkgProgressMap 보존, FE 가역),
+  //   (2) hover 간략정보·팝업 재활용 대비. noUnusedLocals 대응 명시적 retain(no-op).
+  void treatmentCycleMap; void pkgProgressMap; void nextHealerByCustomer; void resvBookerMap;
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 클립보드 (Ctrl+C/X/V)
@@ -2608,154 +2612,53 @@ export default function Reservations() {
                                           {chartNoBadge(resvChartMap.get(r.customer_id))}
                                         </span>
                                       )}
-                                      {/* T-20260620-foot-RESVMGMT-NOSHOW-BADGE-DEDUP: 차트번호 옆 "노쇼 N회" destructive 배지 제거
-                                          (상태줄 STATUS_LABEL '노쇼'와 중복). noshowByCustomer state/fetch는 ReservationDetailPopup
-                                          noshowCount prop(L~2065)에서 여전히 사용하므로 유지. */}
-                                      {/* T-20260527-foot-TREATMENT-CYCLE-ALERT AC-2/AC-3:
-                                          치료 회차 배지 + 6배수 진료필요 배지 */}
-                                      {r.customer_id && r.status !== 'cancelled' && (() => {
-                                        const completed = treatmentCycleMap.get(r.customer_id) ?? 0;
-                                        const nextCycle = completed + 1;
-                                        const needsExam = nextCycle > 0 && nextCycle % 6 === 0;
-                                        return (
-                                          <>
-                                            <span
-                                              className="text-[10px] font-mono tabular-nums text-gray-400 leading-none"
-                                              data-testid={`cycle-count-${r.id}`}
-                                              title={`누적 완료 ${completed}회 · 이번 예약 ${nextCycle}회차`}
-                                            >
-                                              {nextCycle}회
-                                            </span>
-                                            {needsExam && (
-                                              <Badge
-                                                className="h-4 px-1 text-[9px] bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-100"
-                                                data-testid={`needs-exam-badge-${r.id}`}
-                                                title={`${nextCycle}회차 — 진료 필요`}
-                                              >
-                                                진료필요
-                                              </Badge>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
-                                      {/* T-20260611-foot-HEALER-DEDUCT-LINK: 고객 '다음 예약이 힐러' read-only indicator.
-                                          현재 카드 자신이 힐러가 아니고(중복 회피), 미래 힐러 예약이 이 카드보다 늦을 때만 노출. */}
-                                      {r.customer_id && resvKind(r) !== 'healer' && r.status !== 'cancelled' && (() => {
-                                        const hl = nextHealerByCustomer[r.customer_id];
-                                        if (!hl) return null;
-                                        const cardKey = `${r.reservation_date} ${r.reservation_time.slice(0, 5)}`;
-                                        if (hl <= cardKey) return null;
-                                        return (
-                                          <Badge
-                                            className="h-4 px-1 text-[9px] bg-yellow-100 text-yellow-700 border border-yellow-300 hover:bg-yellow-100"
-                                            data-testid={`next-healer-badge-${r.id}`}
-                                            title={`다음 예약 힐러 — ${hl}`}
-                                          >
-                                            다음 힐러
-                                          </Badge>
-                                        );
-                                      })()}
-                                      {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): 초진 카드 예약경로 배지(우상단).
-                                          r.visit_route(없으면 referral_source) 있을 때만 표기. ml-auto로 행 우측 정렬. */}
-                                      {resvKind(r) === 'new' && r.status !== 'cancelled' && (r.visit_route ?? r.referral_source) && (
-                                        <span
-                                          className="ml-auto shrink-0 rounded border border-gray-300 bg-gray-100 px-1 text-[9px] font-medium leading-tight text-gray-600"
-                                          data-testid={`resv-route-badge-${r.id}`}
-                                          title={`예약경로 ${r.visit_route ?? r.referral_source}`}
-                                        >
-                                          {r.visit_route ?? r.referral_source}
-                                        </span>
-                                      )}
+                                      {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row1: 주뷰 고객박스를 일뷰(renderDayCard) 기준으로 통일 → 이름만.
+                                          회차(N회)·진료필요·다음힐러·예약경로 배지 제거(renderDayCard Row1과 정합, L2088~). 취소건 차트번호 배지(PAIRING-AUDIT: 환자명 단독노출 0)는 유지. */}
                                     </div>
-                                    {/* T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item2): 초진=간략메모 / 재진=패키지 N/N 인라인 라인(값 있을 때만, 없으면 줄 생략). */}
-                                    {r.status !== 'cancelled' && resvKind(r) === 'new' && r.brief_note?.trim() && (
+                                    {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row2: 간략메모(brief_note)만 — 초진/재진/힐러 전 유형 공통(초진 한정 제거), 취소건 제외·있을 때만.
+                                        renderDayCard Row2(L2132~)와 정합: whitespace-normal break-words 로 truncate 대신 자동 줄바꿈(박스 높이 자동 확장). */}
+                                    {r.status !== 'cancelled' && r.brief_note?.trim() && (
                                       <div
-                                        className="truncate text-[10px] leading-tight text-gray-700"
+                                        className="whitespace-normal break-words text-[10px] font-medium leading-tight text-gray-700"
                                         data-testid={`resv-brief-${r.id}`}
                                         title={r.brief_note.trim()}
                                       >
                                         {r.brief_note.trim()}
                                       </div>
                                     )}
-                                    {r.status !== 'cancelled' && resvKind(r) !== 'new' && r.customer_id && (() => {
-                                      const pg = pkgProgressMap.get(r.customer_id);
-                                      if (!pg || !pg.total) return null;
-                                      return (
-                                        <div
-                                          className="truncate text-[10px] font-medium leading-tight text-blue-700"
-                                          data-testid={`resv-pkg-progress-${r.id}`}
-                                          title={`패키지 ${pg.used}/${pg.total} 회차`}
-                                        >
-                                          패키지 {pg.used}/{pg.total}
-                                        </div>
-                                      );
-                                    })()}
-                                    {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
-                                    <div className="flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 상태줄 폰트 text-xs→text-[10px] / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: text-[10px]→text-[9px] / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-2: 가독성 복원 text-[9px]→text-[10px] (방문유형·상태·전화뒷4자리 전부 유지) */}
-                                      {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
-                                      {/* T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 고객박스 슬림화 —
-                                          초진/재진 텍스트 제거(박스 컬러로 구분, 컬러 점 유지) + 연락처(전화 뒷4자리) 제거(간략정보 hover로 이관).
-                                          예약 상태(STATUS_LABEL)·담당자(@booker)는 운영 신호로 유지. */}
-                                      <span className={cn(
-                                        'inline-block h-1.5 w-1.5 rounded-full',
-                                        KIND_DOT[resvKind(r)],
-                                      )} />
-                                      {STATUS_LABEL[r.status]}
-                                      {/* T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1·AC3·AC4): 담당자=예약 잡은 계정.
-                                          연락처(전화) 옆 같은 라인 + '@담당자명' 표기. 미상(과거예약 등) 시 미렌더(AC5).
-                                          ★SCOPE: 예약관리 표시 한정 — 차트 담당자(customers.assigned_staff_id) 불변. */}
-                                      {resvBookerMap.get(r.id) && (
+                                    {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row2: 패키지 N/N 표기 제거(기본값) — renderDayCard 정합.
+                                        ⚠ 총괄 confirm '유지'로 오면 아래 블록만 즉시 복원(FE 가역, 격리 롤백). DB/pkgProgressMap 배선은 그대로 유지되어 재활성만 하면 됨:
+                                        {r.status !== 'cancelled' && resvKind(r) !== 'new' && r.customer_id && (() => {
+                                          const pg = pkgProgressMap.get(r.customer_id);
+                                          if (!pg || !pg.total) return null;
+                                          return (
+                                            <div className="truncate text-[10px] font-medium leading-tight text-blue-700"
+                                                 data-testid={`resv-pkg-progress-${r.id}`} title={`패키지 ${pg.used}/${pg.total} 회차`}>
+                                              패키지 {pg.used}/{pg.total}
+                                            </div>
+                                          );
+                                        })()} */}
+                                    {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row3: 상태줄 = [색상점 + 상태] 좌 / [@예약등록자] 우(ml-auto) — renderDayCard Row3(L2151~)와 정합.
+                                        · 데이터 소스: booker(resvBookerMap=예약 잡은 계정) → registrar_name(예약등록자 스냅샷) 교체.
+                                          카드 우하단 별도줄로 있던 @예약등록자(구 registrar-tag)를 이 줄로 인라인 통합. hover 간략정보(registrarLabel)와 단일 소스.
+                                        · 폰트 text-[10px] → text-[7px](일뷰 상태줄과 동일). */}
+                                    <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
+                                      <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
+                                      <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
+                                      {r.registrar_name && (
                                         <span
-                                          className="truncate text-teal-700"
-                                          data-testid={`assigned-staff-tag-${r.id}`}
-                                          title={`담당자 ${resvBookerMap.get(r.id)}`}
+                                          className="ml-auto min-w-0 truncate text-teal-700"
+                                          data-testid={`registrar-tag-${r.id}`}
+                                          title={`예약등록자 ${r.registrar_name}`}
                                         >
-                                          · @{resvBookerMap.get(r.id)}
+                                          @{r.registrar_name}
                                         </span>
                                       )}
                                     </div>
-                                    {/* T-20260515-foot-INLINE-RESV AC-4: 예약메모 한눈에 표시 */}
-                                    {r.booking_memo && (
-                                      <div
-                                        className="truncate text-[10px] text-amber-600"
-                                        title={r.booking_memo}
-                                      >
-                                        📝 {r.booking_memo}
-                                      </div>
-                                    )}
-                                    {/* T-PROGRESS-CHECKPOINT AC-3/4: 경과분석 배지
-                                        T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §1 회차 명확화:
-                                        progress_check_label(=plan label, 예 "6회 경과분석")에 '체크포인트' 접미를 붙여
-                                        해당 항목이 '몇 회차 경과분석 체크포인트'인지 한눈에. 회차 카운트는
-                                        PROGRESS-CHECKPOINT plan.session_milestone(label에 반영) 재사용 — 신설 없음. */}
-                                    {r.progress_check_required && (
-                                      <div
-                                        className={cn(
-                                          'inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1 font-medium text-teal-800 leading-none py-0.5 mt-0.5',
-                                          // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 뷰(filterProgress) 제거 → 기본(OFF) 표시로 고정. 배지(읽기전용 회차 표시)는 유지.
-                                          'text-[10px]',
-                                        )}
-                                        data-testid={`progress-badge-${r.id}`}
-                                        title={`${r.progress_check_label ?? '경과분석'} — 경과분석 체크포인트`}
-                                      >
-                                        <TrendingUp className="h-2.5 w-2.5" />
-                                        {r.progress_check_label ?? '경과분석'}
-                                        <span className="opacity-70">체크포인트</span>
-                                      </div>
-                                    )}
-                                    {/* T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: 담당자 표시는 위 상태줄(연락처 옆 @담당자명)로 이동.
-                                        기존 차트 담당자(customers.assigned_staff_id) 기준 표시 제거 — 예약관리 한정 SCOPE. */}
-                                    {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS AC-5: 우측 하단 @예약등록자.
-                                        정상·취소됨 박스 모두 적용. 미지정 시 빈칸(미렌더, 에러 없음). */}
-                                    {r.registrar_name && (
-                                      <div
-                                        className="truncate text-right text-[10px] text-muted-foreground leading-none mt-0.5"
-                                        data-testid={`registrar-tag-${r.id}`}
-                                        title={`예약등록자 ${r.registrar_name}`}
-                                      >
-                                        @{r.registrar_name}
-                                      </div>
-                                    )}
+                                    {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row4/5/6 제거(일뷰 정합):
+                                        · Row4 예약메모(📝 booking_memo) 제거 — hover 간략정보(bookingMemo)로 이미 노출.
+                                        · Row5 경과분석 배지(progress-badge) 제거.
+                                        · Row6 별도줄 @예약등록자(registrar-tag) → Row3 상태줄 우측(ml-auto)으로 인라인 통합(위). */}
                                   </div>
                                   </DraggableResv>
                                   );
