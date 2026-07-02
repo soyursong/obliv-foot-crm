@@ -44,3 +44,10 @@ revenue_insurance_split_spec v1.2 §2-2-1a 신설. NULL hira_score 분기에서 
 - 스크린샷 SSOT가 티켓 본문 화면명과 불일치할 수 있음. 판독으로 실제 화면 특정 후 착수할 것.
 - 판별 지표: '초' 텍스트 배지+폰뒷4+미수 배지+현재시각선 = 대시보드 통합시간표(DashboardTimeline). 예약관리 카드는 색 점(KIND_DOT)만.
 - AS-IS 서술("치료유형 중앙정렬+상태 별도 줄")이 코드 어디에도 없으면 추정수정 금지 → planner FOLLOWUP(scope_conflict). 특히 CHART-OPEN-GUARD surface.
+
+## 2026-07-03 — T-20260702-foot-RESVCAL-DAYWEEK-LAYOUT-UNIFY 착수전진단→블로커(코드 미변경)
+- REDEFINITION_RISK 진단 의무 수행. 일뷰=이미 RESVGRID 엑셀격자(4행분할)로 전면 재구현됨 / 주뷰=별개 table substrate(셀당 grid-cols-2 = 2×2 미니그리드의 정체).
+- 스크린샷 F0BELKUCKKP 헤더 '됨' 뱃지는 git 전 이력에 존재한 적 없음(git log -S) → 스크린샷이 현행 배포본과 불일치. '일뷰 기준=정상카드'도 현행엔 없음(격자화됨).
+- 판정: 티켓 §CONFLICT verdict (b) '격자 재구현이 이미 카드뷰 대체 → 요청 무의미/재충돌' 케이스. '일뷰와 동일하게'(AC-1/AC-3)가 (현행격자 vs 구카드) 두 갈래로 모순.
+- 조치: 추정 착수 금지. planner FOLLOWUP(MSG-20260703-000149-ic4s, P1)로 기준 재확인 요청 + 안전 부분수정(AC-2: 주뷰 grid-cols-2→단일열 full-width, 주뷰한정·무충돌) 선행 배포 가부 문의. 회신 전까지 코드 미변경.
+- 학습: 같은 화면축(/reservations)이 활발히 재아키텍처 중일 때, 스크린샷 SSOT라도 현행 코드와 대조(git log -S)로 기준선 유효성부터 검증. '됨' 같은 미존재 토큰 = 기준선 stale 신호.
