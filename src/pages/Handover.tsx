@@ -517,7 +517,7 @@ export default function Handover() {
       {/* 헤더 */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white/80 px-4 py-3">
         <div className="flex items-center gap-2">
-          <ClipboardCheck className="h-4 w-4 text-teal-600" />
+          <ClipboardCheck className="h-4 w-4 text-gray-500" />
           <h1 className="text-base font-semibold">직원 근무 캘린더</h1>
           <span className="hidden text-xs text-muted-foreground sm:inline">· 인수인계</span>
         </div>
@@ -586,7 +586,7 @@ export default function Handover() {
               onClick={() => setView(v)}
               data-testid={`handover-view-${v}`}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                view === v ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:bg-muted'
+                view === v ? 'bg-gray-700 text-white' : 'text-muted-foreground hover:bg-muted'
               }`}
             >
               {label}
@@ -625,7 +625,7 @@ export default function Handover() {
           {view === 'day' && (
             <div className="rounded-lg border bg-white p-3 text-center text-sm text-muted-foreground">
               {format(selectedDate, 'yyyy년 M월 d일 (EEEE)', { locale: ko })} 인수인계
-              <span className="ml-1 font-semibold text-teal-700">
+              <span className="ml-1 font-semibold text-gray-600">
                 {selectedNotes.length}건
               </span>
             </div>
@@ -636,7 +636,7 @@ export default function Handover() {
         <div className="lg:w-[380px] lg:shrink-0">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-sm font-semibold">
-              <CalendarDays className="h-4 w-4 text-teal-600" />
+              <CalendarDays className="h-4 w-4 text-gray-500" />
               {format(selectedDate, 'M월 d일 (EEE)', { locale: ko })} 인수인계
             </div>
             <Button size="xs" variant="outline" onClick={openNew} className="gap-1">
@@ -673,7 +673,7 @@ export default function Handover() {
                         {isOwner(n) && (
                           <button
                             onClick={() => openEdit(n)}
-                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-teal-700"
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-gray-700"
                             title="수정"
                             data-testid="handover-edit"
                           >
@@ -709,7 +709,7 @@ export default function Handover() {
                             disabled={!isOwner(n)}
                             onChange={() => toggleListItem(n, it)}
                             data-testid="handover-item-check"
-                            className="h-4 w-4 accent-teal-600 disabled:opacity-60"
+                            className="h-4 w-4 accent-gray-600 disabled:opacity-60"
                           />
                           <span
                             className={`text-sm ${it.is_checked ? 'text-muted-foreground line-through' : 'text-gray-700'}`}
@@ -838,7 +838,7 @@ export default function Handover() {
                         type="checkbox"
                         checked={it.is_checked}
                         onChange={() => toggleDraftItem(idx)}
-                        className="h-4 w-4 accent-teal-600"
+                        className="h-4 w-4 accent-gray-600"
                       />
                       <span className={`flex-1 text-sm ${it.is_checked ? 'text-muted-foreground line-through' : ''}`}>
                         {it.label}
@@ -895,7 +895,7 @@ function CellAttendees({
       {shown.map((nm) => (
         <span
           key={nm}
-          className="truncate rounded bg-teal-50 px-1 text-[9px] font-medium leading-tight text-teal-700"
+          className="truncate rounded bg-gray-100 px-1 text-[9px] font-medium leading-tight text-gray-700"
           title={nm}
         >
           {nm}
@@ -957,13 +957,13 @@ function MonthGrid({
               onClick={() => onSelect(d)}
               data-testid={`handover-day-${key}`}
               className={`flex min-h-[64px] flex-col items-center rounded-md border p-1 transition-colors ${
-                isSelected ? 'border-teal-500 bg-teal-50' : 'border-transparent hover:bg-muted/50'
+                isSelected ? 'border-gray-400 bg-gray-100' : 'border-transparent hover:bg-muted/50'
               } ${inMonth ? '' : 'opacity-35'}`}
             >
               <span
                 className={`text-xs font-medium ${
                   isToday
-                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-teal-600 text-white'
+                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-white'
                     : dow === 0
                       ? 'text-red-500'
                       : dow === 6
@@ -975,7 +975,7 @@ function MonthGrid({
               </span>
               {count > 0 && (
                 <span
-                  className="mt-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] font-semibold text-white"
+                  className="mt-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-gray-700 px-1 text-[10px] font-semibold text-white"
                   data-testid={`handover-badge-${key}`}
                 >
                   {count}
@@ -1022,7 +1022,7 @@ function WeekStrip({
             onClick={() => onSelect(d)}
             data-testid={`handover-day-${key}`}
             className={`flex min-h-[88px] flex-col items-center rounded-lg border p-2 transition-colors ${
-              isSelected ? 'border-teal-500 bg-teal-50' : 'border-border hover:bg-muted/50'
+              isSelected ? 'border-gray-400 bg-gray-100' : 'border-border hover:bg-muted/50'
             }`}
           >
             <span
@@ -1034,14 +1034,14 @@ function WeekStrip({
             </span>
             <span
               className={`mt-0.5 text-sm font-semibold ${
-                isToday ? 'flex h-6 w-6 items-center justify-center rounded-full bg-teal-600 text-white' : 'text-gray-800'
+                isToday ? 'flex h-6 w-6 items-center justify-center rounded-full bg-gray-700 text-white' : 'text-gray-800'
               }`}
             >
               {format(d, 'd')}
             </span>
             {count > 0 && (
               <span
-                className="mt-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] font-semibold text-white"
+                className="mt-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-gray-700 px-1 text-[10px] font-semibold text-white"
                 data-testid={`handover-badge-${key}`}
               >
                 {count}
