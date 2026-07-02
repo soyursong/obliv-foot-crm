@@ -841,6 +841,10 @@ ${COMMON_STYLE}
   <div class="header-note">■ [별지 제1호 서식] 진료비 세부산정내역 서식 (제2호제1항 관련)</div>
   <div class="title-main">진료비 세부산정내역</div>
 
+  <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT §2-B#3/AC-2: 참조양식(IMG_8778) 좌측 요양기관기호 라인
+       (제목과 환자정보표 사이). {{clinic_code}}=loadAutoBindContext clinic.nhis_code(rx_standard와 동일 alias). -->
+  <div style="font-size:9pt; margin:2px 0 4px;">요양기관기호 : <span style="text-decoration:underline;">{{clinic_code}}</span></div>
+
   <!-- 환자 기본 정보 -->
   <table style="margin-bottom:4px;">
     <thead>
@@ -870,37 +874,46 @@ ${COMMON_STYLE}
   </table>
 
   <!-- 항목 테이블 -->
-  <table>
+  <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-2/AC-8: 참조양식(IMG_8778) 2단 헤더 정합.
+       (1) 주(主)컬럼(항목·일자·코드·명칭·금액·횟수·일수·총액·비급여)을 rowspan="3" 단일 풀높이 셀로 —
+           직전 rowspan="2"+빈 3행 th 는 헤더에 불필요한 가로 분할선을 만들어 참조양식과 불일치했음.
+       (2) 급여 super-header(colspan3) > 일부본인부담(colspan2)/전액본인부담(rowspan2) > 본인부담금·공단부담금.
+       (3) table-layout:fixed + colgroup 로 12컬럼 폭을 참조사진 실측 비율(명칭 최광폭≈29%, 부담금열 협폭)로 고정. -->
+  <table style="table-layout:fixed;">
+    <colgroup>
+      <col style="width:64px;" />
+      <col style="width:88px;" />
+      <col style="width:70px;" />
+      <col />
+      <col style="width:78px;" />
+      <col style="width:38px;" />
+      <col style="width:38px;" />
+      <col style="width:82px;" />
+      <col style="width:52px;" />
+      <col style="width:52px;" />
+      <col style="width:52px;" />
+      <col style="width:82px;" />
+    </colgroup>
     <thead>
       <tr>
-        <th rowspan="2" style="width:55px;">항목</th>
-        <th rowspan="2" style="width:72px;">일자</th>
-        <th rowspan="2" style="width:60px;">코드</th>
-        <th rowspan="2">명칭</th>
-        <th rowspan="2" style="width:60px;">금액</th>
-        <th rowspan="2" style="width:30px;">횟수</th>
-        <th rowspan="2" style="width:30px;">일수</th>
-        <th rowspan="2" style="width:65px;">총액</th>
-        <th colspan="3" style="width:150px;">급여</th>
-        <th rowspan="2" style="width:65px;">비급여</th>
+        <th rowspan="3">항목</th>
+        <th rowspan="3">일자</th>
+        <th rowspan="3">코드</th>
+        <th rowspan="3">명칭</th>
+        <th rowspan="3">금액</th>
+        <th rowspan="3">횟수</th>
+        <th rowspan="3">일수</th>
+        <th rowspan="3">총액</th>
+        <th colspan="3">급여</th>
+        <th rowspan="3">비급여</th>
       </tr>
       <tr>
-        <th colspan="2" style="width:100px;">일부본인부담</th>
-        <th style="width:50px;">전액<br>본인부담</th>
+        <th colspan="2">일부본인부담</th>
+        <th rowspan="2">전액<br>본인부담</th>
       </tr>
       <tr>
-        <th></th>
-        <th></th>
-        <th></th>
-        <th></th>
-        <th></th>
-        <th></th>
-        <th></th>
-        <th></th>
-        <th style="width:50px;">본인부담금</th>
-        <th style="width:50px;">공단부담금</th>
-        <th></th>
-        <th></th>
+        <th>본인부담금</th>
+        <th>공단부담금</th>
       </tr>
     </thead>
     <tbody>
@@ -1499,14 +1512,17 @@ const RX_STANDARD_HTML = `
   </table>
 
   <!-- ⑤ 처방 의약품 -->
+  <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-8: 참조양식(IMG_8777) 처방의약품 표 컬럼 폭 정합 —
+       명칭(최광폭 잔여)/투약량·횟수·일수(협폭)/용법(광폭≈30%). 직전 용법 110px 는 참조 대비 과협소였음.
+       라벨 문구(1회 투약량/1일투여 횟수/총투약 일수)는 표준처방전 표기라 미변경(참조 문구차는 planner 확인 대상). -->
   <table style="margin-top:4px;">
     <thead>
       <tr>
         <th>처&nbsp;방&nbsp;의&nbsp;약&nbsp;품&nbsp;의&nbsp;명&nbsp;칭</th>
-        <th style="width:52px;">1회<br>투약량</th>
-        <th style="width:52px;">1일투여<br>횟&nbsp;&nbsp;&nbsp;수</th>
-        <th style="width:52px;">총투약<br>일&nbsp;&nbsp;&nbsp;수</th>
-        <th style="width:110px;">용&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;법</th>
+        <th style="width:48px;">1회<br>투약량</th>
+        <th style="width:48px;">1일투여<br>횟&nbsp;&nbsp;&nbsp;수</th>
+        <th style="width:48px;">총투약<br>일&nbsp;&nbsp;&nbsp;수</th>
+        <th style="width:190px;">용&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;법</th>
       </tr>
     </thead>
     <tbody>
