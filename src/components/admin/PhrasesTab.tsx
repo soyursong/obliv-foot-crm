@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { canEditStaffAreaPhrase } from '@/lib/permissions';
+import { canEditStaffAreaPhrase, canEditClinicMgmt } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -369,9 +369,13 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   //   ★medical_chart surface(의사영역)는 admin-only 절대 무변경(AC-5 회귀 0).
   //   서버측: phrase_templates RLS 2-policy ADDITIVE(admin_write{admin,manager} + 신규 staff_write{5역할,
   //     pen/customer 가드}) = FE set 과 동일 effective. (migration 20260620_phrase_templates_staff_write_staffarea)
+  // T-20260702-foot-CLINICMGMT-DIRECTOR-EDIT-FIX (Phase B 집행): medical_chart surface(의사 영역) EDIT 를
+  //   정본 헬퍼로 정합. Phase A admin-only 하드코딩이 director(문지은 대표원장) 락아웃 유발 → canEditClinicMgmt 로 교체.
+  //   staff-area 분기(펜/고객차트)는 기존 canEditStaffAreaPhrase 유지(무변경). §11.1: medical_chart picker = 진료관리 영역.
+  //   동반: phrase_templates[medical_chart] RLS write 에 director ADDITIVE({admin,manager}→{admin,manager,director}).
   const isMedchartSurface = lockedType === 'medical_chart';
   const canEdit = isMedchartSurface
-    ? profile?.role === 'admin'
+    ? canEditClinicMgmt(profile)
     : canEditStaffAreaPhrase(profile?.role);
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();

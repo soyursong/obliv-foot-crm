@@ -75,11 +75,9 @@ test.describe('T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW', () => {
   }
 
   // ── 2. RLS-{admin,manager} surface 6종: admin-only(manager 제거, director=Phase B) ──
+  // ★Phase A admin-only 하드코딩이 잔존하는 surface(본 티켓 범위 밖, 여전히 admin-only).
   const adminOnlyTabs = [
     'src/components/admin/QuickRxButtonsTab.tsx',
-    'src/components/admin/SuperPhrasesTab.tsx',
-    'src/components/admin/OpinionPhrasesTab.tsx',
-    'src/components/admin/DocumentTemplatesTab.tsx',
     'src/components/admin/TreatmentSetsTab.tsx',
   ];
   for (const file of adminOnlyTabs) {
@@ -91,12 +89,33 @@ test.describe('T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW', () => {
     });
   }
 
-  // ── 3. PhrasesTab: 공유 컴포넌트 — medical_chart(진료관리)만 게이트, 직원 상용구관리는 무변경 ──
-  test('AC-2/§11.1: PhrasesTab write 게이트는 lockedType=medical_chart 일 때만 admin-only, 그 외(pen/customer_chart)는 admin||manager 보존', () => {
+  // ★Phase B 로 이관된 surface — admin-only 하드코딩 → canEditClinicMgmt(profile) 정본 헬퍼.
+  //   SuperPhrases/DocumentTemplates = T-20260702-foot-CLINICMGMT-DIRECTOR-EDIT-FIX (director 락아웃 해소).
+  //   OpinionPhrases = 旣 이관(T-20260623 계열). Phase A admin-only 잔존 시 director 락아웃 회귀 → 그 재현 가드.
+  const phaseBMigratedTabs = [
+    'src/components/admin/SuperPhrasesTab.tsx',
+    'src/components/admin/OpinionPhrasesTab.tsx',
+    'src/components/admin/DocumentTemplatesTab.tsx',
+  ];
+  for (const file of phaseBMigratedTabs) {
+    test(`AC-2→Phase B: ${file.split('/').pop()} write 게이트는 canEditClinicMgmt(profile)(admin-only 하드코딩 제거)`, () => {
+      const src = read(file);
+      expect(src).toContain("import { canEditClinicMgmt } from '@/lib/permissions'");
+      expect(src).toMatch(/const\s+canEdit\s*=\s*canEditClinicMgmt\(profile\)\s*;/);
+      // admin-only 하드코딩 잔존 금지(director 락아웃 회귀 가드)
+      expect(src).not.toMatch(/const\s+canEdit\s*=\s*profile\?\.role\s*===\s*'admin'\s*;/);
+    });
+  }
+
+  // ── 3. PhrasesTab: 공유 컴포넌트 — medical_chart(진료관리)는 Phase B canEditClinicMgmt, 직원 상용구관리는 무변경 ──
+  test('AC-2/§11.1→Phase B: PhrasesTab — medical_chart 는 canEditClinicMgmt, 그 외(pen/customer_chart)는 canEditStaffAreaPhrase 유지', () => {
     const src = read('src/components/admin/PhrasesTab.tsx');
     expect(src).toContain("const isMedchartSurface = lockedType === 'medical_chart'");
-    // medical_chart → admin-only / 그 외 → admin||manager 분기
-    expect(src).toMatch(/isMedchartSurface\s*\?\s*profile\?\.role\s*===\s*'admin'\s*:\s*\(profile\?\.role\s*===\s*'admin'\s*\|\|\s*profile\?\.role\s*===\s*'manager'\)/);
+    // medical_chart → canEditClinicMgmt(profile) / 그 외 → canEditStaffAreaPhrase(profile?.role) 분기
+    //   (T-20260702-foot-CLINICMGMT-DIRECTOR-EDIT-FIX: medical_chart admin-only → canEditClinicMgmt)
+    expect(src).toMatch(/isMedchartSurface\s*\?\s*canEditClinicMgmt\(profile\)\s*:\s*canEditStaffAreaPhrase\(profile\?\.role\)/);
+    // medical_chart 분기 admin-only 하드코딩 잔존 금지
+    expect(src).not.toMatch(/isMedchartSurface\s*\?\s*profile\?\.role\s*===\s*'admin'/);
   });
 
   // ── 4. 무회귀 가드 ───────────────────────────────────────────────────────

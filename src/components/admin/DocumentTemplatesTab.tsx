@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { Loader2, Plus, Pencil, Trash2, FileText } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -221,11 +222,12 @@ function SubcategoryField({
 // ---------------------------------------------------------------------------
 export default function DocumentTemplatesTab() {
   // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용.
-  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
-  //   ★서류 템플릿(document_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
-  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
+  // T-20260702-foot-CLINICMGMT-DIRECTOR-EDIT-FIX (Phase B 집행): 진료관리 EDIT 게이트를 정본 헬퍼로 정합.
+  //   canEditClinicMgmt = ROLE-MATRIX canon(EDIT=has_ops_authority/admin + director escape stopgap).
+  //   Phase A admin-only 하드코딩이 director(문지은 대표원장) 락아웃을 유발 → 정본 게이트로 교체.
+  //   동반: document_templates RLS write 에 director ADDITIVE({admin,manager}→{admin,manager,director}).
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin';
+  const canEdit = canEditClinicMgmt(profile);
   const { data: templates = [], isLoading } = useDocumentTemplates();
   const upsert = useUpsertDoc();
   const del = useDeleteDoc();

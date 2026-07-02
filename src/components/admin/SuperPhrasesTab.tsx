@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from '@/lib/toast';
+import { canEditClinicMgmt } from '@/lib/permissions';
 import { Loader2, Plus, Pencil, Trash2, X, Sparkles, Stethoscope, FileText, FlaskConical } from 'lucide-react';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import RxCountInput from '@/components/admin/RxCountInput';
@@ -316,10 +317,11 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
 // ---------------------------------------------------------------------------
 export default function SuperPhrasesTab() {
   const { profile } = useAuth();
-  // T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 로 제한.
-  //   ★super_phrases(phrase_templates) RLS write = {admin,manager}(director 부재) → director grant 시 RLS 거부.
-  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS) RLS 와 동시.
-  const canEdit = profile?.role === 'admin';
+  // T-20260702-foot-CLINICMGMT-DIRECTOR-EDIT-FIX (Phase B 집행): 진료관리 EDIT 게이트를 정본 헬퍼로 정합.
+  //   canEditClinicMgmt = ROLE-MATRIX canon(EDIT=has_ops_authority/admin + director escape stopgap).
+  //   Phase A admin-only 하드코딩이 director(문지은 대표원장) 락아웃을 유발 → 정본 게이트로 교체.
+  //   동반: 3 테이블 RLS write 에 director ADDITIVE({admin,manager}→{admin,manager,director}).
+  const canEdit = canEditClinicMgmt(profile);
   const clinicId = (profile as { clinic_id?: string } | null)?.clinic_id ?? null;
   const { data: phrases = [], isLoading, isError } = useSuperPhrases();
   const upsert = useUpsertSuper();
