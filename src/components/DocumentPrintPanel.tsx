@@ -326,24 +326,33 @@ function openBatchPrintWindow(
   } else {
     // HTML 양식(L-006 12종) — 프린트 엔진 @page 물리 여백으로 중앙 배치(축소 없음).
     // T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 현장 2차 — 출력물이 아직 위로 쏠림.
-    //   상단 @page margin 을 12mm→30mm(약 +68px ≈ 엔터 4~5줄) 로 키워 콘텐츠를 시트에서 더 아래로 배치.
-    //   하단은 12mm 유지(클립 방지). 콘텐츠박스 높이 = A4 - (상30+하12) → portrait 255mm / landscape 168mm.
-    //   min-height 동시 축소로 단일 페이지·넘침/잘림 없음 보장(AC-2 하단여백 + AC-5 동시충족).
+    //   상단 여백 12mm→30mm(약 +68px ≈ 엔터 4~5줄) 로 키워 콘텐츠를 시트에서 더 아래로 배치.
+    //   하단은 12mm 유지(클립 방지). 콘텐츠박스 = A4 - (좌우10·상30·하12) → portrait 190×255mm / landscape 277×168mm.
+    // T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 브라우저 window.print() 기본 헤더 2종
+    //   (좌상단 인쇄일시 · 우상단 document.title="서류 출력 …") 완전 제거.
+    //   [RC] 크롬은 @page margin 이 0 보다 크면 그 여백 박스에 인쇄일시/제목을 자동 삽입한다.
+    //        직전 CENTER-ALIGN 모델이 중앙배치를 @page margin(30 10 12) 로 수행 → 그 여백이 헤더 캔버스가 됨.
+    //   [수정] @page margin:0 (여백 박스 소멸 → 헤더 삽입 불가) + 동일 물리 여백을 .page padding 으로 이관.
+    //        box-sizing:border-box + 전폭(210/297mm) .page → 콘텐츠박스 190×255 / 277×168mm 로 물리 위치 불변
+    //        (legacy-img 분기가 이미 @page:0 + 전폭 210mm 로 축소 없이 프로덕션 검증됨 → 중앙배치 회귀 없음).
     const pageRule = forceLandscape
-      ? '@page { size: A4 landscape; margin: 30mm 10mm 12mm; }'
-      : '@page { size: A4 portrait; margin: 30mm 10mm 12mm; }';
-    const minH = forceLandscape ? '168mm' : '255mm'; // A4 short side - @page 상하여백(상30+하12=42mm)
+      ? '@page { size: A4 landscape; margin: 0; }'
+      : '@page { size: A4 portrait; margin: 0; }';
+    const pageW = forceLandscape ? '297mm' : '210mm';
+    const pageH = forceLandscape ? '210mm' : '297mm';
     styleBlock = `
   ${pageRule}
   html, body { margin: 0; padding: 0; }
   .page {
+    box-sizing: border-box;
     position: relative;
-    width: 100%;
-    min-height: ${minH};
+    width: ${pageW};
+    min-height: ${pageH};
+    padding: 30mm 10mm 12mm; /* 구 @page 물리여백을 콘텐츠 패딩으로 이관(중앙배치 불변, 브라우저 헤더 제거) */
     overflow: visible;
     page-break-after: always;
   }
-  .page-landscape { width: 100%; min-height: 168mm; }
+  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 30mm 10mm 12mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* AC-1: 마지막 페이지 빈 페이지 방지 */
@@ -695,6 +704,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     // [SYNC: G-007] fmtAmt 로컬 중복 제거 → formatAmount(중앙함수) + '원' 교체
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>진료비 영수증 — ${checkIn.customer_name}</title>
 <style>
+  /* T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: @page margin:0 → 브라우저 자동 헤더(인쇄일시·제목) 제거.
+     여백은 body padding 이 담당(콘텐츠 공백 유지). */
+  @page{size:A4 portrait;margin:0}
+  html,body{margin:0}
   body{font-family:'Malgun Gothic',sans-serif;padding:20mm;color:#222;font-size:13px}
   h2{text-align:center;margin-bottom:24px;font-size:18px}
   h3{border-bottom:2px solid #333;padding-bottom:6px;margin-bottom:12px;font-size:15px}

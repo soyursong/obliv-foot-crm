@@ -40,8 +40,11 @@ export function printKohResult(fieldData: unknown): boolean {
   const win = window.open('', '_blank', 'width=820,height=1000');
   if (!win) return false;
   win.document.open();
+  // T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 기존엔 @page 미선언 → 브라우저 기본여백 박스에
+  //   인쇄일시·제목 헤더가 자동 삽입됨. @page margin:0 으로 여백 박스를 없애 헤더 제거(콘텐츠 공백은 body padding).
   win.document.write(
-    `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>검사결과 보고서</title></head><body>${html}` +
+    `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>검사결과 보고서</title>` +
+      `<style>@page { size: A4 portrait; margin: 0; } html, body { margin: 0; } body { box-sizing: border-box; padding: 12mm; }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();

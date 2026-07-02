@@ -34,10 +34,13 @@ function openPhotoPrintWindow(urls: string[], customerName: string) {
   <meta charset="utf-8" />
   <title>비포/애프터 사진 — ${customerName}</title>
   <style>
-    @page { size: A4 landscape; margin: 12mm; }
+    /* T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: @page margin:0 → 브라우저 자동 헤더(인쇄일시·제목) 제거.
+       구 물리여백 12mm 는 body padding 으로 이관(레이아웃 불변). 본문 "출력일" 표기는 의도된 콘텐츠라 존치. */
+    @page { size: A4 landscape; margin: 0; }
     body {
       font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
-      margin: 0; padding: 0;
+      margin: 0; padding: 12mm;
+      box-sizing: border-box;
       background: #fff;
     }
     .header {

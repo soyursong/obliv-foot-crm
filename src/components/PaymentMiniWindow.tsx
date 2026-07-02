@@ -224,7 +224,9 @@ function draftKey(checkInId: string): string {
 //   엔진 shrink-to-fit 으로 좌·상단 앵커 → 현장이 본 상단 쏠림. 두 경로가 "완전 동일" 해야 한다는 본 함수 계약 위반.
 //   [수정] openBatchPrintWindow 와 동일한 분기로 통일:
 //     - isLegacyImg(page-img 오버레이, field_map px 좌표가 210mm page 기준): @page:0 / 전폭 .page 유지(불변).
-//     - HTML 양식: @page margin:30mm 10mm 12mm(상단 +68px 하향) + 콘텐츠박스 minH(portrait 255 / landscape 168mm).
+//     - HTML 양식: 물리여백(상30·좌우10·하12mm)으로 상단 +68px 하향 + 콘텐츠박스(portrait 190×255 / landscape 277×168mm).
+// T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 브라우저 자동 헤더 제거를 위해 위 물리여백을 @page margin(비-0)에서
+//   @page margin:0 + .page padding 으로 이관(경로1과 완전 동일). 물리 위치 불변 → 중앙배치 회귀 없음.
 function buildPrintHtml(pages: string[], title: string, forceLandscape = false): string {
   const isLegacyImg = pages.some((p) => p.includes('page-img'));
   if (isLegacyImg) {
@@ -255,24 +257,29 @@ function buildPrintHtml(pages: string[], title: string, forceLandscape = false):
 </style>
 </head><body>${pages.join('\n')}</body></html>`;
   }
-  // HTML 양식(L-006 12종) — 프린트 엔진 @page 물리 여백으로 중앙 배치 + 상단 30mm 하향(경로1과 동일).
+  // HTML 양식(L-006 12종) — 콘텐츠 물리 여백으로 중앙 배치 + 상단 30mm 하향(경로1과 동일).
+  // T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 경로1(openBatchPrintWindow)과 완전 동일하게
+  //   @page margin:0(브라우저 자동 헤더 제거) + 물리여백을 .page padding 으로 이관. 두 경로 "완전 동일" 계약 유지.
   const pageRule = forceLandscape
-    ? '@page { size: A4 landscape; margin: 30mm 10mm 12mm; }'
-    : '@page { size: A4 portrait; margin: 30mm 10mm 12mm; }';
-  const minH = forceLandscape ? '168mm' : '255mm'; // A4 short side - @page 상하여백(상30+하12=42mm)
+    ? '@page { size: A4 landscape; margin: 0; }'
+    : '@page { size: A4 portrait; margin: 0; }';
+  const pageW = forceLandscape ? '297mm' : '210mm';
+  const pageH = forceLandscape ? '210mm' : '297mm';
   return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>${title}</title>
 <style>
   ${pageRule}
   html, body { margin: 0; padding: 0; }
   .page {
+    box-sizing: border-box;
     position: relative;
-    width: 100%;
-    min-height: ${minH};
+    width: ${pageW};
+    min-height: ${pageH};
+    padding: 30mm 10mm 12mm; /* 구 @page 물리여백을 콘텐츠 패딩으로 이관(중앙배치 불변, 브라우저 헤더 제거) */
     overflow: visible;
     page-break-after: always;
   }
-  .page-landscape { width: 100%; min-height: 168mm; }
+  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 30mm 10mm 12mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page:last-child { page-break-after: avoid; }

@@ -78,9 +78,12 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   //   form-wrap(COMMON_STYLE @media print 에서 margin:0 auto)이 콘텐츠박스를 채우고 엔진이 시트에 물리 배치.
   // T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 경로1·4와 동일하게 상단 margin 12mm→30mm 하향
   //   (약 +68px ≈ 엔터 4~5줄). 하단 12mm 유지. 콘텐츠박스 255mm(=297-30-12) → 단일 페이지·넘침/잘림 없음.
+  // T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 브라우저 window.print() 기본 헤더(좌상단 인쇄일시·우상단 제목)
+  //   제거. 크롬은 @page margin>0 여백 박스에 헤더를 자동 삽입 → @page margin:0 으로 여백 박스를 없애고,
+  //   구 물리여백(상30·좌우10·하12mm)은 body padding 으로 이관해 중앙배치를 물리적으로 동일 유지(경로1·4와 통일).
   win.document.write(
     `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>` +
-      `<style>@page { size: A4 portrait; margin: 30mm 10mm 12mm; } html, body { margin: 0; padding: 0; }</style></head><body>${html}` +
+      `<style>@page { size: A4 portrait; margin: 0; } html, body { margin: 0; padding: 0; } body { box-sizing: border-box; padding: 30mm 10mm 12mm; }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();
