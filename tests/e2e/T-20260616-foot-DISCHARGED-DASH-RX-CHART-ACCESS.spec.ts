@@ -156,42 +156,45 @@ test.describe('S2 인플레이스 처방 mutate 차단 유지(귀가 잠금)', (
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// S3 — 명시적 '차트 열기' 버튼 렌더 (affordance 가시화)
-//   reporter(문지은 대표원장) 동일 thread 재확인(planner CLARIFY MSG-20260620-023610-702z):
-//   "데드 '-'/'—' invisible click 만으론 부족 — 눈에 보이는 '차트 열기' 버튼/링크를 기대".
-//   → 귀가(discharged) 행 진입점은 바로 보이는 라벨('차트 열기')+아이콘 chip 으로 렌더돼야 한다.
+// S3 — ★SUPERSEDED by T-20260702-foot-DOCDASH-DONE-RXCLINICAL-TEXTPREVIEW★
+//   최초 S3(2026-06-20)는 귀가 행 빈 처방/임상경과 셀을 명시 '차트 열기' chip(FileText+라벨)으로
+//   가시화하도록 요구했다. 그러나 동일 reporter(문지은 대표원장)가 2026-07-02 후속 정정:
+//   "처방·임상경과는 텍스트로 미리보게 해줘. 차트보기 버튼으로 대체하라는 게 아님."
+//   → planner absorb-on-baseline(MSG-…-4ixw): 프롬넌트 '차트 열기' chip = 보조 진입점으로 강등.
+//     내용 있는 셀은 이미 읽기전용 텍스트 프리뷰(confirmed rx summary / clinicalPreview)로 노출되고,
+//     내용 없는 셀은 AC⑥대로 '-'/'—'(읽기전용 빈값 표기)로 강등하되 클릭 시 진료차트(읽기전용)로 여는
+//     보조 진입점은 유지(폐기 아님). 아래 S3는 '데드텍스트가 아니라 chart-open 보조 진입점으로 유지'를
+//     검증하는 형태로 재작성 — 라벨/chip 프롬넌스 요구는 TEXTPREVIEW 로 대체(상세: 신 spec S1~S4).
 // ═══════════════════════════════════════════════════════════════════════════
-test.describe('S3 귀가 행 명시적 \'차트 열기\' 버튼 가시화', () => {
-  // 진입점 <button> 본문(여는 '>' 이후 children)만 잘라낸다 — 긴 className/title 뒤의 라벨까지 안전 캡처.
+test.describe('S3 귀가 빈 셀 = 읽기전용 빈값 + 차트 오픈 보조 진입점 유지 (TEXTPREVIEW 강등 반영)', () => {
+  // testid 를 가진 <button ...>...</button> 요소 전체(속성 포함)를 잘라낸다.
   function buttonBody(block: string, testid: string): string {
-    const idx = block.indexOf(`data-testid="${testid}"`);
-    expect(idx, `${testid} 진입점이 존재해야 함`).toBeGreaterThan(-1);
-    const gt = block.indexOf('>', idx);
-    expect(gt).toBeGreaterThan(idx);
-    const close = block.indexOf('</button>', gt);
-    expect(close).toBeGreaterThan(gt);
-    return block.slice(idx, close);
+    const anchor = block.indexOf(`data-testid="${testid}"`);
+    expect(anchor, `${testid} 진입점이 존재해야 함`).toBeGreaterThan(-1);
+    const open = block.lastIndexOf('<button', anchor);
+    expect(open).toBeGreaterThan(-1);
+    const close = block.indexOf('</button>', anchor);
+    expect(close).toBeGreaterThan(anchor);
+    return block.slice(open, close + '</button>'.length);
   }
 
-  test('S3-a — 귀가·미처방 처방셀 진입점이 명시 라벨 \'차트 열기\'(데드 \'-\' 텍스트 아님)', () => {
+  test('S3-a — 귀가·미처방 처방셀: 프롬넌트 chip 강등, 클릭=진료차트(readonly) 보조 진입점 유지', () => {
     const scope = buttonBody(completedRxCellBlock(), 'doctor-completed-no-rx');
-    // 버튼 본문에 보이는 라벨 '차트 열기' 가 렌더된다.
-    expect(scope).toContain('차트 열기');
-    // 아이콘(FileText) 동반 — 클릭 가능한 버튼임이 시각적으로 명확.
-    expect(scope).toContain('<FileText');
-    // 더 이상 본문이 bare '-' 데드텍스트가 아니다.
-    expect(scope.replace(/\s/g, '')).not.toMatch(/>-<\/button>/);
+    // 강등: 더 이상 프롬넌트 '차트 열기' 라벨 chip 이 아니다.
+    expect(scope).not.toContain('차트 열기');
+    // 보조 진입점 유지: 클릭 시 진료차트를 readonly(discharged) 로 연다 — 폐기 아님(AC④).
+    expect(scope).toContain("onOpenChart(checkIn.customer_id, 'full', discharged)");
   });
 
-  test('S3-b — 귀가 빈값 임상경과 진입점이 명시 라벨 \'차트 열기\'(데드 \'—\' 텍스트 아님)', () => {
+  test('S3-b — 귀가 빈값 임상경과셀: 프롬넌트 chip 강등, 클릭=진료차트(readonly) 보조 진입점 유지', () => {
     const scope = buttonBody(completedClinicalCellBlock(), 'doctor-completed-clinical-empty-chart-btn');
-    expect(scope).toContain('차트 열기');
-    expect(scope).toContain('<FileText');
+    expect(scope).not.toContain('차트 열기');
+    expect(scope).toContain("onOpenChart(checkIn.customer_id, 'full', discharged)");
   });
 
-  test('S3-c — 데드텍스트(bare 대시) 진입점이 customer_id 있는 귀가 행에서 제거됨', () => {
-    // 귀가+customer_id 진입점은 더 이상 button 본문이 bare '-'/'—' 만 가진 데드텍스트가 아니다.
-    const rxScope = buttonBody(completedRxCellBlock(), 'doctor-completed-no-rx');
-    expect(rxScope).toContain('차트 열기');
+  test('S3-c — 인플레이스 mutate 미노출(귀가 잠금 무회귀): 빈 처방셀 진입점에 QuickRxBar/setShowRx 없음', () => {
+    const scope = buttonBody(completedRxCellBlock(), 'doctor-completed-no-rx');
+    expect(scope).not.toContain('<QuickRxBar');
+    expect(scope).not.toContain('setShowRx');
   });
 });

@@ -1472,21 +1472,21 @@ function CompletedRow({
                 </RxPopover>
               </>
             ) : checkIn.customer_id ? (
-              /* T-20260616-foot-DISCHARGED-DASH-RX-CHART-ACCESS A안 (문지은 대표원장 CONFIRM MSG-20260620-023304):
-                 "잠금유지하면서 차트는 열리게 해줘. 직접 차트 열어서 수정만 가능하게(귀가완료환자 기준)."
-                 ★ 동일 thread 재확인(MSG-20260620-023610-702z, planner CLARIFY): 데드 '-'(invisible click)로는 부족 →
-                   reporter는 '눈에 보이는 차트 열기 버튼/링크'를 기대. 명시 라벨('차트 열기')+아이콘+테두리 chip 로 affordance 가시화.
-                 처방 작성/수정은 차트 내부에서만 — 대시보드 인플레이스 처방 mutate(QuickRxBar apply) 미노출 유지(귀가 잠금 무회귀). */
+              /* T-20260702-foot-DOCDASH-DONE-RXCLINICAL-TEXTPREVIEW (문지은 대표원장, DISCHARGED 흡수/AC④·⑥):
+                 상위 confirmed 분기가 확정처방을 이미 읽기전용 텍스트(RxConfirmedSummary summary)로 인라인 노출하므로,
+                 이 분기는 '확정 처방이 없는 귀가 환자' = 표시할 처방 내용 없음. reporter 정정("차트보기 버튼으로 대체하지 마") +
+                 AC⑥(데이터 없는 행='-') 반영 → 선행 T-20260616(7f8fe9b6)의 명시 '차트 열기' 프롬넌트 chip 을
+                 읽기전용 '-'(빈값 표기)로 강등. 차트 전체 진입점은 폐기 아님 — '-' 자체가 클릭 시 진료차트(읽기전용) 오픈하는
+                 보조 진입점으로 유지(AC④, 이름클릭과 동일 동선). 인플레이스 처방 mutate(QuickRxBar apply)는 여전히 미노출(귀가 잠금 무회귀). */
               <button
                 type="button"
                 /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 귀가완료 환자 차트는 readonly 로 오픈(수정 불가). */
                 onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full', discharged)}
                 data-testid="doctor-completed-no-rx"
-                title="귀가 환자 — 처방은 차트에서 확인 (클릭 시 진료차트 열림, 읽기전용)"
-                className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
+                title="처방 내역 없음 — 클릭 시 진료차트에서 확인 (읽기전용)"
+                className="text-[13px] text-gray-300 underline-offset-2 transition-colors cursor-pointer hover:text-sky-600 hover:underline"
               >
-                <FileText className="h-3 w-3" />
-                차트 열기
+                -
               </button>
             ) : (
               /* customer_id 결측(차트 진입 불가) — 종전 정적 '-' 유지. */
@@ -1526,17 +1526,20 @@ function CompletedRow({
                작성·수정은 풀차트 서랍(별도 surface) 안에서만. clinicalPreview 있으면 위 분기 read-only 펼침으로 확인.
                ⚠ 원내잔류(!discharged)는 아래 button 분기 그대로 — 작성 흐름 무회귀(AC-4). */
             checkIn.customer_id ? (
-              /* ★ MSG-20260620-023610-702z(planner CLARIFY): 데드 '—' invisible click → 명시 '차트 열기' 버튼/링크. */
+              /* T-20260702-foot-DOCDASH-DONE-RXCLINICAL-TEXTPREVIEW (문지은 대표원장, DISCHARGED 흡수/AC④·⑥):
+                 위 clinicalPreview 분기가 임상경과 내용을 이미 읽기전용 텍스트로 인라인 노출 → 이 분기는 '임상경과 내용 없음'.
+                 reporter 정정("차트보기 버튼으로 대체하지 마") + AC⑥(데이터 없는 행='—') 반영 → 선행 T-20260616(7f8fe9b6)
+                 명시 '차트 열기' chip 을 읽기전용 '—'(빈값 표기)로 강등. 차트 전체 진입점 폐기 아님 — '—' 클릭 시
+                 진료차트(읽기전용) 오픈 보조 진입점 유지(AC④). 인플레이스 임상경과 작성(showClinical embed)은 여전히 미노출(귀가 잠금 무회귀). */
               <button
                 type="button"
                 /* T-20260620-foot-DOCDASH-RXCLIN-PREVIEW-DROPDOWN 축2: 귀가완료 환자 차트는 readonly 로 오픈(작성/수정 불가, 확인 전용). */
                 onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full', discharged)}
                 data-testid="doctor-completed-clinical-empty-chart-btn"
-                title="귀가 환자 — 임상경과는 차트에서 확인 (클릭 시 진료차트 열림, 읽기전용)"
-                className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
+                title="임상경과 내역 없음 — 클릭 시 진료차트에서 확인 (읽기전용)"
+                className="text-[15px] font-medium text-gray-300 underline-offset-2 transition-colors cursor-pointer hover:text-sky-600 hover:underline"
               >
-                <FileText className="h-3 w-3" />
-                차트 열기
+                —
               </button>
             ) : (
               /* customer_id 결측(차트 진입 불가) — 종전 readonly '—' 유지(클릭 불가). */
