@@ -1,7 +1,11 @@
-# T-20260701-foot-STAFF-ROSTER-DEDUP — DB 게이트 HOLD 패키지 (apply 보류)
+# T-20260701-foot-STAFF-ROSTER-DEDUP — DB 게이트 HOLD 패키지 (SUPERSEDED, history)
+
+> ⚠ **SUPERSEDED (2026-07-02): AC-3 현장 confirm PASS. 최신 apply-ready 게이트 입력 = `T-20260701-foot-STAFF-ROSTER-DEDUP_dbgate_FINAL.md`.**
+> 본 문서는 confirm 前 HOLD 상태·DA **제안 매핑**(확정 아님) 기록용. 실제 집행 바인딩은 FINAL 문서 참조.
+> (특히 #1 박소예: 본 HOLD 의 DA 제안은 5c17e4bc=canonical 이었으나, AC-3 confirm 이 5fb3e3b1(yoonha62@gmail.com)=canonical 로 **역전** — FINAL FLAG-1 참조.)
 
 > dev-foot. carve-out from T-20260630-foot-STAFF-AUTH-LINK-BACKFILL.
-> **현 상태: apply 보류(HELD).** AC-1(dry-run)·AC-2(DA CONSULT) 충족. **AC-3 현장 confirm(김주연 총괄 행별 canonical/폐기) + AC-4 supervisor DB 게이트 미충족 → 처분 SQL 실행 0.**
+> **당시 상태(SUPERSEDED): apply 보류(HELD).** AC-1(dry-run)·AC-2(DA CONSULT) 충족. AC-3 현장 confirm + AC-4 supervisor DB 게이트 미충족 → 처분 SQL 실행 0.
 > PHI 귀속 경로 = autonomy §3.1 **면제 아님**. dev-foot 직접 prod write 금지. **추정 병합 금지.**
 > DDL 무변경(데이터 정리). staff 는 soft-delete 컬럼 부재(`active` boolean만) → 폐기 = `active=false` 유지 + 감사용 name 마커, **hard-delete 금지**(의료법 §22 감사 trail 보존).
 
