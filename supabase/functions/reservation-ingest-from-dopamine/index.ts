@@ -83,6 +83,75 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: CORS_HEADERS });
 }
 
+// T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: 도파민 예약메모를 SoT(reservation_memo_history=rmh)에 정렬.
+//   근본원인(런타임 규명): 본 ingest EF 가 실제 push 경로임에도 memo 를 reservations.memo
+//   (deprecated[T-20260504-MEMO-RESTRUCTURE], FE 미read)에만 직접 착지시켜, 풋 예약상세 팝업>예약메모
+//   및 달력 hover(둘 다 rmh 를 read)에서 공란이었다. 재타겟 RPC(upsert_reservation_from_source,55f3f62d)는
+//   rmh 에 쓰지만 이 경로에서 미호출(직접 insert) → 7/1 02:00 RPC 재타겟이 실 push 에 무효과였음.
+//   해소: DA-20260701-FOOTRESV-MEMO-SOT-RETARGET ruling(예약메모 SoT=rmh, timeline-only,
+//   source_system provenance, 멱등 upsert)을 이 EF 에도 동일 적용. 스키마 무변경 —
+//   source_system 컬럼·uq_rmh_resv_source partial unique 인덱스는 마이그 20260701020000 旣존.
+async function syncReservationMemoToTimeline(
+  // deno check: createClient 반환 제네릭이 호출부 admin 추론형과 불일치 → EF helper 는 loose 타입.
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  reservationId: string,
+  clinicId: string,
+  rawMemo: string | undefined,
+  sourceSystem: string,
+): Promise<void> {
+  const content = (rawMemo ?? '').trim();
+  // 빈값 skip(멱등 no-op): 사람 저작행(source_system NULL)·기존 외부 memo 보존.
+  if (!content) return;
+
+  // uq_rmh_resv_source = PARTIAL unique index (WHERE source_system IS NOT NULL).
+  //   supabase-js .upsert({onConflict}) 는 partial index 술어(WHERE)를 못 실어 42P10 → 사용 불가.
+  //   대신 명시적 select→update|insert(멱등). 동일 (reservation_id, source_system) 재push=content UPDATE
+  //   — RPC 55f3f62d 의 ON CONFLICT DO UPDATE 와 동일 결과. race(23505) 시 update 폴백.
+  const { data: existingMemo } = await admin
+    .from('reservation_memo_history')
+    .select('id')
+    .eq('reservation_id', reservationId)
+    .eq('source_system', sourceSystem)
+    .maybeSingle();
+
+  if (existingMemo) {
+    const { error } = await admin
+      .from('reservation_memo_history')
+      .update({ content })
+      .eq('id', existingMemo.id);
+    if (error) console.error(`[reservation-ingest] memo timeline update failed rid=${reservationId}: ${error.message}`);
+    return;
+  }
+
+  const { error } = await admin
+    .from('reservation_memo_history')
+    .insert({
+      reservation_id: reservationId,
+      clinic_id: clinicId,             // ★ RLS rmh_clinic_access 가시성(RPC 라인과 동일 critical)
+      content,
+      created_by_name: '도파민TM',      // RPC 55f3f62d 와 동일 provenance 라벨
+      source_system: sourceSystem,     // NULL=사람저작 / 외부=sync (uq_rmh_resv_source 대상)
+    });
+  if (error) {
+    // race: 동시 push 로 partial-unique 위반(23505) → update 폴백.
+    if ((error as { code?: string }).code === '23505') {
+      const { data: raceMemo } = await admin
+        .from('reservation_memo_history')
+        .select('id')
+        .eq('reservation_id', reservationId)
+        .eq('source_system', sourceSystem)
+        .maybeSingle();
+      if (raceMemo) {
+        await admin.from('reservation_memo_history').update({ content }).eq('id', raceMemo.id);
+        return;
+      }
+    }
+    // 예약행은 이미 생성됨(주 artifact) → 메모 sync 실패로 ingest 500 로 되돌리지 않고 경고만.
+    console.error(`[reservation-ingest] memo timeline insert failed rid=${reservationId}: ${error.message}`);
+  }
+}
+
 // E.164 phone validation (+[country][number], 7-15 digits after +)
 function isE164(phone: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(phone);
@@ -311,6 +380,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (existing) {
+      // T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: 중복(편집 재push)에도 예약메모 rmh 멱등 upsert.
+      //   RPC 55f3f62d 의 ON CONFLICT DO UPDATE(편집 재push=content 갱신)와 동치 — 재push 로 수정된
+      //   메모가 timeline 에 반영되도록. 빈값이면 helper 내부 no-op(기존 메모 보존).
+      await syncReservationMemoToTimeline(admin, existing.id as string, clinicId, memo, sourceSystem ?? 'dopamine');
       console.log(`[reservation-ingest] duplicate external_id ${externalId} → existing ${existing.id}`);
       return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
     }
@@ -446,7 +519,10 @@ Deno.serve(async (req) => {
       ...(slotType ? { visit_type: slotType === 'new_consult' ? 'new' : 'returning' } : {}),
       // B-9: 해석된 service_id 만 착지(null이면 미삽입 → 컬럼 DEFAULT NULL 유지, 회귀 0)
       ...(serviceId ? { service_id: serviceId } : {}),
-      ...(memo     ? { memo } : {}),
+      // T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: memo → reservations.memo 매핑 제거(timeline-only).
+      //   reservations.memo = deprecated(FE 미read). 예약메모는 아래 insert 성공 후
+      //   syncReservationMemoToTimeline() 으로 rmh(SoT)에 착지 → 예약상세 팝업·달력 hover 노출.
+      //   (RPC 55f3f62d 의 'reservations.memo 매핑 제거' 와 동일 조치를 실 push 경로에도 적용.)
       // T-20260630-foot-INGEST-REGISTRAR-CREATEDBY (RECONCILE-FINAL):
       //   (b) registrar 표시축 — 해소된 FK(있을 때만) + 표시 라벨(매칭 스냅샷 or provenance).
       //       ⛔ 방화벽: 표시 전용 — created_by/stats 미승격. created_by는 미삽입(NULL graceful, (c)).
@@ -476,6 +552,8 @@ Deno.serve(async (req) => {
           .eq('external_id', externalId)
           .single();
         if (raceRsv) {
+          // T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: race 중복도 예약메모 rmh 멱등 upsert(위와 동일).
+          await syncReservationMemoToTimeline(admin, raceRsv.id as string, clinicId, memo, sourceSystem ?? 'dopamine');
           return json({ ok: true, reservation_id: raceRsv.id, applied: false, reason: 'duplicate' });
         }
       }
@@ -485,6 +563,9 @@ Deno.serve(async (req) => {
     if (!newRsv) {
       return json({ ok: false, error: 'INTERNAL', detail: 'reservation insert returned no data' }, 500);
     }
+
+    // T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: 예약메모를 rmh(SoT)에 착지(빈값 skip·멱등).
+    await syncReservationMemoToTimeline(admin, newRsv.id as string, clinicId, memo, sourceSystem ?? 'dopamine');
 
     console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId ?? 'NULL'} is_companion=${isCompanion} customer_real_name=${customerRealName ?? '-'} clinic_slug=${clinicSlug} clinic_id=${clinicId} service_code=${serviceCode ?? '-'} service_id=${serviceId ?? '-'} created_via=${createdVia} visit_route=${visitRouteLanded ?? '-'} registrar_id=${registrarId ?? '-'} registrar_name=${registrarNameLanded ?? '-'}`);
     return json({ ok: true, reservation_id: newRsv.id, applied: true });
