@@ -30,15 +30,17 @@ const AGG = fs.readFileSync(path.resolve('src/lib/resvSlotAgg.ts'), 'utf-8');
 // AC1/AC2 — 세로축 4분류 라벨 SSOT (초진/재진/힐러/리본(발각질)) + 축약(초/재/힐/리)
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC1/AC2: KIND_AXIS_LABELS — 4분류 full/abbr 상수', () => {
-  test('AC1-1: full 라벨 = 초진 / 재진 / 힐러 / 리본(발각질)', () => {
+  test('AC1-1: full 라벨 = 초진 / 재진 / 힐러 / [리본]', () => {
     expect(KIND_AXIS_LABELS.new.full).toBe('초진');
     expect(KIND_AXIS_LABELS.returning.full).toBe('재진');
     expect(KIND_AXIS_LABELS.healer.full).toBe('힐러');
-    expect(KIND_AXIS_LABELS.ribbon.full).toBe('리본(발각질)');
+    // T-20260702-foot-RESVAXIS-RIBON-LABEL supersede: 리본 라벨 3차 변경 '리본(발각질)' → '[리본]' (§13.1.A REDEFINITION).
+    expect(KIND_AXIS_LABELS.ribbon.full).toBe('[리본]');
   });
 
-  test('AC2-1: 리본 라벨 발각질 → 리본(발각질) 확정 (soak recheck 해소)', () => {
-    expect(RIBBON_BADGE_LABEL).toBe('리본(발각질)');
+  test('AC2-1: 리본 라벨 확정 (RESVAXIS-RIBON-LABEL supersede → [리본])', () => {
+    // 구 확정값 '리본(발각질)' → 김주연 총괄 3차 지시로 '[리본]' 재확정.
+    expect(RIBBON_BADGE_LABEL).toBe('[리본]');
     // full 라벨은 RIBBON_BADGE_LABEL 상수 SSOT 재사용
     expect(KIND_AXIS_LABELS.ribbon.full).toBe(RIBBON_BADGE_LABEL);
     expect(AGG, 'RIBBON_BADGE_LABEL export 누락').toContain('export const RIBBON_BADGE_LABEL');
@@ -65,11 +67,12 @@ test.describe('AC1/AC2: KIND_AXIS_LABELS — 4분류 full/abbr 상수', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC1: 일간 세로축 좌측 행 라벨 — 4분류 full 열거', () => {
   test('AC1-3: 세로축 라벨이 KIND_AXIS_LABELS.full 4종을 위→아래로 표기', () => {
-    expect(RESV_PAGE, '초진 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.new.full}');
-    expect(RESV_PAGE, '재진 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.returning.full}');
-    expect(RESV_PAGE, '힐러 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.healer.full}');
-    expect(RESV_PAGE, '리본(발각질) 세로축 라벨 누락').toContain('{KIND_AXIS_LABELS.ribbon.full}');
-    // T-20260702-foot-RESVGRID-4ROW-BODYSPLIT supersede: 세로축이 4개 물리 행(초진/재진/힐러/리본)으로 분할됨 →
+    // T-20260702-foot-RESVGRID-4ROW-BODYSPLIT supersede: 세로축 4개 물리 행 = DAY_ROW_KINDS 배열 구성.
+    //   full 라벨은 JSX 직접이 아니라 배열 항목 label 로 참조(label: KIND_AXIS_LABELS.{kind}.full).
+    expect(RESV_PAGE, '초진 세로축 라벨 누락').toContain('label: KIND_AXIS_LABELS.new.full');
+    expect(RESV_PAGE, '재진 세로축 라벨 누락').toContain('label: KIND_AXIS_LABELS.returning.full');
+    expect(RESV_PAGE, '힐러 세로축 라벨 누락').toContain('label: KIND_AXIS_LABELS.healer.full');
+    expect(RESV_PAGE, '리본 세로축 라벨 누락').toContain('label: KIND_AXIS_LABELS.ribbon.full');
     //   rowlabel testid 는 row.kind(4행 각각) 로 렌더. full 라벨 4종은 DAY_ROW_KINDS 구성으로 세로축에 위→아래 표기.
     expect(RESV_PAGE, '세로축 rowlabel testid 회귀').toContain('data-testid={`resv-day-rowlabel-${row.kind}`}');
   });
