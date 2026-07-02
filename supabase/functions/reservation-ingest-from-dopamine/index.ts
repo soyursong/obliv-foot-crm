@@ -426,6 +426,14 @@ Deno.serve(async (req) => {
       //   reservations.customer_name denormalize 누락 → 목록 표시 NULL이었음.
       //   비-도파민 예약은 이미 채워지는 旣존 컬럼 — 동일 denormalize 패턴 정합.
       customer_name:    name,
+      // T-20260702-foot-DOPAINGEST-PHONE-HOVER-MISSING: 캘린더 호버 '번호 없음' 수정.
+      //   FE(Reservations.tsx resvAsCheckIn→CustomerHoverCard)는 reservations.customer_phone
+      //   스냅샷을 읽는데, 본 EF가 phone을 customers.phone에만 적재하고 reservations엔
+      //   denormalize 누락 → 호버 공란이었음. customer_name과 동일 denormalize 패턴 정합.
+      //   비동행만 적재: phoneE164는 이 경로에서 필수+E.164 검증 완료(:171-176)라
+      //   reservations_customer_phone_e164_chk 정합 보장. 동행(§444)은 무폰 축(미검증 phone
+      //   포함) → 미삽입, NULL 유지(설계상 정상, CHECK NULL 허용). CHECK 위반·오염 원천 차단.
+      ...(!isCompanion && phoneE164 ? { customer_phone: phoneE164 } : {}),
       clinic_id:        clinicId,                          // DB 조회 결과 직접 할당 (조건부 아님)
       source_system:    sourceSystem ?? 'dopamine',
       created_via:      createdVia,                        // 생성경로 (enum v1.1 정합)
