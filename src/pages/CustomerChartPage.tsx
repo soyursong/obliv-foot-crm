@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
-import { canViewRrn } from '@/lib/permissions';
+import { canViewRrn, isStaffUnlockRole } from '@/lib/permissions';
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay, formatDateDots, formatDateTimeDots } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO, staffRoleSortIndex } from '@/lib/status';
@@ -6687,7 +6687,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold text-muted-foreground">구매 패키지(티켓)</div>
-                  {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                  {/* T-20260702-foot-CODY-ALL-PKG-PERM (김주연 총괄 repro pin): 코디(coordinator)가 2번차트 패키지 섹션에서
+                      '구입 티켓 추가'/'항목 추가' 버튼 미노출 → 계좌이체 선결제 패키지 생성 불가.
+                      packages RLS write set = STAFF_UNLOCK_ROLES(coordinator 포함, 동반 packages_staff_unlock_6menu 마이그로 DB write 정상)인데
+                      이 FE 버튼 게이트만 admin/manager/consultant 하드코딩 = FE/RLS 불일치(lock-out-in-disguise). first-failing-link = 이 버튼 미노출(체크인 게이트 아님).
+                      → 버튼 게이트를 isStaffUnlockRole 로 정합(FE=RLS). director/therapist 도 RLS write 보유 → 동일 latent lock-out 해소. */}
+                  {isStaffUnlockRole(profile?.role) && (
                     <div className="flex items-center gap-1.5">
                       {/* T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 active 패키지에 항목 합산 */}
                       {packages.some((p) => p.status === 'active') && (
@@ -6754,8 +6759,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               }`}>
                                 {PKG_STATUS_KO[p.status] ?? p.status}
                               </span>
-                              {/* AC-1/AC-3: 수정·삭제 버튼 — admin/manager/consultant만 */}
-                              {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                              {/* AC-1/AC-3: 수정·삭제 버튼. T-20260702-foot-CODY-ALL-PKG-PERM: 생성(구입 티켓 추가)과 동일 role-set으로 정합
+                                  → coordinator/director/therapist 도 자기가 만든 패키지 수정/삭제 가능(FE=RLS packages write set). 반쪽 권한(생성만·수정불가) 방지. */}
+                              {isStaffUnlockRole(profile?.role) && (
                                 <span className="flex items-center gap-0.5">
                                   <button
                                     type="button"
