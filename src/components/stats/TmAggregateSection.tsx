@@ -79,7 +79,7 @@ export default function TmAggregateSection({
   // NULL/미매칭이면서 도파민 ingest 예약이면 도파민/TM 유입 라벨, 그 외 미지정.
   // (필터용 tmOfRes/tmOfCheckIn 은 raw uid 유지 — onlyMine/TM팀만 의미 보존.)
   const labelForRes = (r: TmResRow): string =>
-    tmCounselorLabel(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name);
+    tmCounselorLabel(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name, r.registrar_name);
   const labelForCheckIn = (ci: TmCheckInRow): string => {
     const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
     if (!matched) return WALKIN;

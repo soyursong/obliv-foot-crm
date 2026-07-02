@@ -237,6 +237,12 @@ export interface TmResRow {
   //   도파민 ingest 예약 마커. 상담사(created_by) NULL/미매칭 행의 provenance 라벨 파생에만 사용.
   //   ⚠ 표시 전용 — 어떤 컬럼도 write 하지 않는다(NULL 유지 = 이중계상 방지 fail-closed).
   source_system: string | null;
+  // T-20260702-foot-TMSTATS-DOPAMINE-REGISTRANT-MISSING (read-only):
+  //   예약등록자 표시 스냅샷 = 예약관리 페이지 '등록자'의 SSOT(reservations.registrar_name).
+  //   도파민/TM 경로 예약은 created_by=NULL(firewall §416)이라 created_by→직원명 resolve 실패 →
+  //   TM집계에서 실제 등록자('진운선')가 안 보였음. 이 컬럼으로 예약관리와 동일하게 등록자명 표시.
+  //   ⚠ 표시 전용 — created_by/인센티브 산식으로 승격 금지(§416 이중계상 격리 유지).
+  registrar_name: string | null;
   customers?: { name: string | null; phone: string | null } | null;
 }
 
@@ -303,7 +309,7 @@ export async function fetchTmAggregate(
     return all;
   };
 
-  const resSelect = 'id, reservation_date, reservation_time, created_at, created_by, status, referral_source, source_system, customers(name, phone)';
+  const resSelect = 'id, reservation_date, reservation_time, created_at, created_by, status, referral_source, source_system, registrar_name, customers(name, phone)';
 
   const [registered, scheduled, visitedRaw, staffRows] = await Promise.all([
     // A: 예약등록건수 (created_at KST 경계 명시)
@@ -372,15 +378,26 @@ export const TM_DOPAMINE_LABEL = '도파민/TM 유입 (상담사 미배정)';
  * @param createdBy    reservations.created_by (user_profiles.id) 또는 null
  * @param sourceSystem reservations.source_system ('dopamine' 마커 등) 또는 null
  * @param staffName    createdBy 가 풋 직원에 매칭될 때의 이름(staffMap[uid]?.name) — 미매칭이면 null/undefined
+ * @param registrarName reservations.registrar_name (예약관리 '등록자'의 SSOT 스냅샷) 또는 null
+ *
+ * T-20260702-foot-TMSTATS-DOPAMINE-REGISTRANT-MISSING:
+ *   도파민/TM 경로 예약은 created_by=NULL(firewall §416)이라 (1)번 직원명 resolve 실패.
+ *   예약관리 페이지는 registrar_name 스냅샷으로 '진운선'을 표시하는데 TM집계는 이 축을 안 봐서
+ *   등록자명이 안 보였다. (2)번으로 registrar_name 을 예약관리와 동일 SSOT로 표시한다.
+ *   ⚠ 직접등록 예약은 (1)번(직원명)에서 이미 잡혀 동작 불변 — 회귀 0. registrar_name 은 표시 전용,
+ *      created_by/집계 귀속/인센티브 산식으로 승격하지 않는다(§416 이중계상 격리 유지).
  */
 export function tmCounselorLabel(
   createdBy: string | null | undefined,
   sourceSystem: string | null | undefined,
   staffName: string | null | undefined,
+  registrarName?: string | null | undefined,
 ): string {
-  if (createdBy && staffName) return staffName;            // 풋 직원이 등록 → 직원명
-  if ((sourceSystem ?? '').trim() === 'dopamine') return TM_DOPAMINE_LABEL; // 도파민 유입 → provenance
-  return TM_UNASSIGNED_LABEL;                              // 그 외 NULL/미매칭 → 미지정
+  if (createdBy && staffName) return staffName;            // (1) 풋 직원이 등록 → 직원명 (직접등록 불변)
+  const rn = (registrarName ?? '').trim();
+  if (rn) return rn;                                        // (2) 예약등록자 스냅샷(=예약관리 '등록자') → '진운선' 등
+  if ((sourceSystem ?? '').trim() === 'dopamine') return TM_DOPAMINE_LABEL; // (3) 스냅샷도 없는 도파민 유입 → provenance
+  return TM_UNASSIGNED_LABEL;                              // (4) 그 외 NULL/미매칭 → 미지정
 }
 
 /** 카테고리 코드 → 한국어 표시 */
