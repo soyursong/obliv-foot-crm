@@ -1224,61 +1224,66 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       <Sheet open={true} onOpenChange={(o) => { if (!o) requestClose(); }}>
         <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
           <SheetHeader>
-            {/* T-20260629-foot-CHART1-FORMAT-UNIFY AC-2: 헤더 단독 고객차트 버튼 → 대시보드(checkIn) 기준
-                [고객차트][진료차트] 2버튼 행으로 통일(아래 본문). 헤더는 성함만. */}
+            {/* T-20260629-foot-CHART1-FORMAT-UNIFY AC-2 → T-20260702-foot-CHART1-CUSTINFO-DASH-LAYOUT-UNIFY:
+                고객관리 1번차트 상단을 대시보드(checkIn) 1번차트 상단과 동일 레이아웃으로 통일.
+                헤더 = 성함 + 차트번호 배지(chartNoBadge) + 초진/재진 배지(latestCheckIn 기준) — 대시보드 SheetTitle과 동일 구조.
+                [고객차트][진료차트] 2버튼 행은 아래 본문(대시보드 기준). */}
             <div className="flex items-center justify-between gap-2">
               <SheetTitle className="flex items-center gap-2 flex-1 flex-wrap">
                 {customerMode.customerName}
+                {/* 차트번호 인접 표기 — 대시보드 1번차트 상단과 동일(화면당 1회 노출) */}
+                <span data-testid="chartno-inline" className="text-xs font-mono font-normal text-teal-600 shrink-0">{chartNoBadge(effectiveChartNumber)}</span>
+                {/* 초진/재진 배지 — 대시보드와 동일하게 성함 옆 상단 배치 (최근 방문유형 기준) */}
+                {latestCheckIn && (latestCheckIn.visit_type === 'new' ? (
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">초진</span>
+                ) : (
+                  /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 재진=초록(firstvisit) */
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-firstvisit-100 text-firstvisit-700 shrink-0">재진</span>
+                ))}
               </SheetTitle>
             </div>
           </SheetHeader>
 
           {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 하위 메모 입력 dirty 추적 */}
           <div className="mt-4 space-y-4" onInput={markDirty}>
-            {/* ── T-20260630-foot-SIDEBAR-LAYOUT-RRN-DOB 요청1 → T-20260630-foot-SIDEBAR-CUST-HEIGHT-FONT-HALF2:
-                고객관리 사이드바 식별정보 섹션. baseline(3a7fabd) 대비 세로높이·폰트·여백·아이콘을 동일 비율(~50%)로 추가 축소.
-                폰트 11→6px(원본 14px 대비 ~1/4·동일비율), 아이콘 12→6px(h-3→h-1.5), 행간 space-y-1→space-y-0.5,
-                항목내 gap-1→gap-0.5. 항목명/값 수평 중앙정렬(text-center, justify-center) 유지(중앙정렬 회귀 0).
-                가독성 가드: truncate 없음·flex-wrap 유지로 overflow/겹침 0. 사이드바 한정 — 하위 메모/패키지/서류 위젯 미변경. */}
-            <div className="space-y-0.5 text-center" data-testid="cust-info-section">
-              {/* 차트번호 */}
-              {effectiveChartNumber && (
-                <div className="text-[6px] font-semibold text-teal-700">{effectiveChartNumber}</div>
-              )}
-              {/* 연락처 */}
-              <div className="flex items-center justify-center gap-0.5 text-[6px] text-muted-foreground">
-                <Phone className="h-1.5 w-1.5 shrink-0" />
-                <span className="tabular-nums">{formatPhone(customerMode.customerPhone)}</span>
+            {/* ── T-20260630-foot-SIDEBAR-LAYOUT-RRN-DOB → T-20260702-foot-CHART1-CUSTINFO-DASH-LAYOUT-UNIFY:
+                고객관리 1번차트 상단 식별정보 섹션을 대시보드(checkIn) 1번차트 상단과 동일 레이아웃으로 통일.
+                기준(reference)=대시보드 상단: 좌측정렬(중앙정렬 제거), 폰트 text-sm(14px), 아이콘 h-3.5,
+                연락처=한 줄(Phone), 생년월일=한 줄(Calendar) — 대시보드 본문과 동일 클래스.
+                HALF2(9b019c8f)의 6px 축소·중앙정렬을 폐기하고 대시보드 정본으로 수렴(현장 판독 불가 해소).
+                차트번호·초진/재진 배지는 헤더 성함 옆으로 이동(대시보드와 동일, 화면당 1회). 사이드바 한정 — 하위 위젯 미변경. */}
+            <div className="space-y-1" data-testid="cust-info-section">
+              {/* 연락처 — 대시보드 상단 연락처 행과 동일(text-sm·h-3.5·좌측정렬) */}
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                  <span className="tabular-nums">{formatPhone(customerMode.customerPhone)}</span>
+                </span>
               </div>
 
               {/* T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 자동 표기.
                   PHI: rrn 평문/뒷자리 미노출, 서버 RPC 파생값(fn_customer_birthdates)만 표시.
-                  T-20260630-foot-SIDEBAR-LAYOUT-RRN-DOB 요청2: 주민번호 보유 고객 생년월일 자동연동 — 본 surface 旣적용(RPC 재사용·신규 디코딩/컬럼 0). */}
-              <div className="flex items-center justify-center gap-0.5 text-[6px] text-muted-foreground" data-testid="cust-detail-birthdate">
-                <Calendar className="h-1.5 w-1.5 shrink-0" />
+                  대시보드 상단 생년월일 행과 동일 클래스(text-sm·h-3.5·좌측정렬)로 통일. */}
+              <div className="flex items-center gap-1 text-sm text-muted-foreground" data-testid="cust-detail-birthdate">
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
                 <span className="tabular-nums">{birthDateDisplay ?? '생년월일 미등록'}</span>
               </div>
 
-              {/* AC9: 접수 상태 표시 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
-              <div className="flex items-center justify-center gap-1 flex-wrap">
-                <span className="text-[6px] text-muted-foreground">최근 접수</span>
+              {/* AC9: 최근 접수 상태 — 항상 표시 (T-20260511-CUSTMGMT 3차). 대시보드 상단과 동일 톤(text-sm·좌측정렬).
+                  초진/재진 배지는 헤더로 이동했으므로 이 행에서는 상태·시각만(중복 제거). */}
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+                <span>최근 접수</span>
                 {latestCheckIn ? (
                   <>
-                    <Badge variant="outline" className="text-[6px] px-1 py-0">
+                    <Badge variant="outline" className="text-xs px-1.5 py-0">
                       {STATUS_KO[latestCheckIn.status as keyof typeof STATUS_KO] ?? latestCheckIn.status}
                     </Badge>
-                    <span className="text-[6px] text-muted-foreground tabular-nums">
+                    <span className="tabular-nums">
                       {formatDateTimeDots(latestCheckIn.checked_in_at)}
                     </span>
-                    {latestCheckIn.visit_type === 'new' ? (
-                      <span className="inline-flex items-center rounded-full px-1 py-0 text-[6px] font-semibold bg-blue-100 text-blue-700">초진</span>
-                    ) : (
-                      /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 재진=초록(firstvisit). sage→A안 초록 통일 */
-                      <span className="inline-flex items-center rounded-full px-1 py-0 text-[6px] font-semibold bg-firstvisit-100 text-firstvisit-700">재진</span>
-                    )}
                   </>
                 ) : (
-                  <span className="text-[6px] text-muted-foreground italic">방문 이력 없음</span>
+                  <span className="italic">방문 이력 없음</span>
                 )}
               </div>
             </div>
