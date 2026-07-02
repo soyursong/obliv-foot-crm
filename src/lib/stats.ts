@@ -400,6 +400,27 @@ export function tmCounselorLabel(
   return TM_UNASSIGNED_LABEL;                              // (4) 그 외 NULL/미매칭 → 미지정
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260702-foot-TMSTATS-TEAMFILTER-ROLE — "TM팀만" 필터 SSOT
+//
+// "TM팀만" = 계정관리(user_profiles) role='tm' 계정만. 판정축을 TM집계 표시 라벨
+// (tmCounselorLabel 결과)과 동일하게 맞춰 필터·결과·집계 3자를 일치시킨다.
+//   · 기존: created_by 단일축(isTm(uid)) 판정 → 풋 TM팀 예약은 registrar_name 경로로 귀속돼
+//     created_by=데스크(admin/coordinator)라 TM 전건 누락(오집계). 반대로 데스크 계정이 그대로
+//     남아 "role≠TM 계정 포함"으로 보였다.
+//   · 정정: staffMap 에서 role='tm' 계정명 집합을 만들고, 표시 라벨(직원명·registrar_name)이
+//     그 집합에 들면 TM으로 판정. role 소스 = user_profiles.role (계약 v1.0 §2-3 enum 'tm';
+//     user_roles flip 은 게이트 SEQUENCED, 현행 소스 유지).
+// ⛔ 순수 함수 — read-only. 어떤 값도 write/승격하지 않는다.
+// ─────────────────────────────────────────────────────────────────────────
+export function tmRoleNames(staffMap: Record<string, TmStaffInfo>): Set<string> {
+  const s = new Set<string>();
+  for (const info of Object.values(staffMap ?? {})) {
+    if (info && info.role === 'tm' && info.name) s.add(info.name);
+  }
+  return s;
+}
+
 /** 카테고리 코드 → 한국어 표시 */
 export function categoryLabel(code: string): string {
   switch (code) {

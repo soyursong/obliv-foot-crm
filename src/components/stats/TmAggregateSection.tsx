@@ -9,6 +9,7 @@ import {
 import { seoulISODate } from '@/lib/format';
 import {
   tmCounselorLabel,
+  tmRoleNames,
   TM_UNASSIGNED_LABEL,
   TM_WALKIN_LABEL,
   type TmAggregateData,
@@ -66,8 +67,7 @@ export default function TmAggregateSection({
     return m;
   }, [registeredRes, scheduledRes]);
 
-  // TM 귀속 (롱래 tmOfRes / tmOfCheckIn 차용)
-  const tmOfRes = (r: TmResRow) => r.created_by || UNASSIGNED;
+  // TM 귀속 (롱래 tmOfCheckIn 차용) — 내원의 raw uid 귀속은 onlyMine('내 예약만') 판정용.
   const tmOfCheckIn = (ci: TmCheckInRow) => {
     if (ci.reservation_id && allResMap.has(ci.reservation_id)) {
       return allResMap.get(ci.reservation_id)!.created_by || UNASSIGNED;
@@ -76,8 +76,8 @@ export default function TmAggregateSection({
   };
 
   // 표시 라벨(provenance-aware). 상담사(created_by)가 매칭되는 풋 직원이면 직원명,
-  // NULL/미매칭이면서 도파민 ingest 예약이면 도파민/TM 유입 라벨, 그 외 미지정.
-  // (필터용 tmOfRes/tmOfCheckIn 은 raw uid 유지 — onlyMine/TM팀만 의미 보존.)
+  // NULL/미매칭이면서 registrar_name(예약등록자 스냅샷) 있으면 등록자명, 도파민 ingest 예약이면
+  // 도파민/TM 유입 라벨, 그 외 미지정. (onlyMine '내 예약만'은 raw uid(currentUserId)로 판정.)
   const labelForRes = (r: TmResRow): string =>
     tmCounselorLabel(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name, r.registrar_name);
   const labelForCheckIn = (ci: TmCheckInRow): string => {
@@ -85,7 +85,14 @@ export default function TmAggregateSection({
     if (!matched) return WALKIN;
     return labelForRes(matched);
   };
-  const isTm = (uid: string) => staffMap[uid]?.role === 'tm';
+
+  // T-20260702-foot-TMSTATS-TEAMFILTER-ROLE:
+  //   "TM팀만" = 계정관리 role='tm' 계정만. 판정축을 집계 표시 라벨(labelForRes/labelForCheckIn)과
+  //   동일하게 맞춰 필터·결과·집계 3자가 항상 일치한다. (기존 created_by 단일축 판정은 풋 TM팀이
+  //   registrar_name 경로로 귀속돼 created_by=데스크(admin/coordinator)라 TM 전건 누락 → 오집계였음.)
+  //   role 소스 = user_profiles.role (계약 v1.0 §2-3 enum 'tm'; user_roles flip 은 게이트 SEQUENCED, 현행 소스 유지).
+  const tmNameSet = useMemo(() => tmRoleNames(staffMap), [staffMap]);
+  const isTmLabel = (label: string) => tmNameSet.has(label);
 
   const isMyRecord = (uid: string | null) => !!uid && !!currentUserId && uid === currentUserId;
 
@@ -103,18 +110,18 @@ export default function TmAggregateSection({
     [visitedCI, onlyMine, currentUserId, allResMap],
   );
 
-  // "TM팀만" 필터 (role='tm')
+  // "TM팀만" 필터 (계정관리 role='tm' 계정만 — 표시 라벨 기준으로 필터·결과·집계 일치)
   const tmFilteredRegistered = useMemo(
-    () => (onlyTmRole ? filteredRegistered.filter((r) => isTm(tmOfRes(r))) : filteredRegistered),
-    [filteredRegistered, onlyTmRole, staffMap],
+    () => (onlyTmRole ? filteredRegistered.filter((r) => isTmLabel(labelForRes(r))) : filteredRegistered),
+    [filteredRegistered, onlyTmRole, tmNameSet, staffMap],
   );
   const tmFilteredScheduled = useMemo(
-    () => (onlyTmRole ? filteredScheduled.filter((r) => isTm(tmOfRes(r))) : filteredScheduled),
-    [filteredScheduled, onlyTmRole, staffMap],
+    () => (onlyTmRole ? filteredScheduled.filter((r) => isTmLabel(labelForRes(r))) : filteredScheduled),
+    [filteredScheduled, onlyTmRole, tmNameSet, staffMap],
   );
   const tmFilteredVisited = useMemo(
-    () => (onlyTmRole ? filteredVisited.filter((ci) => isTm(tmOfCheckIn(ci))) : filteredVisited),
-    [filteredVisited, onlyTmRole, staffMap, allResMap],
+    () => (onlyTmRole ? filteredVisited.filter((ci) => isTmLabel(labelForCheckIn(ci))) : filteredVisited),
+    [filteredVisited, onlyTmRole, tmNameSet, staffMap, allResMap],
   );
 
   const totals = useMemo(() => {
@@ -243,7 +250,7 @@ export default function TmAggregateSection({
           <button
             type="button"
             onClick={() => setOnlyTmRole((v) => !v)}
-            title="직책 TM(전화예약) 직원만 집계"
+            title="계정관리 직책이 TM인 계정만 집계"
             className={
               onlyTmRole
                 ? 'bg-teal-600 text-white px-3 py-1 rounded-md text-xs font-medium'
