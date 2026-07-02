@@ -653,7 +653,8 @@ export default function CalendarNoticePanel() {
                     <ul className="mt-1 space-y-0.5">
                       {n.handover_checklist_items.map((c) => (
                         <li key={c.id} className="flex items-center gap-1 text-[11px]">
-                          <span className={cn('text-xs', c.is_checked ? 'text-emerald-600' : 'text-muted-foreground')}>
+                          {/* T-20260702-foot-SIDEBAR-STAFFCAL-GRAY-DUTYWIDTH AC-1: 체크완료 emerald(무채색 테마서 chromatic 잔존) → 무채색 gray */}
+                          <span className={cn('text-xs', c.is_checked ? 'text-gray-700' : 'text-muted-foreground')}>
                             {c.is_checked ? '☑' : '☐'}
                           </span>
                           <span className={cn(c.is_checked && 'text-muted-foreground line-through')}>{c.label}</span>
