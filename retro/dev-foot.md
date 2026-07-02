@@ -39,3 +39,8 @@ revenue_insurance_split_spec v1.2 §2-2-1a 신설. NULL hira_score 분기에서 
 - 신규 컬럼·테이블·enum 추가 마이그는 P0 핫픽스라도 **DA CONSULT 회신=GO를 눈으로 확인한 뒤** apply/deploy-ready. `requested`/미회신 상태 배포 금지 — 핫픽스 긴급성이 게이트 면제 사유 아님.
 - 명칭(naming)은 SSOT 수렴 이슈 = DA 단독 소유. "수신측 컬럼 부재=계약결함 보정"처럼 보여도 *명칭이 SSOT에 있는지*는 내 판단축이 아니라 DA 게이트.
 - 롤백은 하류 의존(dopamine 필드제거) 검증 후 게이트. 증상 해소된 drift를 성급히 롤백하면 원 RED 재발 — rollback SQL 헤더 경고를 운영 순서로 준수.
+
+##  — T-20260702-foot-RESVLIST-TREATTYPE-STATUS-LAYOUT (착수보류)
+- 스크린샷 SSOT가 티켓 본문 화면명과 불일치할 수 있음. 판독으로 실제 화면 특정 후 착수할 것.
+- 판별 지표: '초' 텍스트 배지+폰뒷4+미수 배지+현재시각선 = 대시보드 통합시간표(DashboardTimeline). 예약관리 카드는 색 점(KIND_DOT)만.
+- AS-IS 서술("치료유형 중앙정렬+상태 별도 줄")이 코드 어디에도 없으면 추정수정 금지 → planner FOLLOWUP(scope_conflict). 특히 CHART-OPEN-GUARD surface.
