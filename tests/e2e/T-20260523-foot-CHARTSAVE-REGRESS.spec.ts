@@ -19,17 +19,20 @@ import { test, expect } from '@playwright/test';
 const describe = test.describe;
 const it = test;
 
-const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_KEY  =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
-  'eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.' +
-  'ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? 'https://rxlomoozakkjesdqjtvd.supabase.co';
+// 🔐 service_role 키는 절대 하드코딩 금지 — 환경변수 참조. 미설정 시 아래 describe 에서 전체 skip.
+// (T-20260702-foot-SVCKEY-GIT-EXPOSURE-ROTATE: 기존 하드코딩 JWT 제거·rotation 대응)
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
 const FOOT_CLINIC_ID  = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 const KIM_EJ_UID      = '2b613328-5c4e-43d3-8b8c-649806bc1095'; // kim@oblivseoul.kr
 
 describe('T-20260523-foot-CHARTSAVE-REGRESS', () => {
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  // env 미설정(로컬/CI) 시 DB 통합 회귀 전체 skip — service_role 키 없이는 실행 불가.
+  test.skip(!SERVICE_KEY, 'SUPABASE_SERVICE_ROLE_KEY 없음 — DB 통합 회귀(service role) 환경 skip');
+  // SERVICE_KEY 가 있으면 실제 클라이언트, 없으면(위 skip 으로 미실행) createClient 가 빈 키로
+  // throw 하지 않도록 no-op placeholder 전달. 실제 네트워크 호출은 skip 으로 발생하지 않음.
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY || 'skip-noop-key');
 
   // ── AC-1: 근본원인 특정 — kim@oblivseoul.kr clinic_id 보정 확인 ──────────────
   describe('AC-1: 근본원인 특정 및 검증', () => {
