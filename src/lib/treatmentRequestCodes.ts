@@ -51,13 +51,17 @@ export interface TreatmentRequestItem {
   existingEntity: ExistingExamEntity;
 }
 
-/** 치료신청 박스 표시 순서(현장 IMG_8740 구성 참고). */
+/**
+ * 치료신청 박스 표시 순서(reporter 김주연 총괄 지정 — T-20260702-foot-TREATREQ-ITEM-ORDER-RELABEL).
+ *   피검사 → KOH균검사 → 무좀 (PC+NL) → 내성 (PD) → 각질 (RB).
+ *   ⚠ 표시 배열 순서 + 라벨 표시 문자열만 변경. 각 항목의 key/axis/codes/existingEntity(코드매핑·저장·배정) 무접촉.
+ */
 export const TREATMENT_REQUEST_ITEMS: readonly TreatmentRequestItem[] = [
-  { key: 'podologue_pd',   label: '내성(PD)',    axis: 'treatment', codes: ['podologue'],                       existingEntity: null },
-  { key: 'ribbon_rb',      label: '각질(RB)',    axis: 'treatment', codes: ['ribbon'],                          existingEntity: null },
   { key: 'blood_test',     label: '피검사',      axis: 'exam',      codes: [],                                  existingEntity: 'blood_flag' },
   { key: 'koh_fungal_test',label: 'KOH균검사',   axis: 'exam',      codes: [],                                  existingEntity: 'koh_flag' },
-  { key: 'athlete_foot',   label: '무좀PC+NL',   axis: 'treatment', codes: ['preconditioning', 'unheated_laser'], existingEntity: null },
+  { key: 'athlete_foot',   label: '무좀 (PC+NL)', axis: 'treatment', codes: ['preconditioning', 'unheated_laser'], existingEntity: null },
+  { key: 'podologue_pd',   label: '내성 (PD)',   axis: 'treatment', codes: ['podologue'],                       existingEntity: null },
+  { key: 'ribbon_rb',      label: '각질 (RB)',   axis: 'treatment', codes: ['ribbon'],                          existingEntity: null },
 ] as const;
 
 /**
