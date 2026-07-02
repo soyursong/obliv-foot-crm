@@ -1489,12 +1489,16 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedic
         예약하기
       </button>
 
-      {/* 4. 수납 — T-20260515-foot-CONTEXT-MENU-4ITEM AC-3 (고객관리: 대시보드 안내) */}
+      {/* 4. 수납 — T-20260515-foot-CONTEXT-MENU-4ITEM AC-3 (고객관리: 대시보드 안내)
+          T-20260702-foot-PKG-CREATE-CHECKIN-GATE-REMOVE (김주연 총괄): 계좌이체 선결제→미내원 패키지 생성이 정상 업무.
+          기존 "체크인 후 수납" dead-end = 요청 안 한 check-in precondition → 미체크인 고객은 결제·패키지 등록 자체가 막힘.
+          변경: 고객차트를 열어 결제/영수증 + 패키지(패키지 탭 '구입 티켓 추가') 등록으로 연결(체크인 비종속, packages insert = check_in FK 없음).
+          내원 시 대시보드 수납 경로는 그대로 유지(무회귀). */}
       <button
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
         onClick={() => {
-          toast('대시보드에서 해당 환자 체크인 후 수납해주세요');
-          onClose();
+          onOpenChart(customer);
+          toast('미체크인(선결제) 고객: 차트에서 결제·패키지를 등록하세요. (내원 시 대시보드 수납도 가능)');
         }}
       >
         <CreditCard className="h-4 w-4 text-teal-600 shrink-0" />
