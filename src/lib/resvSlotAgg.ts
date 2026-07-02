@@ -13,8 +13,28 @@ export type ResvKind = 'new' | 'returning' | 'healer' | 'other';
  *   ⚠️ 중복 구현 금지: 예약격자 헤더 리본 카운트는 반드시 이 predicate 를 통한다(힐러 시맨틱과 동일 원칙).
  */
 export const RIBBON_BRIEF_KEYWORD = '발각질'; // 간략메모 칩 '발각질케어' 및 자유입력 변형 포괄
-/** 격자 헤더 배지 라벨. field-soak 총괄 재확인 게이트 — 기본값=간략메모 칩 라벨 계열('발각질'), 반대 시 '리본'으로 1줄 교체. */
-export const RIBBON_BADGE_LABEL = '발각질';
+/**
+ * 격자 헤더 배지 '전체(full)' 라벨.
+ * T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR: RESVAXIS-HEALER-RIBBON field_soak_recheck 해소 —
+ *   김주연 총괄이 '리본(발각질)'로 확정 → 기본값 '발각질' → '리본(발각질)' 1줄 교체(soak recheck close).
+ */
+export const RIBBON_BADGE_LABEL = '리본(발각질)';
+
+/**
+ * T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR: 세로축 4분류 축약 표기(시간칸 밑 '초-재-힐-리').
+ *   전체(full) 라벨 = 초진/재진/힐러/리본(발각질). 축약(abbr) = 초/재/힐/리. 순서·정합 SSOT.
+ *   ⚠️ 시간칸 헤더처럼 폭이 좁은 곳은 abbr, 여유 있는 곳(요일 헤더 등)은 full 사용.
+ */
+export const KIND_AXIS_LABELS = {
+  /** 초진(new) */
+  new: { full: '초진', abbr: '초' },
+  /** 재진(returning) */
+  returning: { full: '재진', abbr: '재' },
+  /** 힐러(healer) */
+  healer: { full: '힐러', abbr: '힐' },
+  /** 리본(발각질) — 간략메모 [발각질케어] 칩 기준 */
+  ribbon: { full: RIBBON_BADGE_LABEL, abbr: '리' },
+} as const;
 
 /** 간략메모(brief_note)가 리본(발각질케어) 칩인지 판정. 취소 제외 등 상위 규칙은 호출측이 적용. */
 export function isRibbonBrief(brief_note?: string | null): boolean {
