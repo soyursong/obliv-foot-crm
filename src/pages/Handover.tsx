@@ -495,7 +495,10 @@ export default function Handover() {
       {canSeeDutyRoster && clinic && (
         <section className="shrink-0 p-4" data-testid="handover-tab-duty">
           <div className="mb-3 flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-teal-600" />
+            {/* T-20260702-foot-SIDEBAR-STAFFCAL-GRAY-DUTYWIDTH: 의사 근무표 헤더 아이콘 warm 잔존 제거.
+                text-teal-600(=THEME-MONOCHROME 램프에서 Umber #6E6353 브라운으로 렌더)이 근무표 페이지에
+                남은 마지막 브라운 소스 → 직원 근무 캘린더 헤더 아이콘(text-gray-500)과 동일 무채색으로 통일. */}
+            <CalendarDays className="h-4 w-4 text-gray-500" />
             <h2 className="text-base font-semibold">의사 근무표</h2>
             <span className="hidden text-xs text-muted-foreground sm:inline">· 원장 근무 캘린더</span>
           </div>
