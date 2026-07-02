@@ -9,9 +9,9 @@
 | 레포 | HEAD 하드코딩 키 | 조치 |
 |------|-----------------|------|
 | obliv-foot-crm | **0건** ✅ (fc7d7132 에서 env ref+skip 교체) | dev-foot 완료·push |
-| obliv-women-crm | **1건 잔존** ❌ `tests/e2e/T-20260523-foot-CHARTSAVE-REGRESS.spec.ts` (foot 하드포크 상속본) | **미조치 — 아래 §3** |
+| obliv-women-crm | **0건** ✅ (2026-07-02 spec 파일 삭제 `81ad7d03`, dev-women 실행) | **조치 완료 — §3-3(a) 결론대로 HEAD 삭제** |
 
-> ⚠ **AC3(두 레포 HEAD 재스캔 0건) 미충족**: women HEAD 에 동일 JWT 가 **라이브로 존재**. women 은 dev-women 도메인 → dev-foot 도메인 격리(§5)로 직접 write 불가. planner 라우팅 필요.
+> ✅ **AC3(두 레포 HEAD 재스캔 0건) 충족** (2026-07-02 갱신): dev-women 이 women HEAD 에서 foot dead-weight spec 삭제(`81ad7d03`, main push). 양 레포 origin/main 전수 재스캔(`git grep -nE "eyJ[A-Za-z0-9_-]{30,}"`) → **하드코딩 service_role JWT 0건**. (당초 women 은 dev-foot 도메인 격리로 직접 write 불가 → dev-women 라우팅으로 해소.)
 
 ## 1. 히스토리 상주 범위
 
