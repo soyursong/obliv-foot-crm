@@ -1,0 +1,228 @@
+{
+  "ticket": "T-20260701-foot-STAFF-ROSTER-DEDUP",
+  "generated_note": "AC-3 PASS + #6 reconcile PASS 반영 apply-resolve (READ-ONLY)",
+  "prod_writes": 0,
+  "gate_input": [
+    {
+      "n": 1,
+      "name": "박소예",
+      "dup_id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+      "dup_active": true,
+      "dup_user_id": null,
+      "canon_id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+      "canon_active": false,
+      "canon_email": "yoonha62@gmail.com",
+      "resolve_note": "email→staff.id 정확히 1행 매칭 (active=false).",
+      "reattribution_expected": {
+        "by": {
+          "duty_roster.doctor_id": 8,
+          "package_sessions.performed_by": 2,
+          "room_assignments.staff_id": 2,
+          "customers.assigned_staff_id": 0
+        },
+        "total": 12
+      },
+      "canon_current_refs": 0,
+      "all_staff_rows_for_name": [
+        {
+          "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+          "active": false,
+          "role": "therapist",
+          "up_email": "yoonha62@gmail.com",
+          "up_active": true
+        },
+        {
+          "id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+          "active": true,
+          "role": "therapist",
+          "up_email": null,
+          "up_active": null
+        }
+      ],
+      "dup_eq_canon": "ok"
+    },
+    {
+      "n": 2,
+      "name": "장예지",
+      "dup_id": "a8ffcea8-bbfc-46e7-841b-8192d1d8a3cd",
+      "dup_active": false,
+      "dup_user_id": null,
+      "canon_id": "0237eba4-d347-4251-bd61-32390f197f22",
+      "canon_active": true,
+      "canon_email": "jangyeji1242@naver.com",
+      "resolve_note": "email→staff.id 정확히 1행 매칭 (active=true).",
+      "reattribution_expected": {
+        "by": {
+          "duty_roster.doctor_id": 8,
+          "package_sessions.performed_by": 0,
+          "room_assignments.staff_id": 0,
+          "customers.assigned_staff_id": 0
+        },
+        "total": 8
+      },
+      "canon_current_refs": 0,
+      "all_staff_rows_for_name": [
+        {
+          "id": "a8ffcea8-bbfc-46e7-841b-8192d1d8a3cd",
+          "active": false,
+          "role": "coordinator",
+          "up_email": null,
+          "up_active": null
+        },
+        {
+          "id": "0237eba4-d347-4251-bd61-32390f197f22",
+          "active": true,
+          "role": "coordinator",
+          "up_email": "jangyeji1242@naver.com",
+          "up_active": true
+        }
+      ],
+      "dup_eq_canon": "ok"
+    },
+    {
+      "n": 3,
+      "name": "김지혜",
+      "dup_id": "5f741eba-7397-46ac-979b-11c31fc72eb4",
+      "dup_active": false,
+      "dup_user_id": null,
+      "canon_id": "735dd27a-75de-4599-86e2-9d5d04b64015",
+      "canon_active": true,
+      "canon_email": "wlgp3907@naver.com",
+      "resolve_note": "email→staff.id 정확히 1행 매칭 (active=true).",
+      "reattribution_expected": {
+        "by": {
+          "duty_roster.doctor_id": 9,
+          "package_sessions.performed_by": 0,
+          "room_assignments.staff_id": 0,
+          "customers.assigned_staff_id": 0
+        },
+        "total": 9
+      },
+      "canon_current_refs": 0,
+      "all_staff_rows_for_name": [
+        {
+          "id": "5f741eba-7397-46ac-979b-11c31fc72eb4",
+          "active": false,
+          "role": "coordinator",
+          "up_email": null,
+          "up_active": null
+        },
+        {
+          "id": "735dd27a-75de-4599-86e2-9d5d04b64015",
+          "active": true,
+          "role": "coordinator",
+          "up_email": "wlgp3907@naver.com",
+          "up_active": true
+        }
+      ],
+      "dup_eq_canon": "ok"
+    },
+    {
+      "n": 4,
+      "name": "서은정",
+      "dup_id": "42ca1057-06c8-4183-91ab-b9ab5a7c3a26",
+      "dup_active": false,
+      "dup_user_id": null,
+      "canon_id": "1d2165fa-5263-4521-9402-d19b8ceae451",
+      "canon_active": true,
+      "canon_email": "bonny_31@naver.com",
+      "resolve_note": "email→staff.id 정확히 1행 매칭 (active=true).",
+      "reattribution_expected": {
+        "by": {
+          "duty_roster.doctor_id": 0,
+          "package_sessions.performed_by": 0,
+          "room_assignments.staff_id": 3,
+          "customers.assigned_staff_id": 0
+        },
+        "total": 3
+      },
+      "canon_current_refs": 25,
+      "all_staff_rows_for_name": [
+        {
+          "id": "42ca1057-06c8-4183-91ab-b9ab5a7c3a26",
+          "active": false,
+          "role": "therapist",
+          "up_email": null,
+          "up_active": null
+        },
+        {
+          "id": "1d2165fa-5263-4521-9402-d19b8ceae451",
+          "active": true,
+          "role": "therapist",
+          "up_email": "bonny_31@naver.com",
+          "up_active": true
+        }
+      ],
+      "dup_eq_canon": "ok"
+    },
+    {
+      "n": 5,
+      "name": "김민경",
+      "dup_id": "3d881cff-40e1-4a1a-9310-5f1482cdd1b8",
+      "dup_active": false,
+      "dup_user_id": null,
+      "canon_id": null,
+      "canon_active": null,
+      "canon_email": "alsrud102938@naver.com",
+      "resolve_note": "⚠ email alsrud102938@naver.com 매칭 staff 0행 — supervisor 바인딩 시 auth/up 직접 확인 필요.",
+      "reattribution_expected": {
+        "by": {
+          "duty_roster.doctor_id": 0,
+          "package_sessions.performed_by": 0,
+          "room_assignments.staff_id": 0,
+          "customers.assigned_staff_id": 0
+        },
+        "total": 0
+      },
+      "canon_current_refs": null,
+      "all_staff_rows_for_name": [
+        {
+          "id": "ca0e8887-1163-4c0e-bb43-76b0d56ae383",
+          "active": true,
+          "role": "coordinator",
+          "up_email": "test@medibuilder.com",
+          "up_active": true
+        },
+        {
+          "id": "3d881cff-40e1-4a1a-9310-5f1482cdd1b8",
+          "active": false,
+          "role": "coordinator",
+          "up_email": null,
+          "up_active": null
+        }
+      ],
+      "dup_eq_canon": "ok"
+    },
+    {
+      "n": 6,
+      "name": "정혜인",
+      "dup_id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+      "dup_active": false,
+      "dup_user_id": null,
+      "canon_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+      "canon_active": null,
+      "canon_email": "정연주(joo4442@naver.com)",
+      "resolve_note": "reconcile 게이트 확정 CANON(정연주). AC-3 5계정 밖 — p6_reconcile_gate PASS.",
+      "reattribution_expected": {
+        "by": {
+          "duty_roster.doctor_id": 0,
+          "package_sessions.performed_by": 0,
+          "room_assignments.staff_id": 2,
+          "customers.assigned_staff_id": 0
+        },
+        "total": 2
+      },
+      "canon_current_refs": 31,
+      "all_staff_rows_for_name": [
+        {
+          "id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+          "active": false,
+          "role": "consultant",
+          "up_email": null,
+          "up_active": null
+        }
+      ],
+      "dup_eq_canon": "ok"
+    }
+  ]
+}
