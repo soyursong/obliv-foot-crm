@@ -1,6 +1,22 @@
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, CSSProperties, TouchEvent as RTouchEvent, MouseEvent as RMouseEvent } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
+// T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: 예약 드래그 HTML5 네이티브 DnD → @dnd-kit(TouchSensor) 이식.
+//   갤럭시탭(터치)에서 HTML5 draggable 死 → 롱레(happy-flow-queue) DnD 패턴 재사용(기존 라이브러리, 신규 npm 아님).
+import {
+  DndContext,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Download, Loader2, Plus, TrendingUp, User, X } from 'lucide-react';
@@ -355,6 +371,106 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
   }
 
   return { ok: true, reservationId: savedId };
+}
+
+// T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: 드래그 가능한 예약 카드 wrapper.
+//   롱레(happy-flow-queue) DraggableRes 패턴 재사용 — confirmed 예약만 드래그(disabled), 터치는 TouchSensor long-press 후 활성.
+//   짧은 탭은 activation constraint 로 드래그 미발동 → 내부 카드 onClick(상세/선택) 그대로 통과.
+function DraggableResv({ resId, disabled, children }: { resId: string; disabled?: boolean; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `resv-${resId}`,
+    data: { resId },
+    disabled,
+  });
+  const [isPressing, setIsPressing] = useState(false);
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPressTimer = useCallback(() => {
+    if (pressTimerRef.current !== null) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setIsPressing(false);
+  }, []);
+
+  // dnd-kit listeners 에 long-press 비주얼·햅틱 피드백 병합 (롱레 패턴)
+  const dndListeners = listeners as Record<string, ((e: RTouchEvent<HTMLDivElement>) => void) | undefined> | undefined;
+  const mergedListeners = disabled
+    ? {}
+    : {
+        ...dndListeners,
+        onTouchStart: (e: RTouchEvent<HTMLDivElement>) => {
+          dndListeners?.onTouchStart?.(e);
+          setIsPressing(true);
+          // 950ms: 드래그 활성화(1000ms) 직전 햅틱 발화 → 즉각적인 느낌
+          pressTimerRef.current = setTimeout(() => {
+            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+            setIsPressing(false);
+          }, 950);
+        },
+        onTouchEnd: (e: RTouchEvent<HTMLDivElement>) => {
+          dndListeners?.onTouchEnd?.(e);
+          clearPressTimer();
+        },
+        onTouchCancel: (e: RTouchEvent<HTMLDivElement>) => {
+          dndListeners?.onTouchCancel?.(e);
+          clearPressTimer();
+        },
+      };
+
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? 'relative' : undefined,
+    touchAction: disabled ? undefined : 'none',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...mergedListeners}
+      {...(disabled ? {} : attributes)}
+      className={cn(
+        'w-full min-w-0 transition-transform duration-150',
+        isDragging && 'opacity-60 shadow-lg',
+        !isDragging && isPressing && 'scale-[1.02] shadow-md ring-2 ring-teal-400 ring-offset-1',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// 드롭 가능한 시간 슬롯 wrapper (td=주간 / div=일간 공용). allowed=false 면 droppable 비활성(불가 슬롯).
+//   over 하이라이트는 상위 DndContext.onDragOver 가 dropTarget 상태를 셋 → 기존 isDragOver className 로직 그대로 재사용.
+type DroppableSlotCellProps = {
+  as?: 'div' | 'td';
+  droppableId: string;
+  dateStr: string;
+  time: string;
+  allowed?: boolean;
+  children?: ReactNode;
+  // className/onClick/onContextMenu/title/data-* 등은 그대로 대상 엘리먼트로 forward
+  [key: string]: unknown;
+};
+function DroppableSlotCell({
+  as: Tag = 'div',
+  droppableId,
+  dateStr,
+  time,
+  allowed = true,
+  children,
+  ...rest
+}: DroppableSlotCellProps) {
+  const { setNodeRef } = useDroppable({ id: droppableId, data: { dateStr, time }, disabled: !allowed });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const Comp: any = Tag;
+  return (
+    <Comp ref={setNodeRef} {...(rest as Record<string, unknown>)}>
+      {children}
+    </Comp>
+  );
 }
 
 type ViewMode = 'week' | 'day';
@@ -1460,18 +1576,37 @@ export default function Reservations() {
     fetchWeek();
   };
 
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    setDraggedId(id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', id);
+  // T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: HTML5 네이티브 DnD 제거 → @dnd-kit 센서/핸들러로 대체.
+  //   센서: 데스크톱(MouseSensor 5px 이동 즉시) + 갤럭시탭(TouchSensor 1초 long-press, 5px tolerance).
+  //   TouchSensor activation constraint(delay) → 짧은 탭은 드래그 미발동(오발동 방지), 카드 onClick 정상 통과.
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 1000, tolerance: 5 } }),
+  );
+
+  const handleDndStart = (event: DragStartEvent) => {
+    const resId = (event.active.data.current as { resId?: string } | undefined)?.resId;
+    if (resId) setDraggedId(resId);
   };
 
-  const handleDrop = (e: React.DragEvent, dateStr: string, time: string) => {
-    e.preventDefault();
-    setDropTarget(null);
-    const id = e.dataTransfer.getData('text/plain') || draggedId;
-    if (id) reschedule(id, dateStr, time);
+  // over 슬롯 하이라이트 — 기존 isDragOver(dropTarget === `${dateStr}_${time}`) 로직 재사용.
+  const handleDndOver = (event: DragOverEvent) => {
+    const drop = event.over?.data.current as { dateStr?: string; time?: string } | undefined;
+    setDropTarget(drop?.dateStr && drop?.time ? `${drop.dateStr}_${drop.time}` : null);
+  };
+
+  // 드롭 종료 → reschedule(기존 write 경로, capacity/동일슬롯/상태 가드 재사용).
+  const handleDndEnd = (event: DragEndEvent) => {
+    const resId = (event.active.data.current as { resId?: string } | undefined)?.resId;
+    const drop = event.over?.data.current as { dateStr?: string; time?: string } | undefined;
     setDraggedId(null);
+    setDropTarget(null);
+    if (resId && drop?.dateStr && drop?.time) reschedule(resId, drop.dateStr, drop.time);
+  };
+
+  const handleDndCancel = () => {
+    setDraggedId(null);
+    setDropTarget(null);
   };
 
   // T-20260515-foot-RESV-CTX-HOVER: Reservation → minimal CheckIn 어댑터
@@ -1719,8 +1854,16 @@ export default function Reservations() {
   }, [rows, changedBy]);
 
   return (
-    /* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ①: 상단 배너 구간 컴팩트화 —
-       페이지 외곽 여백 p-6→px-4 py-2(세로 여백 ≈절반) + 헤더 mb-4→mb-2 로 전체 레이아웃 상향(격자 가시영역 확대). */
+    /* T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: 예약 드래그 전체를 @dnd-kit DndContext 로 감싼다(터치 대응). */
+    <DndContext
+      sensors={dndSensors}
+      onDragStart={handleDndStart}
+      onDragOver={handleDndOver}
+      onDragEnd={handleDndEnd}
+      onDragCancel={handleDndCancel}
+    >
+    {/* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ①: 상단 배너 구간 컴팩트화 —
+       페이지 외곽 여백 p-6→px-4 py-2(세로 여백 ≈절반) + 헤더 mb-4→mb-2 로 전체 레이아웃 상향(격자 가시영역 확대). */}
     <div className="flex h-full flex-col px-4 py-2">
       <div className="mb-2 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -1910,12 +2053,10 @@ export default function Reservations() {
             //   시간은 가로 한 줄(컬럼 헤더)로 유지하되, 각 시간 컬럼 아래로 예약을 클릭 없이 상시 세로 진열.
             //   세로축 그루핑(치료사/공간)은 여전히 없음(C5) — 세로는 단순 "그 시간의 예약 누적".
             const renderDayCard = (r: Reservation) => (
+              // T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: HTML5 draggable → DraggableResv(@dnd-kit) 래핑(터치 대응). confirmed만 드래그.
+              <DraggableResv key={r.id} resId={r.id} disabled={r.status !== 'confirmed'}>
               <div
-                key={r.id}
                 data-testid={`resv-card-${r.id}`}
-                draggable={r.status === 'confirmed'}
-                onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
-                onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
                 // T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑦: 고객박스 1번 클릭 → 선택(selectedResvId).
                 //   선택 후 Ctrl+X/C/V 로 잘라내기/복사/붙여넣기(주간캘린더와 동일 키보드 핸들러 재사용, L1000~).
                 //   stopPropagation → 셀 onClick(빈칸 신규예약 생성)로 버블 차단(카드 클릭이 신규예약을 트리거하지 않음).
@@ -2017,6 +2158,7 @@ export default function Reservations() {
                   )}
                 </div>
               </div>
+              </DraggableResv>
             );
 
             return (
@@ -2107,15 +2249,18 @@ export default function Reservations() {
                             if (!full) openNewSlot(selectedDay, time);
                           };
                           return (
-                            <div
+                            // T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: HTML5 onDrop → DroppableSlotCell(@dnd-kit). over 하이라이트는 DndContext.onDragOver→dropTarget(isDragOver) 재사용.
+                            //   일간 셀은 droppable 상시 활성 — 정원 초과 드롭은 reschedule 가드가 toast 로 반려(기존 동작 유지).
+                            <DroppableSlotCell
+                              as="div"
                               key={`${row.kind}-${time}`}
+                              droppableId={`day-${row.kind}-${dateStr}-${time}`}
+                              dateStr={dateStr}
+                              time={time}
                               // 4행 셀 testid: 초진 셀=resv-day-cell-new-{time}(하위호환) / 재진·힐러·리본=resv-day-cell-{kind}-{time}. (time,kind)당 유일.
                               data-testid={`resv-day-cell-${row.kind}-${time}`}
                               data-slot-time={time}
                               onClick={handleCellCreate}
-                              onDragOver={(e) => { e.preventDefault(); setDropTarget(`${dateStr}_${time}`); }}
-                              onDragLeave={() => setDropTarget(null)}
-                              onDrop={(e) => handleDrop(e, dateStr, time)}
                               title={full ? '정원 마감' : clipboard ? '붙여넣기 위치 지정 (Ctrl+V)' : '빈 칸 클릭 → 신규예약'}
                               className={cn(
                                 // 엑셀식 셀: 빈영역 전체가 클릭 어포던스(별도 (+) 버튼 없음). 4행 동등 높이 baseline = min-h-[56px](태블릿 탭 타깃).
@@ -2132,7 +2277,7 @@ export default function Reservations() {
                               )}
                             >
                               {cards.map(renderDayCard)}
-                            </div>
+                            </DroppableSlotCell>
                           );
                         })}
                       </Fragment>
@@ -2243,8 +2388,15 @@ export default function Reservations() {
                           clipboardTarget?.date === dateStr &&
                           clipboardTarget?.time === time;
                         return (
-                          <td
+                          // T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: HTML5 onDrop(td) → DroppableSlotCell(as="td", @dnd-kit).
+                          //   allowed 슬롯만 droppable(불가 슬롯 드롭 차단=기존 `if (allowed)` 가드 등가). over 하이라이트는 DndContext.onDragOver→dropTarget(isDragOver) 재사용.
+                          <DroppableSlotCell
+                            as="td"
                             key={d.toISOString() + time}
+                            droppableId={`week-${dateStr}-${time}`}
+                            dateStr={dateStr}
+                            time={time}
+                            allowed={allowed}
                             className={cn(
                               // T-20260617-foot-RESVMGMT-COMPACT AC-1: 시간 슬롯 row 높이/패딩 압축(h-12→h-8, p-1→p-0.5) — 절반 밀도, 한 화면 예약건 최대 노출.
                               // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 2차 절반 압축 — 빈 슬롯 최소높이 추가 축소(h-8→h-4, p-0.5→px-0.5 py-0) → 빈 행 32px→16px(~50%). 카드 있는 셀은 카드 높이로 자연 확장(align-top).
@@ -2255,16 +2407,13 @@ export default function Reservations() {
                               isDragOver && full && 'bg-red-100 ring-2 ring-inset ring-red-400',
                               isClipboardTarget && 'bg-green-50 ring-2 ring-inset ring-green-400',
                             )}
-                            onDragOver={(e) => { if (allowed) { e.preventDefault(); setDropTarget(cellKey); } }}
-                            onDragLeave={() => setDropTarget(null)}
-                            onDrop={(e) => { if (allowed) handleDrop(e, dateStr, time); }}
                             // T-20260615-foot-RESVPOPUP-3BUG AC3 (BUG-3): 빈 슬롯 우클릭 → (+) 버튼과 동일하게
                             //   예약상세 팝업 new-mode 오픈(openNewSlot). 기존엔 빈 슬롯에 우클릭 핸들러가 없어 (+) 경로와
                             //   동작 불일치(현장 질의 "두 진입경로가 왜 다름?"). 예약 카드 우클릭은 카드 자체 onContextMenu 가
                             //   stopPropagation 하므로 이 셀 핸들러로 버블되지 않음 → 카드=컨텍스트메뉴 / 빈슬롯=new-mode 유지.
                             //   🔒 L-002: 생성 capability·로직 불변(openNewSlot 재사용) — 진입 '배선'만 (+) 와 통일.
                             //   가드는 (+) 버튼(아래 slot-plus)과 동일: allowed && !full && 클립보드 없음.
-                            onContextMenu={(e) => {
+                            onContextMenu={(e: RMouseEvent<HTMLTableCellElement>) => {
                               if (allowed && !full && !clipboard) {
                                 e.preventDefault();
                                 openNewSlot(d, time);
@@ -2333,12 +2482,10 @@ export default function Reservations() {
                                   const colNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);     // 왼쪽 열 = 초진
                                   const colRest = visible.filter((r) => resvKind(r) !== 'new').sort(byTime);    // 오른쪽 열 = 재진+힐러(+기타)
                                   const renderCard = (r: Reservation) => (
+                                  // T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: HTML5 draggable → DraggableResv(@dnd-kit) 래핑(터치 대응). confirmed만 드래그.
+                                  <DraggableResv key={r.id} resId={r.id} disabled={r.status !== 'confirmed'}>
                                   <div
-                                    key={r.id}
                                     data-testid={`resv-card-${r.id}`}
-                                    draggable={r.status === 'confirmed'}
-                                    onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
-                                    onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
                                     // T-20260525-foot-RESV-CANCEL-ANYDATE: 카드 전체 영역 우클릭 → 컨텍스트메뉴
                                     // (이름 span 밖 클릭도 취소 메뉴 접근 가능 — 전일자 포함 날짜 무관 동작)
                                     // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC5: soft-delete 메뉴 노출 정책.
@@ -2610,6 +2757,7 @@ export default function Reservations() {
                                       </div>
                                     )}
                                   </div>
+                                  </DraggableResv>
                                   );
                                   // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 초진(colNew)/재진·힐러(colRest) 분류 유지. 카드가 하나도 없으면 컨테이너 자체 미렌더(빈 슬롯 유지).
                                   // T-20260702-foot-RESVCAL-DAYWEEK-LAYOUT-UNIFY (AC-2 partial — planner carve-out MSG-20260703-000711-xfkm):
@@ -2678,7 +2826,7 @@ export default function Reservations() {
                                 )}
                               </div>
                             )}
-                          </td>
+                          </DroppableSlotCell>
                         );
                       })}
                     </tr>
@@ -2834,6 +2982,7 @@ export default function Reservations() {
         onSaved={() => { toast.success('수납 완료'); setResvMiniPayTarget(null); }}
       />
     </div>
+    </DndContext>
   );
 }
 
