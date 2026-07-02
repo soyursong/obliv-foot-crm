@@ -1071,7 +1071,7 @@ export default function MedicalChartPanel({
 
   // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-3: 선택된(저장된) 차트의 진료의 변경이력 로드(차트 단위 조회).
   useEffect(() => {
-    if (!selectedChartId || selectedChartId.startsWith('__dummy__')) {
+    if (!selectedChartId) {
       setSignerAudit([]);
       setSignerAuditOpen(false);
       return;
@@ -1149,9 +1149,9 @@ export default function MedicalChartPanel({
     //   현장(문지은 6/11): 같은 환자 today-차트 2건 중복 INSERT 확인. loadData 완료 전엔 latch 금지.
     if (!chartsLoadedRef.current) return;
     const today = format(new Date(), 'yyyy-MM-dd');
-    const todays = charts.find(
-      (c) => c.visit_date === today && !c.id.startsWith('__dummy__'),
-    );
+    // T-20260702-foot-MEDCHART-PROGRESS-EMPTYSTATE-DUMMY: 더미 잔류 코드경로 제거.
+    //   하드코딩 더미 배열(UNHARDCODE에서 폐지) 이후 더미 id 차트는 생성 불가 → 죽은 가드 제거.
+    const todays = charts.find((c) => c.visit_date === today);
     if (todays) {
       setSelectedChartId(todays.id);
       resetForm(todays);
@@ -1222,11 +1222,6 @@ export default function MedicalChartPanel({
     //   formDate 미설정(로드 미완 등) 시 사용자가 "저장했는데 안 됨"으로 오인하지 않도록 안내.
     if (!customerId || !clinicId || !formDate) {
       toast.error('아직 차트 정보를 불러오는 중입니다 — 잠시 후 다시 저장해주세요');
-      return;
-    }
-    // T-20260526-foot-NAV-ARROW-DUMMY: 더미 차트는 저장 불가
-    if (selectedChartId?.startsWith('__dummy__')) {
-      toast.error('더미 데이터는 저장할 수 없습니다 (실제 고객 데이터 없음)');
       return;
     }
     // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-6 (FE 강제, 의료법): 진료의 없이 저장 차단.
@@ -1376,7 +1371,6 @@ export default function MedicalChartPanel({
       return;
     }
     if (!isDirector) { toast.error('삭제 권한이 없습니다 (원장/관리자 전용)'); return; }
-    if (target.id.startsWith('__dummy__')) { toast.error('더미 데이터는 삭제할 수 없습니다'); return; }
     setDeleting(true);
     try {
       // 삭제 수행자 auth.uid()(법적 진실원천은 audit_log.changed_by, deleted_by 는 보조 기록).
@@ -2871,7 +2865,6 @@ export default function MedicalChartPanel({
 
                   {/* 아코디언 엔트리 목록 */}
                   {filteredDisplayCharts.map(chart => {
-                    const isDummyEntry = chart.id.startsWith('__dummy__');
                     const isExpanded = expandedChartIds.has(chart.id);
                     const hasTreat = hasTreatMemo(chart);
                     const hasDoc = hasDocMemo(chart);
@@ -2883,7 +2876,6 @@ export default function MedicalChartPanel({
                       <div
                         key={chart.id}
                         className="border-b border-border/40"
-                        style={isDummyEntry ? { outline: '2px solid #facc15', outlineOffset: '-2px' } : undefined}
                         data-testid="medical-chart-timeline-entry"
                       >
                         {/* 엔트리 헤더 — T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-8/AC-9 재구성.
@@ -2919,13 +2911,10 @@ export default function MedicalChartPanel({
                                     title={hasRxItems ? '처방' : undefined}
                                   />
                                 </span>
-                                {/* AC-9: 날짜 좌측정렬(+더미) */}
+                                {/* AC-9: 날짜 좌측정렬 */}
                                 <span className="text-[11px] font-semibold text-teal-700 shrink-0">
                                   {fmtDateShort(chart.visit_date)}
                                 </span>
-                                {isDummyEntry && (
-                                  <span className="text-[9px] text-yellow-600 font-bold shrink-0">더미</span>
-                                )}
                                 {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY AC-1: soft-delete 행 배지(원장/관리자 '삭제된 차트 보기' 시에만 노출) */}
                                 {chart.is_deleted && (
                                   <span className="text-[9px] text-red-600 font-bold shrink-0 bg-red-50 border border-red-200 rounded px-1" data-testid="timeline-deleted-badge">삭제됨</span>
@@ -2964,9 +2953,9 @@ export default function MedicalChartPanel({
                             </button>
                           </div>
                           {/* T-20260620-foot-MEDCHART-DELETE-SAMEDAY-POLICY AC-1: 진료차트 삭제(무효화) 버튼.
-                              director/admin 한정(isDirector) + 더미·이미삭제행 제외 + softDeleteEnabled(런타임 스키마 게이트).
+                              director/admin 한정(isDirector) + 이미삭제행 제외 + softDeleteEnabled(런타임 스키마 게이트).
                               soft-delete만(의료법 §22-3 hard-delete 금지) — 확인 다이얼로그를 거쳐 handleConfirmDelete 실행. */}
-                          {isDirector && softDeleteEnabled && !isDummyEntry && !chart.is_deleted && (
+                          {isDirector && softDeleteEnabled && !chart.is_deleted && (
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setDeleteTarget(chart); setDeleteReason(''); }}
@@ -3127,7 +3116,7 @@ export default function MedicalChartPanel({
                             10rem로 수용해 truncate/overflow 없음. 데이터·회차 로직 무변경(표시 폭만). */}
                       {selectedChartId ? (
                         <>
-                          {`진료 기록 ${selectedChartId.startsWith('__dummy__') ? '[더미] ' : (!isReadOnly ? '수정 ' : '')}— `}
+                          {`진료 기록 ${!isReadOnly ? '수정 ' : ''}— `}
                           <span className="inline-block min-w-[10rem]" data-testid="medical-chart-form-title-date">
                             {fmtDateFull(formDate)}
                           </span>
@@ -3206,7 +3195,7 @@ export default function MedicalChartPanel({
                       서명블록(chart-signing-doctor)이 canonical → 상단 선택 입력 숨김. 신규/수정/더미만 노출.
                       AC-4: 라벨·select 한 줄 인라인. 경고문(미선택/의사없음)은 select 바로 아래 컬럼으로만
                       흘려 단일 행 외형 유지(formSigningDoctorId NOT NULL 강제·변경이력 로직 무변경). */}
-                  {!(isReadOnly && selectedChart && !selectedChartId?.startsWith('__dummy__')) && (
+                  {!(isReadOnly && selectedChart) && (
                   <div className="flex items-center gap-2 min-w-0 sm:ml-auto" data-testid="signing-doctor-select-block">
                     <label className="text-xs font-semibold text-muted-foreground whitespace-nowrap">담당 의사</label>
                     <div className="flex flex-col min-w-0">
@@ -3716,7 +3705,7 @@ export default function MedicalChartPanel({
 
                   {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 작성자 서명 — 기록 본문 말미.
                       상단 로그인 계정 인디케이터와 구분되는 '서명' 스타일(우측 정렬, 점선 구분, 작성: {이름}). */}
-                  {selectedChart && !selectedChartId?.startsWith('__dummy__') && (
+                  {selectedChart && (
                     <div className="flex flex-col items-end gap-1.5 border-t border-dashed border-gray-300 pt-2" data-testid="chart-signature-block">
                       {/* T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-5: 진료의 직인(있으면) 또는 이름 자동 표기.
                           저장된 signing_doctor_name 기준(출력시 임의 선택 의사 아님). 레거시(미보유) 행은 라벨 표기. */}
@@ -3810,7 +3799,7 @@ export default function MedicalChartPanel({
                         <Lock className="h-4 w-4" />
                         읽기전용 — 수정할 수 없어요
                       </div>
-                    ) : isReadOnly && !selectedChartId?.startsWith('__dummy__') ? (
+                    ) : isReadOnly ? (
                       <Button
                         size="lg"
                         className="flex-1 h-12 text-base bg-amber-500 hover:bg-amber-600 text-white"
@@ -3822,11 +3811,7 @@ export default function MedicalChartPanel({
                     ) : (
                       <Button
                         size="lg"
-                        className={`flex-1 h-12 text-base ${
-                          selectedChartId?.startsWith('__dummy__')
-                            ? 'bg-gray-300 hover:bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-neutral-800 hover:bg-neutral-900 text-white'
-                        }`}
+                        className="flex-1 h-12 text-base bg-neutral-800 hover:bg-neutral-900 text-white"
                         onClick={handleSave}
                         disabled={saving || !formDate}
                         data-testid="medical-chart-save-btn"
@@ -3834,11 +3819,9 @@ export default function MedicalChartPanel({
                         {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                         {saving
                           ? '저장 중...'
-                          : selectedChartId?.startsWith('__dummy__')
-                            ? '더미 데이터 — 저장 불가'
-                            : selectedChartId
-                              ? '수정 저장'
-                              : '진료기록 저장'}
+                          : selectedChartId
+                            ? '수정 저장'
+                            : '진료기록 저장'}
                       </Button>
                     )}
                   </div>
