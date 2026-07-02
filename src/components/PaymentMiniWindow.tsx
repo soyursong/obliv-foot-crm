@@ -166,6 +166,23 @@ const PREPAID_CODE_MAP: Record<string, string[]> = {
 export const isTrialService = (svc: { name?: string | null } | null | undefined): boolean =>
   /체험/.test(svc?.name ?? '');
 
+// T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (c):
+//   선수금차감 대상 서비스 → package_sessions.session_type 역매핑.
+//   PREPAID_CODE_MAP / PREPAID_KEYWORDS 와 동일 기준(코드 우선, '비가열'을 '가열'보다 먼저 판정).
+//   preconditioning/reborn/trial 은 선수금차감 자동대상(PREPAID_KEYWORDS)이 아니므로 null.
+export const prepaidSessionType = (
+  svc: { service_code?: string | null; name?: string | null; category?: string | null; category_label?: string | null },
+): 'heated_laser' | 'unheated_laser' | 'iv' | 'podologue' | null => {
+  const code = svc.service_code ?? '';
+  const name = svc.name ?? '';
+  const cat = `${svc.category_label ?? ''} ${svc.category ?? ''}`;
+  if (code === 'SZ035-30' || name.includes('비가열')) return 'unheated_laser';
+  if (code === 'SZ035-35' || (name.includes('가열') && !name.includes('비가열'))) return 'heated_laser';
+  if (code === 'BC1300MB08' || name.includes('포돌로게')) return 'podologue';
+  if (cat.includes('수액') || name.includes('수액')) return 'iv';
+  return null;
+};
+
 // ── 결제수단 ────────────────────────────────────────────────────────────────
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
@@ -1493,6 +1510,40 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       .update({ status: 'done' })
       .eq('id', checkIn.id);
     if (ciErr) throw ciErr;
+
+    // ── T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (c) ────────────────────────
+    //   선수금차감(taxType='선수금') 수납 확정 시 package_sessions 를 실제 소진한다.
+    //   기존엔 check_in_services.is_package_session 마킹만 하고 회차를 insert 하지 않아
+    //   '잔여가 영영 줄지 않는' 현금손실 결함이 있었다. RPC 는 동일 check_in 멱등 + 초과차감 방지.
+    if (taxType === '선수금' && checkIn.customer_id) {
+      const counts: Record<string, number> = {
+        heated_laser: 0, unheated_laser: 0, iv: 0, podologue: 0,
+      };
+      for (const { service, qty } of selectedItems) {
+        if (!prepaidIds.has(service.id) || isTrialService(service)) continue;
+        const st = prepaidSessionType(service);
+        if (st) counts[st] += qty;
+      }
+      if (counts.heated_laser + counts.unheated_laser + counts.iv + counts.podologue > 0) {
+        const { data: consumeData, error: consumeErr } = await supabase.rpc(
+          'consume_package_sessions_for_checkin',
+          {
+            p_check_in_id: checkIn.id,
+            p_customer_id: checkIn.customer_id,
+            p_clinic_id: checkIn.clinic_id,
+            p_counts: counts,
+          },
+        );
+        if (consumeErr) {
+          // 수납은 이미 커밋됨 → 회차 차감 실패는 결제를 롤백하지 않되, 반드시 노출(수동 회차소진 유도).
+          console.error('선수금 회차 차감 실패:', consumeErr.message);
+          toast.error(`선수금 회차 차감 실패 — 패키지에서 수동 회차소진 필요: ${consumeErr.message}`);
+        } else {
+          const ins = (consumeData as { inserted?: number } | null)?.inserted ?? 0;
+          if (ins > 0) toast.success(`선수금 회차 ${ins}건 차감 완료`);
+        }
+      }
+    }
 
     const { error: trErr } = await supabase.from('status_transitions').insert({
       check_in_id: checkIn.id,

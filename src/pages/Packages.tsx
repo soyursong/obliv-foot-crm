@@ -1387,7 +1387,12 @@ function PackageDetailSheet({
           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE: 미수금(잔금) = 패키지 금액 − 순납부(fee_kind='package'). 파생값, 합산 단일표기 아님. */}
           {(() => {
             // fee_kind 분리: 패키지 결제분만 패키지 잔금에 반영(기존 행은 backfill='package'로 동일 동작).
-            const outstanding = computeOutstanding(pkg.total_amount, netPaidFromPayments(pkgPayments, 'package'));
+            const netPkgPaid = netPaidFromPayments(pkgPayments, 'package');
+            // T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (a): 양도 승계 패키지는 매출 이중계상 방지를 위해
+            //   package_payments 승계행을 만들지 않는다(승계액은 packages.paid_amount 에만 반영).
+            //   결제행이 전혀 없는 승계 패키지(transferred_from 有)는 paid_amount 로 완납 처리 → 거짓 미수 방지.
+            const effPaid = (pkg.transferred_from && pkgPayments.length === 0) ? (pkg.paid_amount ?? 0) : netPkgPaid;
+            const outstanding = computeOutstanding(pkg.total_amount, effPaid);
             const st = balanceStatus(outstanding);
             return (
               <div
@@ -1936,28 +1941,19 @@ function TransferDialog({ open, pkg, onOpenChange, onDone }: {
     if (!target) return;
     if (!window.confirm(`${target.name}님에게 패키지를 양도하시겠습니까?`)) return;
     setSubmitting(true);
-    const { error } = await supabase.from('packages').update({
-      status: 'transferred', transferred_from: pkg.customer_id, transferred_to: target.id,
-      memo: `${pkg.customer?.name ?? '?'} → ${target.name} 양도 (${new Date().toISOString().slice(0, 10)})`,
-    }).eq('id', pkg.id);
-    if (error) { toast.error(`양도 실패: ${error.message}`); setSubmitting(false); return; }
-    const { error: createErr } = await supabase.from('packages').insert({
-      clinic_id: pkg.clinic_id, customer_id: target.id,
-      package_name: pkg.package_name, package_type: pkg.package_type,
-      total_sessions: pkg.total_sessions, heated_sessions: pkg.heated_sessions ?? 0,
-      unheated_sessions: pkg.unheated_sessions ?? 0, iv_sessions: pkg.iv_sessions ?? 0,
-      preconditioning_sessions: pkg.preconditioning_sessions ?? 0,
-      podologe_sessions: pkg.podologe_sessions ?? 0,
-      iv_company: pkg.iv_company ?? null,
-      shot_upgrade: pkg.shot_upgrade ?? false, af_upgrade: pkg.af_upgrade ?? false,
-      upgrade_surcharge: pkg.upgrade_surcharge ?? 0, total_amount: pkg.total_amount,
-      paid_amount: pkg.paid_amount, status: 'active', transferred_from: pkg.customer_id,
-      contract_date: new Date().toISOString().slice(0, 10),
-      memo: `${pkg.customer?.name ?? '?'}로부터 양도받음`,
+    // T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (a)+(b):
+    //   기존 FE 2-step 양도는 (1) transferred_from 에 customer_id 를 넣어 FK(packages.id) 위반 →
+    //   원본이 active 로 잔류 → 환불버튼 살아있음(이중환불), (2) 수령 패키지를 '전체' 회차로 생성 →
+    //   잔여 리셋 결함이 있었다. 원자 RPC 로 대체: 원본 transferred 전이(환불차단) + 잔여 회차/금액만 승계.
+    const { data, error } = await supabase.rpc('transfer_package_atomic', {
+      p_package_id: pkg.id,
+      p_target_customer_id: target.id,
     });
     setSubmitting(false);
-    if (createErr) { toast.error(`수령 패키지 생성 실패: ${createErr.message}`); return; }
-    toast.success(`${target.name}님에게 양도 완료`);
+    if (error) { toast.error(`양도 실패: ${error.message}`); return; }
+    const res = data as { ok?: boolean; error?: string; carried_sessions?: number };
+    if (!res?.ok) { toast.error(res?.error ?? '양도 실패'); return; }
+    toast.success(`${target.name}님에게 양도 완료 (잔여 ${res.carried_sessions ?? 0}회 승계)`);
     onDone();
   };
 
