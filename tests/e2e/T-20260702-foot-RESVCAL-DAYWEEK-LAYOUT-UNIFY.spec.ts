@@ -14,7 +14,66 @@
  * 데이터/clinic 미준비 시 graceful skip + 데이터 무의존 CSS-contract probe(결정적) 병행.
  */
 import { test, expect, type Page } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 import { loginAndWaitForDashboard } from '../helpers';
+
+const RESV_PAGE = fs.readFileSync(path.resolve('src/pages/Reservations.tsx'), 'utf-8');
+
+// day-summary(주뷰 날짜 헤더 카운트뱃지) 블록만 추출 — testid ~ 첫 </div>.
+function daySummaryBlock(): string {
+  const m = RESV_PAGE.match(/data-testid=\{`day-summary-\$\{format\(d[\s\S]*?<\/div>\s*\);/);
+  expect(m, 'day-summary 헤더 블록 파싱 실패').toBeTruthy();
+  return m![0];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC-1 — 주뷰 날짜 헤더 카운트뱃지 스타일을 일뷰 기준으로 통일 (부모 잔여 scope)
+//   김주연 총괄 confirm: '일별 기준으로 통일' · SSOT=코드(일뷰 resv-day-hslot-count treatment).
+//   칩/뱃지(rounded-full + bg-*-100) → 색상 텍스트 + 가운뎃점(·) 구분 = 일뷰 스타일.
+//   source-integrity(거대 인라인 Reservations.tsx 관례) — 실 렌더는 supervisor field-soak.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC-1: 주뷰 헤더 카운트뱃지 일뷰 스타일 통일', () => {
+  test('AC1-1: 헤더 카운트뱃지가 pill(rounded-full + bg-*-100)이 아니라 일뷰식 색상 텍스트', () => {
+    const b = daySummaryBlock();
+    // 칩 wrapper(둥근 배경 pill) 제거 — 일뷰 헤더는 배경 없는 색상 텍스트.
+    expect(b, '주뷰 헤더에 pill(rounded-full) 잔존').not.toContain('rounded-full');
+    expect(b, '주뷰 헤더에 초진 pill 배경(bg-blue-100) 잔존').not.toContain('bg-blue-100');
+    expect(b, '주뷰 헤더에 재진 pill 배경(bg-firstvisit-100) 잔존').not.toContain('bg-firstvisit-100');
+    expect(b, '주뷰 헤더에 힐러 pill 배경(bg-healer-100) 잔존').not.toContain('bg-healer-100');
+    expect(b, '주뷰 헤더에 리본 pill 배경(bg-rose-100) 잔존').not.toContain('bg-rose-100');
+  });
+
+  test('AC1-2: 일뷰 treatment — 색상 텍스트 span + 가운뎃점(·) 구분자', () => {
+    const b = daySummaryBlock();
+    expect(b, '초진 색상 텍스트(text-blue-700) 누락').toContain('text-blue-700');
+    expect(b, '재진 색상 텍스트(text-firstvisit-700) 누락').toContain('text-firstvisit-700');
+    expect(b, '힐러 색상 텍스트(text-healer-700) 누락').toContain('text-healer-700');
+    expect(b, '리본 색상 텍스트(text-rose-700) 누락').toContain('text-rose-700');
+    // 일뷰 헤더(L2219 등)와 동일한 가운뎃점 구분자.
+    expect(b, '가운뎃점(·) 구분자 누락 — 일뷰 treatment 불일치').toContain('text-muted-foreground/40">·');
+  });
+
+  test('AC1-3: 라벨/집계 SSOT(KIND_AXIS_LABELS) + 총건수(초+재+힐) 유지(회귀)', () => {
+    const b = daySummaryBlock();
+    expect(b, '초 abbr 라벨 누락').toContain('{KIND_AXIS_LABELS.new.abbr} {c.n}');
+    expect(b, '재 abbr 라벨 누락').toContain('{KIND_AXIS_LABELS.returning.abbr} {c.r}');
+    expect(b, '힐 abbr 라벨 누락').toContain('{KIND_AXIS_LABELS.healer.abbr} {c.h}');
+    expect(b, '리본 full 라벨 누락(주뷰는 여백 충분 → full 유지)').toContain('{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}');
+    expect(b, '총건수(초+재+힐) 누락').toContain('총 {c.n + c.r + c.h}');
+  });
+
+  test('AC1-4: day-summary testid + justify-center 유지(field-soak 셀렉터/중앙정렬 회귀)', () => {
+    expect(RESV_PAGE, 'day-summary testid 누락')
+      .toContain('data-testid={`day-summary-${format(d, \'yyyy-MM-dd\')}`}');
+    expect(daySummaryBlock(), 'day-summary 중앙정렬(justify-center) 누락').toContain('justify-center');
+  });
+
+  test('AC1-5: 전건 0(초+재+힐+리본) null 렌더 가드 유지(회귀)', () => {
+    expect(RESV_PAGE, '전건 0 null 가드 누락')
+      .toContain('c.n === 0 && c.r === 0 && c.h === 0 && c.ribbon === 0');
+  });
+});
 
 async function gotoWeekView(page: Page): Promise<boolean> {
   await page.goto('/admin/reservations');

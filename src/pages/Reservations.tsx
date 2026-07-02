@@ -2323,18 +2323,27 @@ export default function Reservations() {
                       const c = dayKindCounts.get(format(d, 'yyyy-MM-dd'));
                       if (!c || (c.n === 0 && c.r === 0 && c.h === 0 && c.ribbon === 0)) return null;
                       return (
-                        // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (2번): 요일 헤더 건수 칩/뱃지형 재디자인.
-                        //   초진=초록/재진=파랑/HL=노랑 칩으로 색상 코딩 일관. 총건수(초+재)는 앞에 굵게.
+                        // T-20260702-foot-RESVCAL-DAYWEEK-LAYOUT-UNIFY AC-1 (김주연 총괄 confirm: '일별 기준으로 통일' · SSOT=코드):
+                        //   주뷰 날짜 헤더 카운트뱃지를 일뷰(resv-day-hslot-count, L2214~) treatment 로 통일.
+                        //   칩/뱃지(rounded-full + bg-*-100 px py) → 색상 텍스트 + 가운뎃점(·) 구분 = 일뷰 스타일 복붙.
+                        //   집계·라벨 SSOT(KIND_AXIS_LABELS)·null 가드·총건수(초+재+힐)·day-summary testid·justify-center·리본 full 라벨 전부 불변(회귀 0).
+                        //   supersede: T-20260612 WEEKCAL 칩형 재디자인(2번) — 헤더 카운트 한정. 카드(3번)·슬롯 셀 카운트(slot-kind-count)는 불변.
+                        //   일뷰와 정합: 초/재/힐(abbr)·리본(full) 4분류 상시 표기(HL>0·리본>0 조건 제거) → 일뷰 헤더처럼 0도 표기.
                         <div
                           data-testid={`day-summary-${format(d, 'yyyy-MM-dd')}`}
-                          className="mt-1 flex flex-wrap items-center justify-center gap-1 text-[10px] font-medium leading-none"
+                          className="mt-1 flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-[10px] font-medium leading-none"
                         >
                           <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
-                          <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">{KIND_AXIS_LABELS.new.abbr} {c.n}</span>
-                          <span className="inline-flex items-center rounded-full bg-firstvisit-100 px-1.5 py-0.5 text-firstvisit-700">{KIND_AXIS_LABELS.returning.abbr} {c.r}</span>
-                          {/* T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR A3: 주간 요일 헤더도 초-재-힐-리 정합(HL→힐). 리본 칩은 full 라벨(리본(발각질))로 렌더(AC2). */}
-                          {c.h > 0 && <span className="inline-flex items-center rounded-full bg-healer-100 px-1.5 py-0.5 text-healer-700">{KIND_AXIS_LABELS.healer.abbr} {c.h}</span>}
-                          {c.ribbon > 0 && <span className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}</span>}
+                          {/* 일뷰 카운트 treatment(색상 텍스트 · 가운뎃점) 그대로 이식 — 초/재/힐(abbr)·리본(full). */}
+                          <span className="flex items-center gap-0.5 whitespace-nowrap">
+                            <span className="text-blue-700">{KIND_AXIS_LABELS.new.abbr} {c.n}</span>
+                            <span className="text-muted-foreground/40">·</span>
+                            <span className="text-firstvisit-700">{KIND_AXIS_LABELS.returning.abbr} {c.r}</span>
+                            <span className="text-muted-foreground/40">·</span>
+                            <span className="text-healer-700">{KIND_AXIS_LABELS.healer.abbr} {c.h}</span>
+                            <span className="text-muted-foreground/40">·</span>
+                            <span className="text-rose-700">{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}</span>
+                          </span>
                         </div>
                       );
                     })()}
