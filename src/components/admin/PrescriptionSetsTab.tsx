@@ -118,13 +118,18 @@ interface SetForm {
   hide_name: boolean;
 }
 
+// T-20260702-foot-BUNDLERX-DOSAGE-DEFAULT-NUM: 새 약 항목 추가 시 숫자 기본값 주입(용량=1·횟수=3·일수=3).
+//   문지은 대표원장 "약 무조건 숫자 세개" 요청 실현. baked default 1/3/2 → 1/3/3 (days 기존 3 유지).
+//   이전엔 dosage=''(빈값)이라 placeholder("적정량")만 보여 "글자가 뜬다"는 혼선 발생.
+//   초기 표시값일 뿐 사용자 입력을 강제하지 않음(AC4: 지우거나 바꾸면 그대로 저장).
 const EMPTY_ITEM: PrescriptionItem = {
   name: '',
-  dosage: '',
+  dosage: '1', // AC1: '' → '1'
   route: '경구',
   frequency: '1일 3회',
-  days: 3,
+  days: 3, // AC2: 기존 3 유지
   notes: '',
+  count: 3, // AC2: 미설정 → 3
 };
 
 const EMPTY_FORM: SetForm = {
@@ -444,7 +449,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
         <Input
           value={item.dosage}
           onChange={(e) => onChange(idx, 'dosage', e.target.value)}
-          placeholder="적정량"
+          placeholder="1"
           className="h-7 text-xs mt-0.5"
           data-testid="rx-set-item-dosage-input"
         />
