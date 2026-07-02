@@ -8,7 +8,12 @@
  *   ❌ 심평원 전자전송(D2 보류) — 전송(transmitted) 버튼/자동전이 없음.
  *   가드(요양기관기호·환수·본인부담구분코드) 위반 시 export BLOCK + 현장 안내.
  *
- * 태블릿 UX: 한국어 · teal-emerald · 천단위 콤마 · 큰 버튼.
+ * 태블릿 UX: 한국어 · 천단위 콤마 · 큰 버튼.
+ *
+ * T-20260702-foot-INSEDI-TAB-MONOTONE-COMPACT (김주연 총괄, 순수 시각조정)
+ *   장식 accent(teal→warm brown·emerald→green)를 DOCROSTER-ACHROMATIC-SCOPE 확립 무채색
+ *   gray-* 램프로 sweep + 여백/밀도를 예약관리(px-4 py-2·h-8·text-xs) 기준 컴팩트화.
+ *   의미색 carve-out 유지: amber 전송보류 경고 · red export-불가 에러(컴팩트만). 기능요소 무변경.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -73,41 +78,41 @@ export default function EdiExport() {
   }, [selectedRow, result, profile?.id, refresh]);
 
   return (
-    <div className="space-y-4 p-4" data-testid="edi-export-page">
+    <div className="space-y-3 p-3" data-testid="edi-export-page">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-6 w-6 text-teal-600" />
+          <ShieldCheck className="h-5 w-5 text-gray-600" />
           <div>
-            <h1 className="text-xl font-bold text-teal-900">보험청구 · EDI</h1>
-            <p className="text-sm text-slate-500">
+            <h1 className="text-lg font-bold text-gray-900">보험청구 · EDI</h1>
+            <p className="text-xs text-slate-500">
               심평원 표준 청구명세서 포맷으로 명세를 생성·보관합니다. 실제 전송은 인증 청구SW가 담당합니다.
             </p>
           </div>
         </div>
-        <Button variant="outline" size="lg" onClick={() => void refresh()} className="gap-2">
+        <Button variant="outline" size="sm" onClick={() => void refresh()} className="gap-2">
           <RefreshCw className="h-4 w-4" /> 새로고침
         </Button>
       </div>
 
       {/* D2 전송 보류 안내(전송 버튼 없음 명시) */}
       <div
-        className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+        className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800"
         data-testid="edi-no-transmit-notice"
       >
         이 화면은 <b>표준포맷 생성·보관까지만</b> 수행합니다. 심평원 직접 전송 기능은 제공하지 않습니다.
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* 청구 목록 */}
-        <Card className="p-3">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">청구 명세 목록</h2>
+        <Card className="p-2.5">
+          <h2 className="mb-1.5 text-xs font-semibold text-slate-700">청구 명세 목록</h2>
           {error && <p className="text-sm text-red-600">목록 로드 실패: {error}</p>}
           {loading && <p className="text-sm text-slate-400">불러오는 중…</p>}
           {!loading && rows.length === 0 && (
             <p className="text-sm text-slate-400">청구 명세가 없습니다.</p>
           )}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {rows.map((r) => (
               <button
                 key={r.id}
@@ -115,10 +120,10 @@ export default function EdiExport() {
                 data-testid="edi-claim-row"
                 onClick={() => void openPreview(r)}
                 className={[
-                  'flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition',
+                  'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition',
                   selectedId === r.id
-                    ? 'border-teal-500 bg-teal-50'
-                    : 'border-slate-200 hover:border-teal-300 hover:bg-slate-50',
+                    ? 'border-gray-400 bg-gray-100'
+                    : 'border-slate-200 hover:border-gray-300 hover:bg-gray-50',
                 ].join(' ')}
               >
                 <div className="min-w-0">
@@ -132,7 +137,7 @@ export default function EdiExport() {
                     {r.export_status === 'exported' && (
                       <Badge
                         data-testid="edi-exported-badge"
-                        className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                        className="bg-gray-100 text-gray-700 hover:bg-gray-100"
                       >
                         export 완료
                       </Badge>
@@ -150,8 +155,8 @@ export default function EdiExport() {
         </Card>
 
         {/* 미리보기 / 가드 */}
-        <Card className="p-3">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">표준 청구명세서 미리보기</h2>
+        <Card className="p-2.5">
+          <h2 className="mb-1.5 text-xs font-semibold text-slate-700">표준 청구명세서 미리보기</h2>
 
           {!selectedRow && <p className="text-sm text-slate-400">좌측에서 청구 명세를 선택하세요.</p>}
           {previewLoading && <p className="text-sm text-slate-400">미리보기 생성 중…</p>}
@@ -159,7 +164,7 @@ export default function EdiExport() {
           {/* 가드 BLOCK 안내 */}
           {result && !result.ok && (
             <div
-              className="rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700"
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
               data-testid="edi-block-msg"
             >
               <div className="mb-1 flex items-center gap-2 font-semibold">
@@ -174,10 +179,10 @@ export default function EdiExport() {
 
           {/* 정상 미리보기 */}
           {result && result.ok && (
-            <div className="space-y-3" data-testid="edi-preview">
+            <div className="space-y-2" data-testid="edi-preview">
               {/* ① 일반내역(헤더) */}
               <section className="rounded-md border border-slate-200 p-2">
-                <div className="mb-1 text-xs font-semibold text-teal-700">① 명세서 일반내역</div>
+                <div className="mb-1 text-xs font-semibold text-gray-700">① 명세서 일반내역</div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-700">
                   <div>요양기관기호</div>
                   <div className="font-medium" data-testid="edi-institution-code">
@@ -200,7 +205,7 @@ export default function EdiExport() {
 
               {/* ② 상병내역 */}
               <section className="rounded-md border border-slate-200 p-2">
-                <div className="mb-1 text-xs font-semibold text-teal-700">② 상병내역 (KCD)</div>
+                <div className="mb-1 text-xs font-semibold text-gray-700">② 상병내역 (KCD)</div>
                 {result.payload.diagnoses.length === 0 ? (
                   <p className="text-xs text-slate-400">등록된 상병 없음</p>
                 ) : (
@@ -209,7 +214,7 @@ export default function EdiExport() {
                       <li key={idx} className="flex items-center gap-2">
                         <span className="font-mono">{d.kcd_code}</span>
                         {d.is_primary && (
-                          <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-100">주상병</Badge>
+                          <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100">주상병</Badge>
                         )}
                       </li>
                     ))}
@@ -219,7 +224,7 @@ export default function EdiExport() {
 
               {/* ③ 진료내역(줄번호) */}
               <section className="rounded-md border border-slate-200 p-2">
-                <div className="mb-1 text-xs font-semibold text-teal-700">③ 진료내역</div>
+                <div className="mb-1 text-xs font-semibold text-gray-700">③ 진료내역</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -257,18 +262,18 @@ export default function EdiExport() {
               {/* export 실행 (전송 버튼 없음) */}
               <div className="flex items-center justify-between pt-1">
                 {selectedRow?.export_status === 'exported' ? (
-                  <span className="flex items-center gap-1 text-sm text-emerald-700">
+                  <span className="flex items-center gap-1 text-sm text-gray-600">
                     <CheckCircle2 className="h-4 w-4" /> 이미 export 완료됨
                   </span>
                 ) : (
                   <span className="text-xs text-slate-400">버전 {result.payload.format_version}</span>
                 )}
                 <Button
-                  size="lg"
+                  size="default"
                   onClick={() => void doExport()}
                   disabled={exporting}
                   data-testid="edi-export-btn"
-                  className="gap-2 bg-teal-600 hover:bg-teal-700"
+                  className="gap-2"
                 >
                   <FileDown className="h-4 w-4" />
                   {exporting
