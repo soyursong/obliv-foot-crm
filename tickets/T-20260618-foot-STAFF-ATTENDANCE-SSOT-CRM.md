@@ -3,19 +3,23 @@ id: T-20260618-foot-STAFF-ATTENDANCE-SSOT-CRM
 domain: foot
 title: "배정화면 '출근 N명' 출근 정본을 구글시트 직접read → CRM 근무캘린더(DB) SSOT로 격상 (A안)"
 priority: P2
-status: migration-authored / supervisor-ddldiff-pending
+status: ac1-ac3-authored / supervisor-ddldiff-pending
 db_change: true
 db_change_kind: additive
+gate_go: MSG-20260703-080819-ur31 (planner GO — gate a=DA✅ / gate b=①field-confirm+②Vercel 양조건 CLEARED)
 consult_reply: MSG-20260618-173142-dajh
 source_msg: MSG-20260618-154847-fkv6
-repo_path: "/Users/domas/Documents/GitHub/obliv-foot-crm"
-related: [T-20260618-foot-AUTOASSIGN-SERVERSIDE-REVIEW, T-20260606-foot-HANDOVER-TODAY-ATTENDEES, T-20260502-foot-DUTY-ROSTER]
-serialization_guard: T-20260618-foot-AUTOASSIGN-SERVERSIDE-REVIEW (approved, design-review)
+repo_path: "/Users/domas/GitHub/obliv-foot-crm"
+related: [T-20260618-foot-AUTOASSIGN-SERVERSIDE-REVIEW, T-20260606-foot-HANDOVER-TODAY-ATTENDEES, T-20260502-foot-DUTY-ROSTER, T-AUTOASSIGN-BALANCE-TOSS]
+serialization_guard: T-20260618-foot-AUTOASSIGN-SERVERSIDE-REVIEW (status=done, design-only — 충돌 없음, 해소)
 migration_fwd: supabase/migrations/20260618200000_staff_attendance_ssot.sql
 migration_rollback: supabase/migrations/20260618200000_staff_attendance_ssot.rollback.sql
+sync_cron_fwd: supabase/migrations/20260618201000_attendance_sync_cron.sql
+sync_cron_rollback: supabase/migrations/20260618201000_attendance_sync_cron.rollback.sql
+sync_ef: supabase/functions/attendance-sync/index.ts
 dryrun_script: scripts/T-20260618-foot-STAFF-ATTENDANCE-SSOT_dryrun.mjs
 dbgate_evidence: db-gate/T-20260618-foot-STAFF-ATTENDANCE-SSOT-CRM_dbgate.md
-e2e_spec_exempt_reason: db-only-additive (테이블 신설 DDL만 — 코드/UI 무변경, 소비처 0, 런타임 동작 변경 0)
+e2e_spec_exempt_reason: db-only-additive (테이블 신설 DDL + sync cron/EF — 소비처 0, 배정화면 read 전환 전까지 런타임 동작 변경 0)
 ---
 
 # AC-0 Read-only 진단 — 출근 산출 경로 + 근무캘린더 DB 모델
@@ -97,3 +101,48 @@ DA CONSULT-REPLY (MSG-20260618-173142-dajh): **Q1=S2 신설 GO / S1 재사용 NO
 
 ### 다음 게이트
 supervisor DDL-diff QA → 통과 후 dev-foot 직접 pg 적용.
+
+---
+
+## 8. GATE GO — 착수 확정 (planner MSG-20260703-080819-ur31, 2026-07-03)
+
+gate(a) DA=✅(S2 staff_attendance 신설 GO/ADDITIVE, S1 duty_roster확장 NO_GO) + gate(b) 양조건 CLEARED:
+- **① AUTOASSIGN-RUN-FAIL-TABSCROLL field-confirm** ✅ (archive/2026-06 이관=done, block_resolved 06-20, 13일 무reopen 안정 → 배정 surface 안정 확정).
+- **② Vercel foot 배포차단** ✅ (실측 드리프트 정정 — prod deployed_at 25건 07-02~03 정상, 07-01 acute cap ~24h 자연리셋, UNFREEZE closed).
+- **직렬화 가드** AUTOASSIGN-SERVERSIDE-REVIEW=done(design-only, 코드·DB 변경 0) → 충돌 없음.
+
+**ADDITIVE + DA GO → 대표게이트 불요(autonomy §3.1). 남은 배포 게이트 = supervisor DDL-diff 1건뿐.**
+
+## 9. AC-3 — sheet→table 자동 sync 설계 (attendance-sync EF + pg_cron)
+
+DA CONSULT-REPLY Q2=**단일 sync EF 통합 GO**. 본 티켓 배정화면 '출근 N명' + AUTOASSIGN-SERVERSIDE 옵션B/C trigger + BALANCE-TOSS #5 후보풀 — **셋 다 동일 staff_attendance 를 read**하는 단일 출근모델(§수렴 준수, 양 티켓 다른 출근모델 금지).
+
+### 산출
+- EF: `supabase/functions/attendance-sync/index.ts`
+- cron 마이그(fwd): `supabase/migrations/20260618201000_attendance_sync_cron.sql`
+- cron 마이그(rollback): `supabase/migrations/20260618201000_attendance_sync_cron.rollback.sql`
+
+### EF 동작 (reconcile, 멱등)
+1. 파서 = `src/lib/dutySheet.ts` 실측검증(2001c73) 순수함수 **그대로 이식**(재작성 아님) — 월 롤오버·특수토큰(전직원/총괄/휴진)·주간블록·월경계 교차주 가드 동일. 서버라 gviz CSV 직접 fetch(CORS 프록시 불요).
+2. active staff 로드 `select id,name`(⚠ display_name 컬럼 미존재 HOTFIX 교훈 → name 매칭만).
+3. 대상 창 `[today-1, today+14]`(KST). 날짜별 시트 출근자 이름 → staff_id 매핑.
+4. **reconcile(google_sheet source만)**: desired에서 빠진 google_sheet 행 DELETE / 신규 INSERT(present) / 기존 UPDATE synced_at. **source IN (manual,crm) 행 무접촉**(현장 수기 override 보존).
+5. graceful: gid·날짜 실패 시 부분 skip(throw 안 함), unmatched 이름 warn 로그(매핑 감사).
+
+### cron (매일/변경시)
+- `foot-attendance-sync` = `*/15 * * * *`(15분 주기) → `trigger_attendance_sync()` → net.http_post EF. 변경 반영 지연 ≤15분 + 매일 자동 보장. 풋 vault 컨벤션(app.supabase_url/app.cron_secret → vault) — dopamine outbox worker 동일.
+- **⚠ 반드시 테이블 마이그(20260618200000) apply 후 적용**(sync worker가 채우는 테이블 선행).
+
+### 범위 한정 (직렬화 가드 준수)
+AC-3 = sync EF + cron **까지만**. 배정화면 read 전환(AC-2)은 sync 가동·freshness 검증 후 별 단계. 본 단계 소비처 0 → 현 시트 직접 read 경로 무변경 → 회귀 표면 0.
+
+### 검증(build/typecheck)
+- `deno check attendance-sync/index.ts` → clean.
+- `npm run build` → ✓ (src/ 무변경, EF는 Deno 런타임).
+
+## 10. 배포 게이트 순서 (planner 권고 반영)
+1. **supervisor DDL-diff 5-check** — 대상: ① `20260618200000_staff_attendance_ssot.sql`(테이블) ② `20260618201000_attendance_sync_cron.sql`(worker). → **본 단계 요청 발행.**
+2. 통과 후 dev-foot PROD apply(테이블 먼저 → cron) + attendance-sync EF 배포(+env 주입).
+3. 수동 1틱 `SELECT trigger_attendance_sync();` → staff_attendance rows>0 + 시트 오늘 출근자 수 대조(AC-5 정합).
+4. freshness 안정 확인 후 → **AC-2 배정화면 read-swap**(시트 직접 read → staff_attendance read).
+5. AC-4 회귀금지(Handover·배정로직·자동배정 무변경) + AC-5 정합검증(근무캘린더 등록→배정화면 출근현황 반영).
