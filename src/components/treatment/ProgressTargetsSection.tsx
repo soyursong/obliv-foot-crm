@@ -16,10 +16,21 @@ import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
+import { useAuth } from '@/lib/auth';
+import { hasOpsAuthority } from '@/lib/permissions';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
-import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks } from 'lucide-react';
+import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
+import { parseFootSites, formatFootSites } from '@/components/FootSiteSelector';
+import {
+  downloadProgressCsv,
+  progressCsvFilename,
+  sessionTypeLabel,
+  healerCell,
+  logProgressCsvExport,
+  type ProgressCsvRow,
+} from '@/lib/progressTreatmentCsv';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 경과분석 리스트에 발행 관련 버튼 2종 UI 배치.
 //   ① 개별 '발행하기'(row별) ② 상단 '일괄처리' + row 체크박스(다건 선택·전체선택·선택개수).
@@ -127,9 +138,15 @@ interface Props {
 
 export default function ProgressTargetsSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
+  const { profile } = useAuth();
   const { data: rows = [], isLoading, isError, error } = useProgressTargets(clinic?.id, date);
   const today = seoulISODate(new Date());
   const isToday = date === today;
+
+  // T-20260702-foot-PROGRESS-CSV-EXPORT: PHI 반출 게이트 — admin/manager(운영권한, 대표원장 포함)만 노출/동작.
+  //   경과분석 탭 열람권과 동일 계층. 치료사/일반직원에게는 CSV 버튼 미노출.
+  const canExportCsv = hasOpsAuthority(profile);
+  const [csvBusy, setCsvBusy] = useState(false);
 
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
@@ -172,6 +189,141 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
     toast.confirm(`선택한 ${selectedCount}명 일괄 발행 기능은 준비 중입니다. (서류 양식 준비 후 제공)`);
   };
 
+  // T-20260702-foot-PROGRESS-CSV-EXPORT: 선택 환자 1~N명 → 시술기록 전체 단일 CSV.
+  //   grain=환자×방문(시술일)×시술타입 → package_sessions(used) 1건=1행(같은날 병행타입 자동 2행 분리).
+  //   각 row 는 자기 package_id FK 로만 join(오매핑 0). 스키마/비즈로직 무변경 read-only 조회.
+  const handleCsvExport = async () => {
+    if (!canExportCsv) return; // 방어(버튼 미노출이지만 이중 가드).
+    // 현재 리스트에서 선택된 예약 row → 대상 고객 id 집합(유효 선택만).
+    const selectedRows = rows.filter((r) => selectedIds.has(r.reservationId) && r.customerId);
+    const customerIds = [...new Set(selectedRows.map((r) => r.customerId as string))];
+    if (customerIds.length === 0) {
+      toast.warning('먼저 CSV로 내보낼 환자를 선택해 주세요.');
+      return;
+    }
+    setCsvBusy(true);
+    try {
+      // 1) 대상 고객의 패키지(총회차·고객 매핑).
+      const { data: pkgData, error: pkgErr } = await supabase
+        .from('packages')
+        .select('id, customer_id, total_sessions')
+        .in('customer_id', customerIds);
+      if (pkgErr) throw pkgErr;
+      const packages = (pkgData ?? []) as Array<{ id: string; customer_id: string; total_sessions: number | null }>;
+      const pkgById = new Map(packages.map((p) => [p.id, p]));
+      const pkgIds = packages.map((p) => p.id);
+
+      // 2) 시술기록(package_sessions) — used·미삭제만. 각 row=1 시술타입(방문×타입 grain).
+      let sessions: Array<Record<string, unknown>> = [];
+      if (pkgIds.length > 0) {
+        const { data: sData, error: sErr } = await supabase
+          .from('package_sessions')
+          .select('id, package_id, check_in_id, session_number, session_type, session_date, status, deleted_at')
+          .in('package_id', pkgIds)
+          .eq('status', 'used')
+          .is('deleted_at', null);
+        if (sErr) throw sErr;
+        sessions = (sData ?? []) as Array<Record<string, unknown>>;
+      }
+
+      // 3) 고객 메타(차트번호·이름).
+      const { data: custData } = await supabase
+        .from('customers')
+        .select('id, chart_number, name')
+        .in('id', customerIds);
+      const custById = new Map(
+        ((custData ?? []) as Array<{ id: string; chart_number: string | null; name: string | null }>).map((c) => [c.id, c]),
+      );
+
+      // 4) 시술부위(check_ins.treatment_memo.foot_sites) + 힐러(reservations.is_healer_intent) — FK 연결분만.
+      const checkInIds = [...new Set(sessions.map((s) => s['check_in_id']).filter(Boolean) as string[])];
+      const ciById = new Map<string, { treatment_memo: unknown; reservation_id: string | null }>();
+      if (checkInIds.length > 0) {
+        const { data: ciData } = await supabase
+          .from('check_ins')
+          .select('id, treatment_memo, reservation_id')
+          .in('id', checkInIds);
+        for (const c of (ciData ?? []) as Array<{ id: string; treatment_memo: unknown; reservation_id: string | null }>) {
+          ciById.set(c.id, { treatment_memo: c.treatment_memo, reservation_id: c.reservation_id });
+        }
+      }
+      const resvIds = [...new Set([...ciById.values()].map((c) => c.reservation_id).filter(Boolean) as string[])];
+      const healerByResv = new Map<string, boolean>();
+      if (resvIds.length > 0) {
+        const { data: rData } = await supabase
+          .from('reservations')
+          .select('id, is_healer_intent')
+          .in('id', resvIds);
+        for (const rv of (rData ?? []) as Array<{ id: string; is_healer_intent: boolean | null }>) {
+          healerByResv.set(rv.id, rv.is_healer_intent === true);
+        }
+      }
+
+      // 5) row 조립.
+      const footSitesFromMemo = (memo: unknown): string => {
+        try {
+          const m = typeof memo === 'string' ? JSON.parse(memo) : memo;
+          const obj = (m ?? {}) as Record<string, unknown>;
+          // 다중선택(foot_sites 배열) 우선, 없으면 단일(foot_site) 폴백.
+          const raw = obj['foot_sites'] ?? (obj['foot_site'] ? [obj['foot_site']] : null);
+          return formatFootSites(parseFootSites(raw));
+        } catch {
+          return '';
+        }
+      };
+
+      const csvRows: ProgressCsvRow[] = sessions.map((s) => {
+        const pkg = pkgById.get(String(s['package_id'] ?? ''));
+        const cust = pkg ? custById.get(pkg.customer_id) : undefined;
+        const sessionType = s['session_type'] ? String(s['session_type']) : '';
+        const sessionDate = s['session_date'] ? String(s['session_date']) : '';
+        const ci = s['check_in_id'] ? ciById.get(String(s['check_in_id'])) : undefined;
+        const isHealer = ci?.reservation_id ? (healerByResv.get(ci.reservation_id) ?? false) : null;
+        return {
+          차트번호: cust?.chart_number ?? '',
+          환자명: cust?.name ?? '',
+          시술일: sessionDate,
+          시술타입: sessionTypeLabel(sessionType),
+          세션번호: typeof s['session_number'] === 'number' ? (s['session_number'] as number) : '',
+          총회차: pkg?.total_sessions ?? '',
+          시술부위: ci ? footSitesFromMemo(ci.treatment_memo) : '',
+          힐러적용여부: healerCell(sessionType, sessionDate, isHealer),
+        };
+      });
+
+      // 정렬: 차트번호 → 시술일 → 세션번호(치료 흐름·환자 묶음 가독성).
+      csvRows.sort((a, b) => {
+        const c = String(a.차트번호).localeCompare(String(b.차트번호));
+        if (c !== 0) return c;
+        const d = String(a.시술일).localeCompare(String(b.시술일));
+        if (d !== 0) return d;
+        return Number(a.세션번호 || 0) - Number(b.세션번호 || 0);
+      });
+
+      if (csvRows.length === 0) {
+        toast.warning('선택한 환자의 시술기록이 없습니다.');
+        return;
+      }
+
+      // PHI 반출 감사로그(필수 AC) — 다운로드 직전 기록.
+      logProgressCsvExport({
+        actor: profile?.email ?? profile?.id ?? null,
+        actorRole: profile?.role ?? null,
+        clinicId: clinic?.id ?? null,
+        patientCount: customerIds.length,
+        rowCount: csvRows.length,
+        chartNumbers: csvRows.map((r) => (r.차트번호 ? String(r.차트번호) : null)),
+      });
+
+      downloadProgressCsv(csvRows, progressCsvFilename());
+      toast.confirm(`선택 ${customerIds.length}명 · 시술기록 ${csvRows.length}건 CSV를 내려받았습니다.`);
+    } catch (e) {
+      toast.error(`CSV 내보내기 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setCsvBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4" data-testid="progress-targets-section">
       {/* T-20260701-foot-PROGRESSLIST-TOP-REORDER: 경과분석 대상자 '리스트'를 화면 최상단으로 이동(위젯보다 위).
@@ -210,6 +362,24 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
               <ListChecks className="h-3.5 w-3.5" />
               일괄처리
             </Button>
+            {/* T-20260702-foot-PROGRESS-CSV-EXPORT: 선택 환자 시술기록 전체 CSV 다운로드. admin/manager(운영권한)만 노출(PHI 가드). */}
+            {canExportCsv && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleCsvExport}
+                disabled={selectedCount === 0 || csvBusy}
+                data-testid="progress-csv-export-btn"
+              >
+                {csvBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                CSV 다운로드
+              </Button>
+            )}
             <span
               className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
               data-testid="progress-targets-count"
