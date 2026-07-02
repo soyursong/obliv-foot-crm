@@ -4,7 +4,7 @@ domain: foot
 priority: P3
 status: deploy-ready
 qa_result: pending (supervisor 표준 FE QA 대기)
-deploy_commit: PENDING
+deploy_commit: 51c5e1b380
 deployed_at: n/a (NOT yet deployed — supervisor QA 대기)
 bundle_hash: n/a (NOT yet deployed)
 db_change: false
