@@ -2611,13 +2611,18 @@ export default function Reservations() {
                                     )}
                                   </div>
                                   );
-                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 좌우 2열 그리드. 카드가 하나도 없으면 그리드 자체 미렌더(빈 슬롯 유지).
-                                  //   왼쪽 열=초진(colNew) / 오른쪽 열=재진+힐러(colRest), 각 열 flex-col 세로 쌓기(예약 시각 순). 2열 트랙은 항상 유지 → 단일 그룹이어도 좌/우 정렬 불깨짐.
+                                  // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 초진(colNew)/재진·힐러(colRest) 분류 유지. 카드가 하나도 없으면 컨테이너 자체 미렌더(빈 슬롯 유지).
+                                  // T-20260702-foot-RESVCAL-DAYWEEK-LAYOUT-UNIFY (AC-2 partial — planner carve-out MSG-20260703-000711-xfkm):
+                                  //   주뷰 셀 카드배치를 좌우 2열 그리드(grid-cols-2, 반폭) → 단일 세로 풀폭 스택(flex-col)으로 전환.
+                                  //   [문제] 같은 시간대 다건이면 각 열이 셀의 반폭이라 카드가 축소·truncate → 치료유형·상태뱃지·담당자 상세정보 소실(스크린샷 F0BELKUCKKP '2×2 미니그리드' 지적).
+                                  //   [해결] 컨테이너를 세로 스택으로 바꿔 각 카드가 셀 전체 폭 사용 → 반폭 축소 truncate 제거, 다건·5건+도 세로로 자연 스택(정보 소실 0).
+                                  //   [불변] renderCard 포맷·필드, KIND_CARD_STYLE 컬러 분류, 정렬(초진군→재진/힐러군, 각 예약시각 순), col-new/col-rest testid, 카드 누락0. 데이터/DB 무변경.
+                                  //   [범위] AC-2 한정(주뷰). AC-1(헤더 카운트뱃지 통일)/AC-3(일뷰 기준 통일)은 baseline 재확인 대기로 blocked — 본 배포 범위 아님.
                                   if (colNew.length === 0 && colRest.length === 0) return null;
                                   return (
                                     <div
                                       data-testid={`resv-typecols-${dateStr}-${time}`}
-                                      className="grid grid-cols-2 gap-0.5 items-start"
+                                      className="flex flex-col gap-0.5"
                                     >
                                       <div
                                         data-testid={`resv-col-new-${dateStr}-${time}`}
