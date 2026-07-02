@@ -30,17 +30,17 @@ const AGG = fs.readFileSync(path.resolve('src/lib/resvSlotAgg.ts'), 'utf-8');
 // AC1/AC2 — 세로축 4분류 라벨 SSOT (초진/재진/힐러/리본(발각질)) + 축약(초/재/힐/리)
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC1/AC2: KIND_AXIS_LABELS — 4분류 full/abbr 상수', () => {
-  test('AC1-1: full 라벨 = 초진 / 재진 / 힐러 / [리본]', () => {
+  test('AC1-1: full 라벨 = 초진 / 재진 / 힐러 / 리본', () => {
     expect(KIND_AXIS_LABELS.new.full).toBe('초진');
     expect(KIND_AXIS_LABELS.returning.full).toBe('재진');
     expect(KIND_AXIS_LABELS.healer.full).toBe('힐러');
-    // T-20260702-foot-RESVAXIS-RIBON-LABEL supersede: 리본 라벨 3차 변경 '리본(발각질)' → '[리본]' (§13.1.A REDEFINITION).
-    expect(KIND_AXIS_LABELS.ribbon.full).toBe('[리본]');
+    // T-20260702-foot-RESVAXIS-RIBON-DEBRACKET supersede: 리본 라벨 4차 변경 '[리본]' → '리본' (대괄호 제거, §13.1.A REDEFINITION).
+    expect(KIND_AXIS_LABELS.ribbon.full).toBe('리본');
   });
 
-  test('AC2-1: 리본 라벨 확정 (RESVAXIS-RIBON-LABEL supersede → [리본])', () => {
-    // 구 확정값 '리본(발각질)' → 김주연 총괄 3차 지시로 '[리본]' 재확정.
-    expect(RIBBON_BADGE_LABEL).toBe('[리본]');
+  test('AC2-1: 리본 라벨 확정 (RESVAXIS-RIBON-DEBRACKET supersede → 리본)', () => {
+    // 확정값 이력: '리본(발각질)' → '[리본]' → 김주연 총괄 4차 지시로 '리본'(대괄호 제거) 재확정.
+    expect(RIBBON_BADGE_LABEL).toBe('리본');
     // full 라벨은 RIBBON_BADGE_LABEL 상수 SSOT 재사용
     expect(KIND_AXIS_LABELS.ribbon.full).toBe(RIBBON_BADGE_LABEL);
     expect(AGG, 'RIBBON_BADGE_LABEL export 누락').toContain('export const RIBBON_BADGE_LABEL');
