@@ -68,7 +68,8 @@ test.describe('AC3: 카드 4행 배치 파티션 — 기존 소스 재사용', (
     expect(KIND_AXIS_LABELS.new.full).toBe('초진');
     expect(KIND_AXIS_LABELS.returning.full).toBe('재진');
     expect(KIND_AXIS_LABELS.healer.full).toBe('힐러');
-    expect(KIND_AXIS_LABELS.ribbon.full).toBe('리본(발각질)');
+    // 리본 라벨 이력: '리본(발각질)' → '[리본]' → '리본'(T-20260702-foot-RESVAXIS-RIBON-DEBRACKET, 대괄호 제거).
+    expect(KIND_AXIS_LABELS.ribbon.full).toBe('리본');
   });
 });
 
