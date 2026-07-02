@@ -51,8 +51,10 @@ const ROSTER_TYPE_LABEL: Record<RosterType, string> = {
 };
 
 const ROSTER_TYPE_COLOR: Record<RosterType, string> = {
-  regular: 'bg-teal-100 text-teal-800 border-teal-300',
-  part: 'bg-amber-100 text-amber-800 border-amber-300',
+  // T-20260702-foot-DOCROSTER-ACHROMATIC-SCOPE: warm(teal/amber) 램프 → 무채색 gray.
+  //   regular(진하게)/part(연하게)로 명도 대비 유지. resigned red는 의미색 보존.
+  regular: 'bg-gray-200 text-gray-800 border-gray-400',
+  part: 'bg-gray-100 text-gray-600 border-gray-300',
   resigned: 'bg-red-100 text-red-700 border-red-300',
 };
 
@@ -238,7 +240,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
       {/* ── 오늘 근무원장님 배너 ── */}
       <Card
         className={`border-2 ${
-          todayDoctors.length > 0 ? 'border-teal-300 bg-teal-50' : 'border-amber-200 bg-amber-50'
+          todayDoctors.length > 0 ? 'border-gray-400 bg-gray-100' : 'border-gray-300 bg-gray-50'
         }`}
       >
         <CardHeader className="pb-2 pt-3">
@@ -249,7 +251,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
         </CardHeader>
         <CardContent className="pb-3">
           {todayDoctors.length === 0 ? (
-            <div className="flex items-center gap-2 text-sm text-amber-700">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>
                 오늘 근무 원장님이 설정되지 않았습니다.{' '}
@@ -261,7 +263,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
               {todayDoctors.map((d) => (
                 <div
                   key={d.name}
-                  className="flex items-center gap-1.5 rounded-full bg-white border border-teal-300 px-3 py-1 text-sm font-medium text-teal-800 shadow-sm"
+                  className="flex items-center gap-1.5 rounded-full bg-white border border-gray-400 px-3 py-1 text-sm font-medium text-gray-800 shadow-sm"
                 >
                   <span>{d.name}</span>
                   <Badge
@@ -271,7 +273,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                   </Badge>
                 </div>
               ))}
-              <span className="self-center text-xs text-teal-600">
+              <span className="self-center text-xs text-gray-500">
                 ← 서류 자동 세팅됩니다
               </span>
             </div>
@@ -369,7 +371,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                       key={ds}
                       className={`border-b border-r px-2 py-1 text-center text-xs font-semibold whitespace-nowrap ${
                         isToday
-                          ? 'bg-teal-100 text-teal-800'
+                          ? 'bg-gray-200 text-gray-800'
                           : 'text-muted-foreground'
                       }`}
                     >
@@ -399,7 +401,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                       <td
                         key={ds}
                         className={`border-b border-r p-0.5 text-center ${
-                          isToday ? 'bg-teal-50/60' : ''
+                          isToday ? 'bg-gray-100/60' : ''
                         }`}
                       >
                         <button
@@ -409,7 +411,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
                               rtype
                                 ? ROSTER_TYPE_COLOR[rtype] +
                                   ' shadow-sm hover:opacity-80'
-                                : 'border-dashed border-gray-200 text-gray-300 hover:border-teal-300 hover:text-teal-400 hover:bg-teal-50/50'
+                                : 'border-dashed border-gray-200 text-gray-300 hover:border-gray-400 hover:text-gray-500 hover:bg-gray-100/50'
                             }
                             ${!canEdit ? 'cursor-default' : 'cursor-pointer active:scale-95'}
                           `}
