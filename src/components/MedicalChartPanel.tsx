@@ -55,6 +55,8 @@ import { ko } from 'date-fns/locale';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Lock, Pill, Search, Trash2, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
+// T-20260703-foot-STAFFPHOTO-CHART-LINK: 직원촬영 임상사진 원장 조회 탭(readOnly). 느슨 결합 드롭인.
+import TreatmentPhotoGallery from '@/components/TreatmentPhotoGallery';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -284,7 +286,7 @@ export interface MedicalChartPanelProps {
   //   임상경과 오기입 차단용 — readOnly=true 면 textarea readOnly + 저장 버튼(embed footer) 미노출.
   // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 패널 열림 시 우측 기본 탭 지정(deep-link/QA 진입용).
   //   미지정 시 기존과 동일하게 'rx'. ?medchart=visit_hist 진입 시 '방문이력' 콘텐츠를 바로 노출하기 위함.
-  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult';
+  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult' | 'clinical_photos';
   //   default false → 기존 모든 호출자(DoctorCallDashboard 등) 동작 무변경(AC-4 회귀가드).
   readOnly?: boolean;
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안 (문지은 대표원장, '둘다해줘'):
@@ -723,7 +725,7 @@ export default function MedicalChartPanel({
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
   // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 'consult' 탭(📋 상담) 추가
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult'>('rx');
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult' | 'clinical_photos'>('rx');
   // T-20260605-foot-RX-PHRASE-CLICK-INSERT: 체크박스 다중선택 → 클릭 시 ✓ 즉시삽입 단일화.
   //   행 클릭 → 그 행만 ✓ 버튼 노출(단일 활성), ✓ 클릭 → 즉시 삽입. (펜차트 PHRASE-MULTISELECT 와 별개 패널)
   const [clickedPhraseId, setClickedPhraseId] = useState<number | null>(null);
@@ -3884,6 +3886,7 @@ export default function MedicalChartPanel({
                     {([
                       { key: 'visit_hist', label: '방문이력' },
                       { key: 'images', label: '진료이미지' },
+                      { key: 'clinical_photos', label: '임상사진' },
                       { key: 'consult', label: '상담' },
                     ] as const).map(({ key, label }) => (
                       <button
@@ -4243,6 +4246,20 @@ export default function MedicalChartPanel({
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* ── T-20260703-foot-STAFFPHOTO-CHART-LINK: 임상사진 탭 (직원촬영 → 원장 조회) ─────
+                      canonical treatment_photos(private 'treatment-photos' 버킷, signed URL) 읽기전용 갤러리.
+                      readOnly → 원장 뷰에서 촬영/삭제 버튼 비노출(업로드·삭제=직원 전용, 조회=원장 포함 전체).
+                      느슨 결합: customerId/clinicId props만 전달 → 총괄 배치 컨펌 시 위치 이동 자유. */}
+                  {rightTab === 'clinical_photos' && (
+                    <div className="p-3" data-testid="right-panel-clinical-photos-content">
+                      <TreatmentPhotoGallery
+                        customerId={customerId}
+                        clinicId={clinicId}
+                        readOnly
+                      />
                     </div>
                   )}
 

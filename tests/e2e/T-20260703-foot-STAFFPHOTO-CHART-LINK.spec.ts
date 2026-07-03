@@ -14,6 +14,9 @@
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -149,5 +152,33 @@ test.describe('T-20260703-foot-STAFFPHOTO-CHART-LINK', () => {
     const { data, error } = await service.storage.from(BUCKET).download(seededPath!);
     expect(error).toBeNull();
     expect(data).toBeTruthy();
+  });
+
+  // ── S4. FE 배치 회귀 가드 (원장 진료차트 연동) ─────────────────────
+  //   supervisor QA phase1 FAIL 재발 방지: TreatmentPhotoGallery 가 정의만 되고
+  //   어느 화면에도 연결되지 않으면(=orphan) 요구사항(원장 차트 조회) 미충족.
+  //   MedicalChartPanel(진료차트) 이 갤러리를 import 하고 readOnly 원장 조회 탭으로
+  //   실제 렌더하는지 소스 계약을 결정적으로 검증한다(재-orphan 차단).
+  test.describe('S4. FE 배치 회귀 가드', () => {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const chartPath = resolve(__dirname, '../../src/components/MedicalChartPanel.tsx');
+    const chartSrc = readFileSync(chartPath, 'utf8');
+
+    test('S4-a. 진료차트가 TreatmentPhotoGallery 를 import', () => {
+      expect(chartSrc).toMatch(/import\s+TreatmentPhotoGallery\s+from\s+['"]@\/components\/TreatmentPhotoGallery['"]/);
+    });
+
+    test('S4-b. 임상사진 탭 키/라벨이 우측 패널에 등록', () => {
+      expect(chartSrc).toContain("key: 'clinical_photos'");
+      expect(chartSrc).toContain("label: '임상사진'");
+    });
+
+    test('S4-c. 원장 조회 = readOnly 로 렌더(촬영/삭제 비노출)', () => {
+      // clinical_photos 탭 콘텐츠 블록에서 <TreatmentPhotoGallery ... readOnly /> 렌더 확인
+      const block = chartSrc.slice(chartSrc.indexOf("rightTab === 'clinical_photos'"));
+      expect(block).toMatch(/<TreatmentPhotoGallery[\s\S]*?readOnly[\s\S]*?\/>/);
+      expect(block).toMatch(/customerId=\{customerId\}/);
+      expect(block).toMatch(/clinicId=\{clinicId\}/);
+    });
   });
 });
