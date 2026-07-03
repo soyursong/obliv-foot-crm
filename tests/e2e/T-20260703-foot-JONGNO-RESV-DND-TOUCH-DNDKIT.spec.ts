@@ -60,9 +60,20 @@ test('AC3: MouseSensor 등록 — 데스크톱 마우스 드래그 회귀 보전
 // ── AC4: 짧은 탭 오발동 방지 = TouchSensor activation constraint(delay) ──
 test('AC4: 짧은 탭 오발동 방지 — TouchSensor delay activation constraint', () => {
   const src = read(SRC);
-  // long-press(1초) 후에만 드래그 활성 → 짧은 탭은 카드 onClick(상세/선택) 통과
-  expect(src).toMatch(/TouchSensor,\s*\{\s*activationConstraint:\s*\{\s*delay:\s*1000/);
+  // long-press(500ms) 후에만 드래그 활성 → 짧은 탭은 카드 onClick(상세/선택) 통과
+  expect(src).toMatch(/TouchSensor,\s*\{\s*activationConstraint:\s*\{\s*delay:\s*500/);
   expect(src).toContain('tolerance');
+});
+
+// ── [reopen RC 회귀가드] 지터-abort config 재유입 차단 ──
+// RC(grounded): delay:1000/tolerance:5 → 갤탭S10 1초 롱프레스 중 자연 손가락 지터가 5px 초과
+//   → @dnd-kit activation abort → 드래그 미발동(field-soak FAIL). 롱레 칸반 검증 config로 교체.
+test('RC가드: TouchSensor 지터-abort config(delay:1000/tolerance:5) 재유입 금지', () => {
+  const src = read(SRC);
+  // 지터-abort 조합이 다시 들어오면 즉시 RED
+  expect(src).not.toMatch(/TouchSensor,\s*\{\s*activationConstraint:\s*\{\s*delay:\s*1000/);
+  // 검증된 터치 config: delay 500ms + tolerance 10px (롱레 AdminDashboard 칸반 상시운용값)
+  expect(src).toMatch(/TouchSensor,\s*\{\s*activationConstraint:\s*\{\s*delay:\s*500,\s*tolerance:\s*10/);
 });
 
 // ── 불변식: confirmed 예약만 드래그(기존 정책 보존) ──

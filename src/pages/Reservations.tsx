@@ -402,11 +402,11 @@ function DraggableResv({ resId, disabled, children }: { resId: string; disabled?
         onTouchStart: (e: RTouchEvent<HTMLDivElement>) => {
           dndListeners?.onTouchStart?.(e);
           setIsPressing(true);
-          // 950ms: 드래그 활성화(1000ms) 직전 햅틱 발화 → 즉각적인 느낌
+          // 450ms: 드래그 활성화(500ms) 직전 햅틱 발화 → 즉각적인 느낌 (RC fix: delay 1000→500 정합)
           pressTimerRef.current = setTimeout(() => {
             if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
             setIsPressing(false);
-          }, 950);
+          }, 450);
         },
         onTouchEnd: (e: RTouchEvent<HTMLDivElement>) => {
           dndListeners?.onTouchEnd?.(e);
@@ -1616,11 +1616,14 @@ export default function Reservations() {
   };
 
   // T-20260703-foot-JONGNO-RESV-DND-TOUCH-DNDKIT: HTML5 네이티브 DnD 제거 → @dnd-kit 센서/핸들러로 대체.
-  //   센서: 데스크톱(MouseSensor 5px 이동 즉시) + 갤럭시탭(TouchSensor 1초 long-press, 5px tolerance).
+  //   센서: 데스크톱(MouseSensor 5px 이동 즉시) + 갤럭시탭(TouchSensor 500ms long-press, 10px tolerance).
   //   TouchSensor activation constraint(delay) → 짧은 탭은 드래그 미발동(오발동 방지), 카드 onClick 정상 통과.
+  //   [reopen RC fix] delay:1000/tolerance:5 → 갤탭S10 1초 롱프레스 중 자연 손가락 지터가 5px 초과 → activation abort(드래그 死).
+  //   롱레 칸반(happy-flow-queue AdminDashboard.tsx, 태블릿 상시운용 검증) 터치 config {delay:500, tolerance:10} 채택:
+  //   드리프트 창 절반(1000→500ms)·tolerance 2배(5→10px) → 지터 수용, 500ms는 탭/드래그 구분 유지.
   const dndSensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 1000, tolerance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 10 } }),
   );
 
   const handleDndStart = (event: DragStartEvent) => {
