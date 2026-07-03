@@ -49,7 +49,10 @@ const Staff = lazyWithRetry(() => import('@/pages/Staff'));
 const Closing = lazyWithRetry(() => import('@/pages/Closing'));
 const Stats = lazyWithRetry(() => import('@/pages/Stats'));
 const Accounts = lazyWithRetry(() => import('@/pages/Accounts'));
-const SelfCheckIn = lazyWithRetry(() => import('@/pages/SelfCheckIn'));
+// T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE (AC2): obliv native SelfCheckIn 사본 제거.
+//   canonical=foot-checkin.pages.dev/jongno-foot 단일화. /checkin/jongno-foot 은
+//   vercel.json 의 permanent 301 edge redirect 로 canonical 이관(무중단). 이 stale 사본은
+//   YESNO-FLOW/VISITTYPE-REMOVE 미반영으로 dev 5라운드 wrong-target 근원이 되어 완전 제거.
 const Waiting = lazyWithRetry(() => import('@/pages/Waiting'));
 const CustomerChartPage = lazyWithRetry(() => import('@/pages/CustomerChartPage'));
 const DailyHistory = lazyWithRetry(() => import('@/pages/DailyHistory'));
@@ -98,11 +101,14 @@ function ThemeBrown({ children }: { children: ReactNode }) {
 }
 
 /**
- * T-20260603-foot-CHECKIN-OLDURL-DEPRECATE: 구 셀프접수 URL 안전망 회수.
- * jongno-foot canonical 은 foot-checkin.pages.dev 로 단일 이전됨(6/2 CF-CUTOVER, 6/3 현장 정착).
- * PROD 1차 차단은 vercel.json 308 edge redirect 가 담당하지만, edge 우회/SPA client-side
- * 진입 시에도 stale native SelfCheckIn 으로 신규 접수가 생성되지 않도록 SPA 레벨에서도
- * canonical 로 강제 리다이렉트(방어심화). 비-deprecated slug 는 기존 native 렌더 보존(로컬/타 클리닉).
+ * T-20260603-foot-CHECKIN-OLDURL-DEPRECATE + T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE (AC2):
+ * jongno-foot 셀프접수 canonical 은 foot-checkin.pages.dev(soyursong/foot-checkin) 단일 이전됨.
+ * PROD 1차 차단은 vercel.json 의 permanent 301 edge redirect(무중단, SPA 미로드 즉시 이관)이 담당.
+ * edge 우회/SPA client-side 진입 시에도 canonical 로 강제 리다이렉트(방어심화) — deprecated slug 계약.
+ *
+ * ⚠️ AC2 STALE-COPY-CONSOLIDATE: obliv 의 stale native SelfCheckIn.tsx 사본(YESNO-FLOW/VISITTYPE-REMOVE
+ *   미반영, dev 5라운드 wrong-target 근원)은 완전 제거됨. CheckinRoute 는 더 이상 native 셀프접수를
+ *   렌더하지 않고 canonical 리다이렉트 전용이다. 비-deprecated slug 는 이관 안내(native 렌더 없음).
  */
 const DEPRECATED_CHECKIN_CANONICAL: Record<string, string> = {
   'jongno-foot': 'https://foot-checkin.pages.dev/jongno-foot',
@@ -114,21 +120,19 @@ function CheckinRoute() {
   useEffect(() => {
     if (canonical) window.location.replace(canonical);
   }, [canonical]);
-  if (canonical) {
-    return (
-      <div className="theme-brown flex h-full min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-base font-medium">셀프접수 주소가 변경되었습니다.</p>
-        <p className="text-sm text-muted-foreground">자동으로 새 접수 화면으로 이동합니다…</p>
+  // AC2: native SelfCheckIn 사본 제거 — canonical 리다이렉트(방어심화) 또는 이관 안내만.
+  return (
+    <div className="theme-brown flex h-full min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="text-base font-medium">셀프접수 주소가 변경되었습니다.</p>
+      <p className="text-sm text-muted-foreground">
+        {canonical ? '자동으로 새 접수 화면으로 이동합니다…' : '접수는 매장 안내 QR 로 진행해 주세요.'}
+      </p>
+      {canonical && (
         <a href={canonical} className="text-sm underline">
           이동되지 않으면 여기를 눌러주세요
         </a>
-      </div>
-    );
-  }
-  return (
-    <ThemeBrown>
-      <SelfCheckIn />
-    </ThemeBrown>
+      )}
+    </div>
   );
 }
 
@@ -157,19 +161,13 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              {/* T-20260531-foot-JONGNOFOOT-NORMAL-SETUP AC-2/AC-6:
-                  jongno-foot 셀프접수를 obliv-foot-crm 자기 도메인에 정상 복귀.
-                  PURGE(L1) 후속 — HFQ 리다이렉트 제거. /checkin/jongno-foot 은
-                  일반 :clinicSlug 라우트로 떨어져 풋 CRM 네이티브 SelfCheckIn 렌더.
-                  (HFQ 코드/DB 비참조 — LOCKDOWN dev_ops_policy v2.5 §1-1)
-                  ⚠️ T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE: CF-CUTOVER 로 jongno-foot
-                  canonical 이 foot-checkin.pages.dev(soyursong/foot-checkin)로 이전됨. 본 native
-                  SelfCheckIn 은 YESNO-FLOW/VISITTYPE-REMOVE 미반영 stale 사본이 되어
-                  PROD 에서는 vercel.json 의 308 edge redirect 로 /checkin/jongno-foot →
-                  canonical 단일화됨(이 SPA 라우트까지 도달 안 함). 로컬/타 클리닉 slug 는 그대로
-                  native 렌더 — :clinicSlug 제네릭 라우트는 보존.
-                  ⚠️ T-20260603-foot-CHECKIN-OLDURL-DEPRECATE: 안전망 회수 — deprecated slug
-                  (jongno-foot)는 CheckinRoute 에서 canonical 로 강제 리다이렉트(방어심화). */}
+              {/* T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE (AC2):
+                  jongno-foot 셀프접수 canonical=foot-checkin.pages.dev(soyursong/foot-checkin) 단일.
+                  /checkin/jongno-foot 은 vercel.json permanent 301 edge redirect 로 canonical 이관(무중단).
+                  이 SPA 라우트는 방어심화 — edge 우회/client-side 진입 시 CheckinRoute 가 canonical 로
+                  강제 리다이렉트한다(deprecated slug 계약). obliv native SelfCheckIn 사본은 stale
+                  (YESNO-FLOW/VISITTYPE-REMOVE 미반영, dev 5라운드 wrong-target 근원)이라 완전 제거 —
+                  CheckinRoute 는 리다이렉트/이관안내 전용, native 렌더 없음. */}
               <Route path="/checkin/:clinicSlug" element={<CheckinRoute />} />
               <Route path="/checklist/:checkInId" element={<ThemeBrown><TabletChecklistPage /></ThemeBrown>} />
               <Route path="/waiting/:clinicSlug" element={<ThemeBrown><Waiting /></ThemeBrown>} />

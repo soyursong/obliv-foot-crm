@@ -96,9 +96,14 @@ test('AC-2: 수동접수 — NewCheckInDialog 재진 선택 시 treatment_waitin
   await page.getByRole('button', { name: '취소' }).click();
 });
 
-// ── AC-1/AC-2: 셀프접수 status 자동 세팅 확인 ────────────────────────────────
+// ── AC-1/AC-2/AC-4: 셀프접수 status 자동 세팅 확인 ────────────────────────────
+// ⚠ T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE (AC2): obliv native SelfCheckIn 사본이
+//   완전 제거됨(canonical=foot-checkin.pages.dev 단일). /checkin/jongno-foot 은 vercel.json
+//   permanent 301 edge redirect 로 canonical 이관 → obliv SPA 에는 native 셀프접수 화면이 없다.
+//   아래 셀프접수 native UI 검증 3건은 canonical(soyursong/foot-checkin) 소관으로 이관되어
+//   obliv 에서는 skip. (위 NewCheckInDialog 수동접수 auto-stage 검증은 그대로 유효.)
 
-test('AC-1: 셀프접수 — 초진 선택 시 SelfCheckIn에 consult_waiting INSERT 로직 존재', async ({ page }) => {
+test.skip('AC-1: 셀프접수 — 초진 선택 시 SelfCheckIn에 consult_waiting INSERT 로직 존재', async ({ page }) => {
   // SelfCheckIn.tsx line 715: status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting'
   // 접수 플로우 UI만 검증 (실제 DB INSERT는 integration test 영역)
   await page.goto(`${BASE_URL}/checkin/jongno-foot`);
@@ -117,7 +122,7 @@ test('AC-1: 셀프접수 — 초진 선택 시 SelfCheckIn에 consult_waiting IN
   await expect(newBtn).toBeVisible();
 });
 
-test('AC-2: 셀프접수 — 재진 선택 시 treatment_waiting 로직', async ({ page }) => {
+test.skip('AC-2: 셀프접수 — 재진 선택 시 treatment_waiting 로직', async ({ page }) => {
   await page.goto(`${BASE_URL}/checkin/jongno-foot`);
 
   await expect(page.getByText('셀프 접수').or(page.getByText('Self Check-In'))).toBeVisible({ timeout: 15000 });
@@ -131,7 +136,7 @@ test('AC-2: 셀프접수 — 재진 선택 시 treatment_waiting 로직', async 
 
 // ── AC-4: 예약없이 방문 (walk-in) ────────────────────────────────────────────
 
-test('AC-4: 셀프접수 — 예약없이 방문 선택 가능', async ({ page }) => {
+test.skip('AC-4: 셀프접수 — 예약없이 방문 선택 가능', async ({ page }) => {
   await page.goto(`${BASE_URL}/checkin/jongno-foot`);
 
   await expect(page.getByText('셀프 접수').or(page.getByText('Self Check-In'))).toBeVisible({ timeout: 15000 });

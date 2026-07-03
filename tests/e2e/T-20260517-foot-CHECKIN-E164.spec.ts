@@ -106,8 +106,12 @@ test('AC-4: NewCheckInDialog — 하이픈 없이 숫자만 입력 가능', asyn
 });
 
 // ── AC-5: SelfCheckIn.tsx 회귀 없음 ────────────────────────────────────────
+// ⚠ T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE (AC2): obliv native SelfCheckIn 사본이
+//   완전 제거됨(canonical=foot-checkin.pages.dev 단일, /checkin/jongno-foot 은 edge 301 이관).
+//   아래 native 셀프접수 렌더 검증 2건은 canonical(soyursong/foot-checkin) 소관으로 이관되어
+//   obliv 에서는 skip. (위 NewCheckInDialog E.164 정규화 검증 AC-1/AC-3/AC-4 는 그대로 유효.)
 
-test('AC-5: SelfCheckIn — 셀프접수 페이지 정상 렌더링 (회귀 없음)', async ({ page }) => {
+test.skip('AC-5: SelfCheckIn — 셀프접수 페이지 정상 렌더링 (회귀 없음)', async ({ page }) => {
   await page.goto(`${BASE_URL}/checkin/jongno-foot`);
 
   // 셀프접수 페이지 기본 UI 확인
@@ -129,7 +133,7 @@ test('AC-5: SelfCheckIn — 셀프접수 페이지 정상 렌더링 (회귀 없�
   await expect(checkInBtn).toBeDisabled();
 });
 
-test('AC-5: SelfCheckIn — 이름+번호 입력 시 접수하기 버튼 활성화', async ({ page }) => {
+test.skip('AC-5: SelfCheckIn — 이름+번호 입력 시 접수하기 버튼 활성화', async ({ page }) => {
   await page.goto(`${BASE_URL}/checkin/jongno-foot`);
 
   await expect(
