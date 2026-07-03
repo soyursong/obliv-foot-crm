@@ -540,6 +540,12 @@ export default function Reservations() {
   //   reservations.booking_memo 컬럼은 생성시 초기메모만 갖는 부분 미러 → 추후 추가분이 hover에 미표시되던 버그.
   //   reservation_id → '대표 메모 1줄'(pinned 우선, 없으면 최신 created_at) 맵. resvBookerMap 패턴 미러.
   const [resvMemoMap, setResvMemoMap] = useState<Map<string, string>>(new Map());
+  // T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING: 힐러 예약카드 치료유형명 소스맵.
+  //   힐러 예약은 후속행 healer_flag=true 토글로 생성 → brief_note(치료유형 캡처칸) 미보유 →
+  //   카드에 표시할 치료유형 데이터 자체가 없어 '● 예약'만 노출되던 게 현장 신고 RC(planner 확정 소스 A).
+  //   해소: linked_package_id → packages.package_name(치료유형명) read-only 조회. reservation_id → package_name 맵.
+  //   resvBookerMap/resvMemoMap 사이드맵 패턴 미러. 미연결·비힐러는 미표기(AC2/AC3 회귀0).
+  const [resvPkgTypeMap, setResvPkgTypeMap] = useState<Map<string, string>>(new Map());
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
@@ -927,6 +933,35 @@ export default function Reservations() {
         }
       }
       setResvMemoMap(memoM);
+    }
+
+    // T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING: 힐러 예약카드 치료유형명(package_name) 사이드맵 구성.
+    //   list 중 linked_package_id 보유 행의 패키지를 단일 배치(.in)로 조회 → reservation_id → package_name 맵.
+    //   read-only, 스키마 무변경(N+1 없음). 카드 렌더(renderDayCard/주뷰)는 힐러 카드 한정 이 맵을 brief_note 대체로 사용.
+    {
+      const pkgTypeM = new Map<string, string>();
+      const pkgIdByResv = new Map<string, string>(); // reservation_id → linked_package_id
+      for (const r of list) {
+        const pid = (r.linked_package_id ?? '').trim();
+        if (pid) pkgIdByResv.set(r.id, pid);
+      }
+      const pkgIds = Array.from(new Set(pkgIdByResv.values()));
+      if (pkgIds.length > 0) {
+        const { data: pkgRows } = await supabase
+          .from('packages')
+          .select('id, package_name')
+          .in('id', pkgIds);
+        const nameByPkg = new Map<string, string>();
+        for (const p of (pkgRows ?? []) as { id: string; package_name: string | null }[]) {
+          const nm = (p.package_name ?? '').trim();
+          if (nm) nameByPkg.set(p.id, nm);
+        }
+        for (const [resvId, pid] of pkgIdByResv) {
+          const nm = nameByPkg.get(pid);
+          if (nm) pkgTypeM.set(resvId, nm);
+        }
+      }
+      setResvPkgTypeMap(pkgTypeM);
     }
 
     // 노쇼 이력 집계
@@ -2142,6 +2177,19 @@ export default function Reservations() {
                     {r.brief_note.trim()}
                   </div>
                 )}
+                {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING: 힐러 카드 치료유형 fallback.
+                    힐러 예약은 brief_note 미보유(생성경로상 미캡처) → 위 간략메모 블록이 비어 '● 예약'만 표시되던 RC.
+                    brief_note 부재 시 한정(중복표기 방지) + 힐러 한정(AC3 타역할 회귀0) + 패키지 연결분만(AC2 미연결은 유지)
+                    linked_package_id→packages.package_name(치료유형명) 표기. 일간뷰. */}
+                {r.status !== 'cancelled' && !r.brief_note?.trim() && resvKind(r) === 'healer' && resvPkgTypeMap.get(r.id) && (
+                  <div
+                    className="mt-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600"
+                    data-testid={`resv-day-pkgtype-${r.id}`}
+                    title={resvPkgTypeMap.get(r.id)}
+                  >
+                    {resvPkgTypeMap.get(r.id)}
+                  </div>
+                )}
                 {/* T-20260625-foot-RESV-CUSTBOX-3FIELDS-ONLY: 고객박스 표시필드 슬림화([성함/간략메모/예약등록자]).
                     · 초진/재진 텍스트 제거 — 박스 배경 컬러(KIND_CARD_STYLE)로 이미 구분(컬러 점 KIND_DOT은 유지).
                     · 연락처(전화 뒷4자리) 제거 → 간략정보(hover)에 풀번호 노출(이관 완료).
@@ -2633,6 +2681,17 @@ export default function Reservations() {
                                         title={r.brief_note.trim()}
                                       >
                                         {r.brief_note.trim()}
+                                      </div>
+                                    )}
+                                    {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING: 힐러 카드 치료유형 fallback(주간뷰, AC4 일간 정합).
+                                        brief_note 부재 + 힐러 + 패키지 연결분 한정 → package_name(치료유형명) 표기. */}
+                                    {r.status !== 'cancelled' && !r.brief_note?.trim() && resvKind(r) === 'healer' && resvPkgTypeMap.get(r.id) && (
+                                      <div
+                                        className="whitespace-normal break-words text-[10px] font-medium leading-tight text-gray-700"
+                                        data-testid={`resv-pkgtype-${r.id}`}
+                                        title={resvPkgTypeMap.get(r.id)}
+                                      >
+                                        {resvPkgTypeMap.get(r.id)}
                                       </div>
                                     )}
                                     {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row2: 패키지 N/N 표기 제거(기본값) — renderDayCard 정합.

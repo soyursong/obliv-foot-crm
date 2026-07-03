@@ -632,6 +632,8 @@ export interface Reservation {
   external_id?: string | null;
   /** T-20260524-foot-THERAPIST-BISYNC: 재진 예약 지정 치료사 — customers.designated_therapist_id와 쌍방 동기화 */
   preferred_therapist_id?: string | null;
+  /** T-20260623-foot-RESVMGMT-OVERHAUL2: 연결 패키지 id — 재진/힐러 예약이 소진하는 패키지(read 시 packages.package_name=치료유형명 조회 소스). */
+  linked_package_id?: string | null;
   /** T-PROGRESS-CHECKPOINT AC-3: 예약이 경과분석 체크포인트 회차에 해당하면 true */
   progress_check_required?: boolean | null;
   /** T-PROGRESS-CHECKPOINT AC-3: 경과분석 레이블 (예: "6회 중간 경과분석") */
