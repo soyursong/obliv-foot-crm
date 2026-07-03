@@ -141,10 +141,17 @@ CREATE POLICY "treatment_photos_obj_update"
   USING (
     bucket_id = 'treatment-photos'
     AND (storage.foldername(name))[1] = public.current_user_clinic_id()::text
+    -- ALL_STAFF_ROLES (src/lib/permissions.ts) verbatim mirror — insert 정책과 동일 role gate(anti-drift).
+    --   write(INSERT/UPDATE) 미러 강제(supervisor DDL-diff FIX MSG-20260703-110219-l7h5). tm 제외, technician 미존재.
+    AND public.current_user_role() IN
+        ('admin','manager','director','consultant','coordinator','therapist','part_lead','staff')
   )
   WITH CHECK (
     bucket_id = 'treatment-photos'
     AND (storage.foldername(name))[1] = public.current_user_clinic_id()::text
+    -- ALL_STAFF_ROLES (src/lib/permissions.ts) verbatim mirror — insert 정책과 동일 role gate(anti-drift).
+    AND public.current_user_role() IN
+        ('admin','manager','director','consultant','coordinator','therapist','part_lead','staff')
   );
 
 COMMIT;
