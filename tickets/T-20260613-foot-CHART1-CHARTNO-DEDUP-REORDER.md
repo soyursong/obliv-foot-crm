@@ -4,14 +4,15 @@ status: deploy-ready
 priority: P2
 domain: foot
 created_at: 2026-06-13
-deploy_ready_at: 2026-06-14
+deploy_ready_at: 2026-07-03T17:49:24+09:00   # DLQ 재작업 재마킹 (prev 2026-06-14, 707e374 orphan 소실)
 deploy_ready_by: dev-foot
 build_ok: true
 spec_added: tests/e2e/T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER.spec.ts
 db_changed: false
 rollback_sql: none
 risk_level: GO (2/5)
-commit_sha: c8c3ac4   # §D(AC-5/AC-6) 추가 반영. A~C=c9dd3c4
+commit_sha: f3c738e8   # DLQ FIX: 707e374(orphan 소실)→AC-1~5 코드 旣 main 병합(c4654066→15baca31)+AC-5 spec 주간뷰 복원. build OK + E2E 7 spec PASS
+deploy_commit: f3c738e8166d8e57c19873a2ec0c0a85a260abc8   # origin/main tip, merge-base ancestor 확인
 ---
 
 ## 요청
