@@ -4,6 +4,36 @@ import type { InsuranceGrade, InsuranceGradeSource, HiraCategory } from './insur
 
 export type VisitType = 'new' | 'returning' | 'experience';
 
+// 직원촬영 임상사진 (T-20260703-foot-STAFFPHOTO-CHART-LINK) — canonical treatment_photos 테이블 row.
+// ※ 레거시 check_ins.treatment_photos(TEXT[] 컬럼)와 별개. 이쪽은 전용 테이블 + private 'treatment-photos' 버킷.
+export type TreatmentPhotoType = 'before' | 'after' | 'progress';
+export type TreatmentPhotoSource = 'staff_capture' | 'patient_upload' | 'import' | 'legacy_string_array';
+export type TreatmentPhotoBucket = 'treatment-photos' | 'photos';
+
+export interface TreatmentPhoto {
+  id: string;
+  customer_id: string;
+  check_in_id: string | null;
+  clinic_id: string;
+  /** storage object path: {clinic_id}/{customer_id}/{uuid} (private 버킷 — signed URL로만 서빙) */
+  photo_url: string;
+  /** object 가 위치한 버킷(신규=treatment-photos, 레거시 backfill=photos) */
+  storage_bucket: TreatmentPhotoBucket;
+  photo_type: TreatmentPhotoType;
+  body_part: string | null;
+  taken_at: string;
+  treatment_name: string | null;
+  session_no: number | null;
+  note: string | null;
+  file_size_bytes: number | null;
+  original_filename: string | null;
+  uploaded_by: string | null;
+  source: TreatmentPhotoSource;
+  photo_category: string | null;
+  deleted_at: string | null;
+  created_at: string;
+}
+
 /** 고객 상태 플래그 (카드 배경색 변경) — T-20260502-foot-STATUS-COLOR-FLAG */
 export type StatusFlag =
   | 'white'     // 정상 (기본)
