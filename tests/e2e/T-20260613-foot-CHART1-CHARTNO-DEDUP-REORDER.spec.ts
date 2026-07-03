@@ -276,6 +276,11 @@ test.describe('T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D — 예약명단
     await page.goto('/admin/reservations');
     await page.waitForLoadState('networkidle');
     await expect(page).toHaveURL(/reservations/);
+    // T-20260630-foot-RESV-CALENDAR-OVERHAUL 이후 예약관리 기본 뷰=일간(가로 격자, <table> 없음).
+    //   AC-5 회귀는 주간 <table> row 기준(2026-06-14 QA 원본 조건, 코드 §D 로직은 뷰 무관 불변)이므로
+    //   주간 토글로 전환해 표 렌더 조건을 복원한다. 주간 <table> 경로는 OVERHAUL 회귀가드로 불변(Reservations.tsx L2064).
+    await page.getByRole('button', { name: '주간', exact: true }).click();
+    await expect(page.locator('table')).toBeVisible({ timeout: 8_000 });
   });
 
   // 시나리오 5-2/5-3: 활성(취소 아님) 예약 카드 — 차트번호 배지 hover 전·후 모두 카드당 1개
