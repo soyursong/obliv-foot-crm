@@ -1,0 +1,40 @@
+
+══ T-20260703 INTERIM-SCOPEDOWN PROD apply ══  2026-07-04T06:15:41.016Z
+
+── BEFORE ──
+  reservations anon_reservation_read USING: ((reservation_date = ((now() AT TIME ZONE 'Asia/Seoul'::text))::date) AND (status = 'confirmed'::text))
+  payments anon grants: (none)
+
+── APPLY 1: reservations scope-down ──
+  ✅ applied (COMMIT)
+
+── APPLY 2: payments REVOKE ──
+  ✅ applied (COMMIT)
+
+── AFTER (postgres role 검증) ──
+  reservations USING: ((reservation_date = ((now() AT TIME ZONE 'Asia/Seoul'::text))::date) AND (status = 'confirmed'::text))
+  ✅ KST 정합: USING 에 Asia/Seoul (CURRENT_DATE UTC 미사용)
+  ✅ status=confirmed predicate 포함
+  ✅ payments anon grants 제거됨 (now: (none))
+  (Track2 유지 확인) check_ins/customers anon grants:
+     check_ins: INSERT,SELECT,UPDATE
+     customers: INSERT,SELECT,UPDATE
+  경계 데모: KST date=2026-07-04 (KST 15:15) / UTC current_date=2026-07-04
+
+── SMOKE 2a: anon reservations select id,customer_phone ──
+  반환 행수: 1
+  ✅ 모든 행 reservation_date=오늘KST(2026-07-04) (위반 0건)
+  ✅ 모든 행 status=confirmed (위반 0건)
+     샘플: date=2026-07-04 status=confirmed phone=+********9992
+
+── SMOKE 2b: KST 경계 — 당일 예약 read 포함 ──
+  DB 상 오늘KST+confirmed 예약: 1건 / anon 반환: 1건
+  ✅ anon 반환수 == 오늘KST+confirmed 실제수 (경계 정합, 누락/초과 0)
+
+── SMOKE 2c: anon payments select → 권한거부(42501) ──
+  ✅ payments anon read 거부 (status=401, code=42501) permission denied for table payments
+
+── SMOKE 2d: 키오스크 체크인 경로 (예약자 phone→banner 매칭) ──
+  ✅ phone 매칭 조회 정상 (banner 매칭 가능, 1건 hit) — 큐 발번 경로 OK
+
+══ 결과: ✅✅ ALL PASS ══
