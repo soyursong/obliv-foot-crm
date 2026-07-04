@@ -77,6 +77,10 @@ import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
 import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
+// T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 통합시간표 포팅, FIX MSG-20260704-175153):
+//   힐러 예약카드 치료유형 fallback 게이트에 Reservations.tsx 와 동일한 분류 SSOT 사용(중복구현 금지).
+//   resvKind 는 is_healer_intent(영속) || healer_flag(레거시) 우선 → 'healer'.
+import { resvKind } from '@/lib/resvSlotAgg';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
 import { subscribeRefresh } from '@/lib/dashboardRefreshBus';
@@ -163,6 +167,14 @@ const CardHandlersCtx = createContext<CardHandlers | null>(null);
 // ── 예약시간 맵 컨텍스트 (reservation_id → reservation_time) ──────────────────
 /** DraggableCard에서 useContext로 읽어 CustomerHoverCard에 예약시간 전달 */
 const ResvTimeMapCtx = createContext<Map<string, string>>(new Map());
+
+// ── T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅, FIX MSG-20260704-175153) ──
+//   힐러 예약카드 치료유형명(package_name) 소스맵 컨텍스트: reservation_id → package_name.
+//   통합시간표(Dashboard)는 예약관리(Reservations.tsx)와 별도 컴포넌트라 소스A fix 미도달 → 이식.
+//   linked_package_id(예약편집기에서 연결한 패키지) 보유 예약 한정 read-only 조회. resvBookerMap 패턴 미러.
+//   ⚠ 실제 힐러 예약(차트 healer_flag 토글 생성)은 linked_package_id 미보유 → 이 맵 empty = 소스A 한계.
+//      효과적 노출은 소스C(생성경로 캡처, planner 게이트) 필요 — FOLLOWUP 참조.
+const ResvPkgTypeMapCtx = createContext<Map<string, string>>(new Map());
 
 // T-20260522-foot-DRAG-RESP-OPT: 드래그 반응속도 최적화 — TickCtx
 // 역할: DraggableCard가 타이머 틱(10s)으로만 시간 표시를 갱신하고,
@@ -1788,6 +1800,12 @@ function DraggableBox1Card({
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지
   const box1OutstandingMap = useContext(OutstandingMapCtx);
   const box1Outstanding = reservation.customer_id ? box1OutstandingMap.get(reservation.customer_id) : undefined;
+  // T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 초진 슬롯에 배치된 힐러(is_healer_intent) 예약 파리티.
+  //   초진(new)은 통상 힐러 아님 → 게이트로 비힐러 자동 비표기. brief_note 있으면 위 [간략메모] 우선(중복 회피).
+  const box1PkgTypeMap = useContext(ResvPkgTypeMapCtx);
+  const box1HealerPkgType = (!reservation.brief_note?.trim() && resvKind(reservation) === 'healer')
+    ? box1PkgTypeMap.get(reservation.id)
+    : undefined;
   return (
     <div
       ref={setNodeRef}
@@ -1821,7 +1839,8 @@ function DraggableBox1Card({
     >
       {/* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진 배지 무채색 → 파랑(blue) */}
       <span className="shrink-0 bg-blue-100 text-blue-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
-      <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation)}</span>
+      {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
+      <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation) || '이름없음'}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW (김주연 총괄): 초진 예약 박스 '성함 폰뒷자리' → '성함 폰뒷자리 [간략메모]'.
           - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
@@ -1835,6 +1854,17 @@ function DraggableBox1Card({
           data-testid="box1-brief-note"
         >
           [{reservation.brief_note.trim()}]
+        </span>
+      )}
+      {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 fallback(초진 슬롯 파리티).
+          brief_note 부재 + 힐러 + 연결패키지 한정 → package_name 표기. 실제 힐러는 linked_package_id 미보유 → 미표기(소스A 한계). */}
+      {box1HealerPkgType && (
+        <span
+          className="shrink-0 max-w-[80px] truncate text-teal-700 font-medium text-[9px]"
+          title={box1HealerPkgType}
+          data-testid={`box1-resv-pkgtype-${reservation.id}`}
+        >
+          [{box1HealerPkgType}]
         </span>
       )}
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지 */}
@@ -1895,6 +1925,13 @@ function DraggableBox2ResvCard({
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지
   const box2OutstandingMap = useContext(OutstandingMapCtx);
   const box2Outstanding = reservation.customer_id ? box2OutstandingMap.get(reservation.customer_id) : undefined;
+  // T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 fallback.
+  //   Reservations.tsx 소스A 게이트 미러 — !brief_note && resvKind==='healer' && 연결패키지명 존재.
+  //   재진 힐러(healer_flag 소모 후에도 is_healer_intent 로 healer 분류) 대응 위해 resvKind SSOT 사용.
+  const box2PkgTypeMap = useContext(ResvPkgTypeMapCtx);
+  const box2HealerPkgType = (!reservation.brief_note?.trim() && resvKind(reservation) === 'healer')
+    ? box2PkgTypeMap.get(reservation.id)
+    : undefined;
   return (
     <div
       ref={setNodeRef}
@@ -1930,7 +1967,8 @@ function DraggableBox2ResvCard({
       data-testid="box2-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
-      <span className="truncate text-gray-800">{cardDisplayName(reservation)}</span>
+      {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
+      <span className="truncate text-gray-800">{cardDisplayName(reservation) || '이름없음'}</span>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
           REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
       <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
@@ -1943,6 +1981,18 @@ function DraggableBox2ResvCard({
       {/* T-20260516-foot-HEALER-RESV-BTN AC-10: 힐러 배지 표시 */}
       {reservation.healer_flag && (
         <span className="shrink-0 text-[8px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-300 rounded px-0.5 leading-tight">힐</span>
+      )}
+      {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 fallback(통합시간표).
+          brief_note 부재 + 힐러 + 연결패키지 한정 → package_name(치료유형명) 표기. Reservations.tsx 소스A 정합.
+          ⚠ 실제 힐러 예약은 linked_package_id 미보유 → 미표기(소스A 한계, 소스C planner 게이트 FOLLOWUP). */}
+      {box2HealerPkgType && (
+        <span
+          className="shrink-0 max-w-[80px] truncate text-teal-700 font-medium text-[9px]"
+          title={box2HealerPkgType}
+          data-testid={`box2-resv-pkgtype-${reservation.id}`}
+        >
+          [{box2HealerPkgType}]
+        </span>
       )}
       {/* T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2: 접수 버튼 — 카드 드래그(DnD) 와 분리 위해 onPointerDown stopPropagation */}
       {onCheckIn && (
@@ -3342,6 +3392,40 @@ export default function Dashboard() {
       if (r.id && r.reservation_time) m.set(r.id, r.reservation_time);
     }
     return m;
+  }, [timelineReservations]);
+  // ── T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅, FIX MSG-20260704-175153) ──
+  //   힐러 예약카드 치료유형명(package_name) 사이드맵. reservation_id → package_name.
+  //   Reservations.tsx 소스A(resvPkgTypeMap) 미러: linked_package_id 보유 예약 → packages.package_name 단일 배치(.in) read-only.
+  //   당일 타임라인 예약(bounded, 소량) 파생 → N+1/스키마 무변경. 미연결·힐러 아님은 empty(카드에서 게이트).
+  const [resvPkgTypeMap, setResvPkgTypeMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pkgIdByResv = new Map<string, string>(); // reservation_id → linked_package_id
+      for (const r of timelineReservations) {
+        const pid = ((r as { linked_package_id?: string | null }).linked_package_id ?? '').trim();
+        if (pid) pkgIdByResv.set(r.id, pid);
+      }
+      const pkgIds = Array.from(new Set(pkgIdByResv.values()));
+      if (pkgIds.length === 0) { if (!cancelled) setResvPkgTypeMap(new Map()); return; }
+      const { data: pkgRows } = await supabase
+        .from('packages')
+        .select('id, package_name')
+        .in('id', pkgIds);
+      if (cancelled) return;
+      const nameByPkg = new Map<string, string>();
+      for (const p of (pkgRows ?? []) as { id: string; package_name: string | null }[]) {
+        const nm = (p.package_name ?? '').trim();
+        if (nm) nameByPkg.set(p.id, nm);
+      }
+      const m = new Map<string, string>();
+      for (const [resvId, pid] of pkgIdByResv) {
+        const nm = nameByPkg.get(pid);
+        if (nm) m.set(resvId, nm);
+      }
+      if (!cancelled) setResvPkgTypeMap(m);
+    })();
+    return () => { cancelled = true; };
   }, [timelineReservations]);
   // T-20260620-foot-DASH-DONESLOT-NAMECHIP-COMPACT AC-2: 완료 슬롯 정시그룹 펼침 상태(기본 전부 접힘).
   //   Set<"HH"> — 펼친 시간대만 보관. 기본 빈 Set = 모두 collapsed.
@@ -7174,6 +7258,8 @@ export default function Dashboard() {
       <TimerExpiredCtx.Provider value={timerExpiredSet}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
+      {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 맵 주입 */}
+      <ResvPkgTypeMapCtx.Provider value={resvPkgTypeMap}>
       <DndContext
         sensors={sensors}
         collisionDetection={customCollision}
@@ -7347,6 +7433,7 @@ export default function Dashboard() {
         {dragging && <DraggableCard checkIn={dragging} compact />}
       </DragOverlay>
       </DndContext>
+      </ResvPkgTypeMapCtx.Provider>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
       </TimerExpiredCtx.Provider>
