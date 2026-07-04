@@ -2165,7 +2165,9 @@ export default function Reservations() {
                       )}
                       onClick={(e) => { if (!r.customer_id) return; e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
                     >
-                      {r.customer_name}
+                      {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING: 고객박스 '표기 안 됨' 방지 — 워크인/미연결·이름 결측 시
+                          빈 span(고객박스 공백)이 되던 것을 CustomerHoverCard 분기와 동일하게 '이름없음' 폴백으로 통일(박스 가시성 보장). */}
+                      {r.customer_name?.trim() || '이름없음'}
                     </span>
                   )}
                   {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
@@ -2660,7 +2662,9 @@ export default function Reservations() {
                                             handleResvOpenChart(resvAsCheckIn(r));
                                           }}
                                         >
-                                          {r.customer_name}
+                                          {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING: 주뷰 고객박스 '표기 안 됨' 방지 — 워크인/미연결·이름 결측 시
+                                              빈 span 대신 '이름없음' 폴백(일뷰·CustomerHoverCard와 정합, 박스 가시성 보장). */}
+                                          {r.customer_name?.trim() || '이름없음'}
                                         </span>
                                       )}
                                       {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}

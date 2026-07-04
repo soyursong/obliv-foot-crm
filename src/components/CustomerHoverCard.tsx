@@ -23,13 +23,17 @@ interface CustomerDetails {
 
 /**
  * 생년월일(YYMMDD) → 나이(한국식 만 나이).
- * T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C5]: 세기판별을 SSOT birthDateYMD(YYYY-MM-DD)에 위임 —
+ * T-20260630-foot-CRM-BIRTHDATE-RRN-GLOBAL [C5]: 세기판별을 SSOT birthDateYMD 에 위임 —
  * 로컬 세기 휴리스틱 중복 제거. 평문 rrn 미사용(birth_date 컬럼만 파싱).
+ * T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING: 구분자 회귀 수정 — DATEFMT-YMD-RELATIVE-PURGE(AC-1)가
+ *   birthDateYMD 출력을 'YYYY-MM-DD' → 'YYYY.MM.DD'(점)으로 바꿨으나 여기 split('-')가 그대로여서
+ *   월/일이 NaN → 만나이가 생일 반영 없이 부정확(연 단위 오차)하게 계산되던 그라운디드 회귀. /[.-]/ 로 양쪽 구분자 허용.
  */
 function calcAge(birthDate: string | null): number | null {
-  const ymd = birthDateYMD(birthDate); // '' 또는 'YYYY-MM-DD'
+  const ymd = birthDateYMD(birthDate); // '' 또는 'YYYY.MM.DD'(점 구분·현행) — 하위호환으로 하이픈도 허용
   if (!ymd) return null;
-  const [fullYear, mm, dd] = ymd.split('-').map((n) => parseInt(n, 10));
+  const [fullYear, mm, dd] = ymd.split(/[.-]/).map((n) => parseInt(n, 10));
+  if (Number.isNaN(fullYear) || Number.isNaN(mm) || Number.isNaN(dd)) return null;
   const today = new Date();
   let age = today.getFullYear() - fullYear;
   if (new Date(today.getFullYear(), mm - 1, dd) > today) age--;
