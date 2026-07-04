@@ -100,9 +100,11 @@ test.describe('T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING — 고객박스 표
     // 하위호환(하이픈)도 동일.
     const [y2, m2, d2] = parse('1990-05-15');
     expect([y2, m2, d2]).toEqual([1990, 5, 15]);
-    // 구(버그) 경로 대조: split('-') 는 점 구분에서 월/일이 NaN 이었음.
+    // 구(버그) 경로 대조: 점(.) 구분 문자열에 split('-') 를 쓰면 통째로 1요소만 나와
+    //   월/일이 아예 추출되지 않음(buggy[1] === undefined) → 만나이 계산에서 NaN.
     const buggy = '1990.05.15'.split('-').map((n) => parseInt(n, 10));
-    expect(Number.isNaN(buggy[1])).toBe(true);
+    expect(buggy.length).toBe(1); // 하이픈이 없어 분해 실패(년/월/일 3요소가 안 됨)
+    expect(Number.isNaN(parseInt(String(buggy[1] ?? ''), 10))).toBe(true); // 월이 파싱 불가(NaN)
   });
 
   test('라이브: 예약관리 일뷰 — 렌더된 고객박스는 성함 텍스트가 비어있지 않음(표기됨)', async ({ page }) => {
