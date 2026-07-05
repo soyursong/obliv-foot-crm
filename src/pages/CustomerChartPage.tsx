@@ -4393,6 +4393,41 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const resetDeductFormAfterSave = () =>
     setC22DeductForm(f => ({ ...f, therapistId: currentUserStaffId || '', treatmentType: 'heated_laser' }));
 
+  // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT (부모 T-20260608 AC4 이관):
+  //   차감 저장 시 슬롯 카운트로 확보되는 "치료 시작~종료 구간"을 차감 레코드에 주입한다.
+  //   소스: status_transitions 기반 fn_check_in_slot_dwell(20260602230000, read-only).
+  //   치료구간 정의(foot-stats v2 측정창과 동일 모델): 치료실(preconditioning) 슬롯.
+  //     · 치료 시작 = 치료실 진입(치료실 세그먼트 entered_at).
+  //     · 치료 종료 = 치료실 퇴실(완료 세그먼트 exited_at). 아직 치료실이면(is_current) 종료 미확정 → NULL.
+  //   전이 로그 없음/치료실 미경유(슬롯 체크인 미경유) → {null,null} 반환. 차감 insert 무차단(nullable).
+  const deriveTreatmentDwell = async (
+    checkInId: string | null | undefined,
+  ): Promise<{ started_at: string | null; ended_at: string | null }> => {
+    if (!checkInId) return { started_at: null, ended_at: null };
+    try {
+      const { data, error } = await supabase.rpc('fn_check_in_slot_dwell', {
+        p_check_in_ids: [checkInId],
+      });
+      if (error || !data) {
+        console.warn('[DEDUCT-DWELL-INJECT] dwell 파생 실패(무차단):', error?.message);
+        return { started_at: null, ended_at: null };
+      }
+      // 치료실(치료중) 슬롯 세그먼트만 — status='preconditioning'.
+      const precondSegs = (data as SlotDwellSeg[])
+        .filter((s) => s.status === 'preconditioning')
+        .sort((a, b) => a.seq - b.seq);
+      if (precondSegs.length === 0) return { started_at: null, ended_at: null };
+      const started_at = precondSegs[0].entered_at ?? null;
+      // 실제로 치료실을 떠난(완료) 세그먼트의 exited_at = 치료 종료. is_current(진행중)면 종료 미확정.
+      const completed = precondSegs.find((s) => !s.is_current);
+      const ended_at = completed ? completed.exited_at ?? null : null;
+      return { started_at, ended_at };
+    } catch (e) {
+      console.warn('[DEDUCT-DWELL-INJECT] dwell 파생 예외(무차단):', e);
+      return { started_at: null, ended_at: null };
+    }
+  };
+
   const saveC22Deduct = async () => {
     if (!customer || !c22DeductForm.therapistId) {
       toast.error('치료사를 선택해주세요');
@@ -4435,6 +4470,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         return;
       }
     }
+    // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 치료실 체류구간 파생(무차단, 파생불가 시 NULL)
+    const dwell = await deriveTreatmentDwell(deductCheckInId);
     const { error } = await supabase.from('package_sessions').insert({
       package_id: targetPkg.id,
       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
@@ -4444,6 +4481,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       performed_by: c22DeductForm.therapistId,
       status: 'used',
       check_in_id: deductCheckInId,
+      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
+      treatment_started_at: dwell.started_at,
+      treatment_ended_at: dwell.ended_at,
     });
     setSavingC22Deduct(false);
     if (error) {
@@ -4477,6 +4517,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const handleDupAddSession = async () => {
     if (!dupDeductModal || dupDeductBusy) return;
     setDupDeductBusy(true);
+    // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 같은 내원 추가 차감 레코드에도 dwell 주입(양 핸들러 dup 경유 공통, 무차단)
+    const dupDwell = await deriveTreatmentDwell(dupDeductModal.deductCheckInId);
     const { error } = await supabase.from('package_sessions').insert({
       package_id: dupDeductModal.targetPkgId,
       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
@@ -4486,6 +4528,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       performed_by: dupDeductModal.therapistId,
       status: 'used',
       check_in_id: dupDeductModal.deductCheckInId,
+      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
+      treatment_started_at: dupDwell.started_at,
+      treatment_ended_at: dupDwell.ended_at,
     });
     if (error) {
       setDupDeductBusy(false);
@@ -4615,6 +4660,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         return;
       }
     }
+    // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 힐러 예약後 차감도 일반 차감과 동일하게 dwell 주입(무차단)
+    const healerDwell = await deriveTreatmentDwell(deductCheckInId);
     const { error: deductError } = await supabase.from('package_sessions').insert({
       package_id: targetPkg.id,
       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
@@ -4624,6 +4671,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       performed_by: c22DeductForm.therapistId,
       status: 'used',
       check_in_id: deductCheckInId,
+      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
+      treatment_started_at: healerDwell.started_at,
+      treatment_ended_at: healerDwell.ended_at,
     });
     if (deductError) {
       setSavingHealerDeduct(false);
