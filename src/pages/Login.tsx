@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const { refresh, signOut } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,7 +36,22 @@ export default function Login() {
         .eq('id', authData.user.id)
         .maybeSingle();
       if (profile && !profile.approved && profile.role !== 'admin') {
-        await supabase.auth.signOut();
+        // T-20260705-foot-LOGIN-SIGNOUT-DEADLOCK (AC-1) — women 20538d8a 완치법 이식:
+        //   ★ raw supabase.auth.signOut() 직접 호출 금지 — women과 바이트-동일 데드락 기전.
+        //     raw 호출은 explicitSignOutRef를 세팅하지 않아, AuthProvider(src/lib/auth.tsx)의
+        //     SIGNED_OUT 핸들러가 콜백 내부에서 `await supabase.auth.refreshSession()`을 재호출 →
+        //     supabase-js 내부 락 데드락 → signOut await 영구 hang → 후속 setError/setLoading 미실행 →
+        //     미승인 사용자 로그인 거부 화면이 영구 정지(폼 재활성 실패).
+        //   → wrapped signOut()(useAuth, explicitSignOutRef 경유로 refreshSession 디바운스 skip) 사용.
+        //   ★ 이중 방어: 타임아웃 가드(Promise.race 2s)로 signOut 지연·실패와 무관하게 거부 UX 복귀 보장.
+        try {
+          await Promise.race([
+            signOut(),
+            new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+          ]);
+        } catch {
+          // signOut 실패해도 거부 결과는 확정 → 에러 안내·폼 재활성은 계속 진행.
+        }
         setError('관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다.');
         setLoading(false);
         return;
