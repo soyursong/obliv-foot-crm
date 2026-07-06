@@ -660,6 +660,16 @@ export interface Reservation {
   source_system?: string | null;
   /** 도파민 cue_card.id (UUID) — 큐카드 master=도파민 모델 */
   external_id?: string | null;
+  // ── 도파민TM write 컬럼 (T-20260707-foot-RESERVATIONS-DOPAMINE-COLS-READ / 부모 CROSSPRODUCT-V1-GATE §3=A ADDITIVE) ──
+  //   cross-CRM 공유 reservations에 dopamine(§3 IMPL)이 ADDITIVE로 추가한 3컬럼.
+  //   ⚠ 소유권 = 도파민TM(write 주체). 풋센터CRM은 **read-only** — 이 필드들에 write/스탬프 금지.
+  //   nullable/defaulted 라 기존 예약(NULL)도 정상. optional 선언으로 신규 컬럼 유입 시 tolerant read 보장.
+  /** 도파민TM: 예방콜(내원 전 리마인드 콜) 완료 여부. read-only. */
+  prevention_call_done?: boolean | null;
+  /** 도파민TM: 취소콜(취소 예약 사후 콜) 완료 여부. read-only. */
+  cancellation_call_done?: boolean | null;
+  /** 도파민TM: 노쇼 클릭 처리 시각(ISO). read-only. */
+  no_show_clicked_at?: string | null;
   /** T-20260524-foot-THERAPIST-BISYNC: 재진 예약 지정 치료사 — customers.designated_therapist_id와 쌍방 동기화 */
   preferred_therapist_id?: string | null;
   /** T-20260623-foot-RESVMGMT-OVERHAUL2: 연결 패키지 id — 재진/힐러 예약이 소진하는 패키지(read 시 packages.package_name=치료유형명 조회 소스). */
