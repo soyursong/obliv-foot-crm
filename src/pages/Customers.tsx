@@ -1226,7 +1226,10 @@ function CreateCustomerDialog({
       phone: normalizeToE164(phone) ?? phone.trim(),
       birth_date: birthDate.trim() || null,
       // chart_number: DB BEFORE INSERT 트리거가 자동 채번 (F-XXXX 형식)
-      memo: memo.trim() || null,
+      // T-20260706-foot-CUSTOMER-CREATE-DIALOG-FIX: 신규 등록 메모를 고객메모(customer_memo)로 저장.
+      // 2번차트(CustomerChartPage)가 customers.customer_memo를 읽어 예약메모 히스토리로 seed하므로 연동을 위해 컬럼 통일.
+      // customers.memo(예약메모)는 신규 등록 시 null 무방(기존 데이터 보존, ADDITIVE·스키마 변경 없음).
+      customer_memo: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
       // T-20260625-foot-PASSPORT-PORT: 외국인 정보. 하나라도 입력 시 is_foreign 자동 true.
@@ -1259,7 +1262,8 @@ function CreateCustomerDialog({
         <DialogHeader>
           <DialogTitle>신규 고객 등록</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        {/* T-20260706-foot-CUSTOMER-CREATE-DIALOG-FIX: 선택정보 펼침 시 저장버튼까지 스크롤 접근 가능하도록 스크롤 컨테이너 적용 (EditCustomerDialog 패턴) */}
+        <div className="max-h-[70vh] overflow-y-auto space-y-3 pr-1">
           <div className="space-y-1.5">
             <Label>이름</Label>
             <InlinePatientSearch
@@ -1332,7 +1336,7 @@ function CreateCustomerDialog({
             onChange={(next) => setForeignInfo((prev) => ({ ...prev, ...next }))}
           />
           <div className="space-y-1.5">
-            <Label>메모</Label>
+            <Label>고객메모</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} />
           </div>
           {/* 추천인 */}
