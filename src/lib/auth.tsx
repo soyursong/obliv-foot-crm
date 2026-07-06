@@ -2,6 +2,9 @@ import * as React from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import type { UserProfile } from './types';
+// T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 로그아웃 시 진료차트 임시저장(localStorage draft) 전체 clear.
+//   기기 공용 대비 — 다음 로그인 사용자에게 이전 사용자 draft 가 남지 않도록 폐기.
+import { clearAllChartDrafts } from './chartDraft';
 
 interface AuthState {
   loading: boolean;
@@ -108,6 +111,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // T-20260522-foot-SSN-SESSION-KILL: 명시적 로그아웃 플래그 설정
     // 이 플래그가 있으면 onAuthStateChange의 SIGNED_OUT 디바운스를 건너뜀
     explicitSignOutRef.current = true;
+    // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 기기 공용 대비 — 로그아웃 시 진료차트 draft 전체 폐기.
+    clearAllChartDrafts();
     try {
       await supabase.auth.signOut();
       setSession(null);

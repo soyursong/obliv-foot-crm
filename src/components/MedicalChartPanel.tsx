@@ -90,6 +90,16 @@ import { formatRxItemToken } from '@/lib/rxTooltip';
 import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
 import type { SuperPhrase } from '@/components/admin/SuperPhrasesTab';
+// T-20260603-foot-CHART-DRAFT-SAVE: 진료차트 localStorage 경량 임시저장(작성 중 내용 유지).
+import {
+  type ChartDraftFields,
+  chartDraftKey,
+  saveChartDraft,
+  loadChartDraft,
+  clearChartDraft,
+  chartDraftContentSig,
+  chartDraftHasContent,
+} from '@/lib/chartDraft';
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -682,6 +692,26 @@ export default function MedicalChartPanel({
     { label: '진료차트' },
   );
 
+  // ── T-20260603-foot-CHART-DRAFT-SAVE: 진료차트 localStorage 경량 임시저장 ──────────
+  //   정책(CEO A안, MSG-20260706-090900-xzug): localStorage(서버/DB 미저장) · 동일 단말/브라우저 한정.
+  //   scope: 전체 진료차트 Drawer(variant='full', 비-embed, 비-readOnly) 한정 — dirty-guard(useUnsavedGuard)와
+  //     별개의 '내용 유지' 계층. 진료대시보드 인라인(embed/clinical, today-latch 자동선택)은 회귀 위험 배제 위해 비대상.
+  //   진료의(formSigningDoctorId)는 draft에 함께 저장/복원하되 '변경 판정'에는 미포함(자동채움 오탐 방지).
+  const draftUserId = profile?.id ?? currentUserEmail ?? 'anon';
+  const draftEnabled = variant === 'full' && !embed && !readOnly;
+  //   키 = 사용자 + 환자 + (선택차트 id | 'new'). 신규작성='new', 저장차트 편집=차트 id (AC-1/AC-4 키 분리).
+  const draftKeyStr =
+    draftEnabled && open && customerId
+      ? chartDraftKey(draftUserId, customerId, selectedChartId ?? 'new')
+      : null;
+  //   기준(로드/빈) 콘텐츠 시그니처 — resetForm 에서 갱신. 이 값과 다를 때만 draft 저장/프롬프트.
+  const draftBaselineSigRef = useRef<string>(
+    chartDraftContentSig({ formDx: '', formClinical: '', formMemo: '', formRx: [] }),
+  );
+  //   key 단위로 프롬프트 1회만(결정 후 재프롬프트 금지). 패널 닫힘 시 리셋.
+  const draftHandledKeysRef = useRef<Set<string>>(new Set<string>());
+  const [draftPrompt, setDraftPrompt] = useState<ChartDraftFields | null>(null);
+
   // T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터 검색
   const [rxSearchQuery, setRxSearchQuery] = useState('');
   const [rxSearchResults, setRxSearchResults] = useState<RxCodeResult[]>([]);
@@ -993,6 +1023,14 @@ export default function MedicalChartPanel({
 
   const resetForm = useCallback((chart?: MedicalChart | null) => {
     const today = format(new Date(), 'yyyy-MM-dd');
+    // T-20260603-foot-CHART-DRAFT-SAVE: 폼 초기화 시점의 '기준 콘텐츠' 스냅샷 → 이후 auto-save/프롬프트가
+    //   기준값과 달라졌을 때만 draft 로 취급(로드 직후 무변경 상태를 draft 로 오저장/오프롬프트 방지).
+    draftBaselineSigRef.current = chartDraftContentSig({
+      formDx: chart?.diagnosis || '',
+      formClinical: chart?.clinical_progress || '',
+      formMemo: chart?.doctor_memo || '',
+      formRx: chart?.prescription_items || [],
+    });
     if (chart) {
       setFormDate(chart.visit_date);
       setFormDx(chart.diagnosis || '');
@@ -1129,12 +1167,70 @@ export default function MedicalChartPanel({
       setMemoFilters(new Set<MemoFilter>());
       // T-20260609-foot-SPECIALNOTE-MEMO-UX AC-2: 새 고객 열림마다 자동 펼침/접힘 재적용(수동 토글 플래그 리셋)
       specialNoteManualRef.current = false;
+      // T-20260603-foot-CHART-DRAFT-SAVE: 새 고객 열림 = draft 세션 리셋(프롬프트 판정 재개).
+      draftHandledKeysRef.current.clear();
+      setDraftPrompt(null);
     } else {
       setCustomer(null);
       setCharts([]);
       setSelectedChartId(null);
+      // T-20260603-foot-CHART-DRAFT-SAVE: 패널 닫힘 → draft 세션/프롬프트 정리.
+      draftHandledKeysRef.current.clear();
+      setDraftPrompt(null);
     }
   }, [open, customerId, loadData, resetForm, initialRightTab]);
+
+  // ── T-20260603-foot-CHART-DRAFT-SAVE: 자동 캡처(AC-1) ─────────────────────────────
+  //   입력 변경 시 debounce(700ms) 후 localStorage 저장. 읽기전용/비대상 variant 는 skip.
+  //   내용이 비었거나 기준값과 동일하면 저장 대신 clear(빈 draft 잔존 방지).
+  useEffect(() => {
+    if (!draftKeyStr) return;
+    const isReadOnlyView = readOnly || (!!selectedChartId && !editMode);
+    if (isReadOnlyView) return;
+    const contentFields = { formDx, formClinical, formMemo, formRx };
+    const sig = chartDraftContentSig(contentFields);
+    const t = setTimeout(() => {
+      if (!chartDraftHasContent(contentFields) || sig === draftBaselineSigRef.current) {
+        clearChartDraft(draftKeyStr);
+      } else {
+        saveChartDraft(draftKeyStr, { formDx, formClinical, formMemo, formRx, formSigningDoctorId });
+      }
+    }, 700);
+    return () => clearTimeout(t);
+  }, [draftKeyStr, formDx, formClinical, formMemo, formRx, formSigningDoctorId, editMode, selectedChartId, readOnly]);
+
+  // ── T-20260603-foot-CHART-DRAFT-SAVE: 복원 트리거(AC-2) ───────────────────────────
+  //   차트 재진입(로드 완료) 시 현재 key 의 draft 감지 → 기준값과 다르고 내용이 있으면 프롬프트 1회.
+  //   결정(불러오기/새로작성) 후엔 handled 처리로 재프롬프트 금지. 만료(7일)분은 loadChartDraft 가 자동 폐기.
+  useEffect(() => {
+    if (!draftKeyStr || loading) return;
+    if (draftHandledKeysRef.current.has(draftKeyStr)) return;
+    draftHandledKeysRef.current.add(draftKeyStr);
+    const draft = loadChartDraft(draftKeyStr);
+    if (!draft) return;
+    if (!chartDraftHasContent(draft)) return;
+    if (chartDraftContentSig(draft) === draftBaselineSigRef.current) return; // 기준값과 동일 → 프롬프트 불요
+    setDraftPrompt(draft);
+  }, [draftKeyStr, loading]);
+
+  // 프롬프트 '불러오기' → draft 폼 복원. '새로 작성' → draft 폐기 후 현재 폼 유지(AC-2).
+  const applyChartDraft = useCallback(() => {
+    setDraftPrompt((d) => {
+      if (d) {
+        setFormDx(d.formDx);
+        setFormClinical(d.formClinical);
+        setFormMemo(d.formMemo);
+        setFormRx(d.formRx);
+        if (d.formSigningDoctorId) setFormSigningDoctorId(d.formSigningDoctorId);
+        setEditMode(true);
+      }
+      return null;
+    });
+  }, []);
+  const discardChartDraft = useCallback(() => {
+    if (draftKeyStr) clearChartDraft(draftKeyStr);
+    setDraftPrompt(null);
+  }, [draftKeyStr]);
 
   // T-20260609-foot-CHARTBTN-MINIMAL-COURSE-DRAWER (clinical variant):
   //   미니멀 임상경과 뷰는 '빠른 경과 입력'이므로, 오늘 날짜의 기존 차트가 있으면 그 차트를 골라
@@ -1237,6 +1333,9 @@ export default function MedicalChartPanel({
       toast.error('선택한 진료의 정보를 찾을 수 없습니다 — 다시 선택해주세요');
       return;
     }
+    // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 정식 저장 성공 시 clear 할 draft key 를 저장 전 캡처.
+    //   (신규 INSERT 시 selectedChartId 가 바뀌어 key 가 달라지므로 저장 직전 값 보존.)
+    const preSaveDraftKey = draftKeyStr;
     // 변경이력(AC-P2-3)용 — 수정 전 진료의 스냅샷.
     const prevChart = charts.find((c) => c.id === selectedChartId) ?? null;
     const prevDoctorId = prevChart?.signing_doctor_id ?? null;
@@ -1349,6 +1448,11 @@ export default function MedicalChartPanel({
       // 필터 활성 상태에서 저장 시 새 차트가 필터에 미일치 → 타임라인에서 사라져 보이는 UX 버그 방지
       setMemoFilters(new Set<MemoFilter>());
       setEditMode(false); // AC-4: 저장 완료 → 읽기전용 전환(연속 실수 차단)
+      // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 정식 저장 성공 → 해당 draft 폐기(stale draft 재복원 방지).
+      if (preSaveDraftKey) {
+        clearChartDraft(preSaveDraftKey);
+        draftHandledKeysRef.current.add(preSaveDraftKey); // 재프롬프트 금지
+      }
       setSignerAuditRefresh((n) => n + 1); // AC-P2-3: 변경이력 패널 재조회
       loadData();
       // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 저장 성공 → 인라인 아코디언 접기(presentation only).
@@ -2463,6 +2567,39 @@ export default function MedicalChartPanel({
 
   return createPortal(
     <>
+      {/* ── T-20260603-foot-CHART-DRAFT-SAVE (AC-2): 임시저장 복원 프롬프트 ──────────────
+          동일 단말/브라우저 재진입 시 draft 감지 → "불러올까요?" 모달. Drawer(z-90) 위(z-[95]). */}
+      {draftPrompt && (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4"
+          data-testid="medical-chart-draft-prompt"
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl">
+            <p className="text-base font-bold text-teal-700">임시저장된 내용이 있습니다</p>
+            <p className="mt-2 text-sm text-gray-600">
+              이 차트에 저장하지 않고 작성하던 내용이 남아 있습니다. 불러올까요?
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={discardChartDraft}
+                className="rounded-lg border border-input bg-background px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                data-testid="medical-chart-draft-discard"
+              >
+                새로 작성
+              </button>
+              <button
+                type="button"
+                onClick={applyChartDraft}
+                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+                data-testid="medical-chart-draft-restore"
+              >
+                불러오기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 백드롭 — 클릭 시 닫힘 (AC-2 Drawer 외부 클릭 닫힘) */}
       <div
         className="fixed inset-0 z-[80] bg-black/40"
