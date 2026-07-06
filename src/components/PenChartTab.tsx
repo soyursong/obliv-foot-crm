@@ -311,6 +311,14 @@ function drawRefundP3NameAutofill(
 //   y=28: 담당의 라인(y≈23)~담당실장 라인(y≈44) 사이 수직 중심
 //   출력 예: "성함: 홍길동  주민번호: 990101-1234567"
 //   김주연 총괄 현장 요청 2026-05-24: "성함+주민번호 배치를 한 줄로 하고 폰트 사이즈 좀만 줄여줘"
+//
+// T-20260706-foot-PENCHART-TOOLBAR-FIXES A-1: 성함을 담당의/담당자 라인 '위'로 이동 (김주연 총괄/최다혜 치료사).
+//   [현장] "환자 성함이 따로 있음 담당자,담당의 위로 위치 변경 필요" (115211/115220 색박스 주석).
+//   [측정 — pen_chart_form.png 1588×2245 → canvas 794×1123, scale=0.5]
+//     담당의   : natural y=128~154 → canvas y=64~77 (colon 우측끝 natural x≈1235 → canvas x≈617.5)
+//     담당실장 : natural y=172~198 → canvas y=86~99
+//   → 성함/주민번호 inline 을 담당의(y64) '위' 밴드(y40)에 배치. 담당 라벨과 동일 우측 콜론열(x=618)에
+//     우측정렬해 세로 스택(성함 y40 / 담당의 y77 / 담당자 y99) 형성. 로고(우측끝 canvas x≈225)와 미접촉.
 function drawPenChartAutofillInline(
   ctx: CanvasRenderingContext2D,
   fields: AutofillFields,
@@ -320,12 +328,13 @@ function drawPenChartAutofillInline(
   if (!name && !rrn) return;
   ctx.save();
   ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분
-  ctx.font = 'italic 11px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+  ctx.font = 'italic 12px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
   ctx.textBaseline = 'top';
+  ctx.textAlign = 'right'; // A-1: 담당 라벨 콜론열(x=618)에 우측정렬 → 담당 위 동일 컬럼 스택
   const parts: string[] = [];
   if (name) parts.push(`성함: ${name}`);
   if (rrn)  parts.push(`주민번호: ${rrn}`);
-  ctx.fillText(parts.join('  '), 190, 28);
+  ctx.fillText(parts.join('  '), 618, 40); // 담당의(y64) 위 밴드 · 우측 콜론열 정렬
   ctx.restore();
 }
 
@@ -336,17 +345,25 @@ function drawPenChartAutofillInline(
 //   "담당의 :"  natural 콜론 우측끝 x≈1235 → canvas x≈617.5 (두 라벨 콜론 우측정렬)
 // → 기존 라벨을 흰 박스로 덮고 "담당자 :"를 동일 콜론 위치(우측정렬)·동일 라인에 재출력.
 // bgCanvas는 handleDrawSave에서 합성되므로(L2275) 화면+저장본 모두 "담당자"로 반영된다.
+//
+// T-20260706-foot-PENCHART-TOOLBAR-FIXES A-2: 담당의·담당자 글자 크기 통일 ("크기가 다름 → 일정하게").
+//   [RC] 종전엔 '담당실장'만 마스킹→'담당자'(18px Malgun)로 재출력하고 '담당의'는 양식 이미지에 구워진
+//     원 폰트(≈이미지 세리프계) 그대로 두어 두 라벨의 폰트/크기가 서로 달라 보였다(현장 "크기가 다름").
+//   [수정] 담당의 라인도 함께 마스킹하고 담당의·담당자 '둘 다' 동일 폰트/동일 크기(20px)로 재출력해
+//     크기·서체를 일치. 우측 콜론열(x=618) 우측정렬로 세로 컬럼 정렬. (성함 A-1 은 y=40 위 밴드라 미접촉.)
+//   [측정] 담당의 canvas y=64~77 / 담당실장 canvas y=86~99 → 마스크 y=60~104 로 두 라인 모두 커버.
 function drawPenChartLabelOverride(ctx: CanvasRenderingContext2D) {
   ctx.save();
-  // 1) 기존 "담당실장 :" 라벨 영역을 양식 배경색(흰색)으로 마스킹 (위 "담당의 :" y=64~77 / 아래 DATE 박스 미접촉)
+  // 1) 담당의 + 담당실장 두 라벨 영역을 양식 배경색(흰색)으로 마스킹 (성함 A-1=y40 위 밴드 / DATE 박스 미접촉)
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(545, 81, 80, 23); // x 545~625, y 81~104
-  // 2) "담당자 :" 재출력 — 콜론을 담당의와 동일 x=618에 우측정렬, baseline=99 (원 라벨 하단)
+  ctx.fillRect(543, 60, 84, 44); // x 543~627, y 60~104 — 담당의(y64~77)+담당실장(y86~99) 통합 커버
+  // 2) 담당의 + 담당자 재출력 — 동일 폰트·동일 크기(20px)·콜론 우측정렬(x=618)로 크기 통일
   ctx.fillStyle = '#2e2e2e';
-  ctx.font = '18px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+  ctx.font = '20px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText('담당자 :', 618, 99);
+  ctx.fillText('담당의 :', 618, 77); // 원 담당의 하단 baseline
+  ctx.fillText('담당자 :', 618, 99); // 원 담당실장 하단 baseline
   ctx.restore();
 }
 
@@ -906,6 +923,14 @@ export function PenChartTab({
   //   [현장 회귀] 0.20도 "여전히 진함"(부모 #3 미해결). 슬라이더 min 0.10→0.05 확장으로 더 옅게 조절 가능.
   //   세션 유지(차트 진입 동안), 저장포맷 무관. 실시간 반영=매 렌더 highlightAlphaRef 동기화(L850).
   const [highlightAlpha, setHighlightAlpha] = useState(0.10);
+  // ── T-20260706-foot-PENCHART-TOOLBAR-FIXES A-3: 상용구 삽입 폰트 크기 '지속' ──
+  //   [현장] "매번 상용구 누를시 크기 리셋됨" (최다혜 치료사). 종전엔 새 상용구 fontSize 를 penSize*4+6
+  //   (도구 전환 시 DEFAULT_THICKNESS 로 리셋되는 굵기)에서 매번 재계산 → 직전에 ± 로 키워둔 크기가
+  //   다음 삽입에서 기본값으로 돌아감. → penSize 와 분리된 전용 phraseFontSize 로 '마지막 설정 크기'를
+  //   세션 유지. ± 조절(onFontSize) 시 이 값도 갱신 → 다음 삽입이 같은 크기로 나온다.
+  const [phraseFontSize, setPhraseFontSize] = useState<number>(
+    () => clampPenChartFont(Math.round(DEFAULT_THICKNESS.pen * 4 + 6)),
+  );
   // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 아이템 목록 (텍스트/상용구 드래그·삭제용)
   const [placedItems, setPlacedItems] = useState<PlacedItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -989,6 +1014,20 @@ export function PenChartTab({
   // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #3: 형광펜 농도 ref — native pointermove(stable, deps 없음)가 최신 alpha 참조
   // T-20260610-foot-PENCHART-6FIX-REFIX C: 기본 0.20 → 0.10 (state와 초기값 일치)
   const highlightAlphaRef = useRef(0.10);
+  // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-3: 상용구 삽입 폰트 크기 ref (placeBoilerplateAt 가 최신값 참조)
+  const phraseFontSizeRef = useRef<number>(clampPenChartFont(Math.round(DEFAULT_THICKNESS.pen * 4 + 6)));
+  // ── T-20260706-foot-PENCHART-TOOLBAR-FIXES A-4: 형광펜 농도 '일률 고정' ──
+  //   [현장 최다혜] 필압(누르는 세기)에 따라 형광펜 진하기가 달라짐 → 항상 일정하게.
+  //   [RC — 코드직독] pressure API 는 읽지 않으나, 형광펜은 pointermove '배치'마다 globalAlpha<1 로 stroke()
+  //   를 개별 호출한다. 획을 천천히/눌러 그으면 배치 수가 늘고 배치 경계(round cap)가 겹쳐 알파가 누적
+  //   → 겹친 지점이 짙어짐(현장이 '필압에 따라 진해짐'으로 인지). 정지/체류가 많을수록 더 짙음.
+  //   [수정] 획 전체를 오프스크린 버퍼에 alpha=1(불투명)로 한 번 그린 뒤(자기겹침은 불투명이라 누적 안 됨),
+  //   pointerup 에서 획 시작 스냅샷을 복원하고 버퍼를 '상수 alpha' 로 1회 합성 → 획 전체가 균일 농도.
+  //   라이브 미리보기는 기존 경로 유지(즉시 피드백), 획 종료 시 균일본으로 대체. 스냅샷 실패 시 라이브 유지(무회귀).
+  //   ※ 시뮬레이터는 pressure 재현 불가 → 실 iPad field-soak(최다혜 치료사)로 최종 확인(티켓 A-4 검증 노트).
+  const hlSnapshotRef   = useRef<ImageData | null>(null);              // 형광펜 획 시작 전 draw 캔버스 스냅샷(physical)
+  const hlStrokePathRef = useRef<Array<{ x: number; y: number }>>([]); // 형광펜 획 경로(logical) — pointerup 재합성용
+  const hlBufferRef     = useRef<HTMLCanvasElement | null>(null);      // 오프스크린 버퍼(불투명 획 누적)
   // ── T-20260610-foot-PENCHART-6FIX-REFIX A: 미확정 텍스트 입력의 단일 commit 수렴용 refs ──
   //   [RC] 부모 #6은 "저장 직전"에만 textInputValue를 흡수했다. 그러나 사용자가 타이핑 후 '저장'이 아닌
   //   '도구 전환(switchTool)'을 하면 switchTool이 commit 없이 setTextInputValue('')로 버려(L1526) → 저장
@@ -1068,6 +1107,7 @@ export function PenChartTab({
   penSizeRef.current        = penSize;
   highlightColorRef.current = highlightColor;
   highlightAlphaRef.current = highlightAlpha; // #3: 형광펜 농도 → native handler 동기화
+  phraseFontSizeRef.current  = phraseFontSize; // A-3: 상용구 삽입 폰트 크기 지속(placeBoilerplateAt 참조)
   editingChartRef.current   = editingChart;   // T-20260622-foot-PENCHART-EDITBTN: 저장 시 최신 수정대상 보장
   // T-20260610-foot-PENCHART-6FIX-REFIX A: 매 렌더 동기화 → flushTextInput(stable)이 최신 입력값 읽음
   textInputPosRef.current   = textInputPos;
@@ -1369,6 +1409,8 @@ export function PenChartTab({
       let drewSomething = false;
       for (const evt of events) {
         const pos  = toLogical(evt);
+        // A-4: 형광펜은 획 경로를 누적 → pointerup 에서 오프스크린 버퍼에 alpha=1 로 재그려 균일 합성
+        if (tool === 'highlight') hlStrokePathRef.current.push({ x: pos.x, y: pos.y });
         const last = lastPosRef.current ?? pos;
         const mid  = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
         if (!drewSomething) {
@@ -1916,6 +1958,11 @@ export function PenChartTab({
     setSelectedIds(new Set());
     setLastInsertedPhraseId(null); // T-20260612-PINGPONG5 AC-1.B: 새 세션 시작 시 패널 ✓ 마킹 리셋
     whiteStrokesAllRef.current = []; // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: 세션 리셋 시 누적 화이트 획 비움
+    // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-4: 형광펜 재합성 임시상태 리셋(세션 간 stale 방지)
+    hlSnapshotRef.current = null;
+    hlStrokePathRef.current = [];
+    // A-3: 상용구 폰트 크기는 세션 시작 시 기본값으로 복귀(차트 간 격리)
+    setPhraseFontSize(clampPenChartFont(Math.round(DEFAULT_THICKNESS.pen * 4 + 6)));
   }, []);
 
   // 명시적 전체 초기화(세션리셋+그래픽) — contextrestored 복구·수동 재시도 등에서 사용.
@@ -2143,7 +2190,8 @@ export function PenChartTab({
   // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2: 상용구 텍스트를 지정 좌표에 직접 commit.
   //   캔버스 탭(placing) 경로와 ✓ 즉시삽입 경로가 공유. fromPlacing=true면 placing 모드 정리(pen 전환).
   const placeBoilerplateAt = (text: string, x: number, y: number, fromPlacing: boolean): string => {
-    const fontSize = Math.round(penSize * 4 + 6);
+    // A-3: 굵기(penSize)와 분리된 '지속' 폰트 크기 사용 — 직전 ± 조절값 유지(매번 리셋 방지)
+    const fontSize = phraseFontSizeRef.current;
     const newItem: PlacedItem = {
       id: `bp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: 'boilerplate',
@@ -2172,35 +2220,8 @@ export function PenChartTab({
     return newItem.id;
   };
 
-  // T-20260617-foot-PENCHART-PHRASE-BUG3 이슈3(AC-3): 상용구 즉시삽입을 캔버스 중앙에 선배치.
-  //   [RC] 기존 computeVisibleAnchor는 '가시영역 좌상단(+32px)'을 반환 → 현장 "좌측 상단 고정" 호소.
-  //   → 캔버스 논리 중앙 - 오브젝트 절반(x=W/2-objW/2, y=H/2-objH/2)으로 변경. 삽입 후 기존
-  //   이중 rAF scrollIntoView(block:'center')가 새 오버레이를 뷰포트 중앙으로 끌어와 가시성 유지.
-  //   별도 윈도우(NEWWIN/popupMode)도 동일 insertPhraseImmediate 경로라 함께 적용됨.
-  const computeCenterAnchor = (text: string, fontSize: number): { x: number; y: number } => {
-    const canvas = canvasRef.current;
-    const dpr = drawDprRef.current || 1;
-    const logicalW = canvas ? canvas.width / dpr : CANVAS_W;
-    const logicalH = canvas ? canvas.height / dpr : CANVAS_H;
-    const lines = text.split('\n');
-    const lineH = fontSize + 6;
-    const objH = lines.length * lineH + 8;
-    // 오브젝트 폭: 동일 폰트로 measureText(변환행렬 비의존) → 가장 긴 줄 기준. ctx 없으면 추정.
-    let objW = 120;
-    const ctx = drawCtxRef.current ?? canvas?.getContext('2d') ?? null;
-    if (ctx) {
-      ctx.save();
-      ctx.font = `${fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
-      objW = Math.max(60, ...lines.map((l) => ctx.measureText(l).width)) + 8;
-      ctx.restore();
-    } else {
-      objW = Math.max(60, ...lines.map((l) => l.length * fontSize * 0.6)) + 8;
-    }
-    return {
-      x: Math.max(0, Math.round(logicalW / 2 - objW / 2)),
-      y: Math.max(0, Math.round(logicalH / 2 - objH / 2)),
-    };
-  };
+  // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-6: computeCenterAnchor(중앙 선배치) 제거.
+  //   상용구는 이제 placing 모드로 사용자가 원하는 지점을 눌러 삽입(드래그 불요) → 중앙 좌표 산출 불요.
 
   // T-20260522-foot-PENCHART-TOOLS-V3 AC-7~9: 텍스트 도구 — placedItems에 추가 (드래그·삭제 지원)
   // T-20260610-foot-PENCHART-6FIX-REFIX A: 명시 '삽입'/Enter 도 단일 commit 경로(flushTextInput)로 수렴.
@@ -2302,6 +2323,15 @@ export function PenChartTab({
       // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: hit-test는 onPointerUp에서 1회만 (onPointerDown 시작점 기록)
       whiteStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'highlight') {
+      // ── T-20260706-foot-PENCHART-TOOLBAR-FIXES A-4: 균일 농도용 획 시작 스냅샷 + 경로 리셋 ──
+      //   getImageData 는 physical 전체 1회(획 시작에만) — hot-path(pointermove) 밖이라 비용 허용.
+      //   실패(perf/taint) 시 null → pointerup 에서 재합성 스킵(라이브 유지, 무회귀).
+      try {
+        hlSnapshotRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      } catch {
+        hlSnapshotRef.current = null;
+      }
+      hlStrokePathRef.current = [{ x: pos.x, y: pos.y }];
       // V3 AC-10~11: 투명도 35%→20%→(6FIX-REFIX) 기본 0.10
       ctx.beginPath();
       const r = Math.max(penSize * 3 + 3, 4);
@@ -2366,6 +2396,63 @@ export function PenChartTab({
         lineWidth: penSize * 8, // native move 시각 stroke 굵기(L1207)와 동일 → 저장 재적용 폭 일치
       });
       whiteStrokePathRef.current = [];
+    }
+
+    // ── T-20260706-foot-PENCHART-TOOLBAR-FIXES A-4: 형광펜 획 종료 — 균일 농도 재합성 ──
+    //   라이브(배치별 alpha 누적으로 비균일)를 스냅샷 복원으로 지우고, 획 전체를 오프스크린 버퍼에
+    //   alpha=1 로 한 번 그린 뒤 상수 alpha 로 1회 drawImage → 획 어디나 동일 농도(필압/속도 무관).
+    if (activeTool === 'highlight' && hlSnapshotRef.current && hlStrokePathRef.current.length > 0) {
+      const hlCanvas = canvasRef.current;
+      const dctx = drawCtxRef.current;
+      const snap = hlSnapshotRef.current;
+      const pts  = hlStrokePathRef.current;
+      if (hlCanvas && dctx) {
+        try {
+          const dpr = drawDprRef.current || DRAW_DPR;
+          const hpen = penSizeRef.current;
+          // 오프스크린 버퍼(physical 크기, 세션 재사용)
+          let buf = hlBufferRef.current;
+          if (!buf) { buf = document.createElement('canvas'); hlBufferRef.current = buf; }
+          if (buf.width !== hlCanvas.width || buf.height !== hlCanvas.height) {
+            buf.width = hlCanvas.width; buf.height = hlCanvas.height;
+          }
+          const bctx = buf.getContext('2d');
+          if (bctx) {
+            bctx.setTransform(1, 0, 0, 1, 0, 0);
+            bctx.clearRect(0, 0, buf.width, buf.height);
+            bctx.setTransform(dpr, 0, 0, dpr, 0, 0); // logical → physical (draw ctx 와 동일 스케일)
+            bctx.globalAlpha = 1;                    // 불투명 → 자기겹침 알파 누적 없음(균일)
+            bctx.strokeStyle = highlightColorRef.current;
+            bctx.fillStyle   = highlightColorRef.current;
+            bctx.lineWidth   = hpen * 6 + 6;         // 라이브 move stroke 굵기와 동일
+            bctx.lineCap  = 'round';
+            bctx.lineJoin = 'round';
+            const r0 = Math.max(hpen * 3 + 3, 4);    // 라이브 시작 dot 반경과 동일
+            bctx.beginPath();
+            bctx.arc(pts[0].x, pts[0].y, r0, 0, Math.PI * 2);
+            bctx.fill();
+            if (pts.length > 1) {
+              bctx.beginPath();
+              bctx.moveTo(pts[0].x, pts[0].y);
+              for (let i = 1; i < pts.length - 1; i++) {
+                const mid = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+                bctx.quadraticCurveTo(pts[i].x, pts[i].y, mid.x, mid.y);
+              }
+              bctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+              bctx.stroke();
+            }
+            // 라이브(비균일) 획 제거 → 버퍼를 상수 alpha 로 1회 합성(physical 1:1)
+            dctx.putImageData(snap, 0, 0);
+            dctx.save();
+            dctx.setTransform(1, 0, 0, 1, 0, 0);
+            dctx.globalAlpha = highlightAlphaRef.current;
+            dctx.drawImage(buf, 0, 0);
+            dctx.restore(); // scale(dpr) 트랜스폼 복원
+          }
+        } catch { /* 실패 시 라이브 획 유지(무회귀) */ }
+      }
+      hlSnapshotRef.current = null;
+      hlStrokePathRef.current = [];
     }
 
     // T-20260622 AC-2: 지우개 도구 hit-test — '텍스트' placedItem 삭제(펜/형광펜은 native move clearRect로 이미 처리).
@@ -2796,40 +2883,19 @@ export function PenChartTab({
     }
     // T-20260612-PINGPONG5 AC-1.B: 클릭한 이 1건만 패널 ✓ 마킹(전역 ✓ 회귀 차단). 다음 클릭 시 새 항목으로 이동.
     setLastInsertedPhraseId(id);
-    // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2 (AC-3): ✓ 클릭 = 즉시 캔버스에 commit.
-    //   [회귀 RC] 기존 동선은 handleBoilerplateSelect로 'boilerplate-placing' 모드만 진입시키고
-    //   실제 배치는 사용자의 "캔버스 탭"에 의존했다. 갤탭(터치)에서는 placing 모드 캔버스 touchAction:'pan-y'
-    //   라 손가락 탭이 스크롤 의도로 흡수돼 onPointerDown 미발화 → "✓ 선택만 되고 안 들어감"으로 재발.
-    //   → 탭 의존 제거: 보이는 영역 좌상단에 즉시 배치 + select 도구 자동전환(드래그로 위치 조정 가능).
-    // T-20260617-foot-PENCHART-PHRASE-BUG3 이슈3(AC-3): 좌상단 고정 → 캔버스 중앙 선배치.
-    //   placeBoilerplateAt 내부 fontSize 산식(penSize*4+6)과 동일하게 맞춰 중앙 좌표 계산.
-    const phraseFontSize = Math.round(penSize * 4 + 6);
-    const { x, y } = computeCenterAnchor(content, phraseFontSize);
-    // 연속 삽입 시 완전 겹침 방지 — 기존 상용구 수만큼 소폭 stagger(AC-3 합리적 오프셋)
-    const n = placedItems.filter((it) => it.type === 'boilerplate').length % 6;
-    const newId = placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
-    // ── T-20260610-foot-PENCHART-6FIX-REFIX B: 삽입 가시화 (부모 #2 회귀 재발 차단) ──
-    //   [RC 가설] computeVisibleAnchor가 스크롤 위치를 못 잡거나(refs 타이밍), 사용자가 폼 하단을 보는데
-    //   상용구가 폼 상단/뷰포트 밖에 꽂혀 "삽입 안 됨"으로 인지되는 경로. 또는 ✓ 후 select 전환을 모르고
-    //   캔버스를 탭해도 안 그려져(=select 무동작) "안 됨"으로 오인. → ①명시 토스트 피드백 + ②새 아이템을
-    //   뷰포트 중앙으로 자동 스크롤해 "어디에 들어갔는지" 항상 보이게 한다. (commit 자체는 placedItems 확정)
+    // ── T-20260706-foot-PENCHART-TOOLBAR-FIXES A-6: '임의(중앙) 배치 후 드래그' → '원하는 위치에 바로 삽입' ──
+    //   [현장 최다혜] "상용구 클릭하면 임의로 지정되는 게 아닌 치료사가 원하는 위치에 나올 수 있도록 —
+    //   드래그하는 시간이 많이 소요되고 번거로움". 종전엔 캔버스 중앙에 선배치 후 드래그로 옮겨야 했다.
+    //   → 상용구 클릭 = placing 모드 진입. 사용자가 캔버스에서 원하는 지점을 눌러(Apple Pencil/펜 탭)
+    //     그 자리에 삽입(onPointerDown 의 boilerplate-placing 분기 → placeBoilerplate(tap x,y)). 드래그 불요.
+    //   [touch 대응] placing 모드에선 캔버스 touchAction:'none'(아래 렌더 조건에 placing 추가) →
+    //     갤탭 손가락 탭도 스크롤로 흡수되지 않고 placement pointerdown 으로 등록.
+    //   [패널] 패널은 열린 채 유지(연속 삽입 동선) — 캔버스 탭 배치 후 placeBoilerplateAt(fromPlacing=true)
+    //     내부 switchTool('pen')이 패널을 닫으므로, 다음 삽입은 상용구 버튼으로 재오픈한다.
+    setPendingBoilerplate(content);
+    setActiveTool('boilerplate-placing');
     const name = phraseTemplates.find((p) => p.id === id)?.name ?? '상용구';
-    toast.success(`상용구 '${name}' 삽입됨 — 드래그로 위치 조정`);
-    // ── T-20260610-foot-PENCHART-TOOLS-3REFIX #2-RE: 삽입 가시화 결정성 하드닝 ──
-    //   [RC] commit(placedItems) 은 정상이나, 새 오버레이가 뷰포트 밖에 꽂히면 "삽입 안 됨"으로 오인.
-    //   직전(6FIX-REFIX)은 단일 rAF 에서 querySelector → 그 시점 React 가 아직 DOM commit 전이면
-    //   엘리먼트 null → scrollIntoView 미발화 → 여전히 안 보임. **이중 rAF**(첫 rAF=React commit 보장,
-    //   둘째 rAF=레이아웃 확정 후 측정)로 새 오버레이를 항상 뷰포트 중앙으로 스크롤해 가시성 보장.
-    if (newId && typeof requestAnimationFrame !== 'undefined') {
-      const scrollToNew = () => {
-        try {
-          document
-            .querySelector(`[data-overlay-id="${newId}"]`)
-            ?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-        } catch { /* scrollIntoView 미지원/구형 환경 무시 (토스트 피드백은 유지) */ }
-      };
-      requestAnimationFrame(() => requestAnimationFrame(scrollToNew));
-    }
+    toast.success(`상용구 '${name}' — 원하는 위치를 눌러 삽입하세요`);
   };
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
@@ -3090,8 +3156,11 @@ export function PenChartTab({
             {showPhrasePanel && (
               <div
                 /* T-20260605-foot-RX-PHRASE-INSERT-UX: 상용구 패널 오버레이.
-                   (AC-6 패널 확장은 현장 정정 2026-06-05으로 취소 — '공간 확장' 오독, 본의는 로딩 버그(별건). w-64 원복.) */
-                className="absolute top-8 left-0 z-20 w-64 rounded-lg border bg-white shadow-lg overflow-hidden"
+                   (AC-6 패널 확장은 현장 정정 2026-06-05으로 취소 — '공간 확장' 오독, 본의는 로딩 버그(별건). w-64 원복.)
+                   T-20260706-foot-PENCHART-TOOLBAR-FIXES A-5: z-20 → z-50 상향. [현장 최다혜] 캔버스에 삽입된
+                   상용구 오버레이(zIndex 20)가 패널과 동일 z 라 패널 위로 겹쳐 떠서 카테고리·다른 상용구를 못 눌렀다.
+                   패널을 오버레이(20)·이동/삭제 컨트롤(30~32) 위(z-50)로 올려 팝업 뜬 상태에서도 항상 클릭 가능. */
+                className="absolute top-8 left-0 z-50 w-64 rounded-lg border bg-white shadow-lg overflow-hidden"
                 data-testid="phrase-library-panel"
               >
                 {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
@@ -3483,8 +3552,12 @@ export function PenChartTab({
                 // ── T-20260609-foot-PENCHART-TOOLS-UX-6FIX #5: [고정](chartLocked) 토글 제거 ──
                 //   위 드로잉 도구 'none' 자동화가 토글의 "드로잉 중 스크롤 차단" 목적을 이미 대체 →
                 //   chartLocked 분기 삭제. 비드로잉 도구는 항상 'pan-y'.
+                // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-6: 'boilerplate-placing' 도 'none' 포함 —
+                //   placing 모드에서 손가락 탭이 세로스크롤(pan-y)로 흡수돼 배치 pointerdown 미발화하던
+                //   회귀를 차단(펜은 원래 무관). 원하는 지점 탭 = 그 자리에 즉시 삽입.
                 touchAction:
-                  (activeTool === 'pen' || activeTool === 'highlight' || activeTool === 'eraser' || activeTool === 'white')
+                  (activeTool === 'pen' || activeTool === 'highlight' || activeTool === 'eraser'
+                    || activeTool === 'white' || activeTool === 'boilerplate-placing')
                     ? 'none'
                     : 'pan-y',
                 cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
@@ -3724,9 +3797,13 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                   //   placedItems.fontSize 만 갱신 → 오버레이 미리보기(L599)·저장 rasterize(L2374) 동일 소스로 실시간 반영.
                   //   저장 직렬화 계약 무변경(fontSize 는 기존 PlacedItem 1급 필드).
                   onFontSize={(id, size) => {
+                    const next = clampPenChartFont(size);
                     setPlacedItems((prev) =>
-                      prev.map((it) => it.id === id ? { ...it, fontSize: clampPenChartFont(size) } : it)
+                      prev.map((it) => it.id === id ? { ...it, fontSize: next } : it)
                     );
+                    // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-3: ± 로 조절한 크기를 '다음 상용구 삽입'
+                    //   기본 크기로 지속 → "매번 리셋" 해소. (phraseFontSizeRef 동기화 = 매 렌더 L1098)
+                    setPhraseFontSize(next);
                   }}
                 />
               );
