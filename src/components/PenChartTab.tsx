@@ -509,13 +509,22 @@ function FullscreenFormWrapper({
 }
 
 // ─── PlacedItemOverlay ─────────────────────────────────────────────────────
+// T-20260706-foot-PENCHART-PHRASE-FONTSIZE: 캔버스 오브젝트 폰트 사이즈 조절 범위(AC-3).
+//   경계값 clamp — 8pt 미만/48pt 초과 차단. 스텝 2pt(± 버튼 태블릿 조작 정합).
+const PENCHART_FONT_MIN = 8;
+const PENCHART_FONT_MAX = 48;
+const PENCHART_FONT_STEP = 2;
+const clampPenChartFont = (n: number) =>
+  Math.max(PENCHART_FONT_MIN, Math.min(PENCHART_FONT_MAX, Math.round(n)));
+
 /**
  * V3 AC-7~9, AC-13~16:
  * 배치된 텍스트/상용구를 draggable DOM 오버레이로 렌더링.
  * 드래그 이동 + 삭제 + Shift+클릭 다중선택 지원.
+ * T-20260706-foot-PENCHART-PHRASE-FONTSIZE: 선택 시 폰트 사이즈 조절(±) 컨트롤 노출(onFontSize).
  */
 function PlacedItemOverlay({
-  item, isSelected, approxH, interactive, onSelect, onMove, onDelete,
+  item, isSelected, approxH, interactive, onSelect, onMove, onDelete, onFontSize,
 }: {
   item: PlacedItem;
   isSelected: boolean;
@@ -526,6 +535,8 @@ function PlacedItemOverlay({
   onSelect: (id: string, multi: boolean) => void;
   onMove: (id: string, dx: number, dy: number) => void;
   onDelete: (id: string) => void;
+  // T-20260706-foot-PENCHART-PHRASE-FONTSIZE: 선택 오브젝트 fontSize(px, clamp 완료값) 커밋.
+  onFontSize: (id: string, size: number) => void;
 }) {
   const dragStart = useRef<{ px: number; py: number } | null>(null);
   const hasMoved  = useRef(false);
@@ -688,6 +699,112 @@ function PlacedItemOverlay({
       >
         <Move style={{ width: 12, height: 12 }} />
       </div>
+      )}
+      {/* ── 폰트 사이즈 조절 컨트롤 (T-20260706-foot-PENCHART-PHRASE-FONTSIZE) ──
+          AC-1: 이동(좌상단)·삭제(우상단) 컨트롤과 같은 선택 툴바로, 오브젝트 하단에 인접 노출.
+          AC-2: −/+ 탭 시 부모 onFontSize → placedItems fontSize 갱신 → 오버레이·rasterize 즉시 리렌더.
+          AC-3: clamp 8~48pt(부모/자식 이중 clamp). AC-4: 값은 item.fontSize(placedItems) 소스라 재선택 유지.
+          foot 태블릿 '큰 버튼' 원칙 — 32px 터치 타깃. 이벤트는 stopPropagation 으로 드래그·선택과 격리. */}
+      {interactive && isSelected && (
+        <div
+          data-testid={`penchart-fontsize-${item.id}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            bottom: -42,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 6px',
+            borderRadius: 8,
+            background: '#7c3aed',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+            pointerEvents: 'auto',
+            touchAction: 'none',
+            zIndex: 32,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <button
+            data-testid={`penchart-fontsize-dec-${item.id}`}
+            data-fontsize-dec="true"
+            title="글자 작게"
+            aria-label="글자 작게"
+            disabled={item.fontSize <= PENCHART_FONT_MIN}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => {
+              e.stopPropagation();
+              onFontSize(item.id, clampPenChartFont(item.fontSize - PENCHART_FONT_STEP));
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              border: 'none',
+              background: item.fontSize <= PENCHART_FONT_MIN ? 'rgba(255,255,255,0.35)' : '#fff',
+              color: '#7c3aed',
+              fontSize: 20,
+              fontWeight: 'bold',
+              lineHeight: 1,
+              cursor: item.fontSize <= PENCHART_FONT_MIN ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >
+            −
+          </button>
+          <span
+            data-testid={`penchart-fontsize-value-${item.id}`}
+            style={{
+              minWidth: 44,
+              textAlign: 'center',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+              userSelect: 'none',
+            }}
+          >
+            {item.fontSize}pt
+          </span>
+          <button
+            data-testid={`penchart-fontsize-inc-${item.id}`}
+            data-fontsize-inc="true"
+            title="글자 크게"
+            aria-label="글자 크게"
+            disabled={item.fontSize >= PENCHART_FONT_MAX}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => {
+              e.stopPropagation();
+              onFontSize(item.id, clampPenChartFont(item.fontSize + PENCHART_FONT_STEP));
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              border: 'none',
+              background: item.fontSize >= PENCHART_FONT_MAX ? 'rgba(255,255,255,0.35)' : '#fff',
+              color: '#7c3aed',
+              fontSize: 20,
+              fontWeight: 'bold',
+              lineHeight: 1,
+              cursor: item.fontSize >= PENCHART_FONT_MAX ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >
+            +
+          </button>
+        </div>
       )}
     </div>
   );
@@ -3602,6 +3719,14 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                   onDelete={(id) => {
                     setPlacedItems((prev) => prev.filter((it) => it.id !== id));
                     setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+                  }}
+                  // T-20260706-foot-PENCHART-PHRASE-FONTSIZE: 선택 오브젝트 fontSize 갱신(px, clamp 완료값).
+                  //   placedItems.fontSize 만 갱신 → 오버레이 미리보기(L599)·저장 rasterize(L2374) 동일 소스로 실시간 반영.
+                  //   저장 직렬화 계약 무변경(fontSize 는 기존 PlacedItem 1급 필드).
+                  onFontSize={(id, size) => {
+                    setPlacedItems((prev) =>
+                      prev.map((it) => it.id === id ? { ...it, fontSize: clampPenChartFont(size) } : it)
+                    );
                   }}
                 />
               );
