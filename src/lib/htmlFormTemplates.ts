@@ -127,7 +127,7 @@ const COMMON_STYLE = `
          콘텐츠박스 높이 273mm→255mm(=297-30-12)로 축소.
          T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-6): 상단 30mm→23mm(2줄↑) 재조정에 맞춰
          콘텐츠박스 255mm→262mm(=297-23-12)로 확대 → 하단 12mm 클립가드 유지·단일 페이지·넘침/잘림 없음. */
-      .form-wrap { width: 190mm; min-height: 262mm; padding: 6mm 8mm; margin: 0 auto; }
+      .form-wrap { width: 190mm; min-height: 269mm; padding: 6mm 8mm; margin: 0 auto; } /* T-20260706-VSPACE-ADJUST: 상단 23→16mm 재조정 → 콘텐츠박스 262→269mm(=297-16-12) */
       td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
     }
   </style>
@@ -837,7 +837,7 @@ ${COMMON_STYLE}
        콘텐츠박스 높이 186mm→168mm(=210-30-12) 축소.
        T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-6): 상단 30mm→23mm(2줄↑) 재조정 →
        콘텐츠박스 168mm→175mm(=210-23-12) 확대로 하단 12mm 클립가드 유지·단일 페이지·넘침/잘림 없음. */
-    .bill-wrap { width: 272mm; min-height: 175mm; padding: 4mm 6mm; margin: 0 auto; overflow: hidden; }
+    .bill-wrap { width: 272mm; min-height: 182mm; padding: 4mm 6mm; margin: 0 auto; overflow: hidden; } /* T-20260706-VSPACE-ADJUST: 상단 23→16mm 재조정 → 콘텐츠박스(landscape) 175→182mm(=210-16-12) */
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
@@ -1101,7 +1101,7 @@ ${COMMON_STYLE}
 
 const REFERRAL_LETTER_HTML = `
 ${COMMON_STYLE}
-<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm 로 콘텐츠박스(190mm) 내 좌우 1mm 여백 + 프린터 unprintable edge clipping 회피 --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; min-height:262mm; margin:0 auto;"><!-- T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 상·하 여백은 인쇄창 @page margin 이 엔진 차원에서 소유 → 인라인 margin:0 auto(이중여백/콘텐츠 초과 방지). 좌우 188mm/auto 는 콘텐츠박스 내 중앙 belt 로 유지. T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): @page 상단 30mm 하향에 맞춰 min-height 273→255mm. AC-6: 상단 30→23mm(2줄↑) 재조정에 맞춰 255→262mm(=297-23-12). -->
+<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm 로 콘텐츠박스(190mm) 내 좌우 1mm 여백 + 프린터 unprintable edge clipping 회피 --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; min-height:269mm; margin:0 auto;"><!-- T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 상·하 여백은 인쇄창 @page margin 이 엔진 차원에서 소유 → 인라인 margin:0 auto(이중여백/콘텐츠 초과 방지). 좌우 188mm/auto 는 콘텐츠박스 내 중앙 belt 로 유지. T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): @page 상단 30mm 하향에 맞춰 min-height 273→255mm. AC-6: 상단 30→23mm(2줄↑) 재조정에 맞춰 255→262mm(=297-23-12). T-20260706-VSPACE-ADJUST: 상단 23→16mm 재조정에 맞춰 262→269mm(=297-16-12). -->
   <div style="border-bottom:1px solid #000; padding:10px 14px 8px;">
     <div class="title" style="font-size:18pt; letter-spacing:14px; padding:8px 0 6px;">진 료 의 뢰 서</div>
   </div>
@@ -1412,7 +1412,7 @@ const RX_STANDARD_HTML = `
        래퍼 @page(margin:12mm 10mm)를 덮어써 처방전만 shrink-to-fit 쏠림 재발 → 제거(@page=인쇄창 래퍼 단일 소유). */
     /* T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 상단 +68px 하향 → 콘텐츠박스 273mm→255mm.
        AC-6: 상단 30→23mm(2줄↑) 재조정 → 콘텐츠박스 255mm→262mm(=297-23-12), 하단 12mm 클립가드 유지. */
-    .rx-wrap { width: 190mm; min-height: 262mm; padding: 5mm 8mm; margin: 0 auto; }
+    .rx-wrap { width: 190mm; min-height: 269mm; padding: 5mm 8mm; margin: 0 auto; } /* T-20260706-VSPACE-ADJUST: 상단 23→16mm 재조정 → 262→269mm(=297-16-12) */
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rx-wrap td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
   }
@@ -1640,7 +1640,7 @@ const BILL_RECEIPT_HTML = `
        차원에서 중앙 배치 → br-wrap 은 박스를 채움(margin:0 auto). @page=인쇄창 래퍼 단일 소유. */
     /* T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 상단 +68px 하향 → 콘텐츠박스 273mm→255mm.
        AC-6: 상단 30→23mm(2줄↑) 재조정 → 콘텐츠박스 255mm→262mm(=297-23-12), 하단 12mm 클립가드 유지. */
-    .br-wrap { width: 190mm; min-height: 262mm; padding: 6mm 8mm; margin: 0 auto; }
+    .br-wrap { width: 190mm; min-height: 269mm; padding: 6mm 8mm; margin: 0 auto; } /* T-20260706-VSPACE-ADJUST: 상단 23→16mm 재조정 → 262→269mm(=297-16-12) */
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>

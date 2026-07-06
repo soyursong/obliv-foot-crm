@@ -43,8 +43,8 @@ const PORTRAIT = ['diagnosis', 'treat_confirm', 'visit_confirm', 'diag_opinion',
   'payment_cert', 'referral_letter', 'medical_record_request', 'rx_standard', 'bill_receipt', 'ins_claim_form'];
 const LANDSCAPE = ['bill_detail'];
 
-// 현 프로덕션 knob (4 경로 일관): 상단 23mm / 좌우 10mm / 하단 12mm.
-const TOP_MM = 23, SIDE_MM = 10, BOTTOM_MM = 12;
+// 현 프로덕션 knob (4 경로 일관): 상단 16mm / 좌우 10mm / 하단 12mm. (VSPACE-ADJUST: AC-6 23→16mm 추가 2줄↑)
+const TOP_MM = 16, SIDE_MM = 10, BOTTOM_MM = 12;
 
 async function measureForm(page: import('@playwright/test').Page, formKey: string, orient: 'portrait' | 'landscape') {
   const raw = getHtmlTemplate(formKey);
@@ -85,9 +85,9 @@ async function measureForm(page: import('@playwright/test').Page, formKey: strin
   const contentMm = m.scrollH / pxPerMm;
   const tag = `[${formKey}/${orient}] 상${topMm.toFixed(1)}/하${bottomMm.toFixed(1)}/좌${leftMm.toFixed(1)}/우${rightMm.toFixed(1)}mm`;
 
-  // AC-6 핵심: 상단여백 ≈ 23mm(22~24mm) — 2차 30mm 대비 ~2줄(7mm)↑, 전 양식 일관.
-  expect(topMm, `${tag} 상단여백 22~24mm(2차 30mm 대비 2줄↑)`).toBeGreaterThan(22);
-  expect(topMm, `${tag} 상단여백 22~24mm(과다 하향 방지)`).toBeLessThan(24.5);
+  // VSPACE-ADJUST 핵심: 상단여백 ≈ 16mm(15~17mm) — AC-6 23mm 대비 ~2줄(7mm)↑, 전 양식 일관.
+  expect(topMm, `${tag} 상단여백 15~17mm(AC-6 23mm 대비 2줄↑)`).toBeGreaterThan(15);
+  expect(topMm, `${tag} 상단여백 15~17mm(과다 하향 방지)`).toBeLessThan(17.5);
   // 하단 12mm 클립가드 유지(넘침 시 음수·과소 → 잘림).
   expect(bottomMm, `${tag} 하단 12mm 클립가드(>10mm)`).toBeGreaterThan(10);
   // 단일 페이지: 콘텐츠 시트 미초과.
