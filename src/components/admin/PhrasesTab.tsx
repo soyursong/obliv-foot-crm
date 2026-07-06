@@ -132,6 +132,19 @@ const MERGED_CATEGORY_LABELS: Record<string, string> = {
   ...CUSTCHART_CATEGORY_LABELS,
 };
 
+// T-20260706-foot-PHRASEMGMT-PENCHART-CLICK-PREVIEW:
+//   목록 행 클릭 → 우측 read-only 미리보기. content 는 원칙적으로 텍스트지만,
+//   방어적으로 이미지 URL/데이터URI 면 <img>, 그 외는 pre-wrap 텍스트로 렌더(캔버스 데이터URI 포함).
+//   순수 표시 판정 — 부수효과·네트워크 없음(읽기전용).
+function isImageContent(content: string | null | undefined): boolean {
+  const s = (content ?? '').trim();
+  if (!s) return false;
+  if (/^data:image\//i.test(s)) return true;
+  // 단일 토큰(공백 없음) + 이미지 확장자로 끝나는 http(s) URL 만 이미지로 취급 (일반 텍스트 오판 방지)
+  if (/^https?:\/\/\S+\.(png|jpe?g|gif|webp|svg)(\?\S*)?$/i.test(s) && !/\s/.test(s)) return true;
+  return false;
+}
+
 // AC-1: 사이드 메뉴용 카테고리 목록 (전체 포함)
 const SIDE_MENU_CATS = [
   { key: 'all', label: '전체' },
@@ -249,9 +262,12 @@ interface SortablePhraseRowProps {
   delPending: boolean;
   onEdit: (p: PhraseTemplate) => void;
   onDelete: (id: number, name: string) => void;
+  // T-20260706-foot-PHRASEMGMT-PENCHART-CLICK-PREVIEW: 행 클릭 → read-only 미리보기 선택.
+  onPreview: (p: PhraseTemplate) => void;
+  isPreviewed: boolean;
 }
 
-function SortablePhraseRow({ p, canEdit, delPending, onEdit, onDelete }: SortablePhraseRowProps) {
+function SortablePhraseRow({ p, canEdit, delPending, onEdit, onDelete, onPreview, isPreviewed }: SortablePhraseRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: p.id,
     disabled: !canEdit,
@@ -266,10 +282,20 @@ function SortablePhraseRow({ p, canEdit, delPending, onEdit, onDelete }: Sortabl
         opacity: isDragging ? 0.4 : 1,
         zIndex: isDragging ? 10 : undefined,
       }}
-      className={`flex items-center justify-between px-3 py-1.5 gap-2 hover:bg-muted/20 transition-colors ${isDragging ? 'bg-card shadow-md' : ''}`}
+      className={`flex items-center justify-between px-3 py-1.5 gap-2 transition-colors ${isDragging ? 'bg-card shadow-md' : ''} ${isPreviewed ? 'bg-teal-50/70 border-l-2 border-l-teal-500' : 'hover:bg-muted/20'}`}
       data-testid="phrase-item"
+      data-previewed={isPreviewed ? 'true' : 'false'}
     >
-      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+      {/* T-20260706-foot-PHRASEMGMT-PENCHART-CLICK-PREVIEW: 좌측 내용 영역 클릭 → read-only 미리보기.
+          (드래그 핸들은 자체 onClick stopPropagation, 우측 편집/삭제 버튼은 이 영역 밖 → 클릭 격리) */}
+      <div
+        className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer"
+        role="button"
+        tabIndex={0}
+        onClick={() => onPreview(p)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPreview(p); } }}
+        data-testid="phrase-row-clickable"
+      >
         {/* 드래그 핸들 — 관리권한 전용 */}
         {canEdit && (
           <button
@@ -401,6 +427,9 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   const [editing, setEditing] = useState<PhraseTemplate | null>(null);
   const [form, setForm] = useState<PhraseForm>(EMPTY_FORM);
   const [filterCat, setFilterCat] = useState<string>('all');
+  // T-20260706-foot-PHRASEMGMT-PENCHART-CLICK-PREVIEW: 행 클릭 시 read-only 미리보기 대상 id.
+  //   phrase 객체를 직접 담지 않고 id 만 보관 → 편집/삭제로 목록 갱신돼도 최신 content 로 자동 반영, 삭제 시 자동 사라짐.
+  const [previewId, setPreviewId] = useState<number | null>(null);
   // T-20260526-foot-MEDCHART-SYNC: phrase_type 필터 ('all' | 'pen_chart' | 'medical_chart')
   const [filterPhraseType, setFilterPhraseType] = useState<string>('all');
   // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: lockedType 지정 시 해당 type 으로 강제 고정.
@@ -469,6 +498,9 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
     (p) => effectivePhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === effectivePhraseType,
   );
   const displayed = typeFiltered.filter((p) => filterCat === 'all' || p.category === filterCat);
+
+  // T-20260706-foot-PHRASEMGMT-PENCHART-CLICK-PREVIEW: 미리보기 대상 — 전체 목록에서 id 로 조회(필터 변경·삭제에 안전).
+  const previewPhrase = previewId != null ? localPhrases.find((p) => p.id === previewId) ?? null : null;
 
   // T-20260701-foot-REORDER-ARROW-TO-DRAG: ↑↓ 화살표 → 잡아끌기(드래그) 순서변경.
   //   화면 목록(displayed, 카테고리 필터 반영)을 arrayMove 로 재배치하되, sort_order 는 같은 유형 전체
@@ -638,11 +670,85 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                       delPending={del.isPending}
                       onEdit={openEdit}
                       onDelete={handleDelete}
+                      onPreview={(pp) => setPreviewId(pp.id)}
+                      isPreviewed={previewId === p.id}
                     />
                   ))}
                 </div>
               </SortableContext>
             </DndContext>
+          )}
+        </div>
+
+        {/* ── T-20260706-foot-PHRASEMGMT-PENCHART-CLICK-PREVIEW: read-only 미리보기 패널 ──
+            AC-1/2: 행 클릭 시 우측에 해당 상용구 내용을 즉시 read-only 렌더(입력·편집 불가).
+            AC-3: 실제 수정은 기존 편집(연필) 버튼 동선 유지 — 이 패널은 표시 전용.
+            AC-4: 다른 행 클릭 시 previewId 교체로 내용 자동 교체. 빈 내용도 안내 문구로 안전 처리.
+            foot 태블릿: 우측 고정폭 패널 + 자체 스크롤. 미선택 시 안내 placeholder. */}
+        <div
+          className="flex w-52 sm:w-64 lg:w-80 flex-shrink-0 border-l bg-muted/5 flex-col max-h-[600px]"
+          data-testid="phrase-preview-panel"
+        >
+          {previewPhrase ? (
+            <div className="flex flex-col h-full min-h-0">
+              <div className="px-3 py-2 border-b bg-muted/20 shrink-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                    {MERGED_CATEGORY_LABELS[previewPhrase.category] ?? previewPhrase.category}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={`text-[9px] h-4 px-1 ${PHRASE_TYPE_BADGE[previewPhrase.phrase_type ?? 'pen_chart'] ?? PHRASE_TYPE_BADGE.pen_chart}`}
+                  >
+                    {PHRASE_TYPE_LABELS[previewPhrase.phrase_type ?? 'pen_chart']}
+                  </Badge>
+                  {previewPhrase.shortcut_key && (
+                    <Badge variant="outline" className="text-[10px] py-0 px-1 font-mono text-teal-600 border-teal-200">
+                      //{previewPhrase.shortcut_key}
+                    </Badge>
+                  )}
+                  {!previewPhrase.is_active && (
+                    <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
+                  )}
+                </div>
+                <p className="text-sm font-semibold mt-1 truncate" data-testid="phrase-preview-name">
+                  {previewPhrase.name}
+                </p>
+              </div>
+              {/* read-only 내용 — 입력 요소 없음(순수 표시). 이미지/데이터URI 면 <img>, 그 외 pre-wrap 텍스트 */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-3" data-testid="phrase-preview-content">
+                {(() => {
+                  const content = previewPhrase.content ?? '';
+                  if (!content.trim()) {
+                    return (
+                      <p className="text-xs text-muted-foreground italic" data-testid="phrase-preview-empty">
+                        (내용이 비어 있는 상용구입니다.)
+                      </p>
+                    );
+                  }
+                  if (isImageContent(content)) {
+                    return (
+                      <img
+                        src={content.trim()}
+                        alt={previewPhrase.name}
+                        className="max-w-full h-auto rounded border"
+                        data-testid="phrase-preview-image"
+                      />
+                    );
+                  }
+                  return (
+                    <p className="text-xs whitespace-pre-wrap break-words leading-relaxed text-foreground">
+                      {content}
+                    </p>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center text-xs text-muted-foreground gap-1">
+              <span>목록에서 상용구를 선택하면</span>
+              <span>여기에 내용이 표시됩니다.</span>
+            </div>
           )}
         </div>
       </div>
