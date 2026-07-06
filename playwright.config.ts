@@ -49,6 +49,9 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX: 진료확인서·통원확인서 레이아웃 5항목(상단/하단 50:50·성명 빈셀제거·용도 너비·상기인칸 3배).
+        //   HTML 템플릿 리터럴 정적 가드 + getHtmlTemplate/bindHtmlTemplate 실렌더. 실 출력은 supervisor 갤탭 field-soak. auth 불요.
+        '**/T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX.spec.ts',
         // T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT: 유리 outer 그림자 완화 + 과거날짜 배너 컴팩트.
         //   순수 CSS/JSX 시각 조정 → box-shadow 값·배너 유틸 클래스 정적 소스 가드. auth.setup 우회(TEST_PASSWORD 불요).
         //   실 렌더는 supervisor 갤탭 field-soak. (FIX-REQUEST MSG-20260701-204705-zyhy: QA 워크트리 .env.local 부재 대응)

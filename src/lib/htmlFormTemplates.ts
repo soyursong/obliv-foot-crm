@@ -328,14 +328,15 @@ ${COMMON_STYLE}
   </div>
   <!-- T-20260601-foot-DOC-PRINT-8FIX AC-5③: 상단 진단 비표시 안내 문구 제거됨 -->
 
-  <table>
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ①: 상단 섹션(병록번호~연령/성별) 좌우 50:50.
+       라벨15%+값35% 좌우 대칭 → 좌·우 반반. table-layout:fixed 로 첫 행 폭 고정(colspan 행 정합). -->
+  <table style="table-layout:fixed;">
     <tbody>
       <tr>
-        <td style="width:70px; background:#f8f8f8;">병 록 번 호</td>
-        <td style="width:140px;">{{record_no}}</td>
-        <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 연령을 빈 칸이던 1행으로 이동 → 주소 행을 전폭(colspan=3) 단일 줄 확보 -->
-        <td style="width:60px; background:#f8f8f8;">연 령</td>
-        <td style="white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
+        <td style="width:15%; background:#f8f8f8;">병 록 번 호</td>
+        <td style="width:35%;">{{record_no}}</td>
+        <td style="width:15%; background:#f8f8f8;">연 령</td>
+        <td style="width:35%; white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">연 번 호</td>
@@ -350,12 +351,10 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
-        <td>{{patient_name}}</td>
-        <!-- T-20260609-foot-DOCFORM-3FIX 이슈3: 비활성 항목 라벨이 인쇄물에 leak → 조건부 렌더.
-             하드코딩 "☐ 상병 표시/비활성화" 라벨을 placeholder 로 치환. 미바인딩(=비활성) 시 공란.
-             셀/colspan 구조는 보존(8FIX 레이아웃·도장 위치 회귀 방지) → 항목/토글 시스템 보존, 활성 시 재출력. -->
-        <td style="background:#f8f8f8; font-size:8pt; white-space:nowrap;">{{disease_display_note}}</td>
-        <td></td>
+        <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ②: 성명 옆 불필요한 막음칸(빈 셀) 제거 → 성명 값 colspan=3 전폭.
+             구 disease_display_note placeholder 셀(3FIX, 상시 공란) + 빈 td 삭제.
+             상병 표시는 CODE 변형의 DISEASE_BLOCK 가 전담(불변) → 바인딩 컨텍스트 무영향. -->
+        <td colspan="3">{{patient_name}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주 민 번 호</td>
@@ -404,28 +403,34 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <table style="margin-top:4px;">
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ③: 용도 입력칸 너비를 내용에 맞게 조정.
+       전폭(full-bleed) → 내용맞춤(width:auto 테이블 + 라벨 60px·값 min-width:320px 좌측 배치). -->
+  <table style="margin-top:4px; width:auto;">
     <tbody>
       <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
            현장 요청(김주연 총괄) — 진료확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
       <tr>
-        <td style="background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
-        <td>{{purpose}}</td>
+        <td style="width:60px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
+        <td style="min-width:320px;">{{purpose}}</td>
       </tr>
     </tbody>
   </table>
 
-  <div class="confirm-text" style="margin-top:6px;">
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ④: "상기인은~확인함" 텍스트칸 세로 높이 3배(≈36px→108px).
+       min-height:108px + flex 상하중앙 정렬(기존 text-align:center 유지). -->
+  <div class="confirm-text" style="margin-top:6px; min-height:108px; display:flex; align-items:center; justify-content:center;">
     상기인은 위와 같이 진료중임(진료하였음)을 확인함.
   </div>
 
-  <table style="margin-top:4px;">
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ⑤: 하단 발행일~주소및명칭 섹션 좌우 50:50.
+       라벨15%+값35% 좌우 대칭. table-layout:fixed 로 첫 행 폭 고정(의료기관·면허 행 정합). -->
+  <table style="margin-top:4px; table-layout:fixed;">
     <tbody>
       <tr>
-        <td style="width:60px; background:#f8f8f8;">발 행 일</td>
-        <td style="width:130px;">{{issue_date}}</td>
-        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">주소 및 명칭</td>
-        <td>{{clinic_address}}</td>
+        <td style="width:15%; background:#f8f8f8;">발 행 일</td>
+        <td style="width:35%;">{{issue_date}}</td>
+        <td style="width:15%; background:#f8f8f8; white-space:nowrap; font-size:8pt;">주소 및 명칭</td>
+        <td style="width:35%;">{{clinic_address}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">의 료 기 관</td>
@@ -529,14 +534,15 @@ ${COMMON_STYLE}
     <div style="flex:1;"></div>
   </div>
 
-  <table>
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ①: 상단 섹션(병록번호~연령/성별) 좌우 50:50.
+       라벨15%+값35% 좌우 대칭 → 좌·우 반반. table-layout:fixed 로 첫 행 폭 고정(colspan 행 정합). -->
+  <table style="table-layout:fixed;">
     <tbody>
       <tr>
-        <td style="width:70px; background:#f8f8f8;">병 록 번 호</td>
-        <td style="width:140px;">{{record_no}}</td>
-        <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 연령을 빈 칸이던 1행으로 이동 → 주소 행을 전폭(colspan=3) 단일 줄 확보 -->
-        <td style="width:60px; background:#f8f8f8;">연 령</td>
-        <td style="white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
+        <td style="width:15%; background:#f8f8f8;">병 록 번 호</td>
+        <td style="width:35%;">{{record_no}}</td>
+        <td style="width:15%; background:#f8f8f8;">연 령</td>
+        <td style="width:35%; white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">연 번 호</td>
@@ -551,12 +557,9 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
-        <td>{{patient_name}}</td>
-        <!-- T-20260609-foot-DOCFORM-3FIX 이슈2: 비활성 항목 라벨이 인쇄물에 leak → 조건부 렌더.
-             하드코딩 "☐ 상병 표시 비활성화 / ☐ 향후치료의견 미표시" 라벨을 placeholder 로 치환.
-             미바인딩(=비활성) 시 공란. colspan=2 셀 구조는 보존(8FIX 레이아웃·도장 위치 회귀 방지)
-             → 항목/토글 시스템 보존, 활성 시 재출력. -->
-        <td colspan="2" style="font-size:8pt; color:#555;">{{visit_display_note}}</td>
+        <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ②: 성명 옆 불필요한 막음칸(빈 셀) 제거 → 성명 값 colspan=3 전폭.
+             구 visit_display_note placeholder 셀(3FIX, 상시 공란) 삭제. 바인딩 컨텍스트 무영향. -->
+        <td colspan="3">{{patient_name}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주 민 번 호</td>
@@ -605,28 +608,34 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <table style="margin-top:4px;">
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ③: 용도 입력칸 너비를 내용에 맞게 조정.
+       전폭(full-bleed) → 내용맞춤(width:auto 테이블 + 라벨 60px·값 min-width:320px 좌측 배치). -->
+  <table style="margin-top:4px; width:auto;">
     <tbody>
       <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
            현장 요청(김주연 총괄) — 통원확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
       <tr>
-        <td style="background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
-        <td>{{purpose}}</td>
+        <td style="width:60px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
+        <td style="min-width:320px;">{{purpose}}</td>
       </tr>
     </tbody>
   </table>
 
-  <div class="confirm-text" style="margin-top:6px;">
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ④: "상기인은~확인함" 텍스트칸 세로 높이 3배(≈36px→108px).
+       min-height:108px + flex 상하중앙 정렬(기존 text-align:center 유지). -->
+  <div class="confirm-text" style="margin-top:6px; min-height:108px; display:flex; align-items:center; justify-content:center;">
     상기인은 위와 같이 통원중임(통원하였음)을 확인함.
   </div>
 
-  <table style="margin-top:4px;">
+  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ⑤: 하단 발행일~주소및명칭 섹션 좌우 50:50.
+       라벨15%+값35% 좌우 대칭. table-layout:fixed 로 첫 행 폭 고정(의료기관·면허 행 정합). -->
+  <table style="margin-top:4px; table-layout:fixed;">
     <tbody>
       <tr>
-        <td style="width:60px; background:#f8f8f8;">발 행 일</td>
-        <td style="width:130px;">{{issue_date}}</td>
-        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">주소 및 명칭</td>
-        <td>{{clinic_address}}</td>
+        <td style="width:15%; background:#f8f8f8;">발 행 일</td>
+        <td style="width:35%;">{{issue_date}}</td>
+        <td style="width:15%; background:#f8f8f8; white-space:nowrap; font-size:8pt;">주소 및 명칭</td>
+        <td style="width:35%;">{{clinic_address}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">의 료 기 관</td>
