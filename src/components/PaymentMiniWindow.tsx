@@ -92,6 +92,8 @@ import {
   loadCustomerOutstanding,
   hasOutstandingDue,
   type CustomerOutstanding,
+  // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백(PATH-4 수렴).
+  loadEffectiveInsuranceGrade,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE: 의료법 제22조 — 급여 방문 진료기록 미작성 시 수납/완료 하드차단.
 import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
@@ -786,14 +788,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setMenuOrder({});
 
     // T-20260526-foot-COPAY-MINI-BUG AC-1: 고객 건보 등급 비동기 로드
+    // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null(신규방문 미입력) 시
+    //   이 방문 service_charges 저장 등급(customer_grade_at_charge)으로 폴백 → 급여구분 붕괴 방지.
+    //   무파괴: live grade 있으면 그대로, 무보험 방문은 covered charge 없어 null 유지.
     if (checkIn.customer_id) {
-      supabase
-        .from('customers')
-        .select('insurance_grade')
-        .eq('id', checkIn.customer_id)
-        .maybeSingle()
-        .then(({ data }) => {
-          setCustomerInsuranceGrade((data?.insurance_grade ?? null) as InsuranceGrade | null);
+      loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
+        .then((grade) => {
+          setCustomerInsuranceGrade(grade);
         });
     }
 

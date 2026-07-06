@@ -346,6 +346,46 @@ export async function loadCustomerInsuranceGrade(
 }
 
 /**
+ * T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK — 급여구분 붕괴 방지용 유효 건보 등급.
+ *
+ * RC(가설 A · 무스키마): 진료비 세부산정내역(bill_detail)·계산서 출력의 급여 분류(getTaxClass)와
+ *   본인부담/공단부담 split(computeFootBilling copaymentTotal)은 customers.insurance_grade 를
+ *   유일 소스로 삼는다. 그런데 신규 방문에서는 접수 시점에 grade 가 아직 null(고객이
+ *   InsuranceGradeSelect 로 명시 입력하기 전)이라, getTaxClass(svc, null)+copayRate=null 로
+ *   급여 항목이 비급여로 오분류되거나 본인/공단이 0/공란으로 붕괴 → "신규출력 시 급여구분 공란".
+ *   2번 차트에서 등급 입력 후 재출력하면 grade 가 채워져 정상 표시되던 조건부 버그(현장 보고와 일치).
+ *
+ * 해소(AC-2 무재산정·무날조): live customers.insurance_grade 가 있으면 그대로 사용(기존 동작 불변).
+ *   비어(null) 있을 때만, 이 방문(check_in_id)의 service_charges 에 이미 영속된
+ *   customer_grade_at_charge — 즉 급여 계산 당시 실제 적용 등급(InsuranceCopaymentPanel.persistCharges
+ *   L165: applied_grade) — 를 폴백한다. 저장된 사실값이므로 임의 등급 날조가 아니며, 신규출력·재출력이
+ *   동일 저장 등급으로 수렴한다(AC-3). 급여 charge 가 없는 무보험 방문은 유효 covered 등급이 없어
+ *   null 반환 → 비급여로 정상 표기(무파괴).
+ */
+export async function loadEffectiveInsuranceGrade(
+  customerId: string | null | undefined,
+  checkInId: string,
+): Promise<InsuranceGrade | null> {
+  const live = await loadCustomerInsuranceGrade(customerId);
+  if (live) return live; // 등급 존재 → 기존 경로 그대로(회귀 0)
+
+  // 폴백: 이 방문에 저장된 급여 계산 당시 등급(service_charges.customer_grade_at_charge).
+  //   is_insurance_covered 급여 행에서만 채택('manual'/비급여 행 제외) — 유효 covered 등급만.
+  const { data } = await supabase
+    .from('service_charges')
+    .select('customer_grade_at_charge, is_insurance_covered')
+    .eq('check_in_id', checkInId);
+  for (const r of (data ?? []) as Array<{
+    customer_grade_at_charge: string | null;
+    is_insurance_covered: boolean | null;
+  }>) {
+    const g = r.customer_grade_at_charge as InsuranceGrade | null;
+    if (r.is_insurance_covered && g && COVERED_GRADES.has(g)) return g;
+  }
+  return null;
+}
+
+/**
  * bill_detail(진료비세부산정내역) items_html 입력행 빌드 — PMW L1480~1492 와 1:1 동일.
  *
  * T-20260609-foot-DOCFORM-3FIX 이슈1 [버그]: 본인부담금/공단부담금 per-item 컬럼 공란.
