@@ -9721,6 +9721,19 @@ function PackagePurchaseFromTemplateDialog({
           <div className="space-y-1.5">
             <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
             <div className="flex flex-wrap gap-2">
+              {/* T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT (김주연 총괄): 구입티켓 생성 시 '커스텀' 메뉴를 목록 최앞(첫 번째)으로 노출.
+                  기존엔 templates.map 뒤(맨 끝)에 위치 → 최상단으로 이동. 템플릿 항목 순서·클릭 동선은 그대로(AC-2 회귀 가드). */}
+              <button
+                onClick={applyCustom}
+                className={cn2(
+                  'h-9 rounded-md border px-3 text-sm font-medium transition',
+                  selectedTemplateId === 'custom'
+                    ? 'border-sage-600 bg-sage-50 text-sage-700'
+                    : 'border-gray-200 hover:bg-gray-50',
+                )}
+              >
+                커스텀
+              </button>
               {templates.map((t) => (
                 <button
                   key={t.id}
@@ -9735,17 +9748,6 @@ function PackagePurchaseFromTemplateDialog({
                   {t.name}
                 </button>
               ))}
-              <button
-                onClick={applyCustom}
-                className={cn2(
-                  'h-9 rounded-md border px-3 text-sm font-medium transition',
-                  selectedTemplateId === 'custom'
-                    ? 'border-sage-600 bg-sage-50 text-sage-700'
-                    : 'border-gray-200 hover:bg-gray-50',
-                )}
-              >
-                커스텀
-              </button>
             </div>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>
