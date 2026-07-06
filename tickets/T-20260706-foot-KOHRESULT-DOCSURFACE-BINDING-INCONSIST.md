@@ -12,7 +12,7 @@ data_architect_consult: GO · ADDITIVE · 대표 게이트 불요 (CONSULT-REPLY
 db_gate: supabase/migrations/20260706140000_koh_publish_birth_server_derive.sql (테이블/컬럼/enum 무변경·publish_koh_result RPC body만, supervisor 함수-diff Gate 대기)
 risk_level: GO (1/5 — RPC body만, 시그니처 무변경 CREATE OR REPLACE, 테이블/enum 무변경. fn_customer_birthdates 재사용)
 deploy_ready: true
-commit_sha: PENDING
+commit_sha: 79686f20
 # ── MIG-GATE 4필드 ──
 mig_files: supabase/migrations/20260706140000_koh_publish_birth_server_derive.sql (멱등 CREATE OR REPLACE + $verify$ 가드) / .rollback.sql 동봉
 mig_dryrun: scripts/T-20260706-foot-KOHRESULT-DOCSURFACE-BINDING-INCONSIST_dryrun.log (트랜잭션 COMMIT→ROLLBACK 재현, $verify$ 통과·미영속 확인)
