@@ -17,7 +17,11 @@
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const SRC = (rel: string) => readFileSync(resolve(__dirname, '../../src', rel), 'utf-8');
 
@@ -46,7 +50,7 @@ test.describe('T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT', () => {
   test('시나리오 2(AC-2 회귀 가드): 템플릿/커스텀 클릭 동선 및 라벨 유지', () => {
     const src = SRC('pages/CustomerChartPage.tsx');
     const dlgIdx = src.indexOf('function PackagePurchaseFromTemplateDialog');
-    const dlgSlice = src.slice(dlgIdx, dlgIdx + 12000);
+    const dlgSlice = src.slice(dlgIdx, dlgIdx + 14000);
 
     // 템플릿 클릭 → applyTemplate 유지 (다른 메뉴 항목 정상 동작)
     expect(dlgSlice.includes('onClick={() => applyTemplate(t)}'),
