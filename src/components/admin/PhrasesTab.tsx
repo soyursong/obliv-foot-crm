@@ -3,7 +3,7 @@
 // T-20260522-foot-PHRASE-MENU-UX:
 //   AC-1: 드롭다운 → 사이드 메뉴 클릭 형태
 //   AC-2: 리스트 행 높이/간격 축소 (컴팩트)
-//   AC-3: [서류] → [원장님] 라벨 변경
+//   AC-3: [서류] → [담당자] 라벨 변경 (T-20260706: '원장님' → '담당자')
 // T-20260526-foot-PHRASE-SLASH:
 //   AC-4: 단축어(shortcut_key) 입력 필드 추가 + 중복 경고
 // T-20260526-foot-MEDCHART-SYNC:
@@ -107,10 +107,11 @@ const PHRASE_TYPE_BADGE: Record<string, string> = {
 };
 
 // AC-3: document '서류' → '원장님'
+// T-20260706-foot-PHRASES-LABEL-DOCTOR-STAFF: document 라벨 '원장님' → '담당자' (key 불변)
 const CATEGORY_LABELS: Record<string, string> = {
   charting: '차팅',
   prescription: '처방',
-  document: '원장님',
+  document: '담당자',
   general: '일반',
 };
 
@@ -136,7 +137,7 @@ const SIDE_MENU_CATS = [
   { key: 'all', label: '전체' },
   { key: 'charting', label: '차팅' },
   { key: 'prescription', label: '처방' },
-  { key: 'document', label: '원장님' },
+  { key: 'document', label: '담당자' },
   { key: 'general', label: '일반' },
 ] as const;
 
@@ -405,7 +406,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: lockedType 지정 시 해당 type 으로 강제 고정.
   const effectivePhraseType = lockedType ?? filterPhraseType;
   // T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-2: 고객차트 surface 면 사이드 분류 = [전체/예약/상담/치료].
-  //   그 외(펜/진료/혼합) = 기존 [전체/차팅/처방/원장님/일반] 그대로.
+  //   그 외(펜/진료/혼합) = 기존 [전체/차팅/처방/담당자/일반] 그대로.
   const isCustchartView = effectivePhraseType === 'customer_chart';
   const sideMenuCats = isCustchartView ? CUSTCHART_SIDE_MENU_CATS : SIDE_MENU_CATS;
 
@@ -685,7 +686,7 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
                 <Label className="text-xs">카테고리</Label>
                 {/* Dialog 내부 portal 충돌 방지 — native select 사용 */}
                 {/* T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-1/AC-2:
-                    고객차트(customer_chart) 유형이면 [예약/상담/치료], 그 외는 기존 [차팅/처방/원장님/일반].
+                    고객차트(customer_chart) 유형이면 [예약/상담/치료], 그 외는 기존 [차팅/처방/담당자/일반].
                     편집 중인 상용구의 현재 category 가 옵션에 없으면(레거시·미분류) 그 값을 보존 옵션으로 노출 → 무손실. */}
                 {(() => {
                   const dialogCatLabels =
