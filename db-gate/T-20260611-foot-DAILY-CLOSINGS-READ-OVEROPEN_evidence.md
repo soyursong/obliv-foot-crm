@@ -147,3 +147,86 @@ DC-FE  전직원 OPEN+tm 제외 ....................... PASS
 ## db_gate_status = APPLIED (prod, 2026-06-12) → deploy-ready
 - RLS SELECT 정책 2건 over-open→canonical(clinic 스코프 추가 = 더 엄격). 데이터 무손실. 백필 없음. 쓰기 불변. 신규 컬럼/테이블/enum 없음(data-architect CONSULT 불요).
 - 검증: 게이트-후 라이브 Playwright 5/5 GREEN + pg 직결 정책 덤프 over-open 0건.
+
+---
+
+## ★★ 재검수 증빙 보강 (FIX-REQUEST MSG-20260706-114959-rb3f — DB-gate 3자 대조) — 2026-07-06 ★★
+> supervisor 재QA(phase1, insufficient_verification): 3자 대조(파일↔schema_migrations↔prod 정책) 증빙 부재.
+> 아래 = **실측 캡처**(prod rxlomoozakkjesdqjtvd, Management API `/v1/projects/{ref}/database/query`, SUPABASE_ACCESS_TOKEN 인증). 추정 아님.
+
+### 【대조축 1/3】 마이그 파일 (선언)
+- `supabase/migrations/20260611200000_closing_workflow_read_canonical.sql` — 존재.
+- `supabase/migrations/20260611200000_closing_workflow_read_canonical.rollback.sql` — 존재.
+- 이전 LOCK `20260611180000_closing_revenue_read_lock.sql.WITHDRAWN` — WITHDRAWN 봉인(적용 금지).
+- 선언 내용: `daily_closings_read` / `closing_manual_read` = over-open(`USING (true)`) → `is_approved_user() AND clinic_id = current_user_clinic_id()`. finance/staff/therapist read + 쓰기 정책 미접촉.
+
+### 【대조축 2/3】 schema_migrations 원장 (prod 실측)
+```sql
+SELECT version, name FROM supabase_migrations.schema_migrations
+WHERE version='20260611200000' OR name ILIKE '%closing_workflow%' OR name ILIKE '%closing_revenue%';
+→ []  (0 rows)
+
+SELECT count(*) FROM supabase_migrations.schema_migrations;  → 119
+-- (로컬 supabase/migrations/*.sql 파일 수 = 731)
+-- 원장 최신 tracked version = 20260625140000, 파일은 20260706120000 까지 존재.
+```
+- **판정(정직 수렴)**: 이 레포는 CLI push 로 원장을 유지하지 않는 **직접 SQL 적용(direct-apply) 워크플로우** — 731개 파일 중 119개만 원장에 존재(구조적 divergence, 본 마이그 특정 누락 아님). 본 canonical 정책은 FIX-REQUEST MSG-20260612-151325-tu5i 지시로 **멱등 `DROP POLICY IF EXISTS + CREATE POLICY`(COMMIT)** 로 prod 적용됨 → RLS 정책 변경은 `schema_migrations` INSERT 를 동반하지 않음.
+- **Migration Ledger Reconciliation 표준 적용**: 정본 = **prod 실재**(원장이 SSOT 아님). 원장 leg = 본 워크플로우에서 구조적 N/A → forward-doc 로 정직 기록(가짜 원장 행 위조 금지). ⇒ 대조는 **파일(선언) ↔ prod 실재(권위 2 leg)** 로 확정, 원장 leg 는 N/A 명시.
+
+### 【대조축 3/3】 prod 정책 실측 (권위 정본)
+`pg_policies` 실측 (2026-07-06, prod):
+```
+daily_closings [SELECT]:
+  daily_closings_finance_read   (is_consultant_or_above() OR is_coordinator_or_above())     ← 유지(coordinator 포함)
+  daily_closings_read           (is_approved_user() AND (clinic_id = current_user_clinic_id()))  ← canonical ✅ (true 제거)
+  daily_closings_staff_read     is_floor_staff()                                            ← 유지
+  daily_closings_therapist_read is_therapist_or_technician()                                ← 유지(삭제 안 함)
+daily_closings [ALL]:
+  daily_closings_admin_all      is_admin_or_manager()                                       ← 유지(쓰기)
+  daily_closings_write          current_user_is_admin_or_manager()                          ← 유지(쓰기)
+  daily_closings_staff_unlock_6menu  ((current_user_role()=ANY(consultant,coordinator,therapist)) AND clinic_id=current_user_clinic_id())
+                                                                                            ← 별 티켓(REGISTER-MENU-CODY-UNLOCK) write, clinic-scoped(over-open 아님)
+
+closing_manual_payments:
+  [SELECT] closing_manual_read  (is_approved_user() AND (clinic_id = current_user_clinic_id()))  ← canonical ✅ (true 제거)
+  [INSERT] closing_manual_insert
+  [UPDATE] closing_manual_update  clinic_id IN (본인 clinic)
+  [DELETE] closing_manual_delete  clinic_id IN (본인 clinic)                                 ← 쓰기 3종 불변
+```
+**over-open(qual='true') SELECT 정책 카운트** (daily_closings + closing_manual_payments):
+```sql
+SELECT count(*) FROM pg_policies
+WHERE schemaname='public' AND tablename IN ('daily_closings','closing_manual_payments')
+  AND cmd='SELECT' AND btrim(coalesce(qual,'')) = 'true';
+→ 0   ✅ (over-open 0건)
+```
+
+### 3자 대조 결론
+| leg | 상태 | 판정 |
+|-----|------|------|
+| ① 마이그 파일(선언) | canonical(approved+clinic) | ✅ |
+| ② schema_migrations 원장 | 0 rows (direct-apply 워크플로우 = 원장 미유지, 구조적 N/A) | ⚠ forward-doc(정본 아님) |
+| ③ prod 실재(권위) | canonical + over-open 0건 | ✅ **①과 일치** |
+→ 권위 2 leg(파일↔prod) 일치 확정. 원장 leg 는 Migration Ledger Reconciliation 표준에 따라 N/A 정직 기록.
+
+### E2E 재실행 로그 (SUPABASE_ACCESS_TOKEN 설정, prod 대상, skip 0)
+`.env.local`(SUPABASE_ACCESS_TOKEN 등 14 env 주입) 로드 상태.
+```
+# desktop-chrome (auth.setup 포함) — 5/5 PASS
+✓ [setup] authenticate (1.0s)
+✓ DC-1  daily_closings over-open 제거 + finance(coordinator)/staff/therapist 유지 (655ms)
+✓ DC-2  closing_manual canonical clinic-scoped (248ms)
+✓ AC-4  쓰기 정책 불변 (508ms)
+✓ DC-FE 전직원(8역할) OPEN + tm 제외 (2ms)
+→ 5 passed (5.2s)   ※ skip 0 (직전 QA 의 token-미설정 skip 해소)
+
+# unit 프로젝트 (auth.setup 미의존 — TEST_PASSWORD 무관 결정론) — 4/4 PASS
+✓ DC-1 (1.1s) / DC-2 (384ms) / AC-4 (601ms) / DC-FE (4ms)
+→ 4 passed (4.5s)
+```
+- ★spec 을 `desktop-chrome`(auth.setup 의존) → `unit` 프로젝트로 이동(playwright.config.ts testMatch). spec 은 `page` 미사용(순수 `request`=Management API + permissions import) → 브라우저/로그인 불요. QA 워크트리(TEST_PASSWORD 부재)에서도 skip 없이 DB 검증 실행되어 insufficient_verification 재발 차단(FOREIGN-LANG-SAVE 선례 동일).
+
+### deploy-ready 재마킹 근거 (2026-07-06)
+- prod 실재 = canonical + over-open 0건(실측). 파일 선언과 일치. 원장 leg N/A 정직 기록.
+- E2E: token 설정·prod 대상·skip 0 → DC-1/DC-2/AC-4/DC-FE 전건 PASS(desktop-chrome 5/5 + unit 4/4).
+- build OK(vite 4.99s). db_only(RLS SELECT 2건, TS 무변경 / config testMatch 1줄 추가). 신규 컬럼/테이블/enum 0 → data-architect CONSULT 불요.

@@ -229,6 +229,13 @@ export default defineConfig({
         //   순수 판정 함수(classifyVisitByRecency/diffDaysISO) 경계값(365/366) off-by-one + 무이력 회귀가드
         //   + NewCheckInDialog 배선(resolveVisitTypeByRecency) 소스 정적 가드. page/auth/server 불요.
         '**/T-20260706-foot-INTAKE-REVISIT-JUDGE-365.spec.ts',
+        // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN: daily_closings/closing_manual RLS SELECT over-open 제거
+        //   검증. DC-1/DC-2/AC-4 = Management API(request fixture, SUPABASE_ACCESS_TOKEN) 직결 prod 정책 assert,
+        //   DC-FE = permissions lib 순수 단언. page/auth.setup/webServer 불요.
+        //   ★unit 편입 사유(FIX-REQUEST MSG-20260706-114959-rb3f): desktop-chrome(auth.setup 의존)에 있으면
+        //     TEST_PASSWORD 없는 QA 워크트리에서 setup 실패→DB 검증 skip=insufficient_verification 재발.
+        //     spec 이 브라우저/로그인 불요이므로 unit 으로 이동해 skip 0·결정론 확보(FOREIGN-LANG-SAVE 선례 동일).
+        '**/T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
