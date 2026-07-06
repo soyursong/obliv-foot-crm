@@ -106,7 +106,7 @@ const PHRASE_TYPE_BADGE: Record<string, string> = {
   customer_chart: 'text-teal-700 border-teal-200 bg-teal-50',
 };
 
-// AC-3: document '서류' → '원장님'
+// AC-3: document '서류' → '담당자'
 // T-20260706-foot-PHRASES-LABEL-DOCTOR-STAFF: document 라벨 '원장님' → '담당자' (key 불변)
 const CATEGORY_LABELS: Record<string, string> = {
   charting: '차팅',
