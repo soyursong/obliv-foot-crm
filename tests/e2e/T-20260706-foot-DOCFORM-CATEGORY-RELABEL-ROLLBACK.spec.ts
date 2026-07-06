@@ -19,6 +19,12 @@
  */
 
 import { test, expect } from '@playwright/test';
+import {
+  groupDocList,
+  DOC_GROUP_LABEL_JEUNGMYEONG,
+  DOC_GROUP_LABEL_ETC,
+  DOC_CATEGORY_JEUNGMYEONG_KEYS,
+} from '../../src/lib/formTemplates';
 
 // ── SUT: Services.tsx 상수 재현 (변경 후 — '제증명' 포함, 의료성 그룹 인접) ──────────────
 const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '처방약', '제증명', '풋케어', '수액', '풋화장품'];
@@ -125,5 +131,74 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK', () => {
     expect(wouldMutate.length).toBe(0); // 이미 전부 '제증명' → 멱등 no-op
     // 진료의뢰서는 대상 코드 집합에 미포함(EXCLUDE)
     expect(targetCodes.has('진료의뢰서')).toBe(false);
+  });
+});
+
+// ── WARN-1: 서류 발급 팝업(DocumentPrintPanel) 카테고리 그룹핑 렌더 (groupDocList SSOT) ──────────
+//   DA-20260706 회신: 서류 팝업은 category_label 을 읽지 않고 form_key 화이트리스트로 렌더 →
+//   데이터층 DML만으로는 화면 무변화. groupDocList 로 '제증명' 그룹 헤더를 노출해 §4-1/AC2 충족.
+type DocTpl = { form_key: string; name_ko: string };
+const DOC_TEMPLATES: DocTpl[] = [
+  { form_key: 'bill_receipt', name_ko: '진료비 계산서·영수증' },
+  { form_key: 'bill_detail', name_ko: '진료비내역서' },
+  { form_key: 'koh_result', name_ko: '검사결과 보고서' },
+  { form_key: 'diag_opinion', name_ko: '소견서' },
+  { form_key: 'diagnosis', name_ko: '진단서' },
+  { form_key: 'treat_confirm_code', name_ko: '진료확인서(코드·진단명 포함)' },
+  { form_key: 'treat_confirm_nocode', name_ko: '진료확인서(코드·진단명 불포함)' },
+  { form_key: 'referral_letter', name_ko: '진료의뢰서' },
+  { form_key: 'visit_confirm', name_ko: '통원확인서' },
+  { form_key: 'medical_record_request', name_ko: '진료기록사본' },
+  { form_key: 'rx_standard', name_ko: '처방전(표준처방전)' },
+];
+
+test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK — WARN-1 서류팝업 그룹핑', () => {
+  test('WARN-1/AC2: 서류 목록에 "제증명" 그룹이 첫 그룹으로 노출된다', () => {
+    const groups = groupDocList(DOC_TEMPLATES);
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups[0].label).toBe(DOC_GROUP_LABEL_JEUNGMYEONG);
+    expect(DOC_GROUP_LABEL_JEUNGMYEONG).toBe('제증명');
+  });
+
+  test('WARN-1/AC3: "제증명" 그룹 = 총괄 선언 10종(무료4 + 제증명6→8 form_key)', () => {
+    const groups = groupDocList(DOC_TEMPLATES);
+    const jeung = groups.find((g) => g.label === DOC_GROUP_LABEL_JEUNGMYEONG)!;
+    const keys = jeung.templates.map((t) => t.form_key);
+    // 무료 4종
+    for (const k of ['bill_receipt', 'bill_detail', 'koh_result', 'rx_standard']) {
+      expect(keys).toContain(k);
+    }
+    // 제증명 6종 → form_key 4개(국·영문 병합)
+    for (const k of ['diagnosis', 'diag_opinion', 'visit_confirm', 'medical_record_request']) {
+      expect(keys).toContain(k);
+    }
+    expect(keys.length).toBe(8);
+    expect([...keys].sort()).toEqual([...DOC_CATEGORY_JEUNGMYEONG_KEYS].sort());
+  });
+
+  test('WARN-2(anti-creep): 진료의뢰서·진료확인서는 "제증명" 그룹에 흡수되지 않는다', () => {
+    const groups = groupDocList(DOC_TEMPLATES);
+    const jeung = groups.find((g) => g.label === DOC_GROUP_LABEL_JEUNGMYEONG)!;
+    const jeungKeys = jeung.templates.map((t) => t.form_key);
+    // 예상외 3종(라이브 category_label='제증명'이나 선언 10종 미포함) = 제증명 그룹 제외
+    expect(jeungKeys).not.toContain('referral_letter');
+    expect(jeungKeys).not.toContain('treat_confirm_code');
+    expect(jeungKeys).not.toContain('treat_confirm_nocode');
+    // '기타 서류' 그룹에서 발급 동선 보존
+    const etc = groups.find((g) => g.label === DOC_GROUP_LABEL_ETC)!;
+    const etcKeys = etc.templates.map((t) => t.form_key);
+    expect(etcKeys).toContain('referral_letter');
+    expect(etcKeys).toContain('treat_confirm_code');
+    expect(etcKeys).toContain('treat_confirm_nocode');
+  });
+
+  test('WARN-1: 그룹 합집합 = 전체 목록(누락 0) + 그룹 내 DOCLIST 순서 보존', () => {
+    const groups = groupDocList(DOC_TEMPLATES);
+    const total = groups.reduce((n, g) => n + g.templates.length, 0);
+    expect(total).toBe(DOC_TEMPLATES.length); // 11 form_key 전부 어느 그룹엔가 노출(발급 동선 보존)
+    // 제증명 그룹 내부 순서 = DOCLIST 순서(bill_receipt가 diagnosis보다 앞)
+    const jeung = groups.find((g) => g.label === DOC_GROUP_LABEL_JEUNGMYEONG)!;
+    const keys = jeung.templates.map((t) => t.form_key);
+    expect(keys.indexOf('bill_receipt')).toBeLessThan(keys.indexOf('diagnosis'));
   });
 });
