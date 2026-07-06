@@ -51,3 +51,11 @@ revenue_insurance_split_spec v1.2 §2-2-1a 신설. NULL hira_score 분기에서 
 - 판정: 티켓 §CONFLICT verdict (b) '격자 재구현이 이미 카드뷰 대체 → 요청 무의미/재충돌' 케이스. '일뷰와 동일하게'(AC-1/AC-3)가 (현행격자 vs 구카드) 두 갈래로 모순.
 - 조치: 추정 착수 금지. planner FOLLOWUP(MSG-20260703-000149-ic4s, P1)로 기준 재확인 요청 + 안전 부분수정(AC-2: 주뷰 grid-cols-2→단일열 full-width, 주뷰한정·무충돌) 선행 배포 가부 문의. 회신 전까지 코드 미변경.
 - 학습: 같은 화면축(/reservations)이 활발히 재아키텍처 중일 때, 스크린샷 SSOT라도 현행 코드와 대조(git log -S)로 기준선 유효성부터 검증. '됨' 같은 미존재 토큰 = 기준선 stale 신호.
+
+## 2026-07-06 — T-20260706-foot-RRN-BIRTHDATE-DERIVE-ISSUE-BLOCK RC규명→블로커(코드 미변경)
+- 증상: 균검사 [발급하기] "생년월일 없어 발급불가"(정연주 F-4449, birth_date NULL·rrn_enc PRESENT). 티켓은 "서버 RRN파생 이식하면 해결" 전제.
+- 진단: 서버파생(fn_customer_birthdates)·effectiveBirth 폴백은 이미 존재·배포됨(T-20260630). 로직 부재 아님. → 착수 전 prod 런타임 실측(service_role REST)으로 RC 규명.
+- RC: 해당 환자 rrn_encryption_version=2(신키, re_encrypted 06-29~07-06). 활성 복호함수 3종(rrn_decrypt/fn_customer_birthdates/RLS decrypt) 전부 app.rrn_key→구키 폴백만 사용, 신키 복호경로 부재. 실측 v1 23명 파생성공 / v2 15명 전원 NULL. 06-29 이후 신규 RRN 14/14 전부 v2 = 라이브 growing gap.
+- 판정: RRN 키 로테이션 컷오버 갭(supervisor 단독 도메인). AC3(신규 복호경로 금지)·§5·키 Runbook 저촉 → dev-foot 크립토/키 독단 수정 금지. 신키 없으면 AC5 백필도 불가. FE 파생 지금 넣어도 v2 복호실패로 여전히 막힘 = false fix.
+- 조치: 코드 미변경, deploy-ready 안 함. planner FOLLOWUP(MSG-20260706-145053-azk0, P1 상향권고)로 supervisor 라우팅 요청. 현장 우회=생년월일 수기입력.
+- 학습: "파생로직만 이식하면 됨" 티켓이라도 착수 전 '복호가 실제로 되는가'를 prod 실측으로 검증. version 컬럼(rrn_encryption_version) 분기 존재 시 = 키 로테이션 진행 신호 → green build 아닌 런타임 복호성공을 종결근거로. green build로 증상만 덮는 false fix 금지(rc_first).
