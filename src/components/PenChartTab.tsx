@@ -33,7 +33,13 @@
  * T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL (P2) — 위 V3 AC-2/3 레이어 재정의:
  *   AC-2: 지우개 = 사용자 드로잉 전담 — 펜/형광펜(draw 레이어 clearRect) + 텍스트(placedItem type='text' hit-test 삭제).
  *   AC-3: 화이트 = 상용구 전담 — boilerplate placedItem hit-test 삭제만. 배경 양식(bgCanvas)은 destination-out으로 보존.
- *         (지우개↔화이트 대상 레이어 분리: 텍스트는 지우개, 상용구는 화이트.)
+ *         (지우개↔화이트 대상 레이어 분리: 텍스트는 지우개, 상용구는 화이트.)  ※SUPERSEDED ↓ (WHITETOOL-PHRASE-DELETE)
+ *
+ * T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (P1) — 위 화이트=상용구 '삭제'를 '화이트아웃'으로 재정의:
+ *   [RC] 화이트로 상용구 위를 칠하면 상용구 placedItem 이 통삭제되어 데이터 소실(현장 김주연 총괄). 화이트=덮기(화이트아웃)이지 삭제가 아님.
+ *   AC-1/AC-3: 화이트 획은 placedItem 을 삭제/선택하지 않는다 — 획 경로만 세션 누적(whiteStrokesAllRef).
+ *   AC-2: 저장 시 상용구/텍스트 rasterize '후' 누적 화이트 획을 destination-out 재적용 → 저장본에서 화이트아웃이 상용구 위에 덮임(오브젝트 보존).
+ *   AC-4(회귀): 다른 툴(선택/삭제) 동선 불변 — pathHitsItem 은 지우개(텍스트) 브랜치에서만 계속 사용.
  *   AC-1: 저장 차트 '수정' 버튼 — editingChart 배경 재오픈 + 동일 path upsert(신규행 0) + form_submissions 재insert 스킵.
  *   AC-4: 펜차트 양식 우상단 '담당실장'→'담당자' 라벨 오버라이드(drawPenChartLabelOverride).
  *   AC-4: 텍스트 — 저장 후 이동·삭제 (PlacedItemOverlay 기존 구현)
@@ -846,6 +852,13 @@ export function PenChartTab({
   const strokeRectRef = useRef<DOMRect | null>(null);
   // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 획 경로 — onPointerUp에서 한 번만 hit-test
   const whiteStrokePathRef = useRef<Array<{ x: number; y: number }>>([]);
+  // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: 화이트 획 '세션 누적'.
+  //   [RC 확정] 구 구현(T-20260622 AC-3)은 화이트 획 종료 시 boilerplate placedItem 을 filter 로 '삭제'했다
+  //   → 현장(김주연 총괄) '화이트로 상용구 위를 칠하면 통째로 사라짐(데이터 소실)' P1. 화이트=화이트아웃(덮기)이지
+  //   삭제가 아니므로 삭제 로직 제거. 대신 획 경로를 세션 단위로 누적 → handleDrawSave 에서 상용구/텍스트
+  //   rasterize '후' destination-out 으로 재적용해 저장본에서 화이트아웃이 상용구 위에 실제로 덮이게 한다
+  //   (오브젝트 데이터는 보존 → AC-1). resetDrawSession·저장완료 시 비운다.
+  const whiteStrokesAllRef = useRef<Array<{ path: Array<{ x: number; y: number }>; lineWidth: number }>>([]);
   // T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL AC-2: 지우개 획 경로 — onPointerUp에서 text placedItem hit-test.
   //   지우개 = 사용자 드로잉(펜/형광펜=draw 레이어 clearRect + 텍스트=placedItem 삭제). 상용구는 미관여(화이트 전담).
   const eraserStrokePathRef = useRef<Array<{ x: number; y: number }>>([]);
@@ -1785,6 +1798,7 @@ export function PenChartTab({
     setPlacedItems([]);
     setSelectedIds(new Set());
     setLastInsertedPhraseId(null); // T-20260612-PINGPONG5 AC-1.B: 새 세션 시작 시 패널 ✓ 마킹 리셋
+    whiteStrokesAllRef.current = []; // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: 세션 리셋 시 누적 화이트 획 비움
   }, []);
 
   // 명시적 전체 초기화(세션리셋+그래픽) — contextrestored 복구·수동 재시도 등에서 사용.
@@ -2224,16 +2238,16 @@ export function PenChartTab({
       );
     };
 
-    // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 hit-test — 획 종료 시 1회만 실행
-    // (onPointerMove에서 매 이벤트마다 setPlacedItems 호출 제거 → React re-render 억제)
-    // T-20260622 AC-3: 화이트는 '상용구'(boilerplate)만 삭제. 텍스트는 지우개(AC-2) 전담 → 대상 레이어 구분.
-    //   배경 양식(bgCanvas)은 destination-out이 draw 레이어만 투명화하므로 보존(불변).
+    // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: white 도구 획 종료 — '삭제' 제거, '누적'으로 전환.
+    //   [구 동작=RC] 종전엔 여기서 화이트 획이 지나간 boilerplate placedItem 을 filter 로 통삭제했다
+    //   (T-20260622 AC-3). 현장 보고: 화이트로 상용구 위를 칠하면 상용구가 canvas 에서 사라지는 데이터 소실.
+    //   [수정] AC-1/AC-3 — 삭제/선택 진입 없이 화이트 획 경로만 세션 누적. 저장 시(handleDrawSave) 상용구
+    //   rasterize '후' destination-out 재적용으로 화이트아웃(덮기)만 반영, 오브젝트 데이터는 보존.
     if (activeTool === 'white' && whiteStrokePathRef.current.length > 0) {
-      const wsz = penSize * 4;
-      const path = whiteStrokePathRef.current;
-      setPlacedItems((prev) => prev.filter((item) =>
-        !(item.type === 'boilerplate' && pathHitsItem(path, item, wsz))
-      ));
+      whiteStrokesAllRef.current.push({
+        path: whiteStrokePathRef.current,
+        lineWidth: penSize * 8, // native move 시각 stroke 굵기(L1207)와 동일 → 저장 재적용 폭 일치
+      });
       whiteStrokePathRef.current = [];
     }
 
@@ -2370,6 +2384,40 @@ export function PenChartTab({
         }
       }
 
+      // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (AC-2): 상용구/텍스트 rasterize '후' 화이트 재적용.
+      //   라이브에서는 boilerplate 가 draw 캔버스 위 DOM 오버레이(zIndex 20)라 화이트(destination-out)가
+      //   시각적으로 덮지 못한다. 그러나 저장 합성본(권위 산출물)에선 위 fillText 로 상용구가 draw 캔버스에
+      //   래스터화되므로, 그 '후' 누적 화이트 획을 destination-out 으로 재적용하면 화이트아웃이 상용구 위에
+      //   실제로 덮인다(재진입 시에도 유지). 배경 양식(bgCanvas)은 draw 레이어만 투명화되므로 불변(보존).
+      //   ※ placedItems 데이터는 삭제하지 않음 — 화이트가 지나가지 않은 부분의 상용구는 그대로 남는다(AC-1).
+      if (whiteStrokesAllRef.current.length > 0) {
+        const wCtx = canvas.getContext('2d');
+        if (wCtx) {
+          wCtx.save();
+          wCtx.globalCompositeOperation = 'destination-out';
+          wCtx.strokeStyle = 'rgba(0,0,0,1)';
+          wCtx.fillStyle   = 'rgba(0,0,0,1)';
+          wCtx.globalAlpha = 1;
+          wCtx.lineCap  = 'round';
+          wCtx.lineJoin = 'round';
+          for (const { path, lineWidth } of whiteStrokesAllRef.current) {
+            if (path.length === 0) continue;
+            wCtx.lineWidth = lineWidth;
+            // 시작 dot(단일 탭 포함) — 라이브 onPointerDown arc(r=penSize*4=lineWidth/2)와 일치
+            wCtx.beginPath();
+            wCtx.arc(path[0].x, path[0].y, lineWidth / 2, 0, Math.PI * 2);
+            wCtx.fill();
+            if (path.length > 1) {
+              wCtx.beginPath();
+              wCtx.moveTo(path[0].x, path[0].y);
+              for (let i = 1; i < path.length; i++) wCtx.lineTo(path[i].x, path[i].y);
+              wCtx.stroke();
+            }
+          }
+          wCtx.restore();
+        }
+      }
+
       // T-20260523-foot-FORM-TEMPLATE-REGEN: bgCanvas = CANVAS_W*2 × canvasH*2 로 고정
       // bgCanvas: CANVAS_W*2 × canvasH*2 (= 1588×2246, drawCanvas와 동일)
       // drawCanvas: CANVAS_W*2 × canvasH*2 (= 1588×2246)
@@ -2457,6 +2505,7 @@ export function PenChartTab({
       await loadSavedCharts();
       setPlacedItems([]);
       setSelectedIds(new Set());
+      whiteStrokesAllRef.current = []; // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: 저장 완료 후 누적 화이트 획 비움
       // #6: 저장에 흡수된 미확정 텍스트 입력창 정리
       setTextInputPos(null);
       setTextInputValue('');
