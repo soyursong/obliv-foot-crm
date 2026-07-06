@@ -89,7 +89,7 @@ const PORTRAIT = ['diagnosis', 'treat_confirm', 'visit_confirm', 'diag_opinion',
 const LANDSCAPE = ['bill_detail'];
 
 // 신규 프로덕션 인쇄창 CSS (openBatchPrintWindow / buildPrintHtml HTML-form 분기와 1:1 동일)
-const PAD_TOP = 30, PAD_LR = 10, PAD_BOT = 12; // .page padding = 구 @page 물리여백
+const PAD_TOP = 23, PAD_LR = 10, PAD_BOT = 12; // .page padding = 구 @page 물리여백 (AC-6: 상단 30→23mm)
 
 async function measure(page: import('@playwright/test').Page, formKey: string, orient: 'portrait' | 'landscape') {
   const raw = getHtmlTemplate(formKey);
@@ -130,7 +130,7 @@ async function measure(page: import('@playwright/test').Page, formKey: string, o
 
   // AC-3: 중앙배치 유지 (헤더 제거 후에도 물리 위치 불변)
   expect(Math.abs(leftMm - rightMm), `${formKey} 좌우 대칭`).toBeLessThan(3);
-  expect(topMm, `${formKey} 상단 ~30mm 하향(쏠림 없음)`).toBeGreaterThan(20);
+  expect(topMm, `${formKey} 상단 ~23mm 하향(AC-6, 쏠림 없음)`).toBeGreaterThan(20);
   expect(bottomMm, `${formKey} 하단 여백(클립 없음)`).toBeGreaterThan(5);
   // AC-4: 본문 회귀 없음 — 콘텐츠박스 내 적합 + 단일 페이지
   expect(wrapWmm, `${formKey} wrap 폭 ≤ 콘텐츠박스`).toBeLessThanOrEqual(boxWmm + 0.6);

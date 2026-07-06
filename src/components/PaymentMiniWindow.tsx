@@ -274,7 +274,7 @@ function buildPrintHtml(pages: string[], title: string, forceLandscape = false):
 </style>
 </head><body>${pages.join('\n')}</body></html>`;
   }
-  // HTML 양식(L-006 12종) — 콘텐츠 물리 여백으로 중앙 배치 + 상단 30mm 하향(경로1과 동일).
+  // HTML 양식(L-006 12종) — 콘텐츠 물리 여백으로 중앙 배치 + 상단 23mm(AC-6, 경로1과 동일).
   // T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 경로1(openBatchPrintWindow)과 완전 동일하게
   //   @page margin:0(브라우저 자동 헤더 제거) + 물리여백을 .page padding 으로 이관. 두 경로 "완전 동일" 계약 유지.
   const pageRule = forceLandscape
@@ -292,11 +292,11 @@ function buildPrintHtml(pages: string[], title: string, forceLandscape = false):
     position: relative;
     width: ${pageW};
     min-height: ${pageH};
-    padding: 30mm 10mm 12mm; /* 구 @page 물리여백을 콘텐츠 패딩으로 이관(중앙배치 불변, 브라우저 헤더 제거) */
+    padding: 23mm 10mm 12mm; /* 상단여백 AC-6 30→23mm(2줄↑). 구 @page 물리여백을 콘텐츠 패딩으로 이관(브라우저 헤더 제거) */
     overflow: visible;
     page-break-after: always;
   }
-  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 30mm 10mm 12mm; }
+  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 23mm 10mm 12mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page:last-child { page-break-after: avoid; }

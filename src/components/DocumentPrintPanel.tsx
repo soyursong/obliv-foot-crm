@@ -327,13 +327,15 @@ function openBatchPrintWindow(
     // HTML 양식(L-006 12종) — 프린트 엔진 @page 물리 여백으로 중앙 배치(축소 없음).
     // T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 현장 2차 — 출력물이 아직 위로 쏠림.
     //   상단 여백 12mm→30mm(약 +68px ≈ 엔터 4~5줄) 로 키워 콘텐츠를 시트에서 더 아래로 배치.
-    //   하단은 12mm 유지(클립 방지). 콘텐츠박스 = A4 - (좌우10·상30·하12) → portrait 190×255mm / landscape 277×168mm.
+    // T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-6): 현장 3차 — 2차(30mm)가 살짝 과함.
+    //   상단 여백 30mm→23mm(약 -7mm ≈ 2줄↑) 미세 상향 재조정. 하단 12mm·좌우 10mm 불변.
+    //   하단은 12mm 유지(클립 방지). 콘텐츠박스 = A4 - (좌우10·상23·하12) → portrait 190×262mm / landscape 277×175mm.
     // T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: 브라우저 window.print() 기본 헤더 2종
     //   (좌상단 인쇄일시 · 우상단 document.title="서류 출력 …") 완전 제거.
     //   [RC] 크롬은 @page margin 이 0 보다 크면 그 여백 박스에 인쇄일시/제목을 자동 삽입한다.
     //        직전 CENTER-ALIGN 모델이 중앙배치를 @page margin(30 10 12) 로 수행 → 그 여백이 헤더 캔버스가 됨.
     //   [수정] @page margin:0 (여백 박스 소멸 → 헤더 삽입 불가) + 동일 물리 여백을 .page padding 으로 이관.
-    //        box-sizing:border-box + 전폭(210/297mm) .page → 콘텐츠박스 190×255 / 277×168mm 로 물리 위치 불변
+    //        box-sizing:border-box + 전폭(210/297mm) .page → 콘텐츠박스 190×262 / 277×175mm(AC-6) 로 물리 위치 불변
     //        (legacy-img 분기가 이미 @page:0 + 전폭 210mm 로 축소 없이 프로덕션 검증됨 → 중앙배치 회귀 없음).
     const pageRule = forceLandscape
       ? '@page { size: A4 landscape; margin: 0; }'
@@ -348,11 +350,11 @@ function openBatchPrintWindow(
     position: relative;
     width: ${pageW};
     min-height: ${pageH};
-    padding: 30mm 10mm 12mm; /* 구 @page 물리여백을 콘텐츠 패딩으로 이관(중앙배치 불변, 브라우저 헤더 제거) */
+    padding: 23mm 10mm 12mm; /* 상단여백 AC-6 30→23mm(2줄↑). 구 @page 물리여백을 콘텐츠 패딩으로 이관(브라우저 헤더 제거) */
     overflow: visible;
     page-break-after: always;
   }
-  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 30mm 10mm 12mm; }
+  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 23mm 10mm 12mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* AC-1: 마지막 페이지 빈 페이지 방지 */
