@@ -19,7 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Download, Loader2, Plus, TrendingUp, User, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, TrendingUp, User, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 // T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY: Badge 카드 사용처(진료필요/다음힐러) 제거로 미사용 → import 정리.
@@ -2461,6 +2461,8 @@ export default function Reservations() {
                             as="td"
                             key={d.toISOString() + time}
                             droppableId={`week-${dateStr}-${time}`}
+                            // T-20260706-foot-RESVMGMT-WEEKLY-CELLCLICK-CREATE: 주별 셀 클릭 진입 E2E 타깃(빈 칸 클릭→신규예약).
+                            data-testid={`week-slot-${dateStr}-${time}`}
                             dateStr={dateStr}
                             time={time}
                             allowed={allowed}
@@ -2469,6 +2471,9 @@ export default function Reservations() {
                               // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 2차 절반 압축 — 빈 슬롯 최소높이 추가 축소(h-8→h-4, p-0.5→px-0.5 py-0) → 빈 행 32px→16px(~50%). 카드 있는 셀은 카드 높이로 자연 확장(align-top).
                               'h-4 border-b border-r px-0.5 py-0 align-top transition-colors',
                               !allowed && 'bg-gray-50',
+                              // T-20260706-foot-RESVMGMT-WEEKLY-CELLCLICK-CREATE [1/2]: (+) 제거 후 빈 칸 클릭 어포던스 — 일별 셀과 동일 커서/hover.
+                              allowed && !full && !clipboard && 'cursor-pointer hover:bg-teal-50/40',
+                              allowed && !full && clipboard && 'cursor-copy hover:bg-teal-50/60',
                               full && !isDragOver && 'bg-red-50',
                               isDragOver && allowed && !full && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
                               isDragOver && full && 'bg-red-100 ring-2 ring-inset ring-red-400',
@@ -2487,17 +2492,24 @@ export default function Reservations() {
                               }
                             }}
                             onClick={() => {
-                              // T-20260515-foot-RESV-BOX-INTERACT: AC-1 빈 영역 클릭 → 선택 해제
-                              if (clipboard && allowed) {
-                                setClipboardTarget({ date: dateStr, time });
-                              } else if (!clipboard) {
-                                // 카드 클릭 미완료 타이머도 취소
-                                if (clickTimerRef.current) {
-                                  clearTimeout(clickTimerRef.current.timerId);
-                                  clickTimerRef.current = null;
-                                }
-                                setSelectedResvId(null);
+                              // T-20260706-foot-RESVMGMT-WEEKLY-CELLCLICK-CREATE [2]: 주별 빈 칸 클릭 → 일별 뷰와 동일 신규예약 동선 통일.
+                              //   클립보드 대기 중이면 붙여넣기 타깃 지정(⑦ 유지), 아니면 빈 슬롯(allowed && !full) 클릭 → 신규예약.
+                              //   ★ AC3: 반드시 공유 openNewSlot(initialCustomer) opener 경유 = CUSTCTX-PREFILL(pendingPrefillCustomer→initialCustomer) prefill 분기 보존.
+                              //     주별 핸들러 자체 폼 구현 금지(폼 opener 우회 시 prefill 회귀). 일별 handleCellCreate(L2305)와 동일 시맨틱.
+                              //   카드 onClick 은 stopPropagation(L2570) → 카드 클릭은 이 셀 핸들러로 버블 안 됨(수정/선택 동선 무회귀).
+                              if (clipboard) {
+                                // T-20260515-foot-RESV-BOX-INTERACT: 클립보드 대기 → 붙여넣기 위치 지정(allowed 슬롯 한정).
+                                if (allowed) setClipboardTarget({ date: dateStr, time });
+                                return;
                               }
+                              // 카드 클릭 미완료 타이머 취소(선택 잔류 방지) + 빈 영역 클릭 → 선택 해제.
+                              if (clickTimerRef.current) {
+                                clearTimeout(clickTimerRef.current.timerId);
+                                clickTimerRef.current = null;
+                              }
+                              setSelectedResvId(null);
+                              // 빈 슬롯 클릭 → 신규예약(openNewSlot). (+) 버튼([1]로 제거)을 대체하는 칸 클릭 진입.
+                              if (allowed && !full) openNewSlot(d, time);
                             }}
                           >
                             {allowed && (
@@ -2768,29 +2780,10 @@ export default function Reservations() {
                                 })()}
                                 {/* T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치' 버튼 제거(현장 불필요).
                                     이전 BATCH-CHECKIN-LEAK 가드 블록 + batchCheckIn 호출 동반 삭제. */}
-                                {/* 빈 슬롯 (+) 예약생성 — full(마감) 아니면 노출.
-                                    T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경1]: 경과분석 뷰(filterProgress) 제거 → (+)는 마감 여부로만 가드. */}
-                                {!full ? (
-                                  <button
-                                    data-testid={`slot-plus-${dateStr}-${time}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: 30분 슬롯 (+) → 해당 슬롯(time) 실제 시각으로 생성.
-                                      if (clipboard) {
-                                        setClipboardTarget({ date: dateStr, time });
-                                      } else {
-                                        openNewSlot(d, time);
-                                      }
-                                    }}
-                                    className={cn(
-                                      // T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-1: 빈 슬롯 (+)버튼 최소높이 압축(min-h-[24px]→min-h-[16px], h-5→h-4) → 빈 행 밀도 ~2배. 클릭/터치 영역 유지(Plus 아이콘 중앙).
-                                      'flex items-center justify-center rounded border border-dashed border-muted-foreground/30 text-muted-foreground/50 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600 transition',
-                                      list.length === 0 ? 'flex-1 min-h-[16px]' : 'h-4 w-full mt-0.5',
-                                    )}
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                ) : full && list.length === 0 ? (
+                                {/* T-20260706-foot-RESVMGMT-WEEKLY-CELLCLICK-CREATE [1]: 주별 칸별 (+) 버튼 완전 제거.
+                                    신규예약 진입은 빈 칸 클릭(위 셀 onClick → openNewSlot)으로 일원화 = 일별 뷰와 UX 통일.
+                                    full(마감) 슬롯의 '마감' 라벨은 유지(빈 마감 슬롯 시각 표기). */}
+                                {full && list.length === 0 ? (
                                   <span className="m-auto text-xs font-medium text-red-500">마감</span>
                                 ) : null}
                                 {clinic && activeCount > 0 && (
