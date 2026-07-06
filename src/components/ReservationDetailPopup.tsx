@@ -44,8 +44,10 @@ import { MiniMonthCalendar } from '@/components/MiniMonthCalendar';
 import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslotPanel';
 // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 활성패키지/치료내역 = 2번차트 패키지탭 양식(read-only) 재사용
 import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/PackageTicketReadonlyList';
-import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
+import type { Customer, Package, Reservation, ReservationRegistrar, Staff, VisitType } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor, resolveVisitRouteDisplay, resolveRegistrarDisplay } from '@/lib/types';
+// T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 접수 시점 초진/재진 = 최근 완료방문 365일 recency(서버 KST).
+import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 
 // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: check_ins 재진판정용 타입.
 //   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용).
@@ -1072,18 +1074,26 @@ export function ReservationDetailPopup({
       p_date: reservation.reservation_date,
     });
     if (qErr) { toast.error(`대기번호 생성 실패: ${qErr.message}`); setBusy(false); return; }
+    // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 초진/재진 분류 기준을 stored reservation.visit_type 에서
+    //   동적 365일 recency(서버 KST)로 교체. 식별된 고객(customer_id) + new/returning 예약에 한해
+    //   최근 완료방문 365일 이내→재진 / 초과·무이력→초진취급 으로 판정. experience/미식별 예약은 기존 유지.
+    //   ⚠ 라우팅 매핑(returning→치료대기 / new→접수중 / else→상담대기)은 불변 — 분류 입력만 교체.
+    const effVisitType: VisitType =
+      reservation.customer_id && reservation.visit_type !== 'experience'
+        ? await resolveVisitTypeByRecency(reservation.customer_id, reservation.clinic_id)
+        : reservation.visit_type;
     const { error } = await supabase.from('check_ins').insert({
       clinic_id: reservation.clinic_id,
       customer_id: reservation.customer_id,
       reservation_id: reservation.id,
       customer_name: reservation.customer_name ?? '',
       customer_phone: reservation.customer_phone,
-      visit_type: reservation.visit_type,
+      visit_type: effVisitType,
       // AC-1/AC-2: 재진 → 치료대기(treatment_waiting), 예약없이방문 → 상담대기(consult_waiting). canonical 분기 복원.
       // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 우클릭→예약상세→초진 체크인 진입점. 셀프접수 초진(receiving)과 통일.
-      status: reservation.visit_type === 'returning'
+      status: effVisitType === 'returning'
         ? 'treatment_waiting'
-        : reservation.visit_type === 'new'
+        : effVisitType === 'new'
           ? 'receiving'
           : 'consult_waiting',
       queue_number: queueData as number,

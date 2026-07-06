@@ -225,6 +225,10 @@ export default defineConfig({
         // T-20260701-foot-ASSIGNORDER-COMPACT-LAYOUT: RotationOrderDialog 컨테이너 여백 컴팩트(밀도만)
         //   + 드래그/저장경로/권한 불변 회귀가드. 순수 소스 정적 단언(page/auth 불요).
         '**/T-20260701-foot-ASSIGNORDER-COMPACT-LAYOUT.spec.ts',
+        // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 초진/재진 분류 = 최근 완료방문 365일 recency(서버 KST).
+        //   순수 판정 함수(classifyVisitByRecency/diffDaysISO) 경계값(365/366) off-by-one + 무이력 회귀가드
+        //   + NewCheckInDialog 배선(resolveVisitTypeByRecency) 소스 정적 가드. page/auth/server 불요.
+        '**/T-20260706-foot-INTAKE-REVISIT-JUDGE-365.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

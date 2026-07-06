@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
+// T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 초진/재진 분류 = 최근 완료방문 365일 recency(서버 KST).
+import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 // T-20260616-foot-PKG-OUTSTANDING-BALANCE ④: 재방 미수금 배너/뱃지 (자동 문자 발송 없음 — 화면 표기만)
 import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
 import { PkgOutstandingBadge } from '@/components/PkgOutstandingBadge';
@@ -126,22 +128,33 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCustomerId, open, clinicId]);
 
-  const selectReservation = (r: Reservation) => {
+  const selectReservation = async (r: Reservation) => {
     setLinkedReservation(r);
     setName(r.customer_name ?? '');
     setPhone(formatPhone(r.customer_phone) || '');
-    setVisitType(r.visit_type);
     // 예약 연결 시 고객 ID도 설정
     if (r.customer_id) setSelectedCustomerId(r.customer_id);
+    // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 분류 기준을 예약 stored visit_type 에서 동적 365일 recency 로 교체.
+    //   식별 고객 + new/returning 예약은 최근 완료방문 365일 판정. experience/미식별은 예약값 유지. 스태프 라디오 override 가능.
+    setVisitType(r.visit_type); // 낙관적 선반영
+    if (r.customer_id && r.visit_type !== 'experience') {
+      setVisitType(await resolveVisitTypeByRecency(r.customer_id, clinicId));
+    }
   };
 
   /** 인라인 검색 드롭다운에서 기존 고객 선택 */
-  const handlePatientSelect = (p: PatientMatch) => {
+  // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 초진/재진 분류 기준을 stored visit_type(기존 고객=무조건 재진)에서
+  //   동적 365일 recency 판정(서버 KST)으로 교체. 기존 고객이어도 최근 완료방문이 365일 초과·무이력이면
+  //   초진취급(대표 확정 B안+365일). 종로 오리진점 풋센터 한정(clinicId 스코프). 라우팅 매핑은 불변.
+  const handlePatientSelect = async (p: PatientMatch) => {
     setName(p.name);
     setPhone(formatPhone(p.phone) || '');
     setSelectedCustomerId(p.id);
+    // 낙관적 선반영: 판정 완료 전 잠깐 재진 표기(기존 고객 default) → recency 판정 후 확정.
     setVisitType('returning');
-    toast.info(`${p.name}님 — 기존 고객 선택`);
+    const resolved = await resolveVisitTypeByRecency(p.id, clinicId);
+    setVisitType(resolved);
+    toast.info(`${p.name}님 — 기존 고객 선택 (${resolved === 'returning' ? '재진' : '초진'})`);
   };
 
   const handleClearSelection = () => {
