@@ -100,7 +100,7 @@ import {
   type FootBillingItem,
   computeFootBilling,
   loadFootBillingItems,
-  loadCustomerInsuranceGrade,
+  loadEffectiveInsuranceGrade,
   buildFootBillDetailItems,
   fillBillItemCopayment,
 } from '@/lib/footBilling';
@@ -526,7 +526,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
 
     const [fbItems, grade] = await Promise.all([
       loadFootBillingItems(checkIn.id, checkIn.clinic_id),
-      loadCustomerInsuranceGrade(checkIn.customer_id),
+      // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null(신규방문 미입력) 시
+      //   이 방문 service_charges 저장 등급으로 폴백 → 급여구분 붕괴 방지(신규출력=재출력 수렴).
+      loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id),
     ]);
     setFootBillingItems(fbItems);
     setCustomerInsuranceGrade(grade);
@@ -640,7 +642,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         : await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
       const fbGrade = fbStale
         ? customerInsuranceGrade
-        : await loadCustomerInsuranceGrade(checkIn.customer_id);
+        // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백.
+        : await loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id);
       const fb = fbItems.length > 0
         ? computeFootBilling(fbItems, fbGrade)
         : null;
@@ -808,7 +811,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         : await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
       const fbGradeBatch = fbStaleBatch
         ? customerInsuranceGrade
-        : await loadCustomerInsuranceGrade(checkIn.customer_id);
+        // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백.
+        : await loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id);
       const fbBatch = fbItemsBatch.length > 0 ? computeFootBilling(fbItemsBatch, fbGradeBatch) : null;
       const needsItems = selectedTemplates.some(
         (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
@@ -925,6 +929,70 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         autoValues.rx_items_html = buildRxItemsHtml([]);
       }
 
+      // ── T-20260706-foot-SERIAL-RPC-AVVC-NOFIRE: 일괄 출력 연번호 발번 (단건 handlePrint 와 동형) ──
+      //   [근인] 배치 경로(handleBatchPrint)는 issue_foot_doc_serial RPC 를 호출하지 않고 visit_no 도 조립하지
+      //   않아 연번호 대상 양식(진료확인서=treat_confirm_code/nocode, 통원확인서=visit_confirm, 진단서=diagnosis)이
+      //   {{visit_no}} 공란으로 인쇄됨. 현장은 이 두 양식을 배치로 출력 → "연번호 공란" 재확인.
+      //   [수정] 단건 IssueDialog.handlePrint 와 동일: 연번호 대상(docSerialPrefix 매핑 + 차트번호 보유) 양식은
+      //     ① form_submissions 선 INSERT → ② issue_foot_doc_serial(멱등) 발번 → ③ buildDocSerial 로 visit_no 조립
+      //     → ④ per-template 바인딩값에 주입 + 발행이력 field_data 갱신. 인쇄본은 아래에서 valuesFor(t) 로 바인딩.
+      //   ⚠ 발번대장 무결성 우선: INSERT/RPC/조립 실패 시 가짜 번호 미생성(공란 유지). 비-대상 양식은 종전대로
+      //     뒤 일괄 INSERT 로 처리(serialIssuedTemplateIds 로 이중 INSERT 차단). RPC 는 기존 배포본 사용(DB 변경 0).
+      const perTemplateValues = new Map<string, Record<string, string>>();
+      const serialIssuedTemplateIds = new Set<string>();
+      if (!isFallback && staffId) {
+        // 연번호 {prefix}-{YYYYMMDD}-{차트번호 F-XXXX}-{NN} 구성요소인 차트번호 1회 로드(IssueDialog 와 동일 소스).
+        let batchChartNo: string | null = null;
+        if (checkIn.customer_id) {
+          const { data: cust } = await supabase
+            .from('customers')
+            .select('chart_number')
+            .eq('id', checkIn.customer_id)
+            .maybeSingle();
+          const cn = (cust?.chart_number as string | null | undefined) ?? null;
+          batchChartNo = cn && String(cn).trim() ? String(cn).trim() : null;
+        }
+        const issueDateYmd = format(new Date(), 'yyyyMMdd');
+        for (const t of selectedTemplates) {
+          const eligible = !!docSerialPrefix(t.form_key) && !!batchChartNo;
+          if (!eligible) continue;
+          const { data: inserted, error: insErr } = await supabase
+            .from('form_submissions')
+            .insert({
+              clinic_id: checkIn.clinic_id,
+              template_id: t.id,
+              check_in_id: checkIn.id,
+              customer_id: checkIn.customer_id,
+              issued_by: staffId,
+              field_data: autoValues, // 발번 전 스냅샷 — RPC 성공 시 아래 visit_no 주입값으로 갱신
+              diagnosis_codes: null,
+              status: 'printed' as const,
+              printed_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single();
+          if (insErr || !inserted?.id) continue; // 선 INSERT 실패 → 뒤 일괄 INSERT 폴백(연번호 미발번)
+          serialIssuedTemplateIds.add(t.id); // 이중 INSERT 차단(성공/발번실패 무관 — 행은 이미 존재)
+          const { data: seq, error: rpcErr } = await supabase.rpc('issue_foot_doc_serial', {
+            p_clinic_id: checkIn.clinic_id,
+            p_form_submission_id: inserted.id,
+          });
+          if (rpcErr || typeof seq !== 'number') continue; // 발번 실패 → 공란 유지(가짜 번호 금지)
+          const docSerial = buildDocSerial({
+            formKey: t.form_key,
+            chartNo: batchChartNo,
+            dateYYYYMMDD: issueDateYmd,
+            seq,
+          });
+          if (!docSerial) continue;
+          const vals = { ...autoValues, visit_no: docSerial };
+          perTemplateValues.set(t.id, vals);
+          await supabase.from('form_submissions').update({ field_data: vals }).eq('id', inserted.id);
+        }
+      }
+      // 연번호 발번 양식은 per-template 값(visit_no 주입)으로, 그 외는 공용 autoValues 로 바인딩.
+      const valuesFor = (t: FormTemplate): Record<string, string> => perTemplateValues.get(t.id) ?? autoValues;
+
       const htmlTemplates = selectedTemplates.filter((t) => t.template_format === 'html' || isHtmlTemplate(t.form_key));
       const jpgTemplates = selectedTemplates.filter((t) => t.template_format !== 'pdf' && t.template_format !== 'html' && !isHtmlTemplate(t.form_key));
       const pdfTemplates = selectedTemplates.filter((t) => t.template_format === 'pdf');
@@ -935,7 +1003,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         const landscapeHtmlTpls = htmlTemplates.filter((t) => t.form_key === 'bill_detail');
         const portraitHtmlTpls  = htmlTemplates.filter((t) => t.form_key !== 'bill_detail');
         if (landscapeHtmlTpls.length > 0) {
-          const pages = landscapeHtmlTpls.map((t) => buildHtmlPageHtml(t, autoValues));
+          const pages = landscapeHtmlTpls.map((t) => buildHtmlPageHtml(t, valuesFor(t)));
           const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`, true);
           if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
         }
@@ -944,10 +1012,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           const pages = portraitHtmlTpls.flatMap((t) =>
             t.form_key === 'rx_standard'
               ? [
-                  buildHtmlPageHtml(t, autoValues, '약국보관용'),
-                  buildHtmlPageHtml(t, autoValues, '환자보관용'),
+                  buildHtmlPageHtml(t, valuesFor(t), '약국보관용'),
+                  buildHtmlPageHtml(t, valuesFor(t), '환자보관용'),
                 ]
-              : [buildHtmlPageHtml(t, autoValues)],
+              : [buildHtmlPageHtml(t, valuesFor(t))],
           );
           const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`);
           if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
@@ -959,7 +1027,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         const pages = jpgTemplates.flatMap((t) => {
           const imgUrl = getTemplateImageUrl(t.form_key);
           if (!imgUrl) return [];
-          return [buildPageHtml(t, autoValues, imgUrl)];
+          return [buildPageHtml(t, valuesFor(t), imgUrl)];
         });
 
         if (pages.length > 0) {
@@ -986,8 +1054,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
           if (t.field_map.length > 0) {
+            const pdfVals = valuesFor(t);
             for (const f of t.field_map) {
-              const val = autoValues[f.key] ?? '';
+              const val = pdfVals[f.key] ?? '';
               if (!val) continue;
               page.drawText(val, { x: f.x, y: f.y, size: f.font ?? 12, font, color: rgb(0, 0, 0) });
             }
@@ -1005,22 +1074,28 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
 
       // form_submissions 기록 (DB 시드 적용된 경우만)
       // staffId: issued_by = staff.id (≠ profile.id). 미조회 시 로그 생략하고 출력은 계속.
+      // T-20260706-foot-SERIAL-RPC-AVVC-NOFIRE: 연번호 발번 양식(serialIssuedTemplateIds)은 위에서 이미
+      //   INSERT 됨 → 여기서 제외해 이중 기록 방지. 나머지 비-연번호 양식만 종전대로 일괄 INSERT.
       if (!isFallback && staffId) {
-        const rows = selectedTemplates.map((t) => ({
-          clinic_id: checkIn.clinic_id,
-          template_id: t.id,
-          check_in_id: checkIn.id,
-          customer_id: checkIn.customer_id,
-          issued_by: staffId,
-          field_data: autoValues,
-          diagnosis_codes: null,
-          status: 'printed' as const,
-          printed_at: new Date().toISOString(),
-        }));
+        const rows = selectedTemplates
+          .filter((t) => !serialIssuedTemplateIds.has(t.id))
+          .map((t) => ({
+            clinic_id: checkIn.clinic_id,
+            template_id: t.id,
+            check_in_id: checkIn.id,
+            customer_id: checkIn.customer_id,
+            issued_by: staffId,
+            field_data: autoValues,
+            diagnosis_codes: null,
+            status: 'printed' as const,
+            printed_at: new Date().toISOString(),
+          }));
 
-        const { error } = await supabase.from('form_submissions').insert(rows);
-        if (error) {
-          toast.warning(`발행 기록 저장 실패: ${error.message}`);
+        if (rows.length > 0) {
+          const { error } = await supabase.from('form_submissions').insert(rows);
+          if (error) {
+            toast.warning(`발행 기록 저장 실패: ${error.message}`);
+          }
         }
       }
 
@@ -1747,7 +1822,9 @@ function IssueDialog({
     const pFootBilling = loadFootBillingItems(checkIn.id, checkIn.clinic_id).then((items) => {
       if (!cancelled) setFootBillingItems(items);
     });
-    const pGrade = loadCustomerInsuranceGrade(checkIn.customer_id).then((grade) => {
+    // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null(신규방문 미입력) 시
+    //   이 방문 service_charges 저장 등급으로 폴백 → bill_detail 급여구분 붕괴 방지.
+    const pGrade = loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id).then((grade) => {
       if (!cancelled) setCustomerInsuranceGrade(grade);
     });
 
