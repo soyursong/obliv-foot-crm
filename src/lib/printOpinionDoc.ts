@@ -84,7 +84,7 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   //   구 물리여백(상23·좌우10·하12mm)은 body padding 으로 이관해 중앙배치를 물리적으로 동일 유지(경로1·4와 통일).
   win.document.write(
     `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>` +
-      `<style>@page { size: A4 portrait; margin: 0; } html, body { margin: 0; padding: 0; } body { box-sizing: border-box; padding: 16mm 10mm 12mm; }</style></head><body>${html}` +
+      `<style>@page { size: A4 portrait; margin: 0; } html, body { margin: 0; padding: 0; } body { box-sizing: border-box; padding: 23mm 10mm 12mm; }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();

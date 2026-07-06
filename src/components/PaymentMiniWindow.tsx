@@ -294,11 +294,11 @@ function buildPrintHtml(pages: string[], title: string, forceLandscape = false):
     position: relative;
     width: ${pageW};
     min-height: ${pageH};
-    padding: 16mm 10mm 12mm; /* 상단여백 T-20260706-VSPACE-ADJUST 23→16mm(추가 2줄↑, AC-6과 동일 -7mm 델타). 구 @page 물리여백을 콘텐츠 패딩으로 이관(브라우저 헤더 제거) */
+    padding: 23mm 10mm 12mm; /* 상단여백 AC-6 30→23mm(2줄↑). 구 @page 물리여백을 콘텐츠 패딩으로 이관(브라우저 헤더 제거) */
     overflow: visible;
     page-break-after: always;
   }
-  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 16mm 10mm 12mm; }
+  .page-landscape { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 23mm 10mm 12mm; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page:last-child { page-break-after: avoid; }
