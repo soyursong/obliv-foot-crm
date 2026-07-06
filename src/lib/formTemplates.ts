@@ -1084,11 +1084,12 @@ export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
  *   - 제증명 6종: 진단서 국/영문 → diagnosis · 소견서 국/영문 → diag_opinion · visit_confirm(통원확인서)
  *     · medical_record_request(진료기록사본)  (국·영문은 동일 form_key 로 병합되어 6 서비스행 = 4 form_key)
  *
- * ★ WARN-2 reconcile(실측 2026-07-06): 라이브 services.category_label='제증명' = 13행 = 선언 10 + 예상외 3
- *   (referral_letter=진료의뢰서, treat_confirm_code/nocode=진료확인서 2폼). 이 3종은 총괄 선언 10종에 미포함
- *   → 본 그룹에서 **의도적 제외**(예상외 멤버 자동 흡수 방지). 서류 팝업 발급 동선은 그대로 유지되며 '기타 서류'
- *   그룹으로 노출된다. (진료의뢰서=AC 무변경/3,000 승인분 보존, 진료확인서=FORMPANEL-SPLIT 무접촉 → 데이터
- *   category_label 은 미변경, FE 그룹 귀속만 선언 기준으로 확정.) 값 권위 재확정은 planner FOLLOWUP(비차단).
+ * ★ A안 확정(총괄 김주연, slack ts 1783329403.678769 / MSG-cosm, 2026-07-06): 예상외 3종
+ *   (referral_letter=진료의뢰서, treat_confirm_code/nocode=진료확인서 2폼)을 '제증명' 그룹에 **함께 노출**한다.
+ *   앞선 WARN-2 anti-creep(3종 '기타 서류' 격리)은 총괄 판단으로 **철회** — 라이브 services.category_label='제증명'
+ *   = 13행 정합에 FE 그룹 귀속을 일치시킨다. 결과: '제증명' 그룹 = DOCLIST_ORDER_10 전체(form_key 11 = 선언 8
+ *   + 예상외 3) → '기타 서류' 그룹은 비어 렌더 생략. 서류 팝업 발급 동선·가격·게이트 무변경(진료의뢰서 3,000
+ *   보존, FORMPANEL-SPLIT 무접촉). 데이터층 category_label DML·마이그 없음(FE 그룹 membership 확장만).
  */
 export const DOC_CATEGORY_JEUNGMYEONG_KEYS: ReadonlyArray<string> = [
   'bill_receipt',           // 진료비영수증 (무료)
@@ -1096,6 +1097,9 @@ export const DOC_CATEGORY_JEUNGMYEONG_KEYS: ReadonlyArray<string> = [
   'koh_result',             // KOH균검사결과지 (무료)
   'diagnosis',              // 진단서(국/영문)
   'diag_opinion',           // 소견서(국/영문)
+  'treat_confirm_code',     // 진료확인서(코드·진단명 포함)  — A안 포함
+  'treat_confirm_nocode',   // 진료확인서(코드·진단명 불포함) — A안 포함
+  'referral_letter',        // 진료의뢰서                    — A안 포함
   'visit_confirm',          // 통원확인서
   'medical_record_request', // 진료기록사본
   'rx_standard',            // 처방전 (무료)
@@ -1111,8 +1115,8 @@ export interface DocListGroup<T> {
 
 /**
  * orderDocList(정렬·필터·라벨 override) 결과를 카테고리 그룹으로 나눈다.
- * - '제증명' 그룹 = DOC_CATEGORY_JEUNGMYEONG_KEYS (총괄 선언 10종).
- * - '기타 서류' 그룹 = 나머지(진료의뢰서·진료확인서 code/nocode 등) — 발급 동선 보존, 예상외 멤버 격리.
+ * - '제증명' 그룹 = DOC_CATEGORY_JEUNGMYEONG_KEYS (A안 확정: DOCLIST_ORDER_10 전체 11 form_key).
+ * - '기타 서류' 그룹 = 나머지 — A안 하에서는 비어 렌더 생략(향후 신규 비-제증명 서류 유입 시 방어적으로 유지).
  * - 각 그룹 내부 순서 = DOCLIST_ORDER_10 확정 순서 유지. 빈 그룹은 반환에서 생략.
  */
 export function groupDocList<T extends { form_key: string }>(

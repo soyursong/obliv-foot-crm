@@ -550,9 +550,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   // T-20260620-foot-DOCLIST-ORDER-10: 결제미니창과 동일한 확정 10종 + 확정 순서로 단일 평면 목록.
   //   기존 기본/별도요청/보험 3섹션 분기 → 단일 리스트로 통합(두 화면 순서·항목수 일치).
   //   진료비 영수증 재발급 카드(insurance_receipts 기반)는 서류 발행 목록과 별개 유틸 → 하단 보존.
-  // T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK (WARN-1): 확정 10종 목록을 '제증명'/'기타 서류'
-  //   카테고리 그룹으로 나눠 노출(총괄 confirm §4-1: 서류 팝업에 '제증명' 그룹 헤더). 순서·발급 동선·게이트
-  //   모두 보존, 표현만 그룹 헤더 추가. 그룹 membership 권위 = formTemplates.groupDocList SSOT.
+  // T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK (A안): 확정 목록을 '제증명' 카테고리 그룹으로 노출
+  //   (A안 확정 MSG-cosm: 예상외 3종=진료의뢰서·진료확인서 code/nocode 함께 표시 → 총 13종/11 form_key).
+  //   '기타 서류' 그룹은 비어 렌더 생략. 순서·발급 동선·게이트 모두 보존, 표현만 그룹 헤더 추가.
+  //   그룹 membership 권위 = formTemplates.groupDocList SSOT.
   const docListGroups = groupDocList(visibleTemplates);
 
   // ── T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED (B안) ──
@@ -1272,9 +1273,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         )}
       </div>
 
-      {/* T-20260620-foot-DOCLIST-ORDER-10 + T-20260706-DOCFORM-CATEGORY-RELABEL-ROLLBACK(WARN-1):
-          서류 출력 — 확정 10종/순서를 '제증명'/'기타 서류' 카테고리 그룹으로 노출.
-          각 그룹은 TemplateSection 헤더로 구분(제증명 그룹 먼저). 발급 동선·게이트·영수증 관리 펼침 보존. */}
+      {/* T-20260620-foot-DOCLIST-ORDER-10 + T-20260706-DOCFORM-CATEGORY-RELABEL-ROLLBACK(A안):
+          서류 출력 — 확정 목록/순서를 '제증명' 카테고리 그룹으로 노출(A안: 예상외 3종 포함, 총 13종/11 form_key).
+          '기타 서류' 그룹은 A안 하 비어 렌더 생략. 각 그룹은 TemplateSection 헤더로 구분(제증명 그룹 먼저).
+          발급 동선·게이트·영수증 관리 펼침 보존. 그룹 membership 권위 = formTemplates.groupDocList SSOT. */}
       {docListGroups.length > 0 && (
         <div className="space-y-3" data-testid="docprint-doc-groups">
           {docListGroups.map((group) => (
