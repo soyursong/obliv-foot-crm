@@ -64,8 +64,10 @@ test('AC-2: customer_name 은 무조건 착지(조건부 spread 아님)', () => 
 test('AC-3: name 은 customer.name 에서 추출 + 필수 가드 유지', () => {
   const src = readEf();
   expect(src).toContain("const name      = customer['name']       as string | undefined;");
-  // name 누락 시 400 MISSING_FIELD 가드 유지 → customer_name 은 항상 non-null
-  expect(src).toContain("customer.phone_e164 and customer.name required");
+  // name 누락 시 400 MISSING_FIELD 가드 유지 → customer_name 은 항상 non-null.
+  // (§444 동행-aware refactor 로 name/phone 가드 분리 — name 은 동행 포함 필수, phone 은 비동행만.
+  //  구 결합문자열 'customer.phone_e164 and customer.name required' → 'customer.name required' 로 이관.)
+  expect(src).toContain("customer.name required");
 });
 
 // ── 회귀: 기존 TA2 핵심 불변식 + 인접 denormalize 컬럼 유지 ─────────
