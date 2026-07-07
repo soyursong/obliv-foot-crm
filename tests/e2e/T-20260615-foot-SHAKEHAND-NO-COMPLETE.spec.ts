@@ -7,10 +7,15 @@
  *   doctor_ack_at 은 stepper '원장확인'·재호출 잔존 등 다른 동선에서 선점되어 손이 '초록'으로 도착할 수 있어
  *   '초록 탭=완료' 로직이 의사의 '첫 손 탭'을 완료로 만들었다(직전 2-탭 arm 땜질로도 결합은 잔존).
  * 교정(SSOT 분리 환원): ✋ 핸들러에서 완료/상태전이 호출을 제거하고 ack write(recordAck)만 남긴다.
- *   완료(purple→pink)는 손이 아닌 '별도 명시 액션' TreatmentCompleteButton('진료완료' 라벨 버튼)에서만 일어난다.
+ *
+ * ⚠ 아키텍처 갱신(T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE, 김주연 총괄 확정): SHAKEHAND-NO-COMPLETE 최초 픽스가
+ *   복원했던 '진료완료' 버튼(TreatmentCompleteButton, doctor-call-complete-btn)은 이후 제거되고, 완료(purple→pink)
+ *   동선은 칸반 '상태 플래그 메뉴 → 진료완료(핑크)'(Dashboard.tsx handleFlagChange → applyStatusFlagTransition)로
+ *   일원화됐다. 즉 진료 알림판(DoctorCallDashboard) 자체에는 이제 완료 전이 호출이 0건이어야 한다.
+ *   본 spec 은 그 현행 아키텍처 기준으로 SHAKEHAND-NO-COMPLETE 불변식(✋=ack-only, 완료 트리거 0)을 가드한다.
  *
  * AC: ✋클릭=doctor_ack_at 만 write / completed_at·status_flag 전이 트리거 금지 / 재클릭 idempotent /
- *     완료는 별도 명시 액션에서만 / 회귀 가드 테스트 추가.
+ *     완료는 별도 명시 액션(칸반 상태 메뉴)에서만 / 회귀 가드 테스트 추가.
  *
  * 정적 소스 검증 스타일 — 인접 DOCDASH spec 컨벤션 동일.
  *   ⚠ 실브라우저 클릭 분리 동선은 supervisor field-soak / 갤탭 현장 confirm 게이트에서 최종 확인.
@@ -25,24 +30,17 @@ const SRC = (rel: string) => readFileSync(join(HERE, '../../src', rel), 'utf-8')
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 const ACK = () => SRC('components/doctor/DoctorAck.tsx');
 const FLAG = () => SRC('lib/statusFlagTransition.ts');
+const DASHBOARD_PAGE = () => SRC('pages/Dashboard.tsx');
 
-/** HandToggle 함수 본문만 추출(인접 컴포넌트 오염 방지). */
+/** HandToggle 함수 본문만 추출(인접 컴포넌트·후행 주석 오염 방지). */
 const HAND_FN = () => {
   const s = DASH();
   const start = s.indexOf('function HandToggle(');
   expect(start).toBeGreaterThan(0);
-  // 진료완료 버튼 섹션 주석(applyStatusFlagTransition 언급) 직전까지 = HandToggle 함수 본문만
-  const end = s.indexOf('// ─── 진료완료 버튼', start);
-  return s.slice(start, end > 0 ? end : undefined);
-};
-
-/** TreatmentCompleteButton 함수 본문만 추출. */
-const COMPLETE_FN = () => {
-  const s = DASH();
-  const start = s.indexOf('function TreatmentCompleteButton(');
-  expect(start).toBeGreaterThan(0);
-  const end = s.indexOf('function VisitBadge(', start);
-  return s.slice(start, end > 0 ? end : undefined);
+  // COMPLETEBTN-REMOVE 이후 HandToggle 직후 섹션 헤더 = '// ─── 진료완료 처리 동선' 직전까지 = 함수 본문만.
+  const end = s.indexOf('// ─── 진료완료 처리 동선', start);
+  expect(end).toBeGreaterThan(start);
+  return s.slice(start, end);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,38 +110,40 @@ test.describe('시나리오 2 — 재클릭 idempotent', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 3 — 완료는 '별도 명시 액션'(TreatmentCompleteButton)에서만
+// 시나리오 3 — 완료는 '별도 명시 액션'에서만 (COMPLETEBTN-REMOVE: 칸반 상태 플래그 메뉴로 일원화)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('시나리오 3 — 완료는 별도 명시 액션에서만', () => {
-  test('TreatmentCompleteButton 컴포넌트가 복원되어 존재한다', () => {
-    expect(DASH()).toContain('function TreatmentCompleteButton(');
+test.describe('시나리오 3 — 완료는 별도 명시 액션(칸반 상태 메뉴)에서만', () => {
+  test('진료 알림판(DoctorCallDashboard)에는 완료 전이 호출이 0건이다(손도, 그 어떤 진입점도 아님)', () => {
+    // COMPLETEBTN-REMOVE 이후 대시보드 자체에는 applyStatusFlagTransition 호출이 존재하지 않는다(주석 언급만 허용).
+    const calls = DASH().match(/applyStatusFlagTransition\s*\(/g)?.length ?? 0;
+    expect(calls).toBe(0);
   });
 
-  test('완료 전이(purple→pink)는 오직 TreatmentCompleteButton 안에서만 일어난다', () => {
-    const fn = COMPLETE_FN();
-    expect(fn).toContain("applyStatusFlagTransition(checkIn, 'pink', actor)");
-    // 대시보드 전체에서 'pink' 전이 호출은 이 명시 버튼 1곳뿐
-    const dashPinkCalls = DASH().match(/applyStatusFlagTransition\(checkIn, 'pink'/g)?.length ?? 0;
-    expect(dashPinkCalls).toBe(1);
+  test('구 진료완료 버튼(TreatmentCompleteButton/doctor-call-complete-btn)은 제거되어 존재하지 않는다', () => {
+    const s = DASH();
+    expect(s).not.toContain('function TreatmentCompleteButton(');
+    expect(s).not.toContain('<TreatmentCompleteButton');
+    // testid 는 제거 근거 주석에는 남아있을 수 있으나, 실제 렌더 어트리뷰트로는 없어야 함.
+    expect(s).not.toContain('data-testid="doctor-call-complete-btn"');
   });
 
-  test('완료 버튼은 명시 라벨(진료완료)·전용 testid 를 가진다(손과 분리)', () => {
-    const fn = COMPLETE_FN();
-    expect(fn).toContain('진료완료');
-    expect(fn).toContain('data-testid="doctor-call-complete-btn"');
+  test('완료 전이(purple→pink) 정본 write 는 칸반 상태 메뉴(Dashboard.handleFlagChange)의 SSOT 경유다', () => {
+    const s = DASHBOARD_PAGE();
+    // handleFlagChange 가 status_flag 전이를 SSOT applyStatusFlagTransition 으로 위임(핑크 포함 임의 flag).
+    expect(s).toContain('await applyStatusFlagTransition(ci, flag, {');
   });
 
-  test('대기(purple) 행에 ✋ 와 진료완료 버튼이 함께 렌더된다(분리된 두 액션)', () => {
+  test('완료 동선 일원화가 소스 주석에 명시적으로 문서화돼 있다(COMPLETEBTN-REMOVE)', () => {
+    const s = DASH();
+    expect(s).toContain('T-20260616-foot-DOCDASH-COMPLETEBTN-REMOVE');
+    expect(s).toContain('상태 플래그 메뉴');
+  });
+
+  test('대기(purple) 행에는 ✋(비완료)만 렌더된다 — 손과 완료가 한 행에서 분리(완료 버튼 없음)', () => {
     const s = DASH();
     expect(s).toContain('<HandToggle');
-    expect(s).toContain('<TreatmentCompleteButton');
     expect(s).toContain('completed={false}'); // 대기 행 손은 비완료
-  });
-
-  test('완료 버튼은 ack 컬럼(doctor_ack_at)을 만지지 않는다(별개 신호)', () => {
-    const fn = COMPLETE_FN();
-    expect(fn).not.toContain('recordAck');
-    expect(fn).not.toContain('doctor_ack_at');
+    expect(s).not.toContain('<TreatmentCompleteButton');
   });
 });
 
