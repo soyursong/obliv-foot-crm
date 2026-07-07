@@ -137,6 +137,29 @@ test('CANCEL → EF 가 RPC cancel 분기 라우팅 → status=cancelled 전이 
   expect(r2.json.ok).toBe(true);
 });
 
+test('CANCEL(malformed scheduled_at="T+09:00") → EF 가 existing date 로 라우팅 → 200 cancelled (field-soak reopen RCA/H3)', async () => {
+  // ★ field-soak partial FAIL 재현(2026-07-07 박민지 TM팀장): 도파민 CANCEL push 가
+  //   reservation.scheduled_at='T+09:00'(빈 date/time 조립 잔해)을 운반 → 旣존 EF 는 substring(0,10)
+  //   ='T+09:00' 을 p_reservation_date(DATE) 로 전달 → PostgREST 경계 캐스팅 실패(22007
+  //   'invalid input syntax for type date: "T+09:00"') → RPC 미실행 → 500 → 도파민 "저장 실패".
+  //   fix(v17): CANCEL 라우팅 시 existing 행의 known-good date/time 사용 → 캐스팅 통과 → 정상 취소.
+  //   (기존 CANCEL 테스트(AC2)는 valid scheduled_at 만 써서 이 조건을 못 잡아 GREEN 오탐이었다.)
+  const skip = preconditionSkip();
+  test.skip(!!skip, skip ?? '');
+  const sb = admin();
+  const ext = extId('cancel-badts');
+  const phone = uniquePhone();
+  await seedAdd(payload(ext, phone));               // valid ADD (confirmed, 2026-07-15)
+  // CANCEL — 도파민이 실제 보낸 malformed scheduled_at 그대로 재현
+  const r = await post(payload(ext, phone, { status: 'cancelled', scheduled_at: 'T+09:00' }));
+  expect(r.status).toBe(200);                       // 旣존엔 500 이었음
+  expect(r.json.applied).toBe(true);
+  expect(r.json.reason).toBe('cancelled');
+  const after = await row(sb, ext);
+  expect(after?.status).toBe('cancelled');
+  expect(after?.reservation_date).toBe('2026-07-15');   // existing date 보존(payload 잔해 미착지)
+});
+
 test('동일 payload 재push → 멱등 duplicate 유지 (AC3, guard#2 불변)', async () => {
   const skip = preconditionSkip();
   test.skip(!!skip, skip ?? '');

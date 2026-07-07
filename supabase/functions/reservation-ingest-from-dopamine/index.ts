@@ -424,14 +424,33 @@ Deno.serve(async (req) => {
       //   guard#3 self-mint scope(source_system 매치) · guard#2 멱등 · UPDATE/cancel 분기를 소유(SSOT).
       //   EF 는 duplicate 앞단에서 튕기지 않고 이 SSOT 로 위임 → 무음 no-op 재발 차단.
       //   phone: normalize_phone(+82…) = no-op(이미 E.164) → 기존 customers 행과 동일키 유지(fork 방지).
+      //
+      // ── T-20260630-dopamine-FOOTRESV-TM-EDIT-CANCEL (FIX/field-soak reopen, RCA H3) ───────────────
+      //   근본원인(prod 로그 규명, 17:53:46-48 KST): 도파민 CANCEL push 가 reservation.scheduled_at
+      //   ='T+09:00'(빈 date/time 로 조립된 ISO 잔해)을 운반 → 본 EF 가 scheduledAt.substring(0,10)
+      //   ='T+09:00' 을 p_reservation_date(DATE) 로 그대로 전달 → PostgREST 가 함수 body 실행 前
+      //   인자 타입 캐스팅 단계에서 'invalid input syntax for type date: "T+09:00"' 로 실패
+      //   → RPC 미실행 → EF 500 INTERNAL(→ 도파민 "저장 실패" 토스트). CANCEL fast-path 는 date/time 을
+      //   전혀 사용하지 않음에도 경계 캐스팅에서 hard-fail. (EDIT/리스케줄은 실 date 운반 → 정상, 회귀 금지.)
+      //   ★ 방어 픽스(CANCEL 한정): 취소는 payload date 가 무의미 → 이미 조회한 existing 행의 known-good
+      //     reservation_date/time 을 RPC 로 넘겨 경계 캐스팅을 항상 통과시킨다. self-mint scope·guard#5 는
+      //     RPC 가 source_system+external_id 로만 판정하므로 결과 불변. EDIT 경로(scheduledDate/Time)는 무변경.
+      //     (emit-side 진짜 결함=도파민 cancel push 가 malformed scheduled_at 발신 → dev-dopamine 별도 조치 +
+      //      DOPAMINE_CALLBACK_SECRET 게이트 CANCEL 실 write E2E 재검증 = dev-dopamine 몫.)
+      const rpcDate = isCancelRequest
+        ? ((existing.reservation_date as string | null) ?? scheduledDate)
+        : scheduledDate;
+      const rpcTime = isCancelRequest
+        ? (((existing.reservation_time as string | null) ?? scheduledTime).substring(0, 8))
+        : scheduledTime;
       const rpcArgs = {
         p_source_system:      sourceSystem ?? 'dopamine',
         p_external_id:        externalId,
         p_clinic_slug:        lookupSlug,
         p_customer_phone:     (!isCompanion && phoneE164) ? phoneE164 : null,
         p_customer_name:      name,
-        p_reservation_date:   scheduledDate,
-        p_reservation_time:   scheduledTime,
+        p_reservation_date:   rpcDate,
+        p_reservation_time:   rpcTime,
         p_memo:               (memo ?? '').trim() !== '' ? memo : null,
         p_status:             isCancelRequest ? 'cancelled' : 'confirmed',
         p_visit_type:         visitTypeMapped,
