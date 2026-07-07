@@ -59,7 +59,8 @@ test.describe('AC-1: 주뷰 헤더 카운트뱃지 일뷰 스타일 통일', () 
     expect(b, '초 abbr 라벨 누락').toContain('{KIND_AXIS_LABELS.new.abbr} {c.n}');
     expect(b, '재 abbr 라벨 누락').toContain('{KIND_AXIS_LABELS.returning.abbr} {c.r}');
     expect(b, '힐 abbr 라벨 누락').toContain('{KIND_AXIS_LABELS.healer.abbr} {c.h}');
-    expect(b, '리본 full 라벨 누락(주뷰는 여백 충분 → full 유지)').toContain('{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}');
+    // T-20260706-foot-RESV-DAYCOUNT-RIBBON-LABEL supersede: 리본 항목 full '리본 {N}' → abbr '리 {N}건'.
+    expect(b, '리본 리N건 라벨 누락').toContain('{KIND_AXIS_LABELS.ribbon.abbr} {c.ribbon}건');
     expect(b, '총건수(초+재+힐) 누락').toContain('총 {c.n + c.r + c.h}');
   });
 

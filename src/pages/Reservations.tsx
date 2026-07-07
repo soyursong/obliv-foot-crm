@@ -2396,7 +2396,9 @@ export default function Reservations() {
                             <span className="text-muted-foreground/40">·</span>
                             <span className="text-healer-700">{KIND_AXIS_LABELS.healer.abbr} {c.h}</span>
                             <span className="text-muted-foreground/40">·</span>
-                            <span className="text-rose-700">{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}</span>
+                            {/* T-20260706-foot-RESV-DAYCOUNT-RIBBON-LABEL AC1 (김주연 총괄): 리본 항목만 '리본 {N}' → '리 {N}건' 포맷.
+                                라벨 '리'=KIND_AXIS_LABELS.ribbon.abbr SSOT 재사용 + '건' 접미. 집계(c.ribbon)·타 항목(총/초/재/힐) 무변경(회귀 0). */}
+                            <span className="text-rose-700">{KIND_AXIS_LABELS.ribbon.abbr} {c.ribbon}건</span>
                           </span>
                         </div>
                       );

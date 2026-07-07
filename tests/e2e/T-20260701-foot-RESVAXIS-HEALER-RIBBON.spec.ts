@@ -83,9 +83,9 @@ test.describe('AC4: 주간 요일 헤더 — 리본 카운트 일관 반영', ()
 
   test('AC4-2: 주간 배지 — 힐러(힐) 회귀 유지 + 리본 칩 병존', () => {
     // T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR SUPERSEDE: 주간 요일 헤더도 초-재-힐-리 정합(HL→힐).
-    //   리본 칩은 full 라벨(KIND_AXIS_LABELS.ribbon.full = '리본(발각질)')로 렌더.
+    // T-20260706-foot-RESV-DAYCOUNT-RIBBON-LABEL supersede: 리본 칩 full '리본 {N}' → abbr '리 {N}건'.
     expect(RESV_PAGE, '주간 힐 배지 회귀').toContain('{KIND_AXIS_LABELS.healer.abbr} {c.h}');
-    expect(RESV_PAGE, '주간 리본 배지 누락').toContain('{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}');
+    expect(RESV_PAGE, '리본 리N건 배지 누락').toContain('{KIND_AXIS_LABELS.ribbon.abbr} {c.ribbon}건');
     // 빈 요약 가드에 ribbon 포함(리본만 있는 날도 배지 노출)
     expect(RESV_PAGE, '빈 요약 가드 ribbon 미포함')
       .toContain('c.n === 0 && c.r === 0 && c.h === 0 && c.ribbon === 0');

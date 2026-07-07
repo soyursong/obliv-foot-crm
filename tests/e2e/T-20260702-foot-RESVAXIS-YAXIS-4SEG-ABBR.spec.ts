@@ -100,7 +100,8 @@ test.describe('AC4: 주간 요일 헤더 정합', () => {
     expect(RESV_PAGE, '주간 초 abbr 누락').toContain('{KIND_AXIS_LABELS.new.abbr} {c.n}');
     expect(RESV_PAGE, '주간 재 abbr 누락').toContain('{KIND_AXIS_LABELS.returning.abbr} {c.r}');
     expect(RESV_PAGE, '주간 힐 abbr 누락').toContain('{KIND_AXIS_LABELS.healer.abbr} {c.h}');
-    expect(RESV_PAGE, '주간 리본 full 누락').toContain('{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}');
+    // T-20260706-foot-RESV-DAYCOUNT-RIBBON-LABEL supersede: 리본 항목 full '리본 {N}' → abbr '리 {N}건'.
+    expect(RESV_PAGE, '리본 리N건 누락').toContain('{KIND_AXIS_LABELS.ribbon.abbr} {c.ribbon}건');
   });
 });
 

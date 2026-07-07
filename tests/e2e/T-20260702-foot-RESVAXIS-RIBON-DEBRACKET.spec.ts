@@ -76,8 +76,9 @@ test.describe('A3: 일간·주간 뷰 반영', () => {
     expect(RESV_PAGE, '세로축 rowlabel testid 회귀').toContain('data-testid={`resv-day-rowlabel-${row.kind}`}');
   });
 
-  test('A3-2: 주간 요일 헤더 리본 칩 = KIND_AXIS_LABELS.ribbon.full 참조', () => {
-    expect(RESV_PAGE, '주간 리본 full 참조 누락').toContain('{KIND_AXIS_LABELS.ribbon.full} {c.ribbon}');
+  test('A3-2: day-summary 리본 칩 = KIND_AXIS_LABELS.ribbon.abbr + N건 참조', () => {
+    // T-20260706-foot-RESV-DAYCOUNT-RIBBON-LABEL supersede: 리본 항목 full '리본 {N}' → abbr '리 {N}건'.
+    expect(RESV_PAGE, '리본 리N건 참조 누락').toContain('{KIND_AXIS_LABELS.ribbon.abbr} {c.ribbon}건');
   });
 
   test('A3-3: 시간칸 밑 리 축약(abbr) 참조 불변', () => {
