@@ -49,6 +49,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS: 시술내역 수정 치료사 권한(RC=FE 게이트, prod RLS 이미 허용).
+        //   permissions lib 순수 단언 + 소스 정적 가드(저장 핸들러 단일행 UPDATE·derived 차감 불변식·canEditClinicMgmt 부재)
+        //   + Management API(SUPABASE_ACCESS_TOKEN) prod 정책 실측(package_sessions_write=ALL therapist 허용·clinic_id 부재).
+        //   시나리오 (1) 정상 저장 + (2.3) 저장 후 차감 카운트 정합(누락/중복 0). db_change=false(추가 마이그 no-op). auth 불요.
+        '**/T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS.spec.ts',
         // T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX: 진료확인서·통원확인서 레이아웃 5항목(상단/하단 50:50·성명 빈셀제거·용도 너비·상기인칸 3배).
         //   HTML 템플릿 리터럴 정적 가드 + getHtmlTemplate/bindHtmlTemplate 실렌더. 실 출력은 supervisor 갤탭 field-soak. auth 불요.
         '**/T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX.spec.ts',

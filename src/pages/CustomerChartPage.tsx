@@ -6935,9 +6935,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
                                     <span className="text-muted-foreground shrink-0">{s.session_date}</span>
                                     {s.staff_name && <span className="text-sage-600 truncate">{s.staff_name}</span>}
-                                    {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director' || profile?.role === 'consultant') && (
+                                    {/* T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS (김주연 총괄 repro): 치료사 계정 2번차트 회차 '수정' 버튼 미노출("수정 권한 없음") — 관리자는 되는데 치료사만 막힘.
+                                        ★diagnose-first(실측): prod RLS package_sessions_write[FOR ALL, self-match 없음]가 therapist UPDATE 이미 허용 → RLS gap 아님(추가 마이그 no-op). package_sessions 에 clinic_id 컬럼 없어 DA canonical 술어 적용 불가. RC = FE 게이트.
+                                        이 수정 버튼 게이트만 admin/manager/director/consultant 하드코딩 = FE/RLS 불일치(latent lock-out-in-disguise). T-20260702 형제 버튼(구입티켓추가)과 동일 패턴으로 isStaffUnlockRole 정합.
+                                        ※ 삭제 버튼은 아래 admin/manager/director 유지 = is_admin_or_manager DELETE 정책 정합(불변). */}
+                                    {isStaffUnlockRole(profile?.role) && (
                                       <span className="ml-auto hidden group-hover:flex items-center gap-0.5 shrink-0">
-                                        {/* 수정 버튼 — consultant 포함 (package_sessions_consult_update RLS 허용) */}
+                                        {/* 수정 버튼 — STAFF_UNLOCK_ROLES(consultant/coordinator/therapist 포함, package_sessions_write RLS 허용) */}
                                         <button
                                           type="button"
                                           onClick={() => {
