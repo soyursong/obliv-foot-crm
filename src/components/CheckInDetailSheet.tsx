@@ -38,6 +38,8 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
 // T-20260515-foot-PAYMENT-EDIT-REFLECT: PaymentDonePayload 추가 import
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
+// T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 결제 상세 항목별 명세 표시(AC-2)
+import { PaymentItemsView } from '@/components/PaymentItemsView';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
@@ -2063,6 +2065,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                         className="rounded px-1 py-0.5 text-[10px] text-red-500 hover:bg-red-50 transition"
                       >삭제</button>
                     </div>
+                    {/* T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세(있을 때만 표시) */}
+                    <PaymentItemsView paymentId={p.id} />
                     {/* 수납 이력 보기 (AC-7) */}
                     <PaymentAuditLogsPanel paymentId={p.id} />
                   </div>

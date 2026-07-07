@@ -254,6 +254,30 @@ export interface Service {
   copayment_rate_override?: number | null;
 }
 
+// ── 결제 항목별 명세 (T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY) ──────
+/** 급여/비급여 분류 표시 라벨 (보험축 2값 고정, 금액 authority 아님) */
+export type ChargeClass = '급여' | '비급여';
+
+/**
+ * payment_items — 결제 항목별(라인아이템) 명세. payments(수납) 하위 grain.
+ * charge_class·service_code 는 표시 스냅샷일 뿐 급여 split/수가 authority 아님(service_charges 유지).
+ * 매출집계/EDI/마감/인센티브 SSOT 미진입 — display/read 전용.
+ */
+export interface PaymentItem {
+  id: string;
+  payment_id: string;
+  check_in_id: string | null;
+  service_id: string | null;
+  service_name: string;
+  service_code: string | null;
+  quantity: number;
+  unit_price: number | null;
+  line_amount: number;
+  charge_class: ChargeClass | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
 // ── 건보 청구 관련 (T-20260520-foot-INS-UI AC-2) ──────────────────────────
 
 export type InsuranceClaimStatus = 'draft' | 'submitted' | 'accepted' | 'rejected' | 'cancelled';

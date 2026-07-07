@@ -25,7 +25,9 @@ import { cn } from '@/lib/utils';
 // T-20260616-foot-PAYDLG-INSURANCE-PANEL-ROLLBACK: 라이브 수납 차단 P0 핫픽스 —
 // 결제 미니창 상단 '급여 진료비 미리보기(건강보험)' 패널 렌더 롤백. 패널 컴포넌트/보험기능은 보존.
 // import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
-import type { CheckIn, PackageTemplate } from '@/lib/types';
+import type { CheckIn, PackageTemplate, Service } from '@/lib/types';
+// T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 결제 항목별 명세 입력 (스코프 C 풀명세)
+import { PaymentItemsEditor, type PaymentItemDraft, draftFromService } from '@/components/PaymentItemsEditor';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
 // AC-5: payments CHECK ✅ membership 허용
@@ -102,6 +104,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const [pkgBalanceDue, setPkgBalanceDue] = useState(0);
   const [consultBalanceDue, setConsultBalanceDue] = useState(0);
   const [balanceKind, setBalanceKind] = useState<'package' | 'consultation' | null>(null);
+  // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 결제 항목별 명세 (payment_items)
+  //   단건 결제(payments) grain 에만 부착. check_in_services 에서 자동 seed(하이브리드 권고 D).
+  //   charge_class·service_code = 표시 스냅샷일 뿐 급여 split/수가 authority 아님(service_charges 유지).
+  const [lineItems, setLineItems] = useState<PaymentItemDraft[]>([]);
+  const [svcCatalog, setSvcCatalog] = useState<Service[]>([]);
 
   // T-20260523-foot-PKG-TMPL-LINK: clinic_id 기준으로 package_templates 로드
   useEffect(() => {
@@ -148,6 +155,46 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       setPkgBalanceDue(0);
       setConsultBalanceDue(0);
       setBalanceKind(null);
+      // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세 초기화 + check_in_services 자동 seed
+      //   서비스 카탈로그 로드 → 방문 시술(check_in_services)을 라인아이템 초안으로 프리필(하이브리드).
+      setLineItems([]);
+      setSvcCatalog([]);
+      Promise.all([
+        supabase
+          .from('services')
+          .select('id, name, price, service_code, hira_code, is_insurance_covered')
+          .eq('clinic_id', checkIn.clinic_id)
+          .eq('active', true),
+        supabase
+          .from('check_in_services')
+          .select('service_id, service_name, price')
+          .eq('check_in_id', checkIn.id),
+      ]).then(([svcRes, cisRes]) => {
+        const svcs = (svcRes.data ?? []) as Service[];
+        setSvcCatalog(svcs);
+        const cis = (cisRes.data ?? []) as { service_id: string | null; service_name: string; price: number | null }[];
+        const seeded: PaymentItemDraft[] = cis.map((ci) => {
+          const svc = ci.service_id ? svcs.find((s) => s.id === ci.service_id) : undefined;
+          if (svc) {
+            const d = draftFromService(svc);
+            // check_in_services.price 를 라인 단가 우선(방문 시점 확정 단가)
+            const unit = ci.price ?? d.unit_price ?? 0;
+            return { ...d, unit_price: unit, line_amount: unit };
+          }
+          const unit = ci.price ?? 0;
+          return {
+            key: `seed-${ci.service_id ?? ci.service_name}`,
+            service_id: ci.service_id ?? null,
+            service_name: ci.service_name,
+            service_code: null,
+            quantity: 1,
+            unit_price: unit,
+            line_amount: unit,
+            charge_class: null,
+          };
+        });
+        setLineItems(seeded);
+      });
       // 활성 직원 목록 로드
       supabase
         .from('staff')
@@ -261,7 +308,36 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       external_approval_no: null, // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움
       external_tid: null,
     }));
-    return supabase.from('payments').insert(payload);
+    // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 삽입된 payment id 확보(항목별 명세 부착용).
+    //   .select() 추가는 { data, error } 형태 유지 → 기존 { error } 구조분해 호출부 무영향(회귀 0).
+    return supabase.from('payments').insert(payload).select('id');
+  };
+
+  // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세를 payment 에 부착 저장.
+  //   payment_items = payments(수납) 하위 grain. 매출집계/EDI/마감/인센티브 미진입(display 전용).
+  //   best-effort: 항목 저장 실패가 이미 커밋된 수납을 롤백하지 않음(현장 수납 연속성 우선).
+  const insertPaymentItems = async (paymentId: string, items: PaymentItemDraft[]) => {
+    const rows = items
+      .filter((it) => it.service_name.trim() && it.line_amount > 0)
+      .map((it) => ({
+        payment_id: paymentId,
+        check_in_id: checkIn.id,
+        service_id: it.service_id,
+        service_name: it.service_name.trim(),
+        service_code: it.service_code,
+        quantity: it.quantity || 1,
+        unit_price: it.unit_price,
+        line_amount: it.line_amount,
+        charge_class: it.charge_class,
+        created_by: profile?.id ?? null,
+      }));
+    if (rows.length === 0) return;
+    const { error } = await supabase.from('payment_items').insert(rows);
+    if (error) {
+      // 비차단 — 항목 명세는 표시 세부. 수납 완료 UX 를 막지 않음.
+      console.error('[payment_items] 항목별 명세 저장 실패(수납은 정상):', error);
+      toast.error('결제는 완료됐으나 항목별 명세 저장에 실패했습니다. 결제 상세에서 다시 추가해 주세요.');
+    }
   };
 
   const handleSubmit = async () => {
@@ -480,6 +556,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       }
     } else {
       // 단건 결제 (기존 로직)
+      // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세를 부착할 대표 payment id.
+      let primaryPaymentId: string | null = null;
       if (isSplit) {
         if (splitCard <= 0 && splitCash <= 0) {
           toast.error('금액을 입력하세요');
@@ -528,19 +606,20 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             tax_exempt_amount: taxExempt > 0 ? taxExempt : null,
           });
         }
-        const { error } = await insertPayments(rows);
+        const { data, error } = await insertPayments(rows);
         if (error) {
           toast.error(`결제 실패: ${error.message}`);
           setSubmitting(false);
           return;
         }
+        primaryPaymentId = data?.[0]?.id ?? null;
       } else {
         if (amount <= 0) {
           toast.error('금액을 입력하세요');
           setSubmitting(false);
           return;
         }
-        const { error } = await insertPayments([
+        const { data, error } = await insertPayments([
           {
             amount,
             method,
@@ -560,6 +639,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           setSubmitting(false);
           return;
         }
+        primaryPaymentId = data?.[0]?.id ?? null;
+      }
+      // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 단건 수납 성공 → 항목별 명세 부착(있을 때만).
+      //   0행이면 스킵 = 레거시 lump-sum 그대로(하위호환). best-effort(비차단).
+      if (primaryPaymentId && lineItems.length > 0) {
+        await insertPaymentItems(primaryPaymentId, lineItems);
       }
     }
 
@@ -1056,6 +1141,17 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   </div>
                 )}
               </div>
+            )}
+
+            {/* T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세 입력 (단건 수납 전용) —
+                패키지 신규/잔금 모드는 자체 회차 grain 이므로 제외. 미입력 시 총액만 저장(기존 방식). */}
+            {paymentMode === 'single' && !balanceKind && (
+              <PaymentItemsEditor
+                items={lineItems}
+                onChange={setLineItems}
+                services={svcCatalog}
+                settlementTotal={totalPayment}
+              />
             )}
 
             {/* C2-MANAGER-PAYMENT-MAP: 결제담당 선택 */}
