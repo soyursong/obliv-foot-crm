@@ -264,6 +264,10 @@ Deno.serve(async (req) => {
   const slotType          = reservation['slot_type']       as string | undefined;
   const serviceCode       = reservation['service_code']    as string | undefined;
   const memo              = reservation['memo']            as string | undefined;
+  // T-20260630-dopamine-FOOTRESV-TM-EDIT-CANCEL (FIX/reopen): 취소요청 discriminator.
+  //   도파민 foot-reservation-push 는 cancel 일 때만 reservation.status='cancelled' 동봉(그 외/누락=active).
+  //   기존 external_id 에 대해 이 값이 'cancelled' 면 EF 가 duplicate 단락 대신 RPC 취소 fast-path 로 라우팅.
+  const statusIn          = reservation['status']          as string | undefined;
   const campaignId        = reservation['campaign_id']     as string | undefined;
   const adsetId           = reservation['adset_id']        as string | undefined;
   const adId              = reservation['ad_id']           as string | undefined;
@@ -369,23 +373,95 @@ Deno.serve(async (req) => {
     const VISIT_ROUTE_ENUM = ['TM', '워크인', '인바운드', '지인소개'];
     const visitRouteLanded = (visitRoute && VISIT_ROUTE_ENUM.includes(visitRoute)) ? visitRoute : null;
 
-    // ── AC-5: 중복 체크 먼저 ─────────────────────────────────────────────────
-    // UNIQUE partial index (source_system IS NOT NULL AND external_id IS NOT NULL)
-    // 중복 시 기존 reservation_id 반환 (applied:false)
+    // ── created_via / customer_real_name / visit_type 선산출 (INSERT 경로 + edit/cancel RPC 라우팅 공용) ──
+    //   T-20260628-crm-RESV-CREATED-VIA-FILL §2: canonical enum v1.1 정합. source_system 채널 →
+    //   created_via 정합 매핑, 미지/기본=dopamine(본 EF=도파민 인입 경로). ★별칭 금지(admin/phone/walk-in).
+    const CREATED_VIA_BY_SOURCE: Record<string, string> = {
+      dopamine: 'dopamine', aicc: 'aicc', naver: 'naver',
+      meta: 'meta', kakao: 'kakao', inbound: 'inbound',
+    };
+    const createdVia = CREATED_VIA_BY_SOURCE[(sourceSystem ?? 'dopamine').toLowerCase()] ?? 'dopamine';
+    // 동행명/본명 스냅샷 (§4-2b 비키): 명시 customer_real_name 우선 → 동행이면 name 폴백. 비동행 미동봉 → undefined(0-회귀).
+    const customerRealName =
+      (customerRealNameIn && customerRealNameIn.trim() !== '')
+        ? customerRealNameIn.trim()
+        : (isCompanion ? name : undefined);
+    // slot_type → visit_type 매핑 (旣존 INSERT 로직과 동일). 미동봉 → 'new'(RPC 기본).
+    const visitTypeMapped = slotType ? (slotType === 'new_consult' ? 'new' : 'returning') : 'new';
+    // scheduled_at(ISO 8601) → date/time 분해 (INSERT·mutation 비교 공용)
+    const scheduledDate = scheduledAt.substring(0, 10);   // "2026-05-25"
+    const scheduledTime = scheduledAt.substring(11, 19);  // "14:30:00"
+
+    // ── AC-5: 중복(멱등키) 체크 — external_id 기존 여부 ─────────────────────────
+    //   UNIQUE partial index (source_system IS NOT NULL AND external_id IS NOT NULL).
+    //   T-20260630-FOOTRESV-TM-EDIT-CANCEL (FIX/reopen): 기존 행 발견 시 무조건 duplicate 단락하던 것을
+    //   (a) 취소요청 / (b) 리스케줄(시간 변경) 이면 RPC upsert_reservation_from_source 의 cancel/UPDATE 분기로
+    //   라우팅하도록 분기 추가. 순수 동일-payload 재push 만 멱등 duplicate 유지(guard#2 불변).
     const { data: existing } = await admin
       .from('reservations')
-      .select('id')
+      .select('id, reservation_date, reservation_time, status')
       .eq('source_system', sourceSystem ?? 'dopamine')
       .eq('external_id', externalId)
       .maybeSingle();
 
     if (existing) {
-      // T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: 중복(편집 재push)에도 예약메모 rmh 멱등 upsert.
-      //   RPC 55f3f62d 의 ON CONFLICT DO UPDATE(편집 재push=content 갱신)와 동치 — 재push 로 수정된
-      //   메모가 timeline 에 반영되도록. 빈값이면 helper 내부 no-op(기존 메모 보존).
-      await syncReservationMemoToTimeline(admin, existing.id as string, clinicId, memo, sourceSystem ?? 'dopamine');
-      console.log(`[reservation-ingest] duplicate external_id ${externalId} → existing ${existing.id}`);
-      return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
+      const isCancelRequest = (statusIn ?? '').toLowerCase().trim() === 'cancelled';
+      // 리스케줄 판정: 도파민이 운반한 date/time 이 기존 착지값과 다른가. (TIME 은 "HH:MM:SS" 8자 비교)
+      const curDate = (existing.reservation_date as string | null) ?? '';
+      const curTime = ((existing.reservation_time as string | null) ?? '').substring(0, 8);
+      const isReschedule = curDate !== scheduledDate || curTime !== scheduledTime;
+
+      // (guard#2) 순수 동일-payload 재push (취소·리스케줄 아님) → 멱등 duplicate 유지.
+      //   예약메모(rmh)만 멱등 upsert(편집 재push 로 수정된 메모 timeline 반영). 빈값=내부 no-op.
+      if (!isCancelRequest && !isReschedule) {
+        await syncReservationMemoToTimeline(admin, existing.id as string, clinicId, memo, sourceSystem ?? 'dopamine');
+        console.log(`[reservation-ingest] duplicate (idempotent no-op) external_id ${externalId} → existing ${existing.id}`);
+        return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
+      }
+
+      // ── (a) 취소 / (b) 리스케줄 → RPC upsert_reservation_from_source 로 라우팅 ─────────────────
+      //   RPC(20260630193000 최종 body)가 guard#5 lifecycle(checked_in/done/no_show reject) ·
+      //   guard#3 self-mint scope(source_system 매치) · guard#2 멱등 · UPDATE/cancel 분기를 소유(SSOT).
+      //   EF 는 duplicate 앞단에서 튕기지 않고 이 SSOT 로 위임 → 무음 no-op 재발 차단.
+      //   phone: normalize_phone(+82…) = no-op(이미 E.164) → 기존 customers 행과 동일키 유지(fork 방지).
+      const rpcArgs = {
+        p_source_system:      sourceSystem ?? 'dopamine',
+        p_external_id:        externalId,
+        p_clinic_slug:        lookupSlug,
+        p_customer_phone:     (!isCompanion && phoneE164) ? phoneE164 : null,
+        p_customer_name:      name,
+        p_reservation_date:   scheduledDate,
+        p_reservation_time:   scheduledTime,
+        p_memo:               (memo ?? '').trim() !== '' ? memo : null,
+        p_status:             isCancelRequest ? 'cancelled' : 'confirmed',
+        p_visit_type:         visitTypeMapped,
+        p_created_via:        createdVia,
+        p_service_id:         serviceId,
+        p_registrar_id:       registrarId,
+        p_registrar_name:     registrarNameLanded,
+        p_customer_real_name: customerRealName ?? null,
+        p_customer_real_phone: null,
+        p_is_companion:       isCompanion,
+      };
+      const { data: rpcRid, error: rpcErr } = await admin.rpc('upsert_reservation_from_source', rpcArgs);
+
+      if (rpcErr) {
+        // guard#5: lifecycle-invalid(checked_in/done/no_show) stale edit/cancel → reject(무음 clobber 금지).
+        //   RPC RAISE P0001(HINT=LIFECYCLE_INVALID) → 4xx 로 회신(도파민 no-retry, crm_sync_status='failed' reject UX).
+        if ((rpcErr as { code?: string }).code === 'P0001') {
+          console.warn(`[reservation-ingest] lifecycle-invalid ${isCancelRequest ? 'cancel' : 'edit'} rejected external_id=${externalId}: ${rpcErr.message}`);
+          return json({ ok: false, error: 'LIFECYCLE_INVALID', detail: rpcErr.message }, 409);
+        }
+        console.error(`[reservation-ingest] RPC ${isCancelRequest ? 'cancel' : 'edit'} failed external_id=${externalId}: ${rpcErr.message}`);
+        return json({ ok: false, error: 'INTERNAL', detail: `rpc upsert failed: ${rpcErr.message}` }, 500);
+      }
+
+      // rpcRid: 취소=self-mint 행 id(이미 cancelled=멱등 id), 리스케줄=UPDATE 행 id. 방어적 fallback=existing.id.
+      const ridResolved = (rpcRid as string | null) ?? (existing.id as string);
+      // 예약메모 SoT=rmh 동기화: RPC 는 reservations.memo(deprecated·FE 미read)에만 기록 → FE 가 read 하는 rmh 는 별도 sync.
+      await syncReservationMemoToTimeline(admin, ridResolved, clinicId, memo, sourceSystem ?? 'dopamine');
+      console.log(`[reservation-ingest] ${isCancelRequest ? 'CANCEL' : 'EDIT'} applied external_id=${externalId} → ${ridResolved} date=${scheduledDate} time=${scheduledTime} status=${isCancelRequest ? 'cancelled' : 'confirmed'}`);
+      return json({ ok: true, reservation_id: ridResolved, applied: true, reason: isCancelRequest ? 'cancelled' : 'rescheduled' });
     }
 
     // ── AC-4: Customer upsert (clinic_id + phone_e164 기준) ─────────────────
@@ -470,29 +546,10 @@ Deno.serve(async (req) => {
     }
     } // end if(!isCompanion) — 동행은 customerId=NULL 유지
 
-    // ── AC-5: Reservation INSERT ─────────────────────────────────────────────
-    // 결함 1/2: scheduledAt(ISO 8601) → reservation_date + reservation_time 분리
-    // DB: reservation_date DATE NOT NULL, reservation_time TIME NOT NULL (scheduled_at 컬럼 없음)
-    const scheduledDate = scheduledAt.substring(0, 10);   // "2026-05-25"
-    const scheduledTime = scheduledAt.substring(11, 19);  // "14:30:00"
-
-    // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 인입 예약 생성경로(created_via) 적재.
-    //   canonical enum v1.1 9값과 정합. source_system 채널 → created_via 정합 매핑,
-    //   미지/기본값은 dopamine(본 EF=도파민 인입 경로). ★별칭 금지(admin/phone/walk-in 미사용).
-    const CREATED_VIA_BY_SOURCE: Record<string, string> = {
-      dopamine: 'dopamine', aicc: 'aicc', naver: 'naver',
-      meta: 'meta', kakao: 'kakao', inbound: 'inbound',
-    };
-    const createdVia = CREATED_VIA_BY_SOURCE[(sourceSystem ?? 'dopamine').toLowerCase()] ?? 'dopamine';
-
-    // ── 동행명/본명 스냅샷 (T-20260630-foot-COMPANION-RESV-INSERT-FAIL, §4-2b 비키) ──
-    //   명시 customer_real_name 우선 → 동행이면 name 폴백. 비동행 미동봉 → 미삽입(NULL, 0-회귀).
-    //   동행(customer_id=NULL, customers 행 부재)의 캘린더/목록 이름복원 1순위 폴백.
-    const customerRealName =
-      (customerRealNameIn && customerRealNameIn.trim() !== '')
-        ? customerRealNameIn.trim()
-        : (isCompanion ? name : undefined);
-
+    // ── AC-5: Reservation INSERT (신규) ───────────────────────────────────────
+    //   scheduledDate/scheduledTime, createdVia, customerRealName, visitTypeMapped 는
+    //   중복체크 前 선산출(edit/cancel RPC 라우팅과 공용). 여기서는 그 값을 그대로 사용.
+    //   결함 1/2: reservation_date DATE NOT NULL, reservation_time TIME NOT NULL (scheduled_at 컬럼 없음).
     const rsvPayload: Record<string, unknown> = {
       customer_id:      customerId,
       // T-20260630-foot-INGEST-CUSTNAME-NULL-FIX: 예약관리 목록 '이름없음' 수정.
