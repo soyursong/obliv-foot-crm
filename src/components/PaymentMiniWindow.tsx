@@ -94,6 +94,10 @@ import {
   type CustomerOutstanding,
   // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백(PATH-4 수렴).
   loadEffectiveInsuranceGrade,
+  // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: bill_detail 급여구분/본인·공단 split SSOT
+  //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
+  buildFootBillDetailItems,
+  type FootBillingItem,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE: 의료법 제22조 — 급여 방문 진료기록 미작성 시 수납/완료 하드차단.
 import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
@@ -1366,6 +1370,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     ? Math.min(Math.ceil((coveredTotal * copayRate) / 100) * 100, coveredTotal)
     : 0;
 
+  // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: 진료비세부산정내역(bill_detail) 행 빌드 SSOT.
+  //   RC(재발): PMW(PATH-4) 단독발행 경로가 기존에 service.is_insurance_covered 만으로 급여/비급여를
+  //   분류하고 per-item 본인부담금(copayment_amount)을 미주입 → 급여 항목의 급여구분(본인/공단 split)이
+  //   '0'/공란으로 출력됐다(현장 재보고). DocumentPrintPanel(PATH-1/2/3)이 이미 쓰는 공유 빌더
+  //   buildFootBillDetailItems 로 통일: getTaxClass(등급반영, hira_code 급여 포함) 분류 +
+  //   copaymentTotal 비례배분(잔차보정)으로 본인/공단 컬럼을 채운다. 화면 산출값 그대로 사용(무재산정·무날조),
+  //   신규 프린트 경로 신설 없음(기존 SSOT 재사용, AC-4/AC-5). 등급 비어도 svc.is_insurance_covered=true 는
+  //   급여 분류 유지 → 최소한 급여/비급여 구분은 항상 삽입됨.
+  const buildPmwBillDetailItems = (visitDate: string) => {
+    const fbItems: FootBillingItem[] = pricingItems.map(({ service, qty }) => ({
+      service,
+      qty,
+      unitPrice: customAmounts.get(service.id) ?? service.price ?? 0,
+    }));
+    return buildFootBillDetailItems(fbItems, visitDate, {
+      insuranceGrade: customerInsuranceGrade,
+      copaymentTotal,
+    });
+  };
+
   // 선수금차감 후 금액 = prepaid 제외 합산
   // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 prepaid로 분류돼도 항상 청구금액에 산입
   //   (선수금차감 제외 → amount=0 증발 방지). 다회차 4종 차감제외는 그대로 유지.
@@ -1747,20 +1771,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
       // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
       if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
-        const billItems = pricingItems.map(({ service, qty }) => {
-          const unitPrice = customAmounts.get(service.id) ?? service.price ?? 0;
-          return {
-            category: service.is_insurance_covered ? '이학요법료' : '기타',
-            date: autoValues.visit_date ?? '',
-            code: service.service_code ?? '',
-            name: service.name,
-            amount: unitPrice,
-            count: qty,
-            days: 1,
-            is_insurance_covered: service.is_insurance_covered ?? false,
-          };
-        });
-        autoValues.items_html = buildBillDetailItemsHtml(billItems);
+        autoValues.items_html = buildBillDetailItemsHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
         if (grandTotal > 0) {
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
@@ -1872,20 +1883,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
       // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
       if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
-        const billItems = pricingItems.map(({ service, qty }) => {
-          const unitPrice = customAmounts.get(service.id) ?? service.price ?? 0;
-          return {
-            category: service.is_insurance_covered ? '이학요법료' : '기타',
-            date: autoValues.visit_date ?? '',
-            code: service.service_code ?? '',
-            name: service.name,
-            amount: unitPrice,
-            count: qty,
-            days: 1,
-            is_insurance_covered: service.is_insurance_covered ?? false,
-          };
-        });
-        autoValues.items_html = buildBillDetailItemsHtml(billItems);
+        autoValues.items_html = buildBillDetailItemsHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
         if (grandTotal > 0) {
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
