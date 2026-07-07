@@ -74,7 +74,13 @@ function todayStr(): string {
 export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
   const qc = useQueryClient();
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260707-foot-DUTYROSTER-COORDINATOR-WRITE-RLS: 근무스케줄=운영/HR 스케줄링 write 표면.
+  //   DA 가설 A(비충돌·직교) 확정 — 편집모델=중앙관리형 → write set {admin, manager, coordinator}.
+  //   (진료관리 EDIT=director 단독과 직교, §12-3 EXCL-3 미포함) RLS ADDITIVE(20260707180000)와 짝.
+  const canEdit =
+    profile?.role === 'admin' ||
+    profile?.role === 'manager' ||
+    profile?.role === 'coordinator';
 
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
