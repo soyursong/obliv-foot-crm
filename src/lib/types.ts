@@ -178,6 +178,7 @@ export interface Customer {
   insurance_grade_verified_at?: string | null;
   insurance_grade_source?: InsuranceGradeSource | null;
   insurance_grade_memo?: string | null;
+  insurance_cert_no?: string | null;   // 건강보험증 번호(보험 증번호) — PII. 수기 입력 + (API 연동 시) 자격조회 자동채움. T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD
   // 주소지 (T-20260507-foot-CHART2-INSURANCE-FIELDS)
   address?: string | null;
   // 고객정보 입력폼 전면 수정 (T-20260508-foot-CUST-FORM-REVAMP)

@@ -2610,6 +2610,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingEmail/editingPassport 제거 — 항상 활성화
   const [emailText, setEmailText] = useState('');
   const [passportText, setPassportText] = useState('');
+  // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 건보조회 행 보험 증번호(건강보험증 번호) 수기 입력값
+  const [certNoText, setCertNoText] = useState('');
+  const [savingCertNo, setSavingCertNo] = useState(false);
+  // 연동(자동 채움) 바인딩 — 자격조회 응답 payload에 증번호(cert_no)가 오면 입력란에 자동 채움(scaffold).
+  //   현재 API 미연동 → nhis.result.cert_no 항상 부재라 실질 no-op. 착지 후 활성화되는 hook.
+  //   자동 채움 후에도 수동 편집 가능(수기 입력이 1차 경로 유지, [저장]은 스태프가 클릭).
+  useEffect(() => {
+    const fetched = nhis.result?.cert_no;
+    if (fetched && fetched.trim()) {
+      setCertNoText(fetched.trim());
+    }
+  }, [nhis.result?.cert_no]);
   // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모(직접수정·non-history, customers.customer_note)
   const [customerNoteText, setCustomerNoteText] = useState('');
   // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 로컬 상태 (optimistic update)
@@ -2881,6 +2893,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setAddressDetailText((custData as Customer).address_detail ?? '');
       setEmailText((custData as Customer).customer_email ?? '');
       setPassportText((custData as Customer).passport_number ?? '');
+      // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호 현재값 로드
+      setCertNoText((custData as Customer).insurance_cert_no ?? '');
       // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 현재값 로드
       setCustomerNoteText((custData as Customer).customer_note ?? '');
       setReferralNameText((custData as Customer).referral_name ?? '');
@@ -3314,6 +3328,32 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // 여권번호 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingPassport 제거)
   const savePassport = async () => {
     await saveCustomerField({ passport_number: passportText.trim() || null });
+  };
+
+  // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호(건강보험증 번호) 저장.
+  //   빈 값 저장 = null(선택 입력). 저장 후 customers.insurance_cert_no 에 귀속·persist.
+  //   마이그(insurance_cert_no 컬럼) 적용 전 window 방어: 컬럼 부재 에러는 스태프 친화 안내로 치환.
+  const saveCertNo = async () => {
+    if (!customer) return;
+    setSavingCertNo(true);
+    const value = certNoText.trim() || null;
+    const { error } = await supabase
+      .from('customers')
+      .update({ insurance_cert_no: value })
+      .eq('id', customer.id);
+    setSavingCertNo(false);
+    if (error) {
+      // 컬럼 미적용 window(PGRST204/42703): 저장 실패 대신 준비중 안내
+      if (/insurance_cert_no|PGRST204|42703|schema cache/i.test(error.message)) {
+        toast.warning('보험 증번호 저장 기능이 준비 중입니다. 잠시 후 다시 시도해 주세요.');
+      } else {
+        toast.error(`보험 증번호 저장 실패: ${error.message}`);
+      }
+      return;
+    }
+    setCustomer((prev) => (prev ? { ...prev, insurance_cert_no: value } : prev));
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    toast.success('보험 증번호가 저장되었습니다');
   };
 
   // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 저장 (010-XXXX-XXXX 유효성 검증)
@@ -5374,6 +5414,32 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           {nhis.error.message}
                         </span>
                       )}
+                      {/* T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호(건강보험증 번호) 전용 입력 칸.
+                          현재 고객메모 자유텍스트 workaround 대체. API 미연동 동안 수기 입력이 1차 경로,
+                          연동 착지 시 자격조회 payload(cert_no)가 자동 채움(위 useEffect 바인딩). 항상 수동 편집 가능. */}
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] text-gray-500 shrink-0">보험 증번호</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={certNoText}
+                          onChange={(e) => { setCertNoText(e.target.value); setIsDirty(true); }}
+                          placeholder="건강보험증 번호 (선택)"
+                          className="h-7 w-[150px] text-[11px] rounded border border-gray-300 px-1.5 focus:outline-none focus:border-sage-600"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { void saveCertNo(); }
+                            if (e.key === 'Escape') { setCertNoText(customer.insurance_cert_no ?? ''); }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { void saveCertNo(); }}
+                          disabled={savingCertNo}
+                          className="rounded bg-neutral-800 text-white text-[10px] px-2 py-1 hover:bg-neutral-900 transition shrink-0 disabled:opacity-60"
+                        >
+                          {savingCertNo ? '저장 중…' : '저장'}
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>

@@ -28,6 +28,13 @@ export interface NhisLookupResult {
   grade: InsuranceGrade;
   copayment_rate: number | null;
   effective_date: string | null;
+  /**
+   * T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD (연동 준비/scaffold):
+   * 건보 자격조회 API 착지 시 응답 payload에 실려 올 건강보험증 번호.
+   * 현재 API 미연동이라 항상 undefined — 착지 후 EF(nhis-lookup)가 채우면
+   * 2번차트 '보험 증번호' 필드에 자동 바인딩된다(수기 입력이 그 전까지 1차 경로).
+   */
+  cert_no?: string | null;
 }
 
 interface NhisErrorCode {
