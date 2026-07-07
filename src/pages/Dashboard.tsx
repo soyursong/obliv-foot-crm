@@ -4516,6 +4516,15 @@ export default function Dashboard() {
       fetchRooms();
     };
     let subscribedOnce = false;
+    // T-20260707-foot-DASH-DATENAV-TIMETABLE-NOSYNC (RC): 날짜 이동(◀/▶) 시 이 effect가
+    //   cleanup→re-run 되며 supabase.removeChannel(channel)이 구 채널을 닫는다. 그 unsubscribe가
+    //   .subscribe 상태콜백을 status='CLOSED'로 트리거하는데, 여기서 부르던 fullResync()는
+    //   "직전 dateStr(오늘)"에 바인딩된 stale 클로저다 → 오늘 데이터를 재조회해 방금 로드한
+    //   선택 날짜(어제/내일) 데이터를 setState로 덮어써 통합시간표가 '금일 고정'된다.
+    //   → 의도적 teardown(날짜변경/언마운트)임을 tornDown 플래그로 표시하고, teardown 유래
+    //     상태콜백에서는 fullResync를 건너뛴다. 실사용 중 소켓 끊김(CHANNEL_ERROR/TIMED_OUT/
+    //     비-teardown CLOSED)·재구독(SUBSCRIBED) catch-up 은 그대로 유지(회귀 없음).
+    let tornDown = false;
 
     const channel = supabase
       .channel(`dashboard_rt_${clinic.id}_${dateStr}`)
@@ -4589,6 +4598,9 @@ export default function Dashboard() {
       //   (재)구독 성공(SUBSCRIBED)마다 catch-up refetch로 유실분 보충.
       //   에러/타임아웃/종료 시에도 안전망 동기화(이후 소켓 재연결→SUBSCRIBED가 재보충).
       .subscribe((status) => {
+        // T-20260707-foot-DASH-DATENAV-TIMETABLE-NOSYNC: 의도적 teardown(날짜변경/언마운트)에서
+        //   발생하는 상태콜백은 stale-dateStr fullResync를 막기 위해 무시한다.
+        if (tornDown) return;
         if (status === 'SUBSCRIBED') {
           if (subscribedOnce) fullResync(); // 최초 구독은 타 effect가 이미 로드 → 재구독부터 보충
           subscribedOnce = true;
@@ -4619,6 +4631,9 @@ export default function Dashboard() {
     }, 30000);
 
     return () => {
+      // T-20260707-foot-DASH-DATENAV-TIMETABLE-NOSYNC: removeChannel(→CLOSED 콜백) 이전에 먼저
+      //   세워야 stale fullResync가 억제된다(선택 날짜 데이터 덮어쓰기 방지).
+      tornDown = true;
       if (checkInTimer) clearTimeout(checkInTimer);
       if (assignTimer) clearTimeout(assignTimer);
       if (resvTimer) clearTimeout(resvTimer);
