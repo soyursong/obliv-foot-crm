@@ -194,6 +194,12 @@ export interface BillingService {
   vat_type?: 'none' | 'exclusive' | 'inclusive' | string | null;
   is_insurance_covered?: boolean | null;
   category_label?: string | null;
+  /**
+   * HIRA 항목분류 enum(services.hira_category, insurance.ts HiraCategory) — 권위 소스이나
+   * 현재 라이브 미적재(전 항목 null, T-20260707-BILLDETAIL-CATEGORY diagnose 확인).
+   * 미래 적재 시 우선 사용하도록 optional 로 보유. 미적재 시 category_label 로 폴백.
+   */
+  hira_category?: string | null;
   price?: number;
 }
 
@@ -304,7 +310,7 @@ export async function loadFootBillingItems(
   const serviceIds = [...new Set(rows.map((r) => r.service_id))];
   const { data: svcData } = await supabase
     .from('services')
-    .select('id, name, service_code, hira_code, vat_type, is_insurance_covered, category_label, price')
+    .select('id, name, service_code, hira_code, hira_category, vat_type, is_insurance_covered, category_label, price')
     .in('id', serviceIds);
 
   const svcMap = new Map<string, BillingService>(
@@ -386,6 +392,47 @@ export async function loadEffectiveInsuranceGrade(
 }
 
 /**
+ * 진료비 세부산정내역서 category 열 = 서비스별 HIRA 항목분류 표시값.
+ *
+ * T-20260707-foot-BILLDETAIL-CATEGORY-HARDCODE:
+ *   기존 하드코드 `covered ? '이학요법료' : '기타'` 는 급여 전부를 '이학요법료',
+ *   비급여 전부를 '기타'로 뭉쳐 검사료/진찰료/치료 구분이 소실됐다. 서비스 종류별로
+ *   HIRA 항목분류(진찰료/검사료/이학요법료/처치및수술료/기타)를 구분 표시한다.
+ *
+ * 매핑 소스 우선순위(diagnose-first 확정, 2026-07-07 live 데이터 진단):
+ *   1) service.hira_category(enum) — 권위 소스. 단 현재 전 항목 null(미적재) → 미래 대비.
+ *   2) service.category_label — 실 청구 line-item 에 유일하게 신호가 있는 소스
+ *      (기본/검사/풋케어/수액/풋화장품/제증명). 이것으로 매핑.
+ *   3) 둘 다 불명(null/미지값) → 레거시 폴백(covered ? '이학요법료' : '기타') 로 무파괴.
+ *
+ * ⚠ 이 함수는 표시 category 열만 결정한다. 급여구분(is_insurance_covered)·본인/공단부담
+ *   (copayment_amount) split 은 별개 축(3d244c19)이라 미접촉 → 회귀 0.
+ *   문서-폼 그룹핑('제증명' 탭, DocumentPrintPanel groupDocList) 도 별개 축 → 미접촉.
+ */
+export function footBillDetailCategory(service: BillingService, covered: boolean): string {
+  // 1) HIRA enum(권위) 우선 — 미래 적재 대비
+  switch (service.hira_category) {
+    case 'consultation': return '진찰료';
+    case 'examination':  return '검사료';
+    case 'procedure':    return '처치및수술료';
+    case 'medication':   return '기타';
+    case 'document':     return '기타';
+    // 'prescription' 등은 코드항목(isCodeItem)이라 pricingItems 에 미포함 → 도달 안 함
+  }
+  // 2) category_label(서비스 유형) 매핑 — 라이브 유일 신호
+  switch (service.category_label) {
+    case '기본':     return '진찰료';       // 초진/재진 진찰료
+    case '검사':     return '검사료';       // KOH도말·일반진균검사·피검사
+    case '풋케어':   return '처치및수술료'; // 레이저 시술·프리컨디셔닝 등 치료
+    case '수액':     return '기타';         // 주사/수액
+    case '풋화장품': return '기타';         // 화장품
+    case '제증명':   return '기타';         // 제증명료(진단서·소견서 등)
+  }
+  // 3) 미지 category_label/(null) → 레거시 폴백(무파괴)
+  return covered ? '이학요법료' : '기타';
+}
+
+/**
  * bill_detail(진료비세부산정내역) items_html 입력행 빌드 — PMW L1480~1492 와 1:1 동일.
  *
  * T-20260609-foot-DOCFORM-3FIX 이슈1 [버그]: 본인부담금/공단부담금 per-item 컬럼 공란.
@@ -452,7 +499,9 @@ export function buildFootBillDetailItems(
   return pricingItems.map(({ service, qty, unitPrice }, idx) => {
     const covered = isCovered(pricingItems[idx]);
     return {
-      category: covered ? '이학요법료' : '기타',
+      // T-20260707-foot-BILLDETAIL-CATEGORY-HARDCODE: 서비스별 HIRA 항목분류 구분 표시
+      //   (기존 하드코드 covered?'이학요법료':'기타' → footBillDetailCategory 매핑으로 교체)
+      category: footBillDetailCategory(service, covered),
       date: visitDate,
       code: service.service_code ?? '',
       name: service.name,
