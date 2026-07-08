@@ -41,8 +41,8 @@
  *     status: string,
  *     source_system: string | null,    // null=워크인
  *     is_walkin: boolean,              // source_system IS NULL
- *     external_id: string | null,      // 도파민 cue_card.id (동행: '{cue_card}#companion-N' composite)
- *     is_companion: boolean,           // 동행 예약 여부 (customer_id NULL & 외부유입, 또는 external_id '#companion-')
+ *     external_id: string | null,      // 도파민 cue_card.id (동행: '{cueCardId}_comp_{nameKey}' composite)
+ *     is_companion: boolean,           // 동행 예약 여부 (external_id comp 패턴 '_comp_'/'#companion-' 결정적 파생, §444 — customer_id NULL 휴리스틱 미사용)
  *     visit_type: string | null,       // 'new' | 'returning'
  *     memo: string | null,
  *     clinic_id: string,
@@ -337,20 +337,22 @@ Deno.serve(async (req) => {
       const customer   = row['customers']  as Record<string, unknown> | null;
       const clinicJoin = row['clinics']    as Record<string, unknown> | null;
       const srcSystem  = row['source_system'] ?? null;
-      const custId     = row['customer_id'] ?? null;
       const extId      = typeof row['external_id'] === 'string' ? (row['external_id'] as string) : null;
       const realName   = typeof row['customer_real_name'] === 'string'
         ? (row['customer_real_name'] as string).trim()
         : '';
 
-      // ── 동행(companion) 판정 (T-20260630-dopamine-FOOT-COMPANION-RESV-SAVE-FAIL, read-half) ──
-      //   write 계약(§444/§52): 동행 → customer_id NULL 강제 + customer_real_name(동행명) 착지 + source_system='dopamine'.
-      //   1차(권위) 판정: 외부유입(source_system NOT NULL) 행인데 링크된 customer_id 가 NULL → 동행.
-      //     (워크인 source_system NULL + customer_id NULL 은 is_walkin 이지 동행 아님 → 제외)
-      //   2차(보강) 판정: external_id 가 composite 동행키 '#companion-' 패턴.
+      // ── 동행(companion) 판정 (T-20260708-foot-COMPANION-READAPI-MIRROR-DISPLAY / 부모 SAVE-FAIL AC-1, read-half) ──
+      //   §444: discriminator = 결정적 파생 only. ★customer_id=NULL 휴리스틱 금지
+      //     (prod 126건 legacy customer_id=NULL 비동행 행을 동행으로 오분류 = whack-a-mole 안티패턴, AC-4).
+      //   결정적 파생 = composite 동행 external_id 패턴:
+      //     · dopamine write 계약(e9f97d8) 실 델리미터 = `{cueCardId}_comp_{nameKey}` → '_comp_' (권위).
+      //     · 설계문서(§441-447) 변형 = `{cueCard}#companion-N` → '#companion-' 도 수용(향후 통일 대비).
+      //   foot ingest 는 external_id 를 opaque TEXT 로 저장 → dopamine 원본 델리미터 그대로 파생 가능.
+      //   customer_id=NULL / 외부유입(source_system) 단독은 판정에 쓰지 않음 → legacy NULL 무오인.
+      //   (소비자=도파민 캘린더 미러 CONSULT MSG-20260708-153459-2k4l Q3 합의안으로 shape lock.)
       const isCompanion =
-        (srcSystem !== null && custId === null) ||
-        (extId !== null && extId.includes('#companion-'));
+        extId !== null && (extId.includes('_comp_') || extId.includes('#companion-'));
 
       // ── customer 표시 블록 ─────────────────────────────────────────────
       //   (1) 진성 링크 customer 행 → 기존 로직 100% 불변.
