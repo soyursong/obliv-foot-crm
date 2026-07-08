@@ -35,11 +35,20 @@
  *   AC-3: 화이트 = 상용구 전담 — boilerplate placedItem hit-test 삭제만. 배경 양식(bgCanvas)은 destination-out으로 보존.
  *         (지우개↔화이트 대상 레이어 분리: 텍스트는 지우개, 상용구는 화이트.)  ※SUPERSEDED ↓ (WHITETOOL-PHRASE-DELETE)
  *
- * T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (P1) — 위 화이트=상용구 '삭제'를 '화이트아웃'으로 재정의:
+ * T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (P1) — 위 화이트=상용구 '삭제'를 '화이트아웃'으로 재정의:  ※SUPERSEDED ↓ (REGRESSION-3FIX 재정의 AC-3a)
  *   [RC] 화이트로 상용구 위를 칠하면 상용구 placedItem 이 통삭제되어 데이터 소실(현장 김주연 총괄). 화이트=덮기(화이트아웃)이지 삭제가 아님.
  *   AC-1/AC-3: 화이트 획은 placedItem 을 삭제/선택하지 않는다 — 획 경로만 세션 누적(whiteStrokesAllRef).
  *   AC-2: 저장 시 상용구/텍스트 rasterize '후' 누적 화이트 획을 destination-out 재적용 → 저장본에서 화이트아웃이 상용구 위에 덮임(오브젝트 보존).
  *   AC-4(회귀): 다른 툴(선택/삭제) 동선 불변 — pathHitsItem 은 지우개(텍스트) 브랜치에서만 계속 사용.
+ *
+ * T-20260708-foot-PENCHART-REGRESSION-3FIX (P1) — 재정의 AC-3a: 화이트 = '상용구 블록 삭제'(reporter-driven 재구현):
+ *   [현장 원문] 김주연 총괄 "상용구 불러오기 하면 지우개로는 못 지우잖아 그걸 지워주는게 화이트임".
+ *   지우개 = 필기 획(handwriting stroke)만 지움 — 상용구 블록은 못 지움. 화이트 = 상용구 블록을 지울 수 있음.
+ *   AC-3a: 화이트 획이 상용구 블록(type==='boilerplate' placedItem) hit-test 히트 → 해당 placedItem 제거(캔버스 삭제).
+ *          필기 획/빈 영역 위 화이트는 기존대로 흰 덧칠(source-atop) 세션 누적 → 저장본 재적용(병존).
+ *   AC-3b: 상용구 블록 선택 후 핸들 delete 버튼 삭제 — 화이트 삭제 경로와 병존(두 삭제 경로 공존).
+ *   AC-3c(AC-FORM-SAFE): bgCanvas(양식 서식) 보호 — 화이트로 상용구 삭제 시에도 placedItems 배열만 변경(bgCanvas 미관여).
+ *   AC-3d(AC-LAYER-SEPARATE): form template 레이어 read-only 유지.
  *   AC-1: 저장 차트 '수정' 버튼 — editingChart 배경 재오픈 + 동일 path upsert(신규행 0) + form_submissions 재insert 스킵.
  *   AC-4: 펜차트 양식 우상단 '담당실장'→'담당자' 라벨 오버라이드(drawPenChartLabelOverride).
  *   AC-4: 텍스트 — 저장 후 이동·삭제 (PlacedItemOverlay 기존 구현)
@@ -415,8 +424,8 @@ const HIGHLIGHT_COLORS = [
 ];
 
 // T-20260522-foot-PENCHART-TOOLS-V3: 도구 모드 통합 타입
-// white: 상용구 지우개 — destination-out 으로 draw 레이어 투명화 + placedItems(상용구) hit-test 삭제.
-//   배경 양식(bgCanvas)은 보존(T-20260622 AC-3). ※구 주석 "source-over white fill, bg 덮음"은 stale(실코드는 destination-out).
+// white: 상용구 블록 삭제 도구(REGRESSION-3FIX 재정의 AC-3a) — 화이트 획이 지나간 boilerplate placedItem 을 hit-test 삭제.
+//   필기 획/빈 영역 위 화이트는 흰 덧칠(source-atop)로 세션 누적 → 저장본 재적용(병존). 배경 양식(bgCanvas)은 미관여(보존).
 // boilerplate-placing: 상용구 삽입 대기 (캔버스 클릭 시 상용구 배치)
 // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select — 선택/이동 모드.
 //   이 모드에서만 placedItem 오버레이가 interactive(pointerEvents auto) → 드래그·선택·삭제.
@@ -2421,14 +2430,27 @@ export function PenChartTab({
       );
     };
 
-    // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: white 도구 획 종료 — '삭제' 제거, '누적'으로 전환.
-    //   [구 동작=RC] 종전엔 여기서 화이트 획이 지나간 boilerplate placedItem 을 filter 로 통삭제했다
-    //   (T-20260622 AC-3). 현장 보고: 화이트로 상용구 위를 칠하면 상용구가 canvas 에서 사라지는 데이터 소실.
-    //   [수정] AC-1/AC-3 — 삭제/선택 진입 없이 화이트 획 경로만 세션 누적. 저장 시(handleDrawSave) 상용구
-    //   rasterize '후' destination-out 재적용으로 화이트아웃(덮기)만 반영, 오브젝트 데이터는 보존.
+    // T-20260708-foot-PENCHART-REGRESSION-3FIX(재정의 AC-3a): 화이트 = '상용구 블록 삭제' 재구현.
+    //   [현장 원문] 김주연 총괄 "상용구 불러오기 하면 지우개로는 못 지우잖아 그걸 지워주는게 화이트임".
+    //   지우개=필기 획만 지움(상용구 블록 못 지움). 화이트=상용구 블록(boilerplate placedItem)을 지울 수 있음.
+    //   [이력] 구 AC-3a(T-20260706 336e81c9)는 화이트=화이트아웃(source-atop 덮기)이라 상용구를 '삭제 안 함'
+    //     이었다 → reporter-driven 재정의로 SUPERSEDED. 원 T-20260622 AC-3(화이트=상용구 hit-test 삭제)에
+    //     회귀하되, '필기 획 위 화이트 덧칠'(source-atop 세션 누적)은 병존 유지.
+    //   [구현 분기] 화이트 획 경로 hit-test →
+    //     (i) 상용구 블록(type==='boilerplate') 히트 → 해당 placedItem 제거(캔버스에서 삭제).
+    //     (ii) 필기 획/빈 영역 → 흰 덧칠(source-atop) 세션 누적 → handleDrawSave 에서 저장본 재적용.
+    //   AC-3b(핸들 delete 버튼 삭제)와 병존(두 삭제 경로 공존). AC-3c: bgCanvas(양식 서식)는 미관여(placedItems
+    //     배열만 변경) → 양식 서식 불변. AC-3d: form template 레이어 read-only 유지.
     if (activeTool === 'white' && whiteStrokePathRef.current.length > 0) {
+      const wsz = penSize * 4; // 화이트 획 시각 굵기(penSize*8)의 절반 = hit-test 반경(지우개 esz와 동일 규약)
+      const wpath = whiteStrokePathRef.current;
+      // (i) 상용구 블록 삭제 — 화이트 획이 지나간 boilerplate placedItem 제거
+      setPlacedItems((prev) => prev.filter((item) =>
+        !(item.type === 'boilerplate' && pathHitsItem(wpath, item, wsz))
+      ));
+      // (ii) 필기 획 위 화이트 덧칠 — 저장본 source-atop 재적용용 세션 누적(handleDrawSave)
       whiteStrokesAllRef.current.push({
-        path: whiteStrokePathRef.current,
+        path: wpath,
         lineWidth: penSize * 8, // native move 시각 stroke 굵기(L1207)와 동일 → 저장 재적용 폭 일치
       });
       whiteStrokePathRef.current = [];
@@ -3137,7 +3159,7 @@ export function PenChartTab({
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
-          {/* 화이트 — 초기 굵기 3. T-20260708-REGRESSION-3FIX: 흰 덧칠(source-atop) — 필기/상용구 위에만 하얗게 덮고 양식 서식(bgCanvas)은 불변. 지우개(투명화)와 구분. */}
+          {/* 화이트 — 초기 굵기 3. T-20260708-REGRESSION-3FIX 재정의 AC-3a: 화이트=상용구 블록 삭제(획이 지나간 boilerplate placedItem 제거). 필기 획 위엔 흰 덧칠(source-atop) 병존. 지우개는 상용구 못 지움. */}
           <button
             onClick={() => switchTool(isWhite ? 'pen' : 'white')}
             className={cn(
