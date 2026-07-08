@@ -1628,7 +1628,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
             {checkIn.customer_phone && (
               <>
-                <span className="flex items-center gap-1">
+                {/* T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 접수 패널 연락처(고객정보 저장 시 denorm 동기화로 즉시 갱신) */}
+                <span className="flex items-center gap-1" data-testid="checkin-detail-phone">
                   <Phone className="h-3.5 w-3.5" />
                   {formatPhone(checkIn.customer_phone)}
                 </span>

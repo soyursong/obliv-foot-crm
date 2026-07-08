@@ -4666,6 +4666,34 @@ export default function Dashboard() {
     return unsub;
   }, [clinic, fetchCheckIns, fetchSelfCheckIns, fetchStageStarts, fetchAssignments, fetchTimelineReservations, fetchRooms]);
 
+  // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 열려있는 접수 패널(CheckInDetailSheet=selectedCheckIn)의
+  //   denorm 표기를 refetch된 rows 와 동기화 (F5 불요). 고객정보(2번차트)에서 연락처/성함 저장 →
+  //   check_ins.customer_phone denorm 갱신 → fetchCheckIns 로 rows 현재화 → 이 effect 가 selectedCheckIn 의
+  //   customer_phone/customer_name 을 신값으로 맞춰 접수 패널이 즉시 갱신되고, verifyChartLinkOrConfirm 가드의
+  //   expectedPhone(=selectedCheckIn.customer_phone)도 차트와 일치 → 오탐 제거.
+  //   ⚠ 식별 denorm(phone/name/customer_id)이 실제로 바뀐 경우에만 새 객체로 교체 → 불필요한
+  //     load() 재실행/메모 리셋 회피. status 등 그 외 필드는 기존 카드 플로우가 담당(무영향).
+  useEffect(() => {
+    setSelectedCheckIn((prev) => {
+      if (!prev) return prev;
+      const fresh = rows.find((r) => r.id === prev.id);
+      if (!fresh) return prev;
+      if (
+        fresh.customer_phone === prev.customer_phone &&
+        fresh.customer_name === prev.customer_name &&
+        fresh.customer_id === prev.customer_id
+      ) {
+        return prev; // 식별 denorm 무변경 → 객체 유지(load 재실행 방지)
+      }
+      return {
+        ...prev,
+        customer_phone: fresh.customer_phone,
+        customer_name: fresh.customer_name,
+        customer_id: fresh.customer_id,
+      };
+    });
+  }, [rows]);
+
   // T-20260522-foot-LASER-TIMER AC-5: timer_records Realtime 구독 + 초기 로드
   useEffect(() => {
     if (!clinic) return;

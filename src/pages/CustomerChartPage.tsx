@@ -31,6 +31,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AmountInput } from '@/components/ui/AmountInput';
 import { toast } from '@/lib/toast';
+// T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
+import { normalizeToE164 } from '@/lib/phone';
+import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -3317,6 +3320,31 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
+  // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
+  //   RC: customers.phone 만 갱신되고 check_ins/reservations 의 denormalized customer_phone(카드 표기·
+  //       verifyChartLinkOrConfirm 가드의 expectedPhone 소스)은 저장 시점 스냅샷 그대로 남아,
+  //       ① 우측 접수 패널(CheckInDetailSheet=checkIn.customer_phone prop)이 구번호로 stale,
+  //       ② phone↔차트 정합 가드가 "카드(구 denorm) vs 차트(신 customers.phone)" 불일치로 오탐(false-positive).
+  //   FIX: 저장 트랜잭션 직후 이 고객의 denorm customer_phone 을 신번호로 동기화한다.
+  //        - 저장 포맷은 생성 경로(NewCheckInDialog/예약등록)와 동일하게 E.164 정규화 → 포맷 드리프트 0.
+  //        - 가드 로직은 무변경(보존). denorm 을 "현재 customers.phone" 과 일치시켜 오탐만 제거 —
+  //          실제 카드≠차트(다른 고객) 케이스는 customer_id 가 달라 이 UPDATE 대상이 아니므로 가드 정상 유지(AC4).
+  //        - requestRefresh(): same-tab 새로고침 버스 → Dashboard fullResync(fetchCheckIns) → 접수 패널 즉시 갱신(F5 불요).
+  const syncCheckinDenormPhone = useCallback(async (normalizedDisplayPhone: string) => {
+    if (!customer) return;
+    const e164 = normalizeToE164(normalizedDisplayPhone) ?? normalizedDisplayPhone;
+    // 이 고객에게 귀속된 접수/예약 카드의 denorm 만 갱신 (customer_id 매칭 → 타 고객 무영향, 가드 무력화 없음)
+    const [ciRes, resvRes] = await Promise.all([
+      supabase.from('check_ins').update({ customer_phone: e164 }).eq('customer_id', customer.id),
+      supabase.from('reservations').update({ customer_phone: e164 }).eq('customer_id', customer.id),
+    ]);
+    if (ciRes.error) console.error('[PHONE-EDIT-PANEL-NOSYNC] check_ins denorm 동기화 실패:', ciRes.error.message);
+    if (resvRes.error) console.error('[PHONE-EDIT-PANEL-NOSYNC] reservations denorm 동기화 실패:', resvRes.error.message);
+    // same-tab 접수 패널 즉시 반영 + cross-tab ping
+    requestRefresh();
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+  }, [customer]);
+
   // 이메일 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail 제거)
   const saveEmail = async () => {
     await saveCustomerField({ customer_email: emailText.trim() || null });
@@ -3366,6 +3394,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
     const normalized = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
     await saveCustomerField({ phone: normalized });
+    // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: denorm(check_ins/reservations.customer_phone) 동기화 → 접수 패널 stale·가드 오탐 해소
+    await syncCheckinDenormPhone(normalized);
     setEditingPhone(false);
   };
 
@@ -3657,6 +3687,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
           // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 고객메모 통합저장 → 1번차트 쌍방연동(AC-8) ping 보존(구 saveCustomerNote 동작).
           localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+          // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 통합저장 경로에서도 연락처 변경 시 denorm 동기화 → 접수 패널 stale·가드 오탐 해소
+          if (patch.phone) await syncCheckinDenormPhone(patch.phone);
         }
       }
       // 3) address 독립 저장 — 실패해도 다른 필드 저장 결과에 영향 없음 (T-20260516-foot-C21-SAVE-REGRESS)
