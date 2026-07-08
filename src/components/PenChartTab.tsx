@@ -2227,6 +2227,15 @@ export function PenChartTab({
       //     기존대로 오버레이 passthrough(상용구 위 직접 필기) 유지 — placing UX(원하는 위치 탭 배치)는 불변.
       setActiveTool('select');
       setSelectedIds(new Set([newItem.id]));
+      // T-20260708-foot-PENCHART-TOOLBAR-REGRESSION R-1: 배치 직후 상용구 패널 닫기.
+      //   [회귀 RC] 3FIX가 이 분기를 switchTool('pen')(패널 닫음) → setActiveTool('select')로 바꾸며
+      //     setShowPhrasePanel(false)가 빠졌다 → 배치 후 패널이 열린 채 유지. A-5가 패널을 z-50(오버레이
+      //     핸들 z30~32 위)으로 올렸기에, 방금 놓은 상용구가 패널 영역과 겹치면 이동/삭제/크기 핸들이
+      //     패널 뒤에 가려 "선택 시 컨트롤 전부 사라짐"(현장 R-1) + 삭제 X 핸들도 가려 "상용구 삭제 불가".
+      //   [수정] 배치 직후 패널을 닫아(A-6 원 설계 = 배치 후 패널 닫힘, 다음 삽입은 상용구 버튼 재오픈)
+      //     select 도구+자동선택 핸들이 패널에 가리지 않고 온전히 노출된다. A-5 z-50(패널이 열려 브라우징
+      //     중일 때 오버레이 위로)과 A-6 탭배치(원하는 위치 삽입)는 불변 — 재회귀 없음.
+      setShowPhrasePanel(false);
     } else {
       // ✓ 즉시삽입(#2): 캔버스 탭 단계 없이 commit. select 도구로 전환 + 자동 선택 →
       //   오버레이가 즉시 interactive(드래그 가능) + "1개 선택됨" 노출로 "삽입됐다"는 피드백 가시화.
