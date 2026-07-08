@@ -2078,6 +2078,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 variant="outline"
                 size="sm"
                 className="w-full gap-1"
+                // T-20260708-foot-CHART1-PAY-MINIWINDOW-IDNAME AC1: 1번차트 결제 진입점(→ 미니창 라우팅) E2E 훅
+                data-testid="btn-chart1-payment-register"
                 onClick={() => onPayment(checkIn)}
               >
                 <CreditCard className="h-3.5 w-3.5" /> 결제 등록

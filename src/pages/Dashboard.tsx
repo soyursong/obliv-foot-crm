@@ -7678,10 +7678,14 @@ export default function Dashboard() {
             if (fresh) setSelectedCheckIn(fresh);
           }
         }}
-        onPayment={(ci, initialMode) => {
+        onPayment={(ci) => {
+          // T-20260708-foot-CHART1-PAY-MINIWINDOW-IDNAME AC1: 1번차트 [결제 등록/결제하기]를
+          //   기존 대형 PaymentDialog 팝업 대신 旣존 PaymentMiniWindow(컴팩트 결제 미니창)로 라우팅.
+          //   결제 데이터·항목별 입력(payment_items)·저장 경로는 미니창 기존 것 재사용(로직 무변경).
+          //   패키지도 미니창 내부 탭/수단('패키지')으로 처리되므로 initialMode 전달 불요 —
+          //   상담 단계 패키지 CTA(onPayment(ci,'package')) 두번째 인자는 안전하게 무시.
           setSelectedCheckIn(null);
-          setPaymentInitialMode(initialMode ?? 'single');
-          setPaymentTarget(ci);
+          setMiniPayTarget(ci);
         }}
         onOpenMedicalChart={(customerId) => {
           setSelectedCheckIn(null);

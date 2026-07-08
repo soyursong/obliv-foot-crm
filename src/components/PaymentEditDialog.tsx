@@ -434,10 +434,17 @@ interface PaymentAuditLogsPanelProps {
   autoLoad?: boolean;
 }
 
+// T-20260708-foot-CHART1-PAY-MINIWINDOW-IDNAME AC3/AC4:
+//   결제 금액 수정 이력의 등록자(actor)는 로그인 계정 email/id로 저장된다.
+//   display-only로 사람 이름(user_profiles.name)으로 해소 — 스키마 무변경(AC5).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsPanelProps) {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
+  // actor(계정 email/id) → 사람 이름(표시명) 매핑. 무매칭은 raw actor로 graceful fallback.
+  const [actorNames, setActorNames] = useState<Record<string, string>>({});
 
   const load = async () => {
     const { data } = await supabase
@@ -445,7 +452,36 @@ export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsP
       .select('id, action, before_data, after_data, actor, reason, created_at')
       .eq('payment_id', paymentId)
       .order('created_at', { ascending: false });
-    setLogs((data ?? []) as AuditLog[]);
+    const rows = (data ?? []) as AuditLog[];
+    setLogs(rows);
+
+    // AC3: actor(계정 email/id) → 사람 이름(표시명) 해소. AC4: 무매칭 시 기존 값 유지(graceful).
+    const actors = Array.from(new Set(rows.map((r) => r.actor).filter((a): a is string => !!a)));
+    const emails = actors.filter((a) => a.includes('@'));
+    const ids = actors.filter((a) => UUID_RE.test(a));
+    if (emails.length || ids.length) {
+      const nameMap: Record<string, string> = {};
+      if (emails.length) {
+        const { data: pe } = await supabase
+          .from('user_profiles')
+          .select('email, name')
+          .in('email', emails);
+        ((pe as { email: string | null; name: string | null }[] | null) ?? []).forEach((p) => {
+          if (p.email && p.name) nameMap[p.email] = p.name;
+        });
+      }
+      if (ids.length) {
+        const { data: pi } = await supabase
+          .from('user_profiles')
+          .select('id, name')
+          .in('id', ids);
+        ((pi as { id: string; name: string | null }[] | null) ?? []).forEach((p) => {
+          if (p.id && p.name) nameMap[p.id] = p.name;
+        });
+      }
+      setActorNames(nameMap);
+    }
+
     setLoaded(true);
     setOpen(true);
   };
@@ -509,7 +545,8 @@ export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsP
                 {formatDateTimeDots(log.created_at)}
               </span>
               {log.actor && (
-                <span className="text-muted-foreground">— {log.actor}</span>
+                // AC3: 계정 email/id → 사람 이름(표시명). AC4: 무매칭이면 raw actor로 graceful fallback.
+                <span className="text-muted-foreground">— {actorNames[log.actor] ?? log.actor}</span>
               )}
             </div>
             {log.action === 'edit' && log.before_data && log.after_data && (
