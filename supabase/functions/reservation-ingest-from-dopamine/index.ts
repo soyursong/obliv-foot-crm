@@ -422,7 +422,19 @@ Deno.serve(async (req) => {
       //   예약메모(rmh)만 멱등 upsert(편집 재push 로 수정된 메모 timeline 반영). 빈값=내부 no-op.
       if (!isCancelRequest && !isReschedule) {
         await syncReservationMemoToTimeline(admin, existing.id as string, clinicId, memo, sourceSystem ?? 'dopamine');
-        console.log(`[reservation-ingest] duplicate (idempotent no-op) external_id ${externalId} → existing ${existing.id}`);
+        // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모도 순수 재push 에서 멱등 반영.
+        //   문제성발톱을 기존 예약(시간 무변경)에 뒤늦게 추가/변경 → 이 duplicate 분기로 유입되므로
+        //   brief_note 를 놓치면 4번이 이 경로에서 재발. COALESCE-보존(non-empty만 UPDATE, 빈값=기존 보존)
+        //   = RPC ON CONFLICT 라인과 동일 semantics · idempotent-no-op 계약 유지(빈값/동일값 무영향).
+        if (briefNote && briefNote.trim() !== '') {
+          const bn = briefNote.trim();
+          const { error: bnErr } = await admin
+            .from('reservations')
+            .update({ brief_note: bn })
+            .eq('id', existing.id as string);
+          if (bnErr) console.error(`[reservation-ingest] brief_note update failed rid=${existing.id}: ${bnErr.message}`);
+        }
+        console.log(`[reservation-ingest] duplicate (idempotent no-op) external_id ${externalId} → existing ${existing.id} brief_note=${(briefNote ?? '').trim() || '-'}`);
         return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
       }
 

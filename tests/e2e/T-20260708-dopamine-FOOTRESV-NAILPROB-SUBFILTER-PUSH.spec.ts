@@ -113,4 +113,18 @@ test.describe('T-20260708 FOOTRESV-NAILPROB-SUBFILTER-PUSH — 문제성발톱 b
     resv = await resvRow(sb);
     expect(resv!.brief_note).toBe('내성발톱');   // 빈값=기존 보존(no-op)
   });
+
+  test('S4 순수 재push(시간 무변경) brief_note 뒤늦은 추가 → duplicate 분기에서도 반영', async () => {
+    // 1) brief_note 없이 신규 예약
+    await pushViaEF(null);
+    const sb = admin();
+    let resv = await resvRow(sb);
+    expect(resv!.brief_note == null || resv!.brief_note === '').toBeTruthy();
+    // 2) 동일 시간 재push + 문제성발톱 뒤늦게 추가(취소·리스케줄 아님 = duplicate 분기)
+    const r = await pushViaEF('발톱무좀');   // 기본 scheduledAt 동일
+    expect(r.status).toBe(200);
+    expect(r.body.reason).toBe('duplicate');   // guard#2 멱등 유지
+    resv = await resvRow(sb);
+    expect(resv!.brief_note).toBe('발톱무좀');   // ★ duplicate 분기도 brief_note 반영(4번 재발 차단)
+  });
 });
