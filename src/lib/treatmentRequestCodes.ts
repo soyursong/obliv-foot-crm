@@ -65,6 +65,25 @@ export const TREATMENT_REQUEST_ITEMS: readonly TreatmentRequestItem[] = [
 ] as const;
 
 /**
+ * ── 렌더 그룹 분리(T-20260708-foot-TREATREQ-EXAMONLY-APPLYLIST-SCHEMAFIX) ──
+ *   reporter(김주연 총괄) 정정 = 순수 FE 렌더-라우팅. request_axis 판별자를 소비만 하며 데이터 계약 불변.
+ *
+ *   · APPLY_LIST_ITEMS (신청리스트로 넘어가는 '신청') = exam 축(피검사·KOH균검사).
+ *       체크 = request_*_for_customer RPC → 既존 리스트업 연동. 동시 다중선택(multiselect) 가능.
+ *   · TREATMENT_CONTENT_ITEMS (고객 치료내용 표기) = treatment 축(무좀·내성·각질).
+ *       '신청' 아님 → 신청리스트 미반영. 단 초진 선택/기록·재진 package_derived 자동표기는
+ *       chart_treatment_requests 저장으로 유지(초진 자동배정 필터 입력원 = SPLIT AC-5 회귀 금지).
+ *
+ *   ⚠ 두 배열은 TREATMENT_REQUEST_ITEMS(SSOT)를 axis 로 분리한 파생 뷰다 —
+ *      순서·라벨·codes·existingEntity 는 SSOT 그대로(RELABEL 순서/라벨 회귀 0). 새 코드 정의 금지.
+ */
+export const APPLY_LIST_ITEMS: readonly TreatmentRequestItem[] =
+  TREATMENT_REQUEST_ITEMS.filter((i) => i.axis === 'exam');
+
+export const TREATMENT_CONTENT_ITEMS: readonly TreatmentRequestItem[] =
+  TREATMENT_REQUEST_ITEMS.filter((i) => i.axis === 'treatment');
+
+/**
  * 배정 필터(AC-5)에 참여하는 치료유형 코드 = axis='treatment' 항목의 codes 합집합.
  *   THERAPIST-SKILL capability(session_type 어휘)와 join. = {podologue, ribbon, preconditioning, unheated_laser}.
  */

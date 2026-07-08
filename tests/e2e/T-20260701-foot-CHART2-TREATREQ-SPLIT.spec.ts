@@ -95,8 +95,12 @@ test.describe('AC-1 — [치료부위]/[치료신청] 2박스 병렬 분리', ()
 
 // ── AC-2 5항목 체크박스 + chart_treatment_requests 저장 ─────────────────────────
 test.describe('AC-2 — 5항목 체크박스 + chart_treatment_requests 저장', () => {
-  test('치료신청 박스가 5항목 전부를 체크박스로 렌더(TREATMENT_REQUEST_ITEMS map)', () => {
-    expect(BOX_C).toMatch(/TREATMENT_REQUEST_ITEMS\.map/);
+  test('5항목 전부를 체크박스로 렌더 — SSOT 파생 2그룹(신청 exam 2 + 치료내용 treatment 3)', () => {
+    // T-20260708 co-reconcile: SPLIT '5항목 일괄 신청' 단일 map 프레이밍 policy_superseded.
+    //   신청(APPLY_LIST_ITEMS=피검사·KOH) / 치료내용(TREATMENT_CONTENT_ITEMS=무좀·내성·각질) 2그룹으로 렌더.
+    //   합집합 = SSOT 5항목 그대로(누락 0).
+    expect(BOX_C).toMatch(/APPLY_LIST_ITEMS\.map/);
+    expect(BOX_C).toMatch(/TREATMENT_CONTENT_ITEMS\.map/);
     expect(BOX_C).toContain('data-testid="pkg-tab-treatreq-section"');
     expect(BOX_C).toContain('treatreq-item-');
   });
@@ -236,10 +240,12 @@ test.describe('AC-8 — 치료신청 박스 방문유형 무관 무조건 렌더
     expect(BOX_C).toMatch(/return \([\s\S]*?data-testid="pkg-tab-treatreq-section"/);
   });
 
-  test('5항목 렌더가 방문유형으로 필터되지 않음 — TREATMENT_REQUEST_ITEMS.map 무조건', () => {
+  test('5항목 렌더가 방문유형으로 필터되지 않음 — 2그룹 map 무조건(visit 필터 없음)', () => {
     // map 앞단에 visit 기반 .filter 가 끼면 재진에서 항목이 사라질 수 있음 → 금지.
-    expect(BOX_C).toMatch(/TREATMENT_REQUEST_ITEMS\.map/);
-    expect(BOX_C).not.toMatch(/TREATMENT_REQUEST_ITEMS[\s\S]{0,60}\.filter\([^)]*visit/i);
+    // T-20260708 co-reconcile: 그룹 분리는 axis 파생(고정)이지 visit 게이트가 아님.
+    expect(BOX_C).toMatch(/APPLY_LIST_ITEMS\.map/);
+    expect(BOX_C).toMatch(/TREATMENT_CONTENT_ITEMS\.map/);
+    expect(BOX_C).not.toMatch(/\.filter\([^)]*visit/i);
   });
 
   test('AC-3/AC-5 불변 — 방문유형 분기는 값 채우기(package_derived)·배정 필터에만 잔존', () => {

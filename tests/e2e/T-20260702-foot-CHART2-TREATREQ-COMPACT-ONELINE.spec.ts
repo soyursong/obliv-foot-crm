@@ -42,9 +42,12 @@ test.describe('AC-1 — 5항목 체크박스 세로 스택(1항목/행)', () => 
     expect(CONTAINER_CLASS).not.toMatch(/grid grid-cols/);
   });
 
-  test('항목 순서·구성 회귀0 — 여전히 TREATMENT_REQUEST_ITEMS 무조건 map(방문유형 필터 없음)', () => {
-    expect(BOX_C).toMatch(/TREATMENT_REQUEST_ITEMS\.map/);
-    expect(BOX_C).not.toMatch(/TREATMENT_REQUEST_ITEMS[\s\S]{0,60}\.filter\(/);
+  test('항목 순서·구성 회귀0 — SSOT 파생 그룹 무조건 map(방문유형 필터 없음)', () => {
+    // T-20260708 co-reconcile: 단일 map → 신청/치료내용 2그룹 map(APPLY_LIST_ITEMS / TREATMENT_CONTENT_ITEMS).
+    //   두 배열은 SSOT(TREATMENT_REQUEST_ITEMS)의 axis 파생 뷰 → 순서·구성 진실 유지.
+    expect(BOX_C).toMatch(/APPLY_LIST_ITEMS\.map/);
+    expect(BOX_C).toMatch(/TREATMENT_CONTENT_ITEMS\.map/);
+    expect(BOX_C).not.toMatch(/\.filter\([^)]*visit/i);
   });
 
   test('각 항목 버튼이 행 전체 폭(w-full) 차지 — 한 줄에 하나씩', () => {
@@ -60,7 +63,8 @@ test.describe('AC-2 — 여백 컴팩트(불필요한 빈 공간 제거)', () =>
   });
 
   test('박스 안쪽 패딩 컴팩트(p-2) + 항목 세로 패딩 축소(py-1.5, min-h 하향)', () => {
-    expect(BOX_C).toMatch(/p-2"[\s\S]{0,40}data-testid="pkg-tab-treatreq-section"/);
+    // T-20260708 co-reconcile: p-2 안쪽 패딩은 각 섹션 카드(신청/치료내용)로 이동. 신청 섹션 카드로 확인.
+    expect(BOX_C).toMatch(/p-2"[\s\S]{0,40}data-testid="treatreq-apply-section"/);
     expect(BOX_C).toMatch(/px-2\.5 py-1\.5/);
     expect(BOX_C).toMatch(/min-h-\[36px\]/);
     // 넓은 py-2.5 / min-h-44 잔존 금지

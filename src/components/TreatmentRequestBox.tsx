@@ -21,7 +21,8 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
 import { Loader2, Check, ClipboardList } from 'lucide-react';
 import {
-  TREATMENT_REQUEST_ITEMS,
+  APPLY_LIST_ITEMS,
+  TREATMENT_CONTENT_ITEMS,
   type TreatmentRequestItem,
 } from '@/lib/treatmentRequestCodes';
 
@@ -233,58 +234,85 @@ export default function TreatmentRequestBox({
     }
   };
 
+  // 한 항목(체크박스/표기 버튼) 렌더 — 신청·치료내용 두 섹션 공용.
+  //   COMPACT-ONELINE 계약 유지: 1항목/행 세로 스택 + 컴팩트 여백(px-2.5 py-1.5 min-h-[36px] text-[13px]).
+  const renderItem = (item: TreatmentRequestItem) => {
+    const checked = isChecked(item);
+    const derived = isDerived(item);
+    return (
+      <button
+        key={item.key}
+        type="button"
+        disabled={!canEdit || busy}
+        onClick={() => onToggle(item)}
+        data-testid={`treatreq-item-${item.key}`}
+        data-checked={checked}
+        data-axis={item.axis}
+        aria-pressed={checked}
+        className={[
+          'flex w-full items-center justify-between gap-1.5 rounded-md border px-2.5 py-1.5 text-left transition',
+          'min-h-[36px] text-[13px] font-medium', // 컴팩트 세로 스택(1항목/행) — 태블릿 터치 유지
+          checked
+            ? 'border-teal-400 bg-teal-50 text-teal-800'
+            : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50',
+          !canEdit ? 'cursor-not-allowed opacity-60' : '',
+        ].join(' ')}
+      >
+        <span className="flex items-center gap-1.5">
+          <span
+            className={[
+              'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+              checked ? 'border-teal-500 bg-teal-500 text-white' : 'border-neutral-300 bg-white',
+            ].join(' ')}
+          >
+            {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+          </span>
+          {item.label}
+        </span>
+        {derived && (
+          <span className="rounded bg-teal-100 px-1 py-0.5 text-[9px] font-semibold text-teal-700">
+            자동
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  // T-20260708-foot-TREATREQ-EXAMONLY-APPLYLIST-SCHEMAFIX (순수 FE 렌더-라우팅):
+  //   ① 치료신청(신청) = 피검사·KOH 2항목만(multiselect) → 신청리스트 연동.
+  //   ② 치료내용 표기 = 무좀·내성·각질(신청 아님). 초진 선택/기록·재진 자동표기는 저장 유지(배정 필터 입력 보존).
   return (
-    <div className="rounded-lg border bg-white p-2" data-testid="pkg-tab-treatreq-section">
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <ClipboardList className="h-4 w-4 text-teal-600" />
-        <span className="text-xs font-semibold text-muted-foreground">치료신청</span>
-        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-600" />}
+    <div className="flex flex-col gap-2" data-testid="pkg-tab-treatreq-section">
+      {/* ① 신청리스트로 넘어가는 '신청' — 피검사·균검사(KOH)만. 동시 다중선택 가능. */}
+      <div className="rounded-lg border bg-white p-2" data-testid="treatreq-apply-section">
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4 text-teal-600" />
+          <span className="text-xs font-semibold text-muted-foreground">치료신청</span>
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-600" />}
+        </div>
+        <p className="mb-1 text-[10px] text-muted-foreground">
+          체크 시 신청리스트로 전달됩니다 · 두 항목 동시 선택 가능
+        </p>
+        {/* COMPACT-ONELINE: 한 줄에 하나씩(1항목/행) 세로 스택. */}
+        <div className="flex flex-col gap-1" data-testid="treatreq-checkbox-grid">
+          {APPLY_LIST_ITEMS.map(renderItem)}
+        </div>
       </div>
-      {/* T-20260702-CHART2-TREATREQ-COMPACT-ONELINE: 한 줄에 하나씩(1항목/행) 세로 스택 + 컴팩트 여백. 기존 2~3열 grid 폐기. */}
-      <div className="flex flex-col gap-1" data-testid="treatreq-checkbox-grid">
-        {TREATMENT_REQUEST_ITEMS.map((item) => {
-          const checked = isChecked(item);
-          const derived = isDerived(item);
-          return (
-            <button
-              key={item.key}
-              type="button"
-              disabled={!canEdit || busy}
-              onClick={() => onToggle(item)}
-              data-testid={`treatreq-item-${item.key}`}
-              data-checked={checked}
-              aria-pressed={checked}
-              className={[
-                'flex w-full items-center justify-between gap-1.5 rounded-md border px-2.5 py-1.5 text-left transition',
-                'min-h-[36px] text-[13px] font-medium', // 컴팩트 세로 스택(1항목/행) — 태블릿 터치 유지
-                checked
-                  ? 'border-teal-400 bg-teal-50 text-teal-800'
-                  : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50',
-                !canEdit ? 'cursor-not-allowed opacity-60' : '',
-              ].join(' ')}
-            >
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={[
-                    'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                    checked ? 'border-teal-500 bg-teal-500 text-white' : 'border-neutral-300 bg-white',
-                  ].join(' ')}
-                >
-                  {checked && <Check className="h-3 w-3" strokeWidth={3} />}
-                </span>
-                {item.label}
-              </span>
-              {derived && (
-                <span className="rounded bg-teal-100 px-1 py-0.5 text-[9px] font-semibold text-teal-700">
-                  자동
-                </span>
-              )}
-            </button>
-          );
-        })}
+
+      {/* ② 고객 치료내용 표기 — 무좀·내성·각질(신청 아님, 신청리스트 미반영). */}
+      <div className="rounded-lg border bg-white p-2" data-testid="treatreq-content-section">
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4 text-neutral-500" />
+          <span className="text-xs font-semibold text-muted-foreground">치료내용</span>
+        </div>
+        {/* COMPACT-ONELINE: 한 줄에 하나씩(1항목/행) 세로 스택. */}
+        <div className="flex flex-col gap-1" data-testid="treatreq-content-grid">
+          {TREATMENT_CONTENT_ITEMS.map(renderItem)}
+        </div>
       </div>
+
       {!canEdit && (
-        <p className="mt-1 text-[10px] text-muted-foreground">조회 권한 — 치료신청은 실장/관리자만 변경 가능</p>
+        <p className="text-[10px] text-muted-foreground">조회 권한 — 치료신청/치료내용은 실장/관리자만 변경 가능</p>
       )}
     </div>
   );

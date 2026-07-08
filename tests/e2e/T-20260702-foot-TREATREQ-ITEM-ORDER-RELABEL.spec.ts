@@ -101,11 +101,16 @@ test.describe('AC-3 — (key↔code/axis/existingEntity) 매핑 회귀 0', () =>
   });
 });
 
-// ── AC-4 렌더 계약 회귀 0(COMPACT/SPLIT 무접촉) ──────────────────────────────────
+// ── AC-4 렌더 계약 회귀 0(COMPACT 무접촉) ────────────────────────────────────────
+// T-20260708 co-reconcile: SPLIT '5항목 일괄 신청' 프레이밍이 policy_superseded 되어
+//   컴포넌트가 APPLY_LIST_ITEMS(신청=exam) + TREATMENT_CONTENT_ITEMS(치료내용=treatment) 두 그룹으로
+//   렌더한다. 두 배열은 SSOT(TREATMENT_REQUEST_ITEMS)의 axis 파생 뷰라 순서·라벨은 여전히 SSOT가 진실.
 test.describe('AC-4 — 렌더 계약 회귀 0', () => {
-  test('컴포넌트가 여전히 TREATMENT_REQUEST_ITEMS.map 으로 무조건 렌더(방문유형 필터 없음)', () => {
-    expect(BOX).toMatch(/TREATMENT_REQUEST_ITEMS\.map/);
-    expect(BOX).not.toMatch(/TREATMENT_REQUEST_ITEMS[\s\S]{0,60}\.filter\(/);
+  test('컴포넌트가 SSOT 파생 그룹(APPLY_LIST_ITEMS + TREATMENT_CONTENT_ITEMS).map 으로 렌더', () => {
+    expect(BOX).toMatch(/APPLY_LIST_ITEMS\.map/);
+    expect(BOX).toMatch(/TREATMENT_CONTENT_ITEMS\.map/);
+    // 방문유형 기반 필터 금지(재진에서 항목 소실 방지)
+    expect(BOX).not.toMatch(/\.filter\([^)]*visit/i);
   });
 
   test('라벨은 배열의 item.label 로 렌더(하드코딩 라벨 없음)', () => {
