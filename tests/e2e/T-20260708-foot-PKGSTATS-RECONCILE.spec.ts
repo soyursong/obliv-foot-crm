@@ -84,23 +84,45 @@ test.describe('T-20260708-foot-PKGSTATS-RECONCILE', () => {
     expect(mig.includes("conname = 'chk_packages_treatment_type'"), '(C) named CHECK 멱등 가드').toBe(true);
   });
 
-  test('(D) reference_price 계약총액 grain — standard_price × 횟수(totalSessions) 스냅샷', () => {
+  test('(D) reference_price 계약총액 grain — 라인별 마스터정가 자동합산(변경2 A안=DA 승인산식)', () => {
     const dlg = dialogSlice();
-    // 반응형 prefill: std × totalSessions (1회가×총결제 혼합 grain 금지)
+    // 변경2(A안): 커스텀 기준정가 = Σ(std_price[type] × count[type]) + upgradeSurcharge (stdRefTotal prefill)
     expect(
-      dlg.includes('setReferencePrice(stdForType * totalSessions)'),
-      '(D) 커스텀 기준정가 = standard_price × totalSessions',
+      dlg.includes('setReferencePrice(stdRefTotal)'),
+      '(D) 커스텀 기준정가 = stdRefTotal(라인별 자동합산) prefill',
     ).toBe(true);
+    // 라인별 합산 산식: 각 유형 마스터정가 × 횟수 + 업그레이드 추가금
+    expect(
+      dlg.includes("(m['가열'] ?? 0) * heated") &&
+        dlg.includes("(m['비가열'] ?? 0) * unheated") &&
+        dlg.includes("(m['포돌로게'] ?? 0) * podologe") &&
+        dlg.includes("(m['수액'] ?? 0) * iv") &&
+        dlg.includes("(m['Re:Born'] ?? 0) * reborn") &&
+        dlg.includes('upgradeSurcharge'),
+      '(D) Σ std_price[type] × count[type] + upgradeSurcharge (라인별 자동합산)',
+    ).toBe(true);
+    // 소스=treatment_standard_prices 마스터. staff 입력단가(unitPrice) fallback 금지 — 합산식은 마스터 map 만 사용
+    expect(
+      dlg.includes('const m = stdPrices.map;'),
+      '(D) 마스터 소스=stdPrices.map (staff 입력단가 fallback 금지)',
+    ).toBe(true);
+    // 구(舊): treatmentType 단일게이트 × totalSessions — 제거 확인
+    expect(dlg.includes('setReferencePrice(stdForType * totalSessions)'), '(D) 단일유형×totalSessions 게이트 제거').toBe(false);
     // 구(舊) 버그: 1회 정상가를 그대로 복사(grain 불일치) — 제거 확인
     expect(dlg.includes('setReferencePrice(std);'), '(D) 1회 정상가 직접복사(grain 불일치) 제거').toBe(false);
     // 수기 override 존중 플래그
     expect(dlg.includes('refPriceTouched'), '(D) 수기 override 플래그 존재').toBe(true);
     expect(dlg.includes('setRefPriceTouched(true)'), '(D) 수기 입력 시 override 마킹').toBe(true);
-    // 템플릿 모드는 계약총액(template.total_price) 유지 — 반응형 effect 가 커스텀 모드에서만 동작
+    // 반응형 effect: 커스텀·미override 조건 (treatmentType 단일게이트 제거됨)
+    expect(
+      dlg.includes("selectedTemplateId !== 'custom' || refPriceTouched"),
+      '(D) 반응형 prefill 은 커스텀·미override 시 (라인별 자동합산)',
+    ).toBe(true);
+    // treatmentType 단일게이트 잔존 금지
     expect(
       dlg.includes("selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType"),
-      '(D) 반응형 prefill 은 커스텀·미override·유형선택 시에만',
-    ).toBe(true);
+      '(D) treatmentType 단일게이트 잔존 금지',
+    ).toBe(false);
     // 할인율 산식(통계전용) = (reference_price − 결제)/reference_price — grain 동일 전제
     expect(
       dlg.includes('(referencePrice - grandTotal) / referencePrice'),

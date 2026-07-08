@@ -9669,8 +9669,10 @@ function PackagePurchaseFromTemplateDialog({
   //   prefill(AC-8/AC-10): 커스텀 모드에서 시술유형 선택 → 탭1 정찰가 마스터(standard_price)를 기준정가에 자동 채움(override 가능).
   //   AC-2b: 템플릿 로드 케이스 → 기준정가 = 템플릿 정가(applyTemplate에서 세팅), 금액 수기변경해도 유지.
   //   RECONCILE(MSG-20260708-224250 (D)): reference_price 는 total_amount 와 동일 grain(계약총액) 불변식.
-  //     커스텀 prefill = standard_price(1회 정상가) × 횟수(totalSessions) 스냅샷 → 1회가×총결제 혼합 grain 방지
-  //     (미이행 시 할인율 음수/과대). refPriceTouched=수기 override 시 자동계산 중단(override 존중).
+  //   변경2(A안=DA 승인산식, T-20260708-...-REFPRICE-1SESSION): 커스텀 prefill = 라인별 자동합산
+  //     referencePrice = Σ_type ( std_price[type] × count[type] ) + upgradeSurcharge
+  //     소스 = treatment_standard_prices 마스터 불변(staff 입력단가 fallback 금지). 마스터 미설정 유형(precon/trial)=0 기여.
+  //     treatmentType 단일게이트 제거 → 라인별 자동 합산. refPriceTouched=수기 override 시 자동계산 중단(override 존중).
   const stdPrices = useTreatmentStandardPrices(clinicId);
   const [treatmentType, setTreatmentType] = useState<TreatmentType | ''>('');
   const [referencePrice, setReferencePrice] = useState(0);
@@ -9694,13 +9696,25 @@ function PackagePurchaseFromTemplateDialog({
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
   const totalSessions = heated + unheated + iv + precon + podologe + trial + reborn;
 
-  // T-20260708 RECONCILE(D): 커스텀 모드 기준정가 = standard_price × 횟수(totalSessions) 계약총액 grain 스냅샷.
-  //   시술유형/횟수 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
-  const stdForType = treatmentType ? stdPrices.map[treatmentType] : null;
+  // T-20260708 변경2(A안=DA 승인산식): 커스텀 모드 기준정가 = 라인별 마스터정가 자동합산 + 업그레이드 추가금.
+  //   referencePrice = Σ ( treatment_standard_prices[type] × count[type] ) + upgradeSurcharge
+  //   마스터 미설정 유형(값 null)·precon/trial(마스터 없음) = 0 기여. staff 입력단가 fallback 금지(마스터 불변).
+  //   라인/횟수/업그레이드 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
+  const stdRefTotal = useMemo(() => {
+    const m = stdPrices.map;
+    return (
+      (m['가열'] ?? 0) * heated +
+      (m['비가열'] ?? 0) * unheated +
+      (m['포돌로게'] ?? 0) * podologe +
+      (m['수액'] ?? 0) * iv +
+      (m['Re:Born'] ?? 0) * reborn +
+      upgradeSurcharge
+    );
+  }, [stdPrices.map, heated, unheated, podologe, iv, reborn, upgradeSurcharge]);
   useEffect(() => {
-    if (selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType) return;
-    if (stdForType != null && stdForType > 0) setReferencePrice(stdForType * totalSessions);
-  }, [stdForType, totalSessions, treatmentType, selectedTemplateId, refPriceTouched]);
+    if (selectedTemplateId !== 'custom' || refPriceTouched) return;
+    setReferencePrice(stdRefTotal);
+  }, [stdRefTotal, selectedTemplateId, refPriceTouched]);
 
   // T-20260510-foot-PKG-CREATE-FIX3: 템플릿 로드 후 첫 번째 자동 선택 (button 활성화 보장)
   useEffect(() => {
@@ -9794,11 +9808,10 @@ function PackagePurchaseFromTemplateDialog({
     setReferencePrice(0); setRefPriceTouched(false);
   };
 
-  // T-20260708 AC-8/AC-10 + RECONCILE(D): 시술유형 선택 시 수기 override 플래그 해제 → 반응형 effect 가
-  //   커스텀 모드에서 standard_price × 횟수(계약총액 grain)를 기준정가에 prefill. 템플릿 모드는 유지(AC-2b).
+  // T-20260708 변경2(A안): 시술유형은 통계 집계용(필수)일 뿐 기준정가 prefill 을 좌우하지 않음(라인별 자동합산).
+  //   → 시술유형 변경 시 refPriceTouched 를 건드리지 않아 수기 override 를 보존한다.
   const selectTreatmentType = (t: TreatmentType | '') => {
     setTreatmentType(t);
-    if (selectedTemplateId === 'custom') setRefPriceTouched(false);
   };
 
   const submit = async () => {
@@ -10248,8 +10261,8 @@ function PackagePurchaseFromTemplateDialog({
             </div>
           </div>
 
-          {/* T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 통계(B안) 시술유형(필수)+기준정가(선택)+할인율 미리보기.
-              커스텀 모드에서 시술유형 선택 시 탭1 정찰가 마스터를 기준정가에 prefill(override 가능, AC-8/AC-10). */}
+          {/* T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE (+ 변경2 A안): 통계 시술유형(필수)+기준정가+할인율 미리보기.
+              커스텀 모드 기준정가 = 라인별 마스터정가 자동합산(Σ std×count + 업그레이드), 수기 override 가능. */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-2 space-y-2">
             <div className="text-xs font-semibold text-teal-800">통계 태깅 <span className="font-normal text-teal-500">(할인율·객단가 집계용)</span></div>
             <div className="grid grid-cols-2 gap-2">

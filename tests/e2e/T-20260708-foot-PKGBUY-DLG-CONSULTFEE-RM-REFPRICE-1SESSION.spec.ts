@@ -3,16 +3,15 @@
  *
  * 2번차트 > "구입 티켓 추가" 다이얼로그(PackagePurchaseFromTemplateDialog)
  *
- * ── 착수 결과 (부분 구현) ──────────────────────────────────────────────
+ * ── 착수 결과 ──────────────────────────────────────────────────────────
  * 변경 1 (진료비 UI 제거) : 구현 완료 — 본 spec 이 회귀 가드.
- * 변경 2 (기준정가 = 1회 수가 합산) : HELD — data-architect CONSULT 대기.
- *   사유: referencePrice 는 packages.reference_price 로 persist 되는 경로(비-미리보기)이며,
- *         제안된 산식(computedTotal+upgradeSurcharge = 입력 1회 수가 합산)은
- *         DA CONSULT-REPLY 단일권위(MSG-20260708-224250-64oj / PKGSTATS-RECONCILE (D):
- *         reference_price = standard_price × 횟수 스냅샷)와 divergence.
- *         이중 산식 구현 금지(CHART-ORDER 좀비 divergence 재발방지) → DA 판단 선행.
- *   따라서 본 spec 은 변경 1 만 단언한다. 변경 2 는 기존 PKGSTATS-RECONCILE (D) 가드가
- *   여전히 유효(standard_price × totalSessions)함을 재확인한다(현 상태 = SSOT 유지).
+ * 변경 2 (기준정가 = 라인별 마스터정가 자동합산) : 구현 완료 (A안 = DA 승인산식).
+ *   reporter confirm: 김주연 총괄 slack "웅 그럼 A" = A안(DA 승인산식) 확정. B안(staff입력 합산) 미채택.
+ *   산식(DA 승인): referencePrice = Σ_type ( std_price[type] × count[type] ) + upgradeSurcharge
+ *     소스 = treatment_standard_prices 마스터 불변(staff 입력단가 fallback 금지).
+ *     마스터 미설정 유형(precon/trial) = 0 기여. treatmentType 단일게이트 제거 → 라인별 자동합산.
+ *   DA SSOT(standard × 횟수, per-line)와 convergence — divergence 아님. refPriceTouched 수기 override 보존.
+ *   할인율 = (referencePrice − grandTotal) / referencePrice (동일 grain). 상세 가드는 PKGSTATS-RECONCILE (D).
  *
  * screenshot_gate=exempt (소스 슬라이스 단언형 — UI 제거/저장상수 확인). 실제 DB insert 없음.
  * 실 렌더/동선은 supervisor 필드 검증.
@@ -62,17 +61,29 @@ test.describe('T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM-REFPRICE-1SESSION', () =
     ).toBe(false);
   });
 
-  test('(2-HELD) 기준정가 산식 = 현 SSOT(standard_price × 횟수) 유지 — 변경2 미착수', () => {
+  test('(2) 기준정가 = 라인별 마스터정가 자동합산 (A안 = DA 승인산식)', () => {
     const dlg = dialogSlice();
-    // 변경 2 는 DA CONSULT 대기 중 → 기존 DA SSOT 가드가 그대로 살아있어야 한다.
+    // 변경2: 커스텀 기준정가 = Σ(std_price[type] × count[type]) + upgradeSurcharge (stdRefTotal prefill)
+    expect(
+      dlg.includes('setReferencePrice(stdRefTotal)'),
+      '(2) reference_price = 라인별 자동합산(stdRefTotal) prefill',
+    ).toBe(true);
+    // "기준 정가" 라벨 유지
+    expect(dlg.includes('기준 정가'), '(2) "기준 정가" 라벨 유지').toBe(true);
+    // 구(舊) 단일유형 게이트 산식 제거
     expect(
       dlg.includes('setReferencePrice(stdForType * totalSessions)'),
-      '(2-HELD) reference_price = standard_price × totalSessions 유지(DA SSOT)',
-    ).toBe(true);
-    // 제안 산식(입력 1회 수가 합산)이 아직 들어오지 않았음을 확인(이중 산식 방지)
+      '(2) 구 단일유형×totalSessions 게이트 제거',
+    ).toBe(false);
+    // B안(staff 입력 1회 수가 합산) 미채택 — 이중 산식 방지
     expect(
       dlg.includes('setReferencePrice(computedTotal + upgradeSurcharge)'),
-      '(2-HELD) 제안 산식 미구현(DA CONSULT 선행)',
+      '(2) B안(staff입력 합산) 미채택',
     ).toBe(false);
+    // 할인율 산식 동일 grain 유지
+    expect(
+      dlg.includes('(referencePrice - grandTotal) / referencePrice'),
+      '(2) 할인율 = (기준정가 − 결제)/기준정가',
+    ).toBe(true);
   });
 });
