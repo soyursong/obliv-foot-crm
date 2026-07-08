@@ -263,6 +263,24 @@ export default function Packages() {
 // ============================================================
 type PkgManageTab = 'standard' | 'official' | 'custom';
 
+// T-20260708-foot-PKGMGMT-ONETIME-TO-REFPRICE-TAB (approach A: 표시-분류, FE-only, DB 무변경):
+//   '1회성' 판정 = 템플릿의 시술유형별 회차 총합이 1인 항목(=단일 시술 성격이라 개념상 '정찰가' 탭에 속함).
+//   원본 package_templates 이동/재적재 없음(뷰 레벨 재분류만) → treatment_standard_prices 단일 SSOT 불변(AC-3).
+//   ⚠ anti-divergence: 이 재분류는 표시/관리 위치만 이동. reference_price prefill 소스는 여전히 정찰가 마스터(탭1 표)뿐.
+function templateSessionTotal(t: PackageTemplate): number {
+  return (
+    (t.heated_sessions ?? 0) +
+    (t.unheated_sessions ?? 0) +
+    (t.podologe_sessions ?? 0) +
+    (t.iv_sessions ?? 0) +
+    (t.trial_sessions ?? 0) +
+    (t.reborn_sessions ?? 0)
+  );
+}
+function isOneTimeTemplate(t: PackageTemplate): boolean {
+  return templateSessionTotal(t) === 1;
+}
+
 // 탭1 — 정찰가 기준표: 시술유형별 1회 정상가 마스터(treatment_standard_prices) CRUD.
 //   = 커스텀 패키지 생성 시 reference_price prefill 소스 SSOT(AC-8/AC-10). 저장 canonical 토큰, 표시라벨 "리본".
 function StandardPricesPanel({ clinicId }: { clinicId: string | undefined }) {
@@ -345,6 +363,71 @@ function StandardPricesPanel({ clinicId }: { clinicId: string | undefined }) {
   );
 }
 
+// 패키지 템플릿 카드 (공식 패키지 탭 + 정찰가 탭 재분류 섹션 공용).
+//   T-20260708-foot-PKGMGMT-ONETIME-TO-REFPRICE-TAB: 1회성 항목을 정찰가 탭에서도 동일 편집/삭제 가능하도록 재사용.
+function TemplateCard({
+  template: t,
+  onEdit,
+  onRemove,
+}: {
+  template: PackageTemplate;
+  onEdit: (t: PackageTemplate) => void;
+  onRemove: (t: PackageTemplate) => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-white p-3 text-xs">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <span className="font-semibold text-sm text-teal-800">{t.name}</span>
+        <div className="flex gap-1 shrink-0">
+          <button
+            onClick={() => onEdit(t)}
+            className="rounded p-1 hover:bg-muted transition"
+            title="편집"
+          >
+            <Pencil className="h-3 w-3 text-muted-foreground" />
+          </button>
+          <button
+            onClick={() => onRemove(t)}
+            className="rounded p-1 hover:bg-red-50 transition"
+            title="삭제"
+          >
+            <Trash2 className="h-3 w-3 text-red-500" />
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground">
+        {t.heated_sessions > 0 && (
+          <div>가열 {t.heated_sessions}회 · {formatAmount(t.heated_unit_price)}{t.heated_upgrade_available && ' (+샷업)' }</div>
+        )}
+        {t.unheated_sessions > 0 && (
+          <div>비가열 {t.unheated_sessions}회 · {formatAmount(t.unheated_unit_price)}{t.unheated_upgrade_available && ' (+AF업)' }</div>
+        )}
+        {t.podologe_sessions > 0 && (
+          <div>포돌로게 {t.podologe_sessions}회 · {formatAmount(t.podologe_unit_price)}</div>
+        )}
+        {t.iv_sessions > 0 && (
+          <div>수액 {t.iv_sessions}회 · {formatAmount(t.iv_unit_price)}{t.iv_company ? ` (${t.iv_company})` : ''}</div>
+        )}
+        {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
+        {(t.trial_sessions ?? 0) > 0 && (
+          <div>체험권 {t.trial_sessions}회 · {formatAmount(t.trial_unit_price ?? 0)}</div>
+        )}
+        {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목 */}
+        {(t.reborn_sessions ?? 0) > 0 && (
+          <div>Re:Born {t.reborn_sessions}회 · {formatAmount(t.reborn_unit_price ?? 0)}</div>
+        )}
+      </div>
+      <div className="mt-1.5 font-medium text-teal-700">
+        총 {formatAmount(t.total_price)}
+        {t.price_override && <span className="ml-1 text-[10px] text-muted-foreground">(수기)</span>}
+      </div>
+      {t.memo && (
+        <div className="mt-1 text-muted-foreground/80 italic">{t.memo}</div>
+      )}
+    </div>
+  );
+}
+
 // ============================================================
 // 패키지 관리 Sheet (3탭: 정찰가 기준표 / 공식 패키지 / 커스텀)
 // ============================================================
@@ -393,6 +476,11 @@ function TemplateManageSheet({
     load();
   };
 
+  // T-20260708-foot-PKGMGMT-ONETIME-TO-REFPRICE-TAB (approach A): 뷰 레벨 재분류.
+  //   1회성(회차 총합=1) → 정찰가 탭에 노출 / 다회권(2회+, 및 회차 미설정)은 공식 패키지 탭 유지(AC-1/AC-2).
+  const oneTimeTemplates = useMemo(() => templates.filter(isOneTimeTemplate), [templates]);
+  const officialTemplates = useMemo(() => templates.filter((t) => !isOneTimeTemplate(t)), [templates]);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="max-w-xl overflow-y-auto">
@@ -410,9 +498,27 @@ function TemplateManageSheet({
             <TabsTrigger value="custom" className="flex-1">커스텀</TabsTrigger>
           </TabsList>
 
-          {/* 탭1 — 정찰가 기준표: 시술유형별 1회 정상가 마스터(reference_price prefill 소스 SSOT) */}
-          <TabsContent value="standard" className="mt-3">
+          {/* 탭1 — 정찰가 기준표: 시술유형별 1회 정상가 마스터(reference_price prefill 소스 SSOT)
+              + T-20260708-foot-PKGMGMT-ONETIME-TO-REFPRICE-TAB: 공식 패키지 중 1회성 항목 재분류 노출(뷰 레벨). */}
+          <TabsContent value="standard" className="mt-3 space-y-4">
             <StandardPricesPanel clinicId={clinicId} />
+
+            {/* 1회성 공식 패키지 재분류 섹션 — 원본은 package_templates. 여기선 표시/관리만 이동(SSOT 불변). */}
+            {oneTimeTemplates.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-teal-800">1회성 공식 패키지</div>
+                  <span className="text-[10px] text-muted-foreground">공식 패키지 중 1회권 항목</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  회차 1회로 등록된 공식 패키지입니다. 개념상 <b>1회 정상가(정찰가)</b> 성격이라 이 탭에 모아 표시합니다.
+                  단, 커스텀 패키지 <b>기준 정가 자동 입력</b>은 <b>위 [1회 정상가] 표</b>만 사용합니다(중복 아님).
+                </div>
+                {oneTimeTemplates.map((t) => (
+                  <TemplateCard key={t.id} template={t} onEdit={setEditTarget} onRemove={remove} />
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* 탭3 — 커스텀: 실제 커스텀 패키지 생성은 고객차트 '구입 티켓 추가'에서. 시술유형 선택 시 탭1 정찰가 자동 prefill. */}
@@ -434,62 +540,15 @@ function TemplateManageSheet({
           {loading && (
             <div className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</div>
           )}
-          {!loading && templates.length === 0 && (
+          {!loading && officialTemplates.length === 0 && (
             <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
-              템플릿 없음 — [새 템플릿]을 눌러 추가하세요
+              {oneTimeTemplates.length > 0
+                ? '다회권 공식 패키지 없음 — 1회성 항목은 [정찰가(기준)] 탭에서 관리됩니다'
+                : '템플릿 없음 — [새 템플릿]을 눌러 추가하세요'}
             </div>
           )}
-          {templates.map((t) => (
-            <div key={t.id} className="rounded-lg border bg-white p-3 text-xs">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <span className="font-semibold text-sm text-teal-800">{t.name}</span>
-                <div className="flex gap-1 shrink-0">
-                  <button
-                    onClick={() => setEditTarget(t)}
-                    className="rounded p-1 hover:bg-muted transition"
-                    title="편집"
-                  >
-                    <Pencil className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                  <button
-                    onClick={() => remove(t)}
-                    className="rounded p-1 hover:bg-red-50 transition"
-                    title="삭제"
-                  >
-                    <Trash2 className="h-3 w-3 text-red-500" />
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground">
-                {t.heated_sessions > 0 && (
-                  <div>가열 {t.heated_sessions}회 · {formatAmount(t.heated_unit_price)}{t.heated_upgrade_available && ' (+샷업)' }</div>
-                )}
-                {t.unheated_sessions > 0 && (
-                  <div>비가열 {t.unheated_sessions}회 · {formatAmount(t.unheated_unit_price)}{t.unheated_upgrade_available && ' (+AF업)' }</div>
-                )}
-                {t.podologe_sessions > 0 && (
-                  <div>포돌로게 {t.podologe_sessions}회 · {formatAmount(t.podologe_unit_price)}</div>
-                )}
-                {t.iv_sessions > 0 && (
-                  <div>수액 {t.iv_sessions}회 · {formatAmount(t.iv_unit_price)}{t.iv_company ? ` (${t.iv_company})` : ''}</div>
-                )}
-                {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
-                {(t.trial_sessions ?? 0) > 0 && (
-                  <div>체험권 {t.trial_sessions}회 · {formatAmount(t.trial_unit_price ?? 0)}</div>
-                )}
-                {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목 */}
-                {(t.reborn_sessions ?? 0) > 0 && (
-                  <div>Re:Born {t.reborn_sessions}회 · {formatAmount(t.reborn_unit_price ?? 0)}</div>
-                )}
-              </div>
-              <div className="mt-1.5 font-medium text-teal-700">
-                총 {formatAmount(t.total_price)}
-                {t.price_override && <span className="ml-1 text-[10px] text-muted-foreground">(수기)</span>}
-              </div>
-              {t.memo && (
-                <div className="mt-1 text-muted-foreground/80 italic">{t.memo}</div>
-              )}
-            </div>
+          {officialTemplates.map((t) => (
+            <TemplateCard key={t.id} template={t} onEdit={setEditTarget} onRemove={remove} />
           ))}
           </TabsContent>
         </Tabs>
