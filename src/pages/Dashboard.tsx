@@ -6216,6 +6216,22 @@ export default function Dashboard() {
     });
   }, [handleNewReservation, navigate]);
 
+  // T-20260708-foot-TIMETABLE-CTXMENU-RESVDETAIL-NAVIGATE [김주연 총괄, C0ATE5P6JTH]: 통합시간표 예약 박스 우클릭 [예약상세] →
+  //   대시보드 인-플레이스 상세 팝업/prefill 신규예약 동선 대신 예약관리(/admin/reservations) 정본 화면으로 '페이지 전환'.
+  //   전체 Reservation 객체를 location.state.openReservationDetail 로 넘겨(예약 ID 기준 식별) 예약관리 수신부
+  //   (Reservations.tsx L740 navDetailConsumed)가 그 예약의 정본 ReservationDetailPopup 을 바로 오픈 →
+  //   대시보드 로컬 팝업 인스턴스 0(단일 정본 팝업 유지, ReservationDetailPopup 은 예약관리 정본 화면에서만 마운트).
+  //   ▸resv 부재(방어) → openReservationDetail 미전달 → 예약관리 목록 화면으로 폴백(dead 진입점 방지, ID 라우팅 불가 폴백).
+  //   ▸T-20260630 prefillCustomerForSlot(신규예약 defer-to-slot-click) 동선을 이 예약박스 진입점 한정 open-existing 으로 교체
+  //     (총괄 fast-follow — L6176 '기존 open-existing 동선 복원 필요 시 재도입' 명시분 이행). 고객박스(체크인 큐) 메뉴는 불변.
+  //   ▸QUICKADD 슬롯 신규생성 게이팅(T-20260708 DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE / onSlotClick·dashResvCreateDisabled)과
+  //     무관 — 우클릭 [예약상세] 항목 핸들러만 교체(인접 게이팅 무접촉). 예약 데이터·상태·저장 무접촉(화면 전환만).
+  const handleResvDetailNavToMgmt = useCallback(() => {
+    const resv = resvContextMenu?.reservation ?? null;
+    setResvContextMenu(null);
+    navigate('/admin/reservations', resv ? { state: { openReservationDetail: resv } } : undefined);
+  }, [resvContextMenu, navigate]);
+
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {
     if (!showCalendar) return;
@@ -7733,18 +7749,18 @@ export default function Dashboard() {
           - 수납: handleResvOpenPaymentFromCtx(연결 check_in 결제 미니창).
           - 문자: admin/manager 한정 SendSmsDialog 경로 재사용.
           - [예약 취소]·[완전 삭제] 메뉴 항목 제거 → 둘 다 ReservationDetailPopup 내부 버튼에서만(메뉴 진입점 제거).
-          T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2 [예약 동선 통일]: 예약 캘린더 카드(타임라인 예약 박스)
-          [예약상세]를 체크인 카드와 *동일 동작*으로 통일 — 기존 예약상세 팝업 즉시 오픈(handleResvOpenDetailFromCtx)
-          대신 handleCardResvDetailOrCreate(고객 prefillCustomerForSlot nav)로 재배선. 김주연 총괄(C0ATE5P6JTH) 확정.
-          ⚠ 트레이드오프: 이 메뉴 [예약상세]의 '기존 예약 즉시 열람' 기능은 슬롯클릭-신규prefill 동선으로 대체됨
-          (열람은 예약 박스 클릭/예약관리에서 가능). 현장에서 열람 진입이 필요하다고 밝혀지면 별도 항목으로 복원(fast-follow). */}
+          T-20260708-foot-TIMETABLE-CTXMENU-RESVDETAIL-NAVIGATE [총괄 fast-follow]: 이 예약 박스 [예약상세]를
+          prefill 신규동선(handleCardResvDetailOrCreate)에서 예약관리 정본 화면 '페이지 전환 + 해당 예약 상세 오픈'
+          (handleResvDetailNavToMgmt: openReservationDetail state, 예약 ID 기준 식별)으로 교체 — 대시보드 로컬 팝업 인스턴스 0.
+          ⚠ 인접: QUICKADD 슬롯 신규생성 게이팅(DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE)은 무접촉 — [예약상세] 항목 핸들러만.
+          고객박스(체크인 큐) CustomerQuickMenu(위)는 prefill 동선 유지(불변). */}
       <CustomerQuickMenu
         checkIn={resvContextMenu ? resvAsCheckIn(resvContextMenu.reservation) : null}
         position={resvContextMenu?.pos ?? null}
         onClose={() => setResvContextMenu(null)}
         onOpenChart={handleOpenChart}
         onOpenMedicalChart={handleOpenMedicalChart}
-        onNewReservation={handleCardResvDetailOrCreate}
+        onNewReservation={handleResvDetailNavToMgmt}
         onOpenPayment={handleResvOpenPaymentFromCtx}
         /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
         reservationActionLabel="예약상세"

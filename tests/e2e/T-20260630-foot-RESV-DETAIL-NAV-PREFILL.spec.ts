@@ -35,16 +35,23 @@ const DASH_SRC = path.resolve(__dirname, '../../src/pages/Dashboard.tsx');
 const CHARTPAGE_SRC = path.resolve(__dirname, '../../src/pages/CustomerChartPage.tsx');
 
 test.describe('T-20260630-foot-RESV-DETAIL-NAV-PREFILL — delta 정적 가드(AC2·AC6)', () => {
-  // AC2: 예약 캘린더 카드(타임라인 예약 박스, resvContextMenu) 우클릭 [예약상세] → 체크인 카드와 동일 핸들러로 통일.
-  test('AC2: 예약 캘린더 카드 [예약상세] = handleCardResvDetailOrCreate (open-existing 핸들러 retire)', () => {
+  // AC2: [SUPERSEDED by T-20260708-foot-TIMETABLE-CTXMENU-RESVDETAIL-NAVIGATE — 김주연 총괄 fast-follow]
+  //   T-20260630 은 예약 캘린더 카드(타임라인 예약 박스) [예약상세]를 체크인 카드와 동일 prefill 핸들러로 통일했으나,
+  //   T-20260708 이 이 예약 박스 진입점에 한해 open-existing(예약관리 정본 화면 '페이지 전환' + 그 예약 상세 오픈)으로 복원.
+  //   (L6176 '기존 open-existing 동선 복원 필요 시 재도입' 명시분 이행.)
+  //   → 예약 캘린더 카드 = handleResvDetailNavToMgmt / 체크인 카드 = handleCardResvDetailOrCreate (두 진입점 분리).
+  test('AC2: 예약 캘린더 카드 [예약상세] = handleResvDetailNavToMgmt (open-existing 복원, T-20260708 supersede)', () => {
     const src = fs.readFileSync(DASH_SRC, 'utf-8');
-    // 두 고객박스(체크인 카드 + 예약 캘린더 카드) 모두 동일 핸들러 = onNewReservation={handleCardResvDetailOrCreate}
-    const wired = src.match(/onNewReservation=\{handleCardResvDetailOrCreate\}/g) ?? [];
-    expect(wired.length, '두 카드(체크인+예약캘린더) 모두 동일 핸들러로 배선').toBe(2);
-    // 구 open-existing 핸들러는 완전히 제거(미사용 dead 코드 0, latent open-existing 부활 차단)
+    // 예약 캘린더 카드(예약 박스) 메뉴 = 신규 open-existing 핸들러(예약관리 페이지 전환 + openReservationDetail)
+    expect(src, '예약 박스 [예약상세] open-existing 핸들러 배선 없음')
+      .toContain('onNewReservation={handleResvDetailNavToMgmt}');
+    // 체크인 카드는 여전히 prefill 통일 핸들러 유지(1회만 — 예약 박스는 분리됨)
+    const prefillWired = src.match(/onNewReservation=\{handleCardResvDetailOrCreate\}/g) ?? [];
+    expect(prefillWired.length, '체크인 카드만 prefill 핸들러 유지(예약 박스는 open-existing 로 분리)').toBe(1);
+    // 구 open-existing 핸들러(handleResvOpenDetailFromCtx)는 여전히 부활 금지(신규 핸들러는 별도 이름·경로)
     expect(src).not.toContain('const handleResvOpenDetailFromCtx');
     expect(src).not.toContain('onNewReservation={handleResvOpenDetailFromCtx}');
-    console.log('[AC2] 예약 캘린더 카드 [예약상세] → 통일 핸들러 + open-existing retire OK');
+    console.log('[AC2] 예약 캘린더 카드 [예약상세] → open-existing 복원(T-20260708) OK');
   });
 
   // AC1 회귀: 체크인 카드(customerMenu) 배선 유지.

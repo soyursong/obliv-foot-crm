@@ -735,8 +735,10 @@ export default function Reservations() {
   //   ⚠ 정합: 대시보드에 별도 팝업 인스턴스를 두지 않고(중복 마운트 제거) 이 단일 정본 팝업(detail)만 사용 →
   //   POPUP-SYNC(field-soak) 와 동기화 깨짐 방지. 전체 Reservation 객체를 state로 전달받아 추가 fetch 없이
   //   라우팅 직후 깜빡임 없이 팝업이 열린 채로 보이게 한다(라우팅 unmount→재오픈 흐름을 사용자 무지각화).
-  //   T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2: 대시보드 예약 캘린더 카드 [예약상세]가 prefill 동선으로 전환되어
-  //   현재 openReservationDetail 을 navigate 하는 송신부는 없음(수신부는 defensive 유지 — 향후 open-existing 복원 시 재사용).
+  //   T-20260630-foot-RESV-DETAIL-NAV-PREFILL AC2: 대시보드 예약 캘린더 카드 [예약상세]가 한때 prefill 동선으로 전환됨.
+  //   T-20260708-foot-TIMETABLE-CTXMENU-RESVDETAIL-NAVIGATE [총괄 fast-follow]: 통합시간표 예약 박스 [예약상세]가
+  //   open-existing 으로 복원(Dashboard.handleResvDetailNavToMgmt)되어 이 수신부가 다시 활성 송신부를 갖는다 —
+  //   전체 Reservation 객체를 넘겨받아 이 정본 팝업(setDetail)을 예약 ID 기준으로 바로 오픈(예약관리에서 그 예약 식별).
   useEffect(() => {
     if (navDetailConsumed.current) return;
     const state = location.state as { openReservationDetail?: Reservation } | null;
