@@ -3,16 +3,16 @@
  *
  * 2번차트 > "구입 티켓 추가" 다이얼로그(PackagePurchaseFromTemplateDialog)
  *
- * ── 착수 결과 (부분 구현) ──────────────────────────────────────────────
- * 변경 1 (진료비 UI 제거) : 구현 완료 — 본 spec 이 회귀 가드.
- * 변경 2 (기준정가 = 1회 수가 합산) : HELD — data-architect CONSULT 대기.
- *   사유: referencePrice 는 packages.reference_price 로 persist 되는 경로(비-미리보기)이며,
- *         제안된 산식(computedTotal+upgradeSurcharge = 입력 1회 수가 합산)은
- *         DA CONSULT-REPLY 단일권위(MSG-20260708-224250-64oj / PKGSTATS-RECONCILE (D):
- *         reference_price = standard_price × 횟수 스냅샷)와 divergence.
- *         이중 산식 구현 금지(CHART-ORDER 좀비 divergence 재발방지) → DA 판단 선행.
- *   따라서 본 spec 은 변경 1 만 단언한다. 변경 2 는 기존 PKGSTATS-RECONCILE (D) 가드가
- *   여전히 유효(standard_price × totalSessions)함을 재확인한다(현 상태 = SSOT 유지).
+ * ── 착수 결과 ─────────────────────────────────────────────────────────
+ * 변경 1 (진료비 UI 제거) : 구현 완료 — (1a)/(1b) 회귀 가드.
+ * 변경 2 (기준정가 = 시술유형별 마스터 정찰가 per-line 합) : 구현 완료 (DA-20260708-FOOT-PKGBUY-REFPRICE 승인산식).
+ *   경위: 원 요청(referencePrice = computedTotal = staff 입력 1회수가 합산=B안)은 비-override 경로에서
+ *         computedTotal+upgradeSurcharge==grandTotal → 할인율 구조적 항상 0 → reference_price(할인율 KPI base)
+ *         자기파괴. DA 가 KPI 근거로 역전, reporter(김주연 총괄) A안 confirm(ts 1783553492.896379, "웅 그럼 A").
+ *   DA 승인산식(A안): referencePrice = Σ_type ( std_price[type] × count[type] ) + upgradeSurcharge.
+ *         소스=treatment_standard_prices 마스터 불변(staff 입력단가 fallback 금지), 마스터 미설정유형(precon/trial)=0 기여,
+ *         treatmentType 단일게이트 제거(라인별 자동합), refPriceTouched 수기 override 보존.
+ *         단일유형에선 기존 SSOT(standard×횟수)와 동일한 일반화 → PKGSTATS-RECONCILE (D) 가드 신 산식으로 이관(파손 아님).
  *
  * screenshot_gate=exempt (소스 슬라이스 단언형 — UI 제거/저장상수 확인). 실제 DB insert 없음.
  * 실 렌더/동선은 supervisor 필드 검증.
@@ -62,17 +62,34 @@ test.describe('T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM-REFPRICE-1SESSION', () =
     ).toBe(false);
   });
 
-  test('(2-HELD) 기준정가 산식 = 현 SSOT(standard_price × 횟수) 유지 — 변경2 미착수', () => {
+  test('(2a) 기준정가 = 시술유형별 마스터 정찰가 per-line 합(DA 승인산식·변경2)', () => {
     const dlg = dialogSlice();
-    // 변경 2 는 DA CONSULT 대기 중 → 기존 DA SSOT 가드가 그대로 살아있어야 한다.
+    // A안: masterReferencePrice = Σ std_price[type]×count[type] + upgradeSurcharge, effect 로 커스텀 prefill.
+    expect(dlg.includes('setReferencePrice(masterReferencePrice)'), '(2a) 기준정가 = 마스터 per-line 합').toBe(true);
+    expect(dlg.includes("(stdPrices.map['가열'] ?? 0) * heated"), '(2a) 가열 라인 = 마스터×회수').toBe(true);
+    expect(dlg.includes("(stdPrices.map['비가열'] ?? 0) * unheated"), '(2a) 비가열 라인').toBe(true);
+    expect(dlg.includes('+ upgradeSurcharge'), '(2a) 업그레이드 가산 포함').toBe(true);
+  });
+
+  test('(2b) treatmentType 단일게이트 제거 + refPriceTouched override 보존', () => {
+    const dlg = dialogSlice();
+    // 반응형 prefill 게이트에서 treatmentType 조건 제거(라인별 자동합) — 커스텀·미override 시에만.
     expect(
-      dlg.includes('setReferencePrice(stdForType * totalSessions)'),
-      '(2-HELD) reference_price = standard_price × totalSessions 유지(DA SSOT)',
+      dlg.includes("selectedTemplateId !== 'custom' || refPriceTouched"),
+      '(2b) 반응형 prefill 게이트(treatmentType 제거)',
     ).toBe(true);
-    // 제안 산식(입력 1회 수가 합산)이 아직 들어오지 않았음을 확인(이중 산식 방지)
+    expect(dlg.includes("|| !treatmentType) return"), '(2b) treatmentType 단일게이트 소거').toBe(false);
+    // 수기 override 존중(AC-4)
+    expect(dlg.includes('setRefPriceTouched(true)'), '(2b) 수기 입력 시 override 마킹').toBe(true);
+  });
+
+  test('(2c) B안(staff 입력 computedTotal) 미채택 — reference_price 자기파괴 방지', () => {
+    const dlg = dialogSlice();
+    // 원 요청 방향(computedTotal 스왑)이 코드에 들어오지 않았음을 가드(할인율 구조적 0 방지).
     expect(
       dlg.includes('setReferencePrice(computedTotal + upgradeSurcharge)'),
-      '(2-HELD) 제안 산식 미구현(DA CONSULT 선행)',
+      '(2c) B안 산식 미구현(DA KPI 역전)',
     ).toBe(false);
+    expect(dlg.includes('setReferencePrice(stdForType * totalSessions)'), '(2c) 舊 단일게이트 산식 이관').toBe(false);
   });
 });

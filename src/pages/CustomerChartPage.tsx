@@ -9668,8 +9668,9 @@ function PackagePurchaseFromTemplateDialog({
   //   treatment_type = 통계 시술유형별 객단가 집계용(필수 선택). reference_price = 기준정가 스냅샷(선택).
   //   prefill(AC-8/AC-10): 커스텀 모드에서 시술유형 선택 → 탭1 정찰가 마스터(standard_price)를 기준정가에 자동 채움(override 가능).
   //   AC-2b: 템플릿 로드 케이스 → 기준정가 = 템플릿 정가(applyTemplate에서 세팅), 금액 수기변경해도 유지.
-  //   RECONCILE(MSG-20260708-224250 (D)): reference_price 는 total_amount 와 동일 grain(계약총액) 불변식.
-  //     커스텀 prefill = standard_price(1회 정상가) × 횟수(totalSessions) 스냅샷 → 1회가×총결제 혼합 grain 방지
+  //   RECONCILE(MSG-20260708-224250 (D)) + 변경2(DA-20260708-FOOT-PKGBUY-REFPRICE): reference_price 는
+  //     total_amount 와 동일 grain(계약총액) 불변식. 커스텀 prefill = 시술유형별 마스터 정찰가 per-line 합
+  //     (Σ std_price[type]×count[type] + upgradeSurcharge) → 혼합 패키지 정확 반영·1회가×총결제 혼합 grain 방지
   //     (미이행 시 할인율 음수/과대). refPriceTouched=수기 override 시 자동계산 중단(override 존중).
   const stdPrices = useTreatmentStandardPrices(clinicId);
   const [treatmentType, setTreatmentType] = useState<TreatmentType | ''>('');
@@ -9694,13 +9695,30 @@ function PackagePurchaseFromTemplateDialog({
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
   const totalSessions = heated + unheated + iv + precon + podologe + trial + reborn;
 
-  // T-20260708 RECONCILE(D): 커스텀 모드 기준정가 = standard_price × 횟수(totalSessions) 계약총액 grain 스냅샷.
-  //   시술유형/횟수 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
-  const stdForType = treatmentType ? stdPrices.map[treatmentType] : null;
+  // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM-REFPRICE-1SESSION 변경2 (DA-20260708-FOOT-PKGBUY-REFPRICE 승인산식):
+  //   기준정가 = 시술유형별 마스터 정찰가(treatment_standard_prices) per-line 합 + 업그레이드 가산.
+  //     masterReferencePrice = Σ_type ( std_price[type] × count[type] ) + upgradeSurcharge
+  //   · 소스 = treatment_standard_prices 마스터 불변 (스태프 입력단가 fallback 금지).
+  //   · treatmentType 단일게이트 제거 → 라인 구성(유형별 회수) 변동에 반응(혼합 패키지 정확 반영).
+  //   · 마스터 미설정 유형(precon/trial 등) = 0 기여.
+  //   · refPriceTouched(수기 override) 시 자동계산 중단 — override 존중(AC-4, 기존 동작 보존).
+  //   · 템플릿 모드는 템플릿 정가 유지(AC-2b) — 커스텀 모드에서만 반응.
+  //   ⚠ B안(staff 입력 computedTotal) 미채택: 비-override 경로에서 computedTotal+upgradeSurcharge==grandTotal →
+  //     할인율 구조적 항상 0 → reference_price(할인율 KPI base) 자기파괴. DA KPI 근거로 역전(reporter A안 confirm).
+  const masterReferencePrice = useMemo(
+    () =>
+      (stdPrices.map['가열'] ?? 0) * heated +
+      (stdPrices.map['비가열'] ?? 0) * unheated +
+      (stdPrices.map['포돌로게'] ?? 0) * podologe +
+      (stdPrices.map['수액'] ?? 0) * iv +
+      (stdPrices.map['Re:Born'] ?? 0) * reborn +
+      upgradeSurcharge,
+    [stdPrices.map, heated, unheated, podologe, iv, reborn, upgradeSurcharge],
+  );
   useEffect(() => {
-    if (selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType) return;
-    if (stdForType != null && stdForType > 0) setReferencePrice(stdForType * totalSessions);
-  }, [stdForType, totalSessions, treatmentType, selectedTemplateId, refPriceTouched]);
+    if (selectedTemplateId !== 'custom' || refPriceTouched) return;
+    setReferencePrice(masterReferencePrice);
+  }, [masterReferencePrice, selectedTemplateId, refPriceTouched]);
 
   // T-20260510-foot-PKG-CREATE-FIX3: 템플릿 로드 후 첫 번째 자동 선택 (button 활성화 보장)
   useEffect(() => {
@@ -9794,11 +9812,11 @@ function PackagePurchaseFromTemplateDialog({
     setReferencePrice(0); setRefPriceTouched(false);
   };
 
-  // T-20260708 AC-8/AC-10 + RECONCILE(D): 시술유형 선택 시 수기 override 플래그 해제 → 반응형 effect 가
-  //   커스텀 모드에서 standard_price × 횟수(계약총액 grain)를 기준정가에 prefill. 템플릿 모드는 유지(AC-2b).
+  // T-20260708 변경2(DA 승인산식): 시술유형(treatmentType)은 통계 태깅 전용 — 기준정가 prefill 은 라인 구성(유형별
+  //   회수)에 반응하므로 유형 선택은 기준정가에 영향 없음. 따라서 유형 선택 시 refPriceTouched 를 리셋하지 않는다
+  //   (수기 override 를 유형 선택으로 되돌리지 않음 = AC-4 존중).
   const selectTreatmentType = (t: TreatmentType | '') => {
     setTreatmentType(t);
-    if (selectedTemplateId === 'custom') setRefPriceTouched(false);
   };
 
   const submit = async () => {
