@@ -357,7 +357,7 @@ function drawPenChartAutofillInline(
 //   [회귀 RC] A-2가 폰트를 18px→20px 로 키우면서 현장(김주연 총괄) "이전 대비 크게 보임 + 위치 벗어남".
 //     (※ 의심 티켓 PHRASE-DIRECTOR-TO-ASSIGNEE-LABEL / PHRASES-LABEL-DOCTOR-STAFF 는 상용구관리 admin
 //      PhrasesTab 만 건드렸고 펜차트 캔버스 라벨은 미변경 — 실제 원인은 TOOLBAR-FIXES A-2 임을 diff로 특정.)
-//   [수정] AC-1b 정량 지시대로 폰트를 현재(20px)의 절반=10px 로 축소. 우측 콜론열(x=618) 우측정렬 +
+//   [수정] AC-1b 정량 지시대로 폰트를 13px 로 축소(현장 확정값 — "절반=10px"은 근사치, 13px 우선. INFO MSG-xt5a). 우측 콜론열(x=618) 우측정렬 +
 //     baseline y=77/99 는 A-1/A-2 측정상 '원 담당의/담당실장 baseline' = 배포 전 위치이므로 유지(AC-1a
 //     위치 복원 = 원 baseline). 폰트 축소로 우측정렬 텍스트가 원 폭으로 되돌아와 "벗어남" 체감도 해소.
 //     담당의·담당자 크기 통일(A-2 개선)은 유지. 마스크(y60~104)는 구워진 원 라벨 은폐용이라 폰트와 무관하게 유지.
@@ -366,9 +366,9 @@ function drawPenChartLabelOverride(ctx: CanvasRenderingContext2D) {
   // 1) 담당의 + 담당실장 두 라벨 영역을 양식 배경색(흰색)으로 마스킹 (성함 A-1=y40 위 밴드 / DATE 박스 미접촉)
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(543, 60, 84, 44); // x 543~627, y 60~104 — 담당의(y64~77)+담당실장(y86~99) 통합 커버
-  // 2) 담당의 + 담당자 재출력 — 동일 폰트·동일 크기(10px=현재 20px의 절반)·콜론 우측정렬(x=618)
+  // 2) 담당의 + 담당자 재출력 — 동일 폰트·동일 크기(13px 현장 확정값)·콜론 우측정렬(x=618)
   ctx.fillStyle = '#2e2e2e';
-  ctx.font = '10px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+  ctx.font = '13px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText('담당의 :', 618, 77); // 원 담당의 하단 baseline
