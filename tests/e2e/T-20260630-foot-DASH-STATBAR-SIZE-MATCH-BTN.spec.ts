@@ -63,9 +63,10 @@ test.describe('T-20260630 DASH-STATBAR-SIZE-MATCH-BTN — source-integrity', () 
     expect(DASH).toMatch(/전체 \{statusNewCount \+ statusReturningCount\}건/);
     expect(DASH).toMatch(/신규 \{statusNewCount\}건/);
     expect(DASH).toMatch(/재진 \{statusReturningCount\}건/);
-    // 카운트 정의는 기존 재사용 — 신규 fetch/집계 추가 없음.
-    expect(DASH).toMatch(/const statusNewCount = activeNonTerminal\.filter/);
-    expect(DASH).toMatch(/const statusReturningCount = activeNonTerminal\.filter/);
+    // T-20260708-foot-DASH-STAT-COUNT-MISMATCH SUPERSEDES: 카운트 소스 activeNonTerminal → boardCountRows 정정.
+    //   (본 STATBAR-SIZE-MATCH 티켓은 presentation-only였고 값을 건드리지 않았으나, 소스 정정으로 배선 식만 변경)
+    expect(DASH).toMatch(/const statusNewCount = boardCountRows\.filter/);
+    expect(DASH).toMatch(/const statusReturningCount = boardCountRows\.filter/);
   });
 
   test('S1-d: 기준 버튼(슬롯편집/배치편집) 사이즈 불변 — px-2 py-1 text-xs font-medium', () => {

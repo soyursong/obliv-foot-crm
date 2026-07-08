@@ -63,9 +63,10 @@ test.describe('T-20260630 DASH-HEADER-DEDUP-COMPACT — source-integrity', () =>
     expect(DASH).toMatch(/전체 \{statusNewCount \+ statusReturningCount\}건/);
     expect(DASH).toMatch(/신규 \{statusNewCount\}건/);
     expect(DASH).toMatch(/재진 \{statusReturningCount\}건/);
-    // 카운트 변수는 기존 정의 재사용 — 본 티켓이 신규 fetch/집계를 추가하지 않음.
-    expect(DASH).toMatch(/const statusNewCount = activeNonTerminal\.filter/);
-    expect(DASH).toMatch(/const statusReturningCount = activeNonTerminal\.filter/);
+    // T-20260708-foot-DASH-STAT-COUNT-MISMATCH SUPERSEDES: 카운트 소스가 activeNonTerminal(진행중만) →
+    //   boardCountRows(rows, cancelled만 제외)로 정정됨. 라벨(전체/신규/재진) 표기 자체는 불변.
+    expect(DASH).toMatch(/const statusNewCount = boardCountRows\.filter\(\(r\) => r\.visit_type === 'new'\)/);
+    expect(DASH).toMatch(/const statusReturningCount = boardCountRows\.filter\(\(r\) => r\.visit_type !== 'new'\)/);
   });
 
   test('S1-d: AC-3 좌측 상태바(dashboard-statusbar-4item) + 미사용 카운트 정의 제거', () => {
@@ -74,9 +75,9 @@ test.describe('T-20260630 DASH-HEADER-DEDUP-COMPACT — source-integrity', () =>
     // 표기 소비처가 사라진 두 카운트 정의 제거(unused 방지).
     expect(DASH).not.toContain('const statusDoneCount');
     expect(DASH).not.toContain('const statusPaymentWaitingCount');
-    // doneCumulativeIds는 activeNonTerminal 계산에 필수라 유지.
-    expect(DASH).toContain('const doneCumulativeIds');
-    expect(DASH).toMatch(/doneCumulativeIds\.has\(r\.id\)/);
+    // T-20260708-foot-DASH-STAT-COUNT-MISMATCH SUPERSEDES: activeNonTerminal 제거로 doneCumulativeIds도
+    //   소비처가 사라져 함께 제거됨(카운트는 board rows 전량 기준). 재도입 금지.
+    expect(DASH).not.toMatch(/const doneCumulativeIds\s*=/);
   });
 
   test('S1-e: AC-4 슬롯편집/배치편집/당일검색 1줄화(whitespace-nowrap)', () => {

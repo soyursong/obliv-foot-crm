@@ -3393,7 +3393,6 @@ export default function Dashboard() {
   //   당일 done 으로 전이된 적이 있는 check_in_id 집합. fetchStageStarts 의 동일 fetch에서 파생(추가 라운드트립 없음).
   //   현재 status 가 done 에서 되돌려져도(상태 재전환) 집합에서 빠지지 않으므로 "완료 후 줄지 않는" 누적 카운트 보장.
   //   현재 byStatus['done'] 와 union 하여 최종 완료 카운트 산출(자정 KST 리셋 = dateStr 변경 시 재fetch).
-  const [doneEverSet, setDoneEverSet] = useState<Set<string>>(new Set());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
@@ -4259,8 +4258,8 @@ export default function Dashboard() {
     //   새로고침/Realtime 재조회 시 완료 환자가 통합시간표에서 사라져 그날 기록이 소실됐다(현장 신고).
     //   → 'done'은 fetch에 포함(취소만 제외)해 완료 환자도 잔존시킨다. 완료 건은 byStatus['done']로
     //   라우팅되어 우측 [완료] 단독 컬럼(렌더링은 기존 renderDoneColumn)에만 표시되고, 활성 슬롯/정렬·
-    //   드래그·초과시간 알림(active 필터 4609에서 done 별도 제외)에는 영향 없다. 완료 카운트는 doneEverSet과
-    //   Set union(dedup)이라 중복 집계 없음. 조회 범위는 당일(checked_in_at gte/lte)로 한정 → 무한 누적 없음.
+    //   드래그·초과시간 알림(active 필터 4609에서 done 별도 제외)에는 영향 없다. 완료 컬럼은 byStatus['done']
+    //   단독 렌더라 중복 집계 없음. 조회 범위는 당일(checked_in_at gte/lte)로 한정 → 무한 누적 없음.
     const { data } = await supabase
       .from('check_ins')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
@@ -4306,18 +4305,16 @@ export default function Dashboard() {
     //   (purple/yellow는 flag라 transition row가 통상 없으나, 향후 호환 위해 set에 포함 — 없으면 자연 미반영.)
     //   ※ stageStartMap(map, 임의 to_status 최신·위치라벨용)은 회귀 금지라 '최신' 유지 — callEntry만 '최초'로 분리.
     const callEntry = new Map<string, string>();
-    // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2: 당일 done 전이 이력 집합(누적 완료).
-    const doneEver = new Set<string>();
+    // T-20260708-foot-DASH-STAT-COUNT-MISMATCH: 구 doneEver(당일 done 전이 이력 누적) 제거.
+    //   유일 소비처였던 상단 카운트 activeNonTerminal 제외 로직이 제거됨(카운트는 이제 board rows 전량 기준).
     for (const t of (data ?? []) as { check_in_id: string; to_status: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
       if (t.to_status === 'healer_waiting' || t.to_status === 'purple' || t.to_status === 'yellow') {
         callEntry.set(t.check_in_id, t.transitioned_at); // desc 순회 + 무조건 덮어쓰기 → 최종값=최초(가장 이른) 진입.
       }
-      if (t.to_status === 'done') doneEver.add(t.check_in_id);
     }
     setStageStartMap(map);
     setCallEntryMap(callEntry);
-    setDoneEverSet(doneEver);
   }, [clinic, dateStr]);
 
   const fetchPackageLabels = useCallback(async () => {
@@ -6429,21 +6426,22 @@ export default function Dashboard() {
 
   const doneCount = (byStatus['done'] ?? []).length;
 
-  // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청2: status bar 4항목 [초진·재진·수납대기·완료].
-  //   해석=상호배타(권장안, salvage ★): 4항목 합 = 금일 체크인 전체(중복 0).
-  //   - 완료(누적) = byStatus['done'](현재 done) ∪ doneEverSet(당일 done 전이 이력) → 되돌려도 줄지 않음(AC-3).
-  //   - 수납대기 = 현재 status payment_waiting (실시간, AC-4).
-  //   - 초진/재진 = 완료(누적)·수납대기를 제외한 진행 환자를 visit_type별로(재진=returning, 그 외=초진).
-  //     실시간 byStatus(filtered) 기반이라 체크인·상태전환 시 즉시 갱신(AC-4).
-  // T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-3: 상태바 4item 제거로 statusDoneCount/statusPaymentWaitingCount
-  //   표기 소비처가 사라짐 → 미사용 변수 정의 제거(unused 린트 방지). doneCumulativeIds는 activeNonTerminal 계산에 필수라 유지.
-  const doneCumulativeIds = new Set<string>(doneEverSet);
-  for (const ci of byStatus['done'] ?? []) doneCumulativeIds.add(ci.id);
-  const activeNonTerminal = filtered.filter(
-    (r) => r.status !== 'done' && r.status !== 'payment_waiting' && !doneCumulativeIds.has(r.id),
-  );
-  const statusNewCount = activeNonTerminal.filter((r) => r.visit_type !== 'returning').length;
-  const statusReturningCount = activeNonTerminal.filter((r) => r.visit_type === 'returning').length;
+  // T-20260708-foot-DASH-STAT-COUNT-MISMATCH: 상단 '전체/신규/재진' 탭 라벨 카운트 정정.
+  //   ⛔ 회귀 근본원인(FIXED): 직전 구현(STATUSBAR-4ITEM → DEDUP-COMPACT 승계)은 카운트를
+  //      activeNonTerminal(= done·payment_waiting·done-ever 이력 제외) 기반으로 냈다. 즉 라벨은 '전체'라
+  //      쓰면서 실제로는 '진행중 환자'만 셌다 → 완료·수납대기 환자가 통째로 누락(현장 스샷: 실제 완료14+수납2
+  //      인데 상단 '전체 1/신규 1/재진 0'). 재진(당일 유일 1건)이 payment_waiting라 재진=0으로 보였다.
+  //      2차 결함: 신규/재진 분류축이 라벨(new = visit_type!=='returning')과 탭 필터
+  //      (new = visit_type==='new' / returning = visit_type!=='new', 아래 `filtered` useMemo) 사이에서 달라,
+  //      visit_type='experience'(체험) 방문이 라벨↔필터에서 반대로 분류됐다(상단↔board 축 불일치).
+  //   ✅ 정정 원칙 = 탭 필터와 '동일소스·동일축'. rows(당일 fetch 전량, cancelled만 제외 = 탭 'all' 필터와 동일)를
+  //      탭과 같은 visit_type 축으로 분할한다. 이렇게 하면 각 탭 라벨 카운트 = 그 탭이 board에 표시할 건수
+  //      (완료·수납대기 컬럼 포함)와 항상 정합한다. 테스트행(예: '접수테스트2')도 board 컬럼과 동일하게
+  //      상단에도 포함되어 '한쪽만 계상'되던 불일치가 사라진다(제외 정책 필요 시 board·상단 동시 적용해야 함).
+  //      탭 선택과 무관한 절대 카운트(각 라벨이 자기 범주 총건수 표기). 0건도 '0건' 정상 표기(NaN 방지).
+  const boardCountRows = rows.filter((r) => r.status !== 'cancelled');
+  const statusNewCount = boardCountRows.filter((r) => r.visit_type === 'new').length;
+  const statusReturningCount = boardCountRows.filter((r) => r.visit_type !== 'new').length;
 
   // T-20260506-foot-SELFCHECKIN-MERGE: 1박스 원칙
   // 이미 체크인 레코드가 연결된 예약(reservation_id 매칭)은 칸반 슬롯·타임라인에서 숨김
@@ -7157,7 +7155,9 @@ export default function Dashboard() {
 
           {/* T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-2: 탭 라벨에 'N건' 표기.
               기존 화면 보유 카운트(statusNewCount/statusReturningCount) 재사용 — 신규 fetch·집계 없음.
-              전체 = 신규 + 재진(activeNonTerminal 합). 0건도 '0건'으로 정상 표기(NaN 방지). */}
+              T-20260708-foot-DASH-STAT-COUNT-MISMATCH: 카운트 소스를 activeNonTerminal(진행중만) →
+              boardCountRows(당일 rows, cancelled만 제외 = 탭 필터 동일소스·동일축)로 정정.
+              전체 = 신규 + 재진 = boardCountRows.length(완료·수납대기 포함). 0건도 '0건' 정상 표기(NaN 방지). */}
           {/* T-20260630-foot-DASH-STATBAR-SIZE-MATCH-BTN: 통계바(전체/신규/재진) 높이·폰트를 같은 행 '슬롯편집'/'배치 편집'
               버튼(px-2 py-1 text-xs font-medium border ≈ 26px)에 맞춰 통일. 순수 presentation — 카운트 값·쿼리·로직 미접촉.
               TabsList h-11(44px)→h-[26px]+p-0.5, TabsTrigger min-h-[44px]→h-full min-h-0(컨테이너 높이로 fill, py-0 px-2=버튼 동일).
