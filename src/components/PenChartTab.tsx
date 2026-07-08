@@ -61,7 +61,7 @@ import { formatDateTimeDots } from '@/lib/format';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
-  CheckSquare, Move, Check,
+  CheckSquare, Square, Move, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -970,8 +970,12 @@ export function PenChartTab({
   //   [RC] 기존 패널은 모든 행의 ✓ 버튼을 상시 teal-500(초록 채움)으로 렌더 → 현장이 "전체 ✓(전부 선택됨)"로
   //   오인. 단일선택 어포던스가 전역처럼 보이는 회귀. → 클릭한 1건만 green ✓, 나머지는 중립(outline + Plus).
   const [lastInsertedPhraseId, setLastInsertedPhraseId] = useState<number | null>(null);
-  // [DEACTIVATED — T-20260605-foot-RX-PHRASE-INSERT-UX Q1] 복수 선택 배열. 복원 시 주석 해제.
-  // const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
+  // ── T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B: 상용구 다중선택 ──
+  //   phraseMultiSelect=true 면 행 클릭이 즉시삽입 대신 선택 토글로 전환(체크박스 UX).
+  //   selectedPhraseIds = 선택된 상용구 id(중복 없음). 삽입은 리스트(sort_order) 순서로 재정렬(AC-3).
+  //   기본값 false → 단건 클릭 즉시삽입(insertPhraseImmediate) 동선 불변(AC-4 회귀 가드).
+  const [phraseMultiSelect, setPhraseMultiSelect] = useState(false);
+  const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
   // T-20260605-foot-RX-PHRASE-INSERT-UX (AC-2): 행 클릭 시 그 행에만 인라인 ✓ 노출 (한 번에 한 행).
   //   null = 노출 없음 / number = 해당 phrase.id 행에 ✓ 노출. 같은 행 재클릭 = 닫힘.
 
@@ -1970,6 +1974,9 @@ export function PenChartTab({
     setPlacedItems([]);
     setSelectedIds(new Set());
     setLastInsertedPhraseId(null); // T-20260612-PINGPONG5 AC-1.B: 새 세션 시작 시 패널 ✓ 마킹 리셋
+    // T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B: 세션 리셋 시 다중선택 상태 비움
+    setPhraseMultiSelect(false);
+    setSelectedPhraseIds([]);
     whiteStrokesAllRef.current = []; // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: 세션 리셋 시 누적 화이트 획 비움
     // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-4: 형광펜 재합성 임시상태 리셋(세션 간 stale 방지)
     hlSnapshotRef.current = null;
@@ -2930,6 +2937,41 @@ export function PenChartTab({
     toast.success(`상용구 '${name}' — 원하는 위치를 눌러 삽입하세요`);
   };
 
+  // ── T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B: 상용구 다중선택 → 일괄 삽입 ──
+  //   [설계] 단건 즉시삽입(insertPhraseImmediate)은 AC-4 회귀 가드로 그대로 유지. 다중선택 모드에선
+  //   행 클릭이 선택 토글만 하고, [N개 삽입] 확정 시 선택 상용구들을 **리스트(sort_order) 순서**로
+  //   **줄바꿈(\n) 결합**해 기존 placing 경로(pendingBoilerplate → 캔버스 탭 배치)로 흘려보낸다.
+  //   → 결합 결과는 멀티라인 단일 placedItem(type='boilerplate'). 캔버스 그린·저장 래스터·bbox 모두
+  //     item.text.split('\n') 로 이미 멀티라인을 처리하므로 삽입 grain 불변(스키마·저장 데이터 무변경, AC-5).
+  const togglePhraseSelect = (id: number) => {
+    setSelectedPhraseIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const insertSelectedPhrases = () => {
+    if (selectedPhraseIds.length === 0) return;
+    // AC-3: 체크 순서가 아니라 리스트 표시 순서(phraseTemplates = sort_order 정렬)대로 결합.
+    const ordered = phraseTemplates.filter((p) => selectedPhraseIds.includes(p.id));
+    const contents = ordered
+      .map((p) => p.content)
+      .filter((c): c is string => typeof c === 'string' && c.trim() !== '');
+    // insertPhraseImmediate 와 동일 가드: 내용 없는 상용구만 선택된 경우 가시 피드백 후 무동작.
+    if (contents.length === 0) {
+      toast.warning('선택한 상용구에 내용이 없습니다. 상용구 관리에서 내용을 입력해 주세요.');
+      return;
+    }
+    // AC-3: 상용구 간 줄바꿈 구분 → 멀티라인 단일 placedItem.
+    const combined = contents.join('\n');
+    setLastInsertedPhraseId(null); // 다중 삽입은 단일 ✓ 마킹 대상 아님(전역 ✓ 오인 회귀 차단).
+    setPendingBoilerplate(combined);
+    setActiveTool('boilerplate-placing');
+    // 결합 완료 → 다중선택 세션 종료. 배치 후 패널은 placeBoilerplateAt(fromPlacing=true)이 닫는다.
+    setPhraseMultiSelect(false);
+    setSelectedPhraseIds([]);
+    toast.success(`상용구 ${contents.length}개 — 원하는 위치를 눌러 한 번에 삽입하세요`);
+  };
+
   // ── 양식 선택 ─────────────────────────────────────────────────────────
   const handleSelectTemplate = (tpl: Template) => {
     setActiveDrawTemplate(tpl);
@@ -3196,7 +3238,30 @@ export function PenChartTab({
                 data-testid="phrase-library-panel"
               >
                 {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
-                <div className="flex items-center justify-end px-2 py-1 bg-teal-50 border-b">
+                {/* T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B: 헤더에 '여러 개 선택' 토글.
+                    ON = 행 클릭이 선택 토글(체크박스) / OFF = 단건 즉시삽입(기존, AC-4). */}
+                <div className="flex items-center justify-between px-2 py-1 bg-teal-50 border-b">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhraseMultiSelect((v) => !v);
+                      setSelectedPhraseIds([]); // 모드 전환 시 선택 초기화(잔여 선택 방지).
+                    }}
+                    className={cn(
+                      'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition',
+                      phraseMultiSelect
+                        ? 'bg-teal-500 border-teal-500 text-white hover:bg-teal-600'
+                        : 'bg-white border-teal-300 text-teal-600 hover:bg-teal-100',
+                    )}
+                    data-testid="phrase-multiselect-toggle"
+                    data-active={phraseMultiSelect ? 'true' : 'false'}
+                    title="여러 개 선택해서 한 번에 삽입"
+                  >
+                    {phraseMultiSelect
+                      ? <CheckSquare className="h-3 w-3" aria-hidden="true" />
+                      : <Square className="h-3 w-3" aria-hidden="true" />}
+                    <span>여러 개 선택</span>
+                  </button>
                   <button
                     onClick={() => setShowPhrasePanel(false)}
                     className="text-teal-500 hover:text-teal-700"
@@ -3213,7 +3278,10 @@ export function PenChartTab({
                       [
                         { key: 'charting',     label: '차팅' },
                         { key: 'prescription', label: '처방' },
-                        { key: 'document',     label: '원장님' },
+                        // T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 A: 펜차트 상용구 picker
+                        //   카테고리 라벨 '원장님' → '담당자' (선행 T-20260706-foot-PHRASES-LABEL-DOCTOR-STAFF가
+                        //   관리화면 PhrasesTab만 커버 → 이 picker 표면 잔여지점 마감). key='document' 불변(저장 데이터 정합 유지).
+                        { key: 'document',     label: '담당자' },
                         { key: 'general',      label: '일반' },
                       ] as const
                     ).map(({ key, label }) => {
@@ -3263,50 +3331,84 @@ export function PenChartTab({
                           //   중립 어포던스(회색 outline + Plus)로 "탭하면 삽입"을 안내하되 '선택됨'처럼 보이지 않게.
                           //   (구: 모든 행을 상시 teal-500 ✓로 칠해 "전체 선택"으로 오인되던 회귀 차단.)
                           const isMarked = lastInsertedPhraseId === phrase.id;
+                          // T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B: 다중선택 모드 상태.
+                          const isSelected = phraseMultiSelect && selectedPhraseIds.includes(phrase.id);
+                          // 행 클릭 동작 분기 — 다중선택 ON=토글 / OFF=단건 즉시삽입(AC-4 회귀 가드).
+                          const handleRowActivate = () =>
+                            phraseMultiSelect ? togglePhraseSelect(phrase.id) : insertPhraseImmediate(phrase.id);
                           return (
                             <div
                               key={phrase.id}
                               role="button"
                               tabIndex={0}
-                              aria-pressed={isMarked}
-                              onClick={() => insertPhraseImmediate(phrase.id)}
+                              aria-pressed={phraseMultiSelect ? isSelected : isMarked}
+                              onClick={handleRowActivate}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                   e.preventDefault();
-                                  insertPhraseImmediate(phrase.id);
+                                  handleRowActivate();
                                 }
                               }}
                               className={cn(
                                 'w-full cursor-pointer text-left px-2.5 py-1.5 text-[11px] border-b border-gray-100 last:border-0 transition flex items-center gap-1.5 focus:outline-none focus:bg-teal-50',
                                 'hover:bg-teal-50 active:bg-teal-100',
-                                isMarked && 'bg-teal-50',
+                                (isMarked || isSelected) && 'bg-teal-50',
                               )}
                               data-testid={`phrase-item-${phrase.id}`}
                               data-marked={isMarked ? 'true' : 'false'}
+                              data-selected={isSelected ? 'true' : 'false'}
                             >
-                              {/* 삽입 어포던스 — 마킹된 1건만 green ✓, 나머지는 중립 outline+Plus. 행 onClick과 동일 삽입(이중삽입 방지 stopPropagation). */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation(); // 행 onClick 중복 발화 방지 (단일 삽입 보장)
-                                  insertPhraseImmediate(phrase.id);
-                                }}
-                                className={cn(
-                                  'flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-teal-300',
-                                  isMarked
-                                    ? 'bg-teal-500 text-white hover:bg-teal-600'
-                                    : 'border border-gray-300 bg-white text-gray-400 hover:border-teal-400 hover:text-teal-500',
-                                )}
-                                data-testid={`phrase-insert-${phrase.id}`}
-                                data-marked={isMarked ? 'true' : 'false'}
-                                aria-label={`${phrase.name} 삽입`}
-                                title="삽입"
-                                tabIndex={-1}
-                              >
-                                {isMarked
-                                  ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                                  : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                              </button>
+                              {/* 어포던스 — T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B:
+                                  다중선택 ON = 체크박스(선택 토글) / OFF = 기존 삽입 버튼(마킹 1건 green ✓, 나머지 outline+Plus).
+                                  둘 다 행 onClick과 동일 동작 → stopPropagation 으로 이중 발화 방지. */}
+                              {phraseMultiSelect ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePhraseSelect(phrase.id);
+                                  }}
+                                  className={cn(
+                                    'flex-shrink-0 h-5 w-5 rounded flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-teal-300',
+                                    isSelected
+                                      ? 'bg-teal-500 text-white hover:bg-teal-600'
+                                      : 'border border-gray-300 bg-white text-gray-400 hover:border-teal-400 hover:text-teal-500',
+                                  )}
+                                  data-testid={`phrase-check-${phrase.id}`}
+                                  data-selected={isSelected ? 'true' : 'false'}
+                                  aria-label={`${phrase.name} 선택`}
+                                  aria-pressed={isSelected}
+                                  title="선택"
+                                  tabIndex={-1}
+                                >
+                                  {isSelected
+                                    ? <CheckSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                                    : <Square className="h-3.5 w-3.5" aria-hidden="true" />}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // 행 onClick 중복 발화 방지 (단일 삽입 보장)
+                                    insertPhraseImmediate(phrase.id);
+                                  }}
+                                  className={cn(
+                                    'flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-teal-300',
+                                    isMarked
+                                      ? 'bg-teal-500 text-white hover:bg-teal-600'
+                                      : 'border border-gray-300 bg-white text-gray-400 hover:border-teal-400 hover:text-teal-500',
+                                  )}
+                                  data-testid={`phrase-insert-${phrase.id}`}
+                                  data-marked={isMarked ? 'true' : 'false'}
+                                  aria-label={`${phrase.name} 삽입`}
+                                  title="삽입"
+                                  tabIndex={-1}
+                                >
+                                  {isMarked
+                                    ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                                    : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                                </button>
+                              )}
                               <span className="min-w-0 flex-1">
                                 <span className="block font-medium text-gray-800 truncate">{phrase.name}</span>
                                 <span className="block text-gray-400 mt-0.5 text-[10px] truncate">
@@ -3320,8 +3422,40 @@ export function PenChartTab({
                   </div>
                 </div>
 
-                {/* [AC-1 — T-20260605-foot-RX-PHRASE-INSERT-UX] 체크박스 복수선택 푸터(삽입/취소) 제거.
-                    단건 즉시삽입 동선으로 전환 — 행 클릭 → 인라인 ✓ → 즉시삽입. */}
+                {/* T-20260708-foot-PENCHART-PHRASELIST-LABEL-MULTISELECT 요청 B: 다중선택 확정 푸터.
+                    다중선택 모드에서만 노출 — 선택 개수 + [N개 삽입] + [취소]. 삽입 시 리스트 순서·줄바꿈
+                    결합으로 캔버스 배치 모드 진입(insertSelectedPhrases). (구: 단건 즉시삽입 전환으로 제거했던
+                    복수선택 푸터를, 현장 재요청으로 단건 동선 유지한 채 별도 모드로 복원.) */}
+                {phraseMultiSelect && (
+                  <div
+                    className="flex items-center justify-between gap-2 px-2 py-1.5 bg-teal-50 border-t"
+                    data-testid="phrase-multiselect-footer"
+                  >
+                    <span className="text-[10px] text-teal-700" data-testid="phrase-selected-count">
+                      {selectedPhraseIds.length}개 선택됨
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPhraseIds([])}
+                        disabled={selectedPhraseIds.length === 0}
+                        className="px-1.5 py-0.5 rounded text-[10px] text-teal-600 hover:bg-teal-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        data-testid="phrase-multiselect-clear"
+                      >
+                        선택 해제
+                      </button>
+                      <button
+                        type="button"
+                        onClick={insertSelectedPhrases}
+                        disabled={selectedPhraseIds.length === 0}
+                        className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                        data-testid="phrase-multiselect-insert"
+                      >
+                        {selectedPhraseIds.length}개 삽입
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
