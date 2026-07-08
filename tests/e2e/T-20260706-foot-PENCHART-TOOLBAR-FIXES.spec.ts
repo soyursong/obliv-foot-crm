@@ -22,7 +22,9 @@ import { test, expect } from '@playwright/test';
 const AUTOFILL_NAME = { x: 618, y: 40, textAlign: 'right' as const };
 const LABEL_DAMDANGUI = { x: 618, baseline: 77 }; // 담당의
 const LABEL_DAMDANGJA = { x: 618, baseline: 99 }; // 담당자
-const LABEL_FONT_PX = 20; // A-2: 두 라벨 동일 크기
+// A-2: 두 라벨 동일 크기. ※SUPERSEDED — T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈1(AC-1b)이
+//   20px→10px(절반)로 축소. '동일 크기(통일)' 불변식은 유지되고 값만 10 으로 갱신.
+const LABEL_FONT_PX = 10;
 
 test.describe('A-1: 성함 위치 담당 라인 위로', () => {
   test('성함 y(40) 는 담당의(y64~77)·담당자(y86~99) 보다 위(작은 y)', () => {
@@ -59,8 +61,8 @@ test.describe('A-2: 담당 라벨 크기 통일', () => {
     expect(maskCovers(LABEL_DAMDANGJA.baseline, 99 - Math.round(LABEL_FONT_PX * 0.7))).toBe(true);
   });
 
-  test('담당의·담당자 재출력 폰트 크기가 동일(20px)', () => {
-    // 실코드는 두 fillText 를 같은 ctx.font('20px …') 로 그린다 → 크기 동일 보장.
+  test('담당의·담당자 재출력 폰트 크기가 동일(10px, REGRESSION-3FIX로 20→10 축소)', () => {
+    // 실코드는 두 fillText 를 같은 ctx.font('10px …') 로 그린다 → 크기 동일(통일) 보장.
     const font1 = `${LABEL_FONT_PX}px "Malgun Gothic"`;
     const font2 = `${LABEL_FONT_PX}px "Malgun Gothic"`;
     expect(font1).toBe(font2);

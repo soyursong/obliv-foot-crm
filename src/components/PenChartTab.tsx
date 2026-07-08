@@ -352,14 +352,23 @@ function drawPenChartAutofillInline(
 //   [수정] 담당의 라인도 함께 마스킹하고 담당의·담당자 '둘 다' 동일 폰트/동일 크기(20px)로 재출력해
 //     크기·서체를 일치. 우측 콜론열(x=618) 우측정렬로 세로 컬럼 정렬. (성함 A-1 은 y=40 위 밴드라 미접촉.)
 //   [측정] 담당의 canvas y=64~77 / 담당실장 canvas y=86~99 → 마스크 y=60~104 로 두 라인 모두 커버.
+//
+// T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈1 (AC-1a/1b): 담당의/담당자 라벨 위치·폰트 회귀 수정.
+//   [회귀 RC] A-2가 폰트를 18px→20px 로 키우면서 현장(김주연 총괄) "이전 대비 크게 보임 + 위치 벗어남".
+//     (※ 의심 티켓 PHRASE-DIRECTOR-TO-ASSIGNEE-LABEL / PHRASES-LABEL-DOCTOR-STAFF 는 상용구관리 admin
+//      PhrasesTab 만 건드렸고 펜차트 캔버스 라벨은 미변경 — 실제 원인은 TOOLBAR-FIXES A-2 임을 diff로 특정.)
+//   [수정] AC-1b 정량 지시대로 폰트를 현재(20px)의 절반=10px 로 축소. 우측 콜론열(x=618) 우측정렬 +
+//     baseline y=77/99 는 A-1/A-2 측정상 '원 담당의/담당실장 baseline' = 배포 전 위치이므로 유지(AC-1a
+//     위치 복원 = 원 baseline). 폰트 축소로 우측정렬 텍스트가 원 폭으로 되돌아와 "벗어남" 체감도 해소.
+//     담당의·담당자 크기 통일(A-2 개선)은 유지. 마스크(y60~104)는 구워진 원 라벨 은폐용이라 폰트와 무관하게 유지.
 function drawPenChartLabelOverride(ctx: CanvasRenderingContext2D) {
   ctx.save();
   // 1) 담당의 + 담당실장 두 라벨 영역을 양식 배경색(흰색)으로 마스킹 (성함 A-1=y40 위 밴드 / DATE 박스 미접촉)
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(543, 60, 84, 44); // x 543~627, y 60~104 — 담당의(y64~77)+담당실장(y86~99) 통합 커버
-  // 2) 담당의 + 담당자 재출력 — 동일 폰트·동일 크기(20px)·콜론 우측정렬(x=618)로 크기 통일
+  // 2) 담당의 + 담당자 재출력 — 동일 폰트·동일 크기(10px=현재 20px의 절반)·콜론 우측정렬(x=618)
   ctx.fillStyle = '#2e2e2e';
-  ctx.font = '20px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+  ctx.font = '10px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText('담당의 :', 618, 77); // 원 담당의 하단 baseline
@@ -1367,12 +1376,16 @@ export function PenChartTab({
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
     } else if (tool === 'white') {
-      // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #4 (AC-6 재정의): 화이트=destination-out 지움.
-      //   기존 source-over 흰색 stroke는 draw 레이어에 불투명 흰색을 칠해 저장 합성 시 양식(bgCanvas)을
-      //   가렸다(=현장 '양식까지 지워버림'). destination-out으로 전환 → draw 레이어 픽셀만 투명화 →
-      //   하단 양식(괘선·인쇄텍스트) 그대로 비쳐 보존. placedItems(텍스트/상용구) 삭제는 onPointerUp hit-test 유지.
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      // T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈3 (AC-3a/3c/3d): 화이트 = '흰 덧칠' 복원.
+      //   [회귀 RC] 6FIX #4가 화이트를 destination-out(지움)으로 바꿔 draw 레이어 픽셀을 투명화했다 →
+      //     ① 지우개와 시각적으로 동일(현장 "화이트=지우개")  ② 저장 재적용도 destination-out이라 상용구
+      //     위를 칠하면 '흰 덮기'가 아니라 구멍(양식 비침)이 남음.
+      //   [수정] source-atop 불투명 흰색으로 전환 — 흰색이 '기존 draw 레이어 내용(필기/래스터 상용구)이
+      //     있는 픽셀 위에만' 얹힌다. draw 레이어가 투명한 곳(양식만 깔린 영역)엔 아무것도 안 그려져
+      //     양식 서식(bgCanvas=별도 레이어)은 전혀 건드리지 않는다(AC-FORM-SAFE/AC-LAYER-SEPARATE).
+      //     지우개(destination-out=투명화)와 명확히 구분 → 화이트=흰 덮기, 지우개=지움.
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.strokeStyle = '#ffffff';
       ctx.globalAlpha = 1;
       ctx.lineWidth   = penSize * 8;
       ctx.lineCap     = 'round';
@@ -2205,8 +2218,14 @@ export function PenChartTab({
     setHasDrawing(true);
     setPendingBoilerplate('');
     if (fromPlacing) {
-      // 탭 배치(B안·AC-2): pen 전환 + 방금 놓은 상용구 자동 선택(이동 그립 강조)
-      switchTool('pen');
+      // T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈2 (AC): 탭 배치 후 조작 핸들 복원.
+      //   [회귀 RC] TOOLBAR-FIXES A-6이 상용구 삽입을 placing 모드(캔버스 탭)로 바꾸면서 이 분기가
+      //     switchTool('pen')으로 끝났다 → activeTool='pen'이라 오버레이 interactive={isSelectTool}=false
+      //     → 자동선택은 됐지만 이동/삭제/크기 핸들이 렌더 안 됨(현장 "삽입하면 핸들 전부 사라짐").
+      //   [수정] 삽입 직후 'select' 도구로 전환(✓ 즉시삽입 분기와 동일) → interactive=true + 자동선택 →
+      //     방금 놓은 상용구에 이동·삭제·크기 핸들 즉시 노출(AC-2). 선택/이동 도구를 벗어나면(펜 등)
+      //     기존대로 오버레이 passthrough(상용구 위 직접 필기) 유지 — placing UX(원하는 위치 탭 배치)는 불변.
+      setActiveTool('select');
       setSelectedIds(new Set([newItem.id]));
     } else {
       // ✓ 즉시삽입(#2): 캔버스 탭 단계 없이 commit. select 도구로 전환 + 자동 선택 →
@@ -2306,11 +2325,12 @@ export function PenChartTab({
       ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
       eraserStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'white') {
-      // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #4: 화이트 시작점 — destination-out(지움)으로 draw 레이어만
-      //   투명화 → 하단 양식 보존. placedItems hit-test 삭제는 onPointerUp 유지. (save/restore로 GCO 격리)
+      // T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈3: 화이트 시작점(dot) — source-atop 흰 덮기.
+      //   native move(L1369)와 동일 — 흰색은 기존 draw 내용 위에만 얹히고 양식(bgCanvas)은 불변.
+      //   (save/restore로 GCO 격리)
       ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = '#ffffff';
       ctx.globalAlpha = 1;
       const sz = penSize * 4;
       ctx.beginPath();
@@ -2588,19 +2608,22 @@ export function PenChartTab({
         }
       }
 
-      // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (AC-2): 상용구/텍스트 rasterize '후' 화이트 재적용.
-      //   라이브에서는 boilerplate 가 draw 캔버스 위 DOM 오버레이(zIndex 20)라 화이트(destination-out)가
-      //   시각적으로 덮지 못한다. 그러나 저장 합성본(권위 산출물)에선 위 fillText 로 상용구가 draw 캔버스에
-      //   래스터화되므로, 그 '후' 누적 화이트 획을 destination-out 으로 재적용하면 화이트아웃이 상용구 위에
-      //   실제로 덮인다(재진입 시에도 유지). 배경 양식(bgCanvas)은 draw 레이어만 투명화되므로 불변(보존).
+      // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (AC-2) → T-20260708-REGRESSION-3FIX 이슈3 재정의:
+      //   상용구/텍스트 rasterize '후' 누적 화이트 획을 draw 캔버스에 재적용한다(라이브에선 boilerplate 가
+      //   DOM 오버레이라 화이트가 덮지 못하지만, 저장 합성본에선 위 fillText 로 draw 캔버스에 래스터화되므로).
+      //   [회귀 수정] 종전 destination-out(투명화)은 상용구 위에 '구멍'을 뚫어 저장본에서 양식이 비쳐
+      //     '흰 덮기'가 아니었다(현장 "덮이지 않음"). → source-atop 불투명 흰색으로 전환:
+      //     흰색이 draw 레이어의 '기존 내용(래스터 상용구/텍스트/필기)이 있는 픽셀 위에만' 얹혀 실제로
+      //     하얗게 덮인다(재진입 시에도 유지). draw 레이어가 투명한 곳엔 안 그려지고, 배경 양식(bgCanvas)은
+      //     별도 레이어라 여기서 전혀 손대지 않는다 → AC-FORM-SAFE/AC-LAYER-SEPARATE(양식 read-only) 보장.
       //   ※ placedItems 데이터는 삭제하지 않음 — 화이트가 지나가지 않은 부분의 상용구는 그대로 남는다(AC-1).
       if (whiteStrokesAllRef.current.length > 0) {
         const wCtx = canvas.getContext('2d');
         if (wCtx) {
           wCtx.save();
-          wCtx.globalCompositeOperation = 'destination-out';
-          wCtx.strokeStyle = 'rgba(0,0,0,1)';
-          wCtx.fillStyle   = 'rgba(0,0,0,1)';
+          wCtx.globalCompositeOperation = 'source-atop';
+          wCtx.strokeStyle = '#ffffff';
+          wCtx.fillStyle   = '#ffffff';
           wCtx.globalAlpha = 1;
           wCtx.lineCap  = 'round';
           wCtx.lineJoin = 'round';
@@ -3063,7 +3086,7 @@ export function PenChartTab({
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
-          {/* 화이트 — 초기 굵기 3. T-20260622 AC-3: 상용구/필기를 지우되 배경 양식은 보존(destination-out + 상용구 hit-test 삭제) */}
+          {/* 화이트 — 초기 굵기 3. T-20260708-REGRESSION-3FIX: 흰 덧칠(source-atop) — 필기/상용구 위에만 하얗게 덮고 양식 서식(bgCanvas)은 불변. 지우개(투명화)와 구분. */}
           <button
             onClick={() => switchTool(isWhite ? 'pen' : 'white')}
             className={cn(
