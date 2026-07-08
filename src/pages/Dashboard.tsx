@@ -71,6 +71,8 @@ import { fetchEffectiveRoomAssignments } from '@/lib/roomAssignments';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
+// T-20260708-foot-DASH-HSCROLL-DRAGPAN: 현황판 가로영역 grab-and-drag(pan)
+import { useDragToPan } from '@/hooks/useDragToPan';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
@@ -3503,6 +3505,9 @@ export default function Dashboard() {
     });
   }, []);
   const calendarRef = useRef<HTMLDivElement>(null);
+  // T-20260708-foot-DASH-HSCROLL-DRAGPAN: 칸반 현황판 가로영역 grab-and-drag(pan) 대상 ref
+  const kanbanScrollRef = useRef<HTMLDivElement>(null);
+  useDragToPan(kanbanScrollRef);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
   // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: 셀프접수 시 차트 자동 열림
@@ -7464,7 +7469,7 @@ export default function Dashboard() {
       {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC / DASH-HSCROLL-CHART-LOC #1:
           relative + overflow-auto — 진료콜 명단 팝업의 positioning 기준 & 가로스크롤 컨테이너.
           팝업은 이 칸반 스크롤 컨테이너 내부 absolute(우측 하단)로 배치되어 슬롯 칸에 종속 → 가로스크롤 시 함께 이동. */}
-      <div data-testid="kanban-scroll" className="relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
+      <div ref={kanbanScrollRef} data-testid="kanban-scroll" className="relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
