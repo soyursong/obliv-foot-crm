@@ -12,10 +12,11 @@
 //   · 처방전  = check_ins.prescription_status='confirmed' AND doctor_confirm_prescription=true (그 내원 행).
 //   · 소견·진단서 = form_submissions(status='published', field_data.doc_kind='opinion_doc') 존재(고객+발행일).
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
+import TreatingDoctorSelect from '@/components/TreatingDoctorSelect';
 import { chartNoBadge } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import type { VisitType } from '@/lib/types';
@@ -33,6 +34,7 @@ interface DoctorHistoryRow {
   checkedInAt: string;
   rxIssued: boolean;        // 처방전 발행 O/X
   opinionIssued: boolean;   // 소견·진단서 발행 O/X
+  treatingDoctorId: string | null; // T-20260708 진료의(요청 A) — check_ins.treating_doctor_id
 }
 
 function dayBounds(date: string) {
@@ -51,7 +53,7 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
       const { data: ciData, error: ciErr } = await supabase
         .from('check_ins')
         .select(
-          'id, customer_id, customer_name, visit_type, status_flag, status, checked_in_at, prescription_status, doctor_confirm_prescription',
+          'id, customer_id, customer_name, visit_type, status_flag, status, checked_in_at, prescription_status, doctor_confirm_prescription, treating_doctor_id',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', start)
@@ -102,6 +104,7 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
           checkedInAt: String(c['checked_in_at'] ?? ''),
           rxIssued,
           opinionIssued: cid ? publishedSet.has(cid) : false,
+          treatingDoctorId: (c['treating_doctor_id'] as string | null) ?? null,
         } as DoctorHistoryRow;
       });
     },
@@ -155,8 +158,13 @@ interface Props {
 
 export default function DoctorHistorySection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
+  const qc = useQueryClient();
 
   const { data: rows = [], isLoading, isError, error } = useDoctorHistory(clinic?.id, date);
+  // 진료의(요청 A) 저장 후 목록 즉시 갱신 — 진료콜 명단과 single-field-share(check_ins.treating_doctor_id)라
+  //   반대쪽(대시보드 진료콜)도 realtime/refetch로 자동 반영(AC3).
+  const onTreatingSaved = () =>
+    void qc.invalidateQueries({ queryKey: ['doctor_history', clinic?.id, date] });
   const custIds = rows.map((r) => r.customerId).filter(Boolean) as string[];
   const { data: metaMap } = useCustomerMeta(clinic?.id, custIds);
 
@@ -197,6 +205,7 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
                 <th className="px-2.5 py-1.5 whitespace-nowrap">접수</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap">환자</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap">방문</th>
+                <th className="px-2.5 py-1.5 whitespace-nowrap">진료의</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap">처방전</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap">소견·진단서</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap text-center">문서 보기</th>
@@ -242,6 +251,18 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
                       <Badge className="bg-slate-100 text-slate-700 text-[11px] px-1.5 py-0">
                         {VISIT_TYPE_KO[r.visitType as VisitType] ?? r.visitType ?? '—'}
                       </Badge>
+                    </td>
+                    <td className="px-2.5 py-1.5">
+                      {/* 요청 A: 진료의 선택(행별). duty_roster 근무 원장 옵션·오늘 휴무 disabled(요청 D).
+                          진료콜 명단과 동일 필드(check_ins.treating_doctor_id) 공유 → 실시간 연동(AC3). */}
+                      <TreatingDoctorSelect
+                        checkInId={r.checkInId}
+                        clinicId={clinic?.id}
+                        date={date}
+                        value={r.treatingDoctorId}
+                        onSaved={onTreatingSaved}
+                        data-testid="dh-treating-doctor-select"
+                      />
                     </td>
                     <td className="px-2.5 py-1.5">
                       <IssueBadge issued={r.rxIssued} testid="dh-rx-issue" />

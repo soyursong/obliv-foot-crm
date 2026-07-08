@@ -480,6 +480,12 @@ export interface CheckIn {
    *  NULL = 자동 진입순(callEntryTime). 값 있으면 수기 우선(asc). 진료중(examination/in_treatment)은 항상 상단 고정.
    *  공유 realtime 영속(localStorage 불가) — check_ins 당일 행 단위(다음날 새 행에서 자연 소멸). */
   call_list_manual_order: number | null;
+  /** 진료의(treating_doctor) 가변 라이브 배정 — T-20260708-foot-TREATING-DOCTOR-SELECT-SYNC (ADDITIVE, DA GO_ADDITIVE).
+   *  FK → clinic_doctors(id) ON DELETE SET NULL. 진료콜 명단·진료환자이력 탭 공통 grain(single-field-share) →
+   *  어느 화면에서 선택해도 즉시 연동(AC3). signing_doctor(medical_charts §2-5 불변 서명)와 별 축 — 커플링 금지.
+   *  NULL = 레거시/미선택 허용(backfill 없음, NOT NULL 강제 없음).
+   *  optional(?) — in-memory 구성 CheckIn 리터럴(예약→접수 임시객체 등)은 미포함 허용. DB select('*')에는 항상 존재. */
+  treating_doctor_id?: string | null;
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback.

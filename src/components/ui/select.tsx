@@ -136,7 +136,7 @@ function SelectItem({
   className,
   children,
   ...props
-}: React.HTMLAttributes<HTMLDivElement> & { value: string }) {
+}: React.HTMLAttributes<HTMLDivElement> & { value: string; disabled?: boolean }) {
   return (
     <BaseSelect.Item
       value={value}

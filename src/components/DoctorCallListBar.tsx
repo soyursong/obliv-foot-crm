@@ -130,7 +130,9 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
 import { getCurrentLocationLabel, getCurrentRoomCode } from '@/lib/checkin-slot';
+import { todaySeoulISODate } from '@/lib/format';
 import DoctorStageStepper from '@/components/doctor/DoctorStageStepper';
+import TreatingDoctorSelect from '@/components/TreatingDoctorSelect';
 
 /** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
 const CALLLIST_POS_KEY = 'foot.doctorCallList.pos.v1';
@@ -1114,6 +1116,21 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
           realtime 동기는 DoctorStageStepper 내부 그대로(미접촉) — 표시 위치(줄)만 통일. */}
       <div className="mt-1" data-testid="doctor-call-stepper-line">
         <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} compact />
+      </div>
+
+      {/* T-20260708-foot-TREATING-DOCTOR-SELECT-SYNC 요청 B: 진료의 선택(대시보드 진료콜 명단).
+          치료테이블 진료환자이력 탭과 동일 필드(check_ins.treating_doctor_id) 공유 → 양쪽 실시간 연동(AC3).
+          옵션=당일 근무 원장(clinic_doctors), 오늘 휴무 원장 disabled(요청 D). treating≠signing(커플링 금지). */}
+      <div className="mt-1 flex items-center gap-1.5" data-testid="doctor-call-treating-line">
+        <span className="text-[10px] font-medium text-gray-500 shrink-0">진료의</span>
+        <TreatingDoctorSelect
+          checkInId={checkIn.id}
+          clinicId={checkIn.clinic_id}
+          date={todaySeoulISODate()}
+          value={checkIn.treating_doctor_id ?? null}
+          onSaved={onRefresh}
+          data-testid="doctor-call-treating-doctor-select"
+        />
       </div>
 
       {/* 진료 전달사항 메모 — T-20260616 #2: 기본 숨김, 연필 토글(showMemo)로만 노출 */}
