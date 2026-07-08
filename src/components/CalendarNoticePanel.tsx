@@ -440,6 +440,7 @@ export default function CalendarNoticePanel() {
         {/* 월 네비게이션 */}
         <div className="flex items-center justify-between mb-2">
           <button
+            data-testid="cal-month-prev"
             onClick={() => setCurrentDate((d) => subMonths(d, 1))}
             className="p-1 rounded hover:bg-muted transition-colors"
           >
@@ -449,6 +450,7 @@ export default function CalendarNoticePanel() {
             {format(currentDate, 'yyyy년 M월', { locale: ko })}
           </span>
           <button
+            data-testid="cal-month-next"
             onClick={() => setCurrentDate((d) => addMonths(d, 1))}
             className="p-1 rounded hover:bg-muted transition-colors"
           >

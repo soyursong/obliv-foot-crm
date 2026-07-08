@@ -1,7 +1,7 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -3278,6 +3278,27 @@ export default function Dashboard() {
     }, 60_000);
     return () => clearInterval(rollover);
   }, []);
+  // T-20260708-foot-LEFTCAL-DAYCLICK-DASHFILTER-TIMETABLE:
+  //   좌측 공통 캘린더(CalendarNoticePanel) day-click → `navigate('/admin?date=YYYY-MM-DD')`가
+  //   기존 selectedDate 전파 소스(DASHCAL-DAYCLICK, 6/29 배포). 그러나 이 `?date=` 파라미터는
+  //   여태 Dashboard `date` 상태(통합시간표 + 모든 날짜의존 위젯 구동)의 소비처가 없어(구 comment "소비처 없음")
+  //   좌측 캘린더 클릭이 통합시간표 명단/현황판까지 필터링하지 못하는 갭이 있었다.
+  //   → 신규 상태 분기 만들지 않고, 그 단일 소스(?date=)를 `date`에 배선만 한다. `date`는 이미
+  //     dateStr→통합시간표/위젯 조회 + DATENAV(T-20260707) tornDown Realtime 가드에 바인딩돼 있어,
+  //     여기서 date만 동기화하면 stale fullResync 없이 선택 날짜로 재조회된다(가드 재사용, 무회귀).
+  //   ★ 의존성은 `dateParam`만 — `date`를 넣지 않는다. 그래야 상단 ◀/▶(setDate만 하고 ?date= 미변경)로
+  //     이동한 뒤에도 이 effect가 재실행돼 stale param(직전 클릭값)으로 date를 되돌리는 일이 없다(AC-4).
+  const [dashSearchParams] = useSearchParams();
+  const dateParam = dashSearchParams.get('date');
+  useEffect(() => {
+    if (!dateParam) return;
+    // noon-local 파싱 — 자정/DST 경계 날짜 롤오버 방지(코드베이스 기존 관례: `${dateStr}T12:00:00`).
+    const parsed = new Date(`${dateParam}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+    // 오늘 클릭(=금일 복귀)이면 pin 해제 → 자정 롤오버 자동추적 복원(AC-3). 과거/미래면 pin 유지.
+    dateUserPinnedRef.current = !isSameDay(parsed, new Date());
+    setDate((d) => (isSameDay(d, parsed) ? d : parsed));
+  }, [dateParam]);
   const [tab, setTab] = useState<TabKey>('all');
   const [rows, setRows] = useState<CheckIn[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
