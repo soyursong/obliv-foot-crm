@@ -3340,6 +3340,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     ]);
     if (ciRes.error) console.error('[PHONE-EDIT-PANEL-NOSYNC] check_ins denorm 동기화 실패:', ciRes.error.message);
     if (resvRes.error) console.error('[PHONE-EDIT-PANEL-NOSYNC] reservations denorm 동기화 실패:', resvRes.error.message);
+    // T-20260708-foot-CUSTCONTACT-EDIT-NOREFLECT: denorm 동기화가 조용히 실패하면(RLS/제약) 접수 카드가 구번호로
+    //   남아 정합 가드 오탐이 재발한다 → 실패를 스태프에게 노출(무음 실패 = 이 버그 재발 경로 차단).
+    //   customers.phone 저장 자체는 성공(별도 경로)이므로 '저장 실패'가 아닌 부분 반영 경고로 안내.
+    if (ciRes.error || resvRes.error) {
+      toast.warning('연락처는 저장됐지만 접수/예약 카드 반영에 실패했습니다. 화면을 새로고침해 주세요.');
+    }
     // same-tab 접수 패널 즉시 반영 + cross-tab ping
     requestRefresh();
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
@@ -3392,10 +3398,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       toast.error('010으로 시작하는 11자리 번호를 입력해주세요 (예: 010-1234-5678)');
       return;
     }
-    const normalized = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-    await saveCustomerField({ phone: normalized });
+    // T-20260708-foot-CUSTCONTACT-EDIT-NOREFLECT: DB 저장 = E.164 (lib/phone SSOT — "DB 저장 = E.164").
+    //   기존엔 display 포맷(010-XXXX-XXXX)을 customers.phone 에 저장 → 등록경로(NewCheckInDialog/예약등록/
+    //   Customers.tsx = normalizeToE164) 와 포맷 드리프트. phoneSame(정합 가드)은 양측 normalizeToE164 로
+    //   포맷 무관 비교라 가드 자체는 견뎠으나, ① UNIQUE(phone) 중복검출이 '010-…' ≠ '+8210…' 로 구멍,
+    //   ② 정규화 안 거치는 임의 비교가 늘 오탐 위험 → storage 를 E.164 로 통일해 결함 클래스 제거.
+    const display = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    const e164 = normalizeToE164(display) ?? display;
+    await saveCustomerField({ phone: e164 });
     // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: denorm(check_ins/reservations.customer_phone) 동기화 → 접수 패널 stale·가드 오탐 해소
-    await syncCheckinDenormPhone(normalized);
+    await syncCheckinDenormPhone(e164);
     setEditingPhone(false);
   };
 
@@ -3674,7 +3686,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           toast.error('010으로 시작하는 11자리 번호를 입력해주세요 (예: 010-1234-5678)');
           return false;
         }
-        patch.phone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+        // T-20260708-foot-CUSTCONTACT-EDIT-NOREFLECT: DB 저장 = E.164 (savePhone 과 동일 규약 — 포맷 드리프트 0)
+        const displayPhone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+        patch.phone = normalizeToE164(displayPhone) ?? displayPhone;
       }
       if (Object.keys(patch).length > 0) {
         const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
@@ -5539,7 +5553,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           className="h-5 w-[110px] text-[11px] rounded border border-sage-400 px-1.5 focus:outline-none focus:border-sage-600"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') savePhone();
-                            if (e.key === 'Escape') { setEditingPhone(false); setPhoneText(customer.phone ?? ''); }
+                            if (e.key === 'Escape') { setEditingPhone(false); setPhoneText(formatPhone(customer.phone)); }
                           }}
                         />
                         <button
@@ -5548,7 +5562,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           className="rounded bg-neutral-800 text-white text-[10px] px-1.5 py-0.5 hover:bg-neutral-900 transition shrink-0"
                         >저장</button>
                         <button
-                          onClick={() => { setEditingPhone(false); setPhoneText(customer.phone ?? ''); }}
+                          onClick={() => { setEditingPhone(false); setPhoneText(formatPhone(customer.phone)); }}
                           className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0"
                         >취소</button>
                       </div>
@@ -5557,7 +5571,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <a href={`tel:${customer.phone}`} className="font-medium text-sage-700 hover:underline text-[11px]">{formatPhone(customer.phone) || '미등록'}</a>
                         <button
                           type="button"
-                          onClick={() => { setPhoneText(customer.phone ?? ''); setEditingPhone(true); }}
+                          onClick={() => { setPhoneText(formatPhone(customer.phone)); setEditingPhone(true); }}
                           className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0 text-gray-600"
                         >수정</button>
                       </div>
