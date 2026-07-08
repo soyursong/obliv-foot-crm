@@ -47,6 +47,13 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -410,9 +417,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   // staff.id (issued_by FK — profile.id ≠ staff.id, user_id 경유 조회)
   const [staffId, setStaffId] = useState<string | null>(null);
-  // 배치 출력 시 복수 원장님 선택 상태
-  const [batchDoctorPickOpen, setBatchDoctorPickOpen] = useState(false);
-  const [batchSelectedDoctorName, setBatchSelectedDoctorName] = useState<string>('');
+  // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN: 서류 출력 시 '진료 원장님'을 상시 드롭다운으로 선택.
+  //   선택값(selectedDoctorName)은 HTML 출력경로 2곳(일괄출력 buildHtmlPageHtml / 영수증 재발급)의
+  //   의사 성명(+도장) 바인딩에 공통 반영된다. 원장 4분 진료체계 도입 전 조기 적용.
+  const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
 
   // ── 진료비 영수증 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) ──
   const [invoiceDocs, setInvoiceDocs] = useState<InvoiceDoc[]>([]);
@@ -448,6 +456,55 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
     : format(new Date(), 'yyyy-MM-dd');
   const { data: dutyDoctors = [] } = useDutyDoctors(checkIn.clinic_id, visitDate);
+
+  // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN: '진료 원장님' 드롭다운 후보.
+  //   1순위 = 진료일 근무 로스터(dutyDoctors, duty_roster role=director/doctor). 하드코딩 금지·실시간 연동.
+  //   폴백 = 근무캘린더 미설정 시 원장 마스터(staff active director) — 드롭다운이 근거 없이 비지 않도록 보강.
+  //   마스터 이름은 clinic_doctors.name 매칭으로 도장/면허가 붙는다(loadAutoBindContext).
+  //   NB: foot CRM staff.role CHECK 8종에 'doctor'는 없고 원장=‘director’. 4분 진료체계도 director 4명으로
+  //   확장되므로 director 만 조회한다(하드코딩 아님 — 실시간 staff 조회, 확장 자동 반영).
+  const [masterDoctors, setMasterDoctors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (dutyDoctors.length > 0) { setMasterDoctors([]); return; }
+    let cancelled = false;
+    supabase
+      .from('staff')
+      .select('id, name')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('role', 'director')
+      .eq('active', true)
+      .order('name')
+      .then(({ data }) => {
+        if (!cancelled) setMasterDoctors((data ?? []) as { id: string; name: string }[]);
+      });
+    return () => { cancelled = true; };
+  }, [dutyDoctors.length, checkIn.clinic_id]);
+
+  const doctorOptions: { id: string; name: string; roster_type?: string }[] =
+    dutyDoctors.length > 0
+      ? dutyDoctors.map((d) => ({ id: d.id, name: d.name, roster_type: d.roster_type }))
+      : masterDoctors.map((d) => ({ id: d.id, name: d.name }));
+  const doctorOptionsKey = doctorOptions.map((o) => o.name).join('|');
+
+  // 옵션 로드/변경 시 기본 선택: 현재 선택이 옵션에 없으면 첫 번째로. 옵션 0명이면 미선택('').
+  useEffect(() => {
+    if (doctorOptions.length === 0) { setSelectedDoctorName(''); return; }
+    setSelectedDoctorName((prev) =>
+      prev && doctorOptions.some((o) => o.name === prev) ? prev : doctorOptions[0].name,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doctorOptionsKey]);
+
+  // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 출력 직전 원장 확정 가드.
+  //   미선택/목록 0명이면 빈·잘못된 원장명이 의료·법적 서류에 찍히지 않도록 출력을 차단한다.
+  const effectiveDoctorName = selectedDoctorName.trim();
+  const resolveDoctorForPrint = (): string | null => {
+    if (!effectiveDoctorName) {
+      toast.error('진료 원장님을 선택해주세요. 근무 원장 정보가 없어 서류를 출력할 수 없습니다.');
+      return null;
+    }
+    return effectiveDoctorName;
+  };
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -613,12 +670,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   // ── 진료비 영수증 재발급 — 체크박스 선택 기반 (T-20260519-foot-RECEIPT-REISSUE) ──
   const handleReceiptReissue = async () => {
     if (selectedPaymentIds.size === 0) return;
+    // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 영수증 재발급도 선택 원장 확정 후에만 진행.
+    const resolvedDoctorName = resolveDoctorForPrint();
+    if (!resolvedDoctorName) return;
     setReceiptReissuePrinting(true);
     try {
       const selected = paymentItems.filter((p) => selectedPaymentIds.has(p.id));
       const paymentsTotal = selected.reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
-      const autoValues = await loadAutoBindContext(checkIn);
+      // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN: 선택 원장명(+도장)을 재발급 영수증 렌더에 반영.
+      //   이전엔 override 없이 내부 자동해석(단일/폴백) → 드롭다운 선택이 무시되고 복수 근무 시 공란 위험.
+      const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const billReceiptTpl = templates.find((t) => t.form_key === 'bill_receipt');
 
       const bindValues: Record<string, string> = { ...autoValues };
@@ -769,24 +831,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   };
 
   // ── 일괄 출력 ──
-  const handleBatchPrint = async (doctorNameForBatch?: string) => {
+  const handleBatchPrint = async () => {
     const selectedTemplates = templates.filter((t) => selectedKeys.has(t.form_key));
     if (selectedTemplates.length === 0) return;
 
-    // 복수 근무원장님: 아직 선택 안 했으면 선택 다이얼로그 표시
-    if (dutyDoctors.length > 1 && !doctorNameForBatch) {
-      setBatchSelectedDoctorName(dutyDoctors[0].name);
-      setBatchDoctorPickOpen(true);
-      return;
-    }
+    // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 상시 드롭다운 선택 원장으로 확정.
+    //   미선택/목록 0명이면 출력 차단(빈·잘못된 원장명 방지). 복수 근무 별도 다이얼로그 불필요.
+    const resolvedDoctorName = resolveDoctorForPrint();
+    if (!resolvedDoctorName) return;
 
     setBatchPrinting(true);
     try {
-      // 원장님 이름 결정 (복수일 땐 선택값, 단수면 자동, 0이면 undefined → 내부 fallback)
-      const resolvedDoctorName =
-        doctorNameForBatch ??
-        (dutyDoctors.length === 1 ? dutyDoctors[0].name : undefined);
-
       const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const isFallback = templates[0]?.id.startsWith('fallback-');
 
@@ -1340,6 +1395,40 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         </div>
       )}
 
+      {/* T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN: '진료 원장님' 상시 드롭다운.
+          선택 원장이 서류의 의사 성명(+도장)으로 출력됨 — 일괄출력·영수증 재발급 공통 반영.
+          항목 = 진료일 근무 로스터(없으면 원장 마스터). 태블릿 큰 버튼 UX(h-11). */}
+      <div className="flex items-center gap-2 rounded-md bg-white border border-teal-200 px-2.5 py-2">
+        <UserCheck className="h-4 w-4 shrink-0 text-teal-600" />
+        <Label className="text-xs font-semibold text-teal-700 shrink-0">진료 원장님</Label>
+        {doctorOptions.length > 0 ? (
+          <Select value={selectedDoctorName} onValueChange={setSelectedDoctorName}>
+            <SelectTrigger
+              className="h-11 flex-1 text-sm border-teal-300 focus:ring-teal-400"
+              data-testid="docprint-doctor-select"
+            >
+              <SelectValue placeholder="원장님을 선택하세요" />
+            </SelectTrigger>
+            <SelectContent>
+              {doctorOptions.map((d) => (
+                <SelectItem key={d.id} value={d.name} className="text-sm py-2.5">
+                  {d.name}
+                  {d.roster_type && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {d.roster_type === 'regular' ? '근무' : '파트근무'}
+                    </span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="flex-1 text-xs text-amber-700">
+            선택 가능한 원장님이 없습니다 — 근무캘린더/직원관리에서 원장님을 등록하세요. (미선택 시 서류 출력 차단)
+          </span>
+        )}
+      </div>
+
       {/* T-20260522-foot-ALT-BADGE AC-13: ALT 레이저코드 차단/허용 상태 시각적 표시 */}
       {altStatus ? (
         <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-2.5 py-1.5">
@@ -1405,57 +1494,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       {/* 발행 이력 — T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달(historyAtTop)에서는 상단으로 이동했으므로 여기선 미렌더 */}
       {!historyAtTop && historyBlock}
 
-      {/* 배치 출력: 복수 원장님 선택 다이얼로그 */}
-      <Dialog open={batchDoctorPickOpen} onOpenChange={setBatchDoctorPickOpen}>
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <UserCheck className="h-4 w-4 text-teal-600" />
-              서류 발행 원장님 선택
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 py-1">
-            <p className="text-xs text-muted-foreground">
-              오늘 근무 원장님이 {dutyDoctors.length}명입니다. 서류에 기재할 원장님을 선택하세요.
-            </p>
-            <div className="flex flex-col gap-2">
-              {dutyDoctors.map((d) => (
-                <button
-                  key={d.id}
-                  className={`rounded-lg border px-4 py-3 text-sm font-medium text-left transition-all ${
-                    batchSelectedDoctorName === d.name
-                      ? 'border-teal-400 bg-teal-50 text-teal-800 ring-1 ring-teal-300'
-                      : 'border-gray-200 hover:border-teal-300 hover:bg-teal-50/50'
-                  }`}
-                  onClick={() => setBatchSelectedDoctorName(d.name)}
-                >
-                  {d.name}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {d.roster_type === 'regular' ? '근무' : '파트근무'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setBatchDoctorPickOpen(false)}>
-              취소
-            </Button>
-            <Button
-              size="sm"
-              className="bg-teal-600 hover:bg-teal-700"
-              disabled={!batchSelectedDoctorName}
-              onClick={() => {
-                setBatchDoctorPickOpen(false);
-                handleBatchPrint(batchSelectedDoctorName);
-              }}
-            >
-              <Printer className="mr-1.5 h-3.5 w-3.5" />
-              이 원장님으로 출력
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN: 복수 원장 선택 다이얼로그 제거 —
+          상단 '진료 원장님' 상시 드롭다운으로 대체(선택 다이얼로그 왕복 없이 즉시 출력). */}
 
       {/* 단건 발행 다이얼로그 */}
       {selectedTemplate && (
