@@ -85,9 +85,11 @@ test.describe('T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW', () => {
 
   // ── S4: 정적 가드 — brief-note span 은 brief_note 텍스트만 사용 (AC-4 힐러 직교) ──
   test('S4: 간략메모 span 렌더는 is_healer_intent/노란박스 토큰을 참조하지 않는다(AC-4 직교)', async () => {
-    // 실제 렌더 표현식(주석 제외)만 추출 — 조건부 시작 `{reservation.brief_note?.trim() && (` 부터
+    // 실제 렌더 표현식(주석 제외)만 추출 — 조건부 시작 `{isBriefNoteChip(reservation.brief_note) && (` 부터
     // 닫는 `)}` 까지. 이 JSX 블록이 brief_note 텍스트만 쓰고 힐러 플래그/노란박스 토큰을 안 쓰는지 확인.
-    const start = DASHBOARD_SRC.indexOf('{reservation.brief_note?.trim() && (');
+    // T-20260708-foot-E2E-SPEC-CLEANUP-STALE5: 렌더 게이트가 brief_note?.trim() → isBriefNoteChip(...)
+    //   (T-20260708 BRIEFMEMO-CHIPONLY-EDIT, 칩값만 표시)로 변경됨 → 앵커 갱신(AC-4 힐러 직교 불변식 유지).
+    const start = DASHBOARD_SRC.indexOf('{isBriefNoteChip(reservation.brief_note) && (');
     expect(start).toBeGreaterThan(-1);
     const block = DASHBOARD_SRC.slice(start, start + 360);
     expect(block).toContain('data-testid="box1-brief-note"');

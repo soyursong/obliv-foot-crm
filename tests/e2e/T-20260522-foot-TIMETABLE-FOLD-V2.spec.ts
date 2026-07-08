@@ -40,11 +40,13 @@ test('SC-4-1: reservations 테이블 Realtime subscription 코드 존재', () =>
   expect(src).toContain('fetchTimelineReservations');
 });
 
-test('SC-4-2: 60초 폴링 fallback이 fetchTimelineReservations()를 포함함', () => {
+test('SC-4-2: 폴링 fallback이 fetchTimelineReservations()를 포함함', () => {
   // pollTimer setInterval 블록 내에 3개 함수가 모두 존재해야 함
+  // T-20260708-foot-E2E-SPEC-CLEANUP-STALE5: 폴링 주기 60초→30초 단축(T-20260529 DASHBOARD-TIMETABLE-SYNC AC-1)
+  //   반영 — 종료 마커 `}, 60000);` → `}, 30000);` 로 셀렉터 갱신(피처 유지, fallback 커버리지 불변).
   const pollBlock = src.slice(
     src.indexOf('const pollTimer = setInterval'),
-    src.indexOf('}, 60000);') + 20,
+    src.indexOf('}, 30000);') + 20,
   );
   expect(pollBlock).toContain('fetchCheckIns()');
   expect(pollBlock).toContain('fetchSelfCheckIns()');
@@ -91,9 +93,11 @@ test('SC-5-5: 빈 슬롯 "예약 없음" 텍스트 존재', () => {
   expect(src).toContain('예약 없음');
 });
 
-test('SC-5-6: 차트번호 표시 — ChartNumberMapCtx + chartMap.get 사용', () => {
+test('SC-5-6: 차트번호 표시 — ChartNumberMapCtx + chartMap?.get 사용', () => {
   expect(src).toContain('ChartNumberMapCtx');
-  expect(src).toContain('chartMap.get');
+  // T-20260708-foot-E2E-SPEC-CLEANUP-STALE5: chartMap 소비가 옵셔널 체이닝(chartMap?.get)으로 하드닝됨
+  //   → 셀렉터 갱신(피처 유지, 차트번호 조회 경로 불변).
+  expect(src).toContain('chartMap?.get');
   // 차트번호 앞 '#' 접두사
   expect(src).toContain('#{chartNo}');
 });
@@ -104,8 +108,10 @@ test('SC-5-7: 아코디언 aria-expanded 속성으로 접근성 보장', () => {
 
 test('SC-5-8: accordionItems 배열이 초진(new) 우선 + 재진(returning) 순으로 구성', () => {
   // newBox1 → newBox2Ci → retBox2Resv → retBox2Ci 순서
+  // T-20260708-foot-E2E-SPEC-CLEANUP-STALE5: push 항목별 AccordionItem 매핑(designatedTherapistId 등)
+  //   추가로 블록 길이가 늘어 600자 창에서 retBox2Ci 가 누락됨 → 1200자로 창 확대(순서 불변식 유지).
   const aIdx = src.indexOf('accordionItems');
-  const block = src.slice(aIdx, aIdx + 600);
+  const block = src.slice(aIdx, aIdx + 1200);
   const newBox1Pos = block.indexOf('newBox1');
   const newBox2CiPos = block.indexOf('newBox2Ci');
   const retBox2ResvPos = block.indexOf('retBox2Resv');

@@ -28,7 +28,9 @@ test.describe('T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING — 대시보드 �
     const src = fs.readFileSync(DASHBOARD_SRC, 'utf-8');
 
     // 분류 SSOT: 중복 resvKind 구현 금지 — @/lib/resvSlotAgg import 사용.
-    expect(src, 'resvKind SSOT import').toMatch(/import\s*\{\s*resvKind\s*\}\s*from\s*'@\/lib\/resvSlotAgg'/);
+    // T-20260708-foot-E2E-SPEC-CLEANUP-STALE5: resvSlotAgg 에서 isBriefNoteChip 등 추가 심볼을 함께 import
+    //   하도록 변경됨(단일-심볼 `{ resvKind }` → 다중 import). 셀렉터 갱신(피처 유지·SSOT 참조 불변).
+    expect(src, 'resvKind SSOT import').toMatch(/import\s*\{[^}]*\bresvKind\b[^}]*\}\s*from\s*'@\/lib\/resvSlotAgg'/);
 
     // 사이드맵 상태 + linked_package_id → packages.package_name read-only 배치 조회.
     expect(src, 'resvPkgTypeMap 상태 선언').toContain('const [resvPkgTypeMap, setResvPkgTypeMap]');
