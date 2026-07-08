@@ -17,6 +17,8 @@ import KohPublishedResults from '@/components/KohPublishedResults';
 import PatientResultFiles from '@/components/PatientResultFiles';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
 import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
+// T-20260606-foot-CHART2-FOOTQ-VIEWER: 자가작성 발건강질문지 별도창(인쇄용) 이미지 뷰어
+import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -7295,7 +7297,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     );
                   })()}
                   {/* AC-2/AC-3: 펜차트 작성 진입 제거 — 현행 HEALTHQ-VIEWER(in-modal) '내용보기'만 노출 */}
-                  <div className="mt-auto pt-1">
+                  <div className="mt-auto pt-1 flex gap-1.5">
                     <button
                       type="button"
                       data-testid="healthq-view-btn"
@@ -7307,8 +7309,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         setViewDocGroup(3);
                       }}
                       disabled={!submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) && healthQResults.length === 0}
-                      className="w-full rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
                     >내용보기</button>
+                    {/* T-20260606-foot-CHART2-FOOTQ-VIEWER: 자가작성 제출분 → 별도창(인쇄용) 이미지 뷰어.
+                        AC-1/AC-4: 자가작성 존재 시에만 노출(미제출 고객은 진입점 없음). */}
+                    {healthQResults.length > 0 && (
+                      <button
+                        type="button"
+                        data-testid="healthq-doc-window-btn"
+                        onClick={() => openHealthQDocumentWindow(healthQResults[0], {
+                          customerName: customer.name,
+                          chartNumber: customer.chart_number != null ? `F-${String(customer.chart_number).padStart(6, '0')}` : null,
+                        })}
+                        className="flex-1 rounded border border-[#C5BEA3] bg-[#F5EFE7] py-1 text-[10px] font-medium text-[#5C3D1E] hover:bg-[#EFE7DA] transition"
+                      >별도창</button>
+                    )}
                   </div>
                 </div>
 
@@ -9461,7 +9476,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         자가작성 제출 ({healthQResults.length}건)
                       </div>
                       {healthQResults.map((r) => (
-                        <ResultCard key={r.id} result={r} defaultExpanded={healthQResults.length === 1} />
+                        <div key={r.id} className="space-y-1.5">
+                          <ResultCard result={r} defaultExpanded={healthQResults.length === 1} />
+                          {/* T-20260606-foot-CHART2-FOOTQ-VIEWER: 별도창(인쇄용) 이미지 뷰어 진입점 */}
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              data-testid="healthq-doc-window-btn-modal"
+                              onClick={() => openHealthQDocumentWindow(r, {
+                                customerName: customer.name,
+                                chartNumber: customer.chart_number != null ? `F-${String(customer.chart_number).padStart(6, '0')}` : null,
+                              })}
+                              className="rounded border border-[#C5BEA3] bg-[#F5EFE7] px-3 py-1 text-[11px] font-medium text-[#5C3D1E] hover:bg-[#EFE7DA] transition"
+                            >별도창(인쇄용)으로 보기</button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}

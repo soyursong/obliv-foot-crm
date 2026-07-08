@@ -18,6 +18,9 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
+// T-20260606-foot-CHART2-FOOTQ-VIEWER: 고민되는 발톱 부위(자가작성) 읽기전용 다이어그램 재사용
+import FootToeIllustration from '@/components/FootToeIllustration';
+import { parseFootSites } from '@/components/FootSiteSelector';
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────────
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 2번차트 상담내역 [내용보기]에서 재사용 위해 export
@@ -36,7 +39,8 @@ interface Props {
 }
 
 // ─── 레이블 맵 ────────────────────────────────────────────────────────────────
-const FORM_TYPE_LABEL: Record<string, string> = {
+// T-20260606-foot-CHART2-FOOTQ-VIEWER: 별도창(인쇄용) 문서 렌더에서 재사용 위해 export
+export const FORM_TYPE_LABEL: Record<string, string> = {
   general: '발건강 질문지 (일반)',
   senior:  '발건강 질문지 (어르신용)',
 };
@@ -105,7 +109,8 @@ function renderValue(key: string, val: unknown): string {
 }
 
 /** form_data 에서 표시할 필드만 추출 (빈 값 제외) */
-function extractDisplayFields(data: Record<string, unknown>) {
+// T-20260606-foot-CHART2-FOOTQ-VIEWER: 별도창(인쇄용) 문서 렌더에서 재사용 위해 export
+export function extractDisplayFields(data: Record<string, unknown>) {
   const ORDER = [
     // 5섹션 최종 확정본 순서
     'symptoms', 'symptoms_other',
@@ -141,6 +146,8 @@ function extractDisplayFields(data: Record<string, unknown>) {
 export function ResultCard({ result, defaultExpanded = false }: { result: HQResult; defaultExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const fields = extractDisplayFields(result.form_data);
+  // T-20260606-foot-CHART2-FOOTQ-VIEWER: 고민되는 발톱 부위(자가작성 선택) — 읽기전용 다이어그램
+  const nailSites = parseFootSites((result.form_data as Record<string, unknown>)?.concern_nail_sites);
   const submittedDate = format(new Date(result.submitted_at), 'yyyy.MM.dd HH:mm', { locale: ko });
 
   return (
@@ -166,17 +173,27 @@ export function ResultCard({ result, defaultExpanded = false }: { result: HQResu
       {/* 내용 */}
       {expanded && (
         <div className="px-4 pb-4 space-y-2 border-t border-teal-50">
-          {fields.length === 0 ? (
+          {fields.length === 0 && nailSites.length === 0 ? (
             <p className="text-xs text-gray-400 pt-3">입력된 항목 없음</p>
           ) : (
-            <dl className="grid grid-cols-1 gap-1.5 pt-3">
-              {fields.map(({ key, label, value }) => (
-                <div key={key} className="flex gap-2">
-                  <dt className="text-xs font-medium text-gray-500 shrink-0 w-28">{label}</dt>
-                  <dd className="text-xs text-gray-700 flex-1">{value}</dd>
+            <>
+              {fields.length > 0 && (
+                <dl className="grid grid-cols-1 gap-1.5 pt-3">
+                  {fields.map(({ key, label, value }) => (
+                    <div key={key} className="flex gap-2">
+                      <dt className="text-xs font-medium text-gray-500 shrink-0 w-28">{label}</dt>
+                      <dd className="text-xs text-gray-700 flex-1">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {nailSites.length > 0 && (
+                <div className="pt-3">
+                  <p className="text-xs font-medium text-gray-500 mb-1">고민되는 발톱 부위</p>
+                  <FootToeIllustration value={nailSites} readOnly />
                 </div>
-              ))}
-            </dl>
+              )}
+            </>
           )}
         </div>
       )}

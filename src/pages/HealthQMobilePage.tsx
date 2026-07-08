@@ -16,6 +16,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
+// T-20260606-foot-CHART2-FOOTQ-VIEWER: 고민되는 발톱 부위 선택 (2번차트 발가락 일러스트 재활용)
+import FootToeIllustration from '@/components/FootToeIllustration';
+import type { FootSite } from '@/components/FootSiteSelector';
 
 // ── anon Supabase 클라이언트 ────────────────────────────────────────────────────
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
@@ -222,6 +225,8 @@ interface HealthQData {
   // 1번 발 관련 증상
   symptoms:               string[];
   symptoms_other:         string;
+  // T-20260606-foot-CHART2-FOOTQ-VIEWER: 고민되는 발톱 부위(고객 직접 선택). JSONB form_data 키 추가, 스키마 무변경.
+  concern_nail_sites:     FootSite[];
   // 2번 발 건강 관련 경험
   nail_treatment_history: string;   // '없음' | '있음'
   nail_treatment_methods: string[]; // 있음일 때 치료방법
@@ -254,6 +259,7 @@ interface HealthQData {
 const emptyData = (): HealthQData => ({
   symptoms:               [],
   symptoms_other:         '',
+  concern_nail_sites:     [],
   nail_treatment_history: '',
   nail_treatment_methods: [],
   symptom_onset:          '',
@@ -769,10 +775,24 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ── 2번 발 건강 관련 경험 (현장 확정 — 4문) ──────────────────────────── */}
+        {/* ── 2번 고민되는 발톱 부위 (T-20260606-foot-CHART2-FOOTQ-VIEWER · 김주연 총괄 확정) ──
+            2번차트 발가락 일러스트(FootToeIllustration) 재활용. 좌·우 발톱 1~5 멀티선택.
+            저장: form_data.concern_nail_sites (JSONB, 스키마 무변경). 미선택 허용(선택 항목). */}
+        <section className="space-y-4 rounded-2xl p-4"
+          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
+          <SectionHeader num={2}
+            title={tt('고민되는 발톱 부위', 'Nail area of concern')}
+            sub={tt('가장 고민되는 발톱을 눌러 선택해주세요 (여러 개 선택 가능)', 'Tap the toenails you are most concerned about (multiple allowed)')} />
+          <FootToeIllustration
+            value={d.concern_nail_sites}
+            onChange={(next) => set('concern_nail_sites', next)}
+          />
+        </section>
+
+        {/* ── 3번 발 건강 관련 경험 (현장 확정 — 4문) ──────────────────────────── */}
         <section className="space-y-5 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={2} title={tt('발 건강 관련 경험', 'Foot health history')} sub={tt('각 항목에서 하나씩 선택해주세요', 'Select one for each item')} />
+          <SectionHeader num={3} title={tt('발 건강 관련 경험', 'Foot health history')} sub={tt('각 항목에서 하나씩 선택해주세요', 'Select one for each item')} />
 
           {/* Q1 문제성 발톱 치료 경험 */}
           <div className="space-y-2">
@@ -867,10 +887,10 @@ export default function HealthQMobilePage() {
           </div>
         </section>
 
-        {/* ── 3번 나의 건강 상태 (다중) — OQ1 해소 최종 11항 ───────────────────── */}
+        {/* ── 4번 나의 건강 상태 (다중) — OQ1 해소 최종 11항 ───────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={3} title={tt('나의 건강 상태', 'My health status')} sub={tt('과거병력 포함 — 해당 항목 모두 선택해주세요', 'Including medical history — select all that apply')} />
+          <SectionHeader num={4} title={tt('나의 건강 상태', 'My health status')} sub={tt('과거병력 포함 — 해당 항목 모두 선택해주세요', 'Including medical history — select all that apply')} />
           <div className="flex flex-wrap gap-2">
             <BigBtn
               active={d.medical_history_none}
@@ -905,13 +925,13 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ── 4번 현재 복용 중인 약 (다중) — 현장 확정 ─────────────────────────── */}
-        {renderMedications(4)}
+        {/* ── 5번 현재 복용 중인 약 (다중) — 현장 확정 ─────────────────────────── */}
+        {renderMedications(5)}
 
-        {/* ── 5번 치료 및 내원 계획 (3문 단일선택) 🆕 ──────────────────────────── */}
+        {/* ── 6번 치료 및 내원 계획 (3문 단일선택) 🆕 ──────────────────────────── */}
         <section className="space-y-5 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={5} title={tt('치료 및 내원 계획', 'Treatment & visit plan')} sub={tt('각 항목에서 하나씩 선택해주세요', 'Select one for each item')} />
+          <SectionHeader num={6} title={tt('치료 및 내원 계획', 'Treatment & visit plan')} sub={tt('각 항목에서 하나씩 선택해주세요', 'Select one for each item')} />
 
           {/* Q1 치료 시작 가능한 시기 */}
           <div className="space-y-2">
@@ -981,7 +1001,7 @@ export default function HealthQMobilePage() {
         {purposeChosen && (
           <section className="space-y-5 rounded-2xl p-4"
             style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-            <SectionHeader num={isCallus ? 5 : 6}
+            <SectionHeader num={isCallus ? 5 : 7}
               title={tt('추가 확인 사항', 'Additional questions')}
               sub={tt('각 항목에서 하나씩 선택해주세요', 'Select one for each item')} />
 
