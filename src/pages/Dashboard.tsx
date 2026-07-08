@@ -1633,7 +1633,10 @@ function TimelineCheckInCard({
       )}
       {/* T-20260708-foot-TIMETABLE-PTNAME-TRUNCATE (P0): flex 자식 min-w-0 부재로 truncate 미발동 → 성함이 셀 밖 넘침.
           min-w-0 로 말줄임(…) 발동 + title 로 hover(PC)/tap(태블릿) 전체 성함 tooltip 보장(AC-1/AC-2). */}
-      <span className={cn('min-w-0 truncate', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} title={cardDisplayName(checkIn)} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
+      {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (김주연 총괄, P0 PTNAME-TRUNCATE 통합/정정):
+          성함 '절대 잘림 금지' → 말줄임(truncate)·tooltip 방식 폐기. min-w-0 + whitespace-normal + break-words 로
+          칸 폭 안에서 전체 표시(넘치면 줄바꿈, 잘림 0). 칸 폭은 패널 w-80→w-96 확대로 확보(접기 기능 유지). */}
+      <span className={cn('min-w-0 whitespace-normal break-words leading-tight', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
       {/* T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY: 통합시간표 초진(new)/재진(returning) 체크인 카드 식별자를
           폰번호 뒷4자리로 통일(김주연 총괄). 초진 차트번호(#RF-…) 표기 제거 → 재진과 동일 '폰 뒷4자리' 포맷.
           (선행: T-20260630-REVISIT-CUSTBOX 재진 통일 → 본 건으로 초진 통일 마무리. presentation only, DB 무변경.
@@ -1808,6 +1811,12 @@ function DraggableBox1Card({
   const box1HealerPkgType = (!reservation.brief_note?.trim() && resvKind(reservation) === 'healer')
     ? box1PkgTypeMap.get(reservation.id)
     : undefined;
+  // T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (김주연 총괄) AC3: 선택칩 4종([발톱무좀]/[내성발톱]/[발각질케어]=BRIEF_NOTE_CHIPS,
+  //   [힐러]=is_healer_intent 직교)을 제외한 '자유 수기입력 brief_note'를 성함 아래 1줄로 표시.
+  //   소스 확정(AC3-2 지시): doctor_call_memo(check_ins 전용·예약박스 미보유)가 아니라, 리포터가 열거한 칩셋을 제외한
+  //   brief_note 자유텍스트(isBriefNoteChip=false & 비공백). 칩은 위 [간략메모]로 계속 노출(BRIEFMEMO-CHIPONLY 정합, 상보).
+  const box1FreeMemo = reservation.brief_note?.trim();
+  const showBox1FreeMemo = !!box1FreeMemo && !isBriefNoteChip(reservation.brief_note);
   return (
     <div
       ref={setNodeRef}
@@ -1825,7 +1834,8 @@ function DraggableBox1Card({
       {...listeners}
       className={cn(
         // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 초진=파랑(blue). T-20260615 무채색 SUPERSEDED.
-        'flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] w-full select-none',
+        // T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE: flex-col — 성함 식별자 줄(1행) + 수기메모 줄(2행, 성함 아래 1줄).
+        'flex flex-col gap-0.5 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] w-full select-none',
         onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-blue-100 hover:border-blue-300 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
@@ -1839,12 +1849,14 @@ function DraggableBox1Card({
       data-testid="box1-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
+      {/* 성함 식별자 줄 (1행): [초] 배지 · 성함(전체표시) · 폰뒷4 · 간략메모칩 · 미수배지 · 노쇼 · 접수버튼 */}
+      <div className="flex items-center gap-1 w-full min-w-0">
       {/* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진 배지 무채색 → 파랑(blue) */}
       <span className="shrink-0 bg-blue-100 text-blue-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
-      {/* T-20260708-foot-TIMETABLE-PTNAME-TRUNCATE (P0): 초진 박스 성함 셀 밖 넘침 해소. min-w-0 로 truncate 발동
-          + title 로 전체 성함 tooltip(AC-1/AC-2). 간략메모(shrink-0) 동반 시에도 성함이 우선 공간 확보 후 말줄임(AC-3). */}
-      <span className="min-w-0 truncate text-gray-900 font-semibold" title={cardDisplayName(reservation) || '이름없음'} data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (P0 PTNAME-TRUNCATE 통합/정정): 성함 '절대 잘림 금지'.
+          말줄임(truncate)·tooltip 폐기 → whitespace-normal + break-words 로 칸 폭 안에서 전체표시(넘치면 줄바꿈, 잘림 0). */}
+      <span className="min-w-0 whitespace-normal break-words leading-tight text-gray-900 font-semibold" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW (김주연 총괄): 초진 예약 박스 '성함 폰뒷자리' → '성함 폰뒷자리 [간략메모]'.
           - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
@@ -1889,6 +1901,19 @@ function DraggableBox1Card({
         >
           접수
         </button>
+      )}
+      </div>
+      {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (김주연 총괄) AC3: 수기메모(선택칩 4종 제외 자유 brief_note)를
+          성함 아래 1줄로 표시. 좌측 성함 기준선 정렬(초 배지폭만큼 들여쓰기 pl-4). 없으면 미렌더(빈 줄 잔류 금지, AC3-3).
+          1줄 초과분은 말줄임(truncate) — 성함(AC1) 가독 불침해(AC3-4). 성함과 달리 수기메모는 말줄임 허용. */}
+      {showBox1FreeMemo && (
+        <div
+          className="pl-4 text-[9px] leading-tight text-gray-500 truncate"
+          title={box1FreeMemo}
+          data-testid="box1-free-memo"
+        >
+          {box1FreeMemo}
+        </div>
       )}
     </div>
   );
@@ -1975,8 +2000,9 @@ function DraggableBox2ResvCard({
       data-noshow={isNoShow ? 'true' : undefined}
     >
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
-      {/* T-20260708-foot-TIMETABLE-PTNAME-TRUNCATE (P0): 재진 박스 성함 셀 밖 넘침 해소. min-w-0 truncate + title tooltip(AC-1/AC-2). */}
-      <span className="min-w-0 truncate text-gray-800" title={cardDisplayName(reservation) || '이름없음'} data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (P0 PTNAME-TRUNCATE 통합/정정): 재진 박스 성함 '절대 잘림 금지'.
+          말줄임·tooltip 폐기 → whitespace-normal + break-words 로 칸 폭 안 전체표시(넘치면 줄바꿈, 잘림 0). */}
+      <span className="min-w-0 whitespace-normal break-words leading-tight text-gray-800" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
           REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
       <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
@@ -7394,7 +7420,9 @@ export default function Dashboard() {
         <div
           className={cn(
             'shrink-0 flex flex-col min-h-0 border-r [overflow-x:clip] overflow-y-hidden md:overflow-hidden transition-all duration-200',
-            timelineFolded ? 'w-8' : 'w-80',
+            // T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (김주연 총괄) AC1: 성함 전체표시 확보를 위해 펼침 폭 w-80→w-96 확대.
+            //   접기 기능(w-8)이 있으므로 폭 확대 허용(리포터 명시). 초진/재진 1fr 컬럼이 넓어져 성함 잘림 완화.
+            timelineFolded ? 'w-8' : 'w-96',
           )}
         >
           <DashboardTimeline

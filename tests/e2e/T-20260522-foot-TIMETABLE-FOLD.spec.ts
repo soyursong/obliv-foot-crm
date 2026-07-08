@@ -49,9 +49,9 @@ test('AC-3: DashboardTimeline에 folded + onToggleFold props가 전달됨', () =
   expect(src).toContain('onToggleFold={handleToggleTimeline}');
 });
 
-// AC-4: w-8 / w-80 조건부 클래스
-test('AC-4: 좌측 컨테이너가 timelineFolded 기반 w-8 / w-80 클래스를 사용함', () => {
-  expect(src).toContain("timelineFolded ? 'w-8' : 'w-80'");
+// AC-4: w-8 / w-96 조건부 클래스 (펼침폭 w-80→w-96, T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE 성함 전체표시 확보)
+test('AC-4: 좌측 컨테이너가 timelineFolded 기반 w-8 / w-96 클래스를 사용함', () => {
+  expect(src).toContain("timelineFolded ? 'w-8' : 'w-96'");
 });
 
 // AC-5: folded 세로 스트립 렌더

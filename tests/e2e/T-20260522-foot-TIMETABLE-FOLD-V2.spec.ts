@@ -125,9 +125,10 @@ test('SC-5-9: 슬롯 행이 flex-col 래퍼 구조 (grid 아코디언 지지)', 
 
 // ── 시나리오 6: AC-8 — V1 회귀 없음 ────────────────────────────────────────
 
-test('SC-6-1: V1 패널 접기 — timelineFolded + w-8/w-80 전환 유지', () => {
+test('SC-6-1: V1 패널 접기 — timelineFolded + w-8/w-96 전환 유지', () => {
   expect(src).toContain('timelineFolded');
-  expect(src).toContain("timelineFolded ? 'w-8' : 'w-80'");
+  // 펼침폭 w-80→w-96 (T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE 성함 전체표시). 접기(w-8) 전환은 유지.
+  expect(src).toContain("timelineFolded ? 'w-8' : 'w-96'");
   expect(src).toContain('handleToggleTimeline');
 });
 
