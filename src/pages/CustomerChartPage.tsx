@@ -9631,8 +9631,8 @@ function PackagePurchaseFromTemplateDialog({
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
   const [manualTotal, setManualTotal] = useState(0);
-  // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비(consultation_fee) — 패키지 금액과 별도(§4-A: 합산 단일표기 금지).
-  const [consultationFee, setConsultationFee] = useState(0);
+  // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM: 진료비(consultation_fee) 입력 UI 제거 — submit 시 0 고정 저장.
+  //   컬럼은 보존(DDL 무변경). 기존 데이터 무손상(패키지 미수 표시 로직은 저장된 값을 그대로 읽음).
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 통계(B안) 시술유형(필수)·기준정가(선택) + prefill.
@@ -9714,7 +9714,7 @@ function PackagePurchaseFromTemplateDialog({
     setTrial(0); setTrialUnitPrice(0);
     setReborn(0); setRebornUnitPrice(0);
     setPrecon(0);
-    setPriceOverride(false); setManualTotal(0); setConsultationFee(0); setMemo('');
+    setPriceOverride(false); setManualTotal(0); setMemo('');
     setTreatmentType(''); setReferencePrice(0); setRefPriceTouched(false);
   }, [open]);
 
@@ -9759,7 +9759,7 @@ function PackagePurchaseFromTemplateDialog({
     setTrial(0); setTrialUnitPrice(0);
     setReborn(0); setRebornUnitPrice(0);
     setPrecon(0);
-    setPriceOverride(false); setManualTotal(0); setConsultationFee(0); setMemo('');
+    setPriceOverride(false); setManualTotal(0); setMemo('');
     // T-20260708: 커스텀 초기화 — 시술유형/기준정가 리셋(시술유형 선택 시 마스터 prefill × 횟수).
     setTreatmentType('');
     setReferencePrice(0); setRefPriceTouched(false);
@@ -9806,8 +9806,8 @@ function PackagePurchaseFromTemplateDialog({
       af_upgrade: unheatedUpgrade,
       upgrade_surcharge: upgradeSurcharge,
       total_amount: grandTotal,
-      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 별도 컬럼(§4-A: total_amount와 합산 단일표기 금지).
-      consultation_fee: consultationFee,
+      // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM: 진료비 UI 제거 → 0 고정 저장(컬럼 보존).
+      consultation_fee: 0,
       // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷(미입력=null → 할인율 '-').
       treatment_type: treatmentType || null,
       reference_price: referencePrice > 0 ? referencePrice : null,
@@ -9856,8 +9856,8 @@ function PackagePurchaseFromTemplateDialog({
       // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목 (packages 전용 — package_templates에는 미반영)
       reborn_sessions: reborn, reborn_unit_price: rebornUnitPrice,
       upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal,
-      // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 별도(§4-A).
-      consultation_fee: consultationFee, paid_amount: 0,
+      // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM: 진료비 UI 제거 → 0 고정 저장(컬럼 보존).
+      consultation_fee: 0, paid_amount: 0,
       // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷.
       treatment_type: treatmentType || null,
       reference_price: referencePrice > 0 ? referencePrice : null,
@@ -10258,16 +10258,6 @@ function PackagePurchaseFromTemplateDialog({
             </div>
           </div>
 
-          {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 — 패키지 금액과 별도 입력/표시(§4-A). 합산 단일표기 금지. */}
-          <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
-            <label className="text-xs font-semibold text-gray-600">진료비 <span className="font-normal text-gray-400">(패키지 금액과 별도 — 합산하지 않음)</span></label>
-            <AmountInput
-              value={consultationFee}
-              onChange={(raw) => setConsultationFee(Number(raw) || 0)}
-              className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
-            />
-            <div className="text-xs text-gray-400">진료비는 패키지 금액에 합산되지 않고, 결제·잔금이 따로 관리됩니다.</div>
-          </div>
 
           {/* 메모 */}
           <div className="space-y-1">
