@@ -2086,8 +2086,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             ))}
           </div>
 
-          {/* ── 중앙: 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1) ── */}
-          <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:flex-1">
+          {/* ── 중앙: 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: 고정 폭)
+              T-20260708-foot-MINIPAY-CHARTFEE-FEEITEM-LEFTLANE:
+              flex-1 → 고정 폭(sm:w-52 md:w-64 lg:w-80)으로 전환.
+              해제된 flex 여유폭은 우측 [차트 코드+진료비 산정 / 수가 항목] lane(flex-1)이 흡수
+              → 수가 항목 영역이 넓게 표시됨. 카드 그리드(grid-cols-3 lg:grid-cols-4)는 그대로. ── */}
+          <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:w-52 md:w-64 lg:w-80 sm:shrink-0" data-testid="pmw-code-grid">
             {/* 풋케어 탭: 서브 카테고리 버튼 (순서 편집 토글 제거됨 — PMW-ORDER-REMOVE)
                 T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
             {activeTab === '풋케어' && (
@@ -2181,8 +2185,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                AC-2: 코드항목(상단) + 수가항목(하단) 통합 표시
           ─────────────────────────────────────────────────────────────────── */}
           {/* AC-2: Zone2 폭 확장 — sm:w-52→w-60→w-64, md:w-56→w-64, lg:w-60→w-72
-              T-20260526-foot-REDBOX-CODENAME-TRIM: sm:w-60→w-64 (+16px) — 코드명 추가 공간 */}
-          <div className="sm:w-64 md:w-64 lg:w-72 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0">
+              T-20260526-foot-REDBOX-CODENAME-TRIM: sm:w-60→w-64 (+16px) — 코드명 추가 공간
+              T-20260708-foot-MINIPAY-CHARTFEE-FEEITEM-LEFTLANE:
+              고정폭(lg:w-72=288px) → flex-1 전환. 이 lane이 "차트 코드+진료비 산정" 헤더 +
+              수가 항목을 담는 독립 영역이며, 코드 그리드가 고정폭으로 바뀌며 남는 폭 전체를 흡수
+              → 288px → ~390px(1080) / ~590px(1280 갤탭)로 넓어져 수가 항목이 넓게 표시됨.
+              내부 순서·서류코드·세금구분·합계·수납버튼·계산/수납 로직은 불변(순수 폭 변경). */}
+          <div className="sm:flex-1 sm:min-w-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0" data-testid="pmw-fee-lane">
 
             {/* Zone 2 헤더 */}
             <div className="px-3 pt-2 pb-1.5 shrink-0 border-b bg-muted/20">
