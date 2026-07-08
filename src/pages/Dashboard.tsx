@@ -1631,7 +1631,9 @@ function TimelineCheckInCard({
           초
         </span>
       )}
-      <span className={cn('truncate', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')}>{cardDisplayName(checkIn)}</span>
+      {/* T-20260708-foot-TIMETABLE-PTNAME-TRUNCATE (P0): flex 자식 min-w-0 부재로 truncate 미발동 → 성함이 셀 밖 넘침.
+          min-w-0 로 말줄임(…) 발동 + title 로 hover(PC)/tap(태블릿) 전체 성함 tooltip 보장(AC-1/AC-2). */}
+      <span className={cn('min-w-0 truncate', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} title={cardDisplayName(checkIn)} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
       {/* T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY: 통합시간표 초진(new)/재진(returning) 체크인 카드 식별자를
           폰번호 뒷4자리로 통일(김주연 총괄). 초진 차트번호(#RF-…) 표기 제거 → 재진과 동일 '폰 뒷4자리' 포맷.
           (선행: T-20260630-REVISIT-CUSTBOX 재진 통일 → 본 건으로 초진 통일 마무리. presentation only, DB 무변경.
@@ -1840,7 +1842,9 @@ function DraggableBox1Card({
       {/* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진 배지 무채색 → 파랑(blue) */}
       <span className="shrink-0 bg-blue-100 text-blue-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
-      <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260708-foot-TIMETABLE-PTNAME-TRUNCATE (P0): 초진 박스 성함 셀 밖 넘침 해소. min-w-0 로 truncate 발동
+          + title 로 전체 성함 tooltip(AC-1/AC-2). 간략메모(shrink-0) 동반 시에도 성함이 우선 공간 확보 후 말줄임(AC-3). */}
+      <span className="min-w-0 truncate text-gray-900 font-semibold" title={cardDisplayName(reservation) || '이름없음'} data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW (김주연 총괄): 초진 예약 박스 '성함 폰뒷자리' → '성함 폰뒷자리 [간략메모]'.
           - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
@@ -1968,7 +1972,8 @@ function DraggableBox2ResvCard({
       data-noshow={isNoShow ? 'true' : undefined}
     >
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
-      <span className="truncate text-gray-800">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260708-foot-TIMETABLE-PTNAME-TRUNCATE (P0): 재진 박스 성함 셀 밖 넘침 해소. min-w-0 truncate + title tooltip(AC-1/AC-2). */}
+      <span className="min-w-0 truncate text-gray-800" title={cardDisplayName(reservation) || '이름없음'} data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
           REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
       <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
