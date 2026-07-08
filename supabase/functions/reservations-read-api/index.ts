@@ -41,16 +41,19 @@
  *     status: string,
  *     source_system: string | null,    // null=워크인
  *     is_walkin: boolean,              // source_system IS NULL
- *     external_id: string | null,      // 도파민 cue_card.id
+ *     external_id: string | null,      // 도파민 cue_card.id (동행: '{cue_card}#companion-N' composite)
+ *     is_companion: boolean,           // 동행 예약 여부 (customer_id NULL & 외부유입, 또는 external_id '#companion-')
  *     visit_type: string | null,       // 'new' | 'returning'
  *     memo: string | null,
  *     clinic_id: string,
  *     clinic_slug: string | null,
  *     customer: {
- *       id: string,
- *       name_masked: string,           // "홍**" (첫 글자 + **)
- *       phone_e164_last4: string,      // 끝 4자리만
- *     } | null,
+ *       id: string | null,             // 동행은 customer 행 없음 → null
+ *       name_masked: string,           // "홍**" (첫 글자 + **). 동행은 customer_real_name(동행명) 폴백, 비면 "동행"
+ *       phone_e164_last4: string,      // 끝 4자리만. 동행 무폰 → "****"
+ *       name?: string,                 // include_full_pii=true 전용. 동행은 customer_real_name(동행명)
+ *       phone_e164?: string,           // include_full_pii=true 전용. 동행 무폰 → undefined
+ *     } | null,                        // 동행이면 customer_id NULL 이어도 폴백 블록 반환(null 아님)
  *     created_at: string,
  *   }
  *
@@ -281,6 +284,8 @@ Deno.serve(async (req) => {
         visit_type,
         memo,
         clinic_id,
+        customer_id,
+        customer_real_name,
         created_at,
         customers ( id, name, phone ),
         clinics ( slug )
@@ -332,6 +337,53 @@ Deno.serve(async (req) => {
       const customer   = row['customers']  as Record<string, unknown> | null;
       const clinicJoin = row['clinics']    as Record<string, unknown> | null;
       const srcSystem  = row['source_system'] ?? null;
+      const custId     = row['customer_id'] ?? null;
+      const extId      = typeof row['external_id'] === 'string' ? (row['external_id'] as string) : null;
+      const realName   = typeof row['customer_real_name'] === 'string'
+        ? (row['customer_real_name'] as string).trim()
+        : '';
+
+      // ── 동행(companion) 판정 (T-20260630-dopamine-FOOT-COMPANION-RESV-SAVE-FAIL, read-half) ──
+      //   write 계약(§444/§52): 동행 → customer_id NULL 강제 + customer_real_name(동행명) 착지 + source_system='dopamine'.
+      //   1차(권위) 판정: 외부유입(source_system NOT NULL) 행인데 링크된 customer_id 가 NULL → 동행.
+      //     (워크인 source_system NULL + customer_id NULL 은 is_walkin 이지 동행 아님 → 제외)
+      //   2차(보강) 판정: external_id 가 composite 동행키 '#companion-' 패턴.
+      const isCompanion =
+        (srcSystem !== null && custId === null) ||
+        (extId !== null && extId.includes('#companion-'));
+
+      // ── customer 표시 블록 ─────────────────────────────────────────────
+      //   (1) 진성 링크 customer 행 → 기존 로직 100% 불변.
+      //   (2) 동행(customer_id NULL) → customer_real_name(동행명) 스냅샷으로 폴백 합성.
+      //       동행명 비어있으면 '동행' 라벨(§4-2 원고객명 동행). 무폰이므로 last4=****.
+      //   (3) 그 외 customer 없음(워크인 등) → null 유지.
+      let customerBlock: Record<string, unknown> | null;
+      if (customer) {
+        // AC-3: 개인정보 마스킹 — 기본 마스킹 유지. include_full_pii=true(신뢰 호출자) 시 전체 PII 추가.
+        customerBlock = {
+          id:               customer['id'],
+          name_masked:      maskName(customer['name']),        // "홍**" — 항상 포함 (하위 호환)
+          phone_e164_last4: maskPhoneLast4(customer['phone']), // 끝 4자리 — 항상 포함 (하위 호환)
+          ...(includeFullPii && {
+            name:       typeof customer['name']  === 'string' ? customer['name']  : undefined,
+            phone_e164: typeof customer['phone'] === 'string' ? customer['phone'] : undefined,
+          }),
+        };
+      } else if (isCompanion) {
+        // 동행 폴백: customer 행이 아니라 예약행 표시명 스냅샷(비-PII master). AC-3 마스킹 규칙 동일 적용.
+        const displayName = realName || '동행';
+        customerBlock = {
+          id:               null,
+          name_masked:      realName ? maskName(realName) : '동행',
+          phone_e164_last4: '****',   // 동행 무폰
+          ...(includeFullPii && {
+            name:       displayName,
+            phone_e164: undefined,
+          }),
+        };
+      } else {
+        customerBlock = null;
+      }
 
       return {
         id:               row['id'],
@@ -341,27 +393,15 @@ Deno.serve(async (req) => {
         source_system:    srcSystem,
         // AC-8: is_walkin = source_system IS NULL
         is_walkin:        srcSystem === null,
+        // T-20260630-COMPANION read-half: 도파민 미러 동행 배지 렌더용
+        is_companion:     isCompanion,
         external_id:      row['external_id']   ?? null,
         visit_type:       row['visit_type']    ?? null,
         memo:             row['memo']          ?? null,
         clinic_id:        row['clinic_id'],
         clinic_slug:      clinicJoin?.['slug'] ?? null,
-        // AC-3: 개인정보 마스킹 — 기본값은 마스킹 유지.
-        // T-20260522-dopamine-CAL-UNMASK: include_full_pii=true(신뢰 호출자) 시 전체 PII 추가 반환.
-        // name_masked / phone_e164_last4 는 하위 호환을 위해 항상 포함.
-        customer: customer
-          ? {
-              id:               customer['id'],
-              name_masked:      maskName(customer['name']),        // "홍**" — 항상 포함 (하위 호환)
-              phone_e164_last4: maskPhoneLast4(customer['phone']), // 끝 4자리 — 항상 포함 (하위 호환)
-              // 신뢰 호출자(include_full_pii=true) 전용 — 미인증 외부 경로로는 절대 노출 안 됨
-              ...(includeFullPii && {
-                name:       typeof customer['name']  === 'string' ? customer['name']  : undefined,
-                phone_e164: typeof customer['phone'] === 'string' ? customer['phone'] : undefined,
-              }),
-            }
-          : null,
-        created_at: row['created_at'],
+        customer:         customerBlock,
+        created_at:       row['created_at'],
       };
     });
 
