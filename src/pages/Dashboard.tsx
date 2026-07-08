@@ -1857,10 +1857,10 @@ function DraggableBox1Card({
       {isBriefNoteChip(reservation.brief_note) && (
         <span
           className="shrink-0 max-w-[80px] truncate text-teal-700 font-medium text-[9px]"
-          title={reservation.brief_note!.trim()}
+          title={reservation.brief_note.trim()}
           data-testid="box1-brief-note"
         >
-          [{reservation.brief_note!.trim()}]
+          [{reservation.brief_note.trim()}]
         </span>
       )}
       {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 fallback(초진 슬롯 파리티).
