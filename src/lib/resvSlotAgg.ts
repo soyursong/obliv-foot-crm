@@ -45,6 +45,25 @@ export function isRibbonBrief(brief_note?: string | null): boolean {
   return !!brief_note && brief_note.includes(RIBBON_BRIEF_KEYWORD);
 }
 
+/**
+ * T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT (김주연 총괄): 간략메모 '빠른선택 칩' 3종 SSOT.
+ *   예약 생성/상세 모달에서 고를 수 있는 간략메모 칩값(주증상). 자유 수기입력과 구분하는 기준이자,
+ *   통합시간표·예약관리 명단에 '선택 칩만 표시(수기 제외)'하는 판정의 단일 소스.
+ *   ⚠️ [힐러]는 brief_note 텍스트가 아니라 is_healer_intent(영속 플래그) — 이 목록에 포함하지 않는다(직교).
+ *   ⚠️ 중복 구현 금지: 칩 목록/칩판정은 반드시 이 모듈을 통한다(팝업·대시보드·예약격자 공유).
+ */
+export const BRIEF_NOTE_CHIPS = ['발톱무좀', '내성발톱', '발각질케어'] as const;
+
+/**
+ * 간략메모(brief_note)가 '선택 칩'값인지 판정(정확 일치, trim).
+ *   true = 예약 생성/상세에서 고른 빠른선택 칩(주증상) → 통합시간표/예약격자 명단에 표시.
+ *   false = 미선택(빈값) 또는 자유 수기입력 텍스트 → 명단에 표시하지 않음(성함 가독 우선).
+ */
+export function isBriefNoteChip(brief_note?: string | null): boolean {
+  const v = brief_note?.trim();
+  return !!v && (BRIEF_NOTE_CHIPS as readonly string[]).includes(v);
+}
+
 /** 분류 입력에 필요한 최소 구조(타입 결합도 최소화).
  *  visit_type 은 string 으로 수용 — 'experience'(선체험) 등 new/returning 외 값은 'other'로 분류(원본 동작 동일).
  *  T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): is_healer_intent(영속) 추가 — 분류 SSOT. */

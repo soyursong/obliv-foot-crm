@@ -80,7 +80,7 @@ import { normalizeToE164 } from '@/lib/phone';
 // T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 통합시간표 포팅, FIX MSG-20260704-175153):
 //   힐러 예약카드 치료유형 fallback 게이트에 Reservations.tsx 와 동일한 분류 SSOT 사용(중복구현 금지).
 //   resvKind 는 is_healer_intent(영속) || healer_flag(레거시) 우선 → 'healer'.
-import { resvKind } from '@/lib/resvSlotAgg';
+import { resvKind, isBriefNoteChip } from '@/lib/resvSlotAgg';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
 import { subscribeRefresh } from '@/lib/dashboardRefreshBus';
@@ -1850,14 +1850,17 @@ function DraggableBox1Card({
           - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
           - 간략메모 미선택(빈값)이면 미렌더 → '미선택/재진은 기존 그대로' 보장.
           - [힐러]는 brief_note 텍스트가 아니라 is_healer_intent 플래그(노란박스 #FFFDE7) → 여기 자동 비표기(AC4 중복 회피).
-          - AC2 clip 가드: max-w + truncate로 폭 넘침 방지(성함은 truncate로 우선 공간 확보). */}
-      {reservation.brief_note?.trim() && (
+          - AC2 clip 가드: max-w + truncate로 폭 넘침 방지(성함은 truncate로 우선 공간 확보).
+          T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT (김주연 총괄) AC1-1: '선택한 [간략메모] 칩값만' 표시,
+            자유 수기입력 텍스트는 명단에 넣지 않음(isBriefNoteChip 게이트) → 성함 밀림·가독 저하 완화(P0 PTNAME-TRUNCATE 정합).
+            AC1-3: 미선택(칩 없음)은 종전대로 성함만(빈 라벨 잔류 없음 — falsy 시 미렌더). */}
+      {isBriefNoteChip(reservation.brief_note) && (
         <span
           className="shrink-0 max-w-[80px] truncate text-teal-700 font-medium text-[9px]"
-          title={reservation.brief_note.trim()}
+          title={reservation.brief_note!.trim()}
           data-testid="box1-brief-note"
         >
-          [{reservation.brief_note.trim()}]
+          [{reservation.brief_note!.trim()}]
         </span>
       )}
       {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 fallback(초진 슬롯 파리티).

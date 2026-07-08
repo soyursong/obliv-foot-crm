@@ -244,6 +244,10 @@ export default defineConfig({
         //     TEST_PASSWORD 없는 QA 워크트리에서 setup 실패→DB 검증 skip=insufficient_verification 재발.
         //     spec 이 브라우저/로그인 불요이므로 unit 으로 이동해 skip 0·결정론 확보(FOREIGN-LANG-SAVE 선례 동일).
         '**/T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN.spec.ts',
+        // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT: 통합시간표 간략메모 '선택 칩만 표시(수기 제외)'
+        //   판정(isBriefNoteChip/BRIEF_NOTE_CHIPS SSOT) 순수 단언 + Dashboard 표시게이트·팝업 편집 UI 소스 정적 가드.
+        //   page/auth/server 불요(FE-only, 스키마 무변경). 실 렌더·저장은 supervisor 갤탭 field-soak.
+        '**/T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

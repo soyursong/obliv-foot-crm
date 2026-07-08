@@ -46,6 +46,7 @@ import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslot
 import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/PackageTicketReadonlyList';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff, VisitType } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor, resolveVisitRouteDisplay, resolveRegistrarDisplay } from '@/lib/types';
+import { BRIEF_NOTE_CHIPS } from '@/lib/resvSlotAgg';
 // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 접수 시점 초진/재진 = 최근 완료방문 365일 recency(서버 KST).
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 
@@ -133,7 +134,8 @@ type CreateReservationParams = {
 
 // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 초진 간략메모 빠른선택 칩(발톱무좀/내성발톱) + 직접입력.
 // T-20260629-foot-NEWRESV-UNIFIED-MODAL AC6(항목10 amendment): 간략메모 3종으로 확장 — 발각질케어 추가.
-const BRIEF_NOTE_QUICK = ['발톱무좀', '내성발톱', '발각질케어'] as const;
+// T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT: 칩 목록 SSOT 를 resvSlotAgg.BRIEF_NOTE_CHIPS 로 통일(대시보드 표시게이트와 단일소스).
+const BRIEF_NOTE_QUICK = BRIEF_NOTE_CHIPS;
 
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────
 
@@ -257,6 +259,11 @@ export function ReservationDetailPopup({
   const [visitRoute, setVisitRoute] = useState<string>('');      // '' = 미지정
   const [registrarId, setRegistrarId] = useState<string>('');    // '' = 미지정
   const [routeSaving, setRouteSaving] = useState(false);
+  // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT (김주연 총괄) AC2: 예약상세(기존 예약) 간략메모 편집.
+  //   기존엔 new-mode(생성)에서만 brief_note 입력 가능 → 예약상세 팝업에선 수정 불가(=버그). anchor 예약(reservation)
+  //   기준으로 편집·영속(기존 reservations.brief_note 컬럼 update + 예약경로·등록자와 동일 [저장] 경로/RLS 재사용).
+  //   new-mode 의 briefNote state 와 분리(양 화면 상호배타 렌더지만 stale 오염 방지 위해 별도 상태).
+  const [detailBriefNote, setDetailBriefNote] = useState('');
   // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: TM 역할은 예약등록자 드롭다운 read-only + 저장 차단.
   const isTmRole = currentUserRole === 'tm';
   // T-20260630-foot-RESVPOPUP-DELBTN-HIDE-TMCODY: TM·코디네이터(coordinator) 역할은 푸터 [예약삭제] 버튼 미렌더(hidden, not disabled).
@@ -447,6 +454,7 @@ export function ReservationDetailPopup({
       setSelectedConsultantId('');
       setVisitRoute('');
       setRegistrarId('');
+      setDetailBriefNote('');
       setCancelDialog(false);
       setCancelReason('');
       setSearchValue('');
@@ -471,6 +479,8 @@ export function ReservationDetailPopup({
     // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
     setVisitRoute(reservation.visit_route ?? '');
     setRegistrarId(reservation.registrar_id ?? '');
+    // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT AC2: 현재 예약의 간략메모(brief_note) 프리로드(편집 대상).
+    setDetailBriefNote(reservation.brief_note ?? '');
 
     const customerId = reservation.customer_id;
     const clinicId = reservation.clinic_id;
@@ -1166,12 +1176,15 @@ export function ReservationDetailPopup({
       .from('reservations')
       .update({
         visit_route: visitRoute === '' ? null : visitRoute,
+        // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT AC2: 간략메모(brief_note)도 [저장]에 동봉 영속.
+        //   기존 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 통합시간표 명단 표시(AC1) 즉시 반영.
+        brief_note: detailBriefNote.trim() || null,
         ...registrarFields,
       })
       .eq('id', reservation.id);
     setRouteSaving(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    toast.success('예약경로·예약등록자 저장됨');
+    toast.success('예약 정보 저장됨');
     onChanged();
   };
 
@@ -1570,6 +1583,42 @@ export function ReservationDetailPopup({
                         </SelectContent>
                       </Select>
                     )}
+                  </div>
+                  {/* T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT (김주연 총괄) AC2: 예약상세 간략메모 수정.
+                      빠른선택 칩(발톱무좀/내성발톱/발각질케어) 토글 + 직접입력 — new-mode 와 동일 UX.
+                      저장은 하단 [저장](예약경로·등록자와 동일 버튼)으로 함께 영속 → 통합시간표 명단(AC1) 즉시 반영.
+                      ⚠ [힐러](is_healer_intent)는 별도 축 — 본 편집은 brief_note 텍스트만 대상(간략메모 요청 범위 한정). */}
+                  <div className="flex flex-col gap-1 pt-0.5">
+                    <span className="text-muted-foreground text-xs">간략메모</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {BRIEF_NOTE_QUICK.map((label) => {
+                        const active = detailBriefNote.trim() === label;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setDetailBriefNote((prev) => (prev.trim() === label ? '' : label))}
+                            className={cn(
+                              'h-8 rounded-md border px-3 text-sm font-medium transition-colors',
+                              active
+                                ? 'border-teal-600 bg-teal-100 text-teal-700'
+                                : 'border-input bg-background hover:bg-muted',
+                            )}
+                            data-testid={`detail-brief-quick-${label}`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input
+                      type="text"
+                      value={detailBriefNote}
+                      onChange={(e) => setDetailBriefNote(e.target.value)}
+                      placeholder="발톱무좀 · 내성발톱 · 발각질케어"
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      data-testid="detail-brief-note-input"
+                    />
                   </div>
                 </div>
               </div>
