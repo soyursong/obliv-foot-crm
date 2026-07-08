@@ -1,0 +1,196 @@
+<!doctype html>
+<!--
+  T-20260606-foot-CHART2-FOOTQ-VIEWER · PHASE 1 시안(정적 모형)
+  A안 = 2번차트 [상담내역] → "발건강질문지 보기" → 별도창에 인쇄용 양식으로 이미지화
+
+  ※ 모형 전용: 실제 DB 연결 없음(더미 데이터). 배포·스키마 변경 없음.
+  ※ 실제 데이터 소스 = health_q_results.form_data (JSONB), customer_id 조인.
+  ※ 스타일 근거 = src/components/HealthQResultsPanel.tsx (teal-emerald 브랜딩, ResultCard).
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>발건강질문지 자가작성 — 별도창 이미지 시안</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
+    background: #eef2f4;
+    padding: 32px;
+    color: #1f2937;
+  }
+  /* 별도창(window.open)에 열리는 인쇄용 양식 카드 — 이미지화 대상 */
+  .doc {
+    width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(15, 118, 110, 0.12);
+    overflow: hidden;
+  }
+  /* 헤더 — 병원명 / 문서 제목 */
+  .doc-header {
+    background: linear-gradient(135deg, #0d9488 0%, #10b981 100%);
+    color: #fff;
+    padding: 24px 32px;
+  }
+  .doc-header .clinic { font-size: 13px; opacity: 0.9; letter-spacing: 0.02em; }
+  .doc-header .title { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .doc-header .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+  /* 환자 정보 바 */
+  .patient-bar {
+    display: flex;
+    gap: 28px;
+    padding: 16px 32px;
+    background: #f0fdfa;
+    border-bottom: 1px solid #ccfbf1;
+    font-size: 13px;
+  }
+  .patient-bar .item { display: flex; gap: 8px; }
+  .patient-bar .k { color: #0f766e; font-weight: 600; }
+  .patient-bar .v { color: #334155; }
+
+  /* 섹션 */
+  .section { padding: 20px 32px 4px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f766e;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 2px solid #99f6e4;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title .num {
+    background: #0d9488; color: #fff;
+    width: 20px; height: 20px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+  }
+  /* Q&A 행 */
+  dl.qa { display: grid; grid-template-columns: 168px 1fr; gap: 6px 12px; padding-bottom: 12px; }
+  dl.qa dt { font-size: 12.5px; color: #64748b; font-weight: 600; padding-top: 2px; }
+  dl.qa dd { font-size: 13px; color: #1f2937; line-height: 1.5; }
+  dl.qa dd .chip {
+    display: inline-block;
+    background: #f0fdfa; border: 1px solid #99f6e4;
+    color: #0f766e; border-radius: 999px;
+    padding: 1px 10px; margin: 1px 3px 1px 0; font-size: 12px;
+  }
+  .pain { color: #dc2626; font-weight: 600; }
+
+  /* 푸터 */
+  .doc-footer {
+    padding: 14px 32px 22px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid #f1f5f9; margin-top: 8px;
+  }
+  .doc-footer .note { font-size: 11px; color: #94a3b8; }
+  .doc-footer .brand { font-size: 11px; color: #0d9488; font-weight: 600; }
+
+  /* 시안 안내 배너 (실물엔 없음) */
+  .mock-banner {
+    width: 720px; margin: 0 auto 16px;
+    background: #fffbeb; border: 1px dashed #f59e0b; border-radius: 10px;
+    padding: 10px 16px; font-size: 12px; color: #92400e;
+  }
+</style>
+</head>
+<body>
+  <div class="mock-banner">
+    🔎 <b>시안(모형)</b> — 2번차트 [상담내역]에서 <b>“발건강질문지 보기”</b> 클릭 시 열리는 별도창을
+    이 양식으로 <b>이미지화(PNG)</b>합니다. 아래는 더미 데이터 예시이며, 실물은 환자 제출값이 들어갑니다.
+  </div>
+
+  <div class="doc" id="doc">
+    <div class="doc-header">
+      <div class="clinic">오블리브 발톱케어의원 · 종로점</div>
+      <div class="title">발건강질문지 (자가작성)</div>
+      <div class="sub">고객 모바일 자가작성 제출본 · 열람 전용</div>
+    </div>
+
+    <div class="patient-bar">
+      <div class="item"><span class="k">환자명</span><span class="v">김발톱</span></div>
+      <div class="item"><span class="k">작성일</span><span class="v">2026.07.05 14:32</span></div>
+      <div class="item"><span class="k">양식</span><span class="v">발건강 질문지 (일반)</span></div>
+    </div>
+
+    <!-- 1. 발 관련 증상 -->
+    <div class="section">
+      <div class="section-title"><span class="num">1</span>발 관련 증상</div>
+      <dl class="qa">
+        <dt>발 관련 증상</dt>
+        <dd>
+          <span class="chip">내향성 발톱</span>
+          <span class="chip">발톱 변색</span>
+          <span class="chip">발톱 두꺼워짐</span>
+        </dd>
+        <dt>발 통증 여부</dt>
+        <dd><span class="pain">있음 — 걸을 때 통증</span></dd>
+      </dl>
+    </div>
+
+    <!-- 2. 발 건강 관련 경험 -->
+    <div class="section">
+      <div class="section-title"><span class="num">2</span>발 건강 관련 경험</div>
+      <dl class="qa">
+        <dt>문제성 발톱 치료</dt>
+        <dd>있음</dd>
+        <dt>치료 방법</dt>
+        <dd><span class="chip">타 병원 발톱 교정</span><span class="chip">자가 처치</span></dd>
+        <dt>증상 시작 시점</dt>
+        <dd>6개월 ~ 1년 전</dd>
+        <dt>가족력</dt>
+        <dd>부모님 내향성 발톱 이력</dd>
+      </dl>
+    </div>
+
+    <!-- 3. 나의 건강 상태 -->
+    <div class="section">
+      <div class="section-title"><span class="num">3</span>나의 건강 상태</div>
+      <dl class="qa">
+        <dt>나의 건강 상태</dt>
+        <dd><span class="chip">당뇨</span><span class="chip">고혈압</span></dd>
+        <dt>복용 중인 약</dt>
+        <dd>메트포르민, 혈압약</dd>
+        <dt>알레르기 상세</dt>
+        <dd>페니실린계 항생제</dd>
+      </dl>
+    </div>
+
+    <!-- 4. 치료 및 내원 계획 -->
+    <div class="section">
+      <div class="section-title"><span class="num">4</span>치료 및 내원 계획</div>
+      <dl class="qa">
+        <dt>치료 시작 시기</dt>
+        <dd>가능한 빨리</dd>
+        <dt>내원 가능 주기</dt>
+        <dd>주 1회</dd>
+        <dt>실비보험</dt>
+        <dd>있음</dd>
+        <dt>보험사</dt>
+        <dd>◯◯화재해상보험</dd>
+      </dl>
+    </div>
+
+    <!-- 5. 시술 관련 확인 -->
+    <div class="section">
+      <div class="section-title"><span class="num">5</span>시술 관련 확인</div>
+      <dl class="qa">
+        <dt>패디큐어 제거 유무</dt>
+        <dd>제거 완료</dd>
+        <dt>30분 이상 엎드려 시술 가능</dt>
+        <dd>가능</dd>
+      </dl>
+    </div>
+
+    <div class="doc-footer">
+      <span class="note">본 문서는 고객이 자가작성한 제출본을 열람 전용으로 렌더한 것입니다. 수정 불가.</span>
+      <span class="brand">OBLIV Foot Care</span>
+    </div>
+  </div>
+</body>
+</html>

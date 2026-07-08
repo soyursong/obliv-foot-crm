@@ -49,7 +49,8 @@ test.describe('AC1: 빈 셀 여백 확대(클릭영역 확보)', () => {
 test.describe('AC2/AC4: 간략메모를 성함 바로 아래로 재배치', () => {
   test('AC2-1: renderDayCard 내 성함(customer_name)이 간략메모(brief)보다 앞', () => {
     const block = renderDayCardBlock();
-    const nameIdx = block.indexOf('{r.customer_name}');
+    // T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING 이후 성함 렌더는 폴백 포함(`{r.customer_name?.trim() || '이름없음'}`).
+    const nameIdx = block.indexOf("r.customer_name?.trim() || '이름없음'");
     const briefIdx = block.indexOf('data-testid={`resv-day-brief-${r.id}`}');
     expect(nameIdx, '성함 렌더 누락').toBeGreaterThan(-1);
     expect(briefIdx, '간략메모 블록 누락').toBeGreaterThan(-1);
@@ -59,8 +60,8 @@ test.describe('AC2/AC4: 간략메모를 성함 바로 아래로 재배치', () =
 
   test('AC2-2: 간략메모 블록 상단 여백 mt-0.5(성함과의 간격) — mb-0.5 아님', () => {
     const block = renderDayCardBlock();
-    // 성함 아래 배치이므로 위쪽 마진(mt-0.5)으로 간격
-    expect(block, '간략메모 mt-0.5(성함 하단 간격) 미적용').toContain('mt-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600');
+    // 성함 아래 배치이므로 위쪽 마진(mt-0.5)으로 간격. T-20260708-foot-RESVMGMT-BRIEFMEMO-LEFTALIGN: text-left(좌측정렬) 포함.
+    expect(block, '간략메모 mt-0.5(성함 하단 간격) 미적용').toContain('mt-0.5 whitespace-normal break-words text-left text-[8px] font-medium leading-tight text-gray-600');
     // 구 상단배치(mb-0.5) 회귀 방지
     expect(block, '구 상단배치 마진(mb-0.5) 잔존 회귀').not.toContain('mb-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600');
   });

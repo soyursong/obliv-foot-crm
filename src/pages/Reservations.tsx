@@ -2176,10 +2176,12 @@ export default function Reservations() {
                   {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                 </div>
                 {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 성함 '바로 아래'에 표기(재배치).
-                    메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방). 취소건은 미표기. mb-0.5→mt-0.5(성함과의 간격). */}
+                    메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방). 취소건은 미표기. mb-0.5→mt-0.5(성함과의 간격).
+                    T-20260708-foot-RESVMGMT-BRIEFMEMO-LEFTALIGN: 좌측정렬 명시(text-left). 부모 격자 컨테이너(resv-day-xaxis)가 text-center라
+                    이 block div가 중앙정렬로 상속되던 게 현장 신고 RC(성함 flex 행은 좌측인데 메모만 중앙). 성함 좌측 기준선과 정렬. */}
                 {r.status !== 'cancelled' && r.brief_note?.trim() && (
                   <div
-                    className="mt-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600"
+                    className="mt-0.5 whitespace-normal break-words text-left text-[8px] font-medium leading-tight text-gray-600"
                     data-testid={`resv-day-brief-${r.id}`}
                     title={r.brief_note.trim()}
                   >
@@ -2192,7 +2194,7 @@ export default function Reservations() {
                     linked_package_id→packages.package_name(치료유형명) 표기. 일간뷰. */}
                 {r.status !== 'cancelled' && !r.brief_note?.trim() && resvKind(r) === 'healer' && resvPkgTypeMap.get(r.id) && (
                   <div
-                    className="mt-0.5 whitespace-normal break-words text-[8px] font-medium leading-tight text-gray-600"
+                    className="mt-0.5 whitespace-normal break-words text-left text-[8px] font-medium leading-tight text-gray-600"
                     data-testid={`resv-day-pkgtype-${r.id}`}
                     title={resvPkgTypeMap.get(r.id)}
                   >

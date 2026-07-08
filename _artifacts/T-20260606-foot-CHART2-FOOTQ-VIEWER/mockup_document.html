@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<!--
+  T-20260606-foot-CHART2-FOOTQ-VIEWER — PHASE 1 시안(모형) [2/2]  · REV2 (총괄 피드백 반영 2026-07-08)
+  A안 = 별도창(window.open) 에서 발건강질문지 자가작성 내용을 "인쇄용 양식(이미지)"처럼 렌더한 예시.
+  ※ 정적 모형. prod 코드/DB 무변경, 더미 데이터. html-to-image 최종 결과물이 어떻게 보일지 시각 확인용.
+  데이터 구조 근거: src/components/HealthQResultsPanel.tsx (FIELD_LABELS / 5섹션 확정본)
+  REV2 변경(총괄 피드백):
+   1) 컬러를 현행 CRM 톤앤매너로 통일 — 쿨 뉴트럴 그레이(sage) 구조색 + 워엄 브라운(Umber/Taupe) 강조.
+      (기존 bright teal 계열은 CRM MONOCHROME-RECOLOR 이후 미사용이라 교체)
+   2) "고민되는 발톱 부위" 선택 섹션 추가 — 2번차트 패키지 탭의 발가락 일러스트
+      (src/components/FootToeIllustration.tsx) 도형/색을 그대로 재활용. 좌 엄지(L1)·우 엄지(R1) 더미 선택 표시.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  /* ── 현행 CRM 팔레트(담백·모노톤 통일) ── */
+  :root{
+    --ink:#2E3133;        /* sage-900 헤더/제목 */
+    --ink-soft:#51585D;   /* sage-700 본문 강조 */
+    --label:#5C6166;      /* sage-600 라벨 */
+    --line:#E4E6E8;       /* sage-100 라인 */
+    --border:#D3D6D9;     /* sage-200 보더 */
+    --surface:#F4F5F6;    /* sage-50 연한 면 */
+    --chip-bg:#E4E6E8;    /* sage-100 칩 배경 */
+    --primary:#443A35;    /* Umber — 주 강조(브랜드 라인·번호칩·버튼) */
+    --primary-hi:#6E6353; /* 워엄 미드(선택 발가락) */
+    --taupe:#C5BEA3;      /* Classic Taupe(선택 발톱) */
+    --cream:#fdf6ec;      /* 발 패드 워엄 크림 (일러스트 기본) */
+    --cream-line:#e7d8c3; /* 일러스트 보더 */
+    --muted:#9CA1A6;      /* 보조 텍스트 */
+    /* 의미색 carve-out — warn(주의) 앰버는 CRM에서도 유지 */
+    --warn-bg:#fef3c7; --warn-tx:#92620a; --warn-bd:#fde08a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: 'Pretendard', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    background: var(--surface);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 별도창 프레임 (window.open 느낌) */
+  .win { width: 820px; margin: 28px auto; }
+  .winbar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--chip-bg); border: 1px solid var(--border);
+    border-radius: 10px 10px 0 0; padding: 9px 14px;
+  }
+  .winbar .dots { display: flex; gap: 6px; }
+  .winbar .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .winbar .r { background: #f6685e; } .winbar .y { background: #f8bd3b; } .winbar .g { background: #61c454; }
+  .winbar .title { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .winbar .badge { margin-left: auto; font-size: 10.5px; color: var(--ink-soft); background: #fff; border: 1px solid var(--border); padding: 2px 9px; border-radius: 999px; font-weight: 600; }
+
+  /* A4 인쇄용 문서 */
+  .paper {
+    background: #ffffff;
+    border: 1px solid var(--border); border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 40px 44px 34px;
+    box-shadow: 0 12px 30px rgba(46,49,51,0.08);
+  }
+
+  /* 문서 헤더 — 워엄 브라운 브랜드 라인 */
+  .doc-head { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 16px; border-bottom: 2.5px solid var(--primary); }
+  .clinic { font-size: 20px; font-weight: 800; color: var(--ink); letter-spacing: -0.4px; }
+  .clinic .sub { display: block; font-size: 11.5px; font-weight: 500; color: var(--label); margin-top: 3px; letter-spacing: 0; }
+  .doc-title { text-align: right; }
+  .doc-title .kicker { font-size: 11px; color: var(--primary-hi); font-weight: 700; letter-spacing: 1px; }
+  .doc-title .name { font-size: 17px; font-weight: 800; color: var(--primary); margin-top: 2px; }
+
+  /* 환자정보 바 */
+  .patient {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 1px; margin-top: 18px;
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--border);
+  }
+  .patient .cell { background: var(--surface); padding: 9px 13px; }
+  .patient .cell .k { font-size: 10px; color: var(--label); font-weight: 600; }
+  .patient .cell .v { font-size: 13.5px; color: var(--ink); font-weight: 700; margin-top: 2px; }
+
+  /* 섹션 */
+  .section { margin-top: 22px; }
+  .section > .sec-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 9px;
+  }
+  .section > .sec-title .no {
+    width: 20px; height: 20px; border-radius: 6px; background: var(--primary); color: #fff;
+    font-size: 11px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700;
+  }
+  .qa { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .qa .row { display: grid; grid-template-columns: 190px 1fr; border-top: 1px solid var(--line); }
+  .qa .row:first-child { border-top: none; }
+  .qa .row .label { background: var(--surface); padding: 10px 14px; font-size: 12px; color: var(--label); font-weight: 600; }
+  .qa .row .value { padding: 10px 14px; font-size: 12.5px; color: var(--ink); line-height: 1.5; }
+  .qa .row .value .tag {
+    display: inline-block; background: var(--chip-bg); color: var(--ink-soft); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1.5px 8px; font-size: 11.5px; font-weight: 600; margin: 1px 4px 1px 0;
+  }
+  .qa .row .value.warn .tag { background: var(--warn-bg); color: var(--warn-tx); border-color: var(--warn-bd); }
+
+  /* ★ 신규: 고민되는 발톱 부위 선택 섹션 (2번차트 발가락 일러스트 재활용) */
+  .nail-sec .sec-title .badge-new {
+    margin-left: 6px; font-size: 10px; font-weight: 700; color: var(--primary);
+    background: var(--surface); border: 1px solid var(--taupe); border-radius: 999px; padding: 1px 8px;
+  }
+  .nail-box {
+    border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px 14px;
+    background: linear-gradient(#ffffff, var(--surface));
+  }
+  .nail-box .nail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .nail-box .nail-head .q { font-size: 12.5px; color: var(--label); font-weight: 600; }
+  .nail-box .nail-head .picked {
+    margin-left: auto; font-family: 'SF Mono', ui-monospace, monospace; font-size: 12px; font-weight: 700;
+    color: var(--ink-soft); background: var(--chip-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 9px;
+  }
+  .feet { display: flex; align-items: flex-start; justify-content: center; gap: 34px; padding: 4px 0 2px; }
+  .foot-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .foot-col svg { width: 128px; height: auto; }
+  .foot-col .cap { font-size: 12px; font-weight: 700; color: var(--label); }
+  .nail-box .legend { margin-top: 10px; text-align: center; font-size: 10.5px; color: var(--muted); }
+  .nail-box .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--primary-hi); border: 1px solid var(--primary); vertical-align: -1px; margin-right: 3px; }
+
+  /* 푸터 */
+  .doc-foot { margin-top: 24px; padding-top: 14px; border-top: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .doc-foot .stamp { font-size: 10.5px; color: var(--muted); }
+  .doc-foot .ro { font-size: 10.5px; color: var(--ink-soft); background: var(--surface); border: 1px solid var(--border); padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="win">
+    <div class="winbar">
+      <span class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></span>
+      <span class="title">발건강질문지 자가작성 — 김민서 (별도 창)</span>
+      <span class="badge">이미지 · 인쇄용</span>
+    </div>
+
+    <div class="paper">
+      <!-- 헤더 -->
+      <div class="doc-head">
+        <div class="clinic">오블리브 발톱교정센터<span class="sub">종로점 · Foot Care Center</span></div>
+        <div class="doc-title">
+          <div class="kicker">SELF-REPORTED</div>
+          <div class="name">발건강 질문지 (일반)</div>
+        </div>
+      </div>
+
+      <!-- 환자정보 -->
+      <div class="patient">
+        <div class="cell"><div class="k">환자명</div><div class="v">김민서</div></div>
+        <div class="cell"><div class="k">차트번호</div><div class="v">F-002841</div></div>
+        <div class="cell"><div class="k">작성일시</div><div class="v">2026.07.05 14:32</div></div>
+        <div class="cell"><div class="k">양식</div><div class="v">일반 (자가작성)</div></div>
+      </div>
+
+      <!-- 1. 발 관련 증상 -->
+      <div class="section">
+        <div class="sec-title"><span class="no">1</span> 발 관련 증상</div>
+        <div class="qa">
+          <div class="row"><div class="label">발 관련 증상</div><div class="value"><span class="tag">내성발톱(파고드는 발톱)</span><span class="tag">발톱 변색 및 변형</span><span class="tag">발톱 끝 부서짐</span></div></div>
+        </div>
+      </div>
+
+      <!-- ★ 2. 고민되는 발톱 부위 (신규 — 발가락 일러스트 선택) -->
+      <div class="section nail-sec">
+        <div class="sec-title"><span class="no">2</span> 고민되는 발톱 부위<span class="badge-new">고객 선택</span></div>
+        <div class="nail-box">
+          <div class="nail-head">
+            <span class="q">고객이 직접 선택한, 가장 고민되는 발톱 부위입니다.</span>
+            <span class="picked" id="picked">L1, R1</span>
+          </div>
+          <div class="feet">
+            <div class="foot-col"><span id="foot-L"></span><span class="cap">좌(L)</span></div>
+            <div class="foot-col"><span id="foot-R"></span><span class="cap">우(R)</span></div>
+          </div>
+          <div class="legend"><span class="sw"></span> 색이 채워진 발톱 = 고객이 선택한 고민 부위 (예시: 좌·우 엄지발톱)</div>
+        </div>
+      </div>
+
+      <!-- 3. 발 건강 관련 경험 -->
+      <div class="section">
+        <div class="sec-title"><span class="no">3</span> 발 건강 관련 경험</div>
+        <div class="qa">
+          <div class="row"><div class="label">문제성 발톱 치료</div><div class="value"><span class="tag">있음</span></div></div>
+          <div class="row"><div class="label">치료 방법</div><div class="value"><span class="tag">바르는 약</span><span class="tag">레이저</span></div></div>
+          <div class="row"><div class="label">증상 시작 시점</div><div class="value">1~3년</div></div>
+          <div class="row"><div class="label">가족력</div><div class="value">있음 (어머니 — 동일 증상)</div></div>
+          <div class="row"><div class="label">발 통증 여부</div><div class="value warn"><span class="tag">있음</span></div></div>
+        </div>
+      </div>
+
+      <!-- 4. 나의 건강 상태 -->
+      <div class="section">
+        <div class="sec-title"><span class="no">4</span> 나의 건강 상태</div>
+        <div class="qa">
+          <div class="row"><div class="label">나의 건강 상태</div><div class="value warn"><span class="tag">당뇨</span><span class="tag">고혈압</span></div></div>
+          <div class="row"><div class="label">복용 중인 약</div><div class="value">혈압약 (아모디핀), 당뇨약</div></div>
+        </div>
+      </div>
+
+      <!-- 5. 치료 및 내원 계획 -->
+      <div class="section">
+        <div class="sec-title"><span class="no">5</span> 치료 및 내원 계획</div>
+        <div class="qa">
+          <div class="row"><div class="label">치료 시작 시기</div><div class="value">가능한 빨리</div></div>
+          <div class="row"><div class="label">내원 가능 주기</div><div class="value">주 1회</div></div>
+          <div class="row"><div class="label">실비보험</div><div class="value"><span class="tag">있음</span></div></div>
+          <div class="row"><div class="label">보험사</div><div class="value">삼성화재</div></div>
+        </div>
+      </div>
+
+      <!-- 6. 시술 관련 확인 -->
+      <div class="section">
+        <div class="sec-title"><span class="no">6</span> 시술 관련 확인</div>
+        <div class="qa">
+          <div class="row"><div class="label">패디큐어 제거 유무</div><div class="value">예 (내원 전 제거함)</div></div>
+          <div class="row"><div class="label">30분 이상 엎드려 시술 가능</div><div class="value">예</div></div>
+        </div>
+      </div>
+
+      <!-- 푸터 -->
+      <div class="doc-foot">
+        <div class="stamp">본 문서는 환자 본인이 셀프접수 단계에서 직접 작성·제출한 내용을 그대로 이미지화한 것입니다.</div>
+        <div class="ro">읽기 전용</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  /* ── 발가락 일러스트 재활용 ──────────────────────────────────────────────
+     src/components/FootToeIllustration.tsx 의 도형/좌표/색을 1:1 미러링(읽기전용 렌더).
+     VB 120x114 · BASE_TOES(우측 기준) · 좌측(L)은 x 미러 · 활성색=워엄(Umber/Taupe). */
+  const VB_W = 120, VB_H = 114;
+  const BASE_TOES = [
+    { toe:1, cx:22,  topY:18, w:28, h:50 },
+    { toe:2, cx:49,  topY:10, w:19, h:47 },
+    { toe:3, cx:69,  topY:11, w:18, h:44 },
+    { toe:4, cx:87,  topY:17, w:16, h:39 },
+    { toe:5, cx:102, topY:26, w:13, h:33 },
+  ];
+  const toePositions = (side) =>
+    side === 'R' ? BASE_TOES : BASE_TOES.map(t => ({ ...t, cx: VB_W - t.cx }));
+
+  // 더미 선택: 좌 엄지(L1) + 우 엄지(R1)
+  const SELECTED = [ { side:'L', toe:1 }, { side:'R', toe:1 } ];
+  const isSel = (side, toe) => SELECTED.some(s => s.side === side && s.toe === toe);
+
+  function footSvg(side) {
+    const toes = toePositions(side);
+    const blushX = side === 'R' ? 36 : VB_W - 36;
+    let g = '';
+    for (const t of toes) {
+      const active = isSel(side, t.toe);
+      const x = t.cx - t.w / 2;
+      const nailW = t.w * 0.64, nailH = t.h * 0.34;
+      const nailX = t.cx - nailW / 2, nailY = t.topY + t.h * 0.12;
+      g += `
+        <g>
+          <rect x="${x}" y="${t.topY}" width="${t.w}" height="${t.h}" rx="${t.w/2}"
+                fill="${active ? '#6E6353' : '#fdf6ec'}" stroke="${active ? '#443A35' : '#e7d8c3'}" stroke-width="2"/>
+          <rect x="${nailX}" y="${nailY}" width="${nailW}" height="${nailH}" rx="${nailW*0.4}"
+                fill="${active ? '#C5BEA3' : '#fff7ec'}" stroke="${active ? '#443A35' : '#e7d8c3'}" stroke-width="1" opacity="0.95"/>
+          <text x="${t.cx}" y="${t.topY + t.h*0.76}" text-anchor="middle" font-size="${t.toe===1?12:10}"
+                font-weight="700" fill="${active ? '#ffffff' : '#6E6353'}">${t.toe}</text>
+        </g>`;
+    }
+    return `<svg viewBox="0 0 ${VB_W} ${VB_H}" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="${side==='L'?'좌측':'우측'} 발 발톱 선택">
+      <rect x="5" y="58" width="${VB_W-10}" height="50" rx="24" fill="#fdf6ec" stroke="#e7d8c3" stroke-width="2"/>
+      <ellipse cx="${blushX}" cy="82" rx="15" ry="9" fill="#fbe3df" opacity="0.6"/>
+      ${g}
+    </svg>`;
+  }
+
+  document.getElementById('foot-L').innerHTML = footSvg('L');
+  document.getElementById('foot-R').innerHTML = footSvg('R');
+  document.getElementById('picked').textContent =
+    SELECTED.map(s => s.side + s.toe).join(', ');
+  </script>
+</body>
+</html>
