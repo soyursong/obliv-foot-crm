@@ -899,6 +899,19 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
               copayment: liveCopay,
               nonCovered: nonCoveredTotal,
             });
+            // T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 폴백(service_charges 직결) 경로도
+            //   요약행 본인/공단 총계 주입. buildBillDetailItemsHtml per-item 산식(copayment_amount 존재 시만
+            //   렌더)과 동일 기준(!= null 필터)으로 집계해 컬럼합과 정합.
+            const billCopay = billItems
+              .filter((i) => i.is_insurance_covered && i.copayment_amount != null)
+              .reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
+            const billFund = billItems
+              .filter((i) => i.is_insurance_covered && i.copayment_amount != null)
+              .reduce((s, i) => s + Math.max(0, i.amount - (i.copayment_amount ?? 0)), 0);
+            autoValues.subtotal_copayment = formatAmount(billCopay);
+            autoValues.total_copayment = autoValues.subtotal_copayment;
+            autoValues.subtotal_fund = formatAmount(billFund);
+            autoValues.total_fund = autoValues.subtotal_fund;
           }
         }
       }
@@ -922,11 +935,23 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             autoValues.subtotal_noncovered = fbBatch.nonCoveredTotal.toLocaleString('ko-KR');
             autoValues.total_noncovered = fbBatch.nonCoveredTotal.toLocaleString('ko-KR');
           }
+          // T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 요약행 본인부담금/공단부담금 총계 주입.
+          //   buildFootBillDetailItems(copayInfo)로 per-item copayment_amount 를 채웠으므로
+          //   Σcopayment=copaymentTotal, Σfund=insuranceCovered 와 정확히 일치.
+          autoValues.subtotal_copayment = formatAmount(fbBatch.copaymentTotal);
+          autoValues.total_copayment = autoValues.subtotal_copayment;
+          autoValues.subtotal_fund = formatAmount(fbBatch.liveBillingValues.insuranceCovered);
+          autoValues.total_fund = autoValues.subtotal_fund;
         }
       } else if (needsItems && !(chargeItems && chargeItems.length > 0)) {
         // service_charges·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
         autoValues.items_html = buildBillDetailItemsHtml([]);
         autoValues.rx_items_html = buildRxItemsHtml([]);
+        // T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 항목 0건 → 요약행 총계 0 명시(공란 방지).
+        autoValues.subtotal_copayment = '0';
+        autoValues.total_copayment = '0';
+        autoValues.subtotal_fund = '0';
+        autoValues.total_fund = '0';
       }
 
       // ── T-20260706-foot-SERIAL-RPC-AVVC-NOFIRE: 일괄 출력 연번호 발번 (단건 handlePrint 와 동형) ──
@@ -2022,6 +2047,12 @@ function IssueDialog({
       base.subtotal_amount = base.total_amount;
       base.subtotal_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
       base.total_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
+      // T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 요약행 본인부담금/공단부담금 총계 주입.
+      //   per-item 컬럼 합계와 정확히 일치(Σcopayment=copaymentTotal, Σfund=insuranceCovered).
+      base.subtotal_copayment = formatAmount(footFb.copaymentTotal);
+      base.total_copayment = base.subtotal_copayment;
+      base.subtotal_fund = formatAmount(footFb.liveBillingValues.insuranceCovered);
+      base.total_fund = base.subtotal_fund;
     } else if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
       // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(기존 동작 보존).
       // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 로 급여 본인부담금 열 표시.
@@ -2046,11 +2077,27 @@ function IssueDialog({
       base.subtotal_amount = base.total_amount;
       base.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
       base.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+      // T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 폴백 경로도 요약행 본인/공단 총계 주입.
+      //   buildBillDetailItemsHtml 의 per-item 산식(급여+copayment_amount 존재 시)과 동일 기준으로 집계.
+      const coveredCopay = billItems
+        .filter((i) => i.is_insurance_covered && i.copayment_amount != null)
+        .reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
+      const coveredFund = billItems
+        .filter((i) => i.is_insurance_covered && i.copayment_amount != null)
+        .reduce((s, i) => s + Math.max(0, i.amount - (i.copayment_amount ?? 0)), 0);
+      base.subtotal_copayment = formatAmount(coveredCopay);
+      base.total_copayment = base.subtotal_copayment;
+      base.subtotal_fund = formatAmount(coveredFund);
+      base.total_fund = base.subtotal_fund;
     } else if (template.form_key === 'bill_detail') {
       base.items_html = buildBillDetailItemsHtml([]);
       base.subtotal_amount = base.total_amount;
       base.subtotal_noncovered = '0';
       base.total_noncovered = '0';
+      base.subtotal_copayment = '0';
+      base.total_copayment = '0';
+      base.subtotal_fund = '0';
+      base.total_fund = '0';
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)

@@ -934,8 +934,10 @@ ${COMMON_STYLE}
       <tr>
         <td colspan="7" style="text-align:center; background:#f8f8f8; font-weight:bold;">계</td>
         <td class="num-cell">{{subtotal_amount}}</td>
-        <td class="num-cell">0</td>
-        <td class="num-cell">0</td>
+        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 본인부담금/공단부담금 총계 하드코딩 0 →
+             {{subtotal_copayment}}/{{subtotal_fund}} 바인딩. per-item 행은 정상이나 요약행 총계가 0 고정이던 근인. -->
+        <td class="num-cell">{{subtotal_copayment}}</td>
+        <td class="num-cell">{{subtotal_fund}}</td>
         <td class="num-cell">0</td>
         <td class="num-cell">{{subtotal_noncovered}}</td>
       </tr>
@@ -950,8 +952,9 @@ ${COMMON_STYLE}
       <tr>
         <td colspan="7" style="text-align:center; background:#f8f8f8; font-weight:bold;">합계</td>
         <td class="num-cell"><strong>{{total_amount}}</strong></td>
-        <td class="num-cell">0</td>
-        <td class="num-cell">0</td>
+        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 합계 본인부담금/공단부담금 하드코딩 0 → 바인딩. -->
+        <td class="num-cell"><strong>{{total_copayment}}</strong></td>
+        <td class="num-cell"><strong>{{total_fund}}</strong></td>
         <td class="num-cell">0</td>
         <td class="num-cell"><strong>{{total_noncovered}}</strong></td>
       </tr>
@@ -1752,7 +1755,9 @@ const BILL_RECEIPT_HTML = `
       <tr>
         <td class="br-label" style="font-weight:bold;">소&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;계</td>
         <td class="br-num" style="font-weight:bold;">{{insurance_covered}}</td>
-        <td class="br-num"></td>
+        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-2: 본인부담 셀 하드코딩 공란 → {{copayment}} 바인딩.
+             copayment 값은 3경로(재발급/배치/단건) 모두 산출·bind되나 template placeholder 누락으로 미출력이던 근인. -->
+        <td class="br-num" style="font-weight:bold;">{{copayment}}</td>
         <td class="br-num" style="font-weight:bold;">{{non_covered}}</td>
         <td class="br-num" style="font-weight:bold;">{{total_amount}}</td>
       </tr>
