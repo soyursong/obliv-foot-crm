@@ -99,8 +99,11 @@ import {
   buildFootBillDetailItems,
   type FootBillingItem,
 } from '@/lib/footBilling';
-// T-20260612-foot-MEDLAW22-B-GATE: 의료법 제22조 — 급여 방문 진료기록 미작성 시 수납/완료 하드차단.
-import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
+// T-20260612-foot-MEDLAW22-B-GATE → T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK:
+//   결제 미니창 급여 수납의 진료기록/방문일 연동 하드차단 완전 해제(reporter=김주연 총괄 결정).
+//   evaluateMedicalRecordGate 는 급여(isCovered) 판정에만 재사용 — 비차단 soft 리마인더용.
+//   차단(blocked)·방문일 매칭은 수납 흐름에서 더 이상 사용하지 않음(계좌이체 등 비내원일 수납 허용).
+import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -687,9 +690,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   //   ★ 표시 전용 — payments 쓰기 경로/집계 불변. 패키지/진료비 잔금은 §4-A 따라 각각 별도 표기(합산 금지).
   const [customerOutstanding, setCustomerOutstanding] = useState<CustomerOutstanding | null>(null);
 
-  // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 하드차단(버튼 비활성 + 배너).
-  //   저장(saved) 후 DB 평가(evaluateMedicalRecordGate). 비급여·기록보유 시 false(무영향).
-  const [medGateBlocked, setMedGateBlocked] = useState(false);
+  // T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK: 급여 수납 차단 완전 해제.
+  //   과거 MEDLAW22-B-GATE 의 (a)진료기록 필수 + (b)방문일 일치 하드차단을 모두 제거.
+  //   이 상태는 이제 '차단'이 아니라 급여 방문 시 진료기록 후속 작성을 권하는 비차단 soft 리마인더 표시용.
+  //   isCovered(급여 여부)로만 결정 — 방문일/차트 존재와 무관(계좌이체 등 비내원일 수납 오표시 방지).
+  const [medRecordReminder, setMedRecordReminder] = useState(false);
 
   // ── T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 처방전 용량/용법/투약일수 (service.id → RxDosage)
   const [rxItemDosages, setRxItemDosages] = useState<Record<string, RxDosage>>({});
@@ -1126,23 +1131,24 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     localStorage.setItem(draftKey(checkIn.id), JSON.stringify(draft));
   }, [selectedItems, saved, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 게이트 평가 ──────────────
-  //   saved(=check_in_services 영속) 후에만 평가 — 항목·수기조정이 DB에 반영된 상태 기준.
-  //   비급여·기록보유 시 blocked=false → [수납] 버튼 정상. 급여+기록없음 시 버튼 비활성+배너.
-  //   미저장 상태에선 버튼이 이미 비표시(`saved &&`)이므로 평가 스킵·초기화.
+  // ── T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK: 급여 방문 soft 리마인더 평가 ──
+  //   saved(=check_in_services 영속) 후에만 평가 — 급여/비급여 분류가 DB에 반영된 상태 기준.
+  //   ★ 차단이 아니라 표시 전용: isCovered(급여)면 진료기록 후속 작성 리마인더를 회색으로 안내.
+  //   res.blocked / 방문일 매칭은 수납 흐름에서 사용하지 않음 — 수납은 항상 진행 가능.
   useEffect(() => {
     if (!checkIn || !saved) {
-      setMedGateBlocked(false);
+      setMedRecordReminder(false);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const res = await evaluateMedicalRecordGate(checkIn);
-        if (!cancelled) setMedGateBlocked(res.blocked);
+        // 급여 방문이면 리마인더만 표시(차단 아님). 비급여면 미표시.
+        if (!cancelled) setMedRecordReminder(res.isCovered);
       } catch {
-        // 평가 오류는 과차단 방지 위해 통과(비차단). 최종 enforcement는 handleSettle에서 재평가.
-        if (!cancelled) setMedGateBlocked(false);
+        // 평가 오류 시 리마인더 미표시(수납은 어차피 차단되지 않음).
+        if (!cancelled) setMedRecordReminder(false);
       }
     })();
     return () => { cancelled = true; };
@@ -1630,19 +1636,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
       return;
     }
-    // ── T-20260612-foot-MEDLAW22-B-GATE: 수납 직전 진료기록 게이트 재평가(하드 enforcement) ──
-    //   버튼 비활성(medGateBlocked)은 UX 보조일 뿐 — 액션 시점에 DB 재평가로 최종 차단한다.
-    //   급여 방문 + 서명 진료기록 미존재 → 차단(사유 우회 없음). 비급여는 즉시 통과.
-    try {
-      const gate = await evaluateMedicalRecordGate(checkIn);
-      if (gate.blocked) {
-        setMedGateBlocked(true);
-        toast.error(gate.reason ?? MEDLAW22_BLOCK_MESSAGE);
-        return;
-      }
-    } catch {
-      // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
-    }
+    // ── T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK: 수납 차단 게이트 제거 ──
+    //   과거 MEDLAW22-B-GATE 의 진료기록 필수 + 방문일 일치 하드차단을 여기서 완전히 제거.
+    //   급여/비급여 무관, 진료기록 미작성·비내원일(계좌이체 등)에도 수납을 그대로 진행한다.
+    //   (급여 청구 정합상 진료기록 후속 작성은 여전히 필요 — soft 리마인더로만 안내.)
     const amount = deductMode ? deductAmount : grandTotal;
     // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
     // 선수금차감 여부와 무관하게 항상 사용자가 선택한 payMethod 기록
@@ -2641,14 +2638,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </p>
                   )}
 
-                  {/* T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 하드차단 배너 */}
-                  {saved && medGateBlocked && (
+                  {/* T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK: 급여 방문 비차단 soft 리마인더.
+                      ★ 차단 아님 — 수납 버튼은 항상 활성. 급여 청구 정합상 진료기록 후속 작성이 필요함을 안내만. */}
+                  {saved && medRecordReminder && (
                     <div
-                      className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-700 leading-relaxed"
-                      data-testid="medlaw22-block-banner"
+                      className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500 leading-relaxed"
+                      data-testid="medrecord-reminder"
                     >
-                      ⛔ 건강보험(급여) 진료는 <strong>진료기록 작성 후</strong> 수납할 수 있습니다.
-                      담당 의사의 진료기록(서명 포함)을 먼저 작성해주세요.
+                      ℹ️ 건강보험(급여) 청구를 위해 <strong>진료기록(서명 포함)</strong> 작성이 필요합니다.
+                      아직 작성 전이라면 진료 후 작성해주세요. (수납은 지금 진행할 수 있습니다.)
                     </div>
                   )}
 
@@ -2657,7 +2655,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     <Button
                       className="w-full h-11 sm:h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
                       onClick={handleSettle}
-                      disabled={submitting || medGateBlocked || !splitValid}
+                      disabled={submitting || !splitValid}
                       data-testid="btn-settle"
                     >
                       {submitting ? '처리 중...' : (

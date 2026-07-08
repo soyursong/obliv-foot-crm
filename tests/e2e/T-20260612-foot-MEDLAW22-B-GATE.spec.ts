@@ -21,6 +21,11 @@
  *       PaymentDialog payment_waiting→done) 배선 가드 — 우회경로 누락 방지.
  *
  * 스타일: 판정은 SSOT 단위검증, 배선·정책은 소스 정적 가드(auth/DB 라이브 비의존).
+ *
+ * ★ 2026-07-08 supersede(부분): T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK 로
+ *   경로1(PaymentMiniWindow) 급여 수납 하드차단(진료기록 필수 + 방문일 일치) 완전 해제.
+ *   reporter=김주연 총괄. 경로1 가드는 '차단 부재 + 비차단 soft 리마인더'로 재고정.
+ *   경로2(Dashboard 완료드래그)·경로3(PaymentDialog)·게이트 lib 정책은 그대로 유지.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -121,28 +126,34 @@ test.describe('게이트 lib(medicalRecordGate) 정책', () => {
 // (C) 3개 수납/완료 진입점 배선 — 우회경로 누락 방지
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('수납/완료 진입점 배선 (3경로)', () => {
-  test('경로1 PaymentMiniWindow.handleSettle — 수납 직전 게이트 재평가 + blocked 시 abort', () => {
+  // ⚠ 경로1(PaymentMiniWindow) 은 T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK 로
+  //   급여 수납 하드차단이 완전 해제됨(reporter=김주연 총괄). handleSettle 의 blocked-abort 와
+  //   버튼 비활성·차단 배너는 제거되고, 급여 방문 soft 리마인더(비차단)로 대체됨.
+  //   따라서 아래 경로1 가드는 '차단 부재 + 리마인더 존재'를 회귀 고정한다.
+  //   (경로2 Dashboard / 경로3 PaymentDialog 의 하드차단은 유지 — 아래 테스트 그대로.)
+  test('경로1 PaymentMiniWindow.handleSettle — 수납 차단 게이트 제거(blocked-abort 부재)', () => {
     const src = PMW();
     expect(src).toMatch(/from '@\/lib\/medicalRecordGate'/);
-    // handleSettle 내 평가 + blocked 시 toast + return (executeAutoDone 도달 전)
     const settleIdx = src.indexOf('const handleSettle');
     const execIdx = src.indexOf('await executeAutoDone');
     expect(settleIdx).toBeGreaterThan(-1);
     expect(execIdx).toBeGreaterThan(settleIdx);
     const settleBody = src.slice(settleIdx, execIdx);
-    expect(settleBody).toMatch(/evaluateMedicalRecordGate\(checkIn\)/);
-    expect(settleBody).toMatch(/gate\.blocked/);
+    // 수납 직전 gate.blocked 로 return 하는 하드차단이 더 이상 없어야 함.
+    expect(settleBody).not.toMatch(/gate\.blocked/);
+    expect(settleBody).not.toMatch(/MEDLAW22_BLOCK_MESSAGE/);
   });
 
-  test('경로1 UX — 급여+미작성 시 [수납] 버튼 비활성 + 차단 배너', () => {
+  test('경로1 UX — 급여 수납 버튼 항상 활성 + 비차단 soft 리마인더', () => {
     const src = PMW();
-    expect(src).toMatch(/medGateBlocked/);
-    // 버튼 disabled 에 medGateBlocked 포함
-    expect(src).toMatch(/disabled=\{submitting \|\| medGateBlocked\}/);
-    // 차단 배너 testid
-    expect(src).toMatch(/data-testid="medlaw22-block-banner"/);
-    // saved 후에만 평가 (check_in_services 영속 상태 기준)
-    expect(src).toMatch(/if\s*\(!checkIn \|\| !saved\)/);
+    // 차단 상태(medGateBlocked)·차단 배너는 제거됨.
+    expect(src).not.toMatch(/medGateBlocked/);
+    expect(src).not.toMatch(/data-testid="medlaw22-block-banner"/);
+    // 수납 버튼 disabled 에서 게이트 차단 제거 — submitting/splitValid 만 남음.
+    expect(src).toMatch(/disabled=\{submitting \|\| !splitValid\}/);
+    // 비차단 soft 리마인더는 유지(isCovered 기반 표시 전용).
+    expect(src).toMatch(/data-testid="medrecord-reminder"/);
+    expect(src).toMatch(/setMedRecordReminder\(res\.isCovered\)/);
   });
 
   test('경로2 Dashboard 완료 드래그 — newStatus==="done" 분기에서 게이트 평가 + abort', () => {
