@@ -252,6 +252,10 @@ export default defineConfig({
         //   + 라벨 13px + 상용구 조작 핸들. 순수 로직 + about:blank canvas page.evaluate(auth/server/로그인 불요).
         //   실기기 브러시 렌더·현장 confirm 은 supervisor 갤탭 field-soak. unit 편입 → auth.setup 우회(skip 0).
         '**/T-20260708-foot-PENCHART-REGRESSION-3FIX.spec.ts',
+        // T-20260709-foot-LAYOUT-WHITESPACE-REDUCE: 발건강질문지 별도창 form row 세로폭 축소
+        //   (상/하 패딩 8→4·행간 1.45→1.35, 가로 13px 불변). 소스 정적 가드 + page.setContent 실 DOM
+        //   측정(row 높이 축소·잘림0·겹침0). FE-only spacing, DB/스키마 무변경. auth/server 불요.
+        '**/T-20260709-foot-LAYOUT-WHITESPACE-REDUCE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

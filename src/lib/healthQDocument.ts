@@ -155,8 +155,9 @@ export function buildHealthQDocumentHtml(result: HQResult, opts: DocumentOpts): 
   .qa{ border:1px solid var(--border); border-radius:10px; overflow:hidden; }
   .qa .row{ display:grid; grid-template-columns:190px 1fr; border-top:1px solid var(--line); }
   .qa .row:first-child{ border-top:none; }
-  .qa .row .label{ background:var(--surface); padding:8px 13px; font-size:11.5px; color:var(--label); font-weight:600; }
-  .qa .row .value{ padding:8px 13px; font-size:12.5px; color:var(--ink); line-height:1.45; }
+  /* 세로폭 축소(총괄 요청 T-20260709-LAYOUT-WHITESPACE-REDUCE): 상하 패딩 8→4·행간 1.45→1.35, 가로 패딩 13 유지(너비 불변) */
+  .qa .row .label{ background:var(--surface); padding:4px 13px; font-size:11.5px; color:var(--label); font-weight:600; line-height:1.35; }
+  .qa .row .value{ padding:4px 13px; font-size:12.5px; color:var(--ink); line-height:1.35; }
   .nail-sec .sec-title .badge-new{ margin-left:6px; font-size:10px; font-weight:700; color:var(--primary); background:var(--surface); border:1px solid var(--taupe); border-radius:999px; padding:1px 8px; }
   .nail-box{ border:1px solid var(--border); border-radius:10px; padding:12px 16px 10px; background:linear-gradient(#fff,var(--surface)); }
   .nail-box .nail-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
