@@ -38,13 +38,24 @@
  * T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (P1) — 위 화이트=상용구 '삭제'를 '화이트아웃'으로 재정의:
  *   [RC] 화이트로 상용구 위를 칠하면 상용구 placedItem 이 통삭제되어 데이터 소실(현장 김주연 총괄). 화이트=덮기(화이트아웃)이지 삭제가 아님.
  *   AC-1/AC-3: 화이트 획은 placedItem 을 삭제/선택하지 않는다 — 획 경로만 세션 누적(whiteStrokesAllRef).
- *   AC-2: 저장 시 상용구/텍스트 rasterize '후' 누적 화이트 획을 destination-out 재적용 → 저장본에서 화이트아웃이 상용구 위에 덮임(오브젝트 보존).
+ *   AC-2: 저장 시 상용구/텍스트 rasterize '후' 누적 화이트 획을 재적용 → 저장본에서 화이트아웃이 상용구 위에 덮임(오브젝트 보존).
+ *         ※ 합성 연산은 3FIX v3에서 source-atop 으로 확정(구 destination-out=투명화는 폐기, 아래 참조).
  *   AC-4(회귀): 다른 툴(선택/삭제) 동선 불변 — pathHitsItem 은 지우개(텍스트) 브랜치에서만 계속 사용.
  *   AC-1: 저장 차트 '수정' 버튼 — editingChart 배경 재오픈 + 동일 path upsert(신규행 0) + form_submissions 재insert 스킵.
  *   AC-4: 펜차트 양식 우상단 '담당실장'→'담당자' 라벨 오버라이드(drawPenChartLabelOverride).
  *   AC-4: 텍스트 — 저장 후 이동·삭제 (PlacedItemOverlay 기존 구현)
  *   AC-5: 형광펜 — globalAlpha 0.20 (기존 구현)
  *   AC-6: T상용구 패널 헤더 중복 라벨 제거
+ *
+ * T-20260708-foot-PENCHART-REGRESSION-3FIX (이슈3) — 화이트 도구 동작 **v3 최종 확정**:
+ *   [배경] 화이트 동작이 하루 내 3회 재정의됨. v1(source-atop 부분 덮기) → v2(상용구 블록 통삭제, 폐기)
+ *          → v3(v2 취소, source-atop 부분 덮기로 복귀). v2 구현 commit 은 revert 됨.
+ *   [v3 확정] 화이트 = 선택(드래그) 영역만 흰색으로 가리는 정밀 수정액(화이트아웃).
+ *     - 대상(상용구/필기/빈영역) 구분 없이 draw 레이어에 source-atop 흰 덧칠. 획이 지나간 픽셀만 하얗게 덮임.
+ *     - 상용구 블록(placedItem)을 통째 삭제하지 않음 — 획 미통과 부분은 그대로 유지(획 경로만 whiteStrokesAllRef 누적).
+ *     - 상용구 블록 '통째 삭제'는 화이트가 아니라 [핸들 delete 버튼](select 도구, AC-3b)이 담당(별개 경로).
+ *   [AC-3c/3d] 배경 양식 서식(bgCanvas)은 destination-out/합성 대상 제외 — read-only 불변. source-atop 은 draw 레이어에만.
+ *   ※ 코드 곳곳의 'destination-out' 문구는 폐기된 구현을 설명하는 히스토리 주석이며, 실 합성은 전부 source-atop 이다.
  *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
@@ -415,8 +426,10 @@ const HIGHLIGHT_COLORS = [
 ];
 
 // T-20260522-foot-PENCHART-TOOLS-V3: 도구 모드 통합 타입
-// white: 상용구 지우개 — destination-out 으로 draw 레이어 투명화 + placedItems(상용구) hit-test 삭제.
-//   배경 양식(bgCanvas)은 보존(T-20260622 AC-3). ※구 주석 "source-over white fill, bg 덮음"은 stale(실코드는 destination-out).
+// white: 정밀 수정액(화이트아웃) — 선택(드래그) 영역만 source-atop 흰색으로 draw 레이어(상용구 raster/필기) 위에 덧칠.
+//   3FIX v3 확정: 대상 구분 없이 획이 지나간 픽셀만 덮음. placedItem 통삭제 안 함(획 경로만 whiteStrokesAllRef 누적).
+//   상용구 블록 통째 삭제는 별개 경로(select 도구 핸들 delete). 배경 양식(bgCanvas)은 read-only 불변(AC-3c/3d).
+//   ※구 destination-out(투명화)+삭제 구현은 폐기됨(위 header 3FIX v3 참조).
 // boilerplate-placing: 상용구 삽입 대기 (캔버스 클릭 시 상용구 배치)
 // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select — 선택/이동 모드.
 //   이 모드에서만 placedItem 오버레이가 interactive(pointerEvents auto) → 드래그·선택·삭제.
@@ -1011,8 +1024,9 @@ export function PenChartTab({
   //   [RC 확정] 구 구현(T-20260622 AC-3)은 화이트 획 종료 시 boilerplate placedItem 을 filter 로 '삭제'했다
   //   → 현장(김주연 총괄) '화이트로 상용구 위를 칠하면 통째로 사라짐(데이터 소실)' P1. 화이트=화이트아웃(덮기)이지
   //   삭제가 아니므로 삭제 로직 제거. 대신 획 경로를 세션 단위로 누적 → handleDrawSave 에서 상용구/텍스트
-  //   rasterize '후' destination-out 으로 재적용해 저장본에서 화이트아웃이 상용구 위에 실제로 덮이게 한다
-  //   (오브젝트 데이터는 보존 → AC-1). resetDrawSession·저장완료 시 비운다.
+  //   rasterize '후' source-atop 으로 재적용해 저장본에서 화이트아웃이 상용구 위에 실제로 덮이게 한다
+  //   (3FIX v3: 구 destination-out=투명화는 폐기, source-atop 부분 덮기로 확정. 오브젝트 데이터는 보존 → AC-1).
+  //   resetDrawSession·저장완료 시 비운다.
   const whiteStrokesAllRef = useRef<Array<{ path: Array<{ x: number; y: number }>; lineWidth: number }>>([]);
   // T-20260622-foot-PENCHART-EDITBTN-ERASER-LABEL AC-2: 지우개 획 경로 — onPointerUp에서 text placedItem hit-test.
   //   지우개 = 사용자 드로잉(펜/형광펜=draw 레이어 clearRect + 텍스트=placedItem 삭제). 상용구는 미관여(화이트 전담).

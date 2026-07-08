@@ -248,6 +248,10 @@ export default defineConfig({
         //   판정(isBriefNoteChip/BRIEF_NOTE_CHIPS SSOT) 순수 단언 + Dashboard 표시게이트·팝업 편집 UI 소스 정적 가드.
         //   page/auth/server 불요(FE-only, 스키마 무변경). 실 렌더·저장은 supervisor 갤탭 field-soak.
         '**/T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT.spec.ts',
+        // T-20260708-foot-PENCHART-REGRESSION-3FIX: 펜차트 회귀 3종 — 화이트 도구 v3(source-atop 부분 덮기·통삭제 없음)
+        //   + 라벨 13px + 상용구 조작 핸들. 순수 로직 + about:blank canvas page.evaluate(auth/server/로그인 불요).
+        //   실기기 브러시 렌더·현장 confirm 은 supervisor 갤탭 field-soak. unit 편입 → auth.setup 우회(skip 0).
+        '**/T-20260708-foot-PENCHART-REGRESSION-3FIX.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
