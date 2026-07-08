@@ -302,7 +302,11 @@ export default function Customers() {
         // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션(테스트 더미) 기본 숨김.
         // IS NOT TRUE → false/NULL(실고객) 보존, true만 제외 (AC-3 null-safe).
         .not('is_simulation', 'is', true)
-        .order('updated_at', { ascending: false })
+        // T-20260708-foot-CUSTMGMT-LIST-SORT-REGDATE-ASC: 기본 정렬 = 등록순(created_at ASC).
+        //   맨 위=가장 오래된 등록 고객. 서버 페이지네이션(.range)이므로 쿼리 레벨 ORDER BY 필수
+        //   (클라 정렬만으론 페이지 경계에서 순서 깨짐). 동률 시 id ASC 안정 tie-break.
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
         .range(from, to);
       // T-20260613-foot-CUSTLIST-STAFF-FILTER + SEARCH-PHONE-DOB: 담당자·검색어 필터 (export와 공유 헬퍼).
       req = applyCustomerSearchFilters(req, staffFilter, trimmed);
@@ -502,7 +506,9 @@ export default function Customers() {
         .select('*')
         .eq('clinic_id', clinic.id)
         .not('is_simulation', 'is', true)
-        .order('updated_at', { ascending: false })
+        // T-20260708-foot-CUSTMGMT-LIST-SORT-REGDATE-ASC: 내보내기(CSV)도 목록과 동일 등록순(created_at ASC) — drift 차단.
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
         .range(0, EXPORT_MAX - 1);
       req = applyCustomerSearchFilters(req, staffFilter, query);
       const { data, error } = await req;
