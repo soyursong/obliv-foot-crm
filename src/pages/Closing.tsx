@@ -46,6 +46,8 @@ import {
 } from '@/components/ui/dialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { ReceiptUpload } from '@/components/ReceiptUpload';
+// T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위 '레드페이' 하위탭 (카드단말기 자동수집 대조)
+import { RedpayReconcileTab } from '@/components/closing/RedpayReconcileTab';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -229,6 +231,8 @@ export default function Closing() {
   const tabFromHash = (): 'summary' | 'payments' =>
     location.hash === '#payments' ? 'payments' : 'summary';
   const [tab, setTab] = useState<'summary' | 'payments'>(tabFromHash);
+  // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위탭 (CRM 수납 / 레드페이). 기본=CRM 수납.
+  const [paySubTab, setPaySubTab] = useState<'crm' | 'redpay'>('crm');
 
   // hash 변경 시(브라우저 앞/뒤 네비게이션) 탭 동기화
   useEffect(() => {
@@ -1442,6 +1446,16 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
 
         {/* ════════════════════════ 탭 2: 결제내역 ════════════════════════ */}
         <TabsContent value="payments" className="space-y-4">
+          {/* T-20260708-foot-REDPAY-CLOSING-TAB AC-2: 결제 탭 하위 '레드페이' 하위탭 신설.
+              기존 CRM 수납 레이아웃·동작 무손상 — 아래 전체를 'CRM 수납' 하위탭으로 감싸고
+              '레드페이' 하위탭(카드단말기 자동수집 대조)만 신규 추가. */}
+          <Tabs value={paySubTab} onValueChange={(v) => setPaySubTab(v as 'crm' | 'redpay')}>
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="crm" className="flex-1 sm:flex-none">CRM 수납</TabsTrigger>
+              <TabsTrigger value="redpay" className="flex-1 sm:flex-none">레드페이</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="crm" className="space-y-4">
           {/* C2-MANAGER-PAYMENT-MAP: 담당자 필터 + 액션 버튼 */}
           <div className="flex flex-wrap items-center gap-2 justify-between">
             <div className="flex items-center gap-3">
@@ -1780,6 +1794,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               </CardContent>
             </Card>
           )}
+            </TabsContent>
+
+            {/* T-20260708-foot-REDPAY-CLOSING-TAB: 레드페이 하위탭 (카드단말기 자동수집 + 대조) */}
+            <TabsContent value="redpay" className="space-y-4">
+              {clinic && <RedpayReconcileTab date={date} clinicId={clinic.id} />}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
 
