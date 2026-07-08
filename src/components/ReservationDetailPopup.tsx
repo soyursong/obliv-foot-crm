@@ -264,6 +264,10 @@ export function ReservationDetailPopup({
   //   기준으로 편집·영속(기존 reservations.brief_note 컬럼 update + 예약경로·등록자와 동일 [저장] 경로/RLS 재사용).
   //   new-mode 의 briefNote state 와 분리(양 화면 상호배타 렌더지만 stale 오염 방지 위해 별도 상태).
   const [detailBriefNote, setDetailBriefNote] = useState('');
+  // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD (김주연 총괄): 예약상세(기존 예약) [힐러] 칩 편집.
+  //   new-mode 엔 [힐러] 칩 기존재(RESVMEMO-HEALER-CHIP-YELLOWBOX, 6/30) — 본 상태는 그 동선을 예약상세 편집에 parity 확장.
+  //   is_healer_intent(영속 컬럼, 신규 스키마 0)를 anchor 예약 기준 토글·[저장] 동봉. brief_note 3종칩과 직교(동시 가능).
+  const [detailHealerIntent, setDetailHealerIntent] = useState<boolean>(reservation?.is_healer_intent ?? false);
   // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: TM 역할은 예약등록자 드롭다운 read-only + 저장 차단.
   const isTmRole = currentUserRole === 'tm';
   // T-20260630-foot-RESVPOPUP-DELBTN-HIDE-TMCODY: TM·코디네이터(coordinator) 역할은 푸터 [예약삭제] 버튼 미렌더(hidden, not disabled).
@@ -455,6 +459,8 @@ export function ReservationDetailPopup({
       setVisitRoute('');
       setRegistrarId('');
       setDetailBriefNote('');
+      // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC2: 예약 없음(닫힘/new-mode) 시 힐러 칩 상태 클린 리셋.
+      setDetailHealerIntent(false);
       setCancelDialog(false);
       setCancelReason('');
       setSearchValue('');
@@ -481,6 +487,8 @@ export function ReservationDetailPopup({
     setRegistrarId(reservation.registrar_id ?? '');
     // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT AC2: 현재 예약의 간략메모(brief_note) 프리로드(편집 대상).
     setDetailBriefNote(reservation.brief_note ?? '');
+    // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC2: 예약 변경 시 [힐러] 칩 상태(is_healer_intent) 재초기화(stale 차단).
+    setDetailHealerIntent(reservation.is_healer_intent ?? false);
 
     const customerId = reservation.customer_id;
     const clinicId = reservation.clinic_id;
@@ -1179,6 +1187,9 @@ export function ReservationDetailPopup({
         // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT AC2: 간략메모(brief_note)도 [저장]에 동봉 영속.
         //   기존 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 통합시간표 명단 표시(AC1) 즉시 반영.
         brief_note: detailBriefNote.trim() || null,
+        // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC4: [힐러] 칩(is_healer_intent)도 동일 [저장] 경로에 동봉 영속.
+        //   기존 영속 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 캘린더/통합시간표 노란박스(healer) 즉시 연동.
+        is_healer_intent: detailHealerIntent,
         ...registrarFields,
       })
       .eq('id', reservation.id);
@@ -1610,6 +1621,23 @@ export function ReservationDetailPopup({
                           </button>
                         );
                       })}
+                      {/* T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC3: 예약상세 [힐러] 칩 — is_healer_intent 토글.
+                          new-mode L832~846(isHealerIntent) 패턴 동일 재사용. active 시 healer 토큰(노랑) → 저장 후
+                          캘린더/통합시간표 노란박스(resvKind→healer) 연동. brief_note 3종칩과 직교(동시 선택 가능). */}
+                      <button
+                        type="button"
+                        onClick={() => setDetailHealerIntent((prev) => !prev)}
+                        aria-pressed={detailHealerIntent}
+                        className={cn(
+                          'h-8 rounded-md border px-3 text-sm font-medium transition-colors',
+                          detailHealerIntent
+                            ? 'border-healer-400 bg-healer-50 text-healer-700'
+                            : 'border-input bg-background hover:bg-muted',
+                        )}
+                        data-testid="detail-brief-quick-힐러"
+                      >
+                        힐러
+                      </button>
                     </div>
                     <input
                       type="text"
