@@ -3507,6 +3507,31 @@ export default function Dashboard() {
   // T-20260708-foot-DASH-HSCROLL-DRAGPAN: 칸반 현황판 가로영역 grab-and-drag(pan) 대상 ref
   const kanbanScrollRef = useRef<HTMLDivElement>(null);
   useDragToPan(kanbanScrollRef);
+  // AC7: PC 보조 — 카드(컬럼) 단위 한 칸 넘기기. getBoundingClientRect(=transform scale 반영 시각 좌표)로
+  //   컬럼 경계를 계산해 컨테이너 좌측 edge 에 정렬. zoom 배율과 무관하게 동작.
+  const scrollKanbanByColumn = useCallback((dir: 1 | -1) => {
+    const el = kanbanScrollRef.current;
+    if (!el) return;
+    const row = el.querySelector('[data-testid="kanban-slot-row"]') as HTMLElement | null;
+    const cols = row ? (Array.from(row.children) as HTMLElement[]) : [];
+    if (cols.length === 0) {
+      el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.8), behavior: 'smooth' });
+      return;
+    }
+    const contRect = el.getBoundingClientRect();
+    const padLeft = parseFloat(getComputedStyle(el).paddingLeft) || 0;
+    const edge = contRect.left + padLeft;
+    const offsets = cols.map((c) => c.getBoundingClientRect().left - edge); // >0 우측, <0 좌측(이미 지나침)
+    if (dir === 1) {
+      const next = offsets.find((o) => o > 4);
+      if (next != null) el.scrollBy({ left: next, behavior: 'smooth' });
+      else el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' });
+    } else {
+      const prev = [...offsets].reverse().find((o) => o < -4);
+      if (prev != null) el.scrollBy({ left: prev, behavior: 'smooth' });
+      else el.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+  }, []);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
   // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: 셀프접수 시 차트 자동 열림
@@ -5385,12 +5410,17 @@ export default function Dashboard() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if ((e.target as HTMLElement | null)?.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'n' || e.key === 'N') { e.preventDefault(); setOpenNew(true); }
+      // T-20260708-foot-DASH-HSCROLL-DRAGPAN AC7: 키보드 좌/우 화살표로 현황판 카드 단위 넘기기.
+      //   입력/모달 포커스 시엔 위 가드로 제외. 가로 오버플로가 없으면 scrollBy no-op(무해).
+      else if (e.key === 'ArrowRight') { e.preventDefault(); scrollKanbanByColumn(1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); scrollKanbanByColumn(-1); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [scrollKanbanByColumn]);
 
   // T-20260603-foot-RES-NAME-MISMATCH-WARN → T-20260617-foot-CHECKIN-CHART-LINK-3KEY 로 차단형 격상.
   //   직전 비차단 경고(warnIfNameMismatch)는 오배정을 막지 못했다(6/17 재발) → verifyChartLinkOrConfirm
@@ -7170,6 +7200,27 @@ export default function Dashboard() {
             </TabsList>
           </Tabs>
 
+          {/* T-20260708-foot-DASH-HSCROLL-DRAGPAN AC7: PC 보조 — 현황판 카드(컬럼) 한 칸 넘기기 화살표.
+              마우스 드래그-팬(AC1~4)·키보드 좌우 화살표와 병행 제공. */}
+          <div className="flex items-center gap-0.5 border rounded-md bg-white/80 px-1 py-0.5">
+            <button
+              data-testid="kanban-nav-left"
+              onClick={() => scrollKanbanByColumn(-1)}
+              className="p-0.5 rounded hover:bg-gray-100 transition"
+              title="이전 카드로 (←)"
+            >
+              <ChevronLeft className="h-3.5 w-3.5 text-gray-600" />
+            </button>
+            <button
+              data-testid="kanban-nav-right"
+              onClick={() => scrollKanbanByColumn(1)}
+              className="p-0.5 rounded hover:bg-gray-100 transition"
+              title="다음 카드로 (→)"
+            >
+              <ChevronRight className="h-3.5 w-3.5 text-gray-600" />
+            </button>
+          </div>
+
           {/* 줌 컨트롤 */}
           <div className="flex items-center gap-0.5 border rounded-md bg-white/80 px-1 py-0.5">
             <button
@@ -7469,7 +7520,18 @@ export default function Dashboard() {
       {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC / DASH-HSCROLL-CHART-LOC #1:
           relative + overflow-auto — 진료콜 명단 팝업의 positioning 기준 & 가로스크롤 컨테이너.
           팝업은 이 칸반 스크롤 컨테이너 내부 absolute(우측 하단)로 배치되어 슬롯 칸에 종속 → 가로스크롤 시 함께 이동. */}
-      <div ref={kanbanScrollRef} data-testid="kanban-scroll" className="relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
+      {/* T-20260708-foot-DASH-HSCROLL-DRAGPAN AC6: 카드(컬럼)단위 snap — 스와이프/스크롤 후 카드 경계 정렬.
+          ⚠ dnd 카드 드래그 중(dragging)에는 snap 을 끈다: autoScroll(imperative scrollLeft)과 snap-mandatory 가
+             매 프레임 재정렬로 충돌해 드래그 스크롤이 깨지는 것을 방지. 드래그-팬(AC1) 중에는 useDragToPan 훅이
+             inline scroll-snap-type:none 으로 별도 억제하고 release 시 복원 → 놓으면 카드 경계로 snap. */}
+      <div
+        ref={kanbanScrollRef}
+        data-testid="kanban-scroll"
+        className={cn(
+          'relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3',
+          !dragging && 'snap-x snap-mandatory',
+        )}
+      >
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
@@ -7516,7 +7578,7 @@ export default function Dashboard() {
                  각 슬롯(타깃+비타깃)에 per-element minHeight: SLOT_COLUMN_HEIGHT floor 를 부여해 빈 상태
                  baseline(=[상담대기]) 을 보존한다(AC-NEW-1). 타깃 4슬롯(치료실·레이저실·수납대기·완료)은
                  minHeight floor + 콘텐츠 자연 성장(내부 스크롤 제거), 비타깃은 floor + 기존 내부 스크롤 유지. */
-              <div data-testid="kanban-slot-row" className="flex items-start gap-2 min-w-max" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
+              <div data-testid="kanban-slot-row" className="flex items-start gap-2 min-w-max [&>*]:snap-start" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
                 {/* 치료실+레이저실 클러스터: 치료실 | 레이저실 나란히 배치.
                     (T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거됨) */}
                 {groupOrder.map((gid) => {

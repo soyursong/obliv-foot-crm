@@ -10,8 +10,11 @@
  *  AC3 드래그 중 커서 grab→grabbing.
  *  AC4 클릭 가능 요소 위 짧은 클릭은 팬으로 오인 안 함(이동거리 임계 ~5px로 구분) — 클릭 무회귀.
  *  AC5 최소 요구=가로 이동. 세로 스크롤 방해 X.
+ *  AC6 (★ 태블릿 주요, 3차 relay) 카드단위 snap — 컨테이너 scroll-snap-type:x mandatory + 자식 snap-start.
+ *  AC7 (PC 보조, 3차 relay) 좌/우 화살표 버튼 + 키보드 ←/→ 로 카드 한 단위씩 넘기기.
  *
  * 구현: pointer 이벤트(pointerdown/move/up)+scrollLeft self-implement (신규 npm 無) — useDragToPan 훅.
+ *   AC6 = CSS scroll-snap(라이브러리 無), AC7 = scrollKanbanByColumn(getBoundingClientRect 기반 컬럼 정렬).
  *
  * 뷰포트 전략: 로그인은 데스크톱 폭(사이드바 '대시보드' 라벨 노출)에서 수행하고,
  *   로그인 후 좁은 폭으로 리사이즈해 가로 오버플로를 유도한다(태블릿 세로 근사). 오버플로가 없으면 graceful skip.
@@ -135,6 +138,63 @@ test.describe('T-20260708-foot-DASH-HSCROLL-DRAGPAN', () => {
     expect(after.scrollLeft, '임계 미만 미세 이동은 pan 미발생(클릭 취급 → scrollLeft 불변)').toBe(before.scrollLeft);
 
     console.log('[시나리오3] 임계 미만 클릭 = pan 오인 없음 PASS');
+  });
+
+  test('시나리오4 (AC7): PC 좌/우 화살표 버튼 + 키보드로 카드 단위 넘기기', async ({ page }) => {
+    const kanban = await prepKanban(page);
+    if (!kanban) { test.skip(true, '로그인 실패/칸반 미렌더 — 스킵'); return; }
+
+    const before = await kanban.evaluate(scrollProbe);
+    if (!before.hasOverflow) { test.skip(true, '가로 오버플로 없음 — 넘길 카드 없음, 스킵'); return; }
+
+    // 화살표 버튼 존재 확인 (AC7)
+    const rightBtn = page.locator('[data-testid="kanban-nav-right"]');
+    const leftBtn = page.locator('[data-testid="kanban-nav-left"]');
+    await expect(rightBtn, 'AC7: 우측 이동 화살표 버튼 렌더').toBeVisible();
+    await expect(leftBtn, 'AC7: 좌측 이동 화살표 버튼 렌더').toBeVisible();
+
+    // 우측 버튼 → scrollLeft 증가 (smooth scroll 반영 대기)
+    await rightBtn.click();
+    await page.waitForTimeout(500);
+    const afterRight = await kanban.evaluate(scrollProbe);
+    expect(afterRight.scrollLeft, `우측 화살표로 카드 넘김(scrollLeft ${before.scrollLeft}→${afterRight.scrollLeft})`).toBeGreaterThan(before.scrollLeft);
+
+    // 좌측 버튼 → 되돌아옴
+    await leftBtn.click();
+    await page.waitForTimeout(500);
+    const afterLeft = await kanban.evaluate(scrollProbe);
+    expect(afterLeft.scrollLeft, `좌측 화살표로 되돌아옴(scrollLeft ${afterRight.scrollLeft}→${afterLeft.scrollLeft})`).toBeLessThan(afterRight.scrollLeft);
+
+    // 키보드 → 화살표 (입력 포커스 아닌 상태에서)
+    await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => {});
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(500);
+    const afterKey = await kanban.evaluate(scrollProbe);
+    expect(afterKey.scrollLeft, `키보드 →로 카드 넘김(scrollLeft ${afterLeft.scrollLeft}→${afterKey.scrollLeft})`).toBeGreaterThan(afterLeft.scrollLeft);
+
+    console.log(`[시나리오4] AC7 PC 버튼/키보드 카드 넘기기 PASS`);
+  });
+
+  test('시나리오5 (AC6): 카드단위 snap CSS 활성 (scroll-snap-type + snap-start)', async ({ page }) => {
+    const kanban = await prepKanban(page);
+    if (!kanban) { test.skip(true, '로그인 실패/칸반 미렌더 — 스킵'); return; }
+
+    // 컨테이너에 scroll-snap-type: x mandatory (Tailwind snap-x snap-mandatory) 가 적용됐는지 (dnd 카드 드래그 중 아님 = 기본 상태)
+    const snapType = await kanban.evaluate((el) => getComputedStyle(el as HTMLElement).scrollSnapType);
+    expect(snapType, `AC6: 컨테이너 scroll-snap-type 활성 (실제="${snapType}")`).toContain('x');
+
+    // 슬롯 row 자식들이 snap-start(scroll-snap-align: start) 를 가지는지
+    const slotRow = page.locator('[data-testid="kanban-slot-row"]').first();
+    const rowExists = await slotRow.isVisible({ timeout: 5000 }).catch(() => false);
+    if (rowExists) {
+      const childAlign = await slotRow.evaluate((row) => {
+        const first = row.firstElementChild as HTMLElement | null;
+        return first ? getComputedStyle(first).scrollSnapAlign : null;
+      });
+      expect(childAlign, `AC6: 카드 자식 scroll-snap-align=start (실제="${childAlign}")`).toContain('start');
+    }
+
+    console.log(`[시나리오5] AC6 카드단위 snap CSS 활성 PASS (snap-type="${snapType}")`);
   });
 
 });

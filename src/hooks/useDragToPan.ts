@@ -58,7 +58,11 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
 
     const clearGrab = () => {
       el.style.cursor = '';
-      if (scrollTarget) scrollTarget.style.removeProperty('user-select');
+      if (scrollTarget) {
+        scrollTarget.style.removeProperty('user-select');
+        // AC6 정합: pan 중 억제했던 카드-snap(scroll-snap-type) 복원 → 놓으면 카드 경계로 snap.
+        scrollTarget.style.removeProperty('scroll-snap-type');
+      }
     };
 
     const onPointerDown = (e: PointerEvent) => {
@@ -96,6 +100,10 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
         }
         el.style.cursor = 'grabbing'; // AC3
         scrollTarget.style.setProperty('user-select', 'none'); // pan 중 텍스트 선택 방지
+        // AC1×AC6 충돌 방지: 컨테이너의 snap-mandatory(카드 경계 강제정렬)가 imperative scrollLeft 와
+        //   매 프레임 싸워 드래그가 튕기는 것을 막기 위해, pan 활성 동안만 scroll-snap-type 을 none 으로 억제.
+        //   release(endPan→clearGrab) 시 복원 → 놓는 순간 가장 가까운 카드 경계로 snap.
+        scrollTarget.style.setProperty('scroll-snap-type', 'none');
       }
       // AC5: 가로 이동만
       scrollTarget.scrollLeft = startScrollLeft - dx;
