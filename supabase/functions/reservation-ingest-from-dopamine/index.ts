@@ -31,6 +31,7 @@
  *       "slot_type": "new_consult",
  *       "service_code": "FC-PDL-01",          ← optional. 발톱/풋 service 태깅 (services.service_code)
  *       "memo": "도파민 TM 상담 메모",
+ *       "brief_note": "발톱무좀",               ← optional. 간략메모(문제성발톱 등) → reservations.brief_note (T-20260708-NAILPROB-SUBFILTER-PUSH)
  *       "registrar_name": "김상담",            ← optional. 로그인 TM 표시 라벨(provenance 표시축)
  *       "visit_route": "TM",                   ← optional. 방문경로(父 tier-1 push는 항상 'TM')
  *       "campaign_id": "...",
@@ -277,6 +278,12 @@ Deno.serve(async (req) => {
   //   ⛔ registrar_email/created_by 착지는 WITHDRAWN(§416 이중계상) — 수신/해소하지 않는다.
   const registrarName     = reservation['registrar_name']  as string | undefined;
   const visitRoute        = reservation['visit_route']     as string | undefined;
+  // T-20260708-dopamine-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모(문제성발톱=발톱무좀/내성발톱 등).
+  //   도파민 CTI가 문제성발톱 선택 시 reservation.brief_note 로 운반(commit 66d661d).
+  //   → reservations.brief_note(旣존 컬럼, FE 예약상세 팝업>간략메모 read SoT) 착지.
+  //   신규 INSERT 경로(rsvPayload) + edit/reschedule RPC 경로(p_brief_note) 양쪽 배선.
+  //   빈값/미동봉 → 미삽입·NULL(회귀 0). 예약메모(rmh timeline)와 직교 독립 축.
+  const briefNote         = reservation['brief_note']      as string | undefined;
 
   // ── Supabase service role client ──────────────────────────────────────────
   const supabaseUrl  = Deno.env.get('SUPABASE_URL')!;
@@ -461,6 +468,9 @@ Deno.serve(async (req) => {
         p_customer_real_name: customerRealName ?? null,
         p_customer_real_phone: null,
         p_is_companion:       isCompanion,
+        // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모 배선(edit/reschedule 재push 반영).
+        //   RPC ON CONFLICT = COALESCE 보존 — 빈값이면 기존 brief_note 유지(no-op). (취소 fast-path는 brief_note 미터치.)
+        p_brief_note:         (briefNote ?? '').trim() !== '' ? briefNote : null,
       };
       const { data: rpcRid, error: rpcErr } = await admin.rpc('upsert_reservation_from_source', rpcArgs);
 
@@ -609,6 +619,10 @@ Deno.serve(async (req) => {
       // T-20260630-foot-COMPANION-RESV-INSERT-FAIL (§4-2b): 동행명/본명 스냅샷(표시전용 폴백).
       //   비키 — JOIN/dedup/귀속 미사용. 동행(customer_id=NULL) 이름복원 1순위. NULL=정상.
       ...(customerRealName    ? { customer_real_name: customerRealName }  : {}),
+      // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모(문제성발톱 등) 착지.
+      //   ★ 이 신규 INSERT 경로가 첫 push(문제성발톱 선택→풋 예약상세 간략메모)의 실 write-path.
+      //     brief_note = 旣존 컬럼(TEXT NULL). non-empty만 삽입 → NULL/미동봉 회귀 0. (RPC 라인과 정합.)
+      ...(briefNote && briefNote.trim() !== '' ? { brief_note: briefNote.trim() } : {}),
       // campaign_id/adset_id/ad_id 는 customers 컬럼 — reservations에서 제거 (결함 5 수정)
     };
 
