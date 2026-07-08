@@ -2042,7 +2042,11 @@ function DashboardTimeline({
   clinic: Clinic | null;
   reservations: Reservation[];
   selfCheckIns: CheckIn[];
-  onSlotClick: (slot: { date: string; time: string; visit_type?: VisitType }) => void;
+  /** T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2, 정책):
+   *  대시보드 통합시간표의 신규예약 생성 진입점(빈 슬롯 클릭 → 빠른 예약 추가 모달). 미전달(undefined)이면
+   *  빈 슬롯 클릭 생성이 비활성화된다. 카드 드롭(시간변동/리스케줄, SlotDropCell useDroppable)은 이 prop과
+   *  독립이라 그대로 유지 — 생성만 차단, 당일 시간변동은 보존(AC2 핵심 회귀 항목). */
+  onSlotClick?: (slot: { date: string; time: string; visit_type?: VisitType }) => void;
   onCardClick?: (ci: CheckIn) => void;
   onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
   /** 재진 예약 카드 클릭 → 차트 조회만 (체크인 X) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1 */
@@ -2713,8 +2717,10 @@ function DashboardTimeline({
                         // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 초진=파랑 배경 틴트(blue, T-20260615 무채색 SUPERSEDED)
                         : newCnt > 0 ? 'bg-blue-50/60' : '',
                   )}
-                  onClick={() => onSlotClick({ date: dateStr, time: slot })}
-                  title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
+                  // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2): onSlotClick 미전달 시
+                  //   빈 슬롯 클릭 신규생성 비활성. 드롭(시간변동)은 SlotDropCell useDroppable로 유지.
+                  onClick={onSlotClick ? () => onSlotClick({ date: dateStr, time: slot }) : undefined}
+                  title={onSlotClick ? '빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경' : '카드 드롭 → 시간 변경'}
                   data-testid="timeline-slot-new"
                 >
                   {newBox1.map((r) => (
@@ -2739,7 +2745,9 @@ function DashboardTimeline({
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
                     />
                   ))}
-                  {newCnt === 0 && (
+                  {/* T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2): '+' 생성 유도 표식은
+                      신규생성 활성(onSlotClick 有)일 때만 노출 — 생성 비활성 시 빈칸으로 오해 유발 방지. */}
+                  {newCnt === 0 && onSlotClick && (
                     <div className="text-[9px] text-gray-200 text-center leading-none py-1 select-none">+</div>
                   )}
                 </SlotDropCell>
@@ -2757,8 +2765,9 @@ function DashboardTimeline({
                         // T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안, 통합시간표 추가 scope): 재진=초록 배경 틴트(firstvisit, T-20260615 무채색 SUPERSEDED)
                         : retCnt > 0 ? 'bg-firstvisit-50/50' : '',
                   )}
-                  onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
-                  title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"
+                  // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2): 재진 슬롯도 동일 — 신규생성 비활성/드롭 유지.
+                  onClick={onSlotClick ? () => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' }) : undefined}
+                  title={onSlotClick ? '빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경' : '카드 드롭 → 시간 변경'}
                   data-testid="timeline-slot-ret"
                 >
                   {retBox2Resv.map((r) => (
@@ -6278,6 +6287,13 @@ export default function Dashboard() {
     }
   }, [rows]);
 
+  // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2, 정책):
+  //   대시보드 통합시간표의 신규예약 생성 진입점 차단 플래그(김주연 총괄 명시 요청 — '신규예약 생성 막고 당일
+  //   시간변동만'). true면 DashboardTimeline onSlotClick 미전달 → 빈 슬롯 클릭 생성 비활성(빠른 예약 추가 모달 미오픈).
+  //   당일 시간변동(드롭 리스케줄)·예약관리 신규생성은 영향 없음. 정책 해제 시 false로만 되돌리면 복구(handleQuickSlotClick·
+  //   QuickReservationDialog 코드는 보존).
+  const dashResvCreateDisabled = true;
+
   // T-20260511-foot-DASH-REVISIT-RESERVE-BUG: visit_type 파라미터 추가 — 재진 슬롯에서 호출 시 'returning' pre-select
   const handleQuickSlotClick = (slot: { date: string; time: string; visit_type?: VisitType }) => {
     setQuickResvDraft({
@@ -7349,7 +7365,11 @@ export default function Dashboard() {
             clinic={clinic}
             reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
-            onSlotClick={handleQuickSlotClick}
+            // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2, 정책 — 김주연 총괄):
+            //   대시보드 통합시간표에서 신규예약 생성([빠른 예약 추가] 모달) 진입점 차단. 빈 슬롯 클릭 생성 = onSlotClick
+            //   undefined 로 비활성. 당일 시간변동(카드 드롭 리스케줄)은 SlotDropCell useDroppable로 독립 유지(보존).
+            //   예약관리 등 다른 surface의 신규예약 생성은 스코프 밖(불변). 정책 해제 시 dashResvCreateDisabled=false.
+            onSlotClick={dashResvCreateDisabled ? undefined : handleQuickSlotClick}
             // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-A):
             //   차트 열기(handleCardClick/handleReservationSelect)는 read-only이므로 isPast로 막지 않는다.
             //   기존 `!isPast ? ... : undefined` 게이트는 stale date(자정 넘긴 태블릿)에서 onClick을

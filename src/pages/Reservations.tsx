@@ -2163,7 +2163,10 @@ export default function Reservations() {
                         //   취소 구분은 카드 회색+음각(shadow-inner)으로 대체. 취소 성함 폰트는 활성과 동일 text-[11px] 유지(축소 안 함).
                         r.status === 'cancelled' && 'text-[11px]',
                       )}
-                      onClick={(e) => { if (!r.customer_id) return; e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
+                      // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC1, 버그 RC): 기존 `if (!r.customer_id) return;`
+                      //   조기반환이 미연결(customer_id=null, 예: 대시보드 워크인 생성건) 고객박스 클릭을 silent no-op(현장 '무반응' 신고 RC)으로
+                      //   만들었다. 항상 handleResvOpenChart 위임 → 연결건은 차트 오픈, 미연결건은 '고객 미연결' 안내 토스트(정상 반응). 취소건+연결 = 인앱 차트(REFIX-8 AC8 유지).
+                      onClick={(e) => { e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
                     >
                       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING: 고객박스 '표기 안 됨' 방지 — 워크인/미연결·이름 결측 시
                           빈 span(고객박스 공백)이 되던 것을 CustomerHoverCard 분기와 동일하게 '이름없음' 폴백으로 통일(박스 가시성 보장). */}
@@ -2669,7 +2672,9 @@ export default function Reservations() {
                                             // T-20260630-...7ADJ ⑥: 취소 이름 취소선(line-through) 제거 → 회색+음각(shadow-inner, 컨테이너)으로 대체.
                                           )}
                                           onClick={(e) => {
-                                            if (!r.customer_id) return;
+                                            // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC1, 버그 RC): 주뷰 고객박스도 동일 —
+                                            //   `if (!r.customer_id) return;` 조기반환 제거. 미연결건 클릭이 '무반응(no-op)'이던 것을 handleResvOpenChart로
+                                            //   위임 → 미연결건은 안내 토스트(정상 반응), 연결건은 차트 오픈.
                                             e.stopPropagation();
                                             // T-20260615-foot-RESVMGMT-REFIX-8 AC8: 취소(cancelled) 고객 클릭 시 별도 window.open 차트가 아니라
                                             //   정상 예약 클릭과 동일한 인앱 차트 패널(handleResvOpenChart)로 통일. 별도 창 분기 제거.
