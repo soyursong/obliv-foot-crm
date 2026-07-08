@@ -647,8 +647,20 @@ export default function AdminLayout() {
                           // 기존엔 navigate(?id=)만 호출 → Customers.tsx는 location.state.openCustomerId로만
                           // 차트를 열어 ?id= 쿼리를 무시 → 탭만 전환되고 차트 미오픈 버그.
                           // CustomerChartSheet는 AdminLayout 레벨(chartId)에서 렌더되므로 openChart로 즉시 오픈.
-                          navigate('/admin/customers');
-                          openChart(c.id);
+                          // T-20260708-foot-CUSTLIST-CLICK-NEARESTRESV-NAV (A안):
+                          //   예약관리 페이지(/admin/reservations)에서 검색·선택 시에는 페이지 이동을 없애고
+                          //   그 고객의 '가장 가까운 다음 예약'으로 예약관리 뷰만 점프한다. 고객정보 팝업(openChart)은
+                          //   그대로 유지(제거 X). 그 외 페이지에서는 기존 동작(고객관리 전환 + 2번차트 오픈) 유지.
+                          //   jumpNonce = 같은 mount에서 반복 검색해도 매 요청이 소비되도록 하는 nonce(boolean 가드 대체).
+                          if (location.pathname === '/admin/reservations') {
+                            openChart(c.id); // 팝업 keep (팀장 요구=유지)
+                            navigate('/admin/reservations', {
+                              state: { jumpToNearestResvCustomerId: c.id, jumpNonce: Date.now() },
+                            });
+                          } else {
+                            navigate('/admin/customers');
+                            openChart(c.id);
+                          }
                         }}
                         className="w-full flex items-center justify-between rounded px-3 py-2 text-sm hover:bg-muted transition text-left"
                       >

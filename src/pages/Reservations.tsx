@@ -497,6 +497,12 @@ export default function Reservations() {
   //   ⚠ defer-to-slot-click: 진입 즉시 폼을 열지 않고(openReservationFor 동선과 분리) pendingPrefillCustomer에
   //   적재만 → 사용자가 빈 슬롯을 클릭(openNewSlot)할 때 비로소 prefill 신규폼이 뜬다.
   const navPrefillConsumed = useRef(false);
+  // T-20260708-foot-CUSTLIST-CLICK-NEARESTRESV-NAV (A안): 예약관리 헤더 검색으로 선택된 고객의
+  //   '가장 가까운 다음 예약'으로 뷰 점프 요청 소비 가드. boolean 대신 nonce 저장 —
+  //   같은 mount(페이지 유지)에서 반복 검색해도 매 요청(다른 nonce)을 소비한다.
+  const jumpConsumedNonceRef = useRef<number | null>(null);
+  // 점프 대상 예약 카드로 스크롤을 대기시키는 id(해당 날짜 rows 렌더 후 scrollIntoView). 소비 후 null.
+  const [pendingJumpScrollId, setPendingJumpScrollId] = useState<string | null>(null);
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-4: 마운트 자동로드 중복 방지.
   // StrictMode 이중 마운트(dev) / 동일 파라미터 재렌더 시 fetchWeek 중복 실행 → RPC N+1 차단.
   const lastAutoFetchKeyRef = useRef<string | null>(null);
@@ -792,6 +798,66 @@ export default function Reservations() {
     setWeekStart(startOfWeek(targetDate, { weekStartsOn: 1 }));
     setViewMode('week');
   }, [location.state]);
+
+  // T-20260708-foot-CUSTLIST-CLICK-NEARESTRESV-NAV (A안): 그 고객의 '가장 가까운 다음 예약'으로 뷰 점프.
+  //   nearest upcoming = (예약일시 >= now) 중 최이른 1건. reservations read-only(스키마 무변경, db_change=false).
+  //   취소 예약(status='cancelled')은 제외. 예정 예약 0건이면 안내 후 현재 뷰/팝업 그대로 유지(페이지 이동 없음, AC-4).
+  const jumpToNearestUpcoming = useCallback(async (customerId: string) => {
+    if (!clinic) return;
+    const nowDate = new Date();
+    const todayStr = format(nowDate, 'yyyy-MM-dd');
+    const nowHM = format(nowDate, 'HH:mm');
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, reservation_date, reservation_time, status')
+      .eq('clinic_id', clinic.id)
+      .eq('customer_id', customerId)
+      .neq('status', 'cancelled')
+      .gte('reservation_date', todayStr)
+      .order('reservation_date', { ascending: true })
+      .order('reservation_time', { ascending: true });
+    if (error) {
+      toast.error('다음 예약 조회 실패');
+      return;
+    }
+    const upcoming = ((data ?? []) as { id: string; reservation_date: string; reservation_time: string | null }[])
+      .find((r) =>
+        r.reservation_date > todayStr ||
+        (r.reservation_date === todayStr && (r.reservation_time ?? '').slice(0, 5) >= nowHM),
+      );
+    if (!upcoming) {
+      // AC-4 폴백(기본안): 예정 예약 없음 안내 + 현재 예약관리 뷰 유지 + 팝업 유지(페이지 이동 없음).
+      toast.info('예정된 다음 예약이 없습니다');
+      return;
+    }
+    const target = new Date(`${upcoming.reservation_date}T00:00:00`);
+    setSelectedDay(target);
+    setWeekStart(startOfWeek(target, { weekStartsOn: 1 }));
+    setViewMode('day');
+    setSelectedResvId(upcoming.id); // 하이라이트(ring-teal-500)
+    setPendingJumpScrollId(upcoming.id); // 해당 날짜 rows 렌더 후 스크롤 대기
+  }, [clinic]);
+
+  // 예약관리 헤더 검색 선택 → AdminLayout이 navigate(state:{jumpToNearestResvCustomerId, jumpNonce})로 넘긴 요청 소비.
+  useEffect(() => {
+    const state = location.state as { jumpToNearestResvCustomerId?: string; jumpNonce?: number } | null;
+    if (!state?.jumpToNearestResvCustomerId || !state.jumpNonce) return;
+    if (jumpConsumedNonceRef.current === state.jumpNonce) return;
+    jumpConsumedNonceRef.current = state.jumpNonce;
+    window.history.replaceState({}, '');
+    void jumpToNearestUpcoming(state.jumpToNearestResvCustomerId);
+  }, [location.state, jumpToNearestUpcoming]);
+
+  // 점프 대상 날짜 rows 렌더 완료 후 해당 예약 카드로 스크롤(포커스). 카드가 렌더되면 1회 소비.
+  useEffect(() => {
+    if (!pendingJumpScrollId) return;
+    if (loading) return;
+    const el = document.querySelector(`[data-testid="resv-card-${pendingJumpScrollId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setPendingJumpScrollId(null);
+    }
+  }, [pendingJumpScrollId, loading, rows, selectedDay]);
 
   // T-20260517-foot-MINICAL-REGRESS: URL ?date=YYYY-MM-DD 파라미터 감지 → 예약판 날짜 전환
   // CalendarNoticePanel이 navigate('/admin/reservations?date=...') 로 전환 시 이미 마운트된
