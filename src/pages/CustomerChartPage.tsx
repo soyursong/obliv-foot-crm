@@ -30,6 +30,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AmountInput } from '@/components/ui/AmountInput';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164 } from '@/lib/phone';
@@ -9824,47 +9825,40 @@ function PackagePurchaseFromTemplateDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-4">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-base font-bold">구입 티켓 추가</h2>
           <button onClick={() => onOpenChange(false)} className="rounded p-1 hover:bg-muted transition">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="space-y-4 text-sm">
+        <div className="space-y-2 text-sm">
           {/* 템플릿 선택 → 자동 채움 */}
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
-            <div className="flex flex-wrap gap-2">
-              {/* T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT (김주연 총괄): 구입티켓 생성 시 '커스텀' 메뉴를 목록 최앞(첫 번째)으로 노출.
-                  기존엔 templates.map 뒤(맨 끝)에 위치 → 최상단으로 이동. 템플릿 항목 순서·클릭 동선은 그대로(AC-2 회귀 가드). */}
-              <button
-                onClick={applyCustom}
-                className={cn2(
-                  'h-9 rounded-md border px-3 text-sm font-medium transition',
-                  selectedTemplateId === 'custom'
-                    ? 'border-sage-600 bg-sage-50 text-sage-700'
-                    : 'border-gray-200 hover:bg-gray-50',
-                )}
-              >
-                커스텀
-              </button>
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => applyTemplate(t)}
-                  className={cn2(
-                    'h-9 rounded-md border px-3 text-sm font-medium transition',
-                    selectedTemplateId === t.id
-                      ? 'border-sage-600 bg-sage-50 text-sage-700'
-                      : 'border-gray-200 hover:bg-gray-50',
-                  )}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
+            {/* T-20260708-foot-PKG-POPUP-TAB-COMPACT: flex-wrap 버튼 나열 → shadcn Tabs 전환.
+                커스텀 탭이 최앞(첫 번째) — T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT 규약 유지.
+                탭 전환 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-1/회귀 가드). */}
+            <Tabs
+              value={selectedTemplateId}
+              onValueChange={(v) => {
+                if (v === 'custom') { applyCustom(); return; }
+                const t = templates.find((x) => x.id === v);
+                if (t) applyTemplate(t);
+              }}
+            >
+              <TabsList className="flex flex-wrap h-auto w-full justify-start gap-1 p-1">
+                <TabsTrigger value="custom" data-testid="pkg-tab-custom" className="h-7 px-2.5 text-xs">
+                  커스텀
+                </TabsTrigger>
+                {templates.map((t) => (
+                  <TabsTrigger key={t.id} value={t.id} data-testid={`pkg-tab-${t.id}`} className="h-7 px-2.5 text-xs">
+                    {t.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>
             )}
@@ -9877,12 +9871,12 @@ function PackagePurchaseFromTemplateDialog({
               value={packageName}
               onChange={(e) => setPackageName(e.target.value)}
               placeholder="패키지명"
-              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+              className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
             />
           </div>
 
           {/* 가열 레이저 */}
-          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+          <div className="rounded-lg border bg-gray-50 p-2 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500">가열 레이저</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
@@ -9890,7 +9884,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={heated}
                   onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9898,14 +9892,14 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={heatedUnitPrice}
                   onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="flex items-end">
                 <button
                   onClick={() => setHeatedUpgrade(!heatedUpgrade)}
                   className={cn2(
-                    'h-9 w-full rounded-md border text-xs font-medium px-1.5 transition',
+                    'h-8 w-full rounded-md border text-xs font-medium px-1.5 transition',
                     heatedUpgrade ? 'border-sage-600 bg-sage-50 text-sage-700' : 'border-gray-200 hover:bg-gray-50',
                   )}
                 >
@@ -9922,7 +9916,7 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
           {/* 비가열 레이저 */}
-          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+          <div className="rounded-lg border bg-gray-50 p-2 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500">비가열 레이저</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
@@ -9930,7 +9924,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={unheated}
                   onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9938,14 +9932,14 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={unheatedUnitPrice}
                   onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="flex items-end">
                 <button
                   onClick={() => setUnheatedUpgrade(!unheatedUpgrade)}
                   className={cn2(
-                    'h-9 w-full rounded-md border text-xs font-medium px-1.5 transition',
+                    'h-8 w-full rounded-md border text-xs font-medium px-1.5 transition',
                     unheatedUpgrade ? 'border-sage-600 bg-sage-50 text-sage-700' : 'border-gray-200 hover:bg-gray-50',
                   )}
                 >
@@ -9962,7 +9956,7 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
           {/* 포돌로게 */}
-          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+          <div className="rounded-lg border bg-gray-50 p-2 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500">포돌로게</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -9970,7 +9964,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={podologe}
                   onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -9978,7 +9972,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={podologeUnitPrice}
                   onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -9988,7 +9982,7 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
           {/* 수액 — T-20260510-foot-PKG-CREATE-FIX3: 수액명 드롭다운 8종 */}
-          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+          <div className="rounded-lg border bg-gray-50 p-2 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
@@ -9996,7 +9990,7 @@ function PackagePurchaseFromTemplateDialog({
                 <select
                   value={ivCompany}
                   onChange={(e) => setIvCompany(e.target.value)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500 bg-white"
+                  className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500 bg-white"
                 >
                   <option value="">— 선택 —</option>
                   <option value="재생">재생</option>
@@ -10014,7 +10008,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={iv}
                   onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -10022,7 +10016,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={ivUnitPrice}
                   onChange={(raw) => setIvUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -10032,7 +10026,7 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
           {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
-          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+          <div className="rounded-lg border bg-gray-50 p-2 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500">체험권</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -10040,7 +10034,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={trial}
                   onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -10048,7 +10042,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={trialUnitPrice}
                   onChange={(raw) => setTrialUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -10058,7 +10052,7 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
           {/* T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목 */}
-          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+          <div className="rounded-lg border bg-gray-50 p-2 space-y-1.5">
             <div className="text-xs font-semibold text-gray-500">Re:Born</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -10066,7 +10060,7 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={reborn}
                   onChange={(e) => setReborn(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
               <div className="space-y-1">
@@ -10074,7 +10068,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={rebornUnitPrice}
                   onChange={(raw) => setRebornUnitPrice(Number(raw) || 0)}
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
             </div>
@@ -10089,7 +10083,7 @@ function PackagePurchaseFromTemplateDialog({
             <input
               type="number" min={0} value={precon}
               onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
-              className="w-28 h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+              className="w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
             />
           </div>
 
@@ -10147,7 +10141,7 @@ function PackagePurchaseFromTemplateDialog({
           })()}
 
           {/* 패키지 총 금액 (항목별 자동합산 + 수기수정) */}
-          <div className="rounded-lg border border-sage-200 bg-sage-50/40 p-3 space-y-2">
+          <div className="rounded-lg border border-sage-200 bg-sage-50/40 p-2 space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-sage-800">패키지 총 금액</span>
               <button
@@ -10163,7 +10157,7 @@ function PackagePurchaseFromTemplateDialog({
               <AmountInput
                 value={manualTotal}
                 onChange={(raw) => setManualTotal(Number(raw) || 0)}
-                className="w-full h-10 rounded-md border border-sage-300 px-3 text-lg font-bold text-sage-700 focus:outline-none"
+                className="w-full h-9 rounded-md border border-sage-300 px-3 text-lg font-bold text-sage-700 focus:outline-none"
               />
             ) : (
               <div className="text-xl font-bold text-sage-700">
@@ -10179,12 +10173,12 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 — 패키지 금액과 별도 입력/표시(§4-A). 합산 단일표기 금지. */}
-          <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 space-y-1.5">
+          <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
             <label className="text-xs font-semibold text-gray-600">진료비 <span className="font-normal text-gray-400">(패키지 금액과 별도 — 합산하지 않음)</span></label>
             <AmountInput
               value={consultationFee}
               onChange={(raw) => setConsultationFee(Number(raw) || 0)}
-              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+              className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
             />
             <div className="text-xs text-gray-400">진료비는 패키지 금액에 합산되지 않고, 결제·잔금이 따로 관리됩니다.</div>
           </div>

@@ -12,8 +12,13 @@
  * 본 spec은 소스단언(regression guard) — prod DB 오염 방지 위해 실제 패키지 insert는 하지 않음.
  * (실 동선/렌더 확인은 supervisor 필드 검증 + 시나리오 가이드 참조)
  *
- * 시나리오 1(AC-1): 커스텀 버튼이 templates.map 보다 앞(최앞)에 위치
- * 시나리오 2(AC-2 회귀 가드): 템플릿 항목·클릭 동선(applyTemplate) + 커스텀 클릭 동선(applyCustom) 유지
+ * 시나리오 1(AC-1): 커스텀이 templates.map 보다 앞(최앞)에 위치
+ * 시나리오 2(AC-2 회귀 가드): 템플릿 항목·채움 동선(applyTemplate) + 커스텀 초기화 동선(applyCustom) 유지
+ *
+ * [2026-07-08 갱신] T-20260708-foot-PKG-POPUP-TAB-COMPACT: 템플릿 선택 UI가 flex-wrap 버튼 →
+ *   shadcn Tabs로 전환됨. '커스텀 최앞' 규약(본 티켓의 본질)은 그대로 유지되며, 구현 기전만 변경.
+ *   → 버튼-구현 특정 단언(onClick={applyCustom}/onClick={applyTemplate(t)})을 Tabs 기전 단언으로 갱신.
+ *     (applyCustom/applyTemplate 로직 자체는 Tabs onValueChange에서 그대로 호출 — 로직 무변경)
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'fs';
@@ -26,7 +31,7 @@ const __dirname = dirname(__filename);
 const SRC = (rel: string) => readFileSync(resolve(__dirname, '../../src', rel), 'utf-8');
 
 test.describe('T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT', () => {
-  test('시나리오 1(AC-1): 커스텀 메뉴가 구입티켓 생성 목록 최앞(templates.map 이전)에 위치', () => {
+  test('시나리오 1(AC-1): 커스텀 탭이 구입티켓 생성 목록 최앞(templates.map 이전)에 위치', () => {
     const src = SRC('pages/CustomerChartPage.tsx');
 
     // PackagePurchaseFromTemplateDialog 정의 이후 템플릿 선택 목록 영역 추출
@@ -39,25 +44,25 @@ test.describe('T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT', () => {
     expect(listAnchor, '템플릿 선택 목록 앵커 존재').toBeGreaterThan(-1);
     const listSlice = dlgSlice.slice(listAnchor, listAnchor + 1600);
 
-    // 커스텀 버튼(applyCustom)이 템플릿 목록 렌더(templates.map) 보다 앞에 있어야 함
-    const customIdx = listSlice.indexOf('onClick={applyCustom}');
+    // [Tabs 전환] 커스텀 탭(value="custom")이 템플릿 목록 렌더(templates.map) 보다 앞에 있어야 함
+    const customIdx = listSlice.indexOf('value="custom"');
     const templatesMapIdx = listSlice.indexOf('templates.map(');
-    expect(customIdx, '커스텀(applyCustom) 버튼 존재').toBeGreaterThan(-1);
+    expect(customIdx, '커스텀 탭(value="custom") 존재').toBeGreaterThan(-1);
     expect(templatesMapIdx, '템플릿 목록(templates.map) 렌더 존재').toBeGreaterThan(-1);
-    expect(customIdx, 'AC-1: 커스텀 버튼이 templates.map 보다 최앞에 위치').toBeLessThan(templatesMapIdx);
+    expect(customIdx, 'AC-1: 커스텀 탭이 templates.map 보다 최앞에 위치').toBeLessThan(templatesMapIdx);
   });
 
-  test('시나리오 2(AC-2 회귀 가드): 템플릿/커스텀 클릭 동선 및 라벨 유지', () => {
+  test('시나리오 2(AC-2 회귀 가드): 템플릿/커스텀 채움 동선(applyTemplate/applyCustom) 및 라벨 유지', () => {
     const src = SRC('pages/CustomerChartPage.tsx');
     const dlgIdx = src.indexOf('function PackagePurchaseFromTemplateDialog');
     const dlgSlice = src.slice(dlgIdx, dlgIdx + 14000);
 
-    // 템플릿 클릭 → applyTemplate 유지 (다른 메뉴 항목 정상 동작)
-    expect(dlgSlice.includes('onClick={() => applyTemplate(t)}'),
-      'AC-2: 템플릿 항목 클릭 동선(applyTemplate) 유지').toBe(true);
-    // 커스텀 클릭 → applyCustom 유지
-    expect(dlgSlice.includes('onClick={applyCustom}'),
-      'AC-2: 커스텀 클릭 동선(applyCustom) 유지').toBe(true);
+    // 템플릿 선택 → applyTemplate 로직 그대로 호출 (Tabs onValueChange 경유)
+    expect(dlgSlice.includes('applyTemplate(t)'),
+      'AC-2: 템플릿 항목 채움 동선(applyTemplate) 유지').toBe(true);
+    // 커스텀 선택 → applyCustom 로직 그대로 호출
+    expect(dlgSlice.includes('applyCustom()'),
+      'AC-2: 커스텀 초기화 동선(applyCustom) 유지').toBe(true);
     // 커스텀 라벨 유지
     expect(dlgSlice.includes('커스텀'),
       'AC-2: 커스텀 메뉴 라벨 유지').toBe(true);
