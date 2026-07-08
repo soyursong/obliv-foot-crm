@@ -60,6 +60,10 @@ export default function Stats() {
 
   const [tab, setTab] = useState<StatsTab>('revenue');
   const [preset, setPreset] = useState<StatsRangePreset>('month');
+  // T-20260708-foot-TMSTATS-PERIOD-DEFAULT-TODAY:
+  //   TM집계 탭만 기간 기본값을 '오늘'로. 타 탭(매출/치료사)의 공유 preset('month')은 불변.
+  //   tm 탭 진입 시마다 'today'로 리셋(탭 재진입 리셋 방식) → 아래 useEffect가 tab 변화에만 반응.
+  const [tmPreset, setTmPreset] = useState<StatsRangePreset>('today');
   const [customFrom, setCustomFrom] = useState<string>('');
   const [customTo, setCustomTo]     = useState<string>('');
 
@@ -69,6 +73,18 @@ export default function Stats() {
       setTab(visibleTabs[0]?.key ?? 'revenue');
     }
   }, [visibleTabs, tab]);
+
+  // T-20260708-foot-TMSTATS-PERIOD-DEFAULT-TODAY:
+  //   TM집계 탭에 들어올 때마다 기간을 '오늘'로 리셋. tab이 바뀔 때만 발화하므로
+  //   같은 탭 안에서 사용자가 기간을 바꾸면(tmPreset 변경) 리셋되지 않는다.
+  useEffect(() => {
+    if (tab === 'tm') setTmPreset('today');
+  }, [tab]);
+
+  // 활성 탭의 기간 프리셋: tm 탭은 tmPreset('오늘' 기본), 그 외는 공유 preset('이번 달' 기본).
+  const activePreset = tab === 'tm' ? tmPreset : preset;
+  const setActivePreset = (p: StatsRangePreset) =>
+    tab === 'tm' ? setTmPreset(p) : setPreset(p);
 
   const [revenue, setRevenue]                       = useState<RevenueRow[]>([]);
   const [categories, setCategories]                 = useState<CategoryRow[]>([]);
@@ -82,9 +98,9 @@ export default function Stats() {
 
   useEffect(() => {
     if (!clinic) return;
-    if (preset === 'custom' && (!customFrom || !customTo)) return;
+    if (activePreset === 'custom' && (!customFrom || !customTo)) return;
 
-    const { from, to } = resolveRange(preset, customFrom, customTo);
+    const { from, to } = resolveRange(activePreset, customFrom, customTo);
 
     let aborted = false;
     const load = async () => {
@@ -129,10 +145,10 @@ export default function Stats() {
     return () => {
       aborted = true;
     };
-  }, [clinic, tab, preset, customFrom, customTo]);
+  }, [clinic, tab, activePreset, customFrom, customTo]);
 
   const { from: rangeFrom, to: rangeTo } = clinic
-    ? resolveRange(preset, customFrom, customTo)
+    ? resolveRange(activePreset, customFrom, customTo)
     : { from: '', to: '' };
 
   // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE:
@@ -187,9 +203,9 @@ export default function Stats() {
             {PRESETS.map((p) => (
               <button
                 key={p.key}
-                onClick={() => setPreset(p.key)}
+                onClick={() => setActivePreset(p.key)}
                 className={
-                  preset === p.key
+                  activePreset === p.key
                     ? 'bg-teal-50 text-teal-700 px-3 py-1.5 text-xs font-medium'
                     : 'text-muted-foreground hover:bg-muted px-3 py-1.5 text-xs font-medium transition'
                 }
@@ -199,7 +215,7 @@ export default function Stats() {
             ))}
           </div>
 
-          {preset === 'custom' && (
+          {activePreset === 'custom' && (
             <div className="flex items-center gap-1 text-xs">
               <input
                 type="date"
