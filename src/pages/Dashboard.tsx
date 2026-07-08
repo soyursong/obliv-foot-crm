@@ -1845,7 +1845,7 @@ function DraggableBox1Card({
         e.stopPropagation();
         onContextMenu?.(e, reservation);
       }}
-      title={`${cardDisplayName(reservation)} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
+      title={cardDisplayName(reservation)}
       data-testid="box1-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
@@ -1994,8 +1994,8 @@ function DraggableBox2ResvCard({
         onContextMenu?.(e, reservation);
       }}
       title={reservation.healer_flag
-        ? `${cardDisplayName(reservation)} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`
-        : `${cardDisplayName(reservation)} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
+        ? `${cardDisplayName(reservation)} — 힐러 치료 예정`
+        : cardDisplayName(reservation)}
       data-testid="box2-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
