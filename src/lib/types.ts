@@ -535,7 +535,44 @@ export interface Package {
   // T-20260616-foot-PKG-OUTSTANDING-BALANCE: 진료비 금액(패키지 금액 total_amount 과 별도, 합산표기 금지).
   // 마이그(20260617120000) ADDITIVE NOT NULL DEFAULT 0. 마이그 미적용 환경 대비 옵셔널 표기.
   consultation_fee?: number;
+  // T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 통계(B안) 시술유형 태깅 + 기준정가 스냅샷.
+  //   treatment_type = 패키지 시술유형(수동, 통계 시술유형별 객단가 집계용). 저장 canonical 토큰, FE 표시 "리본".
+  //   reference_price = 기준정가 스냅샷(불변). 할인율=(reference_price−실결제)/reference_price 통계표시 전용.
+  //   둘 다 nullable ADDITIVE. 마이그 미적용 환경 대비 옵셔널.
+  treatment_type?: TreatmentType | null;
+  reference_price?: number | null;
   created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── T-20260708 시술유형 canonical 택소노미 (저장값=안정 식별자, FE 표시라벨 분리) ──
+// 저장 5토큰 = packages.treatment_type / treatment_standard_prices.treatment_type CHECK 와 동일.
+// 'Re:Born' = foot repo 배포된 SSOT(PREPAID_KEYWORDS + Re:Born, 치료사통계 AC1)와 vocabulary 공유.
+export const TREATMENT_TYPES = ['비가열', '가열', '포돌로게', '수액', 'Re:Born'] as const;
+export type TreatmentType = (typeof TREATMENT_TYPES)[number];
+
+// 저장값 → FE 표시라벨. 'Re:Born'만 현장 요청대로 "리본"으로 렌더(나머지는 저장값=표시값 동일).
+export const TREATMENT_TYPE_LABEL: Record<TreatmentType, string> = {
+  '비가열': '비가열',
+  '가열': '가열',
+  '포돌로게': '포돌로게',
+  '수액': '수액',
+  'Re:Born': '리본',
+};
+
+export function treatmentTypeLabel(t?: string | null): string {
+  if (!t) return '-';
+  return (TREATMENT_TYPE_LABEL as Record<string, string>)[t] ?? t;
+}
+
+// 시술유형별 1회 정상가(정찰가) 마스터 = /packages 탭1 정찰가 기준표. reference_price prefill SSOT.
+export interface TreatmentStandardPrice {
+  id: string;
+  clinic_id: string;
+  treatment_type: TreatmentType;
+  standard_price: number;
+  updated_by?: string | null;
   created_at: string;
   updated_at: string;
 }

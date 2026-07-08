@@ -36,6 +36,8 @@ import { toast } from '@/lib/toast';
 import { normalizeToE164 } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
+import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
+import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
 // T-20260510-foot-C2-DOC-ISSUANCE: 서류발행 패널
@@ -9633,6 +9635,17 @@ function PackagePurchaseFromTemplateDialog({
   const [consultationFee, setConsultationFee] = useState(0);
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 통계(B안) 시술유형(필수)·기준정가(선택) + prefill.
+  //   treatment_type = 통계 시술유형별 객단가 집계용(필수 선택). reference_price = 기준정가 스냅샷(선택).
+  //   prefill(AC-8/AC-10): 커스텀 모드에서 시술유형 선택 → 탭1 정찰가 마스터(standard_price)를 기준정가에 자동 채움(override 가능).
+  //   AC-2b: 템플릿 로드 케이스 → 기준정가 = 템플릿 정가(applyTemplate에서 세팅), 금액 수기변경해도 유지.
+  //   RECONCILE(MSG-20260708-224250 (D)): reference_price 는 total_amount 와 동일 grain(계약총액) 불변식.
+  //     커스텀 prefill = standard_price(1회 정상가) × 횟수(totalSessions) 스냅샷 → 1회가×총결제 혼합 grain 방지
+  //     (미이행 시 할인율 음수/과대). refPriceTouched=수기 override 시 자동계산 중단(override 존중).
+  const stdPrices = useTreatmentStandardPrices(clinicId);
+  const [treatmentType, setTreatmentType] = useState<TreatmentType | ''>('');
+  const [referencePrice, setReferencePrice] = useState(0);
+  const [refPriceTouched, setRefPriceTouched] = useState(false);
 
   // 항목별 자동합산
   const computedTotal = useMemo(
@@ -9651,6 +9664,14 @@ function PackagePurchaseFromTemplateDialog({
   // T-20260522-foot-PKG-TRIAL: 체험권 포함
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
   const totalSessions = heated + unheated + iv + precon + podologe + trial + reborn;
+
+  // T-20260708 RECONCILE(D): 커스텀 모드 기준정가 = standard_price × 횟수(totalSessions) 계약총액 grain 스냅샷.
+  //   시술유형/횟수 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
+  const stdForType = treatmentType ? stdPrices.map[treatmentType] : null;
+  useEffect(() => {
+    if (selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType) return;
+    if (stdForType != null && stdForType > 0) setReferencePrice(stdForType * totalSessions);
+  }, [stdForType, totalSessions, treatmentType, selectedTemplateId, refPriceTouched]);
 
   // T-20260510-foot-PKG-CREATE-FIX3: 템플릿 로드 후 첫 번째 자동 선택 (button 활성화 보장)
   useEffect(() => {
@@ -9676,6 +9697,8 @@ function PackagePurchaseFromTemplateDialog({
           setTrial(first.trial_sessions ?? 0); setTrialUnitPrice(first.trial_unit_price ?? 0);
           setReborn(0); setRebornUnitPrice(0); // 템플릿은 Re:Born 미보유
           setPrecon(0); setPriceOverride(false); setMemo(first.memo ?? '');
+          // T-20260708 AC-2b: 자동선택 템플릿 정가 = 기준정가.
+          setTreatmentType(''); setReferencePrice(first.total_price ?? 0); setRefPriceTouched(false);
         }
       });
   }, [open, clinicId]);
@@ -9692,6 +9715,7 @@ function PackagePurchaseFromTemplateDialog({
     setReborn(0); setRebornUnitPrice(0);
     setPrecon(0);
     setPriceOverride(false); setManualTotal(0); setConsultationFee(0); setMemo('');
+    setTreatmentType(''); setReferencePrice(0); setRefPriceTouched(false);
   }, [open]);
 
   // 자동합산 변경 시 manualTotal 동기화
@@ -9720,6 +9744,9 @@ function PackagePurchaseFromTemplateDialog({
     setPrecon(0);
     setPriceOverride(false);
     setMemo(tmpl.memo ?? '');
+    // T-20260708 AC-2b: 템플릿 정가 = 기준정가(reference_price). 이후 금액 수기변경해도 유지. 시술유형은 수동 선택.
+    setTreatmentType('');
+    setReferencePrice(tmpl.total_price ?? 0); setRefPriceTouched(false);
   };
 
   const applyCustom = () => {
@@ -9733,11 +9760,23 @@ function PackagePurchaseFromTemplateDialog({
     setReborn(0); setRebornUnitPrice(0);
     setPrecon(0);
     setPriceOverride(false); setManualTotal(0); setConsultationFee(0); setMemo('');
+    // T-20260708: 커스텀 초기화 — 시술유형/기준정가 리셋(시술유형 선택 시 마스터 prefill × 횟수).
+    setTreatmentType('');
+    setReferencePrice(0); setRefPriceTouched(false);
+  };
+
+  // T-20260708 AC-8/AC-10 + RECONCILE(D): 시술유형 선택 시 수기 override 플래그 해제 → 반응형 effect 가
+  //   커스텀 모드에서 standard_price × 횟수(계약총액 grain)를 기준정가에 prefill. 템플릿 모드는 유지(AC-2b).
+  const selectTreatmentType = (t: TreatmentType | '') => {
+    setTreatmentType(t);
+    if (selectedTemplateId === 'custom') setRefPriceTouched(false);
   };
 
   const submit = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260708 AC-5: 시술유형 필수(통계 시술유형별 객단가 집계용). 미선택 저장 차단.
+    if (!treatmentType) { toast.error('시술 유형을 선택하세요 (통계 집계용)'); return; }
     setSubmitting(true);
     const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
     const { error } = await supabase.from('packages').insert({
@@ -9769,6 +9808,9 @@ function PackagePurchaseFromTemplateDialog({
       total_amount: grandTotal,
       // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 별도 컬럼(§4-A: total_amount와 합산 단일표기 금지).
       consultation_fee: consultationFee,
+      // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷(미입력=null → 할인율 '-').
+      treatment_type: treatmentType || null,
+      reference_price: referencePrice > 0 ? referencePrice : null,
       paid_amount: 0,
       status: 'active',
       memo: memo.trim() || null,
@@ -9782,6 +9824,8 @@ function PackagePurchaseFromTemplateDialog({
   const submitWithTemplate = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260708 AC-5: 시술유형 필수(통계 집계용). 미선택 저장 차단.
+    if (!treatmentType) { toast.error('시술 유형을 선택하세요 (통계 집계용)'); return; }
     setSubmitting(true);
     // 1) 템플릿 저장
     const { error: tmplErr } = await supabase.from('package_templates').insert({
@@ -9814,6 +9858,9 @@ function PackagePurchaseFromTemplateDialog({
       upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal,
       // T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비 별도(§4-A).
       consultation_fee: consultationFee, paid_amount: 0,
+      // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷.
+      treatment_type: treatmentType || null,
+      reference_price: referencePrice > 0 ? referencePrice : null,
       status: 'active', memo: memo.trim() || null,
     });
     setSubmitting(false);
@@ -10169,6 +10216,45 @@ function PackagePurchaseFromTemplateDialog({
             )}
             <div className="text-xs text-gray-400">
               총 {totalSessions}회{podologe > 0 ? ` + 포돌로게 ${podologe}회` : ''}
+            </div>
+          </div>
+
+          {/* T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 통계(B안) 시술유형(필수)+기준정가(선택)+할인율 미리보기.
+              커스텀 모드에서 시술유형 선택 시 탭1 정찰가 마스터를 기준정가에 prefill(override 가능, AC-8/AC-10). */}
+          <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-2 space-y-2">
+            <div className="text-xs font-semibold text-teal-800">통계 태깅 <span className="font-normal text-teal-500">(할인율·객단가 집계용)</span></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">시술 유형 <span className="text-red-500">*</span></label>
+                <select
+                  value={treatmentType}
+                  onChange={(e) => selectTreatmentType(e.target.value as TreatmentType | '')}
+                  data-testid="pkg-treatment-type"
+                  className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">— 선택 —</option>
+                  {TREATMENT_TYPES.map((t) => (
+                    <option key={t} value={t}>{treatmentTypeLabel(t)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">기준 정가 <span className="font-normal text-gray-400">(선택)</span></label>
+                <AmountInput
+                  value={referencePrice}
+                  onChange={(raw) => { setReferencePrice(Number(raw) || 0); setRefPriceTouched(true); }}
+                  data-testid="pkg-reference-price"
+                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            <div className="text-xs text-gray-500" data-testid="pkg-discount-preview">
+              {referencePrice > 0 ? (
+                <>할인율 <span className="font-semibold text-teal-700">{Math.round(((referencePrice - grandTotal) / referencePrice) * 100)}%</span>
+                  {' '}= (기준정가 {formatAmount(referencePrice)} − 결제 {formatAmount(grandTotal)}) / 기준정가</>
+              ) : (
+                <span className="text-gray-400">기준 정가 미입력 시 할인율은 통계에서 '-'로 표시됩니다 (객단가는 정상 집계).</span>
+              )}
             </div>
           </div>
 

@@ -15,15 +15,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
+import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, formatDateTimeDots } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
+import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
 
 // T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 옵셔널)
 type PackageListItem = Package & { customer: { name: string; phone: string; chart_number?: string | null } | null };
@@ -116,7 +118,7 @@ export default function Packages() {
           </div>
           {isAdmin && (
             <Button variant="outline" onClick={() => setOpenTemplates(true)} className="gap-1">
-              <Layers className="h-4 w-4" /> 템플릿 관리
+              <Layers className="h-4 w-4" /> 패키지 관리
             </Button>
           )}
           {/* T-20260521-foot-STAFF-PKG-ROLLBACK: therapist는 READ only — 생성 버튼 숨김 */}
@@ -257,7 +259,94 @@ export default function Packages() {
 }
 
 // ============================================================
-// 템플릿 관리 Sheet
+// T-20260708-foot-PKGSTATS: 패키지 관리 3탭 (정찰가 기준표 / 공식 패키지 / 커스텀)
+// ============================================================
+type PkgManageTab = 'standard' | 'official' | 'custom';
+
+// 탭1 — 정찰가 기준표: 시술유형별 1회 정상가 마스터(treatment_standard_prices) CRUD.
+//   = 커스텀 패키지 생성 시 reference_price prefill 소스 SSOT(AC-8/AC-10). 저장 canonical 토큰, 표시라벨 "리본".
+function StandardPricesPanel({ clinicId }: { clinicId: string | undefined }) {
+  const { profile } = useAuth();
+  const { map, available, isLoading, saveStandardPrice } = useTreatmentStandardPrices(clinicId);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [savingType, setSavingType] = useState<TreatmentType | null>(null);
+
+  // 마스터 로드/변경 시 draft 초기화(서버값 기준).
+  useEffect(() => {
+    const next: Record<string, number> = {};
+    for (const t of TREATMENT_TYPES) next[t] = map[t] ?? 0;
+    setDraft(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map['비가열'], map['가열'], map['포돌로게'], map['수액'], map['Re:Born']]);
+
+  const save = async (t: TreatmentType) => {
+    setSavingType(t);
+    try {
+      await saveStandardPrice(t, draft[t] ?? 0, profile?.id ?? null);
+      toast.success(`${treatmentTypeLabel(t)} 정찰가 저장됨`);
+    } catch (e) {
+      toast.error(`저장 실패: ${(e as Error).message}`);
+    } finally {
+      setSavingType(null);
+    }
+  };
+
+  if (!available && !isLoading) {
+    return (
+      <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+        정찰가 기준표를 사용할 수 없습니다 (마이그레이션 배포 대기).
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground">
+        시술 유형별 <b>1회 정상가(정찰가)</b>를 등록하세요. 커스텀 패키지 생성 시 시술 유형을 선택하면 이 값이 <b>기준 정가로 자동 입력</b>됩니다.
+      </div>
+      <div className="rounded-lg border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/60 text-xs text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">시술 유형</th>
+              <th className="px-3 py-2 text-right font-medium">1회 정상가</th>
+              <th className="px-3 py-2 text-center font-medium w-20">저장</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TREATMENT_TYPES.map((t) => (
+              <tr key={t} className="border-t">
+                <td className="px-3 py-2 font-medium">{treatmentTypeLabel(t)}</td>
+                <td className="px-3 py-2 text-right">
+                  <AmountInput
+                    value={draft[t] ?? 0}
+                    onChange={(raw) => setDraft((d) => ({ ...d, [t]: Number(raw) || 0 }))}
+                    data-testid={`std-price-${t}`}
+                    className="w-40 h-8 rounded-md border border-input px-3 text-sm text-right focus:outline-none focus:ring-1 focus:ring-teal-500 tabular-nums"
+                  />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={savingType === t || (draft[t] ?? 0) === (map[t] ?? 0)}
+                    onClick={() => save(t)}
+                    data-testid={`std-price-save-${t}`}
+                  >
+                    {savingType === t ? '…' : '저장'}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 패키지 관리 Sheet (3탭: 정찰가 기준표 / 공식 패키지 / 커스텀)
 // ============================================================
 function TemplateManageSheet({
   open,
@@ -272,6 +361,7 @@ function TemplateManageSheet({
   const [loading, setLoading] = useState(false);
   const [editTarget, setEditTarget] = useState<PackageTemplate | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [subTab, setSubTab] = useState<PkgManageTab>('standard');
 
   const load = useCallback(async () => {
     if (!clinicId) return;
@@ -306,16 +396,41 @@ function TemplateManageSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="max-w-xl overflow-y-auto">
+        {/* T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE (fmro 병합, AC-9/10):
+            패키지 템플릿 관리 = 3탭 분리. 탭1 정찰가(기준) 마스터 CRUD(=reference_price prefill SSOT),
+            탭2 공식 패키지(기존 템플릿 관리 무회귀 이동), 탭3 커스텀(고객차트 구입티켓에서 정찰가 자동불러오기 안내). */}
         <SheetHeader>
-          <div className="flex items-center justify-between">
-            <SheetTitle>패키지 템플릿 관리</SheetTitle>
+          <SheetTitle>패키지 관리</SheetTitle>
+        </SheetHeader>
+
+        <Tabs value={subTab} onValueChange={(v) => setSubTab(v as PkgManageTab)} className="mt-3">
+          <TabsList className="w-full">
+            <TabsTrigger value="standard" className="flex-1">정찰가(기준)</TabsTrigger>
+            <TabsTrigger value="official" className="flex-1">공식 패키지</TabsTrigger>
+            <TabsTrigger value="custom" className="flex-1">커스텀</TabsTrigger>
+          </TabsList>
+
+          {/* 탭1 — 정찰가 기준표: 시술유형별 1회 정상가 마스터(reference_price prefill 소스 SSOT) */}
+          <TabsContent value="standard" className="mt-3">
+            <StandardPricesPanel clinicId={clinicId} />
+          </TabsContent>
+
+          {/* 탭3 — 커스텀: 실제 커스텀 패키지 생성은 고객차트 '구입 티켓 추가'에서. 시술유형 선택 시 탭1 정찰가 자동 prefill. */}
+          <TabsContent value="custom" className="mt-3">
+            <div className="rounded-lg border border-dashed bg-teal-50/30 p-4 text-sm text-muted-foreground space-y-1.5">
+              <div className="font-semibold text-teal-800">커스텀 패키지</div>
+              <div>커스텀(직접 조합) 패키지는 <b>고객 차트 → 구입 티켓 추가</b>에서 만듭니다.</div>
+              <div>거기서 <b>시술 유형</b>을 선택하면 이 [정찰가(기준)] 탭에 등록한 <b>1회 정상가</b>가 <b>기준 정가로 자동 입력</b>되고(수정 가능), 결제금액과 비교해 <b>할인율이 자동 계산</b>됩니다.</div>
+            </div>
+          </TabsContent>
+
+          {/* 탭2 — 공식 패키지: 기존 패키지 템플릿 관리(무회귀) */}
+          <TabsContent value="official" className="mt-3 space-y-2">
+          <div className="flex justify-end">
             <Button size="sm" className="gap-1" onClick={() => setCreateOpen(true)}>
               <Plus className="h-3.5 w-3.5" /> 새 템플릿
             </Button>
           </div>
-        </SheetHeader>
-
-        <div className="mt-4 space-y-2">
           {loading && (
             <div className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</div>
           )}
@@ -376,7 +491,8 @@ function TemplateManageSheet({
               )}
             </div>
           ))}
-        </div>
+          </TabsContent>
+        </Tabs>
 
         <PackageTemplateDialog
           open={createOpen || !!editTarget}

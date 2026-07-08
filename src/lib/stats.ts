@@ -207,6 +207,51 @@ export async function fetchTherapistServices(
   return (data ?? []) as TherapistServiceRow[];
 }
 
+// ─── T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 패키지 통계(B안) ───
+// 실장별 할인율 + 시술유형별 평균 객단가. packages grain. 매출 SSOT 무접촉(내부 통계표시 전용).
+
+export interface PkgDiscountConsultantRow {
+  consultant_id: string;
+  name: string;
+  pkg_count: number;               // 귀속 패키지 수(기준정가 유무 무관)
+  discount_pkg_count: number;      // 기준정가 있는 패키지 수(할인율 분모)
+  avg_discount_rate: number | null; // 0~1 비율. null=기준정가 있는 패키지 없음 → FE '-'
+}
+
+export interface PkgTreatmentAvgRow {
+  treatment_type: string;          // 비가열 / 가열 / 포돌로게 / 수액 / Re:Born (저장 canonical)
+  pkg_count: number;
+  avg_amount: number;              // 평균 객단가(total_amount 평균)
+}
+
+export async function fetchPkgDiscountByConsultant(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<PkgDiscountConsultantRow[]> {
+  const { data, error } = await supabase.rpc('foot_stats_pkg_discount_by_consultant', {
+    p_clinic_id: clinicId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return (data ?? []) as PkgDiscountConsultantRow[];
+}
+
+export async function fetchPkgAvgByTreatment(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<PkgTreatmentAvgRow[]> {
+  const { data, error } = await supabase.rpc('foot_stats_pkg_avg_by_treatment', {
+    p_clinic_id: clinicId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return (data ?? []) as PkgTreatmentAvgRow[];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // T-20260610-foot-STATS-TM-AGGREGATE-TAB: TM집계
 //
