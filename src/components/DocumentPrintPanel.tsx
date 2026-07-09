@@ -480,10 +480,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     return () => { cancelled = true; };
   }, [dutyDoctors.length, checkIn.clinic_id]);
 
-  const doctorOptions: { id: string; name: string; roster_type?: string }[] =
+  // T-20260709-foot-CUSTCHART-CLOSE-BTN-ERROR RC: staff/duty_roster 의 name 이 NULL 인 원장 행이
+  //   섞이면 doctorOptions[0].name=null → selectedDoctorName=null → effectiveDoctorName.trim() 에서
+  //   TypeError(null.trim) → DocumentPrintPanel 렌더 crash → 고객차트 닫기 시 하위 Outlet 에러바운더리.
+  //   이름 없는 원장은 서류 서명 주체가 될 수 없으므로 옵션에서 제외 + string 강제(null 유입 원천 차단).
+  const doctorOptions: { id: string; name: string; roster_type?: string }[] = (
     dutyDoctors.length > 0
-      ? dutyDoctors.map((d) => ({ id: d.id, name: d.name, roster_type: d.roster_type }))
-      : masterDoctors.map((d) => ({ id: d.id, name: d.name }));
+      ? dutyDoctors.map((d) => ({ id: d.id, name: (d.name ?? '').trim(), roster_type: d.roster_type }))
+      : masterDoctors.map((d) => ({ id: d.id, name: (d.name ?? '').trim() }))
+  ).filter((o) => o.name.length > 0);
   const doctorOptionsKey = doctorOptions.map((o) => o.name).join('|');
 
   // 옵션 로드/변경 시 기본 선택: 현재 선택이 옵션에 없으면 첫 번째로. 옵션 0명이면 미선택('').
@@ -497,7 +502,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
 
   // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 출력 직전 원장 확정 가드.
   //   미선택/목록 0명이면 빈·잘못된 원장명이 의료·법적 서류에 찍히지 않도록 출력을 차단한다.
-  const effectiveDoctorName = selectedDoctorName.trim();
+  // T-20260709-foot-CUSTCHART-CLOSE-BTN-ERROR: belt&suspenders — selectedDoctorName 이 어떤 경로로든
+  //   null/undefined 로 세팅돼도 crash 하지 않도록 방어(?? '' 후 trim). 정상 문자열은 무영향.
+  const effectiveDoctorName = (selectedDoctorName ?? '').trim();
   const resolveDoctorForPrint = (): string | null => {
     if (!effectiveDoctorName) {
       toast.error('진료 원장님을 선택해주세요. 근무 원장 정보가 없어 서류를 출력할 수 없습니다.');
@@ -1839,7 +1846,8 @@ function IssueDialog({
           : undefined; // 없음: loadAutoBindContext 내부 fallback
 
     if (dutyDoctors.length > 1) {
-      setSelectedDoctorName(dutyDoctors[0].name); // 첫 번째 기본 선택
+      // T-20260709-foot-CUSTCHART-CLOSE-BTN-ERROR: name NULL 방어(?? '') — null 상태 유입 차단.
+      setSelectedDoctorName(dutyDoctors[0].name ?? ''); // 첫 번째 기본 선택
     }
 
     // === 콘텐츠 핵심 4소스 (Promise.all 게이트) ===
