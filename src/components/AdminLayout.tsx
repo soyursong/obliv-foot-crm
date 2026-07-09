@@ -1,6 +1,6 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. openChart/ChartContext.Provider/CustomerChartSheet 단일 구현. 변경 시 현장 승인 필수
-import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ChartContext } from '@/lib/chartContext';
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
@@ -64,9 +64,34 @@ function OutletPageLoader() {
 }
 
 interface EBState { hasError: boolean }
-class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+// T-20260709-foot-CUSTCHART-CLOSE-ERRORPAGE (Track A — 계측/mitigation, fix 아님):
+//   Outlet subtree 렌더 예외 발생 시 componentDidCatch로 구조화 스택을 콘솔에 남긴다.
+//   목적 = 다음 필드 재발 시 스택+역할+경로 확보(ROLE-SPECIFIC 가설 실증용). role 을 prop 으로 받아 로그에 동봉.
+//   순수 additive: getDerivedStateFromError/fallback UI/happy-path 렌더 무변경.
+class ChunkErrorBoundary extends Component<{ children: ReactNode; role?: string }, EBState> {
   state: EBState = { hasError: false };
   static getDerivedStateFromError(): EBState { return { hasError: true }; }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // additive 로깅 전용 — 렌더 흐름/상태전이에 영향 없음.
+    try {
+      // eslint-disable-next-line no-console
+      console.error('[ChunkErrorBoundary] Outlet subtree render error', {
+        ticket: 'T-20260709-foot-CUSTCHART-CLOSE-ERRORPAGE',
+        role: this.props.role ?? '(unknown)',
+        pathname: typeof window !== 'undefined' ? window.location.pathname : '(ssr)',
+        search: typeof window !== 'undefined' ? window.location.search : '',
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+        componentStack: errorInfo?.componentStack,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '(no-navigator)',
+        // Date.now() 는 계측 목적상 안전 — 렌더 상태에 영향 없음(로그 타임스탬프 전용).
+        ts: new Date().toISOString(),
+      });
+    } catch {
+      // 로깅 실패는 삼킨다 — 계측이 앱 동작을 절대 깨뜨리지 않도록.
+    }
+  }
   render() {
     if (this.state.hasError) {
       return (
@@ -696,7 +721,7 @@ export default function AdminLayout() {
               min-w-0 추가 시 overflow-hidden이 정상 동작 → Dashboard 내용이 이 div 안에 갇힘. */}
           {/* T-20260522-foot-SPA-NAV-RELOAD: Outlet에 독립 Suspense 경계 — AdminLayout unmount 방지 */}
           <div data-testid="page-content-area" className="flex-1 min-w-0 min-h-0 overflow-hidden">
-            <ChunkErrorBoundary>
+            <ChunkErrorBoundary role={profile?.role}>
               <Suspense fallback={<OutletPageLoader />}>
                 <Outlet />
               </Suspense>
