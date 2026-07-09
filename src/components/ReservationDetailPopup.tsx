@@ -1326,9 +1326,7 @@ export function ReservationDetailPopup({
                     stale 버그. 환자정보 섹션(아래)은 customer state 로 이미 갱신되나 헤더 타이틀만 reservation.customer_name
                     (원본 A)에 하드바인딩돼 있었음. loadedMatch(검색 선택 즉시) → customer(loadZone1Data 갱신) → 원본 순으로
                     바인딩해 검색 선택 시 헤더 고객명도 즉시 B 로 반영. (6FIX AC1 의 1번구역 갱신 동선과 정합) */}
-                {/* T-20260709-foot-COMPANION-RESV-FIELD-DROP AC2: 동행(customer_id=NULL) 예약은 customers JOIN 결과가
-                    NULL → customer?.name 미확보. customer_name 다음 customer_real_name 스냅샷(§4-2b)까지 폴백해 성함 공란 방지. */}
-                <span>{loadedMatch?.name ?? customer?.name ?? reservation.customer_name ?? reservation.customer_real_name}</span>
+                <span>{loadedMatch?.name ?? customer?.name ?? reservation.customer_name}</span>
                 {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
                 <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(customer?.chart_number ?? null)}</span>
                 <span
@@ -1399,9 +1397,7 @@ export function ReservationDetailPopup({
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
                 <SectionHeader accent="teal">환자 정보</SectionHeader>
                 <div className="space-y-1 text-xs">
-                  {/* T-20260709-foot-COMPANION-RESV-FIELD-DROP AC2: 동행 예약(customer_id=NULL)은 customers JOIN NULL →
-                      customer_name 다음 customer_real_name 스냅샷(cross_crm_data_contract §4-2b)까지 폴백(성함 공란 방지). */}
-                  <FieldRow label="이름" value={customer?.name ?? reservation.customer_name ?? reservation.customer_real_name ?? '—'} />
+                  <FieldRow label="이름" value={customer?.name ?? reservation.customer_name ?? '—'} />
                   <FieldRow label="고객번호" value={customer?.chart_number ?? '—'} />
                   {/* T-20260614-foot-RESVPOPUP-RRN-NOBIND: 마스킹 주민번호.
                       1순위) 서버파생 생년월일(birthDisplay)+성별 → YYMMDD-G******.
