@@ -81,9 +81,10 @@ export async function stripSimulationRows<R extends { customer_id?: string | nul
 //   - 본 필터        = "테스트 페르소나 매출을 표시매출 합계에서 *제외*"
 // 매출은 재무 수치이므로 노출 예외 페르소나(토마토 등)도 매출에서는 전부 제외한다.
 //
-// revenue split SSOT(오가닉/광고·급여/비급여)와 직교 [DA CONSULT GO]:
+// revenue split SSOT(오가닉/광고·급여/비급여)와 직교 [DA CONSULT PENDING — MSG-20260709-231100-yjnt]:
 //   산식은 손대지 않고 입력 행집합에서 sim 고객 결제만 제거한다. 세금속성·
 //   source_system·service_charges 산출 로직은 그대로이므로 집계 시맨틱 불변.
+//   ※ AC-1 어드바이저리 게이트: data-architect CONSULT GO 회신 확정 후 deploy-ready.
 //
 // 안전 원칙 (실매출 무손상, 누락 0):
 //  - customer_id=NULL(워크인) 행은 항상 보존.
