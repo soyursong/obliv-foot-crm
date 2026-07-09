@@ -137,6 +137,16 @@ type CreateReservationParams = {
 // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT: 칩 목록 SSOT 를 resvSlotAgg.BRIEF_NOTE_CHIPS 로 통일(대시보드 표시게이트와 단일소스).
 const BRIEF_NOTE_QUICK = BRIEF_NOTE_CHIPS;
 
+// T-20260709-foot-RESVDETAIL-NAME-FALLBACK-HARDEN: 예약상세 성함 방어 폴백(belt&suspenders).
+//   detail 팝업은 reservations.customer_name 을 직접 read → 현재 데이터엔 공란 없음(정상).
+//   단 customer_id=NULL 경로(동행 등)에서 customer_name 이 NULL/공란인 malformed push 재발 시 성함이 공란이 될 수 있음.
+//   형제 list read-api(READAPI-MIRROR)는 customer_real_name 스냅샷(cross_crm_data_contract §4-2b)으로 이미 COALESCE 폴백 보유 →
+//   detail 팝업을 동일 방어수준으로 parity. customer_name 에 값이 있으면 그대로(우선순위 상단) — 정상 데이터 무영향(회귀 0).
+//   .trim() 으로 NULL·공란 모두 방어(형제 read-api realName 정규화와 동일 관례). 폴백도 비면 최종 fallback 라벨은 호출부에서.
+function resvNameFallback(r: Reservation | null | undefined): string {
+  return (r?.customer_name?.trim() || r?.customer_real_name?.trim() || '');
+}
+
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────
 
 export function ReservationDetailPopup({
@@ -1326,7 +1336,8 @@ export function ReservationDetailPopup({
                     stale 버그. 환자정보 섹션(아래)은 customer state 로 이미 갱신되나 헤더 타이틀만 reservation.customer_name
                     (원본 A)에 하드바인딩돼 있었음. loadedMatch(검색 선택 즉시) → customer(loadZone1Data 갱신) → 원본 순으로
                     바인딩해 검색 선택 시 헤더 고객명도 즉시 B 로 반영. (6FIX AC1 의 1번구역 갱신 동선과 정합) */}
-                <span>{loadedMatch?.name ?? customer?.name ?? reservation.customer_name}</span>
+                {/* T-20260709-foot-RESVDETAIL-NAME-FALLBACK-HARDEN: reservation.customer_name → customer_real_name 폴백(malformed push 방어). */}
+                <span>{loadedMatch?.name ?? customer?.name ?? resvNameFallback(reservation)}</span>
                 {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
                 <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(customer?.chart_number ?? null)}</span>
                 <span
@@ -1397,7 +1408,8 @@ export function ReservationDetailPopup({
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
                 <SectionHeader accent="teal">환자 정보</SectionHeader>
                 <div className="space-y-1 text-xs">
-                  <FieldRow label="이름" value={customer?.name ?? reservation.customer_name ?? '—'} />
+                  {/* T-20260709-foot-RESVDETAIL-NAME-FALLBACK-HARDEN: customer_name NULL/공란 시 customer_real_name 폴백. 값 있으면 무영향. */}
+                  <FieldRow label="이름" value={customer?.name ?? (resvNameFallback(reservation) || '—')} />
                   <FieldRow label="고객번호" value={customer?.chart_number ?? '—'} />
                   {/* T-20260614-foot-RESVPOPUP-RRN-NOBIND: 마스킹 주민번호.
                       1순위) 서버파생 생년월일(birthDisplay)+성별 → YYMMDD-G******.
@@ -1936,7 +1948,7 @@ export function ReservationDetailPopup({
                       size="sm"
                       disabled={busy}
                       onClick={() => {
-                        if (window.confirm(`${reservation.customer_name}님을 노쇼 처리하시겠습니까?`))
+                        if (window.confirm(`${resvNameFallback(reservation) || '고객'}님을 노쇼 처리하시겠습니까?`))
                           setStatus('no_show');
                       }}
                     >
@@ -1960,7 +1972,7 @@ export function ReservationDetailPopup({
                     disabled={busy}
                     data-testid="btn-reservation-restore"
                     onClick={() => {
-                      if (window.confirm(`${reservation.customer_name}님 예약을 복원하시겠습니까?`))
+                      if (window.confirm(`${resvNameFallback(reservation) || '고객'}님 예약을 복원하시겠습니까?`))
                         setStatus('confirmed');
                     }}
                   >
@@ -1994,7 +2006,7 @@ export function ReservationDetailPopup({
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>예약 취소 — {reservation.customer_name}</DialogTitle>
+              <DialogTitle>예약 취소 — {resvNameFallback(reservation) || '고객'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">

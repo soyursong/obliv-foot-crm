@@ -687,6 +687,10 @@ export interface Reservation {
   clinic_id: string;
   customer_id: string | null;
   customer_name: string | null;
+  /** T-20260709-foot-RESVDETAIL-NAME-FALLBACK-HARDEN: 성함 방어 폴백용 실명 스냅샷(cross_crm_data_contract §4-2b).
+   *  customer_id=NULL 경로(동행 등)에서 customer_name 이 NULL/공란인 malformed push 대비, 표시 시 COALESCE 폴백 소스.
+   *  형제 list read-api(READAPI-MIRROR)가 이미 폴백 보유 — detail 팝업 parity(belt&suspenders). 비영속/read-only 축, write 금지. */
+  customer_real_name?: string | null;
   customer_phone: string | null;
   reservation_date: string;
   reservation_time: string;
