@@ -3382,8 +3382,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .eq('id', customer.id);
     setSavingCertNo(false);
     if (error) {
-      // 컬럼 미적용 window(PGRST204/42703): 저장 실패 대신 준비중 안내
-      if (/insurance_cert_no|PGRST204|42703|schema cache/i.test(error.message)) {
+      // T-20260709-foot-INSURANCE-CERTNO-SAVE-TOAST: 컬럼 미적용 window(PGRST204 schema cache /
+      //   42703 undefined_column / "column ... does not exist")만 준비중 안내로 치환.
+      //   기존엔 맨 앞 /insurance_cert_no/ alternative 가 컬럼명 포함 모든 에러(마이그 착지 후 RLS 등
+      //   무관 에러 포함)를 "준비 중"으로 오분류 → 실제 저장 실패를 스태프에게 감추는 함정.
+      //   컬럼 부재 시그니처로 좁혀 마이그 착지 후엔 진짜 에러가 노출되도록 견고화.
+      if (/PGRST204|42703|schema cache|column\s.*insurance_cert_no.*does not exist/i.test(error.message)) {
         toast.warning('보험 증번호 저장 기능이 준비 중입니다. 잠시 후 다시 시도해 주세요.');
       } else {
         toast.error(`보험 증번호 저장 실패: ${error.message}`);
