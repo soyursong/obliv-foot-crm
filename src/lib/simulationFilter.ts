@@ -67,3 +67,56 @@ export async function stripSimulationRows<R extends { customer_id?: string | nul
 
   return rows.filter((r) => !r.customer_id || !hiddenSim.has(r.customer_id));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 매출 집계 방어 필터 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// 표시매출(payments/package_payments) 집계 소스에서 is_simulation=true 고객의
+// 결제를 상시 제외한다. 테스트/시뮬 데이터가 다시 유입돼도 표시매출을 부풀리지
+// 못하게 하는 방어적 하드닝(원 사고: T-20260606-foot-D1-TESTDATA-CLEANUP, 624 sims).
+//
+// admin 목록/캘린더용 화이트리스트(EXPOSED_SIM_NAMES)와는 별개 축이다:
+//   - EXPOSED_SIM_NAMES = "테스트 페르소나(토마토)를 admin 예약/캘린더에 *노출*"
+//   - 본 필터        = "테스트 페르소나 매출을 표시매출 합계에서 *제외*"
+// 매출은 재무 수치이므로 노출 예외 페르소나(토마토 등)도 매출에서는 전부 제외한다.
+//
+// revenue split SSOT(오가닉/광고·급여/비급여)와 직교 [DA CONSULT GO]:
+//   산식은 손대지 않고 입력 행집합에서 sim 고객 결제만 제거한다. 세금속성·
+//   source_system·service_charges 산출 로직은 그대로이므로 집계 시맨틱 불변.
+//
+// 안전 원칙 (실매출 무손상, 누락 0):
+//  - customer_id=NULL(워크인) 행은 항상 보존.
+//  - 시뮬레이션 집합 조회 실패 시 빈 집합 반환 → 아무 것도 제외 안 함(필터보다 무손상 우선).
+//
+// customers(is_simulation) 부분 인덱스 idx_customers_simulation WHERE is_simulation=true
+// 를 그대로 활용한다(시뮬레이션 집합만 조회 — 소량).
+
+/**
+ * clinic 내 is_simulation=true 고객 id 집합 조회.
+ * 조회 실패 시 빈 집합(무손상 우선 — 제외하지 않음).
+ */
+export async function getSimulationCustomerIds(
+  clinicId: string,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('is_simulation', true);
+
+  if (error || !data) return new Set();
+  return new Set((data as { id: string }[]).map((c) => c.id));
+}
+
+/**
+ * payments/package_payments/service_charges 행에서 sim 고객 결제를 제외.
+ * customer_id=NULL(워크인) 행은 항상 보존한다.
+ * simIds가 비어 있으면(실운영엔 sim 0건이 정상) 원본 그대로 반환 → 무변화.
+ */
+export function excludeSimulationPaymentRows<
+  R extends { customer_id?: string | null },
+>(rows: R[], simIds: ReadonlySet<string>): R[] {
+  if (simIds.size === 0) return rows;
+  return rows.filter((r) => !r.customer_id || !simIds.has(r.customer_id));
+}

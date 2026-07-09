@@ -16,6 +16,10 @@ import { AlertTriangle } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
@@ -59,6 +63,8 @@ interface RawPayment {
   tax_type: string | null;
   amount: number;
   payment_type: string | null;
+  /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
+  customer_id: string | null;
 }
 
 interface DailyClosingRow {
@@ -113,13 +119,15 @@ export function SalesDailyTab({ filter }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('method, tax_type, amount, payment_type')
+        .select('method, tax_type, amount, payment_type, customer_id')
         .eq('clinic_id', clinic!.id)
         .neq('status', 'deleted')
         .gte('accounting_date', from)
         .lte('accounting_date', to);
       if (error) throw error;
-      return (data ?? []) as RawPayment[];
+      // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      return excludeSimulationPaymentRows((data ?? []) as RawPayment[], simIds);
     },
   });
 
@@ -130,12 +138,14 @@ export function SalesDailyTab({ filter }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('package_payments')
-        .select('method, tax_type, amount, payment_type')
+        .select('method, tax_type, amount, payment_type, customer_id')
         .eq('clinic_id', clinic!.id)
         .gte('accounting_date', from)
         .lte('accounting_date', to);
       if (error) throw error;
-      return (data ?? []) as RawPayment[];
+      // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      return excludeSimulationPaymentRows((data ?? []) as RawPayment[], simIds);
     },
   });
 

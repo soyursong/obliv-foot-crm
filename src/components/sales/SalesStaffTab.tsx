@@ -21,6 +21,10 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -48,6 +52,8 @@ interface StaffPayRow {
   payment_type: string | null;
   accounting_date: string | null;
   parent_payment_id: string | null;
+  /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
+  customer_id: string | null;
   check_ins: {
     therapist: { id: string; name: string } | null;
     technician: { id: string; name: string } | null;
@@ -135,7 +141,7 @@ export function SalesStaffTab({ filter }: Props) {
       const { data, error } = await supabase
         .from('payments')
         .select(`
-          id, amount, payment_type, accounting_date, parent_payment_id,
+          id, amount, payment_type, accounting_date, parent_payment_id, customer_id,
           check_ins(
             therapist:staff!check_ins_therapist_id_fkey(id, name),
             technician:staff!check_ins_technician_id_fkey(id, name)
@@ -146,7 +152,12 @@ export function SalesStaffTab({ filter }: Props) {
         .gte('accounting_date', from)
         .lte('accounting_date', to);
       if (error) throw error;
-      return data as unknown as StaffPayRow[];
+      // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      return excludeSimulationPaymentRows(
+        data as unknown as StaffPayRow[],
+        simIds,
+      );
     },
   });
 

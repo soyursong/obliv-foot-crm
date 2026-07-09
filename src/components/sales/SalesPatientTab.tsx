@@ -15,6 +15,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -49,6 +53,8 @@ interface PatientRow {
   method: string | null;
   tax_type: string | null;
   parent_payment_id: string | null;
+  /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
+  customer_id: string | null;
   /** ICD-10 상병코드 (정규화 테이블 T-20260515-foot-SALES-COMMON-DB) */
   claim_diagnoses: ClaimDiagnosis[] | null;
   check_ins: {
@@ -278,7 +284,7 @@ export function SalesPatientTab({ filter }: Props) {
         .from('payments')
         .select(`
           id, accounting_date, payment_type, status, amount,
-          method, tax_type, parent_payment_id,
+          method, tax_type, parent_payment_id, customer_id,
           claim_diagnoses(disease_code, disease_name),
           check_ins(
             visit_type, customer_name,
@@ -295,7 +301,12 @@ export function SalesPatientTab({ filter }: Props) {
         .lte('accounting_date', to)
         .order('accounting_date', { ascending: false });
       if (error) throw error;
-      return (data ?? []) as unknown as PatientRow[];
+      // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      return excludeSimulationPaymentRows(
+        (data ?? []) as unknown as PatientRow[],
+        simIds,
+      );
     },
   });
 

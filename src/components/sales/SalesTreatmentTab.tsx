@@ -15,6 +15,10 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -39,6 +43,8 @@ interface PaymentWithServices {
   payment_type: string | null;
   status: string | null;
   accounting_date: string | null;
+  /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
+  customer_id: string | null;
   check_ins: {
     check_in_services: CheckInService[] | null;
   } | null;
@@ -78,7 +84,7 @@ export function SalesTreatmentTab({ filter }: Props) {
       const { data, error } = await supabase
         .from('payments')
         .select(`
-          id, amount, payment_type, status, accounting_date,
+          id, amount, payment_type, status, accounting_date, customer_id,
           check_ins(
             check_in_services(
               price,
@@ -91,7 +97,12 @@ export function SalesTreatmentTab({ filter }: Props) {
         .gte('accounting_date', from)
         .lte('accounting_date', to);
       if (error) throw error;
-      return (data ?? []) as unknown as PaymentWithServices[];
+      // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      return excludeSimulationPaymentRows(
+        (data ?? []) as unknown as PaymentWithServices[],
+        simIds,
+      );
     },
   });
 

@@ -32,6 +32,10 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -125,7 +129,11 @@ export function SalesDoctorTab({ filter }: Props) {
         .gte('accounting_date', from)
         .lte('accounting_date', to);
       if (payErr) throw payErr;
-      const rows = (pays ?? []) as PayRow[];
+      // 방어필터: is_simulation=true 고객 결제/명세 제외 (워크인 NULL 보존).
+      //   payments·service_charges 모두 customer_id 보유 → 동일 sim 집합 적용.
+      //   T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const rows = excludeSimulationPaymentRows((pays ?? []) as PayRow[], simIds);
 
       // 2. 공단부담액 명세 (service_charges, 명세 grain — EDI 무관)
       //    calculated_at(차지 산출시각) 기준 윈도잉. 급여 항목(is_insurance_covered)만.
@@ -137,7 +145,7 @@ export function SalesDoctorTab({ filter }: Props) {
         .gte('calculated_at', from)
         .lte('calculated_at', `${to}T23:59:59.999`);
       if (scErr) throw scErr;
-      const charges = (scData ?? []) as ChargeRow[];
+      const charges = excludeSimulationPaymentRows((scData ?? []) as ChargeRow[], simIds);
 
       // 3. 수기수납 (closing_manual_payments, close_date 기준 — 비급여 UNION)
       const { data: cmData, error: cmErr } = await supabase

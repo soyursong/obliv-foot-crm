@@ -39,6 +39,10 @@ import {
   type SalesExcelRow,
 } from '@/lib/salesExport';
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { toast } from '@/lib/toast';
 import { BarChart2, Users, Layers, UserCheck, User } from 'lucide-react';
@@ -163,6 +167,8 @@ interface PaymentRawRow {
   origin_tx_date: string | null;
   payment_type: string | null;
   status: string | null;
+  /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
+  customer_id: string | null;
   amount: number;
   method: string | null;
   tax_type: string | null;
@@ -193,6 +199,8 @@ interface PkgPaymentRawRow {
   accounting_date: string | null;
   origin_tx_date: string | null;
   payment_type: string | null;
+  /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
+  customer_id: string | null;
   amount: number;
   method: string | null;
   tax_type: string | null;
@@ -225,7 +233,7 @@ async function fetchSalesRawRows(
     .select(`
       id, accounting_date, origin_tx_date, payment_type, status,
       amount, method, tax_type, appr_info, exclude_tax_report,
-      parent_payment_id, memo, created_at,
+      parent_payment_id, memo, created_at, customer_id,
       check_ins(
         visit_type, customer_name,
         customers(chart_number),
@@ -248,7 +256,7 @@ async function fetchSalesRawRows(
     .select(`
       id, accounting_date, origin_tx_date, payment_type,
       amount, method, tax_type, appr_info, exclude_tax_report,
-      parent_payment_id, memo, created_at,
+      parent_payment_id, memo, created_at, customer_id,
       packages(package_name, customers:customers!packages_customer_id_fkey(name, chart_number))
     `)
     .eq('clinic_id', clinicId)
@@ -258,8 +266,18 @@ async function fetchSalesRawRows(
   if (payRes.error) throw payRes.error;
   if (pkgRes.error) throw pkgRes.error;
 
-  const payRows = (payRes.data ?? []) as unknown as PaymentRawRow[];
-  const pkgRows = (pkgRes.data ?? []) as unknown as PkgPaymentRawRow[];
+  // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존).
+  //   엑셀 raw도 표시매출 탭과 동일한 집계 소스이므로 동일하게 sim 제외.
+  //   T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE
+  const simIds = await getSimulationCustomerIds(clinicId);
+  const payRows = excludeSimulationPaymentRows(
+    (payRes.data ?? []) as unknown as PaymentRawRow[],
+    simIds,
+  );
+  const pkgRows = excludeSimulationPaymentRows(
+    (pkgRes.data ?? []) as unknown as PkgPaymentRawRow[],
+    simIds,
+  );
 
   const result: SalesExcelRow[] = [];
 
