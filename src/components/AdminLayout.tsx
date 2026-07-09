@@ -63,14 +63,26 @@ function OutletPageLoader() {
   );
 }
 
-interface EBState { hasError: boolean }
-// T-20260709-foot-CUSTCHART-CLOSE-ERRORPAGE (Track A — 계측/mitigation, fix 아님):
-//   Outlet subtree 렌더 예외 발생 시 componentDidCatch로 구조화 스택을 콘솔에 남긴다.
-//   목적 = 다음 필드 재발 시 스택+역할+경로 확보(ROLE-SPECIFIC 가설 실증용). role 을 prop 으로 받아 로그에 동봉.
-//   순수 additive: getDerivedStateFromError/fallback UI/happy-path 렌더 무변경.
-class ChunkErrorBoundary extends Component<{ children: ReactNode; role?: string }, EBState> {
-  state: EBState = { hasError: false };
-  static getDerivedStateFromError(): EBState { return { hasError: true }; }
+interface EBState { hasError: boolean; resetKey?: string }
+// T-20260709-foot-CUSTCHART-CLOSE-ERRORPAGE (Track A — 계측) + T-20260709-foot-ERRORBOUNDARY-HARDENING (복원력):
+//   [AC1 관측성] Outlet subtree 렌더 예외 발생 시 componentDidCatch로 구조화 스택을 콘솔에 남긴다.
+//     목적 = 다음 필드 재발 시 스택+역할+경로 확보(ROLE-SPECIFIC 가설 실증용). role 을 prop 으로 받아 로그에 동봉.
+//   [AC2 복원력] hasError 영구 latch 탈출: resetKey(location.key = 네비게이션마다 유일) 변경 시 경계 자동 리셋.
+//     한 번 throw로 hasError=true 된 뒤에도 다른 메뉴로 이동하면 full reload 없이 정상 화면 복귀.
+//     ★재-throw 무한루프 가드: 리셋은 resetKey가 "바뀔 때만" 발생(getDerivedStateFromProps). 동일 페이지 재-throw
+//       (같은 resetKey)에서는 리셋되지 않고 fallback 안정 유지 → 리셋→재throw→리셋 무한루프 원천 차단.
+//   순수 additive: fallback UI/happy-path 렌더 무변경. 정상 렌더 시 resetKey 추적만 하고 UI 영향 없음.
+class ChunkErrorBoundary extends Component<{ children: ReactNode; role?: string; resetKey?: string }, EBState> {
+  state: EBState = { hasError: false, resetKey: this.props.resetKey };
+  static getDerivedStateFromError(): Partial<EBState> { return { hasError: true }; }
+  // AC2: 네비게이션(resetKey) 변경 감지 → latch 자동 해제. error 여부와 무관히 최신 resetKey 추적.
+  static getDerivedStateFromProps(props: { resetKey?: string }, state: EBState): Partial<EBState> | null {
+    if (props.resetKey !== state.resetKey) {
+      // resetKey가 바뀐 렌더에서만 리셋. 같은 지점 재-throw는 여기 오지 않으므로 무한루프 없음.
+      return { hasError: false, resetKey: props.resetKey };
+    }
+    return null;
+  }
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // additive 로깅 전용 — 렌더 흐름/상태전이에 영향 없음.
     try {
@@ -721,7 +733,9 @@ export default function AdminLayout() {
               min-w-0 추가 시 overflow-hidden이 정상 동작 → Dashboard 내용이 이 div 안에 갇힘. */}
           {/* T-20260522-foot-SPA-NAV-RELOAD: Outlet에 독립 Suspense 경계 — AdminLayout unmount 방지 */}
           <div data-testid="page-content-area" className="flex-1 min-w-0 min-h-0 overflow-hidden">
-            <ChunkErrorBoundary role={profile?.role}>
+            {/* T-20260709-foot-ERRORBOUNDARY-HARDENING AC2: location.key(네비게이션마다 유일)를 resetKey로 전달 →
+                오류 latch가 페이지 이동 시 자동 해제(full reload 불필요). */}
+            <ChunkErrorBoundary role={profile?.role} resetKey={location.key}>
               <Suspense fallback={<OutletPageLoader />}>
                 <Outlet />
               </Suspense>
