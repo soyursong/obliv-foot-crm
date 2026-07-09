@@ -687,6 +687,11 @@ export interface Reservation {
   clinic_id: string;
   customer_id: string | null;
   customer_name: string | null;
+  /** T-20260709-foot-COMPANION-RESV-FIELD-DROP AC2: 예약 시점 실명 스냅샷(cross_crm_data_contract §4-2b).
+   *  ⚠ read-only(도파민TM/ingest write 주체). 동행(customer_id=NULL) 예약은 customers JOIN 결과가 NULL이라
+   *  live name을 못 얻음 → 예약상세 성함은 customer_name 다음 이 스냅샷으로 폴백(COALESCE)해야 공란을 막는다.
+   *  DB 컬럼 기존재(ADDITIVE, DDL 0) — optional 선언으로 legacy row(NULL) tolerant read. */
+  customer_real_name?: string | null;
   customer_phone: string | null;
   reservation_date: string;
   reservation_time: string;
