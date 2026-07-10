@@ -76,6 +76,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
+import { BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from '@/lib/toast';
@@ -1264,7 +1265,7 @@ export function PenChartTab({
   }, [popupMode, editChartName, savedCharts]);
 
   // T-20260528-foot-PENCHART-POPUP: 팝업 창 저장 완료 시 목록 자동 갱신
-  // BroadcastChannel('penchart-update') + localStorage storage 이벤트 이중 폴백
+  // BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE) + localStorage storage 이벤트 이중 폴백
   // BroadcastChannel: Chrome/Firefox/Edge/Safari 15.4+
   // storage event: Safari < 15.4, 구형 iPad 폴백용
   useEffect(() => {
@@ -1275,13 +1276,13 @@ export function PenChartTab({
     // BroadcastChannel (현대 브라우저)
     let bc: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
-      bc = new BroadcastChannel('penchart-update');
+      bc = new BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE);
       bc.onmessage = (e: MessageEvent) => handleUpdate(e.data?.customerId);
     }
 
     // localStorage storage 이벤트 (Safari < 15.4 폴백, 다른 탭/윈도우에서 발화)
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'penchart-update' && e.newValue) {
+      if (e.key === BROADCAST_CHANNELS.PENCHART_UPDATE && e.newValue) {
         try {
           const payload = JSON.parse(e.newValue) as { customerId: string };
           handleUpdate(payload.customerId);
@@ -2774,13 +2775,13 @@ export function PenChartTab({
       if (popupMode) {
         // BroadcastChannel (현대 브라우저)
         try {
-          const bc = new BroadcastChannel('penchart-update');
+          const bc = new BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE);
           bc.postMessage({ customerId });
           bc.close();
         } catch { /* BroadcastChannel 미지원 환경 무시 */ }
         // localStorage storage 이벤트 폴백 (Safari < 15.4 / 구형 iPad)
         try {
-          localStorage.setItem('penchart-update', JSON.stringify({ customerId, ts: Date.now() }));
+          localStorage.setItem(BROADCAST_CHANNELS.PENCHART_UPDATE, JSON.stringify({ customerId, ts: Date.now() }));
         } catch { /* 무시 */ }
         setTimeout(() => window.close(), 150);
       }

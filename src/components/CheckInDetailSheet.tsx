@@ -28,6 +28,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
+import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
 import { formatAmount, formatPhone, formatDateTimeDots, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
@@ -888,7 +889,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   useEffect(() => {
     const myCustomerId = () => checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
     const handler = (e: StorageEvent) => {
-      if (e.key !== 'foot_crm_customer_refresh' || !e.newValue) return;
+      if (e.key !== STORAGE_KEYS.CUSTOMER_REFRESH || !e.newValue) return;
       try {
         const { customerId: changedId } = JSON.parse(e.newValue) as { customerId: string };
         if (myCustomerId() && changedId === myCustomerId()) load();
@@ -1119,7 +1120,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     await supabase.from('customers').update({ visit_route: val || null }).eq('id', customerId);
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 자동저장 완료 → dirty 해제
     // AC-8 쌍방연동 — 2번차트에 변경 알림
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId, ts: Date.now() }));
   };
 
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (customers.customer_memo)
@@ -1142,7 +1143,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     toast.success('고객메모 추가됨');
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     // AC-8 쌍방연동 — 2번차트에 변경 알림
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId, ts: Date.now() }));
   };
 
   // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모 (customers.memo)
@@ -1162,7 +1163,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setEtcMemo(newValue);
     toast.success('기타메모 추가됨');
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId, ts: Date.now() }));
   };
 
   const totalPaid = payments

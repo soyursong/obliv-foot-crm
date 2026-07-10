@@ -31,6 +31,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ImagePlus, MessageSquare, Phone, User, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
+import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { isReservedEventType } from '@/lib/notificationEventTypes';
 import {
   MMS_ACCEPT, validateMmsImage, checkMmsResolution,
@@ -438,7 +439,7 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId, e
       }
 
       // ── 즉시 발송 (기존 동선) ──
-      const { data, error } = await supabase.functions.invoke('send-notification', {
+      const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.SEND_NOTIFICATION, {
         body: {
           _action: 'manual_send',
           clinic_id: clinicId,

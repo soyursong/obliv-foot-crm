@@ -14,6 +14,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -538,7 +539,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
               .single();
 
             if (rsvRow?.source_system === 'dopamine' && rsvRow?.external_id) {
-              await supabase.functions.invoke('dopamine-callback', {
+              await supabase.functions.invoke(EDGE_FUNCTIONS.DOPAMINE_CALLBACK, {
                 body: {
                   type: 'paid',
                   check_in_id: checkIn.id,

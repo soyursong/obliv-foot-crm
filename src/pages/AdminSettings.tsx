@@ -23,6 +23,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { QR_CODE_API_ENDPOINT, EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
@@ -594,7 +595,7 @@ function SectionConnection({
     setTesting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const { data, error } = await supabase.functions.invoke('send-notification', {
+      const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.SEND_NOTIFICATION, {
         body: { _action: 'test_sms', clinic_id: clinicId, recipient_phone: phone },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -1653,7 +1654,7 @@ function SectionSelfCheckinQR({ clinic }: { clinic: Clinic }) {
   // foot 셀프접수 URL — App.tsx 의 /checkin/:clinicSlug 라우트(jongno-foot). HFQ 도메인 아님.
   const checkinUrl = `${window.location.origin}/checkin/${clinic.slug}`;
   // foot 기존 QR 생성 패턴(SelfCheckIn.tsx) 재사용 — 신규 npm 도입 없음.
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(checkinUrl)}&qzone=2&margin=0&format=png`;
+  const qrImageUrl = `${QR_CODE_API_ENDPOINT}?size=400x400&data=${encodeURIComponent(checkinUrl)}&qzone=2&margin=0&format=png`;
 
   // QR PNG 원본을 fetch → 동일 출처 object URL 로 변환(canvas taint 방지 + 다운로드 재사용)
   const fetchQrBlob = useCallback(async (): Promise<Blob> => {

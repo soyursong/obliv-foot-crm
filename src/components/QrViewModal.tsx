@@ -12,6 +12,7 @@
  * AC: 모달 X버튼/외부클릭 닫기(base-ui Dialog 기본) · QR 최소 200×200px.
  */
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QR_CODE_API_ENDPOINT } from '@/lib/externalServices';
 
 interface QrViewModalProps {
   open: boolean;
@@ -36,7 +37,7 @@ export function QrViewModal({
 }: QrViewModalProps) {
   // AC: 최소 200×200px 보장
   const px = Math.max(200, size);
-  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=${px}x${px}&data=${encodeURIComponent(
+  const qrSrc = `${QR_CODE_API_ENDPOINT}?size=${px}x${px}&data=${encodeURIComponent(
     url,
   )}&qzone=2&margin=0&format=png`;
 

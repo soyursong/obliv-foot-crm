@@ -12,6 +12,7 @@
 
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
+import { QR_CODE_API_ENDPOINT } from '@/lib/externalServices';
 import { formatAmount } from '@/lib/format';
 import { formatPhone } from '@/lib/format';
 import { fetchDutyDoctors } from '@/hooks/useDutyRoster';
@@ -225,7 +226,7 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
   // QR 정의는 RX-PRINT-DUAL 범위 재사용 (OPEN-Q3: 검증 URL 확정 시 data payload 교체).
   const rxRecordNo = ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '';
   const rxQrData = `RX|${rxRecordNo}|${today}`;
-  const rxQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&qzone=1&margin=0&format=png&data=${encodeURIComponent(rxQrData)}`;
+  const rxQrUrl = `${QR_CODE_API_ENDPOINT}?size=140x140&qzone=1&margin=0&format=png&data=${encodeURIComponent(rxQrData)}`;
 
   return {
     patient_name: ctx.customer?.name ?? ctx.checkIn.customer_name ?? '',

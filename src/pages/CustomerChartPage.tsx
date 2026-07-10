@@ -21,6 +21,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
+import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
 import { canViewRrn, isStaffUnlockRole } from '@/lib/permissions';
@@ -3228,7 +3229,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (!customer) return;
     const customerId = customer.id;
     const handler = (e: StorageEvent) => {
-      if (e.key !== 'foot_crm_customer_refresh' || !e.newValue) return;
+      if (e.key !== STORAGE_KEYS.CUSTOMER_REFRESH || !e.newValue) return;
       try {
         const { customerId: changedId } = JSON.parse(e.newValue) as { customerId: string };
         if (changedId !== customerId) return;
@@ -3254,7 +3255,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
   // T-20260520-foot-PENCHART-VIEW-SPLIT REOPEN4:
   // 펜차트를 [별도 창](window.open '/penchart-editor')에서 저장하면 PenChartTab(popup)이
-  // BroadcastChannel('penchart-update') + localStorage('penchart-update') 신호를 쏘지만,
+  // BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE) + localStorage(BROADCAST_CHANNELS.PENCHART_UPDATE) 신호를 쏘지만,
   // 부모(이 차트 창)는 그 신호를 구독하지 않아 submissionEntries 가 갱신되지 않았음.
   // → 저장(form_submissions INSERT)은 성공했는데 상담내역 탭 [내용보기] 버튼이
   //    페이지 새로고침 전까지 비활성으로 남아 "저장했는데 안 뜬다" 반복 호소의 근인.
@@ -3270,12 +3271,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // 1) BroadcastChannel (현대 브라우저)
     let bc: BroadcastChannel | null = null;
     try {
-      bc = new BroadcastChannel('penchart-update');
+      bc = new BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE);
       bc.onmessage = (ev) => onUpdate((ev.data as { customerId?: string } | null)?.customerId);
     } catch { /* BroadcastChannel 미지원 무시 */ }
     // 2) localStorage storage 이벤트 폴백 (Safari < 15.4 / 구형 iPad)
     const storageHandler = (e: StorageEvent) => {
-      if (e.key !== 'penchart-update' || !e.newValue) return;
+      if (e.key !== BROADCAST_CHANNELS.PENCHART_UPDATE || !e.newValue) return;
       try { onUpdate((JSON.parse(e.newValue) as { customerId?: string }).customerId); }
       catch { onUpdate(); }
     };
@@ -3324,7 +3325,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
     // AC-8 쌍방연동 — 1번차트에 변경 알림 (방문경로·고객메모·기타메모 등)
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
@@ -3355,7 +3356,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
     // same-tab 접수 패널 즉시 반영 + cross-tab ping
     requestRefresh();
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   }, [customer]);
 
   // 이메일 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail 제거)
@@ -3397,7 +3398,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
     setCustomer((prev) => (prev ? { ...prev, insurance_cert_no: value } : prev));
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
     toast.success('보험 증번호가 저장되었습니다');
   };
 
@@ -3711,7 +3712,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         } else {
           setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
           // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 고객메모 통합저장 → 1번차트 쌍방연동(AC-8) ping 보존(구 saveCustomerNote 동작).
-          localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+          localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
           // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 통합저장 경로에서도 연락처 변경 시 denorm 동기화 → 접수 패널 stale·가드 오탐 해소
           if (patch.phone) await syncCheckinDenormPhone(patch.phone);
         }
@@ -4139,7 +4140,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       memo: resvDetailForm.etcMemo || null,
     } : prev);
     // AC-8 쌍방연동 — 1번차트에 변경 알림
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
   // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
@@ -4877,7 +4878,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setReservations((resvData ?? []) as Reservation[]);
     setEditResvId(null);
     // AC-8 쌍방연동 — 예약메모 변경 시 1번차트에 알림
-    if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    if (customer) localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 — 미니예약창/수정모달 슬롯
@@ -5179,7 +5180,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     await insertReservationMemo(reservationId, customer.clinic_id ?? '', content, profile.name ?? null);
     setResvMemoInputs(prev => ({ ...prev, [reservationId]: '' }));
     // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
-    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
     setEditingResvMemoId(null);
   };
 

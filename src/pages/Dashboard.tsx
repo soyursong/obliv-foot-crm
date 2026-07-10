@@ -67,6 +67,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { fetchEffectiveRoomAssignments } from '@/lib/roomAssignments';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
@@ -2134,14 +2135,14 @@ function DashboardTimeline({
 
   // AC-5: 뷰 모드 sessionStorage 유지 ('time' | 'therapist')
   const [viewMode, setViewMode] = useState<'time' | 'therapist'>(() => {
-    try { return (sessionStorage.getItem('foot-crm-timetable-viewmode') as 'time' | 'therapist') ?? 'time'; }
+    try { return (sessionStorage.getItem(STORAGE_KEYS.TIMETABLE_VIEWMODE) as 'time' | 'therapist') ?? 'time'; }
     catch { return 'time'; }
   });
 
   // AC-5: 접혀있는 치료사 ID Set — sessionStorage 세션 내 유지
   const [foldedTherapists, setFoldedTherapists] = useState<Set<string>>(() => {
     try {
-      const raw = sessionStorage.getItem('foot-crm-therapist-fold');
+      const raw = sessionStorage.getItem(STORAGE_KEYS.THERAPIST_FOLD);
       return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set<string>();
     } catch { return new Set<string>(); }
   });
@@ -2167,25 +2168,25 @@ function DashboardTimeline({
 
   function setView(mode: 'time' | 'therapist') {
     setViewMode(mode);
-    try { sessionStorage.setItem('foot-crm-timetable-viewmode', mode); } catch {/* ignore */}
+    try { sessionStorage.setItem(STORAGE_KEYS.TIMETABLE_VIEWMODE, mode); } catch {/* ignore */}
   }
   function toggleTherapistFold(id: string) {
     setFoldedTherapists(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
-      try { sessionStorage.setItem('foot-crm-therapist-fold', JSON.stringify([...next])); } catch {/* ignore */}
+      try { sessionStorage.setItem(STORAGE_KEYS.THERAPIST_FOLD, JSON.stringify([...next])); } catch {/* ignore */}
       return next;
     });
   }
   // AC-4: 전체 접기
   function foldAllTherapists() {
     setFoldedTherapists(new Set(allTherapistKeys));
-    try { sessionStorage.setItem('foot-crm-therapist-fold', JSON.stringify(allTherapistKeys)); } catch {/* ignore */}
+    try { sessionStorage.setItem(STORAGE_KEYS.THERAPIST_FOLD, JSON.stringify(allTherapistKeys)); } catch {/* ignore */}
   }
   // AC-4: 전체 펼치기
   function unfoldAllTherapists() {
     setFoldedTherapists(new Set());
-    try { sessionStorage.removeItem('foot-crm-therapist-fold'); } catch {/* ignore */}
+    try { sessionStorage.removeItem(STORAGE_KEYS.THERAPIST_FOLD); } catch {/* ignore */}
   }
 
   // T-20260513-foot-TIMETABLE-20H: 하드코딩 '20:00' → DB clinic.close_time 동적 참조
@@ -3416,12 +3417,12 @@ export default function Dashboard() {
   // ── 달력 + 타임라인 상태 ──────────────────────────────────────────────────────
   // T-20260522-foot-TIMETABLE-FOLD: localStorage 기반 접기/펼치기 상태
   const [timelineFolded, setTimelineFolded] = useState<boolean>(() => {
-    try { return localStorage.getItem('foot-crm-timeline-folded') === 'true'; } catch { return false; }
+    try { return localStorage.getItem(STORAGE_KEYS.TIMELINE_FOLDED) === 'true'; } catch { return false; }
   });
   const handleToggleTimeline = useCallback(() => {
     setTimelineFolded((prev) => {
       const next = !prev;
-      try { localStorage.setItem('foot-crm-timeline-folded', String(next)); } catch { /* ignore */ }
+      try { localStorage.setItem(STORAGE_KEYS.TIMELINE_FOLDED, String(next)); } catch { /* ignore */ }
       return next;
     });
   }, []);
@@ -3436,7 +3437,7 @@ export default function Dashboard() {
     } else {
       // landscape 복원: localStorage 저장값 우선 (사용자 수동 설정 보존)
       try {
-        const saved = localStorage.getItem('foot-crm-timeline-folded');
+        const saved = localStorage.getItem(STORAGE_KEYS.TIMELINE_FOLDED);
         setTimelineFolded(saved === 'true');
       } catch {
         setTimelineFolded(false);
@@ -3549,13 +3550,13 @@ export default function Dashboard() {
 
   // ── 줌 + 레이아웃 편집 상태 ──────────────────────────────────────────────────
   const [zoomLevel, setZoomLevel] = useState<number>(() => {
-    const saved = localStorage.getItem('foot-dash-zoom');
+    const saved = localStorage.getItem(STORAGE_KEYS.DASH_ZOOM);
     const n = saved ? Number(saved) : 100;
     return Number.isFinite(n) && n >= 50 && n <= 150 ? n : 100;
   });
   const [groupOrder, setGroupOrder] = useState<KanbanGroupId[]>(() => {
     try {
-      const saved = localStorage.getItem('foot-dash-group-order');
+      const saved = localStorage.getItem(STORAGE_KEYS.DASH_GROUP_ORDER);
       if (saved) {
         let parsed = JSON.parse(saved) as string[];
         // T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 분리 마이그레이션
@@ -3607,7 +3608,7 @@ export default function Dashboard() {
   const handleZoom = useCallback((delta: number) => {
     setZoomLevel((prev) => {
       const next = Math.min(150, Math.max(50, prev + delta));
-      localStorage.setItem('foot-dash-zoom', String(next));
+      localStorage.setItem(STORAGE_KEYS.DASH_ZOOM, String(next));
       return next;
     });
   }, []);
@@ -3631,7 +3632,7 @@ export default function Dashboard() {
       // 드래그 결과로 laser_rooms 뒤에 항목이 생기면 laser_rooms 앞으로 자동 교정
       next = ensureLaserRoomsLast(next);
       next = ensureReceivingFirst(next); // AC-5: 접수중 항상 맨 앞
-      localStorage.setItem('foot-dash-group-order', JSON.stringify(next));
+      localStorage.setItem(STORAGE_KEYS.DASH_GROUP_ORDER, JSON.stringify(next));
       return next;
     });
   }, []);
@@ -3715,7 +3716,7 @@ export default function Dashboard() {
         merged = ensureLaserRoomsLast(merged);
         merged = ensureReceivingFirst(merged); // AC-5: 접수중 항상 맨 앞
         setGroupOrder(merged);
-        localStorage.setItem('foot-dash-group-order', JSON.stringify(merged));
+        localStorage.setItem(STORAGE_KEYS.DASH_GROUP_ORDER, JSON.stringify(merged));
       }
       if (
         typeof stored.zoomLevel === 'number' &&
@@ -3724,7 +3725,7 @@ export default function Dashboard() {
         stored.zoomLevel <= 150
       ) {
         setZoomLevel(stored.zoomLevel);
-        localStorage.setItem('foot-dash-zoom', String(stored.zoomLevel));
+        localStorage.setItem(STORAGE_KEYS.DASH_ZOOM, String(stored.zoomLevel));
       }
     },
     [],
@@ -3757,9 +3758,9 @@ export default function Dashboard() {
     }
     if (!loaded) {
       setGroupOrder([...DEFAULT_GROUP_ORDER]);
-      localStorage.removeItem('foot-dash-group-order');
+      localStorage.removeItem(STORAGE_KEYS.DASH_GROUP_ORDER);
       setZoomLevel(100);
-      localStorage.removeItem('foot-dash-zoom');
+      localStorage.removeItem(STORAGE_KEYS.DASH_ZOOM);
     }
     toast.message('내 배치가 초기화됐어요');
   }, [clinic, profile, applyStoredLayout]);
@@ -7233,7 +7234,7 @@ export default function Dashboard() {
             </button>
             <button
               onClick={() => setZoomLevel((_prev) => {
-                localStorage.setItem('foot-dash-zoom', '100');
+                localStorage.setItem(STORAGE_KEYS.DASH_ZOOM, '100');
                 return 100;
               })}
               className="px-1.5 text-xs tabular-nums font-mono text-gray-700 hover:bg-gray-100 rounded transition min-w-[36px] text-center"

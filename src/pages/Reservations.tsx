@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -1876,7 +1877,7 @@ export default function Reservations() {
     if (cancelTarget.external_id) {
       (async () => {
         try {
-          await supabase.functions.invoke('dopamine-callback', {
+          await supabase.functions.invoke(EDGE_FUNCTIONS.DOPAMINE_CALLBACK, {
             body: {
               type: 'cancelled',
               reservation_id: cancelTarget.id,

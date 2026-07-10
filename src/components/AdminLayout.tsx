@@ -36,6 +36,7 @@ import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 //   배치/렌더는 각 페이지가 소유 — 헤더에선 import·렌더 모두 제거(중복 노출 차단).
 import DashboardRefreshCountdown from '@/components/DashboardRefreshCountdown';
 import { supabase } from '@/lib/supabase';
+import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { formatPhone, chartNoBadge, birthDateYMD } from '@/lib/format';
 // T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part A: 팝업 차단 시 안내 토스트
@@ -218,7 +219,7 @@ export default function AdminLayout() {
   const clinic = useClinic();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem('foot-sidebar-collapsed') === 'true',
+    () => localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED) === 'true',
   );
 
   // T-20260522-foot-TABLET-DUAL-LAYOUT: AC-2 portrait 사이드바 자동 최소화
@@ -234,7 +235,7 @@ export default function AdminLayout() {
       }
     } else {
       // landscape 복원
-      const saved = localStorage.getItem('foot-sidebar-collapsed') === 'true';
+      const saved = localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED) === 'true';
       setSidebarCollapsed(saved);
     }
   }, [orientation]);
@@ -387,7 +388,7 @@ export default function AdminLayout() {
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem('foot-sidebar-collapsed', String(next));
+      localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, String(next));
       return next;
     });
   };
