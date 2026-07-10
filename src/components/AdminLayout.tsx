@@ -143,7 +143,8 @@ const NAV_ITEMS: {
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
   // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 메뉴 노출 (route 가드와 패리티).
   // AC-6: 통계 미노출 유지 / STAFF-ROLE-TM-ADD: tm. T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 flag 필요(봉직의 배제).
-  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'director', 'part_lead', 'tm'], requiresOpsAuthority: true },
+  // T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY Q2(안전 기본값): 통계=part_lead 숨김. part_lead 제거(requiresOpsAuthority 는 director 만 차단 → roles 에서 실제 제거 필요). PERM_MATRIX.stats + App.tsx route 3-gate SSOT.
+  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'director', 'tm'], requiresOpsAuthority: true },
   // AC-6: 매출집계 미노출 유지 / MUNJIEUN B2①: +director. ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director flag 필요.
   { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager', 'director'], requiresOpsAuthority: true },
   // T-20260629-foot-EDI-EXPORT-IMPL: 보험청구·EDI(심평원 표준 청구명세서 export).

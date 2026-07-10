@@ -106,7 +106,12 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   //   ★이전 값(coordinator/therapist 회수)은 '일마감'을 '매출집계'로 오분류 → 정정. 매출집계(실장별·치료사별 성과)는 별도 /sales(payments 직접쿼리, PERM 없음·route admin/manager EXCL) — 이 키와 무관.★
   //   ⚠️ AdminLayout nav + App.tsx route 와 3-gate 동일 집합 SSOT(한쪽만 바꾸면 NAV-BOUNCE). ★tm 제외★(STAFF-ROLE-TM-ADD 최소권한) → ALL_STAFF_ROLES 재사용으로 구조 보장.
   closing:      [...ALL_STAFF_ROLES],
-  stats:        ['admin', 'manager', 'director', 'part_lead', 'tm'],
+  // T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY (Q2 안전 기본값 발효, CEO STAMP Lane A MSG-20260710-142249-rp15):
+  //   통계 메뉴 = 파트장(part_lead)에게도 숨김(최소노출 안전 기본값). part_lead 제거 = 축소(lock-out 아님, 정책 확정).
+  //   ★gap-fix RC: requireOpsAuthority 가드는 director 만 차단(ProtectedRoute L49) → part_lead 는 roles 포함 시 그대로 통과했음.
+  //     ∴ roles 배열에서 part_lead 를 실제로 빼야 차단됨(가드로는 안 막힘). tm 은 별 AC6(STAFF-ROLE-TM-ADD 4메뉴) 유지·본건 무관.
+  //   ⚠️ App.tsx stats route + AdminLayout stats nav 와 3-gate 동일 집합 SSOT(한쪽만 바꾸면 NAV-BOUNCE).
+  stats:        ['admin', 'manager', 'director', 'tm'],
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 접수/등록 운영 parity). admin 비제거(ADDITIVE).
   // T-20260630-foot-REGISTER-MENU-CODY-UNLOCK (COORD-PERM-UNLOCK ⑤): 접수/신규등록 동선 권한 3역할 ADDITIVE 확대.
   //   role_scope EXPANDED→CONFIRMED(2026-06-30 김주연 총괄 ts:1782820093): coordinator 단독 → +consultant +therapist.

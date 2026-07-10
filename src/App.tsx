@@ -210,7 +210,8 @@ function App() {
                     통계 내부 탭 가시성(TM집계 탭만)은 자매 티켓 STATS-TM-AGGREGATE-TAB 에서 처리. */}
                 {/* T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2① AC2: route-guard director 부재 ↔ PERM_MATRIX.stats director 존재 = 불일치 정합화(+director). */}
                 {/* T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 has_ops_authority 필요(봉직의 통계 배제). nav requiresOpsAuthority 패리티. */}
-                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'director', 'part_lead', 'tm']} requireOpsAuthority><Stats /></RoleGuard>} />
+                {/* T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY Q2(안전 기본값): 통계=part_lead 숨김. part_lead 제거 — requireOpsAuthority 는 director 만 차단하므로 roles 에서 실제 제거해야 part_lead 차단됨. PERM_MATRIX.stats + AdminLayout nav 3-gate SSOT. */}
+                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'director', 'tm']} requireOpsAuthority><Stats /></RoleGuard>} />
                 <Route path="history" element={<DailyHistory />} />
                 {/* T-20260617-foot-AUTOASSIGN-BALANCE-TOSS: 상담·치료사 배정 통합 뷰. nav(AdminLayout)와 roles 패리티 SSOT. */}
                 <Route path="assignments" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><Assignments /></RoleGuard>} />

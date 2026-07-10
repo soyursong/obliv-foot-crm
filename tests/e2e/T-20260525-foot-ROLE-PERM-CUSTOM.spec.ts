@@ -31,9 +31,9 @@ test('AC-2 messaging 권한: consultant/coordinator/therapist/director/admin/man
   expect(canAccess('director', 'messaging')).toBe(true);
   expect(canAccess('admin', 'messaging')).toBe(true);
   expect(canAccess('manager', 'messaging')).toBe(true);
-  // 미허용 역할
-  expect(canAccess('part_lead', 'messaging')).toBe(false);
-  expect(canAccess('staff', 'messaging')).toBe(false);
+  // T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: messaging = 전직원(8역할, tm 제외) 개방 → part_lead/staff 도 true 로 정정(stale 수정).
+  expect(canAccess('part_lead', 'messaging')).toBe(true);
+  expect(canAccess('staff', 'messaging')).toBe(true);
 });
 
 // ── AC-3: 제외 3종 검증 ────────────────────────────────────────────────────────
@@ -41,7 +41,8 @@ test('AC-3 통계(stats) — consultant 제외 유지', () => {
   expect(canAccess('consultant', 'stats')).toBe(false);
   expect(canAccess('admin', 'stats')).toBe(true);
   expect(canAccess('manager', 'stats')).toBe(true);
-  expect(canAccess('part_lead', 'stats')).toBe(true);
+  // T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY Q2(안전 기본값): 통계=part_lead 숨김 → false 로 정정.
+  expect(canAccess('part_lead', 'stats')).toBe(false);
   expect(canAccess('director', 'stats')).toBe(true);
 });
 
