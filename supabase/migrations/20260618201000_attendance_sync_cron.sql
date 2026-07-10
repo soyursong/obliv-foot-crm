@@ -53,7 +53,7 @@ BEGIN
       'Content-Type',    'application/json',
       'X-Internal-Cron', v_cron_secret
     ),
-    body    := jsonb_build_object('days_back', 1, 'days_forward', 14)::TEXT
+    body    := jsonb_build_object('days_back', 1, 'days_forward', 14)  -- pg_net http_post: body 는 jsonb (TEXT 캐스트 시 signature 불일치 42883)
   );
 
   RETURN jsonb_build_object(
