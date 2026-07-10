@@ -427,7 +427,19 @@ export default function Customers() {
       return;
     }
     const { error } = await supabase.from('customers').delete().eq('id', c.id);
-    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    if (error) {
+      // T-20260710-foot-CUST-CASCADE-PHI-FK C2 — PHI-bearing FK CASCADE→RESTRICT 하드닝 대응.
+      // 진료기록 자식(clinical_images·treatment_photos·health_q_results·patient_past_history·
+      // patient_file_records·customer_treatment_memos·customer_consult_memos·customer_special_notes 8종 +
+      // consultation_notes)이 연결된 고객 hard-DELETE 시 23503(foreign_key_violation)으로 fail-closed 차단됨.
+      // 의료법 §22 진료기록 보존의무상 올바른 동작 — raw Postgres 영문 대신 한국어 문구로 표면화(조용히 깨지지 말 것).
+      if (error.code === '23503') {
+        toast.error('진료기록(임상사진·문진·상담/시술 메모 등)이 연결되어 있어 삭제할 수 없습니다. 기록 보존을 위해 삭제가 차단됩니다.');
+        return;
+      }
+      toast.error(`삭제 실패: ${error.message}`);
+      return;
+    }
     toast.success(`${c.name}님 삭제됨`);
     runSearch(query, page);
   };
