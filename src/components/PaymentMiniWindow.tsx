@@ -73,6 +73,8 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+// T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
+import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
 import { useClinicHeader } from '@/components/doctor/OpinionDocTab';
 import {
@@ -1750,6 +1752,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('서류를 선택해주세요');
       return;
     }
+    // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
+    if (!(await ensureChartSavedBeforePublish())) return;
     setDocPrinting(true);
     try {
       // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (공유 lib) 로 교체.
@@ -1861,6 +1865,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('결제 금액이 없습니다');
       return;
     }
+    // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
+    if (!(await ensureChartSavedBeforePublish())) return;
     setDocSettlePrinting(true);
     try {
       // 1. 서류 출력 (iframe — PAY-SLOT-MOVE AC-4)

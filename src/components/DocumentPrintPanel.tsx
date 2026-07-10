@@ -98,6 +98,8 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+// T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
+import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
 // T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과(KOH)·투약내용(처방약) 자동 로드.
 import { loadReferralAutoFields } from '@/lib/referralAutoLoad';
 // T-20260608-foot-DOC-PATH12-SYNC: PATH-4(PaymentMiniWindow) 빌링 로직 1:1 재사용 (4경로 통일).
@@ -680,6 +682,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 영수증 재발급도 선택 원장 확정 후에만 진행.
     const resolvedDoctorName = resolveDoctorForPrint();
     if (!resolvedDoctorName) return;
+    // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
+    if (!(await ensureChartSavedBeforePublish())) return;
     setReceiptReissuePrinting(true);
     try {
       const selected = paymentItems.filter((p) => selectedPaymentIds.has(p.id));
@@ -846,6 +850,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     //   미선택/목록 0명이면 출력 차단(빈·잘못된 원장명 방지). 복수 근무 별도 다이얼로그 불필요.
     const resolvedDoctorName = resolveDoctorForPrint();
     if (!resolvedDoctorName) return;
+
+    // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
+    if (!(await ensureChartSavedBeforePublish())) return;
 
     setBatchPrinting(true);
     try {
@@ -2440,6 +2447,8 @@ function IssueDialog({
       toast.error('서류 내용을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.');
       return;
     }
+    // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
+    if (!(await ensureChartSavedBeforePublish())) return;
     setSaving(true);
     const isFallback = template.id.startsWith('fallback-');
 

@@ -44,6 +44,8 @@ import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
 // T-20260510-foot-C2-DOC-ISSUANCE: 서류발행 패널
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
+// T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 고객정보 저장 가드
+import { registerPublishSaveGuard } from '@/lib/unsavedGuard';
 // T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 2번차트 진료비 자동산정 패널
@@ -3767,6 +3769,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260609-foot-CHART2-SAVE-CLOSE-BTN: Sheet "저장 후 닫기" 버튼에 본문 저장 핸들러 등록
   //   (동일 핸들러 재사용 — 신규 저장 경로 없음). Sheet 모드 아니면 no-op.
   useRegisterChartSave(handleInfoPanelSave);
+
+  // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 가드 등록.
+  //   발급(문서/영수/증명) 직전 2번차트가 미저장이면 "저장 후 발급" 확인을 받는다.
+  //   isDirty/save 는 항상 최신 클로저를 ref 로 읽으므로 mount 동안 1회 등록으로 충분.
+  //   저장 경로 = 통합 저장(handleInfoPanelSave) 1:1 재사용(신규 write-path/스키마 없음, db_change=false).
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+  useEffect(() => {
+    return registerPublishSaveGuard({
+      isDirty: () => isDirtyRef.current,
+      save: () => handleInfoPanelSaveRef.current(),
+      label: '고객정보(2번차트)',
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 60초 자동저장 (현장 확정: 30→60초, 김주연 5/11 16:14)
   useEffect(() => {

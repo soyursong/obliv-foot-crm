@@ -86,6 +86,74 @@ export async function flushAll(gs: UnsavedGuard[]): Promise<UnsavedGuard[]> {
   return failed;
 }
 
+// ── 발급 직전 미저장 가드 (T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2) ──
+//
+// 배경(AC2): '발급하기'는 클릭 시점에 loadAutoBindContext 로 customers 를 fresh 재조회해
+//   저장된 2번차트 값 기준으로 발급물을 만든다(데이터소스 요건 이미 충족). 단, 2번차트에서
+//   고객정보(이름/주민번호/주소/연락처 등 발급물 필드)를 고쳐놓고 '저장'을 누르지 않은 채
+//   발급하면, DB엔 아직 구값이라 발급물이 구값으로 생성된다(설계상 정상이나 현장 오인 소지).
+//
+// 본 가드 = 그 갭의 UX 방어선: 발급 직전 2번차트가 미저장(dirty)이면
+//   "저장 후 발급하시겠습니까?" 확인 → 저장 성공 시에만 발급 진행, 저장 실패/취소면 발급 중단
+//   (구값 발급 방지). '유실 방지' intent 만 가지는 UnsavedGuard(새로고침 배너용)와 분리된
+//   단일 슬롯 레지스트리 — 새로고침 서브시스템(UpdateBanner/DashboardRefreshCountdown) 동작에
+//   영향 0. 무패키지, 순수 모듈-레벨 상태.
+export interface PublishSaveGuard {
+  /** 현재 미저장(dirty) 고객정보 편집이 있는지. 예외는 false(안전 통과). */
+  isDirty: () => boolean;
+  /** 통합 저장 실행. true=저장 성공(발급 진행 가능), false=실패(발급 중단). */
+  save: () => Promise<boolean>;
+  /** 확인창 안내 라벨(예: '고객정보(2번차트)'). */
+  label?: string;
+}
+
+let publishGuard: PublishSaveGuard | null = null;
+
+/** 2번차트가 자신의 미저장/저장 경로를 발급 가드로 등록. 반환 함수로 해제. */
+export function registerPublishSaveGuard(g: PublishSaveGuard): () => void {
+  publishGuard = g;
+  return () => {
+    // 그새 다른 인스턴스로 교체됐으면 그 인스턴스를 지우지 않는다.
+    if (publishGuard === g) publishGuard = null;
+  };
+}
+
+/**
+ * 발급(문서/영수/증명) 직전 호출. 2번차트가 미저장이면 저장 확인을 받고,
+ *   - 확인+저장 성공 → true(발급 진행)
+ *   - 저장 실패      → false(발급 중단: 구값 발급 방지)
+ *   - 취소           → false(발급 중단)
+ * 등록된 가드가 없거나 dirty 가 아니면 즉시 true(무영향).
+ */
+export async function ensureChartSavedBeforePublish(): Promise<boolean> {
+  const g = publishGuard;
+  if (!g) return true;
+  let dirty = false;
+  try {
+    dirty = g.isDirty();
+  } catch {
+    dirty = false; // 가드 평가 실패는 정상 발급을 막지 않는다.
+  }
+  if (!dirty) return true;
+  const label = g.label ?? '고객정보';
+  const proceed =
+    typeof window !== 'undefined' && typeof window.confirm === 'function'
+      ? window.confirm(
+          `저장하지 않은 ${label} 변경사항이 있습니다.\n` +
+            `발급물은 저장된 정보 기준으로 만들어집니다. 먼저 저장한 뒤 발급하시겠습니까?\n\n` +
+            `[확인] 저장 후 발급   /   [취소] 발급 중단`,
+        )
+      : true;
+  if (!proceed) return false;
+  let ok = false;
+  try {
+    ok = await g.save();
+  } catch {
+    ok = false;
+  }
+  return ok; // 저장 실패 시 발급 중단(구값 발급 방지).
+}
+
 // ── E2E/디버깅 훅 ────────────────────────────────────────────────────────────
 // Playwright가 결정적으로 dirty-guard 분기(정상/즉시/blocking)를 재현할 수 있도록
 // 합성 가드를 주입/해제하는 최소 API를 window에 노출. (프로덕션 동작엔 무영향)
@@ -94,5 +162,8 @@ if (typeof window !== 'undefined') {
     register: registerUnsavedGuard,
     collect: collectDirty,
     clear: () => guards.clear(),
+    // 발급 가드(AC2) 결정적 재현용.
+    registerPublish: registerPublishSaveGuard,
+    ensurePublish: ensureChartSavedBeforePublish,
   };
 }
