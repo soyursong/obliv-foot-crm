@@ -122,7 +122,8 @@ const NAV_ITEMS: {
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: director(대표원장) nav-parity OR-추가. App.tsx route RoleGuard 와 동일 집합 SSOT 유지. admin 비제거.
   { to: '/admin/assignments', label: '상담·치료사 배정', icon: ArrowRightLeft, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
   // T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만 노출 + 라우트 가드(App.tsx) 이중
-  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager', 'director'] },
+  // T-20260710-foot-TREAT-TABLE-ROLE-OPEN (CEO STAMP open-all-except-3): 치료 테이블=제외 3카테고리 미해당 → staff parity. +consultant/coordinator/therapist ADDITIVE. App.tsx treatment-table route RoleGuard 와 동일 집합 SSOT(NAV-BOUNCE 방지). tm 미추가(최소권한 고정).
+  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
   // T-20260525-foot-MESSAGING-V1 AC-S1: 메시지 설정 — 서비스관리 바로 아래 (현장 요청: 김주연 총괄)
   // T-20260525-foot-ROLE-PERM-CUSTOM 3차: coordinator/therapist 추가
   // T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). 메뉴=라우트(App.tsx settings RoleGuard)=PERM_MATRIX.messaging 동일 집합 SSOT. ★tm 제외★(최소권한). nav 누락 시 route 개방돼도 메뉴 미노출로 무력화 → 패리티 필수.

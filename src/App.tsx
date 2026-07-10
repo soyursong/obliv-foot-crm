@@ -230,8 +230,10 @@ function App() {
                 {/* T-20260512-foot-QUICK-RX-BUTTON: 치료사/원장도 진료환자목록 탭 접근 가능 */}
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-2: consultant/coordinator 진료도구 접근 추가 */}
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead', 'consultant', 'coordinator']}><DoctorTools /></RoleGuard>} />
-                {/* T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만. 직접 URL 차단(라우트 가드) + 메뉴 숨김(AdminLayout) 이중. Sales와 동일 게이트 / T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director(원장 본인 평가 열람 정합) */}
-                <Route path="treatment-table" element={<RoleGuard roles={['admin', 'manager', 'director']}><TreatmentTable /></RoleGuard>} />
+                {/* T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만. 직접 URL 차단(라우트 가드) + 메뉴 숨김(AdminLayout) 이중. Sales와 동일 게이트 / T-20260619-MUNJIEUN-ROLE-DIRECTOR B2①: +director(원장 본인 평가 열람 정합)
+                    T-20260710-foot-TREAT-TABLE-ROLE-OPEN (CEO STAMP open-all-except-3, MSG-20260710-142249-rp15): 치료 테이블=임상·운영 메뉴 → 제외 3카테고리(통계/매출집계/계정관리) 미해당 → staff parity 기본값.
+                    +consultant/coordinator/therapist ADDITIVE(확대만, admin/manager/director 무회귀). AdminLayout.tsx L125 nav 와 동일 집합 SSOT(한쪽만 바꾸면 NAV-BOUNCE). backing-table SELECT RLS = role-agnostic(TO authenticated, clinic-scoped) 이미 열림 → RLS 무변경. */}
+                <Route path="treatment-table" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><TreatmentTable /></RoleGuard>} />
                 <Route path="notices" element={<Notices />} />
                 {/* T-20260605-foot-HANDOVER-BOARD AC-5: 전 직원 작성/조회 — RoleGuard 없음 */}
                 <Route path="handover" element={<Handover />} />
