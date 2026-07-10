@@ -28,6 +28,7 @@
 //   INTERNAL_CRON_SECRET   — pg_cron 인증 공유 시크릿
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolveRedpayPaymentsUrl } from "../_shared/redpay-config.ts";
 import {
   matchTransactionsBatch,
   detectMissingInCrm,
@@ -53,14 +54,15 @@ const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") ===
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
-// ── RedPay 엔드포인트: 파일명 포함 전체 경로를 상수에 박제(하드코딩) ──────────────
-//   urljoin / base-only concat 금지. `payments.php` 파일명이 탈락하면 요청이
-//   디렉터리 경로(`/api/partner/`)로 가고, nginx가 application/json 이 아닌
-//   HTML 403(디렉터리 접근 거부)을 반환한다. 이 HTML 403을 "API Key 불일치"로
-//   오진해 키를 반복 재등록했던 사고가 있었다(redpay-403-incident F0BGDKNATK7,
-//   2026-07-10 이은상 팀장 forensic — 소거법으로 URL 오조립 단일 원인 확정).
-//   파일명을 이 상수에 박아 탈락 자체를 구조적으로 불가능하게 한다.
-const REDPAY_BASE_URL           = "https://redpay.kr/api/partner/payments.php";
+// ── RedPay 엔드포인트: SSOT(_shared/redpay-config.ts)에서 해석 ────────────────────
+//   T-20260710-foot-REDPAY-URL-CONFIG-HARDEN (이은상 팀장 지시) — 하드코딩 박제 →
+//   env(REDPAY_PAYMENTS_URL) + 중앙 constants 로 상향. 한 곳 정의 → 수정 시 1곳만.
+//   urljoin / base-only concat 금지 원칙은 그대로: resolveRedpayPaymentsUrl() 이
+//   "파일명 포함 전체 URL"을 반환하고, payments.php 탈락 시 fail-fast(assertPaymentsUrl)로
+//   구조적으로 차단한다. env 미설정 시 known-good 전체 URL 폴백(무설정 회귀 없음).
+//   (ref: redpay-403-incident F0BGDKNATK7, 2026-07-10 forensic — URL 오조립 단일 원인 확정)
+//   ⚠ OCR-BUILD Step3(T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD) 도 같은 SSOT를 공유한다.
+const REDPAY_BASE_URL           = resolveRedpayPaymentsUrl();
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 

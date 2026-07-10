@@ -45,6 +45,10 @@ REDPAY_DRY_RUN       = false
 
 - **기존 유지(재set 불요):** `REDPAY_API_KEY`(이은상 팀장 등록분, merchant 1777284978) · `INTERNAL_CRON_SECRET`(cron 인증) · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY`.
 - **선택(미설정 시 로그만, 알림 미발사):** `REDPAY_ALERT_CHANNEL` · `REDPAY_SLACK_BOT_TOKEN`.
+- **선택 — URL override (T-20260710-foot-REDPAY-URL-CONFIG-HARDEN):** `REDPAY_PAYMENTS_URL` = `https://redpay.kr/api/partner/payments.php`
+  - 미설정 시 코드가 known-good 전체 URL(`_shared/redpay-config.ts` `DEFAULT_PAYMENTS_URL`)로 폴백 → **무설정 회귀 없음**(HOTFIX_FIRST 순서와 무관하게 안전).
+  - ⚠ 반드시 **파일명(payments.php) 포함 전체 URL**로 설정. 파일명 누락 시 EF 부팅 시점 `assertPaymentsUrl` fail-fast (payments.php 탈락 → nginx HTML 403 재발 구조적 차단).
+  - `receipt-ocr`(OCR-BUILD Step3)도 동일 env/모듈을 SSOT로 공유(중복 하드코딩 금지).
 
 ### 2.1 파싱 포맷 (guard.ts / index.ts 근거)
 - `REDPAY_TID_WHITELIST` = **CSV(쉼표 구분, 공백 무관)**. 코드: `.split(",").map(t=>t.trim()).filter(Boolean)` (index.ts:193/285/462, guard.ts:57). JSON 아님.

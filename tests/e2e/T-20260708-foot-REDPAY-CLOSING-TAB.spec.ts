@@ -18,6 +18,8 @@ const REDPAY_TAB = 'src/components/closing/RedpayReconcileTab.tsx';
 const MIG = 'supabase/migrations/20260708230000_redpay_recon_daily_view.sql';
 const MIG_ROLLBACK = 'supabase/migrations/20260708230000_redpay_recon_daily_view.rollback.sql';
 const RECON_EF = 'supabase/functions/redpay-reconcile/index.ts';
+// T-20260710-foot-REDPAY-URL-CONFIG-HARDEN — URL/엔드포인트 SSOT (하드코딩 박제 → env/constants 중앙화)
+const REDPAY_CONFIG = 'supabase/functions/_shared/redpay-config.ts';
 
 // 풋 13 TID 화이트리스트 (obliv_origin_env.md)
 const FOOT_TIDS = [
@@ -147,15 +149,37 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB AC-6/AC-7 — 활성화 전 렌더 
 //   ref: redpay-403-incident F0BGDKNATK7 (2026-07-10 이은상 팀장 forensic).
 //   403 = nginx HTML 디렉터리 거부(payments.php 파일명 탈락) — API 키 문제 아님.
 test.describe('T-20260708-REDPAY-CLOSING-TAB 403-FIX — EF URL 조립 방어', () => {
-  test('URL 은 payments.php 전체 경로를 상수에 하드코딩 (urljoin/base-only 금지)', () => {
+  // T-20260710-foot-REDPAY-URL-CONFIG-HARDEN: 하드코딩 박제(c930c423) → env/constants SSOT 로 상향.
+  //   anti-regression 의도(payments.php 탈락 불가)는 그대로 유지 — 이제 SSOT 모듈이 보증한다.
+  test('URL 은 SSOT(_shared/redpay-config.ts) 에서 해석 (하드코딩 박제 금지, urljoin/base-only 금지)', () => {
     const src = fs.readFileSync(RECON_EF, 'utf-8');
-    // 파일명 포함 전체 경로 상수
-    expect(src).toContain('const REDPAY_BASE_URL           = "https://redpay.kr/api/partner/payments.php";');
-    // 조립은 상수 + 쿼리스트링만
+    // index.ts 는 SSOT 함수로 전체 URL 해석 (문자열 리터럴 하드코딩 아님)
+    expect(src).toContain('import { resolveRedpayPaymentsUrl } from "../_shared/redpay-config.ts";');
+    expect(src).toContain('const REDPAY_BASE_URL           = resolveRedpayPaymentsUrl();');
+    // 조립은 (해석된 전체 URL) 상수 + 쿼리스트링만
     expect(src).toContain('const requestUrl = `${REDPAY_BASE_URL}?${params}`;');
+    // index.ts 에 URL 문자열 리터럴 하드코딩 부활 금지
+    expect(src).not.toContain('"https://redpay.kr');
+    expect(src).not.toContain("'https://redpay.kr");
     // base 를 파일명 없는 디렉터리 문자열로 정의하는 안티패턴 없음 (payments.php 탈락 원천 차단)
     expect(src).not.toContain('= "https://redpay.kr/api/partner/"');
     expect(src).not.toContain("= 'https://redpay.kr/api/partner/'");
+  });
+
+  test('SSOT — payments.php 필수 세그먼트 유실 fail-fast + env override (T-20260710 HARDEN)', () => {
+    const src = fs.readFileSync(REDPAY_CONFIG, 'utf-8');
+    // 엔드포인트 파일명 중앙 정의 (enum-like)
+    expect(src).toContain("payments: \"payments.php\"");
+    // known-good 전체 URL 폴백 (env 미설정 회귀 없음)
+    expect(src).toContain('export const DEFAULT_PAYMENTS_URL');
+    // env override 키
+    expect(src).toContain('REDPAY_PAYMENTS_URL');
+    expect(src).toContain('Deno.env.get(REDPAY_PAYMENTS_URL_ENV)');
+    // payments.php 탈락 fail-fast 가드 (pathname 이 /payments.php 로 끝나지 않으면 throw)
+    expect(src).toContain('export function assertPaymentsUrl');
+    expect(src).toContain('pathname.endsWith(`/${REDPAY_ENDPOINTS.payments}`)');
+    // urljoin/문자열결합으로 base+endpoint 조립하는 안티패턴 없음 (전체 URL 단일값 원칙)
+    expect(src).not.toContain('+ REDPAY_ENDPOINTS.payments');
   });
 
   test('조치#3 — 실제 발사 URL 로깅 (payments.php 탈락 즉시 지목)', () => {
