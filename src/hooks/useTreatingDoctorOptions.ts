@@ -17,9 +17,16 @@
  *
  * disabled 는 filter(제외) 아님 — 옵션에 '표시하되 선택 불가'. UI(드롭다운)에서 disabled 처리.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+
+// 인스턴스별 고유 채널 시퀀스 — 동일 (clinicId,date)로 다수 마운트(진료환자이력 테이블: 섹션 1 + 행별
+// TreatingDoctorSelect N개)될 때 채널 topic 이 겹치면 supabase가 기존 구독 채널을 재사용 →
+// subscribe() 이후 .on() 추가가 "cannot add postgres_changes callbacks ... after subscribe()"로
+// throw 되어 페이지 전체가 ErrorBoundary로 낙하한다(T-20260710-foot-TREATHIST-DOCREQ-DOCTORCOUNT QA fail).
+// 채널명에 인스턴스 시퀀스를 붙여 topic 충돌을 구조적으로 제거한다.
+let __treatingDoctorOptsChannelSeq = 0;
 
 export interface TreatingDoctorOption {
   /** clinic_doctors.id — check_ins.treating_doctor_id 에 저장되는 값 */
@@ -128,6 +135,9 @@ export function useTreatingDoctorOptions(
   date: string,
 ) {
   const qc = useQueryClient();
+  // 마운트마다 안정적으로 부여되는 인스턴스 id(채널 topic 유일화용).
+  const instanceIdRef = useRef<number>();
+  if (instanceIdRef.current === undefined) instanceIdRef.current = ++__treatingDoctorOptsChannelSeq;
   const query = useQuery<TreatingDoctorOption[]>({
     queryKey: ['treating_doctor_options', clinicId, date],
     enabled: !!clinicId && !!date,
@@ -142,7 +152,7 @@ export function useTreatingDoctorOptions(
     const invalidate = () =>
       void qc.invalidateQueries({ queryKey: ['treating_doctor_options', clinicId, date] });
     const channel = supabase
-      .channel(`treating_doctor_opts_${clinicId}_${date}`)
+      .channel(`treating_doctor_opts_${clinicId}_${date}_${instanceIdRef.current}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'duty_roster', filter: `clinic_id=eq.${clinicId}` }, invalidate)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clinic_doctors', filter: `clinic_id=eq.${clinicId}` }, invalidate)
       .subscribe();
