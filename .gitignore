@@ -68,3 +68,6 @@ migration_packages/T-20260531-data-JONGNOFOOT-MIGRATE-HFQ-TO-FOOT/AC7_dry_run_re
 # T-20260708-foot-QUICKRESV-TESTDATA-BUG — 테스트환자 삭제 archive/rollback 덤프 (연락처 포함, off-git)
 rollback/T-20260708-foot-QUICKRESV-TESTDATA-BUG_archive_*.json
 rollback/T-20260708-foot-QUICKRESV-TESTDATA-BUG_rollback_*.sql
+# T-20260702-foot-CODY-PKG-CREATE-PERM — ghost auth 삭제 archive/rollback 덤프 (auth secret+PHI, off-git only)
+rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_archive_*.json
+rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
