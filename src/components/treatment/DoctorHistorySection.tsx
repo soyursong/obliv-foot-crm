@@ -7,6 +7,13 @@
 // Ticket: T-20260710-foot-TREATHIST-DOCREQ-DOCTORCOUNT (김주연 총괄)
 //   요구1. 소견·진단서 열 = '신청여부' + '발행여부' 2항목 분리 표시.
 //   요구2. 탭 상단 = 진료의별 금일 담당 환자수 요약(read-only 집계).
+// Ticket: T-20260710-foot-VISITHIST-DOCSTATUS-DOCTORCOUNT (김주연 총괄) — 위 티켓의 코디팀 프레이밍 delta
+//   요구①(집계보강). 상단에 '소견·진단서 금일 신청 N건 · 발행 M건' 한눈 요약(코디팀 오늘 신청/발행 건수 확인용).
+//     · 신규 스키마·쿼리 0 — 이미 파생된 rows(docRequested/opinionIssued)를 read-only 카운트(computeDocStatusSummary).
+//     · 신청 ≠ 발행 독립 축(같은 환자 신청만/발행만/둘다 가능) → 각각 별도 카운트.
+//   요구②. 진료의별 금일 담당 환자수 = 상위 티켓에서 이미 충족(computeDoctorCountSummary). 회귀 유지.
+//   ※ 착수 결정(note): db_change=false / ② grain=실제 진료(진료콜 등재 status_flag purple|pink) / ① 신청모델=form_submissions
+//     staff_consult 재사용(KOHEXAM check_in_services 모델 미공유·신규모델 0).
 //
 // 리스트 기준: 선택 날짜 기준 원장 진료콜 명단에 등재된 이력이 있는 환자(내원).
 //   진료콜 등재 = check_ins.status_flag IN ('purple'=진료필요, 'pink'=진료완료). (doctor-call-notify SSOT)
@@ -31,7 +38,7 @@ import { VISIT_TYPE_KO } from '@/lib/status';
 import type { VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Stethoscope, Users, Eye } from 'lucide-react';
+import { Loader2, Stethoscope, Users, Eye, FileText } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
 interface DoctorHistoryRow {
@@ -93,6 +100,26 @@ export function computeDoctorCountSummary(
     return a.name.localeCompare(b.name, 'ko');
   });
   return entries;
+}
+
+// 소견·진단서 금일 신청/발행 집계(T-20260710-VISITHIST-DOCSTATUS, 요구①). 코디팀 '오늘 신청 N건·발행 M건' 한눈 확인.
+//   read-only — 이미 파생된 rows(docRequested/opinionIssued)만 카운트. 신규 쿼리·스키마 0.
+//   신청 ≠ 발행 독립 축 → 각각 별도 카운트. total(명단 총원)은 분모 참고용.
+export interface DocStatusSummary {
+  requestedCount: number; // 소견·진단서 '신청' O 인 환자 수(금일)
+  issuedCount: number;    // 소견·진단서 '발행' O 인 환자 수(금일)
+  total: number;          // 진료콜 명단 총원(참고)
+}
+export function computeDocStatusSummary(
+  rows: Array<{ docRequested: boolean; opinionIssued: boolean }>,
+): DocStatusSummary {
+  let requestedCount = 0;
+  let issuedCount = 0;
+  for (const r of rows) {
+    if (r.docRequested) requestedCount += 1;
+    if (r.opinionIssued) issuedCount += 1;
+  }
+  return { requestedCount, issuedCount, total: rows.length };
 }
 
 function useDoctorHistory(clinicId: string | null | undefined, date: string) {
@@ -255,6 +282,9 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
   const doctorNameById = new Map(doctorOptions.map((o) => [o.id, o.name]));
   const doctorSummary = computeDoctorCountSummary(rows, doctorNameById);
 
+  // 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수 요약(코디팀 한눈 확인). read-only, rows 파생 재사용.
+  const docStatus = computeDocStatusSummary(rows);
+
   return (
     <div className="flex flex-col gap-3" data-testid="doctor-history-section">
       <div>
@@ -291,6 +321,36 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
               <span className="tabular-nums font-semibold text-teal-700">{s.count}명</span>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수(코디팀 '오늘 신청 N건·발행 M건' 한눈). 명단 있을 때만 노출. */}
+      {!isLoading && !isError && rows.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-[12px]"
+          data-testid="dh-doc-status-summary"
+        >
+          <span className="flex items-center gap-1 font-medium text-muted-foreground">
+            <FileText className="h-3.5 w-3.5 text-teal-600" />
+            소견·진단서 금일
+          </span>
+          <span
+            className="flex items-center gap-1"
+            data-testid="dh-doc-status-requested"
+            data-count={docStatus.requestedCount}
+          >
+            <span className="text-muted-foreground">신청</span>
+            <span className="tabular-nums font-semibold text-teal-700">{docStatus.requestedCount}건</span>
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span
+            className="flex items-center gap-1"
+            data-testid="dh-doc-status-issued"
+            data-count={docStatus.issuedCount}
+          >
+            <span className="text-muted-foreground">발행</span>
+            <span className="tabular-nums font-semibold text-emerald-700">{docStatus.issuedCount}건</span>
+          </span>
         </div>
       )}
 
