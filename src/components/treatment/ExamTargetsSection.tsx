@@ -48,8 +48,13 @@ import {
 import { Loader2, FlaskConical, Droplet, ClipboardList, FileText, CalendarDays, Upload, ChevronRight, ChevronDown, FileCheck2 } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
-// AC-2: 일자별 리스트 윈도(검사신청일 기준 직전 N일). 검사결과는 수일 뒤 회신되므로 단일일 → 2주 윈도.
-const WINDOW_DAYS = 14;
+// AC-2: 일자별 리스트 윈도(검사신청일 기준, 선택일 끝으로 직전 N일).
+// T-20260710-foot-EXAM-TARGET-TABLE-TODAY-EXPAND: 기존 14일 윈도는 진입 시 직전 14일치가
+//   일자별 그룹으로 한꺼번에 펼쳐져 "당일 것만" 요구와 어긋났음(현장 7/2 요청, 김주연 총괄 재확인).
+//   → 윈도를 선택일 당일(1일)로 좁힘. 기본 date=오늘(TreatmentTable 부모)이라 진입 시 '당일'만 표시.
+//   ★비파괴: 부모 날짜 네비게이터(◀ ▶ / 오늘)로 date 를 바꾸면 그 날짜의 대상자를 그대로 조회 가능
+//     → 데이터 숨김 아님, 기본 뷰만 당일로 좁힘(AC3). exam 축 데이터 계약(EXAMONLY/SPLIT) 무변경, DB 0(AC5).
+const WINDOW_DAYS = 1;
 
 interface ExamTargetRow {
   customerId: string;
