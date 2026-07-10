@@ -1,0 +1,28 @@
+═══ T-20260702 계정삭제 DRY-RUN (in-txn ROLLBACK) ═══
+stamp: 20260710 / target: d4c83d20-e8d6-4918-97ce-2cce68d444ae kyh3858@hanmail.net
+
+[PRE-COUNT]
+  user_profiles(target) = 1 (guard: =1)
+  auth.users(target)    = 1 (guard: =1)
+  auth.identities(target)= 1
+  auth.one_time_tokens(target)= 1
+  user_profiles TOTAL   = 47
+  auth.users TOTAL      = 47
+  PRE guard: ✅ (target 정확히 1행)
+
+[IN-TXN POST-COUNT] (DELETE app→auth.users cascade, ROLLBACK 직전)
+  user_profiles(target) = 0 (기대: 0)
+  auth.users(target)    = 0 (기대: 0)
+  auth.identities(target)= 0 (기대: 0, CASCADE)
+  auth.one_time_tokens(target)= 0 (기대: 0, CASCADE)
+  user_profiles TOTAL   = 46 (기대: 46, diff=1)
+  auth.users TOTAL      = 46 (기대: 46, diff=1)
+  POST(in-txn): ✅ 삭제·cascade·freeze diff=1 모두 부합
+
+[ROLLBACK 후 재확인] (비파괴 증명)
+  user_profiles TOTAL   = 47 (기대: 47 불변)
+  auth.users TOTAL      = 47 (기대: 47 불변)
+  user_profiles(target) = 1 (기대: 1 여전 존재)
+  ROLLBACK: ✅ 총계 불변·target 잔존 → DRY-RUN 비파괴 확인
+
+═══ DRY-RUN 결과: ✅ PASS (apply 준비완료, 게이트 통과 후 실행) ═══
