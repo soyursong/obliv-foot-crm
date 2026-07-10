@@ -1,0 +1,16 @@
+PROD staff policies (total 4) @ 2026-07-10T03:39:40.478Z
+  staff_admin_all [ALL] roles={authenticated}
+     USING: is_admin_or_manager()
+     CHECK: is_admin_or_manager()
+  staff_coordinator_insert_staffcrud [INSERT] roles={authenticated}
+     CHECK: ((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))
+  staff_approved_read [SELECT] roles={authenticated}
+     USING: is_approved_user()
+  staff_coordinator_update_staffcrud [UPDATE] roles={authenticated}
+     USING: ((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))
+     CHECK: ((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))
+
+=== VERDICT ===
+  staff_coordinator_insert_staffcrud: PRESENT ✅
+  staff_coordinator_update_staffcrud: PRESENT ✅
+  schema_migrations 20260630220000: recorded ✅
