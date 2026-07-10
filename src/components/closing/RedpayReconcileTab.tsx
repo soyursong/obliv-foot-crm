@@ -2,7 +2,7 @@
 // ──────────────────────────────────────────────────────────────
 // Phase 1(각자쌓기): 카드단말기 redpay 자동수집 결제를 별도로 표시.
 // Phase 2(대조): CRM 수납 ↔ 레드페이 매칭/미매칭 구분 표시.
-// Phase 3(통일=합침/자동반영)은 OUT-OF-SCOPE(AC-5) — read-only 표시까지만.
+// Phase 3(통일=통합 표시)은 OUT-OF-SCOPE(AC-5) — read-only 표시까지만.
 //
 // 데이터 소스: read-only VIEW public.v_redpay_reconciliation_daily (DA 확정, AC-3).
 //   FE 조인·FE 매칭 재계산 금지 — 이 뷰만 소비(매처 진실원천 이중화 방지).
@@ -257,7 +257,7 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
       </Card>
 
       <p className="text-xs text-muted-foreground px-1">
-        ※ 레드페이 탭은 카드단말기 자동수집 결제를 <b>별도로</b> 보여줍니다(각자 쌓기). CRM 수납과의 합침·자동반영은 추후 별도 기능으로,
+        ※ 레드페이 탭은 카드단말기 자동수집 결제를 <b>별도로</b> 보여줍니다(각자 쌓기). CRM 수납과의 통합 표시는 추후 별도 기능으로,
         지금은 매칭/미매칭 대조만 표시합니다.
       </p>
     </div>
