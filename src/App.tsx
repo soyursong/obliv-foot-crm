@@ -8,12 +8,17 @@ import { ProtectedRoute, RoleGuard } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 // T-20260610-foot-SPA-VERSION-AUTORELOAD: 배포 후 stale-app 재발방지 — 신버전 감지 배너
 import UpdateBanner from '@/components/UpdateBanner';
+// T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: chunk 자가치유 가드 SSOT
+import { markAndCheckAutoReload, clearAutoReloadGuard } from '@/lib/chunkReload';
 
 /**
  * T-20260522-foot-SPA-NAV-RELOAD: chunk load failure 자동 복구
  * 새 배포 후 구버전 chunk URL이 404를 반환할 때 자동 리로드로 복구.
- * sessionStorage 플래그로 무한 리로드 방지 (최대 1회).
- * 성공 시 플래그 해제 → 이후 다른 청크 오류도 한 번 더 시도 가능.
+ *
+ * T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: 재시도 가드를 '영구 단발 플래그(spa_reload_tried)'에서
+ *   시간 윈도우 가드(chunkReload SSOT)로 교체. 영구 플래그는 한 번 '1' 로 남으면 이후 정당한 복구까지
+ *   영구 무력화되어(현장 "모든 메뉴 오류" 지속) → 윈도우 만료 시 자가치유가 항상 재무장되도록 변경.
+ *   ChunkErrorBoundary(eval-time throw 경로)와 동일 가드를 공유해 경합 없이 협력한다.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function lazyWithRetry<T extends ComponentType<any>>(
@@ -22,19 +27,21 @@ function lazyWithRetry<T extends ComponentType<any>>(
   return lazy<T>(() =>
     factory()
       .then((mod) => {
-        // 정상 로드 → 이전 실패 플래그 초기화
-        sessionStorage.removeItem('spa_reload_tried');
+        // 정상 로드 → 가드 해제(자가치유 재무장)
+        clearAutoReloadGuard();
         return mod;
       })
-      .catch((): Promise<{ default: T }> => {
-        if (!sessionStorage.getItem('spa_reload_tried')) {
-          sessionStorage.setItem('spa_reload_tried', '1');
+      .catch((err: unknown): Promise<{ default: T }> => {
+        if (markAndCheckAutoReload(Date.now())) {
+          // 최신 index.html(no-cache) → 최신 해시 chunk 로 자가치유
           window.location.reload();
           // 페이지가 곧 리로드됨 — 이 Promise는 resolve되지 않음
           return new Promise<{ default: T }>(() => {});
         }
-        // 리로드 후에도 실패 → ErrorBoundary에서 복구 UI 제공
-        return Promise.reject(new Error('페이지 청크 로드 실패 — 새로고침이 필요합니다.'));
+        // 루프윈도우 이내 재발(리로드해도 여전히 실패) → ErrorBoundary 수동 복구 UI 로 위임
+        return Promise.reject(
+          err instanceof Error ? err : new Error('페이지 청크 로드 실패 — 새로고침이 필요합니다.'),
+        );
       }),
   );
 }

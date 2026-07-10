@@ -259,6 +259,11 @@ export default defineConfig({
         //   (상/하 패딩 8→4·행간 1.45→1.35, 가로 13px 불변). 소스 정적 가드 + page.setContent 실 DOM
         //   측정(row 높이 축소·잘림0·겹침0). FE-only spacing, DB/스키마 무변경. auth/server 불요.
         '**/T-20260709-foot-LAYOUT-WHITESPACE-REDUCE.spec.ts',
+        // T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: 현장 "모든 메뉴 오류" = stale 번들 → lazy chunk purge →
+        //   ChunkErrorBoundary fallback. RC = lazyWithRetry 재시도 가드가 영구 단발 플래그라 한 번 세워지면
+        //   자가치유 영구 무력화. 처방 = 시간 윈도우 가드 SSOT(@/lib/chunkReload)로 교체 + ChunkErrorBoundary
+        //   eval-time chunk 에러 자동 하드리로드(1회, 루프 차단). 순수 단위/소스 정적(page/auth/server 불요).
+        '**/T-20260710-foot-DASHBOARD-PAGELOAD-ERROR.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

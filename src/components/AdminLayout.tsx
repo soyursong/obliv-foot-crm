@@ -48,6 +48,8 @@ import { hasOpsAuthority } from '@/lib/permissions';
 import ChangePasswordDialog from '@/components/ChangePasswordDialog';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
 import { useOrientation } from '@/hooks/useOrientation';
+// T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: chunk 자가치유 가드 SSOT (App.tsx lazyWithRetry 와 공유)
+import { isChunkLoadError, markAndCheckAutoReload, clearAutoReloadGuard } from '@/lib/chunkReload';
 
 // ── T-20260522-foot-SPA-NAV-RELOAD ───────────────────────────────────────────
 // Outlet 전용 Suspense + ErrorBoundary.
@@ -63,11 +65,42 @@ function OutletPageLoader() {
   );
 }
 
-interface EBState { hasError: boolean }
+// ── T-20260710-foot-DASHBOARD-PAGELOAD-ERROR ─────────────────────────────────
+// RC: 현장 태블릿/브라우저가 배포 이전 index 번들을 캐시한 채로 도는 stale-app 상태에서,
+//   React.lazy route chunk 의 해시 파일이 신규 배포로 CDN 에서 purge → dynamic import 실패.
+//   Vercel SPA rewrite(/(.*) → /index.html)가 없는 /assets/*.js 에 HTML(200)을 돌려줘
+//   "not a valid JavaScript MIME type: text/html" 로 throw → ChunkErrorBoundary 가 잡아
+//   "페이지를 불러오는 중 오류" fallback 을 모든 route(=모든 메뉴)에서 노출한다.
+// 기존 useVersionCheck 는 배너만 띄우고 자동 reload 하지 않으므로, 이미 chunk 가 깨진 시점엔
+//   사용자가 수동으로 [새로고침] 을 눌러야만 복구됐다(현장 "모든 메뉴 오류" 신고 경로).
+// 처방: chunk-load 성격의 에러는 sessionStorage 가드(무한 reload 루프 차단, 루프윈도우 20s)로
+//   1회만 자동 하드리로드해 최신 index → 최신 chunk 로 자가치유한다. index.html 은 vercel.json
+//   상 no-cache/must-revalidate 라 reload 시 최신 번들을 받는다.
+//   ※ 청크성이 아닌 실제 렌더 throw 는 자동 reload 대상에서 제외(루프 방지) → 수동 fallback 유지.
+//   가드/판별은 @/lib/chunkReload SSOT 공유(App.tsx lazyWithRetry 와 동일 가드).
+
+interface EBState { hasError: boolean; recovering: boolean }
 class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
-  state: EBState = { hasError: false };
-  static getDerivedStateFromError(): EBState { return { hasError: true }; }
+  state: EBState = { hasError: false, recovering: false };
+  static getDerivedStateFromError(): EBState { return { hasError: true, recovering: false }; }
+
+  componentDidCatch(error: unknown): void {
+    if (!isChunkLoadError(error)) return; // 실제 렌더 버그 → 자동 reload 안 함(루프 방지)
+    // 직전 자동 reload 후 루프윈도우 이내 재발이면 false → 루프 중단, 수동 fallback 유지
+    if (!markAndCheckAutoReload(Date.now())) return;
+    this.setState({ recovering: true });
+    // 최신 index.html(no-cache) → 최신 해시 chunk 로 자가치유
+    window.location.reload();
+  }
+
   render() {
+    if (this.state.recovering) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
+          <p className="text-sm text-muted-foreground">새 버전을 적용하는 중입니다…</p>
+        </div>
+      );
+    }
     if (this.state.hasError) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
@@ -76,7 +109,11 @@ class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
           </p>
           <button
             className="rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900 transition-colors"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              // 수동 재시도 시엔 자동 reload 가드를 비워, 이후 chunk 자가치유가 다시 동작하도록 한다.
+              clearAutoReloadGuard();
+              window.location.reload();
+            }}
           >
             새로고침
           </button>

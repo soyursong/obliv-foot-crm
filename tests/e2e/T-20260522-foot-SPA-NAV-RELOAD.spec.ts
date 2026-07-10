@@ -48,11 +48,15 @@ test.describe('AC-1: Suspense 경계 소스 정적 검증', () => {
 // ── AC-6: lazyWithRetry 소스 검증 ─────────────────────────────────────────────
 
 test.describe('AC-6: lazyWithRetry chunk 복구 로직 소스 검증', () => {
-  test('AC-6-1: App.tsx에 lazyWithRetry 함수 + sessionStorage 리로드 로직 존재', () => {
+  // T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: 재시도 가드가 영구 플래그(spa_reload_tried)에서
+  //   시간 윈도우 가드(chunkReload SSOT)로 교체됨. AC-6-1 을 신 메커니즘 기준으로 갱신.
+  test('AC-6-1: App.tsx에 lazyWithRetry 함수 + chunkReload 시간윈도우 가드 리로드 로직 존재', () => {
     const appPath = path.resolve(__dirname, '../../src/App.tsx');
     const src = fs.readFileSync(appPath, 'utf-8');
     expect(src).toContain('lazyWithRetry');
-    expect(src).toContain('spa_reload_tried');
+    // 영구 단발 플래그 → 시간 윈도우 가드 SSOT 로 전환
+    expect(src).toContain('markAndCheckAutoReload');
+    expect(src).toContain('clearAutoReloadGuard');
     expect(src).toContain('window.location.reload()');
   });
 
