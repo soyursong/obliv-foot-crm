@@ -174,9 +174,10 @@ test.describe('§1 — AC-1 경로 전수 감사 결과 고정 (DOC_PRINT_UNIFY_
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('§2 — FALLBACK_TEMPLATES 단일 소스 구조 (AC-4)', () => {
-  test('FALLBACK_TEMPLATES에 16종이 존재해야 함', () => {
+  test('FALLBACK_TEMPLATES에 17종이 존재해야 함', () => {
     // 새 양식 추가 시 이 숫자를 업데이트할 것
-    expect(FALLBACK_TEMPLATES.length).toBe(16);
+    // T-20260710-foot-KOHRESULT-DOC-PRINT-ENABLE: koh_result(html) 추가 → 16→17 (DOCLIST_ORDER_10 SSOT 정합).
+    expect(FALLBACK_TEMPLATES.length).toBe(17);
   });
 
   test('각 FALLBACK 템플릿에 form_key / name_ko / category 필드 존재', () => {

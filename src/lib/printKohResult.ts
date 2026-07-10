@@ -5,9 +5,49 @@
 //   - 인쇄(printKohResult) + 화면 미리보기/PNG(KohResultDialog) 가 같은 바인딩 결과를 공유(복제 금지).
 
 import { getHtmlTemplate, bindHtmlTemplate } from '@/lib/htmlFormTemplates';
+import { supabase } from '@/lib/supabase';
 
 /** KOH 결과지 sheet 루트 element id — KOH_RESULT_HTML 스코프 루트(html2canvas 캡처 타겟). */
 export const KOH_SHEET_ID = 'koh-report-sheet';
+
+/**
+ * 발행된 KOH 결과지(form_submissions, template=koh_result, status='published')의 field_data 조회.
+ * T-20260710-foot-KOHRESULT-DOC-PRINT-ENABLE (AC-2/AC-3): 서류출력 명단(DocumentPrintPanel)에서
+ *   koh_result 를 출력할 때, 검사결과 탭(KohPublishedResults)과 **동일한 발행 field_data**(발톱부위·
+ *   의뢰번호·채취일 등)를 바인딩해 표기 오류(공란) 없이 정확 렌더한다.
+ * - 쿼리는 KohPublishedResults 와 동형(마이그 미적용 시 템플릿 없음 → null 폴백, 무파손).
+ * - checkInId 가 주어지면 그 방문의 발행분 우선, 없으면 고객 최신 발행분(검사결과 탭 표시분과 동일 semantics).
+ * - 발행분이 없으면 null → 호출부는 기존 autobind(공란) 유지.
+ */
+export async function loadPublishedKohFieldData(
+  clinicId: string | null,
+  customerId: string | null,
+  checkInId?: string | null,
+): Promise<Record<string, unknown> | null> {
+  if (!clinicId || !customerId) return null;
+  // koh_result 템플릿 id — 미적용 prod/dev 면 없음 → null 폴백.
+  const { data: tpl } = await supabase
+    .from('form_templates')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('form_key', 'koh_result')
+    .limit(1)
+    .maybeSingle();
+  if (!tpl?.id) return null;
+  const { data, error } = await supabase
+    .from('form_submissions')
+    .select('field_data, check_in_id, created_at')
+    .eq('clinic_id', clinicId)
+    .eq('customer_id', customerId)
+    .eq('template_id', tpl.id as string)
+    .eq('status', 'published')
+    .order('created_at', { ascending: false });
+  if (error || !data || data.length === 0) return null;
+  const rows = data as Array<{ field_data: unknown; check_in_id: string | null }>;
+  // 이 방문 발행분 우선 → 없으면 고객 최신 발행분.
+  const row = (checkInId ? rows.find((r) => r.check_in_id === checkInId) : undefined) ?? rows[0];
+  return (row?.field_data ?? null) as Record<string, unknown> | null;
+}
 
 /** field_data(jsonb) → 문자열 맵 정규화(bindHtmlTemplate 입력 shape). */
 function toStringMap(fieldData: unknown): Record<string, string> {

@@ -274,6 +274,35 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     sort_order: 5,
   },
 
+  // ── KOH균검사결과지 (T-20260710-foot-KOHRESULT-DOC-PRINT-ENABLE AC-2) ──
+  //   DOCLIST_ORDER_10 SSOT 3번 = koh_result. 운영 DB form_templates 에는 실재하나(PHASE15 발행 동선),
+  //   FALLBACK(빈 DB/프리뷰)에는 누락되어 있었다 → SSOT 목록과 폴백 불일치 해소(additive, db_change=false).
+  //   template_format='html' → isHtmlTemplate(koh_result)=true 라이브 HTML 경로(KOH_RESULT_HTML)로 렌더.
+  //   field_map = KOH_RESULT_HTML 플레이스홀더(발행 field_data 로 바인딩; 미발행 시 공란).
+  {
+    id: 'fallback-koh-result',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'koh_result',
+    name_ko: 'KOH균검사결과지',
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name',   label: '수진자',   type: 'text', x: 0, y: 0 },
+      { key: 'chart_number',   label: '차트번호', type: 'text', x: 0, y: 0 },
+      { key: 'birth_date',     label: '생년월일', type: 'date', x: 0, y: 0 },
+      { key: 'specimen_type',  label: '검체(발톱부위)', type: 'text', x: 0, y: 0 },
+      { key: 'collected_date', label: '채취일',   type: 'date', x: 0, y: 0 },
+      { key: 'requested_date', label: '의뢰일',   type: 'date', x: 0, y: 0 },
+      { key: 'request_no',     label: '의뢰번호', type: 'text', x: 0, y: 0 },
+      { key: 'specimen_no',    label: '검체번호', type: 'text', x: 0, y: 0 },
+    ],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 8,
+  },
+
   // ── 별도 요청 서류 (현장 22:04 요청 기준) ──
   {
     id: 'fallback-prescription',

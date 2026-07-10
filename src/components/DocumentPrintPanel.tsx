@@ -102,6 +102,9 @@ import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
 // T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과(KOH)·투약내용(처방약) 자동 로드.
 import { loadReferralAutoFields } from '@/lib/referralAutoLoad';
+// T-20260710-foot-KOHRESULT-DOC-PRINT-ENABLE (AC-2/AC-3): 서류출력 명단에서 koh_result 출력 시
+//   검사결과 탭(KohPublishedResults)과 동일한 발행 field_data 를 바인딩(발톱부위·의뢰번호 등 공란 방지).
+import { loadPublishedKohFieldData } from '@/lib/printKohResult';
 // T-20260608-foot-DOC-PATH12-SYNC: PATH-4(PaymentMiniWindow) 빌링 로직 1:1 재사용 (4경로 통일).
 //   service_charges 가 비어있는 경로(= PMW 수기조정만 있고 보험 copay 미산출)에서 check_in_services
 //   기반으로 PMW 와 동일한 빌링 폴백을 적용한다. (무파괴: service_charges 존재 시 기존 동작 불변.)
@@ -1892,6 +1895,23 @@ function IssueDialog({
         const ref = await loadReferralAutoFields(checkIn.clinic_id, checkIn.customer_id);
         if (cancelled) return;
         setAutoValues({ ...vals, test_result: ref.test_result, medication: ref.medication });
+      } else if (template.form_key === 'koh_result' && checkIn.customer_id) {
+        // T-20260710-foot-KOHRESULT-DOC-PRINT-ENABLE (AC-2/AC-3): 발행된 KOH 결과지 field_data 병합.
+        //   검사결과 탭 KohResultDialog 와 동일 소스 → 발톱부위(specimen_type)·의뢰번호·채취일 등 정확 렌더.
+        //   발행분 부재 시 kohFd=null → 기존 autobind(공란) 유지(무파손). 이 방문(check_in) 발행분 우선.
+        const kohFd = await loadPublishedKohFieldData(
+          checkIn.clinic_id,
+          checkIn.customer_id,
+          checkIn.id,
+        );
+        if (cancelled) return;
+        if (kohFd) {
+          const kohStr: Record<string, string> = {};
+          for (const [k, v] of Object.entries(kohFd)) kohStr[k] = v == null ? '' : String(v);
+          setAutoValues({ ...vals, ...kohStr });
+        } else {
+          setAutoValues(vals);
+        }
       } else {
         setAutoValues(vals);
       }
