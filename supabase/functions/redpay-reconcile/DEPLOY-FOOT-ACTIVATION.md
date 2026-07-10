@@ -116,3 +116,20 @@ SELECT cron.schedule('foot-redpay-reconcile', '*/5 * * * *',
 | 4 검증 | 검증 쿼리 세트 제공 | 실행+evidence 수집 |
 
 **db_change: ADDITIVE(function+cron only) · 신규 테이블/컬럼/enum 0 · rollback=DROP FUNCTION+unschedule(데이터 손실 0).**
+
+---
+
+## 6. 403 근본원인 후속 (2026-07-10T20:26, NEW-TASK MSG-...-ex06 / redpay-403-incident F0BGDKNATK7)
+
+**forensic 결론:** 403 = RedPay API 오류가 아니라 nginx HTML 디렉터리 거부. 요청 URL에서 `payments.php` 탈락 시 `/api/partner/` 로 가서 발생. **API 키(RDP_MB_…c55b)·사업자번호(511-60-00988)는 정상** — 키 오류는 항상 401, 403은 파일명 탈락 유일. "키 불일치/중지"는 레퍼런스표 오진(응답에 없는 문구).
+
+**dev-foot 실측 — EF 소스는 이미 정상이었음:**
+- `index.ts` 의 URL 조립부는 레포 이식 시점(96c3d394, 2026-06-07)부터 **`payments.php` 전체 경로가 상수에 하드코딩**되어 있었고, 조립은 `${REDPAY_BASE_URL}?${params}` 문자열 결합(urljoin 아님). **레포 전수 grep 결과 redpay URL 조립 지점은 이 1곳뿐** — EF 소스에 §4.1 urljoin/base-only 버그는 **존재하지 않았다**. (봇이 보고한 403은 EF가 아닌 진단 툴 자체 호출에서 발생한 것으로 추정.)
+- 따라서 이번 수정은 "버그 제거"가 아니라 **재발 방지 방어 3종**이다:
+  1. URL 상수 하드코딩 의도를 주석으로 박제(사고 ref 명시).
+  2. **Content-Type 가드** — 응답이 `application/json` 아니면(특히 nginx text/html 403) 오류코드 표 조회 없이 `status/content_type/url/body` 원문을 그대로 담아 throw. 오진 재발 구조적 차단.
+  3. **요청 URL 로깅** — `[redpay-reconcile][foot] redpay request url=...` (API 키는 X-API-KEY 헤더에만 있어 URL 로그 안전).
+
+**supervisor 배포 후 확인 1줄:** DRY_RUN=false 첫 폴링 로그에서 `redpay request url=` 이 `https://redpay.kr/api/partner/payments.php?...` 로 **payments.php 포함**하는지 확인 → 포함 시 raw 적재 진행. 비-JSON 응답이 오면 새 가드가 원문 URL/body 를 로그에 그대로 노출하므로 오조립/키/권한 어느 쪽인지 즉시 판별 가능.
+
+> **raw=0 의 실제 원인은 URL 버그가 아니라 §0 #1(EF prod 미배포) + secrets 미비일 가능성이 높다.** 본 수정 배포 + secrets 3종(BUSINESS_NO/TID_WHITELIST/DRY_RUN=false) + 폴러 재기동으로 raw≥1 검증 필요. 코드 재작업 아님.

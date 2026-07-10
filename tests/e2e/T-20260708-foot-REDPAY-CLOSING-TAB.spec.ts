@@ -17,6 +17,7 @@ const CLOSING = 'src/pages/Closing.tsx';
 const REDPAY_TAB = 'src/components/closing/RedpayReconcileTab.tsx';
 const MIG = 'supabase/migrations/20260708230000_redpay_recon_daily_view.sql';
 const MIG_ROLLBACK = 'supabase/migrations/20260708230000_redpay_recon_daily_view.rollback.sql';
+const RECON_EF = 'supabase/functions/redpay-reconcile/index.ts';
 
 // 풋 13 TID 화이트리스트 (obliv_origin_env.md)
 const FOOT_TIDS = [
@@ -139,6 +140,50 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB AC-6/AC-7 — 활성화 전 렌더 
   test('AC-6: 빈 목록에서도 깨지지 않는 empty state', () => {
     const src = fs.readFileSync(REDPAY_TAB, 'utf-8');
     expect(src).toContain('레드페이 자동수집 결제가 없습니다');
+  });
+});
+
+// ─── 403 근본원인(URL 오조립) 방어 — redpay-reconcile EF ─────────────────────
+//   ref: redpay-403-incident F0BGDKNATK7 (2026-07-10 이은상 팀장 forensic).
+//   403 = nginx HTML 디렉터리 거부(payments.php 파일명 탈락) — API 키 문제 아님.
+test.describe('T-20260708-REDPAY-CLOSING-TAB 403-FIX — EF URL 조립 방어', () => {
+  test('URL 은 payments.php 전체 경로를 상수에 하드코딩 (urljoin/base-only 금지)', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // 파일명 포함 전체 경로 상수
+    expect(src).toContain('const REDPAY_BASE_URL           = "https://redpay.kr/api/partner/payments.php";');
+    // 조립은 상수 + 쿼리스트링만
+    expect(src).toContain('const requestUrl = `${REDPAY_BASE_URL}?${params}`;');
+    // base 를 파일명 없는 디렉터리 문자열로 정의하는 안티패턴 없음 (payments.php 탈락 원천 차단)
+    expect(src).not.toContain('= "https://redpay.kr/api/partner/"');
+    expect(src).not.toContain("= 'https://redpay.kr/api/partner/'");
+  });
+
+  test('조치#3 — 실제 발사 URL 로깅 (payments.php 탈락 즉시 지목)', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    expect(src).toContain('redpay request url=${requestUrl}');
+    // fetch 는 로깅한 requestUrl 을 그대로 사용
+    expect(src).toContain('await fetchWithRetry(requestUrl,');
+  });
+
+  test('조치#2 — Content-Type 가드: 비-JSON 이면 오류표 조회 없이 원문 노출', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // Content-Type 헤더 검사
+    expect(src).toContain('res.headers.get("Content-Type")');
+    expect(src).toContain('application/json');
+    // 비-JSON 시 status/content_type/url/body 원문을 담아 throw
+    expect(src).toContain('URL 오조립/미도달 의심');
+    expect(src).toMatch(/status=\$\{res\.status\}/);
+    expect(src).toContain('url=${requestUrl}');
+    // Content-Type 가드가 !res.ok 분기보다 먼저 배치 (HTML 403 을 JSON 오류로 오분류 방지)
+    const ctypeIdx = src.indexOf('res.headers.get("Content-Type")');
+    const okIdx = src.indexOf('if (!res.ok) {');
+    expect(ctypeIdx).toBeGreaterThan(0);
+    expect(okIdx).toBeGreaterThan(ctypeIdx);
+  });
+
+  test('안전 — 읽기전용 GET(payments.php)만, cancel.php 실거래 취소 절대 미호출', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    expect(src).not.toContain('cancel.php');
   });
 });
 

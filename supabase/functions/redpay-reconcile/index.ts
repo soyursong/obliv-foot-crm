@@ -53,6 +53,13 @@ const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") ===
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
+// ── RedPay 엔드포인트: 파일명 포함 전체 경로를 상수에 박제(하드코딩) ──────────────
+//   urljoin / base-only concat 금지. `payments.php` 파일명이 탈락하면 요청이
+//   디렉터리 경로(`/api/partner/`)로 가고, nginx가 application/json 이 아닌
+//   HTML 403(디렉터리 접근 거부)을 반환한다. 이 HTML 403을 "API Key 불일치"로
+//   오진해 키를 반복 재등록했던 사고가 있었다(redpay-403-incident F0BGDKNATK7,
+//   2026-07-10 이은상 팀장 forensic — 소거법으로 URL 오조립 단일 원인 확정).
+//   파일명을 이 상수에 박아 탈락 자체를 구조적으로 불가능하게 한다.
 const REDPAY_BASE_URL           = "https://redpay.kr/api/partner/payments.php";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -786,11 +793,33 @@ async function fetchRedpayPage(
     params.set("tid", tidList[0]);
   }
 
-  const res = await fetchWithRetry(`${REDPAY_BASE_URL}?${params}`, {
+  // URL 조립: 전체 경로 상수(REDPAY_BASE_URL) + 쿼리스트링만 부착. base 단독 조립·urljoin 금지.
+  const requestUrl = `${REDPAY_BASE_URL}?${params}`;
+
+  // 조치#3 — 실제 발사 URL 로깅. API 키는 X-API-KEY 헤더에만 있고 쿼리스트링엔 없으므로
+  //   URL 로깅은 안전(키 미노출). payments.php 탈락 여부를 로그 1줄로 즉시 지목 가능.
+  console.log(`[redpay-reconcile][foot] redpay request url=${requestUrl}`);
+
+  const res = await fetchWithRetry(requestUrl, {
     headers: {
       "X-API-KEY": REDPAY_API_KEY,
     },
   });
+
+  // 조치#2 — Content-Type 가드. RedPay 파트너 API는 정상·오류 불문 모든 응답이
+  //   application/json 이다. 비-JSON(특히 nginx 의 text/html 403)이 오면 이는 API 오류가
+  //   아니라 요청이 payments.php 에 도달하지 못한 URL 오조립/미도달 신호다.
+  //   → 오류코드 표를 조회하지 말고 원문(status/content-type/url/body)을 그대로 노출한다
+  //     (오진 재발 방지, ref: redpay-403-incident §4·§5·§6.1).
+  const ctype = res.headers.get("Content-Type") ?? "";
+  if (!ctype.toLowerCase().includes("application/json")) {
+    const rawBody = await res.text();
+    throw new Error(
+      `레드페이 비-JSON 응답 (URL 오조립/미도달 의심 — 오류코드 표 조회 금지): ` +
+      `status=${res.status} content_type=${JSON.stringify(ctype)} ` +
+      `url=${requestUrl} body=${JSON.stringify(rawBody.slice(0, 300))}`
+    );
+  }
 
   if (!res.ok) {
     const body = await res.text();
