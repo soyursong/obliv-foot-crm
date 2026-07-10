@@ -38,7 +38,7 @@ import { toast } from '@/lib/toast';
 import { normalizeToE164 } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
-import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
+import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor } from '@/lib/types';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -5771,7 +5771,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
                 {/* ⑩ 특이 항목 삭제 — C2-REMOVE-EXTRA-FIELDS */}
 
-                {/* ⑪ 방문경로 드롭다운 — C2-VISIT-ROUTE */}
+                {/* ⑪ 방문경로 드롭다운 — C2-VISIT-ROUTE
+                    T-20260710-foot-RESVROUTE-VISITCHANNEL-UNIFY (AC1): 예약관리 '예약경로'와 동일 SSOT(visitRouteOptionsFor)로 통일.
+                    하드코딩 이원화(기존: TM/인바운드/워크인/지인소개 — '네이버' 누락) 제거 → 통일 목록 미지정(빈값)/TM/네이버/인바운드/워크인/지인소개.
+                    기존행이 legacy '인콜' 등 목록 밖 값이면 visitRouteOptionsFor 가 현재값을 동적 보존(빈칸화 방지, read-time 흡수). */}
                 <tr>
                   <td className={LC}>방문경로</td>
                   <td className={VC} colSpan={3}>
@@ -5786,13 +5789,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         saveCustomerField({ visit_route: val || null });
                       }}
                       disabled={savingField}
+                      data-testid="chart-visit-route-select"
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
                     >
                       <option value="">— 선택 —</option>
-                      <option value="TM">TM</option>
-                      <option value="인바운드">인바운드</option>
-                      <option value="워크인">워크인</option>
-                      <option value="지인소개">지인소개</option>
+                      {visitRouteOptionsFor(customer.visit_route).map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
                     </select>
                   </td>
                 </tr>

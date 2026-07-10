@@ -42,6 +42,7 @@ import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEd
 import { PaymentItemsView } from '@/components/PaymentItemsView';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
+import { visitRouteOptionsFor } from '@/lib/types';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
 // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 1번차트 건보공단 실시간 자격조회 row 제거 (NhisLookupPanel import 삭제)
@@ -1329,11 +1330,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   }}
                   className="rounded border border-gray-300 px-2 py-0.5 text-xs cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
                 >
+                  {/* T-20260710-foot-RESVROUTE-VISITCHANNEL-UNIFY (AC1): 예약경로/방문경로 단일 SSOT(visitRouteOptionsFor). 하드코딩 이원화 제거. */}
                   <option value="">— 선택 —</option>
-                  <option value="TM">TM</option>
-                  <option value="인바운드">인바운드</option>
-                  <option value="워크인">워크인</option>
-                  <option value="지인소개">지인소개</option>
+                  {visitRouteOptionsFor(visitRoute).map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
                 </select>
               </div>
               {/* T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE AC-2: 건보공단 실시간 자격조회 row 제거 (customerMode) */}
@@ -1893,11 +1894,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       }}
                       className="rounded border border-gray-300 px-2 py-0.5 text-xs cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
                     >
+                      {/* T-20260710-foot-RESVROUTE-VISITCHANNEL-UNIFY (AC1): 예약경로/방문경로 단일 SSOT(visitRouteOptionsFor). 하드코딩 이원화 제거. */}
                       <option value="">— 선택 —</option>
-                      <option value="TM">TM</option>
-                      <option value="인바운드">인바운드</option>
-                      <option value="워크인">워크인</option>
-                      <option value="지인소개">지인소개</option>
+                      {visitRouteOptionsFor(visitRoute).map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
                     </select>
                   </div>
                 )}

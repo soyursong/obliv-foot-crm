@@ -4057,7 +4057,8 @@ function ReservationEditor({
               >
                 <option value="">— 선택 안 함 —</option>
                 {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 방문경로 옵션 SSOT 재사용.
-                    W2-DB(item8): 신규 5종(TM/네이버/인콜/워크인/지인소개) + legacy 인바운드 현재값 보존. */}
+                    T-20260710-foot-RESVROUTE-VISITCHANNEL-UNIFY (AC1, A안): 통일 5종(TM/네이버/인바운드/워크인/지인소개)
+                    + legacy '인콜' 현재값 보존(visitRouteOptionsFor). 고객정보 방문경로와 동일 SSOT. */}
                 {visitRouteOptionsFor(state.visit_route).map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}

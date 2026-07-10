@@ -780,14 +780,24 @@ export interface ReservationRegistrar {
  * T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS / T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB(item8):
  * 방문경로(예약경로) 대분류 옵션 SSOT — 신규 등록 선택지 5종.
  * customers.visit_route / reservations.visit_route CHECK 제약(W2-DB: TM/워크인/인바운드/지인소개/네이버/인콜)과 정합.
- * ⚠ B안(비파괴): 신규 등록 드롭다운은 5종(TM/네이버/인콜/워크인/지인소개)만 노출.
- *    legacy '인바운드'는 CHECK·표시에는 허용하되 드롭다운 기본 노출에서 제외(visitRouteOptionsFor 로 동적 보존).
+ *
+ * ─── T-20260710-foot-RESVROUTE-VISITCHANNEL-UNIFY (A안, 김주연 총괄 확정 ts=1783651711.419909) ───
+ *   예약관리 '예약경로' ↔ 고객정보(2번차트) '방문경로'를 이 단일 SSOT 하나로 통일(양 화면 동일 목록 렌더).
+ *   통일 목록 = 미지정(빈값=NULL) / TM / 네이버 / 인바운드 / 워크인 / 지인소개.
+ *   ★ A안: 기존 '인콜'을 '인바운드'로 어휘 수렴(canonical inbound). '인콜'은 DB CHECK·기존행 표시에만
+ *      허용하고 신규 드롭다운 기본 노출에서 제외(VISIT_ROUTE_LEGACY + visitRouteOptionsFor 로 동적 보존).
+ *   ★ 비파괴(ADDITIVE): DB CHECK 는 이미 6값(TM/워크인/인바운드/지인소개/네이버/인콜) 전부 허용(20260624100000)
+ *      → 신규 DDL/enum 추가 0. 기존행 물리 UPDATE 0(read-time 흡수). '인바운드'는 두 테이블 CHECK 에 이미 존재.
+ *   ★ DA canonical 매핑(DA-20260710-FOOT-ROUTE-UNIFY): 미지정→NULL / TM→dopamine축 / 네이버→naver /
+ *      인콜·인바운드→inbound(동일물 별칭수렴) / 워크인→walkin / 지인소개=referral 축(referral_name).
  * ⚠ 이름충돌 경고(DA CONSULT-REPLY igq8): foot.visit_route '네이버'(네이버예약/플레이스 수기 inbound)
- *    ≠ cue_cards.media_source='naver'(도파민 paid). silver/route_std 매핑: '네이버'→naver / '인콜'→inbound / legacy '인바운드'→inbound.
+ *    ≠ cue_cards.media_source='naver'(도파민 paid). silver/route_std 매핑: '네이버'→naver / '인콜'·'인바운드'→inbound.
+ * ⚠ 매출 귀속 불변(AC5): 본 표시축은 reservations.source_system(Revenue Source Split SSOT)과 직교 독립.
+ *    'TM' 표시값 write 가 source_system='dopamine' 으로 흐르지 않는다(resolveVisitRouteDisplay §AC-1 가드).
  */
-export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인콜', '워크인', '지인소개'] as const;
-/** 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용). */
-export const VISIT_ROUTE_LEGACY = ['인바운드'] as const;
+export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인바운드', '워크인', '지인소개'] as const;
+/** 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용). '인콜'은 A안에서 '인바운드'로 수렴됐으나 기존행 표시 보존. */
+export const VISIT_ROUTE_LEGACY = ['인콜'] as const;
 export type VisitRoute = (typeof VISIT_ROUTE_OPTIONS)[number] | (typeof VISIT_ROUTE_LEGACY)[number];
 
 /**
