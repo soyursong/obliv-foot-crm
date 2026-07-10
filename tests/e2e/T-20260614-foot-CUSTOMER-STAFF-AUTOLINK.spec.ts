@@ -72,14 +72,21 @@ test.describe('T-20260614 CUSTOMER-STAFF-AUTOLINK — 결선 (소스 무결성)'
     expect(CUST_PAGE).toMatch(/from\('staff'\)[\s\S]{0,160}select\('id, name'\)[\s\S]{0,80}eq\('clinic_id', clinic\.id\)/);
   });
 
-  // ⚠ SUPERSEDED by T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI:
-  //   예약 카드(예약관리 surface)의 '담당자' 표시 기준이 차트 담당자(customers.assigned_staff_id)에서
-  //   '예약 잡은 계정'(COALESCE(updated_by, created_by) → user_profiles.name)으로 재정의됨(reporter=김주연 총괄 policy_superseded).
-  //   따라서 예약 카드에서 resvAssignedStaffMap·customers.assigned_staff_id 사용은 제거됨. 신규 동작은 BOOKER spec에서 검증.
-  test('SUPERSEDED: 예약 카드 담당자는 더이상 resvAssignedStaffMap(차트 담당자)을 쓰지 않음', () => {
+  // ⚠ SUPERSEDED (2단계) — 예약 카드(예약관리 surface) '담당자' 표시 기준이 아래로 연쇄 재정의됨:
+  //   ① T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: 차트 담당자(customers.assigned_staff_id) → '예약 잡은 계정'(booker, COALESCE(updated_by, created_by))
+  //      (reporter=김주연 총괄 policy_superseded) → resvAssignedStaffMap 제거.
+  //   ② T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH: booker(resvBookerMap=created_by) → 예약등록자(registrar_name 스냅샷)로 소스 교체
+  //      (라벨/의도는 줄곧 '예약등록자'였는데 소스만 booker였던 게 현장 미스매치 RC).
+  //   ③ T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY: 별도줄 @예약등록자 태그를 상태줄에 인라인 통합하며
+  //      testid 를 assigned-staff-tag-${r.id} → registrar-tag-${r.id} 로 개명·승계.
+  //   ∴ 예약 카드에서 resvAssignedStaffMap·assigned-staff-tag 는 완전 제거됨. 현행 동작은 registrar-tag / registrar_name 소스로 검증.
+  test('SUPERSEDED: 예약 카드 담당자는 차트담당자(resvAssignedStaffMap)·assigned-staff-tag 를 더이상 쓰지 않고 예약등록자(registrar-tag)로 대체됨', () => {
     expect(RESV_PAGE).not.toContain('resvAssignedStaffMap');
-    // assigned-staff-tag testid 는 BOOKER UI 가 승계(연락처 옆 @담당자명) — 존재는 하되 booker 소스 기반
-    expect(RESV_PAGE).toMatch(/data-testid=\{`assigned-staff-tag-\$\{r\.id\}`\}/);
+    // 구 testid 는 제거됨 (assigned-staff-tag → registrar-tag 로 개명)
+    expect(RESV_PAGE).not.toMatch(/data-testid=\{`assigned-staff-tag-\$\{r\.id\}`\}/);
+    // 승계 태그: 예약등록자 스냅샷(registrar_name) 기반 registrar-tag (연락처/상태줄 우측 @예약등록자명)
+    expect(RESV_PAGE).toMatch(/data-testid=\{`registrar-tag-\$\{r\.id\}`\}/);
+    expect(RESV_PAGE).toMatch(/@\{r\.registrar_name\}/);
   });
 
   test('SCOPE 가드: 예약 fetchWeek 가 customers.assigned_staff_id 를 더이상 로드하지 않음(예약관리 한정 재정의)', () => {
