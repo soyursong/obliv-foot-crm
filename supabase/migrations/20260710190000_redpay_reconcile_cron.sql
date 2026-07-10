@@ -61,7 +61,7 @@ BEGIN
       'Content-Type',    'application/json',
       'X-Internal-Cron', v_cron_secret
     ),
-    body    := jsonb_build_object('mode', 'incremental')::TEXT
+    body    := jsonb_build_object('mode', 'incremental')  -- pg_net http_post: body 는 jsonb (TEXT 캐스트 시 signature 불일치 42883)
   );
 
   RETURN jsonb_build_object(
