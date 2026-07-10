@@ -54,6 +54,9 @@ import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
+// T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 항목별 명세 에디터를
+//   현장 정본 결제 표면(PaymentMiniWindow)에 탑재. PaymentDialog L1149 와 동일 규칙.
+import { PaymentItemsEditor, type PaymentItemDraft, draftFromService } from '@/components/PaymentItemsEditor';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate } from '@/lib/insurance';
 import {
@@ -675,6 +678,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── Services + Selection
   const [services, setServices] = useState<Service[]>([]);
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+  // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 결제 항목별 명세(payment_items).
+  //   현재 수가 선택(pricingItems)에서 자동 seed(하이브리드) → 사용자가 직접 편집하면 재seed 중단.
+  //   charge_class·service_code = 표시 스냅샷일 뿐 급여 split/수가 authority 아님(service_charges 유지).
+  const [lineItems, setLineItems] = useState<PaymentItemDraft[]>([]);
+  const lineItemsTouchedRef = useRef(false);
   const [saved, setSaved] = useState(false);
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
   // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 — 하나의 수납 건을 복수 결제수단으로 나눠 받기.
@@ -776,6 +784,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setSelectedItems([]);
     setSaved(false);
     setPayMethod('card');
+    // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 환자 전환 시 항목 명세 초기화 → 재seed 허용
+    setLineItems([]);
+    lineItemsTouchedRef.current = false;
     // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
     setSplitMode(false);
     setSplitRows([]);
@@ -1359,6 +1370,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   const grandTotal = pricingItems.reduce((s, item) => s + getItemAmount(item), 0);
 
+  // ── T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 항목별 명세 자동 seed ──
+  //   현재 수가 선택(pricingItems)을 payment_items 라인 초안으로 프리필(하이브리드 권고 D).
+  //   customAmounts 오버라이드를 단가 우선으로 반영. draftFromService 재사용(charge_class·service_code 스냅샷).
+  //   사용자가 에디터를 직접 편집하면(touched) 자동 재seed 중단 — 수동 charge_class 입력 보존.
+  //   deductMode(선수금 차감 = 패키지 회차 grain)는 제외 = PaymentDialog `paymentMode==='single' && !balanceKind` 동형 가드.
+  useEffect(() => {
+    if (lineItemsTouchedRef.current) return;
+    if (deductMode) {
+      setLineItems([]);
+      return;
+    }
+    const seeded: PaymentItemDraft[] = pricingItems.map(({ service, qty }) => {
+      const override = customAmounts.get(service.id);
+      const unit = override !== undefined ? override : (service.price ?? 0);
+      const d = draftFromService(service, qty);
+      return { ...d, unit_price: unit, line_amount: unit * qty };
+    });
+    setLineItems(seeded);
+  }, [selectedItems, customAmounts, deductMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 세금 구분별 합산 (풋케어 항목만)
   const totalByTax: Record<TaxClass, number> = {
     '비급여(과세)': 0,
@@ -1508,6 +1539,33 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     loadZone3Data(checkIn);
   };
 
+  // ── T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 항목별 명세 부착 저장 ──
+  //   payment_items = payments(수납) 하위 grain. 매출집계/EDI/마감/인센티브 미진입(display 전용).
+  //   best-effort: 항목 저장 실패가 이미 커밋된 수납을 롤백하지 않음(현장 수납 연속성 우선).
+  const insertPaymentItems = async (paymentId: string, items: PaymentItemDraft[]) => {
+    const rows = items
+      .filter((it) => it.service_name.trim() && it.line_amount > 0)
+      .map((it) => ({
+        payment_id: paymentId,
+        check_in_id: checkIn.id,
+        service_id: it.service_id,
+        service_name: it.service_name.trim(),
+        service_code: it.service_code,
+        quantity: it.quantity || 1,
+        unit_price: it.unit_price,
+        line_amount: it.line_amount,
+        charge_class: it.charge_class,
+        created_by: profile?.id ?? null,
+      }));
+    if (rows.length === 0) return;
+    const { error } = await supabase.from('payment_items').insert(rows);
+    if (error) {
+      // 비차단 — 항목 명세는 표시 세부. 수납 완료 UX 를 막지 않음.
+      console.error('[payment_items] 항목별 명세 저장 실패(수납은 정상):', error);
+      toast.error('결제는 완료됐으나 항목별 명세 저장에 실패했습니다. 결제 상세에서 다시 추가해 주세요.');
+    }
+  };
+
   // ── executeAutoDone ────────────────────────────────────────────────────────
   // T-20260616-foot-PMW-SPLIT-PAYMENT AC-3/AC-4:
   //   splits = [{method, amount}] N개 → payments 행 N개를 동일 check_in_id로 분리 insert.
@@ -1538,8 +1596,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         external_tid: null,
       };
     });
-    const { error: payErr } = await supabase.from('payments').insert(payRows);
+    const { data: payData, error: payErr } = await supabase
+      .from('payments')
+      .insert(payRows)
+      .select('id');
     if (payErr) throw payErr;
+
+    // ── T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 단건 수납 성공 → 항목별 명세 부착 ──
+    //   0행이면 스킵 = 레거시 lump-sum 그대로(하위호환·회귀 0). best-effort(비차단).
+    //   선수금 차감(taxType='선수금' = 패키지 회차 grain)은 제외 = PaymentDialog `!balanceKind` 동형 가드.
+    const primaryPaymentId = payData?.[0]?.id ?? null;
+    if (primaryPaymentId && taxType !== '선수금' && lineItems.length > 0) {
+      await insertPaymentItems(primaryPaymentId, lineItems);
+    }
 
     const { error: ciErr } = await supabase
       .from('check_ins')
@@ -2462,6 +2531,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     shrink(flex-shrink:1) + min-h-0으로 Zone2 flex-col 안에서 압축 허용,
                     overflow-y-auto로 수납 버튼 스크롤 접근 보장. */}
                 <div className="px-3 pt-2 pb-3 space-y-2 overflow-y-auto border-t shrink min-h-0">
+                  {/* T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY (P1 FIX): 항목별 명세 입력 (단건 수납 전용) —
+                      선수금 차감(패키지 회차 grain)은 자체 grain 이므로 제외(PaymentDialog `!balanceKind` 동형).
+                      미입력 시 총액만 저장(기존 방식·회귀 0). */}
+                  {!deductMode && pricingItems.length > 0 && (
+                    <PaymentItemsEditor
+                      items={lineItems}
+                      onChange={(items) => {
+                        lineItemsTouchedRef.current = true;
+                        setLineItems(items);
+                      }}
+                      services={services}
+                      settlementTotal={grandTotal}
+                    />
+                  )}
+
                   {/* [시술 저장 및 포함 금액 산정] */}
                   <Button
                     variant="outline"
