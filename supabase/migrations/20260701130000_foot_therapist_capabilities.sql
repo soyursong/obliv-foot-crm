@@ -87,3 +87,11 @@ END
 $verify$;
 
 COMMIT;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PostgREST 스키마 캐시 리로드 (신규 테이블 therapist_capabilities 를 REST 엔드포인트로 즉시 노출)
+-- cross_crm_data_contract.md §23 / docs/PGRST-SCHEMA-RELOAD-HYGIENE-CONVENTION.md 준수.
+-- 이 라인 부재 시 신규 테이블이 schema cache 에 미등재 → PGRST205(테이블 미발견)로
+-- FE capMissing=true → '가능 시술' 체크박스 disabled (T-20260710-foot-ASSIGN-ORDER-SCROLL-TREATSELECT AC2).
+-- ─────────────────────────────────────────────────────────────────────────────
+NOTIFY pgrst, 'reload schema';

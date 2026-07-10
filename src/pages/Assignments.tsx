@@ -1648,7 +1648,7 @@ function RotationOrderDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl" data-testid="rotation-order-dialog">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="rotation-order-dialog">
         <DialogHeader>
           <DialogTitle>자동배정 기본순번 설정</DialogTitle>
         </DialogHeader>
