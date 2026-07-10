@@ -111,3 +111,13 @@ END
 $verify$;
 
 COMMIT;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PostgREST 스키마 캐시 리로드 (신규 테이블 chart_treatment_requests 를 REST 엔드포인트로 즉시 노출)
+-- cross_crm_data_contract.md §23 / docs/PGRST-SCHEMA-RELOAD-HYGIENE-CONVENTION.md 준수.
+-- 이 라인 부재 시 신규 테이블이 schema cache 에 미등재 → PGRST205(테이블 미발견)로 FE 조회 실패.
+-- (§23 위생 체인 마감: silver 2026-07-03 검증서 NOTIFY 누락 3건 중 마지막. therapist_capabilities
+--  = 20260701130000 에서 이미 추가(T-20260710-foot-ASSIGN-ORDER-SCROLL-TREATSELECT), pkg_triple
+--  = 20260703040000 는 이미 보유.)
+-- ─────────────────────────────────────────────────────────────────────────────
+NOTIFY pgrst, 'reload schema';
