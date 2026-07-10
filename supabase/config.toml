@@ -14,3 +14,12 @@ project_id = "rxlomoozakkjesdqjtvd"
 # ─────────────────────────────────────────────────────────────────────────────
 [functions.reservation-ingest-from-dopamine]
 verify_jwt = false
+
+# T-20260708-foot-REDPAY-CLOSING-TAB (activation_gate):
+#   redpay-reconcile 는 pg_cron(trigger_redpay_reconcile → net.http_post)이 X-Internal-Cron
+#   헤더만 실어 호출한다(Supabase JWT 아님). 게이트웨이 기본 verify_jwt=true 면 EF 코드 도달
+#   전 401 → 5분 폴러가 매번 거부되어 실 적재 불가. verify_jwt=false 로 게이트웨이 JWT 검사를
+#   끄고 인증은 EF 내부(index.ts:121-123 X-Internal-Cron==INTERNAL_CRON_SECRET 또는
+#   service_role Bearer)에 위임한다. 둘 다 불일치 → 401 이므로 unauth hole 없음.
+[functions.redpay-reconcile]
+verify_jwt = false
