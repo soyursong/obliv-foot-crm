@@ -1,61 +1,88 @@
 -- ══════════════════════════════════════════════════════════════════
 -- T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD — OCR 영수증 수납 ↔ 레드페이 자동대조
 -- ══════════════════════════════════════════════════════════════════
--- ⚠ PROPOSAL 아티팩트 — data-architect CONSULT(1차 스키마 게이트) GO 전 prod 미적용.
---   dev-foot 자문게이트(§S2.4): 신규 컬럼 ADD 전 DA CONSULT 미선행 시 deploy-ready 금지.
---   본 파일 = CONSULT 첨부 설계 embodiment. supervisor DDL-diff 후에만 apply.
+-- ⚠ ADDITIVE 마이그. data-architect CONSULT(1차 스키마 게이트) GO 수신 완료
+--   (MSG-20260710-151152-qd7x: 컬럼 3종 GO(ADDITIVE) · 뷰 REVISE 반영본 · PCI CHECK ADOPT).
+--   apply 게이트 = supervisor DDL-diff (ADDITIVE+DA GO → 대표게이트 면제, autonomy §3.1).
 --
 -- Rollback: 20260710120000_ocr_receipt_redpay_match.rollback.sql
 --
+-- ── DA 검증 확정(information_schema, 2026-07-10) ──────────────────────
+-- Model A 4아티팩트 foot prod 실재 확인 ✅:
+--   redpay_raw_transactions · payment_reconciliation_log · redpay_poller_state · payments(recon 컬럼).
+-- 재사용 컬럼 실제명(foot는 external_* 접두, canonical 표기와 drift) ✅:
+--   payments.external_approval_no / external_tid / external_trxid / external_status
+--   / external_root_trxid / reconciled_at / amount  (신규 approval/tid 컬럼 신설 금지 — 재사용).
+-- PCI 위반행 count(raw_text ~ '[0-9]{13,}') = 0 실측 ✅ → NOT VALID→VALIDATE 안전.
+--
 -- ── 설계 요지 ────────────────────────────────────────────────────────
 -- Step1(업로드·영구저장): payments.image_url = 영수증 이미지 영구경로(수납 레코드 맵핑).
--- Step2(OCR 추출·검증팝업): 승인번호(8자리)=기존 payments.external_approval_no 재사용(신규 0),
---   결제금액=기존 payments.amount 재사용, 인쇄시각=신규 payments.ocr_receipt_datetime.
---   OCR 원본 추적 = 기존 receipt_ocr_results(+parsed_approval_no 신규 컬럼).
--- Step3(레드페이 자동대조) 매칭전략(LOCKED gate#6):
---   주키 = 승인번호(8자리) + 결제금액.  +보강 = 인쇄시각 ↔ approved_at ±15분 window 병용.
---   +TID = 있으면 보조, 없으면 무시(강제 아님).
--- Step4([영수증 수납] 탭): read-only VIEW v_receipt_settlement_daily (FE 조인/매칭 재계산 금지).
+-- Step2(OCR 추출·검증팝업):
+--   승인번호(8자리) 확정값 = 기존 payments.external_approval_no 재사용(신규 0),
+--   결제금액 확정값     = 기존 payments.amount 재사용(신규 0, ocr_amount 신설 금지 — DA[3]),
+--   인쇄시각            = 신규 payments.ocr_receipt_datetime,
+--   OCR 원문 추적       = receipt_ocr_results.parsed_approval_no + parsed_amount(신규, provenance).
+-- Step3(레드페이 자동대조): ★뷰가 매칭을 재계산하지 않는다.
+--   매칭 SSOT = redpay-reconcile EF(4-Tier: approval_no+amount+approved_at±5min+tid).
+--   매처가 payments.reconciled_at / redpay_raw_transactions.matched_payment_id /
+--   payment_reconciliation_log 에 영속화한 결과를 뷰가 JOIN 하여 surface only.
+-- Step4([영수증 수납] 탭): read-only VIEW v_receipt_settlement_daily (매처 산출 표면화).
 --
 -- ── SSOT 주의 (컬럼① 표시축) ─────────────────────────────────────────
--- 화면 표시·매칭 = ocr_receipt_datetime(실물 영수증 인쇄시각). created_at(시스템 업로드시각)과 별개 축.
+-- 화면 표시 = ocr_receipt_datetime(실물 영수증 인쇄시각). created_at(시스템 업로드시각)과 별개 축.
 -- (MSG-95y7 later-wins SSOT. MSG-0dyw '촬영·업로드 일시'는 표시축 아님.)
+-- ★매칭축(±윈도)은 뷰가 아니라 매처(EF) 소관 — 인쇄시각을 매처 CRM측 시각앵커로 접수하는 건
+--   별도 EF 개선 티켓(DA[1]). 본 뷰엔 시각윈도 재계산 없음.
 --
--- ── PCI 마스킹 가드 ──────────────────────────────────────────────────
--- 카드 전체 PAN(16자리) 영속 금지. 승인번호(≤12자리)·금액·인쇄시각만 저장.
--- receipt_ocr_results.raw_text 는 EF 단계에서 PAN 마스킹 후 적재(EF 가드 SSOT).
--- 아래 CHECK 는 DB-레벨 2차 방어(연속 13자리 이상 숫자열 = PAN 의심 → 저장 거부).
--- (DA 판정 대상: DB CHECK 채택 여부 / EF-only 여부.)
+-- ── write-precedence / 멱등 가드 (DA[2] 가드①②) ─────────────────────
+-- 가드①(later-wins): OCR 확정 승인번호 승격은 external_approval_no 가 NULL 일 때만 write,
+--   또는 스태프 명시 확정+overwrite 이력을 receipt_ocr_results 에 기록(비-OCR 소스 조용한 덮어쓰기 금지).
+--   → FE/EF write 경로에서 강제(FE DB-바인딩 단계). 아래 부분 UNIQUE 인덱스는 멱등(가드②) DB 2차방어.
+-- 가드②(idempotent): 동일 영수증 재촬영/재처리 시 payments 중복 INSERT 방지
+--   → 부분 UNIQUE 인덱스(image_url IS NOT NULL 인 OCR 영수증 건에 한정, 아래 §4).
 --
--- risk: ADDITIVE-ONLY (신규 nullable 컬럼 3 + read-only VIEW 1). 파괴적 변경 0.
+-- ── PCI 마스킹 가드 (DA[5] ADOPT · defense-in-depth) ─────────────────
+-- PRIMARY = EF 단계 PAN 마스킹(마스킹 SSOT). DB CHECK = 연속 미마스킹 PAN 2차방어(both, either/or 아님).
+-- backstop-only: '[0-9]{13,}' 는 연속 13~16자리만 차단(공백/대시 분절 PAN 은 통과 → EF가 잡음).
+-- 통과: 사업자번호(10)·전화(11)·승인번호(≤12). 차단: 연속 13자리+(전체 PAN, 연속13 RRN).
+-- NOT VALID→VALIDATE 패턴(count=0 실측 확인 후·무중단·기존행 톨러런스).
+--
+-- risk: ADDITIVE-ONLY (신규 nullable 컬럼 3 + parsed_amount 1 + 부분 UNIQUE 인덱스 1
+--       + CHECK 1 + read-only VIEW 1). 파괴적 변경 0.
 -- ══════════════════════════════════════════════════════════════════
 
--- ── 풋 단말기 13 TID 화이트리스트 (공유 merchant 511-60-00988 내 풋 판별자) ──
---   v_redpay_reconciliation_daily 와 동일 집합. +TID 보조 매칭·서버권위 필터용.
+-- 풋 단말기 13 TID 화이트리스트 (공유 merchant 511-60-00988 내 풋 판별자).
+--   §787/§519 소비뷰 TID 스코프 불변식 — business_no 단독 불충분, 아래 뷰에서 서버권위 필터.
+--   v_redpay_reconciliation_daily 와 동일 집합.
 
 -- ============================================================
--- 1. payments — 영수증 영구경로 + 인쇄시각 (ADDITIVE, nullable)
+-- 1. payments — 영수증 영구경로 + 인쇄시각 (ADDITIVE, nullable) — DA[1] GO
 -- ============================================================
 ALTER TABLE public.payments
   ADD COLUMN IF NOT EXISTS image_url            TEXT,         -- Step1: 영수증 이미지 영구 URL(receipts 버킷)
-  ADD COLUMN IF NOT EXISTS ocr_receipt_datetime TIMESTAMPTZ;  -- Step2: 영수증 인쇄시각(표시·매칭 SSOT)
+  ADD COLUMN IF NOT EXISTS ocr_receipt_datetime TIMESTAMPTZ;  -- Step2: 영수증 인쇄시각(표시 SSOT)
 
 COMMENT ON COLUMN public.payments.image_url IS
   'T-20260710-OCR-RECEIPT: 영수증 이미지 영구경로(receipts 버킷). NULL=OCR 영수증 비첨부 수납.';
 COMMENT ON COLUMN public.payments.ocr_receipt_datetime IS
-  'T-20260710-OCR-RECEIPT: 실물 영수증 인쇄 결제일시(OCR값). [영수증 수납] 컬럼① 표시축 + 레드페이 ±15분 매칭축. created_at(업로드시각)과 별개.';
+  'T-20260710-OCR-RECEIPT: 실물 영수증 인쇄 결제일시(OCR값). [영수증 수납] 컬럼① 표시축. created_at(업로드시각)과 별개. 매칭축 아님(매칭=redpay-reconcile EF).';
 
 -- ============================================================
--- 2. receipt_ocr_results — 승인번호(8자리) OCR 파싱 결과 추적 (ADDITIVE)
+-- 2. receipt_ocr_results — OCR 원문 추출값 provenance (ADDITIVE) — DA[1][3] GO
+--    확정값은 payments(external_approval_no·amount)로 승격, 원문은 여기 보관(OCR 정확도 텔레메트리).
 -- ============================================================
 ALTER TABLE public.receipt_ocr_results
-  ADD COLUMN IF NOT EXISTS parsed_approval_no TEXT;  -- OCR 추출 승인번호(8자리) — 검증팝업 프리필/오인식 이력 추적
+  ADD COLUMN IF NOT EXISTS parsed_approval_no TEXT,     -- OCR 추출 승인번호(8자리) — 검증팝업 프리필/오인식 이력
+  ADD COLUMN IF NOT EXISTS parsed_amount      INTEGER;  -- OCR 추출 결제금액 — provenance(확정=payments.amount). DA[3] 권고
 
 COMMENT ON COLUMN public.receipt_ocr_results.parsed_approval_no IS
-  'T-20260710-OCR-RECEIPT: OCR 추출 승인번호(8자리). 검증팝업 프리필 소스. 확정값은 payments.external_approval_no 로 승격.';
+  'T-20260710-OCR-RECEIPT: OCR 추출 승인번호(8자리). 검증팝업 프리필 소스. 확정값은 payments.external_approval_no 로 승격(later-wins: NULL일 때만 조용히 write).';
+COMMENT ON COLUMN public.receipt_ocr_results.parsed_amount IS
+  'T-20260710-OCR-RECEIPT: OCR 추출 결제금액(원단위). provenance/오인식 감사·OCR 정확도 텔레메트리용. 확정 진실원천은 payments.amount(이중컬럼 divergence 방지).';
 
--- ── PCI 2차 방어 (DA 판정 대상) — raw_text 연속 13자리+ 숫자열(PAN 의심) 저장 거부 ──
---   승인번호(≤12) 통과, 전체 PAN(13~16) 차단. 하이픈/공백 제거 후 검사는 EF 가드가 담당.
+-- ── PCI 2차 방어 (DA[5] ADOPT) — raw_text 연속 13자리+ 숫자열(전체 PAN 의심) 저장 거부 ──
+--   count=0 실측 확인(2026-07-10) 후 NOT VALID→VALIDATE(무중단·기존행 톨러런스).
+--   EF-단계 마스킹이 PRIMARY, 본 CHECK 는 연속 미마스킹 PAN 2차방어(both).
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -63,16 +90,22 @@ BEGIN
   ) THEN
     ALTER TABLE public.receipt_ocr_results
       ADD CONSTRAINT receipt_ocr_results_no_full_pan
-      CHECK (raw_text !~ '[0-9]{13,}');
+      CHECK (raw_text !~ '[0-9]{13,}') NOT VALID;   -- 기존행 스킵, 신규/변경행만 강제
+    ALTER TABLE public.receipt_ocr_results
+      VALIDATE CONSTRAINT receipt_ocr_results_no_full_pan;  -- count=0 확인됨 → 즉시 검증
   END IF;
 END
 $$;
 
 -- ============================================================
--- 3. VIEW v_receipt_settlement_daily — [영수증 수납] 탭 read-only 대조 뷰
+-- 3. VIEW v_receipt_settlement_daily — [영수증 수납] 탭 read-only 대조 뷰 (DA[4] REVISE 반영)
 --    grain = OCR 영수증 첨부 수납 1건 = 1행 (payment-anchored).
---    매칭전략(LOCKED): 주키 승인번호+금액, +보강 인쇄시각↔approved_at ±15분 window 병용.
---    FE 는 이 뷰만 소비 — FE 조인/매칭 재계산 금지(매처 진실원천 이중화 방지).
+--    ★매칭 재계산 없음 — 매처(redpay-reconcile EF)가 영속화한 결과만 JOIN surface.
+--      · redpay_raw_transactions.matched_payment_id = p.id  (매처 링크, approval+amount+윈도 재계산 아님)
+--      · payments.reconciled_at                              (매처 대사시각)
+--      · payment_reconciliation_log                          (대사 verdict/enum)
+--    §787/§519 TID 스코프 불변식: rp 조인·freshness 에 풋 13 TID 필터.
+--    §789 freshness: 피드 마지막 approved_at 노출 → 未적재를 missing 오탐 금지.
 --    security_invoker=true → 호출자 clinic RLS 적용.
 -- ============================================================
 CREATE OR REPLACE VIEW public.v_receipt_settlement_daily
@@ -80,59 +113,84 @@ WITH (security_invoker = true) AS
 SELECT
   p.id                                                        AS payment_id,
   p.clinic_id                                                 AS clinic_id,
-  -- close_date = 인쇄시각 우선(SSOT), 없으면 업로드시각 폴백
+  -- close_date = 인쇄시각 우선(표시 SSOT), 없으면 업로드시각 폴백
   COALESCE(
     (p.ocr_receipt_datetime AT TIME ZONE 'Asia/Seoul')::date,
     (p.created_at           AT TIME ZONE 'Asia/Seoul')::date
   )                                                           AS close_date,
-  p.ocr_receipt_datetime                                      AS receipt_datetime,   -- 컬럼① 표시(인쇄시각 SSOT)
-  p.created_at                                                AS uploaded_at,        -- 시스템 업로드시각(별개 축)
+  p.ocr_receipt_datetime                                      AS receipt_datetime,   -- 컬럼① 표시(인쇄시각)
+  p.created_at                                                AS uploaded_at,        -- 시스템 업로드시각(별개)
   c.name                                                      AS customer_name,      -- 컬럼②
   c.chart_number                                              AS chart_number,       -- 컬럼②(차트번호)
-  p.amount::numeric                                           AS ocr_amount,         -- 컬럼③ 결제금액(OCR확정)
-  p.external_approval_no                                      AS approval_no,        -- 컬럼④ 승인번호=매칭핵심키
-  p.external_tid                                              AS tid,                -- +TID 보조(있으면)
+  p.amount::numeric                                           AS amount,             -- 컬럼③ 결제금액(확정 SSOT)
+  p.external_approval_no                                      AS approval_no,        -- 컬럼④ 승인번호(확정값 surface)
+  p.external_tid                                              AS tid,                -- 참고(매처 tid)
   p.image_url                                                 AS image_url,          -- 컬럼⑤ 원본 영수증
-  -- ── 레드페이 자동대조 (주키 승인번호+금액 AND ±15분 window 병용) ──
+  p.reconciled_at                                             AS reconciled_at,      -- 매처 대사시각
+  -- ── 매처가 링크한 VAN 승인행 (matched_payment_id JOIN — 재계산 아님) ──
   rp.id                                                       AS redpay_row_id,
   rp.approved_at                                              AS redpay_approved_at,
   rp.amount::numeric                                          AS redpay_amount,
   rp.tid                                                      AS redpay_tid,
+  rp.match_rule                                               AS match_rule,         -- 매처 Tier
+  -- ── 대사 verdict (recon_log enum, 최신 1건 surface) ──
+  rl.event_type                                               AS recon_event_type,
+  rl.mismatch_reason                                          AS recon_mismatch_reason,
+  -- ── match_status = 매처 산출 기반 (뷰 판정 아님) ──
   CASE
-    WHEN p.external_approval_no IS NULL THEN 'no_approval'    -- 승인번호 미확정(OCR 실패/미입력)
-    WHEN rp.id IS NOT NULL              THEN 'matched'
+    WHEN rp.id IS NOT NULL OR p.reconciled_at IS NOT NULL THEN 'matched'
     ELSE 'unmatched'
-  END                                                         AS match_status
+  END                                                         AS match_status,
+  -- ── freshness (§789): 피드 watermark → 未적재 missing 오탐 방지 ──
+  (SELECT max(r2.approved_at)
+     FROM public.redpay_raw_transactions r2
+     WHERE r2.clinic_id = p.clinic_id
+       AND r2.tid IN (
+         '1047479483','1047479476','1047479477','1047479478','1047479479',
+         '1047479480','1047479481','1047479482','1047479153','1047479148',
+         '1047479155','1047479158','1047479157'
+       ))                                                     AS redpay_feed_last_approved_at
 FROM public.payments p
 JOIN public.customers c ON c.id = p.customer_id
+-- 매처 링크(matched_payment_id) 로만 조인 — 승인번호/금액/윈도 재계산 제거 (DA[4])
+LEFT JOIN public.redpay_raw_transactions rp
+       ON rp.matched_payment_id = p.id
+      AND rp.tid IN (                                         -- §787/§519 소비뷰 TID 스코프 불변식
+        '1047479483','1047479476','1047479477','1047479478','1047479479',
+        '1047479480','1047479481','1047479482','1047479153','1047479148',
+        '1047479155','1047479158','1047479157'
+      )
+-- 대사 verdict 최신 1건 surface (매칭 계산 아님 — 최신 로그행 픽업)
 LEFT JOIN LATERAL (
-  SELECT r.id, r.approved_at, r.amount, r.tid
-  FROM public.redpay_raw_transactions r
-  WHERE r.clinic_id = p.clinic_id
-    AND p.external_approval_no IS NOT NULL
-    AND r.approval_no = p.external_approval_no                -- 주키①: 승인번호(8자리)
-    AND r.amount      = p.amount                              -- 주키②: 결제금액
-    AND (
-      p.ocr_receipt_datetime IS NULL                         -- 인쇄시각 없으면 주키만
-      OR abs(extract(epoch FROM (r.approved_at - p.ocr_receipt_datetime))) <= 900  -- +보강 ±15분(900초)
-    )
-    AND r.tid IN (
-      '1047479483','1047479476','1047479477','1047479478','1047479479',
-      '1047479480','1047479481','1047479482','1047479153','1047479148',
-      '1047479155','1047479158','1047479157'
-    )
-  -- 동일금액 반복결제 코너: 인쇄시각에 가장 가까운 레드페이 1건 선택
-  ORDER BY abs(extract(epoch FROM (r.approved_at - COALESCE(p.ocr_receipt_datetime, p.created_at)))) ASC
+  SELECT rl2.event_type, rl2.mismatch_reason
+  FROM public.payment_reconciliation_log rl2
+  WHERE rl2.payment_id = p.id
+  ORDER BY rl2.created_at DESC
   LIMIT 1
-) rp ON true
+) rl ON true
 WHERE p.image_url IS NOT NULL                                -- OCR 영수증 업로드 건만
   AND p.payment_type = 'payment'
   AND COALESCE(p.status, '') <> 'deleted';
 
 COMMENT ON VIEW public.v_receipt_settlement_daily IS
   'T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: [영수증 수납] 탭 read-only 대조 뷰. '
-  'grain=OCR 영수증 첨부 수납 1건=1행. 5컬럼(인쇄시각/성함·차트/OCR금액/승인번호/이미지) + 레드페이 매칭. '
-  '매칭전략(LOCKED): 주키=승인번호(8자리)+금액, +보강=인쇄시각↔approved_at ±15분 window 병용, 풋 13 TID 서버권위. '
-  'match_status ∈ matched/unmatched/no_approval. FE 는 이 뷰만 소비(조인/매칭 재계산 금지). security_invoker=true.';
+  'grain=OCR 영수증 첨부 수납 1건=1행. 5컬럼(인쇄시각/성함·차트/금액/승인번호/이미지). '
+  '★매칭 재계산 없음 — 매처(redpay-reconcile EF)가 영속화한 matched_payment_id/reconciled_at/recon_log 를 surface only. '
+  '§787/§519 풋 13 TID 서버권위 필터. §789 freshness(redpay_feed_last_approved_at) 노출. '
+  'match_status ∈ matched/unmatched. FE 는 이 뷰만 소비(조인/매칭 재계산 금지). security_invoker=true.';
 
 GRANT SELECT ON public.v_receipt_settlement_daily TO authenticated;
+
+-- ============================================================
+-- 4. 멱등 가드 (DA[2] 가드②) — 동일 영수증 재촬영 payments 중복 INSERT 2차방어
+--    부분 UNIQUE: OCR 영수증 건(image_url IS NOT NULL) 한정, 승인번호+금액+인쇄시각 조합 유일.
+--    image_url 신규 컬럼(현재 전량 NULL) → 기존행 0 매칭 → 무충돌 생성.
+-- ============================================================
+CREATE UNIQUE INDEX IF NOT EXISTS payments_ocr_receipt_idempotent_idx
+  ON public.payments (clinic_id, external_approval_no, amount, ocr_receipt_datetime)
+  WHERE image_url IS NOT NULL
+    AND external_approval_no IS NOT NULL
+    AND ocr_receipt_datetime IS NOT NULL;
+
+COMMENT ON INDEX public.payments_ocr_receipt_idempotent_idx IS
+  'T-20260710-OCR-RECEIPT: OCR 영수증 수납 멱등 가드(DA 가드②). 동일 승인번호+금액+인쇄시각 재촬영 중복 INSERT 차단. FE 멱등키 DB 2차방어.';
