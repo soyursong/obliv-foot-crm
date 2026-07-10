@@ -721,6 +721,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── T-20260525-foot-FEE-SET-TEMPLATE: 수가세트 드롭다운
   const [feeSetTemplates, setFeeSetTemplates] = useState<FeeSetTemplate[]>([]);
   const [feeSetOpen, setFeeSetOpen] = useState(false);
+  // ── T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (REOPEN): [차트 코드+진료비 산정]을
+  //    맨 위 큰 블록 → 컴팩트 한 줄(접힘 기본) + 펼침/접힘 토글로 축소. 기본 접힘.
+  const [feeItemExpanded, setFeeItemExpanded] = useState(false);
 
   // ── Phase 2: 서류발행 (AC-8~10)
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
@@ -2062,25 +2065,62 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             태블릿/PC(≥sm): 기존 3열 가로 레이아웃 */}
         {/* FEE-ITEM-SCROLL: 520→600px — 수가 항목 5건 노출 보장 */}
         {/* ═══════════════════════════════════════════════════════════════════════
-             T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (ROW-SPLIT / 현장 확정 2026-07-08 19:03 김주연 총괄)
-             본문을 세로 스택으로 재구성:
-               (1) 상단 독립 행 = [차트 코드+진료비 산정] 헤더 + 서류코드 + 수가 항목 (모달 full-width, 좌측정렬)
-               (2) 하단 가로 행 = 카테고리 탭 · 코드 그리드 · [세금구분·합계·수납버튼](기존 폭 lg:w-72 유지) · Zone3(기존 폭 유지)
-             → LEFTLANE(dc469694)의 fee-lane flex-1 폭확장을 revert. 가로를 나누지 않으므로("가로 길어짐" 회귀)
-               수가항목 컬럼 폭 압축·줄바꿈이 원천적으로 발생하지 않음.
-             FEE-ITEM-SCROLL: 상단 행 sm:max-h-[300px] + 리스트 overflow-y-auto → 5건 노출·6건+ 스크롤 유지. */}
+             T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (REOPEN / 현장 재지시 2026-07-08 김주연 총괄)
+             "빨간박스 부분 왜 위로 가있어!! 초록색+파란색 사이로 한 줄!!"
+             → ROW-SPLIT 대원칙(모달 총 가로폭 불변, 가로 분리 금지)은 유지하되,
+               [차트 코드+진료비 산정]을 '맨 위 큰 블록'이 아니라 하단영역 상단경계
+               (초록=시술·파란=수납 위)의 컴팩트 한 줄(기본 접힘) + 펼침/접힘 토글로 축소.
+             - 접힘(기본): 한 줄 요약(서류코드 건수·수가 건수·합계)만 노출 → 세로 점유 최소화.
+             - 펼침: 서류코드 + 세트코드 + 수가항목 편집 UI 전량 보존(추가·삭제·금액·급여표기·세트·DnD·스크롤 회귀 없음).
+             - 가로를 나누지 않으므로("가로 길어짐" 회귀) 수가항목 컬럼 폭 압축·줄바꿈이 원천적으로 발생하지 않음.
+             - 초록/파란/Zone3 위치·동작 불변. FEE-ITEM-SCROLL: 펼침 컨테이너 sm:max-h-[280px] + overflow-y-auto. */}
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto sm:overflow-hidden sm:flex-none sm:h-[600px]">
 
-          {/* ═══ 상단 독립 행(row-split): 차트 코드+진료비 산정 헤더 + 서류코드 + 수가 항목 — 모달 full-width, 좌측정렬 ═══ */}
-          <div className="shrink-0 flex flex-col min-h-0 border-b bg-white sm:max-h-[300px]" data-testid="pmw-feeitem-row">
-            {/* 좌측정렬 + 과폭 방지: 내부 콘텐츠 max-w 캡 (가로가 과하게 길어지지 않게, 좌측 고정) */}
-            <div className="flex flex-col min-h-0 w-full sm:max-w-[720px] lg:max-w-[880px]">
-            {/* Zone 2 헤더 */}
-            <div className="px-3 pt-2 pb-1.5 shrink-0 border-b bg-muted/20">
-              <p className="text-xs font-semibold text-muted-foreground">
-                차트 코드 + 진료비 산정
-              </p>
-            </div>
+          {/* ═══ 컴팩트 한 줄(row-split): 차트 코드+진료비 산정 — 접힘 기본, 클릭 시 펼침 ═══ */}
+          <div className="shrink-0 flex flex-col min-h-0 border-b bg-white" data-testid="pmw-feeitem-row">
+            {/* 한 줄 헤더(항상 표시) — 클릭 시 펼침/접힘. 좌측정렬 + 요약 배지 + 토글 화살표 */}
+            <button
+              type="button"
+              onClick={() => setFeeItemExpanded((v) => !v)}
+              className="w-full flex items-center gap-2 px-3 py-2 min-h-[44px] sm:min-h-0 text-left hover:bg-muted/30 transition-colors"
+              data-testid="pmw-feeitem-toggle"
+              aria-expanded={feeItemExpanded}
+            >
+              <span className="text-xs font-semibold text-muted-foreground shrink-0">
+                차트 코드 · 진료비 산정
+              </span>
+              {/* 한 줄 요약(접힘/펼침 무관 항상 노출) — 좁은 화면 대비 truncate/overflow-hidden */}
+              <span
+                className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden text-[11px]"
+                data-testid="pmw-feeitem-summary"
+              >
+                {codeItems.length > 0 && (
+                  <span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700">
+                    서류 {codeItems.length}
+                  </span>
+                )}
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                  수가 {pricingItems.length}건
+                </span>
+                {pricingItems.length > 0 ? (
+                  <span className="shrink-0 tabular-nums font-semibold text-purple-700">
+                    합계 {formatAmount(grandTotal)}
+                  </span>
+                ) : (
+                  <span className="truncate text-muted-foreground">코드를 선택하면 항목이 추가됩니다</span>
+                )}
+              </span>
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                  feeItemExpanded && 'rotate-180',
+                )}
+              />
+            </button>
+
+            {/* 펼침 콘텐츠: 서류코드 + 세트코드 + 수가항목 (편집 UI 전량 보존) */}
+            {feeItemExpanded && (
+            <div className="flex flex-col min-h-0 w-full border-t overflow-y-auto sm:max-h-[280px] sm:max-w-[720px] lg:max-w-[880px]">
 
             {/* Zone 2 코드 항목 (상병코드·처방약) — 선택 시만 표시 */}
             {codeItems.length > 0 && (
@@ -2249,6 +2289,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 </SortableContext>
               </DndContext>
             </div>
+            )}
           </div>
 
           {/* ═══ 하단 가로 행: 카테고리 탭 / 코드 그리드 / 세금·합계·수납(기존 폭) / Zone3(기존 폭) ═══ */}
