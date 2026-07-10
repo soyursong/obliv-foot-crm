@@ -18,10 +18,12 @@ export interface OcrParsedData {
   amount?: number;
   /** 결제수단 */
   method?: 'card' | 'cash' | 'transfer';
-  /** 결제일시 (ISO 8601) */
+  /** 결제일시 (ISO 8601) — 영수증 인쇄시각(ocr_receipt_datetime SSOT) */
   paidAt?: string;
   /** 카드사 */
   cardCompany?: string;
+  /** T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 승인번호(8자리) — 레드페이 매칭 핵심키 */
+  approvalNo?: string;
 }
 
 export interface OcrResult {
@@ -59,6 +61,8 @@ export interface OcrApiResponse {
   parsedMethod: 'card' | 'cash' | 'transfer' | null;
   parsedPaidAt: string | null;
   parsedCardCompany: string | null;
+  /** T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 승인번호(8자리) — receipt-ocr EF 반환 */
+  parsedApprovalNo?: string | null;
   confidence: number;
   provider: string;
   error?: string;

@@ -48,14 +48,17 @@ function parseReceiptText(text: string): {
   parsedMethod: 'card' | 'cash' | 'transfer' | null;
   parsedPaidAt: string | null;
   parsedCardCompany: string | null;
+  // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 승인번호(8자리) = 레드페이 매칭 핵심키
+  parsedApprovalNo: string | null;
 } {
   let parsedAmount: number | null = null;
   let parsedMethod: 'card' | 'cash' | 'transfer' | null = null;
   let parsedPaidAt: string | null = null;
   let parsedCardCompany: string | null = null;
+  let parsedApprovalNo: string | null = null;
 
   if (!text.trim()) {
-    return { parsedAmount, parsedMethod, parsedPaidAt, parsedCardCompany };
+    return { parsedAmount, parsedMethod, parsedPaidAt, parsedCardCompany, parsedApprovalNo };
   }
 
   // ── 금액 ──────────────────────────────────────────────────
@@ -99,7 +102,22 @@ function parseReceiptText(text: string): {
     if (text.includes(cc)) { parsedCardCompany = cc; break; }
   }
 
-  return { parsedAmount, parsedMethod, parsedPaidAt, parsedCardCompany };
+  // ── 승인번호 (8자리) — 레드페이 매칭 핵심키 ─────────────────
+  //   라벨 예: "승인번호 12345678" / "승인 No.12345678" / "승인번호: 1234 5678" / "APPROVAL NO 12345678"
+  //   PCI: 승인번호는 PAN 이 아님(카드번호와 무관). 8자리 고정(gate#6 LOCK).
+  const approvalPatterns = [
+    /(?:승인\s*(?:번호|no\.?|number)?)\s*[:.\s]?\s*(\d[\d\s-]{6,10}\d)/i,
+    /(?:approval\s*(?:no\.?|number)?)\s*[:.\s]?\s*(\d[\d\s-]{6,10}\d)/i,
+  ];
+  for (const pat of approvalPatterns) {
+    const m = text.match(pat);
+    if (m) {
+      const digits = m[1].replace(/[\s-]/g, '');
+      if (digits.length === 8) { parsedApprovalNo = digits; break; }
+    }
+  }
+
+  return { parsedAmount, parsedMethod, parsedPaidAt, parsedCardCompany, parsedApprovalNo };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -207,6 +225,8 @@ Deno.serve(async (req) => {
     parsedMethod: parsed.parsedMethod,
     parsedPaidAt: parsed.parsedPaidAt,
     parsedCardCompany: parsed.parsedCardCompany,
+    // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 승인번호(8자리) 매칭키
+    parsedApprovalNo: parsed.parsedApprovalNo,
     confidence: ocrOut.confidence,
     provider: ocrOut.provider,
   };

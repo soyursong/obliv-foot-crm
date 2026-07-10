@@ -65,6 +65,8 @@ export class SupabaseEdgeOcrService implements IOcrService {
         method: json.parsedMethod ?? undefined,
         paidAt: json.parsedPaidAt ?? undefined,
         cardCompany: json.parsedCardCompany ?? undefined,
+        // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 승인번호(8자리) 매칭키
+        approvalNo: json.parsedApprovalNo ?? undefined,
       },
       confidence: json.confidence,
       provider: json.provider,
