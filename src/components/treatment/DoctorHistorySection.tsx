@@ -4,19 +4,28 @@
 //   A. 컴팩트 — 테이블 px/py·텍스트 축소(정보밀도 ↑).
 //   B. 날짜필터 — 내부 date state 제거, 부모(TreatmentTable) 공통 날짜선택기의 `date` prop 사용(controlled).
 //   D. 이름 인터랙션 — 좌클릭=2번차트 open / 우클릭=CRM 컨텍스트 메뉴(부모 nameInteraction 핸들러 위임).
+// Ticket: T-20260710-foot-TREATHIST-DOCREQ-DOCTORCOUNT (김주연 총괄)
+//   요구1. 소견·진단서 열 = '신청여부' + '발행여부' 2항목 분리 표시.
+//   요구2. 탭 상단 = 진료의별 금일 담당 환자수 요약(read-only 집계).
 //
 // 리스트 기준: 선택 날짜 기준 원장 진료콜 명단에 등재된 이력이 있는 환자(내원).
 //   진료콜 등재 = check_ins.status_flag IN ('purple'=진료필요, 'pink'=진료완료). (doctor-call-notify SSOT)
 //
-// 발행 O/X(원장 발행 여부) — read-only 재사용, 신규 스키마 0:
-//   · 처방전  = check_ins.prescription_status='confirmed' AND doctor_confirm_prescription=true (그 내원 행).
-//   · 소견·진단서 = form_submissions(status='published', field_data.doc_kind='opinion_doc') 존재(고객+발행일).
+// 신청/발행 O/X — read-only 재사용, 신규 스키마 0 (discovery-first, db_change=false):
+//   · 처방전 발행  = check_ins.prescription_status='confirmed' AND doctor_confirm_prescription=true (그 내원 행).
+//   · 소견·진단서 신청 = form_submissions 요청 row(field_data.request_origin='staff_consult') 존재(당일·고객).
+//       └ 재사용 배관: T-20260620-CHART2-OPINION-SELECT-BOX-LINK / opinionRequest.ts (실장→원장 서류 발행요청).
+//         draft=대기 요청 / voided(resolved_reason='published')=발행완료된 요청 → 둘 다 '신청됨'.
+//         voided(resolved_reason='cancelled')=요청취소 → 신청 아님(제외).
+//   · 소견·진단서 발행 = form_submissions(status='published', field_data.doc_kind='opinion_doc') 존재(고객+발행일).
+//       └ 현행 발행추적 값 재사용(회귀 0). 신청 row(staff_consult)와는 별개 published row.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import TreatingDoctorSelect from '@/components/TreatingDoctorSelect';
+import { useTreatingDoctorOptions } from '@/hooks/useTreatingDoctorOptions';
 import { chartNoBadge } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import type { VisitType } from '@/lib/types';
@@ -32,13 +41,58 @@ interface DoctorHistoryRow {
   chartNumber: string | null;
   visitType: string;
   checkedInAt: string;
-  rxIssued: boolean;        // 처방전 발행 O/X
-  opinionIssued: boolean;   // 소견·진단서 발행 O/X
+  rxIssued: boolean;         // 처방전 발행 O/X
+  docRequested: boolean;     // T-20260710 소견·진단서 신청 O/X (요구1)
+  opinionIssued: boolean;    // 소견·진단서 발행 O/X
   treatingDoctorId: string | null; // T-20260708 진료의(요청 A) — check_ins.treating_doctor_id
 }
 
 function dayBounds(date: string) {
   return { start: `${date}T00:00:00+09:00`, end: `${date}T23:59:59+09:00` };
+}
+
+// ─── 순수 파생 로직 (E2E spec 이 동일 함수를 직접 import·단언 → drift 방지) ───────────────
+
+// 신청여부 파생 — staff_consult 서류 발행요청 row 존재 판정(요구1, AC-3).
+//   draft=대기 요청 / voided(resolved_reason≠'cancelled')=발행완료된 요청 → '신청됨'.
+//   voided(resolved_reason='cancelled')=요청취소 → 신청 아님. (opinionRequest.ts 상태전이 그라운딩)
+export function isActiveDocRequest(status: string, resolvedReason: string | null): boolean {
+  if (status === 'draft') return true;
+  if (status === 'voided') return resolvedReason !== 'cancelled';
+  return false;
+}
+
+// 진료의별 금일 담당 환자수 요약(요구2, AC-4). 미배정 → '미지정' 버킷.
+//   ★합계 = 입력 rows.length 와 항상 정합(미지정 포함) — read-only 집계.
+export const UNASSIGNED_DOCTOR_KEY = '__unassigned__';
+export interface DoctorCountEntry {
+  key: string;       // clinic_doctors.id | UNASSIGNED_DOCTOR_KEY
+  name: string;
+  count: number;
+  unassigned: boolean;
+}
+export function computeDoctorCountSummary(
+  rows: Array<{ treatingDoctorId: string | null }>,
+  doctorNameById: Map<string, string>,
+): DoctorCountEntry[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.treatingDoctorId ?? UNASSIGNED_DOCTOR_KEY;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const entries: DoctorCountEntry[] = [...counts.entries()].map(([key, count]) => ({
+    key,
+    count,
+    unassigned: key === UNASSIGNED_DOCTOR_KEY,
+    name: key === UNASSIGNED_DOCTOR_KEY ? '미지정' : (doctorNameById.get(key) ?? '진료의(비활성)'),
+  }));
+  // 미지정 버킷 맨 뒤 → 담당수 desc → 이름 asc(ko).
+  entries.sort((a, b) => {
+    if (a.unassigned !== b.unassigned) return a.unassigned ? 1 : -1;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.name.localeCompare(b.name, 'ko');
+  });
+  return entries;
 }
 
 function useDoctorHistory(clinicId: string | null | undefined, date: string) {
@@ -87,7 +141,34 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
             if (cid) publishedSet.add(cid);
           }
         } catch {
-          // 발행본 조회 실패 — 소견·진단서 O/X 는 X 폴백(섹션 무파손).
+          // 발행본 조회 실패 — 소견·진단서 발행 O/X 는 X 폴백(섹션 무파손).
+        }
+      }
+
+      // 소견·진단서 '신청'(요구1) — 실장→원장 서류 발행요청 row(request_origin='staff_consult').
+      //   재사용 배관(opinionRequest.ts / CHART2-OPINION-SELECT-BOX-LINK). 신규 스키마 0.
+      //   당일(created_at) 기준 — 코디팀 '오늘 서류 신청 건수' 프레이밍. draft/voided(취소 제외)만 '신청됨'.
+      const requestedSet = new Set<string>();
+      if (custIds.length > 0) {
+        try {
+          const { data: reqs } = await supabase
+            .from('form_submissions')
+            .select('customer_id, status, field_data, created_at')
+            .eq('clinic_id', clinicId)
+            .eq('field_data->>request_origin', 'staff_consult')
+            .in('customer_id', custIds)
+            .in('status', ['draft', 'voided'])
+            .gte('created_at', start)
+            .lte('created_at', end);
+          for (const r of (reqs ?? []) as Array<Record<string, unknown>>) {
+            const cid = String(r['customer_id'] ?? '');
+            if (!cid) continue;
+            const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+            const reason = (fd['resolved_reason'] as string | null) ?? null;
+            if (isActiveDocRequest(String(r['status'] ?? ''), reason)) requestedSet.add(cid);
+          }
+        } catch {
+          // 신청 조회 실패 — 소견·진단서 신청 O/X 는 X 폴백(섹션 무파손).
         }
       }
 
@@ -103,6 +184,7 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
           visitType: String(c['visit_type'] ?? ''),
           checkedInAt: String(c['checked_in_at'] ?? ''),
           rxIssued,
+          docRequested: cid ? requestedSet.has(cid) : false,
           opinionIssued: cid ? publishedSet.has(cid) : false,
           treatingDoctorId: (c['treating_doctor_id'] as string | null) ?? null,
         } as DoctorHistoryRow;
@@ -136,8 +218,8 @@ function useCustomerMeta(clinicId: string | null | undefined, customerIds: strin
   });
 }
 
-// 발행 O/X 배지.
-function IssueBadge({ issued, testid }: { issued: boolean; testid: string }) {
+// 상태 O/X 배지 (label = '신청' | '발행').
+function IssueBadge({ issued, label, testid }: { issued: boolean; label: string; testid: string }) {
   return (
     <span
       className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
@@ -146,7 +228,7 @@ function IssueBadge({ issued, testid }: { issued: boolean; testid: string }) {
       data-testid={testid}
       data-issued={issued ? 'true' : 'false'}
     >
-      {issued ? '발행 O' : '발행 X'}
+      {issued ? `${label} O` : `${label} X`}
     </span>
   );
 }
@@ -168,6 +250,11 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
   const custIds = rows.map((r) => r.customerId).filter(Boolean) as string[];
   const { data: metaMap } = useCustomerMeta(clinic?.id, custIds);
 
+  // 요구2 — 진료의별 금일 담당 환자수 요약. 옵션(clinic_doctors) 이름맵으로 treating_doctor_id 해석.
+  const { data: doctorOptions = [] } = useTreatingDoctorOptions(clinic?.id, date);
+  const doctorNameById = new Map(doctorOptions.map((o) => [o.id, o.name]));
+  const doctorSummary = computeDoctorCountSummary(rows, doctorNameById);
+
   return (
     <div className="flex flex-col gap-3" data-testid="doctor-history-section">
       <div>
@@ -176,9 +263,36 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
           진료 환자 이력
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          선택 날짜에 원장 진료콜 명단에 오른 환자입니다. 처방전·소견서/진단서 발행 여부를 표시합니다.
+          선택 날짜에 원장 진료콜 명단에 오른 환자입니다. 처방전·소견/진단서 신청·발행 여부를 표시합니다.
         </p>
       </div>
+
+      {/* 요구2 — 진료의별 금일 담당 환자수 요약(상단). 명단 있을 때만 노출. 합계=명단 총원(미지정 포함). */}
+      {!isLoading && !isError && doctorSummary.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-[12px]"
+          data-testid="dh-doctor-count-summary"
+        >
+          <span className="flex items-center gap-1 font-medium text-muted-foreground">
+            <Users className="h-3.5 w-3.5 text-teal-600" />
+            진료의별 금일 담당
+          </span>
+          {doctorSummary.map((s) => (
+            <span
+              key={s.key}
+              className="flex items-center gap-1"
+              data-testid="dh-doctor-count-chip"
+              data-doctor-id={s.key}
+              data-count={s.count}
+            >
+              <span className={s.unassigned ? 'text-muted-foreground/70' : 'font-medium'}>
+                {s.name}
+              </span>
+              <span className="tabular-nums font-semibold text-teal-700">{s.count}명</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-8">
@@ -207,7 +321,8 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
                 <th className="px-2.5 py-1.5 whitespace-nowrap">방문</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap">진료의</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap">처방전</th>
-                <th className="px-2.5 py-1.5 whitespace-nowrap">소견·진단서</th>
+                <th className="px-2.5 py-1.5 whitespace-nowrap">소견·진단서 신청</th>
+                <th className="px-2.5 py-1.5 whitespace-nowrap">소견·진단서 발행</th>
                 <th className="px-2.5 py-1.5 whitespace-nowrap text-center">문서 보기</th>
               </tr>
             </thead>
@@ -265,10 +380,13 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
                       />
                     </td>
                     <td className="px-2.5 py-1.5">
-                      <IssueBadge issued={r.rxIssued} testid="dh-rx-issue" />
+                      <IssueBadge issued={r.rxIssued} label="발행" testid="dh-rx-issue" />
                     </td>
                     <td className="px-2.5 py-1.5">
-                      <IssueBadge issued={r.opinionIssued} testid="dh-opinion-issue" />
+                      <IssueBadge issued={r.docRequested} label="신청" testid="dh-opinion-request" />
+                    </td>
+                    <td className="px-2.5 py-1.5">
+                      <IssueBadge issued={r.opinionIssued} label="발행" testid="dh-opinion-issue" />
                     </td>
                     <td className="px-2.5 py-1.5 text-center">
                       {/* 뷰어 pending_decision(모달 vs 인라인) — 현장 confirm 후 빌드. 발행본 있을 때만 자리 노출(비활성). */}
@@ -293,7 +411,8 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
       )}
 
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 발행 문서 내용 보기(뷰어)는 표시 방식 확정 후 제공됩니다. 현재는 발행 여부(O/X)만 표시합니다.
+        ※ 소견·진단서는 <b>신청</b>(코디팀 요청)과 <b>발행</b>(원장 발행)을 각각 O/X로 표시합니다.
+        발행 문서 내용 보기(뷰어)는 표시 방식 확정 후 제공됩니다.
       </p>
     </div>
   );
