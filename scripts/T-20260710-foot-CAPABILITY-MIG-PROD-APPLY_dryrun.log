@@ -1,0 +1,6 @@
+── AC1 forward-apply (DRY-RUN) ──
+원장 사전 131행
+  + 신규 20260701120000 20260701120000_foot_chart_treatment_requests.sql
+  + 신규 20260701130000 20260701130000_foot_therapist_capabilities.sql
+
+[dry-run] --apply 미지정 → DDL·원장 write 없음.

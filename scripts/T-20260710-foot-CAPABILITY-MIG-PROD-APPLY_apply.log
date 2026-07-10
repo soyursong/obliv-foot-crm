@@ -1,0 +1,8 @@
+── AC1 forward-apply (APPLY) ──
+원장 사전 131행
+  + 신규 20260701120000 20260701120000_foot_chart_treatment_requests.sql
+  + 신규 20260701130000 20260701130000_foot_therapist_capabilities.sql
+  ✓ 20260701120000 적용+원장기록 (foot_chart_treatment_requests)
+  ✓ 20260701130000 적용+원장기록 (foot_therapist_capabilities)
+
+완료: 적용 2 / 실패 0. 원장 사후 133행 (max=20260710190000)

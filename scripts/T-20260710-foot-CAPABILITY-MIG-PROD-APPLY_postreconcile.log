@@ -1,0 +1,11 @@
+── AC4 3자 정합 대조 (read-only) ──
+원장(schema_migrations) 현재 133행, max=20260710190000
+
+[AC1] 20260701120000 chart_treatment_requests
+      원장=Y  prod실재=Y  파일선언=Y  → OK
+[AC1] 20260701130000 therapist_capabilities
+      원장=Y  prod실재=Y  파일선언=Y  → OK
+[AC3] 20260703040000 transfer_package_atomic (+consume_package_sessions_for_checkin)
+      원장=N  prod실재=Y  파일선언=Y  → ⚠ DIVERGENCE
+
+divergence 건수(원장↔prod) = 1
