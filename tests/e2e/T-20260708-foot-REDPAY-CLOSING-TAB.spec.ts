@@ -146,16 +146,37 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB AC-6/AC-7 — 활성화 전 렌더 
 // ─── 403 근본원인(URL 오조립) 방어 — redpay-reconcile EF ─────────────────────
 //   ref: redpay-403-incident F0BGDKNATK7 (2026-07-10 이은상 팀장 forensic).
 //   403 = nginx HTML 디렉터리 거부(payments.php 파일명 탈락) — API 키 문제 아님.
+//   RC 재확정(최필경): /api/partner/payments.php → 200, /api/partner/ → 403.
 test.describe('T-20260708-REDPAY-CLOSING-TAB 403-FIX — EF URL 조립 방어', () => {
-  test('URL 은 payments.php 전체 경로를 상수에 하드코딩 (urljoin/base-only 금지)', () => {
+  // (a) 최종 URL 에 payments.php 파일명 포함 (전체경로 단일 SSOT + env override)
+  test('URL 은 payments.php 전체 경로가 SSOT — 기본값 + env override + 파일명 가드', () => {
     const src = fs.readFileSync(RECON_EF, 'utf-8');
-    // 파일명 포함 전체 경로 상수
-    expect(src).toContain('const REDPAY_BASE_URL           = "https://redpay.kr/api/partner/payments.php";');
-    // 조립은 상수 + 쿼리스트링만
+    // 전체경로 기본값(SSOT). base+file 분해 없음.
+    expect(src).toContain('DEFAULT_FULL_URL: "https://redpay.kr/api/partner/payments.php"');
+    // 조립은 전체경로 상수 + 쿼리스트링만 (urljoin/base-only 금지)
     expect(src).toContain('const requestUrl = `${REDPAY_BASE_URL}?${params}`;');
-    // base 를 파일명 없는 디렉터리 문자열로 정의하는 안티패턴 없음 (payments.php 탈락 원천 차단)
+    // 디렉터리 경로만으로 base 를 정의하는 안티패턴 없음 (payments.php 탈락 원천 차단)
     expect(src).not.toContain('= "https://redpay.kr/api/partner/"');
     expect(src).not.toContain("= 'https://redpay.kr/api/partner/'");
+    // 새 코드가 base+endpoint 로 분해하지 않았는지(=urljoin 재도입 금지) 확인:
+    //   "/api/partner/" 뒤에 payments.php 가 붙지 않은 독립 문자열 리터럴이 없어야 함.
+    expect(src).not.toContain('"/api/partner/"');
+  });
+
+  // (c) URL base/endpoint 가 상수·env 단일 소스로 관리 (이은상 — 하드코딩 산재 금지)
+  test('URL 은 상수/enum + env(REDPAY_API_URL) 단일 소스로 관리 + payments.php 탈락 가드', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // 단일 상수/enum 로 엔드포인트 관리
+    expect(src).toContain('const REDPAY_ENDPOINT = {');
+    expect(src).toContain('REQUIRED_FILENAME: "payments.php"');
+    // env override 지점 (한 군데)
+    expect(src).toContain('Deno.env.get("REDPAY_API_URL")');
+    // payments.php 탈락 시 런타임 throw 가드 (RC 재발 구조적 차단)
+    expect(src).toContain('function resolveRedpayEndpoint()');
+    expect(src).toContain('가드 위반');
+    expect(src).toMatch(/endsWith\(\s*"\/"\s*\+\s*REDPAY_ENDPOINT\.REQUIRED_FILENAME\s*\)/);
+    // REDPAY_BASE_URL 은 resolve 결과 (하드코딩 리터럴 아님)
+    expect(src).toContain('const REDPAY_BASE_URL = resolveRedpayEndpoint();');
   });
 
   test('조치#3 — 실제 발사 URL 로깅 (payments.php 탈락 즉시 지목)', () => {
@@ -179,6 +200,44 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB 403-FIX — EF URL 조립 방어', 
     const okIdx = src.indexOf('if (!res.ok) {');
     expect(ctypeIdx).toBeGreaterThan(0);
     expect(okIdx).toBeGreaterThan(ctypeIdx);
+  });
+
+  // (b) 마스터 키 멀티테넌트 방어 — business_no 필수 전송 + 풋 13 TID narrowing
+  test('business_no 는 항상 요청 파라미터로 전송 (마스터 키 사업자 스코프)', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // business_no 를 URLSearchParams 에 필수로 세팅
+    expect(src).toContain('business_no: REDPAY_BUSINESS_NO');
+    // 빈 business_no 는 폴러 진입 자체를 차단 (G4 blocked)
+    expect(src).toContain('!REDPAY_BUSINESS_NO');
+  });
+
+  test('풋 TID 화이트리스트를 콤마 다중값 tid 파라미터로 전송 (서버-측 narrowing)', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // 단일/13개 무관 콤마 조인 다중값 전송
+    expect(src).toContain('params.set("tid", tidList.join(","))');
+    // 과거 단일 TID 만 전송하던 코드 제거 확인
+    expect(src).not.toContain('params.set("tid", tidList[0])');
+  });
+
+  test('클라이언트-측 2차 방어 — 화이트리스트 외 TID 는 upsert 전 제외', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    expect(src).toContain('function filterToFootScope(');
+    expect(src).toContain('TENANT-GUARD');
+    // 화이트리스트 통과분(kept)만 upsert
+    expect(src).toContain('upsertRawTransactions(clinicId, kept)');
+  });
+
+  // (데이터 파싱) data.items 중첩 + trxid dedup + 취소금액 음수 보존
+  test('데이터 파싱 — data.items 중첩 + trxid dedup + 취소금액 음수 부호 보존', () => {
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // data.items[] 중첩 파싱
+    expect(src).toContain('envelope.data?.items');
+    // trxid dedup (페이지 내 (trxid,status,amount) 중복 제거 → ON CONFLICT 이중행 차단)
+    expect(src).toContain('trxid dedup');
+    expect(src).toContain('`${r.external_trxid}|${r.external_status}|${r.amount}`');
+    // 취소금액 음수 부호 보존 (net 계산 그대로 합산)
+    expect(src).toContain('amount:          t.amount');
+    expect(src).toContain('음수');
   });
 
   test('안전 — 읽기전용 GET(payments.php)만, cancel.php 실거래 취소 절대 미호출', () => {

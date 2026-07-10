@@ -4,7 +4,8 @@
     "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.108.2"
   },
   "remote": {
-    "https://esm.sh/@supabase/supabase-js@2.108.2": "7fbe17c4ef67b80d388cef1f0a0c7ecb28b2b1c3c4110875925a4bc82ff28e13"
+    "https://esm.sh/@supabase/supabase-js@2.108.2": "7fbe17c4ef67b80d388cef1f0a0c7ecb28b2b1c3c4110875925a4bc82ff28e13",
+    "https://esm.sh/@supabase/supabase-js@2.49.1": "947c71e163ca8bb5b538eccb5ee86fbc8da6bcb916a861586db5fad1af4701bb"
   },
   "workspace": {
     "packageJson": {
