@@ -21,7 +21,7 @@
 --   승인번호(8자리) 확정값 = 기존 payments.external_approval_no 재사용(신규 0),
 --   결제금액 확정값     = 기존 payments.amount 재사용(신규 0, ocr_amount 신설 금지 — DA[3]),
 --   인쇄시각            = 신규 payments.ocr_receipt_datetime,
---   OCR 원문 추적       = receipt_ocr_results.parsed_approval_no + parsed_amount(신규, provenance).
+--   OCR 원문 추적       = receipt_ocr_results.parsed_approval_no(신규) + parsed_amount(기존 재사용, provenance).
 -- Step3(레드페이 자동대조): ★뷰가 매칭을 재계산하지 않는다.
 --   매칭 SSOT = redpay-reconcile EF(4-Tier: approval_no+amount+approved_at±5min+tid).
 --   매처가 payments.reconciled_at / redpay_raw_transactions.matched_payment_id /
@@ -47,8 +47,9 @@
 -- 통과: 사업자번호(10)·전화(11)·승인번호(≤12). 차단: 연속 13자리+(전체 PAN, 연속13 RRN).
 -- NOT VALID→VALIDATE 패턴(count=0 실측 확인 후·무중단·기존행 톨러런스).
 --
--- risk: ADDITIVE-ONLY (신규 nullable 컬럼 3 + parsed_amount 1 + 부분 UNIQUE 인덱스 1
---       + CHECK 1 + read-only VIEW 1). 파괴적 변경 0.
+-- risk: ADDITIVE-ONLY (신규 nullable 컬럼 3 = payments.image_url/ocr_receipt_datetime
+--       + receipt_ocr_results.parsed_approval_no. parsed_amount 는 기존 컬럼 재사용(신규 아님).
+--       + 부분 UNIQUE 인덱스 1 + CHECK 1 + read-only VIEW 1). 파괴적 변경 0.
 -- ══════════════════════════════════════════════════════════════════
 
 -- 풋 단말기 13 TID 화이트리스트 (공유 merchant 511-60-00988 내 풋 판별자).
@@ -71,14 +72,19 @@ COMMENT ON COLUMN public.payments.ocr_receipt_datetime IS
 -- 2. receipt_ocr_results — OCR 원문 추출값 provenance (ADDITIVE) — DA[1][3] GO
 --    확정값은 payments(external_approval_no·amount)로 승격, 원문은 여기 보관(OCR 정확도 텔레메트리).
 -- ============================================================
+-- ── parsed_amount 는 신규 아님 = 기존 컬럼 재사용 (DDL-diff destructive mismatch 방지) ──
+--   20260522030000_receipt_ocr_results.sql L21 에서 parsed_amount INTEGER 이미 신설(prod 기실재).
+--   본 마이그가 신규로 추가하는 컬럼은 parsed_approval_no 하나뿐. parsed_amount 는 OCR provenance
+--   용도로 기존 컬럼을 그대로 재사용한다(신규 ADD 금지 → no-op 이지만 DDL-diff 오인 회피).
+--   → rollback 에서도 parsed_amount 는 DROP 하지 않는다(기존 OCR 결과 데이터 무손실).
 ALTER TABLE public.receipt_ocr_results
-  ADD COLUMN IF NOT EXISTS parsed_approval_no TEXT,     -- OCR 추출 승인번호(8자리) — 검증팝업 프리필/오인식 이력
-  ADD COLUMN IF NOT EXISTS parsed_amount      INTEGER;  -- OCR 추출 결제금액 — provenance(확정=payments.amount). DA[3] 권고
+  ADD COLUMN IF NOT EXISTS parsed_approval_no TEXT;     -- OCR 추출 승인번호(8자리) — 검증팝업 프리필/오인식 이력
 
 COMMENT ON COLUMN public.receipt_ocr_results.parsed_approval_no IS
   'T-20260710-OCR-RECEIPT: OCR 추출 승인번호(8자리). 검증팝업 프리필 소스. 확정값은 payments.external_approval_no 로 승격(later-wins: NULL일 때만 조용히 write).';
+-- (기존 컬럼 재사용 — 20260522030000 L21 신설. 본 마이그는 comment 재정의만, 컬럼 신규 아님.)
 COMMENT ON COLUMN public.receipt_ocr_results.parsed_amount IS
-  'T-20260710-OCR-RECEIPT: OCR 추출 결제금액(원단위). provenance/오인식 감사·OCR 정확도 텔레메트리용. 확정 진실원천은 payments.amount(이중컬럼 divergence 방지).';
+  'T-20260710-OCR-RECEIPT(기존 컬럼 재사용): OCR 추출 결제금액(원단위). provenance/오인식 감사·OCR 정확도 텔레메트리용. 확정 진실원천은 payments.amount(이중컬럼 divergence 방지).';
 
 -- ── PCI 2차 방어 (DA[5] ADOPT) — raw_text 연속 13자리+ 숫자열(전체 PAN 의심) 저장 거부 ──
 --   count=0 실측 확인(2026-07-10) 후 NOT VALID→VALIDATE(무중단·기존행 톨러런스).
