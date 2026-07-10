@@ -29,15 +29,16 @@ const APP = 'src/App.tsx';
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 1: 정상 동선 — 탭 분리 표시 (AC-1/2/3)
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC-1: shadcn Tabs 재사용 + [상담]/[치료] 트리거 2개 + active 상태 와이어링', () => {
+test('AC-1: shadcn Tabs 재사용 + [상담]/[치료] 트리거 + active 상태 와이어링', () => {
   const src = read(PAGE);
   expect(src).toContain("from '@/components/ui/tabs'");
   expect(src).toContain('data-testid="assignments-role-tabs"');
   expect(src).toContain('data-testid="assignments-tab-consult"');
   expect(src).toContain('data-testid="assignments-tab-therapy"');
-  // active 탭 상태가 Tabs value/onValueChange 에 묶임
-  expect(src).toMatch(/value=\{activeTab\}/);
-  expect(src).toMatch(/onValueChange=.*setActiveTab/);
+  // T-20260710-foot-ASSIGNMENT-LIST-TAB: Tabs 는 상위 mainTab(3-way)에 묶이고,
+  //   상담/치료 선택 시 기존 activeTab(role 필터)에 동기화 → 운영 카드 로직 불변.
+  expect(src).toMatch(/value=\{mainTab\}/);
+  expect(src).toMatch(/if \(next === 'consult' \|\| next === 'therapy'\) setActiveTab\(next\)/);
 });
 
 test('AC-1: 기본 active 탭 = consult(상담)', () => {

@@ -130,6 +130,15 @@ export default function Assignments() {
   // (사이드바 단일 메뉴 유지. active 탭 기준 role 필터만 — 배정/토스/당김 로직 불변)
   const [activeTab, setActiveTab] = useState<AssignmentRole>('consult');
 
+  // T-20260710-foot-ASSIGNMENT-LIST-TAB: 상위 탭 3분기 [상담]/[치료]/[배정목록].
+  //  · 상담/치료 → 기존 배정 운영 카드(①오늘현황 ②당김 ③금일배분 ④당월누적) 노출 + activeTab 동기화(로직 불변).
+  //  · 배정목록 → 카테고리(상담/치료) 드롭 → 담당자(상담사/치료사) 드롭 → 선택 담당자 금일 배정 환자목록 read-only 표시.
+  //  금일 배정 grain 실측(2026-07-10 prod): 앵커=check_ins(consultant_id/therapist_id). reservations엔 배정필드 부재
+  //  (preferred_therapist_id=예약단계 선호값), visits 테이블 부재 → TREATING-DOCTOR-SELECT-SYNC 선례와 정합. DB무변경.
+  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list'>('consult');
+  const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
+  const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
+
   // 토스 다이얼로그
   const [tossTarget, setTossTarget] = useState<{
     checkIn: CheckIn;
@@ -472,6 +481,64 @@ export default function Assignments() {
     return rows.sort((a, b) => b.at.localeCompare(a.at));
   }, [monthCheckIns, actions, activeTab]);
 
+  // ── [배정목록] 탭 — 카테고리 담당자 드롭 옵션 + 선택 담당자 금일 배정 환자목록 ─────────
+  // T-20260710-foot-ASSIGNMENT-LIST-TAB
+  //   담당자 옵션 = 해당 role(consultant/therapist) 전체 active staff(출근 무관 — 과거/전체 조회 가능). 이름 정렬.
+  const listStaffOptions = useMemo<Staff[]>(() => {
+    const target = listCategory === 'consult' ? 'consultant' : 'therapist';
+    return staff
+      .filter((s) => s.role === target)
+      .sort((a, b) =>
+        (a.display_name ?? a.name).trim().localeCompare((b.display_name ?? b.name).trim(), 'ko'),
+      );
+  }, [staff, listCategory]);
+
+  // 선택 담당자(미선택 시 카테고리 전체)의 금일 배정 환자목록.
+  //   앵커 = check_ins(정본, monthCheckIns 를 오늘로 필터 → done 포함/cancelled 제외). 배정 = consultant_id(상담)/therapist_id(치료).
+  //   배정시각 = 해당 role 최신 assignment_action(auto/manual/toss/pull) created_at 우선, 없으면 checked_in_at.
+  interface ListRow {
+    id: string;
+    checkIn: CheckIn;
+    customerName: string;
+    staffId: string;
+    status: CheckInStatus;
+    axis: string;
+    at: string; // ISO 배정시각(action 우선, fallback checked_in_at)
+  }
+  const assignmentListRows = useMemo<ListRow[]>(() => {
+    const todayIso = todaySeoulISODate();
+    const todayStartMs = new Date(`${todayIso}T00:00:00+09:00`).getTime();
+    // check_in_id:role → 최신 action(created_at desc) — 배정시각 파생용(todayDistribution 과 동일 규칙).
+    const latestAct = new Map<string, AssignmentAction>();
+    for (const a of actions) {
+      if (!a.check_in_id || a.role !== listCategory) continue;
+      if (new Date(a.created_at).getTime() < todayStartMs) continue;
+      const key = `${a.check_in_id}:${a.role}`;
+      const prev = latestAct.get(key);
+      if (!prev || a.created_at > prev.created_at) latestAct.set(key, a);
+    }
+    const rows: ListRow[] = [];
+    for (const ci of monthCheckIns) {
+      if (!ci.checked_in_at || new Date(ci.checked_in_at).getTime() < todayStartMs) continue;
+      if (ci.status === 'cancelled') continue; // 취소 건은 '금일 배정 환자' 아님
+      const staffId = listCategory === 'consult' ? ci.consultant_id : ci.therapist_id;
+      if (!staffId) continue; // 미배정 제외
+      if (listStaffId && staffId !== listStaffId) continue; // 담당 선택 시 그 담당만 (AC4). 미선택=전체 (AC5)
+      const act = latestAct.get(`${ci.id}:${listCategory}`);
+      rows.push({
+        id: `${ci.id}:${listCategory}`,
+        checkIn: ci,
+        customerName: ci.customer_name ?? '—',
+        staffId,
+        status: ci.status,
+        axis: monthAxisOf(ci, listCategory),
+        at: act?.created_at ?? ci.checked_in_at,
+      });
+    }
+    // 배정시각 오름차순(먼저 배정된 순)
+    return rows.sort((a, b) => a.at.localeCompare(b.at));
+  }, [monthCheckIns, actions, listCategory, listStaffId, monthAxisOf]);
+
   // ── 당김 후보(미배정 대기 건만) ──────────────────────────────────────────────
   // T-20260629-foot-PULLCAND-ASSIGNED-EXCLUDE: 담당자가 배정되면(수동·자동·토스 무관)
   //   당김 후보에서 즉시 제외. 후보 = assigned 가 NULL(미배정/대기)인 건만.
@@ -701,8 +768,17 @@ export default function Assignments() {
         />
       )}
 
-      {/* [상담]/[치료] 탭 — 같은 화면 내 파트별 분리 (active 탭 기준 role 필터) */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AssignmentRole)}>
+      {/* [상담]/[치료]/[배정목록] 탭 — 같은 화면 내 파트별 분리.
+          상담/치료 = 배정 운영 카드(role 필터). 배정목록 = 담당자별 금일 환자목록 조회(T-20260710-foot-ASSIGNMENT-LIST-TAB). */}
+      <Tabs
+        value={mainTab}
+        onValueChange={(v) => {
+          const next = v as 'consult' | 'therapy' | 'list';
+          setMainTab(next);
+          // 상담/치료 탭은 기존 운영 카드의 role 필터(activeTab) 동기화. 배정목록은 자체 드롭으로 조회.
+          if (next === 'consult' || next === 'therapy') setActiveTab(next);
+        }}
+      >
         <TabsList className="h-auto gap-1 p-1" data-testid="assignments-role-tabs">
           <TabsTrigger value="consult" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-consult">
             상담
@@ -710,9 +786,15 @@ export default function Assignments() {
           <TabsTrigger value="therapy" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-therapy">
             치료
           </TabsTrigger>
+          <TabsTrigger value="list" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-list">
+            배정목록
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
+      {/* ── [상담]/[치료] 탭: 기존 배정 운영 카드(①~④). 배정목록 탭에서는 미노출. ── */}
+      {mainTab !== 'list' && (
+        <>
       {/* ① 오늘 배정 현황 */}
       <Card>
         <CardHeader className="py-3">
@@ -1009,6 +1091,125 @@ export default function Assignments() {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
+
+      {/* ── [배정목록] 탭: 카테고리(상담/치료) 드롭 → 담당자 드롭 → 선택 담당자 금일 배정 환자목록 ── */}
+      {/* T-20260710-foot-ASSIGNMENT-LIST-TAB. read-only 조회(DB무변경). 앵커=check_ins. */}
+      {mainTab === 'list' && (
+        <Card data-testid="assignments-list-card">
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm">배정목록</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* 드롭다운 2단 — 태블릿 큰 터치 타깃 */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">카테고리</label>
+                <select
+                  data-testid="list-category-select"
+                  className="w-full rounded border bg-background px-2 py-2 text-sm"
+                  value={listCategory}
+                  onChange={(e) => {
+                    setListCategory(e.target.value as AssignmentRole);
+                    setListStaffId(''); // 카테고리 전환 시 담당 선택 초기화(직전 목록 잔존 X — 시나리오2)
+                  }}
+                >
+                  <option value="consult">상담</option>
+                  <option value="therapy">치료</option>
+                </select>
+              </div>
+              <div className="flex-1 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  {listCategory === 'consult' ? '상담사' : '치료사'}
+                </label>
+                <select
+                  data-testid="list-staff-select"
+                  className="w-full rounded border bg-background px-2 py-2 text-sm"
+                  value={listStaffId}
+                  onChange={(e) => setListStaffId(e.target.value)}
+                >
+                  <option value="">전체 ({listCategory === 'consult' ? '상담사' : '치료사'} 전원)</option>
+                  {listStaffOptions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {(s.display_name ?? s.name).trim()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* 금일 배정 환자목록 */}
+            <div className="rounded border">
+              <div className="border-b bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                금일 배정 환자{' '}
+                <span className="font-semibold text-foreground">{assignmentListRows.length}</span>명
+                {listStaffId
+                  ? ` · ${staffName(listStaffId)}`
+                  : ` · ${listCategory === 'consult' ? '상담사' : '치료사'} 전체`}
+              </div>
+              <div className="max-h-[52vh] overflow-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 z-10 border-b bg-muted text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">환자</th>
+                      {!listStaffId && <th className="px-2 py-2 text-left font-medium">담당</th>}
+                      <th className="px-2 py-2 text-left font-medium">상태</th>
+                      <th className="px-2 py-2 text-left font-medium">축</th>
+                      <th className="px-2 py-2 text-right font-medium">배정시각</th>
+                    </tr>
+                  </thead>
+                  <tbody data-testid="list-patient-rows">
+                    {assignmentListRows.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={listStaffId ? 4 : 5}
+                          className="px-3 py-8 text-center text-muted-foreground"
+                          data-testid="list-empty"
+                        >
+                          금일 배정된 환자가 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                    {assignmentListRows.map((r) => (
+                      <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{r.customerName}</span>
+                          {r.checkIn.queue_number != null && (
+                            <span className="ml-1 text-muted-foreground">#{r.checkIn.queue_number}</span>
+                          )}
+                        </td>
+                        {!listStaffId && (
+                          <td className="px-2 py-2 text-muted-foreground">{staffName(r.staffId)}</td>
+                        )}
+                        <td className="px-2 py-2">
+                          <Badge variant="outline" className="font-normal">
+                            {STATUS_KO[r.status] ?? r.status}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2">
+                          <Badge variant={r.axis === 'returning' ? 'secondary' : 'teal'} className="font-normal">
+                            {listCategory === 'consult' ? '상담' : '치료'}·{AXIS_KO[r.axis] ?? r.axis}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2 text-right text-muted-foreground">
+                          {r.at
+                            ? new Date(r.at).toLocaleTimeString('ko-KR', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                timeZone: 'Asia/Seoul',
+                              })
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 토스 다이얼로그 — 사유 필수(시나리오4) */}
       <Dialog open={!!tossTarget} onOpenChange={(o) => !o && setTossTarget(null)}>
