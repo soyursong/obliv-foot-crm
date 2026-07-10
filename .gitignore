@@ -71,3 +71,5 @@ rollback/T-20260708-foot-QUICKRESV-TESTDATA-BUG_rollback_*.sql
 # T-20260702-foot-CODY-PKG-CREATE-PERM — ghost auth 삭제 archive/rollback 덤프 (auth secret+PHI, off-git only)
 rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_archive_*.json
 rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
+# apply 증빙 로그는 count만(PHI/secret 없음) → git-track 허용 (*.log override)
+!db-gate/T-20260702-foot-CODY-PKG-CREATE-PERM_apply_evidence.log

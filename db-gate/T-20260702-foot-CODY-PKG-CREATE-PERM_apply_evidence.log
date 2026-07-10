@@ -1,0 +1,12 @@
+═══ T-20260702 계정삭제 APPLY (DESTRUCTIVE, COMMIT) ═══
+  archive 확인: /Users/domas/ops/archive/T-20260702-foot-CODY-PKG-CREATE-PERM/T-20260702-foot-CODY-PKG-CREATE-PERM_archive_20260710.json + /Users/domas/ops/archive/T-20260702-foot-CODY-PKG-CREATE-PERM/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_20260710.sql ✅
+  INV-4 getUserById 재검증: id↔email 일치 ✅
+  DB id+email 재검증: 1행 ✅
+
+[POST-COMMIT 검증]
+  user_profiles(target) = 0 (기대 0)
+  auth.users(target)    = 0 (기대 0)
+  user_profiles TOTAL   = 46 (기대 46, baseline 47 - 1)
+  auth.users TOTAL      = 46 (기대 46, baseline 47 - 1)
+
+═══ APPLY 결과: ✅ 삭제 완료 (post-count=0, freeze diff=1) ═══

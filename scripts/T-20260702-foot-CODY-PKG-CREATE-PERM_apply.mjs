@@ -41,10 +41,11 @@ const fail = (msg) => { out('❌ ABORT:', msg); fs.writeFileSync('db-gate/T-2026
 
 out('═══ T-20260702 계정삭제 APPLY (DESTRUCTIVE, COMMIT) ═══');
 
-// 0) archive 존재 재확인
-const archPath = 'rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_archive_20260710.json';
-const rbPath = 'rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_20260710.sql';
-if (!fs.existsSync(archPath) || !fs.existsSync(rbPath)) fail('archive/rollback 파일 부재 — archive-first 미충족');
+// 0) archive 존재 재확인 (off-git: PHI+secret 덤프는 repo 밖 /Users/domas/ops/archive 에 chmod 600 보관 — 4115cd6f gitignore 이관)
+const ARCHIVE_DIR = process.env.ARCHIVE_DIR || '/Users/domas/ops/archive/T-20260702-foot-CODY-PKG-CREATE-PERM';
+const archPath = `${ARCHIVE_DIR}/T-20260702-foot-CODY-PKG-CREATE-PERM_archive_20260710.json`;
+const rbPath = `${ARCHIVE_DIR}/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_20260710.sql`;
+if (!fs.existsSync(archPath) || !fs.existsSync(rbPath)) fail('archive/rollback 파일 부재 — archive-first 미충족 (off-git: ' + ARCHIVE_DIR + ')');
 out('  archive 확인:', archPath, '+', rbPath, '✅');
 
 // 1) INV-4 TOCTOU 재검증 (destructive 직전 getUserById + DB 재조회)
