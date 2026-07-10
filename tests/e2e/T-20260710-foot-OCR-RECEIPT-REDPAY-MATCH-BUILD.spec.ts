@@ -13,6 +13,14 @@
  *   Step4 [영수증 수납] 탭  : /admin/closing#payments → 3번째 탭(레드페이 우측) 5컬럼 Data Grid
  *
  * SSOT: 컬럼① 표시축 = 영수증 인쇄시각(ocr_receipt_datetime), created_at(업로드시각) 아님.
+ *
+ * ⚠ 두 모달 표면 구분 (planner INFO MSG-20260710-145745-y2jz, 색박스 스샷 회수 근거):
+ *   (A) Step2 검증·보정 팝업 = at-capture 표준 form 모달. 촬영 직후 표시,
+ *       결제금액/승인번호/날짜시간 editable + [확인]/[취소]. → 수납 레코드 생성.
+ *   (B) col⑤ [이미지 보기] 뷰 모달 = row-click 시 뜨는 read-only 「카드 영수증」 조회.
+ *       결제금액/승인번호/카드번호/결제일자(+취소건은 취소일자) 표시, 편집 필드 無,
+ *       [인쇄하기]/[닫기]만. (스샷 image3 = F0BG8CYUKUK 형태, 취소건 예시)
+ *   → (A)와 (B)는 별개 표면. FE 랜딩 시 혼동 금지.
  */
 
 import { test, expect, type Route, type Page } from '@playwright/test';
@@ -142,4 +150,34 @@ test('Step4: 컬럼① 표시 = 인쇄시각(업로드시각 아님) SSOT', asyn
   }
   // (post-FE) receipt_datetime(인쇄시각) 표시, uploaded_at 미표시 assert 승격 예정.
   expect(true).toBeTruthy();
+});
+
+// ─────────────────────────────────────────────────────────────
+// Step4-col⑤: row-click [이미지 보기] → read-only 「카드 영수증」 뷰 모달
+//   (planner INFO y2jz: Step2 검증·보정 팝업과 별개 표면 — read-only + 인쇄/닫기)
+// ─────────────────────────────────────────────────────────────
+
+test('Step4-col⑤: [이미지 보기] → read-only 뷰 모달(편집필드 無, 인쇄/닫기)', async ({ page }) => {
+  await gotoPaymentsTab(page);
+  const settlementTab = page.getByRole('tab', { name: /영수증\s*수납/ });
+  if (await settlementTab.count() === 0) {
+    test.skip(true, '[영수증 수납] 탭 미랜딩 — DA GO 후 FE 랜딩 시 승격');
+    return;
+  }
+  await settlementTab.click();
+
+  const viewBtn = page.getByRole('button', { name: /이미지\s*보기|영수증\s*보기/ }).first();
+  if (await viewBtn.count() === 0) {
+    test.skip(true, 'col⑤ [이미지 보기] 버튼 미랜딩 — DA GO 후 FE 랜딩 시 승격');
+    return;
+  }
+  await viewBtn.click();
+
+  // 「카드 영수증」 read-only 뷰 모달 (image3 형태): 조회 필드 + 인쇄/닫기, 편집 필드 無
+  const viewModal = page.getByTestId('receipt-view-modal');
+  await expect(viewModal).toBeVisible();
+  // read-only 보장: 모달 내 편집 가능 input/textarea 0개 (검증·보정 팝업과 구분)
+  await expect(viewModal.locator('input:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])')).toHaveCount(0);
+  await expect(viewModal.getByRole('button', { name: /인쇄/ })).toBeVisible();
+  await expect(viewModal.getByRole('button', { name: /닫기/ })).toBeVisible();
 });
