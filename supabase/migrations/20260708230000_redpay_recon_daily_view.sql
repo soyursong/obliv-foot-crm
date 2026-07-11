@@ -17,9 +17,11 @@
 --       (PORT 매처가 read-only 기록)에 존재 → 뷰는 그 상태를 표면화만.
 -- AC-3: recon_status 파생 = matched / missing_in_crm / missing_at_van /
 --       amount_mismatch / refund_not_in_crm (recon_log 4종 enum 동일 집합).
--- AC-4: ⚠ business_no 511-60-00988 = 공유 merchant(롱레 8 TID + 풋 13 TID 동거).
---       → 뷰가 tid IN (풋 13 TID 화이트리스트) 를 서버-권위 필터로 강제(FE 전달 아님).
---       clinic_id(RLS) = 테넌트 계정 스코프, tid = 풋↔롱레 판별자. 이중 방어.
+-- AC-4: ⚠ business_no 511-60-00988 = 5도메인 공유(풋/도수/피부/롱래스팅 동거).
+--       [2026-07-11 피벗 REDPAY-MACSTUDIO-POLLER + DA GO] 권위 키 = merchant_id(도메인 경계).
+--       → 뷰 1차 판정 = raw_payload->merchant->>id IN (풋 merchant_id 17). TID 17 은 belt-and-suspenders 보조.
+--       도수/피부/롱레는 merchant 대역 밖 → 구조적 자동배제. clinic_id(RLS)=테넌트 계정 스코프. 삼중 방어.
+--       SSOT = memory/1_Projects/201_메디빌더_AI도입/redpay_foot_terminal_registry.md §2 (authoritative).
 -- AC-7: 적재 freshness(마지막 approved_at + 폴러 last_incremental_to) 노출 →
 --       "거래 없음"(폴러 정상·raw 0) vs "적재 死"(폴러 stale) 를 현장이 구분.
 --       missing_at_van 오탐 방지: 해당 일자 raw 존재(EXISTS) 시에만 산출.
@@ -27,9 +29,10 @@
 -- risk: GO_WARN — 검증된 PORT 인프라 위 read-only view/func. 파괴적 변경 0.
 -- ══════════════════════════════════════════════════════════════════
 
--- ── 풋 단말기 13 TID 화이트리스트 (obliv_origin_env.md, 첨부 F0BFXCWLGQ2) ──────────
---   멀티단말 8 + 무선단말 5 = 13. business_no 511-60-00988 공유 merchant 내 풋 판별자.
---   env REDPAY_TID_WHITELIST(EF 폴러) 와 동일 집합. 뷰는 서버-권위로 하드코딩.
+-- ── 풋 스코프 화이트리스트 (redpay_foot_terminal_registry.md §2 = authoritative) ──────
+--   1차 권위 = merchant_id 17종(VAN2·1777285* / 유선2·1777288* / 멀티·무선13·1777289*).
+--   보조 = TID 17종(merchant 1:1). env REDPAY_MERCHANT_WHITELIST/REDPAY_TID_WHITELIST(폴러) 와 동일 집합.
+--   뷰는 서버-권위로 하드코딩. fast-follow(§6): DB 레지스트리 테이블 SSOT 로 단일화 예정(별도 P1).
 
 -- ============================================================
 -- 1. VIEW v_redpay_reconciliation_daily — CRM ↔ 레드페이 대조 (read-only)
@@ -62,10 +65,17 @@ SELECT
   END                                                         AS recon_status
 FROM public.redpay_raw_transactions r
 LEFT JOIN public.payments p ON p.id = r.matched_payment_id
-WHERE r.tid IN (
-  '1047479483','1047479476','1047479477','1047479478','1047479479',
-  '1047479480','1047479481','1047479482','1047479153','1047479148',
-  '1047479155','1047479158','1047479157'
+WHERE (r.raw_payload->'merchant'->>'id') IN (   -- 1차 권위: 풋 merchant_id 17(도메인 경계)
+  '1777285001','1777285004','1777288001','1777288004','1777289001',
+  '1777289002','1777289003','1777289004','1777289005','1777289006',
+  '1777289007','1777289008','1777289009','1777289010','1777289011',
+  '1777289012','1777289013'
+)
+AND r.tid IN (                                  -- belt-and-suspenders: 풋 TID 17(merchant 1:1)
+  '1047479255','1047479261','1047479469','1047479472','1047479483',
+  '1047479476','1047479477','1047479478','1047479479','1047479480',
+  '1047479481','1047479482','1047479153','1047479148','1047479155',
+  '1047479158','1047479157'
 )
 
 UNION ALL
@@ -98,10 +108,17 @@ WHERE p.method = 'card'
     SELECT 1
     FROM public.redpay_raw_transactions r2
     WHERE r2.clinic_id = p.clinic_id
-      AND r2.tid IN (
-        '1047479483','1047479476','1047479477','1047479478','1047479479',
-        '1047479480','1047479481','1047479482','1047479153','1047479148',
-        '1047479155','1047479158','1047479157'
+      AND (r2.raw_payload->'merchant'->>'id') IN (   -- 1차 권위: 풋 merchant_id 17
+        '1777285001','1777285004','1777288001','1777288004','1777289001',
+        '1777289002','1777289003','1777289004','1777289005','1777289006',
+        '1777289007','1777289008','1777289009','1777289010','1777289011',
+        '1777289012','1777289013'
+      )
+      AND r2.tid IN (                                -- belt-and-suspenders: 풋 TID 17
+        '1047479255','1047479261','1047479469','1047479472','1047479483',
+        '1047479476','1047479477','1047479478','1047479479','1047479480',
+        '1047479481','1047479482','1047479153','1047479148','1047479155',
+        '1047479158','1047479157'
       )
       AND (r2.approved_at AT TIME ZONE 'Asia/Seoul')::date
           = (p.created_at AT TIME ZONE 'Asia/Seoul')::date
@@ -109,7 +126,7 @@ WHERE p.method = 'card'
 
 COMMENT ON VIEW public.v_redpay_reconciliation_daily IS
   'T-20260708-foot-REDPAY-CLOSING-TAB: 일마감 레드페이 하위탭 read-only 대조 뷰. '
-  'redpay 승인 1건=1행(풋 13 TID 화이트리스트) + missing_at_van(당일 raw EXISTS 가드). '
+  'redpay 승인 1건=1행(풋 merchant_id 17 1차 권위 + TID 17 보조 필터) + missing_at_van(당일 raw EXISTS 가드). '
   'recon_status ∈ matched/missing_in_crm/missing_at_van/amount_mismatch/refund_not_in_crm. '
   'FE 는 이 뷰만 소비 — FE 조인/매칭 재계산 금지(매처 진실원천 이중화 방지). '
   'security_invoker=true → 호출자 clinic RLS 적용.';
@@ -135,17 +152,27 @@ AS $$
   WITH me AS (
     SELECT clinic_id FROM public.user_profiles WHERE id = auth.uid()
   ),
-  foot_tids AS (
+  foot_merchants AS (   -- 1차 권위: 풋 merchant_id 17(도메인 경계)
     SELECT unnest(ARRAY[
-      '1047479483','1047479476','1047479477','1047479478','1047479479',
-      '1047479480','1047479481','1047479482','1047479153','1047479148',
-      '1047479155','1047479158','1047479157'
+      '1777285001','1777285004','1777288001','1777288004','1777289001',
+      '1777289002','1777289003','1777289004','1777289005','1777289006',
+      '1777289007','1777289008','1777289009','1777289010','1777289011',
+      '1777289012','1777289013'
+    ]) AS merchant_id
+  ),
+  foot_tids AS (        -- belt-and-suspenders: 풋 TID 17(merchant 1:1)
+    SELECT unnest(ARRAY[
+      '1047479255','1047479261','1047479469','1047479472','1047479483',
+      '1047479476','1047479477','1047479478','1047479479','1047479480',
+      '1047479481','1047479482','1047479153','1047479148','1047479155',
+      '1047479158','1047479157'
     ]) AS tid
   )
   SELECT
     (SELECT max(r.approved_at)
        FROM public.redpay_raw_transactions r
       WHERE r.clinic_id = (SELECT clinic_id FROM me)
+        AND (r.raw_payload->'merchant'->>'id') IN (SELECT merchant_id FROM foot_merchants)
         AND r.tid IN (SELECT tid FROM foot_tids)),
     (SELECT max(r.updated_at)
        FROM public.redpay_raw_transactions r
@@ -155,6 +182,7 @@ AS $$
     (SELECT count(*)
        FROM public.redpay_raw_transactions r
       WHERE r.clinic_id = (SELECT clinic_id FROM me)
+        AND (r.raw_payload->'merchant'->>'id') IN (SELECT merchant_id FROM foot_merchants)
         AND r.tid IN (SELECT tid FROM foot_tids)
         AND (r.approved_at AT TIME ZONE 'Asia/Seoul')::date
             = (now() AT TIME ZONE 'Asia/Seoul')::date);

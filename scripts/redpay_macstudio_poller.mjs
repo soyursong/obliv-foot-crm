@@ -14,7 +14,8 @@
  * ── 이 스크립트의 일 (CEO 권고 Path A) ───────────────────────────────────────
  *   launchd 5분 주기로:
  *     1. 레드페이 payments.php 를 "직접" 조회(검증된 200 경로, X-API-KEY)
- *     2. 풋 13 TID 화이트리스트로 스크립트-레벨 필터(EF guard.ts G4 미경유 → 여기서 강제)
+ *     2. 풋 merchant_id 17 화이트리스트(1차 권위) + TID 17(보조)로 스크립트-레벨 필터
+ *        (EF guard.ts G4 미경유 → 여기서 강제. 도수/피부/롱레는 merchant 대역 밖 → 구조적 자동배제)
  *     3. Supabase PostgREST(service_role)로 redpay_raw_transactions upsert (멱등)
  *     4. redpay_poller_state(id=1) last_incremental_to 갱신 = 적재 heartbeat
  *        (get_redpay_feed_freshness() 가 이 값으로 "적재死 vs 거래없음" 구분)
@@ -76,22 +77,46 @@ const SERVICE_ROLE_KEY = cfg("SUPABASE_SERVICE_ROLE_KEY");
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
 const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "511-60-00988"); // 종로 풋 (공유 merchant)
 const REDPAY_TID_WHITELIST_ENV = cfg("REDPAY_TID_WHITELIST");
+const REDPAY_MERCHANT_WHITELIST_ENV = cfg("REDPAY_MERCHANT_WHITELIST");
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const POLL_MODE = cfg("REDPAY_POLL_MODE", "incremental"); // incremental | daily_full
 const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
+// daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
+const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
+const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
 
-// ── 풋 17 TID 화이트리스트 SSOT (redpay_foot_terminal_registry.md §2 = authoritative) ──
+// ── 풋 스코프 SSOT (redpay_foot_terminal_registry.md §2 = authoritative) ──
 //   ⚠ business_no 511-60-00988 = 5도메인 공유 merchant(풋/도수/피부/롱래스팅 동거).
 //   EF guard.ts G4 를 "미경유"하므로 타도메인(도수 등) 혼입 방지 필터를 스크립트 자체에서 강제(AC-3).
-//   env 미설정 시 이 상수를 fail-safe 기본값으로 사용(빈 화이트리스트 = 전량통과 = 타도메인혼입 위험 차단).
-//   [2026-07-11 정정 T-...-REDPAY-MACSTUDIO-POLLER] 기존 13종은 멀티8+무선5뿐 — 라이브 VAN2·유선2 누락으로
-//   실단말 조회 fetched=0 유발. DA CONSULT-REPLY GO(MSG-20260711-094634-tjtk)로 17종(VAN2+유선2+멀티8+무선5) 확정.
+//
+//   [2026-07-11 피벗 T-...-REDPAY-MACSTUDIO-POLLER + DA GO MSG-20260711-094634-tjtk]
+//   ★ 권위 키 = merchant_id (TID 아님). 도메인 경계(풋/도수/피부/롱레)는 merchant 레벨에 산다
+//     (가맹점명에 "풋"/"도수"/… 명시). TID 는 단말 단위 추가·교체되며 유지보수 안 돼 drift 원천
+//     (이번 사고 근본원인 — 기존 13-list 는 라이브 VAN2·유선2 누락 → tid= 조회 fetched=0).
+//   → filterToFootScope 1차 판정 = merchant_id allowlist(17). TID(17)은 belt-and-suspenders 보조.
+//   env 미설정 시 이 상수를 fail-safe 기본값(빈 화이트리스트 = 전량통과 = 타도메인혼입 위험 → 차단).
+
+// merchant_id 17종 (VAN2·1777285* / 유선2·1777288* / 멀티·무선13·1777289*) — 1차 권위(도메인 경계).
+const FOOT_MERCHANT_WHITELIST_DEFAULT = [
+  "1777285001", "1777285004",             // VAN2
+  "1777288001", "1777288004",             // 유선2
+  "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
+  "1777289006", "1777289007", "1777289008", // 멀티8
+  "1777289009", "1777289010", "1777289011", "1777289012", "1777289013", // 무선5
+];
+
+// TID 17종 (merchant 1:1) — 서버-측 tid= narrowing + belt-and-suspenders 보조필터.
 const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479255", "1047479261", "1047479469", "1047479472", // VAN2 + 유선2 (라이브)
   "1047479483", "1047479476", "1047479477", "1047479478", "1047479479",
   "1047479480", "1047479481", "1047479482", // 멀티8
   "1047479153", "1047479148", "1047479155", "1047479158", "1047479157", // 무선5
 ];
+
+const merchantList = REDPAY_MERCHANT_WHITELIST_ENV
+  ? REDPAY_MERCHANT_WHITELIST_ENV.split(",").map((m) => m.trim()).filter(Boolean)
+  : FOOT_MERCHANT_WHITELIST_DEFAULT.slice();
+const merchantWhitelist = new Set(merchantList);
 
 const tidList = REDPAY_TID_WHITELIST_ENV
   ? REDPAY_TID_WHITELIST_ENV.split(",").map((t) => t.trim()).filter(Boolean)
@@ -251,15 +276,28 @@ function toRawTrxRow(clinicId, t) {
     raw_payload: t,
   };
 }
-// 풋 스코프 필터 — 화이트리스트 밖 TID(롱레8/타 병원) 제외 (AC-3, AC-4 롱레8 교집합0).
+// 풋 스코프 필터 (merchant_id 1차 권위 피벗, T-...-REDPAY-MACSTUDIO-POLLER / DA GO).
+//   1차 = merchant_id allowlist(도메인 경계 — 가맹점명 "풋". 도수/피부/롱레는 대역 밖 → 구조적 자동배제).
+//   보조 = TID(17) belt-and-suspenders. merchant 값 부재(레거시/이상행) 시에만 TID 로 폴백(풋행 유실 방지).
+//   drift = 풋 merchant 인정인데 미등록 TID → 신규 풋 단말 후보. silent include 금지(registry §6) → 알람 표면화.
 function filterToFootScope(items) {
   const kept = [];
   const dropped = [];
+  const drift = [];
   for (const it of items) {
-    if (it.tid && tidWhitelist.has(it.tid)) kept.push(it);
-    else dropped.push(it);
+    const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
+    const merchantOk = mid != null && merchantWhitelist.has(mid);   // 1차 권위(도메인 경계)
+    const tidOk = it.tid != null && tidWhitelist.has(it.tid);       // belt-and-suspenders 보조
+    // merchant 가 권위. merchant 값이 아예 없을 때만 TID 보조필터로 폴백.
+    const keep = merchantOk || (mid == null && tidOk);
+    if (keep) {
+      kept.push(it);
+      if (merchantOk && !tidOk) drift.push(it); // 풋 merchant + 미등록 TID = 신규 단말 drift
+    } else {
+      dropped.push(it);
+    }
   }
-  return { kept, dropped };
+  return { kept, dropped, drift };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -368,17 +406,29 @@ async function main() {
     errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)}) 또는 REDPAY_BUSINESS_NO(${REDPAY_BUSINESS_NO}) 미설정 — 종료.`);
     process.exit(1);
   }
+  if (merchantWhitelist.size === 0) {
+    // fail-safe: 1차 권위 화이트리스트가 비면 도메인 경계 소실 = 타도메인 혼입 위험 → 차단.
+    errlog("merchant_id 화이트리스트 비어있음 — 타도메인(도수/피부/롱레) 혼입 방지 위해 종료(AC-3/AC-4).");
+    process.exit(1);
+  }
   if (tidWhitelist.size === 0) {
-    // fail-safe: 화이트리스트가 비면 전량 통과 = 롱레8 혼입 위험 → 차단.
-    errlog("TID 화이트리스트 비어있음 — 롱레8 혼입 방지 위해 종료(AC-3/AC-4).");
+    // fail-safe: 보조 화이트리스트가 비면 belt-and-suspenders/서버narrowing 소실 → 차단.
+    errlog("TID 화이트리스트 비어있음 — belt-and-suspenders 소실 방지 위해 종료(AC-3/AC-4).");
     process.exit(1);
   }
 
-  log(`가동: mode=${POLL_MODE} business_no=${REDPAY_BUSINESS_NO} tid_whitelist=${tidWhitelist.size}건 ` +
+  log(`가동: mode=${POLL_MODE} business_no=${REDPAY_BUSINESS_NO} ` +
+      `merchant_whitelist=${merchantWhitelist.size}건(1차) tid_whitelist=${tidWhitelist.size}건(보조) ` +
       `service_role=${mask(SERVICE_ROLE_KEY)} url=${REDPAY_BASE_URL}`);
 
   const now = new Date();
   const nowIso = now.toISOString();
+  // daily_full 상한(to). REDPAY_DAILY_TO(KST) override 있으면 그날 23:59:59, 없으면 now.
+  let toDt = now;
+  if (POLL_MODE !== "incremental" && REDPAY_DAILY_TO) {
+    const t = new Date(`${REDPAY_DAILY_TO}T23:59:59+09:00`);
+    if (!isNaN(t.getTime())) toDt = t;
+  }
 
   // ── 윈도 슬라이딩: poller_state 기반 from 계산 (EF runPoller 와 동일) ────────
   let fromDt;
@@ -398,8 +448,13 @@ async function main() {
       fromDt = new Date(now.getTime() - 60 * 60 * 1000);
       log(`윈도 초기화 (state 없음): from=${fromDt.toISOString()}`);
     }
+  } else if (REDPAY_DAILY_FROM) {
+    // daily_full 백필 override: REDPAY_DAILY_FROM(KST 날짜) 00:00 KST 부터 (7/9~7/11 재실행용).
+    const f = new Date(`${REDPAY_DAILY_FROM}T00:00:00+09:00`);
+    fromDt = !isNaN(f.getTime()) ? f : new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    log(`daily_full 백필 범위 override: from=${fromDt.toISOString()} to=${toDt.toISOString()}`);
   } else {
-    // daily_full: 어제 00:00 KST 부터
+    // daily_full 기본: 어제 00:00 KST 부터
     const y = new Date(now);
     y.setDate(y.getDate() - 1);
     y.setHours(0, 0, 0, 0);
@@ -418,19 +473,26 @@ async function main() {
   let totalScopedOut = 0;
   let totalUpserted = 0;
   let totalErrors = 0;
+  let totalDrift = 0;
   let page = 1;
   while (true) {
-    const { items, totalPage } = await fetchRedpayPage(fromDt, now, page, PAGE_SIZE);
+    const { items, totalPage } = await fetchRedpayPage(fromDt, toDt, page, PAGE_SIZE);
     if (items.length === 0) break;
     totalFetched += items.length;
 
-    // 스크립트-레벨 롱레8 혼입 방지 필터 (EF guard.ts G4 미경유 대체 — AC-3).
-    const { kept, dropped } = filterToFootScope(items);
+    // 스크립트-레벨 타도메인 혼입 방지 필터 (merchant_id 1차 권위, EF guard.ts G4 미경유 대체 — AC-3).
+    const { kept, dropped, drift } = filterToFootScope(items);
     if (dropped.length > 0) {
       totalScopedOut += dropped.length;
-      const sampleTids = [...new Set(dropped.map((d) => d.tid ?? "null"))].slice(0, 10);
-      warn(`[TENANT-GUARD] 화이트리스트 외 TID ${dropped.length}건 제외 (롱레8/타 병원 혼입 차단). ` +
-           `제외 TID 샘플=[${sampleTids.join(",")}]`);
+      const sampleMerchants = [...new Set(dropped.map((d) => d.merchant?.id ?? "null"))].slice(0, 10);
+      warn(`[TENANT-GUARD] 풋 merchant_id allowlist 외 ${dropped.length}건 제외 (도수/피부/롱레 혼입 구조적 차단). ` +
+           `제외 merchant_id 샘플=[${sampleMerchants.join(",")}]`);
+    }
+    if (drift.length > 0) {
+      totalDrift += drift.length;
+      const driftTids = [...new Set(drift.map((d) => d.tid ?? "null"))].slice(0, 10);
+      warn(`[DRIFT-ALARM] 풋 merchant 인정이나 미등록 TID ${drift.length}건 = 신규 풋 단말 후보(적재는 진행). ` +
+           `레지스트리(redpay_foot_terminal_registry.md §2) 17-set 갱신 필요. TID=[${driftTids.join(",")}]`);
     }
     if (kept.length > 0) {
       const { upserted, errors } = await upsertRawTransactions(clinicId, kept);
@@ -450,7 +512,7 @@ async function main() {
 
   const elapsedMs = Date.now() - startMs;
   log(`완료 elapsed_ms=${elapsedMs} fetched=${totalFetched} scoped_out=${totalScopedOut} ` +
-      `upserted=${totalUpserted} errors=${totalErrors}`);
+      `drift=${totalDrift} upserted=${totalUpserted} errors=${totalErrors}`);
 }
 
 main().catch((e) => {

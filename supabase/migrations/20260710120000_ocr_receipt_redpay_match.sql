@@ -52,9 +52,10 @@
 --       + 부분 UNIQUE 인덱스 1 + CHECK 1 + read-only VIEW 1). 파괴적 변경 0.
 -- ══════════════════════════════════════════════════════════════════
 
--- 풋 단말기 13 TID 화이트리스트 (공유 merchant 511-60-00988 내 풋 판별자).
---   §787/§519 소비뷰 TID 스코프 불변식 — business_no 단독 불충분, 아래 뷰에서 서버권위 필터.
---   v_redpay_reconciliation_daily 와 동일 집합.
+-- 풋 스코프 화이트리스트 (redpay_foot_terminal_registry.md §2 = authoritative).
+--   [2026-07-11 피벗 REDPAY-MACSTUDIO-POLLER + DA GO] 1차 권위 = merchant_id 17(raw_payload->merchant->>id).
+--   보조 = TID 17(belt-and-suspenders). §787/§519 소비뷰 스코프 불변식 — business_no 단독 불충분.
+--   도수/피부/롱레는 merchant 대역 밖 → 구조적 자동배제. v_redpay_reconciliation_daily 와 동일 집합.
 
 -- ============================================================
 -- 1. payments — 영수증 영구경로 + 인쇄시각 (ADDITIVE, nullable) — DA[1] GO
@@ -110,7 +111,7 @@ $$;
 --      · redpay_raw_transactions.matched_payment_id = p.id  (매처 링크, approval+amount+윈도 재계산 아님)
 --      · payments.reconciled_at                              (매처 대사시각)
 --      · payment_reconciliation_log                          (대사 verdict/enum)
---    §787/§519 TID 스코프 불변식: rp 조인·freshness 에 풋 13 TID 필터.
+--    §787/§519 스코프 불변식: rp 조인·freshness 에 풋 merchant_id 17(1차)+TID 17(보조) 필터.
 --    §789 freshness: 피드 마지막 approved_at 노출 → 未적재를 missing 오탐 금지.
 --    security_invoker=true → 호출자 clinic RLS 적용.
 -- ============================================================
@@ -151,20 +152,34 @@ SELECT
   (SELECT max(r2.approved_at)
      FROM public.redpay_raw_transactions r2
      WHERE r2.clinic_id = p.clinic_id
-       AND r2.tid IN (
-         '1047479483','1047479476','1047479477','1047479478','1047479479',
-         '1047479480','1047479481','1047479482','1047479153','1047479148',
-         '1047479155','1047479158','1047479157'
+       AND (r2.raw_payload->'merchant'->>'id') IN (   -- 1차 권위: 풋 merchant_id 17
+         '1777285001','1777285004','1777288001','1777288004','1777289001',
+         '1777289002','1777289003','1777289004','1777289005','1777289006',
+         '1777289007','1777289008','1777289009','1777289010','1777289011',
+         '1777289012','1777289013'
+       )
+       AND r2.tid IN (                                 -- belt-and-suspenders: 풋 TID 17
+         '1047479255','1047479261','1047479469','1047479472','1047479483',
+         '1047479476','1047479477','1047479478','1047479479','1047479480',
+         '1047479481','1047479482','1047479153','1047479148','1047479155',
+         '1047479158','1047479157'
        ))                                                     AS redpay_feed_last_approved_at
 FROM public.payments p
 JOIN public.customers c ON c.id = p.customer_id
 -- 매처 링크(matched_payment_id) 로만 조인 — 승인번호/금액/윈도 재계산 제거 (DA[4])
 LEFT JOIN public.redpay_raw_transactions rp
        ON rp.matched_payment_id = p.id
-      AND rp.tid IN (                                         -- §787/§519 소비뷰 TID 스코프 불변식
-        '1047479483','1047479476','1047479477','1047479478','1047479479',
-        '1047479480','1047479481','1047479482','1047479153','1047479148',
-        '1047479155','1047479158','1047479157'
+      AND (rp.raw_payload->'merchant'->>'id') IN (            -- 1차 권위: 풋 merchant_id 17(§787/§519)
+        '1777285001','1777285004','1777288001','1777288004','1777289001',
+        '1777289002','1777289003','1777289004','1777289005','1777289006',
+        '1777289007','1777289008','1777289009','1777289010','1777289011',
+        '1777289012','1777289013'
+      )
+      AND rp.tid IN (                                         -- belt-and-suspenders: 풋 TID 17
+        '1047479255','1047479261','1047479469','1047479472','1047479483',
+        '1047479476','1047479477','1047479478','1047479479','1047479480',
+        '1047479481','1047479482','1047479153','1047479148','1047479155',
+        '1047479158','1047479157'
       )
 -- 대사 verdict 최신 1건 surface (매칭 계산 아님 — 최신 로그행 픽업)
 LEFT JOIN LATERAL (
@@ -182,7 +197,7 @@ COMMENT ON VIEW public.v_receipt_settlement_daily IS
   'T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: [영수증 수납] 탭 read-only 대조 뷰. '
   'grain=OCR 영수증 첨부 수납 1건=1행. 5컬럼(인쇄시각/성함·차트/금액/승인번호/이미지). '
   '★매칭 재계산 없음 — 매처(redpay-reconcile EF)가 영속화한 matched_payment_id/reconciled_at/recon_log 를 surface only. '
-  '§787/§519 풋 13 TID 서버권위 필터. §789 freshness(redpay_feed_last_approved_at) 노출. '
+  '§787/§519 풋 merchant_id 17(1차)+TID 17(보조) 서버권위 필터. §789 freshness(redpay_feed_last_approved_at) 노출. '
   'match_status ∈ matched/unmatched. FE 는 이 뷰만 소비(조인/매칭 재계산 금지). security_invoker=true.';
 
 GRANT SELECT ON public.v_receipt_settlement_daily TO authenticated;
