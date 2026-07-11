@@ -58,6 +58,30 @@ npx supabase db query --linked -f supabase/migrations/<파일명>.sql
 npx supabase db query --linked -f supabase/migrations/<파일명>.down.sql
 ```
 
+### 착수 전 pg_proc PREFLIGHT (함수/RPC 마이그 필수 게이트)
+
+*2026-07-11 발효 · T-20260711-ops-MIG-OVERLOAD-PGPROC-PREFLIGHT-GUARD · deploy_flow.md v2.2 §2-A G0 / deploy-precheck C10 로 supervisor 집행*
+
+아래 유형의 마이그는 **착수 전(pre-impl) prod pg_proc 실덤프로 라이브 overload 를 확정**한 뒤에만 SQL 을 작성한다:
+
+- SECDEF 핀 부여/제거, `EXECUTE GRANT`/`REVOKE`
+- 함수 시그니처 / overload(arity) 변경
+- `CREATE OR REPLACE FUNCTION` / `DROP FUNCTION`
+- RPC 원장정합(ledger reconciliation) 판정 마이그
+
+**덤프 4요소 전부 확보** (함수명의 전 overload 집합):
+`proname` + `prosecdef`(SECDEF 여부) + `proconfig`(search_path) + `proargtypes`(arity/시그니처)
+
+```bash
+npx supabase db query --linked "SELECT p.oid::regprocedure, p.prosecdef, p.proconfig, p.proargtypes \
+FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.proname='<fn>';"
+```
+
+- **파일 lineage · 런타임 에러코드(42703 vs PGRST202) 추론 단독 신뢰 금지** — 에러코드는 보강증거일 뿐, overload 집합의 authority 는 pg_proc 실덤프뿐이다.
+- **db_change=true 티켓의 `mig_ledger_check` evidence 에 pg_proc 덤프 결과를 반드시 포함**한다. 미포함 시 supervisor QA 에서 qa-fail `pgproc_preflight_missing` (deploy_flow §2-A G0).
+- 근거: migration_ledger_reconciliation.md Case H(scalp) + Case I(body) — pre-impl 가설이 prod 실측에서 반증된 arity-shadow/overload 혼동 실증 2건.
+- SSOT: `migration_ledger_reconciliation.md` (원칙 정본) / `deploy_flow.md` v2.2 §2-A G0 (게이트).
+
 ## 설계문서
 
 - 풋센터_CRM설계.md — 인터뷰 기반 요구사항
