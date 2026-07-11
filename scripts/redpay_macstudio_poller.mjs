@@ -80,14 +80,17 @@ const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const POLL_MODE = cfg("REDPAY_POLL_MODE", "incremental"); // incremental | daily_full
 const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
 
-// ── 풋 13 TID 화이트리스트 SSOT (obliv_origin_env.md F0BFXCWLGQ2 = 뷰 하드코딩과 동일 집합) ──
-//   ⚠ business_no 511-60-00988 = 공유 merchant(롱레 8 TID + 풋 13 TID 동거).
-//   EF guard.ts G4 를 "미경유"하므로 롱레8 혼입 방지 필터를 스크립트 자체에서 강제(AC-3).
-//   env 미설정 시 이 상수를 fail-safe 기본값으로 사용(빈 화이트리스트 = 전량통과 = 롱레혼입 위험 차단).
+// ── 풋 17 TID 화이트리스트 SSOT (redpay_foot_terminal_registry.md §2 = authoritative) ──
+//   ⚠ business_no 511-60-00988 = 5도메인 공유 merchant(풋/도수/피부/롱래스팅 동거).
+//   EF guard.ts G4 를 "미경유"하므로 타도메인(도수 등) 혼입 방지 필터를 스크립트 자체에서 강제(AC-3).
+//   env 미설정 시 이 상수를 fail-safe 기본값으로 사용(빈 화이트리스트 = 전량통과 = 타도메인혼입 위험 차단).
+//   [2026-07-11 정정 T-...-REDPAY-MACSTUDIO-POLLER] 기존 13종은 멀티8+무선5뿐 — 라이브 VAN2·유선2 누락으로
+//   실단말 조회 fetched=0 유발. DA CONSULT-REPLY GO(MSG-20260711-094634-tjtk)로 17종(VAN2+유선2+멀티8+무선5) 확정.
 const FOOT_TID_WHITELIST_DEFAULT = [
+  "1047479255", "1047479261", "1047479469", "1047479472", // VAN2 + 유선2 (라이브)
   "1047479483", "1047479476", "1047479477", "1047479478", "1047479479",
-  "1047479480", "1047479481", "1047479482", "1047479153", "1047479148",
-  "1047479155", "1047479158", "1047479157",
+  "1047479480", "1047479481", "1047479482", // 멀티8
+  "1047479153", "1047479148", "1047479155", "1047479158", "1047479157", // 무선5
 ];
 
 const tidList = REDPAY_TID_WHITELIST_ENV
