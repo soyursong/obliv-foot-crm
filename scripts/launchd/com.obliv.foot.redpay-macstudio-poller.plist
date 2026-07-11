@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.obliv.foot.redpay-macstudio-poller
+  T-20260711-foot-REDPAY-MACSTUDIO-POLLER — 레드페이 foot 적재 우회로 (맥스튜디오 상주 폴러)
+
+  왜: 레드페이 WAF 가 클라우드/데이터센터 IP(Supabase EF / pg_net) egress 를 403 차단.
+      한국 일반 IP 인 맥스튜디오에서만 레드페이 직접 호출이 200 으로 생존(CEO 조종실 소거실험).
+      → 이 폴러가 5분 주기로 레드페이 payments.php 직접 조회 → redpay_raw_transactions upsert.
+
+  배포 (supervisor, macstudio):
+    1. 시크릿 배치 (평문 커밋 금지, .env* gitignore):
+         cat >> ~/.env.redpay-foot <<'EOF'
+         SUPABASE_URL="https://rxlomoozakkjesdqjtvd.supabase.co"
+         SUPABASE_SERVICE_ROLE_KEY="<foot service_role key>"
+         REDPAY_API_KEY="<레드페이 파트너 키>"
+         REDPAY_BUSINESS_NO="511-60-00988"
+         REDPAY_TID_WHITELIST="1047479483,1047479476,1047479477,1047479478,1047479479,1047479480,1047479481,1047479482,1047479153,1047479148,1047479155,1047479158,1047479157"
+         EOF
+         chmod 600 ~/.env.redpay-foot
+    2. 등록:
+         mkdir -p ~/logs
+         ln -sf ~/GitHub/obliv-foot-crm/scripts/launchd/com.obliv.foot.redpay-macstudio-poller.plist \
+           ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller.plist
+         launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller.plist
+    3. 검증:
+         launchctl list | grep redpay-macstudio-poller
+         tail -50 ~/logs/redpay_macstudio_poller.out   # '✅ 레드페이 200 OK' + upserted=N 확인
+         tail -50 ~/logs/redpay_macstudio_poller.err
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.obliv.foot.redpay-macstudio-poller</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm &amp;&amp; node scripts/redpay_macstudio_poller.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/domas/GitHub/obliv-foot-crm</string>
+
+    <!-- 5분(300초) 주기 증분 폴 -->
+    <key>StartInterval</key><integer>300</integer>
+    <key>RunAtLoad</key><true/>
+
+    <!-- SPOF 완화(AC-7): 크래시 시 자동 재기동. 정상 종료(exit 0)는 다음 StartInterval 대기. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key><false/>
+    </dict>
+    <!-- 재기동 폭주 방지: 실패 후 최소 60초 간격 -->
+    <key>ThrottleInterval</key><integer>60</integer>
+
+    <key>StandardOutPath</key><string>/Users/domas/logs/redpay_macstudio_poller.out</string>
+    <key>StandardErrorPath</key><string>/Users/domas/logs/redpay_macstudio_poller.err</string>
+</dict>
+</plist>

@@ -176,6 +176,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "Unauthorized" }, 401);
   }
 
+  // ── mode=match_only — 레드페이 fetch 없이 매처만 실행 (T-20260711 맥스튜디오 폴러 연동) ──
+  //   403 WAF 사가 이후 레드페이 직접 호출은 맥스튜디오 폴러가 담당(한국 IP). EF 는 클라우드
+  //   egress 라 fetch 시 WAF 403 → 이 모드는 fetch 를 "건너뛰고" 이미 적재된 raw 에 대해
+  //   기존 4-tier 매처(runMatcher)만 재사용한다(매처 로직 무변경, 레드페이 미호출 = 순수 DB).
+  //   API 키 불요(fetch 없음). business_no 만 있으면 clinic 스코프로 매칭 가능.
+  {
+    let peekBody: RunRequest = { mode: "incremental" };
+    try { peekBody = await req.clone().json(); } catch { /* ignore */ }
+    if ((peekBody as { mode?: string }).mode === "match_only") {
+      if (!REDPAY_BUSINESS_NO) {
+        return json({ status: "blocked", reason: "match_only: REDPAY_BUSINESS_NO 미등록", dry_run: false }, 200);
+      }
+      try {
+        const { data: clinic } = await supabase
+          .from("clinics").select("id").eq("business_no", REDPAY_BUSINESS_NO).maybeSingle();
+        const clinicId = clinic?.id as string | undefined;
+        if (!clinicId) throw new Error(`clinic_id 조회 실패 — business_no=${REDPAY_BUSINESS_NO}`);
+        const { matched, events } = await runMatcher(clinicId);
+        console.log(`[redpay-reconcile][foot][match_only] 완료: matched=${matched} events=${events}`);
+        return json({ status: "ok", mode: "match_only", dry_run: false, fetched: 0, upserted: 0, matched, events });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[redpay-reconcile][foot][match_only] 오류:", msg);
+        return json({ status: "error", mode: "match_only", error: msg }, 500);
+      }
+    }
+  }
+
   // ── DRY_RUN 모드 분기 (G5 hard-lock) ────────────────────────────────────
   if (REDPAY_DRY_RUN) {
     console.log(
