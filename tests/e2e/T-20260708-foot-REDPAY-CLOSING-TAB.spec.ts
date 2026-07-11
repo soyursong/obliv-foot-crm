@@ -18,6 +18,9 @@ const REDPAY_TAB = 'src/components/closing/RedpayReconcileTab.tsx';
 const MIG = 'supabase/migrations/20260708230000_redpay_recon_daily_view.sql';
 const MIG_ROLLBACK = 'supabase/migrations/20260708230000_redpay_recon_daily_view.rollback.sql';
 const RECON_EF = 'supabase/functions/redpay-reconcile/index.ts';
+// T-20260710-foot-REDPAY-URL-CONFIG-HARDEN — URL/엔드포인트 resolve 로직 SSOT (인라인 → _shared 추출).
+//   형제 EF(receipt-ocr Step3)와 공유하는 단일 정의처. env 계약 = REDPAY_API_URL (신규 env 금지).
+const REDPAY_CONFIG = 'supabase/functions/_shared/redpay-config.ts';
 
 // 풋 13 TID 화이트리스트 (obliv_origin_env.md)
 const FOOT_TIDS = [
@@ -149,34 +152,59 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB AC-6/AC-7 — 활성화 전 렌더 
 //   RC 재확정(최필경): /api/partner/payments.php → 200, /api/partner/ → 403.
 test.describe('T-20260708-REDPAY-CLOSING-TAB 403-FIX — EF URL 조립 방어', () => {
   // (a) 최종 URL 에 payments.php 파일명 포함 (전체경로 단일 SSOT + env override)
+  //   T-20260710 HARDEN: 전체경로 기본값·resolve 로직은 _shared/redpay-config.ts SSOT 로 추출.
+  //   index.ts 는 import 해 REDPAY_BASE_URL 만 조립 — URL 문자열 리터럴 하드코딩 부활 금지.
   test('URL 은 payments.php 전체 경로가 SSOT — 기본값 + env override + 파일명 가드', () => {
+    const cfg = fs.readFileSync(REDPAY_CONFIG, 'utf-8');
     const src = fs.readFileSync(RECON_EF, 'utf-8');
-    // 전체경로 기본값(SSOT). base+file 분해 없음.
-    expect(src).toContain('DEFAULT_FULL_URL: "https://redpay.kr/api/partner/payments.php"');
+    // 전체경로 기본값(SSOT, _shared). base+file 분해 없음.
+    expect(cfg).toContain('DEFAULT_FULL_URL: "https://redpay.kr/api/partner/payments.php"');
     // 조립은 전체경로 상수 + 쿼리스트링만 (urljoin/base-only 금지)
     expect(src).toContain('const requestUrl = `${REDPAY_BASE_URL}?${params}`;');
+    // index.ts 에 URL 문자열 리터럴 하드코딩 부활 금지 (SSOT 는 _shared 단일 정의처)
+    expect(src).not.toContain('"https://redpay.kr');
+    expect(src).not.toContain("'https://redpay.kr");
     // 디렉터리 경로만으로 base 를 정의하는 안티패턴 없음 (payments.php 탈락 원천 차단)
-    expect(src).not.toContain('= "https://redpay.kr/api/partner/"');
-    expect(src).not.toContain("= 'https://redpay.kr/api/partner/'");
-    // 새 코드가 base+endpoint 로 분해하지 않았는지(=urljoin 재도입 금지) 확인:
-    //   "/api/partner/" 뒤에 payments.php 가 붙지 않은 독립 문자열 리터럴이 없어야 함.
-    expect(src).not.toContain('"/api/partner/"');
+    expect(cfg).not.toContain('= "https://redpay.kr/api/partner/"');
+    expect(cfg).not.toContain("= 'https://redpay.kr/api/partner/'");
+    // base+endpoint 로 분해(=urljoin 재도입)하지 않았는지: 파일명 없는 디렉터리 독립 리터럴 없음.
+    expect(cfg).not.toContain('"/api/partner/"');
   });
 
   // (c) URL base/endpoint 가 상수·env 단일 소스로 관리 (이은상 — 하드코딩 산재 금지)
+  //   T-20260710 HARDEN: 정의는 _shared/redpay-config.ts SSOT, index.ts 는 import + resolve 호출.
   test('URL 은 상수/enum + env(REDPAY_API_URL) 단일 소스로 관리 + payments.php 탈락 가드', () => {
+    const cfg = fs.readFileSync(REDPAY_CONFIG, 'utf-8');
     const src = fs.readFileSync(RECON_EF, 'utf-8');
-    // 단일 상수/enum 로 엔드포인트 관리
-    expect(src).toContain('const REDPAY_ENDPOINT = {');
-    expect(src).toContain('REQUIRED_FILENAME: "payments.php"');
-    // env override 지점 (한 군데)
-    expect(src).toContain('Deno.env.get("REDPAY_API_URL")');
+    // 단일 상수/enum 로 엔드포인트 관리 (_shared SSOT)
+    expect(cfg).toContain('export const REDPAY_ENDPOINT = {');
+    expect(cfg).toContain('REQUIRED_FILENAME: "payments.php"');
+    // env override 지점 (한 군데, _shared)
+    expect(cfg).toContain('Deno.env.get("REDPAY_API_URL")');
     // payments.php 탈락 시 런타임 throw 가드 (RC 재발 구조적 차단)
-    expect(src).toContain('function resolveRedpayEndpoint()');
-    expect(src).toContain('가드 위반');
-    expect(src).toMatch(/endsWith\(\s*"\/"\s*\+\s*REDPAY_ENDPOINT\.REQUIRED_FILENAME\s*\)/);
+    expect(cfg).toContain('export function resolveRedpayEndpoint()');
+    expect(cfg).toContain('가드 위반');
+    expect(cfg).toMatch(/endsWith\(\s*"\/"\s*\+\s*REDPAY_ENDPOINT\.REQUIRED_FILENAME\s*\)/);
+    // index.ts 는 SSOT 를 import 해서 소비 (인라인 재정의 금지)
+    expect(src).toContain('import { resolveRedpayEndpoint } from "../_shared/redpay-config.ts";');
+    expect(src).not.toContain('function resolveRedpayEndpoint()'); // 인라인 재정의 부활 금지
     // REDPAY_BASE_URL 은 resolve 결과 (하드코딩 리터럴 아님)
     expect(src).toContain('const REDPAY_BASE_URL = resolveRedpayEndpoint();');
+  });
+
+  // (d) ★ env 계약 non-regression (WARN 핵심축, T-20260710 Option A) —
+  //   override env 는 이미 배포된 REDPAY_API_URL 하나뿐. REDPAY_PAYMENTS_URL 등 신규 env 도입 금지
+  //   (env 계약 회귀 = 라이브 정산 폴러 URL 오조립 재발 경로). SSOT·소비처 어디에도 잔존 금지.
+  test('env 계약 — REDPAY_API_URL 단일, REDPAY_PAYMENTS_URL 신규 env 도입 금지', () => {
+    const cfg = fs.readFileSync(REDPAY_CONFIG, 'utf-8');
+    const src = fs.readFileSync(RECON_EF, 'utf-8');
+    // SSOT 가 반드시 REDPAY_API_URL 을 읽는다 (배포된 계약 존중)
+    expect(cfg).toContain('Deno.env.get("REDPAY_API_URL")');
+    // 신규 env 계약 도입 금지 — 폐기된 30fba7e3 의 REDPAY_PAYMENTS_URL 잔존 0
+    expect(cfg).not.toContain('REDPAY_PAYMENTS_URL');
+    expect(src).not.toContain('REDPAY_PAYMENTS_URL');
+    // 다른 URL override env 키로 읽는 우회 없음 (URL 관련 env 는 REDPAY_API_URL 뿐)
+    expect(cfg).not.toContain('resolveRedpayPaymentsUrl');
   });
 
   test('조치#3 — 실제 발사 URL 로깅 (payments.php 탈락 즉시 지목)', () => {

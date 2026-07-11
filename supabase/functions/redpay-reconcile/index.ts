@@ -31,6 +31,9 @@
 //   INTERNAL_CRON_SECRET   — pg_cron 인증 공유 시크릿
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// RedPay 엔드포인트 SSOT — 형제 EF(receipt-ocr Step3)와 공유하는 단일 정의처.
+//   env 계약 = REDPAY_API_URL (신규 env 도입 금지). ref: T-20260710-foot-REDPAY-URL-CONFIG-HARDEN.
+import { resolveRedpayEndpoint } from "../_shared/redpay-config.ts";
 import {
   matchTransactionsBatch,
   detectMissingInCrm,
@@ -56,51 +59,16 @@ const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") ===
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
-// ── RedPay 엔드포인트: 전체경로 단일 SSOT(상수/enum) + payments.php 탈락 가드 ─────
-//   [이은상 팀장 T-20260708 신규] 유지보수성: base URL·endpoint 를 상수/env 한 곳에서
-//     관리. 경로 변경은 이 REDPAY_ENDPOINT 또는 env REDPAY_API_URL 한 군데만 손대면 됨.
-//   [c930c423 화해] 단, base+file 분해(urljoin/base-only concat) 금지 — `payments.php`
-//     파일명이 탈락하면 요청이 디렉터리(`/api/partner/`)로 가고 nginx 가
-//     application/json 이 아닌 HTML 403(디렉터리 거부)을 돌려준다. 이 HTML 403 을
-//     "API Key 불일치"로 오진해 키를 반복 재등록한 사고가 있었다(redpay-403-incident
-//     F0BGDKNATK7, 2026-07-10 이은상 팀장 forensic — URL 오조립 단일원인 확정).
-//   → 두 지시의 본질(payments.php 탈락 방지)을 모두 지키기 위해: 전체경로를 "단일 값"으로
-//     유지(분해 금지)하되 env override 를 허용하고, 어떤 경우에도 payments.php 파일명이
-//     탈락하면 런타임 가드가 즉시 throw 하여 잘못된 URL 로의 발사 자체를 차단한다.
-const REDPAY_ENDPOINT = {
-  /** 기본 전체경로(SSOT). env REDPAY_API_URL 로 override 가능하나 payments.php 는 불가분. */
-  DEFAULT_FULL_URL: "https://redpay.kr/api/partner/payments.php",
-  /** payments.php 탈락 방지 가드 — 최종 경로가 이 파일명으로 끝나야 함. */
-  REQUIRED_FILENAME: "payments.php",
-} as const;
-
-/**
- * RedPay 거래조회 전체경로 resolve.
- *   - override(env REDPAY_API_URL) 없으면 DEFAULT_FULL_URL 사용.
- *   - 최종 URL 의 pathname 이 `/payments.php` 로 끝나지 않으면 throw(부모 403 사고 RC 차단).
- *   - base-only / urljoin 조립 없음 — 전체경로를 단일 값으로만 다룸.
- */
-function resolveRedpayEndpoint(): string {
-  const override = (Deno.env.get("REDPAY_API_URL") ?? "").trim();
-  const url = override.length > 0 ? override : REDPAY_ENDPOINT.DEFAULT_FULL_URL;
-  let pathname: string;
-  try {
-    pathname = new URL(url).pathname;
-  } catch {
-    throw new Error(
-      `[redpay-reconcile][foot] REDPAY_API_URL 파싱 불가 — url=${JSON.stringify(url)}`
-    );
-  }
-  if (!pathname.endsWith("/" + REDPAY_ENDPOINT.REQUIRED_FILENAME)) {
-    throw new Error(
-      `[redpay-reconcile][foot] REDPAY_API_URL 가드 위반 — payments.php 파일명 탈락(resolved=${url}). ` +
-      `디렉터리 경로(/api/partner/)는 nginx HTML 403 을 유발(부모 403 사고 RC). ` +
-      `전체경로(…/payments.php)를 사용하라.`
-    );
-  }
-  return url;
-}
-
+// ── RedPay 엔드포인트: 전체경로 단일 SSOT(_shared/redpay-config.ts) + payments.php 탈락 가드 ──
+//   [이은상 팀장 T-20260708→T-20260710] 유지보수성: base URL·endpoint·resolve 로직을
+//     _shared/redpay-config.ts 한 곳에서 관리. 경로 변경은 그 REDPAY_ENDPOINT 또는
+//     env REDPAY_API_URL 한 군데만 손대면 됨. 형제 EF(receipt-ocr Step3)와 이 모듈을 공유한다.
+//   [c930c423 화해] base+file 분해(urljoin/base-only concat) 금지 — `payments.php` 파일명이
+//     탈락하면 요청이 디렉터리(`/api/partner/`)로 가고 nginx 가 application/json 이 아닌
+//     HTML 403(디렉터리 거부)을 돌려준다. 이 HTML 403 을 "API Key 불일치"로 오진해 키를 반복
+//     재등록한 사고가 있었다(redpay-403-incident F0BGDKNATK7, 2026-07-10 forensic — URL
+//     오조립 단일원인 확정). resolveRedpayEndpoint() 이 전체경로를 단일 값으로만 다루고
+//     payments.php 탈락 시 즉시 throw 한다(RC 차단). 상세 근거·가드는 _shared/redpay-config.ts 참조.
 // resolve 된 전체경로 상수 (모듈 로드 시 1회 검증). 쿼리스트링만 부착해 사용.
 const REDPAY_BASE_URL = resolveRedpayEndpoint();
 
@@ -177,10 +145,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // ── mode=match_only — 레드페이 fetch 없이 매처만 실행 (T-20260711 맥스튜디오 폴러 연동) ──
-  //   403 WAF 사가 이후 레드페이 직접 호출은 맥스튜디오 폴러가 담당(한국 IP). EF 는 클라우드
-  //   egress 라 fetch 시 WAF 403 → 이 모드는 fetch 를 "건너뛰고" 이미 적재된 raw 에 대해
-  //   기존 4-tier 매처(runMatcher)만 재사용한다(매처 로직 무변경, 레드페이 미호출 = 순수 DB).
-  //   API 키 불요(fetch 없음). business_no 만 있으면 clinic 스코프로 매칭 가능.
+  //   [주석 정정 T-20260711-REDPAY-IPBLOCK-REVERIFY] 과거 이 자리엔 "EF cloud egress = WAF
+  //   403" 가정이 적혀 있었으나 재검증으로 반증됨: macstudio 한국IP 실호출에서 관측된 403 은
+  //   payments.php 파일명 탈락 시의 nginx 디렉터리 거부(IP-무관)였고, 정식 payments.php+키 는
+  //   200 JSON 이었다. "403=WAF/IP차단" 은 실증된 적 없음(오진). EF cloud fresh 재호출의
+  //   실제 도달성은 별도 미확정 이슈로 이월(WAF-WHITELIST 티켓). 이 모드는 그와 무관하게,
+  //   레드페이 직접 호출을 맥스튜디오 폴러(한국 IP)에 위임하는 운영 분리 하에 fetch 를
+  //   "건너뛰고" 이미 적재된 raw 에 대해 기존 4-tier 매처(runMatcher)만 재사용한다
+  //   (매처 로직 무변경, 레드페이 미호출 = 순수 DB). API 키 불요(fetch 없음).
+  //   business_no 만 있으면 clinic 스코프로 매칭 가능.
   {
     let peekBody: RunRequest = { mode: "incremental" };
     try { peekBody = await req.clone().json(); } catch { /* ignore */ }
