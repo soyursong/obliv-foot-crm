@@ -9,12 +9,21 @@ import path from "path";
  * ② 동일 ID 를 담은 정적 version.json 을 dist 루트에 emit 한다.
  * 클라(useVersionCheck)가 /version.json(no-cache)을 폴링/visibility 전환 시 읽어
  * 번들에 박힌 로컬 BUILD_ID 와 다르면 '새 버전' 배너를 띄운다(무패키지).
- * Vercel 은 VERCEL_GIT_COMMIT_SHA 를 제공 → 커밋 단위로 안정적인 버전 식별.
+ *
+ * COMMIT 지문 (T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX FIX-REQUEST):
+ *   본 프로젝트는 Vercel→Cloudflare Pages 로 이관(CF-CUTOVER)됐다. CF Pages 빌드
+ *   환경엔 VERCEL_GIT_COMMIT_SHA 가 없어 예전엔 항상 `local-<ts>` 로 폴백 →
+ *   라이브 번들에서 커밋 식별 불가(supervisor QA 증빙 실패의 근본원인).
+ *   CF Pages 는 CF_PAGES_COMMIT_SHA(full SHA) 를 주입한다. 이를 우선순위에 포함하고,
+ *   version.json 에 full `commit` 필드를 명시 노출해 재QA 가 커밋 단위로 배포를 증빙하게 한다.
  */
-const BUILD_ID =
-  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ??
-  process.env.GIT_COMMIT_SHA?.slice(0, 12) ??
-  `local-${Date.now()}`;
+const COMMIT_SHA: string | null =
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.CF_PAGES_COMMIT_SHA ??
+  process.env.GIT_COMMIT_SHA ??
+  null;
+
+const BUILD_ID = COMMIT_SHA?.slice(0, 12) ?? `local-${Date.now()}`;
 
 /** dist 루트에 version.json 을 emit (빌드 시에만 동작) */
 function buildVersionPlugin(): Plugin {
@@ -28,6 +37,8 @@ function buildVersionPlugin(): Plugin {
         source: JSON.stringify({
           buildId: BUILD_ID,
           builtAt: new Date().toISOString(),
+          // 라이브 번들 커밋 증빙용 full SHA (없으면 null). CF Pages=CF_PAGES_COMMIT_SHA.
+          commit: COMMIT_SHA,
         }),
       });
     },
