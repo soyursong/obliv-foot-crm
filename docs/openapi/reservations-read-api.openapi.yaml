@@ -1,0 +1,303 @@
+openapi: 3.0.3
+
+# ==============================================================================
+# reservations-read-api — 풋CRM 예약 조회 전용 API (Read-only)
+# ------------------------------------------------------------------------------
+# 출처: supabase/functions/reservations-read-api/index.ts (JSDoc 헤더 → 정규 스펙 이관)
+# 티켓: T-20260712-foot-READONLY-EXTERNAL-GRANT-APIDOC-BUILD (Track A / Phase A)
+#       └ 상위 T-20260712-foot-DOAI-READONLY-API-OPENAPI (doAI 연동 구축)
+#
+# ⚠ 외부 공유 스코프 (Phase A — 스펙 작성까지만):
+#   · 본 스펙은 외부 파트너용 "마스킹된 read-only 계약"만 기술한다.
+#   · 내부 신뢰 호출자 전용 파라미터 `include_full_pii`(전체 PII 반환)는
+#     외부 계약에서 의도적으로 제외했다. 외부 발급 시크릿으로는 이 플래그가
+#     동작하지 않도록 서버측 게이트를 두는 것을 Phase B(DA CONSULT) 권고사항으로
+#     planner에 별도 보고함.
+#   · server.url 의 project_ref / 실제 시크릿 값은 CONSULT GO(Phase B) 전
+#     외부 공유 금지 → 아래 server 변수 default 는 플레이스홀더.
+#   · PostgREST 자동생성 OpenAPI(/rest/v1/)는 PHI 테이블 전체노출 → 외부공유 금지.
+#     본 커스텀 EF 스펙만 공유 대상.
+# ==============================================================================
+
+info:
+  title: 풋센터 예약 조회 API (reservations-read-api)
+  version: "1.0.0"
+  description: |
+    오블리브 풋센터 CRM의 **조회 전용(Read-only)** 예약 API.
+
+    예약 상태·외부 매핑을 조회한다. 쓰기(생성/수정/삭제) 기능은 없다.
+
+    ## 인증
+    - 헤더 `X-ReadAPI-Secret` 에 조회 전용 시크릿을 넣어 호출한다.
+    - 이 시크릿은 **쓰기 시크릿과 물리적으로 분리**되어 있어, 이 열쇠로는
+      데이터 변경 자체가 불가능하다.
+    - 헤더 없음/불일치 → `401 UNAUTHORIZED`.
+
+    ## 개인정보 보호 (기본 마스킹 ON)
+    - 고객 이름: 첫 글자 + `**` (예: `홍**`)
+    - 전화번호: 끝 4자리만 노출
+    - 마스킹은 항상 적용된다(외부 계약 기준).
+
+    ## 메서드
+    - `GET` (쿼리 파라미터) / `POST` (JSON 본문) — 동일 파라미터.
+
+servers:
+  - url: "https://{project_ref}.supabase.co/functions/v1"
+    description: Supabase Edge Functions (운영). project_ref 는 Phase B 안전공유 시 제공.
+    variables:
+      project_ref:
+        default: "YOUR_PROJECT_REF"
+        description: Supabase 프로젝트 ref (실제 값은 키/URL 안전공유 단계에서 전달)
+
+tags:
+  - name: reservations
+    description: 예약 조회
+
+security:
+  - ReadApiSecret: []
+
+paths:
+  /reservations-read-api:
+    get:
+      tags: [reservations]
+      operationId: getReservations
+      summary: 예약 목록 조회 (GET)
+      description: 쿼리 파라미터로 예약을 조회한다. `clinic_slug`, `date_from`, `date_to` 필수.
+      parameters:
+        - $ref: '#/components/parameters/ClinicSlug'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - $ref: '#/components/parameters/ExternalId'
+        - $ref: '#/components/parameters/PhoneE164'
+        - $ref: '#/components/parameters/SourceSystem'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200': { $ref: '#/components/responses/ReservationList' }
+        '400': { $ref: '#/components/responses/InvalidParam' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '422': { $ref: '#/components/responses/InvalidValue' }
+        '500': { $ref: '#/components/responses/Internal' }
+    post:
+      tags: [reservations]
+      operationId: postReservations
+      summary: 예약 목록 조회 (POST)
+      description: |
+        JSON 본문으로 예약을 조회한다. GET 과 동일한 파라미터를 본문 키로 전달한다.
+        (조회 전용 — 데이터 변경 없음)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationQuery'
+      responses:
+        '200': { $ref: '#/components/responses/ReservationList' }
+        '400': { $ref: '#/components/responses/InvalidParam' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '422': { $ref: '#/components/responses/InvalidValue' }
+        '500': { $ref: '#/components/responses/Internal' }
+
+components:
+  securitySchemes:
+    ReadApiSecret:
+      type: apiKey
+      in: header
+      name: X-ReadAPI-Secret
+      description: |
+        조회 전용 시크릿. 쓰기 시크릿과 물리 분리(변경 불가).
+        실제 값은 키/URL 안전공유 단계(Phase B)에서 별도 전달.
+
+  parameters:
+    ClinicSlug:
+      name: clinic_slug
+      in: query
+      required: true
+      description: 클리닉 슬러그 (예약이 속한 지점). 구키 `foot-jongno` 입력 시 `jongno-foot` 로 자동 정규화.
+      schema: { type: string, example: "jongno-foot" }
+    DateFrom:
+      name: date_from
+      in: query
+      required: true
+      description: 조회 시작일 (reservation_date >=), YYYY-MM-DD.
+      schema: { type: string, format: date, example: "2026-07-01" }
+    DateTo:
+      name: date_to
+      in: query
+      required: true
+      description: 조회 종료일 (reservation_date <=), YYYY-MM-DD. date_from <= date_to.
+      schema: { type: string, format: date, example: "2026-07-31" }
+    ExternalId:
+      name: external_id
+      in: query
+      required: false
+      description: 외부 시스템 예약 식별자(도파민 cue_card.id). 단일 조회용.
+      schema: { type: string, example: "a1b2c3d4-0000-0000-0000-000000000000" }
+    PhoneE164:
+      name: phone_e164
+      in: query
+      required: false
+      description: 고객 전화번호(E.164). 형식 불일치 시 400.
+      schema: { type: string, pattern: '^\+[1-9]\d{6,14}$', example: "+821012345678" }
+    SourceSystem:
+      name: source_system
+      in: query
+      required: false
+      description: |
+        예약 유입 경로 필터.
+        - `all` (기본): 전체
+        - `dopamine`: 도파민 유입 예약
+        - `walkin`: 워크인(외부 경유 없음, source_system IS NULL)
+      schema:
+        type: string
+        enum: [all, dopamine, walkin]
+        default: all
+    Status:
+      name: status
+      in: query
+      required: false
+      description: 예약 상태 필터.
+      schema:
+        type: string
+        enum: [all, confirmed, checked_in, cancelled, no_show]
+        default: all
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: 최대 결과 수 (default 50, max 200). 하위호환 별칭 `limit` 도 허용.
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: 페이지네이션 커서(현재 미지원 — 지정 시 무시).
+      schema: { type: string }
+
+  schemas:
+    ReservationQuery:
+      type: object
+      required: [clinic_slug, date_from, date_to]
+      properties:
+        clinic_slug:   { type: string, example: "jongno-foot" }
+        date_from:     { type: string, format: date, example: "2026-07-01" }
+        date_to:       { type: string, format: date, example: "2026-07-31" }
+        external_id:   { type: string, nullable: true }
+        phone_e164:    { type: string, pattern: '^\+[1-9]\d{6,14}$', nullable: true }
+        source_system: { type: string, enum: [all, dopamine, walkin], default: all }
+        status:        { type: string, enum: [all, confirmed, checked_in, cancelled, no_show], default: all }
+        page_size:     { type: integer, minimum: 1, maximum: 200, default: 50 }
+        cursor:        { type: string, nullable: true }
+
+    CustomerMasked:
+      type: object
+      description: 고객 표시 블록(마스킹). 워크인 등 고객 미연결 시 null.
+      nullable: true
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: 고객 ID. 동행 예약은 고객 행이 없어 null.
+        name_masked:
+          type: string
+          description: 마스킹된 이름 (첫 글자 + `**`). 동행은 동행명 폴백, 비면 "동행".
+          example: "홍**"
+        phone_e164_last4:
+          type: string
+          description: 전화번호 끝 4자리. 동행 무폰 → "****".
+          example: "5678"
+
+    Reservation:
+      type: object
+      properties:
+        id:               { type: string, description: 예약 ID }
+        reservation_date: { type: string, format: date, example: "2026-07-15" }
+        reservation_time: { type: string, description: "HH:MM:SS", example: "14:30:00" }
+        status:           { type: string, example: "confirmed" }
+        source_system:
+          type: string
+          nullable: true
+          description: 유입 경로. null = 워크인.
+        is_walkin:
+          type: boolean
+          description: source_system IS NULL 여부.
+        is_companion:
+          type: boolean
+          description: 동행 예약 여부(external_id 패턴 `_comp_`/`#companion-` 결정적 파생).
+        external_id:
+          type: string
+          nullable: true
+          description: 외부 시스템 식별자(도파민 cue_card.id). 동행은 composite 패턴.
+        visit_type:
+          type: string
+          nullable: true
+          enum: [new, returning]
+          description: 초진/재진 구분.
+        memo:      { type: string, nullable: true }
+        clinic_id: { type: string }
+        clinic_slug:
+          type: string
+          nullable: true
+        customer:  { $ref: '#/components/schemas/CustomerMasked' }
+        created_at: { type: string, format: date-time }
+
+    ReservationListResponse:
+      type: object
+      properties:
+        ok:    { type: boolean, example: true }
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/Reservation' }
+        total: { type: integer, example: 2 }
+
+    Error:
+      type: object
+      properties:
+        ok:     { type: boolean, example: false }
+        error:
+          type: string
+          description: 에러 코드.
+          enum: [INVALID_PARAM, UNAUTHORIZED, INVALID_VALUE, METHOD_NOT_ALLOWED, INTERNAL]
+        detail:
+          type: string
+          description: 사람이 읽을 수 있는 상세(선택).
+
+  responses:
+    ReservationList:
+      description: 조회 성공.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ReservationListResponse' }
+    InvalidParam:
+      description: 필수 파라미터 누락/형식 오류.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: INVALID_PARAM, detail: "clinic_slug is required" }
+    Unauthorized:
+      description: 시크릿 없음/불일치.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: UNAUTHORIZED }
+    InvalidValue:
+      description: 허용되지 않는 열거값(source_system/status).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: INVALID_VALUE, detail: "status 'foo' must be one of: all, confirmed, checked_in, cancelled, no_show" }
+    MethodNotAllowed:
+      description: GET/POST 외 메서드.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: METHOD_NOT_ALLOWED }
+    Internal:
+      description: 서버 내부 오류.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: INTERNAL, detail: "query failed: ..." }

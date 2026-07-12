@@ -1,0 +1,245 @@
+openapi: 3.0.3
+
+# ==============================================================================
+# foot-calendar-read — 풋CRM 캘린더 조회 전용 API (Read-only)
+# ------------------------------------------------------------------------------
+# 출처: supabase/functions/foot-calendar-read/index.ts (JSDoc 헤더 → 정규 스펙 이관)
+# 티켓: T-20260712-foot-READONLY-EXTERNAL-GRANT-APIDOC-BUILD (Track A / Phase A)
+#       └ 상위 T-20260712-foot-DOAI-READONLY-API-OPENAPI (doAI 연동 구축)
+#
+# ⚠ 외부 공유 스코프 (Phase A — 스펙 작성까지만):
+#   · 응답 필드는 서버 RPC(foot_calendar_read_direct)가 구조적으로 강제하는
+#     allowlist 만 반환한다. 풀 전화번호·주민번호·진료기록(PHI)은 RPC 반환
+#     테이블에 컬럼 자체가 없어 우회 불가.
+#   · server.url 의 project_ref / 실제 시크릿 값은 CONSULT GO(Phase B) 전
+#     외부 공유 금지 → 아래 server 변수 default 는 플레이스홀더.
+#   · PostgREST 자동생성 OpenAPI(/rest/v1/)는 PHI 테이블 전체노출 → 외부공유 금지.
+#     본 커스텀 EF 스펙만 공유 대상.
+# ==============================================================================
+
+info:
+  title: 풋센터 캘린더 조회 API (foot-calendar-read)
+  version: "1.0.0"
+  description: |
+    오블리브 풋센터 CRM의 **조회 전용(Read-only)** 캘린더 API.
+
+    풋 direct/워크인 예약을 캘린더 투영용으로 조회한다. 쓰기 기능은 없다.
+
+    ## 인증
+    - 헤더 `X-Foot-Read-Secret` 에 캘린더 조회 전용 시크릿을 넣어 호출한다.
+    - 이 시크릿은 **쓰기 계열 시크릿과 물리적으로 분리**되어 있어, 쓰기 시크릿으로는
+      호출할 수 없고 이 열쇠로는 데이터 변경이 불가능하다.
+    - 헤더 없음/불일치 → `401 UNAUTHORIZED`.
+
+    ## 개인정보 보호 (구조적 강제)
+    - 응답은 서버가 정한 허용 필드(allowlist)만 반환한다.
+    - 고객 이름은 마스킹된 형태(`김**`)로만 나온다.
+    - 풀 전화번호·주민번호·진료기록 등 민감정보는 응답 구조에 아예 존재하지 않는다.
+
+    ## 메서드
+    - `GET` (쿼리 파라미터) / `POST` (JSON 본문) — 동일 파라미터.
+
+servers:
+  - url: "https://{project_ref}.supabase.co/functions/v1"
+    description: Supabase Edge Functions (운영). project_ref 는 Phase B 안전공유 시 제공.
+    variables:
+      project_ref:
+        default: "YOUR_PROJECT_REF"
+        description: Supabase 프로젝트 ref (실제 값은 키/URL 안전공유 단계에서 전달)
+
+tags:
+  - name: calendar
+    description: 캘린더(예약) 조회
+
+security:
+  - FootReadSecret: []
+
+paths:
+  /foot-calendar-read:
+    get:
+      tags: [calendar]
+      operationId: getFootCalendar
+      summary: 캘린더 예약 조회 (GET)
+      description: 쿼리 파라미터로 캘린더 예약을 조회한다. `clinic_slug`, `date_from`, `date_to` 필수.
+      parameters:
+        - $ref: '#/components/parameters/ClinicSlug'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Caller'
+      responses:
+        '200': { $ref: '#/components/responses/CalendarList' }
+        '400': { $ref: '#/components/responses/InvalidParam' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '422': { $ref: '#/components/responses/InvalidValue' }
+        '500': { $ref: '#/components/responses/Internal' }
+    post:
+      tags: [calendar]
+      operationId: postFootCalendar
+      summary: 캘린더 예약 조회 (POST)
+      description: |
+        JSON 본문으로 캘린더 예약을 조회한다. GET 과 동일한 파라미터를 본문 키로 전달한다.
+        (조회 전용 — 데이터 변경 없음)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalendarQuery'
+      responses:
+        '200': { $ref: '#/components/responses/CalendarList' }
+        '400': { $ref: '#/components/responses/InvalidParam' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '422': { $ref: '#/components/responses/InvalidValue' }
+        '500': { $ref: '#/components/responses/Internal' }
+
+components:
+  securitySchemes:
+    FootReadSecret:
+      type: apiKey
+      in: header
+      name: X-Foot-Read-Secret
+      description: |
+        캘린더 조회 전용 시크릿. 쓰기 계열 시크릿과 물리 분리(변경 불가).
+        실제 값은 키/URL 안전공유 단계(Phase B)에서 별도 전달.
+
+  parameters:
+    ClinicSlug:
+      name: clinic_slug
+      in: query
+      required: true
+      description: 클리닉 슬러그 (풋 지점). 구키 `foot-jongno` 입력 시 `jongno-foot` 로 자동 정규화.
+      schema: { type: string, example: "jongno-foot" }
+    DateFrom:
+      name: date_from
+      in: query
+      required: true
+      description: 조회 시작일 (reservation_date >=), YYYY-MM-DD.
+      schema: { type: string, format: date, example: "2026-07-01" }
+    DateTo:
+      name: date_to
+      in: query
+      required: true
+      description: 조회 종료일 (reservation_date <=), YYYY-MM-DD. date_from <= date_to.
+      schema: { type: string, format: date, example: "2026-07-31" }
+    Status:
+      name: status
+      in: query
+      required: false
+      description: |
+        예약 상태 필터. legacy `noshow`(언더스코어 없음) 입력은 `no_show` 로 정규화.
+      schema:
+        type: string
+        enum: [all, confirmed, checked_in, cancelled, no_show]
+        default: all
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: 최대 결과 수 (default 200, max 500). 하위호환 별칭 `limit` 도 허용.
+      schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+    Caller:
+      name: caller
+      in: query
+      required: false
+      description: 감사 로그용 호출자 식별(예 `dopamine`). 최대 64자.
+      schema: { type: string, maxLength: 64, example: "doai" }
+
+  schemas:
+    CalendarQuery:
+      type: object
+      required: [clinic_slug, date_from, date_to]
+      properties:
+        clinic_slug: { type: string, example: "jongno-foot" }
+        date_from:   { type: string, format: date, example: "2026-07-01" }
+        date_to:     { type: string, format: date, example: "2026-07-31" }
+        status:      { type: string, enum: [all, confirmed, checked_in, cancelled, no_show], default: all }
+        page_size:   { type: integer, minimum: 1, maximum: 500, default: 200 }
+        caller:      { type: string, maxLength: 64 }
+
+    CalendarReservation:
+      type: object
+      description: 캘린더 예약 항목(서버 RPC allowlist — 민감정보 컬럼 자체 부재).
+      properties:
+        reservation_id:
+          type: string
+          description: 예약 식별자(opaque uuid).
+        reservation_date: { type: string, format: date, example: "2026-07-15" }
+        reservation_time: { type: string, description: "HH:MM:SS", example: "14:30:00" }
+        service_label:
+          type: string
+          nullable: true
+          description: 시술유형 라벨(services.name).
+        visit_type:
+          type: string
+          nullable: true
+          enum: [new, returning, experience]
+          description: 초진/재진/체험 구분.
+        status: { type: string, example: "confirmed" }
+        room:
+          type: string
+          nullable: true
+          description: 방 정보. 예약은 방 미배정 → 보통 null.
+        customer_name_masked:
+          type: string
+          description: 마스킹된 고객명 (첫 글자 + `**`).
+          example: "김**"
+
+    CalendarListResponse:
+      type: object
+      properties:
+        ok:        { type: boolean, example: true }
+        read_only: { type: boolean, example: true, description: 항상 true(조회 전용 표식). }
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/CalendarReservation' }
+        total: { type: integer, example: 3 }
+
+    Error:
+      type: object
+      properties:
+        ok:    { type: boolean, example: false }
+        error:
+          type: string
+          enum: [INVALID_PARAM, UNAUTHORIZED, INVALID_VALUE, METHOD_NOT_ALLOWED, INTERNAL]
+        detail: { type: string }
+
+  responses:
+    CalendarList:
+      description: 조회 성공.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CalendarListResponse' }
+    InvalidParam:
+      description: 필수 파라미터 누락/형식 오류.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: INVALID_PARAM, detail: "clinic_slug is required" }
+    Unauthorized:
+      description: 시크릿 없음/불일치.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: UNAUTHORIZED }
+    InvalidValue:
+      description: 허용되지 않는 status 값.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: INVALID_VALUE, detail: "status 'foo' must be one of: all, confirmed, checked_in, cancelled, no_show" }
+    MethodNotAllowed:
+      description: GET/POST 외 메서드.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: METHOD_NOT_ALLOWED }
+    Internal:
+      description: 서버 내부 오류.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: INTERNAL, detail: "read failed: ..." }
