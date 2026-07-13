@@ -14,7 +14,8 @@
  * 검증: 빌더 로직(footBilling.fillBillItemCopayment)은 단위 검증 + 실제 HTML 렌더(page.setContent)로
  *   "현장 출력물"에 금액이 찍히는지 확인. DB/auth 불요.
  *
- * 회귀 가드: AC-2(합계=copaymentTotal 정합), 무파괴(DB 값 보존), 무보험 미개입.
+ * 회귀 가드: AC-2(합계=copaymentTotal 정합), 무파괴(DB 값 보존), 등급 null → 본인=급여전액/공단=0
+ *   (T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR 총괄 확정으로 과거 "무보험 미개입"에서 역전).
  */
 import { test, expect } from '@playwright/test';
 import {
@@ -114,13 +115,17 @@ test.describe('T-20260616-foot-DOCFORM-3FIX-REGRESSION — Path A 본인/공단 
     expect(items[1].copayment_amount).toBeUndefined();
   });
 
-  // ── 데이터 조건: 무보험(등급 null)·비대상 등급은 분리 불가 → 미개입(기존 동작) ──
-  test('데이터 조건: 보험등급 null(무보험)이면 본인/공단 미개입(기존 동작 보존)', () => {
+  // ── 데이터 조건: 등급 null → 본인=급여전액/공단=0 (T-20260707-RECUR 총괄 확정으로 역전) ──
+  test('등급 null → 본인=급여전액/공단=0 (T-20260707-RECUR 확정 스펙으로 역전, 공란 금지)', () => {
+    // ⚠ 과거엔 "무보험 등급 null → 미개입(undefined)" 이었으나, T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR
+    //   총괄 확정 스펙(slack ts 1783974675.205029): grade/coverage null → 본인부담금 = 급여 진료비 전액,
+    //   공단부담금 = 0, 공란 절대 금지. → Path A 도 컬럼을 급여 전액(본인)으로 채운다.
     const items: BillItem[] = [
       billItem({ name: '도수치료', amount: 30000, is_insurance_covered: true }),
     ];
     fillBillItemCopayment(items, null);
-    expect(items[0].copayment_amount, '무보험 → 본인부담 분리 안 함').toBeUndefined();
+    expect(items[0].copayment_amount, '등급 null → 본인 = 급여 전액').toBe(30000);
+    expect(items[0].amount - (items[0].copayment_amount ?? 0), '공단 = 0').toBe(0);
   });
 
   // ── 의료급여 1종(본인부담 0): 0 명시 → 공단부담금 급여전액 정상 ──

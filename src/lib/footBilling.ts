@@ -266,9 +266,18 @@ export function computeFootBilling(
   const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
     ? getBaseCopayRate(insuranceGrade)
     : null;
-  // 100원 절상 — copayCalc.ts / PMW 와 동일 규칙
-  const copaymentTotal = copayRate !== null && coveredTotal > 0
-    ? Math.min(Math.ceil((coveredTotal * copayRate) / 100) * 100, coveredTotal)
+  // 100원 절상 — copayCalc.ts / PMW 와 동일 규칙.
+  //
+  // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙, slack ts 1783974675.205029):
+  //   건보 조회 실패 / insurance_grade=null / coverage_rate(=copayRate) null 방문의 서류 렌더 →
+  //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0 (빈칸/공란 절대 금지).
+  //   과거 동작(copayRate null → copaymentTotal=0 → 본인0/공단=급여전액)을 의도적으로 역전한다.
+  //   유효 등급(copayRate≠null)은 기존 100원 절상 산식 그대로 — 회귀 0.
+  //   ⚠ 표시 산출값(copayment allocation)만 폴백. DB insurance_grade/service_charges 무접촉·write 0(AC-4).
+  const copaymentTotal = coveredTotal > 0
+    ? (copayRate !== null
+        ? Math.min(Math.ceil((coveredTotal * copayRate) / 100) * 100, coveredTotal)
+        : coveredTotal) // grade/coverage null → 본인 전액(공단=0) 폴백
     : 0;
 
   const nonCoveredTotal = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
@@ -552,12 +561,17 @@ export function fillBillItemCopayment(
   const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
     ? getBaseCopayRate(insuranceGrade)
     : null;
-  // 무보험·비대상 등급: 본인/공단 분리 자체가 성립 안 함(데이터 조건) → 미개입(기존 동작 보존).
-  if (copayRate === null) return;
 
   const coveredSum = covered.reduce((s, x) => s + x.total, 0);
-  // 100원 절상 — computeFootBilling / copayCalc / PMW 와 동일 규칙
-  const copaymentTotal = Math.min(Math.ceil((coveredSum * copayRate) / 100) * 100, coveredSum);
+  // 100원 절상 — computeFootBilling / copayCalc / PMW 와 동일 규칙.
+  //
+  // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙): grade/coverage(=copayRate) null →
+  //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0. computeFootBilling 과 동일 역전 규칙(Path A 정합).
+  //   과거엔 copayRate null → early-return(미개입) 이라 급여 항목 본인/공단이 0/공란 잔존했다 → 폴백 채움.
+  //   유효 등급은 100원 절상 기존 산식 그대로 — 회귀 0. (anyExisting=DB 권위 값이 있으면 위에서 이미 미개입)
+  const copaymentTotal = copayRate !== null
+    ? Math.min(Math.ceil((coveredSum * copayRate) / 100) * 100, coveredSum)
+    : coveredSum; // grade/coverage null → 본인 전액(공단=0) 폴백
 
   if (copaymentTotal <= 0) {
     // 급여 본인부담 0 등급(예: 의료급여 1종): 0 명시 → 공단부담금=급여전액 정상 산출.

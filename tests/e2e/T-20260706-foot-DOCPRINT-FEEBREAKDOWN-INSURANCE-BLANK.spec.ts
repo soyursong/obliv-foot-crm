@@ -49,18 +49,21 @@ const HIRA_ONLY_COVERED: FootBillingItem[] = [
 ];
 
 test.describe('T-20260706 급여구분 = 등급 소스에 좌우 (버그 메커니즘)', () => {
-  test('BUG 재현: grade=null 이면 본인/공단 split 붕괴 (copaymentTotal=0)', () => {
-    // 신규출력 시점(grade 미입력) 재현.
+  test('grade=null → 본인=급여전액/공단=0 (T-20260707-RECUR 총괄 확정 스펙으로 역전)', () => {
+    // ⚠ T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR 총괄 확정 스펙(slack ts 1783974675.205029)으로
+    //   본 predecessor 의 grade-null 동작을 역전: 과거엔 copaymentTotal=0(본인0/공단=급여전액)이었으나
+    //   확정 스펙 = 본인부담금 = 급여 진료비 전액, 공단부담금 = 0, 공란 금지.
     const fbNull = computeFootBilling(MIXED_VISIT, null);
-    // 급여 항목(is_insurance_covered=true)은 여전히 급여로 분류되나, copayRate=null → 본인부담 split 붕괴.
-    expect(fbNull.copaymentTotal).toBe(0);
+    // 급여 항목(is_insurance_covered=true)은 급여로 분류 유지. copayRate=null → 본인 전액 폴백.
+    expect(fbNull.copaymentTotal).toBe(13370);                  // 본인 = 급여 전액
+    expect(fbNull.liveBillingValues.insuranceCovered).toBe(0);   // 공단 = 0
 
     const itemsNull = buildFootBillDetailItems(fbNull.pricingItems, '2026-06-09', {
       insuranceGrade: null, copaymentTotal: fbNull.copaymentTotal,
     });
     const consultNull = itemsNull.find((i) => i.code === 'AA254')!;
-    // 본인부담금 0 → 공단부담금이 전액을 먹어 실제 30% split 이 사라짐(현장 "급여구분 미표시" 증상).
-    expect(consultNull.copayment_amount).toBe(0);
+    expect(consultNull.copayment_amount).toBe(13370);           // 본인 = 급여 전액(공란 아님)
+    expect(consultNull.amount - (consultNull.copayment_amount ?? 0)).toBe(0); // 공단 = 0
   });
 
   test('BUG 재현: hira_code-전용 급여 항목은 grade=null 이면 비급여로 오분류', () => {

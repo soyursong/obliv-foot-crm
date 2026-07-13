@@ -131,12 +131,14 @@ test.describe('T-20260608-foot-DOC-REISSUE-SYNC — PATH-3 ↔ PATH-4 빌링 SSO
     expect(buildBillDetailItemsHtml(buildFootBillDetailItems([], '2026-06-08'))).toContain('진료 항목 없음');
   });
 
-  // ── AC-3 회귀: 건보 미적용(등급 null) 시 급여 0, 전액 비급여 분류 유지 ──
-  test('AC-3: 건보 등급 null 이면 copay 0 — 기존 비급여 동작 보존', () => {
+  // ── AC-3: 건보 등급 null → 본인=급여전액/공단=0 (T-20260707-RECUR 총괄 확정으로 역전) ──
+  test('AC-3: 건보 등급 null 이면 본인=급여전액/공단=0 (T-20260707-RECUR 확정 스펙)', () => {
+    // ⚠ T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR 총괄 확정: grade/coverage null →
+    //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0 (과거 copay 0/공단=전액 에서 역전, 공란 금지).
     const fb = computeFootBilling(ITEMS, null);
-    // 등급 null → SVC_COVERED 는 is_insurance_covered=true 라 여전히 급여, 단 copay 미산출
+    // 등급 null → SVC_COVERED 는 is_insurance_covered=true 라 여전히 급여, copay 는 급여 전액 폴백.
     expect(fb.coveredTotal).toBe(60000);
-    expect(fb.copaymentTotal).toBe(0); // 등급 없으면 본인부담률 미적용
-    expect(fb.liveBillingValues.insuranceCovered).toBe(60000);
+    expect(fb.copaymentTotal).toBe(60000);                    // 본인 = 급여 전액
+    expect(fb.liveBillingValues.insuranceCovered).toBe(0);     // 공단 = 0
   });
 });
