@@ -48,6 +48,18 @@ function getSavedNoticeMs(): number {
   return 900;
 }
 
+/**
+ * blocked 데드엔드 자가복구 재평가 주기(ms). E2E는 window.__updateRecoveryPollMs로
+ * 짧게 덮어써 결정적으로 검증한다(프로덕션 동작 무영향).
+ */
+function getRecoveryPollMs(): number {
+  if (typeof window !== 'undefined') {
+    const override = (window as unknown as { __updateRecoveryPollMs?: number }).__updateRecoveryPollMs;
+    if (typeof override === 'number' && override >= 100 && override <= 60000) return override;
+  }
+  return 5000;
+}
+
 type Phase = 'counting' | 'flushing' | 'blocked';
 
 export default function UpdateBanner() {
@@ -115,6 +127,37 @@ export default function UpdateBanner() {
 
     return clearTick;
   }, [updateAvailable, attemptReload, clearTick]);
+
+  // ── T-20260713-foot-APPSHELL-STALE-BUNDLE-RELOAD-GUARD — blocked 데드엔드 자가복구 ──
+  //
+  // RC(origin RECEIPT-ITEMIZED false-reopen): 새 버전 감지 후 카운트다운이 attemptReload 를
+  //   발화한 순간 미저장 blocking 가드가 하나라도 있으면 phase='blocked' 로 고정되고, 그 뒤
+  //   가드가 해제(저장/차트 닫힘)돼도 재시도 경로가 없어 세션이 종일 구 in-memory 번들로 남았다
+  //   → 방금 배포한 fix 가 현장에 안 보임(유령 재진입/false reopen).
+  // 처방: blocked 인 동안 (a) 주기적으로 + (b) 탭 재활성(visibility/focus) 시 blocking 이
+  //   비었는지 재평가해, 비면 자동으로 reload 경로(attemptReload)를 재개한다. blocking 이
+  //   남아 있으면 계속 보류(데이터 유실 0 유지) — 안전할 때에만 스스로 착지한다. 무패키지.
+  useEffect(() => {
+    if (!updateAvailable || phase !== 'blocked') return;
+    let cancelled = false;
+    const retry = () => {
+      if (cancelled) return;
+      // 여전히 blocking 이면 재개하지 않음(유실 0). 비었을 때만 reload 경로 재진입.
+      if (collectDirty().blocking.length === 0) void attemptReload();
+    };
+    const id = window.setInterval(retry, getRecoveryPollMs());
+    const onActive = () => {
+      if (document.visibilityState === 'visible') retry();
+    };
+    document.addEventListener('visibilitychange', onActive);
+    window.addEventListener('focus', onActive);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onActive);
+      window.removeEventListener('focus', onActive);
+    };
+  }, [updateAvailable, phase, attemptReload]);
 
   if (!updateAvailable) return null;
 
