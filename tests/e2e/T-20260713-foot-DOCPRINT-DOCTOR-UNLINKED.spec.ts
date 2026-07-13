@@ -209,4 +209,51 @@ test.describe('T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED — 지정 진료의 서
     expect(v.doctor_seal_html).not.toContain('/seals/');
     expect(v.doctor_seal_html).not.toContain('supabase.co/storage');
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // REOPEN (field-soak FAIL) — 현장 지배 경로: 치료테이블 미지정 + 복수 근무일
+  //   RC(라이브 재현): 결제창(PATH-4)은 override 미전달(undefined)이라 진료의 선택 UI가 없다.
+  //   지정 진료의 없음(174건 중 8건만 지정) + 복수 근무(당일 3명)면 doctorName=null로 떨어져
+  //   세부산정내역서 '대표자'·계산서·영수증 '진료의사'가 공란 발행되고(❶), 도장도 대표원장 seal_null
+  //   폴백으로 붉은 인장이 안 찍혔다(❂). 수정: 자동 경로에서 요양기관 대표(is_default clinic_doctor
+  //   = 대표원장)로 이름·직인을 항상 채운다. 표기 이름↔도장 동일 원장 1:1(오매핑 0).
+  //   ⚠ loadAutoBindContext의 duty>1 분기는 DB 의존 — 아래는 "대표원장으로 결정된 후 두 서식에
+  //   이름·도장이 도달하는" 렌더 전달 축 계약. 결선(duty>1→대표원장) 축은 코드 + 라이브렌더 실측으로 확인.
+  // ══════════════════════════════════════════════════════════════════════════
+  test('REOPEN AC-R1: 대표원장 폴백 시 두 서식(대표자/진료의사) 이름 비공란 + 대표원장 도장', () => {
+    const REP_SEAL = 'https://rxlomoozakkjesdqjtvd.supabase.co/storage/v1/object/sign/documents/seals/x/mje.png';
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '김지윤', phone: '01099998888' },
+      doctor: '문지은', // 자동 경로 폴백으로 결정된 대표원장
+      clinicDoctor: {
+        name: '문지은',
+        license_no: '제20001호',
+        specialist_no: null,
+        seal_image_url: REP_SEAL, // 대표원장 1:1 매핑 도장(signed URL 자리)
+      },
+    });
+    // ❶ 이름 비공란
+    expect(v.doctor_name).toBe('문지은');
+    // ❂ 대표원장 도장 img (표기 이름과 동일 원장 — 오매핑 0)
+    expect(v.doctor_seal_html).toContain(REP_SEAL);
+    // 두 서식 모두 대표자/진료의사 자리에 이름 + 도장 렌더
+    for (const key of ['bill_detail', 'bill_receipt']) {
+      const html = bindHtmlTemplate(getHtmlTemplate(key) as string, v);
+      expect(html, `${key} 이름 비공란`).toContain('문지은');
+      expect(html, `${key} 도장 img`).toContain(REP_SEAL);
+    }
+  });
+
+  // 회귀: 지정 진료의가 있으면 대표원장 폴백이 아니라 지정 진료의가 유지(무영향)
+  test('REOPEN AC-R2: 지정 진료의가 있으면 폴백 없이 지정 진료의 유지', () => {
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '엄경은', phone: '01011112222' },
+      doctor: '한동훈',
+      clinicDoctor: { name: '한동훈', license_no: '제10001호', specialist_no: null, seal_image_url: 'https://x/hdh.png' },
+    });
+    expect(v.doctor_name).toBe('한동훈');
+    expect(v.doctor_seal_html).toContain('https://x/hdh.png');
+  });
 });

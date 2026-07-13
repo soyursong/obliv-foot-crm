@@ -554,6 +554,23 @@ export async function loadAutoBindContext(
       doctorName = fallbackStaff?.name ?? null;
     }
     // dutyDocs.length > 1: doctorName = null → UI에서 선택 (DocPrintPanel만 해당)
+
+    // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN field-soak]:
+    //   RC(현장 라이브 재현) — 결제창(PATH-4, 현장 1순위)은 override 미전달(undefined)이라
+    //   UI 진료의 선택칸이 없다. 그런데 (a) 치료테이블 미지정(치료건 174 중 지정 8) + (b) 복수
+    //   근무일(오늘 3명)이면 위 분기에서 doctorName=null로 떨어져 세부산정내역서 '대표자'/
+    //   계산서·영수증 '진료의사'가 공란으로 발행된다(❶). 도장도 sort_order[0](대표원장) seal_null →
+    //   기관 도장/공란으로 대체돼 붉은 인장이 안 찍힌다(❷). code-inspection은 지정 진료의 경로만
+    //   검증해 통과했으나 현장 지배 경로(미지정·복수근무)에서 재발.
+    //   → override 미전달(자동 발행 경로)에서는 공란 대신 요양기관 대표(is_default clinic_doctor,
+    //     = 대표원장)로 폴백해 이름·직인을 항상 채운다. 표기 이름과 도장은 동일 원장으로 1:1 유지
+    //     (오매핑 0 — 법적 정확성). 지정 진료의가 있으면 위에서 이미 그 원장으로 결선되므로 무영향.
+    //     override='' (복수근무 UI 대기, DocumentPrintPanel)는 상단 분기라 여기 도달 안 함 → UX 무회귀.
+    if (doctorName === null && clinicDoctors.length > 0) {
+      const representative =
+        clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
+      if (representative?.name) doctorName = representative.name;
+    }
   }
 
   // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 원장 상세 결정
