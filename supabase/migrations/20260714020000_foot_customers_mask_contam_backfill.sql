@@ -1,10 +1,15 @@
 -- ============================================================================
 -- foot customers 마스킹오염 백필 (Option D: relink + archive-first)
 -- Ticket : T-20260713-foot-CUSTOMERS-MASK-CONTAM-BACKFILL
--- DA     : DA-...-BACKFILL  GO(조건부) RE-CONFIRMED  (MSG-20260714-012820-amra)
+-- DA     : DA-...-BACKFILL  GO(조건부) RE-CONFIRMED (MSG-20260714-012820-amra)
+--          + addendum GO 유효 재확인 (MSG-20260714-013056-zbn9): 결정키(reservation_id) 전건 부재 →
+--          6건 batch→per-row 전량 격상, 배치 auto-merge 경로 폐쇄(C7). 라이즈드바 채택:
+--          INV-3 정확단일수렴(비협상) + tail4 충돌가드(정확 1건) + 약보강행(#1·#5) temporal 무효 강등규율.
 -- SOP    : Cross-CRM Orphan-Row Archive-First Cleanup + FK Integrity Guard
 --          (파괴적 삭제 → destructive branch. mutable-UPDATE SOP 아님.)
--- Scope  : 6 RESOLVABLE phantom (class A 미러재링크). 02594dfa HOLD = per-row, 본 마이그 제외.
+-- Scope  : 6 ADOPT phantom (per-row 라이즈드바 통과: tail4+clinic 후보=1 + name-stem 교차확인, probe 실증).
+--          02594dfa HOLD = §2-F per-row, 본 마이그 제외.
+--          라이즈드바 probe: db-gate/..._raisedbar_result.json (6/6 후보=1, 0 강등). PHI=off-git perrow_confirm.json.
 -- Vector : UNAUTH-CHANGE(self_checkin masked write) 잔류물. WS-A 가드(798a2281/20260713120000)는
 --          forward-only 차단 → 기존 오염행은 본 백필이 정정.
 --
@@ -91,6 +96,19 @@ BEGIN
       RAISE EXCEPTION 'ABORT G0: raw % 검증실패 (존재/non-masked/tail4 미일치, got %)', rw, rw_ok;
     END IF;
     IF ph = rw THEN RAISE EXCEPTION 'ABORT G0: phantom=raw 동일 %', ph; END IF;
+
+    -- ★ tail4 충돌가드 (DA addendum MSG-20260714-013056-zbn9, C7 라이즈드바):
+    --   결정키(reservation_id) 부재로 tail4+clinic 이 1차 결정근거로 승격 → phantom 제외 동 clinic·
+    --   non-masked·8+digit·동일 tail4 raw 후보가 정확히 1건(=declared raw)이어야 채택. ≥2 면 INV-3
+    --   fail-closed → auto-merge 금지, 전체 ABORT. (probe 시점 6건 전부 후보=1 실증. 집행시점 재검증.)
+    SELECT count(*) INTO tail_ok FROM customers c
+     WHERE c.clinic_id = v_clinic AND c.id <> ph
+       AND c.name !~ '\*'
+       AND length(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g')) >= 8
+       AND right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),4) = want_tail;
+    IF tail_ok <> 1 THEN
+      RAISE EXCEPTION 'ABORT G0(tail4 충돌가드): tail4 % non-masked 후보 %건 (정확히 1 기대) → INV-3 fail-closed, per-row HOLD', want_tail, tail_ok;
+    END IF;
   END LOOP;
 
   -- 정확히 6건만 대상 (초과/부족 시 abort)

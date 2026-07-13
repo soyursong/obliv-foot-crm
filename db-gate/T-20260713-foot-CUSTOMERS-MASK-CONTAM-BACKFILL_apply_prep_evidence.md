@@ -25,15 +25,17 @@
 
 phantom→raw 매핑 (UUID PK만 — phone_tail4+clinic 단일수렴, per-row confirm 대상):
 
-| # | phantom(8) | → raw(8) | tail4 | FK 자식 | temporal gap | verdict |
-|---|---|---|---|---|---|---|
-| 1 | 0356b229 | c51dd5e0 | 9089 | 4 | ~19.7h | RESOLVABLE (gap 큼→강한 confirm) |
-| 2 | 512998d0 | 8fa12f4c | 5453 | 4 | ~39s | RESOLVABLE |
-| 3 | 67ea1793 | 7ad9e9a4 | 0011 | 7 | ~3.9h | RESOLVABLE |
-| 4 | bd307dfe | d916d27b | 2200 | 5 | ~3.9h | RESOLVABLE |
-| 5 | 44a6a076 | d2ba1e9a | 1122 | 2 | ~11.2d | RESOLVABLE (gap 큼→강한 confirm) |
-| 6 | 2dc21d1c | 38e1a858 | 0101 | 5 | ~4.1h | RESOLVABLE |
-| — | **02594dfa** | — (HOLD) | 0000 | (6, 본 배치 제외) | — | **HOLD_PERROW** (§2-F, 후보 6 DUMMY) |
+| # | phantom(8) | → raw(8) | tail4 | tail4+clinic 후보수 | FK 자식 | temporal gap | name-stem | verdict (C7 라이즈드바) |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0356b229 | c51dd5e0 | 9089 | **1** | 4 | ~19.7h *(약보강: temporal 무효)* | 성·끝·visible substr 일치(len3) | **ADOPT** — tail4+clinic 단일 + name-stem (temporal 배제 후에도 ≥2 수렴) |
+| 2 | 512998d0 | 8fa12f4c | 5453 | **1** | 4 | ~39s | 성·끝 일치 | ADOPT — tail4+clinic 단일 + name-stem + temporal |
+| 3 | 67ea1793 | 7ad9e9a4 | 0011 | **1** | 7 | ~3.9h | 성·끝 일치 | ADOPT — tail4+clinic 단일 + name-stem + temporal |
+| 4 | bd307dfe | d916d27b | 2200 | **1** | 5 | ~3.9h | 성·끝 일치 | ADOPT — tail4+clinic 단일 + name-stem + temporal |
+| 5 | 44a6a076 | d2ba1e9a | 1122 | **1** | 2 | ~11.2d *(약보강: temporal 무효)* | 성·끝 일치 | **ADOPT** — tail4+clinic 단일 + name-stem (temporal 배제 후에도 ≥2 수렴) |
+| 6 | 2dc21d1c | 38e1a858 | 0101 | **1** | 5 | ~4.1h | 성·끝 일치 | ADOPT — tail4+clinic 단일 + name-stem + temporal |
+| — | **02594dfa** | — (HOLD) | 0000 | (후보 6 DUMMY) | (6, 본 배치 제외) | — | — | **HOLD_PERROW** (§2-F, 후보 6 DUMMY) |
+
+> ⚠ **舊 apply-prep(RESOLVABLE "gap 큼→강한 confirm") 판정 정정.** DA addendum(MSG-20260714-013056-zbn9)은 temporal gap이 **클수록 temporal 보강력을 잃는다**로 명시(舊 반대논리 폐기). #1(~19.7h)·#5(~11.2d)는 약보강행 강등규율 대상 → temporal을 채택근거로 쓰지 않고 **tail4+clinic 단일 + name-stem 교차확인**만으로 clean single convergence 재판정. probe 실측 결과 두 행 모두 tail4+clinic 후보=정확히 1 + name-stem(성·끝글자, #1은 visible substr까지) 일치 → temporal 배제 후에도 ≥2 독립신호 정확단일수렴 성립 → **ADOPT 유지(강등 불요)**. clean single 미성립 시엔 HOLD 강등이었을 것.
 
 ---
 
@@ -68,9 +70,26 @@ phantom 복원=6/6 · check_ins phantom 복귀=7(≥6) · post-probe 무영속=6
 
 ---
 
+## C7 라이즈드바 반영 (DA addendum MSG-20260714-013056-zbn9, 2026-07-14 KST)
+
+DA supplement(MSG-20260714-012746-0dsq, 결정키 reservation_id 전건 부재)에 대한 회신:
+**GO 유효(RE-CONFIRMED 그대로) + Q2/Q3 강화 addendum. 신규 verdict 불요.** dev-foot 격상 판단 승인.
+- **(2) 6건 batch→per-row 전량 격상 승인(의무).** 결정키 부재로 6건 전부 auto-merge 자격 상실 → 전량 fallback. **배치 auto-merge 경로 본 대상셋에서 폐쇄.**
+- **(3) tail4+clinic 단일수렴 + name-stem 을 per-row 채택근거로 인정, 승격 바 상향:**
+  - INV-3 정확단일수렴(비협상): ≥2 보강신호가 정확히 1 raw 후보 수렴 시만 채택, ≥2 후보 → HOLD.
+  - tail4 충돌가드: `phone_tail4+clinic` non-masked raw master 정확히 1건(≥2 → HOLD). name-stem·temporal은 그 단일수렴의 교차확인으로만, 단독 tie-break 승격 금지.
+  - 약보강행 강등규율: temporal gap 클수록 temporal 보강력 상실 → #1(~19.7h)·#5(~11.2d)는 `tail4+clinic+name-stem`만으로 판정, clean single 미성립 시 temporal로 메우지 말고 HOLD 강등.
+
+**집행(dev-foot):**
+1. **라이즈드바 probe(READ-ONLY)** `scripts/..._raisedbar_probe.mjs` → `db-gate/..._raisedbar_result.json`(count/PK8만). 6행 전부 tail4+clinic 후보=정확히 1, name-stem(성·끝글자) 일치. **0 강등, 6/6 ADOPT.** 약보강 2건(#1·#5)도 temporal 배제 후 ≥2 신호(tail4+clinic 단일 + name-stem) 정확단일수렴 성립.
+2. **tail4 충돌가드 마이그 기계집행 추가**: G0 루프에 phantom 제외 동 clinic·non-masked·8+digit·동일 tail4 후보 `count=1` 아니면 ABORT. 집행시점 재검증(probe 시점값 신뢰 금지). mutation dry-run 재실행 PASS(delta 27/7/6 불변, 무영속), rollback 라운드트립 PASS(6/6 복원).
+3. **off-git per-row 스냅샷 갱신**: `~/foot-phi-offgit/..._perrow_confirm.json` — 행별 tail4+clinic 후보수·name-stem·temporal delta·test/DUMMY 근거·verdict + `human_confirm=PENDING`(6 ADOPT + 02594dfa HOLD).
+
+**C1~C6 전부 유효(RECONFIRM 그대로). C7 추가 충족.** 02594dfa=§2-F per-row 변경 없음.
+
 ## 남은 게이트 (apply 前 필수)
 
-1. **(c) per-row 사람 confirm** — off-git 스냅샷(`~/foot-phi-offgit/..._perrow_confirm.json`) 6 RESOLVABLE + 02594dfa HOLD, 전 `human_confirm=PENDING`. auto-merge 금지, temporal gap 큰 2건(#1·#5) 강한 확인.
+1. **(c) per-row 사람 confirm** — off-git 스냅샷(`~/foot-phi-offgit/..._perrow_confirm.json`) 6 ADOPT + 02594dfa HOLD, 전 `human_confirm=PENDING`. **배치 auto-merge 금지(C7)** — 각 행 per-row 채택근거(INV-3 단일수렴·tail4 충돌가드·name-stem 교차확인) 스냅샷 첨부. 미충족 행은 dev 판단으로 HOLD 가능(재-CONSULT 불요).
 2. **(d) supervisor 최종게이트** — MIG-GATE 4필드 + C6 post-probe로 실 apply. Step=DESTRUCTIVE(relink+archive-first delete) → supervisor DB-GATE.
 
 **per-row confirm + supervisor GO 前 apply/deploy-ready 금지.**
