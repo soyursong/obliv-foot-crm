@@ -1,6 +1,7 @@
 # CRM 영향 작업 총괄 선승인 게이트 (보안 강화 캠페인 기간)
 
 > **Ticket**: T-20260713-foot-CRM-CHANGE-PREGATE-DIRECTIVE (P0)
+> **Formal gate ticket**: T-20260713-foot-CRM-IMPACT-PREAPPROVAL-GATE (P1, planner 정본 — affects_tickets 4건 명시)
 > **Source**: 김주연 총괄 지시 (U0ATDB587PV, 채널 C0ATE5P6JTH, ts 1783904001.992269, 2026-07-13)
 > **Status**: ACTIVE — 최종 점검·보안 강화 캠페인 기간 한정
 > **성격**: 거버넌스 게이트 (코드/스키마 변경 없음, ADDITIVE)
@@ -64,6 +65,19 @@
   - ① MIGRATION-LEDGER-DRIFT-SWEEP → blocked→**in_progress** (HOLD 해제, supervisor DDL-diff apply lane 재개)
   - ② STAFF-AUTH-LINK-BACKFILL → blocked→**deploy-ready** 복귀 (supervisor 배포 lane)
   - flag ③ ROLE-MATRIX-3TIER-RBAC 은 정지중 = 이번 승인 대상 아님 (재활성 시 게이트 재발동)
+
+## 게이트 적용 대상 진행 티켓 (T-20260713-foot-CRM-IMPACT-PREAPPROVAL-GATE, 4건)
+
+planner 정본 게이트 티켓이 지정한, 캠페인 기간 게이트가 걸리는 진행 티켓:
+
+| 티켓 | 상태 | 게이트 적용 지점 |
+|------|------|-----------------|
+| T-20260712-foot-DOAI-READONLY-API-OPENAPI | in_progress | Track B 실제 read-only grant/키 발급 = CRM-영향 → 기존 legal+CEO 게이트 + **총괄 사전승인** |
+| T-20260713-foot-UNAUTH-CHANGE-INVESTIGATE-ROLLBACK | approved | 원복(rollback) = CRM-영향. **단 총괄이 원복 직접 지시(P0)** → 원복 실행 자체는 총괄 승인 기수령. #1 SECDEF PHI 함수 건드리면 DA CONSULT+DDL-diff 유지, 배포 前 총괄 재확인 |
+| T-20260703-foot-JONGNO-ANON-PHI-LEAK-RLS-LOCKDOWN | blocked(dependency) | full 2b DROP/REVOKE prod apply = CRM-영향(파괴적) → 기존 CEO 게이트 + **총괄 사전승인** |
+| T-20260702-foot-SVCKEY-GIT-EXPOSURE-ROTATE | blocked(dependency) | 키 rotation 운영 영향 시 → **총괄 사전보고**. supervisor 단독 키운영 게이트와 병존 |
+
+> 선보고·승인은 responder 경유로 총괄 스레드(C0ATE5P6JTH)에 기록. 기존 게이트 통과 + 총괄 사전승인 = 둘 다 충족해야 실행.
 
 ## dev-foot 운영 규약 (내재화)
 
