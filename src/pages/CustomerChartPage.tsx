@@ -36,7 +36,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
-import { normalizeToE164 } from '@/lib/phone';
+import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
 import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor } from '@/lib/types';
@@ -3336,15 +3336,24 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // T-20260508-foot-CUST-FORM-REVAMP: 단일 필드 즉시 저장 헬퍼
-  const saveCustomerField = async (patch: Partial<Customer>) => {
-    if (!customer) return;
+  // T-20260713-foot-CUSTINFO-PHONE-EDIT-ERROR: 에러 객체 반환 + 토스트 억제 옵션 추가(하위호환 — 기존 호출부는 반환값 무시).
+  //   savePhone 이 UNIQUE(clinic_id,phone) 충돌을 친화 메시지로 치환할 수 있도록 error 를 넘겨준다.
+  const saveCustomerField = async (
+    patch: Partial<Customer>,
+    opts?: { suppressToast?: boolean },
+  ): Promise<{ error: { code?: string; message?: string } | null }> => {
+    if (!customer) return { error: null };
     setSavingField(true);
     const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
     setSavingField(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    if (error) {
+      if (!opts?.suppressToast) toast.error(`저장 실패: ${error.message}`);
+      return { error };
+    }
     setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
     // AC-8 쌍방연동 — 1번차트에 변경 알림 (방문경로·고객메모·기타메모 등)
     localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    return { error: null };
   };
 
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
@@ -3436,7 +3445,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     //   ② 정규화 안 거치는 임의 비교가 늘 오탐 위험 → storage 를 E.164 로 통일해 결함 클래스 제거.
     const display = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
     const e164 = normalizeToE164(display) ?? display;
-    await saveCustomerField({ phone: e164 });
+    // T-20260713-foot-CUSTINFO-PHONE-EDIT-ERROR: 저장 실패 시 UNIQUE(clinic_id,phone) 중복이면 친화 안내로 치환.
+    //   중복(23505) → "이미 다른 고객이 사용 중인 번호입니다"; 그 외 오류는 기존 raw 메시지 유지(실패 은폐 금지).
+    const { error } = await saveCustomerField({ phone: e164 }, { suppressToast: true });
+    if (error) {
+      toast.error(phoneSaveErrorMessage(error) ?? `저장 실패: ${error.message}`);
+      return; // 실패 시 편집 모드 유지 → 스태프가 번호를 고쳐 재시도할 수 있게 함
+    }
     // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: denorm(check_ins/reservations.customer_phone) 동기화 → 접수 패널 stale·가드 오탐 해소
     await syncCheckinDenormPhone(e164);
     setEditingPhone(false);
@@ -3725,7 +3740,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
         if (error) {
           console.error('[C21-SAVE-REGRESS] 다른 필드 저장 실패 (address 저장은 계속 진행):', error.message);
-          toast.error(`저장 실패: ${error.message}`);
+          // T-20260713-foot-CUSTINFO-PHONE-EDIT-ERROR: 통합저장에 phone 이 포함됐고 UNIQUE(clinic_id,phone) 중복이면
+          //   raw DB 메시지 대신 친화 안내. phone 미포함이거나 중복 외 오류면 기존 메시지 유지(실패 은폐 금지).
+          const friendly = patch.phone ? phoneSaveErrorMessage(error) : null;
+          toast.error(friendly ?? `저장 실패: ${error.message}`);
           allOk = false; // T-20260609-CHART2-SAVE-CLOSE-BTN: 실패 시 "저장 후 닫기" 미닫힘
           // return 제거 — address 저장 블록은 다른 필드 저장 결과와 독립 (T-20260516-foot-C21-SAVE-REGRESS AC-3)
         } else {

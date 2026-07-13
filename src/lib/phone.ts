@@ -11,6 +11,23 @@ export function normalizeToE164(raw: string | null | undefined): string | null {
   return null;
 }
 
+// T-20260713-foot-CUSTINFO-PHONE-EDIT-ERROR: 전화번호 저장 실패를 스태프 친화 안내로 매핑.
+//   RC(재현 확인): 고객정보(2번차트) 휴대폰 수정 시 다른 고객이 이미 쓰는 번호로 저장하면
+//   UNIQUE(clinic_id, phone) = idx_customers_clinic_phone 충돌(Postgres 23505)이 발생하고,
+//   기존엔 raw DB 메시지("duplicate key value violates unique constraint …")가 그대로 토스트로 노출됐다.
+//   → 원인(중복 번호)을 알 수 없는 "오류". 이 헬퍼가 해당 오류만 골라 명확한 한국어 안내로 치환한다.
+//   중복 외 오류(null 반환)는 호출부가 기존 메시지를 유지하도록 위임 → 실제 실패를 숨기지 않음.
+export function phoneSaveErrorMessage(
+  err: { code?: string; message?: string } | null | undefined,
+): string | null {
+  if (!err) return null;
+  const msg = err.message ?? "";
+  if (err.code === "23505" || /idx_customers_clinic_phone|duplicate key value|unique constraint/i.test(msg)) {
+    return "이미 다른 고객이 사용 중인 번호입니다. 번호를 다시 확인해 주세요.";
+  }
+  return null;
+}
+
 // T-20260617-foot-CHECKIN-CHART-LINK-3KEY: 포맷 무관 비교용 canonical national digits.
 //   E.164(+8210…)/숫자(0210…)/하이픈(010-…)이 DB·입력에 혼재 → 동일 번호를 한 표준으로 환원해 비교.
 //   010… → 8210…, 8210… 유지, 그 외 8자리+ 는 그대로. RPC self_checkin_with_reservation_link 의
