@@ -54,6 +54,9 @@ import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2Insurance
 // T-20260520-foot-SET-LOAD-REMOVE: TreatmentSetLoadButton 2구역 상단에서 제거
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
+// T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY (축2): 초진/재진 배지를 stored visit_type → recency(365일) 판정으로 통일.
+//   접수분류(JUDGE-365)·배정축과 동일 헬퍼 재사용(single source) → 표시 불일치 해소(AC-3).
+import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
@@ -2506,6 +2509,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const navigate = useNavigate();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
+  // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY (축2): recency(365일) 판정 초진/재진 — 배지 표시용.
+  //   null = 판정 전(로딩 중) → 배지는 stored visit_type 로 폴백(깜빡임 방지).
+  const [recencyVisitType, setRecencyVisitType] = useState<VisitType | null>(null);
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
   const [visits, setVisits] = useState<CheckIn[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -2886,6 +2892,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     migrationContent: consultMigContent,
     migrationAuthorName: consultMigName,
   });
+
+  // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY (축2): 배지용 초진/재진을 recency(365일)로 판정.
+  //   JUDGE-365 헬퍼(resolveVisitTypeByRecency) 재사용 → 접수분류·배정축과 동일 산식(single source, AC-2).
+  //   clinicId 스코프(해당 풋센터 완료방문) — customer 로드 후 clinic_id 확정되면 판정.
+  useEffect(() => {
+    const cid = customer?.clinic_id ?? null;
+    if (!customerId) { setRecencyVisitType(null); return; }
+    let alive = true;
+    void resolveVisitTypeByRecency(customerId, cid).then((vt) => {
+      if (alive) setRecencyVisitType(vt);
+    });
+    return () => { alive = false; };
+  }, [customerId, customer?.clinic_id]);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -5200,9 +5219,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {customer.phone && <span className="text-white/70 text-[11px]">{formatPhone(customer.phone)}</span>}
           {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
           <span className="text-white/60">{chartNoBadge(customer.chart_number)}</span>
-          <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
-            {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
-          </Badge>
+          {/* T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY (축2): 배지 = recency(365일) 판정 결과.
+              판정 전(null)엔 stored visit_type 폴백 → 접수분류·배정축과 수렴(365일+ 고객: '초진'으로 일치). */}
+          {(() => {
+            const badgeVt = recencyVisitType ?? customer.visit_type;
+            return (
+              <Badge variant={badgeVt === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
+                {VISIT_TYPE_KO[badgeVt as keyof typeof VISIT_TYPE_KO] ?? badgeVt}
+              </Badge>
+            );
+          })()}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           {/* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-3: [예약하기] 좌측 차트 전체저장 버튼.

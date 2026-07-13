@@ -48,6 +48,9 @@ import {
   fetchTodayTempOffStaffIds,
   setStaffTempOff,
 } from '@/lib/autoAssign';
+// T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축(deriveConsultAxis)의 초진/재진 입력을 stored visit_type →
+//   recency(365일) 배치 판정으로 통일. 배정 화면 표시·재진 상담칸 숨김이 접수분류·배지·엔진과 수렴(AC-3).
+import { resolveVisitTypesByRecency } from '@/lib/visitRecency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -213,6 +216,16 @@ export default function Assignments() {
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
+      // T-20260713 RECENCY-UNIFY: 상담 축 파생 입력을 recency(365일) 판정으로 교체 — visit_type 필드만 override.
+      //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 map 의 visit_type 을 recency 결과로 바꾸면
+      //   axisOf(오늘 배정뷰)·재진 상담칸 숨김이 접수분류·배지·엔진과 동일 소스가 된다.
+      {
+        const recencyMap = await resolveVisitTypesByRecency(custIds, clinic.id);
+        for (const [id, vt] of recencyMap) {
+          const cu = custMap.get(id);
+          if (cu) custMap.set(id, { ...cu, visit_type: vt });
+        }
+      }
       setCustomers(custMap);
 
       // 5) 당월 assignment_actions (토스 N건·당김 N건·금일 배분 '방식' 표시 SSOT)
@@ -251,6 +264,12 @@ export default function Assignments() {
             .select('id, visit_type, lead_source, visit_route')
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
+        }
+        // T-20260713 RECENCY-UNIFY: 월간 상담 축(monthAxisOf)도 recency 판정으로 통일 — visit_type override.
+        const recencyMonthMap = await resolveVisitTypesByRecency(monthCustIds, clinic.id);
+        for (const [id, vt] of recencyMonthMap) {
+          const cu = monthCustMap.get(id);
+          if (cu) monthCustMap.set(id, { ...cu, visit_type: vt });
         }
       }
       setMonthCustomers(monthCustMap);

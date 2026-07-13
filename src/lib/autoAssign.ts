@@ -25,6 +25,9 @@ import { supabase } from './supabase';
 import { fetchTodayAttendeeNames, DUTY_SHEET_GIDS } from './dutySheet';
 import { todaySeoulISODate } from './format';
 import { GATED_CAPABILITY_CODES } from './treatmentRequestCodes';
+// T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 초진/재진 판정을 stored visit_type → 동적 365일 recency 로 통일.
+//   JUDGE-365(접수분류, prod LIVE)와 동일 헬퍼 재사용 = single source(재-divergence 방지).
+import { resolveVisitTypeByRecency } from './visitRecency';
 import type {
   AssignmentRole,
   AssignmentActionType,
@@ -576,9 +579,15 @@ export async function maybeAutoAssign(
       customer = cu ?? null;
     }
 
+    // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 초진/재진 판정을 stored customers.visit_type 이 아닌
+    //   동적 365일 recency(해당 풋센터 최근 완료방문)로 통일. JUDGE-365 헬퍼(resolveVisitTypeByRecency) 재사용.
+    //   이 recencyVisitType 을 axis·재진skip·capability필터·reason 전 판정에 단일 소스로 사용해
+    //   maybeAutoAssign 내부에서 초진/재진 정의가 갈라지지 않게 한다(AC-1/AC-2).
+    const recencyVisitType = await resolveVisitTypeByRecency(checkIn.customer_id, checkIn.clinic_id);
+
     // 2) 축 파생
     const axis = role === 'consult'
-      ? deriveConsultAxis(customer ?? {})
+      ? deriveConsultAxis({ ...(customer ?? {}), visit_type: recencyVisitType })
       : deriveTherapyAxis(checkIn);
 
     // T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE (AC-3): 재진(returning) 상담(consult) 자동배정 skip.
@@ -600,7 +609,8 @@ export async function maybeAutoAssign(
     // AC-5(초진 한정): 치료사 배정 후보를 치료신청(treatment 축) capability 로 좁힌다.
     //   graceful — 초진 아님/치료신청 없음/capability 소스 부재 시 무동작(전체 pool, 회귀 0).
     if (role === 'therapy') {
-      pool = await filterTherapistPoolByTreatmentCapability(pool, checkInId, customer?.visit_type ?? null);
+      // T-20260713 RECENCY-UNIFY: 초진 한정 필터도 recency 판정으로 통일(stored visit_type divergence 제거).
+      pool = await filterTherapistPoolByTreatmentCapability(pool, checkInId, recencyVisitType);
     }
 
     // 4) 0순위 — 지정 담당 우선(당일 출근 + 임시 off 아님 시). 임시 off 면 fallback(least-loaded).
@@ -691,7 +701,8 @@ export async function maybeAutoAssign(
     //      재진 consult → 지정 유무·휴무·미지정 전 조합 sentinel(알림 완전 제외). 치료사(therapy) 경로 불변(AC-2).
     const reason = resolveAssignReason({
       role,
-      visitType: customer?.visit_type ?? null,
+      // T-20260713 RECENCY-UNIFY: 알림 suppress 판정(재진 여부)도 axis 와 동일한 recency 소스 사용.
+      visitType: recencyVisitType,
       usedDesignated,
       designatedFallback,
     });
@@ -908,7 +919,12 @@ export async function logRealAssignment(opts: {
           .maybeSingle();
         customer = data ?? null;
       }
-      axis = deriveConsultAxis(customer ?? {});
+      // T-20260713 RECENCY-UNIFY: 실배정 사후기록의 상담 축도 recency 판정으로 통일(engine 과 동일 소스).
+      const recencyVisitType = await resolveVisitTypeByRecency(
+        opts.checkIn.customer_id,
+        opts.checkIn.clinic_id,
+      );
+      axis = deriveConsultAxis({ ...(customer ?? {}), visit_type: recencyVisitType });
     }
 
     await logAssignment({

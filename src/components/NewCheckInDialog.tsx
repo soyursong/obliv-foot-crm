@@ -354,12 +354,17 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         if (!isReturningVisit) {
           const { data: axCust } = await supabase
             .from('customers')
-            .select('visit_type, lead_source, visit_route')
+            .select('lead_source, visit_route')
             .eq('id', customerId ?? '')
             .maybeSingle();
-          axis = deriveConsultAxis(
-            (axCust as { visit_type?: string | null; lead_source?: string | null; visit_route?: string | null } | null) ?? {},
-          );
+          // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축 파생의 visit_type 은 stored 재조회가 아니라
+          //   이미 recency(JUDGE-365)로 확정된 visitType 을 사용한다. 접수 insert(visit_type: visitType)와
+          //   동일 소스 → 컴포넌트 내부 divergence 제거(365일+ 고객이 stored 'returning' 이어도 축은 초진 경로).
+          axis = deriveConsultAxis({
+            visit_type: visitType,
+            lead_source: (axCust as { lead_source?: string | null } | null)?.lead_source,
+            visit_route: (axCust as { visit_route?: string | null } | null)?.visit_route,
+          });
         }
         // T-20260701-foot-REVISIT-CONSULT-ALERT-FULLSKIP (B→A, supersedes #1 REVISIT-CHECKIN-AUTOASSIGN-SKIP):
         //   재진 체크인의 상담사 = customers.assigned_staff_id(지정 담당 실장) autofill.
