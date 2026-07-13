@@ -9,8 +9,9 @@
 --   reject = 로컬표기(010…) · 하이픈 · 그 외 비-E.164
 -- NOT VALID: 기존 오염행(cust 21 · resv 98)은 블록 안 함(무변경). 신규 나쁜 쓰기만 즉시 거부.
 --   → 오염 정정 백필/VALIDATE 는 별 티켓(T-20260713-foot-PHONE-E164-BACKFILL-VALIDATE, Step3).
--- ⚠ apply 전제: 국제환자 해외 E.164 허용 1줄(`^\+(?!82)[1-9]\d{6,14}$`)은 DA-final 예측식 pin 후.
---   (너무 엄격하면 정상 외국인 쓰기 오거부 — §78/§80 foot foreign self-checkin) build/dry-run/rollback 은 선행 OK.
+-- 국제환자 해외 E.164 허용 1줄(`^\+(?!82)[1-9]\d{6,14}$`) = DA-final PIN 확정(MSG-20260713-193142-xhdb).
+--   fork 계통 longre→foot→body 단일 정본 상속(CRM별 변형 금지). customers + reservations 동일식. 문자 그대로 embed.
+--   apply 게이트 해제 — 남은 게이트 = supervisor DDL-diff(테스트 벡터 검증) 1건.
 -- 멱등: DROP CONSTRAINT IF EXISTS → 재실행 시 drop 후 재add 로 수렴.
 -- 게이트: 대표 게이트 면제(데이터 무변경·enforcement-forward·원장 무접점). supervisor DDL-diff.
 -- ============================================================================
@@ -24,10 +25,10 @@ ALTER TABLE public.customers
   ADD CONSTRAINT customers_phone_e164_chk
   CHECK (
     phone IS NULL
-    OR phone ~ '^\+82(1[016789]\d{7,8})$'   -- KR E.164 (모바일)
-    OR phone LIKE 'DUMMY-%'                   -- DUMMY placeholder
-    OR phone = '+821000000000'                -- 고정 placeholder
-    OR phone ~ '^\+(?!82)[1-9]\d{6,14}$'      -- 국제환자 해외 E.164 (비-82, DA-final pin 대상)
+    OR phone LIKE 'DUMMY-%'                    -- 결정적 토큰
+    OR phone = '+821000000000'                -- 동행 placeholder (방어적 명시)
+    OR phone ~ '^\+82(1[016789]\d{7,8})$'     -- KR 모바일 E.164 (strict)
+    OR phone ~ '^\+(?!82)[1-9]\d{6,14}$'      -- ★국제환자 해외 E.164 (non-KR) — DA-final PIN 확정줄
   )
   NOT VALID;
 
@@ -38,9 +39,9 @@ ALTER TABLE public.reservations
   ADD CONSTRAINT reservations_customer_phone_e164_chk
   CHECK (
     customer_phone IS NULL
-    OR customer_phone ~ '^\+82(1[016789]\d{7,8})$'
     OR customer_phone LIKE 'DUMMY-%'
     OR customer_phone = '+821000000000'
+    OR customer_phone ~ '^\+82(1[016789]\d{7,8})$'
     OR customer_phone ~ '^\+(?!82)[1-9]\d{6,14}$'
   )
   NOT VALID;

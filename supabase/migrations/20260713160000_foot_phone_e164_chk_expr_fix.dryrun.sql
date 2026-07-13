@@ -35,18 +35,18 @@ BEGIN
   ALTER TABLE public.customers ADD CONSTRAINT customers_phone_e164_chk
     CHECK (
       phone IS NULL
-      OR phone ~ '^\+82(1[016789]\d{7,8})$'
       OR phone LIKE 'DUMMY-%'
       OR phone = '+821000000000'
+      OR phone ~ '^\+82(1[016789]\d{7,8})$'
       OR phone ~ '^\+(?!82)[1-9]\d{6,14}$'
     ) NOT VALID;
   ALTER TABLE public.reservations DROP CONSTRAINT IF EXISTS reservations_customer_phone_e164_chk;
   ALTER TABLE public.reservations ADD CONSTRAINT reservations_customer_phone_e164_chk
     CHECK (
       customer_phone IS NULL
-      OR customer_phone ~ '^\+82(1[016789]\d{7,8})$'
       OR customer_phone LIKE 'DUMMY-%'
       OR customer_phone = '+821000000000'
+      OR customer_phone ~ '^\+82(1[016789]\d{7,8})$'
       OR customer_phone ~ '^\+(?!82)[1-9]\d{6,14}$'
     ) NOT VALID;
 
@@ -84,12 +84,14 @@ BEGIN
       (v_clinic, 'DR-DUMMY', 'DUMMY-dryrun1', 'DRYRUN-CHK-A2'),   -- DUMMY placeholder
       (v_clinic, 'DR-PLACE', '+821000000000', 'DRYRUN-CHK-A3'),   -- 고정 placeholder
       (v_clinic, 'DR-US',    '+13105551234',  'DRYRUN-CHK-A4'),   -- 국제(US) E.164
-      (v_clinic, 'DR-UK',    '+442071838750', 'DRYRUN-CHK-A5');    -- 국제(UK) E.164
+      (v_clinic, 'DR-UK',    '+442071838750', 'DRYRUN-CHK-A5'),   -- 국제(UK) E.164
+      (v_clinic, 'DR-JP',    '+819012345678', 'DRYRUN-CHK-A6'),   -- 국제(JP) E.164 (DA 테스트벡터)
+      (v_clinic, 'DR-CN',    '+8613800138000','DRYRUN-CHK-A7');    -- 국제(CN) E.164 (DA 테스트벡터)
     -- (NULL 은 customers.phone 컬럼 NOT NULL 이라 INSERT 불가 → CHECK 의 NULL 분기는 reservations 로 검증)
   EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'ACCEPT-FAIL customers: 정상 phone 이 거부됨: %', SQLERRM;
   END;
-  RAISE NOTICE 'ACCEPT-OK customers: KR/DUMMY/placeholder/US/UK 통과';
+  RAISE NOTICE 'ACCEPT-OK customers: KR/DUMMY/placeholder/US/UK/JP/CN 통과';
 
   BEGIN
     INSERT INTO public.reservations (clinic_id, reservation_date, reservation_time, customer_phone) VALUES
@@ -104,7 +106,8 @@ BEGIN
   -- (6) REJECT: 로컬표기·하이픈·비-E.164 는 신규 쓰기 거부돼야 함 (버그 재현 방지)
   --   각 케이스를 sub-block 으로 감싸 check_violation 만 잡고 flag 로 판정.
   --   customers
-  FOREACH v_ph IN ARRAY ARRAY['01012345678','010-1234-5678','+82-10-1234-5678','010 1234 5678','821012345678','+8210'] LOOP
+  --   기형 +82(유선/과다자릿수)도 (?!82) 가드로 해외분기 우회 차단 → 거부돼야 함(DA 근거#2)
+  FOREACH v_ph IN ARRAY ARRAY['01012345678','010-1234-5678','+82-10-1234-5678','010 1234 5678','821012345678','+8210','+82212345678','+8299999999999'] LOOP
     v_rejected := false;
     BEGIN
       INSERT INTO public.customers (clinic_id, name, phone, chart_number)
