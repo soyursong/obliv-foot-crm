@@ -57,3 +57,9 @@ DA Q2 자식모델 = check_ins/status_transitions. **실측 = 6 FK테이블 8행
 - mig_dryrun: **pass** (BEGIN..ROLLBACK 무영속 + 커밋 마이그 SQL 무영속 실행 PASS)
 - mig_ledger_check: net-new(20260713140000 미등재) → apply 시 정직등재. 무충돌.
 - mig_rollback: `.rollback.sql` — _backup 에서 dup master 재삽입 + 자식 old_customer_id 재앵커 복원.
+
+## 재검증 (dev-foot, 2026-07-13 14:32 KST · PUSH vx3z proceed)
+- planner PUSH `MSG-20260713-140550-vx3z`(파괴적-apply-HOLD 해제·WS-C proceed) 수신 → merge dry-run **prod 재실행**.
+- 결과 **재현 일치·PASS**(로그 `dryrun_rerun_1432.log`): freeze 4행 정합(dup 2 masked + raw 2 PII) · reservation_id 부재(결정적키0)→per-row(INV-3)·실환자0 기본채택 · 전 FK 스캔 6종 8행 · full re-anchor 후 dup 자식 0 · dup DELETE 2 · ROLLBACK 무영속(dup customers 잔존 2 재확인).
+- abort 불변식 재확인: 147(`fn_selfcheckin_today_reservations`) **무접촉**(마이그 DML=customers/자식 FK만·147 comment-only 무참조) · 키오스크 anon raw-PHI-0(§15-5-1) 무관(반환면 미접촉) · PHI 위생(git-tracked WSC 아티팩트 평문 성명/전화 0건 grep 실증) · 원장=apply 시 net-new 20260713140000 정직등재.
+- ball → **supervisor 최종 DB-GATE** → 승인 시 `WSC_APPLY=1` archive-first apply → 현장 통합 confirm(스레드 1783902832.916999).
