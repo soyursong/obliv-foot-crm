@@ -8,8 +8,10 @@
 import { expect, type Page } from '@playwright/test';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })();
+// CI(ci-push.yml/ci-nightly.yml/ci-regression.yml)는 secrets 를 TEST_USER_EMAIL / TEST_USER_PASSWORD 로 주입한다.
+// 로컬은 TEST_EMAIL / TEST_PASSWORD 관례를 쓴다. 둘 다 수용 (auth.setup.ts 와 동일 계약). 평문 폴백은 없음.
+const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD (or TEST_USER_PASSWORD) env required (no plaintext fallback)'); })();
 
 /**
  * RC-C self-seed (T-20260615-foot-REGRESSION-SUITE-DEROT)
