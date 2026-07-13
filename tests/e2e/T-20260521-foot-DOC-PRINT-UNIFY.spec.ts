@@ -71,10 +71,17 @@ const PRINT_PATHS = [
   },
 ] as const;
 
-// ── HTML_TEMPLATE_MAP 키 12종 (AC-3 잠금 대상) ──────────────────────────────
+// ── HTML_TEMPLATE_MAP 키 13종 (AC-3 잠금 대상) ──────────────────────────────
+// T-20260713-foot-DOCPRINT-JPG-HTML-STALE-E2E: treat_confirm_code / treat_confirm_nocode 를
+//   HTML 분류로 이동(하단 JPG_FORM_KEYS에서 제거). T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT에서
+//   두 발급폼을 HTML 템플릿(TREAT_CONFIRM_CODE_HTML / TREAT_CONFIRM_NOCODE_HTML)으로 전환해
+//   HTML_TEMPLATE_MAP에 등록됨 → isHtmlTemplate()=true가 현행 정본. spec의 기대치가 뒤처져 있던 것.
+//   여기로 이동하면 §2(:197)·§5 HTML 경로가 두 키를 양성(positive) 검증 → AC-3 대체 커버리지 확보.
 const HTML_FORM_KEYS = [
   'diagnosis',
   'treat_confirm',
+  'treat_confirm_code',
+  'treat_confirm_nocode',
   'visit_confirm',
   'diag_opinion',
   'bill_detail',
@@ -86,13 +93,14 @@ const HTML_FORM_KEYS = [
   'bill_receipt',
 ] as const;
 
-// JPG 처리 양식 (HTML_TEMPLATE_MAP 미등록)
+// JPG 처리 양식 (HTML_TEMPLATE_MAP 미등록 — PNG 폴백 렌더러 경로)
+// T-20260713-foot-DOCPRINT-JPG-HTML-STALE-E2E: 현행 템플릿 분류에 맞춰 갱신.
+//   treat_confirm_code / treat_confirm_nocode 는 HTML로 전환됐으므로 제거(→ HTML_FORM_KEYS로 이동).
+//   아래 3종은 여전히 HTML_TEMPLATE_MAP 미등록 = 진짜 JPG/PNG 폴백 경로(무회귀).
 const JPG_FORM_KEYS = [
   'prescription',
   'med_record_short',
   'med_record_long',
-  'treat_confirm_code',
-  'treat_confirm_nocode',
 ] as const;
 
 // 공통 Mock 데이터
@@ -194,7 +202,7 @@ test.describe('§2 — FALLBACK_TEMPLATES 단일 소스 구조 (AC-4)', () => {
     });
   });
 
-  test('HTML 처리 대상 11종이 isHtmlTemplate()=true여야 함', () => {
+  test('HTML 처리 대상 13종이 isHtmlTemplate()=true여야 함', () => {
     HTML_FORM_KEYS.forEach((key) => {
       expect(isHtmlTemplate(key), `${key}: isHtmlTemplate()=false (HTML_TEMPLATE_MAP 미등록)`).toBe(true);
     });
@@ -206,7 +214,7 @@ test.describe('§2 — FALLBACK_TEMPLATES 단일 소스 구조 (AC-4)', () => {
     });
   });
 
-  test('HTML 11종 모두 getHtmlTemplate()이 non-null 문자열 반환', () => {
+  test('HTML 13종 모두 getHtmlTemplate()이 non-null 문자열 반환', () => {
     HTML_FORM_KEYS.forEach((key) => {
       const tpl = getHtmlTemplate(key);
       expect(tpl, `${key}: getHtmlTemplate()=null`).not.toBeNull();
@@ -303,7 +311,7 @@ test.describe('§4 — AUTO_BIND_KEYS 완전성 lock', () => {
 // §5. HTML 11종 양식 렌더링 일관성 (AC-3 시각 검증)
 // ─────────────────────────────────────────────────────────────────────────────
 
-test.describe('§5 — HTML 11종 양식 렌더링 일관성 (AC-3)', () => {
+test.describe('§5 — HTML 13종 양식 렌더링 일관성 (AC-3)', () => {
   for (const formKey of HTML_FORM_KEYS) {
     test(`[${formKey}] 렌더링 — 플레이스홀더 노출 0건, 필수 클리닉명 포함`, async ({ page }) => {
       const tpl = getHtmlTemplate(formKey);
@@ -480,7 +488,7 @@ test.describe('§9 — AC-5 진료비세부산정내역 landscape 출력 (김주
 
     expect(LANDSCAPE_FORM_KEYS).toHaveLength(1);
     expect(LANDSCAPE_FORM_KEYS[0]).toBe('bill_detail');
-    // 나머지 10종은 portrait
+    // 나머지 HTML 양식(bill_detail 제외 전부)은 portrait
     PORTRAIT_FORM_KEYS.forEach((k) => {
       expect(k).not.toBe('bill_detail');
     });
