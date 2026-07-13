@@ -941,8 +941,34 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       toast.error(`결제 데이터가 있어 삭제할 수 없습니다 (${count}건). 결제를 먼저 취소하세요.`);
       return;
     }
+    // T-20260713-foot-CHECKIN-DELETE-RESV-RESTORE: 체크인 삭제는 '체크인 취소'
+    //   (T-20260611-foot-CHECKIN-CANCEL-RENAME-RESTORE, Dashboard 상태변경 핸들러)와 달리
+    //   원본 예약의 상태 역전이가 누락돼 있었다. 체크인 시 reservations→'checked_in'으로
+    //   전이됐던 예약이 삭제 후에도 'checked_in'에 묶여 (1)재체크인 불가 (2)통합시간표·
+    //   대시보드에서 예약 카드 소실. 삭제 성공 시 예약을 'confirmed'(예약)로 복구한다.
+    //   FE 원자성(saga): 예약 복구를 먼저 커밋 → 체크인 삭제 → 삭제 실패 시 예약을 보상 롤백.
+    //   (신규 컬럼·enum 없음 — 기존 status 값 'confirmed'/'checked_in' 재사용, FE-only.)
+    const resvId = checkIn.reservation_id;
+    let restored = false;
+    if (resvId) {
+      const { data: resvUpd, error: resvErr } = await supabase
+        .from('reservations')
+        .update({ status: 'confirmed' })
+        .eq('id', resvId)
+        .eq('status', 'checked_in') // 멱등 가드: 이미 다른 상태면 건드리지 않음
+        .select('id');
+      if (resvErr) { toast.error(`예약 복구 실패: ${resvErr.message}`); return; }
+      restored = (resvUpd?.length ?? 0) > 0;
+    }
     const { error } = await supabase.from('check_ins').delete().eq('id', checkIn.id);
-    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    if (error) {
+      // 보상 트랜잭션: 삭제 실패 시 방금 복구한 예약을 원상('checked_in') 롤백 → 원자성 유지
+      if (restored && resvId) {
+        await supabase.from('reservations').update({ status: 'checked_in' }).eq('id', resvId);
+      }
+      toast.error(`삭제 실패: ${error.message}`);
+      return;
+    }
     toast.success('체크인 삭제됨');
     onClose();
     onUpdated();
