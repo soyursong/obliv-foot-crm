@@ -1124,6 +1124,10 @@ export function PenChartTab({
   const editingChartRef    = useRef<SavedChart | null>(null);
   // T-20260622-foot-PENCHART-EDITBTN-NOCLICK AC-2: 팝업창 수정 자동진입 1회 가드(savedCharts 재로드 시 재진입 방지).
   const editAutoOpenedRef  = useRef(false);
+  // T-20260713-foot-PENCHART-EDITMODE-WHITETOOL-DISABLED: 수정 재진입 시 저장본 PNG 를 draw 레이어로 이관하는
+  //   1회 가드. draw 캔버스 (재)초기화(initDrawCanvas)마다 false 로 리셋 → bgCanvas onload 성공 시 재-seed.
+  //   (초기화 없이 bg 만 재로드[onerror 재시도]되는 경우엔 중복 이관 방지)
+  const editDrawSeededRef  = useRef(false);
 
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
 
@@ -1733,6 +1737,56 @@ export function PenChartTab({
         if (fk === 'pen_chart') {
           drawPenChartLabelOverride(ctx);
         }
+
+        // ── T-20260713-foot-PENCHART-EDITMODE-WHITETOOL-DISABLED: 수정 재진입 시 저장본을 draw 레이어로 이관 ──
+        //   [RC — diagnose-first: 저장 전 vs 저장 후 재진입 차이 코드-직독 확정]
+        //     신규작성(저장 전): 사용자 필기는 draw 레이어에 있음 → 화이트(source-atop)·지우개(clearRect)가
+        //       draw 픽셀 위에서 정상 동작.
+        //     수정 재진입(저장 후): 저장본 PNG(양식+기존필기 합성)를 bgCanvas 에만 깔고 draw 는 투명(빈 상태)으로
+        //       시작(L1839 "드로잉 레이어는 투명으로 시작") → 화이트=source-atop 대상 픽셀 부재로 무동작,
+        //       지우개=clearRect 로 지울 draw 픽셀 부재로 무동작. = 현장 "화이트·지우개 안 됨"(EDITMODE-DISABLED).
+        //   [수정 — '툴 활성 복원'만, 화이트 v3 source-atop LOCK 불침범]
+        //     방금 렌더된 저장본(bgCanvas 합성 결과)을 draw 레이어로 1:1 복사한 뒤 bg 는 흰색으로 환원.
+        //     이제 두 도구가 '기존 합성본 픽셀' 위에서 동작(화이트=source-atop 덧칠, 지우개=clearRect 로 흰 bg 노출).
+        //     화이트 stroke 코드경로(L1397~ native / L2358~ down / L2648~ 저장 재적용)는 전혀 손대지 않음
+        //     → source-atop '선택영역만 흰 덧칠=수정액' semantics 불변(d8445146 v3 LOCK 유지).
+        //     저장 합성(handleDrawSave: bg + draw)도 bg=흰색 + draw=저장본+편집 → 동일 결과로 정합.
+        //   [무회귀 가드] editingChart 인 경우만, draw 초기화 직후 1회만(editDrawSeededRef), 사용자가 아직
+        //     그리지 않은 상태(!hasDrawingRef)에서만 이관 → 편집분 클로버 방지. 실패 시 bg 유지(기존 동작).
+        if (editingChart && !editDrawSeededRef.current && !hasDrawingRef.current) {
+          const drawCanvas = canvasRef.current;
+          const dctx = drawCtxRef.current;
+          if (drawCanvas && dctx && !dctx.isContextLost()
+              && drawCanvas.width === canvas.width && drawCanvas.height === canvas.height) {
+            try {
+              // 저장본(현재 bgCanvas 물리 픽셀)을 draw 레이어(동일 물리 치수)로 이관.
+              //   dctx 는 scale(dpr) 적용 상태 → 논리 CANVAS_W×canvasH 로 그리면 물리 전체를 채움(1:1).
+              dctx.clearRect(0, 0, CANVAS_W, canvasH);
+              dctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, CANVAS_W, canvasH);
+              // bg 는 흰색 환원 — 지우개 clearRect 시 흰 배경 노출, 저장 합성(bg+draw) 정합 유지.
+              ctx.clearRect(0, 0, CANVAS_W, canvasH);
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, CANVAS_W, canvasH);
+              // undo 기준선 재설정 — draw 로 옮긴 저장본이 undo(첫 획→직전 상태 복원) 로 지워지지 않도록
+              //   seeded 상태를 baseline 으로. 실패(CORS taint) 시 baseline 만 스킵(무회귀).
+              try {
+                undoStackRef.current = [];
+                if (pendingUndoRafRef.current !== null) {
+                  cancelAnimationFrame(pendingUndoRafRef.current);
+                  pendingUndoRafRef.current = null;
+                }
+                pendingUndoDataRef.current = dctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+              } catch (undoErr) {
+                console.warn('[PenChartTab] 수정 재진입 undo baseline 재캡처 스킵(CORS taint?):', undoErr);
+              }
+              editDrawSeededRef.current = true;
+              console.log('[PenChartTab] 수정 재진입 저장본 → draw 레이어 이관 완료(화이트·지우개 활성 복원)');
+            } catch (seedErr) {
+              // 실패 시 아무 것도 바꾸지 않음 = 기존 동작(bg 유지) — 크래시/무음실패 없이 안전 폴백.
+              console.error('[PenChartTab] 수정 재진입 draw-seed 실패(bg 유지 폴백):', seedErr);
+            }
+          }
+        }
       };
       img.src = bgUrl;
     }
@@ -1746,6 +1800,9 @@ export function PenChartTab({
   const initDrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // T-20260713-foot-PENCHART-EDITMODE-WHITETOOL-DISABLED: draw 레이어를 (재)초기화하면 저장본 이관을 다시
+    //   허용해야 한다(아래 initBgCanvas onload 가 draw 로 저장본을 seed). 매 초기화 시 가드 리셋.
+    editDrawSeededRef.current = false;
     // T-20260525-foot-PENCHART-FORM-BLACKSCR REOPEN4 근본 수정:
     //   desynchronized:true 완전 제거.
     //
