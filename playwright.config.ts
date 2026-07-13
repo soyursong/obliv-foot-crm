@@ -264,6 +264,11 @@ export default defineConfig({
         //   자가치유 영구 무력화. 처방 = 시간 윈도우 가드 SSOT(@/lib/chunkReload)로 교체 + ChunkErrorBoundary
         //   eval-time chunk 에러 자동 하드리로드(1회, 루프 차단). 순수 단위/소스 정적(page/auth/server 불요).
         '**/T-20260710-foot-DASHBOARD-PAGELOAD-ERROR.spec.ts',
+        // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: 급여/비급여 본인·공단 split (grade-null → 본인=급여전액/공단=0).
+        //   pure-path SSOT 단언(SPLIT-RECUR) + AC-3 실브라우저 인쇄 미리보기 렌더 evidence(RENDER, page.setContent+print media
+        //   로 세부산정내역·계산서영수증 × grade-null/실재 4문서 스크린샷). auth/server 불요(setContent 정적 렌더).
+        '**/T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR.spec.ts',
+        '**/T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR-RENDER.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
