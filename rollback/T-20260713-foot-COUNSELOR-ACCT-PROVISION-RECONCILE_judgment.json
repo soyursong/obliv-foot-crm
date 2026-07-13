@@ -1,0 +1,61 @@
+{
+  "ticket": "T-20260713-foot-COUNSELOR-ACCT-PROVISION-RECONCILE",
+  "verdict": "ALREADY-CONVERGED / NO-OP (no write applied)",
+  "verified_at_prod": "2026-07-13 (live SUPABASE rxlomoozakkjesdqjtvd)",
+  "identity_resolution": {
+    "standard": "GOTRUE-ADMIN-EMAIL-FILTER-BAN (INV-1..4)",
+    "target_email": "faceofangel9999@oblivseoul.kr",
+    "exact_match_count": 1,
+    "target_uid": "b36e74a3-be1f-4b61-aeb4-9150affe2c05",
+    "getUserById_email_reverify": "OK",
+    "last_sign_in_at": "2026-07-13T11:33:25Z",
+    "gmail_account_untouched": {
+      "email": "faceofangel9999@gmail.com",
+      "uid": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "note": "무접촉 대상 — 본 티켓 write 미경유"
+    }
+  },
+  "target_current_state": {
+    "user_profiles.role": "consultant",
+    "user_profiles.clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "clinic": "오블리브의원 서울 오리진점 (slug=jongno-foot)",
+    "active": true,
+    "approved": true
+  },
+  "linked_staff": {
+    "id": "c23d4491-cbdc-423d-af33-17c836941f9c",
+    "role": "consultant",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "active": true
+  },
+  "planner_claimed_inconsistencies": {
+    "(1) role coordinator vs consultant": "RESOLVED — user_profiles.role already = consultant (matches staff). 정합.",
+    "(2) clinic_id NULL vs 74967aea": "RESOLVED — user_profiles.clinic_id already = 74967aea (matches staff). 정합.",
+    "explanation": "선행 티켓 COUNSELOR-ACCT-CREATE-FACEOFANGEL 의 APPLY=1 상태정정이 실제 persist 됨. planner 주장 불일치는 그 before.json 스냅샷(수정 전 상태) 기준 stale 판단으로 추정."
+  },
+  "rbac_gate_diagnosis": {
+    "source": "user_profiles.role",
+    "evidence": "src/lib/permissions.ts canAccess()/PERM_MATRIX 는 subject.role(=user_profiles.role) 평가; App.tsx ProtectedRoute 도 profile.role 기준. staff.role 은 로스터/배정용(계정 RBAC 축 아님).",
+    "implication": "user_profiles.role 이 RBAC/메뉴 게이트 축이므로 role UPDATE 는 no-op 아님(불일치였다면 정정 필요). 단 현 상태가 이미 consultant 라 실제 write 불요."
+  },
+  "multi_account_contamination_scan": {
+    "total_profiles": 47,
+    "active_null_clinic": 0,
+    "role_mismatch_profile_vs_staff": 2,
+    "clinic_mismatch": 0,
+    "role_mismatch_detail": [
+      {"uid8": "64a1f77a", "email": "test@medibuilder.com", "profile": "admin", "staff": "coordinator", "verdict": "benign — test 슈퍼유저 admin elevation"},
+      {"uid8": "ee67fc6b", "email": "juyeon@medibuilder.com", "profile": "admin", "staff": "consultant", "verdict": "benign — 김주연 총괄(ops-authority admin elevation, SUPERADMIN-EXEMPT reporter). clinic_id 정상."}
+    ],
+    "conclusion": "마이그 오프로비저닝 지문(clinic_id=NULL + coordinator 다운그레이드) 보유 계정 0건. 2건 role diff 는 의도된 admin(ops-authority) elevation 으로 오염 아님 → 대량 data-correction 재분류 FOLLOWUP 불요. target 단일계정 격리 확정."
+  },
+  "action_taken": "NONE (write 미실행). SOP freeze-set 재검증 결과 이미 desired-state → 맹목적 count UPDATE 회피. 되돌릴 것 없음(선행 rollback SQL 유효 상태 유지).",
+  "sop_compliance": [
+    "단일 count UPDATE 금지: 준수(count 기반 UPDATE 미실행)",
+    "freeze셋 재검증: 준수(단일계정 target + gmail 격리 확인)",
+    "판정근거 스냅샷: 본 파일",
+    "롤백: N/A(write 없음). 선행 티켓 rollback SQL 존재",
+    "Identity 재검증: INV-1..4 준수",
+    "원장 무접점: 준수(target=상담실장, 의료화면/원장계정 무관)"
+  ]
+}
