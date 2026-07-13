@@ -41,6 +41,11 @@ const dupChildren = scan.filter((r) => r.n > 0);
 const dupChildTotal = dupChildren.reduce((s, r) => s + r.n, 0);
 console.log(`── (0) baseline: dup customers=2 확인 · dup 자식(전 FK)=${dupChildTotal}건 [${dupChildren.map((r) => `${r.t}.${r.c}:${r.n}`).join(', ')}]`);
 
+// G1(financial 원장 무접점) baseline: dup∪raw 소속 package_payments 금액 총합/행수 스냅샷
+const ppBase = await query(`SELECT COALESCE(SUM(amount),0)::bigint AS amt, COALESCE(SUM(vat_amount),0)::bigint AS vat, COUNT(*)::int AS cnt FROM package_payments WHERE customer_id IN (${inL([...DUP, ...RAW])})`);
+const g1Base = ppBase?.[0] || { amt: 0, vat: 0, cnt: 0 };
+console.log(`── (0) G1 baseline: package_payments(dup∪raw) SUM(amount)=${g1Base.amt} SUM(vat)=${g1Base.vat} cnt=${g1Base.cnt} (재앵커 후 불변이어야)`);
+
 // 147 무접촉 확인(baseline fingerprint)
 const fn147a = await query(`SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='${FN147}'`);
 console.log(`── (0) 147(${FN147}) 존재=${fn147a?.[0]?.n} (무접촉 대상 — WS-C 는 customers/자식만)`);
@@ -99,16 +104,21 @@ const rawChild = await query(fks.map((f) => `SELECT count(*)::int n FROM ${f.t} 
 const rawChildTotal = rawChild.reduce((s, r) => s + r.n, 0);
 const fn147b = await query(`SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='${FN147}'`);
 const led = await query(`SELECT version, name, created_by FROM supabase_migrations.schema_migrations WHERE version='20260713140000'`);
+// G1 post: dup 삭제 후 raw 로 재앵커된 package_payments 금액 총합/행수 = baseline 불변(순소실0·원장 무접점)
+const ppPost = await query(`SELECT COALESCE(SUM(amount),0)::bigint AS amt, COALESCE(SUM(vat_amount),0)::bigint AS vat, COUNT(*)::int AS cnt FROM package_payments WHERE customer_id IN (${inL([...DUP, ...RAW])})`);
+const g1Post = ppPost?.[0] || { amt: -1, vat: -1, cnt: -1 };
+const g1Ok = String(g1Post.amt) === String(g1Base.amt) && String(g1Post.vat) === String(g1Base.vat) && g1Post.cnt === g1Base.cnt;
 
 console.log(`\n── (4) post-verify ──`);
 console.log(`   dup customers 잔존 = ${dupLeft?.[0]?.n} (기대 0)`);
 console.log(`   raw customers 잔존 = ${rawLeft?.[0]?.n} (기대 2, 무손실)`);
 console.log(`   dup 참조 자식(전 FK) = ${dupRefLeft} (기대 0)`);
 console.log(`   raw 인수 자식(전 FK) = ${rawChildTotal} (기대 ≥ ${dupChildTotal}, 순소실0)`);
+console.log(`   G1 package_payments SUM(amount) = ${g1Post.amt} (baseline ${g1Base.amt}) · SUM(vat)=${g1Post.vat} · cnt=${g1Post.cnt} · 불변=${g1Ok ? '✅' : '❌'}`);
 console.log(`   147(${FN147}) 존재 = ${fn147b?.[0]?.n} (무접촉)`);
 console.log(`   원장 등재 = ${JSON.stringify(led)}`);
 
 const ok = dupLeft?.[0]?.n === 0 && rawLeft?.[0]?.n === 2 && dupRefLeft === 0
-  && rawChildTotal >= dupChildTotal && fn147b?.[0]?.n === 1 && Array.isArray(led) && led.length === 1;
-console.log(`\n===== WS-C APPLY 판정: ${ok ? '✅ GO (dup 소멸·raw 무손실·자식 인수·147 무접촉·원장 등재)' : '❌ FAIL'} =====`);
+  && rawChildTotal >= dupChildTotal && g1Ok && fn147b?.[0]?.n === 1 && Array.isArray(led) && led.length === 1;
+console.log(`\n===== WS-C APPLY 판정: ${ok ? '✅ GO (dup 소멸·raw 무손실·자식 인수·G1 금액불변·147 무접촉·원장 등재)' : '❌ FAIL'} =====`);
 process.exit(ok ? 0 : 1);

@@ -20,7 +20,20 @@
 --   freeze셋 재검증 abort: 재앵커 후 dup 자식이 0 이 아니면 RAISE → 트랜잭션 전체 롤백(파괴 미실행).
 --   원장: DDL0(UPDATE/DELETE) 이나 감사추적 위해 apply 러너가 net-new version 20260713140000 로 정직등재.
 --   abort 불변식: 147(fn_selfcheckin_today_reservations) 무접촉 · 키오스크 anon raw-PHI-0(§15-5-1) 무관(customers/자식만).
--- author: dev-foot / 2026-07-13 · DA: DA-20260713-foot-SELFCHECKIN-WRITE-HARDEN Q2
+--
+-- ── DA CONSULT-REPLY(2lha, 2026-07-13) child-model divergence RESOLVED — G1~G3 guardrail 반영 ──
+--   전 6 FK full re-anchor = faithful execution(scope 확장 아님·설계변경 아님). 명시 2종(check_ins/status_transitions)은
+--   당시 가시분 illustrative 였고 net-loss-0 은 grain-agnostic → financial/clinical 자식 재앵커도 이미 순소실0 에 포함.
+--   G1 (financial 원장 무접점): package_payments 재앵커 = customer_id FK-only UPDATE·금액/결제 컬럼 무접촉.
+--       → re-anchor 전후 SUM(amount)/SUM(vat_amount) 불변 assert 동봉(변동 시 WSC_ABORT_G1·전체 롤백).
+--   G2 (clinical PHI): health_q*/consult_memos 재앵커 = FK-only(customer_id) UPDATE 1컬럼만·내용/동의링크 무변경.
+--       평문 PHI 는 off-git(redacted 스냅샷만 커밋). ↓ 재앵커 루프가 FK 컬럼 1개만 SET(내용/동의 컬럼 미접촉).
+--   G3 (최중요·CASCADE 순서 불변식): CASCADE(health_q*,consult_memos)+NO ACTION(check_ins,packages,package_payments)
+--       혼재 → 삭제 순서 뒤집으면 CASCADE 자식이 archive 前 소실. 순서 고정 =
+--       (1) 전 6 FK 자식 raw master 로 re-anchor UPDATE 완료 → (2) dup master 가 6 FK '전반' 자식 0건 재검증
+--       (잔존 시 abort) → (3) archive-first remove(master empty → CASCADE 무해화). ↓ 본 DO 블록이 이 순서를 강제.
+--   판정근거 스냅샷 자식건수 = 기계열거된 전 6 FK 카운트(information_schema 동적 열거·2종 부분집합 금지).
+-- author: dev-foot / 2026-07-13 · DA: DA-20260713-foot-SELFCHECKIN-WRITE-HARDEN Q2 + CONSULT-REPLY 2lha
 
 BEGIN;
 
@@ -36,7 +49,22 @@ DECLARE
   v_remaining  bigint  := 0;
   v_cnt        bigint;
   v_deleted    bigint;
+  -- G1 (financial 원장 무접점): package_payments 금액 총합 재앵커 전후 불변 assert
+  v_raw        uuid[]  := ARRAY['8fa12f4c-abfe-405e-8736-c2ca8e4aef8a',
+                                'c51dd5e0-5e3f-4f5c-a44f-78001ab9cf6b']::uuid[];
+  v_pp_amt_before  bigint;
+  v_pp_vat_before  bigint;
+  v_pp_cnt_before  bigint;
+  v_pp_amt_after   bigint;
+  v_pp_vat_after   bigint;
+  v_pp_cnt_after   bigint;
 BEGIN
+  -- ── G1 baseline: dup∪raw 소속 package_payments 금액 총합/행수 스냅샷(재앵커 前) ──
+  SELECT COALESCE(SUM(amount),0), COALESCE(SUM(vat_amount),0), COUNT(*)
+    INTO v_pp_amt_before, v_pp_vat_before, v_pp_cnt_before
+    FROM public.package_payments
+   WHERE customer_id = ANY(v_dup) OR customer_id = ANY(v_raw);
+
   -- ── Step A: customers.id 참조 전 FK 컬럼 dup→raw 재앵커 ──
   FOR r IN
     SELECT tc.table_name AS t, kcu.column_name AS c
@@ -70,6 +98,21 @@ BEGIN
   IF v_remaining <> 0 THEN
     RAISE EXCEPTION 'WSC_ABORT: dup 재앵커 후 자식 % 건 잔존(전 FK) — 파괴 미실행, 전체 롤백', v_remaining;
   END IF;
+
+  -- ── G1 assert(financial 원장 무접점): 재앵커는 customer_id FK-only UPDATE 이므로 ──
+  --    dup∪raw 소속 package_payments 의 금액 총합·행수는 불변이어야 한다(금액/결제 컬럼 미접촉 확증). ──
+  SELECT COALESCE(SUM(amount),0), COALESCE(SUM(vat_amount),0), COUNT(*)
+    INTO v_pp_amt_after, v_pp_vat_after, v_pp_cnt_after
+    FROM public.package_payments
+   WHERE customer_id = ANY(v_dup) OR customer_id = ANY(v_raw);
+
+  IF v_pp_amt_before <> v_pp_amt_after
+     OR v_pp_vat_before <> v_pp_vat_after
+     OR v_pp_cnt_before <> v_pp_cnt_after THEN
+    RAISE EXCEPTION 'WSC_ABORT_G1: package_payments 금액/행수 변동 감지 (amount % → %, vat % → %, cnt % → %) — 원장 접촉 의심, 전체 롤백',
+      v_pp_amt_before, v_pp_amt_after, v_pp_vat_before, v_pp_vat_after, v_pp_cnt_before, v_pp_cnt_after;
+  END IF;
+  RAISE NOTICE 'G1 OK: package_payments SUM(amount)=% SUM(vat)=% cnt=% 불변(재앵커 전후 동일)', v_pp_amt_after, v_pp_vat_after, v_pp_cnt_after;
 
   -- ── Step B: 빈 dup master 제거 (자식 0 확증됨) ──
   DELETE FROM public.customers WHERE id = ANY(v_dup);

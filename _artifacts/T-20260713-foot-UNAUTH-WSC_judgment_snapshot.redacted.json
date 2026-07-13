@@ -2,13 +2,32 @@
   "ticket": "T-20260713-foot-UNAUTH-CHANGE-INVESTIGATE-ROLLBACK",
   "work_stream": "WS-C (오염행 정정 merge/re-anchor)",
   "generated_by": "dev-foot",
-  "da_ref": "DA-20260713-foot-SELFCHECKIN-WRITE-HARDEN Q2",
+  "da_ref": "DA-20260713-foot-SELFCHECKIN-WRITE-HARDEN Q2 + CONSULT-REPLY 2lha (child-model divergence RESOLVED)",
   "freeze_set": [
     "512998d0-d51a-42c4-947e-b0cb2cc69da4",
     "0356b229-e8c7-4655-aa6e-651b15370c1f"
   ],
   "phi_redaction": "name=첫자+길이, phone=tail4 only. 평문 raw 는 off-git(stdout).",
-  "topology_divergence": "DA Q2 자식모델=check_ins/status_transitions. 실측=6 FK테이블 8행(+financial packages/package_payments +clinical health_q/consult_memos). CASCADE(health_q*,consult_memos)+NO ACTION(check_ins,packages,package_payments) → full merge 가 유일한 순소실0 경로.",
+  "topology_divergence": "DA Q2 자식모델=check_ins/status_transitions. 실측=6 FK테이블 8행(+financial packages/package_payments +clinical health_q/consult_memos). CASCADE(health_q*,consult_memos)+NO ACTION(check_ins,packages,package_payments) → full merge 가 유일한 순소실0 경로. DA 2lha: 전 6 FK full re-anchor = faithful execution(scope 확장/설계변경 아님·net-loss-0 grain-agnostic).",
+  "child_fk_snapshot_all6": {
+    "note": "판정근거 스냅샷 자식건수 = 기계열거된 전 6 FK 카운트(information_schema 동적 열거·2종 부분집합 금지·손열거 undercount 차단). 재실행 로그 dryrun_rerun_G1G3_1520.log.",
+    "fks": [
+      { "ref": "check_ins.customer_id", "n": 2, "delete_rule": "NO ACTION" },
+      { "ref": "health_q_tokens.customer_id", "n": 2, "delete_rule": "CASCADE" },
+      { "ref": "customer_consult_memos.customer_id", "n": 1, "delete_rule": "CASCADE" },
+      { "ref": "health_q_results.customer_id", "n": 1, "delete_rule": "CASCADE" },
+      { "ref": "package_payments.customer_id", "n": 1, "delete_rule": "NO ACTION" },
+      { "ref": "packages.customer_id", "n": 1, "delete_rule": "NO ACTION" }
+    ],
+    "total_fk_tables": 6,
+    "total_child_rows": 8,
+    "plus_status_transitions_via_check_in_id": 11
+  },
+  "da_guardrails_2lha": {
+    "G1_financial_ledger_no_touch": "package_payments 재앵커=customer_id FK-only UPDATE·금액/결제 컬럼 무접촉. 마이그+dry-run+apply 러너에 SUM(amount)/SUM(vat_amount)/COUNT 재앵커 전후 불변 assert 동봉. dry-run 실측: SUM(amount) 100→100, SUM(vat) 0→0, cnt 1→1 = 불변 PASS. 변동 시 WSC_ABORT_G1 전체 롤백.",
+    "G2_clinical_PHI": "health_q_tokens/health_q_results/customer_consult_memos 재앵커=FK 컬럼(customer_id) 1개만 SET·내용/동의링크 무변경. 평문 PHI off-git(본 스냅샷 redacted, dry-run raw stdout-only).",
+    "G3_cascade_order_invariant": "CASCADE+NO ACTION 혼재 → 순서 고정: (1)전 6 FK 자식 raw master 로 re-anchor UPDATE 완료 →(2)dup master 가 6 FK 전반 자식 0건 재검증(잔존 시 RAISE abort·전체 롤백) →(3)archive-first remove(master empty→CASCADE 무해화). 마이그 DO 블록이 이 순서를 강제(re-anchor→v_remaining=0 assert→DELETE)."
+  },
   "rows": [
     {
       "pair": "A",
