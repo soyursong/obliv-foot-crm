@@ -1,0 +1,13 @@
+{
+  "ticket": "T-20260713-foot-ACCOUNT-LOGIN-FAIL-FACEOFANGEL",
+  "captured_at": "2026-07-13T10:10:50.249Z",
+  "id": "b36e74a3-be1f-4b61-aeb4-9150affe2c05",
+  "email": "faceofangel9999@oblivseoul.kr",
+  "email_confirmed_at": "2026-07-13T06:38:43.523332Z",
+  "banned_until": null,
+  "deleted_at": null,
+  "updated_at": "2026-07-13T10:00:24.279086Z",
+  "last_sign_in_at": "2026-07-13T07:03:11.151771Z",
+  "identities_cnt": 1,
+  "note": "password hash NOT captured (irreversible). rollback=user self-change."
+}
