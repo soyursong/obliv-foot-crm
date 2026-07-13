@@ -514,10 +514,13 @@ Deno.serve(async (req) => {
     // ── 동행(§444/§52): customers 링크·phone 역조회 절대 금지 → customer_id=NULL 착지. ──
     //   비동행만 (clinic_id, phone) lookup/upsert (기존 경로 0-회귀). 동행은 아래 블록 전체 skip.
     let customerId: string | null = null;
+    // T-20260713-foot-INGEST-NAME-OVERWRITE-GUARD: 기존 고객 name no-touch 시 push 명을
+    //   reservations.customer_real_name 스냅샷으로 착지시키기 위한 캐리어(비동행 INSERT 경로 전용).
+    let pushNameSnapshot: string | null = null;
     if (!isCompanion) {
     const { data: existingCustomer, error: custLookupErr } = await admin
       .from('customers')
-      .select('id')
+      .select('id, name')                     // GUARD: never-downgrade 판정 위해 기존 name 동반 조회
       .eq('clinic_id', clinicId)
       .eq('phone', phoneE164)
       .maybeSingle();
@@ -529,11 +532,27 @@ Deno.serve(async (req) => {
 
     if (existingCustomer) {
       customerId = existingCustomer.id as string;
-      // 최신 정보 반영 + 광고 추적 필드 선택적 반영
+      // ── T-20260713-foot-INGEST-NAME-OVERWRITE-GUARD (DA-20260713-CRM-INGEST-NAME-OVERWRITE-BAN, verdict=GO) ──
+      //   [진원] 旣존 로직은 payload name 을 가드 없이 customers.name 에 override → 현장에서 정정한
+      //          본명이 도파민 push 별칭('ok' 등)으로 재오염(bleed)됨. 이를 write-path 계약으로 교체.
+      //   [계약] ① create-only: 신규 고객만 push 명 → 초기값(아래 else 블록 유지).
+      //          ② 기존 행 = never-downgrade / no-touch: 기존 non-empty name 은 절대 미터치.
+      //          ③ preserve-on-NULL: customers.name = COALESCE(NULLIF(btrim(push),''), customers.name).
+      //          push 명은 유실 방지를 위해 reservations.customer_real_name 스냅샷으로 착지.
+      //   ⚠ 트리거 trg_sync_customer_name 미접촉(정식 mirror, 버그 아님). DDL 0.
+      const existingName = ((existingCustomer.name as string | null) ?? '').trim();
+      const pushName     = (name ?? '').trim();
+      // ③ preserve-on-NULL: 기존 name 이 공란일 때만 non-empty push 명으로 채움. 기존 non-empty 는 미터치.
+      const shouldFillName = existingName === '' && pushName !== '';
+      // ② no-touch: 기존 non-empty name 을 보존한 경우 push 명(다른 값)은 예약 스냅샷으로만 착지(유실 방지).
+      if (existingName !== '' && pushName !== '' && pushName !== existingName) {
+        pushNameSnapshot = pushName;
+      }
+      // 최신 정보 반영 + 광고 추적 필드 선택적 반영 (name 은 위 계약에 따라 조건부만 포함)
       await admin
         .from('customers')
         .update({
-          name,
+          ...(shouldFillName ? { name: pushName } : {}),   // GUARD: 공란 채움만, 덮어쓰기 금지
           // birth_year: (C)DROP — 미적재 (T-20260630-foot-DOPAMINE-INGEST-BIRTHYEAR)
           ...(gender ? { gender } : {}),
           // campaign_id/adset_id/ad_id → customers 컬럼 (reservations 아님)
@@ -630,7 +649,9 @@ Deno.serve(async (req) => {
       ...(visitRouteLanded    ? { visit_route: visitRouteLanded }        : {}),
       // T-20260630-foot-COMPANION-RESV-INSERT-FAIL (§4-2b): 동행명/본명 스냅샷(표시전용 폴백).
       //   비키 — JOIN/dedup/귀속 미사용. 동행(customer_id=NULL) 이름복원 1순위. NULL=정상.
-      ...(customerRealName    ? { customer_real_name: customerRealName }  : {}),
+      // T-20260713-foot-INGEST-NAME-OVERWRITE-GUARD: 기존 고객 name no-touch(②) 시 push 명 유실 방지 —
+      //   우선순위: 명시 customer_real_name/동행명(customerRealName) → 없으면 no-touch push 명(pushNameSnapshot).
+      ...((customerRealName ?? pushNameSnapshot) ? { customer_real_name: (customerRealName ?? pushNameSnapshot) } : {}),
       // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모(문제성발톱 등) 착지.
       //   ★ 이 신규 INSERT 경로가 첫 push(문제성발톱 선택→풋 예약상세 간략메모)의 실 write-path.
       //     brief_note = 旣존 컬럼(TEXT NULL). non-empty만 삽입 → NULL/미동봉 회귀 0. (RPC 라인과 정합.)
