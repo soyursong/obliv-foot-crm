@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 qa_result: pass
-deploy_commit: c4c90f091020
+deploy_commit: fecb5101d309
 deployed_at: n/a (NOT yet deployed)
 bundle_hash: n/a (NOT yet deployed)
 summary: "접수 상세창(CheckInDetailSheet) '체크인 삭제(관리자)'가 check_ins row만 지우고 원본 예약의 상태 역전이를 누락 → 예약이 'checked_in'에 묶여 재체크인 불가 + 통합시간표·대시보드에서 예약 카드 소실. RC: '체크인 취소'(T-20260611-CHECKIN-CANCEL-RENAME-RESTORE)는 예약을 'confirmed'로 되돌리는데 '삭제' 경로만 이 역연산이 빠져 삭제 vs 취소 동작이 갈림(현장 스레드 진단 '삭제 vs 취소 경로 차이'와 일치). 수정(FE-only): deleteCheckIn이 checkIn.reservation_id의 예약을 'confirmed'로 복구. FE 원자성(saga) — 예약 복구를 먼저 커밋 → 체크인 삭제 → 삭제 실패 시 예약을 'checked_in'으로 보상 롤백. 멱등 가드(.eq('status','checked_in'))로 이미 다른 상태면 무변경. 신규 컬럼·enum 없음(기존 status 값 재사용), DB 스키마 변경 없음. 빌드 OK. E2E: 정적 불변식 가드(항상 실행, 삭제↔취소 재분기 방지) PASS + 시나리오3(삭제→예약복구→재체크인) seed 기반 skip-tolerant. 인접 회귀: checkin-flow 창건 테스트 실패는 clean HEAD에서도 동일(빈 test-DB 환경 이슈, 본 변경 무관 확인)."
