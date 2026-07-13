@@ -8,7 +8,8 @@
  *
  * AC-1: [차트 코드+진료비 산정] 한 줄 헤더(pmw-feeitem-toggle)가 컴팩트하게 노출되고,
  *       '큰 블록'이 아님 — 기본 접힘 상태에서 수가항목 편집 리스트(pricing-list)는 숨김.
- * AC-2: 컴팩트 행이 하단 가로 zone(코드 그리드=초록)보다 "위(상단 경계)"에 위치(세로 스택).
+ * AC-2: 세로 스택 라이브 순서 = [초록 코드 그리드] → [컴팩트 feeitem-row] → [파란 settle-lane].
+ *        (권위 spec T-20260713-…LEFTSPLIT S1 확정 순서와 일치 — feeRow 는 코드 그리드 "아래".)
  * AC-3: 접힘(기본)일 때 세로 점유가 작음(컴팩트) — 펼침 토글 클릭 시 수가항목 편집 UI 노출/재접힘.
  * AC-4: 모달 총 가로폭 불변 — 컴팩트 행이 모달 폭을 넘지 않고(좁은 화면 80% 축소 포함) 가로 오버플로 없음.
  * AC-5: 초록/파란/Zone3 위치 유지 + 수가항목 기능(펼침→코드추가→합계→저장→수납) 회귀 없음.
@@ -58,23 +59,32 @@ test.describe('T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (REOPEN) — 차
     await expect(dialog.locator('[data-testid="pricing-list"]')).toHaveCount(0);
   });
 
-  // ── AC-2: 컴팩트 행이 코드 그리드(초록)보다 위(상단 경계) ──
-  test('AC-2: 컴팩트 행이 하단 코드 그리드보다 위(세로 스택 상단 경계)', async ({ page }) => {
+  // ── AC-2: 라이브 세로 스택 순서 = 초록 코드 그리드 → 컴팩트 feeitem-row → 파란 settle-lane ──
+  //   (권위 spec T-20260713-…LEFTSPLIT S1 과 동일 순서: feeRow 는 코드 그리드 "아래" / settle "위")
+  test('AC-2: 컴팩트 행이 코드 그리드 아래 + settle-lane 위(라이브 세로 스택 순서)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
 
     const dialog = await openPaymentMiniWindow(page);
     if (!dialog) { test.skip(); return; }
 
-    const feeRow = dialog.locator('[data-testid="pmw-feeitem-row"]');
     const codeGrid = dialog.locator('[data-testid="pmw-code-grid"]');
-    await expect(feeRow).toBeVisible();
+    const feeRow = dialog.locator('[data-testid="pmw-feeitem-row"]');
+    const settle = dialog.locator('[data-testid="pmw-settle-lane"]');
     await expect(codeGrid).toBeVisible();
+    await expect(feeRow).toBeVisible();
 
-    const feeBox = await feeRow.boundingBox();
     const codeBox = await codeGrid.boundingBox();
-    if (feeBox && codeBox) {
-      // 컴팩트 행 하단 ≤ 코드 그리드 상단(+오차) → 상단 경계에 위치
-      expect(feeBox.y + feeBox.height).toBeLessThanOrEqual(codeBox.y + 8);
+    const feeBox = await feeRow.boundingBox();
+    if (codeBox && feeBox) {
+      // 컴팩트 행 top 이 코드 그리드 top 아래 → "초록 아래"
+      expect(feeBox.y).toBeGreaterThan(codeBox.y + 8);
+    }
+    // settle-lane 이 있으면 컴팩트 행보다 아래(= "파란 위") 검증
+    if ((await settle.count()) > 0) {
+      const settleBox = await settle.boundingBox();
+      if (feeBox && settleBox) {
+        expect(feeBox.y).toBeLessThan(settleBox.y);
+      }
     }
   });
 
