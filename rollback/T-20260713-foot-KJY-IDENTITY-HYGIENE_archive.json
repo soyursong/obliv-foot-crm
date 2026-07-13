@@ -1,0 +1,208 @@
+{
+  "ticket": "T-20260713-foot-KJY-IDENTITY-HYGIENE",
+  "captured_at": "2026-07-13T15:39:35.204Z",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "gmail_id": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+  "gmail_email": "faceofangel9999@gmail.com",
+  "canon_id": "b36e74a3-be1f-4b61-aeb4-9150affe2c05",
+  "canon_email": "faceofangel9999@oblivseoul.kr",
+  "freeze_ids": [
+    "f7f8a5c5-a10d-4ada-8e11-fa9745ca582a",
+    "593907ef-ef9b-4bf0-81d6-2669daee02be",
+    "bf4cf656-708b-4cbd-9aaa-a50f8144c409",
+    "66c7fa60-c44b-4c78-9cf0-8c2772c2d370",
+    "794c6b62-222f-448b-a438-9086ac6411f0",
+    "9f93e062-b6a7-4fba-b9f3-175d0dd620c8",
+    "1f7bd58b-cb61-4766-96f5-5ae446ff8916",
+    "2c75fca0-9afb-4323-b610-1fe87157961e",
+    "05cca3ac-7785-474e-b302-c466c5e18623"
+  ],
+  "reparent_snapshot": [
+    {
+      "id": "f7f8a5c5-a10d-4ada-8e11-fa9745ca582a",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-06-29 07:14:01.91529+00",
+      "action_type": "manual",
+      "role": "consult",
+      "axis": "워크인",
+      "check_in_id": "358ed1f1-824a-4c84-a4dc-1383959c0fb4",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "593907ef-ef9b-4bf0-81d6-2669daee02be",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-06-29 08:08:32.4964+00",
+      "action_type": "auto_assign",
+      "role": "therapy",
+      "axis": "main",
+      "check_in_id": "358ed1f1-824a-4c84-a4dc-1383959c0fb4",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "bf4cf656-708b-4cbd-9aaa-a50f8144c409",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-06-30 07:22:01.309286+00",
+      "action_type": "auto_assign",
+      "role": "therapy",
+      "axis": "main",
+      "check_in_id": "5d4d82b4-6a00-42e8-89fa-915b0233269c",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "66c7fa60-c44b-4c78-9cf0-8c2772c2d370",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-07-02 02:07:55.609363+00",
+      "action_type": "manual",
+      "role": "consult",
+      "axis": "워크인",
+      "check_in_id": "74b174d0-3b8c-4bb1-a4db-e3a55cca1e89",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "794c6b62-222f-448b-a438-9086ac6411f0",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-07-02 07:09:00.499855+00",
+      "action_type": "manual",
+      "role": "consult",
+      "axis": "워크인",
+      "check_in_id": "01baf9ea-23e4-4e3f-9ec2-288638eece4b",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "9f93e062-b6a7-4fba-b9f3-175d0dd620c8",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-07-04 02:07:35.967349+00",
+      "action_type": "auto_assign",
+      "role": "therapy",
+      "axis": "main",
+      "check_in_id": "f75822bf-5b2f-4231-9abd-3f7fa318aaf7",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "1f7bd58b-cb61-4766-96f5-5ae446ff8916",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-07-09 04:39:24.142106+00",
+      "action_type": "auto_assign",
+      "role": "therapy",
+      "axis": "main",
+      "check_in_id": "c7cbb43d-009d-4aff-b6cb-4aae77f3171f",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "2c75fca0-9afb-4323-b610-1fe87157961e",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-07-10 07:16:33.465268+00",
+      "action_type": "manual",
+      "role": "consult",
+      "axis": "TM",
+      "check_in_id": "99257988-2e9a-42f8-83a5-cf144b2345fc",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "05cca3ac-7785-474e-b302-c466c5e18623",
+      "created_by": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "created_at": "2026-07-10 08:58:15.759216+00",
+      "action_type": "manual",
+      "role": "consult",
+      "axis": "returning",
+      "check_in_id": "1c2117de-b091-4227-b8a5-a167c1d865b7",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    }
+  ],
+  "cascade_to_be_deleted": {
+    "auth.identities": [
+      {
+        "id": "d6cf40b0-855d-480e-b3d6-f7485b28ec4f",
+        "user_id": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+        "provider": "email",
+        "provider_id": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+        "created_at": "2026-06-09 01:11:35.649148+00"
+      }
+    ],
+    "public.user_profiles": [
+      {
+        "id": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+        "role": "consultant",
+        "approved": true,
+        "active": false,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "created_at": "2026-06-09 01:11:35.641914+00"
+      }
+    ]
+  },
+  "active_source": {
+    "caveat": "raw_app_meta_data.active=null (두 계정 모두) → active flag 아닌 last_sign_in 로 정본판정",
+    "gmail": {
+      "last_sign_in_at": "2026-07-13 04:28:10.629268+00",
+      "meta_active": null
+    },
+    "canon": {
+      "last_sign_in_at": "2026-07-13 11:51:54.707629+00",
+      "meta_active": null
+    },
+    "verdict": "정본=b36e74a3(@oblivseoul.kr) — 로그인 정상/실사용. 잉여=a7e2e012(@gmail) 미사용."
+  },
+  "id_email_verify": {
+    "gmail": {
+      "status": 200,
+      "id": "a7e2e012-735c-4ecc-8f54-c7c5c545bddd",
+      "email": "faceofangel9999@gmail.com"
+    },
+    "canon": {
+      "status": 200,
+      "id": "b36e74a3-be1f-4b61-aeb4-9150affe2c05",
+      "email": "faceofangel9999@oblivseoul.kr"
+    }
+  },
+  "blocking_fk_preview": [
+    {
+      "table": "public.therapist_capabilities",
+      "col": "created_by",
+      "count": 0,
+      "conname": "therapist_capabilities_created_by_fkey"
+    },
+    {
+      "table": "public.check_in_room_logs",
+      "col": "logged_by",
+      "count": 0,
+      "conname": "check_in_room_logs_logged_by_fkey"
+    },
+    {
+      "table": "public.assignment_actions",
+      "col": "created_by",
+      "count": 9,
+      "conname": "assignment_actions_created_by_fkey"
+    },
+    {
+      "table": "public.patient_file_records",
+      "col": "uploaded_by",
+      "count": 0,
+      "conname": "patient_file_records_uploaded_by_fkey"
+    },
+    {
+      "table": "public.staff_temp_off",
+      "col": "created_by",
+      "count": 0,
+      "conname": "staff_temp_off_created_by_fkey"
+    },
+    {
+      "table": "public.patient_past_history",
+      "col": "confirmed_by",
+      "count": 0,
+      "conname": "patient_past_history_confirmed_by_fkey"
+    },
+    {
+      "table": "public.payment_reconciliation_log",
+      "col": "operator_id",
+      "count": 0,
+      "conname": "payment_reconciliation_log_operator_id_fkey"
+    },
+    {
+      "table": "public.chart_treatment_requests",
+      "col": "created_by",
+      "count": 0,
+      "conname": "chart_treatment_requests_created_by_fkey"
+    }
+  ],
+  "note": "hard-DELETE(gmail)는 비가역. reparent는 rollback SQL로 되돌림 가능(삭제 前 한정). CASCADE 2행(identities/user_profiles)은 삭제 시 소실 — auth 재생성 대상 아님(정본 b36e74a3 사용)."
+}
