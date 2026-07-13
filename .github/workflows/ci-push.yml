@@ -105,7 +105,13 @@ jobs:
     name: "🗂️ Chart Open Gate"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build]
+    # T-20260713-foot-CI-E2E-RED-DIAGNOSE: critical-flow 와 chart-open-gate 는
+    #   동일 shared-DB(rxlomoozakkjesdqjtvd)에 [QA-FIXTURE] 를 write 하고, global-setup/teardown
+    #   의 cleanupAll() 이 마커로 전수 스윕한다. 두 job 이 동시(needs:[build] 병렬) 실행되면
+    #   한 job 의 스윕이 다른 job 의 in-flight 시드(예: G3/G4 어제 예약)를 삭제 → 카드 소멸 →
+    #   resvStatus=null(no_show 아님) → skip 미발동 → 교대성 하드 RED.
+    #   → chart-open-gate 를 critical-flow 뒤로 직렬화해 동시 스윕 레이스를 원천 차단.
+    needs: [build, critical-flow]
 
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
