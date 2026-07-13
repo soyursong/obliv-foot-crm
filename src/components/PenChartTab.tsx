@@ -1012,6 +1012,10 @@ export function PenChartTab({
   const hasDrawingRef = useRef(false);
   // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: draw canvas ctx 캐싱 — onPointerMove마다 getContext 제거
   const drawCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  // T-20260713-foot-PENCHART-EDITMODE-WHITETOOL-DISABLED [REOPEN R1]: bg canvas ctx 캐싱.
+  //   수정 재진입에서 '지우개 대상레이어 복원' — 저장본 draw-seed 성패와 무관하게 지우개가 확실히 지우도록,
+  //   edit 모드 지우개가 draw(clearRect) + bg(흰색 덮기) 를 동시에 지운다(hot-path getContext 제거용 캐시).
+  const bgCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   // ── draw(overlay) 캔버스 DPR 단일소스 — REOPEN#2(필기불능 P0 회귀 복구)에서 항상 DRAW_DPR(2) 고정 ──────
   //   getPos/onPointerDown/handleNativePointerMove 3개 좌표 스케일 지점이 이 단일 ref 를 사용 → 좌표 어긋남 차단.
   //   REOPEN#1의 ?penchart_lite(1x) 레버는 필기불능 회귀(43c2c9a field-soak FAIL)로 제거 → 값은 항상 DRAW_DPR.
@@ -1329,6 +1333,33 @@ export function PenChartTab({
    * deps = [] (stable) — 모든 state는 *Ref.current 경유로 읽음.
    * initDrawCanvas에서 canvas에 1회 등록 (initCanvas 재호출 시 remove→add로 중복 방지).
    */
+  // ── T-20260713-foot-PENCHART-EDITMODE-WHITETOOL-DISABLED [REOPEN R1]: 수정 재진입 지우개 대상레이어 복원 ──
+  //   [RC — diagnose-first, 코드 직독]
+  //     기존(9f2affd6)은 수정 재진입 시 저장본 PNG 를 bg→draw 로 '1회 seed' 해 지우개(draw clearRect)·화이트
+  //     (draw source-atop)가 draw 픽셀 위에서 동작하게 했다. 그러나 이 seed 는 bg img.onload 최말단(수많은
+  //     조기-return 가드: naturalWidth=0 / ctx-lost / decode throw / stale / 타일 stale / 치수가드 / try-catch)
+  //     안에 있고, 200ms init + 재렌더 레이스에 노출된다. seed 가 실기기(갤탭)에서 한 번이라도 스킵되면
+  //     저장본은 bg 에만 남고 draw 는 투명 → clearRect(draw) 가 지울 픽셀이 없어 '지우개 무동작' 재현.
+  //   [수정 — 지우개 '대상레이어'를 합성본이 실제 존재하는 레이어까지 확장(seed 성패 비의존)]
+  //     edit 모드에서만 지우개가 draw(clearRect) + bg(흰색 덮기) 를 동시 처리한다.
+  //       · seed 성공(bg=흰색): bg 흰색 덮기는 무해, clearRect(draw) 가 저장본 픽셀을 지워 흰 bg 노출 → 지워짐.
+  //       · seed 실패(bg=합성본): clearRect(draw)=무동작이지만 bg 흰색 덮기가 기존 필기/양식을 덮음 → 지워짐.
+  //     저장 합성(handleDrawSave: bg + draw)도 두 경우 모두 흰 영역이 보존돼 정합.
+  //   [범위 가드] 신규작성(editingChart 없음)에선 bg=빈 양식 read-only 이므로 절대 손대지 않음(양식 보존).
+  //     화이트 v3 source-atop 코드경로는 전혀 손대지 않음 → semantics 불변(d8445146 LOCK 유지).
+  const eraseBgIfEdit = useCallback((x: number, y: number, sz: number) => {
+    if (!editingChartRef.current) return; // 신규작성은 bg(빈 양식) read-only — 미관여
+    const bctx = bgCtxRef.current;
+    if (!bctx || bctx.isContextLost()) return;
+    // bg ctx 는 draw ctx 와 동일 DRAW_DPR 스케일(logical 좌표계 일치) → clearRect 와 동일 논리 rect 를 흰색으로 덮음.
+    bctx.save();
+    bctx.globalCompositeOperation = 'source-over';
+    bctx.globalAlpha = 1;
+    bctx.fillStyle = '#ffffff';
+    bctx.fillRect(x - sz, y - sz, sz * 2, sz * 2);
+    bctx.restore();
+  }, []);
+
   const handleNativePointerMove = useCallback((e: PointerEvent) => {
     if (e.pointerType === 'touch') return;
     const tool = activeToolRef.current;
@@ -1478,9 +1509,11 @@ export function PenChartTab({
         const last = lastPosRef.current ?? pos;
 
         if (tool === 'eraser') {
-          // 펜/형광펜(draw 레이어)만 clearRect → bg(양식)·상용구 보존.
+          // 펜/형광펜(draw 레이어) clearRect → bg(양식)·상용구 보존.
           // T-20260622 AC-2: 텍스트 placedItem 삭제는 onPointerUp hit-test에서 1회(경로 누적).
           ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
+          // T-20260713 [REOPEN R1]: edit 모드는 bg 합성본도 흰색으로 덮어 seed 성패 비의존 확실 삭제(신규작성 무영향).
+          eraseBgIfEdit(pos.x, pos.y, eraserSz);
           eraserStrokePathRef.current.push(pos);
         } else if (tool === 'white') {
           ctx.beginPath();
@@ -1553,6 +1586,9 @@ export function PenChartTab({
     canvas.style.width  = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
     ctx.scale(DRAW_DPR, DRAW_DPR);
+    // T-20260713-foot-PENCHART-EDITMODE-WHITETOOL-DISABLED [REOPEN R1]: bg ctx 캐싱(logical=CANVAS_W×canvasH,
+    //   draw ctx 와 동일 DRAW_DPR 스케일) → edit 모드 지우개가 hot-path getContext 없이 bg 를 흰색으로 덮을 수 있음.
+    bgCtxRef.current = ctx;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CANVAS_W, canvasH);   // 이미지 로드 전 흰 배경 표시
 
@@ -2407,10 +2443,12 @@ export function PenChartTab({
     if (!ctx) return;
 
     if (activeTool === 'eraser') {
-      // 펜/형광펜(draw 레이어)만 clearRect → bg(양식)·상용구 보존.
+      // 펜/형광펜(draw 레이어) clearRect → bg(양식)·상용구 보존.
       // T-20260622 AC-2: 텍스트 placedItem 삭제는 onPointerUp hit-test(시작점부터 경로 누적).
       const sz = penSize * 4;
       ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
+      // T-20260713 [REOPEN R1]: edit 모드는 bg 합성본도 흰색으로 덮어 seed 성패 비의존 확실 삭제(신규작성 무영향).
+      eraseBgIfEdit(pos.x, pos.y, sz);
       eraserStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'white') {
       // T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈3: 화이트 시작점(dot) — source-atop 흰 덮기.
