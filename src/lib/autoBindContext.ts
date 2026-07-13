@@ -500,15 +500,37 @@ export async function loadAutoBindContext(
   type ClinicDoctorRow = { id: string; name: string; license_no: string | null; specialist_no: string | null; seal_image_url: string | null; is_default: boolean };
   const clinicDoctors = (clinicDoctorsData ?? []) as ClinicDoctorRow[];
 
+  // ── 치료테이블 지정 진료의 (T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED) ──
+  //   RC: 치료테이블 '진료의' 선택은 check_ins.treating_doctor_id(=clinic_doctors.id)에 저장되나
+  //   (TreatingDoctorSelect → 진료콜 명단·진료환자이력 공용 write), 서류 렌더는 이 필드를 전혀
+  //   읽지 않고 duty_roster/fallback director로만 진료의를 결정해 왔다 → 지정 의사가 서류에 미반영
+  //   (저장 O · 렌더 전달 X, 처음부터 결선 누락). 렌더 소스를 저장 소스에 결선한다.
+  //   checkIn 객체에 값이 안 실려 오는 호출부(PATH-4 PaymentMiniWindow 등) 대비 단일 컬럼 DB 재조회.
+  let treatingDoctorId: string | null = (checkIn.treating_doctor_id ?? null) as string | null;
+  if (treatingDoctorId === null && checkIn.id) {
+    const { data: ciRow } = await supabase
+      .from('check_ins')
+      .select('treating_doctor_id')
+      .eq('id', checkIn.id)
+      .maybeSingle();
+    treatingDoctorId = (ciRow?.treating_doctor_id as string | null) ?? null;
+  }
+  const treatingDoctor =
+    treatingDoctorId ? clinicDoctors.find((d) => d.id === treatingDoctorId) ?? null : null;
+
   // ── 진료 의사 결정 (T-20260502-foot-DUTY-ROSTER) ──
-  // 1순위: 외부에서 전달된 이름 (이미 결정됨)
-  // 2순위: 당일 duty_roster 1명이면 자동
-  // 3순위: 첫 번째 활성 director (fallback)
+  // 1순위: 외부 명시 override (호출부 UI 선택)
+  // 2순위: 치료테이블 지정 진료의 (T-20260713) — 명시 override 없을 때
+  // 3순위: 당일 duty_roster 1명이면 자동
+  // 4순위: 첫 번째 활성 director (fallback)
   let doctorName: string | null = null;
 
   if (doctorNameOverride !== undefined) {
     // 빈 문자열('')이면 미선택 상태 유지, 비어있지 않으면 사용
     doctorName = doctorNameOverride || null;
+  } else if (treatingDoctor?.name) {
+    // 치료테이블에서 지정한 진료의를 서류 진료의로 사용
+    doctorName = treatingDoctor.name;
   } else {
     // duty_roster 조회
     const visitDateStr = checkIn.checked_in_at
@@ -543,6 +565,11 @@ export async function loadAutoBindContext(
   if (clinicDoctors.length > 0) {
     if (clinicDoctorId) {
       clinicDoctor = clinicDoctors.find((d) => d.id === clinicDoctorId) ?? null;
+    }
+    // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 명시 clinicDoctorId/override 없으면 치료테이블
+    //   지정 진료의로 상세(면허번호·직인)까지 일치시킨다(이름-매칭 동명이인 오결선 방지).
+    if (!clinicDoctor && clinicDoctorId === undefined && doctorNameOverride === undefined && treatingDoctor) {
+      clinicDoctor = treatingDoctor;
     }
     if (!clinicDoctor && doctorName) {
       clinicDoctor = clinicDoctors.find((d) => d.name === doctorName) ?? null;
@@ -588,4 +615,33 @@ export async function loadAutoBindContext(
     diagCodes,
     insuranceInfo,
   });
+}
+
+/**
+ * T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED:
+ * 치료테이블에서 지정한 진료의(check_ins.treating_doctor_id → clinic_doctors.name)를 반환.
+ * DocumentPrintPanel '진료 원장님' 드롭다운의 기본 선택을 지정 진료의로 맞추는 데 사용한다
+ * (사용자는 여전히 드롭다운으로 변경 가능 — 명시 선택이 최우선).
+ * 미지정/미연결(clinic_doctors 매칭 실패) 시 null → 호출부는 기존 duty 기본값 유지(회귀 없음).
+ */
+export async function loadTreatingDoctorName(
+  checkIn: Pick<CheckIn, 'id' | 'treating_doctor_id'>,
+): Promise<string | null> {
+  let treatingDoctorId: string | null = (checkIn.treating_doctor_id ?? null) as string | null;
+  if (treatingDoctorId === null && checkIn.id) {
+    const { data: ciRow } = await supabase
+      .from('check_ins')
+      .select('treating_doctor_id')
+      .eq('id', checkIn.id)
+      .maybeSingle();
+    treatingDoctorId = (ciRow?.treating_doctor_id as string | null) ?? null;
+  }
+  if (!treatingDoctorId) return null;
+  const { data: cd } = await supabase
+    .from('clinic_doctors')
+    .select('name')
+    .eq('id', treatingDoctorId)
+    .maybeSingle();
+  const name = ((cd?.name as string | null) ?? '').trim();
+  return name || null;
 }

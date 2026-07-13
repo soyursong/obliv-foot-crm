@@ -98,7 +98,7 @@ import {
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
-import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+import { loadAutoBindContext, applyBillingFallback, loadTreatingDoctorName } from '@/lib/autoBindContext';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
 // T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과(KOH)·투약내용(처방약) 자동 로드.
@@ -427,6 +427,14 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   //   선택값(selectedDoctorName)은 HTML 출력경로 2곳(일괄출력 buildHtmlPageHtml / 영수증 재발급)의
   //   의사 성명(+도장) 바인딩에 공통 반영된다. 원장 4분 진료체계 도입 전 조기 적용.
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 치료테이블에서 지정한 진료의(기본 서명자).
+  //   지정 진료의를 드롭다운 기본 선택으로 → 서류 출력에 자동 반영(사용자는 여전히 변경 가능).
+  const [treatingDoctorName, setTreatingDoctorName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadTreatingDoctorName(checkIn).then((n) => { if (!cancelled) setTreatingDoctorName(n); });
+    return () => { cancelled = true; };
+  }, [checkIn.id, checkIn.treating_doctor_id]);
 
   // ── 진료비 영수증 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) ──
   const [invoiceDocs, setInvoiceDocs] = useState<InvoiceDoc[]>([]);
@@ -490,21 +498,30 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   //   섞이면 doctorOptions[0].name=null → selectedDoctorName=null → effectiveDoctorName.trim() 에서
   //   TypeError(null.trim) → DocumentPrintPanel 렌더 crash → 고객차트 닫기 시 하위 Outlet 에러바운더리.
   //   이름 없는 원장은 서류 서명 주체가 될 수 없으므로 옵션에서 제외 + string 강제(null 유입 원천 차단).
-  const doctorOptions: { id: string; name: string; roster_type?: string }[] = (
+  const baseDoctorOptions: { id: string; name: string; roster_type?: string }[] = (
     dutyDoctors.length > 0
       ? dutyDoctors.map((d) => ({ id: d.id, name: (d.name ?? '').trim(), roster_type: d.roster_type }))
       : masterDoctors.map((d) => ({ id: d.id, name: (d.name ?? '').trim() }))
   ).filter((o) => o.name.length > 0);
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 치료테이블 지정 진료의가 근무/마스터 목록에 없어도
+  //   서명자로 선택 가능하도록 옵션에 보강(additive) — 지정 의사가 그날 근무표에 없어도 서류엔 반영.
+  const doctorOptions: { id: string; name: string; roster_type?: string }[] =
+    treatingDoctorName && !baseDoctorOptions.some((o) => o.name === treatingDoctorName)
+      ? [{ id: `treating:${treatingDoctorName}`, name: treatingDoctorName }, ...baseDoctorOptions]
+      : baseDoctorOptions;
   const doctorOptionsKey = doctorOptions.map((o) => o.name).join('|');
 
-  // 옵션 로드/변경 시 기본 선택: 현재 선택이 옵션에 없으면 첫 번째로. 옵션 0명이면 미선택('').
+  // 옵션 로드/변경 시 기본 선택: 현재 선택이 옵션에 없으면 → 치료테이블 지정 진료의 우선, 없으면 첫 번째.
+  //   옵션 0명이면 미선택(''). (T-20260713: 지정 진료의 기본화. 사용자 명시 선택은 보존.)
   useEffect(() => {
     if (doctorOptions.length === 0) { setSelectedDoctorName(''); return; }
-    setSelectedDoctorName((prev) =>
-      prev && doctorOptions.some((o) => o.name === prev) ? prev : doctorOptions[0].name,
-    );
+    setSelectedDoctorName((prev) => {
+      if (prev && doctorOptions.some((o) => o.name === prev)) return prev;
+      if (treatingDoctorName && doctorOptions.some((o) => o.name === treatingDoctorName)) return treatingDoctorName;
+      return doctorOptions[0].name;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doctorOptionsKey]);
+  }, [doctorOptionsKey, treatingDoctorName]);
 
   // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 출력 직전 원장 확정 가드.
   //   미선택/목록 0명이면 빈·잘못된 원장명이 의료·법적 서류에 찍히지 않도록 출력을 차단한다.
@@ -1811,6 +1828,23 @@ function IssueDialog({
   const [editOverrides, setEditOverrides] = useState<Record<string, string>>({});
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 치료테이블 지정 진료의 — 복수 근무의 UI 기본값에 사용.
+  const [treatingDoctorName, setTreatingDoctorName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadTreatingDoctorName(checkIn).then((n) => { if (!cancelled) setTreatingDoctorName(n); });
+    return () => { cancelled = true; };
+  }, [checkIn.id, checkIn.treating_doctor_id]);
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: treatingDoctorName 비동기 로드가 open 이후 완료된 경우,
+  //   복수 근무의 기본 선택을 지정 진료의로 승격. 사용자가 이미 다른 근무의를 고른 경우(≠자동기본)는 보존.
+  useEffect(() => {
+    if (!open || dutyDoctors.length <= 1 || !treatingDoctorName) return;
+    if (!dutyDoctors.some((d) => (d.name ?? '') === treatingDoctorName)) return;
+    setSelectedDoctorName((prev) =>
+      (!prev || prev === (dutyDoctors[0].name ?? '')) ? treatingDoctorName : prev,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, treatingDoctorName, dutyDoctors]);
   // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 다중 의사 선택
   const [clinicDoctors, setClinicDoctors] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
   const [selectedClinicDoctorId, setSelectedClinicDoctorId] = useState<string>('');
@@ -1878,19 +1912,23 @@ function IssueDialog({
     setBillingReady(false);
 
     // 원장님 이름 결정
-    // - 1명: 자동 세팅 (이미 loadAutoBindContext에서 처리됨)
-    // - 2명 이상: 빈 채로 — 아래 selectedDoctorName으로 별도 처리
-    // - 0명: loadAutoBindContext fallback 처리
+    // - 0/1명: override 미전달(undefined) → loadAutoBindContext에 위임
+    //   → 치료테이블 지정 진료의 > duty_roster > fallback director 순으로 결선(T-20260713).
+    //   (지정 진료의 없으면 기존과 동일하게 duty[1명]/fallback으로 귀결 — 회귀 없음.)
+    // - 2명 이상: 빈 채로 — 아래 selectedDoctorName(UI 선택, 기본=지정 진료의)으로 별도 주입
     const resolvedDoctorName =
-      dutyDoctors.length === 1
-        ? dutyDoctors[0].name
-        : dutyDoctors.length > 1
-          ? ''  // 복수: UI에서 선택
-          : undefined; // 없음: loadAutoBindContext 내부 fallback
+      dutyDoctors.length > 1
+        ? ''  // 복수: UI에서 선택
+        : undefined; // 0/1명: loadAutoBindContext 위임(치료테이블 지정 진료의 우선)
 
     if (dutyDoctors.length > 1) {
       // T-20260709-foot-CUSTCHART-CLOSE-BTN-ERROR: name NULL 방어(?? '') — null 상태 유입 차단.
-      setSelectedDoctorName(dutyDoctors[0].name ?? ''); // 첫 번째 기본 선택
+      // T-20260713: 치료테이블 지정 진료의가 근무 목록에 있으면 그것을 기본 선택으로(없으면 첫 번째).
+      const preferred =
+        treatingDoctorName && dutyDoctors.some((d) => (d.name ?? '') === treatingDoctorName)
+          ? treatingDoctorName
+          : (dutyDoctors[0].name ?? '');
+      setSelectedDoctorName(preferred);
     }
 
     // === 콘텐츠 핵심 4소스 (Promise.all 게이트) ===
