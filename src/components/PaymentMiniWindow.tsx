@@ -2140,17 +2140,136 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             태블릿/PC(≥sm): 기존 3열 가로 레이아웃 */}
         {/* FEE-ITEM-SCROLL: 520→600px — 수가 항목 5건 노출 보장 */}
         {/* ═══════════════════════════════════════════════════════════════════════
-             T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (REOPEN / 현장 재지시 2026-07-08 김주연 총괄)
-             "빨간박스 부분 왜 위로 가있어!! 초록색+파란색 사이로 한 줄!!"
-             → ROW-SPLIT 대원칙(모달 총 가로폭 불변, 가로 분리 금지)은 유지하되,
-               [차트 코드+진료비 산정]을 '맨 위 큰 블록'이 아니라 하단영역 상단경계
-               (초록=시술·파란=수납 위)의 컴팩트 한 줄(기본 접힘) + 펼침/접힘 토글로 축소.
-             - 접힘(기본): 한 줄 요약(서류코드 건수·수가 건수·합계)만 노출 → 세로 점유 최소화.
-             - 펼침: 서류코드 + 세트코드 + 수가항목 편집 UI 전량 보존(추가·삭제·금액·급여표기·세트·DnD·스크롤 회귀 없음).
-             - 가로를 나누지 않으므로("가로 길어짐" 회귀) 수가항목 컬럼 폭 압축·줄바꿈이 원천적으로 발생하지 않음.
-             - 초록/파란/Zone3 위치·동작 불변. FEE-ITEM-SCROLL: 펼침 컨테이너 sm:max-h-[280px] + overflow-y-auto. */}
+             T-20260713-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (P0 HOTFIX · 3연속 미착지 후 착지 / 색박스 좌표 근거)
+             현장 확정(스레드 ts=1783652657, 김주연 총괄): "초록 구역(시술 선택) 아래 / 파란 구역(수납 금액) 위 — 그 사이 컴팩트 한 줄".
+             ◆ 근본원인(b276877b): [차트코드+진료비 산정]을 컴팩트 토글 한 줄로 만드는 데는 성공했으나, feeitem-row를
+               body flex-col의 첫 자식(하단 band보다 위)에 그대로 둬서 DOM 순서상 여전히 최상단 → "맨 위 큰 블록" 그대로.
+               블록의 내부 렌더(접힘/펼침)만 바꿨고 트리 위치는 안 옮긴 것이 3연속 미착지의 실체(번들/CSS-order 문제 아님).
+             ◆ 수정: feeitem-row를 최상단에서 떼어, band 내부 중앙 세로 스택 [초록 시술그리드] → [컴팩트 한 줄] → [파란 수납]
+               사이로 이동. tabnav(좌)·Zone3(우)는 사이드 열 그대로 유지 → 모달 총 가로폭 불변("가로 길어짐" 회귀 없음).
+             - 접힘(기본): 한 줄 요약(서류코드 건수·수가 건수·합계)만 노출. 펼침: 서류코드·세트코드·수가항목 편집 UI 전량 보존. */}
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto sm:overflow-hidden sm:flex-none sm:h-[600px]">
 
+          {/* ═══ 하단 가로 행: 카테고리 탭 / 코드 그리드 / 세금·합계·수납(기존 폭) / Zone3(기존 폭) ═══ */}
+          <div className="flex flex-col sm:flex-row flex-1 min-h-0 sm:overflow-hidden">
+
+          {/* ── 좌측: 카테고리 탭 (모바일: 가로 상단 탭바 / 데스크탑: 세로 사이드) ── */}
+          <div className="shrink-0 border-b sm:border-b-0 sm:border-r bg-muted/30 flex flex-row sm:flex-col py-0 sm:py-2 sm:w-20 md:w-24 lg:w-28">
+            {TAB_LABELS.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setActiveTab(tab);
+                }}
+                className={cn(
+                  'flex-1 sm:flex-none sm:w-full px-2 sm:px-3 py-2 sm:py-3 text-sm font-medium text-center sm:text-left transition border-b-2 sm:border-b-0 sm:border-l-2 min-h-[44px]',
+                  activeTab === tab
+                    ? 'bg-teal-50 text-teal-700 border-teal-600'
+                    : 'text-muted-foreground border-transparent hover:bg-muted',
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* ═══ 중앙 세로 스택 (T-20260713-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT / P0 HOTFIX · 색박스 좌표 근거)
+              b276877b RC = feeitem-row가 body flex-col의 첫 자식(하단 band보다 위)이라 DOM상 여전히 최상단 → "맨 위 큰 블록".
+              수정: feeitem-row를 최상단에서 떼어 [초록 시술그리드] 아래 · [파란 수납] 위 사이로 이동(중앙 세로 스택).
+              tabnav(좌)·Zone3(우)는 사이드 열 그대로 · 모달 총 가로폭 불변. ═══ */}
+          <div className="flex flex-col min-w-0 min-h-0 flex-1 sm:overflow-hidden">
+
+          {/* ── 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1)
+              T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT: LEFTLANE(dc469694) fee-lane 폭확장 revert.
+              고정폭(sm:w-52 md:w-64 lg:w-80 shrink-0) → sm:flex-1 원복.
+              수가 항목은 상단 독립 행(row-split)으로 분리됨. ── */}
+          <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:flex-1" data-testid="pmw-code-grid">
+            {/* 풋케어 탭: 서브 카테고리 버튼 (순서 편집 토글 제거됨 — PMW-ORDER-REMOVE)
+                T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
+            {activeTab === '풋케어' && (
+              <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center">
+                {FOOTCARE_CATS.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setFootcareCat(cat);
+                    }}
+                    className={cn(
+                      'px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
+                      footcareCat === cat
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'border-input hover:bg-muted',
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* 풋케어: 4열 그리드 — AC-3(코드명/코드번호/수가) + AC-4(스크롤) */}
+            {activeTab === '풋케어' && (
+              <div className="flex-1 overflow-y-auto p-2">
+                {tabServices.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    등록된 코드가 없습니다
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 lg:grid-cols-4 gap-1.5">
+                    {tabServices.map((svc) => (
+                      <button
+                        key={svc.id}
+                        onClick={() => handleSelectService(svc)}
+                        className="aspect-square flex flex-col items-center justify-center rounded border p-1.5 hover:bg-teal-50 hover:border-teal-300 transition-colors text-center"
+                      >
+                        <span className="text-[10px] font-medium leading-tight line-clamp-2">
+                          {svc.name}
+                        </span>
+                        {svc.service_code && (
+                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
+                            {svc.service_code}
+                          </span>
+                        )}
+                        <span className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
+                          {formatAmount(svc.price)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 상병코드 / 처방약 탭: 소형 그리드 (AC-1: 풋케어 스타일 소형화 — 한 눈에 전체 카테고리) */}
+            {(activeTab === '상병코드' || activeTab === '처방약') && (
+              <div className="flex-1 overflow-y-auto p-2">
+                {tabServices.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    등록된 코드가 없습니다
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-1.5">
+                    {tabServices.map((svc) => (
+                      <button
+                        key={svc.id}
+                        onClick={() => handleSelectService(svc)}
+                        className="flex flex-col items-center justify-center rounded border p-1.5 hover:bg-blue-50 hover:border-blue-300 transition-colors text-center min-h-[56px] sm:min-h-[48px]"
+                      >
+                        <span className="text-[10px] font-medium leading-tight line-clamp-2 w-full text-center">
+                          {svc.name}
+                        </span>
+                        {svc.service_code && (
+                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
+                            {svc.service_code}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {/* ═══ 컴팩트 한 줄(row-split): 차트 코드+진료비 산정 — 접힘 기본, 클릭 시 펼침 ═══ */}
           <div className="shrink-0 flex flex-col min-h-0 border-b bg-white" data-testid="pmw-feeitem-row">
             {/* 한 줄 헤더(항상 표시) — 클릭 시 펼침/접힘. 좌측정렬 + 요약 배지 + 토글 화살표 */}
@@ -2367,126 +2486,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             )}
           </div>
 
-          {/* ═══ 하단 가로 행: 카테고리 탭 / 코드 그리드 / 세금·합계·수납(기존 폭) / Zone3(기존 폭) ═══ */}
-          <div className="flex flex-col sm:flex-row flex-1 min-h-0 sm:overflow-hidden">
-
-          {/* ── 좌측: 카테고리 탭 (모바일: 가로 상단 탭바 / 데스크탑: 세로 사이드) ── */}
-          <div className="shrink-0 border-b sm:border-b-0 sm:border-r bg-muted/30 flex flex-row sm:flex-col py-0 sm:py-2 sm:w-20 md:w-24 lg:w-28">
-            {TAB_LABELS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => {
-                  setActiveTab(tab);
-                }}
-                className={cn(
-                  'flex-1 sm:flex-none sm:w-full px-2 sm:px-3 py-2 sm:py-3 text-sm font-medium text-center sm:text-left transition border-b-2 sm:border-b-0 sm:border-l-2 min-h-[44px]',
-                  activeTab === tab
-                    ? 'bg-teal-50 text-teal-700 border-teal-600'
-                    : 'text-muted-foreground border-transparent hover:bg-muted',
-                )}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {/* ── 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1)
-              T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT: LEFTLANE(dc469694) fee-lane 폭확장 revert.
-              고정폭(sm:w-52 md:w-64 lg:w-80 shrink-0) → sm:flex-1 원복.
-              수가 항목은 상단 독립 행(row-split)으로 분리됨. ── */}
-          <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:flex-1" data-testid="pmw-code-grid">
-            {/* 풋케어 탭: 서브 카테고리 버튼 (순서 편집 토글 제거됨 — PMW-ORDER-REMOVE)
-                T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
-            {activeTab === '풋케어' && (
-              <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center">
-                {FOOTCARE_CATS.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      setFootcareCat(cat);
-                    }}
-                    className={cn(
-                      'px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
-                      footcareCat === cat
-                        ? 'bg-teal-600 text-white border-teal-600'
-                        : 'border-input hover:bg-muted',
-                    )}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* 풋케어: 4열 그리드 — AC-3(코드명/코드번호/수가) + AC-4(스크롤) */}
-            {activeTab === '풋케어' && (
-              <div className="flex-1 overflow-y-auto p-2">
-                {tabServices.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">
-                    등록된 코드가 없습니다
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-3 lg:grid-cols-4 gap-1.5">
-                    {tabServices.map((svc) => (
-                      <button
-                        key={svc.id}
-                        onClick={() => handleSelectService(svc)}
-                        className="aspect-square flex flex-col items-center justify-center rounded border p-1.5 hover:bg-teal-50 hover:border-teal-300 transition-colors text-center"
-                      >
-                        <span className="text-[10px] font-medium leading-tight line-clamp-2">
-                          {svc.name}
-                        </span>
-                        {svc.service_code && (
-                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
-                            {svc.service_code}
-                          </span>
-                        )}
-                        <span className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
-                          {formatAmount(svc.price)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 상병코드 / 처방약 탭: 소형 그리드 (AC-1: 풋케어 스타일 소형화 — 한 눈에 전체 카테고리) */}
-            {(activeTab === '상병코드' || activeTab === '처방약') && (
-              <div className="flex-1 overflow-y-auto p-2">
-                {tabServices.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">
-                    등록된 코드가 없습니다
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-1.5">
-                    {tabServices.map((svc) => (
-                      <button
-                        key={svc.id}
-                        onClick={() => handleSelectService(svc)}
-                        className="flex flex-col items-center justify-center rounded border p-1.5 hover:bg-blue-50 hover:border-blue-300 transition-colors text-center min-h-[56px] sm:min-h-[48px]"
-                      >
-                        <span className="text-[10px] font-medium leading-tight line-clamp-2 w-full text-center">
-                          {svc.name}
-                        </span>
-                        {svc.service_code && (
-                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
-                            {svc.service_code}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
             {/* ─────────────────────────────────────────────────────────────────────
                  세금구분 · 합계 · 수납버튼 (Zone2 tail) — 기존 폭 유지 (LEFTLANE 이전 원복폭 sm:w-64 md:w-64 lg:w-72).
                  추출된 상단 수가항목 행의 아래로 흐르며, 계산/수납 로직·동작은 불변.
             ───────────────────────────────────────────────────────────────────── */}
-            <div className="sm:w-64 md:w-64 lg:w-72 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0" data-testid="pmw-settle-lane">
+            <div className="w-full flex-1 min-h-0 border-t flex flex-col sm:min-h-0" data-testid="pmw-settle-lane">
                 {/* 세금 구분 + 합산 (수가 항목 있을 때만) */}
                 {pricingItems.length > 0 && (
                   <div className="border-t px-3 py-2 bg-muted/20 shrink-0 space-y-1">
@@ -2807,6 +2811,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   )}
                 </div>
             </div>
+          </div>
+
 
           {/* ─────────────────────────────────────────────────────────────────────
                BILLING-3ZONE Zone 3: 구매패키지 + 금일 시술내역 + 서류발행
