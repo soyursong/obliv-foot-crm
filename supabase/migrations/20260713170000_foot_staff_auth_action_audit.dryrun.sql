@@ -13,10 +13,11 @@ DO $dry$
 DECLARE
   v_cnt INT; v_bool BOOLEAN; v_txt TEXT; v_id BIGINT; v_outcome TEXT;
 BEGIN
-  -- (1) §8-B 테이블 무영속 생성 (byte-identical shape)
+  -- (1) §8-B v0.4 테이블 무영속 생성 (byte-identical shape, actor_user_id NOT NULL 승격)
   EXECUTE $ddl$
     CREATE TABLE public.staff_auth_action_audit (
       id             bigint      generated always as identity primary key,
+      actor_user_id  uuid        not null,
       actor_staff_id uuid        null,
       target_user_id uuid        not null,
       target_email   text        null,
@@ -43,8 +44,8 @@ BEGIN
     BEGIN
       IF v_actor IS NULL THEN RAISE EXCEPTION 'no actor' USING ERRCODE='28000'; END IF;
       SELECT s.id INTO v_staff_id FROM public.staff s WHERE s.user_id=v_actor LIMIT 1;
-      INSERT INTO public.staff_auth_action_audit(actor_staff_id, target_user_id, target_email, action, outcome, request_meta)
-      VALUES (v_staff_id, p_target_user_id, NULLIF(lower(trim(p_target_email)),''), p_action, 'attempted', p_request_meta)
+      INSERT INTO public.staff_auth_action_audit(actor_user_id, actor_staff_id, target_user_id, target_email, action, outcome, request_meta)
+      VALUES (v_actor, v_staff_id, p_target_user_id, NULLIF(lower(trim(p_target_email)),''), p_action, 'attempted', p_request_meta)
       RETURNING id INTO v_id; RETURN v_id;
     END; $b$
   $fn1$;
@@ -60,18 +61,25 @@ BEGIN
 
   -- ══════════════ AC 검증 ══════════════
 
-  -- AC-1: §8-B 컬럼 byte-identical (7 non-id 컬럼 정확)
+  -- AC-1: §8-B v0.4 컬럼 byte-identical (8 non-id 컬럼 정확 — actor_user_id 승격 포함)
   SELECT count(*) INTO v_cnt FROM information_schema.columns
    WHERE table_schema='public' AND table_name='staff_auth_action_audit'
-     AND column_name IN ('actor_staff_id','target_user_id','target_email','action','outcome','request_meta','occurred_at');
-  IF v_cnt <> 7 THEN RAISE EXCEPTION 'AC-1 FAIL: expected 7 §8-B columns, got %', v_cnt; END IF;
+     AND column_name IN ('actor_user_id','actor_staff_id','target_user_id','target_email','action','outcome','request_meta','occurred_at');
+  IF v_cnt <> 8 THEN RAISE EXCEPTION 'AC-1 FAIL: expected 8 §8-B v0.4 columns, got %', v_cnt; END IF;
   SELECT count(*) INTO v_cnt FROM information_schema.columns
    WHERE table_schema='public' AND table_name='staff_auth_action_audit';
-  IF v_cnt <> 8 THEN RAISE EXCEPTION 'AC-1 FAIL: extra/missing columns (want id+7, got %)', v_cnt; END IF;
+  IF v_cnt <> 9 THEN RAISE EXCEPTION 'AC-1 FAIL: extra/missing columns (want id+8, got %)', v_cnt; END IF;
   -- target_user_id NOT NULL / outcome default attempted 확인
   SELECT is_nullable INTO v_txt FROM information_schema.columns
    WHERE table_schema='public' AND table_name='staff_auth_action_audit' AND column_name='target_user_id';
   IF v_txt <> 'NO' THEN RAISE EXCEPTION 'AC-1 FAIL: target_user_id must be NOT NULL'; END IF;
+  -- AC-1b (v0.4): actor_user_id NOT NULL 승격 확인 / actor_staff_id nullable(best-effort)
+  SELECT is_nullable INTO v_txt FROM information_schema.columns
+   WHERE table_schema='public' AND table_name='staff_auth_action_audit' AND column_name='actor_user_id';
+  IF v_txt <> 'NO' THEN RAISE EXCEPTION 'AC-1 FAIL: actor_user_id must be NOT NULL (v0.4)'; END IF;
+  SELECT is_nullable INTO v_txt FROM information_schema.columns
+   WHERE table_schema='public' AND table_name='staff_auth_action_audit' AND column_name='actor_staff_id';
+  IF v_txt <> 'YES' THEN RAISE EXCEPTION 'AC-1 FAIL: actor_staff_id must stay nullable (best-effort staff-link)'; END IF;
 
   -- AC-3a: RLS enabled+forced
   SELECT relrowsecurity AND relforcerowsecurity INTO v_bool FROM pg_class WHERE oid='public.staff_auth_action_audit'::regclass;
@@ -94,8 +102,9 @@ BEGIN
   END IF;
 
   -- AC-2/AC-4: two-phase attempted→succeeded 흐름 (함수 경유). auth.uid() 없음 → 직접 INSERT 로 시뮬.
-  INSERT INTO public.staff_auth_action_audit(actor_staff_id, target_user_id, target_email, action)
-  VALUES (NULL, gen_random_uuid(), 'someone@clinic.test', 'password_reset') RETURNING id INTO v_id;
+  --   actor_user_id NOT NULL(v0.4) → 시뮬용 uuid 공급(런타임 함수경로는 auth.uid() 서버세팅).
+  INSERT INTO public.staff_auth_action_audit(actor_user_id, actor_staff_id, target_user_id, target_email, action)
+  VALUES (gen_random_uuid(), NULL, gen_random_uuid(), 'someone@clinic.test', 'password_reset') RETURNING id INTO v_id;
   SELECT outcome INTO v_outcome FROM public.staff_auth_action_audit WHERE id=v_id;
   IF v_outcome <> 'attempted' THEN RAISE EXCEPTION 'AC-4 FAIL: default outcome must be attempted, got %', v_outcome; END IF;
   -- stamp 1회 전이
@@ -112,9 +121,18 @@ BEGIN
   EXCEPTION WHEN others THEN v_bool := true; END;
   IF NOT v_bool THEN RAISE EXCEPTION 'AC-4 FAIL: invalid outcome NOT rejected'; END IF;
 
-  -- AC-2: record/stamp 함수 존재 + auth.uid 서버확정
+  -- AC-2: record/stamp 함수 존재 + auth.uid 서버확정 + actor_user_id 세팅(v0.4)
   SELECT pg_get_functiondef('public.record_auth_action(uuid,text,text,jsonb)'::regprocedure) INTO v_txt;
   IF position('auth.uid()' IN v_txt)=0 THEN RAISE EXCEPTION 'AC-2 FAIL: record_auth_action must resolve actor via auth.uid()'; END IF;
+  IF position('actor_user_id' IN v_txt)=0 THEN RAISE EXCEPTION 'AC-2 FAIL: record_auth_action must set actor_user_id (v0.4 권위 actor)'; END IF;
+
+  -- AC-5 (v0.4): actor_user_id NOT NULL 강제 실증 — NULL 삽입 시도가 거부되는지
+  v_bool := false;
+  BEGIN
+    INSERT INTO public.staff_auth_action_audit(actor_user_id, target_user_id, action)
+    VALUES (NULL, gen_random_uuid(), 'ban');
+  EXCEPTION WHEN not_null_violation THEN v_bool := true; END;
+  IF NOT v_bool THEN RAISE EXCEPTION 'AC-5 FAIL: actor_user_id NULL insert NOT rejected (NOT NULL 미강제)'; END IF;
 
   RAISE EXCEPTION 'DRYRUN_SENTINEL_OK' USING ERRCODE = 'P0001';
 END

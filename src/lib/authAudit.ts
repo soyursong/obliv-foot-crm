@@ -1,16 +1,23 @@
 /**
  * authAudit — INV-5 (§3-B) app-level 파괴적 auth op 행위주체(actor) 감사.
- * 표준: cross_crm_auth_identity_standard.md v0.3 §3-B + §8-B. foot = canonical pilot.
+ * 표준: cross_crm_auth_identity_standard.md v0.4 §3-B + §8-B. foot = canonical pilot.
+ *
+ * ── v0.4 승격 ────────────────────────────────────────────────────────────
+ * 권위 actor = actor_user_id(auth.uid(), NOT NULL). actorStaffId 는 best-effort staff-link
+ * (사람 읽을 이름/역할 조인용) 로 격하 — null=정상(admin/manager staff row 미보유), 귀속 공백 아님.
+ * ★진짜 귀속 공백 = actor_user_id 미해소(로그인 세션 없음)뿐 → 그 경우만 fail-loud warn.
  *
  * ── foot 변형 (copy-now 팬아웃 시 필독) ──────────────────────────────────
  * 정본 §3-B 는 서버측 service_role 클라이언트가 `admin.from(...).insert()`(직삽입) +
  * `admin.auth.admin.updateUserById()`(GoTrue HTTP) 하는 패턴을 가정한다. foot 은 브라우저에
  * service_role 를 두지 않으므로(키 노출 금지), 감사 write 를 SECURITY DEFINER RPC
  * (record_auth_action / stamp_auth_action_outcome)로 back 한다. 시그니처·호출규약·best-effort
- * 의미(attempted → succeeded/failed)는 §3-B 그대로 보존한다. actor 는 서버(auth.uid())가 확정.
+ * 의미(attempted → succeeded/failed)는 §3-B 그대로 보존한다.
+ * ★변형 1(DB-RPC): actor_user_id·actor_staff_id 둘 다 함수 내부 auth.uid() 로 서버확정(클라 인자 신뢰
+ *   금지). 그러므로 아래 actorUserId 인자는 "로그인 세션 존재" 신호용(fail-loud) 이고 DB 는 서버값을 쓴다.
  *
  * 호출 규약 (INV-4 + INV-5):
- *   const auditId = await recordAuthAction(supabase, { actorStaffId, targetUserId, targetEmail, action, requestMeta });
+ *   const auditId = await recordAuthAction(supabase, { actorUserId, targetUserId, targetEmail, action, requestMeta });
  *   try   { <destructive op RPC/HTTP>; await stampAuthActionOutcome(supabase, auditId, 'succeeded'); }
  *   catch (e) { await stampAuthActionOutcome(supabase, auditId, 'failed'); throw e; }
  *
@@ -28,8 +35,11 @@ export type AuthAuditAction =
   | 'invite_overwrite';
 
 export interface RecordAuthActionArgs {
-  /** 로그인 staff canonical id (앱 컨텍스트 known값). null 이면 사람-귀속 공백 → fail-loud warn.
-   *  註: DB write 시 actor 는 서버(auth.uid())가 재확정하므로 이 값은 fail-loud 신호용. */
+  /** 권위 actor = auth.uid()(로그인 세션 user id, NOT NULL §8-B v0.4). null 이면 진짜 귀속 공백 → fail-loud warn.
+   *  註: 변형1(DB-RPC)에서 DB 는 서버 auth.uid() 를 쓰므로 이 인자는 "로그인 세션 존재" 신호용. */
+  actorUserId?: string | null;
+  /** best-effort staff-link (사람 읽을 이름/역할 조인용). null=정상(staff row 미보유), 귀속 공백 아님.
+   *  註: 변형1(DB-RPC)에서 DB 가 auth.uid()→staff 로 서버해소하므로 이 인자는 참고용(무시됨). */
   actorStaffId?: string | null;
   /** INV-4 통과한 대상 auth user id */
   targetUserId: string;
@@ -46,11 +56,12 @@ export interface RecordAuthActionArgs {
  */
 export async function recordAuthAction(
   supabase: SupabaseClient,
-  { actorStaffId, targetUserId, targetEmail, action, requestMeta }: RecordAuthActionArgs,
+  { actorUserId, targetUserId, targetEmail, action, requestMeta }: RecordAuthActionArgs,
 ): Promise<number | null> {
-  if (!actorStaffId) {
-    // 사람-귀속 공백 신호 (§3-B fail-loud). op 은 진행하되 관측되게.
-    console.warn('[INV-5] actor unresolved — attribution gap', { action, targetUserId });
+  if (!actorUserId) {
+    // ★진짜 귀속 공백 = 로그인 세션 없음(auth.uid() 미해소). op 은 진행하되 fail-loud 관측 (§3-B v0.4).
+    //   註: actorStaffId=null 은 정상(best-effort staff-link) → warn 하지 않는다.
+    console.warn('[INV-5] actor_user_id unresolved (no session) — attribution gap', { action, targetUserId });
   }
   try {
     const { data, error } = await supabase.rpc('record_auth_action', {

@@ -1,6 +1,7 @@
 /**
  * E2E — T-20260713-foot-AUTH-ACTOR-AUDIT-APPLEVEL  (B) STRUCTURAL, foot canonical pilot
- * 정본: cross_crm_auth_identity_standard.md v0.3 §3-B(client-orchestrated call convention) + §8-B(DDL).
+ * 정본: cross_crm_auth_identity_standard.md v0.4 §3-B(client-orchestrated call convention) + §8-B(DDL).
+ *   v0.4: 권위 actor = actor_user_id(auth.uid(), NOT NULL). actor_staff_id = best-effort staff-link(NULL 정상).
  *
  * ── 설계 (Design B, §3-B client-orchestrated) ─────────────────────────────
  *   foot 의 destructive auth op(admin_reset_user_password / admin_toggle_user_active /
@@ -12,8 +13,8 @@
  *   S1. destructive auth op → actor 기록 (§3-B 시퀀스)
  *       admin 세션으로 record_auth_action → admin_reset_user_password → stamp_auth_action_outcome('succeeded').
  *       staff_auth_action_audit 에 action='password_reset', target=대상, outcome='succeeded' 행 1건.
- *       actor 귀속 = record_auth_action 이 auth.uid() 서버확정으로 staff 매핑(actor_staff_id).
- *       ★ foot 관측: admin 이 staff row 미보유 시 actor_staff_id=NULL(§8-B 설계상 nullable=fail-loud gap).
+ *       ★ v0.4 권위 귀속 = actor_user_id = auth.uid()(NOT NULL, 서버확정). "누가"는 항상 이 값이 짊어짐.
+ *       actor_staff_id = best-effort staff-link: staff 매핑 시 staff.id / 미보유 시 NULL(정상, 귀속 공백 아님).
  *   S2. append-only + admin-read RLS + outcome-stamp 허용경로(1회 UPDATE)
  *       - admin 은 감사행 SELECT 가능 / admin(authenticated) 의 직접 UPDATE·DELETE 거부(append-only)
  *       - 유일 UPDATE 경로 = stamp_auth_action_outcome(attempted→succeeded 1회), 재호출 no-op(불변)
@@ -77,7 +78,7 @@ test.describe('T-20260713 actor audit (foot canonical pilot)', () => {
       // 감사행 확인 (service_role 로 조회 — RLS 무관하게 실재 검증)
       const { data: rows, error: qErr } = await service
         .from('staff_auth_action_audit')
-        .select('actor_staff_id, target_user_id, target_email, action, outcome, occurred_at, request_meta')
+        .select('actor_user_id, actor_staff_id, target_user_id, target_email, action, outcome, occurred_at, request_meta')
         .eq('id', auditId);
       expect(qErr).toBeNull();
       expect(rows!.length).toBe(1);
@@ -89,18 +90,19 @@ test.describe('T-20260713 actor audit (foot canonical pilot)', () => {
       // 비번 평문이 audit 에 적재되지 않았는지 (contract: no plaintext pw)
       expect(JSON.stringify(row.request_meta ?? {})).not.toMatch(/New!|password/i);
 
-      // actor 귀속 검증: record_auth_action 이 auth.uid()→staff 로 서버확정.
-      //   admin 이 staff row 보유 시 actor_staff_id=해당 staff.id / 미보유 시 NULL(§8-B 설계상 gap, fail-loud).
+      // ★ v0.4 권위 귀속 검증: actor_user_id = auth.uid()(NOT NULL, 서버확정). "누가"는 항상 이 값이 짊어짐.
+      expect(row.actor_user_id).toBe(actorId);                      // 권위 actor = 로그인 admin 의 auth.uid()
+      expect(row.actor_user_id).not.toBeNull();
+
+      // actor_staff_id = best-effort staff-link: staff 보유 시 staff.id / 미보유 시 NULL(정상, 귀속 공백 아님).
       const { data: staffRow } = await service.from('staff').select('id').eq('user_id', actorId).maybeSingle();
       if (staffRow?.id) {
-        expect(row.actor_staff_id).toBe(staffRow.id);               // "누가" = 로그인 admin 의 staff id
-        console.log(`[S1] actor_staff_id=${row.actor_staff_id} (staff mapped) → target=${targetId} ✅`);
+        expect(row.actor_staff_id).toBe(staffRow.id);               // 사람 읽을 이름/역할 조인 힌트
+        console.log(`[S1] actor_user_id=${row.actor_user_id} + actor_staff_id=${row.actor_staff_id} (staff mapped) → target=${targetId} ✅`);
       } else {
-        // ★ foot canonical pilot 관측: admin 이 staff 미보유 → actor_staff_id NULL(사람-귀속 공백).
-        //   §8-B 는 nullable+fail-loud 설계. 이 gap 은 planner→DA FOLLOWUP(actor_user_id 승격 제안)의 근거.
+        // v0.4: admin 이 staff 미보유 → actor_staff_id NULL = 정상. 귀속은 actor_user_id 가 이미 짊어짐(공백 아님).
         expect(row.actor_staff_id).toBeNull();
-        console.warn(`[S1][INV-5 gap] actor(auth.uid=${actorId}) has no staff row → actor_staff_id=NULL. `
-          + `op/target/action/outcome 은 기록되나 "누가"는 staff 미매핑. → DA §8-B actor_user_id 승격 검토 근거.`);
+        console.log(`[S1] actor_user_id=${row.actor_user_id} (권위 귀속 확정) / actor_staff_id=NULL (staff 미보유 — 정상). target=${targetId} ✅`);
       }
     } finally {
       // cleanup (service_role 는 append-only REVOKE 대상 아님)
@@ -116,11 +118,12 @@ test.describe('T-20260713 actor audit (foot canonical pilot)', () => {
 
     // seed 1 audit row via service_role (outcome=attempted 로 시작 — stamp 허용경로 검증용)
     const service = svc();
+    const fakeActor = crypto.randomUUID();
     const fakeTarget = crypto.randomUUID();
     const fakeStaff = crypto.randomUUID();
     const { data: ins, error: insErr } = await service
       .from('staff_auth_action_audit')
-      .insert({ actor_staff_id: fakeStaff, target_user_id: fakeTarget, target_email: 'zz@medibuilder.test', action: 'ban', outcome: 'attempted' })
+      .insert({ actor_user_id: fakeActor, actor_staff_id: fakeStaff, target_user_id: fakeTarget, target_email: 'zz@medibuilder.test', action: 'ban', outcome: 'attempted' })
       .select('id').single();
     expect(insErr).toBeNull();
     const auditId = ins!.id;

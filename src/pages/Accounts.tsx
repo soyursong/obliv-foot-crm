@@ -53,8 +53,8 @@ function generateTempPassword(): string {
 
 export default function Accounts() {
   const clinic = useClinic();
-  // INV-5 §3-B: actor 프레즌스 신호(fail-loud). DB write 시 actor 는 서버(auth.uid())가 canonical staff 로
-  //   재확정하므로 이 값은 "로그인 세션이 있는가" 관측 신호용(null=사람-귀속 공백 → warn). staff_id 는 profile 이 안 실음.
+  // INV-5 §3-B(v0.4): 권위 actor=auth.uid()(actor_user_id, NOT NULL). DB write 시 서버가 auth.uid() 로
+  //   재확정하므로 이 값은 "로그인 세션이 있는가" 신호용(null=진짜 귀속 공백 → fail-loud warn).
   const { session } = useAuth();
   const actorUserId = session?.user?.id ?? null;
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -131,7 +131,7 @@ export default function Accounts() {
     if (!window.confirm(`${u.name ?? u.email}의 가입을 거절할까요? 거절하면 승인 대기 목록에서 사라집니다.`)) return;
     // INV-5 §3-B: op 직전 actor stamp → op → outcome 확정 (best-effort, 감사실패≠op차단)
     const auditId = await recordAuthAction(supabase, {
-      actorStaffId: actorUserId,
+      actorUserId,
       targetUserId: u.id,
       targetEmail: u.email,
       action: 'ban',
@@ -152,7 +152,7 @@ export default function Accounts() {
     if (!next && !window.confirm(`${u.name ?? u.email}을(를) ${action}하시겠습니까? (staff 활성도 동기화됩니다)`)) return;
     // INV-5 §3-B: 활성화=unban / 비활성화=ban 으로 actor 감사
     const auditId = await recordAuthAction(supabase, {
-      actorStaffId: actorUserId,
+      actorUserId,
       targetUserId: u.id,
       targetEmail: u.email,
       action: next ? 'unban' : 'ban',
@@ -186,7 +186,7 @@ export default function Accounts() {
     setResetBusy(true);
     // INV-5 §3-B: 비번 재설정 = FACEOFANGEL/김지윤 사고 원본 액션 → actor 감사 필수. 비번 평문은 절대 기록 안 함.
     const auditId = await recordAuthAction(supabase, {
-      actorStaffId: actorUserId,
+      actorUserId,
       targetUserId: resetUser.id,
       targetEmail: resetUser.email,
       action: 'password_reset',
@@ -251,7 +251,7 @@ export default function Accounts() {
     // 2) user_profiles 등록 + staff 매핑/생성 (RPC 트랜잭션)
     // INV-5 §3-B: admin 이 신규 계정을 발급/덮어쓰는 destructive auth op → actor 감사
     const auditId = await recordAuthAction(supabase, {
-      actorStaffId: actorUserId,
+      actorUserId,
       targetUserId: data.user.id,
       targetEmail: email,
       action: 'invite_overwrite',
