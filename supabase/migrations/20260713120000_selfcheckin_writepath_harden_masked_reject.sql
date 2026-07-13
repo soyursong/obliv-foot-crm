@@ -24,7 +24,9 @@
 --         · resolve 불가 + 마스킹지문 → 신규 customers 생성 거부 + 미연결 check_in(denormalized NULL)
 --           + 현장 재해소(기존 v_match_count>=2 보류 path L116-119 동형). error 로 막지 않음.
 --   (d) denormalized 방어: check_ins.customer_name/customer_phone 에 마스킹값 저장 금지 →
---       resolve 된 raw(customers) 또는 NULL.
+--       resolve 된 raw(customers) 또는 NULL. ⚠ 단 customer_name 은 NOT NULL(초기스키마) 이라
+--       NULL 저장 불가 → 마스킹·미연결 케이스는 고정 sentinel '미확인'(비-PII·비-마스킹) 저장.
+--       (NULL 강제 시 not_null_violation → 환자 hard-block = (c) 위반이므로 (c)>(d문구) 우선.)
 --
 -- 분류/게이트: 비-ADDITIVE(write 동작 변경)·비-destructive → corrective write-path hardening.
 --   동일 signature CREATE OR REPLACE, 롤백=직전 함수정의(20260617000000_selfcheckin_composite_key_3key).
@@ -179,8 +181,11 @@ BEGIN
     SELECT name, phone INTO v_denorm_name, v_denorm_phone
       FROM customers WHERE id = v_customer_id;
   ELSIF v_masking_seen THEN
-    -- 마스킹 표시값은 절대 denormalized 로 남기지 않는다(오염 방지) → NULL.
-    v_denorm_name  := NULL;
+    -- 마스킹 표시값은 절대 denormalized 로 남기지 않는다(오염 방지).
+    -- ⚠ check_ins.customer_name 은 NOT NULL(초기스키마) → NULL 저장 시 not_null_violation 으로
+    --   함수가 에러 → 환자 hard-block(DA (c) 위반). 따라서 name 은 마스킹값도 아니고 PII 도 아닌
+    --   고정 sentinel('미확인')로 저장(현장 재해소 신호는 unlinked_masking_hold=true). phone 은 nullable → NULL.
+    v_denorm_name  := '미확인';
     v_denorm_phone := NULL;
   ELSE
     -- 미연결이나 마스킹 아님(진짜 워크인 2건+ 보류 등) → 입력 raw 보존.

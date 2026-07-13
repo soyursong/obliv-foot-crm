@@ -25,8 +25,10 @@ try {
   await client.query('BEGIN');
   await client.query(sql);                                       // 함수 교체(트랜잭션 내)
   console.log('── 함수 CREATE OR REPLACE 적용(트랜잭션 내) OK ──');
-  // NOTE: 5테스트는 supervisor 가 실제 seed(예약/raw customer)로 실행. 여기선 구문+무영속만 확증.
-  // (로컬 스텁 DB 5테스트 PASS 증거는 report 동봉.)
+  // NOTE: 이 러너 = prod 구문 적용 + 무영속(ROLLBACK) + post-probe 확증 전용.
+  //   행위 회귀 5테스트(seed→assert)는 faithful-schema(check_ins.customer_name NOT NULL 등 prod 제약
+  //   그대로) 로컬 stub 으로 **시크릿 0** 재현 가능 — bash scripts/T-20260713-foot-UNAUTH-WSA_5test_local.sh.
+  //   그 stub 이 마스킹 guard 경로의 not-null hard-block 회귀(구 코드 test② FAIL)를 잡아 fix 검증함.
 } catch (e) { pass = false; console.error('❌ DRY-RUN 실패:', e.message); }
 finally {
   await client.query('ROLLBACK');                                // 무영속 보장
