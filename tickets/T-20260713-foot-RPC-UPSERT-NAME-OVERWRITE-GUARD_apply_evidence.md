@@ -28,3 +28,28 @@
 - args: `... p_is_companion boolean, p_brief_note text` (18-arg, 단일 signature)
 
 → supervisor post-verify + deployed 마킹 대기.
+
+---
+
+## 재확인 + 원장 정합 (FIX-REQUEST MSG-20260713-230427-znag, 2026-07-13)
+
+supervisor 재요청("PROD apply + pg_proc/schema_migrations 확인 결과 공유")에 대한 dev-foot 재검증.
+
+### 발견
+- **pg_proc body = 이미 never-downgrade canon (live)**: PRE-APPLY probe `[{"has_never_downgrade":true,"has_old_override":false}]`. 함수 body 는 선행 apply(MSG-224829-qm2p)로 이미 prod-LIVE.
+- **schema_migrations 원장 결여**: `version='20260713150000'` 행 **부재** (mgmt-API apply 경로가 CLI 원장 미기입). → prod실재(canon) = OK, 원장 divergence.
+
+### 조치 (Migration Ledger Reconciliation — forward-doc)
+1. **APPLY 재실행** (멱등 CREATE OR REPLACE): Status 201 ✅. body/ACL 정본 재확정.
+2. **원장 forward-doc reconcile**: `INSERT INTO supabase_migrations.schema_migrations (version, name, statements, created_by, rollback) ... ON CONFLICT (version) DO NOTHING` → Status 201 ✅. (prod실재=canon 기준으로 원장을 수렴 — 종이선언 아님, 실재 우선.)
+
+### FINAL POST-VERIFY (live)
+| 항목 | 결과 |
+|------|------|
+| pg_proc `has_never_downgrade` | **true** ✅ |
+| pg_proc `has_old_override` (舊 CASE) | **false** ✅ |
+| overload_count | **1** (18-arg 단일 signature) ✅ |
+| schema_migrations `20260713150000` | **present** ✅ (name=foot_rpc_upsert_name_never_downgrade_guard, created_by=dev-foot:T-..., statements+rollback 동봉) |
+| 원장 tail | 20260713150000 → 20260713120000 → 20260711120000 → 20260710190000 (정합) |
+
+→ PROD apply 완료 + 원장 정합 확보. deploy-ready 재마킹.
