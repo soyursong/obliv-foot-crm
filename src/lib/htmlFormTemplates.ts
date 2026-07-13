@@ -1702,56 +1702,12 @@ const BILL_RECEIPT_HTML = `
       </tr>
     </thead>
     <tbody>
-      <tr>
-        <td class="br-label">진찰료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">입원료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">식&nbsp;&nbsp;&nbsp;대</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">투약 및 조제료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">주사료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">처치 및 수술료</td>
-        <td class="br-num"></td><td class="br-num"></td>
-        <td class="br-num">{{non_covered}}</td>
-        <td class="br-num">{{total_amount}}</td>
-      </tr>
-      <tr>
-        <td class="br-label">검&nbsp;&nbsp;&nbsp;사&nbsp;&nbsp;&nbsp;료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">영상진단 및 방사선치료료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">재활 및 물리치료료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">정신요법료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">치과행위</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
-      <tr>
-        <td class="br-label">한방행위</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
-      </tr>
+      <!-- T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT (diagnose-first forward-fix):
+           정적 하드코딩 그리드(전액을 '처치 및 수술료' 한 행 비급여 열에 뭉뚱그림 = 항목 미구분/비급여 한덩어리,
+           공단·본인 per-category 미채움) → 항목별 동적 그리드. 세부산정내역과 동일 SSOT(buildFootBillDetailItems)를
+           HIRA 항목분류로 집계해 공단부담/본인부담/비급여/합계를 행별 배치. buildBillReceiptFeeGridHtml 산출.
+           소계행({{insurance_covered}}/{{copayment}}/{{non_covered}}/{{total_amount}})은 동일 항목 소스라 구조적 정합. -->
+      {{fee_grid_html}}
       <tr>
         <td class="br-label" style="font-weight:bold;">소&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;계</td>
         <td class="br-num" style="font-weight:bold;">{{insurance_covered}}</td>
@@ -2180,6 +2136,93 @@ export function buildBillDetailItemsHtml(
       </tr>`;
     })
     .join('\n');
+}
+
+/**
+ * 진료비 계산서·영수증(bill_receipt) 급여/비급여 **항목별** 그리드 rows 생성.
+ *
+ * T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT (diagnose-first forward-fix):
+ *   기존 BILL_RECEIPT_HTML 은 정적 그리드였다 — 전 금액이 '처치 및 수술료' 한 행 비급여 열에
+ *   뭉뚱그려지고(a: 항목 미구분 / c: 비급여 한덩어리), 공단/본인 컬럼은 per-category 로 채워지지
+ *   않고 소계행 집계만 표기됐다(b: 공단/본인 미분리). RC = 렌더 경로는 이미 SSOT(computeFootBilling
+ *   + buildFootBillDetailItems)를 산출하나 템플릿이 per-item 을 소비하지 못하는 구조.
+ *
+ *   해소: **세부산정내역과 동일 SSOT** 인 buildFootBillDetailItems 출력을 그대로 받아 HIRA
+ *   항목분류(footBillDetailCategory 결과 category 열)로 집계 → 계산서 표준 행에 배치한다.
+ *   신규 산출로직·병렬 프린트경로 신설 없음(AC-5, SPLIT-RECUR AC-5 계승).
+ *
+ *   행 값:
+ *     - 급여 항목: 공단부담 = 항목총액 − copayment_amount, 본인부담 = copayment_amount.
+ *       (insurance_grade=null 방문은 copayment_amount=0 → 공단=전액/본인=0. AC-6 정상 —
+ *        세부산정내역과 동일 표기. 실 % split 은 등급 데이터 필요 = 직교 grade-capture 축.)
+ *     - 비급여 항목: 비급여 열.
+ *   Σ(행 공단) / Σ(행 비급여) / Σ(행 합계) = 소계행 {{insurance_covered}} / {{non_covered}} /
+ *   {{total_amount}} 와 구조적으로 정합(동일 항목 소스).
+ */
+export function buildBillReceiptFeeGridHtml(
+  billItems: Array<{
+    category?: string;
+    amount: number;
+    count?: number;
+    days?: number;
+    is_insurance_covered?: boolean;
+    copayment_amount?: number;
+  }>,
+): string {
+  // footBillDetailCategory 출력(진찰료/검사료/처치및수술료/이학요법료/기타) → 계산서 표준 행 매핑.
+  const CATEGORY_TO_ROW: Record<string, string> = {
+    진찰료: '진찰료',
+    검사료: '검사료',
+    처치및수술료: '처치 및 수술료',
+    '처치 및 수술료': '처치 및 수술료',
+    이학요법료: '재활 및 물리치료료',
+    '재활 및 물리치료료': '재활 및 물리치료료',
+  };
+  // 공식 서식 표준 행 순서 — 값 유무와 무관하게 전부 렌더(빈 행은 공란, 기존 서식 외형 보존).
+  const ROW_ORDER = [
+    '진찰료', '입원료', '식대', '투약 및 조제료', '주사료',
+    '처치 및 수술료', '검사료', '영상진단 및 방사선치료료',
+    '재활 및 물리치료료', '정신요법료', '치과행위', '한방행위',
+  ];
+  type Agg = { covered: number; copay: number; nonCovered: number };
+  const acc = new Map<string, Agg>();
+  const bump = (row: string, fn: (a: Agg) => void) => {
+    let a = acc.get(row);
+    if (!a) { a = { covered: 0, copay: 0, nonCovered: 0 }; acc.set(row, a); }
+    fn(a);
+  };
+  for (const it of billItems) {
+    const total = it.amount * (it.count ?? 1) * (it.days ?? 1);
+    if (total <= 0) continue;
+    const row = CATEGORY_TO_ROW[it.category ?? ''] ?? '기타';
+    if (it.is_insurance_covered) {
+      const copay = it.copayment_amount ?? 0;
+      bump(row, (a) => { a.covered += total; a.copay += copay; });
+    } else {
+      bump(row, (a) => { a.nonCovered += total; });
+    }
+  }
+  const won = (n: number) => n.toLocaleString('ko-KR');
+  const cells = (a: Agg | undefined) => {
+    if (!a || a.covered + a.nonCovered <= 0) {
+      return '<td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>';
+    }
+    // 급여 행: 공단/본인 항상 표기(copay 0 이어도 '0' 명시). 비급여 열은 값 있을 때만.
+    const gongdan = a.covered > 0 ? won(Math.max(0, a.covered - a.copay)) : '';
+    const bonin = a.covered > 0 ? won(a.copay) : '';
+    const nonCov = a.nonCovered > 0 ? won(a.nonCovered) : '';
+    const sum = won(a.covered + a.nonCovered);
+    return `<td class="br-num">${gongdan}</td><td class="br-num">${bonin}</td><td class="br-num">${nonCov}</td><td class="br-num">${sum}</td>`;
+  };
+  const rows = ROW_ORDER.map(
+    (label) => `<tr><td class="br-label">${label}</td>${cells(acc.get(label))}</tr>`,
+  );
+  // 표준 행에 매핑 안 되는 '기타'(수액·화장품·제증명 등) — 금액 있을 때만 추가(합계 정합 유지, 손실 0).
+  const etc = acc.get('기타');
+  if (etc && etc.covered + etc.nonCovered > 0) {
+    rows.push(`<tr><td class="br-label">기타</td>${cells(etc)}</tr>`);
+  }
+  return rows.join('\n');
 }
 
 /** HTML 양식 여부 확인 */

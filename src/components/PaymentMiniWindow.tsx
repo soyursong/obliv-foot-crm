@@ -68,6 +68,7 @@ import {
 import {
   bindHtmlTemplate,
   buildBillDetailItemsHtml,
+  buildBillReceiptFeeGridHtml,
   buildRxItemsHtml,
   getHtmlTemplate,
   isHtmlTemplate,
@@ -1781,6 +1782,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           autoValues.subtotal_amount = formatAmount(grandTotal);
         }
       }
+      // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(공단/본인/비급여).
+      //   PATH-4(결제창 단독발행)도 세부산정내역과 동일 SSOT(buildPmwBillDetailItems)로 항목별 집계.
+      if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
+        autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+      }
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
@@ -1894,6 +1900,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
         }
+      }
+      // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(출력+수납 경로).
+      if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
+        autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
       }
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리

@@ -93,6 +93,7 @@ import {
 import {
   bindHtmlTemplate,
   buildBillDetailItemsHtml,
+  buildBillReceiptFeeGridHtml,
   buildRxItemsHtml,
   getHtmlTemplate,
   isHtmlTemplate,
@@ -737,10 +738,34 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           bindValues.insurance_covered = formatAmount(fb.liveBillingValues.insuranceCovered);
           bindValues.copayment = formatAmount(fb.liveBillingValues.copayment);
           bindValues.non_covered = formatAmount(fb.liveBillingValues.nonCovered);
+          // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 재발급 영수증도 항목별 그리드(공단/본인/비급여).
+          //   세부산정내역과 동일 SSOT(buildFootBillDetailItems)로 항목별 집계 → 소계와 구조적 정합.
+          const receiptBillItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '', {
+            insuranceGrade: fbGrade,
+            copaymentTotal: fb.copaymentTotal,
+          });
+          bindValues.fee_grid_html = buildBillReceiptFeeGridHtml(receiptBillItems);
+        } else if (serviceItems.length > 0) {
+          // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(bill_detail 폴백과 동일 규칙).
+          const fbItems2 = serviceItems.map((item) => ({
+            category: item.is_insurance_covered ? '이학요법료' : '기타',
+            amount: item.amount,
+            count: 1,
+            days: 1,
+            is_insurance_covered: item.is_insurance_covered,
+            copayment_amount: item.copayment_amount ?? undefined,
+          }));
+          fillBillItemCopayment(fbItems2, fbGrade);
+          bindValues.fee_grid_html = buildBillReceiptFeeGridHtml(fbItems2);
         }
       } else {
         // 진료 항목 미기록(구 데이터) — 기존 동작 보존: 선택한 결제 건 합산.
         bindValues.total_amount = formatAmount(paymentsTotal);
+      }
+      // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 정적 그리드 제거로 fee_grid_html 미설정 시
+      //   본문 공란 회귀 방지 — 항목 없어도 표준 빈 그리드 rows 를 명시 렌더.
+      if (bindValues.fee_grid_html == null) {
+        bindValues.fee_grid_html = buildBillReceiptFeeGridHtml([]);
       }
 
       // 출력
@@ -886,8 +911,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백.
         : await loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id);
       const fbBatch = fbItemsBatch.length > 0 ? computeFootBilling(fbItemsBatch, fbGradeBatch) : null;
+      // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 도 SSOT billItems 필요
+      //   (fee_grid_html 항목별 그리드). bill_receipt 단독 선택 시에도 billItems 빌드가 발화하도록 포함.
       const needsItems = selectedTemplates.some(
-        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
+        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard' || t.form_key === 'bill_receipt',
       );
 
       if (chargeItems && chargeItems.length > 0) {
@@ -951,6 +978,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
               copayment_amount: item.copayment_amount ?? undefined,
             }));
             autoValues.items_html = buildBillDetailItemsHtml(billItems);
+            // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 영수증 항목별 그리드도 동일 billItems 로.
+            autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
             const total = mappedItems.reduce((s, item) => s + item.amount, 0);
             autoValues.total_amount = formatAmount(total);
             const nonCoveredTotal = mappedItems
@@ -998,6 +1027,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             copaymentTotal: fbBatch.copaymentTotal,
           });
           autoValues.items_html = buildBillDetailItemsHtml(billItems);
+          // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 영수증 항목별 그리드도 동일 SSOT billItems 로
+          //   (세부산정내역과 구조적 정합 — 동일 항목·급여분류·copay 배분).
+          autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
           if (autoValues.rx_items_html == null) autoValues.rx_items_html = buildRxItemsHtml([]);
           if (fbBatch.grandTotal > 0) {
             autoValues.total_amount = formatAmount(fbBatch.grandTotal);
@@ -1016,8 +1048,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           autoValues.total_fund = autoValues.subtotal_fund;
         }
       } else if (needsItems && !(chargeItems && chargeItems.length > 0)) {
-        // service_charges·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
+        // service_charges·check_in_services 모두 없을 때: bill_detail/rx_standard/bill_receipt 빈 rows 처리
         autoValues.items_html = buildBillDetailItemsHtml([]);
+        autoValues.fee_grid_html = buildBillReceiptFeeGridHtml([]);
         autoValues.rx_items_html = buildRxItemsHtml([]);
         // T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 항목 0건 → 요약행 총계 0 명시(공란 방지).
         autoValues.subtotal_copayment = '0';
@@ -2173,6 +2206,33 @@ function IssueDialog({
       base.total_copayment = '0';
       base.subtotal_fund = '0';
       base.total_fund = '0';
+    }
+
+    // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(fee_grid_html).
+    //   세부산정내역(bill_detail)과 **동일 SSOT·동일 billItems 구성**으로 HIRA 항목분류 집계 →
+    //   공단부담/본인부담/비급여/합계를 행별 배치. (a)항목 미구분·(c)비급여 한덩어리·(b)공단/본인 미분리 해소.
+    //   소계행({{insurance_covered}}/{{copayment}}/{{non_covered}}/{{total_amount}})은 applyBillingFallback
+    //   (footFb.liveBillingValues 또는 serviceItems 라이브)로 이미 설정됨 → 항목합과 구조적 정합.
+    if (template.form_key === 'bill_receipt') {
+      let receiptItems: Parameters<typeof buildBillReceiptFeeGridHtml>[0] = [];
+      if (footFb) {
+        receiptItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '', {
+          insuranceGrade: customerInsuranceGrade,
+          copaymentTotal: footFb.copaymentTotal,
+        });
+      } else if (serviceItems.length > 0) {
+        const fbItems = serviceItems.map((item) => ({
+          category: item.is_insurance_covered ? '이학요법료' : '기타',
+          amount: item.amount,
+          count: 1,
+          days: 1,
+          is_insurance_covered: item.is_insurance_covered,
+          copayment_amount: item.copayment_amount ?? undefined,
+        }));
+        fillBillItemCopayment(fbItems, customerInsuranceGrade);
+        receiptItems = fbItems;
+      }
+      base.fee_grid_html = buildBillReceiptFeeGridHtml(receiptItems);
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
