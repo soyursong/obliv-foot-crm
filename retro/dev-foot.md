@@ -59,3 +59,11 @@ revenue_insurance_split_spec v1.2 §2-2-1a 신설. NULL hira_score 분기에서 
 - 판정: RRN 키 로테이션 컷오버 갭(supervisor 단독 도메인). AC3(신규 복호경로 금지)·§5·키 Runbook 저촉 → dev-foot 크립토/키 독단 수정 금지. 신키 없으면 AC5 백필도 불가. FE 파생 지금 넣어도 v2 복호실패로 여전히 막힘 = false fix.
 - 조치: 코드 미변경, deploy-ready 안 함. planner FOLLOWUP(MSG-20260706-145053-azk0, P1 상향권고)로 supervisor 라우팅 요청. 현장 우회=생년월일 수기입력.
 - 학습: "파생로직만 이식하면 됨" 티켓이라도 착수 전 '복호가 실제로 되는가'를 prod 실측으로 검증. version 컬럼(rrn_encryption_version) 분기 존재 시 = 키 로테이션 진행 신호 → green build 아닌 런타임 복호성공을 종결근거로. green build로 증상만 덮는 false fix 금지(rc_first).
+
+## 2026-07-14 T-20260713-foot-HIRA-UNIT-VALUE-2026-UPDATE (급여 수가 오류 2건)
+- 사건: '선배포 확인' 하드제약(①NULLFIX 배포 후 rebase)이 prod probe 결과 FALSE — NULLFIX 파일은 있으나 미적용(schema_migrations 미기록 + prod RPC 6-col). 이 repo는 Management API로 apply → schema_migrations를 안 씀 = ledger가 파일이 아니라 pg_proc 실재. 권위 판별을 파일 존재가 아닌 prod pg_get_function_result로 함.
+- 조치: '이중패치0' 의도를 지키려고 NULLFIX v1.2 로직을 v1.3 마이그에 흡수(subsume), v1.1→v1.3 단일 DROP+CREATE. 블로킹 대신 적응 + planner에 subsumption/ledger 정합 FOLLOWUP.
+- 학습1: '선행 티켓 deploy-ready'는 '배포됨'이 아니다. 하드제약의 사전조건은 파일이 아니라 prod 실재(런타임 introspection)로 검증. deploy-ready≠deployed.
+- 학습2: 제보 내용을 그대로 코드화하지 말 것 — 제보 '3구간(15~25k=20%)'은 오류, DA 정본 4구간(15~20k=10%). 버그를 다른 버그로 교체할 뻔. SSOT(DA) 정본 우선.
+- 학습3: 하드코딩 상수는 코드 fallback(??89.4)뿐 아니라 컬럼 DEFAULT(89.4)도 stale drift 벡터. governed data면 default까지 제거해야 NULL→BLOCK 거버넌스가 실효.
+- 학습4: 금액직결 계산은 green build/spec PASS로 끝내지 말고 라이브 prod RPC parity(임시데이터 RAISE-rollback으로 무오염)로 서버 실동작 실측. 감사필드(applied_rate)와 권위금액(copayment_amount) 분리 — 재계산 소비처 grep으로 과청구 리스크 배제.
