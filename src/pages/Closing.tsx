@@ -1624,6 +1624,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             {/* T-20260525-foot-ROLE-PERM-CUSTOM AC-5: canRefund(+consultant/coordinator/therapist)로 확장 */}
                             {canRefund && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && (
                               <button
+                                data-testid="refund-open-btn"
                                 onClick={() => setRefundTarget(r)}
                                 className="text-muted-foreground hover:text-destructive transition-colors p-1"
                                 title="환불"
@@ -2237,9 +2238,21 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
     onSuccess();
   };
 
+  // T-20260713-foot-PAY-REFUND-AMOUNT-INPUT: 단건 환불 금액 실시간 검증
+  //   AC: 1원 ≤ 환불액 ≤ 수납금액. 빈값/0/음수(입력단계 strip)/원금초과는 즉시 차단
+  //   (제출 버튼 비활성 + 인라인 에러). 부분(일부)·전액 환불 모두 지원.
+  const singleAmt = parseInt(refundAmountStr.replace(/[^\d]/g, ''), 10);
+  const singleAmtError: string | null = isPackage
+    ? null
+    : !singleAmt || singleAmt <= 0
+      ? '환불금액을 입력하세요 (최소 1원)'
+      : singleAmt > row.amount
+        ? `원결제 금액(${formatAmount(row.amount)}) 초과 불가`
+        : null;
+
   return (
     <Dialog open={open} onOpenChange={o => { if (!o && !submitting) onClose(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" data-testid="closing-refund-dialog">
         <DialogHeader>
           <DialogTitle>환불 처리 — {row.customer_name}</DialogTitle>
         </DialogHeader>
@@ -2287,14 +2300,20 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
 
           {/* 단건 환불: 금액 입력 */}
           {!isPackage && (
-            <div className="space-y-1">
+            <div className="space-y-1" data-testid="refund-amount-field">
               <Label>환불금액 <span className="text-destructive">*</span></Label>
               <AmountInput
+                data-testid="refund-amount-input"
                 value={refundAmountStr}
                 onChange={(raw) => setRefundAmountStr(raw)}
                 placeholder={String(row.amount)}
+                className={cn(singleAmtError && 'border-destructive')}
               />
-              <p className="text-[11px] text-muted-foreground">최대 {formatAmount(row.amount)}</p>
+              {singleAmtError ? (
+                <p data-testid="refund-amount-error" className="text-[11px] text-destructive">{singleAmtError}</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">최대 {formatAmount(row.amount)} · 일부 금액만도 환불 가능</p>
+              )}
             </div>
           )}
 
@@ -2335,8 +2354,9 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
         <DialogFooter>
           <Button variant="outline" disabled={submitting} onClick={onClose}>취소</Button>
           <Button
+            data-testid="refund-submit"
             variant="destructive"
-            disabled={submitting || (isPackage && !pkgQuote)}
+            disabled={submitting || (isPackage && !pkgQuote) || (!isPackage && !!singleAmtError)}
             onClick={handleSubmit}
           >
             {submitting ? '처리 중…' : '환불 확인'}
