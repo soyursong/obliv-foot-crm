@@ -1,0 +1,62 @@
+{
+  "ticket": "T-20260713-foot-UNAUTH-CHANGE-INVESTIGATE-ROLLBACK",
+  "work_stream": "WS-C (오염행 정정 merge/re-anchor)",
+  "generated_by": "dev-foot",
+  "da_ref": "DA-20260713-foot-SELFCHECKIN-WRITE-HARDEN Q2",
+  "freeze_set": [
+    "512998d0-d51a-42c4-947e-b0cb2cc69da4",
+    "0356b229-e8c7-4655-aa6e-651b15370c1f"
+  ],
+  "phi_redaction": "name=첫자+길이, phone=tail4 only. 평문 raw 는 off-git(stdout).",
+  "topology_divergence": "DA Q2 자식모델=check_ins/status_transitions. 실측=6 FK테이블 8행(+financial packages/package_payments +clinical health_q/consult_memos). CASCADE(health_q*,consult_memos)+NO ACTION(check_ins,packages,package_payments) → full merge 가 유일한 순소실0 경로.",
+  "rows": [
+    {
+      "pair": "A",
+      "dup_id": "512998d0-d51a-42c4-947e-b0cb2cc69da4",
+      "raw_id": "8fa12f4c-abfe-405e-8736-c2ca8e4aef8a",
+      "reservation_id": [],
+      "deterministic_fk_key": false,
+      "match_basis": {
+        "name_stem": "dup=\"최▪×4(masked)\" ↔ raw=\"최▪×4\" · stem-match=true",
+        "phone_tail": "dup=…5453(4d) raw=…5453(12d) · tail-match=true",
+        "temporal_delta_sec": 39,
+        "inv3_note": "약신호(tail+stem+temporal) 단독 destructive 금지 → per-row confirm. 실환자0(test/DUMMY) → 기본채택."
+      },
+      "dup_masked": true,
+      "raw_is_pii": true,
+      "dup_visit_type": "new",
+      "child_counts": {
+        "check_ins": 1,
+        "health_q_tokens": 1,
+        "package_payments": 1,
+        "packages": 1
+      },
+      "child_total": 4,
+      "per_row_verdict": "ACCEPT (real-patient=0, deterministic FK re-anchor, strong 3-signal identity match)"
+    },
+    {
+      "pair": "B",
+      "dup_id": "0356b229-e8c7-4655-aa6e-651b15370c1f",
+      "raw_id": "c51dd5e0-5e3f-4f5c-a44f-78001ab9cf6b",
+      "reservation_id": [],
+      "deterministic_fk_key": false,
+      "match_basis": {
+        "name_stem": "dup=\"장▪×2\" ↔ raw=\"장▪×2\" · stem-match=true",
+        "phone_tail": "dup=…9089(4d) raw=…9089(12d) · tail-match=true",
+        "temporal_delta_sec": 70982,
+        "inv3_note": "약신호(tail+stem+temporal) 단독 destructive 금지 → per-row confirm. 실환자0(test/DUMMY) → 기본채택."
+      },
+      "dup_masked": true,
+      "raw_is_pii": true,
+      "dup_visit_type": "returning",
+      "child_counts": {
+        "check_ins": 1,
+        "health_q_tokens": 1,
+        "health_q_results": 1,
+        "customer_consult_memos": 1
+      },
+      "child_total": 4,
+      "per_row_verdict": "ACCEPT (real-patient=0, deterministic FK re-anchor, strong 3-signal identity match)"
+    }
+  ]
+}
