@@ -2167,6 +2167,12 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
   );
   const [refundMemo, setRefundMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260713-foot-CLOSING-REFUND-SINGLE-PAY-MISSING (AC-3): 단건 이미 환불액 차감.
+  //   원결제에 연결된(linked_payment_id) 환불 행 합계를 빼 '실제 환불 가능(잔여)' 금액을 산출.
+  //   기존엔 잔여를 계산하지 않고 항상 원결제 전액을 환불가능으로 제시 → 전액/부분 환불 후에도
+  //   재차 전액 환불 가능(과다환불)한 결함. null(로딩 전) 구분 위해 초기값 null.
+  const [priorRefunded, setPriorRefunded] = useState<number | null>(null);
+  const singleRemaining = row.amount - (priorRefunded ?? 0);
 
   // 다이얼로그 오픈 시 초기화 + 패키지 견적 조회
   useEffect(() => {
@@ -2175,6 +2181,7 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
       setRefundAmountStr(String(row.amount));
       setMethod((['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer');
       setRefundMemo('');
+      setPriorRefunded(null);
       return;
     }
     if (isPackage && row.package_id) {
@@ -2182,8 +2189,21 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
         const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: row.package_id });
         setPkgQuote(data as RefundQuote | null);
       })();
+    } else if (!isPackage && row.payment_id) {
+      // 단건: 원결제(payment_id)에 연결된 기존 환불 합계 조회 → 잔여 산출 후 입력 기본값 세팅
+      (async () => {
+        const { data, error } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('linked_payment_id', row.payment_id!)
+          .eq('payment_type', 'refund')
+          .neq('status', 'deleted');
+        const already = error ? 0 : (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
+        setPriorRefunded(already);
+        setRefundAmountStr(String(Math.max(0, row.amount - already)));
+      })();
     }
-  }, [open, isPackage, row.package_id, row.method, row.amount]);
+  }, [open, isPackage, row.package_id, row.payment_id, row.method, row.amount]);
 
   const handleSubmit = async () => {
     if (!refundMemo.trim()) {
@@ -2216,8 +2236,13 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
       // 단건 환불: refund_single_payment RPC 호출
       const amt = parseInt(refundAmountStr.replace(/[^\d]/g, ''), 10);
       if (!amt || amt <= 0) { toast.error('환불금액을 입력하세요.'); setSubmitting(false); return; }
-      if (amt > row.amount) {
-        toast.error(`환불금액이 원결제 금액(${formatAmount(row.amount)})을 초과할 수 없습니다.`);
+      // AC-3: 원결제 전액이 아니라 '잔여 환불가능액'(원결제 − 기존 환불) 기준으로 상한 검증.
+      if (amt > singleRemaining) {
+        toast.error(
+          priorRefunded && priorRefunded > 0
+            ? `환불 가능 잔여금액(${formatAmount(singleRemaining)})을 초과할 수 없습니다. (이미 환불 ${formatAmount(priorRefunded)})`
+            : `환불금액이 원결제 금액(${formatAmount(row.amount)})을 초과할 수 없습니다.`,
+        );
         setSubmitting(false);
         return;
       }
@@ -2241,14 +2266,17 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
   // T-20260713-foot-PAY-REFUND-AMOUNT-INPUT: 단건 환불 금액 실시간 검증
   //   AC: 1원 ≤ 환불액 ≤ 수납금액. 빈값/0/음수(입력단계 strip)/원금초과는 즉시 차단
   //   (제출 버튼 비활성 + 인라인 에러). 부분(일부)·전액 환불 모두 지원.
+  //   AC-3: 상한 = 잔여 환불가능액(원결제 − 기존 환불). 잔여 0 → 이미 전액 환불 안내.
   const singleAmt = parseInt(refundAmountStr.replace(/[^\d]/g, ''), 10);
   const singleAmtError: string | null = isPackage
     ? null
-    : !singleAmt || singleAmt <= 0
-      ? '환불금액을 입력하세요 (최소 1원)'
-      : singleAmt > row.amount
-        ? `원결제 금액(${formatAmount(row.amount)}) 초과 불가`
-        : null;
+    : singleRemaining <= 0
+      ? '이미 전액 환불된 결제입니다'
+      : !singleAmt || singleAmt <= 0
+        ? '환불금액을 입력하세요 (최소 1원)'
+        : singleAmt > singleRemaining
+          ? `환불 가능 잔여금액(${formatAmount(singleRemaining)}) 초과 불가`
+          : null;
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o && !submitting) onClose(); }}>
@@ -2298,21 +2326,33 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
             )
           )}
 
-          {/* 단건 환불: 금액 입력 */}
+          {/* 단건 환불: 금액 입력 — AC-3: 잔여 환불가능액 기준 */}
           {!isPackage && (
             <div className="space-y-1" data-testid="refund-amount-field">
               <Label>환불금액 <span className="text-destructive">*</span></Label>
+              {/* 이미 환불된 내역이 있으면 원결제/기존환불/잔여를 명시 */}
+              {priorRefunded !== null && priorRefunded > 0 && (
+                <div
+                  data-testid="refund-remaining-summary"
+                  className="rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] space-y-0.5"
+                >
+                  <div className="flex justify-between"><span className="text-muted-foreground">원결제금액</span><span className="tabular-nums">{formatAmount(row.amount)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">기존 환불</span><span className="tabular-nums text-destructive">-{formatAmount(priorRefunded)}</span></div>
+                  <div className="flex justify-between font-medium"><span>환불 가능 잔여</span><span className="tabular-nums">{formatAmount(singleRemaining)}</span></div>
+                </div>
+              )}
               <AmountInput
                 data-testid="refund-amount-input"
                 value={refundAmountStr}
                 onChange={(raw) => setRefundAmountStr(raw)}
-                placeholder={String(row.amount)}
+                placeholder={String(singleRemaining)}
+                disabled={singleRemaining <= 0}
                 className={cn(singleAmtError && 'border-destructive')}
               />
               {singleAmtError ? (
                 <p data-testid="refund-amount-error" className="text-[11px] text-destructive">{singleAmtError}</p>
               ) : (
-                <p className="text-[11px] text-muted-foreground">최대 {formatAmount(row.amount)} · 일부 금액만도 환불 가능</p>
+                <p className="text-[11px] text-muted-foreground">최대 {formatAmount(singleRemaining)} · 일부 금액만도 환불 가능</p>
               )}
             </div>
           )}
