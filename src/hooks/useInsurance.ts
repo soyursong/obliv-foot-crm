@@ -30,6 +30,8 @@ interface CalcCopaymentRpcRow {
   exempt_amount: number;
   applied_rate: number;
   applied_grade: InsuranceGrade;
+  /** 데이터 불완전 BLOCK (calc_copayment v1.2+). 구버전 RPC 는 undefined → false 처리. */
+  data_incomplete?: boolean;
 }
 
 /** 단일 서비스 본인부담 산출 (RPC) */
@@ -69,6 +71,7 @@ export function useCalcCopayment({ serviceId, customerId, clinicId, visitDate }:
           exempt_amount: row.exempt_amount,
           applied_rate: Number(row.applied_rate),
           applied_grade: row.applied_grade,
+          data_incomplete: row.data_incomplete ?? false,
         });
       } else {
         setData(null);
@@ -110,6 +113,7 @@ export async function calcCopaymentBatch(
               exempt_amount: row.exempt_amount,
               applied_rate: Number(row.applied_rate),
               applied_grade: row.applied_grade,
+              data_incomplete: row.data_incomplete ?? false,
             }
           : null,
       ] as const;

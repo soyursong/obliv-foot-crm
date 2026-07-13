@@ -27,7 +27,11 @@ export interface CopayCalcServiceInput {
 }
 
 export interface CopayCalcClinicInput {
-  /** 점수당 원 (기본 89.4 — 2024 기준) */
+  /**
+   * 점수당 원(환산지수, 원). governed data — 하드코딩 fallback 없음.
+   * NULL = 데이터 불완전 → data_incomplete=true BLOCK (임의 상수 계산강행 금지).
+   * (T-20260713-foot-HIRA-UNIT-VALUE-2026-UPDATE)
+   */
   hira_unit_value: number | null;
 }
 
@@ -38,6 +42,12 @@ export interface CopayCalcResult {
   exempt_amount: number;
   applied_rate: number;
   applied_grade: InsuranceGrade;
+  /**
+   * 데이터 불완전 BLOCK 플래그 (서버 RPC data_incomplete 미러).
+   * true = 산출 불가(급여+hira_score NULL default-deny / hira_unit_value NULL).
+   * 금액 날조 금지 → 모든 금액 0, applied_rate 0. (§2-2-1b)
+   */
+  data_incomplete: boolean;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -67,16 +77,31 @@ export function getBaseCopayRate(grade: InsuranceGrade): number {
 // 핵심 산출 함수
 // ──────────────────────────────────────────────────────────
 
+/** data_incomplete BLOCK 결과 (금액 날조 금지 — 모두 0, rate 0). */
+function blockedResult(grade: InsuranceGrade): CopayCalcResult {
+  return {
+    base_amount: 0,
+    insurance_covered_amount: 0,
+    copayment_amount: 0,
+    exempt_amount: 0,
+    applied_rate: 0,
+    applied_grade: grade,
+    data_incomplete: true,
+  };
+}
+
 /**
- * 건보 본인부담 산출 (순수 함수).
+ * 건보 본인부담 산출 (순수 함수) — 서버 RPC calc_copayment v1.3 미러.
  *
  * 산출 규칙 (서버 RPC calc_copayment와 동일):
  *  1. 비급여 or 외국인 → 전액 본인부담 (price 기준)
- *  2. hira_score 미설정 → 비급여 폴백
- *  3. copayment_rate_override 있으면 우선 적용
- *  4. 의료급여 1종 → MIN(1,000, 수가)
- *  5. 65세 정액 + 수가 ≤ 15,000 → MIN(1,500, 수가)
- *  6. 그 외 → CEIL(base × rate / 100) × 100 (100원 절상)
+ *  2. 급여 + hira_score NULL → default-deny (general 만 전액본인부담 fallback, 그 외 BLOCK) [NULLFIX v1.2]
+ *  3. 점당단가(hira_unit_value) NULL → data_incomplete BLOCK (89.4 fallback 제거) [이슈1]
+ *  4. copayment_rate_override 있으면 우선 적용
+ *  5. 의료급여 1종 → MIN(1,000, 수가)
+ *  6. 65세(elderly_flat) 정률제 4구간 [이슈2, §2-2-3]:
+ *       ≤15,000=정액 1,500 / ~20,000=10% / ~25,000=20% / >25,000=30%
+ *  7. 그 외 → CEIL(base × rate / 100) × 100 (100원 절상)
  */
 export function calcCopayment(
   service: CopayCalcServiceInput,
@@ -85,7 +110,7 @@ export function calcCopayment(
 ): CopayCalcResult {
   const isCovered = !!service.is_insurance_covered;
 
-  // ── 1. 비급여 / 외국인 ────────────────────────────────
+  // ── 1. 비급여 / 외국인 → 전액 본인부담 ────────────────
   if (!isCovered || grade === 'foreigner') {
     const base = service.price ?? 0;
     return {
@@ -95,36 +120,57 @@ export function calcCopayment(
       exempt_amount: 0,
       applied_rate: 1.0,
       applied_grade: grade,
+      data_incomplete: false,
     };
   }
 
-  // ── 2. hira_score 미설정 → 비급여 폴백 ───────────────
+  // ── 2. 급여 + hira_score NULL → default-deny (NULLFIX v1.2) ─────────────
   if (service.hira_score == null) {
-    const base = service.price ?? 0;
-    return {
-      base_amount: base,
-      insurance_covered_amount: 0,
-      copayment_amount: base,
-      exempt_amount: 0,
-      applied_rate: 1.0,
-      applied_grade: grade,
-    };
+    if (grade === 'general') {
+      const base = service.price ?? 0;
+      return {
+        base_amount: base,
+        insurance_covered_amount: 0,
+        copayment_amount: base,
+        exempt_amount: 0,
+        applied_rate: 1.0,
+        applied_grade: grade,
+        data_incomplete: false,
+      };
+    }
+    // low_income_1/2·infant·medical_aid·elderly·unverified 등 → BLOCK
+    return blockedResult(grade);
   }
 
-  // ── 3. 수가 산출 ──────────────────────────────────────
+  // ── 3. 점당단가 governed: NULL → BLOCK (89.4 fallback 제거) [이슈1] ──────
+  if (clinic.hira_unit_value == null) {
+    return blockedResult(grade);
+  }
+
+  // ── 4. 수가 산출 ──────────────────────────────────────
   const baseRate = getBaseCopayRate(grade);
   // OVERRIDE-RULE: O-001 — 서비스별 실손보험 자기부담률 개별 적용
   // OVERRIDE: copayCalc — copayment_rate_override 서비스별 자기부담률 추가 적용. 기본 로직 전체 연동.
+  const hasOverride = service.copayment_rate_override != null;
   const rate = service.copayment_rate_override ?? baseRate;
-  const unitValue = clinic.hira_unit_value ?? 89.4;
-  const base = Math.round(service.hira_score * unitValue);
+  const base = Math.round(service.hira_score * clinic.hira_unit_value);
 
-  // ── 4 & 5. 정액제 분기 ────────────────────────────────
+  // ── 5·6·7. 정액/정률 분기 ─────────────────────────────
   let copay: number;
   if (grade === 'medical_aid_1') {
     copay = Math.min(1000, base);
-  } else if (grade === 'elderly_flat' && base <= 15000) {
-    copay = Math.min(1500, base);
+  } else if (grade === 'elderly_flat' && !hasOverride) {
+    // [이슈2] 노인 외래 정률제 4구간 (의원급, §2-2-3). override 있으면 정률경로(else)로 흡수.
+    if (base <= 15000) {
+      copay = Math.min(1500, base);          // 정액 1,500
+    } else if (base <= 20000) {
+      copay = Math.ceil((base * 0.10) / 100) * 100;  // 10%
+    } else if (base <= 25000) {
+      copay = Math.ceil((base * 0.20) / 100) * 100;  // 20%
+    } else {
+      copay = Math.ceil((base * 0.30) / 100) * 100;  // 30%
+    }
+    if (copay > base) copay = base;
   } else {
     // 100원 단위 절상
     copay = Math.ceil((base * rate) / 100) * 100;
@@ -139,5 +185,6 @@ export function calcCopayment(
     exempt_amount: 0,
     applied_rate: rate,
     applied_grade: grade,
+    data_incomplete: false,
   };
 }
