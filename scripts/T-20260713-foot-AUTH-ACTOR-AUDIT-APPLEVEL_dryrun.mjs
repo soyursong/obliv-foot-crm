@@ -35,10 +35,9 @@ console.log(`\n>> §DO verdict: ${sentinelOk ? 'PASS (all AC + no-persist rollba
 console.log('\n=== §POST (post-probe: prod 무영속 실증) ===');
 const postSql = `
   SELECT
-    (to_regclass('public.staff_auth_action_audit') IS NULL)                               AS table_absent_expected_true,
-    NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='log_staff_auth_action')               AS helper_absent_expected_true,
-    (position('log_staff_auth_action' IN pg_get_functiondef('public.admin_reset_user_password(uuid,text)'::regprocedure))=0)
-                                                                                            AS reset_rpc_unpatched_expected_true;
+    (to_regclass('public.staff_auth_action_audit') IS NULL)                    AS table_absent_expected_true,
+    NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='record_auth_action')       AS record_fn_absent_expected_true,
+    NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='stamp_auth_action_outcome') AS stamp_fn_absent_expected_true;
 `;
 const postRes = await q(postSql);
 console.log(`HTTP ${postRes.status} ok=${postRes.ok}`);
@@ -47,8 +46,8 @@ let postOk = false;
 try {
   const row = JSON.parse(postRes.body)[0];
   postOk = row.table_absent_expected_true === true
-        && row.helper_absent_expected_true === true
-        && row.reset_rpc_unpatched_expected_true === true;
+        && row.record_fn_absent_expected_true === true
+        && row.stamp_fn_absent_expected_true === true;
 } catch { /* body already printed */ }
 console.log(`\n>> §POST verdict: ${postOk ? 'PASS (prod unchanged — no persistence)' : 'CHECK body'}`);
 

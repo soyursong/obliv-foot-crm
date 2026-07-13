@@ -4,7 +4,9 @@ import { toast } from '@/lib/toast';
 import { Check, ChevronDown, ChevronUp, Copy, KeyRound, Shield, UserPlus, UserX, X } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
+import { recordAuthAction, stampAuthActionOutcome } from '@/lib/authAudit';
 import { useClinic } from '@/hooks/useClinic';
+import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,6 +53,10 @@ function generateTempPassword(): string {
 
 export default function Accounts() {
   const clinic = useClinic();
+  // INV-5 §3-B: actor 프레즌스 신호(fail-loud). DB write 시 actor 는 서버(auth.uid())가 canonical staff 로
+  //   재확정하므로 이 값은 "로그인 세션이 있는가" 관측 신호용(null=사람-귀속 공백 → warn). staff_id 는 profile 이 안 실음.
+  const { session } = useAuth();
+  const actorUserId = session?.user?.id ?? null;
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,10 +129,18 @@ export default function Accounts() {
   // pending 필터(!approved && active)에 의해 거절건(!approved && !active)은 모든 섹션에서 사라진다.
   const rejectPending = async (u: UserProfile) => {
     if (!window.confirm(`${u.name ?? u.email}의 가입을 거절할까요? 거절하면 승인 대기 목록에서 사라집니다.`)) return;
+    // INV-5 §3-B: op 직전 actor stamp → op → outcome 확정 (best-effort, 감사실패≠op차단)
+    const auditId = await recordAuthAction(supabase, {
+      actorStaffId: actorUserId,
+      targetUserId: u.id,
+      targetEmail: u.email,
+      action: 'ban',
+    });
     const { error } = await supabase.rpc('admin_toggle_user_active', {
       target_user_id: u.id,
       set_active: false,
     });
+    await stampAuthActionOutcome(supabase, auditId, error ? 'failed' : 'succeeded');
     if (error) { toast.error(`거절 실패: ${error.message}`); return; }
     toast.success('가입을 거절했어요');
     fetchUsers();
@@ -136,10 +150,18 @@ export default function Accounts() {
     const next = !u.active;
     const action = next ? '활성화' : '비활성화';
     if (!next && !window.confirm(`${u.name ?? u.email}을(를) ${action}하시겠습니까? (staff 활성도 동기화됩니다)`)) return;
+    // INV-5 §3-B: 활성화=unban / 비활성화=ban 으로 actor 감사
+    const auditId = await recordAuthAction(supabase, {
+      actorStaffId: actorUserId,
+      targetUserId: u.id,
+      targetEmail: u.email,
+      action: next ? 'unban' : 'ban',
+    });
     const { error } = await supabase.rpc('admin_toggle_user_active', {
       target_user_id: u.id,
       set_active: next,
     });
+    await stampAuthActionOutcome(supabase, auditId, error ? 'failed' : 'succeeded');
     if (error) { toast.error(`${action} 실패: ${error.message}`); return; }
     toast.success(`${action}됨`);
     fetchUsers();
@@ -162,10 +184,18 @@ export default function Accounts() {
     const pw = resetPw.trim();
     if (pw.length < 6) { toast.error('비밀번호 6자 이상'); return; }
     setResetBusy(true);
+    // INV-5 §3-B: 비번 재설정 = FACEOFANGEL/김지윤 사고 원본 액션 → actor 감사 필수. 비번 평문은 절대 기록 안 함.
+    const auditId = await recordAuthAction(supabase, {
+      actorStaffId: actorUserId,
+      targetUserId: resetUser.id,
+      targetEmail: resetUser.email,
+      action: 'password_reset',
+    });
     const { error } = await supabase.rpc('admin_reset_user_password', {
       target_user_id: resetUser.id,
       new_password: pw,
     });
+    await stampAuthActionOutcome(supabase, auditId, error ? 'failed' : 'succeeded');
     setResetBusy(false);
     if (error) { toast.error(`초기화 실패: ${error.message}`); return; }
     setResetResult(pw);
@@ -219,6 +249,13 @@ export default function Accounts() {
     }
 
     // 2) user_profiles 등록 + staff 매핑/생성 (RPC 트랜잭션)
+    // INV-5 §3-B: admin 이 신규 계정을 발급/덮어쓰는 destructive auth op → actor 감사
+    const auditId = await recordAuthAction(supabase, {
+      actorStaffId: actorUserId,
+      targetUserId: data.user.id,
+      targetEmail: email,
+      action: 'invite_overwrite',
+    });
     const { error: rpcErr } = await supabase.rpc('admin_register_user', {
       target_user_id: data.user.id,
       email,
@@ -227,6 +264,7 @@ export default function Accounts() {
       approved: true,
       staff_id: inviteStaffId || null,
     });
+    await stampAuthActionOutcome(supabase, auditId, rpcErr ? 'failed' : 'succeeded');
     setInviteBusy(false);
     if (rpcErr) {
       // auth.users에 고아 레코드가 남았을 수 있음 (UUID: data.user.id)
