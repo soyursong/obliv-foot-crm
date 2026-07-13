@@ -460,7 +460,7 @@ export default function ClinicSettings() {
 
         {/* 신규 의사 추가 폼 */}
         {addingDoctor && (
-          <div className="rounded-md border border-dashed border-teal-400 bg-teal-50/40 p-4 space-y-3">
+          <div data-testid="doctor-add-form" className="rounded-md border border-dashed border-teal-400 bg-teal-50/40 p-4 space-y-3">
             <div className="text-xs font-semibold text-teal-700 mb-1">새 의사 정보 입력</div>
             <DoctorFormFields
               form={newDoctorForm}

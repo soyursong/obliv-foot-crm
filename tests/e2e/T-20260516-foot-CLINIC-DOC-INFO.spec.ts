@@ -60,17 +60,23 @@ test.describe('T-20260516-CLINIC-DOC-INFO — 병원·원장 정보 설정 + 서
     await addBtn.click();
 
     // 새 의사 정보 입력 폼 출현
-    await expect(page.getByText('새 의사 정보 입력')).toBeVisible();
-    await expect(page.getByPlaceholder('홍길동')).toBeVisible();
-    await expect(page.getByPlaceholder('12345')).toBeVisible();
-    await expect(page.getByPlaceholder('S-67890')).toBeVisible();
+    // NOTE(T-20260713-CLINIC-DOC-INFO-FORM-VALID-BASELINE): 기존 등록 의사 카드도 동일한
+    //   DoctorFormFields(placeholder '홍길동'/'12345'/'S-67890')를 재사용하므로, 페이지 전역
+    //   getByPlaceholder 는 등록 의사 수만큼 매칭돼 strict-mode 위반을 낸다(데이터 드리프트).
+    //   → 신규 추가 폼(data-testid="doctor-add-form") 스코프로 한정해 결정적으로 단언한다.
+    const addForm = page.getByTestId('doctor-add-form');
+    await expect(addForm).toBeVisible();
+    await expect(addForm.getByText('새 의사 정보 입력')).toBeVisible();
+    await expect(addForm.getByPlaceholder('홍길동')).toBeVisible();
+    await expect(addForm.getByPlaceholder('12345')).toBeVisible();
+    await expect(addForm.getByPlaceholder('S-67890')).toBeVisible();
 
-    // 추가 버튼 (성명 미입력 시 비활성화 아니라 toast 에러로 처리됨 — 클릭만 확인)
-    await expect(page.getByRole('button', { name: '추가' })).toBeVisible();
+    // 추가 버튼 (성명 미입력 시 disabled — 폼 스코프로 '의사 추가' 상단 버튼과 구분)
+    await expect(addForm.getByRole('button', { name: '추가' })).toBeVisible();
 
     // 취소 클릭 → 폼 사라짐
-    await page.getByRole('button', { name: '취소' }).click();
-    await expect(page.getByText('새 의사 정보 입력')).not.toBeVisible();
+    await addForm.getByRole('button', { name: '취소' }).click();
+    await expect(page.getByTestId('doctor-add-form')).not.toBeVisible();
   });
 
   // ── 시나리오 3: 병원정보 저장 UI (admin 권한 없으면 skip) ───────────────
