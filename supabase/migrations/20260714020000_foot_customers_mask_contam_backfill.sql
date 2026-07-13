@@ -5,11 +5,20 @@
 --          + addendum GO 유효 재확인 (MSG-20260714-013056-zbn9): 결정키(reservation_id) 전건 부재 →
 --          6건 batch→per-row 전량 격상, 배치 auto-merge 경로 폐쇄(C7). 라이즈드바 채택:
 --          INV-3 정확단일수렴(비협상) + tail4 충돌가드(정확 1건) + 약보강행(#1·#5) temporal 무효 강등규율.
+--          + (c) per-row PHI 판정 q0fb(MSG-20260714-015408) + uulc addendum(015456) + reconciliation
+--            INFO(MSG-20260714-015905-oq42): NOT ALL test/DUMMY. rows 2·3·4·5·6 = 5건 realness CLEAR
+--            (test/DUMMY) / row1(0356b229) = NOT-CLEARABLE(실환자 배제불가) → 본 배치 제외(HOLD).
+-- 재스코프 : planner SPLIT 집행 지시(FIX-REQUEST MSG-20260714-020001-7xrp) — 6→5. row1 제외.
+--          identity-resolution 'ADOPT'(누구에 병합=resolvability) ≠ PHI-realness 'CLEAR'(실환자냐).
+--          row1은 clean-single 성립해도 realness 못 깸(raw phone 실형식·양측 test_hint=F·phantom name
+--          비마스킹=오염서명 불일치) → fail-closed 제외. (A)-first 별트랙 조사(§row1).
 -- SOP    : Cross-CRM Orphan-Row Archive-First Cleanup + FK Integrity Guard
 --          (파괴적 삭제 → destructive branch. mutable-UPDATE SOP 아님.)
--- Scope  : 6 ADOPT phantom (per-row 라이즈드바 통과: tail4+clinic 후보=1 + name-stem 교차확인, probe 실증).
---          02594dfa HOLD = §2-F per-row, 본 마이그 제외.
+-- Scope  : 5 ADOPT phantom (per-row 라이즈드바 통과: tail4+clinic 후보=1 + name-stem 교차확인, probe 실증).
+--          row1(0356b229) HOLD = (A)-first 조사 대기, 02594dfa HOLD = §2-F per-row, 둘 다 본 마이그 제외.
 --          라이즈드바 probe: db-gate/..._raisedbar_result.json (6/6 후보=1, 0 강등). PHI=off-git perrow_confirm.json.
+--          row5(44a6a076 ~11.2d gap) 포함: clean-single(tail4+clinic 후보=1) 충족 + realness CLEAR
+--          (test/DUMMY, 오조인 harm=test 데이터로 한정) → 포함. G0 tail4 충돌가드가 집행시점 재검증.
 -- Vector : UNAUTH-CHANGE(self_checkin masked write) 잔류물. WS-A 가드(798a2281/20260713120000)는
 --          forward-only 차단 → 기존 오염행은 본 백필이 정정.
 --
@@ -55,8 +64,8 @@ DO $mig$
 DECLARE
   v_clinic constant uuid := '74967aea-a60b-4da3-a0e7-9c997a930bc8';
   -- frozen phantom→raw 매핑 (UUID PK만 — PHI 아님. phone_tail4+clinic 단일수렴, per-row confirm 대상)
+  -- ※ row1(0356b229/c51dd5e0/9089)은 DA q0fb NOT-CLEARABLE → 제외(HOLD). 5건만.
   map jsonb := '[
-    {"phantom":"0356b229-e8c7-4655-aa6e-651b15370c1f","raw":"c51dd5e0-5e3f-4f5c-a44f-78001ab9cf6b","tail":"9089"},
     {"phantom":"512998d0-d51a-42c4-947e-b0cb2cc69da4","raw":"8fa12f4c-abfe-405e-8736-c2ca8e4aef8a","tail":"5453"},
     {"phantom":"67ea1793-05e5-4d4a-b5c1-1ec73486e317","raw":"7ad9e9a4-5e52-418c-acdb-300ee7d30e0b","tail":"0011"},
     {"phantom":"bd307dfe-79f0-4fea-86a6-0957cea492cd","raw":"d916d27b-e1a4-42ea-893e-db9a4fd3a461","tail":"2200"},
@@ -72,7 +81,7 @@ DECLARE
   denorm_ct int := 0;
   ph_ok int; rw_ok int; tail_ok int;
 BEGIN
-  -- ── [G0] freeze re-assert: 매핑 phantom 6건이 정확히 존재 + masking-signature + clinic 일치 ──
+  -- ── [G0] freeze re-assert: 매핑 phantom 5건이 정확히 존재 + masking-signature + clinic 일치 ──
   FOR rec IN SELECT * FROM jsonb_array_elements(map) LOOP
     ph := (rec->>'phantom')::uuid; rw := (rec->>'raw')::uuid; want_tail := rec->>'tail';
 
@@ -111,11 +120,18 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 정확히 6건만 대상 (초과/부족 시 abort)
+  -- 정확히 5건만 대상 (초과/부족 시 abort — row1 제외 재스코프)
   SELECT count(*) INTO ph_ok FROM jsonb_array_elements(map);
-  IF ph_ok <> 6 THEN RAISE EXCEPTION 'ABORT G0: map 건수 % (6 기대)', ph_ok; END IF;
+  IF ph_ok <> 5 THEN RAISE EXCEPTION 'ABORT G0: map 건수 % (5 기대)', ph_ok; END IF;
 
-  -- ── [G1] archive-first: phantom 6건 스냅샷 ──
+  -- ── [G0-hold] row1(0356b229) held-row 보호가드: 본 배치가 절대 건드리지 않음 재확인 ──
+  --   NOT-CLEARABLE(실환자 배제불가) → map 부재여야. 실수 유입 시 fail-closed ABORT.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(map) e
+             WHERE (e->>'phantom')::uuid = '0356b229-e8c7-4655-aa6e-651b15370c1f'::uuid) THEN
+    RAISE EXCEPTION 'ABORT G0-hold: row1(0356b229) held-row 가 map 에 유입됨 — DA NOT-CLEARABLE, 배치 제외 위반';
+  END IF;
+
+  -- ── [G1] archive-first: phantom 5건 스냅샷 ──
   FOR rec IN SELECT * FROM jsonb_array_elements(map) LOOP
     ph := (rec->>'phantom')::uuid;
     INSERT INTO _backfill_mask_contam_customers_bak
@@ -191,7 +207,7 @@ BEGIN
     deleted_ct := deleted_ct + moved;
   END LOOP;
 
-  -- ── [G-final] frozen 6-set에 masking-signature customer 0건 잔존 ──
+  -- ── [G-final] frozen 5-set에 masking-signature customer 0건 잔존 ──
   SELECT count(*) INTO total_remaining
     FROM customers c
    WHERE c.id IN (SELECT (e->>'phantom')::uuid FROM jsonb_array_elements(map) e);
