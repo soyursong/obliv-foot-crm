@@ -2138,7 +2138,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               </div>
             )}
 
-            {/* 풋케어: 4열 그리드 — AC-3(코드명/코드번호/수가) + AC-4(스크롤) */}
+            {/* 풋케어: 세로 단일 열 리스트 — AC-3(코드명/코드번호/수가 무손실) + AC-4(스크롤)
+                T-20260713-foot-PAYMINI-ITEMS-VERTICAL-STACK AC-1: 가로 다열 그리드(grid-cols-3 lg:grid-cols-4)
+                → flex-col 세로 강제. 각 항목이 별도 행(코드명 좌 · 코드번호 · 금액 우). */}
             {activeTab === '풋케어' && (
               <div className="flex-1 overflow-y-auto p-2">
                 {tabServices.length === 0 ? (
@@ -2146,22 +2148,23 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     등록된 코드가 없습니다
                   </p>
                 ) : (
-                  <div className="grid grid-cols-3 lg:grid-cols-4 gap-1.5">
+                  <div className="flex flex-col gap-1.5" data-testid="pmw-palette-list">
                     {tabServices.map((svc) => (
                       <button
                         key={svc.id}
                         onClick={() => handleSelectService(svc)}
-                        className="aspect-square flex flex-col items-center justify-center rounded border p-1.5 hover:bg-teal-50 hover:border-teal-300 transition-colors text-center"
+                        data-testid="pmw-palette-item"
+                        className="w-full flex flex-row items-center justify-between gap-2 rounded border px-2.5 py-2 min-h-[44px] hover:bg-teal-50 hover:border-teal-300 transition-colors text-left"
                       >
-                        <span className="text-[10px] font-medium leading-tight line-clamp-2">
+                        <span className="text-xs font-medium leading-tight line-clamp-2 flex-1 min-w-0">
                           {svc.name}
                         </span>
                         {svc.service_code && (
-                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
+                          <span className="text-[10px] text-blue-500 shrink-0 tabular-nums">
                             {svc.service_code}
                           </span>
                         )}
-                        <span className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
+                        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                           {formatAmount(svc.price)}
                         </span>
                       </button>
