@@ -1,0 +1,13 @@
+{
+  "id": "b36e74a3-be1f-4b61-aeb4-9150affe2c05",
+  "email": "faceofangel9999@oblivseoul.kr",
+  "name": "김지윤",
+  "role": "coordinator",
+  "clinic_id": null,
+  "active": true,
+  "approved": true,
+  "created_at": "2026-07-13T02:53:03.640401+00:00",
+  "access_tier": "member",
+  "updated_at": "2026-07-13T06:36:55.335155+00:00",
+  "exempt_from_restrictions": false
+}
