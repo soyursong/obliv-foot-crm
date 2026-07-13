@@ -1791,6 +1791,26 @@ export default function Reservations() {
     openChart(ci.customer_id);
   }, [openChart]);
 
+  // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE (RC 확정, FE-only):
+  //   동행(companion) 예약은 dopamine emit shape 상 customer_id=NULL + external_id `_comp_` 로 착지하는
+  //   '의도된 정본'(진성 customer row 없음, 변경 금지). 그런데 예약카드 이름 클릭 핸들러는 customer_id 유무만으로
+  //   분기해 온다(customer_id 有=CustomerHoverCard→고객차트 / customer_id 無=plain span→handleResvOpenChart).
+  //   customer_id=NULL 인 동행행은 이 클릭 경로에서 '고객 미연결(=예약 없음/신규)' 로 오판돼, 현장에선
+  //   기존 예약 상세가 아니라 신규예약 생성 팝업 계열 동선으로 새는 것으로 신고됨(박민지 팀장, 100% 재현).
+  //   → 근인: '카드 이름 클릭' 분기가 예약 row 존재(r.id)가 아니라 customer_id 를 예약 식별자로 오용.
+  //   → 수정: 예약 row 는 항상 존재하므로, customer_id=NULL(동행/워크인 등 미연결) 이어도 클릭 시
+  //     본예약과 동일하게 '예약 상세 팝업'(setDetail=ReservationDetailPopup 기존 예약 모드)을 연다.
+  //     customer_id 有(본예약/취소-연결) 는 기존 고객차트 동선 완전 불변(AC-2 회귀 0).
+  //   emit shape(customer_id NULL + external_id) 는 read/display 모두 불변 — FE 클릭 분기만 교정.
+  const handleResvCardOpen = useCallback((r: Reservation) => {
+    if (!r.customer_id) {
+      // 동행/미연결 예약 → 고객차트가 없으므로 예약 상세 팝업으로 진입(신규예약 오판 방지).
+      setDetail(r);
+      return;
+    }
+    handleResvOpenChart(resvAsCheckIn(r));
+  }, [handleResvOpenChart, resvAsCheckIn]);
+
   const handleResvOpenMedicalChart = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
     setResvMedicalChartCustomerId(ci.customer_id);
@@ -2174,7 +2194,10 @@ export default function Reservations() {
                 //   stopPropagation → 셀 onClick(빈칸 신규예약 생성)로 버블 차단(카드 클릭이 신규예약을 트리거하지 않음).
                 onClick={(e) => { e.stopPropagation(); setSelectedResvId(r.id); }}
                 onContextMenu={(e) => {
-                  if (r.customer_id) { e.preventDefault(); e.stopPropagation(); setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } }); }
+                  // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE: 컨텍스트메뉴 개방을 customer_id 가 아니라
+                  //   예약 row 존재(r.id) 기준으로 — 동행(customer_id NULL)도 [예약상세]/수납/문자 진입 가능(AC-3).
+                  //   메뉴 항목 핸들러는 미연결건에서 graceful degrade(고객차트/수납=안내 토스트, 예약상세=setDetail).
+                  if (r.id) { e.preventDefault(); e.stopPropagation(); setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } }); }
                 }}
                 className={cn(
                   // TIMEGRID-VERTICAL: 컬럼 폭에 맞춘 세로 진열 카드(full-width). 색상은 KIND_CARD_STYLE(초진=그린/재진=하늘/힐러=노랑) 유지.
@@ -2235,7 +2258,9 @@ export default function Reservations() {
                       // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC1, 버그 RC): 기존 `if (!r.customer_id) return;`
                       //   조기반환이 미연결(customer_id=null, 예: 대시보드 워크인 생성건) 고객박스 클릭을 silent no-op(현장 '무반응' 신고 RC)으로
                       //   만들었다. 항상 handleResvOpenChart 위임 → 연결건은 차트 오픈, 미연결건은 '고객 미연결' 안내 토스트(정상 반응). 취소건+연결 = 인앱 차트(REFIX-8 AC8 유지).
-                      onClick={(e) => { e.stopPropagation(); handleResvOpenChart(resvAsCheckIn(r)); }}
+                      // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE: customer_id 유무로 '신규' 오판하지 않고
+                      //   예약 row 기준으로 라우팅 — 연결건=고객차트 / 동행·미연결건=예약 상세 팝업(신규예약 오출력 방지).
+                      onClick={(e) => { e.stopPropagation(); handleResvCardOpen(r); }}
                     >
                       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING: 고객박스 '표기 안 됨' 방지 — 워크인/미연결·이름 결측 시
                           빈 span(고객박스 공백)이 되던 것을 CustomerHoverCard 분기와 동일하게 '이름없음' 폴백으로 통일(박스 가시성 보장). */}
@@ -2648,7 +2673,9 @@ export default function Reservations() {
                                     //   reservations 는 hard-delete(deleted_at 컬럼 없음)이므로 row 존재 = 메뉴 표시 대상.
                                     //   기존 `status !== 'cancelled'` 차단 제거(취소 예약 메뉴 진입 불가 버그 해소).
                                     onContextMenu={(e) => {
-                                      if (r.customer_id) {
+                                      // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE: 예약 row 기준(r.id) 개방 —
+                                      //   동행(customer_id NULL)도 [예약상세] 등 진입 가능(AC-3). customer_id 게이트 제거.
+                                      if (r.id) {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } });
@@ -2748,8 +2775,10 @@ export default function Reservations() {
                                             //   위임 → 미연결건은 안내 토스트(정상 반응), 연결건은 차트 오픈.
                                             e.stopPropagation();
                                             // T-20260615-foot-RESVMGMT-REFIX-8 AC8: 취소(cancelled) 고객 클릭 시 별도 window.open 차트가 아니라
-                                            //   정상 예약 클릭과 동일한 인앱 차트 패널(handleResvOpenChart)로 통일. 별도 창 분기 제거.
-                                            handleResvOpenChart(resvAsCheckIn(r));
+                                            //   정상 예약 클릭과 동일한 인앱 차트 패널로 통일. 별도 창 분기 제거.
+                                            // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE: customer_id=NULL 동행행은 '신규' 오판 대신
+                                            //   예약 상세 팝업으로 진입(연결건은 기존 고객차트 동선 불변). 예약 row 기준 라우팅.
+                                            handleResvCardOpen(r);
                                           }}
                                         >
                                           {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING: 주뷰 고객박스 '표기 안 됨' 방지 — 워크인/미연결·이름 결측 시
