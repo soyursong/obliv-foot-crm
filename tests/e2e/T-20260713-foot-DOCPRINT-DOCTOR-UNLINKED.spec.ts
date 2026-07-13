@@ -124,4 +124,89 @@ test.describe('T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED — 지정 진료의 서
     // 진료의도 함께 정상
     expect(v.doctor_name).toBe('문지은');
   });
+
+  // ── AC-8 (2차 신고 yy98): 진료비 세부산정내역 "대표자"란에 지정 진료의명 렌더(공란 아님) ──
+  test('AC-8: 진료비 세부산정내역(bill_detail) "대표자"란에 지정 진료의명이 찍힌다', async ({ page }) => {
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '홍길동', phone: '01012345678' },
+      doctor: '한동훈', // 치료테이블 지정 진료의 → loadAutoBindContext에서 결정
+    });
+    const body = await renderBound(page, 'bill_detail', v);
+    // "대 표 자" 라벨 인접에 진료의명이 실제로 출력(공란 회귀 아님)
+    expect(body).toContain('대 표 자');
+    expect(body).toContain('한동훈');
+  });
+
+  // ── AC-9 (2차 신고 yy98): 진료비 계산서·영수증 "진료의사"란에 지정 진료의명 렌더(공란 아님) ──
+  test('AC-9: 진료비 계산서·영수증(bill_receipt) "진료의사"란에 지정 진료의명이 찍힌다', async ({ page }) => {
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '홍길동', phone: '01012345678' },
+      doctor: '김상은',
+    });
+    const body = await renderBound(page, 'bill_receipt', v);
+    expect(body).toContain('진료의사');
+    expect(body).toContain('김상은');
+  });
+
+  // ── AC-10 (2차 신고 yy98): "공란" RC — doctor_name 바인딩이 두 서식 필드에 실제 도달 ──
+  //   preselect(loadAutoBindContext)로 결정된 doctor_name이 {{doctor_name}} 플레이스홀더로
+  //   흐르며, 두 서식 모두 별도 필드바인딩 누락 없이 동일 값을 소비함을 검증.
+  test('AC-10: 두 서식({{doctor_name}}) 바인딩 일치 — preselect 값이 공란 없이 도달', async ({ page }) => {
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '홍길동', phone: '01012345678' },
+      doctor: '김윤기',
+    });
+    for (const key of ['bill_detail', 'bill_receipt']) {
+      const body = await renderBound(page, key, v);
+      expect(body, `${key}에 진료의명`).toContain('김윤기');
+    }
+    // 미지정 시 두 서식 모두 공란·크래시 없음(회귀 폴백)
+    const empty = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '홍길동', phone: '01012345678' },
+      doctor: null,
+    });
+    for (const key of ['bill_detail', 'bill_receipt']) {
+      const body = await renderBound(page, key, empty);
+      expect(body).not.toContain('undefined');
+      expect(body).not.toContain('null');
+    }
+  });
+
+  // ── AC-5 (도장): 지정 진료의의 도장(seal_image_url)이 {{doctor_seal_html}}로 흐르고 서류에 렌더 ──
+  test('AC-5: 지정 진료의 도장이 서류(bill_detail/bill_receipt/diagnosis)에 img로 렌더된다', () => {
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '홍길동', phone: '01012345678' },
+      doctor: '한동훈',
+      clinicDoctor: {
+        name: '한동훈',
+        license_no: '제10001호',
+        specialist_no: null,
+        seal_image_url: 'https://example.test/seal-hdh.png', // 한동훈 1:1 매핑 도장(signed URL 자리)
+      },
+    });
+    // 결정된 진료의의 도장만 흐름(오매핑 0) — 이름·도장 동일 원장에서 파생
+    expect(v.doctor_seal_html).toContain('https://example.test/seal-hdh.png');
+    for (const key of ['bill_detail', 'bill_receipt', 'diagnosis']) {
+      const tpl = getHtmlTemplate(key) as string;
+      const html = bindHtmlTemplate(tpl, v);
+      expect(html, `${key}에 도장 img`).toContain('https://example.test/seal-hdh.png');
+    }
+  });
+
+  // ── AC-6 (도장): 진료의 미지정 시 특정 원장 도장 미출력(엉뚱한 원장 도장 금지) ──
+  test('AC-6: 진료의 미지정 시 특정 원장 storage seal이 출력되지 않는다(폴백만)', () => {
+    const v = buildAutoBindValues({
+      checkIn: baseCheckIn(),
+      customer: { name: '홍길동', phone: '01012345678' },
+      doctor: null, // 미지정 → clinicDoctor 없음 → 특정 원장 도장 없음
+    });
+    // 특정 원장 storage seal(seals/ path·signed URL)이 아님 — SEAL-NULL-FALLBACK(로컬자산/(인))만 허용
+    expect(v.doctor_seal_html).not.toContain('/seals/');
+    expect(v.doctor_seal_html).not.toContain('supabase.co/storage');
+  });
 });
