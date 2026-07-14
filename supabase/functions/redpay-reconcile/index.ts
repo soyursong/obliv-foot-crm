@@ -719,7 +719,7 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   //   VAN-앵커 이벤트(raw_transaction_id 有)는 raw merchant band 로, CRM-앵커(missing_at_van,
   //   raw 없음)는 이 foot CRM 의 payments → 'foot'. default-mapping 금지(centerForRawRow 미분류=WARN).
   const centerByRawId = new Map<string, "foot" | "body">();
-  for (const r of (rawTrxList as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
+  for (const r of ((rawTrxList ?? []) as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
   for (const r of ((cancelledRaw ?? []) as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
   for (const e of allEvents) {
     e.center = e.raw_transaction_id
