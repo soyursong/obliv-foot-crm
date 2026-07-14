@@ -59,6 +59,8 @@ import { useClinic } from '@/hooks/useClinic';
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+// T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
+import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
 import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean, useChartSheetDock } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
@@ -741,13 +743,20 @@ function ReceiptUploadSection({
   //   - 단건/패키지 토글 제거 + 활성 패키지 자동감지 제거 → 항상 package_payments INSERT
   //   - 활성 패키지 없으면 가드 차단(단건 fallback 금지) — "패키지 먼저 생성" 전제
   //   - paymentDate: 결제일 — Closing이 created_at 기준 일자 집계하므로 과거일 선택 시 created_at 세팅
+  // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC (옵션A): 귀속 대상 수기선택.
+  //   targetSel = 'pkg:<id>' | 'ci:<id>' | 'single'. 활성패키지 無 시 하드블록 제거 → ci/단건 라우팅.
   const [amountDlg, setAmountDlg] = useState<{
     open: boolean; amount: string; method: 'card' | 'cash' | 'transfer';
-    packageId: string; paymentDate: string;
-  }>({ open: false, amount: '', method: 'cash', packageId: '', paymentDate: todaySeoulISODate() });
+    targetSel: string; paymentDate: string;
+  }>({ open: false, amount: '', method: 'cash', targetSel: '', paymentDate: todaySeoulISODate() });
   // 활성 패키지 목록 (영수증 결제 라우팅 대상)
   // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: totalSessions 추가 — 회수=1 영수증은 단건(payments)으로 분기.
   const [activePkgs, setActivePkgs] = useState<{ id: string; name: string; totalSessions: number }[]>([]);
+  // T-20260714 옵션A: payment_waiting(수납대기) 내원 후보 — 귀속 시 payments + 칸반 해소.
+  const [waitingCIs, setWaitingCIs] = useState<{
+    id: string; clinic_id: string; status: string;
+    status_flag_history: unknown[]; customer_id: string | null; label: string;
+  }[]>([]);
 
   const storagePath = `customer/${customerId}/receipt`;
 
@@ -762,6 +771,24 @@ function ReceiptUploadSection({
       .order('created_at', { ascending: false });
     setActivePkgs((data ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
       ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 })));
+  }, [customerId]);
+
+  // T-20260714 옵션A: 고객의 payment_waiting(수납대기) 내원 조회 (귀속 후보). 최신순.
+  const loadWaitingCIs = useCallback(async () => {
+    const { data } = await supabase
+      .from('check_ins')
+      .select('id, clinic_id, status, status_flag_history, customer_id, checked_in_at')
+      .eq('customer_id', customerId)
+      .eq('status', 'payment_waiting')
+      .order('checked_in_at', { ascending: false });
+    setWaitingCIs((data ?? []).map((c: {
+      id: string; clinic_id: string; status: string; status_flag_history: unknown[];
+      customer_id: string | null; checked_in_at: string | null;
+    }) => ({
+      id: c.id, clinic_id: c.clinic_id, status: c.status,
+      status_flag_history: c.status_flag_history ?? [], customer_id: c.customer_id,
+      label: `수납대기 내원${c.checked_in_at ? ` · ${formatDateTimeDots(c.checked_in_at)}` : ''}`,
+    })));
   }, [customerId]);
 
   const load = useCallback(async () => {
@@ -782,7 +809,7 @@ function ReceiptUploadSection({
     setImages(withUrls.filter((i) => i.signedUrl));
   }, [storagePath]);
 
-  useEffect(() => { load(); loadActivePkgs(); }, [load, loadActivePkgs]);
+  useEffect(() => { load(); loadActivePkgs(); loadWaitingCIs(); }, [load, loadActivePkgs, loadWaitingCIs]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -808,11 +835,28 @@ function ReceiptUploadSection({
     const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
       ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 }));
     setActivePkgs(pkgs);
-    // 매출 연동 다이얼로그 열기 — 영수증 업로드 = 항상 패키지 결제. 최신 패키지 1건 프리셀렉트.
-    // 활성 패키지 없으면 다이얼로그 내 가드로 차단(등록 비활성), 단건 fallback 안 함.
+    // T-20260714 옵션A: payment_waiting 내원 재조회 (귀속 후보).
+    const { data: ciRows } = await supabase
+      .from('check_ins')
+      .select('id, clinic_id, status, status_flag_history, customer_id, checked_in_at')
+      .eq('customer_id', customerId)
+      .eq('status', 'payment_waiting')
+      .order('checked_in_at', { ascending: false });
+    const wcis = (ciRows ?? []).map((c: {
+      id: string; clinic_id: string; status: string; status_flag_history: unknown[];
+      customer_id: string | null; checked_in_at: string | null;
+    }) => ({
+      id: c.id, clinic_id: c.clinic_id, status: c.status,
+      status_flag_history: c.status_flag_history ?? [], customer_id: c.customer_id,
+      label: `수납대기 내원${c.checked_in_at ? ` · ${formatDateTimeDots(c.checked_in_at)}` : ''}`,
+    }));
+    setWaitingCIs(wcis);
+    // 매출 연동 다이얼로그 열기 — 옵션A 귀속 선택. 기본값: 활성패키지>수납대기 내원>단건 순.
+    //   활성패키지 無 여도 하드블록 없이 ci/단건으로 귀속 가능(옵션A, RECEIPT-PKG-ALWAYS 하드블록 supersede).
+    const defaultSel = pkgs.length > 0 ? `pkg:${pkgs[0].id}` : (wcis.length > 0 ? `ci:${wcis[0].id}` : 'single');
     setAmountDlg({
       open: true, amount: '', method: 'cash',
-      packageId: pkgs.length > 0 ? pkgs[0].id : '',
+      targetSel: defaultSel,
       paymentDate: todaySeoulISODate(),
     });
   };
@@ -826,15 +870,7 @@ function ReceiptUploadSection({
   const handlePaymentConfirm = async () => {
     const amt = parseAmount(amountDlg.amount);
     if (amt <= 0) { toast.error('금액을 입력하세요'); return; }
-
-    // ── T-20260609-foot-RECEIPT-PKG-ALWAYS (AC-1·AC-2) ─────────────────
-    // 영수증 업로드 = 항상 package_payments INSERT. 단건 fallback 금지(자동감지·토글 제거).
-    // 활성 패키지 없으면 가드 차단 — "패키지 먼저 생성" 전제(reporter 김주연 총괄).
-    if (activePkgs.length === 0) {
-      toast.error('결제할 패키지가 없습니다. 패키지를 먼저 생성한 뒤 등록하세요.');
-      return;
-    }
-    if (!amountDlg.packageId) { toast.error('결제할 패키지를 선택하세요'); return; }
+    if (!amountDlg.targetSel) { toast.error('귀속 대상을 선택하세요'); return; }
 
     // 결제일 귀속(AC-3): Closing은 created_at 기준 일자 집계.
     // 오늘 결제(=업로드일)면 now() 그대로(정확 타임스탬프), 과거 결제일이면 해당일 정오(KST)로 created_at 세팅.
@@ -844,65 +880,81 @@ function ReceiptUploadSection({
         ? `${amountDlg.paymentDate}T12:00:00+09:00`
         : undefined;
 
-    // ── T-20260610-foot-PKGCLASS-SESSION1-SINGLE (AC-3·회수1 영수증=단건) ───────────
-    // 선택 패키지의 총 회수=1 이면 단건(payments)으로 분류한다. RECEIPT-PKG-ALWAYS(305b0ad)를
-    // 회수=1 케이스에 한해 supersede. 1차 키=회수(금액 보조). Closing은 payments(단건)·
-    // package_payments(패키지) 행을 각각 집계하므로 분기만으로 단건 버킷에 정확히 산입된다.
-    const selectedPkg = activePkgs.find((p) => p.id === amountDlg.packageId);
-    if (selectedPkg && isSinglePaymentByCount(selectedPkg.totalSessions)) {
-      const { error: pErr } = await supabase.from('payments').insert({
-        clinic_id: clinicId,
-        check_in_id: null, // 영수증 업로드는 내원(check_in) 비종속 — payments.check_in_id NULLABLE
-        customer_id: customerId,
-        amount: amt,
-        method: amountDlg.method,
-        installment: 0,
-        payment_type: 'payment',
-        memo: '영수증 업로드(회수1·단건)',
-        ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
-      });
-      if (pErr) { toast.error(`단건 결제 기록 실패: ${pErr.message}`); return; }
-      // 패키지 자체는 존속(1회 세션 소진 추적). paid_amount 에 단건 납부분 직접 반영 —
-      // payments 행은 package_payments 합계에 안 잡히므로 "미납" 오표시 방지.
-      const { data: pkgRow } = await supabase
-        .from('packages')
-        .select('paid_amount')
-        .eq('id', amountDlg.packageId)
-        .maybeSingle();
-      await supabase
-        .from('packages')
-        .update({ paid_amount: (pkgRow?.paid_amount ?? 0) + amt })
-        .eq('id', amountDlg.packageId);
+    const sel = amountDlg.targetSel;
+
+    // ── 패키지 귀속 (pkg:<id>) ────────────────────────────────────────────
+    if (sel.startsWith('pkg:')) {
+      const packageId = sel.slice(4);
+      // ── T-20260610-foot-PKGCLASS-SESSION1-SINGLE: 회수1 패키지는 단건(payments)+paid_amount 직접반영 (기존 동선 UNCHANGED)
+      const selectedPkg = activePkgs.find((p) => p.id === packageId);
+      if (selectedPkg && isSinglePaymentByCount(selectedPkg.totalSessions)) {
+        const { error: pErr } = await supabase.from('payments').insert({
+          clinic_id: clinicId,
+          check_in_id: null, // 영수증 업로드는 내원(check_in) 비종속 — payments.check_in_id NULLABLE
+          customer_id: customerId,
+          amount: amt,
+          method: amountDlg.method,
+          installment: 0,
+          payment_type: 'payment',
+          memo: '영수증 업로드(회수1·단건)',
+          ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
+        });
+        if (pErr) { toast.error(`단건 결제 기록 실패: ${pErr.message}`); return; }
+        const { data: pkgRow } = await supabase
+          .from('packages')
+          .select('paid_amount')
+          .eq('id', packageId)
+          .maybeSingle();
+        await supabase
+          .from('packages')
+          .update({ paid_amount: (pkgRow?.paid_amount ?? 0) + amt })
+          .eq('id', packageId);
+        setAmountDlg((d) => ({ ...d, open: false }));
+        toast.success('단건 결제로 기록 (회수 1회)');
+        onPaymentCreated();
+        return;
+      }
+      // 패키지 잔금 결제 — 정본 write-path SSOT(recordManualPayment) 경유(AC7: 단일경로).
+      //   memo='영수증 업로드' 유지 → CHART2-RECEIPT-RESTRUCTURE: 수납내역 제외, 결제영수증 섹션 표기(중복방지).
+      try {
+        await recordManualPayment({
+          clinicId, customerId, amount: amt, method: amountDlg.method,
+          attribution: { kind: 'package', packageId },
+          memo: '영수증 업로드', createdAtOverride,
+        });
+      } catch (e) { toast.error(e instanceof Error ? e.message : '패키지 결제 기록 실패'); return; }
       setAmountDlg((d) => ({ ...d, open: false }));
-      toast.success('단건 결제로 기록 (회수 1회)');
+      toast.success('패키지 결제로 기록 (미수 반영)');
       onPaymentCreated();
       return;
     }
 
-    // PKG-REVENUE-SPLIT(2026-05-19 확립) 경로 재사용 — 새 경로 신설 금지(AC-5).
-    const { error: ppErr } = await supabase.from('package_payments').insert({
-      clinic_id: clinicId,
-      package_id: amountDlg.packageId,
-      customer_id: customerId,
-      amount: amt,
-      method: amountDlg.method,
-      installment: 0,
-      payment_type: 'payment',
-      memo: '영수증 업로드',
-      ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
-    });
-    if (ppErr) { toast.error(`패키지 결제 기록 실패: ${ppErr.message}`); return; }
-    // PackagePaymentAdd 동일 로직: package_payments 합계 → packages.paid_amount 재집계
-    const { data: sum } = await supabase
-      .from('package_payments')
-      .select('amount, payment_type')
-      .eq('package_id', amountDlg.packageId);
-    const total = (sum ?? []).reduce(
-      (s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
-    await supabase.from('packages').update({ paid_amount: total }).eq('id', amountDlg.packageId);
-    setAmountDlg((d) => ({ ...d, open: false }));
-    toast.success('패키지 결제로 기록');
-    onPaymentCreated();
+    // ── 옵션A 라우팅 (ci / single) — recordManualPayment 정본 write-path ────
+    let attribution: ManualPayAttribution;
+    if (sel.startsWith('ci:')) {
+      const ci = waitingCIs.find((c) => c.id === sel.slice(3));
+      if (!ci) { toast.error('수납대기 내원 정보를 찾을 수 없습니다'); return; }
+      attribution = { kind: 'checkin', checkIn: ci };
+    } else {
+      attribution = { kind: 'single' };
+    }
+    try {
+      const res = await recordManualPayment({
+        clinicId, customerId, amount: amt, method: amountDlg.method,
+        attribution, createdAtOverride,
+      });
+      setAmountDlg((d) => ({ ...d, open: false }));
+      if (res.route === 'checkin') {
+        toast.success(res.kanbanResolved ? '수납 완료 — 대기목록 해소' : '수납 기록됨');
+      } else {
+        toast.success('단건 결제로 기록');
+      }
+      // 귀속 후보 최신화(칸반 해소 반영)
+      await loadWaitingCIs();
+      onPaymentCreated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '결제 기록 실패');
+    }
   };
 
   return (
@@ -951,40 +1003,33 @@ function ReceiptUploadSection({
             <div className="font-semibold text-sm">영수증 매출 연동</div>
             <p className="text-xs text-muted-foreground">결제 금액을 입력하면 일일 매출에 자동 반영됩니다.</p>
             <div className="space-y-2">
-              {/* T-20260609-foot-RECEIPT-PKG-ALWAYS: 영수증 업로드 = 항상 패키지 결제 (토글 제거) */}
-              {activePkgs.length === 0 ? (
-                /* 활성 패키지 없음 — 가드 차단(단건 fallback 금지) */
-                <div
-                  data-testid="receipt-no-package-guard"
-                  className="rounded border border-amber-200 bg-amber-50 px-2 py-2 text-[11px] leading-relaxed text-amber-800"
+              {/* T-20260714-foot-DAYCLOSE-MANUAL-PAY (옵션A): 귀속 대상 수기선택 — 활성패키지 / 수납대기 내원 / 단건.
+                  RECEIPT-PKG-ALWAYS 하드블록(활성패키지 無 차단) supersede — 언제나 저장 가능. */}
+              <div>
+                <label className="text-xs text-muted-foreground block mb-0.5">귀속 대상</label>
+                <select
+                  data-testid="receipt-attribution-select"
+                  value={amountDlg.targetSel}
+                  onChange={(e) => setAmountDlg((d) => ({ ...d, targetSel: e.target.value }))}
+                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
                 >
-                  결제할 패키지가 없습니다. <b>패키지를 먼저 생성</b>한 뒤 영수증을 등록하세요.
-                </div>
-              ) : (
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-0.5">패키지 결제</label>
-                  {/* 패키지 선택: 2개 이상이면 드롭다운(귀속 명시), 1개면 라벨 */}
-                  {activePkgs.length > 1 ? (
-                    <select
-                      data-testid="receipt-package-select"
-                      value={amountDlg.packageId}
-                      onChange={(e) => setAmountDlg((d) => ({ ...d, packageId: e.target.value }))}
-                      className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
-                    >
-                      {activePkgs.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div
-                      data-testid="receipt-package-label"
-                      className="rounded bg-sage-50 px-2 py-1 text-[11px] text-sage-800 truncate"
-                    >
-                      {activePkgs[0].name}
-                    </div>
-                  )}
-                </div>
-              )}
+                  {activePkgs.map((p) => (
+                    <option key={p.id} value={`pkg:${p.id}`}>패키지 잔금 · {p.name}</option>
+                  ))}
+                  {waitingCIs.map((c) => (
+                    <option key={c.id} value={`ci:${c.id}`}>{c.label}</option>
+                  ))}
+                  <option value="single">단건 결제 (귀속 없음)</option>
+                </select>
+                {activePkgs.length === 0 && waitingCIs.length === 0 && (
+                  <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                    활성 패키지·수납대기 내원이 없어 <b>단건 결제</b>로 기록됩니다.
+                  </p>
+                )}
+                {amountDlg.targetSel.startsWith('ci:') && (
+                  <p className="text-[10px] text-emerald-700 mt-0.5">저장 시 수납대기 목록에서 자동 해소됩니다.</p>
+                )}
+              </div>
               <div>
                 <label className="text-xs text-muted-foreground block mb-0.5">금액 (원)</label>
                 <AmountInput
@@ -1042,7 +1087,6 @@ function ReceiptUploadSection({
                 size="sm"
                 className="flex-1 bg-sage-600 hover:bg-sage-700"
                 onClick={handlePaymentConfirm}
-                disabled={activePkgs.length === 0}
                 data-testid="receipt-payment-submit"
               >
                 등록
