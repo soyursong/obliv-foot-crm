@@ -5,7 +5,7 @@ priority: P0
 hotfix: true
 status: deploy-ready
 qa_result: pass
-deploy_commit: PENDING_FILL_AFTER_COMMIT
+deploy_commit: e14557269b23
 deployed_at: n/a (NOT yet deployed — supervisor QA/bundle 검증 대기)
 bundle_hash: PaymentMiniWindow-CMF_IKZ_.js / index-Dn3lhecX.js (로컬 build 산출 — supervisor 운영배포 후 재검증)
 db_change: false
