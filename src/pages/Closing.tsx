@@ -28,6 +28,8 @@ import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
 // T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL: 일일 미수금 박스 — footBilling outstanding SSOT 재사용(신규 산출 0)
 import { loadCustomerOutstanding } from '@/lib/footBilling';
+// T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC (옵션A): 수기입력 → 정본 write-path 연동(단일 SSOT)
+import { recordManualPayment, type ManualPayAttribution, type ManualPayCheckIn } from '@/lib/manualPaymentWritePath';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1882,6 +1884,60 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
   );
   const [memo, setMemo] = useState(editTarget?.memo ?? '');
   const [saving, setSaving] = useState(false);
+  const { profile } = useAuth();
+
+  // ── T-20260714-foot-DAYCLOSE-MANUAL-PAY (옵션A): 차트번호 → 고객 연동 정본 귀속 ──
+  //   차트번호가 이 클리닉 내 고객 1인으로 유일 해소되면, 활성 패키지 잔금 / 수납대기 내원으로
+  //   정본(package_payments/payments) 귀속 가능. 귀속 시 closing_manual_payments 는 만들지 않아
+  //   매출 이중계상 없음(net-zero). 기본값 = '수기(rollup)' — 기존 동선 무회귀.
+  const [resolvedCust, setResolvedCust] = useState<{ id: string; name: string } | null>(null);
+  const [custPkgs, setCustPkgs] = useState<{ id: string; name: string; totalSessions: number }[]>([]);
+  const [custWaitingCIs, setCustWaitingCIs] = useState<(ManualPayCheckIn & { label: string })[]>([]);
+  const [attrSel, setAttrSel] = useState<string>('manual'); // 'manual' | 'pkg:<id>' | 'ci:<id>' | 'single'
+
+  useEffect(() => {
+    if (isEdit) return; // 수정 모드는 기존 rollup 행만 편집 (귀속 전환 비대상)
+    const cn = chartNumber.trim();
+    if (!cn) { setResolvedCust(null); setCustPkgs([]); setCustWaitingCIs([]); setAttrSel('manual'); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const { data: custs } = await supabase
+        .from('customers')
+        .select('id, name')
+        .eq('clinic_id', clinicId)
+        .eq('chart_number', cn)
+        .limit(2);
+      if (cancelled) return;
+      if (!custs || custs.length !== 1) { setResolvedCust(null); setCustPkgs([]); setCustWaitingCIs([]); setAttrSel('manual'); return; }
+      const cust = custs[0] as { id: string; name: string };
+      setResolvedCust(cust);
+      const { data: pkgs } = await supabase
+        .from('packages')
+        .select('id, package_name, total_sessions')
+        .eq('customer_id', cust.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+      const { data: cis } = await supabase
+        .from('check_ins')
+        .select('id, clinic_id, status, status_flag_history, customer_id, checked_in_at')
+        .eq('customer_id', cust.id)
+        .eq('status', 'payment_waiting')
+        .order('checked_in_at', { ascending: false });
+      if (cancelled) return;
+      setCustPkgs((pkgs ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
+        ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 })));
+      setCustWaitingCIs((cis ?? []).map((c: {
+        id: string; clinic_id: string; status: string; status_flag_history: unknown[];
+        customer_id: string | null; checked_in_at: string | null;
+      }) => ({
+        id: c.id, clinic_id: c.clinic_id, status: c.status,
+        status_flag_history: c.status_flag_history ?? [], customer_id: c.customer_id,
+        label: `수납대기 내원${c.checked_in_at ? ` · ${format(new Date(c.checked_in_at), 'MM/dd HH:mm')}` : ''}`,
+      })));
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [chartNumber, clinicId, isEdit]);
+
   /** T-20260512-foot-OCR-RECEIPT: OCR 추출 결과 자동기입 콜백 */
   const handleReceiptExtracted = (data: { amount?: number; method?: 'card' | 'cash' | 'transfer'; storagePath?: string }) => {
     if (data.amount) setAmount(String(data.amount));
@@ -1893,6 +1949,38 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
     if (!customerName.trim()) { toast.error('성함을 입력하세요'); return; }
     const amt = parseInt(amount.replace(/[^\d]/g, ''), 10);
     if (!amt || amt <= 0) { toast.error('결제금액을 입력하세요'); return; }
+
+    // ── T-20260714 옵션A: 정본 귀속 선택 시 canonical write-path 경유(closing_manual_payments 미생성) ──
+    if (!isEdit && resolvedCust && attrSel !== 'manual') {
+      setSaving(true);
+      // 매출은 마감일(closeDate) 기준 반영 — created_at 을 마감일+시간(KST)로 세팅.
+      const createdAtOverride = `${closeDate}T${(payTime && payTime.length === 5) ? payTime : '12:00'}:00+09:00`;
+      let attribution: ManualPayAttribution | null = null;
+      if (attrSel.startsWith('pkg:')) attribution = { kind: 'package', packageId: attrSel.slice(4) };
+      else if (attrSel.startsWith('ci:')) {
+        const ci = custWaitingCIs.find((c) => c.id === attrSel.slice(3));
+        if (ci) attribution = { kind: 'checkin', checkIn: ci };
+      } else if (attrSel === 'single') attribution = { kind: 'single' };
+      if (!attribution) { setSaving(false); toast.error('귀속 대상을 확인하세요'); return; }
+      try {
+        const res = await recordManualPayment({
+          clinicId, customerId: resolvedCust.id, amount: amt, method,
+          attribution, memo: memo || undefined, createdAtOverride,
+          actor: { id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null },
+        });
+        setSaving(false);
+        toast.success(
+          res.route === 'package' ? '패키지 잔금 결제로 기록 (미수 반영)'
+          : res.route === 'checkin' ? (res.kanbanResolved ? '수납 완료 — 대기목록 해소' : '수납 기록됨')
+          : '단건 결제로 기록',
+        );
+        onSaved();
+      } catch (e) {
+        setSaving(false);
+        toast.error(e instanceof Error ? e.message : '정본 결제 기록 실패');
+      }
+      return;
+    }
 
     setSaving(true);
     const payload = {
@@ -1949,6 +2037,34 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
             <Label>성함 <span className="text-destructive">*</span></Label>
             <Input placeholder="홍길동" value={customerName} onChange={e => setCustomerName(e.target.value)} />
           </div>
+          {/* T-20260714-foot-DAYCLOSE-MANUAL-PAY (옵션A): 차트번호 해소 시 고객 정본 귀속 선택 */}
+          {!isEdit && resolvedCust && (
+            <div className="space-y-1 rounded-md border border-emerald-200 bg-emerald-50/60 p-2">
+              <Label className="text-emerald-800">
+                고객 연동 <span className="font-normal text-emerald-700">— {resolvedCust.name} 확인됨</span>
+              </Label>
+              <select
+                data-testid="manual-attribution-select"
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={attrSel}
+                onChange={e => setAttrSel(e.target.value)}
+              >
+                <option value="manual">수기 내역만 기록 (고객 미연동)</option>
+                {custPkgs.map(p => (
+                  <option key={p.id} value={`pkg:${p.id}`}>패키지 잔금 · {p.name} (미수 해소)</option>
+                ))}
+                {custWaitingCIs.map(c => (
+                  <option key={c.id} value={`ci:${c.id}`}>{c.label} (수납·대기해소)</option>
+                ))}
+                <option value="single">단건 결제 (고객 귀속)</option>
+              </select>
+              {attrSel !== 'manual' && (
+                <p className="text-[11px] leading-relaxed text-emerald-700">
+                  고객 수납내역·미수에 반영됩니다. (수기 결제내역에는 중복 기록되지 않음)
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>내원경로</Label>
