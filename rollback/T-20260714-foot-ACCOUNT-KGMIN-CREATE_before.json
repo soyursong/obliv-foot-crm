@@ -1,0 +1,23 @@
+{
+  "ticket": "T-20260714-foot-ACCOUNT-KGMIN-CREATE",
+  "captured_at": "2026-07-14T02:25:21.048Z",
+  "id": "170e0cd5-2d17-43d7-9433-3be5280d5d30",
+  "email": "kgm8337@gmail.com",
+  "banned_until": null,
+  "created_at": "2026-07-10T09:16:03.245982Z",
+  "user_profiles": {
+    "name": "강경민",
+    "role": "consultant",
+    "approved": true,
+    "active": true,
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+  },
+  "staff": {
+    "id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+    "name": "강경민",
+    "role": "consultant",
+    "active": true,
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+  },
+  "note": "password hash NOT captured (irreversible). rollback=user self-change or re-reset. email_confirm rollback=set email_confirmed_at NULL(비권장)."
+}

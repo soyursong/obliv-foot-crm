@@ -1,0 +1,5 @@
+-- Rollback: T-20260714-foot-ACCOUNT-KGMIN-CREATE reconcile 되돌리기
+-- 비번: 실장 본인 최초 로그인 후 변경(해시 irreversible). 계정 비활성화가 필요하면 아래.
+-- UPDATE public.user_profiles SET active=false WHERE id='170e0cd5-2d17-43d7-9433-3be5280d5d30';
+-- UPDATE public.staff SET active=false WHERE user_id='170e0cd5-2d17-43d7-9433-3be5280d5d30';
+-- (email_confirmed_at 을 NULL 로 되돌리는 것은 로그인 재차단이므로 비권장)
