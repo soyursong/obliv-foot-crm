@@ -933,9 +933,10 @@ ${COMMON_STYLE}
       {{items_html}}
       <tr>
         <td colspan="7" style="text-align:center; background:#f8f8f8; font-weight:bold;">계</td>
-        <td class="num-cell">{{subtotal_amount}}</td>
-        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 본인부담금/공단부담금 총계 하드코딩 0 →
-             {{subtotal_copayment}}/{{subtotal_fund}} 바인딩. per-item 행은 정상이나 요약행 총계가 0 고정이던 근인. -->
+        <!-- T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): '총액(합계)' 열 = 급여 본인부담금 + 비급여
+             ({{detail_subtotal}}, 공단부담금 제외). 공단부담금 칸/금액({{subtotal_fund}})은 표시 그대로 유지 — 합계에서만 제외. -->
+        <td class="num-cell">{{detail_subtotal}}</td>
+        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 본인부담금/공단부담금 총계 바인딩(표시 유지). -->
         <td class="num-cell">{{subtotal_copayment}}</td>
         <td class="num-cell">{{subtotal_fund}}</td>
         <td class="num-cell">0</td>
@@ -951,8 +952,10 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td colspan="7" style="text-align:center; background:#f8f8f8; font-weight:bold;">합계</td>
-        <td class="num-cell"><strong>{{total_amount}}</strong></td>
-        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 합계 본인부담금/공단부담금 하드코딩 0 → 바인딩. -->
+        <!-- T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): '총액(합계)' 열 = 급여 본인부담금 + 비급여
+             ({{detail_total}}, 공단부담금 제외). 공단부담금 합계({{total_fund}})는 표시 그대로 유지 — 합계에서만 제외. -->
+        <td class="num-cell"><strong>{{detail_total}}</strong></td>
+        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 합계 본인부담금/공단부담금 바인딩(표시 유지). -->
         <td class="num-cell"><strong>{{total_copayment}}</strong></td>
         <td class="num-cell"><strong>{{total_fund}}</strong></td>
         <td class="num-cell">0</td>
@@ -1706,7 +1709,9 @@ const BILL_RECEIPT_HTML = `
            정적 하드코딩 그리드(전액을 '처치 및 수술료' 한 행 비급여 열에 뭉뚱그림 = 항목 미구분/비급여 한덩어리,
            공단·본인 per-category 미채움) → 항목별 동적 그리드. 세부산정내역과 동일 SSOT(buildFootBillDetailItems)를
            HIRA 항목분류로 집계해 공단부담/본인부담/비급여/합계를 행별 배치. buildBillReceiptFeeGridHtml 산출.
-           소계행({{insurance_covered}}/{{copayment}}/{{non_covered}}/{{total_amount}})은 동일 항목 소스라 구조적 정합. -->
+           소계행 공단부담/본인부담/비급여는 동일 항목 소스라 구조적 정합.
+           T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 소계·총 합계는 receipt_total(본인+비급여, 공단 제외) 바인딩
+           — 공단부담(insurance_covered) 열은 표시 유지. (旧 total_amount=공단포함 grandTotal placeholder 제거: 주석 내 잔존 시 bind 로 렌더 유출) -->
       {{fee_grid_html}}
       <tr>
         <td class="br-label" style="font-weight:bold;">소&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;계</td>
@@ -1715,12 +1720,15 @@ const BILL_RECEIPT_HTML = `
              copayment 값은 3경로(재발급/배치/단건) 모두 산출·bind되나 template placeholder 누락으로 미출력이던 근인. -->
         <td class="br-num" style="font-weight:bold;">{{copayment}}</td>
         <td class="br-num" style="font-weight:bold;">{{non_covered}}</td>
-        <td class="br-num" style="font-weight:bold;">{{total_amount}}</td>
+        <!-- T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): '합계' = 급여 본인부담금 + 비급여
+             ({{receipt_total}}, 공단부담금 제외). 공단부담 열({{insurance_covered}})은 표시 그대로 유지 — 합계에서만 제외. -->
+        <td class="br-num" style="font-weight:bold;">{{receipt_total}}</td>
       </tr>
       <tr style="height:32px;">
         <td class="br-label" style="font-size:9pt; font-weight:bold; text-align:center;">총&nbsp;진료비&nbsp;합계</td>
         <td colspan="4" style="font-size:13pt; font-weight:bold; text-align:center; letter-spacing:2px;">
-          ₩ {{total_amount}}
+          <!-- T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 환자 청구 합계 = 본인부담금 + 비급여(공단 제외). -->
+          ₩ {{receipt_total}}
         </td>
       </tr>
     </tbody>
@@ -2211,7 +2219,9 @@ export function buildBillReceiptFeeGridHtml(
     const gongdan = a.covered > 0 ? won(Math.max(0, a.covered - a.copay)) : '';
     const bonin = a.covered > 0 ? won(a.copay) : '';
     const nonCov = a.nonCovered > 0 ? won(a.nonCovered) : '';
-    const sum = won(a.covered + a.nonCovered);
+    // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 행별 '합계' = 본인부담(copay) + 비급여(공단 제외).
+    //   공단부담 열(gongdan)은 표시 그대로 유지 — 합계에서만 제외. (기존: a.covered + a.nonCovered = 공단 포함 버그)
+    const sum = won(a.copay + a.nonCovered);
     return `<td class="br-num">${gongdan}</td><td class="br-num">${bonin}</td><td class="br-num">${nonCov}</td><td class="br-num">${sum}</td>`;
   };
   const rows = ROW_ORDER.map(
