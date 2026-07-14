@@ -273,6 +273,12 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 전용 축(hira_institution_name) 재배선 +
+        //   대표자 print 분리(Q2). bill_detail·bill_receipt 요양기관명 셀 = {{hira_institution_name}}(affirmative,
+        //   silent 폴백 금지) + bill_detail 대표자 셀 = {{representative_name}}(박영진) / bill_receipt 진료의사 셀
+        //   = {{doctor_name}} 보존(박영진 미주입). ins_claim_form clinic_name 유지(축분리 스코프 가드) + page.setContent
+        //   +print media 렌더 스크린샷(DoD#2). auth/server 불요.
+        '**/T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

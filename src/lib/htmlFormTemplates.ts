@@ -973,9 +973,11 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <td style="width:100px; background:#f8f8f8; text-align:center;">요양기관 명칭</td>
-        <td>{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT axisA: 요양기관명 전용 축(clinic_name←clinics.name 폐지) -->
+        <td>{{hira_institution_name}}</td>
         <td style="width:60px; background:#f8f8f8; text-align:center;">대 표 자</td>
-        <td style="width:120px;">{{doctor_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT axisB(Q2): 기관 대표자 셀 → representative_name(박영진). 진료의 셀 아님. ⚠ 인접 직인(doctor_seal_html) leaf 무접촉. -->
+        <td style="width:120px;">{{representative_name}}</td>
         <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 대표자 성명 근방 직인 -->
         <td style="width:52px; text-align:center;">{{doctor_seal_html}}</td>
       </tr>
@@ -1667,7 +1669,8 @@ const BILL_RECEIPT_HTML = `
       <tr>
         <td rowspan="3" class="br-label" style="width:20px; text-align:center; font-size:7.5pt; padding:2px; letter-spacing:1px;">요<br>양<br>기<br>관</td>
         <td class="br-label" style="width:70px; text-align:center;">명&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;칭</td>
-        <td colspan="3" style="font-weight:bold;">{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT axisA: 요양기관 명칭 전용 축 -->
+        <td colspan="3" style="font-weight:bold;">{{hira_institution_name}}</td>
         <td rowspan="3" class="br-label" style="width:20px; text-align:center; font-size:7.5pt; padding:2px; letter-spacing:1px;">환<br>자</td>
         <td class="br-label" style="width:70px; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
         <td colspan="3" style="font-weight:bold;">{{patient_name}}</td>
@@ -1733,7 +1736,7 @@ const BILL_RECEIPT_HTML = `
     </div>
     <div class="br-sign-row">
       <div class="br-sign-item">
-        요양기관명 : <span style="font-weight:bold;">{{clinic_name}}</span>
+        요양기관명 : <span style="font-weight:bold;">{{hira_institution_name}}</span>
       </div>
       <div class="br-sign-item">
         진료의사 : {{doctor_name}}&nbsp;{{doctor_seal_html}}
