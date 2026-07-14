@@ -111,3 +111,50 @@ test.describe('T-20260714 PMW 수납잔액 = 본인부담금 + 비급여 (공단
     expect(fb.copaymentTotal).toBe(9000); // ceil(30000*0.3/100)*100 — 회귀 0
   });
 });
+
+/**
+ * PMW 공단부담액(명세) 정보성 라인이 소비하는 값과 1:1 동일한 순수 파생.
+ *   src/components/PaymentMiniWindow.tsx:
+ *     const insuranceCoveredTotal = footBilling.liveBillingValues.insuranceCovered
+ *     {insuranceCoveredTotal > 0 && <라인 "공단부담액(명세)" />}
+ */
+function pmwInsuranceCovered(items: FootBillingItem[], grade: Parameters<typeof computeFootBilling>[1]): number {
+  return computeFootBilling(items, grade).liveBillingValues.insuranceCovered;
+}
+
+test.describe('T-20260714 Part2 — 공단부담액(명세) 정보성 라인 (수납잔액 제외, 명세 grain)', () => {
+  test('시나리오1 급여환자(general): 공단부담액(명세) = 급여 − 본인부담금 = 21,000, 수납잔액과 배타', () => {
+    const fb = computeFootBilling(MIXED_VISIT, 'general');
+    const insCovered = pmwInsuranceCovered(MIXED_VISIT, 'general');
+    // 급여 30,000, 본인 9,000 → 공단부담액(명세) = 21,000.
+    expect(insCovered).toBe(21000);
+    // liveBillingValues.insuranceCovered(문서 폴백/저장처 소스)와 동일 값 소비(병렬 계산 경로 없음).
+    expect(insCovered).toBe(fb.liveBillingValues.insuranceCovered);
+    // ★ grain 정합: 수납잔액(payments) + 공단부담액(명세) = 총 진료비. 두 축은 배타(중복 합산 0).
+    expect(pmwPayableTotal(MIXED_VISIT, 'general') + insCovered).toBe(fb.grandTotal);
+  });
+
+  test('시나리오2 비급여만: 급여 0 → 공단부담액(명세) = 0 → 라인 숨김(insCovered>0 조건)', () => {
+    const NONCOVERED_ONLY: FootBillingItem[] = [
+      { service: svc({ id: 'n1', name: '비급여 레이저', service_code: 'SZ035', is_insurance_covered: false, category_label: '풋케어', price: 5000 }), qty: 1, unitPrice: 5000 },
+    ];
+    expect(pmwInsuranceCovered(NONCOVERED_ONLY, 'general')).toBe(0); // 라인 미표시(0/날조 없음)
+  });
+
+  test('시나리오3 grade=null 엣지: DOCPRINT-RECUR(본인=급여전액/공단=0) → 공단부담액(명세)=0, 라인 숨김', () => {
+    // footBilling 소비값 그대로 — 0/price 날조 없음. general 외 등급 hira NULL BLOCK 은
+    // calc_copayment v1.3(data_incomplete)이 service_charges 기록 단계에서 차단(PMW 라이브 표시 무영향).
+    const insCovered = pmwInsuranceCovered(MIXED_VISIT, null);
+    expect(insCovered).toBe(0);
+    // 이때 수납잔액 = 총 진료비(공단 0). 배타 불변식 유지.
+    expect(pmwPayableTotal(MIXED_VISIT, null) + insCovered).toBe(computeFootBilling(MIXED_VISIT, null).grandTotal);
+  });
+
+  test('저장처 정합: 공단부담액 소스 = liveBillingValues.insuranceCovered (service_charges.insurance_covered_amount 폴백 소스와 동일 정의)', () => {
+    // Part2 저장처 = 기존 canonical 컬럼 service_charges.insurance_covered_amount(신규 DDL 없음).
+    // PMW 표시는 그 폴백 소스와 동일한 liveBillingValues.insuranceCovered 를 소비 → 표시/저장 grain 일관.
+    const fb = computeFootBilling(MIXED_VISIT, 'general');
+    expect(pmwInsuranceCovered(MIXED_VISIT, 'general')).toBe(fb.liveBillingValues.insuranceCovered);
+    // 라벨 규율: "공단부담액(명세)" (명세 추정액) — "공단청구액(EDI)"(확정액) 아님. SalesDoctor 와 동일 grain.
+  });
+});

@@ -1381,6 +1381,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − copaymentTotal)은 제외.
   //   예: 급여 30,000(본인10,000+공단20,000)+비급여5,000 → payableTotal = 10,000 + 5,000 = 15,000.
   const payableTotal = copaymentTotal + nonCoveredTotal;
+  // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2, 공단부담액 정보성 라인) ─────
+  //   공단부담액(명세) = 급여 진료비 − 본인부담금. 배포 SSOT computeFootBilling 의 liveBillingValues
+  //   (insuranceCovered = max(0, coveredTotal − copaymentTotal))를 그대로 소비한다(병렬 계산 경로 신설 금지,
+  //   DA CONSULT-REPLY MSG-20260714-121317-pq2t §구현제약1). 저장처 = 기존 canonical 컬럼
+  //   service_charges.insurance_covered_amount(InsuranceCopaymentPanel.persistCharges 기록, 신규 DDL 없음).
+  //   수납잔액(payments grain)에는 포함하지 않는 명세 grain 값 — 정보성 표시 전용.
+  //   엣지(grade=null): footBilling 이 DOCPRINT-RECUR 규칙으로 본인=급여전액/공단=0 을 산출 → 소비값 그대로
+  //   (0/price 날조 없음). general 외 등급의 hira NULL BLOCK 은 calc_copayment v1.3(has_nullblock=T)이
+  //   service_charges 기록 단계에서 data_incomplete 로 차단 — PMW 라이브 표시는 footBilling 소비값 유지.
+  const insuranceCoveredTotal = footBilling.liveBillingValues.insuranceCovered;
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate 조회. 금액 산출은 위 SSOT가 담당(중복 계산 아님).
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
     ? getBaseCopayRate(customerInsuranceGrade)
@@ -2461,6 +2471,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                           {copayRate !== null && ` (${Math.round(copayRate * 100)}%)`}
                         </span>
                         <span className="tabular-nums font-semibold">{formatAmount(copaymentTotal)}</span>
+                      </div>
+                    )}
+                    {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2): 공단부담액(명세) 정보성 라인.
+                        급여 진료비 − 본인부담금 = 공단(NHIS) 몫. 수납잔액에는 미포함(환자가 내지 않음).
+                        라벨 "공단부담액(명세)" — 명세(service_charges) 기준 추정액이지 EDI 확정액 아님
+                        (❌"공단청구액(EDI)" 금지). 값>0(급여 방문·유효등급)일 때만 표시. muted 스타일로
+                        수납 대상과 시각적으로 구분. SalesDoctor 집계와 동일 grain/라벨(cross-ref 정합). */}
+                    {insuranceCoveredTotal > 0 && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>공단부담액(명세)</span>
+                        <span className="tabular-nums">{formatAmount(insuranceCoveredTotal)}</span>
                       </div>
                     )}
                     {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 하단 볼드 합계 = 수납잔액(본인부담금+비급여).
