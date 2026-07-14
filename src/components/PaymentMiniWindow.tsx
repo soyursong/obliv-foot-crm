@@ -91,6 +91,10 @@ import {
   COVERED_GRADES,
   getTaxClass,
   isCodeItem,
+  // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 세금구분/급여·본인부담 산출을 배포된 SSOT로 일원화.
+  //   수납잔액(본인부담금+비급여) 산출을 위해 PMW 인라인 계산 대신 computeFootBilling 재사용
+  //   (병렬 계산 경로 신설 금지 — grade=null 시 본인=급여전액/공단=0 DOCPRINT-RECUR 규칙까지 동일 수렴).
+  computeFootBilling,
   // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금(잔금) 산출은 PKG-OUTSTANDING-BALANCE SSOT 재사용 (신규 쿼리/산출 금지).
   loadCustomerOutstanding,
   hasOutstandingDue,
@@ -1358,29 +1362,29 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const pricingItems = selectedItems.filter((i) => !isCodeItem(i.service));
   const codeItems = selectedItems.filter((i) => isCodeItem(i.service));
 
-  const grandTotal = pricingItems.reduce((s, item) => s + getItemAmount(item), 0);
-
-  // 세금 구분별 합산 (풋케어 항목만)
-  const totalByTax: Record<TaxClass, number> = {
-    '비급여(과세)': 0,
-    '비급여(면세)': 0,
-    급여: 0,
-  };
-  for (const item of pricingItems) {
-    // T-20260526-foot-COPAY-MINI-BUG AC-1: 건보 등급 반영
-    const taxClass = getTaxClass(item.service, customerInsuranceGrade);
-    totalByTax[taxClass] += getItemAmount(item);
-  }
-
-  // T-20260526-foot-COPAY-MINI-BUG AC-2: 급여 자부담금 산출 (건보 등급별 본인부담률)
-  const coveredTotal = totalByTax['급여'];
+  // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part1, 수납잔액 급여 split) ──────
+  //   세금구분/급여합/본인부담금 산출을 배포된 SSOT computeFootBilling(8239350e, DOCPRINT-RECUR)로
+  //   일원화한다. PMW 인라인 재계산은 grade=null 시 copaymentTotal=0 으로 SSOT(본인=급여전액/공단=0)와
+  //   divergence 하던 병렬 경로 → 제거. 항목 빌드는 buildPmwBillDetailItems(L1394~)와 동일 규칙
+  //   (customAmounts 수기조정가 = check_in_services.price, qty 반영)으로 통일.
+  const footBillingItems: FootBillingItem[] = pricingItems.map(({ service, qty }) => ({
+    service,
+    qty,
+    unitPrice: customAmounts.get(service.id) ?? service.price ?? 0,
+  }));
+  const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade);
+  const grandTotal = footBilling.grandTotal;                 // 총 진료비(급여 전액 + 비급여) — 서류 총진료비/합계 표시용
+  const totalByTax: Record<TaxClass, number> = footBilling.totalByTax;
+  const coveredTotal = footBilling.coveredTotal;             // 급여 진료비 전액(본인 + 공단)
+  const copaymentTotal = footBilling.copaymentTotal;         // 급여 본인부담금 (grade=null → 급여전액, DOCPRINT-RECUR)
+  const nonCoveredTotal = footBilling.nonCoveredTotal;       // 비급여 전액(과세 + 면세)
+  // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − copaymentTotal)은 제외.
+  //   예: 급여 30,000(본인10,000+공단20,000)+비급여5,000 → payableTotal = 10,000 + 5,000 = 15,000.
+  const payableTotal = copaymentTotal + nonCoveredTotal;
+  // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate 조회. 금액 산출은 위 SSOT가 담당(중복 계산 아님).
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
     ? getBaseCopayRate(customerInsuranceGrade)
     : null;
-  // 100원 절상 — copayCalc.ts와 동일 규칙
-  const copaymentTotal = copayRate !== null && coveredTotal > 0
-    ? Math.min(Math.ceil((coveredTotal * copayRate) / 100) * 100, coveredTotal)
-    : 0;
 
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: 진료비세부산정내역(bill_detail) 행 빌드 SSOT.
   //   RC(재발): PMW(PATH-4) 단독발행 경로가 기존에 service.is_insurance_covered 만으로 급여/비급여를
@@ -1646,7 +1650,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     //   과거 MEDLAW22-B-GATE 의 진료기록 필수 + 방문일 일치 하드차단을 여기서 완전히 제거.
     //   급여/비급여 무관, 진료기록 미작성·비내원일(계좌이체 등)에도 수납을 그대로 진행한다.
     //   (급여 청구 정합상 진료기록 후속 작성은 여전히 필요 — soft 리마인더로만 안내.)
-    const amount = deductMode ? deductAmount : grandTotal;
+    // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: payments 기록 = 수납잔액(본인부담금+비급여). 공단부담금 제외.
+    const amount = deductMode ? deductAmount : payableTotal;
     // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
     // 선수금차감 여부와 무관하게 항상 사용자가 선택한 payMethod 기록
     // (선수금차감 추적은 package_sessions 회차 소진으로 별도 관리)
@@ -1866,7 +1871,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
       return;
     }
-    const amount = deductMode ? deductAmount : grandTotal;
+    // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: payments 기록 = 수납잔액(본인부담금+비급여). 공단부담금 제외.
+    //   (서류 total_amount/공단·본인 split 표기는 아래 applyBillingFallback 그대로 — 총진료비 기준, Part1 무접촉.)
+    const amount = deductMode ? deductAmount : payableTotal;
     if (amount < 0) {
       toast.error('결제 금액이 없습니다');
       return;
@@ -1977,7 +1984,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── 표시용 수납 금액 ─────────────────────────────────────────────────────
-  const displayAmount = deductMode ? deductAmount : grandTotal;
+  // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 수납잔액 표시 = 본인부담금 + 비급여(공단부담금 제외).
+  const displayAmount = deductMode ? deductAmount : payableTotal;
 
   // ── T-20260616-foot-PMW-SPLIT-PAYMENT: 분할 합산/차액 (AC-2) ───────────────
   const splitSum = splitRows.reduce((s, r) => s + (r.amount || 0), 0);
@@ -2455,10 +2463,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         <span className="tabular-nums font-semibold">{formatAmount(copaymentTotal)}</span>
                       </div>
                     )}
+                    {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 하단 볼드 합계 = 수납잔액(본인부담금+비급여).
+                        공단부담금은 이 합계에서 제외(수납 대상 아님). 총 진료비는 세금구분(급여+비급여)으로 확인. */}
                     <div className="flex justify-between text-sm font-bold pt-1 border-t">
-                      <span>합계</span>
+                      <span>수납잔액</span>
                       <span className="tabular-nums text-purple-700">
-                        {formatAmount(grandTotal)}
+                        {formatAmount(payableTotal)}
                       </span>
                     </div>
                     {prepaidIds.size > 0 && (
