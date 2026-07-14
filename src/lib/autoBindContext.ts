@@ -198,6 +198,24 @@ export function deriveBirthYYMMDDFromRrn(rrn: string | null | undefined): string
   return d.slice(0, 6);
 }
 
+/**
+ * T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [AC-6 v2, 김주연 총괄 U0ATDB587PV 최종 확정
+ *   2026-07-14T10:30 KST, MSG-20260714-104310-1b9f].
+ * 서류 도장 슬롯을 오블리브오리진 법인 인감(getStampUrl priority-2)으로 강제할지 판정한다.
+ * 도장 매핑 최종 3분기:
+ *   ① 한동훈·김윤기·김상은 지정(is_default=false, 폴백 아님) → false → 각 개인 도장(印) 유지.
+ *   ② 문지은 원장(대표원장 is_default=true) 지정 → true → 법인 인감(개인 직인 미사용).
+ *   ③ 진료의 미지정 폴백(sealFallbackToInstitution) → true → 법인 인감.
+ * ★의료서류 공식 인장의 법적 정확성(오매핑 0). DB seal drift(문지은 개인직인 재업로드) 시에도
+ *   is_default 조건으로 법인 인감이 강제되도록 코드-레벨 이중 방어.
+ */
+export function shouldForceInstitutionSeal(
+  isDefaultDoctor: boolean | null | undefined,
+  sealFallbackToInstitution: boolean,
+): boolean {
+  return sealFallbackToInstitution || isDefaultDoctor === true;
+}
+
 export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
   const today = format(new Date(), 'yyyy-MM-dd');
   const visitDate = ctx.checkIn.checked_in_at
@@ -627,12 +645,29 @@ export async function loadAutoBindContext(
   //   기관명 vs 공란 최종 표기는 종결 confirm_gate ★★ 라이브 렌더 현장 실측에서 확정 후 스왑 가능.
   //   지정 진료의(한동훈/김윤기/김상은)는 상단에서 개인 이름·개인 도장으로 결선되어 이 분기 미도달 →
   //   무영향(오매핑 0, ★법적 정확성). ★DB 데이터 정합(문지은 seal_image_url NULL)과 이중 방어.
+  //
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [AC-6 v2, 김주연 총괄 U0ATDB587PV 최종 확정
+  //   2026-07-14T10:30 KST, MSG-20260714-104310-1b9f / planner FIX-REQUEST MSG-20260714-104648-wwls]:
+  //   도장 매핑 최종 3분기 — ①한동훈·김윤기·김상은 지정 → 각 개인 도장(印) / ②문지은 원장 지정 →
+  //   오블리브오리진 법인 인감(개인 직인 미사용) / ③미지정 → 법인 인감. B안에 '문지은 원장=항상
+  //   법인 인감' 규칙을 추가한 확장.
+  //   ★핵심 차이: ②문지은 '지정'은 도장만 법인 인감으로 폴스루하고 이름(문지은)은 유지한다
+  //   (문지은이 실제 지정 진료의이므로 이름란은 문지은). vs ③미지정은 이름·도장 둘 다 기관으로.
+  //   문지은 = 대표원장(is_default) — 이 CRM에서 대표원장은 개인 직인 대신 법인 인감을 쓴다.
+  //   구현: 문지은 개인직인 seal_image_url을 비워(현재 DB=NULL, 데이터 정합) doctor_seal_html(L317)이
+  //   getStampUrl()(법인 인감 priority-2)로 폴스루하게 하되, DB drift(문지은 개인직인 재업로드) 시에도
+  //   법인 인감이 강제되도록 코드 가드로 이중 방어한다(오매핑 0, ★의료서류 공식 인장 법적 정확성).
+  //   한동훈·김윤기·김상은(is_default=false)은 이 가드 미해당 → 개인 도장 그대로 유지.
+  const forceInstitutionSeal = shouldForceInstitutionSeal(clinicDoctor?.is_default, sealFallbackToInstitution);
   if (sealFallbackToInstitution) {
+    // ③미지정 폴백: 이름란도 기관명으로 재정합('문지은 이름 + 법인 도장' 미스매치 방지, REOPEN#4).
     const institutionName = (clinicData?.name ?? '오블리브 풋센터 종로').trim();
     if (institutionName) doctorName = institutionName;
-    if (clinicDoctor?.seal_image_url) {
-      clinicDoctor = { ...clinicDoctor, seal_image_url: null };
-    }
+  }
+  // ②문지은 지정(+③미지정 포함): 도장 슬롯을 법인 인감으로 강제(개인직인 seal_image_url 비움 → 폴스루).
+  //   이름은 위 분기에서만 변경 → 문지은 지정 시 이름=문지은 유지.
+  if (forceInstitutionSeal && clinicDoctor?.seal_image_url) {
+    clinicDoctor = { ...clinicDoctor, seal_image_url: null };
   }
 
   // 직인 이미지: storage path → signed URL (1시간)
