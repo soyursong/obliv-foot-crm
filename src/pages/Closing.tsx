@@ -183,8 +183,10 @@ interface EnrichedRow {
   cash_receipt_type: string | null;
   /** T-20260522-foot-CLOSING-REFUND: 환불 처리용 */
   payment_id?: string;       // source === 'payment' 시 payments.id
-  package_id?: string;       // source === 'package' 시 packages.id (refund_package_atomic용)
-  row_customer_id?: string;  // refund_package_atomic p_customer_id용
+  package_id?: string;       // source === 'package' 시 packages.id (legacy)
+  // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 선택 결제행 단위 환불(refund_package_payment)용
+  pkg_payment_id?: string;   // source === 'package' 시 package_payments.id (환불 대상 결제행)
+  row_customer_id?: string;  // 원결제행 customer_id (표시용)
 }
 
 const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
@@ -776,6 +778,8 @@ export default function Closing() {
         cash_receipt_type: null,
         // T-20260522-foot-CLOSING-REFUND: 환불 RPC 호출용
         package_id: p.package_id,
+        // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 선택 결제행 단위 환불 대상 = 이 package_payments row
+        pkg_payment_id: p.id,
         row_customer_id: p.customer_id,
       });
     }
@@ -2258,16 +2262,9 @@ function DailyOutstandingCard({
 // ──────────────────────────────────────────────────────────────
 // T-20260522-foot-CLOSING-REFUND: 환불 처리 다이얼로그
 // 단건(source='payment'): 금액+수단+사유 → refund_single_payment RPC
-// 패키지(source='package'): calc_refund_amount 견적+수단+사유 → refund_package_atomic
+// 패키지(source='package'): 선택 결제행 amount 바인딩 → refund_package_payment RPC
+//   (T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 견적 refund_package_atomic 폐용)
 // ──────────────────────────────────────────────────────────────
-
-interface RefundQuote {
-  refund_amount: number;
-  total_sessions: number;
-  used_sessions: number;
-  remaining_sessions: number;
-  unit_price: number;
-}
 
 interface ClosingRefundDialogProps {
   open: boolean;
@@ -2280,7 +2277,6 @@ interface ClosingRefundDialogProps {
 function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: ClosingRefundDialogProps) {
   const isPackage = row.source === 'package';
 
-  const [pkgQuote, setPkgQuote] = useState<RefundQuote | null>(null);
   const [refundAmountStr, setRefundAmountStr] = useState(String(row.amount));
   const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>(
     (['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer',
@@ -2291,23 +2287,30 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
   //   원결제에 연결된(linked_payment_id) 환불 행 합계를 빼 '실제 환불 가능(잔여)' 금액을 산출.
   //   기존엔 잔여를 계산하지 않고 항상 원결제 전액을 환불가능으로 제시 → 전액/부분 환불 후에도
   //   재차 전액 환불 가능(과다환불)한 결함. null(로딩 전) 구분 위해 초기값 null.
+  // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 패키지도 동일하게 '선택 결제행(package_payments)
+  //   amount − 기존 환불(parent_payment_id linked)' = 잔여로 산출. 견적(잔여회차×정가단가) 폐용.
   const [priorRefunded, setPriorRefunded] = useState<number | null>(null);
   const singleRemaining = row.amount - (priorRefunded ?? 0);
 
-  // 다이얼로그 오픈 시 초기화 + 패키지 견적 조회
+  // 다이얼로그 오픈 시 초기화 + 선택 결제행 기존 환불액 조회
   useEffect(() => {
     if (!open) {
-      setPkgQuote(null);
       setRefundAmountStr(String(row.amount));
       setMethod((['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer');
       setRefundMemo('');
       setPriorRefunded(null);
       return;
     }
-    if (isPackage && row.package_id) {
+    if (isPackage && row.pkg_payment_id) {
+      // 패키지: 선택한 결제행(package_payments.id)에 linked 기존 환불(parent_payment_id) 합계 조회 → 잔여 산출.
       (async () => {
-        const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: row.package_id });
-        setPkgQuote(data as RefundQuote | null);
+        const { data, error } = await supabase
+          .from('package_payments')
+          .select('amount')
+          .eq('parent_payment_id', row.pkg_payment_id!)
+          .eq('payment_type', 'refund');
+        const already = error ? 0 : (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
+        setPriorRefunded(already);
       })();
     } else if (!isPackage && row.payment_id) {
       // 단건: 원결제(payment_id)에 연결된 기존 환불 합계 조회 → 잔여 산출 후 입력 기본값 세팅
@@ -2323,7 +2326,7 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
         setRefundAmountStr(String(Math.max(0, row.amount - already)));
       })();
     }
-  }, [open, isPackage, row.package_id, row.payment_id, row.method, row.amount]);
+  }, [open, isPackage, row.pkg_payment_id, row.payment_id, row.method, row.amount]);
 
   const handleSubmit = async () => {
     if (!refundMemo.trim()) {
@@ -2333,20 +2336,25 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
     setSubmitting(true);
 
     if (isPackage) {
-      // 패키지 환불: refund_package_atomic 호출
-      if (!pkgQuote) {
-        toast.error('환불 금액 계산 중입니다. 잠시 후 다시 시도해 주세요.');
+      // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 선택 결제행 단위 환불(refund_package_payment).
+      //   FE 는 p_payment_id(+method)만 전달 — 서버가 package_payments.amount 재조회로 처리금액 결정
+      //   + 과다환불 상한(누적 ≤ row.amount) + clinic 격리 서버 강제. 견적(refund_package_atomic) 폐용.
+      if (!row.pkg_payment_id) {
+        toast.error('환불 대상 결제행을 찾을 수 없습니다.');
         setSubmitting(false);
         return;
       }
-      if (!window.confirm(`패키지 환불 금액 ${formatAmount(pkgQuote.refund_amount)}을 환불하시겠습니까?`)) {
+      if (singleRemaining <= 0) {
+        toast.error('이미 전액 환불된 결제입니다.');
         setSubmitting(false);
         return;
       }
-      const { data, error } = await supabase.rpc('refund_package_atomic', {
-        p_package_id: row.package_id!,
-        p_clinic_id: clinicId,
-        p_customer_id: row.row_customer_id!,
+      if (!window.confirm(`선택한 결제 금액 ${formatAmount(singleRemaining)}을 환불하시겠습니까?`)) {
+        setSubmitting(false);
+        return;
+      }
+      const { data, error } = await supabase.rpc('refund_package_payment', {
+        p_payment_id: row.pkg_payment_id,
         p_method: method,
       });
       if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
@@ -2422,28 +2430,24 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
             </div>
           </div>
 
-          {/* 패키지 환불: 견적 표시 */}
+          {/* 패키지 환불: 선택한 결제행 금액 기준 (T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH)
+              — 견적(잔여회차×정가단가) 폐용. 이 결제 건의 실제 금액만 바인딩. */}
           {isPackage && (
-            pkgQuote ? (
-              <div className="rounded-lg border bg-teal-50 p-3 space-y-1.5">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-                  <span>총 회차</span>
-                  <span className="text-foreground">{pkgQuote.total_sessions}회</span>
-                  <span>사용</span>
-                  <span className="text-foreground">{pkgQuote.used_sessions}회</span>
-                  <span>잔여</span>
-                  <span className="text-foreground">{pkgQuote.remaining_sessions}회</span>
-                  <span>회당 단가</span>
-                  <span className="text-foreground tabular-nums">{formatAmount(pkgQuote.unit_price)}</span>
-                </div>
-                <div className="mt-1 border-t pt-1.5">
-                  <div className="text-xs text-muted-foreground">환불 금액 (할인가 기준)</div>
-                  <div className="text-xl font-bold text-teal-700 tabular-nums">{formatAmount(pkgQuote.refund_amount)}</div>
-                </div>
+            <div className="rounded-lg border bg-teal-50 p-3 space-y-1.5" data-testid="pkg-refund-amount-box">
+              <div className="text-xs text-muted-foreground">선택한 결제 금액</div>
+              <div className="text-xl font-bold text-teal-700 tabular-nums" data-testid="pkg-refund-amount">
+                {formatAmount(singleRemaining)}
               </div>
-            ) : (
-              <div className="py-4 text-center text-xs text-muted-foreground">환불 금액 계산 중…</div>
-            )
+              {priorRefunded !== null && priorRefunded > 0 && (
+                <div className="border-t pt-1.5 text-[11px] space-y-0.5">
+                  <div className="flex justify-between"><span className="text-muted-foreground">원결제금액</span><span className="tabular-nums">{formatAmount(row.amount)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">기존 환불</span><span className="tabular-nums text-destructive">-{formatAmount(priorRefunded)}</span></div>
+                </div>
+              )}
+              {singleRemaining <= 0 && (
+                <div className="text-[11px] text-destructive">이미 전액 환불된 결제입니다</div>
+              )}
+            </div>
           )}
 
           {/* 단건 환불: 금액 입력 — AC-3: 잔여 환불가능액 기준 */}
@@ -2516,7 +2520,7 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
           <Button
             data-testid="refund-submit"
             variant="destructive"
-            disabled={submitting || (isPackage && !pkgQuote) || (!isPackage && !!singleAmtError)}
+            disabled={submitting || (isPackage && singleRemaining <= 0) || (!isPackage && !!singleAmtError)}
             onClick={handleSubmit}
           >
             {submitting ? '처리 중…' : '환불 확인'}

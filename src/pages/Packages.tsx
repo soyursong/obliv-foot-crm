@@ -30,14 +30,6 @@ import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/t
 // T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 옵셔널)
 type PackageListItem = Package & { customer: { name: string; phone: string; chart_number?: string | null } | null };
 
-interface RefundQuote {
-  total_amount: number;
-  total_sessions: number;
-  used_sessions: number;
-  remaining_sessions: number;
-  unit_price: number;
-  refund_amount: number;
-}
 
 type FilterStatus = 'active' | 'completed' | 'refunded' | 'all';
 
@@ -1465,7 +1457,7 @@ function PackageDetailSheet({
     { id: string; session_number: number; session_type: string; session_date: string; status: string }[]
   >([]);
   const [pkgPayments, setPkgPayments] = useState<
-    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null }[]
+    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null; parent_payment_id?: string | null }[]
   >([]);
   const [refundOpen, setRefundOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -1481,7 +1473,8 @@ function PackageDetailSheet({
       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete(status='deleted') 회차는 소진이력 표시에서 제외.
       supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
         .eq('package_id', packageId).neq('status', 'deleted').order('session_number', { ascending: true }),
-      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind')
+      // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: parent_payment_id 추가(결제행 단위 환불 잔여 산출용)
+      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind, parent_payment_id')
         .eq('package_id', packageId).order('created_at', { ascending: false }),
     ]);
     setPkg(pkgRes.data as unknown as PackageListItem);
@@ -1684,8 +1677,8 @@ function PackageDetailSheet({
         )}
         <UseSessionDialog open={useSessionOpen} pkg={pkg} remaining={remaining} onOpenChange={setUseSessionOpen}
           onDone={() => { setUseSessionOpen(false); reload(); onChanged(); }} />
-        <RefundDialog open={refundOpen} packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id}
-          pkgStatus={pkg.status} onOpenChange={setRefundOpen}
+        <RefundDialog open={refundOpen} payments={pkgPayments}
+          onOpenChange={setRefundOpen}
           onDone={() => { setRefundOpen(false); reload(); onChanged(); }} />
         <TransferDialog open={transferOpen} pkg={pkg} onOpenChange={setTransferOpen}
           onDone={() => { setTransferOpen(false); onChanged(); }} />
@@ -2012,32 +2005,50 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
   );
 }
 
-function RefundDialog({ open, packageId, customerId, clinicId, pkgStatus: _pkgStatus, onOpenChange, onDone }: {
-  open: boolean; packageId: string; customerId: string; clinicId: string; pkgStatus: string;
+// T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 패키지 환불 = 개별 결제행(package_payments) 선택 →
+//   그 row 의 amount 만 바인딩·처리(refund_package_payment). 견적(calc_refund_amount/refund_package_atomic) 폐용.
+//   각 결제행 잔여 = amount − Σ(parent_payment_id linked 환불). 잔여>0 결제행만 환불 대상.
+function RefundDialog({ open, payments, onOpenChange, onDone }: {
+  open: boolean;
+  payments: { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null; parent_payment_id?: string | null }[];
   onOpenChange: (o: boolean) => void; onDone: () => void;
 }) {
-  const [quote, setQuote] = useState<RefundQuote | null>(null);
+  const refundable = useMemo(() => {
+    const priorByParent = new Map<string, number>();
+    for (const p of payments) {
+      if (p.payment_type === 'refund' && p.parent_payment_id) {
+        priorByParent.set(p.parent_payment_id, (priorByParent.get(p.parent_payment_id) ?? 0) + p.amount);
+      }
+    }
+    return payments
+      .filter((p) => p.payment_type === 'payment')
+      .map((p) => ({ ...p, remaining: p.amount - (priorByParent.get(p.id) ?? 0) }))
+      .filter((p) => p.remaining > 0);
+  }, [payments]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>('card');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    (async () => {
-      const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: packageId });
-      setQuote(data as RefundQuote | null);
-    })();
-  }, [open, packageId]);
+    if (!open) { setSelectedId(null); setMethod('card'); return; }
+    // 환불 가능 결제행이 하나면 자동 선택
+    if (refundable.length === 1) setSelectedId(refundable[0].id);
+  }, [open, refundable]);
+
+  const selected = refundable.find((p) => p.id === selectedId) ?? null;
 
   const process = async () => {
-    if (!quote) return;
-    if (!window.confirm(`환불 금액 ${formatAmount(quote.refund_amount)}을 환불하시겠습니까?`)) return;
+    if (!selected) { toast.error('환불할 결제 건을 선택하세요.'); return; }
+    if (!window.confirm(`선택한 결제 금액 ${formatAmount(selected.remaining)}을 환불하시겠습니까?`)) return;
     setSubmitting(true);
-    const { data, error } = await supabase.rpc('refund_package_atomic', {
-      p_package_id: packageId, p_clinic_id: clinicId, p_customer_id: customerId, p_method: method,
+    // FE 는 p_payment_id(+method)만 전달 — 서버가 amount 재조회·과다환불 상한·clinic 격리 강제.
+    const { data, error } = await supabase.rpc('refund_package_payment', {
+      p_payment_id: selected.id, p_method: method,
     });
     if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
     const result = data as { ok?: boolean; error?: string };
-    if (result.error) { toast.error(result.error); setSubmitting(false); return; }
+    if (result?.error) { toast.error(result.error); setSubmitting(false); return; }
     setSubmitting(false);
     toast.success('환불 처리 완료');
     onDone();
@@ -2047,18 +2058,30 @@ function RefundDialog({ open, packageId, customerId, clinicId, pkgStatus: _pkgSt
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>환불</DialogTitle></DialogHeader>
-        {quote ? (
+        {refundable.length === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">환불 가능한 결제 내역이 없습니다.</div>
+        ) : (
           <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              <Meta label="총 회차" value={`${quote.total_sessions}회`} />
-              <Meta label="사용" value={`${quote.used_sessions}회`} />
-              <Meta label="잔여" value={`${quote.remaining_sessions}회`} />
-              <Meta label="회당 단가" value={formatAmount(quote.unit_price)} />
+            <div className="space-y-1.5">
+              <Label>환불할 결제 건 선택</Label>
+              <div className="space-y-1.5">
+                {refundable.map((p) => (
+                  <button key={p.id} type="button" onClick={() => setSelectedId(p.id)}
+                    data-testid="pkg-refund-row"
+                    className={cn('flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors',
+                      selectedId === p.id ? 'border-teal-600 bg-teal-50' : 'border-input hover:bg-muted')}>
+                    <span className="text-xs text-muted-foreground">{formatDateTimeDots(p.created_at)} · {methodLabel(p.method)}</span>
+                    <span className="font-medium tabular-nums">{formatAmount(p.remaining)}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="rounded-lg border bg-teal-50 p-3">
-              <div className="text-xs text-muted-foreground">환불 금액 (할인가 기준)</div>
-              <div className="text-xl font-bold text-teal-700">{formatAmount(quote.refund_amount)}</div>
-            </div>
+            {selected && (
+              <div className="rounded-lg border bg-teal-50 p-3" data-testid="pkg-refund-amount-box">
+                <div className="text-xs text-muted-foreground">환불 금액 (선택한 결제 금액)</div>
+                <div className="text-xl font-bold text-teal-700 tabular-nums" data-testid="pkg-refund-amount">{formatAmount(selected.remaining)}</div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>환불 수단</Label>
               <div className="grid grid-cols-3 gap-2">
@@ -2071,22 +2094,13 @@ function RefundDialog({ open, packageId, customerId, clinicId, pkgStatus: _pkgSt
               </div>
             </div>
           </div>
-        ) : <div className="py-6 text-center text-sm text-muted-foreground">계산 중…</div>}
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-          <Button variant="destructive" disabled={submitting || !quote} onClick={process}>환불 실행</Button>
+          <Button variant="destructive" data-testid="pkg-refund-submit" disabled={submitting || !selected} onClick={process}>환불 실행</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded bg-muted/40 px-2.5 py-1.5">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
-    </div>
   );
 }
 
