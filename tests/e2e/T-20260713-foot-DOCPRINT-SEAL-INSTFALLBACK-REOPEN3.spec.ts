@@ -8,13 +8,13 @@
  *       경로가 만드는 상태) → 법인 인감(getStampUrl / jongno-foot-stamp.png)으로 폴스루,
  *   (b) 지정 진료의(seal_image_url=개인 도장 storage path) → 해당 원장 개인 도장(오매핑 0),
  *   두 인장 슬롯이 섞이지 않는지(WARN-4 축 분리)를 계약으로 고정한다.
- *   ※ 미지정 서류의 진료의명은 여전히 대표원장(문지은)으로 채워 공란은 없다(AC-8/9). 이름↔도장 축은
- *     분리 — 이름=대표원장(기관 대표), 도장=법인 인감(기관 대표 도장)으로 기관 서명자 정합.
+ *   ※ [REOPEN#4 보정] 미지정 서류의 진료의명은 문지은 개인명이 아니라 기관명으로 채운다(공란 방지 +
+ *     이름↔도장 세트 정합). 이름=기관명, 도장=법인 인감으로 기관 서명자 정합. 개인명↔법인 도장 미스매치 제거.
  *
  * AC-R3-1: 미지정 폴백(seal null) → doctor_seal_html = 법인 인감(jongno-foot-stamp) <img>, 개인직인 아님.
  * AC-R3-2: 지정 진료의(한동훈/김윤기/김상은) → 해당 개인 도장 storage path <img> (법인 인감 아님).
  * AC-R3-3: 폴백 인장 src ≠ 지정 진료의 인장 src (인장 슬롯 분리 — 오매핑 0).
- * AC-R3-4: 미지정 폴백 서류에 대표원장 이름은 채워짐(공란 방지, AC-8/9 회귀 없음).
+ * AC-R3-4: [REOPEN#4] 미지정 폴백 서류 진료의명 = 기관명(공란 방지) + 문지은 개인명 부재(이름↔도장 정합).
  */
 import { test, expect } from '@playwright/test';
 import { buildAutoBindValues } from '../../src/lib/autoBindContext';
@@ -69,16 +69,21 @@ test.describe('T-20260713 REOPEN#3 — 미지정 폴백 = 오블리브오리진 
     expect(new Set([fb, ...assigned]).size).toBe(4); // 법인 + 3개 개인 모두 상이
   });
 
-  test.describe('AC-R3-1/4: 두 빌링서식 라이브 렌더 — 미지정=법인 인감 + 대표원장 이름', () => {
+  test.describe('AC-R3-1/4: 두 빌링서식 라이브 렌더 — 미지정=법인 인감 + 기관명(문지은 개인명 부재)', () => {
+    // [REOPEN#4] loadAutoBindContext.sealFallbackToInstitution 경로가 만드는 최종 상태:
+    //   doctor=기관명, clinicDoctor.seal_image_url=null.
+    const INSTITUTION_NAME = '오블리브 풋센터 종로';
     for (const formKey of ['bill_detail', 'bill_receipt']) {
       test(`${formKey} 미지정 폴백`, async ({ page }) => {
-        const v = build('문지은', null);
+        const v = build(INSTITUTION_NAME, null);
         const tpl = getHtmlTemplate(formKey);
         expect(tpl, `${formKey} 템플릿 존재`).toBeTruthy();
         const html = bindHtmlTemplate(tpl as string, v);
         await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`);
-        // 대표원장 이름 = 공란 아님(AC-8/9)
-        expect(await page.locator('body').innerText()).toContain('문지은');
+        const bodyText = await page.locator('body').innerText();
+        // 진료의명 = 기관명(공란 아님) + 문지은 개인명 부재(이름↔도장 정합)
+        expect(bodyText).toContain(INSTITUTION_NAME);
+        expect(bodyText).not.toContain('문지은');
         // 법인 인감 <img> 존재 + 개인 도장 path 부재
         await expect(page.locator(`img[src*="${INSTITUTION_SEAL}"]`)).toHaveCount(1);
         for (const p of Object.values(SEALS)) await expect(page.locator(`img[src*="${p}"]`)).toHaveCount(0);

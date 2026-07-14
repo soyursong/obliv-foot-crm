@@ -581,8 +581,10 @@ export async function loadAutoBindContext(
       const representative =
         clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
       if (representative?.name) {
+        // 대표원장으로 임시 세팅 → 아래 clinicDoctor 상세(면허번호 등) 결선에 사용.
+        //   최종 이름·도장은 sealFallbackToInstitution 블록(하단)에서 기관명+법인 인감으로 재정합
+        //   ('문지은 이름 + 법인 도장' 미스매치 방지, REOPEN#4).
         doctorName = representative.name;
-        // REOPEN#3 B안: 미지정 폴백 = 대표원장 이름은 채우되(공란 방지, AC-8/9) 도장은 법인 인감.
         sealFallbackToInstitution = true;
       }
     }
@@ -614,14 +616,23 @@ export async function loadAutoBindContext(
     }
   }
 
-  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN#3 B안, 2026-07-14T10:22 KST field-confirm]:
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN#4 name↔seal 정합 보정, planner FIX-REQUEST
+  //   MSG-20260714-103328-mq1p, 김주연 총괄 U0ATDB587PV field-confirm 2026-07-14T10:22 KST]:
   //   미지정 폴백 슬롯의 도장은 대표원장(문지은) 개인직인이 아니라 오블리브오리진 법인 인감으로 렌더한다.
   //   개인직인 seal_image_url을 비워 doctor_seal_html(L317)이 getStampUrl()(법인 인감, priority-2)로
-  //   폴스루하게 한다. 이름은 이미 대표원장으로 채워져 공란은 없다(AC-8/9). 지정 진료의 개인 도장은
-  //   상단에서 이미 결선되어 이 분기에 도달하지 않으므로 무영향(한동훈/김윤기/김상은 오매핑 0).
-  //   ★DB 데이터 정합(문지은 seal_image_url NULL 복원)과 이중 방어 — DB 재시딩 시에도 법인 인감 보장.
-  if (sealFallbackToInstitution && clinicDoctor?.seal_image_url) {
-    clinicDoctor = { ...clinicDoctor, seal_image_url: null };
+  //   폴스루하게 한다. ★단 REOPEN#3에서 도장만 법인 인감으로 되돌리고 이름란(세부산정 '대표자'/
+  //   계산서·영수증 '진료의사')은 문지은 개인명으로 남겨 '문지은 이름 + 법인 도장' 미스매치가 발생.
+  //   총괄 명시("문지은 원장님 도장은 요청한 적 없다") → 미지정 이름란도 문지은 개인명 제거하고
+  //   기관명으로 채운다(이름↔도장 세트 정합). 공란은 ❶ 재발(AC-8/9 회귀)이므로 기관명 채택 —
+  //   기관명 vs 공란 최종 표기는 종결 confirm_gate ★★ 라이브 렌더 현장 실측에서 확정 후 스왑 가능.
+  //   지정 진료의(한동훈/김윤기/김상은)는 상단에서 개인 이름·개인 도장으로 결선되어 이 분기 미도달 →
+  //   무영향(오매핑 0, ★법적 정확성). ★DB 데이터 정합(문지은 seal_image_url NULL)과 이중 방어.
+  if (sealFallbackToInstitution) {
+    const institutionName = (clinicData?.name ?? '오블리브 풋센터 종로').trim();
+    if (institutionName) doctorName = institutionName;
+    if (clinicDoctor?.seal_image_url) {
+      clinicDoctor = { ...clinicDoctor, seal_image_url: null };
+    }
   }
 
   // 직인 이미지: storage path → signed URL (1시간)
