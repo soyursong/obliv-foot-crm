@@ -81,6 +81,11 @@ const REDPAY_MERCHANT_WHITELIST_ENV = cfg("REDPAY_MERCHANT_WHITELIST");
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const POLL_MODE = cfg("REDPAY_POLL_MODE", "incremental"); // incremental | daily_full
 const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
+// ── 도메인 (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER: 멀티센터 env-swap) ──
+//   foot(기본) | body(도수/재활). 동일 폴러 스크립트를 REDPAY_DOMAIN env-swap 으로 재사용
+//   (동일 마스터키·동일 사업자 511-60-00988, merchant band 만 교체). 도메인별 launchd 인스턴스.
+//   레지스트리(redpay_terminal_registry.domain)·하드코딩 DEFAULT·로그라벨이 모두 이 값으로 스코핑.
+const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
@@ -118,25 +123,43 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479153", "1047479148", "1047479155", "1047479158", "1047479157", // 무선5
 ];
 
+// ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
+//   da_decision_redpay_rehab_b1_scoping_20260714.md: 재활=도수=body, band 1777274-276, 511-60-00988 하위.
+//   ★ 도수 TID 미상 → merchant_id 단일 스코핑(1차 권위). tid=[] (belt-and-suspenders 미가용, tid backfill=별도 티켓).
+//   DB registry(domain='body') 미배포/미seed 시의 fail-safe DEFAULT (silent-drop 봉인).
+const DOHSU_MERCHANT_WHITELIST_DEFAULT = [
+  "1777274001",
+  "1777275001", "1777275002", "1777275003", "1777275004",
+  "1777275005", "1777275006", "1777275007", "1777275008",
+  "1777276001", "1777276002", "1777276003", "1777276004", "1777276005",
+];
+const DOHSU_TID_WHITELIST_DEFAULT = []; // 도수 TID 미상 — merchant-only 스코핑
+
+// 도메인별 하드코딩 DEFAULT 선택 (REDPAY_DOMAIN env-swap).
+const DOMAIN_MERCHANT_DEFAULTS = { foot: FOOT_MERCHANT_WHITELIST_DEFAULT, body: DOHSU_MERCHANT_WHITELIST_DEFAULT };
+const DOMAIN_TID_DEFAULTS = { foot: FOOT_TID_WHITELIST_DEFAULT, body: DOHSU_TID_WHITELIST_DEFAULT };
+const MERCHANT_DEFAULT_FOR_DOMAIN = (DOMAIN_MERCHANT_DEFAULTS[REDPAY_DOMAIN] ?? FOOT_MERCHANT_WHITELIST_DEFAULT);
+const TID_DEFAULT_FOR_DOMAIN = (DOMAIN_TID_DEFAULTS[REDPAY_DOMAIN] ?? FOOT_TID_WHITELIST_DEFAULT);
+
 // ── 화이트리스트 소스 우선순위 (T-20260711-REDPAY-TERMINAL-REGISTRY-TABLE) ──
-//   1) env(REDPAY_*_WHITELIST) 명시 override  →  2) DB redpay_terminal_registry(domain=foot,active) SSOT
-//   →  3) 하드코딩 DEFAULT(DB 미가용 fail-safe. 정전/네트워크 장애에도 폴러 생존).
-//   env 미설정 시 DB 를 SSOT 로 조회하여 8곳-복제 drift 를 봉인. 실제 값 주입은 resolveWhitelists()(main).
+//   1) env(REDPAY_*_WHITELIST) 명시 override  →  2) DB redpay_terminal_registry(domain=REDPAY_DOMAIN,active) SSOT
+//   →  3) 하드코딩 DEFAULT(도메인별. DB 미가용 fail-safe. 정전/네트워크 장애에도 폴러 생존).
+//   env 미설정 시 DB 를 SSOT 로 조회하여 drift 를 봉인. 실제 값 주입은 resolveWhitelists()(main).
 let merchantList = REDPAY_MERCHANT_WHITELIST_ENV
   ? REDPAY_MERCHANT_WHITELIST_ENV.split(",").map((m) => m.trim()).filter(Boolean)
-  : FOOT_MERCHANT_WHITELIST_DEFAULT.slice();
+  : MERCHANT_DEFAULT_FOR_DOMAIN.slice();
 let merchantWhitelist = new Set(merchantList);
 
 let tidList = REDPAY_TID_WHITELIST_ENV
   ? REDPAY_TID_WHITELIST_ENV.split(",").map((t) => t.trim()).filter(Boolean)
-  : FOOT_TID_WHITELIST_DEFAULT.slice();
+  : TID_DEFAULT_FOR_DOMAIN.slice();
 let tidWhitelist = new Set(tidList);
 
-// redpay_terminal_registry SSOT 조회 → 풋 화이트리스트 파생. 실패 시 null 반환(호출측 폴백).
+// redpay_terminal_registry SSOT 조회 → REDPAY_DOMAIN 화이트리스트 파생. 실패 시 null 반환(호출측 폴백).
 async function loadRegistryFromDb() {
   try {
     const rows = await restGet(
-      "redpay_terminal_registry?domain=eq.foot&active=eq.true&select=merchant_id,tid"
+      `redpay_terminal_registry?domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true&select=merchant_id,tid`
     );
     if (!Array.isArray(rows) || rows.length === 0) return null;
     const merchants = [...new Set(rows.map((r) => (r.merchant_id ?? "").trim()).filter(Boolean))];
@@ -202,9 +225,9 @@ const PAGE_SIZE = 500;
 
 // ── 로그 헬퍼 ────────────────────────────────────────────────────────────────
 function ts() { return new Date().toISOString(); }
-function log(...a) { console.log(`[${ts()}][redpay-macstudio][foot]`, ...a); }
-function warn(...a) { console.warn(`[${ts()}][redpay-macstudio][foot][WARN]`, ...a); }
-function errlog(...a) { console.error(`[${ts()}][redpay-macstudio][foot][ERROR]`, ...a); }
+function log(...a) { console.log(`[${ts()}][redpay-macstudio][${REDPAY_DOMAIN}]`, ...a); }
+function warn(...a) { console.warn(`[${ts()}][redpay-macstudio][${REDPAY_DOMAIN}][WARN]`, ...a); }
+function errlog(...a) { console.error(`[${ts()}][redpay-macstudio][${REDPAY_DOMAIN}][ERROR]`, ...a); }
 function mask(k) { return k ? `${k.slice(0, 6)}***(${k.length})` : "(빈값)"; }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -321,23 +344,26 @@ function toRawTrxRow(clinicId, t) {
     raw_payload: t,
   };
 }
-// 풋 스코프 필터 (merchant_id 1차 권위 피벗, T-...-REDPAY-MACSTUDIO-POLLER / DA GO).
-//   1차 = merchant_id allowlist(도메인 경계 — 가맹점명 "풋". 도수/피부/롱레는 대역 밖 → 구조적 자동배제).
-//   보조 = TID(17) belt-and-suspenders. merchant 값 부재(레거시/이상행) 시에만 TID 로 폴백(풋행 유실 방지).
-//   drift = 풋 merchant 인정인데 미등록 TID → 신규 풋 단말 후보. silent include 금지(registry §6) → 알람 표면화.
+// 도메인 스코프 필터 (merchant_id 1차 권위 피벗, T-...-REDPAY-MACSTUDIO-POLLER / DA GO).
+//   1차 = merchant_id allowlist(도메인 경계 — foot/body/… 대역. 타도메인은 구조적 자동배제).
+//   보조 = TID belt-and-suspenders. merchant 값 부재(레거시/이상행) 시에만 TID 로 폴백(행 유실 방지).
+//   drift = 자도메인 merchant 인정인데 미등록 TID → 신규 단말 후보. silent include 금지(registry §6) → 알람.
+//   ⚠ tidWhitelist 가 비면(domain=body 도수, TID 미상) drift 판정 무의미 → 억제(merchant-only 스코핑).
 function filterToFootScope(items) {
   const kept = [];
   const dropped = [];
   const drift = [];
+  const tidScopeActive = tidWhitelist.size > 0; // TID 보조필터/drift 판정 활성 여부
   for (const it of items) {
     const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
     const merchantOk = mid != null && merchantWhitelist.has(mid);   // 1차 권위(도메인 경계)
-    const tidOk = it.tid != null && tidWhitelist.has(it.tid);       // belt-and-suspenders 보조
-    // merchant 가 권위. merchant 값이 아예 없을 때만 TID 보조필터로 폴백.
+    const tidOk = tidScopeActive && it.tid != null && tidWhitelist.has(it.tid); // belt-and-suspenders 보조
+    // merchant 가 권위. merchant 값이 아예 없을 때만 TID 보조필터로 폴백(tid 스코프 활성 시).
     const keep = merchantOk || (mid == null && tidOk);
     if (keep) {
       kept.push(it);
-      if (merchantOk && !tidOk) drift.push(it); // 풋 merchant + 미등록 TID = 신규 단말 drift
+      // drift = merchant 인정 + 미등록 TID. tid 스코프 비활성(도수) 시엔 판정 억제(전건 오탐 방지).
+      if (tidScopeActive && merchantOk && !tidOk) drift.push(it);
     } else {
       dropped.push(it);
     }
@@ -459,13 +485,16 @@ async function main() {
 
   if (merchantWhitelist.size === 0) {
     // fail-safe: 1차 권위 화이트리스트가 비면 도메인 경계 소실 = 타도메인 혼입 위험 → 차단.
-    errlog("merchant_id 화이트리스트 비어있음 — 타도메인(도수/피부/롱레) 혼입 방지 위해 종료(AC-3/AC-4).");
+    //   (merchant = 도메인 경계 1차 권위. 비면 어떤 도메인이든 혼입 위험 → 하드 종료.)
+    errlog(`merchant_id 화이트리스트 비어있음(domain=${REDPAY_DOMAIN}) — 타도메인 혼입 방지 위해 종료(AC-3/AC-4).`);
     process.exit(1);
   }
   if (tidWhitelist.size === 0) {
-    // fail-safe: 보조 화이트리스트가 비면 belt-and-suspenders/서버narrowing 소실 → 차단.
-    errlog("TID 화이트리스트 비어있음 — belt-and-suspenders 소실 방지 위해 종료(AC-3/AC-4).");
-    process.exit(1);
+    // ⚠ T-20260714-foot-REDPAY-DOHSU: tid 비어있음은 domain=body(도수, TID 미상) 정상 케이스.
+    //   merchant_id 가 1차 권위(도메인 경계)이므로 tid 부재여도 merchant-only 스코핑으로 안전.
+    //   → 하드 종료(exit) 대신 WARN 다운그레이드. (foot 은 tid 17-set 보유 → 이 경로 미진입.)
+    warn(`TID 화이트리스트 비어있음(domain=${REDPAY_DOMAIN}) — belt-and-suspenders/tid= narrowing 미가용. ` +
+         `merchant_id(${merchantWhitelist.size}건) 1차 권위 단일 스코핑으로 진행(도수 TID 미상 정상 케이스).`);
   }
 
   log(`가동: mode=${POLL_MODE} business_no=${REDPAY_BUSINESS_NO} ` +
@@ -482,14 +511,23 @@ async function main() {
   }
 
   // ── 윈도 슬라이딩: poller_state 기반 from 계산 (EF runPoller 와 동일) ────────
+  //   ⚠ T-20260714-foot-REDPAY-DOHSU: redpay_poller_state 는 singleton(CHECK id=1) — foot 전용 heartbeat.
+  //     get_redpay_feed_freshness() 가 foot last_incremental_to 를 소비하므로, body(도수) 인스턴스가
+  //     id=1 을 덮어쓰면 foot heartbeat 오염(cross-tenant 격리 위반). → STATE_ENABLED=foot 만 true.
+  //     body 는 무상태(고정 lookback 1h, 멱등 upsert 로 재수집 안전)로 foot state 무접촉.
+  const STATE_ENABLED = REDPAY_DOMAIN === "foot";
   let fromDt;
   if (POLL_MODE === "incremental") {
     let lastTo = null;
-    try {
-      const rows = await restGet("redpay_poller_state?id=eq.1&select=last_incremental_to");
-      if (rows[0]?.last_incremental_to) lastTo = new Date(rows[0].last_incremental_to);
-    } catch (e) {
-      warn(`state 조회 오류 — fallback 1시간: ${e instanceof Error ? e.message : String(e)}`);
+    if (STATE_ENABLED) {
+      try {
+        const rows = await restGet("redpay_poller_state?id=eq.1&select=last_incremental_to");
+        if (rows[0]?.last_incremental_to) lastTo = new Date(rows[0].last_incremental_to);
+      } catch (e) {
+        warn(`state 조회 오류 — fallback 1시간: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      log(`domain=${REDPAY_DOMAIN}: poller_state(id=1) 무접촉(foot heartbeat 격리) — 고정 1h lookback 무상태 폴.`);
     }
     if (lastTo && !isNaN(lastTo.getTime())) {
       const proposed = new Date(lastTo.getTime() - WINDOW_OVERLAP_MS);
@@ -559,8 +597,10 @@ async function main() {
     page++;
   }
 
-  // ── poller_state heartbeat ─────────────────────────────────────────────────
-  await updatePollerState(POLL_MODE, nowIso, totalFetched, totalUpserted);
+  // ── poller_state heartbeat (foot 전용 — body 는 singleton id=1 격리 위해 무접촉) ──
+  if (STATE_ENABLED) {
+    await updatePollerState(POLL_MODE, nowIso, totalFetched, totalUpserted);
+  }
 
   // ── EF match_only 트리거 (best-effort) ─────────────────────────────────────
   if (totalUpserted > 0) await triggerMatcher();

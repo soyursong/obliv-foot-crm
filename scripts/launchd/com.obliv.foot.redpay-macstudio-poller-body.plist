@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.obliv.foot.redpay-macstudio-poller-body
+  T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER — 도수(재활, body) 레드페이 적재 (맥스튜디오 상주 폴러, env-swap)
+
+  왜: 도수(재활의학, B1)는 풋과 동일 사업자(511-60-00988)·동일 마스터키를 공유. merchant band 만 다름
+      (1777274-276, 14종). foot 폴러 스크립트를 REDPAY_DOMAIN=body 로 env-swap 재사용(코드 무분기).
+      WAF 회피(한국 IP=맥스튜디오 직접 호출) 동일 근거.
+
+  ── foot 인스턴스와의 격리 (cross-tenant) ──────────────────────────────────
+    · REDPAY_DOMAIN=body → 화이트리스트 = registry(domain='body') 파생 / DB 미가용 시 DOHSU 하드코딩 DEFAULT.
+    · redpay_poller_state(singleton id=1) 무접촉 — foot heartbeat 오염 방지(폴러 STATE_ENABLED=foot 만 true).
+      body 는 무상태(고정 1h lookback, 멱등 upsert) 폴.
+    · 로그 라벨 [body], 로그 파일 분리(redpay_macstudio_poller_body.*).
+
+  ── 선결 ────────────────────────────────────────────────────────────────
+    · payment_reconciliation_log.center + redpay_terminal_registry(domain='body' seed 14) 마이그 배포 후 가동.
+    · 도수 raw 격리 EF(center-aware runMatcher) 배포 후 가동 — 미배포 상태로 body 수집 시 foot recon 오염 위험.
+    ⇒ 배포 순서: [마이그 3종] → [EF redpay-reconcile center-aware] → [본 body 폴러 launchd load].
+
+  배포 (supervisor, macstudio):
+    1. 시크릿: foot 과 동일 ~/.env.redpay-foot 공유(SUPABASE_URL/SERVICE_ROLE/REDPAY_API_KEY/REDPAY_BUSINESS_NO).
+       도수 화이트리스트는 registry(domain='body') 자동 파생 → 별도 env 불필요.
+       (비상 override: REDPAY_MERCHANT_WHITELIST 로 14종 명시 가능. tid 는 미상이라 미설정 정상.)
+    2. 등록:
+         mkdir -p ~/logs
+         ln -sf ~/GitHub/obliv-foot-crm/scripts/launchd/com.obliv.foot.redpay-macstudio-poller-body.plist \
+           ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller-body.plist
+         launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller-body.plist
+    3. 검증:
+         launchctl list | grep redpay-macstudio-poller-body
+         tail -50 ~/logs/redpay_macstudio_poller_body.out  # '[body]' 라벨 + '✅ 레드페이 200 OK' + upserted 확인
+         tail -50 ~/logs/redpay_macstudio_poller_body.err
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.obliv.foot.redpay-macstudio-poller-body</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm &amp;&amp; node scripts/redpay_macstudio_poller.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/domas/GitHub/obliv-foot-crm</string>
+
+    <!-- REDPAY_DOMAIN=body: env-swap 으로 도수 band 수집 (동일 스크립트 재사용) -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REDPAY_DOMAIN</key><string>body</string>
+    </dict>
+
+    <!-- 5분(300초) 주기 증분 폴 -->
+    <key>StartInterval</key><integer>300</integer>
+    <key>RunAtLoad</key><true/>
+
+    <!-- SPOF 완화: 크래시 시 자동 재기동. 정상 종료(exit 0)는 다음 StartInterval 대기. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key><false/>
+    </dict>
+    <key>ThrottleInterval</key><integer>60</integer>
+
+    <key>StandardOutPath</key><string>/Users/domas/logs/redpay_macstudio_poller_body.out</string>
+    <key>StandardErrorPath</key><string>/Users/domas/logs/redpay_macstudio_poller_body.err</string>
+</dict>
+</plist>

@@ -49,6 +49,49 @@ import {
 // ── 픽스처 (DRY_RUN 모드용) ─────────────────────────────────────────────────
 import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" };
 
+// ── 멀티센터 center 스코핑 (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──────────
+//   payment_reconciliation_log.center = canonical brand 토큰 {'foot','body'} (DA
+//   da_decision_body_redpay_center_column_20260714.md). merchant band 로 명시 파생 —
+//   default-mapping 금지(미분류를 조용히 'foot'로 흘리면 풋 recon 오염 = AC4 위반).
+//     · foot 17-set merchant  → center='foot'
+//     · 도수(재활,body) 14-band(1777274-276) → center='body'
+//   band↔center 는 폴러 DEFAULT(scripts/redpay_macstudio_poller.mjs)와 미러. 값 표준 canonical
+//   ⇒ ⛔ 'dohsu'/'dosu'(display alias) ⛔ 'body_rehab'(축오염). 재활도 center='body'.
+const FOOT_MERCHANT_SET = new Set<string>([
+  "1777285001", "1777285004", "1777288001", "1777288004",
+  "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
+  "1777289006", "1777289007", "1777289008",
+  "1777289009", "1777289010", "1777289011", "1777289012", "1777289013",
+]);
+const BODY_MERCHANT_SET = new Set<string>([
+  "1777274001",
+  "1777275001", "1777275002", "1777275003", "1777275004",
+  "1777275005", "1777275006", "1777275007", "1777275008",
+  "1777276001", "1777276002", "1777276003", "1777276004", "1777276005",
+]);
+
+/** raw_payload.merchant.id 추출 → 안전 문자열. 부재 시 null. */
+function merchantIdOf(rawPayload: unknown): string | null {
+  const m = (rawPayload as { merchant?: { id?: unknown } } | null | undefined)?.merchant?.id;
+  return m != null && `${m}`.trim() !== "" ? `${m}`.trim() : null;
+}
+
+/**
+ * raw 트랜잭션(merchant band) → center 명시 파생.
+ *   foot 17-set → 'foot' / body 14-band → 'body'.
+ *   미분류(폴러 whitelist 상 발생 불가하나 방어) → 'foot' 폴백 + WARN 표면화(silent 금지, registry §6 정신).
+ */
+function centerForRawRow(raw: { raw_payload?: unknown } | null | undefined): "foot" | "body" {
+  const mid = merchantIdOf(raw?.raw_payload);
+  if (mid && BODY_MERCHANT_SET.has(mid)) return "body";
+  if (mid && FOOT_MERCHANT_SET.has(mid)) return "foot";
+  console.warn(
+    `[redpay-reconcile][center] 미분류 merchant(id=${mid ?? "∅"}) — center='foot' 폴백(표면화). ` +
+    `신규 단말 후보면 registry(redpay_terminal_registry)에 등록 필요.`,
+  );
+  return "foot";
+}
+
 // ── 환경 변수 ─────────────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -465,7 +508,7 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   // 1. 미매칭 raw 거래 조회 (Y 상태 + 미매칭)
   const { data: rawTrxList, error: rawErr } = await supabase
     .from("redpay_raw_transactions")
-    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id")
+    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id,raw_payload")
     .eq("clinic_id", clinicId)
     .eq("external_status", "Y")
     .is("matched_payment_id", null)
@@ -653,7 +696,7 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   // 환불 추적 (N/X/M raw 건)
   const { data: cancelledRaw } = await supabase
     .from("redpay_raw_transactions")
-    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id")
+    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id,raw_payload")
     .eq("clinic_id", clinicId)
     .in("external_status", ["N", "X", "M"])
     .limit(100);
@@ -672,10 +715,22 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
     }
   }
 
-  // 6. reconciliation_log 기록
+  // 6. center 스탬프 (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) — merchant band 명시 파생.
+  //   VAN-앵커 이벤트(raw_transaction_id 有)는 raw merchant band 로, CRM-앵커(missing_at_van,
+  //   raw 없음)는 이 foot CRM 의 payments → 'foot'. default-mapping 금지(centerForRawRow 미분류=WARN).
+  const centerByRawId = new Map<string, "foot" | "body">();
+  for (const r of (rawTrxList as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
+  for (const r of ((cancelledRaw ?? []) as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
+  for (const e of allEvents) {
+    e.center = e.raw_transaction_id
+      ? (centerByRawId.get(e.raw_transaction_id) ?? "foot")   // VAN 앵커: merchant band
+      : "foot";                                                // CRM 앵커(missing_at_van): 이 foot CRM
+  }
+
+  // 7. reconciliation_log 기록
   await insertReconEvents(allEvents);
 
-  // 7. M3 알림 발송 (REDPAY_ALERT_CHANNEL 있을 때만)
+  // 8. M3 알림 발송 (REDPAY_ALERT_CHANNEL 있을 때만)
   await dispatchAlerts(allEvents);
 
   console.log(
@@ -703,6 +758,7 @@ async function insertReconEvents(events: ReconEvent[]): Promise<void> {
     external_amount:    e.external_amount,
     crm_amount:         e.crm_amount,
     raw_payload:        e.alert_payload,
+    center:             e.center ?? "foot",   // 멀티센터 스코핑(NOT NULL). 미stamp 방어 폴백.
   }));
 
   const { error } = await supabase

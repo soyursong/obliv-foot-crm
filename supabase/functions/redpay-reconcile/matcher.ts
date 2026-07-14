@@ -45,6 +45,8 @@ export interface RawTransaction {
   tid:             string | null;
   approved_at:     string | null;  // ISO8601 UTC
   matched_payment_id: string | null;
+  /** redpay 원본 JSON(merchant.id 포함) — center(멀티센터 스코핑) 파생용. T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER */
+  raw_payload?:    Record<string, unknown> | null;
 }
 
 /** CRM payments 레코드 (reconciliation에 필요한 필드만)
@@ -111,6 +113,12 @@ export interface ReconEvent {
   crm_amount:      number | null;
   /** 알림 페이로드 (실발송은 M3 이후 — M0에서는 로그만) */
   alert_payload:   AlertPayload | null;
+  /**
+   * 멀티센터 recon 스코핑(canonical brand 토큰). 'foot'=풋 / 'body'=도수(재활).
+   * merchant band 로 명시 파생(default-mapping 금지). insertReconEvents 직전 index.ts 에서 stamp.
+   * T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER / DA da_decision_body_redpay_center_column.
+   */
+  center?:         "foot" | "body";
 }
 
 /** Slack 알림 페이로드 (M3에서 실발송) */
