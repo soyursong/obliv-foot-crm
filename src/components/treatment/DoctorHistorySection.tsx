@@ -35,7 +35,7 @@ import TreatingDoctorSelect from '@/components/TreatingDoctorSelect';
 import { useTreatingDoctorOptions } from '@/hooks/useTreatingDoctorOptions';
 import { chartNoBadge } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import type { VisitType } from '@/lib/types';
+import type { VisitType, StatusFlag } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Stethoscope, Users, Eye, FileText } from 'lucide-react';
@@ -52,6 +52,9 @@ interface DoctorHistoryRow {
   docRequested: boolean;     // T-20260710 소견·진단서 신청 O/X (요구1)
   opinionIssued: boolean;    // 소견·진단서 발행 O/X
   treatingDoctorId: string | null; // T-20260708 진료의(요청 A) — check_ins.treating_doctor_id
+  // T-20260714-foot-TREATTABLE-DONE-SECTION-RETAIN: 진료완료(pink) 분리 표시용 파생.
+  statusFlag: StatusFlag | null; // 진료콜 색 플래그 (purple=진료필요/진행, pink=진료완료).
+  completedAt: string | null;    // 진료완료(pink) 전이 시각 — status_flag_history 파생(하단 섹션 정렬키).
 }
 
 function dayBounds(date: string) {
@@ -122,6 +125,51 @@ export function computeDocStatusSummary(
   return { requestedCount, issuedCount, total: rows.length };
 }
 
+// ─── T-20260714-foot-TREATTABLE-DONE-SECTION-RETAIN — 진료완료(pink) 2섹션 분리 파생 ──────────────
+//   배경: 진료 환자 이력 목록 쿼리는 status_flag IN ('purple'=진료필요, 'pink'=진료완료) 를 fetch한다.
+//     진료완료(pink) 전이 후에도 상단 활성목록에 섞여 표시되어, 완료/미완료 구분이 흐려진다(현장 피드백).
+//   교정: 완료(pink)를 상단 활성목록에서 빼서 하단 [진료완료] read-only 섹션으로 이동(완전소멸 X).
+//     완료 status = status_flag 'pink' (SHAKEHAND-NO-COMPLETE field-soak 정합: purple→pink=진료완료 SSOT).
+//   당일 범위 = 부모(TreatmentTable) 공통 날짜의 checked_in_at [00:00,23:59:59] KST — 쿼리 불변(회귀 0).
+//     익일엔 그 날짜의 check_ins만 fetch → 전일 완료건 자연 제외(AC-4).
+
+// 진료완료(pink) 전이 시각 파생 — status_flag_history 중 flag==='pink' 최신 changed_at.
+//   applyStatusFlagTransition 가 completed_at 을 쓰지 않으므로(pink는 status='done'와 별개 신호),
+//   pink 전이 이력이 완료시각의 1순위 근거. 부재 시 상위 호출부가 checked_in_at 폴백(+note).
+export function derivePinkCompletionAt(
+  history: Array<{ flag: StatusFlag | null; changed_at: string }> | null | undefined,
+): string | null {
+  if (!history || history.length === 0) return null;
+  let latest: string | null = null;
+  for (const h of history) {
+    if (h.flag === 'pink' && h.changed_at) {
+      if (!latest || h.changed_at > latest) latest = h.changed_at;
+    }
+  }
+  return latest;
+}
+
+// active(진료 필요/진행) vs done(진료완료) 분리 — 완료 = status_flag 'pink'.
+//   done 섹션 정렬 = 완료시각(pink 전이) desc, 부재 시 checked_in_at desc 폴백(+행 note).
+export interface CompletionSplit {
+  active: DoctorHistoryRow[];
+  done: DoctorHistoryRow[];
+}
+export function splitByCompletion(rows: DoctorHistoryRow[]): CompletionSplit {
+  const active: DoctorHistoryRow[] = [];
+  const done: DoctorHistoryRow[] = [];
+  for (const r of rows) {
+    if (r.statusFlag === 'pink') done.push(r);
+    else active.push(r);
+  }
+  done.sort((a, b) => {
+    const ka = a.completedAt ?? a.checkedInAt ?? '';
+    const kb = b.completedAt ?? b.checkedInAt ?? '';
+    return kb.localeCompare(ka); // 완료 시각 역순
+  });
+  return { active, done };
+}
+
 function useDoctorHistory(clinicId: string | null | undefined, date: string) {
   return useQuery<DoctorHistoryRow[]>({
     queryKey: ['doctor_history', clinicId, date],
@@ -134,7 +182,7 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
       const { data: ciData, error: ciErr } = await supabase
         .from('check_ins')
         .select(
-          'id, customer_id, customer_name, visit_type, status_flag, status, checked_in_at, prescription_status, doctor_confirm_prescription, treating_doctor_id',
+          'id, customer_id, customer_name, visit_type, status_flag, status_flag_history, status, checked_in_at, prescription_status, doctor_confirm_prescription, treating_doctor_id',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', start)
@@ -203,6 +251,9 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
         const cid = c['customer_id'] ? String(c['customer_id']) : null;
         const rxIssued =
           c['prescription_status'] === 'confirmed' && c['doctor_confirm_prescription'] === true;
+        const statusFlag = (c['status_flag'] as StatusFlag | null) ?? null;
+        const history =
+          (c['status_flag_history'] as Array<{ flag: StatusFlag | null; changed_at: string }> | null) ?? null;
         return {
           checkInId: String(c['id']),
           customerId: cid,
@@ -214,6 +265,8 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
           docRequested: cid ? requestedSet.has(cid) : false,
           opinionIssued: cid ? publishedSet.has(cid) : false,
           treatingDoctorId: (c['treating_doctor_id'] as string | null) ?? null,
+          statusFlag,
+          completedAt: statusFlag === 'pink' ? derivePinkCompletionAt(history) : null,
         } as DoctorHistoryRow;
       });
     },
@@ -283,7 +336,12 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
   const doctorSummary = computeDoctorCountSummary(rows, doctorNameById);
 
   // 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수 요약(코디팀 한눈 확인). read-only, rows 파생 재사용.
+  //   ★ 집계(진료의별 담당수·소견 신청/발행)는 완료 포함 당일 전체(rows) 기준 유지 — 회귀 0.
   const docStatus = computeDocStatusSummary(rows);
+
+  // T-20260714-foot-TREATTABLE-DONE-SECTION-RETAIN — 진료완료(pink) 분리.
+  //   active(진료필요/진행) = 상단 활성목록 / done(진료완료 pink) = 하단 read-only 섹션(완료시각 desc).
+  const { active, done } = splitByCompletion(rows);
 
   return (
     <div className="flex flex-col gap-3" data-testid="doctor-history-section">
@@ -371,6 +429,9 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
           해당 날짜에 진료콜 명단에 오른 환자가 없습니다.
         </div>
       ) : (
+        <>
+        {/* 상단 활성목록 — 진료 필요/진행(active). AC-1: 진료완료(pink)는 여기서 제외되어 하단 섹션으로 이동. */}
+        {active.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border bg-background" data-testid="doctor-history-table">
           <table className="w-full text-[13px]">
             <thead>
@@ -387,7 +448,7 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, idx) => {
+              {active.map((r, idx) => {
                 const anyIssued = r.rxIssued || r.opinionIssued;
                 const meta = r.customerId ? metaMap?.get(r.customerId) : undefined;
                 return (
@@ -468,11 +529,110 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
             </tbody>
           </table>
         </div>
+        ) : (
+          <div
+            className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed p-6 text-center text-[13px] text-muted-foreground"
+            data-testid="doctor-history-active-empty"
+          >
+            <Stethoscope className="h-4 w-4 text-muted-foreground/40" />
+            진행 중인 진료 환자가 없습니다. (모두 진료완료)
+          </div>
+        )}
+
+        {/* 하단 [진료완료] read-only 섹션 — AC-1/AC-2. 완료(pink) 환자를 당일 이력으로 열람.
+            편집/상태변경 액션 없음(read-only): 진료의=텍스트, 처방전·소견 O/X 표시 전용, 이름 좌클릭=차트 열람(read). */}
+        {done.length > 0 && (
+          <div className="flex flex-col gap-1.5" data-testid="doctor-history-done-section">
+            <p className="flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-pink-400" aria-hidden />
+              진료완료
+              <span className="tabular-nums font-semibold text-pink-600">{done.length}명</span>
+              <span className="text-[11px] font-normal text-muted-foreground/60">· 당일 이력(열람 전용)</span>
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-pink-100 bg-pink-50/20" data-testid="doctor-history-done-table">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b bg-pink-50/40 text-left text-[11px] font-semibold text-muted-foreground">
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">#</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">완료</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">환자</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">방문</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">진료의</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">처방전</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">소견·진단서 신청</th>
+                    <th className="px-2.5 py-1.5 whitespace-nowrap">소견·진단서 발행</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {done.map((r, idx) => {
+                    const meta = r.customerId ? metaMap?.get(r.customerId) : undefined;
+                    const doctorName = r.treatingDoctorId
+                      ? (doctorNameById.get(r.treatingDoctorId) ?? '진료의(비활성)')
+                      : '미지정';
+                    // 완료시각: pink 전이(completedAt) 1순위 / 부재 시 접수시각(checked_in_at) 폴백 + note.
+                    const hasCompletedAt = !!r.completedAt;
+                    const shownTime = r.completedAt ?? r.checkedInAt;
+                    return (
+                      <tr
+                        key={r.checkInId}
+                        className="border-b last:border-0"
+                        data-testid="doctor-history-done-row"
+                        data-completed-at={r.completedAt ?? ''}
+                      >
+                        <td className="px-2.5 py-1.5 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
+                        <td className="px-2.5 py-1.5 text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
+                          {shownTime ? format(new Date(shownTime), 'HH:mm') : '—'}
+                          {!hasCompletedAt && (
+                            <span className="ml-1 text-[10px] text-muted-foreground/50" title="완료시각 미기록 — 접수시각으로 대체 표기">
+                              (접수)
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2.5 py-1.5 font-medium whitespace-nowrap">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded px-1 -mx-1 text-left hover:text-teal-700 hover:underline"
+                            data-testid="dh-done-name-clickable"
+                            onClick={() => nameInteraction.onLeftClick(r.customerId)}
+                          >
+                            <span>{r.customerName}</span>
+                            <span className="font-mono text-[11px] font-normal text-muted-foreground/70">
+                              {chartNoBadge(meta?.chart ?? null)}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <Badge className="bg-slate-100 text-slate-700 text-[11px] px-1.5 py-0">
+                            {VISIT_TYPE_KO[r.visitType as VisitType] ?? r.visitType ?? '—'}
+                          </Badge>
+                        </td>
+                        <td className="px-2.5 py-1.5 text-[12px] text-muted-foreground whitespace-nowrap" data-testid="dh-done-doctor">
+                          {doctorName}
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <IssueBadge issued={r.rxIssued} label="발행" testid="dh-done-rx-issue" />
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <IssueBadge issued={r.docRequested} label="신청" testid="dh-done-opinion-request" />
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <IssueBadge issued={r.opinionIssued} label="발행" testid="dh-done-opinion-issue" />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       <p className="text-[11px] text-muted-foreground/70">
         ※ 소견·진단서는 <b>신청</b>(코디팀 요청)과 <b>발행</b>(원장 발행)을 각각 O/X로 표시합니다.
         발행 문서 내용 보기(뷰어)는 표시 방식 확정 후 제공됩니다.
+        <br />※ <b>진료완료</b> 환자는 상단 목록에서 하단 <b>[진료완료]</b> 섹션(당일 열람 전용)으로 이동합니다.
       </p>
     </div>
   );
