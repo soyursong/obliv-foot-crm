@@ -179,8 +179,16 @@ export default function Customers() {
   // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑥: 고객정보 수정 — therapist 누락분 해제(3역할 전체 보장).
   //   ★ADDITIVE only: 기존 staff/part_lead 절대 회수 금지(lock-out 0). isStaffUnlockRole(6역할: +director/therapist) ∪ {staff,part_lead}.
   //   동반 RLS 마이그(customers_therap_update_6menu = therapist UPDATE). consult/coord 는 customers_*_update 旣허용.
-  const canEditCustomer = isStaffUnlockRole(profile?.role) || ['staff', 'part_lead'].includes(profile?.role ?? '');
+  // T-20260714-foot-TM-CUSTOMER-EDIT-NODELETE: tm(콜센터) 역할에 고객정보 수정 권한 ADDITIVE 부여(삭제 제외).
+  //   ★FE union = RLS union 확인(NO-DDL, db_change=false): customers UPDATE RLS = customers_staff_update
+  //     → is_floor_staff()(=admin/manager/director/staff/part_lead/tm, clinic-scoped)에 tm 旣포함 → tm 저장 정상(AC2).
+  //   ★삭제는 canDeleteCustomer(admin/director)에 tm 미추가 + customers DELETE RLS = customers_admin_all(FOR ALL,
+  //     is_admin_or_manager = admin/manager/director)에도 tm 부재 → tm DELETE 는 FE 숨김 + 서버 RLS 이중 거부(AC3/AC4).
+  //   ★민감정보(여권번호 등)는 canEditSensitive(=isStaffUnlockRole, tm 미포함)로 별도 게이트 → tm 은 staff/part_lead 와
+  //     동일하게 비민감 필드만 수정(RRN 은 canViewRrn 별 게이트로 tm 조회·수정 불가). 최소권한 유지.
+  const canEditCustomer = isStaffUnlockRole(profile?.role) || ['staff', 'part_lead', 'tm'].includes(profile?.role ?? '');
   // 삭제는 admin / T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director(대표원장). customers RLS=is_admin_or_manager(director 포함)이라 FOR ALL(DELETE) 이미 director 허용 → RLS/감사로그 영향 0. admin 비제거.
+  //   T-20260714-foot-TM-CUSTOMER-EDIT-NODELETE: tm 은 여기 미포함(삭제 권한 명시 제외).
   const canDeleteCustomer = profile?.role === 'admin' || profile?.role === 'director';
   // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기는 PII(전화·생년월일) 포함 → admin/manager 한정(노출+실행 동시 게이팅).
   // T-20260620-foot-SUPERADMIN-EXEMPT: profile(subject) 전달 → exempt_from_restrictions honor(상시예외 시 customer_export 보존). role 문자열 대신 subject.
