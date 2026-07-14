@@ -525,6 +525,15 @@ export async function loadAutoBindContext(
   // 4순위: 첫 번째 활성 director (fallback)
   let doctorName: string | null = null;
 
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN#3, field-confirm B안 2026-07-14T10:22 KST,
+  //   김주연 총괄 U0ATDB587PV]: 진료의 "미지정 폴백" 서류의 도장은 대표원장(문지은) 개인직인이 아니라
+  //   오블리브오리진 법인 인감(빨간, 기관 대표 도장)으로 찍어야 한다("문지은 원장님 도장은 요청한 적
+  //   없는데 기존 대표 도장 어디갔어?"). 법인 인감 = getStampUrl()(jongno-foot-stamp.png, priority-2)
+  //   = 7-13 이전 미지정 서류에 실제로 찍히던 '기존 대표 도장'. 아래 폴백 경로에서만 true → 도장 슬롯을
+  //   법인 인감으로 강제(개인직인 seal_image_url 우회). 지정 진료의(override/치료테이블/clinicDoctorId)는
+  //   무영향 — 해당 원장 개인 도장(한동훈印/김윤기印/김상은印) 그대로 유지(오매핑 0, ★법적 정확성).
+  let sealFallbackToInstitution = false;
+
   if (doctorNameOverride !== undefined) {
     // 빈 문자열('')이면 미선택 상태 유지, 비어있지 않으면 사용
     doctorName = doctorNameOverride || null;
@@ -563,13 +572,19 @@ export async function loadAutoBindContext(
     //   기관 도장/공란으로 대체돼 붉은 인장이 안 찍힌다(❷). code-inspection은 지정 진료의 경로만
     //   검증해 통과했으나 현장 지배 경로(미지정·복수근무)에서 재발.
     //   → override 미전달(자동 발행 경로)에서는 공란 대신 요양기관 대표(is_default clinic_doctor,
-    //     = 대표원장)로 폴백해 이름·직인을 항상 채운다. 표기 이름과 도장은 동일 원장으로 1:1 유지
-    //     (오매핑 0 — 법적 정확성). 지정 진료의가 있으면 위에서 이미 그 원장으로 결선되므로 무영향.
+    //     = 대표원장)로 폴백해 이름을 항상 채운다(공란 방지, AC-8/9). ★단 [REOPEN#3, 2026-07-14 field]:
+    //     도장은 대표원장 개인직인이 아니라 오블리브오리진 법인 인감(getStampUrl priority-2)으로 찍는다
+    //     (sealFallbackToInstitution=true → 아래 seal 우회). '기존 대표 도장'(법인 인감) 복원.
+    //     지정 진료의가 있으면 위에서 이미 그 원장(개인 도장 유지)으로 결선되므로 무영향.
     //     override='' (복수근무 UI 대기, DocumentPrintPanel)는 상단 분기라 여기 도달 안 함 → UX 무회귀.
     if (doctorName === null && clinicDoctors.length > 0) {
       const representative =
         clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
-      if (representative?.name) doctorName = representative.name;
+      if (representative?.name) {
+        doctorName = representative.name;
+        // REOPEN#3 B안: 미지정 폴백 = 대표원장 이름은 채우되(공란 방지, AC-8/9) 도장은 법인 인감.
+        sealFallbackToInstitution = true;
+      }
     }
   }
 
@@ -593,7 +608,20 @@ export async function loadAutoBindContext(
     }
     if (!clinicDoctor) {
       clinicDoctor = clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0];
+      // REOPEN#3 B안: 지정 진료의를 특정하지 못해 is_default(대표원장)로 떨어진 경우도 미지정 폴백 →
+      //   도장은 법인 인감(director-fallback 등 doctorName이 clinic_doctor와 미매칭인 경로 포함).
+      sealFallbackToInstitution = true;
     }
+  }
+
+  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN#3 B안, 2026-07-14T10:22 KST field-confirm]:
+  //   미지정 폴백 슬롯의 도장은 대표원장(문지은) 개인직인이 아니라 오블리브오리진 법인 인감으로 렌더한다.
+  //   개인직인 seal_image_url을 비워 doctor_seal_html(L317)이 getStampUrl()(법인 인감, priority-2)로
+  //   폴스루하게 한다. 이름은 이미 대표원장으로 채워져 공란은 없다(AC-8/9). 지정 진료의 개인 도장은
+  //   상단에서 이미 결선되어 이 분기에 도달하지 않으므로 무영향(한동훈/김윤기/김상은 오매핑 0).
+  //   ★DB 데이터 정합(문지은 seal_image_url NULL 복원)과 이중 방어 — DB 재시딩 시에도 법인 인감 보장.
+  if (sealFallbackToInstitution && clinicDoctor?.seal_image_url) {
+    clinicDoctor = { ...clinicDoctor, seal_image_url: null };
   }
 
   // 직인 이미지: storage path → signed URL (1시간)
