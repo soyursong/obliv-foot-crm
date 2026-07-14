@@ -742,6 +742,13 @@ export interface Reservation {
   cancellation_call_done?: boolean | null;
   /** 도파민TM: 노쇼 클릭 처리 시각(ISO). read-only. */
   no_show_clicked_at?: string | null;
+  // ── 내원콜 방문확인 수신 (T-20260714-dopamine-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME / Part A receive) ──
+  //   도파민TM 내원콜 결과 push 착지. canonical governed enum(reachable/absent) — 도파민 write, 풋 read-only.
+  //   FE 표시라벨 매핑: reachable→'내원예정' / absent→'부재' (VISIT_CALL_RESULT_LABEL 참조).
+  /** 도파민TM 내원콜 방문확인 결과. canonical. read-only. */
+  visit_call_result?: 'reachable' | 'absent' | null;
+  /** 내원콜 방문확인 결과 확정 시각(ISO). read-only. */
+  visit_call_result_at?: string | null;
   /** T-20260524-foot-THERAPIST-BISYNC: 재진 예약 지정 치료사 — customers.designated_therapist_id와 쌍방 동기화 */
   preferred_therapist_id?: string | null;
   /** T-20260623-foot-RESVMGMT-OVERHAUL2: 연결 패키지 id — 재진/힐러 예약이 소진하는 패키지(read 시 packages.package_name=치료유형명 조회 소스). */
@@ -758,6 +765,17 @@ export interface Reservation {
    *    통합시간표 명단 "지정" 배지 판정용. customers.designated_therapist_id SSOT 재사용. */
   customers?: { name: string | null; chart_number?: string | null; designated_therapist_id?: string | null } | null;
 }
+
+/**
+ * T-20260714-dopamine-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (rename 분기 A):
+ * 내원콜 방문확인 canonical(reachable/absent) → 풋 FE 표시라벨 매핑 SSOT.
+ * 라벨 rename(방문예정→내원예정 / 방문안함→부재)은 순수 FE 표시명 교체(비파괴). canonical 값 불변.
+ * 롱레 라벨('내원가능')과 풋 라벨('내원예정')은 표시라벨 차이일 뿐 동일 canonical reachable.
+ */
+export const VISIT_CALL_RESULT_LABEL: Record<'reachable' | 'absent', string> = {
+  reachable: '내원예정',
+  absent: '부재',
+};
 
 /**
  * T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 편집형 마스터.

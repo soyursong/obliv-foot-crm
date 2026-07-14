@@ -39,7 +39,7 @@ import { toast } from '@/lib/toast';
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
-import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor } from '@/lib/types';
+import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -4325,13 +4325,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       })[0];
     if (!nextResv || !customer) return;
     setConfirmingVisit(true);
-    const content = willVisit ? '[방문확인] 방문 예정' : '[방문확인] 방문 안함';
+    // T-20260714-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (rename 분기 A): 라벨 방문예정→내원예정 / 방문안함→부재.
+    //   비파괴 — reservation_memo_history 는 append-only 타임라인(자유텍스트). 기존 '[방문확인] 방문 예정' 행은
+    //   불변 보존(무손실), 신규 기록만 새 라벨 사용. DB CHECK/enum 없음 = 값 마이그 0.
+    const content = willVisit ? '[방문확인] 내원예정' : '[방문확인] 부재';
     await insertReservationMemo(nextResv.id, customer.clinic_id, content, profile?.name ?? null);
     setConfirmingVisit(false);
     if (willVisit) {
-      toast.success('방문 예정으로 기록되었습니다');
+      toast.success('내원예정으로 기록되었습니다');
     } else {
-      toast.info('방문 안함으로 기록되었습니다');
+      toast.info('부재로 기록되었습니다');
     }
   };
 
@@ -8246,6 +8249,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <div className="text-[11px] text-amber-700 mb-2">
                   예약: {nextResv.reservation_date} {nextResv.reservation_time.slice(0, 5)}
                 </div>
+                {/* T-20260714-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (Part A / AC4):
+                    도파민TM 내원콜 결과 수신값 표시(canonical→FE 라벨). 도파민 push 착지분(read-only). */}
+                {nextResv.visit_call_result && (
+                  <div
+                    data-testid="visit-call-result-badge"
+                    className={`mb-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                      nextResv.visit_call_result === 'reachable'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-rose-100 text-rose-700'
+                    }`}
+                  >
+                    도파민TM 내원콜: {VISIT_CALL_RESULT_LABEL[nextResv.visit_call_result]}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -8254,7 +8271,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     data-testid="btn-visit-confirm-yes"
                     className="flex-1 rounded bg-neutral-800 text-white py-1.5 text-[11px] font-semibold hover:bg-neutral-900 transition disabled:opacity-50"
                   >
-                    방문 예정 ✓
+                    내원예정 ✓
                   </button>
                   <button
                     type="button"
@@ -8263,7 +8280,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     data-testid="btn-visit-confirm-no"
                     className="flex-1 rounded border border-gray-300 bg-white text-gray-700 py-1.5 text-[11px] font-semibold hover:bg-gray-100 transition disabled:opacity-50"
                   >
-                    방문 안함 ✗
+                    부재 ✗
                   </button>
                 </div>
               </div>
