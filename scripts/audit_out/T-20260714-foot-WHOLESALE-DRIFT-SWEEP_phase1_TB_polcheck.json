@@ -1,0 +1,188 @@
+{
+  "check_ins": [
+    {
+      "policyname": "check_ins_admin_all",
+      "cmd": "ALL",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_delete_admin",
+      "cmd": "DELETE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "anon_insert_checkin_self",
+      "cmd": "INSERT",
+      "roles": "{anon}"
+    },
+    {
+      "policyname": "check_ins_consult_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_coord_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_register_unlock_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "anon_checkin_read",
+      "cmd": "SELECT",
+      "roles": "{anon}"
+    },
+    {
+      "policyname": "check_ins_approved_read",
+      "cmd": "SELECT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_read",
+      "cmd": "SELECT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_consult_update",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_coord_update",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_flag_update",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_floor_dashboard_update",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_therap_update",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_update_privileged",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "check_ins_update_therapist_own",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    }
+  ],
+  "customer_treatment_memos": [
+    {
+      "policyname": "clinic_isolation_ctm_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "clinic_isolation_ctm_select",
+      "cmd": "SELECT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "manage_update_ctm",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    }
+  ],
+  "medical_charts": [
+    {
+      "policyname": "mc_clinic_isolated_v3",
+      "cmd": "ALL",
+      "roles": "{authenticated}"
+    }
+  ],
+  "daily_room_status": [
+    {
+      "policyname": "daily_room_status_admin_manager_write",
+      "cmd": "ALL",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "daily_room_status_staff_own_write",
+      "cmd": "ALL",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "daily_room_status_approved_read",
+      "cmd": "SELECT",
+      "roles": "{authenticated}"
+    }
+  ],
+  "doctor_diagnosis_favorites": [],
+  "customer_reservation_memos": [
+    {
+      "policyname": "clinic_isolation_crm_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "clinic_isolation_crm_select",
+      "cmd": "SELECT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "manage_update_crm",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    }
+  ],
+  "customer_consult_memos": [
+    {
+      "policyname": "clinic_isolation_ccm_insert",
+      "cmd": "INSERT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "clinic_isolation_ccm_select",
+      "cmd": "SELECT",
+      "roles": "{authenticated}"
+    },
+    {
+      "policyname": "manage_update_ccm",
+      "cmd": "UPDATE",
+      "roles": "{authenticated}"
+    }
+  ],
+  "redpay_terminal_registry": [],
+  "storage.objects (msgimg/treatment_photos)": [
+    {
+      "policyname": "msgimg_clinic_read",
+      "cmd": "SELECT"
+    },
+    {
+      "policyname": "msgimg_clinic_write",
+      "cmd": "ALL"
+    },
+    {
+      "policyname": "treatment_photos_obj_insert",
+      "cmd": "INSERT"
+    },
+    {
+      "policyname": "treatment_photos_obj_read",
+      "cmd": "SELECT"
+    },
+    {
+      "policyname": "treatment_photos_obj_update",
+      "cmd": "UPDATE"
+    }
+  ]
+}

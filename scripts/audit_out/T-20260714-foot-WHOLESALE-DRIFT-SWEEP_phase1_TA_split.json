@@ -1,0 +1,555 @@
+{
+  "writeReady": [
+    "20260504",
+    "20260517000050",
+    "20260517000070",
+    "20260518000030",
+    "20260519000040",
+    "20260520000040",
+    "20260520000070",
+    "20260520000080",
+    "20260520000090",
+    "20260520130000",
+    "20260521000030",
+    "20260521000040",
+    "20260521000050",
+    "20260521050000",
+    "20260521060000",
+    "20260522010000",
+    "20260522020000",
+    "20260522030000",
+    "20260522070000",
+    "20260522080000",
+    "20260522090010",
+    "20260522090020",
+    "20260522090030",
+    "20260522100000",
+    "20260522110000",
+    "20260523040000",
+    "20260524020000",
+    "20260524040000",
+    "20260525010000",
+    "20260525040000",
+    "20260525050000",
+    "20260525070000",
+    "20260526110000",
+    "20260526120000",
+    "20260526130000",
+    "20260526150000",
+    "20260526160000",
+    "20260526190000",
+    "20260526210000",
+    "20260527000000",
+    "20260527010000",
+    "20260527100000",
+    "20260527110000",
+    "20260527220000",
+    "20260529001000",
+    "20260529002000",
+    "20260529003000",
+    "20260529010000",
+    "20260529030000",
+    "20260530170000",
+    "20260601000050",
+    "20260601130000",
+    "20260601150000",
+    "20260601160000",
+    "20260601190000",
+    "20260602190000",
+    "20260602200000",
+    "20260602210000",
+    "20260602230000",
+    "20260602230010",
+    "20260602240020",
+    "20260603000000",
+    "20260603010000",
+    "20260603030000",
+    "20260603040000",
+    "20260603060000",
+    "20260603070000",
+    "20260603080000",
+    "20260605120000",
+    "20260606170000",
+    "20260607180000",
+    "20260607200000",
+    "20260607210000",
+    "20260608120000",
+    "20260608130000",
+    "20260608140000",
+    "20260608170000",
+    "20260609120000",
+    "20260609140000",
+    "20260609160000",
+    "20260609180000",
+    "20260609230000",
+    "20260609233000",
+    "20260609235500",
+    "20260610090000",
+    "20260610100000",
+    "20260610100010",
+    "20260611100000",
+    "20260611140000",
+    "20260611150000",
+    "20260611200000",
+    "20260612000000",
+    "20260612010000",
+    "20260612060000",
+    "20260612140000",
+    "20260612150000",
+    "20260612160000",
+    "20260613120000",
+    "20260614120000",
+    "20260614130000",
+    "20260614230000",
+    "20260615120000",
+    "20260615170000",
+    "20260615190000",
+    "20260616000000",
+    "20260616180000",
+    "20260617000000",
+    "20260617120000",
+    "20260617150000",
+    "20260618130000",
+    "20260618140000",
+    "20260619020000",
+    "20260620120100",
+    "20260620163000",
+    "20260622120000",
+    "20260622170000",
+    "20260622200000",
+    "20260622210000",
+    "20260623120000",
+    "20260623130000",
+    "20260623150000",
+    "20260623160000",
+    "20260623170000",
+    "20260623180000",
+    "20260624100000",
+    "20260625120000",
+    "20260625130000",
+    "20260625150000",
+    "20260628000000",
+    "20260628160000",
+    "20260629120000",
+    "20260629143000",
+    "20260629150000",
+    "20260629160000",
+    "20260629190000",
+    "20260629200000",
+    "20260629210000",
+    "20260630120000",
+    "20260630120001",
+    "20260630170000",
+    "20260630190000",
+    "20260630193000",
+    "20260701020000",
+    "20260703160000",
+    "20260708230000",
+    "20260710170000",
+    "20260710180000",
+    "20260710224000",
+    "20260714120500",
+    "20260714160000",
+    "20260714190000",
+    "20260715123000",
+    "20260715130000"
+  ],
+  "hold": [
+    {
+      "version": "20260520000010",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:insurance_claims::ins_claims_auth_all",
+        "pol:claim_items::claim_items_auth_all",
+        "pol:insurance_claim_diagnoses::insurance_claim_diagnoses_auth_all",
+        "pol:edi_submissions::edi_submissions_auth_all"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260520000030",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "fn:public.rrn_encrypt"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260522000010",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:form_submissions::form_submissions_read",
+        "pol:form_submissions::form_submissions_insert"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260524030000",
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:daily_room_status::daily_room_status_staff_own_write"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260526170000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:package_progress_plans::ppp_write"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260526200000",
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:user_dashboard_layout_overrides::udlo_select",
+        "pol:user_dashboard_layout_overrides::udlo_insert",
+        "pol:user_dashboard_layout_overrides::udlo_update"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260527200000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:medical_charts::mc_clinic_isolated_v3"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260602120000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:check_ins::check_ins_floor_dashboard_update"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260602240010",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:check_ins::anon_insert_checkin_self"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260602250000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "driftObjs": [
+        "fn:public.batch_checkin"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260603040020",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:prescription_contraindications::rx_contra_admin_write"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260603050000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:customer_special_notes::own_update_csn"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260605130000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:handover_checklist_items::handover_checklist_insert",
+        "pol:handover_checklist_items::handover_checklist_update"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260607190000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:redpay_raw_transactions::redpay_raw_read_own_clinic",
+        "pol:payment_reconciliation_log::recon_log_read_own_clinic",
+        "pol:redpay_poller_state::redpay_poller_state_service_role_only"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260611160000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:clinic_events::clinic_events_select"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260611190000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:clinic_events::clinic_events_insert",
+        "pol:clinic_events::clinic_events_update"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260611220000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:room_assignments::room_assignments_assign_insert",
+        "pol:room_assignments::room_assignments_assign_update"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260615160000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:customers::customers_admin_all",
+        "pol:customers::customers_coord_insert",
+        "pol:customers::customers_consult_update",
+        "pol:customers::customers_coord_update",
+        "pol:customers::customers_staff_update",
+        "pol:check_ins::check_ins_admin_all",
+        "pol:check_ins::check_ins_consult_insert",
+        "pol:check_ins::check_ins_coord_insert",
+        "pol:check_ins::check_ins_insert",
+        "pol:check_ins::check_ins_consult_update",
+        "pol:check_ins::check_ins_coord_update",
+        "pol:check_ins::check_ins_flag_update",
+        "pol:check_ins::check_ins_therap_update",
+        "pol:check_ins::check_ins_update_privileged",
+        "pol:check_ins::check_ins_update_therapist_own",
+        "pol:reservations::reservations_admin_all",
+        "pol:reservations::reservations_coord_all",
+        "pol:reservations::reservations_consult_update",
+        "pol:reservations::reservations_staff_update",
+        "pol:payments::payments_admin_all",
+        "pol:payments::payments_consult_insert",
+        "pol:payments::payments_coord_insert",
+        "pol:payments::payments_insert",
+        "pol:payments::payments_therap_insert",
+        "pol:payments::payments_update"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260616160000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:form_submissions::form_submissions_update"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260618120000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:assignment_actions::assignment_actions_clinic_access"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260624130000",
+      "tags": [
+        "PHI"
+      ],
+      "driftObjs": [
+        "fn:public.assign_foot_customer_chart_number"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260624160000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:customer_treatment_memos::manage_update_ctm",
+        "pol:customer_reservation_memos::manage_update_crm",
+        "pol:customer_consult_memos::manage_update_ccm"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260624170000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:staff_temp_off::approved_clinic_staff_temp_off_all"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260624180000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:prescription_sets::admin_write_prescription_sets"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260630184500",
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:handover_checklist_items::handover_checklist_delete"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260630210000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:customers::customers_register_unlock_insert",
+        "pol:reservations::reservations_register_unlock_insert",
+        "pol:check_ins::check_ins_register_unlock_insert"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260701040000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:phrase_templates::staffarea_write_phrases"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260702200000",
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "driftObjs": [
+        "pol:super_phrases::admin_write_super_phrases",
+        "pol:document_templates::admin_write_document_templates",
+        "pol:phrase_templates::admin_write_phrase_templates"
+      ],
+      "money": false
+    },
+    {
+      "version": "20260706120000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "driftObjs": [
+        "fn:public.foot_stats_by_category",
+        "fn:public.foot_stats_therapist_summary"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260706140000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "driftObjs": [
+        "fn:public.publish_koh_result"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260714133000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "driftObjs": [
+        "fn:public.calc_copayment"
+      ],
+      "money": true
+    },
+    {
+      "version": "20260715120000",
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "driftObjs": [
+        "fn:public.fn_dashboard_reissue_health_q_token",
+        "fn:public.upsert_reservation_from_source"
+      ],
+      "money": true
+    }
+  ]
+}

@@ -1,0 +1,3649 @@
+{
+  "summary": {
+    "F_versions": 185,
+    "existence_only": 50,
+    "canon_PASS": 134,
+    "canon_DRIFT": 75,
+    "superseded_provenance": 81,
+    "phi_rls_dual_tagged": 65
+  },
+  "results": [
+    {
+      "version": "20260504",
+      "files": [
+        "20260504_doctor_treatment_flow_up.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:phrase_templates::staff_read_phrase_templates",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:phrase_templates::admin_write_phrase_templates",
+          "r": "F-provenance (superseded by 20260702200000)"
+        },
+        {
+          "o": "pol:prescription_sets::staff_read_prescription_sets",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:prescription_sets::admin_write_prescription_sets",
+          "r": "F-provenance (superseded by 20260624180000)"
+        },
+        {
+          "o": "pol:document_templates::staff_read_document_templates",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:document_templates::admin_write_document_templates",
+          "r": "F-provenance (superseded by 20260702200000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260517000050",
+      "files": [
+        "20260517000050_pending_healer_flag.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260517000070",
+      "files": [
+        "20260517000070_save_customer_address_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.save_customer_address",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260518000030",
+      "files": [
+        "20260518000030_patient_room_daily_log.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:patient_room_daily_log::patient_room_daily_log_clinic_access",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260519000040",
+      "files": [
+        "20260519000040_pending_healer_flag.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260520000010",
+      "files": [
+        "20260520000010_insurance_claims_schema.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.update_insurance_claims_updated_at",
+          "r": "CANON-PASS",
+          "money": true
+        },
+        {
+          "o": "pol:insurance_claims::ins_claims_auth_all",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        },
+        {
+          "o": "pol:claim_items::claim_items_auth_all",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        },
+        {
+          "o": "pol:insurance_claim_diagnoses::insurance_claim_diagnoses_auth_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:edi_submissions::edi_submissions_auth_all",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000030",
+      "files": [
+        "20260520000030_rrn_key_harden.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.rrn_encrypt",
+          "r": "CANON-DRIFT",
+          "money": false
+        },
+        {
+          "o": "fn:public.rrn_decrypt",
+          "r": "F-provenance (superseded by 20260710170000)"
+        },
+        {
+          "o": "pol:nhis_idor_audit_logs::nhis_idor_audit_service_role_only",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000040",
+      "files": [
+        "20260520000040_dopamine_integration_schema.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:dopamine_outbound_log::dopamine_outbound_log_service_role_only",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000070",
+      "files": [
+        "20260520000070_customers_staff_update_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:customers::customers_staff_update",
+          "r": "F-provenance (superseded by 20260615160000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000080",
+      "files": [
+        "20260520000080_rbac_menu_expand.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:daily_closings::daily_closings_therapist_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000090",
+      "files": [
+        "20260520000090_customers_staff_select_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.is_floor_staff",
+          "r": "F-provenance (superseded by 20260522090030)"
+        },
+        {
+          "o": "pol:customers::customers_staff_select",
+          "r": "F-provenance (superseded by 20260615160000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520130000",
+      "files": [
+        "20260520130000_resv_memo_walkin.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260521000030",
+      "files": [
+        "20260521000030_daily_closings_staff_select_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.is_floor_staff",
+          "r": "F-provenance (superseded by 20260522090030)"
+        },
+        {
+          "o": "pol:daily_closings::daily_closings_staff_read",
+          "r": "F-provenance (superseded by 20260522090030)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260521000040",
+      "files": [
+        "20260521000040_room_assignments_staff_update_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.is_floor_staff",
+          "r": "F-provenance (superseded by 20260522090030)"
+        },
+        {
+          "o": "pol:room_assignments::room_assignments_staff_update",
+          "r": "F-provenance (superseded by 20260522090020)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260521000050",
+      "files": [
+        "20260521000050_reservations_staff_update_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:reservations::reservations_staff_update",
+          "r": "F-provenance (superseded by 20260615160000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260521050000",
+      "files": [
+        "20260521050000_resv_memo_checkin_id.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260521060000",
+      "files": [
+        "20260521060000_reservations_read_api_index.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260522000010",
+      "files": [
+        "20260522000010_form_submissions_rls_issued_by_fix.sql",
+        "20260522000010_refund_single_payment_rpc.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:form_submissions::form_submissions_read",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:form_submissions::form_submissions_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:form_submissions::form_submissions_update",
+          "r": "F-provenance (superseded by 20260616160000)"
+        },
+        {
+          "o": "fn:public.refund_single_payment",
+          "r": "F-provenance (superseded by 20260525050000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522010000",
+      "files": [
+        "20260522010000_pkg_trial_sessions.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.get_package_remaining",
+          "r": "F-provenance (superseded by 20260608130000)"
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260522020000",
+      "files": [
+        "20260522020000_clinical_images_category.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:clinical_images::auth_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522030000",
+      "files": [
+        "20260522030000_receipt_ocr_results.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:receipt_ocr_results::auth_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522070000",
+      "files": [
+        "20260522070000_designated_therapist.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260522080000",
+      "files": [
+        "20260522080000_alt_badge.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260522090010",
+      "files": [
+        "20260522090010_customers_staff_update_rls_reapply.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.is_floor_staff",
+          "r": "F-provenance (superseded by 20260522090030)"
+        },
+        {
+          "o": "pol:customers::customers_staff_update",
+          "r": "F-provenance (superseded by 20260615160000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522090020",
+      "files": [
+        "20260522090020_room_assignments_staff_update_rls_reapply.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.is_floor_staff",
+          "r": "F-provenance (superseded by 20260522090030)"
+        },
+        {
+          "o": "pol:room_assignments::room_assignments_staff_update",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522090030",
+      "files": [
+        "20260522090030_daily_closings_staff_select_rls_reapply.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.is_floor_staff",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "pol:daily_closings::daily_closings_staff_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522100000",
+      "files": [
+        "20260522100000_staff_role_perm_gap.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:payments::payments_coord_insert",
+          "r": "F-provenance (superseded by 20260615160000)"
+        },
+        {
+          "o": "pol:payments::payments_therap_insert",
+          "r": "F-provenance (superseded by 20260615160000)"
+        },
+        {
+          "o": "pol:package_sessions::package_sessions_coord_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:package_sessions::package_sessions_coord_update",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_in_services::check_in_services_coord_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_in_services::check_in_services_therap_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_in_services::check_in_services_coord_delete",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_in_services::check_in_services_therap_delete",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522110000",
+      "files": [
+        "20260522110000_timer_records.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:timer_records::timer_records_authenticated_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:timer_records::timer_records_authenticated_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:timer_records::timer_records_authenticated_update",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260523040000",
+      "files": [
+        "20260523040000_pay_external_fields.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260524020000",
+      "files": [
+        "20260524020000_daily_room_status_carry_over.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260524030000",
+      "files": [
+        "20260524030000_daily_room_status_nextday_staff.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:daily_room_status::daily_room_status_admin_manager_write",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:daily_room_status::daily_room_status_staff_own_write",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260524040000",
+      "files": [
+        "20260524040000_reservations_preferred_therapist.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260525010000",
+      "files": [
+        "20260525010000_fee_set_templates.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:fee_set_templates::auth_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260525040000",
+      "files": [
+        "20260525040000_reservation_logs_change_reason.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260525050000",
+      "files": [
+        "20260525050000_refund_perm_expand.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.refund_single_payment",
+          "r": "CANON-PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260525070000",
+      "files": [
+        "20260525070000_services_display_order.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260526110000",
+      "files": [
+        "20260526110000_calc_copayment_price_fallback.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.calc_copayment",
+          "r": "F-provenance (superseded by 20260714133000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260526120000",
+      "files": [
+        "20260526120000_services_category_sort_order.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260526130000",
+      "files": [
+        "20260526130000_service_menu_order.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260526150000",
+      "files": [
+        "20260526150000_phrase_shortcut_unique.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260526160000",
+      "files": [
+        "20260526160000_ctm_memo_type.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260526170000",
+      "files": [
+        "20260526170000_progress_plans.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:package_progress_plans::ppp_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:package_progress_plans::ppp_write",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260526190000",
+      "files": [
+        "20260526190000_checklist_sms_opt_in.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_complete_prescreen_checklist",
+          "r": "F-provenance (superseded by 20260710224000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260526200000",
+      "files": [
+        "20260526200000_user_dashboard_layout_overrides.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:user_dashboard_layout_overrides::udlo_select",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:user_dashboard_layout_overrides::udlo_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:user_dashboard_layout_overrides::udlo_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:user_dashboard_layout_overrides::udlo_delete",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260526210000",
+      "files": [
+        "20260526210000_phrase_type.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260527000000",
+      "files": [
+        "20260527000000_progress_check_resv.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260527010000",
+      "files": [
+        "20260527010000_resv_cancelled_by_cache_fix.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:reservations::reservations_staff_update",
+          "r": "F-provenance (superseded by 20260615160000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527100000",
+      "files": [
+        "20260527100000_messaging_s2_ops_data.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.notify_reservation_messaging",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.notify_reminders_batch",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260527110000",
+      "files": [
+        "20260527110000_service_menu_order_rls_harden.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:service_menu_order::smo_clinic_isolated",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527200000",
+      "files": [
+        "20260527200000_medchart_data_loss_fix.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:medical_charts::mc_clinic_isolated_v3",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527220000",
+      "files": [
+        "20260527220000_treatment_cycle_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.get_treatment_cycle_counts",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260529001000",
+      "files": [
+        "20260529001000_selfcheckin_personal_info_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_update_personal_info",
+          "r": "F-provenance (superseded by 20260629120000)"
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_create_health_q_token",
+          "r": "F-provenance (superseded by 20260625150000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260529002000",
+      "files": [
+        "20260529002000_selfcheckin_insurance_rrn_match.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_update_personal_info",
+          "r": "F-provenance (superseded by 20260629120000)"
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_rrn_match",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260529003000",
+      "files": [
+        "20260529003000_selfcheckin_rrn_pending_flag.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_rrn_match",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260529010000",
+      "files": [
+        "20260529010000_resv_checkin_unique_fix.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260529030000",
+      "files": [
+        "20260529030000_dashboard_reissue_health_q_token.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_dashboard_reissue_health_q_token",
+          "r": "F-provenance (superseded by 20260715120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260530170000",
+      "files": [
+        "20260530170000_daily_closings_actual_transfer_total.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260601000050",
+      "files": [
+        "20260601000050_health_q_token_url_safe_fix.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_health_q_create_token",
+          "r": "F-provenance (superseded by 20260630181500)"
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_create_health_q_token",
+          "r": "F-provenance (superseded by 20260625150000)"
+        },
+        {
+          "o": "fn:public.fn_dashboard_reissue_health_q_token",
+          "r": "F-provenance (superseded by 20260715120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260601130000",
+      "files": [
+        "20260601130000_checkin_doctor_call_memo.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260601150000",
+      "files": [
+        "20260601150000_save_room_assignments_atomic_rpc.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.save_room_assignments",
+          "r": "F-provenance (superseded by 20260611220000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260601160000",
+      "files": [
+        "20260601160000_save_room_assignments_include_unassigned.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.save_room_assignments",
+          "r": "F-provenance (superseded by 20260611220000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260601190000",
+      "files": [
+        "20260601190000_selfcheckin_today_reservations_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_today_reservations",
+          "r": "F-provenance (superseded by 20260711120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260602120000",
+      "files": [
+        "20260602120000_check_ins_floor_dashboard_update_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:check_ins::check_ins_floor_dashboard_update",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602190000",
+      "files": [
+        "20260602190000_consent_timestamp_cols.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_update_personal_info",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260602200000",
+      "files": [
+        "20260602200000_selfcheckin_dup_guard_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_dup_guard",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260602210000",
+      "files": [
+        "20260602210000_selfcheckin_with_reservation_link_rpc.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.self_checkin_with_reservation_link",
+          "r": "F-provenance (superseded by 20260713120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260602230000",
+      "files": [
+        "20260602230000_check_in_slot_dwell_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_check_in_slot_dwell",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260602230010",
+      "files": [
+        "20260602230010_room_max_occupancy_to_3.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260602240010",
+      "files": [
+        "20260602240010_anon_rls_receiving.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:check_ins::anon_insert_checkin_self",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602240020",
+      "files": [
+        "20260602240020_health_q_submit_receiving_transition.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_health_q_submit",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260602250000",
+      "files": [
+        "20260602250000_tz_checkin_kst_unify.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.kst_date",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.next_queue_number",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.batch_checkin",
+          "r": "CANON-DRIFT",
+          "money": false
+        },
+        {
+          "o": "fn:public.assign_consultant_atomic",
+          "r": "F-provenance (superseded by 20260622170000)"
+        },
+        {
+          "o": "fn:public.self_checkin_with_reservation_link",
+          "r": "F-provenance (superseded by 20260713120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260603000000",
+      "files": [
+        "20260603000000_refund_session_cascade.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.refund_package_atomic",
+          "r": "CANON-PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260603010000",
+      "files": [
+        "20260603010000_dopamine_callback_outbox.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.enqueue_dopamine_callback",
+          "r": "F-provenance (superseded by 20260629150000)"
+        },
+        {
+          "o": "fn:public.alert_dopamine_callback_dlq",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.process_dopamine_callback_outbox",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260603030000",
+      "files": [
+        "20260603030000_sync_customer_name_trigger.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_sync_customer_name",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260603040000",
+      "files": [
+        "20260603040000_prescription_sets_folder.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260603040020",
+      "files": [
+        "20260603040020_prescription_contraindications.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:prescription_contraindications::rx_contra_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:prescription_contraindications::rx_contra_admin_write",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603050000",
+      "files": [
+        "20260603050000_customer_special_notes.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:customer_special_notes::clinic_isolation_csn_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:customer_special_notes::clinic_isolation_csn_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:customer_special_notes::own_update_csn",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customer_special_notes::own_delete_csn",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603060000",
+      "files": [
+        "20260603060000_super_phrases.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:super_phrases::staff_read_super_phrases",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:super_phrases::admin_write_super_phrases",
+          "r": "F-provenance (superseded by 20260702200000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603070000",
+      "files": [
+        "20260603070000_document_templates_category.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260603080000",
+      "files": [
+        "20260603080000_special_note_pin.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.set_special_note_pin",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260605120000",
+      "files": [
+        "20260605120000_pkg_session_unit_price_snapshot.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_fill_session_unit_price",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260605130000",
+      "files": [
+        "20260605130000_handover_notes.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:handover_notes::handover_notes_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:handover_notes::handover_notes_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:handover_notes::handover_notes_update",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:handover_notes::handover_notes_delete",
+          "r": "F-provenance (superseded by 20260630184500)"
+        },
+        {
+          "o": "pol:handover_checklist_items::handover_checklist_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:handover_checklist_items::handover_checklist_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:handover_checklist_items::handover_checklist_update",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        },
+        {
+          "o": "pol:handover_checklist_items::handover_checklist_delete",
+          "r": "F-provenance (superseded by 20260630184500)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260606170000",
+      "files": [
+        "20260606170000_medchart_created_by_name.backfill.sql",
+        "20260606170000_medchart_created_by_name.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260607180000",
+      "files": [
+        "20260607180000_prescription_drug_folders.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:prescription_folders::prescription_folders_read_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:prescription_folders::prescription_folders_write_auth",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:prescription_code_folders::prescription_code_folders_read_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:prescription_code_folders::prescription_code_folders_write_auth",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260607190000",
+      "files": [
+        "20260607190000_pay_recon_port.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.set_redpay_raw_updated_at",
+          "r": "CANON-PASS",
+          "money": true
+        },
+        {
+          "o": "pol:redpay_raw_transactions::redpay_raw_read_own_clinic",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:payment_reconciliation_log::recon_log_read_own_clinic",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:redpay_poller_state::redpay_poller_state_service_role_only",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260607200000",
+      "files": [
+        "20260607200000_diagnosis_folders_fk.backfill.sql",
+        "20260607200000_diagnosis_folders_fk.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:diagnosis_folders::diagnosis_folders_read_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:diagnosis_folders::diagnosis_folders_write_auth",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260607210000",
+      "files": [
+        "20260607210000_foot_therapist_stats_rpc.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_therapist_summary",
+          "r": "F-provenance (superseded by 20260706120000)"
+        },
+        {
+          "o": "fn:public.foot_stats_therapist_services",
+          "r": "F-provenance (superseded by 20260623130000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260608120000",
+      "files": [
+        "20260608120000_diagnosis_sets.sql",
+        "20260608120000_foot_pkg_reborn_item.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:diagnosis_sets::diagnosis_sets_read_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:diagnosis_sets::diagnosis_sets_write_auth",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:diagnosis_set_items::diagnosis_set_items_read_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:diagnosis_set_items::diagnosis_set_items_write_auth",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260608130000",
+      "files": [
+        "20260608130000_pkg_session_treatment_window.sql",
+        "20260608130000_pkg_sessions_reborn_check.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.get_package_remaining",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260608140000",
+      "files": [
+        "20260608140000_save_room_assignments_scoped_delete.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.save_room_assignments",
+          "r": "F-provenance (superseded by 20260611220000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260608170000",
+      "files": [
+        "20260608170000_foot_pkg_template_reborn.sql",
+        "20260608170000_medchart_signing_doctor.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.enforce_medchart_signing_doctor",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "pol:medical_chart_signer_audit::mc_signer_audit_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:medical_chart_signer_audit::mc_signer_audit_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609120000",
+      "files": [
+        "20260609120000_diagnosis_sets_is_favorite.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260609140000",
+      "files": [
+        "20260609140000_prescription_codes_insurance_status.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260609160000",
+      "files": [
+        "20260609160000_insurance_sync_runs.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:insurance_sync_runs::insurance_sync_runs_read_admin",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609180000",
+      "files": [
+        "20260609180000_foot_pkg_session_checkin_link.sql",
+        "20260609180000_handover_notes_admin_delete.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_therapist_summary",
+          "r": "F-provenance (superseded by 20260706120000)"
+        },
+        {
+          "o": "fn:public.foot_stats_therapist_services",
+          "r": "F-provenance (superseded by 20260623130000)"
+        },
+        {
+          "o": "pol:handover_notes::handover_notes_delete",
+          "r": "F-provenance (superseded by 20260630184500)"
+        },
+        {
+          "o": "pol:handover_checklist_items::handover_checklist_delete",
+          "r": "F-provenance (superseded by 20260630184500)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609230000",
+      "files": [
+        "20260609230000_selfcheckin_rrn_match_addr_sync.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_rrn_match",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260609233000",
+      "files": [
+        "20260609233000_checkin_doctor_ack_at.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260609235500",
+      "files": [
+        "20260609235500_selfcheckin_personal_info_postal_code.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_update_personal_info",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260610090000",
+      "files": [
+        "20260610090000_sms_display_name.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.admin_set_sms_display_name",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": []
+    },
+    {
+      "version": "20260610100000",
+      "files": [
+        "20260610100000_reservation_dup_guard_fn.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_reservation_dup_guard",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260610100010",
+      "files": [
+        "20260610100010_reservations_customer_daily_unique.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260611100000",
+      "files": [
+        "20260611100000_selfcheckin_personal_info_consolidate.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_update_personal_info",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260611140000",
+      "files": [
+        "20260611140000_selfcheckin_rrn_match_consent_sync.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_rrn_match",
+          "r": "F-provenance (superseded by 20260629120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260611150000",
+      "files": [
+        "20260611150000_health_q_rls_canonical_identity.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:health_q_results::hq_results_staff_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:health_q_tokens::hq_tokens_staff_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611160000",
+      "files": [
+        "20260611160000_clinic_events_select_rls_canonical.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:clinic_events::clinic_events_select",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611190000",
+      "files": [
+        "20260611190000_clinic_events_write_rls_canonical.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:clinic_events::clinic_events_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:clinic_events::clinic_events_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:clinic_events::clinic_events_delete",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611200000",
+      "files": [
+        "20260611200000_closing_workflow_read_canonical.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:daily_closings::daily_closings_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:closing_manual_payments::closing_manual_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611220000",
+      "files": [
+        "20260611220000_room_assignments_staff_write_scoped.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.can_assign_rooms",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.save_room_assignments",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "pol:room_assignments::room_assignments_assign_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:room_assignments::room_assignments_assign_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612000000",
+      "files": [
+        "20260612000000_form_templates_write_rls_canonical.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:form_templates::form_templates_admin_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612010000",
+      "files": [
+        "20260612010000_checkin_doctor_status_realtime.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260612060000",
+      "files": [
+        "20260612060000_progress_plans_tier_model.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260612140000",
+      "files": [
+        "20260612140000_pkg_session_soft_delete_restore.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.soft_delete_package_session",
+          "r": "CANON-PASS",
+          "money": true
+        },
+        {
+          "o": "fn:public.restore_package_session",
+          "r": "CANON-PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260612150000",
+      "files": [
+        "20260612150000_medical_charts_body_audit.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.medical_charts_body_audit",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "pol:medical_charts_audit_log::mcal_select_approved",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:medical_charts_audit_log::mcal_insert_approved",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612160000",
+      "files": [
+        "20260612160000_koh_nail_sites.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.set_koh_nail_sites",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260613120000",
+      "files": [
+        "20260613120000_customer_birthdate_derive_rpc.sql",
+        "20260613120000_rxset_namedesc_migrate.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_customer_birthdates",
+          "r": "F-provenance (superseded by 20260710180000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260614120000",
+      "files": [
+        "20260614120000_rxset_bundle_drugfolder.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260614130000",
+      "files": [
+        "20260614130000_reservation_is_healer_intent.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260614230000",
+      "files": [
+        "20260614230000_check_in_services_checkin_idx.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260615120000",
+      "files": [
+        "20260615120000_rxset_tag_meta.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260615160000",
+      "files": [
+        "20260615160000_rls_clinic_isolation_patient_tables.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.rrn_decrypt",
+          "r": "F-provenance (superseded by 20260710170000)"
+        },
+        {
+          "o": "pol:customers::customers_admin_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customers::customers_coord_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customers::customers_approved_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:customers::customers_staff_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:customers::customers_consult_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customers::customers_coord_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customers::customers_staff_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_admin_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_delete_admin",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_ins::check_ins_consult_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_coord_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_approved_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_ins::check_ins_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:check_ins::check_ins_consult_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_coord_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_flag_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_therap_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_update_privileged",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_update_therapist_own",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:reservations::reservations_admin_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:reservations::reservations_coord_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:reservations::reservations_approved_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:reservations::reservations_consult_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:reservations::reservations_staff_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:payments::payments_admin_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:payments::payments_delete_admin",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:payments::payments_consult_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:payments::payments_coord_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:payments::payments_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:payments::payments_therap_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:payments::payments_approved_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:payments::payments_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:payments::payments_update",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260615170000",
+      "files": [
+        "20260615170000_rls_clinic_isolation_anon_rpc_additive.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_reservation_banner",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_find_customer",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_existing_checkin_today",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_match_reservation",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_linked_checkin",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_upsert_customer",
+          "r": "F-provenance (superseded by 20260714120000)"
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_create_check_in",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260615190000",
+      "files": [
+        "20260615190000_koh_lifecycle_publish.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.set_koh_requested",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.next_koh_request_no",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.next_koh_specimen_no",
+          "r": "F-provenance (superseded by 20260616180000)"
+        },
+        {
+          "o": "fn:public.publish_koh_result",
+          "r": "F-provenance (superseded by 20260706140000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260616000000",
+      "files": [
+        "20260616000000_callist_manual_order.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260616160000",
+      "files": [
+        "20260616160000_opinion_doc_form_stack.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.form_submissions_published_immutable_guard",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.is_doctor_role",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.publish_opinion_doc",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "pol:form_submissions::form_submissions_update",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260616180000",
+      "files": [
+        "20260616180000_koh_specimen_no_format.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.next_koh_specimen_no",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.publish_koh_result",
+          "r": "F-provenance (superseded by 20260706140000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260617000000",
+      "files": [
+        "20260617000000_blood_test_requested.sql",
+        "20260617000000_selfcheckin_composite_key_3key.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.set_blood_test_requested",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.self_checkin_with_reservation_link",
+          "r": "F-provenance (superseded by 20260713120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260617120000",
+      "files": [
+        "20260617120000_koh_request_for_customer.sql",
+        "20260617120000_pkg_consultation_fee_and_payment_feekind.sql",
+        "20260617120000_rxset_hide_name.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.request_koh_for_customer",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260617150000",
+      "files": [
+        "20260617150000_prescription_codes_write_rls_canonical.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:prescription_codes::prescription_codes_admin_all",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260618120000",
+      "files": [
+        "20260618120000_assignment_autoassign.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:assignment_actions::assignment_actions_clinic_access",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260618130000",
+      "files": [
+        "20260618130000_prescription_codes_description.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260618140000",
+      "files": [
+        "20260618140000_prescription_codes_service_id_unify.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260619020000",
+      "files": [
+        "20260619020000_foot_stats_consultant_session_presence.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_consultant",
+          "r": "F-provenance (superseded by 20260622210000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260620120100",
+      "files": [
+        "20260620120100_rrn_decrypt_a2_role_restore.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.rrn_decrypt",
+          "r": "F-provenance (superseded by 20260710170000)"
+        },
+        {
+          "o": "pol:phi_access_log::phi_access_log_admin_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260620163000",
+      "files": [
+        "20260620163000_user_profiles_exempt_from_restrictions_additive.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260622120000",
+      "files": [
+        "20260622120000_foot_therapist_stats_staff_source_filter.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_therapist_summary",
+          "r": "F-provenance (superseded by 20260706120000)"
+        },
+        {
+          "o": "fn:public.foot_stats_therapist_services",
+          "r": "F-provenance (superseded by 20260623130000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260622170000",
+      "files": [
+        "20260622170000_foot_assign_consultant_daily_cumulative.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.assign_consultant_atomic",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260622200000",
+      "files": [
+        "20260622200000_reservations_updated_by.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260622210000",
+      "files": [
+        "20260622210000_foot_stats_consultant_total_amount.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_consultant",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260623120000",
+      "files": [
+        "20260623120000_foot_therapist_stats_designated_on_roster.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_therapist_summary",
+          "r": "F-provenance (superseded by 20260706120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260623130000",
+      "files": [
+        "20260623130000_foot_therapist_stats_treatment_exit_window.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_therapist_summary",
+          "r": "F-provenance (superseded by 20260706120000)"
+        },
+        {
+          "o": "fn:public.foot_stats_therapist_services",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260623150000",
+      "files": [
+        "20260623150000_patient_file_records.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:patient_file_records::clinic_isolation_pfr_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:patient_file_records::clinic_isolation_pfr_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:patient_file_records::own_delete_pfr",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260623160000",
+      "files": [
+        "20260623160000_blood_request_for_customer.sql",
+        "20260623160000_clinics_email.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.request_blood_test_for_customer",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260623170000",
+      "files": [
+        "20260623170000_customers_customer_note.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260623180000",
+      "files": [
+        "20260623180000_patient_past_history.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:patient_past_history::clinic_isolation_pph_select",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:patient_past_history::clinic_isolation_pph_insert",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:patient_past_history::own_delete_pph",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260624100000",
+      "files": [
+        "20260624100000_resvmgmt_overhaul2_w2.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260624130000",
+      "files": [
+        "20260624130000_chartno_race_atomicity.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.assign_foot_customer_chart_number",
+          "r": "CANON-DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260624160000",
+      "files": [
+        "20260624160000_memo_soft_delete_role_manage.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:customer_treatment_memos::manage_update_ctm",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customer_reservation_memos::manage_update_crm",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:customer_consult_memos::manage_update_ccm",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260624170000",
+      "files": [
+        "20260624170000_staff_temp_off.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:staff_temp_off::approved_clinic_staff_temp_off_all",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260624180000",
+      "files": [
+        "20260624180000_bundlerx_director_write_rls.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:prescription_sets::admin_write_prescription_sets",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:document_templates::admin_write_document_templates",
+          "r": "F-provenance (superseded by 20260702200000)"
+        },
+        {
+          "o": "pol:phrase_templates::admin_write_phrase_templates",
+          "r": "F-provenance (superseded by 20260702200000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260625120000",
+      "files": [
+        "20260625120000_health_q_lang.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_health_q_validate_token",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_health_q_create_token",
+          "r": "F-provenance (superseded by 20260630181500)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260625130000",
+      "files": [
+        "20260625130000_passport_port_nationalities_foreign_fields.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260625150000",
+      "files": [
+        "20260625150000_selfcheckin_token_lang.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_create_health_q_token",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260628000000",
+      "files": [
+        "20260628000000_rrn_stage2a_audit_columns_precreate.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260628160000",
+      "files": [
+        "20260628160000_anon_upsert_customer_resolve_v2.sql",
+        "20260628160000_reservations_created_via.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_upsert_customer_resolve_v2",
+          "r": "F-provenance (superseded by 20260714120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260629120000",
+      "files": [
+        "20260629120000_foot_consent_sensitive.sql",
+        "20260629120000_staff_assign_sort_order.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_update_personal_info",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_selfcheckin_rrn_match",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260629143000",
+      "files": [
+        "20260629143000_health_q_create_token_searchpath_permanent_fix.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_health_q_create_token",
+          "r": "F-provenance (superseded by 20260630181500)"
+        }
+      ],
+      "tags": []
+    },
+    {
+      "version": "20260629150000",
+      "files": [
+        "20260629150000_foot_resv_status_noshow_to_no_show.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_noshow_returning",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.enqueue_dopamine_callback",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.check_reservation_status",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260629160000",
+      "files": [
+        "20260629160000_anon_upsert_customer_resolve_v3.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_selfcheckin_upsert_customer_resolve_v3",
+          "r": "F-provenance (superseded by 20260714120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260629190000",
+      "files": [
+        "20260629190000_calc_copayment_nullfix_default_deny.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.calc_copayment",
+          "r": "F-provenance (superseded by 20260714133000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260629200000",
+      "files": [
+        "20260629200000_edi_export_additive.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260629210000",
+      "files": [
+        "20260629210000_form_service_bridge_additive.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260630120000",
+      "files": [
+        "20260630120000_foot_doc_serial_seq_harden.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.issue_foot_doc_serial",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260630120001",
+      "files": [
+        "20260630120001_foot_doc_serial_seq_unique_idx.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260630170000",
+      "files": [
+        "20260630170000_foot_companion_extid_text_realname_rpc17.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.upsert_reservation_from_source",
+          "r": "F-provenance (superseded by 20260715120000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260630184500",
+      "files": [
+        "20260630184500_handover_notes_delete_role_canon.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:handover_notes::handover_notes_delete",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        },
+        {
+          "o": "pol:handover_checklist_items::handover_checklist_delete",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260630190000",
+      "files": [
+        "20260630190000_foot_tm_edit_cancel_superset_rpc.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.upsert_reservation_from_source",
+          "r": "F-provenance (superseded by 20260715120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260630193000",
+      "files": [
+        "20260630193000_foot_tm_edit_cancel_lifecycle_guard.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.upsert_reservation_from_source",
+          "r": "F-provenance (superseded by 20260715120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260630210000",
+      "files": [
+        "20260630210000_register_unlock_3roles_rls_additive.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:customers::customers_register_unlock_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:reservations::reservations_register_unlock_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        },
+        {
+          "o": "pol:check_ins::check_ins_register_unlock_insert",
+          "r": "CANON-DRIFT",
+          "uEq": true,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260701020000",
+      "files": [
+        "20260701020000_foot_resv_memo_timeline_retarget_provenance.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.upsert_reservation_from_source",
+          "r": "F-provenance (superseded by 20260715120000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260701040000",
+      "files": [
+        "20260701040000_phrase_templates_staffarea_write_7role_unified.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:phrase_templates::staffarea_write_phrases",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260702200000",
+      "files": [
+        "20260702200000_clinicmgmt_3tab_director_write_rls_canonical.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:super_phrases::admin_write_super_phrases",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:document_templates::admin_write_document_templates",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        },
+        {
+          "o": "pol:phrase_templates::admin_write_phrase_templates",
+          "r": "CANON-DRIFT",
+          "uEq": false,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260703160000",
+      "files": [
+        "20260703160000_anon_reservation_read_scopedown_today_confirmed.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:reservations::anon_reservation_read",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260706120000",
+      "files": [
+        "20260706120000_foot_stats_reconcile_iv_exclude_sameday_conv.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.foot_stats_by_category",
+          "r": "CANON-DRIFT",
+          "money": false
+        },
+        {
+          "o": "fn:public.foot_stats_therapist_summary",
+          "r": "CANON-DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260706140000",
+      "files": [
+        "20260706140000_koh_publish_birth_server_derive.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.publish_koh_result",
+          "r": "CANON-DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260708230000",
+      "files": [
+        "20260708230000_redpay_recon_daily_view.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.get_redpay_feed_freshness",
+          "r": "F-provenance (superseded by 20260711140000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260710170000",
+      "files": [
+        "20260710170000_rrn_decrypt_version_aware_multikey.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.rrn_decrypt",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_customer_birthdates",
+          "r": "F-provenance (superseded by 20260710180000)"
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260710180000",
+      "files": [
+        "20260710180000_fn_customer_birthdates_version_aware_vault.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_customer_birthdates",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260710224000",
+      "files": [
+        "20260710224000_prescreen_searchpath_pin_harden.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_prescreen_start",
+          "r": "CANON-PASS",
+          "money": false
+        },
+        {
+          "o": "fn:public.fn_complete_prescreen_checklist",
+          "r": "CANON-PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI"
+      ]
+    },
+    {
+      "version": "20260714120500",
+      "files": [
+        "20260714120500_calc_copayment_hira_governed_elderly_tiers.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.calc_copayment",
+          "r": "F-provenance (superseded by 20260714133000)"
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260714133000",
+      "files": [
+        "20260714133000_calc_copayment_elderly_floor_rounding.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.calc_copayment",
+          "r": "CANON-DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260714160000",
+      "files": [
+        "20260714160000_clinics_representative_name.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260714190000",
+      "files": [
+        "20260714190000_closing_manual_payments_softvoid.sql"
+      ],
+      "objs": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260715120000",
+      "files": [
+        "20260715120000_maskreject_writepath_rescope_2paths.sql"
+      ],
+      "objs": [
+        {
+          "o": "fn:public.fn_dashboard_reissue_health_q_token",
+          "r": "CANON-DRIFT",
+          "money": false
+        },
+        {
+          "o": "fn:public.upsert_reservation_from_source",
+          "r": "CANON-DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260715123000",
+      "files": [
+        "20260715123000_foot_visit_call_result_receive.sql"
+      ],
+      "objs": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY"
+    },
+    {
+      "version": "20260715130000",
+      "files": [
+        "20260715130000_foot_anon_write_grant_hygiene_sweep.sql"
+      ],
+      "objs": [
+        {
+          "o": "pol:payment_audit_logs::payment_audit_logs_open",
+          "r": "CANON-PASS",
+          "uEq": true,
+          "cEq": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    }
+  ]
+}

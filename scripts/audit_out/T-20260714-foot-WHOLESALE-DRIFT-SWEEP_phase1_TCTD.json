@@ -1,0 +1,996 @@
+{
+  "ticket": "T-20260714-foot-MIGRATION-LEDGER-WHOLESALE-DRIFT-SWEEP",
+  "phase": 1,
+  "TC": {
+    "total": 49,
+    "auto_A_count": 10,
+    "gate_count": 39,
+    "catCount": {
+      "UPDATE+SET+DO-block+INSERT+DELETE+ON-CONFLICT-DO-UPDATE": 1,
+      "UPDATE+SET+DO-block": 6,
+      "DO-block+INSERT+ON-CONFLICT-DO-UPDATE": 2,
+      "UPDATE+SET+DO-block+INSERT+ON-CONFLICT-DO-UPDATE": 1,
+      "DO-block": 4,
+      "기타/미상": 6,
+      "COMMENT-pure": 5,
+      "INSERT": 2,
+      "UPDATE+SET+DO-block+INSERT": 1,
+      "UPDATE+SET": 8,
+      "DO-block+INSERT": 3,
+      "INSERT+ON-CONFLICT-DO-UPDATE": 1,
+      "DO-block+INSERT+DELETE": 1,
+      "GRANT/REVOKE": 4,
+      "pure-seed(ON CONFLICT DO NOTHING)": 1,
+      "UPDATE+SET+INSERT": 2,
+      "DO-block+DELETE": 1
+    },
+    "auto_A": [
+      {
+        "version": "20260521090000",
+        "files": [
+          "20260521090000_form_submissions_template_id_nullable.sql"
+        ],
+        "cat": "COMMENT-pure",
+        "auto_A": true,
+        "verdict": "(A) auto — COMMENT idempotent"
+      },
+      {
+        "version": "20260602240000",
+        "files": [
+          "20260602240000_check_ins_receiving_status.sql"
+        ],
+        "cat": "COMMENT-pure",
+        "auto_A": true,
+        "verdict": "(A) auto — COMMENT idempotent"
+      },
+      {
+        "version": "20260603020000",
+        "files": [
+          "20260603020000_status_flag_add_brown.sql"
+        ],
+        "cat": "COMMENT-pure",
+        "auto_A": true,
+        "verdict": "(A) auto — COMMENT idempotent"
+      },
+      {
+        "version": "20260603040010",
+        "files": [
+          "20260603040010_prescription_item_code_id.sql"
+        ],
+        "cat": "COMMENT-pure",
+        "auto_A": true,
+        "verdict": "(A) auto — COMMENT idempotent"
+      },
+      {
+        "version": "20260616010000",
+        "files": [
+          "20260616010000_phi_anon_grant_revoke_hardening.sql"
+        ],
+        "cat": "GRANT/REVOKE",
+        "auto_A": true,
+        "verdict": "(A) auto — GRANT/REVOKE idempotent"
+      },
+      {
+        "version": "20260617121000",
+        "files": [
+          "20260617121000_rx_unify_stage1_backfill.sql"
+        ],
+        "cat": "pure-seed(ON CONFLICT DO NOTHING)",
+        "auto_A": true,
+        "verdict": "(A) auto — idempotent seed"
+      },
+      {
+        "version": "20260628120000",
+        "files": [
+          "20260628120000_notiflog_status_delivered_atafail.sql"
+        ],
+        "cat": "COMMENT-pure",
+        "auto_A": true,
+        "verdict": "(A) auto — COMMENT idempotent"
+      },
+      {
+        "version": "20260628140000",
+        "files": [
+          "20260628140000_anon_revoke_payments_only.sql"
+        ],
+        "cat": "GRANT/REVOKE",
+        "auto_A": true,
+        "verdict": "(A) auto — GRANT/REVOKE idempotent"
+      },
+      {
+        "version": "20260629140000",
+        "files": [
+          "20260629140000_anon_pii_leak_revoke_phase1.sql"
+        ],
+        "cat": "GRANT/REVOKE",
+        "auto_A": true,
+        "verdict": "(A) auto — GRANT/REVOKE idempotent"
+      },
+      {
+        "version": "20260710223000",
+        "files": [
+          "20260710223000_secdef_anon_execute_revoke_allowlist.sql"
+        ],
+        "cat": "GRANT/REVOKE",
+        "auto_A": true,
+        "verdict": "(A) auto — GRANT/REVOKE idempotent"
+      }
+    ],
+    "gated": [
+      {
+        "version": "20260515",
+        "files": [
+          "20260515_foot_form_templates_refresh.sql",
+          "20260515_space_assign_revamp.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block+INSERT+DELETE+ON-CONFLICT-DO-UPDATE",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260517000040",
+        "files": [
+          "20260517000040_form_templates_html_normalize.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260517000060",
+        "files": [
+          "20260517000060_penchart_template_seed.sql"
+        ],
+        "cat": "DO-block+INSERT+ON-CONFLICT-DO-UPDATE",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260519000050",
+        "files": [
+          "20260519000050_personal_checklist_templates.sql"
+        ],
+        "cat": "DO-block+INSERT+ON-CONFLICT-DO-UPDATE",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260519000060",
+        "files": [
+          "20260519000060_health_questionnaire_templates.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block+INSERT+ON-CONFLICT-DO-UPDATE",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260519000070",
+        "files": [
+          "20260519000070_personal_checklist_pdf_overlay.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260520000020",
+        "files": [
+          "20260520000020_foot_insurance_service_seed.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260521070000",
+        "files": [
+          "20260521070000_form_submissions_status_completed.sql"
+        ],
+        "cat": "DO-block",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260521080000",
+        "files": [
+          "20260521080000_pkg_sessions_trial.sql"
+        ],
+        "cat": "기타/미상",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260521100000",
+        "files": [
+          "20260521100000_seed_jongno_foot_clinic_info.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260522040000",
+        "files": [
+          "20260522040000_ins_doc_form_templates.sql"
+        ],
+        "cat": "INSERT",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260522060000",
+        "files": [
+          "20260522060000_form_templates_audit_fix.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block+INSERT",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260523010000",
+        "files": [
+          "20260523010000_staff_user_id_link.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260523020000",
+        "files": [
+          "20260523020000_verify_jongno_foot_clinic.sql"
+        ],
+        "cat": "DO-block+INSERT",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260523030000",
+        "files": [
+          "20260523030000_chartsave_regress_coordinator_clinic_fix.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260524000001",
+        "files": [
+          "20260524000001_pen_chart_rename_insurance.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260525020000",
+        "files": [
+          "20260525020000_fee_set_templates_seed.sql"
+        ],
+        "cat": "DO-block+INSERT",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260525060000",
+        "files": [
+          "20260525060000_ins_claim_form_field_bind_fix.sql"
+        ],
+        "cat": "INSERT+ON-CONFLICT-DO-UPDATE",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260526100000",
+        "files": [
+          "20260526100000_services_insurance_covered_fix.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260526140000",
+        "files": [
+          "20260526140000_dummy_progress_test.sql"
+        ],
+        "cat": "DO-block+INSERT+DELETE",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260601173000",
+        "files": [
+          "20260601173000_health_q_token_search_path_fix.sql"
+        ],
+        "cat": "기타/미상",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260601180000",
+        "files": [
+          "20260601180000_services_cosmetic_label_normalize.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260602220000",
+        "files": [
+          "20260602220000_visittype_returning_backfill.sql"
+        ],
+        "cat": "DO-block",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260607220000",
+        "files": [
+          "20260607220000_contra_severity_reduce.distribution.sql",
+          "20260607220000_contra_severity_reduce.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260611230000",
+        "files": [
+          "20260611230000_deduct_dupkey_checkin_session.sql"
+        ],
+        "cat": "기타/미상",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260616020000",
+        "files": [
+          "20260616020000_timer_records_duration_dynamic.sql"
+        ],
+        "cat": "기타/미상",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260619010000",
+        "files": [
+          "20260619010000_phrase_type_customer_chart.sql"
+        ],
+        "cat": "DO-block",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260620163100",
+        "files": [
+          "20260620163100_juyeon_exempt_from_restrictions_set.sql"
+        ],
+        "cat": "기타/미상",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260630140000",
+        "files": [
+          "20260630140000_foot_docform_svc_reconcile_migration_b.sql"
+        ],
+        "cat": "UPDATE+SET+INSERT",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260630150000",
+        "files": [
+          "20260630150000_foot_docconfirm_pricebranch_relabel.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260630160000",
+        "files": [
+          "20260630160000_foot_customers_consent_marketing_drop_convergence.sql",
+          "20260630160000_foot_docconfirm_formpanel_split.sql"
+        ],
+        "cat": "UPDATE+SET+INSERT",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260630180000",
+        "files": [
+          "20260630180000_foot_docform_q2q3_deactivate.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260703170500",
+        "files": [
+          "20260703170500_foot_treatment_photos_legacy_copy.sql"
+        ],
+        "cat": "INSERT",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260706170000",
+        "files": [
+          "20260706170000_foot_docform_jeungmyeong_category_membership_affirm.sql"
+        ],
+        "cat": "UPDATE+SET",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260710",
+        "files": [
+          "20260710_foot_CUST-CASCADE-PHI-FK-HARDEN_up.sql"
+        ],
+        "cat": "DO-block",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260713140000",
+        "files": [
+          "20260713140000_wsc_oxrow_merge_reanchor_remove.sql"
+        ],
+        "cat": "DO-block+DELETE",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      },
+      {
+        "version": "20260713160000",
+        "files": [
+          "20260713160000_foot_phone_e164_chk_expr_fix.sql"
+        ],
+        "cat": "기타/미상",
+        "auto_A": false,
+        "verdict": "수기 idempotency-proof 게이트 (재실행 부작용 가능)"
+      },
+      {
+        "version": "20260714110000",
+        "files": [
+          "20260714110000_clinics_hira_unit_value_2026_governed.sql"
+        ],
+        "cat": "UPDATE+SET+DO-block",
+        "auto_A": false,
+        "verdict": "GATE — UPDATE+SET 재-덮어쓰기 위험. 데이터-정정 성격이면 백필 SOP 경유"
+      },
+      {
+        "version": "20260714170100",
+        "files": [
+          "20260714170100_redpay_dohsu_registry_seed.sql"
+        ],
+        "cat": "DO-block+INSERT",
+        "auto_A": false,
+        "verdict": "GATE — DO-block 부수효과. 멱등 확증 전 (A) 금지"
+      }
+    ]
+  },
+  "TD": {
+    "total": 20,
+    "groups": {
+      "MIXED": 5,
+      "NONE-APPLIED": 4,
+      "ALL-APPLIED": 11
+    },
+    "items": [
+      {
+        "version": "20260514000010",
+        "count": 2,
+        "inLedger": true,
+        "group": "MIXED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260514000010_form_templates_4form_impl.sql",
+            "verdict": "UNKNOWN",
+            "tags": [
+              "DO-block",
+              "INSERT",
+              "DROP CONSTRAINT",
+              "ON-CONFLICT-DO-UPDATE"
+            ]
+          },
+          {
+            "file": "20260514000010_payment_edit_cancel_delete.sql",
+            "verdict": "APPLIED",
+            "tags": []
+          }
+        ],
+        "action": "APPLIED 멤버=(F) provenance 보존. 미물화 멤버만 14-digit version 재부여(file lane, 원장 무충돌). 재부여≠재-apply"
+      },
+      {
+        "version": "20260515",
+        "count": 2,
+        "inLedger": false,
+        "group": "NONE-APPLIED",
+        "legacy8": true,
+        "members": [
+          {
+            "file": "20260515_foot_form_templates_refresh.sql",
+            "verdict": "UNKNOWN",
+            "tags": [
+              "DO-block",
+              "INSERT",
+              "UPDATE",
+              "ON-CONFLICT-DO-UPDATE"
+            ]
+          },
+          {
+            "file": "20260515_space_assign_revamp.sql",
+            "verdict": "UNKNOWN",
+            "tags": [
+              "INSERT",
+              "UPDATE",
+              "DELETE",
+              "ON-CONFLICT-DO-NOTHING"
+            ]
+          }
+        ],
+        "action": "어느 멤버도 미물화 → 미물화 멤버 version 재부여 + 개별 A/X. 재부여가 재-apply 유발 금지(Case J) | 8-digit→14-digit 표준화"
+      },
+      {
+        "version": "20260522000010",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260522000010_form_submissions_rls_issued_by_fix.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260522000010_refund_single_payment_rpc.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "INSERT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260606140000",
+        "count": 2,
+        "inLedger": false,
+        "group": "NONE-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260606140000_chart_diagnoses.backfill.sql",
+            "verdict": "UNKNOWN",
+            "tags": []
+          },
+          {
+            "file": "20260606140000_chart_diagnoses.sql",
+            "verdict": "MISSING",
+            "tags": []
+          }
+        ],
+        "action": "어느 멤버도 미물화 → 미물화 멤버 version 재부여 + 개별 A/X. 재부여가 재-apply 유발 금지(Case J)"
+      },
+      {
+        "version": "20260606170000",
+        "count": 2,
+        "inLedger": false,
+        "group": "MIXED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260606170000_medchart_created_by_name.backfill.sql",
+            "verdict": "UNKNOWN",
+            "tags": []
+          },
+          {
+            "file": "20260606170000_medchart_created_by_name.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          }
+        ],
+        "action": "APPLIED 멤버=(F) provenance 보존. 미물화 멤버만 14-digit version 재부여(file lane, 원장 무충돌). 재부여≠재-apply"
+      },
+      {
+        "version": "20260607200000",
+        "count": 2,
+        "inLedger": false,
+        "group": "MIXED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260607200000_diagnosis_folders_fk.backfill.sql",
+            "verdict": "UNKNOWN",
+            "tags": [
+              "DO-block"
+            ]
+          },
+          {
+            "file": "20260607200000_diagnosis_folders_fk.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          }
+        ],
+        "action": "APPLIED 멤버=(F) provenance 보존. 미물화 멤버만 14-digit version 재부여(file lane, 원장 무충돌). 재부여≠재-apply"
+      },
+      {
+        "version": "20260607220000",
+        "count": 2,
+        "inLedger": false,
+        "group": "NONE-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260607220000_contra_severity_reduce.distribution.sql",
+            "verdict": "UNKNOWN",
+            "tags": []
+          },
+          {
+            "file": "20260607220000_contra_severity_reduce.sql",
+            "verdict": "UNKNOWN",
+            "tags": [
+              "UPDATE",
+              "DROP CONSTRAINT"
+            ]
+          }
+        ],
+        "action": "어느 멤버도 미물화 → 미물화 멤버 version 재부여 + 개별 A/X. 재부여가 재-apply 유발 금지(Case J)"
+      },
+      {
+        "version": "20260608120000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260608120000_diagnosis_sets.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260608120000_foot_pkg_reborn_item.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260608130000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260608130000_pkg_session_treatment_window.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260608130000_pkg_sessions_reborn_check.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "DROP CONSTRAINT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260608170000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260608170000_foot_pkg_template_reborn.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260608170000_medchart_signing_doctor.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260609180000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260609180000_foot_pkg_session_checkin_link.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260609180000_handover_notes_admin_delete.sql",
+            "verdict": "APPLIED",
+            "tags": []
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260613120000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260613120000_customer_birthdate_derive_rpc.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260613120000_rxset_namedesc_migrate.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "DO-block",
+              "INSERT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260617000000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260617000000_blood_test_requested.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT",
+              "DO-block",
+              "UPDATE"
+            ]
+          },
+          {
+            "file": "20260617000000_selfcheckin_composite_key_3key.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT",
+              "INSERT",
+              "UPDATE"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260617120000",
+        "count": 3,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260617120000_koh_request_for_customer.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT",
+              "DO-block",
+              "INSERT",
+              "UPDATE"
+            ]
+          },
+          {
+            "file": "20260617120000_pkg_consultation_fee_and_payment_feekind.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT",
+              "DO-block"
+            ]
+          },
+          {
+            "file": "20260617120000_rxset_hide_name.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT",
+              "DO-block"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260620120000",
+        "count": 2,
+        "inLedger": false,
+        "group": "MIXED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260620120000_phrase_templates_staff_write_staffarea.sql",
+            "verdict": "MISSING",
+            "tags": [
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260620120000_staff_perm_unlock_6menu_rls_additive.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          }
+        ],
+        "action": "APPLIED 멤버=(F) provenance 보존. 미물화 멤버만 14-digit version 재부여(file lane, 원장 무충돌). 재부여≠재-apply"
+      },
+      {
+        "version": "20260623160000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260623160000_blood_request_for_customer.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT",
+              "DO-block",
+              "INSERT",
+              "UPDATE"
+            ]
+          },
+          {
+            "file": "20260623160000_clinics_email.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT",
+              "DO-block"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260628160000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260628160000_anon_upsert_customer_resolve_v2.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT",
+              "INSERT",
+              "UPDATE"
+            ]
+          },
+          {
+            "file": "20260628160000_reservations_created_via.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT",
+              "DROP CONSTRAINT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260629120000",
+        "count": 2,
+        "inLedger": false,
+        "group": "ALL-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260629120000_foot_consent_sensitive.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "GRANT/REVOKE",
+              "COMMENT",
+              "UPDATE",
+              "DELETE"
+            ]
+          },
+          {
+            "file": "20260629120000_staff_assign_sort_order.sql",
+            "verdict": "APPLIED",
+            "tags": [
+              "COMMENT"
+            ]
+          }
+        ],
+        "action": "원장 단일행(F, version 기준·collision 무해) → T-A 합류. rename/재실행 금지"
+      },
+      {
+        "version": "20260630160000",
+        "count": 2,
+        "inLedger": false,
+        "group": "NONE-APPLIED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260630160000_foot_customers_consent_marketing_drop_convergence.sql",
+            "verdict": "UNKNOWN",
+            "tags": []
+          },
+          {
+            "file": "20260630160000_foot_docconfirm_formpanel_split.sql",
+            "verdict": "UNKNOWN",
+            "tags": [
+              "INSERT",
+              "UPDATE"
+            ]
+          }
+        ],
+        "action": "어느 멤버도 미물화 → 미물화 멤버 version 재부여 + 개별 A/X. 재부여가 재-apply 유발 금지(Case J)"
+      },
+      {
+        "version": "20260630200000",
+        "count": 2,
+        "inLedger": true,
+        "group": "MIXED",
+        "legacy8": false,
+        "members": [
+          {
+            "file": "20260630200000_daily_room_status_staff_unlock_6menu_rls_additive.sql",
+            "verdict": "MISSING",
+            "tags": [
+              "COMMENT"
+            ]
+          },
+          {
+            "file": "20260630200000_notif_tmpl_write_staff_roles_align.sql",
+            "verdict": "APPLIED",
+            "tags": []
+          }
+        ],
+        "action": "APPLIED 멤버=(F) provenance 보존. 미물화 멤버만 14-digit version 재부여(file lane, 원장 무충돌). 재부여≠재-apply"
+      }
+    ]
+  }
+}

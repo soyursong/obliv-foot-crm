@@ -1,0 +1,3737 @@
+{
+  "ticket": "T-20260714-foot-MIGRATION-LEDGER-WHOLESALE-DRIFT-SWEEP",
+  "phase": 1,
+  "track": "T-A",
+  "summary": {
+    "F_versions": 185,
+    "existence_only": 50,
+    "body_parity_candidates": 135,
+    "obj_checks_PASS": 103,
+    "obj_checks_DRIFT": 187,
+    "phi_rls_dual_tagged": 138
+  },
+  "results": [
+    {
+      "version": "20260504",
+      "files": [
+        "20260504_doctor_treatment_flow_up.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:phrase_templates::staff_read_phrase_templates",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:phrase_templates::admin_write_phrase_templates",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:prescription_sets::staff_read_prescription_sets",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:prescription_sets::admin_write_prescription_sets",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:document_templates::staff_read_document_templates",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:document_templates::admin_write_document_templates",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260517000050",
+      "files": [
+        "20260517000050_pending_healer_flag.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260517000070",
+      "files": [
+        "20260517000070_save_customer_address_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.save_customer_address",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260518000030",
+      "files": [
+        "20260518000030_patient_room_daily_log.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:patient_room_daily_log::patient_room_daily_log_clinic_access",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260519000040",
+      "files": [
+        "20260519000040_pending_healer_flag.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260520000010",
+      "files": [
+        "20260520000010_insurance_claims_schema.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.update_insurance_claims_updated_at",
+          "result": "PASS",
+          "money": true
+        },
+        {
+          "obj": "pol:insurance_claims::ins_claims_auth_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:claim_items::claim_items_auth_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:insurance_claim_diagnoses::insurance_claim_diagnoses_auth_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:edi_submissions::edi_submissions_auth_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000030",
+      "files": [
+        "20260520000030_rrn_key_harden.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.rrn_encrypt",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.rrn_decrypt",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "pol:nhis_idor_audit_logs::nhis_idor_audit_service_role_only",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000040",
+      "files": [
+        "20260520000040_dopamine_integration_schema.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:dopamine_outbound_log::dopamine_outbound_log_service_role_only",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000070",
+      "files": [
+        "20260520000070_customers_staff_update_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:customers::customers_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000080",
+      "files": [
+        "20260520000080_rbac_menu_expand.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:daily_closings::daily_closings_therapist_read",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520000090",
+      "files": [
+        "20260520000090_customers_staff_select_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.is_floor_staff",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:customers::customers_staff_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260520130000",
+      "files": [
+        "20260520130000_resv_memo_walkin.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260521000030",
+      "files": [
+        "20260521000030_daily_closings_staff_select_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.is_floor_staff",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:daily_closings::daily_closings_staff_read",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260521000040",
+      "files": [
+        "20260521000040_room_assignments_staff_update_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.is_floor_staff",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:room_assignments::room_assignments_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260521000050",
+      "files": [
+        "20260521000050_reservations_staff_update_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:reservations::reservations_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260521050000",
+      "files": [
+        "20260521050000_resv_memo_checkin_id.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260521060000",
+      "files": [
+        "20260521060000_reservations_read_api_index.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260522000010",
+      "files": [
+        "20260522000010_form_submissions_rls_issued_by_fix.sql",
+        "20260522000010_refund_single_payment_rpc.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.refund_single_payment",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "pol:form_submissions::form_submissions_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:form_submissions::form_submissions_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:form_submissions::form_submissions_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522010000",
+      "files": [
+        "20260522010000_pkg_trial_sessions.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.get_package_remaining",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260522020000",
+      "files": [
+        "20260522020000_clinical_images_category.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:clinical_images::auth_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522030000",
+      "files": [
+        "20260522030000_receipt_ocr_results.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:receipt_ocr_results::auth_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522070000",
+      "files": [
+        "20260522070000_designated_therapist.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260522080000",
+      "files": [
+        "20260522080000_alt_badge.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260522090010",
+      "files": [
+        "20260522090010_customers_staff_update_rls_reapply.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.is_floor_staff",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:customers::customers_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522090020",
+      "files": [
+        "20260522090020_room_assignments_staff_update_rls_reapply.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.is_floor_staff",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:room_assignments::room_assignments_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522090030",
+      "files": [
+        "20260522090030_daily_closings_staff_select_rls_reapply.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.is_floor_staff",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:daily_closings::daily_closings_staff_read",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522100000",
+      "files": [
+        "20260522100000_staff_role_perm_gap.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:payments::payments_coord_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_therap_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:package_sessions::package_sessions_coord_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:package_sessions::package_sessions_coord_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_in_services::check_in_services_coord_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_in_services::check_in_services_therap_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_in_services::check_in_services_coord_delete",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:check_in_services::check_in_services_therap_delete",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260522110000",
+      "files": [
+        "20260522110000_timer_records.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:timer_records::timer_records_authenticated_select",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:timer_records::timer_records_authenticated_insert",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:timer_records::timer_records_authenticated_update",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260523040000",
+      "files": [
+        "20260523040000_pay_external_fields.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "MONEY-INVARIANT"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260524020000",
+      "files": [
+        "20260524020000_daily_room_status_carry_over.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260524030000",
+      "files": [
+        "20260524030000_daily_room_status_nextday_staff.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:daily_room_status::daily_room_status_admin_manager_write",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:daily_room_status::daily_room_status_staff_own_write",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260524040000",
+      "files": [
+        "20260524040000_reservations_preferred_therapist.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260525010000",
+      "files": [
+        "20260525010000_fee_set_templates.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:fee_set_templates::auth_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260525040000",
+      "files": [
+        "20260525040000_reservation_logs_change_reason.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260525050000",
+      "files": [
+        "20260525050000_refund_perm_expand.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.refund_single_payment",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260525070000",
+      "files": [
+        "20260525070000_services_display_order.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260526110000",
+      "files": [
+        "20260526110000_calc_copayment_price_fallback.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.calc_copayment",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260526120000",
+      "files": [
+        "20260526120000_services_category_sort_order.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260526130000",
+      "files": [
+        "20260526130000_service_menu_order.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260526150000",
+      "files": [
+        "20260526150000_phrase_shortcut_unique.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260526160000",
+      "files": [
+        "20260526160000_ctm_memo_type.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260526170000",
+      "files": [
+        "20260526170000_progress_plans.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:package_progress_plans::ppp_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:package_progress_plans::ppp_write",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260526190000",
+      "files": [
+        "20260526190000_checklist_sms_opt_in.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_complete_prescreen_checklist",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260526200000",
+      "files": [
+        "20260526200000_user_dashboard_layout_overrides.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:user_dashboard_layout_overrides::udlo_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:user_dashboard_layout_overrides::udlo_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:user_dashboard_layout_overrides::udlo_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:user_dashboard_layout_overrides::udlo_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260526210000",
+      "files": [
+        "20260526210000_phrase_type.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260527000000",
+      "files": [
+        "20260527000000_progress_check_resv.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260527010000",
+      "files": [
+        "20260527010000_resv_cancelled_by_cache_fix.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:reservations::reservations_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527100000",
+      "files": [
+        "20260527100000_messaging_s2_ops_data.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.notify_reservation_messaging",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.notify_reminders_batch",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527110000",
+      "files": [
+        "20260527110000_service_menu_order_rls_harden.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:service_menu_order::smo_clinic_isolated",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527200000",
+      "files": [
+        "20260527200000_medchart_data_loss_fix.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:medical_charts::mc_clinic_isolated_v3",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260527220000",
+      "files": [
+        "20260527220000_treatment_cycle_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.get_treatment_cycle_counts",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260529001000",
+      "files": [
+        "20260529001000_selfcheckin_personal_info_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_update_personal_info",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_create_health_q_token",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260529002000",
+      "files": [
+        "20260529002000_selfcheckin_insurance_rrn_match.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_update_personal_info",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_rrn_match",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260529003000",
+      "files": [
+        "20260529003000_selfcheckin_rrn_pending_flag.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_rrn_match",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260529010000",
+      "files": [
+        "20260529010000_resv_checkin_unique_fix.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260529030000",
+      "files": [
+        "20260529030000_dashboard_reissue_health_q_token.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_dashboard_reissue_health_q_token",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260530170000",
+      "files": [
+        "20260530170000_daily_closings_actual_transfer_total.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "MONEY-INVARIANT"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260601000050",
+      "files": [
+        "20260601000050_health_q_token_url_safe_fix.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_health_q_create_token",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_create_health_q_token",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_dashboard_reissue_health_q_token",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260601130000",
+      "files": [
+        "20260601130000_checkin_doctor_call_memo.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260601150000",
+      "files": [
+        "20260601150000_save_room_assignments_atomic_rpc.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.save_room_assignments",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260601160000",
+      "files": [
+        "20260601160000_save_room_assignments_include_unassigned.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.save_room_assignments",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260601190000",
+      "files": [
+        "20260601190000_selfcheckin_today_reservations_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_today_reservations",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602120000",
+      "files": [
+        "20260602120000_check_ins_floor_dashboard_update_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:check_ins::check_ins_floor_dashboard_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602190000",
+      "files": [
+        "20260602190000_consent_timestamp_cols.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_update_personal_info",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602200000",
+      "files": [
+        "20260602200000_selfcheckin_dup_guard_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_dup_guard",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602210000",
+      "files": [
+        "20260602210000_selfcheckin_with_reservation_link_rpc.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.self_checkin_with_reservation_link",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602230000",
+      "files": [
+        "20260602230000_check_in_slot_dwell_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_check_in_slot_dwell",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602230010",
+      "files": [
+        "20260602230010_room_max_occupancy_to_3.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260602240010",
+      "files": [
+        "20260602240010_anon_rls_receiving.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:check_ins::anon_insert_checkin_self",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602240020",
+      "files": [
+        "20260602240020_health_q_submit_receiving_transition.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_health_q_submit",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260602250000",
+      "files": [
+        "20260602250000_tz_checkin_kst_unify.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.kst_date",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.next_queue_number",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.batch_checkin",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.assign_consultant_atomic",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.self_checkin_with_reservation_link",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603000000",
+      "files": [
+        "20260603000000_refund_session_cascade.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.refund_package_atomic",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603010000",
+      "files": [
+        "20260603010000_dopamine_callback_outbox.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.enqueue_dopamine_callback",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "fn:public.alert_dopamine_callback_dlq",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.process_dopamine_callback_outbox",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603030000",
+      "files": [
+        "20260603030000_sync_customer_name_trigger.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_sync_customer_name",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603040000",
+      "files": [
+        "20260603040000_prescription_sets_folder.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260603040020",
+      "files": [
+        "20260603040020_prescription_contraindications.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:prescription_contraindications::rx_contra_read",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:prescription_contraindications::rx_contra_admin_write",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603050000",
+      "files": [
+        "20260603050000_customer_special_notes.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:customer_special_notes::clinic_isolation_csn_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:customer_special_notes::clinic_isolation_csn_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customer_special_notes::own_update_csn",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customer_special_notes::own_delete_csn",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603060000",
+      "files": [
+        "20260603060000_super_phrases.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:super_phrases::staff_read_super_phrases",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:super_phrases::admin_write_super_phrases",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260603070000",
+      "files": [
+        "20260603070000_document_templates_category.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260603080000",
+      "files": [
+        "20260603080000_special_note_pin.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.set_special_note_pin",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260605120000",
+      "files": [
+        "20260605120000_pkg_session_unit_price_snapshot.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_fill_session_unit_price",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260605130000",
+      "files": [
+        "20260605130000_handover_notes.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:handover_notes::handover_notes_select",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:handover_notes::handover_notes_insert",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:handover_notes::handover_notes_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:handover_notes::handover_notes_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:handover_checklist_items::handover_checklist_select",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:handover_checklist_items::handover_checklist_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:handover_checklist_items::handover_checklist_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:handover_checklist_items::handover_checklist_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260606170000",
+      "files": [
+        "20260606170000_medchart_created_by_name.backfill.sql",
+        "20260606170000_medchart_created_by_name.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260607180000",
+      "files": [
+        "20260607180000_prescription_drug_folders.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:prescription_folders::prescription_folders_read_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:prescription_folders::prescription_folders_write_auth",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:prescription_code_folders::prescription_code_folders_read_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:prescription_code_folders::prescription_code_folders_write_auth",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260607190000",
+      "files": [
+        "20260607190000_pay_recon_port.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.set_redpay_raw_updated_at",
+          "result": "PASS",
+          "money": true
+        },
+        {
+          "obj": "pol:redpay_raw_transactions::redpay_raw_read_own_clinic",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:payment_reconciliation_log::recon_log_read_own_clinic",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:redpay_poller_state::redpay_poller_state_service_role_only",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260607200000",
+      "files": [
+        "20260607200000_diagnosis_folders_fk.backfill.sql",
+        "20260607200000_diagnosis_folders_fk.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:diagnosis_folders::diagnosis_folders_read_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:diagnosis_folders::diagnosis_folders_write_auth",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260607210000",
+      "files": [
+        "20260607210000_foot_therapist_stats_rpc.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_therapist_summary",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "fn:public.foot_stats_therapist_services",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260608120000",
+      "files": [
+        "20260608120000_diagnosis_sets.sql",
+        "20260608120000_foot_pkg_reborn_item.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:diagnosis_sets::diagnosis_sets_read_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:diagnosis_sets::diagnosis_sets_write_auth",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:diagnosis_set_items::diagnosis_set_items_read_all",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:diagnosis_set_items::diagnosis_set_items_write_auth",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260608130000",
+      "files": [
+        "20260608130000_pkg_session_treatment_window.sql",
+        "20260608130000_pkg_sessions_reborn_check.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.get_package_remaining",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260608140000",
+      "files": [
+        "20260608140000_save_room_assignments_scoped_delete.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.save_room_assignments",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260608170000",
+      "files": [
+        "20260608170000_foot_pkg_template_reborn.sql",
+        "20260608170000_medchart_signing_doctor.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.enforce_medchart_signing_doctor",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:medical_chart_signer_audit::mc_signer_audit_select",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:medical_chart_signer_audit::mc_signer_audit_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609120000",
+      "files": [
+        "20260609120000_diagnosis_sets_is_favorite.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260609140000",
+      "files": [
+        "20260609140000_prescription_codes_insurance_status.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260609160000",
+      "files": [
+        "20260609160000_insurance_sync_runs.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:insurance_sync_runs::insurance_sync_runs_read_admin",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609180000",
+      "files": [
+        "20260609180000_foot_pkg_session_checkin_link.sql",
+        "20260609180000_handover_notes_admin_delete.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_therapist_summary",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "fn:public.foot_stats_therapist_services",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "pol:handover_notes::handover_notes_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:handover_checklist_items::handover_checklist_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609230000",
+      "files": [
+        "20260609230000_selfcheckin_rrn_match_addr_sync.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_rrn_match",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260609233000",
+      "files": [
+        "20260609233000_checkin_doctor_ack_at.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260609235500",
+      "files": [
+        "20260609235500_selfcheckin_personal_info_postal_code.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_update_personal_info",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260610090000",
+      "files": [
+        "20260610090000_sms_display_name.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.admin_set_sms_display_name",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": []
+    },
+    {
+      "version": "20260610100000",
+      "files": [
+        "20260610100000_reservation_dup_guard_fn.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_reservation_dup_guard",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260610100010",
+      "files": [
+        "20260610100010_reservations_customer_daily_unique.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260611100000",
+      "files": [
+        "20260611100000_selfcheckin_personal_info_consolidate.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_update_personal_info",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611140000",
+      "files": [
+        "20260611140000_selfcheckin_rrn_match_consent_sync.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_rrn_match",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611150000",
+      "files": [
+        "20260611150000_health_q_rls_canonical_identity.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:health_q_results::hq_results_staff_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:health_q_tokens::hq_tokens_staff_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611160000",
+      "files": [
+        "20260611160000_clinic_events_select_rls_canonical.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:clinic_events::clinic_events_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611190000",
+      "files": [
+        "20260611190000_clinic_events_write_rls_canonical.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:clinic_events::clinic_events_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:clinic_events::clinic_events_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:clinic_events::clinic_events_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611200000",
+      "files": [
+        "20260611200000_closing_workflow_read_canonical.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:daily_closings::daily_closings_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:closing_manual_payments::closing_manual_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260611220000",
+      "files": [
+        "20260611220000_room_assignments_staff_write_scoped.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.can_assign_rooms",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.save_room_assignments",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:room_assignments::room_assignments_assign_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:room_assignments::room_assignments_assign_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612000000",
+      "files": [
+        "20260612000000_form_templates_write_rls_canonical.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:form_templates::form_templates_admin_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612010000",
+      "files": [
+        "20260612010000_checkin_doctor_status_realtime.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260612060000",
+      "files": [
+        "20260612060000_progress_plans_tier_model.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260612140000",
+      "files": [
+        "20260612140000_pkg_session_soft_delete_restore.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.soft_delete_package_session",
+          "result": "PASS",
+          "money": true
+        },
+        {
+          "obj": "fn:public.restore_package_session",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612150000",
+      "files": [
+        "20260612150000_medical_charts_body_audit.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.medical_charts_body_audit",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:medical_charts_audit_log::mcal_select_approved",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        },
+        {
+          "obj": "pol:medical_charts_audit_log::mcal_insert_approved",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260612160000",
+      "files": [
+        "20260612160000_koh_nail_sites.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.set_koh_nail_sites",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260613120000",
+      "files": [
+        "20260613120000_customer_birthdate_derive_rpc.sql",
+        "20260613120000_rxset_namedesc_migrate.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_customer_birthdates",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260614120000",
+      "files": [
+        "20260614120000_rxset_bundle_drugfolder.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260614130000",
+      "files": [
+        "20260614130000_reservation_is_healer_intent.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260614230000",
+      "files": [
+        "20260614230000_check_in_services_checkin_idx.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260615120000",
+      "files": [
+        "20260615120000_rxset_tag_meta.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260615160000",
+      "files": [
+        "20260615160000_rls_clinic_isolation_patient_tables.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.rrn_decrypt",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "pol:customers::customers_admin_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customers::customers_coord_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customers::customers_approved_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:customers::customers_staff_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:customers::customers_consult_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customers::customers_coord_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customers::customers_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_admin_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_delete_admin",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:check_ins::check_ins_consult_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_coord_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_approved_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:check_ins::check_ins_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:check_ins::check_ins_consult_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_coord_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_flag_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_therap_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_update_privileged",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_update_therapist_own",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:reservations::reservations_admin_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:reservations::reservations_coord_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:reservations::reservations_approved_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:reservations::reservations_consult_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:reservations::reservations_staff_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_admin_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_delete_admin",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:payments::payments_consult_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_coord_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_therap_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:payments::payments_approved_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:payments::payments_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:payments::payments_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260615170000",
+      "files": [
+        "20260615170000_rls_clinic_isolation_anon_rpc_additive.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_reservation_banner",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_find_customer",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_existing_checkin_today",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_match_reservation",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_linked_checkin",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_upsert_customer",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_create_check_in",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260615190000",
+      "files": [
+        "20260615190000_koh_lifecycle_publish.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.set_koh_requested",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.next_koh_request_no",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.next_koh_specimen_no",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.publish_koh_result",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260616000000",
+      "files": [
+        "20260616000000_callist_manual_order.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260616160000",
+      "files": [
+        "20260616160000_opinion_doc_form_stack.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.form_submissions_published_immutable_guard",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.is_doctor_role",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.publish_opinion_doc",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "pol:form_submissions::form_submissions_update",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260616180000",
+      "files": [
+        "20260616180000_koh_specimen_no_format.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.next_koh_specimen_no",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.publish_koh_result",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260617000000",
+      "files": [
+        "20260617000000_blood_test_requested.sql",
+        "20260617000000_selfcheckin_composite_key_3key.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.set_blood_test_requested",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.self_checkin_with_reservation_link",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260617120000",
+      "files": [
+        "20260617120000_koh_request_for_customer.sql",
+        "20260617120000_pkg_consultation_fee_and_payment_feekind.sql",
+        "20260617120000_rxset_hide_name.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.request_koh_for_customer",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260617150000",
+      "files": [
+        "20260617150000_prescription_codes_write_rls_canonical.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:prescription_codes::prescription_codes_admin_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260618120000",
+      "files": [
+        "20260618120000_assignment_autoassign.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:assignment_actions::assignment_actions_clinic_access",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260618130000",
+      "files": [
+        "20260618130000_prescription_codes_description.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260618140000",
+      "files": [
+        "20260618140000_prescription_codes_service_id_unify.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260619020000",
+      "files": [
+        "20260619020000_foot_stats_consultant_session_presence.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_consultant",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260620120100",
+      "files": [
+        "20260620120100_rrn_decrypt_a2_role_restore.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.rrn_decrypt",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "pol:phi_access_log::phi_access_log_admin_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260620163000",
+      "files": [
+        "20260620163000_user_profiles_exempt_from_restrictions_additive.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260622120000",
+      "files": [
+        "20260622120000_foot_therapist_stats_staff_source_filter.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_therapist_summary",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "fn:public.foot_stats_therapist_services",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260622170000",
+      "files": [
+        "20260622170000_foot_assign_consultant_daily_cumulative.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.assign_consultant_atomic",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260622200000",
+      "files": [
+        "20260622200000_reservations_updated_by.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260622210000",
+      "files": [
+        "20260622210000_foot_stats_consultant_total_amount.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_consultant",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260623120000",
+      "files": [
+        "20260623120000_foot_therapist_stats_designated_on_roster.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_therapist_summary",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260623130000",
+      "files": [
+        "20260623130000_foot_therapist_stats_treatment_exit_window.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_therapist_summary",
+          "result": "PASS",
+          "money": true
+        },
+        {
+          "obj": "fn:public.foot_stats_therapist_services",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260623150000",
+      "files": [
+        "20260623150000_patient_file_records.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:patient_file_records::clinic_isolation_pfr_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:patient_file_records::clinic_isolation_pfr_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:patient_file_records::own_delete_pfr",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260623160000",
+      "files": [
+        "20260623160000_blood_request_for_customer.sql",
+        "20260623160000_clinics_email.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.request_blood_test_for_customer",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260623170000",
+      "files": [
+        "20260623170000_customers_customer_note.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260623180000",
+      "files": [
+        "20260623180000_patient_past_history.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:patient_past_history::clinic_isolation_pph_select",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:patient_past_history::clinic_isolation_pph_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:patient_past_history::own_delete_pph",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260624100000",
+      "files": [
+        "20260624100000_resvmgmt_overhaul2_w2.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260624130000",
+      "files": [
+        "20260624130000_chartno_race_atomicity.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.assign_foot_customer_chart_number",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": []
+    },
+    {
+      "version": "20260624160000",
+      "files": [
+        "20260624160000_memo_soft_delete_role_manage.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:customer_treatment_memos::manage_update_ctm",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customer_reservation_memos::manage_update_crm",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        },
+        {
+          "obj": "pol:customer_consult_memos::manage_update_ccm",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260624170000",
+      "files": [
+        "20260624170000_staff_temp_off.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:staff_temp_off::approved_clinic_staff_temp_off_all",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260624180000",
+      "files": [
+        "20260624180000_bundlerx_director_write_rls.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:prescription_sets::admin_write_prescription_sets",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:document_templates::admin_write_document_templates",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:phrase_templates::admin_write_phrase_templates",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260625120000",
+      "files": [
+        "20260625120000_health_q_lang.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_health_q_validate_token",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_health_q_create_token",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260625130000",
+      "files": [
+        "20260625130000_passport_port_nationalities_foreign_fields.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260625150000",
+      "files": [
+        "20260625150000_selfcheckin_token_lang.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_create_health_q_token",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260628000000",
+      "files": [
+        "20260628000000_rrn_stage2a_audit_columns_precreate.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260628160000",
+      "files": [
+        "20260628160000_anon_upsert_customer_resolve_v2.sql",
+        "20260628160000_reservations_created_via.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_upsert_customer_resolve_v2",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260629120000",
+      "files": [
+        "20260629120000_foot_consent_sensitive.sql",
+        "20260629120000_staff_assign_sort_order.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_update_personal_info",
+          "result": "PASS",
+          "money": true
+        },
+        {
+          "obj": "fn:public.fn_selfcheckin_rrn_match",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260629143000",
+      "files": [
+        "20260629143000_health_q_create_token_searchpath_permanent_fix.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_health_q_create_token",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260629150000",
+      "files": [
+        "20260629150000_foot_resv_status_noshow_to_no_show.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_noshow_returning",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.enqueue_dopamine_callback",
+          "result": "PASS",
+          "money": true
+        },
+        {
+          "obj": "fn:public.check_reservation_status",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260629160000",
+      "files": [
+        "20260629160000_anon_upsert_customer_resolve_v3.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_selfcheckin_upsert_customer_resolve_v3",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260629190000",
+      "files": [
+        "20260629190000_calc_copayment_nullfix_default_deny.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.calc_copayment",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260629200000",
+      "files": [
+        "20260629200000_edi_export_additive.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260629210000",
+      "files": [
+        "20260629210000_form_service_bridge_additive.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260630120000",
+      "files": [
+        "20260630120000_foot_doc_serial_seq_harden.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.issue_foot_doc_serial",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260630120001",
+      "files": [
+        "20260630120001_foot_doc_serial_seq_unique_idx.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260630170000",
+      "files": [
+        "20260630170000_foot_companion_extid_text_realname_rpc17.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.upsert_reservation_from_source",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "MONEY-INVARIANT"
+      ]
+    },
+    {
+      "version": "20260630184500",
+      "files": [
+        "20260630184500_handover_notes_delete_role_canon.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:handover_notes::handover_notes_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:handover_checklist_items::handover_checklist_delete",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260630190000",
+      "files": [
+        "20260630190000_foot_tm_edit_cancel_superset_rpc.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.upsert_reservation_from_source",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260630193000",
+      "files": [
+        "20260630193000_foot_tm_edit_cancel_lifecycle_guard.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.upsert_reservation_from_source",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": []
+    },
+    {
+      "version": "20260630210000",
+      "files": [
+        "20260630210000_register_unlock_3roles_rls_additive.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:customers::customers_register_unlock_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:reservations::reservations_register_unlock_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        },
+        {
+          "obj": "pol:check_ins::check_ins_register_unlock_insert",
+          "result": "DRIFT-PREDICATE",
+          "using_match": true,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260701020000",
+      "files": [
+        "20260701020000_foot_resv_memo_timeline_retarget_provenance.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.upsert_reservation_from_source",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260701040000",
+      "files": [
+        "20260701040000_phrase_templates_staffarea_write_7role_unified.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:phrase_templates::staffarea_write_phrases",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260702200000",
+      "files": [
+        "20260702200000_clinicmgmt_3tab_director_write_rls_canonical.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:super_phrases::admin_write_super_phrases",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:document_templates::admin_write_document_templates",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        },
+        {
+          "obj": "pol:phrase_templates::admin_write_phrase_templates",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260703160000",
+      "files": [
+        "20260703160000_anon_reservation_read_scopedown_today_confirmed.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:reservations::anon_reservation_read",
+          "result": "DRIFT-PREDICATE",
+          "using_match": false,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "PHI",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260706120000",
+      "files": [
+        "20260706120000_foot_stats_reconcile_iv_exclude_sameday_conv.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.foot_stats_by_category",
+          "result": "DRIFT",
+          "money": true
+        },
+        {
+          "obj": "fn:public.foot_stats_therapist_summary",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260706140000",
+      "files": [
+        "20260706140000_koh_publish_birth_server_derive.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.publish_koh_result",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260708230000",
+      "files": [
+        "20260708230000_redpay_recon_daily_view.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.get_redpay_feed_freshness",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260710170000",
+      "files": [
+        "20260710170000_rrn_decrypt_version_aware_multikey.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.rrn_decrypt",
+          "result": "PASS",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_customer_birthdates",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260710180000",
+      "files": [
+        "20260710180000_fn_customer_birthdates_version_aware_vault.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_customer_birthdates",
+          "result": "PASS",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260710224000",
+      "files": [
+        "20260710224000_prescreen_searchpath_pin_harden.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_prescreen_start",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.fn_complete_prescreen_checklist",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260714120500",
+      "files": [
+        "20260714120500_calc_copayment_hira_governed_elderly_tiers.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.calc_copayment",
+          "result": "PASS",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260714133000",
+      "files": [
+        "20260714133000_calc_copayment_elderly_floor_rounding.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.calc_copayment",
+          "result": "DRIFT",
+          "money": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260714160000",
+      "files": [
+        "20260714160000_clinics_representative_name.sql"
+      ],
+      "checks": [],
+      "tags": [],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260714190000",
+      "files": [
+        "20260714190000_closing_manual_payments_softvoid.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "MONEY-INVARIANT"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260715120000",
+      "files": [
+        "20260715120000_maskreject_writepath_rescope_2paths.sql"
+      ],
+      "checks": [
+        {
+          "obj": "fn:public.fn_dashboard_reissue_health_q_token",
+          "result": "DRIFT",
+          "money": false
+        },
+        {
+          "obj": "fn:public.upsert_reservation_from_source",
+          "result": "DRIFT",
+          "money": false
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    },
+    {
+      "version": "20260715123000",
+      "files": [
+        "20260715123000_foot_visit_call_result_receive.sql"
+      ],
+      "checks": [],
+      "tags": [
+        "PHI"
+      ],
+      "parity": "EXISTENCE-ONLY (no fn/policy body; census verdict APPLIED — existence parity sufficient)"
+    },
+    {
+      "version": "20260715130000",
+      "files": [
+        "20260715130000_foot_anon_write_grant_hygiene_sweep.sql"
+      ],
+      "checks": [
+        {
+          "obj": "pol:payment_audit_logs::payment_audit_logs_open",
+          "result": "PASS",
+          "using_match": true,
+          "check_match": true
+        }
+      ],
+      "tags": [
+        "MONEY-INVARIANT",
+        "phi_rls_drift_guard:dual-tag"
+      ]
+    }
+  ]
+}

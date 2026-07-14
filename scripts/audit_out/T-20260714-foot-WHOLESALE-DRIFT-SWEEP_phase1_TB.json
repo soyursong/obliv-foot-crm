@@ -1,0 +1,479 @@
+{
+  "drift12": [
+    {
+      "version": "20260519000080",
+      "files": [
+        "20260519000080_medchart_revamp.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "columns:medical_charts.clinical_progress",
+          "exists": true
+        },
+        {
+          "obj": "columns:phrase_templates.shortcut_key",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_pt_shortcut_key",
+          "exists": false
+        }
+      ],
+      "absentReal": [
+        "indexes:idx_pt_shortcut_key"
+      ],
+      "verdict": "object-level split: 1 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260520000060",
+      "files": [
+        "20260520000060_check_ins_staff_update_rls.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "functions:public.is_floor_staff",
+          "exists": true
+        },
+        {
+          "obj": "policies:check_ins::check_ins_staff_update",
+          "exists": false
+        }
+      ],
+      "absentReal": [
+        "policies:check_ins::check_ins_staff_update"
+      ],
+      "verdict": "object-level split: 1 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260520000100",
+      "files": [
+        "20260520000100_customer_treatment_memos.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:customer_treatment_memos::clinic_isolation_ctm_select",
+          "exists": true
+        },
+        {
+          "obj": "policies:customer_treatment_memos::clinic_isolation_ctm_insert",
+          "exists": true
+        },
+        {
+          "obj": "policies:customer_treatment_memos::own_update_ctm",
+          "exists": false
+        },
+        {
+          "obj": "policies:customer_treatment_memos::own_delete_ctm",
+          "exists": false
+        },
+        {
+          "obj": "tables:customer_treatment_memos",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_ctm_customer_id",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_ctm_clinic_id",
+          "exists": true
+        }
+      ],
+      "absentReal": [
+        "policies:customer_treatment_memos::own_update_ctm",
+        "policies:customer_treatment_memos::own_delete_ctm"
+      ],
+      "verdict": "object-level split: 2 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260521000020",
+      "files": [
+        "20260521000020_check_ins_staff_insert_rls.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "functions:public.is_floor_staff",
+          "exists": true
+        },
+        {
+          "obj": "policies:check_ins::check_ins_staff_insert",
+          "exists": false
+        }
+      ],
+      "absentReal": [
+        "policies:check_ins::check_ins_staff_insert"
+      ],
+      "verdict": "object-level split: 1 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260522050000",
+      "files": [
+        "20260522050000_medchart_rls_hq_fix.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:medical_charts::mc_clinic_isolated_v2",
+          "exists": false
+        },
+        {
+          "obj": "policies:chart_doctor_memos::cdm_director_clinic_v2",
+          "exists": true
+        }
+      ],
+      "absentReal": [
+        "policies:medical_charts::mc_clinic_isolated_v2"
+      ],
+      "verdict": "object-level split: 1 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260524010000",
+      "files": [
+        "20260524010000_daily_room_status.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:daily_room_status::daily_room_status_approved_read",
+          "exists": true
+        },
+        {
+          "obj": "policies:daily_room_status::daily_room_status_admin_all",
+          "exists": false
+        },
+        {
+          "obj": "tables:daily_room_status",
+          "exists": true
+        },
+        {
+          "obj": "indexes:daily_room_status_clinic_date_idx",
+          "exists": true
+        }
+      ],
+      "absentReal": [
+        "policies:daily_room_status::daily_room_status_admin_all"
+      ],
+      "verdict": "object-level split: 1 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260606160000",
+      "files": [
+        "20260606160000_diagnosis_folder_and_favorites.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:doctor_diagnosis_favorites::ddf_select_own",
+          "exists": false
+        },
+        {
+          "obj": "policies:doctor_diagnosis_favorites::ddf_insert_own",
+          "exists": false
+        },
+        {
+          "obj": "policies:doctor_diagnosis_favorites::ddf_delete_own",
+          "exists": false
+        },
+        {
+          "obj": "tables:doctor_diagnosis_favorites",
+          "exists": false
+        },
+        {
+          "obj": "columns:services.diagnosis_folder",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_doctor_diagnosis_favorites_staff",
+          "exists": false
+        }
+      ],
+      "absentReal": [
+        "policies:doctor_diagnosis_favorites::ddf_select_own",
+        "policies:doctor_diagnosis_favorites::ddf_insert_own",
+        "policies:doctor_diagnosis_favorites::ddf_delete_own",
+        "tables:doctor_diagnosis_favorites",
+        "indexes:idx_doctor_diagnosis_favorites_staff"
+      ],
+      "verdict": "object-level split: 5 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260609100000",
+      "files": [
+        "20260609100000_foot_therapist_stats_v2.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "functions:public.foot_stats_therapist_summary",
+          "exists": true
+        },
+        {
+          "obj": "functions:public.foot_stats_therapist_services",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_status_transitions_checkin_tostatus",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_package_sessions_performed_status",
+          "exists": false
+        }
+      ],
+      "absentReal": [
+        "indexes:idx_package_sessions_performed_status"
+      ],
+      "verdict": "object-level split: 1 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260609200000",
+      "files": [
+        "20260609200000_notification_templates_image_mms.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:objects::msgimg_clinic_read",
+          "exists": false
+        },
+        {
+          "obj": "policies:objects::msgimg_clinic_write",
+          "exists": false
+        },
+        {
+          "obj": "columns:notification_templates.image_path",
+          "exists": true
+        }
+      ],
+      "absentReal": [
+        "policies:objects::msgimg_clinic_read",
+        "policies:objects::msgimg_clinic_write"
+      ],
+      "verdict": "object-level split: 2 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260622180000",
+      "files": [
+        "20260622180000_customer_resv_consult_memos.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:customer_reservation_memos::clinic_isolation_crm_select",
+          "exists": true
+        },
+        {
+          "obj": "policies:customer_reservation_memos::clinic_isolation_crm_insert",
+          "exists": true
+        },
+        {
+          "obj": "policies:customer_reservation_memos::own_update_crm",
+          "exists": false
+        },
+        {
+          "obj": "policies:customer_reservation_memos::own_delete_crm",
+          "exists": false
+        },
+        {
+          "obj": "policies:customer_consult_memos::clinic_isolation_ccm_select",
+          "exists": true
+        },
+        {
+          "obj": "policies:customer_consult_memos::clinic_isolation_ccm_insert",
+          "exists": true
+        },
+        {
+          "obj": "policies:customer_consult_memos::own_update_ccm",
+          "exists": false
+        },
+        {
+          "obj": "policies:customer_consult_memos::own_delete_ccm",
+          "exists": false
+        },
+        {
+          "obj": "tables:customer_reservation_memos",
+          "exists": true
+        },
+        {
+          "obj": "tables:customer_consult_memos",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_crm_customer_id",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_crm_clinic_id",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_ccm_customer_id",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_ccm_clinic_id",
+          "exists": true
+        }
+      ],
+      "absentReal": [
+        "policies:customer_reservation_memos::own_update_crm",
+        "policies:customer_reservation_memos::own_delete_crm",
+        "policies:customer_consult_memos::own_update_ccm",
+        "policies:customer_consult_memos::own_delete_ccm"
+      ],
+      "verdict": "object-level split: 4 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260703170000",
+      "files": [
+        "20260703170000_foot_treatment_photos_staff_capture.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "policies:treatment_photos::treatment_photos_read_clinic",
+          "exists": true
+        },
+        {
+          "obj": "policies:treatment_photos::treatment_photos_insert_staff",
+          "exists": true
+        },
+        {
+          "obj": "policies:treatment_photos::treatment_photos_update_staff",
+          "exists": true
+        },
+        {
+          "obj": "policies:objects::treatment_photos_obj_read",
+          "exists": false
+        },
+        {
+          "obj": "policies:objects::treatment_photos_obj_insert",
+          "exists": false
+        },
+        {
+          "obj": "policies:objects::treatment_photos_obj_update",
+          "exists": false
+        },
+        {
+          "obj": "tables:treatment_photos",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_treatment_photos_customer_live",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_treatment_photos_checkin_live",
+          "exists": true
+        },
+        {
+          "obj": "indexes:idx_treatment_photos_clinic_live",
+          "exists": true
+        }
+      ],
+      "absentReal": [
+        "policies:objects::treatment_photos_obj_read",
+        "policies:objects::treatment_photos_obj_insert",
+        "policies:objects::treatment_photos_obj_update"
+      ],
+      "verdict": "object-level split: 3 truly-absent → per-object A(additive)/X"
+    },
+    {
+      "version": "20260711140000",
+      "files": [
+        "20260711140000_redpay_terminal_registry_ssot.sql"
+      ],
+      "reprobe": [
+        {
+          "obj": "functions:public.get_redpay_feed_freshness",
+          "exists": true
+        },
+        {
+          "obj": "policies:redpay_terminal_registry::redpay_terminal_registry_read_all",
+          "exists": false
+        },
+        {
+          "obj": "tables:redpay_terminal_registry",
+          "exists": false
+        },
+        {
+          "obj": "views:v_redpay_reconciliation_daily",
+          "exists": true
+        },
+        {
+          "obj": "views:v_receipt_settlement_daily",
+          "exists": false
+        },
+        {
+          "obj": "views:v_redpay_unclassified_merchants",
+          "exists": false
+        },
+        {
+          "obj": "indexes:idx_redpay_terminal_registry_domain_active",
+          "exists": false
+        }
+      ],
+      "absentReal": [
+        "policies:redpay_terminal_registry::redpay_terminal_registry_read_all",
+        "tables:redpay_terminal_registry",
+        "views:v_receipt_settlement_daily",
+        "views:v_redpay_unclassified_merchants",
+        "indexes:idx_redpay_terminal_registry_domain_active"
+      ],
+      "verdict": "object-level split: 5 truly-absent → per-object A(additive)/X"
+    }
+  ],
+  "destructive4": [
+    {
+      "version": "20260616120000_bundlerx_drugname_migrate",
+      "drop_targets": [
+        "prescription_codes_bundlerx_backup_20260616 (self-created snapshot)",
+        "prescription_folders_bundlerx_backup_20260616 (self)",
+        "prescription_code_folders_bundlerx_backup_20260616 (self)",
+        "_bundlerx_resolved_20260616 (TEMP)"
+      ],
+      "prod_check": {
+        "backup_tables": [],
+        "rxmig_codes": [
+          {
+            "n": 0
+          }
+        ],
+        "igwan_folder": [
+          {
+            "id": "6ef0c750-196d-4129-b344-1b6fe67d69fe",
+            "name": "이관약"
+          }
+        ]
+      }
+    },
+    {
+      "version": "20260629170000_medical_charts_check_in_id_fk",
+      "nature": "ADDITIVE (DROP CONSTRAINT IF EXISTS = idempotent re-run guard, immediately re-added)",
+      "prod_check": {
+        "column": [],
+        "fkey": [],
+        "index": []
+      }
+    },
+    {
+      "version": "20260714020000_foot_customers_mask_contam_backfill",
+      "nature": "DATA-DELETE (phantom customers, frozen 5-set). Cross-CRM Orphan-Row Archive-First Cleanup SOP. NOT flat-apply.",
+      "prod_check": {
+        "note": "frozen 5-set ids off-git (perrow_confirm.json). commit c9074f0a marked BLOCKED/DO-NOT-APPLY. per-row + supervisor gates incomplete.",
+        "customers_total": [
+          {
+            "n": 358
+          }
+        ]
+      }
+    },
+    {
+      "version": "20260714170000_paylog_center_column",
+      "nature": "ADDITIVE (DROP CONSTRAINT IF EXISTS = idempotent guard + re-add). ⚠ file contains self-ledger INSERT INTO schema_migrations ON CONFLICT (§1.4 OOB write — must strip before any apply).",
+      "prod_check": {
+        "column": [],
+        "check_con": [],
+        "index": [],
+        "table_exists": [
+          {
+            "?column?": 1
+          }
+        ]
+      }
+    }
+  ]
+}
