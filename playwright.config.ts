@@ -269,6 +269,10 @@ export default defineConfig({
         //   로 세부산정내역·계산서영수증 × grade-null/실재 4문서 스크린샷). auth/server 불요(setContent 정적 렌더).
         '**/T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR.spec.ts',
         '**/T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR-RENDER.spec.ts',
+        // T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL: 비급여동의서 서명 뷰 태블릿 스크롤 불가 픽스
+        //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
+        //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
+        '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

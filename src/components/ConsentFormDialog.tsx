@@ -187,15 +187,18 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      {/* T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL:
+          태블릿 스크롤 불가 픽스 — vh→dvh (브라우저 크롬 포함 vh 과대계산으로 서명버튼이 화면 밖으로 밀림)
+          + flex 컬럼 구조로 본문만 스크롤·푸터(서명 완료) 고정 노출. PC(dvh==vh) 회귀 0. */}
+      <DialogContent className="max-w-lg max-h-[90dvh] p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 px-4 pt-4 pb-0">
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
             {FORM_TITLES[formType]}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-4">
           <div className="rounded-lg border bg-muted/20 p-4 text-sm leading-relaxed space-y-2">
             {FORM_CONTENT[formType].map((line, i) => (
               <p key={i}>{line}</p>
@@ -260,11 +263,12 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="shrink-0 border-t px-4 py-3 mt-0 bg-background">
+          <Button variant="outline" className="h-11" onClick={() => onOpenChange(false)}>
             취소
           </Button>
           <Button
+            className="h-11"
             onClick={handleSign}
             disabled={submitting || !agreed || (formType === 'privacy' && !consentSensitiveAgreed)}
           >
