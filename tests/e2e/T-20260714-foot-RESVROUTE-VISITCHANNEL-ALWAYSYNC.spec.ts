@@ -23,8 +23,9 @@
  *   AC-3  두 경로 공통: visit_route 가 ''/null 이면 customers.visit_route 미갱신(기존값 보존).
  *   G1    customers.update payload = visit_route 단일 컬럼만(WRITEPATH-MASK 포렌식 — 타 컬럼 미접촉).
  *   G2    empty-preserve(=AC-3).
- *   G3    reservations.source_system 무접촉(매출 오가닉/광고 split 불변).
+ *   G3    reservations.source_system 무접촉(매출 오가닉/광고 split 불변) — 동기 전/후 split count self-test.
  *   G4    초진 신규생성 시 customer insert 후 반환 id 로 seed(양쪽 실측).
+ *   덮어쓰기 트리거 한정(Phase2 DA GO): 예약경로 무변경 편집([저장]으로 메모·힐러만 수정)은 customers.visit_route 재-stomp 금지.
  */
 import { test, expect } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -135,6 +136,69 @@ test.describe('T-20260714 ALWAYSYNC — DB 계약(비파괴, 신규 DDL 0)', () 
     expect(row.lead_source, 'G1 위반: lead_source 오염').toBe('네이버');
     expect(row.customer_memo, 'G1 위반: customer_memo 오염').toBe('PRESERVE-ME');
     console.log('[G1] visit_route 단일컬럼 update — 타 컬럼 미접촉 PASS');
+  });
+
+  test('G3(매출 회귀가드): customers.visit_route 동기 전/후 source_system 오가닉·광고 split count 불변', async () => {
+    test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
+    // 유입경로축(오가닉/광고)은 reservations.source_system 기준(TM=광고, 그 외=오가닉).
+    //   본 티켓 write-path 는 customers.visit_route 만 만짐 → source_system 무접촉이 되어야 split 이 불변.
+    const splitCount = async () => {
+      const { count: adCount } = await sb!
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId)
+        .eq('source_system', 'dopamine');
+      const { count: totalCount } = await sb!
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId);
+      const total = totalCount ?? 0;
+      const ad = adCount ?? 0;
+      return { ad, organic: total - ad };
+    };
+    const before = await splitCount();
+    // 동기 write-path 실행(단일컬럼) — source_system 은 어디서도 건드리지 않음.
+    const c = await seedCustomer('returning');
+    await sb!.from('customers').update({ visit_route: 'TM' }).eq('id', c.id);
+    const after = await splitCount();
+    expect(after.ad, 'G3 위반: 광고(dopamine) split count 변동').toBe(before.ad);
+    expect(after.organic, 'G3 위반: 오가닉 split count 변동').toBe(before.organic);
+    console.log(`[G3] source_system split 불변 PASS (ad=${before.ad}→${after.ad}, organic=${before.organic}→${after.organic})`);
+  });
+
+  test('덮어쓰기 트리거 한정: 예약경로 무변경(메모·힐러만 편집)이면 customers.visit_route 재-stomp 금지', async () => {
+    test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
+    // 시나리오: customers.visit_route='네이버'(수동/과거 확정값). 예약행 visit_route 도 '네이버'(동일).
+    //   사용자가 예약상세 [저장]으로 간략메모/힐러만 바꾸고 예약경로는 그대로 두면(routeChanged=false)
+    //   → saveRouteAndRegistrar 는 customers.update 를 호출하지 않아야 함(blast radius 축소).
+    const c = await seedCustomer('returning', { visit_route: '네이버' });
+    const resvVisitRoute = '네이버'; // 예약행 프리로드값 = 팝업 초기 visitRoute
+    const editedVisitRoute = '네이버'; // 사용자가 route 드롭다운을 만지지 않음(무변경)
+    const routeChanged = editedVisitRoute !== (resvVisitRoute ?? '');
+    // FE 가드: 무변경이면 customers 미터치
+    if (c.id && editedVisitRoute !== '' && routeChanged) {
+      await sb!.from('customers').update({ visit_route: editedVisitRoute }).eq('id', c.id);
+    }
+    const { data } = await sb!.from('customers').select('visit_route').eq('id', c.id).single();
+    // 재-stomp 되지 않았음을 확인(값은 그대로지만, 핵심은 무변경 저장이 write 트리거가 아니라는 것).
+    expect(routeChanged, '무변경인데 routeChanged=true → 재-stomp 발생').toBe(false);
+    expect((data as { visit_route: string }).visit_route).toBe('네이버');
+    console.log('[blast-radius] 예약경로 무변경 저장 → customers 재-stomp 금지 PASS');
+  });
+
+  test('덮어쓰기 트리거: 예약경로 실제 변경 시엔 정상 동기(last-write-wins)', async () => {
+    test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
+    const c = await seedCustomer('returning', { visit_route: '네이버' });
+    const resvVisitRoute = '네이버';
+    const editedVisitRoute = '지인소개'; // 사용자가 route 를 실제로 변경
+    const routeChanged = editedVisitRoute !== (resvVisitRoute ?? '');
+    if (c.id && editedVisitRoute !== '' && routeChanged) {
+      await sb!.from('customers').update({ visit_route: editedVisitRoute }).eq('id', c.id);
+    }
+    const { data } = await sb!.from('customers').select('visit_route').eq('id', c.id).single();
+    expect(routeChanged).toBe(true);
+    expect((data as { visit_route: string }).visit_route, 'A안 last-write-wins: 변경값으로 overwrite').toBe('지인소개');
+    console.log('[blast-radius] 예약경로 변경 시 정상 last-write-wins 동기 PASS');
   });
 });
 

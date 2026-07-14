@@ -1204,12 +1204,16 @@ export function ReservationDetailPopup({
       })
       .eq('id', reservation.id);
     if (error) { setRouteSaving(false); toast.error(`저장 실패: ${error.message}`); return; }
-    // T-20260714-foot-RESVROUTE-VISITCHANNEL-ALWAYSYNC (AC-2/G1/G2): 예약상세 [저장] 시 예약경로 → 2번차트 방문경로(customers.visit_route) 동기.
+    // T-20260714-foot-RESVROUTE-VISITCHANNEL-ALWAYSYNC (AC-2/G1/G2/blast-radius): 예약상세 [저장] 시 예약경로 → 2번차트 방문경로(customers.visit_route) 동기.
     //   기존엔 reservations.visit_route 만 갱신 → customers.visit_route 미연동(예약상세 write-path 누락)이 현장 '전부 미연동' RC.
     //   ▸ G1(단일컬럼 scoping, MANDATORY): customers.update payload = visit_route 단일 컬럼만(WRITEPATH-MASK 포렌식, 타 컬럼 미접촉).
     //   ▸ G2(empty-preserve): 예약경로 빈값('')이면 customers 미갱신(기존 방문경로 보존). last-write-wins 는 비어있지 않은 값에만.
+    //   ▸ 덮어쓰기 트리거 한정(Phase2 DA GO): [저장]은 간략메모·힐러칩·등록자와 예약경로를 한 버튼에 동봉하므로,
+    //       예약경로가 실제로 변경된 경우에만 customers 동기(routeChanged). 메모·힐러만 편집하고 저장 시엔
+    //       예약경로 무변경 → customers.visit_route 재-stomp 금지(blast radius 축소). 초기값 = reservation.visit_route(L496 프리로드).
     //   ▸ G3(매출 회귀가드): source_system 무접촉.
-    if (reservation.customer_id && visitRoute !== '') {
+    const routeChanged = visitRoute !== (reservation.visit_route ?? '');
+    if (reservation.customer_id && visitRoute !== '' && routeChanged) {
       const { error: custErr } = await supabase
         .from('customers')
         .update({ visit_route: visitRoute })
