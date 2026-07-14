@@ -71,6 +71,8 @@ export interface AutoBindContext {
     established_date?: string | null;
     // T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 병원(기관) 이메일 — 환자 이메일과 별개
     email?: string | null;
+    // T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET #2: 요양기관 대표자(대표원장) 성명. 법인 대표와 별개 축.
+    representative_name?: string | null;
   } | null;
   doctor?: string | null;
   /** T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 매칭된 원장 상세 정보 */
@@ -285,6 +287,10 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     // T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 처방전 의료기관 블록 E-mail 주소 자동 바인딩.
     //   병원(기관) 이메일 — 환자 이메일(patient_email)과 별개. 미입력 시 빈칸(회귀 방지).
     clinic_email: ctx.clinic?.email ?? '',
+    // T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET #2: 대표자 컨텍스트 바인딩(데이터원 준비).
+    //   ⚠ print 재배선 금지 — 출력서류 대표자셀 {{doctor_name}} 유지(진료의 축 별도 티켓).
+    //   여기서는 {{representative_name}} 슬롯 데이터만 제공(템플릿 미접촉).
+    representative_name: ctx.clinic?.representative_name ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 차트번호 (record_no fallback)
     record_no: ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 진단 코드·명칭
@@ -464,7 +470,7 @@ export async function loadAutoBindContext(
   // T-20260520-foot-PRINT-FORM-BIND: 클리닉 정보 확장 (nhis_code, fax 추가)
   const { data: clinicData } = await supabase
     .from('clinics')
-    .select('name, address, phone, fax, nhis_code, business_no, established_date, email')
+    .select('name, address, phone, fax, nhis_code, business_no, established_date, email, representative_name')
     .eq('id', checkIn.clinic_id)
     .maybeSingle();
 

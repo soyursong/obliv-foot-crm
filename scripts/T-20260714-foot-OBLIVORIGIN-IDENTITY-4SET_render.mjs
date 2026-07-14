@@ -1,9 +1,10 @@
 /**
- * T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET — 기관명 strip('점') 라이브 렌더 실측 하니스 (WARN-A 게이트).
- * parent: T-20260714-ops-OBLIVORIGIN-IDENTITY-4SET-SWEEP (CEO MSG-waza).
+ * T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET — 기관명(옵션B)/대표자 라이브 렌더 실측 하니스 (WARN-A 게이트).
+ * parent: T-20260714-ops-OBLIVORIGIN-IDENTITY-4SET-SWEEP (CEO MSG-waza / xdax 옵션B / FIX 5wb5).
  *
- * 목적: #1 기관명 = '오블리브의원 서울 오리진'(점 제거)이 전 출력서류에 실제 렌더되는지 육안 스크린샷.
+ * 목적: #1 기관명 = '오블리브의원 서울오리진점'(옵션B, 사업자등록 상호 verbatim)이 전 출력서류에 렌더되는지 육안 스크린샷.
  *   - autoBindContext.ts 라이브 경로 미러: clinic_name ← clinics.name(id=jongno-foot) prod DB 직접 조회.
+ *   - #2 대표자 박영진 = clinics.representative_name write 검증(print 재배선은 별개 티켓 — 미접촉).
  *   - #3 요양기관번호 13328581 동시 재검증(회귀 0).
  *   - 코드-그린 ≠ 필드-그린: 실 DB 값 + 실 템플릿 + 육안 PNG.
  * 실행: node scripts/T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET_render.mjs
@@ -30,24 +31,32 @@ for (const line of fs.readFileSync(path.join(REPO, '.env.local'), 'utf8').split(
 const sb = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const CLINIC = '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // jongno-foot
 
-const EXPECT_NAME = '오블리브의원 서울 오리진';   // 점 제거 확정값
-const STALE_NAME  = '오블리브의원 서울 오리진점'; // strip 이전 stale
+// CEO DECISION xdax(15:18) 옵션B = 사업자등록증 상호 verbatim(붙임+끝점). 옵션A(strip) 폐기.
+const EXPECT_NAME = '오블리브의원 서울오리진점';   // 옵션B 확정값 (붙임, 끝 점)
+const STALE_NAMES = [
+  '오블리브의원 서울 오리진점', // Stage1 원본 (공백+점)
+  '오블리브의원 서울 오리진',   // 폐기된 옵션A (strip, 공백)
+];
+const EXPECT_REP  = '박영진';    // #2 대표자
 const EXPECT_NHIS = '13328581';
 
-// 라이브 autoBind 경로와 동일하게 clinics.name/nhis_code 를 id 기준 조회.
-const { data: clinic } = await sb.from('clinics').select('name, nhis_code').eq('id', CLINIC).maybeSingle();
-console.log(`clinic(id=${CLINIC}) name="${clinic?.name}" nhis_code=${JSON.stringify(clinic?.nhis_code)}`);
+// 라이브 autoBind 경로와 동일하게 clinics.name/nhis_code/representative_name 를 id 기준 조회.
+const { data: clinic } = await sb.from('clinics').select('name, nhis_code, representative_name').eq('id', CLINIC).maybeSingle();
+console.log(`clinic(id=${CLINIC}) name="${clinic?.name}" nhis_code=${JSON.stringify(clinic?.nhis_code)} rep="${clinic?.representative_name}"`);
 if (clinic?.name !== EXPECT_NAME) {
   console.error(`✗ ABORT(AC-1): clinics.name="${clinic?.name}" != 확정값 "${EXPECT_NAME}"`); process.exit(1);
+}
+if (clinic?.representative_name !== EXPECT_REP) {
+  console.error(`✗ ABORT(AC-2): representative_name="${clinic?.representative_name}" != "${EXPECT_REP}"`); process.exit(1);
 }
 if (clinic?.nhis_code !== EXPECT_NHIS) {
   console.error(`✗ ABORT(AC-3): nhis_code="${clinic?.nhis_code}" != ${EXPECT_NHIS}`); process.exit(1);
 }
-// AC-5 스코프 가드: songdo 무영향 재확인
-const { data: songdo } = await sb.from('clinics').select('slug, name').eq('slug', 'songdo-foot').maybeSingle();
-console.log(`songdo(slug=songdo-foot) name="${songdo?.name}"`);
-if (songdo?.name?.includes('오블리브의원 서울 오리진')) {
-  console.error('✗ ABORT(AC-5): songdo 서류에 오리진 신원값 오염 감지'); process.exit(1);
+// AC-5 스코프 가드: songdo 무영향 재확인 (기관명·대표자 오염 0)
+const { data: songdo } = await sb.from('clinics').select('slug, name, representative_name').eq('slug', 'songdo-foot').maybeSingle();
+console.log(`songdo(slug=songdo-foot) name="${songdo?.name}" rep=${JSON.stringify(songdo?.representative_name)}`);
+if (songdo?.name?.includes('오블리브의원 서울오리진') || songdo?.representative_name) {
+  console.error('✗ ABORT(AC-5): songdo 에 오리진 신원값/대표자 오염 감지'); process.exit(1);
 }
 
 const NHIS = clinic.nhis_code;
@@ -58,6 +67,7 @@ const SAMPLE = {
   issue_date: '2026년 07월 14일', year: '2026', month: '07', day: '14',
   clinic_name: clinic.name, clinic_address: '서울특별시 종로구 ○○로 00', clinic_phone: '02-123-4567',
   clinic_nhis_code: NHIS, clinic_code: NHIS,
+  representative_name: clinic.representative_name ?? '',
   doctor_name: '문지은', doctor_license_no: '제12345호',
   referral_to_hospital: '○○대학교병원', referral_content: '경과 관찰 요망',
   diagnosis: 'M20.1 무지외반증', diagnosis_ko: '무지외반증',
@@ -78,11 +88,11 @@ for (const formKey of FORM_KEYS) {
   if (!raw.includes('{{clinic_name}}')) continue; // 기관명 슬롯 없는 양식 skip
   const html = bindHtmlTemplate(raw, SAMPLE);
   const hasNew = html.includes(EXPECT_NAME);
-  const hasStale = html.includes(STALE_NAME);
+  const hasStale = STALE_NAMES.some((s) => html.includes(s));
   const nhisOk = html.includes(NHIS);
   const leftover = html.includes('{{clinic_name}}');
   const ok = hasNew && !hasStale && !leftover;
-  console.log(`  ${ok ? '✓' : '❌'} ${formKey}: 신규명=${hasNew} stale점=${hasStale} 미치환=${leftover} nhis=${nhisOk}`);
+  console.log(`  ${ok ? '✓' : '❌'} ${formKey}: 옵션B명=${hasNew} stale=${hasStale} 미치환=${leftover} nhis=${nhisOk}`);
   if (!ok) fail++;
   rendered++;
   const page = await browser.newPage();
@@ -93,5 +103,5 @@ for (const formKey of FORM_KEYS) {
 await browser.close();
 
 console.log(`\n렌더 ${rendered}종 · 실패 ${fail}건 · 증빙=${OUT}`);
-console.log(fail === 0 ? '✅ WARN-A 게이트 PASS — 기관명 strip 전 서류 렌더 확정' : '❌ WARN-A 게이트 FAIL');
+console.log(fail === 0 ? '✅ WARN-A 게이트 PASS — 기관명 옵션B 전 서류 렌더 확정' : '❌ WARN-A 게이트 FAIL');
 process.exit(fail === 0 ? 0 : 1);
