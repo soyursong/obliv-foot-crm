@@ -28,17 +28,28 @@ import path from 'path';
 const DETAIL_POPUP = fs.readFileSync(path.resolve('src/components/ReservationDetailPopup.tsx'), 'utf-8');
 const NEW_CHECKIN_DIALOG = fs.readFileSync(path.resolve('src/components/NewCheckInDialog.tsx'), 'utf-8');
 const DASHBOARD = fs.readFileSync(path.resolve('src/pages/Dashboard.tsx'), 'utf-8');
-const SELF_CHECKIN = fs.readFileSync(path.resolve('src/pages/SelfCheckIn.tsx'), 'utf-8');
+// NOTE(T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET FIX): obliv native SelfCheckIn.tsx 사본은
+//   T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE(a869edeb) AC2 로 완전 제거됨.
+//   jongno-foot 셀프접수 canonical 은 foot-checkin(soyursong/foot-checkin, foot-checkin.pages.dev)
+//   단일 레포로 이관 → 본 레포에는 파일이 없다. 셀프접수 canonical 분기 단언은 그 레포 spec 소관.
+//   과거 AC-3-3 이 삭제된 경로를 readFileSync 하며 ENOENT → 회귀 스펙 실행 실패 원인이었으므로 제거.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AC-1: 예약상세 팝업 doCheckIn — 재진 → treatment_waiting 분기 복원
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC-1: 예약상세 팝업 체크인전환 재진 슬롯', () => {
-  test('AC-1-1: doCheckIn INSERT status 가 canonical 분기(returning ? treatment_waiting : consult_waiting)', () => {
+  test('AC-1-1: doCheckIn INSERT status 가 canonical 분기(returning → treatment_waiting, else → consult_waiting)', () => {
+    // NOTE(T-20260714 FIX): 소스가 T-20260613-foot-FIELDBATCH item2 로 3분기 canonical 진화 —
+    //   returning → treatment_waiting / new → receiving / else → consult_waiting, 변수도 effVisitType.
+    //   회귀 가드 핵심(재진 → 치료대기, 무조건 consult_waiting 하드코딩 금지)은 유지, 단언만 현행화.
     expect(
       DETAIL_POPUP,
-      'ReservationDetailPopup.doCheckIn 의 status 가 canonical 분기여야 함',
-    ).toContain("status: reservation.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting'");
+      'ReservationDetailPopup.doCheckIn: 재진(returning) → treatment_waiting 분기여야 함',
+    ).toMatch(/status:\s*effVisitType === 'returning'\s*\?\s*'treatment_waiting'/);
+    expect(
+      DETAIL_POPUP,
+      'canonical 분기의 최종 else 가 consult_waiting 이어야 함',
+    ).toContain(": 'consult_waiting'");
   });
 
   test('AC-1-2: 전(全) visit_type 하드코딩(status: \'consult_waiting\')이 제거됨', () => {
@@ -54,23 +65,21 @@ test.describe('AC-1: 예약상세 팝업 체크인전환 재진 슬롯', () => {
 // AC-3: 다른 체크인 경로 canonical 분기 일관 (회귀 가드)
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('AC-3: 체크인 경로별 canonical 분기 일관', () => {
+  // NOTE(T-20260714 FIX): 세 경로 모두 T-20260613-foot-FIELDBATCH item2 로 3분기 canonical 진화
+  //   (returning → treatment_waiting / new → receiving / else → consult_waiting). 재진 가드는 불변.
   test('AC-3-1: NewCheckInDialog([+체크인]) — returning → treatment_waiting', () => {
-    expect(NEW_CHECKIN_DIALOG).toContain(
-      "status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting'",
-    );
+    expect(NEW_CHECKIN_DIALOG).toMatch(/visitType === 'returning'\s*\?\s*'treatment_waiting'/);
+    expect(NEW_CHECKIN_DIALOG).toContain(": 'consult_waiting'");
   });
 
   test('AC-3-2: Dashboard.handleReservationCheckIn — returning → treatment_waiting', () => {
-    expect(DASHBOARD).toContain(
-      "res.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting'",
-    );
+    expect(DASHBOARD).toMatch(/res\.visit_type === 'returning'\s*\?\s*'treatment_waiting'/);
+    expect(DASHBOARD).toContain(": 'consult_waiting'");
   });
 
-  test('AC-3-3: SelfCheckIn(셀프접수) — returning → treatment_waiting', () => {
-    expect(SELF_CHECKIN).toContain("? 'treatment_waiting'");
-    // returning 분기가 treatment_waiting 인지 구조 확인
-    expect(SELF_CHECKIN).toMatch(/visitType === 'returning'\s*\n?\s*\?\s*'treatment_waiting'/);
-  });
+  // AC-3-3 셀프접수(SelfCheckIn) canonical 분기 단언은 foot-checkin 레포로 이관됨(위 NOTE 참조).
+  //   본 레포에 native SelfCheckIn 사본이 없어 skip 처리 — 회귀 가드는 canonical 레포 spec 이 담당.
+  test.skip('AC-3-3: SelfCheckIn(셀프접수) — returning → treatment_waiting [MIGRATED→foot-checkin]', () => {});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -92,7 +101,9 @@ test.describe('AC-4: 체크인전환 진입점·배선', () => {
   });
 });
 
-test('AC-2: 초진/워크인 분기 유지 — doCheckIn else 경로가 consult_waiting', () => {
-  // canonical 분기의 else(초진/예약없이방문) 가 consult_waiting 임을 단언 (AC-2 회귀 없음).
-  expect(DETAIL_POPUP).toContain("? 'treatment_waiting' : 'consult_waiting'");
+test('AC-2: 초진/워크인 분기 유지 — doCheckIn 최종 else 경로가 consult_waiting', () => {
+  // canonical 3분기의 최종 else(예약없이방문/워크인) 가 consult_waiting 임을 단언 (AC-2 회귀 없음).
+  //   NOTE(T-20260714 FIX): 초진(new)은 T-20260613 FIELDBATCH 로 receiving 분기로 분리됨.
+  expect(DETAIL_POPUP).toMatch(/effVisitType === 'returning'\s*\?\s*'treatment_waiting'/);
+  expect(DETAIL_POPUP).toContain(": 'consult_waiting'");
 });

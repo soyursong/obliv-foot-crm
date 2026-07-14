@@ -32,7 +32,10 @@ function readSrc(rel: string): string {
 const chartSrc = readSrc('pages/CustomerChartPage.tsx');
 const panelSrc = readSrc('components/insurance/NhisLookupPanel.tsx');
 const hookSrc = readSrc('hooks/useNhisLookup.ts');
-const selfCheckInSrc = readSrc('pages/SelfCheckIn.tsx');
+// NOTE(T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET FIX): obliv native SelfCheckIn.tsx 사본은
+//   T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE(a869edeb) AC2 로 완전 제거되어 canonical 이
+//   foot-checkin(soyursong/foot-checkin) 단일 레포로 이관됨. 본 레포에 파일이 없어 readSrc 시
+//   ENOENT → 회귀 스펙 실행 실패. 셀프접수 hira_consent scaffold 단언은 canonical 레포 소관.
 
 // ──────────────────────────────────────────────────────────────────────
 // 시나리오 1 (일부): API 미연동 현행 — 1구역 자격조회 시도 시 미연동 안내(에러 메시지)
@@ -87,10 +90,9 @@ test.describe('시나리오2: 셀프접수 동의 = 자동조회 트리거', () 
     expect(chartSrc).toMatch(/\[customer\?\.id, customer\?\.hira_consent, nhisPerformLookup\]/);
   });
 
-  test('셀프접수(SelfCheckIn) 동의 저장부에 자동조회 scaffold 마커', () => {
-    expect(selfCheckInSrc).toContain('T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE');
-    expect(selfCheckInSrc).toContain('hira_consent');
-  });
+  // 셀프접수(SelfCheckIn) 동의 저장부 scaffold 단언은 foot-checkin 레포로 이관됨(위 NOTE 참조).
+  //   본 레포에 native SelfCheckIn 사본이 없어 skip — 회귀 가드는 canonical 레포 spec 이 담당.
+  test.skip('셀프접수(SelfCheckIn) 동의 저장부에 자동조회 scaffold 마커 [MIGRATED→foot-checkin]', () => {});
 
   test('동의 게이트 우회 옵션(bypassConsentGate) — 토글 직후 stale prop 대응', () => {
     expect(hookSrc).toContain('bypassConsentGate');
@@ -145,16 +147,13 @@ test.describe('C/시나리오4. 2구역 전체 섹션 제거', () => {
     expect(chartSrc).toMatch(/nhis\.error\.message/);
   });
 
-  test('회귀: NhisLookupPanel 자체는 잔존하고 기존 사용처(CheckInDetailSheet)는 내부 훅+버튼 그대로', () => {
+  test('회귀: NhisLookupPanel 컴포넌트 무결성 유지 (1번차트 사용처는 T-20260629 로 제거됨)', () => {
+    // NOTE(T-20260714 FIX): CheckInDetailSheet(1번차트) 의 NhisLookupPanel row 는
+    //   T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE 로 의도적으로 제거됨(자격조회 트리거 1구역 일원화).
+    //   따라서 "CheckInDetailSheet 에 패널이 잔존" 단언은 폐기 — 대신 미렌더(import 삭제)를 회귀 가드로 반전.
     const checkInSrc = readSrc('components/CheckInDetailSheet.tsx');
-    // CheckInDetailSheet 는 여전히 NhisLookupPanel 을 내부 훅 모드(트리거 버튼 포함)로 사용
-    const usages = checkInSrc.match(/<NhisLookupPanel[\s\S]*?\/>/g) ?? [];
-    expect(usages.length).toBeGreaterThan(0);
-    for (const u of usages) {
-      expect(u).not.toContain('hideTrigger');
-      expect(u).not.toContain('controller=');
-    }
-    // 패널은 내부 훅 모드에서 트리거 버튼 + 결과뷰(자격등급/본인부담률)를 유지
+    expect(checkInSrc.match(/<NhisLookupPanel[\s\S]*?\/>/g) ?? []).toHaveLength(0);
+    // 패널 컴포넌트 자체는 재사용 대비 잔존 + 내부 훅 모드(트리거 버튼 + 결과뷰) 무결성 유지
     expect(panelSrc).toMatch(/\{!hideTrigger && \(/);
     expect(panelSrc).toContain('자격등급');
     expect(panelSrc).toContain('본인부담률');
