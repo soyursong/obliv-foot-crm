@@ -1,7 +1,8 @@
 /**
  * T-20260715-foot-MASKPII-TABLE-TRIGGER-DURABLE — 무영속 dry-run (Migration Dry-Run No-Persistence Protocol)
  *   · up.sql 의 top-level BEGIN;/COMMIT; strip → 본 러너가 BEGIN…ROLLBACK 로 감싸 무영속 보장.
- *   · in-tx: 트리거 present 확인 + 8개 행위테스트(가드 fire / 회귀 무 / grandfathered short-circuit / 정정 통과).
+ *   · in-tx: 트리거 present 확인 + 8 행위테스트(가드 fire / 회귀 무 / grandfathered short-circuit / 정정 통과)
+ *     + sentinel '미확인'·NULL/dummy-phone false-reject 無(DA 판정항1, §3.1 대표게이트 면제 실증).
  *   · post-tx introspection: prod 에 트리거 미영속 확증(has_trigger=false = 아직 supervisor 미apply).
  * 실제 prod apply 는 supervisor DDL-diff 게이트 소관 + DA CONSULT-REPLY GO 선행. author: dev-foot / 2026-07-15.
  */
@@ -20,6 +21,7 @@ const up = readFileSync('supabase/migrations/20260715130000_customers_maskreject
 const uniq = (Date.now() % 100000000).toString().padStart(8,'0');
 const PH_CLEAN = `+8210${uniq}`;
 const PH_FIX   = `+8210${(Number(uniq)+1).toString().padStart(8,'0').slice(-8)}`;
+const PH_SENT  = `+8210${(Number(uniq)+2).toString().padStart(8,'0').slice(-8)}`;
 
 const tests = `
 CREATE TEMP TABLE _dr(t text, result text) ON COMMIT DROP;
@@ -76,6 +78,25 @@ BEGIN
           INSERT INTO _dr VALUES('H_change_to_masked','NO_REJECT❌');
     EXCEPTION WHEN others THEN INSERT INTO _dr VALUES('H_change_to_masked','rejected '||SQLSTATE); END;
   ELSE INSERT INTO _dr VALUES('H_change_to_masked','skip(flagged 행 0)'); END IF;
+
+  -- I: INSERT sentinel 성함 '미확인' + raw phone → 통과(sentinel false-reject 無, DA 판정항1)
+  --    '미확인' 은 마스킹 아님(* 무·phone 유효) → 트리거 미차단 확증(정당 미확인고객 등록 회귀 방지).
+  BEGIN INSERT INTO public.customers(clinic_id,name,phone) VALUES(v_cid,'미확인','${PH_SENT}') RETURNING id INTO v_new;
+        INSERT INTO _dr VALUES('I_insert_sentinel_name','passed (sentinel 미확인 false-reject 無)');
+  EXCEPTION WHEN others THEN INSERT INTO _dr VALUES('I_insert_sentinel_name','FALSE_REJECT❌ '||SQLSTATE); END;
+
+  -- I2: helper NULL/sentinel/dummy-phone NULL-safety in-tx (DA 판정항1: NULL·sentinel·미수집 false-reject 無)
+  --     phone 은 NOT NULL 이라 리터럴 NULL INSERT 불가 → predicate NULL-safety 를 직접 검증(트리거 masked 판정의
+  --     유일 근거). 셋 중 하나라도 flagged 면 false-reject 회귀.
+  BEGIN
+    IF public._fn_is_masked_pii('미확인', NULL)
+       OR public._fn_is_masked_pii('미확인', '+821012345678')
+       OR public._fn_is_masked_pii('전화없음', '+821000000000') THEN
+      INSERT INTO _dr VALUES('I2_null_sentinel_helper','FALSE_REJECT❌ (NULL/sentinel/dummy flagged)');
+    ELSE
+      INSERT INTO _dr VALUES('I2_null_sentinel_helper','passed (NULL/sentinel/dummy false-reject 無)');
+    END IF;
+  EXCEPTION WHEN others THEN INSERT INTO _dr VALUES('I2_null_sentinel_helper','UNEXPECTED '||SQLSTATE); END;
 END $D$;
 
 -- in-tx 트리거 present 확인
@@ -110,8 +131,10 @@ async function main(){
     /passed/.test(map.F_grandfathered_unchanged||'') &&
     /passed/.test(map.G_grandfathered_correction||'') &&
     /rejected 22023/.test(map.H_change_to_masked||'') &&
+    /passed/.test(map.I_insert_sentinel_name||'') &&
+    /passed/.test(map.I2_null_sentinel_helper||'') &&
     has === false;
-  console.log(`\n판정: ${pass?'✅ PASS — 트리거 폐쇄 정상 + 회귀0(short-circuit) + 무영속':'❌ REVIEW 필요'}`);
+  console.log(`\n판정: ${pass?'✅ PASS — 트리거 폐쇄 정상 + 회귀0(short-circuit) + sentinel/NULL false-reject 無 + 무영속':'❌ REVIEW 필요'}`);
   process.exit(pass?0:1);
 }
 main().catch(e=>{console.error(e);process.exit(1);});
