@@ -270,16 +270,16 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     }
   }
 
-  // 초진 방문경로 → customers 동기 (visit_route / lead_source / referral_name)
-  if (input.customerId && input.visit_type === 'new' && input.visit_route) {
-    const customerUpdate: Record<string, string | null> = {
-      visit_route: input.visit_route,
-      lead_source: input.visit_route,
-    };
-    if (input.visit_route === '지인소개') {
-      customerUpdate.referral_name = input.referral_name?.trim() || null;
-    }
-    await supabase.from('customers').update(customerUpdate).eq('id', input.customerId);
+  // T-20260714-foot-RESVROUTE-VISITCHANNEL-ALWAYSYNC (AC-1/AC-B/G1/G2/G4): 예약경로 → 2번차트 방문경로(customers.visit_route) 동기.
+  //   ▸ AC-1: visit_type==='new' 게이트 제거 → 초/재진 구분 없이 연동(재진 미갱신 원인 해소).
+  //   ▸ AC-B/G4(초진 근본원인 실측): 초진도 customerId는 호출측(handleCreateReservationFromPopup / 신규 CREATE 경로)에서
+  //       customers insert 후 resolve 완료된 값이라 이 시점 non-null → 게이트 제거만으로 초진도 정상 seed(null-타이밍 가설 반증).
+  //   ▸ G1(단일컬럼 scoping, MANDATORY): customers.update payload = visit_route 단일 컬럼만.
+  //       WRITEPATH-MASK-SOURCE-FORENSIC / ROW1-MASTER-DEFECT 포렌식 진행 중 → lead_source/referral_name 등 타 컬럼 미접촉(넓은 spread 금지).
+  //   ▸ G2(empty-preserve): input.visit_route 가 ''/null 이면 미갱신(기존 방문경로 보존). truthy 체크로 빈값 제외.
+  //   ▸ G3(매출 회귀가드): source_system 무접촉 — 오가닉/광고 split 무영향.
+  if (input.customerId && input.visit_route) {
+    await supabase.from('customers').update({ visit_route: input.visit_route }).eq('id', input.customerId);
   }
 
   // ② 패키지연결 + 치료사 preferred 포함 페이로드

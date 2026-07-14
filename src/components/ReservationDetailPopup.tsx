@@ -1203,8 +1203,20 @@ export function ReservationDetailPopup({
         ...registrarFields,
       })
       .eq('id', reservation.id);
+    if (error) { setRouteSaving(false); toast.error(`저장 실패: ${error.message}`); return; }
+    // T-20260714-foot-RESVROUTE-VISITCHANNEL-ALWAYSYNC (AC-2/G1/G2): 예약상세 [저장] 시 예약경로 → 2번차트 방문경로(customers.visit_route) 동기.
+    //   기존엔 reservations.visit_route 만 갱신 → customers.visit_route 미연동(예약상세 write-path 누락)이 현장 '전부 미연동' RC.
+    //   ▸ G1(단일컬럼 scoping, MANDATORY): customers.update payload = visit_route 단일 컬럼만(WRITEPATH-MASK 포렌식, 타 컬럼 미접촉).
+    //   ▸ G2(empty-preserve): 예약경로 빈값('')이면 customers 미갱신(기존 방문경로 보존). last-write-wins 는 비어있지 않은 값에만.
+    //   ▸ G3(매출 회귀가드): source_system 무접촉.
+    if (reservation.customer_id && visitRoute !== '') {
+      const { error: custErr } = await supabase
+        .from('customers')
+        .update({ visit_route: visitRoute })
+        .eq('id', reservation.customer_id);
+      if (custErr) { setRouteSaving(false); toast.error(`방문경로 연동 실패: ${custErr.message}`); return; }
+    }
     setRouteSaving(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     toast.success('예약 정보 저장됨');
     onChanged();
   };
