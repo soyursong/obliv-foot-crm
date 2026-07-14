@@ -248,6 +248,10 @@ export interface FootBillingResult {
 export function computeFootBilling(
   items: FootBillingItem[],
   insuranceGrade: InsuranceGrade | null,
+  // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (REOPEN/RC): 등급 미상(copayRate=null) 급여 방문의
+  //   본인부담 폴백 정책을 호출 컨텍스트별로 분리. 기본값 'covered_full' = 기존 DOCPRINT-RECUR 그대로
+  //   (서류출력 경로 회귀 0). 수납잔액(payments grain)만 'general_default' 를 지정한다(§아래 주석).
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default' },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
   const amountOf = (i: FootBillingItem) => i.unitPrice * i.qty;
@@ -267,17 +271,35 @@ export function computeFootBilling(
     ? getBaseCopayRate(insuranceGrade)
     : null;
   // 100원 절상 — copayCalc.ts / PMW 와 동일 규칙.
+  const round100 = (base: number, rate: number) =>
+    Math.min(Math.ceil((base * rate) / 100) * 100, base);
   //
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙, slack ts 1783974675.205029):
-  //   건보 조회 실패 / insurance_grade=null / coverage_rate(=copayRate) null 방문의 서류 렌더 →
-  //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0 (빈칸/공란 절대 금지).
-  //   과거 동작(copayRate null → copaymentTotal=0 → 본인0/공단=급여전액)을 의도적으로 역전한다.
-  //   유효 등급(copayRate≠null)은 기존 100원 절상 산식 그대로 — 회귀 0.
-  //   ⚠ 표시 산출값(copayment allocation)만 폴백. DB insurance_grade/service_charges 무접촉·write 0(AC-4).
+  //   건보 조회 실패 / insurance_grade=null / coverage_rate(=copayRate) null 방문의 **서류 렌더** →
+  //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0 (빈칸/공란 절대 금지). = 'covered_full'(기본).
+  //
+  // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (REOPEN RC):
+  //   위 '본인=전액' 폴백을 **수납잔액**(payments grain)에 그대로 재사용하면, 등급 미상 급여 방문에서
+  //   공단(NHIS) 몫까지 환자 수납액에 포함되어 3배가량 과다청구된다(현장 P0, 자부담 8,900 기대 vs 공단포함
+  //   표시). 라이브 고객 89%(301/338)가 insurance_grade=null 이므로 사실상 모든 급여 방문이 영향. 수납 경로는
+  //   'general_default' 로 외래 급여 기본률 general(30%, getBaseCopayRate)을 적용해 본인부담을 산정한다.
+  //   (grade='general'/유효등급은 copayRate≠null 로 기존 100원 절상 그대로 — 회귀 0. 유효등급과 미상등급이
+  //    동일 general 30% 로 수렴 → 신규출력/현장 기대값 일치.) ⚠ 표시·payments 산출값만 폴백 분기.
+  //    DB insurance_grade/service_charges 무접촉(AC-4). 서류출력 copaymentTotal 은 default('covered_full') 유지.
+  //
+  //   ★ DA CONSULT-REPLY(MSG-20260714-121317-pq2t) §구현제약3 divergence 명시 & ratification 요청:
+  //     DA 는 SSOT §2-2-1 기준 "grade=null general → 전액본인부담(공단=0)" 을 상기했으나, 그것은 **명세
+  //     (service_charges/calc_copayment) grain** 규칙이다. 이 default('covered_full') 로 명세 grain 은 그대로
+  //     보존한다. 그러나 그 규칙을 **수납 grain** 에 적용하면 등급 미상 급여환자에게 전액(=공단 포함) 청구 →
+  //     현장 P0(총괄 요구 자부담 8,900)와 정면 배치. 수납 grain 은 임상 관행상 미검증 환자를 general 30% 로
+  //     기본 청구(등급 확정 후 정정)하는 것이 정합 → 'general_default' 채택. 두 grain 분리 = 본 티켓의 본질.
+  //     (planner FOLLOWUP 로 DA/총괄 ratification 요청함 — 정책 확정 시 이 분기 조정 가능.)
   const copaymentTotal = coveredTotal > 0
     ? (copayRate !== null
-        ? Math.min(Math.ceil((coveredTotal * copayRate) / 100) * 100, coveredTotal)
-        : coveredTotal) // grade/coverage null → 본인 전액(공단=0) 폴백
+        ? round100(coveredTotal, copayRate)
+        : (opts?.unknownGradeCopay === 'general_default'
+            ? round100(coveredTotal, getBaseCopayRate('general')) // 수납: 등급 미상 → 외래 기본 30% 본인부담
+            : coveredTotal))                                       // 서류(기본): 본인 전액(공단=0) 폴백(DOCPRINT-RECUR)
     : 0;
 
   const nonCoveredTotal = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);

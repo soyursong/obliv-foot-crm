@@ -1376,25 +1376,37 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const grandTotal = footBilling.grandTotal;                 // 총 진료비(급여 전액 + 비급여) — 서류 총진료비/합계 표시용
   const totalByTax: Record<TaxClass, number> = footBilling.totalByTax;
   const coveredTotal = footBilling.coveredTotal;             // 급여 진료비 전액(본인 + 공단)
-  const copaymentTotal = footBilling.copaymentTotal;         // 급여 본인부담금 (grade=null → 급여전액, DOCPRINT-RECUR)
   const nonCoveredTotal = footBilling.nonCoveredTotal;       // 비급여 전액(과세 + 면세)
-  // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − copaymentTotal)은 제외.
-  //   예: 급여 30,000(본인10,000+공단20,000)+비급여5,000 → payableTotal = 10,000 + 5,000 = 15,000.
-  const payableTotal = copaymentTotal + nonCoveredTotal;
+  // copaymentTotal(문서 grain) — 서류출력(buildPmwBillDetailItems·service_charges autoValues) 전용.
+  //   grade=null 서류 폴백은 DOCPRINT-RECUR(본인=급여전액/공단=0, 총괄확정) 그대로 — 회귀 0.
+  const copaymentTotal = footBilling.copaymentTotal;
+  // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (REOPEN RC): 수납 grain 본인부담 산정 ──────
+  //   [현장 FAIL RC] computeFootBilling 의 DOCPRINT-RECUR 폴백(grade=null → 본인=급여전액)을 수납잔액에
+  //   그대로 쓰면 공단(NHIS) 몫까지 환자에게 청구되는 과다수납(현장 P0). 라이브 고객 89%가 grade=null 이라
+  //   사실상 전 급여 방문이 '공단 포함' 으로 표시됐다(E2E 는 grade=general 시나리오만 → PASS, 현장은 실
+  //   급여환자(grade=null) 경로 → FAIL, divergence 원인). 수납 경로는 등급 미상 시 외래 급여 기본률
+  //   general(30%)로 본인부담을 산정('general_default') → grade=general/null 모두 자부담 8,900 로 수렴.
+  const payBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, {
+    unknownGradeCopay: 'general_default',
+  });
+  const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
+  // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
+  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → payableTotal = 8,900 + 0 = 8,900.
+  const payableTotal = payCopaymentTotal + nonCoveredTotal;
   // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2, 공단부담액 정보성 라인) ─────
   //   공단부담액(명세) = 급여 진료비 − 본인부담금. 배포 SSOT computeFootBilling 의 liveBillingValues
   //   (insuranceCovered = max(0, coveredTotal − copaymentTotal))를 그대로 소비한다(병렬 계산 경로 신설 금지,
   //   DA CONSULT-REPLY MSG-20260714-121317-pq2t §구현제약1). 저장처 = 기존 canonical 컬럼
   //   service_charges.insurance_covered_amount(InsuranceCopaymentPanel.persistCharges 기록, 신규 DDL 없음).
   //   수납잔액(payments grain)에는 포함하지 않는 명세 grain 값 — 정보성 표시 전용.
-  //   엣지(grade=null): footBilling 이 DOCPRINT-RECUR 규칙으로 본인=급여전액/공단=0 을 산출 → 소비값 그대로
-  //   (0/price 날조 없음). general 외 등급의 hira NULL BLOCK 은 calc_copayment v1.3(has_nullblock=T)이
-  //   service_charges 기록 단계에서 data_incomplete 로 차단 — PMW 라이브 표시는 footBilling 소비값 유지.
-  const insuranceCoveredTotal = footBilling.liveBillingValues.insuranceCovered;
-  // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate 조회. 금액 산출은 위 SSOT가 담당(중복 계산 아님).
+  //   T-20260714 REOPEN: 수납 표시 박스 내 정합을 위해 payBilling(수납 grain, 등급 미상→30%) 소비.
+  //   → 자부담 8,900 / 공단부담액 20,480 이 서로 정합(과거 footBilling 소비 시 grade=null 이면 공단=0 으로
+  //   표시돼 '자부담 8,900 인데 공단 0' 모순 발생). 값>0 일 때만 노출. DB 무접촉(표시 전용).
+  const insuranceCoveredTotal = payBilling.liveBillingValues.insuranceCovered;
+  // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
     ? getBaseCopayRate(customerInsuranceGrade)
-    : null;
+    : (coveredTotal > 0 ? getBaseCopayRate('general') : null); // 등급 미상 급여 방문 → 30% 라벨(수납 산정과 일치)
 
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: 진료비세부산정내역(bill_detail) 행 빌드 SSOT.
   //   RC(재발): PMW(PATH-4) 단독발행 경로가 기존에 service.is_insurance_covered 만으로 급여/비급여를
@@ -2463,14 +2475,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         <span className="tabular-nums font-medium">{formatAmount(amt)}</span>
                       </div>
                     ))}
-                    {/* T-20260526-foot-COPAY-MINI-BUG AC-2: 급여 자부담금 */}
-                    {copaymentTotal > 0 && (
+                    {/* T-20260526-foot-COPAY-MINI-BUG AC-2: 급여 자부담금
+                        T-20260714 REOPEN: 수납 grain(payCopaymentTotal, 등급 미상→30%) 표시 →
+                        하단 수납잔액과 동일 본인부담 값으로 정합(공단 몫 미포함). */}
+                    {payCopaymentTotal > 0 && (
                       <div className="flex justify-between text-xs text-blue-700">
                         <span>
                           급여 자부담
                           {copayRate !== null && ` (${Math.round(copayRate * 100)}%)`}
                         </span>
-                        <span className="tabular-nums font-semibold">{formatAmount(copaymentTotal)}</span>
+                        <span className="tabular-nums font-semibold">{formatAmount(payCopaymentTotal)}</span>
                       </div>
                     )}
                     {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2): 공단부담액(명세) 정보성 라인.
