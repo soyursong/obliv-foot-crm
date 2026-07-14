@@ -18,7 +18,7 @@ import { calcCopayment, type CopayCalcResult } from '../../src/lib/copayCalc';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 const COPAY_CALC = path.join(ROOT, 'src/lib/copayCalc.ts');
-const RPC_MIG = path.join(ROOT, 'supabase/migrations/20260714120000_calc_copayment_hira_governed_elderly_tiers.sql');
+const RPC_MIG = path.join(ROOT, 'supabase/migrations/20260714120500_calc_copayment_hira_governed_elderly_tiers.sql');
 const SEED_MIG = path.join(ROOT, 'supabase/migrations/20260714110000_clinics_hira_unit_value_2026_governed.sql');
 
 // unit_value=1 로 두면 base = hira_score → 구간 경계 정확 검증
@@ -57,20 +57,21 @@ test.describe('T-20260713 HIRA-UNIT-VALUE-2026 — 이슈2: 65세 4구간 정률
   test('경계: 15,000 이하 = 정액 1,500', () => {
     expect(calcElderly(15000).copayment_amount).toBe(1500);
   });
-  test('경계: 15,001 = 10% 구간 진입', () => {
-    expect(calcElderly(15001).copayment_amount).toBe(Math.ceil((15001 * 0.10) / 100) * 100); // 1600
+  // [ROUNDING-CONFIRM T-20260714] 정률구간 원단위 = 100원 미만 절사(FLOOR). 종전 CEIL 폐기.
+  test('경계: 15,001 = 10% 구간 진입 (100원 절사)', () => {
+    expect(calcElderly(15001).copayment_amount).toBe(Math.floor((15001 * 0.10) / 100) * 100); // 1500
   });
   test('경계: 20,000 = 10% (2,000)', () => {
     expect(calcElderly(20000).copayment_amount).toBe(2000);
   });
-  test('경계: 20,001 = 20% 구간 진입', () => {
-    expect(calcElderly(20001).copayment_amount).toBe(Math.ceil((20001 * 0.20) / 100) * 100); // 4100
+  test('경계: 20,001 = 20% 구간 진입 (100원 절사)', () => {
+    expect(calcElderly(20001).copayment_amount).toBe(Math.floor((20001 * 0.20) / 100) * 100); // 4000
   });
   test('경계: 25,000 = 20% (5,000)', () => {
     expect(calcElderly(25000).copayment_amount).toBe(5000);
   });
-  test('경계: 25,001 = 30% 구간 진입', () => {
-    expect(calcElderly(25001).copayment_amount).toBe(Math.ceil((25001 * 0.30) / 100) * 100); // 7600
+  test('경계: 25,001 = 30% 구간 진입 (100원 절사)', () => {
+    expect(calcElderly(25001).copayment_amount).toBe(Math.floor((25001 * 0.30) / 100) * 100); // 7500
   });
 
   test('override 있으면 4구간 미적용 (실손 자기부담률 우선)', () => {

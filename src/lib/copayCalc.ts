@@ -101,6 +101,7 @@ function blockedResult(grade: InsuranceGrade): CopayCalcResult {
  *  5. 의료급여 1종 → MIN(1,000, 수가)
  *  6. 65세(elderly_flat) 정률제 4구간 [이슈2, §2-2-3]:
  *       ≤15,000=정액 1,500 / ~20,000=10% / ~25,000=20% / >25,000=30%
+ *       정률구간 원단위 = 100원 미만 절사(FLOOR) [ROUNDING-CONFIRM, 시행령 별표2 §19①]
  *  7. 그 외 → CEIL(base × rate / 100) × 100 (100원 절상)
  */
 export function calcCopayment(
@@ -161,14 +162,19 @@ export function calcCopayment(
     copay = Math.min(1000, base);
   } else if (grade === 'elderly_flat' && !hasOverride) {
     // [이슈2] 노인 외래 정률제 4구간 (의원급, §2-2-3). override 있으면 정률경로(else)로 흡수.
+    // [ROUNDING-CONFIRM] 정률구간 원단위 = 100원 미만 절사(버림, FLOOR). 규정 근거:
+    //   국민건강보험법 시행령 별표2 제19조 제1항 "100원 미만은 제외한다"
+    //   + 심평원 외래 본인부담기준표 "100원미만 절사" (전 구분 동일).
+    //   종전 CEIL(100원 올림)로 정률구간 초과징수 관찰 → FLOOR 정정.
+    //   (T-20260714-foot-HIRA-ELDERLY-ROUNDING-CONFIRM)
     if (base <= 15000) {
-      copay = Math.min(1500, base);          // 정액 1,500
+      copay = Math.min(1500, base);          // 정액 1,500 (절사 무영향)
     } else if (base <= 20000) {
-      copay = Math.ceil((base * 0.10) / 100) * 100;  // 10%
+      copay = Math.floor((base * 0.10) / 100) * 100;  // 10% · 100원 미만 절사
     } else if (base <= 25000) {
-      copay = Math.ceil((base * 0.20) / 100) * 100;  // 20%
+      copay = Math.floor((base * 0.20) / 100) * 100;  // 20% · 100원 미만 절사
     } else {
-      copay = Math.ceil((base * 0.30) / 100) * 100;  // 30%
+      copay = Math.floor((base * 0.30) / 100) * 100;  // 30% · 100원 미만 절사
     }
     if (copay > base) copay = base;
   } else {
