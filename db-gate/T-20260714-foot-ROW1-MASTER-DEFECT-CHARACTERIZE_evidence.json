@@ -1,0 +1,165 @@
+{
+  "ticket": "T-20260714-foot-ROW1-MASTER-DEFECT-CHARACTERIZE",
+  "READ_ONLY": true,
+  "mutation_executed": 0,
+  "persistence": "NONE (SELECT-only)",
+  "targets": {
+    "ROW1": "0356b229",
+    "RAW": "c51dd5e0",
+    "clinic": "74967aea"
+  },
+  "row1_meta": {
+    "id8": "0356b229",
+    "name_len": 3,
+    "name_masked": false,
+    "ptail": "9089",
+    "pdigits": 4,
+    "phone_star": false,
+    "has_rrn": true,
+    "has_resident_id": false,
+    "has_birth": false,
+    "lead_source": null,
+    "visit_route": null,
+    "visit_type": "returning",
+    "is_simulation": false,
+    "phone_dummy": false,
+    "is_foreign": false,
+    "chart_number": "F-4616",
+    "created_by8": null,
+    "unified8": null,
+    "has_referrer": false,
+    "has_referrer_name": false,
+    "created_kst": "2026-07-11 13:09:47.187893",
+    "updated_kst": "2026-07-11 16:14:07.130882"
+  },
+  "raw_meta": {
+    "id8": "c51dd5e0",
+    "name_len": 3,
+    "name_masked": false,
+    "ptail": "9089",
+    "pdigits": 12,
+    "phone_star": false,
+    "has_rrn": false,
+    "has_resident_id": false,
+    "has_birth": false,
+    "lead_source": "지인소개",
+    "visit_route": "지인소개",
+    "visit_type": "new",
+    "is_simulation": false,
+    "phone_dummy": false,
+    "is_foreign": false,
+    "chart_number": "F-4599",
+    "created_by8": null,
+    "unified8": null,
+    "has_referrer": false,
+    "has_referrer_name": false,
+    "created_kst": "2026-07-10 17:26:45.192936",
+    "updated_kst": "2026-07-10 17:27:18.649982"
+  },
+  "identity_match": {
+    "same_name_full": true,
+    "same_name_stem": true,
+    "same_name_len": true,
+    "same_ptail": true,
+    "same_birth_date": null,
+    "same_rrn": null,
+    "same_created_by": null,
+    "linked_via_unified": null
+  },
+  "fk_count": 32,
+  "fk_child_tables": 31,
+  "child_distribution": [
+    {
+      "fk": "notification_logs.customer_id",
+      "ROW1": 0,
+      "RAW": 3,
+      "on_delete": "SET NULL"
+    },
+    {
+      "fk": "check_ins.customer_id",
+      "ROW1": 1,
+      "RAW": 0,
+      "on_delete": "NO ACTION"
+    },
+    {
+      "fk": "customer_consult_memos.customer_id",
+      "ROW1": 1,
+      "RAW": 0,
+      "on_delete": "CASCADE"
+    },
+    {
+      "fk": "health_q_results.customer_id",
+      "ROW1": 1,
+      "RAW": 0,
+      "on_delete": "CASCADE"
+    },
+    {
+      "fk": "health_q_tokens.customer_id",
+      "ROW1": 1,
+      "RAW": 0,
+      "on_delete": "CASCADE"
+    },
+    {
+      "fk": "reservations.customer_id",
+      "ROW1": 0,
+      "RAW": 1,
+      "on_delete": "NO ACTION"
+    }
+  ],
+  "row1_children_total": 4,
+  "raw_children_total": 4,
+  "row1_checkins": [
+    {
+      "ci8": "4e760772",
+      "resv_null": true,
+      "resv_cust8": null,
+      "points_to_raw": null
+    }
+  ],
+  "raw_checkins": {
+    "n": 0,
+    "with_resv": 0
+  },
+  "raw_reservations": 1,
+  "row1_reservations": 0,
+  "medical_charts": [],
+  "tail4_universe": {
+    "total": 2,
+    "nonmasked": 2,
+    "with_rrn": 1
+  },
+  "stem_tail_other_rows": 0,
+  "evidence": {
+    "same_name_full": true,
+    "same_name_stem": true,
+    "same_ptail": true,
+    "same_birth_date": null,
+    "same_rrn": null,
+    "row1_children": 4,
+    "raw_children": 4,
+    "row1_has_rrn": true,
+    "raw_has_rrn": false,
+    "row1_selfcheckin_sig": true,
+    "row1_ci_points_to_raw": false,
+    "row1_created_kst": "2026-07-11 13:09:47.187893",
+    "raw_created_kst": "2026-07-10 17:26:45.192936",
+    "tail4_collision_universe": 2,
+    "same_visit_episode": true,
+    "raw_resv_no_show": true,
+    "relink_conflict_risk": 0,
+    "row1_masked_phone": true,
+    "raw_real_phone": true
+  },
+  "verdict": "A-duplicate",
+  "confidence": "high",
+  "reasoning": "name 완전일치 + tail4 일치 + ROW1 self-checkin 서명(resv_null) + 같은 방문 episode(RAW 예약일=ROW1 체크인일, RAW 예약 no_show=자기-예약 미매칭 지문) → ROW1 = RAW 의 self-checkin 중복행(A). 정정 = relink+archive. ★keep=RAW(실 phone 보유·마스킹 복원), ROW1→RAW RRN 이관(RAW RRN 부재) + 4자식 relink 후 archive-first 제거. 파괴적·실환자·RRN(PHI) 이동 → 대표 게이트.",
+  "sop_recommendation": "HYBRID: Cross-CRM Orphan-Row Archive-First Cleanup + FK Integrity Guard SOP(중복 master 파괴적 relink+archive-first) + Data-Correction Backfill SOP 규율(ROW1→RAW RRN mutable 이관). ⚠부모 마스킹 마이그 기계(옵션D) 재사용 금지(DA). keep=RAW.",
+  "mutation_plan_hint": [
+    "1) ROW1→RAW RRN 이관(rrn_enc/rrn_vault_id/rrn_encryption_version — RAW RRN 부재). ADDITIVE.",
+    "2) ROW1 4자식(check_ins·customer_consult_memos·health_q_results·health_q_tokens) FK relink→RAW. 충돌 UNIQUE 0건 확인.",
+    "3) (business) RAW 예약 no_show→실제 방문 반영 여부 = 현장/planner 판단(추정 금지).",
+    "4) archive-first: ROW1 _backup 스냅샷 → 자식 0건 재검증(잔존 시 abort) → ROW1 제거. chart F-4616 공번.",
+    "5) 임상(medical_charts)·결제(payments/packages) 자식 0 → 저blast. 단 실환자·RRN(PHI)·파괴적 → 대표 게이트."
+  ],
+  "gates_forward": "DA CONSULT + supervisor DB-GATE + 대표 게이트(파괴적·실환자·RRN 이동). db_change 재판정 + MIG-GATE 4필드. per-row 사람 confirm(동일인 최종). fail-closed 유지."
+}
