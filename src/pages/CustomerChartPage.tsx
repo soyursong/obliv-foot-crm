@@ -4879,6 +4879,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
     setSavingEditResv(true);
+    // T-20260714-foot-RESCHED-HIST-MISSING: 수정 전 원본(날짜/시간) 캡처 — 감사 로그(변경이력) 기록용.
+    //   기존 버그: 고객차트 예약수정 저장 경로만 reservation_logs insert 가 누락되어 날짜/시간 변경이
+    //   '예약 변경 이력'에 남지 않았다(다른 경로 — 예약관리 드래그·상세팝업 — 는 정상 기록).
+    const prevResv = reservations.find((r) => r.id === editResvId) ?? null;
     const updatePayload: Record<string, unknown> = {
       reservation_date: editResvForm.date,
       reservation_time: editResvForm.startTime,
@@ -4889,8 +4893,30 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       updatePayload.preferred_therapist_id = editResvForm.therapistId || null;
     }
     const { error } = await supabase.from('reservations').update(updatePayload).eq('id', editResvId);
+    if (error) { setSavingEditResv(false); toast.error(`수정 실패: ${error.message}`); return; }
+
+    // T-20260714-foot-RESCHED-HIST-MISSING: 예약 변경 이력 기록(reservation_logs).
+    //   canonical 패턴 재사용(Reservations.tsx save() / Dashboard executeSlotDrag / ReservationDetailPopup).
+    //   날짜 또는 시간이 바뀌면 'reschedule', 그 외(메모/치료사만)면 'update'. useReservationAuditLog 는
+    //   create/reschedule 만 노출하므로 날짜·시간 변경만 변경이력에 나타난다(AC-1/2 정합).
+    //   insert 실패는 non-fatal(예약 수정 자체는 이미 성공) — 기존 canonical 경로와 동일하게 에러 미차단.
+    if (prevResv) {
+      const oldDate = prevResv.reservation_date;
+      const oldTime = (prevResv.reservation_time ?? '').slice(0, 5);
+      const newDate = editResvForm.date;
+      const newTime = editResvForm.startTime.slice(0, 5);
+      const isReschedule = oldDate !== newDate || oldTime !== newTime;
+      await supabase.from('reservation_logs').insert({
+        reservation_id: editResvId,
+        clinic_id: prevResv.clinic_id ?? customer?.clinic_id,
+        action: isReschedule ? 'reschedule' : 'update',
+        old_data: { date: oldDate, time: oldTime },
+        new_data: { date: newDate, time: newTime },
+        changed_by: profile?.id ?? null,
+      });
+    }
+
     setSavingEditResv(false);
-    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
     // T-20260524-foot-DESIG-BIDIRECT AC-2: 재진 예약 치료사 수기 변경 시 → designated_therapist_id 역동기화 (REST UPDATE)
     // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
     if (
