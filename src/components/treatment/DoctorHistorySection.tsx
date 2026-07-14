@@ -15,8 +15,16 @@
 //   ※ 착수 결정(note): db_change=false / ② grain=실제 진료(진료콜 등재 status_flag purple|pink) / ① 신청모델=form_submissions
 //     staff_consult 재사용(KOHEXAM check_in_services 모델 미공유·신규모델 0).
 //
+// Ticket: T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN (김주연 총괄) — 상태 풀림 보존
+//   요구. 진료 환자 이력에서 상태변경을 풀면(status_flag null) 리스트에서 완전 소멸 → 한번 올라왔던 환자를
+//     하단 [진료완료] 섹션으로 이동해 보존. db_change=false(FE 리스트 쿼리/그룹핑 레이어).
+//   착수 결정(discovery): 상태전이='풀림'=상태 플래그 메뉴 활성 flag 재클릭→null(StatusContextMenu L116).
+//     '한번 올라왔던'=status_flag_history 에 purple|pink 이력(진료콜 등재 이력) 有. AC5=HANDSTATE '되돌리기'와
+//     다른 write 경로·다른 surface → 충돌 0(본 fix 는 write 경로 불간섭, read 레이어만). 리셋=당일(checked_in_at bound).
+//
 // 리스트 기준: 선택 날짜 기준 원장 진료콜 명단에 등재된 이력이 있는 환자(내원).
 //   진료콜 등재 = check_ins.status_flag IN ('purple'=진료필요, 'pink'=진료완료). (doctor-call-notify SSOT)
+//   + 상태 풀림 보존(위 티켓): status_flag=null 이나 status_flag_history 에 purple|pink 이력이 있는 행도 재확보(하단 보존).
 //
 // 신청/발행 O/X — read-only 재사용, 신규 스키마 0 (discovery-first, db_change=false):
 //   · 처방전 발행  = check_ins.prescription_status='confirmed' AND doctor_confirm_prescription=true (그 내원 행).
@@ -149,7 +157,35 @@ export function derivePinkCompletionAt(
   return latest;
 }
 
-// active(진료 필요/진행) vs done(진료완료) 분리 — 완료 = status_flag 'pink'.
+// ─── T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN — 상태 풀림(revert/unset) 보존 파생 ──────────
+//   배경: 진료 환자 이력 목록은 status_flag IN ('purple','pink') 만 fetch → 상태 플래그 메뉴에서 활성 flag
+//     재클릭 시 status_flag=null 로 '풀림'(StatusContextMenu L116)되면 필터에서 탈락, 명단에서 완전 소멸.
+//     한번 진료콜에 올라왔던 환자를 당일 추적 불가(현장 피드백, 김주연 총괄).
+//   교정(db_change=false, FE 리스트 레이어): '풀림'=status_flag null 을 별도 q2 로 재확보하되,
+//     status_flag_history 에 purple|pink 이력이 있는('한번 올라왔던') 행만 보존해 하단 [진료완료] 섹션으로 이동.
+//   상태전이 특정: '풀림' = 상태 플래그 메뉴 활성 flag 재클릭 → status_flag null (applyStatusFlagTransition null).
+//     ⚠ T-20260614 HANDSTATE-COLORCYCLE '되돌리기'(진료알림판 ✋ 손상태 색 사이클 = doctor_ack_at 토글,
+//        status_flag 불간섭)와는 다른 surface·다른 write 경로 → 코드경로 충돌 없음(AC5). 본 fix 는 write 경로를
+//        일절 만지지 않고 리스트 read/쿼리/그룹핑 레이어만 변경하므로 어떤 revert 경로든 이력 기반으로 보존.
+
+// '한번 올라왔던' 판정 — status_flag_history 에 purple|pink 엔트리가 하나라도 있으면 진료콜 등재 이력 O.
+//   (풀림으로 현재 flag 가 null 이어도 이력이 흔적. append 실패 caveat 있으나 최초 flag set 시 이미 append됨.)
+export function historyHadDoctorCall(
+  history: Array<{ flag: StatusFlag | null }> | null | undefined,
+): boolean {
+  if (!history || history.length === 0) return false;
+  return history.some((h) => h.flag === 'purple' || h.flag === 'pink');
+}
+
+// 하단 [진료완료] 섹션 편입 사유 — pink='completed'(진료완료) / 그 외(null 등)='released'(상태해제 보존).
+//   라벨 정합(§확인필요-3): 라벨 그대로의 '진료완료'(pink)와 '상태해제 후 보존'(released)을 배지로 구분.
+export type RetainReason = 'completed' | 'released';
+export function retainReason(flag: StatusFlag | null): RetainReason {
+  return flag === 'pink' ? 'completed' : 'released';
+}
+
+// active(진료 진행중=purple) vs done(하단 보존=진료완료 pink + 상태해제 그 외) 분리.
+//   AC-1(본건): 상태 풀림(null) 행은 소멸하지 않고 done 으로 편입. AC-3: 다시 purple 로 활성화하면 active 복귀.
 //   done 섹션 정렬 = 완료시각(pink 전이) desc, 부재 시 checked_in_at desc 폴백(+행 note).
 export interface CompletionSplit {
   active: DoctorHistoryRow[];
@@ -159,16 +195,20 @@ export function splitByCompletion(rows: DoctorHistoryRow[]): CompletionSplit {
   const active: DoctorHistoryRow[] = [];
   const done: DoctorHistoryRow[] = [];
   for (const r of rows) {
-    if (r.statusFlag === 'pink') done.push(r);
-    else active.push(r);
+    // 진료 진행중(purple)만 상단 활성. 진료완료(pink)·상태해제(null 등)는 하단 보존.
+    if (r.statusFlag === 'purple') active.push(r);
+    else done.push(r);
   }
   done.sort((a, b) => {
     const ka = a.completedAt ?? a.checkedInAt ?? '';
     const kb = b.completedAt ?? b.checkedInAt ?? '';
-    return kb.localeCompare(ka); // 완료 시각 역순
+    return kb.localeCompare(ka); // 완료/해제 시각 역순
   });
   return { active, done };
 }
+
+const DOCTOR_HISTORY_SELECT =
+  'id, customer_id, customer_name, visit_type, status_flag, status_flag_history, status, checked_in_at, prescription_status, doctor_confirm_prescription, treating_doctor_id';
 
 function useDoctorHistory(clinicId: string | null | undefined, date: string) {
   return useQuery<DoctorHistoryRow[]>({
@@ -178,12 +218,10 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
       if (!clinicId) return [];
       const { start, end } = dayBounds(date);
 
-      // 진료콜 등재 내원(status_flag purple|pink). 처방 발행 판정 컬럼 동반 read.
+      // q1 — 진료콜 등재 내원(status_flag purple|pink). 처방 발행 판정 컬럼 동반 read. (쿼리 불변, 회귀 0)
       const { data: ciData, error: ciErr } = await supabase
         .from('check_ins')
-        .select(
-          'id, customer_id, customer_name, visit_type, status_flag, status_flag_history, status, checked_in_at, prescription_status, doctor_confirm_prescription, treating_doctor_id',
-        )
+        .select(DOCTOR_HISTORY_SELECT)
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', start)
         .lte('checked_in_at', end)
@@ -194,7 +232,39 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
         if (/status_flag|prescription_status|42703/.test(ciErr.message ?? '')) return [];
         throw ciErr;
       }
-      const ciRows = (ciData ?? []) as Array<Record<string, unknown>>;
+
+      // q2 — T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN: 상태 풀림(status_flag=null) 보존 재확보.
+      //   당일 범위·비취소 동일, status_flag IS NULL 만. 클라이언트에서 '한번 올라왔던'(history purple|pink) 행만 유지.
+      //   실패 시 [] 로 degrade — 활성/완료(q1) 표시는 무파손(기존 대비 악화 0).
+      let revRows: Array<Record<string, unknown>> = [];
+      try {
+        const { data: revData } = await supabase
+          .from('check_ins')
+          .select(DOCTOR_HISTORY_SELECT)
+          .eq('clinic_id', clinicId)
+          .gte('checked_in_at', start)
+          .lte('checked_in_at', end)
+          .neq('status', 'cancelled')
+          .is('status_flag', null)
+          .order('checked_in_at', { ascending: true });
+        revRows = ((revData ?? []) as Array<Record<string, unknown>>).filter((c) =>
+          historyHadDoctorCall(
+            (c['status_flag_history'] as Array<{ flag: StatusFlag | null }> | null) ?? null,
+          ),
+        );
+      } catch {
+        // 상태해제 보존행 조회 실패 — q1(활성/완료)만으로 진행(섹션 무파손).
+      }
+
+      // q1(purple/pink) + q2(null 상태해제) 병합 — status_flag 로 상호배타이나 id Set 으로 중복 방어.
+      const seen = new Set<string>();
+      const ciRows: Array<Record<string, unknown>> = [];
+      for (const c of [...((ciData ?? []) as Array<Record<string, unknown>>), ...revRows]) {
+        const id = String(c['id'] ?? '');
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ciRows.push(c);
+      }
       if (ciRows.length === 0) return [];
 
       // 소견·진단서 발행본(form_submissions published, doc_kind='opinion_doc') — 해당 날짜·고객 집합.
@@ -266,7 +336,8 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
           opinionIssued: cid ? publishedSet.has(cid) : false,
           treatingDoctorId: (c['treating_doctor_id'] as string | null) ?? null,
           statusFlag,
-          completedAt: statusFlag === 'pink' ? derivePinkCompletionAt(history) : null,
+          // 완료/해제 시각 정렬키 — pink 전이 이력이 1순위(완료 후 풀린 행도 완료시각 유지). purple(active)는 미사용.
+          completedAt: derivePinkCompletionAt(history),
         } as DoctorHistoryRow;
       });
     },
@@ -330,17 +401,21 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
   const custIds = rows.map((r) => r.customerId).filter(Boolean) as string[];
   const { data: metaMap } = useCustomerMeta(clinic?.id, custIds);
 
+  // 집계 기준 = 진료콜 명단(purple/pink)만. T-20260714-COMPLETED-LIST-RETAIN 로 보존 편입된 상태해제(null) 행은
+  //   '금일 담당/신청/발행' 카운트에서 제외 → 기존 요약 수치 회귀 0(보존은 리스트 표시 전용).
+  const callRows = rows.filter((r) => r.statusFlag === 'purple' || r.statusFlag === 'pink');
+
   // 요구2 — 진료의별 금일 담당 환자수 요약. 옵션(clinic_doctors) 이름맵으로 treating_doctor_id 해석.
   const { data: doctorOptions = [] } = useTreatingDoctorOptions(clinic?.id, date);
   const doctorNameById = new Map(doctorOptions.map((o) => [o.id, o.name]));
-  const doctorSummary = computeDoctorCountSummary(rows, doctorNameById);
+  const doctorSummary = computeDoctorCountSummary(callRows, doctorNameById);
 
-  // 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수 요약(코디팀 한눈 확인). read-only, rows 파생 재사용.
-  //   ★ 집계(진료의별 담당수·소견 신청/발행)는 완료 포함 당일 전체(rows) 기준 유지 — 회귀 0.
-  const docStatus = computeDocStatusSummary(rows);
+  // 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수 요약(코디팀 한눈 확인). read-only, callRows 파생 재사용.
+  //   ★ 집계(진료의별 담당수·소견 신청/발행)는 완료 포함 진료콜 명단(callRows) 기준 유지 — 회귀 0.
+  const docStatus = computeDocStatusSummary(callRows);
 
-  // T-20260714-foot-TREATTABLE-DONE-SECTION-RETAIN — 진료완료(pink) 분리.
-  //   active(진료필요/진행) = 상단 활성목록 / done(진료완료 pink) = 하단 read-only 섹션(완료시각 desc).
+  // T-20260714-foot-TREATTABLE-DONE-SECTION-RETAIN + COMPLETED-LIST-RETAIN — 상단/하단 분리.
+  //   active(진료 진행중 purple) = 상단 활성목록 / done(진료완료 pink + 상태해제 null) = 하단 read-only 보존 섹션.
   const { active, done } = splitByCompletion(rows);
 
   return (
@@ -382,8 +457,8 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
         </div>
       )}
 
-      {/* 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수(코디팀 '오늘 신청 N건·발행 M건' 한눈). 명단 있을 때만 노출. */}
-      {!isLoading && !isError && rows.length > 0 && (
+      {/* 요구①(집계보강) — 소견·진단서 금일 신청/발행 건수(코디팀 '오늘 신청 N건·발행 M건' 한눈). 진료콜 명단 있을 때만 노출. */}
+      {!isLoading && !isError && callRows.length > 0 && (
         <div
           className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-[12px]"
           data-testid="dh-doc-status-summary"
@@ -572,12 +647,15 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
                     // 완료시각: pink 전이(completedAt) 1순위 / 부재 시 접수시각(checked_in_at) 폴백 + note.
                     const hasCompletedAt = !!r.completedAt;
                     const shownTime = r.completedAt ?? r.checkedInAt;
+                    // T-20260714-COMPLETED-LIST-RETAIN: 편입 사유 — completed(pink 진료완료) / released(상태해제 보존).
+                    const reason = retainReason(r.statusFlag);
                     return (
                       <tr
                         key={r.checkInId}
                         className="border-b last:border-0"
                         data-testid="doctor-history-done-row"
                         data-completed-at={r.completedAt ?? ''}
+                        data-retain-reason={reason}
                       >
                         <td className="px-2.5 py-1.5 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
                         <td className="px-2.5 py-1.5 text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
@@ -600,6 +678,16 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
                               {chartNoBadge(meta?.chart ?? null)}
                             </span>
                           </button>
+                          {/* 라벨 정합(§확인필요-3): 진료완료(pink)와 상태해제(풀림) 보존을 구분. released 만 명시 배지. */}
+                          {reason === 'released' && (
+                            <span
+                              className="ml-1.5 inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                              data-testid="dh-done-released-badge"
+                              title="상태변경을 풀어(해제) 활성 명단에서 내려온 환자입니다. 이력 보존용으로 표시됩니다."
+                            >
+                              상태해제
+                            </span>
+                          )}
                         </td>
                         <td className="px-2.5 py-1.5">
                           <Badge className="bg-slate-100 text-slate-700 text-[11px] px-1.5 py-0">
@@ -632,7 +720,7 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
       <p className="text-[11px] text-muted-foreground/70">
         ※ 소견·진단서는 <b>신청</b>(코디팀 요청)과 <b>발행</b>(원장 발행)을 각각 O/X로 표시합니다.
         발행 문서 내용 보기(뷰어)는 표시 방식 확정 후 제공됩니다.
-        <br />※ <b>진료완료</b> 환자는 상단 목록에서 하단 <b>[진료완료]</b> 섹션(당일 열람 전용)으로 이동합니다.
+        <br />※ <b>진료완료</b> 환자, 그리고 상태변경을 <b>푼(상태해제)</b> 환자는 상단 목록에서 하단 <b>[진료완료]</b> 섹션(당일 열람 전용)으로 이동해 보존됩니다. 상태해제 건은 <b>상태해제</b> 배지로 구분되며, 상태를 다시 지정하면 상단 활성 명단으로 복귀합니다.
       </p>
     </div>
   );

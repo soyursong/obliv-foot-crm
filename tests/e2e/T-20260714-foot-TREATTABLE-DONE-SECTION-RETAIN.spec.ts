@@ -74,14 +74,18 @@ test.describe('AC-1 — splitByCompletion: 진료완료(pink)만 하단, 나머�
     expect(done.map((r) => r.checkInId)).toEqual(['b']);
   });
 
-  test('pink 이외 플래그(null/purple)는 모두 active — 완료로 오분류 없음', () => {
+  // ⚠ 계약 변경(T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN): 상태 풀림(status_flag null) 보존 도입으로
+  //   splitByCompletion 규칙이 'pink만 done' → 'purple만 active / 그 외(pink·null) done' 으로 승격.
+  //   null(상태해제) 행은 이제 하단 [진료완료] 보존 섹션으로 간다(완전소멸 X). 아래 단언을 신 계약에 맞춰 갱신.
+  test('purple 만 active — pink(완료)·null(상태해제)은 done', () => {
     const rows = [
       row({ checkInId: 'a', statusFlag: null }),
       row({ checkInId: 'b', statusFlag: 'purple' }),
+      row({ checkInId: 'c', statusFlag: 'pink', completedAt: '2026-07-14T10:00:00+09:00' }),
     ];
     const { active, done } = splitByCompletion(rows);
-    expect(active).toHaveLength(2);
-    expect(done).toHaveLength(0);
+    expect(active.map((r) => r.checkInId)).toEqual(['b']);
+    expect(done.map((r) => r.checkInId).sort()).toEqual(['a', 'c']);
   });
 
   test('완전소멸 X — 분리 후 total 보존(active + done = 입력)', () => {
@@ -147,8 +151,10 @@ test.describe('AC-0 §3 — derivePinkCompletionAt: pink 전이 시각 파생', 
 
 // ─── B. 정적 소스 가드 ────────────────────────────────────────────────────────
 
-test.describe('AC-3 — 목록 쿼리 불변(회귀 0)', () => {
-  test("useDoctorHistory 쿼리는 여전히 status_flag IN ('purple','pink') fetch(범위 확장/축소 없음)", () => {
+test.describe('AC-3 — 진료콜 명단 쿼리(q1) 불변(회귀 0)', () => {
+  // NOTE(T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN): 상태 풀림 보존을 위해 q2(status_flag IS NULL) 쿼리가
+  //   추가됐다. 단 q1(진료콜 명단 = purple/pink)은 그대로 유지 — 활성/완료 표시·당일 바운드·비취소 필터 회귀 0.
+  test("useDoctorHistory q1 은 여전히 status_flag IN ('purple','pink') fetch(축소 없음)", () => {
     const src = SECTION_SRC();
     expect(src).toContain(".in('status_flag', ['purple', 'pink'])");
     expect(src).toContain(".neq('status', 'cancelled')");
