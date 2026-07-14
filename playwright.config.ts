@@ -113,6 +113,9 @@ export default defineConfig({
         '**/insurance-calc.spec.ts',
         // T-20260602-multi-CALLBACK-EF-4-NEW: 도파민 콜백 outbox 정적 검증 (마이그레이션/EF/롤백 파일 단언, browser 불필요)
         '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
+        // T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT: 풋→도파민 lifecycle emit(step2) — reschedule CHECK+트리거,
+        //   FOOT_CALLBACK_SECRET 폴백, 단일 타깃(cancel-callback fan-out 금지), payload 계약키 정적 단언. browser 불요.
+        '**/T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT.spec.ts',
         // T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT: 자동완성 cross-patient 누설 분류 불변식 (page 미사용 순수 로직)
         '**/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts',
         // T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS: 임상경과 `//` 드롭다운 caret 좌표/wrap 폭 정합 (정본 로직 + page.setContent 실DOM, auth 불요)
