@@ -1,0 +1,32 @@
+{
+  "ticket": "T-20260714-foot-MIG-VERSION-COLLISION-COPAYMENT-LEDGER-RECONCILE",
+  "gate": "C2 content-parity",
+  "body_byte_identical": true,
+  "body_len": {
+    "mig": 3477,
+    "prod": 3477
+  },
+  "has_894_string": true,
+  "occ_894": [
+    {
+      "line": 52,
+      "in_comment_only": true,
+      "text": "-- ── [이슈1] 점당단가 governed: NULL → data_incomplete BLOCK (89.4 fallback 제거, §2-2-1b) ──"
+    }
+  ],
+  "rebuttal_894_fallback_absent": true,
+  "no_coalesce_894_logic": true,
+  "invariants": {
+    "hira_unit_value_null_block": true,
+    "elderly_4tier": true,
+    "elderly_flat_1500": true,
+    "comment_v13": true
+  },
+  "fn_comment": "건보 본인부담 산출 v1.3 — [이슈1]점당단가 governed(hira_unit_value NULL→data_incomplete BLOCK, 89.4 fallback 제거) + [이슈2]노인 외래 정률제 4구간(≤15k=1500/≤20k=10%/≤25k=20%/>25k=30%). NULLFIX v1.2 default-deny 흡수(subsume). (T-20260713-foot-HIRA-UNIT-VALUE-2026-UPDATE, SSOT §2-2-0/1/3)",
+  "ledger_120500_present": false,
+  "ledger_120000_squatter": {
+    "version": "20260714120000",
+    "name": "selfcheckin_upsert_masked_pii_reject_guard"
+  },
+  "PASS": true
+}
