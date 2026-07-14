@@ -87,4 +87,27 @@ ELSIF phone_canon → 워크인 복합키 매칭/INSERT
 ## 5. 기존 오염행 정정
 - b1b5f6f7(masked dup) + e8a11dc3(masked ci) 등 신규 오염행 정정·재앵커는 **BACKFILL(T-20260713…CONTAM-BACKFILL) / 별건 소관.** 단 BACKFILL 대상셋이 **07-14 신규 유입분(b1b5f6f7 등) 포함하도록 freeze 재산출 필요**(소스 미차단 기간 연장 → 대상 확대).
 
+---
+
+## 6. [Phase 1c 추가] 증상1 근본원인 (a)WRITE-path / (b)RLS-fallback 이중가설 분기 확정
+> 트리거: planner INFO `MSG-20260714-094316-98kf` (3차 relay `…-u4g8` dedup fold, 신규 티켓 아님 — 본 티켓 Phase-1 진단각도 1개 추가). 스크립트: `scripts/…_phase1c.mjs`. READ-ONLY, mutation 0.
+
+**증상1(대시보드/통합시간표 성함·연락처 마스킹 표시)의 근본원인 두 갈래:**
+- **(a) WRITE-path 오염**: 저장값 자체가 `총**트`/phone 4자리 등 마스킹값 (기존 §1~§3 가설)
+- **(b) RLS fallback**: 저장값은 raw인데 **staff 세션 RLS가 anon-origin customer row를 SELECT 못 해** 대시보드가 fallback 마스킹 표시
+
+### 판정 결과 → **(a) 확정 · (b) 반증(REFUTED)**
+
+| 판정 | 근거(READ-ONLY 실측) | 함의 |
+|---|---|---|
+| **판정1 (결정적)** | masked row `b1b5f6f7` 를 **service_role(=RLS 우회) 로 직접 읽음** → `name`에 `*` **3개** 물리 포함(len5) + `phone` **4자리(7754)** 만 저장. | RLS를 우회해도 저장값이 마스킹 → **물리 저장값 자체가 마스킹값 = (a)**. (b)라면 service_role 읽기는 raw여야 함 → (b) 반증. |
+| **대조** | 동일인 raw row `e8ed0df6`: `name` `*` 0개(len5) + `phone` **12자리**. | raw는 물리적으로 raw 저장. 마스킹은 **row별 물리 오염**이지 read-time 산출물 아님. |
+| **판정2b (구조적 (b) 반증)** | `customers` SELECT 정책 3종(staff/approved/admin) 모두 `is_*() AND clinic_id = current_user_clinic_id()` — **origin/created-by 필터 부재**. anon-origin row를 staff에게서 숨기는 정책 자체가 없음. | (b)가 주장하는 기전("staff RLS가 anon-origin row SELECT 불가")이 **구조적으로 존재하지 않음**. masked/raw 두 row 모두 동일 clinic_id → staff에 동등 노출. |
+| **판정3** | `check_ins` denorm(`customer_name`/`phone`)도 마스킹(`*` 포함·4자리) — masked customer row에서 정상 denorm된 값. | read-time fallback이 아니라 **오염 저장값의 정상 전파** 확인 → (a) 재확인. |
+
+### fix 방향에 대한 함의 (planner 질의 응답)
+- planner 각주: "(b)면 수정 방향이 RLS 정책(ADDITIVE) 쪽." → **(b) 반증되었으므로 RLS 정책 변경 불필요.**
+- **fix 방향 §4와 동일 유지**: 미가드 anon upsert write-path(`fn_selfcheckin_upsert_customer[_resolve_v2/v3]`)에 마스킹-reject 가드 + resolve-to-existing (= `ANON-WRITEPATH-MASK-GUARD-DEFENSE` P1 승격). RLS 손대지 않음.
+- 게이트 불변: db_change=true·write-path·PII 마스터 → **DA CONSULT 1차게이트 선행**. 본 세션 mutation/deploy-ready **미실행**.
+
 *mutation/deploy-ready 미실행. 본 게이트 = READ-ONLY 포렌식 전용. Phase 2 는 DA CONSULT + FORENSIC REOPEN 판단(planner) 후.*
