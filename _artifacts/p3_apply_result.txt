@@ -1,0 +1,17 @@
+[BEFORE] cmp_today=20 | marker_pp=0(0) marker_pay=0(0) | pkg_bal0=0/11 | heryu total=4880000 paid=380000 bal=4500000
+
+>>> apply.sql 집행...
+    집행 완료.
+
+[AFTER] cmp_today=8 | marker_pp=11(4600000) marker_pay=1(8900) | pkg_bal0=11/11 | heryu total=4880000 paid=4880000 bal=0
+
+=== SELF-TEST ===
+✅ cmp_today 12건 감소 (20→8)
+✅ canonical package_payments 11건 (11)
+✅ canonical package_payments 합계 4,600,000(=10*10k+4.5M) (4600000)
+✅ canonical payments 1건(이미현 8,900) (1/8900)
+✅ net-zero(canonical합=삭제합 4,608,900) (4608900)
+✅ 11개 패키지 balance 0(미수해소) (11/11)
+✅ 허유희 paid=4,880,000 balance 0(이중계상 0) (paid=4880000 bal=0)
+
+=== ALL PASS ===

@@ -1,17 +1,11 @@
--- T-20260714-foot-SAMEDAY-MANUALPAY-REMAP-UNPAID-CLEAN — Phase 3 APPLY (opt-A canonicalize) — RE-FROZEN v2
--- ⚠ 현장(김주연 총괄) confirm 후 실행 승인("반영해주세요" ts 1784020887.022199).
--- ★ v2 재freeze 사유(SOP 준수): apply 직전 재조회에서 freeze-set drift 검출 —
---   (1) 허유희 F-4696: 원행 a226fb72(3,880,000 card) 현장 삭제 + 38a37a50 amount 1,000,000→4,500,000 현장 정정
---       (memo "최초이체 100만원 / 계좌이체 350만원 추가 / 카드 38만원"). 오늘 실수납 = 4,500,000.
---       기결제 380,000(package_payment 734bad9c "영수증 업로드")과 합산 시 4,880,000 = 24회권 총액 → balance 0. 이중계상 0.
---       ∴ reconcile-with-evidence: 허유희 canonical = 4,500,000 단일행(구 apply의 3.88M+1M=4.88M 은 380k 이중계상 → 폐기).
---   (2) 17:51 이후 신규 수기행 8건(허유진/김성애/노수옥/이멋진/이재성/황찬식 + 데스크 8,900 2건)은 confirm 범위 밖 → 본 apply 미포함(별도 후속).
--- 대상셋(재freeze) = 12건. 로직 = manualPaymentWritePath.recordManualPayment 재현.
--- net-zero: canonical 생성 후 원 closing_manual_payments 12건 DELETE. 매출 이중계상 없음(SUM canonical = SUM deleted = 4,608,900).
--- 멱등 가드: 동일 memo 마커 기존행 있으면 재INSERT 안 함(WHERE NOT EXISTS). canonical 마커 사전존재 0건 확인(apply 미실행 상태).
+-- T-20260714-foot-SAMEDAY-MANUALPAY-REMAP-UNPAID-CLEAN — Phase 3 APPLY (opt-A canonicalize)
+-- ⚠ 현장(김주연 총괄) confirm 후에만 실행. freeze set = snapshot §4 (13건).
+-- 로직 = manualPaymentWritePath.recordManualPayment 재현(package: package_payments INSERT + paid_amount 재집계 / single: payments INSERT).
+-- net-zero: canonical 생성 후 원 closing_manual_payments 행 DELETE(Part1 opt-A와 동일). 매출 이중계상 없음.
+-- 멱등 가드: 동일 memo 마커 기존행 있으면 재INSERT 안 함(WHERE NOT EXISTS).
 BEGIN;
 
--- ── Group A: 소액체험/무좀체험권 잔금 → package_payments (10건 @ 10,000) ──────────
+-- ── Group A + B: 패키지 잔금 결제 → package_payments (12건) ──────────────────
 INSERT INTO package_payments
   (clinic_id, package_id, customer_id, amount, method, installment, payment_type, fee_kind, memo, created_at)
 SELECT v.clinic_id, v.package_id, v.customer_id, v.amount, v.method, 0, 'payment', 'package', v.memo, v.created_at
@@ -25,19 +19,11 @@ FROM (VALUES
   ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'387c8f6a-f151-426d-ac56-96366188a2f4'::uuid,'7d177461-cd0c-478b-b322-7c8498798ef5'::uuid,10000,'card','일마감 수기결제 정본화(F-4601 정종석, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T15:45:00+09:00'::timestamptz),
   ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'24e02b64-84b0-4e44-82cd-670768340927'::uuid,'d0a9a495-e068-4dba-a96e-b0366ab6c596'::uuid,10000,'card','일마감 수기결제 정본화(F-4546 김종형, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T15:50:00+09:00'::timestamptz),
   ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'692fb8d5-ce16-48c0-a25b-19c885757483'::uuid,'476038ed-5ed1-44c0-8a2b-2cfb2d7011b9'::uuid,10000,'card','일마감 수기결제 정본화(F-4597 윤철희, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T16:32:00+09:00'::timestamptz),
-  ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'1637a08f-5d5a-4eab-bcb8-aea9b84253e1'::uuid,'6b3f8373-3841-49af-b308-1f128d4b00cc'::uuid,10000,'card','일마감 수기결제 정본화(F-4687 신용섭, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T16:34:00+09:00'::timestamptz)
+  ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'1637a08f-5d5a-4eab-bcb8-aea9b84253e1'::uuid,'6b3f8373-3841-49af-b308-1f128d4b00cc'::uuid,10000,'card','일마감 수기결제 정본화(F-4687 신용섭, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T16:34:00+09:00'::timestamptz),
+  ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'876e1a55-0545-4c5f-8591-75609be0bd06'::uuid,'4e051559-a7bf-4eee-9819-d626a26b6220'::uuid,3880000,'card','일마감 수기결제 정본화(F-4696 허유희, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T15:51:00+09:00'::timestamptz),
+  ('74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'876e1a55-0545-4c5f-8591-75609be0bd06'::uuid,'4e051559-a7bf-4eee-9819-d626a26b6220'::uuid,1000000,'transfer','일마감 수기결제 정본화(F-4696 허유희, opt-A/pkg) T-20260714-SAMEDAY-REMAP','2026-07-14T15:52:00+09:00'::timestamptz)
 ) AS v(clinic_id, package_id, customer_id, amount, method, memo, created_at)
 WHERE NOT EXISTS (SELECT 1 FROM package_payments pp WHERE pp.memo = v.memo);
-
--- ── Group B: 허유희 F-4696 24회권 잔금 → package_payments (RECONCILED net 4,500,000) ──
--- 오늘 실수납 4,500,000(이체) + 기결제 380,000(영수증업로드 pp 734bad9c) = 4,880,000 = 총액 → balance 0. 이중계상 0.
-INSERT INTO package_payments
-  (clinic_id, package_id, customer_id, amount, method, installment, payment_type, fee_kind, memo, created_at)
-SELECT '74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid,'876e1a55-0545-4c5f-8591-75609be0bd06'::uuid,'4e051559-a7bf-4eee-9819-d626a26b6220'::uuid,
-       4500000,'transfer',0,'payment','package',
-       '일마감 수기결제 정본화(F-4696 허유희 24회권 잔금, opt-A/pkg, net 4,500,000=총액4,880,000-기결제380,000영수증업로드; 원장 최초이체100만+계좌이체350만) T-20260714-SAMEDAY-REMAP',
-       '2026-07-14T15:52:00+09:00'::timestamptz
-WHERE NOT EXISTS (SELECT 1 FROM package_payments pp WHERE pp.memo LIKE '일마감 수기결제 정본화(F-4696 허유희 24회권 잔금, opt-A/pkg, net 4,500,000%');
 
 -- 패키지 paid_amount 재집계(미수 파생값 정합) — 영향 11개 패키지
 UPDATE packages p SET paid_amount = COALESCE((
@@ -52,21 +38,21 @@ WHERE p.id IN (
   '876e1a55-0545-4c5f-8591-75609be0bd06');
 
 -- ── Group C: 이미현 F-4695 진찰료 8,900 → single (payments, check_in_id NULL) ──
--- confirm: single(단독수납) default 적용 (현장 재확인 비차단 residual).
+-- ⚠ 현장 confirm 'single' 시에만. 'checkin'(12211472 귀속+칸반해소) 택 시 이 블록 대체.
 INSERT INTO payments
   (clinic_id, check_in_id, customer_id, amount, method, installment, payment_type, memo, created_at)
 SELECT '74967aea-a60b-4da3-a0e7-9c997a930bc8'::uuid, NULL, 'a07a3079-69ba-415a-a0f8-61e8d0921168'::uuid,
        8900, 'card', 0, 'payment', '일마감 수기결제 정본화(F-4695 이미현 진찰료, opt-A/single) T-20260714-SAMEDAY-REMAP', '2026-07-14T12:06:00+09:00'::timestamptz
 WHERE NOT EXISTS (SELECT 1 FROM payments p WHERE p.memo = '일마감 수기결제 정본화(F-4695 이미현 진찰료, opt-A/single) T-20260714-SAMEDAY-REMAP');
 
--- ── 원 closing_manual_payments 12건 DELETE (canonical로 대체, net-zero) ──────
--- (a226fb72 은 현장 삭제로 이미 부재 → 목록 제외. 신규 8건은 confirm 범위 밖 → 미삭제.)
+-- ── 원 closing_manual_payments 13건 DELETE (canonical로 대체, net-zero) ──────
 DELETE FROM closing_manual_payments WHERE id IN (
-  '804b6d72-cf9f-4827-9545-1aa126f59573','4e73d913-8bf4-4c9b-ae92-f76f3ac28055',
-  'b674132c-b68f-4920-9b25-977527e39eb9','a503218f-0d0a-4393-a771-a6ddf8a02173',
-  'dfd30a1a-1b6c-463d-a433-2d03c486c616','f0f16293-d146-4bb1-a430-5547623a88d0',
-  '28e305ff-4e54-404c-b360-21336eb0508e','a41079be-81eb-4874-949d-d6636974dae8',
-  'c3f9b8fd-58fe-4a38-a8c5-68aabf81f489','38a37a50-a9f4-44f3-b233-376345b4d3d7',
-  'bb54e3f4-30f1-4069-8aec-c5fe238a1359','832b75bc-1555-444c-8354-f3c1b5aba4df');
+  '804b6d72-cf9f-4827-9545-1aa126f59573','b674132c-b68f-4920-9b25-977527e39eb9',
+  'a503218f-0d0a-4393-a771-a6ddf8a02173','dfd30a1a-1b6c-463d-a433-2d03c486c616',
+  'f0f16293-d146-4bb1-a430-5547623a88d0','28e305ff-4e54-404c-b360-21336eb0508e',
+  'a41079be-81eb-4874-949d-d6636974dae8','c3f9b8fd-58fe-4a38-a8c5-68aabf81f489',
+  'bb54e3f4-30f1-4069-8aec-c5fe238a1359','832b75bc-1555-444c-8354-f3c1b5aba4df',
+  'a226fb72-683a-4e74-abe5-b869c87eae1f','38a37a50-a9f4-44f3-b233-376345b4d3d7',
+  '4e73d913-8bf4-4c9b-ae92-f76f3ac28055');
 
 COMMIT;
