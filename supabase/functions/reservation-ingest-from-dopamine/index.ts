@@ -49,6 +49,13 @@
  *   (c) created_by = NULL graceful 유지(registrar→created_by 착지 WITHDRAWN, §416 이중계상).
  *   (KEEP) visit_route='TM'(旣존 enum) — source_system='dopamine'과 직교 독립 set.
  *
+ * ── customers.visit_route seed (T-20260714-foot-RESVROUTE-CUSTOMERS-SYNC-FIX) ──
+ *   reservations.visit_route='TM' 착지에 더해 customers.visit_route(2번차트 방문경로)도 연동.
+ *   RC: 초진(new_consult) 다수가 이 TM 인입인데 customers.visit_route 미seed → 2번차트 방문경로 공란
+ *       (prod Phase0 실측 dopamine 59/60 NULL). FE 게이트 제거(ALWAYSYNC)는 TM 초진에 무효(이 EF 경로는 FE 미경유).
+ *   계약: 신규고객 INSERT = visitRouteLanded seed / 기존고객 = preserve-on-NULL fill(non-empty 수동값 미터치, no-clobber).
+ *   G1: visit_route 단일 컬럼만 / G3: source_system 무접촉(매출 split 불변).
+ *
  * ── service_id 태깅 (T-20260627-foot-INGEST-SERVICE-TAG / B-9) ────
  *   reservation.service_code (도파민이 운반한 발톱 product 코드, 예: FC006/FC007 류)
  *   → services.service_code DB 조회(clinic 스코프) → reservations.service_id 착지.
@@ -520,7 +527,7 @@ Deno.serve(async (req) => {
     if (!isCompanion) {
     const { data: existingCustomer, error: custLookupErr } = await admin
       .from('customers')
-      .select('id, name')                     // GUARD: never-downgrade 판정 위해 기존 name 동반 조회
+      .select('id, name, visit_route')        // GUARD: never-downgrade name + RESVROUTE-SYNC preserve-on-NULL 판정 위해 기존 visit_route 동반 조회
       .eq('clinic_id', clinicId)
       .eq('phone', phoneE164)
       .maybeSingle();
@@ -548,11 +555,23 @@ Deno.serve(async (req) => {
       if (existingName !== '' && pushName !== '' && pushName !== existingName) {
         pushNameSnapshot = pushName;
       }
+      // ── T-20260714-foot-RESVROUTE-CUSTOMERS-SYNC-FIX: 예약경로(visit_route='TM') → 2번차트 방문경로(customers.visit_route) 연동 ──
+      //   [RC / 초진 별도원인] 초진(new_consult) 다수가 도파민 TM 인입(본 EF)인데 customers.visit_route 를 seed 하지 않아
+      //     2번차트 방문경로가 공란(prod Phase0 실측: dopamine 59/60 NULL). FE 게이트 제거(ALWAYSYNC)만으론 TM 초진이 안 고쳐짐 —
+      //     TM 초진은 FE createReservationCanonical(line274) 경로를 애초에 타지 않고 이 EF 로 인입되기 때문.
+      //   [계약] preserve-on-NULL(no-clobber): 기존 방문경로가 공란일 때만 visitRouteLanded('TM')로 채운다.
+      //     현장이 수동 정정한 non-empty 방문경로는 절대 미터치(도파민 재push 로 인한 clobber 차단) — INGEST-NAME-OVERWRITE-GUARD 와 동일 철학.
+      //     FE 신규경로(A안 last-write-wins, 사람이 방금 선택)와 채널 시맨틱 분리: 자동 인입은 보수적 fill-only.
+      //   [G1] visit_route 단일 컬럼만 조건부 추가(타 컬럼 미접촉). [G3] source_system 무접촉(매출 split 불변).
+      const existingVisitRoute = ((existingCustomer.visit_route as string | null) ?? '').trim();
+      const shouldFillVisitRoute = existingVisitRoute === '' && !!visitRouteLanded;
       // 최신 정보 반영 + 광고 추적 필드 선택적 반영 (name 은 위 계약에 따라 조건부만 포함)
       await admin
         .from('customers')
         .update({
           ...(shouldFillName ? { name: pushName } : {}),   // GUARD: 공란 채움만, 덮어쓰기 금지
+          // RESVROUTE-CUSTOMERS-SYNC-FIX: 방문경로 preserve-on-NULL fill (기존 공란일 때만, non-empty 미터치)
+          ...(shouldFillVisitRoute ? { visit_route: visitRouteLanded } : {}),
           // birth_year: (C)DROP — 미적재 (T-20260630-foot-DOPAMINE-INGEST-BIRTHYEAR)
           ...(gender ? { gender } : {}),
           // campaign_id/adset_id/ad_id → customers 컬럼 (reservations 아님)
@@ -568,6 +587,10 @@ Deno.serve(async (req) => {
         name,
         phone: phoneE164,
         clinic_id: clinicId,                          // DB 조회로 얻은 clinicId
+        // T-20260714-foot-RESVROUTE-CUSTOMERS-SYNC-FIX (시나리오 0 = 신규 초진 첫 예약): 신규 TM 초진 고객 → 2번차트 방문경로 seed.
+        //   visitRouteLanded(='TM' 등, VISIT_ROUTE_ENUM 검증 완료) 있을 때만 착지 → 미동봉/비enum 시 미삽입(NULL, 회귀 0).
+        //   이 신규-고객 INSERT 경로가 '초진 다 빠짐' 의 실 write-path(첫 예약 = 첫 customers row 생성 시점).
+        ...(visitRouteLanded ? { visit_route: visitRouteLanded } : {}),
         // birth_year: (C)DROP — 미적재 (T-20260630-foot-DOPAMINE-INGEST-BIRTHYEAR)
         ...(gender ? { gender } : {}),
         ...(campaignId ? { campaign_id: campaignId } : {}),
