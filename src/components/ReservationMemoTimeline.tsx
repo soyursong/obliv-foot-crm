@@ -36,6 +36,10 @@ export interface MemoHistoryItem {
   // T-20260522-foot-ALT-BADGE AC-9,10: 고정 기능
   is_pinned: boolean;
   pinned_at: string | null;
+  // T-20260714-dopamine-FOOTRESV-MEMO-SYNC-PIN AC4/AC5: 도파민 유래 메모 provenance.
+  //   reservation-ingest-from-dopamine EF 가 write 시 source_system='dopamine'(비-NULL) 착지.
+  //   사람 저작행 = NULL. 비-NULL = 외부(도파민) 유래 → 예약메모 상단 '고정(📌 핀)' 노출.
+  source_system?: string | null;
 }
 
 interface Props {
@@ -82,16 +86,28 @@ interface Props {
   editable?: boolean;
 }
 
+// T-20260714-dopamine-FOOTRESV-MEMO-SYNC-PIN AC4: 도파민 유래(source_system 비-NULL) 판정.
+//   EF write 시 source_system='dopamine' 착지 / 사람 저작행 = NULL. 빈문자열도 방어적으로 non-origin 취급.
+function isSourcePinned(i: MemoHistoryItem): boolean {
+  return !!i.source_system && i.source_system.trim() !== '';
+}
+
 // T-20260522-foot-ALT-BADGE AC-10: 고정 정렬 — is_pinned 먼저(pinned_at DESC), 나머지 created_at DESC
+// T-20260714-dopamine-FOOTRESV-MEMO-SYNC-PIN AC4: 도파민 유래 메모(source_system)를 최상단 고정.
+//   순서: ① 도파민 유래(created_at DESC) → ② 수동 고정(is_pinned, pinned_at DESC) → ③ 나머지(created_at DESC).
+//   '고정'=상단 정렬만(표시). 원본 편집·삭제 잠금 아님(AC5) — 정렬 계약만 담당.
 function sortMemoItems(items: MemoHistoryItem[]): MemoHistoryItem[] {
-  const pinned = items.filter((i) => i.is_pinned).sort((a, b) => {
+  const sourcePinned = items.filter(isSourcePinned).sort((a, b) =>
+    b.created_at.localeCompare(a.created_at)
+  );
+  const pinned = items.filter((i) => !isSourcePinned(i) && i.is_pinned).sort((a, b) => {
     if (a.pinned_at && b.pinned_at) return b.pinned_at.localeCompare(a.pinned_at);
     return 0;
   });
-  const rest = items.filter((i) => !i.is_pinned).sort((a, b) =>
+  const rest = items.filter((i) => !isSourcePinned(i) && !i.is_pinned).sort((a, b) =>
     b.created_at.localeCompare(a.created_at)
   );
-  return [...pinned, ...rest];
+  return [...sourcePinned, ...pinned, ...rest];
 }
 
 export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle, Props>(function ReservationMemoTimeline({
@@ -145,7 +161,7 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
     // T-20260522-foot-ALT-BADGE: is_pinned, pinned_at 포함해서 조회
     const query = supabase
       .from('reservation_memo_history')
-      .select('id, reservation_id, customer_id, check_in_id, content, created_by_name, created_at, is_pinned, pinned_at')
+      .select('id, reservation_id, customer_id, check_in_id, content, created_by_name, created_at, is_pinned, pinned_at, source_system')
       .order('created_at', { ascending: false });
 
     // T-20260521-foot-WALKIN-MEMO-GAP: 3순위 fallback — reservation_id → customer_id → check_in_id
@@ -184,7 +200,7 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
     const { data, error } = await supabase
       .from('reservation_memo_history')
       .insert(insertPayload)
-      .select('id, reservation_id, customer_id, content, created_by_name, created_at, is_pinned, pinned_at')
+      .select('id, reservation_id, customer_id, content, created_by_name, created_at, is_pinned, pinned_at, source_system')
       .single();
     setSubmitting(false);
     if (error) {
@@ -283,22 +299,32 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
         <div className="text-xs text-muted-foreground py-1">불러오는 중…</div>
       ) : displayItems.length > 0 ? (
         <div className={listGap}>
-          {displayItems.map((item) => (
+          {displayItems.map((item) => {
+            // T-20260714-dopamine-FOOTRESV-MEMO-SYNC-PIN AC4/AC5: 도파민 유래 메모는 '고정(📌 핀)'.
+            //   sourcePinned = source_system 비-NULL(EF write). 상단 고정(정렬) + 📌 핀 마커만 노출.
+            //   ⛔ AC5: 배지/시각강조(teal 박스) 미적용 — neutral 톤 유지, 핀 아이콘도 muted(강조 아닌 표식).
+            //   수동 고정(is_pinned, ALT-BADGE)의 teal 강조는 기존 기능이므로 sourcePinned 아닐 때만 유지.
+            const sourcePinned = isSourcePinned(item);
+            const manualPinnedOnly = item.is_pinned && !sourcePinned;
+            return (
             <div
               key={item.id}
               className={`rounded border ${itemPad} ${itemFont} ${
-                item.is_pinned
+                manualPinnedOnly
                   ? 'border-teal-300 bg-teal-50'
                   : 'border-border bg-card'
               }`}
-              data-testid={item.is_pinned ? 'memo-pinned' : 'memo-item'}
+              data-testid={sourcePinned ? 'memo-source-pinned' : item.is_pinned ? 'memo-pinned' : 'memo-item'}
             >
               <div className="flex items-start justify-between gap-1">
                 <div className="flex-1 min-w-0">
-                  <span className={`font-medium tabular-nums mr-1 ${item.is_pinned ? 'text-teal-700' : 'text-muted-foreground'}`}>
-                    {item.is_pinned && (
+                  <span className={`font-medium tabular-nums mr-1 ${manualPinnedOnly ? 'text-teal-700' : 'text-muted-foreground'}`}>
+                    {sourcePinned ? (
+                      // AC5: neutral 핀 마커(강조 아님) — 도파민 유래 고정 표식
+                      <Pin className="inline h-3 w-3 mr-0.5 text-muted-foreground shrink-0" data-testid="memo-source-pin-icon" />
+                    ) : item.is_pinned ? (
                       <Pin className="inline h-3 w-3 mr-0.5 text-teal-600 shrink-0" />
-                    )}
+                    ) : null}
                     [{formatDateTimeDots(item.created_at)}
                     {item.created_by_name ? ` ${item.created_by_name}` : ''}]
                   </span>
@@ -384,7 +410,8 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
           {hasMore && (
             <button
               type="button"
