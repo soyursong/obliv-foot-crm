@@ -16,7 +16,7 @@ build: pass (npm run build ✓ built in 5.31s)
 scenario_count: 15 (신규 spec 12 PASS: 절사 비정수배 3 + 경계 3 + AC 정수배 3 + 정액무영향 1 + override 1 + parity 3 실검산) + 3 (parity/source 정적) ; 기존 T-20260713 spec 22 PASS(경계 CEIL→FLOOR 갱신 포함). 합 34 PASS.
 e2e_spec: tests/e2e/T-20260714-foot-HIRA-ELDERLY-ROUNDING-CONFIRM.spec.ts
 spec: tests/e2e/T-20260714-foot-HIRA-ELDERLY-ROUNDING-CONFIRM.spec.ts
-deploy_commit: (아래 commit 참조)
+deploy_commit: b3d13ac5 (main → Vercel; RPC apply=supervisor exec lane)
 deployed_at: n/a (NOT yet deployed — supervisor 게이트+PREFLIGHT+COMMIT apply 대기)
 bundle_hash: copayCalc 클라 미러(Reservations/Closing/CheckIn 청크 인라인) — supervisor 운영배포 후 재검증. 권위=서버 RPC(v1.4).
 created: 2026-07-14
