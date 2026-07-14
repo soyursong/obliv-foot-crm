@@ -60,5 +60,9 @@ WHERE slug='jongno-foot' AND name='오블리브의원 서울오리진점';
 
 ## 스코프 밖 (본 FIX 미포함)
 - **#2 대표자(박영진)**: clinics.representative_name = 박영진 (기 반영·유지). print {{doctor_name}} 재배선은 별개 티켓(진료의 축) — 미접촉. 기존 게이트(MSG-sunb) 유지, 재-ping 금지.
+  - **[2026-07-15 저장 축(a) 형식 GO 확정]** DA CONSULT-REPLY `DA-20260714-FOOT-REPNAME` (MSG-20260714-140659-v4ca): (A)=(C) 채택 → `clinics.representative_name` text NULL ADDITIVE 신설 **GO**. 저장 계약(storage)만 UNBLOCK.
+    - 실측 재확인(prod, 2026-07-15): 컬럼 PRESENT · jongno-foot=`박영진`(단일행) · songdo-foot=null(무영향) · `company_name`/`stamp` 컬럼 ABSENT(over-build 가드 준수, YAGNI). ⇒ 저장 축(a) **완결**.
+    - cross-CRM 수렴: body clinics 旣보유 `representative_name` 과 동일 컬럼명·의미로 정렬 = 계약 발산 방지. DA follow-up(공통필드 등재)은 DA 소유·비블로킹.
+    - ⚠ 출력 축(b): 법정서류 대표자/원장 셀 `{{doctor_name}}`→representative 재배선은 **DA lane 아님 = CEO 결정 게이트 + planner**. 저장≠출력 분리 — 저장했다고 출력 자동표기 안 됨. dev-foot는 (a)만 진행, (b) 미접촉 유지.
 - **#3 요양기관번호(nhis_code/hira_org_code=13328581)**: 유지, 회귀 0.
 - **#4 대표도장**: verify-only PASS. leaf 미접촉.
