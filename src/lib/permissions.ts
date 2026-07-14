@@ -198,6 +198,32 @@ export function canViewRrn(role: UserRole | null | undefined): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260714-foot-TM-CUSTOMER-EDIT-ENABLE — 고객정보 수정(edit)/삭제(delete) 권한 role-set SSOT (1지점).
+//   기존엔 Customers.tsx 인라인 상수(isStaffUnlockRole ∪ {staff,part_lead})였으나, 파일 컨벤션(ROLE-SET+predicate)
+//   정합 + 단위테스트 가능성 위해 SSOT 추출. 인라인 로직과 1:1 동치 유지(무회귀).
+//   ★TM ADDITIVE(2026-07-14): 풋 자체 TM(tm)에 '수정' 부여. AC-0 게이트 PASS(분기 a):
+//     PROD role='tm' 3계정 전부 clinic=jongno-foot·@medibuilder.com·provider=email·source_system=null →
+//     전원 풋 자체 TM 확정(도파민 TM콜센터 소속 0). silent 전체 grant 아님.
+//   ★FE union = RLS union 의무 = 이미 충족(무DDL): customers UPDATE 'customers_staff_update'(is_floor_staff())의
+//     is_floor_staff() 가 PROD 에서 이미 tm 포함(admin/manager/director/staff/part_lead/tm) → tm write 旣허용.
+//     ∴ RLS ADDITIVE 불요·enum/스키마 무변경·DA CONSULT/DDL-diff 불요.
+//   ★삭제(delete)는 tm 미포함: admin/director 만(=customers_admin_all is_admin_or_manager RLS 와 정합, tm DB 거부).
+export const CUSTOMER_EDIT_ROLES: UserRole[] = [...STAFF_UNLOCK_ROLES, 'staff', 'part_lead', 'tm'];
+export const CUSTOMER_DELETE_ROLES: UserRole[] = ['admin', 'director'];
+
+/** 고객정보 '수정(edit)' 권한 보유 여부. null/undefined 안전 기본값 false. */
+export function canEditCustomer(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return CUSTOMER_EDIT_ROLES.includes(role);
+}
+
+/** 고객 '삭제(delete)' 권한 보유 여부(admin/director 한정, tm 제외). null/undefined 안전 기본값 false. */
+export function canDeleteCustomer(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return CUSTOMER_DELETE_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260620-foot-PHRASE-STAFF-PERM-BLOCKED — 직원영역 편집(상용구·수가세트) role-set SSOT (1지점).
 //   현장(김주연 총괄, U0ATDB587PV) "직원들이 메인으로 쓰는 곳" → 전직원(8역할, tm 제외) inclusive.
 //   AREA-SEPARATION 모델 표(직원영역 customer/pen_chart = '직원 편집 가능')를 실현.

@@ -40,7 +40,7 @@ import { useChart } from '@/lib/chartContext';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 우클릭 [문자] parity — 기존 SMS 발송 경로(SendSmsDialog) 재사용
 import SendSmsDialog from '@/components/SendSmsDialog';
-import { canAccess, isStaffUnlockRole } from '@/lib/permissions';
+import { canAccess, isStaffUnlockRole, canEditCustomer as roleCanEditCustomer, canDeleteCustomer as roleCanDeleteCustomer } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -179,9 +179,18 @@ export default function Customers() {
   // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ⑥: 고객정보 수정 — therapist 누락분 해제(3역할 전체 보장).
   //   ★ADDITIVE only: 기존 staff/part_lead 절대 회수 금지(lock-out 0). isStaffUnlockRole(6역할: +director/therapist) ∪ {staff,part_lead}.
   //   동반 RLS 마이그(customers_therap_update_6menu = therapist UPDATE). consult/coord 는 customers_*_update 旣허용.
-  const canEditCustomer = isStaffUnlockRole(profile?.role) || ['staff', 'part_lead'].includes(profile?.role ?? '');
+  // T-20260714-foot-TM-CUSTOMER-EDIT-ENABLE: 풋 자체 TM(tm) 에 고객정보 '수정(edit)' ADDITIVE 부여(삭제 X).
+  //   ★AC-0 게이트 PASS(분기 a): PROD role='tm' 3계정(진운선/이수빈/김효신) 전부 clinic=jongno-foot·@medibuilder.com·
+  //     provider=email·source_system=null, 도파민 TM콜센터 소속 0 → 전원 풋 자체 TM 확정(도파민 콜센터 미포함).
+  //   ★FE union = RLS union 의무 = 이미 충족(무DDL): customers UPDATE RLS 'customers_staff_update'(USING/CHECK=
+  //     is_floor_staff() AND clinic) 의 is_floor_staff() 가 PROD 에서 이미 tm 포함
+  //     (role IN admin/manager/director/staff/part_lead/tm) → tm write 旣허용. SELECT(customers_staff_select /
+  //     customers_approved_read)도 tm 통과. ∴ RLS ADDITIVE 불요·enum/스키마 무변경·DA CONSULT/DDL-diff 불요(db_change=investigate 결론).
+  //   ★권한 SSOT는 permissions.ts(canEditCustomer/CUSTOMER_EDIT_ROLES)로 추출 — 인라인 로직과 1:1 동치(무회귀).
+  const canEditCustomer = roleCanEditCustomer(profile?.role);
   // 삭제는 admin / T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①(DA PII 민감도): +director(대표원장). customers RLS=is_admin_or_manager(director 포함)이라 FOR ALL(DELETE) 이미 director 허용 → RLS/감사로그 영향 0. admin 비제거.
-  const canDeleteCustomer = profile?.role === 'admin' || profile?.role === 'director';
+  //   ★tm 제외(T-20260714): 삭제 권한 미부여 — CUSTOMER_DELETE_ROLES(admin/director) SSOT.
+  const canDeleteCustomer = roleCanDeleteCustomer(profile?.role);
   // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기는 PII(전화·생년월일) 포함 → admin/manager 한정(노출+실행 동시 게이팅).
   // T-20260620-foot-SUPERADMIN-EXEMPT: profile(subject) 전달 → exempt_from_restrictions honor(상시예외 시 customer_export 보존). role 문자열 대신 subject.
   const canExportCustomers = canAccess(profile, 'customer_export');
