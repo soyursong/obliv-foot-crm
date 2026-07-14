@@ -155,12 +155,16 @@ export function SalesDailyTab({ filter }: Props) {
     queryKey: ['sales-daily-manual', clinic?.id, from, to],
     enabled: !!clinic,
     queryFn: async () => {
+      // T-20260714-foot-SOFTVOID-INFRA-FWD-PRIMITIVE: soft-void 무효행 제외(합산경로 (b) 비급여버킷).
+      //   revenue_insurance_split §2-1 산식 소스 — 수기수납은 tax_type 없어 비급여(면세)로 집계됨.
+      //   voided_at IS NULL 유효행만 → left.taxfree/우측매트릭스/현금시재 전부 무효행 배제. 전건 NULL → net-zero.
       const { data, error } = await supabase
         .from('closing_manual_payments')
         .select('method, amount')
         .eq('clinic_id', clinic!.id)
         .gte('close_date', from)
-        .lte('close_date', to);
+        .lte('close_date', to)
+        .is('voided_at', null);
       if (error) throw error;
       return (data ?? []) as RawManual[];
     },

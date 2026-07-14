@@ -476,11 +476,15 @@ export default function Closing() {
     queryKey: ['closing-manual', clinic?.id, date],
     enabled: !!clinic,
     queryFn: async () => {
+      // T-20260714-foot-SOFTVOID-INFRA-FWD-PRIMITIVE: soft-void 무효행 제외(합산경로 (a) 일마감 grossTotal).
+      //   voided_at IS NULL = 유효행만 로드 → totals(grossTotal)/enrichedRows/daily_closings payload 전부 무효행 배제.
+      //   forward 프리미티브 배포 시점 전건 voided_at=NULL → 합계 불변(net-zero).
       const { data, error } = await supabase
         .from('closing_manual_payments')
         .select('*')
         .eq('clinic_id', clinic!.id)
         .eq('close_date', date)
+        .is('voided_at', null)
         .order('pay_time', { ascending: true, nullsFirst: true });
       if (error) throw error;
       return (data ?? []) as ManualPaymentRow[];
