@@ -76,3 +76,7 @@ rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
 
 # migration DDL(백필 정정)은 PK-only·PHI 없음 → git-track 허용 (T-20260713 mask-contam backfill, *backfill*.sql override)
 !supabase/migrations/*backfill*.sql
+
+# T-20260714 RESVROUTE-DOPAMINE-BACKFILL 스크립트는 PHI-clean(로직 only·리터럴 식별자 0건, freeze id 집합은
+# 실행시 off-git _backup 테이블에만 영속) → SOP §4-b 버전관리 위해 git-track 허용 (*backfill*.sql override)
+!db-gate/T-20260714-foot-RESVROUTE-DOPAMINE-BACKFILL_backfill.sql
