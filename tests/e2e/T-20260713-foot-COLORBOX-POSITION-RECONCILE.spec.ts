@@ -22,6 +22,24 @@
  *   시나리오2(회귀): 맨위 배치 재발 0 (feeitem-row 는 code-grid 보다 아래 + 모달 body 최상단 아님) /
  *     펼침 토글 후에도 순서 유지 / 색박스 지정 항목(서류코드·세트코드·수가항목) 누락 0 /
  *     인접 요소(합계) 정합 유지 = AC-4 회귀 0
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * T-20260715-foot-PAYMINI-CHARTFEE-ROW-RESTORE (P0/hotfix) 보강 — AC-5 좌표가드 강화
+ * ─────────────────────────────────────────────────────────────────────────────
+ *   [E2E 갭 근본원인] 기존 assert는 세로 top 순서(grid.top<fee.top<settle.top) + 폭≤모달만 검증.
+ *     → fee-row 가 팔레트 그리드 "우측 열"에 대형 세로 패널로 스프레드돼도(IMG_8950: 서류코드/K297/
+ *       B351/세트코드 드롭다운이 우측 열 전체 점유) top 순서만 만족하면 PASS → 07-15 회귀가 field-soak 통과.
+ *   [보강 AC-5] (a) grid.bottom ≤ fee.top (그리드 "아래", 옆 아님)
+ *              (b) fee.height ≤ 52px (컴팩트 한 줄, 대형 패널 아님)
+ *              (c) fee.left ≈ grid.left & fee.width ≥ grid.width×0.8 (동일 중앙 컬럼, 우측 별도 열 아님)
+ *   [forensic 발견] HEAD(=origin/main d494920f) 소스의 fee-row 레이아웃은 known-good 508893fa 이후
+ *     "무변경"(diff: COPAY-BALANCE-SPLIT 로직·팔레트 testid 만 변경). 실브라우저(desktop-chrome) 렌더 실측:
+ *     grid(x=213,y=133,w=710,h=280) → fee(x=213,y=412,w=710,h=40) → settle(x=213,y=452,w=710)
+ *     = fee-row 는 그리드 바로 아래 동일 컬럼 컴팩트 40px 한 줄(=canonical). 즉 소스레벨 회귀 없음.
+ *     IMG_8950 의 우측 대형 패널은 HEAD 소스에서 재현 불가 → 배포/캐시 아티팩트(stale bundle) 의심.
+ *     본 spec 강화 커밋이 fresh 배포를 트리거 → 검증된 good 번들을 prod 에 재공급.
+ *   [AC-4 정합식 갱신] COPAY-BALANCE-SPLIT 이후 settle-lane 총액 라벨 "합계"→"수납잔액"(공단부담 제외).
+ *     compact "합계"(grandTotal) 는 settle 세금구분 총합(비급여과세+비급여면세+급여)과 대사(rename 무관 불변식).
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
@@ -130,6 +148,10 @@ test('시나리오1+2: [차트코드·진료비 산정] = 초록 아래·파랑 
   const sb = await settle.boundingBox();
   expect(db && gb && fb && sb, 'boundingBox 확보').toBeTruthy();
 
+  // evidence 항상 선출력 (어떤 assert가 실패해도 좌표 근거는 남긴다 — no_auto_promote 게이트 증거)
+  // eslint-disable-next-line no-console
+  console.log(`[COLORBOX-RECONCILE-EVIDENCE] dialog(x=${Math.round(db!.x)},y=${Math.round(db!.y)},w=${Math.round(db!.width)}) grid(x=${Math.round(gb!.x)},y=${Math.round(gb!.y)},w=${Math.round(gb!.width)},h=${Math.round(gb!.height)}) fee(x=${Math.round(fb!.x)},y=${Math.round(fb!.y)},w=${Math.round(fb!.width)},h=${Math.round(fb!.height)}) settle(x=${Math.round(sb!.x)},y=${Math.round(sb!.y)},w=${Math.round(sb!.width)})`);
+
   // ── AC-1 / AC-3(색박스 좌표 근거): canonical 세로 순서 = 🟢초록 → 컴팩트 → 🔵파랑 ──
   expect(
     fb!.y,
@@ -160,6 +182,38 @@ test('시나리오1+2: [차트코드·진료비 산정] = 초록 아래·파랑 
     `컴팩트 한 줄 폭(${Math.round(fb!.width)})이 모달 폭(${Math.round(db!.width)}) 이내`,
   ).toBeLessThanOrEqual(db!.width + 2);
 
+  // ═══ AC-5 (T-20260715-foot-PAYMINI-CHARTFEE-ROW-RESTORE): 좌우/컴팩트 좌표가드 강화 ═══
+  //   근본원인(RECONCILE field-soak가 07-15 회귀를 통과시킨 이유):
+  //     기존 assert는 세로 top 순서(grid.top<fee.top<settle.top) + 폭≤모달만 검증 →
+  //     "차트코드+진료비"가 팔레트 그리드 우측 열에 대형 세로 패널로 스프레드돼도(옆으로 풀림)
+  //     top 순서만 만족하면 PASS. (IMG_8950 = 우측 열 전체 점유 대형 패널)
+  //   보강: fee-row 가 (a)그리드 "아래"(옆 아님) + (b)컴팩트 한 줄(대형 패널 아님) +
+  //         (c)그리드와 동일 세로 중앙 컬럼(우측 별도 열 아님) 임을 좌표로 잠근다.
+
+  // ── AC-5(a): 그리드 "아래" — fee.top 이 grid.bottom 이상 (옆이면 top 이 겹침) ──
+  const gridBottom = gb!.y + gb!.height;
+  expect(
+    fb!.y,
+    `AC-5(a) fee-row(top=${Math.round(fb!.y)})는 팔레트 그리드 "아래"(grid.bottom=${Math.round(gridBottom)})여야 함 — 옆 열(우측 스프레드) 재발 감지`,
+  ).toBeGreaterThanOrEqual(gridBottom - 12);
+
+  // ── AC-5(b): 컴팩트 한 줄 — 접힘 높이 ≤ 52px(대형 세로 패널 아님, 좌표잠금 근거 h≈38~44) ──
+  expect(
+    fb!.height,
+    `AC-5(b) 접힘 fee-row 높이(${Math.round(fb!.height)}px)는 컴팩트 한 줄(≤52px) — 우측 대형 패널(수백 px) 재발 감지`,
+  ).toBeLessThanOrEqual(52);
+
+  // ── AC-5(c): 동일 세로 중앙 컬럼 — fee.left ≈ grid.left & fee.width ≈ grid.width ──
+  //   우측 별도 열이면 fee.left ≫ grid.left, fee.width ≪ grid.width 가 된다.
+  expect(
+    Math.abs(fb!.x - gb!.x),
+    `AC-5(c-left) fee-row 좌단(x=${Math.round(fb!.x)})이 팔레트 그리드 좌단(x=${Math.round(gb!.x)})과 동일 컬럼(±24px) — 우측 별도 열 재발 감지`,
+  ).toBeLessThanOrEqual(24);
+  expect(
+    fb!.width,
+    `AC-5(c-width) fee-row 폭(${Math.round(fb!.width)})이 팔레트 그리드 폭(${Math.round(gb!.width)})의 80%↑ — 좁은 우측 열 재발 감지`,
+  ).toBeGreaterThanOrEqual(gb!.width * 0.8);
+
   await dialog.screenshot({ path: path.join(SHOT_DIR, '01-collapsed-canonical.png') });
   await page.screenshot({ path: path.join(SHOT_DIR, '01-collapsed-full.png') });
 
@@ -179,17 +233,31 @@ test('시나리오1+2: [차트코드·진료비 산정] = 초록 아래·파랑 
   expect(fb2!.y, '펼침 후에도 초록 아래').toBeGreaterThan(gb2!.y);
   expect(fb2!.y, '펼침 후에도 파랑 위').toBeLessThan(sb2!.y);
 
-  // ── AC-4(인접 요소 회귀 0): 컴팩트 한 줄 요약 "합계" = 파란 settle-lane "합계" 금액 정합 ──
-  //   ("합계" 뒤 금액만 추출 — "수가 N건" 카운트 숫자 혼입 방지)
+  // ── AC-4(인접 요소 회귀 0): 컴팩트 한 줄 요약 "합계"(=grandTotal) = 파란 settle-lane 세금구분 합 ──
+  //   ※ T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT 이후 settle-lane 총액 라벨은 "합계"→"수납잔액"
+  //     (수납잔액 = 급여 본인부담 + 비급여, 공단부담 제외)으로 바뀌어 grandTotal 과 값이 다르다.
+  //     따라서 compact "합계"(grandTotal)는 settle 의 세금구분 총합(비급여과세+비급여면세+급여)과 대사한다
+  //     — 이것이 rename 에 무관한 진짜 불변식(grandTotal = Σ 세금구분).
   const feeTotal = ((await page.locator('[data-testid="pmw-feeitem-summary"]').first().innerText())
     .match(/합계\s*([\d,]+)/)?.[1] ?? '').replace(/[^0-9]/g, '');
-  const settleTotal = (((await settle.innerText()).match(/합계\s*([\d,]+)/)?.[1]) ?? '').replace(/[^0-9]/g, '');
   expect(feeTotal.length, '컴팩트 요약 합계 금액 추출').toBeGreaterThan(0);
-  expect(
-    feeTotal,
-    `컴팩트 요약 합계(${feeTotal})가 파란 수납 lane 합계(${settleTotal})와 일치(금액계산 회귀 0)`,
-  ).toBe(settleTotal);
 
-  // eslint-disable-next-line no-console
-  console.log(`[COLORBOX-RECONCILE-EVIDENCE] dialog.top=${Math.round(db!.y)} grid.top=${Math.round(gb!.y)} fee.top=${Math.round(fb!.y)} settle.top=${Math.round(sb!.y)} fee.h=${Math.round(fb!.height)} fee.w=${Math.round(fb!.width)} dialog.w=${Math.round(db!.width)}`);
+  // settle-lane 세금구분 라인 합 = 비급여(과세) + 비급여(면세) + 급여 (급여 자부담·공단부담액·수납잔액 제외)
+  const settleText = await settle.innerText();
+  const num = (label: RegExp): number => {
+    const m = settleText.match(label);
+    return m ? Number(m[1].replace(/[^0-9]/g, '')) : NaN;
+  };
+  const taxSum =
+    (num(/비급여\(과세\)\s*([\d,]+)/) || 0) +
+    (num(/비급여\(면세\)\s*([\d,]+)/) || 0) +
+    (num(/급여(?!\s*자부담)\s*([\d,]+)/) || 0);
+  expect(
+    Number.isFinite(taxSum) && taxSum > 0,
+    `settle-lane 세금구분 합 추출(taxSum=${taxSum}) — settleText=${JSON.stringify(settleText).slice(0, 200)}`,
+  ).toBeTruthy();
+  expect(
+    Number(feeTotal),
+    `컴팩트 요약 합계(${feeTotal})가 파란 수납 lane 세금구분 총합(${taxSum})과 일치(금액계산 회귀 0)`,
+  ).toBe(taxSum);
 });
