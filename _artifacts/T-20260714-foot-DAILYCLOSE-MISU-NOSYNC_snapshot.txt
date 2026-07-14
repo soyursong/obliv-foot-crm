@@ -1,0 +1,118 @@
+===== T-20260714-foot-DAILYCLOSE-MISU-NOSYNC fresh snapshot (READ-ONLY) =====
+snapshot_at: 2026-07-14T12:02:29.909Z
+{
+  "package": [
+    {
+      "id": "e55c868d-7b39-4b50-a98e-305d2353152d",
+      "customer_id": "a07a3079-69ba-415a-a0f8-61e8d0921168",
+      "package_name": "12회권",
+      "status": "active",
+      "total_amount": 2890000,
+      "consultation_fee": 0,
+      "paid_amount": 2890000,
+      "total_sessions": 12,
+      "created_at": "2026-07-14 01:57:26.666846+00"
+    }
+  ],
+  "package_balance": [
+    {
+      "total_amount": 2890000,
+      "paid_amount": 2890000,
+      "net_pkg_payments": 2890000,
+      "balance": 0
+    }
+  ],
+  "package_payments_full": [
+    {
+      "id": "18a2a6be-9b15-453c-9554-0c51d1d176eb",
+      "package_id": "e55c868d-7b39-4b50-a98e-305d2353152d",
+      "customer_id": "a07a3079-69ba-415a-a0f8-61e8d0921168",
+      "amount": 2890000,
+      "method": "card",
+      "installment": 0,
+      "payment_type": "payment",
+      "vat_amount": 0,
+      "memo": "일마감 수기결제 정본화(F-4695, opt-A) T-20260714-DAYCLOSE-MANUAL-PAY",
+      "created_at": "2026-07-14 02:09:00+00",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "accounting_date": "2026-07-14",
+      "origin_tx_date": null,
+      "tax_type": null,
+      "appr_info": null,
+      "exclude_tax_report": false,
+      "parent_payment_id": null,
+      "external_approval_no": null,
+      "external_tid": null,
+      "fee_kind": "package"
+    }
+  ],
+  "manual_by_id": [],
+  "manual_by_id_count": [
+    {
+      "cnt": 0
+    }
+  ],
+  "manual_f4695_any": [
+    {
+      "id": "4e73d913-8bf4-4c9b-ae92-f76f3ac28055",
+      "close_date": "2026-07-14",
+      "chart_number": "F-4695",
+      "customer_name": "이미현",
+      "amount": 8900,
+      "method": "card",
+      "memo": "진찰료",
+      "created_at": "2026-07-14 03:07:03.789502+00"
+    }
+  ],
+  "bucket_single": [
+    {
+      "method": "card",
+      "gross_cnt": 2,
+      "refund_cnt": 2,
+      "net_amt": 0,
+      "gross_amt": 539800
+    }
+  ],
+  "bucket_pkg": [
+    {
+      "method": "card",
+      "gross_cnt": 2,
+      "refund_cnt": 0,
+      "net_amt": 3270000,
+      "gross_amt": 3270000
+    }
+  ],
+  "bucket_manual": [
+    {
+      "method": "card",
+      "cnt": 18,
+      "amt": 516700
+    },
+    {
+      "method": "cash",
+      "cnt": 1,
+      "amt": 10000
+    },
+    {
+      "method": "transfer",
+      "cnt": 1,
+      "amt": 4500000
+    }
+  ],
+  "gross_total": [
+    {
+      "total_card": "3786700",
+      "total_cash": "10000",
+      "total_transfer": "4500000",
+      "gross_total": "8296700"
+    }
+  ],
+  "daily_closing": []
+}
+
+--- SUMMARY ---
+pkg e55c868d-7b39-4b50-a98e-305d2353152d: total=2,890,000 paid=2,890,000 netPkgPay=2,890,000 balance=0
+pkg payments rows: 1
+manual d993ffc5 존재? 부재 ✅ (0행)
+close 3버킷 grossTotal(NET, membership제외)=8,296,700 (card=3,786,700 cash=10,000 transfer=4,500,000)
+daily_closing 2026-07-14: 레코드 없음(미확정)
