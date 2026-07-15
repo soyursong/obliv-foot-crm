@@ -314,12 +314,19 @@ test.describe('시나리오 3: 처방전 (rx_standard) — 팩스 중복제거 +
     expect(html).toMatch(/교부일로부터[\s\S]{0,40}\{\{usage_days\}\}[\s\S]{0,40}일간/);
   });
 
-  test('AC-3③: 총 투약일수 자동연동 제거 — buildRxItemsHtml total_days 항상 공란', () => {
+  // T-20260714-foot-DOCPRINT-RX-STANDARD-DOSEDAYS-QR-BASELINE: 아래 baseline 정정.
+  //   원 8FIX AC-3③은 total_days:'' (항상 공란)을 요구했으나, 후속 T-20260606-DOC-FIELD-MISSING-3
+  //   (commit bbd82440)이 "명시 입력값까지 폐기 → 현장 '입력해도 미표기'" 회귀를 고쳐
+  //   total_days = item.total_days ?? '' 로 환원(호출부 빈값 전달 시 공란=수기 기입, 시술데이터 자동연동은 미부활).
+  //   → 현 처방전 양식(정정 후 계약)에 맞게 spec 갱신. 실 렌더 회귀 없음(AC-3④ 렌더 테스트 green).
+  test('AC-3③: 총 투약일수 — 시술데이터 자동연동 제거(호출부 빈값=공란), 명시 입력값은 표기 (DOC-FIELD-MISSING-3 supersede)', () => {
     const src = fs.readFileSync(FORM_TEMPLATES_SRC, 'utf-8');
-    // buildRxItemsHtml 내 total_days: '' (item.total_days 연동 제거)
+    // buildRxItemsHtml: total_days = item.total_days ?? '' — 자동연동 없이 호출부 전달값만 표기.
+    expect(src).toMatch(/total_days:\s*item\.total_days\s*\?\?\s*''/);
+    // 빈 채움행(TOTAL_ROWS 패딩)은 여전히 공란 유지.
     expect(src).toMatch(/total_days:\s*''/);
-    // 8FIX 마커
-    expect(src).toContain('T-20260601-foot-DOC-PRINT-8FIX AC-3③');
+    // 8FIX AC-3③ 목적(자동연동 제거) 근거 마커 유지.
+    expect(src).toContain('AC-3③');
   });
 
   test('AC-3④: rx_standard — QR 자리 텍스트("처방전QR코드") 삭제 + {{rx_qr_html}} 자동삽입', () => {
@@ -328,10 +335,18 @@ test.describe('시나리오 3: 처방전 (rx_standard) — 팩스 중복제거 +
     expect(html).not.toContain('처방전<br>QR코드');
   });
 
-  test('AC-3④: autoBindContext — rx_qr_html 자동 생성 (api.qrserver 재사용, 신규 의존 없음)', () => {
+  // T-20260714-foot-DOCPRINT-RX-STANDARD-DOSEDAYS-QR-BASELINE: baseline 정정.
+  //   api.qrserver.com URL 리터럴이 src/lib/externalServices.ts(QR_CODE_API_ENDPOINT)로 centralize됨.
+  //   autoBindContext 는 그 상수를 import 재사용 → "qrserver 재사용, 신규 의존 없음" 의도 그대로.
+  //   기존 spec은 URL 리터럴을 autoBindContext.ts 안에서만 찾아 stale FAIL → 소스 SSOT에 맞게 갱신.
+  test('AC-3④: autoBindContext — rx_qr_html 자동 생성 (QR 엔드포인트 centralize 재사용, 신규 의존 없음)', () => {
     const src = fs.readFileSync(AUTOBIND_SRC, 'utf-8');
     expect(src).toContain('rx_qr_html');
-    expect(src).toContain('api.qrserver.com');
+    // autoBindContext 는 centralize된 QR 엔드포인트 상수를 재사용(하드코딩 URL 아님).
+    expect(src).toContain('QR_CODE_API_ENDPOINT');
+    // 실제 qrserver 엔드포인트는 externalServices SSOT에 존재(신규 의존 없음 = 기존 qrserver 재사용).
+    const extSrc = fs.readFileSync(path.join(SRC_ROOT, 'lib/externalServices.ts'), 'utf-8');
+    expect(extSrc).toContain('api.qrserver.com');
   });
 
   test('AC-3④: rx_standard 렌더 — QR img 삽입, 텍스트 placeholder 미잔류', () => {
