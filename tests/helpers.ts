@@ -5,13 +5,21 @@
  * - storageState 가 정상 주입되면 /admin 직접 진입으로 충분 → UI 로그인 불필요
  * - storageState 없거나 만료 시 UI 로그인 폴백 (rate-limit 위험)
  */
-import { expect, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 // CI(ci-push.yml/ci-nightly.yml/ci-regression.yml)는 secrets 를 TEST_USER_EMAIL / TEST_USER_PASSWORD 로 주입한다.
 // 로컬은 TEST_EMAIL / TEST_PASSWORD 관례를 쓴다. 둘 다 수용 (auth.setup.ts 와 동일 계약). 평문 폴백은 없음.
+//
+// T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW (QA FIX, phase2/env_missing): 이전엔 여기서
+// module-eval throw 했다 → 이 헬퍼를 import 하는 373개 스펙의 test *collection* 단계가
+// .env.local(gitignored) 부재한 supervisor QA 워크트리에서 통째 crash("TEST_PASSWORD ...
+// env required"). auth.setup.ts 가 이미 적용한 선례(throw 를 setup 본문으로 지연)와 동형으로,
+// module-eval 은 빈문자 폴백 → import 항상 성공. 실제 UI 로그인 시점(uiLogin)에만 가드가
+// 작동 → 시크릿 없으면 평문 로그인 대신 test.skip(graceful). "평문 폴백 없음" 보안 property
+// 동일 유지(빈 비밀번호 로그인 시도 0). 실 E2E 검증 = .env.local 주입된 macstudio + 갤탭 field-soak.
 const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD (or TEST_USER_PASSWORD) env required (no plaintext fallback)'); })();
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? '';
 
 /**
  * RC-C self-seed (T-20260615-foot-REGRESSION-SUITE-DEROT)
@@ -208,6 +216,13 @@ async function uiLogin(page: Page): Promise<boolean> {
     } catch {
       return false;
     }
+  }
+
+  // 시크릿(TEST_PASSWORD) 부재 = supervisor QA 워크트리 등 .env.local 없는 환경.
+  // 평문 폴백 없음 보안 property 유지 → 빈 비밀번호로 로그인 시도하지 않고 graceful skip.
+  // (실 UI 로그인 검증은 시크릿 주입된 macstudio 풀 E2E + 갤탭 field-soak 에서 수행.)
+  if (!TEST_PASSWORD) {
+    test.skip(true, 'TEST_PASSWORD env 부재 — 평문 폴백 없이 graceful skip (실검증=macstudio + 갤탭 field-soak)');
   }
 
   await page.getByLabel('이메일').fill(TEST_EMAIL);
