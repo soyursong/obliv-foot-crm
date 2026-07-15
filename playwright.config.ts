@@ -277,6 +277,14 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE: 당일 초진/재진 표기 소스를
+        //   check_ins.visit_type(접수 스냅샷) 으로 교정. 순수 함수(classifyVisitByRecency/diffDaysISO)
+        //   + Closing/visitRecency/NewCheckInDialog 정적 소스 가드. page/auth/server 불요.
+        //   ★unit 편입 사유(FIX-REQUEST MSG-20260715-124201-dcp9): unit 프로젝트 testMatch 미등록 시
+        //     `npx playwright test <file> --project=unit` 이 "No tests found" → spec_fail_new.
+        //     desktop-chrome 로 흘러가면 auth.setup(TEST_PASSWORD) 끌어들여 QA 워크트리 실패.
+        //     → unit 등록(실행) + desktop-chrome testIgnore(무-project QA 시 setup 미기동)로 결정론 확보.
+        '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -300,6 +308,10 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
         //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.
         '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE: unit 전용 순수함수+정적가드 spec.
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단
+        //   (FIX-REQUEST MSG-20260715-124201-dcp9). unit 에서만 실행.
+        '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
       ],
     },
     {
