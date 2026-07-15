@@ -277,6 +277,11 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5개 화면 [고객메모] 단일 저장소(customer_note) 수렴.
+        //   read `customer_note ?? customer_memo` / write `customer_note` 정적 가드(예약팝업·2번차트·체크인·
+        //   고객목록/편집·신규등록) + service-role DB 왕복(양방향 공유 컬럼) + 3구역 예약메모 seed(customer_memo) 무회귀.
+        //   page/auth/server 불요(fs 소스 정적 + service-role DB, 비파괴 원본 복원). db_change=false.
+        '**/T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
