@@ -37,6 +37,7 @@ import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
+import { useDragToPan } from '@/hooks/useDragToPan';
 import {
   closeTimeFor,
   generateSlots,
@@ -666,6 +667,10 @@ export default function Reservations() {
 
   // 세로 스크롤 컨테이너 ref + 현재 슬롯 행 ref + 진입 1회 플래그
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // T-20260715-foot-RESVMGMT-DRAGPAN-BGSCROLL: 예약관리 타임테이블 배경 잡아 드래그-팬(스크롤바 안 잡고 이동).
+  //   대시보드 DASH-HSCROLL-DRAGPAN 패턴 재사용(useDragToPan). 타임테이블은 2D(가로 시간축+세로 행) → axis:'both'.
+  //   PC 마우스=이 훅 / 태블릿 터치=네이티브 스와이프(훅은 touch 위임), 기존 스크롤바·휠 무회귀.
+  useDragToPan(scrollContainerRef, { axis: 'both' });
   const currentSlotRef = useRef<HTMLTableRowElement>(null);
   const didInitialScrollRef = useRef(false);
 
