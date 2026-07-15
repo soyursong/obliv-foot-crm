@@ -978,9 +978,15 @@ ${COMMON_STYLE}
         <td style="width:100px; background:#f8f8f8; text-align:center;">요양기관 명칭</td>
         <td>{{clinic_name}}</td>
         <td style="width:60px; background:#f8f8f8; text-align:center;">대 표 자</td>
-        <td style="width:120px;">{{doctor_name}}</td>
-        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 대표자 성명 근방 직인 -->
-        <td style="width:52px; text-align:center;">{{doctor_seal_html}}</td>
+        <!-- T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B1: 세부내역서(기관 발행) 대표자란 = 진료의
+             ({{doctor_name}})가 아닌 개설자(대표자) {{receipt_representative}}(=clinics.representative_name
+             ||'박영진'). DOCFEE 신양식(bill_receipt_new)과 동일 토큰·단일 소스(신규 토큰 신설 0). 진료의 축
+             서류(진단서·처방전 등)의 {{doctor_name}}은 무접촉. -->
+        <td style="width:120px;">{{receipt_representative}}</td>
+        <!-- T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B2: 대표자 근방 도장 = 진료의 개인직인이 아닌
+             법인(요양기관) 인감({{institution_seal_html}}). 前 {{doctor_seal_html}}은 선택 진료의 개인직인이
+             찍혀 '박영진 + 진료의 개인도장' 미스매치가 나던 경로 → 법인 인감으로 정합. -->
+        <td style="width:52px; text-align:center;">{{institution_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -2178,10 +2184,13 @@ const BILL_RECEIPT_NEW_HTML = `
         <td class="rn-lbl">상호</td><td>{{clinic_name}}</td>
         <td class="rn-lbl">전화번호</td><td>02-6956-3438</td>
       </tr>
+      <!-- T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B2: 계산서·영수증 신양식(기관 발행) 대표자
+           (=박영진 canonical) 근방 법인(요양기관) 인감 출력. 진료의 개인직인 무사용(fee docs = 개설자·기관 축).
+           세부내역서와 동일 법인 도장으로 정합. -->
       <tr>
         <td class="rn-lbl">사업장 소재지</td><td colspan="3">{{clinic_address}}</td>
         <td class="rn-lbl">대표자</td>
-        <td style="text-align:left;">{{receipt_representative}}</td>
+        <td style="text-align:left;">{{receipt_representative}}&nbsp;&nbsp;{{institution_seal_html}}</td>
       </tr>
     </tbody>
   </table>

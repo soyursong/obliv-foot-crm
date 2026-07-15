@@ -266,7 +266,9 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'issue_date',    label: '발행일',     type: 'date',   x: 0, y: 0 },
       { key: 'total_amount',  label: '합계금액',   type: 'amount', x: 0, y: 0 },
       { key: 'clinic_name',   label: '요양기관명', type: 'text',   x: 0, y: 0 },
-      { key: 'doctor_name',   label: '대표자',     type: 'text',   x: 0, y: 0 },
+      // T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B1: 세부내역서 대표자란 = 개설자(대표자)
+      //   {{receipt_representative}}(박영진), 진료의({{doctor_name}}) 아님. BILL_DETAIL_HTML 렌더 정합.
+      { key: 'receipt_representative', label: '대표자', type: 'text', x: 0, y: 0 },
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',

@@ -350,6 +350,18 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
         ? `<img src="${sealUrl}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
         : '(인)';
     })(),
+    // T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B2: 기관 발행 서류(진료비 계산서·영수증/세부내역서,
+    //   대표자={{receipt_representative}}=박영진) 전용 '법인(요양기관) 도장' 슬롯. 진료의 개인직인
+    //   ({{doctor_seal_html}} = clinicDoctor.seal_image_url)과 분리 — 선택 진료의가 개인직인을 가진 경우에도
+    //   기관 발행 fee docs 에는 항상 오블리브오리진 법인 인감(getStampUrl priority-2, jongno-foot-stamp.png)을
+    //   찍는다('박영진 이름 + 진료의 개인도장' 미스매치 차단, 법정성 출력물 인장 정확성). 진료의 축 서류
+    //   (진단서·처방전 등)의 {{doctor_seal_html}}(3원장 개인직인 세트)은 무접촉 — 도장 축 오염 0.
+    institution_seal_html: (() => {
+      const sealUrl = getStampUrl();
+      return sealUrl
+        ? `<img src="${sealUrl}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
+        : '(인)';
+    })(),
   };
 }
 
