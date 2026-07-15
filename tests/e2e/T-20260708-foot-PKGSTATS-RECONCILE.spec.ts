@@ -84,22 +84,31 @@ test.describe('T-20260708-foot-PKGSTATS-RECONCILE', () => {
     expect(mig.includes("conname = 'chk_packages_treatment_type'"), '(C) named CHECK 멱등 가드').toBe(true);
   });
 
-  test('(D) reference_price 계약총액 grain — standard_price × 횟수(totalSessions) 스냅샷', () => {
+  test('(D) reference_price 계약총액 grain — 시술유형별 마스터 정찰가 per-line 합(변경2 이관)', () => {
     const dlg = dialogSlice();
-    // 반응형 prefill: std × totalSessions (1회가×총결제 혼합 grain 금지)
+    // 변경2(DA-20260708-FOOT-PKGBUY-REFPRICE): 반응형 prefill = Σ std_price[type]×count[type] + upgradeSurcharge.
+    //   단일유형에선 std × 횟수와 동일한 일반화 → 계약총액 grain 불변식 유지. 가드문자열만 신 산식으로 이관(파손 아님).
     expect(
-      dlg.includes('setReferencePrice(stdForType * totalSessions)'),
-      '(D) 커스텀 기준정가 = standard_price × totalSessions',
+      dlg.includes('setReferencePrice(masterReferencePrice)'),
+      '(D) 커스텀 기준정가 = 마스터 per-line 합(masterReferencePrice)',
     ).toBe(true);
+    expect(
+      dlg.includes("(stdPrices.map['가열'] ?? 0) * heated"),
+      '(D) per-line 합 = 마스터 정찰가 × 라인별 회수',
+    ).toBe(true);
+    // 舊 산식(단일유형 std × totalSessions) 이관 확인 — 더 이상 존재하지 않음
+    expect(dlg.includes('setReferencePrice(stdForType * totalSessions)'), '(D) 舊 단일게이트 산식 이관').toBe(false);
     // 구(舊) 버그: 1회 정상가를 그대로 복사(grain 불일치) — 제거 확인
     expect(dlg.includes('setReferencePrice(std);'), '(D) 1회 정상가 직접복사(grain 불일치) 제거').toBe(false);
+    // staff 입력단가 fallback(B안) 금지 — reference_price 자기파괴 방지
+    expect(dlg.includes('setReferencePrice(computedTotal + upgradeSurcharge)'), '(D) B안(computedTotal) 미채택').toBe(false);
     // 수기 override 존중 플래그
     expect(dlg.includes('refPriceTouched'), '(D) 수기 override 플래그 존재').toBe(true);
     expect(dlg.includes('setRefPriceTouched(true)'), '(D) 수기 입력 시 override 마킹').toBe(true);
-    // 템플릿 모드는 계약총액(template.total_price) 유지 — 반응형 effect 가 커스텀 모드에서만 동작
+    // 템플릿 모드는 계약총액(template.total_price) 유지 — 반응형 effect 가 커스텀·미override 시에만 동작(유형게이트 제거)
     expect(
-      dlg.includes("selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType"),
-      '(D) 반응형 prefill 은 커스텀·미override·유형선택 시에만',
+      dlg.includes("selectedTemplateId !== 'custom' || refPriceTouched"),
+      '(D) 반응형 prefill 은 커스텀·미override 시에만(treatmentType 단일게이트 제거)',
     ).toBe(true);
     // 할인율 산식(통계전용) = (reference_price − 결제)/reference_price — grain 동일 전제
     expect(
