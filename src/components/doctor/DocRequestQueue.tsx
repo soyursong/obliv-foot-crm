@@ -37,7 +37,15 @@ import { buildContraindKeySet, applyPrefillExclusivity } from '@/lib/opinionDocC
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속(미리보기 셀 클릭→컬럼-앵커 드롭다운 전문). 공유 컴포넌트 재사용(중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { Button } from '@/components/ui/button';
-import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
@@ -63,6 +71,27 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   const openWrite = (r: OpinionRequestRow) => {
     setActive(r);
     setDialogOpen(true);
+  };
+
+  // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: 실장(데스크)이 잘못 보낸 draft 발행요청을 원장 발행 전에 회수.
+  //   기존 useResolveOpinionRequest.mutate({reason:'cancelled'}) 재사용 → status='voided' + resolved_reason='cancelled'.
+  //   'cancelled' 의미론(=신청 아님, 집계·완료표시 제외)은 T-20260710-DOCREQ-DOCTORCOUNT(deployed) 확정 계약 — 신규 상태·의미 도입 없음(AC-3).
+  //   AC-7 authoring 경계: publish(published) 경로·서명·직인 로직 절대 미접촉. draft void 한정.
+  const [cancelTarget, setCancelTarget] = useState<OpinionRequestRow | null>(null);
+
+  const openCancel = (r: OpinionRequestRow) => setCancelTarget(r);
+
+  const handleCancelConfirm = async () => {
+    if (!cancelTarget) return;
+    try {
+      // reason:'cancelled' → 기존 mutation 재사용. update 시 .eq('status','draft') 동시성 가드로 이미 처리된 건 무영향.
+      await resolveMut.mutateAsync({ requestId: cancelTarget.id, reason: 'cancelled' });
+      // AC-4: 취소 완료 시 큐 invalidate(onSuccess) → draft 필터가 voided 배제해 해당 행 즉시 제거.
+    } catch {
+      // 실패 시 큐 그대로 유지(voided 처리 안 됨) — 다음 폴링/재시도 가능. 사용자 차단 없음.
+    } finally {
+      setCancelTarget(null);
+    }
   };
 
   // 큐 행 → OpinionEditorDialog visitor 구성. id=check_in_id(발행 앵커). 없으면 발행 불가 안내.
@@ -140,6 +169,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                 clinicalSnaps={clinicalSnaps}
                 itemLabelsForRow={itemLabelsForRow}
                 onWrite={openWrite}
+                onCancel={openCancel}
               />
             </div>
           )}
@@ -188,6 +218,51 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         requestId={active?.id ?? null}
         onPublished={handlePublished}
       />
+
+      {/* AC-2: 요청 취소(회수) 확인 다이얼로그 — 실수 취소 방지. 확정 시에만 voided 처리. */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) setCancelTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-500" />
+              요청 취소(회수)
+            </DialogTitle>
+            <DialogDescription>
+              이 요청을 취소하시겠어요?
+              {cancelTarget?.patientName && (
+                <span className="mt-1 block font-medium text-foreground">
+                  {cancelTarget.patientName} · {docTypeLabel(cancelTarget.docType)}
+                </span>
+              )}
+              <span className="mt-1 block text-xs text-muted-foreground">
+                취소하면 처리대기 큐에서 사라집니다. (이미 발행된 서류는 영향받지 않습니다.)
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelTarget(null)}
+              disabled={resolveMut.isPending}
+              data-testid="docreq-cancel-dismiss-btn"
+            >
+              아니오
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelConfirm}
+              disabled={resolveMut.isPending}
+              data-testid="docreq-cancel-confirm-btn"
+            >
+              {resolveMut.isPending ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> 취소 중…</>
+              ) : (
+                '요청 취소'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -202,6 +277,7 @@ function DocReqTable({
   clinicalSnaps,
   itemLabelsForRow,
   onWrite,
+  onCancel,
 }: {
   rows: OpinionRequestRow[];
   variant: 'pending' | 'done';
@@ -209,6 +285,8 @@ function DocReqTable({
   // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX: 행 단위 배타 정규화 라벨(혼합 큐 위반 조합 표시 차단).
   itemLabelsForRow: (r: OpinionRequestRow) => string;
   onWrite: (r: OpinionRequestRow) => void;
+  // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: pending 그룹에만 전달(done=undefined → 완료행 취소버튼 미표시, AC-7).
+  onCancel?: (r: OpinionRequestRow) => void;
 }) {
   return (
     <table className="w-full text-sm">
@@ -234,6 +312,7 @@ function DocReqTable({
             snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
             itemLabels={itemLabelsForRow(r)}
             onWrite={onWrite}
+            onCancel={onCancel}
           />
         ))}
       </tbody>
@@ -252,12 +331,14 @@ function DocRequestRow({
   snap,
   itemLabels,
   onWrite,
+  onCancel,
 }: {
   r: OpinionRequestRow;
   variant?: 'pending' | 'done';
   snap: ClinicalSnap | undefined;
   itemLabels: string;
   onWrite: (r: OpinionRequestRow) => void;
+  onCancel?: (r: OpinionRequestRow) => void;
 }) {
   const rxCellRef = useRef<HTMLTableCellElement>(null);
   const clinicalCellRef = useRef<HTMLTableCellElement>(null);
@@ -339,6 +420,18 @@ function DocRequestRow({
             </span>
             {!r.checkInId && (
               <span className="mt-0.5 block text-[9px] text-amber-600" title="내원 이력이 없어 발행 전 내원 확인이 필요합니다.">내원확인 필요</span>
+            )}
+            {/* T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2 (AC-1): 잘못 보낸 draft 요청 회수 버튼. '작성하기' 아래·outline 톤(룩앤필 조화). AC-2 확인 다이얼로그 경유. */}
+            {onCancel && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-1 block h-6 w-full gap-1 px-2 text-[10px] text-muted-foreground hover:text-red-600"
+                onClick={() => onCancel(r)}
+                data-testid="docreq-cancel-btn"
+              >
+                <XCircle className="h-3 w-3" /> 요청 취소
+              </Button>
             )}
           </>
         )}

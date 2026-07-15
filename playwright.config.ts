@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import os from 'os';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
@@ -11,6 +13,29 @@ dotenv.config({ path: path.join(__dirname, '.env.test') });
 // .env.local (gitignored, 비커밋) — SUPABASE_ACCESS_TOKEN 등 DB정책 E2E 비밀 로드.
 // 미존재 시 무시 → DB 정책 spec 은 test.skip 로 안전 강등(스킵 사유 명확).
 dotenv.config({ path: path.join(__dirname, '.env.local'), override: true });
+
+// ── QA 워크트리 .env.local 폴백 (FIX-REQUEST MSG-20260715-161411-l4bf) ──────────
+//   배경: `.env.local`(TEST_PASSWORD + Supabase 비밀)은 gitignored 라 fresh QA 워크트리
+//         (git worktree/신규 clone)에는 존재하지 않는다. 그 결과 auth 의존 spec(로그인→
+//         /admin/closing 등)이 auth.setup 의 "TEST_PASSWORD env required (no plaintext
+//         fallback)" 에서 즉시 실패했다(MSG-20260715-161411-l4bf phase2 spec_fail_new).
+//   해법: 로컬 .env.local 로 TEST_PASSWORD 가 채워지지 않았으면(=워크트리에 비밀 부재)
+//         정본 체크아웃(canonical checkout)의 .env.local 을 폴백 로드한다.
+//         - 비밀은 여전히 미커밋(gitignored) — 커밋되는 것은 "경로"뿐(보안 property 불변).
+//         - 정본 경로 우선순위: (1) 환경변수 FOOT_QA_ENV_LOCAL (2) ~/GitHub/obliv-foot-crm/.env.local
+//           (macstudio 정책: 모든 dev/QA E2E 는 ~/GitHub 정본 체크아웃 호스트에서 실행).
+//         - 정본 == 현재 dir 이면 이미 위에서 로드됨 → 폴백은 no-op(동일 파일 재로드 무해).
+//         - 정본에도 없으면 무시 → 종전처럼 auth.setup 가 명확한 사유로 실패(보안 유지).
+if (!process.env.TEST_PASSWORD && !process.env.TEST_USER_PASSWORD) {
+  const canonicalEnvLocal =
+    process.env.FOOT_QA_ENV_LOCAL ??
+    path.join(os.homedir(), 'GitHub', 'obliv-foot-crm', '.env.local');
+  if (fs.existsSync(canonicalEnvLocal) && canonicalEnvLocal !== path.join(__dirname, '.env.local')) {
+    dotenv.config({ path: canonicalEnvLocal, override: true });
+    // eslint-disable-next-line no-console
+    console.log(`[playwright.config] .env.local 폴백 로드 → ${canonicalEnvLocal}`);
+  }
+}
 
 const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
@@ -269,6 +294,10 @@ export default defineConfig({
         //   로 세부산정내역·계산서영수증 × grade-null/실재 4문서 스크린샷). auth/server 불요(setContent 정적 렌더).
         '**/T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR.spec.ts',
         '**/T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR-RENDER.spec.ts',
+        // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 계산서·영수증/세부산정내역 '합계' = 급여 본인부담금 + 비급여
+        //   (공단 제외). 공단부담금 칸/금액 표시는 유지. SSOT 렌더(computeFootBilling/buildBillReceiptFeeGridHtml/
+        //   buildBillDetailItemsHtml) + page.setContent+print media 인쇄 미리보기 스크린샷(AC-5) + 합계·공단표시 단언. auth/server 불요.
+        '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
         // T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL: 비급여동의서 서명 뷰 태블릿 스크롤 불가 픽스
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
@@ -301,6 +330,10 @@ export default defineConfig({
         // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 순수 정적/렌더 unit 스펙 — desktop-chrome(auth 의존)
         //   에서 제외해 `npx playwright test <file>` 무-project 실행 시 setup 미기동. (FIX-REQUEST MSG-20260716-003500-sg9r)
         '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
+        // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY: unit 전용 setContent 렌더 spec.
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
+        //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.
+        '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
       ],
     },
     {
