@@ -6,12 +6,24 @@ import { createClient, type SupabaseClientOptions } from '@supabase/supabase-js'
 const viteEnv = ((import.meta as unknown as { env?: Record<string, string> }).env) ?? {};
 const procEnv =
   (globalThis as { process?: { env?: Record<string, string> } }).process?.env ?? {};
-const SUPABASE_URL = (viteEnv.VITE_SUPABASE_URL ?? procEnv.VITE_SUPABASE_URL) as string;
-const SUPABASE_ANON_KEY = (viteEnv.VITE_SUPABASE_ANON_KEY ?? procEnv.VITE_SUPABASE_ANON_KEY) as string;
+const RAW_SUPABASE_URL = (viteEnv.VITE_SUPABASE_URL ?? procEnv.VITE_SUPABASE_URL) as string;
+const RAW_SUPABASE_ANON_KEY = (viteEnv.VITE_SUPABASE_ANON_KEY ?? procEnv.VITE_SUPABASE_ANON_KEY) as string;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+// Vite 런타임 판별: Vite는 import.meta.env 를 항상 MODE/DEV/PROD/BASE_URL 로 채운다 →
+//   viteEnv 가 비어있으면(=Node/Playwright ESM) Vite 밖 컨텍스트다.
+//   프로덕션/dev(Vite) 에서 env 누락 시엔 종전대로 throw 가드 유지(오배포 차단).
+//   반면 Playwright 유닛 스펙(순수 함수 import)에서 supabase 연결이 불필요한데도
+//   env 파일(.env — gitignored) 부재로 모듈 로드가 throw 하던 문제를 구조적으로 제거:
+//   비-Vite + env 미설정이면 무해한 로컬 placeholder 로 폴백(네트워크 미사용, createClient 만 성립).
+//   env 가 process.env(.env / .env.local dotenv) 로 주입돼 있으면 그대로 실사용.
+const isViteRuntime = Object.keys(viteEnv).length > 0;
+
+if (isViteRuntime && (!RAW_SUPABASE_URL || !RAW_SUPABASE_ANON_KEY)) {
   throw new Error('VITE_SUPABASE_URL 과 VITE_SUPABASE_ANON_KEY 가 .env에 설정되어야 합니다.');
 }
+
+const SUPABASE_URL = RAW_SUPABASE_URL || 'http://localhost:54321';
+const SUPABASE_ANON_KEY = RAW_SUPABASE_ANON_KEY || 'test-anon-key-placeholder';
 
 /**
  * 테스트(Playwright) 환경에서는 navigator.locks 기반 멀티탭 동기화 락이
