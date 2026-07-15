@@ -931,7 +931,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 도 SSOT billItems 필요
       //   (fee_grid_html 항목별 그리드). bill_receipt 단독 선택 시에도 billItems 빌드가 발화하도록 포함.
       const needsItems = selectedTemplates.some(
-        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard' || t.form_key === 'bill_receipt',
+        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard'
+          || t.form_key === 'bill_receipt'
+          // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 신양식도 총액/급여분해(computeFootBilling) 필요.
+          || t.form_key === 'bill_receipt_new',
       );
 
       if (chargeItems && chargeItems.length > 0) {
@@ -2271,6 +2274,15 @@ function IssueDialog({
         receiptItems = fbItems;
       }
       base.fee_grid_html = buildBillReceiptFeeGridHtml(receiptItems);
+    }
+
+    // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 신양식(bill_receipt_new) ⑥ 진료비 총액 = grandTotal
+    //   (급여 전액 + 비급여 = 법정 ①+②+③+④, 공단 포함). ⑦ 공단부담(insurance_covered)·⑧ 환자부담
+    //   (patient_amount = 본인부담금 + 비급여, 공단 제외 — AC7 B안)은 아래 applyBillingFallback 로 설정.
+    //   ⚠ 기존 bill_receipt 총액 바인딩 경로 무접촉 — 신 form_key 전용 additive(AC5).
+    if (template.form_key === 'bill_receipt_new' && footFb && footFb.grandTotal > 0) {
+      base.total_amount = formatAmount(footFb.grandTotal);
+      base.subtotal_amount = base.total_amount;
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
