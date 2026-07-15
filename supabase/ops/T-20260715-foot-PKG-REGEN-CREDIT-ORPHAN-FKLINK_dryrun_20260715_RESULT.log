@@ -1,0 +1,30 @@
+═══════════════════════════════════════════════════════════
+T-20260715-foot-PKG-REGEN-CREDIT-ORPHAN-FKLINK — DRY-RUN (No-Persistence) 실행 결과
+실행시각 : 2026-07-15T11:02:41.439Z
+DB 환경  : foot prod / project_ref=rxlomoozakkjesdqjtvd (https://rxlomoozakkjesdqjtvd.supabase.co)
+실행방식 : Supabase Management API /database/query (SUPABASE_ACCESS_TOKEN, pooler DB_PW 불요)
+대조원천 : supabase/migrations/20260715190000_foot_pkg_regen_credit_ledger_fklink.dryrun.sql
+프로토콜 : Migration Dry-Run No-Persistence Protocol (txn-strip + canary + in-txn assert + post-probe)
+═══════════════════════════════════════════════════════════
+✅ Management API 연결(rxlomoozakkjesdqjtvd) — DRY-RUN, 무영속
+
+── (0) baseline (prod 실재):
+     payments.package_id=false  packages.superseded_by=false  ledger=false  amendments=false
+     기대: 전부 false(미적용). ✅ 일치
+── (1) canary: ROLLBACK 후 카나리 잔존? ✅ 미잔존(ROLLBACK 실효 확인)
+── (2) apply: dryrun.sql 무영속 실행 OK — DDL 4객체+헬퍼 생성 + in-txn assertion(DO $chk$) 통과(RAISE EXCEPTION 미발생) → ROLLBACK
+── (3) post-probe (무영속 확증, prod 실재):
+     payments.package_id=false  packages.superseded_by=false  ledger=false  amendments=false
+     기대: 전부 false(무영속). ✅ 무영속 확증(적용 전과 동일)
+
+═══════════════════════════════════════════════════════════
+판정 : ✅ DRY-RUN PASS (무영속·전 ADDITIVE·assertion 통과) — supervisor DDL-diff 게이트 진입 가능
+═══════════════════════════════════════════════════════════
+
+── (부록) Ledger 3자 대조 (schema_migrations ↔ 파일 ↔ prod) — pre-apply 정합
+     · 파일        : 20260715190000_foot_pkg_regen_credit_ledger_fklink.sql (branch staged, main 미머지)
+     · schema_migrations : version 20260715190000 미등록(false)
+     · prod 실재   : package_credit_ledger / payments.package_id 부재(false/false)
+     · 최신 등록   : 20260715140000 < 190000 (순서 정합, phantom/gap 없음)
+     ⇒ 3자 전부 "미적용"에서 일치 → divergence 0. supervisor DDL-diff 적용 시 forward-consistent 전환.
+═══════════════════════════════════════════════════════════
