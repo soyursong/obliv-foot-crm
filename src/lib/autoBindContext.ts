@@ -291,6 +291,12 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     //   ⚠ print 재배선 금지 — 출력서류 대표자셀 {{doctor_name}} 유지(진료의 축 별도 티켓).
     //   여기서는 {{representative_name}} 슬롯 데이터만 제공(템플릿 미접촉).
     representative_name: ctx.clinic?.representative_name ?? '',
+    // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN (AC3 정정, reporter U0ATDB587PV 명시 재지시 MSG-mq8y):
+    //   진료비 계산서·영수증 신양식 '대표자'란 전용 토큰. fee docs = **개설자(대표자) 기준**(진료의 축 아님).
+    //   canonical = clinics.representative_name(=박영진, PREFLIGHT 확정). body CLINIC-REPNAME {{receipt_representative}}
+    //   패턴 포트. affirmative populate — 부재/공란(예: songdo-foot) 시 개설자 '박영진'으로 폴백(빈 대표자 금지, AC3
+    //   시나리오3 edge). {{doctor_name}}(진료의 축, 진단서·처방전)과 분리 — 공유 토큰 오염 차단.
+    receipt_representative: (ctx.clinic?.representative_name || '박영진'),
     // T-20260520-foot-PRINT-FORM-BIND: 차트번호 (record_no fallback)
     record_no: ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 진단 코드·명칭
@@ -391,6 +397,20 @@ export function applyBillingFallback(
   //   ⚠ 실제 수납/결제 금액 산정 로직 불변 — 출력 데이터 소스만 '수납 완료 상태' 의존에서 분리.
   fill('total_amount', live.total);
   fill('subtotal_amount', live.total);
+  // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN (AC7 B안): 진료비계산서 신양식(bill_receipt_new) ⑧ 환자부담 총액 =
+  //   급여 본인부담금(copayment) + 비급여(non_covered). 공단부담금(insurance_covered)은 제외 — 별도 라인(⑦)에 표시 유지.
+  //   화면에 표기된 ①본인부담금 + ④비급여 와 정확히 정합하도록 fill 직후 최종 values 기준으로 산출한다.
+  //   신양식 전용 additive 키(patient_amount) — 기존 bill_receipt/bill_detail 등 무접촉(회귀 0).
+  //   (T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY B안 산식과 동일: copayment + non_covered.)
+  if (isBlankOrZero(values.patient_amount)) {
+    const parseAmt = (v: string | undefined): number => {
+      if (v == null || v === '') return 0;
+      const n = Number(v.replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const patientPay = parseAmt(values.copayment) + parseAmt(values.non_covered);
+    if (patientPay > 0) values.patient_amount = formatAmount(patientPay);
+  }
 }
 
 /**
