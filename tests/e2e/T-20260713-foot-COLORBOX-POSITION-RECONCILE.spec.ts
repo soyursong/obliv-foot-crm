@@ -236,13 +236,21 @@ test('시나리오1+2: [차트코드·진료비 산정] = 초록 아래·파랑 
   // ── AC-4(인접 요소 회귀 0): 컴팩트 한 줄 요약 "합계"(=grandTotal) = 파란 settle-lane 세금구분 합 ──
   //   ※ T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT 이후 settle-lane 총액 라벨은 "합계"→"수납잔액"
   //     (수납잔액 = 급여 본인부담 + 비급여, 공단부담 제외)으로 바뀌어 grandTotal 과 값이 다르다.
-  //     따라서 compact "합계"(grandTotal)는 settle 의 세금구분 총합(비급여과세+비급여면세+급여)과 대사한다
+  //     따라서 compact "합계"(grandTotal)는 settle 의 세금구분 총합과 대사한다
   //     — 이것이 rename 에 무관한 진짜 불변식(grandTotal = Σ 세금구분).
   const feeTotal = ((await page.locator('[data-testid="pmw-feeitem-summary"]').first().innerText())
     .match(/합계\s*([\d,]+)/)?.[1] ?? '').replace(/[^0-9]/g, '');
   expect(feeTotal.length, '컴팩트 요약 합계 금액 추출').toBeGreaterThan(0);
 
-  // settle-lane 세금구분 라인 합 = 비급여(과세) + 비급여(면세) + 급여 (급여 자부담·공단부담액·수납잔액 제외)
+  // T-20260715-foot-COLORBOX-SPEC-TAXSUM-REGEX-FIX: 세금구분 라인 대사를 배포 라벨에 수렴(테스트→정본).
+  //   COPAY-BALANCE-SPLIT REOPEN#5(deployed·DA ratified) 이후 settle-lane 급여 라인은 급여 "전액"이 아니라
+  //     • "급여 자부담(30%)" = payCopaymentTotal(환자 자부담만)  +
+  //     • 별도 "공단부담액(명세)" = insuranceCoveredTotal(공단 NHIS 몫, 급여 방문 시에만 렌더)
+  //   로 분리 렌더된다(PaymentMiniWindow.tsx L2478~2501). 따라서 grandTotal(총 진료비=급여 전액+비급여)을
+  //   재구성하는 세금구분 합 = 급여 자부담 + 공단부담액(명세) + 비급여(과세) + 비급여(면세) 4개 표시 라인의 합.
+  //   [red RC] 기존 `급여(?!\s*자부담)` 는 shipped 라벨 "급여 자부담(30%)" 에 매칭되지 않아 급여 몫이 통째 누락
+  //     → 급여 방문 시 taxSum < grandTotal 불일치. 정본 라벨은 뒤집지 않고 regex 만 정본에 수렴시킨다.
+  //   (비급여-only 시드에서는 급여/공단 라인 미렌더 → 두 항 0, taxSum = 비급여 합 = grandTotal 로 동일 성립.)
   const settleText = await settle.innerText();
   const num = (label: RegExp): number => {
     const m = settleText.match(label);
@@ -251,7 +259,8 @@ test('시나리오1+2: [차트코드·진료비 산정] = 초록 아래·파랑 
   const taxSum =
     (num(/비급여\(과세\)\s*([\d,]+)/) || 0) +
     (num(/비급여\(면세\)\s*([\d,]+)/) || 0) +
-    (num(/급여(?!\s*자부담)\s*([\d,]+)/) || 0);
+    (num(/급여\s*자부담(?:\(\d+%\))?\s*([\d,]+)/) || 0) + // "급여 자부담(30%)" = 환자 자부담(payCopaymentTotal)
+    (num(/공단부담액\(명세\)\s*([\d,]+)/) || 0);          // "공단부담액(명세)" = 공단 몫 → 급여 전액 재구성
   expect(
     Number.isFinite(taxSum) && taxSum > 0,
     `settle-lane 세금구분 합 추출(taxSum=${taxSum}) — settleText=${JSON.stringify(settleText).slice(0, 200)}`,
