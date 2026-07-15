@@ -1,11 +1,11 @@
 -- ============================================================================
 -- ROLLBACK — foot row1(0356b229) self-checkin 중복행 정정 mutation
 -- Ticket : T-20260715-foot-ROW1-DUP-CLEANUP-MUTATION
--- 전제   : forward 마이그(20260715140000)가 COMMIT되어 _cleanup_row1_* 4표 존재.
+-- 전제   : forward 마이그(20260715170000)가 COMMIT되어 _cleanup_row1_* 4표 존재.
 -- 방식   : archive-first SSOT 정밀 역주행 (역순: remove→relink→rrn→denorm 되돌림).
 --   (1) ROW1 customers 재INSERT (_bak → customers, FK 타깃 복원)  ── 삭제 되돌림
 --   (2) _fkmoves 역주행: 이동된 자식 행만 child PK(id) 기준 RAW→ROW1 복귀  ── relink 되돌림
---   (3) RAW rrn 컬럼 원복 (_rrn_bak old 값 = NULL 기대)  ── RRN 이관 되돌림
+--   (3) RAW rrn 4컬럼 원복 (_rrn_bak old 값 = NULL 기대)  ── RRN 이관 되돌림
 --   (4) _denorm 복원: check_ins customer_name/phone → old 값(마스킹)  ── denorm 되돌림
 -- 멱등: 재실행 시 이미 복원된 건은 no-op (ON CONFLICT / WHERE 조건).
 -- 주의: 전 FK 자식 테이블은 'id' PK 보유 가정(기계열거). 예외 시 수동 검토.
@@ -44,7 +44,7 @@ BEGIN
   END LOOP;
 END $rb2$;
 
--- (3) RAW rrn 컬럼 원복 (이관 전 값 = NULL 기대)
+-- (3) RAW rrn 4컬럼 원복 (이관 전 값 = NULL 기대)
 UPDATE customers r
    SET rrn_enc                = b.old_rrn_enc,
        rrn_vault_id           = b.old_rrn_vault_id,
