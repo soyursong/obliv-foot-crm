@@ -712,6 +712,17 @@ export default function Closing() {
     return map;
   }, [checkInsDetail]);
 
+  // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC1): 당일 초진/재진 = check_ins.visit_type(접수 스냅샷) 기준.
+  //   customers.visit_type 은 [완료] 이동 시 'returning' 승격(다음 방문 예측용) → 당일 표시엔 사용 금지.
+  //   단건 결제는 check_in_id 직접 연결로 조회하고, 패키지 결제(check_in_id 無)는 customer_id → 당일 check_in 으로 폴백 조회.
+  const checkInVisitTypeByCustomer = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of checkInsDetail) {
+      if (c.customer_id && !map.has(c.customer_id)) map.set(c.customer_id, c.visit_type);
+    }
+    return map;
+  }, [checkInsDetail]);
+
   // ── 통합 결제내역 (enriched) ────────────────────────────────
   const enrichedRows = useMemo<EnrichedRow[]>(() => {
     const rows: EnrichedRow[] = [];
@@ -734,9 +745,16 @@ export default function Closing() {
         pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: customerName,
-        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route, 초진재진=customers.visit_type
+        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route
         lead_source: cust?.visit_route ?? null,
-        visit_type_label: visitTypeLabel(cust?.visit_type ?? null),
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC1): 초진/재진 = check_ins.visit_type(접수 스냅샷).
+        //   단건 결제는 check_in_id 직접 연결(ci) 우선, 없으면 customer_id 폴백, 최후에 customers.visit_type.
+        visit_type_label: visitTypeLabel(
+          ci?.visit_type
+            ?? (customerId ? checkInVisitTypeByCustomer.get(customerId) ?? null : null)
+            ?? cust?.visit_type
+            ?? null,
+        ),
         staff_name: consultantName,
         amount: p.amount,
         method: p.method,
@@ -764,9 +782,15 @@ export default function Closing() {
         pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: cust?.name ?? '-',
-        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route, 초진재진=customers.visit_type
+        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route
         lead_source: cust?.visit_route ?? null,
-        visit_type_label: visitTypeLabel(cust?.visit_type ?? null),
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC1): 초진/재진 = check_ins.visit_type(접수 스냅샷).
+        //   패키지 결제는 check_in_id 미보유 → customer_id 로 당일 check_in 조회, 없으면 customers.visit_type 폴백.
+        visit_type_label: visitTypeLabel(
+          (p.customer_id ? checkInVisitTypeByCustomer.get(p.customer_id) ?? null : null)
+            ?? cust?.visit_type
+            ?? null,
+        ),
         staff_name: assignedStaffName,
         amount: p.amount,
         method: p.method,
@@ -810,7 +834,7 @@ export default function Closing() {
 
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
     return rows;
-  }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerMap, staffMap]);
+  }, [payments, pkgPayments, manualEntries, checkInDetailMap, checkInVisitTypeByCustomer, customerMap, staffMap]);
 
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' 통일

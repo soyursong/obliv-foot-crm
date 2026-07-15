@@ -22,6 +22,23 @@ import type { VisitType } from './types';
 export const RETURNING_WINDOW_DAYS = 365;
 
 /**
+ * T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC2)
+ *
+ * 오늘(KST) 자정 시작 시각. recency 조회에서 **당일 자기방문**을 제외하기 위한 상한 경계.
+ *
+ * 왜 필요한가: 금일 초진 고객을 [완료]로 이동하면 그 당일 check_in 이 status='done' 이 되어
+ * recency 조회의 최신 완료방문으로 잡혀 스스로를 '재진'으로 판정(diff=0 <= 365)하는 오염 발생.
+ * 당일 방문의 초진/재진은 접수 스냅샷(check_ins.visit_type) 기준이어야 하므로, recency(=다음 방문 예측)
+ * 조회에서는 당일 완료방문을 제외한다.
+ *
+ * ⚠ 접수화면(NewCheckInDialog)·배정축 회귀 없음: 접수/배정 시점의 당일 check_in 은 아직 done 이 아니라
+ *   본 하한 필터에 걸릴 대상이 없다. JUDGE-365(b0522329) 접수판정 동작 불변.
+ */
+function todaySeoulMidnightISO(): string {
+  return `${todaySeoulISODate()}T00:00:00+09:00`;
+}
+
+/**
  * 두 KST 날짜(YYYY-MM-DD) 사이 경과 일수 = todayISO - lastISO.
  * UTC 자정으로 정규화해 밀리초 차 → 일수로 환산한다(로컬 타임존/서머타임 무영향).
  * 잘못된 입력이면 NaN 반환(호출부에서 무이력과 동일 처리).
@@ -72,6 +89,8 @@ export async function resolveVisitTypeByRecency(
       .select('checked_in_at')
       .eq('customer_id', customerId)
       .eq('status', 'done')
+      // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC2): 당일 자기방문 제외
+      .lt('checked_in_at', todaySeoulMidnightISO())
       .order('checked_in_at', { ascending: false })
       .limit(1);
     if (clinicId) q = q.eq('clinic_id', clinicId); // 종로 오리진점 풋센터 한정
@@ -120,6 +139,8 @@ export async function resolveVisitTypesByRecency(
         .select('customer_id, checked_in_at')
         .in('customer_id', slice)
         .eq('status', 'done')
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC2): 당일 자기방문 제외 (single 헬퍼와 동일 규칙 — re-divergence 방지)
+        .lt('checked_in_at', todaySeoulMidnightISO())
         .order('checked_in_at', { ascending: false });
       if (clinicId) q = q.eq('clinic_id', clinicId); // 종로 오리진점 풋센터 한정
       const { data, error } = await q;
