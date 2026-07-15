@@ -398,16 +398,19 @@ export default function Closing() {
     },
   });
 
-  // ── 시술별 통계 ────────────────────────────────────────────
+  // ── 시술별 통계 (raw 시술 항목) ─────────────────────────────
   // T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3:
   //   is_package_session=true 항목 제외 — 패키지 차감 세션은 이미 결제된 건
-  const { data: procedureStats = [] } = useQuery<{ service_name: string; count: number; revenue: number }[]>({
+  // T-20260715-foot-DAYCLOSE-STAT-PAYONLY:
+  //   집계(paid 필터·revenue 합산)는 아래 procedureStats useMemo로 이동.
+  //   이 쿼리는 당일 체크인의 시술 raw 행만 조회한다.
+  const { data: procedureServicesRaw = [] } = useQuery<{ service_name: string; price: number; check_in_id: string | null; is_package_session?: boolean | null }[]>({
     queryKey: ['closing-procedures', clinic?.id, date],
     enabled: !!clinic,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('check_in_services')
-        // is_package_session 포함해 JS에서 필터링 (null 안전성)
+        // is_package_session·check_in_id 포함해 JS에서 필터링 (null 안전성)
         .select('service_name, price, check_in_id, is_package_session')
         .in('check_in_id', (await supabase
           .from('check_ins')
@@ -418,19 +421,43 @@ export default function Closing() {
           .then(r => (r.data ?? []).map((d: { id: string }) => d.id))
         ));
       if (error) throw error;
-      const byName: Record<string, { count: number; revenue: number }> = {};
-      for (const row of (data ?? []) as { service_name: string; price: number; is_package_session?: boolean | null }[]) {
-        // T-20260519-foot-PKG-REVENUE-SPLIT: 패키지 세션 항목 제외
-        if (row.is_package_session === true) continue;
-        const entry = byName[row.service_name] ??= { count: 0, revenue: 0 };
-        entry.count++;
-        entry.revenue += row.price;
-      }
-      return Object.entries(byName)
-        .map(([service_name, { count, revenue }]) => ({ service_name, count, revenue }))
-        .sort((a, b) => b.count - a.count);
+      return (data ?? []) as { service_name: string; price: number; check_in_id: string | null; is_package_session?: boolean | null }[];
     },
   });
+
+  // ── 실수납/결제 confirmed 체크인 집합 (net>0) ────────────────
+  // T-20260715-foot-DAYCLOSE-STAT-PAYONLY (A안, 김주연 총괄 결정):
+  //   시술별 통계는 '완료' 상태 전환만으로는 집계하지 않고 실제 수납/결제된 건만 집계한다.
+  //   AC-4 RC 확정: 환불은 payments 별도 행(payment_type='refund')으로 저장 → check_in별
+  //   net = Σ(payment.amount) − Σ(refund.amount). net>0 기준(b) 채택.
+  //   (payment 레코드 존재(a)는 F-4714(net=0 환불건)를 걸러내지 못하므로 부적합.)
+  const paidCheckInIds = useMemo(() => {
+    const net = new Map<string, number>();
+    for (const p of payments) {
+      if (!p.check_in_id) continue;
+      net.set(p.check_in_id, (net.get(p.check_in_id) ?? 0) + (p.payment_type === 'refund' ? -p.amount : p.amount));
+    }
+    const set = new Set<string>();
+    for (const [id, amt] of net) if (amt > 0) set.add(id);
+    return set;
+  }, [payments]);
+
+  // ── 시술별 통계 (paid 필터 후 집계) ─────────────────────────
+  const procedureStats = useMemo<{ service_name: string; count: number; revenue: number }[]>(() => {
+    const byName: Record<string, { count: number; revenue: number }> = {};
+    for (const row of procedureServicesRaw) {
+      // T-20260519-foot-PKG-REVENUE-SPLIT: 패키지 세션 항목 제외
+      if (row.is_package_session === true) continue;
+      // T-20260715-foot-DAYCLOSE-STAT-PAYONLY: 실수납/결제 confirmed(net>0) 체크인만 집계
+      if (!row.check_in_id || !paidCheckInIds.has(row.check_in_id)) continue;
+      const entry = byName[row.service_name] ??= { count: 0, revenue: 0 };
+      entry.count++;
+      entry.revenue += row.price;
+    }
+    return Object.entries(byName)
+      .map(([service_name, { count, revenue }]) => ({ service_name, count, revenue }))
+      .sort((a, b) => b.count - a.count);
+  }, [procedureServicesRaw, paidCheckInIds]);
 
   // ── 체크인 상세 (결제내역 탭용 enriched) ──────────────────
   const { data: checkInsDetail = [] } = useQuery<CheckInDetail[]>({
@@ -1439,9 +1466,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             />
           </div>
 
-          {/* 시술별 통계 */}
+          {/* 시술별 통계 — T-20260715-foot-DAYCLOSE-STAT-PAYONLY: 실수납/결제 confirmed(net>0) 건만 */}
           {procedureStats.length > 0 && (
-            <Card>
+            <Card data-testid="procedure-stats-card">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">시술별 통계 ({procedureStats.reduce((s, p) => s + p.count, 0)}건)</CardTitle>
               </CardHeader>
@@ -1465,7 +1492,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                     <tr className="font-medium">
                       <td className="py-1.5">합계</td>
                       <td className="py-1.5 text-right tabular-nums">{procedureStats.reduce((s, p) => s + p.count, 0)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatAmount(procedureStats.reduce((s, p) => s + p.revenue, 0))}</td>
+                      <td className="py-1.5 text-right tabular-nums" data-testid="procedure-stats-total-revenue">{formatAmount(procedureStats.reduce((s, p) => s + p.revenue, 0))}</td>
                     </tr>
                   </tbody>
                 </table>
