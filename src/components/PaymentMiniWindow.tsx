@@ -2469,24 +2469,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 {pricingItems.length > 0 && (
                   <div className="border-t px-3 py-2 bg-muted/20 shrink-0 space-y-1">
                     <p className="text-xs font-semibold text-muted-foreground">세금 구분</p>
-                    {(Object.entries(totalByTax) as [TaxClass, number][]).map(([cls, amt]) => (
-                      <div key={cls} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">{cls}</span>
-                        <span className="tabular-nums font-medium">{formatAmount(amt)}</span>
-                      </div>
-                    ))}
-                    {/* T-20260526-foot-COPAY-MINI-BUG AC-2: 급여 자부담금
-                        T-20260714 REOPEN: 수납 grain(payCopaymentTotal, 등급 미상→30%) 표시 →
-                        하단 수납잔액과 동일 본인부담 값으로 정합(공단 몫 미포함). */}
-                    {payCopaymentTotal > 0 && (
-                      <div className="flex justify-between text-xs text-blue-700">
-                        <span>
-                          급여 자부담
-                          {copayRate !== null && ` (${Math.round(copayRate * 100)}%)`}
-                        </span>
-                        <span className="tabular-nums font-semibold">{formatAmount(payCopaymentTotal)}</span>
-                      </div>
-                    )}
+                    {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT REOPEN#5 (김주연 총괄, 스크린샷 요구):
+                        세금구분 '급여' 라인 = 환자 자부담(30%)만 표시. 공단부담(70%)은 이 라인/수납잔액에서 제외하고
+                        아래 '공단부담액(명세)' 라인으로 분리. 값·라벨 모두 배포 SSOT(payCopaymentTotal/copayRate,
+                        computeFootBilling general_default 30%) 소비 — 인라인 병렬 재계산 금지(DA §제약1).
+                        - 급여: amt(=coveredTotal 본인+공단) → payCopaymentTotal(본인 자부담만). 라벨 "급여"→"급여 자부담(30%)".
+                        - 비급여(과세)/면세: totalByTax 그대로. */}
+                    {(Object.entries(totalByTax) as [TaxClass, number][]).map(([cls, amt]) => {
+                      const isCovered = cls === '급여';
+                      const label = isCovered
+                        ? `급여 자부담${copayRate !== null ? `(${Math.round(copayRate * 100)}%)` : ''}`
+                        : cls;
+                      const displayAmt = isCovered ? payCopaymentTotal : amt;
+                      return (
+                        <div key={cls} className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className="tabular-nums font-medium">{formatAmount(displayAmt)}</span>
+                        </div>
+                      );
+                    })}
                     {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2): 공단부담액(명세) 정보성 라인.
                         급여 진료비 − 본인부담금 = 공단(NHIS) 몫. 수납잔액에는 미포함(환자가 내지 않음).
                         라벨 "공단부담액(명세)" — 명세(service_charges) 기준 추정액이지 EDI 확정액 아님
