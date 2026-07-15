@@ -294,7 +294,13 @@ export default defineConfig({
       // 순수 정적 소스 가드(unit 프로젝트 전용)는 desktop-chrome 에서 제외 — auth.setup 의존을
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
-      testIgnore: ['**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts'],
+      testIgnore: [
+        '**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts',
+        // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY: unit 전용 setContent 렌더 spec.
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
+        //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.
+        '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+      ],
     },
     {
       name: 'tablet',
