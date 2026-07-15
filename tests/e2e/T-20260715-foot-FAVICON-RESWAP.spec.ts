@@ -15,7 +15,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const CACHE_VER = '20260715';
+const CACHE_VER = '20260715b'; // v2 재교체(RESWAP): 舊 v1(?v=20260715) 캐시 무효화 위해 구분값
 const EXPECTED_TITLE = '오블리브 풋센터 CRM';
 
 test.describe('T-20260715 FAVICON-RESWAP — 탭 아이콘 재교체 + 캐시 무효화', () => {
