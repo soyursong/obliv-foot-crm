@@ -4,7 +4,8 @@
 -- up.sql 은 inner COMMIT 없음 → 하단 ROLLBACK 이 archive/DELETE/DDL 전부 원복.
 -- supervisor 러너는 Dry-Run No-Persistence Protocol(txn-control strip + exception-handler
 --   + 사후 무영속 introspection post-probe)을 추가 적용.
--- 기대: G1~G4 통과 → NOTICE 'DONE: archived customers=4 aicc=4, removed customers=4 aicc=4'
+-- 기대: G1~G4 통과 + G5(chart_number)=INTERIOR-GAP NOTICE(2026-07-15 probe: 초과 live 13건 max=F-4777)
+--       → NOTICE 'DONE: archived customers=4 aicc=4, removed customers=4 aicc=4'
 --       → sentinel EXCEPTION 강제 롤백(무영속).
 -- ============================================================================
 BEGIN;
@@ -33,6 +34,7 @@ DECLARE
     ]::uuid[];
   n_cust int; n_fp int; n_led int; n_fk int; n_aicc_live int;
   n_arch_c int; n_arch_a int; del_c int; del_a int; overlap int;
+  n_above int; v_clinic uuid; v_max text;
 BEGIN
   -- ── G1 freeze 재검증 abort: keep ∩ tgt = 0 ─────────────────────────────
   SELECT count(*) INTO overlap
@@ -116,6 +118,21 @@ BEGIN
     INTO n_fk;
   IF n_fk <> 0 THEN
     RAISE EXCEPTION 'ABORT G4(child): aicc 외 자식 %건 유입 — 실환자화 신호. abort→재판정', n_fk;
+  END IF;
+
+  -- ── G5 chart_number 발번축 probe (DA C3·C5, READ-ONLY·비차단) ──────────────
+  SELECT DISTINCT clinic_id INTO v_clinic FROM customers WHERE id = ANY(tgt);
+  SELECT count(*), max(c.chart_number)
+    INTO n_above, v_max
+    FROM customers c
+    WHERE c.clinic_id = v_clinic
+      AND c.chart_number ~ '^F'
+      AND NOT (c.id = ANY(tgt))
+      AND NULLIF(regexp_replace(c.chart_number, '\D', '', 'g'), '')::bigint > 4763;
+  IF n_above > 0 THEN
+    RAISE NOTICE 'G5(chart_number)=INTERIOR-GAP: 초과 live %건(max=%) → 재사용 원천 없음(무해)', n_above, v_max;
+  ELSE
+    RAISE NOTICE 'G5(chart_number)=TOP-OF-SEQUENCE: 초과 live 0건 → 재발번 재사용 가능하나 tolerable·진행';
   END IF;
 
   -- ==================== ARCHIVE (ADDITIVE, 순소실0 선결) ====================

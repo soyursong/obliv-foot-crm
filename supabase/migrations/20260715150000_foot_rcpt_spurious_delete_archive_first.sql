@@ -21,6 +21,15 @@
 --     임상/운영 자식 전부 0 (reservations/check_ins/checklists/consent/memo/clinical_images 등).
 --     유일 접점 = aicc_crm_phone_match 4행(비FK dangling CTI 캐시, customer_id 1:1) → 함께 archive+remove.
 --   freeze 유지 10건: 전원 실재(hyphenated 010-XXXX-XXXX), 대상 4 id/전화와 교집합 0. (아래 keep[] 고정)
+--
+-- ── Q3 chart_number 발번축 probe (DA CONSULT-REPLY C3·C5, scripts/..._probe4_chartno.mjs) ──
+--   DA 재지정: next_chart_number = durable seq 아님, live customers.chart_number MAX-rescan(registry L714).
+--   대상 chart_number = F-4760/4761/4762/4763 (clinic_id 74967aea-a60b-4da3-a0e7-9c997a930bc8, foot).
+--   2026-07-15 probe 판정 = **INTERIOR-GAP** — 동일 clinic live MAX=F-4777, F-4763 초과 live 13행 존재.
+--     ⟹ MAX-rescan 재발번은 F-4778 산출 → 삭제된 F-4760~4763 **재사용 원천 없음 = 완전 무해**.
+--   ∴ chart_number 회수 불요(DA GO), 재사용 방어코드(HWM/gap-reserve/seq-rollback) 불요(over-eng 금지).
+--   apply-time G5로 재확인(READ-ONLY·비차단): top-of-sequence로 뒤집혀도 tolerable(archive full-fidelity 보존
+--     ·live unique_scope 위반 아님·timestamp disambiguate)이므로 NOTICE 기록만·abort 아님.
 -- ============================================================================
 
 BEGIN;
@@ -49,6 +58,7 @@ DECLARE
     ]::uuid[];
   n_cust int; n_fp int; n_led int; n_fk int; n_aicc_live int;
   n_arch_c int; n_arch_a int; del_c int; del_a int; overlap int;
+  n_above int; v_clinic uuid; v_max text;
 BEGIN
   -- ── G1 freeze 재검증 abort: keep ∩ tgt = 0 ─────────────────────────────
   SELECT count(*) INTO overlap
@@ -132,6 +142,24 @@ BEGIN
     INTO n_fk;
   IF n_fk <> 0 THEN
     RAISE EXCEPTION 'ABORT G4(child): aicc 외 자식 %건 유입 — 실환자화 신호. abort→재판정', n_fk;
+  END IF;
+
+  -- ── G5 chart_number 발번축 probe (DA C3·C5, READ-ONLY·비차단) ──────────────
+  --   interior-gap(상위 번호 live 존재) → 재발급 원천 없음 → 완전 무해.
+  --   top-of-sequence(상위 번호 부재) → 재사용 가능하나 tolerable(archive 보존·live unique 무위반).
+  --   두 분기 모두 진행. 재사용 방어코드 없음(over-eng 금지). NOTICE로 evidence 기록만.
+  SELECT DISTINCT clinic_id INTO v_clinic FROM customers WHERE id = ANY(tgt);
+  SELECT count(*), max(c.chart_number)
+    INTO n_above, v_max
+    FROM customers c
+    WHERE c.clinic_id = v_clinic
+      AND c.chart_number ~ '^F'
+      AND NOT (c.id = ANY(tgt))
+      AND NULLIF(regexp_replace(c.chart_number, '\D', '', 'g'), '')::bigint > 4763;
+  IF n_above > 0 THEN
+    RAISE NOTICE 'G5(chart_number)=INTERIOR-GAP: 대상 F-4760~4763 초과 live %건(max=%) → MAX-rescan 재발번이 상위 번호 산출 → 재사용 원천 없음(완전 무해)', n_above, v_max;
+  ELSE
+    RAISE NOTICE 'G5(chart_number)=TOP-OF-SEQUENCE: 초과 live 0건 → 삭제 후 재발번 시 F-4760~4763 재사용 가능(tolerable: archive full-fidelity 보존·live unique 무위반·timestamp disambiguate). blocker 아님·진행';
   END IF;
 
   -- ==================== ARCHIVE (ADDITIVE, 순소실0 선결) ====================
