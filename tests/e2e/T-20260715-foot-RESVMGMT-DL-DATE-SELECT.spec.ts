@@ -31,7 +31,7 @@ async function loginIfNeeded(page: import('@playwright/test').Page) {
     await loginInput.fill(process.env.TEST_EMAIL ?? 'test@test.com');
     await page.getByPlaceholder('비밀번호').fill(process.env.TEST_PASSWORD ?? (() => { throw new Error('TEST_PASSWORD env required (no plaintext fallback)'); })());
     await page.getByRole('button', { name: '로그인' }).click();
-    await page.waitForURL(/\/(dashboard|reservations|$)/, { timeout: 10000 });
+    await page.waitForURL(/\/admin(\/|$)/, { timeout: 10000 });
   }
 }
 
@@ -39,7 +39,10 @@ test.describe('T-20260715-foot-RESVMGMT-DL-DATE-SELECT', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE_URL);
     await loginIfNeeded(page);
-    await page.goto(`${BASE_URL}/reservations`);
+    // 예약관리 라우트는 /admin 하위(/admin/reservations). '/reservations' 단독은
+    // App.tsx 의 catch-all(path="*" → Navigate /admin)로 대시보드로 리다이렉트되어
+    // day-summary-download 버튼이 없는 화면이 뜬다(FIX-REQUEST MSG-20260716-052902-tcce RC).
+    await page.goto(`${BASE_URL}/admin/reservations`);
     await page.waitForLoadState('networkidle');
   });
 
