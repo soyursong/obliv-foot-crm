@@ -19,8 +19,11 @@
 //
 // ── 환경 변수 ──────────────────────────────────────────────────────────────
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY — 자동 주입
-//   REDPAY_API_KEY         — D1 (기존 검증 키)
-//   REDPAY_BUSINESS_NO     — 풋 사업자번호 (종로 풋 511-60-00988)
+//   REDPAY_API_KEY         — D1 (기존 검증 키, = 산하 전 사업자 마스터 키)
+//   REDPAY_API_URL         — (선택) 거래조회 전체경로 override. 미설정 시 기본값
+//                            https://redpay.kr/api/partner/payments.php. payments.php
+//                            파일명 탈락 시 런타임 가드가 throw(부모 403 사고 RC 차단).
+//   REDPAY_BUSINESS_NO     — 풋 사업자번호 (종로 풋 511-60-00988) — 마스터 키 스코프 필터 필수
 //   REDPAY_TID_WHITELIST   — 풋 단말기 TID 목록 (쉼표 구분)
 //   REDPAY_DRY_RUN         — 'true'(기본) = 실호출 차단, 픽스처 시뮬레이션
 //   REDPAY_ALERT_CHANNEL   — M3 알림 채널 (비워두면 로그만)
@@ -28,6 +31,9 @@
 //   INTERNAL_CRON_SECRET   — pg_cron 인증 공유 시크릿
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// RedPay 엔드포인트 SSOT — 형제 EF(receipt-ocr Step3)와 공유하는 단일 정의처.
+//   env 계약 = REDPAY_API_URL (신규 env 도입 금지). ref: T-20260710-foot-REDPAY-URL-CONFIG-HARDEN.
+import { resolveRedpayEndpoint } from "../_shared/redpay-config.ts";
 import {
   matchTransactionsBatch,
   detectMissingInCrm,
@@ -43,17 +49,75 @@ import {
 // ── 픽스처 (DRY_RUN 모드용) ─────────────────────────────────────────────────
 import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" };
 
+// ── 멀티센터 center 스코핑 (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──────────
+//   payment_reconciliation_log.center = canonical brand 토큰 {'foot','body'} (DA
+//   da_decision_body_redpay_center_column_20260714.md). merchant band 로 명시 파생 —
+//   default-mapping 금지(미분류를 조용히 'foot'로 흘리면 풋 recon 오염 = AC4 위반).
+//     · foot 17-set merchant  → center='foot'
+//     · 도수(재활,body) 14-band(1777274-276) → center='body'
+//   band↔center 는 폴러 DEFAULT(scripts/redpay_macstudio_poller.mjs)와 미러. 값 표준 canonical
+//   ⇒ ⛔ 'dohsu'/'dosu'(display alias) ⛔ 'body_rehab'(축오염). 재활도 center='body'.
+const FOOT_MERCHANT_SET = new Set<string>([
+  "1777285001", "1777285004", "1777288001", "1777288004",
+  "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
+  "1777289006", "1777289007", "1777289008",
+  "1777289009", "1777289010", "1777289011", "1777289012", "1777289013",
+]);
+const BODY_MERCHANT_SET = new Set<string>([
+  "1777274001",
+  "1777275001", "1777275002", "1777275003", "1777275004",
+  "1777275005", "1777275006", "1777275007", "1777275008",
+  "1777276001", "1777276002", "1777276003", "1777276004", "1777276005",
+]);
+
+/** raw_payload.merchant.id 추출 → 안전 문자열. 부재 시 null. */
+function merchantIdOf(rawPayload: unknown): string | null {
+  const m = (rawPayload as { merchant?: { id?: unknown } } | null | undefined)?.merchant?.id;
+  return m != null && `${m}`.trim() !== "" ? `${m}`.trim() : null;
+}
+
+/**
+ * raw 트랜잭션(merchant band) → center 명시 파생.
+ *   foot 17-set → 'foot' / body 14-band → 'body'.
+ *   미분류(폴러 whitelist 상 발생 불가하나 방어) → 'foot' 폴백 + WARN 표면화(silent 금지, registry §6 정신).
+ */
+function centerForRawRow(raw: { raw_payload?: unknown } | null | undefined): "foot" | "body" {
+  const mid = merchantIdOf(raw?.raw_payload);
+  if (mid && BODY_MERCHANT_SET.has(mid)) return "body";
+  if (mid && FOOT_MERCHANT_SET.has(mid)) return "foot";
+  console.warn(
+    `[redpay-reconcile][center] 미분류 merchant(id=${mid ?? "∅"}) — center='foot' 폴백(표면화). ` +
+    `신규 단말 후보면 registry(redpay_terminal_registry)에 등록 필요.`,
+  );
+  return "foot";
+}
+
 // ── 환경 변수 ─────────────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const REDPAY_API_KEY            = Deno.env.get("REDPAY_API_KEY") ?? "";
 const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
+// clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①).
+//   business_no 는 세무 cert 정정으로 mutable(511→457 divergence → clinic 조회 실패). clinic 해석은 slug 우선.
+//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO) 은 불변 — 물리 merchant=511 유지.
+const REDPAY_CLINIC_SLUG        = Deno.env.get("REDPAY_CLINIC_SLUG") ?? "jongno-foot";
 const REDPAY_TID_WHITELIST      = Deno.env.get("REDPAY_TID_WHITELIST") ?? "";
 const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") === "true";
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
-const REDPAY_BASE_URL           = "https://redpay.kr/api/partner/payments.php";
+// ── RedPay 엔드포인트: 전체경로 단일 SSOT(_shared/redpay-config.ts) + payments.php 탈락 가드 ──
+//   [이은상 팀장 T-20260708→T-20260710] 유지보수성: base URL·endpoint·resolve 로직을
+//     _shared/redpay-config.ts 한 곳에서 관리. 경로 변경은 그 REDPAY_ENDPOINT 또는
+//     env REDPAY_API_URL 한 군데만 손대면 됨. 형제 EF(receipt-ocr Step3)와 이 모듈을 공유한다.
+//   [c930c423 화해] base+file 분해(urljoin/base-only concat) 금지 — `payments.php` 파일명이
+//     탈락하면 요청이 디렉터리(`/api/partner/`)로 가고 nginx 가 application/json 이 아닌
+//     HTML 403(디렉터리 거부)을 돌려준다. 이 HTML 403 을 "API Key 불일치"로 오진해 키를 반복
+//     재등록한 사고가 있었다(redpay-403-incident F0BGDKNATK7, 2026-07-10 forensic — URL
+//     오조립 단일원인 확정). resolveRedpayEndpoint() 이 전체경로를 단일 값으로만 다루고
+//     payments.php 탈락 시 즉시 throw 한다(RC 차단). 상세 근거·가드는 _shared/redpay-config.ts 참조.
+// resolve 된 전체경로 상수 (모듈 로드 시 1회 검증). 쿼리스트링만 부착해 사용.
+const REDPAY_BASE_URL = resolveRedpayEndpoint();
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -125,6 +189,39 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (!isInternalCron && !isServiceRole) {
     return json({ error: "Unauthorized" }, 401);
+  }
+
+  // ── mode=match_only — 레드페이 fetch 없이 매처만 실행 (T-20260711 맥스튜디오 폴러 연동) ──
+  //   [주석 정정 T-20260711-REDPAY-IPBLOCK-REVERIFY] 과거 이 자리엔 "EF cloud egress = WAF
+  //   403" 가정이 적혀 있었으나 재검증으로 반증됨: macstudio 한국IP 실호출에서 관측된 403 은
+  //   payments.php 파일명 탈락 시의 nginx 디렉터리 거부(IP-무관)였고, 정식 payments.php+키 는
+  //   200 JSON 이었다. "403=WAF/IP차단" 은 실증된 적 없음(오진). EF cloud fresh 재호출의
+  //   실제 도달성은 별도 미확정 이슈로 이월(WAF-WHITELIST 티켓). 이 모드는 그와 무관하게,
+  //   레드페이 직접 호출을 맥스튜디오 폴러(한국 IP)에 위임하는 운영 분리 하에 fetch 를
+  //   "건너뛰고" 이미 적재된 raw 에 대해 기존 4-tier 매처(runMatcher)만 재사용한다
+  //   (매처 로직 무변경, 레드페이 미호출 = 순수 DB). API 키 불요(fetch 없음).
+  //   business_no 만 있으면 clinic 스코프로 매칭 가능.
+  {
+    let peekBody: RunRequest = { mode: "incremental" };
+    try { peekBody = await req.clone().json(); } catch { /* ignore */ }
+    if ((peekBody as { mode?: string }).mode === "match_only") {
+      if (!REDPAY_BUSINESS_NO) {
+        return json({ status: "blocked", reason: "match_only: REDPAY_BUSINESS_NO 미등록", dry_run: false }, 200);
+      }
+      try {
+        const { data: clinic } = await supabase
+          .from("clinics").select("id").eq("slug", REDPAY_CLINIC_SLUG).maybeSingle();
+        const clinicId = clinic?.id as string | undefined;
+        if (!clinicId) throw new Error(`clinic_id 조회 실패 — slug=${REDPAY_CLINIC_SLUG}`);
+        const { matched, events } = await runMatcher(clinicId);
+        console.log(`[redpay-reconcile][foot][match_only] 완료: matched=${matched} events=${events}`);
+        return json({ status: "ok", mode: "match_only", dry_run: false, fetched: 0, upserted: 0, matched, events });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[redpay-reconcile][foot][match_only] 오류:", msg);
+        return json({ status: "error", mode: "match_only", error: msg }, 500);
+      }
+    }
   }
 
   // ── DRY_RUN 모드 분기 (G5 hard-lock) ────────────────────────────────────
@@ -284,25 +381,32 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
   const tidList = REDPAY_TID_WHITELIST
     ? REDPAY_TID_WHITELIST.split(",").map((t) => t.trim()).filter(Boolean)
     : [];
+  const tidWhitelistSet = new Set(tidList);
 
-  let totalFetched  = 0;
-  let totalUpserted = 0;
-  let totalMatched  = 0;
-  let totalEvents   = 0;
-  let totalErrors   = 0;
-  let page          = 1;
-  const PAGE_SIZE   = 500;
+  console.log(
+    `[redpay-reconcile][foot] 스코프: business_no=${REDPAY_BUSINESS_NO} ` +
+    `tid_whitelist=${tidList.length}건 (마스터 키 → business_no+TID 이중 필터 적용)`
+  );
 
-  // clinic_id 조회 (business_no 기준 — 풋 단일 클리닉)
+  let totalFetched   = 0;   // API 가 돌려준 원건수
+  let totalScopedOut = 0;   // 화이트리스트 외 TID 로 제외된 건수(타 병원 혼입 차단)
+  let totalUpserted  = 0;
+  let totalMatched   = 0;
+  let totalEvents    = 0;
+  let totalErrors    = 0;
+  let page           = 1;
+  const PAGE_SIZE    = 500;
+
+  // clinic_id 조회 (안정키 slug 기준 — 풋 단일 클리닉. business_no 는 세무 cert 정정으로 mutable)
   const { data: clinic } = await supabase
     .from("clinics")
     .select("id")
-    .eq("business_no", REDPAY_BUSINESS_NO)
+    .eq("slug", REDPAY_CLINIC_SLUG)
     .maybeSingle();
 
   const clinicId: string | null = clinic?.id ?? null;
   if (!clinicId) {
-    throw new Error(`clinic_id 조회 실패 — business_no=${REDPAY_BUSINESS_NO}`);
+    throw new Error(`clinic_id 조회 실패 — slug=${REDPAY_CLINIC_SLUG}`);
   }
 
   while (true) {
@@ -311,9 +415,24 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
 
     totalFetched += items.length;
 
-    const { upserted, errors } = await upsertRawTransactions(clinicId, items);
-    totalUpserted += upserted;
-    totalErrors   += errors;
+    // ── 클라이언트-측 2차 방어 (최필경 T-20260708) ──────────────────────────
+    //   마스터 키가 서버-측 tid 필터를 무시하고 타 병원 결제를 돌려줘도, 풋 화이트리스트
+    //   밖 TID 는 upsert 전에 제외한다. 화이트리스트 미설정 시(초기)엔 전량 통과.
+    const { kept, dropped } = filterToFootScope(items, tidWhitelistSet);
+    if (dropped.length > 0) {
+      totalScopedOut += dropped.length;
+      const sampleTids = [...new Set(dropped.map((d) => d.tid ?? "null"))].slice(0, 10);
+      console.warn(
+        `[redpay-reconcile][foot][TENANT-GUARD] 화이트리스트 외 TID ${dropped.length}건 제외 ` +
+        `(타 병원 결제 혼입 차단). 제외 TID 샘플=[${sampleTids.join(",")}]`
+      );
+    }
+
+    if (kept.length > 0) {
+      const { upserted, errors } = await upsertRawTransactions(clinicId, kept);
+      totalUpserted += upserted;
+      totalErrors   += errors;
+    }
 
     if (page >= totalPage) break;
     page++;
@@ -327,7 +446,7 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
   const elapsedMs = Date.now() - startMs;
   console.log(
     `[redpay-reconcile][foot] mode=${mode} 완료 elapsed_ms=${elapsedMs} ` +
-    `fetched=${totalFetched} upserted=${totalUpserted} errors=${totalErrors}`
+    `fetched=${totalFetched} scoped_out=${totalScopedOut} upserted=${totalUpserted} errors=${totalErrors}`
   );
 
   if (elapsedMs > EF_TIMEOUT_WARN_MS) {
@@ -393,7 +512,7 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   // 1. 미매칭 raw 거래 조회 (Y 상태 + 미매칭)
   const { data: rawTrxList, error: rawErr } = await supabase
     .from("redpay_raw_transactions")
-    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id")
+    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id,raw_payload")
     .eq("clinic_id", clinicId)
     .eq("external_status", "Y")
     .is("matched_payment_id", null)
@@ -581,7 +700,7 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   // 환불 추적 (N/X/M raw 건)
   const { data: cancelledRaw } = await supabase
     .from("redpay_raw_transactions")
-    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id")
+    .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id,raw_payload")
     .eq("clinic_id", clinicId)
     .in("external_status", ["N", "X", "M"])
     .limit(100);
@@ -600,10 +719,22 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
     }
   }
 
-  // 6. reconciliation_log 기록
+  // 6. center 스탬프 (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) — merchant band 명시 파생.
+  //   VAN-앵커 이벤트(raw_transaction_id 有)는 raw merchant band 로, CRM-앵커(missing_at_van,
+  //   raw 없음)는 이 foot CRM 의 payments → 'foot'. default-mapping 금지(centerForRawRow 미분류=WARN).
+  const centerByRawId = new Map<string, "foot" | "body">();
+  for (const r of ((rawTrxList ?? []) as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
+  for (const r of ((cancelledRaw ?? []) as RawTransaction[])) centerByRawId.set(r.id, centerForRawRow(r));
+  for (const e of allEvents) {
+    e.center = e.raw_transaction_id
+      ? (centerByRawId.get(e.raw_transaction_id) ?? "foot")   // VAN 앵커: merchant band
+      : "foot";                                                // CRM 앵커(missing_at_van): 이 foot CRM
+  }
+
+  // 7. reconciliation_log 기록
   await insertReconEvents(allEvents);
 
-  // 7. M3 알림 발송 (REDPAY_ALERT_CHANNEL 있을 때만)
+  // 8. M3 알림 발송 (REDPAY_ALERT_CHANNEL 있을 때만)
   await dispatchAlerts(allEvents);
 
   console.log(
@@ -631,6 +762,7 @@ async function insertReconEvents(events: ReconEvent[]): Promise<void> {
     external_amount:    e.external_amount,
     crm_amount:         e.crm_amount,
     raw_payload:        e.alert_payload,
+    center:             e.center ?? "foot",   // 멀티센터 스코핑(NOT NULL). 미stamp 방어 폴백.
   }));
 
   const { error } = await supabase
@@ -774,23 +906,53 @@ async function fetchRedpayPage(
   page:    number,
   limit:   number
 ): Promise<RedpayPageResult> {
+  // ── 멀티테넌트 스코프 파라미터 (최필경 T-20260708 신규 — 마스터 키 방어) ─────────
+  //   REDPAY_API_KEY 는 산하 전 사업자를 조회할 수 있는 마스터 키 → business_no 필터가
+  //   빠지면 타 병원(온리프/심플치과/롱레 등) 결제가 혼입된다. business_no 는 필수로
+  //   항상 전송(아래). 추가로 풋 단말기 TID 화이트리스트를 콤마 다중값으로 전송해
+  //   business_no 공유 merchant(롱레 8 TID 동거) 내에서 풋 13 TID 로 서버-권위 narrowing.
+  //   (redpay-partner-api.md §2.2/§2.5 — tid 콤마 다중값 지원)
   const params = new URLSearchParams({
     from:        formatRedpayDate(from),
     to:          formatRedpayDate(to),
-    business_no: REDPAY_BUSINESS_NO,
+    business_no: REDPAY_BUSINESS_NO,   // 필수 — 마스터 키 사업자 스코프 (511-60-00988)
     page:        String(page),
     limit:       String(limit),
   });
 
-  if (tidList.length === 1) {
-    params.set("tid", tidList[0]);
+  // 풋 TID 화이트리스트 전체를 콤마 다중값으로 전송 (1개든 13개든 동일 처리).
+  //   서버-측 1차 narrowing. 클라이언트-측 2차 방어는 runPoller 의 filterToFootScope.
+  if (tidList.length >= 1) {
+    params.set("tid", tidList.join(","));
   }
 
-  const res = await fetchWithRetry(`${REDPAY_BASE_URL}?${params}`, {
+  // URL 조립: 전체 경로 상수(REDPAY_BASE_URL) + 쿼리스트링만 부착. base 단독 조립·urljoin 금지.
+  const requestUrl = `${REDPAY_BASE_URL}?${params}`;
+
+  // 조치#3 — 실제 발사 URL 로깅. API 키는 X-API-KEY 헤더에만 있고 쿼리스트링엔 없으므로
+  //   URL 로깅은 안전(키 미노출). payments.php 탈락 여부를 로그 1줄로 즉시 지목 가능.
+  console.log(`[redpay-reconcile][foot] redpay request url=${requestUrl}`);
+
+  const res = await fetchWithRetry(requestUrl, {
     headers: {
       "X-API-KEY": REDPAY_API_KEY,
     },
   });
+
+  // 조치#2 — Content-Type 가드. RedPay 파트너 API는 정상·오류 불문 모든 응답이
+  //   application/json 이다. 비-JSON(특히 nginx 의 text/html 403)이 오면 이는 API 오류가
+  //   아니라 요청이 payments.php 에 도달하지 못한 URL 오조립/미도달 신호다.
+  //   → 오류코드 표를 조회하지 말고 원문(status/content-type/url/body)을 그대로 노출한다
+  //     (오진 재발 방지, ref: redpay-403-incident §4·§5·§6.1).
+  const ctype = res.headers.get("Content-Type") ?? "";
+  if (!ctype.toLowerCase().includes("application/json")) {
+    const rawBody = await res.text();
+    throw new Error(
+      `레드페이 비-JSON 응답 (URL 오조립/미도달 의심 — 오류코드 표 조회 금지): ` +
+      `status=${res.status} content_type=${JSON.stringify(ctype)} ` +
+      `url=${requestUrl} body=${JSON.stringify(rawBody.slice(0, 300))}`
+    );
+  }
 
   if (!res.ok) {
     const body = await res.text();
@@ -826,7 +988,23 @@ async function upsertRawTransactions(
   let upserted = 0;
   let errors   = 0;
 
-  const rows = transactions.map((t) => toRawTrxRow(clinicId, t));
+  const mapped = transactions.map((t) => toRawTrxRow(clinicId, t));
+
+  // ── trxid dedup (redpay-partner-api.md §7·§4.9) ──────────────────────────────
+  //   동일 페이지에 (trxid,status,amount) 동일 행이 2건 이상 오면 upsert 의
+  //   ON CONFLICT("external_trxid,external_status,amount") 가 "동일 행 2회 반영 불가"
+  //   오류를 낸다. 업서트 전 in-memory 로 dedup 하여 chunk 실패를 원천 차단한다.
+  const seenKeys = new Set<string>();
+  const rows = mapped.filter((r) => {
+    const key = `${r.external_trxid}|${r.external_status}|${r.amount}`;
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
+  const dupDropped = mapped.length - rows.length;
+  if (dupDropped > 0) {
+    console.log(`[redpay-reconcile][foot] trxid dedup: 페이지 내 중복 ${dupDropped}건 제거`);
+  }
 
   const BATCH = 100;
   for (let i = 0; i < rows.length; i += BATCH) {
@@ -852,6 +1030,22 @@ async function upsertRawTransactions(
 
 // ── 공통 헬퍼 ─────────────────────────────────────────────────────────────
 
+// 풋 스코프 필터 — 화이트리스트 밖 TID(타 병원) 제외 (마스터 키 혼입 2차 방어).
+//   whitelist 비어있으면(초기·미설정) 전량 통과 → 활성화 전 UI 렌더 보장.
+function filterToFootScope(
+  items:        RedpayTransaction[],
+  tidWhitelist: Set<string>
+): { kept: RedpayTransaction[]; dropped: RedpayTransaction[] } {
+  if (tidWhitelist.size === 0) return { kept: items, dropped: [] };
+  const kept:    RedpayTransaction[] = [];
+  const dropped: RedpayTransaction[] = [];
+  for (const it of items) {
+    if (it.tid && tidWhitelist.has(it.tid)) kept.push(it);
+    else dropped.push(it);
+  }
+  return { kept, dropped };
+}
+
 // Redpay approved_at / cancelled_at KST→UTC 변환 헬퍼
 //   Redpay API는 "YYYY-MM-DD HH:MM:SS" 형식의 KST 문자열 반환.
 //   Deno Edge Function은 UTC 환경 → "+09:00" 명시 후 toISOString().
@@ -871,6 +1065,8 @@ function toRawTrxRow(clinicId: string, t: RedpayTransaction) {
     clinic_id:       clinicId,
     external_trxid:  t.trxid,
     external_status: t.status,
+    // 취소(N/X/M)는 amount 가 음수로 내려옴 → 부호 그대로 보존(redpay-partner-api.md §7.2).
+    //   net 계산·환불 추적(detectRefundNotInCrm)이 원부호를 그대로 사용한다.
     amount:          t.amount,
     approval_no:     t.approval_no ?? null,
     root_trxid:      rootTrxid,
