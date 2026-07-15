@@ -97,6 +97,10 @@ const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const REDPAY_API_KEY            = Deno.env.get("REDPAY_API_KEY") ?? "";
 const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
+// clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①).
+//   business_no 는 세무 cert 정정으로 mutable(511→457 divergence → clinic 조회 실패). clinic 해석은 slug 우선.
+//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO) 은 불변 — 물리 merchant=511 유지.
+const REDPAY_CLINIC_SLUG        = Deno.env.get("REDPAY_CLINIC_SLUG") ?? "jongno-foot";
 const REDPAY_TID_WHITELIST      = Deno.env.get("REDPAY_TID_WHITELIST") ?? "";
 const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") === "true";
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
@@ -206,9 +210,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
       try {
         const { data: clinic } = await supabase
-          .from("clinics").select("id").eq("business_no", REDPAY_BUSINESS_NO).maybeSingle();
+          .from("clinics").select("id").eq("slug", REDPAY_CLINIC_SLUG).maybeSingle();
         const clinicId = clinic?.id as string | undefined;
-        if (!clinicId) throw new Error(`clinic_id 조회 실패 — business_no=${REDPAY_BUSINESS_NO}`);
+        if (!clinicId) throw new Error(`clinic_id 조회 실패 — slug=${REDPAY_CLINIC_SLUG}`);
         const { matched, events } = await runMatcher(clinicId);
         console.log(`[redpay-reconcile][foot][match_only] 완료: matched=${matched} events=${events}`);
         return json({ status: "ok", mode: "match_only", dry_run: false, fetched: 0, upserted: 0, matched, events });
@@ -393,16 +397,16 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
   let page           = 1;
   const PAGE_SIZE    = 500;
 
-  // clinic_id 조회 (business_no 기준 — 풋 단일 클리닉)
+  // clinic_id 조회 (안정키 slug 기준 — 풋 단일 클리닉. business_no 는 세무 cert 정정으로 mutable)
   const { data: clinic } = await supabase
     .from("clinics")
     .select("id")
-    .eq("business_no", REDPAY_BUSINESS_NO)
+    .eq("slug", REDPAY_CLINIC_SLUG)
     .maybeSingle();
 
   const clinicId: string | null = clinic?.id ?? null;
   if (!clinicId) {
-    throw new Error(`clinic_id 조회 실패 — business_no=${REDPAY_BUSINESS_NO}`);
+    throw new Error(`clinic_id 조회 실패 — slug=${REDPAY_CLINIC_SLUG}`);
   }
 
   while (true) {

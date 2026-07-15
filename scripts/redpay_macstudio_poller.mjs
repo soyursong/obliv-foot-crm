@@ -86,6 +86,13 @@ const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
 //   (동일 마스터키·동일 사업자 511-60-00988, merchant band 만 교체). 도메인별 launchd 인스턴스.
 //   레지스트리(redpay_terminal_registry.domain)·하드코딩 DEFAULT·로그라벨이 모두 이 값으로 스코핑.
 const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
+// ── clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①) ──
+//   business_no 는 mutable·overloaded(세무 cert 정정으로 foot 511→457 divergence → clinic 조회 실패
+//   → L558 hard-throw 로 폴러 종료 → 실시간 적재 12h 중단). clinic '해석'은 안정키 slug 우선.
+//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO, L286) 은 불변 — 물리 merchant=511 유지.
+//   slug 미지정 도메인(body 등)은 business_no 폴백(하위호환 — 기존 동작 보존).
+const DOMAIN_CLINIC_SLUG_DEFAULTS = { foot: "jongno-foot" };
+const REDPAY_CLINIC_SLUG = cfg("REDPAY_CLINIC_SLUG", DOMAIN_CLINIC_SLUG_DEFAULTS[REDPAY_DOMAIN] ?? "");
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
@@ -550,12 +557,17 @@ async function main() {
     fromDt = new Date(y.getTime() - 9 * 60 * 60 * 1000); // KST→UTC
   }
 
-  // ── clinic_id 조회 (business_no 기준 — 풋 단일 클리닉) ──────────────────────
-  const clinics = await restGet(
-    `clinics?business_no=eq.${encodeURIComponent(REDPAY_BUSINESS_NO)}&select=id&limit=1`
-  );
+  // ── clinic_id 조회 — 안정키 slug 우선(business_no 는 세무 cert 정정으로 mutable) ──────────
+  //   slug 미지정 도메인은 business_no 폴백(하위호환). RedPay API scope(L286) 와는 무관.
+  const clinicQuery = REDPAY_CLINIC_SLUG
+    ? `clinics?slug=eq.${encodeURIComponent(REDPAY_CLINIC_SLUG)}&select=id&limit=1`
+    : `clinics?business_no=eq.${encodeURIComponent(REDPAY_BUSINESS_NO)}&select=id&limit=1`;
+  const clinics = await restGet(clinicQuery);
   const clinicId = clinics[0]?.id ?? null;
-  if (!clinicId) throw new Error(`clinic_id 조회 실패 — business_no=${REDPAY_BUSINESS_NO}`);
+  if (!clinicId) {
+    const keyDesc = REDPAY_CLINIC_SLUG ? `slug=${REDPAY_CLINIC_SLUG}` : `business_no=${REDPAY_BUSINESS_NO}`;
+    throw new Error(`clinic_id 조회 실패 — ${keyDesc}`);
+  }
 
   // ── 페이지 순회: fetch → 스코프 필터 → upsert ──────────────────────────────
   let totalFetched = 0;
