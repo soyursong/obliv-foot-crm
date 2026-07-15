@@ -628,7 +628,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           .limit(10),
         supabase
           .from('customers')
-          .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
+          .select('id, chart_number, customer_memo, customer_note, visit_route, memo, hira_consent')
           .eq('id', customerId)
           .single(),
         supabase
@@ -659,9 +659,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       const pkgs = (pkgRes.data ?? []) as PackageType[];
       setPackages(pkgs);
       setHistory((histRes.data ?? []) as VisitHistory[]);
-      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
+      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; customer_note?: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
       setChartNumber(custData?.chart_number ?? customerMode.chartNumber ?? null);
-      setCustomerMemo(custData?.customer_memo ?? '');
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 고객메모 통합 — read-fallback(customer_note ?? customer_memo)
+      // 정본=customer_note. 레거시 customer_memo(9건) 표시 연속성 보존. write는 customer_note로 일원화(아래 appendCustomerMemo).
+      setCustomerMemo(custData?.customer_note ?? custData?.customer_memo ?? '');
       setVisitRoute(custData?.visit_route ?? '');
       setEtcMemo(custData?.memo ?? '');
       // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
@@ -728,13 +730,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
+            .select('id, chart_number, customer_memo, customer_note, visit_route, memo, hira_consent')
             .eq('id', checkIn.customer_id)
             .single()
         : checkIn.customer_phone
           ? supabase
               .from('customers')
-              .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
+              .select('id, chart_number, customer_memo, customer_note, visit_route, memo, hira_consent')
               .eq('clinic_id', checkIn.clinic_id)
               .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '').slice(-8)}%`)
               .order('created_at', { ascending: false })
@@ -805,9 +807,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
+    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; customer_note?: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
     setChartNumber(custData?.chart_number ?? null);
-    setCustomerMemo(custData?.customer_memo ?? '');
+    // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 통합 read-fallback(customer_note ?? customer_memo).
+    setCustomerMemo(custData?.customer_note ?? custData?.customer_memo ?? '');
     setVisitRoute(custData?.visit_route ?? '');
     setEtcMemo(custData?.memo ?? '');
     // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
@@ -1149,10 +1152,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId, ts: Date.now() }));
   };
 
-  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (customers.customer_memo)
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (customers.customer_note — 5-surface 정본)
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customerMode fallback 추가
   // T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: textarea+개별저장 → 인라인+[추가]+누적(append-only).
   //   한 줄을 컬럼에 \n append 후 즉시 persist (예약메모와 동작 일관). DB 스키마 변경 없음.
+  // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: write를 customer_note로 일원화(5-surface 통합).
+  //   customer_memo(3구역 예약메모 히스토리 seed 원본)는 미변경 보존. base는 read-fallback값이므로
+  //   레거시 customer_memo 내용 위에 이어붙어 연속성 유지.
   const appendCustomerMemo = async (line: string) => {
     const customerId = checkIn?.customer_id ?? customerMode?.customerId;
     if (!customerId) return;
@@ -1161,7 +1167,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setSavingCustomerMemo(true);
     const { error } = await supabase
       .from('customers')
-      .update({ customer_memo: newValue })
+      .update({ customer_note: newValue })
       .eq('id', customerId);
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }
