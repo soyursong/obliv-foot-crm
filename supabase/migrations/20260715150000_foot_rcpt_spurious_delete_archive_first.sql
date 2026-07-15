@@ -19,7 +19,12 @@
 --   blast radius(순소실0 근거): 원장 접점 0 (payments/medical_charts/package_payments/service_charges/
 --     prescriptions/insurance_*/payment_code_claims 전부 0) → 실환자 재판정 신호 없음.
 --     임상/운영 자식 전부 0 (reservations/check_ins/checklists/consent/memo/clinical_images 등).
---     유일 접점 = aicc_crm_phone_match 4행(비FK dangling CTI 캐시, customer_id 1:1) → 함께 archive+remove.
+--     유일 접점 = aicc_crm_phone_match — 단, 이는 독립 테이블이 아니라 customers 투영
+--     auto-updatable VIEW (relkind='v', viewdef: SELECT id AS customer_id, clinic_id, name,
+--     phone, created_at FROM customers). 2026-07-15 dry-run 에서 확인: `DELETE FROM
+--     aicc_crm_phone_match` 는 auto-rewrite 로 customers 를 직접 삭제한다(독립 저장소 아님).
+--     ∴ customers 삭제가 view 행을 동반 소멸시키므로 별도 remove 불요. archive 는 감사용
+--     투영 사본으로만 보존(순소실0 은 full-fidelity customers archive 가 담보).
 --   freeze 유지 10건: 전원 실재(hyphenated 010-XXXX-XXXX), 대상 4 id/전화와 교집합 0. (아래 keep[] 고정)
 --
 -- ── Q3 chart_number 발번축 probe (DA CONSULT-REPLY C3·C5, scripts/..._probe4_chartno.mjs) ──
@@ -200,15 +205,22 @@ BEGIN
     RAISE EXCEPTION 'ABORT archive: aicc 아카이브 % < live % — 순소실0 위반', n_arch_a, n_aicc_live;
   END IF;
 
-  -- ==================== REMOVE (DESTRUCTIVE, children-first) ================
-  DELETE FROM aicc_crm_phone_match WHERE customer_id = ANY(tgt);
-  GET DIAGNOSTICS del_a = ROW_COUNT;
-
+  -- ==================== REMOVE (DESTRUCTIVE) ===============================
+  -- ⚠ aicc_crm_phone_match 는 독립 테이블이 아니라 customers 투영 auto-updatable VIEW.
+  --   customers 삭제가 view 행을 동반 소멸시킨다. 과거의 선행 `DELETE FROM
+  --   aicc_crm_phone_match` 문은 auto-rewrite 로 customers 를 먼저 삭제 → 후속 customers
+  --   DELETE 가 0행 → 'ABORT remove 0건' 오류를 유발했다(2026-07-15 dry-run RC).
+  --   ∴ view-DELETE 선행문 제거, customers 단일 DELETE 로 정정. n_aicc_live(=삭제 전 view
+  --   행수, VERIFY 단계에서 획득) 대비 사후 잔존으로 view 동반 소멸분(del_a)을 산출.
   DELETE FROM customers WHERE id = ANY(tgt) AND id <> ALL(keep);  -- keep 이중가드
   GET DIAGNOSTICS del_c = ROW_COUNT;
   IF del_c <> 4 THEN
     RAISE EXCEPTION 'ABORT remove: customers 삭제 %건 (기대 4) — 롤백', del_c;
   END IF;
+
+  -- aicc VIEW 행 동반 소멸 검증 (독립 삭제 아님 — customers 삭제의 투영 결과)
+  SELECT n_aicc_live - count(*) INTO del_a
+    FROM aicc_crm_phone_match WHERE customer_id = ANY(tgt);
 
   -- ── FINAL: 잔존 0 ──────────────────────────────────────────────────────
   SELECT count(*) INTO n_cust FROM customers WHERE id = ANY(tgt);

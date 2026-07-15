@@ -2,6 +2,10 @@
 -- DRY-RUN (NO-PERSISTENCE) — T-20260715-foot-RCPT-SPURIOUS-DELETE
 -- up.sql 본문 DO 블록을 인라인 + BEGIN…ROLLBACK 무영속 래핑 (mgmt API 러너 호환, \i 미사용).
 -- up.sql 은 inner COMMIT 없음 → 하단 ROLLBACK 이 archive/DELETE/DDL 전부 원복.
+-- ⚠ 권위 증거(authoritative)는 이 파일의 BEGIN…ROLLBACK 이 아니라 canonical 러너:
+--   scripts/T-20260715-foot-RCPT-SPURIOUS-DELETE_dryrun_run.mjs (dryrun_lib.mjs = txn-control
+--   strip + plpgsql exception-handler + post-probe). Management API 는 raw+ROLLBACK 세션을
+--   지원하지 않으므로 이 .dryrun.sql 은 사람이 읽는 참조 미러일 뿐이다.
 -- supervisor 러너는 Dry-Run No-Persistence Protocol(txn-control strip + exception-handler
 --   + 사후 무영속 introspection post-probe)을 추가 적용.
 -- 기대: G1~G4 통과 + G5(chart_number)=INTERIOR-GAP NOTICE(2026-07-15 probe: 초과 live 13건 max=F-4777)
@@ -173,15 +177,17 @@ BEGIN
     RAISE EXCEPTION 'ABORT archive: aicc 아카이브 % < live % — 순소실0 위반', n_arch_a, n_aicc_live;
   END IF;
 
-  -- ==================== REMOVE (DESTRUCTIVE, children-first) ================
-  DELETE FROM aicc_crm_phone_match WHERE customer_id = ANY(tgt);
-  GET DIAGNOSTICS del_a = ROW_COUNT;
-
+  -- ==================== REMOVE (DESTRUCTIVE) ===============================
+  -- aicc_crm_phone_match = customers 투영 auto-updatable VIEW → customers 삭제가 view 행
+  --   동반 소멸. view-DELETE 선행문 제거(up.sql 과 동일 정정, 2026-07-15 dry-run RC).
   DELETE FROM customers WHERE id = ANY(tgt) AND id <> ALL(keep);  -- keep 이중가드
   GET DIAGNOSTICS del_c = ROW_COUNT;
   IF del_c <> 4 THEN
     RAISE EXCEPTION 'ABORT remove: customers 삭제 %건 (기대 4) — 롤백', del_c;
   END IF;
+
+  SELECT n_aicc_live - count(*) INTO del_a
+    FROM aicc_crm_phone_match WHERE customer_id = ANY(tgt);
 
   -- ── FINAL: 잔존 0 ──────────────────────────────────────────────────────
   SELECT count(*) INTO n_cust FROM customers WHERE id = ANY(tgt);
