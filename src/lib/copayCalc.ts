@@ -91,7 +91,7 @@ function blockedResult(grade: InsuranceGrade): CopayCalcResult {
 }
 
 /**
- * 건보 본인부담 산출 (순수 함수) — 서버 RPC calc_copayment v1.3 미러.
+ * 건보 본인부담 산출 (순수 함수) — 서버 RPC calc_copayment v1.5 미러.
  *
  * 산출 규칙 (서버 RPC calc_copayment와 동일):
  *  1. 비급여 or 외국인 → 전액 본인부담 (price 기준)
@@ -102,7 +102,8 @@ function blockedResult(grade: InsuranceGrade): CopayCalcResult {
  *  6. 65세(elderly_flat) 정률제 4구간 [이슈2, §2-2-3]:
  *       ≤15,000=정액 1,500 / ~20,000=10% / ~25,000=20% / >25,000=30%
  *       정률구간 원단위 = 100원 미만 절사(FLOOR) [ROUNDING-CONFIRM, 시행령 별표2 §19①]
- *  7. 그 외 → CEIL(base × rate / 100) × 100 (100원 절상)
+ *  7. 그 외(일반 정률경로) → FLOOR(base × rate / 100) × 100 (100원 미만 절사, v1.5)
+ *       [CIT-2026-001/002 외래 본인부담 전반 FLOOR. 종전 CEIL 초과징수 정정]
  */
 export function calcCopayment(
   service: CopayCalcServiceInput,
@@ -178,8 +179,13 @@ export function calcCopayment(
     }
     if (copay > base) copay = base;
   } else {
-    // 100원 단위 절상
-    copay = Math.ceil((base * rate) / 100) * 100;
+    // ★[ROUNDING v1.5] 일반 정률경로 원단위 = 100원 미만 절사(버림, FLOOR). 서버 RPC calc_copayment v1.5 미러.
+    //   종전 CEIL(100원 절상) → 일반경로 급여 초과징수(최대 99원/건) 정정. 규정 근거:
+    //   CIT-2026-001 국민건강보험법 시행령 별표2 §19① "100원 미만은 제외한다"
+    //   + CIT-2026-002 심평원 외래 본인부담기준표 "100원미만 절사" (외래 본인부담 전반 FLOOR).
+    //   + revenue_insurance_split_spec §2-2 v1.12 (copayment = round-DOWN).
+    //   (T-20260715-foot-COPAY-GENERAL-CEIL-TO-FLOOR-FIX — FE↔RPC parity)
+    copay = Math.floor((base * rate) / 100) * 100;
     if (copay > base) copay = base;
   }
 
