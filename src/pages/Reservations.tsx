@@ -53,6 +53,8 @@ import { cn } from '@/lib/utils';
 import { resvKind, summarizeKinds, isRibbonBrief, KIND_AXIS_LABELS, type ResvKind } from '@/lib/resvSlotAgg';
 // T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 그룹핑 REVERT(예약관리 캘린더는 30분 슬롯 복원).
 //   buildHourBuckets import 제거 — gridSlots(30분) 직접 사용으로 환원.
+// T-20260715-foot-RESVMGMT-DL-DATE-SELECT: 내려받기 대상일 선택 — 기존 미니 월간 캘린더(presentational) 재사용.
+import { MiniMonthCalendar } from '@/components/MiniMonthCalendar';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
@@ -556,6 +558,10 @@ export default function Reservations() {
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
+  // T-20260715-foot-RESVMGMT-DL-DATE-SELECT: 내려받기 대상일 선택 다이얼로그.
+  //   기본값=오늘 → 미변경 다운로드 시 기존 동작 회귀 0(AC3). 임의 날짜(과거/미래) 선택 가능(AC1/AC2).
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [downloadTargetDate, setDownloadTargetDate] = useState<Date>(() => new Date());
   // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2 시나리오1): (+) 새 예약 → 예약상세 팝업 new-mode 오픈
   //   (별도 폼/ReservationEditor 모달 스폰 폐기). reservation=null 이어도 팝업이 검색→생성 폼만 렌더.
   const [newReservationMode, setNewReservationMode] = useState(false);
@@ -1152,20 +1158,22 @@ export default function Reservations() {
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
 
-  // T-20260623-foot-RESVMGMT-DAILY-RESV-EXPORT: '전체예약' 옆 내려받기 — 당일(KST) 예약 현황 요약.
+  // T-20260623-foot-RESVMGMT-DAILY-RESV-EXPORT: '전체예약' 옆 내려받기 — 지정일(KST) 예약 현황 요약.
   //   집계 산식 = @/lib/resvSlotAgg.summarizeKinds 단일 소스 재사용(resvKind). TIMETABLE-VISITCOUNT 와 동일 SSOT(이중 산식 금지).
   //   표기: 초진 = n · 재진 = r+h(HL=힐러 h · PD=비힐러 재진 r). 전체 기준(담당자/필터 무관, '전체예약' 의미).
-  //   당일 = 실제 오늘(KST). 현재 뷰(주간/일간/선택일)와 무관하게 오늘자만 별도 조회 → 뷰 상태 의존성 제거.
-  const handleDownloadDaySummary = useCallback(async () => {
+  //   T-20260715-foot-RESVMGMT-DL-DATE-SELECT: 대상 날짜를 인자로 받아 과거/미래 임의 날짜 export 지원.
+  //     기본값=오늘(호출부에서 미지정 시 new Date()) → 기존 동작 회귀 0(AC3). read-only 조회만(AC4).
+  //     현재 뷰(주간/일간/선택일)와 무관하게 대상일자만 별도 조회 → 뷰 상태 의존성 제거.
+  const handleDownloadDaySummary = useCallback(async (targetDate?: Date) => {
     if (!clinic) return;
-    const today = format(new Date(), 'yyyy-MM-dd');
+    const today = format(targetDate ?? new Date(), 'yyyy-MM-dd');
     const { data, error } = await supabase
       .from('reservations')
       .select('*')
       .eq('clinic_id', clinic.id)
       .eq('reservation_date', today);
     if (error) {
-      toast.error('당일 예약 현황을 불러오지 못했습니다.');
+      toast.error('예약 현황을 불러오지 못했습니다.');
       return;
     }
     const list = await stripSimulationRows((data ?? []) as Reservation[]);
@@ -1207,7 +1215,7 @@ export default function Reservations() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    toast.success(`당일 예약: 초진 ${cho} · 재진 ${jae}(HL ${hl}, PD ${pd}) / 취소 ${cancelled} · 노쇼 ${noshow} 내려받기 완료`);
+    toast.success(`${today} 예약: 초진 ${cho} · 재진 ${jae}(HL ${hl}, PD ${pd}) / 취소 ${cancelled} · 노쇼 ${noshow} 내려받기 완료`);
   }, [clinic]);
 
   // 마운트/주간전환 자동로드. StrictMode 이중 마운트 + 동일 파라미터 재렌더 시
@@ -2081,8 +2089,12 @@ export default function Reservations() {
             variant="outline"
             size="sm"
             data-testid="day-summary-download"
-            onClick={handleDownloadDaySummary}
-            title="당일 예약 현황 내려받기 (초진/재진·HL/PD)"
+            onClick={() => {
+              // 다이얼로그 열 때 기본값=오늘로 초기화(직전 선택 잔상 방지 → AC3 회귀 보장).
+              setDownloadTargetDate(new Date());
+              setDownloadDialogOpen(true);
+            }}
+            title="예약 현황 내려받기 — 날짜 선택 (초진/재진·HL/PD)"
             className="h-8 gap-1.5 border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
           >
             <Download className="h-3.5 w-3.5" />
@@ -3060,6 +3072,55 @@ export default function Reservations() {
         onComplete={() => setResvMiniPayTarget(null)}
         onSaved={() => { toast.success('수납 완료'); setResvMiniPayTarget(null); }}
       />
+
+      {/* T-20260715-foot-RESVMGMT-DL-DATE-SELECT: 내려받기 대상일 선택 다이얼로그.
+          기본값=오늘. 과거/미래 임의 날짜 선택 → 해당일 예약 현황 CSV export(read-only). */}
+      <Dialog open={downloadDialogOpen} onOpenChange={setDownloadDialogOpen}>
+        <DialogContent className="max-w-xs" data-testid="download-date-dialog">
+          <DialogHeader>
+            <DialogTitle>예약 현황 내려받기</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              다운로드할 날짜를 선택하세요. 선택한 날짜의 예약 현황(초진/재진·HL/PD)이 저장됩니다.
+            </p>
+            <div
+              className="rounded-md border p-2"
+              data-testid="download-selected-date"
+              data-selected-date={format(downloadTargetDate, 'yyyy-MM-dd')}
+            >
+              <MiniMonthCalendar
+                value={downloadTargetDate}
+                onSelect={(d) => setDownloadTargetDate(d)}
+              />
+            </div>
+            <p className="text-center text-sm font-semibold text-teal-700">
+              {format(downloadTargetDate, 'yyyy년 M월 d일 (EEE)', { locale: ko })}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDownloadDialogOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              data-testid="download-date-confirm"
+              className="gap-1.5 bg-teal-600 text-white hover:bg-teal-700"
+              onClick={() => {
+                void handleDownloadDaySummary(downloadTargetDate);
+                setDownloadDialogOpen(false);
+              }}
+            >
+              <Download className="h-4 w-4" />
+              내려받기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </DndContext>
   );
