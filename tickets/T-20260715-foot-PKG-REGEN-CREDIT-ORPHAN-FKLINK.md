@@ -7,6 +7,14 @@ qa_result: pending (supervisor DDL-diff 게이트)
 resolution: grain-antipattern 구조해소 — §10-5 ledger-SSOT 적용(FK linkage + credit ledger + supersede lineage)
 db_change: true
 db_migration: 20260715190000_foot_pkg_regen_credit_ledger_fklink.sql (+ .rollback.sql / .dryrun.sql / orphan freeze report)
+mig_files:
+  - supabase/migrations/20260715190000_foot_pkg_regen_credit_ledger_fklink.sql
+  - supabase/migrations/20260715190000_foot_pkg_regen_credit_ledger_fklink.rollback.sql
+  - supabase/migrations/20260715190000_foot_pkg_regen_credit_ledger_fklink.dryrun.sql
+  - supabase/migrations/20260715190000_foot_pkg_orphan_credit_freeze.report.sql
+mig_dryrun: "PASS — supabase/ops/T-20260715-foot-PKG-REGEN-CREDIT-ORPHAN-FKLINK_dryrun_20260715_RESULT.log (Mgmt API, 2026-07-15T11:02Z, commit 703d2bb4). No-Persistence: baseline 부재 / canary ROLLBACK 실효 / apply in-txn assert 통과 / post-probe 무영속 확증."
+mig_ledger_check: "3-way OK(pre-apply, divergence 0): 파일 staged / schema_migrations 미등록 / prod 부재. 최신 20260715140000 < 190000 순서정합. 적용 후 forward-consistent."
+mig_rollback: "20260715190000_foot_pkg_regen_credit_ledger_fklink.rollback.sql — ADDITIVE 역순, 0-row 전제, canary로 ROLLBACK 실효 선증명."
 db_gate: |
   CONSULT-REPLY GO(조건부) 수신(MSG-20260715-153541, DA-20260715-...-FKLINK.md).
   구조 = 전부 ADDITIVE(payments.package_id NULLABLE FK + packages.superseded_by NULLABLE
