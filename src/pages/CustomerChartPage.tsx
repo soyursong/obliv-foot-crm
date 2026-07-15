@@ -6420,10 +6420,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             // ── T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE (요청 #2) ─────────────
             // 수납내역 탭은 '진료비 수납내역'만. 영수증 업로드(상담내역>결제영수증 경로)로
             // 생성된 결제 행은 제외 — 상담내역 결제영수증 섹션에서 표기(요청 #1)하므로 중복 방지.
-            //   · 일반 결제(payments): memo가 '영수증 업로드…'로 시작하는 행 제외(회수1·단건 영수증 포함).
+            //   · 일반 결제(payments): memo가 '영수증 업로드…'로 시작하는 행 제외.
             //   · 패키지 결제(package_payments): memo==='영수증 업로드'(영수증 연결분) 제외 → 직접 결제분만 잔존.
-            // ★DISPLAY-ONLY: 프론트 필터만. write 경로·집계 쿼리·스키마 불변(§3 하드가드 준수).
-            const feePayments = payments.filter((p) => !(p.memo ?? '').startsWith('영수증 업로드'));
+            // ── T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE (예외) ─────────────────
+            //   체험(회수1·단건) 패키지 구입 영수증결제(memo='영수증 업로드(회수1…')는 수납내역에 표시.
+            //   이 결제는 회수1 패키지의 유일 수납 행이므로 제외 시 차트가 '결제없음'으로 보여 현장 오인 발생.
+            //   RC-A(F-4716 forensic) UX 개선. 그 외 '영수증 업로드…'는 결제영수증 섹션 표기 → 제외 유지.
+            // ★DISPLAY-ONLY: 프론트 read 필터만 확장. write 경로·집계 쿼리·스키마 불변(§3 하드가드 준수).
+            const feePayments = payments.filter((p) => {
+              const memo = p.memo ?? '';
+              if (memo.startsWith('영수증 업로드(회수1')) return true; // 체험(회수1·단건) 영수증결제 포함
+              return !memo.startsWith('영수증 업로드');
+            });
             const directPkgPayments = pkgPayments.filter((p) => p.memo !== '영수증 업로드');
             return (
             <div className="space-y-3">
