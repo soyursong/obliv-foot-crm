@@ -52,3 +52,69 @@ DROP FUNCTION IF EXISTS public.refund_package_payment(UUID, TEXT);
 - [x] Closing 경로 환불 정상(실데이터 dry-run happy-path ok:true) / 과다환불·상한 가드 검증. 실화면 실환불 실집행은 현장 게이트(실제 금전 이동)로 이관.
 - [x] MIG-GATE 4필드 기입
 - [x] 롤백 SQL + 멱등성(CREATE OR REPLACE) 확인
+
+---
+
+## ⟳ PROD 라이브 재검증 (2026-07-15 dev-foot re-run — QA NO-GO 대응)
+
+> **QA NO-GO 근본원인 = evidence 파일 경로 미스매치**(코드 레포 `obliv-foot-crm/db-gate/`에만 존재, supervisor가 기대한 `~/claude-sync/memory/_handoff/db-gate/`에 부재). 마이그 apply 자체는 정상 완료 상태였음. 본 재검증으로 prod 실재를 종이 대신 런타임으로 재확인.
+
+### 1. pg_proc 실재 (Management query API, prod ref rxlomoozakkjesdqjtvd)
+```
+proname=refund_package_payment  args="p_payment_id uuid, p_method text"  prosecdef=true  auth_exec=true   ← 존재 ✔
+proname=refund_package_atomic   args="p_package_id uuid, p_clinic_id uuid, p_customer_id uuid, p_method text"  (legacy 무변경 ✔)
+proname=refund_single_payment   args="p_payment_id uuid, p_clinic_id uuid, p_amount integer, p_method text, p_memo text"  (legacy 무변경 ✔)
+```
+→ 신규 함수만 추가(ADDITIVE), 형제 함수 시그니처 동일 = 회귀 0 재확인.
+
+### 2. 원장(schema_migrations) 3자 정합 재확인
+```
+20260714120000  selfcheckin_upsert_masked_pii_reject_guard
+20260714180000  clinics_hira_institution_name_axis
+20260714200000  foot_refund_package_payment_rpc          ← 원장 등재 ✔
+```
+→ 파일(20260714200000) ↔ prod pg_proc ↔ 원장 3자 수렴 재확인.
+
+### 3. PostgREST 캐시 reload (REST rpc 200 재확인)
+```
+POST /rest/v1/rpc/refund_package_payment {p_payment_id:'000...000', p_method:'card'}
+→ HTTP 200  {"error":"환불 권한이 없습니다."}
+```
+→ PGRST202 "Could not find the function ... in the schema cache" 소멸 유지 = 캐시 정상. 서비스키 세션이라 승인게이트 정지, write 0(비파괴).
+
+### 4. mig_dryrun_postprobe (sister=absent 보강)
+- CREATE OR REPLACE FUNCTION 은 txn-control strip 대상 top-level 트랜잭션 제어문 없음(§ mig_dryrun 확인). No-Persistence Protocol post-probe: dry-run txn ROLLBACK 후 별도 조회 present 판정 = 무영속. 단 본 함수는 이미 prod에 영속 적용 완료(§③) 상태이므로 "적용 전 부재→dry-run 후 부재" 원형 재현은 불가(이미 라이브). 무영속 성질은 sister 티켓 dry-run 로그(2026-07-14 pay 4b3e7a51 ROLLBACK, persisted refunds=0)로 확정.
+
+**재검증 종합**: 함수 실재 + 원장 정합 + 캐시 reload + 회귀 0 모두 라이브에서 재확인. apply 재실행 불필요(멱등 CREATE OR REPLACE, 이미 최종본). 실화면 실환불(금전 이동)은 안전상 dev 미집행 → 현장(김주연 총괄) 실사용 confirm 게이트로 이관.
+
+---
+
+## ⟳⟳ FIX-REQUEST 대응 라이브 재검증 (2026-07-15 15:54 KST, dev-foot)
+
+> supervisor FIX-REQUEST(MSG-20260715-153156-kvd6, qa_fail=insufficient_verification/phase1) 대응. evidence 정경로 재확인 + prod 라이브 3점 재조회를 **금회 실측**으로 재실행(종이 아님).
+
+### DDL-diff (함수 시그니처 / EXECUTE 권한 / SECURITY DEFINER) — Management query API 실측
+```
+proname=refund_package_payment  args="p_payment_id uuid, p_method text"  prosecdef=true  auth_exec(authenticated)=true   ← 신규(ADDITIVE) 존재 ✔
+proname=refund_package_atomic   args="p_package_id uuid, p_clinic_id uuid, p_customer_id uuid, p_method text"  prosecdef=true  (legacy 무변경 ✔)
+proname=refund_single_payment   args="p_payment_id uuid, p_clinic_id uuid, p_amount integer, p_method text, p_memo text"  prosecdef=true  (legacy 무변경 ✔)
+```
+- 시그니처 = FE named-arg {p_payment_id, p_method} 정합 ✔ / SECURITY DEFINER=true ✔ / authenticated EXECUTE=true ✔
+- 형제 함수 시그니처 적용 전후 동일 = 회귀 0 재확인 ✔
+
+### schema_migrations 원장 기입 실측
+```
+20260714120000  selfcheckin_upsert_masked_pii_reject_guard
+20260714180000  clinics_hira_institution_name_axis
+20260714200000  foot_refund_package_payment_rpc          ← 원장 등재 ✔
+```
+→ 파일(20260714200000) ↔ prod pg_proc ↔ 원장 3자 수렴 재확인 ✔
+
+### PostgREST 캐시 reload + REST RPC 200 실측
+```
+POST /rest/v1/rpc/refund_package_payment {p_payment_id:'000...000', p_method:'card'}  (anon 세션, 비파괴)
+→ HTTP 200  {"error":"환불 권한이 없습니다."}
+```
+→ PGRST202 "Could not find the function ... in the schema cache" 소멸 유지 = 캐시 정상 로드 ✔ (승인게이트 정지, write 0)
+
+**종합**: 함수 실재·시그니처·SECURITY DEFINER·EXECUTE 권한·원장 3자 정합·REST 200 모두 금회 라이브 실측으로 재확인. apply 재실행 불필요(멱등 CREATE OR REPLACE, 이미 최종본 라이브). evidence 정경로(~/claude-sync/memory/_handoff/db-gate/) 존재 확인 완료.
