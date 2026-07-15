@@ -2970,7 +2970,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호 현재값 로드
       setCertNoText((custData as Customer).insurance_cert_no ?? '');
       // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 현재값 로드
-      setCustomerNoteText((custData as Customer).customer_note ?? '');
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: read-fallback(customer_note ?? customer_memo)로
+      // 레거시 customer_memo(신설 전 9건) 표시 연속성 보존 → 예약팝업 read와 동일 규칙(양방향 sync 정합).
+      setCustomerNoteText((custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '');
       setReferralNameText((custData as Customer).referral_name ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
       // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
