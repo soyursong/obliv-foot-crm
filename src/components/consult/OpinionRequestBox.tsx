@@ -20,15 +20,25 @@ import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
 import {
   OPINION_DOC_TYPES,
   type OpinionDocType,
+  type OpinionRequestRow,
   useOpinionDocTemplateId,
   useCreateOpinionRequest,
   useOpinionRequestQueue,
+  useResolveOpinionRequest,
   docTypeLabel,
 } from '@/lib/opinionRequest';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, FileText, Send } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Loader2, FileText, Send, XCircle, X } from 'lucide-react';
 
 // T-20260630-foot-DIAGCERT-ORALMED-VIEWERBLUE-PDFBLACK (A안 AC6): '경구약 사유' 입력칸을 노출할
 //   경구약 관련 옵션 key 집합. 경구약X(진단서)·효과미비·복용후 위장장애(금기증) — 항진균제 복용불가 사유 입력 대상.
@@ -66,6 +76,27 @@ export default function OpinionRequestBox({
   const { data: templateId = null } = useOpinionDocTemplateId(clinicId);
   const createMut = useCreateOpinionRequest(clinicId);
   const { data: queue = [] } = useOpinionRequestQueue(clinicId);
+  const resolveMut = useResolveOpinionRequest(clinicId);
+
+  // T-20260715-foot-DOCREQ-CANCEL-AND-RETRACT (Part A): 실장이 2번차트에서 자기가 보낸 발행요청을 회수.
+  //   기존 useResolveOpinionRequest({reason:'cancelled'}) 재사용 → status='draft'→'voided' + resolved_reason='cancelled'
+  //   (소프트 취소, 감사필드 resolved_at/resolved_reason 보존). 원장 발행(published) 경로·authoring 절대 미접촉.
+  //   신규 상태값·컬럼·enum 도입 0 (db_change=false). 취소 시 진료대시보드 서류작성 큐가 status='draft' 필터로
+  //   voided 를 자동 배제해 해당 행이 즉시 회수됨(AC-3, DocRequestQueue 코드 무접촉).
+  const [cancelTarget, setCancelTarget] = useState<OpinionRequestRow | null>(null);
+
+  const handleCancelConfirm = async () => {
+    if (!cancelTarget) return;
+    try {
+      // .eq('status','draft') 동시성 가드 → 이미 원장이 발행/처리한 건은 무영향(중복취소 방지).
+      await resolveMut.mutateAsync({ requestId: cancelTarget.id, reason: 'cancelled' });
+      toast.success('발행 요청을 취소했습니다.');
+    } catch (e) {
+      toast.error(`취소 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setCancelTarget(null);
+    }
+  };
 
   // 이 고객의 처리 대기(open) 요청 — 중복요청 가시화.
   const openForCustomer = useMemo(
@@ -291,16 +322,73 @@ export default function OpinionRequestBox({
       {openForCustomer.length > 0 && (
         <div className="mt-2 space-y-1 border-t pt-2" data-testid="opinion-req-pending-list">
           {openForCustomer.map((q) => (
-            <div key={q.id} className="flex items-center gap-1.5 rounded bg-neutral-100/60 px-2 py-1 text-[10px] text-neutral-700">
+            <div key={q.id} className="flex items-center gap-1.5 rounded bg-neutral-100/60 px-2 py-1 text-[10px] text-neutral-700" data-testid={`opinion-req-pending-row-${q.id}`}>
               <FileText className="h-3 w-3 shrink-0" />
               <span className="font-medium">{docTypeLabel(q.docType)}</span>
               <span className="text-neutral-500">· 해당항목 {q.selectedKeys.length}개</span>
               {q.staffMemo && <span className="truncate text-neutral-500" title={q.staffMemo}>· {q.staffMemo}</span>}
               <span className="ml-auto shrink-0 text-neutral-500">원장 발행 대기</span>
+              {/* Part A: 실장이 보낸 요청을 원장 발행 전 회수 — 확인 다이얼로그 후 소프트 취소. */}
+              <button
+                type="button"
+                onClick={() => setCancelTarget(q)}
+                title="요청 취소"
+                aria-label="요청 취소"
+                data-testid={`opinion-req-cancel-${q.id}`}
+                className="shrink-0 rounded p-0.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           ))}
         </div>
       )}
+
+      {/* Part A: 요청 취소(회수) 확인 다이얼로그 — 실수 취소 방지. 확정 시에만 소프트 취소(voided) 처리.
+          원장측 DocRequestQueue 취소 다이얼로그와 동일 UX·동일 mutation(reason:'cancelled')으로 일관성 유지. */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) setCancelTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-500" />
+              요청 취소(회수)
+            </DialogTitle>
+            <DialogDescription>
+              이 발행 요청을 취소하시겠어요?
+              {cancelTarget && (
+                <span className="mt-1 block font-medium text-foreground">
+                  {cancelTarget.patientName} · {docTypeLabel(cancelTarget.docType)}
+                </span>
+              )}
+              <span className="mt-1 block text-xs text-muted-foreground">
+                취소하면 원장님 서류작성 요청 목록에서 사라집니다. (이미 발행된 서류는 영향받지 않습니다.)
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelTarget(null)}
+              disabled={resolveMut.isPending}
+              data-testid="opinion-req-cancel-dismiss-btn"
+            >
+              아니오
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelConfirm}
+              disabled={resolveMut.isPending}
+              data-testid="opinion-req-cancel-confirm-btn"
+            >
+              {resolveMut.isPending ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> 취소 중…</>
+              ) : (
+                '요청 취소'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
