@@ -906,6 +906,32 @@ export default function Closing() {
     );
   }, [enrichedRows, staffFilter, methodFilter]);
 
+  // ── T-20260715-foot-DAYCLOSE-LIST-PATIENT-GROUP: 동일 환자(차트번호+성함) 건 그룹 묶음 ──
+  //   현장(김주연 총괄) 요청: 결제 시각순으로 흩어진 동일 환자 건을 최초 결제 시각 아래로 묶어 표시.
+  //   ★ 순수 표시(render) 재배열 — 합계/집계 reduce 는 filteredEnrichedRows 를 그대로 사용하므로 숫자 무회귀.
+  //   ★ Excel/PDF(exportExcel/handlePrint)는 enrichedRows(시간순) 그대로 → 출력물 형식 무변경(AC11).
+  //   ★ 병합된 환불행(merged_refund)은 표시 스킵 규칙을 유지한 채 그룹화(REFUNDROW reconcile).
+  //   그룹 키: chart_number + customer_name (chart_number null → customer_name 만으로 그룹).
+  //   filteredEnrichedRows 는 이미 sort_key(pay_time) 오름차순 → Map 삽입순 = 그룹 최초시각 오름차순,
+  //   그룹 내부 = 등장순 = 시각 오름차순(AC2/AC3 자동 충족).
+  const groupedDisplayRows = useMemo<Array<{ row: EnrichedRow; indexInGroup: number; groupSize: number }>>(() => {
+    const display = filteredEnrichedRows.filter(r => !r.merged_refund);
+    // key: null-char 구분자로 chart_number 접두 → chart null(빈 접두)과 chart 값 절대 충돌 없음.
+    // chart null 이면 접두가 빈 문자열 → customer_name 만으로 그룹화(AC9).
+    const groups = new Map<string, EnrichedRow[]>();
+    for (const r of display) {
+      const key = `${r.chart_number ?? ''}\u0000${r.customer_name}`;
+      const g = groups.get(key);
+      if (g) g.push(r);
+      else groups.set(key, [r]);
+    }
+    const flat: Array<{ row: EnrichedRow; indexInGroup: number; groupSize: number }> = [];
+    for (const g of groups.values()) {
+      g.forEach((row, idx) => flat.push({ row, indexInGroup: idx, groupSize: g.length }));
+    }
+    return flat;
+  }, [filteredEnrichedRows]);
+
   // ── AC-4: 자동 갱신 시 결제내역 스크롤 위치 보존 ──────────────
   // T-20260525-foot-CLOSING-NAV-BUG:
   //   qc.invalidateQueries → 데이터 갱신 → filteredEnrichedRows 변경 →
@@ -1661,15 +1687,28 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       </tr>
                     )}
                     {/* T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 병합된 환불행은 표시 스킵(원결제행에 annotate). */}
-                    {filteredEnrichedRows.filter(r => !r.merged_refund).map((r, i) => (
+                    {/* T-20260715-foot-DAYCLOSE-LIST-PATIENT-GROUP: 동일 환자(차트+성함) 그룹 묶음 render.
+                        groupedDisplayRows = filteredEnrichedRows(merged_refund 스킵)를 환자 그룹으로 재배열. */}
+                    {groupedDisplayRows.map(({ row: r, indexInGroup, groupSize }, i) => {
+                      const isContinuation = indexInGroup > 0;      // 그룹 2번째 이후 행 → 들여쓰기
+                      const isGroupStart = indexInGroup === 0;
+                      const isMultiGroup = groupSize > 1;
+                      return (
                       <tr
                         key={`row-${i}`}
+                        data-testid="closing-pay-row"
+                        data-group-index={indexInGroup}
+                        data-group-size={groupSize}
                         className={cn(
                           'border-b transition-colors',
                           r.payment_type === 'refund' && 'bg-red-50 text-red-700',
                           // T-20260715 REQ②: 환불된 원결제행 — 옅은 적색 틴트로 환불 표기
                           r.refunded && 'bg-red-50/40',
                           r.source === 'manual' && 'bg-sky-50',
+                          // PATIENT-GROUP: 새 다건 그룹 시작 행(첫 행 제외)에 그룹 구분선
+                          isMultiGroup && isGroupStart && i > 0 && 'border-t-2 border-t-emerald-100',
+                          // PATIENT-GROUP: 그룹 연속 행 — 좌측 emerald 강조선(묶음 시각 표시)
+                          isContinuation && 'border-l-2 border-l-emerald-300',
                         )}
                       >
                         <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{r.pay_date}</td>
@@ -1683,7 +1722,17 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           )}
                         </td>
                         <td className="py-2 px-2 text-xs text-muted-foreground">{r.chart_number ?? '-'}</td>
-                        <td className="py-2 px-2 font-medium">{r.customer_name}</td>
+                        {/* PATIENT-GROUP: 연속 행은 들여쓰기 + ↳ 커넥터로 동일 환자 묶음 표시 */}
+                        <td className={cn('py-2 px-2 font-medium', isContinuation && 'pl-5')}>
+                          {isContinuation ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-emerald-500/70" data-testid="group-connector">↳</span>
+                              {r.customer_name}
+                            </span>
+                          ) : (
+                            r.customer_name
+                          )}
+                        </td>
                         <td className="py-2 px-2 text-xs">{r.lead_source ?? '-'}</td>
                         <td className="py-2 px-2 text-xs">{r.visit_type_label}</td>
                         {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' */}
@@ -1771,7 +1820,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   {filteredEnrichedRows.length > 0 && (
                     <tfoot>
