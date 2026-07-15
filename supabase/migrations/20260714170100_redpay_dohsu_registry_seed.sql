@@ -36,8 +36,11 @@ BEGIN
     RETURN;
   END IF;
 
-  -- 511-60-00988 클리닉(도수도 동일 사업자 하위 — 물리 수집 클리닉, best-effort. 도메인 경계는 merchant_id 가 1차)
-  SELECT id INTO v_clinic FROM public.clinics WHERE business_no = '511-60-00988' ORDER BY id LIMIT 1;
+  -- 물리 수집 클리닉(도수도 동일 클리닉 하위 — best-effort. 도메인 경계는 merchant_id 가 1차)
+  --   ⚠ 링크키 = slug('jongno-foot') 정본. business_no 링크 금지:
+  --      prod foot clinics.business_no 는 457 로 드리프트(세무 cert 정본) → '511-60-00988' 매칭 시 v_clinic=NULL
+  --      → clinic_id NULL orphan 유발. slug 는 전역 정본 링크키(T-20260716-foot-BIZREG-DOHSU-SEED-FIX).
+  SELECT id INTO v_clinic FROM public.clinics WHERE slug = 'jongno-foot' ORDER BY id LIMIT 1;
 
   INSERT INTO public.redpay_terminal_registry
     (clinic_id, domain, merchant_id, tid, terminal_label, active, source, verified_at)
