@@ -31,11 +31,19 @@ import path from 'path';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:8089';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-  (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required'); })();
+// service_role = 비커밋 시크릿(.env.local, gitignored). git 커밋 = P0 보안 위반이라 QA
+// 워크트리엔 부재. 이전엔 여기서 module-eval throw → test *collection* 단계가 통째 crash
+// (FIX-REQUEST MSG-20260715-132543-1zku, 관측: spec:36 'SUPABASE_SERVICE_ROLE_KEY env required').
+// → 부재 시 throw 하지 말고 seedOk=false 로 graceful skip. (DOCPRINT-GONGDAN 5152455c 선례 동형.)
+//   · .env.local 주입된 dev/QA 머신(macstudio) = 실 seed → 풀 E2E 검증.
+//   · 시크릿 없는 QA 워크트리 = collection OK · test.skip(0 crash).
+//   · 실기기 렌더/현장 confirm = supervisor 갤탭 field-soak.
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+const HAS_SERVICE_ROLE = SERVICE_ROLE_KEY.length > 0;
 
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+const supabase = HAS_SERVICE_ROLE
+  ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+  : null;
 
 const PHONE = '+821099997744';
 const NAME = '[PAYMINI-4ZONE-TEST]';
@@ -48,6 +56,7 @@ let checkInId: string | null = null;
 let seedOk = false;
 
 async function cleanup() {
+  if (!supabase) return;
   const { data: custs } = await supabase.from('customers').select('id').eq('phone', PHONE);
   const ids = (custs ?? []).map((c) => c.id);
   if (ids.length === 0) return;
@@ -62,6 +71,7 @@ async function cleanup() {
 }
 
 test.beforeAll(async () => {
+  if (!supabase) { seedOk = false; return; }   // service_role 부재 = graceful skip (collection crash 방지)
   await cleanup();
   const { data: svcs } = await supabase
     .from('services').select('*').eq('active', true).limit(2);
