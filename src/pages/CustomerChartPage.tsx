@@ -9844,6 +9844,17 @@ function PackagePurchaseFromTemplateDialog({
   );
   const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
   const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
+  // T-20260716-foot-BUYTICKET-OFFICIAL-PKG-COMPOSITION-LOCK: 공식(팜플릿 등록) 패키지 구성(회차) 잠금.
+  //   공식 패키지 판별 = 템플릿에서 로드된 상태(selectedTemplateId !== 'custom'). 별도 DB 플래그 불필요.
+  //   회차(_sessions·precon) 입력은 readonly/disabled 고정(값 없는 0 항목 포함) → 구성 변경 원천 차단.
+  //   수가(_unit_price)·총금액 override 는 editable 유지(고객별 금액 조정 = 현장 핵심 요구, 함께 잠그지 말 것).
+  //   구성이 달라야 하면 커스텀 탭에서 신규 생성(현장 지시). 커스텀 모드(=== 'custom')는 전 필드 자유 입력.
+  const isOfficialPkg = selectedTemplateId !== 'custom';
+  // 잠금 시 회차 입력에 덧붙이는 시각/동작 클래스 + 안내 tooltip
+  const lockedSessionCls = isOfficialPkg ? ' bg-gray-100 text-gray-500 cursor-not-allowed' : '';
+  const lockedSessionTitle = isOfficialPkg
+    ? '공식 패키지는 회차(횟수) 고정 — 변경이 필요하면 커스텀 탭에서 새로 만들어 주세요'
+    : undefined;
   // T-20260510-foot-PKG-CREATE-FIX3: 포돌로게 포함 (total_sessions에 반영)
   // T-20260522-foot-PKG-TRIAL: 체험권 포함
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
@@ -10095,6 +10106,18 @@ function PackagePurchaseFromTemplateDialog({
             )}
           </div>
 
+          {/* T-20260716-foot-BUYTICKET-OFFICIAL-PKG-COMPOSITION-LOCK: 공식 패키지 회차 잠금 안내 */}
+          {isOfficialPkg && (
+            <div
+              data-testid="pkg-official-lock-notice"
+              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              🔒 <b>공식 패키지</b>는 회차(횟수)가 고정됩니다. 수가·금액은 조정 가능합니다.
+              <br />
+              회차 변경이 필요하면 <b>커스텀 탭에서 새로 만들어 주세요.</b>
+            </div>
+          )}
+
           {/* 패키지명 */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">패키지명 *</label>
@@ -10115,7 +10138,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={heated}
                   onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-heated"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10123,6 +10148,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={heatedUnitPrice}
                   onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)}
+                  data-testid="pkg-unitprice-heated"
                   className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
@@ -10155,7 +10181,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={unheated}
                   onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-unheated"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10195,7 +10223,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={podologe}
                   onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-podologe"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10239,7 +10269,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={iv}
                   onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-iv"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10265,7 +10297,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={trial}
                   onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-trial"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10291,7 +10325,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={reborn}
                   onChange={(e) => setReborn(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-reborn"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10314,7 +10350,9 @@ function PackagePurchaseFromTemplateDialog({
             <input
               type="number" min={0} value={precon}
               onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
-              className="w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+              disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+              data-testid="pkg-session-precon"
+              className={`w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
             />
           </div>
 
