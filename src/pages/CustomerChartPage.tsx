@@ -38,7 +38,7 @@ import { toast } from '@/lib/toast';
 import { normalizeToE164 } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
-import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
+import { treatmentTypeLabel, type TreatmentType } from '@/lib/types';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -9812,18 +9812,39 @@ function PackagePurchaseFromTemplateDialog({
     setReferencePrice(0); setRefPriceTouched(false);
   };
 
-  // T-20260708 변경2(DA 승인산식): 시술유형(treatmentType)은 통계 태깅 전용 — 기준정가 prefill 은 라인 구성(유형별
-  //   회수)에 반응하므로 유형 선택은 기준정가에 영향 없음. 따라서 유형 선택 시 refPriceTouched 를 리셋하지 않는다
-  //   (수기 override 를 유형 선택으로 되돌리지 않음 = AC-4 존중).
-  const selectTreatmentType = (t: TreatmentType | '') => {
-    setTreatmentType(t);
-  };
+  // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 통계태깅(시술유형)을 스태프 수동 선택 → 패키지 구성에서 자동 파생.
+  //   방향전환(총괄 김주연, MSG-20260715-141356-suta): '통계태깅 제거' 접고 '자동 매핑'으로 전환.
+  //   · 매핑 1:1 identity: 가열→'가열' / 비가열→'비가열' / 포돌로게→'포돌로게' / 수액→'수액' / 리본→'Re:Born'.
+  //   · dominant 규칙: 라인 회수 최대 → (동률) 라인금액 최대 → (동률) 고정 우선순위(다이얼로그 표시순). 단일유형=그 유형.
+  //   · fallback: 매핑 가능한 라인이 없으면(체험권/사전처치만 등) '' → persist 시 null(미태깅, CHECK 5토큰·nullable 허용).
+  //     ⚠ 체험권(trial)은 packages.treatment_type CHECK 5토큰('비가열','가열','포돌로게','수액','Re:Born')에 없음 →
+  //       스키마 무변경(db_change=false) 원칙상 '체험권' 토큰 persist 불가 → 체험권 라인은 태깅 기여 안 함(NULL fallback).
+  //   · reference_price(변경2 masterReferencePrice per-line)와 직교 — treatmentType 은 prefill 게이트 아님(간섭 없음).
+  //   · 필드는 읽기전용(자동분류) — 수동 입력 UI 제거(혼선 방지). 구성 변경 시 자동 갱신.
+  const derivedTreatmentType = useMemo<TreatmentType | ''>(() => {
+    const lines: { type: TreatmentType; count: number; amount: number; order: number }[] = [
+      { type: '가열', count: heated, amount: heated * heatedUnitPrice, order: 0 },
+      { type: '비가열', count: unheated, amount: unheated * unheatedUnitPrice, order: 1 },
+      { type: '포돌로게', count: podologe, amount: podologe * podologeUnitPrice, order: 2 },
+      { type: '수액', count: iv, amount: iv * ivUnitPrice, order: 3 },
+      { type: 'Re:Born', count: reborn, amount: reborn * rebornUnitPrice, order: 4 },
+    ];
+    const candidates = lines.filter((l) => l.count > 0);
+    if (candidates.length === 0) return '';
+    candidates.sort((a, b) => b.count - a.count || b.amount - a.amount || a.order - b.order);
+    return candidates[0].type;
+  }, [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice, reborn, rebornUnitPrice]);
+
+  // 자동 파생값을 treatmentType state 에 동기화(수동 setter 경로 폐지 → SSOT = 구성). 커스텀/템플릿 공통.
+  useEffect(() => {
+    setTreatmentType(derivedTreatmentType);
+  }, [derivedTreatmentType]);
 
   const submit = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
-    // T-20260708 AC-5: 시술유형 필수(통계 시술유형별 객단가 집계용). 미선택 저장 차단.
-    if (!treatmentType) { toast.error('시술 유형을 선택하세요 (통계 집계용)'); return; }
+    // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
+    //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
     setSubmitting(true);
     const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
     const { error } = await supabase.from('packages').insert({
@@ -9871,8 +9892,7 @@ function PackagePurchaseFromTemplateDialog({
   const submitWithTemplate = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
-    // T-20260708 AC-5: 시술유형 필수(통계 집계용). 미선택 저장 차단.
-    if (!treatmentType) { toast.error('시술 유형을 선택하세요 (통계 집계용)'); return; }
+    // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
     setSubmitting(true);
     // 1) 템플릿 저장
     const { error: tmplErr } = await supabase.from('package_templates').insert({
@@ -10266,24 +10286,23 @@ function PackagePurchaseFromTemplateDialog({
             </div>
           </div>
 
-          {/* T-20260708-foot-PKGSTATS-DIRECTINPUT-TREATTYPE-REFPRICE: 통계(B안) 시술유형(필수)+기준정가(선택)+할인율 미리보기.
-              커스텀 모드에서 시술유형 선택 시 탭1 정찰가 마스터를 기준정가에 prefill(override 가능, AC-8/AC-10). */}
+          {/* T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 통계 태깅 시술유형 = 패키지 구성에서 자동 분류(읽기전용).
+              수동 select 제거(혼선 방지) → 구성 라인의 dominant 유형을 1:1 identity 매핑으로 표시. 구성 변경 시 자동 갱신.
+              기준정가(변경2 masterReferencePrice per-line)는 이 자동파생과 직교 — 유형 파생이 기준정가에 간섭하지 않음. */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-2 space-y-2">
             <div className="text-xs font-semibold text-teal-800">통계 태깅 <span className="font-normal text-teal-500">(할인율·객단가 집계용)</span></div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-xs text-gray-500">시술 유형 <span className="text-red-500">*</span></label>
-                <select
-                  value={treatmentType}
-                  onChange={(e) => selectTreatmentType(e.target.value as TreatmentType | '')}
+                <label className="text-xs text-gray-500">시술 유형 <span className="font-normal text-gray-400">(자동 분류)</span></label>
+                <div
                   data-testid="pkg-treatment-type"
-                  className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                  data-treatment-type={treatmentType}
+                  className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm bg-gray-50 flex items-center text-gray-700"
                 >
-                  <option value="">— 선택 —</option>
-                  {TREATMENT_TYPES.map((t) => (
-                    <option key={t} value={t}>{treatmentTypeLabel(t)}</option>
-                  ))}
-                </select>
+                  {treatmentType
+                    ? treatmentTypeLabel(treatmentType)
+                    : <span className="text-gray-400">구성 항목에서 자동 분류</span>}
+                </div>
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">기준 정가 <span className="font-normal text-gray-400">(선택)</span></label>
