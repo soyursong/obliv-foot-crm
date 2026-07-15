@@ -7,7 +7,19 @@
  * AC-3: 현금 시재 (전일이월 + 당일수납 = 잔액)
  * AC-4: 글로벌 SalesFilterState.dateRange(accounting_date) 사용
  *
- * READ-ONLY — DB 변경 없음. payments + package_payments + daily_closings 조회만.
+ * READ-ONLY — DB 변경 없음. payments + package_payments + service_charges + daily_closings 조회만.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * T-20260715-foot-REVENUE-SALESDAILY-INSURANCE-SPLIT-FIX (Stage A)
+ *   이 화면엔 grain이 2개다 (DA CONSULT-REPLY / revenue_insurance_split_spec §0·§2-3).
+ *   ① 발생(청구)기준 급여 3값(급여총액·본부금·공단청구액) = 명세 grain = service_charges.
+ *      공단부담(insurance_covered_amount)은 payments에 영원히 없음(공단이 기관에 직접 지급).
+ *      → 좌측 급여 섹션은 service_charges(WHERE is_insurance_covered=TRUE)에서만 산출.
+ *        기간 = 진료(charge)일 = calculated_at 기준(C3). payments.tax_type='급여' predicate 완전 제거(C1).
+ *   ② 수납기준 비급여/선수금 = 수납 grain = payments(accounting_date). 공단부담 없음.
+ *   좌우 대사(AC-2)는 수납(cash) grain끼리만 유효 → 급여(발생기준) 제외하고 비급여+선수금만 대사.
+ *   Stage B(수납수단별 급여 열, C4 payment↔service_charge 링크 확인) = 별도 stage.
+ *   ADDITIVE: 신규 컬럼/enum/마이그 0, service_charges는 읽기만(ALTER 금지, C2).
  */
 
 import { useMemo } from 'react';
@@ -85,6 +97,19 @@ interface RawManual {
   amount: number;
 }
 
+/**
+ * T-20260715-foot-REVENUE-SALESDAILY-INSURANCE-SPLIT-FIX — 발생(청구)기준 급여 명세.
+ * service_charges(명세 grain). 공단부담(insurance_covered_amount)은 payments에 없어 여기서만 산출.
+ * 불변식: base_amount = copayment_amount + insurance_covered_amount + exempt_amount.
+ */
+interface RawServiceCharge {
+  base_amount: number;
+  copayment_amount: number;
+  insurance_covered_amount: number;
+  exempt_amount: number;
+  customer_id: string | null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 헬퍼
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +174,29 @@ export function SalesDailyTab({ filter }: Props) {
     },
   });
 
+  // ── 발생(청구)기준 급여 명세 (service_charges, calculated_at=진료일 기준) ────
+  //   T-20260715-foot-REVENUE-SALESDAILY-INSURANCE-SPLIT-FIX (C1·C3):
+  //   급여총액·본부금·공단청구액의 권위 grain = 명세(service_charges). WHERE is_insurance_covered=TRUE.
+  //   공단부담(insurance_covered_amount)은 payments에 없음 → calc_copayment가 차지 생성 시 즉시 적재
+  //   (EDI/insurance_claims 무관 항상 값 존재). SalesDoctorTab와 동일 canonical(§0, cross-CRM 일치).
+  const { data: serviceCharges = [], isLoading: scLoading } = useQuery<RawServiceCharge[]>({
+    queryKey: ['sales-daily-service-charges', clinic?.id, from, to],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('service_charges')
+        .select('base_amount, copayment_amount, insurance_covered_amount, exempt_amount, customer_id')
+        .eq('clinic_id', clinic!.id)
+        .eq('is_insurance_covered', true)
+        .gte('calculated_at', from)
+        .lte('calculated_at', `${to}T23:59:59.999`);
+      if (error) throw error;
+      // 방어필터: is_simulation=true 고객 명세 제외 (워크인 NULL 보존) — payments와 동일 sim 집합.
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      return excludeSimulationPaymentRows((data ?? []) as RawServiceCharge[], simIds);
+    },
+  });
+
   // ── 수기 결제내역 (close_date 기준) ────────────────────────────────────────
   //   일마감 결제내역 탭에서 수기 추가/수정한 항목. 일마감과 동일하게 amount 부호 그대로 net 합산.
   const { data: manualEntries = [], isLoading: manualLoading } = useQuery<RawManual[]>({
@@ -186,25 +234,38 @@ export function SalesDailyTab({ filter }: Props) {
     },
   });
 
-  const isLoading = payLoading || pkgLoading || manualLoading;
+  const isLoading = payLoading || pkgLoading || scLoading || manualLoading;
   const allPayments = useMemo<RawPayment[]>(() => [...payments, ...pkgPayments], [payments, pkgPayments]);
 
-  // ── 좌측 매트릭스: 발생 기준 집계 (세금속성별) ─────────────────────────────
-  //   급여(본부금+공단청구액) / 비급여(과세+면세) / 선수금 / 할인 / 총진료비
-  //   주의: 본부금·공단청구액은 DB에 별도 분리 필드 없음 → 급여합계로 단순 표시
+  // ── 좌측 매트릭스: 발생 기준 집계 ──────────────────────────────────────────
+  //   급여(급여총액·본부금·공단청구액) = 발생(청구)기준 · service_charges(명세) grain (C1)
+  //   비급여(과세+면세)·선수금 = 수납기준 · payments(accounting_date) grain
+  //   T-20260715 FIX: payments.tax_type='급여' predicate 제거. 급여 3값은 service_charges에서만 산출.
   const left = useMemo(() => {
-    let copay = 0;    // 급여 본부금 (급여 전체 — 공단청구 분리 불가)
-    let claim = 0;    // 공단청구액 (현재 DB 미지원 → 0)
+    // (발생기준) 급여 3값 — 명세 grain. is_insurance_covered=TRUE 명세만 조회됨.
+    //   불변식: base_amount = copayment_amount + insurance_covered_amount + exempt_amount.
+    let baseTotal = 0;  // 급여총액 = SUM(base_amount)
+    let copay = 0;      // 본부금(본인부담) = SUM(copayment_amount)
+    let claim = 0;      // 공단청구액 = SUM(insurance_covered_amount)
+    let exempt = 0;     // 면제분 = SUM(exempt_amount)
+    for (const sc of serviceCharges) {
+      baseTotal += sc.base_amount;
+      copay += sc.copayment_amount;
+      claim += sc.insurance_covered_amount;
+      exempt += sc.exempt_amount;
+    }
+
+    // (수납기준) 비급여/선수금 — payments grain. tax_type='급여'는 여기서 집계하지 않음(발생기준으로 이관).
     let taxable = 0;  // 비급여 과세
     let taxfree = 0;  // 비급여 면세
     let prepaid = 0;  // 선수금차감
-    // 할인 필드는 별도 DB 컬럼 없음 → 0
-
     for (const p of allPayments) {
       const n = net(p);
       const tt = p.tax_type ?? '';
       if (tt === '급여') {
-        copay += n;
+        // 급여 수납분(본인부담)은 발생기준(service_charges)으로 대체 집계 → 좌측 비급여 버킷 오염 방지.
+        //   수납수단별 급여 열은 Stage B(C4 payment↔service_charge 링크) 대상.
+        continue;
       } else if (tt === '과세_비급여') {
         taxable += n;
       } else if (tt === '면세_비급여') {
@@ -223,9 +284,12 @@ export function SalesDailyTab({ filter }: Props) {
       taxfree += m.amount;
     }
 
-    const total = copay + claim + taxable + taxfree + prepaid;
-    return { copay, claim, taxable, taxfree, prepaid, discount: 0, total };
-  }, [allPayments, manualEntries]);
+    // 총진료비(발생기준) = 급여총액(명세 base) + 비급여(과세+면세) + 선수금.
+    const total = baseTotal + taxable + taxfree + prepaid;
+    // 수납(cash) grain 소계 — 좌우 대사(AC-2) 대상. 급여(발생기준)는 대사 제외.
+    const cashTotal = taxable + taxfree + prepaid;
+    return { baseTotal, copay, claim, exempt, taxable, taxfree, prepaid, discount: 0, total, cashTotal };
+  }, [serviceCharges, allPayments, manualEntries]);
 
   // ── 우측 매트릭스: 수납수단 × 세금속성 교차 ────────────────────────────────
   type Matrix = Record<MethodRow, Record<TaxCol, number>>;
@@ -268,9 +332,13 @@ export function SalesDailyTab({ filter }: Props) {
 
   const totalRight = TAX_COLS.reduce((s, col) => s + rightColTotals[col], 0);
 
-  // AC-2: 좌우 대사 — 1원 이상 차이 시 경고
-  const hasAnyRow = allPayments.length > 0 || manualEntries.length > 0;
-  const mismatch = hasAnyRow && Math.abs(left.total - totalRight) >= 1;
+  // AC-2: 좌우 대사 — 수납(cash) grain끼리만 유효. 급여(발생기준·명세 grain)는 대사 제외.
+  //   T-20260715 FIX: 좌측 급여가 service_charges(발생기준)로 이관되어 payments(수납)와 grain이 다름.
+  //   → 대사는 비급여+선수금(좌측 cashTotal) vs 우측 급여 열 제외 소계로 apples-to-apples.
+  //   우측 급여 열(Stage B, C4)은 현재 payments.tax_type='급여'(=0건) → 오늘 표시/대사 무변화.
+  const rightCashTotal = totalRight - rightColTotals['급여'];
+  const hasAnyRow = allPayments.length > 0 || serviceCharges.length > 0 || manualEntries.length > 0;
+  const mismatch = hasAnyRow && Math.abs(left.cashTotal - rightCashTotal) >= 1;
 
   // ── AC-3: 현금 시재 ────────────────────────────────────────────────────────
   const cashCarryover = prevClosing?.actual_cash_total ?? 0;
@@ -315,11 +383,11 @@ export function SalesDailyTab({ filter }: Props) {
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
           <span>
-            <strong>대사 불일치 감지</strong> — 발생기준 합계{' '}
-            <strong>{formatAmount(left.total)}원</strong>과 실수납 합계{' '}
-            <strong>{formatAmount(totalRight)}원</strong>이 다릅니다.
-            차이: <strong>{formatAmount(Math.abs(left.total - totalRight))}원</strong>.
-            결제 데이터를 확인해 주세요.
+            <strong>수납 대사 불일치 감지</strong> — 비급여·선수금(수납기준){' '}
+            <strong>{formatAmount(left.cashTotal)}원</strong>과 실수납 합계(급여 제외){' '}
+            <strong>{formatAmount(rightCashTotal)}원</strong>이 다릅니다.
+            차이: <strong>{formatAmount(Math.abs(left.cashTotal - rightCashTotal))}원</strong>.
+            결제 데이터를 확인해 주세요. (급여는 발생기준·명세 집계로 대사 대상 아님)
           </span>
         </div>
       )}
@@ -331,7 +399,9 @@ export function SalesDailyTab({ filter }: Props) {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">발생 기준 집계</CardTitle>
-            <p className="text-xs text-muted-foreground">세금속성별 진료비 분류 (accounting_date 기준)</p>
+            <p className="text-xs text-muted-foreground">
+              급여=발생(청구)기준·명세 (진료일) / 비급여·선수금=수납기준 (accounting_date)
+            </p>
           </CardHeader>
           <CardContent className="p-0">
             <table
@@ -346,17 +416,37 @@ export function SalesDailyTab({ filter }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {/* 급여 */}
+                {/* 급여 — 발생(청구)기준·명세(service_charges) grain. 불변식: 급여총액=본부금+공단청구액+면제 */}
                 <tr className="border-b hover:bg-muted/20">
-                  <td className="py-2 px-3 align-middle text-xs font-medium border-r bg-blue-50/50" rowSpan={2}>
+                  <td className="py-2 px-3 align-middle text-xs font-medium border-r bg-blue-50/50" rowSpan={3}>
                     급여
+                    <div className="mt-0.5 text-[10px] font-normal text-muted-foreground">발생(청구)기준</div>
                   </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">본부금</td>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatAmount(left.copay)}</td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">급여총액</td>
+                  <td
+                    className="py-2 px-3 text-right tabular-nums font-medium"
+                    data-testid="sales-daily-ins-base"
+                  >
+                    {formatAmount(left.baseTotal)}
+                  </td>
+                </tr>
+                <tr className="border-b hover:bg-muted/20">
+                  <td className="py-2 px-3 text-xs text-muted-foreground">본부금(본인부담)</td>
+                  <td
+                    className="py-2 px-3 text-right tabular-nums"
+                    data-testid="sales-daily-ins-copay"
+                  >
+                    {formatAmount(left.copay)}
+                  </td>
                 </tr>
                 <tr className="border-b hover:bg-muted/20">
                   <td className="py-2 px-3 text-xs text-muted-foreground">공단청구액</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{formatAmount(left.claim)}</td>
+                  <td
+                    className="py-2 px-3 text-right tabular-nums"
+                    data-testid="sales-daily-ins-claim"
+                  >
+                    {formatAmount(left.claim)}
+                  </td>
                 </tr>
 
                 {/* 비급여 */}
