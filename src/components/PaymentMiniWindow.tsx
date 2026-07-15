@@ -1545,7 +1545,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     taxType?: string | null,
   ) => {
     // PAY-CASH-RECEIPT: 결제 삽입 시 cash_receipt_issued 포함 (현금/이체 행에 한해)
-    const payRows = splits.map((s) => {
+    const buildPayRow = (s: { method: PayMethod; amount: number }) => {
       const isCashLike = s.method === 'cash' || s.method === 'transfer';
       return {
         check_in_id: checkIn.id,
@@ -1564,9 +1564,69 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         external_approval_no: null,
         external_tid: null,
       };
-    });
-    const { error: payErr } = await supabase.from('payments').insert(payRows);
-    if (payErr) throw payErr;
+    };
+
+    // ── T-20260715-foot-CONSULTFEE-WRITEPATH-INSURANCE-SPLIT ─────────────────
+    //   급여 진찰료(건강보험) 수납 write-path. 기존엔 진찰료가 plain payment(tax_type=null)로만 남아
+    //   §2-1 NULL→면세→비급여 오귀속 + 명세(service_charges) 0건 → 매출 급여 칸 영구 0.
+    //   해소: covered 진찰료(is_insurance_covered && hira_category='consultation') 항목의 본인부담분을
+    //   서버 원자 RPC record_insurance_consult_payment 로 라우팅 → service_charge(is_insurance_covered=TRUE,
+    //   calc_copayment 반환 적재) + copay payment(tax_type NULL=면세, service_charge_id FK) 원자 생성 + 멱등.
+    //   나머지(비급여·비진찰료 급여 등)만 기존 plain payment 경로 유지(회귀 0). going-forward only(W7).
+    //   ⚠ 단일 결제수단(splits.length===1)·비선수금 경로에서만 RPC 사용 — 분할/선수금 혼합은 parent C4
+    //     활성화(1:N 배분) 소관(DA Q3, 본 티켓 blocking 아님) → 기존 동선 그대로.
+    const isDeductSettle = taxType === '선수금';
+    const coveredConsultServices =
+      !isDeductSettle && splits.length === 1
+        ? Array.from(
+            new Map(
+              pricingItems
+                .filter(
+                  ({ service }) =>
+                    service.is_insurance_covered === true &&
+                    service.hira_category === 'consultation',
+                )
+                .map(({ service }) => [service.id, service]),
+            ).values(),
+          )
+        : [];
+
+    let effectiveSplits = splits;
+    if (coveredConsultServices.length > 0) {
+      const visitDate =
+        checkIn.checked_in_at?.slice(0, 10) ??
+        new Date().toISOString().slice(0, 10);
+      let consultCopaySum = 0;
+      for (const svc of coveredConsultServices) {
+        // atomic RPC — 부분성공(payment만/명세만) 방지: 에러 시 throw 로 전체 수납 중단.
+        const { data: rpcData, error: rpcErr } = await supabase.rpc(
+          'record_insurance_consult_payment',
+          {
+            p_check_in_id: checkIn.id,
+            p_customer_id: checkIn.customer_id,
+            p_clinic_id: checkIn.clinic_id,
+            p_service_id: svc.id,
+            p_method: splits[0].method,
+            p_visit_date: visitDate,
+          },
+        );
+        if (rpcErr) throw rpcErr;
+        const row = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as
+          | { copayment_amount?: number }
+          | null;
+        consultCopaySum += row?.copayment_amount ?? 0;
+      }
+      // 진찰료 copay 는 RPC 가 이미 payment 를 생성 → plain 에서 제외. 나머지(비급여 등)만 plain insert.
+      const remainder = Math.max(0, splits[0].amount - consultCopaySum);
+      effectiveSplits =
+        remainder > 0 ? [{ method: splits[0].method, amount: remainder }] : [];
+    }
+
+    const payRows = effectiveSplits.map(buildPayRow);
+    if (payRows.length > 0) {
+      const { error: payErr } = await supabase.from('payments').insert(payRows);
+      if (payErr) throw payErr;
+    }
 
     const { error: ciErr } = await supabase
       .from('check_ins')
