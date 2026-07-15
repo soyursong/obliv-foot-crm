@@ -74,6 +74,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT: 진료 대시보드 행 → 서류 출력 1클릭 단축(DocumentPrintPanel 재사용 진입점).
+        //   S1(진입점 배선: 버튼·onOpenDocPrint·openDocPrint lazy-fetch·모달=DocumentPrintPanel) + S2(published-only 발행완료 불변식
+        //   순수 모사 + medDocPrintGate status='published' 정본 가드). 출력 surface 신설 0. auth/DB 불요. 실 렌더=supervisor 갤탭.
+        '**/T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT.spec.ts',
         // T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS: 시술내역 수정 치료사 권한(RC=FE 게이트, prod RLS 이미 허용).
         //   permissions lib 순수 단언 + 소스 정적 가드(저장 핸들러 단일행 UPDATE·derived 차감 불변식·canEditClinicMgmt 부재)
         //   + Management API(SUPABASE_ACCESS_TOKEN) prod 정책 실측(package_sessions_write=ALL therapist 허용·clinic_id 부재).

@@ -11,10 +11,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { todaySeoulISODate, chartNoDisplay } from '@/lib/format';
+import { todaySeoulISODate, chartNoDisplay, formatDateTimeDots } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
-import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, Printer, X } from 'lucide-react';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import {
   // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 처방확정 공통 가드 + 차트변경 audit.
@@ -29,7 +29,13 @@ import { isInClinic } from '@/lib/status';
 import { formatRxConfirmedSummary, normalizeRxItem } from '@/lib/rxTooltip';
 // T-20260617-foot-DOCDASH-DOCLIST-5FIX B2-3: 진료완료목록 뷰어 re-skin으로 방 칼럼 제거 →
 //   getAssignedSlotName(치료실 파생) 미사용 → import 제거. *_room 컬럼 SELECT/스키마는 무변경.
-import type { CheckInStatus } from '@/lib/types';
+import type { CheckInStatus, CheckIn } from '@/lib/types';
+// T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT: 진료 대시보드 행 → 서류 출력 1클릭 단축.
+//   ★재사용 원칙: 차트 서류탭/재발급 모달과 동일한 출력 surface(DocumentPrintPanel, LOGIC-LOCK L-006 단일 출력 경로)를
+//   그대로 열기만 한다. 신규 출력 로직/별도 다이얼로그 컴포넌트 신설 0. published-only 의료 안전 불변식도
+//   DocumentPrintPanel(+medDocPrintGate: 소견서/진단서 status='published' 발행본만)의 기존 동작을 그대로 상속 →
+//   차트 서류탭 출력과 동일(AC-4). 대시보드 행은 진입점만 추가.
+import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY (AC-1): 임상경과 = DoctorCallDashboard
 //   showClinical 과 동일 SSOT(MedicalChartPanel embed variant='clinical'). 신규 조회경로/Drawer 신설 금지.
 //   기존 차트 존재 시 read 모드(isReadOnly)로 로드 — read 뷰 요건 충족.
@@ -457,6 +463,8 @@ function PatientRow({
   role,
   onRefresh,
   onOpenChart,
+  onOpenDocPrint,
+  docPrintLoading = false,
   isPast = false,
   clinicId,
   currentUserEmail,
@@ -468,6 +476,10 @@ function PatientRow({
   onRefresh: () => void;
   /** T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 차단 시 차트 진입 동선. */
   onOpenChart?: () => void;
+  /** T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT: 서류 출력 1클릭 단축 — 이 행 고객의 서류 출력 다이얼로그(DocumentPrintPanel) 오픈. */
+  onOpenDocPrint?: () => void;
+  /** T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT: 서류 출력 버튼 클릭 후 check_in full-row lazy-fetch 중 여부. */
+  docPrintLoading?: boolean;
   /** T-20260609-foot-PASTVISIT-TREATMENT-VIEW: 과거 날짜(어제 이전) read-only '받은 치료' 모드. */
   isPast?: boolean;
   /** T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 확장 임상경과(MedicalChartPanel) 컨텍스트. */
@@ -658,8 +670,31 @@ function PatientRow({
           {row.booking_memo || '—'}
         </span>
 
-        {/* ⑧ 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 */}
+        {/* ⑧ 액션 — 서류 출력 / 확정 버튼 / 대기 알림 / 펼치기 토글 */}
         <div className="flex items-center gap-1.5 justify-end">
+          {/* T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT (AC-1/2): 서류 출력 1클릭 단축.
+              차트 진입 없이 곧바로 이 행 고객의 서류 출력 다이얼로그(DocumentPrintPanel = 차트 서류탭 동일 출력 경로) 오픈.
+              published-only 의료 안전 불변식은 DocumentPrintPanel 상속(AC-3). 기존 행 액션 룩앤필(h-6 text-[11px]) 준수. */}
+          {onOpenDocPrint && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-6 text-[11px] px-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+              onClick={onOpenDocPrint}
+              disabled={docPrintLoading}
+              title="서류 출력 — 차트 진입 없이 발행완료 서류 출력"
+              data-testid="dashbd-docprint-btn"
+            >
+              {docPrintLoading ? (
+                <Loader2 className="h-3 w-3 mr-0.5 animate-spin" />
+              ) : (
+                <Printer className="h-3 w-3 mr-0.5" />
+              )}
+              서류 출력
+            </Button>
+          )}
+
           {/* 임시 처방이고 의사인 경우 → 확정 버튼 */}
           {hasPendingRx && doctorMode && (
             <Button
@@ -878,6 +913,30 @@ export default function DoctorPatientList() {
     setMedicalChartCustomerId(customerId);
     setMedicalChartVariant(variant);
     setMedicalChartOpen(true);
+  };
+
+  // T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT: 서류 출력 1클릭 단축 상태.
+  //   행 버튼 클릭 → 해당 check_in 전체 행을 lazy-fetch(목록 select는 DocumentPrintPanel가 요구하는
+  //   clinic_id/treating_doctor_id/package_id 미포함 → 출력 시점에만 full row 로드) → 부모 단일 모달 렌더.
+  //   ★출력 surface 자체는 신설하지 않고 DocumentPrintPanel(차트 서류탭/재발급 모달과 동일 경로)만 연다.
+  const [docPrintCheckIn, setDocPrintCheckIn] = useState<CheckIn | null>(null);
+  const [docPrintLoadingId, setDocPrintLoadingId] = useState<string | null>(null);
+  const openDocPrint = async (checkInId: string) => {
+    setDocPrintLoadingId(checkInId);
+    try {
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('*')
+        .eq('id', checkInId)
+        .single();
+      if (error || !data) throw error ?? new Error('check_in not found');
+      setDocPrintCheckIn(data as unknown as CheckIn);
+    } catch (e) {
+      console.error('[DASHBD-DOCPRINT] check_in 로드 실패', e);
+      toast.error('서류 출력을 열 수 없습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setDocPrintLoadingId(null);
+    }
   };
 
   // T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1: 기본 조회 날짜 = 오늘(KST). AC-2: < > 로 전/후 이동.
@@ -1114,6 +1173,8 @@ export default function DoctorPatientList() {
               role={profile?.role ?? ''}
               onRefresh={() => refetch()}
               onOpenChart={row.customer_id ? () => openTreatmentChart(row.customer_id as string, 'full') : undefined}
+              onOpenDocPrint={() => openDocPrint(row.id)}
+              docPrintLoading={docPrintLoadingId === row.id}
               isPast={isPast}
               clinicId={clinicId}
               currentUserEmail={profile?.email ?? null}
@@ -1140,6 +1201,42 @@ export default function DoctorPatientList() {
         variant={medicalChartVariant}
         onOpenFull={() => setMedicalChartVariant('full')}
       />
+
+      {/* T-20260716-foot-DASHBD-DOCPRINT-SHORTCUT (AC-2/3/4): 서류 출력 다이얼로그 — 부모 단일 렌더(행 누수 0).
+          차트 서류탭 '서류 재발급' 모달(CustomerChartPage docReissue)과 동일 wrapper·동일 DocumentPrintPanel 재사용.
+          출력 내용·서식·published-only 발행완료 게이트 모두 DocumentPrintPanel 상속 → 차트 출력과 동일(AC-4).
+          신규 출력 UI/로직 신설 0 — 진입점만 대시보드 행으로 relocating. */}
+      {docPrintCheckIn && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setDocPrintCheckIn(null)}
+          data-testid="dashbd-docprint-dialog"
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-auto rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="font-semibold text-sm">
+                서류 출력 — {docPrintCheckIn.customer_name}
+                <span className="ml-2 text-xs font-normal text-gray-400">
+                  {formatDateTimeDots(docPrintCheckIn.checked_in_at)}
+                </span>
+              </div>
+              <button
+                onClick={() => setDocPrintCheckIn(null)}
+                className="rounded p-1 hover:bg-gray-100"
+                data-testid="dashbd-docprint-close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <DocumentPrintPanel checkIn={docPrintCheckIn} onUpdated={() => {}} historyAtTop />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
