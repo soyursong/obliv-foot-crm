@@ -273,6 +273,12 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 진료비 계산서·영수증 신양식(bill_receipt_new) 코드-레벨 불변식
+        //   (AC3 대표자={{receipt_representative}} rebind · AC4 병원 고정정보 · AC5 격리 · fallback field_map).
+        //   src 정적 grep + page.setContent 결정론 렌더. 스펙 자체가 "로그인 불요·결정론적" 선언 → unit 편입.
+        //   (FIX-REQUEST MSG-20260716-003500-sg9r: 미편입 시 desktop-chrome 매치 → auth.setup 기동 →
+        //    TEST_PASSWORD 없는 QA 워크트리 env_missing 실패. unit 편입 + desktop-chrome testIgnore 로 우회.)
+        '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -290,7 +296,12 @@ export default defineConfig({
       // 순수 정적 소스 가드(unit 프로젝트 전용)는 desktop-chrome 에서 제외 — auth.setup 의존을
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
-      testIgnore: ['**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts'],
+      testIgnore: [
+        '**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts',
+        // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 순수 정적/렌더 unit 스펙 — desktop-chrome(auth 의존)
+        //   에서 제외해 `npx playwright test <file>` 무-project 실행 시 setup 미기동. (FIX-REQUEST MSG-20260716-003500-sg9r)
+        '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
+      ],
     },
     {
       name: 'tablet',
