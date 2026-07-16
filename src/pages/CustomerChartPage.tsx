@@ -39,7 +39,7 @@ import { toast } from '@/lib/toast';
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
-import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
+import { TREATMENT_TYPES, PACKAGE_TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -9843,7 +9843,8 @@ function PackagePurchaseFromTemplateDialog({
   //     커스텀 prefill = standard_price(1회 정상가) × 횟수(totalSessions) 스냅샷 → 1회가×총결제 혼합 grain 방지
   //     (미이행 시 할인율 음수/과대). refPriceTouched=수기 override 시 자동계산 중단(override 존중).
   const stdPrices = useTreatmentStandardPrices(clinicId);
-  const [treatmentType, setTreatmentType] = useState<TreatmentType | ''>('');
+  // T-20260716-foot-EXPPASS: packages/통계 축 6토큰(+체험권). 정찰가 마스터(tsp)는 5토큰 유지(DA Q2=NO).
+  const [treatmentType, setTreatmentType] = useState<PackageTreatmentType | ''>('');
   const [referencePrice, setReferencePrice] = useState(0);
   const [refPriceTouched, setRefPriceTouched] = useState(false);
 
@@ -9874,7 +9875,12 @@ function PackagePurchaseFromTemplateDialog({
 
   // T-20260708 RECONCILE(D): 커스텀 모드 기준정가 = standard_price × 횟수(totalSessions) 계약총액 grain 스냅샷.
   //   시술유형/횟수 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
-  const stdForType = treatmentType ? stdPrices.map[treatmentType] : null;
+  // T-20260716-foot-EXPPASS: 체험권은 정찰가 마스터(tsp, 5토큰)에 없음 → prefill 없음(기준정가 부재, 할인율 "-").
+  //   tsp 축(TREATMENT_TYPES)에 속한 유형만 standard_price 조회. 체험권 선택 시 stdForType=null → reference_price 미채움.
+  const stdForType =
+    treatmentType && (TREATMENT_TYPES as readonly string[]).includes(treatmentType)
+      ? stdPrices.map[treatmentType as TreatmentType]
+      : null;
   useEffect(() => {
     if (selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType) return;
     if (stdForType != null && stdForType > 0) setReferencePrice(stdForType * totalSessions);
@@ -9977,7 +9983,7 @@ function PackagePurchaseFromTemplateDialog({
 
   // T-20260708 AC-8/AC-10 + RECONCILE(D): 시술유형 선택 시 수기 override 플래그 해제 → 반응형 effect 가
   //   커스텀 모드에서 standard_price × 횟수(계약총액 grain)를 기준정가에 prefill. 템플릿 모드는 유지(AC-2b).
-  const selectTreatmentType = (t: TreatmentType | '') => {
+  const selectTreatmentType = (t: PackageTreatmentType | '') => {
     setTreatmentType(t);
     if (selectedTemplateId === 'custom') setRefPriceTouched(false);
   };
@@ -10505,12 +10511,13 @@ function PackagePurchaseFromTemplateDialog({
                 <label className="text-xs text-gray-500">시술 유형 <span className="text-red-500">*</span></label>
                 <select
                   value={treatmentType}
-                  onChange={(e) => selectTreatmentType(e.target.value as TreatmentType | '')}
+                  onChange={(e) => selectTreatmentType(e.target.value as PackageTreatmentType | '')}
                   data-testid="pkg-treatment-type"
                   className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
                 >
                   <option value="">— 선택 —</option>
-                  {TREATMENT_TYPES.map((t) => (
+                  {/* T-20260716-foot-EXPPASS: packages/통계 축 6토큰(+체험권) → 체험권 선택 시 treatment_type='체험권' 저장·통계 태깅. */}
+                  {PACKAGE_TREATMENT_TYPES.map((t) => (
                     <option key={t} value={t}>{treatmentTypeLabel(t)}</option>
                   ))}
                 </select>
