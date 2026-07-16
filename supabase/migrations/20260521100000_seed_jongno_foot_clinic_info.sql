@@ -37,7 +37,7 @@ SET
   name         = '오블리브의원 서울 오리진점',
   phone        = '02-6956-3438',
   fax          = '02-6956-3439',
-  business_no  = '511-60-00988'
+  business_no  = '457-23-00938'
 WHERE slug = 'jongno-foot';
 
 -- 적용 확인
@@ -63,7 +63,7 @@ BEGIN
   IF v_fax != '02-6956-3439' THEN
     RAISE EXCEPTION '팩스 업데이트 실패: %', v_fax;
   END IF;
-  IF v_bno != '511-60-00988' THEN
+  IF v_bno != '457-23-00938' THEN
     RAISE EXCEPTION '사업자등록번호 업데이트 실패: %', v_bno;
   END IF;
 
