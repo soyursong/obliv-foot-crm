@@ -23,7 +23,7 @@ summary: 방문경로/예약경로 옵션 '공홈'(공식 홈페이지) 순수 A
 # T-20260716-foot-VISITROUTE-OPT-GONGHOM-ADD-NAVER-ALIGN
 
 방문경로/예약경로 옵션 **'공홈'(공식 홈페이지) 신규 추가 [순수 ADDITIVE]** + '네이버' 표기 통일.
-DA CONSULT-REPLY GO(MSG-20260716-004703-pvs0) 수신 완료 → 대표 게이트 면제(autonomy §3.1), supervisor DDL-diff만.
+DA CONSULT-REPLY **v2** GO(MSG-20260716-005653-nh69, SUPERSEDES pvs0) 수신 완료 → 대표 게이트 면제(autonomy §3.1), supervisor DDL-diff만. CHECK=7값(기존6+'공홈'), pvs0의 8값/'네이버야'는 reporter 정정(no7d)으로 무효.
 
 ⚠ **'네이버야' rename 아님** — 기존 '네이버' 항목명·저장값 불변. net 추가 = **'공홈' 1개뿐**.
 

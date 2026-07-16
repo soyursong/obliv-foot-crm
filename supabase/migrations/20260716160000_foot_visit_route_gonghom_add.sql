@@ -3,7 +3,7 @@
 -- 작성: dev-foot / 2026-07-16
 --
 -- ⚠ 운영 적용은 supervisor DDL-diff 게이트(대표 게이트 면제, autonomy §3.1 — 순수 ADDITIVE).
---   DA CONSULT-REPLY MSG-20260716-004703-pvs0: GO, 순수 ADDITIVE.
+--   DA CONSULT-REPLY v2 MSG-20260716-005653-nh69 (SUPERSEDES pvs0): GO, 순수 ADDITIVE 단일 신규값('공홈' 1개). CHECK=7값(기존6+'공홈'). pvs0의 8값/'네이버야'는 reporter 정정(no7d)으로 무효.
 --
 -- 순수 ADDITIVE — 기존 데이터 무손실:
 --   · CHECK 제약 값 '공홈' 1개 ADD만. DROP 값 없음. 기존 6값('TM','워크인','인바운드','지인소개','네이버','인콜') 전부 존치.

@@ -816,7 +816,7 @@ export interface ReservationRegistrar {
 // T-20260716-foot-VISITROUTE-OPT-GONGHOM-ADD-NAVER-ALIGN (김주연 총괄, ch C0ATE5P6JTH, no7d authoritative):
 //   '공홈'(공식 홈페이지) 신규 ADDITIVE 추가. 3 surface(예약생성/예약상세, 2번차트 방문경로, CheckInDetailSheet)
 //   모두 이 단일 SSOT(visitRouteOptionsFor) 경유 노출. '네이버' 존치·rename 없음('네이버야' 문자열 미도입).
-//   DA CONSULT-REPLY(MSG-pvs0): '공홈'→route_std `homepage`(신규 canonical, owned homepage=organic).
+//   DA CONSULT-REPLY v2(MSG-20260716-005653-nh69, SUPERSEDES pvs0): '공홈'→route_std `homepage`(신규 canonical, owned homepage=organic). CHECK=7값(기존6+공홈), '네이버야'/8값 무효.
 //   ⚠ DB CHECK(customers/reservations)에 '공홈' ADD 동반 필수(20260716160000_foot_visit_route_gonghom_add.sql). system_codes 무접촉.
 export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인바운드', '워크인', '지인소개', '공홈'] as const;
 /** 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용). '인콜'은 A안에서 '인바운드'로 수렴됐으나 기존행 표시 보존. */
