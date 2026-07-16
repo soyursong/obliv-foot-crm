@@ -319,6 +319,11 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: 세부산정내역 '계'/'합계'(detail_subtotal/
+        //   detail_total) 공란(0) 회귀 가드. DocumentPrintPanel bill_detail 바인딩을 SSOT(computeFootBilling/
+        //   buildFootBillDetailItems)로 replay → 계/합계 = 본인부담+비급여(공단 제외, B안 보존) 단언 +
+        //   공단 칸 표시 유지(AC4) + 항목 0건 '0' 표시 + page.setContent 인쇄 미리보기 캡처. auth/server 불요.
+        '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -342,6 +347,9 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
         //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.
         '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+        // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: unit 전용 setContent 렌더 spec →
+        //   무-project 실행 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 끌어들이지 않도록 제외. unit 에서만 실행.
+        '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
       ],
     },
     {
