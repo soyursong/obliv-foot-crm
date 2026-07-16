@@ -111,6 +111,7 @@ import {
 //   evaluateMedicalRecordGate 는 급여(isCovered) 판정에만 재사용 — 비차단 soft 리마인더용.
 //   차단(blocked)·방문일 매칭은 수납 흐름에서 더 이상 사용하지 않음(계좌이체 등 비내원일 수납 허용).
 import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
+import { InsuranceResettlePanel } from '@/components/insurance/InsuranceResettlePanel';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -2526,6 +2527,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                           {formatAmount(calcDeductAmount())}
                         </span>
                       </div>
+                    )}
+                    {/* T-20260714-foot-INSGRADE-VERIFY-RESETTLE: 등급 확정 재정산 미리보기(급여방문·확정등급).
+                        grade=null 잠정 30% 수납 → 확정 본인부담 차액(환불/추가징수). 실 처리는 money_gate 후.
+                        서버 RPC(calc_copayment authority)가 산출·판단 — 여기선 표시만. 대상 아니면 자체 생략. */}
+                    {checkIn?.id && (
+                      <InsuranceResettlePanel
+                        checkInId={checkIn.id}
+                        grade={customerInsuranceGrade}
+                        moneyGateOpen={false}
+                      />
                     )}
                   </div>
                 )}
