@@ -69,7 +69,8 @@ async function main() {
     const slice = resvIds.slice(i, i + CHUNK);
     const { data: resvs, error: e2 } = await sb
       .from('reservations')
-      .select('id, status, reservation_date, reservation_time, customer_id, customer_name, created_at, updated_at')
+      // §4 PHI 위생: customer_name(실명) 미조회 — 정정·감사는 UUID PK로 충분.
+      .select('id, status, reservation_date, reservation_time, customer_id, created_at, updated_at')
       .in('id', slice)
       .eq('status', 'confirmed');
     if (e2) { console.error('reservations query error:', e2.message); process.exit(1); }
@@ -80,8 +81,6 @@ async function main() {
         reservation_id: r.id,
         reservation_date: r.reservation_date,
         reservation_time: r.reservation_time,
-        customer_name: r.customer_name,
-        phone: null,
         resv_status: r.status,
         checkin_id: ci.id,
         checkin_status: ci.status,
@@ -118,7 +117,7 @@ async function main() {
   console.log(JSON.stringify({ total_diverged: report.total_diverged, correction_target_dist: dist, checkin_status_dist: ciDist }, null, 2));
   console.log('\n--- rows ---');
   for (const d of diverged) {
-    console.log(`${d.reservation_date} ${d.reservation_time || ''} | ${d.customer_name || '?'} (${d.phone || '?'}) | resv=${d.reservation_id.slice(0,8)} status=${d.resv_status} | checkin=${d.checkin_status} → 정정:${d.correction_target}`);
+    console.log(`${d.reservation_date} ${d.reservation_time || ''} | resv=${d.reservation_id.slice(0,8)} status=${d.resv_status} | checkin=${(d.checkin_id||'').slice(0,8)}/${d.checkin_status} → 정정:${d.correction_target}`);
   }
   console.log('\nsaved:', base + '.json');
 }
