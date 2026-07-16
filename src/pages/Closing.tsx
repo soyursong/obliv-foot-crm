@@ -1682,7 +1682,18 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             </div>
                           )}
                         </td>
-                        <td className="py-2 px-2 text-xs text-muted-foreground">{r.chart_number ?? '-'}</td>
+                        {/* T-20260715-foot-CLOSING-CHARTNUM-CHARTNAV: 차트번호 셀 클릭 → 고객 2번차트(/chart/:customerId) nav.
+                            row_customer_id 있는 행(단건·패키지결제)만 클릭/hover 활성, 수기행(row_customer_id 없음)은 비활성. */}
+                        <td
+                          className={cn(
+                            'py-2 px-2 text-xs text-muted-foreground',
+                            r.row_customer_id && 'cursor-pointer hover:text-primary hover:underline',
+                          )}
+                          onClick={r.row_customer_id ? () => navigate(`/chart/${r.row_customer_id}`) : undefined}
+                          data-testid="closing-chartno-cell"
+                        >
+                          {r.chart_number ?? '-'}
+                        </td>
                         <td className="py-2 px-2 font-medium">{r.customer_name}</td>
                         <td className="py-2 px-2 text-xs">{r.lead_source ?? '-'}</td>
                         <td className="py-2 px-2 text-xs">{r.visit_type_label}</td>
