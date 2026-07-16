@@ -149,10 +149,46 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
     ? `ci:${checkInId}`
     : null;
 
+  // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-4): 미저장 메모 초안 유실 방지.
+  //   입력칸(inputVal)은 명시적 [추가]/상단 [저장](flushPending) 전까지 서버 미저장 상태다. 재렌더 폭주·고객 전환·
+  //   새로고침/창 닫기 시 조합 중이던 차팅이 소실될 수 있음(총괄 신고 "차팅 정보 날아감"). effectiveKey 별
+  //   localStorage 초안으로 상시 백업/복원 + beforeunload 경고로 순소실 0 을 보장. 서버 저장 계약은 불변(무회귀).
+  const draftKey = effectiveKey ? `foot_crm_memo_draft:${effectiveKey}` : null;
+
   // effectiveKey 없으면 로딩 상태 초기화
   useEffect(() => {
     if (!effectiveKey) setLoading(false);
   }, [effectiveKey]);
+
+  // 대상(고객/예약) 전환·재진입 시 저장된 초안 복원 — 없으면 빈칸으로 리셋(초안이 다른 대상으로 새지 않도록).
+  useEffect(() => {
+    if (!draftKey) { setInputVal(''); return; }
+    try {
+      const saved = localStorage.getItem(draftKey);
+      setInputVal(saved ?? '');
+    } catch { /* localStorage 접근 불가(사생활 모드 등) 무시 */ }
+  }, [draftKey]);
+
+  // 입력 변경 시 초안 자동 백업(디바운스 400ms). 빈 입력이면 초안 제거.
+  useEffect(() => {
+    if (!draftKey) return;
+    const t = setTimeout(() => {
+      try {
+        if (inputVal.trim()) localStorage.setItem(draftKey, inputVal);
+        else localStorage.removeItem(draftKey);
+      } catch { /* 무시 */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [inputVal, draftKey]);
+
+  // 미저장 내용이 있는 채로 새로고침/창 닫기 시 경고(브라우저 기본 이탈 확인).
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (inputValRef.current.trim()) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
 
   useEffect(() => {
     if (!effectiveKey) return;
@@ -209,6 +245,8 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
     }
     setItems((prev) => sortMemoItems([data as MemoHistoryItem, ...prev]));
     setInputVal('');
+    // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-4): 서버 저장 성공 → 초안 즉시 제거(재입장 시 유령 초안 방지).
+    try { if (draftKey) localStorage.removeItem(draftKey); } catch { /* 무시 */ }
     onAdded?.();
     return true;
   };

@@ -63,6 +63,8 @@ import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanc
 import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
 import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean, useChartSheetDock } from '@/lib/chartSheetContext';
+// T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 레이저 타이머 카운트다운 격리 컴포넌트
+import { LaserTimerPanel } from '@/components/chart/LaserTimerPanel';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
@@ -510,12 +512,7 @@ interface TimerRecord {
 // 클리닉 설정(clinics.laser_time_units)이 비었거나 null일 때만 사용 — 버튼이 사라지지 않도록 보장.
 const LASER_TIMER_FALLBACK_UNITS = [5, 15, 20];
 
-function formatTimerRemaining(secs: number): string {
-  if (secs <= 0) return '00:00';
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+// T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): formatTimerRemaining 은 LaserTimerPanel 로 이관(중복 제거).
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) 섹션
 interface PackageSession {
@@ -2729,7 +2726,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '치료메모'>('예약');
   // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
   const [activeTimer, setActiveTimer] = useState<TimerRecord | null>(null);
-  const [timerRemainingSecs, setTimerRemainingSecs] = useState(0);
+  // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 카운트다운 상태(timerRemainingSecs)+500ms 인터벌은
+  //   LaserTimerPanel 자식 컴포넌트로 이관 — 최상위 0.5초 재렌더 제거(차팅 입력 버벅임 원인). 아래 참조.
   const [timerLoading, setTimerLoading] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [resvDetailForm, setResvDetailForm] = useState({
@@ -4251,17 +4249,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [latestCheckIn?.id, loadActiveTimer]);
 
-  // ends_at 기준 카운트다운 — 탭 비활성 대응 (서버시각 앵커)
-  useEffect(() => {
-    if (!activeTimer) { setTimerRemainingSecs(0); return; }
-    const tick = () => {
-      const remaining = Math.max(0, new Date(activeTimer.ends_at).getTime() - Date.now()) / 1000;
-      setTimerRemainingSecs(Math.ceil(remaining));
-    };
-    tick();
-    const id = setInterval(tick, 500);
-    return () => clearInterval(id);
-  }, [activeTimer]);
+  // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 카운트다운 인터벌 이관.
+  //   기존 `setInterval(tick, 500)` 은 최상위 setTimerRemainingSecs 로 페이지 전체를 0.5초마다 재렌더시켜
+  //   차팅 입력 버벅임을 유발했다. 이 로직은 LaserTimerPanel(자식) 내부로 이동 — 부모는 activeTimer(저빈도)만 소유.
 
   const handleStartTimer = useCallback(async (minutes: number) => {
     if (!latestCheckIn?.id || !customer) return;
@@ -8445,105 +8435,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
 
             {/* T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): [상세] 탭 상단 — 탭 선택 무관하게 항상 표시 */}
+            {/* T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 500ms 카운트다운 재렌더를 이 위젯 서브트리로 격리.
+                (기존 인라인 JSX → LaserTimerPanel 컴포넌트. 표시·동작·data-testid 동일 — 무회귀) */}
             {latestCheckIn && (
-              <div
-                className={`mx-2 mt-2 mb-1 rounded-xl border p-2.5 flex flex-col gap-2 ${
-                  activeTimer
-                    ? timerRemainingSecs <= 60
-                      ? 'border-red-400 bg-red-50'
-                      : 'border-slate-300 bg-slate-50'
-                    : 'border-muted bg-muted/20'
-                }`}
-                data-testid="laser-timer-panel"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Timer className="h-3.5 w-3.5 text-slate-600 shrink-0" />
-                  <span className="text-[11px] font-semibold text-slate-700">비가열 레이저 타이머</span>
-                  {activeTimer && (
-                    <span
-                      className={`ml-auto tabular-nums font-mono text-base font-bold ${
-                        timerRemainingSecs <= 60 ? 'text-red-600' : 'text-slate-700'
-                      }`}
-                      data-testid="laser-timer-countdown"
-                    >
-                      {formatTimerRemaining(timerRemainingSecs)}
-                    </span>
-                  )}
-                </div>
-
-                {!activeTimer ? (
-                  /* 타이머 미실행 — 시작 버튼 3종 */
-                  <div className="flex gap-1.5" data-testid="laser-timer-start-buttons">
-                    {laserTimerUnits.map((min) => (
-                      <button
-                        key={min}
-                        type="button"
-                        disabled={timerLoading}
-                        onClick={() => handleStartTimer(min)}
-                        className="flex-1 rounded-lg border-2 border-slate-400 bg-white text-slate-700 font-bold text-sm py-2 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        data-testid={`laser-timer-btn-${min}`}
-                      >
-                        {timerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" /> : `${min}분`}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  /* 타이머 실행 중 — 진행 바 + 중지 버튼 */
-                  <div className="space-y-1.5">
-                    <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          timerRemainingSecs <= 60 ? 'bg-red-500' : 'bg-slate-500'
-                        }`}
-                        style={{
-                          width: `${Math.min(100, (timerRemainingSecs / (activeTimer.duration_minutes * 60)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{activeTimer.duration_minutes}분 타이머</span>
-                      <button
-                        type="button"
-                        disabled={timerLoading}
-                        onClick={() => setStopConfirmOpen(true)}
-                        className="flex items-center gap-1 rounded border border-red-300 bg-white text-red-600 text-[10px] font-medium px-2 py-0.5 hover:bg-red-50 transition-colors disabled:opacity-50"
-                        data-testid="laser-timer-stop-btn"
-                      >
-                        {timerLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : '■ 종료'}
-                      </button>
-                    </div>
-
-                    {/* 종료 확인 인라인 박스 */}
-                    {stopConfirmOpen && (
-                      <div
-                        className="mt-1 rounded-lg border border-red-300 bg-red-50 p-2 flex flex-col gap-1.5"
-                        data-testid="laser-timer-stop-confirm"
-                      >
-                        <p className="text-[11px] text-red-700 font-medium">타이머를 종료하시겠습니까?</p>
-                        <div className="flex gap-1.5 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setStopConfirmOpen(false)}
-                            className="rounded border border-gray-300 bg-white text-gray-600 text-[10px] font-medium px-2.5 py-1 hover:bg-gray-50 transition-colors"
-                            data-testid="laser-timer-stop-cancel"
-                          >
-                            취소
-                          </button>
-                          <button
-                            type="button"
-                            disabled={timerLoading}
-                            onClick={() => { setStopConfirmOpen(false); handleStopTimer(); }}
-                            className="rounded bg-red-500 text-white text-[10px] font-semibold px-2.5 py-1 hover:bg-red-600 transition-colors disabled:opacity-50"
-                            data-testid="laser-timer-stop-confirm-btn"
-                          >
-                            {timerLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : '종료'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <LaserTimerPanel
+                activeTimer={activeTimer}
+                laserTimerUnits={laserTimerUnits}
+                timerLoading={timerLoading}
+                stopConfirmOpen={stopConfirmOpen}
+                setStopConfirmOpen={setStopConfirmOpen}
+                onStart={handleStartTimer}
+                onStop={handleStopTimer}
+              />
             )}
 
             {/* 탭 — T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item2: 표시 라벨만 변경(예약→예약메모/상담→상담메모/치료메모 유지).
