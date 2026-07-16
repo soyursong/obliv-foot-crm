@@ -49,6 +49,12 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260716-foot-MEDCHART-THERAPISTMEMO-LAG-DATALOSS(-FIX/-RCA) + MEMO-HISTORY:
+        //   치료메모 입력 격리(렉해소)·sessionStorage draft(무손실)·edit RLS 0-row 에러화 — 순수 소스 정적 가드.
+        //   실 입력 체감/재렌더/이탈 무손실은 supervisor 갤탭 field-soak(김주연 총괄 확인). auth 불요.
+        '**/T-20260716-foot-MEDCHART-THERAPISTMEMO-LAG-DATALOSS-FIX.spec.ts',
+        '**/T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA.spec.ts',
+        '**/T-20260520-foot-MEMO-HISTORY.spec.ts',
         // T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS: 시술내역 수정 치료사 권한(RC=FE 게이트, prod RLS 이미 허용).
         //   permissions lib 순수 단언 + 소스 정적 가드(저장 핸들러 단일행 UPDATE·derived 차감 불변식·canEditClinicMgmt 부재)
         //   + Management API(SUPABASE_ACCESS_TOKEN) prod 정책 실측(package_sessions_write=ALL therapist 허용·clinic_id 부재).

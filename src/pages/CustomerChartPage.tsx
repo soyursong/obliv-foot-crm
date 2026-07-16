@@ -5,6 +5,8 @@ import { format, parseISO } from 'date-fns';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
+// T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
+import { TreatmentMemoComposer, TreatmentMemoEditor } from '@/components/TreatmentMemoComposer';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
@@ -2708,10 +2710,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [treatmentMemoUnavailable, setTreatmentMemoUnavailable] = useState(false);
   // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 수납통계 상단 요약블록용 — 치료메모 최신 1건(eager, 탭 진입 무관).
   const [latestTreatmentMemo, setLatestTreatmentMemo] = useState<{ content: string; created_at: string } | null>(null);
-  const [newMemoText, setNewMemoText] = useState('');
+  // T-20260716 INPUT-LAG-DATALOSS-RCA: newMemoText/editingMemoText 부모 상태 제거 —
+  //   입력 상태는 <TreatmentMemoComposer>/<TreatmentMemoEditor>가 로컬 소유(키 입력 시 부모 무재렌더).
   const [savingNewMemo, setSavingNewMemo] = useState(false);
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
-  const [editingMemoText, setEditingMemoText] = useState('');
   const [savingEditMemo, setSavingEditMemo] = useState(false);
   // T-20260526-foot-VISIT-HIST-FILTER: 방문이력 펼침/접기
   // T-20260622-foot-CHART2-UICLEAN-4FIX 요청6: 메모유형 필터(치료메모/진료메모/특이사항) 제거 — '전체 펼치기'만 유지.
@@ -4360,16 +4362,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [treatmentMemos, treatmentMemosLoaded]);
 
-  // 새 메모 저장
-  const saveNewTreatmentMemo = async () => {
-    if (!customer || !newMemoText.trim()) return;
+  // 새 메모 저장 — T-20260716 INPUT-LAG-DATALOSS-RCA: 입력 상태를 <TreatmentMemoComposer>가 로컬 소유.
+  //   본 함수는 text를 인자로 받아 DB INSERT만 담당(저장 시점·트리거·payload 무변경). 성공 시 true 반환.
+  const saveNewTreatmentMemo = async (text: string): Promise<boolean> => {
+    const content = text.trim();
+    if (!customer || !content) return false;
     setSavingNewMemo(true);
     const { data, error } = await supabase
       .from('customer_treatment_memos')
       .insert({
         customer_id: customer.id,
         clinic_id: customer.clinic_id,
-        content: newMemoText.trim(),
+        content,
         created_by: profile?.email ?? null,
         created_by_name: profile?.name ?? null,
       })
@@ -4388,30 +4392,41 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       } else {
         toast.error(`저장 실패: ${error.message}`);
       }
-      return;
+      return false;
     }
     if (data) setTreatmentMemos(prev => [data as TreatmentMemoEntry, ...prev]);
-    setNewMemoText('');
+    return true;
   };
 
-  // 메모 수정 저장
-  const saveTreatmentMemoEdit = async () => {
-    if (!editingMemoId || !editingMemoText.trim()) return;
+  // 메모 수정 저장 — 입력 상태는 <TreatmentMemoEditor>가 로컬 소유. text 인자로 UPDATE만 담당.
+  const saveTreatmentMemoEdit = async (text: string): Promise<boolean> => {
+    const content = text.trim();
+    if (!editingMemoId || !content) return false;
     setSavingEditMemo(true);
     const now = new Date().toISOString();
-    const { error } = await supabase
+    // T-20260716 INPUT-LAG-DATALOSS-RCA(§2 부차원인 2차): .update()에 .select() 부재 시,
+    //   RLS USING 미매치(타인/이전기록 created_by=null 메모를 비-admin이 수정)가 '0행·에러없음'으로
+    //   조용히 성공 처리 → 새로고침 시 수정 증발(silent data-loss). .select()로 반영행을 회수해
+    //   0-row를 명시 에러로 표면화한다(payload·트리거 무변경, RLS 정책 무변경 — 감지만 추가).
+    const { data, error } = await supabase
       .from('customer_treatment_memos')
-      .update({ content: editingMemoText.trim(), updated_at: now })
-      .eq('id', editingMemoId);
+      .update({ content, updated_at: now })
+      .eq('id', editingMemoId)
+      .select('id');
     setSavingEditMemo(false);
-    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    if (error) { toast.error(`수정 실패: ${error.message}`); return false; }
+    if (!data || data.length === 0) {
+      // RLS 등으로 반영된 행이 없음 — 낙관적 성공 표시를 막고 유실을 알린다.
+      toast.error('수정 권한이 없거나 반영되지 않았습니다. (이전 기록/타인 작성 메모는 수정할 수 없습니다)');
+      return false;
+    }
     setTreatmentMemos(prev =>
       prev.map(m => m.id === editingMemoId
-        ? { ...m, content: editingMemoText.trim(), updated_at: now }
+        ? { ...m, content, updated_at: now }
         : m)
     );
     setEditingMemoId(null);
-    setEditingMemoText('');
+    return true;
   };
 
   // 메모 삭제 — T-20260624-foot-CHART2-MEMO-EDIT-DELETE: hard-delete → soft-delete(의료법 §22-3/§40 진료기록 보존).
@@ -8562,49 +8577,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     치료메모 기능 준비 중입니다. 잠시 후 다시 이용해주세요.
                   </div>
                 )}
-                {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김 */}
-                {!treatmentMemoUnavailable && (
-                  <>
-                    {/* CS-AC-3: 고객차트 상용구 — 새 치료메모에 삽입.
-                        T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '치료' 분류 + 미분류만 노출. */}
-                    {custchartPhrasesByTab['치료메모'].length > 0 && (
-                      <div>
-                        <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
-                        <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-치료메모">
-                          {custchartPhrasesByTab['치료메모'].map(phrase => (
-                            <button
-                              key={phrase.id}
-                              type="button"
-                              onClick={() => setNewMemoText(prev => prev ? `${prev} ${phrase.content}` : phrase.content)}
-                              className="rounded border border-sage-200 bg-sage-50 px-1.5 py-0.5 text-[10px] text-sage-700 hover:bg-sage-100 transition"
-                            >
-                              {phrase.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
-                      {/* T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-2: 치료메모 기입칸 2.5배(rows 3→8) */}
-                      <Textarea
-                        value={newMemoText}
-                        onChange={(e) => setNewMemoText(e.target.value)}
-                        rows={8}
-                        placeholder="치료 메모"
-                        className="text-[11px] resize-none"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={saveNewTreatmentMemo}
-                      disabled={savingNewMemo || !newMemoText.trim()}
-                      /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 모노톤 미드그레이(#666, 추가/기입 secondary) */
-                      className="w-full rounded bg-[#666666] text-white py-1.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
-                    >
-                      {savingNewMemo ? '저장 중…' : '메모 추가'}
-                    </button>
-                  </>
+                {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김.
+                    T-20260716 INPUT-LAG-DATALOSS-RCA: 입력 상태를 <TreatmentMemoComposer>(memoized)가 로컬 소유
+                    → 키 입력 시 부모(CustomerChartPage) 무재렌더로 랙 해소 + sessionStorage draft로 재렌더/이탈 무손실. */}
+                {!treatmentMemoUnavailable && customer && (
+                  <TreatmentMemoComposer
+                    phrases={custchartPhrasesByTab['치료메모']}
+                    saving={savingNewMemo}
+                    draftKey={`foot_txmemo_draft:${customer.id}`}
+                    onSave={saveNewTreatmentMemo}
+                  />
                 )}
 
                 {/* 이력 목록 (최신순 DESC) */}
@@ -8618,32 +8600,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     {treatmentMemos.map((memo) => (
                       <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
                         {editingMemoId === memo.id ? (
-                          <>
-                            <Textarea
-                              value={editingMemoText}
-                              onChange={(e) => setEditingMemoText(e.target.value)}
-                              rows={3}
-                              className="text-[11px] resize-none"
-                              autoFocus
-                            />
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={saveTreatmentMemoEdit}
-                                disabled={savingEditMemo || !editingMemoText.trim()}
-                                className="flex-1 rounded bg-neutral-800 text-white py-1 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
-                              >
-                                {savingEditMemo ? '저장 중…' : '수정 저장'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { setEditingMemoId(null); setEditingMemoText(''); }}
-                                className="px-2 rounded border border-gray-300 text-[11px] hover:bg-gray-100 transition"
-                              >
-                                취소
-                              </button>
-                            </div>
-                          </>
+                          /* T-20260716 INPUT-LAG-DATALOSS-RCA: 수정 입력도 <TreatmentMemoEditor>(memoized) 로컬 상태 → 편집 중 부모 무재렌더 */
+                          <TreatmentMemoEditor
+                            initialContent={memo.content}
+                            saving={savingEditMemo}
+                            onSave={saveTreatmentMemoEdit}
+                            onCancel={() => setEditingMemoId(null)}
+                          />
                         ) : (
                           <>
                             <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{memo.content}</p>
@@ -8655,7 +8618,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <div className="flex gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => { setEditingMemoId(memo.id); setEditingMemoText(memo.content); }}
+                                    onClick={() => setEditingMemoId(memo.id)}
                                     className="text-[10px] text-sage-600 hover:underline"
                                   >
                                     수정
