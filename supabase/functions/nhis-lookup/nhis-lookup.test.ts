@@ -17,7 +17,80 @@ import {
   assertNotEquals,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 
-import { mapQualificationCode, maskRrnInRaw } from './index.ts';
+import {
+  mapQualificationCode,
+  maskRrnInRaw,
+  resolveAuthMode,
+  resolveNhisEndpoint,
+} from './index.ts';
+
+// 테스트용 env stub 헬퍼
+function mkEnv(map: Record<string, string | undefined>) {
+  return (k: string) => map[k];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260716: resolveNhisEndpoint — 엔드포인트 파라미터화
+// ─────────────────────────────────────────────────────────────────────────────
+
+Deno.test('endpoint: NHIS_API_URL 완성 URL 최우선', () => {
+  const env = mkEnv({
+    NHIS_API_URL: 'https://api.nhic.or.kr:1443/xxxx',
+    NHIS_API_HOST: 'ignored.example.com',
+    NHIS_API_PORT: '9999',
+    NHIS_API_PATH: '/ignored',
+  });
+  assertEquals(resolveNhisEndpoint(env), 'https://api.nhic.or.kr:1443/xxxx');
+});
+
+Deno.test('endpoint: 조각 조합 (host+port+path)', () => {
+  const env = mkEnv({
+    NHIS_API_HOST: 'api.nhic.or.kr',
+    NHIS_API_PORT: '1443',
+    NHIS_API_PATH: '/qlfc/inq',
+  });
+  assertEquals(resolveNhisEndpoint(env), 'https://api.nhic.or.kr:1443/qlfc/inq');
+});
+
+Deno.test('endpoint: path 앞 슬래시 없어도 보정', () => {
+  const env = mkEnv({
+    NHIS_API_HOST: 'api.nhic.or.kr',
+    NHIS_API_PORT: '1444',
+    NHIS_API_PATH: 'qlfc/inq',
+  });
+  assertEquals(resolveNhisEndpoint(env), 'https://api.nhic.or.kr:1444/qlfc/inq');
+});
+
+Deno.test('endpoint: host 에 스킴/트레일링 슬래시 있어도 정규화', () => {
+  const env = mkEnv({
+    NHIS_API_HOST: 'https://api.nhic.or.kr/',
+    NHIS_API_PORT: '1454',
+    NHIS_API_PATH: '/inq',
+  });
+  assertEquals(resolveNhisEndpoint(env), 'https://api.nhic.or.kr:1454/inq');
+});
+
+Deno.test('endpoint: 포트 미확정(조각 불완전) → null → graceful 503', () => {
+  assertEquals(resolveNhisEndpoint(mkEnv({ NHIS_API_HOST: 'api.nhic.or.kr', NHIS_API_PATH: '/inq' })), null);
+  assertEquals(resolveNhisEndpoint(mkEnv({})), null);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260716: resolveAuthMode — 인증 모델 divergence guard
+// ─────────────────────────────────────────────────────────────────────────────
+
+Deno.test('authmode: 미설정 → bearer (하위호환)', () => {
+  assertEquals(resolveAuthMode(mkEnv({})), 'bearer');
+});
+
+Deno.test('authmode: cert-mtls / message-sign 인식', () => {
+  assertEquals(resolveAuthMode(mkEnv({ NHIS_AUTH_MODE: 'cert-mtls' })), 'cert-mtls');
+  assertEquals(resolveAuthMode(mkEnv({ NHIS_AUTH_MODE: 'MESSAGE-SIGN' })), 'message-sign');
+});
+
+Deno.test('authmode: 알 수 없는 값 → bearer 폴백', () => {
+  assertEquals(resolveAuthMode(mkEnv({ NHIS_AUTH_MODE: 'weird' })), 'bearer');
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-4: mapQualificationCode 단위테스트

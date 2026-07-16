@@ -3,6 +3,8 @@
  *
  * T-20260515-foot-KENBO-API-NATIVE (골격)
  * T-20260520-foot-NHIS-HARDEN      (보안 보강 Phase b+c)
+ * T-20260716-foot-CHART2-NHIS-LOOKUP-ENABLE (prep/feasibility — REST transport 확정,
+ *   auth 모델 pluggable화 + port/endpoint 파라미터화. prod 실활성 아님)
  *
  * POST /functions/v1/nhis-lookup
  * Body: { customer_id: string }
@@ -10,15 +12,31 @@
  *
  * ── Edge Secrets (AC-6) ──────────────────────────────────────────
  *   Supabase Dashboard > Project Settings > Edge Functions > Secrets
- *   NHIS_API_URL       — NHIS 수진자 자격조회 API 엔드포인트
- *                        예: https://apis.nhis.or.kr/api/v1/qlfc/qlfcInq
- *   NHIS_API_KEY       — NHIS Open API 인증키 (Bearer token)
- *   NHIS_FACILITY_CODE — 요양기관기호 (예: 12345678)
+ *
+ *   [엔드포인트] — 아래 둘 중 하나. NHIS_API_URL 이 있으면 최우선.
+ *   NHIS_API_URL       — 완성된 자격조회 엔드포인트 URL (host:port/path 단일값)
+ *                        예: https://api.nhic.or.kr:1443/xxxx
+ *   ── 또는 조각 조합 (포트만 미확정일 때 유용) ──
+ *   NHIS_API_HOST      — 베이스 호스트 (접수값: api.nhic.or.kr)
+ *   NHIS_API_PORT      — 포트 ⚠미확정 (프록시 종류별 1443|1444|1454 중 1) — 확정 시 이 값만 교체
+ *   NHIS_API_PATH      — 엔드포인트 경로 ⚠미확정 (예: /xxxx)
+ *
+ *   [요양기관]
+ *   NHIS_FACILITY_CODE — 요양기관번호 (정본: 13328581)
+ *
+ *   [인증 모델] — ⚠ divergence guard. 실 auth 방식 미확정.
+ *   NHIS_AUTH_MODE     — 'bearer' | 'cert-mtls' | 'message-sign' (미설정 시 'bearer')
+ *     bearer       Open API 인증키(Bearer). 접수상 인증키 부재 → 실체 불일치 가능성 높음.
+ *     cert-mtls    공동인증서 client-cert(mTLS). ⚠ Supabase Edge(Deno) 런타임 미지원 →
+ *                  요청 시 503 NHIS_AUTH_MTLS_UNSUPPORTED (활성화 불가, 대체 런타임 필요).
+ *     message-sign 공동인증서 메시지 서명(표준 HTTPS). Deno 실현 가능하나 서명규격 미확정 →
+ *                  scaffold(미구현) → 503 NHIS_AUTH_SIGN_NOT_IMPL.
+ *   NHIS_API_KEY       — bearer 모드에서만 사용 (Open API 인증키)
  *
  * ── 개발/운영 분리 (AC-8) ────────────────────────────────────────
  *   NHIS_MOCK=true     — dev 환경 모의 응답 활성화 (AC-7)
  *                        dev Secrets에만 설정, prod는 미설정
- *   미설정 시 → NHIS_NOT_CONFIGURED 에러코드 반환 (graceful)
+ *   미설정/미확정 시 → NHIS_NOT_CONFIGURED 에러코드 반환 (graceful 503)
  *
  * 응답:
  *   200: { grade, copayment_rate, effective_date, raw }
@@ -28,8 +46,10 @@
  *   403: { error: 'CLINIC_MISMATCH' }     — IDOR 시도 차단 (AC-3)
  *   422: { error: 'RRN_MISSING' }         — RRN 미입력
  *   500: { error: 'RRN_DECRYPT_FAILED' }
+ *   501: { error: 'NHIS_AUTH_SIGN_NOT_IMPL' }   — message-sign 미구현 (규격 미확정)
  *   502: { error: 'NHIS_API_ERROR', detail }
- *   503: { error: 'NHIS_NOT_CONFIGURED' } — 환경변수 미설정
+ *   503: { error: 'NHIS_NOT_CONFIGURED' }        — 엔드포인트/포트/인증 미확정
+ *   503: { error: 'NHIS_AUTH_MTLS_UNSUPPORTED' } — cert-mtls, Deno Edge 런타임 미지원
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -154,6 +174,37 @@ function buildMockResponse(rrn13: string): Record<string, unknown> {
   };
 }
 
+// ── T-20260716: 엔드포인트 파라미터화 ─────────────────────────────────────
+/**
+ * 자격조회 엔드포인트 URL 해석.
+ *  1) NHIS_API_URL (완성 URL) 있으면 그대로 사용 — 최우선.
+ *  2) 없으면 NHIS_API_HOST + NHIS_API_PORT + NHIS_API_PATH 조합.
+ *     포트만 미확정인 상황을 위한 조각 구성 — 포트 확정 시 NHIS_API_PORT 한 값만 교체.
+ * 셋 중 하나라도 없으면 null → 호출부에서 graceful 503(NHIS_NOT_CONFIGURED).
+ */
+export function resolveNhisEndpoint(
+  env: (k: string) => string | undefined,
+): string | null {
+  const full = env('NHIS_API_URL');
+  if (full && full.trim()) return full.trim();
+
+  const host = env('NHIS_API_HOST');
+  const port = env('NHIS_API_PORT');
+  const path = env('NHIS_API_PATH');
+  if (!host || !port || !path) return null;
+
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `https://${host.replace(/^https?:\/\//, '').replace(/\/$/, '')}:${port}${p}`;
+}
+
+/** 인증 모델 해석 — 미설정 시 'bearer'(하위호환). */
+export type NhisAuthMode = 'bearer' | 'cert-mtls' | 'message-sign';
+export function resolveAuthMode(env: (k: string) => string | undefined): NhisAuthMode {
+  const m = (env('NHIS_AUTH_MODE') ?? 'bearer').trim().toLowerCase();
+  if (m === 'cert-mtls' || m === 'message-sign') return m;
+  return 'bearer';
+}
+
 Deno.serve(async (req) => {
   // CORS preflight
   if (req.method === 'OPTIONS') {
@@ -267,24 +318,66 @@ Deno.serve(async (req) => {
     );
   }
 
-  // ── AC-6: 환경변수 확인 (Edge Secrets) ──────────────────────────────────
-  const nhisApiUrl = Deno.env.get('NHIS_API_URL');
-  const nhisApiKey = Deno.env.get('NHIS_API_KEY');
-  const nhisFacilityCode = Deno.env.get('NHIS_FACILITY_CODE');
+  // ── AC-6 / T-20260716: 환경변수 확인 (Edge Secrets) ─────────────────────
+  const env = (k: string) => Deno.env.get(k);
+  const nhisEndpoint = resolveNhisEndpoint(env);
+  const nhisApiKey = env('NHIS_API_KEY');
+  const nhisFacilityCode = env('NHIS_FACILITY_CODE');
+  const authMode = resolveAuthMode(env);
 
   // ── AC-7: NHIS_MOCK=true → 모의 응답 분기 (dev 전용) ────────────────────
   const nhisMock = Deno.env.get('NHIS_MOCK') === 'true';
 
-  // 실 API 미설정이면서 mock도 아닐 때 graceful degradation
-  if (!nhisMock && (!nhisApiUrl || !nhisApiKey || !nhisFacilityCode)) {
+  // 엔드포인트/포트/요양기관 미확정 → graceful degradation (실 API 미연동)
+  if (!nhisMock && (!nhisEndpoint || !nhisFacilityCode)) {
     return new Response(
       JSON.stringify({
         error: 'NHIS_NOT_CONFIGURED',
         fallback_url: FALLBACK_URL,
-        detail: '건보공단 API 환경변수가 설정되지 않았습니다. Supabase Edge Function Secrets를 확인하세요.',
+        detail: '건보공단 API 엔드포인트/포트가 아직 확정되지 않았습니다. 외부 조회 링크를 이용하세요.',
       }),
       { status: 503, headers: corsHeaders },
     );
+  }
+
+  // ── T-20260716: 인증 모델 divergence guard ─────────────────────────────
+  // 실 auth 방식이 확정되기 전까지 미지원/미구현 모드는 명시적으로 차단.
+  // (mock 모드는 auth 무관하게 통과 — dev)
+  if (!nhisMock) {
+    if (authMode === 'cert-mtls') {
+      // Supabase Edge(Deno) 런타임은 outbound mTLS client-cert 미지원.
+      // (Deno.createHttpClient unstable API 미노출 · edge-runtime#205 "not planned")
+      return new Response(
+        JSON.stringify({
+          error: 'NHIS_AUTH_MTLS_UNSUPPORTED',
+          fallback_url: FALLBACK_URL,
+          detail: '공동인증서 mTLS 인증은 현재 서버 런타임에서 지원되지 않습니다. 외부 조회 링크를 이용하세요.',
+        }),
+        { status: 503, headers: corsHeaders },
+      );
+    }
+    if (authMode === 'message-sign') {
+      // 공동인증서 메시지 서명 방식 — 서명 규격 확정 후 구현 예정.
+      return new Response(
+        JSON.stringify({
+          error: 'NHIS_AUTH_SIGN_NOT_IMPL',
+          fallback_url: FALLBACK_URL,
+          detail: '공동인증서 서명 방식은 아직 구현되지 않았습니다. 외부 조회 링크를 이용하세요.',
+        }),
+        { status: 501, headers: corsHeaders },
+      );
+    }
+    // bearer 모드: 인증키 필요
+    if (!nhisApiKey) {
+      return new Response(
+        JSON.stringify({
+          error: 'NHIS_NOT_CONFIGURED',
+          fallback_url: FALLBACK_URL,
+          detail: '건보공단 API 인증 정보가 설정되지 않았습니다. 외부 조회 링크를 이용하세요.',
+        }),
+        { status: 503, headers: corsHeaders },
+      );
+    }
   }
 
   // service role 클라이언트로 RRN 복호화
@@ -323,7 +416,8 @@ Deno.serve(async (req) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
 
-      const nhisRes = await fetch(nhisApiUrl!, {
+      // bearer 모드만 여기 도달 (cert-mtls/message-sign 은 위에서 차단)
+      const nhisRes = await fetch(nhisEndpoint!, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
