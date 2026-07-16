@@ -26,6 +26,13 @@ const MIG = () =>
     resolve(__dirname, '../../supabase/migrations/20260708220000_foot_pkg_treatment_type_reference_price.sql'),
     'utf-8',
   );
+// T-20260716-foot-EXPPASS: packages.treatment_type CHECK 를 6토큰(+체험권)으로 ADDITIVE 확장한 후속 마이그.
+//   named constraint chk_packages_treatment_type 의 '현행 유효 정의' 는 이 파일에서 온다(tsp CHECK 은 20260708 유지).
+const MIG_EXPPASS = () =>
+  readFileSync(
+    resolve(__dirname, '../../supabase/migrations/20260716120000_foot_pkg_treatment_type_add_exppass.sql'),
+    'utf-8',
+  );
 
 /** PackagePurchaseFromTemplateDialog 본문 슬라이스 (다음 컴포넌트 정의 이전까지) */
 function dialogSlice(): string {
@@ -72,16 +79,25 @@ test.describe('T-20260708-foot-PKGSTATS-RECONCILE', () => {
 
   test('(C) named CHECK 제약 — chk_packages_treatment_type(IS NULL OR IN) + chk_tsp_treatment_type', () => {
     const mig = MIG();
-    // packages: named + NULL 허용 가드
+    // packages: named + NULL 허용 가드 (20260708 최초 정의)
     expect(mig.includes('ADD CONSTRAINT chk_packages_treatment_type'), '(C) named chk_packages_treatment_type').toBe(true);
-    expect(
-      mig.includes("CHECK (treatment_type IS NULL OR treatment_type IN ('비가열','가열','포돌로게','수액','Re:Born'))"),
-      '(C) packages CHECK = IS NULL OR IN 5토큰',
-    ).toBe(true);
-    // 마스터: named
+    // 마스터: named (tsp 는 20260708 에서 5토큰 유지 — T-20260716-foot-EXPPASS Q2=NO, 동반확장 안 함)
     expect(mig.includes('CONSTRAINT chk_tsp_treatment_type'), '(C) named chk_tsp_treatment_type').toBe(true);
     // 멱등 가드(재실행 안전) — DO 블록 pg_constraint 조회
     expect(mig.includes("conname = 'chk_packages_treatment_type'"), '(C) named CHECK 멱등 가드').toBe(true);
+
+    // T-20260716-foot-EXPPASS: packages CHECK '현행 유효 정의' = 6토큰(+체험권). 후속 마이그가 SSOT.
+    //   (20260708 파일의 5토큰 문자열은 최초 정의로 남되, 유효 constraint 은 20260716 에서 재정의됨.)
+    const migExp = MIG_EXPPASS();
+    expect(migExp.includes('ADD CONSTRAINT chk_packages_treatment_type'), '(C) EXPPASS named 재정의(동일명 보존)').toBe(true);
+    expect(
+      migExp.includes("CHECK (treatment_type IS NULL OR treatment_type IN ('비가열','가열','포돌로게','수액','Re:Born','체험권'))"),
+      '(C) packages CHECK = IS NULL OR IN 6토큰(+체험권)',
+    ).toBe(true);
+    // ADDITIVE: 멱등 DROP→ADD (재실행 안전)
+    expect(migExp.includes('DROP CONSTRAINT IF EXISTS chk_packages_treatment_type'), '(C) EXPPASS 멱등 DROP 가드').toBe(true);
+    // Q2=NO: tsp CHECK 은 6토큰으로 확장하지 않음(체험권 미포함) — 후속 마이그가 tsp constraint 를 건드리지 않음
+    expect(migExp.includes('chk_tsp_treatment_type'), '(C) EXPPASS 는 tsp constraint 무변경(Q2=NO)').toBe(false);
   });
 
   test('(D) reference_price 계약총액 grain — standard_price × 횟수(totalSessions) 스냅샷', () => {
