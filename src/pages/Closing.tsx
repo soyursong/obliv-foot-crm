@@ -2634,12 +2634,15 @@ function ClosingRefundDialog({ open, rows, clinicId, onClose, onSuccess }: Closi
   };
 
   // 선택 항목 환불 금액 합산(AC-3): 단건=입력액, 패키지=잔여.
+  //   money-path 가드: 단건 입력이 잔여 초과/0/NaN이면 합산에서 무효(0 처리)
+  //   → 선택 합계가 환불 가능 금액을 초과 표기하지 않음(E2E selectedSum helper와 동기화).
   const selectedSum = rows.reduce((s, r) => {
     const key = refundRowKey(r);
     if (!selected.has(key)) return s;
     if (r.source === 'package') return s + (remainingMap?.[key] ?? 0);
+    const rem = remainingMap?.[key] ?? 0;
     const a = parseInt((amountMap[key] ?? '').replace(/[^\d]/g, ''), 10);
-    return s + (isNaN(a) ? 0 : a);
+    return s + (!isNaN(a) && a > 0 && a <= rem ? a : 0);
   }, 0);
 
   // 선택된 단건 중 금액 오류가 하나라도 있으면 확정 불가(money-path 가드).
