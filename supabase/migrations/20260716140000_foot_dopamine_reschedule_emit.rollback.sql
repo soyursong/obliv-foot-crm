@@ -1,5 +1,5 @@
 -- ROLLBACK — T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT (step2, reschedule emit)
--- 20260715140000_foot_dopamine_reschedule_emit.sql 역연산.
+-- 20260716140000_foot_dopamine_reschedule_emit.sql 역연산.
 --
 -- ⚠ 순서: 트리거·함수 제거 → CHECK 를 원복(reschedule 제거).
 --   CHECK 원복 전 reschedule 행이 남아 있으면 제약 위반으로 실패하므로,

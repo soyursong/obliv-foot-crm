@@ -1,6 +1,11 @@
 -- T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT (step2, emit lane 3)
 -- 풋 CRM → 도파민 라이프사이클 emit 확장: reschedule(예약일 변경) 이벤트 outbox 적재.
 --
+-- ⚠ 버전 재발번(2026-07-16, dev-foot): 원 파일명 20260715140000 이 배포단계 ledger 대조에서
+--   prod 旣적용 마이그 `foot_stats_revenue_attrib_axis_unify`(REVENUE-ATTRIB, 2026-07-15)와
+--   **동일 version 충돌** 검출됨(브랜치 stale 로 timestamp 중복 발번). DDL 내용 무변경, 파일 version 만
+--   20260716140000(전 旣적용 max=20260715230000 이후)로 재발번해 충돌 해소. ledger 정합=clean.
+--
 -- 근거 계약(SSOT):
 --   memory/1_Projects/201_메디빌더_AI도입/da_replies/DA-20260714-FOOT-LIFECYCLE-CANCEL-RESCHEDULE-CANON.md
 --   cross_crm_data_contract.md §6-6-8(reschedule canonical) / §6-6-1(payload) / §6-6-5(event_id)
@@ -31,7 +36,7 @@
 --   EF 가 supervisor QA통과+배포된 뒤. recv 미배포 중 emit → 도파민 4xx → outbox DLQ 적체.
 --   ∴ 본 마이그 배포 = step1 배포 확인(planner 통지) 이후. shadow/live 는 dopamine_callback_config.mode.
 --
--- 롤백: 20260715140000_foot_dopamine_reschedule_emit.rollback.sql
+-- 롤백: 20260716140000_foot_dopamine_reschedule_emit.rollback.sql
 -- 작성: dev-foot / 2026-07-15 / ticket T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT
 
 BEGIN;
