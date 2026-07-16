@@ -56,6 +56,20 @@ if (!process.env.TEST_PASSWORD && !process.env.TEST_USER_PASSWORD) {
 
 const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
+// ── foot 전용 E2E 포트 8091 SSOT 전파 (FIX-REQUEST MSG-20260716-214106-of5k) ──────────
+//   RC: cross-CRM 포트 충돌. foot·scalp2·women 이 모두 8089 하드코딩 → macstudio 동시 QA 시
+//       먼저 뜬 형제(scalp2 vite)가 8089 점유 → foot Playwright reuseExistingServer 로 그 형제
+//       서버 재사용 → auth.setup 세션 미인식/대시보드 timeout. foot 을 고유 포트 8091 로 격리.
+//   문제: 다수 spec 이 `process.env.<BASE_URL|APP_URL|PLAYWRIGHT_BASE_URL> ?? 'http://localhost:8089'`
+//         로 8089 를 절대경로 fallback 한다(baseURL 우회). config 는 Playwright 테스트 프로세스에서
+//         평가되므로, 여기서 세 env 를 8091 로 선세팅하면 91개 spec 을 개별 수정하지 않고도 모든
+//         절대경로 fallback 이 8091(=webServer 가 실제 기동하는 foot dev 서버)로 수렴한다.
+//         (이미 외부에서 값을 준 경우는 존중 → ??= 로 미설정시에만 주입.)
+const FOOT_E2E_ORIGIN = 'http://localhost:8091';
+process.env.BASE_URL ??= FOOT_E2E_ORIGIN;
+process.env.APP_URL ??= FOOT_E2E_ORIGIN;
+process.env.PLAYWRIGHT_BASE_URL ??= FOOT_E2E_ORIGIN;
+
 export default defineConfig({
   testDir: './tests',
   testIgnore: ['**/helpers.ts'],
@@ -71,7 +85,14 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
-    baseURL: 'http://localhost:8089',
+    // ⚠ foot 전용 E2E 포트 8091 (RC: cross-CRM 포트 충돌 — FIX-REQUEST MSG-20260716-214106-of5k).
+    //   배경: foot·scalp2·women 이 모두 8089 를 하드코딩 → macstudio 동시 QA 시 먼저 뜬 형제
+    //         (관측: obliv-scalp2-crm vite = '오블리브 두피센터 CRM')가 8089 를 점유. foot Playwright 는
+    //         reuseExistingServer:!CI 로 그 형제 서버를 재사용(VITE_DISABLE_AUTH_LOCK=1 미적용 + 다른
+    //         Supabase ref) → auth.setup 이 주입한 sb-{foot-ref}-auth-token 미인식 → /login 리다이렉트 →
+    //         '대시보드' 미표시 timeout. → foot 을 형제와 겹치지 않는 8091 로 격리(8081 derm·8082 body·8089
+    //         scalp2/women·8085 dev-default 회피). 8091 은 형제 config·현재 리스너 모두 미사용 확인.
+    baseURL: 'http://localhost:8091',
     screenshot: 'on',
     trace: 'retain-on-failure',
     actionTimeout: 10_000,
@@ -357,8 +378,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    // 기동 전 8089 포트의 죽은 잔여 프로세스를 먼저 정리한 뒤 dev 서버를 띄운다.
-    //   배경: 직전 run의 zombie vite가 8089를 점유하면(소켓은 열렸지만 응답 없음) Playwright가
+    // 기동 전 8091 포트의 죽은 잔여 프로세스를 먼저 정리한 뒤 dev 서버를 띄운다.
+    //   배경: 직전 run의 zombie vite가 8091를 점유하면(소켓은 열렸지만 응답 없음) Playwright가
     //         auth.setup `page.goto('/login')` 단계에서 net::ERR_CONNECTION_REFUSED 로 실패.
     //   reuseExistingServer=true 일 때 정상 서버가 이미 떠 있으면 Playwright가 url 헬스체크 후
     //   이 command 자체를 실행하지 않으므로, free-test-port 는 launch 가 필요한 경우(=죽은/없는
@@ -372,20 +393,20 @@ export default defineConfig({
     //   → `exec`로 vite 바이너리를 직접 실행해 중간 npm 레이어를 제거한다. 이제 Playwright가
     //     추적하는 PID == vite 이므로 graceful SIGTERM이 vite에 직접 도달, vite가 esbuild 자식을
     //     정리한다. (세션 SIGKILL 시의 전역 idle-tree reaper 는 meta 티켓 supervisor+conductor 소유)
-    command: 'bash scripts/free-test-port.sh 8089 && exec node_modules/.bin/vite',
-    // 전용 테스트 포트 8089: 일반 dev(8085)와 분리
-    // VITE_DEV_PORT=8089 → vite.config.ts server.port 에서 읽어 8089로 기동
-    // reuseExistingServer: 로컬에선 이미 8089에 떠있는 서버를 재사용(잔여 프로세스로 인한
+    command: 'bash scripts/free-test-port.sh 8091 && exec node_modules/.bin/vite',
+    // 전용 테스트 포트 8091(foot 격리): 일반 dev(8085)·형제 CRM(8089 등)과 분리
+    // VITE_DEV_PORT=8091 → vite.config.ts server.port 에서 읽어 8091로 기동
+    // reuseExistingServer: 로컬에선 이미 8091에 떠있는 서버를 재사용(잔여 프로세스로 인한
     //   "8089 is already used" webServer 기동 실패 방지). CI에선 항상 새로 기동.
     //   포트 정리가 필요하면 `npm run test:e2e:clean` 또는 scripts/free-test-port.sh 사용.
-    url: 'http://localhost:8089',
+    url: 'http://localhost:8091',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
     env: {
       // Vite dev 서버에 테스트 모드 플래그 전달 → src/lib/supabase.ts 에서 lock 우회
       VITE_DISABLE_AUTH_LOCK: '1',
-      // 전용 테스트 포트 — 일반 dev 서버(8085)와 충돌 방지
-      VITE_DEV_PORT: '8089',
+      // 전용 테스트 포트 — 일반 dev 서버(8085)·형제 CRM(8089)과 충돌 방지
+      VITE_DEV_PORT: '8091',
     },
   },
 });
