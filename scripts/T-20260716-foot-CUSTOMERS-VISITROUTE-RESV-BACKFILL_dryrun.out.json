@@ -1,0 +1,886 @@
+{
+  "ticket": "T-20260716-foot-CUSTOMERS-VISITROUTE-RESV-BACKFILL",
+  "db": "rxlomoozakkjesdqjtvd (obliv-foot PROD)",
+  "mode": "dry-run (SELECT-only, write 0)",
+  "generated_kst_note": "stamp on wrapper",
+  "sections": {
+    "before.customers_visit_route_dist": [
+      {
+        "v": "<NULL>",
+        "n": 272
+      },
+      {
+        "v": "TM",
+        "n": 113
+      },
+      {
+        "v": "지인소개",
+        "n": 15
+      },
+      {
+        "v": "워크인",
+        "n": 6
+      },
+      {
+        "v": "인바운드",
+        "n": 5
+      },
+      {
+        "v": "네이버",
+        "n": 4
+      }
+    ],
+    "before.target_universe (customers NULL/'' ∩ EXISTS reservations routed)": [
+      {
+        "n": 155
+      }
+    ],
+    "before.customers_null_or_empty_total": [
+      {
+        "n": 272
+      }
+    ],
+    "before.customers_null_no_routed_resv (out-of-scope: no source)": [
+      {
+        "n": 117
+      }
+    ],
+    "setA.DA_strict_first_touch.count": [
+      {
+        "n": 154
+      }
+    ],
+    "setA.DA_strict_first_touch.mapping_breakdown": {
+      "TM→TM": 154
+    },
+    "setB.AC2_earliest_nonnull.count": [
+      {
+        "n": 155
+      }
+    ],
+    "setB.AC2_earliest_nonnull.mapping_breakdown": {
+      "TM→TM": 155
+    },
+    "divergence.B_minus_A (forward-fill candidates DA excludes)": [
+      {
+        "count": 1,
+        "sample": [
+          {
+            "customer_id": "2997fc1c-1164-4cc2-b5e1-5e381ad84658",
+            "src": "TM",
+            "new_value": "TM"
+          }
+        ]
+      }
+    ],
+    "divergence.value_mismatch_where_both_present": [
+      {
+        "count": 0,
+        "sample": []
+      }
+    ],
+    "reference.setC_most_recent.count": [
+      {
+        "n": 155
+      }
+    ],
+    "reference.first_vs_recent_divergence (per AC2 line132)": [
+      {
+        "count": 0,
+        "sample": []
+      }
+    ],
+    "noclobber.existing_nonnull_in_any_set (must be 0)": [
+      {
+        "inA": 0
+      }
+    ],
+    "dopamine.residual_sliver (DA Q2, expect 0)": [
+      {
+        "n": 0
+      }
+    ],
+    "mapping.values_out_of_check_domain (must be empty)": []
+  },
+  "freeze_primary_DA_strict": {
+    "rule": "first-touch strict (earliest reservation; NULL→out-of-scope, no forward-fill)",
+    "count": 154,
+    "rows": [
+      {
+        "customer_id": "040da3d2-f12e-4a3f-af5e-1384597fee4f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "05ac6233-a8e4-41c3-bdaf-fe028bb84dbd",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "05c9f619-859b-46e9-b13c-c4dd1176a479",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "0675e908-4ba4-450f-a4f4-63716d7f471a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "07b06028-e483-466e-8db0-c591a5df969b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "0b730491-8de6-4d02-8be4-3bfbdd0afbb1",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "0cd4cfde-2e3b-43e4-9a12-9631dd3d8dfe",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "0d498ec2-4434-4f6e-b0d2-e31f7ea6680e",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "0e12b61b-9dc2-47ba-8a0b-f3267bb0e398",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "106ecb06-168c-458b-aa11-9b77c83c0a06",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "13dfadf5-28e2-4d36-9a80-8ad5793c767f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "16ce81e5-1d6e-4c79-9e5e-ab7d7e18feb3",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "1abecb4c-4cb8-4b51-8cae-61ab5d2e0e08",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "1b17c54d-9744-4dbb-82c2-3046e24d1634",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "1c39f51d-4942-4f41-bf30-45cc7da2e8f1",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "1cef3e21-d91b-4b0a-9e75-106c55ab35f6",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "1d529e3c-35d2-4369-bed4-53938fe1742b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "22b35fbf-2e0e-449f-8163-183aac7a94d0",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "22fe24bd-66a2-46c6-976f-97f6cbc93189",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "259abd32-d784-4c45-b59e-1ccae1b69492",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "25fc8801-65ed-4142-bcf2-d015e15e38c1",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "2670fee5-b38d-4bd8-b20e-7de3dd8772a4",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "29986429-cbce-4786-82f0-e0f1c49fce45",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "2c3f5248-08d0-4926-a9a0-bd731cd1050c",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "2c96698d-31ba-4cf4-8f93-afde36a8263d",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "2dd20a90-0569-4a93-993f-d3d3c341573c",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "30eb25d6-687a-4444-ad4e-62a0391a104d",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "321e22bb-1c92-4b24-92a7-8d17518d7f88",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "33f3b28c-2d82-4424-b2bb-85e27a687997",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "33f498f9-bb5f-4708-add1-b100cbb19ce6",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "36e1b4d5-d2ea-44cd-9e02-8bfd8a2fc100",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "3777161f-1178-4898-a458-8c16cbc54d50",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "3821d23a-7990-47ad-970e-e330067310a5",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "382e19bf-7ee2-4a53-8e2d-92f30241eb6b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "38f6d46a-2257-4e2a-89d7-c8d25d813117",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "3900adcb-c4b6-4f0d-b13a-d775f5a7407b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "39ce535e-2a4f-44fe-af69-97cd19643223",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "39de3784-da3c-4c57-b3e5-ea728427c297",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "3cae0f01-3166-4eea-8a72-3531f25b8c63",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "3ea360a1-526a-4cc8-b1f4-9fdcc10f0cfe",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "4578279a-1ad6-4529-bf99-bd7b27423d04",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "46282905-eb83-4218-9bcb-9553e2955e89",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "4728ea33-612f-4d72-a852-4c929fd0453a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "4a5776f7-6367-4098-b9eb-c4e545d2f70a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "4afd2645-69c2-43a0-8063-f6d6309a4422",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "4f678cff-b10e-4eca-ad5f-b5fe2feeb90a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "4f85924b-07c5-4586-a783-68cdae6ce5f2",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "536fdcf6-ce12-4ccb-95a2-47a558f8bf5f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "552f944f-3f2c-4a7c-8c24-6cd8a826d378",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "5659dad8-c486-465f-a842-a0f41dbd478c",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "56b14728-ae6b-4764-9ee8-f59cd7acec56",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "56e59090-92f9-4784-846f-e4ef9afa9742",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "5a0a59fe-fa84-40b2-acaa-092cb4017cc8",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "5ae99d38-2b7f-4b00-adf3-1af4146e565e",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "5aedc13a-5764-4d81-937e-b7e88daef001",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "5bcf3bd9-7c9f-4805-8f1d-f93f1edb9d3f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "5c87d407-7299-402e-9171-ac7ccf77a692",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6190621e-fa51-4a20-9f9a-1128787ba492",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6292d297-e5d6-4eba-8904-ee0febf43b5d",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "64dad9a5-b9a5-4887-8ef1-7839a3377e0e",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "67d1f3c3-5358-447d-a44b-874268a36dc0",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "684bd930-1c8d-4348-9f50-57c1ca9a834b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "69201a05-7766-4c7e-b736-1bae028eb968",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "69e7413d-5d9f-47c4-b3bc-fbf442fc535f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6cb18963-cb12-4302-a833-adce7bfa87dc",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6cc4c6be-ef39-40a2-8066-96207cedf103",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6e8c0bdc-61b1-457a-b2fb-a47c641b4d05",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6f1027a5-5987-49dc-ad11-83ecff2a836c",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "6fb61222-1594-475f-9249-2c70c60ea0fe",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7013943f-a343-45a7-a4f7-e0c59908f411",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "708f62fd-75be-4e89-b13b-c5e1c3864e27",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "711994ef-a9c9-491a-8dda-d55be72c6980",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "73e82b3e-d266-4cfc-8d61-38aae11ec028",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "74168031-2a3e-4f5a-8c81-b625c7a00e89",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7512be57-d8f3-4c73-8b22-00537309b8cd",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "76cbbc7b-3ecf-4b4d-9eb2-a6f0f227cc57",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "782db732-5cec-443c-9345-bc9fdc680536",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7862a0f1-6bf3-43d1-82de-b1e3110d2f29",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "786b0f97-6796-48e9-b752-8e64ee613ee5",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7a3eef67-2baf-4bed-b803-5aca51d4c8cb",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7a954b50-8e22-4e7e-9f0f-68bf4456365b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7b1f7be6-eac9-4493-b7cd-afe13d6c67cf",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7cce89f9-d8b0-4e0b-9aff-12be2ac69a78",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "7f4e5517-3b48-4e34-9926-70e78c481475",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "803ba0af-425b-4658-96f5-411002092b2c",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "847d54ff-4abf-4540-b53e-92783ef427fc",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "85f4d526-9407-4f71-8660-fb3ee2a71a93",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "876baf41-59b6-419f-91e6-2756efa8472b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "88598cef-fa4d-4ff6-90f5-d7fdc3835ea9",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "88c2bf9d-441c-4c8b-9330-8ad22b8a51e7",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "89252a06-7216-4503-865d-2d98ded16cb1",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8a0d1313-284d-4af3-8eaf-9693929d9462",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8ca37b5f-2e56-4a06-8205-24094d6624b9",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8e04f95d-1b73-45a0-8987-1ef56a975363",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8e6aeed8-7c26-421c-877a-a4a882b36a65",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8f95c0bd-f9fd-4609-b038-411a0150780e",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8fd1ede3-6040-4677-ab25-edc0fd7ddc07",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "8fe2b500-9ad8-4351-9536-791ed155564a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "92566f74-9b5c-49a2-8982-7b4c6c939109",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "92d333e8-9ec1-472a-be1d-392d0fda9b2f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "92ff144c-502a-4017-b915-c5919738cd34",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "93505fa5-f2d7-4e18-8b11-56aae70248d9",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "93fd5a01-7cbf-4a0a-af2c-4d2bb3618045",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "9455b959-1388-47b5-b4c5-7a46e423e238",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "961ac908-1299-411c-a32a-fc6a3a6f785a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "9669f2c4-a490-41f8-885b-dc89ca54b46b",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "a4efcd0e-5ccf-4fd6-a105-fa4b8c020ea6",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "a618b6d3-9a3a-4b43-8680-69e60917de36",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "a693ed17-bdd4-48f1-a74a-4a1bad4bf859",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "a6d5c8f1-d84e-4eff-9d03-3b63ae74666d",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "a9f8cad1-38c4-450d-aa56-749c4cb0a3eb",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "abf63ee0-3b5b-4a42-b71d-9bb6077fb195",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "ac65896b-ab76-49df-8992-582e51865abd",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "acaee116-fa7d-4347-8dce-6e34697bf264",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "ad1b935f-9989-435d-89e7-66938b3fd348",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "b106d4ef-a21a-4368-ac31-8a64813b5b90",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "b3b7eac9-5974-4056-9fa5-1f174be3c31a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "b3c6bc16-18f7-48c8-8c7b-c4cd3057771d",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "b7ed5278-6480-4a01-b0a9-724e4742502a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "b84eb5c7-32e4-4062-9b78-1d227cf7dfa2",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "bd224699-6c39-4ffa-b92f-71ce1cec40f3",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "bde16239-6197-45fa-8eb4-892b6d3557f7",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "be595f43-cb1e-4c8e-9489-0792e239c361",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "bf62b065-6f41-4177-b4fb-5889c4084930",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "c3e4ba57-8e41-41b9-a130-c2c4eb26c426",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "c6beee24-8810-4cd1-a8ee-2fc3586a4713",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "c7af9279-2059-4f3d-a6a7-036973b1f96e",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "ca456fb9-e4fa-4733-a565-4c850eccc7c2",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "caf6b213-a194-4d32-819e-b1b8cf2228fa",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "cbd71b52-6be8-432b-984e-1ee7599a4b0f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "cc969207-f089-4c08-a6c7-4cf404794e93",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "cca0f181-aa4d-49c3-8345-245de867c1d0",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "d0a95327-3f3e-4746-9be5-0a562cb0ddb2",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "d18a2b7f-b50c-4733-9da1-37545f282bc8",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "d7814e4b-588e-4197-8d55-7a7930a379c1",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "d9ea41da-25ff-4883-b43a-655f870c07c6",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "dc37b796-f89c-4062-b05e-0e8c4ca0380a",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "e053787e-dcc2-4020-97fe-17c99c2ce15d",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "e141db6c-6502-4f85-bcb2-0d22b0ab33ce",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "e148529a-ce8d-4851-ae40-059b9c5d3b86",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "e241e2be-5594-4316-8a04-b7e83d1f2dd5",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "e864d11d-75b4-49ba-830f-ecae0ce35c69",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "eb688217-e28f-482a-a046-36e4d48bdd3f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "ed978701-0413-43e3-9861-64b700d66b55",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "f44729e4-1dec-43e1-89ec-77a19fba7dae",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "f570057e-d38a-4a40-8089-929e111ed52f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "f6c82867-b250-4247-a203-3e708b070efd",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "f73945e5-7c59-4061-90fd-3b8a0bc761c8",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "f77e50e5-f8ee-468e-adf7-3c3a185c136f",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "f9e5c0dc-79b0-4a70-96a4-f61a145241c8",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "fb193508-89a8-4fb9-a74a-ac5266dc2152",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "fbe5bb49-b636-40aa-b57d-38b8a1f94acc",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      },
+      {
+        "customer_id": "fe62686f-2342-4202-a212-780e7f5baff1",
+        "src_route": "TM",
+        "new_visit_route": "TM"
+      }
+    ]
+  },
+  "spec_tension_flag": {
+    "note": "DA Q4 (strict first-touch, forward-fill 금지) vs AC2 line107 (earliest NON-NULL). B-A divergence 위 참조. PRIMARY freeze=DA-strict(보수적). supervisor/planner 판정 요망.",
+    "setA_DA_strict_count": 154,
+    "setB_AC2_earliest_nonnull_count": 155
+  }
+}
