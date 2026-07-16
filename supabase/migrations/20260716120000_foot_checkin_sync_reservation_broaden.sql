@@ -9,7 +9,7 @@
 --     · 대시보드(Dashboard.tsx)      = check_ins 테이블 병행 조회
 --   → check_ins 행은 생성됐으나 reservations.status 가 checked_in 으로 동기화되지 않아 두 화면 divergence.
 --
--- ── RC (런타임 규명, 이재이 010-2115-0170 / resv 9f45105b 실데이터) ───────────
+-- ── RC (런타임 규명, [PHI-redacted] / resv 9f45105b 실데이터) ───────────
 --   reservations.status='confirmed' 인데 연결 check_in(f62bf262, status=done) 이 실재.
 --   즉 예약↔체크인 sync 트리거가 발화하지 않았다.
 --
