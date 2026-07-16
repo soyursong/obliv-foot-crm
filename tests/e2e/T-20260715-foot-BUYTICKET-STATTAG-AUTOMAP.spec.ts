@@ -104,4 +104,44 @@ test.describe('T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP', () => {
     expect(dlg.includes('data-treatment-type={treatmentType}'), '(6) 파생값 data 속성 노출').toBe(true);
     expect(dlg.includes('자동 분류'), '(6) 자동 분류 라벨 표기').toBe(true);
   });
+
+  // ── PIVOT=A(불허) — 총괄 최종확정 ts=1784151112 ──────────────────────────
+  // 공식 패키지(템플릿) 선택 시 회차·구성 고정(readonly/disabled), 수가(금액)만 수정 가능.
+  test('(7) PIVOT=A — 템플릿 모드 판정 + lock 스타일 정의', () => {
+    const dlg = dialogSlice();
+    // 템플릿 모드 = 커스텀이 아닌 선택 상태
+    expect(dlg.includes("const isTemplateMode = selectedTemplateId !== 'custom'"), '(7) isTemplateMode 판정').toBe(true);
+    // lock 스타일 존재(회차/구성 필드에 적용)
+    expect(dlg.includes('const lockCls ='), '(7) lockCls 정의').toBe(true);
+    // 잠금 안내 배너
+    expect(dlg.includes('data-testid="pkg-template-lock-hint"'), '(7) 잠금 안내 배너 testid').toBe(true);
+    expect(dlg.includes('수가(금액)만 조정'), '(7) 안내 문구(수가만 조정)').toBe(true);
+  });
+
+  test('(8) PIVOT=A — 회차/구성 필드 readonly, 수가(단가/총액/기준정가)는 편집 유지', () => {
+    const dlg = dialogSlice();
+    // 각 유형 회수 input 이 템플릿 모드에서 readonly
+    const readonlyCount = (dlg.match(/readOnly=\{isTemplateMode\}/g) ?? []).length;
+    // heated/unheated/podologe/iv/trial/reborn/precon = 7개 회수 input
+    expect(readonlyCount, '(8) 회차 input readonly 7곳').toBeGreaterThanOrEqual(7);
+    // 업그레이드 토글 + 수액명 select = disabled
+    const disabledCount = (dlg.match(/disabled=\{isTemplateMode\}/g) ?? []).length;
+    expect(disabledCount, '(8) 업그레이드·수액명 disabled 3곳(가열/비가열 업그레이드 + 수액명)').toBeGreaterThanOrEqual(3);
+    // 수가(단가)는 여전히 편집 가능 — AmountInput(회당단가) 에는 isTemplateMode 잠금 미적용
+    expect(dlg.includes('onChange={(raw) => setHeatedUnitPrice'), '(8) 가열 회당단가 편집 유지(무잠금)').toBe(true);
+    // 총액 수기수정·기준정가 AmountInput 에 isTemplateMode 잠금 미적용(수가 편집 유지)
+    expect(dlg.includes('value={manualTotal}'), '(8) 총액 수기수정 유지').toBe(true);
+    expect(dlg.includes('data-testid="pkg-reference-price"'), '(8) 기준정가 편집 유지').toBe(true);
+  });
+
+  test('(9) 1회성 상품 — 선택지 명시(badge) + 기존 5토큰 재사용(CHECK 확장 불필요)', () => {
+    const dlg = dialogSlice();
+    // 1회성 판정 = 시술유형별 회차 총합 1
+    expect(dlg.includes('const isOneTime = oneTimeTotal === 1'), '(9) 1회성 판정(회차 총합 1)').toBe(true);
+    // 탭에 1회성 뱃지 + data-onetime 속성 노출
+    expect(dlg.includes("data-onetime={isOneTime ? '1' : '0'}"), '(9) data-onetime 속성').toBe(true);
+    expect(dlg.includes('>1회성</span>'), '(9) 1회성 뱃지 라벨').toBe(true);
+    // 1회성 전용 신규 treatment_type 토큰을 만들지 않음(기존 5토큰 재사용, db_change=false)
+    expect(dlg.includes("type: '체험권'"), '(9) 신규 토큰 미도입').toBe(false);
+  });
 });

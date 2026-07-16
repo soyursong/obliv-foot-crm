@@ -9937,6 +9937,16 @@ function PackagePurchaseFromTemplateDialog({
 
   const cn2 = (...classes: string[]) => classes.filter(Boolean).join(' ');
 
+  // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP PIVOT=A(불허, 총괄 최종확정 ts=1784151112):
+  //   공식 패키지(템플릿) 선택 시 → 회차·구성 필드 고정(readonly/disabled), 수가(금액)만 수정 가능.
+  //   · 개별 회차 가감 불가(B안 아님). 스태프는 단가/총액만 조정 후 저장.
+  //   · 커스텀 모드(selectedTemplateId==='custom')는 전체 편집 유지(구성 자유 입력).
+  //   · lock 대상=구성: 각 유형 회수(heated/unheated/podologe/iv/trial/reborn/precon) + 업그레이드 토글 + 수액명.
+  //   · 편집 유지=수가: 유형별 회당단가(AmountInput) + 총금액 수기수정 + 기준정가.
+  //   · 통계태깅(시술유형)은 이미 자동파생 readonly(위 derivedTreatmentType) — PIVOT 무관하게 잠김.
+  const isTemplateMode = selectedTemplateId !== 'custom';
+  const lockCls = isTemplateMode ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : '';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="relative bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-4">
@@ -9966,15 +9976,41 @@ function PackagePurchaseFromTemplateDialog({
                 <TabsTrigger value="custom" data-testid="pkg-tab-custom" className="h-7 px-2.5 text-xs">
                   커스텀
                 </TabsTrigger>
-                {templates.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id} data-testid={`pkg-tab-${t.id}`} className="h-7 px-2.5 text-xs">
-                    {t.name}
-                  </TabsTrigger>
-                ))}
+                {templates.map((t) => {
+                  // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP (총괄 최종확정 item2): 1회성 상품을 선택지에 명시.
+                  //   '1회성' 판정 = 시술유형별 회차 총합 1 (Packages.tsx isOneTimeTemplate 규약 동일, DB 무변경·FE 표시분류).
+                  //   1회성 상품은 기존 5토큰(가열/비가열/포돌로게/수액/Re:Born)을 재사용 → treatment_type CHECK 확장 불필요(db_change=false).
+                  const oneTimeTotal =
+                    (t.heated_sessions ?? 0) + (t.unheated_sessions ?? 0) + (t.podologe_sessions ?? 0) +
+                    (t.iv_sessions ?? 0) + (t.trial_sessions ?? 0) + (t.reborn_sessions ?? 0);
+                  const isOneTime = oneTimeTotal === 1;
+                  return (
+                    <TabsTrigger
+                      key={t.id}
+                      value={t.id}
+                      data-testid={`pkg-tab-${t.id}`}
+                      data-onetime={isOneTime ? '1' : '0'}
+                      className="h-7 px-2.5 text-xs"
+                    >
+                      {t.name}
+                      {isOneTime && (
+                        <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">1회성</span>
+                      )}
+                    </TabsTrigger>
+                  );
+                })}
               </TabsList>
             </Tabs>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>
+            )}
+            {isTemplateMode && (
+              <div
+                data-testid="pkg-template-lock-hint"
+                className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700"
+              >
+                공식 패키지 — 회차·구성은 고정입니다. 수가(금액)만 조정할 수 있습니다.
+              </div>
             )}
           </div>
 
@@ -9996,9 +10032,9 @@ function PackagePurchaseFromTemplateDialog({
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={heated}
-                  onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  type="number" min={0} value={heated} readOnly={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setHeated(Math.max(0, Number(e.target.value) || 0)); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
                 />
               </div>
               <div className="space-y-1">
@@ -10011,10 +10047,12 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="flex items-end">
                 <button
-                  onClick={() => setHeatedUpgrade(!heatedUpgrade)}
+                  disabled={isTemplateMode}
+                  onClick={() => { if (isTemplateMode) return; setHeatedUpgrade(!heatedUpgrade); }}
                   className={cn2(
                     'h-8 w-full rounded-md border text-xs font-medium px-1.5 transition',
                     heatedUpgrade ? 'border-sage-600 bg-sage-50 text-sage-700' : 'border-gray-200 hover:bg-gray-50',
+                    isTemplateMode ? 'opacity-50 cursor-not-allowed' : '',
                   )}
                 >
                   {heatedUpgrade ? '✓ ' : ''}6000샷 +5만
@@ -10036,9 +10074,9 @@ function PackagePurchaseFromTemplateDialog({
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={unheated}
-                  onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  type="number" min={0} value={unheated} readOnly={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setUnheated(Math.max(0, Number(e.target.value) || 0)); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
                 />
               </div>
               <div className="space-y-1">
@@ -10051,10 +10089,12 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="flex items-end">
                 <button
-                  onClick={() => setUnheatedUpgrade(!unheatedUpgrade)}
+                  disabled={isTemplateMode}
+                  onClick={() => { if (isTemplateMode) return; setUnheatedUpgrade(!unheatedUpgrade); }}
                   className={cn2(
                     'h-8 w-full rounded-md border text-xs font-medium px-1.5 transition',
                     unheatedUpgrade ? 'border-sage-600 bg-sage-50 text-sage-700' : 'border-gray-200 hover:bg-gray-50',
+                    isTemplateMode ? 'opacity-50 cursor-not-allowed' : '',
                   )}
                 >
                   {unheatedUpgrade ? '✓ ' : ''}AF +4만
@@ -10076,9 +10116,9 @@ function PackagePurchaseFromTemplateDialog({
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={podologe}
-                  onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  type="number" min={0} value={podologe} readOnly={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setPodologe(Math.max(0, Number(e.target.value) || 0)); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
                 />
               </div>
               <div className="space-y-1">
@@ -10103,8 +10143,9 @@ function PackagePurchaseFromTemplateDialog({
                 <label className="text-xs text-gray-500">수액명</label>
                 <select
                   value={ivCompany}
-                  onChange={(e) => setIvCompany(e.target.value)}
-                  className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500 bg-white"
+                  disabled={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setIvCompany(e.target.value); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500 bg-white', lockCls)}
                 >
                   <option value="">— 선택 —</option>
                   <option value="재생">재생</option>
@@ -10120,9 +10161,9 @@ function PackagePurchaseFromTemplateDialog({
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={iv}
-                  onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  type="number" min={0} value={iv} readOnly={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setIv(Math.max(0, Number(e.target.value) || 0)); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
                 />
               </div>
               <div className="space-y-1">
@@ -10146,9 +10187,9 @@ function PackagePurchaseFromTemplateDialog({
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={trial}
-                  onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  type="number" min={0} value={trial} readOnly={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setTrial(Math.max(0, Number(e.target.value) || 0)); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
                 />
               </div>
               <div className="space-y-1">
@@ -10172,9 +10213,9 @@ function PackagePurchaseFromTemplateDialog({
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={reborn}
-                  onChange={(e) => setReborn(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  type="number" min={0} value={reborn} readOnly={isTemplateMode}
+                  onChange={(e) => { if (isTemplateMode) return; setReborn(Math.max(0, Number(e.target.value) || 0)); }}
+                  className={cn2('w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
                 />
               </div>
               <div className="space-y-1">
@@ -10195,9 +10236,9 @@ function PackagePurchaseFromTemplateDialog({
           <div className="space-y-1">
             <label className="text-xs text-gray-500">사전처치 회수 (프리컨디셔닝 — 수가 미포함)</label>
             <input
-              type="number" min={0} value={precon}
-              onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
-              className="w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+              type="number" min={0} value={precon} readOnly={isTemplateMode}
+              onChange={(e) => { if (isTemplateMode) return; setPrecon(Math.max(0, Number(e.target.value) || 0)); }}
+              className={cn2('w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500', lockCls)}
             />
           </div>
 
