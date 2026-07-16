@@ -16,7 +16,7 @@ commit_sha: 79686f20
 # ── MIG-GATE 4필드 ──
 mig_files: supabase/migrations/20260706140000_koh_publish_birth_server_derive.sql (멱등 CREATE OR REPLACE + $verify$ 가드) / .rollback.sql 동봉
 mig_dryrun: scripts/T-20260706-foot-KOHRESULT-DOCSURFACE-BINDING-INCONSIST_dryrun.log (트랜잭션 COMMIT→ROLLBACK 재현, $verify$ 통과·미영속 확인)
-mig_ledger_check: schema_migrations(version=20260706140000)=미기록 / 파일=존재 / prod=旣정의(birth 미반영) — 3자 정합(apply 전 상태). apply=ledger helper 경유(applyMigration → schema_migrations 자동 INSERT)
+mig_ledger_check: [APPLIED 2026-07-16] schema_migrations(version=20260706140000, name=koh_publish_birth_server_derive, created_by=T-20260706-foot-KOHRESULT-...)=기록됨 / 파일=존재 / prod=birth 서버파생 반영됨(fn_customer_birthdates 호출 + COALESCE(v_birth_ko,...) merge) — 3자 정합(apply 후). apply=ledger helper 경유(applyMigration → schema_migrations 자동 INSERT), 오류 0. 로그=scripts/T-20260706-foot-KOHRESULT-DOCSURFACE-BINDING-INCONSIST_apply.log
 mig_rollback: supabase/migrations/20260706140000_koh_publish_birth_server_derive.rollback.sql (직전 20260616180000 publish_koh_result 정의 CREATE OR REPLACE 복원, 시그니처 무변경·데이터 무손실)
 ---
 
