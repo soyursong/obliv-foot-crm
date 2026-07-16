@@ -47,3 +47,9 @@ export function generateSlots(open: string, close: string, intervalMin: number):
 }
 
 export const WEEK_DAYS_KO = ['월', '화', '수', '목', '금', '토', '일'];
+
+// T-20260716-foot-TIMESLOT-RESCHEDULE-EMPTYDATE: 예약 시간 선택 그리드 SSOT (07:00~22:00, 30분).
+//   - 신규예약 폼(ReservationDetailPopup NEW_RESV_TIME_SLOTS)이 쓰던 규칙과 동일(editor EDIT_TIME_SLOTS 규칙).
+//   - 예약상세 reschedule 에서 "예약 0건 날짜"에도 이 그리드로 클릭 가능한 시간 슬롯을 렌더(빈 슬롯 = count 0).
+//   두 경로가 같은 그리드를 공유하도록 단일 상수로 승격(하드코딩 중복 제거).
+export const RESV_TIME_GRID = generateSlots('07:00', '22:00', 30);

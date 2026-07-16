@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
-import { generateSlots } from '@/lib/schedule';
+import { RESV_TIME_GRID } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -102,7 +102,9 @@ function maskRrnDisplay(
 }
 
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지 (07:00~22:00, 30분 — editor EDIT_TIME_SLOTS 동일 규칙)
-const NEW_RESV_TIME_SLOTS = generateSlots('07:00', '22:00', 30);
+//   T-20260716-foot-TIMESLOT-RESCHEDULE-EMPTYDATE: 그리드를 schedule.ts RESV_TIME_GRID SSOT 로 승격(값 동일, 무회귀).
+//   reschedule 빈날짜 슬롯 렌더(ReservationDayTimeslotPanel)와 동일 그리드 공유.
+const NEW_RESV_TIME_SLOTS = RESV_TIME_GRID;
 
 // new-mode 생성 콜백 파라미터 (parent = 단일소스 createReservationCanonical 위임)
 // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 시스템에 없는 완전 신규 고객 등록 허용 → customerId 가 null 일 수 있음.
