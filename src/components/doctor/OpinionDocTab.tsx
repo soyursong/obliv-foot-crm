@@ -48,6 +48,9 @@ import {
   ORAL_X_DEFAULT_REASON,
 } from '@/lib/opinionDocCompose';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
+// T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
+//   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
+import { useUpdateStaffMemo } from '@/lib/opinionRequest';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import type { UserProfile } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -610,7 +613,23 @@ export function OpinionEditorDialog({
 
   // AC-6/12: 서류종류 라벨(진단서/소견서) — 큐에서 열리면 실장이 고른 doc_type, 아니면 소견서(기본).
   const docTitle = initialDocType === 'diagnosis' ? '진단서' : '소견서';
-  const staffMemo = (staffRequestMemo ?? '').trim();
+
+  // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모 편집 draft.
+  //   staffRequestMemo(요청 원본)를 seed(bind 블록) → 편집칸 controlled state. memoSaved=마지막 persist 값(dirty 판정 기준).
+  //   저장 = useUpdateStaffMemo(requestId) blur 시. requestId 없으면(허브 직접 오픈) 미노출·미저장.
+  const [memoDraft, setMemoDraft] = useState('');
+  const [memoSaved, setMemoSaved] = useState('');
+  const updateMemoMut = useUpdateStaffMemo(clinicId);
+  const handleMemoSave = async () => {
+    if (!requestId) return;
+    if (memoDraft === memoSaved) return;   // 변경 없음 → no-op(불필요 write 방지, AC-3 핸드오프 무결)
+    try {
+      await updateMemoMut.mutateAsync({ requestId, staffMemo: memoDraft });
+      setMemoSaved(memoDraft);
+    } catch {
+      // 저장 실패 — draft 유지(memoSaved 미변경→dirty 유지), 사용자 재시도 가능. 차단 없음.
+    }
+  };
 
   // opinion_doc 템플릿(form_templates: templateId + field_map 옵션 그리드) + clinic_doctors + 발행 이력.
   const { data: tpl } = useOpinionTemplate(clinicId);
@@ -729,6 +748,9 @@ export function OpinionEditorDialog({
     setDoctorTouched(false);
     setChartOpen(false);
     setExpandedGroups(new Set()); // 금기증 대분류 펼침 초기화(선택된 소분류는 isGroupOpen 이 자동 펼침)
+    // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모 seed(요청 원본) — 새 요청 바인딩 시 draft 초기화.
+    setMemoDraft(staffRequestMemo ?? '');
+    setMemoSaved(staffRequestMemo ?? '');
   }
 
   // item2: 선택/플레이스홀더 변화 → 본문 자동 합성. 원장이 직접 수정(textTouched)하면 덮어쓰지 않음(AC-4 SSOT).
@@ -1105,10 +1127,36 @@ export function OpinionEditorDialog({
 
             {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
             <div className="flex flex-col gap-2">
-              {/* AC-3/10 참고 패널: 실장(데스크)이 보낸 요청 메모 — '참고용'만(authoring 경계 AC-4). */}
-              {staffMemo && (
+              {/* T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-1/2): 실장(데스크) 요청 메모.
+                  원 스펙(T-20260620-INTEGRATION)의 read-only 참고패널 → 편집 가능 textarea 로 전환 + 저장 유지.
+                  ★authoring 경계(AC-4, BLOCKING): 이 칸은 '직원 요청 메모'(field_data.staff_memo) 전용 —
+                    아래 의료판단 본문 editor(Textarea)와 물리적으로 분리. 저장은 staff_memo 단일 키 merge(useUpdateStaffMemo)
+                    → 진단/소견 본문·서명·직인·발행(published) 절대 미접촉.
+                  큐('작성하기')로 열린 요청(requestId)에만 노출·저장(요청 1건=작성창 1회 매핑, AC-3).
+                    requestId 없음(DoctorDocsHubDialog 직접 오픈)이면 미노출 → 허브 동선 무회귀. */}
+              {requestId && (
                 <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-sm text-teal-900" data-testid="opinion-staff-request-memo">
-                  <span className="font-bold">실장 요청(참고)</span> · {staffMemo}
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="font-bold">실장 요청(메모)</span>
+                    <span className="text-[11px] font-medium text-teal-700/80" data-testid="opinion-staff-memo-status">
+                      {updateMemoMut.isPending
+                        ? '저장 중…'
+                        : memoDraft !== memoSaved
+                          ? '수정됨 · 입력칸 밖을 누르면 저장'
+                          : memoSaved
+                            ? '저장됨'
+                            : ''}
+                    </span>
+                  </div>
+                  <textarea
+                    value={memoDraft}
+                    onChange={(e) => setMemoDraft(e.target.value)}
+                    onBlur={handleMemoSave}
+                    placeholder="실장이 남긴 서류 요청 상세내용 (수정 가능)"
+                    rows={2}
+                    className="w-full resize-y rounded border border-teal-200 bg-white px-2 py-1.5 text-sm text-teal-900 focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                    data-testid="opinion-staff-memo-input"
+                  />
                 </div>
               )}
               {/* AC-1.2: 자동 pre-check 안내 — 발건강 질문지에서 미리 채운 항목(QR입력) 확인 유도. */}
