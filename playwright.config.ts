@@ -14,26 +14,43 @@ dotenv.config({ path: path.join(__dirname, '.env.test') });
 // 미존재 시 무시 → DB 정책 spec 은 test.skip 로 안전 강등(스킵 사유 명확).
 dotenv.config({ path: path.join(__dirname, '.env.local'), override: true });
 
-// ── QA 워크트리 .env.local 폴백 (FIX-REQUEST MSG-20260715-161411-l4bf) ──────────
+// ── QA 워크트리 .env.local 폴백 (FIX-REQUEST MSG-20260715-161411-l4bf ·
+//    ROOTFIX T-20260716-foot-DOCFEE-E2E-ENV-WIRING-ROOTFIX MSG-20260716-133036) ──────
 //   배경: `.env.local`(TEST_PASSWORD + Supabase 비밀)은 gitignored 라 fresh QA 워크트리
-//         (git worktree/신규 clone)에는 존재하지 않는다. 그 결과 auth 의존 spec(로그인→
-//         /admin/closing 등)이 auth.setup 의 "TEST_PASSWORD env required (no plaintext
-//         fallback)" 에서 즉시 실패했다(MSG-20260715-161411-l4bf phase2 spec_fail_new).
+//         (git worktree --detach + npm ci / 신규 clone)에는 존재하지 않는다. 그 결과
+//         auth 의존 spec(로그인→/admin/closing 등)이 auth.setup 의 "TEST_PASSWORD env
+//         required (no plaintext fallback)" 에서 즉시 실패했다.
 //   해법: 로컬 .env.local 로 TEST_PASSWORD 가 채워지지 않았으면(=워크트리에 비밀 부재)
 //         정본 체크아웃(canonical checkout)의 .env.local 을 폴백 로드한다.
 //         - 비밀은 여전히 미커밋(gitignored) — 커밋되는 것은 "경로"뿐(보안 property 불변).
-//         - 정본 경로 우선순위: (1) 환경변수 FOOT_QA_ENV_LOCAL (2) ~/GitHub/obliv-foot-crm/.env.local
-//           (macstudio 정책: 모든 dev/QA E2E 는 ~/GitHub 정본 체크아웃 호스트에서 실행).
+//         - 후보 우선순위: (1) env FOOT_QA_ENV_LOCAL (2) ~/GitHub/obliv-foot-crm/.env.local
+//           (macstudio 정본) (3) ~/Documents/GitHub/obliv-foot-crm/.env.local (macbook 정본).
+//           → homedir 레이아웃 차이를 모두 커버해 어느 머신의 clean detach 든 env 재요청 없이 로드.
 //         - 정본 == 현재 dir 이면 이미 위에서 로드됨 → 폴백은 no-op(동일 파일 재로드 무해).
-//         - 정본에도 없으면 무시 → 종전처럼 auth.setup 가 명확한 사유로 실패(보안 유지).
+//   ROOTFIX 핵심(env 재배달 루프 차단): 후보가 하나도 없으면 조용히 넘기지 않고 원인을
+//         명시 경고한다. env "부재"가 아니라 "배선/워크트리" 문제(=fallback 이전 커밋의 stale
+//         워크트리에서 QA, 또는 정본 체크아웃 .env.local 삭제)임을 알려 재요청 반복을 끊는다.
 if (!process.env.TEST_PASSWORD && !process.env.TEST_USER_PASSWORD) {
-  const canonicalEnvLocal =
-    process.env.FOOT_QA_ENV_LOCAL ??
-    path.join(os.homedir(), 'GitHub', 'obliv-foot-crm', '.env.local');
-  if (fs.existsSync(canonicalEnvLocal) && canonicalEnvLocal !== path.join(__dirname, '.env.local')) {
-    dotenv.config({ path: canonicalEnvLocal, override: true });
+  const selfEnvLocal = path.join(__dirname, '.env.local');
+  const candidates = [
+    process.env.FOOT_QA_ENV_LOCAL,
+    path.join(os.homedir(), 'GitHub', 'obliv-foot-crm', '.env.local'),
+    path.join(os.homedir(), 'Documents', 'GitHub', 'obliv-foot-crm', '.env.local'),
+  ].filter((p): p is string => !!p && p !== selfEnvLocal);
+
+  const hit = candidates.find((p) => fs.existsSync(p));
+  if (hit) {
+    dotenv.config({ path: hit, override: true });
     // eslint-disable-next-line no-console
-    console.log(`[playwright.config] .env.local 폴백 로드 → ${canonicalEnvLocal}`);
+    console.log(`[playwright.config] .env.local 폴백 로드 → ${hit}`);
+  } else if (!process.env.CI) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[playwright.config] ⚠ TEST_PASSWORD 미설정 + 정본 .env.local 폴백 후보 전무.\n' +
+        `    self=${selfEnvLocal}\n    후보=${candidates.join(', ') || '(없음)'}\n` +
+        '    → env 재요청 전 확인: (a) 현재 워크트리 config 에 이 폴백 블록이 있는지(=fallback 커밋 이후인지)\n' +
+        '      (b) 정본 체크아웃(~/GitHub/obliv-foot-crm)에 .env.local 이 실재하는지.',
+    );
   }
 }
 
