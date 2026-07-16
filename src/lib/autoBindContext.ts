@@ -73,6 +73,9 @@ export interface AutoBindContext {
     email?: string | null;
     // T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET #2: 요양기관 대표자(대표원장) 성명. 법인 대표와 별개 축.
     representative_name?: string | null;
+    // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT (axis A): 요양기관명(HIRA 등록 명칭).
+    //   표시명(name)과 별개 축. 출력서류 요양기관명 셀 데이터원. NULL→name silent 폴백 금지.
+    hira_institution_name?: string | null;
   } | null;
   doctor?: string | null;
   /** T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 매칭된 원장 상세 정보 */
@@ -268,6 +271,10 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     copayment: ctx.payments ? formatAmount(ctx.payments.copayment ?? 0) : '',
     non_covered: ctx.payments ? formatAmount(ctx.payments.non_covered) : '',
     clinic_name: ctx.clinic?.name ?? '오블리브 풋센터 종로',
+    // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT (axis A): 요양기관명 셀 전용 바인딩.
+    //   ⚠ affirmative — NULL 시 clinics.name silent 폴백 금지(공란 렌더). 요양기관명≠표시명 축 분리.
+    //   현재 값 = 사업자상호 동일('오블리브의원 서울오리진점')이나 정식발번 divergence 대비 별개 슬롯.
+    hira_institution_name: ctx.clinic?.hira_institution_name ?? '',
     clinic_address: ctx.clinic?.address ?? '',
     issue_date: today,
     // T-20260516-foot-CLINIC-DOC-INFO: 원장·병원 상세 정보
@@ -470,7 +477,7 @@ export async function loadAutoBindContext(
   // T-20260520-foot-PRINT-FORM-BIND: 클리닉 정보 확장 (nhis_code, fax 추가)
   const { data: clinicData } = await supabase
     .from('clinics')
-    .select('name, address, phone, fax, nhis_code, business_no, established_date, email, representative_name')
+    .select('name, address, phone, fax, nhis_code, business_no, established_date, email, representative_name, hira_institution_name')
     .eq('id', checkIn.clinic_id)
     .maybeSingle();
 

@@ -340,6 +340,10 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축(hira_institution_name) 재배선 +
+        //   대표자 print 분리(CEO Q2). getHtmlTemplate/bindHtmlTemplate + buildAutoBindValues 순수 함수 —
+        //   축 분리·affirmative(silent 폴백 금지)·진료의({{doctor_name}}) 보존 단언. 실기기 렌더는 supervisor 게이트. auth/server 불요.
+        '**/T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

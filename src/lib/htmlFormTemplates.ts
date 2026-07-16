@@ -293,7 +293,8 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8;">의 료 기 관</td>
-        <td colspan="7">{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (진단서) -->
+        <td colspan="7">{{hira_institution_name}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">주소 및 명칭</td>
@@ -976,8 +977,10 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <td style="width:100px; background:#f8f8f8; text-align:center;">요양기관 명칭</td>
-        <td>{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (세부산정내역) -->
+        <td>{{hira_institution_name}}</td>
         <td style="width:60px; background:#f8f8f8; text-align:center;">대 표 자</td>
+        <!-- CEO Q2: 대표자 셀 = 진료의({{doctor_name}}) 보존 · 기관 대표자(representative_name) 주입 금지 -->
         <td style="width:120px;">{{doctor_name}}</td>
         <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 대표자 성명 근방 직인 -->
         <td style="width:52px; text-align:center;">{{doctor_seal_html}}</td>
@@ -1477,7 +1480,8 @@ const RX_STANDARD_HTML = `
         <td colspan="2">{{issue_date}}&nbsp;&nbsp;제&nbsp;{{issue_no}}&nbsp;호</td>
         <td rowspan="4" style="width:18px; background:#f8f8f8; text-align:center; font-size:7.5pt; padding:2px;">의<br>료<br>기<br>관</td>
         <td style="width:60px; background:#f8f8f8; text-align:center;">명&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;칭</td>
-        <td>{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (처방전) -->
+        <td>{{hira_institution_name}}</td>
       </tr>
       <tr>
         <td rowspan="3" style="width:18px; background:#f8f8f8; text-align:center; font-size:7.5pt; padding:2px;">환<br>자</td>
@@ -1670,7 +1674,8 @@ const BILL_RECEIPT_HTML = `
       <tr>
         <td rowspan="3" class="br-label" style="width:20px; text-align:center; font-size:7.5pt; padding:2px; letter-spacing:1px;">요<br>양<br>기<br>관</td>
         <td class="br-label" style="width:70px; text-align:center;">명&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;칭</td>
-        <td colspan="3" style="font-weight:bold;">{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (영수증) -->
+        <td colspan="3" style="font-weight:bold;">{{hira_institution_name}}</td>
         <td rowspan="3" class="br-label" style="width:20px; text-align:center; font-size:7.5pt; padding:2px; letter-spacing:1px;">환<br>자</td>
         <td class="br-label" style="width:70px; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
         <td colspan="3" style="font-weight:bold;">{{patient_name}}</td>
@@ -1741,7 +1746,8 @@ const BILL_RECEIPT_HTML = `
     </div>
     <div class="br-sign-row">
       <div class="br-sign-item">
-        요양기관명 : <span style="font-weight:bold;">{{clinic_name}}</span>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (영수증 청구서명란) -->
+        요양기관명 : <span style="font-weight:bold;">{{hira_institution_name}}</span>
       </div>
       <div class="br-sign-item">
         진료의사 : {{doctor_name}}&nbsp;{{doctor_seal_html}}
@@ -1878,7 +1884,8 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">의&nbsp;료&nbsp;기&nbsp;관&nbsp;명&nbsp;&nbsp;:&nbsp;</td>
-        <td style="border:none; padding:2px 0; background:none; min-width:160px;">{{clinic_name}}</td>
+        <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (공단 보험청구서) -->
+        <td style="border:none; padding:2px 0; background:none; min-width:160px;">{{hira_institution_name}}</td>
       </tr>
       <tr>
         <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">전&nbsp;&nbsp;화&nbsp;&nbsp;번&nbsp;&nbsp;호&nbsp;&nbsp;:&nbsp;</td>
