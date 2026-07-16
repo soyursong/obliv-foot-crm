@@ -315,6 +315,10 @@ export default defineConfig({
         //   (공단 제외). 공단부담금 칸/금액 표시는 유지. SSOT 렌더(computeFootBilling/buildBillReceiptFeeGridHtml/
         //   buildBillDetailItemsHtml) + page.setContent+print media 인쇄 미리보기 스크린샷(AC-5) + 합계·공단표시 단언. auth/server 불요.
         '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION: 결제창(PATH-4) 서류 '계'·'합계'·총진료비 공란 회귀 hotfix.
+        //   PMW 바인딩에 detail_subtotal/detail_total/receipt_total(=본인부담+비급여, 공단 제외) 재바인딩 복구.
+        //   SSOT 렌더 + page.setContent print media 인쇄 미리보기 + RC/AC-7 역가드. auth/server 불요.
+        '**/T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION.spec.ts',
         // T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL: 비급여동의서 서명 뷰 태블릿 스크롤 불가 픽스
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
