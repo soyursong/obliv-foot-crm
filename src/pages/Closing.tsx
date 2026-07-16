@@ -1504,7 +1504,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="py-1.5 text-left font-medium">시술명</th>
                       <th className="py-1.5 text-right font-medium">건수</th>
-                      <th className="py-1.5 text-right font-medium">매출</th>
+                      {/* T-20260715-foot-DAYCLOSE-STATCOL-LABEL-TREATAMT: '매출'→'시술금액' (B안, 김주연 총괄 권고). 집계 로직 무변경(STAT-PAYONLY 담당). */}
+                      <th className="py-1.5 text-right font-medium">시술금액</th>
                     </tr>
                   </thead>
                   <tbody>

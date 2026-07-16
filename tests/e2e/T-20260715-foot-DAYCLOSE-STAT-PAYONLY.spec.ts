@@ -34,6 +34,20 @@ async function gotoClosingSummary(page) {
 }
 
 test.describe('DAYCLOSE-STAT-PAYONLY', () => {
+  // [번들 흡수] T-20260715-foot-DAYCLOSE-STATCOL-LABEL-TREATAMT AC-1:
+  //   시술별 통계 컬럼 헤더 = '시술금액' 렌더, '매출' 문자열 잔존 0 (라벨 rename, B안).
+  test('statcol-label: 시술별 통계 헤더 = 시술금액 (매출 잔존 0)', async ({ page }) => {
+    await gotoClosingSummary(page);
+    const statCard = page.getByTestId('procedure-stats-card');
+    if (await statCard.count() === 0) {
+      test.info().annotations.push({ type: 'note', description: '당일 시술별 통계 없음 — 헤더 라벨 검증 스킵' });
+      return;
+    }
+    const headText = await statCard.locator('thead').innerText();
+    expect(headText).toContain('시술금액');
+    expect(headText).not.toContain('매출');
+  });
+
   // 시나리오 1 + AC-1/AC-3: 시술별 통계 매출 합계는 결제내역 net 총합을 초과하지 않는다.
   //   (미수납/환불 net=0 시술이 매출을 부풀리면 이 불변식이 깨짐 → fix 전 코드는 위반 가능)
   test('scenario-1: 시술별 통계 매출 ≤ 결제내역 net 총합 (paid-only 불변식)', async ({ page }) => {
