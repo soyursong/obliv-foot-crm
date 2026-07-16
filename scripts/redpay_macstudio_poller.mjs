@@ -72,6 +72,14 @@ function cfg(key, fallback = "") {
 // ── Supabase (풋 프로젝트) ──────────────────────────────────────────────────
 const SUPABASE_URL = cfg("SUPABASE_URL", "https://rxlomoozakkjesdqjtvd.supabase.co");
 const SERVICE_ROLE_KEY = cfg("SUPABASE_SERVICE_ROLE_KEY");
+// ── EF match_only 트리거 인증 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / FIX) ──
+//   과거 triggerMatcher 는 `Bearer SERVICE_ROLE_KEY` 로 EF 를 호출했으나, Supabase 신 API
+//   키 포맷 전환으로 EF 주입 SUPABASE_SERVICE_ROLE_KEY = raw-hex 가 되어 legacy-JWT 와 정확
+//   일치(isServiceRole)가 깨져 매 사이클 401(Unauthorized). 이미 launchd cron
+//   (com.medibuilder.redpay-recon*)이 T-20260711-crm-REDPAY-DAILY-POLLER-AUTH-FIX 에서
+//   anon(게이트웨이) + x-internal-cron(EF 내부) 로 전환·검증 완료 → 폴러도 동일 표준으로 통일.
+const ANON_KEY = cfg("SUPABASE_ANON_KEY");
+const INTERNAL_CRON_SECRET = cfg("INTERNAL_CRON_SECRET");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
@@ -452,11 +460,19 @@ async function updatePollerState(mode, nowIso, fetched, upserted) {
 // ════════════════════════════════════════════════════════════════════════════
 async function triggerMatcher() {
   if (!TRIGGER_MATCH) return;
+  // 인증: anon(게이트웨이 verify_jwt) + x-internal-cron(EF 내부 isInternalCron).
+  //   legacy `Bearer SERVICE_ROLE_KEY` 는 신 raw-hex 키 전환으로 401 → cron 과 동일 표준으로 통일.
+  if (!ANON_KEY || !INTERNAL_CRON_SECRET) {
+    warn("EF match_only 트리거 스킵(비치명): SUPABASE_ANON_KEY / INTERNAL_CRON_SECRET 미설정 " +
+         "(~/.env.redpay 확인). 매칭은 5분 cron(com.medibuilder.redpay-recon)이 회복.");
+    return;
+  }
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/redpay-reconcile`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        Authorization: `Bearer ${ANON_KEY}`,
+        "x-internal-cron": INTERNAL_CRON_SECRET,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ mode: "match_only" }),
