@@ -87,6 +87,9 @@ function renderReceipt(billItems: typeof BILL_ITEMS): string {
     copayment: bonin.toLocaleString('ko-KR'),
     non_covered: bigy.toLocaleString('ko-KR'),
     total_amount: hap.toLocaleString('ko-KR'),
+    // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY(B안) 이후 소계·총 진료비 합계 셀 = {{receipt_total}}(본인+비급여, 공단 제외).
+    //   grade=null 이라 본인=급여전액 → 합계=hap(공단 0). 렌더 경로(PMW/DocumentPrintPanel)와 동일하게 별도 세팅.
+    receipt_total: hap.toLocaleString('ko-KR'),
     patient_name: '최***트',
     visit_date: '2026-07-13',
     clinic_name: '오블리브 풋센터',
