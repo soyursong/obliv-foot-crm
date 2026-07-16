@@ -181,14 +181,31 @@ export const ReservationMemoTimeline = forwardRef<ReservationMemoTimelineHandle,
     return () => clearTimeout(t);
   }, [inputVal, draftKey]);
 
-  // 미저장 내용이 있는 채로 새로고침/창 닫기 시 경고(브라우저 기본 이탈 확인).
+  // 미저장 내용이 있는 채로 새로고침/창 닫기 시 (1) 디바운스 미도달분을 동기 백업, (2) 브라우저 기본 이탈 경고.
+  //   디바운스(400ms) 특성상 마지막에 입력한 문장은 아직 localStorage 에 반영되지 않았을 수 있다.
+  //   이 상태로 새로고침/전환하면 복원 시 마지막 문장이 누락됨(QA AC-2/AC-3 fail). 이탈 직전 현재 값을
+  //   동기적으로 flush 해 재진입 복원 시 순소실 0 을 보장한다. draftKey 변경 추종을 위해 deps 에 포함.
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
+    const flushDraft = () => {
+      if (!draftKey) return;
+      try {
+        const val = inputValRef.current;
+        if (val.trim()) localStorage.setItem(draftKey, val);
+        else localStorage.removeItem(draftKey);
+      } catch { /* localStorage 접근 불가 무시 */ }
+    };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      flushDraft();
       if (inputValRef.current.trim()) { e.preventDefault(); e.returnValue = ''; }
     };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, []);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    // pagehide: 모바일/bfcache 등 beforeunload 미발화 경로(갤탭 태블릿) 백업 커버
+    window.addEventListener('pagehide', flushDraft);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', flushDraft);
+    };
+  }, [draftKey]);
 
   useEffect(() => {
     if (!effectiveKey) return;
