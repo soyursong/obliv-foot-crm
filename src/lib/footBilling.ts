@@ -270,9 +270,12 @@ export function computeFootBilling(
   const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
     ? getBaseCopayRate(insuranceGrade)
     : null;
-  // 100원 절상 — copayCalc.ts / PMW 와 동일 규칙.
+  // 100원 절사(round-DOWN) — copayCalc / RPC 와 동일 규칙.
+  //   CIT-2026-001(건보법 시행령 별표2 100원미만 제외) + CIT-2026-002(심평원 외래본인부담 100원미만 절사)
+  //   + revenue_insurance_split_spec §2-2 v1.12(절사=round-DOWN). 종전 CEIL(절상)=초과징수 → FLOOR 정정.
+  //   (T-20260715-foot-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY)
   const round100 = (base: number, rate: number) =>
-    Math.min(Math.ceil((base * rate) / 100) * 100, base);
+    Math.min(Math.floor((base * rate) / 100) * 100, base);
   //
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙, slack ts 1783974675.205029):
   //   건보 조회 실패 / insurance_grade=null / coverage_rate(=copayRate) null 방문의 **서류 렌더** →
@@ -585,14 +588,15 @@ export function fillBillItemCopayment(
     : null;
 
   const coveredSum = covered.reduce((s, x) => s + x.total, 0);
-  // 100원 절상 — computeFootBilling / copayCalc / PMW 와 동일 규칙.
+  // 100원 절사(round-DOWN) — computeFootBilling / copayCalc / RPC 와 동일 규칙.
+  //   CIT-2026-001/002 + revenue_insurance_split_spec §2-2 v1.12(절사). 종전 CEIL=초과징수 → FLOOR 정정.
   //
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙): grade/coverage(=copayRate) null →
   //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0. computeFootBilling 과 동일 역전 규칙(Path A 정합).
   //   과거엔 copayRate null → early-return(미개입) 이라 급여 항목 본인/공단이 0/공란 잔존했다 → 폴백 채움.
   //   유효 등급은 100원 절상 기존 산식 그대로 — 회귀 0. (anyExisting=DB 권위 값이 있으면 위에서 이미 미개입)
   const copaymentTotal = copayRate !== null
-    ? Math.min(Math.ceil((coveredSum * copayRate) / 100) * 100, coveredSum)
+    ? Math.min(Math.floor((coveredSum * copayRate) / 100) * 100, coveredSum)
     : coveredSum; // grade/coverage null → 본인 전액(공단=0) 폴백
 
   if (copaymentTotal <= 0) {

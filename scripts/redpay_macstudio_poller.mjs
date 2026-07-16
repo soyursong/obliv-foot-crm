@@ -72,6 +72,14 @@ function cfg(key, fallback = "") {
 // ── Supabase (풋 프로젝트) ──────────────────────────────────────────────────
 const SUPABASE_URL = cfg("SUPABASE_URL", "https://rxlomoozakkjesdqjtvd.supabase.co");
 const SERVICE_ROLE_KEY = cfg("SUPABASE_SERVICE_ROLE_KEY");
+// ── EF match_only 트리거 인증 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / FIX) ──
+//   과거 triggerMatcher 는 `Bearer SERVICE_ROLE_KEY` 로 EF 를 호출했으나, Supabase 신 API
+//   키 포맷 전환으로 EF 주입 SUPABASE_SERVICE_ROLE_KEY = raw-hex 가 되어 legacy-JWT 와 정확
+//   일치(isServiceRole)가 깨져 매 사이클 401(Unauthorized). 이미 launchd cron
+//   (com.medibuilder.redpay-recon*)이 T-20260711-crm-REDPAY-DAILY-POLLER-AUTH-FIX 에서
+//   anon(게이트웨이) + x-internal-cron(EF 내부) 로 전환·검증 완료 → 폴러도 동일 표준으로 통일.
+const ANON_KEY = cfg("SUPABASE_ANON_KEY");
+const INTERNAL_CRON_SECRET = cfg("INTERNAL_CRON_SECRET");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
@@ -86,6 +94,13 @@ const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
 //   (동일 마스터키·동일 사업자 511-60-00988, merchant band 만 교체). 도메인별 launchd 인스턴스.
 //   레지스트리(redpay_terminal_registry.domain)·하드코딩 DEFAULT·로그라벨이 모두 이 값으로 스코핑.
 const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
+// ── clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①) ──
+//   business_no 는 mutable·overloaded(세무 cert 정정으로 foot 511→457 divergence → clinic 조회 실패
+//   → L558 hard-throw 로 폴러 종료 → 실시간 적재 12h 중단). clinic '해석'은 안정키 slug 우선.
+//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO, L286) 은 불변 — 물리 merchant=511 유지.
+//   slug 미지정 도메인(body 등)은 business_no 폴백(하위호환 — 기존 동작 보존).
+const DOMAIN_CLINIC_SLUG_DEFAULTS = { foot: "jongno-foot" };
+const REDPAY_CLINIC_SLUG = cfg("REDPAY_CLINIC_SLUG", DOMAIN_CLINIC_SLUG_DEFAULTS[REDPAY_DOMAIN] ?? "");
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
@@ -445,11 +460,19 @@ async function updatePollerState(mode, nowIso, fetched, upserted) {
 // ════════════════════════════════════════════════════════════════════════════
 async function triggerMatcher() {
   if (!TRIGGER_MATCH) return;
+  // 인증: anon(게이트웨이 verify_jwt) + x-internal-cron(EF 내부 isInternalCron).
+  //   legacy `Bearer SERVICE_ROLE_KEY` 는 신 raw-hex 키 전환으로 401 → cron 과 동일 표준으로 통일.
+  if (!ANON_KEY || !INTERNAL_CRON_SECRET) {
+    warn("EF match_only 트리거 스킵(비치명): SUPABASE_ANON_KEY / INTERNAL_CRON_SECRET 미설정 " +
+         "(~/.env.redpay 확인). 매칭은 5분 cron(com.medibuilder.redpay-recon)이 회복.");
+    return;
+  }
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/redpay-reconcile`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        Authorization: `Bearer ${ANON_KEY}`,
+        "x-internal-cron": INTERNAL_CRON_SECRET,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ mode: "match_only" }),
@@ -550,12 +573,17 @@ async function main() {
     fromDt = new Date(y.getTime() - 9 * 60 * 60 * 1000); // KST→UTC
   }
 
-  // ── clinic_id 조회 (business_no 기준 — 풋 단일 클리닉) ──────────────────────
-  const clinics = await restGet(
-    `clinics?business_no=eq.${encodeURIComponent(REDPAY_BUSINESS_NO)}&select=id&limit=1`
-  );
+  // ── clinic_id 조회 — 안정키 slug 우선(business_no 는 세무 cert 정정으로 mutable) ──────────
+  //   slug 미지정 도메인은 business_no 폴백(하위호환). RedPay API scope(L286) 와는 무관.
+  const clinicQuery = REDPAY_CLINIC_SLUG
+    ? `clinics?slug=eq.${encodeURIComponent(REDPAY_CLINIC_SLUG)}&select=id&limit=1`
+    : `clinics?business_no=eq.${encodeURIComponent(REDPAY_BUSINESS_NO)}&select=id&limit=1`;
+  const clinics = await restGet(clinicQuery);
   const clinicId = clinics[0]?.id ?? null;
-  if (!clinicId) throw new Error(`clinic_id 조회 실패 — business_no=${REDPAY_BUSINESS_NO}`);
+  if (!clinicId) {
+    const keyDesc = REDPAY_CLINIC_SLUG ? `slug=${REDPAY_CLINIC_SLUG}` : `business_no=${REDPAY_BUSINESS_NO}`;
+    throw new Error(`clinic_id 조회 실패 — ${keyDesc}`);
+  }
 
   // ── 페이지 순회: fetch → 스코프 필터 → upsert ──────────────────────────────
   let totalFetched = 0;

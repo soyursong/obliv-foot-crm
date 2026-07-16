@@ -111,7 +111,7 @@ export async function loadClaimForExport(claimId: string): Promise<EdiExportResu
       id, clinic_id, customer_id, check_in_id, visit_date,
       total_base, total_copayment, total_covered,
       customers ( name, chart_number ),
-      clinics ( name, nhis_code )
+      clinics ( name, nhis_code, hira_institution_name )
     `)
     .eq('id', claimId)
     .maybeSingle();
@@ -123,7 +123,7 @@ export async function loadClaimForExport(claimId: string): Promise<EdiExportResu
     return { ok: false, block_code: 'NO_ITEMS', block_reason: '청구를 찾을 수 없습니다(권한 또는 삭제됨).' };
   }
   const cust = claim.customers as { name?: string; chart_number?: string } | null;
-  const clinic = claim.clinics as { name?: string; nhis_code?: string } | null;
+  const clinic = claim.clinics as { name?: string; nhis_code?: string; hira_institution_name?: string } | null;
 
   // ── 2. 진료내역 — logical view insurance_claim_items(AC-9) ──
   const { data: itemRows, error: itemErr } = await supabase
@@ -211,7 +211,10 @@ export async function loadClaimForExport(claimId: string): Promise<EdiExportResu
     claim: {
       claim_id: claim.id as string,
       clinic_nhis_code: clinic?.nhis_code ?? null,
-      clinic_name: clinic?.name ?? null,
+      // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 공단·EDI 요양기관명 축 재배선.
+      //   affirmative — hira_institution_name(요양기관명) 사용, NULL 시 name silent 폴백 금지.
+      //   EDI export는 nhis_code 보유 clinic(jongno-foot)만 통과 → 요양기관명 populate 보장.
+      clinic_name: clinic?.hira_institution_name ?? null,
       visit_date: claim.visit_date as string,
       patient_name: cust?.name ?? null,
       patient_chart_no: cust?.chart_number ?? null,

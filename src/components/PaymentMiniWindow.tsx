@@ -111,6 +111,7 @@ import {
 //   evaluateMedicalRecordGate 는 급여(isCovered) 판정에만 재사용 — 비차단 soft 리마인더용.
 //   차단(blocked)·방문일 매칭은 수납 흐름에서 더 이상 사용하지 않음(계좌이체 등 비내원일 수납 허용).
 import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
+import { InsuranceResettlePanel } from '@/components/insurance/InsuranceResettlePanel';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -2158,21 +2159,33 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             {/* 풋케어 탭: 서브 카테고리 버튼 (순서 편집 토글 제거됨 — PMW-ORDER-REMOVE)
                 T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
             {activeTab === '풋케어' && (
-              <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center">
+              <div
+                className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center"
+                data-testid="pmw-footcare-cat-tabs"
+              >
                 {FOOTCARE_CATS.map((cat) => (
                   <button
                     key={cat}
                     onClick={() => {
                       setFootcareCat(cat);
                     }}
+                    data-testid="pmw-footcare-cat-tab"
                     className={cn(
-                      'px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
+                      // ═══ T-20260715-foot-PAYMINI-4ZONE-LAYOUT-SPEC AC1 (색박스 스샷 F0BJ87C400G 좌표근거) ═══
+                      // 🔴 좌측 탭(기본(진찰료)/시술내역/수액/화장품) = 공간 최소(컴팩트) + 정사각형 형태.
+                      // 구: 가로 pill(px-2 py-1 rounded, 텍스트폭 가변) → 신: 소형 정사각형(aspect-square w-14).
+                      // 하단 코드 카드(aspect-square, L2197)와 시각 정합 → AC4 4구역 스샷 일치.
+                      // AC3 회귀가드: 사이즈 변경은 code-grid 열(pmw-code-grid) 내부에 국한 →
+                      //   ②차트코드행·③세금/수납잔액·④우측 zone reflow 무영향(사이드 열 폭·DOM 트리 불변).
+                      'aspect-square w-14 shrink-0 flex items-center justify-center rounded border transition-colors',
                       footcareCat === cat
                         ? 'bg-teal-600 text-white border-teal-600'
                         : 'border-input hover:bg-muted',
                     )}
                   >
-                    {cat}
+                    <span className="text-[10px] leading-tight text-center px-0.5 line-clamp-3">
+                      {cat}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -2515,6 +2528,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         </span>
                       </div>
                     )}
+                    {/* T-20260714-foot-INSGRADE-VERIFY-RESETTLE: 등급 확정 재정산 미리보기(급여방문·확정등급).
+                        grade=null 잠정 30% 수납 → 확정 본인부담 차액(환불/추가징수). 실 처리는 money_gate 후.
+                        서버 RPC(calc_copayment authority)가 산출·판단 — 여기선 표시만. 대상 아니면 자체 생략. */}
+                    {checkIn?.id && (
+                      <InsuranceResettlePanel
+                        checkInId={checkIn.id}
+                        grade={customerInsuranceGrade}
+                        moneyGateOpen={false}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -2793,7 +2816,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                BILLING-3ZONE Zone 3: 구매패키지 + 금일 시술내역 + 서류발행
                AC-3: 서류발행 우측 이동 / AC-4: 패키지 읽기 / AC-5: 시술이력 읽기
           ─────────────────────────────────────────────────────────────────── */}
-          <div className="sm:w-52 md:w-56 lg:w-64 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0 bg-slate-50/50">
+          <div
+            className="sm:w-52 md:w-56 lg:w-64 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0 bg-slate-50/50"
+            data-testid="pmw-zone3"
+          >
 
             {/* Zone 3 — AC-4: 구매패키지 (읽기 전용) */}
             <div className="border-b shrink-0">

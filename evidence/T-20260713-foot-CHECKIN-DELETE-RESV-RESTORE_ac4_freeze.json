@@ -121,8 +121,8 @@
     },
     {
       "id": "5244c31a-fea6-43fc-9a38-00d6f6297919",
-      "customer_name": "김사비",
-      "customer_phone": "010-9846-2575",
+      "customer_name": "[PHI-redacted]",
+      "customer_phone": "[PHI-redacted]",
       "reservation_date": "2026-05-17",
       "reservation_time": "13:00:00",
       "visit_type": "returning",
@@ -160,8 +160,8 @@
     },
     {
       "id": "48a2af07-9ac5-40d7-b927-b705b11b2080",
-      "customer_name": "박민석",
-      "customer_phone": "+821068222670",
+      "customer_name": "[PHI-redacted]",
+      "customer_phone": "[PHI-redacted]",
       "reservation_date": "2026-05-21",
       "reservation_time": "10:00:00",
       "visit_type": "new",
@@ -173,8 +173,8 @@
     },
     {
       "id": "611ba015-a14b-4f64-a13e-820fb20e2f9f",
-      "customer_name": "왕지현",
-      "customer_phone": "+821066242601",
+      "customer_name": "[PHI-redacted]",
+      "customer_phone": "[PHI-redacted]",
       "reservation_date": "2026-05-26",
       "reservation_time": "18:30:00",
       "visit_type": "new",
@@ -199,8 +199,8 @@
     },
     {
       "id": "f5d37b02-dfbe-407d-b7ea-1606470ff66e",
-      "customer_name": "장예지",
-      "customer_phone": "+821034011242",
+      "customer_name": "[PHI-redacted]",
+      "customer_phone": "[PHI-redacted]",
       "reservation_date": "2026-05-29",
       "reservation_time": "11:00:00",
       "visit_type": "new",
@@ -212,7 +212,7 @@
     },
     {
       "id": "b0001156-57ef-4eae-977b-7cef0bb9ce1b",
-      "customer_name": "김유리",
+      "customer_name": "[PHI-redacted]",
       "customer_phone": null,
       "reservation_date": "2026-06-02",
       "reservation_time": "15:00:00",
@@ -407,8 +407,8 @@
     },
     {
       "id": "c302de18-ecb4-4b23-8037-5b750cbac466",
-      "customer_name": "Daniel",
-      "customer_phone": "+821044585474",
+      "customer_name": "[PHI-redacted]",
+      "customer_phone": "[PHI-redacted]",
       "reservation_date": "2026-06-25",
       "reservation_time": "14:00:00",
       "visit_type": "new",
@@ -420,7 +420,7 @@
     },
     {
       "id": "a62c3aa3-7a86-4195-b6c0-ffe23df3f9a7",
-      "customer_name": "행행이",
+      "customer_name": "[PHI-redacted]",
       "customer_phone": null,
       "reservation_date": "2026-07-13",
       "reservation_time": "12:00:00",

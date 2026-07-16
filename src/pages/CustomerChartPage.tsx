@@ -33,7 +33,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AmountInput } from '@/components/ui/AmountInput';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
@@ -9773,6 +9773,22 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 // T-20260507-foot-PKG-TEMPLATE-REDESIGN: 고객차트에서 구입 티켓 추가
 // 항목별 [회수/수가] 자동합산 폼 — 상담 실장 고객차트 연동
 // ============================================================
+// T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭을 /packages 관리 3그룹(정찰가(기준)/공식 패키지/커스텀)으로 묶기 위한
+//   회차-합 기반 분류 헬퍼. /packages 의 isOneTimeTemplate(회차 총합=1) 규칙과 동일(뷰 레벨 재분류만, 원본 무변경).
+type PkgGroupTab = 'standard' | 'official' | 'custom';
+function pkgTemplateSessionTotal(t: PackageTemplate): number {
+  return (
+    (t.heated_sessions ?? 0) +
+    (t.unheated_sessions ?? 0) +
+    (t.podologe_sessions ?? 0) +
+    (t.iv_sessions ?? 0) +
+    (t.trial_sessions ?? 0) +
+    (t.reborn_sessions ?? 0)
+  );
+}
+function pkgTemplateIsOneTime(t: PackageTemplate): boolean {
+  return pkgTemplateSessionTotal(t) === 1;
+}
 function PackagePurchaseFromTemplateDialog({
   open,
   customerId,
@@ -9831,6 +9847,13 @@ function PackagePurchaseFromTemplateDialog({
   const [referencePrice, setReferencePrice] = useState(0);
   const [refPriceTouched, setRefPriceTouched] = useState(false);
 
+  // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭 = /packages 관리 3그룹.
+  //   개별 패키지(12회권 등)는 나열하지 않고 그룹 내부 pill 로 선택 → 기존 선택 항목 누락 없음(AC-2).
+  //   회차 총합=1 → 정찰가(기준) 그룹 / 그 외 → 공식 패키지 그룹 (뷰 레벨 재분류, 원본 templates 무변경).
+  const oneTimeTemplates = useMemo(() => templates.filter(pkgTemplateIsOneTime), [templates]);
+  const officialTemplates = useMemo(() => templates.filter((t) => !pkgTemplateIsOneTime(t)), [templates]);
+  const [groupTab, setGroupTab] = useState<PkgGroupTab>('custom');
+
   // 항목별 자동합산
   const computedTotal = useMemo(
     () =>
@@ -9883,6 +9906,8 @@ function PackagePurchaseFromTemplateDialog({
           setPrecon(0); setPriceOverride(false); setMemo(first.memo ?? '');
           // T-20260708 AC-2b: 자동선택 템플릿 정가 = 기준정가.
           setTreatmentType(''); setReferencePrice(first.total_price ?? 0); setRefPriceTouched(false);
+          // T-20260715: 자동선택 템플릿의 그룹으로 상단 탭 동기화(회차 총합=1 → 정찰가(기준), 그 외 → 공식 패키지).
+          setGroupTab(pkgTemplateIsOneTime(first) ? 'standard' : 'official');
         }
       });
   }, [open, clinicId]);
@@ -9890,6 +9915,7 @@ function PackagePurchaseFromTemplateDialog({
   useEffect(() => {
     if (!open) return;
     setSelectedTemplateId('custom');
+    setGroupTab('custom');
     setPackageName('');
     setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
@@ -9954,6 +9980,17 @@ function PackagePurchaseFromTemplateDialog({
   const selectTreatmentType = (t: TreatmentType | '') => {
     setTreatmentType(t);
     if (selectedTemplateId === 'custom') setRefPriceTouched(false);
+  };
+
+  // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 그룹 탭 전환.
+  //   커스텀 → applyCustom(). 정찰가(기준)/공식 패키지 → 이미 그룹 내 항목이 선택돼 있으면 유지,
+  //   아니면 그룹 첫 항목을 applyTemplate 로 자동 채움(기존 탭 클릭=자동선택 동선 무회귀, AC-3).
+  const selectPkgGroup = (g: PkgGroupTab) => {
+    setGroupTab(g);
+    if (g === 'custom') { applyCustom(); return; }
+    const inGroup = g === 'standard' ? oneTimeTemplates : officialTemplates;
+    const alreadyInGroup = selectedTemplateId !== 'custom' && inGroup.some((t) => t.id === selectedTemplateId);
+    if (!alreadyInGroup && inGroup.length > 0) applyTemplate(inGroup[0]);
   };
 
   const submit = async () => {
@@ -10065,30 +10102,86 @@ function PackagePurchaseFromTemplateDialog({
         </div>
 
         <div className="space-y-2 text-sm">
-          {/* 템플릿 선택 → 자동 채움 */}
+          {/* 패키지 템플릿 선택 → 자동 채움 */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
-            {/* T-20260708-foot-PKG-POPUP-TAB-COMPACT: flex-wrap 버튼 나열 → shadcn Tabs 전환.
-                커스텀 탭이 최앞(첫 번째) — T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT 규약 유지.
-                탭 전환 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-1/회귀 가드). */}
-            <Tabs
-              value={selectedTemplateId}
-              onValueChange={(v) => {
-                if (v === 'custom') { applyCustom(); return; }
-                const t = templates.find((x) => x.id === v);
-                if (t) applyTemplate(t);
-              }}
-            >
-              <TabsList className="flex flex-wrap h-auto w-full justify-start gap-1 p-1">
-                <TabsTrigger value="custom" data-testid="pkg-tab-custom" className="h-7 px-2.5 text-xs">
-                  커스텀
-                </TabsTrigger>
-                {templates.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id} data-testid={`pkg-tab-${t.id}`} className="h-7 px-2.5 text-xs">
-                    {t.name}
-                  </TabsTrigger>
-                ))}
+            {/* T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 개별 패키지명 나열 → /packages 관리 3그룹으로 재배치.
+                상단 탭 = 정찰가(기준) / 공식 패키지 / 커스텀 (라벨·순서 /packages Sheet 와 동일).
+                개별 패키지(12/24회권 등)는 해당 그룹 탭 내부 pill 로 선택(누락 없음, AC-2).
+                탭 전환·항목 선택 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-3 회귀 가드).
+                (선행 배포 PKG-POPUP-TAB-COMPACT(41dc6380)의 shadcn Tabs 위에 그룹핑만 얹음.) */}
+            <Tabs value={groupTab} onValueChange={(v) => selectPkgGroup(v as PkgGroupTab)}>
+              <TabsList className="w-full">
+                <TabsTrigger value="standard" data-testid="pkg-group-standard" className="flex-1 h-7 text-xs">정찰가(기준)</TabsTrigger>
+                <TabsTrigger value="official" data-testid="pkg-group-official" className="flex-1 h-7 text-xs">공식 패키지</TabsTrigger>
+                <TabsTrigger value="custom" data-testid="pkg-group-custom" className="flex-1 h-7 text-xs">커스텀</TabsTrigger>
               </TabsList>
+
+              {/* 그룹1 — 정찰가(기준): 시술유형별 1회 정상가 참조(/packages 탭1 동일 개념) + 1회성 패키지 선택 pill */}
+              <TabsContent value="standard" className="mt-2 space-y-2">
+                <div className="rounded-lg border border-teal-100 bg-teal-50/30 p-2 space-y-1" data-testid="pkg-group-standard-refprices">
+                  <div className="text-[11px] font-semibold text-teal-800">시술유형별 1회 정상가 (정찰가 기준)</div>
+                  {stdPrices.available ? (
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                      {TREATMENT_TYPES.map((t) => (
+                        <div key={t} className="flex justify-between">
+                          <span className="text-gray-500">{treatmentTypeLabel(t)}</span>
+                          <span className="tabular-nums text-gray-700">{stdPrices.map[t] != null ? formatAmount(stdPrices.map[t]!) : '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">정찰가 기준표 미설정 — [패키지 관리 &gt; 정찰가(기준)] 탭에서 등록</div>
+                  )}
+                </div>
+                {oneTimeTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {oneTimeTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`pkg-tab-${t.id}`}
+                        onClick={() => applyTemplate(t)}
+                        className={cn2(
+                          'h-7 rounded-md border px-2.5 text-xs transition',
+                          selectedTemplateId === t.id ? 'border-sage-600 bg-sage-50 text-sage-700 font-medium' : 'border-gray-200 hover:bg-gray-50',
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">1회성 패키지 없음 — 아래에서 직접 조합하세요</div>
+                )}
+              </TabsContent>
+
+              {/* 그룹2 — 공식 패키지: 다회권 템플릿(12/24/36/48회권, 레이저류 등) 선택 pill */}
+              <TabsContent value="official" className="mt-2">
+                {officialTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {officialTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`pkg-tab-${t.id}`}
+                        onClick={() => applyTemplate(t)}
+                        className={cn2(
+                          'h-7 rounded-md border px-2.5 text-xs transition',
+                          selectedTemplateId === t.id ? 'border-sage-600 bg-sage-50 text-sage-700 font-medium' : 'border-gray-200 hover:bg-gray-50',
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">공식 패키지 없음 — 커스텀으로 직접 입력하세요</div>
+                )}
+              </TabsContent>
+
+              {/* 그룹3 — 커스텀: 아래 항목 직접 조합 */}
+              <TabsContent value="custom" className="mt-2">
+                <div className="text-[11px] text-muted-foreground">아래 항목(레이저·포돌로게·수액·체험권 등)을 직접 조합해 커스텀 패키지를 구성하세요.</div>
+              </TabsContent>
             </Tabs>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>

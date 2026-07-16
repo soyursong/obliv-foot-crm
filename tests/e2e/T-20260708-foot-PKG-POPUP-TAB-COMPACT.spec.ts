@@ -67,12 +67,14 @@ test.describe('T-20260708-foot-PKG-POPUP-TAB-COMPACT', () => {
   test('시나리오 2(AC-1/AC-2/AC-3): 커스텀 탭 최앞(CUSTOMMENU-FRONT) + 컴팩트 렌더 클래스 축소', () => {
     const dlg = dialogSlice();
 
-    // 커스텀 탭이 templates.map 보다 최앞(첫 번째) — CUSTOMMENU-FRONT 규약 유지
+    // NOTE(T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP): 상단 탭이 개별 패키지명 flat 나열 →
+    //   /packages 관리 3그룹(정찰가(기준)/공식 패키지/커스텀)으로 재배치됨. 이에 따라 이 다이얼로그의
+    //   top-tab CUSTOMMENU-FRONT(커스텀 최앞) 규약은 3그룹 순서(커스텀 최후미)로 대체됨.
+    //   개별 패키지 선택 자체는 그룹 탭 내부 pill 로 유지(누락 없음) — 개별 pill 의 CUSTOMMENU-FRONT 는
+    //   커스텀 그룹 탭 자체가 담당. shadcn Tabs 전환·커스텀 탭 존재는 그대로 회귀 가드로 유지.
     const customTabIdx = dlg.indexOf('value="custom"');
-    const templatesMapIdx = dlg.indexOf('templates.map(');
     expect(customTabIdx, 'AC-1: 커스텀 탭(value="custom") 존재').toBeGreaterThan(-1);
-    expect(templatesMapIdx, 'AC-1: 템플릿 탭 렌더(templates.map) 존재').toBeGreaterThan(-1);
-    expect(customTabIdx, 'CUSTOMMENU-FRONT: 커스텀 탭이 템플릿 목록보다 최앞').toBeLessThan(templatesMapIdx);
+    expect(dlg.includes('data-testid="pkg-group-custom"'), '3GROUP: 커스텀 그룹 탭 존재').toBe(true);
     expect(dlg.includes('커스텀'), 'AC-1: 커스텀 탭 라벨 유지').toBe(true);
 
     // AC-2 컴팩트: 카드 패딩 p-3 → p-2, 섹션 간격 space-y-2 → space-y-1.5

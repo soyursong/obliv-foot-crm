@@ -8,8 +8,13 @@
  *       상담내역에서 업로드한 영수증은 read-only 뷰어로 표시
  *
  * ★하드가드(§3 GO_WARN 사유 — CRITICAL): 영수증 업로드 = 결제 기록 생성 write 경로.
- *   ReceiptUploadSection의 package_payments.insert + packages.paid_amount update 는 절대 전역 삭제 금지.
+ *   package_payments.insert + packages.paid_amount update 는 절대 전역 삭제 금지.
  *   사라지면 패키지 결제가 일마감(Closing)·매출(SalesDailyTab) 집계에서 누락됨.
+ *   ※ T-20260716-foot-CHART2-S3GUARD-WRITEPATH-REPOINT: 이 write 경로는
+ *     T-20260714 DAYCLOSE-MANUAL-PAY 리팩터로 recordManualPayment(src/lib/manualPaymentWritePath.ts)
+ *     정본 SSOT 로 추출·이동됨. ReceiptUploadSection(CustomerChartPage.tsx)은 그 SSOT를 호출.
+ *     → S3 가드는 write 경로 실거처(WRITE_PATH)에서 insert/paid_amount 를, CHART_PAGE에서
+ *       호출 배선(recordManualPayment)·영수증 식별 memo·컴포넌트 존속을 단언한다(커버리지 불변).
  *
  * 본 스펙은 auth-free 정적 소스 가드(unit 프로젝트). DISPLAY-ONLY 변경이므로
  * write 경로 보존 + 표시 필터 적용을 소스 레벨에서 결정적으로 단언한다.
@@ -23,23 +28,34 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CHART_PAGE = path.resolve(__dirname, '../../src/pages/CustomerChartPage.tsx');
+// T-20260716-foot-CHART2-S3GUARD-WRITEPATH-REPOINT: package_payments write 경로 실거처.
+//   recordManualPayment 로 추출·이동(T-20260714 DAYCLOSE-MANUAL-PAY). S3 CRITICAL 가드가 여기서 읽음.
+const WRITE_PATH = path.resolve(__dirname, '../../src/lib/manualPaymentWritePath.ts');
 
 function src(): string {
   return readFileSync(CHART_PAGE, 'utf-8');
+}
+function writePathSrc(): string {
+  return readFileSync(WRITE_PATH, 'utf-8');
 }
 
 test.describe('T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE — 영수증·수납내역 표시 재구성', () => {
   // ── 시나리오 3 (회귀 가드, CRITICAL): 영수증 업로드 write 경로 보존 ───────────
   // 일마감/매출 집계는 payments·package_payments 행을 직접 SELECT → write 경로가
   // 살아있어야 패키지 결제가 집계에 반영된다. 이 단언이 깨지면 CRITICAL.
-  test('S3-가드: ReceiptUploadSection write 경로(package_payments.insert + paid_amount update) 보존', () => {
+  // T-20260716 REPOINT: write 경로가 recordManualPayment(WRITE_PATH)로 이동 →
+  //   insert/paid_amount 는 WRITE_PATH에서, 호출 배선·memo·컴포넌트는 CHART_PAGE에서 단언.
+  //   (억지 green 아님 — write 경로가 실제로 삭제되면 (a)(c)가, 배선이 끊기면 (b)가 여전히 RED)
+  test('S3-가드: 패키지결제 write 경로(package_payments.insert + paid_amount update) 보존 — recordManualPayment SSOT', () => {
     const s = src();
-    // (a) package_payments INSERT 경로 존속
-    expect(s).toContain("from('package_payments').insert");
-    // (b) ReceiptUploadSection 내 패키지 결제 INSERT memo 라벨 존속 (요청 #1 식별키)
+    const wp = writePathSrc();
+    // (a) package_payments INSERT 경로 존속 — 정본 write-path SSOT(recordManualPayment)로 이동
+    expect(wp).toContain("from('package_payments').insert");
+    // (b) ReceiptUploadSection 패키지결제가 write-path SSOT를 호출(존속) + 영수증 식별 memo 라벨(요청 #1 식별키)
+    expect(s).toContain('recordManualPayment(');
     expect(s).toContain("memo: '영수증 업로드'");
-    // (c) packages.paid_amount 재집계 update 존속
-    expect(s).toMatch(/from\('packages'\)\.update\(\{\s*paid_amount/);
+    // (c) packages.paid_amount 재집계 update 존속 (write-path SSOT 내)
+    expect(wp).toMatch(/from\('packages'\)\.update\(\{\s*paid_amount/);
     // (d) onPaymentCreated → refreshPayments 콜백 배선 존속 (저장 후 갱신)
     expect(s).toContain('onPaymentCreated={refreshPayments}');
     // (e) ReceiptUploadSection 컴포넌트 자체 존속

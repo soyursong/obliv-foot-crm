@@ -296,6 +296,43 @@ export function useResolveOpinionRequest(clinicId: string | null) {
   });
 }
 
+// ─── 실장 요청 메모 편집 저장 (T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE, AC-2/3) ──
+//   원장 작성창(OpinionEditorDialog)에서 실장(데스크)이 남긴 요청 메모(field_data.staff_memo)를
+//   뷰어→편집 전환. 저장 = 기존 form_submissions.field_data JSONB 재사용 → 신규 컬럼/테이블/enum/RLS = 0 (NO-DDL).
+//   ★authoring 경계(AC-4, BLOCKING): staff_memo 단일 키만 merge-update. 진단/소견 본문·서명·직인·발행(published)
+//     산출물·publish_opinion_doc RPC 절대 미접촉. request_origin='staff_consult' + status='draft' 인 요청에만 write.
+//   ★핸드오프 무결성(AC-3): merge-update(전체 field_data 스프레드 + staff_memo 덮어쓰기) → selected_keys/doc_type/
+//     request_date 등 다른 요청 메타 무변경. 요청 1건=작성창 1회 매핑 불변.
+//   form_submissions_update RLS = clinic member + status<>'published' → draft 갱신 허용.
+export function useUpdateStaffMemo(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { requestId: string; staffMemo: string }) => {
+      if (!input.requestId) throw new Error('요청 정보를 확인할 수 없습니다.');
+      const { data: cur } = await supabase
+        .from('form_submissions')
+        .select('field_data, status')
+        .eq('id', input.requestId)
+        .maybeSingle();
+      const prev = ((cur as { field_data?: Record<string, unknown> } | null)?.field_data ?? {}) as Record<string, unknown>;
+      // 큐 식별키(staff_consult) 요청만 write 대상 — 오분류/타 draft 제출 오염 방지(AC-4).
+      if (prev['request_origin'] !== 'staff_consult') throw new Error('편집 대상 요청이 아닙니다.');
+      const merged = { ...prev, staff_memo: input.staffMemo ?? '' };
+      const { error } = await supabase
+        .from('form_submissions')
+        .update({ field_data: merged })
+        .eq('id', input.requestId)
+        .eq('status', 'draft');   // 경계 가드: 발행(published/voided)된 건은 소급 미변경(AC-4 발행완료 산출물 보호)
+      if (error) throw error;
+      return { ok: true };
+    },
+    onSuccess: () => {
+      // 큐(DocRequestQueue) 즉시 반영 — 편집한 메모가 처리대기 큐 표시에도 동기화(AC-1 표시 일관성).
+      qc.invalidateQueries({ queryKey: ['opinion_request_queue', clinicId] });
+    },
+  });
+}
+
 // ─── 큐 행 임상 컬럼(오늘시술/처방내역/임상경과) — 최근 medical_chart 스냅샷 (read-only, 방어적) ──
 //   AC-11 9컬럼 중 오늘시술/처방내역/임상경과 보조표시. 조회 실패/컬럼부재여도 큐는 깨지지 않음(빈 맵 폴백).
 //   T-20260620-foot-CHART2-DOC-REQUEST-INTEGRATION (AC-2): 처방내역=medical_charts.prescription_items(JSONB)

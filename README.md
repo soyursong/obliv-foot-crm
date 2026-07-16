@@ -82,6 +82,10 @@ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.proname='<fn>
 - 근거: migration_ledger_reconciliation.md Case H(scalp) + Case I(body) — pre-impl 가설이 prod 실측에서 반증된 arity-shadow/overload 혼동 실증 2건.
 - SSOT: `migration_ledger_reconciliation.md` (원칙 정본) / `deploy_flow.md` v2.2 §2-A G0 (게이트).
 
+## 규정·근거 인용
+
+- **급여(건강보험) 관련 계산 로직을 개발할 때는 `docs/citations/` 를 먼저 참조**한다 — 본인부담금 단수처리·환산지수·노인 정액제 등 규정 원문 근거 저장소. 급여 근거 모음: `docs/citations/health_insurance.md`.
+
 ## 설계문서
 
 - 풋센터_CRM설계.md — 인터뷰 기반 요구사항
