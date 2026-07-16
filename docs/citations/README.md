@@ -45,7 +45,7 @@
 
 | id | 출처기관 | 문서·조항 | 결론 요지 | retrieved_at | 관련 티켓 |
 |----|----------|-----------|-----------|--------------|-----------|
-| [CIT-2026-001](./CIT-2026-001-nhis-enforcement-decree-table2.md) | 법제처 | 국민건강보험법 시행령 별표2 제19조 제1항 | 100원 미만 금액은 제외(절사) | 2026-07-14 | COPAY-ROUND-REG-VERIFY, HIRA-ELDERLY-ROUNDING-CONFIRM |
+| [CIT-2026-001](./CIT-2026-001-nhis-enforcement-decree-table2.md) | 법제처/복지부/심평원 | 시행령 제22조1항→복지부 고시 [verified] · 별표2 제19조1항 verbatim [⚠pending_lawgokr] | 100원 미만 절사 (결론 verified·불변) | 2026-07-14 | COPAY-ROUND-REG-VERIFY, HIRA-ELDERLY-ROUNDING-CONFIRM, CIT-BYPYO2-VERBATIM-RECONCILE |
 | [CIT-2026-002](./CIT-2026-002-hira-outpatient-copay-standard.md) | 건강보험심사평가원 | 외래 본인부담기준(본인부담금 산정) | 100원 미만 절사 | 2026-07-14 | COPAY-ROUND-REG-VERIFY, HIRA-ELDERLY-ROUNDING-CONFIRM |
 
 ## 5. 토픽 문서
