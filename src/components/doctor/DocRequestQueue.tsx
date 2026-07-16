@@ -391,7 +391,9 @@ function DocRequestRow({
       <td className="px-2 py-1.5 text-foreground/80" data-testid="docreq-cell-items">
         <span className="block max-w-[16rem] truncate" title={itemLabels}>{itemLabels || '—'}</span>
         {r.staffMemo && (
-          /* Q2 fallback(non-blocking): 직원 서류요청 메모 = 단방향 read-display(양방향 편집·외부연동 미구현). */
+          /* AC-1 표시 보장: 실장 요청 메모(field_data.staff_memo)가 있으면 큐에서 항상 노출.
+             T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE: 편집은 '작성하기' 작성창(OpinionEditorDialog)에서 수행되며,
+             저장 시 큐 invalidate(useUpdateStaffMemo)로 이 셀도 최신 메모로 동기화(표시 일관성). 셀 자체는 read-display. */
           <span className="mt-0.5 block max-w-[16rem] truncate text-[10px] text-teal-700/80" title={r.staffMemo} data-testid="docreq-cell-memo">메모: {r.staffMemo}</span>
         )}
       </td>
