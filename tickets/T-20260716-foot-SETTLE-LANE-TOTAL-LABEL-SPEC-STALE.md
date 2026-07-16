@@ -4,9 +4,9 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: pass
-deploy_commit: PENDING
-deployed_at: PENDING
-bundle_hash: n/a (test-only, 프로덕션 무변경 — 재배포 불요)
+deploy_commit: 67be8590a3
+deployed_at: 2026-07-16T16:43:39+09:00
+bundle_hash: n/a (test-only, 프로덕션 번들 무변경 — tests/ 비번들 · 재배포 불요)
 db_change: false
 summary: settle-lane 볼드 총액 라벨 '합계'→'수납잔액'(COPAY-BALANCE-SPLIT deployed) relabel 후 stale된 exact:true '합계' assert 교정 + 중복 spec retire. test-only.
 created: 2026-07-16
