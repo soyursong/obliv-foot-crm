@@ -344,6 +344,12 @@ export default defineConfig({
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 진료비 계산서·영수증 신양식(bill_receipt_new) 코드-레벨 불변식
+        //   (AC3 대표자={{receipt_representative}} rebind · AC4 병원 고정정보 · AC5 격리 · fallback field_map).
+        //   src 정적 grep + page.setContent 결정론 렌더. 스펙 자체가 "로그인 불요·결정론적" 선언 → unit 편입.
+        //   (FIX-REQUEST MSG-20260716-003500-sg9r: 미편입 시 desktop-chrome 매치 → auth.setup 기동 →
+        //    TEST_PASSWORD 없는 QA 워크트리 env_missing 실패. unit 편입 + desktop-chrome testIgnore 로 우회.)
+        '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
         // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축(hira_institution_name) 재배선 +
         //   대표자 print 분리(CEO Q2). getHtmlTemplate/bindHtmlTemplate + buildAutoBindValues 순수 함수 —
         //   축 분리·affirmative(silent 폴백 금지)·진료의({{doctor_name}}) 보존 단언. 실기기 렌더는 supervisor 게이트. auth/server 불요.
@@ -367,6 +373,9 @@ export default defineConfig({
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
         '**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts',
+        // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 순수 정적/렌더 unit 스펙 — desktop-chrome(auth 의존)
+        //   에서 제외해 `npx playwright test <file>` 무-project 실행 시 setup 미기동. (FIX-REQUEST MSG-20260716-003500-sg9r)
+        '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
         // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY: unit 전용 setContent 렌더 spec.
         //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
         //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.

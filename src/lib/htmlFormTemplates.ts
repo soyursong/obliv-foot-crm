@@ -2008,6 +2008,219 @@ const KOH_RESULT_HTML = `
 </div>
 `;
 
+// ─── 진료비 계산서·영수증 신양식 (T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN) ───
+//
+// 총괄(김주연) 컨펌 시안 F0BHY545XTJ = 국민건강보험 요양급여의 기준에 관한 규칙 [별지 제6호서식]
+//   기반 도수센터(obliv-body-crm) 스타일 재디자인. 별지 제6호서식 draft 레이아웃을 이 라이브 상수로
+//   승격(복제) + foot SSOT 바인딩으로 배선. ⚠ draft 모듈을 import/참조하지 않고 자립 상수로 복제
+//   (라이브-draft 런타임 커플링 0 — FEEDOC 격리 불변식 유지).
+//
+// ⚠ 격리 제약(AC5): 기존 bill_receipt(BILL_RECEIPT_HTML) 템플릿/렌더 경로 완전 무접촉. 이 상수는
+//   신규 form_key='bill_receipt_new' 전용이며 기존 5칼럼 양식과 독립. 기존 출력 회귀 0.
+//
+// 바인딩(전량 기존 foot SSOT 재사용 — AC6 금액 bind 회귀 0):
+//   patient_name/patient_birthdate/record_no  = loadAutoBindContext (실 환자 레코드, AC2 자동)
+//   receipt_representative                     = clinics.representative_name(=박영진, 개설자 고정) — AC3 정정
+//     ⚠ [2026-07-15T17:33 AC3 정정, reporter U0ATDB587PV 명시 재지시 MSG-mq8y] 진료비 계산서·영수증은
+//       의료법상 진료의 축 아닌 **개설자(대표자) 기준**. 前 스펙(대표자={{doctor_name}} 진료의)은 폐기(policy_superseded).
+//       값소스 = clinics.representative_name(canonical, body CLINIC-REPNAME 패턴 포트) → {{receipt_representative}} 토큰.
+//       진단서·처방전 등 진료의 축 서류는 {{doctor_name}} 무접촉(축 오염 금지). 도장(법인/원장직인)은 sibling
+//       T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT(P1)이 co-deploy — 본 DOCFEE는 대표자 VALUE만 정정.
+//   copayment(본인부담)/insurance_covered(공단부담)/non_covered(비급여)/total_amount(진료비총액)
+//                                             = computeFootBilling + applyBillingFallback (기존 동일)
+//   patient_amount                            = 급여 본인부담금 + 비급여 (공단 제외) — applyBillingFallback
+//                                               신양식 전용 additive 키. ⑧ 환자부담 총액.
+// 고정 표기(AC4): 진료과목='피부과' · 사업자등록번호='511-60-00988' · 전화번호='02-6956-3438' (리터럴).
+//
+// AC7 B안(T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY, 김주연 총괄 ts 1784020522.027429):
+//   총 합계(환자 실부담) = 급여 본인부담금 + 비급여. 공단부담금은 합계에서만 제외, 항목·칸·금액은 표시 유지.
+//   → 별지 제6호 구조가 B안을 자연 구현: ⑦ 공단부담 총액(insurance_covered)은 별도 라인 표시 유지,
+//     ⑧ 환자부담 총액(patient_amount = 본인+비급여)이 공단을 제외한 실 청구 합계. 공단 열/합계 ②도 표시.
+const BILL_RECEIPT_NEW_HTML = `
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .rn-wrap {
+    font-family: 'Malgun Gothic','Apple SD Gothic Neo',NanumGothic,sans-serif;
+    font-size: 7.3pt; color:#000; background:#fff;
+    padding: 6mm 8mm; width: 194mm; min-height: 285mm;
+  }
+  .rn-legal { font-size:7pt; margin-bottom:1mm; }
+  .rn-title { text-align:center; font-size:14pt; font-weight:bold; letter-spacing:2px; padding:2px 0 4px; }
+  .rn-title .chk { font-size:8.5pt; font-weight:normal; letter-spacing:0; }
+  .rn-wrap table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  .rn-wrap td, .rn-wrap th { border:1px solid #000; padding:1px 3px; vertical-align:middle; font-size:7.3pt; line-height:1.12; }
+  .rn-wrap th { background:#f2f2f2; font-weight:bold; text-align:center; }
+  .rn-lbl { background:#f7f7f7; text-align:center; white-space:nowrap; }
+  .rn-sub { font-size:6.4pt; color:#333; }
+  .rn-num { text-align:right; font-variant-numeric:tabular-nums; padding-right:4px; }
+  .rn-grp { background:#f7f7f7; text-align:center; font-size:6.8pt; width:16px; letter-spacing:1px; }
+  .rn-flex { display:flex; gap:0; align-items:stretch; }
+  .rn-left { flex:0 0 62%; }
+  .rn-right { flex:1; margin-left:-1px; }
+  .rn-right table { height:100%; }
+  @media print {
+    @page { size:A4 portrait; margin:0; }
+    .rn-wrap { width:210mm; padding:5mm 7mm; }
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+<div class="rn-wrap">
+  <div class="rn-legal">■ 국민건강보험 요양급여의 기준에 관한 규칙 [별지 제6호서식] &lt;개정 2024. 7. 18.&gt;</div>
+  <div class="rn-title"><span class="chk">[■]외래 [ ]입원 ([ ]퇴원 [ ]중간)</span> 진료비 계산서ㆍ영수증</div>
+
+  <table style="margin-bottom:-1px;">
+    <colgroup><col style="width:13%"><col style="width:20%"><col style="width:11%"><col style="width:19%"><col style="width:10%"><col style="width:15%"><col style="width:12%"></colgroup>
+    <tbody>
+      <tr>
+        <td class="rn-lbl">환자등록번호</td><td>{{record_no}}</td>
+        <td class="rn-lbl">환자 성명</td>
+        <td>{{patient_name}}<br><span class="rn-sub">생년월일 {{patient_birthdate}}</span></td>
+        <td class="rn-lbl">진료기간</td><td>{{visit_date}}</td>
+        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[ ]야간 [ ]공휴일</td>
+      </tr>
+      <tr>
+        <td class="rn-lbl">진료과목</td><td>피부과</td>
+        <td class="rn-lbl" style="font-size:6.8pt;">질병군(DRG)번호</td><td></td>
+        <td class="rn-lbl">병실</td><td></td>
+        <td class="rn-lbl" style="font-size:6.4pt;">환자구분<br>건강보험</td>
+      </tr>
+      <tr>
+        <td class="rn-lbl">영수증번호</td><td colspan="6" style="text-align:left;">{{receipt_no}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rn-flex">
+    <div class="rn-left">
+      <table>
+        <colgroup><col style="width:16px"><col><col style="width:16%"><col style="width:16%"><col style="width:15%"><col style="width:16%"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2" rowspan="3">항목</th>
+            <th colspan="3">급여</th>
+            <th rowspan="3">비급여</th>
+          </tr>
+          <tr><th colspan="2">일부 본인부담</th><th rowspan="2">전액<br>본인부담</th></tr>
+          <tr><th>본인부담금</th><th>공단부담금</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="rn-grp" rowspan="18">기<br>본<br>항<br>목</td><td>진찰료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>입원료 (1인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>입원료 (2·3인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>입원료 (4인실 이상)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>식대</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>투약 및 조제료 (행위료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>투약 및 조제료 (약품비)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>주사료 (행위료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>주사료 (약품비)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>마취료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>처치 및 수술료</td><td class="rn-num">{{copayment}}</td><td class="rn-num">{{insurance_covered}}</td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>검사료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>영상진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>방사선치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>치료재료대</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>재활 및 물리치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>정신요법료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>전혈 및 혈액성분제제료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td class="rn-grp" rowspan="12">선<br>택<br>항<br>목</td><td>CT 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>MRI 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>PET 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>초음파 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>보철ㆍ교정료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>제증명수수료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>선별급여</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>65세 이상 등 정액</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>정액수가(요양병원)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>정액수가(완화의료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>질병군 포괄수가</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>기타</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{non_covered}}</td></tr>
+          <tr>
+            <td class="rn-lbl" colspan="2" style="font-weight:bold;">합계</td>
+            <td class="rn-num" style="font-weight:bold;">① {{copayment}}</td>
+            <td class="rn-num" style="font-weight:bold;">② {{insurance_covered}}</td>
+            <td class="rn-num" style="font-weight:bold;">③ </td>
+            <td class="rn-num" style="font-weight:bold;">④ {{non_covered}}</td>
+          </tr>
+          <tr>
+            <td class="rn-lbl" colspan="2">상한액 초과금 ⑤</td>
+            <td class="rn-num" colspan="4" style="text-align:left;"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rn-right">
+      <table>
+        <colgroup><col style="width:56%"><col></colgroup>
+        <tbody>
+          <tr><th colspan="2">금액산정내용</th></tr>
+          <tr><td>⑥ 진료비 총액<br>(①+②+③+④)</td><td class="rn-num" style="font-weight:bold;">{{total_amount}}</td></tr>
+          <tr><td>⑦ 공단부담 총액<br>(②+⑤)</td><td class="rn-num">{{insurance_covered}}</td></tr>
+          <tr><td>⑧ 환자부담 총액<br>(①-⑤)+③+④</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
+          <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num"></td></tr>
+          <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
+          <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;"></span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;"></span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;"></span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;"></span></td></tr>
+          <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num"></td></tr>
+          <tr><td>현금영수증 (&nbsp;&nbsp;&nbsp;)</td><td></td></tr>
+          <tr><td>신분확인번호</td><td></td></tr>
+          <tr><td>현금영수증 승인번호</td><td></td></tr>
+          <tr><td colspan="2" style="font-size:6.6pt; color:#555; text-align:left;">* 요양기관 임의활용공간</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <table style="margin-top:2mm;">
+    <colgroup><col style="width:14%"><col><col style="width:9%"><col style="width:12%"><col style="width:9%"><col style="width:16%"></colgroup>
+    <tbody>
+      <tr>
+        <td class="rn-lbl">요양기관 종류</td>
+        <td colspan="5" style="text-align:left;">[■]의원급ㆍ보건기관 &nbsp; [ ]병원급 &nbsp; [ ]종합병원 &nbsp; [ ]상급종합병원</td>
+      </tr>
+      <tr>
+        <td class="rn-lbl">사업자등록번호</td><td>511-60-00988</td>
+        <td class="rn-lbl">상호</td><td>{{clinic_name}}</td>
+        <td class="rn-lbl">전화번호</td><td>02-6956-3438</td>
+      </tr>
+      <tr>
+        <td class="rn-lbl">사업장 소재지</td><td colspan="3">{{clinic_address}}</td>
+        <td class="rn-lbl">대표자</td>
+        <td style="text-align:left;">{{receipt_representative}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="text-align:center; font-size:9pt; margin-top:3mm; letter-spacing:1px;">{{issue_date}}</div>
+
+  <table style="margin-top:1.5mm;">
+    <colgroup><col style="width:68%"><col></colgroup>
+    <thead>
+      <tr><th>항목별 설명</th><th>일반사항 안내</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="vertical-align:top; text-align:left; font-size:6.2pt; line-height:1.32; padding:2px 4px;">
+          <div>1. 일부 본인부담: 일반적으로 다음과 같이 본인부담률을 적용하나, 요양기관 지역, 요양기관의 종별, 환자 자격, 선별급여 여부, 병실종류 등에 따라 달라질 수 있습니다.</div>
+          <div style="padding-left:6px;">- 외래 본인부담률: 요양기관 종별에 따라 30% ~ 60% 등</div>
+          <div style="margin-top:1px;">2. 전액 본인부담: 건강보험(의료급여)에서 금액을 정하고 있으나 진료비 전액을 환자 본인이 부담합니다.</div>
+          <div style="margin-top:1px;">3. 상한액 초과금: 본인부담상한액의 최고 금액을 초과하는 본인부담금이 발생한 경우 공단이 부담하는 초과분 중 사전 정산하는 금액을 말합니다.</div>
+        </td>
+        <td style="vertical-align:top; text-align:left; font-size:6.2pt; line-height:1.32; padding:2px 4px;">
+          <div>1. 이 계산서ㆍ영수증에 대한 세부내용은 요양기관에 요구하여 제공받을 수 있습니다.</div>
+          <div style="margin-top:1px;">2. 환자가 전액 부담한 비용과 비급여로 부담한 비용의 타당성 여부를 건강보험심사평가원(☏1644-2000)에 확인 요청하실 수 있습니다.</div>
+          <div style="margin-top:1px;">3. 계산서ㆍ영수증은 「소득세법」에 따른 의료비 공제신청 또는 「조세특례제한법」에 따른 현금영수증 공제신청에 사용할 수 있습니다.</div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="text-align:right; font-size:6.4pt; color:#555; margin-top:1mm;">210㎜×297㎜[백상지 80g/㎡]</div>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -2029,6 +2242,9 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   rx_standard: RX_STANDARD_HTML,
   // T-20260517-foot-FORM-SCREENSHOT-FIX: 진료비 계산서·영수증 HTML 신규
   bill_receipt: BILL_RECEIPT_HTML,
+  // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 진료비 계산서·영수증 신양식(별지 제6호서식, 총괄 시안 F0BHY545XTJ).
+  //   기존 bill_receipt 무접촉 격리(AC5) — 신규 form_key 전용.
+  bill_receipt_new: BILL_RECEIPT_NEW_HTML,
   // T-20260522-foot-INS-DOC-PRINT: 보험청구서
   ins_claim_form: INS_CLAIM_FORM_HTML,
 };
