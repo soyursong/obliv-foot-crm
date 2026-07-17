@@ -107,12 +107,28 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       }
     : null;
 
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item3): 발급(작성하기) 완료 시 화면 정체 제거 → 대기 목록의 다음 환자로 자동 전환.
+  //   ★트랜잭션-then-navigate: onPublished 는 OpinionEditorDialog.handlePublish 의 발행(publish_opinion_doc) 성공 직후에만
+  //     호출된다(발행 실패 시 미호출 → 이동 없음, 현재 화면 유지). 즉 '저장 성공 확정 후에만 이동'(AC-4) 이 구조적으로 보장됨.
+  //   다음 환자 = 대기(rows) 목록에서 방금 발행한 active 다음 행 우선, 없으면 남은 대기의 첫 행(위로 되돌아감).
+  //     남은 대기가 없으면 dialog 닫고 목록 복귀(AC-3 엣지). resolve invalidate 전에 rows 스냅샷으로 대상 확정(레이스 방지).
   const handlePublished = async () => {
     if (!active) return;
+    const currentIdx = rows.findIndex((r) => r.id === active.id);
+    const nextRow =
+      (currentIdx >= 0 ? rows.slice(currentIdx + 1).find(Boolean) : undefined) ??
+      rows.find((r) => r.id !== active.id) ??
+      null;
     try {
       await resolveMut.mutateAsync({ requestId: active.id, reason: 'published' });
     } catch {
       // resolve 실패해도 발행본은 정상 생성됨 — 다음 폴링/새로고침 시 재시도 가능. 사용자 차단 없음.
+    }
+    // 발행 성공 확정 후 화면 전환. 다음 대기 환자 있으면 재바인딩(작성창 유지), 없으면 목록 복귀.
+    if (nextRow) {
+      setActive(nextRow); // bindKey 변경 → OpinionEditorDialog 바인딩 리셋(다음 환자 prefill/메모 로드)
+    } else {
+      setDialogOpen(false); // 다음 대기 환자 없음 → 작성창 닫고 목록 화면 복귀
     }
   };
 
