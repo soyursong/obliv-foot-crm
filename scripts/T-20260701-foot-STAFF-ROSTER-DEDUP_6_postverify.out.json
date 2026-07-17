@@ -1,0 +1,34 @@
+{
+  "verified_at": "2026-07-17T18:56:59.449Z",
+  "inbound_total_after": 0,
+  "reassigned_ok": true,
+  "all_pass": true,
+  "snapshot": {
+    "dup_row": {
+      "id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+      "name": "정혜인 [중복정리 2026-07-18]",
+      "active": false,
+      "user_id": null
+    },
+    "canon_row": {
+      "id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+      "name": "정연주",
+      "active": true,
+      "user_id": "3bd596ca-036b-423c-a4f6-3cbab8083133"
+    },
+    "ref_duty_roster": 0,
+    "ref_package_sessions": 0,
+    "ref_room_assignments": 0,
+    "ref_customers": 0,
+    "reassigned_to_canon": [
+      {
+        "id": "215c9b5b-e5da-4207-81ec-406a5568aed1",
+        "staff_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566"
+      },
+      {
+        "id": "bd2ff40c-f5a1-4c0f-af96-266cf0d30311",
+        "staff_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566"
+      }
+    ]
+  }
+}

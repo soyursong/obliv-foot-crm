@@ -1,0 +1,10 @@
+import { query } from './lib/foot_migration_ledger.mjs';
+const nowKst = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }) + ' KST';
+console.log(`── AC-3 FRESHNESS SOAK VERIFY — ${nowKst()} ──\n`);
+const out = {};
+out['rows_total']       = await query("SELECT count(*)::int AS n FROM public.staff_attendance;");
+out['sync_freshness']   = await query("SELECT max(synced_at) AS last_sync, (now()-max(synced_at))::text AS age FROM public.staff_attendance;");
+out['today_present']    = await query("SELECT count(*)::int AS present FROM public.staff_attendance WHERE date=(now() AT TIME ZONE 'Asia/Seoul')::date AND status='present';");
+out['cron_runs_6h']     = await query("SELECT status, count(*)::int n, min(start_time)::text AS first, max(start_time)::text AS last FROM cron.job_run_details d JOIN cron.job j ON j.jobid=d.jobid WHERE j.jobname='foot-attendance-sync' AND start_time > now()-interval '6 hours' GROUP BY status ORDER BY status;");
+out['cron_last5']       = await query("SELECT start_time::text, status, left(return_message,50) msg FROM cron.job_run_details d JOIN cron.job j ON j.jobid=d.jobid WHERE j.jobname='foot-attendance-sync' ORDER BY start_time DESC LIMIT 5;");
+console.log(JSON.stringify(out, null, 2));

@@ -1,0 +1,48 @@
+{
+  "snapshot": {
+    "dup_rows": [
+      {
+        "id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+        "name": "정혜인",
+        "active": false,
+        "user_id": null,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      }
+    ],
+    "dup_by_name": [
+      {
+        "id": "5f141f76-7f72-4560-8a67-bbcdf4938cad",
+        "active": false,
+        "user_id": null
+      }
+    ],
+    "canon_rows": [
+      {
+        "id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+        "name": "정연주",
+        "active": true,
+        "user_id": "3bd596ca-036b-423c-a4f6-3cbab8083133"
+      }
+    ],
+    "ref_room_assignments": 2,
+    "ref_room_assignment_ids": [
+      "215c9b5b-e5da-4207-81ec-406a5568aed1",
+      "bd2ff40c-f5a1-4c0f-af96-266cf0d30311"
+    ],
+    "ref_duty_roster": 0,
+    "ref_package_sessions": 0,
+    "ref_customers": 0
+  },
+  "verdict": {
+    "generated_at": "2026-07-17T18:49:53.597Z",
+    "dup_user_id": null,
+    "canon_user_id": "3bd596ca-036b-423c-a4f6-3cbab8083133",
+    "room_assignment_ids": [
+      "215c9b5b-e5da-4207-81ec-406a5568aed1",
+      "bd2ff40c-f5a1-4c0f-af96-266cf0d30311"
+    ],
+    "inbound_total": 2,
+    "all_guards_pass": true,
+    "next": "GO — apply DO block"
+  }
+}

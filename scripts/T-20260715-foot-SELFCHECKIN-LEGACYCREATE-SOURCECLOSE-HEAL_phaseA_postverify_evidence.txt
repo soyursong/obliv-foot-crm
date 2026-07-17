@@ -1,0 +1,15 @@
+{
+  "phaseA_sourceclose": {
+    "anon_exec": false,
+    "auth_exec": false,
+    "service_exec": false,
+    "postgres_exec": true,
+    "has_deprecated_comment": true
+  },
+  "sourceclose_unlinked_confirmed": 0,
+  "phaseB_inv1_count": 1,
+  "phaseB_frozen_reservation_status": "confirmed"
+}
+
+Phase A (source close): PASS
+Phase B (heal):         PENDING/FAIL
