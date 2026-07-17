@@ -2030,7 +2030,8 @@ const KOH_RESULT_HTML = `
 //                                             = computeFootBilling + applyBillingFallback (기존 동일)
 //   patient_amount                            = 급여 본인부담금 + 비급여 (공단 제외) — applyBillingFallback
 //                                               신양식 전용 additive 키. ⑧ 환자부담 총액.
-// 고정 표기(AC4): 진료과목='피부과' · 사업자등록번호='511-60-00988' · 전화번호='02-6956-3438' (리터럴).
+// 고정 표기(AC4): 진료과목='피부과' · 사업자등록번호='457-23-00938' · 전화번호='02-6956-3438' (리터럴).
+//   (T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 511-60-00988 → 457-23-00938 갱신)
 //
 // AC7 B안(T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY, 김주연 총괄 ts 1784020522.027429):
 //   총 합계(환자 실부담) = 급여 본인부담금 + 비급여. 공단부담금은 합계에서만 제외, 항목·칸·금액은 표시 유지.
@@ -2066,7 +2067,10 @@ const BILL_RECEIPT_NEW_HTML = `
 </style>
 <div class="rn-wrap">
   <div class="rn-legal">■ 국민건강보험 요양급여의 기준에 관한 규칙 [별지 제6호서식] &lt;개정 2024. 7. 18.&gt;</div>
-  <div class="rn-title"><span class="chk">[■]외래 [ ]입원 ([ ]퇴원 [ ]중간)</span> 진료비 계산서ㆍ영수증</div>
+  <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #1: 대제목 위치 정렬 — 별지 제6호서식 표준은 제목이 페이지
+       정중앙, 체크박스([■]외래…)는 좌측 고정. 前: chk+제목을 한 인라인 그룹으로 center → 제목이 우측으로
+       밀림(off-center). chk 를 absolute left 로 흐름 밖에 두어 제목만 full-width 정중앙 정렬. -->
+  <div class="rn-title" style="position:relative;"><span class="chk" style="position:absolute; left:0; top:50%; transform:translateY(-50%);">[■]외래 [ ]입원 ([ ]퇴원 [ ]중간)</span>진료비 계산서ㆍ영수증</div>
 
   <table style="margin-bottom:-1px;">
     <colgroup><col style="width:13%"><col style="width:20%"><col style="width:11%"><col style="width:19%"><col style="width:10%"><col style="width:15%"><col style="width:12%"></colgroup>
@@ -2104,7 +2108,12 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><th>본인부담금</th><th>공단부담금</th></tr>
         </thead>
         <tbody>
-          <tr><td class="rn-grp" rowspan="18">기<br>본<br>항<br>목</td><td>진찰료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #2: 진찰료 급여 본인부담금/공단부담금 컬럼 보완(표시 전용).
+               foot 급여 = 진찰료(초진/재진 진찰료, footBillDetailCategory 기본→진찰료)가 원천이므로 급여 split은
+               진찰료 행에 표기가 정합. 前: 급여 aggregate(copayment/insurance_covered)가 아래 '처치 및 수술료'
+               행에 배치돼 진찰료 칸 공란·처치행 오표기 → 진찰료 행으로 이동(중복표기 방지: 처치행에서는 제거).
+               값 원천=service_charges(Revenue Insurance Split SSOT), 원장 무접촉. 합계 ①/②와 동일값 정합. -->
+          <tr><td class="rn-grp" rowspan="18">기<br>본<br>항<br>목</td><td>진찰료</td><td class="rn-num">{{copayment}}</td><td class="rn-num">{{insurance_covered}}</td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>입원료 (1인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>입원료 (2·3인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>입원료 (4인실 이상)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
@@ -2114,7 +2123,9 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>주사료 (행위료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>주사료 (약품비)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>마취료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
-          <tr><td>처치 및 수술료</td><td class="rn-num">{{copayment}}</td><td class="rn-num">{{insurance_covered}}</td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #2: 급여 split 을 진찰료 행으로 이동(위) → 처치 및 수술료 행은
+               공란 복원. foot 풋케어(처치)는 비급여이므로 급여 본인/공단 표기가 부적합했음. 중복표기 제거. -->
+          <tr><td>처치 및 수술료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>검사료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>영상진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>방사선치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
@@ -2181,7 +2192,8 @@ const BILL_RECEIPT_NEW_HTML = `
         <td colspan="5" style="text-align:left;">[■]의원급ㆍ보건기관 &nbsp; [ ]병원급 &nbsp; [ ]종합병원 &nbsp; [ ]상급종합병원</td>
       </tr>
       <tr>
-        <td class="rn-lbl">사업자등록번호</td><td>511-60-00988</td>
+        <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 갱신 511-60-00988 → 457-23-00938 -->
+        <td class="rn-lbl">사업자등록번호</td><td>457-23-00938</td>
         <td class="rn-lbl">상호</td><td>{{clinic_name}}</td>
         <td class="rn-lbl">전화번호</td><td>02-6956-3438</td>
       </tr>

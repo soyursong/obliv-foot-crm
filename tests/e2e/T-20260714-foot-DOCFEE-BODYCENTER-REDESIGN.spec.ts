@@ -45,12 +45,14 @@ test.describe('DOCFEE 신양식 — AC3 대표자=박영진 rebind + 축 격리'
     expect(body).not.toContain('홍길동'); // 진료의 sentinel 미유입(신양식에 doctor_name 토큰 부재)
   });
 
-  test('AC4: 진료과목=피부과 · 사업자등록번호=511-60-00988 · 전화=02-6956-3438 고정 표기', async ({ page }) => {
+  // T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 511-60-00988 → 457-23-00938 갱신 반영.
+  test('AC4: 진료과목=피부과 · 사업자등록번호=457-23-00938 · 전화=02-6956-3438 고정 표기', async ({ page }) => {
     const tpl = extractNewTemplate().replace(/\{\{[a-z_]+\}\}/g, '샘플');
     await page.setContent(`<!doctype html><html><body>${tpl}</body></html>`, { waitUntil: 'networkidle' });
     const body = await page.locator('body').innerText();
     expect(body).toContain('피부과');
-    expect(body).toContain('511-60-00988');
+    expect(body).toContain('457-23-00938');
+    expect(body).not.toContain('511-60-00988'); // 구 사업자번호 잔존 금지
     expect(body).toContain('02-6956-3438');
     expect(body).toContain('별지 제6호서식');
   });
