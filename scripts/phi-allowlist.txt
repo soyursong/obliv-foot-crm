@@ -26,6 +26,9 @@
 010-?1234-?5678
 \+?82-?10-?1234-?5678
 010-?0000-?0001
+#   REVENUE-SPLIT e2e seed MSISDN (010-0000-6715) — MSIT 비할당 010-0000-xxxx 블록·구조적 합성·실환자 아님.
+#   provenance: tests/e2e/T-20260715-foot-REVENUE-SALESDAILY-INSURANCE-SPLIT-FIX.spec.ts TEST_PHONE. 리뷰 게이트: 실환자값 아님 확인(supervisor QA MSG-20260718-063645-90b6).
+\+?82-?10-?0000-?6715
 #
 # ── (i) schema/contract/cue_card E.164 예시 (합성) ──
 #   문서화된 E.164 표기 예시. 값 자체가 예시용 합성.

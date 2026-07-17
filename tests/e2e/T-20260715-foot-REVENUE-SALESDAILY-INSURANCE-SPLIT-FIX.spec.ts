@@ -34,7 +34,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistS
 // 개원 이전 고정 과거일 → 실 prod 명세와 충돌 0 (완전 격리).
 const SEED_DATE = '2025-01-02';
 const SEED_TS = `${SEED_DATE}T05:00:00.000Z`; // = 14:00 KST, 경계 안전
-const TEST_PHONE = '+821099996715';
+const TEST_PHONE = '+821000006715'; // 010-0000 중간블록 = KR MSIT 비할당 구조적 합성값(비PHI). phi-allowlist permit 등재.
 const TEST_NAME = '[REVENUE-SPLIT] 급여';
 
 // seed 급여 명세 2건 — 불변식 base = copay + insurance + exempt 준수.
