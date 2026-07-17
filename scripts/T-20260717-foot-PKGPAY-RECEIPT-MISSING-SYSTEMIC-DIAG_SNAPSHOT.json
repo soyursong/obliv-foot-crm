@@ -1,0 +1,937 @@
+{
+  "generated_at": "2026-07-17T12:17:00.997Z",
+  "layers": {
+    "L0": 86,
+    "L1": 55,
+    "L2": 40,
+    "L1_resid": 15
+  },
+  "phantom_due_sum": {
+    "L0": 142997000,
+    "L1": 4857000,
+    "L2": 1698000
+  },
+  "signature_payments_active": 40,
+  "snapshot": [
+    {
+      "chart_number": "F-4507",
+      "customer_id": "df380b13-c069-450a-99a3-2c5bd4d1f17b",
+      "customer_name": "최민지",
+      "package_id": "b07ab3dd-9ddd-4a8e-9828-9040c78f1cb6",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "5e42026a-f956-4d96-a84e-0237ecc87b54",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T09:39:11.605184+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T09:37:54.739136+00:00"
+    },
+    {
+      "chart_number": "F-4515",
+      "customer_id": "914472a7-2012-4f42-b4f9-df008b0eefc0",
+      "customer_name": "박경진",
+      "package_id": "54c7f814-7c43-4a4a-a4e0-bdc4764411e3",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "300f3cce-1d07-4f4c-bec8-998f2cee7398",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T02:40:15.273593+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T02:38:17.621925+00:00"
+    },
+    {
+      "chart_number": "F-4517",
+      "customer_id": "6e8c0bdc-61b1-457a-b2fb-a47c641b4d05",
+      "customer_name": "박명대",
+      "package_id": "454d9bd2-cd49-4c81-b852-60a180110be9",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "93215ad5-168a-48cd-ae15-f2a86ce4961f",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T08:04:43.868503+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T07:55:04.061931+00:00"
+    },
+    {
+      "chart_number": "F-4543",
+      "customer_id": "acaee116-fa7d-4347-8dce-6e34697bf264",
+      "customer_name": "박정배",
+      "package_id": "07cf9093-5098-4705-a8d4-b505052813a4",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "6caee740-5b69-47b9-98ef-673a100eea1f",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T01:11:43.444381+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T01:07:16.324779+00:00"
+    },
+    {
+      "chart_number": "F-4548",
+      "customer_id": "d92b129d-07b6-4ade-a875-81fdbcf0bd81",
+      "customer_name": "장영준",
+      "package_id": "2c1948e8-2e42-4f85-93c1-3ecdfa463aa4",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "e455d86d-bd78-4b6f-aacc-1ba15205ebec",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T05:36:34.632411+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T05:29:13.822433+00:00"
+    },
+    {
+      "chart_number": "F-4557",
+      "customer_id": "58707805-e5a0-493d-bbb2-4254d76db1a8",
+      "customer_name": "전진우",
+      "package_id": "a76b990d-cebc-4187-9a64-973ad3ee590d",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "407b2af9-855a-4103-af93-d2f890a4695d",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T09:51:55.820556+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T09:45:57.463301+00:00"
+    },
+    {
+      "chart_number": "F-4561",
+      "customer_id": "f73945e5-7c59-4061-90fd-3b8a0bc761c8",
+      "customer_name": "김명환",
+      "package_id": "c54361d7-0cbd-4ab8-ac41-64f35fc65d44",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "1b1a37ac-f713-4b2e-be15-8f42ad208004",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T09:43:07.394643+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T09:37:19.601001+00:00"
+    },
+    {
+      "chart_number": "F-4583",
+      "customer_id": "fd0ea471-65bf-42d6-91e3-cc85986b51c1",
+      "customer_name": "이숙희",
+      "package_id": "927ad1d7-6a63-4f24-afd6-62817f5696bf",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "d6760056-1f9e-48f1-8745-f9f1f95833a0",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T02:14:15.60624+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T02:11:59.08119+00:00"
+    },
+    {
+      "chart_number": "F-4591",
+      "customer_id": "151fc672-804b-4c18-a379-f19081700cfd",
+      "customer_name": "손경란",
+      "package_id": "26736b38-63ed-41be-a4ff-eb1b465647f1",
+      "package_name": "체험",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "02cb075a-97a5-4f1d-850a-e6d8998ccb95",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T06:20:43.698643+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T06:14:02.217521+00:00"
+    },
+    {
+      "chart_number": "F-4594",
+      "customer_id": "fb193508-89a8-4fb9-a74a-ac5266dc2152",
+      "customer_name": "김희수",
+      "package_id": "3511287e-e29a-4890-92c8-2d6c9c9e8d7c",
+      "package_name": "체험",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "3a75baec-7249-4a9d-b4d2-9b1b06ffc01b",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T02:19:49.905853+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T01:57:10.9993+00:00"
+    },
+    {
+      "chart_number": "F-4595",
+      "customer_id": "0e37c2ca-9dee-478d-966f-75c24c74a337",
+      "customer_name": "김민후",
+      "package_id": "421d806c-6489-4392-9690-47059b4b1e53",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "f58a814f-0f50-4475-9191-7af45e2728d8",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T04:17:10.934498+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T02:09:47.811348+00:00"
+    },
+    {
+      "chart_number": "F-4612",
+      "customer_id": "10fef1ad-6a50-42a2-9a46-15ff9002e0c1",
+      "customer_name": "신나은",
+      "package_id": "670fe3ac-0492-4de0-84e1-3194ca22ca6d",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "976969e3-099c-427b-abf7-291ce9fb492d",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T09:39:36.180836+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T08:58:30.865351+00:00"
+    },
+    {
+      "chart_number": "F-4619",
+      "customer_id": "a618b6d3-9a3a-4b43-8680-69e60917de36",
+      "customer_name": "계상욱",
+      "package_id": "21f95c2a-33e2-48e9-904c-92cd43cfde54",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "5492427e-7c39-49e8-8d19-c5977c1e97f5",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T10:30:11.883296+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T10:28:16.219049+00:00"
+    },
+    {
+      "chart_number": "F-4651",
+      "customer_id": "7a954b50-8e22-4e7e-9f0f-68bf4456365b",
+      "customer_name": "이재이",
+      "package_id": "989f9240-a5ea-49b9-9e77-1a48ca956844",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "de30f38c-283b-43fe-bc99-ecbd344fe334",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T03:01:14.140712+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T02:34:10.641276+00:00"
+    },
+    {
+      "chart_number": "F-4653",
+      "customer_id": "503b1900-8937-4f1c-bbd8-4add036cadf0",
+      "customer_name": "이용근",
+      "package_id": "e906596e-af96-436e-9114-ff92e1326a7f",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "e949758f-11fc-49a6-979c-a4399b702489",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T02:38:42.297102+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T02:34:30.037498+00:00"
+    },
+    {
+      "chart_number": "F-4657",
+      "customer_id": "d9ea41da-25ff-4883-b43a-655f870c07c6",
+      "customer_name": "박진규",
+      "package_id": "20883f3d-90e9-4345-b3cb-82b2630a2f44",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "a1e17676-7204-494b-938b-287e39878391",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T10:48:14.45651+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T10:43:28.047417+00:00"
+    },
+    {
+      "chart_number": "F-4658",
+      "customer_id": "88c2bf9d-441c-4c8b-9330-8ad22b8a51e7",
+      "customer_name": "김성수",
+      "package_id": "047412b6-da2f-4ffc-b14a-7a5cc6834b93",
+      "package_name": "오니코레이저",
+      "total_sessions": 1,
+      "total_amount": 260000,
+      "paid_amount": 260000,
+      "phantom_pkg_due": 260000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "01ef6fa1-c165-43e9-8bb2-33782c26cfe8",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 260000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T05:42:23.602071+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T05:21:50.016324+00:00"
+    },
+    {
+      "chart_number": "F-4680",
+      "customer_id": "803ba0af-425b-4658-96f5-411002092b2c",
+      "customer_name": "전지혜",
+      "package_id": "8c827bf7-42ed-4d49-b53e-1e45c216e682",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "4a17a22d-79db-456f-89e6-5cb3100ea88c",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T05:22:45.490072+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T05:19:53.613371+00:00"
+    },
+    {
+      "chart_number": "F-4704",
+      "customer_id": "8a0d1313-284d-4af3-8eaf-9693929d9462",
+      "customer_name": "이정훈",
+      "package_id": "9c2b3f3d-6065-4a9c-a246-33786d1664dd",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "25924080-0f93-4a1f-bd3b-aed23d35f194",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T02:54:38.061447+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T01:20:27.426158+00:00"
+    },
+    {
+      "chart_number": "F-4716",
+      "customer_id": "5050b17e-07a8-4cfa-bbbc-0717402c6142",
+      "customer_name": "김희정",
+      "package_id": "3f4d3ec6-30e1-47a1-873d-3e798043f240",
+      "package_name": "내성체험권",
+      "total_sessions": 1,
+      "total_amount": 59000,
+      "paid_amount": 59000,
+      "phantom_pkg_due": 59000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "a72eea54-356d-4a02-b001-ba6392de2cdc",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 59000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T04:31:46.49601+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T04:46:51.039137+00:00"
+    },
+    {
+      "chart_number": "F-4718",
+      "customer_id": "786b0f97-6796-48e9-b752-8e64ee613ee5",
+      "customer_name": "최현성",
+      "package_id": "d85bc6cb-b57b-4232-8f8a-780e611712f2",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "9842a0be-12b2-494c-be0d-f024355502f0",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T04:13:00.942222+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T01:53:24.587983+00:00"
+    },
+    {
+      "chart_number": "F-4720",
+      "customer_id": "7e4222ff-7d91-46ee-a13c-a82dcf9b97b2",
+      "customer_name": "원승택",
+      "package_id": "b9938bc9-781f-4cd2-9636-03cdcc333a39",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "168055d3-cecd-4fca-89e2-7356788aac19",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T02:37:15.24485+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T02:28:30.272431+00:00"
+    },
+    {
+      "chart_number": "F-4721",
+      "customer_id": "53e59392-cde7-4e17-a16b-2bdc1f978045",
+      "customer_name": "전옥희",
+      "package_id": "1c48c361-a459-43c4-80b6-61c098e2dbf6",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "d973c7d4-1212-4d6d-8590-cb1fd7920a4f",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T05:51:00.174682+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T05:49:25.890297+00:00"
+    },
+    {
+      "chart_number": "F-4728",
+      "customer_id": "c7a8aa6e-dd77-41dc-b404-f2b06ff81e26",
+      "customer_name": "김호정",
+      "package_id": "8f4240f4-048e-4e56-af49-f62ae77a3d5e",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "aeb656b7-d96b-4e7a-8cc0-03697238aafc",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T06:33:22.164217+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T06:31:43.713584+00:00"
+    },
+    {
+      "chart_number": "F-4733",
+      "customer_id": "310c9f54-214e-4439-9b1e-58d73e0b4f82",
+      "customer_name": "김현아",
+      "package_id": "74ebad2d-1f32-4b66-934b-7ac7b700b8fb",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "8439f211-cb80-43f7-ac27-5a8905933372",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T05:06:52.12598+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T05:01:06.634888+00:00"
+    },
+    {
+      "chart_number": "F-4736",
+      "customer_id": "f6ae1b90-6f05-40af-a1e9-e00997a89b4e",
+      "customer_name": "이중근",
+      "package_id": "9dd9379f-f8f5-4bb9-b674-524edc7aa937",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "482c577d-0cce-4b7d-89dd-33104618aedb",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T05:21:00.687674+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T05:08:01.116447+00:00"
+    },
+    {
+      "chart_number": "F-4747",
+      "customer_id": "58608802-b733-44ed-9ffb-de5a2b7a77ff",
+      "customer_name": "한정규",
+      "package_id": "83c31d09-d066-44ec-9ac5-1b6415e0cc0a",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "d2021f95-9f4f-4967-8760-a39d0ec557a6",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T02:15:56.993335+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T02:10:31.712013+00:00"
+    },
+    {
+      "chart_number": "F-4773",
+      "customer_id": "80d661da-44e9-4a91-b77f-86b3caddd6f5",
+      "customer_name": "김가람",
+      "package_id": "92c44e3e-cd7e-4333-aedc-76b3c1df4c10",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "8f3b40b0-1375-4985-a095-77a82b343f11",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T11:04:35.098847+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T11:03:00.920865+00:00"
+    },
+    {
+      "chart_number": "F-4778",
+      "customer_id": "2516a4e9-241e-4f24-8195-633f41ad7c46",
+      "customer_name": "이기상",
+      "package_id": "f93f08a5-ffb7-4ff2-a658-29507dacd749",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "425e8735-e28f-4834-b08c-3f000fb147ba",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T06:53:22.119073+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T06:36:55.028506+00:00"
+    },
+    {
+      "chart_number": "F-4780",
+      "customer_id": "cf66e59c-a9b7-4011-82fb-133d1c48fbbc",
+      "customer_name": "김건표",
+      "package_id": "2034c30b-60b6-4407-8fc3-e6fa568f6222",
+      "package_name": "내성체험권",
+      "total_sessions": 1,
+      "total_amount": 59000,
+      "paid_amount": 59000,
+      "phantom_pkg_due": 59000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "4987887c-e5ef-4168-ad7e-8ef6e803a574",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 59000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T06:17:16.1844+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T06:16:04.030257+00:00"
+    },
+    {
+      "chart_number": "F-4781",
+      "customer_id": "a1390c68-532c-44dd-bf9a-90f7f61559e8",
+      "customer_name": "김효인",
+      "package_id": "0a9670a2-31b8-415b-8703-07ec2bf1d4b2",
+      "package_name": "체험",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "7b557c27-26b6-4c50-8f95-5285169eff84",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-15T06:49:27.066585+00:00"
+        }
+      ],
+      "contract_date": "2026-07-15",
+      "created_at": "2026-07-15T06:40:35.470963+00:00"
+    },
+    {
+      "chart_number": "F-4795",
+      "customer_id": "7f759ed3-5c53-4edb-b6ff-4af1ee95a998",
+      "customer_name": "이도희",
+      "package_id": "7f55c67a-8e00-49c3-8d67-110ef1faef56",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "9022bd56-d455-4b8d-a61a-045ccae27c43",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T06:29:37.395403+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T06:28:53.501507+00:00"
+    },
+    {
+      "chart_number": "F-4804",
+      "customer_id": "9c6832be-bdc5-4cb4-a07b-3c7a77c08218",
+      "customer_name": "김주희",
+      "package_id": "05d6f22c-2582-430d-9577-f3287b5a0cf5",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "4edc208e-c8fc-4448-9ebc-c3e6e6d12bdb",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T04:45:33.159241+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T04:43:46.046234+00:00"
+    },
+    {
+      "chart_number": "F-4815",
+      "customer_id": "ea0c7638-62db-47d8-ad3c-f20dc80864a9",
+      "customer_name": "최재영",
+      "package_id": "f6e850ff-e118-40e8-8811-856a6a48d3c0",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "1454affd-4d9d-4fd8-a1ee-bfe218865146",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T07:04:43.253593+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T06:53:15.040926+00:00"
+    },
+    {
+      "chart_number": "F-4821",
+      "customer_id": "9a61b808-a6e3-4ad6-badc-d83dbb6a56de",
+      "customer_name": "강다영",
+      "package_id": "fc116db7-651a-4ca9-8409-c1c3841721ab",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "55f58c49-58ce-4d7c-97db-4e281be2dd93",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T08:37:21.132653+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T08:28:04.717064+00:00"
+    },
+    {
+      "chart_number": "F-4826",
+      "customer_id": "72aeb1e7-f595-480f-b56c-1481f9729c2b",
+      "customer_name": "김종국",
+      "package_id": "4371bc1e-49d0-4db7-b986-d5c0f6e75298",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "1f30f2b0-1039-4973-adf9-3fa96f0abd24",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T02:01:45.962693+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T01:54:12.440513+00:00"
+    },
+    {
+      "chart_number": "F-4832",
+      "customer_id": "10ab94a6-3135-4820-9f73-dd4848893553",
+      "customer_name": "고한우",
+      "package_id": "e6e5ab19-1be8-4ac0-8126-0d58d18bce2c",
+      "package_name": "무좀체험권",
+      "total_sessions": 1,
+      "total_amount": 10000,
+      "paid_amount": 10000,
+      "phantom_pkg_due": 10000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "7c22175b-ce85-4c1f-8add-afc6e306fb24",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 10000,
+          "payment_type": "payment",
+          "created_at": "2026-07-16T07:26:14.010344+00:00"
+        }
+      ],
+      "contract_date": "2026-07-16",
+      "created_at": "2026-07-16T07:22:43.637873+00:00"
+    },
+    {
+      "chart_number": "F-4846",
+      "customer_id": "28f099b0-51d3-45c3-88c7-e42bc82de6af",
+      "customer_name": "김구엽",
+      "package_id": "6d5bb21d-2e64-484d-8805-e3e3a38326d1",
+      "package_name": "1회",
+      "total_sessions": 1,
+      "total_amount": 240000,
+      "paid_amount": 240000,
+      "phantom_pkg_due": 240000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "ffcd3b91-23d7-4fca-9805-19102eee8847",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 240000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T07:35:17.517317+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T07:32:48.036751+00:00"
+    },
+    {
+      "chart_number": "F-4854",
+      "customer_id": "98a0d43c-7d42-4ed2-acc5-e0522590f82d",
+      "customer_name": "윤지훈",
+      "package_id": "97da9649-4ce4-4faf-a5f1-0914164aff65",
+      "package_name": "1회",
+      "total_sessions": 1,
+      "total_amount": 240000,
+      "paid_amount": 240000,
+      "phantom_pkg_due": 240000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "8508fdcf-8fbf-42d7-bc07-c35e772094be",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 240000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T09:05:03.537048+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T09:03:49.655518+00:00"
+    },
+    {
+      "chart_number": "F-4857",
+      "customer_id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "customer_name": "엘런",
+      "package_id": "38cfc0d4-3d54-4d11-87ff-677493fa5307",
+      "package_name": "RB2(에센셜)",
+      "total_sessions": 1,
+      "total_amount": 500000,
+      "paid_amount": 500000,
+      "phantom_pkg_due": 500000,
+      "package_payments_count": 0,
+      "signature_payments": [
+        {
+          "id": "662f6ecf-3aed-4ae7-b6ef-f9068a2d6db1",
+          "memo": "영수증 업로드(회수1·단건)",
+          "amount": 500000,
+          "payment_type": "payment",
+          "created_at": "2026-07-17T08:47:27.353369+00:00"
+        }
+      ],
+      "contract_date": "2026-07-17",
+      "created_at": "2026-07-17T08:47:09.413872+00:00"
+    }
+  ]
+}
