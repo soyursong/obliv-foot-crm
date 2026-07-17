@@ -33,6 +33,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const DOPAMINE_FUNCTIONS_URL = Deno.env.get("DOPAMINE_FUNCTIONS_URL") ?? "";
 // 공유 시크릿 — supervisor가 양쪽 env 동시 주입 (계약). 풋 기존 콜백과 동일 env.
 const DOPAMINE_CALLBACK_SECRET = Deno.env.get("DOPAMINE_CALLBACK_SECRET") ?? "";
+// T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT (canon §1 / cross_crm §6-6-2·§4-2d):
+//   정준 발신 secret = 풋 전용 FOOT_CALLBACK_SECRET (`{SLUG}_CALLBACK_SECRET` 패턴, rotation 격리).
+//   미설정 시 기존 DOPAMINE_CALLBACK_SECRET 로 폴백(무중단 이행).
+const FOOT_CALLBACK_SECRET = Deno.env.get("FOOT_CALLBACK_SECRET") ?? "";
+const CALLBACK_SECRET = FOOT_CALLBACK_SECRET || DOPAMINE_CALLBACK_SECRET;
 // worker 인증용 (net.http_post 헤더 X-Internal-Cron 과 일치)
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 // 재시도 소진 임계 — 마이그레이션 backoff(1·2·4·8·16·32·60)와 동일
@@ -136,7 +141,7 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Callback-Secret": DOPAMINE_CALLBACK_SECRET,
+        "X-Callback-Secret": CALLBACK_SECRET,
       },
       body: JSON.stringify(payload),
     });
