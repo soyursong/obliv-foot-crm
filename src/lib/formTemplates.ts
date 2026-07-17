@@ -1080,6 +1080,11 @@ export const DOC_PANEL_HIDDEN_FORM_KEYS: ReadonlyArray<string> = [
  */
 export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   'bill_receipt',           // 1. 진료비영수증
+  // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN 완결(reopened→fix): 진료비 계산서·영수증 신양식.
+  //   RC = DOCFEE 배포분(DB row 015d94be·fallback·compose/print handler 전부 LIVE)이 이 렌더 화이트리스트에
+  //   미등록되어 orderDocList 필터에서 탈락 → 목록 미노출(divergence). additive 등록으로 노출 복원(AC5 기존
+  //   bill_receipt 무접촉). 진열은 원양식 바로 뒤(동일 서류종류 신/구 인접).
+  'bill_receipt_new',       // 1b. 진료비 계산서·영수증(신양식)
   'bill_detail',            // 2. 진료비세부내역서
   'koh_result',             // 3. KOH균검사결과지
   'diag_opinion',           // 4. 소견서
@@ -1155,6 +1160,7 @@ export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
  */
 export const DOC_CATEGORY_JEUNGMYEONG_KEYS: ReadonlyArray<string> = [
   'bill_receipt',           // 진료비영수증 (무료)
+  'bill_receipt_new',       // 진료비 계산서·영수증(신양식) — DOCFEE 완결 additive 등록 (무료)
   'bill_detail',            // 진료비세부내역서 (무료)
   'koh_result',             // KOH균검사결과지 (무료)
   'diagnosis',              // 진단서(국/영문)
