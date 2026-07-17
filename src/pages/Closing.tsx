@@ -1886,7 +1886,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             차트번호 셀 클릭 → 고객 2번차트(/chart/:customerId) 별도 팝업창(window.open).
                             일마감 화면을 유지(사라지지 않음)한 채 2번차트를 새 창으로 표출.
                             row_customer_id 있는 행(단건·패키지결제)만 클릭/hover 활성, 수기행(row_customer_id 없음)은 비활성.
-                            (navigate → window.open, 김주연 총괄 요청 · NEW-TASK MSG-20260717-151418-oj4g) */}
+                            (navigate → window.open, 김주연 총괄 요청 · NEW-TASK MSG-20260717-152211-ewov) */}
                         <td
                           className={cn(
                             'py-2 px-2 text-xs text-muted-foreground',
@@ -1896,9 +1896,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             r.row_customer_id
                               ? () =>
                                   window.open(
-                                    `/chart/${r.row_customer_id}`,
+                                    `${window.location.origin}/chart/${r.row_customer_id}`,
                                     `foot-chart-${r.row_customer_id}`,
-                                    'width=1200,height=800,noopener,noreferrer',
+                                    'width=1200,height=900,scrollbars=yes,resizable=yes',
                                   )
                               : undefined
                           }
