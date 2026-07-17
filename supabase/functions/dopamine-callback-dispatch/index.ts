@@ -123,13 +123,25 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, reason: "dopamine_url_not_configured" }, 500);
   }
 
-  // ── 2. payload 구성 (저장된 payload + mode) ──────────────────
-  // payload.source_system='foot' 는 트리거가 이미 적재.
-  const payload = { ...(row.payload as Record<string, unknown>), mode };
-  const targetUrl = `${DOPAMINE_FUNCTIONS_URL}/crm-lifecycle-callback`;
+  // ── 2. payload/target 구성 — event_type 라우팅 discriminator ──
+  // T-20260717-foot-CHECKIN-VISITED-EMIT-DOPAMINE (접근 B, DA MSG-h576 가드레일 5, 축 분리):
+  //   · 'visited_stage' → foot-callback-recv (stage='visited' 축). 수신부는 이미 live·gate 없음
+  //     → mode 미주입(검증된 foot-callback-recv envelope 그대로 forward). payload 는 트리거가
+  //       수신 계약({type,external_id,event_id,occurred_at,payload})대로 적재.
+  //   · 그 외(visited/no_show/cancelled/rejected/reschedule) → crm-lifecycle-callback
+  //     (process_status/TM 축). 기존 경로 무변경(mode 주입 유지).
+  //   두 축은 별개 endpoint·별개 outbox 행 = 병합 금지(가드레일 5).
+  const isStageAxis = row.event_type === "visited_stage";
+  const targetUrl = isStageAxis
+    ? `${DOPAMINE_FUNCTIONS_URL}/foot-callback-recv`
+    : `${DOPAMINE_FUNCTIONS_URL}/crm-lifecycle-callback`;
+  // payload.source_system='foot' 는 트리거가 이미 적재. stage 축은 mode 미주입.
+  const payload = isStageAxis
+    ? { ...(row.payload as Record<string, unknown>) }
+    : { ...(row.payload as Record<string, unknown>), mode };
 
   console.log(
-    `[cb-dispatch] firing → ${targetUrl} | id=${outbox_id} type=${row.event_type} attempts=${row.attempts} mode=${mode}`,
+    `[cb-dispatch] firing → ${targetUrl} | id=${outbox_id} type=${row.event_type} attempts=${row.attempts} mode=${isStageAxis ? "n/a(stage)" : mode}`,
   );
 
   // ── 3. 단일 POST (재시도는 worker 소유) ──────────────────────
