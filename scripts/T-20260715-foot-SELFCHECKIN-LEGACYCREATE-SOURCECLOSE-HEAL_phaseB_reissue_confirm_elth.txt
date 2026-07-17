@@ -1,0 +1,60 @@
+T-20260715-foot-SELFCHECKIN-LEGACYCREATE-SOURCECLOSE-HEAL — Phase B GO 등재-type 재발행 검증
+supervisor DB-GATE: MSG-20260718-052430-elth (선행 미등재 MSG-20260718-052324-z2r1 재발행, 내용 동일)
+prod: rxlomoozakkjesdqjtvd · date: 2026-07-18 · dev-foot (fresh read-only re-verify)
+
+═══════════════════════════════════════════════════════════════════════════════
+배경 — Phase B 는 선행 GO(z2r1)에 이미 apply 완료
+═══════════════════════════════════════════════════════════════════════════════
+Phase B heal 은 z2r1 GO 수신 시 이미 prod 적용됨:
+  commit d40a7869 "Phase B apply — INV-1 per-row heal (supervisor DB-GATE-GO z2r1)"
+  commit b88695eb "signals deployed T-20260715 SOURCECLOSE-HEAL Phase B apply"
+본 elth 는 z2r1 의 등재-type 재발행(내용 동일). 이번 세션은 blind 신뢰 없이 prod 실상태 fresh 재검증.
+
+═══════════════════════════════════════════════════════════════════════════════
+① Phase B apply 상태 (affected_rows / guard) — 멱등 재확인
+═══════════════════════════════════════════════════════════════════════════════
+apply 증거(선행, phaseB_apply_evidence_20260718.txt):
+  [pre]  frozen 26f3e3d5 status = confirmed
+  [apply] atomic BEGIN/COMMIT · UPDATE WHERE id=freeze AND status='confirmed' AND EXISTS(active ci f9840007)
+  [post] status = checked_in · checked_in count = 1
+       ⇒ affected_rows=1 (confirmed→checked_in) · DO guard v_n=1 통과 (RAISE 미발생)
+
+멱등 재실행(본 세션, phaseB_apply.mjs):
+  [pre] frozen reservation 26f3e3d5 status = checked_in
+  [abort] pre-state != 'confirmed' (got checked_in) — old-value 가드 drift, apply 중단  (exit 2)
+  ⇒ 이중적용 없음. 비파괴·멱등 확인.
+
+═══════════════════════════════════════════════════════════════════════════════
+② postverify.mjs 재실행 (fresh read-only, 본 세션) — Phase B PASS 증거
+═══════════════════════════════════════════════════════════════════════════════
+{
+  "phaseA_sourceclose": {
+    "anon_exec": false, "auth_exec": false, "service_exec": false,
+    "postgres_exec": true, "has_deprecated_comment": true
+  },
+  "sourceclose_unlinked_confirmed": 0,
+  "phaseB_inv1_count": 0,
+  "phaseB_frozen_reservation_status": "checked_in"
+}
+Phase A (source close): PASS
+Phase B (heal):         PASS
+✅ 전체 PASS — 소스닫힘 + INV-1 heal 완결. (exit 0)
+
+  ⇒ inv1_count=0 · frozen 26f3e3d5 status='checked_in'  (supervisor 요청 증거 충족)
+
+═══════════════════════════════════════════════════════════════════════════════
+③ DEVCHANGE-OWNER-CONFIRM
+═══════════════════════════════════════════════════════════════════════════════
+dev-foot 자기확인 완료:
+  - 파괴적 삭제 아님 — status 정합 정정 1행(confirmed→checked_in)만.
+  - SOP §2-F per-row heal 준수 — 명시 PK freeze 1행, 자동배치/단일 count-UPDATE 아님.
+  - old-value 가드 + EXISTS 판정 재확인 + v_n=1 RAISE guard(atomic) → drift 시 0행 abort-equivalent.
+  - 가역 — rollback SQL 동봉(checked_in→confirmed, PK+status 가드).
+  - 원장 무접점.
+  - 대표 게이트 면제(autonomy §3.1), supervisor 검증 게이트(step3 PASS + step4 exit0) 통과.
+
+═══════════════════════════════════════════════════════════════════════════════
+판정
+═══════════════════════════════════════════════════════════════════════════════
+Phase B heal 완결(선행 apply, 본 세션 멱등+PASS 재확인). INV-1 divergence=0.
+소스(Phase A) 봉합 지속. A3 epic foot 잔여 클로저 조건 충족.
