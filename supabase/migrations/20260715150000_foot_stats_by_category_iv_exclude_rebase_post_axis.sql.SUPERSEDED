@@ -1,5 +1,26 @@
+-- ############################################################
+-- ★★★ VOID / NEVER-APPLY — DO NOT RUN THIS MIGRATION ★★★
+-- ############################################################
+-- SUPERSEDED BY: 20260717190000_foot_stats_by_category_pkg_created_reconcile.sql
+--                (prod live = commit 9de0bbef, pkg_created 브랜치, iv-exclude NATIVE 내장)
+-- 판정 근거(SSOT): da_decision_foot_bycat_ivexclude_obe_disposition_20260718.md
+--                  (DA-20260718-001 / MSG-20260718-005157-zd1k, data-architect)
+--
+-- 왜 VOID 인가:
+--   본 마이그의 목적(iv=수액 통계제외 prod 반영)은 후행·confirm 된
+--   T-20260619 pkg_created(20260717190000, prod 9de0bbef)가 iv-exclude 를 네이티브로
+--   탑재하여 이미 100% 달성됨(AC1 완전 충족). 잔여작업 0.
+--   ⚠ 본 파일 base = post-AXIS pkg_used body(md5 623999a0)는 SUPERSEDED/VOID 로 폐기 확정.
+--   ⚠ 본 마이그를 적용하면 foot_stats_by_category 를 pkg_created → pkg_used 로 REVERT →
+--      확정 KPI(카테고리별 매출 귀속 단위) 회귀. 절대 적용 금지.
+--   → 게이트 지시 DA-20260715-001 §2(b)ADDITIVE / §3 base=623999a0 는 SUPERSEDED/VOID.
+--      지시 재발행 불요, 신규 마이그 없음.
+--   → 파일은 .SUPERSEDED 접미사로 격리(runner 미픽업) + 본 forward-doc 로 재적용 차단.
+-- (코드 로직 변경 없음 — 아래 원본 body 는 이력 보존용으로 그대로 둔다.)
+-- ############################################################
+--
 -- ============================================================
--- T-20260715-foot-BYCAT-IVEXCLUDE-PROD-RECONCILE  (AC2)
+-- T-20260715-foot-BYCAT-IVEXCLUDE-PROD-RECONCILE  (AC2)  [VOID — 위 헤더 참조]
 -- foot_stats_by_category: iv(수액) 통계제외 predicate 재이식 — post-AXIS body 위 rebase.
 -- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm, foot 단일 Supabase)
 -- 작성: dev-foot / 2026-07-15
