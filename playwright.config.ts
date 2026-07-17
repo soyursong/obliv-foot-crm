@@ -375,6 +375,11 @@ export default defineConfig({
         //   buildFootBillDetailItems)로 replay → 계/합계 = 본인부담+비급여(공단 제외, B안 보존) 단언 +
         //   공단 칸 표시 유지(AC4) + 항목 0건 '0' 표시 + page.setContent 인쇄 미리보기 캡처. auth/server 불요.
         '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
+        // T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE: 고객 차트 '수납내역' 탭에 체험(회수1·단건)
+        //   패키지 구입 영수증결제(memo='영수증 업로드(회수1…')도 표시(현장 '결제없음' 오인 해소, RC-A).
+        //   DISPLAY-ONLY read 필터 확장 — feePayments 필터 회수1 포함 분기 + 일반 영수증 업로드 제외
+        //   유지 + 순서/중복 불변식 런타임 단언(정본 소스 미러). write-path·집계 무접점. auth/server 불요.
+        '**/T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
