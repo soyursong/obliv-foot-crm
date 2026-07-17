@@ -112,6 +112,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS: 태블릿 카메라 업로드 후 "영수증 매출 연동"
+        //   팝업 미표시(가설A: 카메라 앱 전환 리마운트/컨텍스트 교란) 해소 — 재조회前 즉시오픈+persist 복원+비차단 갱신.
+        //   소스 불변식 가드 + page.setContent 실DOM 뷰포트 포지셔닝(B 회귀가드). auth·server 불요. 실기 갤탭=field-soak.
+        '**/T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS.spec.ts',
         // T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS: 시술내역 수정 치료사 권한(RC=FE 게이트, prod RLS 이미 허용).
         //   permissions lib 순수 단언 + 소스 정적 가드(저장 핸들러 단일행 UPDATE·derived 차감 불변식·canEditClinicMgmt 부재)
         //   + Management API(SUPABASE_ACCESS_TOKEN) prod 정책 실측(package_sessions_write=ALL therapist 허용·clinic_id 부재).

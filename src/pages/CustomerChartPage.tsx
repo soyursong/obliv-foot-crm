@@ -759,6 +759,34 @@ function ReceiptUploadSection({
   }[]>([]);
 
   const storagePath = `customer/${customerId}/receipt`;
+  // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS:
+  //   매출연동 다이얼로그 오픈 의도 persist 키 — 태블릿 카메라 앱 전환 중 리마운트/컨텍스트 리셋
+  //   (가설A)으로 setAmountDlg가 소실돼도 마운트시 복원해 팝업을 보장한다.
+  const PENDING_DLG_KEY = `receipt-amount-dlg-pending:${customerId}`;
+
+  // T-20260717 계측: 갤탭 실기 field-soak에서 팝업 미표시 지점 특정용(가설 A/B/C 좁힘).
+  //   기존 CAMERA-FOCUS/CAMERA-ZOOM console.debug 진단 패턴 준용.
+  const diagReceiptDlg = (step: string, extra?: unknown) => {
+    try { console.debug(`[RECEIPT-DLG] ${step}`, extra ?? ''); } catch { /* noop */ }
+  };
+
+  // T-20260717: 현재 로드된 귀속후보로 매출연동 다이얼로그 오픈 (기본 귀속대상 산출).
+  //   무거운 재조회에 의존하지 않고 즉시 오픈 가능한 단일 진입점 — handleUpload/리마운트복원 공용.
+  const openAmountDialog = useCallback(() => {
+    const defaultSel = activePkgs.length > 0
+      ? `pkg:${activePkgs[0].id}`
+      : (waitingCIs.length > 0 ? `ci:${waitingCIs[0].id}` : 'single');
+    setAmountDlg({
+      open: true, amount: '', method: 'cash',
+      targetSel: defaultSel, paymentDate: todaySeoulISODate(),
+    });
+  }, [activePkgs, waitingCIs]);
+
+  // T-20260717: 다이얼로그 종료(등록/건너뛰기) — persist된 오픈 의도 해제 후 close.
+  const closeAmountDlg = useCallback(() => {
+    try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* private mode */ }
+    setAmountDlg((d) => ({ ...d, open: false }));
+  }, [PENDING_DLG_KEY]);
 
   // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 고객 활성 패키지 조회 (영수증 결제 라우팅용)
   // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: total_sessions 동반 조회 (회수 기반 단건/패키지 자동 분류).
@@ -811,54 +839,56 @@ function ReceiptUploadSection({
 
   useEffect(() => { load(); loadActivePkgs(); loadWaitingCIs(); }, [load, loadActivePkgs, loadWaitingCIs]);
 
+  // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS (가설A 복원):
+  //   태블릿 카메라 앱 전환 중 컴포넌트가 리마운트되어 amountDlg가 {open:false}로 리셋된 경우,
+  //   업로드 직후 남긴 pending 스탬프(5분 내)로 다이얼로그를 재오픈한다. 스탬프 만료 시 정리.
+  useEffect(() => {
+    let ts = 0;
+    try {
+      const raw = sessionStorage.getItem(PENDING_DLG_KEY);
+      ts = raw ? Number(raw) : 0;
+    } catch { ts = 0; }
+    if (ts && Date.now() - ts < 5 * 60 * 1000) {
+      diagReceiptDlg('dialog:restore-after-remount', { ageMs: Date.now() - ts });
+      openAmountDialog();
+    } else if (ts) {
+      try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
+    }
+    // 마운트 1회만 복원 — openAmountDialog는 후보 로드 시 재생성되나 복원은 최초 1회로 충분.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    // AC3: 카메라 촬영 취소·빈 FileList(일부 모바일 브라우저의 빈 onChange 발화) 안전 early return.
+    if (!files || files.length === 0) { diagReceiptDlg('upload:empty-filelist'); return; }
+    diagReceiptDlg('upload:start', { count: files.length });
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+    let uploadedOk = false;
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop() ?? 'jpg';
+        const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+        if (error) toast.error(`업로드 실패: ${error.message}`);
+        else uploadedOk = true;
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    setUploading(false);
-    e.target.value = '';
-    await load();
-    // T-20260609-foot-RECEIPT-PKG-ALWAYS: 최신 활성 패키지 재조회 (귀속 대상 프리셀렉트)
-    await loadActivePkgs();
-    const { data: pkgRows } = await supabase
-      .from('packages')
-      .select('id, package_name, total_sessions')
-      .eq('customer_id', customerId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-    const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
-      ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 }));
-    setActivePkgs(pkgs);
-    // T-20260714 옵션A: payment_waiting 내원 재조회 (귀속 후보).
-    const { data: ciRows } = await supabase
-      .from('check_ins')
-      .select('id, clinic_id, status, status_flag_history, customer_id, checked_in_at')
-      .eq('customer_id', customerId)
-      .eq('status', 'payment_waiting')
-      .order('checked_in_at', { ascending: false });
-    const wcis = (ciRows ?? []).map((c: {
-      id: string; clinic_id: string; status: string; status_flag_history: unknown[];
-      customer_id: string | null; checked_in_at: string | null;
-    }) => ({
-      id: c.id, clinic_id: c.clinic_id, status: c.status,
-      status_flag_history: c.status_flag_history ?? [], customer_id: c.customer_id,
-      label: `수납대기 내원${c.checked_in_at ? ` · ${formatDateTimeDots(c.checked_in_at)}` : ''}`,
-    }));
-    setWaitingCIs(wcis);
-    // 매출 연동 다이얼로그 열기 — 옵션A 귀속 선택. 기본값: 활성패키지>수납대기 내원>단건 순.
-    //   활성패키지 無 여도 하드블록 없이 ci/단건으로 귀속 가능(옵션A, RECEIPT-PKG-ALWAYS 하드블록 supersede).
-    const defaultSel = pkgs.length > 0 ? `pkg:${pkgs[0].id}` : (wcis.length > 0 ? `ci:${wcis[0].id}` : 'single');
-    setAmountDlg({
-      open: true, amount: '', method: 'cash',
-      targetSel: defaultSel,
-      paymentDate: todaySeoulISODate(),
-    });
+    if (!uploadedOk) { diagReceiptDlg('upload:none-ok'); return; }
+    await load().catch(() => {}); // 썸네일 갱신 — 비차단(실패해도 다이얼로그 진행).
+    // ── T-20260717 (가설A 타겟픽스): 무거운 귀속후보 재조회 이전에 다이얼로그를 즉시 오픈 ──
+    //   + 오픈 의도를 sessionStorage에 스탬프 → 카메라 앱 전환 중 리마운트/컨텍스트 리셋에도
+    //   마운트 복원으로 팝업을 보장한다. (기존: await 체인 말미 setAmountDlg → 체인 중단 시 팝업 소실)
+    try { sessionStorage.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
+    openAmountDialog();
+    diagReceiptDlg('dialog:opened');
+    // 귀속후보 최신화 — 오픈 이후 비차단 갱신(실패해도 다이얼로그 유지). loadActivePkgs/loadWaitingCIs
+    //   가 동일 쿼리를 수행하므로 인라인 중복 재조회 제거(정본 로더 재사용).
+    void loadActivePkgs().catch(() => {});
+    void loadWaitingCIs().catch(() => {});
   };
 
   const remove = async (img: StorageImageItem) => {
@@ -909,7 +939,7 @@ function ReceiptUploadSection({
           .from('packages')
           .update({ paid_amount: (pkgRow?.paid_amount ?? 0) + amt })
           .eq('id', packageId);
-        setAmountDlg((d) => ({ ...d, open: false }));
+        closeAmountDlg();
         toast.success('단건 결제로 기록 (회수 1회)');
         onPaymentCreated();
         return;
@@ -923,7 +953,7 @@ function ReceiptUploadSection({
           memo: '영수증 업로드', createdAtOverride,
         });
       } catch (e) { toast.error(e instanceof Error ? e.message : '패키지 결제 기록 실패'); return; }
-      setAmountDlg((d) => ({ ...d, open: false }));
+      closeAmountDlg();
       toast.success('패키지 결제로 기록 (미수 반영)');
       onPaymentCreated();
       return;
@@ -943,7 +973,7 @@ function ReceiptUploadSection({
         clinicId, customerId, amount: amt, method: amountDlg.method,
         attribution, createdAtOverride,
       });
-      setAmountDlg((d) => ({ ...d, open: false }));
+      closeAmountDlg();
       if (res.route === 'checkin') {
         toast.success(res.kanbanResolved ? '수납 완료 — 대기목록 해소' : '수납 기록됨');
       } else {
@@ -1079,7 +1109,7 @@ function ReceiptUploadSection({
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => setAmountDlg((d) => ({ ...d, open: false }))}
+                onClick={closeAmountDlg}
               >
                 건너뛰기
               </Button>
