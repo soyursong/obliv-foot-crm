@@ -1,6 +1,7 @@
 # T-20260618-foot-STAFF-ATTENDANCE-SSOT-CRM — PROD 배포 evidence (POST-DEPLOY CHECKLIST)
 
-- DEPLOY-GO: MSG-20260718-012818-3rbk (supervisor DDL-diff 5-check GO, Green/ADDITIVE, commit `eb59fe60`)
+- **정본 DB-GATE**: MSG-20260718-012858-kjfp (supervisor DB-GATE, DDL-diff 5-check GO, Green/ADDITIVE, commit `eb59fe60` = origin/main acad5cc6 tree, ::TEXT→jsonb fix 포함). **supersedes** MSG-20260718-012818-3rbk (미등록 type DEPLOY-GO였음).
+- DEPLOY-GO(원): MSG-20260718-012818-3rbk (supervisor DDL-diff 5-check GO, Green/ADDITIVE, commit `eb59fe60`)
 - 집행: dev-foot / 2026-07-18 04:07~04:12 KST (self-execution)
 - ref: rxlomoozakkjesdqjtvd (obliv-foot-crm prod)
 - 집행 순서 준수: 테이블(20260618200000) 先 → cron(20260618201000) 後 → EF 배포+env → 수동 1틱 → 정합
@@ -49,3 +50,10 @@
   1. 티켓 §10.4 = "**freshness 안정 확인 후** AC-2" — sync 는 방금 live(1틱), 다틱 안정성 관측 전.
   2. AC-2 는 배정화면(자동배정 후보풀 = 회귀 핵심지점)의 **런타임 동작 변경** → DDL-diff 5-check 범위 밖 + `db-only-additive` E2E 면제 무효화(E2E spec 신규 필요) → supervisor QA 별도 게이트.
 - → planner FOLLOWUP 발행(시퀀싱: freshness soak 후 AC-2 read-swap 별 티켓/단계 + E2E spec + supervisor QA).
+
+## FRESHNESS SOAK 재검증 (정본 DB-GATE MSG-20260718-012858-kjfp 접수 후 live 재확인) — PASS ✅
+- 시각: 2026-07-18 04:24 KST (배포 04:20 이후 재검증)
+- **구조 재확인**(postverify): staff_attendance 테이블 9컬럼 + PK/UNIQUE/FK×2/CHECK×2 + 인덱스3 + RLS ON + 정책4 · trigger_attendance_sync prosecdef=true · cron `foot-attendance-sync` `*/15 * * * *` active=true — 전부 live.
+- **freshness**: `max(synced_at)` = 2026-07-17 19:15:01 UTC (= 04:15:01 KST), age **9m40s < 15min interval** → **자율 cron 틱**(수동 1틱과 별개, :15 정렬 = 스케줄 틱) 정상 랜딩 확인. pg_cron→net.http_post→EF→staff_attendance end-to-end 무인 동작 재입증.
+- rows_total = 170 · today(07-18 KST) present = **9** → 최초 evidence(§6)와 정합.
+- 판정: **AC-1/AC-3/AC-4/AC-5 = 배포+soak PASS 재확인. AC-2 = HOLD 유지**(soak 다틱 안정 + E2E spec + supervisor 별 QA 게이트 대기).

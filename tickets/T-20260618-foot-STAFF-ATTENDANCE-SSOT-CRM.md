@@ -11,7 +11,9 @@ bundle_hash: n/a (db+ef only, no FE bundle — infra deploy)
 deploy_ready_at: 2026-07-18T04:12:00+09:00
 deployed_scope: "AC-1 테이블 + AC-3 cron/attendance-sync EF (DDL-diff GO 범위). AC-2 배정화면 read-swap 은 freshness soak 후 별 게이트(HELD, planner FOLLOWUP)."
 deploy_evidence: evidence/T-20260618-foot-STAFF-ATTENDANCE-SSOT-CRM_postdeploy.md
-deploy_go: MSG-20260718-012818-3rbk (supervisor DDL-diff 5-check GO, ADDITIVE, eb59fe60)
+deploy_go: MSG-20260718-012858-kjfp (supervisor DB-GATE, DDL-diff 5-check GO, Green/ADDITIVE, commit eb59fe60 = origin/main acad5cc6 tree, ::TEXT→jsonb fix 포함) — 정본 DB-GATE. supersedes MSG-20260718-012818-3rbk (미등록 type DEPLOY-GO)
+deploy_go_superseded: MSG-20260718-012818-3rbk
+freshness_reconfirm: "2026-07-18 04:24 KST — 자율 cron 틱 04:15 KST(19:15 UTC) 확인, last_sync age 9m40s < 15min interval. rows=170 / today present=9 (evidence 정합 재확인). AC-3 sync live+fresh 재검증."
 db_change: true
 db_change_kind: additive
 mig_files: [supabase/migrations/20260618200000_staff_attendance_ssot.sql, supabase/migrations/20260618201000_attendance_sync_cron.sql]
