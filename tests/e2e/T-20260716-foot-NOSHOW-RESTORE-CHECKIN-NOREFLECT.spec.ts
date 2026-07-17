@@ -13,7 +13,7 @@
  * AC2: reservations.status 즉시 반영 (예약관리 목록 소스 동기화).
  * AC3: 기존 정상 동선(confirmed→checked_in)에 영향 없음 (회귀 방지) + 멱등.
  *
- * ⚠️ 마이그레이션 20260716120000_foot_checkin_sync_reservation_broaden.sql 적용된 DB 에서만 PASS.
+ * ⚠️ 마이그레이션 20260717180000_foot_checkin_sync_reservation_broaden.sql 적용된 DB 에서만 PASS.
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';

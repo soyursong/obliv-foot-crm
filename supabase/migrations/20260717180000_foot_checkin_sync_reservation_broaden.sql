@@ -45,7 +45,7 @@
 --
 -- 스코프: 함수 body-only 교체. 컬럼/테이블/enum/트리거 정의 변경 0 (신규 DDL 없음).
 --   트리거 바인딩(trg_checkin_sync_reservation AFTER INSERT)·SECURITY DEFINER·OWNER postgres 불변.
--- 가역: 20260716120000_foot_checkin_sync_reservation_broaden.rollback.sql (구 'confirmed' 정확일치 body 복원).
+-- 가역: 20260717180000_foot_checkin_sync_reservation_broaden.rollback.sql (구 'confirmed' 정확일치 body 복원).
 -- ════════════════════════════════════════════════════════════════════════════
 
 BEGIN;

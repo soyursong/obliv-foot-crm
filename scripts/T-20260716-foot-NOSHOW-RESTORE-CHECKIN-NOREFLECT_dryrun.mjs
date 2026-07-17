@@ -2,7 +2,7 @@
 /**
  * DRY-RUN — T-20260716-foot-NOSHOW-RESTORE-CHECKIN-NOREFLECT (allowlist 재작성본)
  *
- * 대상 마이그: supabase/migrations/20260716120000_foot_checkin_sync_reservation_broaden.sql
+ * 대상 마이그: supabase/migrations/20260717180000_foot_checkin_sync_reservation_broaden.sql
  *   body-only CREATE OR REPLACE fn_checkin_sync_reservation()
  *   sync WHERE = status IN ('reserved','confirmed')  ← DA CONSULT-REPLY 정정 채택(allowlist)
  *   (denylist `NOT IN ('checked_in','done','cancelled')` 는 DA 반려 — STALE)
@@ -24,7 +24,7 @@
 import { readFileSync } from 'node:fs';
 import { runDryrun } from './dryrun_lib.mjs';
 
-const MIG = 'supabase/migrations/20260716120000_foot_checkin_sync_reservation_broaden.sql';
+const MIG = 'supabase/migrations/20260717180000_foot_checkin_sync_reservation_broaden.sql';
 const migSql = readFileSync(MIG, 'utf8');
 
 // 롤백-봉투 내 기능 검증 DO 블록. 마이그 body 적용 직후, harness 가 붙일 sentinel RAISE 이전에 실행.
