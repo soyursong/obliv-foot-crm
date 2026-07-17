@@ -187,7 +187,8 @@ export default function Assignments() {
       const mine = staffList.find((s) => s.user_id && s.user_id === profile?.id);
       setMyStaffId(mine?.id ?? null);
 
-      // 2) 당일 출근자 (구글시트 근무 캘린더 read)
+      // 2) 당일 출근자 (T-20260718 READ-SWAP: staff_attendance DB SSOT read 우선,
+      //    비었으면 구글시트 폴백 — accessor 내부 처리, 반환 계약 불변)
       const working = await fetchTodayWorkingStaffIds(clinic.id, staffList);
       setWorkingIds(working);
 

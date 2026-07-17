@@ -178,16 +178,63 @@ export async function fetchActiveStaff(clinicId: string): Promise<Staff[]> {
 }
 
 /**
- * 당일 출근한 staff id 집합 — 구글시트 근무 캘린더 read + 이름 매칭.
- * 시트 장애 시 graceful: 빈 set 반환 → 호출측에서 "출근자 미확인" 처리.
+ * 출근 데이터 소스 관측 로그 (T-20260718-foot-ATTENDANCE-READ-SWAP AC-2b).
+ * source=staff_attendance(DB SSOT 정상 read) | fallback(DB 비어 시트 read 폴백 발동).
+ * freshness/폴백 발동 감사·회귀 진단용. 콘솔 info 로 관측(현장 콘솔·E2E 관측 가능).
  */
-export async function fetchTodayWorkingStaffIds(
+function logAttendanceSource(
+  source: 'staff_attendance' | 'fallback',
   clinicId: string,
-  staff?: Staff[],
+  date: string,
+  present: number,
+): void {
+  console.info(
+    `[attendance-read] source=${source} clinic=${clinicId} date=${date} present=${present}`,
+  );
+}
+
+/**
+ * staff_attendance(SSOT)에서 특정 clinic·date 의 present staff id 집합.
+ * T-20260718-foot-ATTENDANCE-READ-SWAP AC-2 — 배정화면 '출근' 데이터의 DB read 경로.
+ * - RLS/네트워크 에러 시 null 반환 → 호출측에서 시트 폴백(AC-2b) 판단.
+ * - 0행이면 빈 Set 반환(호출측이 "비었음"으로 판단해 폴백). '출근 N명'= status='present' 카운트.
+ * - active staff 교집합으로 후보풀 동일성 보장(AC-4 회귀0 — inactive/삭제 staff row 유입 차단).
+ */
+async function fetchAttendancePresentStaffIds(
+  clinicId: string,
+  date: string,
+  staffList: Staff[],
+): Promise<Set<string> | null> {
+  try {
+    const { data, error } = await supabase
+      .from('staff_attendance')
+      .select('staff_id')
+      .eq('clinic_id', clinicId)
+      .eq('date', date)
+      .eq('status', 'present');
+    if (error) return null; // 에러 → 폴백(회귀0)
+    const activeIds = new Set(staffList.map((s) => s.id));
+    const ids = new Set<string>();
+    for (const r of (data ?? []) as Array<{ staff_id: string }>) {
+      if (activeIds.has(r.staff_id)) ids.add(r.staff_id);
+    }
+    return ids;
+  } catch {
+    return null; // 예외 → 폴백
+  }
+}
+
+/**
+ * 구글시트 근무 캘린더 직접 read + 이름 매칭으로 당일 출근 staff id 집합.
+ * T-20260718-foot-ATTENDANCE-READ-SWAP: 기존 시트 read 경로를 그대로 추출(회귀0).
+ *   read-swap 이후에는 stale-guard fallback(staff_attendance 비었을 때) 전용 경로가 된다.
+ * 시트 장애 시 graceful: 빈 set 반환.
+ */
+async function fetchWorkingStaffIdsFromSheet(
+  today: string,
+  list: Staff[],
 ): Promise<Set<string>> {
-  const list = staff ?? (await fetchActiveStaff(clinicId));
   const allNames = list.map((s) => s.name);
-  const today = todaySeoulISODate();
   let names: string[] = [];
   try {
     names = await fetchTodayAttendeeNames(today, DUTY_SHEET_GIDS, allNames);
@@ -201,6 +248,36 @@ export async function fetchTodayWorkingStaffIds(
     if (nameSet.has(nm) || nameSet.has((s.name ?? '').trim())) ids.add(s.id);
   }
   return ids;
+}
+
+/**
+ * 당일 출근한 staff id 집합.
+ *
+ * T-20260718-foot-ATTENDANCE-READ-SWAP (SSOT-CRM carve-out):
+ *   AC-2  = staff_attendance(DB SSOT) read 우선. 구글시트는 sync 입력원으로만(기반 티켓 AC-3 live).
+ *   AC-2b = 해당 clinic·date 에 present 행이 하나도 없으면(sync 지연·미커버 clinic=송도 등)
+ *           구글시트 read 로 자동 폴백(회귀0) + source=fallback 관측 로그.
+ *   AC-4  = 반환 타입(Set<string>)·후보풀 소비 계약 무변경 → 자동배정/Handover 등 동작 불변.
+ * 시트·DB 모두 장애 시 graceful: 빈 set 반환 → 호출측에서 "출근자 미확인" 처리.
+ */
+export async function fetchTodayWorkingStaffIds(
+  clinicId: string,
+  staff?: Staff[],
+): Promise<Set<string>> {
+  const list = staff ?? (await fetchActiveStaff(clinicId));
+  const today = todaySeoulISODate();
+
+  // AC-2: staff_attendance(DB SSOT) read 우선.
+  const dbIds = await fetchAttendancePresentStaffIds(clinicId, today, list);
+  if (dbIds && dbIds.size > 0) {
+    logAttendanceSource('staff_attendance', clinicId, today, dbIds.size);
+    return dbIds;
+  }
+
+  // AC-2b (stale-guard fallback): DB 비었음(sync 지연·미커버 clinic) 또는 read 에러 → 시트 폴백(회귀0).
+  const sheetIds = await fetchWorkingStaffIdsFromSheet(today, list);
+  logAttendanceSource('fallback', clinicId, today, sheetIds.size);
+  return sheetIds;
 }
 
 /**
