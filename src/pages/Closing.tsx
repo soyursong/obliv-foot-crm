@@ -2646,6 +2646,28 @@ function refundRowKey(r: EnrichedRow): string {
   return r.source === 'package' ? `pkg:${r.pkg_payment_id}` : `pay:${r.payment_id}`;
 }
 
+// ──────────────────────────────────────────────────────────────
+// T-20260715-foot-REFUND-BACKDATE-NAV-ERROR-HOTFIX (AC-4): 환불 RPC 오류 → 현장 친화 메시지.
+//   RC = 배포 직후 PostgREST 스키마 캐시가 아직 신규 환불 RPC(refund_package_payment)를
+//   인지하지 못한 순간(PGRST202 "Could not find the function … in the schema cache")에
+//   환불을 시도하면 raw 영문 스택이 토스트로 노출됐다(현장 스샷 F0BH8BP2VH9).
+//   화면 갇힘/크래시는 아니었으나(toast) 문구가 비친화적 → 명확한 안내로 치환.
+//   ★ 환불 경로/RPC 신설 없음(REDEFINITION_RISK 회피). 기존 배치 핸들러 error 분기(failMsgs)만 보강.
+//   prefix = 배치 요약(failMsgs[0]) 표기 구분용(단건 '환불 실패' / 패키지 '패키지 환불 실패').
+//   단, 스키마 캐시 미스는 prefix 무관하게 동일한 한국어 안내로 매핑.
+function refundErrorMessage(
+  error: { code?: string; message?: string } | null | undefined,
+  prefix = '환불 실패',
+): string {
+  const msg = error?.message ?? '';
+  const isSchemaCacheMiss =
+    error?.code === 'PGRST202' || /schema cache|Could not find the function/i.test(msg);
+  if (isSchemaCacheMiss) {
+    return '환불 기능이 아직 서버에 반영되지 않았습니다. 잠시 후 다시 시도하시고, 계속되면 관리자에게 문의해 주세요.';
+  }
+  return `${prefix}: ${msg || '알 수 없는 오류'}`;
+}
+
 function ClosingRefundDialog({ open, rows, clinicId, onClose, onSuccess }: ClosingRefundDialogProps) {
   const customerName = rows[0]?.customer_name ?? '-';
 
@@ -2772,7 +2794,7 @@ function ClosingRefundDialog({ open, rows, clinicId, onClose, onSuccess }: Closi
           p_payment_id: r.pkg_payment_id,
           p_method: method,
         });
-        if (error) { failMsgs.push(`패키지 환불 실패: ${error.message}`); continue; }
+        if (error) { failMsgs.push(refundErrorMessage(error, '패키지 환불 실패')); continue; }
         const result = data as { ok?: boolean; error?: string };
         if (result?.error) { failMsgs.push(result.error); continue; }
         okCount += 1;
@@ -2787,7 +2809,7 @@ function ClosingRefundDialog({ open, rows, clinicId, onClose, onSuccess }: Closi
           p_method: method,
           p_memo: refundMemo.trim(),
         });
-        if (error) { failMsgs.push(`환불 실패: ${error.message}`); continue; }
+        if (error) { failMsgs.push(refundErrorMessage(error, '환불 실패')); continue; }
         const result = data as { ok?: boolean; error?: string };
         if (result?.error) { failMsgs.push(result.error); continue; }
         okCount += 1;
