@@ -23,3 +23,14 @@ verify_jwt = false
 #   service_role Bearer)에 위임한다. 둘 다 불일치 → 401 이므로 unauth hole 없음.
 [functions.redpay-reconcile]
 verify_jwt = false
+
+# T-20260618-foot-STAFF-ATTENDANCE-SSOT-CRM:
+#   attendance-sync 는 pg_cron(trigger_attendance_sync → net.http_post)이 X-Internal-Cron
+#   헤더만 실어 호출한다(Supabase JWT 아님). 게이트웨이 기본 verify_jwt=true 면 EF 코드 도달
+#   전 401(UNAUTHORIZED_NO_AUTH_HEADER) → 15분 폴러가 매번 거부되어 staff_attendance 미적재
+#   (실측 확인: DEPLOY-GO 집행 중 header-only 호출 401). verify_jwt=false 로 게이트웨이 JWT
+#   검사를 끄고 인증은 EF 내부(index.ts: CRON_SECRET 있으면 X-Internal-Cron==CRON_SECRET,
+#   불일치/누락 → 401)에 위임 → secret 검증이 인증의 단일 관문이므로 unauth hole 없음
+#   (redpay-reconcile / reservation-ingest-from-dopamine 동일 컨벤션).
+[functions.attendance-sync]
+verify_jwt = false
