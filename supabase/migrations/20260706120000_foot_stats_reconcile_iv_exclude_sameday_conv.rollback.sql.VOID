@@ -1,3 +1,5 @@
+-- ⛔ VOID / NEVER-APPLIED — up.sql(20260706120000)이 prod 미적용이므로 이 롤백도 무의미(사료).
+--    재수렴은 신규 timestamp 20260715150000_..._iv_exclude_rebase_post_axis 로 진행. (DA-20260715-001)
 -- ============================================================
 -- ROLLBACK — T-20260608-foot-TICKET-DEDUCT-SLOT-DATA (reconcile-R5)
 -- 20260706120000 역전: 두 통계함수를 reconcile 직전 현행 prod prosrc 로 복원
