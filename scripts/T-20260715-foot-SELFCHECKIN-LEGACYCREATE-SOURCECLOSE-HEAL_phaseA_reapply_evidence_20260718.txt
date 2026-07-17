@@ -1,0 +1,48 @@
+Phase A source-close APPLY + POSTVERIFY (DB-GATE reminder MSG-20260718-031541-3b2c)
+prod rxlomoozakkjesdqjtvd · 2026-07-18 · dev-foot (READ + idempotent re-APPLY)
+
+═══════════════════════════════════════════════════════════════════════════════
+DISCREPANCY NOTE vs reminder baseline
+═══════════════════════════════════════════════════════════════════════════════
+Reminder MSG-20260718-031541-3b2c baseline claimed:
+  "self_checkin_create(text,text,text) EXECUTE: anon/auth/service = true (열린 표면 잔존),
+   deprecated 주석 없음 → Phase A 미적용."
+
+dev-foot independent read-only probe (2026-07-18, BEFORE any write this session) found the OPPOSITE:
+  proacl        = {postgres=X/postgres}   (only owner — anon/auth/service NOT present)
+  anon_exec     = false
+  auth_exec     = false
+  service_exec  = false
+  postgres_exec = true
+  deprecated comment = PRESENT (verbatim Phase A migration text, "DEPRECATED 2026-07-16 …")
+  ⇒ Phase A was ALREADY applied in prod (consistent with prior committed evidence
+     phaseA_postverify_evidence.txt / reverify_gohp.txt).
+
+To remove ALL ambiguity, dev-foot then re-ran the idempotent Phase A apply
+(REVOKE naturally idempotent + COMMENT idempotent, non-destructive, data-unchanged)
+and re-captured evidence below. Net state is definitively source-closed regardless
+of the reminder's stale reading.
+
+═══════════════════════════════════════════════════════════════════════════════
+Phase A apply (re-run, idempotent) — 20260716090000_..._deprecate_sourceclose.sql
+═══════════════════════════════════════════════════════════════════════════════
+  [apply] OK (REVOKE + COMMENT committed).  exit 0
+
+═══════════════════════════════════════════════════════════════════════════════
+POSTVERIFY (read-only, after re-apply)
+═══════════════════════════════════════════════════════════════════════════════
+self_checkin_create(p_clinic_slug text, p_phone text, p_name text)  oid=18389:
+  anon_exec              = false   (source closed)
+  auth_exec              = false   (source closed)
+  service_exec           = false   (source closed)
+  postgres_exec (owner)  = true    (preserved — definer context intact)
+  has_deprecated_comment = true
+
+sourceclose_unlinked_confirmed (P4, new unlinked active check_in + same-day confirmed) = 0
+  → no new divergence inflow. Source-closed persists.
+
+Phase B (still GATED — NOT applied this session, per gate order step 4):
+  phaseB_inv1_count                = 1   (known INV-1: check_in f9840007 ↔ resv 26f3e3d5, legacy stuck)
+  phaseB_frozen_reservation_status = confirmed   (un-healed — correct while gated)
+
+VERDICT: Phase A (source close) = PASS. Phase B remains GATED pending supervisor gate 3→4.
