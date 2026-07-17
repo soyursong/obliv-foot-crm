@@ -354,6 +354,12 @@ export default defineConfig({
         //   대표자 print 분리(CEO Q2). getHtmlTemplate/bindHtmlTemplate + buildAutoBindValues 순수 함수 —
         //   축 분리·affirmative(silent 폴백 금지)·진료의({{doctor_name}}) 보존 단언. 실기기 렌더는 supervisor 게이트. auth/server 불요.
         '**/T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT.spec.ts',
+        // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 일마감 환불창 유형 구분(패키지/진료비/단건)
+        //   + 항목 선택 환불 + [FOLD] 완전환불행 재환불 방지. 순수 로직(selectedSum/isFullyRefunded money-path
+        //   가드) + Closing.tsx 정적 소스 가드로 AC-1~6·AC-B1~B3 결정론 검증. real-browser 렌더는 갤탭 field-soak.
+        //   (FIX-REQUEST MSG-20260717-141523-ydgt: phase2 spec_missing — desktop-chrome 단독 매칭 시
+        //    QA 워크트리 TEST_PASSWORD 부재로 auth.setup 기동/실패 → "No tests found". unit 편입으로 차단.)
+        '**/T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -380,6 +386,10 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
         //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.
         '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+        // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: unit 전용(순수 로직 + 소스 가드).
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭 → auth.setup(TEST_PASSWORD) 끌어들여
+        //   "No tests found"/실패하던 것을 차단(FIX-REQUEST MSG-20260717-141523-ydgt). unit 에서만 실행.
+        '**/T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT.spec.ts',
       ],
     },
     {
