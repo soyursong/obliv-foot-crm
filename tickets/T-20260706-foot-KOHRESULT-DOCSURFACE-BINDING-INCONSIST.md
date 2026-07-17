@@ -79,3 +79,17 @@ supervisor 함수-diff 게이트 사전승인 통과 → `scripts/…_apply.mjs 
 
 3자 대조(apply 후): 파일有 · 원장有 · prod有 = 완전 수렴. RRN 재노출 0 유지(AC4).
 → signals qa-pending 재신호. supervisor 사후검증(라이브 결과지 birth 표시) 후 qa_result 마킹 대기.
+
+## APPLY 재확인 (2026-07-18 — 재발행분 MSG-20260718-044450-qirm 처리)
+
+⚠ 본 처리 = supervisor 재발행 메시지(qirm, 4occ의 미등록 type APPLY-APPROVED 재발행분) 기준. **직전 4occ 처리분과 동일 대상**이며 상태는 이미 완전 수렴 상태였음(원장有·prod有·시그니처 무변경).
+
+**blind re-apply 금지 준수 + 멱등 재확인:** 착수 전 `--ledger` 3자 대조로 상태 완전 파악(원장有/prod反映有) 후 `--apply` 실행 = `applyMigration`(CREATE OR REPLACE 동일 body) + `recordLedger`(ON CONFLICT DO NOTHING) = **완전 멱등**(중복기록·재정의 부작용 0). apply.log 보존.
+
+### 사후검증 증거 3종 (apply 후 실측, 2026-07-18)
+- **(a) pg_get_functiondef(publish_koh_result):** 시그니처 `public.publish_koh_result(p_check_in_service_id uuid, p_field_data jsonb)` **무변경** · `fn_customer_birthdates` 호출 실재 **YES** · `COALESCE(v_birth_ko, …)` 서버파생 우선(역순 아님) **YES** · birth 파생값은 `v_birth_display`(YYYY-MM-DD, 주석: "RRN/세기코드 미수신") → **AC4 RRN 평문·세기코드·뒷자리 read/노출 0** (RRN 언급 전부 주석) ✅
+- **(b) schema_migrations 원장:** `version=20260706140000 · name=koh_publish_birth_server_derive` 기록 확정 ✅
+- **(c) E2E spec 재실행:** `tests/e2e/T-20260706-foot-KOHRESULT-DOCSURFACE-BINDING-INCONSIST.spec.ts` → **6 passed (6.0s)** — S1~S5 전원 PASS (S5 = AC8/AC4 RRN 평문·세기코드·뒷자리 미노출 포함) ✅
+
+3자 대조(apply 후): 파일有 · 원장有 · prod有 = 완전 수렴. RRN 재노출 0 유지(AC4). 실패·에러 0 → rollback 불요.
+→ signals qa-pending 재신호. supervisor 사후검증(라이브 결과지 birth 표시 확인) 후 qa_result 마킹 대기.

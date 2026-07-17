@@ -1,0 +1,17 @@
+import { query } from './lib/foot_migration_ledger.mjs';
+const def = (await query(`SELECT pg_get_functiondef((SELECT oid FROM pg_proc WHERE proname='publish_koh_result' LIMIT 1)) AS def;`))?.[0]?.def ?? '';
+console.log('=== (a) fn_customer_birthdates 호출 실재 ===');
+console.log('  fn_customer_birthdates 호출 :', /fn_customer_birthdates/.test(def) ? 'YES' : 'NO');
+console.log('  COALESCE(v_birth_ko 역순가드 :', /COALESCE\(v_birth_ko/.test(def) ? 'YES' : 'NO');
+console.log('  RRN 평문 재노출(AC4 회귀) :', /rrn|jumin|resident_reg|주민등록/i.test(def) ? '⚠검토필요' : '흔적없음');
+console.log('  시그니처 :', (def.match(/CREATE OR REPLACE FUNCTION[^\n]*/)||[''])[0]);
+console.log('\n=== (b) schema_migrations 원장 기록 ===');
+const cols = await query(`SELECT column_name FROM information_schema.columns WHERE table_schema='supabase_migrations' AND table_name='schema_migrations' ORDER BY ordinal_position;`);
+console.log('  cols:', cols.map(c=>c.column_name).join(', '));
+const led = await query(`SELECT version, name FROM supabase_migrations.schema_migrations WHERE version='20260706140000';`);
+console.log('  row:', JSON.stringify(led));
+const recent = await query(`SELECT version FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 6;`);
+console.log('  최근6:', recent.map(r=>r.version).join(', '));
+console.log('\n=== birth 파생 라인 컨텍스트 발췌 ===');
+const idx = def.indexOf('fn_customer_birthdates');
+console.log(idx>=0 ? def.slice(Math.max(0,idx-450), idx+250) : '(없음)');
