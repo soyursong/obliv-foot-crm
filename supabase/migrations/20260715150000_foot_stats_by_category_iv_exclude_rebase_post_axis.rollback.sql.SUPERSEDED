@@ -2,6 +2,8 @@
 -- ★★★ VOID / NEVER-APPLY — paired with VOID migration ★★★
 -- ############################################################
 -- SUPERSEDED BY: 20260717190000_foot_stats_by_category_pkg_created_reconcile (prod 9de0bbef, iv-exclude native)
+--                via T-20260619-foot-CATSTAT-PKGITEM-SOURCE
+-- 재실행·부활 금지: 짝 up 이 VOID → 본 롤백도 영구 미적용(runner 미픽업 + 본 배너).
 -- 근거(SSOT): da_decision_foot_bycat_ivexclude_obe_disposition_20260718.md (DA-20260718-001)
 -- 짝 마이그(20260715150000 up)가 VOID 이므로 본 롤백도 적용 대상 아님.
 --   본 롤백 body 는 pkg_used base(623999a0)로 복원 → 적용 시 확정 KPI 회귀. 절대 실행 금지.
