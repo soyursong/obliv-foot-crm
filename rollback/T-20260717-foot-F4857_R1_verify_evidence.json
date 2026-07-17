@@ -1,0 +1,50 @@
+{
+  "ts_utc": "2026-07-17T13:12:29.514Z",
+  "read_only": true,
+  "customer": {
+    "id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+    "name": "엘런",
+    "chart_number": "F-4857",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+  },
+  "active_packages": [
+    {
+      "id": "38cfc0d4-3d54-4d11-87ff-677493fa5307",
+      "customer_id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "total_amount": 500000,
+      "consultation_fee": 0,
+      "created_at": "2026-07-17 08:47:09.413872+00",
+      "total_sessions": 1,
+      "paid_amount": 500000,
+      "transferred_from": null,
+      "status": "active",
+      "package_name": "RB2(에센셜)"
+    }
+  ],
+  "per_package": [
+    {
+      "package_id": "38cfc0d4-3d54-4d11-87ff-677493fa5307",
+      "name": "RB2(에센셜)",
+      "status": "active",
+      "total_amount": 500000,
+      "total_sessions": 1,
+      "paid_amount": 500000,
+      "transferred_from": null,
+      "package_payments_count": 0,
+      "effectiveNetPaid": 500000,
+      "pkgDue": 0,
+      "consultDue": 0,
+      "fallback_hit": true
+    }
+  ],
+  "customer_outstanding": {
+    "packageDue": 0,
+    "consultationDue": 0
+  },
+  "pre_R1_packageDue": 500000,
+  "post_R1_packageDue": 0,
+  "VERDICT": {
+    "prod_outstanding_zero": true,
+    "phantom_healed_by_R1": true
+  }
+}
