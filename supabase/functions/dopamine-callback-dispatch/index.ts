@@ -29,8 +29,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-// 도파민 EF base URL (예: https://<dopamine-project>.supabase.co/functions/v1)
-const DOPAMINE_FUNCTIONS_URL = Deno.env.get("DOPAMINE_FUNCTIONS_URL") ?? "";
+// 도파민 EF base URL 도출.
+//   FIX-REQUEST D2(2026-07-18): 롱레 미러의 DOPAMINE_FUNCTIONS_URL/CRON_SECRET 은 풋 프로젝트에
+//   미설정(secret 이름 불일치 → 500 dopamine_url_not_configured). 풋 컨벤션 secret 로 정렬:
+//     · 풋 sibling EF(checkin-visited-fire·dopamine-callback)와 동일한 DOPAMINE_CALLBACK_URL 재사용.
+//       단 그 값은 **full endpoint URL**(예: .../functions/v1/crm-lifecycle-callback)이므로
+//       본 dispatch 는 2개 도파민 엔드포인트(foot-callback-recv / crm-lifecycle-callback)를 라우팅
+//       하려면 **functions base**(.../functions/v1)가 필요 → 마지막 path 세그먼트를 정규화 제거.
+//       (base 형태로 들어와도 멱등 — 이미 .../functions/v1 이면 그대로.)
+const DOPAMINE_CALLBACK_URL_RAW = Deno.env.get("DOPAMINE_CALLBACK_URL") ?? "";
+const DOPAMINE_FUNCTIONS_URL = DOPAMINE_CALLBACK_URL_RAW
+  ? DOPAMINE_CALLBACK_URL_RAW.replace(/\/+$/, "").replace(/(\/functions\/v1)(\/[^/?#]+)?$/, "$1")
+  : "";
 // 공유 시크릿 — supervisor가 양쪽 env 동시 주입 (계약). 풋 기존 콜백과 동일 env.
 const DOPAMINE_CALLBACK_SECRET = Deno.env.get("DOPAMINE_CALLBACK_SECRET") ?? "";
 // T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT (canon §1 / cross_crm §6-6-2·§4-2d):
@@ -38,8 +48,10 @@ const DOPAMINE_CALLBACK_SECRET = Deno.env.get("DOPAMINE_CALLBACK_SECRET") ?? "";
 //   미설정 시 기존 DOPAMINE_CALLBACK_SECRET 로 폴백(무중단 이행).
 const FOOT_CALLBACK_SECRET = Deno.env.get("FOOT_CALLBACK_SECRET") ?? "";
 const CALLBACK_SECRET = FOOT_CALLBACK_SECRET || DOPAMINE_CALLBACK_SECRET;
-// worker 인증용 (net.http_post 헤더 X-Internal-Cron 과 일치)
-const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// worker 인증용 (net.http_post 헤더 X-Internal-Cron 과 일치).
+//   FIX-REQUEST D2: 풋 컨벤션 secret 명 INTERNAL_CRON_SECRET (redpay-reconcile·send-notification 동일).
+//   worker 는 vault internal_cron_secret 를 X-Internal-Cron 으로 보내므로 값이 일치해야 함.
+const CRON_SECRET = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
 // 재시도 소진 임계 — 마이그레이션 backoff(1·2·4·8·16·32·60)와 동일
 const MAX_ATTEMPTS = 7;
 
@@ -110,7 +122,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!DOPAMINE_FUNCTIONS_URL) {
-    console.error("[cb-dispatch] DOPAMINE_FUNCTIONS_URL not set");
+    console.error("[cb-dispatch] DOPAMINE_CALLBACK_URL not set (functions base 도출 불가)");
     // pending 유지 → worker가 재시도. env 주입 전 안전망.
     await supabase
       .from("dopamine_callback_outbox")
@@ -123,13 +135,25 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, reason: "dopamine_url_not_configured" }, 500);
   }
 
-  // ── 2. payload 구성 (저장된 payload + mode) ──────────────────
-  // payload.source_system='foot' 는 트리거가 이미 적재.
-  const payload = { ...(row.payload as Record<string, unknown>), mode };
-  const targetUrl = `${DOPAMINE_FUNCTIONS_URL}/crm-lifecycle-callback`;
+  // ── 2. payload/target 구성 — event_type 라우팅 discriminator ──
+  // T-20260717-foot-CHECKIN-VISITED-EMIT-DOPAMINE (접근 B, DA MSG-h576 가드레일 5, 축 분리):
+  //   · 'visited_stage' → foot-callback-recv (stage='visited' 축). 수신부는 이미 live·gate 없음
+  //     → mode 미주입(검증된 foot-callback-recv envelope 그대로 forward). payload 는 트리거가
+  //       수신 계약({type,external_id,event_id,occurred_at,payload})대로 적재.
+  //   · 그 외(visited/no_show/cancelled/rejected/reschedule) → crm-lifecycle-callback
+  //     (process_status/TM 축). 기존 경로 무변경(mode 주입 유지).
+  //   두 축은 별개 endpoint·별개 outbox 행 = 병합 금지(가드레일 5).
+  const isStageAxis = row.event_type === "visited_stage";
+  const targetUrl = isStageAxis
+    ? `${DOPAMINE_FUNCTIONS_URL}/foot-callback-recv`
+    : `${DOPAMINE_FUNCTIONS_URL}/crm-lifecycle-callback`;
+  // payload.source_system='foot' 는 트리거가 이미 적재. stage 축은 mode 미주입.
+  const payload = isStageAxis
+    ? { ...(row.payload as Record<string, unknown>) }
+    : { ...(row.payload as Record<string, unknown>), mode };
 
   console.log(
-    `[cb-dispatch] firing → ${targetUrl} | id=${outbox_id} type=${row.event_type} attempts=${row.attempts} mode=${mode}`,
+    `[cb-dispatch] firing → ${targetUrl} | id=${outbox_id} type=${row.event_type} attempts=${row.attempts} mode=${isStageAxis ? "n/a(stage)" : mode}`,
   );
 
   // ── 3. 단일 POST (재시도는 worker 소유) ──────────────────────
