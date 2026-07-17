@@ -140,6 +140,7 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK', () => {
 type DocTpl = { form_key: string; name_ko: string };
 const DOC_TEMPLATES: DocTpl[] = [
   { form_key: 'bill_receipt', name_ko: '진료비 계산서·영수증' },
+  { form_key: 'bill_receipt_new', name_ko: '진료비 계산서·영수증(신양식)' }, // T-20260714-foot-DOCFEE 완결(additive)
   { form_key: 'bill_detail', name_ko: '진료비내역서' },
   { form_key: 'koh_result', name_ko: '검사결과 보고서' },
   { form_key: 'diag_opinion', name_ko: '소견서' },
@@ -177,8 +178,10 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK — A안 서류
     for (const k of ['referral_letter', 'treat_confirm_code', 'treat_confirm_nocode']) {
       expect(keys).toContain(k);
     }
-    // 11 form_key = 총 13종(진단서·소견서 국/영문 병합 전 기준) 전부 '제증명' 그룹
-    expect(keys.length).toBe(11);
+    // 무료 4종 + 신양식 1(진료비 계산서·영수증 신양식) + 제증명 6(4 form_key) + 예상외 3
+    //   = 12 form_key 전부 '제증명' 그룹 (T-20260714-foot-DOCFEE 신양식 additive 등록 후)
+    expect(keys).toContain('bill_receipt_new');
+    expect(keys.length).toBe(12);
     expect([...keys].sort()).toEqual([...DOC_CATEGORY_JEUNGMYEONG_KEYS].sort());
   });
 

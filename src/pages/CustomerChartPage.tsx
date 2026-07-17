@@ -33,13 +33,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AmountInput } from '@/components/ui/AmountInput';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
-import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
+import { TREATMENT_TYPES, PACKAGE_TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -58,7 +58,7 @@ import { useClinic } from '@/hooks/useClinic';
 //   접수분류(JUDGE-365)·배정축과 동일 헬퍼 재사용(single source) → 표시 불일치 해소(AC-3).
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
-import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
 import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
@@ -759,6 +759,34 @@ function ReceiptUploadSection({
   }[]>([]);
 
   const storagePath = `customer/${customerId}/receipt`;
+  // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS:
+  //   매출연동 다이얼로그 오픈 의도 persist 키 — 태블릿 카메라 앱 전환 중 리마운트/컨텍스트 리셋
+  //   (가설A)으로 setAmountDlg가 소실돼도 마운트시 복원해 팝업을 보장한다.
+  const PENDING_DLG_KEY = `receipt-amount-dlg-pending:${customerId}`;
+
+  // T-20260717 계측: 갤탭 실기 field-soak에서 팝업 미표시 지점 특정용(가설 A/B/C 좁힘).
+  //   기존 CAMERA-FOCUS/CAMERA-ZOOM console.debug 진단 패턴 준용.
+  const diagReceiptDlg = (step: string, extra?: unknown) => {
+    try { console.debug(`[RECEIPT-DLG] ${step}`, extra ?? ''); } catch { /* noop */ }
+  };
+
+  // T-20260717: 현재 로드된 귀속후보로 매출연동 다이얼로그 오픈 (기본 귀속대상 산출).
+  //   무거운 재조회에 의존하지 않고 즉시 오픈 가능한 단일 진입점 — handleUpload/리마운트복원 공용.
+  const openAmountDialog = useCallback(() => {
+    const defaultSel = activePkgs.length > 0
+      ? `pkg:${activePkgs[0].id}`
+      : (waitingCIs.length > 0 ? `ci:${waitingCIs[0].id}` : 'single');
+    setAmountDlg({
+      open: true, amount: '', method: 'cash',
+      targetSel: defaultSel, paymentDate: todaySeoulISODate(),
+    });
+  }, [activePkgs, waitingCIs]);
+
+  // T-20260717: 다이얼로그 종료(등록/건너뛰기) — persist된 오픈 의도 해제 후 close.
+  const closeAmountDlg = useCallback(() => {
+    try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* private mode */ }
+    setAmountDlg((d) => ({ ...d, open: false }));
+  }, [PENDING_DLG_KEY]);
 
   // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 고객 활성 패키지 조회 (영수증 결제 라우팅용)
   // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: total_sessions 동반 조회 (회수 기반 단건/패키지 자동 분류).
@@ -811,54 +839,56 @@ function ReceiptUploadSection({
 
   useEffect(() => { load(); loadActivePkgs(); loadWaitingCIs(); }, [load, loadActivePkgs, loadWaitingCIs]);
 
+  // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS (가설A 복원):
+  //   태블릿 카메라 앱 전환 중 컴포넌트가 리마운트되어 amountDlg가 {open:false}로 리셋된 경우,
+  //   업로드 직후 남긴 pending 스탬프(5분 내)로 다이얼로그를 재오픈한다. 스탬프 만료 시 정리.
+  useEffect(() => {
+    let ts = 0;
+    try {
+      const raw = sessionStorage.getItem(PENDING_DLG_KEY);
+      ts = raw ? Number(raw) : 0;
+    } catch { ts = 0; }
+    if (ts && Date.now() - ts < 5 * 60 * 1000) {
+      diagReceiptDlg('dialog:restore-after-remount', { ageMs: Date.now() - ts });
+      openAmountDialog();
+    } else if (ts) {
+      try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
+    }
+    // 마운트 1회만 복원 — openAmountDialog는 후보 로드 시 재생성되나 복원은 최초 1회로 충분.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    // AC3: 카메라 촬영 취소·빈 FileList(일부 모바일 브라우저의 빈 onChange 발화) 안전 early return.
+    if (!files || files.length === 0) { diagReceiptDlg('upload:empty-filelist'); return; }
+    diagReceiptDlg('upload:start', { count: files.length });
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+    let uploadedOk = false;
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop() ?? 'jpg';
+        const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+        if (error) toast.error(`업로드 실패: ${error.message}`);
+        else uploadedOk = true;
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    setUploading(false);
-    e.target.value = '';
-    await load();
-    // T-20260609-foot-RECEIPT-PKG-ALWAYS: 최신 활성 패키지 재조회 (귀속 대상 프리셀렉트)
-    await loadActivePkgs();
-    const { data: pkgRows } = await supabase
-      .from('packages')
-      .select('id, package_name, total_sessions')
-      .eq('customer_id', customerId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-    const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
-      ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 }));
-    setActivePkgs(pkgs);
-    // T-20260714 옵션A: payment_waiting 내원 재조회 (귀속 후보).
-    const { data: ciRows } = await supabase
-      .from('check_ins')
-      .select('id, clinic_id, status, status_flag_history, customer_id, checked_in_at')
-      .eq('customer_id', customerId)
-      .eq('status', 'payment_waiting')
-      .order('checked_in_at', { ascending: false });
-    const wcis = (ciRows ?? []).map((c: {
-      id: string; clinic_id: string; status: string; status_flag_history: unknown[];
-      customer_id: string | null; checked_in_at: string | null;
-    }) => ({
-      id: c.id, clinic_id: c.clinic_id, status: c.status,
-      status_flag_history: c.status_flag_history ?? [], customer_id: c.customer_id,
-      label: `수납대기 내원${c.checked_in_at ? ` · ${formatDateTimeDots(c.checked_in_at)}` : ''}`,
-    }));
-    setWaitingCIs(wcis);
-    // 매출 연동 다이얼로그 열기 — 옵션A 귀속 선택. 기본값: 활성패키지>수납대기 내원>단건 순.
-    //   활성패키지 無 여도 하드블록 없이 ci/단건으로 귀속 가능(옵션A, RECEIPT-PKG-ALWAYS 하드블록 supersede).
-    const defaultSel = pkgs.length > 0 ? `pkg:${pkgs[0].id}` : (wcis.length > 0 ? `ci:${wcis[0].id}` : 'single');
-    setAmountDlg({
-      open: true, amount: '', method: 'cash',
-      targetSel: defaultSel,
-      paymentDate: todaySeoulISODate(),
-    });
+    if (!uploadedOk) { diagReceiptDlg('upload:none-ok'); return; }
+    await load().catch(() => {}); // 썸네일 갱신 — 비차단(실패해도 다이얼로그 진행).
+    // ── T-20260717 (가설A 타겟픽스): 무거운 귀속후보 재조회 이전에 다이얼로그를 즉시 오픈 ──
+    //   + 오픈 의도를 sessionStorage에 스탬프 → 카메라 앱 전환 중 리마운트/컨텍스트 리셋에도
+    //   마운트 복원으로 팝업을 보장한다. (기존: await 체인 말미 setAmountDlg → 체인 중단 시 팝업 소실)
+    try { sessionStorage.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
+    openAmountDialog();
+    diagReceiptDlg('dialog:opened');
+    // 귀속후보 최신화 — 오픈 이후 비차단 갱신(실패해도 다이얼로그 유지). loadActivePkgs/loadWaitingCIs
+    //   가 동일 쿼리를 수행하므로 인라인 중복 재조회 제거(정본 로더 재사용).
+    void loadActivePkgs().catch(() => {});
+    void loadWaitingCIs().catch(() => {});
   };
 
   const remove = async (img: StorageImageItem) => {
@@ -909,7 +939,7 @@ function ReceiptUploadSection({
           .from('packages')
           .update({ paid_amount: (pkgRow?.paid_amount ?? 0) + amt })
           .eq('id', packageId);
-        setAmountDlg((d) => ({ ...d, open: false }));
+        closeAmountDlg();
         toast.success('단건 결제로 기록 (회수 1회)');
         onPaymentCreated();
         return;
@@ -923,7 +953,7 @@ function ReceiptUploadSection({
           memo: '영수증 업로드', createdAtOverride,
         });
       } catch (e) { toast.error(e instanceof Error ? e.message : '패키지 결제 기록 실패'); return; }
-      setAmountDlg((d) => ({ ...d, open: false }));
+      closeAmountDlg();
       toast.success('패키지 결제로 기록 (미수 반영)');
       onPaymentCreated();
       return;
@@ -943,7 +973,7 @@ function ReceiptUploadSection({
         clinicId, customerId, amount: amt, method: amountDlg.method,
         attribution, createdAtOverride,
       });
-      setAmountDlg((d) => ({ ...d, open: false }));
+      closeAmountDlg();
       if (res.route === 'checkin') {
         toast.success(res.kanbanResolved ? '수납 완료 — 대기목록 해소' : '수납 기록됨');
       } else {
@@ -1079,7 +1109,7 @@ function ReceiptUploadSection({
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => setAmountDlg((d) => ({ ...d, open: false }))}
+                onClick={closeAmountDlg}
               >
                 건너뛰기
               </Button>
@@ -6553,7 +6583,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   const rows = pkgPayments.filter((pp) => pp.package_id === p.id);
                   const pkgTotal = p.total_amount ?? 0;
                   const consultTotal = p.consultation_fee ?? 0;
-                  const pkgDue = computeOutstanding(pkgTotal, netPaidFromPayments(rows, 'package'));
+                  // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 = paid_amount 폴백)로 phantom 미수 치유.
+                  const pkgDue = computeOutstanding(pkgTotal, effectiveNetPaid(p, rows));
                   const consultDue = computeOutstanding(consultTotal, netPaidFromPayments(rows, 'consultation'));
                   if (pkgDue > 0) curPackageDue += pkgDue;
                   if (consultDue > 0) curConsultDue += consultDue;
@@ -7126,7 +7157,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 패키지 금액/진료비 금액 별도 표기 + 항목별 잔금(§4-A: 합산 단일표기 금지). */}
                           {(() => {
                             const rows = pkgPayments.filter((pay) => pay.package_id === p.id);
-                            const pkgDue = computeOutstanding(p.total_amount, netPaidFromPayments(rows, 'package'));
+                            // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 폴백)로 phantom 미수 치유.
+                            const pkgDue = computeOutstanding(p.total_amount, effectiveNetPaid(p, rows));
                             const pkgSt = balanceStatus(pkgDue);
                             const fee = p.consultation_fee ?? 0;
                             const consultDue = computeOutstanding(fee, netPaidFromPayments(rows, 'consultation'));
@@ -9773,6 +9805,22 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 // T-20260507-foot-PKG-TEMPLATE-REDESIGN: 고객차트에서 구입 티켓 추가
 // 항목별 [회수/수가] 자동합산 폼 — 상담 실장 고객차트 연동
 // ============================================================
+// T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭을 /packages 관리 3그룹(정찰가(기준)/공식 패키지/커스텀)으로 묶기 위한
+//   회차-합 기반 분류 헬퍼. /packages 의 isOneTimeTemplate(회차 총합=1) 규칙과 동일(뷰 레벨 재분류만, 원본 무변경).
+type PkgGroupTab = 'standard' | 'official' | 'custom';
+function pkgTemplateSessionTotal(t: PackageTemplate): number {
+  return (
+    (t.heated_sessions ?? 0) +
+    (t.unheated_sessions ?? 0) +
+    (t.podologe_sessions ?? 0) +
+    (t.iv_sessions ?? 0) +
+    (t.trial_sessions ?? 0) +
+    (t.reborn_sessions ?? 0)
+  );
+}
+function pkgTemplateIsOneTime(t: PackageTemplate): boolean {
+  return pkgTemplateSessionTotal(t) === 1;
+}
 function PackagePurchaseFromTemplateDialog({
   open,
   customerId,
@@ -9827,9 +9875,17 @@ function PackagePurchaseFromTemplateDialog({
   //     커스텀 prefill = standard_price(1회 정상가) × 횟수(totalSessions) 스냅샷 → 1회가×총결제 혼합 grain 방지
   //     (미이행 시 할인율 음수/과대). refPriceTouched=수기 override 시 자동계산 중단(override 존중).
   const stdPrices = useTreatmentStandardPrices(clinicId);
-  const [treatmentType, setTreatmentType] = useState<TreatmentType | ''>('');
+  // T-20260716-foot-EXPPASS: packages/통계 축 6토큰(+체험권). 정찰가 마스터(tsp)는 5토큰 유지(DA Q2=NO).
+  const [treatmentType, setTreatmentType] = useState<PackageTreatmentType | ''>('');
   const [referencePrice, setReferencePrice] = useState(0);
   const [refPriceTouched, setRefPriceTouched] = useState(false);
+
+  // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭 = /packages 관리 3그룹.
+  //   개별 패키지(12회권 등)는 나열하지 않고 그룹 내부 pill 로 선택 → 기존 선택 항목 누락 없음(AC-2).
+  //   회차 총합=1 → 정찰가(기준) 그룹 / 그 외 → 공식 패키지 그룹 (뷰 레벨 재분류, 원본 templates 무변경).
+  const oneTimeTemplates = useMemo(() => templates.filter(pkgTemplateIsOneTime), [templates]);
+  const officialTemplates = useMemo(() => templates.filter((t) => !pkgTemplateIsOneTime(t)), [templates]);
+  const [groupTab, setGroupTab] = useState<PkgGroupTab>('custom');
 
   // 항목별 자동합산
   const computedTotal = useMemo(
@@ -9851,7 +9907,12 @@ function PackagePurchaseFromTemplateDialog({
 
   // T-20260708 RECONCILE(D): 커스텀 모드 기준정가 = standard_price × 횟수(totalSessions) 계약총액 grain 스냅샷.
   //   시술유형/횟수 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
-  const stdForType = treatmentType ? stdPrices.map[treatmentType] : null;
+  // T-20260716-foot-EXPPASS: 체험권은 정찰가 마스터(tsp, 5토큰)에 없음 → prefill 없음(기준정가 부재, 할인율 "-").
+  //   tsp 축(TREATMENT_TYPES)에 속한 유형만 standard_price 조회. 체험권 선택 시 stdForType=null → reference_price 미채움.
+  const stdForType =
+    treatmentType && (TREATMENT_TYPES as readonly string[]).includes(treatmentType)
+      ? stdPrices.map[treatmentType as TreatmentType]
+      : null;
   useEffect(() => {
     if (selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType) return;
     if (stdForType != null && stdForType > 0) setReferencePrice(stdForType * totalSessions);
@@ -9883,6 +9944,8 @@ function PackagePurchaseFromTemplateDialog({
           setPrecon(0); setPriceOverride(false); setMemo(first.memo ?? '');
           // T-20260708 AC-2b: 자동선택 템플릿 정가 = 기준정가.
           setTreatmentType(''); setReferencePrice(first.total_price ?? 0); setRefPriceTouched(false);
+          // T-20260715: 자동선택 템플릿의 그룹으로 상단 탭 동기화(회차 총합=1 → 정찰가(기준), 그 외 → 공식 패키지).
+          setGroupTab(pkgTemplateIsOneTime(first) ? 'standard' : 'official');
         }
       });
   }, [open, clinicId]);
@@ -9890,6 +9953,7 @@ function PackagePurchaseFromTemplateDialog({
   useEffect(() => {
     if (!open) return;
     setSelectedTemplateId('custom');
+    setGroupTab('custom');
     setPackageName('');
     setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
@@ -9951,9 +10015,20 @@ function PackagePurchaseFromTemplateDialog({
 
   // T-20260708 AC-8/AC-10 + RECONCILE(D): 시술유형 선택 시 수기 override 플래그 해제 → 반응형 effect 가
   //   커스텀 모드에서 standard_price × 횟수(계약총액 grain)를 기준정가에 prefill. 템플릿 모드는 유지(AC-2b).
-  const selectTreatmentType = (t: TreatmentType | '') => {
+  const selectTreatmentType = (t: PackageTreatmentType | '') => {
     setTreatmentType(t);
     if (selectedTemplateId === 'custom') setRefPriceTouched(false);
+  };
+
+  // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 그룹 탭 전환.
+  //   커스텀 → applyCustom(). 정찰가(기준)/공식 패키지 → 이미 그룹 내 항목이 선택돼 있으면 유지,
+  //   아니면 그룹 첫 항목을 applyTemplate 로 자동 채움(기존 탭 클릭=자동선택 동선 무회귀, AC-3).
+  const selectPkgGroup = (g: PkgGroupTab) => {
+    setGroupTab(g);
+    if (g === 'custom') { applyCustom(); return; }
+    const inGroup = g === 'standard' ? oneTimeTemplates : officialTemplates;
+    const alreadyInGroup = selectedTemplateId !== 'custom' && inGroup.some((t) => t.id === selectedTemplateId);
+    if (!alreadyInGroup && inGroup.length > 0) applyTemplate(inGroup[0]);
   };
 
   const submit = async () => {
@@ -10065,30 +10140,86 @@ function PackagePurchaseFromTemplateDialog({
         </div>
 
         <div className="space-y-2 text-sm">
-          {/* 템플릿 선택 → 자동 채움 */}
+          {/* 패키지 템플릿 선택 → 자동 채움 */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
-            {/* T-20260708-foot-PKG-POPUP-TAB-COMPACT: flex-wrap 버튼 나열 → shadcn Tabs 전환.
-                커스텀 탭이 최앞(첫 번째) — T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT 규약 유지.
-                탭 전환 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-1/회귀 가드). */}
-            <Tabs
-              value={selectedTemplateId}
-              onValueChange={(v) => {
-                if (v === 'custom') { applyCustom(); return; }
-                const t = templates.find((x) => x.id === v);
-                if (t) applyTemplate(t);
-              }}
-            >
-              <TabsList className="flex flex-wrap h-auto w-full justify-start gap-1 p-1">
-                <TabsTrigger value="custom" data-testid="pkg-tab-custom" className="h-7 px-2.5 text-xs">
-                  커스텀
-                </TabsTrigger>
-                {templates.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id} data-testid={`pkg-tab-${t.id}`} className="h-7 px-2.5 text-xs">
-                    {t.name}
-                  </TabsTrigger>
-                ))}
+            {/* T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 개별 패키지명 나열 → /packages 관리 3그룹으로 재배치.
+                상단 탭 = 정찰가(기준) / 공식 패키지 / 커스텀 (라벨·순서 /packages Sheet 와 동일).
+                개별 패키지(12/24회권 등)는 해당 그룹 탭 내부 pill 로 선택(누락 없음, AC-2).
+                탭 전환·항목 선택 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-3 회귀 가드).
+                (선행 배포 PKG-POPUP-TAB-COMPACT(41dc6380)의 shadcn Tabs 위에 그룹핑만 얹음.) */}
+            <Tabs value={groupTab} onValueChange={(v) => selectPkgGroup(v as PkgGroupTab)}>
+              <TabsList className="w-full">
+                <TabsTrigger value="standard" data-testid="pkg-group-standard" className="flex-1 h-7 text-xs">정찰가(기준)</TabsTrigger>
+                <TabsTrigger value="official" data-testid="pkg-group-official" className="flex-1 h-7 text-xs">공식 패키지</TabsTrigger>
+                <TabsTrigger value="custom" data-testid="pkg-group-custom" className="flex-1 h-7 text-xs">커스텀</TabsTrigger>
               </TabsList>
+
+              {/* 그룹1 — 정찰가(기준): 시술유형별 1회 정상가 참조(/packages 탭1 동일 개념) + 1회성 패키지 선택 pill */}
+              <TabsContent value="standard" className="mt-2 space-y-2">
+                <div className="rounded-lg border border-teal-100 bg-teal-50/30 p-2 space-y-1" data-testid="pkg-group-standard-refprices">
+                  <div className="text-[11px] font-semibold text-teal-800">시술유형별 1회 정상가 (정찰가 기준)</div>
+                  {stdPrices.available ? (
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                      {TREATMENT_TYPES.map((t) => (
+                        <div key={t} className="flex justify-between">
+                          <span className="text-gray-500">{treatmentTypeLabel(t)}</span>
+                          <span className="tabular-nums text-gray-700">{stdPrices.map[t] != null ? formatAmount(stdPrices.map[t]!) : '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">정찰가 기준표 미설정 — [패키지 관리 &gt; 정찰가(기준)] 탭에서 등록</div>
+                  )}
+                </div>
+                {oneTimeTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {oneTimeTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`pkg-tab-${t.id}`}
+                        onClick={() => applyTemplate(t)}
+                        className={cn2(
+                          'h-7 rounded-md border px-2.5 text-xs transition',
+                          selectedTemplateId === t.id ? 'border-sage-600 bg-sage-50 text-sage-700 font-medium' : 'border-gray-200 hover:bg-gray-50',
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">1회성 패키지 없음 — 아래에서 직접 조합하세요</div>
+                )}
+              </TabsContent>
+
+              {/* 그룹2 — 공식 패키지: 다회권 템플릿(12/24/36/48회권, 레이저류 등) 선택 pill */}
+              <TabsContent value="official" className="mt-2">
+                {officialTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {officialTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`pkg-tab-${t.id}`}
+                        onClick={() => applyTemplate(t)}
+                        className={cn2(
+                          'h-7 rounded-md border px-2.5 text-xs transition',
+                          selectedTemplateId === t.id ? 'border-sage-600 bg-sage-50 text-sage-700 font-medium' : 'border-gray-200 hover:bg-gray-50',
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">공식 패키지 없음 — 커스텀으로 직접 입력하세요</div>
+                )}
+              </TabsContent>
+
+              {/* 그룹3 — 커스텀: 아래 항목 직접 조합 */}
+              <TabsContent value="custom" className="mt-2">
+                <div className="text-[11px] text-muted-foreground">아래 항목(레이저·포돌로게·수액·체험권 등)을 직접 조합해 커스텀 패키지를 구성하세요.</div>
+              </TabsContent>
             </Tabs>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>
@@ -10412,12 +10543,13 @@ function PackagePurchaseFromTemplateDialog({
                 <label className="text-xs text-gray-500">시술 유형 <span className="text-red-500">*</span></label>
                 <select
                   value={treatmentType}
-                  onChange={(e) => selectTreatmentType(e.target.value as TreatmentType | '')}
+                  onChange={(e) => selectTreatmentType(e.target.value as PackageTreatmentType | '')}
                   data-testid="pkg-treatment-type"
                   className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
                 >
                   <option value="">— 선택 —</option>
-                  {TREATMENT_TYPES.map((t) => (
+                  {/* T-20260716-foot-EXPPASS: packages/통계 축 6토큰(+체험권) → 체험권 선택 시 treatment_type='체험권' 저장·통계 태깅. */}
+                  {PACKAGE_TREATMENT_TYPES.map((t) => (
                     <option key={t} value={t}>{treatmentTypeLabel(t)}</option>
                   ))}
                 </select>

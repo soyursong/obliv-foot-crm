@@ -54,6 +54,7 @@ function mockTpl(form_key: string, name_ko: string, category = 'foot-service'): 
 // 변경 전(구명칭) 운영 DB 입력 — bill_detail/koh_result 구명칭, bill_receipt 현행.
 const DB_TEMPLATES_OLD_LABELS: FormTemplate[] = [
   mockTpl('bill_receipt', '진료비 계산서·영수증'),
+  mockTpl('bill_receipt_new', '진료비 계산서·영수증(신양식)'), // T-20260714-foot-DOCFEE 완결(additive)
   mockTpl('bill_detail', '진료비내역서'),
   mockTpl('koh_result', '검사결과 보고서'),
   mockTpl('diag_opinion', '소견서'),
@@ -114,7 +115,7 @@ test('시나리오2: override 매핑 SSOT — 정확히 2건(bill_detail/koh_res
 
 // ── 시나리오 3: 회귀 가드 — 순서·집합·필드 불변 ────────────────────────────────
 
-test('시나리오3: 순서·표시 집합 parent §1 그대로 회귀 0 (SPLIT: 11항목)', () => {
+test('시나리오3: 순서·표시 집합 parent §1 그대로 회귀 0 (DOCFEE 신양식 additive: 12항목)', () => {
   const result = orderDocList(DB_TEMPLATES_OLD_LABELS);
   expect(result.map((t) => t.form_key)).toEqual([...DOCLIST_ORDER_10]);
   expect(result).toHaveLength(DOCLIST_ORDER_10.length);

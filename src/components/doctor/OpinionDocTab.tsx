@@ -27,7 +27,7 @@
 //   원장이 editor 에서 수기 수정하므로 기본 문구는 출발점일 뿐(AC-4). 임의 임상 단정 회피 — 라벨 기반 중립 문장.
 //   form_templates(form_key='opinion_doc').field_map.sections 가 있으면 그 그리드를 우선 사용(없으면 이 하드코드).
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -48,6 +48,9 @@ import {
   ORAL_X_DEFAULT_REASON,
 } from '@/lib/opinionDocCompose';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
+// T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
+//   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
+import { useUpdateStaffMemo } from '@/lib/opinionRequest';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import type { UserProfile } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -518,6 +521,31 @@ function useVisitSigningDoctors(clinicId: string | null, customerId: string | nu
 }
 
 // ---------------------------------------------------------------------------
+// T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (item2 / DA A-Doc "seed only·auto-bind NO"):
+//   진단서/소견서 발행자(진료의) 기본값 seed 출처 = 그 내원 치료테이블 지정 진료의(check_ins.treating_doctor_id).
+//   visitor.id = check_ins.id → 해당 내원행의 treating_doctor_id read-only 조회(무DDL).
+//   treating_doctor_id = clinic_doctors.id → 발행자 드롭다운과 직접 비교 가능.
+//   ★seed 기본값만 제안 — override(doctorTouched)·발행게이트(publish_opinion_doc RPC)·field_data 스냅샷 전부 불변.
+//   미지정/미매칭 시 null → defaultDoctorId 가 기존 체인(서명의→is_default→첫 진료의) 폴백.
+function useVisitTreatingDoctor(clinicId: string | null, checkInId: string | null) {
+  return useQuery<string | null>({
+    queryKey: ['opinion_visit_treating_doctor', clinicId, checkInId],
+    enabled: !!clinicId && !!checkInId,
+    queryFn: async () => {
+      if (!clinicId || !checkInId) return null;
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('treating_doctor_id')
+        .eq('id', checkInId)
+        .maybeSingle();
+      if (error) throw error;
+      return ((data as { treating_doctor_id: string | null } | null)?.treating_doctor_id) ?? null;
+    },
+    staleTime: 15_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ (AC-1) — 그 환자의 최신 발건강 질문지(form_data) read-only 조회.
 //   submitted_at 최신 1건. 없으면 null(자동화 스킵=수동 모드). HealthQResultsPanel.loadResults 조회 컨벤션 재사용.
 // ---------------------------------------------------------------------------
@@ -610,7 +638,27 @@ export function OpinionEditorDialog({
 
   // AC-6/12: 서류종류 라벨(진단서/소견서) — 큐에서 열리면 실장이 고른 doc_type, 아니면 소견서(기본).
   const docTitle = initialDocType === 'diagnosis' ? '진단서' : '소견서';
-  const staffMemo = (staffRequestMemo ?? '').trim();
+
+  // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모 편집 draft.
+  //   staffRequestMemo(요청 원본)를 seed(bind 블록) → 편집칸 controlled state. memoSaved=마지막 persist 값(dirty 판정 기준).
+  //   저장 = useUpdateStaffMemo(requestId) blur 시. requestId 없으면(허브 직접 오픈) 미노출·미저장.
+  const [memoDraft, setMemoDraft] = useState('');
+  const [memoSaved, setMemoSaved] = useState('');
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item2): 실장 요청 메모 textarea 내용 분량만큼 세로 자동확장(스크롤 제거).
+  //   MedicalChartPanel(L1104) 검증 패턴 재사용 — height='auto' 리셋 후 scrollHeight 로 확장(순수 JS, 신규 npm 0).
+  //   field-sizing:content 미지원 갤탭/구브라우저에서도 동작 보장. 아래 useEffect 가 memoDraft 변화마다 재계산.
+  const memoRef = useRef<HTMLTextAreaElement>(null);
+  const updateMemoMut = useUpdateStaffMemo(clinicId);
+  const handleMemoSave = async () => {
+    if (!requestId) return;
+    if (memoDraft === memoSaved) return;   // 변경 없음 → no-op(불필요 write 방지, AC-3 핸드오프 무결)
+    try {
+      await updateMemoMut.mutateAsync({ requestId, staffMemo: memoDraft });
+      setMemoSaved(memoDraft);
+    } catch {
+      // 저장 실패 — draft 유지(memoSaved 미변경→dirty 유지), 사용자 재시도 가능. 차단 없음.
+    }
+  };
 
   // opinion_doc 템플릿(form_templates: templateId + field_map 옵션 그리드) + clinic_doctors + 발행 이력.
   const { data: tpl } = useOpinionTemplate(clinicId);
@@ -627,6 +675,8 @@ export function OpinionEditorDialog({
   // ③ 그 내원(customer_id + visit_date=내원일 KST)의 진료 본 의사 — 발행자 일치 게이트용(read-only).
   const visitDate = visitor?.checked_in_at ? seoulISODate(visitor.checked_in_at) : null;
   const { data: visitSigning } = useVisitSigningDoctors(clinicId, visitor?.customer_id ?? null, visitDate);
+  // T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (item2): 그 내원 치료테이블 지정 진료의 — 발행자 seed 우선 출처.
+  const { data: treatingDoctorId = null } = useVisitTreatingDoctor(clinicId, visitor?.id ?? null);
 
   // AC-1: 그 환자의 최신 발건강 질문지(read-only) — 자동 pre-check 소스.
   const { data: healthQData, isLoading: hqLoading } = useLatestHealthQ(clinicId, visitor?.customer_id ?? null);
@@ -636,13 +686,15 @@ export function OpinionEditorDialog({
   // 발행자 ↔ 진료의 일치: 정보가 없으면 게이트 미적용(true), 있으면 발행자가 그날 진료의 Set 에 속해야 true.
   const issuerMatchesSigning = !hasSigningInfo || (doctorId !== '' && signingIds.has(doctorId));
 
-  // 발행자 기본값: 그 내원 진료 본 의사가 등록 진료의에 있으면 우선 → is_default → 첫 진료의.
+  // 발행자 기본값: 치료테이블 지정 진료의(item2, A-Doc seed) 우선 → 그 내원 서명의 → is_default → 첫 진료의.
   const defaultDoctorId = useMemo(() => {
     if (doctors.length === 0) return '';
+    // T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (A-Doc seed): 치료테이블 지정 진료의 우선(등록 진료의에 있을 때).
+    if (treatingDoctorId && doctors.some((d) => d.id === treatingDoctorId)) return treatingDoctorId;
     const signed = doctors.find((d) => signingIds.has(d.id));
     if (signed) return signed.id;
     return (doctors.find((d) => d.is_default) ?? doctors[0]).id;
-  }, [doctors, signingIds]);
+  }, [doctors, signingIds, treatingDoctorId]);
 
   // 옵션 그리드 = form_templates(opinion_doc).field_map.sections 우선, 없으면 하드코드 OPINION_SECTIONS(empty-safe).
   const sections: OpinionSection[] = useMemo(
@@ -729,6 +781,9 @@ export function OpinionEditorDialog({
     setDoctorTouched(false);
     setChartOpen(false);
     setExpandedGroups(new Set()); // 금기증 대분류 펼침 초기화(선택된 소분류는 isGroupOpen 이 자동 펼침)
+    // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모 seed(요청 원본) — 새 요청 바인딩 시 draft 초기화.
+    setMemoDraft(staffRequestMemo ?? '');
+    setMemoSaved(staffRequestMemo ?? '');
   }
 
   // item2: 선택/플레이스홀더 변화 → 본문 자동 합성. 원장이 직접 수정(textTouched)하면 덮어쓰지 않음(AC-4 SSOT).
@@ -738,6 +793,16 @@ export function OpinionEditorDialog({
     setText(composedText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, composedText, textTouched]);
+
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item2): 실장 요청 메모 autosize — 내용 높이만큼 확장(스크롤 없이 전체 표시).
+  //   memoDraft/open/requestId 변화(입력·seed·바인딩)마다 height 재계산. 삭제 시 height='auto' 리셋으로 축소도 반영(AC-2).
+  useEffect(() => {
+    if (!open || !requestId) return;
+    const ta = memoRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [open, requestId, memoDraft]);
 
   // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
   useEffect(() => {
@@ -1086,37 +1151,70 @@ export function OpinionEditorDialog({
         {canPublish ? (
           /* ④ 3단 레이아웃: 옵션그리드 | editor+발행자+발행 | 발행이력/출력(우측 단) */
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)]">
-            {/* 1단: 옵션 그리드 (F0BAETELCTF) */}
-            <div className="max-h-[62vh] space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
-              {sections.map((section) => (
-                <div key={section.title}>
-                  <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
-                  {/* 금기증=대분류-소분류 그리드(재정렬) / 그 외(진단서)=기존 flat 그리드. */}
-                  {isContraindSection(section.title) ? (
-                    renderContraindSection(section)
-                  ) : (
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {section.options.map((opt) => renderOptBtn(opt))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
-            <div className="flex flex-col gap-2">
-              {/* AC-3/10 참고 패널: 실장(데스크)이 보낸 요청 메모 — '참고용'만(authoring 경계 AC-4). */}
-              {staffMemo && (
-                <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-sm text-teal-900" data-testid="opinion-staff-request-memo">
-                  <span className="font-bold">실장 요청(참고)</span> · {staffMemo}
-                </div>
-              )}
-              {/* AC-1.2: 자동 pre-check 안내 — 발건강 질문지에서 미리 채운 항목(QR입력) 확인 유도. */}
+            {/* 1단: 옵션 그리드 (F0BAETELCTF) + 좌측 하단 QR 안내문구(item1) */}
+            <div className="flex max-h-[62vh] flex-col gap-2">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
+                {sections.map((section) => (
+                  <div key={section.title}>
+                    <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
+                    {/* 금기증=대분류-소분류 그리드(재정렬) / 그 외(진단서)=기존 flat 그리드. */}
+                    {isContraindSection(section.title) ? (
+                      renderContraindSection(section)
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {section.options.map((opt) => renderOptBtn(opt))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* T-20260717-foot-OPINION-WRITE-UI-3FIX (item1): QR 안내문구를 좌측 하단으로 이동(문지은 대표원장 요청, 첨부 F0BHXT5AB0V).
+                  옵션 그리드(좌측 단) 하단에 고정 — 스크롤 영역 밖. 기존 2단(editor 단) 상단 위치에서 이관. */}
               {autoChecked.size > 0 && (
                 <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-sm text-amber-900" data-testid="opinion-autocheck-hint">
                   <span className="font-bold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
                 </div>
               )}
+            </div>
+
+            {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
+            <div className="flex flex-col gap-2">
+              {/* T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-1/2): 실장(데스크) 요청 메모.
+                  원 스펙(T-20260620-INTEGRATION)의 read-only 참고패널 → 편집 가능 textarea 로 전환 + 저장 유지.
+                  ★authoring 경계(AC-4, BLOCKING): 이 칸은 '직원 요청 메모'(field_data.staff_memo) 전용 —
+                    아래 의료판단 본문 editor(Textarea)와 물리적으로 분리. 저장은 staff_memo 단일 키 merge(useUpdateStaffMemo)
+                    → 진단/소견 본문·서명·직인·발행(published) 절대 미접촉.
+                  큐('작성하기')로 열린 요청(requestId)에만 노출·저장(요청 1건=작성창 1회 매핑, AC-3).
+                    requestId 없음(DoctorDocsHubDialog 직접 오픈)이면 미노출 → 허브 동선 무회귀. */}
+              {requestId && (
+                <div className="rounded-md border border-teal-200 bg-teal-50/60 px-2 py-1.5 text-sm text-teal-900" data-testid="opinion-staff-request-memo">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="font-bold">실장 요청(메모)</span>
+                    <span className="text-[11px] font-medium text-teal-700/80" data-testid="opinion-staff-memo-status">
+                      {updateMemoMut.isPending
+                        ? '저장 중…'
+                        : memoDraft !== memoSaved
+                          ? '수정됨 · 입력칸 밖을 누르면 저장'
+                          : memoSaved
+                            ? '저장됨'
+                            : ''}
+                    </span>
+                  </div>
+                  {/* T-20260717-foot-OPINION-WRITE-UI-3FIX (item2): 고정높이+스크롤 → 내용 분량만큼 세로 자동확장.
+                      rows=2 최소치 유지 + overflow-hidden(자동확장이 스크롤 대체) + resize-none(수동 리사이즈 불필요). */}
+                  <textarea
+                    ref={memoRef}
+                    value={memoDraft}
+                    onChange={(e) => setMemoDraft(e.target.value)}
+                    onBlur={handleMemoSave}
+                    placeholder="실장이 남긴 서류 요청 상세내용 (수정 가능)"
+                    rows={2}
+                    className="w-full resize-none overflow-hidden rounded border border-teal-200 bg-white px-2 py-1.5 text-sm text-teal-900 focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                    data-testid="opinion-staff-memo-input"
+                  />
+                </div>
+              )}
+              {/* T-20260717-foot-OPINION-WRITE-UI-3FIX (item1): QR 안내문구는 좌측 하단(옵션 그리드 단)으로 이관됨 — 여기서 제거. */}
               {/* item2 플레이스홀더 변형 셀렉터 — 선택한 항목 원문에 마커가 있을 때만 노출(금기증/진단서 선택 종속). */}
               {(showDate || showHepatitis || showOralXReason) && (
                 <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-2" data-testid="opinion-placeholder-controls">

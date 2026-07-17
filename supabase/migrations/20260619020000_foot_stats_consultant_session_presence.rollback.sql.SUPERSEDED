@@ -1,3 +1,4 @@
+-- ⛔ SUPERSEDED (2026-07-18, supervisor 승인 MSG-20260717-234304-ev5b) — OBE: up 미적용 → 롤백 no-op. DB 무접점.
 -- ============================================================
 -- ROLLBACK: T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX (파트2 · REWORK)
 -- foot_stats_consultant 를 직전 정의(20260430110000 — LEFT JOIN, 전체 명단)로 복원.

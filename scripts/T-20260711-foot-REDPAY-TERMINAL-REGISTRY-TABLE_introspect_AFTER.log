@@ -1,0 +1,40 @@
+════════════════════════════════════════════════════════════
+[AFTER] redpay family 5종 prod introspection — ref rxlomoozakkjesdqjtvd
+════════════════════════════════════════════════════════════
+
+── A. LEDGER (schema_migrations 원장행) ──
+  20260710120000  ledger=PRESENT
+  20260711140000  ledger=PRESENT
+  20260714170000  ledger=PRESENT
+  20260714170100  ledger=PRESENT
+  20260714210000  ledger=PRESENT
+  ledger MAX version = 20260718130000
+
+── B. OBJECT/DATA 실재 (원장과 분리 확인) ──
+  redpay_terminal_registry table = redpay_terminal_registry
+    domain counts: [{"domain":"body","n":14},{"domain":"foot","n":17}]
+    → foot=17 (기대 17), body=14 (기대 14)
+  public.v_receipt_settlement_daily = v_receipt_settlement_daily
+  public.v_redpay_unclassified_merchants = v_redpay_unclassified_merchants
+  public.v_redpay_reconciliation_daily = v_redpay_reconciliation_daily
+    v_redpay_reconciliation_daily registry-derived = true
+  payments 신규컬럼(image_url/ocr_receipt_datetime) present = ["image_url","ocr_receipt_datetime"]
+  receipt_ocr_results.parsed_approval_no present = true
+  payment_reconciliation_log.center = {"is_nullable":"NO","column_default":"'foot'::text"}
+  center CHECK constraint present = true
+    center value dist: []
+  v_redpay_reconciliation_body = v_redpay_reconciliation_body
+    (deploy-precheck i) center 컬럼 노출 count = 0 (MUST 0)
+  role body_recon_ro present = true
+    (deploy-precheck ii) grant base=false(MUST false) foot=false(MUST false) body=true(MUST true)
+
+── C. VALIDATE FAIL-CLOSED PRECHECK (receipt_ocr_results PCI) ──
+  receipt_ocr_results total rows = 0
+  raw_text ~ '[0-9]{13,}' count = 0  → ✅ SAFE (VALIDATE 통과 가능)
+
+── D. HAZARD 판정 (body-seed silent-SKIP) ──
+  20260714170100 ledger=PRESENT, registry=EXISTS, body count=14
+  → body-seed REPAIR 필요 = NO (이미 14)
+
+[AFTER] introspection 완료.
+

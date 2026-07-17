@@ -107,12 +107,28 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       }
     : null;
 
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item3): 발급(작성하기) 완료 시 화면 정체 제거 → 대기 목록의 다음 환자로 자동 전환.
+  //   ★트랜잭션-then-navigate: onPublished 는 OpinionEditorDialog.handlePublish 의 발행(publish_opinion_doc) 성공 직후에만
+  //     호출된다(발행 실패 시 미호출 → 이동 없음, 현재 화면 유지). 즉 '저장 성공 확정 후에만 이동'(AC-4) 이 구조적으로 보장됨.
+  //   다음 환자 = 대기(rows) 목록에서 방금 발행한 active 다음 행 우선, 없으면 남은 대기의 첫 행(위로 되돌아감).
+  //     남은 대기가 없으면 dialog 닫고 목록 복귀(AC-3 엣지). resolve invalidate 전에 rows 스냅샷으로 대상 확정(레이스 방지).
   const handlePublished = async () => {
     if (!active) return;
+    const currentIdx = rows.findIndex((r) => r.id === active.id);
+    const nextRow =
+      (currentIdx >= 0 ? rows.slice(currentIdx + 1).find(Boolean) : undefined) ??
+      rows.find((r) => r.id !== active.id) ??
+      null;
     try {
       await resolveMut.mutateAsync({ requestId: active.id, reason: 'published' });
     } catch {
       // resolve 실패해도 발행본은 정상 생성됨 — 다음 폴링/새로고침 시 재시도 가능. 사용자 차단 없음.
+    }
+    // 발행 성공 확정 후 화면 전환. 다음 대기 환자 있으면 재바인딩(작성창 유지), 없으면 목록 복귀.
+    if (nextRow) {
+      setActive(nextRow); // bindKey 변경 → OpinionEditorDialog 바인딩 리셋(다음 환자 prefill/메모 로드)
+    } else {
+      setDialogOpen(false); // 다음 대기 환자 없음 → 작성창 닫고 목록 화면 복귀
     }
   };
 
@@ -391,7 +407,9 @@ function DocRequestRow({
       <td className="px-2 py-1.5 text-foreground/80" data-testid="docreq-cell-items">
         <span className="block max-w-[16rem] truncate" title={itemLabels}>{itemLabels || '—'}</span>
         {r.staffMemo && (
-          /* Q2 fallback(non-blocking): 직원 서류요청 메모 = 단방향 read-display(양방향 편집·외부연동 미구현). */
+          /* AC-1 표시 보장: 실장 요청 메모(field_data.staff_memo)가 있으면 큐에서 항상 노출.
+             T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE: 편집은 '작성하기' 작성창(OpinionEditorDialog)에서 수행되며,
+             저장 시 큐 invalidate(useUpdateStaffMemo)로 이 셀도 최신 메모로 동기화(표시 일관성). 셀 자체는 read-display. */
           <span className="mt-0.5 block max-w-[16rem] truncate text-[10px] text-teal-700/80" title={r.staffMemo} data-testid="docreq-cell-memo">메모: {r.staffMemo}</span>
         )}
       </td>
@@ -406,9 +424,8 @@ function DocRequestRow({
           </span>
         ) : (
           <>
-            {/* AC-9 반짝효과: 신규 요청 시각화. AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). */}
+            {/* AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). 신규 요청 시각화는 큐 항목·teal-600 버튼 상시 노출로 충분(T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE: 청록 ripple 반짝임 제거). */}
             <span className="relative inline-flex">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-md bg-teal-400/40" aria-hidden />
               <Button
                 size="sm"
                 className="relative h-7 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
@@ -426,7 +443,7 @@ function DocRequestRow({
               <Button
                 size="sm"
                 variant="outline"
-                className="mt-1 block h-6 w-full gap-1 px-2 text-[10px] text-muted-foreground hover:text-red-600"
+                className="mt-1 flex h-6 w-full items-center justify-center gap-1 px-2 text-[10px] leading-none text-muted-foreground hover:text-red-600"
                 onClick={() => onCancel(r)}
                 data-testid="docreq-cancel-btn"
               >

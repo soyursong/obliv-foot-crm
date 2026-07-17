@@ -121,25 +121,33 @@ test.describe('S3 item3 — 약 한 줄 표기 포맷', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 4 — item4: 이름·처방배지 가로 중앙정렬 (grid 컬럼 보존)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('S4 item4 — 이름·배지 중앙정렬', () => {
+// SPEC-DRIFT-REPAIR(T-20260716): 본 describe 는 원래 item4 "이름·처방배지 가로 중앙정렬"을 가드했으나,
+//   T-20260613-foot-CLINIC3-TABLEDENSITY-TIGHTEN(8d94b70f)에서 문지은 대표원장 요청으로 3개 진료화면을
+//   좌측정렬 밀도 압축으로 통일 → 이름/차트 text-center→text-left, 배지 래퍼 justify-center→justify-start.
+//   (commit 메시지: "이름 중앙정렬 MONOTONE supersede"). item4 중앙정렬은 의도적으로 좌측정렬로 대체됨.
+//   이후 이름 셀 톤도 text-sm→text-[15px] text-gray-900(item⑤ B안), 그리드도 CHARTNO-COL-SPLIT/당일시술 칼럼
+//   추가로 진화. → 가드 의도(셀 정렬 일관 + items-center 세로 중앙 + 그리드 트랙 무회귀)를 현행 좌측정렬 기준으로 재정렬.
+test.describe('S4 item4 — 이름·배지 정렬(좌측정렬로 supersede, 밀도 압축)', () => {
   const src = () => SRC('components/doctor/DoctorPatientList.tsx');
 
-  test('이름 셀 text-center (가로 중앙)', () => {
-    expect(src()).toContain('className="text-sm font-semibold truncate text-center"');
+  test('이름 셀 text-left (밀도 압축 좌측정렬 — 중앙정렬 supersede)', () => {
+    // 중앙정렬(text-center) 잔존 0 — 좌측정렬로 통일됨
+    expect(src()).toContain('truncate text-left text-[15px] font-semibold text-gray-900');
   });
 
-  test('처방배지 셀 flex justify-center (justify-start 잔존 0)', () => {
+  test('처방배지 셀 flex justify-start (밀도 압축 — justify-center supersede)', () => {
     const s = src();
-    // 배지 래퍼가 justify-center
-    expect(s).toContain('{/* ③ 처방 상태 배지');
-    expect(s).toMatch(/처방 상태 배지[\s\S]*?<div className="flex justify-center">/);
+    expect(s).toContain('{/* 처방 상태 배지');
+    // 처방 상태 배지 래퍼가 justify-start (좌측정렬 통일)
+    expect(s).toMatch(/처방 상태 배지[\s\S]*?<div className="flex justify-start">/);
   });
 
-  test('회귀: grid 컬럼 정의 8트랙 보존 + items-center(세로 중앙) 유지', () => {
+  test('회귀: grid 컬럼 정의 7트랙 보존 + items-center(세로 중앙) 유지', () => {
     const s = src();
-    // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX(5e55c13)이 4.75rem 치료실 열을 추가 — 7→8트랙 정합 갱신.
-    //   가드 의도(이름·배지 셀 가로 중앙 + items-center 세로 중앙 보존)는 불변, 트랙 수만 현행화.
-    expect(s).toContain('grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center');
+    // 이력(과거) 모드 그리드: 방문유형·이름·차트번호·처방배지·처방내용·치료종류·히러레이저 (7트랙)
+    expect(s).toContain('grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center');
+    // 오늘 모드 그리드: 방문유형·이름·차트번호·당일시술·처방배지·예약메모·액션 (7트랙, 당일시술 7rem 칼럼 추가)
+    expect(s).toContain('grid grid-cols-[3rem_5rem_4.5rem_7rem_5.5rem_minmax(0,1fr)_auto] items-center');
   });
 });
 
@@ -160,9 +168,12 @@ test.describe('S5 item6 — 처방나감 필터', () => {
     expect(passesFilter('pending', 'confirmed')).toBe(false);
   });
 
-  test('소스: 필터 라벨 "처방나감" + key "confirmed", 옛 "처방 없음"/none 제거', () => {
+  test('소스: 필터 라벨 "처방환자 목록" + key "confirmed", 옛 "처방 없음"/none 제거', () => {
     const s = SRC('components/doctor/DoctorPatientList.tsx');
-    expect(s).toMatch(/key:\s*'confirmed'\s*as const,\s*label:\s*`처방나감/);
+    // SPEC-DRIFT-REPAIR(T-20260716): '처방나감' 표시 라벨은 T-20260613-foot-RXLIST-FUNGAL-LABEL-SAVEBUG
+    //   (b1f4a5fb) AC-1 에서 '처방환자 목록'으로 재교정됨(표시 라벨만, key='confirmed'/카운트 로직 불변).
+    //   item6 술어 방향(confirmed만 통과)·key·'none' 제거 가드는 그대로 유지.
+    expect(s).toMatch(/key:\s*'confirmed'\s*as const,\s*label:\s*`처방환자 목록/);
     // T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER: 단일 return 술어 → 가드형 early-return
     //   리팩터(서명의사 필터와 AND 누적 위해). 술어 방향 불변(confirmed만 통과), 형태만 현행화.
     expect(s).toContain(

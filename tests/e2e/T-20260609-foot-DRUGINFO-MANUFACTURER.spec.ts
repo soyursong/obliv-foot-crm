@@ -35,10 +35,14 @@ test.describe('DRUGINFO-MANUFACTURER — 데이터 파이프라인 정적 가드
     expect(src).toMatch(/\.select\([^)]*ingredient_code,manufacturer/);
   });
 
-  test('#2/#3 MedicalChartPanel: RxCodeResult.manufacturer + 검색 SELECT 포함', () => {
+  test('#2/#3 MedicalChartPanel: RxCodeResult.manufacturer + 검색결과 운반', () => {
     const src = read('src/components/MedicalChartPanel.tsx');
     expect(src).toMatch(/manufacturer:\s*string\s*\|\s*null/);
-    expect(src).toMatch(/\.select\('id,name_ko,claim_code,classification,code_source,price_krw,manufacturer'\)/);
+    // T-20260606-foot-RX-DRUG-WHITELIST (commit c3236cac): 진료차트 처방 약 검색 소스를 prescription_codes
+    //   직접 .select(...) 자유검색 → 처방세트 등록약(searchServiceRxDrugs)으로 재바인딩. 옛 SELECT 문자열은
+    //   제거됨(stale). manufacturer 는 RxCodeResult adapt map 으로 계속 운반됨을 대신 가드.
+    expect(src).toContain('searchServiceRxDrugs');
+    expect(src).toMatch(/manufacturer:\s*null/); // service 소스 adapt map 에 manufacturer 필드 운반(간극 시 null)
     // 검색 결과 row 에 제약사 조건부 렌더 + NULL fallback 가드 존재
     expect(src).toContain('rx-search-result-manufacturer');
     expect(src).toMatch(/code\.manufacturer\s*&&\s*code\.manufacturer\.trim\(\)\s*!==\s*''/);
@@ -47,8 +51,11 @@ test.describe('DRUGINFO-MANUFACTURER — 데이터 파이프라인 정적 가드
   test('#2 DrugFolderTree(약품 폴더): FolderDrug.manufacturer + join + 평탄화 운반', () => {
     const lib = read('src/lib/drugFolders.ts');
     expect(lib).toMatch(/manufacturer:\s*string\s*\|\s*null/);
-    // 조인 SELECT 에 manufacturer 동봉
-    expect(lib).toMatch(/prescription_codes\(name_ko,claim_code,classification,code_source,manufacturer\)/);
+    // 조인 SELECT 에 manufacturer 동봉.
+    //   T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE / RXSET-VIEWALL-DESC-HOVER-WIDEN 로 join
+    //   컬럼에 code_type,insurance_status,description 이 추가됨 → 닫는 괄호 고정 매칭(stale) 대신
+    //   manufacturer 가 join 목록 안에 존재하는지만 가드(무회귀).
+    expect(lib).toMatch(/prescription_codes\([^)]*\bmanufacturer\b[^)]*\)/);
     // 평탄화 map 에 manufacturer 운반
     expect(lib).toMatch(/manufacturer:\s*r\.prescription_codes!\.manufacturer\s*\?\?\s*null/);
 

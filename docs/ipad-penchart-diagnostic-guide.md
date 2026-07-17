@@ -2,7 +2,7 @@
 
 **대상 버그**: T-20260525-foot-PENCHART-FORM-BLACKSCR  
 **최신 픽스 커밋**: cf69be5 (desynchronized:true 제거)  
-**라이브 URL**: https://obliv-foot-crm.vercel.app
+**라이브 URL**: https://obliv-foot-crm.pages.dev
 
 ---
 
@@ -12,10 +12,10 @@
 1. iPad → 설정 → Safari → 고급 → **웹 인스펙터 ON**
 2. USB로 iPad를 Mac에 연결
 3. Mac Safari → 개발자 메뉴(없으면 Safari 환경설정 → 고급 → 메뉴 막대에 개발자 메뉴 표시)
-4. 개발자 메뉴 → [iPad 이름] → obliv-foot-crm.vercel.app
+4. 개발자 메뉴 → [iPad 이름] → obliv-foot-crm.pages.dev
 
 ### 2단계: 테스트 실행
-1. iPad Safari → https://obliv-foot-crm.vercel.app 접속
+1. iPad Safari → https://obliv-foot-crm.pages.dev 접속
 2. 로그인 → 고객 선택 → 2번차트 → 펜차트 탭
 3. 양식 목록에서 **"[보험차트]" 또는 "발건강 질문지(일반)"** 클릭
 4. 화면 렌더링 확인 (정상 흰 바탕 vs 검정)

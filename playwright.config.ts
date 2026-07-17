@@ -14,30 +14,61 @@ dotenv.config({ path: path.join(__dirname, '.env.test') });
 // 미존재 시 무시 → DB 정책 spec 은 test.skip 로 안전 강등(스킵 사유 명확).
 dotenv.config({ path: path.join(__dirname, '.env.local'), override: true });
 
-// ── QA 워크트리 .env.local 폴백 (FIX-REQUEST MSG-20260715-161411-l4bf) ──────────
+// ── QA 워크트리 .env.local 폴백 (FIX-REQUEST MSG-20260715-161411-l4bf ·
+//    ROOTFIX T-20260716-foot-DOCFEE-E2E-ENV-WIRING-ROOTFIX MSG-20260716-133036) ──────
 //   배경: `.env.local`(TEST_PASSWORD + Supabase 비밀)은 gitignored 라 fresh QA 워크트리
-//         (git worktree/신규 clone)에는 존재하지 않는다. 그 결과 auth 의존 spec(로그인→
-//         /admin/closing 등)이 auth.setup 의 "TEST_PASSWORD env required (no plaintext
-//         fallback)" 에서 즉시 실패했다(MSG-20260715-161411-l4bf phase2 spec_fail_new).
+//         (git worktree --detach + npm ci / 신규 clone)에는 존재하지 않는다. 그 결과
+//         auth 의존 spec(로그인→/admin/closing 등)이 auth.setup 의 "TEST_PASSWORD env
+//         required (no plaintext fallback)" 에서 즉시 실패했다.
 //   해법: 로컬 .env.local 로 TEST_PASSWORD 가 채워지지 않았으면(=워크트리에 비밀 부재)
 //         정본 체크아웃(canonical checkout)의 .env.local 을 폴백 로드한다.
 //         - 비밀은 여전히 미커밋(gitignored) — 커밋되는 것은 "경로"뿐(보안 property 불변).
-//         - 정본 경로 우선순위: (1) 환경변수 FOOT_QA_ENV_LOCAL (2) ~/GitHub/obliv-foot-crm/.env.local
-//           (macstudio 정책: 모든 dev/QA E2E 는 ~/GitHub 정본 체크아웃 호스트에서 실행).
+//         - 후보 우선순위: (1) env FOOT_QA_ENV_LOCAL (2) ~/GitHub/obliv-foot-crm/.env.local
+//           (macstudio 정본) (3) ~/Documents/GitHub/obliv-foot-crm/.env.local (macbook 정본).
+//           → homedir 레이아웃 차이를 모두 커버해 어느 머신의 clean detach 든 env 재요청 없이 로드.
 //         - 정본 == 현재 dir 이면 이미 위에서 로드됨 → 폴백은 no-op(동일 파일 재로드 무해).
-//         - 정본에도 없으면 무시 → 종전처럼 auth.setup 가 명확한 사유로 실패(보안 유지).
+//   ROOTFIX 핵심(env 재배달 루프 차단): 후보가 하나도 없으면 조용히 넘기지 않고 원인을
+//         명시 경고한다. env "부재"가 아니라 "배선/워크트리" 문제(=fallback 이전 커밋의 stale
+//         워크트리에서 QA, 또는 정본 체크아웃 .env.local 삭제)임을 알려 재요청 반복을 끊는다.
 if (!process.env.TEST_PASSWORD && !process.env.TEST_USER_PASSWORD) {
-  const canonicalEnvLocal =
-    process.env.FOOT_QA_ENV_LOCAL ??
-    path.join(os.homedir(), 'GitHub', 'obliv-foot-crm', '.env.local');
-  if (fs.existsSync(canonicalEnvLocal) && canonicalEnvLocal !== path.join(__dirname, '.env.local')) {
-    dotenv.config({ path: canonicalEnvLocal, override: true });
+  const selfEnvLocal = path.join(__dirname, '.env.local');
+  const candidates = [
+    process.env.FOOT_QA_ENV_LOCAL,
+    path.join(os.homedir(), 'GitHub', 'obliv-foot-crm', '.env.local'),
+    path.join(os.homedir(), 'Documents', 'GitHub', 'obliv-foot-crm', '.env.local'),
+  ].filter((p): p is string => !!p && p !== selfEnvLocal);
+
+  const hit = candidates.find((p) => fs.existsSync(p));
+  if (hit) {
+    dotenv.config({ path: hit, override: true });
     // eslint-disable-next-line no-console
-    console.log(`[playwright.config] .env.local 폴백 로드 → ${canonicalEnvLocal}`);
+    console.log(`[playwright.config] .env.local 폴백 로드 → ${hit}`);
+  } else if (!process.env.CI) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[playwright.config] ⚠ TEST_PASSWORD 미설정 + 정본 .env.local 폴백 후보 전무.\n' +
+        `    self=${selfEnvLocal}\n    후보=${candidates.join(', ') || '(없음)'}\n` +
+        '    → env 재요청 전 확인: (a) 현재 워크트리 config 에 이 폴백 블록이 있는지(=fallback 커밋 이후인지)\n' +
+        '      (b) 정본 체크아웃(~/GitHub/obliv-foot-crm)에 .env.local 이 실재하는지.',
+    );
   }
 }
 
 const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
+
+// ── foot 전용 E2E 포트 8091 SSOT 전파 (FIX-REQUEST MSG-20260716-214106-of5k) ──────────
+//   RC: cross-CRM 포트 충돌. foot·scalp2·women 이 모두 8089 하드코딩 → macstudio 동시 QA 시
+//       먼저 뜬 형제(scalp2 vite)가 8089 점유 → foot Playwright reuseExistingServer 로 그 형제
+//       서버 재사용 → auth.setup 세션 미인식/대시보드 timeout. foot 을 고유 포트 8091 로 격리.
+//   문제: 다수 spec 이 `process.env.<BASE_URL|APP_URL|PLAYWRIGHT_BASE_URL> ?? 'http://localhost:8089'`
+//         로 8089 를 절대경로 fallback 한다(baseURL 우회). config 는 Playwright 테스트 프로세스에서
+//         평가되므로, 여기서 세 env 를 8091 로 선세팅하면 91개 spec 을 개별 수정하지 않고도 모든
+//         절대경로 fallback 이 8091(=webServer 가 실제 기동하는 foot dev 서버)로 수렴한다.
+//         (이미 외부에서 값을 준 경우는 존중 → ??= 로 미설정시에만 주입.)
+const FOOT_E2E_ORIGIN = 'http://localhost:8091';
+process.env.BASE_URL ??= FOOT_E2E_ORIGIN;
+process.env.APP_URL ??= FOOT_E2E_ORIGIN;
+process.env.PLAYWRIGHT_BASE_URL ??= FOOT_E2E_ORIGIN;
 
 export default defineConfig({
   testDir: './tests',
@@ -54,7 +85,14 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
-    baseURL: 'http://localhost:8089',
+    // ⚠ foot 전용 E2E 포트 8091 (RC: cross-CRM 포트 충돌 — FIX-REQUEST MSG-20260716-214106-of5k).
+    //   배경: foot·scalp2·women 이 모두 8089 를 하드코딩 → macstudio 동시 QA 시 먼저 뜬 형제
+    //         (관측: obliv-scalp2-crm vite = '오블리브 두피센터 CRM')가 8089 를 점유. foot Playwright 는
+    //         reuseExistingServer:!CI 로 그 형제 서버를 재사용(VITE_DISABLE_AUTH_LOCK=1 미적용 + 다른
+    //         Supabase ref) → auth.setup 이 주입한 sb-{foot-ref}-auth-token 미인식 → /login 리다이렉트 →
+    //         '대시보드' 미표시 timeout. → foot 을 형제와 겹치지 않는 8091 로 격리(8081 derm·8082 body·8089
+    //         scalp2/women·8085 dev-default 회피). 8091 은 형제 config·현재 리스너 모두 미사용 확인.
+    baseURL: 'http://localhost:8091',
     screenshot: 'on',
     trace: 'retain-on-failure',
     actionTimeout: 10_000,
@@ -74,6 +112,13 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: 회수1 phantom 미수 치유 (R1, effectiveNetPaid 중앙화).
+        //   순수 로직 불변식 — AC1 완납 phantom소멸 / AC2 회수≥2 회귀0 / AC3 매출 split 불변 + F-4857 archive 가드. auth 불요.
+        '**/T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX.spec.ts',
+        // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS: 태블릿 카메라 업로드 후 "영수증 매출 연동"
+        //   팝업 미표시(가설A: 카메라 앱 전환 리마운트/컨텍스트 교란) 해소 — 재조회前 즉시오픈+persist 복원+비차단 갱신.
+        //   소스 불변식 가드 + page.setContent 실DOM 뷰포트 포지셔닝(B 회귀가드). auth·server 불요. 실기 갤탭=field-soak.
+        '**/T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS.spec.ts',
         // T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS: 시술내역 수정 치료사 권한(RC=FE 게이트, prod RLS 이미 허용).
         //   permissions lib 순수 단언 + 소스 정적 가드(저장 핸들러 단일행 UPDATE·derived 차감 불변식·canEditClinicMgmt 부재)
         //   + Management API(SUPABASE_ACCESS_TOKEN) prod 정책 실측(package_sessions_write=ALL therapist 허용·clinic_id 부재).
@@ -138,6 +183,9 @@ export default defineConfig({
         '**/insurance-calc.spec.ts',
         // T-20260602-multi-CALLBACK-EF-4-NEW: 도파민 콜백 outbox 정적 검증 (마이그레이션/EF/롤백 파일 단언, browser 불필요)
         '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
+        // T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT: 풋→도파민 lifecycle emit(step2) — reschedule CHECK+트리거,
+        //   FOOT_CALLBACK_SECRET 폴백, 단일 타깃(cancel-callback fan-out 금지), payload 계약키 정적 단언. browser 불요.
+        '**/T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT.spec.ts',
         // T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT: 자동완성 cross-patient 누설 분류 불변식 (page 미사용 순수 로직)
         '**/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts',
         // T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS: 임상경과 `//` 드롭다운 caret 좌표/wrap 폭 정합 (정본 로직 + page.setContent 실DOM, auth 불요)
@@ -298,10 +346,35 @@ export default defineConfig({
         //   (공단 제외). 공단부담금 칸/금액 표시는 유지. SSOT 렌더(computeFootBilling/buildBillReceiptFeeGridHtml/
         //   buildBillDetailItemsHtml) + page.setContent+print media 인쇄 미리보기 스크린샷(AC-5) + 합계·공단표시 단언. auth/server 불요.
         '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION: 결제창(PATH-4) 서류 '계'·'합계'·총진료비 공란 회귀 hotfix.
+        //   PMW 바인딩에 detail_subtotal/detail_total/receipt_total(=본인부담+비급여, 공단 제외) 재바인딩 복구.
+        //   SSOT 렌더 + page.setContent print media 인쇄 미리보기 + RC/AC-7 역가드. auth/server 불요.
+        '**/T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION.spec.ts',
         // T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL: 비급여동의서 서명 뷰 태블릿 스크롤 불가 픽스
         //   (vh→dvh + flex 컬럼·shrink-0 푸터). page.setContent 실 DOM 스크롤 측정(태블릿 768×1024 /
         //   PC 1280×800) + 旧 구조 대조 + ConsentFormDialog.tsx 소스 정적 가드. auth/server 불요.
         '**/T-20260714-foot-NONCOVERED-CONSENT-TABLET-SCROLL.spec.ts',
+        // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 진료비 계산서·영수증 신양식(bill_receipt_new) 코드-레벨 불변식
+        //   (AC3 대표자={{receipt_representative}} rebind · AC4 병원 고정정보 · AC5 격리 · fallback field_map).
+        //   src 정적 grep + page.setContent 결정론 렌더. 스펙 자체가 "로그인 불요·결정론적" 선언 → unit 편입.
+        //   (FIX-REQUEST MSG-20260716-003500-sg9r: 미편입 시 desktop-chrome 매치 → auth.setup 기동 →
+        //    TEST_PASSWORD 없는 QA 워크트리 env_missing 실패. unit 편입 + desktop-chrome testIgnore 로 우회.)
+        '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
+        // T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축(hira_institution_name) 재배선 +
+        //   대표자 print 분리(CEO Q2). getHtmlTemplate/bindHtmlTemplate + buildAutoBindValues 순수 함수 —
+        //   축 분리·affirmative(silent 폴백 금지)·진료의({{doctor_name}}) 보존 단언. 실기기 렌더는 supervisor 게이트. auth/server 불요.
+        '**/T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT.spec.ts',
+        // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 일마감 환불창 유형 구분(패키지/진료비/단건)
+        //   + 항목 선택 환불 + [FOLD] 완전환불행 재환불 방지. 순수 로직(selectedSum/isFullyRefunded money-path
+        //   가드) + Closing.tsx 정적 소스 가드로 AC-1~6·AC-B1~B3 결정론 검증. real-browser 렌더는 갤탭 field-soak.
+        //   (FIX-REQUEST MSG-20260717-141523-ydgt: phase2 spec_missing — desktop-chrome 단독 매칭 시
+        //    QA 워크트리 TEST_PASSWORD 부재로 auth.setup 기동/실패 → "No tests found". unit 편입으로 차단.)
+        '**/T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT.spec.ts',
+        // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: 세부산정내역 '계'/'합계'(detail_subtotal/
+        //   detail_total) 공란(0) 회귀 가드. DocumentPrintPanel bill_detail 바인딩을 SSOT(computeFootBilling/
+        //   buildFootBillDetailItems)로 replay → 계/합계 = 본인부담+비급여(공단 제외, B안 보존) 단언 +
+        //   공단 칸 표시 유지(AC4) + 항목 0건 '0' 표시 + page.setContent 인쇄 미리보기 캡처. auth/server 불요.
+        '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -321,10 +394,20 @@ export default defineConfig({
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
         '**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts',
+        // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 순수 정적/렌더 unit 스펙 — desktop-chrome(auth 의존)
+        //   에서 제외해 `npx playwright test <file>` 무-project 실행 시 setup 미기동. (FIX-REQUEST MSG-20260716-003500-sg9r)
+        '**/T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN.spec.ts',
         // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY: unit 전용 setContent 렌더 spec.
         //   무-project 실행(supervisor QA) 시 desktop-chrome 가 매칭→setup(TEST_PASSWORD) 끌어들여
         //   실패하던 것을 차단(FIX-REQUEST MSG-20260715-114337-t54c). unit 에서만 실행.
         '**/T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY.spec.ts',
+        // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: unit 전용(순수 로직 + 소스 가드).
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭 → auth.setup(TEST_PASSWORD) 끌어들여
+        //   "No tests found"/실패하던 것을 차단(FIX-REQUEST MSG-20260717-141523-ydgt). unit 에서만 실행.
+        '**/T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT.spec.ts',
+        // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: unit 전용 setContent 렌더 spec →
+        //   무-project 실행 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 끌어들이지 않도록 제외. unit 에서만 실행.
+        '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
       ],
     },
     {
@@ -340,8 +423,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    // 기동 전 8089 포트의 죽은 잔여 프로세스를 먼저 정리한 뒤 dev 서버를 띄운다.
-    //   배경: 직전 run의 zombie vite가 8089를 점유하면(소켓은 열렸지만 응답 없음) Playwright가
+    // 기동 전 8091 포트의 죽은 잔여 프로세스를 먼저 정리한 뒤 dev 서버를 띄운다.
+    //   배경: 직전 run의 zombie vite가 8091를 점유하면(소켓은 열렸지만 응답 없음) Playwright가
     //         auth.setup `page.goto('/login')` 단계에서 net::ERR_CONNECTION_REFUSED 로 실패.
     //   reuseExistingServer=true 일 때 정상 서버가 이미 떠 있으면 Playwright가 url 헬스체크 후
     //   이 command 자체를 실행하지 않으므로, free-test-port 는 launch 가 필요한 경우(=죽은/없는
@@ -355,20 +438,20 @@ export default defineConfig({
     //   → `exec`로 vite 바이너리를 직접 실행해 중간 npm 레이어를 제거한다. 이제 Playwright가
     //     추적하는 PID == vite 이므로 graceful SIGTERM이 vite에 직접 도달, vite가 esbuild 자식을
     //     정리한다. (세션 SIGKILL 시의 전역 idle-tree reaper 는 meta 티켓 supervisor+conductor 소유)
-    command: 'bash scripts/free-test-port.sh 8089 && exec node_modules/.bin/vite',
-    // 전용 테스트 포트 8089: 일반 dev(8085)와 분리
-    // VITE_DEV_PORT=8089 → vite.config.ts server.port 에서 읽어 8089로 기동
-    // reuseExistingServer: 로컬에선 이미 8089에 떠있는 서버를 재사용(잔여 프로세스로 인한
+    command: 'bash scripts/free-test-port.sh 8091 && exec node_modules/.bin/vite',
+    // 전용 테스트 포트 8091(foot 격리): 일반 dev(8085)·형제 CRM(8089 등)과 분리
+    // VITE_DEV_PORT=8091 → vite.config.ts server.port 에서 읽어 8091로 기동
+    // reuseExistingServer: 로컬에선 이미 8091에 떠있는 서버를 재사용(잔여 프로세스로 인한
     //   "8089 is already used" webServer 기동 실패 방지). CI에선 항상 새로 기동.
     //   포트 정리가 필요하면 `npm run test:e2e:clean` 또는 scripts/free-test-port.sh 사용.
-    url: 'http://localhost:8089',
+    url: 'http://localhost:8091',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
     env: {
       // Vite dev 서버에 테스트 모드 플래그 전달 → src/lib/supabase.ts 에서 lock 우회
       VITE_DISABLE_AUTH_LOCK: '1',
-      // 전용 테스트 포트 — 일반 dev 서버(8085)와 충돌 방지
-      VITE_DEV_PORT: '8089',
+      // 전용 테스트 포트 — 일반 dev 서버(8085)·형제 CRM(8089)과 충돌 방지
+      VITE_DEV_PORT: '8091',
     },
   },
 });

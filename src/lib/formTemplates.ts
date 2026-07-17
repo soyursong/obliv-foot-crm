@@ -480,6 +480,39 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     active: true,
     sort_order: 35,
   },
+  // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 진료비 계산서·영수증 신양식(별지 제6호서식, 총괄 시안 F0BHY545XTJ).
+  //   기존 bill_receipt(sort 35) 무접촉 격리(AC5). 운영은 form_templates DB row(멱등 seed 마이그)로 목록 노출·발행이력
+  //   정합(form_submissions.template_id 실 UUID); FALLBACK 는 빈 DB/프리뷰 목록 정합용(SSOT-폴백 불일치 방지, additive).
+  {
+    id: 'fallback-bill-receipt-new',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'bill_receipt_new',
+    name_ko: '진료비 계산서·영수증(신양식)',
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name',      label: '환자성명',   type: 'text',   x: 0, y: 0 },
+      { key: 'patient_birthdate', label: '생년월일',   type: 'text',   x: 0, y: 0 },
+      { key: 'record_no',         label: '환자등록번호', type: 'text', x: 0, y: 0 },
+      { key: 'visit_date',        label: '진료기간',   type: 'date',   x: 0, y: 0 },
+      { key: 'clinic_name',       label: '상호',       type: 'text',   x: 0, y: 0 },
+      { key: 'clinic_address',    label: '사업장소재지', type: 'text', x: 0, y: 0 },
+      { key: 'copayment',         label: '본인부담금', type: 'amount', x: 0, y: 0 },
+      { key: 'insurance_covered', label: '공단부담금', type: 'amount', x: 0, y: 0 },
+      { key: 'non_covered',       label: '비급여',     type: 'amount', x: 0, y: 0 },
+      { key: 'total_amount',      label: '진료비총액', type: 'amount', x: 0, y: 0 },
+      { key: 'patient_amount',    label: '환자부담총액', type: 'amount', x: 0, y: 0 },
+      // T-20260714-foot-DOCFEE AC3 정정: 대표자=개설자(박영진, clinics.representative_name canonical), 진료의 축 아님.
+      { key: 'receipt_representative', label: '대표자(개설자)', type: 'text', x: 0, y: 0 },
+      { key: 'issue_date',        label: '발행일',     type: 'date',   x: 0, y: 0 },
+    ],
+    requires_signature: false,
+    // 기존 bill_receipt(진료비 계산서·영수증) row 와 동일 role — 동일 발행 권한자가 신양식도 발행 가능.
+    required_role: 'admin|manager|director|consultant|coordinator|therapist',
+    active: true,
+    sort_order: 36,
+  },
 
   {
     id: 'fallback-med-record-short',
@@ -1047,6 +1080,11 @@ export const DOC_PANEL_HIDDEN_FORM_KEYS: ReadonlyArray<string> = [
  */
 export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   'bill_receipt',           // 1. 진료비영수증
+  // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN 완결(reopened→fix): 진료비 계산서·영수증 신양식.
+  //   RC = DOCFEE 배포분(DB row 015d94be·fallback·compose/print handler 전부 LIVE)이 이 렌더 화이트리스트에
+  //   미등록되어 orderDocList 필터에서 탈락 → 목록 미노출(divergence). additive 등록으로 노출 복원(AC5 기존
+  //   bill_receipt 무접촉). 진열은 원양식 바로 뒤(동일 서류종류 신/구 인접).
+  'bill_receipt_new',       // 1b. 진료비 계산서·영수증(신양식)
   'bill_detail',            // 2. 진료비세부내역서
   'koh_result',             // 3. KOH균검사결과지
   'diag_opinion',           // 4. 소견서
@@ -1122,6 +1160,7 @@ export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
  */
 export const DOC_CATEGORY_JEUNGMYEONG_KEYS: ReadonlyArray<string> = [
   'bill_receipt',           // 진료비영수증 (무료)
+  'bill_receipt_new',       // 진료비 계산서·영수증(신양식) — DOCFEE 완결 additive 등록 (무료)
   'bill_detail',            // 진료비세부내역서 (무료)
   'koh_result',             // KOH균검사결과지 (무료)
   'diagnosis',              // 진단서(국/영문)

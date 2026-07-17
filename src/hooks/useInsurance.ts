@@ -126,6 +126,53 @@ export async function calcCopaymentBatch(
   return map;
 }
 
+/**
+ * 건보 등급 확정 재정산 — T-20260714-foot-INSGRADE-VERIFY-RESETTLE (SSOT §2-2-5)
+ *
+ * grade=null 급여방문에서 general 30% 로 잠정징수된 수납을, 등급 확정 후 확정 본인부담과
+ * 대조해 차액(refund/추가징수)을 산출·처리한다. 서버 RPC resettle_insurance_grade 가 진실의
+ * 원천 — calc_copayment authority 위에서만 산출(병렬 계산경로 신설 금지).
+ *
+ * ★ dryRun=true(기본) = 미리보기(write 없음). commit(dryRun=false) = Layer2 MONEY(실 refund/추가징수)
+ *   → 대표·회계 게이트(money_gate) 해제 후에만 호출. UX 는 기본 미리보기로 금액을 노출하고, 실 처리는
+ *   게이트 확인 다이얼로그를 거친다.
+ * ★ 재정산은 등급이 이미 확정(customers.insurance_grade 갱신)된 뒤 호출한다(§2-2-4 endgame).
+ */
+export interface ResettleResult {
+  ok: boolean;
+  dry_run?: boolean;
+  committed?: boolean;
+  blocked?: boolean;
+  reason?: string;
+  error?: string;
+  confirmed_grade?: InsuranceGrade | null;
+  covered_count?: number;
+  confirmed_copay?: number;
+  provisional_copay?: number;
+  refund?: number;
+  additional?: number;
+  paid_total?: number;
+  already_resettled?: boolean;
+  orig_payment_id?: string | null;
+  resettle_payment_id?: string | null;
+}
+
+export async function resettleInsuranceGrade(
+  checkInId: string,
+  opts?: { dryRun?: boolean; confirmedGrade?: InsuranceGrade | null; method?: string },
+): Promise<ResettleResult> {
+  const { data, error } = await supabase.rpc('resettle_insurance_grade', {
+    p_check_in_id: checkInId,
+    p_confirmed_grade: opts?.confirmedGrade ?? null,
+    p_dry_run: opts?.dryRun ?? true,
+    p_method: opts?.method ?? 'cash',
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return (data ?? { ok: false, error: '재정산 응답이 비어 있습니다.' }) as ResettleResult;
+}
+
 /** 고객 자격등급 수동 갱신 — verified_at 자동 갱신 */
 export async function updateInsuranceGrade(
   customerId: string,
