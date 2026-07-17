@@ -43,6 +43,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { isCodeItem } from '../../src/lib/footBilling';
 import fs from 'fs';
 import path from 'path';
 
@@ -80,11 +81,37 @@ async function cleanup() {
 
 test.beforeAll(async () => {
   await cleanup();
-  // 활성 서비스 2건 픽업 → pricingItems=2 (수가 항목 다건 + 합계 검증)
-  const { data: svcs } = await supabase
-    .from('services').select('*').eq('active', true).limit(2);
-  if (!svcs || svcs.length < 1) { seedOk = false; return; }
-  clinicId = svcs[0].clinic_id;
+  // ── 결정론 시드 (T-20260715-foot-COLORBOX-SPEC-TAXSUM-REGEX-FIX FIX-REQUEST) ───────
+  //   [RC — QA NO-GO] 기존 `.eq('active',true).limit(2)` 는 정렬/필터 없이 첫 2건을 뽑아,
+  //     현 DB 첫 active 서비스가 code-item(category_label∈{상병,처방약}, footBilling.isCodeItem)이면
+  //     FE(pricingItems = selectedItems.filter(i => !isCodeItem(i.service)), PMW L1362)가 전부 걸러
+  //     pricing-row 0개 → line 226 `pricingRows.count()>=1` 가 결정론적으로 RED (regex fix 검증 도달 불가).
+  //   [FIX-1 결정론화] code-item 배제 + id 정렬 고정으로 pricingItems≥1 안정화.
+  //   [FIX-2 regex 실검증 보장] 본 티켓의 taxSum regex(급여 자부담/공단부담액) 를 실제 렌더·합산으로
+  //     검증하려면 급여(covered) 서비스 1건 이상 필수. 비급여-only 시드면 settle-lane 급여/공단 라인이
+  //     0(또는 미렌더)이라 regex fix 가 "실행되지 않은 채 우연히 GREEN"이 됨(spec L253 자인).
+  //     → is_insurance_covered=true 1건(급여) + 비급여·비코드 1건을 명시 확보(둘 다 price>0, 같은 clinic).
+  //   [불변식] grandTotal = coveredTotal + 비급여합, taxSum = 비급여(과세)+비급여(면세)+급여자부담(payCopaymentTotal)
+  //     +공단부담액(insuranceCoveredTotal) = 비급여합 + coveredTotal = grandTotal (급여 라인이 반드시 실렌더돼야 성립).
+
+  // (2) 급여 서비스 1건 (필수) — settle-lane '급여 자부담(30%)'·'공단부담액(명세)' 실렌더 보장
+  const { data: covPool } = await supabase
+    .from('services').select('*')
+    .eq('active', true).eq('is_insurance_covered', true).gt('price', 0)
+    .order('id');
+  const coveredSvc = (covPool ?? []).find((s) => !isCodeItem(s)) ?? null;
+  if (!coveredSvc) { seedOk = false; return; }
+  clinicId = coveredSvc.clinic_id;
+
+  // (1) 비급여·비코드 서비스 1건 (같은 clinic) — 비급여 라인 + pricingItems 다건(수가 항목 2건)
+  const { data: nonCovPool } = await supabase
+    .from('services').select('*')
+    .eq('active', true).eq('clinic_id', clinicId).eq('is_insurance_covered', false).gt('price', 0)
+    .order('id');
+  const nonCoveredSvc = (nonCovPool ?? []).find((s) => !isCodeItem(s)) ?? null;
+
+  const svcs = [coveredSvc, ...(nonCoveredSvc ? [nonCoveredSvc] : [])];
+  if (svcs.length < 1) { seedOk = false; return; }
 
   const { data: cust } = await supabase
     .from('customers')
@@ -236,26 +263,52 @@ test('시나리오1+2: [차트코드·진료비 산정] = 초록 아래·파랑 
   // ── AC-4(인접 요소 회귀 0): 컴팩트 한 줄 요약 "합계"(=grandTotal) = 파란 settle-lane 세금구분 합 ──
   //   ※ T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT 이후 settle-lane 총액 라벨은 "합계"→"수납잔액"
   //     (수납잔액 = 급여 본인부담 + 비급여, 공단부담 제외)으로 바뀌어 grandTotal 과 값이 다르다.
-  //     따라서 compact "합계"(grandTotal)는 settle 의 세금구분 총합(비급여과세+비급여면세+급여)과 대사한다
+  //     따라서 compact "합계"(grandTotal)는 settle 의 세금구분 총합과 대사한다
   //     — 이것이 rename 에 무관한 진짜 불변식(grandTotal = Σ 세금구분).
   const feeTotal = ((await page.locator('[data-testid="pmw-feeitem-summary"]').first().innerText())
     .match(/합계\s*([\d,]+)/)?.[1] ?? '').replace(/[^0-9]/g, '');
   expect(feeTotal.length, '컴팩트 요약 합계 금액 추출').toBeGreaterThan(0);
 
-  // settle-lane 세금구분 라인 합 = 비급여(과세) + 비급여(면세) + 급여 (급여 자부담·공단부담액·수납잔액 제외)
+  // T-20260715-foot-COLORBOX-SPEC-TAXSUM-REGEX-FIX: 세금구분 라인 대사를 배포 라벨에 수렴(테스트→정본).
+  //   COPAY-BALANCE-SPLIT REOPEN#5(deployed·DA ratified) 이후 settle-lane 급여 라인은 급여 "전액"이 아니라
+  //     • "급여 자부담(30%)" = payCopaymentTotal(환자 자부담만)  +
+  //     • 별도 "공단부담액(명세)" = insuranceCoveredTotal(공단 NHIS 몫, 급여 방문 시에만 렌더)
+  //   로 분리 렌더된다(PaymentMiniWindow.tsx L2478~2501). 따라서 grandTotal(총 진료비=급여 전액+비급여)을
+  //   재구성하는 세금구분 합 = 급여 자부담 + 공단부담액(명세) + 비급여(과세) + 비급여(면세) 4개 표시 라인의 합.
+  //   [red RC] 기존 `급여(?!\s*자부담)` 는 shipped 라벨 "급여 자부담(30%)" 에 매칭되지 않아 급여 몫이 통째 누락
+  //     → 급여 방문 시 taxSum < grandTotal 불일치. 정본 라벨은 뒤집지 않고 regex 만 정본에 수렴시킨다.
+  //   (본 spec 은 beforeAll 에서 급여 서비스 1건을 결정론적으로 시드하므로 급여/공단 라인이 항상 실렌더된다
+  //    — regex fix 가 실제로 실행됨을 아래 copayLine/nhisLine>0 게이트로 못박는다. 비급여-only 우연 GREEN 차단.)
   const settleText = await settle.innerText();
   const num = (label: RegExp): number => {
     const m = settleText.match(label);
     return m ? Number(m[1].replace(/[^0-9]/g, '')) : NaN;
   };
+  // 본 티켓 regex fix 의 검증 대상 라인 2종 (급여 자부담 / 공단부담액)을 개별 추출해 실렌더를 못박는다.
+  const copayLine = num(/급여\s*자부담(?:\(\d+%\))?\s*([\d,]+)/); // "급여 자부담(30%)" = payCopaymentTotal(환자 자부담만)
+  const nhisLine = num(/공단부담액\(명세\)\s*([\d,]+)/);           // "공단부담액(명세)" = insuranceCoveredTotal(공단 몫)
   const taxSum =
     (num(/비급여\(과세\)\s*([\d,]+)/) || 0) +
     (num(/비급여\(면세\)\s*([\d,]+)/) || 0) +
-    (num(/급여(?!\s*자부담)\s*([\d,]+)/) || 0);
+    (copayLine || 0) +
+    (nhisLine || 0);
+  // eslint-disable-next-line no-console
+  console.log(`[TAXSUM-REGEX-FIX-EVIDENCE] copayLine(급여 자부담)=${copayLine} nhisLine(공단부담액)=${nhisLine} taxSum=${taxSum} feeTotal=${feeTotal} settleText=${JSON.stringify(settleText).slice(0, 240)}`);
   expect(
     Number.isFinite(taxSum) && taxSum > 0,
     `settle-lane 세금구분 합 추출(taxSum=${taxSum}) — settleText=${JSON.stringify(settleText).slice(0, 200)}`,
   ).toBeTruthy();
+  // ── regex fix 실검증 게이트 (T-20260715 FIX-REQUEST #2): 급여 서비스 시드 → 급여 자부담·공단부담액 라인이
+  //   실제 렌더돼 taxSum 에 합산됨을 못박는다. 이 두 라인이 0/미추출이면 regex fix 가 실행되지 않은 채
+  //   비급여-only 로 우연 GREEN 된 것이므로 명시 FAIL 시킨다(선재 시드 비결정성 재발 차단).
+  expect(
+    copayLine,
+    `regex fix 실검증: '급여 자부담(30%)' 라인이 실렌더·매칭되어야 함(급여 서비스 시드됨). copayLine=${copayLine}`,
+  ).toBeGreaterThan(0);
+  expect(
+    nhisLine,
+    `regex fix 실검증: '공단부담액(명세)' 라인이 실렌더·매칭되어야 함(급여 서비스 시드됨). nhisLine=${nhisLine}`,
+  ).toBeGreaterThan(0);
   expect(
     Number(feeTotal),
     `컴팩트 요약 합계(${feeTotal})가 파란 수납 lane 세금구분 총합(${taxSum})과 일치(금액계산 회귀 0)`,
