@@ -55,7 +55,10 @@ test.describe('T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT', () => {
   test('시나리오 2(AC-2 회귀 가드): 템플릿/커스텀 채움 동선(applyTemplate/applyCustom) 및 라벨 유지', () => {
     const src = SRC('pages/CustomerChartPage.tsx');
     const dlgIdx = src.indexOf('function PackagePurchaseFromTemplateDialog');
-    const dlgSlice = src.slice(dlgIdx, dlgIdx + 14000);
+    // 다음 컴포넌트(PackageAddonDialog) 경계까지 스코프 격리 — 고정 offset(brittle) 대신.
+    // (T-20260716-OFFICIAL-PKG-COMPOSITION-LOCK: 회차 잠금 추가로 본문 길이 증가 → 고정 14000 window 초과 방지)
+    const nextIdx = src.indexOf('function PackageAddonDialog', dlgIdx);
+    const dlgSlice = src.slice(dlgIdx, nextIdx > -1 ? nextIdx : dlgIdx + 20000);
 
     // 템플릿 선택 → applyTemplate 로직 그대로 호출 (Tabs onValueChange 경유)
     expect(dlgSlice.includes('applyTemplate(t)'),
