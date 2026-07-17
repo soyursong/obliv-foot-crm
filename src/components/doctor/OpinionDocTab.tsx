@@ -521,6 +521,31 @@ function useVisitSigningDoctors(clinicId: string | null, customerId: string | nu
 }
 
 // ---------------------------------------------------------------------------
+// T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (item2 / DA A-Doc "seed only·auto-bind NO"):
+//   진단서/소견서 발행자(진료의) 기본값 seed 출처 = 그 내원 치료테이블 지정 진료의(check_ins.treating_doctor_id).
+//   visitor.id = check_ins.id → 해당 내원행의 treating_doctor_id read-only 조회(무DDL).
+//   treating_doctor_id = clinic_doctors.id → 발행자 드롭다운과 직접 비교 가능.
+//   ★seed 기본값만 제안 — override(doctorTouched)·발행게이트(publish_opinion_doc RPC)·field_data 스냅샷 전부 불변.
+//   미지정/미매칭 시 null → defaultDoctorId 가 기존 체인(서명의→is_default→첫 진료의) 폴백.
+function useVisitTreatingDoctor(clinicId: string | null, checkInId: string | null) {
+  return useQuery<string | null>({
+    queryKey: ['opinion_visit_treating_doctor', clinicId, checkInId],
+    enabled: !!clinicId && !!checkInId,
+    queryFn: async () => {
+      if (!clinicId || !checkInId) return null;
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('treating_doctor_id')
+        .eq('id', checkInId)
+        .maybeSingle();
+      if (error) throw error;
+      return ((data as { treating_doctor_id: string | null } | null)?.treating_doctor_id) ?? null;
+    },
+    staleTime: 15_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // T-20260623-foot-OPINIONDOC-AUTOLINK-HEALTHQ (AC-1) — 그 환자의 최신 발건강 질문지(form_data) read-only 조회.
 //   submitted_at 최신 1건. 없으면 null(자동화 스킵=수동 모드). HealthQResultsPanel.loadResults 조회 컨벤션 재사용.
 // ---------------------------------------------------------------------------
@@ -650,6 +675,8 @@ export function OpinionEditorDialog({
   // ③ 그 내원(customer_id + visit_date=내원일 KST)의 진료 본 의사 — 발행자 일치 게이트용(read-only).
   const visitDate = visitor?.checked_in_at ? seoulISODate(visitor.checked_in_at) : null;
   const { data: visitSigning } = useVisitSigningDoctors(clinicId, visitor?.customer_id ?? null, visitDate);
+  // T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (item2): 그 내원 치료테이블 지정 진료의 — 발행자 seed 우선 출처.
+  const { data: treatingDoctorId = null } = useVisitTreatingDoctor(clinicId, visitor?.id ?? null);
 
   // AC-1: 그 환자의 최신 발건강 질문지(read-only) — 자동 pre-check 소스.
   const { data: healthQData, isLoading: hqLoading } = useLatestHealthQ(clinicId, visitor?.customer_id ?? null);
@@ -659,13 +686,15 @@ export function OpinionEditorDialog({
   // 발행자 ↔ 진료의 일치: 정보가 없으면 게이트 미적용(true), 있으면 발행자가 그날 진료의 Set 에 속해야 true.
   const issuerMatchesSigning = !hasSigningInfo || (doctorId !== '' && signingIds.has(doctorId));
 
-  // 발행자 기본값: 그 내원 진료 본 의사가 등록 진료의에 있으면 우선 → is_default → 첫 진료의.
+  // 발행자 기본값: 치료테이블 지정 진료의(item2, A-Doc seed) 우선 → 그 내원 서명의 → is_default → 첫 진료의.
   const defaultDoctorId = useMemo(() => {
     if (doctors.length === 0) return '';
+    // T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (A-Doc seed): 치료테이블 지정 진료의 우선(등록 진료의에 있을 때).
+    if (treatingDoctorId && doctors.some((d) => d.id === treatingDoctorId)) return treatingDoctorId;
     const signed = doctors.find((d) => signingIds.has(d.id));
     if (signed) return signed.id;
     return (doctors.find((d) => d.is_default) ?? doctors[0]).id;
-  }, [doctors, signingIds]);
+  }, [doctors, signingIds, treatingDoctorId]);
 
   // 옵션 그리드 = form_templates(opinion_doc).field_map.sections 우선, 없으면 하드코드 OPINION_SECTIONS(empty-safe).
   const sections: OpinionSection[] = useMemo(
