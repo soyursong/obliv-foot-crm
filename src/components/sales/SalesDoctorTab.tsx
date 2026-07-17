@@ -148,12 +148,16 @@ export function SalesDoctorTab({ filter }: Props) {
       const charges = excludeSimulationPaymentRows((scData ?? []) as ChargeRow[], simIds);
 
       // 3. 수기수납 (closing_manual_payments, close_date 기준 — 비급여 UNION)
+      // T-20260714-foot-SOFTVOID-INFRA-FWD-PRIMITIVE: soft-void 무효행 제외(합산경로 (c) 상담의사별 비급여 매출).
+      //   voided_at IS NULL 유효행만 → 담당실장별 비급여 UNION 집계가 grossTotal/SalesDailyTab(b)와 일관.
+      //   forward 프리미티브 배포 시점 전건 voided_at=NULL → 합계 불변(net-zero). ((a)(b) 동일 패턴)
       const { data: cmData, error: cmErr } = await supabase
         .from('closing_manual_payments')
         .select('amount, staff_name, close_date')
         .eq('clinic_id', clinic!.id)
         .gte('close_date', from)
-        .lte('close_date', to);
+        .lte('close_date', to)
+        .is('voided_at', null);
       if (cmErr) throw cmErr;
       const manuals = (cmData ?? []) as ManualRow[];
 
