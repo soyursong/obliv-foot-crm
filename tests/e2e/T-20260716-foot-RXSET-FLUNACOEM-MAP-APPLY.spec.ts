@@ -23,7 +23,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const LEGACY = 'LEGACY-015b55130567';
 const NEW_CLAIM = 'HIRA-201403310';
 const MIG = 'supabase/migrations/20260716140500_rxset_flunacoem_map_apply.sql';
-const DDL = 'supabase/migrations/20260716140000_rxset_hira_provenance_columns.sql';
+const DDL = 'supabase/migrations/20260716140100_rxset_hira_provenance_columns.sql';
 
 function sbClient(): SupabaseClient | null {
   try {
