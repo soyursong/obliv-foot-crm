@@ -12,7 +12,8 @@ mig_dryrun: pass
 mig_ledger_check: clean
 mig_rollback: supabase/migrations/20260716160000_foot_visit_route_gonghom_add.rollback.sql
 mig_dryrun_postprobe: absent
-applied_at: n/a (PROD DDL 미적용 — supervisor DDL-diff 게이트 통과 후 apply·POSTCHECK 예정)
+mig_ledger_recorded: "20260716160000 INSERT OK (schema_migrations 177→178행, direct-apply 원장 divergence 방지)"
+applied_at: "2026-07-18 06:05 KST POSTCHECK customers=7값 reservations=7값 (TM/워크인/인바운드/지인소개/네이버/인콜/공홈), 네이버야 미도입 확인, ledger 20260716160000 기록 OK. Management API /database/query direct-exec (supabase db push 원장 divergence 우회). runner=scripts/T-20260716-foot-VISITROUTE-OPT-GONGHOM-ADD-NAVER-ALIGN_apply.mjs --apply"
 deploy-ready-by: agent-fdd-dev-foot
 deploy-ready-at: 2026-07-16
 deadline: 2026-07-21
