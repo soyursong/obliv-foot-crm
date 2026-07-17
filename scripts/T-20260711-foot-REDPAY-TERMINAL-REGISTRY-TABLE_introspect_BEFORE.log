@@ -1,0 +1,35 @@
+════════════════════════════════════════════════════════════
+[BEFORE] redpay family 5종 prod introspection — ref rxlomoozakkjesdqjtvd
+════════════════════════════════════════════════════════════
+
+── A. LEDGER (schema_migrations 원장행) ──
+  20260710120000  ledger=ABSENT
+  20260711140000  ledger=ABSENT
+  20260714170000  ledger=ABSENT
+  20260714170100  ledger=ABSENT
+  20260714210000  ledger=ABSENT
+  ledger MAX version = 20260718130000
+
+── B. OBJECT/DATA 실재 (원장과 분리 확인) ──
+  redpay_terminal_registry table = ABSENT
+  public.v_receipt_settlement_daily = ABSENT
+  public.v_redpay_unclassified_merchants = ABSENT
+  public.v_redpay_reconciliation_daily = v_redpay_reconciliation_daily
+    v_redpay_reconciliation_daily registry-derived = false
+  payments 신규컬럼(image_url/ocr_receipt_datetime) present = []
+  receipt_ocr_results.parsed_approval_no present = false
+  payment_reconciliation_log.center = ABSENT
+  center CHECK constraint present = false
+  v_redpay_reconciliation_body = ABSENT
+  role body_recon_ro present = false
+
+── C. VALIDATE FAIL-CLOSED PRECHECK (receipt_ocr_results PCI) ──
+  receipt_ocr_results total rows = 0
+  raw_text ~ '[0-9]{13,}' count = 0  → ✅ SAFE (VALIDATE 통과 가능)
+
+── D. HAZARD 판정 (body-seed silent-SKIP) ──
+  20260714170100 ledger=ABSENT, registry=ABSENT, body count=null
+  → body-seed REPAIR 필요 = apply 후 재판정
+
+[BEFORE] introspection 완료.
+

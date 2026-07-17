@@ -1,0 +1,32 @@
+════════════════════════════════════════════════════════════
+[APPLY(실적용)] redpay family 순서 apply — ref rxlomoozakkjesdqjtvd (2026-07-18 02:36:48 KST)
+  order: 20260710120000 → 20260711140000 → 20260714170000 → 20260714170100 → 20260714210000
+════════════════════════════════════════════════════════════
+
+── [gate] VALIDATE fail-closed precheck (직전 재실측) ──
+  receipt_ocr_results total=0, raw_text~[0-9]{13,}=0
+  ✅ SAFE — no_full_pan VALIDATE 통과 가능. 체인 진행.
+
+
+▶ APPLY 20260710120000  20260710120000_ocr_receipt_redpay_match.sql
+  ✅ applied + ledger recorded (ocr_receipt_redpay_match)
+
+▶ APPLY 20260711140000  20260711140000_redpay_terminal_registry_ssot.sql
+  ✅ applied + ledger recorded (redpay_terminal_registry_ssot)
+    ↳ registry foot count = 17 (기대 17)
+
+▶ APPLY 20260714170000  20260714170000_paylog_center_column.sql
+  ✅ applied + ledger recorded (paylog_center_column)
+  [precheck] redpay_terminal_registry = redpay_terminal_registry (body seed to_regclass 가드)
+
+▶ APPLY 20260714170100  20260714170100_redpay_dohsu_registry_seed.sql
+  ✅ applied + ledger recorded (redpay_dohsu_registry_seed)
+    ↳ registry body count = 14 (기대 14)
+
+▶ APPLY 20260714210000  20260714210000_redpay_body_recon_view_grant.sql
+  ✅ applied + ledger recorded (redpay_body_recon_view_grant)
+
+════════════════════════════════════════════════════════════
+[DONE] applied in order: 20260710120000 → 20260711140000 → 20260714170000 → 20260714170100 → 20260714210000  (2026-07-18 02:36:52 KST)
+AFTER 검증: introspect --tag AFTER
+════════════════════════════════════════════════════════════
