@@ -27,7 +27,7 @@
 //   원장이 editor 에서 수기 수정하므로 기본 문구는 출발점일 뿐(AC-4). 임의 임상 단정 회피 — 라벨 기반 중립 문장.
 //   form_templates(form_key='opinion_doc').field_map.sections 가 있으면 그 그리드를 우선 사용(없으면 이 하드코드).
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -619,6 +619,10 @@ export function OpinionEditorDialog({
   //   저장 = useUpdateStaffMemo(requestId) blur 시. requestId 없으면(허브 직접 오픈) 미노출·미저장.
   const [memoDraft, setMemoDraft] = useState('');
   const [memoSaved, setMemoSaved] = useState('');
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item2): 실장 요청 메모 textarea 내용 분량만큼 세로 자동확장(스크롤 제거).
+  //   MedicalChartPanel(L1104) 검증 패턴 재사용 — height='auto' 리셋 후 scrollHeight 로 확장(순수 JS, 신규 npm 0).
+  //   field-sizing:content 미지원 갤탭/구브라우저에서도 동작 보장. 아래 useEffect 가 memoDraft 변화마다 재계산.
+  const memoRef = useRef<HTMLTextAreaElement>(null);
   const updateMemoMut = useUpdateStaffMemo(clinicId);
   const handleMemoSave = async () => {
     if (!requestId) return;
@@ -760,6 +764,16 @@ export function OpinionEditorDialog({
     setText(composedText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, composedText, textTouched]);
+
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item2): 실장 요청 메모 autosize — 내용 높이만큼 확장(스크롤 없이 전체 표시).
+  //   memoDraft/open/requestId 변화(입력·seed·바인딩)마다 height 재계산. 삭제 시 height='auto' 리셋으로 축소도 반영(AC-2).
+  useEffect(() => {
+    if (!open || !requestId) return;
+    const ta = memoRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [open, requestId, memoDraft]);
 
   // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
   useEffect(() => {
@@ -1108,21 +1122,30 @@ export function OpinionEditorDialog({
         {canPublish ? (
           /* ④ 3단 레이아웃: 옵션그리드 | editor+발행자+발행 | 발행이력/출력(우측 단) */
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)]">
-            {/* 1단: 옵션 그리드 (F0BAETELCTF) */}
-            <div className="max-h-[62vh] space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
-              {sections.map((section) => (
-                <div key={section.title}>
-                  <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
-                  {/* 금기증=대분류-소분류 그리드(재정렬) / 그 외(진단서)=기존 flat 그리드. */}
-                  {isContraindSection(section.title) ? (
-                    renderContraindSection(section)
-                  ) : (
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {section.options.map((opt) => renderOptBtn(opt))}
-                    </div>
-                  )}
+            {/* 1단: 옵션 그리드 (F0BAETELCTF) + 좌측 하단 QR 안내문구(item1) */}
+            <div className="flex max-h-[62vh] flex-col gap-2">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
+                {sections.map((section) => (
+                  <div key={section.title}>
+                    <p className="mb-1.5 text-center text-xs font-semibold text-muted-foreground">{section.title}</p>
+                    {/* 금기증=대분류-소분류 그리드(재정렬) / 그 외(진단서)=기존 flat 그리드. */}
+                    {isContraindSection(section.title) ? (
+                      renderContraindSection(section)
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {section.options.map((opt) => renderOptBtn(opt))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* T-20260717-foot-OPINION-WRITE-UI-3FIX (item1): QR 안내문구를 좌측 하단으로 이동(문지은 대표원장 요청, 첨부 F0BHXT5AB0V).
+                  옵션 그리드(좌측 단) 하단에 고정 — 스크롤 영역 밖. 기존 2단(editor 단) 상단 위치에서 이관. */}
+              {autoChecked.size > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-sm text-amber-900" data-testid="opinion-autocheck-hint">
+                  <span className="font-bold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
                 </div>
-              ))}
+              )}
             </div>
 
             {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
@@ -1148,23 +1171,21 @@ export function OpinionEditorDialog({
                             : ''}
                     </span>
                   </div>
+                  {/* T-20260717-foot-OPINION-WRITE-UI-3FIX (item2): 고정높이+스크롤 → 내용 분량만큼 세로 자동확장.
+                      rows=2 최소치 유지 + overflow-hidden(자동확장이 스크롤 대체) + resize-none(수동 리사이즈 불필요). */}
                   <textarea
+                    ref={memoRef}
                     value={memoDraft}
                     onChange={(e) => setMemoDraft(e.target.value)}
                     onBlur={handleMemoSave}
                     placeholder="실장이 남긴 서류 요청 상세내용 (수정 가능)"
                     rows={2}
-                    className="w-full resize-y rounded border border-teal-200 bg-white px-2 py-1.5 text-sm text-teal-900 focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                    className="w-full resize-none overflow-hidden rounded border border-teal-200 bg-white px-2 py-1.5 text-sm text-teal-900 focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
                     data-testid="opinion-staff-memo-input"
                   />
                 </div>
               )}
-              {/* AC-1.2: 자동 pre-check 안내 — 발건강 질문지에서 미리 채운 항목(QR입력) 확인 유도. */}
-              {autoChecked.size > 0 && (
-                <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-sm text-amber-900" data-testid="opinion-autocheck-hint">
-                  <span className="font-bold">QR입력</span> 표시 항목은 환자 발건강 질문지에서 자동으로 미리 체크되었습니다. 내용을 확인하신 뒤 확정하거나, 클릭해 해제하세요. (최종 확정은 발행 시점)
-                </div>
-              )}
+              {/* T-20260717-foot-OPINION-WRITE-UI-3FIX (item1): QR 안내문구는 좌측 하단(옵션 그리드 단)으로 이관됨 — 여기서 제거. */}
               {/* item2 플레이스홀더 변형 셀렉터 — 선택한 항목 원문에 마커가 있을 때만 노출(금기증/진단서 선택 종속). */}
               {(showDate || showHepatitis || showOralXReason) && (
                 <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-2" data-testid="opinion-placeholder-controls">
