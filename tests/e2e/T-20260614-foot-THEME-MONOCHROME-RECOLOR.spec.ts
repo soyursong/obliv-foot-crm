@@ -59,7 +59,10 @@ test.describe('THEME-MONOCHROME-RECOLOR(재오픈) — 정적 소스 가드 (aut
   test('AC4(carve-out②③④⑤): 재진·laser·역할칩·선체험 의미색(emerald/green)이 보존돼 있다', () => {
     expect(status).toMatch(/laser:\s*'bg-emerald-500 text-white'/);          // ⑤ laser
     expect(status).toMatch(/returning:\s*'bg-emerald-100 text-emerald-700'/); // ② 재진
-    expect(status).toMatch(/therapist:\s*'bg-green-100 text-green-800 border-green-300'/); // ④ 역할칩
+    // ④ 역할칩 — carve-out 의미색(green-family) 보존. HEX 단계값은 T-20260629-foot-HANDOVER-COMPACT-PASTEL
+    //   (commit 17be5a61)이 파스텔 톤으로 desaturate: bg-*-100/text-*-800/border-*-300 → bg-*-50/text-*-700/border-*-200.
+    //   green 계열(의미색) 자체는 유지 → carve-out 정합 불변. 원본 STEP-F 하드값은 stale → 파스텔값으로 갱신.
+    expect(status).toMatch(/therapist:\s*'bg-green-50 text-green-700 border-green-200'/);
     expect(status).toMatch(/green:\s*'선체험'/);                              // ③ 선체험(라벨)
     expect(status).toMatch(/green:\s*'bg-green-500'/);                        // ③ 선체험(도트)
   });

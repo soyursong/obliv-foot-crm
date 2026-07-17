@@ -314,12 +314,19 @@ test.describe('시나리오 3: 처방전 (rx_standard) — 팩스 중복제거 +
     expect(html).toMatch(/교부일로부터[\s\S]{0,40}\{\{usage_days\}\}[\s\S]{0,40}일간/);
   });
 
-  test('AC-3③: 총 투약일수 자동연동 제거 — buildRxItemsHtml total_days 항상 공란', () => {
+  test('AC-3③: 총 투약일수 — 시술데이터 자동연동 제거(명시 입력값은 표기)', () => {
     const src = fs.readFileSync(FORM_TEMPLATES_SRC, 'utf-8');
-    // buildRxItemsHtml 내 total_days: '' (item.total_days 연동 제거)
+    // STALE-SPEC-FIX: 8FIX AC-3③의 "항상 공란" 불변식은 후속 티켓
+    //   T-20260606-foot-DOC-FIELD-MISSING-3 AC-5 로 의도적으로 승계됨.
+    //   목적("시술데이터 기반 자동연동 제거")은 유지하되, RX-DOSAGE-DYNAMIC 으로
+    //   명시 입력된 total_days 는 그대로 표기(현장 "입력해도 미표기" 회귀 해소).
+    //   → buildRxItemsHtml 은 item.total_days 를 폐기하지 않고 통과(자동연동 부활 아님),
+    //     빈 패딩 행은 여전히 공란.
+    expect(src).toMatch(/total_days:\s*item\.total_days\s*\?\?\s*''/);
+    // 빈 패딩 행은 공란 유지
     expect(src).toMatch(/total_days:\s*''/);
-    // 8FIX 마커
-    expect(src).toContain('T-20260601-foot-DOC-PRINT-8FIX AC-3③');
+    // 자동연동 제거 근거 마커(후속 티켓)
+    expect(src).toContain('T-20260606-foot-DOC-FIELD-MISSING-3 AC-5');
   });
 
   test('AC-3④: rx_standard — QR 자리 텍스트("처방전QR코드") 삭제 + {{rx_qr_html}} 자동삽입', () => {
@@ -331,7 +338,13 @@ test.describe('시나리오 3: 처방전 (rx_standard) — 팩스 중복제거 +
   test('AC-3④: autoBindContext — rx_qr_html 자동 생성 (api.qrserver 재사용, 신규 의존 없음)', () => {
     const src = fs.readFileSync(AUTOBIND_SRC, 'utf-8');
     expect(src).toContain('rx_qr_html');
-    expect(src).toContain('api.qrserver.com');
+    // STALE-SPEC-FIX: api.qrserver.com URL 리터럴이 공유 상수 QR_CODE_API_ENDPOINT
+    //   (src/lib/externalServices.ts = 'https://api.qrserver.com/v1/create-qr-code/') 로 리팩터됨.
+    //   autoBindContext 는 해당 상수를 import·재사용 → "신규 의존 없음" 의도 유지.
+    //   따라서 리터럴 대신 공유 상수 재사용을 검증하고, 상수 실값이 qrserver 임을 별도 확인.
+    expect(src).toContain('QR_CODE_API_ENDPOINT');
+    const extSrc = fs.readFileSync(path.join(SRC_ROOT, 'lib/externalServices.ts'), 'utf-8');
+    expect(extSrc).toContain('api.qrserver.com');
   });
 
   test('AC-3④: rx_standard 렌더 — QR img 삽입, 텍스트 placeholder 미잔류', () => {

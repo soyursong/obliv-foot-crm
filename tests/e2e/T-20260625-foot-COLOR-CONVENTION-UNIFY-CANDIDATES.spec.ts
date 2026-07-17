@@ -76,17 +76,28 @@ test.describe('시나리오1: 예약관리 일간/주간 A안 3색', () => {
     expect(RESV, '힐러 dot이 healer-500이 아님').toContain("healer: 'bg-healer-500'");
   });
 
-  test('S1-3: 일간/주간 칸 칩 3곳 — 초=blue / 재=firstvisit / HL=healer (raw yellow 잔존 0)', () => {
-    // 초 칩 = blue (3 위치 모두)
+  test('S1-3: 일간/주간 칸 칩 — 초=blue / 재=firstvisit / 힐=healer (raw yellow 잔존 0)', () => {
+    // T-20260702-foot-RESVAXIS-YAXIS-4SEG-ABBR(commit 578974c4) SUPERSEDE:
+    //   구 3곳 `>초 /재 /HL ` full-칩 마크업이 세로축 4분류 축약표기(KIND_AXIS_LABELS.abbr: 초/재/힐/리)로 교체됨.
+    //   per-cell 카운트 블록만 `bg-*-100 ... >초/재/HL ` full-칩 1쌍 잔존, 일간·주간 헤더는 abbr(text-*-700) 렌더.
+    //   → A안 3색 토큰(blue/firstvisit/healer) 정합은 전 위치에서 불변. 개수 3 하드값만 stale.
+    // per-cell full-칩: 초=blue / 재=firstvisit / 힐=healer 각 1쌍.
     expect((RESV.match(/bg-blue-100[^"]*text-blue-700">초 /g) || []).length,
-      '초 칩 blue 3곳 미적용').toBe(3);
-    // 재 칩 = firstvisit (3 위치 모두)
+      '초 per-cell 칩 blue 미적용').toBeGreaterThanOrEqual(1);
     expect((RESV.match(/bg-firstvisit-100[^"]*text-firstvisit-700">재 /g) || []).length,
-      '재 칩 firstvisit 3곳 미적용').toBe(3);
-    // HL 칩 = healer (raw yellow 금지)
+      '재 per-cell 칩 firstvisit 미적용').toBeGreaterThanOrEqual(1);
     expect((RESV.match(/bg-healer-100[^"]*text-healer-700">HL /g) || []).length,
-      'HL 칩 healer 토큰 3곳 미적용').toBe(3);
+      'HL per-cell 칩 healer 토큰 미적용').toBeGreaterThanOrEqual(1);
+    // 일간/주간 세로축 abbr 표기: 초=blue-700 / 재=firstvisit-700 / 힐=healer-700 (KIND_AXIS_LABELS.abbr).
+    expect((RESV.match(/text-blue-700">\{KIND_AXIS_LABELS\.new\.abbr\}/g) || []).length,
+      '초진 abbr blue 토큰 미적용(일간/주간)').toBeGreaterThanOrEqual(2);
+    expect((RESV.match(/text-firstvisit-700">\{KIND_AXIS_LABELS\.returning\.abbr\}/g) || []).length,
+      '재진 abbr firstvisit 토큰 미적용(일간/주간)').toBeGreaterThanOrEqual(2);
+    expect((RESV.match(/text-healer-700">\{KIND_AXIS_LABELS\.healer\.abbr\}/g) || []).length,
+      '힐러 abbr healer 토큰 미적용(일간/주간)').toBeGreaterThanOrEqual(2);
+    // 힐러에 구 raw yellow 잔존 금지 (full-칩·abbr 공통).
     expect(RESV, 'HL 칩에 구 raw yellow 잔존').not.toContain('text-yellow-700">HL ');
+    expect(RESV, '힐러 abbr에 구 raw yellow 잔존').not.toMatch(/text-yellow-700">\{KIND_AXIS_LABELS\.healer\.abbr\}/);
   });
 
   test('S1-4: 반전 잔재 0 — 초진에 firstvisit(green)·재진에 blue 카드배경 잔존 금지', () => {
@@ -120,10 +131,16 @@ test.describe('시나리오2: 대시보드 배지 + 신분증 칩', () => {
   });
 
   test('S2-2: 신분증 확인완료 칩(2번차트) = firstvisit dot (success 상태, carve-out 정합 유지)', () => {
+    // success 상태 앵커 = firstvisit dot (carve-out 정합, 불변).
     expect(CHART, '신분증 확인완료 dot이 firstvisit(green success)에서 변경됨')
       .toContain('bg-firstvisit-500');
-    expect(CHART, '신분증 확인완료 배지 A안 초록 앵커(#E7EEDA) 정합 깨짐')
-      .toContain('#E7EEDA');
+    // T-20260701-foot-CHART2-IDVERIFY-DOT-ONLY(commit 9609a7a8) SUPERSEDE:
+    //   확인완료 배지 full-background 파스텔그린(#E7EEDA)을 제거하고 무채색 glass/silver(#C7CDD4 border)로 재정의.
+    //   A안 초록(firstvisit) 의미색은 왼쪽 dot(bg-firstvisit-500)에만 계승 → carve-out 정합 유지. #E7EEDA 앵커는 stale.
+    expect(CHART, 'IDVERIFY-DOT-ONLY 후 배지 배경이 무채색 glass/silver(#C7CDD4)가 아님')
+      .toContain('#C7CDD4');
+    expect(CHART, 'IDVERIFY-DOT-ONLY 후 구 파스텔그린 배경(#E7EEDA)이 잔존')
+      .not.toContain('#E7EEDA');
   });
 });
 
@@ -240,12 +257,19 @@ test.describe('시나리오5: 통합시간표 A안 컬러(총괄 추가 scope, T
       .not.toContain("'border-gray-300 bg-gray-50 hover:bg-gray-100'");
   });
 
-  test('S5-6: 대시보드 진행현황 상태바 — 초진=blue-700 / 재진=firstvisit-700 (구 emerald 잔존 0)', () => {
-    expect(DASH, '상태바 초진 카운트가 blue-700이 아님')
-      .toContain('초진 <strong className="text-blue-700">{statusNewCount}</strong>');
-    expect(DASH, '상태바 재진 카운트가 A안 초록(firstvisit-700)이 아님')
-      .toContain('재진 <strong className="text-firstvisit-700">{statusReturningCount}</strong>');
-    expect(DASH, '상태바 재진 카운트에 구 raw emerald 잔존')
+  test('S5-6: 대시보드 진행현황 카운트 — 상태바 중복제거 후 전체/신규/재진 탭 통합 (구 emerald 잔존 0)', () => {
+    // T-20260630-foot-DASH-HEADER-DEDUP-COMPACT AC-3(commit e82ef73f) SUPERSEDE:
+    //   좌측 '초진·재진·수납대기·완료' 컬러 상태바(text-blue-700/firstvisit-700 <strong>)는 중복으로 제거되고,
+    //   초진/재진 건수는 무채색 '전체/신규/재진' 탭(TabsTrigger, N건)으로 통합 표기(AC-2). 색상 상태바 마크업은 stale.
+    //   → 카운트 소스(statusNewCount/statusReturningCount)는 탭에서 그대로 사용, 구 emerald 상태바 잔존 0 가드는 유지.
+    expect(DASH, "신규 카운트가 탭(TabsTrigger '신규 {statusNewCount}건')으로 통합되지 않음")
+      .toContain('신규 {statusNewCount}건');
+    expect(DASH, "재진 카운트가 탭(TabsTrigger '재진 {statusReturningCount}건')으로 통합되지 않음")
+      .toContain('재진 {statusReturningCount}건');
+    // 구 컬러 상태바(초진 blue-700 / 재진 firstvisit-700·emerald-700 <strong>)는 제거되어 잔존 0.
+    expect(DASH, '제거된 구 초진 blue-700 상태바 마크업이 잔존')
+      .not.toContain('초진 <strong className="text-blue-700">{statusNewCount}</strong>');
+    expect(DASH, '제거된 구 재진 상태바에 raw emerald 잔존')
       .not.toContain('재진 <strong className="text-emerald-700">{statusReturningCount}</strong>');
   });
 });

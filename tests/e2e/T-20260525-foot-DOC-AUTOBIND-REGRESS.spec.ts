@@ -139,7 +139,10 @@ test.describe('AC-2: 고객정보 바인딩 렌더', () => {
 // ── AC-3: 상병코드 전건 — 6efe66e 동일 범위 재확인 ───────────────────────────
 
 test.describe('AC-3: 상병코드 전건 bindHtmlTemplate 렌더', () => {
-  const DIAG_FORMS = ['diagnosis', 'treat_confirm', 'visit_confirm', 'diag_opinion', 'rx_standard', 'ins_claim_form'];
+  // T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE (src commit 76d3dc2e): treat_confirm/visit_confirm
+  //   은 상병(diag_code) 비노출로 의도 변경됨. 상병 노출 진료확인서는 T-20260630-foot-DOCCONFIRM-
+  //   FORMPANEL-SPLIT (src commit 73dced59) 로 신설된 treat_confirm_code 가 담당 → re-point (의도 보존).
+  const DIAG_FORMS = ['diagnosis', 'treat_confirm_code', 'diag_opinion', 'rx_standard', 'ins_claim_form'];
 
   for (const formKey of DIAG_FORMS) {
     test(`${formKey} — diag_code_1 렌더`, async ({ page }) => {
