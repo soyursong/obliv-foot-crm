@@ -112,6 +112,9 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: 회수1 phantom 미수 치유 (R1, effectiveNetPaid 중앙화).
+        //   순수 로직 불변식 — AC1 완납 phantom소멸 / AC2 회수≥2 회귀0 / AC3 매출 split 불변 + F-4857 archive 가드. auth 불요.
+        '**/T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX.spec.ts',
         // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS: 태블릿 카메라 업로드 후 "영수증 매출 연동"
         //   팝업 미표시(가설A: 카메라 앱 전환 리마운트/컨텍스트 교란) 해소 — 재조회前 즉시오픈+persist 복원+비차단 갱신.
         //   소스 불변식 가드 + page.setContent 실DOM 뷰포트 포지셔닝(B 회귀가드). auth·server 불요. 실기 갤탭=field-soak.

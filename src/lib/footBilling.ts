@@ -62,6 +62,41 @@ export function netPaidFromPayments(
   }, 0);
 }
 
+/**
+ * T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX — 패키지 net-paid 산출 SSOT 중앙화(R1).
+ *
+ * 배경(DIAG): 파생 미수(pkg_due)를 `package_payments` 만으로 산출하면, package_payments 를
+ *   **의도적으로** 만들지 않는 두 정당 경로의 결제가 반영되지 않아 **phantom 미수**가 뜬다:
+ *     (a) 회수1 단건(PKGCLASS-SESSION1-SINGLE, 매출 이중계상 방지): 영수증/추가결제가 payments 로만
+ *         기록되고 packages.paid_amount 에 직접 가산된다(package_payments 미생성).
+ *     (b) 양도 승계(PACKAGE-TRIPLE-DEFECT): 승계행을 만들지 않고 승계액을 paid_amount 에만 반영.
+ *   두 경우 모두 결제행(package_payments)이 비어 있고 net-paid 의 유일 소스는 paid_amount 다.
+ *
+ * 규칙: **결제행이 비어 있으면서**((a)단건 또는 (b)양도) → paid_amount 를 net-paid 로 사용,
+ *   그 외 전부 → 기존대로 netPaidFromPayments(rows, 'package'). 결제행이 존재하면(회수≥2 분할결제
+ *   진행중 등) 항상 결제행이 권위 소스이므로 폴백 미개입 → 회귀 0(기존 8콜러 정상 미수 표시 불변).
+ *
+ * ⚠ 매출 split 무관: 본 헬퍼는 **미수(pkg_due) 파생에만** 관여한다. 매출 source/insurance split
+ *   경로(payments·service_charges)는 미접촉이므로 single≠package revenue 규칙 불변(AC3).
+ * ⚠ archive 무개입: status 필터는 콜러 책임(loadCustomerOutstanding 은 status='active' 한정).
+ *   본 헬퍼는 net-paid 값만 계산할 뿐 어떤 패키지를 포함할지는 결정하지 않는다 → archive 패키지의
+ *   paid_amount 를 미수/매출에 재유입시키지 않는다(F-4857 38cfc0d4 검증).
+ */
+export function effectiveNetPaid(
+  pkg: {
+    total_sessions?: number | null;
+    paid_amount?: number | null;
+    transferred_from?: string | null;
+  },
+  rows: PackagePaymentRow[] | null | undefined,
+): number {
+  const rowsEmpty = (rows?.length ?? 0) === 0;
+  if (rowsEmpty && (isSinglePaymentByCount(pkg.total_sessions) || pkg.transferred_from)) {
+    return pkg.paid_amount ?? 0;
+  }
+  return netPaidFromPayments(rows, 'package');
+}
+
 /** 잔금 = 총액 − 순납부액. 음수면 과수(환불검토). 반올림(정수원 도메인). */
 export function computeOutstanding(
   totalAmount: number | null | undefined,
@@ -121,13 +156,16 @@ export async function loadCustomerOutstanding(
 
   const { data: pkgs } = await supabase
     .from('packages')
-    .select('id, customer_id, total_amount, consultation_fee, created_at')
+    // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: total_sessions·paid_amount·transferred_from
+    //   동반 조회 → effectiveNetPaid 회수1/양도 폴백. status='active' 필터 유지(archive 무재유입).
+    .select('id, customer_id, total_amount, consultation_fee, created_at, total_sessions, paid_amount, transferred_from')
     .eq('clinic_id', clinicId)
     .eq('status', 'active')
     .in('customer_id', ids);
   const pkgRows = (pkgs ?? []) as Array<{
     id: string; customer_id: string; total_amount: number | null;
     consultation_fee: number | null; created_at: string;
+    total_sessions: number | null; paid_amount: number | null; transferred_from: string | null;
   }>;
   if (pkgRows.length === 0) return result;
 
@@ -147,7 +185,9 @@ export async function loadCustomerOutstanding(
   const sorted = [...pkgRows].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
   for (const pkg of sorted) {
     const rows = payByPkg.get(pkg.id);
-    const pkgDue = computeOutstanding(pkg.total_amount, netPaidFromPayments(rows, 'package'));
+    // 패키지 잔금: effectiveNetPaid(회수1/양도 = paid_amount 폴백, 그 외 = 결제행) — phantom 미수 치유.
+    const pkgDue = computeOutstanding(pkg.total_amount, effectiveNetPaid(pkg, rows));
+    // 진료비 잔금: consultation_fee 는 단건 폴백과 무관(별도 축) → 결제행 그대로(§4-A).
     const consultDue = computeOutstanding(pkg.consultation_fee ?? 0, netPaidFromPayments(rows, 'consultation'));
     const prev = result.get(pkg.customer_id) ?? { packageDue: 0, consultationDue: 0, duePackageId: null };
     if (pkgDue > 0) prev.packageDue += pkgDue;
