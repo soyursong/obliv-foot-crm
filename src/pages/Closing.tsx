@@ -1882,14 +1882,26 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             </div>
                           )}
                         </td>
-                        {/* T-20260715-foot-CLOSING-CHARTNUM-CHARTNAV: 차트번호 셀 클릭 → 고객 2번차트(/chart/:customerId) nav.
-                            row_customer_id 있는 행(단건·패키지결제)만 클릭/hover 활성, 수기행(row_customer_id 없음)은 비활성. */}
+                        {/* T-20260717-foot-CLOSING-CHARTNUM-POPUP (supersedes T-20260715-CHARTNAV):
+                            차트번호 셀 클릭 → 고객 2번차트(/chart/:customerId) 별도 팝업창(window.open).
+                            일마감 화면을 유지(사라지지 않음)한 채 2번차트를 새 창으로 표출.
+                            row_customer_id 있는 행(단건·패키지결제)만 클릭/hover 활성, 수기행(row_customer_id 없음)은 비활성.
+                            (navigate → window.open, 김주연 총괄 요청 · NEW-TASK MSG-20260717-151418-oj4g) */}
                         <td
                           className={cn(
                             'py-2 px-2 text-xs text-muted-foreground',
                             r.row_customer_id && 'cursor-pointer hover:text-primary hover:underline',
                           )}
-                          onClick={r.row_customer_id ? () => navigate(`/chart/${r.row_customer_id}`) : undefined}
+                          onClick={
+                            r.row_customer_id
+                              ? () =>
+                                  window.open(
+                                    `/chart/${r.row_customer_id}`,
+                                    `foot-chart-${r.row_customer_id}`,
+                                    'width=1200,height=800,noopener,noreferrer',
+                                  )
+                              : undefined
+                          }
                           data-testid="closing-chartno-cell"
                         >
                           {r.chart_number ?? '-'}
