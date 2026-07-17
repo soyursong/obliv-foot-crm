@@ -1,3 +1,4 @@
+-- ⛔ SUPERSEDED (2026-07-18, supervisor 승인 MSG-20260717-234304-ev5b) — OBE: prod 20260717160000/170000 consultant_universe INNER JOIN으로 원 의도(퇴사자/실적0 실장 제외) 충족. 5-col up over 7-col prod = 파괴적 회귀. 미적용·DB 무접점.
 -- ============================================================
 -- T-20260619-foot-STATS-CATEGORY-MANAGER-SOURCE-FIX (파트2 · REWORK)
 -- 통계 > 실장별 실적 ↔ 직원관리 명단(SSOT) 연동:
