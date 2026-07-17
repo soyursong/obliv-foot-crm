@@ -424,9 +424,8 @@ function DocRequestRow({
           </span>
         ) : (
           <>
-            {/* AC-9 반짝효과: 신규 요청 시각화. AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). */}
+            {/* AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). 신규 요청 시각화는 큐 항목·teal-600 버튼 상시 노출로 충분(T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE: 청록 ripple 반짝임 제거). */}
             <span className="relative inline-flex">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-md bg-teal-400/40" aria-hidden />
               <Button
                 size="sm"
                 className="relative h-7 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
