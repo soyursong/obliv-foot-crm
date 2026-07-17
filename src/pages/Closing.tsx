@@ -1036,6 +1036,22 @@ export default function Closing() {
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [enrichedRows]);
 
+  // ── T-20260717-foot-CLOSING-REFUND-STATS-MISSING: 금일 환불 별도 집계 섹션(표시 전용) ──
+  //   [REOPEN 실제 요구] '차감 여부'는 이미 정상(refundAmount가 grossTotal에서 NET 차감).
+  //   본 작업은 환불 건을 '별도 집계 섹션'으로 노출만 추가한다(additive display).
+  //   ★ 환불 식별·금액은 확정 소스 재사용: enrichedRows 의 payment_type==='refund' 행
+  //     (단건=payments / 패키지=package_payments, payment_type='refund') — 새 산식 발명 0.
+  //   ★ 합계·차감·담당자별 로직 무접점 — refundRows 는 표시용 파생값일 뿐(reduce 경로 불변).
+  //   ★ merged_refund(원결제행에 병합 표시된 환불) 포함 — 병합은 '결제내역 목록' 표기 규칙일 뿐
+  //     환불 집계에서는 모든 refund 행을 세야 totals.refundAmount/totalRefundCount 와 정합(AC-R4).
+  const refundRows = useMemo<EnrichedRow[]>(
+    () =>
+      enrichedRows
+        .filter(r => r.payment_type === 'refund')
+        .sort((a, b) => a.sort_key.localeCompare(b.sort_key)),
+    [enrichedRows],
+  );
+
   // ── 핸들러 ────────────────────────────────────────────────
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['closing', clinic?.id, date] });
@@ -1568,6 +1584,73 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               dueCustomerCount={dailyOutstanding.dueCustomerCount}
             />
           </div>
+
+          {/* ── T-20260717-foot-CLOSING-REFUND-STATS-MISSING: 금일 환불 별도 집계 섹션 ──
+              [REOPEN] '차감'은 이미 정상 → 여기서는 금일 환불을 '별도 요약(건수+총액)'으로 표시만 추가.
+              소스=refundRows(enrichedRows 의 refund 행) / 수치=totals.refundAmount·totalRefundCount(확정 SSOT 재사용).
+              배치=매출 요약(SummaryCard 그리드) 바로 아래(인접 default). 항상 렌더(0건도 명시). */}
+          <Card data-testid="closing-refund-summary-card" className="border-rose-200 dark:border-rose-900">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                <RotateCcw className="h-4 w-4 text-rose-500" />
+                금일 환불
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-1.5 py-0 border-rose-300 text-rose-700 font-semibold"
+                  data-testid="closing-refund-count-badge"
+                >
+                  {totals.totalRefundCount}건
+                </Badge>
+                <span className="ml-auto text-sm font-semibold tabular-nums text-rose-700" data-testid="closing-refund-total-amount">
+                  총 환불액 {formatAmount(totals.refundAmount)}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* 유형별 소계 (단건/패키지) — totals SSOT 재사용 */}
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span>단건 환불 <span className="tabular-nums font-medium text-foreground">{formatAmount(totals.refundSingleAmount)}</span> ({totals.singleRefundCount}건)</span>
+                <span>패키지 환불 <span className="tabular-nums font-medium text-foreground">{formatAmount(totals.refundPkgAmount)}</span> ({totals.pkgRefundCount}건)</span>
+              </div>
+
+              {refundRows.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="closing-refund-list">
+                    <thead>
+                      <tr className="border-b text-xs text-muted-foreground">
+                        <th className="py-1.5 pr-2 text-left font-medium">시각</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">고객</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">차트번호</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">유형</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">결제수단</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">담당자</th>
+                        <th className="py-1.5 text-right font-medium">환불액</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {refundRows.map((r, i) => (
+                        <tr key={(r.payment_id ?? r.pkg_payment_id ?? r.sort_key) + ':' + i} className="border-b">
+                          <td className="py-1.5 pr-2 text-xs text-muted-foreground tabular-nums">{r.pay_time}</td>
+                          <td className="py-1.5 pr-2">{r.customer_name}</td>
+                          <td className="py-1.5 pr-2 font-mono text-xs text-muted-foreground">{chartNoBadge(r.chart_number)}</td>
+                          <td className="py-1.5 pr-2 text-xs">{r.source === 'package' ? '패키지' : '단건'}</td>
+                          <td className="py-1.5 pr-2 text-xs">{METHOD_KO[r.method as Method] ?? r.method}</td>
+                          <td className="py-1.5 pr-2 text-xs">{r.staff_name ?? '미지정'}</td>
+                          <td className="py-1.5 text-right tabular-nums font-medium text-rose-700">-{formatAmount(r.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-semibold">
+                        <td className="py-1.5" colSpan={6}>환불 합계 ({totals.totalRefundCount}건)</td>
+                        <td className="py-1.5 text-right tabular-nums text-rose-700">-{formatAmount(totals.refundAmount)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="closing-refund-empty">금일 환불 내역이 없습니다.</p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* 시술별 통계 — T-20260715-foot-DAYCLOSE-STAT-PAYONLY: 실수납/결제 confirmed(net>0) 건만 */}
           {procedureStats.length > 0 && (
