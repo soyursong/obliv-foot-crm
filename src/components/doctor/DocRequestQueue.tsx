@@ -428,7 +428,7 @@ function DocRequestRow({
               <Button
                 size="sm"
                 variant="outline"
-                className="mt-1 block h-6 w-full gap-1 px-2 text-[10px] text-muted-foreground hover:text-red-600"
+                className="mt-1 flex h-6 w-full items-center justify-center gap-1 px-2 text-[10px] leading-none text-muted-foreground hover:text-red-600"
                 onClick={() => onCancel(r)}
                 data-testid="docreq-cancel-btn"
               >
