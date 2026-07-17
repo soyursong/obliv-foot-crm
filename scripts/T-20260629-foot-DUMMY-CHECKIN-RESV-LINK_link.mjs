@@ -23,6 +23,12 @@
  * 선행:  §1 마이그레이션(check_in_id 컬럼) 적용 완료 필수.
  */
 import { createClient } from '@supabase/supabase-js';
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const OUT_JSON = join(__dirname, 'T-20260629-foot-DUMMY-CHECKIN-RESV-LINK_link.out.json');
 
 const URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -99,6 +105,22 @@ console.log(`\n=== 결속 계획 ===`);
 plan.forEach(p => console.log(`LINK MC ${p.mcId.slice(0,8)} -> check_in ${p.checkInId.slice(0,8)} (${p.date}) dx="${(p.dx||'').slice(0,24)}"`));
 console.log(`\nSUMMARY: link=${plan.length} | skip(치료사방문)=${skipNonDoctor} skip(noMatch)=${skipNoMatch} skip(ambiguous)=${skipAmbiguous} / orphan=${mc.length}`);
 
+// before-image = 링크 대상행의 현재 check_in_id(NULL). 롤백 = set NULL (진료기록 본체 무손실).
+const beforeImage = plan.map(p => ({ mcId: p.mcId, before_check_in_id: null, target_check_in_id: p.checkInId, visit_date: p.date }));
+const evidence = {
+  ticket: 'T-20260629-foot-DUMMY-CHECKIN-RESV-LINK',
+  phase: APPLY ? 'apply' : 'dry-run',
+  colExists,
+  simCustomers: simIds.length,
+  orphanSimMedicalCharts: mc.length,
+  intruders: intruders.length,          // 실고객 혼입 (0 이어야 apply 진행)
+  summary: { link: plan.length, skipNonDoctor, skipNoMatch, skipAmbiguous },
+  plan: plan.map(p => ({ mcId: p.mcId, checkInId: p.checkInId, visit_date: p.date, dx: (p.dx || '').slice(0, 40) })),
+  beforeImage,
+};
+writeFileSync(OUT_JSON, JSON.stringify(evidence, null, 2));
+console.log(`\n[EVIDENCE] before-image + plan → ${OUT_JSON}`);
+
 if (!APPLY) {
   console.log('\n[DRY-RUN] --apply 없음 → write 안 함. supervisor DML gate 통과 후 --apply 로 실행.');
   process.exit(0);
@@ -119,3 +141,8 @@ for (const p of plan) {
   else { ok += (data?.length || 0); console.log(`OK MC ${p.mcId.slice(0,8)} -> ${data?.[0]?.check_in_id?.slice(0,8)}`); }
 }
 console.log(`\n[APPLY DONE] linked=${ok} fail=${fail}`);
+
+// after-image 기록 (증거 보강)
+evidence.applyResult = { linked: ok, fail };
+writeFileSync(OUT_JSON, JSON.stringify(evidence, null, 2));
+console.log(`[EVIDENCE] apply result → ${OUT_JSON}`);

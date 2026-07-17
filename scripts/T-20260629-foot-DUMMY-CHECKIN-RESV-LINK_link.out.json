@@ -1,0 +1,16 @@
+{
+  "ticket": "T-20260629-foot-DUMMY-CHECKIN-RESV-LINK",
+  "phase": "dry-run",
+  "colExists": true,
+  "simCustomers": 4,
+  "orphanSimMedicalCharts": 4,
+  "intruders": 0,
+  "summary": {
+    "link": 0,
+    "skipNonDoctor": 4,
+    "skipNoMatch": 0,
+    "skipAmbiguous": 0
+  },
+  "plan": [],
+  "beforeImage": []
+}
