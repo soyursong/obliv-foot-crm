@@ -2,13 +2,15 @@
  * T-20260515-foot-SALES-TAB-PATIENT
  * 매출집계 탭2 — 환자별 원무 대사 뷰
  *
- * AC-1: accounting_date 기준 최신순 평면 그리드 (14 컬럼 풀 스펙)
+ * AC-1: accounting_date 기준 최신순 평면 그리드 (15 컬럼 풀 스펙)
  * AC-2: 행 클릭 → 상세 모달 (원천 영수증 수가내역 + 차트 오더)
  * AC-3: 글로벌 필터 + 엑셀은 부모(Sales.tsx)에서 처리
  *
- * READ-ONLY. DB 변경 없음.
+ * T-20260717-foot-SALESPATIENT-REFUND-PROCESSOR-COLUMN:
+ *   맨 우측 '처리 직원명'(index14) 추가. payments.created_by → user_profiles.name JOIN.
+ *   과거행 created_by NULL → '—'. READ-ONLY 뷰(쓰기는 PaymentDialog/refund RPC).
  * 소스: payments JOIN claim_diagnoses JOIN check_ins JOIN customers
- *        JOIN check_in_services JOIN service_charges
+ *        JOIN check_in_services JOIN service_charges JOIN user_profiles(processor)
  */
 
 import { useState } from 'react';
@@ -69,6 +71,8 @@ interface PatientRow {
     /** 수가 산출 이력 (T-20260504-foot-INSURANCE-COPAYMENT) */
     service_charges: ServiceChargeSummary[] | null;
   } | null;
+  /** 처리 직원(결제자/환불처리자) — T-20260717-foot-SALESPATIENT-REFUND-PROCESSOR-COLUMN */
+  processor: { name: string | null } | null;
 }
 
 interface Props {
@@ -131,8 +135,8 @@ function diagLabel(diagnoses: ClaimDiagnosis[] | null | undefined): string {
 const HEADERS = [
   '회계귀속일', '차트번호', '환자명', '진료구분', '상병코드',
   '시술명', '본부금', '공단청구액', '과세공급가', '면세금액',
-  '할인', '실수납액', '결제수단', '전표상태',
-] as const; // 14 컬럼
+  '할인', '실수납액', '결제수단', '전표상태', '처리 직원명',
+] as const; // 15 컬럼 (T-20260717: 처리 직원명 index14 맨 우측)
 
 // ─── 상세 모달 (AC-2) ───────────────────────────────────────────────────────
 
@@ -293,7 +297,8 @@ export function SalesPatientTab({ filter }: Props) {
             consultant:staff!check_ins_consultant_id_fkey(name),
             therapist:staff!check_ins_therapist_id_fkey(name),
             service_charges(copayment_amount, insurance_covered_amount, exempt_amount)
-          )
+          ),
+          processor:user_profiles!payments_created_by_fkey(name)
         `)
         .eq('clinic_id', clinic!.id)
         .not('status', 'eq', 'deleted')
@@ -440,6 +445,13 @@ export function SalesPatientTab({ filter }: Props) {
                       {statusLabel(row.payment_type, row.status)}
                     </Badge>
                   </td>
+                  {/* 처리 직원명 (T-20260717) */}
+                  <td
+                    data-testid="sales-patient-processor"
+                    className="whitespace-nowrap px-2 py-1.5"
+                  >
+                    {row.processor?.name ?? '—'}
+                  </td>
                 </tr>
               );
             })}
@@ -457,7 +469,8 @@ export function SalesPatientTab({ filter }: Props) {
               >
                 {formatAmount(totalNetAmt)}
               </td>
-              <td colSpan={2} />
+              {/* 결제수단·전표상태·처리직원명 3열 (T-20260717: 2→3) — 총합은 실수납액(12열) 정렬 유지 */}
+              <td colSpan={3} />
             </tr>
           </tfoot>
         </table>
