@@ -1,3 +1,22 @@
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║ ⛔ VOID / NEVER-APPLIED — 재실행·부활 금지 (forward-doc only)              ║
+-- ║ ──────────────────────────────────────────────────────────────────────── ║
+-- ║ 이 마이그(timestamp 20260706120000)는 prod 에 **적용된 적이 없다**.       ║
+-- ║   · prod schema_migrations 에 20260706120000 미등재 (실측 2026-07-15).    ║
+-- ║   · prod live foot_stats_by_category prosrc 에 iv 필터 부재 (미반영).     ║
+-- ║   · 과거 commit 91dffd16(reconcile-R5)의 verify-pass 증거가 prod 실재와   ║
+-- ║     divergence = **신뢰불가**. done/qa-pass 마킹이 prod 와 불일치.         ║
+-- ║ DA-20260715-001(MSG-20260715-085433-xk12) 판정: 이 죽은 timestamp 는       ║
+-- ║ 재실행/부활 금지. iv-exclude 재수렴은 **신규 timestamp** 로만 진행한다.    ║
+-- ║ → 대체(SUPERSEDED BY):                                                     ║
+-- ║   20260715150000_foot_stats_by_category_iv_exclude_rebase_post_axis.sql    ║
+-- ║     (post-AXIS live body 위 iv-exclude rebase, ADDITIVE 재수렴)            ║
+-- ║ 파일은 forward-doc(사료) 로만 보존하며 `.VOID` 접미사로 마이그 러너가      ║
+-- ║ 픽업하지 않도록 격리한다. (T-20260608 AC3 therapist_summary 당일전환       ║
+-- ║ 필터도 본 파일과 함께 void — 필요 시 신규 timestamp 로 재발행할 것.)       ║
+-- ║ 표준: Migration Ledger Reconciliation (정본=prod 실재).                    ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+--
 -- ============================================================
 -- T-20260608-foot-TICKET-DEDUCT-SLOT-DATA  (reconcile-R5)  AC1 + AC3
 -- 단일 reconciling 마이그 — 42P13 stale-migration 해소 + AC1/AC3 통계 재이식.

@@ -119,17 +119,19 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(r.copayment_amount).toBe(1500);
   });
 
-  test('만65세 정액 — 수가 >15,000원이면 일반 30% 적용', () => {
+  test('만65세 정액 — 15,000~20,000원 구간 10% 정률(100원 절사)', () => {
+    // [T-20260714-foot-HIRA-ELDERLY-ROUNDING-CONFIRM] 노인 외래 4구간 정률제(RPC v1.4 미러):
+    //   ≤15,000=정액1,500 / ~20,000=10% / ~25,000=20% / >25,000=30%, 정률구간 100원 미만 절사(FLOOR)
     const highService: ServiceLike = {
       is_insurance_covered: true,
-      hira_score: 200, // 200*89.4 = 17880 (>15000)
+      hira_score: 200, // 200*89.4 = 17880 (15,000 초과·20,000 이하 → 10% 구간)
       copayment_rate_override: null,
       price: 0,
     };
     const r = calcCopaymentLocal(highService, clinic, 'elderly_flat');
     expect(r.base_amount).toBe(17880);
-    // copay = CEIL(17880*0.3/100)*100 = CEIL(53.64)*100 = 5400
-    expect(r.copayment_amount).toBe(5400);
+    // copay = FLOOR(17880*0.10/100)*100 = FLOOR(17.88)*100 = 1700
+    expect(r.copayment_amount).toBe(1700);
   });
 
   test('미확인(unverified) — 일반 30% 동일', () => {
@@ -212,18 +214,18 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(r.insurance_covered_amount).toBe(15000 - 1500);
   });
 
-  test('만65세 정액 구간 + copayment_rate_override — 정액제 구간에서는 override 무시', () => {
-    // base ≤ 15,000 → flat 1,500 (override 있어도 정액 분기 우선)
+  test('만65세 정액 구간 + copayment_rate_override — override는 정률경로로 흡수 적용', () => {
+    // [RPC v1.4/copayCalc 미러] override 있으면 노인 4구간 미적용 → ELSE 정률경로로 흡수(개별 실손 자기부담률 우선)
     const overrideService: ServiceLike = {
       is_insurance_covered: true,
-      hira_score: 100, // base = ROUND(100*89.4) = 8,940 (≤15000)
+      hira_score: 100, // base = ROUND(100*89.4) = 8,940
       copayment_rate_override: 0.10,
       price: 0,
     };
     const r = calcCopaymentLocal(overrideService, clinic, 'elderly_flat');
     expect(r.base_amount).toBe(8940);
-    // 정액 구간: override 무시 → MIN(1500, 8940) = 1500
-    expect(r.copayment_amount).toBe(1500);
+    // 정률경로 CEIL: CEIL(8940*0.10/100)*100 = CEIL(8.94)*100 = 900
+    expect(r.copayment_amount).toBe(900);
   });
 
   test('만6세 미만(infant) + copayment_rate_override — override가 21% 대신 적용', () => {
@@ -256,12 +258,13 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(r.applied_rate).toBe(2.0);
   });
 
-  test('clinic.hira_unit_value = null → 기본값 89.4 폴백', () => {
-    // null 값은 89.4로 폴백 — general 30%와 동일 결과
+  test('clinic.hira_unit_value = null → data_incomplete BLOCK (89.4 폴백 제거)', () => {
+    // [T-20260713-foot-HIRA-UNIT-VALUE-2026-UPDATE] governed data — NULL은 89.4 폴백 대신 BLOCK.
+    //   금액 날조 금지 → 모든 금액 0, data_incomplete=true (RPC v1.4 미러)
     const r = calcCopaymentLocal(consultService, { hira_unit_value: null }, 'general');
-    // base = ROUND(153.36 * 89.4) = 13710 (89.4 기본값 적용)
-    expect(r.base_amount).toBe(13710);
-    expect(r.copayment_amount).toBe(4200);
-    expect(r.insurance_covered_amount).toBe(13710 - 4200);
+    expect(r.data_incomplete).toBe(true);
+    expect(r.base_amount).toBe(0);
+    expect(r.copayment_amount).toBe(0);
+    expect(r.insurance_covered_amount).toBe(0);
   });
 });

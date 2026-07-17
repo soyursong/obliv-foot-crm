@@ -71,16 +71,20 @@ test.describe('시나리오 2 — 과다환불 차단 / 이미 환불', () => {
 // 정적 소스 가드 — FE 재배선 회귀 락 (DA PIN: 4-arg callsite 0)
 // ──────────────────────────────────────────────────────────────────────────────
 test.describe('정적 소스 가드 — FE 재배선 (refund_package_payment / 4-arg callsite 0)', () => {
+  // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT 로 환불창이 항목 선택(다건) UI 로
+  //   대체됨 — 패키지 분기는 여전히 refund_package_payment(p_payment_id=선택 결제행) 배선(견적 폐용 유지).
+  //   회귀 락을 신 구현 배선(항목 참조 r.pkg_payment_id + 패키지 그룹 섹션)으로 이동.
   test('AC-3: Closing.tsx 패키지 분기 = refund_package_payment(p_payment_id) 배선', () => {
     const src = readFileSync(path.join(__dirname, '../../src/pages/Closing.tsx'), 'utf8');
-    // 신규 함수 배선 + p_payment_id 전달
+    // 신규 함수 배선 + 선택 항목 p_payment_id 전달
     expect(src).toContain("rpc('refund_package_payment'");
-    expect(src).toMatch(/p_payment_id:\s*row\.pkg_payment_id/);
+    expect(src).toMatch(/p_payment_id:\s*r\.pkg_payment_id/);
     // 폐용 함수 라이브 호출 0
     expect(src).not.toMatch(/rpc\(['"]refund_package_atomic['"]/);
     expect(src).not.toMatch(/rpc\(['"]calc_refund_amount['"]/);
-    // 패키지 금액 박스 testid + row.amount 기준 잔여 표시
-    expect(src).toContain('data-testid="pkg-refund-amount"');
+    // 패키지 유형 그룹 섹션 + 항목 잔여 표시(선택 결제행 amount 기준)
+    expect(src).toContain('패키지(회차권) 결제');
+    expect(src).toContain('data-testid="refund-item-remaining"');
     console.log('[AC-3] Closing.tsx 재배선 PASS (4-arg/견적 callsite 0)');
   });
 
@@ -159,20 +163,20 @@ test.describe('실브라우저 — 패키지 환불 금액 = 선택 결제행 am
       return;
     }
 
-    // 패키지(source=package) 다이얼로그(pkg-refund-amount 존재)를 찾을 때까지 순회
+    // T-20260713-ITEMSELECT: 환불창은 항목 선택 UI. 패키지(회차권) 그룹 섹션 + 항목 잔여 표시 확인.
     let opened = false;
     for (let i = 0; i < count; i++) {
       await refundBtns.nth(i).click();
       const dialog = page.getByTestId('closing-refund-dialog');
       await expect(dialog).toBeVisible({ timeout: 5000 });
-      const amtBox = dialog.getByTestId('pkg-refund-amount');
-      if (await amtBox.isVisible().catch(() => false)) {
+      const pkgGroup = dialog.getByTestId('refund-group-package');
+      if (await pkgGroup.isVisible().catch(() => false)) {
         opened = true;
-        // AC-1: 환불 금액이 표시되고 0 초과 (선택 결제행 amount 기준)
-        const shown = ((await amtBox.textContent()) ?? '').replace(/[^\d]/g, '');
+        // AC-1: 패키지 항목의 환불 가능 금액(선택 결제행 amount 기준)이 표시되고 0 초과
+        const rem = pkgGroup.getByTestId('refund-item-remaining').first();
+        const shown = ((await rem.textContent()) ?? '').replace(/[^\d]/g, '');
         expect(shown.length).toBeGreaterThan(0);
-        // 원결제금액(요약)과 잔여 금액이 같거나(기존환불 0) 잔여 ≤ 원결제
-        console.log(`[BROWSER] 패키지 환불 금액 박스 표시 PASS (환불액=${shown})`);
+        console.log(`[BROWSER] 패키지 유형 그룹 + 항목 잔여 표시 PASS (잔여=${shown})`);
         await page.keyboard.press('Escape');
         break;
       }

@@ -1062,13 +1062,60 @@ export default function MedicalChartPanel({
   //   의사호출 대시보드가 의사로 취급하는 manager/doctor 를 누락시켰음 → "내 이름 == 활성 clinic_doctor" 매칭
   //   자체를 의사 판정 기준으로 사용(role 프록시 제거). 매칭=의사이므로 AC-P2-1 의 strict superset → 풀차트 회귀 없음.
   //   드롭다운 수동 변경 가능(formSigningDoctorId 빈 값일 때만 채움) + 비우면 NOT NULL guard 로 저장 차단 유지(AC-P2-6).
+  // T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT item1 (DA A안 "Seed, don't bind"):
+  //   신규 진료차트 담당의(진료의) 기본값 seed 출처를 '로그인 계정' → '치료테이블 지정 진료의'로 통일.
+  //   패널은 customerId 기준(check_in 컨텍스트 없음, L504) → 당일 KST 최신 check_in 1건의 treating_doctor_id
+  //   를 자체 조회(docAck effect 패턴 재사용, 신규 라이브러리 0). 표시/기본값만 seed —
+  //   저장된 서명귀속·불변 스냅샷(signing_doctor_id/name)·override·감사는 불변(A안 가드 4개).
+  //   treating 미지정이면 null → 아래 seed effect 가 로그인 이름매칭 폴백(현행) 유지.
+  const [treatingDoctorId, setTreatingDoctorId] = useState<string | null>(null);
   useEffect(() => {
-    if (selectedChartId) return;          // 저장된 차트는 복원값 유지
-    if (formSigningDoctorId) return;      // 이미 선택됨(수동 선택 보존)
+    if (!open || !customerId || !clinicId) { setTreatingDoctorId(null); return; }
+    let cancelled = false;
+    const today = todaySeoulISODate();
+    const fetchTreating = async () => {
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('treating_doctor_id, checked_in_at')
+        .eq('customer_id', customerId)
+        .eq('clinic_id', clinicId)
+        .gte('checked_in_at', `${today}T00:00:00+09:00`)
+        .lte('checked_in_at', `${today}T23:59:59+09:00`)
+        .not('treating_doctor_id', 'is', null)
+        .order('checked_in_at', { ascending: false })
+        .limit(1);
+      if (cancelled || error) return;
+      const row = (data ?? [])[0] as { treating_doctor_id: string | null } | undefined;
+      setTreatingDoctorId(row?.treating_doctor_id ?? null);
+    };
+    void fetchTreating();
+    const channel = supabase
+      .channel(`medchart_treating_${customerId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'check_ins', filter: `customer_id=eq.${customerId}` },
+        () => { void fetchTreating(); },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [open, customerId, clinicId]);
+
+  useEffect(() => {
+    if (selectedChartId) return;          // 가드1: 저장된 차트는 복원값 유지(불변 — 미개입)
+    if (formSigningDoctorId) return;      // 가드2: 이미 선택됨(수동 선택 보존 — 비파괴 seed)
     if (clinicDoctors.length === 0) return;
+    // T-20260714-foot-CHARTDOC-TREATSOURCE-SNAPSHOT (A안): seed 출처 = 치료테이블 지정 진료의 우선.
+    if (treatingDoctorId && clinicDoctors.some((d) => d.id === treatingDoctorId)) {
+      setFormSigningDoctorId(treatingDoctorId);
+      return;
+    }
+    // 폴백(현행 유지): 로그인 계정 이름매칭 = 로그인 계정이 의사 → 본인 자동.
     const mine = clinicDoctors.find((d) => d.name === currentUserName);
-    if (mine) setFormSigningDoctorId(mine.id);   // 이름 매칭 = 로그인 계정이 의사 → 본인 자동
-  }, [selectedChartId, formSigningDoctorId, clinicDoctors, currentUserName]);
+    if (mine) setFormSigningDoctorId(mine.id);
+  }, [selectedChartId, formSigningDoctorId, clinicDoctors, currentUserName, treatingDoctorId]);
 
   // T-20260612-foot-DOCDASH-11FIX AC-6: singleLine 진료의 = 평소엔 "진료의 ○○○" 레이블, 클릭 시에만
   //   드롭다운 노출. 미선택(빈값)이면 드롭다운 강제 노출 → NOT NULL 강제(AC-P2-6) 무회귀.

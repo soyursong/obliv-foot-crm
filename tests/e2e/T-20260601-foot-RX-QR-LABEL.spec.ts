@@ -120,8 +120,11 @@ test.describe('S2: 2장 출력·QR 자동삽입 유지 (무파괴, AC-3)', () =>
 
   test('AC-3: PATH-1 — rx_standard 2장(약국+환자) 출력 호출부 유지', () => {
     const src = fs.readFileSync(DOC_PANEL_SRC, 'utf-8');
-    const dualCallCount = (src.match(/buildHtmlPageHtml\([^)]*'약국보관용'\)/g) || []).length;
-    const patientCallCount = (src.match(/buildHtmlPageHtml\([^)]*'환자보관용'\)/g) || []).length;
+    // T-20260706-foot-SERIAL-RPC-AVVC-NOFIRE (commit 6977fda0): 인쇄 바인딩을 autoValues → valuesFor(t)
+    //   로 전환하면서 호출부가 buildHtmlPageHtml(t, valuesFor(t), '약국보관용') 형태(중첩 괄호)로 바뀜.
+    //   기존 [^)]* 는 valuesFor(t) 의 ')' 에서 멈춰 매칭 실패(stale). 라벨 리터럴 인자만 카운트하도록 정정.
+    const dualCallCount = (src.match(/buildHtmlPageHtml\([^;]*?'약국보관용'\)/g) || []).length;
+    const patientCallCount = (src.match(/buildHtmlPageHtml\([^;]*?'환자보관용'\)/g) || []).length;
     expect(dualCallCount, '약국보관용 호출(인쇄+JPG 2경로)').toBeGreaterThanOrEqual(2);
     expect(patientCallCount, '환자보관용 호출(인쇄+JPG 2경로)').toBeGreaterThanOrEqual(2);
   });
@@ -137,7 +140,12 @@ test.describe('S2: 2장 출력·QR 자동삽입 유지 (무파괴, AC-3)', () =>
     const abSrc = fs.readFileSync(path.join(SRC_ROOT, 'lib/autoBindContext.ts'), 'utf-8');
     expect(tplSrc).toContain('{{rx_qr_html}}');
     expect(abSrc).toContain('rx_qr_html');
-    expect(abSrc).toContain('api.qrserver.com');
+    // T-20260710-foot-NO-HARDCODE-ENUM-GUARDRAIL (commit b61c03f8): 하드코딩 api.qrserver.com URL 을
+    //   externalServices.QR_CODE_API_ENDPOINT 단일소스로 중앙화. autoBindContext 는 이제 상수를 참조하고
+    //   리터럴 URL 은 externalServices.ts 에 존재(stale 정정). QR 배선(상수 참조)+원본 URL 을 함께 가드.
+    expect(abSrc).toContain('QR_CODE_API_ENDPOINT');
+    const extSrc = fs.readFileSync(path.join(SRC_ROOT, 'lib/externalServices.ts'), 'utf-8');
+    expect(extSrc).toContain('api.qrserver.com');
   });
 
   test('AC-3 무파괴 — 보관용 라벨 미주입(기본값) 상태에서도 처방전 렌더 에러 없음', () => {

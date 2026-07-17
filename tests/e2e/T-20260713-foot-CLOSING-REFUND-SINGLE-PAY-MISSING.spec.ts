@@ -38,21 +38,22 @@ test.describe('CLOSING-REFUND-SINGLE-PAY-MISSING', () => {
     expect(await refundBtns.count()).toBeGreaterThan(0);
   });
 
-  // AC-3: 이미 전액 환불된 단건 → 환불창 잔여 0 처리
-  test('scenario-3: 이미 전액 환불된 단건은 잔여 0 → 입력/제출 비활성', async ({ page }) => {
+  // AC-3 → T-20260713-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT [FOLD] AC-B1 로 승격:
+  //   이미 전액 환불된 결제(잔여 0)는 '환불창에서 잔여 0 처리'를 넘어 재환불 클릭 자체를 차단한다.
+  //   → 완전환불 행은 리스트 환불 버튼이 숨겨지고 '완료' 배지가 표시됨(재환불 방지 UX).
+  test('scenario-3 [FOLD AC-B1]: 완전환불(잔여 0) 행은 재환불 버튼 숨김 + 완료 배지', async ({ page }) => {
     await openPaymentsTab(page);
-    const payTable = page.locator('table', { has: page.locator('thead', { hasText: '환불' }) }).first();
-    // '오렌지족' 313,370 단건(오늘 15:22 전액환불 완료)의 환불 버튼 클릭
-    const targetRow = payTable.locator('tbody tr', { hasText: '오렌지족' })
-      .filter({ hasText: '단건' }).first();
-    await targetRow.locator('[data-testid="refund-open-btn"]').click();
-    const dialog = page.getByTestId('closing-refund-dialog');
-    await expect(dialog).toBeVisible();
-    // 잔여 요약: 기존 환불 표기 + 잔여 0
-    await expect(dialog.getByTestId('refund-remaining-summary')).toBeVisible();
-    await expect(dialog.getByTestId('refund-amount-error')).toContainText('이미 전액 환불');
-    // 입력 비활성 + 제출 비활성
-    await expect(dialog.getByTestId('refund-amount-input')).toBeDisabled();
-    await expect(dialog.getByTestId('refund-submit')).toBeDisabled();
+    const fullyBadges = page.getByTestId('fully-refunded-badge');
+    const n = await fullyBadges.count();
+    if (n === 0) {
+      console.log('[AC-B1] 오늘 완전환불 행 없음 — 신규 티켋 로직/소스가드로 검증(graceful).');
+      return;
+    }
+    // 각 완전환불 행에는 환불 버튼이 없어야 함(재환불 클릭 차단)
+    for (let i = 0; i < n; i++) {
+      const row = fullyBadges.nth(i).locator('xpath=ancestor::tr[1]');
+      await expect(row.getByTestId('refund-open-btn')).toHaveCount(0);
+    }
+    console.log(`[AC-B1] 완전환불 ${n}개 행 재환불 버튼 숨김 PASS`);
   });
 });

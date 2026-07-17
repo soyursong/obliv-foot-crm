@@ -1,0 +1,36 @@
+# phi-allowlist.txt — §4 PHI 스캐너 permit-set (phi_redaction_standard v2.3 §4.2.1 two-surface mirror)
+#
+# 목적: 구조적/합성 비-PHI 값(재식별 리스크 0)만 열거하는 good-set allowlist.
+#   §4.2.1 Ruling — 환자번호를 열거(denylist)하지 말고, 정당한 KEEP 값의 小형 집합을 열거하고
+#   phone/RRN 패턴 매치 중 allowlist 밖 전량 = BLOCK (fail-closed toward privacy).
+#
+# 규율:
+#   - 이 파일에는 실환자 phone/RRN/실명 절대 미기재 (§4.1 위치규율). 합성/센티넬 값만.
+#   - 한 줄 = 하나의 permit (정규식). '#' 시작 줄과 공백줄은 무시.
+#   - 매치가 이 permit 중 하나에 완전히 걸리면 BLOCK 하지 않음.
+#   - allowlist 확장은 리뷰 게이트(§4.2.1 permit-set = DA/supervisor 게이트). 무단 append 금지.
+#
+# ── (iii) 구조적 센티넬 / 비할당(non-assignable) 플레이스홀더 (§4.2.1 v2.2) ──
+#   subscriber body 가 단일 반복자리 → KR MSIT 미할당 → 비PHI·재식별 0.
+010-?0000-?0000
+\+?82-?10-?0000-?0000
+01011111111
+01099999999
+#   풋테스트4 합성 test MSISDN (010-0000-9991) — MSIT 비할당 010-0000-xxxx 블록·비PHI.
+#   provenance: signals.md L325 legacy(2026-07-02, 콘텐츠스캐너 도입 2026-07-16 前 커밋분). 실환자 아님.
+\+?82-?10-?0000-?9991
+010-?0000-?9991
+#
+# ── (iv) 구조적-합성 test fixture (§4.2.1-note, 잠정 (iv)) ──
+#   순차/문서화된 지정 test MSISDN. 실환자형 아님(합성마커).
+010-?1234-?5678
+\+?82-?10-?1234-?5678
+010-?0000-?0001
+#
+# ── (i) schema/contract/cue_card E.164 예시 (합성) ──
+#   문서화된 E.164 표기 예시. 값 자체가 예시용 합성.
+\+821012345678
+#
+# ── (ii) 업무발신번호 (solapi sender / 법인 공개번호) ──
+#   법인 공개 대표번호는 PHI 아님. 신규 등재는 리뷰 게이트.
+#   (현재 등재 없음 — 필요 시 provenance 주석과 함께 추가)

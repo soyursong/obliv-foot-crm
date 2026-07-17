@@ -8,8 +8,11 @@ import type { PermKey } from '../../src/lib/permissions';
 // ── AC-1: 3역할 전권한 확인 — 통계·매출집계 제외, 나머지 전부 허용 ────────────
 // T-20260525-foot-ROLE-PERM-CUSTOM 3차(2798917): coordinator/therapist 포함 전수 검수
 test('AC-1 3역할 전권한 확인: consultant/coordinator/therapist', () => {
-  const MUST_HAVE: PermKey[] = ['dashboard', 'reservations', 'customers', 'closing', 'messaging'];
-  const MUST_NOT_HAVE: PermKey[] = ['stats', 'register'];
+  // T-20260630-foot-REGISTER-MENU-CODY-UNLOCK (commit 21a39f81): 접수/신규등록(register)
+  //   PermKey 를 coordinator/consultant/therapist 3역할에 ADDITIVE 확대. → register 는 더 이상
+  //   consultant MUST_NOT_HAVE 대상 아님(stale 정정). 통계(stats)만 3역할 제외 유지.
+  const MUST_HAVE: PermKey[] = ['dashboard', 'reservations', 'customers', 'closing', 'messaging', 'register'];
+  const MUST_NOT_HAVE: PermKey[] = ['stats'];
   const ROLES = ['consultant', 'coordinator', 'therapist'] as const;
 
   for (const role of ROLES) {
@@ -46,19 +49,27 @@ test('AC-3 통계(stats) — consultant 제외 유지', () => {
   expect(canAccess('director', 'stats')).toBe(true);
 });
 
-test('AC-3 매출집계(register) — consultant 제외 유지', () => {
-  // register = 계정 등록 전 결제 데이터. 매출집계에 해당.
-  expect(canAccess('consultant', 'register')).toBe(false);
+test('AC-3 접수/신규등록(register) — 3역할 ADDITIVE 확대 반영', () => {
+  // T-20260630-foot-REGISTER-MENU-CODY-UNLOCK (commit 21a39f81): register 를 coordinator/consultant/
+  //   therapist 에 ADDITIVE 확대(role_scope EXPANDED→CONFIRMED, 김주연 총괄). admin/manager 무회귀.
+  //   ★기존 spec 은 register 를 '매출집계=consultant 제외'로 오분류했으나, 실 매출집계 surface 는 /sales
+  //     (PERM 키 없음)이고 register PermKey 는 접수/신규등록 동선 SSOT → consultant 포함이 정본.
+  expect(canAccess('consultant', 'register')).toBe(true);
+  expect(canAccess('coordinator', 'register')).toBe(true);
+  expect(canAccess('therapist', 'register')).toBe(true);
   expect(canAccess('admin', 'register')).toBe(true);
   expect(canAccess('manager', 'register')).toBe(true);
+  expect(canAccess('director', 'register')).toBe(true);
 });
 
 // 계정관리 = NAV_ITEMS roles:['admin'] 전용 (PERM_MATRIX 별도 key 없음)
 // AdminLayout.tsx NAV_ITEMS에서 roles 필터로 차단됨 — FE 렌더 레벨 검증은 Playwright 브라우저 필요
-test('AC-3 PERM_MATRIX — consultant는 admin/manager 전용 key에 접근 불가', () => {
-  // stats, register 이외에 consultant가 갖지 말아야 할 것 없음 (계정관리는 NAV 레벨)
+test('AC-3 PERM_MATRIX — consultant는 상위권한 전용 key에 접근 불가', () => {
+  // 통계(stats)는 여전히 consultant 제외(admin/manager/director/tm 한정).
   expect(canAccess('consultant', 'stats')).toBe(false);
-  expect(canAccess('consultant', 'register')).toBe(false);
+  // 고객 리스트 내보내기(customer_export, PII 포함)는 admin/manager/director 한정 → consultant 제외 유지.
+  //   (register 는 T-20260630-foot-REGISTER-MENU-CODY-UNLOCK 로 consultant 에 확대되어 더 이상 제외 대상 아님.)
+  expect(canAccess('consultant', 'customer_export')).toBe(false);
 });
 
 // ── AC-4: RLS 정합성 — A안은 DB 변경 없음, RLS 불변 확인 ─────────────────────

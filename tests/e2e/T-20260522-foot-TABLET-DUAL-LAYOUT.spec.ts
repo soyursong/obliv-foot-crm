@@ -81,8 +81,10 @@ test('AC-2: Dashboard에 portrait 자동 fold useEffect가 있음', () => {
 
 test('AC-2: landscape 복귀 시 localStorage 복원 로직이 있음', () => {
   expect(dashboardSrc).toContain("orientation === 'portrait'");
-  expect(dashboardSrc).toContain("'foot-crm-timeline-folded'");
-  expect(dashboardSrc).toContain('setTimelineFolded(saved');
+  // T-20260710-foot-NO-HARDCODE-ENUM-GUARDRAIL: 'foot-crm-timeline-folded' 리터럴이
+  // STORAGE_KEYS.TIMELINE_FOLDED(src/lib/storageKeys.ts) 로 중앙화됨. 복원 로직은 불변.
+  expect(dashboardSrc).toContain('STORAGE_KEYS.TIMELINE_FOLDED');
+  expect(dashboardSrc).toContain("setTimelineFolded(saved === 'true')");
 });
 
 test('AC-2: AdminLayout에 portrait 사이드바 자동 최소화 로직이 있음', () => {
@@ -123,8 +125,10 @@ test('AC-4: Dashboard 루트 div에 data-testid="dashboard-root"가 있음', () 
   expect(dashboardSrc).toContain('data-testid="dashboard-root"');
 });
 
-test('AC-4: 타임라인 w-8/w-80 조건부 클래스가 유지됨 (기존 AC 회귀 없음)', () => {
-  expect(dashboardSrc).toContain("timelineFolded ? 'w-8' : 'w-80'");
+test('AC-4: 타임라인 w-8/w-96 조건부 클래스가 유지됨 (기존 AC 회귀 없음)', () => {
+  // T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE: 펼침 폭 w-80→w-96 확대(성함 전체표시).
+  // 접기/펼치기 조건부 클래스 자체(fold 기능)는 불변.
+  expect(dashboardSrc).toContain("timelineFolded ? 'w-8' : 'w-96'");
 });
 
 // ── AC-5: 빌드/E2E 회귀 없음 ──────────────────────────────────────────────────

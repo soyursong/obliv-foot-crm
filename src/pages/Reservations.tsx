@@ -37,6 +37,7 @@ import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
+import { useDragToPan } from '@/hooks/useDragToPan';
 import {
   closeTimeFor,
   generateSlots,
@@ -666,6 +667,10 @@ export default function Reservations() {
 
   // 세로 스크롤 컨테이너 ref + 현재 슬롯 행 ref + 진입 1회 플래그
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // T-20260715-foot-RESVMGMT-DRAGPAN-BGSCROLL: 예약관리 타임테이블 배경 잡아 드래그-팬(스크롤바 안 잡고 이동).
+  //   대시보드 DASH-HSCROLL-DRAGPAN 패턴 재사용(useDragToPan). 타임테이블은 2D(가로 시간축+세로 행) → axis:'both'.
+  //   PC 마우스=이 훅 / 태블릿 터치=네이티브 스와이프(훅은 touch 위임), 기존 스크롤바·휠 무회귀.
+  useDragToPan(scrollContainerRef, { axis: 'both' });
   const currentSlotRef = useRef<HTMLTableRowElement>(null);
   const didInitialScrollRef = useRef(false);
 
@@ -1995,9 +2000,11 @@ export default function Reservations() {
       onDragCancel={handleDndCancel}
     >
     {/* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ①: 상단 배너 구간 컴팩트화 —
-       페이지 외곽 여백 p-6→px-4 py-2(세로 여백 ≈절반) + 헤더 mb-4→mb-2 로 전체 레이아웃 상향(격자 가시영역 확대). */}
+       페이지 외곽 여백 p-6→px-4 py-2(세로 여백 ≈절반) + 헤더 mb-4→mb-2 로 전체 레이아웃 상향(격자 가시영역 확대).
+       T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목1] rebase 정합: 헤더 ~50% 축소 의도는 main(GRID-CLICKCREATE-7ADJ ①)이
+       py-2·mb-2 로 이미 동일 달성 → 격자 폭 확보(px-4) 유지하고 헤더 마진만 mb-2→mb-1.5 로 소폭 더 조여 항목1 의도 보존. */}
     <div className="flex h-full flex-col px-4 py-2">
-      <div className="mb-2 flex items-center justify-between gap-4">
+      <div className="mb-1.5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -2095,7 +2102,9 @@ export default function Reservations() {
           {/* T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ②: 우측 상단 [+새 예약] 버튼 제거.
               신규예약 진입은 항목③ 격자 빈 칸 클릭(handleGridCellCreate → openNewSlot)으로 일원화.
               (openNewSlot 경유 유지 = CUSTCTX-PREFILL initialCustomer 분기 보존, §dependency 가드) */}
-          {/* T-20260630-...7ADJ ①: 일간/주간 토글 min-h-[44px]→min-h-[34px](배너 세로폭 축소). 태블릿 탭 타깃은 34px+좌우 px-3 로 확보. */}
+          {/* T-20260630-...7ADJ ① / T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목1] rebase 정합:
+              일간/주간 토글 min-h-[44px]→min-h-[34px](배너 세로폭 축소). 항목1 토글 축소 의도는 main이 이미 동일 반영.
+              태블릿 탭 타깃은 34px+좌우 px-3 로 확보. */}
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
@@ -2202,14 +2211,16 @@ export default function Reservations() {
                 className={cn(
                   // TIMEGRID-VERTICAL: 컬럼 폭에 맞춘 세로 진열 카드(full-width). 색상은 KIND_CARD_STYLE(초진=그린/재진=하늘/힐러=노랑) 유지.
                   // COMPACT2(2단계, 김주연 총괄 확정 8px): 칸 90px화에 맞춰 카드 패딩·폰트 축소(px-2 py-1→px-1 py-0.5, text-[12px]→text-[8px]). 색상/구조 불변. 8px=가독성 하한 → leading-tight+truncate로 깨짐 방지.
-                  'w-full min-w-0 overflow-hidden rounded border px-1 py-0.5 text-[8px] leading-tight shadow-sm transition-opacity',
+                  // T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목5]: 고객박스 기본 크기 소폭 확대(min-h) — 간략메모(상단)가 들어가도 답답하지 않게. 격자 가독성 해치지 않는 '조금'만.
+                  'w-full min-w-0 overflow-hidden rounded border px-1 py-0.5 text-[8px] leading-tight shadow-sm transition-opacity min-h-[2.75rem]',
                   r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                   draggedId === r.id && 'opacity-40',
                   STATUS_STYLE[r.status],
                   KIND_CARD_STYLE[resvKind(r)],
                   r.status === 'checked_in' && draggedId !== r.id && 'opacity-60',
-                  // T-20260630-...7ADJ ⑥: 취소건 = 회색+음각(inset/눌린) → 육안 구분. '취소됨' 텍스트·이름 취소선은 제거(아래).
-                  //   KIND_CARD_STYLE 컬러 배경을 회색으로 override + shadow-inner(내부 그림자=눌린 효과). hover 툴팁은 취소건 plain-span 분기라 이미 미노출.
+                  // T-20260630-...7ADJ ⑥ / T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목6] rebase 정합: 취소건 = 회색+음각(inset/눌린) → 육안 구분.
+                  //   '취소됨' 텍스트·이름 취소선은 제거(아래). 항목6의 회색배경+음각·취소선/라벨 제거·hover 정상노출 의도를 main(7ADJ⑥)이 동일 달성.
+                  //   KIND_CARD_STYLE 컬러 배경을 회색으로 override + shadow-inner(내부 그림자=눌린 효과).
                   r.status === 'cancelled' && 'border-gray-300 bg-gray-200 text-gray-500 shadow-inner',
                   // T-20260630-...7ADJ ⑦: 선택/클립보드 시각 피드백(주간뷰 renderCard와 동일 규칙).
                   selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
@@ -2218,9 +2229,12 @@ export default function Reservations() {
                 )}
               >
                 {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 고객 성함 '위→아래'로 재배치.
-                    부모 7ADJ⑤ 는 메모를 성함 상단에 뒀으나, 총괄(김주연) 현장 요청으로 표시순서를 [성함]→[간략메모]로 변경(성함 바로 아래).
-                    성함 flex 행 렌더 → 아래 간략메모 블록(mt-0.5) 순서. 취소건은 미표기(음각 최소화) 유지. */}
+                    T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목5] rebase 정합: 항목5는 메모를 성함 '위(최상단)'로 뒀으나,
+                    이후 총괄(김주연) 현장 요청(CUSTBOX-PADDING-MEMO-POS, 07-02)이 표시순서를 [성함]→[간략메모](성함 바로 아래)로 확정 → 항목5의 상단배치를 supersede.
+                    박스 소폭 확대(항목5) 의도는 아래 성함하단 메모줄이 박스 높이를 자동 확장하여 충족. 성함 flex 행 → 아래 간략메모 블록(mt-0.5) 순서. 취소건은 미표기. */}
                 <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                  {/* T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목6-5R] rebase 정합: 취소건 hover(6-5R)는 stale-base 자동병합 잔재로 제거.
+                      취소건은 main 확정대로 plain span 분기 유지(주뷰 취소 차트번호 배지 WEEKBOX-DAYUNIFY 07-03과 일관, 일/주 대칭). 등록고객 취소 hover는 별도 wave. */}
                   {r.customer_id && r.status !== 'cancelled' ? (
                     <CustomerHoverCard
                       checkIn={resvAsCheckIn(r)}
@@ -2251,8 +2265,9 @@ export default function Reservations() {
                       className={cn(
                         'block min-w-0 max-w-full truncate font-semibold text-gray-900',
                         r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
-                        // T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑥: 취소 이름 '취소선(line-through)' 제거.
+                        // T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ⑥ / [항목6-2] 정합: 취소 이름 '취소선(line-through)' 제거.
                         //   취소 구분은 카드 회색+음각(shadow-inner)으로 대체. 취소 성함 폰트는 활성과 동일 text-[11px] 유지(축소 안 함).
+                        //   (이 분기는 미연결 워크인(customer_id 없음) 전용 — 등록고객 취소건은 위 CustomerHoverCard 분기로 hover 정상노출(AC6-5R).)
                         r.status === 'cancelled' && 'text-[11px]',
                       )}
                       // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC1, 버그 RC): 기존 `if (!r.customer_id) return;`
@@ -2267,7 +2282,7 @@ export default function Reservations() {
                       {r.customer_name?.trim() || '이름없음'}
                     </span>
                   )}
-                  {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
+                  {/* T-20260630-...7ADJ ⑥ / [항목6-1] 정합: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                 </div>
                 {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 성함 '바로 아래'에 표기(재배치).
                     메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방). 취소건은 미표기. mb-0.5→mt-0.5(성함과의 간격).
@@ -2368,6 +2383,8 @@ export default function Reservations() {
                             data-testid={`resv-day-hslot-count-${time}`}
                             className="flex items-center justify-center gap-0.5 whitespace-nowrap text-[8px] font-medium leading-none"
                           >
+                            {/* T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목4] rebase 정합: 시간 라벨 중앙정렬+1.5배(15px)는
+                                main 축전치 재구현(RESVGRID-TIMEAXIS-EXCELCELL, 위 hslot 라벨 text-[15px] 중앙정렬)이 이미 동일 반영 → 항목4 충족. */}
                             <span className="text-blue-700">{KIND_AXIS_LABELS.new.abbr}{n}</span>
                             <span className="text-muted-foreground/40">·</span>
                             <span className="text-firstvisit-700">{KIND_AXIS_LABELS.returning.abbr}{rr}</span>
@@ -2530,7 +2547,8 @@ export default function Reservations() {
                 className="w-20 border-b border-r py-0 text-center text-[11px] font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
                         {/* T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: 시간축 라벨 = 30분 단위 슬롯(HH:00·HH:30). 정시 그룹 라벨(bucket.label) 철회. */}
-                        <div>{time}</div>
+                        {/* T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목4]: 주간 시간축 라벨 중앙정렬(td 기존 text-center) + 폰트 1.5배(text-[11px]→[16px]). 일간 뷰와 동일 반영(항목10). */}
+                        <div className="text-center text-[16px] font-semibold leading-tight text-foreground">{time}</div>
                         {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 MSG-...gkj2 옵션2 '일자×시간 매트릭스'):
                             좌측 시간축의 '보이는 날짜 전체 합산'(5FIX AC2/a921cef per-time sum) supersede 확정 →
                             건수 분포를 각 (날짜×시간) 셀에 per-cell 표기로 이동(아래 cell-kind-count-*). 시간축 라벨은 시간만. */}
@@ -2707,7 +2725,8 @@ export default function Reservations() {
                                     }}
                                     className={cn(
                                       // T-20260622-foot-RESVCAL-TYPE-2COL-2TIER(A안): 카드는 열(flex-col) 안에서 w-full(열폭 채움)+min-w-0(좁은 열폭 truncate 흡수). 세로 쌓기이므로 flex-1 금지.
-                                      'min-w-0 w-full overflow-hidden rounded border px-1 py-0 text-[11px] leading-tight shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축(text-[11px]→text-[10px]) / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-1·AC-2: 가독성 복원 — 카드 본문 폰트 text-[10px]→text-[11px](읽히는 최소). 정보항목 전부 유지(삭제 0), 압축은 padding(px-1 py-0)·leading-tight·셀높이로만 달성, 넘치면 ellipsis
+                                      // T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목5]: 고객박스 기본 크기 소폭 확대(min-h) — 간략메모(상단) 들어가도 답답하지 않게. 일간 뷰와 동일 반영(항목10).
+                                      'min-w-0 w-full overflow-hidden rounded border px-1 py-0 text-[11px] leading-tight shadow-sm transition-opacity min-h-[2.5rem]', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260617-foot-RESVMGMT-COMPACT AC-1: 예약 박스 압축(px-2 py-1→px-1.5 py-0.5, text-xs→text-[11px]) / T-20260620-foot-RESVCAL-COMPACT-HALFSIZE AC-3: 2차 절반 압축(text-[11px]→text-[10px]) / T-20260622-foot-RESVCAL-COMPACT-CONTENT-KEEP AC-1·AC-2: 가독성 복원 — 카드 본문 폰트 text-[10px]→text-[11px](읽히는 최소). 정보항목 전부 유지(삭제 0), 압축은 padding(px-1 py-0)·leading-tight·셀높이로만 달성, 넘치면 ellipsis
 
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
@@ -2722,11 +2741,16 @@ export default function Reservations() {
                                       selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
                                       clipboard?.resv.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
                                       clipboard?.resv.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
+                                      // T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목6] rebase 정합: 취소건 회색+음각 처리는 위 7ADJ⑥(shadow-inner)이 이미 동일 달성 →
+                                      //   stale-base 자동병합으로 중복 삽입됐던 shadow-[inset...] 라인 제거(중복 cn 제거, 회귀 0).
                                     )}
                                   >
+                                    {/* T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목5] rebase 정합: 간략메모 상단배치 블록은 stale-base 자동병합 잔재로 제거.
+                                        간략메모(brief_note)는 아래 WEEKBOX-DAYUNIFY Row2(성함 하단, 총괄 07-02 확정)에서 단일 렌더 — 상단 중복 블록(resv-brief testid 중복) 삭제. */}
                                     <div className="flex min-w-0 items-center gap-1 overflow-hidden">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 이름·배지 행 수축 허용 / T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN AC-2: overflow-hidden → 2단 좁은 폭에서 성함 ellipsis 클립 경계 */}
                                       {/* T-20260515-foot-RESV-CTX-HOVER: hover 팝업 + 우클릭 컨텍스트 메뉴
-                                          취소된 예약 / 미연결 고객은 기존 plain span 유지 */}
+                                          T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목6-5R] rebase 정합: 취소건 hover는 stale-base 잔재로 제거 →
+                                          취소건은 plain span 유지(주뷰 취소 차트번호 배지 WEEKBOX-DAYUNIFY 07-03 유지와 일관, 일/주 대칭). 미연결(customer_id 없음)만 plain span. */}
                                       {r.customer_id && r.status !== 'cancelled' ? (
                                         // T-20260525-foot-RSVMGMT-CHART-OPEN AC-1: onClick → openChart (대시보드 동작과 동일)
                                         <CustomerHoverCard
@@ -2767,7 +2791,8 @@ export default function Reservations() {
                                             //   박스 넘침 없이 ellipsis로 흡수(block+min-w-0+truncate). 폰트는 카드 본문(text-[11px]) 상속.
                                             'block min-w-0 max-w-full truncate',
                                             r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
-                                            // T-20260630-...7ADJ ⑥: 취소 이름 취소선(line-through) 제거 → 회색+음각(shadow-inner, 컨테이너)으로 대체.
+                                            // T-20260630-...7ADJ ⑥ / [항목6-2] 정합: 취소 이름 취소선(line-through) 제거 → 회색+음각(shadow-inner, 컨테이너)으로 대체.
+                                            //   (이 분기는 미연결 워크인 전용 — 등록고객 취소건은 위 CustomerHoverCard 분기로 hover 정상노출.)
                                           )}
                                           onClick={(e) => {
                                             // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC1, 버그 RC): 주뷰 고객박스도 동일 —
@@ -2786,7 +2811,9 @@ export default function Reservations() {
                                           {r.customer_name?.trim() || '이름없음'}
                                         </span>
                                       )}
-                                      {/* T-20260630-...7ADJ ⑥: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
+                                      {/* T-20260630-...7ADJ ⑥ / [항목6-1] 정합: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
+                                      {/* T-20260630-foot-RESV-CALENDAR-OVERHAUL [항목6-5R] rebase 정합: 항목6-5R은 취소-전용 인라인 차트번호 배지 제거를 의도했으나,
+                                          이후 총괄 확정 WEEKBOX-DAYUNIFY(07-03)가 '취소건 차트번호 배지(PAIRING-AUDIT: 환자명 단독노출 0) 유지'로 확정 → 항목6-5R의 배지제거를 supersede. 등록고객 취소건은 아래 배지 유지. */}
                                       {/* T-20260514-foot-CHART-NO-VISIBLE / T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 등록환자(customer_id)면 차트번호 항상 표시(미발번도 명시)
                                           T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): 활성 카드는 CustomerHoverCard 트리거가
                                           이미 차트번호를 인접 표기 → 여기서 중복 배지 제거. 취소건(plain span 분기, hovercard 미사용)에만

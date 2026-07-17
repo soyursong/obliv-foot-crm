@@ -22,7 +22,7 @@ import { isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, formatDateTimeDots } from '@/lib/format';
-import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments } from '@/lib/footBilling';
+import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments, effectiveNetPaid } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
@@ -1554,12 +1554,10 @@ function PackageDetailSheet({
 
           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE: 미수금(잔금) = 패키지 금액 − 순납부(fee_kind='package'). 파생값, 합산 단일표기 아님. */}
           {(() => {
-            // fee_kind 분리: 패키지 결제분만 패키지 잔금에 반영(기존 행은 backfill='package'로 동일 동작).
-            const netPkgPaid = netPaidFromPayments(pkgPayments, 'package');
-            // T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (a): 양도 승계 패키지는 매출 이중계상 방지를 위해
-            //   package_payments 승계행을 만들지 않는다(승계액은 packages.paid_amount 에만 반영).
-            //   결제행이 전혀 없는 승계 패키지(transferred_from 有)는 paid_amount 로 완납 처리 → 거짓 미수 방지.
-            const effPaid = (pkg.transferred_from && pkgPayments.length === 0) ? (pkg.paid_amount ?? 0) : netPkgPaid;
+            // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: net-paid 산출을 effectiveNetPaid(SSOT)로 중앙화.
+            //   결제행이 비었을 때 (a)회수1 단건(PKGCLASS-SESSION1-SINGLE) 또는 (b)양도 승계(PACKAGE-TRIPLE-DEFECT)는
+            //   paid_amount 폴백 → phantom 미수 치유. 그 외(회수≥2 등)는 결제행 그대로(회귀 0).
+            const effPaid = effectiveNetPaid(pkg, pkgPayments);
             const outstanding = computeOutstanding(pkg.total_amount, effPaid);
             const st = balanceStatus(outstanding);
             return (

@@ -5713,6 +5713,24 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
+
+    // ── T-20260715-foot-MEDLAW22B-CTXMENU-COMPLETE-GATE-BYPASS: 우클릭 완료 경로 게이트 정합 ──
+    //   드래그 완료 경로(handleDragEnd else-branch)와 동일 조건·메시지로 급여 진료기록
+    //   하드차단 게이트(MEDLAW22-B-GATE)를 적용한다. 우클릭이 게이트를 우회하던 불일치 해소.
+    //   기존 evaluateMedicalRecordGate 로직 재사용(신규 정의 없음) — 비급여는 즉시 통과.
+    //   낙관적 업데이트(setRows) 이전에 abort → 드래그와 identical.
+    if (newStatus === 'done') {
+      try {
+        const gate = await evaluateMedicalRecordGate(ci);
+        if (gate.blocked) {
+          toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
+          return;
+        }
+      } catch {
+        // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
+      }
+    }
+
     markRecentlyUpdated(ci.id);
     // #25 경합 방지: 함수형 업데이트 + 직전 row 캡처
     let prevRow: CheckIn | undefined;

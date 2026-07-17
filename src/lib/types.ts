@@ -545,7 +545,8 @@ export interface Package {
   //   treatment_type = 패키지 시술유형(수동, 통계 시술유형별 객단가 집계용). 저장 canonical 토큰, FE 표시 "리본".
   //   reference_price = 기준정가 스냅샷(불변). 할인율=(reference_price−실결제)/reference_price 통계표시 전용.
   //   둘 다 nullable ADDITIVE. 마이그 미적용 환경 대비 옵셔널.
-  treatment_type?: TreatmentType | null;
+  //   T-20260716-foot-EXPPASS: packages 축 6토큰(+체험권) → PackageTreatmentType. 체험권=reference_price NULL(할인율 "-").
+  treatment_type?: PackageTreatmentType | null;
   reference_price?: number | null;
   created_by: string | null;
   created_at: string;
@@ -553,18 +554,28 @@ export interface Package {
 }
 
 // ── T-20260708 시술유형 canonical 택소노미 (저장값=안정 식별자, FE 표시라벨 분리) ──
-// 저장 5토큰 = packages.treatment_type / treatment_standard_prices.treatment_type CHECK 와 동일.
+// 저장 5토큰 = treatment_standard_prices.treatment_type CHECK(정찰가 마스터 축) 와 동일.
 // 'Re:Born' = foot repo 배포된 SSOT(PREPAID_KEYWORDS + Re:Born, 치료사통계 AC1)와 vocabulary 공유.
+// ⚠ T-20260716-foot-EXPPASS(DA Q2=NO): 이 상수는 '정찰가/tsp 축' 전용 — 체험권을 여기 추가 금지
+//   (체험권=기준정가 부재 → 정찰가표 재유입 시 tsp NOT NULL·reference_price grain 위배). packages/통계 축은 아래 PACKAGE_TREATMENT_TYPES 사용.
 export const TREATMENT_TYPES = ['비가열', '가열', '포돌로게', '수액', 'Re:Born'] as const;
 export type TreatmentType = (typeof TREATMENT_TYPES)[number];
 
-// 저장값 → FE 표시라벨. 'Re:Born'만 현장 요청대로 "리본"으로 렌더(나머지는 저장값=표시값 동일).
-export const TREATMENT_TYPE_LABEL: Record<TreatmentType, string> = {
+// ── T-20260716-foot-EXPPASS-TREATTYPE-CHECK-EXPAND: packages/통계 축 6토큰(+ '체험권') ──
+// DA CONSULT-REPLY(MSG-20260716-065359-xapy) Q1 GO+ADDITIVE. 상수 이원화 — packages.treatment_type
+//   CHECK(6토큰) 와 정합, 통계 시술유형 집계에 체험권을 독립 카테고리로 포함(건수·객단가 O, 할인율 제외).
+//   불변식: TREATMENT_TYPES(5, tsp/정찰가 축) ⊂ PACKAGE_TREATMENT_TYPES(6, packages/통계 축).
+export const PACKAGE_TREATMENT_TYPES = ['비가열', '가열', '포돌로게', '수액', 'Re:Born', '체험권'] as const;
+export type PackageTreatmentType = (typeof PACKAGE_TREATMENT_TYPES)[number];
+
+// 저장값 → FE 표시라벨. 'Re:Born'만 현장 요청대로 "리본"으로 렌더(나머지는 저장값=표시값 동일, '체험권' 포함).
+export const TREATMENT_TYPE_LABEL: Record<PackageTreatmentType, string> = {
   '비가열': '비가열',
   '가열': '가열',
   '포돌로게': '포돌로게',
   '수액': '수액',
   'Re:Born': '리본',
+  '체험권': '체험권',
 };
 
 export function treatmentTypeLabel(t?: string | null): string {

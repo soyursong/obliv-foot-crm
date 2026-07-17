@@ -37,7 +37,15 @@ import { buildContraindKeySet, applyPrefillExclusivity } from '@/lib/opinionDocC
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속(미리보기 셀 클릭→컬럼-앵커 드롭다운 전문). 공유 컴포넌트 재사용(중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { Button } from '@/components/ui/button';
-import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
@@ -65,6 +73,27 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
     setDialogOpen(true);
   };
 
+  // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: 실장(데스크)이 잘못 보낸 draft 발행요청을 원장 발행 전에 회수.
+  //   기존 useResolveOpinionRequest.mutate({reason:'cancelled'}) 재사용 → status='voided' + resolved_reason='cancelled'.
+  //   'cancelled' 의미론(=신청 아님, 집계·완료표시 제외)은 T-20260710-DOCREQ-DOCTORCOUNT(deployed) 확정 계약 — 신규 상태·의미 도입 없음(AC-3).
+  //   AC-7 authoring 경계: publish(published) 경로·서명·직인 로직 절대 미접촉. draft void 한정.
+  const [cancelTarget, setCancelTarget] = useState<OpinionRequestRow | null>(null);
+
+  const openCancel = (r: OpinionRequestRow) => setCancelTarget(r);
+
+  const handleCancelConfirm = async () => {
+    if (!cancelTarget) return;
+    try {
+      // reason:'cancelled' → 기존 mutation 재사용. update 시 .eq('status','draft') 동시성 가드로 이미 처리된 건 무영향.
+      await resolveMut.mutateAsync({ requestId: cancelTarget.id, reason: 'cancelled' });
+      // AC-4: 취소 완료 시 큐 invalidate(onSuccess) → draft 필터가 voided 배제해 해당 행 즉시 제거.
+    } catch {
+      // 실패 시 큐 그대로 유지(voided 처리 안 됨) — 다음 폴링/재시도 가능. 사용자 차단 없음.
+    } finally {
+      setCancelTarget(null);
+    }
+  };
+
   // 큐 행 → OpinionEditorDialog visitor 구성. id=check_in_id(발행 앵커). 없으면 발행 불가 안내.
   const activeVisitor: VisitorRow | null = active
     ? {
@@ -78,12 +107,28 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       }
     : null;
 
+  // T-20260717-foot-OPINION-WRITE-UI-3FIX (item3): 발급(작성하기) 완료 시 화면 정체 제거 → 대기 목록의 다음 환자로 자동 전환.
+  //   ★트랜잭션-then-navigate: onPublished 는 OpinionEditorDialog.handlePublish 의 발행(publish_opinion_doc) 성공 직후에만
+  //     호출된다(발행 실패 시 미호출 → 이동 없음, 현재 화면 유지). 즉 '저장 성공 확정 후에만 이동'(AC-4) 이 구조적으로 보장됨.
+  //   다음 환자 = 대기(rows) 목록에서 방금 발행한 active 다음 행 우선, 없으면 남은 대기의 첫 행(위로 되돌아감).
+  //     남은 대기가 없으면 dialog 닫고 목록 복귀(AC-3 엣지). resolve invalidate 전에 rows 스냅샷으로 대상 확정(레이스 방지).
   const handlePublished = async () => {
     if (!active) return;
+    const currentIdx = rows.findIndex((r) => r.id === active.id);
+    const nextRow =
+      (currentIdx >= 0 ? rows.slice(currentIdx + 1).find(Boolean) : undefined) ??
+      rows.find((r) => r.id !== active.id) ??
+      null;
     try {
       await resolveMut.mutateAsync({ requestId: active.id, reason: 'published' });
     } catch {
       // resolve 실패해도 발행본은 정상 생성됨 — 다음 폴링/새로고침 시 재시도 가능. 사용자 차단 없음.
+    }
+    // 발행 성공 확정 후 화면 전환. 다음 대기 환자 있으면 재바인딩(작성창 유지), 없으면 목록 복귀.
+    if (nextRow) {
+      setActive(nextRow); // bindKey 변경 → OpinionEditorDialog 바인딩 리셋(다음 환자 prefill/메모 로드)
+    } else {
+      setDialogOpen(false); // 다음 대기 환자 없음 → 작성창 닫고 목록 화면 복귀
     }
   };
 
@@ -140,6 +185,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                 clinicalSnaps={clinicalSnaps}
                 itemLabelsForRow={itemLabelsForRow}
                 onWrite={openWrite}
+                onCancel={openCancel}
               />
             </div>
           )}
@@ -188,6 +234,51 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         requestId={active?.id ?? null}
         onPublished={handlePublished}
       />
+
+      {/* AC-2: 요청 취소(회수) 확인 다이얼로그 — 실수 취소 방지. 확정 시에만 voided 처리. */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) setCancelTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-500" />
+              요청 취소(회수)
+            </DialogTitle>
+            <DialogDescription>
+              이 요청을 취소하시겠어요?
+              {cancelTarget?.patientName && (
+                <span className="mt-1 block font-medium text-foreground">
+                  {cancelTarget.patientName} · {docTypeLabel(cancelTarget.docType)}
+                </span>
+              )}
+              <span className="mt-1 block text-xs text-muted-foreground">
+                취소하면 처리대기 큐에서 사라집니다. (이미 발행된 서류는 영향받지 않습니다.)
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelTarget(null)}
+              disabled={resolveMut.isPending}
+              data-testid="docreq-cancel-dismiss-btn"
+            >
+              아니오
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelConfirm}
+              disabled={resolveMut.isPending}
+              data-testid="docreq-cancel-confirm-btn"
+            >
+              {resolveMut.isPending ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> 취소 중…</>
+              ) : (
+                '요청 취소'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -202,6 +293,7 @@ function DocReqTable({
   clinicalSnaps,
   itemLabelsForRow,
   onWrite,
+  onCancel,
 }: {
   rows: OpinionRequestRow[];
   variant: 'pending' | 'done';
@@ -209,6 +301,8 @@ function DocReqTable({
   // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX: 행 단위 배타 정규화 라벨(혼합 큐 위반 조합 표시 차단).
   itemLabelsForRow: (r: OpinionRequestRow) => string;
   onWrite: (r: OpinionRequestRow) => void;
+  // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: pending 그룹에만 전달(done=undefined → 완료행 취소버튼 미표시, AC-7).
+  onCancel?: (r: OpinionRequestRow) => void;
 }) {
   return (
     <table className="w-full text-sm">
@@ -234,6 +328,7 @@ function DocReqTable({
             snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
             itemLabels={itemLabelsForRow(r)}
             onWrite={onWrite}
+            onCancel={onCancel}
           />
         ))}
       </tbody>
@@ -252,12 +347,14 @@ function DocRequestRow({
   snap,
   itemLabels,
   onWrite,
+  onCancel,
 }: {
   r: OpinionRequestRow;
   variant?: 'pending' | 'done';
   snap: ClinicalSnap | undefined;
   itemLabels: string;
   onWrite: (r: OpinionRequestRow) => void;
+  onCancel?: (r: OpinionRequestRow) => void;
 }) {
   const rxCellRef = useRef<HTMLTableCellElement>(null);
   const clinicalCellRef = useRef<HTMLTableCellElement>(null);
@@ -310,7 +407,9 @@ function DocRequestRow({
       <td className="px-2 py-1.5 text-foreground/80" data-testid="docreq-cell-items">
         <span className="block max-w-[16rem] truncate" title={itemLabels}>{itemLabels || '—'}</span>
         {r.staffMemo && (
-          /* Q2 fallback(non-blocking): 직원 서류요청 메모 = 단방향 read-display(양방향 편집·외부연동 미구현). */
+          /* AC-1 표시 보장: 실장 요청 메모(field_data.staff_memo)가 있으면 큐에서 항상 노출.
+             T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE: 편집은 '작성하기' 작성창(OpinionEditorDialog)에서 수행되며,
+             저장 시 큐 invalidate(useUpdateStaffMemo)로 이 셀도 최신 메모로 동기화(표시 일관성). 셀 자체는 read-display. */
           <span className="mt-0.5 block max-w-[16rem] truncate text-[10px] text-teal-700/80" title={r.staffMemo} data-testid="docreq-cell-memo">메모: {r.staffMemo}</span>
         )}
       </td>
@@ -325,9 +424,8 @@ function DocRequestRow({
           </span>
         ) : (
           <>
-            {/* AC-9 반짝효과: 신규 요청 시각화. AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). */}
+            {/* AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). 신규 요청 시각화는 큐 항목·teal-600 버튼 상시 노출로 충분(T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE: 청록 ripple 반짝임 제거). */}
             <span className="relative inline-flex">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-md bg-teal-400/40" aria-hidden />
               <Button
                 size="sm"
                 className="relative h-7 gap-1 bg-teal-600 px-2.5 text-[11px] text-white hover:bg-teal-700"
@@ -339,6 +437,18 @@ function DocRequestRow({
             </span>
             {!r.checkInId && (
               <span className="mt-0.5 block text-[9px] text-amber-600" title="내원 이력이 없어 발행 전 내원 확인이 필요합니다.">내원확인 필요</span>
+            )}
+            {/* T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2 (AC-1): 잘못 보낸 draft 요청 회수 버튼. '작성하기' 아래·outline 톤(룩앤필 조화). AC-2 확인 다이얼로그 경유. */}
+            {onCancel && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-1 flex h-6 w-full items-center justify-center gap-1 px-2 text-[10px] leading-none text-muted-foreground hover:text-red-600"
+                onClick={() => onCancel(r)}
+                data-testid="docreq-cancel-btn"
+              >
+                <XCircle className="h-3 w-3" /> 요청 취소
+              </Button>
             )}
           </>
         )}

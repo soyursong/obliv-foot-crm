@@ -1,0 +1,31 @@
+T-20260717-foot-DAYCLOSE-VS-SIDEBAR-MGRSTAT-RECONCILE — foot prod forward-apply RESULT
+project: rxlomoozakkjesdqjtvd (obliv-foot-crm, foot 단일 Supabase)
+migration: 20260717160000_foot_stats_consultant_pkg_attr_reconstruct.sql (권고안 A, ADDITIVE)
+supervisor DDL-diff = GO (ADDITIVE 확정) / DA CONSULT-REPLY GO (pk55/zbqr) / §3.1 CEO 게이트 면제
+
+applied_at (KST): 2026-07-17 20:11:41 KST
+프로시저: public.foot_stats_consultant(uuid,date,date) — 반환형 6컬럼 불변 (CREATE OR REPLACE, 42P13 없음)
+
+prosrc md5:
+  PRE  = b6ebdf420271f3a71e85109a0b71c2c4 (len 2792)  ← 라이브 base(20260622210000: pkg_flag/pkg_once/ci.package_id 마커 확인)
+  POST = 6614b6bd7316a96aa3e62350f16fdf80 (len 4441)  ← forward 마이그 function-body raw md5 와 일치(정확 적용 확인)
+  변경 = YES ✓
+  ※ supervisor 리포트의 393f1785… 는 다른 해시 대상(파일/정규화 본문). 라이브 md5(prosrc) 기준 실측 = b6ebdf42. 
+    prod=base 여부는 md5가 아니라 본문 마커로 확정: pkg_flag/pkg_once/ci.package_id(base) 존재 · pkg_attr/ticketed_all/pkg_conv/consultant_universe(신규) 부재.
+
+schema_migrations 원장: 153행 → 154행 (20260717160000 등재 false → true) ✓ idempotent 기록
+
+SMOKE (foot_stats_consultant, clinic=오블리브의원 서울오리진점 74967aea..., 당월): 7행, 무오류 ✓
+  송지현: tk=18 pkg=8  avg=747222 total=13450000
+  엄경은: tk=21 pkg=10 avg=262381 total=5510000
+  김지윤: tk=20 pkg=2  avg=142570 total=2851400
+  강경민: tk=14 pkg=3  avg=60200  total=842800
+  정연주: tk=36 pkg=6  avg=2617   total=94200
+  김수린: tk=3  pkg=1  avg=3      total=10
+  김주연: tk=6  pkg=0  avg=0      total=0
+  → 패키지매출 귀속 복원(실장별 총매출 <1% → ~100% 점프): 기대된 버그수정 거동 확인.
+
+rollback: 20260717160000_..._reconstruct.rollback.sql (직전 base prosrc 정확 복원, CREATE OR REPLACE 즉시 역전)
+
+배포 벡터 주의(supervisor): force-push/checkout-tip 금지. 정식 3-way merge 로 배포(금일 환불 섹션 7161a0e2 보존).
+ball → supervisor (POSTCHECK prod prosrc 변경확인 → main 정식 merge → 슬랙 공지 AC5 3건 → field-soak)
