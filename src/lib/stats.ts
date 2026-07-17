@@ -25,11 +25,17 @@ export interface ConsultantRow {
   name: string;
   ticketing_count: number;
   package_count: number;
-  avg_amount: number;
-  // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE: 실장별 총 매출액(SUM(rev)).
-  // 리포터 모델 = 객단가(avg_amount) ÷ 상담건수 의 1차값. RPC foot_stats_consultant 가 반환.
-  // 옵셔널: 구버전 RPC(total_amount 미반환) 배포 타이밍 대비 fallback(avg×건수) 가능하게.
+  // T-20260717-foot-CONSULTANT-ARPU-STATS (AC6): 상담(내원)고객당 ARPU.
+  //   avg_amount = total_amount ÷ consulted_customer_count (distinct 상담고객, checked_in_at 축).
+  //   분모=0(매출귀속만·기간상담 0) → RPC 가 NULL 반환 → 화면 '-' 표시.
+  //   ※ 분자(total_amount)는 accounting_date 축(dual-axis grain, 의도된 설계 — 오독 금지).
+  avg_amount: number | null;
+  // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE: 실장별 총 매출액(SUM(rev), net·accounting_date).
+  // 옵셔널: 구버전 RPC(total_amount 미반환) 배포 타이밍 대비 fallback 유지.
   total_amount?: number;
+  // T-20260717-foot-CONSULTANT-ARPU-STATS (AC6): distinct 상담(내원)고객 수(객단가 분모).
+  //   노쇼·예약only 제외 · 결제여부 무관 · 동일고객 다회상담 = 1. 옵셔널(구버전 RPC 대비).
+  consulted_customer_count?: number;
 }
 
 export interface NoshowReturningRow {

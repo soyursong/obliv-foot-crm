@@ -15,10 +15,16 @@
 import * as XLSX from 'xlsx';
 import type { ConsultantRow } from '@/lib/stats';
 
-/** 실장별 매출액: RPC total_amount 우선, 미반환(구버전) 시 객단가×건수 역산 fallback. */
+/**
+ * 실장별 매출액: RPC total_amount 우선, 미반환(구버전) 시 객단가×건수 역산 fallback.
+ * ⚠ T-20260717-foot-CONSULTANT-ARPU-STATS (AC6): avg_amount 분모가 상담'건수'→상담'고객수'로
+ *   재정의되어 `avg_amount × ticketing_count ≠ total_amount` 가 되었다(역산식 무효). 단 현 RPC 는
+ *   total_amount 를 항상 반환하므로 이 fallback 은 dead-path(미발화). avg_amount NULL 이어도
+ *   상단 total_amount 분기에서 종료되어 안전. 구버전 RPC 하위호환 목적으로만 잔존.
+ */
 export function consultantRevenue(r: Pick<ConsultantRow, 'total_amount' | 'avg_amount' | 'ticketing_count'>): number {
   if (typeof r.total_amount === 'number') return r.total_amount;
-  return Math.round(r.avg_amount * r.ticketing_count);
+  return Math.round((r.avg_amount ?? 0) * r.ticketing_count);
 }
 
 /** 상담객단가: 매출 ÷ 상담건수 (반올림). 건수 0 이면 0. */
