@@ -136,8 +136,13 @@ test.describe('B1(A4) — 서브탭/헤더 라벨 → 진료 환자 목록', () 
     expect(TOOLS).toContain('value="patient_list" className="gap-1.5" data-testid="tab-patient-list"');
   });
 
-  test('페이지 설명 문구도 "진료 환자 목록"으로 일관', () => {
-    expect(TOOLS).toContain('진료 알림판 · 진료 환자 목록 · 균검사지(KOH) · 소견서를 확인합니다.');
+  test('페이지 설명 문구 정리(제거)됨 — 구 "처방 환자 목록" 문구 잔재 0건', () => {
+    // SPEC-DRIFT-REPAIR(T-20260716): 원래 헤더 설명 부제("진료 알림판 · 진료 환자 목록 · … 확인합니다.")를
+    //   가드했으나, T-20260701-foot-MEDSCREEN-COPY-SWEEP-CONFIRMGATE(2209abff)에서 "의료화면 요청 안 한
+    //   설명·placeholder 문구 정리"로 <p className="text-sm text-muted-foreground"> 부제 전체를 의도적 제거.
+    //   설명 부제 자체가 사라졌으므로 B1(A4)의 잔여 의도(구 '처방 환자 목록' 표기 잔재 0건)만 유지 검증.
+    expect(TOOLS).not.toContain('확인합니다.');
+    expect(TOOLS).not.toContain('· 처방 환자 목록 ·');
   });
 
   test('DoctorPatientList 헤더 라벨 = "진료 환자 목록"', () => {

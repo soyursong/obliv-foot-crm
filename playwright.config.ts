@@ -370,6 +370,11 @@ export default defineConfig({
         //   (FIX-REQUEST MSG-20260717-141523-ydgt: phase2 spec_missing — desktop-chrome 단독 매칭 시
         //    QA 워크트리 TEST_PASSWORD 부재로 auth.setup 기동/실패 → "No tests found". unit 편입으로 차단.)
         '**/T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT.spec.ts',
+        // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: 세부산정내역 '계'/'합계'(detail_subtotal/
+        //   detail_total) 공란(0) 회귀 가드. DocumentPrintPanel bill_detail 바인딩을 SSOT(computeFootBilling/
+        //   buildFootBillDetailItems)로 replay → 계/합계 = 본인부담+비급여(공단 제외, B안 보존) 단언 +
+        //   공단 칸 표시 유지(AC4) + 항목 0건 '0' 표시 + page.setContent 인쇄 미리보기 캡처. auth/server 불요.
+        '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -400,6 +405,9 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭 → auth.setup(TEST_PASSWORD) 끌어들여
         //   "No tests found"/실패하던 것을 차단(FIX-REQUEST MSG-20260717-141523-ydgt). unit 에서만 실행.
         '**/T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT.spec.ts',
+        // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: unit 전용 setContent 렌더 spec →
+        //   무-project 실행 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 끌어들이지 않도록 제외. unit 에서만 실행.
+        '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
       ],
     },
     {

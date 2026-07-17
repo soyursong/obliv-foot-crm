@@ -30,12 +30,18 @@ import { FALLBACK_TEMPLATES } from '../../src/lib/formTemplates';
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
-/** HTML 양식 11종 (form_key) */
+// T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT (src commit 73dced59): 진료확인서 발급폼이
+//   treat_confirm_code(코드·진단명 포함) / treat_confirm_nocode(불포함) 2종으로 분리되며
+//   둘 다 HTML/CSS 템플릿(HTML_TEMPLATE_MAP 등록)으로 신설됨 → JPG 양식이 아니라 HTML 양식.
+//   원 스펙은 이 둘을 IMAGE_FORMS(=isHtmlTemplate false)로 간주했으나 STALE → HTML_FORMS 로 이동.
+/** HTML 양식 13종 (form_key) */
 const HTML_FORMS = [
   'bill_detail',
   'diag_opinion',
   'diagnosis',
   'treat_confirm',
+  'treat_confirm_code',
+  'treat_confirm_nocode',
   'visit_confirm',
   'rx_standard',
   'bill_receipt',
@@ -45,13 +51,11 @@ const HTML_FORMS = [
   'diag_opinion_v2',
 ] as const;
 
-/** JPG/PNG 양식 5종 */
+/** JPG/PNG 양식 3종 */
 const IMAGE_FORMS = [
   'prescription',
   'med_record_short',
   'med_record_long',
-  'treat_confirm_code',
-  'treat_confirm_nocode',
 ] as const;
 
 /** 병원정보 4항목 */

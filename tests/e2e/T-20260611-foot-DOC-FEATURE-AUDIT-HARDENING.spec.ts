@@ -85,7 +85,10 @@ test.describe('T-20260611-foot-DOC-FEATURE-AUDIT-HARDENING — 서류 전 기능
     // (2) 빌링 폴백이 state 단독 의존이 아니라 print 시점 fresh 조회(fbStale 게이트).
     expect(PANEL_SRC).toContain('fbStale');
     const freshFb = PANEL_SRC.match(/loadFootBillingItems\(checkIn\.id, checkIn\.clinic_id\)/g) ?? [];
-    const freshGrade = PANEL_SRC.match(/loadCustomerInsuranceGrade\(checkIn\.customer_id\)/g) ?? [];
+    // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK / SERIAL-RPC-AVVC-NOFIRE:
+    //   loadCustomerInsuranceGrade(customer_id) → loadEffectiveInsuranceGrade(customer_id, checkIn.id) 로 이관
+    //   (체크인 기준 급여등급 폴백 해소). print 시점 fresh 조회 자체(회귀 가드 대상)는 불변.
+    const freshGrade = PANEL_SRC.match(/loadEffectiveInsuranceGrade\(checkIn\.customer_id, checkIn\.id\)/g) ?? [];
     // load() + handleBatchPrint + handleReceiptReissue 최소 3회.
     expect(freshFb.length).toBeGreaterThanOrEqual(3);
     expect(freshGrade.length).toBeGreaterThanOrEqual(3);
@@ -118,7 +121,9 @@ test.describe('T-20260611-foot-DOC-FEATURE-AUDIT-HARDENING — 서류 전 기능
       issue_date: '2026-06-11',
       visit_date: '2026-06-11',
       clinic_name: '오블리브 풋센터',
-      total_amount: '160,000',
+      // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY(B안): 旧 total_amount(공단포함 grandTotal)
+      //   placeholder 제거 → receipt_total(본인부담+비급여, 공단 제외)로 이관. 합계 렌더 자체는 불변.
+      receipt_total: '160,000',
       non_covered: '50,000',
       insurance_covered: '110,000',
     });

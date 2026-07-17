@@ -97,8 +97,10 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const initStart = src.indexOf('const initBgCanvas = useCallback');
     expect(initStart).toBeGreaterThan(0);
-    // REOPEN: isContextLost() 추가로 함수 길이 증가 → 2500자 윈도우 사용
-    const initBlock = src.slice(initStart, initStart + 2500);
+    // REOPEN: isContextLost() 추가로 함수 길이 증가 → 윈도우 확대.
+    // SPEC-DRIFT-REPAIR(T-20260716): 이후 티켓들의 가드/진단 주석 누적으로 fillStyle(rel~2535)·
+    //   fillRect(rel~2566) 가 기존 2500 윈도우 밖으로 밀림 → 2800 으로 확대(로직 무변경, 윈도우만 현행화).
+    const initBlock = src.slice(initStart, initStart + 2800);
 
     // 이미지 로드 전 흰 배경 설정
     expect(initBlock).toContain("ctx.fillStyle = '#ffffff'");
@@ -182,19 +184,39 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(src).toContain(RETRY_BTN_TEXT);
 
     // 다시 시도 버튼 onClick은 initCanvas
-    const retryIdx = src.indexOf(RETRY_BTN_TEXT);
-    const surroundingBlock = src.slice(Math.max(0, retryIdx - 400), retryIdx + 200);
-    expect(surroundingBlock).toContain('initCanvas');
+    // SPEC-DRIFT-REPAIR(T-20260716): T-20260622-foot-PENCHART-EDIT-NOACTION 이 저장 실패 토스트에
+    //   "화면 새로고침 후 다시 시도해주세요." 문구를 추가 → src.indexOf('다시 시도') 가 폴백 UI 버튼이
+    //   아닌 토스트 문자열(앞쪽)을 먼저 잡아 오탐. RETRY_BTN_TEXT 인근(-400/+200)에 initCanvas 가 있는
+    //   실제 폴백 재시도 버튼 블록을 찾아 검증(기능 불변, 매칭만 정확화).
+    let retryIdx = -1;
+    let from = 0;
+    while ((from = src.indexOf(RETRY_BTN_TEXT, from)) !== -1) {
+      const block = src.slice(Math.max(0, from - 400), from + 200);
+      if (block.includes('initCanvas')) { retryIdx = from; break; }
+      from += RETRY_BTN_TEXT.length;
+    }
+    expect(retryIdx, '다시 시도 버튼(onClick=initCanvas) 블록을 찾지 못함').toBeGreaterThan(0);
   });
 
   // ── AC-4: initCanvas 재시도 시 에러 초기화 ────────────────────────────────
   test('AC-4: initCanvas 진입 시 setBgImgLoadError(false) 초기화 — 재시도 가능', () => {
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
+    // SPEC-DRIFT-REPAIR(T-20260716): PINGPONG5(3db160c4) 에서 캔버스 그래픽 초기화가 initCanvas →
+    //   initCanvasGraphics 로 분리됨(5차 재발 RC: 사용자 작업상태 리셋과 그래픽 리셋을 한 함수에 묶어
+    //   200ms init effect deps 재실행 시 placedItems 소실). setBgImgLoadError(false) 재시도 초기화는
+    //   initCanvasGraphics 로 이동. initCanvas 는 이를 호출 → 재시도 초기화 경로 보존.
     const initCanvasIdx = src.indexOf('const initCanvas = useCallback');
     expect(initCanvasIdx).toBeGreaterThan(0);
     const initBlock = src.slice(initCanvasIdx, initCanvasIdx + 400);
-    expect(initBlock).toContain('setBgImgLoadError(false)');
+    // initCanvas 는 initCanvasGraphics 를 호출(그래픽 초기화 위임)
+    expect(initBlock).toContain('initCanvasGraphics()');
+
+    // 실제 setBgImgLoadError(false) 재시도 초기화는 initCanvasGraphics 진입 시 수행
+    const graphicsIdx = src.indexOf('const initCanvasGraphics = useCallback');
+    expect(graphicsIdx, 'initCanvasGraphics 선언 없음').toBeGreaterThan(0);
+    const graphicsBlock = src.slice(graphicsIdx, graphicsIdx + 400);
+    expect(graphicsBlock).toContain('setBgImgLoadError(false)');
   });
 
   // ── AC-4: OOM / ctx null 방어 (T-20260525-foot-PENCHART-FORM-BLACKSCR) ────────
@@ -254,7 +276,9 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const bgInitIdx = src.indexOf('const initBgCanvas = useCallback');
     expect(bgInitIdx).toBeGreaterThan(0);
-    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 3500);
+    // SPEC-DRIFT-REPAIR(T-20260716): 누적 가드/주석으로 로그 라인(rel~3861)이 3500 윈도우 밖으로 밀림
+    //   → 4200 확대(로직 무변경).
+    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 4200);
 
     expect(bgBlock).toContain('배경 이미지 로딩 시작');
     expect(bgBlock).toContain('bgUrl');
