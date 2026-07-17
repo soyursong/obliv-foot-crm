@@ -1,0 +1,18 @@
+Phase A source-close RE-VERIFY (gate MSG-20260718-023749-gohp, supervisor independent GO)
+prod rxlomoozakkjesdqjtvd · 2026-07-18 · dev-foot postverify re-run (READ-ONLY)
+
+self_checkin_create(p_clinic_slug text, p_phone text, p_name text):
+  anon_exec              = false   (source closed)
+  auth_exec              = false   (source closed)
+  service_exec           = false   (source closed)
+  postgres_exec (owner)  = true    (preserved — definer context intact)
+  has_deprecated_comment = true
+
+sourceclose_unlinked_confirmed (P4, new unlinked active check_in + same-day confirmed) = 0
+  → no new divergence inflow since Phase A apply (bjpq). Source-closed persists.
+
+Phase B (still GATED — NOT applied):
+  phaseB_inv1_count                = 1   (known INV-1: check_in f9840007 ↔ resv 26f3e3d5, stuck 2026-05-11 legacy)
+  phaseB_frozen_reservation_status = confirmed   (un-healed — correct while gated)
+
+VERDICT: Phase A (source close) = PASS. Phase B remains GATED pending supervisor gate 3~4.
