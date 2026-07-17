@@ -1809,11 +1809,24 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
         }
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-2/6): 세부산정내역 '계'·'합계' = 급여 본인부담금 + 비급여(공단 제외).
+        //   RC = GONGDAN-HIDE-COPAY-ONLY(B안)이 계/합계 셀 placeholder 를 {{detail_subtotal}}/{{detail_total}} 로 바꿨으나
+        //   결제창(PATH-4) 바인딩만 미갱신 → 두 영역 공란 회귀. DocumentPrintPanel 과 동일 산식(copaymentTotal 본인부담 +
+        //   비급여 합계, 위 applyBillingFallback nonCovered 와 동일 소스)으로 복구 — 건보 산출로직·서식 무변경(AC-7).
+        autoValues.detail_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
+        autoValues.detail_subtotal = autoValues.detail_total;
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(공단/본인/비급여).
       //   PATH-4(결제창 단독발행)도 세부산정내역과 동일 SSOT(buildPmwBillDetailItems)로 항목별 집계.
       if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
         autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-1): 계산서·영수증 소계·총 진료비 합계 = 본인부담금 + 비급여(공단 제외).
+        //   {{receipt_total}} 미바인딩 → 합계 공란 회귀 복구. 동일 산식·서식 무변경(AC-7), 공단부담 라인 표시 유지(AC-3).
+        autoValues.receipt_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
       }
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
@@ -1930,10 +1943,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
         }
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-2/6): 세부산정내역 '계'·'합계' = 급여 본인부담금 + 비급여(공단 제외).
+        //   출력+수납 경로도 동일 회귀 — {{detail_subtotal}}/{{detail_total}} 미바인딩 공란 복구. 산식·서식 무변경(AC-7).
+        autoValues.detail_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
+        autoValues.detail_subtotal = autoValues.detail_total;
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(출력+수납 경로).
       if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
         autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-1): 계산서·영수증 소계·총 진료비 합계 = 본인부담금 + 비급여(공단 제외).
+        //   {{receipt_total}} 미바인딩 공란 회귀 복구. 산식·서식 무변경(AC-7), 공단부담 라인 표시 유지(AC-3).
+        autoValues.receipt_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
       }
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
