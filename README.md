@@ -2,7 +2,7 @@
 
 종로 5층 문제성발톱클리닉 전용 CRM. 패키지 기반 시술 관리 + 이중 동선(신규/재진) 칸반.
 
-> **2026-04-30 하드포크 완료**: Lovable 연동 해제 → GitHub → Vercel 직접 배포로 전환.
+> **2026-04-30 하드포크 완료**: Lovable 연동 해제 → GitHub → Cloudflare Pages 직접 배포로 전환(2026-07-16 canon).
 > 상세: `2_Areas/204_오블리브_종로점오픈/풋센터_lovable_분리.md`
 
 ## Stack
@@ -11,7 +11,7 @@
 - Supabase (Auth, DB, Realtime, Storage)
 - shadcn/ui + Tailwind CSS
 - @dnd-kit (칸반 DnD)
-- **배포**: GitHub main → Vercel 자동 배포 (Lovable 경유 X)
+- **배포**: GitHub main → Cloudflare Pages 자동 배포 (정본, 2026-07-16 canon)
 
 ## 개발
 
@@ -30,18 +30,23 @@ npm run dev    # localhost:8082
 ```
 git push origin main
   → GitHub Actions (ci-push.yml): TypeCheck + Build + Critical-Flow E2E
-  → Vercel: main 브랜치 webhook → 자동 빌드 & 배포
-  → https://obliv-foot-crm.vercel.app   ← 정본(canonical) 라이브 URL
+  → Cloudflare Pages: main 브랜치 자동 빌드 & 배포 (github-linked)
+  → https://obliv-foot-crm.pages.dev   ← 정본(canonical) 라이브 URL
 ```
 
-> ✅ **배포 검증·현장 안내는 반드시 `https://obliv-foot-crm.vercel.app` 단일 정본 URL로만 한다.**
-> 배포 완료 확인(번들 해시·버전 등)은 이 URL 기준. 다른 호스트로 검증하면 분기된 빌드를 볼 수 있어 오인 위험.
+> ✅ **배포 검증·현장 안내는 반드시 `https://obliv-foot-crm.pages.dev` 단일 정본 URL로만 한다.**
+> 배포 완료 확인(번들 해시·버전 등)은 이 URL 기준. 배포 판정: `pages.dev/version.json` 의 commit == origin/main HEAD.
+> 현장 접속 경로: `https://obliv-foot-crm.pages.dev/admin`.
 
-> ⚠️ **`obliv-foot-crm.pages.dev` (Cloudflare Pages) — 사용 금지(검증·현장 안내 모두).**
-> 동일 GitHub 레포를 소스로 자동 빌드되는 **별개의 독립 파이프라인**으로, Vercel 정본과 **청크 해시가 다른 분기 빌드**를 서빙한다(2026-06-22 TRIAGE 확인, MSG-20260622-224519-j4gb). "어디서 보느냐에 따라 결과가 다른" 구조적 혼란의 원인.
-> 파이프라인 최종 처분(폐쇄/리다이렉트 vs 공식 문서화)은 supervisor 인프라 결정 대기 — `T-20260622-foot-PAGESDEV-PIPELINE-DECISION` (R2). 결정 전까지 이 호스트는 어떤 용도로도 참조하지 않는다.
+> ⚠️ **canon 전환 (2026-07-16, `T-20260716-meta-DEPLOY-PIPE-SSOT-CLOUDFLARE-CANON`):** 정본 파이프라인이
+> **Vercel → Cloudflare Pages** 로 확정 전환됨. 이전 판(vercel=정본, pages.dev=금지)은 **폐기**됨.
+
+> ⛔ **`obliv-foot-crm.vercel.app` (구 Vercel) — deprecated, 참조 금지(검증·현장 안내 모두).**
+> 이 호스트는 canon 전환 후 갱신이 멈춘 **frozen/stale 빌드**를 서빙한다(마지막 빌드 2026-07-16 15:03, commit 2da30ee2).
+> 여기서 검증/현장 안내를 하면 최신 배포가 "하나도 반영 안 됨"으로 오인된다(2026-07-17 4구역 결제미니창 field-soak FAIL 재발 RC).
+> Vercel 프로젝트 최종 폐쇄(대시보드 처분)는 인프라 액션 — `T-20260717-foot-PAYMINI-4ZONE-LAYOUT-SPEC` FOLLOWUP 참조.
 >
-> ※ 참고: `foot-checkin.pages.dev` 는 별개의 **의도된** 셀프체크인 전용 앱(`soyursong/foot-checkin`)으로, 위 ghost CRM 파이프라인과 무관하다.
+> ※ 참고: `foot-checkin.pages.dev` 는 별개의 **의도된** 셀프체크인 전용 앱(`soyursong/foot-checkin`)으로 무관하다.
 
 > ⚠️ Lovable 프로젝트는 2026-04-30 GitHub Disconnect 완료. 향후 Lovable에서 변경 시 이 레포에 반영되지 않음.
 
