@@ -19,7 +19,7 @@ import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount, chartNoBadge } from '@/lib/format';
-import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, type PackagePaymentRow } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, type PackagePaymentRow } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 완료 하드차단(방어적 적용).
 import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
 import { cn } from '@/lib/utils';
@@ -100,6 +100,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
     total_amount: number;
     total_sessions: number;
     consultation_fee: number;
+    // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid 회수1/양도 폴백 소스.
+    paid_amount: number;
+    transferred_from: string | null;
   } | null>(null);
   // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 고객 활성 패키지의 패키지/진료비 잔금(파생값) + 잔금결제 모드.
   const [pkgBalanceDue, setPkgBalanceDue] = useState(0);
@@ -211,7 +214,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         (async () => {
           const { data: pkg } = await supabase
             .from('packages')
-            .select('id, package_name, total_amount, total_sessions, consultation_fee')
+            .select('id, package_name, total_amount, total_sessions, consultation_fee, paid_amount, transferred_from')
             .eq('customer_id', checkIn.customer_id)
             .eq('clinic_id', checkIn.clinic_id)
             .eq('status', 'active')
@@ -225,6 +228,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             total_amount: (pkg.total_amount as number) ?? 0,
             total_sessions: (pkg.total_sessions as number) ?? 0,
             consultation_fee: (pkg.consultation_fee as number) ?? 0,
+            // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid 회수1/양도 폴백 소스.
+            paid_amount: (pkg.paid_amount as number) ?? 0,
+            transferred_from: (pkg.transferred_from as string | null) ?? null,
           };
           setCustomerPackage(cp);
           const { data: pays } = await supabase
@@ -232,7 +238,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             .select('amount, payment_type, fee_kind')
             .eq('package_id', cp.id);
           const rows = (pays ?? []) as PackagePaymentRow[];
-          setPkgBalanceDue(computeOutstanding(cp.total_amount, netPaidFromPayments(rows, 'package')));
+          // 회수1 단건(package_payments 미생성)은 paid_amount 폴백 → phantom 미수 치유. 회수≥2 는 결제행 그대로.
+          setPkgBalanceDue(computeOutstanding(cp.total_amount, effectiveNetPaid(cp, rows)));
           setConsultBalanceDue(computeOutstanding(cp.consultation_fee, netPaidFromPayments(rows, 'consultation')));
         })();
       }

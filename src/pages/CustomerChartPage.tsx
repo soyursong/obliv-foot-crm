@@ -58,7 +58,7 @@ import { useClinic } from '@/hooks/useClinic';
 //   접수분류(JUDGE-365)·배정축과 동일 헬퍼 재사용(single source) → 표시 불일치 해소(AC-3).
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
-import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
 import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
@@ -6583,7 +6583,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   const rows = pkgPayments.filter((pp) => pp.package_id === p.id);
                   const pkgTotal = p.total_amount ?? 0;
                   const consultTotal = p.consultation_fee ?? 0;
-                  const pkgDue = computeOutstanding(pkgTotal, netPaidFromPayments(rows, 'package'));
+                  // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 = paid_amount 폴백)로 phantom 미수 치유.
+                  const pkgDue = computeOutstanding(pkgTotal, effectiveNetPaid(p, rows));
                   const consultDue = computeOutstanding(consultTotal, netPaidFromPayments(rows, 'consultation'));
                   if (pkgDue > 0) curPackageDue += pkgDue;
                   if (consultDue > 0) curConsultDue += consultDue;
@@ -7156,7 +7157,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 패키지 금액/진료비 금액 별도 표기 + 항목별 잔금(§4-A: 합산 단일표기 금지). */}
                           {(() => {
                             const rows = pkgPayments.filter((pay) => pay.package_id === p.id);
-                            const pkgDue = computeOutstanding(p.total_amount, netPaidFromPayments(rows, 'package'));
+                            // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 폴백)로 phantom 미수 치유.
+                            const pkgDue = computeOutstanding(p.total_amount, effectiveNetPaid(p, rows));
                             const pkgSt = balanceStatus(pkgDue);
                             const fee = p.consultation_fee ?? 0;
                             const consultDue = computeOutstanding(fee, netPaidFromPayments(rows, 'consultation'));

@@ -79,8 +79,10 @@ test.describe('T-20260620-foot-CHART2-PAYMENT-MISU-HISTORY — 수납내역 탭 
 
   test('S3-b: SSOT(PKG-OUTSTANDING-BALANCE) 미수 산출 재사용 — 신규 산식 없음', () => {
     const s = src();
-    // 미수이력 블록 내 computeOutstanding/netPaidFromPayments(SSOT) 사용
-    expect(s).toMatch(/computeOutstanding\(pkgTotal,\s*netPaidFromPayments\(rows,\s*'package'\)\)/);
+    // 미수이력 블록 내 computeOutstanding(SSOT) 사용.
+    // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: 패키지 net-paid 산출을 effectiveNetPaid(SSOT
+    //   중앙화 — 회수1/양도 paid_amount 폴백)로 승격. 여전히 footBilling SSOT 재사용(신규 bespoke 산식 없음).
+    expect(s).toMatch(/computeOutstanding\(pkgTotal,\s*effectiveNetPaid\(p,\s*rows\)\)/);
     expect(s).toMatch(/computeOutstanding\(consultTotal,\s*netPaidFromPayments\(rows,\s*'consultation'\)\)/);
   });
 
