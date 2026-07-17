@@ -1,0 +1,30 @@
+T-20260715-foot-SELFCHECKIN-LEGACYCREATE-SOURCECLOSE-HEAL — Phase B apply evidence
+supervisor DB-GATE-GO: MSG-20260718-052324-z2r1 (gate step3 PASS + step4 PASS, exit 0)
+prod: rxlomoozakkjesdqjtvd · date: 2026-07-18
+
+── pre-apply gates (재확인) ──
+[postverify baseline]  Phase A=PASS (anon/auth/service EXECUTE=false · postgres=true · deprecated comment=true · P4 unlinked+당일confirmed=0)
+                       Phase B=PENDING (inv1_count=1 · frozen 26f3e3d5 status='confirmed')
+[freeze_reverify]      global INV-1 count=1 (기대 1) · freeze 26f3e3d5: resv=confirmed · ci f9840007=treatment_waiting · link 일치 → MATCH · exit 0 PASS
+
+── Phase B apply (mig 20260716091000_selfcheckin_inv1_divergent_perrow_heal.sql) ──
+[pre]  frozen reservation 26f3e3d5-d1d9-4880-a1da-b6dc56c6da0a status = confirmed
+[apply] atomic BEGIN/COMMIT · UPDATE WHERE id=freeze AND status='confirmed' AND EXISTS(active linked ci f9840007)
+[post] frozen reservation status = checked_in · checked_in count = 1
+       ⇒ affected_rows=1 (confirmed→checked_in) · DO guard v_n=1 통과 (RAISE 미발생 = 정확히 1행)
+
+── post-apply postverify.mjs (Phase B PASS 증거) ──
+{
+  "phaseA_sourceclose": { "anon_exec": false, "auth_exec": false, "service_exec": false, "postgres_exec": true, "has_deprecated_comment": true },
+  "sourceclose_unlinked_confirmed": 0,
+  "phaseB_inv1_count": 0,
+  "phaseB_frozen_reservation_status": "checked_in"
+}
+Phase A (source close): PASS
+Phase B (heal):         PASS
+✅ 전체 PASS — 소스닫힘 + INV-1 heal 완결. (exit 0)
+
+── 판정 ──
+Phase B heal 완결. INV-1 divergence 0. 소스(Phase A) 봉합 지속. 비파괴·가역(rollback 동봉).
+원장 무접점. SOP §2-F per-row heal 준수 — 자동배치/count-UPDATE 아님, 명시 PK freeze 1행.
+DEVCHANGE-OWNER-CONFIRM: dev-foot 자기확인 완료 (파괴적 삭제 아님, status 정합 정정 1행, 대표 게이트 면제 autonomy §3.1).
