@@ -35,11 +35,14 @@
 | 마이그 | 결과 | 비고 |
 |--------|------|------|
 | A 20260715130000 | **PASS** | txn-control strip(BEGIN;/COMMIT;) · plpgsql exception-rollback · post-probe absent 4/4. PREFLIGHT+sweep+ALTER DEFAULT+AC-2+VERIFY 전부 rolled-back subtxn 내 통과 |
-| B 20260716180000 | **FAIL (blocker)** | `VERIFY_FAIL: revoked count = 94 (expected 93)`. prod drift → 마이그 자체 VERIFY 가드가 정상 abort. |
+| B 20260716180000 | **PASS** (2026-07-17 재실행, DA GO 후) | expected count 93→94 정정 후 재실행 → sentinel 도달(harness resp `[]`, VERIFY 94 통과) · txn-control strip(BEGIN;/COMMIT;) · plpgsql exception-rollback · post-probe absent 4/4(anon foot_stats_revenue/admin_reset_user_password/get_vault_secret EXECUTE 여전히 grant=REVOKE 미영속 + postgres fn default_acl anon=X 잔존=ALTER DEFAULT 미영속). |
+| ~~B 20260716180000 (구)~~ | ~~FAIL (blocker)~~ | ~~`VERIFY_FAIL: revoked count = 94 (expected 93)`. prod drift → VERIFY 가드 정상 abort. DA CONSULT-REPLY(MSG-20260717-181836-o8v8)로 93→94 정정 GO → 해제.~~ |
 
 ---
 
-## ★ 마이그 B BLOCKER — prod drift +1 (DA 재-CONSULT 필요)
+## ★ 마이그 B BLOCKER — prod drift +1 (✅ 해제: DA CONSULT-REPLY MSG-20260717-181836-o8v8, 93→94 정정 GO)
+
+> **[해제 2026-07-17]** DA 판정: `resettle_insurance_grade(uuid,text,boolean,text)` anon EXECUTE = **REVOKE**(staff-only, **category A 확정** — dev 권고 승인). expected count 93→94 정정 GO. 근거: Layer2 MONEY 함수(SECDEF payments refund/추가징수 INSERT + service_charges copay re-persist), 저작 의도 이미 staff-only(REVOKE ALL FROM PUBLIC+GRANT authenticated), 내부게이트 is_approved_user()+clinic isolation, REVOKE=strictly-more-secure·비파괴. → 마이그 B VERIFY 가드 `<>93`→`<>94` 정정 + dryrun passNote 정정 → **dry-run 재실행 PASS**. 이하 원인 규명은 히스토리 보존.
 
 ### 원인 규명 (definitive)
 - 마이그 B 저작 시점(2026-07-16 18:00) introspect: public 함수 **141** / anon-exec **125** (32 KEEP + **93** REVOKE).
@@ -84,11 +87,11 @@
 ---
 
 ## db_change evidence 4필드 (ticket frontmatter)
-- `mig_files`: [20260715130000_foot_anon_write_grant_hygiene_sweep, 20260716180000_foot_rpc_anon_exec_hygiene_sweep_batch1]
-- `mig_dryrun`: A=PASS(no-persistence, post-probe absent 4/4) · **B=FAIL(prod drift +1, VERIFY abort — DA 재-CONSULT 대기)**
+- `mig_files`: [20260715130000_foot_anon_write_grant_hygiene_sweep] (deploy scope=A 단독) · `deferred_mig`: [20260716180000_foot_rpc_anon_exec_hygiene_sweep_batch1] (B, 별도 track)
+- `mig_dryrun`: A=PASS(no-persistence, post-probe absent 4/4) · **B=PASS(no-persistence, post-probe absent 4/4 — expected 93→94 정정 후 재실행, DA GO MSG-20260717-181836-o8v8)**
 - `mig_ledger_check`: A 원장 부재(미착지, 정본=미적용) · B(SELFCHECKIN) 원장 APPLIED(부모+자식) — 본 문서
 - `mig_rollback`: 두 마이그 rollback.sql 동봉(anon grant 복원 = fork 기본값)
-- `applied_at`: "" (미적용 — A는 supervisor 게이트 대기, B는 drift blocker)
+- `applied_at`: "" (미적용 — A/B 모두 supervisor DDL-diff 게이트 → prod APPLY 후 POSTCHECK 기록)
 
 ## POSTCHECK 쿼리 (적용 후 supervisor 검증용)
 ```sql

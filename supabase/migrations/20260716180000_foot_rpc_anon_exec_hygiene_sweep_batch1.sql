@@ -8,11 +8,21 @@
 --   anon EXECUTE=TRUE. 125개 전부 acl 에 PUBLIC(=X) + explicit anon(anon=X) 이중 grant
 --   → REVOKE FROM anon 단독 불충분, ★PUBLIC 포함 회수 필요(DA #1(b)).
 --   fork-wide systemic drift(125/141) 를 2-batch split 로 처리:
---     · Batch1 (본 마이그, GO NOW): (A)staff-only-in-repo + (B)trigger/util no-op = 93함수.
+--     · Batch1 (본 마이그, GO NOW): (A)staff-only-in-repo + (B)trigger/util no-op = 94함수.
 --     · Batch2 (DEFER, 외부 콜그래프 대기): self_checkin 17 + health-Q 토큰발급 2 +
 --       upsert_reservation_from_source 1 + (C)flow-adjacent 8 = 28함수 무접촉(KEEP).
 --     · allowlist(anonClient 정상경로, 영구 KEEP): 4함수.
---   → KEEP 총 32 / REVOKE 93. (32 + 93 = 125.)
+--   → KEEP 총 32 / REVOKE 94. (32 + 94 = 126.)
+--
+-- ── ★ 93→94 정정 (DA CONSULT-REPLY MSG-20260717-181836-o8v8) ───────────────────
+--   180000 저작 후(deferred track) 착지한 20260716220000 마이그가 신규 MONEY 함수
+--   resettle_insurance_grade(uuid,text,boolean,text) 를 추가 → anon-exec 모집단 125→126.
+--   220000 이 저작의도상 이미 staff-only(REVOKE ALL FROM PUBLIC + GRANT authenticated)
+--   지만 fork-wide drift 로 prod introspect 상 anon EXECUTE 잔존. DA 판정: category A
+--   확정(Layer2 MONEY: SECDEF 로 payments refund/추가징수 INSERT + service_charges copay
+--   re-persist, 내부게이트 is_approved_user()+clinic isolation) → REVOKE(staff-only 유지).
+--   keep_names 미포함 → 동적 sweep 자연 포착. REVOKE=strictly-more-secure·비파괴
+--   (anon 축소만, authenticated staff 재정산 RPC 경로 무영향). expected count 93→94.
 --
 -- ── 분류 규칙 (DA 신규) ────────────────────────────────────────────────────────
 --   (A) staff-only-in-repo (authenticated supabase 클라이언트만 호출) → Batch1 REVOKE
@@ -167,10 +177,12 @@ DECLARE
   bad_def_pub   int;
   ok_def_auth   int;
 BEGIN
-  -- (0) sweep 처리 건수 = 93 (introspect 기준: 125 anon-exec − 32 KEEP). drift 시 abort.
+  -- (0) sweep 처리 건수 = 94 (introspect 기준: 126 anon-exec − 32 KEEP). drift 시 abort.
+  --     126 = 125(2026-07-16 introspect) + 1(resettle_insurance_grade, 220000 착지 후 추가.
+  --     DA CONSULT-REPLY MSG-20260717-181836-o8v8: category A REVOKE 확정 → 93→94 정정).
   SELECT count(*) INTO n_revoked FROM _batch1_revoked;
-  IF n_revoked <> 93 THEN
-    RAISE EXCEPTION 'VERIFY_FAIL: revoked count = % (expected 93 = 125 anon-exec − 32 KEEP). prod drift vs introspect — 재-CONSULT 필요', n_revoked;
+  IF n_revoked <> 94 THEN
+    RAISE EXCEPTION 'VERIFY_FAIL: revoked count = % (expected 94 = 126 anon-exec − 32 KEEP). prod drift vs introspect — 재-CONSULT 필요', n_revoked;
   END IF;
 
   -- (a) [핵심] KEEP 외 함수에 anon EXECUTE 잔존 0

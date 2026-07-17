@@ -54,5 +54,5 @@ const POST = [
   },
 ];
 
-runDryrun({ upPath: UP, assertAbsent: POST, passNote: '(RPC anon EXECUTE hygiene sweep Batch1 · KEEP 32 / REVOKE 93)' })
+runDryrun({ upPath: UP, assertAbsent: POST, passNote: '(RPC anon EXECUTE hygiene sweep Batch1 · KEEP 32 / REVOKE 94 · +resettle_insurance_grade cat.A, DA MSG-20260717-181836-o8v8)' })
   .catch((e) => { console.error(e); process.exit(1); });
