@@ -1,0 +1,22 @@
+-- ============================================================================
+-- FORWARD-DOC MIGRATION — PROVENANCE MARKER ONLY (실행문 없음 / NO executable DDL·DML)
+-- version : 20260715230000
+-- ledger  : foot_f4571_pkg12_mismap_archive_cleanup
+-- ticket  : T-20260714-foot-MIGRATION-LEDGER-WHOLESALE-DRIFT-SWEEP (Case C3-a, F-track)
+-- 근거    : da_decision_foot_visitroute_gonghom_silver_ledger_reconcile_20260718.md §Item2
+--           migration_ledger_reconciliation.md §Case C3-a
+--
+-- ▸ 성격: 1회성 데이터-정정(data-op) 리메디에이션 — 패키지 mismap(f4571 / pkg12) 아카이브 정리.
+--   스키마 오브젝트 변경 없음. prod schema_migrations.statements = NULL(비재현 DML) = replay hazard 0.
+-- ▸ 본 파일은 repo↔remote 파일셋 정합(db push unblock)을 위한 provenance marker 이다.
+--   과거 데이터 정정을 재실행하면 이미 정리된 대상에 재적용될 위험이 있으므로 실행문을 담지 않는다
+--   ("statements NULL 정상형 유지 — full-fidelity replay 금지", Case L-1).
+-- ▸ 원장(schema_migrations) 단일행 write 는 supervisor exec lane 전속(§1.5/L-2). dev=repo 파일만.
+--
+-- 요약(2026-07-18 provenance-probe):
+--   - prod 물화 = data-op cleanup(패키지 mismap 교정 remediation), 재현 statements 없음(NULL).
+--   - 스키마 부작용 없음. PHI/권한 위험벡터 미검출(Case-F 위험벡터 무).
+--   - 재실행 대상 아님. 이력 보존/파일셋 정합 목적의 no-op 문서.
+-- ============================================================================
+
+-- (의도적 no-op: 실행 가능한 DDL/DML 없음 — provenance marker)

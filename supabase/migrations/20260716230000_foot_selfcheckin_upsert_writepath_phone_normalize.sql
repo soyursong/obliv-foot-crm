@@ -1,0 +1,24 @@
+-- ============================================================================
+-- FORWARD-DOC MIGRATION — PROVENANCE MARKER (실행문 없음 / def 는 후속 forward-doc 에 co-located)
+-- version : 20260716230000
+-- ledger  : foot_selfcheckin_upsert_writepath_phone_normalize
+-- ticket  : T-20260714-foot-MIGRATION-LEDGER-WHOLESALE-DRIFT-SWEEP (Case C3-a, F-track)
+-- 근거    : da_decision_foot_visitroute_gonghom_silver_ledger_reconcile_20260718.md §Item2
+--           migration_ledger_reconciliation.md §Case C3-a
+--
+-- ▸ 성격: selfcheckin upsert 함수군(fn_selfcheckin_upsert_customer / _resolve_v2 / _resolve_v3)의
+--   INSERT writepath 에 phone 정규화를 도입 — write 前 public.normalize_phone(NULLIF(p_phone,''))
+--   로 E.164 정규화(SSOT), dedup 비교는 canonical national digits(82…) 양측 매칭.
+--   prod 물화 실측: fn_selfcheckin_upsert_customer* 에 phone_norm 경로 라이브(무해 additive).
+--
+-- ▸ 이 버전은 함수 CREATE OR REPLACE 를 직접 담지 않는다. 사유:
+--   동일 함수군이 후속 OOB 버전 20260717120000(foot_selfcheckin_upsert_created_by_canon)에서 다시
+--   개정되었고, 관측 가능한 것은 현행(누적) prod def 뿐이라 본 버전 시점의 정확한 중간 def 를
+--   재구성할 수 없다(파일·git 이력 유실). 허위 중간 def 를 만드는 대신, 현행 prod 실재 def 의
+--   content-parity CREATE OR REPLACE 는 후속 forward-doc 20260717120000 파일에 co-located 한다.
+--   파일셋 최종 적용 순서상 후속 파일이 최종 def 로 수렴 → end-state content-parity 보장.
+-- ▸ 원장(schema_migrations) 단일행 write 는 supervisor exec lane 전속(§1.5/L-2). dev=repo 파일만.
+--   본 버전은 이미 prod applied — 재실행 없음.
+-- ============================================================================
+
+-- (의도적 no-op: 실행문 없음 — 현행 def 는 20260717120000_foot_selfcheckin_upsert_created_by_canon.sql 참조)
