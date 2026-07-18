@@ -115,6 +115,11 @@ export default defineConfig({
         // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND: ④고객 export PII-egress audit + ⑨opt-out soft-delete 법적 guard
         //   + 권한 3역할 ADDITIVE 확대. 정적 소스/계약 검증(auth·server 불요). re-cut 시 unit testMatch 등록(원 커밋 미등록 갭 치유).
         '**/T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND.spec.ts',
+        // T-20260718-foot-FLAG-EMOJI-WEBFONT-PORT: 국적 국기 이모지 Windows 코드깨짐 웹폰트 해결(derm Option C 이식).
+        //   src/index.css @font-face(unicode-range 국기 한정)·html 스택 선두 prepend 정적 가드 +
+        //   page.setContent computed font-family 렌더 단언. CSS-only(신규 npm/DB 0). auth/server 불요.
+        //   진짜 게이트 = 현장 Windows 국기 실렌더(supervisor field-soak).
+        '**/T-20260718-foot-FLAG-EMOJI-WEBFONT-PORT.spec.ts',
         // T-20260718-foot-SALESREPORT-ARPU-UNIQUE-DENOM: 일간매출보고 xlsx 상담객단가 분모 통일
         //   (÷상담건수 → ÷distinct 상담고객수 = 화면 배포본 canonical). RPC avg_amount 직접 소비 + 합계 분모=Σ상담고객.
         //   순수 로직: 헤더/상담건수 컬럼 불변 · 실장별=avg_amount · 분모0→빈칸 · 합계=Σ매출÷Σ상담고객. auth·server 불요.
