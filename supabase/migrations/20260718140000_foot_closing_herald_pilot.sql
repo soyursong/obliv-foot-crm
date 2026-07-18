@@ -455,6 +455,10 @@ BEGIN
 
   SELECT slug INTO v_slug FROM public.clinics WHERE id = NEW.clinic_id;
 
+  -- ★안전계약: payload 빌드/적재 전체를 예외 격리. 어떤 실패도 마감확정(open→closed UPDATE)을
+  --   롤백시키지 않는다(현장 마감 흐름 절대 비차단). 실패 시 최소 v1 payload로 emit 보존(유실 방지).
+  BEGIN
+
   -- ── base payload (schema_version 1) — foot 버킷(other 없음: 0 고정, system=package+single) ──
   v_sys_total := COALESCE(NEW.package_card_total,0) + COALESCE(NEW.single_card_total,0)
                + COALESCE(NEW.package_cash_total,0) + COALESCE(NEW.single_cash_total,0)
@@ -555,6 +559,31 @@ BEGIN
     v_payload
   )
   ON CONFLICT (clinic_id, close_date, revision) DO NOTHING;
+
+  EXCEPTION WHEN OTHERS THEN
+    -- payload 빌드/적재 실패 → 마감확정은 유지. 최소 v1 payload 재시도(emit 유실 방지).
+    RAISE LOG 'enqueue_closing_confirmed: 전체 실패(%) clinic=% date=% — 마감확정 유지, 최소 payload 재시도',
+      SQLERRM, v_slug, NEW.close_date;
+    BEGIN
+      INSERT INTO public.closing_confirmed_outbox
+        (clinic_id, clinic_slug, close_date, revision, superseded, payload)
+      VALUES (
+        NEW.clinic_id, v_slug, NEW.close_date, NEW.revision, (NEW.revision > 0),
+        jsonb_build_object(
+          'source_system',  'foot',
+          'clinic_slug',    v_slug,
+          'close_date',     to_char(NEW.close_date, 'YYYY-MM-DD'),
+          'revision',       NEW.revision,
+          'superseded',     (NEW.revision > 0),
+          'schema_version', 1,
+          'degraded',       true
+        )
+      )
+      ON CONFLICT (clinic_id, close_date, revision) DO NOTHING;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE LOG 'enqueue_closing_confirmed: 최소 payload INSERT도 실패(%) — emit 유실, 마감확정만 유지', SQLERRM;
+    END;
+  END;
 
   RETURN NEW;
 END;
