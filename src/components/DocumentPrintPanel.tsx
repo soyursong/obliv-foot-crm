@@ -65,7 +65,7 @@ import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
-import { buildDocSerial, docSerialPrefix } from '@/lib/docSerial';
+import { buildDocSerial, docSerialPrefix, buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
@@ -95,10 +95,19 @@ import {
   buildBillDetailItemsHtml,
   buildBillReceiptFeeGridHtml,
   buildRxItemsHtml,
+  buildSurchargeDetailRowHtml,
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback, loadTreatingDoctorName } from '@/lib/autoBindContext';
+// T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간·공휴일 가산 자동 판정·계산(FE-only).
+import {
+  detectSurchargeKind,
+  computeSurcharge,
+  surchargeMark,
+  toLocalDateStr,
+  SURCHARGE_KIND_LABEL,
+} from '@/lib/nightHolidaySurcharge';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
 // T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과(KOH)·투약내용(처방약) 자동 로드.
@@ -222,9 +231,11 @@ function buildHtmlPageHtml(
   //   → 그 오버레이 박스만 제거하고, 중앙 상단 {{rx_copy_label}}(약국보관용/환자보관용) 구분 라벨은
   //   2장 출력 식별 표식으로 보존한다(현장 "중앙 상단 라벨 절대 제거하지 말 것").
   //   2장 출력(RX-DUAL)·QR 자동삽입(8FIX) 무파괴.
+  // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목1): 교부번호 표시 분리(display-only) — 저장 issue_no 불변,
+  //   렌더 직전에만 '20260718 제 000025 호'로 재조립. splitIssueNoForDisplay 는 비-rx/미채번 시 no-op.
   const boundValues =
     template.form_key === 'rx_standard'
-      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
+      ? splitIssueNoForDisplay({ ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' })
       : fieldValues;
   const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';
@@ -997,6 +1008,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           // rx_standard 항목 — service_charges 기반(기존 동작 유지).
           const rxItems = mappedItems.map((item) => ({
             name: item.name,
+            // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+            code: item.service_code,
             unit_dose: '1',
             daily_freq: '1',
             // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 배치 경로는 per-item 입력 없음 → 공란(수기 기입).
@@ -1854,6 +1867,24 @@ function IssueDialog({
 }) {
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
+  // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 달력 '빨간날' 소스(clinic_events event_type='holiday').
+  //   법정공휴일 목록(KOREAN_HOLIDAYS_2026) 밖 제헌절·임시·대체공휴일도 공휴일로 인식(body A안 clinic_events 동일).
+  const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(() => new Set());
+  // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (AC-4): 스태프 수동 편집 키 집합(가산 override).
+  const [surchargeOverriddenKeys, setSurchargeOverriddenKeys] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('clinic_events')
+        .select('event_date')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('event_type', 'holiday');
+      if (cancelled || error || !data) return;
+      setHolidayDateSet(new Set(data.map((r) => String(r.event_date))));
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn.clinic_id]);
   const [manualValues, setManualValues] = useState<Record<string, string>>({
     diagnosis_ko: '',
     memo: '',
@@ -1911,6 +1942,11 @@ function IssueDialog({
   //   seq = C(무리셋 통산): 클리닉 전역 form_submissions count + 1 (날짜·서류종류·환자 무관, read-only).
   //   미리보기는 INSERT 안 함 → 반복 호출에도 seq 불변(idempotent). null = 아직 산출 전 → 발번 보류.
   const [serialChartNo, setSerialChartNo] = useState<string | null>(null);
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST / DA 설계경보 MSG-k7iz):
+  //   교부번호(issue_no)는 **발행 시점 1회 채번→persist 불변 필드** — print-time 재계산 금지(익일/재인쇄 시 다른번호=결함).
+  //   채번은 handlePrint 의 발행 RPC(issue_foot_rx_issue_no) 내부에서만 수행하고 field_data 에 persist.
+  //   → 미리보기(memo)에는 fabricate 하지 않는다(visit_no 와 동형: 발행본에만 authoritative 번호 표기).
+  //   ⚠ 폐기: 구 interim 의 print-time read-only count(todayIssueSeq) — persist·재인쇄불변 미충족(DA 경보).
   // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 발급순번(serialSeq) FE 상태 제거.
   //   발번 권위 = DB RPC issue_foot_doc_serial (출력 확정 시 선점, handlePrint). 미리보기는 미발번.
   //   출력 확정 시 RPC 가 반환한 seq 를 인쇄본 visit_no 에 주입(아래 issuedVisitNo).
@@ -2112,6 +2148,10 @@ function IssueDialog({
       });
     return () => { cancelled = true; };
   }, [open, checkIn.customer_id, checkIn.clinic_id]);
+
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호 당일순번 print-time 로드 제거.
+  //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative.
+  //     미리보기용 count 로더(구 todayIssueSeq)는 print-time 재계산 = persist·재인쇄불변 위배 → 삭제.
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
   const handleDeleteItem = async (id: string) => {
@@ -2341,23 +2381,32 @@ function IssueDialog({
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
-    // T-20260517-foot-RX-DOSAGE-DYNAMIC: 하드코딩 → per-item 사용자 입력, 미입력 시 1/1/7 fallback
+    // 총투약일수(total_days) = A안(빈칸+수기): 자동 계산값을 삽입하지 않고 현장 수기 기입.
+    //   (T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX / 총괄 확정 MSG-h6y2. 약국 기준 불일치 반려 방지.)
+    //   ⚠ 부활 금지: 구 T-20260517 의 "1/1/7 fallback"(자동 total_days 주입) 및 items[].days 자동 산출.
+    //     total_days 소스 = rxItemDosages(수기 입력) 단일. prescription_sets.items[].days 오염 유입 경로 없음(AC2).
     // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-4: 상병코드(category_label='상병') 항목은 처방전 제외
     //   PaymentMiniWindow buildCodeEnrichedValues와 동일 정책 적용.
     if (template.form_key === 'rx_standard') {
       const rxServiceItems = serviceItems.filter((i) => i.category_label !== '상병');
       const rxItems = rxServiceItems.map((item) => ({
         name: item.name,
+        // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+        code: item.service_code,
         unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
         daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
-        // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).
+        // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5 / A안(총괄 MSG-h6y2): 입력값 그대로, 미입력 시 공란(수기 기입).
+        //   ⚠ 자동값(items[].days 등) 강제 주입 금지 — 빈칸이 정답.
         total_days: rxItemDosages[item.id]?.total_days || '',
         method: '',
       }));
       base.rx_items_html = buildRxItemsHtml(rxItems);
       // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일
       if (!base.usage_days) base.usage_days = '3';
-      if (!base.issue_no) base.issue_no = checkIn.id.slice(0, 5).toUpperCase();
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호(issue_no)는 미리보기에서 미채번.
+      //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative·persist.
+      //     여기(memo)서 print-time count 로 fabricate 하면 재인쇄/익일 다른번호 = correctness 결함 → 발행본에서만 주입.
+      //   ⚠ 절대 부활 금지: 구 checkIn.id.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가 반려 실사고.
     }
 
     // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
@@ -2437,6 +2486,80 @@ function IssueDialog({
       base.visit_no = checkIn.id.slice(0, 8) ?? '';
     }
 
+    // ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (B안): 출력시점 야간·공휴일 가산 자동 반영 ──
+    //   대상 2종 서류(진료비 계산서·영수증 신양식 bill_receipt_new / 세부산정내역 bill_detail)만 form-scoped 적용.
+    //   판정 기준 = 출력 시점 현재 날짜·시간(new Date(), AC-1) + 달력 빨간날(clinic_events) 합집합.
+    //   가산 범위(Q4) = 진찰료(급여) base × 30%. 겹침 = 공휴일 우선 단일(AC-3). 미가산 시 공란·기본금액(AC-5).
+    //   ★가드(AC-6): FE-only 표시 전용 — service_charges 영속 없음 → 급여 본인부담 분자 이중계상 없음.
+    if (template.form_key === 'bill_receipt_new' || template.form_key === 'bill_detail') {
+      const refDate = new Date();
+      const isCalHoliday = holidayDateSet.has(toLocalDateStr(refDate));
+      const kind = detectSurchargeKind(refDate, isCalHoliday);
+
+      // 체크박스 자동 체크(계산서 신양식). 미가산 시 공란 유지(회귀0).
+      base.night_mark = surchargeMark(kind, 'night');
+      base.holiday_mark = surchargeMark(kind, 'holiday');
+
+      const parseAmt = (v: string | undefined): number => {
+        if (v == null || v === '') return 0;
+        const n = Number(v.replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      if (template.form_key === 'bill_receipt_new') {
+        // 진찰료 급여 base = 본인부담금(①) + 공단부담금(②). foot 급여 = 진찰료(Q4).
+        const copayBase = parseAmt(base.copayment);
+        const coveredBase = parseAmt(base.insurance_covered);
+        const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+        base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
+        base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
+        if (sc.amount > 0) {
+          // 금액란 반영(AC-2) — override 되지 않은 키만 folding(AC-4 수동값 우선).
+          const fold = (key: string, add: number) => {
+            if (surchargeOverriddenKeys.has(key)) return;
+            base[key] = formatAmount(parseAmt(base[key]) + add);
+          };
+          fold('copayment', sc.copay);
+          fold('insurance_covered', sc.covered);
+          fold('total_amount', sc.amount);
+          fold('subtotal_amount', sc.amount);
+          // ⑧ 환자부담 총액 = 본인부담 + 비급여(공단 제외) → 가산 본인분만 가산.
+          fold('patient_amount', sc.copay);
+        }
+      } else {
+        // bill_detail(세부산정내역): 진찰료 급여 base = 표시된 본인부담금 총계 + 공단부담금 총계.
+        const copayBase = parseAmt(base.subtotal_copayment);
+        const coveredBase = parseAmt(base.subtotal_fund);
+        const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+        base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
+        base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
+        if (sc.amount > 0) {
+          // 항목 테이블에 가산 급여 행 append(items_html) + 요약행 금액 bump.
+          const rowHtml = buildSurchargeDetailRowHtml({
+            kind: kind as 'night' | 'holiday',
+            amount: sc.amount,
+            copay: sc.copay,
+            covered: sc.covered,
+            date: base.visit_date ?? '',
+          });
+          if (rowHtml) base.items_html = (base.items_html ?? '') + '\n' + rowHtml;
+          const bump = (key: string, add: number) => {
+            if (surchargeOverriddenKeys.has(key)) return;
+            base[key] = formatAmount(parseAmt(base[key]) + add);
+          };
+          bump('subtotal_copayment', sc.copay);
+          bump('total_copayment', sc.copay);
+          bump('subtotal_fund', sc.covered);
+          bump('total_fund', sc.covered);
+          bump('subtotal_amount', sc.amount);
+          bump('total_amount', sc.amount);
+          // 합계(총액 열) = 본인부담금 + 비급여(공단 제외, GONGDAN-HIDE-COPAY-ONLY B안) → 가산 본인분만.
+          bump('detail_subtotal', sc.copay);
+          bump('detail_total', sc.copay);
+        }
+      }
+    }
+
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.
     //   빈 키는 덮지 않음(미편집 필드 무파괴) — 사용자가 명시 편집한 값만 출력 바인딩에 반영(AC3/AC5).
     for (const [k, v] of Object.entries(editOverrides)) {
@@ -2444,7 +2567,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -2482,6 +2605,14 @@ function IssueDialog({
   }, [template.field_map, template.form_key]);
 
   const updateField = (key: string, value: string) => {
+    // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (AC-4): 스태프가 수동 편집한 키는
+    //   가산 자동계산이 덮지 않도록 override 기록 → 수동값 우선(가산 금액도 수동 변경 가능).
+    setSurchargeOverriddenKeys((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
     if (key in autoValues) {
       setAutoValues((prev) => ({ ...prev, [key]: value }));
     } else {
@@ -2642,6 +2773,12 @@ function IssueDialog({
     let printValues: Record<string, string> = allValues;
     const serialEligible = !!docSerialPrefix(template.form_key) && !!serialChartNo;
 
+    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 처방전 교부번호 발행시점 채번 준비.
+    //   isRx=처방전 → 발행 RPC(issue_foot_rx_issue_no) 로 당일순번 채번(발행본에만 주입, 미리보기 미채번).
+    const isRx = template.form_key === 'rx_standard';
+    const issueYmd = format(new Date(), 'yyyyMMdd');   // 교부번호 앞 8자리(YYYYMMDD, buildIssueNo)
+    const issueDateIso = format(new Date(), 'yyyy-MM-dd'); // RPC p_issue_date(date) 파티션 키
+
     // staffId: issued_by = staff.id (≠ user_profiles.id). 미조회 시 로그 생략하고 출력은 계속.
     if (!isFallback && staffId) {
       // INSERT 후 행 id 확보 → RPC 발번의 멱등 키(form_submission_id).
@@ -2697,6 +2834,40 @@ function IssueDialog({
           toast.error('연번호 발번 실패 — 잠시 후 재출력해 주세요.');
         }
       }
+
+      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST / DA 경보 MSG-k7iz):
+      //   처방전 교부번호(issue_no) = 발행 시점 1회 채번→persist 불변 필드. INSERT 후 RPC(멱등, form_submission_id 키)로
+      //   당일순번 채번 → buildIssueNo(8+N자리) → field_data.issue_no 갱신(재인쇄·익일 인쇄 시 동일번호 = 불변 보장).
+      //   ⚠ print-time count 금지. RPC 실패 시 seq=1 폴백으로 (8+N)자리 유효값은 항상 보장(약국 반려 방지·공란/UUID 금지).
+      if (isRx) {
+        const { data: rxSeq, error: rxErr } = await supabase.rpc('issue_foot_rx_issue_no', {
+          p_clinic_id: checkIn.clinic_id,
+          p_issue_date: issueDateIso,
+          p_form_submission_id: inserted.id,
+        });
+        const iss = buildIssueNo(issueYmd, !rxErr && typeof rxSeq === 'number' ? rxSeq : 1);
+        if (iss) {
+          printValues = { ...printValues, issue_no: iss };
+          const { error: updErr } = await supabase
+            .from('form_submissions')
+            .update({ field_data: printValues })
+            .eq('id', inserted.id);
+          if (updErr) {
+            // rx_issue_seq(권위 순번)는 이미 RPC 가 기록 → 번호 확정. field_data 표시 갱신만 실패.
+            toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+          }
+        }
+      }
+    } else if (isRx) {
+      // 발행 기록 INSERT 없는 경로(fallback 템플릿·staff 미조회)도 교부번호 공란 금지 → 카운터 순번만 채번(persist 없음).
+      //   form_submission_id=null → 순번만 반환. 발행이력 행이 없어 field_data persist 불가하나 인쇄 공란·UUID 는 방지.
+      const { data: rxSeq } = await supabase.rpc('issue_foot_rx_issue_no', {
+        p_clinic_id: checkIn.clinic_id,
+        p_issue_date: issueDateIso,
+        p_form_submission_id: null,
+      });
+      const iss = buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1);
+      if (iss) printValues = { ...printValues, issue_no: iss };
     }
 
     if (template.template_format === 'pdf') {

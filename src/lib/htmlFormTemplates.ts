@@ -308,7 +308,12 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td colspan="3">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
-        <td colspan="2">{{doctor_name}}</td>
+        <!-- T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND: 진단서 진료의 성명 = 진단서 전용 {{attending_doctor_name}}
+             (실 의료인·사람, clinicDoctor 기준). ★{{doctor_name}}(billing 대표자 축)은 미지정 시 기관명으로 폴백
+             (T-20260713 UNLINKED, field-confirmed)해 진단서 '의사 성명'이 기관명으로 찍혀 진료의 신원 오표기(법정
+             문서 결함) → 처방전(prescriber_name, P1 RX-DOCTOR-BIND)과 동일 축 오염 분리. 면허번호({{doctor_license_no}})는
+             이미 clinicDoctor.license_no 바인딩 = 성명과 동일 사람 기준 → 이름↔면허 정합. -->
+        <td colspan="2">{{attending_doctor_name}}</td>
         <td style="text-align:center; vertical-align:middle; min-width:52px; padding:2px;">{{doctor_seal_html}}</td>
       </tr>
     </tbody>
@@ -1515,14 +1520,19 @@ const RX_STANDARD_HTML = `
         <td style="width:90px;">{{diag_code_1}}</td>
         <td rowspan="4" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
         <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 도장 우하단 고정 제거 → 처방의료인 성명 근방 직인 -->
-        <td rowspan="4" style="width:130px;">{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
+        <!-- T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: 처방의료인 성명 = 처방전 전용 {{prescriber_name}}(실 의료인·사람).
+             ★{{doctor_name}}(billing 대표자 축)은 미지정 시 기관명으로 폴백(T-20260713 UNLINKED, field-confirmed)해
+             처방전 처방의료인 성명이 기관명으로 찍혀 §12①4 위반·약국 반려(실사고) → 공유 토큰 오염 분리. -->
+        <td rowspan="4" style="width:130px;">{{prescriber_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
         <td style="width:55px; background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;종&nbsp;별</td>
         <td>의사</td>
       </tr>
       <tr>
         <td>{{diag_code_2}}</td>
         <td style="background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;번&nbsp;호</td>
-        <td>{{doctor_license_no}}</td>
+        <!-- T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: §12①4 처방의료인 면허번호 = 처방전 전용 {{prescriber_license_no}}
+             (성명 {{prescriber_name}}과 동일 clinicDoctor 사람 기준 → 이름↔면허 정합, 기관명 폴백 오염 차단). -->
+        <td>{{prescriber_license_no}}</td>
       </tr>
       <tr style="{{diag_row_3_style}}">
         <td>{{diag_code_3}}</td>
@@ -2080,7 +2090,9 @@ const BILL_RECEIPT_NEW_HTML = `
         <td class="rn-lbl">환자 성명</td>
         <td>{{patient_name}}<br><span class="rn-sub">생년월일 {{patient_birthdate}}</span></td>
         <td class="rn-lbl">진료기간</td><td>{{visit_date}}</td>
-        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[ ]야간 [ ]공휴일</td>
+<!-- T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간/공휴일 자동 판정 →
+             체크박스 자동 체크(마크 소스=night_mark/holiday_mark, DocumentPrintPanel 배선). 미가산 시 공란(회귀0). -->
+        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[{{night_mark}}]야간 [{{holiday_mark}}]공휴일</td>
       </tr>
       <tr>
         <td class="rn-lbl">진료과목</td><td>피부과</td>
@@ -2382,6 +2394,40 @@ export function buildBillDetailItemsHtml(
 }
 
 /**
+ * T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 세부산정내역(bill_detail) 야간·공휴일 가산 행.
+ * buildBillDetailItemsHtml 과 **동일 12컬럼 포맷**의 급여 항목 <tr> 1행을 반환(items_html 뒤 append).
+ * 가산 = 진찰료 급여 base × 30%. copay/covered 는 진찰료 본인부담률 승계값(computeSurcharge 분할).
+ * date=진료기간, code=가산 코드(야간=010/공휴일=050 canon), 명칭="야간/공휴일 진료 가산 (30%)".
+ */
+export function buildSurchargeDetailRowHtml(args: {
+  kind: 'night' | 'holiday';
+  amount: number;
+  copay: number;
+  covered: number;
+  date?: string;
+}): string {
+  const { kind, amount, copay, covered, date } = args;
+  if (amount <= 0) return '';
+  const label = kind === 'holiday' ? '공휴일' : '야간';
+  const code = kind === 'holiday' ? '050' : '010';
+  const amtStr = amount.toLocaleString('ko-KR');
+  return `<tr>
+        <td>진찰료</td>
+        <td style="font-size:7.5pt; white-space:nowrap;">${date ?? ''}</td>
+        <td style="font-size:7.5pt; white-space:nowrap;">${code}</td>
+        <td style="text-align:left;">${label} 진료 가산 (30%)</td>
+        <td class="num-cell">${amtStr}</td>
+        <td class="num-cell">1</td>
+        <td class="num-cell">1</td>
+        <td class="num-cell">${amtStr}</td>
+        <td class="num-cell">${copay.toLocaleString('ko-KR')}</td>
+        <td class="num-cell">${covered.toLocaleString('ko-KR')}</td>
+        <td class="num-cell">0</td>
+        <td class="num-cell">0</td>
+      </tr>`;
+}
+
+/**
  * 진료비 계산서·영수증(bill_receipt) 급여/비급여 **항목별** 그리드 rows 생성.
  *
  * T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT (diagnose-first forward-fix):
@@ -2485,6 +2531,10 @@ export function isHtmlTemplate(formKey: string): boolean {
 export function buildRxItemsHtml(
   items: Array<{
     name: string;
+    // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code).
+    //   있으면 약품명 앞에 '코드 | ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
+    //   T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 구분자 대괄호 '[코드]' → 파이프 '코드 |'.
+    code?: string | null;
     unit_dose?: string;
     daily_freq?: string;
     total_days?: string;
@@ -2493,7 +2543,12 @@ export function buildRxItemsHtml(
 ): string {
   const TOTAL_ROWS = 8;
   const rows = items.map((item) => ({
-    name: item.name,
+    // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 약품명 앞 코드 prefix 구분자 '코드 | 약품명'(파이프).
+    //   (구 T-20260718-foot-RXPRINT-DRUGCODE-PREFIX 의 '[코드] 약품명' 대괄호에서 파이프로 변경.)
+    //   코드 미등록/미매핑(NULL/공백) 시 파이프 없이 약품명만 출력(AC3 graceful fallback).
+    name: (item.code ?? '').trim()
+      ? `${(item.code ?? '').trim()} | ${item.name}`
+      : item.name,
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
     // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 처방 입력의 총투약일수를 출력물에 표기.

@@ -493,7 +493,7 @@ export default function Customers() {
       방문횟수: stats?.visit_count ?? 0,
       최종방문: stats?.last_visit ? formatDateDots(stats.last_visit) : '',
       결제액: stats?.total_revenue ?? 0,
-      고객메모: c.customer_memo ?? '',
+      고객메모: c.customer_note ?? c.customer_memo ?? '', // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 정본 customer_note, 레거시 read-fallback
     }),
     [],
   );
@@ -947,7 +947,8 @@ function EditCustomerDialog({
       setBirthDate(customer.birth_date ?? '');
       setChartNumber(customer.chart_number ?? '');
       setMemo(customer.memo ?? '');
-      setCustomerMemo(customer.customer_memo ?? '');
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 통합 read-fallback(customer_note ?? customer_memo)
+      setCustomerMemo(customer.customer_note ?? customer.customer_memo ?? '');
       setLeadSource(customer.lead_source ?? '');
       setTmMemo(customer.tm_memo ?? '');
       setReferrerName(customer.referrer_name ?? '');
@@ -982,7 +983,7 @@ function EditCustomerDialog({
         birth_date: birthDate.trim() || null,
         // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
         memo: memo.trim() || null,
-        customer_memo: customerMemo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
+        customer_note: customerMemo.trim() || null, // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 고객메모 정본 write=customer_note(5-surface 통합). customer_memo 미변경 보존(3구역 seed).
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
         referrer_name: referrerName.trim() || null,
@@ -1279,10 +1280,11 @@ function CreateCustomerDialog({
       phone: normalizeToE164(phone) ?? phone.trim(),
       birth_date: birthDate.trim() || null,
       // chart_number: DB BEFORE INSERT 트리거가 자동 채번 (F-XXXX 형식)
-      // T-20260706-foot-CUSTOMER-CREATE-DIALOG-FIX: 신규 등록 메모를 고객메모(customer_memo)로 저장.
-      // 2번차트(CustomerChartPage)가 customers.customer_memo를 읽어 예약메모 히스토리로 seed하므로 연동을 위해 컬럼 통일.
-      // customers.memo(예약메모)는 신규 등록 시 null 무방(기존 데이터 보존, ADDITIVE·스키마 변경 없음).
-      customer_memo: memo.trim() || null,
+      // T-20260706-foot-CUSTOMER-CREATE-DIALOG-FIX: 신규 등록 [고객메모] 저장.
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 고객메모 정본=customer_note로 일원화.
+      //   신규 고객 [고객메모]는 고객 단위(customer-level) 필드 → 예약팝업·2번차트·체크인·고객목록과 동일 컬럼 공유.
+      //   customer_memo(3구역 예약메모 히스토리 seed 원본)는 미변경 보존(신규는 null 무방, 기존 데이터 무회귀).
+      customer_note: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
       // T-20260625-foot-PASSPORT-PORT: 외국인 정보. 하나라도 입력 시 is_foreign 자동 true.

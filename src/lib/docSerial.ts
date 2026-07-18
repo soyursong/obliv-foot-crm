@@ -88,3 +88,78 @@ export function buildDocSerial(parts: DocSerialParts): string | null {
   if (!parts.dateYYYYMMDD) return null;
   return `${prefix}-${parts.dateYYYYMMDD}-${chart}-${formatIssueSeq(parts.seq)}`;
 }
+
+/**
+ * 처방전 교부번호(issue_no) 당일 순번 zero-pad 폭 N — **설정 상수 (CEO 지시 MSG-n7ip: 하드코딩 금지)**.
+ *
+ * 교부번호 총자릿수 = 8(YYYYMMDD) + N. 자릿수 규격이 검증 중이라 **파라미터화**한다:
+ *   - 총괄 확정(MSG-a2zc) = N=6 → 총 14자리 (예 20260718000025)
+ *   - 심평원 실무 안내(약업신문 게재 규격) = N=5 → 총 13자리 (예 2026071800025)
+ *   확정 검증 경로: (a) 「요양급여비용 청구방법·명세서서식·작성요령」 law.go.kr admRulSeq=2000000081143,
+ *                  (b) 반려 약국 실무검증(RX-DUR-INTEGRATION-SCOPE AC6, 자릿수/형식 확인 포함).
+ *   → N lock 시 **이 상수 1줄만 flip**(재수정 비용 제거). length CHECK/정규식을 특정 자릿수로 고정 금지.
+ *
+ * ⚠ 현재값 = 6 (총괄 확정 잠정). 심평원 규격(5) 확정 시 이 값만 5 로 변경.
+ */
+export const ISSUE_NO_SEQ_WIDTH = 6;
+
+/**
+ * 처방전 교부번호(issue_no) 생성 — (8+N)자리 = YYYYMMDD(발행일 8) + 당일 clinic 발행순번(zero-pad N).
+ *   예) buildIssueNo('20260718', 25) → '20260718000025'  (N=6, "제 20260718000025 호")
+ *       buildIssueNo('20260718', 25, 5) → '2026071800025'  (N=5, 심평원 실무규격)
+ *
+ * T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (총괄 확정 format MSG-a2zc):
+ *   앞 8 = 발행 날짜(Asia/Seoul) / 뒤 N = 해당 의료기관(clinic) 당일 순차번호 zero-pad.
+ *   ⚠ 폐기: 기존 UUID-slice fallback(checkIn.id.slice(0,5).toUpperCase()) — 약국 판독불가 교부번호로
+ *     실제 처방전 반려(약 수령 실패)를 유발한 실사고. 다시 도입 금지.
+ *   ⚠ zero-pad 폭은 하드코딩하지 않는다(CEO n7ip). 기본값 = ISSUE_NO_SEQ_WIDTH 설정 상수.
+ *   seq 미산출(null/undefined) 또는 날짜 형식 이상이면 null 반환(임시값 fabrication 금지 —
+ *     호출부는 발번 완료를 대기하거나 seq=1 로 폴백해 (8+N)자리를 항상 보장).
+ *
+ * ※ 당일 순번의 gapless·동시성 무결성 완전 보장은 DB 당일-스코프 시퀀스/유니크 제약(ADDITIVE,
+ *   data-architect CONSULT 게이트) 후속 필요 — 본 FE 헬퍼 범위 외(planner 비차단 FOLLOWUP).
+ */
+export function buildIssueNo(
+  dateYYYYMMDD: string,
+  seq: number | null | undefined,
+  seqWidth: number = ISSUE_NO_SEQ_WIDTH,
+): string | null {
+  if (!dateYYYYMMDD || dateYYYYMMDD.length !== 8) return null;
+  if (seq === null || seq === undefined || !Number.isFinite(seq)) return null;
+  const n = Math.max(1, Math.trunc(seq));
+  return `${dateYYYYMMDD}${String(n).padStart(seqWidth, '0')}`;
+}
+
+/**
+ * T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목1) — 처방전 교부번호 **표시 전용** 분리 (display-only).
+ *
+ * 저장된 교부번호(field_data.issue_no = date8+seqN 연속, buildIssueNo 산출값)는 **불변**으로 두고,
+ * 인쇄 렌더 시점에만 표시용으로 재조립한다:
+ *   `제 20260718000025 호`  →  `20260718 제 000025 호`
+ * 처방전 양식의 `{{issue_date}}&nbsp;&nbsp;제&nbsp;{{issue_no}}&nbsp;호` 슬롯에 맞춰
+ *   issue_date = 앞 8자리(YYYYMMDD, 발행날짜) / issue_no = 나머지(당일 순번, zero-pad 폭 유지) 로 나눈다.
+ *
+ * ⚠ 발번값·로직·DB·RPC 무변경(AC1·AC4): 이 함수는 렌더 직전 values 사본만 만든다(원본 field_data 미변형).
+ * 안전 가드 / 멱등:
+ *   - issue_no 가 (date8 + 순번1자리↑ = 9자리↑ 전체숫자) 가 아니면 원본 그대로(미리보기 미채번·비-rx 등).
+ *   - 멱등은 **issue_no 포맷**으로 판정한다(issue_date 존재 여부 아님): 1차 split 후 issue_no 는
+ *     6자리(예 "000025") = `/^\d{9,}$/` 미매치 → 재적용 시 자동 no-op. issue_date 가드 없이도 멱등 보장.
+ *     ⚠ issue_date 가드를 쓰면 운영 렌더 경로(loadAutoBindContext 가 issue_date=today 를 항상 선바인딩)에서
+ *        가드가 무조건 발동 → split 미실행(functional no-op) → 서식 재조정이 운영에 전혀 적용 안 됨
+ *        (T-20260718-foot-RXPRINT-FORMAT-ADJUST FIX QA). 따라서 issue_date 존재 가드 제거.
+ *   - split 시 issue_date 를 issue_no 앞 8자리(compact YYYYMMDD)로 **덮어써**, 슬롯 앞날짜가 today dashed
+ *     ('2026-07-18')가 아닌 compact 8자리('20260718')로 찍히게 한다(요구 형식 정합). issue_date 는
+ *     RX_STANDARD_HTML 슬롯 1곳에서만 소비 → 덮어써도 타 필드 무영향.
+ *   - 순번 zero-pad 폭(ISSUE_NO_SEQ_WIDTH=6, 심평원 5)에 무관하게 '앞 8 / 나머지' 분리라 폭 flip 시에도 정합.
+ */
+export function splitIssueNoForDisplay(
+  values: Record<string, string>,
+): Record<string, string> {
+  const raw = (values.issue_no ?? '').trim();
+  if (!/^\d{9,}$/.test(raw)) return values;        // date8 + 순번(1자리↑) 아니면 무변경(멱등: split 후 6자리는 미매치)
+  return {
+    ...values,
+    issue_date: raw.slice(0, 8), // compact YYYYMMDD 로 덮어씀(today dashed 선바인딩 교정)
+    issue_no: raw.slice(8),
+  };
+}

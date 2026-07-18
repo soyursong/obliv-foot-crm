@@ -83,7 +83,7 @@ test.describe('T-20260616-foot-DOCFORM-3FIX-REGRESSION — Path A 본인/공단 
   });
 
   // ── AC-2: per-item 본인부담금 합계 = 집계 copaymentTotal (진료비계산서 정합) ──
-  test('AC-2: 본인부담금 per-item 합 = 일반등급(30%) 집계 copaymentTotal(100원 절상)', () => {
+  test('AC-2: 본인부담금 per-item 합 = 일반등급(30%) 집계 copaymentTotal(100원 절사)', () => {
     const items: BillItem[] = [
       billItem({ name: '도수치료', amount: 13710, count: 2, is_insurance_covered: true }),
       billItem({ name: '물리치료', amount: 2548, is_insurance_covered: true }),
@@ -92,9 +92,10 @@ test.describe('T-20260616-foot-DOCFORM-3FIX-REGRESSION — Path A 본인/공단 
     const coveredSum = items
       .filter((i) => i.is_insurance_covered)
       .reduce((s, i) => s + i.amount * i.count * i.days, 0);
-    // computeFootBilling 과 동일 공식: ceil(coveredSum*rate/100)*100 (rate=분수, 100원 절상)
+    // computeFootBilling 과 동일 공식: floor(coveredSum*rate/100)*100 (rate=분수, 100원 절사)
+    //   T-20260715-foot-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY 로 CEIL(절상)→FLOOR(절사) 정본화(deployed).
     const rate = getBaseCopayRate('general');
-    const expectedTotal = Math.min(Math.ceil((coveredSum * rate) / 100) * 100, coveredSum);
+    const expectedTotal = Math.min(Math.floor((coveredSum * rate) / 100) * 100, coveredSum);
     const copaySum = items.reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
     expect(copaySum, '본인부담금 per-item 합 = 집계 copaymentTotal').toBe(expectedTotal);
     // 공단부담금 합 = 급여총액 - 본인부담 합 (음수 없음)

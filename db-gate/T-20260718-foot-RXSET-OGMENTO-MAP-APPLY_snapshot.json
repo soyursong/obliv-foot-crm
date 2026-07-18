@@ -1,0 +1,135 @@
+{
+  "ticket": "T-20260718-foot-RXSET-OGMENTO-MAP-APPLY",
+  "captured_at": "2026-07-18T09:34:39.826Z",
+  "case": "Case2 (official 미등재 → 신규 official ADDITIVE + reference-move + custom deprecate)",
+  "target_official": {
+    "name_ko": "오구멘토정375밀리그램(아목시실린·클라불란산칼륨)",
+    "manufacturer": "주식회사 더유제약",
+    "claim_code": "HIRA-201908078",
+    "prodcode9": "201908078",
+    "std13": "8800570003904",
+    "hira_status": "active(취소일자 공란)",
+    "note": "오구멘틴(Augmentin/글락소, 200209643 정375mg 2012-04-26 취소) 아님 — 제조사·코드·active 분리 확인"
+  },
+  "custom_row_before": {
+    "id": "942b2ea4-bcd9-4afa-a34f-98a33323a3f6",
+    "claim_code": "LEGACY-f859925fdba2",
+    "name_ko": "오구멘토",
+    "code_type": "자체사용코드",
+    "classification": "내복약",
+    "manufacturer": null,
+    "anti_dropout": false,
+    "relative_value": 0,
+    "ingredient_code": null,
+    "low_dose": false,
+    "created_at": "2026-06-17T03:11:23.700928+00:00",
+    "price_krw": null,
+    "code_source": "custom",
+    "insurance_status": null,
+    "insurance_status_updated_at": null,
+    "insurance_status_source": null,
+    "description": null,
+    "service_id": null,
+    "hira_verified_at": null,
+    "hira_match_basis": null,
+    "hira_mapped_to_code_id": null,
+    "hira_verified_by": null
+  },
+  "folder_membership_before": {
+    "prescription_code_id": "942b2ea4-bcd9-4afa-a34f-98a33323a3f6",
+    "folder_id": "ed3ae609-a2db-4871-ac41-cbe2ddb653e6",
+    "sort_order": 0,
+    "created_at": "2026-06-17T03:11:23.700928+00:00"
+  },
+  "new_official_claim_code": "HIRA-201908078",
+  "expect": {
+    "target_custom": 1,
+    "claim_conflict": 0,
+    "folder_move": 1,
+    "set_refs": 0
+  },
+  "actual": {
+    "target_custom": 1,
+    "claim_conflict": 0,
+    "folder_move": 1,
+    "set_refs": 0,
+    "total_custom": 19,
+    "other_custom": 18,
+    "other_custom_in_folder": 17
+  },
+  "gate_pass": true,
+  "other_custom": [
+    {
+      "name_ko": "플루나코엠캡슐(플루코나졸)",
+      "claim_code": "LEGACY-015b55130567"
+    },
+    {
+      "name_ko": "한미유리아크림 200ml(우레아)50g",
+      "claim_code": "LEGACY-1edb55721d2f"
+    },
+    {
+      "name_ko": "세파클리어",
+      "claim_code": "LEGACY-1f8b80f62fbb"
+    },
+    {
+      "name_ko": "스티렌",
+      "claim_code": "LEGACY-2a0c89797bce"
+    },
+    {
+      "name_ko": "록소포펜",
+      "claim_code": "LEGACY-2e28835bfc5f"
+    },
+    {
+      "name_ko": "터미졸크림(테르비나핀염산염)15g",
+      "claim_code": "LEGACY-3e7ce9b8f6fb"
+    },
+    {
+      "name_ko": "한미유리아크림 200ml(우레아)20g",
+      "claim_code": "LEGACY-45744395cb7a"
+    },
+    {
+      "name_ko": "베타베이트연고(클로베타솔프로피오네이트)15g",
+      "claim_code": "LEGACY-a7a1a9195c67"
+    },
+    {
+      "name_ko": "하이트리크림 20g",
+      "claim_code": "LEGACY-a9078a1449c3"
+    },
+    {
+      "name_ko": "에스로반연고(무피로신)10g",
+      "claim_code": "LEGACY-ba5c97dfb0b8"
+    },
+    {
+      "name_ko": "삼아리도멕스크림(프레드니솔론발레로아세테이트)",
+      "claim_code": "LEGACY-d17507bd1967"
+    },
+    {
+      "name_ko": "루마졸크림",
+      "claim_code": "LEGACY-e98e0cb79ec6"
+    },
+    {
+      "name_ko": "닥터로반",
+      "claim_code": "LEGACY-f76313d45cc9"
+    },
+    {
+      "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+      "claim_code": "LEGACY-12d7730e32e8"
+    },
+    {
+      "name_ko": "바르토벤 외용액 4ml(에피나코나졸)",
+      "claim_code": "LEGACY-1bb57c2e4782"
+    },
+    {
+      "name_ko": "바르토벤 외용액 8ml(에피나코나졸)",
+      "claim_code": "LEGACY-5d19d9727ef4"
+    },
+    {
+      "name_ko": "주블리아외용액 4ml(에피나코나졸)",
+      "claim_code": "LEGACY-ce36618a71d0"
+    },
+    {
+      "name_ko": "주블리아 외용액 8ml(에피나코나졸)",
+      "claim_code": "LEGACY-e11452cf9200"
+    }
+  ]
+}

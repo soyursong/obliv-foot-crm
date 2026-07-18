@@ -251,6 +251,20 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
   const rxQrData = `RX|${rxRecordNo}|${today}`;
   const rxQrUrl = `${QR_CODE_API_ENDPOINT}?size=140x140&qzone=1&margin=0&format=png&data=${encodeURIComponent(rxQrData)}`;
 
+  // T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND [FIX-REQUEST MSG-20260719-030026-gjpf]:
+  //   진단서 '의사 성명'(attending_doctor_name) 결선 — 1순위 clinicDoctor(실 의료인) 성명.
+  //   clinicDoctor 부재 시 blank 방지 폴백으로 ctx.doctor(치료테이블/듀티/override 진료의 성명)를 쓰되,
+  //   ★ctx.doctor 가 기관명(ctx.clinic.name)과 동일하면 폴백을 억제해 공란으로 둔다.
+  //   근거: loadAutoBindContext sealFallbackToInstitution 경로에서 doctorName←clinics.name 으로 덮이므로,
+  //   이 폴백이 그 값을 그대로 흘리면 진단서 '의사 성명'에 기관명이 찍혀 RC(법정문서 신원 오표기) 재발.
+  //   ∴ 기관명 일치 시 억제 = RC 그대로 차단(신규 spec 엣지 '기관명 추정 금지') + 실 진료의명은 폴백 채움
+  //   (UNLINKED AC-1 회귀 재통과). 생산 shape 에선 clinicDoctor null ⟺ clinic_doctors empty ⟹ seal-fallback
+  //   미발화라 ctx.doctor 가 기관명일 수 없으나, 합성/미래 shape 까지 방어하는 defense-in-depth.
+  const institutionName = ctx.clinic?.name ?? '';
+  const attendingDoctorName =
+    ctx.clinicDoctor?.name ??
+    (ctx.doctor && ctx.doctor !== institutionName ? ctx.doctor : '');
+
   return {
     patient_name: ctx.customer?.name ?? ctx.checkIn.customer_name ?? '',
     patient_phone: formatPhone(ctx.customer?.phone ?? ctx.checkIn.customer_phone),
@@ -265,7 +279,36 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     patient_age: calcAge(effBirthYYMMDD),
     visit_date: visitDate,
     doctor_name: ctx.doctor ?? '',
+    // T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: 처방전(rx_standard) 처방의료인 축 전용 바인딩.
+    //   §12①4 법정 처방전의 처방의료인 '성명·면허번호'는 실제 의료인(사람)이라야 한다.
+    //   RC(실사고·약국 반려): {{doctor_name}}은 billing '대표자' 축이라 미지정 폴백 시 기관명으로 덮인다
+    //   (loadAutoBindContext sealFallbackToInstitution: doctorName←clinicData.name, T-20260713 UNLINKED
+    //   field-confirmed). 처방전 처방의료인 성명이 이 공유 토큰을 쓰면 '오블리브의원…'(기관명)으로 출력돼
+    //   처방의료인 성명 부재로 조제 거부 → 처방의료인 = clinicDoctor(사람) 기준으로 분리 결선한다.
+    //   clinicDoctor는 미지정 폴백 시에도 대표원장(is_default) 실인물로 유지(이름·면허 보존, 도장만 법인
+    //   인감 폴스루)되므로 항상 실 의료인 성명·면허 확보 + 이름↔면허 정합. 지정/드롭다운 선택 원장은 그
+    //   원장으로 결선(발행시점 스냅샷=치료테이블 지정 진료의, AC-1). billing 대표자 축({{doctor_name}})은 무접촉.
+    prescriber_name: ctx.clinicDoctor?.name ?? '',
+    prescriber_license_no: ctx.clinicDoctor?.license_no ?? '',
+    // T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND: 진단서(diagnosis) 진료의 축 전용 성명 바인딩.
+    //   진단서 = 법정 의료서식(의료법 시행규칙 §9) — '의사 성명'은 실제 진료의(사람)여야 한다.
+    //   RC(선제·latent, 처방전 약국반려 실사고와 동일 클래스): {{doctor_name}}은 billing '대표자' 축이라
+    //   미지정 폴백 시 기관명으로 덮인다(loadAutoBindContext sealFallbackToInstitution: doctorName←clinicData.name,
+    //   T-20260713 UNLINKED field-confirmed). 진단서가 이 공유 토큰을 쓰면 '의사 성명'이 기관명으로 출력돼
+    //   진료의 신원 오표기(법정 문서 결함) → 처방전(prescriber_name, P1)과 동일하게 clinicDoctor(사람) 기준
+    //   전용 토큰으로 분리한다. clinicDoctor는 미지정 폴백 시에도 대표원장(is_default) 실인물로 유지
+    //   (이름·면허 보존, 도장만 법인 인감 폴스루) → 항상 실 의료인 성명 확보 + 이름↔면허({{doctor_license_no}},
+    //   동일 clinicDoctor.license_no) 정합. 지정 진료의는 그 원장으로 결선. billing 축({{doctor_name}}) 무접촉.
+    //   T-20260718-...-BIND [FIX-REQUEST MSG-20260719-030026-gjpf, spec_fail_regression 보강]:
+    //   결선 로직은 위 attendingDoctorName const 참조(기관명-가드 폴백). blank latent gap 차단 +
+    //   기관명 오염(RC) 차단을 동시 만족. UNLINKED AC-1 회귀 재통과 + 신규 spec 엣지 GREEN.
+    attending_doctor_name: attendingDoctorName,
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
+    // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 야간·공휴일 체크박스 마크 기본 공란.
+    //   실제 자동 체크·가산 금액 반영은 출력시점(new Date()) 판정으로 DocumentPrintPanel(대상 2종 서류)
+    //   에서 form-scoped 배선. 여기선 전 서류 공통 안전 기본값(공란)만 제공 → 미가산·비대상 서류 회귀 0.
+    night_mark: ' ',
+    holiday_mark: ' ',
     // 진료비계산서 field_map (T-20260504-foot-INSURANCE-COPAYMENT)
     insurance_covered: ctx.payments ? formatAmount(ctx.payments.insurance_covered) : '',
     copayment: ctx.payments ? formatAmount(ctx.payments.copayment ?? 0) : '',

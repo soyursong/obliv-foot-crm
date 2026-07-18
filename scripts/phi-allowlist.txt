@@ -33,6 +33,15 @@
 # ── (i) schema/contract/cue_card E.164 예시 (합성) ──
 #   문서화된 E.164 표기 예시. 값 자체가 예시용 합성.
 \+821012345678
+#   CROSSCRM-HINT-PHONEDUMMY-EXCLUDE 제외술어 각인 — 구조적 센티넬 + 합성 fixture (실환자 아님).
+#   provenance: src/lib/crossCrmHintExclusion.ts (§69 PLACEHOLDER_PHONE_SET 정본 리터럴)
+#     + tests/e2e/T-20260709-foot-CROSSCRM-HINT-PHONEDUMMY-EXCLUDE.spec.ts. 리뷰 게이트: supervisor QA.
+#   (iii) §69 정본 리터럴 82100000000 = 821+00000000 = MSIT 비할당 구조적 센티넬.
+\+?82100000000
+#   (iii) all-same-subscriber 센티넬 +821011111111 (is_dummy_phone regex 매치 = 비할당 반복자리).
+\+?821011111111
+#   (iv) 순차-합성 test fixture MSISDN (010-2345-6789) — 실환자형 아님(합성마커).
+\+?821023456789
 #
 # ── (ii) 업무발신번호 (solapi sender / 법인 공개번호) ──
 #   법인 공개 대표번호는 PHI 아님. 신규 등재는 리뷰 게이트.

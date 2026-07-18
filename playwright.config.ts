@@ -115,6 +115,11 @@ export default defineConfig({
         // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND: ④고객 export PII-egress audit + ⑨opt-out soft-delete 법적 guard
         //   + 권한 3역할 ADDITIVE 확대. 정적 소스/계약 검증(auth·server 불요). re-cut 시 unit testMatch 등록(원 커밋 미등록 갭 치유).
         '**/T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND.spec.ts',
+        // T-20260718-foot-FLAG-EMOJI-WEBFONT-PORT: 국적 국기 이모지 Windows 코드깨짐 웹폰트 해결(derm Option C 이식).
+        //   src/index.css @font-face(unicode-range 국기 한정)·html 스택 선두 prepend 정적 가드 +
+        //   page.setContent computed font-family 렌더 단언. CSS-only(신규 npm/DB 0). auth/server 불요.
+        //   진짜 게이트 = 현장 Windows 국기 실렌더(supervisor field-soak).
+        '**/T-20260718-foot-FLAG-EMOJI-WEBFONT-PORT.spec.ts',
         // T-20260718-foot-SALESREPORT-ARPU-UNIQUE-DENOM: 일간매출보고 xlsx 상담객단가 분모 통일
         //   (÷상담건수 → ÷distinct 상담고객수 = 화면 배포본 canonical). RPC avg_amount 직접 소비 + 합계 분모=Σ상담고객.
         //   순수 로직: 헤더/상담건수 컬럼 불변 · 실장별=avg_amount · 분모0→빈칸 · 합계=Σ매출÷Σ상담고객. auth·server 불요.
@@ -243,6 +248,9 @@ export default defineConfig({
         // T-20260616-foot-E2E-PROD-WRITE-ISOLATION: RC#0 픽스처 누적 차단 — cleanupAll orphan 스윕 +
         //   globalSetup/Teardown 안전망 회귀 가드 (service_role DB 직접 검증, page/auth 불요)
         '**/T-20260616-foot-E2E-PROD-WRITE-ISOLATION.spec.ts',
+        // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: 시뮬/CI 하네스 위생(registry teardown POST=DELETE
+        //   + is_simulation opt-in + E.164 seed) — service_role DB 직접 검증(page/auth 불요).
+        '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',
         // T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT: 패키지 3중 결함(양도 이중환불·잔여 리셋·선수금 미차감)
         //   금액/회차 정합 불변식 — transfer_package_atomic + consume_package_sessions_for_checkin RPC
         //   직접 검증(service_role, page/auth 불요). ※RPC 미배포 시 실패 → supervisor DDL apply 후 PASS.
@@ -393,6 +401,19 @@ export default defineConfig({
         //   DISPLAY-ONLY read 필터 확장 — feePayments 필터 회수1 포함 분기 + 일반 영수증 업로드 제외
         //   유지 + 순서/중복 불변식 런타임 단언(정본 소스 미러). write-path·집계 무접점. auth/server 불요.
         '**/T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE.spec.ts',
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE: 당일 초진/재진 표기 소스를
+        //   check_ins.visit_type(접수 스냅샷) 으로 교정. 순수 함수(classifyVisitByRecency/diffDaysISO)
+        //   + Closing/visitRecency/NewCheckInDialog 정적 소스 가드. page/auth/server 불요.
+        //   ★unit 편입 사유(FIX-REQUEST MSG-20260715-124201-dcp9): unit 프로젝트 testMatch 미등록 시
+        //     `npx playwright test <file> --project=unit` 이 "No tests found" → spec_fail_new.
+        //     desktop-chrome 로 흘러가면 auth.setup(TEST_PASSWORD) 끌어들여 QA 워크트리 실패.
+        //     → unit 등록(실행) + desktop-chrome testIgnore(무-project QA 시 setup 미기동)로 결정론 확보.
+        '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
+        // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5개 화면 [고객메모] 단일 저장소(customer_note) 수렴.
+        //   read `customer_note ?? customer_memo` / write `customer_note` 정적 가드(예약팝업·2번차트·체크인·
+        //   고객목록/편집·신규등록) + service-role DB 왕복(양방향 공유 컬럼) + 3구역 예약메모 seed(customer_memo) 무회귀.
+        //   page/auth/server 불요(fs 소스 정적 + service-role DB, 비파괴 원본 복원). db_change=false.
+        '**/T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -426,6 +447,13 @@ export default defineConfig({
         // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: unit 전용 setContent 렌더 spec →
         //   무-project 실행 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 끌어들이지 않도록 제외. unit 에서만 실행.
         '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
+        // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: db-only(unit 전용) — desktop-chrome 에서 제외해
+        //   `npx playwright test <file>` 무-project 실행(supervisor QA) 시 auth.setup(TEST_PASSWORD) 미기동.
+        '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE: unit 전용 순수함수+정적가드 spec.
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단
+        //   (FIX-REQUEST MSG-20260715-124201-dcp9). unit 에서만 실행.
+        '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
       ],
     },
     {
