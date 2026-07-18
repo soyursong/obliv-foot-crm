@@ -33,6 +33,12 @@
 - archive-first 스냅샷 `_APPLY_archive.json`(mode=APPLY, PHI off-git) 기록. ROLLBACK 짝 = `_rollback.mjs`(archive 기반).
 - Pass1 hard-close 조건 충족 → DOPAMINE-BACKFILL(Pass2) 진행 가능. 현장(김주연 총괄) confirm 요청 = responder 경유.
 
+### ✅ 07-18 gate#4 재확인 (DLQ 오분류 정정 후 · PUSH MSG-20260718-235125-83eh)
+- **경위**: gate#3 GRANT(4wrk, 22:49)으로 status→deploy-approved 되자 자동 deploy-executor(foot-fast lane)가 pure-DML backfill 을 코드배포로 오인수 → no_deploy_commit 3회 실패·DLQ. planner 정정(자동 lane 회수·수동 APPLY 라우팅). **DML 자체는 22:49 APPLY 에서 이미 정상 랜딩**(위 섹션).
+- **수동 APPLY 러너 재실행**(`--i-have-supervisor-backfill-approval`, STEP1 fresh 재산출): frozen SetA 137 재도출 → **frozen∩still-NULL = 0** (전량 이미 TM 채워짐, 멱등 no-op·double-write 0). drift-check clean(out-of-domain 0/value_mismatch 0/new-eligible 0). `_APPLY_archive.json` mode=APPLY·target_count=0·rows=[] 재스탬프.
+- **POST-VERIFY (AC4 RULE 3항) live prod 재확인 PASS**: (a) frozen 137 현 분포 = **TM×137**, frozen∩still-NULL 잔존 **0** ✅ (b) cust `2997fc1c…` = **`<NULL>`** 정당 유지 ✅ (c) no-source 고객 = 130 NULL 불변(still_eligible_firsttouch_null = **[]**) ✅.
+- **현 prod 분포**: `TM=300 · <NULL>=130 · 지인소개=15 · 워크인=9 · 인바운드=6 · 네이버=4` (총 464) — 22:49 APPLY AFTER 와 정합. ⇒ **gate#4 완료**, status→deployed(deploy_manual_apply 경로, 자동 executor 미경유). 현장 confirm = responder 경유(김주연 총괄, ch C0ATE5P6JTH).
+
 ## 대상 정의 (AC1 / zip4)
 - 물리 대상 = `customers.visit_route` **단독** fill-on-NULL (reservations **절대 미변경** — 소스, read-only).
 - 소스 = `reservations.visit_route` (한글 enum, **≠source_system**).
@@ -75,7 +81,5 @@
 ## 잔여 게이트
 1. ✅ 게이트#0/#1/#1.5 CLOSED (reporter 매핑·DA CONSULT·fill-rule first-touch).
 2. ✅ **게이트#2 dry-run evidence — 본 리포트 (완료·재실행 갱신)**. first-touch/freeze/BEFORE-AFTER/no-clobber/divergence0/sliver0 실증.
-3. ⬜ 게이트#3 **supervisor 백필 승인 (DML-diff + archive-first + 원장 무접점)** ← **ball**.
-   - forward EF(ALWAYSYNC 15efde96 / seed b128c2ee) live + soak GREEN(07-15 15:17) = 소스 닫힘(GO 조건 1/8): supervisor DML-diff 시 재확인.
-4. ⬜ 게이트#4 APPLY (STEP 1 fresh freeze → STEP 2 assert → STEP 2.5 drift/sliver abort → STEP 3 UPDATE → STEP 4 post-verify) → 현장 confirm.
-   - post-verify: in-scope 잔존 0 + forward-fill gap 1(NULL 유지) + no-route 117(NULL 유지). APPLY 시점 count 는 재산출값 기준.
+3. ✅ 게이트#3 **supervisor 백필 승인 GRANTED** (2026-07-18, DML-diff + archive-first + 원장 무접점 감사 통과).
+4. ✅ 게이트#4 **APPLY 완료** (137 rows 랜딩 07-18 22:49 · DLQ 정정 후 멱등 재확인 target 0) → **post-verify AC4 RULE 3항 PASS** → status deployed. 현장 confirm = responder 경유(잔여).
