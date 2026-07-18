@@ -1,9 +1,11 @@
 -- DRY-RUN (No-Persistence): T-20260718-foot-DRUG-DAEWOONG-PLURANAZOLE-REMOVE
 -- Migration Dry-Run No-Persistence Protocol 준수 (migration_dryrun_no_persistence_standard.md):
 --   · up.sql 의 txn-control(COMMIT) 제거 → BEGIN..ROLLBACK 자체로 무영속(prod 미변경).
---   · in-txn assertion: (a) 동명 freeze census=1 (b) 참조 5종 = 0 (c) DELETE 건수=1 (d) 잔존 0.
+--   · in-txn assertion: (a) 동명 freeze census=1 (b) 임상/청구 참조 4종(금기·화이트·묶음·처방이력) = 0
+--       (폴더는 CASCADE 자동정리·비-abort → 계측만) (c) DELETE 건수=1 (d) 잔존 0.
 --   · DML-only(영속 DDL 객체 없음) → post-probe(assertAbsent) 비대상. 본 파일 = in-txn 검증만.
 --   ⚠ dry-run 은 삭제를 실제 수행하나 ROLLBACK 으로 되돌림 → prod 무영향. 실 DELETE COUNT 확정 = supervisor DML 게이트.
+--   ⚠ rev 2026-07-19(FIX-REQUEST 옵션①): 폴더 참조를 abort 합산에서 제외. 폴더 멤버십은 DELETE 시 FK CASCADE 자동삭제.
 BEGIN;
 
 -- ── PRE 스냅샷 ────────────────────────────────────────────────────────
@@ -35,12 +37,12 @@ BEGIN
     RAISE EXCEPTION 'DRYRUN-FAIL: 대상 미식별';
   END IF;
 
-  -- 참조 5종 합산
+  -- 참조 계측: 임상/청구 4종만 abort 합산(폴더는 CASCADE·비-abort → 계측만)
   SELECT count(*) INTO v_c FROM public.prescription_contraindications WHERE prescription_code_id = v_target_id;
   v_ref_total := v_ref_total + v_c;
   IF to_regclass('public.prescription_code_folders') IS NOT NULL THEN
     EXECUTE 'SELECT count(*) FROM public.prescription_code_folders WHERE prescription_code_id=$1' INTO v_c USING v_target_id;
-    v_ref_total := v_ref_total + v_c;
+    RAISE NOTICE 'DRYRUN 계측: 폴더 멤버십=% 건(CASCADE 자동정리·abort 제외)', v_c;  -- 비-abort
   END IF;
   IF to_regclass('public.prescription_code_allowlist') IS NOT NULL THEN
     EXECUTE 'SELECT count(*) FROM public.prescription_code_allowlist WHERE prescription_code_id=$1' INTO v_c USING v_target_id;
@@ -60,9 +62,9 @@ BEGIN
   END IF;
 
   IF v_ref_total <> 0 THEN
-    RAISE EXCEPTION 'DRYRUN-FAIL: 참조 % 건 존재 — hard-DELETE 금지', v_ref_total;
+    RAISE EXCEPTION 'DRYRUN-FAIL: 임상/청구 참조 % 건 존재(금기/화이트/묶음/처방이력) — hard-DELETE 금지', v_ref_total;
   END IF;
-  RAISE NOTICE 'DRYRUN-OK: 참조 5종 합산 0 (금기/폴더/화이트/묶음/처방이력)';
+  RAISE NOTICE 'DRYRUN-OK: 임상/청구 참조 4종 합산 0 (금기/화이트/묶음/처방이력) · 폴더는 CASCADE 정리';
 
   DELETE FROM public.prescription_codes WHERE id = v_target_id;
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
