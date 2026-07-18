@@ -1,0 +1,257 @@
+{
+  "ticket": "T-20260716-foot-RXSET-CUSTOM-DRUG-LIST-REPORT",
+  "run_at": "2026-07-18T13:48:13.723Z",
+  "read_only": true,
+  "total_custom_active": 17,
+  "total_custom_deprecated_excluded": 2,
+  "total_official_excluded": 501,
+  "flunacoem_apply_reflected": true,
+  "flunacoem_detail": {
+    "custom_row_present": true,
+    "official_created": true,
+    "custom_deprecated": true
+  },
+  "category_subtotals": {
+    "내복약": 17
+  },
+  "drugs": [
+    {
+      "seq": 1,
+      "category": "내복약",
+      "name_ko": "닥터로반",
+      "claim_code": "LEGACY-f76313d45cc9",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "1d0d1ffb-12e1-4071-8d83-e5a14e2f285e"
+    },
+    {
+      "seq": 2,
+      "category": "내복약",
+      "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+      "claim_code": "LEGACY-12d7730e32e8",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "676ceca0-23f0-4d33-a362-1af04770b564"
+    },
+    {
+      "seq": 3,
+      "category": "내복약",
+      "name_ko": "록소포펜",
+      "claim_code": "LEGACY-2e28835bfc5f",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "a8583048-db80-4a74-85f1-b6c10ce49287"
+    },
+    {
+      "seq": 4,
+      "category": "내복약",
+      "name_ko": "루마졸크림",
+      "claim_code": "LEGACY-e98e0cb79ec6",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "d00b8a51-5506-4221-b25c-07370482627d"
+    },
+    {
+      "seq": 5,
+      "category": "내복약",
+      "name_ko": "바르토벤 외용액 4ml(에피나코나졸)",
+      "claim_code": "LEGACY-1bb57c2e4782",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "1774b3c3-0ecd-49b6-85f0-8b39dfe67c20"
+    },
+    {
+      "seq": 6,
+      "category": "내복약",
+      "name_ko": "바르토벤 외용액 8ml(에피나코나졸)",
+      "claim_code": "LEGACY-5d19d9727ef4",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "bce07aed-e428-4165-ae3d-e1a64622a686"
+    },
+    {
+      "seq": 7,
+      "category": "내복약",
+      "name_ko": "베타베이트연고(클로베타솔프로피오네이트)15g",
+      "claim_code": "LEGACY-a7a1a9195c67",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "8f418de1-661b-4e1b-8d90-2861d9c2bf03"
+    },
+    {
+      "seq": 8,
+      "category": "내복약",
+      "name_ko": "삼아리도멕스크림(프레드니솔론발레로아세테이트)",
+      "claim_code": "LEGACY-d17507bd1967",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "c4dcfad3-a528-4974-9819-3acb4f0c84d4"
+    },
+    {
+      "seq": 9,
+      "category": "내복약",
+      "name_ko": "세파클리어",
+      "claim_code": "LEGACY-1f8b80f62fbb",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "6a8f2155-f760-4403-a79a-87c25d7bd4f3"
+    },
+    {
+      "seq": 10,
+      "category": "내복약",
+      "name_ko": "스티렌",
+      "claim_code": "LEGACY-2a0c89797bce",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "994d5789-738e-4aae-b42d-445b1f3f5b4f"
+    },
+    {
+      "seq": 11,
+      "category": "내복약",
+      "name_ko": "에스로반연고(무피로신)10g",
+      "claim_code": "LEGACY-ba5c97dfb0b8",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "2d74ecd7-36f8-4cba-a8b0-092a7162abaf"
+    },
+    {
+      "seq": 12,
+      "category": "내복약",
+      "name_ko": "주블리아 외용액 8ml(에피나코나졸)",
+      "claim_code": "LEGACY-e11452cf9200",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "be87fd12-6954-4ac4-9093-4a4dde7028f6"
+    },
+    {
+      "seq": 13,
+      "category": "내복약",
+      "name_ko": "주블리아외용액 4ml(에피나코나졸)",
+      "claim_code": "LEGACY-ce36618a71d0",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "5642ca63-f580-406e-a2ba-602c66e87d02"
+    },
+    {
+      "seq": 14,
+      "category": "내복약",
+      "name_ko": "터미졸크림(테르비나핀염산염)15g",
+      "claim_code": "LEGACY-3e7ce9b8f6fb",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "1993c25a-a847-407b-8249-d7ca93a89c36"
+    },
+    {
+      "seq": 15,
+      "category": "내복약",
+      "name_ko": "하이트리크림 20g",
+      "claim_code": "LEGACY-a9078a1449c3",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "f8fdcb92-046d-4719-bb87-0329911e8ab0"
+    },
+    {
+      "seq": 16,
+      "category": "내복약",
+      "name_ko": "한미유리아크림 200ml(우레아)20g",
+      "claim_code": "LEGACY-45744395cb7a",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "7d175a34-9837-4ad7-ad52-ed251bc5a72c"
+    },
+    {
+      "seq": 17,
+      "category": "내복약",
+      "name_ko": "한미유리아크림 200ml(우레아)50g",
+      "claim_code": "LEGACY-1edb55721d2f",
+      "manufacturer": null,
+      "classification": "내복약",
+      "code_type": "자체사용코드",
+      "folders": [
+        "처방세트 이관"
+      ],
+      "created_at": "2026-06-17T03:11:23.700928+00:00",
+      "id": "304d99e7-f4af-4f88-876e-68bcfd0ce5be"
+    }
+  ]
+}
