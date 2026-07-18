@@ -129,3 +129,31 @@ export function buildIssueNo(
   const n = Math.max(1, Math.trunc(seq));
   return `${dateYYYYMMDD}${String(n).padStart(seqWidth, '0')}`;
 }
+
+/**
+ * T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목1) — 처방전 교부번호 **표시 전용** 분리 (display-only).
+ *
+ * 저장된 교부번호(field_data.issue_no = date8+seqN 연속, buildIssueNo 산출값)는 **불변**으로 두고,
+ * 인쇄 렌더 시점에만 표시용으로 재조립한다:
+ *   `제 20260718000025 호`  →  `20260718 제 000025 호`
+ * 처방전 양식의 `{{issue_date}}&nbsp;&nbsp;제&nbsp;{{issue_no}}&nbsp;호` 슬롯에 맞춰
+ *   issue_date = 앞 8자리(YYYYMMDD, 발행날짜) / issue_no = 나머지(당일 순번, zero-pad 폭 유지) 로 나눈다.
+ *
+ * ⚠ 발번값·로직·DB·RPC 무변경(AC1·AC4): 이 함수는 렌더 직전 values 사본만 만든다(원본 field_data 미변형).
+ * 안전 가드:
+ *   - issue_no 가 (date8 + 순번1자리↑ = 9자리↑ 전체숫자) 가 아니면 원본 그대로(미리보기 미채번·비-rx 등).
+ *   - issue_date 가 이미 채워져 있으면 무간섭(다른 발행일 소스 보존) → 이중 적용에도 멱등.
+ *   - 순번 zero-pad 폭(ISSUE_NO_SEQ_WIDTH=6, 심평원 5)에 무관하게 '앞 8 / 나머지' 분리라 폭 flip 시에도 정합.
+ */
+export function splitIssueNoForDisplay(
+  values: Record<string, string>,
+): Record<string, string> {
+  const raw = (values.issue_no ?? '').trim();
+  if (!/^\d{9,}$/.test(raw)) return values;        // date8 + 순번(1자리↑) 아니면 무변경
+  if ((values.issue_date ?? '').trim()) return values; // 이미 발행일 있으면 무간섭(멱등)
+  return {
+    ...values,
+    issue_date: raw.slice(0, 8),
+    issue_no: raw.slice(8),
+  };
+}

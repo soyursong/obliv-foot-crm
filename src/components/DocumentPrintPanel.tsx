@@ -65,7 +65,7 @@ import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
-import { buildDocSerial, docSerialPrefix, buildIssueNo } from '@/lib/docSerial';
+import { buildDocSerial, docSerialPrefix, buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
@@ -222,9 +222,11 @@ function buildHtmlPageHtml(
   //   → 그 오버레이 박스만 제거하고, 중앙 상단 {{rx_copy_label}}(약국보관용/환자보관용) 구분 라벨은
   //   2장 출력 식별 표식으로 보존한다(현장 "중앙 상단 라벨 절대 제거하지 말 것").
   //   2장 출력(RX-DUAL)·QR 자동삽입(8FIX) 무파괴.
+  // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목1): 교부번호 표시 분리(display-only) — 저장 issue_no 불변,
+  //   렌더 직전에만 '20260718 제 000025 호'로 재조립. splitIssueNoForDisplay 는 비-rx/미채번 시 no-op.
   const boundValues =
     template.form_key === 'rx_standard'
-      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
+      ? splitIssueNoForDisplay({ ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' })
       : fieldValues;
   const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';

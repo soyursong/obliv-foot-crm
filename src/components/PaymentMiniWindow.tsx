@@ -48,7 +48,7 @@ import { cn } from '@/lib/utils';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
 // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
-import { buildIssueNo } from '@/lib/docSerial';
+import { buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -497,9 +497,11 @@ function buildHtmlPageDiv(
   //   PATH-4(결제창 영수증 미니창)도 PATH-1과 대칭. 제거 대상은 우측 상단 absolute 오버레이 박스뿐.
   //   중앙 상단 {{rx_copy_label}}(약국보관용/환자보관용) 구분 라벨은 2장 출력 식별 표식으로 보존
   //   (현장 "중앙 상단 라벨 절대 제거하지 말 것"). 2장 출력·QR 자동삽입 무파괴.
+  // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목1, PATH-4 대칭): 교부번호 표시 분리(display-only) —
+  //   저장 issue_no 불변, 렌더 직전에만 '20260718 제 000025 호'로 재조립. 비-rx/미채번 시 no-op.
   const boundValues =
     template.form_key === 'rx_standard'
-      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
+      ? splitIssueNoForDisplay({ ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' })
       : fieldValues;
   const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';

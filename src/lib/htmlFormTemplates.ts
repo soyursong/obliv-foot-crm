@@ -2491,7 +2491,8 @@ export function buildRxItemsHtml(
   items: Array<{
     name: string;
     // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code).
-    //   있으면 약품명 앞에 '[코드] ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
+    //   있으면 약품명 앞에 '코드 | ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
+    //   T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 구분자 대괄호 '[코드]' → 파이프 '코드 |'.
     code?: string | null;
     unit_dose?: string;
     daily_freq?: string;
@@ -2501,10 +2502,11 @@ export function buildRxItemsHtml(
 ): string {
   const TOTAL_ROWS = 8;
   const rows = items.map((item) => ({
-    // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 약품명 앞 코드 prefix — 송도 처방전 서식 참고 '[코드] 약품명'.
-    //   코드 미등록/미매핑 시 빈 '[]'·'null' 문자열 노출 없이 약품명만 출력(graceful fallback).
+    // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 약품명 앞 코드 prefix 구분자 '코드 | 약품명'(파이프).
+    //   (구 T-20260718-foot-RXPRINT-DRUGCODE-PREFIX 의 '[코드] 약품명' 대괄호에서 파이프로 변경.)
+    //   코드 미등록/미매핑(NULL/공백) 시 파이프 없이 약품명만 출력(AC3 graceful fallback).
     name: (item.code ?? '').trim()
-      ? `[${(item.code ?? '').trim()}] ${item.name}`
+      ? `${(item.code ?? '').trim()} | ${item.name}`
       : item.name,
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
