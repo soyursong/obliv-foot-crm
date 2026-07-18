@@ -70,17 +70,22 @@ try {
   console.log(`  ${JSON.stringify(gen)}`);
   chk(gen?.is_insurance_covered === true, 'W1 service_charge is_insurance_covered=TRUE');
   chk(gen?.base_amount === 14661, `W1 base_amount=14661 (실=${gen?.base_amount})`);
-  chk(gen?.copayment_amount === 4400, `W1 copay=4400 30% (실=${gen?.copayment_amount})`);
-  chk(gen?.insurance_covered_amount === 10261, `W1 covered=10261 (실=${gen?.insurance_covered_amount})`);
+  // ── calc_copayment v1.5 정합(T-20260715-foot-COPAY-GENERAL-CEIL-TO-FLOOR-FIX, mig 20260715150000) ──
+  //   14661×30%=4398.3 → 일반 정률 원단위 FLOOR ⇒ copay 4300 / covered 10361 (구 CEIL 4400/10261 폐기).
+  //   write-path 는 calc_copayment 반환을 그대로 적재(단일권위) → 산식 변경이 코드수정 0으로 전파됨을 실증.
+  chk(gen?.copayment_amount === 4300, `W1 copay=4300 30%FLOOR (실=${gen?.copayment_amount})`);
+  chk(gen?.insurance_covered_amount === 10361, `W1 covered=10361 (실=${gen?.insurance_covered_amount})`);
+  chk(gen?.base_amount === gen?.copayment_amount + gen?.insurance_covered_amount,
+    `W-불변식 base==copay+covered (${gen?.base_amount}==${gen?.copayment_amount}+${gen?.insurance_covered_amount})`);
   chk(gen?.hira_unit_value_year === 2026, `W1 hira_unit_value_year=2026 (실=${gen?.hira_unit_value_year})`);
-  chk(gen?.pay_amount === 4400, `W6 payment.amount==copay 4400 (공단분 미수납, 실=${gen?.pay_amount})`);
+  chk(gen?.pay_amount === 4300, `W6 payment.amount==copay 4300 (공단분 미수납, 실=${gen?.pay_amount})`);
   chk(gen?.pay_tax_type === null, `W2 payment.tax_type NULL=면세 (실=${gen?.pay_tax_type})`);
   chk(gen?.fk_linked === true, 'W4 payment.service_charge_id → service_charge FK 링크');
   chk(res.gen_sc_count === 1, `W3 멱등: 재호출 후 명세 1건 (중복 미생성, 실=${res.gen_sc_count})`);
   console.log('\n── grade=null 수납 (W5) ──');
   console.log(`  ${JSON.stringify(nul)}`);
   chk(nul?.customer_grade_at_charge === 'unverified', `W5 grade=unverified 스냅샷 (실=${nul?.customer_grade_at_charge})`);
-  chk(nul?.pay_amount === 4400, `W5 수납 payment=general_default 30% 4400 잠정 (실=${nul?.pay_amount})`);
+  chk(nul?.pay_amount === 4300, `W5 수납 payment=general_default 30%FLOOR 4300 잠정 (실=${nul?.pay_amount})`);
   chk(nul?.insurance_covered_amount === 0, `W5 명세 공단부담=0 보수(phantom 방지, 실=${nul?.insurance_covered_amount})`);
   chk(nul?.base_amount === 14661, `W5 base_amount 유지 14661 (실=${nul?.base_amount})`);
   console.log(`\n${ok ? '✅ 기능 리허설 PASS (무영속)' : '❌ 기능 리허설 FAIL'}`);
