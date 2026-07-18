@@ -24,6 +24,9 @@ import {
   type DrugFolderNode,
   type FolderDrug,
 } from '@/lib/drugFolders';
+// T-20260615-foot-RX-WHITELIST-FOLDERTREE (DA Model B): 처방 화이트리스트 overlay.
+//   enforcement OFF(Phase 1)=필터 미적용(전량 노출, 무회귀). ON(Phase 2, 문지은 confirm 후)=enabled 코드만.
+import { usePrescriptionCodeAllowlist } from '@/lib/rxAllowlist';
 
 /** 처방내역에 추가할 약 1건의 최소 식별 정보 */
 export interface DrugPick {
@@ -42,6 +45,8 @@ interface DrugFolderTreeProps {
 export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTreeProps) {
   const { data: folders = [], isLoading: foldersLoading } = useDrugFolders();
   const { data: drugs = [], isLoading: drugsLoading } = useFolderDrugs();
+  // 화이트리스트 overlay. enforced=false(Phase 1) 면 필터 미적용(fail-OPEN, 전량 노출=무회귀).
+  const { enforced: rxEnforced, allowedIds: rxAllowedIds } = usePrescriptionCodeAllowlist();
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -49,11 +54,14 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
   const drugsByFolder = useMemo(() => {
     const m = new Map<string, FolderDrug[]>();
     for (const d of drugs) {
+      // enforcement ON 시 positive allowlist(default-deny): allowlist(enabled) 코드만 노출/선택 가능.
+      //   미승인 코드는 트리에서 비표시. enforcement OFF 면 이 게이트는 통과(전량 노출, 무회귀).
+      if (rxEnforced && !rxAllowedIds.has(d.prescription_code_id)) continue;
       if (!m.has(d.folder_id)) m.set(d.folder_id, []);
       m.get(d.folder_id)!.push(d);
     }
     return m;
-  }, [drugs]);
+  }, [drugs, rxEnforced, rxAllowedIds]);
 
   function toggleFolder(id: string) {
     setCollapsed((prev) => {
