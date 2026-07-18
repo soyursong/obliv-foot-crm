@@ -663,17 +663,19 @@ export default function DoctorCallDashboard() {
                   T-20260615-foot-DOCDASH-STATNAME-WIDEN-CENTER: 상태 7→8·이름 6→7(×1.2 재확대), 임상경과 34→32(차감 흡수). 합 100%.
                   T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(6%) 제거 → 해방 6%p 전량 임상경과(32→38)에 재분배. 9칼럼 합 100%.
                   T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: '시간(경과시간)' 칼럼(5%) 제거 → 해방 5%p 전량 임상경과(32→37)에 재분배. 8칼럼 합 100%. */}
+              {/* T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN (문지은 대표원장): 컬럼 폭 %→고정px 재산정(예상 텍스트 범위 기준, 불필요 여백 제거).
+                  방 w-14(방번호 1~3자) · 상태 w-28(진료필요✋+N분) · 이름 w-36(초/재배지+이름+서류) · 생년 w-28("1990 (만 35세)" ~12자) ·
+                  차트번호 w-16(mono 7자) · 오늘시술 w-24(truncate) · 처방 w-40. 임상경과=폭 미지정(auto)→잔여폭 전량 흡수(본문).
+                  넓은 화면에서 %가 팽창시키던 메타데이터 여백 제거. min-w-[1040px] 유지(가로스크롤 무회귀). 두 테이블 동일 colgroup(WAITDONE-ALIGN 보존). 선행 CLINIC3 패딩 압축(ab76117) 무접촉. */}
               <colgroup>
-                <col className="w-[4%]" />
-                <col className="w-[8%]" />
-                <col className="w-[7%]" />
-                <col className="w-[9%]" />
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
-                {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item3(문지은 대표원장): 처방 12%→18%(×1.5).
-                    +6%p 는 임상경과(38→32)에서 흡수 — 합 100% 유지, 타 컬럼 불변, 양 테이블 동일. */}
-                <col className="w-[18%]" />
-                <col className="w-[37%]" />
+                <col className="w-14" />
+                <col className="w-28" />
+                <col className="w-36" />
+                <col className="w-28" />
+                <col className="w-16" />
+                <col className="w-24" />
+                <col className="w-40" />
+                <col />
               </colgroup>
               {/* DOCDASH_THEAD — 3FIX item2: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과 ('차트'·'시간' 칼럼 제거). */}
               <thead>
@@ -767,17 +769,16 @@ export default function DoctorCallDashboard() {
                   폭 = STATNAME-WIDEN-CENTER 확정 대기 실폭과 1:1 동일.
                   T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX item2: '차트' 칼럼(6%) 제거 → 임상경과 32→38 재분배 (대기 테이블과 동일). 9칼럼 합 100%.
                   T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: '시간' placeholder 칼럼(5%) 제거 → 임상경과 32→37 (대기 테이블과 동일). 8칼럼 합 100%. */}
+              {/* T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN: 진료대기 테이블과 픽셀단위 동일 colgroup(고정px). WAITDONE-ALIGN 세로경계 일치 보존. */}
               <colgroup>
-                <col className="w-[4%]" />
-                <col className="w-[8%]" />
-                <col className="w-[7%]" />
-                <col className="w-[9%]" />
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
-                {/* T-20260615-foot-DOCDASH-RX-DISPLAY-REVAMP item3(문지은 대표원장): 처방 12%→18%(×1.5).
-                    +6%p 는 임상경과(38→32)에서 흡수 — 합 100% 유지, 타 컬럼 불변, 양 테이블 동일. */}
-                <col className="w-[18%]" />
-                <col className="w-[37%]" />
+                <col className="w-14" />
+                <col className="w-28" />
+                <col className="w-36" />
+                <col className="w-28" />
+                <col className="w-16" />
+                <col className="w-24" />
+                <col className="w-40" />
+                <col />
               </colgroup>
               {/* COMPLETED THEAD — WAITDONE-ALIGN: 대기 테이블과 동일 순서·폭('차트'·'시간' 칼럼 제거). */}
               <thead>
@@ -1799,7 +1800,8 @@ function ProcedureCell({ checkIn }: { checkIn: Pick<CheckIn, 'treatment_kind' | 
       미지정
     </span>
   ) : (
-    <span className="text-[13px] font-medium text-gray-700" data-testid="doctor-procedure-cell">
+    // T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN AC-2: 오늘시술 칼럼 폭 축소(w-24) 대비 넘침 안전처리 — block truncate + title tooltip(정보손실 0).
+    <span className="block truncate text-[13px] font-medium text-gray-700" data-testid="doctor-procedure-cell" title={v}>
       {v}
     </span>
   );
