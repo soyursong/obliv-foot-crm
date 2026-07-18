@@ -457,6 +457,8 @@ function buildCodeEnrichedValues(
     const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
     values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({
       name: i.service.name,
+      // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+      code: i.service.service_code,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
       // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).

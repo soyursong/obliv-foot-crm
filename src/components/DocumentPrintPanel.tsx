@@ -997,6 +997,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           // rx_standard 항목 — service_charges 기반(기존 동작 유지).
           const rxItems = mappedItems.map((item) => ({
             name: item.name,
+            // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+            code: item.service_code,
             unit_dose: '1',
             daily_freq: '1',
             // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 배치 경로는 per-item 입력 없음 → 공란(수기 기입).
@@ -2360,6 +2362,8 @@ function IssueDialog({
       const rxServiceItems = serviceItems.filter((i) => i.category_label !== '상병');
       const rxItems = rxServiceItems.map((item) => ({
         name: item.name,
+        // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+        code: item.service_code,
         unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
         daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
         // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5 / A안(총괄 MSG-h6y2): 입력값 그대로, 미입력 시 공란(수기 기입).

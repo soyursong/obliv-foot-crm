@@ -2490,6 +2490,9 @@ export function isHtmlTemplate(formKey: string): boolean {
 export function buildRxItemsHtml(
   items: Array<{
     name: string;
+    // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code).
+    //   있으면 약품명 앞에 '[코드] ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
+    code?: string | null;
     unit_dose?: string;
     daily_freq?: string;
     total_days?: string;
@@ -2498,7 +2501,11 @@ export function buildRxItemsHtml(
 ): string {
   const TOTAL_ROWS = 8;
   const rows = items.map((item) => ({
-    name: item.name,
+    // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 약품명 앞 코드 prefix — 송도 처방전 서식 참고 '[코드] 약품명'.
+    //   코드 미등록/미매핑 시 빈 '[]'·'null' 문자열 노출 없이 약품명만 출력(graceful fallback).
+    name: (item.code ?? '').trim()
+      ? `[${(item.code ?? '').trim()}] ${item.name}`
+      : item.name,
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
     // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 처방 입력의 총투약일수를 출력물에 표기.
