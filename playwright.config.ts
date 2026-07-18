@@ -401,6 +401,14 @@ export default defineConfig({
         //   DISPLAY-ONLY read 필터 확장 — feePayments 필터 회수1 포함 분기 + 일반 영수증 업로드 제외
         //   유지 + 순서/중복 불변식 런타임 단언(정본 소스 미러). write-path·집계 무접점. auth/server 불요.
         '**/T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE.spec.ts',
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE: 당일 초진/재진 표기 소스를
+        //   check_ins.visit_type(접수 스냅샷) 으로 교정. 순수 함수(classifyVisitByRecency/diffDaysISO)
+        //   + Closing/visitRecency/NewCheckInDialog 정적 소스 가드. page/auth/server 불요.
+        //   ★unit 편입 사유(FIX-REQUEST MSG-20260715-124201-dcp9): unit 프로젝트 testMatch 미등록 시
+        //     `npx playwright test <file> --project=unit` 이 "No tests found" → spec_fail_new.
+        //     desktop-chrome 로 흘러가면 auth.setup(TEST_PASSWORD) 끌어들여 QA 워크트리 실패.
+        //     → unit 등록(실행) + desktop-chrome testIgnore(무-project QA 시 setup 미기동)로 결정론 확보.
+        '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -437,6 +445,10 @@ export default defineConfig({
         // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: db-only(unit 전용) — desktop-chrome 에서 제외해
         //   `npx playwright test <file>` 무-project 실행(supervisor QA) 시 auth.setup(TEST_PASSWORD) 미기동.
         '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE: unit 전용 순수함수+정적가드 spec.
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단
+        //   (FIX-REQUEST MSG-20260715-124201-dcp9). unit 에서만 실행.
+        '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
       ],
     },
     {
