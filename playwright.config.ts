@@ -112,6 +112,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260718-foot-SALESREPORT-ARPU-UNIQUE-DENOM: 일간매출보고 xlsx 상담객단가 분모 통일
+        //   (÷상담건수 → ÷distinct 상담고객수 = 화면 배포본 canonical). RPC avg_amount 직접 소비 + 합계 분모=Σ상담고객.
+        //   순수 로직: 헤더/상담건수 컬럼 불변 · 실장별=avg_amount · 분모0→빈칸 · 합계=Σ매출÷Σ상담고객. auth·server 불요.
+        '**/T-20260718-foot-SALESREPORT-ARPU-UNIQUE-DENOM.spec.ts',
         // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: 회수1 phantom 미수 치유 (R1, effectiveNetPaid 중앙화).
         //   순수 로직 불변식 — AC1 완납 phantom소멸 / AC2 회수≥2 회귀0 / AC3 매출 split 불변 + F-4857 archive 가드. auth 불요.
         '**/T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX.spec.ts',
