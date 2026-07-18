@@ -140,20 +140,26 @@ export function buildIssueNo(
  *   issue_date = 앞 8자리(YYYYMMDD, 발행날짜) / issue_no = 나머지(당일 순번, zero-pad 폭 유지) 로 나눈다.
  *
  * ⚠ 발번값·로직·DB·RPC 무변경(AC1·AC4): 이 함수는 렌더 직전 values 사본만 만든다(원본 field_data 미변형).
- * 안전 가드:
+ * 안전 가드 / 멱등:
  *   - issue_no 가 (date8 + 순번1자리↑ = 9자리↑ 전체숫자) 가 아니면 원본 그대로(미리보기 미채번·비-rx 등).
- *   - issue_date 가 이미 채워져 있으면 무간섭(다른 발행일 소스 보존) → 이중 적용에도 멱등.
+ *   - 멱등은 **issue_no 포맷**으로 판정한다(issue_date 존재 여부 아님): 1차 split 후 issue_no 는
+ *     6자리(예 "000025") = `/^\d{9,}$/` 미매치 → 재적용 시 자동 no-op. issue_date 가드 없이도 멱등 보장.
+ *     ⚠ issue_date 가드를 쓰면 운영 렌더 경로(loadAutoBindContext 가 issue_date=today 를 항상 선바인딩)에서
+ *        가드가 무조건 발동 → split 미실행(functional no-op) → 서식 재조정이 운영에 전혀 적용 안 됨
+ *        (T-20260718-foot-RXPRINT-FORMAT-ADJUST FIX QA). 따라서 issue_date 존재 가드 제거.
+ *   - split 시 issue_date 를 issue_no 앞 8자리(compact YYYYMMDD)로 **덮어써**, 슬롯 앞날짜가 today dashed
+ *     ('2026-07-18')가 아닌 compact 8자리('20260718')로 찍히게 한다(요구 형식 정합). issue_date 는
+ *     RX_STANDARD_HTML 슬롯 1곳에서만 소비 → 덮어써도 타 필드 무영향.
  *   - 순번 zero-pad 폭(ISSUE_NO_SEQ_WIDTH=6, 심평원 5)에 무관하게 '앞 8 / 나머지' 분리라 폭 flip 시에도 정합.
  */
 export function splitIssueNoForDisplay(
   values: Record<string, string>,
 ): Record<string, string> {
   const raw = (values.issue_no ?? '').trim();
-  if (!/^\d{9,}$/.test(raw)) return values;        // date8 + 순번(1자리↑) 아니면 무변경
-  if ((values.issue_date ?? '').trim()) return values; // 이미 발행일 있으면 무간섭(멱등)
+  if (!/^\d{9,}$/.test(raw)) return values;        // date8 + 순번(1자리↑) 아니면 무변경(멱등: split 후 6자리는 미매치)
   return {
     ...values,
-    issue_date: raw.slice(0, 8),
+    issue_date: raw.slice(0, 8), // compact YYYYMMDD 로 덮어씀(today dashed 선바인딩 교정)
     issue_no: raw.slice(8),
   };
 }
