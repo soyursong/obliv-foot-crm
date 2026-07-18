@@ -1,5 +1,5 @@
 # T-20260718-foot-SELFREG-PROFILE-CREATE-PATH-FIX — apply evidence (POST-APPLY 실측)
-ref=rxlomoozakkjesdqjtvd · mig=20260718220000_foot_selfreg_handle_new_user_canon · verified_at=2026-07-18 21:08:00 KST
+ref=rxlomoozakkjesdqjtvd · mig=20260718220000_foot_selfreg_handle_new_user_canon · verified_at=2026-07-19 01:17:21 KST
 adopted=B(auth.users 트리거) · women 동형 승계 · 벤더잔차 canon 재정의(CREATE OR REPLACE, 비파괴).
 
 ## [POST-APPLY] handle_new_user canon 실측
@@ -24,7 +24,7 @@ adopted=B(auth.users 트리거) · women 동형 승계 · 벤더잔차 canon 재
   · [director 자기선언 → staff 강등] ✅ (role=staff·approved=false·clinic=jongno-foot 검증 후 롤백)
   · [role 누락 → staff] ✅ (role=staff·approved=false·clinic=jongno-foot 검증 후 롤백)
 
-## [POSTCHECK 요약] applied_at=2026-07-18 21:08:01 KST
+## [POSTCHECK 요약] applied_at=2026-07-19 01:17:24 KST
   · canon(SECDEF/owner=postgres/search_path=''/anon-exec=false/trigger=1/COMMENT) = true
   · ledger clean = true
   · signup 전수 스모크(4케이스: 화이트리스트 유지·admin/director 강등·no-role→staff, 전부 approved=false·clinic 파생) = true

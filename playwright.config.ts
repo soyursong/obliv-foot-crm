@@ -248,6 +248,9 @@ export default defineConfig({
         // T-20260616-foot-E2E-PROD-WRITE-ISOLATION: RC#0 픽스처 누적 차단 — cleanupAll orphan 스윕 +
         //   globalSetup/Teardown 안전망 회귀 가드 (service_role DB 직접 검증, page/auth 불요)
         '**/T-20260616-foot-E2E-PROD-WRITE-ISOLATION.spec.ts',
+        // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: 시뮬/CI 하네스 위생(registry teardown POST=DELETE
+        //   + is_simulation opt-in + E.164 seed) — service_role DB 직접 검증(page/auth 불요).
+        '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',
         // T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT: 패키지 3중 결함(양도 이중환불·잔여 리셋·선수금 미차감)
         //   금액/회차 정합 불변식 — transfer_package_atomic + consume_package_sessions_for_checkin RPC
         //   직접 검증(service_role, page/auth 불요). ※RPC 미배포 시 실패 → supervisor DDL apply 후 PASS.
@@ -431,6 +434,9 @@ export default defineConfig({
         // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: unit 전용 setContent 렌더 spec →
         //   무-project 실행 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 끌어들이지 않도록 제외. unit 에서만 실행.
         '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
+        // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: db-only(unit 전용) — desktop-chrome 에서 제외해
+        //   `npx playwright test <file>` 무-project 실행(supervisor QA) 시 auth.setup(TEST_PASSWORD) 미기동.
+        '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',
       ],
     },
     {
