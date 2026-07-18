@@ -165,6 +165,18 @@ function isE164(phone: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(phone);
 }
 
+// ── T-20260719-foot-DOPAMINE-RESCHED-INGEST-5XX-DIAG: scheduled_at 경계 캐스팅 방어 검증기 ──
+//   도파민 reschedule('날짜 변경') push 가 date-only/malformed scheduled_at 을 운반할 때
+//   substring 파생 date/time 이 비-DATE/비-TIME → RPC 인자(p_reservation_date DATE / p_reservation_time
+//   TIME) PostgREST 경계 캐스팅(22007 'invalid input syntax') hard-fail → RPC 미실행 → 500 을 유발.
+//   valid 여부를 선판정해 malformed 이면 existing 행의 known-good 값으로 폴백(호출부).
+function isValidDate(s: string | undefined): boolean {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+function isValidTime(s: string | undefined): boolean {
+  return !!s && /^\d{2}:\d{2}(:\d{2})?$/.test(s);
+}
+
 // ── Cross-CRM slug 통일 (dual-key transition window, ~2026-06-15 구키 제거) ──────
 //   도파민 신키 'jongno-foot' ↔ 구키 'foot-jongno' 1주 전환기 양쪽 수용.
 //   입력 slug는 구키→신키 정규화 후 clinics.slug DB 조회 (in-flight 구키 메시지 보호).
@@ -423,7 +435,27 @@ Deno.serve(async (req) => {
       // 리스케줄 판정: 도파민이 운반한 date/time 이 기존 착지값과 다른가. (TIME 은 "HH:MM:SS" 8자 비교)
       const curDate = (existing.reservation_date as string | null) ?? '';
       const curTime = ((existing.reservation_time as string | null) ?? '').substring(0, 8);
-      const isReschedule = curDate !== scheduledDate || curTime !== scheduledTime;
+
+      // ── T-20260719-foot-DOPAMINE-RESCHED-INGEST-5XX-DIAG: reschedule 경계 캐스팅 방어 (RC 픽스) ──
+      //   [RC] 도파민 '날짜 변경'(reschedule) push 는 새 날짜만 운반하고 time 을 빈/malformed 로 조립할 수
+      //     있다(예 scheduled_at='2026-07-21T+09:00' — cancel H3(T-20260707) 와 동형 ISO 잔해;
+      //     date 부분=OK, time 부분 substring(11,19)='+09:00' = 비-TIME). 그러면 rpcTime='+09:00' 이
+      //     RPC 의 p_reservation_time(TIME) PostgREST 경계 캐스팅에서 22007 hard-fail → RPC 미실행 →
+      //     500 INTERNAL(도파민 '풋센터 반영 실패'). 신규 push 는 EF 직접 INSERT(RPC 미경유·full scheduled_at)
+      //     라 정상 → reschedule(UPDATE/RPC)만 5xx (INSERT vs UPDATE 분기 확인, 착안 3 규명).
+      //     cancel 은 이미 existing known-good 폴백으로 방어(H3)했으나 reschedule 은 미방어였다 —
+      //     EDIT 테스트(T-20260707 AC1)가 항상 full valid scheduled_at 만 써서 GREEN 오탐.
+      //   [FIX] malformed date/time 은 existing 행의 known-good 값으로 폴백. '날짜 변경'=time 보존이 정확한
+      //     시맨틱(날짜만 바뀜). 유효한 신규 date/time 은 그대로 사용 → 회귀 0. self-mint scope/guard#5 는
+      //     RPC 가 source_system+external_id 로만 판정하므로 결과 불변. no-DDL(스키마/제약 위반 아님 — 순수
+      //     EF 경계 캐스팅 로직 결함 → db_change=false 유지).
+      const safeDate = isValidDate(scheduledDate) ? scheduledDate : (curDate || scheduledDate);
+      const safeTime = isValidTime(scheduledTime) ? scheduledTime.substring(0, 8) : (curTime || scheduledTime);
+      if (safeDate !== scheduledDate || safeTime !== scheduledTime.substring(0, 8)) {
+        console.warn(`[reservation-ingest] reschedule malformed scheduled_at guard: ext=${externalId} raw='${scheduledAt}' → date=${safeDate} time=${safeTime} (existing known-good fallback)`);
+      }
+
+      const isReschedule = curDate !== safeDate || curTime !== safeTime;
 
       // (guard#2) 순수 동일-payload 재push (취소·리스케줄 아님) → 멱등 duplicate 유지.
       //   예약메모(rmh)만 멱등 upsert(편집 재push 로 수정된 메모 timeline 반영). 빈값=내부 no-op.
@@ -463,12 +495,14 @@ Deno.serve(async (req) => {
       //     RPC 가 source_system+external_id 로만 판정하므로 결과 불변. EDIT 경로(scheduledDate/Time)는 무변경.
       //     (emit-side 진짜 결함=도파민 cancel push 가 malformed scheduled_at 발신 → dev-dopamine 별도 조치 +
       //      DOPAMINE_CALLBACK_SECRET 게이트 CANCEL 실 write E2E 재검증 = dev-dopamine 몫.)
+      //   EDIT/reschedule 경로: safeDate/safeTime(malformed 이면 existing known-good 폴백) 사용 →
+      //   경계 캐스팅 항상 통과(T-20260719 RC 픽스). CANCEL 경로는 旣존 방어(H3) 무변경.
       const rpcDate = isCancelRequest
         ? ((existing.reservation_date as string | null) ?? scheduledDate)
-        : scheduledDate;
+        : safeDate;
       const rpcTime = isCancelRequest
         ? (((existing.reservation_time as string | null) ?? scheduledTime).substring(0, 8))
-        : scheduledTime;
+        : safeTime;
       const rpcArgs = {
         p_source_system:      sourceSystem ?? 'dopamine',
         p_external_id:        externalId,
