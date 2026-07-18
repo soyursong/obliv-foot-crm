@@ -21,6 +21,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
+import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath } from '@/lib/photoUrl';
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
@@ -534,7 +535,17 @@ interface PackageSession {
 interface StorageImageItem {
   path: string;
   signedUrl: string;
+  // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드/목록 표시용 transform 썸네일.
+  //   그리드 <img> 는 thumbUrl(수십 KB), 확대/열기/편집은 signedUrl(원본)만 사용해 Egress 절감.
+  thumbUrl: string;
   name: string;
+}
+
+// T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 썸네일 클릭 시에만 원본 signed URL 을
+//   lazy 발급해 새 창으로 연다(AC-3). 그리드 자체는 원본을 다운로드하지 않는다.
+async function openOriginalPhoto(path: string) {
+  const url = await signedOriginalUrl('photos', path); // transform 없음 = 원본
+  if (url) window.open(url, '_blank');
 }
 
 const PKG_STATUS_KO: Record<string, string> = {
@@ -627,15 +638,18 @@ function CustomerStorageImageSection({
     });
     if (!files || files.length === 0) { setImages([]); return; }
     // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시는 transform 썸네일(수십 KB)만 다운로드.
+    //   원본 signed URL 은 클릭(새 창) 시점에만 발급 → 원본 반복 다운로드 제거. URL 은 캐시로 안정화(브라우저 캐시 HIT).
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
-    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const thumbs = await signedThumbUrls('photos', paths);
     const withUrls = filtered.map((file, i) => ({
       path: paths[i],
-      signedUrl: urlData?.[i]?.signedUrl ?? '',
+      signedUrl: '', // 원본은 클릭 시 lazy 발급 (openOriginalPhoto)
+      thumbUrl: thumbs[i] ?? '',
       name: file.name,
     }));
-    setImages(withUrls.filter((i) => i.signedUrl));
+    setImages(withUrls.filter((i) => i.thumbUrl));
   }, [storagePath]);
 
   useEffect(() => { load(); }, [load]);
@@ -647,7 +661,7 @@ function CustomerStorageImageSection({
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop() ?? 'jpg';
       const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -703,10 +717,11 @@ function CustomerStorageImageSection({
           {images.map((img) => (
             <div key={img.path} className="relative group aspect-square">
               <img
-                src={img.signedUrl}
+                src={img.thumbUrl}
                 alt={img.name}
+                loading="lazy"
                 className="w-full h-full object-cover rounded border cursor-pointer"
-                onClick={() => window.open(img.signedUrl, '_blank')}
+                onClick={() => openOriginalPhoto(img.path)}
               />
               {/* T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE: readOnly 시 삭제 버튼 미노출 (뷰어 전용) */}
               {!readOnly && (
@@ -826,15 +841,18 @@ function ReceiptUploadSection({
     });
     if (!files || files.length === 0) { setImages([]); return; }
     // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시는 transform 썸네일(수십 KB)만 다운로드.
+    //   원본 signed URL 은 클릭(새 창) 시점에만 발급 → 원본 반복 다운로드 제거. URL 은 캐시로 안정화(브라우저 캐시 HIT).
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
-    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const thumbs = await signedThumbUrls('photos', paths);
     const withUrls = filtered.map((file, i) => ({
       path: paths[i],
-      signedUrl: urlData?.[i]?.signedUrl ?? '',
+      signedUrl: '', // 원본은 클릭 시 lazy 발급 (openOriginalPhoto)
+      thumbUrl: thumbs[i] ?? '',
       name: file.name,
     }));
-    setImages(withUrls.filter((i) => i.signedUrl));
+    setImages(withUrls.filter((i) => i.thumbUrl));
   }, [storagePath]);
 
   useEffect(() => { load(); loadActivePkgs(); loadWaitingCIs(); }, [load, loadActivePkgs, loadWaitingCIs]);
@@ -869,7 +887,7 @@ function ReceiptUploadSection({
       for (const file of Array.from(files)) {
         const ext = file.name.split('.').pop() ?? 'jpg';
         const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
         if (error) toast.error(`업로드 실패: ${error.message}`);
         else uploadedOk = true;
       }
@@ -1010,10 +1028,11 @@ function ReceiptUploadSection({
           {images.map((img) => (
             <div key={img.path} className="relative group aspect-square">
               <img
-                src={img.signedUrl}
+                src={img.thumbUrl}
                 alt={img.name}
+                loading="lazy"
                 className="w-full h-full object-cover rounded border cursor-pointer"
-                onClick={() => window.open(img.signedUrl, '_blank')}
+                onClick={() => openOriginalPhoto(img.path)}
               />
               <button
                 onClick={() => remove(img)}
@@ -1229,14 +1248,20 @@ function TreatmentImagesSection({
         .filter((f) => f.name && !f.id?.endsWith('/'))
         .map(async (file) => {
           const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드=썸네일(thumbUrl), 라이트박스/편집/다운로드=원본(signedUrl).
+          //   두 URL 모두 캐시 안정화(재서명·브라우저 재다운로드 감축). 그리드가 원본을 다운로드하지 않는 게 핵심.
+          const [thumbUrl, signedUrl] = await Promise.all([
+            signedThumbUrl('photos', path),
+            signedOriginalUrl('photos', path),
+          ]);
           const { imgType, timestamp } = parseTreatImgMeta(file.name);
           const dateStr = timestamp > 0
             ? new Date(timestamp).toISOString().slice(0, 10)
             : (file.created_at ? file.created_at.slice(0, 10) : 'unknown');
           return {
             path,
-            signedUrl: data?.signedUrl ?? '',
+            signedUrl: signedUrl ?? '',
+            thumbUrl: thumbUrl ?? '',
             name: file.name,
             imgType,
             dateStr,
@@ -1286,7 +1311,7 @@ function TreatmentImagesSection({
       const ext = file.name.split('.').pop() ?? 'jpg';
       // T-20260517: 파일명에 type 접두사 포함
       const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -1774,7 +1799,7 @@ function TreatmentImagesSection({
     let done = 0;
     for (const { blob, previewUrl } of capturedBlobs) {
       const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
-      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
       URL.revokeObjectURL(previewUrl);
       done++;
@@ -1842,8 +1867,12 @@ function TreatmentImagesSection({
       const { error } = await supabase.storage.from('photos').upload(editingImg.path, rotatedBlob, {
         contentType: 'image/jpeg',
         upsert: true,
+        ...PHOTO_UPLOAD_OPTS,
       });
       if (error) throw error;
+      // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 동일 path 객체 교체(회전) → stale signed URL/썸네일
+      //   캐시가 옛 이미지를 재표시하지 않도록 해당 path 캐시 무효화.
+      invalidatePhotoPath('photos', editingImg.path);
       toast.success('회전 저장 완료');
       setEditingImg(null);
       await load();
@@ -2012,8 +2041,9 @@ function TreatmentImagesSection({
                                 return (
                                 <div key={img.path} className="relative group aspect-square">
                                   <img
-                                    src={img.signedUrl}
+                                    src={img.thumbUrl}
                                     alt={img.name}
+                                    loading="lazy"
                                     data-testid="treat-img-thumb"
                                     className={cn(
                                       'w-full h-full object-cover rounded border cursor-pointer',
@@ -2619,7 +2649,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // 상담내역 그룹3 [내용보기] 활성화 + 다이얼로그 구조화 렌더에 사용
   const [healthQResults, setHealthQResults] = useState<HQResult[]>([]);
   // T-20260520-foot-PENCHART-VIEW-SPLIT: 이미지 뷰어 상태
-  const [submissionImages, setSubmissionImages] = useState<{ url: string; date: string; label: string }[]>([]);
+  const [submissionImages, setSubmissionImages] = useState<{ url: string; thumbUrl: string; date: string; label: string }[]>([]);
   const [submissionImagesLoading, setSubmissionImagesLoading] = useState(false);
   // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답
   const [checklistEntries, setChecklistEntries] = useState<{
@@ -3227,8 +3257,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           const canvasFile = (s.field_data as Record<string, unknown> | null)?.canvas_file as string | undefined;
           if (!canvasFile) return null;
           const path = `customer/${cid}/pen-chart/${canvasFile}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          if (!data?.signedUrl) return null;
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 인라인 미리보기는 transform 프리뷰(A4 양식
+          //   가독성 위해 width 800)로 서빙 → 원본 A4 PNG 반복 다운로드 제거. '원본 보기' 링크만 원본(url) 사용.
+          const [preview, original] = await Promise.all([
+            signedThumbUrl('photos', path, { width: 800, quality: 72, resize: 'contain' }),
+            signedOriginalUrl('photos', path),
+          ]);
+          if (!preview && !original) return null;
           const dateStr = s.printed_at ?? s.signed_at ?? '';
           let label = '';
           if (s.template_key === 'personal_checklist_general') label = '개인정보+체크리스트 (일반)';
@@ -3237,10 +3272,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           else if (s.template_key === 'health_questionnaire_general') label = '발건강 질문지 (일반)';
           else if (s.template_key === 'health_questionnaire_senior') label = '발건강 질문지 (어르신용)';
           else label = s.template_key ?? '';
-          return { url: data.signedUrl, date: dateStr, label };
+          return { url: original ?? preview ?? '', thumbUrl: preview ?? original ?? '', date: dateStr, label };
         }),
       );
-      setSubmissionImages(results.filter(Boolean) as { url: string; date: string; label: string }[]);
+      setSubmissionImages(results.filter(Boolean) as { url: string; thumbUrl: string; date: string; label: string }[]);
     } finally {
       setSubmissionImagesLoading(false);
     }
@@ -9603,8 +9638,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </a>
                       </div>
                       <img
-                        src={img.url}
+                        src={img.thumbUrl}
                         alt={img.label}
+                        loading="lazy"
                         className="w-full object-contain max-h-[400px]"
                       />
                     </div>

@@ -28,6 +28,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
+import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS } from '@/lib/photoUrl';
 import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
@@ -262,6 +263,9 @@ type C1TreatImgType = 'before' | 'after' | 'photo';
 interface C1TreatImgItem {
   path: string;
   signedUrl: string;
+  // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시용 transform 썸네일(수십 KB).
+  //   그리드 <img> 는 thumbUrl, 확대(새 창)는 signedUrl(원본)만 사용해 원본 반복 다운로드 제거.
+  thumbUrl: string;
   name: string;
   imgType: C1TreatImgType;
   dateStr: string;
@@ -296,15 +300,20 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
         .filter((f) => f.name && !f.id?.endsWith('/'))
         .map(async (file) => {
           const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드=썸네일(thumbUrl), 확대=원본(signedUrl).
+          //   두 URL 모두 캐시 안정화(재서명·브라우저 재다운로드 감축). 그리드가 원본을 다운로드하지 않는 게 핵심.
+          const [thumbUrl, signedUrl] = await Promise.all([
+            signedThumbUrl('photos', path),
+            signedOriginalUrl('photos', path),
+          ]);
           const { imgType, timestamp } = parseC1TreatMeta(file.name);
           const dateStr = timestamp > 0
             ? new Date(timestamp).toISOString().slice(0, 10)
             : (file.created_at ? file.created_at.slice(0, 10) : 'unknown');
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name, imgType, dateStr, timestamp } as C1TreatImgItem;
+          return { path, signedUrl: signedUrl ?? '', thumbUrl: thumbUrl ?? '', name: file.name, imgType, dateStr, timestamp } as C1TreatImgItem;
         }),
     );
-    const valid = withMeta.filter((i) => i.signedUrl);
+    const valid = withMeta.filter((i) => i.thumbUrl || i.signedUrl);
     valid.sort((a, b) => b.timestamp - a.timestamp);
     setItems(valid);
     // 최신 날짜 자동 펼치기
@@ -323,7 +332,8 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop() ?? 'jpg';
       const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 신규분 cacheControl 부여(브라우저/CDN 캐시 창).
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -433,10 +443,11 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
                               {typeItems.map((img) => (
                                 <div key={img.path} className="relative group">
                                   <img
-                                    src={img.signedUrl}
+                                    src={img.thumbUrl || img.signedUrl}
                                     alt={img.name}
+                                    loading="lazy"
                                     className="w-full h-20 object-cover rounded border cursor-pointer"
-                                    onClick={() => window.open(img.signedUrl, '_blank')}
+                                    onClick={() => window.open(img.signedUrl || img.thumbUrl, '_blank')}
                                   />
                                   <button
                                     onClick={() => remove(img)}
