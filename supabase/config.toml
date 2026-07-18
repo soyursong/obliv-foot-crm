@@ -34,3 +34,14 @@ verify_jwt = false
 #   (redpay-reconcile / reservation-ingest-from-dopamine 동일 컨벤션).
 [functions.attendance-sync]
 verify_jwt = false
+
+# T-20260718-foot-CLOSING-HERALD-PORT-GOLDEN (shadow apply):
+#   closing-confirmed-publisher 는 pg_cron worker(process_closing_confirmed_outbox → net.http_post)가
+#   X-Internal-Cron 헤더(=vault internal_cron_secret)만 실어 호출한다(Supabase JWT 아님). 게이트웨이
+#   기본 verify_jwt=true 면 EF 코드 도달 전 401 → 워커가 매번 거부되어 outbox pending→sent 전이 불가.
+#   verify_jwt=false 로 게이트웨이 JWT 검사를 끄고 인증은 EF 내부(index.ts: X-Internal-Cron==CRON_SECRET,
+#   불일치/누락 → 401)에 위임 → secret 검증이 인증의 단일 관문이므로 unauth hole 없음
+#   (attendance-sync / redpay-reconcile / reservation-ingest-from-dopamine 동일 컨벤션).
+#   ※첫 배포=shadow(config.mode='shadow', dispatch 0) → 워커가 live-flip 전엔 EF 미호출. live-flip=supervisor 소관.
+[functions.closing-confirmed-publisher]
+verify_jwt = false
