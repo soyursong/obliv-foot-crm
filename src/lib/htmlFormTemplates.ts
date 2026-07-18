@@ -1515,14 +1515,19 @@ const RX_STANDARD_HTML = `
         <td style="width:90px;">{{diag_code_1}}</td>
         <td rowspan="4" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
         <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 도장 우하단 고정 제거 → 처방의료인 성명 근방 직인 -->
-        <td rowspan="4" style="width:130px;">{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
+        <!-- T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: 처방의료인 성명 = 처방전 전용 {{prescriber_name}}(실 의료인·사람).
+             ★{{doctor_name}}(billing 대표자 축)은 미지정 시 기관명으로 폴백(T-20260713 UNLINKED, field-confirmed)해
+             처방전 처방의료인 성명이 기관명으로 찍혀 §12①4 위반·약국 반려(실사고) → 공유 토큰 오염 분리. -->
+        <td rowspan="4" style="width:130px;">{{prescriber_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
         <td style="width:55px; background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;종&nbsp;별</td>
         <td>의사</td>
       </tr>
       <tr>
         <td>{{diag_code_2}}</td>
         <td style="background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;번&nbsp;호</td>
-        <td>{{doctor_license_no}}</td>
+        <!-- T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: §12①4 처방의료인 면허번호 = 처방전 전용 {{prescriber_license_no}}
+             (성명 {{prescriber_name}}과 동일 clinicDoctor 사람 기준 → 이름↔면허 정합, 기관명 폴백 오염 차단). -->
+        <td>{{prescriber_license_no}}</td>
       </tr>
       <tr style="{{diag_row_3_style}}">
         <td>{{diag_code_3}}</td>
