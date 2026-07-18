@@ -251,6 +251,20 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
   const rxQrData = `RX|${rxRecordNo}|${today}`;
   const rxQrUrl = `${QR_CODE_API_ENDPOINT}?size=140x140&qzone=1&margin=0&format=png&data=${encodeURIComponent(rxQrData)}`;
 
+  // T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND [FIX-REQUEST MSG-20260719-030026-gjpf]:
+  //   진단서 '의사 성명'(attending_doctor_name) 결선 — 1순위 clinicDoctor(실 의료인) 성명.
+  //   clinicDoctor 부재 시 blank 방지 폴백으로 ctx.doctor(치료테이블/듀티/override 진료의 성명)를 쓰되,
+  //   ★ctx.doctor 가 기관명(ctx.clinic.name)과 동일하면 폴백을 억제해 공란으로 둔다.
+  //   근거: loadAutoBindContext sealFallbackToInstitution 경로에서 doctorName←clinics.name 으로 덮이므로,
+  //   이 폴백이 그 값을 그대로 흘리면 진단서 '의사 성명'에 기관명이 찍혀 RC(법정문서 신원 오표기) 재발.
+  //   ∴ 기관명 일치 시 억제 = RC 그대로 차단(신규 spec 엣지 '기관명 추정 금지') + 실 진료의명은 폴백 채움
+  //   (UNLINKED AC-1 회귀 재통과). 생산 shape 에선 clinicDoctor null ⟺ clinic_doctors empty ⟹ seal-fallback
+  //   미발화라 ctx.doctor 가 기관명일 수 없으나, 합성/미래 shape 까지 방어하는 defense-in-depth.
+  const institutionName = ctx.clinic?.name ?? '';
+  const attendingDoctorName =
+    ctx.clinicDoctor?.name ??
+    (ctx.doctor && ctx.doctor !== institutionName ? ctx.doctor : '');
+
   return {
     patient_name: ctx.customer?.name ?? ctx.checkIn.customer_name ?? '',
     patient_phone: formatPhone(ctx.customer?.phone ?? ctx.checkIn.customer_phone),
@@ -285,7 +299,10 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     //   전용 토큰으로 분리한다. clinicDoctor는 미지정 폴백 시에도 대표원장(is_default) 실인물로 유지
     //   (이름·면허 보존, 도장만 법인 인감 폴스루) → 항상 실 의료인 성명 확보 + 이름↔면허({{doctor_license_no}},
     //   동일 clinicDoctor.license_no) 정합. 지정 진료의는 그 원장으로 결선. billing 축({{doctor_name}}) 무접촉.
-    attending_doctor_name: ctx.clinicDoctor?.name ?? '',
+    //   T-20260718-...-BIND [FIX-REQUEST MSG-20260719-030026-gjpf, spec_fail_regression 보강]:
+    //   결선 로직은 위 attendingDoctorName const 참조(기관명-가드 폴백). blank latent gap 차단 +
+    //   기관명 오염(RC) 차단을 동시 만족. UNLINKED AC-1 회귀 재통과 + 신규 spec 엣지 GREEN.
+    attending_doctor_name: attendingDoctorName,
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
     // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 야간·공휴일 체크박스 마크 기본 공란.
     //   실제 자동 체크·가산 금액 반영은 출력시점(new Date()) 판정으로 DocumentPrintPanel(대상 2종 서류)

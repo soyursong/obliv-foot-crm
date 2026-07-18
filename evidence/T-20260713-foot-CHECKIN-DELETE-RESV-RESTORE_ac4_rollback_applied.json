@@ -1,0 +1,12 @@
+{
+  "note": "rollback: set these ids status back to checked_in",
+  "ids": [
+    "5244c31a-fea6-43fc-9a38-00d6f6297919",
+    "48a2af07-9ac5-40d7-b927-b705b11b2080",
+    "611ba015-a14b-4f64-a13e-820fb20e2f9f",
+    "f5d37b02-dfbe-407d-b7ea-1606470ff66e",
+    "b0001156-57ef-4eae-977b-7cef0bb9ce1b",
+    "c302de18-ecb4-4b23-8037-5b750cbac466",
+    "a62c3aa3-7a86-4195-b6c0-ffe23df3f9a7"
+  ]
+}

@@ -23,6 +23,13 @@
 import { type InsuranceGrade, getBaseCopayRate } from './insurance';
 import { supabase } from './supabase';
 
+// [CI-UNBLOCK] getBaseCopayRate 재수출(facade). footBilling 은 급여 본인부담 산정의 SSOT 파사드라
+//   copay 기본률 조회를 이 모듈 표면에서 함께 노출한다. T-20260715-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY
+//   /T-20260526-COPAY-MINI-BUG spec 이 '../lib/footBilling' 에서 import(원 소스=insurance.ts) →
+//   미재수출로 Playwright 전체 collection 이 module-load SyntaxError 로 abort 되던 것 복구.
+//   순수 re-export(런타임/behavior 무변) — insurance.ts 가 유일 정의 소스.
+export { getBaseCopayRate } from './insurance';
+
 export type TaxClass = '비급여(과세)' | '비급여(면세)' | '급여';
 
 /* ───────────────────────────────────────────────────────────────────────────
