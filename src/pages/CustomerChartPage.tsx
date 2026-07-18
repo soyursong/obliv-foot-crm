@@ -28,6 +28,7 @@ import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
 import { canViewRrn, isStaffUnlockRole } from '@/lib/permissions';
+import { deriveGenderFromRRN } from '@/lib/rrn'; // T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): 성별 파생 표시전용
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay, formatDateDots, formatDateTimeDots } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO, staffRoleSortIndex } from '@/lib/status';
@@ -2844,6 +2845,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8: 전체 표시용 (펜차트 보험차트 자동채움 전용)
   const [rrnFull, setRrnFull] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
+  // T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): RRN 7번째 자리 파생 성별(남/여/외국인). 표시전용 — 자릿수 비노출.
+  const [rrnDerivedGender, setRrnDerivedGender] = useState<'남' | '여' | '외국인' | null>(null);
   // C22-PKG-DEDUCT: 인라인 차감 폼 (복구 — T-20260510-foot-C22-SECTION-MERGE regression fix)
   const [c22DeductForm, setC22DeductForm] = useState({
     sessionDate: format(new Date(), 'yyyy-MM-dd'),
@@ -3325,6 +3328,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (!customer) return;
     setRrnMasked(undefined);
     setRrnFull(undefined);
+    setRrnDerivedGender(null); // T-20260630 (B안): 고객 변경 시 파생 성별 초기화
     // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 조회 권한 없는 직원은 rrn_decrypt 가
     //   항상 null → 불필요한 RPC 호출 생략. 렌더에서 userCanViewRrn 분기로 안내문 표기.
     if (!userCanViewRrn) {
@@ -3339,9 +3343,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         setRrnMasked(s.slice(0, 6) + '-*******');
         // AC-8: 펜차트 보험차트 자동채움용 전체 표시 (마스킹 없음)
         setRrnFull(s.slice(0, 6) + '-' + s.slice(6));
+        // T-20260630 (B안): 성별 더블체크용 파생 라벨 (자릿수 비노출, 인메모리 복호값 재사용)
+        setRrnDerivedGender(deriveGenderFromRRN(s));
       } else {
         setRrnMasked(null);
         setRrnFull(null);
+        setRrnDerivedGender(null);
       }
     })();
   }, [customer?.id, userCanViewRrn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3636,6 +3643,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           // 서버 권위값으로 즉시 반영 (새로고침 불필요)
           setRrnMasked(s.slice(0, 6) + '-*******');
           setRrnFull(s.slice(0, 6) + '-' + s.slice(6)); // AC-8: 펜차트 자동채움용 전체값
+          setRrnDerivedGender(deriveGenderFromRRN(s)); // T-20260630 (B안): 저장 직후 파생 성별 갱신
           return true;
         }
         // encrypt 는 성공으로 보였으나 재조회 실패 = 미영속 → 데이터 유실 신호 (오해 방지: 낙관 표시 안 함)
@@ -5714,10 +5722,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </tr>
 
                 {/* ③ 성별 (라디오 스타일) — T-20260510-foot-C21-DEPLOYED-VERIFY: 클릭 활성화 */}
+                {/* T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): 주민번호 파생 성별 라벨로 더블체크 (자릿수 비노출) */}
                 <tr>
                   <td className={LC}>성별</td>
                   <td className={VC} colSpan={3}>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
                       {[
                         { val: 'M',       label: '남성' },
                         { val: 'F',       label: '여성' },
@@ -5756,6 +5765,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           </button>
                         );
                       })}
+                      {/* T-20260630 (B안): 주민번호 파생 성별 힌트 — 직원 더블체크용. RRN 자릿수는 노출하지 않음. */}
+                      {rrnDerivedGender && (() => {
+                        // 저장된 성별과 파생 성별 불일치 여부 (더블체크 경고)
+                        const storedLabel = customer.is_foreign
+                          ? '외국인'
+                          : customer.gender === 'M' ? '남'
+                          : customer.gender === 'F' ? '여'
+                          : null;
+                        const mismatch = storedLabel !== null && storedLabel !== rrnDerivedGender;
+                        return (
+                          <span
+                            className={cn(
+                              'text-xs whitespace-nowrap',
+                              mismatch ? 'text-red-600 font-semibold' : 'text-amber-600',
+                            )}
+                            title={mismatch
+                              ? `저장된 성별(${storedLabel})과 주민번호 파생 성별(${rrnDerivedGender})이 다릅니다. 확인해주세요.`
+                              : '주민번호 뒷자리로 파생한 성별 (표시전용)'}
+                          >
+                            {mismatch ? '⚠ ' : ''}주민번호 파생: {rrnDerivedGender}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                 </tr>
