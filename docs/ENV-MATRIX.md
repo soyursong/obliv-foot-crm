@@ -51,6 +51,10 @@
 - **컷오버(원자 단위, supervisor 협업)** — dev DB 스키마 적재 완료 후에만 일괄 전환:
   1. 스키마 baseline: `scripts/sync-schema-to-dev.sh` (prod schema-only pg_dump → dev + 합성 PHI-0 시드). prod DB 비번=supervisor 보유.
   2. CI secret: `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` → **dev 자체 값**(prod 키 재사용 금지, P1 SERVICEROLE-KEY-EXPOSURE 정합).
+  2b. **PRODREF-HARDGUARD 활성**: CI secret·로컬에 `EXPECT_DEV_DB_REF=kcdqtyivtqcjmcrdjkqi` 주입.
+      → `tests/fixtures/index.ts assertExpectedDbTarget()`(global-setup/teardown 검문)가 이후
+      secret 오배선으로 target 이 prod ref 로 되돌아가면 pre-sweep·픽스처 write 이전에 즉시 abort.
+      **컷오버 전에는 미설정 유지**(무동작 → 현행 prod 타겟 CI 무파손). defense-in-depth 2차 방벽.
   3. 로컬 `.env.local` E2E 타겟 → dev ref.
   4. AC-2 sim-flag: `tests/fixtures/index.ts` `simulation` 기본값 전면 on(dev DB엔 실환자 뷰 없음 → 가시성 spec 무파손, 매듭 자동 해소).
   5. CF Pages preview env → dev ref.

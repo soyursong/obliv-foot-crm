@@ -24,6 +24,34 @@ function svc(): SupabaseClient {
   return _sb;
 }
 
+// ── PRODREF-HARDGUARD (T-20260719-foot-HARNESS-TESTDB-ISOLATION / §4 defense-in-depth) ──
+//   E2E/CI 하네스가 격리 dev DB(obliv-foot-dev)에서 다시 prod(rxlomoozakkjesdqjtvd)로
+//   향하는 secret 오배선을 **첫 write 이전에** 큰소리로 차단한다.
+//   - 기본값(EXPECT_DEV_DB_REF 미설정) = 무동작 → 컷오버 전 현행 CI 무파손(prod 타겟 허용).
+//   - supervisor 가 컷오버 절차(docs/ENV-MATRIX.md §테스트/E2E 격리 DB, step 2~5)에서
+//     `EXPECT_DEV_DB_REF=kcdqtyivtqcjmcrdjkqi` 를 CI/로컬에 주입 → 그 시점부터 가드 활성.
+//     이후 secret 이 실수로 prod ref 로 되돌아가면 fixture write·cleanup 이전에 즉시 abort.
+//   기존 registry teardown(AC-3)과 독립된 2차 방벽(defense-in-depth): teardown 은 '치우고',
+//   이 가드는 '애초에 prod 로 못 쓰게' 한다.
+const KNOWN_PROD_REF = 'rxlomoozakkjesdqjtvd';
+export function assertExpectedDbTarget(): void {
+  const expected = (process.env.EXPECT_DEV_DB_REF ?? '').trim();
+  if (!expected) return; // opt-in — 컷오버 전에는 무동작
+  const url = SUPA_URL ?? '';
+  if (!url.includes(expected)) {
+    throw new Error(
+      `[PRODREF-HARDGUARD] E2E/CI target Supabase 가 기대 dev ref('${expected}')를 포함하지 않습니다 ` +
+        `(VITE_SUPABASE_URL=${url || '<빈값>'}). secret 오배선 의심 → 하네스 abort(실환자 DB 오염 차단). ` +
+        `컷오버 절차: docs/ENV-MATRIX.md §테스트/E2E 격리 DB.`,
+    );
+  }
+  if (url.includes(KNOWN_PROD_REF) && expected !== KNOWN_PROD_REF) {
+    throw new Error(
+      `[PRODREF-HARDGUARD] target 이 prod ref('${KNOWN_PROD_REF}')를 가리킵니다. 격리 dev DB 로 전환하세요.`,
+    );
+  }
+}
+
 // ── 시드 row 레지스트리 (T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE / AC-3) ──
 //   마커(memo/notes) + 이름접두 스윕은 test 가 name/memo 를 커스텀 값으로 덮어쓰면 놓칠 수
 //   있다(POST 10 / DELETE 6 = 4 잔재의 구조적 원인). 프로세스가 살아있는 동안 생성한 row id
