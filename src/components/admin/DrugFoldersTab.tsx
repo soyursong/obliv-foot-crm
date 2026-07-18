@@ -144,10 +144,16 @@ export default function DrugFoldersTab() {
   // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: profile 전달(has_ops_authority 반영). EDIT=대표원장(flag)·admin escape.
   const canEdit = canEditClinicMgmt(profile);
   // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 편집 권한.
-  //   T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 통일 방향.
-  //   ★급여여부 RLS(is_admin_or_manager)에 director 부재 → FE 에서 director grant 시 저장이 RLS 거부됨.
-  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS, CONSULT GO 후) RLS 와 동시.
-  const canManageInsurance = profile?.role === 'admin';
+  //   T-20260702-foot-DRUGFOLDER-INSURANCE-DIRECTOR-EDIT (P1): 급여여부 편집을 진료관리 canon 과 정합.
+  //   ★RC 정정: 이 자리의 구 주석 "급여여부 RLS(is_admin_or_manager)에 director 부재"는 STALE·오류였음.
+  //     PROD 실측(2026-07-18 라이브 스냅샷, _probe.mjs)으로 확정:
+  //       is_admin_or_manager() = current_user_role() IN ('admin','manager','director')  ← director 이미 포함
+  //       prescription_codes_admin_all [ALL] USING/WITH CHECK = is_admin_or_manager()   ← director 이미 write 가능
+  //     ⇒ 실제 락아웃 원인 = 이 FE 하드코딩(role==='admin') 단독. RLS/DDL 변경 불필요(sibling 4f27fec8 동형).
+  //   canEditClinicMgmt = {admin, director(대표원장), has_ops_authority} true / 일반직원 false
+  //     → 회귀 가드 정합: admin(총괄) 정상 유지, director(문지은 대표원장) 편집 grant, 일반직원 미노출 유지.
+  //     ★RLS(is_admin_or_manager=admin/manager/director) 와 이중 가드. FE 가 더 엄격(manager 제외)해도 write-deny 사고 無.
+  const canManageInsurance = canEditClinicMgmt(profile);
   const qc = useQueryClient();
 
   const { data: folders = [], isLoading: foldersLoading } = useDrugFolders();
