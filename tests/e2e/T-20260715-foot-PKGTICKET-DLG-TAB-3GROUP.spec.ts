@@ -48,12 +48,14 @@ test.describe('T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP', () => {
     expect(dlg.includes('공식 패키지'), 'AC-1: 공식 패키지 라벨').toBe(true);
     expect(dlg.includes('커스텀'), 'AC-1: 커스텀 라벨').toBe(true);
 
-    // /packages 와 동일 순서: 정찰가(기준) → 공식 패키지 → 커스텀
+    // 탭 순서 = [커스텀 | 공식 패키지 | 정찰가(기준)] — 커스텀 최앞.
+    // (T-20260715-foot-BUYTICKET-POPUP-TAB-MATCH-PKGMGMT, 김주연 총괄 A/A 최종확정 2026-07-18,
+    //  옵션 A CUSTOMMENU-FRONT 로 3GROUP 초기 순서[정찰가<공식<커스텀]를 supersede. 라벨/그룹 소스 불변.)
     const iStd = dlg.indexOf('data-testid="pkg-group-standard"');
     const iOff = dlg.indexOf('data-testid="pkg-group-official"');
     const iCus = dlg.indexOf('data-testid="pkg-group-custom"');
-    expect(iStd, '순서: 정찰가 < 공식').toBeLessThan(iOff);
-    expect(iOff, '순서: 공식 < 커스텀').toBeLessThan(iCus);
+    expect(iCus, '순서: 커스텀 < 공식').toBeLessThan(iOff);
+    expect(iOff, '순서: 공식 < 정찰가').toBeLessThan(iStd);
 
     // 개별 패키지명이 상단 탭 라벨로 직접 나열되지 않음(그룹 탭 value = 그룹 키)
     expect(dlg.includes('value="standard"'), 'AC-1: 그룹 value=standard').toBe(true);

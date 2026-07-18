@@ -10162,15 +10162,18 @@ function PackagePurchaseFromTemplateDialog({
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
             {/* T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 개별 패키지명 나열 → /packages 관리 3그룹으로 재배치.
-                상단 탭 = 정찰가(기준) / 공식 패키지 / 커스텀 (라벨·순서 /packages Sheet 와 동일).
                 개별 패키지(12/24회권 등)는 해당 그룹 탭 내부 pill 로 선택(누락 없음, AC-2).
                 탭 전환·항목 선택 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-3 회귀 가드).
-                (선행 배포 PKG-POPUP-TAB-COMPACT(41dc6380)의 shadcn Tabs 위에 그룹핑만 얹음.) */}
+                (선행 배포 PKG-POPUP-TAB-COMPACT(41dc6380)의 shadcn Tabs 위에 그룹핑만 얹음.)
+                T-20260715-foot-BUYTICKET-POPUP-TAB-MATCH-PKGMGMT (김주연 총괄 A/A 최종확정 2026-07-18):
+                상단 탭 순서 = [커스텀 | 공식 패키지 | 정찰가(기준)] — 커스텀 최앞 유지(CUSTOMMENU-FRONT, 옵션 A).
+                (/packages 는 정찰가 최앞이나, 팝업은 현장 요청으로 커스텀 최앞 = 의도적 편차. 라벨·그룹 소스는 동일.)
+                시각 순서만 변경(TabsList) — value 기반 렌더라 default groupTab='custom'/selectPkgGroup/채움 로직 전부 무변경. */}
             <Tabs value={groupTab} onValueChange={(v) => selectPkgGroup(v as PkgGroupTab)}>
               <TabsList className="w-full">
-                <TabsTrigger value="standard" data-testid="pkg-group-standard" className="flex-1 h-7 text-xs">정찰가(기준)</TabsTrigger>
-                <TabsTrigger value="official" data-testid="pkg-group-official" className="flex-1 h-7 text-xs">공식 패키지</TabsTrigger>
                 <TabsTrigger value="custom" data-testid="pkg-group-custom" className="flex-1 h-7 text-xs">커스텀</TabsTrigger>
+                <TabsTrigger value="official" data-testid="pkg-group-official" className="flex-1 h-7 text-xs">공식 패키지</TabsTrigger>
+                <TabsTrigger value="standard" data-testid="pkg-group-standard" className="flex-1 h-7 text-xs">정찰가(기준)</TabsTrigger>
               </TabsList>
 
               {/* 그룹1 — 정찰가(기준): 시술유형별 1회 정상가 참조(/packages 탭1 동일 개념) + 1회성 패키지 선택 pill */}
