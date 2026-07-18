@@ -338,7 +338,10 @@ export function ReservationDetailPopup({
         if (!data) return;
         const c = data as Customer;
         setCustomer(c);
-        setCustomerMemo(c.customer_memo ?? c.memo ?? '');
+        // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 예약팝업 [고객메모]를 2번차트 1구역과
+        // 동일 컬럼(customers.customer_note)으로 수렴 → 양방향 자동 연동. read-fallback으로 레거시
+        // customer_memo(신설 전 9건) 표시 연속성 보존(백필 불요). write는 customer_note로 일원화.
+        setCustomerMemo(c.customer_note ?? c.customer_memo ?? c.memo ?? '');
         setSelectedConsultantId(c.assigned_staff_id ?? '');
       });
     // 1b) 주민번호 마스킹 표시용 생년월일(서버파생) — T-20260614-foot-RESVPOPUP-RRN-NOBIND.
@@ -1156,9 +1159,12 @@ export function ReservationDetailPopup({
   const saveCustomerMemo = async () => {
     if (!reservation.customer_id) return;
     setMemoSaving(true);
+    // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: write는 2번차트 1구역과 동일 컬럼
+    // customers.customer_note로 일원화(양방향 sync). customer_memo는 3구역 예약메모 히스토리
+    // (customer_reservation_memos) seed 원본이므로 미변경·보존(무회귀).
     const { error } = await supabase
       .from('customers')
-      .update({ customer_memo: customerMemo })
+      .update({ customer_note: customerMemo })
       .eq('id', reservation.customer_id);
     setMemoSaving(false);
     if (error) { toast.error(`고객메모 저장 실패: ${error.message}`); return; }
