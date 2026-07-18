@@ -1,0 +1,13 @@
+{
+  "status": 201,
+  "result": "[]",
+  "reattr": {
+    "duty_roster": 8,
+    "package_sessions": 13,
+    "room_assignments": 8,
+    "customers": 0
+  },
+  "activate": 1,
+  "soft_delete": 1,
+  "committed_at": "2026-07-18T05:52:28.658Z"
+}

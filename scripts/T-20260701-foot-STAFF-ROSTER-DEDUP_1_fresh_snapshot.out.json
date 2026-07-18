@@ -1,0 +1,147 @@
+{
+  "snapshot": {
+    "dup_rows": [
+      {
+        "id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+        "name": "박소예",
+        "active": true,
+        "user_id": null,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      }
+    ],
+    "canon_rows": [
+      {
+        "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+        "name": "박소예",
+        "active": false,
+        "user_id": "833c7135-7e26-4743-9679-a95c31573c7f",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      }
+    ],
+    "by_name": [
+      {
+        "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+        "active": false,
+        "user_id": "833c7135-7e26-4743-9679-a95c31573c7f"
+      },
+      {
+        "id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+        "active": true,
+        "user_id": null
+      }
+    ],
+    "dup_ref_duty": 8,
+    "dup_ref_duty_ids": [
+      "000caf90-d7ab-4b22-81be-47459df88df5",
+      "32169004-92f5-46c8-94e6-008c1060ec2e",
+      "61eab4f8-e0de-495f-ae8a-131378d9e70a",
+      "92ffbdb9-aa84-4292-b0fc-b705f03d0d6e",
+      "aa5222a8-c90f-4840-be62-c820c3cadbf3",
+      "b0c19633-ba56-4be7-a202-edaa23b6c22b",
+      "c9673315-ad01-463d-b6bd-402482d5a9ee",
+      "dfed0182-7c92-42d6-89ea-d4cf859f21c9"
+    ],
+    "dup_ref_pkg": 13,
+    "dup_ref_pkg_ids": [
+      "316b0ce5-b33b-43fb-b50a-0c6418dce79e",
+      "3817600c-99d8-4078-a0b1-0b0e50242c85",
+      "38441f3b-095d-41e2-8fa8-7e38c83ae330",
+      "56d6db3f-2d9b-4562-b66e-8022fd5b1858",
+      "750141d6-aa5c-4ec9-bbc5-d0f42879273b",
+      "7ee96f89-27f6-467c-90bf-566751d302a0",
+      "98ca65d2-d015-4a49-a249-bbb8c9df5bb1",
+      "ae0d3ed5-e5c0-4ca2-abfc-49686e052fdd",
+      "b63ed621-e777-44b5-9c1c-b8016e05e08e",
+      "bf53e640-e90f-4bb8-bec7-3ceed73134ad",
+      "ca6b789c-8ddb-48e1-97be-61c1a8602f42",
+      "d78a7702-eae5-44f3-bb11-18b5f843b4d5",
+      "e5531f86-b9c1-4a48-8021-23301d410b59"
+    ],
+    "dup_ref_room": 8,
+    "dup_ref_room_ids": [
+      "113fc9a4-ab88-4aa0-a28c-279b75005926",
+      "539e4dea-99bd-4ab0-bb07-d0bd4648b439",
+      "5979b7c0-978b-4120-a6e7-76a720169385",
+      "adbfd7a0-9bcd-4b12-a8e1-f5a0e4df6e9d",
+      "b01070dc-47f7-41b5-b492-7157703806a9",
+      "ec933430-d859-493c-b27a-408c826fa863",
+      "ee588ab1-3163-4ae3-8a22-aef502d6baa7",
+      "f95eaf8d-91bf-4f5c-964e-8d0e64ff10c5"
+    ],
+    "dup_ref_cust": 0,
+    "dup_ref_cust_ids": [],
+    "canon_ref_duty": 0,
+    "canon_ref_pkg": 0,
+    "canon_ref_room": 0,
+    "canon_ref_cust": 0,
+    "canon_ref_cust_ids": [],
+    "duty_collision": [],
+    "dup_user_id": null,
+    "canon_up": [
+      {
+        "id": "833c7135-7e26-4743-9679-a95c31573c7f",
+        "active": true
+      }
+    ]
+  },
+  "manifest": {
+    "generated_at": "2026-07-18T05:50:29.456Z",
+    "dup": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+    "canon": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+    "canon_user": "833c7135-7e26-4743-9679-a95c31573c7f",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "per_column_freeze": {
+      "duty_roster": 8,
+      "package_sessions": 13,
+      "room_assignments": 8,
+      "customers": 0
+    },
+    "inbound_total": 29,
+    "dup_customer_ids": [],
+    "canon_customer_ids_before": [],
+    "dup_duty_ids": [
+      "000caf90-d7ab-4b22-81be-47459df88df5",
+      "32169004-92f5-46c8-94e6-008c1060ec2e",
+      "61eab4f8-e0de-495f-ae8a-131378d9e70a",
+      "92ffbdb9-aa84-4292-b0fc-b705f03d0d6e",
+      "aa5222a8-c90f-4840-be62-c820c3cadbf3",
+      "b0c19633-ba56-4be7-a202-edaa23b6c22b",
+      "c9673315-ad01-463d-b6bd-402482d5a9ee",
+      "dfed0182-7c92-42d6-89ea-d4cf859f21c9"
+    ],
+    "dup_pkg_ids": [
+      "316b0ce5-b33b-43fb-b50a-0c6418dce79e",
+      "3817600c-99d8-4078-a0b1-0b0e50242c85",
+      "38441f3b-095d-41e2-8fa8-7e38c83ae330",
+      "56d6db3f-2d9b-4562-b66e-8022fd5b1858",
+      "750141d6-aa5c-4ec9-bbc5-d0f42879273b",
+      "7ee96f89-27f6-467c-90bf-566751d302a0",
+      "98ca65d2-d015-4a49-a249-bbb8c9df5bb1",
+      "ae0d3ed5-e5c0-4ca2-abfc-49686e052fdd",
+      "b63ed621-e777-44b5-9c1c-b8016e05e08e",
+      "bf53e640-e90f-4bb8-bec7-3ceed73134ad",
+      "ca6b789c-8ddb-48e1-97be-61c1a8602f42",
+      "d78a7702-eae5-44f3-bb11-18b5f843b4d5",
+      "e5531f86-b9c1-4a48-8021-23301d410b59"
+    ],
+    "dup_room_ids": [
+      "113fc9a4-ab88-4aa0-a28c-279b75005926",
+      "539e4dea-99bd-4ab0-bb07-d0bd4648b439",
+      "5979b7c0-978b-4120-a6e7-76a720169385",
+      "adbfd7a0-9bcd-4b12-a8e1-f5a0e4df6e9d",
+      "b01070dc-47f7-41b5-b492-7157703806a9",
+      "ec933430-d859-493c-b27a-408c826fa863",
+      "ee588ab1-3163-4ae3-8a22-aef502d6baa7",
+      "f95eaf8d-91bf-4f5c-964e-8d0e64ff10c5"
+    ],
+    "canon_refs_before": {
+      "duty_roster": 0,
+      "package_sessions": 0,
+      "room_assignments": 0,
+      "customers": 0
+    },
+    "duty_collision": [],
+    "all_guards_pass": true,
+    "next": "GO — apply DO block (freeze 매니페스트 대사)"
+  }
+}

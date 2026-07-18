@@ -1,0 +1,131 @@
+{
+  "staff_rows": [
+    {
+      "id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+      "name": "박소예",
+      "active": true,
+      "user_id": null,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+      "name": "박소예",
+      "active": false,
+      "user_id": "833c7135-7e26-4743-9679-a95c31573c7f",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    }
+  ],
+  "staff_cols": [
+    "id",
+    "clinic_id",
+    "name",
+    "role",
+    "active",
+    "created_at",
+    "user_id",
+    "updated_at",
+    "assign_sort_order"
+  ],
+  "constraints": [
+    {
+      "table_name": "customers",
+      "constraint_name": "customers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "cols": "id"
+    },
+    {
+      "table_name": "duty_roster",
+      "constraint_name": "duty_roster_clinic_id_date_doctor_id_key",
+      "constraint_type": "UNIQUE",
+      "cols": "clinic_id,date,doctor_id"
+    },
+    {
+      "table_name": "duty_roster",
+      "constraint_name": "duty_roster_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "cols": "id"
+    },
+    {
+      "table_name": "package_sessions",
+      "constraint_name": "package_sessions_package_id_session_number_key",
+      "constraint_type": "UNIQUE",
+      "cols": "package_id,session_number"
+    },
+    {
+      "table_name": "package_sessions",
+      "constraint_name": "package_sessions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "cols": "id"
+    },
+    {
+      "table_name": "package_sessions",
+      "constraint_name": "unique_package_checkin_session",
+      "constraint_type": "UNIQUE",
+      "cols": "package_id,check_in_id,session_number"
+    },
+    {
+      "table_name": "room_assignments",
+      "constraint_name": "room_assignments_clinic_work_date_type_number_key",
+      "constraint_type": "UNIQUE",
+      "cols": "clinic_id,work_date,room_type,room_number"
+    },
+    {
+      "table_name": "room_assignments",
+      "constraint_name": "room_assignments_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "cols": "id"
+    }
+  ],
+  "unique_indexes": [
+    {
+      "tablename": "customers",
+      "indexname": "customers_pkey",
+      "indexdef": "CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (id)"
+    },
+    {
+      "tablename": "customers",
+      "indexname": "idx_customers_clinic_phone",
+      "indexdef": "CREATE UNIQUE INDEX idx_customers_clinic_phone ON public.customers USING btree (clinic_id, phone)"
+    },
+    {
+      "tablename": "customers",
+      "indexname": "customers_chart_number_unique",
+      "indexdef": "CREATE UNIQUE INDEX customers_chart_number_unique ON public.customers USING btree (chart_number) WHERE (chart_number IS NOT NULL)"
+    },
+    {
+      "tablename": "duty_roster",
+      "indexname": "duty_roster_pkey",
+      "indexdef": "CREATE UNIQUE INDEX duty_roster_pkey ON public.duty_roster USING btree (id)"
+    },
+    {
+      "tablename": "duty_roster",
+      "indexname": "duty_roster_clinic_id_date_doctor_id_key",
+      "indexdef": "CREATE UNIQUE INDEX duty_roster_clinic_id_date_doctor_id_key ON public.duty_roster USING btree (clinic_id, date, doctor_id)"
+    },
+    {
+      "tablename": "package_sessions",
+      "indexname": "package_sessions_pkey",
+      "indexdef": "CREATE UNIQUE INDEX package_sessions_pkey ON public.package_sessions USING btree (id)"
+    },
+    {
+      "tablename": "package_sessions",
+      "indexname": "package_sessions_package_id_session_number_key",
+      "indexdef": "CREATE UNIQUE INDEX package_sessions_package_id_session_number_key ON public.package_sessions USING btree (package_id, session_number)"
+    },
+    {
+      "tablename": "package_sessions",
+      "indexname": "unique_package_checkin_session",
+      "indexdef": "CREATE UNIQUE INDEX unique_package_checkin_session ON public.package_sessions USING btree (package_id, check_in_id, session_number)"
+    },
+    {
+      "tablename": "room_assignments",
+      "indexname": "room_assignments_pkey",
+      "indexdef": "CREATE UNIQUE INDEX room_assignments_pkey ON public.room_assignments USING btree (id)"
+    },
+    {
+      "tablename": "room_assignments",
+      "indexname": "room_assignments_clinic_work_date_type_number_key",
+      "indexdef": "CREATE UNIQUE INDEX room_assignments_clinic_work_date_type_number_key ON public.room_assignments USING btree (clinic_id, work_date, room_type, room_number)"
+    }
+  ]
+}

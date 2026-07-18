@@ -1,0 +1,44 @@
+{
+  "verified_at": "2026-07-18T05:53:09.600Z",
+  "dup_inbound_after": 0,
+  "cust_set_ok": true,
+  "all_pass": true,
+  "snapshot": {
+    "dup_row": {
+      "id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+      "name": "박소예 [중복정리 2026-07-18]",
+      "active": false,
+      "user_id": null
+    },
+    "canon_row": {
+      "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+      "name": "박소예",
+      "active": true,
+      "user_id": "833c7135-7e26-4743-9679-a95c31573c7f"
+    },
+    "active_soye": [
+      {
+        "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+        "name": "박소예"
+      }
+    ],
+    "dup_ref_duty": 0,
+    "dup_ref_pkg": 0,
+    "dup_ref_room": 0,
+    "dup_ref_cust": 0,
+    "reattr_duty_to_canon": 8,
+    "reattr_pkg_to_canon": 13,
+    "reattr_room_to_canon": 8,
+    "canon_ref_duty": 8,
+    "canon_ref_pkg": 13,
+    "canon_ref_room": 8,
+    "canon_ref_cust": 0,
+    "canon_cust_ids": []
+  },
+  "freeze": {
+    "duty_roster": 8,
+    "package_sessions": 13,
+    "room_assignments": 8,
+    "customers": 0
+  }
+}
