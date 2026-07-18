@@ -1911,10 +1911,11 @@ function IssueDialog({
   //   seq = C(무리셋 통산): 클리닉 전역 form_submissions count + 1 (날짜·서류종류·환자 무관, read-only).
   //   미리보기는 INSERT 안 함 → 반복 호출에도 seq 불변(idempotent). null = 아직 산출 전 → 발번 보류.
   const [serialChartNo, setSerialChartNo] = useState<string | null>(null);
-  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: 처방전 교부번호(issue_no) 당일 clinic 발행순번.
-  //   read-only count(form_submissions, clinic·당일 printed) +1 → 14자리 교부번호(YYYYMMDD+6자리)의 뒤 6자리.
-  //   ⚠ 기존 UUID-slice fallback 폐기(약국 판독불가 반려 실사고). 로드 실패 시 1로 폴백해 14자리 항상 보장.
-  const [todayIssueSeq, setTodayIssueSeq] = useState<number | null>(null);
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST / DA 설계경보 MSG-k7iz):
+  //   교부번호(issue_no)는 **발행 시점 1회 채번→persist 불변 필드** — print-time 재계산 금지(익일/재인쇄 시 다른번호=결함).
+  //   채번은 handlePrint 의 발행 RPC(issue_foot_rx_issue_no) 내부에서만 수행하고 field_data 에 persist.
+  //   → 미리보기(memo)에는 fabricate 하지 않는다(visit_no 와 동형: 발행본에만 authoritative 번호 표기).
+  //   ⚠ 폐기: 구 interim 의 print-time read-only count(todayIssueSeq) — persist·재인쇄불변 미충족(DA 경보).
   // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 발급순번(serialSeq) FE 상태 제거.
   //   발번 권위 = DB RPC issue_foot_doc_serial (출력 확정 시 선점, handlePrint). 미리보기는 미발번.
   //   출력 확정 시 RPC 가 반환한 seq 를 인쇄본 visit_no 에 주입(아래 issuedVisitNo).
@@ -2117,35 +2118,9 @@ function IssueDialog({
     return () => { cancelled = true; };
   }, [open, checkIn.customer_id, checkIn.clinic_id]);
 
-  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: 처방전 교부번호(issue_no) 당일 순번 로드 (read-only).
-  //   다이얼로그 오픈 시 1회. "clinic 단위 당일 발행순"(총괄 확정) = 해당 clinic 오늘 발행(printed) 서류 건수 +1.
-  //   ⚠ db_change=false: DB 시퀀스/RPC 미추가 → FE read-only count(docSerial approach-b 선례). 순수 count+1 은
-  //     유니크 제약이 없어 동시발번 race 잔존(단일 clinic 순차발행 window 극소) → DB 당일-gapless 하드닝 별도 FOLLOWUP.
-  //   count 실패/null 이어도 seq 최소 1 보장 → buildIssueNo 가 항상 14자리 유효값 산출(약국 반려 방지, AC1).
-  useEffect(() => {
-    if (!open || !checkIn.clinic_id) {
-      setTodayIssueSeq(null);
-      return;
-    }
-    let cancelled = false;
-    // 오늘(Asia/Seoul, 갤탭 로컬=KST) 00:00 ~ 익일 00:00 경계 → created/printed timestamptz(UTC) 대비.
-    const now = new Date();
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-    supabase
-      .from('form_submissions')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', checkIn.clinic_id)
-      .not('printed_at', 'is', null)
-      .gte('printed_at', dayStart.toISOString())
-      .lt('printed_at', dayEnd.toISOString())
-      .then(({ count, error }) => {
-        if (cancelled) return;
-        // 실패해도 최소 1 → 교부번호 14자리 항상 보장(공란 방지). 성공 시 당일 발행수 +1 = 다음(현재) 발행 순번.
-        setTodayIssueSeq(error ? 1 : (count ?? 0) + 1);
-      });
-    return () => { cancelled = true; };
-  }, [open, checkIn.clinic_id]);
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호 당일순번 print-time 로드 제거.
+  //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative.
+  //     미리보기용 count 로더(구 todayIssueSeq)는 print-time 재계산 = persist·재인쇄불변 위배 → 삭제.
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
   const handleDeleteItem = async (id: string) => {
@@ -2395,13 +2370,10 @@ function IssueDialog({
       base.rx_items_html = buildRxItemsHtml(rxItems);
       // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일
       if (!base.usage_days) base.usage_days = '3';
-      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (Bug1): 교부번호 = 14자리(YYYYMMDD + 당일 clinic 발행순번 6자리).
-      //   ⚠ 폐기: 기존 checkIn.id.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가로 처방전 반려 실사고.
-      //   todayIssueSeq 미로드(null) 시엔 미주입(유효 seq 확보 후 memo 재계산) — 로더가 실패해도 최소 1 보장.
-      if (!base.issue_no) {
-        const iss = buildIssueNo(format(new Date(), 'yyyyMMdd'), todayIssueSeq);
-        if (iss) base.issue_no = iss;
-      }
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호(issue_no)는 미리보기에서 미채번.
+      //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative·persist.
+      //     여기(memo)서 print-time count 로 fabricate 하면 재인쇄/익일 다른번호 = correctness 결함 → 발행본에서만 주입.
+      //   ⚠ 절대 부활 금지: 구 checkIn.id.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가 반려 실사고.
     }
 
     // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
@@ -2488,7 +2460,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, todayIssueSeq, editOverrides]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -2686,13 +2658,11 @@ function IssueDialog({
     let printValues: Record<string, string> = allValues;
     const serialEligible = !!docSerialPrefix(template.form_key) && !!serialChartNo;
 
-    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (Bug1 backstop): 처방전 교부번호 14자리 항상 보장.
-    //   memo 계산 시 당일 순번 미로드(null)로 issue_no 공란이던 극단 케이스 방어 — 출력 직전 seq(폴백 1)로 재조립.
-    //   약국 반려 방지: 교부번호 공란·UUID 절대 금지.
-    if (template.form_key === 'rx_standard' && !printValues.issue_no) {
-      const iss = buildIssueNo(format(new Date(), 'yyyyMMdd'), todayIssueSeq ?? 1);
-      if (iss) printValues = { ...printValues, issue_no: iss };
-    }
+    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 처방전 교부번호 발행시점 채번 준비.
+    //   isRx=처방전 → 발행 RPC(issue_foot_rx_issue_no) 로 당일순번 채번(발행본에만 주입, 미리보기 미채번).
+    const isRx = template.form_key === 'rx_standard';
+    const issueYmd = format(new Date(), 'yyyyMMdd');   // 교부번호 앞 8자리(YYYYMMDD, buildIssueNo)
+    const issueDateIso = format(new Date(), 'yyyy-MM-dd'); // RPC p_issue_date(date) 파티션 키
 
     // staffId: issued_by = staff.id (≠ user_profiles.id). 미조회 시 로그 생략하고 출력은 계속.
     if (!isFallback && staffId) {
@@ -2749,6 +2719,40 @@ function IssueDialog({
           toast.error('연번호 발번 실패 — 잠시 후 재출력해 주세요.');
         }
       }
+
+      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST / DA 경보 MSG-k7iz):
+      //   처방전 교부번호(issue_no) = 발행 시점 1회 채번→persist 불변 필드. INSERT 후 RPC(멱등, form_submission_id 키)로
+      //   당일순번 채번 → buildIssueNo(8+N자리) → field_data.issue_no 갱신(재인쇄·익일 인쇄 시 동일번호 = 불변 보장).
+      //   ⚠ print-time count 금지. RPC 실패 시 seq=1 폴백으로 (8+N)자리 유효값은 항상 보장(약국 반려 방지·공란/UUID 금지).
+      if (isRx) {
+        const { data: rxSeq, error: rxErr } = await supabase.rpc('issue_foot_rx_issue_no', {
+          p_clinic_id: checkIn.clinic_id,
+          p_issue_date: issueDateIso,
+          p_form_submission_id: inserted.id,
+        });
+        const iss = buildIssueNo(issueYmd, !rxErr && typeof rxSeq === 'number' ? rxSeq : 1);
+        if (iss) {
+          printValues = { ...printValues, issue_no: iss };
+          const { error: updErr } = await supabase
+            .from('form_submissions')
+            .update({ field_data: printValues })
+            .eq('id', inserted.id);
+          if (updErr) {
+            // rx_issue_seq(권위 순번)는 이미 RPC 가 기록 → 번호 확정. field_data 표시 갱신만 실패.
+            toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+          }
+        }
+      }
+    } else if (isRx) {
+      // 발행 기록 INSERT 없는 경로(fallback 템플릿·staff 미조회)도 교부번호 공란 금지 → 카운터 순번만 채번(persist 없음).
+      //   form_submission_id=null → 순번만 반환. 발행이력 행이 없어 field_data persist 불가하나 인쇄 공란·UUID 는 방지.
+      const { data: rxSeq } = await supabase.rpc('issue_foot_rx_issue_no', {
+        p_clinic_id: checkIn.clinic_id,
+        p_issue_date: issueDateIso,
+        p_form_submission_id: null,
+      });
+      const iss = buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1);
+      if (iss) printValues = { ...printValues, issue_no: iss };
     }
 
     if (template.template_format === 'pdf') {
