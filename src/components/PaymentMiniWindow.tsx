@@ -343,23 +343,85 @@ interface RxDosage {
  *   - 미입력 항목은 각각 1/1/7 fallback
  */
 /**
- * T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 처방전 교부번호 당일 clinic 발행순번(read-only count).
- *   PATH-4(결제창) 발행 경로도 DocumentPrintPanel(PATH-1)과 동일 산출 = 해당 clinic 오늘 발행(printed) 서류 건수 +1.
- *   db_change=false: DB 시퀀스/RPC 미추가 → FE read-only count(docSerial approach-b 선례). count 실패/null 이어도
- *   최소 1 보장 → buildIssueNo 가 항상 (8+N)자리 유효값 산출(약국 반려 방지, AC1). gapless·동시성 완전보장은 별도 FOLLOWUP.
+ * T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / DA 경보 MSG-k7iz / ★L-006 현장승인 2026-07-18):
+ *   결제창(PATH-4) 발행 = **persist-before-print**. 인쇄 전에 form_submissions 를 INSERT 하고, 처방전 교부번호(issue_no)를
+ *   발행 시점 1회 채번(issue_foot_rx_issue_no RPC = per-(clinic,date) 원자 발번, 멱등 키=form_submission_id)해서
+ *   field_data 에 persist 한다 → 재인쇄/익일 인쇄 시 동일 교부번호(불변, print-time 재계산 결함 제거).
+ *   ⚠ 순서재편(구 print-first→insert(fire&forget) → persist-first)은 L-006('서류출력 경로 통일, 변경 시 현장승인 필수')
+ *      저촉 → 김주연 총괄 현장승인("웅 진행ㄱ", MSG-51e0 ts 1784359275.956699, 2026-07-18) 하에 시행.
+ *   반환 = 인쇄본에 주입할 확정 교부번호 문자열(rxIssueNo). rx 미포함 → null(issue_no 미채번).
+ *     fallback/미staff(발행이력 persist 불가) → 순번만 채번(persist 없이 공란/UUID 방지, DocumentPrintPanel 경로A 동형).
+ *   ⚠ 8+N 파라미터화(buildIssueNo/ISSUE_NO_SEQ_WIDTH) 계승 — N 하드코딩 금지(총괄확정 6/14 vs 심평원 5/13 검증 중).
  */
-async function fetchTodayClinicIssueSeq(clinicId: string): Promise<number> {
-  const now = new Date();
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-  const { count, error } = await supabase
+async function persistSubmissionsAndResolveIssueNo(params: {
+  selected: FormTemplate[];
+  clinicId: string | null;
+  checkInId: string;
+  customerId: string | null;
+  staffId: string | null;
+  autoValues: Record<string, string>;
+  codeItems: SelectedItem[];
+  rxItemDosages?: Record<string, RxDosage>;
+  isFallback: boolean;
+}): Promise<string | null> {
+  const { selected, clinicId, checkInId, customerId, staffId, autoValues, codeItems, rxItemDosages, isFallback } = params;
+  const hasRx = selected.some((t) => t.form_key === 'rx_standard');
+  const issueYmd = format(new Date(), 'yyyyMMdd');    // 교부번호 앞 8자리(YYYYMMDD)
+  const issueDateIso = format(new Date(), 'yyyy-MM-dd'); // RPC p_issue_date(date) 파티션 키
+  const nowIso = new Date().toISOString();
+
+  // fallback/미staff: 발행이력 INSERT 불가 → 순번만 채번(persist 없이 공란/UUID 방지). rx 없으면 발번 불요.
+  if (isFallback || !staffId) {
+    if (!hasRx || !clinicId) return null;
+    const { data: rxSeq } = await supabase.rpc('issue_foot_rx_issue_no', {
+      p_clinic_id: clinicId,
+      p_issue_date: issueDateIso,
+      p_form_submission_id: null,
+    });
+    return buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1) || null;
+  }
+
+  // 1) form_submissions INSERT 먼저(issue_no 미포함 field_data) — persist-before-print. 선택 서류 전종 이력 기록(종전과 동일).
+  const submissionRows = selected.map((t) => ({
+    clinic_id: clinicId,
+    template_id: t.id,
+    check_in_id: checkInId,
+    customer_id: customerId,
+    issued_by: staffId,
+    field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, null),
+    status: 'printed' as const,
+    printed_at: nowIso,
+  }));
+  const { data: insertedRows, error: insErr } = await supabase
     .from('form_submissions')
-    .select('id', { count: 'exact', head: true })
-    .eq('clinic_id', clinicId)
-    .not('printed_at', 'is', null)
-    .gte('printed_at', dayStart.toISOString())
-    .lt('printed_at', dayEnd.toISOString());
-  return error ? 1 : (count ?? 0) + 1;
+    .insert(submissionRows)
+    .select('id, template_id');
+  if (insErr) {
+    console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', insErr.message);
+  }
+
+  if (!hasRx || !clinicId) return null;
+
+  // 2) 처방전 행 교부번호 발행시점 채번·persist. 멱등 키=form_submission_id(RPC 가 rx_issue_seq 기록). INSERT 실패 시 fs_id=null(순번만).
+  const rxTpl = selected.find((t) => t.form_key === 'rx_standard');
+  const rxRowId = insertedRows?.find((r) => r.template_id === rxTpl?.id)?.id ?? null;
+  const { data: rxSeq, error: rxErr } = await supabase.rpc('issue_foot_rx_issue_no', {
+    p_clinic_id: clinicId,
+    p_issue_date: issueDateIso,
+    p_form_submission_id: rxRowId,
+  });
+  const rxIssueNo = buildIssueNo(issueYmd, !rxErr && typeof rxSeq === 'number' ? rxSeq : 1) || null;
+
+  // 3) field_data.issue_no persist(재인쇄/익일 동일번호 = 불변). rx_issue_seq 권위 순번은 RPC 가 이미 기록 → 표시 갱신만.
+  if (rxIssueNo && rxRowId) {
+    const rxFieldData = buildCodeEnrichedValues(autoValues, codeItems, 'rx_standard', rxItemDosages, rxIssueNo);
+    const { error: updErr } = await supabase
+      .from('form_submissions')
+      .update({ field_data: rxFieldData })
+      .eq('id', rxRowId);
+    if (updErr) toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+  }
+  return rxIssueNo;
 }
 
 function buildCodeEnrichedValues(
@@ -367,9 +429,10 @@ function buildCodeEnrichedValues(
   codeItems: SelectedItem[],
   formKey: string,
   rxItemDosages?: Record<string, RxDosage>,
-  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 당일 clinic 발행순번 → 14자리 교부번호.
-  //   ⚠ 구 checkInId(UUID-slice 채번) 파라미터 폐기 — 약국 판독불가 반려 실사고 근원.
-  issueSeq?: number | null,
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / DA 경보 MSG-k7iz): 발행 시점 채번·persist된 확정 교부번호(issue_no).
+  //   ⚠ 구 print-time count(issueSeq) 폐기 — issue_no 는 발행 RPC(issue_foot_rx_issue_no) 결과만 authoritative·불변(재인쇄/익일 동일번호).
+  //   null/미전달(미리보기·pre-persist) 시 미주입(fabricate 금지, visit_no 동형). 구 checkInId(UUID-slice) 채번은 약국 판독불가 반려 실사고 근원.
+  rxIssueNo?: string | null,
 ): Record<string, string> {
   const values = { ...base };
 
@@ -402,13 +465,12 @@ function buildCodeEnrichedValues(
     })));
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
-    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (Bug1 경로B): 교부번호 = (8+N)자리(YYYYMMDD + 당일 clinic 발행순번).
+    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): 교부번호 = 발행 시점 채번·persist된 확정 문자열(8+N자리) 주입.
     //   ⚠ 폐기: 기존 checkInId.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가로 처방전 반려 실사고(PATH-4도 동일 결함).
-    //   이번이 그 임시코드(§385 "정식 채번 확정 시 교체")의 정식 채번 확정 시점. 발번 소스 = 당일 clinic 발행순번(issueSeq).
-    //   issueSeq 미전달 시 1로 폴백해 항상 유효 (8+N)자리 보장(약국 반려 방지, 교부번호 공란·UUID 절대 금지).
-    if (!values.issue_no) {
-      const iss = buildIssueNo(format(new Date(), 'yyyyMMdd'), issueSeq ?? 1);
-      if (iss) values.issue_no = iss;
+    //   그 임시코드(§"정식 채번 확정 시 교체")의 정식 채번 확정 시점 = 발행 RPC(issue_foot_rx_issue_no) 결과 rxIssueNo.
+    //   ⚠ DA 경보 MSG-k7iz: 여기서 print-time 로 fabricate 금지 — persist된 rxIssueNo 만 주입(pre-persist/미리보기=미주입).
+    if (!values.issue_no && rxIssueNo) {
+      values.issue_no = rxIssueNo;
     }
   }
 
@@ -1815,12 +1877,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // 경로 4 = 1순위 — DocumentPrintPanel과 동일한 25+ 필드 바인딩 사용.
       const autoValues = await loadAutoBindContext(checkIn);
 
-      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 처방전 포함 시 당일 clinic 발행순번 선발번(read-only count).
-      //   14자리 교부번호(YYYYMMDD+순번)의 뒤 순번 소스. rx 미포함/ clinic 없으면 null(발번 불요).
-      const rxIssueSeq = selected.some((t) => t.form_key === 'rx_standard') && checkIn.clinic_id
-        ? await fetchTodayClinicIssueSeq(checkIn.clinic_id)
-        : null;
-
       // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
       //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
       //   공단부담금/본인부담금/비급여 "미표기". 화면 실 산출값으로 폴백(autobind 값 있으면 보존).
@@ -1861,6 +1917,22 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         );
       }
 
+      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
+      //   인쇄 전에 form_submissions INSERT + 처방전 교부번호 발행시점 채번·persist → 확정 교부번호(rxIssueNo)로 인쇄본 렌더.
+      //   (구: print-first → insert(fire&forget). 순서재편 = 김주연 총괄 현장승인 2026-07-18.)
+      const isFallback = templates[0]?.id.startsWith('fallback-');
+      const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
+        selected,
+        clinicId: checkIn.clinic_id,
+        checkInId: checkIn.id,
+        customerId: checkIn.customer_id ?? null,
+        staffId,
+        autoValues,
+        codeItems,
+        rxItemDosages,
+        isFallback,
+      });
+
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
       const portraitSelected  = selected.filter((t) => t.form_key !== 'bill_detail');
@@ -1869,8 +1941,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         tmplList.flatMap((t) => {
           // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
           // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: rxIssueSeq 전달 → 14자리 교부번호(AC1 경로B).
-          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq);
+          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): persist된 확정 교부번호(rxIssueNo) 주입 → 인쇄본 = 저장본 동일번호.
+          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -1904,25 +1976,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         printViaIframe(buildPrintHtml(portraitPages, `서류 출력 — ${checkIn.customer_name}`));
       }
       toast.success(`${selected.length}종 출력 요청됨`);
-      // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
-      const isFallback = templates[0]?.id.startsWith('fallback-');
-      if (!isFallback && staffId) {
-        const now = new Date().toISOString();
-        const submissionRows = selected.map((t) => ({
-          clinic_id: checkIn.clinic_id,
-          template_id: t.id,
-          check_in_id: checkIn.id,
-          customer_id: checkIn.customer_id ?? null,
-          issued_by: staffId,
-          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: 저장 field_data 도 인쇄본과 동일 14자리 교부번호(AC1 경로B).
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq),
-          status: 'printed' as const,
-          printed_at: now,
-        }));
-        supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
-          if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', error.message);
-        });
-      }
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): form_submissions 이력 기록은
+      //   persistSubmissionsAndResolveIssueNo() 에서 **인쇄 전** 이미 완료(persist-before-print). 구 print-후 fire&forget 제거.
       // 슬롯 이동 없음 (onComplete 호출 X)
     } finally {
       setDocPrinting(false);
@@ -1957,11 +2012,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
       // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (경로 4 = 1순위 통일 바인딩)
       const autoValues = await loadAutoBindContext(checkIn);
-
-      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 처방전 포함 시 당일 clinic 발행순번 선발번(read-only count).
-      const rxIssueSeq = selected.some((t) => t.form_key === 'rx_standard') && checkIn.clinic_id
-        ? await fetchTodayClinicIssueSeq(checkIn.clinic_id)
-        : null;
 
       // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
       //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
@@ -1999,13 +2049,28 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         );
       }
 
+      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
+      //   출력+수납 경로도 인쇄 전에 form_submissions INSERT + 교부번호 발행시점 채번·persist → 확정 교부번호로 인쇄본 렌더.
+      const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
+      const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
+        selected,
+        clinicId: checkIn.clinic_id,
+        checkInId: checkIn.id,
+        customerId: checkIn.customer_id ?? null,
+        staffId,
+        autoValues,
+        codeItems,
+        rxItemDosages,
+        isFallback: isFallbackTpl,
+      });
+
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       {
         const landscapeSel = selected.filter((t) => t.form_key === 'bill_detail');
         const portraitSel  = selected.filter((t) => t.form_key !== 'bill_detail');
         const buildPages2 = (tmplList: typeof selected) =>
           tmplList.flatMap((t) => {
-            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq);
+            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
@@ -2029,24 +2094,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           if (pPages.length > 0) printViaIframe(buildPrintHtml(pPages, `서류 출력 — ${checkIn.customer_name}`));
         }
       }
-      // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
-      const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
-      if (!isFallbackTpl && staffId) {
-        const now = new Date().toISOString();
-        const submissionRows = selected.map((t) => ({
-          clinic_id: checkIn.clinic_id,
-          template_id: t.id,
-          check_in_id: checkIn.id,
-          customer_id: checkIn.customer_id ?? null,
-          issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq),
-          status: 'printed' as const,
-          printed_at: now,
-        }));
-        supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
-          if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패(settle):', error.message);
-        });
-      }
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): form_submissions 이력 기록은
+      //   persistSubmissionsAndResolveIssueNo() 에서 **인쇄 전** 이미 완료(persist-before-print). 구 print-후 fire&forget 제거.
 
       // 2. 수납 + auto-done
       // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
