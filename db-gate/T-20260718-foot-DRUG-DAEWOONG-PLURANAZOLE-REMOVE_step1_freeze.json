@@ -1,0 +1,58 @@
+{
+  "ticket": "T-20260718-foot-DRUG-DAEWOONG-PLURANAZOLE-REMOVE",
+  "stamp": "2026-07-18T03:59:20.457Z",
+  "db": "https://rxlomoozakkjesdqjtvd.supabase.co",
+  "name_exact": "대웅푸루나졸",
+  "candidates": [
+    {
+      "id": "676ceca0-23f0-4d33-a362-1af04770b564",
+      "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+      "claim_code": "LEGACY-12d7730e32e8",
+      "code_type": "자체사용코드",
+      "classification": "내복약",
+      "manufacturer": null,
+      "code_source": "custom",
+      "insurance_status": null,
+      "hira_verified_at": null,
+      "hira_match_basis": null,
+      "service_id": null,
+      "created_at": "2026-06-17T03:11:23.700928+00:00"
+    }
+  ],
+  "targets": [
+    {
+      "id": "676ceca0-23f0-4d33-a362-1af04770b564",
+      "name_ko": "대웅푸루나졸정150mg(플루코나졸)",
+      "claim_code": "LEGACY-12d7730e32e8",
+      "code_type": "자체사용코드",
+      "classification": "내복약",
+      "manufacturer": null,
+      "code_source": "custom",
+      "insurance_status": null,
+      "hira_verified_at": null,
+      "hira_match_basis": null,
+      "service_id": null,
+      "created_at": "2026-06-17T03:11:23.700928+00:00"
+    }
+  ],
+  "ids": [
+    "676ceca0-23f0-4d33-a362-1af04770b564"
+  ],
+  "refs": {
+    "by_id": {
+      "676ceca0-23f0-4d33-a362-1af04770b564": {
+        "folders": 1,
+        "contraindications": 0,
+        "prescription_sets": 0,
+        "medical_charts": 0
+      }
+    },
+    "totals": {
+      "folders": 1,
+      "contraindications": 0,
+      "prescription_sets": 0,
+      "medical_charts": 0
+    }
+  },
+  "any_ref": true
+}
