@@ -88,3 +88,44 @@ export function buildDocSerial(parts: DocSerialParts): string | null {
   if (!parts.dateYYYYMMDD) return null;
   return `${prefix}-${parts.dateYYYYMMDD}-${chart}-${formatIssueSeq(parts.seq)}`;
 }
+
+/**
+ * 처방전 교부번호(issue_no) 당일 순번 zero-pad 폭 N — **설정 상수 (CEO 지시 MSG-n7ip: 하드코딩 금지)**.
+ *
+ * 교부번호 총자릿수 = 8(YYYYMMDD) + N. 자릿수 규격이 검증 중이라 **파라미터화**한다:
+ *   - 총괄 확정(MSG-a2zc) = N=6 → 총 14자리 (예 20260718000025)
+ *   - 심평원 실무 안내(약업신문 게재 규격) = N=5 → 총 13자리 (예 2026071800025)
+ *   확정 검증 경로: (a) 「요양급여비용 청구방법·명세서서식·작성요령」 law.go.kr admRulSeq=2000000081143,
+ *                  (b) 반려 약국 실무검증(RX-DUR-INTEGRATION-SCOPE AC6, 자릿수/형식 확인 포함).
+ *   → N lock 시 **이 상수 1줄만 flip**(재수정 비용 제거). length CHECK/정규식을 특정 자릿수로 고정 금지.
+ *
+ * ⚠ 현재값 = 6 (총괄 확정 잠정). 심평원 규격(5) 확정 시 이 값만 5 로 변경.
+ */
+export const ISSUE_NO_SEQ_WIDTH = 6;
+
+/**
+ * 처방전 교부번호(issue_no) 생성 — (8+N)자리 = YYYYMMDD(발행일 8) + 당일 clinic 발행순번(zero-pad N).
+ *   예) buildIssueNo('20260718', 25) → '20260718000025'  (N=6, "제 20260718000025 호")
+ *       buildIssueNo('20260718', 25, 5) → '2026071800025'  (N=5, 심평원 실무규격)
+ *
+ * T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (총괄 확정 format MSG-a2zc):
+ *   앞 8 = 발행 날짜(Asia/Seoul) / 뒤 N = 해당 의료기관(clinic) 당일 순차번호 zero-pad.
+ *   ⚠ 폐기: 기존 UUID-slice fallback(checkIn.id.slice(0,5).toUpperCase()) — 약국 판독불가 교부번호로
+ *     실제 처방전 반려(약 수령 실패)를 유발한 실사고. 다시 도입 금지.
+ *   ⚠ zero-pad 폭은 하드코딩하지 않는다(CEO n7ip). 기본값 = ISSUE_NO_SEQ_WIDTH 설정 상수.
+ *   seq 미산출(null/undefined) 또는 날짜 형식 이상이면 null 반환(임시값 fabrication 금지 —
+ *     호출부는 발번 완료를 대기하거나 seq=1 로 폴백해 (8+N)자리를 항상 보장).
+ *
+ * ※ 당일 순번의 gapless·동시성 무결성 완전 보장은 DB 당일-스코프 시퀀스/유니크 제약(ADDITIVE,
+ *   data-architect CONSULT 게이트) 후속 필요 — 본 FE 헬퍼 범위 외(planner 비차단 FOLLOWUP).
+ */
+export function buildIssueNo(
+  dateYYYYMMDD: string,
+  seq: number | null | undefined,
+  seqWidth: number = ISSUE_NO_SEQ_WIDTH,
+): string | null {
+  if (!dateYYYYMMDD || dateYYYYMMDD.length !== 8) return null;
+  if (seq === null || seq === undefined || !Number.isFinite(seq)) return null;
+  const n = Math.max(1, Math.trunc(seq));
+  return `${dateYYYYMMDD}${String(n).padStart(seqWidth, '0')}`;
+}

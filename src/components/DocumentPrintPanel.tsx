@@ -65,7 +65,7 @@ import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
-import { buildDocSerial, docSerialPrefix } from '@/lib/docSerial';
+import { buildDocSerial, docSerialPrefix, buildIssueNo } from '@/lib/docSerial';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
@@ -1911,6 +1911,10 @@ function IssueDialog({
   //   seq = C(무리셋 통산): 클리닉 전역 form_submissions count + 1 (날짜·서류종류·환자 무관, read-only).
   //   미리보기는 INSERT 안 함 → 반복 호출에도 seq 불변(idempotent). null = 아직 산출 전 → 발번 보류.
   const [serialChartNo, setSerialChartNo] = useState<string | null>(null);
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: 처방전 교부번호(issue_no) 당일 clinic 발행순번.
+  //   read-only count(form_submissions, clinic·당일 printed) +1 → 14자리 교부번호(YYYYMMDD+6자리)의 뒤 6자리.
+  //   ⚠ 기존 UUID-slice fallback 폐기(약국 판독불가 반려 실사고). 로드 실패 시 1로 폴백해 14자리 항상 보장.
+  const [todayIssueSeq, setTodayIssueSeq] = useState<number | null>(null);
   // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 발급순번(serialSeq) FE 상태 제거.
   //   발번 권위 = DB RPC issue_foot_doc_serial (출력 확정 시 선점, handlePrint). 미리보기는 미발번.
   //   출력 확정 시 RPC 가 반환한 seq 를 인쇄본 visit_no 에 주입(아래 issuedVisitNo).
@@ -2112,6 +2116,36 @@ function IssueDialog({
       });
     return () => { cancelled = true; };
   }, [open, checkIn.customer_id, checkIn.clinic_id]);
+
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: 처방전 교부번호(issue_no) 당일 순번 로드 (read-only).
+  //   다이얼로그 오픈 시 1회. "clinic 단위 당일 발행순"(총괄 확정) = 해당 clinic 오늘 발행(printed) 서류 건수 +1.
+  //   ⚠ db_change=false: DB 시퀀스/RPC 미추가 → FE read-only count(docSerial approach-b 선례). 순수 count+1 은
+  //     유니크 제약이 없어 동시발번 race 잔존(단일 clinic 순차발행 window 극소) → DB 당일-gapless 하드닝 별도 FOLLOWUP.
+  //   count 실패/null 이어도 seq 최소 1 보장 → buildIssueNo 가 항상 14자리 유효값 산출(약국 반려 방지, AC1).
+  useEffect(() => {
+    if (!open || !checkIn.clinic_id) {
+      setTodayIssueSeq(null);
+      return;
+    }
+    let cancelled = false;
+    // 오늘(Asia/Seoul, 갤탭 로컬=KST) 00:00 ~ 익일 00:00 경계 → created/printed timestamptz(UTC) 대비.
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+    supabase
+      .from('form_submissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', checkIn.clinic_id)
+      .not('printed_at', 'is', null)
+      .gte('printed_at', dayStart.toISOString())
+      .lt('printed_at', dayEnd.toISOString())
+      .then(({ count, error }) => {
+        if (cancelled) return;
+        // 실패해도 최소 1 → 교부번호 14자리 항상 보장(공란 방지). 성공 시 당일 발행수 +1 = 다음(현재) 발행 순번.
+        setTodayIssueSeq(error ? 1 : (count ?? 0) + 1);
+      });
+    return () => { cancelled = true; };
+  }, [open, checkIn.clinic_id]);
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
   const handleDeleteItem = async (id: string) => {
@@ -2341,7 +2375,10 @@ function IssueDialog({
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
-    // T-20260517-foot-RX-DOSAGE-DYNAMIC: 하드코딩 → per-item 사용자 입력, 미입력 시 1/1/7 fallback
+    // 총투약일수(total_days) = A안(빈칸+수기): 자동 계산값을 삽입하지 않고 현장 수기 기입.
+    //   (T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX / 총괄 확정 MSG-h6y2. 약국 기준 불일치 반려 방지.)
+    //   ⚠ 부활 금지: 구 T-20260517 의 "1/1/7 fallback"(자동 total_days 주입) 및 items[].days 자동 산출.
+    //     total_days 소스 = rxItemDosages(수기 입력) 단일. prescription_sets.items[].days 오염 유입 경로 없음(AC2).
     // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-4: 상병코드(category_label='상병') 항목은 처방전 제외
     //   PaymentMiniWindow buildCodeEnrichedValues와 동일 정책 적용.
     if (template.form_key === 'rx_standard') {
@@ -2350,14 +2387,21 @@ function IssueDialog({
         name: item.name,
         unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
         daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
-        // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).
+        // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5 / A안(총괄 MSG-h6y2): 입력값 그대로, 미입력 시 공란(수기 기입).
+        //   ⚠ 자동값(items[].days 등) 강제 주입 금지 — 빈칸이 정답.
         total_days: rxItemDosages[item.id]?.total_days || '',
         method: '',
       }));
       base.rx_items_html = buildRxItemsHtml(rxItems);
       // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일
       if (!base.usage_days) base.usage_days = '3';
-      if (!base.issue_no) base.issue_no = checkIn.id.slice(0, 5).toUpperCase();
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (Bug1): 교부번호 = 14자리(YYYYMMDD + 당일 clinic 발행순번 6자리).
+      //   ⚠ 폐기: 기존 checkIn.id.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가로 처방전 반려 실사고.
+      //   todayIssueSeq 미로드(null) 시엔 미주입(유효 seq 확보 후 memo 재계산) — 로더가 실패해도 최소 1 보장.
+      if (!base.issue_no) {
+        const iss = buildIssueNo(format(new Date(), 'yyyyMMdd'), todayIssueSeq);
+        if (iss) base.issue_no = iss;
+      }
     }
 
     // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
@@ -2444,7 +2488,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, todayIssueSeq, editOverrides]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -2641,6 +2685,14 @@ function IssueDialog({
     //   인쇄에 사용할 최종 필드값. 연번호 대상 양식은 INSERT 후 RPC seq 로 visit_no 를 덮어 인쇄/기록한다.
     let printValues: Record<string, string> = allValues;
     const serialEligible = !!docSerialPrefix(template.form_key) && !!serialChartNo;
+
+    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (Bug1 backstop): 처방전 교부번호 14자리 항상 보장.
+    //   memo 계산 시 당일 순번 미로드(null)로 issue_no 공란이던 극단 케이스 방어 — 출력 직전 seq(폴백 1)로 재조립.
+    //   약국 반려 방지: 교부번호 공란·UUID 절대 금지.
+    if (template.form_key === 'rx_standard' && !printValues.issue_no) {
+      const iss = buildIssueNo(format(new Date(), 'yyyyMMdd'), todayIssueSeq ?? 1);
+      if (iss) printValues = { ...printValues, issue_no: iss };
+    }
 
     // staffId: issued_by = staff.id (≠ user_profiles.id). 미조회 시 로그 생략하고 출력은 계속.
     if (!isFallback && staffId) {

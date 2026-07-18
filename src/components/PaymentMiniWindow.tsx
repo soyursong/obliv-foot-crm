@@ -47,6 +47,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
+// T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
+import { buildIssueNo } from '@/lib/docSerial';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -340,13 +342,34 @@ interface RxDosage {
  *   - rxItemDosages: service.id → { unit_dose, daily_freq, total_days }
  *   - 미입력 항목은 각각 1/1/7 fallback
  */
+/**
+ * T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 처방전 교부번호 당일 clinic 발행순번(read-only count).
+ *   PATH-4(결제창) 발행 경로도 DocumentPrintPanel(PATH-1)과 동일 산출 = 해당 clinic 오늘 발행(printed) 서류 건수 +1.
+ *   db_change=false: DB 시퀀스/RPC 미추가 → FE read-only count(docSerial approach-b 선례). count 실패/null 이어도
+ *   최소 1 보장 → buildIssueNo 가 항상 (8+N)자리 유효값 산출(약국 반려 방지, AC1). gapless·동시성 완전보장은 별도 FOLLOWUP.
+ */
+async function fetchTodayClinicIssueSeq(clinicId: string): Promise<number> {
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from('form_submissions')
+    .select('id', { count: 'exact', head: true })
+    .eq('clinic_id', clinicId)
+    .not('printed_at', 'is', null)
+    .gte('printed_at', dayStart.toISOString())
+    .lt('printed_at', dayEnd.toISOString());
+  return error ? 1 : (count ?? 0) + 1;
+}
+
 function buildCodeEnrichedValues(
   base: Record<string, string>,
   codeItems: SelectedItem[],
   formKey: string,
   rxItemDosages?: Record<string, RxDosage>,
-  // T-20260606-foot-DOC-FIELD-MISSING-3 AC-4: 처방전 "제 N호" 채번용 check_in id
-  checkInId?: string,
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 당일 clinic 발행순번 → 14자리 교부번호.
+  //   ⚠ 구 checkInId(UUID-slice 채번) 파라미터 폐기 — 약국 판독불가 반려 실사고 근원.
+  issueSeq?: number | null,
 ): Record<string, string> {
   const values = { ...base };
 
@@ -379,11 +402,14 @@ function buildCodeEnrichedValues(
     })));
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
-    // T-20260606-foot-DOC-FIELD-MISSING-3 AC-4: 처방전 "제 N호" 채움.
-    //   기존 '' 강제로 PATH-4(결제창) 발행 시 교부번호 란이 비었다(현장 "제 N호 미기입").
-    //   DocumentPrintPanel(PATH-1)과 동일 산출(checkIn.id 선두 5자)로 통일해 일관 표기.
-    //   ※ N의 정식 채번 기준(누적회차/일자발번/발행대장)은 planner DECISION 대기 — 확정 시 교체.
-    if (!values.issue_no && checkInId) values.issue_no = checkInId.slice(0, 5).toUpperCase();
+    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (Bug1 경로B): 교부번호 = (8+N)자리(YYYYMMDD + 당일 clinic 발행순번).
+    //   ⚠ 폐기: 기존 checkInId.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가로 처방전 반려 실사고(PATH-4도 동일 결함).
+    //   이번이 그 임시코드(§385 "정식 채번 확정 시 교체")의 정식 채번 확정 시점. 발번 소스 = 당일 clinic 발행순번(issueSeq).
+    //   issueSeq 미전달 시 1로 폴백해 항상 유효 (8+N)자리 보장(약국 반려 방지, 교부번호 공란·UUID 절대 금지).
+    if (!values.issue_no) {
+      const iss = buildIssueNo(format(new Date(), 'yyyyMMdd'), issueSeq ?? 1);
+      if (iss) values.issue_no = iss;
+    }
   }
 
   return values;
@@ -1789,6 +1815,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // 경로 4 = 1순위 — DocumentPrintPanel과 동일한 25+ 필드 바인딩 사용.
       const autoValues = await loadAutoBindContext(checkIn);
 
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 처방전 포함 시 당일 clinic 발행순번 선발번(read-only count).
+      //   14자리 교부번호(YYYYMMDD+순번)의 뒤 순번 소스. rx 미포함/ clinic 없으면 null(발번 불요).
+      const rxIssueSeq = selected.some((t) => t.form_key === 'rx_standard') && checkIn.clinic_id
+        ? await fetchTodayClinicIssueSeq(checkIn.clinic_id)
+        : null;
+
       // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
       //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
       //   공단부담금/본인부담금/비급여 "미표기". 화면 실 산출값으로 폴백(autobind 값 있으면 보존).
@@ -1837,7 +1869,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         tmplList.flatMap((t) => {
           // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
           // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id);
+          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: rxIssueSeq 전달 → 14자리 교부번호(AC1 경로B).
+          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -1881,7 +1914,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           check_in_id: checkIn.id,
           customer_id: checkIn.customer_id ?? null,
           issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id),
+          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX: 저장 field_data 도 인쇄본과 동일 14자리 교부번호(AC1 경로B).
+          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq),
           status: 'printed' as const,
           printed_at: now,
         }));
@@ -1923,6 +1957,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
       // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (경로 4 = 1순위 통일 바인딩)
       const autoValues = await loadAutoBindContext(checkIn);
+
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 처방전 포함 시 당일 clinic 발행순번 선발번(read-only count).
+      const rxIssueSeq = selected.some((t) => t.form_key === 'rx_standard') && checkIn.clinic_id
+        ? await fetchTodayClinicIssueSeq(checkIn.clinic_id)
+        : null;
 
       // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
       //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
@@ -1966,7 +2005,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const portraitSel  = selected.filter((t) => t.form_key !== 'bill_detail');
         const buildPages2 = (tmplList: typeof selected) =>
           tmplList.flatMap((t) => {
-            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id);
+            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
@@ -2000,7 +2039,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           check_in_id: checkIn.id,
           customer_id: checkIn.customer_id ?? null,
           issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id),
+          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueSeq),
           status: 'printed' as const,
           printed_at: now,
         }));
