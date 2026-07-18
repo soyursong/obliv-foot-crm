@@ -265,6 +265,17 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     patient_age: calcAge(effBirthYYMMDD),
     visit_date: visitDate,
     doctor_name: ctx.doctor ?? '',
+    // T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: 처방전(rx_standard) 처방의료인 축 전용 바인딩.
+    //   §12①4 법정 처방전의 처방의료인 '성명·면허번호'는 실제 의료인(사람)이라야 한다.
+    //   RC(실사고·약국 반려): {{doctor_name}}은 billing '대표자' 축이라 미지정 폴백 시 기관명으로 덮인다
+    //   (loadAutoBindContext sealFallbackToInstitution: doctorName←clinicData.name, T-20260713 UNLINKED
+    //   field-confirmed). 처방전 처방의료인 성명이 이 공유 토큰을 쓰면 '오블리브의원…'(기관명)으로 출력돼
+    //   처방의료인 성명 부재로 조제 거부 → 처방의료인 = clinicDoctor(사람) 기준으로 분리 결선한다.
+    //   clinicDoctor는 미지정 폴백 시에도 대표원장(is_default) 실인물로 유지(이름·면허 보존, 도장만 법인
+    //   인감 폴스루)되므로 항상 실 의료인 성명·면허 확보 + 이름↔면허 정합. 지정/드롭다운 선택 원장은 그
+    //   원장으로 결선(발행시점 스냅샷=치료테이블 지정 진료의, AC-1). billing 대표자 축({{doctor_name}})은 무접촉.
+    prescriber_name: ctx.clinicDoctor?.name ?? '',
+    prescriber_license_no: ctx.clinicDoctor?.license_no ?? '',
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
     // 진료비계산서 field_map (T-20260504-foot-INSURANCE-COPAYMENT)
     insurance_covered: ctx.payments ? formatAmount(ctx.payments.insurance_covered) : '',

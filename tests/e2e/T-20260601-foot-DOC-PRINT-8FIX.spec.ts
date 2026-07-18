@@ -221,8 +221,14 @@ test.describe('시나리오 1: 공통 도장 위치 재발 (AC-1) — 레거시 
       const html = getHtmlTemplate(formKey);
       if (!html) continue;
       expect(html, `${formKey}에 doctor_seal_html 바인딩`).toContain('{{doctor_seal_html}}');
-      // doctor_name 과 doctor_seal_html 이 근접(같은 셀/줄 = 150자 이내)
-      expect(html, `${formKey} 성명 근방 직인`).toMatch(/doctor_name[\s\S]{0,150}doctor_seal_html/);
+      // 성명 토큰과 doctor_seal_html 이 근접(같은 셀/줄 = 150자 이내).
+      // rx_standard(처방전)는 T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND 로 처방의료인 성명 축을
+      //   {{doctor_name}}(billing 대표자 축) → {{prescriber_name}}(실 의료인 축) 으로 분리 rename.
+      //   → 직인 실배치는 여전히 성명 인접({{prescriber_name}}&nbsp;&nbsp;{{doctor_seal_html}}) = 렌더 무회귀.
+      const nameToken = formKey === 'rx_standard' ? 'prescriber_name' : 'doctor_name';
+      expect(html, `${formKey} 성명 근방 직인`).toMatch(
+        new RegExp(`${nameToken}[\\s\\S]{0,150}doctor_seal_html`),
+      );
     }
   });
 
