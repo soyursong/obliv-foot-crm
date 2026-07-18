@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,7 +32,13 @@ export default function Register() {
     setLoading(true);
     setError(null);
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    // [T-20260718-foot-SELFREG-PROFILE-CREATE-PATH-FIX / women 동형 승계, adopted=B]
+    //   프로필 최초생성은 auth.users 표준 트리거(on_auth_user_created → public.handle_new_user())가
+    //   signUp 트랜잭션 내에서 NEW.id 로 직접 수행한다(approved=false 서버강제, role=자기신고 화이트리스트,
+    //   clinic_id=jongno-foot 서버파생). FE 직접 INSERT 는 제거 — signUp 직후 아직 anon 세션이라
+    //   GRANT(6/29 PII lockdown)/RLS(0515 authenticated-only) 이중차단으로 실패했음.
+    //   name/role 은 options.data(raw_user_meta_data)로 전달되어 트리거가 반영한다.
+    const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name, role } },
@@ -43,23 +48,6 @@ export default function Register() {
       setError(signUpError.message);
       setLoading(false);
       return;
-    }
-
-    if (data.user) {
-      const clinic = await getClinic().catch(() => null);
-      const { error: profileError } = await supabase.from('user_profiles').insert({
-        id: data.user.id,
-        email,
-        name,
-        role,
-        clinic_id: clinic?.id ?? null,
-        approved: false,
-      });
-      if (profileError) {
-        setError(profileError.message);
-        setLoading(false);
-        return;
-      }
     }
 
     setLoading(false);
