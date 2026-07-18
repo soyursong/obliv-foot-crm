@@ -277,6 +277,11 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     prescriber_name: ctx.clinicDoctor?.name ?? '',
     prescriber_license_no: ctx.clinicDoctor?.license_no ?? '',
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
+    // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 야간·공휴일 체크박스 마크 기본 공란.
+    //   실제 자동 체크·가산 금액 반영은 출력시점(new Date()) 판정으로 DocumentPrintPanel(대상 2종 서류)
+    //   에서 form-scoped 배선. 여기선 전 서류 공통 안전 기본값(공란)만 제공 → 미가산·비대상 서류 회귀 0.
+    night_mark: ' ',
+    holiday_mark: ' ',
     // 진료비계산서 field_map (T-20260504-foot-INSURANCE-COPAYMENT)
     insurance_covered: ctx.payments ? formatAmount(ctx.payments.insurance_covered) : '',
     copayment: ctx.payments ? formatAmount(ctx.payments.copayment ?? 0) : '',

@@ -95,10 +95,19 @@ import {
   buildBillDetailItemsHtml,
   buildBillReceiptFeeGridHtml,
   buildRxItemsHtml,
+  buildSurchargeDetailRowHtml,
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback, loadTreatingDoctorName } from '@/lib/autoBindContext';
+// T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간·공휴일 가산 자동 판정·계산(FE-only).
+import {
+  detectSurchargeKind,
+  computeSurcharge,
+  surchargeMark,
+  toLocalDateStr,
+  SURCHARGE_KIND_LABEL,
+} from '@/lib/nightHolidaySurcharge';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
 // T-20260617-foot-DOCFORM-POPUP-OVERHAUL G4/AC-4: 진료의뢰서 검사결과(KOH)·투약내용(처방약) 자동 로드.
@@ -1858,6 +1867,24 @@ function IssueDialog({
 }) {
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
+  // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 달력 '빨간날' 소스(clinic_events event_type='holiday').
+  //   법정공휴일 목록(KOREAN_HOLIDAYS_2026) 밖 제헌절·임시·대체공휴일도 공휴일로 인식(body A안 clinic_events 동일).
+  const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(() => new Set());
+  // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (AC-4): 스태프 수동 편집 키 집합(가산 override).
+  const [surchargeOverriddenKeys, setSurchargeOverriddenKeys] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('clinic_events')
+        .select('event_date')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('event_type', 'holiday');
+      if (cancelled || error || !data) return;
+      setHolidayDateSet(new Set(data.map((r) => String(r.event_date))));
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn.clinic_id]);
   const [manualValues, setManualValues] = useState<Record<string, string>>({
     diagnosis_ko: '',
     memo: '',
@@ -2459,6 +2486,80 @@ function IssueDialog({
       base.visit_no = checkIn.id.slice(0, 8) ?? '';
     }
 
+    // ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (B안): 출력시점 야간·공휴일 가산 자동 반영 ──
+    //   대상 2종 서류(진료비 계산서·영수증 신양식 bill_receipt_new / 세부산정내역 bill_detail)만 form-scoped 적용.
+    //   판정 기준 = 출력 시점 현재 날짜·시간(new Date(), AC-1) + 달력 빨간날(clinic_events) 합집합.
+    //   가산 범위(Q4) = 진찰료(급여) base × 30%. 겹침 = 공휴일 우선 단일(AC-3). 미가산 시 공란·기본금액(AC-5).
+    //   ★가드(AC-6): FE-only 표시 전용 — service_charges 영속 없음 → 급여 본인부담 분자 이중계상 없음.
+    if (template.form_key === 'bill_receipt_new' || template.form_key === 'bill_detail') {
+      const refDate = new Date();
+      const isCalHoliday = holidayDateSet.has(toLocalDateStr(refDate));
+      const kind = detectSurchargeKind(refDate, isCalHoliday);
+
+      // 체크박스 자동 체크(계산서 신양식). 미가산 시 공란 유지(회귀0).
+      base.night_mark = surchargeMark(kind, 'night');
+      base.holiday_mark = surchargeMark(kind, 'holiday');
+
+      const parseAmt = (v: string | undefined): number => {
+        if (v == null || v === '') return 0;
+        const n = Number(v.replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      if (template.form_key === 'bill_receipt_new') {
+        // 진찰료 급여 base = 본인부담금(①) + 공단부담금(②). foot 급여 = 진찰료(Q4).
+        const copayBase = parseAmt(base.copayment);
+        const coveredBase = parseAmt(base.insurance_covered);
+        const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+        base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
+        base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
+        if (sc.amount > 0) {
+          // 금액란 반영(AC-2) — override 되지 않은 키만 folding(AC-4 수동값 우선).
+          const fold = (key: string, add: number) => {
+            if (surchargeOverriddenKeys.has(key)) return;
+            base[key] = formatAmount(parseAmt(base[key]) + add);
+          };
+          fold('copayment', sc.copay);
+          fold('insurance_covered', sc.covered);
+          fold('total_amount', sc.amount);
+          fold('subtotal_amount', sc.amount);
+          // ⑧ 환자부담 총액 = 본인부담 + 비급여(공단 제외) → 가산 본인분만 가산.
+          fold('patient_amount', sc.copay);
+        }
+      } else {
+        // bill_detail(세부산정내역): 진찰료 급여 base = 표시된 본인부담금 총계 + 공단부담금 총계.
+        const copayBase = parseAmt(base.subtotal_copayment);
+        const coveredBase = parseAmt(base.subtotal_fund);
+        const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+        base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
+        base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
+        if (sc.amount > 0) {
+          // 항목 테이블에 가산 급여 행 append(items_html) + 요약행 금액 bump.
+          const rowHtml = buildSurchargeDetailRowHtml({
+            kind: kind as 'night' | 'holiday',
+            amount: sc.amount,
+            copay: sc.copay,
+            covered: sc.covered,
+            date: base.visit_date ?? '',
+          });
+          if (rowHtml) base.items_html = (base.items_html ?? '') + '\n' + rowHtml;
+          const bump = (key: string, add: number) => {
+            if (surchargeOverriddenKeys.has(key)) return;
+            base[key] = formatAmount(parseAmt(base[key]) + add);
+          };
+          bump('subtotal_copayment', sc.copay);
+          bump('total_copayment', sc.copay);
+          bump('subtotal_fund', sc.covered);
+          bump('total_fund', sc.covered);
+          bump('subtotal_amount', sc.amount);
+          bump('total_amount', sc.amount);
+          // 합계(총액 열) = 본인부담금 + 비급여(공단 제외, GONGDAN-HIDE-COPAY-ONLY B안) → 가산 본인분만.
+          bump('detail_subtotal', sc.copay);
+          bump('detail_total', sc.copay);
+        }
+      }
+    }
+
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.
     //   빈 키는 덮지 않음(미편집 필드 무파괴) — 사용자가 명시 편집한 값만 출력 바인딩에 반영(AC3/AC5).
     for (const [k, v] of Object.entries(editOverrides)) {
@@ -2466,7 +2567,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -2504,6 +2605,14 @@ function IssueDialog({
   }, [template.field_map, template.form_key]);
 
   const updateField = (key: string, value: string) => {
+    // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (AC-4): 스태프가 수동 편집한 키는
+    //   가산 자동계산이 덮지 않도록 override 기록 → 수동값 우선(가산 금액도 수동 변경 가능).
+    setSurchargeOverriddenKeys((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
     if (key in autoValues) {
       setAutoValues((prev) => ({ ...prev, [key]: value }));
     } else {

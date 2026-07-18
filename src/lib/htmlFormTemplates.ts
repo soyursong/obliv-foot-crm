@@ -2085,7 +2085,9 @@ const BILL_RECEIPT_NEW_HTML = `
         <td class="rn-lbl">환자 성명</td>
         <td>{{patient_name}}<br><span class="rn-sub">생년월일 {{patient_birthdate}}</span></td>
         <td class="rn-lbl">진료기간</td><td>{{visit_date}}</td>
-        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[ ]야간 [ ]공휴일</td>
+<!-- T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간/공휴일 자동 판정 →
+             체크박스 자동 체크(마크 소스=night_mark/holiday_mark, DocumentPrintPanel 배선). 미가산 시 공란(회귀0). -->
+        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[{{night_mark}}]야간 [{{holiday_mark}}]공휴일</td>
       </tr>
       <tr>
         <td class="rn-lbl">진료과목</td><td>피부과</td>
@@ -2384,6 +2386,40 @@ export function buildBillDetailItemsHtml(
       </tr>`;
     })
     .join('\n');
+}
+
+/**
+ * T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 세부산정내역(bill_detail) 야간·공휴일 가산 행.
+ * buildBillDetailItemsHtml 과 **동일 12컬럼 포맷**의 급여 항목 <tr> 1행을 반환(items_html 뒤 append).
+ * 가산 = 진찰료 급여 base × 30%. copay/covered 는 진찰료 본인부담률 승계값(computeSurcharge 분할).
+ * date=진료기간, code=가산 코드(야간=010/공휴일=050 canon), 명칭="야간/공휴일 진료 가산 (30%)".
+ */
+export function buildSurchargeDetailRowHtml(args: {
+  kind: 'night' | 'holiday';
+  amount: number;
+  copay: number;
+  covered: number;
+  date?: string;
+}): string {
+  const { kind, amount, copay, covered, date } = args;
+  if (amount <= 0) return '';
+  const label = kind === 'holiday' ? '공휴일' : '야간';
+  const code = kind === 'holiday' ? '050' : '010';
+  const amtStr = amount.toLocaleString('ko-KR');
+  return `<tr>
+        <td>진찰료</td>
+        <td style="font-size:7.5pt; white-space:nowrap;">${date ?? ''}</td>
+        <td style="font-size:7.5pt; white-space:nowrap;">${code}</td>
+        <td style="text-align:left;">${label} 진료 가산 (30%)</td>
+        <td class="num-cell">${amtStr}</td>
+        <td class="num-cell">1</td>
+        <td class="num-cell">1</td>
+        <td class="num-cell">${amtStr}</td>
+        <td class="num-cell">${copay.toLocaleString('ko-KR')}</td>
+        <td class="num-cell">${covered.toLocaleString('ko-KR')}</td>
+        <td class="num-cell">0</td>
+        <td class="num-cell">0</td>
+      </tr>`;
 }
 
 /**
