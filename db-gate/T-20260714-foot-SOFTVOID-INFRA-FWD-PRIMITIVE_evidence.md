@@ -7,8 +7,21 @@
 ## 스코프
 closing_manual_payments 에 soft-void 메타 3컬럼 ADDITIVE 신설 + 전 합산경로(foot) `WHERE voided_at IS NULL` 필터 원자배포.
 - DDL: `voided_at timestamptz NULL` / `voided_reason text NULL` / `voided_by text NULL`
-- 합산경로 (a): 일마감(Closing.tsx) grossTotal — 수기결제 로드 쿼리 `.is('voided_at', null)`
-- 합산경로 (b): 매출집계(SalesDailyTab.tsx) 비급여버킷(revenue_insurance_split §2-1 산식 소스) — 수기결제 로드 쿼리 `.is('voided_at', null)`
+- 합산경로 (a): 일마감(Closing.tsx L584) grossTotal — 수기결제 로드 쿼리 `.is('voided_at', null)`
+- 합산경로 (b): 매출집계(SalesDailyTab.tsx L162) 비급여버킷(revenue_insurance_split §2-1 산식 소스) — 수기결제 로드 쿼리 `.is('voided_at', null)`
+- 합산경로 (c): 상담의사별 매출(SalesDoctorTab.tsx L151) 비급여 UNION(AC-3 수기수납 보강경로) — 수기결제 로드 쿼리 `.is('voided_at', null)` ★QA NO-GO(phase1) 보강 2026-07-17: 최초 제출 시 (c) 누락 → soft-void 실사용 시 grossTotal/(b)와 상담의사별 매출 정합 파탄 위험. 본 수정으로 "전 합산경로" 완결.
+
+### 합산 read 경로 전수 스캔 자가검증 (`grep -rn closing_manual_payments src/`)
+| # | 경로 | 종류 | 필터 |
+|---|------|------|------|
+| a | src/pages/Closing.tsx L584 | 합산 read (grossTotal) | `.is('voided_at', null)` ✓ |
+| b | src/components/sales/SalesDailyTab.tsx L162 | 합산 read (비급여버킷) | `.is('voided_at', null)` ✓ |
+| c | src/components/sales/SalesDoctorTab.tsx L151 | 합산 read (상담의사별 비급여 UNION) | `.is('voided_at', null)` ✓ |
+| — | src/pages/Closing.tsx L654 | Realtime 구독(postgres_changes) | 합산 아님, 제외 |
+| — | src/pages/Closing.tsx L1346 | `.delete()` 뮤테이션 | 합산 아님, 제외 |
+| — | src/pages/Closing.tsx L2365/2369 | `.insert()` 뮤테이션 | 합산 아님, 제외 |
+
+→ 합산 read 3경로(a/b/c) 전부 `WHERE voided_at IS NULL` 적용. 구독/뮤테이션 경로는 합산 대상 아님(정당 제외). "전 합산경로(foot)" 완결.
 
 ## MIG-GATE 4필드
 

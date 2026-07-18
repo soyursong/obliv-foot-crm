@@ -28,6 +28,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
+import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS } from '@/lib/photoUrl';
 import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
@@ -262,6 +263,9 @@ type C1TreatImgType = 'before' | 'after' | 'photo';
 interface C1TreatImgItem {
   path: string;
   signedUrl: string;
+  // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시용 transform 썸네일(수십 KB).
+  //   그리드 <img> 는 thumbUrl, 확대(새 창)는 signedUrl(원본)만 사용해 원본 반복 다운로드 제거.
+  thumbUrl: string;
   name: string;
   imgType: C1TreatImgType;
   dateStr: string;
@@ -296,15 +300,20 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
         .filter((f) => f.name && !f.id?.endsWith('/'))
         .map(async (file) => {
           const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드=썸네일(thumbUrl), 확대=원본(signedUrl).
+          //   두 URL 모두 캐시 안정화(재서명·브라우저 재다운로드 감축). 그리드가 원본을 다운로드하지 않는 게 핵심.
+          const [thumbUrl, signedUrl] = await Promise.all([
+            signedThumbUrl('photos', path),
+            signedOriginalUrl('photos', path),
+          ]);
           const { imgType, timestamp } = parseC1TreatMeta(file.name);
           const dateStr = timestamp > 0
             ? new Date(timestamp).toISOString().slice(0, 10)
             : (file.created_at ? file.created_at.slice(0, 10) : 'unknown');
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name, imgType, dateStr, timestamp } as C1TreatImgItem;
+          return { path, signedUrl: signedUrl ?? '', thumbUrl: thumbUrl ?? '', name: file.name, imgType, dateStr, timestamp } as C1TreatImgItem;
         }),
     );
-    const valid = withMeta.filter((i) => i.signedUrl);
+    const valid = withMeta.filter((i) => i.thumbUrl || i.signedUrl);
     valid.sort((a, b) => b.timestamp - a.timestamp);
     setItems(valid);
     // 최신 날짜 자동 펼치기
@@ -323,7 +332,8 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop() ?? 'jpg';
       const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 신규분 cacheControl 부여(브라우저/CDN 캐시 창).
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -433,10 +443,11 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
                               {typeItems.map((img) => (
                                 <div key={img.path} className="relative group">
                                   <img
-                                    src={img.signedUrl}
+                                    src={img.thumbUrl || img.signedUrl}
                                     alt={img.name}
+                                    loading="lazy"
                                     className="w-full h-20 object-cover rounded border cursor-pointer"
-                                    onClick={() => window.open(img.signedUrl, '_blank')}
+                                    onClick={() => window.open(img.signedUrl || img.thumbUrl, '_blank')}
                                   />
                                   <button
                                     onClick={() => remove(img)}
@@ -628,7 +639,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           .limit(10),
         supabase
           .from('customers')
-          .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
+          .select('id, chart_number, customer_memo, customer_note, visit_route, memo, hira_consent')
           .eq('id', customerId)
           .single(),
         supabase
@@ -659,9 +670,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       const pkgs = (pkgRes.data ?? []) as PackageType[];
       setPackages(pkgs);
       setHistory((histRes.data ?? []) as VisitHistory[]);
-      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
+      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; customer_note?: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
       setChartNumber(custData?.chart_number ?? customerMode.chartNumber ?? null);
-      setCustomerMemo(custData?.customer_memo ?? '');
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 고객메모 통합 — read-fallback(customer_note ?? customer_memo)
+      // 정본=customer_note. 레거시 customer_memo(9건) 표시 연속성 보존. write는 customer_note로 일원화(아래 appendCustomerMemo).
+      setCustomerMemo(custData?.customer_note ?? custData?.customer_memo ?? '');
       setVisitRoute(custData?.visit_route ?? '');
       setEtcMemo(custData?.memo ?? '');
       // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
@@ -728,13 +741,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
+            .select('id, chart_number, customer_memo, customer_note, visit_route, memo, hira_consent')
             .eq('id', checkIn.customer_id)
             .single()
         : checkIn.customer_phone
           ? supabase
               .from('customers')
-              .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
+              .select('id, chart_number, customer_memo, customer_note, visit_route, memo, hira_consent')
               .eq('clinic_id', checkIn.clinic_id)
               .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '').slice(-8)}%`)
               .order('created_at', { ascending: false })
@@ -805,9 +818,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
+    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; customer_note?: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
     setChartNumber(custData?.chart_number ?? null);
-    setCustomerMemo(custData?.customer_memo ?? '');
+    // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 통합 read-fallback(customer_note ?? customer_memo).
+    setCustomerMemo(custData?.customer_note ?? custData?.customer_memo ?? '');
     setVisitRoute(custData?.visit_route ?? '');
     setEtcMemo(custData?.memo ?? '');
     // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
@@ -1149,10 +1163,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId, ts: Date.now() }));
   };
 
-  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (customers.customer_memo)
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (customers.customer_note — 5-surface 정본)
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customerMode fallback 추가
   // T-20260629-foot-CHART1-MEMO-INPUT-UNIFY: textarea+개별저장 → 인라인+[추가]+누적(append-only).
   //   한 줄을 컬럼에 \n append 후 즉시 persist (예약메모와 동작 일관). DB 스키마 변경 없음.
+  // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: write를 customer_note로 일원화(5-surface 통합).
+  //   customer_memo(3구역 예약메모 히스토리 seed 원본)는 미변경 보존. base는 read-fallback값이므로
+  //   레거시 customer_memo 내용 위에 이어붙어 연속성 유지.
   const appendCustomerMemo = async (line: string) => {
     const customerId = checkIn?.customer_id ?? customerMode?.customerId;
     if (!customerId) return;
@@ -1161,7 +1178,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setSavingCustomerMemo(true);
     const { error } = await supabase
       .from('customers')
-      .update({ customer_memo: newValue })
+      .update({ customer_note: newValue })
       .eq('id', customerId);
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }

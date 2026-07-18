@@ -7,7 +7,7 @@
  *
  * 또한 E2E 가 어느 Supabase 에 write 하는지 명시 로깅한다(prod 단일연결 가시성).
  */
-import { cleanupAll } from './fixtures';
+import { cleanupAll, assertExpectedDbTarget } from './fixtures';
 
 export default async function globalSetup() {
   const url = process.env.VITE_SUPABASE_URL;
@@ -15,6 +15,9 @@ export default async function globalSetup() {
     console.warn('[global-setup] Supabase env 미설정 → 픽스처 pre-sweep 건너뜀');
     return;
   }
+  // PRODREF-HARDGUARD: 컷오버 후(EXPECT_DEV_DB_REF 주입 시) target 이 dev ref 가 아니면
+  //   pre-sweep DELETE·픽스처 write 이전에 즉시 abort (secret 오배선→prod 오염 차단).
+  assertExpectedDbTarget();
   console.log(`[global-setup] E2E 픽스처 write 대상 Supabase: ${url}`);
   try {
     const summary = await cleanupAll();

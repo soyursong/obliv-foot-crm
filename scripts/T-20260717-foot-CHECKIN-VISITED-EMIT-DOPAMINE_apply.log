@@ -1,0 +1,28 @@
+════════════════════════════════════════════════════════════
+[APPLY(실적용)] visited_stage mig 20260718120000 선택 apply — ref rxlomoozakkjesdqjtvd (2026-07-18 02:55:32 KST)
+════════════════════════════════════════════════════════════
+
+── BEFORE (prod 실측) ──
+  ledger has 20260718120000? : true
+  ledger has 20260718130000 (D1 worker mig)? : true
+  CHECK def         : CHECK ((event_type = ANY (ARRAY['visited'::text, 'no_show'::text, 'cancelled'::text, 'rejected'::text, 'reschedule'::text, 'visited_stage'::text])))
+  enqueue_dopamine_visited_stage pg_proc n : 1
+  trg_dopamine_cb_checkin_stage n          : 1
+  trg_dopamine_cb_checkin (base) n         : 1
+
+⚠ 20260718120000 이미 ledger 존재 — 재apply 스킵(멱등). POSTCHECK 만 수행.
+  applied_at = 2026-07-18 02:55:33 KST
+
+════════════════════════════════════════════════════════════
+POSTCHECK (prod 실측)
+════════════════════════════════════════════════════════════
+(a) CHECK def : CHECK ((event_type = ANY (ARRAY['visited'::text, 'no_show'::text, 'cancelled'::text, 'rejected'::text, 'reschedule'::text, 'visited_stage'::text])))
+    → visited_stage 등재(6값): ✅ PASS
+(b) enqueue_dopamine_visited_stage pg_proc n=1 : ✅ PASS
+(c) trg_dopamine_cb_checkin_stage n=1 : ✅ PASS
+    기존 trg_dopamine_cb_checkin (base) n=1 : ✅ 무손상
+
+  ledger has 20260718120000 (after) : ✅
+
+✅ ALL POSTCHECK PASS
+applied_at(KST) = 2026-07-18 02:55:33 KST

@@ -1,0 +1,115 @@
+{
+  "customer": [
+    {
+      "id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "name": "엘런",
+      "chart_number": "F-4857",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "created_at": "2026-07-17 07:25:05.008279+00"
+    }
+  ],
+  "payments": [
+    {
+      "id": "f8f3ca8b-0b0a-421b-8b59-248b02093127",
+      "check_in_id": null,
+      "customer_id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "amount": 500000,
+      "method": "card",
+      "installment": 0,
+      "payment_type": "payment",
+      "status": "active",
+      "deleted_at": null,
+      "delete_reason": null,
+      "cancelled_at": null,
+      "cancel_reason": null,
+      "parent_payment_id": null,
+      "linked_payment_id": null,
+      "memo": "영수증 수납(단건)",
+      "created_at": "2026-07-17 08:46:21.816185+00"
+    },
+    {
+      "id": "662f6ecf-3aed-4ae7-b6ef-f9068a2d6db1",
+      "check_in_id": null,
+      "customer_id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "amount": 500000,
+      "method": "card",
+      "installment": 0,
+      "payment_type": "payment",
+      "status": "active",
+      "deleted_at": null,
+      "delete_reason": null,
+      "cancelled_at": null,
+      "cancel_reason": null,
+      "parent_payment_id": null,
+      "linked_payment_id": null,
+      "memo": "영수증 업로드(회수1·단건)",
+      "created_at": "2026-07-17 08:47:27.353369+00"
+    },
+    {
+      "id": "02a34435-ce86-4f7a-8d90-9ebd52afc423",
+      "check_in_id": null,
+      "customer_id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "amount": 500000,
+      "method": "card",
+      "installment": 0,
+      "payment_type": "refund",
+      "status": "active",
+      "deleted_at": null,
+      "delete_reason": null,
+      "cancelled_at": null,
+      "cancel_reason": null,
+      "parent_payment_id": null,
+      "linked_payment_id": "f8f3ca8b-0b0a-421b-8b59-248b02093127",
+      "memo": "중복",
+      "created_at": "2026-07-17 08:48:27.891865+00"
+    }
+  ],
+  "package_payments": [],
+  "packages": [
+    {
+      "id": "38cfc0d4-3d54-4d11-87ff-677493fa5307",
+      "customer_id": "fa0dc73d-6e03-4b6f-8022-f6216539805d",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "total_amount": 500000,
+      "consultation_fee": 0,
+      "paid_amount": 500000,
+      "total_sessions": 1,
+      "status": "active",
+      "created_at": "2026-07-17 08:47:09.413872+00"
+    }
+  ],
+  "outstanding_derived": [
+    {
+      "package_id": "38cfc0d4-3d54-4d11-87ff-677493fa5307",
+      "total_amount": 500000,
+      "consultation_fee": 0,
+      "net_pkg_paid": 0,
+      "net_consult_paid": 0,
+      "pkg_due": 500000,
+      "consult_due": 0
+    }
+  ],
+  "payments_net": [
+    {
+      "net_payments": 500000,
+      "n": 3
+    }
+  ],
+  "split_baseline": {
+    "package_payments_by_feekind": [],
+    "payments_by_method": [
+      {
+        "method": "card",
+        "payment_type": "payment",
+        "sum_amount": 1000000,
+        "n": 2
+      },
+      {
+        "method": "card",
+        "payment_type": "refund",
+        "sum_amount": 500000,
+        "n": 1
+      }
+    ]
+  }
+}

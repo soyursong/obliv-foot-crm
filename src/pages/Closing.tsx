@@ -77,6 +77,8 @@ interface PaymentRow {
   cash_receipt_type?: string | null;
   taxable_amount?: number | null;
   tax_exempt_amount?: number | null;
+  /** T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행 → 원결제행 링크(단건). 환불(refund) 행에서만 채워짐. */
+  linked_payment_id?: string | null;
 }
 
 interface PackagePaymentRow {
@@ -91,6 +93,8 @@ interface PackagePaymentRow {
   customer_id: string;
   installment: number | null;
   memo: string | null;
+  /** T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행 → 원결제행 링크(패키지). 환불(refund) 행에서만 채워짐. */
+  parent_payment_id?: string | null;
 }
 
 interface UnpaidCheckIn {
@@ -183,10 +187,29 @@ interface EnrichedRow {
   cash_receipt_type: string | null;
   /** T-20260522-foot-CLOSING-REFUND: 환불 처리용 */
   payment_id?: string;       // source === 'payment' 시 payments.id
+  // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING: 진료비/단건 heuristic 구분용(payments.check_in_id 유무).
+  //   check_in_id 有 → 진료(내원)에 종속된 수납 = '진료비', null → 내원 비종속 별도결제 = '단건'.
+  //   ⚠ 확정 비즈니스 카테고리 필드는 스키마에 없음 → planner FOLLOWUP(scenario_missing) 로 구분키 확인 요청.
+  //   (표기 label 전용 — money-path(환불 금액)는 행별 amount 로 산출하므로 heuristic 오분류돼도 금액 무영향)
+  pay_check_in_id?: string | null;
   package_id?: string;       // source === 'package' 시 packages.id (legacy)
   // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 선택 결제행 단위 환불(refund_package_payment)용
   pkg_payment_id?: string;   // source === 'package' 시 package_payments.id (환불 대상 결제행)
   row_customer_id?: string;  // 원결제행 customer_id (표시용)
+  // ── T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불 = 기존 행 annotate ──
+  //   환불행을 별도 빨간 새 행으로 그리지 않고, 원결제행 안에 '환불' 표기 + 두 시각을 병기한다.
+  /** 이 행이 환불(refund)이며 원결제행에 병합됨 → 표시 경로에서 렌더 스킵(합계 reduce 에는 그대로 남아 net 유지). */
+  merged_refund?: boolean;
+  /** 이 행(원결제)이 환불된 결제임 → '환불' 표기 노출. */
+  refunded?: boolean;
+  /** 환불 신청 시각(원결제행 표시용). 결제 업로드 시각은 기존 pay_date/pay_time. */
+  refund_date?: string | null;
+  refund_time?: string | null;
+  /** 원결제행에 병합된 환불 총액(양수 합). */
+  refund_amount?: number;
+  /** 환불행 → 원결제행 매칭 키(단건=linked_payment_id / 패키지=parent_payment_id). */
+  linked_payment_id?: string | null;
+  parent_payment_id?: string | null;
 }
 
 const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
@@ -268,8 +291,10 @@ export default function Closing() {
   const [staffFilter, setStaffFilter] = useState('');
   /** T-20260530-foot-CLOSING-PAYMETHOD-FILTER: 결제내역 결제수단 필터 ('' = 전체) */
   const [methodFilter, setMethodFilter] = useState('');
-  /** T-20260522-foot-CLOSING-REFUND: 환불 처리 대상 결제 행 */
-  const [refundTarget, setRefundTarget] = useState<EnrichedRow | null>(null);
+  /** T-20260522-foot-CLOSING-REFUND: 환불 처리 대상 결제 행
+   *  T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 단일행 → 고객의 환불 가능 행 묶음(배열).
+   *    환불창이 유형별(패키지/진료비/단건) 구분 표기 + 항목 선택(체크박스) UI 로 확장됨. */
+  const [refundTarget, setRefundTarget] = useState<EnrichedRow[] | null>(null);
 
   /** T-20260525-foot-CLOSING-NAV-BUG AC-4: 결제내역 테이블 스크롤 위치 보존 */
   const paymentsTableRef = useRef<HTMLDivElement>(null);
@@ -290,7 +315,8 @@ export default function Closing() {
       const { data, error } = await supabase
         .from('payments')
         // T-20260522-foot-CLOSING-REFUND: id 추가 (환불 RPC 호출용)
-        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount')
+        // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: linked_payment_id 추가(환불행→원결제행 annotate 매칭용)
+        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -310,13 +336,59 @@ export default function Closing() {
       const { data, error } = await supabase
         .from('package_payments')
         // T-20260522-foot-CLOSING-REFUND: id, package_id 추가 (환불 RPC 호출용)
-        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo')
+        // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: parent_payment_id 추가(패키지 환불행→원결제행 annotate 매칭용)
+        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo, parent_payment_id')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
         .order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PackagePaymentRow[];
+    },
+  });
+
+  // ── T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT [FOLD]: 전 기간 환불 합계 ──
+  //   AC-B1/AC-B2: 완전환불행 재환불 차단 + 교차일(원결제일≠환불일) 환불 배지.
+  //   당일 표시되는 원결제행(payments/package_payments)에 연결된 환불을 '날짜 필터 없이' 조회해
+  //   원결제 id 별 누적 환불액을 산출한다(같은날 병합 로직은 당일만 보므로 교차일 누락을 이 쿼리가 보완).
+  //   ★ read-only 조회만 — schema/서버/데이터 무접점. 합계(net) reduce 경로는 건드리지 않음(무회귀).
+  const origPayIds = useMemo(
+    () => payments.filter(p => p.payment_type !== 'refund').map(p => p.id),
+    [payments],
+  );
+  const origPkgPayIds = useMemo(
+    () => pkgPayments.filter(p => p.payment_type !== 'refund').map(p => p.id),
+    [pkgPayments],
+  );
+  const { data: refundTotalsAllDates = {} } = useQuery<Record<string, number>>({
+    queryKey: ['closing-refund-alldates', clinic?.id, origPayIds, origPkgPayIds],
+    enabled: !!clinic && (origPayIds.length > 0 || origPkgPayIds.length > 0),
+    queryFn: async () => {
+      const map: Record<string, number> = {};
+      if (origPayIds.length > 0) {
+        const { data } = await supabase
+          .from('payments')
+          .select('linked_payment_id, amount')
+          .eq('clinic_id', clinic!.id)
+          .eq('payment_type', 'refund')
+          .neq('status', 'deleted')
+          .in('linked_payment_id', origPayIds);
+        for (const r of (data ?? []) as { linked_payment_id: string | null; amount: number | null }[]) {
+          if (r.linked_payment_id) map[`pay:${r.linked_payment_id}`] = (map[`pay:${r.linked_payment_id}`] ?? 0) + (r.amount ?? 0);
+        }
+      }
+      if (origPkgPayIds.length > 0) {
+        const { data } = await supabase
+          .from('package_payments')
+          .select('parent_payment_id, amount')
+          .eq('clinic_id', clinic!.id)
+          .eq('payment_type', 'refund')
+          .in('parent_payment_id', origPkgPayIds);
+        for (const r of (data ?? []) as { parent_payment_id: string | null; amount: number | null }[]) {
+          if (r.parent_payment_id) map[`pkg:${r.parent_payment_id}`] = (map[`pkg:${r.parent_payment_id}`] ?? 0) + (r.amount ?? 0);
+        }
+      }
+      return map;
     },
   });
 
@@ -378,16 +450,19 @@ export default function Closing() {
     },
   });
 
-  // ── 시술별 통계 ────────────────────────────────────────────
+  // ── 시술별 통계 (raw 시술 항목) ─────────────────────────────
   // T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3:
   //   is_package_session=true 항목 제외 — 패키지 차감 세션은 이미 결제된 건
-  const { data: procedureStats = [] } = useQuery<{ service_name: string; count: number; revenue: number }[]>({
+  // T-20260715-foot-DAYCLOSE-STAT-PAYONLY:
+  //   집계(paid 필터·revenue 합산)는 아래 procedureStats useMemo로 이동.
+  //   이 쿼리는 당일 체크인의 시술 raw 행만 조회한다.
+  const { data: procedureServicesRaw = [] } = useQuery<{ service_name: string; price: number; check_in_id: string | null; is_package_session?: boolean | null }[]>({
     queryKey: ['closing-procedures', clinic?.id, date],
     enabled: !!clinic,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('check_in_services')
-        // is_package_session 포함해 JS에서 필터링 (null 안전성)
+        // is_package_session·check_in_id 포함해 JS에서 필터링 (null 안전성)
         .select('service_name, price, check_in_id, is_package_session')
         .in('check_in_id', (await supabase
           .from('check_ins')
@@ -398,19 +473,43 @@ export default function Closing() {
           .then(r => (r.data ?? []).map((d: { id: string }) => d.id))
         ));
       if (error) throw error;
-      const byName: Record<string, { count: number; revenue: number }> = {};
-      for (const row of (data ?? []) as { service_name: string; price: number; is_package_session?: boolean | null }[]) {
-        // T-20260519-foot-PKG-REVENUE-SPLIT: 패키지 세션 항목 제외
-        if (row.is_package_session === true) continue;
-        const entry = byName[row.service_name] ??= { count: 0, revenue: 0 };
-        entry.count++;
-        entry.revenue += row.price;
-      }
-      return Object.entries(byName)
-        .map(([service_name, { count, revenue }]) => ({ service_name, count, revenue }))
-        .sort((a, b) => b.count - a.count);
+      return (data ?? []) as { service_name: string; price: number; check_in_id: string | null; is_package_session?: boolean | null }[];
     },
   });
+
+  // ── 실수납/결제 confirmed 체크인 집합 (net>0) ────────────────
+  // T-20260715-foot-DAYCLOSE-STAT-PAYONLY (A안, 김주연 총괄 결정):
+  //   시술별 통계는 '완료' 상태 전환만으로는 집계하지 않고 실제 수납/결제된 건만 집계한다.
+  //   AC-4 RC 확정: 환불은 payments 별도 행(payment_type='refund')으로 저장 → check_in별
+  //   net = Σ(payment.amount) − Σ(refund.amount). net>0 기준(b) 채택.
+  //   (payment 레코드 존재(a)는 F-4714(net=0 환불건)를 걸러내지 못하므로 부적합.)
+  const paidCheckInIds = useMemo(() => {
+    const net = new Map<string, number>();
+    for (const p of payments) {
+      if (!p.check_in_id) continue;
+      net.set(p.check_in_id, (net.get(p.check_in_id) ?? 0) + (p.payment_type === 'refund' ? -p.amount : p.amount));
+    }
+    const set = new Set<string>();
+    for (const [id, amt] of net) if (amt > 0) set.add(id);
+    return set;
+  }, [payments]);
+
+  // ── 시술별 통계 (paid 필터 후 집계) ─────────────────────────
+  const procedureStats = useMemo<{ service_name: string; count: number; revenue: number }[]>(() => {
+    const byName: Record<string, { count: number; revenue: number }> = {};
+    for (const row of procedureServicesRaw) {
+      // T-20260519-foot-PKG-REVENUE-SPLIT: 패키지 세션 항목 제외
+      if (row.is_package_session === true) continue;
+      // T-20260715-foot-DAYCLOSE-STAT-PAYONLY: 실수납/결제 confirmed(net>0) 체크인만 집계
+      if (!row.check_in_id || !paidCheckInIds.has(row.check_in_id)) continue;
+      const entry = byName[row.service_name] ??= { count: 0, revenue: 0 };
+      entry.count++;
+      entry.revenue += row.price;
+    }
+    return Object.entries(byName)
+      .map(([service_name, { count, revenue }]) => ({ service_name, count, revenue }))
+      .sort((a, b) => b.count - a.count);
+  }, [procedureServicesRaw, paidCheckInIds]);
 
   // ── 체크인 상세 (결제내역 탭용 enriched) ──────────────────
   const { data: checkInsDetail = [] } = useQuery<CheckInDetail[]>({
@@ -712,6 +811,17 @@ export default function Closing() {
     return map;
   }, [checkInsDetail]);
 
+  // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC1): 당일 초진/재진 = check_ins.visit_type(접수 스냅샷) 기준.
+  //   customers.visit_type 은 [완료] 이동 시 'returning' 승격(다음 방문 예측용) → 당일 표시엔 사용 금지.
+  //   단건 결제는 check_in_id 직접 연결로 조회하고, 패키지 결제(check_in_id 無)는 customer_id → 당일 check_in 으로 폴백 조회.
+  const checkInVisitTypeByCustomer = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of checkInsDetail) {
+      if (c.customer_id && !map.has(c.customer_id)) map.set(c.customer_id, c.visit_type);
+    }
+    return map;
+  }, [checkInsDetail]);
+
   // ── 통합 결제내역 (enriched) ────────────────────────────────
   const enrichedRows = useMemo<EnrichedRow[]>(() => {
     const rows: EnrichedRow[] = [];
@@ -734,9 +844,16 @@ export default function Closing() {
         pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: customerName,
-        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route, 초진재진=customers.visit_type
+        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route
         lead_source: cust?.visit_route ?? null,
-        visit_type_label: visitTypeLabel(cust?.visit_type ?? null),
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC1): 초진/재진 = check_ins.visit_type(접수 스냅샷).
+        //   단건 결제는 check_in_id 직접 연결(ci) 우선, 없으면 customer_id 폴백, 최후에 customers.visit_type.
+        visit_type_label: visitTypeLabel(
+          ci?.visit_type
+            ?? (customerId ? checkInVisitTypeByCustomer.get(customerId) ?? null : null)
+            ?? cust?.visit_type
+            ?? null,
+        ),
         staff_name: consultantName,
         amount: p.amount,
         method: p.method,
@@ -749,7 +866,11 @@ export default function Closing() {
         cash_receipt_type: p.cash_receipt_type ?? null,
         // T-20260522-foot-CLOSING-REFUND: 환불 RPC 호출용
         payment_id: p.id,
+        // T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING: 진료비/단건 heuristic(check_in_id 유무)
+        pay_check_in_id: p.check_in_id ?? null,
         row_customer_id: p.customer_id ?? undefined,
+        // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행→원결제행 매칭 키
+        linked_payment_id: p.linked_payment_id ?? null,
       });
     }
 
@@ -764,9 +885,15 @@ export default function Closing() {
         pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: cust?.name ?? '-',
-        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route, 초진재진=customers.visit_type
+        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route
         lead_source: cust?.visit_route ?? null,
-        visit_type_label: visitTypeLabel(cust?.visit_type ?? null),
+        // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC1): 초진/재진 = check_ins.visit_type(접수 스냅샷).
+        //   패키지 결제는 check_in_id 미보유 → customer_id 로 당일 check_in 조회, 없으면 customers.visit_type 폴백.
+        visit_type_label: visitTypeLabel(
+          (p.customer_id ? checkInVisitTypeByCustomer.get(p.customer_id) ?? null : null)
+            ?? cust?.visit_type
+            ?? null,
+        ),
         staff_name: assignedStaffName,
         amount: p.amount,
         method: p.method,
@@ -781,6 +908,8 @@ export default function Closing() {
         // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 선택 결제행 단위 환불 대상 = 이 package_payments row
         pkg_payment_id: p.id,
         row_customer_id: p.customer_id,
+        // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 패키지 환불행→원결제행 매칭 키
+        parent_payment_id: p.parent_payment_id ?? null,
       });
     }
 
@@ -808,9 +937,64 @@ export default function Closing() {
       });
     }
 
+    // ── T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불 = 기존 행 annotate ──────
+    //   환불(refund) 행을 별도 빨간 새 행으로 그리지 않고, 원결제행에 '환불' 표기 + 환불 신청 시각을
+    //   병기한다. 매칭: 단건=linked_payment_id→payment_id / 패키지=parent_payment_id→pkg_payment_id.
+    //   ★ 합계 불변식: 병합해도 refund 행은 rows 배열에 그대로 남긴다(merged_refund 플래그만 세팅) →
+    //     모든 합계 reduce(payment_type==='refund'?-amount:amount)는 net 값을 그대로 유지(회귀 0).
+    //     표시 경로(.map/Excel/PDF)에서만 merged_refund 행을 스킵한다.
+    //   ★ 데이터 무손실: 원결제행이 당일 목록에 없는 '고아 환불'(과거일 결제 환불 등)은 병합하지 않고
+    //     기존처럼 자체 행으로 렌더(regression-safe fallback).
+    const originalByPaymentId = new Map<string, EnrichedRow>();
+    const originalByPkgPaymentId = new Map<string, EnrichedRow>();
+    for (const r of rows) {
+      if (r.payment_type === 'refund') continue;
+      if (r.source === 'payment' && r.payment_id) originalByPaymentId.set(r.payment_id, r);
+      if (r.source === 'package' && r.pkg_payment_id) originalByPkgPaymentId.set(r.pkg_payment_id, r);
+    }
+    for (const r of rows) {
+      if (r.payment_type !== 'refund') continue;
+      const orig =
+        r.source === 'payment' && r.linked_payment_id
+          ? originalByPaymentId.get(r.linked_payment_id)
+          : r.source === 'package' && r.parent_payment_id
+          ? originalByPkgPaymentId.get(r.parent_payment_id)
+          : undefined;
+      if (!orig) continue; // 고아 환불 → 자체 행 유지(fallback)
+      r.merged_refund = true;                 // 표시에서 스킵(합계 reduce 에는 잔존)
+      orig.refunded = true;
+      orig.refund_amount = (orig.refund_amount ?? 0) + r.amount;
+      // 마지막(최신) 환불 신청 시각을 원결제행에 표기
+      orig.refund_date = r.pay_date;
+      orig.refund_time = r.pay_time;
+    }
+
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
     return rows;
-  }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerMap, staffMap]);
+  }, [payments, pkgPayments, manualEntries, checkInDetailMap, checkInVisitTypeByCustomer, customerMap, staffMap]);
+
+  // ── T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 환불 상태 헬퍼 ──
+  //   전 기간(교차일 포함) 누적 환불액 / 완전환불 판정 / 고객 단위 환불행 묶기.
+  const refundedTotalForRow = (r: EnrichedRow): number => {
+    if (r.source === 'payment' && r.payment_id) return refundTotalsAllDates[`pay:${r.payment_id}`] ?? 0;
+    if (r.source === 'package' && r.pkg_payment_id) return refundTotalsAllDates[`pkg:${r.pkg_payment_id}`] ?? 0;
+    return 0;
+  };
+  // AC-B1: 잔여 환불가능 0(원결제 ≤ 누적 환불) → 완전환불 = 재환불 불가.
+  const isFullyRefunded = (r: EnrichedRow): boolean =>
+    (r.source === 'payment' || r.source === 'package') && r.amount > 0 && refundedTotalForRow(r) >= r.amount;
+  // 환불창 오픈 시 같은 고객(row_customer_id)의 환불 가능 결제행(payment/package, 환불행 제외) 묶음.
+  //   row_customer_id 없으면(고객 미매칭 payment 등) 해당 행 단독.
+  const gatherCustomerRefundRows = (r: EnrichedRow): EnrichedRow[] => {
+    if (!r.row_customer_id) return [r];
+    const set = enrichedRows.filter(
+      x =>
+        (x.source === 'payment' || x.source === 'package') &&
+        x.payment_type !== 'refund' &&
+        x.row_customer_id === r.row_customer_id,
+    );
+    return set.length > 0 ? set : [r];
+  };
 
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' 통일
@@ -822,6 +1006,32 @@ export default function Closing() {
       (!methodFilter || r.method === methodFilter)
     );
   }, [enrichedRows, staffFilter, methodFilter]);
+
+  // ── T-20260715-foot-DAYCLOSE-LIST-PATIENT-GROUP: 동일 환자(차트번호+성함) 건 그룹 묶음 ──
+  //   현장(김주연 총괄) 요청: 결제 시각순으로 흩어진 동일 환자 건을 최초 결제 시각 아래로 묶어 표시.
+  //   ★ 순수 표시(render) 재배열 — 합계/집계 reduce 는 filteredEnrichedRows 를 그대로 사용하므로 숫자 무회귀.
+  //   ★ Excel/PDF(exportExcel/handlePrint)는 enrichedRows(시간순) 그대로 → 출력물 형식 무변경(AC11).
+  //   ★ 병합된 환불행(merged_refund)은 표시 스킵 규칙을 유지한 채 그룹화(REFUNDROW reconcile).
+  //   그룹 키: chart_number + customer_name (chart_number null → customer_name 만으로 그룹).
+  //   filteredEnrichedRows 는 이미 sort_key(pay_time) 오름차순 → Map 삽입순 = 그룹 최초시각 오름차순,
+  //   그룹 내부 = 등장순 = 시각 오름차순(AC2/AC3 자동 충족).
+  const groupedDisplayRows = useMemo<Array<{ row: EnrichedRow; indexInGroup: number; groupSize: number }>>(() => {
+    const display = filteredEnrichedRows.filter(r => !r.merged_refund);
+    // key: null-char 구분자로 chart_number 접두 → chart null(빈 접두)과 chart 값 절대 충돌 없음.
+    // chart null 이면 접두가 빈 문자열 → customer_name 만으로 그룹화(AC9).
+    const groups = new Map<string, EnrichedRow[]>();
+    for (const r of display) {
+      const key = `${r.chart_number ?? ''}\u0000${r.customer_name}`;
+      const g = groups.get(key);
+      if (g) g.push(r);
+      else groups.set(key, [r]);
+    }
+    const flat: Array<{ row: EnrichedRow; indexInGroup: number; groupSize: number }> = [];
+    for (const g of groups.values()) {
+      g.forEach((row, idx) => flat.push({ row, indexInGroup: idx, groupSize: g.length }));
+    }
+    return flat;
+  }, [filteredEnrichedRows]);
 
   // ── AC-4: 자동 갱신 시 결제내역 스크롤 위치 보존 ──────────────
   // T-20260525-foot-CLOSING-NAV-BUG:
@@ -849,6 +1059,22 @@ export default function Closing() {
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [enrichedRows]);
+
+  // ── T-20260717-foot-CLOSING-REFUND-STATS-MISSING: 금일 환불 별도 집계 섹션(표시 전용) ──
+  //   [REOPEN 실제 요구] '차감 여부'는 이미 정상(refundAmount가 grossTotal에서 NET 차감).
+  //   본 작업은 환불 건을 '별도 집계 섹션'으로 노출만 추가한다(additive display).
+  //   ★ 환불 식별·금액은 확정 소스 재사용: enrichedRows 의 payment_type==='refund' 행
+  //     (단건=payments / 패키지=package_payments, payment_type='refund') — 새 산식 발명 0.
+  //   ★ 합계·차감·담당자별 로직 무접점 — refundRows 는 표시용 파생값일 뿐(reduce 경로 불변).
+  //   ★ merged_refund(원결제행에 병합 표시된 환불) 포함 — 병합은 '결제내역 목록' 표기 규칙일 뿐
+  //     환불 집계에서는 모든 refund 행을 세야 totals.refundAmount/totalRefundCount 와 정합(AC-R4).
+  const refundRows = useMemo<EnrichedRow[]>(
+    () =>
+      enrichedRows
+        .filter(r => r.payment_type === 'refund')
+        .sort((a, b) => a.sort_key.localeCompare(b.sort_key)),
+    [enrichedRows],
+  );
 
   // ── 핸들러 ────────────────────────────────────────────────
   const refresh = () => {
@@ -1383,9 +1609,76 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             />
           </div>
 
-          {/* 시술별 통계 */}
+          {/* ── T-20260717-foot-CLOSING-REFUND-STATS-MISSING: 금일 환불 별도 집계 섹션 ──
+              [REOPEN] '차감'은 이미 정상 → 여기서는 금일 환불을 '별도 요약(건수+총액)'으로 표시만 추가.
+              소스=refundRows(enrichedRows 의 refund 행) / 수치=totals.refundAmount·totalRefundCount(확정 SSOT 재사용).
+              배치=매출 요약(SummaryCard 그리드) 바로 아래(인접 default). 항상 렌더(0건도 명시). */}
+          <Card data-testid="closing-refund-summary-card" className="border-rose-200 dark:border-rose-900">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                <RotateCcw className="h-4 w-4 text-rose-500" />
+                금일 환불
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-1.5 py-0 border-rose-300 text-rose-700 font-semibold"
+                  data-testid="closing-refund-count-badge"
+                >
+                  {totals.totalRefundCount}건
+                </Badge>
+                <span className="ml-auto text-sm font-semibold tabular-nums text-rose-700" data-testid="closing-refund-total-amount">
+                  총 환불액 {formatAmount(totals.refundAmount)}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* 유형별 소계 (단건/패키지) — totals SSOT 재사용 */}
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span>단건 환불 <span className="tabular-nums font-medium text-foreground">{formatAmount(totals.refundSingleAmount)}</span> ({totals.singleRefundCount}건)</span>
+                <span>패키지 환불 <span className="tabular-nums font-medium text-foreground">{formatAmount(totals.refundPkgAmount)}</span> ({totals.pkgRefundCount}건)</span>
+              </div>
+
+              {refundRows.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="closing-refund-list">
+                    <thead>
+                      <tr className="border-b text-xs text-muted-foreground">
+                        <th className="py-1.5 pr-2 text-left font-medium">시각</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">고객</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">차트번호</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">유형</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">결제수단</th>
+                        <th className="py-1.5 pr-2 text-left font-medium">담당자</th>
+                        <th className="py-1.5 text-right font-medium">환불액</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {refundRows.map((r, i) => (
+                        <tr key={(r.payment_id ?? r.pkg_payment_id ?? r.sort_key) + ':' + i} className="border-b">
+                          <td className="py-1.5 pr-2 text-xs text-muted-foreground tabular-nums">{r.pay_time}</td>
+                          <td className="py-1.5 pr-2">{r.customer_name}</td>
+                          <td className="py-1.5 pr-2 font-mono text-xs text-muted-foreground">{chartNoBadge(r.chart_number)}</td>
+                          <td className="py-1.5 pr-2 text-xs">{r.source === 'package' ? '패키지' : '단건'}</td>
+                          <td className="py-1.5 pr-2 text-xs">{METHOD_KO[r.method as Method] ?? r.method}</td>
+                          <td className="py-1.5 pr-2 text-xs">{r.staff_name ?? '미지정'}</td>
+                          <td className="py-1.5 text-right tabular-nums font-medium text-rose-700">-{formatAmount(r.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-semibold">
+                        <td className="py-1.5" colSpan={6}>환불 합계 ({totals.totalRefundCount}건)</td>
+                        <td className="py-1.5 text-right tabular-nums text-rose-700">-{formatAmount(totals.refundAmount)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="closing-refund-empty">금일 환불 내역이 없습니다.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 시술별 통계 — T-20260715-foot-DAYCLOSE-STAT-PAYONLY: 실수납/결제 confirmed(net>0) 건만 */}
           {procedureStats.length > 0 && (
-            <Card>
+            <Card data-testid="procedure-stats-card">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">시술별 통계 ({procedureStats.reduce((s, p) => s + p.count, 0)}건)</CardTitle>
               </CardHeader>
@@ -1395,7 +1688,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="py-1.5 text-left font-medium">시술명</th>
                       <th className="py-1.5 text-right font-medium">건수</th>
-                      <th className="py-1.5 text-right font-medium">매출</th>
+                      {/* T-20260715-foot-DAYCLOSE-STATCOL-LABEL-TREATAMT: '매출'→'시술금액' (B안, 김주연 총괄 권고). 집계 로직 무변경(STAT-PAYONLY 담당). */}
+                      <th className="py-1.5 text-right font-medium">시술금액</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1409,7 +1703,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                     <tr className="font-medium">
                       <td className="py-1.5">합계</td>
                       <td className="py-1.5 text-right tabular-nums">{procedureStats.reduce((s, p) => s + p.count, 0)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatAmount(procedureStats.reduce((s, p) => s + p.revenue, 0))}</td>
+                      <td className="py-1.5 text-right tabular-nums" data-testid="procedure-stats-total-revenue">{formatAmount(procedureStats.reduce((s, p) => s + p.revenue, 0))}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1470,7 +1764,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           <div className="flex flex-wrap items-center gap-2 justify-between">
             <div className="flex items-center gap-3">
               <div className="text-sm text-muted-foreground">
-                총 <span className="font-semibold text-foreground">{filteredEnrichedRows.length}건</span> ·
+                {/* T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 건수=표시 행(병합 환불 제외) / 합계=net(병합 환불 포함 → 회귀 0) */}
+                총 <span className="font-semibold text-foreground">{filteredEnrichedRows.filter(r => !r.merged_refund).length}건</span> ·
                 합계 <span className="font-semibold text-emerald-700">{formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}</span>
               </div>
               {/* 담당자 필터 드롭다운 */}
@@ -1576,25 +1871,93 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         </td>
                       </tr>
                     )}
-                    {filteredEnrichedRows.map((r, i) => (
+                    {/* T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 병합된 환불행은 표시 스킵(원결제행에 annotate). */}
+                    {/* T-20260715-foot-DAYCLOSE-LIST-PATIENT-GROUP: 동일 환자(차트+성함) 그룹 묶음 render.
+                        groupedDisplayRows = filteredEnrichedRows(merged_refund 스킵)를 환자 그룹으로 재배열. */}
+                    {groupedDisplayRows.map(({ row: r, indexInGroup, groupSize }, i) => {
+                      const isContinuation = indexInGroup > 0;      // 그룹 2번째 이후 행 → 들여쓰기
+                      const isGroupStart = indexInGroup === 0;
+                      const isMultiGroup = groupSize > 1;
+                      return (
                       <tr
                         key={`row-${i}`}
+                        data-testid="closing-pay-row"
+                        data-group-index={indexInGroup}
+                        data-group-size={groupSize}
                         className={cn(
                           'border-b transition-colors',
                           r.payment_type === 'refund' && 'bg-red-50 text-red-700',
+                          // T-20260715 REQ②: 환불된 원결제행 — 옅은 적색 틴트로 환불 표기
+                          r.refunded && 'bg-red-50/40',
                           r.source === 'manual' && 'bg-sky-50',
+                          // PATIENT-GROUP: 새 다건 그룹 시작 행(첫 행 제외)에 그룹 구분선
+                          isMultiGroup && isGroupStart && i > 0 && 'border-t-2 border-t-emerald-100',
+                          // PATIENT-GROUP: 그룹 연속 행 — 좌측 emerald 강조선(묶음 시각 표시)
+                          isContinuation && 'border-l-2 border-l-emerald-300',
                         )}
                       >
                         <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{r.pay_date}</td>
-                        <td className="py-2 px-2 tabular-nums text-xs">{r.pay_time}</td>
-                        <td className="py-2 px-2 text-xs text-muted-foreground">{r.chart_number ?? '-'}</td>
-                        <td className="py-2 px-2 font-medium">{r.customer_name}</td>
+                        <td className="py-2 px-2 tabular-nums text-xs">
+                          {r.pay_time}
+                          {/* T-20260715 REQ②: 결제 업로드 시각(위) + 환불 신청 시각(아래) 각각 표기 */}
+                          {r.refunded && (
+                            <div className="text-[10px] text-red-600 leading-tight" data-testid="refund-requested-at">
+                              환불 {r.refund_date && r.refund_date !== r.pay_date ? `${r.refund_date} ` : ''}{r.refund_time}
+                            </div>
+                          )}
+                        </td>
+                        {/* T-20260717-foot-CLOSING-CHARTNUM-POPUP (supersedes T-20260715-CHARTNAV):
+                            차트번호 셀 클릭 → 고객 2번차트(/chart/:customerId) 별도 팝업창(window.open).
+                            일마감 화면을 유지(사라지지 않음)한 채 2번차트를 새 창으로 표출.
+                            row_customer_id 있는 행(단건·패키지결제)만 클릭/hover 활성, 수기행(row_customer_id 없음)은 비활성.
+                            (navigate → window.open, 김주연 총괄 요청 · NEW-TASK MSG-20260717-152211-ewov) */}
+                        <td
+                          className={cn(
+                            'py-2 px-2 text-xs text-muted-foreground',
+                            r.row_customer_id && 'cursor-pointer hover:text-primary hover:underline',
+                          )}
+                          onClick={
+                            r.row_customer_id
+                              ? () =>
+                                  window.open(
+                                    `${window.location.origin}/chart/${r.row_customer_id}`,
+                                    `foot-chart-${r.row_customer_id}`,
+                                    'width=1200,height=900,scrollbars=yes,resizable=yes',
+                                  )
+                              : undefined
+                          }
+                          data-testid="closing-chartno-cell"
+                        >
+                          {r.chart_number ?? '-'}
+                        </td>
+                        {/* PATIENT-GROUP: 연속 행은 들여쓰기 + ↳ 커넥터로 동일 환자 묶음 표시 */}
+                        <td className={cn('py-2 px-2 font-medium', isContinuation && 'pl-5')}>
+                          {isContinuation ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-emerald-500/70" data-testid="group-connector">↳</span>
+                              {r.customer_name}
+                            </span>
+                          ) : (
+                            r.customer_name
+                          )}
+                        </td>
                         <td className="py-2 px-2 text-xs">{r.lead_source ?? '-'}</td>
                         <td className="py-2 px-2 text-xs">{r.visit_type_label}</td>
                         {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' */}
                         <td className="py-2 px-2 text-xs">{r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}</td>
                         <td className="py-2 px-2 text-right tabular-nums font-medium">
                           {r.payment_type === 'refund' ? '-' : ''}{formatAmount(r.amount)}
+                          {/* T-20260715 REQ②: 원결제행에 병합된 환불액(양수) 병기 */}
+                          {/* T-20260713 [FOLD] AC-B2: 같은날 병합액 없을 때도 교차일 누적 환불액을 병기 */}
+                          {r.refunded && r.refund_amount ? (
+                            <div className="text-[10px] text-red-600 leading-tight" data-testid="refund-amount">
+                              환불 -{formatAmount(r.refund_amount)}
+                            </div>
+                          ) : !r.refunded && refundedTotalForRow(r) > 0 ? (
+                            <div className="text-[10px] text-red-600 leading-tight" data-testid="refund-amount">
+                              환불 -{formatAmount(refundedTotalForRow(r))}
+                            </div>
+                          ) : null}
                         </td>
                         {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세/현금영수증 */}
                         <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
@@ -1621,21 +1984,34 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           </Badge>
                         </td>
                         <td className="py-2 px-2 text-center">
-                          <Badge
-                            variant={r.payment_type === 'refund' ? 'destructive' : r.source === 'manual' ? 'default' : 'secondary'}
-                            className="text-xs"
-                          >
-                            {r.payment_type === 'refund' ? '환불' : r.source === 'manual' ? '수기' : r.source === 'package' ? '패키지' : '단건'}
-                          </Badge>
+                          <div className="flex items-center justify-center gap-1">
+                            <Badge
+                              variant={r.payment_type === 'refund' ? 'destructive' : r.source === 'manual' ? 'default' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {r.payment_type === 'refund' ? '환불' : r.source === 'manual' ? '수기' : r.source === 'package' ? '패키지' : '단건'}
+                            </Badge>
+                            {/* T-20260715 REQ②: 환불된 원결제행 — '환불' 표기(새 빨간 행 대신 기존 행 annotate) */}
+                            {/* T-20260713 [FOLD] AC-B2: 교차일 환불(같은날 병합 미발생)도 배지 노출 */}
+                            {(r.refunded || refundedTotalForRow(r) > 0) && (
+                              <Badge variant="destructive" className="text-xs" data-testid="refunded-badge">환불</Badge>
+                            )}
+                            {/* AC-B1: 완전환불(잔여 0) 시각 표시 */}
+                            {isFullyRefunded(r) && (
+                              <Badge variant="outline" className="text-[10px] border-red-300 text-red-500" data-testid="fully-refunded-badge">완료</Badge>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-1 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {/* T-20260522-foot-CLOSING-REFUND: 환불 버튼 — admin/manager + 이미 환불 아닌 건 + payment/package 소스만 */}
                             {/* T-20260525-foot-ROLE-PERM-CUSTOM AC-5: canRefund(+consultant/coordinator/therapist)로 확장 */}
-                            {canRefund && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && (
+                            {/* T-20260713-ITEMSELECT: 클릭 시 같은 고객의 환불 가능 행 묶음을 창으로 전달(유형별 구분+항목 선택) */}
+                            {/* [FOLD] AC-B1: 완전환불(잔여 0) 행은 재환불 클릭 차단 → 버튼 숨김 */}
+                            {canRefund && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && !isFullyRefunded(r) && (
                               <button
                                 data-testid="refund-open-btn"
-                                onClick={() => setRefundTarget(r)}
+                                onClick={() => setRefundTarget(gatherCustomerRefundRows(r))}
                                 className="text-muted-foreground hover:text-destructive transition-colors p-1"
                                 title="환불"
                               >
@@ -1664,7 +2040,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   {filteredEnrichedRows.length > 0 && (
                     <tfoot>
@@ -1835,12 +2212,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
       {refundTarget && clinic && (
         <ClosingRefundDialog
           open={!!refundTarget}
-          row={refundTarget}
+          rows={refundTarget}
           clinicId={clinic.id}
           onClose={() => setRefundTarget(null)}
           onSuccess={() => {
             setRefundTarget(null);
             refreshPayments();
+            qc.invalidateQueries({ queryKey: ['closing-refund-alldates', clinic.id] });
           }}
         />
       )}
@@ -2261,223 +2639,322 @@ function DailyOutstandingCard({
 
 // ──────────────────────────────────────────────────────────────
 // T-20260522-foot-CLOSING-REFUND: 환불 처리 다이얼로그
-// 단건(source='payment'): 금액+수단+사유 → refund_single_payment RPC
-// 패키지(source='package'): 선택 결제행 amount 바인딩 → refund_package_payment RPC
+// T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT:
+//   단일행 → 고객의 환불 가능 결제행 묶음(rows[])을 유형별(패키지/진료비/단건)로 구분 표기 +
+//   항목 선택(체크박스) + 선택 합산 표시 후 일괄 환불. money-path 는 기존 RPC 재사용:
+//     단건(source='payment'): 금액(잔여 이내 편집 가능)+수단+사유 → refund_single_payment RPC
+//     패키지(source='package'): 선택 결제행 amount 바인딩 → refund_package_payment RPC
 //   (T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 견적 refund_package_atomic 폐용)
+//   [FOLD] AC-B1: 완전환불(잔여 0) 행은 체크박스 비활성(재환불 차단).
 // ──────────────────────────────────────────────────────────────
 
 interface ClosingRefundDialogProps {
   open: boolean;
-  row: EnrichedRow;
+  /** 같은 고객의 환불 가능 결제행 묶음(payment/package, 환불행 제외). */
+  rows: EnrichedRow[];
   clinicId: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: ClosingRefundDialogProps) {
-  const isPackage = row.source === 'package';
+// 유형별 그룹 정의 — AC-1(패키지/진료비/단건 3종 시각 구분).
+//   ⚠ 진료비 vs 단건: 확정 카테고리 필드가 스키마에 없어 pay_check_in_id(내원 종속) 유무로 heuristic 분류.
+//     label 전용이며 환불 금액 산출(money-path)에는 영향 없음. planner FOLLOWUP(scenario_missing)로 구분키 확인.
+const REFUND_GROUP_DEFS: { key: string; label: string; sub: string; match: (r: EnrichedRow) => boolean }[] = [
+  { key: 'package', label: '패키지(회차권) 결제', sub: '남은 결제 금액 기준', match: r => r.source === 'package' },
+  { key: 'consult', label: '진료비', sub: '수납 금액 기준', match: r => r.source === 'payment' && !!r.pay_check_in_id },
+  { key: 'single', label: '단건 결제', sub: '수납 금액 기준', match: r => r.source === 'payment' && !r.pay_check_in_id },
+];
 
-  const [refundAmountStr, setRefundAmountStr] = useState(String(row.amount));
+function refundRowKey(r: EnrichedRow): string {
+  return r.source === 'package' ? `pkg:${r.pkg_payment_id}` : `pay:${r.payment_id}`;
+}
+
+// ──────────────────────────────────────────────────────────────
+// T-20260715-foot-REFUND-BACKDATE-NAV-ERROR-HOTFIX (AC-4): 환불 RPC 오류 → 현장 친화 메시지.
+//   RC = 배포 직후 PostgREST 스키마 캐시가 아직 신규 환불 RPC(refund_package_payment)를
+//   인지하지 못한 순간(PGRST202 "Could not find the function … in the schema cache")에
+//   환불을 시도하면 raw 영문 스택이 토스트로 노출됐다(현장 스샷 F0BH8BP2VH9).
+//   화면 갇힘/크래시는 아니었으나(toast) 문구가 비친화적 → 명확한 안내로 치환.
+//   ★ 환불 경로/RPC 신설 없음(REDEFINITION_RISK 회피). 기존 배치 핸들러 error 분기(failMsgs)만 보강.
+//   prefix = 배치 요약(failMsgs[0]) 표기 구분용(단건 '환불 실패' / 패키지 '패키지 환불 실패').
+//   단, 스키마 캐시 미스는 prefix 무관하게 동일한 한국어 안내로 매핑.
+function refundErrorMessage(
+  error: { code?: string; message?: string } | null | undefined,
+  prefix = '환불 실패',
+): string {
+  const msg = error?.message ?? '';
+  const isSchemaCacheMiss =
+    error?.code === 'PGRST202' || /schema cache|Could not find the function/i.test(msg);
+  if (isSchemaCacheMiss) {
+    return '환불 기능이 아직 서버에 반영되지 않았습니다. 잠시 후 다시 시도하시고, 계속되면 관리자에게 문의해 주세요.';
+  }
+  return `${prefix}: ${msg || '알 수 없는 오류'}`;
+}
+
+function ClosingRefundDialog({ open, rows, clinicId, onClose, onSuccess }: ClosingRefundDialogProps) {
+  const customerName = rows[0]?.customer_name ?? '-';
+
   const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>(
-    (['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer',
+    (['card', 'cash', 'transfer'].includes(rows[0]?.method ?? '') ? rows[0]!.method : 'card') as 'card' | 'cash' | 'transfer',
   );
   const [refundMemo, setRefundMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // T-20260713-foot-CLOSING-REFUND-SINGLE-PAY-MISSING (AC-3): 단건 이미 환불액 차감.
-  //   원결제에 연결된(linked_payment_id) 환불 행 합계를 빼 '실제 환불 가능(잔여)' 금액을 산출.
-  //   기존엔 잔여를 계산하지 않고 항상 원결제 전액을 환불가능으로 제시 → 전액/부분 환불 후에도
-  //   재차 전액 환불 가능(과다환불)한 결함. null(로딩 전) 구분 위해 초기값 null.
-  // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 패키지도 동일하게 '선택 결제행(package_payments)
-  //   amount − 기존 환불(parent_payment_id linked)' = 잔여로 산출. 견적(잔여회차×정가단가) 폐용.
-  const [priorRefunded, setPriorRefunded] = useState<number | null>(null);
-  const singleRemaining = row.amount - (priorRefunded ?? 0);
+  // 행별 잔여 환불가능액(원결제 − 기존 환불). null = 로딩 전.
+  const [remainingMap, setRemainingMap] = useState<Record<string, number> | null>(null);
+  // 선택된 행 키.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 단건(payment) 행별 환불 입력 금액(문자열). 기본값 = 잔여. 패키지는 잔여 고정(편집 불가).
+  const [amountMap, setAmountMap] = useState<Record<string, string>>({});
 
-  // 다이얼로그 오픈 시 초기화 + 선택 결제행 기존 환불액 조회
+  // 오픈 시 rows 전체의 기존 환불액 조회 → 잔여 산출 + 입력 기본값 세팅.
+  //   (T-20260713-SINGLE-PAY-MISSING AC-3 / T-20260714 잔여 산출 로직을 행 묶음으로 확장 — money-path 동일.)
   useEffect(() => {
-    if (!open) {
-      setRefundAmountStr(String(row.amount));
-      setMethod((['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer');
-      setRefundMemo('');
-      setPriorRefunded(null);
-      return;
-    }
-    if (isPackage && row.pkg_payment_id) {
-      // 패키지: 선택한 결제행(package_payments.id)에 linked 기존 환불(parent_payment_id) 합계 조회 → 잔여 산출.
-      (async () => {
-        const { data, error } = await supabase
-          .from('package_payments')
-          .select('amount')
-          .eq('parent_payment_id', row.pkg_payment_id!)
-          .eq('payment_type', 'refund');
-        const already = error ? 0 : (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
-        setPriorRefunded(already);
-      })();
-    } else if (!isPackage && row.payment_id) {
-      // 단건: 원결제(payment_id)에 연결된 기존 환불 합계 조회 → 잔여 산출 후 입력 기본값 세팅
-      (async () => {
-        const { data, error } = await supabase
+    if (!open) return;
+    (async () => {
+      const payIds = rows.filter(r => r.source === 'payment' && r.payment_id).map(r => r.payment_id!) as string[];
+      const pkgIds = rows.filter(r => r.source === 'package' && r.pkg_payment_id).map(r => r.pkg_payment_id!) as string[];
+      const priorPay: Record<string, number> = {};
+      const priorPkg: Record<string, number> = {};
+      if (payIds.length > 0) {
+        const { data } = await supabase
           .from('payments')
-          .select('amount')
-          .eq('linked_payment_id', row.payment_id!)
+          .select('linked_payment_id, amount')
           .eq('payment_type', 'refund')
-          .neq('status', 'deleted');
-        const already = error ? 0 : (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
-        setPriorRefunded(already);
-        setRefundAmountStr(String(Math.max(0, row.amount - already)));
-      })();
-    }
-  }, [open, isPackage, row.pkg_payment_id, row.payment_id, row.method, row.amount]);
+          .neq('status', 'deleted')
+          .in('linked_payment_id', payIds);
+        for (const r of (data ?? []) as { linked_payment_id: string | null; amount: number | null }[]) {
+          if (r.linked_payment_id) priorPay[r.linked_payment_id] = (priorPay[r.linked_payment_id] ?? 0) + (r.amount ?? 0);
+        }
+      }
+      if (pkgIds.length > 0) {
+        const { data } = await supabase
+          .from('package_payments')
+          .select('parent_payment_id, amount')
+          .eq('payment_type', 'refund')
+          .in('parent_payment_id', pkgIds);
+        for (const r of (data ?? []) as { parent_payment_id: string | null; amount: number | null }[]) {
+          if (r.parent_payment_id) priorPkg[r.parent_payment_id] = (priorPkg[r.parent_payment_id] ?? 0) + (r.amount ?? 0);
+        }
+      }
+      const remMap: Record<string, number> = {};
+      const amtMap: Record<string, string> = {};
+      for (const r of rows) {
+        const key = refundRowKey(r);
+        let prior = 0;
+        if (r.source === 'payment' && r.payment_id) prior = priorPay[r.payment_id] ?? 0;
+        if (r.source === 'package' && r.pkg_payment_id) prior = priorPkg[r.pkg_payment_id] ?? 0;
+        const rem = Math.max(0, r.amount - prior);
+        remMap[key] = rem;
+        amtMap[key] = String(rem);
+      }
+      setRemainingMap(remMap);
+      setAmountMap(amtMap);
+    })();
+  }, [open, rows]);
+
+  const toggleSelect = (key: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // 단건 행 선택 시 금액 검증(1원 ≤ 입력 ≤ 잔여).
+  const paymentItemError = (r: EnrichedRow): string | null => {
+    const key = refundRowKey(r);
+    const rem = remainingMap?.[key];
+    if (rem == null) return null;
+    if (rem <= 0) return '이미 전액 환불됨';
+    const a = parseInt((amountMap[key] ?? '').replace(/[^\d]/g, ''), 10);
+    if (!a || a <= 0) return '금액 입력 필요';
+    if (a > rem) return `잔여 ${formatAmount(rem)} 초과`;
+    return null;
+  };
+
+  // 선택 항목 환불 금액 합산(AC-3): 단건=입력액, 패키지=잔여.
+  //   money-path 가드: 단건 입력이 잔여 초과/0/NaN이면 합산에서 무효(0 처리)
+  //   → 선택 합계가 환불 가능 금액을 초과 표기하지 않음(E2E selectedSum helper와 동기화).
+  const selectedSum = rows.reduce((s, r) => {
+    const key = refundRowKey(r);
+    if (!selected.has(key)) return s;
+    if (r.source === 'package') return s + (remainingMap?.[key] ?? 0);
+    const rem = remainingMap?.[key] ?? 0;
+    const a = parseInt((amountMap[key] ?? '').replace(/[^\d]/g, ''), 10);
+    return s + (!isNaN(a) && a > 0 && a <= rem ? a : 0);
+  }, 0);
+
+  // 선택된 단건 중 금액 오류가 하나라도 있으면 확정 불가(money-path 가드).
+  const hasSelectedError = rows.some(
+    r => selected.has(refundRowKey(r)) && r.source === 'payment' && paymentItemError(r) != null,
+  );
+
+  // AC-5: 선택 0건 / 사유 미입력 / 금액 오류 → 확정 비활성.
+  const confirmDisabled = submitting || selected.size === 0 || !refundMemo.trim() || hasSelectedError;
 
   const handleSubmit = async () => {
-    if (!refundMemo.trim()) {
-      toast.error('환불 사유를 입력해 주세요.');
-      return;
-    }
-    setSubmitting(true);
+    if (selected.size === 0) { toast.error('환불할 항목을 선택해 주세요.'); return; }
+    if (!refundMemo.trim()) { toast.error('환불 사유를 입력해 주세요.'); return; }
+    if (hasSelectedError) { toast.error('선택한 항목의 환불 금액을 확인해 주세요.'); return; }
 
-    if (isPackage) {
-      // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: 선택 결제행 단위 환불(refund_package_payment).
-      //   FE 는 p_payment_id(+method)만 전달 — 서버가 package_payments.amount 재조회로 처리금액 결정
-      //   + 과다환불 상한(누적 ≤ row.amount) + clinic 격리 서버 강제. 견적(refund_package_atomic) 폐용.
-      if (!row.pkg_payment_id) {
-        toast.error('환불 대상 결제행을 찾을 수 없습니다.');
-        setSubmitting(false);
-        return;
+    const targets = rows.filter(r => selected.has(refundRowKey(r)));
+    if (!window.confirm(`선택한 ${targets.length}개 항목 · 합계 ${formatAmount(selectedSum)}을 환불하시겠습니까?`)) return;
+
+    setSubmitting(true);
+    let okCount = 0;
+    const failMsgs: string[] = [];
+
+    // 선택 항목을 순차 처리(각 건은 기존 단건/패키지 RPC 재사용 — 신규 파라미터/스키마 무접점).
+    for (const r of targets) {
+      const key = refundRowKey(r);
+      const rem = remainingMap?.[key] ?? 0;
+      if (rem <= 0) { failMsgs.push(`${r.customer_name}: 이미 전액 환불됨`); continue; }
+
+      if (r.source === 'package') {
+        if (!r.pkg_payment_id) { failMsgs.push('패키지 결제행 없음'); continue; }
+        const { data, error } = await supabase.rpc('refund_package_payment', {
+          p_payment_id: r.pkg_payment_id,
+          p_method: method,
+        });
+        if (error) { failMsgs.push(refundErrorMessage(error, '패키지 환불 실패')); continue; }
+        const result = data as { ok?: boolean; error?: string };
+        if (result?.error) { failMsgs.push(result.error); continue; }
+        okCount += 1;
+      } else {
+        if (!r.payment_id) { failMsgs.push('결제행 없음'); continue; }
+        const amt = parseInt((amountMap[key] ?? '').replace(/[^\d]/g, ''), 10);
+        if (!amt || amt <= 0 || amt > rem) { failMsgs.push(`${r.customer_name}: 환불 금액 오류`); continue; }
+        const { data, error } = await supabase.rpc('refund_single_payment', {
+          p_payment_id: r.payment_id,
+          p_clinic_id: clinicId,
+          p_amount: amt,
+          p_method: method,
+          p_memo: refundMemo.trim(),
+        });
+        if (error) { failMsgs.push(refundErrorMessage(error, '환불 실패')); continue; }
+        const result = data as { ok?: boolean; error?: string };
+        if (result?.error) { failMsgs.push(result.error); continue; }
+        okCount += 1;
       }
-      if (singleRemaining <= 0) {
-        toast.error('이미 전액 환불된 결제입니다.');
-        setSubmitting(false);
-        return;
-      }
-      if (!window.confirm(`선택한 결제 금액 ${formatAmount(singleRemaining)}을 환불하시겠습니까?`)) {
-        setSubmitting(false);
-        return;
-      }
-      const { data, error } = await supabase.rpc('refund_package_payment', {
-        p_payment_id: row.pkg_payment_id,
-        p_method: method,
-      });
-      if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
-      const result = data as { ok?: boolean; error?: string };
-      if (result?.error) { toast.error(result.error); setSubmitting(false); return; }
-    } else {
-      // 단건 환불: refund_single_payment RPC 호출
-      const amt = parseInt(refundAmountStr.replace(/[^\d]/g, ''), 10);
-      if (!amt || amt <= 0) { toast.error('환불금액을 입력하세요.'); setSubmitting(false); return; }
-      // AC-3: 원결제 전액이 아니라 '잔여 환불가능액'(원결제 − 기존 환불) 기준으로 상한 검증.
-      if (amt > singleRemaining) {
-        toast.error(
-          priorRefunded && priorRefunded > 0
-            ? `환불 가능 잔여금액(${formatAmount(singleRemaining)})을 초과할 수 없습니다. (이미 환불 ${formatAmount(priorRefunded)})`
-            : `환불금액이 원결제 금액(${formatAmount(row.amount)})을 초과할 수 없습니다.`,
-        );
-        setSubmitting(false);
-        return;
-      }
-      const { data, error } = await supabase.rpc('refund_single_payment', {
-        p_payment_id: row.payment_id!,
-        p_clinic_id: clinicId,
-        p_amount: amt,
-        p_method: method,
-        p_memo: refundMemo.trim(),
-      });
-      if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
-      const result = data as { ok?: boolean; error?: string };
-      if (result?.error) { toast.error(result.error); setSubmitting(false); return; }
     }
 
     setSubmitting(false);
-    toast.success('환불 처리 완료');
-    onSuccess();
+
+    if (okCount > 0 && failMsgs.length === 0) {
+      toast.success(`환불 처리 완료 (${okCount}건)`);
+    } else if (okCount > 0) {
+      toast.error(`일부만 처리됨 (성공 ${okCount}건 / 실패 ${failMsgs.length}건): ${failMsgs[0]}`);
+    } else {
+      toast.error(failMsgs[0] ?? '환불 처리 실패');
+    }
+    if (okCount > 0) onSuccess();
   };
 
-  // T-20260713-foot-PAY-REFUND-AMOUNT-INPUT: 단건 환불 금액 실시간 검증
-  //   AC: 1원 ≤ 환불액 ≤ 수납금액. 빈값/0/음수(입력단계 strip)/원금초과는 즉시 차단
-  //   (제출 버튼 비활성 + 인라인 에러). 부분(일부)·전액 환불 모두 지원.
-  //   AC-3: 상한 = 잔여 환불가능액(원결제 − 기존 환불). 잔여 0 → 이미 전액 환불 안내.
-  const singleAmt = parseInt(refundAmountStr.replace(/[^\d]/g, ''), 10);
-  const singleAmtError: string | null = isPackage
-    ? null
-    : singleRemaining <= 0
-      ? '이미 전액 환불된 결제입니다'
-      : !singleAmt || singleAmt <= 0
-        ? '환불금액을 입력하세요 (최소 1원)'
-        : singleAmt > singleRemaining
-          ? `환불 가능 잔여금액(${formatAmount(singleRemaining)}) 초과 불가`
-          : null;
+  const loading = remainingMap == null;
+  // 표기 그룹 구성(빈 그룹은 렌더 스킵).
+  const groups = REFUND_GROUP_DEFS
+    .map(def => ({ ...def, items: rows.filter(def.match) }))
+    .filter(g => g.items.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o && !submitting) onClose(); }}>
-      <DialogContent className="max-w-sm" data-testid="closing-refund-dialog">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" data-testid="closing-refund-dialog">
         <DialogHeader>
-          <DialogTitle>환불 처리 — {row.customer_name}</DialogTitle>
+          <DialogTitle>환불 처리 — {customerName}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
-          {/* 원결제 요약 */}
-          <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-0.5">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">원결제금액</span>
-              <span className="font-medium tabular-nums">{formatAmount(row.amount)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">결제수단</span>
-              <span>{METHOD_KO[row.method as keyof typeof METHOD_KO] ?? row.method}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">구분</span>
-              <span>{isPackage ? '패키지' : '단건'}</span>
-            </div>
-          </div>
+          <p className="text-xs text-muted-foreground">환불할 항목을 선택하세요. 유형별로 구분되어 표시됩니다.</p>
 
-          {/* 패키지 환불: 선택한 결제행 금액 기준 (T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH)
-              — 견적(잔여회차×정가단가) 폐용. 이 결제 건의 실제 금액만 바인딩. */}
-          {isPackage && (
-            <div className="rounded-lg border bg-teal-50 p-3 space-y-1.5" data-testid="pkg-refund-amount-box">
-              <div className="text-xs text-muted-foreground">선택한 결제 금액</div>
-              <div className="text-xl font-bold text-teal-700 tabular-nums" data-testid="pkg-refund-amount">
-                {formatAmount(singleRemaining)}
+          {loading ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">불러오는 중…</div>
+          ) : (
+            <div className="space-y-3" data-testid="refund-item-list">
+              {/* AC-1/AC-2: 유형별(패키지/진료비/단건) 섹션 구분 + 각 항목 환불 가능 금액 표기 */}
+              {groups.map(g => (
+                <div key={g.key} className="space-y-1.5" data-testid={`refund-group-${g.key}`}>
+                  <div className="flex items-baseline justify-between border-b border-teal-100 pb-0.5">
+                    <span className="text-xs font-semibold text-teal-700">{g.label}</span>
+                    <span className="text-[10px] text-muted-foreground">{g.sub}</span>
+                  </div>
+                  {g.items.map(r => {
+                    const key = refundRowKey(r);
+                    const rem = remainingMap?.[key] ?? 0;
+                    const fully = rem <= 0;
+                    const checked = selected.has(key);
+                    const itemErr = r.source === 'payment' && checked ? paymentItemError(r) : null;
+                    return (
+                      <div
+                        key={key}
+                        data-testid="refund-item"
+                        className={cn(
+                          'rounded-lg border p-2.5 space-y-1.5 transition-colors',
+                          checked ? 'border-teal-500 bg-teal-50/60' : 'border-input',
+                          fully && 'opacity-60',
+                        )}
+                      >
+                        <label className={cn('flex items-center gap-2.5', fully ? 'cursor-not-allowed' : 'cursor-pointer')}>
+                          <input
+                            type="checkbox"
+                            data-testid="refund-item-checkbox"
+                            className="h-5 w-5 accent-teal-600"
+                            checked={checked}
+                            disabled={fully}
+                            onChange={() => toggleSelect(key)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                {r.pay_time} · {METHOD_KO[r.method as keyof typeof METHOD_KO] ?? r.method}
+                              </span>
+                              <span className="tabular-nums text-sm font-medium">{formatAmount(r.amount)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] text-muted-foreground">
+                                {fully ? '환불 가능 잔여 없음' : '환불 가능'}
+                              </span>
+                              <span className={cn('tabular-nums text-[11px]', fully ? 'text-destructive' : 'text-teal-700 font-medium')} data-testid="refund-item-remaining">
+                                {formatAmount(rem)}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* [FOLD] AC-B1: 완전환불행 → 재환불 불가 표시 */}
+                        {fully && (
+                          <div className="text-[10px] text-destructive" data-testid="refund-item-fully">이미 전액 환불된 결제입니다 (재환불 불가)</div>
+                        )}
+
+                        {/* 단건(진료비/단건) 선택 시 부분 환불 금액 편집 유지(무회귀) — 패키지는 잔여 고정 */}
+                        {checked && !fully && r.source === 'payment' && (
+                          <div className="pl-7 space-y-1" data-testid="refund-item-amount-field">
+                            <AmountInput
+                              data-testid="refund-item-amount-input"
+                              value={amountMap[key] ?? ''}
+                              onChange={raw => setAmountMap(prev => ({ ...prev, [key]: raw }))}
+                              placeholder={String(rem)}
+                              className={cn('h-9', itemErr && 'border-destructive')}
+                            />
+                            {itemErr ? (
+                              <p className="text-[11px] text-destructive" data-testid="refund-item-amount-error">{itemErr}</p>
+                            ) : (
+                              <p className="text-[10px] text-muted-foreground">최대 {formatAmount(rem)} · 일부 금액만도 환불 가능</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {/* AC-3: 선택 항목 환불 금액 합산 */}
+              <div className="rounded-lg bg-muted/60 px-3 py-2 flex items-center justify-between" data-testid="refund-selected-sum">
+                <span className="text-xs text-muted-foreground">선택 {selected.size}건 환불 합계</span>
+                <span className="tabular-nums text-lg font-bold text-teal-700">{formatAmount(selectedSum)}</span>
               </div>
-              {priorRefunded !== null && priorRefunded > 0 && (
-                <div className="border-t pt-1.5 text-[11px] space-y-0.5">
-                  <div className="flex justify-between"><span className="text-muted-foreground">원결제금액</span><span className="tabular-nums">{formatAmount(row.amount)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">기존 환불</span><span className="tabular-nums text-destructive">-{formatAmount(priorRefunded)}</span></div>
-                </div>
-              )}
-              {singleRemaining <= 0 && (
-                <div className="text-[11px] text-destructive">이미 전액 환불된 결제입니다</div>
-              )}
-            </div>
-          )}
-
-          {/* 단건 환불: 금액 입력 — AC-3: 잔여 환불가능액 기준 */}
-          {!isPackage && (
-            <div className="space-y-1" data-testid="refund-amount-field">
-              <Label>환불금액 <span className="text-destructive">*</span></Label>
-              {/* 이미 환불된 내역이 있으면 원결제/기존환불/잔여를 명시 */}
-              {priorRefunded !== null && priorRefunded > 0 && (
-                <div
-                  data-testid="refund-remaining-summary"
-                  className="rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] space-y-0.5"
-                >
-                  <div className="flex justify-between"><span className="text-muted-foreground">원결제금액</span><span className="tabular-nums">{formatAmount(row.amount)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">기존 환불</span><span className="tabular-nums text-destructive">-{formatAmount(priorRefunded)}</span></div>
-                  <div className="flex justify-between font-medium"><span>환불 가능 잔여</span><span className="tabular-nums">{formatAmount(singleRemaining)}</span></div>
-                </div>
-              )}
-              <AmountInput
-                data-testid="refund-amount-input"
-                value={refundAmountStr}
-                onChange={(raw) => setRefundAmountStr(raw)}
-                placeholder={String(singleRemaining)}
-                disabled={singleRemaining <= 0}
-                className={cn(singleAmtError && 'border-destructive')}
-              />
-              {singleAmtError ? (
-                <p data-testid="refund-amount-error" className="text-[11px] text-destructive">{singleAmtError}</p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">최대 {formatAmount(singleRemaining)} · 일부 금액만도 환불 가능</p>
-              )}
             </div>
           )}
 
@@ -2520,10 +2997,10 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
           <Button
             data-testid="refund-submit"
             variant="destructive"
-            disabled={submitting || (isPackage && singleRemaining <= 0) || (!isPackage && !!singleAmtError)}
+            disabled={confirmDisabled}
             onClick={handleSubmit}
           >
-            {submitting ? '처리 중…' : '환불 확인'}
+            {submitting ? '처리 중…' : `환불 확정${selected.size > 0 ? ` (${selected.size}건)` : ''}`}
           </Button>
         </DialogFooter>
       </DialogContent>

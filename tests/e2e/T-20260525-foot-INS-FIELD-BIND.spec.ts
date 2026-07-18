@@ -304,8 +304,10 @@ test('AC-3: 기존 diag_code 주입 양식 — 플레이스홀더 회귀 없음'
 //
 // PASS/FAIL 체크리스트 (form_key별):
 // ✅ diagnosis        — {{diag_code_1}}, {{diag_name_1}}, {{diag_code_2}}, {{diag_name_2}} 존재
-// ✅ treat_confirm    — {{diag_code_1}}, {{diag_name_1}}, {{diag_code_2}}, {{diag_name_2}} 존재
-// ✅ visit_confirm    — {{diag_code_1}}, {{diag_name_1}}, {{diag_code_2}}, {{diag_name_2}} 존재
+// ✅ treat_confirm_code — {{diag_code_1}}, {{diag_name_1}}, {{diag_code_2}}, {{diag_name_2}} 존재
+//    (STALE-SPEC-FIX: T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE + T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT
+//     — 단일 treat_confirm 은 상병 비노출(김주연 총괄 2026-06-22)로 전환, 상병코드는 분리된 treat_confirm_code 로 이관)
+// ✅ visit_confirm    — 상병 비노출 (T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE, 김주연 총괄) → diag 플레이스홀더 없음 N/A
 // ✅ diag_opinion     — {{diag_code_1}}, {{diag_name_1}}, {{diag_code_2}}, {{diag_name_2}} 존재
 // ✅ diag_opinion_v2  — {{diag_code_1}}, {{diag_code_2}} 존재 (diag_name 없음 — 설계상)
 // ✅ rx_standard      — {{diag_code_1}}, {{diag_code_2}} 존재 (diag_name 없음 — 설계상)
@@ -317,17 +319,20 @@ test('AC-3: 기존 diag_code 주입 양식 — 플레이스홀더 회귀 없음'
 // ✅ bill_receipt     — 상병코드 불필요 N/A
 
 /** 상병코드 플레이스홀더가 존재해야 하는 양식 */
+// STALE-SPEC-FIX: treat_confirm/visit_confirm 은 상병 비노출로 의도적 전환됨
+//   · T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE (김주연 총괄 2026-06-22): 통원/진료확인서 상병명 비노출
+//   · T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 진료확인서 → code(상병 렌더)/nocode(미렌더) 2폼 분리
+//   따라서 상병코드 보유 폼은 treat_confirm_code 로 이관, visit_confirm 은 diag 미보유(N/A).
 const DIAG_CODE_FORMS: { fk: string; hasName: boolean }[] = [
-  { fk: 'diagnosis',      hasName: true  },
-  { fk: 'treat_confirm',  hasName: true  },
-  { fk: 'visit_confirm',  hasName: true  },
-  { fk: 'diag_opinion',   hasName: true  },
-  { fk: 'diag_opinion_v2',hasName: false }, // 설계상 diag_name 없음
-  { fk: 'rx_standard',    hasName: false }, // 설계상 diag_name 없음
-  { fk: 'ins_claim_form', hasName: true  },
+  { fk: 'diagnosis',         hasName: true  },
+  { fk: 'treat_confirm_code',hasName: true  }, // 구 treat_confirm 상병표 이관처(FORMPANEL-SPLIT)
+  { fk: 'diag_opinion',      hasName: true  },
+  { fk: 'diag_opinion_v2',   hasName: false }, // 설계상 diag_name 없음
+  { fk: 'rx_standard',       hasName: false }, // 설계상 diag_name 없음
+  { fk: 'ins_claim_form',    hasName: true  },
 ];
 
-test('AC-3 보강: 상병코드 플레이스홀더 전수 — diag_code_1 존재 (7종)', () => {
+test('AC-3 보강: 상병코드 플레이스홀더 전수 — diag_code_1 존재 (6종)', () => {
   for (const { fk } of DIAG_CODE_FORMS) {
     const tpl = getHtmlTemplate(fk);
     expect(tpl, `${fk}: HTML 템플릿 null`).not.toBeNull();
@@ -335,14 +340,14 @@ test('AC-3 보강: 상병코드 플레이스홀더 전수 — diag_code_1 존재
   }
 });
 
-test('AC-3 보강: 상병코드 플레이스홀더 전수 — diag_code_2 존재 (7종)', () => {
+test('AC-3 보강: 상병코드 플레이스홀더 전수 — diag_code_2 존재 (6종)', () => {
   for (const { fk } of DIAG_CODE_FORMS) {
     const tpl = getHtmlTemplate(fk);
     expect(tpl!, `${fk}: {{diag_code_2}} 플레이스홀더 없음`).toContain('{{diag_code_2}}');
   }
 });
 
-test('AC-3 보강: 상병명 플레이스홀더 전수 — diag_name_1 존재 (5종)', () => {
+test('AC-3 보강: 상병명 플레이스홀더 전수 — diag_name_1 존재 (4종)', () => {
   const formsWithName = DIAG_CODE_FORMS.filter((f) => f.hasName);
   for (const { fk } of formsWithName) {
     const tpl = getHtmlTemplate(fk);
@@ -351,7 +356,7 @@ test('AC-3 보강: 상병명 플레이스홀더 전수 — diag_name_1 존재 (5
   }
 });
 
-test('AC-3 보강: service_charges 상병코드 바인딩 시뮬레이션 — 전 7종 렌더링', async ({ page }) => {
+test('AC-3 보강: service_charges 상병코드 바인딩 시뮬레이션 — 전 6종 렌더링', async ({ page }) => {
   // DocumentPrintPanel allValues useMemo의 diagChargeItems 주입 로직 시뮬레이션:
   // - service_charges에서 category_label='상병' 항목 필터
   // - diag_code_N = service_code, diag_name_N = name

@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
-import { generateSlots } from '@/lib/schedule';
+import { RESV_TIME_GRID } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -102,7 +102,9 @@ function maskRrnDisplay(
 }
 
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지 (07:00~22:00, 30분 — editor EDIT_TIME_SLOTS 동일 규칙)
-const NEW_RESV_TIME_SLOTS = generateSlots('07:00', '22:00', 30);
+//   T-20260716-foot-TIMESLOT-RESCHEDULE-EMPTYDATE: 그리드를 schedule.ts RESV_TIME_GRID SSOT 로 승격(값 동일, 무회귀).
+//   reschedule 빈날짜 슬롯 렌더(ReservationDayTimeslotPanel)와 동일 그리드 공유.
+const NEW_RESV_TIME_SLOTS = RESV_TIME_GRID;
 
 // new-mode 생성 콜백 파라미터 (parent = 단일소스 createReservationCanonical 위임)
 // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 시스템에 없는 완전 신규 고객 등록 허용 → customerId 가 null 일 수 있음.
@@ -336,7 +338,10 @@ export function ReservationDetailPopup({
         if (!data) return;
         const c = data as Customer;
         setCustomer(c);
-        setCustomerMemo(c.customer_memo ?? c.memo ?? '');
+        // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 예약팝업 [고객메모]를 2번차트 1구역과
+        // 동일 컬럼(customers.customer_note)으로 수렴 → 양방향 자동 연동. read-fallback으로 레거시
+        // customer_memo(신설 전 9건) 표시 연속성 보존(백필 불요). write는 customer_note로 일원화.
+        setCustomerMemo(c.customer_note ?? c.customer_memo ?? c.memo ?? '');
         setSelectedConsultantId(c.assigned_staff_id ?? '');
       });
     // 1b) 주민번호 마스킹 표시용 생년월일(서버파생) — T-20260614-foot-RESVPOPUP-RRN-NOBIND.
@@ -1154,9 +1159,12 @@ export function ReservationDetailPopup({
   const saveCustomerMemo = async () => {
     if (!reservation.customer_id) return;
     setMemoSaving(true);
+    // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: write는 2번차트 1구역과 동일 컬럼
+    // customers.customer_note로 일원화(양방향 sync). customer_memo는 3구역 예약메모 히스토리
+    // (customer_reservation_memos) seed 원본이므로 미변경·보존(무회귀).
     const { error } = await supabase
       .from('customers')
-      .update({ customer_memo: customerMemo })
+      .update({ customer_note: customerMemo })
       .eq('id', reservation.customer_id);
     setMemoSaving(false);
     if (error) { toast.error(`고객메모 저장 실패: ${error.message}`); return; }

@@ -5,6 +5,8 @@ import { format, parseISO } from 'date-fns';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
+// T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
+import { TreatmentMemoComposer, TreatmentMemoEditor } from '@/components/TreatmentMemoComposer';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
@@ -21,10 +23,12 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
+import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath } from '@/lib/photoUrl';
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
 import { canViewRrn, isStaffUnlockRole } from '@/lib/permissions';
+import { deriveGenderFromRRN } from '@/lib/rrn'; // T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): 성별 파생 표시전용
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay, formatDateDots, formatDateTimeDots } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO, staffRoleSortIndex } from '@/lib/status';
@@ -33,13 +37,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AmountInput } from '@/components/ui/AmountInput';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
-import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
+import { TREATMENT_TYPES, PACKAGE_TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -58,11 +62,13 @@ import { useClinic } from '@/hooks/useClinic';
 //   접수분류(JUDGE-365)·배정축과 동일 헬퍼 재사용(single source) → 표시 불일치 해소(AC-3).
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
-import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
 import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
 import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean, useChartSheetDock } from '@/lib/chartSheetContext';
+// T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 레이저 타이머 카운트다운 격리 컴포넌트
+import { LaserTimerPanel } from '@/components/chart/LaserTimerPanel';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
@@ -510,12 +516,7 @@ interface TimerRecord {
 // 클리닉 설정(clinics.laser_time_units)이 비었거나 null일 때만 사용 — 버튼이 사라지지 않도록 보장.
 const LASER_TIMER_FALLBACK_UNITS = [5, 15, 20];
 
-function formatTimerRemaining(secs: number): string {
-  if (secs <= 0) return '00:00';
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+// T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): formatTimerRemaining 은 LaserTimerPanel 로 이관(중복 제거).
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) 섹션
 interface PackageSession {
@@ -534,7 +535,17 @@ interface PackageSession {
 interface StorageImageItem {
   path: string;
   signedUrl: string;
+  // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드/목록 표시용 transform 썸네일.
+  //   그리드 <img> 는 thumbUrl(수십 KB), 확대/열기/편집은 signedUrl(원본)만 사용해 Egress 절감.
+  thumbUrl: string;
   name: string;
+}
+
+// T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 썸네일 클릭 시에만 원본 signed URL 을
+//   lazy 발급해 새 창으로 연다(AC-3). 그리드 자체는 원본을 다운로드하지 않는다.
+async function openOriginalPhoto(path: string) {
+  const url = await signedOriginalUrl('photos', path); // transform 없음 = 원본
+  if (url) window.open(url, '_blank');
 }
 
 const PKG_STATUS_KO: Record<string, string> = {
@@ -627,15 +638,18 @@ function CustomerStorageImageSection({
     });
     if (!files || files.length === 0) { setImages([]); return; }
     // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시는 transform 썸네일(수십 KB)만 다운로드.
+    //   원본 signed URL 은 클릭(새 창) 시점에만 발급 → 원본 반복 다운로드 제거. URL 은 캐시로 안정화(브라우저 캐시 HIT).
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
-    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const thumbs = await signedThumbUrls('photos', paths);
     const withUrls = filtered.map((file, i) => ({
       path: paths[i],
-      signedUrl: urlData?.[i]?.signedUrl ?? '',
+      signedUrl: '', // 원본은 클릭 시 lazy 발급 (openOriginalPhoto)
+      thumbUrl: thumbs[i] ?? '',
       name: file.name,
     }));
-    setImages(withUrls.filter((i) => i.signedUrl));
+    setImages(withUrls.filter((i) => i.thumbUrl));
   }, [storagePath]);
 
   useEffect(() => { load(); }, [load]);
@@ -647,7 +661,7 @@ function CustomerStorageImageSection({
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop() ?? 'jpg';
       const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -703,10 +717,11 @@ function CustomerStorageImageSection({
           {images.map((img) => (
             <div key={img.path} className="relative group aspect-square">
               <img
-                src={img.signedUrl}
+                src={img.thumbUrl}
                 alt={img.name}
+                loading="lazy"
                 className="w-full h-full object-cover rounded border cursor-pointer"
-                onClick={() => window.open(img.signedUrl, '_blank')}
+                onClick={() => openOriginalPhoto(img.path)}
               />
               {/* T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE: readOnly 시 삭제 버튼 미노출 (뷰어 전용) */}
               {!readOnly && (
@@ -759,6 +774,34 @@ function ReceiptUploadSection({
   }[]>([]);
 
   const storagePath = `customer/${customerId}/receipt`;
+  // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS:
+  //   매출연동 다이얼로그 오픈 의도 persist 키 — 태블릿 카메라 앱 전환 중 리마운트/컨텍스트 리셋
+  //   (가설A)으로 setAmountDlg가 소실돼도 마운트시 복원해 팝업을 보장한다.
+  const PENDING_DLG_KEY = `receipt-amount-dlg-pending:${customerId}`;
+
+  // T-20260717 계측: 갤탭 실기 field-soak에서 팝업 미표시 지점 특정용(가설 A/B/C 좁힘).
+  //   기존 CAMERA-FOCUS/CAMERA-ZOOM console.debug 진단 패턴 준용.
+  const diagReceiptDlg = (step: string, extra?: unknown) => {
+    try { console.debug(`[RECEIPT-DLG] ${step}`, extra ?? ''); } catch { /* noop */ }
+  };
+
+  // T-20260717: 현재 로드된 귀속후보로 매출연동 다이얼로그 오픈 (기본 귀속대상 산출).
+  //   무거운 재조회에 의존하지 않고 즉시 오픈 가능한 단일 진입점 — handleUpload/리마운트복원 공용.
+  const openAmountDialog = useCallback(() => {
+    const defaultSel = activePkgs.length > 0
+      ? `pkg:${activePkgs[0].id}`
+      : (waitingCIs.length > 0 ? `ci:${waitingCIs[0].id}` : 'single');
+    setAmountDlg({
+      open: true, amount: '', method: 'cash',
+      targetSel: defaultSel, paymentDate: todaySeoulISODate(),
+    });
+  }, [activePkgs, waitingCIs]);
+
+  // T-20260717: 다이얼로그 종료(등록/건너뛰기) — persist된 오픈 의도 해제 후 close.
+  const closeAmountDlg = useCallback(() => {
+    try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* private mode */ }
+    setAmountDlg((d) => ({ ...d, open: false }));
+  }, [PENDING_DLG_KEY]);
 
   // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 고객 활성 패키지 조회 (영수증 결제 라우팅용)
   // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: total_sessions 동반 조회 (회수 기반 단건/패키지 자동 분류).
@@ -798,67 +841,72 @@ function ReceiptUploadSection({
     });
     if (!files || files.length === 0) { setImages([]); return; }
     // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시는 transform 썸네일(수십 KB)만 다운로드.
+    //   원본 signed URL 은 클릭(새 창) 시점에만 발급 → 원본 반복 다운로드 제거. URL 은 캐시로 안정화(브라우저 캐시 HIT).
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
-    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const thumbs = await signedThumbUrls('photos', paths);
     const withUrls = filtered.map((file, i) => ({
       path: paths[i],
-      signedUrl: urlData?.[i]?.signedUrl ?? '',
+      signedUrl: '', // 원본은 클릭 시 lazy 발급 (openOriginalPhoto)
+      thumbUrl: thumbs[i] ?? '',
       name: file.name,
     }));
-    setImages(withUrls.filter((i) => i.signedUrl));
+    setImages(withUrls.filter((i) => i.thumbUrl));
   }, [storagePath]);
 
   useEffect(() => { load(); loadActivePkgs(); loadWaitingCIs(); }, [load, loadActivePkgs, loadWaitingCIs]);
 
+  // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS (가설A 복원):
+  //   태블릿 카메라 앱 전환 중 컴포넌트가 리마운트되어 amountDlg가 {open:false}로 리셋된 경우,
+  //   업로드 직후 남긴 pending 스탬프(5분 내)로 다이얼로그를 재오픈한다. 스탬프 만료 시 정리.
+  useEffect(() => {
+    let ts = 0;
+    try {
+      const raw = sessionStorage.getItem(PENDING_DLG_KEY);
+      ts = raw ? Number(raw) : 0;
+    } catch { ts = 0; }
+    if (ts && Date.now() - ts < 5 * 60 * 1000) {
+      diagReceiptDlg('dialog:restore-after-remount', { ageMs: Date.now() - ts });
+      openAmountDialog();
+    } else if (ts) {
+      try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
+    }
+    // 마운트 1회만 복원 — openAmountDialog는 후보 로드 시 재생성되나 복원은 최초 1회로 충분.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    // AC3: 카메라 촬영 취소·빈 FileList(일부 모바일 브라우저의 빈 onChange 발화) 안전 early return.
+    if (!files || files.length === 0) { diagReceiptDlg('upload:empty-filelist'); return; }
+    diagReceiptDlg('upload:start', { count: files.length });
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+    let uploadedOk = false;
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop() ?? 'jpg';
+        const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
+        if (error) toast.error(`업로드 실패: ${error.message}`);
+        else uploadedOk = true;
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    setUploading(false);
-    e.target.value = '';
-    await load();
-    // T-20260609-foot-RECEIPT-PKG-ALWAYS: 최신 활성 패키지 재조회 (귀속 대상 프리셀렉트)
-    await loadActivePkgs();
-    const { data: pkgRows } = await supabase
-      .from('packages')
-      .select('id, package_name, total_sessions')
-      .eq('customer_id', customerId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-    const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
-      ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 }));
-    setActivePkgs(pkgs);
-    // T-20260714 옵션A: payment_waiting 내원 재조회 (귀속 후보).
-    const { data: ciRows } = await supabase
-      .from('check_ins')
-      .select('id, clinic_id, status, status_flag_history, customer_id, checked_in_at')
-      .eq('customer_id', customerId)
-      .eq('status', 'payment_waiting')
-      .order('checked_in_at', { ascending: false });
-    const wcis = (ciRows ?? []).map((c: {
-      id: string; clinic_id: string; status: string; status_flag_history: unknown[];
-      customer_id: string | null; checked_in_at: string | null;
-    }) => ({
-      id: c.id, clinic_id: c.clinic_id, status: c.status,
-      status_flag_history: c.status_flag_history ?? [], customer_id: c.customer_id,
-      label: `수납대기 내원${c.checked_in_at ? ` · ${formatDateTimeDots(c.checked_in_at)}` : ''}`,
-    }));
-    setWaitingCIs(wcis);
-    // 매출 연동 다이얼로그 열기 — 옵션A 귀속 선택. 기본값: 활성패키지>수납대기 내원>단건 순.
-    //   활성패키지 無 여도 하드블록 없이 ci/단건으로 귀속 가능(옵션A, RECEIPT-PKG-ALWAYS 하드블록 supersede).
-    const defaultSel = pkgs.length > 0 ? `pkg:${pkgs[0].id}` : (wcis.length > 0 ? `ci:${wcis[0].id}` : 'single');
-    setAmountDlg({
-      open: true, amount: '', method: 'cash',
-      targetSel: defaultSel,
-      paymentDate: todaySeoulISODate(),
-    });
+    if (!uploadedOk) { diagReceiptDlg('upload:none-ok'); return; }
+    await load().catch(() => {}); // 썸네일 갱신 — 비차단(실패해도 다이얼로그 진행).
+    // ── T-20260717 (가설A 타겟픽스): 무거운 귀속후보 재조회 이전에 다이얼로그를 즉시 오픈 ──
+    //   + 오픈 의도를 sessionStorage에 스탬프 → 카메라 앱 전환 중 리마운트/컨텍스트 리셋에도
+    //   마운트 복원으로 팝업을 보장한다. (기존: await 체인 말미 setAmountDlg → 체인 중단 시 팝업 소실)
+    try { sessionStorage.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
+    openAmountDialog();
+    diagReceiptDlg('dialog:opened');
+    // 귀속후보 최신화 — 오픈 이후 비차단 갱신(실패해도 다이얼로그 유지). loadActivePkgs/loadWaitingCIs
+    //   가 동일 쿼리를 수행하므로 인라인 중복 재조회 제거(정본 로더 재사용).
+    void loadActivePkgs().catch(() => {});
+    void loadWaitingCIs().catch(() => {});
   };
 
   const remove = async (img: StorageImageItem) => {
@@ -909,7 +957,7 @@ function ReceiptUploadSection({
           .from('packages')
           .update({ paid_amount: (pkgRow?.paid_amount ?? 0) + amt })
           .eq('id', packageId);
-        setAmountDlg((d) => ({ ...d, open: false }));
+        closeAmountDlg();
         toast.success('단건 결제로 기록 (회수 1회)');
         onPaymentCreated();
         return;
@@ -923,7 +971,7 @@ function ReceiptUploadSection({
           memo: '영수증 업로드', createdAtOverride,
         });
       } catch (e) { toast.error(e instanceof Error ? e.message : '패키지 결제 기록 실패'); return; }
-      setAmountDlg((d) => ({ ...d, open: false }));
+      closeAmountDlg();
       toast.success('패키지 결제로 기록 (미수 반영)');
       onPaymentCreated();
       return;
@@ -943,7 +991,7 @@ function ReceiptUploadSection({
         clinicId, customerId, amount: amt, method: amountDlg.method,
         attribution, createdAtOverride,
       });
-      setAmountDlg((d) => ({ ...d, open: false }));
+      closeAmountDlg();
       if (res.route === 'checkin') {
         toast.success(res.kanbanResolved ? '수납 완료 — 대기목록 해소' : '수납 기록됨');
       } else {
@@ -980,10 +1028,11 @@ function ReceiptUploadSection({
           {images.map((img) => (
             <div key={img.path} className="relative group aspect-square">
               <img
-                src={img.signedUrl}
+                src={img.thumbUrl}
                 alt={img.name}
+                loading="lazy"
                 className="w-full h-full object-cover rounded border cursor-pointer"
-                onClick={() => window.open(img.signedUrl, '_blank')}
+                onClick={() => openOriginalPhoto(img.path)}
               />
               <button
                 onClick={() => remove(img)}
@@ -1079,7 +1128,7 @@ function ReceiptUploadSection({
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => setAmountDlg((d) => ({ ...d, open: false }))}
+                onClick={closeAmountDlg}
               >
                 건너뛰기
               </Button>
@@ -1199,14 +1248,20 @@ function TreatmentImagesSection({
         .filter((f) => f.name && !f.id?.endsWith('/'))
         .map(async (file) => {
           const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드=썸네일(thumbUrl), 라이트박스/편집/다운로드=원본(signedUrl).
+          //   두 URL 모두 캐시 안정화(재서명·브라우저 재다운로드 감축). 그리드가 원본을 다운로드하지 않는 게 핵심.
+          const [thumbUrl, signedUrl] = await Promise.all([
+            signedThumbUrl('photos', path),
+            signedOriginalUrl('photos', path),
+          ]);
           const { imgType, timestamp } = parseTreatImgMeta(file.name);
           const dateStr = timestamp > 0
             ? new Date(timestamp).toISOString().slice(0, 10)
             : (file.created_at ? file.created_at.slice(0, 10) : 'unknown');
           return {
             path,
-            signedUrl: data?.signedUrl ?? '',
+            signedUrl: signedUrl ?? '',
+            thumbUrl: thumbUrl ?? '',
             name: file.name,
             imgType,
             dateStr,
@@ -1256,7 +1311,7 @@ function TreatmentImagesSection({
       const ext = file.name.split('.').pop() ?? 'jpg';
       // T-20260517: 파일명에 type 접두사 포함
       const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -1744,7 +1799,7 @@ function TreatmentImagesSection({
     let done = 0;
     for (const { blob, previewUrl } of capturedBlobs) {
       const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
-      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
       URL.revokeObjectURL(previewUrl);
       done++;
@@ -1812,8 +1867,12 @@ function TreatmentImagesSection({
       const { error } = await supabase.storage.from('photos').upload(editingImg.path, rotatedBlob, {
         contentType: 'image/jpeg',
         upsert: true,
+        ...PHOTO_UPLOAD_OPTS,
       });
       if (error) throw error;
+      // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 동일 path 객체 교체(회전) → stale signed URL/썸네일
+      //   캐시가 옛 이미지를 재표시하지 않도록 해당 path 캐시 무효화.
+      invalidatePhotoPath('photos', editingImg.path);
       toast.success('회전 저장 완료');
       setEditingImg(null);
       await load();
@@ -1982,8 +2041,9 @@ function TreatmentImagesSection({
                                 return (
                                 <div key={img.path} className="relative group aspect-square">
                                   <img
-                                    src={img.signedUrl}
+                                    src={img.thumbUrl}
                                     alt={img.name}
+                                    loading="lazy"
                                     data-testid="treat-img-thumb"
                                     className={cn(
                                       'w-full h-full object-cover rounded border cursor-pointer',
@@ -2589,7 +2649,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // 상담내역 그룹3 [내용보기] 활성화 + 다이얼로그 구조화 렌더에 사용
   const [healthQResults, setHealthQResults] = useState<HQResult[]>([]);
   // T-20260520-foot-PENCHART-VIEW-SPLIT: 이미지 뷰어 상태
-  const [submissionImages, setSubmissionImages] = useState<{ url: string; date: string; label: string }[]>([]);
+  const [submissionImages, setSubmissionImages] = useState<{ url: string; thumbUrl: string; date: string; label: string }[]>([]);
   const [submissionImagesLoading, setSubmissionImagesLoading] = useState(false);
   // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답
   const [checklistEntries, setChecklistEntries] = useState<{
@@ -2729,7 +2789,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '치료메모'>('예약');
   // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
   const [activeTimer, setActiveTimer] = useState<TimerRecord | null>(null);
-  const [timerRemainingSecs, setTimerRemainingSecs] = useState(0);
+  // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 카운트다운 상태(timerRemainingSecs)+500ms 인터벌은
+  //   LaserTimerPanel 자식 컴포넌트로 이관 — 최상위 0.5초 재렌더 제거(차팅 입력 버벅임 원인). 아래 참조.
   const [timerLoading, setTimerLoading] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [resvDetailForm, setResvDetailForm] = useState({
@@ -2761,10 +2822,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [treatmentMemoUnavailable, setTreatmentMemoUnavailable] = useState(false);
   // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 수납통계 상단 요약블록용 — 치료메모 최신 1건(eager, 탭 진입 무관).
   const [latestTreatmentMemo, setLatestTreatmentMemo] = useState<{ content: string; created_at: string } | null>(null);
-  const [newMemoText, setNewMemoText] = useState('');
+  // T-20260716 INPUT-LAG-DATALOSS-RCA: newMemoText/editingMemoText 부모 상태 제거 —
+  //   입력 상태는 <TreatmentMemoComposer>/<TreatmentMemoEditor>가 로컬 소유(키 입력 시 부모 무재렌더).
   const [savingNewMemo, setSavingNewMemo] = useState(false);
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
-  const [editingMemoText, setEditingMemoText] = useState('');
   const [savingEditMemo, setSavingEditMemo] = useState(false);
   // T-20260526-foot-VISIT-HIST-FILTER: 방문이력 펼침/접기
   // T-20260622-foot-CHART2-UICLEAN-4FIX 요청6: 메모유형 필터(치료메모/진료메모/특이사항) 제거 — '전체 펼치기'만 유지.
@@ -2782,6 +2843,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8: 전체 표시용 (펜차트 보험차트 자동채움 전용)
   const [rrnFull, setRrnFull] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
+  // T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): RRN 7번째 자리 파생 성별(남/여/외국인). 표시전용 — 자릿수 비노출.
+  const [rrnDerivedGender, setRrnDerivedGender] = useState<'남' | '여' | '외국인' | null>(null);
   // C22-PKG-DEDUCT: 인라인 차감 폼 (복구 — T-20260510-foot-C22-SECTION-MERGE regression fix)
   const [c22DeductForm, setC22DeductForm] = useState({
     sessionDate: format(new Date(), 'yyyy-MM-dd'),
@@ -2970,7 +3033,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호 현재값 로드
       setCertNoText((custData as Customer).insurance_cert_no ?? '');
       // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 현재값 로드
-      setCustomerNoteText((custData as Customer).customer_note ?? '');
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: read-fallback(customer_note ?? customer_memo)로
+      // 레거시 customer_memo(신설 전 9건) 표시 연속성 보존 → 예약팝업 read와 동일 규칙(양방향 sync 정합).
+      setCustomerNoteText((custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '');
       setReferralNameText((custData as Customer).referral_name ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
       // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
@@ -3197,8 +3262,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           const canvasFile = (s.field_data as Record<string, unknown> | null)?.canvas_file as string | undefined;
           if (!canvasFile) return null;
           const path = `customer/${cid}/pen-chart/${canvasFile}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          if (!data?.signedUrl) return null;
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 인라인 미리보기는 transform 프리뷰(A4 양식
+          //   가독성 위해 width 800)로 서빙 → 원본 A4 PNG 반복 다운로드 제거. '원본 보기' 링크만 원본(url) 사용.
+          const [preview, original] = await Promise.all([
+            signedThumbUrl('photos', path, { width: 800, quality: 72, resize: 'contain' }),
+            signedOriginalUrl('photos', path),
+          ]);
+          if (!preview && !original) return null;
           const dateStr = s.printed_at ?? s.signed_at ?? '';
           let label = '';
           if (s.template_key === 'personal_checklist_general') label = '개인정보+체크리스트 (일반)';
@@ -3207,10 +3277,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           else if (s.template_key === 'health_questionnaire_general') label = '발건강 질문지 (일반)';
           else if (s.template_key === 'health_questionnaire_senior') label = '발건강 질문지 (어르신용)';
           else label = s.template_key ?? '';
-          return { url: data.signedUrl, date: dateStr, label };
+          return { url: original ?? preview ?? '', thumbUrl: preview ?? original ?? '', date: dateStr, label };
         }),
       );
-      setSubmissionImages(results.filter(Boolean) as { url: string; date: string; label: string }[]);
+      setSubmissionImages(results.filter(Boolean) as { url: string; thumbUrl: string; date: string; label: string }[]);
     } finally {
       setSubmissionImagesLoading(false);
     }
@@ -3258,6 +3328,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (!customer) return;
     setRrnMasked(undefined);
     setRrnFull(undefined);
+    setRrnDerivedGender(null); // T-20260630 (B안): 고객 변경 시 파생 성별 초기화
     // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 조회 권한 없는 직원은 rrn_decrypt 가
     //   항상 null → 불필요한 RPC 호출 생략. 렌더에서 userCanViewRrn 분기로 안내문 표기.
     if (!userCanViewRrn) {
@@ -3272,9 +3343,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         setRrnMasked(s.slice(0, 6) + '-*******');
         // AC-8: 펜차트 보험차트 자동채움용 전체 표시 (마스킹 없음)
         setRrnFull(s.slice(0, 6) + '-' + s.slice(6));
+        // T-20260630 (B안): 성별 더블체크용 파생 라벨 (자릿수 비노출, 인메모리 복호값 재사용)
+        setRrnDerivedGender(deriveGenderFromRRN(s));
       } else {
         setRrnMasked(null);
         setRrnFull(null);
+        setRrnDerivedGender(null);
       }
     })();
   }, [customer?.id, userCanViewRrn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3569,6 +3643,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           // 서버 권위값으로 즉시 반영 (새로고침 불필요)
           setRrnMasked(s.slice(0, 6) + '-*******');
           setRrnFull(s.slice(0, 6) + '-' + s.slice(6)); // AC-8: 펜차트 자동채움용 전체값
+          setRrnDerivedGender(deriveGenderFromRRN(s)); // T-20260630 (B안): 저장 직후 파생 성별 갱신
           return true;
         }
         // encrypt 는 성공으로 보였으나 재조회 실패 = 미영속 → 데이터 유실 신호 (오해 방지: 낙관 표시 안 함)
@@ -4251,17 +4326,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [latestCheckIn?.id, loadActiveTimer]);
 
-  // ends_at 기준 카운트다운 — 탭 비활성 대응 (서버시각 앵커)
-  useEffect(() => {
-    if (!activeTimer) { setTimerRemainingSecs(0); return; }
-    const tick = () => {
-      const remaining = Math.max(0, new Date(activeTimer.ends_at).getTime() - Date.now()) / 1000;
-      setTimerRemainingSecs(Math.ceil(remaining));
-    };
-    tick();
-    const id = setInterval(tick, 500);
-    return () => clearInterval(id);
-  }, [activeTimer]);
+  // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 카운트다운 인터벌 이관.
+  //   기존 `setInterval(tick, 500)` 은 최상위 setTimerRemainingSecs 로 페이지 전체를 0.5초마다 재렌더시켜
+  //   차팅 입력 버벅임을 유발했다. 이 로직은 LaserTimerPanel(자식) 내부로 이동 — 부모는 activeTimer(저빈도)만 소유.
 
   const handleStartTimer = useCallback(async (minutes: number) => {
     if (!latestCheckIn?.id || !customer) return;
@@ -4465,16 +4532,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [treatmentMemos, treatmentMemosLoaded]);
 
-  // 새 메모 저장
-  const saveNewTreatmentMemo = async () => {
-    if (!customer || !newMemoText.trim()) return;
+  // 새 메모 저장 — T-20260716 INPUT-LAG-DATALOSS-RCA: 입력 상태를 <TreatmentMemoComposer>가 로컬 소유.
+  //   본 함수는 text를 인자로 받아 DB INSERT만 담당(저장 시점·트리거·payload 무변경). 성공 시 true 반환.
+  const saveNewTreatmentMemo = async (text: string): Promise<boolean> => {
+    const content = text.trim();
+    if (!customer || !content) return false;
     setSavingNewMemo(true);
     const { data, error } = await supabase
       .from('customer_treatment_memos')
       .insert({
         customer_id: customer.id,
         clinic_id: customer.clinic_id,
-        content: newMemoText.trim(),
+        content,
         created_by: profile?.email ?? null,
         created_by_name: profile?.name ?? null,
       })
@@ -4493,30 +4562,41 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       } else {
         toast.error(`저장 실패: ${error.message}`);
       }
-      return;
+      return false;
     }
     if (data) setTreatmentMemos(prev => [data as TreatmentMemoEntry, ...prev]);
-    setNewMemoText('');
+    return true;
   };
 
-  // 메모 수정 저장
-  const saveTreatmentMemoEdit = async () => {
-    if (!editingMemoId || !editingMemoText.trim()) return;
+  // 메모 수정 저장 — 입력 상태는 <TreatmentMemoEditor>가 로컬 소유. text 인자로 UPDATE만 담당.
+  const saveTreatmentMemoEdit = async (text: string): Promise<boolean> => {
+    const content = text.trim();
+    if (!editingMemoId || !content) return false;
     setSavingEditMemo(true);
     const now = new Date().toISOString();
-    const { error } = await supabase
+    // T-20260716 INPUT-LAG-DATALOSS-RCA(§2 부차원인 2차): .update()에 .select() 부재 시,
+    //   RLS USING 미매치(타인/이전기록 created_by=null 메모를 비-admin이 수정)가 '0행·에러없음'으로
+    //   조용히 성공 처리 → 새로고침 시 수정 증발(silent data-loss). .select()로 반영행을 회수해
+    //   0-row를 명시 에러로 표면화한다(payload·트리거 무변경, RLS 정책 무변경 — 감지만 추가).
+    const { data, error } = await supabase
       .from('customer_treatment_memos')
-      .update({ content: editingMemoText.trim(), updated_at: now })
-      .eq('id', editingMemoId);
+      .update({ content, updated_at: now })
+      .eq('id', editingMemoId)
+      .select('id');
     setSavingEditMemo(false);
-    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    if (error) { toast.error(`수정 실패: ${error.message}`); return false; }
+    if (!data || data.length === 0) {
+      // RLS 등으로 반영된 행이 없음 — 낙관적 성공 표시를 막고 유실을 알린다.
+      toast.error('수정 권한이 없거나 반영되지 않았습니다. (이전 기록/타인 작성 메모는 수정할 수 없습니다)');
+      return false;
+    }
     setTreatmentMemos(prev =>
       prev.map(m => m.id === editingMemoId
-        ? { ...m, content: editingMemoText.trim(), updated_at: now }
+        ? { ...m, content, updated_at: now }
         : m)
     );
     setEditingMemoId(null);
-    setEditingMemoText('');
+    return true;
   };
 
   // 메모 삭제 — T-20260624-foot-CHART2-MEMO-EDIT-DELETE: hard-delete → soft-delete(의료법 §22-3/§40 진료기록 보존).
@@ -5634,10 +5714,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </tr>
 
                 {/* ③ 성별 (라디오 스타일) — T-20260510-foot-C21-DEPLOYED-VERIFY: 클릭 활성화 */}
+                {/* T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): 주민번호 파생 성별 라벨로 더블체크 (자릿수 비노출) */}
                 <tr>
                   <td className={LC}>성별</td>
                   <td className={VC} colSpan={3}>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
                       {[
                         { val: 'M',       label: '남성' },
                         { val: 'F',       label: '여성' },
@@ -5676,6 +5757,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           </button>
                         );
                       })}
+                      {/* T-20260630 (B안): 주민번호 파생 성별 힌트 — 직원 더블체크용. RRN 자릿수는 노출하지 않음. */}
+                      {rrnDerivedGender && (() => {
+                        // 저장된 성별과 파생 성별 불일치 여부 (더블체크 경고)
+                        const storedLabel = customer.is_foreign
+                          ? '외국인'
+                          : customer.gender === 'M' ? '남'
+                          : customer.gender === 'F' ? '여'
+                          : null;
+                        const mismatch = storedLabel !== null && storedLabel !== rrnDerivedGender;
+                        return (
+                          <span
+                            className={cn(
+                              'text-xs whitespace-nowrap',
+                              mismatch ? 'text-red-600 font-semibold' : 'text-amber-600',
+                            )}
+                            title={mismatch
+                              ? `저장된 성별(${storedLabel})과 주민번호 파생 성별(${rrnDerivedGender})이 다릅니다. 확인해주세요.`
+                              : '주민번호 뒷자리로 파생한 성별 (표시전용)'}
+                          >
+                            {mismatch ? '⚠ ' : ''}주민번호 파생: {rrnDerivedGender}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                 </tr>
@@ -6390,10 +6494,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             // ── T-20260616-foot-CHART2-RECEIPT-RESTRUCTURE (요청 #2) ─────────────
             // 수납내역 탭은 '진료비 수납내역'만. 영수증 업로드(상담내역>결제영수증 경로)로
             // 생성된 결제 행은 제외 — 상담내역 결제영수증 섹션에서 표기(요청 #1)하므로 중복 방지.
-            //   · 일반 결제(payments): memo가 '영수증 업로드…'로 시작하는 행 제외(회수1·단건 영수증 포함).
+            //   · 일반 결제(payments): memo가 '영수증 업로드…'로 시작하는 행 제외.
             //   · 패키지 결제(package_payments): memo==='영수증 업로드'(영수증 연결분) 제외 → 직접 결제분만 잔존.
-            // ★DISPLAY-ONLY: 프론트 필터만. write 경로·집계 쿼리·스키마 불변(§3 하드가드 준수).
-            const feePayments = payments.filter((p) => !(p.memo ?? '').startsWith('영수증 업로드'));
+            // ── T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE (예외) ─────────────────
+            //   체험(회수1·단건) 패키지 구입 영수증결제(memo='영수증 업로드(회수1…')는 수납내역에 표시.
+            //   이 결제는 회수1 패키지의 유일 수납 행이므로 제외 시 차트가 '결제없음'으로 보여 현장 오인 발생.
+            //   RC-A(F-4716 forensic) UX 개선. 그 외 '영수증 업로드…'는 결제영수증 섹션 표기 → 제외 유지.
+            // ★DISPLAY-ONLY: 프론트 read 필터만 확장. write 경로·집계 쿼리·스키마 불변(§3 하드가드 준수).
+            const feePayments = payments.filter((p) => {
+              const memo = p.memo ?? '';
+              if (memo.startsWith('영수증 업로드(회수1')) return true; // 체험(회수1·단건) 영수증결제 포함
+              return !memo.startsWith('영수증 업로드');
+            });
             const directPkgPayments = pkgPayments.filter((p) => p.memo !== '영수증 업로드');
             return (
             <div className="space-y-3">
@@ -6553,7 +6665,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   const rows = pkgPayments.filter((pp) => pp.package_id === p.id);
                   const pkgTotal = p.total_amount ?? 0;
                   const consultTotal = p.consultation_fee ?? 0;
-                  const pkgDue = computeOutstanding(pkgTotal, netPaidFromPayments(rows, 'package'));
+                  // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 = paid_amount 폴백)로 phantom 미수 치유.
+                  const pkgDue = computeOutstanding(pkgTotal, effectiveNetPaid(p, rows));
                   const consultDue = computeOutstanding(consultTotal, netPaidFromPayments(rows, 'consultation'));
                   if (pkgDue > 0) curPackageDue += pkgDue;
                   if (consultDue > 0) curConsultDue += consultDue;
@@ -7126,7 +7239,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 패키지 금액/진료비 금액 별도 표기 + 항목별 잔금(§4-A: 합산 단일표기 금지). */}
                           {(() => {
                             const rows = pkgPayments.filter((pay) => pay.package_id === p.id);
-                            const pkgDue = computeOutstanding(p.total_amount, netPaidFromPayments(rows, 'package'));
+                            // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 폴백)로 phantom 미수 치유.
+                            const pkgDue = computeOutstanding(p.total_amount, effectiveNetPaid(p, rows));
                             const pkgSt = balanceStatus(pkgDue);
                             const fee = p.consultation_fee ?? 0;
                             const consultDue = computeOutstanding(fee, netPaidFromPayments(rows, 'consultation'));
@@ -8445,105 +8559,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
 
             {/* T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): [상세] 탭 상단 — 탭 선택 무관하게 항상 표시 */}
+            {/* T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 500ms 카운트다운 재렌더를 이 위젯 서브트리로 격리.
+                (기존 인라인 JSX → LaserTimerPanel 컴포넌트. 표시·동작·data-testid 동일 — 무회귀) */}
             {latestCheckIn && (
-              <div
-                className={`mx-2 mt-2 mb-1 rounded-xl border p-2.5 flex flex-col gap-2 ${
-                  activeTimer
-                    ? timerRemainingSecs <= 60
-                      ? 'border-red-400 bg-red-50'
-                      : 'border-slate-300 bg-slate-50'
-                    : 'border-muted bg-muted/20'
-                }`}
-                data-testid="laser-timer-panel"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Timer className="h-3.5 w-3.5 text-slate-600 shrink-0" />
-                  <span className="text-[11px] font-semibold text-slate-700">비가열 레이저 타이머</span>
-                  {activeTimer && (
-                    <span
-                      className={`ml-auto tabular-nums font-mono text-base font-bold ${
-                        timerRemainingSecs <= 60 ? 'text-red-600' : 'text-slate-700'
-                      }`}
-                      data-testid="laser-timer-countdown"
-                    >
-                      {formatTimerRemaining(timerRemainingSecs)}
-                    </span>
-                  )}
-                </div>
-
-                {!activeTimer ? (
-                  /* 타이머 미실행 — 시작 버튼 3종 */
-                  <div className="flex gap-1.5" data-testid="laser-timer-start-buttons">
-                    {laserTimerUnits.map((min) => (
-                      <button
-                        key={min}
-                        type="button"
-                        disabled={timerLoading}
-                        onClick={() => handleStartTimer(min)}
-                        className="flex-1 rounded-lg border-2 border-slate-400 bg-white text-slate-700 font-bold text-sm py-2 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        data-testid={`laser-timer-btn-${min}`}
-                      >
-                        {timerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" /> : `${min}분`}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  /* 타이머 실행 중 — 진행 바 + 중지 버튼 */
-                  <div className="space-y-1.5">
-                    <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          timerRemainingSecs <= 60 ? 'bg-red-500' : 'bg-slate-500'
-                        }`}
-                        style={{
-                          width: `${Math.min(100, (timerRemainingSecs / (activeTimer.duration_minutes * 60)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{activeTimer.duration_minutes}분 타이머</span>
-                      <button
-                        type="button"
-                        disabled={timerLoading}
-                        onClick={() => setStopConfirmOpen(true)}
-                        className="flex items-center gap-1 rounded border border-red-300 bg-white text-red-600 text-[10px] font-medium px-2 py-0.5 hover:bg-red-50 transition-colors disabled:opacity-50"
-                        data-testid="laser-timer-stop-btn"
-                      >
-                        {timerLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : '■ 종료'}
-                      </button>
-                    </div>
-
-                    {/* 종료 확인 인라인 박스 */}
-                    {stopConfirmOpen && (
-                      <div
-                        className="mt-1 rounded-lg border border-red-300 bg-red-50 p-2 flex flex-col gap-1.5"
-                        data-testid="laser-timer-stop-confirm"
-                      >
-                        <p className="text-[11px] text-red-700 font-medium">타이머를 종료하시겠습니까?</p>
-                        <div className="flex gap-1.5 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setStopConfirmOpen(false)}
-                            className="rounded border border-gray-300 bg-white text-gray-600 text-[10px] font-medium px-2.5 py-1 hover:bg-gray-50 transition-colors"
-                            data-testid="laser-timer-stop-cancel"
-                          >
-                            취소
-                          </button>
-                          <button
-                            type="button"
-                            disabled={timerLoading}
-                            onClick={() => { setStopConfirmOpen(false); handleStopTimer(); }}
-                            className="rounded bg-red-500 text-white text-[10px] font-semibold px-2.5 py-1 hover:bg-red-600 transition-colors disabled:opacity-50"
-                            data-testid="laser-timer-stop-confirm-btn"
-                          >
-                            {timerLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : '종료'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <LaserTimerPanel
+                activeTimer={activeTimer}
+                laserTimerUnits={laserTimerUnits}
+                timerLoading={timerLoading}
+                stopConfirmOpen={stopConfirmOpen}
+                setStopConfirmOpen={setStopConfirmOpen}
+                onStart={handleStartTimer}
+                onStop={handleStopTimer}
+              />
             )}
 
             {/* 탭 — T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item2: 표시 라벨만 변경(예약→예약메모/상담→상담메모/치료메모 유지).
@@ -8717,49 +8744,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     치료메모 기능 준비 중입니다. 잠시 후 다시 이용해주세요.
                   </div>
                 )}
-                {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김 */}
-                {!treatmentMemoUnavailable && (
-                  <>
-                    {/* CS-AC-3: 고객차트 상용구 — 새 치료메모에 삽입.
-                        T-20260620-foot-PHRASE-CUSTCHART-CATEGORY-LINK AC-3: '치료' 분류 + 미분류만 노출. */}
-                    {custchartPhrasesByTab['치료메모'].length > 0 && (
-                      <div>
-                        <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
-                        <div className="flex flex-wrap gap-1" data-testid="custchart-phrases-치료메모">
-                          {custchartPhrasesByTab['치료메모'].map(phrase => (
-                            <button
-                              key={phrase.id}
-                              type="button"
-                              onClick={() => setNewMemoText(prev => prev ? `${prev} ${phrase.content}` : phrase.content)}
-                              className="rounded border border-sage-200 bg-sage-50 px-1.5 py-0.5 text-[10px] text-sage-700 hover:bg-sage-100 transition"
-                            >
-                              {phrase.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
-                      {/* T-20260624-foot-CHART2-RESVMEMO-UNIFY-MEMO-UI AC-2: 치료메모 기입칸 2.5배(rows 3→8) */}
-                      <Textarea
-                        value={newMemoText}
-                        onChange={(e) => setNewMemoText(e.target.value)}
-                        rows={8}
-                        placeholder="치료 메모"
-                        className="text-[11px] resize-none"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={saveNewTreatmentMemo}
-                      disabled={savingNewMemo || !newMemoText.trim()}
-                      /* T-20260622-foot-CHART-MONOTONE-SAVEALL-PKGTEST AC-2: 완전검정 → 모노톤 미드그레이(#666, 추가/기입 secondary) */
-                      className="w-full rounded bg-[#666666] text-white py-1.5 text-[11px] font-medium hover:bg-[#757575] transition disabled:opacity-50"
-                    >
-                      {savingNewMemo ? '저장 중…' : '메모 추가'}
-                    </button>
-                  </>
+                {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김.
+                    T-20260716 INPUT-LAG-DATALOSS-RCA: 입력 상태를 <TreatmentMemoComposer>(memoized)가 로컬 소유
+                    → 키 입력 시 부모(CustomerChartPage) 무재렌더로 랙 해소 + sessionStorage draft로 재렌더/이탈 무손실. */}
+                {!treatmentMemoUnavailable && customer && (
+                  <TreatmentMemoComposer
+                    phrases={custchartPhrasesByTab['치료메모']}
+                    saving={savingNewMemo}
+                    draftKey={`foot_txmemo_draft:${customer.id}`}
+                    onSave={saveNewTreatmentMemo}
+                  />
                 )}
 
                 {/* 이력 목록 (최신순 DESC) */}
@@ -8773,32 +8767,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     {treatmentMemos.map((memo) => (
                       <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
                         {editingMemoId === memo.id ? (
-                          <>
-                            <Textarea
-                              value={editingMemoText}
-                              onChange={(e) => setEditingMemoText(e.target.value)}
-                              rows={3}
-                              className="text-[11px] resize-none"
-                              autoFocus
-                            />
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={saveTreatmentMemoEdit}
-                                disabled={savingEditMemo || !editingMemoText.trim()}
-                                className="flex-1 rounded bg-neutral-800 text-white py-1 text-[11px] font-medium hover:bg-neutral-900 transition disabled:opacity-50"
-                              >
-                                {savingEditMemo ? '저장 중…' : '수정 저장'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { setEditingMemoId(null); setEditingMemoText(''); }}
-                                className="px-2 rounded border border-gray-300 text-[11px] hover:bg-gray-100 transition"
-                              >
-                                취소
-                              </button>
-                            </div>
-                          </>
+                          /* T-20260716 INPUT-LAG-DATALOSS-RCA: 수정 입력도 <TreatmentMemoEditor>(memoized) 로컬 상태 → 편집 중 부모 무재렌더 */
+                          <TreatmentMemoEditor
+                            initialContent={memo.content}
+                            saving={savingEditMemo}
+                            onSave={saveTreatmentMemoEdit}
+                            onCancel={() => setEditingMemoId(null)}
+                          />
                         ) : (
                           <>
                             <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{memo.content}</p>
@@ -8810,7 +8785,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <div className="flex gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => { setEditingMemoId(memo.id); setEditingMemoText(memo.content); }}
+                                    onClick={() => setEditingMemoId(memo.id)}
                                     className="text-[10px] text-sage-600 hover:underline"
                                   >
                                     수정
@@ -9563,8 +9538,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </a>
                       </div>
                       <img
-                        src={img.url}
+                        src={img.thumbUrl}
                         alt={img.label}
+                        loading="lazy"
                         className="w-full object-contain max-h-[400px]"
                       />
                     </div>
@@ -9773,6 +9749,22 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 // T-20260507-foot-PKG-TEMPLATE-REDESIGN: 고객차트에서 구입 티켓 추가
 // 항목별 [회수/수가] 자동합산 폼 — 상담 실장 고객차트 연동
 // ============================================================
+// T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭을 /packages 관리 3그룹(정찰가(기준)/공식 패키지/커스텀)으로 묶기 위한
+//   회차-합 기반 분류 헬퍼. /packages 의 isOneTimeTemplate(회차 총합=1) 규칙과 동일(뷰 레벨 재분류만, 원본 무변경).
+type PkgGroupTab = 'standard' | 'official' | 'custom';
+function pkgTemplateSessionTotal(t: PackageTemplate): number {
+  return (
+    (t.heated_sessions ?? 0) +
+    (t.unheated_sessions ?? 0) +
+    (t.podologe_sessions ?? 0) +
+    (t.iv_sessions ?? 0) +
+    (t.trial_sessions ?? 0) +
+    (t.reborn_sessions ?? 0)
+  );
+}
+function pkgTemplateIsOneTime(t: PackageTemplate): boolean {
+  return pkgTemplateSessionTotal(t) === 1;
+}
 function PackagePurchaseFromTemplateDialog({
   open,
   customerId,
@@ -9827,9 +9819,17 @@ function PackagePurchaseFromTemplateDialog({
   //     커스텀 prefill = standard_price(1회 정상가) × 횟수(totalSessions) 스냅샷 → 1회가×총결제 혼합 grain 방지
   //     (미이행 시 할인율 음수/과대). refPriceTouched=수기 override 시 자동계산 중단(override 존중).
   const stdPrices = useTreatmentStandardPrices(clinicId);
-  const [treatmentType, setTreatmentType] = useState<TreatmentType | ''>('');
+  // T-20260716-foot-EXPPASS: packages/통계 축 6토큰(+체험권). 정찰가 마스터(tsp)는 5토큰 유지(DA Q2=NO).
+  const [treatmentType, setTreatmentType] = useState<PackageTreatmentType | ''>('');
   const [referencePrice, setReferencePrice] = useState(0);
   const [refPriceTouched, setRefPriceTouched] = useState(false);
+
+  // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭 = /packages 관리 3그룹.
+  //   개별 패키지(12회권 등)는 나열하지 않고 그룹 내부 pill 로 선택 → 기존 선택 항목 누락 없음(AC-2).
+  //   회차 총합=1 → 정찰가(기준) 그룹 / 그 외 → 공식 패키지 그룹 (뷰 레벨 재분류, 원본 templates 무변경).
+  const oneTimeTemplates = useMemo(() => templates.filter(pkgTemplateIsOneTime), [templates]);
+  const officialTemplates = useMemo(() => templates.filter((t) => !pkgTemplateIsOneTime(t)), [templates]);
+  const [groupTab, setGroupTab] = useState<PkgGroupTab>('custom');
 
   // 항목별 자동합산
   const computedTotal = useMemo(
@@ -9844,6 +9844,17 @@ function PackagePurchaseFromTemplateDialog({
   );
   const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
   const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
+  // T-20260716-foot-BUYTICKET-OFFICIAL-PKG-COMPOSITION-LOCK: 공식(팜플릿 등록) 패키지 구성(회차) 잠금.
+  //   공식 패키지 판별 = 템플릿에서 로드된 상태(selectedTemplateId !== 'custom'). 별도 DB 플래그 불필요.
+  //   회차(_sessions·precon) 입력은 readonly/disabled 고정(값 없는 0 항목 포함) → 구성 변경 원천 차단.
+  //   수가(_unit_price)·총금액 override 는 editable 유지(고객별 금액 조정 = 현장 핵심 요구, 함께 잠그지 말 것).
+  //   구성이 달라야 하면 커스텀 탭에서 신규 생성(현장 지시). 커스텀 모드(=== 'custom')는 전 필드 자유 입력.
+  const isOfficialPkg = selectedTemplateId !== 'custom';
+  // 잠금 시 회차 입력에 덧붙이는 시각/동작 클래스 + 안내 tooltip
+  const lockedSessionCls = isOfficialPkg ? ' bg-gray-100 text-gray-500 cursor-not-allowed' : '';
+  const lockedSessionTitle = isOfficialPkg
+    ? '공식 패키지는 회차(횟수) 고정 — 변경이 필요하면 커스텀 탭에서 새로 만들어 주세요'
+    : undefined;
   // T-20260510-foot-PKG-CREATE-FIX3: 포돌로게 포함 (total_sessions에 반영)
   // T-20260522-foot-PKG-TRIAL: 체험권 포함
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
@@ -9851,7 +9862,12 @@ function PackagePurchaseFromTemplateDialog({
 
   // T-20260708 RECONCILE(D): 커스텀 모드 기준정가 = standard_price × 횟수(totalSessions) 계약총액 grain 스냅샷.
   //   시술유형/횟수 변동에 반응(수기 override 전까지). 템플릿 모드는 템플릿 정가 유지(AC-2b) — 여기서 덮지 않음.
-  const stdForType = treatmentType ? stdPrices.map[treatmentType] : null;
+  // T-20260716-foot-EXPPASS: 체험권은 정찰가 마스터(tsp, 5토큰)에 없음 → prefill 없음(기준정가 부재, 할인율 "-").
+  //   tsp 축(TREATMENT_TYPES)에 속한 유형만 standard_price 조회. 체험권 선택 시 stdForType=null → reference_price 미채움.
+  const stdForType =
+    treatmentType && (TREATMENT_TYPES as readonly string[]).includes(treatmentType)
+      ? stdPrices.map[treatmentType as TreatmentType]
+      : null;
   useEffect(() => {
     if (selectedTemplateId !== 'custom' || refPriceTouched || !treatmentType) return;
     if (stdForType != null && stdForType > 0) setReferencePrice(stdForType * totalSessions);
@@ -9883,6 +9899,8 @@ function PackagePurchaseFromTemplateDialog({
           setPrecon(0); setPriceOverride(false); setMemo(first.memo ?? '');
           // T-20260708 AC-2b: 자동선택 템플릿 정가 = 기준정가.
           setTreatmentType(''); setReferencePrice(first.total_price ?? 0); setRefPriceTouched(false);
+          // T-20260715: 자동선택 템플릿의 그룹으로 상단 탭 동기화(회차 총합=1 → 정찰가(기준), 그 외 → 공식 패키지).
+          setGroupTab(pkgTemplateIsOneTime(first) ? 'standard' : 'official');
         }
       });
   }, [open, clinicId]);
@@ -9890,6 +9908,7 @@ function PackagePurchaseFromTemplateDialog({
   useEffect(() => {
     if (!open) return;
     setSelectedTemplateId('custom');
+    setGroupTab('custom');
     setPackageName('');
     setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
@@ -9951,9 +9970,20 @@ function PackagePurchaseFromTemplateDialog({
 
   // T-20260708 AC-8/AC-10 + RECONCILE(D): 시술유형 선택 시 수기 override 플래그 해제 → 반응형 effect 가
   //   커스텀 모드에서 standard_price × 횟수(계약총액 grain)를 기준정가에 prefill. 템플릿 모드는 유지(AC-2b).
-  const selectTreatmentType = (t: TreatmentType | '') => {
+  const selectTreatmentType = (t: PackageTreatmentType | '') => {
     setTreatmentType(t);
     if (selectedTemplateId === 'custom') setRefPriceTouched(false);
+  };
+
+  // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 그룹 탭 전환.
+  //   커스텀 → applyCustom(). 정찰가(기준)/공식 패키지 → 이미 그룹 내 항목이 선택돼 있으면 유지,
+  //   아니면 그룹 첫 항목을 applyTemplate 로 자동 채움(기존 탭 클릭=자동선택 동선 무회귀, AC-3).
+  const selectPkgGroup = (g: PkgGroupTab) => {
+    setGroupTab(g);
+    if (g === 'custom') { applyCustom(); return; }
+    const inGroup = g === 'standard' ? oneTimeTemplates : officialTemplates;
+    const alreadyInGroup = selectedTemplateId !== 'custom' && inGroup.some((t) => t.id === selectedTemplateId);
+    if (!alreadyInGroup && inGroup.length > 0) applyTemplate(inGroup[0]);
   };
 
   const submit = async () => {
@@ -10065,35 +10095,106 @@ function PackagePurchaseFromTemplateDialog({
         </div>
 
         <div className="space-y-2 text-sm">
-          {/* 템플릿 선택 → 자동 채움 */}
+          {/* 패키지 템플릿 선택 → 자동 채움 */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
-            {/* T-20260708-foot-PKG-POPUP-TAB-COMPACT: flex-wrap 버튼 나열 → shadcn Tabs 전환.
-                커스텀 탭이 최앞(첫 번째) — T-20260706-foot-PKG-PURCHASE-CUSTOMMENU-FRONT 규약 유지.
-                탭 전환 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-1/회귀 가드). */}
-            <Tabs
-              value={selectedTemplateId}
-              onValueChange={(v) => {
-                if (v === 'custom') { applyCustom(); return; }
-                const t = templates.find((x) => x.id === v);
-                if (t) applyTemplate(t);
-              }}
-            >
-              <TabsList className="flex flex-wrap h-auto w-full justify-start gap-1 p-1">
-                <TabsTrigger value="custom" data-testid="pkg-tab-custom" className="h-7 px-2.5 text-xs">
-                  커스텀
-                </TabsTrigger>
-                {templates.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id} data-testid={`pkg-tab-${t.id}`} className="h-7 px-2.5 text-xs">
-                    {t.name}
-                  </TabsTrigger>
-                ))}
+            {/* T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 개별 패키지명 나열 → /packages 관리 3그룹으로 재배치.
+                개별 패키지(12/24회권 등)는 해당 그룹 탭 내부 pill 로 선택(누락 없음, AC-2).
+                탭 전환·항목 선택 시 기존 applyCustom/applyTemplate 로직을 그대로 호출(로직 무변경, AC-3 회귀 가드).
+                (선행 배포 PKG-POPUP-TAB-COMPACT(41dc6380)의 shadcn Tabs 위에 그룹핑만 얹음.)
+                T-20260715-foot-BUYTICKET-POPUP-TAB-MATCH-PKGMGMT (김주연 총괄 A/A 최종확정 2026-07-18):
+                상단 탭 순서 = [커스텀 | 공식 패키지 | 정찰가(기준)] — 커스텀 최앞 유지(CUSTOMMENU-FRONT, 옵션 A).
+                (/packages 는 정찰가 최앞이나, 팝업은 현장 요청으로 커스텀 최앞 = 의도적 편차. 라벨·그룹 소스는 동일.)
+                시각 순서만 변경(TabsList) — value 기반 렌더라 default groupTab='custom'/selectPkgGroup/채움 로직 전부 무변경. */}
+            <Tabs value={groupTab} onValueChange={(v) => selectPkgGroup(v as PkgGroupTab)}>
+              <TabsList className="w-full">
+                <TabsTrigger value="custom" data-testid="pkg-group-custom" className="flex-1 h-7 text-xs">커스텀</TabsTrigger>
+                <TabsTrigger value="official" data-testid="pkg-group-official" className="flex-1 h-7 text-xs">공식 패키지</TabsTrigger>
+                <TabsTrigger value="standard" data-testid="pkg-group-standard" className="flex-1 h-7 text-xs">정찰가(기준)</TabsTrigger>
               </TabsList>
+
+              {/* 그룹1 — 정찰가(기준): 시술유형별 1회 정상가 참조(/packages 탭1 동일 개념) + 1회성 패키지 선택 pill */}
+              <TabsContent value="standard" className="mt-2 space-y-2">
+                <div className="rounded-lg border border-teal-100 bg-teal-50/30 p-2 space-y-1" data-testid="pkg-group-standard-refprices">
+                  <div className="text-[11px] font-semibold text-teal-800">시술유형별 1회 정상가 (정찰가 기준)</div>
+                  {stdPrices.available ? (
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                      {TREATMENT_TYPES.map((t) => (
+                        <div key={t} className="flex justify-between">
+                          <span className="text-gray-500">{treatmentTypeLabel(t)}</span>
+                          <span className="tabular-nums text-gray-700">{stdPrices.map[t] != null ? formatAmount(stdPrices.map[t]!) : '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">정찰가 기준표 미설정 — [패키지 관리 &gt; 정찰가(기준)] 탭에서 등록</div>
+                  )}
+                </div>
+                {oneTimeTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {oneTimeTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`pkg-tab-${t.id}`}
+                        onClick={() => applyTemplate(t)}
+                        className={cn2(
+                          'h-7 rounded-md border px-2.5 text-xs transition',
+                          selectedTemplateId === t.id ? 'border-sage-600 bg-sage-50 text-sage-700 font-medium' : 'border-gray-200 hover:bg-gray-50',
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">1회성 패키지 없음 — 아래에서 직접 조합하세요</div>
+                )}
+              </TabsContent>
+
+              {/* 그룹2 — 공식 패키지: 다회권 템플릿(12/24/36/48회권, 레이저류 등) 선택 pill */}
+              <TabsContent value="official" className="mt-2">
+                {officialTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {officialTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`pkg-tab-${t.id}`}
+                        onClick={() => applyTemplate(t)}
+                        className={cn2(
+                          'h-7 rounded-md border px-2.5 text-xs transition',
+                          selectedTemplateId === t.id ? 'border-sage-600 bg-sage-50 text-sage-700 font-medium' : 'border-gray-200 hover:bg-gray-50',
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">공식 패키지 없음 — 커스텀으로 직접 입력하세요</div>
+                )}
+              </TabsContent>
+
+              {/* 그룹3 — 커스텀: 아래 항목 직접 조합 */}
+              <TabsContent value="custom" className="mt-2">
+                <div className="text-[11px] text-muted-foreground">아래 항목(레이저·포돌로게·수액·체험권 등)을 직접 조합해 커스텀 패키지를 구성하세요.</div>
+              </TabsContent>
             </Tabs>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>
             )}
           </div>
+
+          {/* T-20260716-foot-BUYTICKET-OFFICIAL-PKG-COMPOSITION-LOCK: 공식 패키지 회차 잠금 안내 */}
+          {isOfficialPkg && (
+            <div
+              data-testid="pkg-official-lock-notice"
+              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              🔒 <b>공식 패키지</b>는 회차(횟수)가 고정됩니다. 수가·금액은 조정 가능합니다.
+              <br />
+              회차 변경이 필요하면 <b>커스텀 탭에서 새로 만들어 주세요.</b>
+            </div>
+          )}
 
           {/* 패키지명 */}
           <div className="space-y-1">
@@ -10115,7 +10216,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={heated}
                   onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-heated"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10123,6 +10226,7 @@ function PackagePurchaseFromTemplateDialog({
                 <AmountInput
                   value={heatedUnitPrice}
                   onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)}
+                  data-testid="pkg-unitprice-heated"
                   className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
                 />
               </div>
@@ -10155,7 +10259,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={unheated}
                   onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-unheated"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10195,7 +10301,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={podologe}
                   onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-podologe"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10239,7 +10347,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={iv}
                   onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-iv"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10265,7 +10375,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={trial}
                   onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-trial"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10291,7 +10403,9 @@ function PackagePurchaseFromTemplateDialog({
                 <input
                   type="number" min={0} value={reborn}
                   onChange={(e) => setReborn(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+                  disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+                  data-testid="pkg-session-reborn"
+                  className={`w-full h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
                 />
               </div>
               <div className="space-y-1">
@@ -10314,7 +10428,9 @@ function PackagePurchaseFromTemplateDialog({
             <input
               type="number" min={0} value={precon}
               onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
-              className="w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500"
+              disabled={isOfficialPkg} readOnly={isOfficialPkg} title={lockedSessionTitle}
+              data-testid="pkg-session-precon"
+              className={`w-28 h-8 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-sage-500${lockedSessionCls}`}
             />
           </div>
 
@@ -10412,12 +10528,13 @@ function PackagePurchaseFromTemplateDialog({
                 <label className="text-xs text-gray-500">시술 유형 <span className="text-red-500">*</span></label>
                 <select
                   value={treatmentType}
-                  onChange={(e) => selectTreatmentType(e.target.value as TreatmentType | '')}
+                  onChange={(e) => selectTreatmentType(e.target.value as PackageTreatmentType | '')}
                   data-testid="pkg-treatment-type"
                   className="w-full h-8 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
                 >
                   <option value="">— 선택 —</option>
-                  {TREATMENT_TYPES.map((t) => (
+                  {/* T-20260716-foot-EXPPASS: packages/통계 축 6토큰(+체험권) → 체험권 선택 시 treatment_type='체험권' 저장·통계 태깅. */}
+                  {PACKAGE_TREATMENT_TYPES.map((t) => (
                     <option key={t} value={t}>{treatmentTypeLabel(t)}</option>
                   ))}
                 </select>

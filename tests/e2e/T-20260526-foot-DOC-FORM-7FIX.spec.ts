@@ -374,7 +374,10 @@ test.describe('시나리오 4: 납입증명서 (payment_cert) — 레이아웃 +
   test('AC-7-①: 타이틀 — 중앙 배치 (납입증명서 근방 text-align:center 존재)', () => {
     const html = getHtmlTemplate('payment_cert')!;
     // 타이틀 영역(납입증명서)이 center 정렬 div 내부에 위치
-    const certIdx = html.indexOf('납입증명서');
+    // STALE-SPEC-FIX: COMMON_STYLE 주석(T-20260611-foot-DOC-FORM-TITLE-CENTER-6)에
+    //   "진료비납입증명서" 문자열이 선행 등장 → bare '납입증명서' indexOf 가 주석을 매칭.
+    //   실제 타이틀 마커('납입증명서(소득공제용)')로 좁혀 center 정렬 div 검증(중앙배치 기능은 유지).
+    const certIdx = html.indexOf('납입증명서(소득공제용)');
     const ctxBefore = html.slice(Math.max(0, certIdx - 200), certIdx);
     expect(ctxBefore).toMatch(/text-align\s*:\s*center/);
   });

@@ -47,6 +47,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
+// T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
+import { buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -111,6 +113,7 @@ import {
 //   evaluateMedicalRecordGate 는 급여(isCovered) 판정에만 재사용 — 비차단 soft 리마인더용.
 //   차단(blocked)·방문일 매칭은 수납 흐름에서 더 이상 사용하지 않음(계좌이체 등 비내원일 수납 허용).
 import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
+import { InsuranceResettlePanel } from '@/components/insurance/InsuranceResettlePanel';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -339,13 +342,97 @@ interface RxDosage {
  *   - rxItemDosages: service.id → { unit_dose, daily_freq, total_days }
  *   - 미입력 항목은 각각 1/1/7 fallback
  */
+/**
+ * T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / DA 경보 MSG-k7iz / ★L-006 현장승인 2026-07-18):
+ *   결제창(PATH-4) 발행 = **persist-before-print**. 인쇄 전에 form_submissions 를 INSERT 하고, 처방전 교부번호(issue_no)를
+ *   발행 시점 1회 채번(issue_foot_rx_issue_no RPC = per-(clinic,date) 원자 발번, 멱등 키=form_submission_id)해서
+ *   field_data 에 persist 한다 → 재인쇄/익일 인쇄 시 동일 교부번호(불변, print-time 재계산 결함 제거).
+ *   ⚠ 순서재편(구 print-first→insert(fire&forget) → persist-first)은 L-006('서류출력 경로 통일, 변경 시 현장승인 필수')
+ *      저촉 → 김주연 총괄 현장승인("웅 진행ㄱ", MSG-51e0 ts 1784359275.956699, 2026-07-18) 하에 시행.
+ *   반환 = 인쇄본에 주입할 확정 교부번호 문자열(rxIssueNo). rx 미포함 → null(issue_no 미채번).
+ *     fallback/미staff(발행이력 persist 불가) → 순번만 채번(persist 없이 공란/UUID 방지, DocumentPrintPanel 경로A 동형).
+ *   ⚠ 8+N 파라미터화(buildIssueNo/ISSUE_NO_SEQ_WIDTH) 계승 — N 하드코딩 금지(총괄확정 6/14 vs 심평원 5/13 검증 중).
+ */
+async function persistSubmissionsAndResolveIssueNo(params: {
+  selected: FormTemplate[];
+  clinicId: string | null;
+  checkInId: string;
+  customerId: string | null;
+  staffId: string | null;
+  autoValues: Record<string, string>;
+  codeItems: SelectedItem[];
+  rxItemDosages?: Record<string, RxDosage>;
+  isFallback: boolean;
+}): Promise<string | null> {
+  const { selected, clinicId, checkInId, customerId, staffId, autoValues, codeItems, rxItemDosages, isFallback } = params;
+  const hasRx = selected.some((t) => t.form_key === 'rx_standard');
+  const issueYmd = format(new Date(), 'yyyyMMdd');    // 교부번호 앞 8자리(YYYYMMDD)
+  const issueDateIso = format(new Date(), 'yyyy-MM-dd'); // RPC p_issue_date(date) 파티션 키
+  const nowIso = new Date().toISOString();
+
+  // fallback/미staff: 발행이력 INSERT 불가 → 순번만 채번(persist 없이 공란/UUID 방지). rx 없으면 발번 불요.
+  if (isFallback || !staffId) {
+    if (!hasRx || !clinicId) return null;
+    const { data: rxSeq } = await supabase.rpc('issue_foot_rx_issue_no', {
+      p_clinic_id: clinicId,
+      p_issue_date: issueDateIso,
+      p_form_submission_id: null,
+    });
+    return buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1) || null;
+  }
+
+  // 1) form_submissions INSERT 먼저(issue_no 미포함 field_data) — persist-before-print. 선택 서류 전종 이력 기록(종전과 동일).
+  const submissionRows = selected.map((t) => ({
+    clinic_id: clinicId,
+    template_id: t.id,
+    check_in_id: checkInId,
+    customer_id: customerId,
+    issued_by: staffId,
+    field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, null),
+    status: 'printed' as const,
+    printed_at: nowIso,
+  }));
+  const { data: insertedRows, error: insErr } = await supabase
+    .from('form_submissions')
+    .insert(submissionRows)
+    .select('id, template_id');
+  if (insErr) {
+    console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', insErr.message);
+  }
+
+  if (!hasRx || !clinicId) return null;
+
+  // 2) 처방전 행 교부번호 발행시점 채번·persist. 멱등 키=form_submission_id(RPC 가 rx_issue_seq 기록). INSERT 실패 시 fs_id=null(순번만).
+  const rxTpl = selected.find((t) => t.form_key === 'rx_standard');
+  const rxRowId = insertedRows?.find((r) => r.template_id === rxTpl?.id)?.id ?? null;
+  const { data: rxSeq, error: rxErr } = await supabase.rpc('issue_foot_rx_issue_no', {
+    p_clinic_id: clinicId,
+    p_issue_date: issueDateIso,
+    p_form_submission_id: rxRowId,
+  });
+  const rxIssueNo = buildIssueNo(issueYmd, !rxErr && typeof rxSeq === 'number' ? rxSeq : 1) || null;
+
+  // 3) field_data.issue_no persist(재인쇄/익일 동일번호 = 불변). rx_issue_seq 권위 순번은 RPC 가 이미 기록 → 표시 갱신만.
+  if (rxIssueNo && rxRowId) {
+    const rxFieldData = buildCodeEnrichedValues(autoValues, codeItems, 'rx_standard', rxItemDosages, rxIssueNo);
+    const { error: updErr } = await supabase
+      .from('form_submissions')
+      .update({ field_data: rxFieldData })
+      .eq('id', rxRowId);
+    if (updErr) toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+  }
+  return rxIssueNo;
+}
+
 function buildCodeEnrichedValues(
   base: Record<string, string>,
   codeItems: SelectedItem[],
   formKey: string,
   rxItemDosages?: Record<string, RxDosage>,
-  // T-20260606-foot-DOC-FIELD-MISSING-3 AC-4: 처방전 "제 N호" 채번용 check_in id
-  checkInId?: string,
+  // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / DA 경보 MSG-k7iz): 발행 시점 채번·persist된 확정 교부번호(issue_no).
+  //   ⚠ 구 print-time count(issueSeq) 폐기 — issue_no 는 발행 RPC(issue_foot_rx_issue_no) 결과만 authoritative·불변(재인쇄/익일 동일번호).
+  //   null/미전달(미리보기·pre-persist) 시 미주입(fabricate 금지, visit_no 동형). 구 checkInId(UUID-slice) 채번은 약국 판독불가 반려 실사고 근원.
+  rxIssueNo?: string | null,
 ): Record<string, string> {
   const values = { ...base };
 
@@ -370,6 +457,8 @@ function buildCodeEnrichedValues(
     const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
     values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({
       name: i.service.name,
+      // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+      code: i.service.service_code,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
       // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).
@@ -378,11 +467,13 @@ function buildCodeEnrichedValues(
     })));
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
-    // T-20260606-foot-DOC-FIELD-MISSING-3 AC-4: 처방전 "제 N호" 채움.
-    //   기존 '' 강제로 PATH-4(결제창) 발행 시 교부번호 란이 비었다(현장 "제 N호 미기입").
-    //   DocumentPrintPanel(PATH-1)과 동일 산출(checkIn.id 선두 5자)로 통일해 일관 표기.
-    //   ※ N의 정식 채번 기준(누적회차/일자발번/발행대장)은 planner DECISION 대기 — 확정 시 교체.
-    if (!values.issue_no && checkInId) values.issue_no = checkInId.slice(0, 5).toUpperCase();
+    // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): 교부번호 = 발행 시점 채번·persist된 확정 문자열(8+N자리) 주입.
+    //   ⚠ 폐기: 기존 checkInId.slice(0,5).toUpperCase() (UUID 앞 5자) — 약국 판독불가로 처방전 반려 실사고(PATH-4도 동일 결함).
+    //   그 임시코드(§"정식 채번 확정 시 교체")의 정식 채번 확정 시점 = 발행 RPC(issue_foot_rx_issue_no) 결과 rxIssueNo.
+    //   ⚠ DA 경보 MSG-k7iz: 여기서 print-time 로 fabricate 금지 — persist된 rxIssueNo 만 주입(pre-persist/미리보기=미주입).
+    if (!values.issue_no && rxIssueNo) {
+      values.issue_no = rxIssueNo;
+    }
   }
 
   return values;
@@ -406,9 +497,11 @@ function buildHtmlPageDiv(
   //   PATH-4(결제창 영수증 미니창)도 PATH-1과 대칭. 제거 대상은 우측 상단 absolute 오버레이 박스뿐.
   //   중앙 상단 {{rx_copy_label}}(약국보관용/환자보관용) 구분 라벨은 2장 출력 식별 표식으로 보존
   //   (현장 "중앙 상단 라벨 절대 제거하지 말 것"). 2장 출력·QR 자동삽입 무파괴.
+  // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목1, PATH-4 대칭): 교부번호 표시 분리(display-only) —
+  //   저장 issue_no 불변, 렌더 직전에만 '20260718 제 000025 호'로 재조립. 비-rx/미채번 시 no-op.
   const boundValues =
     template.form_key === 'rx_standard'
-      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
+      ? splitIssueNoForDisplay({ ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' })
       : fieldValues;
   const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';
@@ -1868,12 +1961,41 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
         }
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-2/6): 세부산정내역 '계'·'합계' = 급여 본인부담금 + 비급여(공단 제외).
+        //   RC = GONGDAN-HIDE-COPAY-ONLY(B안)이 계/합계 셀 placeholder 를 {{detail_subtotal}}/{{detail_total}} 로 바꿨으나
+        //   결제창(PATH-4) 바인딩만 미갱신 → 두 영역 공란 회귀. DocumentPrintPanel 과 동일 산식(copaymentTotal 본인부담 +
+        //   비급여 합계, 위 applyBillingFallback nonCovered 와 동일 소스)으로 복구 — 건보 산출로직·서식 무변경(AC-7).
+        autoValues.detail_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
+        autoValues.detail_subtotal = autoValues.detail_total;
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(공단/본인/비급여).
       //   PATH-4(결제창 단독발행)도 세부산정내역과 동일 SSOT(buildPmwBillDetailItems)로 항목별 집계.
       if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
         autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-1): 계산서·영수증 소계·총 진료비 합계 = 본인부담금 + 비급여(공단 제외).
+        //   {{receipt_total}} 미바인딩 → 합계 공란 회귀 복구. 동일 산식·서식 무변경(AC-7), 공단부담 라인 표시 유지(AC-3).
+        autoValues.receipt_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
       }
+
+      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
+      //   인쇄 전에 form_submissions INSERT + 처방전 교부번호 발행시점 채번·persist → 확정 교부번호(rxIssueNo)로 인쇄본 렌더.
+      //   (구: print-first → insert(fire&forget). 순서재편 = 김주연 총괄 현장승인 2026-07-18.)
+      const isFallback = templates[0]?.id.startsWith('fallback-');
+      const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
+        selected,
+        clinicId: checkIn.clinic_id,
+        checkInId: checkIn.id,
+        customerId: checkIn.customer_id ?? null,
+        staffId,
+        autoValues,
+        codeItems,
+        rxItemDosages,
+        isFallback,
+      });
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
@@ -1883,7 +2005,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         tmplList.flatMap((t) => {
           // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
           // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id);
+          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): persist된 확정 교부번호(rxIssueNo) 주입 → 인쇄본 = 저장본 동일번호.
+          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -1917,24 +2040,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         printViaIframe(buildPrintHtml(portraitPages, `서류 출력 — ${checkIn.customer_name}`));
       }
       toast.success(`${selected.length}종 출력 요청됨`);
-      // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
-      const isFallback = templates[0]?.id.startsWith('fallback-');
-      if (!isFallback && staffId) {
-        const now = new Date().toISOString();
-        const submissionRows = selected.map((t) => ({
-          clinic_id: checkIn.clinic_id,
-          template_id: t.id,
-          check_in_id: checkIn.id,
-          customer_id: checkIn.customer_id ?? null,
-          issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id),
-          status: 'printed' as const,
-          printed_at: now,
-        }));
-        supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
-          if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', error.message);
-        });
-      }
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): form_submissions 이력 기록은
+      //   persistSubmissionsAndResolveIssueNo() 에서 **인쇄 전** 이미 완료(persist-before-print). 구 print-후 fire&forget 제거.
       // 슬롯 이동 없음 (onComplete 호출 X)
     } finally {
       setDocPrinting(false);
@@ -1989,11 +2096,37 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           autoValues.total_amount = formatAmount(grandTotal);
           autoValues.subtotal_amount = formatAmount(grandTotal);
         }
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-2/6): 세부산정내역 '계'·'합계' = 급여 본인부담금 + 비급여(공단 제외).
+        //   출력+수납 경로도 동일 회귀 — {{detail_subtotal}}/{{detail_total}} 미바인딩 공란 복구. 산식·서식 무변경(AC-7).
+        autoValues.detail_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
+        autoValues.detail_subtotal = autoValues.detail_total;
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(출력+수납 경로).
       if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
         autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-1): 계산서·영수증 소계·총 진료비 합계 = 본인부담금 + 비급여(공단 제외).
+        //   {{receipt_total}} 미바인딩 공란 회귀 복구. 산식·서식 무변경(AC-7), 공단부담 라인 표시 유지(AC-3).
+        autoValues.receipt_total = formatAmount(
+          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        );
       }
+
+      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
+      //   출력+수납 경로도 인쇄 전에 form_submissions INSERT + 교부번호 발행시점 채번·persist → 확정 교부번호로 인쇄본 렌더.
+      const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
+      const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
+        selected,
+        clinicId: checkIn.clinic_id,
+        checkInId: checkIn.id,
+        customerId: checkIn.customer_id ?? null,
+        staffId,
+        autoValues,
+        codeItems,
+        rxItemDosages,
+        isFallback: isFallbackTpl,
+      });
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       {
@@ -2001,7 +2134,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const portraitSel  = selected.filter((t) => t.form_key !== 'bill_detail');
         const buildPages2 = (tmplList: typeof selected) =>
           tmplList.flatMap((t) => {
-            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id);
+            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
@@ -2025,24 +2158,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           if (pPages.length > 0) printViaIframe(buildPrintHtml(pPages, `서류 출력 — ${checkIn.customer_name}`));
         }
       }
-      // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
-      const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
-      if (!isFallbackTpl && staffId) {
-        const now = new Date().toISOString();
-        const submissionRows = selected.map((t) => ({
-          clinic_id: checkIn.clinic_id,
-          template_id: t.id,
-          check_in_id: checkIn.id,
-          customer_id: checkIn.customer_id ?? null,
-          issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id),
-          status: 'printed' as const,
-          printed_at: now,
-        }));
-        supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
-          if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패(settle):', error.message);
-        });
-      }
+      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): form_submissions 이력 기록은
+      //   persistSubmissionsAndResolveIssueNo() 에서 **인쇄 전** 이미 완료(persist-before-print). 구 print-후 fire&forget 제거.
 
       // 2. 수납 + auto-done
       // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
@@ -2218,21 +2335,33 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             {/* 풋케어 탭: 서브 카테고리 버튼 (순서 편집 토글 제거됨 — PMW-ORDER-REMOVE)
                 T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
             {activeTab === '풋케어' && (
-              <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center">
+              <div
+                className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center"
+                data-testid="pmw-footcare-cat-tabs"
+              >
                 {FOOTCARE_CATS.map((cat) => (
                   <button
                     key={cat}
                     onClick={() => {
                       setFootcareCat(cat);
                     }}
+                    data-testid="pmw-footcare-cat-tab"
                     className={cn(
-                      'px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
+                      // ═══ T-20260715-foot-PAYMINI-4ZONE-LAYOUT-SPEC AC1 (색박스 스샷 F0BJ87C400G 좌표근거) ═══
+                      // 🔴 좌측 탭(기본(진찰료)/시술내역/수액/화장품) = 공간 최소(컴팩트) + 정사각형 형태.
+                      // 구: 가로 pill(px-2 py-1 rounded, 텍스트폭 가변) → 신: 소형 정사각형(aspect-square w-14).
+                      // 하단 코드 카드(aspect-square, L2197)와 시각 정합 → AC4 4구역 스샷 일치.
+                      // AC3 회귀가드: 사이즈 변경은 code-grid 열(pmw-code-grid) 내부에 국한 →
+                      //   ②차트코드행·③세금/수납잔액·④우측 zone reflow 무영향(사이드 열 폭·DOM 트리 불변).
+                      'aspect-square w-14 shrink-0 flex items-center justify-center rounded border transition-colors',
                       footcareCat === cat
                         ? 'bg-teal-600 text-white border-teal-600'
                         : 'border-input hover:bg-muted',
                     )}
                   >
-                    {cat}
+                    <span className="text-[10px] leading-tight text-center px-0.5 line-clamp-3">
+                      {cat}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -2575,6 +2704,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         </span>
                       </div>
                     )}
+                    {/* T-20260714-foot-INSGRADE-VERIFY-RESETTLE: 등급 확정 재정산 미리보기(급여방문·확정등급).
+                        grade=null 잠정 30% 수납 → 확정 본인부담 차액(환불/추가징수). 실 처리는 money_gate 후.
+                        서버 RPC(calc_copayment authority)가 산출·판단 — 여기선 표시만. 대상 아니면 자체 생략. */}
+                    {checkIn?.id && (
+                      <InsuranceResettlePanel
+                        checkInId={checkIn.id}
+                        grade={customerInsuranceGrade}
+                        moneyGateOpen={false}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -2853,7 +2992,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                BILLING-3ZONE Zone 3: 구매패키지 + 금일 시술내역 + 서류발행
                AC-3: 서류발행 우측 이동 / AC-4: 패키지 읽기 / AC-5: 시술이력 읽기
           ─────────────────────────────────────────────────────────────────── */}
-          <div className="sm:w-52 md:w-56 lg:w-64 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0 bg-slate-50/50">
+          <div
+            className="sm:w-52 md:w-56 lg:w-64 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0 bg-slate-50/50"
+            data-testid="pmw-zone3"
+          >
 
             {/* Zone 3 — AC-4: 구매패키지 (읽기 전용) */}
             <div className="border-b shrink-0">

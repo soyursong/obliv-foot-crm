@@ -852,8 +852,12 @@ export default function KohReportTab() {
             : `${periodLabel}에 검사 후 하루가 지난 KOH 진균검사 명단이 없습니다.${includeInactive ? '' : ' (비활성 건은 제외 — 보려면 "비활성 포함")'}`}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">
-          <table className="w-full text-sm">
+        <div className="w-fit max-w-full overflow-x-auto rounded-lg border" data-testid="koh-table">
+          {/* T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN (문지은 대표원장): fit-content 타이트닝.
+              table w-full(컨테이너 100% 강제 stretch → 컬럼 사이 불필요 여백) → 폭 미지정(auto shrink-to-content).
+              래퍼 w-fit max-w-full 로 테두리가 표 내용에 밀착(우측 빈 여백 제거) + 좁은 화면 overflow-x-auto 가로스크롤 유지.
+              컬럼은 각 셀 whitespace-nowrap 텍스트에 밀착(예상 텍스트 범위 기준). PHASE15(진료의)·발급 로직 무접촉. */}
+          <table className="text-sm">
             <thead>
               {/* RELOCATE[2]: read-only 리스트 — 이름·생년(만나이)·차트번호·채취부위·진료의·신청유무·발급여부.
                   선택(일괄발행) 컬럼·채취조갑 입력 위젯·발급 버튼은 제거(발급 동작은 치료테이블로 이전). */}

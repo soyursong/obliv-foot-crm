@@ -15,10 +15,16 @@ import {
 
 // ── 단위 테스트: 템플릿 바인딩 레벨 ────────────────────────────────────────────
 
+// T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE (src commit 76d3dc2e, 김주연 총괄 현장 요청):
+//   treat_confirm / visit_confirm 템플릿에서 상병(병명 테이블: 상병코드/상병명/특정기호)이
+//   의도적으로 비노출로 변경됨 → 이 두 폼은 더 이상 diag_code_N 을 렌더하지 않는다.
+//   상병 전건 노출 기능(본 스펙의 원 의도)은 여전히 유효하며, 진료확인서 상병 노출은
+//   T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT (src commit 73dced59) 로 신설된
+//   treat_confirm_code(코드·진단명 포함) HTML 템플릿이 담당한다.
+//   따라서 treat_confirm / visit_confirm 을 treat_confirm_code 로 re-point (의도 보존).
 const DIAG_FORMS = [
   'diagnosis',
-  'treat_confirm',
-  'visit_confirm',
+  'treat_confirm_code',
   'diag_opinion',
 ];
 

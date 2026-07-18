@@ -22,36 +22,34 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = (rel: string) => readFileSync(join(HERE, '../../src', rel), 'utf-8');
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 
-const colsOf = (tableTestId: string) => {
+// T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN: 각 <col> 의 width 클래스 토큰 시퀀스(className 없으면 'auto').
+// (구 colsOf 는 w-[N%] 퍼센트만 파싱 — 8칼럼화(T-20260616)·고정px화(T-20260718)로 폐기.)
+const colClassesOf = (tableTestId: string) => {
   const s = DASH();
   const t = s.indexOf(`data-testid="${tableTestId}"`);
   const start = s.indexOf('<colgroup>', t);
   const block = s.slice(start, s.indexOf('</colgroup>', start));
-  return [...block.matchAll(/w-\[(\d+)%\]/g)].map((m) => Number(m[1]));
+  return [...block.matchAll(/<col\b([^>]*?)\/>/g)].map((m) => {
+    const cm = m[1].match(/className="([^"]*)"/);
+    return cm ? cm[1].trim() : 'auto';
+  });
 };
 
 test.describe('AC1/AC2 — 두 테이블 칼럼 폭 픽셀 일치', () => {
-  test('대기·완료 colgroup 이 글자 그대로 동일(10칼럼)', () => {
-    const a = colsOf('doctor-call-feed-table');
-    const b = colsOf('doctor-completed-table');
-    expect(a).toEqual([4, 8, 7, 9, 8, 9, 6, 12, 32, 5]);
-    expect(b).toEqual(a); // 공유 9칼럼 + 시간 placeholder 까지 1:1 동일
+  // ⚠ 이 describe 는 후속 티켓으로 supersede 됨:
+  //   T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX(10→8칼럼, 시간 placeholder 제거),
+  //   T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN(%→예상텍스트 기준 고정px, 임상경과 auto 흡수).
+  //   불변식(두 테이블 colgroup 픽셀 경계 1:1 동일)은 그대로 — 만족 여부만 현행 설계로 재단언.
+  test('대기·완료 colgroup 이 글자 그대로 동일(8칼럼 고정px)', () => {
+    const a = colClassesOf('doctor-call-feed-table');
+    const b = colClassesOf('doctor-completed-table');
+    expect(a).toEqual(['w-14', 'w-28', 'w-36', 'w-28', 'w-16', 'w-24', 'w-40', 'auto']);
+    expect(b).toEqual(a); // 두 테이블 1:1 동일(WAITDONE-ALIGN 픽셀 경계 유지)
   });
 
-  test('두 colgroup 합 100% (table-fixed 무결)', () => {
-    expect(colsOf('doctor-call-feed-table').reduce((x, y) => x + y, 0)).toBe(100);
-    expect(colsOf('doctor-completed-table').reduce((x, y) => x + y, 0)).toBe(100);
-  });
-
-  test('완료 테이블 colspan = 10 (대기와 동일)', () => {
-    expect(DASH()).toContain('const DOCDASH_COMPLETED_COLSPAN = 10');
-  });
-
-  test('완료 행 끝 시간 빈 셀 placeholder 존재(경과시간 값 미표시)', () => {
-    const s = DASH();
-    expect(s).toContain('data-testid="doctor-completed-elapsed-empty"');
-    // 완료 테이블에 경과시간 데이터 testid(doctor-completed-elapsed = 값표시)는 없어야 함(빈칸만)
-    expect(s).not.toContain('data-testid="doctor-completed-elapsed"'); // -empty 와 구분(접미사)
+  test('완료 테이블 colspan = 대기와 동일(8칼럼)', () => {
+    expect(DASH()).toContain('const DOCDASH_COLSPAN = 8');
+    expect(DASH()).toContain('const DOCDASH_COMPLETED_COLSPAN = 8');
   });
 });
 

@@ -35,7 +35,8 @@ export default function ConsultantSection({ rows, loading }: Props) {
         case 'ticketing':  diff = a.ticketing_count - b.ticketing_count; break;
         case 'conversion': diff = a.conversion - b.conversion; break;
         case 'total':      diff = a.revenue - b.revenue; break;
-        case 'avg':        diff = a.avg_amount - b.avg_amount; break;
+        // AC6: avg_amount NULL(상담고객 0) 은 항상 최하위. 그 외는 값 비교.
+        case 'avg':        diff = (a.avg_amount ?? -1) - (b.avg_amount ?? -1); break;
       }
       return sortAsc ? diff : -diff;
     });
@@ -89,6 +90,8 @@ export default function ConsultantSection({ rows, loading }: Props) {
                         총 매출액{arrow('total')}
                       </button>
                     </th>
+                    {/* AC6: 상담(내원)고객 수 = 객단가 분모(distinct 고객, 결제무관·노쇼/예약only 제외) */}
+                    <th className="pb-2 font-medium text-right">상담고객</th>
                     <th className="pb-2 font-medium text-right">
                       <button onClick={() => setSort('avg')} className="hover:text-foreground">
                         객단가{arrow('avg')}
@@ -108,8 +111,15 @@ export default function ConsultantSection({ rows, loading }: Props) {
                       <td className="py-2 text-right tabular-nums font-semibold text-teal-700">
                         {formatAmount(r.revenue)}
                       </td>
+                      {/* AC6: 상담고객 수(객단가 분모). 0명이면 '-' */}
+                      <td className="py-2 text-right tabular-nums text-muted-foreground">
+                        {r.consulted_customer_count && r.consulted_customer_count > 0
+                          ? `${r.consulted_customer_count}명`
+                          : '-'}
+                      </td>
+                      {/* AC6: 상담고객당 객단가. 분모=0 → RPC NULL → '-' 표시 */}
                       <td className="py-2 text-right tabular-nums font-medium">
-                        {formatAmount(r.avg_amount)}
+                        {r.avg_amount == null ? '-' : formatAmount(r.avg_amount)}
                       </td>
                     </tr>
                   ))}

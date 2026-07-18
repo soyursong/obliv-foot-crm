@@ -34,7 +34,37 @@
   `vercel env add VITE_KAKAO_REST_API_KEY production` → 재배포. (도메인 제한 설정 필수 — 프론트 노출 키)
   키 발급 전까지는 빈 값 유지 = 수기입력 모드로 정상 운영.
 
+## 테스트/E2E 격리 DB (obliv-foot-dev) — T-20260719-foot-HARNESS-TESTDB-ISOLATION
+
+> cross-CRM dev-DB 격리 표준의 foot 롤아웃(scalp 선례 복제, 부모 `T-20260616-meta-CRM-DEVDB-PROJECT-SPLIT` foot 슬라이스).
+> **prod 번들·prod DB 무접점** — 아래는 오직 E2E/CI + dev 브랜치 preview 타겟에만 해당.
+
+| 항목 | prod (운영) | dev (E2E/CI · preview 격리) |
+|------|-------------|------------------------------|
+| Supabase 프로젝트 | crm-obliv-foot | **obliv-foot-dev** |
+| ref | `rxlomoozakkjesdqjtvd` | `kcdqtyivtqcjmcrdjkqi` |
+| region | ap-southeast-1 | **ap-northeast-2 (Seoul)** |
+| PHI | 실환자 | **0 (합성 시드만)** |
+| 대상 origin | obliv-foot-crm.pages.dev | dev.obliv-foot-crm.pages.dev |
+
+- env-pair 불변식(dev_ops_policy §1-α): 도메인당 non-prod ref 1개 — 본 dev 프로젝트가 **CF Pages Preview AND E2E/CI 타겟 겸용**(branch DB 불요).
+- **컷오버(원자 단위, supervisor 협업)** — dev DB 스키마 적재 완료 후에만 일괄 전환:
+  1. 스키마 baseline: `scripts/sync-schema-to-dev.sh` (prod schema-only pg_dump → dev + 합성 PHI-0 시드). prod DB 비번=supervisor 보유.
+  2. CI secret: `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` → **dev 자체 값**(prod 키 재사용 금지, P1 SERVICEROLE-KEY-EXPOSURE 정합).
+  2b. **PRODREF-HARDGUARD 활성**: CI secret·로컬에 `EXPECT_DEV_DB_REF=kcdqtyivtqcjmcrdjkqi` 주입.
+      → `tests/fixtures/index.ts assertExpectedDbTarget()`(global-setup/teardown 검문)가 이후
+      secret 오배선으로 target 이 prod ref 로 되돌아가면 pre-sweep·픽스처 write 이전에 즉시 abort.
+      **컷오버 전에는 미설정 유지**(무동작 → 현행 prod 타겟 CI 무파손). defense-in-depth 2차 방벽.
+  3. 로컬 `.env.local` E2E 타겟 → dev ref.
+  4. AC-2 sim-flag: `tests/fixtures/index.ts` `simulation` 기본값 전면 on(dev DB엔 실환자 뷰 없음 → 가시성 spec 무파손, 매듭 자동 해소).
+  5. CF Pages preview env → dev ref.
+  6. §1-α 번들-스모크 grep 2개 GREEN(dev ref ≥1 / prod ref =0) + env-pair 매칭 → 그때만 deploy-ready.
+- **하드가드 존치**: 부모 AC-3 REGISTRY teardown / PRODREF-HARDGUARD 제거 금지(defense-in-depth). dev 전환 후에도 leak 위생 가드 유지.
+- 재게이트 트리거 2개뿐: ①prod 스키마 변경 발생 ②Supabase Pro 승급 비용 발생 → planner FOLLOWUP.
+
 ## 변경 이력
+- 2026-07-19: **obliv-foot-dev(kcdqtyivtqcjmcrdjkqi, Seoul) provisioning 완료** — T-20260719-foot-HARNESS-TESTDB-ISOLATION.
+  격리 dev Supabase 신설(PHI-0). 스키마 적재·컷오버는 supervisor 협업(위 §테스트/E2E 격리 DB). prod 무접점(db_change=false).
 - 2026-06-30: 신설. T-20260630-foot-REVISIT-CHECKIN-AUTOASSIGN-SKIP QA phase1.5 env_missing
   false-positive(VITE_KAKAO_REST_API_KEY=OPTIONAL) 해소 근거. supervisor 게이트 OPTIONAL 예외 권위 소스.
 - 2026-07-01: **동일 false-positive 재발 기록** — T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP

@@ -340,6 +340,26 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
 //     끌어올리지 않음). 각 슬롯이 자기 minHeight floor 위에서 독립 성장.
 const SLOT_COLUMN_HEIGHT = '420px';
 
+// T-20260718-foot-DASHBOARD-POLL-CHECKIN-SELECT-EGRESS-THROTTLE AC-2: 대시보드 목록 fetch(check_ins)의
+//   select('*') 를 표시/파생에 실제 소비되는 컬럼만으로 축소해 egress 절감.
+//   ⚠ 드롭 3종은 "목록 row 에서 읽히지 않고" 상세 패널이 id 로 재조회하는 대용량 컬럼만 선정(회귀0 근거):
+//     · document_content  — Dashboard row 참조 0건. DoctorTreatmentPanel/MedicalChartPanel 이 check_in id 로 재조회.
+//     · prescription_items — Dashboard row 참조 0건. DoctorTreatmentPanel(id 재조회)·DoctorCallDashboard(자체 CALL_SELECT) 소비.
+//     · treatment_photos   — 레거시 컬럼. 정본은 treatment_photos 테이블 + useTreatmentPhotos 훅(별도 재조회).
+//   ✅ 유지: notes/treatment_memo/doctor_note(CheckInDetailSheet 가 prop 으로 직접 읽음), status_flag_history(getCallTime 소비),
+//     status_flag/treatment_contents/treating_doctor_id 등 목록 row 소비 컬럼 전량. CheckIn 타입이 소비 계약(SSOT)이라
+//     타입 필드 = 허용목록 기준(신규 컬럼은 소비처 추가 시 함께 등록).
+const CHECKIN_LIST_COLS =
+  'id, clinic_id, customer_id, reservation_id, queue_number, customer_name, customer_phone, ' +
+  'visit_type, status, consultant_id, therapist_id, technician_id, consultation_room, treatment_room, ' +
+  'laser_room, package_id, notes, treatment_memo, doctor_note, examination_room, checked_in_at, ' +
+  'called_at, completed_at, priority_flag, sort_order, skip_reason, created_at, consultation_done, ' +
+  'treatment_kind, preconditioning_done, pododulle_done, laser_minutes, doctor_confirm_charting, ' +
+  'doctor_confirm_prescription, doctor_confirm_document, doctor_confirmed_at, healer_laser_confirm, ' +
+  'prescription_status, status_flag, status_flag_history, assigned_counselor_id, treatment_category, ' +
+  'treatment_contents, doctor_call_memo, doctor_ack_at, doctor_status, doctor_started_at, doctor_ended_at, ' +
+  'call_list_manual_order, treating_doctor_id';
+
 // T-20260622-foot-DASH-PAYMENT-WAITING-EMPTY-HEIGHT: 수납대기 scoped override(PAYMENT_WAITING_COLUMN_HEIGHT,
 //   T-20260620 도입 max(560px,calc(100vh-170px)))는 빈 상태 과성장 회귀를 유발해 제거. 수납대기도 SLOT_COLUMN_HEIGHT(420px)
 //   floor 로 통일 복귀 → 전 슬롯 빈 상태 동일 높이. naturalGrow 로 카드 추가 시 자연 성장은 유지.
@@ -4104,7 +4124,8 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from('check_ins')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
-      .select('*, customers(name, chart_number)')
+      // T-20260718-foot-DASHBOARD-POLL-CHECKIN-SELECT-EGRESS-THROTTLE AC-2: select('*')→표시컬럼 축소(egress↓)
+      .select(`${CHECKIN_LIST_COLS}, customers(name, chart_number)`)
       .eq('clinic_id', clinic.id)
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
@@ -4117,7 +4138,10 @@ export default function Dashboard() {
     // 24시간 이상 경과한 registered 건 필터링 (테스트 데이터 정리)
     const now = Date.now();
     const STALE_MS = 24 * 60 * 60 * 1000;
-    const staleFiltered = ((data ?? []) as CheckIn[]).filter((ci) => {
+    // T-20260718-foot-...-EGRESS-THROTTLE AC-2: 목록 select 는 treatment_photos/prescription_items/
+    //   document_content 3종을 의도적으로 제외(상세 패널이 id 로 재조회). 목록 row 에서 미소비 확인 완료 →
+    //   unknown 경유 cast(부분 shape 의도 명시). Dashboard/CheckInDetailSheet 는 이 3종을 row 에서 읽지 않음.
+    const staleFiltered = ((data ?? []) as unknown as CheckIn[]).filter((ci) => {
       if (ci.status !== 'registered') return true;
       const age = now - new Date(ci.checked_in_at).getTime();
       return age < STALE_MS;
@@ -4291,7 +4315,8 @@ export default function Dashboard() {
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
       // T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designated_therapist_id 추가(read-only) →
       //   [치료사별] 탭 그룹핑 키 + "지정" 배지 판정
-      .select('*, customers(name, chart_number, designated_therapist_id)')
+      // T-20260718-foot-DASHBOARD-POLL-CHECKIN-SELECT-EGRESS-THROTTLE AC-2: select('*')→표시컬럼 축소(egress↓)
+      .select(`${CHECKIN_LIST_COLS}, customers(name, chart_number, designated_therapist_id)`)
       .eq('clinic_id', clinic.id)
       .not('status', 'in', '("cancelled")')
       .in('visit_type', ['new', 'returning', 'experience'])
@@ -4299,7 +4324,8 @@ export default function Dashboard() {
       .lte('checked_in_at', end)
       .order('checked_in_at', { ascending: true });
     // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션 고객 체크인 숨김.
-    setSelfCheckIns(await stripSimulationRows((data ?? []) as CheckIn[]));
+    // T-20260718-foot-...-EGRESS-THROTTLE AC-2: 상동(3종 제외 부분 shape) — unknown 경유 cast.
+    setSelfCheckIns(await stripSimulationRows((data ?? []) as unknown as CheckIn[]));
   }, [clinic, dateStr]);
 
   // T-20260522-foot-PERF-TUNING OPT-3: pendingReservations → timelineReservations 파생 (DB round trip 1회 절감)
@@ -4608,6 +4634,10 @@ export default function Dashboard() {
       fetchRooms();
     };
     let subscribedOnce = false;
+    // T-20260718-foot-DASHBOARD-POLL-CHECKIN-SELECT-EGRESS-THROTTLE AC-1: Realtime 연결 건강도 추적.
+    //   SUBSCRIBED=healthy → 폴링 fallback을 완화 주기(healthy safety-net)로 낮춰 egress 절감.
+    //   단절(CHANNEL_ERROR/TIMED_OUT/CLOSED)=unhealthy → 30초 빠른 폴로 신속 복구(회귀0).
+    let realtimeHealthy = false;
     // T-20260707-foot-DASH-DATENAV-TIMETABLE-NOSYNC (RC): 날짜 이동(◀/▶) 시 이 effect가
     //   cleanup→re-run 되며 supabase.removeChannel(channel)이 구 채널을 닫는다. 그 unsubscribe가
     //   .subscribe 상태콜백을 status='CLOSED'로 트리거하는데, 여기서 부르던 fullResync()는
@@ -4694,9 +4724,11 @@ export default function Dashboard() {
         //   발생하는 상태콜백은 stale-dateStr fullResync를 막기 위해 무시한다.
         if (tornDown) return;
         if (status === 'SUBSCRIBED') {
+          realtimeHealthy = true; // T-20260718: 폴링 완화 게이트
           if (subscribedOnce) fullResync(); // 최초 구독은 타 effect가 이미 로드 → 재구독부터 보충
           subscribedOnce = true;
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          realtimeHealthy = false; // T-20260718: 단절 → 폴링 fast fallback 재개
           fullResync();
         }
       });
@@ -4711,16 +4743,35 @@ export default function Dashboard() {
 
     // T-20260514-foot-DASH-REALTIME-FAIL AC-4: Realtime 단절 대비 폴링 fallback
     // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-1: 60초 → 30초 단축 (최대 30초 이내 반영 보장)
-    // Supabase WebSocket이 간헐적으로 끊길 경우 최대 30초 이내 자동 복구
     // T-20260522-foot-TIMETABLE-FOLD V2 AC-6: 예약 변경도 폴링 커버 추가
-    const pollTimer = setInterval(() => {
+    // T-20260718-foot-DASHBOARD-POLL-CHECKIN-SELECT-EGRESS-THROTTLE AC-1: 무조건 30초 6-fetch 폴 →
+    //   조건부 폴로 전환해 egress 절감. Realtime healthy 시엔 postgres_changes+debounce refetch가 이미
+    //   즉시 반영하므로 폴은 "좀비 구독(SUBSCRIBED인데 이벤트 무전달)" 대비 완화 safety-net(120초)만 유지.
+    //   Realtime 단절(unhealthy) 시엔 30초 fast fallback으로 신속 복구 → 신선도 회귀0.
+    //   ⚠ 기존 30초 tick 유지(빠른 복구 위해) + healthy 구간만 4tick(=120초)에 1회로 스킵.
+    const POLL_TICK_MS = 30000;
+    const HEALTHY_POLL_EVERY_TICKS = 4; // 4 × 30s = 120s safety-net (좀비 구독 대비)
+    let ticksSinceHealthyPoll = 0;
+    const runPollFetch = () => {
       fetchCheckIns();
       fetchSelfCheckIns();
       fetchStageStarts();
       fetchAssignments();          // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG AC-2: 방배정 누락 보충
       fetchTimelineReservations(); // AC-6 + DASHBOARD-TIMETABLE-SYNC AC-1
       fetchRooms();                // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG AC-2: 슬롯 변경 누락 보충(ref 가드로 커스텀 유지)
-    }, 30000);
+    };
+    const pollTimer = setInterval(() => {
+      if (realtimeHealthy) {
+        // healthy: realtime이 이미 커버 → 완화 주기(120초)의 safety-net 폴만 실행
+        ticksSinceHealthyPoll += 1;
+        if (ticksSinceHealthyPoll < HEALTHY_POLL_EVERY_TICKS) return;
+        ticksSinceHealthyPoll = 0;
+      } else {
+        // unhealthy(단절): 30초마다 즉시 폴 → 다음 healthy 진입 시 full window부터 재개
+        ticksSinceHealthyPoll = 0;
+      }
+      runPollFetch();
+    }, POLL_TICK_MS);
 
     return () => {
       // T-20260707-foot-DASH-DATENAV-TIMETABLE-NOSYNC: removeChannel(→CLOSED 콜백) 이전에 먼저
@@ -5713,6 +5764,24 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
+
+    // ── T-20260715-foot-MEDLAW22B-CTXMENU-COMPLETE-GATE-BYPASS: 우클릭 완료 경로 게이트 정합 ──
+    //   드래그 완료 경로(handleDragEnd else-branch)와 동일 조건·메시지로 급여 진료기록
+    //   하드차단 게이트(MEDLAW22-B-GATE)를 적용한다. 우클릭이 게이트를 우회하던 불일치 해소.
+    //   기존 evaluateMedicalRecordGate 로직 재사용(신규 정의 없음) — 비급여는 즉시 통과.
+    //   낙관적 업데이트(setRows) 이전에 abort → 드래그와 identical.
+    if (newStatus === 'done') {
+      try {
+        const gate = await evaluateMedicalRecordGate(ci);
+        if (gate.blocked) {
+          toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
+          return;
+        }
+      } catch {
+        // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
+      }
+    }
+
     markRecentlyUpdated(ci.id);
     // #25 경합 방지: 함수형 업데이트 + 직전 row 캡처
     let prevRow: CheckIn | undefined;

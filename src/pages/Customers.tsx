@@ -493,15 +493,39 @@ export default function Customers() {
       방문횟수: stats?.visit_count ?? 0,
       최종방문: stats?.last_visit ? formatDateDots(stats.last_visit) : '',
       결제액: stats?.total_revenue ?? 0,
-      고객메모: c.customer_memo ?? '',
+      고객메모: c.customer_note ?? c.customer_memo ?? '', // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 정본 customer_note, 레거시 read-fallback
     }),
     [],
   );
 
+  // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ④ (DA CONSULT-REPLY DA-20260701):
+  //   PII-egress audit — export 성공 시 fn_log_customer_export(DEFINER RPC) 호출.
+  //   ★actor/role/clinic 은 서버파생(RPC 내부) — 클라이언트는 구조메타만 전달.
+  //   ★filter_context = 구조메타(필터 활성 bool)만. 검색어 원문(전화/이름) 절대 미전달(C1②).
+  //   ★best-effort: 감사기록 실패가 이미 완료된 다운로드를 막지 않음(DA Q2 skip-risk 명시·수용).
+  const logExportAudit = useCallback(
+    async (selectionMode: 'selected' | 'filter_all', count: number) => {
+      try {
+        await (supabase.rpc as any)('fn_log_customer_export', {
+          p_selection_mode: selectionMode,
+          p_selected_count: count,
+          p_filter_context: {
+            has_query: query.trim().length > 0,
+            has_staff_filter: staffFilter !== '',
+          },
+        });
+      } catch (e) {
+        // 감사기록 실패는 비차단(다운로드는 이미 완료). 콘솔 경고만.
+        console.warn('customer export audit log failed (non-blocking):', e);
+      }
+    },
+    [query, staffFilter],
+  );
+
   const handleExport = useCallback(async () => {
-    // 권한 게이트(실행): admin/manager만. 버튼은 미노출이지만 호출 경로 이중 방어.
+    // 권한 게이트(실행): customer_export 보유 역할만. 버튼은 미노출이지만 호출 경로 이중 방어.
     if (!canExportCustomers) {
-      toast.error('내보내기 권한이 없습니다 (관리자·매니저 전용)');
+      toast.error('내보내기 권한이 없습니다');
       return;
     }
     if (exporting || !clinic) return;
@@ -515,6 +539,7 @@ export default function Customers() {
       }
       const rows = targets.map((c) => toCsvRow(c, statsMap.get(c.id), birthMap));
       downloadCustomerCsv(rows, customerCsvFilename());
+      void logExportAudit('selected', rows.length);
       toast.success(`${rows.length}명 내보내기 완료`);
       return;
     }
@@ -548,12 +573,13 @@ export default function Customers() {
       );
       const rows = all.map((c) => toCsvRow(c, exStats.get(c.id), exBirth));
       downloadCustomerCsv(rows, customerCsvFilename());
+      void logExportAudit('filter_all', rows.length);
       const capped = all.length >= EXPORT_MAX;
       toast.success(`${rows.length}명 내보내기 완료${capped ? ` (상한 ${EXPORT_MAX}명)` : ''}`);
     } finally {
       setExporting(false);
     }
-  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow]);
+  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow, logExportAudit]);
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -921,7 +947,8 @@ function EditCustomerDialog({
       setBirthDate(customer.birth_date ?? '');
       setChartNumber(customer.chart_number ?? '');
       setMemo(customer.memo ?? '');
-      setCustomerMemo(customer.customer_memo ?? '');
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 통합 read-fallback(customer_note ?? customer_memo)
+      setCustomerMemo(customer.customer_note ?? customer.customer_memo ?? '');
       setLeadSource(customer.lead_source ?? '');
       setTmMemo(customer.tm_memo ?? '');
       setReferrerName(customer.referrer_name ?? '');
@@ -956,7 +983,7 @@ function EditCustomerDialog({
         birth_date: birthDate.trim() || null,
         // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
         memo: memo.trim() || null,
-        customer_memo: customerMemo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
+        customer_note: customerMemo.trim() || null, // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 고객메모 정본 write=customer_note(5-surface 통합). customer_memo 미변경 보존(3구역 seed).
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
         referrer_name: referrerName.trim() || null,
@@ -1253,10 +1280,11 @@ function CreateCustomerDialog({
       phone: normalizeToE164(phone) ?? phone.trim(),
       birth_date: birthDate.trim() || null,
       // chart_number: DB BEFORE INSERT 트리거가 자동 채번 (F-XXXX 형식)
-      // T-20260706-foot-CUSTOMER-CREATE-DIALOG-FIX: 신규 등록 메모를 고객메모(customer_memo)로 저장.
-      // 2번차트(CustomerChartPage)가 customers.customer_memo를 읽어 예약메모 히스토리로 seed하므로 연동을 위해 컬럼 통일.
-      // customers.memo(예약메모)는 신규 등록 시 null 무방(기존 데이터 보존, ADDITIVE·스키마 변경 없음).
-      customer_memo: memo.trim() || null,
+      // T-20260706-foot-CUSTOMER-CREATE-DIALOG-FIX: 신규 등록 [고객메모] 저장.
+      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: 5-surface 고객메모 정본=customer_note로 일원화.
+      //   신규 고객 [고객메모]는 고객 단위(customer-level) 필드 → 예약팝업·2번차트·체크인·고객목록과 동일 컬럼 공유.
+      //   customer_memo(3구역 예약메모 히스토리 seed 원본)는 미변경 보존(신규는 null 무방, 기존 데이터 무회귀).
+      customer_note: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
       // T-20260625-foot-PASSPORT-PORT: 외국인 정보. 하나라도 입력 시 is_foreign 자동 true.

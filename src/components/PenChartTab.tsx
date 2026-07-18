@@ -76,6 +76,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
+import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath } from '@/lib/photoUrl';
 import { BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -100,7 +101,10 @@ export const BOILERPLATE_ITEMS = [
 
 interface SavedChart {
   name: string;
-  url: string;
+  url: string;         // 원본 signed URL — 편집 배경(bgCanvas)·확대 뷰·내려받기 전용(원본 해상도 필수)
+  // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 목록 미리보기용 transform 프리뷰(가독성 위해 width 640).
+  //   목록 <img> 만 thumbUrl 사용 → 원본 A4 PNG 반복 다운로드 제거. 편집/확대/다운로드는 url(원본) 유지.
+  thumbUrl: string;
   uploadedAt: string; // ISO string parsed from filename
 }
 
@@ -168,7 +172,7 @@ interface AutofillFields {
   name:        string; // 고객 성명
   birthDate:   string; // 생년월일 (하위 호환 유지 — 현재 포지션 미사용)
   chartNumber: string; // 차트번호 (환불동의서 page 1)
-  rrn:         string; // 주민번호 전체 표시 (보험차트 전용 — 예: "990101-1234567") AC-8: 마스킹 제거
+  rrn:         string; // 주민번호 전체 표시 (보험차트 전용 — 형식 예: "YYMMDD-GXXXXXX") AC-8: 마스킹 제거
   // phone 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 연락처 자동채움 불필요
 }
 
@@ -321,7 +325,7 @@ function drawRefundP3NameAutofill(
 //   pen_chart_form.png 2482×3510 → canvas 794×1123 (scale=0.32)
 //   x=190: 로고(x≈25-185) 바로 우측 — 담당의(x≈530) 까지 340px 공간 확보 (긴 이름+주민번호 안전)
 //   y=28: 담당의 라인(y≈23)~담당실장 라인(y≈44) 사이 수직 중심
-//   출력 예: "성함: 홍길동  주민번호: 990101-1234567"
+//   출력 예: "성함: (환자명)  주민번호: YYMMDD-GXXXXXX"
 //   김주연 총괄 현장 요청 2026-05-24: "성함+주민번호 배치를 한 줄로 하고 폰트 사이즈 좀만 줄여줘"
 //
 // T-20260706-foot-PENCHART-TOOLBAR-FIXES A-1: 성함을 담당의/담당자 라인 '위'로 이동 (김주연 총괄/최다혜 치료사).
@@ -1193,17 +1197,23 @@ export function PenChartTab({
 
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
-    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 목록=transform 프리뷰(width 640) / 편집·확대·다운로드=원본.
+    //   원본 signed URL 은 캐시 안정화(signedOriginalUrl)로 재서명·브라우저 재다운로드 감축.
+    const [thumbs, originals] = await Promise.all([
+      signedThumbUrls('photos', paths, { width: 640, quality: 70, resize: 'contain' }),
+      Promise.all(paths.map((p) => signedOriginalUrl('photos', p))),
+    ]);
     const charts = filtered.map((file, i) => {
       const tsMatch = file.name.match(/^(\d+)/);
       const ts = tsMatch ? parseInt(tsMatch[1], 10) : 0;
       return {
         name: file.name,
-        url: urlData?.[i]?.signedUrl ?? '',
+        url: originals[i] ?? '',
+        thumbUrl: thumbs[i] ?? originals[i] ?? '',
         uploadedAt: ts ? new Date(ts).toISOString() : '',
       };
     });
-    setSavedCharts(charts.filter((c) => c.url));
+    setSavedCharts(charts.filter((c) => c.url || c.thumbUrl));
   }, [storagePath]);
 
   // ── 템플릿 로드 ──────────────────────────────────────────────────────
@@ -2813,8 +2823,11 @@ export function PenChartTab({
         ? editTarget.name
         : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
       const path = `${storagePath}/${fileName}`;
-      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: !!editTarget });
+      // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 신규분 cacheControl 부여(브라우저/CDN 캐시 창).
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: !!editTarget, ...PHOTO_UPLOAD_OPTS });
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+      // 수정(덮어쓰기)이면 동일 path 객체가 교체됨 → stale 썸네일/원본 캐시 무효화(옛 필기본 재표시 방지).
+      if (editTarget) invalidatePhotoPath('photos', path);
 
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
       const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
@@ -4168,8 +4181,9 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                   /* T-20260622-foot-PENCHART-EDIT-NOACTION: 수정 배경 로더(crossOrigin='anonymous')와 동일
                      캐시 파티션을 쓰도록 CORS-clean으로 적재 → non-CORS 캐시 오염→편집 bgCanvas taint 차단 */
                   crossOrigin="anonymous"
-                  src={chart.url}
+                  src={chart.thumbUrl}
                   alt={chart.name}
+                  loading="lazy"
                   className="w-full object-cover"
                   style={{ maxHeight: 200 }}
                 />

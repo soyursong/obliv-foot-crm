@@ -16,7 +16,11 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
+// T-20260718-foot-RX-ALLOWLIST-CURATION-UI (Phase 2a): 처방 허용 큐레이션 토글(overlay upsert).
+//   enforcement 무접촉 — 상태 저장만, 처방 렌더(DrugFolderTree/묶음처방)는 무영향(AC-3).
+import { useRxAllowlistCurationMap, useToggleRxAllowlist } from '@/lib/rxAllowlist';
 // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 인라인 편집(우측 단) + HIRA 동기화(AC-5 이전처).
 import InsuranceStatusPanel, { INSURANCE_STATUS_STYLE } from '@/components/admin/InsuranceStatusPanel';
 import HiraInsuranceSyncPanel from '@/components/admin/HiraInsuranceSyncPanel';
@@ -144,10 +148,16 @@ export default function DrugFoldersTab() {
   // T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: profile 전달(has_ops_authority 반영). EDIT=대표원장(flag)·admin escape.
   const canEdit = canEditClinicMgmt(profile);
   // T-20260618-foot-RXFOLDER-INSURANCE-INLINE-MERGE: 급여여부 편집 권한.
-  //   T-20260619-foot-CLINICMGMT-WRITE-RESTRICT-MEDVIEW Phase A(AC-2): 진료관리 write = director+admin 통일 방향.
-  //   ★급여여부 RLS(is_admin_or_manager)에 director 부재 → FE 에서 director grant 시 저장이 RLS 거부됨.
-  //   Phase A 는 노출 축소만(manager 제거 → admin-only). director 추가는 Phase B(AC-3 RLS, CONSULT GO 후) RLS 와 동시.
-  const canManageInsurance = profile?.role === 'admin';
+  //   T-20260702-foot-DRUGFOLDER-INSURANCE-DIRECTOR-EDIT (P1): 급여여부 편집을 진료관리 canon 과 정합.
+  //   ★RC 정정: 이 자리의 구 주석 "급여여부 RLS(is_admin_or_manager)에 director 부재"는 STALE·오류였음.
+  //     PROD 실측(2026-07-18 라이브 스냅샷, _probe.mjs)으로 확정:
+  //       is_admin_or_manager() = current_user_role() IN ('admin','manager','director')  ← director 이미 포함
+  //       prescription_codes_admin_all [ALL] USING/WITH CHECK = is_admin_or_manager()   ← director 이미 write 가능
+  //     ⇒ 실제 락아웃 원인 = 이 FE 하드코딩(role==='admin') 단독. RLS/DDL 변경 불필요(sibling 4f27fec8 동형).
+  //   canEditClinicMgmt = {admin, director(대표원장), has_ops_authority} true / 일반직원 false
+  //     → 회귀 가드 정합: admin(총괄) 정상 유지, director(문지은 대표원장) 편집 grant, 일반직원 미노출 유지.
+  //     ★RLS(is_admin_or_manager=admin/manager/director) 와 이중 가드. FE 가 더 엄격(manager 제외)해도 write-deny 사고 無.
+  const canManageInsurance = canEditClinicMgmt(profile);
   const qc = useQueryClient();
 
   const { data: folders = [], isLoading: foldersLoading } = useDrugFolders();
@@ -159,6 +169,12 @@ export default function DrugFoldersTab() {
   const unassignDrug = useUnassignDrug();
   // T-20260618-foot-RXSET-VIEWALL-DESC-HOVER-WIDEN (Part C): 약별 설명 인라인 저장.
   const updateDesc = useUpdateDrugDescription();
+  // T-20260718-foot-RX-ALLOWLIST-CURATION-UI (Phase 2a): 처방 허용 큐레이션 상태 + 토글.
+  //   조회는 canEdit(admin surface)일 때만 — enforcement 플래그와 무관(큐레이션 도구 전용).
+  //   AC-4: 토글 write=canEditClinicMgmt(admin/director) + RLS(is_admin_or_manager) 이중 가드.
+  const { enabledMap: rxAllowlistMap } = useRxAllowlistCurationMap(canEdit);
+  const toggleRxAllowlist = useToggleRxAllowlist();
+  const [rxTogglePendingId, setRxTogglePendingId] = useState<string | null>(null);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -394,6 +410,22 @@ export default function DrugFoldersTab() {
     }
   }
 
+  // ── Phase 2a: 처방 허용 큐레이션 토글 ──────────────────────────────────────────
+  //   overlay(prescription_code_allowlist) upsert 만 수행 — 처방 렌더 경로 무접촉(AC-3).
+  //   토글 ON=이 약을 승인셋에 포함(enabled true) / OFF=제외(enabled false, 행 보존·감사 유지).
+  async function handleToggleRxAllowlist(d: FolderDrug, next: boolean) {
+    if (!canEdit) return;
+    setRxTogglePendingId(d.prescription_code_id);
+    try {
+      await toggleRxAllowlist.mutateAsync({ prescription_code_id: d.prescription_code_id, enabled: next });
+      toast.success(next ? `"${d.name_ko}" 처방 허용으로 표시됐어요.` : `"${d.name_ko}" 처방 허용이 해제됐어요.`);
+    } catch (e) {
+      toast.error(`처방 허용 변경 실패: ${(e as Error).message}`);
+    } finally {
+      setRxTogglePendingId(null);
+    }
+  }
+
   const renderNode = (node: DrugFolderNode) => {
     const isCollapsed = collapsed.has(node.id);
     const folderDrugs = drugsByFolder.get(node.id) ?? [];
@@ -625,6 +657,8 @@ export default function DrugFoldersTab() {
                     <col />
                     {/* 급여여부 — 고정 narrow */}
                     <col className="w-24" />
+                    {/* Phase 2a: 처방 허용 — 고정 narrow(토글) */}
+                    <col className="w-20" />
                     {/* 소속 폴더 — 고정 */}
                     <col className="w-32" />
                     {/* Part C: 설명 — 가용 폭 흡수(소속 폴더 옆) */}
@@ -647,6 +681,8 @@ export default function DrugFoldersTab() {
                       <th className="px-2 py-1.5 font-medium">약 이름(용량)</th>
                       {/* INLINE-MERGE: 급여여부 배지 컬럼 — 차단상태(비급여/급여삭제/급여기준변경) 한눈에 식별 */}
                       <th className="px-2 py-1.5 font-medium">급여여부</th>
+                      {/* Phase 2a: 처방 허용 큐레이션 토글 컬럼 (enforcement OFF — 상태 저장만) */}
+                      <th className="px-2 py-1.5 font-medium" data-testid="drug-folder-viewall-rxallow-head">처방 허용</th>
                       <th className="px-2 py-1.5 font-medium">소속 폴더</th>
                       {/* Part C: 소속 폴더 옆 '설명' 컬럼(약별 자유텍스트, 더블클릭 인라인 편집) */}
                       <th className="px-2 py-1.5 font-medium" data-testid="drug-folder-viewall-desc-head">설명</th>
@@ -744,6 +780,34 @@ export default function DrugFoldersTab() {
                             ) : (
                               <span className="text-[10px] text-muted-foreground">미설정</span>
                             )}
+                          </td>
+                          {/* Phase 2a: 처방 허용 토글 — overlay upsert(enforcement 무접촉).
+                              canEdit(admin/director)만 조작. 그 외 역할은 상태 배지만(read-only, AC-4). */}
+                          <td className="px-2 py-1.5" data-testid="drug-folder-viewall-rxallow-cell">
+                            {(() => {
+                              const rxAllowed = rxAllowlistMap.get(d.prescription_code_id) === true;
+                              if (!canEdit) {
+                                return (
+                                  <span
+                                    className={`text-[10px] ${rxAllowed ? 'text-teal-700' : 'text-muted-foreground'}`}
+                                    data-testid="drug-folder-viewall-rxallow-readonly"
+                                    data-rxallowed={rxAllowed ? 'on' : 'off'}
+                                  >
+                                    {rxAllowed ? '허용' : '미허용'}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <Switch
+                                  checked={rxAllowed}
+                                  disabled={rxTogglePendingId === d.prescription_code_id}
+                                  onCheckedChange={(next) => void handleToggleRxAllowlist(d, next)}
+                                  aria-label={`${d.name_ko} 처방 허용`}
+                                  data-testid="drug-folder-viewall-rxallow-toggle"
+                                  data-rxallowed={rxAllowed ? 'on' : 'off'}
+                                />
+                              );
+                            })()}
                           </td>
                           <td className="px-2 py-1.5">
                             <span className="text-[11px] text-muted-foreground truncate">

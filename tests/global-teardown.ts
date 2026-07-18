@@ -10,13 +10,15 @@
  *
  * 안전: cleanupAll 은 QA 마커/이름접두를 가진 row 만 삭제한다(실데이터 불가침).
  */
-import { cleanupAll } from './fixtures';
+import { cleanupAll, assertExpectedDbTarget } from './fixtures';
 
 export default async function globalTeardown() {
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.warn('[global-teardown] Supabase env 미설정 → 픽스처 스윕 건너뜀');
     return;
   }
+  // PRODREF-HARDGUARD: 오배선된 prod target 에 teardown DELETE 를 쏘지 않도록 스윕 전 검문.
+  assertExpectedDbTarget();
   try {
     const summary = await cleanupAll();
     console.log(

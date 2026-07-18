@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileText, FlaskConical, Trash2, Upload } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
+import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS } from '@/lib/photoUrl';
 import type { CheckIn } from '@/lib/types';
 
 // ─── 타입 ───
@@ -26,8 +27,13 @@ import type { CheckIn } from '@/lib/types';
 interface StorageItem {
   path: string;
   signedUrl: string;
+  // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드 표시용 썸네일(이미지 파일만; PDF 등은 원본 폴백).
+  thumbUrl: string;
   name: string;
 }
+
+// transform 은 이미지에만 적용 가능 — PDF/기타는 원본 signed URL 로 폴백.
+const IMG_EXT = /\.(jpe?g|png|webp)$/i;
 
 interface Props {
   checkIn: CheckIn;
@@ -69,11 +75,17 @@ function InsDocStorageSection({
         .filter((f) => f.name && !f.id?.endsWith('/'))
         .map(async (file) => {
           const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+          const isImg = IMG_EXT.test(file.name);
+          // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 그리드는 썸네일(이미지만), 원본은 클릭 시 lazy.
+          //   PDF 등 비이미지는 transform 불가 → 원본 signed URL 폴백. URL 은 캐시 안정화.
+          const [thumbUrl, signedUrl] = await Promise.all([
+            isImg ? signedThumbUrl('photos', path) : signedOriginalUrl('photos', path),
+            signedOriginalUrl('photos', path),
+          ]);
+          return { path, signedUrl: signedUrl ?? '', thumbUrl: thumbUrl ?? signedUrl ?? '', name: file.name };
         }),
     );
-    setImages(withUrls.filter((i) => i.signedUrl));
+    setImages(withUrls.filter((i) => i.thumbUrl || i.signedUrl));
   }, [storagePath]);
 
   useEffect(() => { load(); }, [load]);
@@ -85,7 +97,7 @@ function InsDocStorageSection({
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop() ?? 'jpg';
       const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
     setUploading(false);
@@ -136,8 +148,9 @@ function InsDocStorageSection({
           {images.map((img) => (
             <div key={img.path} className="relative group aspect-square">
               <img
-                src={img.signedUrl}
+                src={img.thumbUrl}
                 alt={img.name}
+                loading="lazy"
                 className="w-full h-full object-cover rounded-lg border cursor-pointer"
                 onClick={() => window.open(img.signedUrl, '_blank')}
               />

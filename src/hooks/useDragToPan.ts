@@ -12,9 +12,21 @@
 //   - AC5: 가로 이동만 수행(scrollLeft). 세로 스크롤(휠/네이티브)은 건드리지 않음.
 //   - touch: 태블릿 네이티브 스와이프가 이미 grab-and-drag이므로 JS pan 미적용(이중 스크롤 방지).
 //            신규 capability는 마우스/펜(스크롤바·휠에만 의존하던 케이스)에 한정.
+//
+// T-20260715-foot-RESVMGMT-DRAGPAN-BGSCROLL: 동일 패턴을 예약관리 창(2D overflow-auto 타임테이블)으로 확장.
+//   - 대시보드 원형은 가로 전용(axis='x')이었으나, 예약관리 타임테이블은 가로(시간축)+세로(행) 2D 스크롤.
+//   - axis 옵션 추가: 'x'(기본, 대시보드 무회귀) / 'y' / 'both'(예약관리).
+//     기본값 'x' → 기존 호출부(대시보드)는 대상 탐색·판정 임계·이동축까지 완전 동일 유지(무회귀).
 
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
+
+// pan 대상 축. 기본 'x' = 대시보드 원형과 완전 호환.
+export type PanAxis = 'x' | 'y' | 'both';
+
+export interface DragToPanOptions {
+  axis?: PanAxis; // default 'x'
+}
 
 // 클릭/드래그 목적이 명확한 요소 — 이 위에서는 pan을 시작하지 않는다.
 // dnd-kit useDraggable/useSortable 카드는 aria-roledescription="draggable" 을 부여받는다.
@@ -34,18 +46,32 @@ const INTERACTIVE_SELECTOR = [
 
 const PAN_THRESHOLD = 5; // px — 이 거리를 넘겨야 클릭이 아닌 pan 으로 판정 (AC4)
 
-// el 자신부터 위로 올라가며 가로 스크롤이 실제로 존재하는 컨테이너를 찾는다.
-// (데스크톱: 칸반 자신이 스크롤 / 모바일: 상위 컨테이너가 스크롤 — 두 레이아웃 모두 커버)
-function findHScrollTarget(el: HTMLElement): HTMLElement {
+const hasOverflowX = (n: HTMLElement) => n.scrollWidth > n.clientWidth + 1;
+const hasOverflowY = (n: HTMLElement) => n.scrollHeight > n.clientHeight + 1;
+
+// axis 관련 오버플로가 실제로 존재하는지 판정.
+const overflowMatches = (n: HTMLElement, axis: PanAxis): boolean => {
+  if (axis === 'x') return hasOverflowX(n);
+  if (axis === 'y') return hasOverflowY(n);
+  return hasOverflowX(n) || hasOverflowY(n); // 'both'
+};
+
+// el 자신부터 위로 올라가며 (해당 축의) 스크롤이 실제로 존재하는 컨테이너를 찾는다.
+// (데스크톱: 칸반/타임테이블 자신이 스크롤 / 모바일: 상위 컨테이너가 스크롤 — 두 레이아웃 모두 커버)
+function findScrollTarget(el: HTMLElement, axis: PanAxis): HTMLElement {
   let node: HTMLElement | null = el;
   while (node) {
-    if (node.scrollWidth > node.clientWidth + 1) return node;
+    if (overflowMatches(node, axis)) return node;
     node = node.parentElement;
   }
   return el;
 }
 
-export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
+export function useDragToPan<T extends HTMLElement>(
+  ref: RefObject<T>,
+  options?: DragToPanOptions,
+): void {
+  const axis: PanAxis = options?.axis ?? 'x';
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -53,7 +79,9 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
     let pointerId: number | null = null;
     let scrollTarget: HTMLElement | null = null;
     let startX = 0;
+    let startY = 0;
     let startScrollLeft = 0;
+    let startScrollTop = 0;
     let panning = false;
 
     const clearGrab = () => {
@@ -74,15 +102,18 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
       // 클릭 가능/드래그 요소 위에서는 pan 미시작 (AC4)
       if (target && target.closest(INTERACTIVE_SELECTOR)) return;
 
-      scrollTarget = findHScrollTarget(el);
-      // 가로 스크롤이 없으면(=넘길 것이 없으면) pan 불필요
-      if (scrollTarget.scrollWidth <= scrollTarget.clientWidth + 1) {
+      const candidate = findScrollTarget(el, axis);
+      // 해당 축의 스크롤이 없으면(=넘길 것이 없으면) pan 불필요
+      if (!overflowMatches(candidate, axis)) {
         scrollTarget = null;
         return;
       }
+      scrollTarget = candidate;
       pointerId = e.pointerId;
       startX = e.clientX;
+      startY = e.clientY;
       startScrollLeft = scrollTarget.scrollLeft;
+      startScrollTop = scrollTarget.scrollTop;
       panning = false;
       el.style.cursor = 'grab'; // AC3
     };
@@ -90,8 +121,16 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
     const onPointerMove = (e: PointerEvent) => {
       if (pointerId === null || e.pointerId !== pointerId || !scrollTarget) return;
       const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
       if (!panning) {
-        if (Math.abs(dx) < PAN_THRESHOLD) return; // 임계 미만 → 아직 클릭 후보 (AC4)
+        // 임계 판정도 축에 한정 → 대시보드(axis='x')는 dx만 보던 기존 판정과 완전 동일.
+        const relevantDelta =
+          axis === 'x'
+            ? Math.abs(dx)
+            : axis === 'y'
+              ? Math.abs(dy)
+              : Math.max(Math.abs(dx), Math.abs(dy)); // 'both'
+        if (relevantDelta < PAN_THRESHOLD) return; // 임계 미만 → 아직 클릭 후보 (AC4)
         panning = true;
         try {
           el.setPointerCapture(pointerId);
@@ -105,8 +144,9 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
         //   release(endPan→clearGrab) 시 복원 → 놓는 순간 가장 가까운 카드 경계로 snap.
         scrollTarget.style.setProperty('scroll-snap-type', 'none');
       }
-      // AC5: 가로 이동만
-      scrollTarget.scrollLeft = startScrollLeft - dx;
+      // 이동: 요청 축만 (대시보드 axis='x' → scrollLeft만, 예약관리 'both' → 2D)
+      if (axis === 'x' || axis === 'both') scrollTarget.scrollLeft = startScrollLeft - dx;
+      if (axis === 'y' || axis === 'both') scrollTarget.scrollTop = startScrollTop - dy;
       e.preventDefault();
     };
 
@@ -148,5 +188,5 @@ export function useDragToPan<T extends HTMLElement>(ref: RefObject<T>): void {
       el.removeEventListener('pointercancel', endPan);
       clearGrab();
     };
-  }, [ref]);
+  }, [ref, axis]);
 }

@@ -46,7 +46,7 @@ test.describe('T-20260616-foot-E2E-PROD-WRITE-ISOLATION — RC#0 픽스처 누�
     // seedCheckIn 의 "customer INSERT 후 crash" 상황을 직접 모사 — check_in 없이 customer 만 생성
     const { data, error } = await sb!
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `qa-fixture-orphan-${ts}`, phone: `010${String(ts).slice(-8)}`, visit_type: 'new', memo: MARKER })
+      .insert({ clinic_id: CLINIC_ID, name: `qa-fixture-orphan-${ts}`, phone: `+8210${String(ts).slice(-8)}`, visit_type: 'new', memo: MARKER })
       .select('id')
       .single();
     expect(error, '시드 INSERT 실패').toBeNull();
@@ -66,7 +66,7 @@ test.describe('T-20260616-foot-E2E-PROD-WRITE-ISOLATION — RC#0 픽스처 누�
 
   test('AC-2: 정상 시드(customer+check_in+package) — 개별 cleanup 미호출이어도 cleanupAll 전수 삭제', async () => {
     const ts = Date.now();
-    const phone = `010${String(ts + 1).slice(-8)}`;
+    const phone = `+8210${String(ts + 1).slice(-8)}`;
     const name = `qa-fixture-full-${ts}`;
     const { data: c } = await sb!
       .from('customers')
@@ -103,7 +103,7 @@ test.describe('T-20260616-foot-E2E-PROD-WRITE-ISOLATION — RC#0 픽스처 누�
     // memo 마커 없이(=마커 누락 회귀 모사) 이름만 픽스처 접두
     const { data } = await sb!
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `qa-fixture-nomark-${ts}`, phone: `010${String(ts + 2).slice(-8)}`, visit_type: 'new' })
+      .insert({ clinic_id: CLINIC_ID, name: `qa-fixture-nomark-${ts}`, phone: `+8210${String(ts + 2).slice(-8)}`, visit_type: 'new' })
       .select('id')
       .single();
     const id = data!.id as string;
@@ -120,7 +120,7 @@ test.describe('T-20260616-foot-E2E-PROD-WRITE-ISOLATION — RC#0 픽스처 누�
     const realName = `정상고객보존${ts}`;
     const { data } = await sb!
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: realName, phone: `010${String(ts + 3).slice(-8)}`, visit_type: 'new', memo: '실데이터-비픽스처' })
+      .insert({ clinic_id: CLINIC_ID, name: realName, phone: `+8210${String(ts + 3).slice(-8)}`, visit_type: 'new', memo: '실데이터-비픽스처' })
       .select('id')
       .single();
     const id = data!.id as string;

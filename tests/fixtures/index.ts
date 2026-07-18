@@ -24,6 +24,54 @@ function svc(): SupabaseClient {
   return _sb;
 }
 
+// ── PRODREF-HARDGUARD (T-20260719-foot-HARNESS-TESTDB-ISOLATION / §4 defense-in-depth) ──
+//   E2E/CI 하네스가 격리 dev DB(obliv-foot-dev)에서 다시 prod(rxlomoozakkjesdqjtvd)로
+//   향하는 secret 오배선을 **첫 write 이전에** 큰소리로 차단한다.
+//   - 기본값(EXPECT_DEV_DB_REF 미설정) = 무동작 → 컷오버 전 현행 CI 무파손(prod 타겟 허용).
+//   - supervisor 가 컷오버 절차(docs/ENV-MATRIX.md §테스트/E2E 격리 DB, step 2~5)에서
+//     `EXPECT_DEV_DB_REF=kcdqtyivtqcjmcrdjkqi` 를 CI/로컬에 주입 → 그 시점부터 가드 활성.
+//     이후 secret 이 실수로 prod ref 로 되돌아가면 fixture write·cleanup 이전에 즉시 abort.
+//   기존 registry teardown(AC-3)과 독립된 2차 방벽(defense-in-depth): teardown 은 '치우고',
+//   이 가드는 '애초에 prod 로 못 쓰게' 한다.
+const KNOWN_PROD_REF = 'rxlomoozakkjesdqjtvd';
+export function assertExpectedDbTarget(): void {
+  const expected = (process.env.EXPECT_DEV_DB_REF ?? '').trim();
+  if (!expected) return; // opt-in — 컷오버 전에는 무동작
+  const url = SUPA_URL ?? '';
+  if (!url.includes(expected)) {
+    throw new Error(
+      `[PRODREF-HARDGUARD] E2E/CI target Supabase 가 기대 dev ref('${expected}')를 포함하지 않습니다 ` +
+        `(VITE_SUPABASE_URL=${url || '<빈값>'}). secret 오배선 의심 → 하네스 abort(실환자 DB 오염 차단). ` +
+        `컷오버 절차: docs/ENV-MATRIX.md §테스트/E2E 격리 DB.`,
+    );
+  }
+  if (url.includes(KNOWN_PROD_REF) && expected !== KNOWN_PROD_REF) {
+    throw new Error(
+      `[PRODREF-HARDGUARD] target 이 prod ref('${KNOWN_PROD_REF}')를 가리킵니다. 격리 dev DB 로 전환하세요.`,
+    );
+  }
+}
+
+// ── 시드 row 레지스트리 (T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE / AC-3) ──
+//   마커(memo/notes) + 이름접두 스윕은 test 가 name/memo 를 커스텀 값으로 덮어쓰면 놓칠 수
+//   있다(POST 10 / DELETE 6 = 4 잔재의 구조적 원인). 프로세스가 살아있는 동안 생성한 row id
+//   를 여기에 등록해, 마커 스윕과 **합집합**으로 teardown 이 정확한 id 로도 삭제하게 한다.
+//   → registered-row 추적 = 마커 무관 100% 삭제 보장(실패-내성: 예외로 개별 cleanup 이 안
+//   돌아도 globalTeardown 의 cleanupAll 이 레지스트리로 전수 회수).
+export const REGISTRY: {
+  customers: Set<string>;
+  checkIns: Set<string>;
+  packages: Set<string>;
+  reservations: Set<string>;
+} = { customers: new Set(), checkIns: new Set(), packages: new Set(), reservations: new Set() };
+
+// E.164 한국 휴대폰 생성 — raw '010…' 저장은 Step1(DB CHECK, PHONE-E164-CHK-UNENFORCED)
+//   배포 후 fail-closed(22023)로 시드가 깨져 sim/CI 대량 fail → dev 파이프라인 파손을 부른다.
+//   시드부터 +8210… (E.164)로 정렬해 계약(cross_crm_data_contract phone E.164)을 강화한다.
+function e164Mobile(ts: number): string {
+  return `+8210${String(ts).slice(-8)}`;
+}
+
 export interface FixtureHandle {
   id: string;
   cleanup: () => Promise<void>;
@@ -35,10 +83,22 @@ export async function seedCheckIn(opts: {
   visit_type?: 'new' | 'returning' | 'experience';
   name?: string;
   package_id?: string;
+  /**
+   * AC-2 (T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE): 시드 customer 를 is_simulation 으로 표기.
+   *
+   * ⚠ dev=prod 단일 DB(rxlomoozakkjesdqjtvd) 제약상 이 플래그는 **양날**이다:
+   *   - true  → 혹시 teardown 실패로 leak 돼도 stripSimulationRows/excludeSimulationPaymentRows 가
+   *             실환자 뷰·매출집계에서 걸러줌(leak 위생). 그러나 run 중에도 admin 칸반/예약목록·매출에서
+   *             숨겨지므로 대시보드 가시성을 assert 하는 spec(PKGBOX·CF·DASH…)이 깨진다.
+   *   - false → run 중 fixture 가 admin surface 에 그대로 보여 기존 spec 통과(문서화된 비-sim 계약).
+   * 따라서 기본값 false(가시성 계약 보존). 대시보드 가시성에 무관한 하네스 경로만 true 로 opt-in.
+   * 근본 해소(leak 위생 + 가시성 양립)는 AC-4 dev/test DB 분리 이후에만 가능 → planner FOLLOWUP.
+   */
+  simulation?: boolean;
 }): Promise<FixtureHandle & { customerId: string; phone: string }> {
   const sb = svc();
   const ts = Date.now();
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = e164Mobile(ts); // AC-5: E.164 (+8210…) — Step1 DB CHECK 무파손
   const name = opts.name ?? `qa-fixture-${ts}`;
 
   const { data: c, error: cErr } = await sb
@@ -49,11 +109,16 @@ export async function seedCheckIn(opts: {
       phone,
       visit_type: opts.visit_type ?? 'new',
       memo: MARKER,
+      // AC-2: sim 플래그. is_simulation 컬럼은 customers 에만 존재(20260420000006_simulation_flag)
+      //   → 연관 check_ins/packages/reservations 는 customer 링크로 필터되므로 여기 1곳이면 충분.
+      //   기본 false(대시보드 가시성 계약 보존, 위 opts.simulation 주석 참조).
+      is_simulation: opts.simulation ?? false,
     })
     .select('id')
     .single();
   if (cErr || !c) throw new Error(`seedCheckIn: customer insert failed: ${cErr?.message}`);
   const customerId = c.id as string;
+  REGISTRY.customers.add(customerId); // AC-3: 마커 무관 회수 보장
 
   // queue_number 충돌 회피:
   //   유니크 제약 idx_checkins_clinic_date_queue = (clinic_id, kst_date(checked_in_at), queue_number).
@@ -94,6 +159,7 @@ export async function seedCheckIn(opts: {
     throw new Error(`seedCheckIn: check_in insert failed: ${ciErr?.message}`);
   }
   const checkInId = ci.id as string;
+  REGISTRY.checkIns.add(checkInId); // AC-3
 
   return {
     id: checkInId,
@@ -103,6 +169,8 @@ export async function seedCheckIn(opts: {
       await sb.from('payments').delete().eq('check_in_id', checkInId);
       await sb.from('check_ins').delete().eq('id', checkInId);
       await sb.from('customers').delete().eq('id', customerId);
+      REGISTRY.checkIns.delete(checkInId);
+      REGISTRY.customers.delete(customerId);
     },
   };
 }
@@ -130,11 +198,13 @@ export async function seedPackage(opts: {
     .single();
   if (error || !pkg) throw new Error(`seedPackage failed: ${error?.message}`);
   const packageId = pkg.id as string;
+  REGISTRY.packages.add(packageId); // AC-3
   return {
     id: packageId,
     cleanup: async () => {
       await sb.from('package_payments').delete().eq('package_id', packageId);
       await sb.from('packages').delete().eq('id', packageId);
+      REGISTRY.packages.delete(packageId);
     },
   };
 }
@@ -164,11 +234,13 @@ export async function seedReservation(opts: {
     .single();
   if (error || !data) throw new Error(`seedReservation failed: ${error?.message}`);
   const id = data.id as string;
+  REGISTRY.reservations.add(id); // AC-3
   return {
     id,
     cleanup: async () => {
       await sb.from('reservation_logs').delete().eq('reservation_id', id);
       await sb.from('reservations').delete().eq('id', id);
+      REGISTRY.reservations.delete(id);
     },
   };
 }
@@ -296,6 +368,10 @@ export async function cleanupAll(): Promise<CleanupSummary> {
     ).forEach((id) => customerIds.add(id));
   }
 
+  // 1d) 레지스트리 등록분 합집합 (AC-3) — test 가 name/memo 를 커스텀으로 덮어써 마커/이름
+  //     접두 스윕을 벗어난 row 도 정확한 id 로 회수. POST=DELETE 정합의 구조적 보장.
+  REGISTRY.customers.forEach((id) => customerIds.add(id));
+
   const customerIdArr = Array.from(customerIds);
 
   // ── 2) customer 종속 row 삭제 (FK 역순: payments → check_ins → package_payments → packages) ──
@@ -342,12 +418,37 @@ export async function cleanupAll(): Promise<CleanupSummary> {
       )
     ).forEach((id) => resIds.add(id));
   }
+  REGISTRY.reservations.forEach((id) => resIds.add(id)); // AC-3 레지스트리 합집합
   const resIdArr = Array.from(resIds);
   if (resIdArr.length) {
     await deleteByIds(sb, 'reservation_logs', 'reservation_id', resIdArr);
     const r = await deleteByIds(sb, 'reservations', 'id', resIdArr);
     summary.reservations += r.deleted;
   }
+
+  // ── 5) 레지스트리 잔여분 직접 회수 (AC-3, belt-and-suspenders) ──
+  //   customer 링크가 어떤 이유로 누락돼 §2 cascade 에 안 잡힌 check_ins/packages 도
+  //   등록된 정확한 id 로 마지막에 삭제. 삭제 성공분은 레지스트리에서 제거해 idempotent 유지.
+  {
+    const ckLeft = Array.from(REGISTRY.checkIns);
+    if (ckLeft.length) {
+      await deleteByIds(sb, 'payments', 'check_in_id', ckLeft);
+      const r = await deleteByIds(sb, 'check_ins', 'id', ckLeft);
+      summary.checkIns += r.deleted;
+    }
+    const pkgLeft = Array.from(REGISTRY.packages);
+    if (pkgLeft.length) {
+      await deleteByIds(sb, 'package_payments', 'package_id', pkgLeft);
+      const r = await deleteByIds(sb, 'packages', 'id', pkgLeft);
+      summary.packages += r.deleted;
+    }
+  }
+
+  // teardown 은 run 종료 시 1회 — 회수 끝난 레지스트리를 비워 재호출 시 중복 삭제 방지.
+  REGISTRY.customers.clear();
+  REGISTRY.checkIns.clear();
+  REGISTRY.packages.clear();
+  REGISTRY.reservations.clear();
 
   return summary;
 }

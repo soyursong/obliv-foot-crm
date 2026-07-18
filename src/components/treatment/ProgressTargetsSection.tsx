@@ -39,6 +39,10 @@ import type { NameInteraction } from '@/pages/TreatmentTable';
 // T-20260630-foot-TXTABLE-PROGRESS-TAB-WIDGETS: 경과분석 탭 상단 위젯 3종(요약 카드/회차 분포/최근 추이).
 //   당일 코호트 rows 를 read-only 로 재사용 + 자체 최근 14일 추이 집계. 기존 대상자 리스트는 그대로(4번째 섹션).
 import ProgressAnalyticsWidgets, { parseProgressSession } from '@/components/treatment/ProgressAnalyticsWidgets';
+// T-20260702-foot-PROGRESS-CSV-BULKRESULT: 외부분석 결과이미지 일괄업로드→환자 자동매칭·첨부(반대편 반쪽).
+//   CSV-export(위)로 내보낸 뒤 외부에서 분석한 결과이미지를 되받아 차트번호 단독조인으로 자동첨부.
+//   admin/manager(운영권한, canExportCsv 동일 게이트)에서만 노출. DA-20260718-...-AUTOMATCH 계약.
+import ProgressResultBulkUploadDialog from '@/components/treatment/ProgressResultBulkUploadDialog';
 
 // T-20260701-foot-PROGRESS-LIST-ICON-LABEL-CLEAN: 경과분석 리스트 '회차' 표시 정리(FE-only, DDL0).
 //   회차 숫자는 기존 label(progress_check_label) 그대로 매핑 — 표시 문자열만 '{N}회차'로 통일.
@@ -147,6 +151,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   //   경과분석 탭 열람권과 동일 계층. 치료사/일반직원에게는 CSV 버튼 미노출.
   const canExportCsv = hasOpsAuthority(profile);
   const [csvBusy, setCsvBusy] = useState(false);
+  // T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드 다이얼로그 open 상태.
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
@@ -340,52 +346,70 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
             보여줍니다. 예약 생성 시 패키지 경과분석 플랜에 따라 자동 표시됩니다.
           </p>
         </div>
-        {rows.length > 0 && (
+        {(canExportCsv || rows.length > 0) && (
           <div className="flex shrink-0 items-center gap-2">
-            {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 상단 일괄처리 툴바(선택 개수 + 일괄처리 버튼). */}
-            {selectedCount > 0 && (
-              <span
-                className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-700"
-                data-testid="progress-bulk-selected-count"
-              >
-                선택 {selectedCount}명
-              </span>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleBulkIssue}
-              disabled={selectedCount === 0}
-              data-testid="progress-bulk-action-btn"
-            >
-              <ListChecks className="h-3.5 w-3.5" />
-              일괄처리
-            </Button>
-            {/* T-20260702-foot-PROGRESS-CSV-EXPORT: 선택 환자 시술기록 전체 CSV 다운로드. admin/manager(운영권한)만 노출(PHI 가드). */}
+            {/* T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드→자동매칭. 오늘 대상자 유무와 무관하게
+                항상 노출(결과지는 방문일과 다른 날 되받을 수 있음). admin/manager(운영권한)만. */}
             {canExportCsv && (
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={handleCsvExport}
-                disabled={selectedCount === 0 || csvBusy}
-                data-testid="progress-csv-export-btn"
+                onClick={() => setBulkUploadOpen(true)}
+                data-testid="progress-result-bulk-open-btn"
               >
-                {csvBusy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-                CSV 다운로드
+                <FileUp className="h-3.5 w-3.5" />
+                결과 업로드
               </Button>
             )}
-            <span
-              className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
-              data-testid="progress-targets-count"
-            >
-              대상 {rows.length}명
-            </span>
+            {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 상단 일괄처리 툴바(선택 개수 + 일괄처리 버튼). */}
+            {rows.length > 0 && (
+              <>
+                {selectedCount > 0 && (
+                  <span
+                    className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-700"
+                    data-testid="progress-bulk-selected-count"
+                  >
+                    선택 {selectedCount}명
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleBulkIssue}
+                  disabled={selectedCount === 0}
+                  data-testid="progress-bulk-action-btn"
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  일괄처리
+                </Button>
+                {/* T-20260702-foot-PROGRESS-CSV-EXPORT: 선택 환자 시술기록 전체 CSV 다운로드. admin/manager(운영권한)만 노출(PHI 가드). */}
+                {canExportCsv && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCsvExport}
+                    disabled={selectedCount === 0 || csvBusy}
+                    data-testid="progress-csv-export-btn"
+                  >
+                    {csvBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    CSV 다운로드
+                  </Button>
+                )}
+                <span
+                  className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
+                  data-testid="progress-targets-count"
+                >
+                  대상 {rows.length}명
+                </span>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -530,6 +554,11 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         cohortRows={rows}
         cohortLoading={isLoading}
       />
+
+      {/* T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드→자동매칭 다이얼로그. admin/manager만. */}
+      {canExportCsv && (
+        <ProgressResultBulkUploadDialog open={bulkUploadOpen} onOpenChange={setBulkUploadOpen} />
+      )}
     </div>
   );
 }

@@ -77,7 +77,9 @@ test.describe('AC-1 예약메모 표시/편집 토글', () => {
     const def = src.slice(defStart, defStart + 700);
     expect(def).toContain('insertReservationMemo(reservationId');
     expect(def).toContain("setResvMemoInputs(prev => ({ ...prev, [reservationId]: '' }))");
-    expect(def).toContain('foot_crm_customer_refresh'); // AC-8 쌍방연동 유지
+    // T-20260710-foot-NO-HARDCODE-ENUM-GUARDRAIL: 'foot_crm_customer_refresh' 리터럴이
+    // STORAGE_KEYS.CUSTOMER_REFRESH(src/lib/storageKeys.ts) 로 중앙화됨. AC-8 쌍방연동 신호는 불변.
+    expect(def).toContain('STORAGE_KEYS.CUSTOMER_REFRESH'); // AC-8 쌍방연동 유지
     expect(def).toContain('setEditingResvMemoId(null)'); // 저장 후 display-only 복귀
     // 신규 테이블/컬럼/enum 추가 없음 — 기존 RPC 1개만 사용
     expect(reservationsTabBlock()).not.toContain('.from(');

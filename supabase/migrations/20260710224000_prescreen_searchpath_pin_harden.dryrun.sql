@@ -87,7 +87,11 @@ BEGIN
        AND p.proname IN ('fn_prescreen_start','fn_complete_prescreen_checklist')
   LOOP
     RAISE NOTICE '[POST] % proconfig=% secdef=% anon_exec=%', r.proname, r.proconfig, r.prosecdef, r.anon_exec;
-    IF r.proconfig IS NULL OR NOT (r.proconfig @> ARRAY['search_path='])       THEN v_fail := true; RAISE WARNING 'FAIL: % search_path 미핀', r.proname; END IF;
+    -- PostgreSQL 은 `SET search_path=''` 를 proconfig 원소 `search_path=""`(따옴표 포함) 로 저장한다.
+    -- 값 표현(따옴표)에 무관하게 핀 존재만 확인 (견고 패턴, cross-repo 표준 — supervisor DB-GATE 2026-07-18).
+    IF r.proconfig IS NULL
+       OR NOT EXISTS (SELECT 1 FROM unnest(r.proconfig) c WHERE c LIKE 'search_path=%')
+                                                                            THEN v_fail := true; RAISE WARNING 'FAIL: % search_path 미핀', r.proname; END IF;
     IF NOT r.prosecdef  THEN v_fail := true; RAISE WARNING 'FAIL: % SECDEF 소실', r.proname; END IF;
     IF NOT r.anon_exec  THEN v_fail := true; RAISE WARNING 'FAIL: % anon EXECUTE 소실', r.proname; END IF;
   END LOOP;

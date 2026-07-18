@@ -14,6 +14,10 @@ import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { aggregateByTimeSlot, type SlotKindCount } from '@/lib/resvSlotAgg';
+import { RESV_TIME_GRID } from '@/lib/schedule';
+
+// T-20260716-foot-TIMESLOT-RESCHEDULE-EMPTYDATE: 예약 0건 슬롯의 카운트(모두 0). reschedule 빈날짜 그리드 렌더용.
+const EMPTY_SLOT_COUNTS: SlotKindCount = { n: 0, r: 0, h: 0, o: 0, total: 0 };
 
 interface TimeslotRow {
   reservation_time: string;
@@ -107,6 +111,14 @@ export function ReservationDayTimeslotPanel({
   }
 
   const selectable = typeof onSelectTime === 'function';
+  // T-20260716-foot-TIMESLOT-RESCHEDULE-EMPTYDATE:
+  //   reschedule 모드(selectable=onSelectTime 有) + 예약 0건 날짜 → 운영시간 그리드(RESV_TIME_GRID)를
+  //   count=0 클릭가능 슬롯으로 렌더 → 빈 날짜에서도 시간 선택(onSelectTime 발화) 가능.
+  //   기존 예약 있는 날짜는 slots 그대로(회귀 가드) / 비-reschedule 조회 모드는 기존 "예약 없음" 안내 유지.
+  const emptyReschedule = selectable && slots.length === 0;
+  const displaySlots = emptyReschedule
+    ? RESV_TIME_GRID.map((time) => ({ time, counts: EMPTY_SLOT_COUNTS }))
+    : slots;
 
   return (
     <div className="mt-2" data-testid="popup-timeslot-panel">
@@ -122,13 +134,18 @@ export function ReservationDayTimeslotPanel({
         </div>
       ) : err ? (
         <div className="text-[11px] text-red-500 px-1 py-2">{err}</div>
-      ) : slots.length === 0 ? (
+      ) : displaySlots.length === 0 ? (
         <div className="text-[11px] text-muted-foreground italic px-1 py-2">
           이 날짜에 예약이 없습니다.
         </div>
       ) : (
-        <div className="space-y-0.5 max-h-44 overflow-y-auto pr-0.5">
-          {slots.map(({ time, counts }) => (
+        <div className="space-y-0.5 max-h-44 overflow-y-auto pr-0.5" data-testid="popup-timeslot-list" data-empty-grid={emptyReschedule ? 'true' : 'false'}>
+          {emptyReschedule && (
+            <div className="text-[11px] text-muted-foreground italic px-1 pb-1" data-testid="popup-timeslot-emptyday-hint">
+              이 날짜엔 예약이 없습니다 — 운영시간 중 원하는 시간을 선택하세요.
+            </div>
+          )}
+          {displaySlots.map(({ time, counts }) => (
             <TimeslotLine
               key={time}
               time={time}

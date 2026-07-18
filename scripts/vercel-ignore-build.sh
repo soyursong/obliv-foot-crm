@@ -20,6 +20,45 @@ set -u
 
 log() { echo "[ignore-build] $*"; }
 
+# --- production vs preview 게이트 (커버리지 갭 차단) -------------------------
+# Ticket: T-20260715-foot-VERCEL-THROTTLE-COVERAGE-GAP
+#   무료플랜 일일 배포한도(api-deployments-free-per-day, >100/day)는 production
+#   과 preview 배포가 "공유"한다. 기존 throttle 은 "바뀐 파일이 런타임에 영향을
+#   주는가"만 판정했기에, 런타임 변경이 담긴 preview(비-prod 브랜치·PR·재푸시)
+#   푸시는 PROCEED 로 흘러 preview 배포를 생성 → prod 슬롯까지 잠식하는 커버리지
+#   갭이 있었다(favicon 티켓이 그 2차 피해 첫 사례).
+#
+# 커버리지 확대: 비-production 배포는 파일 판정 이전에 무조건 SKIP 하여 일일한도를
+#   prod 배포에만 소비한다. (Vercel 은 ignoreCommand 를 production/preview 모든
+#   배포에서 실행하며 exit 0 => 배포 미생성 => 일일한도 미소비.)
+#
+# 안전 원칙: production 판정이 불확실하면 production 으로 간주(아래 파일 판정으로
+#   흘려보냄) → 정상 prod 배포가 실수로 skip 되는 일은 없다.
+PROD_BRANCH="main"
+V_ENV="${VERCEL_ENV:-}"
+V_REF="${VERCEL_GIT_COMMIT_REF:-}"
+
+is_production() {
+  # 1순위: VERCEL_ENV (production | preview | development)
+  if [ -n "$V_ENV" ]; then
+    [ "$V_ENV" = "production" ]
+    return
+  fi
+  # 2순위: 배포 대상 브랜치 ref (prod 브랜치 = main, master 호환)
+  if [ -n "$V_REF" ]; then
+    [ "$V_REF" = "$PROD_BRANCH" ] || [ "$V_REF" = "master" ]
+    return
+  fi
+  # 판정 불가 → fail-safe = production 으로 간주 (SKIP 하지 않음)
+  return 0
+}
+
+if ! is_production; then
+  log "non-production deployment (VERCEL_ENV=${V_ENV:-?} ref=${V_REF:-?}) -> SKIP (preview/재푸시 배포 — 일일한도 미소비, prod 슬롯 보전)"
+  exit 0
+fi
+log "production deployment (VERCEL_ENV=${V_ENV:-?} ref=${V_REF:-?}) -> 파일 판정 진행"
+
 # --- 비교 기준(parent) 결정 ------------------------------------------------
 CUR="${VERCEL_GIT_COMMIT_SHA:-HEAD}"
 PREV="${VERCEL_GIT_PREVIOUS_SHA:-}"
