@@ -13,12 +13,25 @@
 신규 예약분을 계속 seed → NULL 셋이 축소 중. zip4 Q2 "실측(now)≠apply(later)" 경고와 정확히 일치.
 ∴ 아래 count 는 스냅샷값이며, **freeze 는 APPLY 직전 fresh 재산출**해야 한다(APPLY sql STEP 1 = fresh, STEP 2.5 = drift·sliver abort).
 
-| 항목 | 초판(15:05) | 재실행(현재) | 비고 |
-|---|---|---|---|
-| customers.visit_route NULL 총계 | 272 | **269** | forward-sync 로 3건 감소 |
-| 대상 universe (NULL/'' ∩ EXISTS routed resv) | 155 | **152** | 3건 감소 |
-| **Set A (PRIMARY, DA-strict first-touch)** | 154 | **151** | 3건 감소 (전량 TM→TM) |
-| out-of-scope (NULL & 소스 route 전무) | 117 | **117** | 불변 |
+| 항목 | 초판(07-16 15:05) | 재실행(07-16 19:34) | 재검증(07-18 deploy-ready) | 비고 |
+|---|---|---|---|---|
+| customers.visit_route NULL 총계 | 272 | 269 | **267** | forward-sync 로 지속 감소 |
+| 대상 universe (NULL/'' ∩ EXISTS routed resv) | 155 | 152 | **138** | 하향 drift |
+| **Set A (PRIMARY, DA-strict first-touch)** | 154 | 151 | **137** | 전량 TM→TM |
+| out-of-scope (NULL & 소스 route 전무) | 117 | 117 | **129** | universe 이탈분 흡수 |
+
+### ✅ 07-18 deploy-ready 재검증 (count LIVE-DRIFT benign, 구조 불변)
+- **재실행 freeze = SetA 137건** (전량 TM→TM). 초판 154 → 151 → **137** 지속 하향 = forward-sync EF(15efde96)가 NULL universe 자연 충전 = zip4 Q2 "실측(now)≠apply(later)" 정합. **고정 정수 anchor 금지** — freeze 는 APPLY 직전 STEP 1 fresh 재산출이 정본.
+- **불변식 전부 GREEN 유지**: no-clobber 0 · first-touch vs most-recent divergence 0 · DOPAMINE sliver 0 · out-of-CHECK-domain 0 · divergence B−A = 1 (동일 cust `2997fc1c…`, 정당 out-of-scope 유지).
+- **APPLY 러너 live-health 확인**: 게이트#3 코드-차단(승인 flag 부재 시 refuse) 정상 + `--dry` 리허설(승인 flag+`--dry`) = freeze 137 재도출·drift-check clean(mismatch 0/out-of-domain 0/new 0)·archive-first 작성·UPDATE 미실행 확인.
+- 판정(SetA/first-touch)·매핑·AC4 RULE 3항 전부 불변. deploy-ready → 게이트#3(supervisor 백필승인) 대기.
+
+### ✅ 07-18 APPLY 실행 완료 (게이트#3 GRANTED · MSG-20260718-224925-4wrk)
+- **STEP1 fresh 재산출**: frozen SetA 137건 재도출 (전량 TM→TM). drift-check clean — out-of-domain 0 / value_mismatch 0 / filled-since-dryrun 0 / new-eligible-not-frozen 0.
+- **UPDATE 실적**: 137 row 변경 (기대 137 일치). BEFORE `NULL=267, TM=163` → AFTER `TM=300(+137), NULL=130`.
+- **POST-VERIFY (AC4 RULE 3항) PASS**: (a) frozen∩still-NULL 잔존 0 ✅ (b) cust `2997fc1c…` 정당 NULL 유지 ✅ (c) no-source 고객 불변(NULL 130 = universe 이탈분 + out-of-scope) ✅.
+- archive-first 스냅샷 `_APPLY_archive.json`(mode=APPLY, PHI off-git) 기록. ROLLBACK 짝 = `_rollback.mjs`(archive 기반).
+- Pass1 hard-close 조건 충족 → DOPAMINE-BACKFILL(Pass2) 진행 가능. 현장(김주연 총괄) confirm 요청 = responder 경유.
 
 ## 대상 정의 (AC1 / zip4)
 - 물리 대상 = `customers.visit_route` **단독** fill-on-NULL (reservations **절대 미변경** — 소스, read-only).
