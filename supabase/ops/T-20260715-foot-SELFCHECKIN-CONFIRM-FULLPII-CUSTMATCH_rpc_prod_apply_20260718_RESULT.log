@@ -1,0 +1,59 @@
+═══════════════════════════════════════════════════════════
+T-20260715-foot-SELFCHECKIN-CONFIRM-FULLPII-CUSTMATCH — RPC prod 실적용 결과
+실행시각 : 2026-07-18T05:59:54Z (KST 2026-07-18 14:59:54)
+DB 환경  : foot prod / project_ref=rxlomoozakkjesdqjtvd
+실행방식 : Supabase Management API /v1/projects/{ref}/database/query (SUPABASE_ACCESS_TOKEN 인증)
+           — psql pooler 우회. up.sql BEGIN..COMMIT 원자 실행, APPLY_RESPONSE=[] (DDL 성공, no rows).
+마이그   : supabase/migrations/20260715200000_selfcheckin_verify_reservation_phone_gated_rpc.sql
+           (commit 7e355f1a, clean/dirty=0, 신규 작성 0 — 게이트 approved 정본 그대로 적용)
+권한근거 : supervisor GO-DB-APPLY (MSG-20260718-144842-bufr, DDL-diff DB-GATE 7항목 ALL PASS)
+분류     : ADDITIVE (신 SECDEF RPC 1개 신설, DROP/ALTER TABLE/DELETE/data-mutate 0)
+가역     : rollback = 20260715200000_..._rpc.rollback.sql (DROP FUNCTION, 데이터 무변경)
+═══════════════════════════════════════════════════════════
+
+── BEFORE (적용 전 무존재 확인) ──
+  pg_proc fn_selfcheckin_verify_reservation exists_cnt = 0  → clean 신설
+
+── APPLY ──
+  Management API POST → HTTP 200, body []  → CREATE OR REPLACE FUNCTION + ALTER OWNER
+  + REVOKE PUBLIC + GRANT anon + COMMENT 전부 COMMIT.
+
+── POSTCHECK 1 [pg_proc: search_path 핀 + SECURITY DEFINER] ──
+  proname   = fn_selfcheckin_verify_reservation
+  proconfig = {search_path=""}     ✅ (§1-8 핀)
+  prosecdef = true                 ✅ (SECURITY DEFINER)
+  prokind=f, lanname=sql
+  → PASS
+
+── POSTCHECK 2 [proacl: PUBLIC 회수 + anon EXECUTE 재부여] ──
+  has_function_privilege('anon', ...(uuid,text,uuid), 'EXECUTE') = true   ✅
+  proacl 전체 엔트리:
+    postgres=X/postgres
+    authenticated=X/postgres   (Supabase ALTER DEFAULT PRIVILEGES 기본 — authenticated 로그인역할)
+    service_role=X/postgres     (동상)
+    anon=X/postgres            ✅ 명시 GRANT
+  → bare PUBLIC 토큰(=X/postgres, grantee 공란) 부재 = §15-5-3 PUBLIC 회수 확증  ✅
+  → PASS
+
+── POSTCHECK 3 [§16-5 UUID-bearer 차단 CRITICAL: phone 없이 UUID 단독 → PII 0건] ──
+  clinic=74967aea-a60b-4da3-a0e7-9c997a930bc8 (jongno-foot)
+  fn(clinic, NULL, '<real_resv_uuid>')  → count = 0   ✅  (phone NULL + reservation_id 有 → 0행)
+  fn(clinic, '',   NULL)                → count = 0   ✅
+  fn(clinic, '   ',<real_resv_uuid>)    → count = 0   ✅  (공백 phone → char_length(pn)<8 fail-closed)
+  → UUID(reservation_id) 단독 자격증명으로 PII 반환 경로 물리적 부재 실증. PASS
+
+── POSTCHECK 4 [정상 동선: 실 예약 phone → 본인 1건 raw] ──
+  fn('74967aea-a60b-4da3-a0e7-9c997a930bc8', '010-2740-0855', NULL)
+  → 정확히 1건 반환:
+     reservation_id   = 3e2f946e-82eb-4789-bceb-f6bd15170b05
+     customer_id      = 72441f60-6f62-455a-afad-ededee88c96e
+     customer_name    = 석**  (raw 반환 확인 — 로그상 부분마스킹)
+     customer_phone   = +8210****0855  (raw 반환 확인 — 82-prefix 저장, 입력 0-local 정규화 매칭)
+     reservation_time = 15:00:00
+     visit_type       = new
+  → clinic_id+phone 이중술어(§L2549) 통과 시 본인 raw 1건 언락 실증. PASS
+
+── 종합 ──
+  4/4 POSTCHECK PASS. RPC prod 영속. supervisor 사후 introspection 검증 대기.
+  다음: ②FE(foot-checkin) 배포는 planner 착지순서 집행.
+═══════════════════════════════════════════════════════════
