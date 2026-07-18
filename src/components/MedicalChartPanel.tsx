@@ -534,15 +534,13 @@ export default function MedicalChartPanel({
       });
     };
     void fetchAck();
+    // T-20260715-foot-TREATDASH-FLICKER (AC2): event:'*' → INSERT/UPDATE 로 좁힘(무관 DELETE 콜백 제거).
+    //   doc_ack/상태플래그 변화는 INSERT(신규 방문 체크인)·UPDATE(호출/ack 전이)로 모두 커버 → 반영 무회귀.
+    const ackFilter = { schema: 'public', table: 'check_ins', filter: `customer_id=eq.${customerId}` } as const;
     const channel = supabase
       .channel(`medchart_doc_ack_${customerId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'check_ins', filter: `customer_id=eq.${customerId}` },
-        () => {
-          void fetchAck();
-        },
-      )
+      .on('postgres_changes', { event: 'INSERT', ...ackFilter }, () => { void fetchAck(); })
+      .on('postgres_changes', { event: 'UPDATE', ...ackFilter }, () => { void fetchAck(); })
       .subscribe();
     return () => {
       cancelled = true;
@@ -1089,13 +1087,13 @@ export default function MedicalChartPanel({
       setTreatingDoctorId(row?.treating_doctor_id ?? null);
     };
     void fetchTreating();
+    // T-20260715-foot-TREATDASH-FLICKER (AC2): event:'*' → INSERT/UPDATE 로 좁힘(무관 DELETE 콜백 제거).
+    //   treating_doctor_id 지정은 UPDATE, 신규 방문은 INSERT 로 커버 → 진료의 seed 반영 무회귀.
+    const treatFilter = { schema: 'public', table: 'check_ins', filter: `customer_id=eq.${customerId}` } as const;
     const channel = supabase
       .channel(`medchart_treating_${customerId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'check_ins', filter: `customer_id=eq.${customerId}` },
-        () => { void fetchTreating(); },
-      )
+      .on('postgres_changes', { event: 'INSERT', ...treatFilter }, () => { void fetchTreating(); })
+      .on('postgres_changes', { event: 'UPDATE', ...treatFilter }, () => { void fetchTreating(); })
       .subscribe();
     return () => {
       cancelled = true;

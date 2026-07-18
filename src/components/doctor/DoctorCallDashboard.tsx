@@ -279,8 +279,11 @@ function useDoctorCallFeed(clinicId: string | null) {
       if (error) throw error;
       return (data ?? []) as unknown as CheckIn[];
     },
-    refetchInterval: 20_000,
-    staleTime: 5_000,
+    // T-20260715-foot-TREATDASH-FLICKER (AC2): 깜빡임(전면 re-render 스톰) 안정화 — 백업 폴링 완화 + staleTime 상향.
+    //   realtime 구독(아래 useEffect, INSERT/UPDATE debounce)이 즉시 반영(≤600ms)을 담당하므로 폴링은 20s→30s로
+    //   완화, staleTime 5s→15s 상향으로 포커스/마운트 배경 refetch 를 병합. 데이터 산출·정렬·상태 의미 불변(비즈로직 무접촉).
+    refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 
@@ -310,8 +313,11 @@ function useCompletedClinicalProgress(clinicId: string | null) {
       }
       return map;
     },
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    // T-20260715-foot-TREATDASH-FLICKER (AC2): 임상경과 미리보기(시간 비민감·저장 시 optimistic 반영 별도)는
+    //   폴링 30s→60s·staleTime 10s→20s 로 완화 → 대시보드 배경 refetch 사이클 수를 줄여 re-render 빈도 감소.
+    //   저장 즉시 반영은 applyClinicalOptimistic(optimistic setQueryData) 가 담당하므로 체감 지연 없음. 데이터 의미 불변.
+    refetchInterval: 60_000,
+    staleTime: 20_000,
   });
 }
 
@@ -416,19 +422,30 @@ export default function DoctorCallDashboard() {
   };
 
   // 실시간 구독 — 호출 발생/변경 즉시 refetch (3초 내 반영)
+  // T-20260715-foot-TREATDASH-FLICKER (AC2): 깜빡임 근본원인(realtime 구독 event:'*' → check_ins 행 변경마다
+  //   즉시 refetch → 전면 re-render 스톰) 안정화. 2가지 additive 교정(데이터 산출·상태 의미·구독 대상 행 불변):
+  //   (1) event:'*' → 대시보드가 실제 반영하는 INSERT/UPDATE 로만 좁힘(무관 DELETE 콜백 제거). 취소는 status='cancelled'
+  //       UPDATE 이므로 여전히 반영(useDoctorCallFeed .neq 로 목록에서 사라짐) — 실시간 반영 무회귀.
+  //   (2) 이벤트 버스트를 debounce(600ms)로 병합 → 바쁜 센터에서 다수 check_ins 변경이 몰릴 때 refetch() 를 한 번으로
+  //       합쳐 순간 repaint 플래시(깜빡임) 제거. 600ms 는 "3초 내 반영" 계약 내(AC-1 무회귀).
   useEffect(() => {
     if (!clinicId) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        void refetch();
+      }, 600);
+    };
+    const changeFilter = { schema: 'public', table: 'check_ins', filter: `clinic_id=eq.${clinicId}` } as const;
     const channel = supabase
       .channel(`doctor_call_dash_${clinicId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'check_ins', filter: `clinic_id=eq.${clinicId}` },
-        () => {
-          void refetch();
-        },
-      )
+      .on('postgres_changes', { event: 'INSERT', ...changeFilter }, scheduleRefetch)
+      .on('postgres_changes', { event: 'UPDATE', ...changeFilter }, scheduleRefetch)
       .subscribe();
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
   }, [clinicId, refetch]);
