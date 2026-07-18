@@ -276,6 +276,16 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     //   원장으로 결선(발행시점 스냅샷=치료테이블 지정 진료의, AC-1). billing 대표자 축({{doctor_name}})은 무접촉.
     prescriber_name: ctx.clinicDoctor?.name ?? '',
     prescriber_license_no: ctx.clinicDoctor?.license_no ?? '',
+    // T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND: 진단서(diagnosis) 진료의 축 전용 성명 바인딩.
+    //   진단서 = 법정 의료서식(의료법 시행규칙 §9) — '의사 성명'은 실제 진료의(사람)여야 한다.
+    //   RC(선제·latent, 처방전 약국반려 실사고와 동일 클래스): {{doctor_name}}은 billing '대표자' 축이라
+    //   미지정 폴백 시 기관명으로 덮인다(loadAutoBindContext sealFallbackToInstitution: doctorName←clinicData.name,
+    //   T-20260713 UNLINKED field-confirmed). 진단서가 이 공유 토큰을 쓰면 '의사 성명'이 기관명으로 출력돼
+    //   진료의 신원 오표기(법정 문서 결함) → 처방전(prescriber_name, P1)과 동일하게 clinicDoctor(사람) 기준
+    //   전용 토큰으로 분리한다. clinicDoctor는 미지정 폴백 시에도 대표원장(is_default) 실인물로 유지
+    //   (이름·면허 보존, 도장만 법인 인감 폴스루) → 항상 실 의료인 성명 확보 + 이름↔면허({{doctor_license_no}},
+    //   동일 clinicDoctor.license_no) 정합. 지정 진료의는 그 원장으로 결선. billing 축({{doctor_name}}) 무접촉.
+    attending_doctor_name: ctx.clinicDoctor?.name ?? '',
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
     // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 야간·공휴일 체크박스 마크 기본 공란.
     //   실제 자동 체크·가산 금액 반영은 출력시점(new Date()) 판정으로 DocumentPrintPanel(대상 2종 서류)

@@ -308,7 +308,12 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td colspan="3">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
-        <td colspan="2">{{doctor_name}}</td>
+        <!-- T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND: 진단서 진료의 성명 = 진단서 전용 {{attending_doctor_name}}
+             (실 의료인·사람, clinicDoctor 기준). ★{{doctor_name}}(billing 대표자 축)은 미지정 시 기관명으로 폴백
+             (T-20260713 UNLINKED, field-confirmed)해 진단서 '의사 성명'이 기관명으로 찍혀 진료의 신원 오표기(법정
+             문서 결함) → 처방전(prescriber_name, P1 RX-DOCTOR-BIND)과 동일 축 오염 분리. 면허번호({{doctor_license_no}})는
+             이미 clinicDoctor.license_no 바인딩 = 성명과 동일 사람 기준 → 이름↔면허 정합. -->
+        <td colspan="2">{{attending_doctor_name}}</td>
         <td style="text-align:center; vertical-align:middle; min-width:52px; padding:2px;">{{doctor_seal_html}}</td>
       </tr>
     </tbody>
