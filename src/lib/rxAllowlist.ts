@@ -17,7 +17,7 @@
 // 플래그 소스 = 빌드타임 env VITE_RX_ALLOWLIST_ENFORCEMENT ('on' 일 때만 ON, 그 외/미설정=OFF).
 //   빌드타임 상수라 런타임 오조작으로 켜질 수 없음(임상 안전). ON flip = env 설정 + 재배포.
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
 // 단일지점이나 per-clinic scope 표준(cross_crm_data_contract). prod 실측값 = 'jongno-foot'.
@@ -67,4 +67,73 @@ export function usePrescriptionCodeAllowlist() {
     isLoading: enforced && query.isLoading,
     error: query.error,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260718-foot-RX-ALLOWLIST-CURATION-UI (Phase 2a) — 큐레이션(입력) 훅
+//   ★ 위 usePrescriptionCodeAllowlist 는 enforcement OFF 면 조회조차 안 함(렌더 필터용).
+//     큐레이션 UI 는 enforcement 와 무관하게 항상 현재 승인 상태를 읽어 토글에 반영해야 하므로
+//     별도 훅으로 분리. 조회 게이트 = 호출부의 canEdit(admin surface) 로만 제어(enforcement 무접촉).
+//   ★ 본 훅/뮤테이션은 오직 prescription_code_allowlist overlay 만 건드림.
+//     DrugFolderTree/묶음처방/searchRxCodes 렌더 경로는 무접촉 → 현장 처방 동선 무회귀(AC-3).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CURATION_QUERY_KEY = ['prescription_code_allowlist_curation', FOOT_CLINIC_SLUG] as const;
+
+/**
+ * 큐레이션용 승인 상태 맵(prescription_code_id → enabled).
+ * enforcement 플래그와 무관하게 조회(큐레이션 도구 전용). enabled=canEdit(admin surface)로만 조회 제어.
+ * RLS read = is_approved_user(). 미등록 코드는 맵에 부재(= 아직 큐레이션 안 됨 = default OFF 표시).
+ */
+export function useRxAllowlistCurationMap(enabled: boolean) {
+  const query = useQuery({
+    queryKey: CURATION_QUERY_KEY,
+    enabled,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Map<string, boolean>> => {
+      const { data, error } = await supabase
+        .from('prescription_code_allowlist')
+        .select('prescription_code_id, enabled')
+        .eq('clinic_slug', FOOT_CLINIC_SLUG);
+      if (error) throw error;
+      const m = new Map<string, boolean>();
+      for (const r of (data ?? []) as Array<{ prescription_code_id: string; enabled: boolean }>) {
+        m.set(r.prescription_code_id, !!r.enabled);
+      }
+      return m;
+    },
+  });
+  return {
+    enabledMap: query.data ?? new Map<string, boolean>(),
+    isLoading: enabled && query.isLoading,
+    error: query.error,
+  };
+}
+
+/**
+ * 처방 허용 토글 upsert(overlay). onConflict=(clinic_slug, prescription_code_id) 로 단일 행 보장.
+ * 감사(AC-2): curated_by=현 auth 사용자 id / curated_at=now(). write RLS = is_admin_or_manager().
+ */
+export function useToggleRxAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { prescription_code_id: string; enabled: boolean }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const curatedBy = userData?.user?.id ?? null;
+      const { error } = await supabase
+        .from('prescription_code_allowlist')
+        .upsert(
+          {
+            clinic_slug: FOOT_CLINIC_SLUG,
+            prescription_code_id: input.prescription_code_id,
+            enabled: input.enabled,
+            curated_by: curatedBy,
+            curated_at: new Date().toISOString(),
+          },
+          { onConflict: 'clinic_slug,prescription_code_id' },
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: CURATION_QUERY_KEY }),
+  });
 }
