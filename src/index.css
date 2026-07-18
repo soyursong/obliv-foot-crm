@@ -4,6 +4,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* T-20260718-foot-FLAG-EMOJI-WEBFONT-PORT: 국적 국기 이모지가 Windows에서 'KR'처럼 코드로 깨지는 회귀.
+   RC = 폰트 글리프 부재. 국가코드↔이모지 매핑과 codepoint(🇰🇷 = U+1F1F0 U+1F1F7)는 정상이나
+   Windows 시스템 이모지 폰트(Segoe UI Emoji)가 국기 글리프를 의도적으로 제외 →
+   regional-indicator 가 'KR' 두 글자로 렌더됨. 해결: 국기 글리프만 가진 웹폰트를 unicode-range 로
+   국기 codepoint 에만 한정 적용(타 텍스트 0 영향) + 폰트 스택 선두 prepend.
+   derm(T-20260615-derm-NATIONALITY-FLAG-EMOJI-REGRESSION, 6/15 검증·배포)의 Option C 이식.
+   CSS-only(신규 npm 패키지 없음), 기존 Pretendard jsDelivr CDN 계열. */
+@font-face {
+  font-family: 'Twemoji Country Flags';
+  unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E0063, U+E0065, U+E0067, U+E006C, U+E006E, U+E0073-E0074, U+E0077, U+E007F;
+  src: url('https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1/dist/TwemojiCountryFlags.woff2') format('woff2');
+  font-display: swap;
+}
+
 @layer base {
   .theme {
     --font-heading: var(--font-sans);
@@ -202,8 +216,10 @@
     /* T-20260615-foot-CRM-FONT-PRETENDARD-GLOBAL: @apply font-sans 는 Tailwind 기본 sans
        리터럴(ui-sans-serif…)을 굽어 :root --font-sans 토큰을 참조하지 않는다. 어드민 전역을
        셀프접수와 동일한 Pretendard로 실제 렌더하려면 var(--font-sans)를 직접 지정(같은 규칙
-       후행 선언이 이김). 웹폰트 실패 시 토큰의 sans-serif fallback. */
-    font-family: var(--font-sans);
+       후행 선언이 이김). 웹폰트 실패 시 토큰의 sans-serif fallback.
+       T-20260718-foot-FLAG-EMOJI-WEBFONT-PORT: 스택 선두에만 'Twemoji Country Flags' prepend.
+       unicode-range 로 국기 codepoint 에만 적용되므로 본문 글꼴은 그대로 Pretendard(회귀 0). */
+    font-family: 'Twemoji Country Flags', var(--font-sans);
     /* T-20260630-foot-DOCFORM-POPUP-BACKDROP-SHAKE: 소견서/진단서 등 모달(@base-ui Dialog) 오픈 시
        body scroll-lock(overflow:hidden) 으로 데스크탑 classic 스크롤바가 사라지며 가로폭이 점프 →
        뒷화면 흔들림(layout shift). 스크롤바 gutter 를 상시 예약해 overflow 토글 시 폭 변화를 0으로 만든다.
