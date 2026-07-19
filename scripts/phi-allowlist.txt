@@ -46,3 +46,10 @@
 # ── (ii) 업무발신번호 (solapi sender / 법인 공개번호) ──
 #   법인 공개 대표번호는 PHI 아님. 신규 등재는 리뷰 게이트.
 #   (현재 등재 없음 — 필요 시 provenance 주석과 함께 추가)
+#
+# ── T-20260716-foot-SELFCHECKIN-RPC-CREATEDBY-CANON 합성 검증 phone (2026-07-19) ──
+#   dev-isolation 기능검증(verify_dev.mjs) 전용 합성값. 반복/순차 자릿수, 실환자 재식별 0.
+\+?821099887766
+\+?821055443322
+#   (note) RRN 경로는 스캐너가 allowlist 미적용(구조상 phone 전용, phi-scan.sh L74-79) — 평문 13자리 RRN은
+#   합성이라도 항상 BLOCK. 대응=마스킹 redact(signals.md L487 참조), allowlist permit 불가.
