@@ -42,9 +42,11 @@ const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
 interface Props {
   customerId: string | null;
   onClose: () => void;
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: 우클릭 [서류] deep-link 초기 탭(서랍/자동화 경로). undefined=펜차트 기본.
+  initialTab?: string;
 }
 
-export function CustomerChartSheet({ customerId, onClose }: Props) {
+export function CustomerChartSheet({ customerId, onClose, initialTab }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   // T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 닫기 전 확인 다이얼로그
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -268,7 +270,8 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
               }
             >
               {/* customerId prop 직접 주입 — useParams() 대신 prop 우선 사용 */}
-              <CustomerChartPage customerId={customerId} />
+              {/* T-20260617-foot-CTXMENU-DOC-ENTRY: 서랍 경로 deep-link 초기 탭 전달(자동화/Playwright 경로 포함) */}
+              <CustomerChartPage customerId={customerId} initialTab={initialTab} />
             </Suspense>
           </ChartSheetCloseCtx.Provider>
           </ChartSheetMarkCleanCtx.Provider>

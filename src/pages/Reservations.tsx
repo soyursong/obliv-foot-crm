@@ -1796,6 +1796,12 @@ export default function Reservations() {
     openChart(ci.customer_id);
   }, [openChart]);
 
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: 예약관리 행 우클릭 [서류] → 해당 고객 서류 탭 deep-link (additive tab opt).
+  const handleResvOpenDocuments = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
+    openChart(ci.customer_id, { tab: 'documents' });
+  }, [openChart]);
+
   // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE (RC 확정, FE-only):
   //   동행(companion) 예약은 dopamine emit shape 상 customer_id=NULL + external_id `_comp_` 로 착지하는
   //   '의도된 정본'(진성 customer row 없음, 변경 금지). 그런데 예약카드 이름 클릭 핸들러는 customer_id 유무만으로
@@ -3041,6 +3047,8 @@ export default function Reservations() {
            (POPUP-SYNC AC-3 에서 라벨만 분기했던 와이어링을 본 티켓에서 동작까지 연결). */
         onNewReservation={handleResvOpenDetailFromMenu}
         onOpenPayment={handleResvOpenPayment}
+        /* T-20260617-foot-CTXMENU-DOC-ENTRY: 수납 하단 [서류] → 서류 탭 deep-link (예약관리 행 surface) */
+        onOpenDocuments={handleResvOpenDocuments}
         /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
         reservationActionLabel="예약상세"
         /* T-20260611-foot-RESV-CTXMENU-SMS-MISSING: CANONICAL 5항목 中 '문자' 복원.

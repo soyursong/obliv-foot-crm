@@ -2577,7 +2577,7 @@ function formatDwell(seconds: number): string {
 }
 
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 내에서 prop으로 주입 가능 (MemoryRouter 불필요)
-export default function CustomerChartPage({ customerId: propCustomerId }: { customerId?: string } = {}) {
+export default function CustomerChartPage({ customerId: propCustomerId, initialTab: propInitialTab }: { customerId?: string; initialTab?: string } = {}) {
   const params = useParams<{ customerId: string }>();
   const customerId = propCustomerId ?? params.customerId;
   // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 진료차트 우측 패널 deep-link 진입(?medchart=visit_hist 등).
@@ -2670,7 +2670,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
   // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
   // T-20260522-foot-CHART2-TAB-PENCHART: 기본 탭 → 펜차트 (현장 요청)
-  const [chartTab, setChartTab] = useState<string>('pen_chart');
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: 우클릭 [서류] deep-link — 초기 탭 진입.
+  //   prop(서랍/자동화 경로) 우선, 없으면 ?tab= 쿼리(별도 창 경로). 현재 'documents'(서류, clinical 그룹)만 지원.
+  //   미지정/미지원 값이면 기존 기본(펜차트) 유지 = 무변경. medchart deep-link 선례와 동일 패턴.
+  const deepLinkTab = propInitialTab ?? searchParams.get('tab') ?? undefined;
+  const [chartTab, setChartTab] = useState<string>(deepLinkTab === 'documents' ? 'documents' : 'pen_chart');
+  // documents·pen_chart 모두 clinical 그룹 → 그룹은 불변('clinical')
   const [chartTabGroup, setChartTabGroup] = useState<'clinical' | 'history'>('clinical');
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);

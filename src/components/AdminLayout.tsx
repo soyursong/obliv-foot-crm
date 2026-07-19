@@ -258,6 +258,8 @@ export default function AdminLayout() {
   // 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
   // ─────────────────────────────────────────────────────────────────────────────
   const [chartId, setChartId] = useState<string | null>(null);
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: 서랍(fallback/자동화) 경로용 초기 탭. window.open 경로는 URL ?tab= 로 전달.
+  const [chartInitialTab, setChartInitialTab] = useState<string | undefined>(undefined);
   // LOGIC-LOCK: L-004 [CHART-LOCK-003] — openChart 단일 구현. setChartId 직접 노출 금지. 중복 구현 금지.
   // ─────────────────────────────────────────────────────────────────────────────
   // T-20260623-foot-CHART2-POPUP-WINDOW-AUTOREFRESH Part A (김주연 총괄 확정 2026-06-24):
@@ -271,12 +273,17 @@ export default function AdminLayout() {
   //   · 분리창 저장은 /chart/:id 독립 페이지 경로(기존)로 정상, 메인 반영은 Dashboard realtime
   //     (check_ins·reservations) + Part B 헤더 자동 새로고침으로 stale 없음. DB 스키마 변경 0(AC6).
   // ─────────────────────────────────────────────────────────────────────────────
-  const openChart = useCallback((customerId: string) => {
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: additive optional `opts.tab` — 우클릭 [서류]가 서류 탭으로 deep-link.
+  //   기존 호출 openChart(id) 는 opts=undefined → 완전 무변경(펜차트 기본). 별도 창=URL ?tab=, 서랍=chartInitialTab.
+  const openChart = useCallback((customerId: string, opts?: { tab?: string }) => {
+    const tab = opts?.tab;
     const isAutomation =
       typeof navigator !== 'undefined' && (navigator as Navigator).webdriver === true;
     if (!isAutomation && typeof window !== 'undefined') {
       try {
-        const url = `${window.location.origin}/chart/${customerId}`;
+        const url = tab
+          ? `${window.location.origin}/chart/${customerId}?tab=${encodeURIComponent(tab)}`
+          : `${window.location.origin}/chart/${customerId}`;
         const win = window.open(
           url,
           `foot-chart-${customerId}`,
@@ -292,9 +299,10 @@ export default function AdminLayout() {
         /* window.open 예외 → 서랍 폴백 */
       }
     }
+    setChartInitialTab(tab); // 서랍 경로 초기 탭(undefined=펜차트 기본)
     setChartId(customerId); // 폴백/비-제스처/자동화: 기존 CustomerChartSheet 서랍 경로 유지
   }, []);
-  const closeChart = useCallback(() => setChartId(null), []);
+  const closeChart = useCallback(() => { setChartId(null); setChartInitialTab(undefined); }, []);
   const chartContextValue = useMemo(
     () => ({ chartId, openChart, closeChart }),
     [chartId, openChart, closeChart],
@@ -751,7 +759,7 @@ export default function AdminLayout() {
         다른 위치에 중복 렌더 추가 금지. customerId/onClose 대체 구현 금지.
         회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts */}
     {/* LOGIC-LOCK: L-004 [CHART-LOCK-005] — CustomerChartSheet 이 1곳 단일 렌더. 중복 렌더 추가 금지. */}
-    <CustomerChartSheet customerId={chartId} onClose={closeChart} />
+    <CustomerChartSheet customerId={chartId} onClose={closeChart} initialTab={chartInitialTab} />
     {/* T-20260519-foot-STAFF-PW-CHANGE: 비밀번호 변경 다이얼로그 */}
     <ChangePasswordDialog open={pwChangeOpen} onOpenChange={setPwChangeOpen} />
     </ChartContext.Provider>

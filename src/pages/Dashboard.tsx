@@ -5719,6 +5719,15 @@ export default function Dashboard() {
     ctxOpenChart(ci.customer_id);
   }, [ctxOpenChart]);
 
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: 우클릭 [서류] → 해당 고객 서류 탭 deep-link (additive tab opt).
+  const handleOpenDocumentsFromCtx = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) {
+      toast.info('고객 정보가 연결되어 있지 않습니다');
+      return;
+    }
+    ctxOpenChart(ci.customer_id, { tab: 'documents' });
+  }, [ctxOpenChart]);
+
 
   const handleNewReservation = useCallback((ci: CheckIn) => {
     // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수
@@ -7896,6 +7905,8 @@ export default function Dashboard() {
         onNewReservation={handleCardResvDetailOrCreate}
         reservationActionLabel="예약상세"
         onOpenPayment={handleOpenPaymentFromMenu}
+        /* T-20260617-foot-CTXMENU-DOC-ENTRY: 수납 하단 [서류] → 서류 탭 deep-link (대시보드 칸반/큐 surface) */
+        onOpenDocuments={handleOpenDocumentsFromCtx}
         /* T-20260606-foot-CTXMENU-SMS-SEND: admin/manager 한정 노출(미허용 시 onSendSms 미전달 → 항목 숨김) */
         onSendSms={
           canAccess(profile, 'manual_sms_send')  /* T-20260620-foot-SUPERADMIN-EXEMPT: subject 전달(exempt honor) */
@@ -7933,6 +7944,8 @@ export default function Dashboard() {
         onOpenPayment={handleResvOpenPaymentFromCtx}
         /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
         reservationActionLabel="예약상세"
+        /* T-20260617-foot-CTXMENU-DOC-ENTRY: 수납 하단 [서류] → 서류 탭 deep-link (대시보드 예약 카드 surface) */
+        onOpenDocuments={handleOpenDocumentsFromCtx}
         /* 문자 — admin/manager(onSendSms 제공 시)만 노출. ci는 resvAsCheckIn 어댑터(customer_id로 phone SSOT refetch). */
         onSendSms={
           canAccess(profile, 'manual_sms_send')  /* T-20260620-foot-SUPERADMIN-EXEMPT: subject 전달(exempt honor) */

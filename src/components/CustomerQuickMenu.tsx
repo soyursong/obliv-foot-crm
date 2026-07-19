@@ -12,7 +12,7 @@
  * 순서: 고객차트 → 진료차트 → 예약하기|예약상세 → 수납 → 문자
  */
 import { useEffect, useRef } from 'react';
-import { BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope } from 'lucide-react';
+import { BookOpen, CalendarPlus, CreditCard, FileText, MessageSquare, Stethoscope } from 'lucide-react';
 import type { CheckIn } from '@/lib/types';
 
 interface Props {
@@ -23,6 +23,11 @@ interface Props {
   onOpenMedicalChart: (checkIn: CheckIn) => void;
   onNewReservation: (checkIn: CheckIn) => void;
   onOpenPayment: (checkIn: CheckIn) => void;
+  /**
+   * T-20260617-foot-CTXMENU-DOC-ENTRY: 수납 하단 [서류] 진입점 — 해당 고객의 서류 탭 deep-link.
+   * 제공 시(대시보드·예약관리 전 surface)만 메뉴 항목 표시. 결제미니창(출력전용)에는 미전달(역할분리 유지).
+   */
+  onOpenDocuments?: (checkIn: CheckIn) => void;
   /** T-20260606-foot-CTXMENU-SMS-SEND: 문자 발송 콜백 — 제공 시(admin/manager)만 메뉴 항목 표시 */
   onSendSms?: (checkIn: CheckIn) => void;
   /**
@@ -41,6 +46,7 @@ export function CustomerQuickMenu({
   onOpenMedicalChart,
   onNewReservation,
   onOpenPayment,
+  onOpenDocuments,
   onSendSms,
   reservationActionLabel = '예약하기',
 }: Props) {
@@ -64,8 +70,8 @@ export function CustomerQuickMenu({
 
   if (!position || !checkIn) return null;
 
-  // 화면 경계 보정 — 항목 수에 따른 높이 고려 (문자 가변)
-  const itemCount = 4 + (onSendSms ? 1 : 0);
+  // 화면 경계 보정 — 항목 수에 따른 높이 고려 (서류·문자 가변)
+  const itemCount = 4 + (onOpenDocuments ? 1 : 0) + (onSendSms ? 1 : 0);
   const x = Math.min(position.x, window.innerWidth - 190);
   const y = Math.min(position.y, window.innerHeight - (60 + itemCount * 44));
 
@@ -130,7 +136,23 @@ export function CustomerQuickMenu({
         수납
       </button>
 
-      {/* 5. 문자 — T-20260606-foot-CTXMENU-SMS-SEND: admin/manager(onSendSms 제공 시)만 노출 */}
+      {/* 5. 서류 — T-20260617-foot-CTXMENU-DOC-ENTRY: 수납 하단 append. 클릭 → 해당 고객 서류 탭 deep-link.
+          제공 시(대시보드·예약관리)만 노출. 기존 항목 순서/동작 무변경(하단 추가). */}
+      {onOpenDocuments && (
+        <button
+          data-testid="quick-menu-doc-btn"
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+          onClick={() => {
+            onOpenDocuments(checkIn);
+            onClose();
+          }}
+        >
+          <FileText className="h-4 w-4 text-teal-600 shrink-0" />
+          서류
+        </button>
+      )}
+
+      {/* 6. 문자 — T-20260606-foot-CTXMENU-SMS-SEND: admin/manager(onSendSms 제공 시)만 노출 */}
       {onSendSms && (
         <button
           data-testid="quick-menu-sms-btn"

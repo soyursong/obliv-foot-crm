@@ -28,7 +28,11 @@ import { createContext, useContext } from 'react';
 
 export interface ChartContextValue {
   chartId: string | null;
-  openChart: (customerId: string) => void;
+  // T-20260617-foot-CTXMENU-DOC-ENTRY: 우클릭 [서류] deep-link 진입점.
+  //   additive optional `opts.tab` (기본 undefined = 기존 동작 무변경 = 펜차트).
+  //   제품 승인(reporter 김주연 총괄 firm 확정, MSG-77ax) — 불변식 보존, 파괴적 변경 아님(FE-only).
+  //   기존 호출부 openChart(customerId) 전부 그대로 유효(파라미터 미전달 = undefined).
+  openChart: (customerId: string, opts?: { tab?: string }) => void;
   closeChart: () => void;
 }
 
