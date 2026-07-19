@@ -1,0 +1,57 @@
+{
+  "ticket": "T-20260628-foot-ANON-KIOSK-CUTOVER",
+  "mig": "supabase/migrations/20260719160000_selfcheckin_update_personal_info_contact_additive.sql",
+  "steps": [
+    {
+      "txn_control_stripped": {
+        "ok": true
+      }
+    },
+    {
+      "signatures_before": [
+        "p_check_in_id uuid, p_clinic_id uuid, p_birth_date text, p_address text, p_address_detail text, p_postal_code text, p_privacy_consent boolean, p_insurance_consent boolean, p_visit_route text, p_visit_route_detail text, p_consent_sensitive boolean, p_consent_agreed_at timestamp with time zone, p_consent_version text"
+      ]
+    },
+    {
+      "precondition": {
+        "has13Before": true,
+        "has15Before": false
+      }
+    },
+    {
+      "apply_in_txn": {
+        "ok": true,
+        "error": null
+      }
+    },
+    {
+      "signatures_in_txn": [
+        "p_check_in_id uuid, p_clinic_id uuid, p_birth_date text, p_address text, p_address_detail text, p_postal_code text, p_privacy_consent boolean, p_insurance_consent boolean, p_visit_route text, p_visit_route_detail text, p_consent_sensitive boolean, p_consent_agreed_at timestamp with time zone, p_consent_version text, p_sms_opt_in boolean, p_customer_email text"
+      ]
+    },
+    {
+      "in_txn_assert": {
+        "has15InTxn": true,
+        "dropped_old_13": true
+      }
+    },
+    {
+      "rolled_back": true
+    },
+    {
+      "signatures_after_rollback": [
+        "p_check_in_id uuid, p_clinic_id uuid, p_birth_date text, p_address text, p_address_detail text, p_postal_code text, p_privacy_consent boolean, p_insurance_consent boolean, p_visit_route text, p_visit_route_detail text, p_consent_sensitive boolean, p_consent_agreed_at timestamp with time zone, p_consent_version text"
+      ]
+    },
+    {
+      "no_persistence_assert": {
+        "persisted15_MUST_be_false": false,
+        "restored13": true
+      }
+    },
+    {
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

@@ -1252,14 +1252,16 @@ export default function SelfCheckIn() {
       const collectPrivacy = isNewVisit && (isForeign || reservationType === 'walkin');
       const collectHira = isNewVisit && reservationType === 'walkin' && !isForeign;
       const emailParam = isForeign && customerEmail.trim() ? customerEmail.trim() : null;
-      // T-20260627-ANON-RLS-PHASE2B resolve_v3: 민감정보 동의(개보법 §23) 3컬럼 ADDITIVE 가산.
-      //   _resolve_v2 가 consent_sensitive 미반영 → 컷오버 시 직접 INSERT 의 consent_sensitive 유실 갭.
-      //   resolve_v3 = v2 본문 + p_consent_sensitive/agreed_at/version (COALESCE 멱등 persist).
-      //   초진(isNewVisit) 공통 전달 — update_personal_info 와 동일 단일 패턴. 미동의→agreed_at/version NULL.
-      // TODO(DA-ow58): customers UPDATE 라우팅 결정 대기 — full 2b 가 customers UPDATE 도 REVOKE 인지 vs
-      //   SELECT×3 만인지(티켓 line119 "SELECT/UPDATE/INSERT" vs JONGNO "REVOKE SELECT×3" divergence),
-      //   그리고 이 sms_opt_in·email·주소3·동의3 UPDATE 를 v3 로 라우팅 유지할지 vs 신규 RPC 로 분리할지
-      //   DA CONSULT(MSG-20260719-101303-ow58) 회신 전까지 현행 유지(v3 경로). 회신 후 planner 확정 반영.
+      // ── T-20260628-ANON-KIOSK-CUTOVER (DA-ow58 확정): customers contact/consent 라우팅 분리 ──
+      //   v3(_upsert_customer_resolve_v3) = 고객 해소 전용(복합키[성함 AND 연락처] 매칭/INSERT).
+      //   contact/consent(sms_opt_in·customer_email·consent_sensitive+at+version)의 authoritative
+      //   persist 는 v3(name+phone 재해소) 가 아니라 check_in_id-keyed update-only RPC
+      //   fn_selfcheckin_update_personal_info 로 라우팅한다(post-check_in, 아래 (4) 참조).
+      //   근거(DA-20260719-foot-KIOSK-L1730-REVOKE-ROUTING):
+      //     · v3 는 0-match 시 신규 INSERT(created) → 검증예약 고객 표기차 시 §25 INV-0 중복차트 벡터.
+      //     · update_personal_info 는 check_in.customer_id UPDATE(신규생성 없음)=§25 INV-0 안전 +
+      //       check_in_id-bearer=§16-5 안전(customer_id-bearer 아님).
+      //   ∴ v3 에는 birth/address/privacy/hira(초진 INSERT 초기화용, isNewVisit 게이트) + 해소키만 전달.
       const { data: resolveRows, error: resolveErr } = await anonClient.rpc(
         'fn_selfcheckin_upsert_customer_resolve_v3',
         {
@@ -1268,20 +1270,15 @@ export default function SelfCheckIn() {
           // 외국인 워크인은 연락처 대신 이메일만 가능 → phone 빈값이면 null(컬럼 nullable).
           p_phone: phoneStored || null,
           p_visit_type: visitType === 'new' ? 'new' : 'returning',
-          p_sms_opt_in: smsOptIn,
           p_birth_date: isNewVisit ? extractBirthDate(rrn) ?? null : null,
           p_address: isNewVisit && address.trim() ? address.trim() : null,
           p_postal_code: isNewVisit && postalCode.trim() ? postalCode.trim() : null,
           p_address_detail: isNewVisit && addressDetail.trim() ? addressDetail.trim() : null,
-          // ⚠ customer_email = 환자 이메일(기관 email 아님, DA Q3 MUST).
-          p_customer_email: emailParam,
           p_privacy_consent: collectPrivacy ? privacyConsent : null,
           // 외국인은 국내 건강보험 비대상 → hira 미전달(NULL=유지).
           p_hira_consent: collectHira ? insuranceConsent : null,
-          // T-20260615-foot-CONSENT-SENSITIVE: 초진 민감정보 동의 영속(보관의무). 미동의→agreed_at/version NULL.
-          p_consent_sensitive: isNewVisit ? consentSensitive : null,
-          p_consent_agreed_at: isNewVisit && consentSensitive ? new Date().toISOString() : null,
-          p_consent_version: isNewVisit && consentSensitive ? 'foot-2026-06' : null,
+          // ⚠ sms_opt_in·customer_email·consent_sensitive(+at+version) 는 v3 미전달(DA-ow58).
+          //   → check_in 생성 직후 fn_selfcheckin_update_personal_info 로 영속(초진/재진 공통).
         },
       );
       if (resolveErr) {
@@ -1466,6 +1463,10 @@ export default function SelfCheckIn() {
             p_consent_sensitive:  consentSensitive,
             p_consent_agreed_at:  consentSensitive ? new Date().toISOString() : null,
             p_consent_version:    consentSensitive ? 'foot-2026-06' : null,
+            // T-20260628-ANON-KIOSK-CUTOVER (DA-ow58): contact(sms_opt_in·customer_email) 을 v3 에서
+            //   check_in_id-keyed 경로로 이관. confirm 스텝에서 초진/재진 공통 수집 → 여기서 영속.
+            p_sms_opt_in:         smsOptIn,
+            p_customer_email:     emailParam,
           });
           // T-20260611-foot-WALKIN-CHART-HIRA-CONSENT-NOTSAVED AC-2: silent-fail 표면화.
           //   기존 빈 catch{} 가 RPC 시그니처 불일치(PGRST202 등)를 삼켜, hira/주소/동의 미저장 버그가
@@ -1511,6 +1512,26 @@ export default function SelfCheckIn() {
         // 초진: QR 화면으로
         setStep('qr');
       } else {
+        // ── 재진/체험: contact(sms_opt_in·customer_email) 영속 — T-20260628 DA-ow58 ──
+        //   재진 동선은 초진 전용 필드(birth/address/consent)를 수집하지 않으므로 update_personal_info
+        //   를 호출하지 않았으나, sms 수신동의 체크박스는 confirm 스텝(초진/재진 공통)에서 수집된다.
+        //   → v3(name+phone 재해소)로 라우팅 금지(§25 INV-0 중복차트 벡터)이므로 check_in_id-keyed
+        //     update-only RPC 로만 갱신. 초진 전용 파라미터는 미전달(NULL=COALESCE 유지).
+        if (newCheckInId && clinicId) {
+          try {
+            const { error: piErr } = await anonClient.rpc('fn_selfcheckin_update_personal_info', {
+              p_check_in_id:    newCheckInId,
+              p_clinic_id:      clinicId,
+              p_sms_opt_in:     smsOptIn,
+              p_customer_email: emailParam,
+            });
+            if (piErr) {
+              console.error('[selfcheckin] 재진 contact 갱신 실패(sms_opt_in/email 미저장 위험):', piErr);
+            }
+          } catch (e) {
+            console.error('[selfcheckin] 재진 contact 갱신 예외:', e);
+          }
+        }
         // 재진: done으로
         setStep('done');
       }

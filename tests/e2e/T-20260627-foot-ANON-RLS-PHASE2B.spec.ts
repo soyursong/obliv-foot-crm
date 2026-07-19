@@ -81,15 +81,24 @@ test.describe('T-20260627-foot-ANON-RLS-PHASE2B — native 셀프체크인 anon 
   test('AC-4: (정적 가드) 제출 핸들러 직접 테이블 경로 제거 + 신규 RPC 참조 확인', () => {
     const src = readFileSync(resolve(process.cwd(), 'src/pages/SelfCheckIn.tsx'), 'utf-8');
 
-    // 제출 경로의 customers/check_ins 직접 .from().select()/.insert() 가 모두 제거됐다.
-    // TODO(DA-ow58): 'customers never-called' 불변식 PENDING — DA CONSULT(MSG-20260719-101303-ow58) 회신 대기.
-    //   full 2b 가 customers UPDATE 도 REVOKE 인지 vs SELECT×3 만인지 미확정 → customers UPDATE 를
-    //   v3 라우팅 유지할지 vs 신규 RPC 로 분리할지 결정 전까지 이 assertion 을 하드 불변식으로 잠그지 않는다.
-    //   (코드는 현행 v3 경로 유지 = 현재 .from('customers') 부재이나, DA 판정으로 뒤집힐 수 있어 false-green 방지 차원 skip.)
-    //   DA 회신 후 planner 확정(a: v3/신규RPC 컷오버 → 재활성 / b: 의도적 잔존 → 예외 명문화)에 맞춰 재개.
-    //   PENDING(assertion 단위 skip) — 아래 한 줄은 회신 전까지 비활성. check_ins/RPC 확정 가드는 유지.
-    // expect(src, "customers 직접 .from() 잔존").not.toMatch(/\.from\(['"]customers['"]\)/);
+    // 제출 경로의 customers/check_ins 직접 .from().select()/.insert()/.update() 가 모두 제거됐다.
+    // DA-ow58 확정(2026-07-19, da_decision_foot_kiosk_L1730_customers_revoke_routing): L1730 customers
+    //   UPDATE = RPC 컷오버(판정 a), 의도적 잔존 REJECT(판정 b). contact/consent 는 v3(고객 해소) +
+    //   check_in_id-keyed fn_selfcheckin_update_personal_info(영속)로만 기록 → 제출 경로에 customers
+    //   직접 .from() 완전 부재. 불변식 재활성(하드 잠금, PENDING 해제).
+    expect(src, "customers 직접 .from() 잔존").not.toMatch(/\.from\(['"]customers['"]\)/);
     expect(src, "check_ins 직접 .from() 잔존").not.toMatch(/\.from\(['"]check_ins['"]\)/);
+
+    // DA-ow58 라우팅 가드: contact/consent 는 check_in_id-keyed update-only RPC 로 영속(v3 의 name+phone
+    //   재해소 write path 아님 — §25 INV-0 중복차트 차단). update_personal_info 참조 확인 +
+    //   v3 콜에서 contact/consent 파라미터 제거 확인.
+    expect(src).toContain('fn_selfcheckin_update_personal_info');
+    const v3CallStart = src.indexOf("'fn_selfcheckin_upsert_customer_resolve_v3'");
+    expect(v3CallStart, 'resolve_v3 콜 미발견').toBeGreaterThan(-1);
+    const v3CallBlock = src.slice(v3CallStart, v3CallStart + 1400);
+    expect(v3CallBlock, 'v3 콜에 p_sms_opt_in 잔존(DA-ow58 위반)').not.toMatch(/p_sms_opt_in\s*:/);
+    expect(v3CallBlock, 'v3 콜에 p_customer_email 잔존(DA-ow58 위반)').not.toMatch(/p_customer_email\s*:/);
+    expect(v3CallBlock, 'v3 콜에 p_consent_sensitive 잔존(DA-ow58 위반)').not.toMatch(/p_consent_sensitive\s*:/);
 
     // 신규/기존 SECURITY DEFINER RPC 로 전환됐다.
     expect(src).toContain('fn_selfcheckin_upsert_customer_resolve_v2');
