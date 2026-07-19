@@ -55,12 +55,16 @@ let seededCheckInId: string | null = null;
 let seedOk = false;
 
 async function cleanupSeed() {
-  // 전화번호 기준 정확 삭제 (실환자 보호: is_simulation=true)
+  // T-20260719-foot-PAYMINI-SUGA-SCROLL-BLOCK: 시드가 is_simulation 미지정(=false)으로 바뀌었으므로
+  //   (simulationFilter 대시보드 숨김 회피) cleanup 필터의 `.eq('is_simulation', true)` 를 제거한다.
+  //   그대로 두면 비-시뮬 seed 를 pre-clean 하지 못해 재실행마다 idx_customers_clinic_phone 중복키로
+  //   시드 실패 → 4-fail(단독 재실행 결정론 붕괴). 실환자 보호는 전용 테스트 전화번호(+821099998801)
+  //   + 테스트 마커 이름(SEED_NAME) 교집합으로 대체(SUGA spec 의 phone-기준 cleanup 과 동일 패턴).
   const { data: custs } = await supabase
     .from('customers')
     .select('id')
     .eq('phone', SEED_PHONE)
-    .eq('is_simulation', true);
+    .eq('name', SEED_NAME);
   const custIds = (custs ?? []).map((c) => c.id);
   if (custIds.length > 0) {
     const { data: cis } = await supabase
