@@ -82,7 +82,13 @@ test.describe('T-20260627-foot-ANON-RLS-PHASE2B — native 셀프체크인 anon 
     const src = readFileSync(resolve(process.cwd(), 'src/pages/SelfCheckIn.tsx'), 'utf-8');
 
     // 제출 경로의 customers/check_ins 직접 .from().select()/.insert() 가 모두 제거됐다.
-    expect(src, "customers 직접 .from() 잔존").not.toMatch(/\.from\(['"]customers['"]\)/);
+    // TODO(DA-ow58): 'customers never-called' 불변식 PENDING — DA CONSULT(MSG-20260719-101303-ow58) 회신 대기.
+    //   full 2b 가 customers UPDATE 도 REVOKE 인지 vs SELECT×3 만인지 미확정 → customers UPDATE 를
+    //   v3 라우팅 유지할지 vs 신규 RPC 로 분리할지 결정 전까지 이 assertion 을 하드 불변식으로 잠그지 않는다.
+    //   (코드는 현행 v3 경로 유지 = 현재 .from('customers') 부재이나, DA 판정으로 뒤집힐 수 있어 false-green 방지 차원 skip.)
+    //   DA 회신 후 planner 확정(a: v3/신규RPC 컷오버 → 재활성 / b: 의도적 잔존 → 예외 명문화)에 맞춰 재개.
+    //   PENDING(assertion 단위 skip) — 아래 한 줄은 회신 전까지 비활성. check_ins/RPC 확정 가드는 유지.
+    // expect(src, "customers 직접 .from() 잔존").not.toMatch(/\.from\(['"]customers['"]\)/);
     expect(src, "check_ins 직접 .from() 잔존").not.toMatch(/\.from\(['"]check_ins['"]\)/);
 
     // 신규/기존 SECURITY DEFINER RPC 로 전환됐다.

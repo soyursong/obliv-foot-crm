@@ -1256,6 +1256,10 @@ export default function SelfCheckIn() {
       //   _resolve_v2 가 consent_sensitive 미반영 → 컷오버 시 직접 INSERT 의 consent_sensitive 유실 갭.
       //   resolve_v3 = v2 본문 + p_consent_sensitive/agreed_at/version (COALESCE 멱등 persist).
       //   초진(isNewVisit) 공통 전달 — update_personal_info 와 동일 단일 패턴. 미동의→agreed_at/version NULL.
+      // TODO(DA-ow58): customers UPDATE 라우팅 결정 대기 — full 2b 가 customers UPDATE 도 REVOKE 인지 vs
+      //   SELECT×3 만인지(티켓 line119 "SELECT/UPDATE/INSERT" vs JONGNO "REVOKE SELECT×3" divergence),
+      //   그리고 이 sms_opt_in·email·주소3·동의3 UPDATE 를 v3 로 라우팅 유지할지 vs 신규 RPC 로 분리할지
+      //   DA CONSULT(MSG-20260719-101303-ow58) 회신 전까지 현행 유지(v3 경로). 회신 후 planner 확정 반영.
       const { data: resolveRows, error: resolveErr } = await anonClient.rpc(
         'fn_selfcheckin_upsert_customer_resolve_v3',
         {
