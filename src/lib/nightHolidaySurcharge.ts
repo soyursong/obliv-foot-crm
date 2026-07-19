@@ -63,6 +63,22 @@ export function toLocalDateStr(d: Date): string {
 }
 
 /**
+ * ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (2026-07-19 body-canon 포트 갭 close, MSG-20260719-160435-exfb) ──
+ * 가산 판정 기준 일시 결정 = **진료일(checked_in_at)** — 출력 시점(now)이 아니라 실제 진료가 이뤄진
+ * 일시로 판정한다. body Chart2InsuranceCalcPanel 의 visitDate=checked_in_at canon 동일(AC-4 canon).
+ * 과거·미래 진료일 서류를 나중에(예: 다음날) 출력해도 진료 당시의 요일(일요일 dow===0)·공휴일·야간(18시
+ * 이후)이 정확히 반영된다. print-time(new Date()) 기준이면 일요일 진료분을 월요일에 출력 시 가산 누락.
+ * checked_in_at 부재(워크인 미체크인) 시에만 now 로 폴백(기존 visitDate 문자열 폴백 규칙과 동일).
+ * @param checkedInAt 체크인 일시(ISO 문자열). null/빈값/파싱불가면 now 폴백.
+ * @param now 폴백용 출력 시점(테스트는 특정 일시 주입 가능).
+ */
+export function resolveSurchargeRefDate(checkedInAt: string | null | undefined, now: Date): Date {
+  if (!checkedInAt) return now;
+  const d = new Date(checkedInAt);
+  return Number.isNaN(d.getTime()) ? now : d;
+}
+
+/**
  * 야간·공휴일 가산 대상 여부 (body canon isNightOrHoliday 동일).
  * - 일요일 종일 / 공휴일 종일(법정목록 ∪ 달력 빨간날) / 평일·토 18시 이후.
  * @param refDate 판정 기준 일시(출력 시점 = new Date()).

@@ -105,6 +105,7 @@ import { loadAutoBindContext, applyBillingFallback, loadTreatingDoctorName } fro
 //   가산이 미리보기에만 반영되고 현장 인쇄물(handleBatchPrint)엔 누락되던 divergence를 구조적으로 차단.
 import {
   applyNightHolidaySurcharge,
+  resolveSurchargeRefDate,
   toLocalDateStr,
 } from '@/lib/nightHolidaySurcharge';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
@@ -1210,8 +1211,11 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       // ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (reopen 2026-07-19, field-soak FAIL RC) ──
       //   가산 자동반영은 미리보기(allValues)에만 있고 이 일괄출력 경로엔 미배선이라 현장 인쇄물에 누락됐다.
       //   → form_key별 **복사본**에 SSOT 헬퍼를 적용(공유 autoValues 원본 무변경, bill_receipt_new↔bill_detail
-      //   공유키 교차오염 차단). 판정 기준 refDate=출력 시점 new Date()(AC-1), clinic_events 합집합·override 존중.
-      const surchargeRefDate = new Date();
+      //   공유키 교차오염 차단). clinic_events 합집합·override 존중.
+      //   (2026-07-19 exfb 포트 갭 close) 판정 기준 refDate = **진료일(checked_in_at)** — body canon
+      //   visitDate=checked_in_at 미러. 출력 시점(now)이 아니라 진료 당시 요일·공휴일·야간을 판정해
+      //   과거일 진료분을 나중에 출력해도 가산 정확(일요일 진료→월요일 출력 시에도 공휴일 가산 유지).
+      const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
       const surchargeIsCalHoliday = batchHolidayDateSet.has(toLocalDateStr(surchargeRefDate));
       // 일괄출력은 편집 UI가 없어 수동 override 없음 → 빈 집합(모든 대상 키 자동 folding).
       const noOverride = new Set<string>();
@@ -2526,17 +2530,20 @@ function IssueDialog({
 
     // ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (B안): 출력시점 야간·공휴일 가산 자동 반영 ──
     //   대상 2종 서류(진료비 계산서·영수증 신양식 bill_receipt_new / 세부산정내역 bill_detail)만 form-scoped 적용.
-    //   판정 기준 = 출력 시점 현재 날짜·시간(new Date(), AC-1) + 달력 빨간날(clinic_events) 합집합.
+    //   판정 기준 = **진료일(checked_in_at)** 날짜·시간 + 달력 빨간날(clinic_events) 합집합.
+    //   (2026-07-19 exfb 포트 갭 close) body canon visitDate=checked_in_at 미러 — 출력 시점(new Date())이
+    //   아니라 진료 당시로 판정(과거일 출력 정확). checked_in_at 부재 시 now 폴백(resolveSurchargeRefDate).
     //   가산 범위(Q4) = 진찰료(급여) base × 30%. 겹침 = 공휴일 우선 단일(AC-3). 미가산 시 공란·기본금액(AC-5).
     //   ★가드(AC-6): FE-only 표시 전용 — service_charges 영속 없음 → 급여 본인부담 분자 이중계상 없음.
     //   (reopen 2026-07-19) 인라인 로직을 applyNightHolidaySurcharge(SSOT)로 일원화 — 미리보기(여기)와
     //   일괄출력(handleBatchPrint valuesFor)이 동일 헬퍼를 호출해 preview/print divergence를 구조적으로 차단.
+    const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
     applyNightHolidaySurcharge(
       base,
       template.form_key,
-      holidayDateSet.has(toLocalDateStr(new Date())),
+      holidayDateSet.has(toLocalDateStr(surchargeRefDate)),
       surchargeOverriddenKeys,
-      new Date(),
+      surchargeRefDate,
       buildSurchargeDetailRowHtml,
     );
 
