@@ -81,3 +81,8 @@ rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
 # 실행시 off-git _backup 테이블에만 영속) → SOP §4-b 버전관리 위해 git-track 허용 (*backfill*.sql override)
 !db-gate/T-20260714-foot-RESVROUTE-DOPAMINE-BACKFILL_backfill.sql
 .qa/
+
+# T-20260720-foot-REPO-GHOST-SIGNALS-SWEEP — repo-root 유령 핸드오프 아티팩트 재-track 차단.
+# signals.md·retro/ 는 claude-sync SSOT(~/claude-sync/memory/_handoff/)가 정본 → 레포에 복사본 금지(state-sync gap 방지).
+/signals.md
+/retro/
