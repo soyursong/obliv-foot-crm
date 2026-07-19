@@ -127,16 +127,16 @@ async function snap(page: import('@playwright/test').Page, html: string, file: s
 test.describe('T-20260714-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안) — 합계 공단 제외·공단 표시 유지', () => {
   test.use({ viewport: { width: 1123, height: 900 } }); // A4 landscape @96dpi
 
-  // 기대값 (general grade): 본인 4,100 / 공단 9,270 / 비급여 350,000 / grandTotal 363,370 / 합계 354,100
+  // 기대값 (general grade): 본인 4,000 / 공단 9,370 / 비급여 350,000 / grandTotal 363,370 / 합계 354,000
   test('pure-path: 합계 산식 = 본인부담금 + 비급여 (공단 제외), 공단 값은 별도 산출', () => {
     const fb = computeFootBilling(MIXED_VISIT, 'general');
-    expect(fb.copaymentTotal).toBe(4100);                      // 본인부담금
-    expect(fb.liveBillingValues.insuranceCovered).toBe(9270);  // 공단부담금
+    expect(fb.copaymentTotal).toBe(4000);                      // 본인부담금
+    expect(fb.liveBillingValues.insuranceCovered).toBe(9370);  // 공단부담금
     expect(fb.nonCoveredTotal).toBe(350000);                   // 비급여
     expect(fb.grandTotal).toBe(363370);                        // 급여전액+비급여(공단 포함)
-    // B안 합계 = 본인부담금 + 비급여 = 354,100 (공단 9,270 제외 → grandTotal 보다 정확히 공단만큼 작음)
+    // B안 합계 = 본인부담금 + 비급여 = 354,000 (공단 9,370 제외 → grandTotal 보다 정확히 공단만큼 작음)
     const billTotal = fb.copaymentTotal + fb.nonCoveredTotal;
-    expect(billTotal).toBe(354100);
+    expect(billTotal).toBe(354000);
     expect(fb.grandTotal - billTotal).toBe(fb.liveBillingValues.insuranceCovered);
   });
 
@@ -146,32 +146,32 @@ test.describe('T-20260714-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안) — 합계 공
       insuranceGrade: 'general', copaymentTotal: fb.copaymentTotal,
     });
     const grid = buildBillReceiptFeeGridHtml(items);
-    // AC-3: 공단부담(9,270)·본인부담(4,100) 모두 표기 유지
-    expect(grid).toContain('9,270');
-    expect(grid).toContain('4,100');
-    // 급여 행 합계 = 본인부담(4,100) + 비급여 0(이 행은 급여) → 4,100. 공단 포함(13,370) 아님.
+    // AC-3: 공단부담(9,370)·본인부담(4,000) 모두 표기 유지
+    expect(grid).toContain('9,370');
+    expect(grid).toContain('4,000');
+    // 급여 행 합계 = 본인부담(4,000) + 비급여 0(이 행은 급여) → 4,000. 공단 포함(13,370) 아님.
     // 4셀 구조 유지: <td class="br-num"> 가 급여 행에 4개(공단|본인|비급여|합계).
-    const coveredRow = grid.split('\n').find((r) => r.includes('9,270'))!;
+    const coveredRow = grid.split('\n').find((r) => r.includes('9,370'))!;
     expect((coveredRow.match(/br-num/g) || []).length).toBe(4);
     expect(coveredRow).not.toContain('13,370'); // 급여 행 합계에 공단포함 전액 미표기
   });
 
-  test('S1 세부산정내역 grade 실재(general) → 공단 9,270 표기 유지 + 합계 354,100(공단 제외)', async ({ page }) => {
+  test('S1 세부산정내역 grade 실재(general) → 공단 9,370 표기 유지 + 합계 354,000(공단 제외)', async ({ page }) => {
     const html = renderBillDetailDoc('general');
-    expect(html).toContain('9,270');    // AC-3 공단부담금 표시 유지
-    expect(html).toContain('4,100');    // 본인부담금
+    expect(html).toContain('9,370');    // AC-3 공단부담금 표시 유지
+    expect(html).toContain('4,000');    // 본인부담금
     expect(html).toContain('350,000');  // AC-4 비급여 회귀 0
-    expect(html).toContain('354,100');  // AC-2 합계 = 본인 + 비급여(공단 제외)
+    expect(html).toContain('354,000');  // AC-2 합계 = 본인 + 비급여(공단 제외)
     expect(html).not.toContain('363,370'); // 공단포함 grandTotal 이 합계로 노출되지 않음
     await snap(page, html, 'S1-detail-graded.png');
   });
 
-  test('S2 계산서·영수증 grade 실재(general) → 공단 9,270 표기 유지 + 합계 354,100(공단 제외)', async ({ page }) => {
+  test('S2 계산서·영수증 grade 실재(general) → 공단 9,370 표기 유지 + 합계 354,000(공단 제외)', async ({ page }) => {
     const html = renderBillReceiptDoc('general');
-    expect(html).toContain('9,270');    // AC-3 공단부담 열 표시 유지
-    expect(html).toContain('4,100');    // 본인부담
+    expect(html).toContain('9,370');    // AC-3 공단부담 열 표시 유지
+    expect(html).toContain('4,000');    // 본인부담
     expect(html).toContain('350,000');  // AC-4 비급여 회귀 0
-    expect(html).toContain('354,100');  // AC-1 합계 = 본인 + 비급여(공단 제외)
+    expect(html).toContain('354,000');  // AC-1 합계 = 본인 + 비급여(공단 제외)
     expect(html).not.toContain('363,370'); // 공단포함 총액이 합계로 노출되지 않음
     await snap(page, html, 'S2-receipt-graded.png');
   });

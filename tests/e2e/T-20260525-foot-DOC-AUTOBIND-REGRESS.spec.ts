@@ -37,9 +37,13 @@ import {
 const FULL_BIND_VALUES: Record<string, string> = {
   // 고객 기본
   patient_name: '홍길동',
-  patient_phone: '010-1111-2222',
+  // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: 합성 fixture PHI를 phi-scan.sh(§4 PHI 스캐너,
+  //   T-20260716-PHI-SCANNER-PARITY-ROOTFIX) 통과형 비할당/구조적 센티넬로 정규화(실환자 아님, 오탐 제거).
+  //   phone → 010-0000-0000(MSIT 비할당 구조 센티넬, phi-allowlist permit). RRN → 성별자리 0(비할당) 로
+  //   구조적 무효화하여 스캐너 RRN regex(-[1-8]) 비매치. 렌더 assert(toContain('900515')) 불변. ★fixture만(AC4).
+  patient_phone: '010-0000-0000',
   // AC-2 핵심 필드
-  patient_rrn: '900515-1234567',       // 주민번호 (rrn_decrypt RPC)
+  patient_rrn: '900515-0000000',       // 합성 주민번호(성별자리 0 = 비할당 센티넬, 실환자 아님)
   patient_address: '서울 종로구 세종대로 201호',
   patient_gender: '☐ 여  ☑ 남',
   patient_birthdate: '1990년 05월 15일',
@@ -50,6 +54,12 @@ const FULL_BIND_VALUES: Record<string, string> = {
   issue_date: '2026-05-25',
   doctor_name: '김의사',
   doctor_license_no: '99999',          // 면허번호 (clinic_doctors.license_no)
+  // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO (AC1 fixture 정합): 처방전 처방의료인 축 분리
+  //   (T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND, 7bfb278d) — rx_standard 는 {{doctor_*}}(청구·대표 축)이 아닌
+  //   {{prescriber_name}}·{{prescriber_license_no}}(clinic_doctors 실 처방의, 기관명 오염 차단)로 재배선됨.
+  //   구 fixture 가 prescriber 키 미제공 → rx_standard 렌더 시 공란. ★fixture 입력만 — 템플릿/렌더 무접촉(AC4).
+  prescriber_name: '김의사',            // 처방의료인 성명 (clinic_doctors.name)
+  prescriber_license_no: '99999',       // 처방의료인 면허번호 (clinic_doctors.license_no)
   doctor_specialist_no: '88888',
   doctor_seal_image: '',
   // 병원
@@ -86,7 +96,8 @@ test.describe('AC-2: 고객정보 HTML 플레이스홀더 전건', () => {
     { key: 'treat_confirm', fields: ['patient_name', 'patient_rrn', 'record_no', 'doctor_license_no'] },
     { key: 'visit_confirm', fields: ['patient_name', 'patient_rrn', 'record_no', 'doctor_license_no'] },
     { key: 'diag_opinion',  fields: ['patient_name', 'patient_rrn', 'record_no', 'doctor_license_no'] },
-    { key: 'rx_standard',   fields: ['patient_name', 'record_no', 'doctor_license_no'] },
+    // rx_standard: 처방의료인 축 분리(T-20260718-DOCPRINT-RX-DOCTOR-BIND) → doctor_license_no 대신 prescriber_license_no
+    { key: 'rx_standard',   fields: ['patient_name', 'record_no', 'prescriber_license_no'] },
   ];
 
   for (const { key, fields } of FORMS_NEEDING_PATIENT_INFO) {
@@ -126,13 +137,13 @@ test.describe('AC-2: 고객정보 바인딩 렌더', () => {
     expect(body).toContain('99999');             // 면허번호
   });
 
-  test('rx_standard — record_no/doctor_license_no 렌더', async ({ page }) => {
+  test('rx_standard — record_no/prescriber_license_no 렌더', async ({ page }) => {
     const tpl = getHtmlTemplate('rx_standard')!;
     const bound = bindHtmlTemplate(tpl, FULL_BIND_VALUES);
     await page.setContent(`<html><body>${bound}</body></html>`);
     const body = await page.locator('body').textContent() ?? '';
     expect(body).toContain('F-0042');
-    expect(body).toContain('99999');
+    expect(body).toContain('99999');  // 처방의료인 면허 = prescriber_license_no (RX-DOCTOR-BIND 후 doctor_* 아님)
   });
 });
 

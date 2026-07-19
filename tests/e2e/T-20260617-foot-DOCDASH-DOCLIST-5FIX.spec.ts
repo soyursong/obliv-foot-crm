@@ -34,15 +34,24 @@ test.describe('A1 — 진료대시보드 테이블 가로 스크롤 실효화', 
     expect([...DASH.matchAll(/<div className="overflow-x-auto">/g)].length).toBeGreaterThanOrEqual(2);
   });
 
-  test('colgroup 8칼럼 % 합 100 무회귀(두 테이블 동일 폭셋)', () => {
-    // 4 + 8 + 7 + 9 + 8 + 9 + 18 + 37 = 100
-    const widths = [...DASH.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((m) => Number(m[1]));
-    // 두 colgroup(대기/완료) → 16개 col, 각 8개 합 100
-    expect(widths.length).toBe(16);
-    const firstSum = widths.slice(0, 8).reduce((a, b) => a + b, 0);
-    const secondSum = widths.slice(8, 16).reduce((a, b) => a + b, 0);
-    expect(firstSum).toBe(100);
-    expect(secondSum).toBe(100);
+  test('colgroup 8칼럼 고정px 폭셋 무회귀(두 테이블 동일)', () => {
+    // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: 폭 정책이 % → 고정px+auto 로 재설계됨
+    //   (T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN, b65ba09e, 문지은 대표원장 blessed·deploy-ready).
+    //   구 '% 합 100' 불변식은 superseded(퍼센트 col 0건). 8칼럼 유지 + 고정px 폭셋 정합으로 가드 전환.
+    //   ★spec 만 — DoctorCallDashboard 소스 무접촉(AC4). (진료대시보드 소스변경은 위 blessed 티켓이 이미 완료)
+    const EXPECTED_COLS = ['w-14', 'w-28', 'w-36', 'w-28', 'w-16', 'w-24', 'w-40']; // + 마지막 auto <col />
+    // 두 colgroup(대기/완료) 동일 폭셋 = 각 7개 고정px + 1개 bare(auto) = 8칼럼, 총 16칼럼
+    const colgroups = [...DASH.matchAll(/<colgroup>([\s\S]*?)<\/colgroup>/g)].map((m) => m[1]);
+    expect(colgroups.length, '대기/완료 두 colgroup').toBe(2);
+    for (const cg of colgroups) {
+      const fixedCols = [...cg.matchAll(/<col className="(w-\d+)" \/>/g)].map((m) => m[1]);
+      const bareCols = [...cg.matchAll(/<col \/>/g)].length;
+      expect(fixedCols).toEqual(EXPECTED_COLS);          // 7개 고정px 순서 정합
+      expect(bareCols, '마지막 auto 칼럼(임상경과 흡수)').toBe(1);
+      expect(fixedCols.length + bareCols, '8칼럼 유지').toBe(8);
+    }
+    // 퍼센트 폭 col 잔존 0건(구 정책 회귀 방지)
+    expect([...DASH.matchAll(/<col className="w-\[\d+%\]" \/>/g)].length).toBe(0);
   });
 });
 

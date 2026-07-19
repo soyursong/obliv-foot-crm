@@ -28,7 +28,11 @@ const created = { customers: [] as string[], packages: [] as string[], checkIns:
 
 async function mkCustomer(name: string): Promise<string> {
   const ts = Date.now() + Math.floor(Math.random() * 100000);
-  const phone = `010${String(ts).slice(-8)}`;
+  // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO (AC2): 구 국내형 '010…' → E.164 '+8210…' 정합.
+  //   공유 테스트DB의 customers_phone_e164_chk(T-20260713 PHONE-E164-CHK, `^\+82(1[016789]\d{7,8})$`)가
+  //   raw '010…' 을 fail-closed 거부 → mkCustomer 결정론 insert 실패(=RPC 도달 前 fixture 파손, race 아님).
+  //   정본 helper(tests/fixtures/index.ts e164Mobile)와 동일 형식. ★fixture 데이터만 — 스키마/RPC 무접촉(AC4).
+  const phone = `+8210${String(ts).slice(-8)}`;
   const { data, error } = await sb!.from('customers')
     .insert({ clinic_id: CLINIC_ID, name: `qa-fixture-${name}-${ts}`, phone, visit_type: 'new', memo: MARKER })
     .select('id').single();
@@ -63,7 +67,7 @@ async function mkCheckIn(customerId: string): Promise<string> {
   const ts = Date.now();
   for (let i = 0; i < 15; i++) {
     const { data, error } = await sb!.from('check_ins').insert({
-      clinic_id: CLINIC_ID, customer_id: customerId, customer_name: 'qa-fixture', customer_phone: `010${String(ts).slice(-8)}`,
+      clinic_id: CLINIC_ID, customer_id: customerId, customer_name: 'qa-fixture', customer_phone: `+8210${String(ts).slice(-8)}`,
       visit_type: 'new', status: 'registered', queue_number: 900000 + Math.floor(Math.random() * 100000),
       checked_in_at: new Date().toISOString(), notes: MARKER,
     }).select('id').single();

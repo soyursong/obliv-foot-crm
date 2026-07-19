@@ -107,7 +107,9 @@ const JPG_FORM_KEYS = [
 const MOCK_BIND: Record<string, string> = {
   patient_name: '김테스트',
   patient_rrn: '900101-1******',
-  patient_phone: '010-0000-1234',
+  // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: 합성 phone 을 phi-scan.sh 통과형 비할당 센티넬(010-0000-0000,
+  //   phi-allowlist permit)로 정규화 — 실환자 아님, 오탐 제거. phone 값은 렌더 assert 대상 아님(placeholder만). ★fixture만(AC4).
+  patient_phone: '010-0000-0000',
   patient_address: '서울특별시 종로구 종로1가 1번지',
   patient_gender: '☑ 남  ☐ 여',
   patient_birthdate: '1990년 01월 01일',
@@ -118,6 +120,15 @@ const MOCK_BIND: Record<string, string> = {
   clinic_phone: '02-000-0000',
   clinic_fax: '02-000-0001',
   clinic_nhis_code: '12345678',
+  // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO (AC1): 신규 요양기관/대표자/법인인감 축 3종 정합 주입.
+  //   템플릿(htmlFormTemplates)이 요양기관명 셀을 {{clinic_name}}→{{hira_institution_name}} 로 재배선
+  //   (T-20260714 INSTNAME-REPPRINT), 영수증 대표자란/법인인감을 {{receipt_representative}}·
+  //   {{institution_seal_html}} 로 신설(T-20260714~15 DOCFEE/RECEIPT-REPNAME) 하였으나 이 구(舊)
+  //   종합렌더 fixture 가 미주입 → 요양기관명 공란(§5·§10 '클리닉명 누락') 결정론 fail. 값=旣 clinic_name/
+  //   개설자(clinics.representative_name) 정합. ★fixture(입력)만 추가 — 템플릿/렌더로직 무접촉(AC4).
+  hira_institution_name: '오블리브 풋센터 종로',
+  receipt_representative: '박영진',
+  institution_seal_html: '<img src="/stamp/institution.png" alt="법인 인감" style="width:48px;height:48px;" />',
   doctor_name: '이의사',
   doctor_license_no: '제12345호',
   doctor_specialist_no: '제6789호',

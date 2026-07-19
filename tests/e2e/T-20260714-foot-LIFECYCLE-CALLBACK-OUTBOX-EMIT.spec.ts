@@ -29,13 +29,16 @@ import { dirname, resolve } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: 마이그 버전 충돌해소 리네임(20260715140000→20260716140000,
+//   c3453dbb "mig version collision 해소")이 실제 파일만 옮기고 이 spec 경로 상수를 미갱신 → ENOENT 결정론 실패.
+//   실 아티팩트(20260716140000…)는 main 에 존재. ★spec 경로만 정합 — 마이그 파일/EF 무접촉(AC4).
 const MIG = resolve(
   __dirname,
-  '../../supabase/migrations/20260715140000_foot_dopamine_reschedule_emit.sql',
+  '../../supabase/migrations/20260716140000_foot_dopamine_reschedule_emit.sql',
 );
 const MIG_RB = resolve(
   __dirname,
-  '../../supabase/migrations/20260715140000_foot_dopamine_reschedule_emit.rollback.sql',
+  '../../supabase/migrations/20260716140000_foot_dopamine_reschedule_emit.rollback.sql',
 );
 const EF = resolve(
   __dirname,

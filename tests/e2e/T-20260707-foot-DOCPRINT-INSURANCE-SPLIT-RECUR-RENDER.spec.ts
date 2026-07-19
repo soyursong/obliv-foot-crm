@@ -125,10 +125,10 @@ test.describe('AC-3 실브라우저 인쇄 미리보기 evidence (SSOT 렌더)',
     await snap(page, html, 'S1-detail-gradenull.png');
   });
 
-  test('S2 세부산정내역 grade 실재(general) → 본인 4,100/공단 9,270 (회귀 없음)', async ({ page }) => {
+  test('S2 세부산정내역 grade 실재(general) → 본인 4,000/공단 9,370 (회귀 없음)', async ({ page }) => {
     const html = renderBillDetailDoc('general');
-    expect(html).toContain('4,100'); // 본인부담금
-    expect(html).toContain('9,270'); // 공단부담금
+    expect(html).toContain('4,000'); // 본인부담금 (FLOOR, 구 CEIL 4,100 정정 — T-20260719 copayCalc v1.5 미러)
+    expect(html).toContain('9,370'); // 공단부담금 (13,370-4,000, 구 9,270 정정)
     await snap(page, html, 'S2-detail-graded.png');
   });
 
@@ -140,10 +140,10 @@ test.describe('AC-3 실브라우저 인쇄 미리보기 evidence (SSOT 렌더)',
     await snap(page, html, 'S3-receipt-gradenull.png');
   });
 
-  test('S4 계산서·영수증 grade 실재(general) → 본인 4,100/공단 9,270 (회귀 없음)', async ({ page }) => {
+  test('S4 계산서·영수증 grade 실재(general) → 본인 4,000/공단 9,370 (회귀 없음)', async ({ page }) => {
     const html = renderBillReceiptDoc('general');
-    expect(html).toContain('4,100'); // 본인부담
-    expect(html).toContain('9,270'); // 공단부담
+    expect(html).toContain('4,000'); // 본인부담 (FLOOR, 구 CEIL 4,100 정정)
+    expect(html).toContain('9,370'); // 공단부담 (13,370-4,000, 구 9,270 정정)
     await snap(page, html, 'S4-receipt-graded.png');
   });
 });

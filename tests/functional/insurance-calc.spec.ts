@@ -75,9 +75,12 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     const r = calcCopaymentLocal(consultService, clinic, 'general');
     // base = ROUND(153.36 * 89.4) = 13710 (153.36*89.4 = 13710.384)
     expect(r.base_amount).toBe(13710);
-    // copay = CEIL(13710 * 0.3 / 100) * 100 = CEIL(41.13) * 100 = 4200
-    expect(r.copayment_amount).toBe(4200);
-    expect(r.insurance_covered_amount).toBe(13710 - 4200);
+    // [T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO] 구 CEIL 기대값 정정 → FLOOR (배포·규정 blessed)
+    //   근거: copayCalc.ts v1.5 CEIL→FLOOR(초과징수 정정, T-20260715-COPAY-GENERAL-CEIL-TO-FLOOR-FIX,
+    //   심평원 외래 본인부담기준표 "100원미만 절사"·시행령 별표2 §19①). copayCalc 무접촉, 기대값만 산정식 미러.
+    // copay = FLOOR(13710 * 0.3 / 100) * 100 = FLOOR(41.13) * 100 = 4100
+    expect(r.copayment_amount).toBe(4100);
+    expect(r.insurance_covered_amount).toBe(13710 - 4100);
     expect(r.applied_rate).toBe(0.3);
   });
 
@@ -86,9 +89,9 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     const r2 = calcCopaymentLocal(consultService, clinic, 'low_income_2');
     expect(r1.applied_rate).toBe(0.14);
     expect(r2.applied_rate).toBe(0.14);
-    // copay = CEIL(13710 * 0.14 / 100) * 100 = CEIL(19.194) * 100 = 2000
-    expect(r1.copayment_amount).toBe(2000);
-    expect(r2.copayment_amount).toBe(2000);
+    // copay = FLOOR(13710 * 0.14 / 100) * 100 = FLOOR(19.194) * 100 = 1900 (구 CEIL 2000 정정)
+    expect(r1.copayment_amount).toBe(1900);
+    expect(r2.copayment_amount).toBe(1900);
   });
 
   test('의료급여 1종 — 정액 1,000원', () => {
@@ -101,15 +104,15 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
   test('의료급여 2종 — 15%', () => {
     const r = calcCopaymentLocal(consultService, clinic, 'medical_aid_2');
     expect(r.applied_rate).toBe(0.15);
-    // copay = CEIL(13710 * 0.15 / 100) * 100 = CEIL(20.565) * 100 = 2100
-    expect(r.copayment_amount).toBe(2100);
+    // copay = FLOOR(13710 * 0.15 / 100) * 100 = FLOOR(20.565) * 100 = 2000 (구 CEIL 2100 정정)
+    expect(r.copayment_amount).toBe(2000);
   });
 
   test('만6세 미만(infant) — 21%', () => {
     const r = calcCopaymentLocal(consultService, clinic, 'infant');
     expect(r.applied_rate).toBe(0.21);
-    // copay = CEIL(13710 * 0.21 / 100) * 100 = CEIL(28.791) * 100 = 2900
-    expect(r.copayment_amount).toBe(2900);
+    // copay = FLOOR(13710 * 0.21 / 100) * 100 = FLOOR(28.791) * 100 = 2800 (구 CEIL 2900 정정)
+    expect(r.copayment_amount).toBe(2800);
   });
 
   test('만65세 정액 — 수가 ≤15,000원이면 1,500원', () => {
@@ -137,7 +140,7 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
   test('미확인(unverified) — 일반 30% 동일', () => {
     const r = calcCopaymentLocal(consultService, clinic, 'unverified');
     expect(r.applied_rate).toBe(0.3);
-    expect(r.copayment_amount).toBe(4200);
+    expect(r.copayment_amount).toBe(4100); // FLOOR(13710*0.3/100)*100 (구 CEIL 4200 정정)
   });
 
   test('hira_score 미설정 → 비급여 폴백', () => {
@@ -162,8 +165,8 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     };
     const r = calcCopaymentLocal(overridden, clinic, 'general');
     expect(r.applied_rate).toBe(0.5);
-    // copay = CEIL(13710 * 0.5 / 100) * 100 = CEIL(68.55) * 100 = 6900
-    expect(r.copayment_amount).toBe(6900);
+    // copay = FLOOR(13710 * 0.5 / 100) * 100 = FLOOR(68.55) * 100 = 6800 (구 CEIL 6900 정정)
+    expect(r.copayment_amount).toBe(6800);
   });
 
   test('의료급여 1종 — 수가 < 1,000원이면 정액 ≤ 수가', () => {
@@ -224,8 +227,8 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     };
     const r = calcCopaymentLocal(overrideService, clinic, 'elderly_flat');
     expect(r.base_amount).toBe(8940);
-    // 정률경로 CEIL: CEIL(8940*0.10/100)*100 = CEIL(8.94)*100 = 900
-    expect(r.copayment_amount).toBe(900);
+    // 정률경로 FLOOR: FLOOR(8940*0.10/100)*100 = FLOOR(8.94)*100 = 800 (구 CEIL 900 정정)
+    expect(r.copayment_amount).toBe(800);
   });
 
   test('만6세 미만(infant) + copayment_rate_override — override가 21% 대신 적용', () => {
@@ -238,9 +241,9 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     };
     const r = calcCopaymentLocal(overrideService, clinic, 'infant');
     expect(r.applied_rate).toBe(0.50);
-    // copay = CEIL(13710 * 0.50 / 100) * 100 = CEIL(68.55) * 100 = 6900
-    expect(r.copayment_amount).toBe(6900);
-    expect(r.insurance_covered_amount).toBe(13710 - 6900);
+    // copay = FLOOR(13710 * 0.50 / 100) * 100 = FLOOR(68.55) * 100 = 6800 (구 CEIL 6900 정정)
+    expect(r.copayment_amount).toBe(6800);
+    expect(r.insurance_covered_amount).toBe(13710 - 6800);
   });
 
   test('copayment_rate_override > 1.0 → 본인부담 상한 = 수가 (클리핑)', () => {

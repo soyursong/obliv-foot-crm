@@ -120,7 +120,10 @@ test.describe('T-20260611-foot-DOC-FEATURE-AUDIT-HARDENING — 서류 전 기능
       patient_name: '홍길동',
       issue_date: '2026-06-11',
       visit_date: '2026-06-11',
-      clinic_name: '오블리브 풋센터',
+      // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO (AC1): bill_receipt 요양기관명 셀 재배선
+      //   ({{clinic_name}} → {{hira_institution_name}}, T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT 669888d0).
+      //   구 fixture 가 clinic_name 키로 바인딩 → 신양식이 무시해 공란. ★fixture 입력만 — 템플릿/렌더 무접촉(AC4).
+      hira_institution_name: '오블리브 풋센터',
       // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY(B안): 旧 total_amount(공단포함 grandTotal)
       //   placeholder 제거 → receipt_total(본인부담+비급여, 공단 제외)로 이관. 합계 렌더 자체는 불변.
       receipt_total: '160,000',

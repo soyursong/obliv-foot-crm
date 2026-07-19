@@ -82,20 +82,25 @@ test.describe('item2/AC2 — 차트 칼럼(헤더+셀+이모지) 제거', () => 
     expect(thOrder(s.slice(doneStart, doneEnd))).toEqual(DEPLOYED);
   });
 
-  // SUPERSEDED by ELAPSED-CLINICAL-3FIX: 차트(6%) 제거(NAME-EMOJI) + 시간(5%) 제거(ELAPSED) → 8칼럼, 합 100%.
-  test('colgroup 8칼럼 + 합 100% (양 섹션, 차트·시간 제거분 임상경과 흡수)', () => {
+  // SUPERSEDED(2회): ①ELAPSED-CLINICAL-3FIX 차트·시간 제거 → 8칼럼. ②T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO:
+  //   폭 정책 % → 고정px+auto 재설계(T-20260718-foot-MEDCHART-TABLE-COLWIDTH-TIGHTEN, b65ba09e, 문지은 대표원장
+  //   blessed·deploy-ready). '합 100%' 불변식 superseded(퍼센트 col 0건). 8칼럼 유지 + 고정px 폭셋으로 가드 전환.
+  //   ★spec 만 — DoctorCallDashboard 소스 무접촉(AC4). (진료대시보드 소스변경은 위 blessed 티켓이 이미 완료)
+  test('colgroup 8칼럼 고정px 폭셋 (양 섹션, 차트·시간 제거분 임상경과 흡수)', () => {
     const s = DASH();
     const g1Start = s.indexOf('<colgroup>');
     const g1 = s.slice(g1Start, s.indexOf('</colgroup>', g1Start));
     const g2Start = s.indexOf('<colgroup>', g1Start + 1);
     const g2 = s.slice(g2Start, s.indexOf('</colgroup>', g2Start));
     const cols = (b: string) => (b.match(/<col /g) ?? []).length;
-    const pct = (b: string) =>
-      [...b.matchAll(/w-\[(\d+)%\]/g)].reduce((a, m) => a + Number(m[1]), 0);
+    const fixedPx = (b: string) => [...b.matchAll(/<col className="(w-\d+)" \/>/g)].map((m) => m[1]);
+    const EXPECTED = ['w-14', 'w-28', 'w-36', 'w-28', 'w-16', 'w-24', 'w-40']; // + 마지막 auto <col />
     expect(cols(g1)).toBe(8);
     expect(cols(g2)).toBe(8);
-    expect(pct(g1)).toBe(100);
-    expect(pct(g2)).toBe(100);
+    expect(fixedPx(g1)).toEqual(EXPECTED);
+    expect(fixedPx(g2)).toEqual(EXPECTED);
+    // 구 퍼센트 폭 정책 회귀 방지(양 colgroup)
+    expect([...(g1 + g2).matchAll(/w-\[\d+%\]/g)].length).toBe(0);
   });
 
   // SUPERSEDED by ELAPSED-CLINICAL-3FIX: 시간 칼럼 제거 → colSpan 9→8(양 테이블).

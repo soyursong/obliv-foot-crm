@@ -116,8 +116,14 @@ test.describe('시나리오3 AC-3: 다른 서류 회귀 없음', () => {
   });
 
   test('도장 placeholder는 inline 텍스트셀에만 — 우하단 stampOverlay 마크업 없음', () => {
+    // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: raw 'position:absolute' 전면금지는 blessed 비-도장
+    //   포지셔닝(T-20260717-RECEIPT-NEWFORM-3FIX #1 대제목 정렬 .chk position:absolute, e232a082)까지
+    //   오탐 → 가드 의도(우하단 '도장/인영' overlay 금지)로 정밀화. position:fixed 는 전면금지 유지(0건),
+    //   position:absolute 는 stamp/seal/도장/날인/인영 마크업과 결합된 경우만 금지. ★spec 만 — 소스 무접촉(AC4).
     const lower = TEMPLATES_SRC.toLowerCase();
     expect(lower).not.toContain('position:fixed');
-    expect(lower).not.toContain('position:absolute');
+    // 도장/인영 overlay 가 absolute/fixed 로 배치되면 실패(양방향)
+    expect(TEMPLATES_SRC).not.toMatch(/position\s*:\s*(fixed|absolute)[^"'`]*(stamp|seal|도장|날인|인영)/i);
+    expect(TEMPLATES_SRC).not.toMatch(/(stamp|seal|도장|날인|인영)[^"'`]*position\s*:\s*(fixed|absolute)/i);
   });
 });
