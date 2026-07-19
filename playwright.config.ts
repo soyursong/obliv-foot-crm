@@ -422,6 +422,9 @@ export default defineConfig({
         // T-20260719-foot-DOCTAB-NEW-CREATE: 2번차트 [서류] 탭 신규(additive) — 예약내역 목록+행별 재출력+
         //   당일 서류 발행 별도 팝업. 소스 미러 정적 가드 + page.setContent 실DOM 시나리오(auth/server 불요).
         '**/T-20260719-foot-DOCTAB-NEW-CREATE.spec.ts',
+        // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 결제 미니창 발행이력 조회+재출력(DocumentPrintPanel 이식).
+        //   소스 미러 정적 가드 + page.setContent 버튼→모달 토글(auth/server 불요).
+        '**/T-20260719-foot-DOCHIST-MULTIPATH-EXTEND.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -466,6 +469,9 @@ export default defineConfig({
         '**/T-20260716-foot-DOCFEE-NONPAY-SEAL.spec.ts',
         '**/T-20260713-foot-DOCPRINT-SEAL-MOON-INSTITUTION-AC6V2.spec.ts',
         '**/T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT.spec.ts',
+        // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND: unit 전용 정적/setContent spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260719-foot-DOCHIST-MULTIPATH-EXTEND.spec.ts',
       ],
     },
     {

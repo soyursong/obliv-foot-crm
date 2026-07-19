@@ -28,6 +28,7 @@ import {
   Check,
   ChevronRight,
   ChevronDown,
+  Clock,
   CreditCard,
   FileText,
   Layers,
@@ -36,6 +37,7 @@ import {
   Square,
   CheckSquare,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   Dialog,
@@ -56,6 +58,10 @@ import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
+// T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 결제 미니창 발행이력 조회+재출력 —
+//   1번차트(CheckInDetailSheet) 기준점과 동일 컴포넌트/데이터소스 재사용(경로별 별도구현 금지).
+//   checkIn(방문) 스코프 = form_submissions.check_in_id 필터 = 그 결제 대상 방문 서류만(전체이력 아님).
+import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate } from '@/lib/insurance';
 import {
@@ -832,6 +838,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [docSettlePrinting, setDocSettlePrinting] = useState(false);
   // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 기록용 staffId
   const [staffId, setStaffId] = useState<string | null>(null);
+  // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 발행이력 조회+재출력 모달 열림 상태.
+  //   기준점(1번차트 DocumentPrintPanel)과 동일 컴포넌트 재사용 — 이력/재출력/권한/RRN마스킹/의료서류 게이트 전부 상속.
+  const [docHistoryOpen, setDocHistoryOpen] = useState(false);
 
   // ── T-20260517-foot-BILLING-3ZONE: Zone 3 — 구매패키지 (AC-4) + 금일 시술내역 (AC-5)
   // ── T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 표시 (AC-1, AC-2)
@@ -3092,13 +3101,28 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
             {/* Zone 3 — AC-3: 서류발행 */}
             <div className="overflow-y-auto px-2 pt-1.5 pb-1 min-h-0 max-h-40 sm:max-h-none sm:flex-1">
-              <p className="text-[10px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
-                <FileText className="h-3 w-3" />
-                <span>서류발행</span>
-                {selectedDocKeys.size > 0 && (
-                  <span className="text-muted-foreground font-normal">({selectedDocKeys.size}종)</span>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                  <FileText className="h-3 w-3" />
+                  <span>서류발행</span>
+                  {selectedDocKeys.size > 0 && (
+                    <span className="text-muted-foreground font-normal">({selectedDocKeys.size}종)</span>
+                  )}
+                </p>
+                {/* T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 해당 방문 발행이력 조회+재출력.
+                    1번차트와 동일 DocumentPrintPanel(historyAtTop) 모달 재사용 — checkIn 방문 스코프. */}
+                {checkIn && (
+                  <button
+                    type="button"
+                    onClick={() => setDocHistoryOpen(true)}
+                    className="inline-flex items-center gap-1 rounded border border-teal-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-50 transition shrink-0"
+                    data-testid="btn-pmw-doc-history"
+                    title="이 방문에 발행된 서류 이력 조회 및 재출력"
+                  >
+                    <Clock className="h-3 w-3" /> 발행이력·재출력
+                  </button>
                 )}
-              </p>
+              </div>
               {/* T-20260522-foot-INS-DOC-PRINT: foot-service + insurance 카테고리 분리 렌더링 */}
               <div className="flex flex-col gap-1" data-testid="doc-template-list">
                 {/* T-20260620-foot-DOCLIST-ORDER-10: 확정 10종만 + 확정 순서 (SSOT) */}
@@ -3283,6 +3307,42 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           </div>
           </div>
         </div>
+
+        {/* T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 발행이력 조회+재출력 모달.
+            2번차트 docReissue 모달과 동일 패턴(DocumentPrintPanel historyAtTop) — 단일 컴포넌트/데이터소스 재사용.
+            checkIn.id 방문 스코프 = 그 결제 대상 방문 서류만(전체 이력 아님). 권한/RRN마스킹/의료서류 게이트 상속. */}
+        {docHistoryOpen && checkIn && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
+            onClick={() => setDocHistoryOpen(false)}
+            data-testid="pmw-doc-history-modal"
+          >
+            <div
+              className="relative w-full max-w-2xl max-h-[90vh] overflow-auto rounded-xl bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <div className="font-semibold text-sm">
+                  발행이력·재출력 — {format(new Date(checkIn.checked_in_at), 'yyyy.MM.dd HH:mm')}
+                </div>
+                <button
+                  onClick={() => setDocHistoryOpen(false)}
+                  className="rounded p-1 hover:bg-gray-100"
+                  data-testid="btn-pmw-doc-history-close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="p-4">
+                <DocumentPrintPanel
+                  checkIn={checkIn}
+                  onUpdated={() => onSaved?.()}
+                  historyAtTop
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
