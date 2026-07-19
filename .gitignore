@@ -86,3 +86,7 @@ rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
 # signals.md·retro/ 는 claude-sync SSOT(~/claude-sync/memory/_handoff/)가 정본 → 레포에 복사본 금지(state-sync gap 방지).
 /signals.md
 /retro/
+
+# T-20260720-meta-CROSSFORK-REPO-GHOST-HANDOFF-ARTIFACTS-SWEEP — _handoff/ (L3 핸드오프 아티팩트: qa_screenshots 등)는
+# claude-sync SSOT(~/claude-sync/memory/_handoff/)가 정본 → 프로덕트 레포 track 금지(하드포크 index 상속 유령 차단).
+/_handoff/
