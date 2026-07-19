@@ -425,6 +425,9 @@ export default defineConfig({
         // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 결제 미니창 발행이력 조회+재출력(DocumentPrintPanel 이식).
         //   소스 미러 정적 가드 + page.setContent 버튼→모달 토글(auth/server 불요).
         '**/T-20260719-foot-DOCHIST-MULTIPATH-EXTEND.spec.ts',
+        // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: 세부산정내역 하단 3행(계 5열 세로합·끝처리 조정 10원절사·
+        //   합계 병합/중앙정렬) — 순수 로직(computeBillDetailRounding) + setContent 렌더 spec. auth/server 불요.
+        '**/T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -458,6 +461,9 @@ export default defineConfig({
         // T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK: unit 전용 setContent 렌더 spec →
         //   무-project 실행 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 끌어들이지 않도록 제외. unit 에서만 실행.
         '**/T-20260716-foot-DOCPRINT-BILLDETAIL-SUBTOTAL-TOTAL-BLANK.spec.ts',
+        // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: unit 전용 순수+setContent spec → 무-project 실행
+        //   (supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX.spec.ts',
         // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: db-only(unit 전용) — desktop-chrome 에서 제외해
         //   `npx playwright test <file>` 무-project 실행(supervisor QA) 시 auth.setup(TEST_PASSWORD) 미기동.
         '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',

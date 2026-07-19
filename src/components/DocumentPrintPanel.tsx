@@ -125,6 +125,7 @@ import {
   loadEffectiveInsuranceGrade,
   buildFootBillDetailItems,
   fillBillItemCopayment,
+  computeBillDetailRounding,
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
@@ -1088,9 +1089,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             autoValues.total_fund = autoValues.subtotal_fund;
             // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 계산서·영수증/세부산정내역 '합계' =
             //   급여 본인부담금 + 비급여(공단 제외). 표시된 본인부담금 총계(billCopay)+비급여 총계와 정합.
-            autoValues.detail_total = formatAmount(billCopay + nonCoveredTotal);
-            autoValues.detail_subtotal = autoValues.detail_total;
-            autoValues.receipt_total = autoValues.detail_total;
+            // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②③: 계 총액(절사 전)/끝처리 조정/합계(절사 후) 분리.
+            {
+              const payableB = billCopay + nonCoveredTotal;
+              const { adjustment, roundedTotal } = computeBillDetailRounding(payableB);
+              autoValues.detail_subtotal = formatAmount(payableB);
+              autoValues.detail_rounding = formatAmount(adjustment);
+              autoValues.detail_total = formatAmount(roundedTotal);
+              autoValues.receipt_total = autoValues.detail_total;
+            }
           }
         }
       }
@@ -1126,9 +1133,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           autoValues.total_fund = autoValues.subtotal_fund;
           // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 계산서·영수증/세부산정내역 '합계' =
           //   급여 본인부담금 + 비급여(공단 제외). copaymentTotal(본인)+nonCoveredTotal(비급여) — 공단(insuranceCovered) 제외.
-          autoValues.detail_total = formatAmount(fbBatch.copaymentTotal + fbBatch.nonCoveredTotal);
-          autoValues.detail_subtotal = autoValues.detail_total;
-          autoValues.receipt_total = autoValues.detail_total;
+          // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②③: 계 총액(절사 전)/끝처리 조정/합계(절사 후) 분리.
+          {
+            const payableB = fbBatch.copaymentTotal + fbBatch.nonCoveredTotal;
+            const { adjustment, roundedTotal } = computeBillDetailRounding(payableB);
+            autoValues.detail_subtotal = formatAmount(payableB);
+            autoValues.detail_rounding = formatAmount(adjustment);
+            autoValues.detail_total = formatAmount(roundedTotal);
+            autoValues.receipt_total = autoValues.detail_total;
+          }
         }
       } else if (needsItems && !(chargeItems && chargeItems.length > 0)) {
         // service_charges·check_in_services 모두 없을 때: bill_detail/rx_standard/bill_receipt 빈 rows 처리
@@ -1141,8 +1154,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         autoValues.subtotal_fund = '0';
         autoValues.total_fund = '0';
         // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 항목 0건 → 공단제외 합계도 0 명시(공란 방지).
+        // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②: 끝처리 조정도 0 명시.
         autoValues.detail_total = '0';
         autoValues.detail_subtotal = '0';
+        autoValues.detail_rounding = '0';
         autoValues.receipt_total = '0';
       }
 
@@ -2320,8 +2335,14 @@ function IssueDialog({
       base.total_fund = base.subtotal_fund;
       // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 세부산정내역 '합계' = 본인부담금 + 비급여(공단 제외).
       //   공단부담금(subtotal_fund/total_fund) 칸은 위에서 그대로 유지 — 합계에서만 공단 제외.
-      base.detail_total = formatAmount(footFb.copaymentTotal + footFb.nonCoveredTotal);
-      base.detail_subtotal = base.detail_total;
+      // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②③: 계 총액(절사 전)/끝처리 조정/합계(절사 후) 분리.
+      {
+        const payableB = footFb.copaymentTotal + footFb.nonCoveredTotal;
+        const { adjustment, roundedTotal } = computeBillDetailRounding(payableB);
+        base.detail_subtotal = formatAmount(payableB);
+        base.detail_rounding = formatAmount(adjustment);
+        base.detail_total = formatAmount(roundedTotal);
+      }
     } else if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
       // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(기존 동작 보존).
       // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 로 급여 본인부담금 열 표시.
@@ -2360,8 +2381,14 @@ function IssueDialog({
       base.total_fund = base.subtotal_fund;
       // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 폴백 경로도 '합계' = 본인부담금 + 비급여(공단 제외).
       //   표시된 본인부담금 총계(coveredCopay)+비급여 총계와 정합. 공단(coveredFund) 칸은 표시 유지.
-      base.detail_total = formatAmount(coveredCopay + nonCoveredTotal);
-      base.detail_subtotal = base.detail_total;
+      // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②③: 계 총액(절사 전)/끝처리 조정/합계(절사 후) 분리.
+      {
+        const payableB = coveredCopay + nonCoveredTotal;
+        const { adjustment, roundedTotal } = computeBillDetailRounding(payableB);
+        base.detail_subtotal = formatAmount(payableB);
+        base.detail_rounding = formatAmount(adjustment);
+        base.detail_total = formatAmount(roundedTotal);
+      }
     } else if (template.form_key === 'bill_detail') {
       base.items_html = buildBillDetailItemsHtml([]);
       base.subtotal_amount = base.total_amount;
@@ -2372,8 +2399,10 @@ function IssueDialog({
       base.subtotal_fund = '0';
       base.total_fund = '0';
       // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 항목 0건 → 공단제외 합계 0 명시(공란 방지).
+      // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②: 끝처리 조정도 0 명시.
       base.detail_total = '0';
       base.detail_subtotal = '0';
+      base.detail_rounding = '0';
     }
 
     // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(fee_grid_html).

@@ -34,6 +34,7 @@ import path from 'path';
 import {
   computeFootBilling,
   buildFootBillDetailItems,
+  computeBillDetailRounding,
   type FootBillingItem,
   type BillingService,
 } from '../../src/lib/footBilling';
@@ -115,9 +116,13 @@ function bindPmw(items: FootBillingItem[], grade: 'general' | null, applyFix: bo
 
   if (applyFix) {
     // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION fix: 계/합계/총진료비 = 본인부담 + 비급여(공단 제외)
-    values.detail_total = formatAmount(copaymentTotal + nonCovered);
-    values.detail_subtotal = values.detail_total;
-    values.receipt_total = formatAmount(copaymentTotal + nonCovered);
+    // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: 계 총액(절사 전)/끝처리 조정/합계(절사 후) 분리.
+    const payable = copaymentTotal + nonCovered;
+    const { adjustment, roundedTotal } = computeBillDetailRounding(payable);
+    values.detail_subtotal = formatAmount(payable);
+    values.detail_rounding = formatAmount(adjustment);
+    values.detail_total = formatAmount(roundedTotal);
+    values.receipt_total = formatAmount(payable);
   }
   return { fb, values, excludeSum: copaymentTotal + nonCovered };
 }
@@ -142,7 +147,8 @@ test('AC-7 역가드: FIX 미적용 PMW 바인딩이면 계/합계/총진료비 
   const receiptHtml = bindHtmlTemplate(getHtmlTemplate('bill_receipt')!, values);
   // 계/합계 총액 셀 = 빈 <td>...</td> (미바인딩)
   expect(detailHtml).toContain('<td class="num-cell"></td>');
-  expect(detailHtml).toContain('<td class="num-cell"><strong></strong></td>');
+  // '합계' 병합 총액 공란 (colspan=5 중앙정렬, T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-③)
+  expect(detailHtml).toContain('<td colspan="5" class="num-cell" style="text-align:center;"><strong></strong></td>');
   // 총 진료비 합계 셀 = ₩ (뒤 값 없음)
   await page.setContent(receiptHtml);
   const grand = await page.locator('text=총 진료비 합계').first();
@@ -166,12 +172,12 @@ for (const [label, items, grade] of [
     const detailHtml = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, values);
     const receiptHtml = bindHtmlTemplate(getHtmlTemplate('bill_receipt')!, values);
 
-    // AC-6: '계' 행 총액 셀 = excludeSum (비어있지 않음)
+    // AC-6: '계' 행 총액 셀 = excludeSum (비어있지 않음). payable 10원 배수라 절사=0 → 합계=excludeSum.
     expect(detailHtml).toContain(`<td class="num-cell">${won(excludeSum)}</td>`);
-    // AC-2: '합계' 행 총액 셀 = excludeSum (strong)
-    expect(detailHtml).toContain(`<td class="num-cell"><strong>${won(excludeSum)}</strong></td>`);
+    // AC-2 + MEDCALC AC-③: '합계' 행 병합 총액 셀 = excludeSum (colspan=5 중앙정렬 strong)
+    expect(detailHtml).toContain(`<td colspan="5" class="num-cell" style="text-align:center;"><strong>${won(excludeSum)}</strong></td>`);
     // 공란 회귀가 아님을 명시
-    expect(detailHtml).not.toContain('<td class="num-cell"><strong></strong></td>');
+    expect(detailHtml).not.toContain('<td colspan="5" class="num-cell" style="text-align:center;"><strong></strong></td>');
 
     // AC-1: 계산서·영수증 총 진료비 합계 = excludeSum
     expect(receiptHtml).toContain(`₩ ${won(excludeSum)}`);

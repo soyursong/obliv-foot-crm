@@ -36,6 +36,7 @@ import path from 'path';
 import {
   computeFootBilling,
   buildFootBillDetailItems,
+  computeBillDetailRounding,
   type FootBillingItem,
   type BillingService,
 } from '../../src/lib/footBilling';
@@ -101,8 +102,12 @@ function bindDocPanel(items: FootBillingItem[], grade: 'general' | null, applyFi
 
   if (applyFix) {
     // B안(GONGDAN-HIDE-COPAY-ONLY) 보존: 계/합계 = 본인부담금 + 비급여(공단 제외).
-    values.detail_total = formatAmount(fb.copaymentTotal + fb.nonCoveredTotal);
-    values.detail_subtotal = values.detail_total;
+    // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: 계 총액(절사 전) / 끝처리 조정 / 합계(절사 후) 분리.
+    const payable = fb.copaymentTotal + fb.nonCoveredTotal;
+    const { adjustment, roundedTotal } = computeBillDetailRounding(payable);
+    values.detail_subtotal = formatAmount(payable);
+    values.detail_rounding = formatAmount(adjustment);
+    values.detail_total = formatAmount(roundedTotal);
   }
   return { fb, values, sum: fb.copaymentTotal + fb.nonCoveredTotal };
 }
@@ -119,6 +124,7 @@ function bindDocPanelEmpty() {
   values.total_fund = '0';
   values.detail_total = '0';
   values.detail_subtotal = '0';
+  values.detail_rounding = '0';
   return values;
 }
 
@@ -127,13 +133,19 @@ test.beforeAll(() => {
 });
 
 // ── AC3 정적 가드: 템플릿이 계/합계 placeholder + 공단 칸 placeholder 를 유지하는지 ──
-test('AC3: bill_detail 템플릿 계/합계 = detail_subtotal/detail_total, 공단 칸 = subtotal_fund/total_fund 유지', () => {
+// T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX(AC-③, 김주연 총괄 확정): '합계' 행은 값 셀을 병합(colspan=5)+
+//   중앙정렬한 단일 셀({{detail_total}})로 재구성 → 합계 행의 per-column total_fund 셀은 제거된다.
+//   공단부담금 별도 표기는 '계' 행({{subtotal_fund}})에서 유지(GONGDAN-HIDE B안 정합). '끝처리 조정금액'은
+//   {{detail_rounding}} 로 바인딩(AC-②).
+test('AC3: bill_detail 템플릿 계=열별 placeholder 유지, 합계=detail_total 병합, 끝처리 조정=detail_rounding', () => {
   const tpl = getHtmlTemplate('bill_detail')!;
   expect(tpl).toBeTruthy();
   expect(tpl).toContain('{{detail_subtotal}}'); // '계' 행 총액 셀
-  expect(tpl).toContain('{{detail_total}}');    // '합계' 행 총액 셀
+  expect(tpl).toContain('{{detail_total}}');    // '합계' 행 병합 총액 셀
   expect(tpl).toContain('{{subtotal_fund}}');   // '계' 공단부담금 칸 (표시 유지)
-  expect(tpl).toContain('{{total_fund}}');      // '합계' 공단부담금 칸 (표시 유지)
+  expect(tpl).toContain('{{detail_rounding}}'); // '끝처리 조정금액' 셀 (AC-②)
+  // '합계' 행 = 병합(colspan=5)+중앙정렬 단일 셀 (AC-③)
+  expect(tpl).toContain('<td colspan="5" class="num-cell" style="text-align:center;"><strong>{{detail_total}}</strong></td>');
 });
 
 // ── AC-역가드: detail_* 미세팅(개명 직전)이면 계/합계 공란 렌더 재현 ──
@@ -141,7 +153,8 @@ test('역가드: DocumentPrintPanel 이 detail_* 미세팅이면 계/합계 공�
   const { values } = bindDocPanel(MIXED_VISIT, 'general', /* applyFix */ false);
   const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, values);
   expect(html).toContain('<td class="num-cell"></td>');            // '계' 총액 공란
-  expect(html).toContain('<td class="num-cell"><strong></strong></td>'); // '합계' 총액 공란
+  // '합계' 병합 총액 공란 (colspan=5 중앙정렬 셀)
+  expect(html).toContain('<td colspan="5" class="num-cell" style="text-align:center;"><strong></strong></td>');
 });
 
 for (const [label, items, grade] of [
@@ -155,17 +168,18 @@ for (const [label, items, grade] of [
     // AC1: 계/합계 placeholder 가 실제로 채워짐(공란/미바인딩 아님)
     expect(values.detail_subtotal, 'detail_subtotal(계) 미바인딩').toBeTruthy();
     expect(values.detail_total, 'detail_total(합계) 미바인딩').toBeTruthy();
-    // AC2: = computeFootBilling(copaymentTotal + nonCoveredTotal), 공단 제외
+    // AC2: = computeFootBilling(copaymentTotal + nonCoveredTotal), 공단 제외.
+    //   본 케이스들은 payable 이 10원 배수라 절사=0 → detail_total(절사 후)=won(sum).
     expect(values.detail_subtotal).toBe(won(sum));
     expect(values.detail_total).toBe(won(sum));
 
     const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, values);
     // '계' 행 총액 셀 = sum (비어있지 않음)
     expect(html).toContain(`<td class="num-cell">${won(sum)}</td>`);
-    // '합계' 행 총액 셀 = sum (strong)
-    expect(html).toContain(`<td class="num-cell"><strong>${won(sum)}</strong></td>`);
+    // '합계' 행 병합 총액 셀 = sum (colspan=5 중앙정렬 strong) — AC-③
+    expect(html).toContain(`<td colspan="5" class="num-cell" style="text-align:center;"><strong>${won(sum)}</strong></td>`);
     // 공란 회귀 아님을 명시
-    expect(html).not.toContain('<td class="num-cell"><strong></strong></td>');
+    expect(html).not.toContain('<td colspan="5" class="num-cell" style="text-align:center;"><strong></strong></td>');
 
     // AC4: 공단부담금 칸 표시 유지(insuranceCovered > 0 이면 그 값이 렌더에 존재)
     if (fb.liveBillingValues.insuranceCovered > 0) {
@@ -188,6 +202,7 @@ test('Edge: 진료항목 0건이면 계/합계 = 0 (공란/NaN 아님)', () => {
   expect(values.detail_total).toBe('0');
   const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, values);
   expect(html).toContain('<td class="num-cell">0</td>');
-  expect(html).toContain('<td class="num-cell"><strong>0</strong></td>');
+  // '합계' 병합 총액 셀 = 0 (colspan=5 중앙정렬)
+  expect(html).toContain('<td colspan="5" class="num-cell" style="text-align:center;"><strong>0</strong></td>');
   expect(html).not.toContain('NaN');
 });
