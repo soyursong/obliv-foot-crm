@@ -1452,20 +1452,13 @@ const RX_STANDARD_HTML = `
 
   <!-- ① 상단 헤더 -->
   <div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:3px;">
-    <!-- T-20260612-foot-RX-TOPBAR-PATIENT-HIRA-MISSING AC-2: 상단 좌측 고객정보 바인딩 추가.
-         진료의뢰서(REFERRAL_LETTER_HTML) 고객정보 블록과 동일 autobind 키 이식
-         (record_no·patient_name·patient_birthdate·patient_rrn·patient_phone·patient_address).
-         기존 빈 레거시 라인(조합기호·증번호·보호종별 — 풋센터 비급여 자가부담이라 데이터 소스 없음)을
-         실제 고객차트 기본정보로 치환. 미입력 필드는 빈 문자열 렌더 → 라벨만 남고 레이아웃 무붕괴(시나리오2).
-         width 고정 + 줄바꿈 허용으로 긴 주소가 외부 flex(제목/QR)를 밀지 않게 함. -->
-    <div style="font-size:7.5pt; line-height:1.7; width:160px; max-width:160px; word-break:break-all;">
-      환자정보 :&nbsp;{{record_no}}<br>
-      성&nbsp;&nbsp;&nbsp;&nbsp;명 :&nbsp;{{patient_name}}<br>
-      생년월일 :&nbsp;{{patient_birthdate}}<br>
-      주민번호 :&nbsp;{{patient_rrn}}<br>
-      연 락 처 :&nbsp;{{patient_phone}}<br>
-      주&nbsp;&nbsp;&nbsp;&nbsp;소 :&nbsp;{{patient_address}}
-    </div>
+    <!-- T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-①: 좌측 상단 고객정보 과다노출 블록 삭제(김주연 총괄 현장 피드백).
+         (구) T-20260612-foot-RX-TOPBAR-PATIENT-HIRA-MISSING 이 넣은 환자정보/성명/생년월일/주민번호/연락처/주소
+         6줄 블록 = 하단 ③ 요양급여 서식표(성명·주민번호)와 중복 + 연락처·주소·생년월일 과다노출. 삭제.
+         ★법정 필수 기재(환자 성명·주민등록번호, 의료법 시행규칙 §12)는 하단 서식표에 존치 → §12 무위반.
+         ★RX-DOCTOR-BIND(처방의료인 성명·면허 빨간박스)와는 다른 블록 — 그 실사고 수정분은 무접촉.
+         제거로 생긴 좌측 공백은 우측 QR(72px)과 대칭 spacer(72px)로 채워 처방전 제목 페이지 중앙정렬 유지. -->
+    <div style="width:72px; flex-shrink:0;"></div>
     <div style="flex:1; text-align:center;">
       <!-- T-20260601-foot-RX-QR-LABEL (현장 확정 재구현): 중앙 상단 [약국보관용/환자보관용] 구분
            라벨은 2장 출력 식별 표식으로 보존(현장 "절대 제거하지 말 것"). 제거 대상은 우측 상단
@@ -1505,14 +1498,15 @@ const RX_STANDARD_HTML = `
         <td>{{clinic_phone_only}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8; text-align:center;">주&nbsp;민&nbsp;번&nbsp;호</td>
-        <td>{{patient_rrn}}</td>
+        <!-- T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-②: 성명·주민번호 기입칸 아래 빈 여백(구 4행 좌측 빈 td 2개) 제거.
+             의료기관 측이 4행(명칭·전화·팩스·E-mail)을 요구해 환자 측 4행째가 빈칸으로 떠 있던 문제 →
+             주민번호 라벨·값 셀을 rowspan=2 로 확장해 4행째 빈 여백을 흡수(빈 박스 소멸). E-mail 행은 정렬 존치. -->
+        <td rowspan="2" style="background:#f8f8f8; text-align:center;">주&nbsp;민&nbsp;번&nbsp;호</td>
+        <td rowspan="2" style="vertical-align:middle;">{{patient_rrn}}</td>
         <td style="background:#f8f8f8; text-align:center;">팩&nbsp;스&nbsp;번&nbsp;호</td>
         <td>{{clinic_fax}}</td>
       </tr>
       <tr>
-        <td></td>
-        <td></td>
         <td style="background:#f8f8f8; text-align:center;">E-mail&nbsp;주소</td>
         <!-- T-20260623-foot-CLINICINFO-HOSPITAL-EMAIL-RXBIND: 의료기관 E-mail = 병원(기관) 이메일 자동 바인딩. 미입력 시 빈칸. -->
         <td>{{clinic_email}}</td>
@@ -1576,10 +1570,13 @@ const RX_STANDARD_HTML = `
   <table style="border-top:none;">
     <tbody>
       <tr>
-        <td colspan="2" style="font-size:8.5pt; width:310px;">
+        <!-- T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-④: 조제시 참고사항 블록 좌측 확장(비율 정합, 총괄 피드백).
+             주사제 처방내역 셀 폭 310px→200px 축소 → 조제시 참고사항(라벨 90px + 기입란)이 좌측으로 확장되어
+             우측 편중된 비율 개선. 외곽 표 폭·상하 표(⑤·⑦) 정렬 무변경(내부 열폭 재분배만). -->
+        <td colspan="2" style="font-size:8.5pt; width:200px;">
           주사제&nbsp;처방내역&nbsp;&nbsp;(&nbsp;원내조제&nbsp;[&nbsp;&nbsp;&nbsp;]&nbsp;,&nbsp;원외조제&nbsp;[&nbsp;&nbsp;&nbsp;]&nbsp;)
         </td>
-        <td rowspan="2" style="background:#f8f8f8; text-align:center; width:70px; font-size:8pt;">조제시<br>참고사항</td>
+        <td rowspan="2" style="background:#f8f8f8; text-align:center; width:90px; font-size:8pt;">조제시<br>참고사항</td>
         <td rowspan="2"></td>
       </tr>
       <tr>

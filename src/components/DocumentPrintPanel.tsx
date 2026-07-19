@@ -1056,6 +1056,45 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           || t.form_key === 'bill_receipt_new',
       );
 
+      // T-20260525-foot-INS-FIELD-BIND AC-3 / T-20260526-DOC-DIAG-TRUNC: 상병코드 주입(service_charges 우선).
+      // T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-③: service_charges 에 상병이 없으면(결제미니창 PATH-4 는 선택 상병을
+      //   check_in_services 에만 저장) fbItemsBatch(check_in_services) 상병으로 폴백 → 일괄출력 처방전에서도 표시.
+      //   ⚠ chargeItems 가 아예 비어도(service_charges 무기록) 폴백이 동작하도록 가드 밖에서 독립 산출.
+      //   두 소스 모두 없을 때만 medical_charts 기반 autoValues 유지(기존 동작 보존).
+      const batchDiagItems: { code: string; name: string }[] = (() => {
+        const fromCharges = (chargeItems ?? [])
+          .map((c) => {
+            const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+            return {
+              code: (svc as { service_code?: string | null } | null)?.service_code ?? '',
+              name: (svc as { name?: string } | null)?.name ?? '',
+              category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
+            };
+          })
+          .filter((i) => i.category_label === '상병')
+          .map((i) => ({ code: i.code, name: i.name }));
+        if (fromCharges.length > 0) return fromCharges;
+        return fbItemsBatch
+          .filter((fb) => (fb.service.category_label ?? '') === '상병')
+          .map((fb) => ({ code: fb.service.service_code ?? '', name: fb.service.name }));
+      })();
+      if (batchDiagItems.length > 0) {
+        delete autoValues.diag_code_1; delete autoValues.diag_name_1;
+        delete autoValues.diag_code_2; delete autoValues.diag_name_2;
+        batchDiagItems.forEach((item, idx) => {
+          const n = idx + 1;
+          autoValues[`diag_code_${n}`] = item.code;
+          autoValues[`diag_name_${n}`] = item.name;
+        });
+      }
+      const batchDiagCount = batchDiagItems.length > 0 ? batchDiagItems.length
+        : (autoValues.diag_code_2 ? 2 : autoValues.diag_code_1 ? 1 : 0);
+      autoValues['diag_row_3_style'] = batchDiagCount >= 3 ? '' : 'display:none';
+      autoValues['diag_row_4_style'] = batchDiagCount >= 4 ? '' : 'display:none';
+      const batchExtraCodes = batchDiagItems.slice(2).map((i) => i.code).filter(Boolean);
+      autoValues['diag_extra_codes_html'] = batchExtraCodes.length > 0
+        ? batchExtraCodes.map((c) => `<br>${c}`).join('') : '';
+
       if (chargeItems && chargeItems.length > 0) {
         const mappedItems = chargeItems.map((c) => {
           const svc = Array.isArray(c.service) ? c.service[0] : c.service;
@@ -1071,26 +1110,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           };
         });
 
-        // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
-        // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
-        const diagBatchItems = mappedItems.filter((i) => i.category_label === '상병');
-        if (diagBatchItems.length > 0) {
-          delete autoValues.diag_code_1; delete autoValues.diag_name_1;
-          delete autoValues.diag_code_2; delete autoValues.diag_name_2;
-          diagBatchItems.forEach((item, idx) => {
-            const n = idx + 1;
-            autoValues[`diag_code_${n}`] = item.service_code ?? '';
-            autoValues[`diag_name_${n}`] = item.name;
-          });
-        }
-        // 행 가시성 플래그 (diagBatchItems 0건이면 auto-bind 기준으로 설정)
-        const batchDiagCount = diagBatchItems.length > 0 ? diagBatchItems.length
-          : (autoValues.diag_code_2 ? 2 : autoValues.diag_code_1 ? 1 : 0);
-        autoValues['diag_row_3_style'] = batchDiagCount >= 3 ? '' : 'display:none';
-        autoValues['diag_row_4_style'] = batchDiagCount >= 4 ? '' : 'display:none';
-        const batchExtraCodes = diagBatchItems.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
-        autoValues['diag_extra_codes_html'] = batchExtraCodes.length > 0
-          ? batchExtraCodes.map((c) => `<br>${c}`).join('') : '';
+        // T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-③: 상병코드(질병분류기호) 주입은 위 가드 밖 batchDiagItems 로 통합
+        //   (service_charges 우선 + check_in_services 폴백). 여기서는 items_html/금액만 처리.
 
         if (needsItems) {
           // rx_standard 항목 — service_charges 기반(기존 동작 유지).
@@ -2581,24 +2602,35 @@ function IssueDialog({
     // loadAutoBindContext의 medical_charts 기반 diag_code보다 service_charges가 더 신뢰성 높음
     // PaymentMiniWindow의 buildCodeEnrichedValues와 동일 로직 (단, serviceItems는 이미 로드된 상태)
     // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
-    const diagChargeItems = serviceItems.filter((i) => i.category_label === '상병');
-    if (diagChargeItems.length > 0) {
-      // 기존 medical_charts 기반 값을 service_charges 상병 항목으로 덮어씀
+    // T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-③: service_charges 에 상병이 없으면(결제미니창 PATH-4 는 선택 상병을
+    //   check_in_services 에만 저장 → service_charges 공란) footBillingItems(check_in_services) 상병으로 폴백.
+    //   → 서류발행(PATH-1) 처방전 '질병분류기호'에도 결제미니창 선택 상병코드가 표시(현장 공란 해소).
+    //   read-path 재사용(신규 write/DDL 0). 두 소스 모두 없을 때만 medical_charts 폴백(기존 동작 보존).
+    const issueDiagItems: { code: string; name: string }[] = (() => {
+      const fromCharges = serviceItems
+        .filter((i) => i.category_label === '상병')
+        .map((i) => ({ code: i.service_code ?? '', name: i.name }));
+      if (fromCharges.length > 0) return fromCharges;
+      return footBillingItems
+        .filter((fb) => (fb.service.category_label ?? '') === '상병')
+        .map((fb) => ({ code: fb.service.service_code ?? '', name: fb.service.name }));
+    })();
+    if (issueDiagItems.length > 0) {
       // 먼저 기존 diag_code_N 키 초기화 (regression 방지)
       delete base.diag_code_1; delete base.diag_name_1;
       delete base.diag_code_2; delete base.diag_name_2;
-      diagChargeItems.forEach((item, idx) => {
+      issueDiagItems.forEach((item, idx) => {
         const n = idx + 1;
-        base[`diag_code_${n}`] = item.service_code ?? '';
+        base[`diag_code_${n}`] = item.code;
         base[`diag_name_${n}`] = item.name;
       });
     }
-    // 행 가시성 플래그 (diagChargeItems 0건이면 auto-bind 기준으로 설정)
-    const issueDiagCount = diagChargeItems.length > 0 ? diagChargeItems.length
+    // 행 가시성 플래그 (상병 0건이면 auto-bind 기준으로 설정)
+    const issueDiagCount = issueDiagItems.length > 0 ? issueDiagItems.length
       : (base.diag_code_2 ? 2 : base.diag_code_1 ? 1 : 0);
     base['diag_row_3_style'] = issueDiagCount >= 3 ? '' : 'display:none';
     base['diag_row_4_style'] = issueDiagCount >= 4 ? '' : 'display:none';
-    const issueExtraCodes = diagChargeItems.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
+    const issueExtraCodes = issueDiagItems.slice(2).map((i) => i.code).filter(Boolean);
     base['diag_extra_codes_html'] = issueExtraCodes.length > 0
       ? issueExtraCodes.map((c) => `<br>${c}`).join('') : '';
 
