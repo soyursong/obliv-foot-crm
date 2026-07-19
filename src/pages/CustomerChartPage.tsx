@@ -5340,6 +5340,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     { key: 'progress',    label: '경과내역' },
     { key: 'reservations', label: '예약내역' }, // AC-1: documents 대체
     { key: 'slot_dwell',   label: '체류시간' }, // AC-3: payments 자리로 이동
+    // T-20260719-foot-DOCTAB-NEW-CREATE: [서류] 탭 신규(additive). 김주연 총괄 firm 확정(CTXMENU-DOC-ENTRY 답=B).
+    //   기존 예약내역 탭(reservations) 무접점 — 삭제/대체 금지, 회귀 0. orphan 'documents' 렌더 슬롯을 이 탭으로 재활용(진입점 재개통).
+    //   내용 = 예약내역 목록 + 행별 [서류 재출력] + [당일 서류 발행](별도 팝업창=기존 docReissueCheckIn 모달 재사용).
+    { key: 'documents',    label: '서류' },
   ];
   const HISTORY_TABS = [
     { key: 'consultations', label: '상담내역' },
@@ -5355,7 +5359,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: 'checklist'(문진) 탭 진입점 제거에 맞춰 orphan 항목 정리.
   //   checklist 렌더 로직(L3972~)은 보존(OQ), chartTab은 더 이상 'checklist'에 도달하지 않음.
   // T-20260615 DWELLSWAP: 멤버십 변경 — clinical에 reservations·slot_dwell, history에 payments.
-  const IMPLEMENTED_CLINICAL = ['progress', 'reservations', 'slot_dwell', 'test_result', 'pen_chart'];
+  const IMPLEMENTED_CLINICAL = ['progress', 'reservations', 'slot_dwell', 'test_result', 'pen_chart', 'documents'];
   const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds', 'payments'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
@@ -7651,20 +7655,83 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           )}
 
-              {/* Clinical: 서류발행 — orphan 보존(T-20260615 DWELLSWAP AC-1: 탭 진입점은 예약내역으로 대체, 렌더는 유지) */}
+              {/* Clinical: [서류] 탭 — T-20260719-foot-DOCTAB-NEW-CREATE (김주연 총괄 firm 확정, CTXMENU-DOC-ENTRY 답=B)
+                  ADDITIVE: 기존 예약내역 탭(reservations, DWELLSWAP shipped) 무접점 — 삭제/변형 금지, 회귀 0.
+                  구성 ① [당일 서류 발행] → 별도 팝업창(기존 docReissueCheckIn 모달 재사용, DocumentPrintPanel 로직 그대로).
+                       ② 예약내역 목록 + 행별 [서류 재출력] → 해당 예약에 매칭되는 접수(check_ins.reservation_id) 기준 재발급 팝업.
+                  ⚠ 서류는 접수(체크인) 단위 발급물 → 접수 기록 없는 예약 행은 재출력 비활성(추정 매칭 금지). 당일 발행은 latestCheckIn 기준. */}
               {chartTabGroup === 'clinical' && chartTab === 'documents' && (
-            <div className="space-y-3">
-              {latestCheckIn ? (
-                <DocumentPrintPanel
-                  checkIn={latestCheckIn}
-                  onUpdated={refreshPayments}
-                  altStatus={altStatus}
-                />
-              ) : (
-                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground border border-dashed rounded-lg">
-                  접수 기록이 없어 서류 발행을 사용할 수 없습니다
+            <div className="space-y-3" data-testid="documents-tab-content">
+              {/* ① 당일 서류 발행 — 별도 팝업창 */}
+              <div className="rounded-lg border bg-white p-3 text-xs" data-testid="doc-tab-issue-today">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#51585D]">당일 서류 발행</div>
+                  <button
+                    type="button"
+                    disabled={!latestCheckIn}
+                    onClick={() => { if (latestCheckIn) setDocReissueCheckIn(latestCheckIn); }}
+                    data-testid="btn-doc-issue-today"
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] font-medium transition',
+                      latestCheckIn
+                        ? 'border-sage-300 bg-sage-50 text-sage-700 hover:bg-sage-100'
+                        : 'border-muted text-muted-foreground cursor-not-allowed',
+                    )}
+                  >
+                    <FileText className="h-3 w-3" /> 당일 서류 발행
+                  </button>
                 </div>
-              )}
+                {!latestCheckIn && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground" data-testid="doc-tab-issue-nocheckin">
+                    접수 기록이 없어 당일 서류 발행을 사용할 수 없습니다
+                  </p>
+                )}
+              </div>
+
+              {/* ② 예약내역 목록 + 행별 서류 재출력 */}
+              <div className="rounded-lg border bg-white p-3 text-xs" data-testid="doc-tab-resv-list">
+                <div className="text-[11px] font-semibold text-[#51585D] mb-2">예약 내역 · 서류 재출력</div>
+                {reservations.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground py-2" data-testid="doc-tab-resv-empty">예약 없음</div>
+                ) : (
+                  <div className="space-y-1">
+                    {reservations.map((r) => {
+                      // 서류는 접수(체크인) 단위 발급물 → 예약에 매칭되는 접수건(check_ins.reservation_id)으로 재발급.
+                      const matchedCi = checkInHistory.find((ci) => ci.reservation_id === r.id) ?? null;
+                      return (
+                        <div
+                          key={r.id}
+                          className="flex items-center gap-2 rounded border border-gray-100 px-2 py-1"
+                          data-testid="doc-tab-resv-row"
+                        >
+                          <span className="tabular-nums shrink-0 text-gray-700">
+                            {formatDateDots(r.reservation_date)} {r.reservation_time.slice(0, 5)}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {VISIT_TYPE_KO[r.visit_type as keyof typeof VISIT_TYPE_KO] ?? r.visit_type}
+                          </span>
+                          <span className="flex-1" />
+                          <button
+                            type="button"
+                            disabled={!matchedCi}
+                            onClick={() => { if (matchedCi) setDocReissueCheckIn(matchedCi); }}
+                            data-testid="btn-doc-reprint"
+                            title={matchedCi ? '' : '접수(내원) 기록이 있는 예약만 서류 재출력이 가능합니다'}
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition shrink-0',
+                              matchedCi
+                                ? 'border-sage-300 bg-sage-50 text-sage-700 hover:bg-sage-100'
+                                : 'border-muted text-muted-foreground cursor-not-allowed',
+                            )}
+                          >
+                            <FileText className="h-3 w-3" /> 서류 재출력
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
