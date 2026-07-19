@@ -53,3 +53,9 @@
 \+?821055443322
 #   (note) RRN 경로는 스캐너가 allowlist 미적용(구조상 phone 전용, phi-scan.sh L74-79) — 평문 13자리 RRN은
 #   합성이라도 항상 BLOCK. 대응=마스킹 redact(signals.md L487 참조), allowlist permit 불가.
+#
+# ── T-20260719-foot-PAYMINI-SUGA-SCROLL-BLOCK 합성 E2E fixture phone (2026-07-19) ──
+#   결제 미니창 수가항목 스크롤 P0 spec 전용 합성값. 반복 자릿수(9999/9988) 합성마커, 실환자 재식별 0.
+#   afterAll cleanupSeed(phone 기준)로 픽스처 즉시 정리.
+\+?821099997745
+\+?821099998801

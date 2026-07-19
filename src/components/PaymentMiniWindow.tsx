@@ -2653,7 +2653,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                  세금구분 · 합계 · 수납버튼 (Zone2 tail) — 기존 폭 유지 (LEFTLANE 이전 원복폭 sm:w-64 md:w-64 lg:w-72).
                  추출된 상단 수가항목 행의 아래로 흐르며, 계산/수납 로직·동작은 불변.
             ───────────────────────────────────────────────────────────────────── */}
-            <div className="w-full flex-1 min-h-0 border-t flex flex-col sm:min-h-0" data-testid="pmw-settle-lane">
+            {/* ═══ T-20260719-foot-PAYMINI-SUGA-SCROLL-BLOCK (P0 hotfix · 수납차단 복구) ═══
+                RC(4ZONE reflow 58f53c40/9cef7d7b): 좌측 탭 aspect-square reflow로 code-grid 열 높이 증가 →
+                  중앙 세로 스택(code-grid flex-1 / feeitem-row / settle-lane flex-1)에서 settle-lane 압축.
+                  실제 스크롤은 하단 버튼 div(overflow-y-auto shrink min-h-0)가 소유 → 창 ~131px로 꽉 차
+                  '결제비 산정'/btn-settle 미도달 → 수납 완전 차단.
+                fix: 스크롤 소유권을 settle-lane 통합 단일 창으로 이관(sm:overflow-y-auto) + sm:min-h-[200px]로
+                  협소창 회귀 차단(code-grid가 min-h-0로 양보). 내부 버튼 div의 자체 스크롤 제거(아래 참조).
+                  계산 SSOT·4ZONE 정사각 탭 무접촉. */}
+            <div className="w-full flex-1 min-h-0 sm:min-h-[200px] border-t sm:overflow-y-auto" data-testid="pmw-settle-lane">
                 {/* 세금 구분 + 합산 (수가 항목 있을 때만) */}
                 {pricingItems.length > 0 && (
                   <div className="border-t px-3 py-2 bg-muted/20 shrink-0 space-y-1">
@@ -2718,12 +2726,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 )}
 
                 {/* 액션 버튼
-                    PMW-SCROLL-FIX: shrink-0 → shrink min-h-0 overflow-y-auto
-                    카드 정보 박스(승인번호·TID) 출현 시 action buttons 높이가 ~287px로 증가,
-                    소형 뷰포트(92vh 제약)에서 sm:overflow-hidden 부모에 수납 버튼 클리핑 발생.
-                    shrink(flex-shrink:1) + min-h-0으로 Zone2 flex-col 안에서 압축 허용,
-                    overflow-y-auto로 수납 버튼 스크롤 접근 보장. */}
-                <div className="px-3 pt-2 pb-3 space-y-2 overflow-y-auto border-t shrink min-h-0">
+                    T-20260719-foot-PAYMINI-SUGA-SCROLL-BLOCK: 자체 overflow-y-auto/shrink/min-h-0 제거.
+                    스크롤은 상위 settle-lane 통합 창이 소유(중첩 스크롤 = 131px 협소창 원인). 여기선 자연 높이로
+                    흘러 settle-lane 스크롤에 편입 → 수납 버튼까지 스크롤 도달 보장. */}
+                <div className="px-3 pt-2 pb-3 space-y-2 border-t">
                   {/* [시술 저장 및 포함 금액 산정] */}
                   <Button
                     variant="outline"
