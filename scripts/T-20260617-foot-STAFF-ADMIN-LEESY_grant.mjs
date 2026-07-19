@@ -79,6 +79,16 @@ async function main() {
   if (ue) { console.error('user_profiles upsert error:', ue.message); process.exit(1); }
   console.log('user_profiles upsert OK (role=admin, clinic=jongno-foot)');
 
+  // 3b. INSERT-경로 방어: 신규 프로필 INSERT 시 DB 트리거가 신규가입 default(role=staff, approved=false)로
+  //     강제하는 것을 관측함(2026-07-19 실행). upsert 값이 유실되므로, 명시 UPDATE로 admin/approved 재적용.
+  //     (UPDATE 경로는 트리거 미개입 → 값 유지) — /admin 진실원천 role=admin 보장.
+  const { error: fe } = await supabase
+    .from('user_profiles')
+    .update({ role: 'admin', approved: true, active: true })
+    .eq('id', user.id);
+  if (fe) { console.error('user_profiles role-enforce update error:', fe.message); process.exit(1); }
+  console.log('user_profiles role-enforce OK (role=admin, approved=true)');
+
   // 4. 검증
   const { data: verify } = await supabase
     .from('user_profiles')
