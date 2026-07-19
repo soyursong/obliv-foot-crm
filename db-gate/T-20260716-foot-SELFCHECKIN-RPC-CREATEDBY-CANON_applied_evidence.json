@@ -1,0 +1,11 @@
+{
+  "ticket": "T-20260716-foot-SELFCHECKIN-RPC-CREATEDBY-CANON",
+  "project": "rxlomoozakkjesdqjtvd",
+  "migration": "supabase/migrations/20260719120000_selfcheckin_v3_reservlink_createdby_stamp.sql",
+  "funcs": {
+    "fn_selfcheckin_upsert_customer_resolve_v3": true,
+    "self_checkin_with_reservation_link": true
+  },
+  "applied_at_kst": "2026-07-19 13:54:41.160244",
+  "verdict": "STAMP_LIVE"
+}
