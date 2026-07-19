@@ -987,6 +987,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           || t.form_key === 'bill_receipt_new',
       );
 
+      // T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-③: service_charges 가 상병을 제공했는지 추적(폴백 게이트).
+      let diagResolvedFromSC = false;
       if (chargeItems && chargeItems.length > 0) {
         const mappedItems = chargeItems.map((c) => {
           const svc = Array.isArray(c.service) ? c.service[0] : c.service;
@@ -1006,6 +1008,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
         const diagBatchItems = mappedItems.filter((i) => i.category_label === '상병');
         if (diagBatchItems.length > 0) {
+          diagResolvedFromSC = true;
           delete autoValues.diag_code_1; delete autoValues.diag_name_1;
           delete autoValues.diag_code_2; delete autoValues.diag_name_2;
           diagBatchItems.forEach((item, idx) => {
@@ -1143,6 +1146,32 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         autoValues.detail_total = '0';
         autoValues.detail_subtotal = '0';
         autoValues.receipt_total = '0';
+      }
+
+      // ── T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-③: 질병분류기호 = 결제미니창 선택 상병코드(check_in_services 폴백) ──
+      //   [RC] 결제미니창 [상병코드] 선택은 check_in_services 에만 영속되나(PMW saveCheckInServices → selectedItems=codeItems),
+      //     서류발행(DocumentPrintPanel) 배치출력은 그간 service_charges 상병만 읽어 서류발행 경로에서 질병분류기호가
+      //     공란이었다(결제창 직접발행 PATH-4 는 in-memory codeItems 로 정상 → 발행경로 divergence).
+      //   [수정] service_charges 상병이 없을 때만(diagResolvedFromSC=false) fbItemsBatch(loadFootBillingItems=check_in_services)
+      //     의 상병(category_label='상병') 항목으로 diag_code_N 폴백 주입. service_charges 우선(기존 동작 불변) ·
+      //     명시적 스태프 선택이므로 medical_charts 자동파싱(autoBind diag_code)보다 우선 · 미선택 시 공란 유지(폴백 정의).
+      //   read-path only(신규 영속처 0, no DDL). IssueDialog(단건) 경로도 동형 폴백 적용(preview/print divergence 차단).
+      if (!diagResolvedFromSC) {
+        const cisDiagBatch = fbItemsBatch.filter((it) => (it.service.category_label ?? '') === '상병');
+        if (cisDiagBatch.length > 0) {
+          delete autoValues.diag_code_1; delete autoValues.diag_name_1;
+          delete autoValues.diag_code_2; delete autoValues.diag_name_2;
+          cisDiagBatch.forEach((it, idx) => {
+            const n = idx + 1;
+            autoValues[`diag_code_${n}`] = it.service.service_code ?? '';
+            autoValues[`diag_name_${n}`] = it.service.name;
+          });
+          autoValues['diag_row_3_style'] = cisDiagBatch.length >= 3 ? '' : 'display:none';
+          autoValues['diag_row_4_style'] = cisDiagBatch.length >= 4 ? '' : 'display:none';
+          const cisExtraCodes = cisDiagBatch.slice(2).map((it) => it.service.service_code ?? '').filter(Boolean);
+          autoValues['diag_extra_codes_html'] = cisExtraCodes.length > 0
+            ? cisExtraCodes.map((c) => `<br>${c}`).join('') : '';
+        }
       }
 
       // ── T-20260706-foot-SERIAL-RPC-AVVC-NOFIRE: 일괄 출력 연번호 발번 (단건 handlePrint 와 동형) ──
@@ -2452,23 +2481,31 @@ function IssueDialog({
     // PaymentMiniWindow의 buildCodeEnrichedValues와 동일 로직 (단, serviceItems는 이미 로드된 상태)
     // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
     const diagChargeItems = serviceItems.filter((i) => i.category_label === '상병');
-    if (diagChargeItems.length > 0) {
-      // 기존 medical_charts 기반 값을 service_charges 상병 항목으로 덮어씀
-      // 먼저 기존 diag_code_N 키 초기화 (regression 방지)
+    // T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-③: service_charges 상병 우선, 없으면 check_in_services(결제미니창
+    //   [상병코드] 선택 영속처=footBillingItems) 폴백. 배치출력(handleBatchPrint)과 동형 → 단건/배치/결제창 모든
+    //   발행경로가 동일 상병코드 표기(preview/print divergence 제거). read-path only(no DDL) · medical_charts 자동파싱보다 우선.
+    const issueDiagList: { service_code: string | null; name: string }[] =
+      diagChargeItems.length > 0
+        ? diagChargeItems.map((i) => ({ service_code: i.service_code, name: i.name }))
+        : footBillingItems
+            .filter((it) => (it.service.category_label ?? '') === '상병')
+            .map((it) => ({ service_code: it.service.service_code ?? null, name: it.service.name }));
+    if (issueDiagList.length > 0) {
+      // 기존 medical_charts 기반 값을 명시 선택 상병 항목으로 덮어씀 (regression 방지: diag_code_N 초기화)
       delete base.diag_code_1; delete base.diag_name_1;
       delete base.diag_code_2; delete base.diag_name_2;
-      diagChargeItems.forEach((item, idx) => {
+      issueDiagList.forEach((item, idx) => {
         const n = idx + 1;
         base[`diag_code_${n}`] = item.service_code ?? '';
         base[`diag_name_${n}`] = item.name;
       });
     }
-    // 행 가시성 플래그 (diagChargeItems 0건이면 auto-bind 기준으로 설정)
-    const issueDiagCount = diagChargeItems.length > 0 ? diagChargeItems.length
+    // 행 가시성 플래그 (상병 0건이면 auto-bind 기준으로 설정)
+    const issueDiagCount = issueDiagList.length > 0 ? issueDiagList.length
       : (base.diag_code_2 ? 2 : base.diag_code_1 ? 1 : 0);
     base['diag_row_3_style'] = issueDiagCount >= 3 ? '' : 'display:none';
     base['diag_row_4_style'] = issueDiagCount >= 4 ? '' : 'display:none';
-    const issueExtraCodes = diagChargeItems.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
+    const issueExtraCodes = issueDiagList.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
     base['diag_extra_codes_html'] = issueExtraCodes.length > 0
       ? issueExtraCodes.map((c) => `<br>${c}`).join('') : '';
 
