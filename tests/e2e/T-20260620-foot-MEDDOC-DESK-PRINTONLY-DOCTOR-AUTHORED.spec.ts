@@ -49,10 +49,11 @@ test.describe('T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED — 원장 
     expect(g).toContain("GATED_MEDDOC_FORM_KEYS");
     expect(g).toContain("'diag_opinion'");
     expect(g).toContain("'diagnosis'");
-    // DOCLIST_ORDER_10 의 4.소견서=diag_opinion / 5.진단서=diagnosis 와 일치
+    // DOCLIST_ORDER_10 의 5.소견서=diag_opinion / 6.진단서=diagnosis 와 일치
+    //   (T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구양식 제거·rx_standard 이동으로 번호 재정렬)
     const f = formTpl();
-    expect(f).toContain("'diag_opinion',           // 4. 소견서");
-    expect(f).toContain("'diagnosis',              // 5. 진단서");
+    expect(f).toContain("'diag_opinion',           // 5. 소견서");
+    expect(f).toContain("'diagnosis',              // 6. 진단서");
     // 나머지 8종이 게이트 배열에 포함되지 않음(과적용 방지)
     for (const other of ['bill_receipt', 'bill_detail', 'koh_result', 'treat_confirm', 'referral_letter', 'visit_confirm', 'medical_record_request', 'rx_standard']) {
       expect(g.includes(`GATED_MEDDOC_FORM_KEYS: ReadonlyArray<string> = ['diag_opinion', 'diagnosis']`)).toBeTruthy();

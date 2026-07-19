@@ -162,9 +162,11 @@ test.describe('AC-3 라이브 HTML 렌더·정확 바인딩', () => {
 
 // ─── 시나리오 4 (AC-4): 무회귀 ─────────────────────────────────────────────────
 test.describe('AC-4 무회귀', () => {
-  test('기존 서류출력 명단 SSOT(핵심 8+종)가 보존된다', () => {
+  test('기존 서류출력 명단 SSOT(핵심 10+종)가 보존된다', () => {
     for (const key of [
-      'bill_receipt',
+      // T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 bill_receipt 제거 → 신양식(bill_receipt_new)이
+      //   유일 정본 '진료비 계산서·영수증'. 명단 핀 고정도 정본 기준.
+      'bill_receipt_new',
       'bill_detail',
       'diag_opinion',
       'diagnosis',
@@ -174,16 +176,13 @@ test.describe('AC-4 무회귀', () => {
       'visit_confirm',
       'medical_record_request',
       'rx_standard',
-      // T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: bill_receipt_new(진료비 계산서·영수증 신양식) 가산 핀 고정
-      //   — 후속 blessed 티켓(T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN, e0a5218c+105b1be2)이 additive 등록.
-      'bill_receipt_new',
     ]) {
       expect(DOCLIST_ORDER_10, `${key} 보존`).toContain(key);
     }
-    // KOH·신양식 추가가 진열 순서 SSOT 를 어긋내지 않음(총 12 키 = 10 핵심 + koh_result + bill_receipt_new).
-    //   T-20260719-foot-LEGACYRENDER-FIXTURE-DBISO: 구 기대 11 → 12(bill_receipt_new 가산, DOCFEE-BODYCENTER blessed).
-    //   ★spec 만 — DOCLIST_ORDER_10 SSOT(formTemplates) 무접촉(AC4). 핵심 10종 전건 보존 확인됨(위 loop).
-    expect(DOCLIST_ORDER_10.length).toBe(12);
+    // 구 bill_receipt 는 목록에서 제거됨(going-forward 메뉴 변경)
+    expect(DOCLIST_ORDER_10).not.toContain('bill_receipt');
+    // 정본 진열 순서 SSOT: 10 핵심(신양식 포함) + koh_result = 11 키.
+    expect(DOCLIST_ORDER_10.length).toBe(11);
   });
 
   test('referral_letter 자동병합 분기가 그대로 유지된다(병합 지점 재사용, 훼손 아님)', () => {

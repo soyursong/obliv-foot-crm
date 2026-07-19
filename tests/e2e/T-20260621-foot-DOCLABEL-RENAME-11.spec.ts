@@ -86,9 +86,17 @@ test('시나리오1: 결제미니창 — koh_result 라벨 = "KOH균검사결과
   expect(result.map((t) => t.name_ko)).not.toContain('검사결과 보고서');
 });
 
-test('시나리오1: 결제미니창 — bill_receipt(진료비 계산서·영수증) 라벨 현행 유지', () => {
+// T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 bill_receipt 제거, 신양식(bill_receipt_new)이
+//   유일 정본 '진료비 계산서·영수증'(라벨 override로 '(신양식)' 접미어 제거).
+test('시나리오1: 결제미니창 — bill_receipt_new 정본 라벨 = "진료비 계산서·영수증"(구양식/접미어 없음)', () => {
   const result = orderDocList(DB_TEMPLATES_OLD_LABELS.filter((t) => t.category !== 'insurance'));
-  expect(labelOf(result, 'bill_receipt')).toBe('진료비 계산서·영수증');
+  expect(labelOf(result, 'bill_receipt_new')).toBe('진료비 계산서·영수증');
+  // 구양식은 목록에서 제거됨
+  expect(labelOf(result, 'bill_receipt')).toBeUndefined();
+  // '(신양식)' 꼬리표는 어느 항목에도 남지 않음
+  expect(result.map((t) => t.name_ko)).not.toContain('진료비 계산서·영수증(신양식)');
+  // '진료비 계산서·영수증' 은 정확히 1개
+  expect(result.filter((t) => t.name_ko === '진료비 계산서·영수증')).toHaveLength(1);
 });
 
 // ── 시나리오 2: 1/2번 차트 라벨 (두 화면 동일 함수 → 동일 문구) ──────────────────
@@ -103,19 +111,20 @@ test('시나리오2: 차트 — 결제미니창과 동일 라벨(SSOT orderDocLi
   expect(labelOf(chart, 'koh_result')).toBe('KOH균검사결과지');
 });
 
-test('시나리오2: override 매핑 SSOT — 정확히 2건(bill_detail/koh_result)만', () => {
+test('시나리오2: override 매핑 SSOT — 3건(bill_detail/koh_result/bill_receipt_new)', () => {
   expect(DOCLIST_LABEL_OVERRIDE).toEqual({
     bill_detail: '진료비세부내역서',
     koh_result: 'KOH균검사결과지',
+    bill_receipt_new: '진료비 계산서·영수증',
   });
-  expect(Object.keys(DOCLIST_LABEL_OVERRIDE)).toHaveLength(2);
-  // bill_receipt 는 override 대상 아님(현행 유지)
+  expect(Object.keys(DOCLIST_LABEL_OVERRIDE)).toHaveLength(3);
+  // 구 bill_receipt 는 목록/override 대상 아님(제거됨)
   expect(DOCLIST_LABEL_OVERRIDE).not.toHaveProperty('bill_receipt');
 });
 
 // ── 시나리오 3: 회귀 가드 — 순서·집합·필드 불변 ────────────────────────────────
 
-test('시나리오3: 순서·표시 집합 parent §1 그대로 회귀 0 (DOCFEE 신양식 additive: 12항목)', () => {
+test('시나리오3: 순서·표시 집합 = DOCLIST_ORDER_10 그대로 회귀 0 (구양식 제거 후 11종)', () => {
   const result = orderDocList(DB_TEMPLATES_OLD_LABELS);
   expect(result.map((t) => t.form_key)).toEqual([...DOCLIST_ORDER_10]);
   expect(result).toHaveLength(DOCLIST_ORDER_10.length);

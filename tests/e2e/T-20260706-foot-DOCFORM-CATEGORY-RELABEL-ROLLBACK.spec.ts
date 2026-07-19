@@ -24,6 +24,7 @@ import {
   DOC_GROUP_LABEL_JEUNGMYEONG,
   DOC_GROUP_LABEL_ETC,
   DOC_CATEGORY_JEUNGMYEONG_KEYS,
+  DOCLIST_ORDER_10,
 } from '../../src/lib/formTemplates';
 
 // ── SUT: Services.tsx 상수 재현 (변경 후 — '제증명' 포함, 의료성 그룹 인접) ──────────────
@@ -166,8 +167,8 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK — A안 서류
     const groups = groupDocList(DOC_TEMPLATES);
     const jeung = groups.find((g) => g.label === DOC_GROUP_LABEL_JEUNGMYEONG)!;
     const keys = jeung.templates.map((t) => t.form_key);
-    // 무료 4종
-    for (const k of ['bill_receipt', 'bill_detail', 'koh_result', 'rx_standard']) {
+    // 무료 4종 — T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 bill_receipt → 신양식(bill_receipt_new) 정본
+    for (const k of ['bill_receipt_new', 'bill_detail', 'koh_result', 'rx_standard']) {
       expect(keys).toContain(k);
     }
     // 제증명 6종 → form_key 4개(국·영문 병합)
@@ -178,10 +179,10 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK — A안 서류
     for (const k of ['referral_letter', 'treat_confirm_code', 'treat_confirm_nocode']) {
       expect(keys).toContain(k);
     }
-    // 무료 4종 + 신양식 1(진료비 계산서·영수증 신양식) + 제증명 6(4 form_key) + 예상외 3
-    //   = 12 form_key 전부 '제증명' 그룹 (T-20260714-foot-DOCFEE 신양식 additive 등록 후)
+    // 구양식 제거 후 정본 11 form_key 전부 '제증명' 그룹 (신양식 bill_receipt_new 포함, 구 bill_receipt 제외)
     expect(keys).toContain('bill_receipt_new');
-    expect(keys.length).toBe(12);
+    expect(keys).not.toContain('bill_receipt');
+    expect(keys.length).toBe(11);
     expect([...keys].sort()).toEqual([...DOC_CATEGORY_JEUNGMYEONG_KEYS].sort());
   });
 
@@ -200,10 +201,12 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK — A안 서류
   test('WARN-1: 그룹 합집합 = 전체 목록(누락 0) + 그룹 내 DOCLIST 순서 보존', () => {
     const groups = groupDocList(DOC_TEMPLATES);
     const total = groups.reduce((n, g) => n + g.templates.length, 0);
-    expect(total).toBe(DOC_TEMPLATES.length); // 11 form_key 전부 어느 그룹엔가 노출(발급 동선 보존)
-    // 제증명 그룹 내부 순서 = DOCLIST 순서(bill_receipt가 diagnosis보다 앞)
+    // T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 입력의 구 bill_receipt 는 화이트리스트 제외 →
+    //   groupDocList 결과 = 정본 11종. 발급 동선 보존.
+    expect(total).toBe(DOCLIST_ORDER_10.length); // 11
+    // 제증명 그룹 내부 순서 = DOCLIST 순서(정본 영수증 bill_receipt_new 가 diagnosis보다 앞)
     const jeung = groups.find((g) => g.label === DOC_GROUP_LABEL_JEUNGMYEONG)!;
     const keys = jeung.templates.map((t) => t.form_key);
-    expect(keys.indexOf('bill_receipt')).toBeLessThan(keys.indexOf('diagnosis'));
+    expect(keys.indexOf('bill_receipt_new')).toBeLessThan(keys.indexOf('diagnosis'));
   });
 });

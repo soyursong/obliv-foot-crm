@@ -1698,7 +1698,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
               onToggle={toggleSelect}
               onCardClick={handleSelectTemplate}
               medDocGate={medDocGate}
-              renderRowExtra={(formKey) => (formKey === 'bill_receipt' ? receiptManagePanel : null)}
+              /* T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 'bill_receipt' 목록 제거에 따라
+                 "영수증 관리" 펼침 패널을 정본 행(신양식 bill_receipt_new='진료비 계산서·영수증')으로 이관.
+                 재발급/등록/삭제 핸들러(handleReceiptReissue/printInvoice/deleteInvoice) 그대로 재사용 — 기능손실 0. */
+              renderRowExtra={(formKey) => (formKey === 'bill_receipt_new' ? receiptManagePanel : null)}
             />
           ))}
         </div>

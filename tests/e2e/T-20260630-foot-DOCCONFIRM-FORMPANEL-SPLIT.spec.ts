@@ -55,7 +55,9 @@ function mockTpl(form_key: string, name_ko: string, active = true): FormTemplate
 // 마이그 후 패널이 받는 활성(active=true) form_templates 집합 시뮬레이션.
 // 레거시 treat_confirm 은 DB active=false → 쿼리(.eq('active',true))에서 제외되어 입력에 없음.
 const ACTIVE_DB_TEMPLATES: FormTemplate[] = [
-  mockTpl('bill_receipt', '진료비 계산서·영수증'),
+  // T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 bill_receipt 목록 제거 → 신양식(bill_receipt_new)이
+  //   유일 정본 '진료비 계산서·영수증'. 패널 목록 입력도 정본 기준으로 시뮬레이션(항목 수 11 유지).
+  mockTpl('bill_receipt_new', '진료비 계산서·영수증(신양식)'),
   mockTpl('bill_detail', '진료비내역서'),
   mockTpl('koh_result', 'KOH균검사결과지'),
   mockTpl('diag_opinion', '소견서'),
@@ -73,7 +75,7 @@ const DISEASE_TOKENS = ['{{diag_code_1}}', '{{diag_name_1}}', '{{diag_row_3_styl
 
 const SAMPLE_VALUES: Record<string, string> = {
   patient_name: '홍길동',
-  patient_rrn: '900101-1234567',
+  patient_rrn: '900101-*******', // phi_redaction_standard §4: 합성 RRN 뒷자리 마스킹(바인딩 렌더 검증 전용, 실환자 무관)
   visit_date: '2026-06-30',
   issue_date: '2026-06-30',
   clinic_name: '오블리브 풋센터',

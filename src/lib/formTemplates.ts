@@ -1080,27 +1080,28 @@ export const DOC_PANEL_HIDDEN_FORM_KEYS: ReadonlyArray<string> = [
  *   7.진료의뢰서=referral_letter  8.통원확인서=visit_confirm  9.진료기록사본=medical_record_request
  *   10.처방전=rx_standard
  */
+// T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER (김주연 총괄 확정): 구양식 정리 + 신양식 정본화 + 11종 재정렬.
+//   ① 구 'bill_receipt'(진료비 계산서·영수증 구양식)을 목록에서 제거 — 신양식이 현장 정본(NEWFORM-3FIX deployed).
+//      제거 = FE 목록 필터일 뿐, bill_receipt DB row·발행이력·과거 재출력 경로는 무접촉(going-forward 메뉴 변경).
+//   ② 'bill_receipt_new'(신양식)이 유일 정본 '진료비 계산서·영수증' 으로 승격 → DOCLIST_LABEL_OVERRIDE 로
+//      '(신양식)' 접미어 제거(form_key 불변). 결과: 목록에 '진료비 계산서·영수증' 정확히 1개.
+//   ③ 아래 배열 인덱스 = 확정 진열 순서(총괄 요청 11종). 두 화면(PaymentMiniWindow·DocumentPrintPanel) 자동 동일.
 export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
-  'bill_receipt',           // 1. 진료비영수증
-  // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN 완결(reopened→fix): 진료비 계산서·영수증 신양식.
-  //   RC = DOCFEE 배포분(DB row 015d94be·fallback·compose/print handler 전부 LIVE)이 이 렌더 화이트리스트에
-  //   미등록되어 orderDocList 필터에서 탈락 → 목록 미노출(divergence). additive 등록으로 노출 복원(AC5 기존
-  //   bill_receipt 무접촉). 진열은 원양식 바로 뒤(동일 서류종류 신/구 인접).
-  'bill_receipt_new',       // 1b. 진료비 계산서·영수증(신양식)
+  'bill_receipt_new',       // 1. 진료비 계산서·영수증 (신양식=정본, 라벨 override로 접미어 제거)
   'bill_detail',            // 2. 진료비세부내역서
-  'koh_result',             // 3. KOH균검사결과지
-  'diag_opinion',           // 4. 소견서
-  'diagnosis',              // 5. 진단서
-  // 6. 진료확인서 — T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 단일 'treat_confirm' →
-  //    2 발급폼 분리. code(코드·진단명 포함, 10,000) / nocode(불포함, 3,000) 두 버튼 노출.
+  'rx_standard',            // 3. 처방전 (표준처방전)
+  'koh_result',             // 4. KOH균검사결과지
+  'diag_opinion',           // 5. 소견서
+  'diagnosis',              // 6. 진단서
+  // 진료확인서 — T-20260630-foot-DOCCONFIRM-FORMPANEL-SPLIT: 단일 'treat_confirm' →
+  //    2 발급폼 분리. code(코드·진단명 포함) / nocode(불포함) 두 버튼 노출.
   //    레거시 'treat_confirm' 은 화이트리스트에서 제거(+ DB active=false) → 3중표시 방지.
   //    동일 서류종류(진료확인서)의 표시변이 → doc-serial prefix 둘 다 VC 공유(docSerial.ts).
-  'treat_confirm_code',     // 6a. 진료확인서(코드·진단명 포함)
-  'treat_confirm_nocode',   // 6b. 진료확인서(코드·진단명 불포함)
-  'referral_letter',        // 7. 진료의뢰서
-  'visit_confirm',          // 8. 통원확인서
-  'medical_record_request', // 9. 진료기록사본
-  'rx_standard',            // 10. 처방전
+  'treat_confirm_code',     // 7. 진료확인서(코드·진단명 포함)
+  'treat_confirm_nocode',   // 8. 진료확인서(코드·진단명 불포함)
+  'referral_letter',        // 9. 진료의뢰서
+  'visit_confirm',          // 10. 통원확인서
+  'medical_record_request', // 11. 의무기록사본발급신청서
 ];
 
 /**
@@ -1118,6 +1119,9 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
 export const DOCLIST_LABEL_OVERRIDE: Readonly<Record<string, string>> = {
   bill_detail: '진료비세부내역서',
   koh_result: 'KOH균검사결과지',
+  // T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER AC-2: 신양식(bill_receipt_new)이 유일 정본이 되어
+  //   '(신양식)' 과도기 표기 소멸 → 표시명만 '진료비 계산서·영수증' 으로 치환(form_key/발행/바인딩 불변).
+  bill_receipt_new: '진료비 계산서·영수증',
 };
 
 /**
@@ -1161,8 +1165,9 @@ export function orderDocList<T extends { form_key: string }>(tpls: T[]): T[] {
  *   보존, FORMPANEL-SPLIT 무접촉). 데이터층 category_label DML·마이그 없음(FE 그룹 membership 확장만).
  */
 export const DOC_CATEGORY_JEUNGMYEONG_KEYS: ReadonlyArray<string> = [
-  'bill_receipt',           // 진료비영수증 (무료)
-  'bill_receipt_new',       // 진료비 계산서·영수증(신양식) — DOCFEE 완결 additive 등록 (무료)
+  // T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 'bill_receipt' 제거 → 신양식(bill_receipt_new)이
+  //   유일 정본 '진료비 계산서·영수증'. (그룹 내부 진열 순서는 orderDocList=DOCLIST_ORDER_10 이 결정)
+  'bill_receipt_new',       // 진료비 계산서·영수증 (정본, 무료)
   'bill_detail',            // 진료비세부내역서 (무료)
   'koh_result',             // KOH균검사결과지 (무료)
   'diagnosis',              // 진단서(국/영문)
