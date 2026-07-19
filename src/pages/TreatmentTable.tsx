@@ -18,7 +18,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2 } from 'lucide-react';
+import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2, FileText } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import DoctorHistorySection from '@/components/treatment/DoctorHistorySection';
@@ -27,6 +27,9 @@ import ProgressTargetsSection from '@/components/treatment/ProgressTargetsSectio
 // T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: 진료관리에서 이식한 '경과분석 플랜'(설정) 탭 = ④번째(맨 뒤).
 //   ③경과분석(ProgressTargetsSection=오늘 대상자)과 별개 surface. 자체 useClinic 사용(props 불요). 컴포넌트·DB 동일.
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
+// T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: 진료대시보드 [서류작성] read-only ADDITIVE 재노출 탭(맨 뒤).
+//   치료테이블(치료사 공간)에 소견서·진단서 신청/발행여부를 read-only 표시. opinionRequest.ts 훅 재사용(단일 소스).
+import DiagDocSection from '@/components/treatment/DiagDocSection';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import SendSmsDialog from '@/components/SendSmsDialog';
@@ -40,7 +43,8 @@ import type { CheckIn } from '@/lib/types';
 // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 치료테이블 탭 = ①진료 환자 이력 ②균검사&피검사 대상자 ③경과분석.
 // T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정, 진료관리에서 이식) = 맨 뒤. confirm 해소(문지은 대표원장 2026-06-29) → 랜딩.
 //   명칭 구분: ③='경과분석'(오늘 대상자 확인) / ④='경과분석 플랜'(설정). 혼동 금지.
-type SectionTab = 'history' | 'exam' | 'progress' | 'plan';
+// T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서(진료대시보드 [서류작성] read-only 재노출) = 맨 뒤.
+type SectionTab = 'history' | 'exam' | 'progress' | 'plan' | 'diagdoc';
 
 /** D. 이름 우클릭 컨텍스트 메뉴 타깃(섹션이 보유한 최소 고객 정보). */
 export interface NameCtxTarget {
@@ -195,6 +199,11 @@ export default function TreatmentTable() {
             <Settings2 className="size-3.5 mr-1.5" />
             경과분석 플랜
           </TabsTrigger>
+          {/* T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서(진료대시보드 [서류작성] read-only 재노출). 맨 뒤. */}
+          <TabsTrigger value="diagdoc" data-testid="tab-diagdoc">
+            <FileText className="size-3.5 mr-1.5" />
+            소견서·진단서
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="mt-0">
@@ -210,6 +219,10 @@ export default function TreatmentTable() {
             ProgressPlansTab 는 useClinic 자체 사용(date/nameInteraction 불요) — 회차tier별 체크포인트 CRUD. */}
         <TabsContent value="plan" className="mt-0">
           <ProgressPlansTab />
+        </TabsContent>
+        {/* T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서 — 부모 공통 날짜(date) 상속(AC-5) + 이름 인터랙션 위임. */}
+        <TabsContent value="diagdoc" className="mt-0">
+          <DiagDocSection date={date} nameInteraction={nameInteraction} />
         </TabsContent>
       </Tabs>
 
