@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# pre-commit — 2-게이트 (secret + PHI)
+# pre-commit — 3-게이트 (ghost-handoff + secret + PHI)
+#   0) ghost-handoff-guard : repo-root signals.md/retro/ 유령 커밋 차단 (T-20260720-foot-REPO-GHOST-SIGNALS-BELT-INSTALL, 원저 scalp2 9a6e219e)
 #   1) secret-scan  : 평문 비번/키 (T-20260629-ops-TESTCRED-PLAINTEXT-LIVECRED Stage 3, §6)
 #   2) phi-scan     : 실명/phone(E.164)/RRN 평문 (phi_redaction_standard §4, T-20260716-foot-PHI-SCANNER-PARITY-ROOTFIX)
 # 활성화: git config core.hooksPath .githooks   (레포당 1회)
 set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# 0) 핸드오프 유령 경로 차단 (先 실행, 우회: GHOST_HANDOFF_BYPASS=1)
+if [ "${GHOST_HANDOFF_BYPASS:-0}" != "1" ] && [ -f "$REPO_ROOT/scripts/ghost-handoff-guard.sh" ]; then
+  bash "$REPO_ROOT/scripts/ghost-handoff-guard.sh"
+fi
+
 "$REPO_ROOT/scripts/secret-scan.sh" staged
 "$REPO_ROOT/scripts/phi-scan.sh" staged
