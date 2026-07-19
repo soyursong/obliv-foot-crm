@@ -25,8 +25,10 @@ function extractNewTemplate(): string {
 test.describe('DOCFEE 신양식 — AC3 대표자=박영진 rebind + 축 격리', () => {
   test('AC3: 신양식 대표자 셀 = {{receipt_representative}} (진료의 doctor_name 아님)', () => {
     const tpl = extractNewTemplate();
-    // 대표자 라벨 다음 셀이 receipt_representative 토큰이어야 한다.
-    expect(tpl).toMatch(/대표자<\/td>\s*<td[^>]*>\{\{receipt_representative\}\}<\/td>/);
+    // 대표자 라벨 다음 셀이 receipt_representative 토큰으로 시작해야 한다.
+    //   T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT(co-deploy)가 근방에 법인 도장
+    //   ({{institution_seal_html}})을 append → 토큰 뒤 trailing 도장 허용.
+    expect(tpl).toMatch(/대표자<\/td>\s*<td[^>]*>\{\{receipt_representative\}\}/);
     // 前 스펙(폐기): 신양식 어디에도 {{doctor_name}}/{{doctor_seal_html}} 바인딩이 없어야 한다(진료의 축 오염 금지).
     expect(tpl).not.toContain('{{doctor_name}}');
     expect(tpl).not.toContain('{{doctor_seal_html}}');

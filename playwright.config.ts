@@ -414,6 +414,11 @@ export default defineConfig({
         //   고객목록/편집·신규등록) + service-role DB 왕복(양방향 공유 컬럼) + 3구역 예약메모 seed(customer_memo) 무회귀.
         //   page/auth/server 불요(fs 소스 정적 + service-role DB, 비파괴 원본 복원). db_change=false.
         '**/T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC.spec.ts',
+        // T-20260716-foot-DOCFEE-NONPAY-SEAL (AC2 슬롯키드 직인) + reconcile 세트 — 순수 바인딩/템플릿/격리 단언.
+        //   대표자란=법인 인감(institution_seal_html) / 원장 서명란=개인직인(doctor_seal_html). auth/server 불요.
+        '**/T-20260716-foot-DOCFEE-NONPAY-SEAL.spec.ts',
+        '**/T-20260713-foot-DOCPRINT-SEAL-MOON-INSTITUTION-AC6V2.spec.ts',
+        '**/T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -454,6 +459,10 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단
         //   (FIX-REQUEST MSG-20260715-124201-dcp9). unit 에서만 실행.
         '**/T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE.spec.ts',
+        // T-20260716-foot-DOCFEE-NONPAY-SEAL 세트 — unit 전용 순수 spec. 무-project 실행 시 setup 미유입.
+        '**/T-20260716-foot-DOCFEE-NONPAY-SEAL.spec.ts',
+        '**/T-20260713-foot-DOCPRINT-SEAL-MOON-INSTITUTION-AC6V2.spec.ts',
+        '**/T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT.spec.ts',
       ],
     },
     {

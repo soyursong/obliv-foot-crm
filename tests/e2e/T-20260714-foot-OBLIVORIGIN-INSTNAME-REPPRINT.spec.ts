@@ -71,20 +71,40 @@ test.describe('요양기관명 축 재배선 (AC-1/AC-2/AC-4/AC-5)', () => {
   });
 });
 
-test.describe('대표자 print 분리 — CEO Q2 (AC-3)', () => {
-  test('bill_detail 대표자 셀 = 진료의({{doctor_name}}) 보존, 박영진(representative_name) 미주입', () => {
+test.describe('대표자 print 분리 — 슬롯키드 refined (AC-3, batch9 재정합 2026-07-19)', () => {
+  // [refined 정책] CEO Q2('대표자=기관 field, 진료의 무접촉')를 '슬롯키드'로 정밀화한다
+  //   (총괄 07-16 13:52 AC9_SEAL_SLOTKEYED_FINAL + BODYPORT §same_subject refine + planner A2 adjudication 07-15 20:28).
+  //   서류 성격으로 대표자 셀 소스가 갈린다:
+  //     · 기관 발행 서류(세부산정내역 bill_detail·영수증) 대표자란 = 개설자(대표자) {{receipt_representative}}=박영진
+  //       (진료의 아님) + 도장=법인(요양기관) 인감 {{institution_seal_html}}
+  //     · 진료의 축 서류(소견서·진단서·처방전 등) = 진료의({{doctor_name}}) 보존, 박영진 미주입 (CEO Q2 원칙 유지)
+  //   구 단언('bill_detail 대표자=진료의 보존')은 세부내역서를 진료의 축으로 오분류 → refined 정책으로 교정.
+  test('bill_detail(세부산정내역·기관 발행) 대표자 셀 = 개설자 {{receipt_representative}}=박영진', () => {
     const tpl = getHtmlTemplate('bill_detail') as string;
     const html = bindHtmlTemplate(tpl, {
       hira_institution_name: INST_NAME,
-      doctor_name: DOCTOR,
-      representative_name: REP_NAME,  // 데이터는 제공되나 print 셀에 주입 안 됨
+      doctor_name: DOCTOR,                          // 데이터는 제공되나 세부내역서 대표자 셀엔 주입 안 됨
+      receipt_representative: REP_NAME,             // 개설자(대표자)=박영진
+      institution_seal_html: '<img class="inst-seal"/>',
     });
-    expect(html).toContain(DOCTOR);           // 진료의 보존
-    expect(html).not.toContain(REP_NAME);     // 박영진 미주입 (진료의 셀 보존)
+    expect(html).toContain(REP_NAME);              // 세부내역서 대표자란 = 박영진 (refined 슬롯키드)
+    expect(html).not.toContain('{{receipt_representative}}');  // 슬롯 치환 완료
   });
 
-  test('재배선 전 서류에 {{representative_name}} 렌더 슬롯이 존재하지 않음 (audit: 진료의 셀만 존재)', () => {
-    // axis B audit: foot 출력서류에 별도 기관 대표자 렌더 필드 없음 → representative_name 미바인딩(무변경).
+  test('diag_opinion(진료의 축 서류) 진료의 셀 = {{doctor_name}} 보존, 박영진 미주입 (CEO Q2 유지)', () => {
+    const tpl = getHtmlTemplate('diag_opinion') as string;
+    const html = bindHtmlTemplate(tpl, {
+      hira_institution_name: INST_NAME,
+      doctor_name: DOCTOR,
+      receipt_representative: REP_NAME,             // 데이터 제공되나 진료의 축 서류 셀엔 주입 안 됨
+    });
+    expect(html).toContain(DOCTOR);                // 진료의 보존
+    expect(html).not.toContain(REP_NAME);          // 박영진 미주입 (진료의 축 격리)
+  });
+
+  test('출력서류에 레거시 {{representative_name}} 렌더 슬롯이 존재하지 않음 (audit: 대표자 토큰은 receipt_representative로 일원화)', () => {
+    // axis B audit: 기관 대표자는 {{receipt_representative}} 단일 토큰으로만 렌더 →
+    //   레거시 {{representative_name}} 토큰은 어느 재배선 서류에도 없어야 함(이중 토큰 신설 0).
     for (const formKey of REBOUND_FORMS) {
       const tpl = getHtmlTemplate(formKey) as string;
       expect(tpl).not.toContain('{{representative_name}}');
