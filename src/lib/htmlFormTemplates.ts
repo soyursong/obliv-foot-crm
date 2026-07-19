@@ -948,24 +948,23 @@ ${COMMON_STYLE}
         <td class="num-cell">0</td>
         <td class="num-cell">{{subtotal_noncovered}}</td>
       </tr>
+      <!-- T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-②: '끝처리 조정금액' = 10원 단위 절사 차액
+           ({{detail_rounding}}, ≤0). 대상 = 계 총액(본인부담금+비급여, 공단 제외)의 10원 미만 우수리.
+           copayment 100원 절사와는 직교(computeBillDetailRounding, 이중적용 없음). 총액 열에 표기. -->
       <tr>
         <td colspan="7" style="text-align:center; background:#f8f8f8;">끝처리 조정금액</td>
-        <td class="num-cell">0</td>
+        <td class="num-cell">{{detail_rounding}}</td>
         <td class="num-cell">0</td>
         <td class="num-cell">0</td>
         <td class="num-cell">0</td>
         <td class="num-cell">0</td>
       </tr>
+      <!-- T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-③: '합계' = 본인부담금 + 비급여(공단 제외, A안) 를
+           끝처리 조정 반영({{detail_total}}=절사 후). 값 셀 병합(colspan=5) + 중앙정렬(김주연 총괄 확정).
+           공단부담금 별도 표기는 '계' 행({{subtotal_fund}})에서 유지 — GONGDAN-HIDE B안 정합. -->
       <tr>
         <td colspan="7" style="text-align:center; background:#f8f8f8; font-weight:bold;">합계</td>
-        <!-- T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): '총액(합계)' 열 = 급여 본인부담금 + 비급여
-             ({{detail_total}}, 공단부담금 제외). 공단부담금 합계({{total_fund}})는 표시 그대로 유지 — 합계에서만 제외. -->
-        <td class="num-cell"><strong>{{detail_total}}</strong></td>
-        <!-- T-20260708-foot-BILLING-DOCFEE-INSAMOUNT-MISSING AC-3: 합계 본인부담금/공단부담금 바인딩(표시 유지). -->
-        <td class="num-cell"><strong>{{total_copayment}}</strong></td>
-        <td class="num-cell"><strong>{{total_fund}}</strong></td>
-        <td class="num-cell">0</td>
-        <td class="num-cell"><strong>{{total_noncovered}}</strong></td>
+        <td colspan="5" class="num-cell" style="text-align:center;"><strong>{{detail_total}}</strong></td>
       </tr>
     </tbody>
   </table>

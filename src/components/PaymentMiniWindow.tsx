@@ -112,6 +112,7 @@ import {
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: bill_detail 급여구분/본인·공단 split SSOT
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
+  computeBillDetailRounding,
   type FootBillingItem,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE → T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK:
@@ -1974,10 +1975,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         //   RC = GONGDAN-HIDE-COPAY-ONLY(B안)이 계/합계 셀 placeholder 를 {{detail_subtotal}}/{{detail_total}} 로 바꿨으나
         //   결제창(PATH-4) 바인딩만 미갱신 → 두 영역 공란 회귀. DocumentPrintPanel 과 동일 산식(copaymentTotal 본인부담 +
         //   비급여 합계, 위 applyBillingFallback nonCovered 와 동일 소스)으로 복구 — 건보 산출로직·서식 무변경(AC-7).
-        autoValues.detail_total = formatAmount(
-          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
-        );
-        autoValues.detail_subtotal = autoValues.detail_total;
+        // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX:
+        //   AC-① 계 행 열별 세로합(본인부담금/공단부담금/비급여) 결제창 경로 미세팅 → blank 회귀 복구.
+        //   AC-② 끝처리 조정(10원 절사). AC-③ 합계=본인+비급여(절사 후). DocumentPrintPanel 과 동일 산식.
+        {
+          const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
+          const pmwFund = Math.max(0, coveredTotal - copaymentTotal);
+          const pmwPayable = copaymentTotal + pmwNonCov;
+          const { adjustment, roundedTotal } = computeBillDetailRounding(pmwPayable);
+          // 계 행 열별 세로합 (AC-①, 5개 열 전부)
+          autoValues.subtotal_copayment = formatAmount(copaymentTotal);
+          autoValues.total_copayment = autoValues.subtotal_copayment;
+          autoValues.subtotal_fund = formatAmount(pmwFund);
+          autoValues.total_fund = autoValues.subtotal_fund;
+          autoValues.subtotal_noncovered = formatAmount(pmwNonCov);
+          autoValues.total_noncovered = autoValues.subtotal_noncovered;
+          // 계 총액(절사 전) / 끝처리 조정 / 합계(절사 후)
+          autoValues.detail_subtotal = formatAmount(pmwPayable);
+          autoValues.detail_rounding = formatAmount(adjustment);
+          autoValues.detail_total = formatAmount(roundedTotal);
+        }
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(공단/본인/비급여).
       //   PATH-4(결제창 단독발행)도 세부산정내역과 동일 SSOT(buildPmwBillDetailItems)로 항목별 집계.
@@ -2107,10 +2124,22 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         }
         // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-2/6): 세부산정내역 '계'·'합계' = 급여 본인부담금 + 비급여(공단 제외).
         //   출력+수납 경로도 동일 회귀 — {{detail_subtotal}}/{{detail_total}} 미바인딩 공란 복구. 산식·서식 무변경(AC-7).
-        autoValues.detail_total = formatAmount(
-          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
-        );
-        autoValues.detail_subtotal = autoValues.detail_total;
+        // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: AC-① 계 행 열별 세로합 + AC-② 끝처리 조정 + AC-③ 합계(절사 후).
+        {
+          const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
+          const pmwFund = Math.max(0, coveredTotal - copaymentTotal);
+          const pmwPayable = copaymentTotal + pmwNonCov;
+          const { adjustment, roundedTotal } = computeBillDetailRounding(pmwPayable);
+          autoValues.subtotal_copayment = formatAmount(copaymentTotal);
+          autoValues.total_copayment = autoValues.subtotal_copayment;
+          autoValues.subtotal_fund = formatAmount(pmwFund);
+          autoValues.total_fund = autoValues.subtotal_fund;
+          autoValues.subtotal_noncovered = formatAmount(pmwNonCov);
+          autoValues.total_noncovered = autoValues.subtotal_noncovered;
+          autoValues.detail_subtotal = formatAmount(pmwPayable);
+          autoValues.detail_rounding = formatAmount(adjustment);
+          autoValues.detail_total = formatAmount(roundedTotal);
+        }
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(출력+수납 경로).
       if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {

@@ -671,3 +671,28 @@ export function fillBillItemCopayment(
     remainder -= add;
   }
 }
+
+/**
+ * T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX AC-② — 진료비 세부산정내역 '끝처리 조정금액' 10원 단위 절사.
+ *
+ * 대상 = 환자 실납부액(payable) = 급여 본인부담금 + 비급여 (공단 제외).
+ *   GONGDAN-HIDE B안(T-20260714) / A안 canon(김주연 총괄 2026-07-19 확정) — 합계에서 공단부담금 제외.
+ *
+ * ▷ diagnose-first (copayment FLOOR 이중적용 없음):
+ *   copayment(본인부담금)는 이미 100원 절사(round-DOWN, computeFootBilling/fillBillItemCopayment)된 값이다.
+ *   본 절사는 그 위에서 (본인부담금 + 비급여) '합'을 10원 배수로 내림하는 별개 레벨의 연산으로,
+ *   copayment 산출 레벨과 직교한다. copayment 가 이미 100원 배수여도 비급여가 10원 미만 우수리를 가지면
+ *   payable 이 10원 배수가 아닐 수 있어 adjustment 가 유효하다. payable 이 이미 10원 배수면 adjustment=0
+ *   (예: 308,800 → 0). 이중 절사·중복 상쇄가 발생하지 않는다.
+ *
+ * @param payable 본인부담금 + 비급여 (계 행 총액, 절사 전)
+ * @returns adjustment = floor(payable/10)*10 - payable (≤ 0, 끝처리 조정금액 행),
+ *          roundedTotal = floor(payable/10)*10 (합계 행, 절사 반영)
+ */
+export function computeBillDetailRounding(
+  payable: number,
+): { adjustment: number; roundedTotal: number } {
+  const safe = Number.isFinite(payable) && payable > 0 ? payable : 0;
+  const roundedTotal = Math.floor(safe / 10) * 10;
+  return { adjustment: roundedTotal - safe, roundedTotal };
+}
