@@ -2356,19 +2356,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     }}
                     data-testid="pmw-footcare-cat-tab"
                     className={cn(
-                      // ═══ T-20260715-foot-PAYMINI-4ZONE-LAYOUT-SPEC AC1 (색박스 스샷 F0BJ87C400G 좌표근거) ═══
-                      // 🔴 좌측 탭(기본(진찰료)/시술내역/수액/화장품) = 공간 최소(컴팩트) + 정사각형 형태.
-                      // 구: 가로 pill(px-2 py-1 rounded, 텍스트폭 가변) → 신: 소형 정사각형(aspect-square w-14).
-                      // 하단 코드 카드(aspect-square, L2197)와 시각 정합 → AC4 4구역 스샷 일치.
-                      // AC3 회귀가드: 사이즈 변경은 code-grid 열(pmw-code-grid) 내부에 국한 →
-                      //   ②차트코드행·③세금/수납잔액·④우측 zone reflow 무영향(사이드 열 폭·DOM 트리 불변).
-                      'aspect-square w-14 shrink-0 flex items-center justify-center rounded border transition-colors',
+                      // ═══ T-20260715-foot-PAYMINI-4ZONE-LAYOUT-SPEC (FIX MSG-3cwy) ═══
+                      // 🔴 좌측 카테고리 탭 = 세로 항목 리스트 위 슬림 네비 스트립.
+                      // 4차 좀비 RC = 이전 AC1이 탭을 'aspect-square 정사각형 가로 wrap'으로 구현(총괄 반려 대상 artifact).
+                      // → 슬림 텍스트 탭(px-2.5 py-1)으로 환원. 탭은 네비게이터(항목 아님) → 슬림 유지.
+                      //   실 세로화 대상은 하단 항목 팔레트(pmw-palette-list, flex flex-col) = ④식 세로 섹션.
+                      // AC3 회귀가드: 변경은 code-grid 열(pmw-code-grid) 내부에 국한 → ②③④ reflow 무영향(사이드 열 DOM 트리 불변).
+                      'px-2.5 py-1 shrink-0 rounded border text-[11px] leading-tight transition-colors',
                       footcareCat === cat
                         ? 'bg-teal-600 text-white border-teal-600'
                         : 'border-input hover:bg-muted',
                     )}
                   >
-                    <span className="text-[10px] leading-tight text-center px-0.5 line-clamp-3">
+                    <span className="whitespace-nowrap">
                       {cat}
                     </span>
                   </button>
@@ -2376,9 +2376,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               </div>
             )}
 
-            {/* 풋케어: 4열 그리드 — AC-3(코드명/코드번호/수가) + AC-4(스크롤)
-                T-20260713-foot-PAYMINI-VERTICAL-STACK-REVERT: 4b5025a flex-col 세로화 원복
-                → 원본 가로 다열 그리드(grid-cols-3 lg:grid-cols-4) 복원. data-testid 유지(E2E 훅). */}
+            {/* 풋케어: ①좌측 항목 팔레트 = ④우측 보라영역식 세로 섹션 리스트
+                ═══ T-20260715-foot-PAYMINI-4ZONE-LAYOUT-SPEC (FIX MSG-3cwy · 4차 좀비 종식) ═══
+                총괄 김주연 직접확정(ts 1784447309.406059, ch C0ATE5P6JTH): "웅 보라색 영역처럼 항목들 세로로 배치!"
+                = pending_question(b) CONFIRMED. 대상=①좌측 항목 팔레트 / 목표비주얼=④ pmw-zone3(패키지·서류발행) 세로 섹션.
+                구: 가로 다열 그리드(grid grid-cols-3 lg:grid-cols-4 · aspect-square 정사각형 카드) = 항목이 좌→우 가로 배치
+                → 신: 세로 스택(flex flex-col gap-1.5) · 항목=full-width 행(이름 좌 / 코드·수가 우, flex items-center justify-between)
+                   = ④ pmw-zone3 패키지 행(rounded border · flex justify-between · space-y)과 동일 DOM 구조 복제.
+                ★anti-zombie: DOM 앵커 = zone3(④) 실 구조 복제 → 항목 flex-direction:column(위→아래 stack). 좌표/정사각형 blind 금지. */}
             {activeTab === '풋케어' && (
               <div className="flex-1 overflow-y-auto p-2">
                 {tabServices.length === 0 ? (
@@ -2386,24 +2391,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     등록된 코드가 없습니다
                   </p>
                 ) : (
-                  <div className="grid grid-cols-3 lg:grid-cols-4 gap-1.5" data-testid="pmw-palette-list">
+                  <div className="flex flex-col gap-1.5" data-testid="pmw-palette-list">
                     {tabServices.map((svc) => (
                       <button
                         key={svc.id}
                         onClick={() => handleSelectService(svc)}
                         data-testid="pmw-palette-item"
-                        className="aspect-square flex flex-col items-center justify-center rounded border p-1.5 hover:bg-teal-50 hover:border-teal-300 transition-colors text-center"
+                        className="w-full flex items-center justify-between gap-2 rounded border px-2.5 py-2 min-h-[44px] hover:bg-teal-50 hover:border-teal-300 transition-colors text-left"
                       >
-                        <span className="text-[10px] font-medium leading-tight line-clamp-2">
+                        <span className="text-[11px] font-medium leading-tight line-clamp-2 min-w-0 flex-1">
                           {svc.name}
                         </span>
-                        {svc.service_code && (
-                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
-                            {svc.service_code}
+                        <span className="flex flex-col items-end shrink-0">
+                          {svc.service_code && (
+                            <span className="text-[9px] text-blue-500 tabular-nums truncate max-w-[88px]">
+                              {svc.service_code}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {formatAmount(svc.price)}
                           </span>
-                        )}
-                        <span className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
-                          {formatAmount(svc.price)}
                         </span>
                       </button>
                     ))}

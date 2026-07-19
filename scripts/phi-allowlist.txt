@@ -63,3 +63,7 @@
 #   결제 미니창 ②③ 재배치 P1 spec 전용 합성값. 반복 자릿수(9999) 합성마커, 실환자 재식별 0.
 #   afterAll cleanup(phone 기준)로 픽스처 즉시 정리.
 \+?821099997746
+# ── T-20260715-foot-PAYMINI-4ZONE-LAYOUT-SPEC 합성 E2E fixture phone (2026-07-19) ──
+#   결제 미니창 4구역 ①좌측 세로 팔레트 P0 spec 전용 합성값. 반복 자릿수(9999/7744) 합성마커, 실환자 재식별 0.
+#   NAME='[PAYMINI-4ZONE-TEST]' · afterAll cleanup(phone 기준)로 픽스처 즉시 정리.
+\+?821099997744
