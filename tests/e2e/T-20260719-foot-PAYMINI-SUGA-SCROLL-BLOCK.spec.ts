@@ -156,25 +156,39 @@ test('AC1~AC4: 수가항목 클릭 후 결제비 산정 버튼 도달 가능 + 4
   const settleBtn = page.locator('[data-testid="btn-settle"]').first();
   await expect(settleBtn, 'AC1 수납 버튼 존재').toBeVisible();
 
-  // ── AC1 RC 가드: btn-settle 의 스크롤 소유자 = pmw-settle-lane(통합 단일 창) ──
-  //   버그시엔 버튼영역만 overflow-y-auto(창 ~131px, 버튼으로 꽉 참) → 터치 스크롤 불가.
-  //   수정 후엔 settle-lane 이 소유 + 창(clientHeight) ≥ 180px 로 넉넉(버그 131px 대비) → 터치 스크롤 가능.
-  //   (feeitem-row 펼침 시 settle-lane 이 다소 줄어 212px 관측 — 여전히 협소창 131px 회귀 가드 통과.)
+  // ── AC1 RC durable fix: T-20260719-foot-PMW-LAYOUT-SCROLL 재배치로 해소 ──
+  //   [구 band-aid] settle-lane 통합 단일 창(sm:overflow-y-auto)이 ③ 세금구분+버튼을 한 덩어리로 스크롤.
+  //   [신 durable]  settle-lane = shrink-0(자연높이) + flex-col. ③ 세금구분(pmw-tax-fixed-band)은 스크롤 밖
+  //     shrink-0 고정, 스크롤 소유권은 액션버튼 div로 이관. ② 접힘 기본이면 버튼도 자연높이로 흘러 무스크롤.
+  //   가드: btn-settle 조상 체인 상에서 pmw-tax-fixed-band(③)는 스크롤 컨테이너 내부에 들어있지 않아야 함.
   const scrollProbe = await settleBtn.evaluate((el) => {
+    // btn-settle 위로 올라가며 최초 스크롤 컨테이너 탐색
     let node: HTMLElement | null = el.parentElement;
+    let scrollOwner: string | null = null;
     while (node) {
       const cs = getComputedStyle(node);
       if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
-        return { owner: node.getAttribute('data-testid'), ch: node.clientHeight, sh: node.scrollHeight };
+        scrollOwner = node.getAttribute('data-testid') ?? '(action-area)';
+        break;
       }
+      if (node.getAttribute('data-testid') === 'pmw-settle-lane') break;
       node = node.parentElement;
     }
-    return { owner: null, ch: 0, sh: 0 };
+    // ③ 세금구분 밴드가 스크롤로 클리핑되는지 (settle-lane 상단 대비)
+    const band = document.querySelector('[data-testid="pmw-tax-fixed-band"]') as HTMLElement | null;
+    const lane = document.querySelector('[data-testid="pmw-settle-lane"]') as HTMLElement | null;
+    return {
+      scrollOwner,
+      bandTop: band ? Math.round(band.getBoundingClientRect().top) : null,
+      laneTop: lane ? Math.round(lane.getBoundingClientRect().top) : null,
+      bandVisible: band ? band.getBoundingClientRect().height > 0 : false,
+    };
   });
   // eslint-disable-next-line no-console
-  console.log(`[SCROLL-EVIDENCE] scroll-owner=${scrollProbe.owner} window=${scrollProbe.ch} content=${scrollProbe.sh}`);
-  expect(scrollProbe.owner, 'AC1 스크롤 소유자=settle-lane(단일 통합 창)').toBe('pmw-settle-lane');
-  expect(scrollProbe.ch, 'AC1 스크롤 창 ≥180px(131px 협소창 회귀 가드)').toBeGreaterThanOrEqual(180);
+  console.log(`[SCROLL-EVIDENCE durable] scroll-owner=${scrollProbe.scrollOwner} bandTop=${scrollProbe.bandTop} laneTop=${scrollProbe.laneTop}`);
+  // ③ 세금구분 밴드는 settle-lane 최상단(±2px)에 고정 — 스크롤 소유자(settle-lane)가 아님.
+  expect(scrollProbe.scrollOwner, 'AC1 스크롤 소유자는 settle-lane 아님(③ 고정 밴드는 스크롤 밖)').not.toBe('pmw-settle-lane');
+  expect(scrollProbe.bandVisible, 'AC1/AC2 ③ 세금구분 고정 밴드 노출').toBe(true);
 
   // ① 스크롤로 btn-settle 을 뷰포트 안에 들일 수 있어야 함(클리핑 밖 → 도달)
   await settleBtn.scrollIntoViewIfNeeded();

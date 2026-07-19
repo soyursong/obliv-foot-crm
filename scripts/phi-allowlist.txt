@@ -59,3 +59,7 @@
 #   afterAll cleanupSeed(phone 기준)로 픽스처 즉시 정리.
 \+?821099997745
 \+?821099998801
+# ── T-20260719-foot-PMW-LAYOUT-SCROLL 합성 E2E fixture phone (2026-07-19) ──
+#   결제 미니창 ②③ 재배치 P1 spec 전용 합성값. 반복 자릿수(9999) 합성마커, 실환자 재식별 0.
+#   afterAll cleanup(phone 기준)로 픽스처 즉시 정리.
+\+?821099997746

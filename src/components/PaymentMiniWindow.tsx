@@ -2662,18 +2662,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                  세금구분 · 합계 · 수납버튼 (Zone2 tail) — 기존 폭 유지 (LEFTLANE 이전 원복폭 sm:w-64 md:w-64 lg:w-72).
                  추출된 상단 수가항목 행의 아래로 흐르며, 계산/수납 로직·동작은 불변.
             ───────────────────────────────────────────────────────────────────── */}
-            {/* ═══ T-20260719-foot-PAYMINI-SUGA-SCROLL-BLOCK (P0 hotfix · 수납차단 복구) ═══
-                RC(4ZONE reflow 58f53c40/9cef7d7b): 좌측 탭 aspect-square reflow로 code-grid 열 높이 증가 →
-                  중앙 세로 스택(code-grid flex-1 / feeitem-row / settle-lane flex-1)에서 settle-lane 압축.
-                  실제 스크롤은 하단 버튼 div(overflow-y-auto shrink min-h-0)가 소유 → 창 ~131px로 꽉 차
-                  '결제비 산정'/btn-settle 미도달 → 수납 완전 차단.
-                fix: 스크롤 소유권을 settle-lane 통합 단일 창으로 이관(sm:overflow-y-auto) + sm:min-h-[200px]로
-                  협소창 회귀 차단(code-grid가 min-h-0로 양보). 내부 버튼 div의 자체 스크롤 제거(아래 참조).
-                  계산 SSOT·4ZONE 정사각 탭 무접촉. */}
-            <div className="w-full flex-1 min-h-0 sm:min-h-[200px] border-t sm:overflow-y-auto" data-testid="pmw-settle-lane">
+            {/* ═══ T-20260719-foot-PMW-LAYOUT-SCROLL (P1 · ②③ 중앙 재배치 · durable fix) ═══
+                색박스 정본(162053/162054, 김주연 총괄): ③ 세금구분·수납잔액·차감후청구 = 스크롤 없이 고정.
+                ◆ 구조 재배치(SUGA-SCROLL-BLOCK P0 밴드에이드 대체):
+                  구: settle-lane 통합 단일 창(flex-1 sm:overflow-y-auto)이 ③ 세금구분 + 액션버튼을 한 덩어리로
+                     스크롤 → ③가 수납버튼과 함께 밀려 협소창에서 '결제비 산정'/btn-settle 미도달(요청2 증상).
+                  신: settle-lane = shrink-0(자연높이 우선) + flex flex-col. code-grid(flex-1)가 공간 양보 →
+                     settle-lane 굶지 않음(SUGA-SCROLL-BLOCK RC 구조적 해소). 내부를 2분할:
+                     [③ 세금구분 fixed band: shrink-0, 스크롤 없이 항상 노출]
+                     [액션버튼: min-h-0 flex-1, sm:overflow-y-auto fallback — 극단(분할결제 다행+등급재정산)만 스크롤].
+                  ② 접힘 기본(feeItemExpanded=false)이라 컴팩트 → 수납버튼 무스크롤 도달(AC-3).
+                  sm:max-h-[460px]로 협소창 밴드 상한(band 600px overflow-hidden 내 회귀 차단).
+                  계산 SSOT(COPAY-BALANCE-SPLIT canonical) 무접촉 — 표시만 재배치(AC-4).
+                  ※ SUGA-SCROLL-BLOCK(P0)의 band-aid 스크롤 fix 별도 구현 금지 — 본 재배치가 durable fix. */}
+            <div className="w-full shrink-0 min-h-0 border-t flex flex-col sm:max-h-[460px]" data-testid="pmw-settle-lane">
                 {/* 세금 구분 + 합산 (수가 항목 있을 때만) */}
                 {pricingItems.length > 0 && (
-                  <div className="border-t px-3 py-2 bg-muted/20 shrink-0 space-y-1">
+                  /* T-20260719-foot-PMW-LAYOUT-SCROLL AC-2: ③ 세금구분·수납잔액·차감후청구 = shrink-0 고정 밴드(스크롤 밖).
+                     상위 settle-lane 스크롤은 아래 액션버튼 div가 소유 → 이 밴드는 항상 노출. */
+                  <div className="border-t px-3 py-2 bg-muted/20 shrink-0 space-y-1" data-testid="pmw-tax-fixed-band">
                     <p className="text-xs font-semibold text-muted-foreground">세금 구분</p>
                     {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT REOPEN#5 (김주연 총괄, 스크린샷 요구):
                         세금구분 '급여' 라인 = 환자 자부담(30%)만 표시. 공단부담(70%)은 이 라인/수납잔액에서 제외하고
@@ -2735,10 +2742,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 )}
 
                 {/* 액션 버튼
-                    T-20260719-foot-PAYMINI-SUGA-SCROLL-BLOCK: 자체 overflow-y-auto/shrink/min-h-0 제거.
-                    스크롤은 상위 settle-lane 통합 창이 소유(중첩 스크롤 = 131px 협소창 원인). 여기선 자연 높이로
-                    흘러 settle-lane 스크롤에 편입 → 수납 버튼까지 스크롤 도달 보장. */}
-                <div className="px-3 pt-2 pb-3 space-y-2 border-t">
+                    T-20260719-foot-PMW-LAYOUT-SCROLL: 스크롤 소유권을 이 버튼 영역으로 이관(flex-1 min-h-0 sm:overflow-y-auto).
+                    위 ③ 세금구분 band(shrink-0)는 스크롤 밖 고정 → 항상 노출(AC-2). ② 접힘 기본이면 버튼도 자연높이로
+                    흘러 무스크롤(AC-3); 극단 케이스만 이 영역 내부 스크롤. */}
+                <div className="min-h-0 flex-1 sm:overflow-y-auto px-3 pt-2 pb-3 space-y-2 border-t">
                   {/* [시술 저장 및 포함 금액 산정] */}
                   <Button
                     variant="outline"
