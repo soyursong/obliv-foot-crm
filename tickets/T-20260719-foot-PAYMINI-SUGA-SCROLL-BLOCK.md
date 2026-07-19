@@ -5,7 +5,10 @@ priority: P0
 hotfix: true
 status: deploy-ready
 qa_result: pending (supervisor 실렌더 GO 대기)
-deploy_commit: c3c30d87
+deploy_commit: 938bae6d
+ceo_decision: MSG-20260719-163833-jksb (형 직접) — 스크롤 복원 유지 + ★AC-4(4ZONE 정사각 canon 회귀금지) 잠정 해제 + AC-3 RC 명시
+ac4_status: 잠정 해제 (canon 보존 의무 OFF — canon 회귀 이유로 스크롤 fix 막지 않음). 현 fix는 canon 무접촉으로도 스크롤 복원 달성(cat-tab 56x56 유지) → 해제 활용 불요.
+ac3_rc: 수납금액=footBilling SSOT(computeFootBilling) 소비만(PMW 병렬재계산 無, line 1491 가드). 스크롤 fix는 순수 CSS(settle-lane)로 계산경로 무접촉 → 스크롤 여파 아님. 유일 금액 불일치=COPAY-BALANCE-SPLIT spec의 stale 기대(CEIL 8,900) vs 현 runtime FLOOR 8,800(revenue_insurance_split_spec §2-2 v1.12, T-20260715 이미 land). 즉 계산버그 아님·산식 재수정 불요 → 산식 FOLLOWUP 없음(stale spec fixture는 CEIL→FLOOR 마이그 소유).
 deployed_at: n/a (supervisor 운영배포/번들 검증 대기)
 bundle_hash: PaymentMiniWindow 청크 (로컬 build ✓ — supervisor 운영배포 후 pages.dev 재검증)
 db_change: false
@@ -44,6 +47,19 @@ summary: 결제 미니창 수가항목 스크롤 불가→수납(btn-settle) 미
 - PMW-SCROLL-FIX 4/4 PASS: AC-3 신 아키텍처 정합 + seed is_simulation:true 제거(대시보드 숨김 pre-existing harness 결함 해소).
 - PMW-SPLIT-PAYMENT 5/5 PASS(단독), 4ZONE-CANON-HOST-GUARD PASS.
 - COPAY-BALANCE-SPLIT 실패 = 기존 CEIL→FLOOR 마이그레이션(footBilling.ts 무접촉) — 본건 무관.
+
+## CEO 결정 반영 (MSG-20260719-163833-jksb / PUSH MSG-20260719-164531-eon2)
+1. **스크롤 복원 유지** — 매출차단 최우선. 현 fix(c3c30d87) 실렌더 SUGA 2/2 PASS로 복원 확정(scroll-owner=pmw-settle-lane, window 212, btn-settle top=681 뷰포트 도달).
+2. **★AC-4 잠정 해제** — 4ZONE 정사각 canon(F0BJ87C400G) 보존 의무 OFF. 단, 현 fix는 canon 무접촉으로 스크롤 복원을 이미 달성(cat-tab 56x56 유지 실측) → 좌측 탭 레이아웃 변경 없이 목표 충족. canon 회귀를 이유로 fix를 막지 않았음(막을 일 없었음). 4ZONE 좌측 탭 정합성은 총괄 재확정 스펙 이후 별도 티켓.
+3. **AC-3 RC 명시** (frontmatter ac3_rc 참조) — 수납금액 오류는 (a) 스크롤 여파 아님(fix=순수 CSS, 계산경로 무접촉), (b) 계산버그 아님(PMW=footBilling SSOT 소비, 병렬재계산 無). runtime 자부담 8,800(FLOOR, 정합) — 과거 8,900(CEIL)는 T-20260715 CEIL→FLOOR 확정 마이그로 대체됨. **산식 재수정 불요 → planner 산식 FOLLOWUP 없음.** (COPAY-BALANCE-SPLIT spec의 stale 8,900 기대는 CEIL→FLOOR 마이그 소유 fixture-lag, 본건 무관.)
+
+## 추가 harness fix (938bae6d, test-only)
+PMW-SCROLL-FIX cleanupSeed 결정론 복구: c3c30d87가 seed에서 is_simulation:true 제거했으나 cleanupSeed 필터는 미갱신 → 재실행마다 중복키 시드실패(4-fail). phone+name 교집합 cleanup으로 교체. **연속 2회 재실행 5 passed 결정론 확인.** 프로덕션 코드 무접촉.
+
+## 검증 (재확정, 갤탭 1280x800 landscape 실렌더 재측정)
+- SUGA spec **2/2 PASS**: scroll-owner=pmw-settle-lane, window=212, content=432, btn-settle afterScroll top=681/bottom=721(뷰포트 도달·클릭), cat-tab 56x56 정사각.
+- PMW-SCROLL-FIX **5 passed(AC1~5, 연속 2회 결정론)**: AC-3 신 아키텍처(settle-lane 소유자 ≥180px) 정합.
+- build ✓ (5.32s).
 
 ## 인계
 supervisor: hotfix 브랜치 → main 병합(CF Pages 자동배포) + pages.dev 실렌더 GO 후 총괄 릴레이.
