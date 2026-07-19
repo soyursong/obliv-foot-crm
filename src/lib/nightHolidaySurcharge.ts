@@ -14,6 +14,8 @@
  * 집계(service_charges)에 영속되지 않으므로 매출 분자에 진입하지 않음(AC-6 구조적 충족).
  */
 
+import { formatAmount } from '@/lib/format';
+
 /** 가산 요율 — 야간/공휴일 공통 30% (의원급 진찰료 표준, body canon 동일). */
 export const SURCHARGE_RATE = 0.3;
 
@@ -124,4 +126,103 @@ export function computeSurcharge(
   const copay = Math.round(amount * ratio);
   const covered = Math.max(0, amount - copay);
   return { amount, copay, covered };
+}
+
+/** 금액 문자열 → 숫자 (콤마·통화기호 제거, NaN 가드). */
+function parseAmt(v: string | undefined): number {
+  if (v == null || v === '') return 0;
+  const n = Number(v.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (reopen 2026-07-19, field-soak FAIL RC) ──
+ * 출력 시점 야간·공휴일 가산을 대상 서류 값 번들에 자동 반영하는 **단일 SSOT 헬퍼**.
+ *
+ * ⚠ reopen RC(스펙-구현 divergence): reopen 전에는 이 로직이 DocumentPrintPanel `allValues` 메모
+ *   (=미리보기 경로)에만 인라인 존재했고, 실제 현장 인쇄 경로인 **일괄 출력(handleBatchPrint)**의
+ *   `valuesFor`(→ autoValues 바인딩)에는 미배선이었다. 그 결과 미리보기엔 가산·체크가 보이나
+ *   현장 인쇄물엔 미반영(preview OK / print FAIL) → 총괄 신고. 순수함수(detectSurchargeKind 등)는
+ *   일요일(dow===0)을 이미 공휴일로 판정하므로 요일판정 누락(가설 a)이 아니라, 렌더 경로 미배선이 RC.
+ *   → 미리보기·일괄출력 양측이 이 동일 헬퍼를 호출하도록 일원화(SSOT)해 divergence를 구조적으로 차단.
+ *
+ * @param base          대상 서류 필드 값 번들. **in-place mutate** — 호출측이 form_key별 복사본을
+ *                      넘겨 bill_receipt_new ↔ bill_detail 간 공유키(subtotal/total_amount) 교차오염을 차단한다.
+ * @param formKey       'bill_receipt_new' | 'bill_detail' 만 적용, 그 외는 no-op(회귀0, AC-5).
+ * @param isCalHoliday  clinic_events(event_type='holiday') 달력 빨간날 소스 합집합 판정.
+ * @param overriddenKeys 스태프 수동 편집 키(AC-4) — 해당 키는 가산 folding 제외(수동값 우선).
+ * @param refDate       판정 기준 일시(출력 시점 = new Date()). 테스트는 특정 일시 주입 가능.
+ */
+export function applyNightHolidaySurcharge(
+  base: Record<string, string>,
+  formKey: string,
+  isCalHoliday: boolean,
+  overriddenKeys: Set<string>,
+  refDate: Date,
+  buildDetailRow: (args: {
+    kind: SurchargeKind;
+    amount: number;
+    copay: number;
+    covered: number;
+    date?: string;
+  }) => string,
+): void {
+  if (formKey !== 'bill_receipt_new' && formKey !== 'bill_detail') return;
+  const kind = detectSurchargeKind(refDate, isCalHoliday);
+
+  // 체크박스 자동 체크(계산서 신양식). 미가산 시 공란 유지(회귀0, AC-1).
+  base.night_mark = surchargeMark(kind, 'night');
+  base.holiday_mark = surchargeMark(kind, 'holiday');
+
+  if (formKey === 'bill_receipt_new') {
+    // 진찰료 급여 base = 본인부담금(①) + 공단부담금(②). foot 급여 = 진찰료(Q4).
+    const copayBase = parseAmt(base.copayment);
+    const coveredBase = parseAmt(base.insurance_covered);
+    const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+    base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
+    base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
+    if (sc.amount > 0) {
+      const fold = (key: string, add: number) => {
+        if (overriddenKeys.has(key)) return;
+        base[key] = formatAmount(parseAmt(base[key]) + add);
+      };
+      fold('copayment', sc.copay);
+      fold('insurance_covered', sc.covered);
+      fold('total_amount', sc.amount);
+      fold('subtotal_amount', sc.amount);
+      // ⑧ 환자부담 총액 = 본인부담 + 비급여(공단 제외) → 가산 본인분만 가산.
+      fold('patient_amount', sc.copay);
+    }
+  } else {
+    // bill_detail(세부산정내역): 진찰료 급여 base = 표시된 본인부담금 총계 + 공단부담금 총계.
+    const copayBase = parseAmt(base.subtotal_copayment);
+    const coveredBase = parseAmt(base.subtotal_fund);
+    const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+    base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
+    base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
+    if (sc.amount > 0) {
+      // 항목 테이블에 가산 급여 행 append(items_html) + 요약행 금액 bump.
+      const rowHtml = buildDetailRow({
+        kind: kind as SurchargeKind,
+        amount: sc.amount,
+        copay: sc.copay,
+        covered: sc.covered,
+        date: base.visit_date ?? '',
+      });
+      if (rowHtml) base.items_html = (base.items_html ?? '') + '\n' + rowHtml;
+      const bump = (key: string, add: number) => {
+        if (overriddenKeys.has(key)) return;
+        base[key] = formatAmount(parseAmt(base[key]) + add);
+      };
+      bump('subtotal_copayment', sc.copay);
+      bump('total_copayment', sc.copay);
+      bump('subtotal_fund', sc.covered);
+      bump('total_fund', sc.covered);
+      bump('subtotal_amount', sc.amount);
+      bump('total_amount', sc.amount);
+      // 합계(총액 열) = 본인부담금 + 비급여(공단 제외, GONGDAN-HIDE-COPAY-ONLY B안) → 가산 본인분만.
+      bump('detail_subtotal', sc.copay);
+      bump('detail_total', sc.copay);
+    }
+  }
 }

@@ -8,6 +8,7 @@ import {
   toLocalDateStr,
   SURCHARGE_RATE,
   KOREAN_HOLIDAYS_2026,
+  applyNightHolidaySurcharge,
 } from '../../src/lib/nightHolidaySurcharge';
 import { buildSurchargeDetailRowHtml } from '../../src/lib/htmlFormTemplates';
 
@@ -122,7 +123,89 @@ test.describe('세부산정내역 가산 행 — 12컬럼 정합 + 금액 반영
   });
 });
 
-test.describe('AC-1 — 계산서 신양식 체크박스 토큰 배선 + AC-4 override 소스 배선', () => {
+/**
+ * ── reopen 2026-07-19 (field-soak FAIL RC) — 실 값 번들 augmentation 검증 ──
+ * 기존 spec은 순수함수 직접호출 + 소스 문자열 grep만 했다(렌더 경로 미검증) → 가산이 미리보기(allValues)에만
+ * 반영되고 현장 인쇄 경로(handleBatchPrint valuesFor)엔 미배선인 divergence를 잡지 못하고 GO가 나갔다.
+ * RC 재발 방지: 출력에 실제 바인딩되는 **값 번들**을 SSOT 헬퍼(applyNightHolidaySurcharge)로 변형해
+ * 일요일(2026-07-19) 공휴일 체크·금액 반영을 직접 assert 한다(총괄 신고 케이스 재현).
+ */
+test.describe('AC-1/2/3/4/5 — applyNightHolidaySurcharge 값 번들 변형 (일요일 공휴일 재현)', () => {
+  const at = (y: number, m: number, d: number, hh: number, mm = 0) => new Date(y, m - 1, d, hh, mm);
+  const sunday = at(2026, 7, 19, 15, 23); // 총괄 신고 시점(일요일 오후) 재현
+  const weekdayNoon = at(2026, 7, 13, 14); // 평일 주간(가산 없음)
+
+  test('bill_receipt_new 일요일: 공휴일 박스 체크(■)+진찰료 30% 가산 금액란 반영(AC-1/2)', () => {
+    const base: Record<string, string> = {
+      copayment: '3,000',
+      insurance_covered: '7,000',
+      total_amount: '10,000',
+      subtotal_amount: '10,000',
+      patient_amount: '3,000',
+    };
+    applyNightHolidaySurcharge(base, 'bill_receipt_new', false, new Set(), sunday, buildSurchargeDetailRowHtml);
+    // 체크박스: 공휴일만 체크(일요일=공휴일 우선 단일, 야간 미적용 AC-3)
+    expect(base.holiday_mark).toBe('■');
+    expect(base.night_mark).toBe(' ');
+    expect(base.surcharge_kind_label).toBe('공휴일');
+    // 진찰료 급여 10,000 × 30% = 3,000 (본인 900 / 공단 2,100)
+    expect(base.surcharge_amount).toBe('3,000');
+    expect(base.copayment).toBe('3,900');          // 3,000 + 900
+    expect(base.insurance_covered).toBe('9,100');   // 7,000 + 2,100
+    expect(base.total_amount).toBe('13,000');       // 10,000 + 3,000
+    expect(base.subtotal_amount).toBe('13,000');
+    expect(base.patient_amount).toBe('3,900');      // 본인부담 + 가산 본인분
+  });
+
+  test('bill_receipt_new 평일 주간: 가산 없음·금액 불변·체크 공란(AC-5 회귀)', () => {
+    const base: Record<string, string> = {
+      copayment: '3,000', insurance_covered: '7,000', total_amount: '10,000',
+      subtotal_amount: '10,000', patient_amount: '3,000',
+    };
+    applyNightHolidaySurcharge(base, 'bill_receipt_new', false, new Set(), weekdayNoon, buildSurchargeDetailRowHtml);
+    expect(base.holiday_mark).toBe(' ');
+    expect(base.night_mark).toBe(' ');
+    expect(base.surcharge_amount).toBe('');
+    expect(base.copayment).toBe('3,000');       // 불변
+    expect(base.total_amount).toBe('10,000');   // 불변
+  });
+
+  test('AC-4 override: 수동 편집된 키(copayment)는 가산 folding 제외', () => {
+    const base: Record<string, string> = {
+      copayment: '5,000', insurance_covered: '7,000', total_amount: '12,000',
+      subtotal_amount: '12,000', patient_amount: '5,000',
+    };
+    applyNightHolidaySurcharge(base, 'bill_receipt_new', false, new Set(['copayment']), sunday, buildSurchargeDetailRowHtml);
+    // 진찰료 급여 12,000 × 30% = 3,600. copayment 는 수동값 그대로(override 우선), 나머지는 가산 반영.
+    expect(base.copayment).toBe('5,000');
+    expect(base.total_amount).toBe('15,600'); // 12,000 + 3,600 (override 아닌 키는 folding)
+  });
+
+  test('bill_detail 일요일: 세부산정내역 가산 행 append + 요약 금액 bump', () => {
+    const base: Record<string, string> = {
+      subtotal_copayment: '3,000', subtotal_fund: '7,000',
+      total_copayment: '3,000', total_fund: '7,000',
+      subtotal_amount: '10,000', total_amount: '10,000',
+      detail_subtotal: '3,000', detail_total: '3,000',
+      items_html: '<tr><td>기존행</td></tr>', visit_date: '2026-07-19',
+    };
+    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), sunday, buildSurchargeDetailRowHtml);
+    expect(base.holiday_mark).toBe('■');
+    expect(base.items_html).toContain('공휴일 진료 가산 (30%)'); // 가산 행 실제 append
+    expect(base.items_html).toContain('기존행');                 // 기존 항목 보존
+    expect(base.subtotal_copayment).toBe('3,900');
+    expect(base.total_amount).toBe('13,000');
+  });
+
+  test('대상 외 form_key(rx_standard)는 no-op(회귀0)', () => {
+    const base: Record<string, string> = { copayment: '3,000', total_amount: '10,000' };
+    applyNightHolidaySurcharge(base, 'rx_standard', false, new Set(), sunday, buildSurchargeDetailRowHtml);
+    expect(base.total_amount).toBe('10,000'); // 불변
+    expect(base.night_mark).toBeUndefined();  // 마크 미설정
+  });
+});
+
+test.describe('AC-1 — 계산서 신양식 토큰 + 양 출력경로(미리보기·일괄출력) SSOT 배선 회귀가드', () => {
   const panelSrc = () => readFileSync('src/components/DocumentPrintPanel.tsx', 'utf-8');
   const tmplSrc = () => readFileSync('src/lib/htmlFormTemplates.ts', 'utf-8');
 
@@ -130,22 +213,17 @@ test.describe('AC-1 — 계산서 신양식 체크박스 토큰 배선 + AC-4 ov
     expect(tmplSrc()).toContain('[{{night_mark}}]야간 [{{holiday_mark}}]공휴일');
   });
 
-  test('DocumentPrintPanel: 출력시점(new Date) 판정 + 대상 2종 form-scoped 적용', () => {
+  test('RC 가드: 미리보기(allValues)와 일괄출력(handleBatchPrint) 양쪽이 SSOT 헬퍼 호출', () => {
     const src = panelSrc();
-    expect(src).toContain("template.form_key === 'bill_receipt_new' || template.form_key === 'bill_detail'");
-    expect(src).toContain('detectSurchargeKind(refDate, isCalHoliday)');
-    expect(src).toContain('holidayDateSet.has(toLocalDateStr(refDate))');
+    // 헬퍼 호출이 최소 2곳(allValues memo + valuesFor) — divergence 재발 방지
+    const calls = src.match(/applyNightHolidaySurcharge\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    // 일괄출력 경로가 form_key별 복사본에 적용(공유 autoValues 원본 무변경)
+    expect(src).toContain('const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };');
+    expect(src).toContain('applyNightHolidaySurcharge(');
   });
 
-  test('AC-4: 수동 편집 키는 가산 folding 제외(override 우선)', () => {
-    const src = panelSrc();
-    expect(src).toContain('surchargeOverriddenKeys');
-    expect(src).toContain('if (surchargeOverriddenKeys.has(key)) return;');
-  });
-
-  test('AC-6 ★가드: FE-only — clinic_events 는 read-only 조회만(service_charges 영속 없음)', () => {
-    const src = panelSrc();
-    // 가산 관련 INSERT/UPDATE service_charges 없음(표시 전용)
-    expect(src).not.toContain("origin: 'auto_calc'");
+  test('AC-6 ★가드: FE-only — service_charges 영속 없음(auto_calc origin 미기입)', () => {
+    expect(panelSrc()).not.toContain("origin: 'auto_calc'");
   });
 });
