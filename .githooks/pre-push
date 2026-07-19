@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# pre-push — ghost-handoff-guard pre-push 보강 (belt tail-gap 봉인)
+#   T-20260720-foot-REPO-GHOST-PREPUSH-GUARD-PORT (supervisor cogate, DA GO)
+#   reference impl: obliv-body-crm 4f8826c6 (T-20260720-body-REPO-GHOST-PREPUSH-GUARD-HARDEN)
+#
+# 배경: pre-commit(belt)은 git 이 fast-forward·무충돌 auto-merge 경로에서 구조적으로
+#       미호출 → 유령 signals.md/retro/ 가 이 경로로 main 재유입 시 미차단(잔여 tail-gap).
+#       pre-push 는 push 대상 ref-range(remote_sha..local_sha)를 스캔해 이 gap 을 봉인한다.
+#
+# git 은 stdin 으로 각 push ref 마다 다음 라인을 전달:
+#   <local ref> <local sha> <remote ref> <remote sha>
+#   - local sha = 0{40} : 브랜치 삭제 push → 내용 없음, skip
+#   - remote sha = 0{40}: 신규 remote 브랜치 → tip 트리 유령 실재만 검사(guard range 모드가 처리)
+#
+# 검출 로직은 scripts/ghost-handoff-guard.sh (belt 공유) 재사용 — 중복 구현 없음.
+# 활성화: git config core.hooksPath .githooks   (belt 에서 이미 설정 → 본 파일만 추가하면 활성)
+# 우회(비권장, 사유 명기): GHOST_HANDOFF_BYPASS=1 git push ...
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+Z40="0000000000000000000000000000000000000000"
+
+# 우회 (belt 와 동일 env, 일관성 유지)
+if [ "${GHOST_HANDOFF_BYPASS:-0}" = "1" ]; then
+  echo "⚠️  [pre-push] GHOST_HANDOFF_BYPASS=1 — 유령 경로 검사 우회(사유 명기 의무)" >&2
+  exit 0
+fi
+
+GUARD="$REPO_ROOT/scripts/ghost-handoff-guard.sh"
+[ -f "$GUARD" ] || exit 0
+
+rc=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # 빈 라인 방어
+  [ -z "${local_sha:-}" ] && continue
+  # 브랜치 삭제 push — 유입 내용 없음
+  [ "$local_sha" = "$Z40" ] && continue
+  # ref-range 스캔 (신규 브랜치=remote_sha 0{40} 은 guard range 모드가 tip 트리 실재만 검사)
+  if ! bash "$GUARD" range "$remote_sha" "$local_sha"; then
+    rc=1
+  fi
+done
+
+exit "$rc"
