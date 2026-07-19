@@ -537,10 +537,24 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   ).filter((o) => o.name.length > 0);
   // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 치료테이블 지정 진료의가 근무/마스터 목록에 없어도
   //   서명자로 선택 가능하도록 옵션에 보강(additive) — 지정 의사가 그날 근무표에 없어도 서류엔 반영.
-  const doctorOptions: { id: string; name: string; roster_type?: string }[] =
+  const doctorOptionsBase: { id: string; name: string; roster_type?: string }[] =
     treatingDoctorName && !baseDoctorOptions.some((o) => o.name === treatingDoctorName)
       ? [{ id: `treating:${treatingDoctorName}`, name: treatingDoctorName }, ...baseDoctorOptions]
       : baseDoctorOptions;
+  // T-20260719-foot-DOCREPRINT-DOCTOR-CONTENT-PERSIST: 재출력 프리필 소스 — 최초 발급 시점의 담당의.
+  //   저장 스코프=예약(check_in) 단위. 최근 유효(무효 제외) 발행분 field_data 스냅샷
+  //   (attending_doctor_name→doctor_name)에서 복원. submissions는 created_at DESC(load()) 정렬.
+  //   ⚠ 기존 컬럼(form_submissions.field_data) 조회 재사용 — 신규 컬럼 없음(db_change=false).
+  const savedDoctorName = submissions
+    .filter((s) => s.status !== 'voided')
+    .map((s) => (s.field_data?.attending_doctor_name || s.field_data?.doctor_name || '').trim())
+    .find((n) => n.length > 0) ?? '';
+  // 저장된 담당의가 근무/치료 목록에 없어도(다른 날 재출력 등) 자동 세팅되도록 additive 보강
+  //   (T-20260713 UNLINKED 패턴 재사용, 신규 정책 없음). 이미 있으면 무주입.
+  const doctorOptions: { id: string; name: string; roster_type?: string }[] =
+    savedDoctorName && !doctorOptionsBase.some((o) => o.name === savedDoctorName)
+      ? [{ id: `saved:${savedDoctorName}`, name: savedDoctorName }, ...doctorOptionsBase]
+      : doctorOptionsBase;
   const doctorOptionsKey = doctorOptions.map((o) => o.name).join('|');
 
   // 옵션 로드/변경 시 기본 선택: 현재 선택이 옵션에 없으면 → 치료테이블 지정 진료의 우선, 없으면 첫 번째.
@@ -554,6 +568,35 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctorOptionsKey, treatingDoctorName]);
+
+  // ── T-20260719-foot-DOCREPRINT-DOCTOR-CONTENT-PERSIST: 재출력 자동 세팅(프리필) ──
+  //   AC2/AC3 — 이미 한 번 출력된 서류(이 예약의 발행 이력 존재)를 다시 열면 최초 발급 시점의
+  //   (a)담당의 (b)선택 출력내용 항목을 선택 UI에 자동으로 채운다(재선택 불필요).
+  //   최초 출력 전(이력 없음)엔 미발동 → 기존 선택 UI 그대로 노출(시나리오3 edge 포함).
+  //   저장 스코프=예약(check_in) 단위(form_submissions.check_in_id). going-forward — 기존 발행분부터
+  //   저장·조회(신규 컬럼/백필 없음, db_change=false). 자동 채운 값은 기존 팝업 편집동작 상속(별도 잠금 없음).
+  //   checkIn.id당 1회만 적용 → 사용자가 자동세팅 후 바꾼 선택을 덮어쓰지 않는다.
+  const prefillAppliedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prefillAppliedRef.current === checkIn.id) return;           // 이미 이 예약에 적용 — 재적용 금지
+    if (submissions.length === 0 || templates.length === 0) return; // 이력 없음/템플릿 미로드 — 프리필 없음
+    // 발행된(무효 제외) 서류의 form_key 집합 = 최초 선택 출력내용 항목 복원(template_id→form_key)
+    const printedKeys = new Set<string>();
+    for (const sub of submissions) {
+      if (sub.status === 'voided') continue;
+      const tpl = templates.find((t) => t.id === sub.template_id);
+      if (tpl) printedKeys.add(tpl.form_key);
+    }
+    if (printedKeys.size === 0 && !savedDoctorName) return;         // 유효 스냅샷 미확보 — 다음 로드까지 대기
+    prefillAppliedRef.current = checkIn.id;                          // 1회 적용 마킹
+    if (printedKeys.size > 0) {
+      setSelectedKeys((prev) => (prev.size > 0 ? prev : printedKeys)); // 사용자 선택 있으면 보존
+    }
+    if (savedDoctorName && doctorOptions.some((o) => o.name === savedDoctorName)) {
+      setSelectedDoctorName(savedDoctorName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkIn.id, submissions, templates]);
 
   // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN AC4: 출력 직전 원장 확정 가드.
   //   미선택/목록 0명이면 빈·잘못된 원장명이 의료·법적 서류에 찍히지 않도록 출력을 차단한다.
