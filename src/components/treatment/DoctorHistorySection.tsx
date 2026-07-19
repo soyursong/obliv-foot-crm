@@ -425,9 +425,7 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
           <Stethoscope className="h-4 w-4 text-teal-600" />
           진료 환자 이력
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          선택 날짜에 원장 진료콜 명단에 오른 환자입니다. 처방전·소견/진단서 신청·발행 여부를 표시합니다.
-        </p>
+        {/* T-20260719-foot-PATHIST-DESC-TEXT-REMOVE: 상단 안내 문구 제거(김주연 총괄 요청). 데이터/기능 무접점. */}
       </div>
 
       {/* 요구2 — 진료의별 금일 담당 환자수 요약(상단). 명단 있을 때만 노출. 합계=명단 총원(미지정 포함). */}
@@ -717,11 +715,7 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
         </>
       )}
 
-      <p className="text-[11px] text-muted-foreground/70">
-        ※ 소견·진단서는 <b>신청</b>(코디팀 요청)과 <b>발행</b>(원장 발행)을 각각 O/X로 표시합니다.
-        발행 문서 내용 보기(뷰어)는 표시 방식 확정 후 제공됩니다.
-        <br />※ <b>진료완료</b> 환자, 그리고 상태변경을 <b>푼(상태해제)</b> 환자는 상단 목록에서 하단 <b>[진료완료]</b> 섹션(당일 열람 전용)으로 이동해 보존됩니다. 상태해제 건은 <b>상태해제</b> 배지로 구분되며, 상태를 다시 지정하면 상단 활성 명단으로 복귀합니다.
-      </p>
+      {/* T-20260719-foot-PATHIST-DESC-TEXT-REMOVE: 하단 ※ 설명 블록 2줄 제거(김주연 총괄 요청). O/X 표기·배지 등 기능 요소는 유지, 안내 텍스트만 삭제. */}
     </div>
   );
 }
