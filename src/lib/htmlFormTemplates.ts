@@ -2144,9 +2144,12 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>주사료 (약품비)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>마취료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #2: 급여 split 을 진찰료 행으로 이동(위) → 처치 및 수술료 행은
-               공란 복원. foot 풋케어(처치)는 비급여이므로 급여 본인/공단 표기가 부적합했음. 중복표기 제거. -->
-          <tr><td>처치 및 수술료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
-          <tr><td>검사료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+               급여 본인/공단 공란(foot 풋케어=비급여, 급여칸 부적합). 중복표기 제거.
+               T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 비급여(전액본인부담) 칸에 category 집계 표시 —
+               '처치 및 수술료'=풋케어 비급여({{proc_noncov}}), '검사료'=검사 비급여({{exam_noncov}}).
+               (표시 전용, 집계 grain 무변경: {{proc_noncov}}+{{exam_noncov}}+{{etc_noncov}}=④{{non_covered}} 항상 정합.) -->
+          <tr><td>처치 및 수술료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{proc_noncov}}</td></tr>
+          <tr><td>검사료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{exam_noncov}}</td></tr>
           <tr><td>영상진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>방사선치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>치료재료대</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
@@ -2164,7 +2167,9 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>정액수가(요양병원)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>정액수가(완화의료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>질병군 포괄수가</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
-          <tr><td>기타</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{non_covered}}</td></tr>
+          <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 처치/검사 분해분 제외한 잔여 비급여만 '기타' 행에.
+               (前: {{non_covered}} 전액 → 처치·검사 항목 누락. 이제 {{etc_noncov}}=non_covered−처치−검사.) -->
+          <tr><td>기타</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{etc_noncov}}</td></tr>
           <tr>
             <td class="rn-lbl" colspan="2" style="font-weight:bold;">합계</td>
             <td class="rn-num" style="font-weight:bold;">① {{copayment}}</td>
@@ -2190,11 +2195,14 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>⑧ 환자부담 총액<br>(①-⑤)+③+④</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
           <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num"></td></tr>
           <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
+          <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 출력 패널 '납부금액(사전입력)' 값이 있으면
+               ⑪ 합계(납부한 금액)에 반영해 사전 출력. 비영속(FE-only 표시) — payments 수납원장 write 아님.
+               미입력 시 공란(기존 동작 유지). 납부하지 않은 금액(⑩-⑪) = patient_amount − 사전입력. -->
           <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;"></span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;"></span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;"></span></td></tr>
-          <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;"></span></td></tr>
-          <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num"></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;">{{prepaid_amount}}</span></td></tr>
+          <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num">{{unpaid_amount}}</td></tr>
           <tr><td>현금영수증 (&nbsp;&nbsp;&nbsp;)</td><td></td></tr>
           <tr><td>신분확인번호</td><td></td></tr>
           <tr><td>현금영수증 승인번호</td><td></td></tr>
@@ -2204,8 +2212,12 @@ const BILL_RECEIPT_NEW_HTML = `
     </div>
   </div>
 
+  <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-④ (빨간박스 스샷 F0BK4NYLPHN 근거):
+       ④-b 사업자등록번호 값칸(前 col2=auto≈40%)이 불필요하게 넓어 13% 고정으로 축소.
+       ④-a 상호(요양기관명) 값칸을 auto(잔여 최대폭)로 확장 + nowrap → 상호명 1줄 출력(줄바꿈 방지).
+       ⚠ 3FIX 값(457-23-00938)·위치, REPNAME 대표자/도장 회귀 없이 열 너비만 조정. -->
   <table style="margin-top:2mm;">
-    <colgroup><col style="width:14%"><col><col style="width:9%"><col style="width:12%"><col style="width:9%"><col style="width:16%"></colgroup>
+    <colgroup><col style="width:12%"><col style="width:13%"><col style="width:7%"><col><col style="width:8%"><col style="width:15%"></colgroup>
     <tbody>
       <tr>
         <td class="rn-lbl">요양기관 종류</td>
@@ -2214,7 +2226,7 @@ const BILL_RECEIPT_NEW_HTML = `
       <tr>
         <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 갱신 511-60-00988 → 457-23-00938 -->
         <td class="rn-lbl">사업자등록번호</td><td>457-23-00938</td>
-        <td class="rn-lbl">상호</td><td>{{clinic_name}}</td>
+        <td class="rn-lbl">상호</td><td style="white-space:nowrap;">{{clinic_name}}</td>
         <td class="rn-lbl">전화번호</td><td>02-6956-3438</td>
       </tr>
       <!-- T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B2: 계산서·영수증 신양식(기관 발행) 대표자

@@ -126,6 +126,7 @@ import {
   buildFootBillDetailItems,
   fillBillItemCopayment,
   computeBillDetailRounding,
+  computeBillReceiptNewCategoryBreakdown,
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
@@ -164,6 +165,29 @@ interface Props {
   /** T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달 전용 레이아웃.
    *  true 시 [발행 이력]을 패널 상단으로 이동 + 2단(2열) 진열. 미지정(false) 시 기존 위치/1열 유지(타 surface 무영향). */
   historyAtTop?: boolean;
+}
+
+// ── T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX 헬퍼 ──
+/** 콤마·통화기호 제거 후 숫자화(NaN 가드). formatAmount 역함수격. */
+function parseAmountStr(v: string | null | undefined): number {
+  if (v == null || v === '') return 0;
+  const n = Number(v.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * AC-② 신양식 비급여 항목행 category 토큰 주입(표시 전용).
+ *   {{proc_noncov}}=처치및수술료 비급여 / {{exam_noncov}}=검사료 비급여 / {{etc_noncov}}=잔여 비급여(기타 행).
+ *   3버킷 합 = {{non_covered}}(④ 합계) 이므로 집계 grain 불변. 급여분은 진찰료 행 aggregate 유지(미접촉).
+ */
+function applyBillReceiptNewCategoryTokens(
+  values: Record<string, string>,
+  billItems: Parameters<typeof computeBillReceiptNewCategoryBreakdown>[0],
+): void {
+  const bd = computeBillReceiptNewCategoryBreakdown(billItems);
+  values.proc_noncov = bd.procNonCov > 0 ? formatAmount(bd.procNonCov) : '';
+  values.exam_noncov = bd.examNonCov > 0 ? formatAmount(bd.examNonCov) : '';
+  values.etc_noncov = bd.etcNonCov > 0 ? formatAmount(bd.etcNonCov) : '';
 }
 
 // T-20260522-foot-ALT-BADGE AC-12: 레이저 관련 서비스 판별 — category OR name 기반
@@ -1097,6 +1121,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             autoValues.items_html = buildBillDetailItemsHtml(billItems);
             // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 영수증 항목별 그리드도 동일 billItems 로.
             autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
+            // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 신양식 비급여 category 분해(폴백=이학요법료/기타 → 전부 기타行).
+            applyBillReceiptNewCategoryTokens(autoValues, billItems);
             const total = mappedItems.reduce((s, item) => s + item.amount, 0);
             autoValues.total_amount = formatAmount(total);
             const nonCoveredTotal = mappedItems
@@ -1158,6 +1184,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 영수증 항목별 그리드도 동일 SSOT billItems 로
           //   (세부산정내역과 구조적 정합 — 동일 항목·급여분류·copay 배분).
           autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
+          // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 신양식 처치/검사/기타 비급여 행 category 분해.
+          applyBillReceiptNewCategoryTokens(autoValues, billItems);
           if (autoValues.rx_items_html == null) autoValues.rx_items_html = buildRxItemsHtml([]);
           if (fbBatch.grandTotal > 0) {
             autoValues.total_amount = formatAmount(fbBatch.grandTotal);
@@ -1997,6 +2025,8 @@ function IssueDialog({
   //   editOverrides 는 allValues 최종단에 병합 → 출력 바인딩 최우선 적용(기존 출력 플로우 무파괴, AC5).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editOverrides, setEditOverrides] = useState<Record<string, string>>({});
+  // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 신양식 사전 납부금액(FE-only 표시, 비영속).
+  const [prepaidAmount, setPrepaidAmount] = useState('');
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
   // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 치료테이블 지정 진료의 — 복수 근무의 UI 기본값에 사용.
@@ -2492,9 +2522,30 @@ function IssueDialog({
     //   (급여 전액 + 비급여 = 법정 ①+②+③+④, 공단 포함). ⑦ 공단부담(insurance_covered)·⑧ 환자부담
     //   (patient_amount = 본인부담금 + 비급여, 공단 제외 — AC7 B안)은 아래 applyBillingFallback 로 설정.
     //   ⚠ 기존 bill_receipt 총액 바인딩 경로 무접촉 — 신 form_key 전용 additive(AC5).
-    if (template.form_key === 'bill_receipt_new' && footFb && footFb.grandTotal > 0) {
-      base.total_amount = formatAmount(footFb.grandTotal);
-      base.subtotal_amount = base.total_amount;
+    if (template.form_key === 'bill_receipt_new') {
+      if (footFb && footFb.grandTotal > 0) {
+        base.total_amount = formatAmount(footFb.grandTotal);
+        base.subtotal_amount = base.total_amount;
+      }
+      // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 처치및수술료·검사료·기타 행 비급여 category 분해.
+      //   SSOT billItems(bill_detail·bill_receipt 와 동일 buildFootBillDetailItems) 재사용 → footBillDetailCategory
+      //   기준 처치/검사 매핑. footFb 없으면 service_charges 직결 폴백(전부 기타 행, 무파괴).
+      let rnItems: Parameters<typeof computeBillReceiptNewCategoryBreakdown>[0] = [];
+      if (footFb) {
+        rnItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '', {
+          insuranceGrade: customerInsuranceGrade,
+          copaymentTotal: footFb.copaymentTotal,
+        });
+      } else if (serviceItems.length > 0) {
+        rnItems = serviceItems.map((item) => ({
+          category: item.is_insurance_covered ? '이학요법료' : '기타',
+          amount: item.amount,
+          count: 1,
+          days: 1,
+          is_insurance_covered: item.is_insurance_covered,
+        }));
+      }
+      applyBillReceiptNewCategoryTokens(base, rnItems);
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
@@ -2622,6 +2673,21 @@ function IssueDialog({
       buildSurchargeDetailRowHtml,
     );
 
+    // ── T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 신양식 '납부금액(사전입력)' 반영(FE-only 표시) ──
+    //   출력 패널 입력값(prepaidAmount)이 있으면 ⑪ 납부한 금액 합계({{prepaid_amount}})에 표기하고,
+    //   납부하지 않은 금액(⑩-⑪, {{unpaid_amount}}) = 환자부담총액(patient_amount, 야간가산 fold 반영 최종값) − 입력값.
+    //   ⚠ 비영속: payments 수납원장 write 아님(사전 표기 전용, 이중계상 없음). 미입력 시 공란(기존 동작 유지).
+    if (template.form_key === 'bill_receipt_new') {
+      const prepaid = parseAmountStr(prepaidAmount);
+      if (prepaid > 0) {
+        base.prepaid_amount = formatAmount(prepaid);
+        base.unpaid_amount = formatAmount(Math.max(0, parseAmountStr(base.patient_amount) - prepaid));
+      } else {
+        base.prepaid_amount = '';
+        base.unpaid_amount = '';
+      }
+    }
+
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.
     //   빈 키는 덮지 않음(미편집 필드 무파괴) — 사용자가 명시 편집한 값만 출력 바인딩에 반영(AC3/AC5).
     for (const [k, v] of Object.entries(editOverrides)) {
@@ -2629,7 +2695,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys, prepaidAmount]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -3286,6 +3352,27 @@ function IssueDialog({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 진료비 계산서·영수증 신양식 전용 —
+                이미 납부한 금액을 미리 입력해 서류에 반영(사전 출력). 비영속(payments 수납 아님) 표시 전용. */}
+            {template.form_key === 'bill_receipt_new' && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 space-y-1.5">
+                <Label className="text-xs font-semibold text-emerald-800">
+                  납부금액(사전입력)
+                </Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={prepaidAmount}
+                  onChange={(e) => setPrepaidAmount(e.target.value)}
+                  placeholder="예: 30,000 (미입력 시 공란)"
+                  className="text-sm bg-white"
+                />
+                <p className="text-[10px] text-emerald-700 leading-tight">
+                  입력한 금액이 ⑪ 납부한 금액·납부하지 않은 금액(⑩-⑪)란에 반영되어 출력됩니다. 실제 수납 기록과는 무관한 표기용 값입니다.
+                </p>
               </div>
             )}
 

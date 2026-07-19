@@ -696,3 +696,43 @@ export function computeBillDetailRounding(
   const roundedTotal = Math.floor(safe / 10) * 10;
   return { adjustment: roundedTotal - safe, roundedTotal };
 }
+
+/**
+ * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② — 진료비 계산서·영수증 신양식 비급여 항목행 category 분해.
+ *
+ * 배경(버그): 신양식(bill_receipt_new)은 급여 split(본인/공단)을 진찰료 행에 aggregate 표기(3FIX)하고,
+ *   비급여(non_covered)는 전부 '기타' 행 하나에 뭉쳐 표기했다. 그 결과 foot 비급여 시술인
+ *   '처치 및 수술료'(풋케어)·'검사료'(검사)가 자기 행에 표시되지 못하고 '기타'로만 나와 "항목 누락"으로 보였다.
+ *
+ * 해소(표시 전용·집계 grain 무변경): buildFootBillDetailItems 가 category(footBillDetailCategory)·
+ *   is_insurance_covered 를 이미 부여한 billItems 를 category 별로 재집계해, 비급여분을
+ *   처치및수술료 / 검사료 / 기타 세 버킷으로 분해한다. 세 버킷 합 = non_covered(aggregate)로 항상 정합
+ *   → 합계 ④({{non_covered}})·매출 Insurance Split SSOT 불변(표시≠grain 변경). 급여(covered)분은 분해하지
+ *   않고 진찰료 행 aggregate({{copayment}}/{{insurance_covered}}) 표기 유지 → 3FIX 급여 배치·야간가산 fold
+ *   (applyNightHolidaySurcharge → copayment/insurance_covered) 경로 무접촉(회귀 0).
+ *
+ * ⚠ 폴백 경로(service_charges 직결, category='이학요법료'/'기타')는 처치/검사 매핑이 없어 전부 기타로 수렴
+ *   → 기존 동작과 동일(무파괴). check_in_services 보유 차트(정상 경로)만 처치/검사 행이 채워진다.
+ */
+export function computeBillReceiptNewCategoryBreakdown(
+  billItems: Array<{
+    category?: string;
+    amount: number;
+    count?: number;
+    days?: number;
+    is_insurance_covered: boolean;
+  }>,
+): { procNonCov: number; examNonCov: number; etcNonCov: number } {
+  let procNonCov = 0;
+  let examNonCov = 0;
+  let etcNonCov = 0;
+  for (const it of billItems) {
+    if (it.is_insurance_covered) continue; // 급여는 진찰료 행 aggregate 표기 유지(중복표기 방지)
+    const total = (it.amount ?? 0) * (it.count ?? 1) * (it.days ?? 1);
+    if (!(total > 0)) continue;
+    if (it.category === '처치및수술료') procNonCov += total;
+    else if (it.category === '검사료') examNonCov += total;
+    else etcNonCov += total;
+  }
+  return { procNonCov, examNonCov, etcNonCov };
+}
