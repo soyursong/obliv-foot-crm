@@ -46,7 +46,7 @@ test.describe('T-20260715-foot-TREATMEMO-TYPINGLAG-RCA — 차팅 버벅임/유�
     const suffix = String(Math.floor(Math.random() * 100_000_000)).padStart(8, '0');
     const { data: cust, error: cErr } = await service
       .from('customers')
-      .insert({ clinic_id: clinicId, name: `버벅임테스트_${suffix.slice(-4)}`, phone: `010${suffix}` })
+      .insert({ clinic_id: clinicId, name: `버벅임테스트_${suffix.slice(-4)}`, phone: `+8210${suffix}` })
       .select('id').single();
     expect(cErr).toBeNull();
     customerId = cust!.id;

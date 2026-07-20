@@ -42,7 +42,7 @@ test.describe('T-20260515-foot-RESV-MEMO-APPEND — 예약메모 누적 저장',
     const suffix = String(Math.floor(Math.random() * 100_000_000)).padStart(8, '0');
     const { data: cust, error: cErr } = await service
       .from('customers')
-      .insert({ clinic_id: clinicId, name: `메모테스트_${suffix.slice(-4)}`, phone: `010${suffix}` })
+      .insert({ clinic_id: clinicId, name: `메모테스트_${suffix.slice(-4)}`, phone: `+8210${suffix}` })
       .select('id')
       .single();
     expect(cErr).toBeNull();
@@ -55,7 +55,7 @@ test.describe('T-20260515-foot-RESV-MEMO-APPEND — 예약메모 누적 저장',
         clinic_id: clinicId,
         customer_id: customerId,
         customer_name: `메모테스트_${suffix.slice(-4)}`,
-        customer_phone: `010${suffix}`,
+        customer_phone: `+8210${suffix}`,
         reservation_date: '2099-12-31',
         reservation_time: '10:00:00',
         visit_type: 'new',

@@ -54,7 +54,7 @@ test.describe('T-20260615-DASH-CROSSACCT-REALTIME-LAG — AC-1: 계정 간 전�
     const B: SupabaseClient = createClient(SUPA_URL, SERVICE_KEY, { realtime: { params: { eventsPerSecond: 10 } } });
 
     const testName = `crossacct-ac1-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await A
       .from('customers')
@@ -123,7 +123,7 @@ test.describe('T-20260615-DASH-CROSSACCT-REALTIME-LAG — AC-2: 누락 0', () =>
     const B: SupabaseClient = createClient(SUPA_URL, SERVICE_KEY, { realtime: { params: { eventsPerSecond: 10 } } });
 
     const testName = `crossacct-ac2-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await A
       .from('customers')
@@ -186,7 +186,7 @@ test.describe('T-20260615-DASH-CROSSACCT-REALTIME-LAG — AC-3: 재연결 catch-
     const B: SupabaseClient = createClient(SUPA_URL, SERVICE_KEY);
 
     const testName = `crossacct-ac3-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await A
       .from('customers')

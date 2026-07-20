@@ -25,7 +25,7 @@ function adminSb() {
 test.describe('T1: 상담 단계 필수 동의서 배너 표시', () => {
   test('consultation 상태 → consult-consent-banner 노출', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -78,7 +78,7 @@ test.describe('T1: 상담 단계 필수 동의서 배너 표시', () => {
 test.describe('T2: 상담 단계 환불동의서 버튼 렌더링', () => {
   test('consultation → consent-btn-refund 버튼 표시', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -132,7 +132,7 @@ test.describe('T2: 상담 단계 환불동의서 버튼 렌더링', () => {
 test.describe('T3: PaymentDialog 동의서 미작성 → 게이트 + 결제버튼 비활성', () => {
   test('동의서 없이 결제 진입 → consent-gate 표시 + btn-payment-submit 비활성', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -204,7 +204,7 @@ test.describe('T3: PaymentDialog 동의서 미작성 → 게이트 + 결제버�
 test.describe('T4: DB — consent_forms INSERT 스키마 검증', () => {
   test('DB: consent_forms 테이블에 refund 서명 기록 INSERT 가능', async () => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -271,7 +271,7 @@ test.describe('T4: DB — consent_forms INSERT 스키마 검증', () => {
 test.describe('T5: 동의서 서명 후 카드 배지 표시', () => {
   test('refund 서명된 check_in → 대시보드 카드에 consent-badge-refund 표시', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: cust } = await sb
       .from('customers')

@@ -34,7 +34,7 @@ async function seedCustomer(
   opts: { visit_type: 'new' | 'returning'; withDoneCheckIn: boolean },
 ): Promise<{ customerId: string; cleanup: () => Promise<void> }> {
   const ts = Date.now() + Math.floor(Math.random() * 1000);
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `+8210${String(ts).slice(-8)}`;
   const name = `${MARKER}-${ts}`;
   const { data: c, error: cErr } = await sb
     .from('customers')

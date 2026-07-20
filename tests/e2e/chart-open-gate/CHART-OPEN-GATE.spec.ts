@@ -59,7 +59,7 @@ const YESTERDAY = localDateStr(new Date(Date.now() - 86_400_000));
 // ── 시드 ─────────────────────────────────────────────────────────────────────
 async function seedCustomer(name: string, visitType: 'new' | 'returning' = 'new'): Promise<string> {
   const ts = Date.now();
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `+8210${String(ts).slice(-8)}`;
   const { data, error } = await svc()
     .from('customers')
     .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: visitType, memo: MARKER })
@@ -107,7 +107,7 @@ async function seedActiveCheckIn(opts: {
       clinic_id: CLINIC_ID,
       customer_id: customerId,
       customer_name: opts.name,
-      customer_phone: `010${String(ts).slice(-8)}`,
+      customer_phone: `+8210${String(ts).slice(-8)}`,
       visit_type: opts.visit_type,
       status: opts.status,
       queue_number: 970 + (ts % 20),

@@ -101,7 +101,7 @@ test.describe('AC — payment_items 테이블 존치 + lump-sum 회귀', () => {
 
   test('lump-sum 회귀 0 — 항목 없는 총액 단독 수납 저장·조회 정상', async () => {
     const sb = createClient(SUPA_URL, SERVICE_KEY);
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
     let customerId: string | null = null;
     let paymentId: string | null = null;
     try {

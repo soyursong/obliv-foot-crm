@@ -40,7 +40,7 @@ const svc = () => (_sb ??= createClient(SUPA_URL, SERVICE_KEY));
 
 async function seedActiveCheckIn(name: string) {
   const ts = Date.now();
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `+8210${String(ts).slice(-8)}`;
   const { data: cust, error: ce } = await svc()
     .from('customers')
     .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: 'new', memo: MARKER })

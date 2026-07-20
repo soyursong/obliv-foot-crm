@@ -29,7 +29,7 @@ function sb() {
 async function seedCustomerWithPackage(suffix: string) {
   const client = sb();
   const name = `pkg-edit-test-${suffix}-${Date.now()}`;
-  const phone = `010${String(Date.now()).slice(-8)}`;
+  const phone = `+8210${String(Date.now()).slice(-8)}`;
 
   const { data: customer, error: custErr } = await client
     .from('customers')

@@ -58,7 +58,7 @@ test.describe('B-1 RLS 자기배정 + anon 셀프체크인', () => {
     });
 
     const phoneSuffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
-    const phone = `010${phoneSuffix}`;
+    const phone = `+8210${phoneSuffix}`;
     const name = `RLS테스트_${phoneSuffix.slice(-4)}`;
 
     // self_checkin_lookup

@@ -50,7 +50,7 @@ async function seedConsultWaiting(
 ): Promise<Seed> {
   const ts = Date.now() + Math.floor(performance.now());
   const name = `${MARKER}-${visitType}-${ts}`;
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `+8210${String(ts).slice(-8)}`;
 
   const { data: cust, error: ce } = await service
     .from('customers')

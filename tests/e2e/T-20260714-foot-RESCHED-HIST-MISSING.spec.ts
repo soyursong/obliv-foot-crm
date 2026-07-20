@@ -56,7 +56,7 @@ test.describe('T-20260714-foot-RESCHED-HIST-MISSING', () => {
     const suffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
     const { data: customer } = await service
       .from('customers')
-      .insert({ clinic_id: clinicId, name: `RHIST_${suffix.slice(-4)}`, phone: `010${suffix}` })
+      .insert({ clinic_id: clinicId, name: `RHIST_${suffix.slice(-4)}`, phone: `+8210${suffix}` })
       .select()
       .single();
 

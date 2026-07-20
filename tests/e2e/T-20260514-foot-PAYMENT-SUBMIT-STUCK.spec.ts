@@ -28,7 +28,7 @@ test.describe('T-20260514-PAYMENT-SUBMIT-STUCK — 버튼 멈춤 버그 회귀',
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `submit-stuck-s1-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 서비스 ID 조회
     const { data: svcs } = await sb
@@ -139,7 +139,7 @@ test.describe('T-20260514-PAYMENT-SUBMIT-STUCK — 버튼 멈춤 버그 회귀',
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `submit-stuck-s2-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 서비스 ID 조회
     const { data: svcs } = await sb

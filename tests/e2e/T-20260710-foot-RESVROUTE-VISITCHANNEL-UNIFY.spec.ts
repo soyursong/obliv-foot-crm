@@ -57,7 +57,7 @@ test.describe('T-20260710 RESVROUTE-VISITCHANNEL-UNIFY — DB 계약(비파괴)'
     for (const v of UNIFIED_MUST_HAVE) {
       const { data, error } = await sb!
         .from('customers')
-        .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `010${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: v })
+        .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `+8210${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: v })
         .select('id')
         .single();
       expect(error, `visit_route='${v}' CHECK 통과 실패`).toBeNull();
@@ -70,7 +70,7 @@ test.describe('T-20260710 RESVROUTE-VISITCHANNEL-UNIFY — DB 계약(비파괴)'
     test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
     const { data, error } = await sb!
       .from('customers')
-      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `010${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: '인콜' })
+      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `+8210${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: '인콜' })
       .select('id')
       .single();
     expect(error, "legacy '인콜' 보존 실패").toBeNull();
@@ -82,7 +82,7 @@ test.describe('T-20260710 RESVROUTE-VISITCHANNEL-UNIFY — DB 계약(비파괴)'
     test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
     const { data, error } = await sb!
       .from('customers')
-      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `010${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: '지인소개', referral_name: '홍길동' })
+      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `+8210${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: '지인소개', referral_name: '홍길동' })
       .select('id, visit_route, referral_name')
       .single();
     expect(error).toBeNull();

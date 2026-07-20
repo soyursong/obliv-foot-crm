@@ -38,7 +38,7 @@ const PNG_1X1 = Buffer.from(
 async function seedCustomer(suffix: string) {
   const client = sb();
   const name = `receipt-pkg-test-${suffix}-${Date.now()}`;
-  const phone = `010${String(Date.now()).slice(-8)}`;
+  const phone = `+8210${String(Date.now()).slice(-8)}`;
   const { data: customer, error } = await client
     .from('customers')
     .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: 'returning' })

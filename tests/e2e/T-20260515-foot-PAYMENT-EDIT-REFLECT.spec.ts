@@ -51,7 +51,7 @@ async function queryByCustomer(
 
 async function seedData(sb: ReturnType<typeof createClient>, suffix: string) {
   const name = `reflect-test-${suffix}-${Date.now()}`;
-  const phone = `010${String(Date.now()).slice(-8)}`;
+  const phone = `+8210${String(Date.now()).slice(-8)}`;
 
   const { data: customer, error: custErr } = await sb.from('customers').insert({
     clinic_id: CLINIC_ID, name, phone, visit_type: 'returning',

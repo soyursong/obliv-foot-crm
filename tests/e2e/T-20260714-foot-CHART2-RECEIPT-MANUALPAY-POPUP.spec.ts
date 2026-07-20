@@ -50,7 +50,7 @@ test.describe('T-20260714-foot-CHART2-RECEIPT-MANUALPAY-POPUP (옵션A)', () => 
 
     const suffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
     const { data: customer } = await service.from('customers')
-      .insert({ clinic_id: clinicId, name: `RCPT_${suffix.slice(-4)}`, phone: `010${suffix}` }).select().single();
+      .insert({ clinic_id: clinicId, name: `RCPT_${suffix.slice(-4)}`, phone: `+8210${suffix}` }).select().single();
     const { data: pkg } = await service.from('packages')
       .insert({ clinic_id: clinicId, customer_id: customer!.id, package_name: '12회권', package_type: '12회권', total_amount: 2890000, paid_amount: 0, total_sessions: 12, status: 'active' })
       .select().single();
@@ -78,7 +78,7 @@ test.describe('T-20260714-foot-CHART2-RECEIPT-MANUALPAY-POPUP (옵션A)', () => 
     const clinicId = clinic!.id;
     const suffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
     const { data: customer } = await service.from('customers')
-      .insert({ clinic_id: clinicId, name: `RCPT_${suffix.slice(-4)}`, phone: `010${suffix}` }).select().single();
+      .insert({ clinic_id: clinicId, name: `RCPT_${suffix.slice(-4)}`, phone: `+8210${suffix}` }).select().single();
     const { data: ci } = await service.from('check_ins')
       .insert({ clinic_id: clinicId, customer_id: customer!.id, customer_name: customer!.name, customer_phone: customer!.phone, visit_type: 'returning', status: 'payment_waiting', queue_number: 990 })
       .select().single();
@@ -109,7 +109,7 @@ test.describe('T-20260714-foot-CHART2-RECEIPT-MANUALPAY-POPUP (옵션A)', () => 
     const clinicId = clinic!.id;
     const suffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
     const { data: customer } = await service.from('customers')
-      .insert({ clinic_id: clinicId, name: `RCPT_${suffix.slice(-4)}`, phone: `010${suffix}` }).select().single();
+      .insert({ clinic_id: clinicId, name: `RCPT_${suffix.slice(-4)}`, phone: `+8210${suffix}` }).select().single();
 
     const { data: pay, error } = await service.from('payments').insert({
       clinic_id: clinicId, check_in_id: null, customer_id: customer!.id,

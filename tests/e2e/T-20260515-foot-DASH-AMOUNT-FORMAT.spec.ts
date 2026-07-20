@@ -111,7 +111,7 @@ test.describe('T-20260515-DASH-AMOUNT-FORMAT — 완료 칸 금액 원 단위 �
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `amount-format-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
     const testAmount = 43520;
 
     // 테스트 고객 + done 체크인 시드

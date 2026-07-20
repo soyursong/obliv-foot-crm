@@ -31,7 +31,7 @@ function adminSb() {
 test.describe('T4: DB — package_sessions 회차 소진 기록', () => {
   test('패키지 회차 소진 흐름 DB 검증', async () => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 고객 생성
     const { data: cust, error: custErr } = await sb
@@ -109,7 +109,7 @@ test.describe('T1~T3, T5: CheckInDetailSheet 시술항목 + 패키지 회차 UI'
   test.beforeAll(async () => {
     if (!SERVICE_KEY) return;
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -246,7 +246,7 @@ test.describe('T1~T3, T5: CheckInDetailSheet 시술항목 + 패키지 회차 UI'
       return;
     }
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 패키지 없는 신규 고객
     const { data: cust } = await sb

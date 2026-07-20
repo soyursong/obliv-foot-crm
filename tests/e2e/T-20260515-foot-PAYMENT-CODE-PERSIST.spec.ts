@@ -38,7 +38,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `persist-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 고객 + 체크인 시드
     const { data: customer, error: custErr } = await sb
@@ -128,7 +128,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `clear-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await sb
       .from('customers')
@@ -333,7 +333,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `db-priority-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await sb
       .from('customers')

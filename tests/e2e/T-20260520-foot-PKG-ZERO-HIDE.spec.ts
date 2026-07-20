@@ -30,7 +30,7 @@ async function seedCustomerWithPackages() {
   const client = sb();
   const ts = Date.now();
   const name = `pkg-zero-hide-${ts}`;
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `+8210${String(ts).slice(-8)}`;
 
   const { data: customer, error: custErr } = await client
     .from('customers')

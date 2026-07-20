@@ -30,7 +30,7 @@ test.describe('T-20260522-ALT-BADGE — AC-2/3/4a: DB 스키마 + ALT 활성화 
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-badge-ac2-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     // customers INSERT with alt_status 필드
     const { data: customer, error: custErr } = await sb
@@ -63,7 +63,7 @@ test.describe('T-20260522-ALT-BADGE — AC-2/3/4a: DB 스키마 + ALT 활성화 
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-badge-activate-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
     const now = new Date().toISOString();
     const testDetail = '5회차까지 진행, 보험 반려됨';
 
@@ -106,7 +106,7 @@ test.describe('T-20260522-ALT-BADGE — AC-2/3/4a: DB 스키마 + ALT 활성화 
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-badge-deactivate-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')
@@ -156,7 +156,7 @@ test.describe('T-20260522-ALT-BADGE — AC-3/4a: reservation_memo_history 고정
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-memo-col-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 고객 생성
     const { data: customer, error: custErr } = await sb
@@ -197,7 +197,7 @@ test.describe('T-20260522-ALT-BADGE — AC-3/4a: reservation_memo_history 고정
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-memo-pin-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')
@@ -243,7 +243,7 @@ test.describe('T-20260522-ALT-BADGE — AC-3/4a: reservation_memo_history 고정
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-memo-unpin-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await sb
       .from('customers')
@@ -293,7 +293,7 @@ test.describe('T-20260522-ALT-BADGE — AC-3/4a: reservation_memo_history 고정
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-auto-pin-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
     const altDetail = '3회차까지 진행, 보험 반려됨';
 
     const { data: customer } = await sb
@@ -362,7 +362,7 @@ test.describe('T-20260522-ALT-BADGE — AC-5: 기존 메모 데이터 보존', (
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-preserve-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer } = await sb
       .from('customers')
@@ -422,7 +422,7 @@ test.describe('T-20260522-ALT-BADGE — AC-5: 기존 메모 데이터 보존', (
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `alt-preserve-fields-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
     const originalCustomerMemo = '주차: B3, 카드결제 선호';
     const originalTmMemo = '보험등급 3단계, 레이저 비급여 희망';
 
@@ -562,7 +562,7 @@ test.describe('T-20260522-ALT-BADGE — AC-6: ALT OFF 패키지 레이저코드 
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `ac6-laser-block-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     // 고객 생성 (ALT OFF)
     const { data: customer, error: custErr } = await sb
@@ -638,7 +638,7 @@ test.describe('T-20260522-ALT-BADGE — AC-6: ALT OFF 패키지 레이저코드 
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `ac6-laser-allow-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')

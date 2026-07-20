@@ -27,7 +27,7 @@ function sb() {
 async function seedCustomerAndPayment(suffix: string, amount: number) {
   const client = sb();
   const name = `c2-sync-test-${suffix}-${Date.now()}`;
-  const phone = `010${String(Date.now()).slice(-8)}`;
+  const phone = `+8210${String(Date.now()).slice(-8)}`;
 
   const { data: customer, error: custErr } = await client
     .from('customers')

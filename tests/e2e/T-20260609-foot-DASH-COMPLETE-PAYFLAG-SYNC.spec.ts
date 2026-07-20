@@ -30,7 +30,7 @@ test.describe('T-20260609-DASH-COMPLETE-PAYFLAG-SYNC — 수납완료 회색 플
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `payflag-sync-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')
@@ -107,7 +107,7 @@ test.describe('T-20260609-DASH-COMPLETE-PAYFLAG-SYNC — 수납완료 회색 플
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `payflag-edge-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `+8210${String(Date.now()).slice(-8)}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')

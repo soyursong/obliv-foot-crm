@@ -22,7 +22,7 @@ async function admin() { return createClient(SUPABASE_URL, SERVICE_KEY, { auth: 
 test.beforeAll(async () => {
   if (!SERVICE_KEY) return;
   const sb = await admin();
-  const phone = `010${String(Date.now()).slice(-8)}`;
+  const phone = `+8210${String(Date.now()).slice(-8)}`;
   const { data: cust } = await sb.from('customers')
     .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: 'new' }).select('id').single();
   customerId = cust?.id ?? null;
