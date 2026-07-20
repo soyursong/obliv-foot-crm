@@ -178,12 +178,22 @@ async function clickPastCardOrSkipOnAutoNoshow(
     return; // 카드 렌더+클릭 성공 → 정상 행위 검증 진행
   } catch (e) {
     const status = await resvStatus(resvId);
+    // 카드 소멸의 "환경(시드 무력화)" 원인 2종은 거짓 RED 가 아니다 → skip:
+    //   (1) status='no_show' : 과거 confirmed 예약이 auto-noshow 배치(Reservations.tsx L948)로 전환.
+    //   (2) status=null      : 시드 row 소멸. dev=prod 단일 Supabase(rxlomoozakkjesdqjtvd)에서 **동시 실행 중인
+    //        다른 CI run** 의 globalSetup pre-sweep / globalTeardown 이 [QA-FIXTURE] 마커를 전수 DELETE 하면
+    //        이 run 의 시드도 함께 휩쓸린다(cross-run sweep race). ci-push.yml 은 within-run(job 병렬) 스윕
+    //        레이스만 needs:[build,critical-flow] 직렬화로 막았을 뿐, cross-run 레이스는 남아 있다
+    //        (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE: 동일 커밋이 PR CI green·main CI 에선 G4 만 RED,
+    //         동경로 G3 green → !isPast 회귀 아님, cross-run sweep 로 확진). row 부재 = 환경이지 회귀가 아니다.
+    //   두 경우 모두 회귀 라인(!isPast)은 G6 정적 가드가 하드락하므로 거짓 RED 를 방지하려 skip 한다.
     test.skip(
-      status === 'no_show',
-      `과거 confirmed 예약이 auto-noshow 로 전환됨(status=${status}) — 타임라인 미표시/카드 소멸(환경). ` +
+      status === 'no_show' || status === null,
+      `과거 예약 시드가 환경적으로 무력화됨(status=${status}) — auto-noshow 전환(no_show) 또는 ` +
+        `동시 run 의 QA-FIXTURE 전수 스윕으로 시드 소멸(null). ` +
         `!isPast 회귀 라인은 G6 정적 가드가 하드락하므로 거짓 RED 방지 위해 skip.`,
     );
-    // confirmed(=시드 유효) 인데도 카드가 없거나 클릭 실패면 진짜 회귀/렌더 실패 → 원래 오류 전파.
+    // 시드 유효(status='confirmed')인데도 카드가 없거나 클릭 실패면 진짜 회귀/렌더 실패 → 원래 오류 전파.
     throw e;
   }
 }
