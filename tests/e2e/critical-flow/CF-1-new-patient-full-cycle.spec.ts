@@ -98,8 +98,17 @@ test.describe('CF-1 신규 환자 풀 사이클', () => {
     expect(ok).toBe(true);
 
     // --- 칸반 카드 노출 검증 (초진대기 컬럼) ---
+    // T-20260721-foot-CHART-KANBAN-CHECKINCARD-NORENDER (AC-1 진단):
+    //   이 카드 대기는 chart-open-gate G1 과 **동일 클래스**의 cold-start 렌더 지연에 노출된다.
+    //   AC-0 read-only 진단 결론(test-only, non-live-affecting): 실 인증 사용자(coordinator)의
+    //   대시보드 쿼리는 seeded exam_waiting row 를 정상 반환(RLS/clinic/KST-window 전부 정상) →
+    //   데이터·board 쿼리 경로 무결. RED 는 Vite dev-server cold-start(첫 페이지 로드 컴파일)로
+    //   카드가 CI 에서 10~16s 늦게 렌더되는데 이 waitFor 가 8s tight-timeout 이었던 것(run
+    //   29759912891: 카드 10.4s 렌더 vs 8s wait → Timeout). prod 는 사전 빌드라 이 컴파일 지연 없음.
+    //   → G1 이 QA#3(88741b4b)에서 12s→20s 로 상향한 것과 동형으로 cold-start 를 흡수한다.
+    //     첫 시도가 cold-start 에서도 통과 → CI retry(2회) 예산을 실flake 용으로 보존 + 결정성 확보.
     const card = page.locator(`[data-testid="checkin-card"][data-checkin-id="${testCheckInId}"]`);
-    await card.waitFor({ state: 'visible', timeout: 8000 });
+    await card.waitFor({ state: 'visible', timeout: 20000 });
 
     // DB 단계 전환 정상 반영 검증
     const { data } = await sb.from('check_ins').select('status').eq('id', testCheckInId!).single();

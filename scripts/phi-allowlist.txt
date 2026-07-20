@@ -67,3 +67,12 @@
 #   결제 미니창 4구역 ①좌측 세로 팔레트 P0 spec 전용 합성값. 반복 자릿수(9999/7744) 합성마커, 실환자 재식별 0.
 #   NAME='[PAYMINI-4ZONE-TEST]' · afterAll cleanup(phone 기준)로 픽스처 즉시 정리.
 \+?821099997744
+
+# ── T-20260720-foot-PAYMINI-CHARTCODE-SPLIT 합성 E2E fixture phone (2026-07-20) ──
+#   NAME='[...-TEST]' fixture + afterAll cleanup(phone 기준) 즉시 정리. 실환자 아님(합성 센티넬).
+#   provenance: tests/e2e/T-20260720-foot-PAYMINI-CHARTCODE-SPLIT.spec.ts(신규) TEST PHONE
+#     + tests/e2e/T-20260713-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT.spec.ts(중앙칸 재배치로 동반수정) TEST PHONE.
+#   +82109999-77xx = SUGA-SCROLL-BLOCK(77xx) 동일 합성계열. 리뷰 게이트: dev-foot 자가확인, supervisor QA.
+\+?821099997720
+\+?821099997713
+\+?821099997721

@@ -72,7 +72,10 @@ test.describe('T-20260610-foot-RESV-DUPGUARD-SAMEDAY — 가드 의미론 (DB)',
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const sfx = randSuffix();
     const TODAY = new Date().toISOString().slice(0, 10);
-    const phone = `0106${sfx}`;
+    // T-20260720-E2E-SEED-DEFERRED-AC4: dedup subject → +82 보존전환(digit-match 유지, DUMMY 불가).
+    //   customers.phone / reservations.customer_phone 는 E.164 CHECK 제약 → 로컬 010 위반.
+    //   dedup 은 phoneDigits(length>=10) 숫자매칭이므로 stored/queried 양측 동일 E.164 → 정합 유지.
+    const phone = `+82106${sfx}`;
 
     const { data: cust } = await sb.from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `dupg-${sfx}`, phone, visit_type: 'new' })
@@ -124,7 +127,7 @@ test.describe('T-20260610-foot-RESV-DUPGUARD-SAMEDAY — 가드 의미론 (DB)',
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const sfx = randSuffix();
     const TODAY = new Date().toISOString().slice(0, 10);
-    const phone = `0105${sfx}`;
+    const phone = `+82105${sfx}`;  // +82 보존전환 (E.164 CHECK 정합)
 
     const { data: cust } = await sb.from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `cxl-${sfx}`, phone, visit_type: 'new' })
@@ -152,7 +155,7 @@ test.describe('T-20260610-foot-RESV-DUPGUARD-SAMEDAY — 가드 의미론 (DB)',
     const sfx = randSuffix();
     const TODAY = new Date().toISOString().slice(0, 10);
     const TOMORROW = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    const phone = `0104${sfx}`;
+    const phone = `+82104${sfx}`;  // +82 보존전환 (E.164 CHECK 정합)
 
     const { data: cust } = await sb.from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `other-${sfx}`, phone, visit_type: 'new' })
@@ -172,7 +175,7 @@ test.describe('T-20260610-foot-RESV-DUPGUARD-SAMEDAY — 가드 의미론 (DB)',
     expect(dupToday, '타 날짜 예약은 오늘 가드에 무영향').toBe(false);
 
     // AC-6: 타 고객(다른 phone, customer 없음) → 무영향
-    const dupOther = await isDupSameDay(sb, CLINIC_ID, null, `0103${sfx}`, TODAY);
+    const dupOther = await isDupSameDay(sb, CLINIC_ID, null, `+82103${sfx}`, TODAY);
     expect(dupOther, '타 고객 → 무영향').toBe(false);
 
     await sb.from('reservations').delete().eq('id', r1Id);
@@ -186,7 +189,7 @@ test.describe('T-20260610-foot-RESV-DUPGUARD-SAMEDAY — fn_reservation_dup_guar
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const sfx = randSuffix();
     const TODAY = new Date().toISOString().slice(0, 10);
-    const phone = `0102${sfx}`;
+    const phone = `+82102${sfx}`;  // +82 보존전환 (E.164 CHECK 정합)
 
     // RPC 미배포(GO_WARN hold) 감지 — 없으면 skip
     const probe = await sb.rpc('fn_reservation_dup_guard', {

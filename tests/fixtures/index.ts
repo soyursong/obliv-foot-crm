@@ -9,6 +9,8 @@
  * cleanup은 본인이 만든 row만 삭제 — 다른 데이터 영향 없음.
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -17,6 +19,76 @@ export const MARKER = '[QA-FIXTURE]';
 // 픽스처 customer/reservation 이름 접두 — orphan(마커 누락/생성중단) 스윕용 2차 키.
 //   seedCheckIn → `qa-fixture-{ts}`, seedReservation → `qa-res-{ts}`.
 export const FIXTURE_NAME_PREFIXES = ['qa-fixture-', 'qa-res-'] as const;
+
+// ── Run-scoped 시드 격리 (T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN) ──
+//   RC(문서화): dev=prod 단일 Supabase(rxlomoozakkjesdqjtvd)를 여러 CI run 이 공유한다.
+//     각 run 의 globalSetup pre-sweep / globalTeardown 이 cleanupAll() 로 bare 마커
+//     (memo/notes == '[QA-FIXTURE]')를 **전수** DELETE 한다. run A 의 스윕이 동시 실행 중인
+//     run B 의 in-flight 시드(특히 chart-open-gate G3/G4 어제/과거 예약카드)를 함께 지워
+//     카드 소멸 → 교대성 하드 RED(T-20260713-foot-CI-E2E-RED-DIAGNOSE).
+//   격리: 시드 마커에 run 토큰을 embed(`[QA-FIXTURE]|<token>|<tsMs>`)한다. bare-exact 로
+//     매칭하는 cleanupAll() 은 이 scoped row 를 **매칭하지 못하므로**, 다른 run 의 전수
+//     스윕이 이 run 의 시드를 건드릴 수 없다. scoped row 의 정리는 이 run 자신의
+//     teardown(토큰 스코프) + 다음 run 의 pre-sweep(TTL 스코프)이 담당한다(sweepScoped).
+//   토큰은 한 CI job 의 모든 프로세스(main+worker)에서 안정적이고 동시 run/job 간 유일해야
+//   한다 → GitHub Actions 의 RUN_ID/ATTEMPT/JOB 조합. 로컬(비-CI)은 globalSetup 이 기록한
+//   토큰 파일로 워커 간 공유.
+const TOKEN_FILE = path.resolve(process.cwd(), 'test-results', '.qa-run-token');
+// LIKE 안전(및 파일/URL 안전)을 위해 토큰을 [A-Za-z0-9-] 로 정규화 — '_'/'%' 등 LIKE 메타 제거.
+function sanitizeToken(s: string): string {
+  return s.replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'run';
+}
+let _runToken: string | null = null;
+/** 현재 CI run(=job) 을 유일하게 식별하는 안정 토큰. 프로세스 간 동일값 수렴. */
+export function runToken(): string {
+  if (_runToken) return _runToken;
+  const gh = [process.env.GITHUB_RUN_ID, process.env.GITHUB_RUN_ATTEMPT, process.env.GITHUB_JOB].filter(
+    Boolean,
+  ) as string[];
+  if (gh.length) return (_runToken = sanitizeToken(gh.join('-')));
+  if (process.env.QA_RUN_TOKEN) return (_runToken = sanitizeToken(process.env.QA_RUN_TOKEN));
+  try {
+    if (fs.existsSync(TOKEN_FILE)) {
+      const t = fs.readFileSync(TOKEN_FILE, 'utf-8').trim();
+      if (t) return (_runToken = sanitizeToken(t));
+    }
+  } catch {
+    /* 파일 접근 실패 → 아래 기본값 */
+  }
+  return (_runToken = 'local');
+}
+/** 로컬(비-CI)에서 워커 프로세스가 동일 토큰을 읽도록 globalSetup 이 1회 파일 기록. */
+export function ensureRunTokenFile(): void {
+  if (process.env.GITHUB_RUN_ID || process.env.QA_RUN_TOKEN) return; // CI/env 토큰이면 파일 불요
+  try {
+    fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
+    if (!fs.existsSync(TOKEN_FILE)) {
+      fs.writeFileSync(TOKEN_FILE, `local-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+    }
+  } catch {
+    /* 기록 실패 시 runToken()='local' 폴백 — 로컬 단독 실행이면 무해 */
+  }
+}
+/** 시드 memo/notes 에 박는 run-scoped 마커: `[QA-FIXTURE]|<token>|<tsMs>` */
+export function runMarker(): string {
+  return `${MARKER}|${runToken()}|${Date.now()}`;
+}
+// scoped row(파이프 포함) 전용 LIKE 패턴. bare '[QA-FIXTURE]'(파이프 없음)는 매칭 제외.
+const SCOPED_LIKE = `${MARKER}|%`;
+const SCOPED_PREFIX = `${MARKER}|`;
+/** memo/notes 값이 run-scoped 마커(`[QA-FIXTURE]|token|ts`)인가. */
+function isScopedMarker(v: unknown): boolean {
+  return typeof v === 'string' && v.startsWith(SCOPED_PREFIX);
+}
+// leak 된 scoped row 를 stale 로 간주하는 TTL. 라이브 spec 은 분 단위로 끝나므로
+//   2h 초과분은 crash 로 남은 잔재로 판정(동시 run 의 fresh row 는 절대 미포함).
+const SCOPED_STALE_TTL_MS = 2 * 60 * 60 * 1000;
+function markerTsMs(marker: string): number | null {
+  const p = marker.split('|');
+  if (p.length < 3) return null;
+  const t = Number(p[p.length - 1]);
+  return Number.isFinite(t) ? t : null;
+}
 
 let _sb: SupabaseClient | null = null;
 function svc(): SupabaseClient {
@@ -108,7 +180,12 @@ export async function seedCheckIn(opts: {
       name,
       phone,
       visit_type: opts.visit_type ?? 'new',
-      memo: MARKER,
+      // run-scoped 마커(T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN §critical-flow 확장):
+      //   critical-flow(CF-1..5)·다수 spec 이 이 시더를 쓴다. bare MARKER 는 동시 실행 중인
+      //   다른 CI run 의 cleanupAll() 전수 스윕에 in-flight 상태로 삭제돼 교대성 RED 를 유발했다.
+      //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 바꿔 cross-run 스윕에서 격리한다(chart-open-gate
+      //   시더와 동일 스킴). 정리는 sweepScoped('run'/'stale') + 개별 cleanup(id) + REGISTRY.
+      memo: runMarker(),
       // AC-2: sim 플래그. is_simulation 컬럼은 customers 에만 존재(20260420000006_simulation_flag)
       //   → 연관 check_ins/packages/reservations 는 customer 링크로 필터되므로 여기 1곳이면 충분.
       //   기본 false(대시보드 가시성 계약 보존, 위 opts.simulation 주석 참조).
@@ -144,7 +221,8 @@ export async function seedCheckIn(opts: {
         // 실제 체크인은 항상 checked_in_at 보유. 대시보드 카드 쿼리가
         // checked_in_at 오늘범위(gte/lte)로 필터하므로 미설정 시 카드가 안 뜬다.
         checked_in_at: checkedInAt,
-        notes: MARKER,
+        notes: runMarker(), // scoped 마커(위 memo 주석 참조) — cross-run cleanupAll 격리
+
       })
       .select('id')
       .single();
@@ -228,7 +306,8 @@ export async function seedReservation(opts: {
       reservation_time: opts.time ?? '14:00',
       visit_type: opts.visit_type ?? 'new',
       status: 'confirmed',
-      memo: MARKER,
+      memo: runMarker(), // scoped 마커(seedCheckIn 주석 참조) — cross-run cleanupAll 격리
+
     })
     .select('id')
     .single();
@@ -290,6 +369,18 @@ async function selectAllValues(build: () => RangeQB, column: string): Promise<st
       const v = r[column];
       if (v) out.push(v as string);
     }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/** build() 가 만든 select 쿼리를 .range() 로 전수 페이지네이션해 원본 레코드를 모은다. */
+async function selectAllRecords(build: () => RangeQB): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error || !data) break;
+    for (const r of data) out.push(r);
     if (data.length < PAGE) break;
   }
   return out;
@@ -359,13 +450,19 @@ export async function cleanupAll(): Promise<CleanupSummary> {
   ).forEach((id) => customerIds.add(id));
 
   // 1c) customers(name ilike 'qa-fixture-%' / 'qa-res-%') — 마커 누락 방어
+  //   ⚠ cross-run 격리(T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN §critical-flow 확장):
+  //     시더가 이제 memo 를 run-scoped(`[QA-FIXTURE]|token|ts`)로 쓴다. 이름접두는 여전히
+  //     'qa-fixture-'/'qa-res-' 라서 이 branch 가 **다른 run 의 in-flight scoped 시드**까지
+  //     이름만으로 삭제하면 cross-run cleanup race 가 그대로 남는다. → memo 가 scoped 인 row 는
+  //     이 전수 스윕에서 제외한다(그 row 는 소유 run 의 sweepScoped('run')/TTL('stale') 소관).
+  //     memo=NULL(마커 누락 회귀) 또는 bare MARKER 인 이름접두 row 만 여기서 회수한다.
   for (const prefix of FIXTURE_NAME_PREFIXES) {
-    (
-      await selectAllValues(
-        () => sb.from('customers').select('id').ilike('name', `${prefix}%`) as unknown as RangeQB,
-        'id',
-      )
-    ).forEach((id) => customerIds.add(id));
+    for (const r of await selectAllRecords(
+      () => sb.from('customers').select('id, memo').ilike('name', `${prefix}%`) as unknown as RangeQB,
+    )) {
+      if (isScopedMarker(r['memo'])) continue; // 다른 run 의 scoped 시드 — 미접촉
+      if (r['id']) customerIds.add(r['id'] as string);
+    }
   }
 
   // 1d) 레지스트리 등록분 합집합 (AC-3) — test 가 name/memo 를 커스텀으로 덮어써 마커/이름
@@ -411,12 +508,13 @@ export async function cleanupAll(): Promise<CleanupSummary> {
     await selectAllValues(() => sb.from('reservations').select('id').eq('memo', MARKER) as unknown as RangeQB, 'id')
   ).forEach((id) => resIds.add(id));
   for (const prefix of FIXTURE_NAME_PREFIXES) {
-    (
-      await selectAllValues(
-        () => sb.from('reservations').select('id').ilike('customer_name', `${prefix}%`) as unknown as RangeQB,
-        'id',
-      )
-    ).forEach((id) => resIds.add(id));
+    // 1c 와 동일 격리: memo 가 scoped 인 다른 run 의 in-flight 예약은 제외(sweepScoped 소관).
+    for (const r of await selectAllRecords(
+      () => sb.from('reservations').select('id, memo').ilike('customer_name', `${prefix}%`) as unknown as RangeQB,
+    )) {
+      if (isScopedMarker(r['memo'])) continue;
+      if (r['id']) resIds.add(r['id'] as string);
+    }
   }
   REGISTRY.reservations.forEach((id) => resIds.add(id)); // AC-3 레지스트리 합집합
   const resIdArr = Array.from(resIds);
@@ -449,6 +547,127 @@ export async function cleanupAll(): Promise<CleanupSummary> {
   REGISTRY.checkIns.clear();
   REGISTRY.packages.clear();
   REGISTRY.reservations.clear();
+
+  return summary;
+}
+
+// (id, marker) 페어를 페이지네이션 수집 — scoped(파이프) row 만.
+type PairQB = {
+  range: (from: number, to: number) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>;
+};
+async function selectScopedPairs(
+  build: () => PairQB,
+  valueCol: string,
+  markerCol: string,
+): Promise<{ value: string; marker: string }[]> {
+  const out: { value: string; marker: string }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error || !data) break;
+    for (const r of data) {
+      const v = r[valueCol];
+      const m = r[markerCol];
+      if (v && typeof m === 'string') out.push({ value: v as string, marker: m });
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Run-scoped 시드 스윕 (T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN).
+ *
+ * cleanupAll() 은 bare 마커('[QA-FIXTURE]')를 전수 삭제하므로 **동시 run 의 in-flight 시드까지
+ * 지우는 cross-run race** 를 유발한다. 그 대상이 되지 않도록 chart-open-gate 시드는 run 토큰이
+ * embed 된 scoped 마커(`[QA-FIXTURE]|<token>|<ts>`)를 쓴다 — bare-exact 매칭인 cleanupAll() 은
+ * 이 row 를 못 잡는다(=다른 run 이 못 건드림). 대신 scoped row 는 이 함수가 정리한다:
+ *   - mode='run'   (globalTeardown): **이 run 토큰** 접두 row 만 삭제 → 동시 run 무간섭.
+ *   - mode='stale' (globalSetup pre-sweep): ts 가 TTL(2h) 초과한 scoped row 만 삭제
+ *       → crash 로 leak 된 과거 run 잔재만 회수, 동시 실행 중인 run 의 fresh 시드는 미접촉.
+ *
+ * 안전 불변식: 삭제 대상은 오직 scoped 마커(`[QA-FIXTURE]|...`)를 가진 row. bare 마커·실데이터
+ * 는 절대 건드리지 않는다(그건 cleanupAll 소관).
+ */
+export async function sweepScoped(opts: { mode: 'run' | 'stale' }): Promise<CleanupSummary> {
+  const sb = svc();
+  const summary: CleanupSummary = { customers: 0, checkIns: 0, packages: 0, reservations: 0, skippedCustomers: 0 };
+  const runPrefix = `${MARKER}|${runToken()}|`;
+  const now = Date.now();
+  const keep = (marker: string): boolean => {
+    if (opts.mode === 'run') return marker.startsWith(runPrefix);
+    // stale: ts 파싱 가능 + TTL 초과분만. (파싱 불가/최근 = 동시 run 가능성 → 미삭제)
+    const ts = markerTsMs(marker);
+    return ts !== null && now - ts > SCOPED_STALE_TTL_MS;
+  };
+
+  // ── 1) 삭제 대상 customer id (customers.memo + check_ins.notes 역참조) ──
+  const customerIds = new Set<string>();
+  (
+    await selectScopedPairs(
+      () => sb.from('customers').select('id, memo').like('memo', SCOPED_LIKE) as unknown as PairQB,
+      'id',
+      'memo',
+    )
+  ).forEach(({ value, marker }) => {
+    if (keep(marker)) customerIds.add(value);
+  });
+  (
+    await selectScopedPairs(
+      () => sb.from('check_ins').select('customer_id, notes').like('notes', SCOPED_LIKE) as unknown as PairQB,
+      'customer_id',
+      'notes',
+    )
+  ).forEach(({ value, marker }) => {
+    if (keep(marker)) customerIds.add(value);
+  });
+  const customerIdArr = Array.from(customerIds);
+
+  // ── 2) customer 종속 cascade (payments → check_ins, package_payments → packages) ──
+  for (const ids of chunk(customerIdArr, DELETE_CHUNK)) {
+    const ckIds = await selectAllValues(
+      () => sb.from('check_ins').select('id').in('customer_id', ids) as unknown as RangeQB,
+      'id',
+    );
+    if (ckIds.length) {
+      await deleteByIds(sb, 'payments', 'check_in_id', ckIds);
+      const r = await deleteByIds(sb, 'check_ins', 'id', ckIds);
+      summary.checkIns += r.deleted;
+    }
+    const pkgIds = await selectAllValues(
+      () => sb.from('packages').select('id').in('customer_id', ids) as unknown as RangeQB,
+      'id',
+    );
+    if (pkgIds.length) {
+      await deleteByIds(sb, 'package_payments', 'package_id', pkgIds);
+      const r = await deleteByIds(sb, 'packages', 'id', pkgIds);
+      summary.packages += r.deleted;
+    }
+  }
+
+  // ── 3) customers ──
+  {
+    const r = await deleteByIds(sb, 'customers', 'id', customerIdArr);
+    summary.customers += r.deleted;
+    summary.skippedCustomers += r.skipped;
+  }
+
+  // ── 4) reservations (reservations.memo scoped) ──
+  const resIds = new Set<string>();
+  (
+    await selectScopedPairs(
+      () => sb.from('reservations').select('id, memo').like('memo', SCOPED_LIKE) as unknown as PairQB,
+      'id',
+      'memo',
+    )
+  ).forEach(({ value, marker }) => {
+    if (keep(marker)) resIds.add(value);
+  });
+  const resIdArr = Array.from(resIds);
+  if (resIdArr.length) {
+    await deleteByIds(sb, 'reservation_logs', 'reservation_id', resIdArr);
+    const r = await deleteByIds(sb, 'reservations', 'id', resIdArr);
+    summary.reservations += r.deleted;
+  }
 
   return summary;
 }

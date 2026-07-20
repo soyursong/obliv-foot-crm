@@ -28,10 +28,12 @@
  *        · ④ 코히런스 앵커: pmw-zone3 도 flex-direction=column (① = ④ DOM 구조 복제 정합)
  *   AC1b(탭 슬림): 🔴 카테고리 탭(pmw-footcare-cat-tab) = 슬림 텍스트 탭(width > height = 정사각형 artifact 종식, height ≤ 36).
  *   AC2: 🔴 좌측 사이드 메뉴(상병코드/처방약/풋케어 세로 나열) = 무변경 → 3개 탭 존재.
- *   AC3(회귀 가드): ① 변경이 ②차트코드행·③세금/수납잔액·④우측 zone reflow 에 영향 0.
- *        · canonical 유지: 중앙 컬럼(x≈213) = [🟢 code-grid]→[② feeitem-row]→[🔵 settle-lane] 세로 스택 / 🟣 zone3 = 우측 별도 컬럼.
- *        · ② feeitem-row = 여전히 code-grid 아래 동일 컬럼 컴팩트 한 줄(≤52px)
- *        · ③ settle-lane(grid 아래 동일 x) / ④ zone3(우측 컬럼) 존재·가시
+ *   AC3(회귀 가드 · T-20260720-foot-PAYMINI-CHARTCODE-SPLIT 반영): ① 변경이 ②③④ zone reflow 에 영향 0.
+ *        중앙 컬럼이 세로 스택→4-컬럼 가로 행(sm:flex-row, 좌→우)으로 재설계됨.
+ *        · canonical 유지: ① pmw-code-grid → ② pmw-chartcode-col(신규 "차트 코드", 구 feeitem-row 대체)
+ *          → ③ pmw-settle-lane("진료비 산정") → ④ pmw-zone3 순으로 x 좌단 엄격 증가(가로 컬럼).
+ *        · 4개 zone 대략 동일 top y (세로 스택 아님) / 4개 zone 존재·가시.
+ *        · REMOVED: pmw-feeitem-row·pmw-feeitem-toggle·컴팩트 한 줄(≤52px)·fold 토글.
  *   AC4: 4구역 전체가 스샷과 시각 일치 (스크린샷 evidence).
  */
 import { test, expect } from '@playwright/test';
@@ -208,15 +210,18 @@ test('AC1(세로 팔레트·flex-direction)+AC1b(탭 슬림)+AC2+AC3+AC4', async
     expect(Math.abs(item1!.x - item0!.x), `AC1 항목 좌단 정렬(동일 열, |Δx|≤6)`).toBeLessThanOrEqual(6);
   }
 
-  // ── AC3(회귀 가드): ②③④ zone reflow 0 ──
-  const grid = page.locator('[data-testid="pmw-code-grid"]').first();   // 🔴/🟢 좌측 code-grid
-  const feeRow = page.locator('[data-testid="pmw-feeitem-row"]').first(); // 🟢 ② 차트코드·진료비
-  const settle = page.locator('[data-testid="pmw-settle-lane"]').first(); // 🔵 ③ 세금구분·수납잔액
-  const zone3 = page.locator('[data-testid="pmw-zone3"]').first();       // 🟣 ④ 우측 유지
+  // ── AC3(회귀 가드): T-20260720-foot-PAYMINI-CHARTCODE-SPLIT 후 4-컬럼 가로 레이아웃 정합 ──
+  //   중앙 컬럼이 세로 스택에서 4개 zone 가로 행(sm:flex-row, 좌→우)으로 재설계됨.
+  //   ① code-grid → ② chartcode-col(신규, 구 feeitem-row 대체) → ③ settle-lane → ④ zone3.
+  //   ①탭 변경이 이 4-컬럼 가로 x-순서를 흐트러뜨리면 reflow 회귀로 감지.
+  const grid = page.locator('[data-testid="pmw-code-grid"]').first();       // ① code-grid(팔레트 그리드)
+  const chartcode = page.locator('[data-testid="pmw-chartcode-col"]').first(); // ② 차트 코드(신규 컬럼)
+  const settle = page.locator('[data-testid="pmw-settle-lane"]').first();   // ③ 진료비 산정
+  const zone3 = page.locator('[data-testid="pmw-zone3"]').first();          // ④ 우측 유지
 
-  await expect(grid, 'code-grid(좌측) 존재').toBeVisible();
-  await expect(feeRow, '② feeitem-row 존재').toBeVisible();
-  await expect(settle, '③ settle-lane 존재').toBeVisible();
+  await expect(grid, '① code-grid 존재').toBeVisible();
+  await expect(chartcode, '② chartcode-col(차트 코드) 존재').toBeVisible();
+  await expect(settle, '③ settle-lane(진료비 산정) 존재').toBeVisible();
   await expect(zone3, '④ zone3(우측) 존재').toBeVisible();
 
   // AC1 ④ 코히런스 앵커: ①팔레트가 복제한 ④ zone3 도 flex-direction=column 이어야 정합(DOM 구조 동형).
@@ -226,26 +231,26 @@ test('AC1(세로 팔레트·flex-direction)+AC1b(탭 슬림)+AC2+AC3+AC4', async
   expect(zone3Flex, 'AC1 ④ zone3 flex-direction=column (① 팔레트 = ④ 세로 섹션 복제 앵커 정합)').toBe('column');
 
   const gb = await grid.boundingBox();
-  const fb = await feeRow.boundingBox();
+  const cb = await chartcode.boundingBox();
   const sb = await settle.boundingBox();
   const zb = await zone3.boundingBox();
-  expect(gb && fb && sb && zb, 'zone boundingBox 확보').toBeTruthy();
+  expect(gb && cb && sb && zb, 'zone boundingBox 확보').toBeTruthy();
 
   // eslint-disable-next-line no-console
-  console.log(`[4ZONE-EVIDENCE] grid(x=${Math.round(gb!.x)},w=${Math.round(gb!.width)}) fee(x=${Math.round(fb!.x)},y=${Math.round(fb!.y)},w=${Math.round(fb!.width)},h=${Math.round(fb!.height)}) settle(x=${Math.round(sb!.x)}) zone3(x=${Math.round(zb!.x)})`);
+  console.log(`[4ZONE-EVIDENCE] grid(x=${Math.round(gb!.x)},y=${Math.round(gb!.y)},w=${Math.round(gb!.width)}) chartcode(x=${Math.round(cb!.x)},y=${Math.round(cb!.y)}) settle(x=${Math.round(sb!.x)},y=${Math.round(sb!.y)}) zone3(x=${Math.round(zb!.x)},y=${Math.round(zb!.y)})`);
 
-  // AC3-①: canonical 레이아웃 유지 (CHARTFEE-ROW-RESTORE 508893fa 착지 구조).
-  //   중앙 컬럼(x≈213, w≈710) = [🟢 code-grid] → [② feeitem-row] → [🔵 settle-lane] 세로 스택.
-  //   🟣 zone3 = 별도 우측 컬럼(x≫중앙). 즉 settle 는 grid "아래"(동일 x), zone3 만 "우측".
-  //   (①탭 변경이 이 세로 스택·우측 컬럼 경계를 흐트러뜨리면 reflow 회귀로 감지.)
-  expect(Math.abs(sb!.x - gb!.x), `AC3 🔵 settle(x=${Math.round(sb!.x)})는 중앙 컬럼(code-grid x=${Math.round(gb!.x)}) 동일 세로 스택(±24)`).toBeLessThanOrEqual(24);
-  expect(sb!.y, `AC3 🔵 settle(top=${Math.round(sb!.y)})는 code-grid(top=${Math.round(gb!.y)}) 아래 = 세로 스택 유지`).toBeGreaterThan(gb!.y);
-  expect(zb!.x, `AC3 🟣 zone3(x=${Math.round(zb!.x)})는 중앙 컬럼(x=${Math.round(gb!.x)}) 우측 별도 컬럼`).toBeGreaterThan(gb!.x + gb!.width - 24);
+  // AC3-①: 4-컬럼 가로 순서 (T-20260720-foot-PAYMINI-CHARTCODE-SPLIT 착지 구조).
+  //   sm:flex-row 로 좌→우 4개 zone: ① code-grid → ② chartcode-col → ③ settle-lane → ④ zone3.
+  //   각 zone 의 좌단 x 가 엄격히 증가해야 함(가로 컬럼 배치, 세로 스택 아님).
+  //   (①탭 변경이 이 가로 x-순서를 흐트러뜨리면 reflow 회귀로 감지.)
+  expect(cb!.x, `AC3 ② chartcode(x=${Math.round(cb!.x)})는 ① code-grid(x=${Math.round(gb!.x)}) 우측`).toBeGreaterThan(gb!.x);
+  expect(sb!.x, `AC3 ③ settle(x=${Math.round(sb!.x)})는 ② chartcode(x=${Math.round(cb!.x)}) 우측`).toBeGreaterThan(cb!.x);
+  expect(zb!.x, `AC3 ④ zone3(x=${Math.round(zb!.x)})는 ③ settle(x=${Math.round(sb!.x)}) 우측(최우단)`).toBeGreaterThan(sb!.x);
 
-  // AC3-②: ② feeitem-row = 여전히 code-grid "아래" 동일 컬럼 컴팩트 한 줄(reflow 없음)
-  expect(fb!.y, `AC3 ② fee-row(top=${Math.round(fb!.y)})는 code-grid(bottom=${Math.round(gb!.y + gb!.height)}) 아래`).toBeGreaterThanOrEqual(gb!.y + gb!.height - 12);
-  expect(fb!.height, `AC3 ② fee-row 컴팩트 한 줄(h=${Math.round(fb!.height)}≤52px)`).toBeLessThanOrEqual(52);
-  expect(Math.abs(fb!.x - gb!.x), `AC3 ② fee-row 좌단(x=${Math.round(fb!.x)})=code-grid 좌단(x=${Math.round(gb!.x)}) 동일 컬럼(±24)`).toBeLessThanOrEqual(24);
+  // AC3-②: 4개 zone 이 대략 동일 top y (세로 스택이 아니라 가로 컬럼 — 관대한 tolerance).
+  const tops = [gb!.y, cb!.y, sb!.y, zb!.y];
+  const topSpread = Math.max(...tops) - Math.min(...tops);
+  expect(topSpread, `AC3 4개 zone 대략 동일 top(spread=${Math.round(topSpread)}≤120px — 가로 컬럼, 세로 스택 아님)`).toBeLessThanOrEqual(120);
 
   // ── AC4: 4구역 시각 evidence ──
   await dialog.screenshot({ path: path.join(SHOT_DIR, '01-4zone-footcare-tabs.png') });

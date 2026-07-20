@@ -80,7 +80,19 @@ export default defineConfig({
   globalTeardown: path.join(__dirname, 'tests', 'global-teardown.ts'),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // CI 한정 재시도 (T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN QA#3):
+  //   cross-run cleanup race 는 run-scoped 마커 격리로 구조적으로 제거됐다(fixtures sweepScoped).
+  //   그럼에도 dev=prod 공유 라이브 DB + Vite cold-start(첫 페이지 로드 컴파일)로 seeded 카드가
+  //   첫 시도에서 12~16s 늦게 렌더돼 waitFor 가 tight-timeout 으로 flaky RED 를 냈다(gate 첫 실행
+  //   G1 16s·G3 17s, G3 시드 status=confirmed 로 잔존 확인 = 삭제 race 아님·순수 렌더 지연).
+  //   재시도 시 서버가 warm 이라 결정적으로 green → AC-3(≥10 rerun green) 안정 수렴. 회귀 검출은
+  //   행위 assert + G6 정적 가드가 유지하므로 재시도가 실회귀를 가리지 않는다. 로컬(비-CI)은 0 유지
+  //   (실 flake 를 개발 중 즉시 노출 + 빠른 피드백).
+  retries: process.env.CI ? 2 : 0,
+  // per-test 타임아웃 60s (기본 30s → 상향, QA#3): gotoDashboard(login + dashboard-root 대기)
+  //   + 20s 카드 렌더 대기(cold-start 흡수) + waitForChartOpen 이 한 attempt 안에서 30s 를 넘겨
+  //   카드 대기 도달 전 test-timeout 으로 잘리던 것을 방지. 정적/빠른 spec 은 영향 없음(즉시 종료).
+  timeout: 60_000,
   workers: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
 
@@ -112,6 +124,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: cross-run 시드 격리 불변식 가드.
+        //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 cleanupAll 전수 스윕이 다른 run 의 in-flight
+        //   시드를 못 지움을 DB 직접 검증(교대성 RED 구조적 부재 = AC-2/3/4). auth/server 불요.
+        '**/T-20260721-foot-CHART-OPENGATE-SEED-ISOLATION-CROSSRUN.spec.ts',
         // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND: ④고객 export PII-egress audit + ⑨opt-out soft-delete 법적 guard
         //   + 권한 3역할 ADDITIVE 확대. 정적 소스/계약 검증(auth·server 불요). re-cut 시 unit testMatch 등록(원 커밋 미등록 갭 치유).
         '**/T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND.spec.ts',
