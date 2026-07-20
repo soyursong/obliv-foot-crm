@@ -233,7 +233,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
       .insert({
         clinic_id: CLINIC_ID,
         name: `slot-a-${ts}`,
-        phone: `01011${String(ts).slice(-7)}`,
+        phone: `DUMMY-${ts}-a`,  // AC4: slot distinctness = -a/-b 유지 (E.164 CHECK 정합, phone 비-subject)
         visit_type: 'returning',
       })
       .select()
@@ -244,7 +244,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
       .insert({
         clinic_id: CLINIC_ID,
         name: `slot-b-${ts}`,
-        phone: `01022${String(ts).slice(-7)}`,
+        phone: `DUMMY-${ts}-b`,  // AC4: slot distinctness = -a/-b 유지 (E.164 CHECK 정합, phone 비-subject)
         visit_type: 'returning',
       })
       .select()
@@ -256,7 +256,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
         clinic_id: CLINIC_ID,
         customer_id: customerA!.id,
         customer_name: `slot-a-${ts}`,
-        customer_phone: `01011${String(ts).slice(-7)}`,
+        customer_phone: `DUMMY-${ts}-a`,
         visit_type: 'returning',
         status: 'payment_waiting',
         queue_number: 992,
@@ -270,7 +270,7 @@ test.describe('T-20260515-PAYMENT-CODE-PERSIST — 시술코드 draft persist', 
         clinic_id: CLINIC_ID,
         customer_id: customerB!.id,
         customer_name: `slot-b-${ts}`,
-        customer_phone: `01022${String(ts).slice(-7)}`,
+        customer_phone: `DUMMY-${ts}-b`,
         visit_type: 'returning',
         status: 'payment_waiting',
         queue_number: 993,

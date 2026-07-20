@@ -44,7 +44,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
     // 1) 고객 생성
     const { data: cust, error: custErr } = await sb
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `resv-test-${sfx}`, phone: `0109${sfx}`, visit_type: 'new' })
+      .insert({ clinic_id: CLINIC_ID, name: `resv-test-${sfx}`, phone: `DUMMY-9${sfx}`, visit_type: 'new' })
       .select('id').single();
     expect(custErr, `customers insert: ${custErr?.message}`).toBeNull();
     const customerId = (cust as { id: string }).id;
@@ -56,7 +56,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
         clinic_id: CLINIC_ID,
         customer_id: customerId,
         customer_name: `resv-test-${sfx}`,
-        customer_phone: `0109${sfx}`,
+        customer_phone: `DUMMY-9${sfx}`,
         reservation_date: TODAY,
         reservation_time: '10:00',
         visit_type: 'new',
@@ -73,7 +73,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
         clinic_id: CLINIC_ID,
         customer_id: customerId,
         customer_name: `resv-test-${sfx}`,
-        customer_phone: `0109${sfx}`,
+        customer_phone: `DUMMY-9${sfx}`,
         visit_type: 'new',
         status: 'consult_waiting',
         reservation_id: reservationId,
@@ -99,7 +99,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
         clinic_id: CLINIC_ID,
         customer_id: customerId,
         customer_name: `resv-test-${sfx}`,
-        customer_phone: `0109${sfx}`,
+        customer_phone: `DUMMY-9${sfx}`,
         visit_type: 'new',
         status: 'consult_waiting',
         reservation_id: reservationId,
@@ -129,7 +129,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
 
     const { data: cust } = await sb
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `dup-guard-${sfx}`, phone: `0108${sfx}`, visit_type: 'returning' })
+      .insert({ clinic_id: CLINIC_ID, name: `dup-guard-${sfx}`, phone: `DUMMY-8${sfx}`, visit_type: 'returning' })
       .select('id').single();
     const customerId = (cust as { id: string }).id;
 
@@ -137,7 +137,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
       .from('reservations')
       .insert({
         clinic_id: CLINIC_ID, customer_id: customerId,
-        customer_name: `dup-guard-${sfx}`, customer_phone: `0108${sfx}`,
+        customer_name: `dup-guard-${sfx}`, customer_phone: `DUMMY-8${sfx}`,
         reservation_date: TODAY, reservation_time: '11:00',
         visit_type: 'returning', status: 'confirmed',
       })
@@ -148,7 +148,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
       .from('check_ins')
       .insert({
         clinic_id: CLINIC_ID, customer_id: customerId,
-        customer_name: `dup-guard-${sfx}`, customer_phone: `0108${sfx}`,
+        customer_name: `dup-guard-${sfx}`, customer_phone: `DUMMY-8${sfx}`,
         visit_type: 'returning', status: 'treatment_waiting',
         reservation_id: reservationId,
       })
@@ -160,7 +160,7 @@ test.describe('AC-2 unique_reservation_checkin 인덱스 조건 (DB)', () => {
       .from('check_ins')
       .insert({
         clinic_id: CLINIC_ID, customer_id: customerId,
-        customer_name: `dup-guard-${sfx}`, customer_phone: `0108${sfx}`,
+        customer_name: `dup-guard-${sfx}`, customer_phone: `DUMMY-8${sfx}`,
         visit_type: 'returning', status: 'treatment_waiting',
         reservation_id: reservationId,
       });
@@ -288,7 +288,7 @@ test.describe('AC-4 23505 에러 사용자 친화 메시지 (anon client)', () =
     // 사전 준비: 예약 + 활성 체크인 생성 (의도적으로 unique violation 유발)
     const { data: cust } = await sb
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `dup-msg-${sfx}`, phone: `0107${sfx}`, visit_type: 'returning' })
+      .insert({ clinic_id: CLINIC_ID, name: `dup-msg-${sfx}`, phone: `DUMMY-7${sfx}`, visit_type: 'returning' })
       .select('id').single();
     const customerId = (cust as { id: string }).id;
 
@@ -296,7 +296,7 @@ test.describe('AC-4 23505 에러 사용자 친화 메시지 (anon client)', () =
       .from('reservations')
       .insert({
         clinic_id: CLINIC_ID, customer_id: customerId,
-        customer_name: `dup-msg-${sfx}`, customer_phone: `0107${sfx}`,
+        customer_name: `dup-msg-${sfx}`, customer_phone: `DUMMY-7${sfx}`,
         reservation_date: TODAY, reservation_time: '14:00',
         visit_type: 'returning', status: 'confirmed',
       })
@@ -308,7 +308,7 @@ test.describe('AC-4 23505 에러 사용자 친화 메시지 (anon client)', () =
       .from('check_ins')
       .insert({
         clinic_id: CLINIC_ID, customer_id: customerId,
-        customer_name: `dup-msg-${sfx}`, customer_phone: `0107${sfx}`,
+        customer_name: `dup-msg-${sfx}`, customer_phone: `DUMMY-7${sfx}`,
         visit_type: 'returning', status: 'treatment_waiting',
         reservation_id: reservationId,
       })
@@ -323,7 +323,7 @@ test.describe('AC-4 23505 에러 사용자 친화 메시지 (anon client)', () =
     await page.waitForLoadState('networkidle');
 
     await page.locator('#sc-name').fill(`dup-msg-${sfx}`);
-    await page.locator('#sc-phone').fill(`0107${sfx}`);
+    await page.locator('#sc-phone').fill(`DUMMY-7${sfx}`);
 
     // 예약 배너가 뜰 때까지 대기 (3초 디바운스 이후)
     await page.waitForTimeout(3500);

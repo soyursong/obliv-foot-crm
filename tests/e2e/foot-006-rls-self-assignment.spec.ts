@@ -57,6 +57,12 @@ test.describe('B-1 RLS 자기배정 + anon 셀프체크인', () => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // T-20260720-E2E-SEED-DEFERRED-AC4 (item4, 예외 유지 · paper-over 금지):
+    //   로컬 010 유지 = self_checkin_create 실입력 경로 재현. self_checkin_create 는 p_phone 을
+    //   normalize 없이 customers.phone 에 as-is INSERT (mig 20260714120000 L489-491) → 로컬 010 은
+    //   E.164 CHECK 위반 → createErr. 이는 RPC/CHECK 상호작용 **실신호**(제품 RPC 정규화 누락)이며
+    //   DUMMY화로 은폐 금지. 현재 아래 createErr 분기는 skip 처리(persist·red 없음, 롤백). RPC 정합은
+    //   별도 제품코드 티켓 소관(dev-foot→planner FOLLOWUP). 본 테스트-인프라 티켓 무접점.
     const phoneSuffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
     const phone = `010${phoneSuffix}`;
     const name = `RLS테스트_${phoneSuffix.slice(-4)}`;

@@ -102,6 +102,8 @@ test('S3: 수동 추가/해제 회귀 — notification_opt_outs 경로 무변경
   if (!ok) { test.skip(true, '메시지 설정 ⑥ 섹션 접근 불가 — 스킵'); return; }
 
   // 충돌 없는 임의 테스트 번호(010-0000-XXXX)
+  // T-20260720-E2E-SEED-DEFERRED-AC4 (item5, 무해 유지): 로컬 010 = UI .fill() 입력값 →
+  //   앱 정규화 경유 + 대상 테이블은 notification_opt_outs(비-E.164-CHECK) → 직삽입 위반 아님. 전환 불요.
   const rand = String(1000 + Math.floor(Math.random() * 8999));
   const rawPhone = `0100000${rand}`;
 

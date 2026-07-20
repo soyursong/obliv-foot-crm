@@ -29,7 +29,10 @@ async function seedCoveredVisit(
   grade: string,
   provisionalCopay: number,
 ): Promise<Seeded> {
-  const phone = `0109999${Math.floor(1000 + (grade.length * 137) % 8999)}`;
+  // T-20260720-E2E-SEED-DEFERRED-AC4: phone 비-subject(grade 가 subject) → DUMMY 직전환.
+  //   customers.phone E.164 CHECK 정합 + (clinic_id,phone) UNIQUE → grade+ts 로 distinctness 보존.
+  //   phone 은 lookup 키 아님(cleanup=customerId) → 결정성 불요.
+  const phone = `DUMMY-${grade}-${Date.now()}`;
   const { data: c } = await sb
     .from('customers')
     .insert({ clinic_id: CLINIC_ID, name: `${MARKER}-${grade}`, phone, visit_type: 'new', insurance_grade: grade })
