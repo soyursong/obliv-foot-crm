@@ -1,44 +1,67 @@
 #!/usr/bin/env bash
-# pre-push — ghost-handoff-guard pre-push 보강 (belt tail-gap 봉인)
-#   T-20260720-foot-REPO-GHOST-PREPUSH-GUARD-PORT (supervisor cogate, DA GO)
-#   reference impl: obliv-body-crm 4f8826c6 (T-20260720-body-REPO-GHOST-PREPUSH-GUARD-HARDEN)
+# pre-push — ① ghost-handoff-guard (belt tail-gap 봉인) + ② red-CI 배포 차단 게이트
+#   ① T-20260720-*-REPO-GHOST-PREPUSH-GUARD-* (supervisor cogate, DA GO)
+#   ② T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE (supervisor) — 2026-07-20 추가
 #
-# 배경: pre-commit(belt)은 git 이 fast-forward·무충돌 auto-merge 경로에서 구조적으로
-#       미호출 → 유령 signals.md/retro/ 가 이 경로로 main 재유입 시 미차단(잔여 tail-gap).
-#       pre-push 는 push 대상 ref-range(remote_sha..local_sha)를 스캔해 이 gap 을 봉인한다.
+# ① ghost: pre-commit(belt)은 ff·무충돌 auto-merge 경로에서 구조적으로 미호출 →
+#    유령 signals.md/retro/ 재유입 gap 을 push ref-range 스캔으로 봉인.
+#    검출 로직 = scripts/ghost-handoff-guard.sh (belt 공유). 우회: GHOST_HANDOFF_BYPASS=1 (사유 명기).
 #
-# git 은 stdin 으로 각 push ref 마다 다음 라인을 전달:
-#   <local ref> <local sha> <remote ref> <remote sha>
-#   - local sha = 0{40} : 브랜치 삭제 push → 내용 없음, skip
-#   - remote sha = 0{40}: 신규 remote 브랜치 → tip 트리 유령 실재만 검사(guard range 모드가 처리)
+# ② ci-gate: red `CI · Push`(G1~G5 미통과) 커밋의 main merge = CF auto-deploy 유출을
+#    push 지점에서 구조 차단 (db33ac52 실사고 재발 방지). mainline push 만 대상.
+#    로직 SSOT = ~/claude-sync/scripts/ci_green_gate.sh (부재/gh 오류 = fail-open + 경고,
+#    사후는 ci_red_main_watch 워처가 경보). 차단 규칙:
+#      - push 커밋에 완료된 red verdict 존재 → BLOCK
+#      - 최신 main CI red(freeze) + push 커밋 green-미검증 → BLOCK
+#      - fix 경로: PR/branch 에서 CI green 확보한 커밋은 red main 위에도 통과
+#    탈출구: CI_GATE_OVERRIDE="사유" git push ... (bus ci_gate_override 기록 + 경보 대상)
 #
-# 검출 로직은 scripts/ghost-handoff-guard.sh (belt 공유) 재사용 — 중복 구현 없음.
-# 활성화: git config core.hooksPath .githooks   (belt 에서 이미 설정 → 본 파일만 추가하면 활성)
-# 우회(비권장, 사유 명기): GHOST_HANDOFF_BYPASS=1 git push ...
+# git 은 stdin 으로 각 push ref 마다: <local ref> <local sha> <remote ref> <remote sha>
+#   - local sha = 0{40} : 브랜치 삭제 push → skip
+#   - remote sha = 0{40}: 신규 remote 브랜치 → guard range 모드가 tip 트리만 검사
+# 활성화: git config core.hooksPath .githooks
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 Z40="0000000000000000000000000000000000000000"
 
-# 우회 (belt 와 동일 env, 일관성 유지)
-if [ "${GHOST_HANDOFF_BYPASS:-0}" = "1" ]; then
-  echo "⚠️  [pre-push] GHOST_HANDOFF_BYPASS=1 — 유령 경로 검사 우회(사유 명기 의무)" >&2
-  exit 0
-fi
-
-GUARD="$REPO_ROOT/scripts/ghost-handoff-guard.sh"
-[ -f "$GUARD" ] || exit 0
+# stdin 1회 캡처 — ghost 스캔 + ci-gate 양쪽에서 사용
+PUSH_REFS="$(cat || true)"
 
 rc=0
-while read -r local_ref local_sha remote_ref remote_sha; do
-  # 빈 라인 방어
-  [ -z "${local_sha:-}" ] && continue
-  # 브랜치 삭제 push — 유입 내용 없음
-  [ "$local_sha" = "$Z40" ] && continue
-  # ref-range 스캔 (신규 브랜치=remote_sha 0{40} 은 guard range 모드가 tip 트리 실재만 검사)
-  if ! bash "$GUARD" range "$remote_sha" "$local_sha"; then
-    rc=1
+
+# ── ① ghost-handoff-guard ──────────────────────────────────────────
+if [ "${GHOST_HANDOFF_BYPASS:-0}" = "1" ]; then
+  echo "⚠️  [pre-push] GHOST_HANDOFF_BYPASS=1 — 유령 경로 검사 우회(사유 명기 의무)" >&2
+else
+  GUARD="$REPO_ROOT/scripts/ghost-handoff-guard.sh"
+  if [ -f "$GUARD" ]; then
+    while read -r local_ref local_sha remote_ref remote_sha; do
+      [ -z "${local_sha:-}" ] && continue
+      [ "$local_sha" = "$Z40" ] && continue
+      if ! bash "$GUARD" range "$remote_sha" "$local_sha"; then
+        rc=1
+      fi
+    done <<< "$PUSH_REFS"
   fi
-done
+fi
+
+# ── ② red-CI 배포 차단 게이트 (mainline push 한정) ──────────────────
+CI_GATE="$HOME/claude-sync/scripts/ci_green_gate.sh"
+if [ -x "$CI_GATE" ]; then
+  MAINLINE="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)"
+  [ -z "$MAINLINE" ] && MAINLINE="main"
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    [ "$local_sha" = "$Z40" ] && continue
+    if [ "$remote_ref" = "refs/heads/$MAINLINE" ]; then
+      if ! bash "$CI_GATE" --repo "$REPO_ROOT" --mode prepush --commit "$local_sha"; then
+        rc=1
+      fi
+    fi
+  done <<< "$PUSH_REFS"
+else
+  echo "⚠️  [pre-push] ci_green_gate.sh 부재 — red-CI 게이트 skip (fail-open, watcher 사후 감시)" >&2
+fi
 
 exit "$rc"
