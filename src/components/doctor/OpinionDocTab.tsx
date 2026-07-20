@@ -223,6 +223,10 @@ export interface VisitorRow {
   id: string;
   customer_id: string | null;
   customer_name: string;
+  // T-20260720-foot-OPINIONDOC-PRINT-4FIX [FIX-REQUEST FIX-②]: check_ins.customer_phone 실값.
+  //   발행본 출력 시 loadAutoBindContext 의 patient_phone 폴백(ctx.checkIn.customer_phone)에
+  //   합성 null 대신 실제 값을 태워 고객 레코드에 전화 없을 때도 공란 방지.
+  customer_phone: string | null;
   chart_number: string | null;
   birth_date: string | null;
   visit_type: string | null;
@@ -243,7 +247,7 @@ function useTodayVisitors(clinicId: string | null) {
       const today = todaySeoulISODate();
       const { data, error } = await supabase
         .from('check_ins')
-        .select('id, customer_id, customer_name, visit_type, checked_in_at, customers!customer_id(chart_number, birth_date)')
+        .select('id, customer_id, customer_name, customer_phone, visit_type, checked_in_at, customers!customer_id(chart_number, birth_date)')
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${today}T00:00:00+09:00`)
         .lte('checked_in_at', `${today}T23:59:59+09:00`)
@@ -254,6 +258,7 @@ function useTodayVisitors(clinicId: string | null) {
         id: String(row['id']),
         customer_id: (row['customer_id'] as string | null) ?? null,
         customer_name: String(row['customer_name'] ?? '—'),
+        customer_phone: (row['customer_phone'] as string | null) ?? null,
         chart_number: readCustomerField<string>(row['customers'], 'chart_number'),
         birth_date: readCustomerField<string>(row['customers'], 'birth_date'),
         visit_type: (row['visit_type'] as string | null) ?? null,
@@ -942,12 +947,16 @@ export function OpinionEditorDialog({
     let autoValues: Record<string, string> | undefined;
     if (clinicId && visitor?.customer_id && visitor.id) {
       try {
+        // T-20260720-foot-OPINIONDOC-PRINT-4FIX [FIX-REQUEST FIX-②]: 종전 `customer_phone: null` 하드코딩을
+        //   check_ins.customer_phone 실값으로 교체. loadAutoBindContext 의 patient_phone 결선은
+        //   `ctx.customer?.phone ?? ctx.checkIn.customer_phone` — customers.phone 이 있으면 그 값이 우선이나,
+        //   고객 레코드에 전화가 없을 때 이 폴백이 null 이면 공란이 된다. 실 내원행 전화를 태워 공란 방지.
         const checkIn = {
           id: visitor.id,
           clinic_id: clinicId,
           customer_id: visitor.customer_id,
           customer_name: visitor.customer_name,
-          customer_phone: null,
+          customer_phone: visitor.customer_phone ?? null,
           checked_in_at: visitor.checked_in_at,
         } as CheckIn;
         autoValues = await loadAutoBindContext(checkIn);

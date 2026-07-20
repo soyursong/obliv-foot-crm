@@ -21,6 +21,14 @@
  *   AC-9  DocumentPrintPanel/medDocPrintGate 경로 소견서 회귀 없음(autoValues 옵셔널)
  *   AC-10 상병코드 미등록 환자 → 빈 행 깨짐 없음
  *
+ * FIX-REQUEST (MSG-20260720-210050, deploy-ready 회수 → 회귀 correctness 2건 보완):
+ *   FIX-① null-safe override — 발행본 스냅샷 필드가 null/공란이면 autoValues base 정상값을
+ *          빈 문자열로 덮어써 소실(환자명·차트번호 등)시키던 RC 차단. truthy 일 때만 override.
+ *   FIX-② customer_phone: null 하드코딩(as CheckIn 캐스팅 우회) 제거 →
+ *          check_ins.customer_phone 실값을 loadAutoBindContext patient_phone 폴백에 주입.
+ *   AC-13 visitor 없이 발행이력 [출력] → 환자명·차트번호 유지(소실 없음). FIX-① 검증.
+ *   AC-14 고객 전화번호 없는 환자 → patient_phone 공란 시 깨짐 없이, 있으면 정상 출력. FIX-② 검증.
+ *
  * 실행: npx playwright test --project=unit T-20260720-foot-OPINIONDOC-PRINT-4FIX.spec.ts
  * NOTE: 템플릿은 const 리터럴 → 정적 소스 검증 + getHtmlTemplate/bindHtmlTemplate 실렌더로 확인.
  *       autoBindContext/printOpinionDoc(window.open) 은 브라우저 의존 → 바인딩 계약은 실렌더+소스 가드로 검증.
@@ -218,5 +226,131 @@ test.describe('실렌더: bindHtmlTemplate(diag_opinion) 계약', () => {
     // 여전히 소견서 구조 유지(제목·본문)
     expect(html).toContain('소 견 서');
     expect(html).toContain('발행 소견 본문');
+  });
+});
+
+// ── FIX-① AC-13: null-safe override — 스냅샷 null 시 autoValues base 보존 ──────────
+test.describe('FIX-① / AC-13: null-safe override (스냅샷 null → autoValues base 유지)', () => {
+  const tpl = () => {
+    const t = getHtmlTemplate('diag_opinion');
+    expect(t, 'diag_opinion 템플릿 로드 실패').toBeTruthy();
+    return t as string;
+  };
+
+  // printOpinionDoc FIX-① 재현: 스냅샷 값이 truthy 일 때만 override (falsy 는 autoValues base 유지)
+  function renderNullSafe(
+    autoValues: Record<string, string>,
+    snapshot: Record<string, string>,
+  ) {
+    const merged: Record<string, string> = { ...autoValues };
+    for (const [k, v] of Object.entries(snapshot)) {
+      if (v) merged[k] = v; // truthy 일 때만 override
+    }
+    return bindHtmlTemplate(tpl(), merged);
+  }
+
+  // ⚠ PHI 금지: 실제 RRN 패턴 금지 → 합성 센티넬. (앞 describe 의 AUTO/SNAP 는 블록 스코프라 재정의)
+  const AUTO: Record<string, string> = {
+    patient_rrn: 'RRN_BIND_SENTINEL',
+    patient_gender: '남',
+    patient_birthdate: '1990년 05월 15일',
+    patient_age: '35',
+    patient_address: '서울시 종로구 1',
+    patient_phone: '010-1234-5678',
+    diag_code_1: 'M20.1',
+    diag_name_1: '무지외반증',
+    diag_flag_1: 'V',
+    doctor_seal_html: '<img src="seal.png" />',
+  };
+  const SNAP: Record<string, string> = {
+    record_no: 'C-0001',
+    patient_name: '홍길동',
+    diagnosis_ko: '발행 소견 본문',
+    issue_date: '2026-07-20',
+    clinic_name: '오블리브 풋센터 종로',
+    doctor_name: '문지은',
+    doctor_license_no: '12345',
+  };
+
+  test('AC-13 source: printOpinionDoc 스냅샷 override 가 null-safe 조건부(truthy) 적용', () => {
+    expect(PRINT_SRC, 'patient_name null-safe 조건부 spread 누락').toMatch(
+      /\.\.\.\(data\.patientName\s*\?\s*\{\s*patient_name:\s*data\.patientName\s*\}\s*:\s*\{\}\)/,
+    );
+    expect(PRINT_SRC, 'record_no(chartNo) null-safe 조건부 spread 누락').toMatch(
+      /\.\.\.\(data\.chartNo\s*\?\s*\{\s*record_no:\s*data\.chartNo\s*\}\s*:\s*\{\}\)/,
+    );
+    expect(PRINT_SRC, 'doctor_name(issuedByName) null-safe 조건부 spread 누락').toMatch(
+      /\.\.\.\(data\.issuedByName\s*\?\s*\{\s*doctor_name:\s*data\.issuedByName\s*\}\s*:\s*\{\}\)/,
+    );
+    // body(본문 스냅샷)는 항상 그대로 출력(조건부 아님) — 발행 body 불변
+    expect(PRINT_SRC).toMatch(/\[bodyField\]:\s*data\.body\s*\?\?\s*''/);
+  });
+
+  test('AC-13: visitor 없는 발행이력 출력 — patient_name/record_no null → autoValues base 유지(소실 없음)', () => {
+    // visitor 부재 시 handlePrint 는 patientName=null, chartNo=null 로 호출 → falsy.
+    const autoValues = { ...AUTO, patient_name: '김환자', record_no: 'C-9999' };
+    const snapshotNulls = { ...SNAP, patient_name: '', record_no: '' }; // null → falsy
+    const html = renderNullSafe(autoValues, snapshotNulls);
+    expect(html, '환자명 소실(FIX-① 회귀)').toContain('김환자');
+    expect(html, '차트번호 소실(FIX-① 회귀)').toContain('C-9999');
+    expect(html, '미치환 {{token}} 잔존').not.toMatch(/\{\{[a-z_0-9]+\}\}/);
+  });
+
+  test('AC-13 회귀: 스냅샷 실값이면 여전히 override 우선(법정 의무기록 불변 보존)', () => {
+    const autoValues = { ...AUTO, patient_name: 'AUTO명', record_no: 'AUTO-1', doctor_name: 'AUTO의사' };
+    const html = renderNullSafe(autoValues, SNAP); // SNAP: 홍길동 / C-0001 / 문지은
+    expect(html).toContain('홍길동');
+    expect(html).toContain('C-0001');
+    expect(html).toContain('문지은');
+    expect(html, 'autoValues 라이브값이 스냅샷을 덮음(불변성 위반)').not.toContain('AUTO명');
+    expect(html).not.toContain('AUTO-1');
+    expect(html).not.toContain('AUTO의사');
+  });
+});
+
+// ── FIX-② AC-14: customer_phone 실값 주입 (null 하드코딩 제거) ─────────────────────
+test.describe('FIX-② / AC-14: patient_phone 폴백 실값 + 공란 안전', () => {
+  const tpl = () => getHtmlTemplate('diag_opinion') as string;
+  const render = (av: Record<string, string>) =>
+    bindHtmlTemplate(tpl(), { ...av, ...{ patient_name: '홍길동', diagnosis_ko: '본문' } });
+
+  const AUTO_PHONE = {
+    patient_rrn: 'RRN_SENTINEL',
+    patient_gender: '여',
+    patient_birthdate: '1988년 01월 01일',
+    patient_age: '38',
+    patient_address: '서울',
+    diag_code_1: '',
+    diag_name_1: '',
+    diag_flag_1: '',
+    doctor_seal_html: '',
+  };
+
+  test('AC-14 source: OpinionDocTab — customer_phone null 하드코딩 제거 + 실값 주입', () => {
+    // 종전: `customer_phone: null,` 하드코딩(as CheckIn 캐스팅 우회) → 제거되어야 함
+    expect(TAB_SRC, 'customer_phone: null 하드코딩 잔존(FIX-②)').not.toMatch(
+      /customer_phone:\s*null,/,
+    );
+    // 합성 checkIn 에 내원행 실 전화 주입
+    expect(TAB_SRC).toContain('customer_phone: visitor.customer_phone ?? null');
+    // 폴백 실값 공급원 — 쿼리 select 에 customer_phone 포함
+    expect(TAB_SRC).toMatch(/\.select\([^)]*customer_phone/);
+    // VisitorRow 타입에 customer_phone 필드
+    expect(TAB_SRC).toMatch(/customer_phone:\s*string\s*\|\s*null/);
+    // 매핑에서 row 값 주입
+    expect(TAB_SRC).toMatch(/customer_phone:\s*\(row\['customer_phone'\]/);
+  });
+
+  test('AC-14: patient_phone 실값 정상 출력', () => {
+    const html = render({ ...AUTO_PHONE, patient_phone: '010-1234-5678' });
+    expect(html).toContain('010-1234-5678');
+    expect(html, '미치환 {{token}} 잔존').not.toMatch(/\{\{[a-z_0-9]+\}\}/);
+  });
+
+  test('AC-14: patient_phone 공란(고객·내원행 모두 전화 없음) — 렌더 깨짐 없음', () => {
+    const html = render({ ...AUTO_PHONE, patient_phone: '' });
+    expect(html, '미치환 {{token}} 잔존').not.toMatch(/\{\{[a-z_0-9]+\}\}/);
+    expect(html).toContain('소 견 서');
+    expect(html).toContain('홍길동');
   });
 });

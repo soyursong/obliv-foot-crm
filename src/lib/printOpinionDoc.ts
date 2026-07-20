@@ -71,17 +71,23 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   //    그동안 공란이던 토큰 주입), 그 위에 발행본 스냅샷 필드를 override 로 얹어 법정 의무기록의
   //   불변성(발행자·면허·차트번호·발행일·본문)을 autoBind 라이브값보다 우선 보존한다.
   //   autoValues 미지정(DocumentPrintPanel/medDocPrintGate 경로)은 종전 9필드만 바인딩(회귀 0, 금지1).
+  // T-20260720-foot-OPINIONDOC-PRINT-4FIX [FIX-REQUEST FIX-①, null-safe override]:
+  //   발행본 스냅샷 override 는 값이 truthy 일 때만 적용한다. 종전 `?? ''` 무조건 대입은 스냅샷 필드가
+  //   null/공란이면 autoValues base 정상값(record_no·patient_name·doctor_name 등)을 빈 문자열로 덮어써
+  //   소실시켰다(RC — 예: visitor 없는 발행이력 출력 시 patient_name 이 null 이라 환자명 소실).
+  //   이제 스냅샷이 실제 값이면 여전히 override 우선(법정 의무기록 불변 보존), null 일 때만 autoValues
+  //   base 로 폴백한다. bindHtmlTemplate 은 키 부재를 ''(빈값)로 렌더 → autoValues 미지정 경로 회귀 0.
   const fieldValues: Record<string, string> = {
     ...(data.autoValues ?? {}),
-    record_no: data.chartNo ?? '',
-    patient_name: data.patientName ?? '',
-    [bodyField]: data.body ?? '',           // 본문(소견/의견)란 — 발행 body 그대로
-    issue_date: data.issueDate ?? '',
-    clinic_name: data.clinicName ?? '',
-    clinic_address: data.clinicAddress ?? '',
-    clinic_phone: data.clinicPhone ?? '',
-    doctor_name: data.issuedByName ?? '',
-    doctor_license_no: data.issuedByLicenseNo ?? '',
+    [bodyField]: data.body ?? '',           // 본문(소견/의견)란 — 발행 body 스냅샷은 항상 그대로 출력
+    ...(data.chartNo ? { record_no: data.chartNo } : {}),
+    ...(data.patientName ? { patient_name: data.patientName } : {}),
+    ...(data.issueDate ? { issue_date: data.issueDate } : {}),
+    ...(data.clinicName ? { clinic_name: data.clinicName } : {}),
+    ...(data.clinicAddress ? { clinic_address: data.clinicAddress } : {}),
+    ...(data.clinicPhone ? { clinic_phone: data.clinicPhone } : {}),
+    ...(data.issuedByName ? { doctor_name: data.issuedByName } : {}),
+    ...(data.issuedByLicenseNo ? { doctor_license_no: data.issuedByLicenseNo } : {}),
   };
   const html = bindHtmlTemplate(tpl, fieldValues);
   const title = TITLE_BY_FORM[formKey];
