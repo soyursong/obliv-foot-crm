@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { EDGE_FUNCTIONS } from '@/lib/externalServices';
+import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -235,6 +236,20 @@ function isHealerIntentColMissing(err: { code?: string; message?: string } | nul
     err.code === 'PGRST204' ||
     /is_healer_intent/.test(err.message ?? '')
   );
+}
+
+// T-20260720-foot-CHART2-RESV-SYNC-BUG (증상1 live-sync): 예약관리에서 취소/일정변경/메모 처리 후,
+//   다른 창에 열려있는 2번차트(CustomerChartPage)가 CUSTOMER_REFRESH 'storage' 신호를 받아 예약내역을 즉시
+//   재조회(status·일정·메모 정합)하도록 알린다. status 원장 write 경로 무접점 — 처리 성공 이후 발사하는
+//   UI 동기화 신호(read 정합 유발)이며 쓰기 시맨틱을 바꾸지 않는다.
+function notifyCustomerRefresh(customerId: string | null | undefined) {
+  if (!customerId) return;
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.CUSTOMER_REFRESH,
+      JSON.stringify({ customerId, ts: Date.now() }),
+    );
+  } catch { /* storage 불가 환경(사파리 프라이빗 등) 무시 */ }
 }
 
 async function createReservationCanonical(input: CanonicalCreateInput): Promise<CanonicalCreateResult> {
@@ -1686,6 +1701,8 @@ export default function Reservations() {
         ? `${r.customer_name} ${oldData.time} → ${newData.time} 이동 완료`
         : `${r.customer_name} 이동 완료: ${oldData.date} ${oldData.time} → ${newData.date} ${newData.time}`,
     );
+    // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상1): 열린 2번차트 예약내역이 변경된 일정을 즉시 반영하도록 신호
+    notifyCustomerRefresh(r.customer_id);
     fetchWeek();
   };
 
@@ -1900,6 +1917,8 @@ export default function Reservations() {
       ),
     );
     setCancelBusy(false);
+    // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상1): 열린 2번차트 예약내역이 취소 상태를 즉시 반영하도록 신호
+    notifyCustomerRefresh(cancelTarget.customer_id);
     setCancelTarget(null);
     toast.success(`${cancelTarget.customer_name} 예약 취소됨`);
 
@@ -3655,6 +3674,8 @@ function ReservationEditor({
 
       toast.success('수정됨');
       setSubmitting(false);
+      // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상1·2): 예약상세 수정(일정/메모) 후 열린 2번차트 예약내역 즉시 재조회 신호
+      notifyCustomerRefresh(customerId);
       onSaved();
       return;
     }

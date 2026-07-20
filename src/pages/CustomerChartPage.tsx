@@ -2606,6 +2606,44 @@ function formatDwell(seconds: number): string {
   return `${sec}초`;
 }
 
+// T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2 RC): 예약메모 SoT = reservation_memo_history(append-only).
+//   reservations.booking_memo 는 생성시 초기메모만 담기는 부분 미러 → 예약관리 팝업/차트 타임라인으로 추가·수정한
+//   메모가 2번차트 예약내역 탭에 미표시되던 근인. 예약관리 hover(Reservations.tsx L970 RESVHOVER-MEMO-NOT-SHOWN)와
+//   동일 배선: reservation_id 배치 조회(.in) → 대표 1줄(고정 우선 pinned_at DESC, 없으면 최신 created_at DESC;
+//   ReservationMemoTimeline sortMemoItems와 동일 순서) 맵 구성. read-only, 스키마 무변경, N+1 없음(단일 쿼리).
+async function fetchResvMemoMap(resvIds: string[]): Promise<Map<string, string>> {
+  const memoM = new Map<string, string>();
+  if (resvIds.length === 0) return memoM;
+  const { data: memoRows } = await supabase
+    .from('reservation_memo_history')
+    .select('reservation_id, content, is_pinned, pinned_at, created_at')
+    .in('reservation_id', resvIds);
+  const byResv = new Map<string, { content: string; is_pinned: boolean; pinned_at: string | null; created_at: string }[]>();
+  for (const m of (memoRows ?? []) as {
+    reservation_id: string | null;
+    content: string | null;
+    is_pinned: boolean | null;
+    pinned_at: string | null;
+    created_at: string;
+  }[]) {
+    const rid = m.reservation_id;
+    const text = (m.content ?? '').trim();
+    if (!rid || !text) continue;
+    const arr = byResv.get(rid) ?? [];
+    arr.push({ content: text, is_pinned: !!m.is_pinned, pinned_at: m.pinned_at, created_at: m.created_at });
+    byResv.set(rid, arr);
+  }
+  for (const [rid, arr] of byResv) {
+    const top = arr.sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+      if (a.is_pinned && b.is_pinned) return (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '');
+      return b.created_at.localeCompare(a.created_at);
+    })[0];
+    if (top) memoM.set(rid, top.content);
+  }
+  return memoM;
+}
+
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 내에서 prop으로 주입 가능 (MemoryRouter 불필요)
 export default function CustomerChartPage({ customerId: propCustomerId, initialTab: propInitialTab }: { customerId?: string; initialTab?: string } = {}) {
   const params = useParams<{ customerId: string }>();
@@ -2651,6 +2689,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const [payments, setPayments] = useState<Payment[]>([]);
   const [pkgPayments, setPkgPayments] = useState<PackagePayment[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2): reservation_id → 대표 예약메모(SoT=reservation_memo_history)
+  const [resvMemoMap, setResvMemoMap] = useState<Map<string, string>>(new Map());
   const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   // T-20260602-foot-SLOT-DWELL-TIME (B안): 방문건별 슬롯 체류시간 이력 (fn_check_in_slot_dwell)
@@ -3165,7 +3205,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       setVisits((visitRes.data ?? []) as CheckIn[]);
       setPayments((payRes.data ?? []) as Payment[]);
       setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
-      setReservations((resvRes.data ?? []) as Reservation[]);
+      const resvRows = (resvRes.data ?? []) as Reservation[];
+      setReservations(resvRows);
+      // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2): 예약메모 SoT(reservation_memo_history) 대표 1줄 맵 로드
+      void fetchResvMemoMap(resvRows.map((r) => r.id)).then(setResvMemoMap);
 
       const ciHistory = (ciHistRes.data ?? []) as CheckIn[];
       setCheckInHistory(ciHistory);
@@ -3415,9 +3458,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             etcMemo: (data as Customer).memo ?? '',
           }));
         });
-        // 예약 새로고침 (booking_memo 반영)
+        // 예약 새로고침 — T-20260720-foot-CHART2-RESV-SYNC-BUG:
+        //   증상1(취소/일정변경) = 예약관리 처리 후 CUSTOMER_REFRESH 신호 수신 시 status·일정 재조회로 즉시 반영.
+        //   증상2(메모) = reservation_memo_history 대표 1줄 맵 동반 재조회.
         supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30).then(({ data }) => {
-          if (data) setReservations(data as Reservation[]);
+          if (data) {
+            const rows = data as Reservation[];
+            setReservations(rows);
+            void fetchResvMemoMap(rows.map((r) => r.id)).then(setResvMemoMap);
+          }
         });
       } catch { /* ignore */ }
     };
@@ -5408,6 +5457,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     if (!content) { setEditingResvMemoId(null); return; }
     await insertReservationMemo(reservationId, customer.clinic_id ?? '', content, profile.name ?? null);
     setResvMemoInputs(prev => ({ ...prev, [reservationId]: '' }));
+    // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2): 저장 즉시 SoT(reservation_memo_history) 대표 메모 맵 반영
+    void fetchResvMemoMap(reservations.map((r) => r.id)).then(setResvMemoMap);
     // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
     localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
     setEditingResvMemoId(null);
@@ -7823,9 +7874,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   <div className="text-[11px] text-muted-foreground py-2">예약 없음</div>
                 ) : (
                   <div className="space-y-1.5">
-                    {reservations.slice(0, 5).map((r) => (
+                    {reservations.slice(0, 5).map((r) => {
+                      // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2): 예약메모 SoT=reservation_memo_history 대표 1줄 우선, booking_memo 폴백.
+                      const displayMemo = resvMemoMap.get(r.id) ?? r.booking_memo ?? '';
+                      // 증상1: 예약관리 취소/노쇼 처리 결과를 2번차트 예약내역에서도 상태로 표시(read 정합, status write 무접점).
+                      const isCancelled = r.status === 'cancelled';
+                      const isNoShow = r.status === 'no_show';
+                      return (
                       <div key={r.id} className="space-y-0.5">
-                        {/* T-20260525-foot-RESV-REDCHECK-REMOVE: 빨간 체크(status badge) 제거 — 변경 사유 직접 표시로 대체 */}
+                        {/* T-20260720-foot-CHART2-RESV-SYNC-BUG (증상1): 취소/노쇼 상태 배지 + 취소일정 취소선. 취소사유 직접 표시(REDCHECK-REMOVE 정합). */}
                         <button
                           type="button"
                           onClick={() => {
@@ -7833,16 +7890,25 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                             setEditResvForm({
                               date: r.reservation_date,
                               startTime: r.reservation_time.slice(0, 5),
-                              memo: resvMemoInputs[r.id] ?? r.booking_memo ?? '',
+                              memo: resvMemoInputs[r.id] ?? displayMemo,
                               // T-20260524-foot-DESIG-BIDIRECT: 예약의 preferred_therapist_id 로드 (수정 모달은 기존 값 복원)
                               therapistId: r.preferred_therapist_id ?? '',
                               visitType: r.visit_type,
                             });
                           }}
-                          className="w-full flex items-center text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
+                          className="w-full flex items-center gap-1.5 text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
                         >
-                          <span className="text-gray-700">{formatDateDots(r.reservation_date)} {r.reservation_time.slice(0, 5)}</span>
+                          <span className={cn('text-gray-700', (isCancelled || isNoShow) && 'line-through text-gray-400')}>{formatDateDots(r.reservation_date)} {r.reservation_time.slice(0, 5)}</span>
+                          {isCancelled && (
+                            <span data-testid="resv-status-cancelled" className="shrink-0 rounded px-1 py-[1px] text-[9px] font-semibold bg-gray-100 text-gray-500 border border-gray-200">취소</span>
+                          )}
+                          {isNoShow && (
+                            <span data-testid="resv-status-noshow" className="shrink-0 rounded px-1 py-[1px] text-[9px] font-semibold bg-rose-50 text-rose-500 border border-rose-200">노쇼</span>
+                          )}
                         </button>
+                        {isCancelled && r.cancel_reason?.trim() && (
+                          <div className="px-1.5 text-[10px] text-gray-400" data-testid="resv-cancel-reason">사유: {r.cancel_reason}</div>
+                        )}
                         {/* T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-1: 항상 열린 입력창 → 표시(텍스트+✏️)↔편집폼 토글.
                             저장 로직·데이터모델 불변 — saveResvMemo 가 기존 append-only RPC 그대로 호출(표시·토글만). */}
                         {editingResvMemoId === r.id ? (
@@ -7877,8 +7943,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                               취소
                             </button>
                           </div>
-                        ) : r.booking_memo ? (
-                          /* 메모 있음 → 텍스트 + 연필(수정). 클릭 시 편집폼. */
+                        ) : displayMemo ? (
+                          /* 메모 있음 → 텍스트 + 연필(수정). 클릭 시 편집폼. displayMemo=reservation_memo_history 대표 1줄(booking_memo 폴백). */
                           <button
                             type="button"
                             data-testid="resv-memo-display"
@@ -7886,7 +7952,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                             className="group w-full flex items-center gap-1 h-5 rounded px-1.5 text-left hover:bg-muted/40 transition"
                           >
                             <span className="flex-1 truncate text-[10px] text-gray-600">
-                              {r.booking_memo}
+                              {displayMemo}
                             </span>
                             <Pencil className="h-3 w-3 shrink-0 text-gray-400 group-hover:text-sage-600" />
                           </button>
@@ -7913,7 +7979,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           hideWhenEmpty
                         />
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 )}
               </div>
