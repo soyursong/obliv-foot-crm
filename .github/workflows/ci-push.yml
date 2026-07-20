@@ -68,6 +68,13 @@ jobs:
       TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
+      # T-20260720-foot-CI-RED-MAIN-RESOLVE: chart-open-gate 와 동일 KST-자정 경계 봉합.
+      #   CF-1 "2. 칸반 카드 발견"(CF-1-new-patient-full-cycle L102)도 seedCheckIn(checked_in_at
+      #   = new Date() UTC now) 후 대시보드 칸반 카드(exam_waiting) 가시성을 assert 한다. 동일하게
+      #   dateStr(브라우저-로컬 TZ)·window(+09:00) 불일치로 UTC 15:00~24:00(KST 00:00~09:00) 구간에서
+      #   시드 카드가 날짜창 밖 배제 → card.waitFor 타임아웃. TZ=Asia/Seoul 로 node·chromium 을
+      #   운영 태블릿과 동일 KST 로 정렬해 봉합(회귀검출 무력화 아님 — 시드 카드가 실제로 떠야 GREEN).
+      TZ: "Asia/Seoul"
 
     steps:
       - uses: actions/checkout@v4
