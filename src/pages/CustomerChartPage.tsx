@@ -760,10 +760,12 @@ function ReceiptUploadSection({
   //   - paymentDate: 결제일 — Closing이 created_at 기준 일자 집계하므로 과거일 선택 시 created_at 세팅
   // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC (옵션A): 귀속 대상 수기선택.
   //   targetSel = 'pkg:<id>' | 'ci:<id>' | 'single'. 활성패키지 無 시 하드블록 제거 → ci/단건 라우팅.
+  // T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD: 결제수단 단일 → 분할결제 행(복수) 지원.
+  //   splits = 결제수단 행 배열(각 행: 카드/현금/이체 + 금액). 최소 1행 유지. 귀속대상·결제일은 분할 공통.
   const [amountDlg, setAmountDlg] = useState<{
-    open: boolean; amount: string; method: 'card' | 'cash' | 'transfer';
+    open: boolean; splits: { method: 'card' | 'cash' | 'transfer'; amount: string }[];
     targetSel: string; paymentDate: string;
-  }>({ open: false, amount: '', method: 'cash', targetSel: '', paymentDate: todaySeoulISODate() });
+  }>({ open: false, splits: [{ method: 'cash', amount: '' }], targetSel: '', paymentDate: todaySeoulISODate() });
   // 활성 패키지 목록 (영수증 결제 라우팅 대상)
   // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: totalSessions 추가 — 회수=1 영수증은 단건(payments)으로 분기.
   const [activePkgs, setActivePkgs] = useState<{ id: string; name: string; totalSessions: number }[]>([]);
@@ -811,7 +813,7 @@ function ReceiptUploadSection({
       ? `pkg:${activePkgs[0].id}`
       : (waitingCIs.length > 0 ? `ci:${waitingCIs[0].id}` : 'single');
     setAmountDlg({
-      open: true, amount: '', method: 'cash',
+      open: true, splits: [{ method: 'cash', amount: '' }],
       targetSel: defaultSel, paymentDate: todaySeoulISODate(),
     });
   }, [activePkgs, waitingCIs]);
@@ -946,9 +948,18 @@ function ReceiptUploadSection({
   };
 
   const handlePaymentConfirm = async () => {
-    const amt = parseAmount(amountDlg.amount);
+    // T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD: 분할결제 행 파싱.
+    //   0원 행은 제외(시나리오3), 유효 행이 없으면 검증 에러. 합계는 각 행 금액의 합.
+    const parsedSplits = amountDlg.splits
+      .map((s) => ({ method: s.method, amount: parseAmount(s.amount) }))
+      .filter((s) => s.amount > 0);
+    const amt = parsedSplits.reduce((sum, s) => sum + s.amount, 0);
     if (amt <= 0) { toast.error('금액을 입력하세요'); return; }
     if (!amountDlg.targetSel) { toast.error('귀속 대상을 선택하세요'); return; }
+    // 단건(1행)일 때 기존 method 시맨틱 유지; 분할일 때만 splits 전달.
+    const isSplit = parsedSplits.length > 1;
+    const primaryMethod = parsedSplits[0].method;
+    const splitsArg = isSplit ? parsedSplits : undefined;
 
     // 결제일 귀속(AC-3): Closing은 created_at 기준 일자 집계.
     // 오늘 결제(=업로드일)면 now() 그대로(정확 타임스탬프), 과거 결제일이면 해당일 정오(KST)로 created_at 세팅.
@@ -966,17 +977,20 @@ function ReceiptUploadSection({
       // ── T-20260610-foot-PKGCLASS-SESSION1-SINGLE: 회수1 패키지는 단건(payments)+paid_amount 직접반영 (기존 동선 UNCHANGED)
       const selectedPkg = activePkgs.find((p) => p.id === packageId);
       if (selectedPkg && isSinglePaymentByCount(selectedPkg.totalSessions)) {
-        const { error: pErr } = await supabase.from('payments').insert({
-          clinic_id: clinicId,
-          check_in_id: null, // 영수증 업로드는 내원(check_in) 비종속 — payments.check_in_id NULLABLE
-          customer_id: customerId,
-          amount: amt,
-          method: amountDlg.method,
-          installment: 0,
-          payment_type: 'payment',
-          memo: '영수증 업로드(회수1·단건)',
-          ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
-        });
+        // 분할결제: 각 행마다 payments row 1개 다중 INSERT, paid_amount 는 합산(amt) 1회 반영.
+        const { error: pErr } = await supabase.from('payments').insert(
+          parsedSplits.map((s) => ({
+            clinic_id: clinicId,
+            check_in_id: null, // 영수증 업로드는 내원(check_in) 비종속 — payments.check_in_id NULLABLE
+            customer_id: customerId,
+            amount: s.amount,
+            method: s.method,
+            installment: 0,
+            payment_type: 'payment',
+            memo: '영수증 업로드(회수1·단건)',
+            ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
+          })),
+        );
         if (pErr) { toast.error(`단건 결제 기록 실패: ${pErr.message}`); return; }
         const { data: pkgRow } = await supabase
           .from('packages')
@@ -996,7 +1010,7 @@ function ReceiptUploadSection({
       //   memo='영수증 업로드' 유지 → CHART2-RECEIPT-RESTRUCTURE: 수납내역 제외, 결제영수증 섹션 표기(중복방지).
       try {
         await recordManualPayment({
-          clinicId, customerId, amount: amt, method: amountDlg.method,
+          clinicId, customerId, amount: amt, method: primaryMethod, splits: splitsArg,
           attribution: { kind: 'package', packageId },
           memo: '영수증 업로드', createdAtOverride,
         });
@@ -1018,7 +1032,7 @@ function ReceiptUploadSection({
     }
     try {
       const res = await recordManualPayment({
-        clinicId, customerId, amount: amt, method: amountDlg.method,
+        clinicId, customerId, amount: amt, method: primaryMethod, splits: splitsArg,
         attribution, createdAtOverride,
       });
       closeAmountDlg();
@@ -1109,15 +1123,80 @@ function ReceiptUploadSection({
                   <p className="text-[10px] text-emerald-700 mt-0.5">저장 시 수납대기 목록에서 자동 해소됩니다.</p>
                 )}
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-0.5">금액 (원)</label>
-                <AmountInput
-                  value={amountDlg.amount}
-                  onChange={(raw) => setAmountDlg((d) => ({ ...d, amount: raw }))}
-                  placeholder="0"
-                  className="text-sm"
-                  autoFocus
-                />
+              {/* T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD: 분할결제 — 결제수단 행 다중.
+                  각 행: 결제수단(카드/현금/이체) + 금액. + 결제수단 추가 / 행 삭제(최소 1행). 합계 자동. */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground block">결제수단 · 금액</label>
+                {amountDlg.splits.map((sp, idx) => (
+                  <div key={idx} className="rounded border border-gray-100 p-1.5 space-y-1">
+                    <div className="flex items-center gap-1">
+                      <div className="flex gap-1 flex-1">
+                        {(['card', 'cash', 'transfer'] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            data-testid={`receipt-split-method-${idx}-${m}`}
+                            onClick={() => setAmountDlg((d) => ({
+                              ...d,
+                              splits: d.splits.map((s, i) => i === idx ? { ...s, method: m } : s),
+                            }))}
+                            className={cn(
+                              'flex-1 py-1 text-xs rounded border transition',
+                              sp.method === m
+                                ? 'bg-sage-600 text-white border-sage-600'
+                                : 'bg-white border-gray-200 hover:bg-gray-50',
+                            )}
+                          >
+                            {m === 'card' ? '카드' : m === 'cash' ? '현금' : '이체'}
+                          </button>
+                        ))}
+                      </div>
+                      {amountDlg.splits.length > 1 && (
+                        <button
+                          type="button"
+                          data-testid={`receipt-split-remove-${idx}`}
+                          onClick={() => setAmountDlg((d) => ({
+                            ...d,
+                            // 최소 1행 유지 — 마지막 행은 삭제 불가(버튼도 숨김).
+                            splits: d.splits.length > 1 ? d.splits.filter((_, i) => i !== idx) : d.splits,
+                          }))}
+                          className="shrink-0 h-6 w-6 flex items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200"
+                          title="행 삭제"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                    <AmountInput
+                      value={sp.amount}
+                      data-testid={`receipt-split-amount-${idx}`}
+                      onChange={(raw) => setAmountDlg((d) => ({
+                        ...d,
+                        splits: d.splits.map((s, i) => i === idx ? { ...s, amount: raw } : s),
+                      }))}
+                      placeholder="0"
+                      className="text-sm"
+                      autoFocus={idx === 0}
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  data-testid="receipt-split-add"
+                  onClick={() => setAmountDlg((d) => ({
+                    ...d,
+                    splits: [...d.splits, { method: 'card', amount: '' }],
+                  }))}
+                  className="w-full py-1 text-xs rounded border border-dashed border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+                >
+                  + 결제수단 추가
+                </button>
+                <div className="flex items-center justify-between px-0.5 pt-0.5 text-xs">
+                  <span className="text-muted-foreground">합계</span>
+                  <span className="font-semibold text-sage-700" data-testid="receipt-split-total">
+                    {formatAmount(amountDlg.splits.reduce((s, r) => s + parseAmount(r.amount), 0))} 원
+                  </span>
+                </div>
               </div>
               {/* T-20260609-foot-RECEIPT-PKG-ALWAYS 변경2: 결제일 — 매출은 결제일 기준 일마감에 반영 */}
               <div>
@@ -1131,26 +1210,6 @@ function ReceiptUploadSection({
                   className="text-sm"
                 />
                 <p className="text-[10px] text-muted-foreground/70 mt-0.5">매출은 결제일 기준 일마감에 반영됩니다.</p>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-0.5">결제수단</label>
-                <div className="flex gap-1">
-                  {(['card', 'cash', 'transfer'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setAmountDlg((d) => ({ ...d, method: m }))}
-                      className={cn(
-                        'flex-1 py-1 text-xs rounded border transition',
-                        amountDlg.method === m
-                          ? 'bg-sage-600 text-white border-sage-600'
-                          : 'bg-white border-gray-200 hover:bg-gray-50',
-                      )}
-                    >
-                      {m === 'card' ? '카드' : m === 'cash' ? '현금' : '이체'}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
             <div className="flex gap-2 pt-1">

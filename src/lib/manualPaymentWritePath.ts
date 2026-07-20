@@ -14,10 +14,22 @@
 //   호출측(일마감 수기입력)은 canonical 라우팅 시 closing_manual_payments 를 만들지 않아 net-zero 를 유지한다.
 //
 // 스키마 변경 없음(기존 테이블/컬럼만 사용) → data-architect CONSULT 불요. db_change=false.
+//
+// T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD: 분할결제(복수 결제수단) 지원 추가.
+//   input.splits 지정 시 각 행마다 payment/package_payments row 1개를 다중 INSERT하고,
+//   미수 해소·paid_amount 재집계·칸반 해소 side-effect 는 분할 '합산' 기준 1회만 적용한다.
+//   splits 미지정 시 amount/method 단건 경로 UNCHANGED(단건 fallback 회귀 안전). 스키마 변경 없음(다중 INSERT).
 import { supabase } from './supabase';
 import { applyStatusFlagTransition, type FlagTransitionActor } from './statusFlagTransition';
 
 export type PayMethod = 'card' | 'cash' | 'transfer';
+
+/** 분할결제 행(복수 결제수단) — 각 행이 payment row 1개로 생성된다.
+ *  T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD */
+export interface PaymentSplit {
+  method: PayMethod;
+  amount: number;
+}
 
 /** 칸반 귀속에 필요한 check_in 최소 형태(status 는 문자열 허용 — 호출측 로딩 편의). */
 export interface ManualPayCheckIn {
@@ -39,6 +51,11 @@ export interface RecordManualPaymentInput {
   customerId: string;
   amount: number;
   method: PayMethod;
+  /** 분할결제(복수 결제수단). 지정 시 각 행마다 payment row 1개 생성하고,
+   *  side-effect(미수 해소·paid_amount 재집계·칸반 해소)는 분할 '합산' 기준 1회만 적용한다.
+   *  미지정(또는 빈 배열) 시 amount/method 단건 경로 UNCHANGED(단건 회귀 안전).
+   *  T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD */
+  splits?: PaymentSplit[];
   attribution: ManualPayAttribution;
   /** 메모(선택). 미지정 시 라우팅별 기본 메모.
    *  주의: '영수증 업로드'로 시작하면 2번차트 수납내역에서 제외됨(CHART2-RECEIPT-RESTRUCTURE 필터). */
@@ -63,24 +80,31 @@ export async function recordManualPayment(
   input: RecordManualPaymentInput,
 ): Promise<RecordManualPaymentResult> {
   const { clinicId, customerId, amount, method, attribution, memo, createdAtOverride, actor } = input;
-  if (!(amount > 0)) throw new Error('금액이 올바르지 않습니다');
+
+  // 분할결제 정규화: splits 지정 시 각 행, 미지정 시 단건 1행. 각 행 amount>0 검증(0원 행은 호출측에서 제외).
+  // T-20260720-foot-RECEIPT-MANUAL-PAY-SPLIT-METHOD — SSOT 단일경로(AC7) 유지: 병렬 write 경로 신설 없이 행만 확장.
+  const rows: PaymentSplit[] =
+    input.splits && input.splits.length > 0 ? input.splits : [{ method, amount }];
+  if (rows.some((r) => !(r.amount > 0))) throw new Error('금액이 올바르지 않습니다');
 
   const createdAtField = createdAtOverride ? { created_at: createdAtOverride } : {};
 
   // ── 'package' — 활성 패키지 잔금 결제 → 미수 해소 ─────────────────────────
   if (attribution.kind === 'package') {
-    const { error: ppErr } = await supabase.from('package_payments').insert({
-      clinic_id: clinicId,
-      package_id: attribution.packageId,
-      customer_id: customerId,
-      amount,
-      method,
-      installment: 0,
-      payment_type: 'payment',
-      fee_kind: 'package',
-      memo: memo ?? '수기수납(패키지 잔금)',
-      ...createdAtField,
-    });
+    const { error: ppErr } = await supabase.from('package_payments').insert(
+      rows.map((r) => ({
+        clinic_id: clinicId,
+        package_id: attribution.packageId,
+        customer_id: customerId,
+        amount: r.amount,
+        method: r.method,
+        installment: 0,
+        payment_type: 'payment',
+        fee_kind: 'package',
+        memo: memo ?? '수기수납(패키지 잔금)',
+        ...createdAtField,
+      })),
+    );
     if (ppErr) throw new Error(`패키지 결제 기록 실패: ${ppErr.message}`);
     // packages.paid_amount 재집계(PKG-REVENUE-SPLIT 동일 로직) — 미수 파생값 정합.
     const { data: sum } = await supabase
@@ -96,17 +120,19 @@ export async function recordManualPayment(
   // ── 'checkin' — payment_waiting 내원 결제 → 수납내역 표시 + 칸반 해소 ──────
   if (attribution.kind === 'checkin') {
     const ci = attribution.checkIn;
-    const { error: pErr } = await supabase.from('payments').insert({
-      clinic_id: clinicId,
-      check_in_id: ci.id,
-      customer_id: customerId,
-      amount,
-      method,
-      installment: 0,
-      payment_type: 'payment',
-      memo: memo ?? '영수증 수납',
-      ...createdAtField,
-    });
+    const { error: pErr } = await supabase.from('payments').insert(
+      rows.map((r) => ({
+        clinic_id: clinicId,
+        check_in_id: ci.id,
+        customer_id: customerId,
+        amount: r.amount,
+        method: r.method,
+        installment: 0,
+        payment_type: 'payment',
+        memo: memo ?? '영수증 수납',
+        ...createdAtField,
+      })),
+    );
     if (pErr) throw new Error(`결제 기록 실패: ${pErr.message}`);
 
     // 칸반 해소: payment_waiting → done (PaymentMiniWindow 동선 재사용). best-effort 부수효과.
@@ -137,17 +163,19 @@ export async function recordManualPayment(
   }
 
   // ── 'single' — 단건 결제(귀속 없음) ─────────────────────────────────────
-  const { error: sErr } = await supabase.from('payments').insert({
-    clinic_id: clinicId,
-    check_in_id: null,
-    customer_id: customerId,
-    amount,
-    method,
-    installment: 0,
-    payment_type: 'payment',
-    memo: memo ?? '영수증 수납(단건)',
-    ...createdAtField,
-  });
+  const { error: sErr } = await supabase.from('payments').insert(
+    rows.map((r) => ({
+      clinic_id: clinicId,
+      check_in_id: null,
+      customer_id: customerId,
+      amount: r.amount,
+      method: r.method,
+      installment: 0,
+      payment_type: 'payment',
+      memo: memo ?? '영수증 수납(단건)',
+      ...createdAtField,
+    })),
+  );
   if (sErr) throw new Error(`단건 결제 기록 실패: ${sErr.message}`);
   return { route: 'single', kanbanResolved: false };
 }
