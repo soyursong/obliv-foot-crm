@@ -177,7 +177,9 @@ async function clickPastCardOrSkipOnAutoNoshow(
   resvId: string,
 ): Promise<void> {
   try {
-    await cardLocator.first().waitFor({ state: 'visible', timeout: 12000 });
+    // 20s: Vite cold-start(첫 페이지 로드 컴파일) + 과거날짜 재조회 지연 흡수
+    //   (QA#3: 첫 gate 실행 시 첫 카드 렌더 16~17s 관측 → 12s tight-timeout flaky RED).
+    await cardLocator.first().waitFor({ state: 'visible', timeout: 20000 });
     await cardLocator.first().click({ timeout: 10000 });
     return; // 카드 렌더+클릭 성공 → 정상 행위 검증 진행
   } catch (e) {
@@ -215,7 +217,8 @@ test.describe('CHART-OPEN-GATE · G1 칸반 click→open', () => {
     try {
       await gotoDashboard(page);
       const card = page.locator(`[data-testid="checkin-card"][data-checkin-id="${checkInId}"]`);
-      await card.waitFor({ state: 'visible', timeout: 12000 });
+      // 20s: Vite cold-start(첫 실행 카드 렌더 16s 관측) 흡수 — QA#3 flaky RED 방지.
+      await card.waitFor({ state: 'visible', timeout: 20000 });
       await card.click();
       const opened = await waitForChartOpen(page);
       expect(opened, '칸반 카드 클릭 후 차트가 열려야 함(차트오픈 1급 경로)').toBe(true);
