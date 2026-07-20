@@ -31,6 +31,7 @@
 import { test, expect } from '@playwright/test';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loginAndWaitForDashboard } from '../../helpers';
+import { runMarker } from '../../fixtures';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -41,7 +42,10 @@ const DASH = path.resolve(__dirname, '../../../src/pages/Dashboard.tsx');
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
-const MARKER = '[QA-FIXTURE]';
+// T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: bare '[QA-FIXTURE]' 대신 run-scoped
+//   마커(`[QA-FIXTURE]|<token>|<ts>`)를 쓴다 → 동시 CI run 의 cleanupAll() bare-exact 전수
+//   스윕이 이 run 의 G3/G4 in-flight 시드를 지우지 못한다(cross-run cleanup race 원천 차단).
+//   scoped row 정리는 globalTeardown/globalSetup 의 sweepScoped(fixtures)가 담당.
 
 let _sb: SupabaseClient | null = null;
 const svc = (): SupabaseClient => (_sb ??= createClient(SUPA_URL, SERVICE_KEY));
@@ -62,7 +66,7 @@ async function seedCustomer(name: string, visitType: 'new' | 'returning' = 'new'
   const phone = `DUMMY-${ts}`;
   const { data, error } = await svc()
     .from('customers')
-    .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: visitType, memo: MARKER })
+    .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: visitType, memo: runMarker() })
     .select('id')
     .single();
   if (error || !data) throw new Error(`seedCustomer failed: ${error?.message}`);
@@ -86,7 +90,7 @@ async function seedReservation(opts: {
       reservation_time: `${opts.time}:00`,
       visit_type: opts.visit_type,
       status: 'confirmed',
-      memo: MARKER,
+      memo: runMarker(),
     })
     .select('id')
     .single();
@@ -112,7 +116,7 @@ async function seedActiveCheckIn(opts: {
       status: opts.status,
       queue_number: 970 + (ts % 20),
       checked_in_at: new Date().toISOString(),
-      notes: MARKER,
+      notes: runMarker(),
     })
     .select('id')
     .single();
@@ -180,12 +184,13 @@ async function clickPastCardOrSkipOnAutoNoshow(
     const status = await resvStatus(resvId);
     // 카드 소멸의 "환경(시드 무력화)" 원인 2종은 거짓 RED 가 아니다 → skip:
     //   (1) status='no_show' : 과거 confirmed 예약이 auto-noshow 배치(Reservations.tsx L948)로 전환.
-    //   (2) status=null      : 시드 row 소멸. dev=prod 단일 Supabase(rxlomoozakkjesdqjtvd)에서 **동시 실행 중인
-    //        다른 CI run** 의 globalSetup pre-sweep / globalTeardown 이 [QA-FIXTURE] 마커를 전수 DELETE 하면
-    //        이 run 의 시드도 함께 휩쓸린다(cross-run sweep race). ci-push.yml 은 within-run(job 병렬) 스윕
-    //        레이스만 needs:[build,critical-flow] 직렬화로 막았을 뿐, cross-run 레이스는 남아 있다
-    //        (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE: 동일 커밋이 PR CI green·main CI 에선 G4 만 RED,
-    //         동경로 G3 green → !isPast 회귀 아님, cross-run sweep 로 확진). row 부재 = 환경이지 회귀가 아니다.
+    //   (2) status=null      : 시드 row 소멸. (구)dev=prod 단일 Supabase(rxlomoozakkjesdqjtvd)에서 동시 실행
+    //        중인 다른 CI run 의 cleanupAll() bare 마커 전수 DELETE 가 이 run 의 시드까지 휩쓴 cross-run
+    //        sweep race 였다(T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE).
+    //        → T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN 이 시드를 run-scoped 마커
+    //          (`[QA-FIXTURE]|<token>|<ts>`)로 격리해 **이 원인은 구조적으로 제거**됐다(bare-exact 스윕이
+    //          scoped row 를 못 잡음). 그럼에도 극히 드문 잔여(예: 수동 정리)까지 거짓 RED 로 두지 않으려
+    //          이 skip 은 belt-and-suspenders 로 유지한다. row 부재 = 환경이지 회귀가 아니다.
     //   두 경우 모두 회귀 라인(!isPast)은 G6 정적 가드가 하드락하므로 거짓 RED 를 방지하려 skip 한다.
     test.skip(
       status === 'no_show' || status === null,

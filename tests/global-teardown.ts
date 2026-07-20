@@ -10,7 +10,7 @@
  *
  * 안전: cleanupAll 은 QA 마커/이름접두를 가진 row 만 삭제한다(실데이터 불가침).
  */
-import { cleanupAll, assertExpectedDbTarget } from './fixtures';
+import { cleanupAll, sweepScoped, runToken, assertExpectedDbTarget } from './fixtures';
 
 export default async function globalTeardown() {
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -20,12 +20,20 @@ export default async function globalTeardown() {
   // PRODREF-HARDGUARD: 오배선된 prod target 에 teardown DELETE 를 쏘지 않도록 스윕 전 검문.
   assertExpectedDbTarget();
   try {
+    // 1) bare 마커 스윕(기존) — scoped 시드는 매칭 안 함(다른 run 의 fresh 시드 불가침).
     const summary = await cleanupAll();
     console.log(
       `[global-teardown] QA 픽스처 스윕 완료 — customers=${summary.customers} checkIns=${summary.checkIns} packages=${summary.packages} reservations=${summary.reservations}`,
     );
+    // 2) scoped 스윕(run-scoped 시드 격리, T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN):
+    //    **이 run 토큰** 의 scoped 시드만 회수한다. 동시 실행 중인 다른 run 의 시드는 토큰이
+    //    다르므로 절대 건드리지 않는다(cross-run cleanup race 원천 차단).
+    const scoped = await sweepScoped({ mode: 'run' });
+    console.log(
+      `[global-teardown] scoped 스윕 완료(run-token=${runToken()}) — customers=${scoped.customers} checkIns=${scoped.checkIns} packages=${scoped.packages} reservations=${scoped.reservations}`,
+    );
   } catch (e) {
     // teardown 실패가 run 결과를 가리지 않도록 throw 하지 않고 경고만.
-    console.error('[global-teardown] cleanupAll 실패(잔존 가능) — 다음 run globalSetup 이 재스윕:', e);
+    console.error('[global-teardown] 스윕 실패(잔존 가능) — 다음 run globalSetup 이 재스윕:', e);
   }
 }
