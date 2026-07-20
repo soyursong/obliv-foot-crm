@@ -99,7 +99,7 @@ test.describe('T-20260522-foot-PKG-BOX-INDICATOR — 대시보드 패키지 보�
 
     // (B) 패키지 미보유 고객
     noPkgName = `nopkg-badge-qa-${Date.now()}`;
-    const phoneB = `011${String(Date.now()).slice(-8)}`;
+    const phoneB = `DUMMY-${Date.now()}-B`;
     const { data: custB, error: custBErr } = await sb
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: noPkgName, phone: phoneB, visit_type: 'returning', is_simulation: true })
