@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.obliv.foot.redpay-terminal-watchdog
+  T-20260720-foot-REDPAY-TERMINAL-WATCHDOG — 레드페이 단말 명단 자동 감시(워치독) · 재발방지 예방 자동화
+
+  왜: 신규 단말이 명단(redpay_terminal_registry 26-set) 등록 前 거래 시작 → 폴러가 silent-drop → 무경보 누락.
+      명단을 17→26 으로 늘려도 27번째가 생기면 재발. 반응적 확장이 아닌 예방적 감시가 필요.
+      이 워치독이 일 1회 business_no=511 을 "무필터 전량" 조회 → 명단 밖 새 단말을 능동 감지·알림.
+
+  ★ 기존 적재 폴러(com.obliv.foot.redpay-macstudio-poller, 5분 주기)와 완전 독립·병행.
+    워치독은 redpay_raw_transactions 에 write 하지 않으며(read-only 조회+알림), 폴러 적재/필터 경로 무접촉(AC-5).
+    시크릿은 폴러와 동일한 ~/.env.redpay-foot 재사용(SUPABASE_*, REDPAY_API_KEY, REDPAY_BUSINESS_NO).
+
+  튜너블(선택, ~/.env.redpay-foot 에 추가 가능):
+    REDPAY_WATCHDOG_QUERY_DAYS=3        # 무필터 조회 lookback (기본 3일)
+    REDPAY_WATCHDOG_DORMANT_DAYS=30     # 휴면 판정 임계 (기본 30일 — 최필경 요청 꼬리 절단, 가정값)
+    REDPAY_WATCHDOG_DORMANT_DOW=1       # 휴면 정기 리포트 슬랙 발송 요일 (0=일~6=토, 기본 1=월)
+    REDPAY_WATCHDOG_SLACK_CHANNEL=C0ATE5P6JTH   # 긴급/리포트 알림 채널 (기본 C0ATE5P6JTH)
+
+  배포 (supervisor, macstudio):
+    0. dry-run 재현 검증 (라이브 전 필수 — 슬랙 미발송·상태파일 미변경, 알림 문안만 로그):
+         cd ~/GitHub/obliv-foot-crm && node scripts/redpay_terminal_watchdog.mjs --self-test   # 순수로직
+         cd ~/GitHub/obliv-foot-crm && node scripts/redpay_terminal_watchdog.mjs --dry-run      # 실조회+문안 재현
+    1. 등록:
+         mkdir -p ~/logs
+         ln -sf ~/GitHub/obliv-foot-crm/scripts/launchd/com.obliv.foot.redpay-terminal-watchdog.plist \
+           ~/Library/LaunchAgents/com.obliv.foot.redpay-terminal-watchdog.plist
+         launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.redpay-terminal-watchdog.plist
+    2. 검증:
+         launchctl list | grep redpay-terminal-watchdog
+         tail -50 ~/logs/redpay_terminal_watchdog.out   # '무필터 조회 완료' + '② 신규 풋 단말 감지' 확인
+         tail -50 ~/logs/redpay_terminal_watchdog.err
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.obliv.foot.redpay-terminal-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm &amp;&amp; node scripts/redpay_terminal_watchdog.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/domas/GitHub/obliv-foot-crm</string>
+
+    <!-- 일 1회, 매일 09:10 KST 실행 (전일 마감·거래 반영 후 아침 점검) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>9</integer>
+        <key>Minute</key><integer>10</integer>
+    </dict>
+
+    <!-- 워치독은 오래 걸리지 않는 1회성 잡. 크래시 자동재기동 불필요(다음 날 재실행). KeepAlive 미설정. -->
+    <key>RunAtLoad</key><false/>
+
+    <key>StandardOutPath</key><string>/Users/domas/logs/redpay_terminal_watchdog.out</string>
+    <key>StandardErrorPath</key><string>/Users/domas/logs/redpay_terminal_watchdog.err</string>
+</dict>
+</plist>
