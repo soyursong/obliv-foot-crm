@@ -1569,14 +1569,15 @@ function TimelineCheckInCard({
   checkIn,
   onClick,
   onContextMenu,
-  offHourTime,
   isWalkIn,
   isNoShow,
 }: {
   checkIn: CheckIn;
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
-  /** T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 실접수 시각 ('HH:mm'). undefined = 정상 */
+  /** T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 실접수 시각 ('HH:mm'). undefined = 정상.
+   *  T-20260720-foot-WALKIN-TIMEBADGE-REMOVE: 주황 배지 render 철거로 카드 인라인 미소비.
+   *  prop 시그니처는 유지(호출부 offHourActualTimeMap 전달 = 슬롯 배정 비즈로직 무접점 보존). */
   offHourTime?: string;
   /** T-20260530-foot-WALKIN-TIMETABLE: 워크인(예약 없이 당일 접수) 여부 → 'W' 배지 표시 */
   isWalkIn?: boolean;
@@ -1682,15 +1683,11 @@ function TimelineCheckInCard({
       )}
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 (워크인 'W' 배지와 동시 표시 가능 — AC-4) */}
       {isNoShow && <NoShowBadge />}
-      {/* T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 실접수 시각 배지 */}
-      {offHourTime && (
-        <span
-          className="text-[8px] bg-orange-100 text-orange-700 px-0.5 rounded shrink-0 leading-tight"
-          title={`실접수 ${offHourTime} (영업시간 외 → 슬롯 자동 배정)`}
-        >
-          {offHourTime}
-        </span>
-      )}
+      {/* T-20260720-foot-WALKIN-TIMEBADGE-REMOVE: 영업시간 외 실접수 시각(주황) 배지 render 제거.
+          김주연 총괄 confirm(2026-07-20, thread 1784507557.344079): "W 배지 유지 / 접수시간은 빼줘".
+          policy_superseded — 배지 '표시'만 철회. offHourTime prop·offHourActualTimeMap 계산 및
+          T-20260530-foot-WALKIN-OFFHOUR-SLOT 영업외 자동 타임슬롯 배정 비즈로직은 그대로 유지(무접점).
+          보라 [W] 배지(isWalkIn)는 워크인 식별자로 유지. */}
       {/* 드래그 힌트 화살표 */}
       <span className="text-[8px] opacity-50 shrink-0 ml-0.5">↗</span>
     </div>
