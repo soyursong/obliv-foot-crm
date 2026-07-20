@@ -777,7 +777,26 @@ function ReceiptUploadSection({
   // T-20260717-foot-RECEIPT-UPLOAD-TABLET-CAMERA-DLG-MISS:
   //   매출연동 다이얼로그 오픈 의도 persist 키 — 태블릿 카메라 앱 전환 중 리마운트/컨텍스트 리셋
   //   (가설A)으로 setAmountDlg가 소실돼도 마운트시 복원해 팝업을 보장한다.
+  // T-20260720-foot-RECEIPT-REVENUEPOPUP-TABLET-NOSHOW (재발·RC 확정):
+  //   T-20260717은 sessionStorage 스탬프로 복원했으나 갤탭 field-soak에서 여전히 팝업 미표시.
+  //   RC = 카메라 앱 포그라운드 시 Android가 브라우저 탭 렌더러 프로세스를 종료 → 복귀 시 탭이
+  //   처음부터 재로드되며 sessionStorage(세션 스코프)가 세션 경계를 넘어 소실 → 마운트 복원이
+  //   읽을 스탬프 자체가 없어 팝업 미생성. localStorage는 프로세스 종료·재로드에도 잔존하므로
+  //   persist 저장소를 localStorage로 전환(동일 5분 타임스탬프 가드 유지, PC 경로 무영향).
   const PENDING_DLG_KEY = `receipt-amount-dlg-pending:${customerId}`;
+  // 팝업 오픈 의도 저장소 — localStorage 우선, 접근 불가(사생활 모드 등) 시 sessionStorage 폴백.
+  const pendingDlgStore: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> = (() => {
+    try {
+      const t = '__rcpt_probe__';
+      window.localStorage.setItem(t, '1');
+      window.localStorage.removeItem(t);
+      return window.localStorage;
+    } catch {
+      try { return window.sessionStorage; } catch { /* both blocked */ }
+    }
+    // 완전 차단 환경 no-op 폴백 (기능 degrade, 크래시 방지)
+    return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  })();
 
   // T-20260717 계측: 갤탭 실기 field-soak에서 팝업 미표시 지점 특정용(가설 A/B/C 좁힘).
   //   기존 CAMERA-FOCUS/CAMERA-ZOOM console.debug 진단 패턴 준용.
@@ -799,8 +818,9 @@ function ReceiptUploadSection({
 
   // T-20260717: 다이얼로그 종료(등록/건너뛰기) — persist된 오픈 의도 해제 후 close.
   const closeAmountDlg = useCallback(() => {
-    try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* private mode */ }
+    try { pendingDlgStore.removeItem(PENDING_DLG_KEY); } catch { /* private mode */ }
     setAmountDlg((d) => ({ ...d, open: false }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [PENDING_DLG_KEY]);
 
   // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 고객 활성 패키지 조회 (영수증 결제 라우팅용)
@@ -863,14 +883,14 @@ function ReceiptUploadSection({
   useEffect(() => {
     let ts = 0;
     try {
-      const raw = sessionStorage.getItem(PENDING_DLG_KEY);
+      const raw = pendingDlgStore.getItem(PENDING_DLG_KEY);
       ts = raw ? Number(raw) : 0;
     } catch { ts = 0; }
     if (ts && Date.now() - ts < 5 * 60 * 1000) {
       diagReceiptDlg('dialog:restore-after-remount', { ageMs: Date.now() - ts });
       openAmountDialog();
     } else if (ts) {
-      try { sessionStorage.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
+      try { pendingDlgStore.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
     }
     // 마운트 1회만 복원 — openAmountDialog는 후보 로드 시 재생성되나 복원은 최초 1회로 충분.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -898,9 +918,9 @@ function ReceiptUploadSection({
     if (!uploadedOk) { diagReceiptDlg('upload:none-ok'); return; }
     await load().catch(() => {}); // 썸네일 갱신 — 비차단(실패해도 다이얼로그 진행).
     // ── T-20260717 (가설A 타겟픽스): 무거운 귀속후보 재조회 이전에 다이얼로그를 즉시 오픈 ──
-    //   + 오픈 의도를 sessionStorage에 스탬프 → 카메라 앱 전환 중 리마운트/컨텍스트 리셋에도
+    //   + 오픈 의도를 pendingDlgStore(localStorage)에 스탬프 → 카메라 앱 전환 중 프로세스 종료·탭 재로드에도
     //   마운트 복원으로 팝업을 보장한다. (기존: await 체인 말미 setAmountDlg → 체인 중단 시 팝업 소실)
-    try { sessionStorage.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
+    try { pendingDlgStore.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
     openAmountDialog();
     diagReceiptDlg('dialog:opened');
     // 귀속후보 최신화 — 오픈 이후 비차단 갱신(실패해도 다이얼로그 유지). loadActivePkgs/loadWaitingCIs
