@@ -118,9 +118,10 @@ test.describe('S2 — 재진 축 처리', () => {
 
   test('통합 뷰 — 재진 카운트는 균등(assigned)과 분리 집계', () => {
     // T-20260620 refine: staffStats 집계 정본을 assignment_actions→check_ins(monthAxisOf)로 이관.
-    // 재진 축은 여전히 균등(assigned)과 분리된 returning 필드로 카운트.
-    expect(PAGE_CODE).toMatch(/=== 'returning'\) st\.returning \+= 1/);
-    expect(PAGE_CODE).toContain('returning:'); // StaffStat 별도 필드
+    // T-20260720 ASSIGN-LABEL-DATE-SELECT: 일누적/당월누적 분리로 bumpAssign(isReturning) 형태 리팩터.
+    //   재진 축은 여전히 균등(assigned)과 분리된 returning 필드로 카운트(불변식 보존).
+    expect(PAGE_CODE).toMatch(/const key = isReturning \? 'returning' : 'assigned'/);
+    expect(PAGE_CODE).toContain('returning:'); // StaffCount 별도 필드
   });
 });
 
