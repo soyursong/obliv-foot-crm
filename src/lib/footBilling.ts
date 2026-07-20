@@ -20,7 +20,7 @@
  * getTaxClass/isCodeItem/COVERED_GRADES 는 본래 PaymentMiniWindow 로컬 정의였으나, 동일
  * 로직이 두 컴포넌트에 흩어지면 본 티켓 같은 비대칭 드리프트가 재발하므로 여기로 일원화한다.
  */
-import { type InsuranceGrade, getBaseCopayRate } from './insurance';
+import { type InsuranceGrade, getBaseCopayRate, copayFromBase } from './insurance';
 import { supabase } from './supabase';
 
 // [CI-UNBLOCK] getBaseCopayRate 재수출(facade). footBilling 은 급여 본인부담 산정의 SSOT 파사드라
@@ -317,12 +317,14 @@ export function computeFootBilling(
   const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
     ? getBaseCopayRate(insuranceGrade)
     : null;
-  // 100원 절사(round-DOWN) — copayCalc / RPC 와 동일 규칙.
-  //   CIT-2026-001(건보법 시행령 별표2 100원미만 제외) + CIT-2026-002(심평원 외래본인부담 100원미만 절사)
-  //   + revenue_insurance_split_spec §2-2 v1.12(절사=round-DOWN). 종전 CEIL(절상)=초과징수 → FLOOR 정정.
-  //   (T-20260715-foot-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY)
-  const round100 = (base: number, rate: number) =>
-    Math.min(Math.floor((base * rate) / 100) * 100, base);
+  // ★ 등급→copay = copayFromBase 단일 SSOT 헬퍼(copayCalc.ts, RPC calc_copayment v1.6 미러) 소비.
+  //   병렬 재계산 경로 신설 금지(DA §제약1: SSOT 단일소비). 정액(의급 1·2종·차상위2)/면제(차상위1)/
+  //   정률(general·infant)/노인 4구간 분기가 이 경로(수납·서류 grain)에도 동일 적용된다.
+  //   ▷ RC(T-20260720-foot-COPAY-GRADE-BRANCH-MISSING): 종전 이 계산기는 rate×base(round100)만 적용해
+  //     정액/면제 등급 분기가 누락 → 차상위·의급 환자 본인부담이 RPC 와 divergence. copayFromBase 로 통일.
+  //   정률경로/노인 정률구간 = 100원 미만 절사(FLOOR). CIT-2026-001/002 + revenue_insurance_split §2-2 v1.12.
+  //   종전 CEIL(절상)=초과징수 → FLOOR 정정 유지(CEIL 복귀 금지, T-20260715).
+  //   footBilling 은 집계 grain(per-service override 없음) → copayFromBase hasOverride=false.
   //
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙, slack ts 1783974675.205029):
   //   건보 조회 실패 / insurance_grade=null / coverage_rate(=copayRate) null 방문의 **서류 렌더** →
@@ -346,9 +348,9 @@ export function computeFootBilling(
   //     (planner FOLLOWUP 로 DA/총괄 ratification 요청함 — 정책 확정 시 이 분기 조정 가능.)
   const copaymentTotal = coveredTotal > 0
     ? (copayRate !== null
-        ? round100(coveredTotal, copayRate)
+        ? copayFromBase(insuranceGrade!, coveredTotal, copayRate, false)
         : (opts?.unknownGradeCopay === 'general_default'
-            ? round100(coveredTotal, getBaseCopayRate('general')) // 수납: 등급 미상 → 외래 기본 30% 본인부담
+            ? copayFromBase('general', coveredTotal, getBaseCopayRate('general'), false) // 수납: 등급 미상 → 외래 기본 30%
             : coveredTotal))                                       // 서류(기본): 본인 전액(공단=0) 폴백(DOCPRINT-RECUR)
     : 0;
 
@@ -635,19 +637,21 @@ export function fillBillItemCopayment(
     : null;
 
   const coveredSum = covered.reduce((s, x) => s + x.total, 0);
-  // 100원 절사(round-DOWN) — computeFootBilling / copayCalc / RPC 와 동일 규칙.
-  //   CIT-2026-001/002 + revenue_insurance_split_spec §2-2 v1.12(절사). 종전 CEIL=초과징수 → FLOOR 정정.
+  // ★ 등급→copay = copayFromBase 단일 SSOT 헬퍼(copayCalc.ts, RPC calc_copayment v1.6 미러) 소비.
+  //   병렬 재계산 경로 신설 금지(DA §제약1). 정액(의급·차상위2)/면제(차상위1)/정률/노인 4구간 동일 적용.
+  //   RC(T-20260720-COPAY-GRADE-BRANCH-MISSING): 종전 rate×base 만 적용 → 정액/면제 분기 누락, RPC divergence.
+  //   정률경로 100원 미만 절사(FLOOR). CIT-2026-001/002 + revenue_insurance_split §2-2 v1.12. CEIL 복귀 금지.
   //
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR (총괄 확정 스펙): grade/coverage(=copayRate) null →
   //   본인부담금 = 급여 진료비 전액, 공단부담금 = 0. computeFootBilling 과 동일 역전 규칙(Path A 정합).
   //   과거엔 copayRate null → early-return(미개입) 이라 급여 항목 본인/공단이 0/공란 잔존했다 → 폴백 채움.
-  //   유효 등급은 100원 절상 기존 산식 그대로 — 회귀 0. (anyExisting=DB 권위 값이 있으면 위에서 이미 미개입)
+  //   (anyExisting=DB 권위 값이 있으면 위에서 이미 미개입). footBilling 집계 grain → hasOverride=false.
   const copaymentTotal = copayRate !== null
-    ? Math.min(Math.floor((coveredSum * copayRate) / 100) * 100, coveredSum)
+    ? copayFromBase(insuranceGrade!, coveredSum, copayRate, false)
     : coveredSum; // grade/coverage null → 본인 전액(공단=0) 폴백
 
   if (copaymentTotal <= 0) {
-    // 급여 본인부담 0 등급(예: 의료급여 1종): 0 명시 → 공단부담금=급여전액 정상 산출.
+    // 급여 본인부담 0 등급(예: 차상위1종 면제=copay 0): 0 명시 → 공단부담금=급여전액 정상 산출.
     for (const x of covered) billItems[x.i].copayment_amount = 0;
     return;
   }

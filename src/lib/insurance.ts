@@ -16,7 +16,7 @@ export type {
   CopayCalcServiceInput as ServiceLike,
   CopayCalcClinicInput  as ClinicLike,
 } from './copayCalc';
-export { getBaseCopayRate, calcCopayment as calcCopaymentLocal } from './copayCalc';
+export { getBaseCopayRate, copayFromBase, copayBasisText, calcCopayment as calcCopaymentLocal } from './copayCalc';
 
 // ── 자격등급 타입 ───────────────────────────────────────────────────────────
 

@@ -84,14 +84,20 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(r.applied_rate).toBe(0.3);
   });
 
-  test('차상위 1종/2종 — 14%', () => {
+  test('차상위 1종 — 0원 면제 / 차상위 2종 — 정액 1,000원 (v1.6 의원급 외래 정정)', () => {
+    // [T-20260720-foot-COPAY-GRADE-BRANCH-MISSING] 종전 14% 정률 = 입원·병원급 rate 오적용.
+    //   의원급 1차 외래 정본: low_income_1=면제(0원), low_income_2=정액 LEAST(1000,base).
+    //   근거: 국민건강보험법 시행령 별표2 제3호 라목 / DA da_ratify_copayment_grade_rates_20260720.
     const r1 = calcCopaymentLocal(consultService, clinic, 'low_income_1');
     const r2 = calcCopaymentLocal(consultService, clinic, 'low_income_2');
-    expect(r1.applied_rate).toBe(0.14);
-    expect(r2.applied_rate).toBe(0.14);
-    // copay = FLOOR(13710 * 0.14 / 100) * 100 = FLOOR(19.194) * 100 = 1900 (구 CEIL 2000 정정)
-    expect(r1.copayment_amount).toBe(1900);
-    expect(r2.copayment_amount).toBe(1900);
+    // low_income_1: 면제 → copay 0, 공단부담 = base 전액
+    expect(r1.copayment_amount).toBe(0);
+    expect(r1.insurance_covered_amount).toBe(13710);
+    expect(r1.applied_rate).toBe(0); // 정보성(면제) — medical_aid_1(0.00) 관행과 통일
+    // low_income_2: 정액 LEAST(1000, 13710) = 1000
+    expect(r2.copayment_amount).toBe(1000);
+    expect(r2.insurance_covered_amount).toBe(13710 - 1000);
+    expect(r2.applied_rate).toBe(0);
   });
 
   test('의료급여 1종 — 정액 1,000원', () => {
@@ -101,11 +107,14 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(r.applied_grade).toBe('medical_aid_1');
   });
 
-  test('의료급여 2종 — 15%', () => {
+  test('의료급여 2종 — 정액 1,000원 (v1.6 의원급 외래 정정)', () => {
+    // [T-20260720-foot-COPAY-GRADE-BRANCH-MISSING] 종전 15% 정률 = 병원급 외래 rate 오적용.
+    //   의원급 1차 외래 정본: medical_aid_2 = 정액 LEAST(1000,base). 의료급여법 시행령 별표1.
     const r = calcCopaymentLocal(consultService, clinic, 'medical_aid_2');
-    expect(r.applied_rate).toBe(0.15);
-    // copay = FLOOR(13710 * 0.15 / 100) * 100 = FLOOR(20.565) * 100 = 2000 (구 CEIL 2100 정정)
-    expect(r.copayment_amount).toBe(2000);
+    // 정액 LEAST(1000, 13710) = 1000
+    expect(r.copayment_amount).toBe(1000);
+    expect(r.insurance_covered_amount).toBe(13710 - 1000);
+    expect(r.applied_rate).toBe(0); // 정보성 — medical_aid_1(0.00) 관행과 통일
   });
 
   test('만6세 미만(infant) — 21%', () => {
@@ -189,12 +198,13 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(r.base_amount).toBe(13496);
   });
 
-  test('getBaseCopayRate — 9등급 모두 정의', () => {
+  test('getBaseCopayRate — 9등급 모두 정의 (v1.6: 정액/면제 등급 rate=0.00)', () => {
     expect(getBaseCopayRate('general')).toBe(0.3);
-    expect(getBaseCopayRate('low_income_1')).toBe(0.14);
-    expect(getBaseCopayRate('low_income_2')).toBe(0.14);
+    // v1.6: 차상위·의급 정액/면제 등급 rate = 0.00(정보성). 실 copay 는 copayFromBase 정액/면제 분기가 정본.
+    expect(getBaseCopayRate('low_income_1')).toBe(0);
+    expect(getBaseCopayRate('low_income_2')).toBe(0);
     expect(getBaseCopayRate('medical_aid_1')).toBe(0);
-    expect(getBaseCopayRate('medical_aid_2')).toBe(0.15);
+    expect(getBaseCopayRate('medical_aid_2')).toBe(0);
     expect(getBaseCopayRate('infant')).toBe(0.21);
     expect(getBaseCopayRate('elderly_flat')).toBe(0.3);
     expect(getBaseCopayRate('foreigner')).toBe(1.0);

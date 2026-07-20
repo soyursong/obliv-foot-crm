@@ -20,6 +20,7 @@ import type { CheckIn } from '@/lib/types';
 import {
   INSURANCE_GRADE_LABELS,
   getBaseCopayRate,
+  copayBasisText,
   type InsuranceGrade,
 } from '@/lib/insurance';
 import { getStampUrl } from '@/lib/formTemplates';
@@ -772,9 +773,13 @@ export async function loadAutoBindContext(
   let insuranceInfo: InsuranceBindInfo | null = null;
   if (customerInsuranceGrade) {
     const rate = getBaseCopayRate(customerInsuranceGrade);
+    // T-20260720-foot-COPAY-GRADE-BRANCH-MISSING §3-6: 정액/면제/노인 정률제 등급은 기준명(면제/정액/
+    //   정률제/전액)으로, 그 외(general/infant/unverified)만 "N%" 로 표기. v1.6 에서 getBaseCopayRate 를
+    //   직접 % 로 찍으면 정액/면제 '0%'·elderly '30%' 오표기가 되므로 copayBasisText 로 정정(표시 전용).
+    const basis = copayBasisText(customerInsuranceGrade);
     insuranceInfo = {
       gradeLabel: INSURANCE_GRADE_LABELS[customerInsuranceGrade] ?? customerInsuranceGrade,
-      copayRateText: `${Math.round(rate * 100)}%`,
+      copayRateText: basis ?? `${Math.round(rate * 100)}%`,
       specialTreatmentCode: '',  // 현장 운영 중 확인 후 추가 (Phase 2)
     };
   }

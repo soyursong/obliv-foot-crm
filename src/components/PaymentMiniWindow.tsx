@@ -63,7 +63,7 @@ import type { CheckIn, Service } from '@/lib/types';
 //   checkIn(방문) 스코프 = form_submissions.check_in_id 필터 = 그 결제 대상 방문 서류만(전체이력 아님).
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
-import { type InsuranceGrade, getBaseCopayRate } from '@/lib/insurance';
+import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
 import {
   FALLBACK_TEMPLATES,
   INSURANCE_FALLBACK_TEMPLATES,
@@ -2726,8 +2726,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         - 비급여(과세)/면세: totalByTax 그대로. */}
                     {(Object.entries(totalByTax) as [TaxClass, number][]).map(([cls, amt]) => {
                       const isCovered = cls === '급여';
+                      // T-20260720-foot-COPAY-GRADE-BRANCH-MISSING §3-6: 정액/면제/노인 정률제 등급은
+                      //   기준명(면제/정액/정률제/전액), 그 외(general/infant/등급미상)만 "N%". v1.6 에서
+                      //   copayRate(=getBaseCopayRate)를 직접 % 로 찍으면 정액/면제 '0%'·elderly '30%' 오표기.
                       const label = isCovered
-                        ? `급여 자부담${copayRate !== null ? `(${Math.round(copayRate * 100)}%)` : ''}`
+                        ? `급여 자부담${copayRate !== null ? `(${copayBasisText(customerInsuranceGrade ?? 'unverified') ?? `${Math.round(copayRate * 100)}%`})` : ''}`
                         : cls;
                       const displayAmt = isCovered ? payCopaymentTotal : amt;
                       return (
