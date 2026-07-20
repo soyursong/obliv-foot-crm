@@ -48,11 +48,13 @@ import {
   ORAL_X_DEFAULT_REASON,
 } from '@/lib/opinionDocCompose';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
+// T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-1): 소견서/진단서 출력 시 공용 바인더로 환자정보·상병코드·의사직인 주입.
+import { loadAutoBindContext } from '@/lib/autoBindContext';
 // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
 //   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
 import { useUpdateStaffMemo } from '@/lib/opinionRequest';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
-import type { UserProfile } from '@/lib/types';
+import type { UserProfile, CheckIn } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -931,7 +933,29 @@ export function OpinionEditorDialog({
     }
   };
 
-  const handlePrint = (row: PublishedOpinionRow) => {
+  const handlePrint = async (row: PublishedOpinionRow) => {
+    // T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-1): 공용 바인더(loadAutoBindContext)로 환자정보(주민번호·성별·
+    //   생년월일·연령·주소·연락처)·상병코드(diag_code/name)·의사 직인(doctor_seal_html) 토큰을 채운다.
+    //   그동안 printOpinionDoc 이 9필드만 수동주입 → 나머지 토큰이 공란으로 조용히 실패하던 결함(RC-1) 해소.
+    //   loadAutoBindContext 는 buildAutoBindValues 전 토큰맵을 반환하고, 발행본 스냅샷(발행자·면허·차트·발행일·
+    //   본문)은 printOpinionDoc 내부에서 override 로 보존한다(법정 의무기록 불변). 조회 실패 시 종전 동작으로 폴백.
+    let autoValues: Record<string, string> | undefined;
+    if (clinicId && visitor?.customer_id && visitor.id) {
+      try {
+        const checkIn = {
+          id: visitor.id,
+          clinic_id: clinicId,
+          customer_id: visitor.customer_id,
+          customer_name: visitor.customer_name,
+          customer_phone: null,
+          checked_in_at: visitor.checked_in_at,
+        } as CheckIn;
+        autoValues = await loadAutoBindContext(checkIn);
+      } catch (e) {
+        // 폴백: autoValues 미주입(종전 9필드 동작). 인쇄 자체는 계속.
+        console.warn('[OPINIONDOC-PRINT-4FIX] autoBind 로드 실패 — 기본 바인딩으로 폴백', e);
+      }
+    }
     const ok = printOpinionDoc({
       body: row.body,
       chartNo: row.chart_no ?? visitor?.chart_number ?? null,
@@ -943,6 +967,7 @@ export function OpinionEditorDialog({
       clinicAddress: clinicHeader?.address ?? null,
       clinicPhone: clinicHeader?.phone ?? null,
       formKey: row.doc_type === 'diagnosis' ? 'diagnosis' : 'diag_opinion',
+      autoValues,
     });
     if (!ok) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   };
@@ -984,7 +1009,7 @@ export function OpinionEditorDialog({
                         size="sm"
                         variant="outline"
                         className="h-6 shrink-0 gap-1 px-2 text-[11px]"
-                        onClick={() => handlePrint(row)}
+                        onClick={() => void handlePrint(row)}
                         data-testid="opinion-save-pdf-btn"
                         title="브라우저 인쇄 대화상자에서 'PDF로 저장'을 선택하세요."
                       >
@@ -994,7 +1019,7 @@ export function OpinionEditorDialog({
                         size="sm"
                         variant="outline"
                         className="h-6 shrink-0 gap-1 px-2 text-[11px]"
-                        onClick={() => handlePrint(row)}
+                        onClick={() => void handlePrint(row)}
                         data-testid="opinion-print-btn"
                       >
                         <Printer className="h-3 w-3" /> 인쇄

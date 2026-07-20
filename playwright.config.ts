@@ -112,6 +112,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260720-foot-OPINIONDOC-PRINT-4FIX: 소견서 출력물 4정정 — 원부대조필인 제거(RC-2) +
+        //   printOpinionDoc autoBindContext 공용바인더 주입으로 환자정보·상병코드·의사직인 렌더(RC-1).
+        //   HTML 템플릿 리터럴 정적 가드 + getHtmlTemplate/bindHtmlTemplate 실렌더(공란 채움·스냅샷 보존·회귀0). auth 불요.
+        '**/T-20260720-foot-OPINIONDOC-PRINT-4FIX.spec.ts',
         // T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND: ④고객 export PII-egress audit + ⑨opt-out soft-delete 법적 guard
         //   + 권한 3역할 ADDITIVE 확대. 정적 소스/계약 검증(auth·server 불요). re-cut 시 unit testMatch 등록(원 커밋 미등록 갭 치유).
         '**/T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND.spec.ts',

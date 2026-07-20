@@ -86,18 +86,21 @@ test.describe('시나리오2 AC-2: 통원확인서 원부대조필 stamp-box 삭
 });
 
 // ── 시나리오 3 AC-3: 나머지 서류 회귀 없음 ─────────────────────────────────
-test.describe('시나리오3 AC-3: 진단서·소견서 원부대조필 유지(회귀 0)', () => {
+// T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-2): 본 티켓(WONBU-SEAL-REMOVE)이 소견서(diag_opinion)를
+//   누락해 소견서만 원부대조필이 잔존 → 현장 결함. 소견서도 삭제하는 것이 정본. 아래 AC-3 를 갱신:
+//   원부대조필 stamp-box 잔존 = 진단서(diagnosis) 1건만.
+test.describe('시나리오3 AC-3: 진단서 원부대조필 유지 / 소견서는 삭제(4FIX RC-2)', () => {
   test('진단서(DIAGNOSIS_HTML) 원부대조필 stamp-box 유지', () => {
     expect(SEAL_RE.test(DIAGNOSIS), '진단서 도장 회귀 삭제됨').toBe(true);
   });
 
-  test('소견서(DIAG_OPINION_HTML) 원부대조필 stamp-box 유지', () => {
-    expect(SEAL_RE.test(DIAG_OPINION), '소견서 도장 회귀 삭제됨').toBe(true);
+  test('소견서(DIAG_OPINION_HTML) 원부대조필 stamp-box 삭제됨(4FIX RC-2)', () => {
+    expect(SEAL_RE.test(DIAG_OPINION), '소견서 원부대조필 잔존 — 4FIX RC-2 미반영').toBe(false);
   });
 
-  test('전체 소스 원부대조필 stamp-box 정확히 2건(진단서·소견서)만 잔존', () => {
+  test('전체 소스 원부대조필 stamp-box 정확히 1건(진단서)만 잔존', () => {
     const count = (TEMPLATES_SRC.match(/<div class="stamp-box">원부대조필/g) ?? []).length;
-    expect(count, '원부대조필 stamp-box 개수 = 2(진단서·소견서)여야 함').toBe(2);
+    expect(count, '원부대조필 stamp-box 개수 = 1(진단서)여야 함 — 소견서는 4FIX 로 제거').toBe(1);
   });
 
   test('좌상단 doctor_seal_html(날인) placeholder 무변동 — 별개 표기 미접촉', () => {

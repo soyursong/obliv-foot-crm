@@ -668,9 +668,10 @@ ${COMMON_STYLE}
   <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
     <div style="flex:1"></div>
     <div class="title" style="flex:none; padding:0 32px;">소 견 서</div>
-    <div style="flex:1; display:flex; justify-content:flex-end;">
-      <div class="stamp-box">원부대조필<br>인</div>
-    </div>
+    <!-- T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-2): 소견서 우측상단 '원부대조필인' 삭제.
+         T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE 가 진료확인서(332)·통원확인서(539)만 삭제하고 소견서(672)를 누락 → 소견서만 잔존. 동일 패턴으로 삭제.
+         빈 flex:1 유지 → 제목 "소 견 서" 중앙정렬 불변(금지4). -->
+    <div style="flex:1;"></div>
   </div>
 
   <table>

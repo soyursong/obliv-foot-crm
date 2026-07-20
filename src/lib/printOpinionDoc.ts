@@ -33,6 +33,15 @@ export interface OpinionPrintData {
   clinicPhone?: string | null;
   /** 출력 양식 — 기본 소견서(diag_opinion). 진단서 출력 시 'diagnosis'. */
   formKey?: OpinionPrintFormKey;
+  /**
+   * T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-1): autoBindContext 공용 바인더 산출값(전 토큰).
+   *   loadAutoBindContext(checkIn) 결과를 그대로 주입 → 환자정보(주민번호·성별·생년월일·연령·주소·연락처)·
+   *   상병코드(diag_code/name)·의사 직인(doctor_seal_html) 등 그동안 미주입돼 공란이던 토큰을 채운다.
+   *   ⚠ 발행본 스냅샷(발행자·면허·차트번호·발행일·본문)은 아래 fieldValues 에서 override 로 보존
+   *      (법정 의무기록 불변성 — autoBind 라이브값이 스냅샷을 덮지 않음).
+   *   미지정(기존 호출부: DocumentPrintPanel/medDocPrintGate)은 종전 동작 유지(회귀 0, 금지1).
+   */
+  autoValues?: Record<string, string>;
 }
 
 // 양식별 본문(발행 body)이 들어갈 필드 키.
@@ -57,7 +66,13 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   const tpl = getHtmlTemplate(formKey);
   if (!tpl) return false;
   const bodyField = BODY_FIELD_BY_FORM[formKey];
+  // T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-1): autoBindContext 공용 바인더 값을 base 로 깔고
+  //   (환자 주민번호·성별·생년월일·연령·주소·연락처 / 상병코드·상병명 / 의사 직인 doctor_seal_html 등
+  //    그동안 공란이던 토큰 주입), 그 위에 발행본 스냅샷 필드를 override 로 얹어 법정 의무기록의
+  //   불변성(발행자·면허·차트번호·발행일·본문)을 autoBind 라이브값보다 우선 보존한다.
+  //   autoValues 미지정(DocumentPrintPanel/medDocPrintGate 경로)은 종전 9필드만 바인딩(회귀 0, 금지1).
   const fieldValues: Record<string, string> = {
+    ...(data.autoValues ?? {}),
     record_no: data.chartNo ?? '',
     patient_name: data.patientName ?? '',
     [bodyField]: data.body ?? '',           // 본문(소견/의견)란 — 발행 body 그대로
