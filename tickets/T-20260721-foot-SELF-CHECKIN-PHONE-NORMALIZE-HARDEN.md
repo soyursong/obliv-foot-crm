@@ -4,7 +4,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: pending (supervisor DB-gate DDL-diff + prod apply 대기)
-deploy_commit: PENDING
+deploy_commit: 76c2714f
 medical_confirm_gate: not-required
 confirm_status: gate-exempt
 gate_exempt_basis: "surface축=셀프체크인 kiosk anon 접수 RPC(비의료 접수 경로, §11 진료대시보드/진료관리 화면 무관). 성격축=DB write-path 정규화 계약 CONFORMANCE(behavioral surface = 저장 phone E.164). 의료화면 코드 0."
