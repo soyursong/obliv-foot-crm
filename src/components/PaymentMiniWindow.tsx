@@ -828,9 +828,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── T-20260525-foot-FEE-SET-TEMPLATE: 수가세트 드롭다운
   const [feeSetTemplates, setFeeSetTemplates] = useState<FeeSetTemplate[]>([]);
   const [feeSetOpen, setFeeSetOpen] = useState(false);
-  // ── T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT (REOPEN): [차트 코드+진료비 산정]을
-  //    맨 위 큰 블록 → 컴팩트 한 줄(접힘 기본) + 펼침/접힘 토글로 축소. 기본 접힘.
-  const [feeItemExpanded, setFeeItemExpanded] = useState(false);
+  // ── T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: 중앙 3열→4열 분리.
+  //    구 LEFTSPLIT 접이식 토글(feeItemExpanded) 제거 — ② 차트 코드 칸이 독립 컬럼으로
+  //    상시 노출되고 항목 과다 시 칸 내부 스크롤(AC-2/AC-10)로 흡수하므로 접힘 개념 소멸.
 
   // ── Phase 2: 서류발행 (AC-8~10)
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
@@ -2359,11 +2359,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             ))}
           </div>
 
-          {/* ═══ 중앙 세로 스택 (T-20260713-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT / P0 HOTFIX · 색박스 좌표 근거)
-              b276877b RC = feeitem-row가 body flex-col의 첫 자식(하단 band보다 위)이라 DOM상 여전히 최상단 → "맨 위 큰 블록".
-              수정: feeitem-row를 최상단에서 떼어 [초록 시술그리드] 아래 · [파란 수납] 위 사이로 이동(중앙 세로 스택).
-              tabnav(좌)·Zone3(우)는 사이드 열 그대로 · 모달 총 가로폭 불변. ═══ */}
-          <div className="flex flex-col min-w-0 min-h-0 flex-1 sm:overflow-hidden">
+          {/* ═══ 중앙 그룹 (T-20260720-foot-PAYMINI-CHARTCODE-SPLIT · 3열→4열 분리)
+              구 LEFTSPLIT: [code-grid]→[feeitem-row 접이식]→[settle-lane] 세로 스택(단일 중앙 컬럼).
+              신: 중앙 컬럼을 가로 3분할 → [① code-grid(팔레트, 무접촉·flex-1)] · [② 차트 코드(신규 컬럼)] · [③ 진료비 산정].
+              tabnav(좌)·Zone3(④, 우)는 사이드 열 그대로 · 모달 총 가로폭(sm:max-w-[1080px]) 불변(AC-8).
+              모바일(<sm): flex-col 세로 스택 유지. ═══ */}
+          <div className="flex flex-col sm:flex-row min-w-0 min-h-0 flex-1 sm:overflow-hidden">
 
           {/* ── 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1)
               T-20260708-foot-PAYMINI-ZONE2-CHARTFEE-LEFTSPLIT: LEFTLANE(dc469694) fee-lane 폭확장 revert.
@@ -2478,171 +2479,92 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               </div>
             )}
           </div>
-          {/* ═══ 컴팩트 한 줄(row-split): 차트 코드+진료비 산정 — 접힘 기본, 클릭 시 펼침 ═══ */}
-          <div className="shrink-0 flex flex-col min-h-0 border-b bg-white" data-testid="pmw-feeitem-row">
-            {/* 한 줄 헤더(항상 표시) — 클릭 시 펼침/접힘. 좌측정렬 + 요약 배지 + 토글 화살표 */}
-            <button
-              type="button"
-              onClick={() => setFeeItemExpanded((v) => !v)}
-              className="w-full flex items-center gap-2 px-3 py-2 min-h-[44px] sm:min-h-0 text-left hover:bg-muted/30 transition-colors"
-              data-testid="pmw-feeitem-toggle"
-              aria-expanded={feeItemExpanded}
-            >
-              <span className="text-xs font-semibold text-muted-foreground shrink-0">
-                차트 코드 · 진료비 산정
-              </span>
-              {/* 한 줄 요약(접힘/펼침 무관 항상 노출) — 좁은 화면 대비 truncate/overflow-hidden */}
-              <span
-                className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden text-[11px]"
-                data-testid="pmw-feeitem-summary"
-              >
-                {codeItems.length > 0 && (
-                  <span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700">
-                    서류 {codeItems.length}
-                  </span>
-                )}
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
-                  수가 {pricingItems.length}건
-                </span>
-                {pricingItems.length > 0 ? (
-                  <span className="shrink-0 tabular-nums font-semibold text-purple-700">
-                    합계 {formatAmount(grandTotal)}
-                  </span>
-                ) : (
-                  <span className="truncate text-muted-foreground">코드를 선택하면 항목이 추가됩니다</span>
-                )}
-              </span>
-              <ChevronDown
-                className={cn(
-                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
-                  feeItemExpanded && 'rotate-180',
-                )}
-              />
-            </button>
+          {/* ═══ ② 차트 코드 (신규 독립 컬럼) — T-20260720-foot-PAYMINI-CHARTCODE-SPLIT
+              상병코드 · 처방약 · 치료내용(구 "수가 항목") 세 그룹을 제목으로 구분해 위→아래 배치(AC-2).
+              항목 과다 시 칸 내부 스크롤(AC-10). 세트코드 드롭다운은 스크롤 영역 하단.
+              ★ 접이식 토글(feeItemExpanded) 제거 — 독립 컬럼 상시 노출. 금액/계산 무접촉(AC-9). ═══ */}
+          <div
+            className="flex flex-col min-w-0 min-h-0 border-b sm:border-b-0 sm:border-l bg-white h-64 sm:h-auto sm:w-52 md:w-56 lg:w-60 sm:shrink-0"
+            data-testid="pmw-chartcode-col"
+          >
+            <p className="shrink-0 px-3 py-2 text-xs font-semibold text-muted-foreground border-b">
+              차트 코드
+            </p>
 
-            {/* 펼침 콘텐츠: 서류코드 + 세트코드 + 수가항목 (편집 UI 전량 보존) */}
-            {feeItemExpanded && (
-            <div className="flex flex-col min-h-0 w-full border-t overflow-y-auto sm:max-h-[280px] sm:max-w-[720px] lg:max-w-[880px]">
+            {/* 스크롤 영역: 상병코드 · 처방약 · 치료내용 · 세트코드 (AC-2·AC-10 칸 내부 스크롤) */}
+            <div className="flex-1 min-h-0 overflow-y-auto" data-testid="pmw-chartcode-scroll">
 
-            {/* Zone 2 코드 항목 (상병코드·처방약) — 선택 시만 표시 */}
-            {codeItems.length > 0 && (
-              <div className="border-b shrink-0">
-                <p className="text-[10px] font-semibold text-blue-700 px-2 pt-1.5 pb-0.5">
-                  서류 코드 ({codeItems.length}건)
-                </p>
-                <div className="max-h-28 overflow-y-auto p-2 space-y-1">
-                  {codeItems.map(({ service, qty }) => (
-                    <div
-                      key={service.id}
-                      className="flex items-center gap-1.5 rounded border px-2 py-1 bg-blue-50 border-blue-200"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium leading-tight truncate">{service.name}</p>
-                        {service.service_code && (
-                          <p className="text-[10px] text-blue-600 mt-0.5">
-                            {service.service_code}
-                            {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleRemoveItem(service.id)}
-                        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
-                        title="제거"
+            {/* ② 상병코드 그룹 — codeItems 중 category_label='상병' (AC-2) */}
+            {codeItems.some((i) => (i.service.category_label ?? '') === '상병') && (
+              <div className="border-b">
+                <p className="text-[10px] font-semibold text-blue-700 px-2 pt-1.5 pb-0.5">상병코드</p>
+                <div className="p-2 space-y-1">
+                  {codeItems
+                    .filter((i) => (i.service.category_label ?? '') === '상병')
+                    .map(({ service, qty }) => (
+                      <div
+                        key={service.id}
+                        className="flex items-center gap-1.5 rounded border px-2 py-1 bg-blue-50 border-blue-200"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium leading-tight truncate">{service.name}</p>
+                          {service.service_code && (
+                            <p className="text-[10px] text-blue-600 mt-0.5">
+                              {service.service_code}
+                              {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleRemoveItem(service.id)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                          title="제거"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
                 </div>
               </div>
             )}
 
-              {/* T-20260525-foot-FEE-SET-TEMPLATE AC-1: 세트코드 드롭다운
-                  수가항목 영역 상단 — 세트 선택 시 항목 일괄 추가(append) */}
-              {feeSetTemplates.length > 0 && (
-                <div className="px-2 pt-2 pb-1 shrink-0 border-b relative" data-testid="fee-set-dropdown-container">
-                  <button
-                    type="button"
-                    onClick={() => setFeeSetOpen((v) => !v)}
-                    className={cn(
-                      'w-full flex items-center justify-between gap-1.5 px-2 py-1.5 rounded border text-xs transition-colors',
-                      feeSetOpen
-                        ? 'bg-teal-50 border-teal-400 text-teal-700'
-                        : 'border-input hover:bg-muted text-muted-foreground',
-                    )}
-                    data-testid="fee-set-dropdown-btn"
-                  >
-                    <span className="flex items-center gap-1">
-                      <Layers className="h-3 w-3 shrink-0" />
-                      세트코드
-                    </span>
-                    <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', feeSetOpen && 'rotate-180')} />
-                  </button>
-
-                  {feeSetOpen && (
-                    <div
-                      className="absolute top-full left-0 right-0 z-50 mx-2 mt-0.5 border rounded-md bg-white shadow-lg max-h-48 overflow-y-auto"
-                      data-testid="fee-set-dropdown-list"
-                    >
-                      {feeSetTemplates.map((tpl) => {
-                        // 세트에 포함된 서비스 목록 미리보기
-                        const previewSvcs = tpl.items
-                          .sort((a, b) => a.sort_order - b.sort_order)
-                          .map((i) => services.find((s) => s.id === i.service_id))
-                          .filter((s): s is Service => !!s);
-                        const setTotal = previewSvcs.reduce((sum, s) => sum + s.price, 0);
-
-                        return (
-                          <button
-                            key={tpl.id}
-                            type="button"
-                            className="w-full flex flex-col gap-0.5 px-3 py-2 text-xs text-left hover:bg-teal-50 border-b border-gray-50 last:border-0 transition-colors"
-                            data-testid={`fee-set-item-${tpl.id}`}
-                            onClick={() => {
-                              // AC-1: 기존 항목 유지 + 세트 항목 append (중복 시 qty+1)
-                              setSelectedItems((prev) => {
-                                const next = [...prev];
-                                previewSvcs.forEach((svc) => {
-                                  const existing = next.find((i) => i.service.id === svc.id);
-                                  if (existing) {
-                                    existing.qty += 1;
-                                  } else {
-                                    next.push({ service: svc, qty: 1 });
-                                  }
-                                });
-                                return next;
-                              });
-                              setSaved(false);
-                              setFeeSetOpen(false);
-                              toast.success(`'${tpl.set_name}' 세트 적용됨 (${previewSvcs.length}개)`);
-                            }}
-                          >
-                            <span className="font-semibold text-gray-800">{tpl.set_name}</span>
-                            <span className="text-muted-foreground truncate">
-                              {previewSvcs.map((s) => s.name).join(' · ')}
-                            </span>
-                            <span className="text-teal-700 tabular-nums font-medium">
-                              합계 {formatAmount(setTotal)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+            {/* ② 처방약 그룹 — codeItems 중 category_label='처방약' (AC-2) */}
+            {codeItems.some((i) => (i.service.category_label ?? '') === '처방약') && (
+              <div className="border-b">
+                <p className="text-[10px] font-semibold text-blue-700 px-2 pt-1.5 pb-0.5">처방약</p>
+                <div className="p-2 space-y-1">
+                  {codeItems
+                    .filter((i) => (i.service.category_label ?? '') === '처방약')
+                    .map(({ service, qty }) => (
+                      <div
+                        key={service.id}
+                        className="flex items-center gap-1.5 rounded border px-2 py-1 bg-blue-50 border-blue-200"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium leading-tight truncate">{service.name}</p>
+                          {service.service_code && (
+                            <p className="text-[10px] text-blue-600 mt-0.5">
+                              {service.service_code}
+                              {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleRemoveItem(service.id)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                          title="제거"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 — DnD + ↑↓ 순서 변경
-                  AC-1: drag handle + ↑↓ 버튼 복합 지원
-                  AC-2: DB persist — services.display_order (clinic 단위, debounce 800ms, 재진입 복원)
-                  AC-3: 기존 CRUD(선수금·금액편집·제거) 무영향
-                  AC-4: 세트코드 일괄 추가 후에도 정상 (pricingItems 재필터링)
-                  AC-5: TouchSensor distance:5 → 태블릿 탭 오인식 방지
-                  FEE-ITEM-SCROLL:
-                    max-h-80 mobile / sm:flex-1 desktop → 5건 노출
-                    overflow-y-auto + scroll-smooth → 6건+ 스크롤
-                    items=0 시 max-h-28 compact */}
+              {/* ② 치료내용 그룹 (구 "수가 항목") — pricingItems, DnD 순서편집 유지.
+                  T-20260720 AC-5: 라벨 "수가 항목" → "치료내용"(현장 용어). 계산·CRUD 무접촉(AC-9).
+                  구 max-h/flex-1 노출제어 → ② 칸 자체 스크롤(pmw-chartcode-scroll)이 흡수하므로 제거. */}
               <DndContext
                 sensors={feeItemSensors}
                 collisionDetection={closestCenter}
@@ -2652,16 +2574,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   items={pricingItems.map((i) => i.service.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div
-                    data-testid="pricing-list"
-                    className={cn(
-                    "overflow-y-auto p-2 min-h-0 space-y-1 scroll-smooth",
-                    pricingItems.length === 0
-                      ? "max-h-28"
-                      : "max-h-80 sm:max-h-none sm:flex-1",
-                  )}>
+                  <div data-testid="pricing-list" className="p-2 min-h-0 space-y-1 scroll-smooth">
                     <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
-                      수가 항목 ({pricingItems.length}건)
+                      치료내용 ({pricingItems.length}건)
                     </p>
                     {pricingItems.length === 0 && (
                       <p className="text-xs text-muted-foreground text-center py-4">
@@ -2690,29 +2605,98 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   </div>
                 </SortableContext>
               </DndContext>
+
             </div>
+            {/* ═══ 세트코드 드롭다운 — ② 차트 코드 칸 하단 footer(shrink-0). handoff §2 "세트코드 → 칸 하단".
+                스크롤 영역 밖 고정 → 항상 접근 가능. 드롭다운은 위로(bottom-full) 열려 클리핑 회피. ═══ */}
+            {feeSetTemplates.length > 0 && (
+              <div className="shrink-0 px-2 pt-2 pb-2 border-t relative" data-testid="fee-set-dropdown-container">
+                <button
+                  type="button"
+                  onClick={() => setFeeSetOpen((v) => !v)}
+                  className={cn(
+                    'w-full flex items-center justify-between gap-1.5 px-2 py-1.5 rounded border text-xs transition-colors',
+                    feeSetOpen
+                      ? 'bg-teal-50 border-teal-400 text-teal-700'
+                      : 'border-input hover:bg-muted text-muted-foreground',
+                  )}
+                  data-testid="fee-set-dropdown-btn"
+                >
+                  <span className="flex items-center gap-1">
+                    <Layers className="h-3 w-3 shrink-0" />
+                    세트코드
+                  </span>
+                  <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', feeSetOpen && 'rotate-180')} />
+                </button>
+
+                {feeSetOpen && (
+                  <div
+                    className="absolute bottom-full left-0 right-0 z-50 mx-2 mb-0.5 border rounded-md bg-white shadow-lg max-h-48 overflow-y-auto"
+                    data-testid="fee-set-dropdown-list"
+                  >
+                    {feeSetTemplates.map((tpl) => {
+                      // 세트에 포함된 서비스 목록 미리보기
+                      const previewSvcs = tpl.items
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map((i) => services.find((s) => s.id === i.service_id))
+                        .filter((s): s is Service => !!s);
+                      const setTotal = previewSvcs.reduce((sum, s) => sum + s.price, 0);
+
+                      return (
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          className="w-full flex flex-col gap-0.5 px-3 py-2 text-xs text-left hover:bg-teal-50 border-b border-gray-50 last:border-0 transition-colors"
+                          data-testid={`fee-set-item-${tpl.id}`}
+                          onClick={() => {
+                            // AC-1: 기존 항목 유지 + 세트 항목 append (중복 시 qty+1)
+                            setSelectedItems((prev) => {
+                              const next = [...prev];
+                              previewSvcs.forEach((svc) => {
+                                const existing = next.find((i) => i.service.id === svc.id);
+                                if (existing) {
+                                  existing.qty += 1;
+                                } else {
+                                  next.push({ service: svc, qty: 1 });
+                                }
+                              });
+                              return next;
+                            });
+                            setSaved(false);
+                            setFeeSetOpen(false);
+                            toast.success(`'${tpl.set_name}' 세트 적용됨 (${previewSvcs.length}개)`);
+                          }}
+                        >
+                          <span className="font-semibold text-gray-800">{tpl.set_name}</span>
+                          <span className="text-muted-foreground truncate">
+                            {previewSvcs.map((s) => s.name).join(' · ')}
+                          </span>
+                          <span className="text-teal-700 tabular-nums font-medium">
+                            합계 {formatAmount(setTotal)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
-            {/* ─────────────────────────────────────────────────────────────────────
-                 세금구분 · 합계 · 수납버튼 (Zone2 tail) — 기존 폭 유지 (LEFTLANE 이전 원복폭 sm:w-64 md:w-64 lg:w-72).
-                 추출된 상단 수가항목 행의 아래로 흐르며, 계산/수납 로직·동작은 불변.
-            ───────────────────────────────────────────────────────────────────── */}
-            {/* ═══ T-20260719-foot-PMW-LAYOUT-SCROLL (P1 · ②③ 중앙 재배치 · durable fix) ═══
-                색박스 정본(162053/162054, 김주연 총괄): ③ 세금구분·수납잔액·차감후청구 = 스크롤 없이 고정.
-                ◆ 구조 재배치(SUGA-SCROLL-BLOCK P0 밴드에이드 대체):
-                  구: settle-lane 통합 단일 창(flex-1 sm:overflow-y-auto)이 ③ 세금구분 + 액션버튼을 한 덩어리로
-                     스크롤 → ③가 수납버튼과 함께 밀려 협소창에서 '결제비 산정'/btn-settle 미도달(요청2 증상).
-                  신: settle-lane = shrink-0(자연높이 우선) + flex flex-col. code-grid(flex-1)가 공간 양보 →
-                     settle-lane 굶지 않음(SUGA-SCROLL-BLOCK RC 구조적 해소). 내부를 2분할:
-                     [③ 세금구분 fixed band: shrink-0, 스크롤 없이 항상 노출]
-                     [액션버튼: min-h-0 flex-1, sm:overflow-y-auto fallback — 극단(분할결제 다행+등급재정산)만 스크롤].
-                  ② 접힘 기본(feeItemExpanded=false)이라 컴팩트 → 수납버튼 무스크롤 도달(AC-3).
-                  sm:max-h-[460px]로 협소창 밴드 상한(band 600px overflow-hidden 내 회귀 차단).
-                  계산 SSOT(COPAY-BALANCE-SPLIT canonical) 무접촉 — 표시만 재배치(AC-4).
-                  ※ SUGA-SCROLL-BLOCK(P0)의 band-aid 스크롤 fix 별도 구현 금지 — 본 재배치가 durable fix. */}
-            <div className="w-full shrink-0 min-h-0 border-t flex flex-col sm:max-h-[460px]" data-testid="pmw-settle-lane">
-                {/* 세금 구분 + 합산 (수가 항목 있을 때만) */}
+            {/* ═══ ③ 진료비 산정 (독립 컬럼) — T-20260720-foot-PAYMINI-CHARTCODE-SPLIT
+                구 settle-lane(세금구분·수납·액션버튼)을 ② 차트 코드 우측 독립 컬럼으로 승격(3열→4열).
+                항목 목록 없음 — 금액만(AC-3). 진료비 총액(구 '합계')·수납잔액·차감후청구 하단 표시(AC-4/6).
+                내부 2분할 유지: [세금구분 fixed band shrink-0 = 항상 노출] / [액션버튼 flex-1 스크롤].
+                계산 SSOT(COPAY-BALANCE-SPLIT canonical) 무접촉 — 표시·배치만(AC-9).
+                구 PMW-LAYOUT-SCROLL durable fix(밴드 고정/버튼 스크롤 소유)는 컬럼화 후에도 계승. */}
+            <div
+              className="flex flex-col min-w-0 min-h-0 border-t sm:border-t-0 sm:border-l sm:w-56 md:w-60 lg:w-64 sm:shrink-0 h-auto"
+              data-testid="pmw-settle-lane"
+            >
+                <p className="shrink-0 px-3 py-2 text-xs font-semibold text-muted-foreground border-b">
+                  진료비 산정
+                </p>
+                {/* 세금 구분 + 합산 (치료내용 있을 때만) */}
                 {pricingItems.length > 0 && (
                   /* T-20260719-foot-PMW-LAYOUT-SCROLL AC-2: ③ 세금구분·수납잔액·차감후청구 = shrink-0 고정 밴드(스크롤 밖).
                      상위 settle-lane 스크롤은 아래 액션버튼 div가 소유 → 이 밴드는 항상 노출. */
@@ -2748,6 +2732,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         <span className="tabular-nums">{formatAmount(insuranceCoveredTotal)}</span>
                       </div>
                     )}
+                    {/* T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: '진료비 총액' 라인(AC-6).
+                        구 feeitem-row 요약 배지의 '합계 {grandTotal}'을 ② 칸 분리로 소멸 → ③ 진료비 산정 칸에
+                        명시 라인으로 이설. 값=grandTotal 그대로(무재산정·AC-9). 라벨은 법정 서식(진료비 계산서·
+                        영수증 별지 제1호 ⑥ '진료비 총액', htmlFormTemplates.ts:2190-2192)과 일치(handoff §5). */}
+                    <div className="flex justify-between text-sm font-semibold pt-1 border-t">
+                      <span>진료비 총액</span>
+                      <span className="tabular-nums">{formatAmount(grandTotal)}</span>
+                    </div>
                     {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 하단 볼드 합계 = 수납잔액(본인부담금+비급여).
                         공단부담금은 이 합계에서 제외(수납 대상 아님). 총 진료비는 세금구분(급여+비급여)으로 확인. */}
                     <div className="flex justify-between text-sm font-bold pt-1 border-t">

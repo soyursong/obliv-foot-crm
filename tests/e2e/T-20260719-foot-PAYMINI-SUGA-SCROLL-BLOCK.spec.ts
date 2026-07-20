@@ -141,9 +141,9 @@ test('AC1~AC4: 수가항목 클릭 후 결제비 산정 버튼 도달 가능 + 4
     }
   }
 
-  // feeitem-row 펼치기(현장이 항목 확인차 펼치는 동선)
-  const feeToggle = page.locator('[data-testid="pmw-feeitem-toggle"]').first();
-  if (await feeToggle.count() > 0) await feeToggle.click();
+  // T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: fold/expand 토글(pmw-feeitem-toggle) 제거됨 →
+  //   차트 코드는 독립 컬럼(pmw-chartcode-col)으로 항상 노출, 진료비 산정은 pmw-settle-lane 로 분리.
+  //   더 이상 펼치기 동선이 필요 없으므로 토글 클릭 단계 삭제(후속 assertion은 그대로 통과).
 
   await dialog.screenshot({ path: path.join(SHOT_DIR, '01-after-suga-add.png') });
 

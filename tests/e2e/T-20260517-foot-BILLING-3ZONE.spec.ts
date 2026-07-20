@@ -57,8 +57,11 @@ test.describe('T-20260517-foot-BILLING-3ZONE — 진료비 산정 3구역 레이
     await expect(dialog.getByText('처방약')).toBeVisible();
     await expect(dialog.getByText('풋케어')).toBeVisible();
 
-    // Zone2: 중앙 — 차트 코드 + 진료비 산정 헤더
-    await expect(dialog.getByText(/차트 코드.*진료비 산정/)).toBeVisible();
+    // Zone2: 중앙 — 차트 코드 컬럼(②) + 진료비 산정 레인(③) 헤더
+    // T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: 통합 헤더 "차트 코드 · 진료비 산정" 이
+    //   ② pmw-chartcode-col(헤더 "차트 코드") + ③ pmw-settle-lane(헤더 "진료비 산정") 로 분리됨
+    await expect(dialog.locator('[data-testid="pmw-chartcode-col"]')).toBeVisible();
+    await expect(dialog.locator('[data-testid="pmw-settle-lane"]')).toBeVisible();
 
     // Zone3: 우측 서류발행 영역
     const docList = dialog.locator('[data-testid="doc-template-list"]');
@@ -91,8 +94,9 @@ test.describe('T-20260517-foot-BILLING-3ZONE — 진료비 산정 3구역 레이
     const svcCount = await svcBtns.count();
     if (svcCount > 0) {
       await svcBtns.first().click();
-      // Zone2에 수가 항목 표시
-      await expect(dialog.getByText(/수가 항목/)).toBeVisible();
+      // Zone2에 치료내용 표시
+      // T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: "수가 항목" 라벨이 "치료내용 (N건)" 으로 리네임됨
+      await expect(dialog.getByText(/치료내용 \(\d+건\)/)).toBeVisible();
     }
   });
 
@@ -160,8 +164,11 @@ test.describe('T-20260517-foot-BILLING-3ZONE — 진료비 산정 3구역 레이
     }
 
     // 3구역 모두 visible — 겹침 없음 확인
+    // T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: "차트 코드" 는 ② pmw-chartcode-col 헤더로 스코프
     await expect(dialog.getByText('상병코드')).toBeVisible();
-    await expect(dialog.getByText(/차트 코드/)).toBeVisible();
+    await expect(
+      dialog.locator('[data-testid="pmw-chartcode-col"]').getByText(/차트 코드/),
+    ).toBeVisible();
     await expect(dialog.getByText('서류발행')).toBeVisible();
 
     // 다이얼로그 전체 영역이 뷰포트 안에 있는지
