@@ -43,6 +43,8 @@ function visitorFromCheckIn(ci: CheckIn): VisitorRow {
     id: ci.id,
     customer_id: ci.customer_id ?? null,
     customer_name: ci.customer_name ?? '—',
+    // T-20260720-foot-OPINIONDOC-PRINT-4FIX FIX-②: 내원행 실 전화를 태워 patient_phone 폴백 공급.
+    customer_phone: ci.customer_phone ?? null,
     chart_number: c?.chart_number ?? null,
     birth_date: c?.birth_date ?? null,
     visit_type: ci.visit_type ?? null,

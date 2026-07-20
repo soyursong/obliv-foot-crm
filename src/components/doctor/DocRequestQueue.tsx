@@ -100,6 +100,9 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         id: active.checkInId ?? '',
         customer_id: active.customerId,
         customer_name: active.patientName,
+        // T-20260720-foot-OPINIONDOC-PRINT-4FIX FIX-②: 서류요청 큐행엔 전화 없음 → null.
+        //   출력 시 loadAutoBindContext 가 customer_id 로 customers.phone 을 조회해 채운다.
+        customer_phone: null,
         chart_number: active.chartNo,
         birth_date: active.birthDate,
         visit_type: null,
