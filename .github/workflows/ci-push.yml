@@ -68,6 +68,13 @@ jobs:
       TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
+      # T-20260720-foot-CI-RED-MAIN-RESOLVE: chart-open-gate 와 동일 KST-자정 경계 봉합.
+      #   CF-1 "2. 칸반 카드 발견"(CF-1-new-patient-full-cycle L102)도 seedCheckIn(checked_in_at
+      #   = new Date() UTC now) 후 대시보드 칸반 카드(exam_waiting) 가시성을 assert 한다. 동일하게
+      #   dateStr(브라우저-로컬 TZ)·window(+09:00) 불일치로 UTC 15:00~24:00(KST 00:00~09:00) 구간에서
+      #   시드 카드가 날짜창 밖 배제 → card.waitFor 타임아웃. TZ=Asia/Seoul 로 node·chromium 을
+      #   운영 태블릿과 동일 KST 로 정렬해 봉합(회귀검출 무력화 아님 — 시드 카드가 실제로 떠야 GREEN).
+      TZ: "Asia/Seoul"
 
     steps:
       - uses: actions/checkout@v4
@@ -121,6 +128,20 @@ jobs:
       TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
+      # T-20260720-foot-CI-RED-MAIN-RESOLVE: KST-자정 경계 결정성 RED 실봉합.
+      #   근본원인(trace 실증, run 29752843100): G1 시드 check_in.checked_in_at = new Date()(UTC now).
+      #   대시보드 칸반 쿼리(Dashboard.tsx fetchSelfCheckIns L4300)는 window 를
+      #   `${dateStr}T00:00..23:59:59+09:00` 로 잡는데, dateStr = format(new Date(),'yyyy-MM-dd')
+      #   가 **브라우저-로컬 TZ** 로 계산된다. CI 는 node·chromium 이 모두 기본 UTC → UTC 15:00~24:00
+      #   (=KST 00:00~09:00) 구간에 실행되면 dateStr 이 전날("2026-07-20")로 굳어 window 끝
+      #   (2026-07-20T14:59:59+09:00 = 14:59:59Z)이 지금(≈15:20Z) 이전 → 시드 카드가 window 밖으로
+      #   배제 → 진료대기 0 → card.waitFor 12s 타임아웃 하드 RED. **cross-run sweep race 아님**
+      #   (trace: 대시보드는 실데이터 정상 렌더, 시드 row 는 존재하나 날짜창 필터로 제외).
+      #   운영 태블릿은 Asia/Seoul 이라 prod 무영향 → CI TZ 를 prod 와 정렬해 봉합.
+      #   TZ 는 node(process TODAY·date-fns) + chromium(JS Date) 양쪽에 전파되어 dateStr 이
+      #   KST 당일로 계산됨 → window 가 now 를 포함 → 시드 카드 렌더. 회귀검출 무력화 아님
+      #   (G6 정적 backstop·!isPast 가드·G3/G4 skip 로직 전부 불변, 시드 카드가 실제로 떠야 GREEN).
+      TZ: "Asia/Seoul"
 
     steps:
       - uses: actions/checkout@v4

@@ -47,6 +47,13 @@ let _sb: SupabaseClient | null = null;
 const svc = (): SupabaseClient => (_sb ??= createClient(SUPA_URL, SERVICE_KEY));
 
 // ── 날짜 헬퍼 (브라우저=노드 동일 TZ 가정 — CI 단일 머신) ─────────────────────
+// ⚠ TZ 정렬 필수 (T-20260720-foot-CI-RED-MAIN-RESOLVE): 대시보드 칸반 쿼리
+//   (Dashboard.tsx fetchSelfCheckIns)는 checked_in_at 을 `${dateStr}T00:00..23:59:59+09:00`
+//   window 로 필터하고 dateStr = format(new Date(),'yyyy-MM-dd') 를 **로컬 TZ** 로 계산한다.
+//   시드의 checked_in_at 은 new Date()(UTC instant). CI 를 UTC 로 돌리면 KST 자정~09시
+//   (UTC 15:00~24:00) 구간에서 dateStr 이 전날로 굳어 시드가 window 밖으로 배제되어
+//   G1(exam_waiting 활성 체크인) 카드가 안 떠 결정적 RED. → ci-push.yml chart-open-gate job 이
+//   TZ=Asia/Seoul(운영 태블릿과 동일)을 주입해 node·chromium 을 KST 로 정렬한다.
 function localDateStr(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
