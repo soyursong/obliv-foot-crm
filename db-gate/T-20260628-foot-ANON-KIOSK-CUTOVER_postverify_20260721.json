@@ -1,0 +1,57 @@
+{
+  "ticket": "T-20260628-foot-ANON-KIOSK-CUTOVER",
+  "part": "A (DB migrate prod apply)",
+  "mig": "supabase/migrations/20260719160000_selfcheckin_update_personal_info_contact_additive.sql",
+  "note": "prod 실재 = 이미 15-arg 영속(2026-07-20T21:48:01.760Z 旣적용). 본 실행 = fresh POSTCHECK + ledger forward-doc reconcile.",
+  "applied_at_original": "2026-07-20T21:48:01.760Z",
+  "steps": [
+    {
+      "postcheck_signatures": [
+        "p_check_in_id uuid, p_clinic_id uuid, p_birth_date text, p_address text, p_address_detail text, p_postal_code text, p_privacy_consent boolean, p_insurance_consent boolean, p_visit_route text, p_visit_route_detail text, p_consent_sensitive boolean, p_consent_agreed_at timestamp with time zone, p_consent_version text, p_sms_opt_in boolean, p_customer_email text"
+      ]
+    },
+    {
+      "postcheck_arg_presence": {
+        "persisted15_MUST_be_true": true,
+        "p_sms_opt_in": true,
+        "p_customer_email": true,
+        "stale_13arg_present": false
+      }
+    },
+    {
+      "postcheck_grant": {
+        "anon_exec": true,
+        "auth_exec": true
+      }
+    },
+    {
+      "body_ssot_markers": {
+        "sms_opt_in_at": true,
+        "customer_email_coalesce_nullif_btrim": true,
+        "security_definer": true,
+        "ok": true
+      }
+    },
+    {
+      "ledger_before": {
+        "present": false,
+        "rows": []
+      }
+    },
+    {
+      "ledger_forward_doc_insert": {
+        "done": true,
+        "rows": [
+          {
+            "version": "20260719160000",
+            "name": "selfcheckin_update_personal_info_contact_additive"
+          }
+        ]
+      }
+    },
+    {
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}
