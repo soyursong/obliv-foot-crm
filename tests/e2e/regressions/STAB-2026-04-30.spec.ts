@@ -130,7 +130,7 @@ test.describe('S01 SEARCH-DOB-CHART — 생년월일+차트번호 검색', () =>
       .insert({
         clinic_id: CLINIC_ID,
         name: `STAB-S01-${ts}`,
-        phone: `010${String(ts).slice(-8)}`,
+        phone: `DUMMY-${ts}`,
         birth_date: '901231',
         chart_number: `STAB-${ts}`,
         visit_type: 'new',
@@ -243,7 +243,7 @@ test.describe('S03 TREATMENT-LABEL — 진료종류 5필드', () => {
     if (!SERVICE_KEY) return;
     const client = sb();
     const ts = Date.now();
-    const phone = `010${String(ts).slice(-8)}`;
+    const phone = `DUMMY-${ts}`;
     const { data: cust } = await client
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `STAB-S03-${ts}`, phone, visit_type: 'new' })
@@ -385,7 +385,7 @@ test.describe('S07 PAYMENT-PACKAGE-INTEGRATED — DeskPaymentMenu 4버튼', () =
     if (!SERVICE_KEY) return;
     const client = sb();
     const ts = Date.now();
-    const phone = `010${String(ts).slice(-8)}`;
+    const phone = `DUMMY-${ts}`;
     const { data: cust } = await client
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `STAB-S07-${ts}`, phone, visit_type: 'returning' })
@@ -452,7 +452,7 @@ test.describe('S09 DOC-PRINT-SPEC — 서류 발행 패널', () => {
     if (!SERVICE_KEY) return;
     const client = sb();
     const ts = Date.now();
-    const phone = `010${String(ts).slice(-8)}`;
+    const phone = `DUMMY-${ts}`;
     const { data: cust } = await client
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `STAB-S09-${ts}`, phone, visit_type: 'new' })

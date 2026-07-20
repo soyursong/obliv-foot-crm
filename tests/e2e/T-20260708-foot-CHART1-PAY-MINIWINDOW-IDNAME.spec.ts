@@ -108,7 +108,7 @@ test.describe('T-20260708-foot-CHART1-PAY-MINIWINDOW-IDNAME', () => {
     const expectedName = profs[0].name as string;
 
     const testName = `id2name-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
     const { data: customer } = await sb
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: testName, phone: testPhone, visit_type: 'returning' })
@@ -181,7 +181,7 @@ test.describe('T-20260708-foot-CHART1-PAY-MINIWINDOW-IDNAME', () => {
     const sb = createClient(SUPA_URL, SERVICE_KEY);
 
     const testName = `noreg-pay-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
     const { data: customer } = await sb
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: testName, phone: testPhone, visit_type: 'returning' })

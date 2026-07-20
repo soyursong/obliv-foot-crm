@@ -25,7 +25,7 @@ function adminSb() {
 test.describe('T1: 초진 패키지 생성 버튼 표시', () => {
   test('초진+패키지없음 → btn-package-create-in-sheet 노출', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -79,7 +79,7 @@ test.describe('T1: 초진 패키지 생성 버튼 표시', () => {
 test.describe('T2: 체험 패키지 생성 버튼 표시', () => {
   test('experience+패키지없음 → btn-package-create-in-sheet 노출', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -133,7 +133,7 @@ test.describe('T2: 체험 패키지 생성 버튼 표시', () => {
 test.describe('T3: 패키지 생성 버튼 → PaymentDialog 패키지 모드', () => {
   test('버튼 클릭 → 패키지 결제 다이얼로그 열림', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -206,7 +206,7 @@ test.describe('T3: 패키지 생성 버튼 → PaymentDialog 패키지 모드', 
 test.describe('T4: 재진+패키지 → 이미 패키지 보유 비활성 안내', () => {
   test('returning+package_id → pkg-create-disabled 표시, 생성버튼 미표시', async ({ page }) => {
     const sb = adminSb();
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: cust } = await sb
       .from('customers')
@@ -289,14 +289,14 @@ test.describe('T5: DB — 패키지 미보유 초진 고객 버튼 렌더 조건
     // 패키지 없는 고객
     const { data: custA } = await sb
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `qa-T5-nopkg-${ts}`, phone: `010${String(ts).slice(-8)}`, visit_type: 'new' })
+      .insert({ clinic_id: CLINIC_ID, name: `qa-T5-nopkg-${ts}`, phone: `DUMMY-${ts}`, visit_type: 'new' })
       .select()
       .single();
 
     // 패키지 있는 고객
     const { data: custB } = await sb
       .from('customers')
-      .insert({ clinic_id: CLINIC_ID, name: `qa-T5-haspkg-${ts}`, phone: `010${String(ts + 1).slice(-8)}`, visit_type: 'returning' })
+      .insert({ clinic_id: CLINIC_ID, name: `qa-T5-haspkg-${ts}`, phone: `DUMMY-${ts + 1}`, visit_type: 'returning' })
       .select()
       .single();
     const { data: pkgB } = await sb

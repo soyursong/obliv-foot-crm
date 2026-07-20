@@ -65,7 +65,7 @@ test.describe('T-20260616-foot-LASER-TIMER-SETTING-NOREFLECT — 하드리로드
     originalUnits = (clinicRow?.laser_time_units as number[] | null) ?? null;
 
     seededName = `laser-noreflect-qa-${Date.now()}`;
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')

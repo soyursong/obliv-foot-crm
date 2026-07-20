@@ -169,7 +169,7 @@ test.describe('T-20260622-foot-RESV-LIVE-AUTOSCROLL-REGRESSION — 실시간 반
 
     const ts = Date.now();
     const name = `RTREG-${ts}`;
-    const phone = `010${String(ts).slice(-8)}`;
+    const phone = `DUMMY-${ts}`;
     const today = new Date();
     const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 

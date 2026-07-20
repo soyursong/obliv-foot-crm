@@ -29,7 +29,7 @@ test.describe('T-20260514-PAYMENT-BLOCKED — 결제 자체 불가 핫픽스 검
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `blocked-pay-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // 테스트 고객 + payment_waiting 체크인 시드 (check_in_services 없음)
     const { data: customer, error: custErr } = await sb
@@ -118,7 +118,7 @@ test.describe('T-20260514-PAYMENT-BLOCKED — 결제 자체 불가 핫픽스 검
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `ux-hint-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // payment_waiting check-in (check_in_services 없음)
     const { data: customer } = await sb
@@ -183,7 +183,7 @@ test.describe('T-20260514-PAYMENT-BLOCKED — 결제 자체 불가 핫픽스 검
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `preloaded-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // 서비스 ID 조회 (기본 탭 첫 번째)
     const { data: svcs } = await sb

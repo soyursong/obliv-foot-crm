@@ -63,7 +63,7 @@ test.describe('T-20260616-foot-LASER-TIMER-SETTING-CONNECT — 타이머 버튼 
 
     // 오늘 활성 check-in 시드
     seededName = `laser-setting-qa-${Date.now()}`;
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')

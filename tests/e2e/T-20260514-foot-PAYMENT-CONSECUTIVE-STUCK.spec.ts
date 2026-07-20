@@ -28,9 +28,9 @@ test.describe('T-20260514-PAYMENT-CONSECUTIVE-STUCK — 연속 수납 멈춤 버
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const ts = Date.now();
     const nameA = `consec-A-${ts}`;
-    const phoneA = `010${String(ts).slice(-8)}`;
+    const phoneA = `DUMMY-${ts}`;
     const nameB = `consec-B-${ts + 1}`;
-    const phoneB = `010${String(ts + 1).slice(-8)}`;
+    const phoneB = `DUMMY-${ts + 1}`;
 
     // 서비스 ID 조회
     const { data: svcs } = await sb
@@ -198,7 +198,7 @@ test.describe('T-20260514-PAYMENT-CONSECUTIVE-STUCK — 연속 수납 멈춤 버
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const ts = Date.now();
     const testName = `consec-s2-${ts}`;
-    const testPhone = `010${String(ts).slice(-8)}`;
+    const testPhone = `DUMMY-${ts}`;
 
     const { data: svcs } = await sb
       .from('services')
@@ -283,7 +283,7 @@ test.describe('T-20260514-PAYMENT-CONSECUTIVE-STUCK — 연속 수납 멈춤 버
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const ts = Date.now();
     const testName = `consec-s3-${ts}`;
-    const testPhone = `010${String(ts).slice(-8)}`;
+    const testPhone = `DUMMY-${ts}`;
 
     const { data: svcs } = await sb
       .from('services')

@@ -38,7 +38,7 @@ test.describe('T-20260515-PAYMENT-MINI-WINDOW — 결제 미니창 Phase 1', () 
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `mini-pay-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // 테스트 고객 + payment_waiting 체크인 시드
     const { data: customer, error: custErr } = await sb
@@ -172,7 +172,7 @@ test.describe('T-20260515-PAYMENT-MINI-WINDOW — 결제 미니창 Phase 1', () 
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `empty-pay-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     const { data: customer } = await sb
       .from('customers')
@@ -263,7 +263,7 @@ test.describe('T-20260515-PAYMENT-MINI-WINDOW — 결제 미니창 Phase 1', () 
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `doc-settle-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // 시드
     const { data: customer, error: custErr } = await sb

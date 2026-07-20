@@ -32,7 +32,7 @@ async function seedCustomerWithPackages() {
   const client = sb();
   const ts = Date.now();
   const name = `z2-pkg-hide-${ts}`;
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `DUMMY-${ts}`;
 
   const { data: customer, error: custErr } = await client
     .from('customers')

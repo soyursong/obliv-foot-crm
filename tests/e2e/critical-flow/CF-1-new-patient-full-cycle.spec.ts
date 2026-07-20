@@ -35,7 +35,7 @@ test.describe('CF-1 신규 환자 풀 사이클', () => {
 
   const TS = Date.now();
   const TEST_NAME = `cf1-new-${TS}`;
-  const TEST_PHONE = `010${String(TS).slice(-8)}`;
+  const TEST_PHONE = `DUMMY-${TS}`;
   let testCheckInId: string | null = null;
   let testCustomerId: string | null = null;
 

@@ -30,7 +30,7 @@ async function seedCustomerWithPackages() {
   const client = sb();
   const ts = Date.now();
   const name = `pkg-zero-hide-${ts}`;
-  const phone = `010${String(ts).slice(-8)}`;
+  const phone = `DUMMY-${ts}`;
 
   const { data: customer, error: custErr } = await client
     .from('customers')
@@ -234,7 +234,8 @@ test.describe('T-20260520-foot-PKG-ZERO-HIDE — UI 스모크', () => {
       await page.waitForLoadState('networkidle');
 
       const searchInput = page.getByPlaceholder(/이름|전화|검색/).first();
-      await searchInput.fill(seed.customer.phone);
+      // 시드 phone 이 DUMMY-* 결정적 토큰(E.164 CHECK 정합)이라 전화검색 매칭이 불확실 → 이름으로 검색(후속 클릭도 이름 기준).
+      await searchInput.fill(seed.customer.name);
       await page.waitForTimeout(500);
 
       // 고객 행 클릭 또는 차트 링크 찾기

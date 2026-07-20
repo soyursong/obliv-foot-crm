@@ -27,7 +27,7 @@ test.describe('T-20260514-PAYMENT-AUTO-DONE — 결제 완료 자동 done 전환
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `auto-done-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // 테스트 고객 + payment_waiting 체크인 시드
     const { data: customer, error: custErr } = await sb
@@ -105,7 +105,7 @@ test.describe('T-20260514-PAYMENT-AUTO-DONE — 결제 완료 자동 done 전환
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `cancel-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     // 테스트 고객 + payment_waiting 체크인 시드
     const { data: customer, error: custErr } = await sb
@@ -163,7 +163,7 @@ test.describe('T-20260514-PAYMENT-AUTO-DONE — 결제 완료 자동 done 전환
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const testName = `consult-flow-test-${Date.now()}`;
-    const testPhone = `010${String(Date.now()).slice(-8)}`;
+    const testPhone = `DUMMY-${Date.now()}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')

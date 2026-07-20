@@ -66,7 +66,7 @@ test.describe('T-20260716 GONGHOM-ADD — DB 계약(순수 ADDITIVE)', () => {
     test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
     const { data, error } = await sb!
       .from('customers')
-      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `010${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: '공홈' })
+      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `DUMMY-${Date.now()}`, visit_type: 'new', visit_route: '공홈' })
       .select('id, visit_route')
       .single();
     expect(error, "visit_route='공홈' CHECK 통과 실패").toBeNull();
@@ -101,7 +101,7 @@ test.describe('T-20260716 GONGHOM-ADD — DB 계약(순수 ADDITIVE)', () => {
     test.skip(!sb || !clinicId, 'DB env / clinic 없음 — 스킵');
     const { data, error } = await sb!
       .from('customers')
-      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `010${String(Date.now()).slice(-8)}`, visit_type: 'new', visit_route: '네이버' })
+      .insert({ clinic_id: clinicId, name: TEST_TAG, phone: `DUMMY-${Date.now()}`, visit_type: 'new', visit_route: '네이버' })
       .select('id, visit_route')
       .single();
     expect(error, "visit_route='네이버' 존치 실패").toBeNull();

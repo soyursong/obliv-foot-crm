@@ -40,7 +40,7 @@ test.describe('B-2 드래그 리스케줄 + 감사 로그 (foot-044)', () => {
 
     // 2) 임시 customer
     const phoneSuffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
-    const phone = `010${phoneSuffix}`;
+    const phone = `DUMMY-${phoneSuffix}`;
     const { data: customer, error: cErr } = await service
       .from('customers')
       .insert({ clinic_id: clinicId, name: `RS테스트_${phoneSuffix.slice(-4)}`, phone })
@@ -107,7 +107,7 @@ test.describe('B-2 드래그 리스케줄 + 감사 로그 (foot-044)', () => {
     const clinicId = clinic!.id;
 
     const phoneSuffix = String(Math.floor(Math.random() * 1_0000_0000)).padStart(8, '0');
-    const phone = `010${phoneSuffix}`;
+    const phone = `DUMMY-${phoneSuffix}`;
     const { data: customer } = await service
       .from('customers')
       .insert({ clinic_id: clinicId, name: `CR테스트_${phoneSuffix.slice(-4)}`, phone })

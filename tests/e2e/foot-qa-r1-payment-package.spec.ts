@@ -33,9 +33,10 @@ test.describe('QA-R1 PaymentDialog (foot-058)', () => {
     let testCustomerId: string | null = null;
     if (!cards || cards.length === 0) {
       // 테스트용 임시 시드
+      const qaPhone = `DUMMY-${Date.now()}`;
       const { data: c } = await sb
         .from('customers')
-        .insert({ clinic_id: CLINIC_ID, name: 'qa-r1-pay', phone: '01098580001', visit_type: 'new' })
+        .insert({ clinic_id: CLINIC_ID, name: 'qa-r1-pay', phone: qaPhone, visit_type: 'new' })
         .select()
         .single();
       testCustomerId = c?.id ?? null;
@@ -45,7 +46,7 @@ test.describe('QA-R1 PaymentDialog (foot-058)', () => {
           clinic_id: CLINIC_ID,
           customer_id: testCustomerId,
           customer_name: 'qa-r1-pay',
-          customer_phone: '01098580001',
+          customer_phone: qaPhone,
           visit_type: 'new',
           status: 'payment_waiting',
           queue_number: 999,
@@ -70,7 +71,7 @@ test.describe('QA-R1 PaymentDialog (foot-058)', () => {
 
   test('패키지 결제 — DB 직접 흐름 검증 (PaymentDialog 클라이언트 호출 패턴)', async () => {
     const sb = createClient(SUPA_URL, SERVICE_KEY);
-    const TEST_PHONE = `010${String(Date.now()).slice(-8)}`;
+    const TEST_PHONE = `DUMMY-${Date.now()}`;
     const { data: customer } = await sb
       .from('customers')
       .insert({ clinic_id: CLINIC_ID, name: `qa-r1-pkg-${Date.now()}`, phone: TEST_PHONE, visit_type: 'new' })

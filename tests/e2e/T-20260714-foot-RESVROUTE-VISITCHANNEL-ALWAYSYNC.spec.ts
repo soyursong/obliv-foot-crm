@@ -43,7 +43,7 @@ const sb: SupabaseClient | null = dbReady
 const TEST_TAG = 'E2E-RESVROUTE-ALWAYSYNC';
 // 픽스처 전용 유니크 번호(빠른 연속 insert 충돌 방지 — 단조 카운터 + ms).
 let phoneSeq = 0;
-const phone = () => `010${String(Date.now()).slice(-6)}${String(phoneSeq++).padStart(2, '0')}`;
+const phone = () => `DUMMY-${String(Date.now()).slice(-6)}${String(phoneSeq++).padStart(2, '0')}`;
 
 let clinicId: string | null = null;
 

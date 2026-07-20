@@ -58,7 +58,7 @@ test.describe('T-20260523-foot-LASER-TIMER — AC-1 위치(2번차트) + 확인 
     await sb.from('clinics').update({ laser_time_units: [5, 15, 20] }).eq('slug', CLINIC_SLUG);
 
     seededName = `laser-timer-qa-${Date.now()}`;
-    const phone = `010${String(Date.now()).slice(-8)}`;
+    const phone = `DUMMY-${Date.now()}`;
 
     const { data: customer, error: custErr } = await sb
       .from('customers')

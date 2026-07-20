@@ -47,7 +47,7 @@ test.describe('T-20260516-foot-RESV-MEMO-C1-SYNC — 1번차트 예약메모 연
       .insert({
         clinic_id: clinicId,
         name: `C1메모테스트_${suffix.slice(-4)}`,
-        phone: `010${suffix}`,
+        phone: `DUMMY-${suffix}`,
       })
       .select('id')
       .single();
@@ -61,7 +61,7 @@ test.describe('T-20260516-foot-RESV-MEMO-C1-SYNC — 1번차트 예약메모 연
         clinic_id: clinicId,
         customer_id: customerId,
         customer_name: `C1메모테스트_${suffix.slice(-4)}`,
-        customer_phone: `010${suffix}`,
+        customer_phone: `DUMMY-${suffix}`,
         reservation_date: '2099-12-31',
         reservation_time: '11:00:00',
         visit_type: 'new',
