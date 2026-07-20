@@ -901,6 +901,14 @@ function ReceiptUploadSection({
     // AC3: 카메라 촬영 취소·빈 FileList(일부 모바일 브라우저의 빈 onChange 발화) 안전 early return.
     if (!files || files.length === 0) { diagReceiptDlg('upload:empty-filelist'); return; }
     diagReceiptDlg('upload:start', { count: files.length });
+    // ── T-20260720-foot-CONSULT-RECEIPT-UPLOAD-TABLET-POPUP ('템플릿으로 업로드' 등 무거운 외부앱 경로 커버) ──
+    //   상담내역 결제영수증 업로드는 단일 handleUpload 경로뿐(별도 '템플릿 업로드 핸들러' 없음). 선행 a89c198d는
+    //   오픈 의도 stamp를 'await upload + await load() 완료 후'(성공 말미)에야 기록했다. 갤러리 선택(일반)은
+    //   가볍고 즉시 반환돼 stamp까지 도달하지만, '템플릿으로 업로드'(삼성 태블릿 문서스캔 등 무거운 외부 앱)는
+    //   업로드/네트워크 대기 중 Android가 렌더러 프로세스를 종료 → 탭 재로드 → stamp 미기록 → 마운트 복원이
+    //   읽을 스탬프가 없어 팝업 미생성. FIX = 파일 선택이 확정된 '업로드 착수 시점'에 stamp를 먼저 persist해,
+    //   업로드가 어느 지점에서 중단·재로드돼도(영수증은 이미 올라감) 복원이 팝업을 보장. 경로 무관(path-agnostic).
+    try { pendingDlgStore.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
     setUploading(true);
     let uploadedOk = false;
     try {
@@ -915,12 +923,14 @@ function ReceiptUploadSection({
       setUploading(false);
       e.target.value = '';
     }
-    if (!uploadedOk) { diagReceiptDlg('upload:none-ok'); return; }
+    if (!uploadedOk) {
+      diagReceiptDlg('upload:none-ok');
+      // 전량 실패/취소 → 착수 시점 stamp 정리 (시나리오3: 실패·취소 시 팝업 미생성 유지).
+      try { pendingDlgStore.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
+      return;
+    }
     await load().catch(() => {}); // 썸네일 갱신 — 비차단(실패해도 다이얼로그 진행).
-    // ── T-20260717 (가설A 타겟픽스): 무거운 귀속후보 재조회 이전에 다이얼로그를 즉시 오픈 ──
-    //   + 오픈 의도를 pendingDlgStore(localStorage)에 스탬프 → 카메라 앱 전환 중 프로세스 종료·탭 재로드에도
-    //   마운트 복원으로 팝업을 보장한다. (기존: await 체인 말미 setAmountDlg → 체인 중단 시 팝업 소실)
-    try { pendingDlgStore.setItem(PENDING_DLG_KEY, String(Date.now())); } catch { /* private mode */ }
+    // 업로드 성공 — stamp는 착수 시점에 이미 기록됨(재로드 내성). 무거운 재조회 이전에 즉시 오픈.
     openAmountDialog();
     diagReceiptDlg('dialog:opened');
     // 귀속후보 최신화 — 오픈 이후 비차단 갱신(실패해도 다이얼로그 유지). loadActivePkgs/loadWaitingCIs
