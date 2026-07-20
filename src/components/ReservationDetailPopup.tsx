@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
 import { RESV_TIME_GRID } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
+import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD, formatDateDots, todaySeoulISODate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -1102,9 +1102,13 @@ export function ReservationDetailPopup({
       setBusy(false);
       return;
     }
+    // T-20260721-foot-DASHBOARD-CHECKIN-ERROR: 발번 버킷은 실제 체크인이 떨어지는 날(checked_in_at=now()
+    //   의 KST 날짜)과 일치해야 한다. UNIQUE 인덱스(idx_checkins_clinic_date_queue)=kst_date(checked_in_at).
+    //   기존 reservation.reservation_date 는 예약 날짜라 KST-today 와 다르면(야간/과거예약 접수) 잘못된
+    //   버킷 MAX+1 발번 → 충돌 위험. KST today 로 통일(NewCheckInDialog/Dashboard 와 동일 SSOT).
     const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: reservation.clinic_id,
-      p_date: reservation.reservation_date,
+      p_date: todaySeoulISODate(),
     });
     if (qErr) { toast.error(`대기번호 생성 실패: ${qErr.message}`); setBusy(false); return; }
     // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 초진/재진 분류 기준을 stored reservation.visit_type 에서
