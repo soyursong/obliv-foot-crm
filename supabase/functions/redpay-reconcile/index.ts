@@ -53,12 +53,16 @@ import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" 
 //   payment_reconciliation_log.center = canonical brand 토큰 {'foot','body'} (DA
 //   da_decision_body_redpay_center_column_20260714.md). merchant band 로 명시 파생 —
 //   default-mapping 금지(미분류를 조용히 'foot'로 흘리면 풋 recon 오염 = AC4 위반).
-//     · foot 17-set merchant  → center='foot'
+//     · foot 26-set merchant  → center='foot'  (17→26 확장 T-20260720-...-WHITELIST-EXPAND)
 //     · 도수(재활,body) 14-band(1777274-276) → center='body'
 //   band↔center 는 폴러 DEFAULT(scripts/redpay_macstudio_poller.mjs)와 미러. 값 표준 canonical
+//   SSOT = redpay_foot_terminal_registry.md §2 26-set(last_verified 2026-07-20, FOOT-CONFIRMED ADDITIVE).
 //   ⇒ ⛔ 'dohsu'/'dosu'(display alias) ⛔ 'body_rehab'(축오염). 재활도 center='body'.
 const FOOT_MERCHANT_SET = new Set<string>([
-  "1777285001", "1777285004", "1777288001", "1777288004",
+  "1777285001", "1777285003", "1777285004", "1777285005", "1777285006",
+  "1777285007", "1777285008",             // VAN7
+  "1777288001", "1777288003", "1777288004", "1777288005", "1777288006",
+  "1777288008",                           // 유선6
   "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
   "1777289006", "1777289007", "1777289008",
   "1777289009", "1777289010", "1777289011", "1777289012", "1777289013",
