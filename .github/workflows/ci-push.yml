@@ -105,13 +105,16 @@ jobs:
     name: "🗂️ Chart Open Gate"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # T-20260713-foot-CI-E2E-RED-DIAGNOSE: critical-flow 와 chart-open-gate 는
-    #   동일 shared-DB(rxlomoozakkjesdqjtvd)에 [QA-FIXTURE] 를 write 하고, global-setup/teardown
-    #   의 cleanupAll() 이 마커로 전수 스윕한다. 두 job 이 동시(needs:[build] 병렬) 실행되면
-    #   한 job 의 스윕이 다른 job 의 in-flight 시드(예: G3/G4 어제 예약)를 삭제 → 카드 소멸 →
-    #   resvStatus=null(no_show 아님) → skip 미발동 → 교대성 하드 RED.
-    #   → chart-open-gate 를 critical-flow 뒤로 직렬화해 동시 스윕 레이스를 원천 차단.
-    needs: [build, critical-flow]
+    # T-20260713-foot-CI-E2E-RED-DIAGNOSE 는 chart-open-gate 를 critical-flow 뒤로 **직렬화**해
+    #   두 job 의 동시 cleanupAll() 스윕 레이스를 막았다. 그러나 이 직렬화는 critical-flow flaky RED
+    #   가 chart-open-gate 를 **영구 skip** 시켜 AC-3(≥10 rerun green) 증빙을 구조적으로 막았다
+    #   (T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN QA#2).
+    # 이제 두 job 의 시드가 모두 run-scoped 마커(`[QA-FIXTURE]|token|ts`)라서 cleanupAll() 의
+    #   전수 스윕이 서로의 in-flight 시드를 삭제할 수 없다(cross-run·cross-job race 원천 차단,
+    #   fixtures.ts cleanupAll 1c/§4 scoped 제외 + seedCheckIn/seedReservation scoped 마커).
+    #   → 직렬화 불필요. build 만 의존시켜 critical-flow 결과와 **독립** 병렬 실행한다
+    #     (critical-flow flaky 여부와 무관하게 chart-open-gate 가 항상 실행 → AC-3 증빙 생성 가능).
+    needs: [build]
 
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}

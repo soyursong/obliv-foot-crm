@@ -75,6 +75,11 @@ export function runMarker(): string {
 }
 // scoped row(파이프 포함) 전용 LIKE 패턴. bare '[QA-FIXTURE]'(파이프 없음)는 매칭 제외.
 const SCOPED_LIKE = `${MARKER}|%`;
+const SCOPED_PREFIX = `${MARKER}|`;
+/** memo/notes 값이 run-scoped 마커(`[QA-FIXTURE]|token|ts`)인가. */
+function isScopedMarker(v: unknown): boolean {
+  return typeof v === 'string' && v.startsWith(SCOPED_PREFIX);
+}
 // leak 된 scoped row 를 stale 로 간주하는 TTL. 라이브 spec 은 분 단위로 끝나므로
 //   2h 초과분은 crash 로 남은 잔재로 판정(동시 run 의 fresh row 는 절대 미포함).
 const SCOPED_STALE_TTL_MS = 2 * 60 * 60 * 1000;
@@ -175,7 +180,12 @@ export async function seedCheckIn(opts: {
       name,
       phone,
       visit_type: opts.visit_type ?? 'new',
-      memo: MARKER,
+      // run-scoped 마커(T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN §critical-flow 확장):
+      //   critical-flow(CF-1..5)·다수 spec 이 이 시더를 쓴다. bare MARKER 는 동시 실행 중인
+      //   다른 CI run 의 cleanupAll() 전수 스윕에 in-flight 상태로 삭제돼 교대성 RED 를 유발했다.
+      //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 바꿔 cross-run 스윕에서 격리한다(chart-open-gate
+      //   시더와 동일 스킴). 정리는 sweepScoped('run'/'stale') + 개별 cleanup(id) + REGISTRY.
+      memo: runMarker(),
       // AC-2: sim 플래그. is_simulation 컬럼은 customers 에만 존재(20260420000006_simulation_flag)
       //   → 연관 check_ins/packages/reservations 는 customer 링크로 필터되므로 여기 1곳이면 충분.
       //   기본 false(대시보드 가시성 계약 보존, 위 opts.simulation 주석 참조).
@@ -211,7 +221,8 @@ export async function seedCheckIn(opts: {
         // 실제 체크인은 항상 checked_in_at 보유. 대시보드 카드 쿼리가
         // checked_in_at 오늘범위(gte/lte)로 필터하므로 미설정 시 카드가 안 뜬다.
         checked_in_at: checkedInAt,
-        notes: MARKER,
+        notes: runMarker(), // scoped 마커(위 memo 주석 참조) — cross-run cleanupAll 격리
+
       })
       .select('id')
       .single();
@@ -295,7 +306,8 @@ export async function seedReservation(opts: {
       reservation_time: opts.time ?? '14:00',
       visit_type: opts.visit_type ?? 'new',
       status: 'confirmed',
-      memo: MARKER,
+      memo: runMarker(), // scoped 마커(seedCheckIn 주석 참조) — cross-run cleanupAll 격리
+
     })
     .select('id')
     .single();
@@ -357,6 +369,18 @@ async function selectAllValues(build: () => RangeQB, column: string): Promise<st
       const v = r[column];
       if (v) out.push(v as string);
     }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/** build() 가 만든 select 쿼리를 .range() 로 전수 페이지네이션해 원본 레코드를 모은다. */
+async function selectAllRecords(build: () => RangeQB): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error || !data) break;
+    for (const r of data) out.push(r);
     if (data.length < PAGE) break;
   }
   return out;
@@ -426,13 +450,19 @@ export async function cleanupAll(): Promise<CleanupSummary> {
   ).forEach((id) => customerIds.add(id));
 
   // 1c) customers(name ilike 'qa-fixture-%' / 'qa-res-%') — 마커 누락 방어
+  //   ⚠ cross-run 격리(T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN §critical-flow 확장):
+  //     시더가 이제 memo 를 run-scoped(`[QA-FIXTURE]|token|ts`)로 쓴다. 이름접두는 여전히
+  //     'qa-fixture-'/'qa-res-' 라서 이 branch 가 **다른 run 의 in-flight scoped 시드**까지
+  //     이름만으로 삭제하면 cross-run cleanup race 가 그대로 남는다. → memo 가 scoped 인 row 는
+  //     이 전수 스윕에서 제외한다(그 row 는 소유 run 의 sweepScoped('run')/TTL('stale') 소관).
+  //     memo=NULL(마커 누락 회귀) 또는 bare MARKER 인 이름접두 row 만 여기서 회수한다.
   for (const prefix of FIXTURE_NAME_PREFIXES) {
-    (
-      await selectAllValues(
-        () => sb.from('customers').select('id').ilike('name', `${prefix}%`) as unknown as RangeQB,
-        'id',
-      )
-    ).forEach((id) => customerIds.add(id));
+    for (const r of await selectAllRecords(
+      () => sb.from('customers').select('id, memo').ilike('name', `${prefix}%`) as unknown as RangeQB,
+    )) {
+      if (isScopedMarker(r['memo'])) continue; // 다른 run 의 scoped 시드 — 미접촉
+      if (r['id']) customerIds.add(r['id'] as string);
+    }
   }
 
   // 1d) 레지스트리 등록분 합집합 (AC-3) — test 가 name/memo 를 커스텀으로 덮어써 마커/이름
@@ -478,12 +508,13 @@ export async function cleanupAll(): Promise<CleanupSummary> {
     await selectAllValues(() => sb.from('reservations').select('id').eq('memo', MARKER) as unknown as RangeQB, 'id')
   ).forEach((id) => resIds.add(id));
   for (const prefix of FIXTURE_NAME_PREFIXES) {
-    (
-      await selectAllValues(
-        () => sb.from('reservations').select('id').ilike('customer_name', `${prefix}%`) as unknown as RangeQB,
-        'id',
-      )
-    ).forEach((id) => resIds.add(id));
+    // 1c 와 동일 격리: memo 가 scoped 인 다른 run 의 in-flight 예약은 제외(sweepScoped 소관).
+    for (const r of await selectAllRecords(
+      () => sb.from('reservations').select('id, memo').ilike('customer_name', `${prefix}%`) as unknown as RangeQB,
+    )) {
+      if (isScopedMarker(r['memo'])) continue;
+      if (r['id']) resIds.add(r['id'] as string);
+    }
   }
   REGISTRY.reservations.forEach((id) => resIds.add(id)); // AC-3 레지스트리 합집합
   const resIdArr = Array.from(resIds);
