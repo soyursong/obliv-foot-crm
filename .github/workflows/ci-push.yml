@@ -68,6 +68,14 @@ jobs:
       TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
+      # T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN QA#3 (CI-RED-MAIN-RESOLVE 미머지분 흡수):
+      #   CF-1 "칸반 카드 발견"(exam_waiting)도 seedCheckIn(checked_in_at=new Date() UTC now) 후
+      #   대시보드 칸반 가시성을 assert 한다. 대시보드 칸반 window 는 dateStr(브라우저-로컬 TZ)
+      #   기준 `T00:00..23:59:59+09:00` — CI node·chromium 기본 UTC 이면 UTC 15:00~24:00(KST
+      #   00:00~09:00) 구간에 dateStr 이 전날로 굳어 window 끝이 now 이전 → 시드 카드 배제 →
+      #   타임아웃 하드 RED(= supervisor 가 관측한 "동일 signature", 실은 cleanup race 아닌 TZ 경계).
+      #   운영 태블릿과 동일 KST 로 정렬해 봉합(회귀검출 무력화 아님 — 시드 카드가 실제로 떠야 GREEN).
+      TZ: "Asia/Seoul"
 
     steps:
       - uses: actions/checkout@v4
@@ -124,6 +132,15 @@ jobs:
       TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
+      # T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN QA#3 (RC 실증, trace run 29761362646):
+      #   G1(칸반 exam_waiting)이 CI TZ=UTC 하에서 UTC 15:00~24:00(KST 00:00~09:00) 구간에 돌면
+      #   대시보드 칸반 date-window(dateStr 브라우저-로컬 TZ 기준 `T00:00..23:59:59+09:00`)가
+      #   전날로 굳어 시드 카드(checked_in_at=UTC now)를 배제 → card.waitFor 결정적 타임아웃.
+      #   본 run 은 16:35Z(=01:35 KST)에 실행돼 정확히 그 구간 → G1 3회(retry 포함) 전부 RED,
+      #   반면 G3/G4(어제·wide window)는 GREEN. = cleanup race 아님·순수 TZ 경계(retry 무효).
+      #   node+chromium 을 운영 태블릿과 동일 Asia/Seoul 로 정렬해 봉합. 격리 디커플(needs:[build])은
+      #   유지 — CI-RED-MAIN-RESOLVE 미머지분의 재직렬화(needs:critical-flow)는 QA#2 가 금지한 구조.
+      TZ: "Asia/Seoul"
 
     steps:
       - uses: actions/checkout@v4
