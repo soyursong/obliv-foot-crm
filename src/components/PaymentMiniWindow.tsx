@@ -1660,6 +1660,84 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     loadZone3Data(checkIn);
   };
 
+  // ── T-20260721-foot-CALCOPAY-PIPELINE-RESTORE §2 ────────────────────────────
+  //   [RCA] 라이브 체크아웃은 payments 만 남기고 service_charges(본인/공단 split 명세 =
+  //   billing 감사·정산 정답 소스)를 안 남겨, 6/6 이후 신규 명세 0건(총 2행=수기 테스트).
+  //   진찰료(hira_category='consultation') 외 급여 시술엔 명세 write-path 가 부재했다
+  //   (record_insurance_consult_payment 는 consultation 단일 카테고리 전용).
+  //   [복구] 결제 확정 후 이 방문의 covered(급여) 시술을 calc_copayment(서버 단일권위)로
+  //   스냅샷 INSERT 해 명세 grain 을 재활성한다. 원칙:
+  //     · forward-only : 신규 방문만(기존 행 UPDATE·소급 절대 금지 — 소급은 별건 DESTRUCTIVE 게이트)
+  //     · best-effort  : never throw — 결제(payments/check_ins done)는 이미 커밋됨, 실패해도 무롤백
+  //     · idempotent   : 이 방문에 이미 있는 service_charge(service_id)는 skip
+  //                      (consult write-path 중복·재시도/더블클릭 방지)
+  //     · charge-only  : payments 무접촉(공단분 이중수납·중복 payment 방지)
+  //     · no-fabricate : calc data_incomplete(자격·수가 미비)=금액 날조 금지 → 해당 시술 skip(재정산 경로)
+  //   신규 DDL 불요(service_charges·calc_copayment 기존 오브젝트 재사용). 명세 grain 은 SSOT
+  //   revenue_insurance_split(공단부담=service_charges) 계약 준수 = 소스 재활성이지 신규 축 아님.
+  const snapshotCoveredServiceCharges = async (visitDate: string) => {
+    if (!checkIn.customer_id) return;
+    // 급여 시술 고유 집합 (code/상병 항목 제외 = pricingItems 기준)
+    const covered = Array.from(
+      new Map(
+        pricingItems
+          .filter(({ service }) => service.is_insurance_covered === true)
+          .map(({ service }) => [service.id, service]),
+      ).values(),
+    );
+    if (covered.length === 0) return;
+    // 이 방문에 이미 적재된 명세(service_id) — consult write-path/재시도 중복 방지
+    const { data: existing } = await supabase
+      .from('service_charges')
+      .select('service_id')
+      .eq('check_in_id', checkIn.id);
+    const already = new Set((existing ?? []).map((r) => r.service_id as string));
+    const rows: Array<Record<string, unknown>> = [];
+    for (const svc of covered) {
+      if (already.has(svc.id)) continue;
+      const { data: calc, error: calcErr } = await supabase.rpc('calc_copayment', {
+        p_service_id: svc.id,
+        p_customer_id: checkIn.customer_id,
+        p_clinic_id: checkIn.clinic_id,
+        p_visit_date: visitDate,
+      });
+      if (calcErr) {
+        console.warn('service_charges 스냅샷 calc_copayment 실패:', svc.id, calcErr.message);
+        continue;
+      }
+      const r = (Array.isArray(calc) ? calc[0] : calc) as {
+        base_amount: number;
+        insurance_covered_amount: number;
+        copayment_amount: number;
+        exempt_amount: number;
+        applied_rate: number | null;
+        applied_grade: string | null;
+        data_incomplete: boolean;
+      } | null;
+      if (!r) continue;
+      if (r.data_incomplete) continue; // 자격/수가 미비 = 금액 날조 금지, 재정산 경로 위임
+      rows.push({
+        clinic_id: checkIn.clinic_id,
+        check_in_id: checkIn.id,
+        customer_id: checkIn.customer_id,
+        service_id: svc.id,
+        is_insurance_covered: true,
+        hira_score: svc.hira_score ?? null,
+        base_amount: r.base_amount,
+        insurance_covered_amount: r.insurance_covered_amount,
+        copayment_amount: r.copayment_amount,
+        exempt_amount: r.exempt_amount,
+        customer_grade_at_charge: r.applied_grade,
+        copayment_rate_at_charge: r.applied_rate,
+        calculation_engine_version: 'pmw_checkout_snapshot_v1',
+      });
+    }
+    if (rows.length > 0) {
+      const { error } = await supabase.from('service_charges').insert(rows);
+      if (error) console.warn('service_charges 스냅샷 INSERT 실패:', error.message);
+    }
+  };
+
   // ── executeAutoDone ────────────────────────────────────────────────────────
   // T-20260616-foot-PMW-SPLIT-PAYMENT AC-3/AC-4:
   //   splits = [{method, amount}] N개 → payments 행 N개를 동일 check_in_id로 분리 insert.
@@ -1816,6 +1894,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
     // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
     await promoteVisitTypeToReturning(checkIn.customer_id);
+
+    // T-20260721-foot-CALCOPAY-PIPELINE-RESTORE §2: 급여 명세 스냅샷 재활성 (best-effort).
+    //   결제(payments/check_ins done)는 이미 커밋 완료 → 스냅샷 실패해도 결제 흐름 무영향.
+    try {
+      const visitDate =
+        checkIn.checked_in_at?.slice(0, 10) ??
+        new Date().toISOString().slice(0, 10);
+      await snapshotCoveredServiceCharges(visitDate);
+    } catch (scErr) {
+      console.error('service_charges 명세 스냅샷 실패(결제는 정상 완료):', scErr);
+    }
   };
 
   // ── T-20260616-foot-PMW-SPLIT-PAYMENT: 수납 splits 빌더 ─────────────────────
