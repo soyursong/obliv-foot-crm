@@ -39,6 +39,24 @@ import { supabase } from '@/lib/supabase';
 /** admin 노출을 현장이 명시 요청한 테스트 페르소나 이름(화이트리스트). */
 export const EXPOSED_SIM_NAMES: ReadonlySet<string> = new Set(['토마토']);
 
+/**
+ * E2E 픽스처 지문(fingerprint) — admin surface 노출 예외 (T-20260721-foot-E2E-FIXTURE-SELFID).
+ *
+ * 야간 Daily Build E2E 픽스처는 이제 is_simulation=true 로 자기식별한다(AC-1). 그 자체로는
+ * stripSimulationRows 가 admin 칸반/예약목록에서 숨겨 가시성 assert spec(PKGBOX·CF·DASH…)을
+ * 깨므로, 픽스처는 phone='DUMMY-%' 지문을 노출 예외로 둔다 → run 중 admin surface 에 그대로 보임.
+ *
+ * ⚠ 실데이터 안전: 이 예외는 **is_simulation=true 집합 안에서만** 적용된다(아래 조회가
+ *   is_simulation=true 로 이미 필터). 실환자는 절대 is_simulation=true 가 아니므로 노출 예외가
+ *   실데이터·실환자 뷰를 건드릴 수 없다. 무전화 외국인 셀프접수(phone=DUMMY-%)도 실환자라
+ *   is_simulation=false → 애초에 숨김 대상이 아님(항상 노출). prod 엔 픽스처가 없어 no-op.
+ *   매출은 excludeSimulationPaymentRows 가 화이트리스트 무관 전 sim 제외 → 표시매출 무오염.
+ */
+function isExposedFixture(c: { name: string | null; phone: string | null }): boolean {
+  if (EXPOSED_SIM_NAMES.has((c.name ?? '').trim())) return true; // 명시 페르소나(토마토)
+  return (c.phone ?? '').startsWith('DUMMY-'); // E2E 픽스처 지문
+}
+
 export async function stripSimulationRows<R extends { customer_id?: string | null }>(
   rows: R[],
 ): Promise<R[]> {
@@ -50,17 +68,17 @@ export async function stripSimulationRows<R extends { customer_id?: string | nul
 
   const { data, error } = await supabase
     .from('customers')
-    .select('id, name')
+    .select('id, name, phone')
     .in('id', ids)
     .eq('is_simulation', true);
 
   // 조회 실패 또는 시뮬레이션 0건 → 원본 유지(실데이터 누락 방지 우선)
   if (error || !data || data.length === 0) return rows;
 
-  // 숨길 sim = is_simulation=true 이면서 화이트리스트(EXPOSED_SIM_NAMES)에 없는 고객
+  // 숨길 sim = is_simulation=true 이면서 노출 예외(화이트리스트 페르소나 또는 E2E 픽스처 지문)가 아닌 고객
   const hiddenSim = new Set(
-    (data as { id: string; name: string | null }[])
-      .filter((c) => !EXPOSED_SIM_NAMES.has((c.name ?? '').trim()))
+    (data as { id: string; name: string | null; phone: string | null }[])
+      .filter((c) => !isExposedFixture(c))
       .map((c) => c.id),
   );
   if (hiddenSim.size === 0) return rows;

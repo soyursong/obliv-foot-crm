@@ -168,11 +168,34 @@ export const REGISTRY: {
   reservations: Set<string>;
 } = { customers: new Set(), checkIns: new Set(), packages: new Set(), reservations: new Set() };
 
-// E.164 한국 휴대폰 생성 — raw '010…' 저장은 Step1(DB CHECK, PHONE-E164-CHK-UNENFORCED)
-//   배포 후 fail-closed(22023)로 시드가 깨져 sim/CI 대량 fail → dev 파이프라인 파손을 부른다.
-//   시드부터 +8210… (E.164)로 정렬해 계약(cross_crm_data_contract phone E.164)을 강화한다.
-function e164Mobile(ts: number): string {
-  return `+8210${String(ts).slice(-8)}`;
+// ── 픽스처 자기식별(self-ID) (T-20260721-foot-E2E-FIXTURE-SELFID) ─────────────────
+//   RC(부모 TEST-DUMMY-CLEANUP AC-2 C2 fail-closed 의 구조적 근인): 야간 Daily Build E2E
+//   픽스처가 실 chart_no(F-####)·실포맷 phone(+8210…)·is_simulation=false 로 생성돼
+//   test-data 로 **자기식별하지 않았다**. → 매 cleanup 이 "이게 실환자인가?" 를 결정적 술어
+//   없이 판단할 수 없어 현장확인을 강제했고, 발번 트리거가 실 chart 시퀀스를 소모했다.
+//   해소: 픽스처 생성행이 (a) 단일 술어 is_simulation=true 만으로 100% 비실환자 확증되고,
+//         (b) phone 이 DUMMY-% (→ 트리거가 phone_dummy=true 자동 파생), (c) chart_number 가
+//         test 전용 네임스페이스(QA-FIX-…)라 실 F-#### 발번 트리거를 우회(=시퀀스 무소모).
+
+// 픽스처 전용 chart_number 접두 — 실 발번(F-####)과 완전 분리된 test 네임스페이스.
+//   assign_foot_customer_chart_number 트리거는 chart_number IS NULL/'' 일 때만 F-#### 를
+//   MAX+1 발번한다(20260505000000 / 20260624130000). 명시적 non-F 값을 넣으면 트리거가
+//   IF 분기를 건너뛰어 **실 시퀀스를 소모하지 않는다**(AC-2 (a): chart 발번 skip, db_change 없음).
+//   또한 MAX 계산은 `WHERE chart_number ~ '^F-[0-9]+$'` 라서 QA-FIX-… 는 MAX 에도 안 잡힌다.
+//   chart_number 는 customers_chart_number_unique(partial UNIQUE)라서 token+ts+rand 로 유일성 확보.
+export const TEST_CHART_PREFIX = 'QA-FIX-';
+function testChartNumber(ts: number): string {
+  return `${TEST_CHART_PREFIX}${runToken()}-${ts}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+// 픽스처 전용 더미 phone — AC-1: phone DUMMY-% prefix.
+//   customers_phone_e164_chk(20260713160000)가 `phone LIKE 'DUMMY-%'` 를 허용하고,
+//   is_dummy_phone(20260709120000)가 DUMMY-% 를 true 로 판정 → BEFORE INSERT 트리거가
+//   phone_dummy=true 를 client-agnostic 하게 자동 파생(AC-1 phone_dummy=true 충족).
+//   tail 을 digit-rich(ts+rand)로 유지해 phone 꼬리검색(RESV-DESIG-AUTOASSIGN 등) 호환.
+//   (clinic_id, phone) UNIQUE 회피를 위해 ts + random 조합.
+function dummyPhone(ts: number): string {
+  return `DUMMY-${runToken()}-${ts}${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}`;
 }
 
 export interface FixtureHandle {
@@ -187,22 +210,31 @@ export async function seedCheckIn(opts: {
   name?: string;
   package_id?: string;
   /**
-   * AC-2 (T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE): 시드 customer 를 is_simulation 으로 표기.
+   * 시드 customer 의 is_simulation 표기. **기본값 true** (T-20260721-foot-E2E-FIXTURE-SELFID / AC-1).
    *
-   * ⚠ dev=prod 단일 DB(rxlomoozakkjesdqjtvd) 제약상 이 플래그는 **양날**이다:
-   *   - true  → 혹시 teardown 실패로 leak 돼도 stripSimulationRows/excludeSimulationPaymentRows 가
-   *             실환자 뷰·매출집계에서 걸러줌(leak 위생). 그러나 run 중에도 admin 칸반/예약목록·매출에서
-   *             숨겨지므로 대시보드 가시성을 assert 하는 spec(PKGBOX·CF·DASH…)이 깨진다.
-   *   - false → run 중 fixture 가 admin surface 에 그대로 보여 기존 spec 통과(문서화된 비-sim 계약).
-   * 따라서 기본값 false(가시성 계약 보존). 대시보드 가시성에 무관한 하네스 경로만 true 로 opt-in.
-   * 근본 해소(leak 위생 + 가시성 양립)는 AC-4 dev/test DB 분리 이후에만 가능 → planner FOLLOWUP.
+   * AC-1 불변식: "모든 픽스처 생성행이 단일 술어 is_simulation=true 만으로 100% 비실환자 확증 가능".
+   *   → 야간 Daily Build cleanup 이 결정적 술어(is_simulation=true)로 test-data 를 판별해
+   *     현장확인 강제 없이 안전 삭제(부모 TEST-DUMMY-CLEANUP C2 fail-closed 의 구조적 근인 해소).
+   *
+   * 과거(T-20260718 AC-2)엔 기본값 false 였다 — is_simulation=true 가 stripSimulationRows 로
+   *   admin 칸반/예약목록에서 숨겨져 가시성 assert spec(PKGBOX·CF·DASH…)을 깨기 때문. 본 티켓은
+   *   그 가시성 충돌을 **DB 분리(AC-4) 없이** 해소한다: src/lib/simulationFilter.ts 의
+   *   stripSimulationRows 가 픽스처 지문(is_simulation=true AND phone LIKE 'DUMMY-%')을 노출
+   *   예외로 둔다 → run 중 fixture 가 admin surface 에 그대로 보여 기존 spec 통과. 매출은
+   *   excludeSimulationPaymentRows 가 화이트리스트 무관하게 전 sim 을 제외하므로 표시매출 무오염.
+   *   (실환자는 절대 is_simulation=true 가 아니므로 이 노출 예외가 실데이터를 건드릴 수 없음.)
+   *
+   * opt-out(false)은 is_simulation 미표기 상태를 명시 검증하는 극소수 하네스 경로 전용.
    */
   simulation?: boolean;
 }): Promise<FixtureHandle & { customerId: string; phone: string }> {
   const sb = svc();
   const ts = Date.now();
-  const phone = e164Mobile(ts); // AC-5: E.164 (+8210…) — Step1 DB CHECK 무파손
+  // AC-1: phone DUMMY-% → 트리거가 phone_dummy=true 자동 파생. CHECK(customers_phone_e164_chk) 허용.
+  const phone = dummyPhone(ts);
   const name = opts.name ?? `qa-fixture-${ts}`;
+  // AC-2 (a): test 전용 chart 네임스페이스 → 실 F-#### 발번 트리거 우회(시퀀스 무소모).
+  const chartNumber = testChartNumber(ts);
 
   const { data: c, error: cErr } = await sb
     .from('customers')
@@ -210,6 +242,12 @@ export async function seedCheckIn(opts: {
       clinic_id: CLINIC_ID,
       name,
       phone,
+      // AC-2 (a): 명시 chart_number(non-F) → assign_foot_customer_chart_number 트리거가
+      //   IF (chart_number IS NULL/'') 분기를 건너뛰어 실 F-#### 시퀀스를 소모하지 않는다.
+      chart_number: chartNumber,
+      // AC-1: phone_dummy=true. phone=DUMMY-% 이므로 트리거(customers_set_phone_dummy)가
+      //   어차피 true 로 override 하지만, 트리거 부재 DB 방어 위해 명시 set(belt-and-suspenders).
+      phone_dummy: true,
       visit_type: opts.visit_type ?? 'new',
       // run-scoped 마커(T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN §critical-flow 확장):
       //   critical-flow(CF-1..5)·다수 spec 이 이 시더를 쓴다. bare MARKER 는 동시 실행 중인
@@ -217,10 +255,11 @@ export async function seedCheckIn(opts: {
       //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 바꿔 cross-run 스윕에서 격리한다(chart-open-gate
       //   시더와 동일 스킴). 정리는 sweepScoped('run'/'stale') + 개별 cleanup(id) + REGISTRY.
       memo: runMarker(),
-      // AC-2: sim 플래그. is_simulation 컬럼은 customers 에만 존재(20260420000006_simulation_flag)
-      //   → 연관 check_ins/packages/reservations 는 customer 링크로 필터되므로 여기 1곳이면 충분.
-      //   기본 false(대시보드 가시성 계약 보존, 위 opts.simulation 주석 참조).
-      is_simulation: opts.simulation ?? false,
+      // AC-1: sim 플래그 기본 true(비실환자 단일 술어). is_simulation 컬럼은 customers 에만 존재
+      //   (20260420000006_simulation_flag) → 연관 check_ins/packages/reservations 는 customer
+      //   링크로 필터되므로 여기 1곳이면 충분. 가시성은 stripSimulationRows 노출 예외로 보존
+      //   (위 opts.simulation 주석 참조).
+      is_simulation: opts.simulation ?? true,
     })
     .select('id')
     .single();
@@ -499,6 +538,29 @@ export async function cleanupAll(): Promise<CleanupSummary> {
   // 1d) 레지스트리 등록분 합집합 (AC-3) — test 가 name/memo 를 커스텀으로 덮어써 마커/이름
   //     접두 스윕을 벗어난 row 도 정확한 id 로 회수. POST=DELETE 정합의 구조적 보장.
   REGISTRY.customers.forEach((id) => customerIds.add(id));
+
+  // 1e) is_simulation 앵커 결정적 스윕 (T-20260721-foot-E2E-FIXTURE-SELFID / AC-3) ──
+  //   픽스처가 이제 is_simulation=true + chart_number='QA-FIX-…'(test 전용 네임스페이스)로
+  //   자기식별한다. cleanup 술어를 이 결정적 마커에 정합시켜, memo/이름을 test 가 덮어써
+  //   1a~1c(마커·이름접두 = legacy fallback) 를 벗어난 잔재까지 **현장확인 없이** 회수한다.
+  //   ⚠ 안전 불변식: chart_number LIKE 'QA-FIX-%' 는 실환자/legacy sim(F-#### 또는 bulk명)과
+  //     절대 겹치지 않는 fixture-배타 키. is_simulation=true 를 AND 로 요구해 이중 안전
+  //     (실환자는 절대 is_simulation=true 아님 → 이 branch 가 실데이터를 건드릴 수 없음).
+  //   ⚠ cross-run 격리: 1c 와 동일. 픽스처는 scoped memo(`[QA-FIXTURE]|token|ts`)를 항상 쓰므로
+  //     동시 run 의 in-flight row 는 여기서 제외되고(소유 run 의 sweepScoped 소관), memo 가
+  //     NULL/bare 로 leak 된 잔재만 이 결정적 지문으로 회수한다.
+  for (const r of await selectAllRecords(
+    () =>
+      sb
+        .from('customers')
+        .select('id, memo')
+        .eq('clinic_id', CLINIC_ID)
+        .eq('is_simulation', true)
+        .like('chart_number', `${TEST_CHART_PREFIX}%`) as unknown as RangeQB,
+  )) {
+    if (isScopedMarker(r['memo'])) continue; // 다른 run 의 scoped 시드 — 미접촉
+    if (r['id']) customerIds.add(r['id'] as string);
+  }
 
   const customerIdArr = Array.from(customerIds);
 
