@@ -1,0 +1,35 @@
+═══════════════════════════════════════════════════════════
+T-20260721-foot-CUSTOMER-NAME-NFD-NFC-BACKFILL — DIAGNOSE-FIRST census
+DB: foot prod / ref=rxlomoozakkjesdqjtvd / read_only:true / write·DDL 0
+═══════════════════════════════════════════════════════════
+
+━━ STEP 1. NFD 지문 전수 census: char_length(name) <> char_length(normalize(name,NFC)) ━━
+전수 NFD 대상: 3건
+
+id(8)    | chart    | sim   | visit_route | raw_len | nfc_len | name_raw -> name_nfc
+---------|----------|-------|-------------|---------|---------|---------------------
+b734f069 | F-4818   | false | TM          | 9       | 3       | 백민석 -> 백민석
+f137fe98 | F-4903   | false | TM          | 9       | 3       | 강승은 -> 강승은
+0fc0752c | F-4920   | false | TM          | 9       | 3       | 천승환 -> 천승환
+
+━━ STEP 2. 분포 (freeze-set 격리 근거) ━━
+  is_simulation=false clinic=74967aea visit_route=TM → 3건
+
+━━ STEP 3. seed 3건(백민석/강승은/천승환) 확증 ━━
+  b734f069 chart=F-4818 raw='백민석'(len9) nfc='백민석' sim=false via=TM
+  f137fe98 chart=F-4903 raw='강승은'(len9) nfc='강승은' sim=false via=TM
+  0fc0752c chart=F-4920 raw='천승환'(len9) nfc='천승환' sim=false via=TM
+
+━━ STEP 4. 이름검색 실패 재현 (백필 전 기대: NFC 리터럴 검색 0건) ━━
+  '강승은': raw LIKE=0건 (백필 전 0 기대)  |  normalize(NFC) LIKE=1건 (백필 후 목표)
+  '백민석': raw LIKE=0건 (백필 전 0 기대)  |  normalize(NFC) LIKE=1건 (백필 후 목표)
+  '천승환': raw LIKE=0건 (백필 전 0 기대)  |  normalize(NFC) LIKE=1건 (백필 후 목표)
+
+━━ STEP 5. 파생 denormalize 사본(reservations.customer_name) NFD 잔존 census ━━
+  reservations.customer_name NFD 사본: 3건 (백필 스코프 확정에 참고 — 본 티켓 1차 대상=customers.name)
+  check_ins.customer_name NFD 사본: 1건 (참고)
+
+━━ STEP 6. freeze-set PK + rollback 원값 스냅샷 → JSON 산출 ━━
+  freeze-set(3건) → scripts/T-20260721-foot-CUSTOMER-NAME-NFD-NFC-BACKFILL_freeze.json (before/after/rollback 원값 보존)
+
+✅ census 완료 — write·DDL 0. gate_hold: DA CONSULT-REPLY(GO) 전 UPDATE 절대 금지.
