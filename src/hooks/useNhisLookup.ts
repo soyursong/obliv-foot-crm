@@ -226,10 +226,16 @@ export function useNhisLookup(
           const memo = lookupResult.effective_date
             ? `건보공단 API 자동조회 · 적용일 ${lookupResult.effective_date}`
             : '건보공단 API 자동조회';
-          await updateInsuranceGrade(customerId, lookupResult.grade, 'hira_lookup', memo);
+          // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: updateInsuranceGrade 가 0-row(사일런트
+          //   유실)를 error 로 승격하므로, 자동 갱신 경로도 반환 error 를 존중해 거짓 성공 toast 를 차단.
+          const { error: gradeErr } = await updateInsuranceGrade(customerId, lookupResult.grade, 'hira_lookup', memo);
           onGradeUpdated?.();
           if (!silent) {
-            toast.success('자격등급이 건보공단 API 조회 결과로 갱신되었습니다.');
+            if (gradeErr) {
+              toast.error(`자격등급 갱신 실패: ${gradeErr}`);
+            } else {
+              toast.success('자격등급이 건보공단 API 조회 결과로 갱신되었습니다.');
+            }
           }
         }
       } catch (err) {

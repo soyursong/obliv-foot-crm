@@ -3676,10 +3676,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     if (!customer) return;
     setSavingCertNo(true);
     const value = certNoText.trim() || null;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('customers')
       .update({ insurance_cert_no: value })
-      .eq('id', customer.id);
+      .eq('id', customer.id)
+      .select('id');
     setSavingCertNo(false);
     if (error) {
       // T-20260709-foot-INSURANCE-CERTNO-SAVE-TOAST: 컬럼 미적용 window(PGRST204 schema cache /
@@ -3692,6 +3693,14 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       } else {
         toast.error(`보험 증번호 저장 실패: ${error.message}`);
       }
+      return;
+    }
+    // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: rows-affected 검증(사일런트 유실 방어).
+    //   RLS 거부/스코프 불일치 시 error=null + 0-row 반환 → 낙관 반영(setCustomer)+거짓 성공 toast 로
+    //   DB 실재와 divergence. .select() 로 반영 행을 회수해 0-row 를 저장 실패로 판정하고 로컬 상태를
+    //   저장 전 값으로 유지한다.
+    if (!data || data.length === 0) {
+      toast.error('보험 증번호 저장 실패: 저장 대상을 찾지 못했습니다. 권한 또는 접속 상태를 확인한 뒤 다시 시도해 주세요.');
       return;
     }
     setCustomer((prev) => (prev ? { ...prev, insurance_cert_no: value } : prev));

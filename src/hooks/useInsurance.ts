@@ -180,7 +180,7 @@ export async function updateInsuranceGrade(
   source: InsuranceGradeSource,
   memo?: string | null,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('customers')
     .update({
       insurance_grade: grade,
@@ -188,8 +188,19 @@ export async function updateInsuranceGrade(
       insurance_grade_verified_at: new Date().toISOString(),
       insurance_grade_memo: memo ?? null,
     })
-    .eq('id', customerId);
-  return { error: error?.message ?? null };
+    .eq('id', customerId)
+    .select('id');
+  if (error) {
+    return { error: error.message };
+  }
+  // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: rows-affected 검증(사일런트 유실 방어).
+  //   RLS 거부/스코프 불일치/id 미존재 시 supabase 는 error=null + 0-row 를 반환 → 호출부가
+  //   "성공"으로 오인해 거짓 성공 toast + 로컬 상태 낙관 반영 → DB 실재와 divergence.
+  //   .select() 로 반영된 행을 회수해 0-row 를 저장 실패로 판정한다.
+  if (!data || data.length === 0) {
+    return { error: '저장 대상을 찾지 못했습니다. 권한 또는 접속 상태를 확인한 뒤 다시 시도해 주세요.' };
+  }
+  return { error: null };
 }
 
 /** 고객 등급 정보 단건 조회 */
