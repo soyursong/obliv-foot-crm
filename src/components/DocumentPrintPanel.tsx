@@ -127,6 +127,8 @@ import {
   fillBillItemCopayment,
   computeBillDetailRounding,
   computeBillReceiptNewCategoryBreakdown,
+  // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
+  applyBillReceiptNewCategoryTokens,
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
@@ -175,20 +177,8 @@ function parseAmountStr(v: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/**
- * AC-② 신양식 비급여 항목행 category 토큰 주입(표시 전용).
- *   {{proc_noncov}}=처치및수술료 비급여 / {{exam_noncov}}=검사료 비급여 / {{etc_noncov}}=잔여 비급여(기타 행).
- *   3버킷 합 = {{non_covered}}(④ 합계) 이므로 집계 grain 불변. 급여분은 진찰료 행 aggregate 유지(미접촉).
- */
-function applyBillReceiptNewCategoryTokens(
-  values: Record<string, string>,
-  billItems: Parameters<typeof computeBillReceiptNewCategoryBreakdown>[0],
-): void {
-  const bd = computeBillReceiptNewCategoryBreakdown(billItems);
-  values.proc_noncov = bd.procNonCov > 0 ? formatAmount(bd.procNonCov) : '';
-  values.exam_noncov = bd.examNonCov > 0 ? formatAmount(bd.examNonCov) : '';
-  values.etc_noncov = bd.etcNonCov > 0 ? formatAmount(bd.etcNonCov) : '';
-}
+// T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: applyBillReceiptNewCategoryTokens 는
+//   footBilling.ts SSOT 로 승격(export)됨 — 결제미니창(PATH-4)과 동일 토큰 주입 공유. import 로 소비.
 
 // T-20260522-foot-ALT-BADGE AC-12: 레이저 관련 서비스 판별 — category OR name 기반
 function isLaserService(svc: { service_code?: string | null; name?: string; category?: string }): boolean {

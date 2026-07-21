@@ -22,6 +22,7 @@
  */
 import { type InsuranceGrade, getBaseCopayRate, copayFromBase } from './insurance';
 import { supabase } from './supabase';
+import { formatAmount } from './format';
 
 // [CI-UNBLOCK] getBaseCopayRate 재수출(facade). footBilling 은 급여 본인부담 산정의 SSOT 파사드라
 //   copay 기본률 조회를 이 모듈 표면에서 함께 노출한다. T-20260715-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY
@@ -739,4 +740,24 @@ export function computeBillReceiptNewCategoryBreakdown(
     else etcNonCov += total;
   }
   return { procNonCov, examNonCov, etcNonCov };
+}
+
+/**
+ * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② 신양식 비급여 항목행 category 토큰 주입(표시 전용).
+ *   {{proc_noncov}}=처치및수술료 비급여 / {{exam_noncov}}=검사료 비급여 / {{etc_noncov}}=잔여 비급여(기타 행).
+ *   3버킷 합 = {{non_covered}}(④ 합계) 이므로 집계 grain 불변. 급여분은 진찰료 행 aggregate 유지(미접촉).
+ *
+ * T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 종전 DocumentPrintPanel 로컬 정의였으나, 결제미니창
+ *   (PaymentMiniWindow, PATH-4)이 동일 토큰을 주입하지 못해 결제창 인쇄 시 처치/검사 행이 공란이던 비대칭
+ *   드리프트를 없애기 위해 footBilling SSOT 로 승격(export). 두 컴포넌트가 동일 인자·동일 로직으로 소비한다.
+ *   순수 이전(로직/시그니처 무변) — DPP 기존 동작 회귀 0.
+ */
+export function applyBillReceiptNewCategoryTokens(
+  values: Record<string, string>,
+  billItems: Parameters<typeof computeBillReceiptNewCategoryBreakdown>[0],
+): void {
+  const bd = computeBillReceiptNewCategoryBreakdown(billItems);
+  values.proc_noncov = bd.procNonCov > 0 ? formatAmount(bd.procNonCov) : '';
+  values.exam_noncov = bd.examNonCov > 0 ? formatAmount(bd.examNonCov) : '';
+  values.etc_noncov = bd.etcNonCov > 0 ? formatAmount(bd.etcNonCov) : '';
 }

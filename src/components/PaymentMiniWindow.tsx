@@ -113,6 +113,9 @@ import {
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
   computeBillDetailRounding,
+  // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A/B: 신양식(bill_receipt_new) 비급여 category 토큰
+  //   주입 SSOT(footBilling 승격) — DPP 와 동일 인자로 소비해 결제미니창 인쇄 시 처치/검사 행 공란 해소.
+  applyBillReceiptNewCategoryTokens,
   type FootBillingItem,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE → T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK:
@@ -2032,6 +2035,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
       //   인쇄 전에 form_submissions INSERT + 처방전 교부번호 발행시점 채번·persist → 확정 교부번호(rxIssueNo)로 인쇄본 렌더.
       //   (구: print-first → insert(fire&forget). 순서재편 = 김주연 총괄 현장승인 2026-07-18.)
+      // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 B: 신양식(bill_receipt_new) 처치/검사 비급여 항목행
+      //   category 토큰 주입 — DPP applyBillReceiptNewCategoryTokens 와 동일 인자(buildPmwBillDetailItems).
+      //   종전 PMW엔 proc_noncov 주입 전무 → 결제미니창 인쇄 시 처치/검사 행 공란. 3버킷 합=non_covered 정합(표시 전용).
+      if (
+        selected.some((t) => t.form_key === 'bill_receipt_new' || t.form_key === 'bill_receipt' || t.form_key === 'bill_detail') &&
+        pricingItems.length > 0
+      ) {
+        applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+      }
       const isFallback = templates[0]?.id.startsWith('fallback-');
       const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
         selected,
@@ -2175,6 +2187,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
       // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
       //   출력+수납 경로도 인쇄 전에 form_submissions INSERT + 교부번호 발행시점 채번·persist → 확정 교부번호로 인쇄본 렌더.
+      // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 B: 출력+수납 경로도 신양식 처치/검사 비급여 category 토큰 주입
+      //   (handleDocPrint 와 동일 — 두 발행 경로 대칭 보장).
+      if (
+        selected.some((t) => t.form_key === 'bill_receipt_new' || t.form_key === 'bill_receipt' || t.form_key === 'bill_detail') &&
+        pricingItems.length > 0
+      ) {
+        applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+      }
       const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
       const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
         selected,
