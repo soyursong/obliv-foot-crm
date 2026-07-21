@@ -124,6 +124,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC: 진료비 서류 2종 정확성 — 계산서·영수증 신양식
+        //   ⑧환자부담총액/⑩납부할금액 10원 절사(computeBillDetailRounding SSOT, 세부내역서 합계 정합=2c)
+        //   + ⑪납부한금액 합계칸 기본 바인딩(2d). 순수 산식 + 템플릿 정적 가드(auth/server 불요, 결정론).
+        //   CANON-GATE(공단부담금 1a/2b)는 미접촉 — ⑦공단부담총액 {{insurance_covered}} 회귀 가드 포함.
+        '**/T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC.spec.ts',
         // T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: cross-run 시드 격리 불변식 가드.
         //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 cleanupAll 전수 스윕이 다른 run 의 in-flight
         //   시드를 못 지움을 DB 직접 검증(교대성 RED 구조적 부재 = AC-2/3/4). auth/server 불요.
@@ -484,6 +489,9 @@ export default defineConfig({
         // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: unit 전용 순수+setContent spec → 무-project 실행
         //   (supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX.spec.ts',
+        // T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC: unit 전용 순수 산식+정적 가드 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC.spec.ts',
         // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: db-only(unit 전용) — desktop-chrome 에서 제외해
         //   `npx playwright test <file>` 무-project 실행(supervisor QA) 시 auth.setup(TEST_PASSWORD) 미기동.
         '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',

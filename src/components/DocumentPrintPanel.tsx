@@ -2705,15 +2705,28 @@ function IssueDialog({
       buildSurchargeDetailRowHtml,
     );
 
-    // ── T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 신양식 '납부금액(사전입력)' 반영(FE-only 표시) ──
-    //   출력 패널 입력값(prepaidAmount)이 있으면 ⑪ 납부한 금액 합계({{prepaid_amount}})에 표기하고,
-    //   납부하지 않은 금액(⑩-⑪, {{unpaid_amount}}) = 환자부담총액(patient_amount, 야간가산 fold 반영 최종값) − 입력값.
-    //   ⚠ 비영속: payments 수납원장 write 아님(사전 표기 전용, 이중계상 없음). 미입력 시 공란(기존 동작 유지).
+    // ── T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC AC-1(2c): 신양식 환자부담총액·납부할금액 10원 절사(FLOOR) ──
+    //   RC(diagnose): 세부산정내역(bill_detail) 합계는 computeBillDetailRounding 로 10원 절사(FLOOR) 되나,
+    //   계산서·영수증 신양식(bill_receipt_new)의 ⑧ 환자부담총액·⑩ 납부할금액({{patient_amount}})은 절사 없이
+    //   raw(copayment+non_covered) 로 바인딩돼 두 법정서류의 환자 실부담 총액이 불일치했다(현장: '총액 안맞음').
+    //   → 세부내역서와 **동일 SSOT**(computeBillDetailRounding = COPAY-CEIL-TO-FLOOR, round-DOWN)로 절사해
+    //     ⑧/⑩ = 세부내역서 detail_total 과 정확히 정합. base.patient_amount 는 야간가산 fold 반영 최종값.
+    //   ⚠ CANON-GATE: ⑦ 공단부담총액({{insurance_covered}}, 1a/2b)은 §2-2-6 v1.14 canon 소관 → **미접촉**.
     if (template.form_key === 'bill_receipt_new') {
+      const rawPatient = parseAmountStr(base.patient_amount);
+      const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+      if (rawPatient > 0) base.patient_amount = formatAmount(patientFloored);
+
+      // T-20260721 AC-2(2d): ⑪ 납부한 금액 [합계] 칸 기본 바인딩.
+      //   RC(diagnose): prepaidAmount 미입력 시 {{prepaid_amount}} 를 공란으로 두어 ⑪ 합계칸이 비어
+      //   출력됐다(현장: '[납부한 금액] 합계칸에 [납부할 금액] 미기입'). 영수증=수납 후 발행이므로
+      //   미입력 기본값 = 납부할금액(=환자부담총액, 절사 후) 으로 표기하고 납부하지 않은 금액=0.
+      //   사전입력(prepaidAmount>0)이 있으면 그 값 우선(부분수납 표기, ITEMFIX ③ 유지). 비영속 FE-only 표시.
       const prepaid = parseAmountStr(prepaidAmount);
-      if (prepaid > 0) {
-        base.prepaid_amount = formatAmount(prepaid);
-        base.unpaid_amount = formatAmount(Math.max(0, parseAmountStr(base.patient_amount) - prepaid));
+      const paidSum = prepaid > 0 ? prepaid : patientFloored;
+      if (paidSum > 0) {
+        base.prepaid_amount = formatAmount(paidSum);
+        base.unpaid_amount = formatAmount(Math.max(0, patientFloored - paidSum));
       } else {
         base.prepaid_amount = '';
         base.unpaid_amount = '';
