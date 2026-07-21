@@ -462,6 +462,11 @@ export default defineConfig({
         // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: 세부산정내역 하단 3행(계 5열 세로합·끝처리 조정 10원절사·
         //   합계 병합/중앙정렬) — 순수 로직(computeBillDetailRounding) + setContent 렌더 spec. auth/server 불요.
         '**/T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX.spec.ts',
+        // T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE: 서버측 마스킹 NFD 깨짐 교정. 마스킹은 100% SQL RPC이고
+        //   native 셀프체크인 렌더는 이 레포에서 제거(T-20260602-CONSOLIDATE, 키오스크=foot-checkin 별도 레포)
+        //   → 브라우저 flow wrong-target. 마스킹 산식 정본 미러(JS normalize NFC) + 마이그 정적 가드로
+        //   NFC 교정 계약을 결정론 잠금. 실배포 함수 증거=SQL dry-run(_dryrun.mjs). auth/server/page 불요.
+        '**/T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -518,6 +523,9 @@ export default defineConfig({
         // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND: unit 전용 정적/setContent spec →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260719-foot-DOCHIST-MULTIPATH-EXTEND.spec.ts',
+        // T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE: unit 전용 순수 산식 미러 + 마이그 정적 가드 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE.spec.ts',
       ],
     },
     {
