@@ -9,6 +9,22 @@ import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
 import { assertNotProdExecution, cleanupKanbanFixtures } from '../fixtures';
 
+// AC-2 (DA-20260721-foot-E2E-FIXTURE-SELFID / IMPROVE-PROPOSAL 채택 (a)안):
+//   kanban-drag 는 시더 미경유 UI 체크인이라 seedCustomer 의 is_simulation 마킹을 못 탄다.
+//   그 결과 leaked 더미가 "결정적 test-data 술어"를 못 가져(is_simulation=false·phone_dummy=false),
+//   teardown 실패 시마다 현장확인/DA adjudication 왕복을 강제했다(DA 실측 2차 왕복 RC).
+//   → 체크인 UI 의 phone 필드를 **결정적 placeholder 전화**로 채운다. 값 자체가 배포된
+//     is_dummy_phone() 트리거(20260709120000)의 all-same-subscriber 패턴 `^\+82(1[016789])(\d)\2{6,7}$`
+//     에 매칭 → BEFORE INSERT 트리거가 customers.phone_dummy=true 를 client-agnostic 하게 자동 파생.
+//   이점: (1) 테스트/EF/DB 어디서도 phone_dummy 를 명시 set 할 필요 없음(트리거 소관).
+//        (2) leaked 돼도 phone_dummy=true + PLACEHOLDER_PHONE_SET 값-술어로 100% 자기식별 → 자동 cleanup 결정화.
+//        (3) 스키마/정책 무변경(트리거 이미 prod 배포·DA ADDITIVE 승인). chart-alloc 네임스페이스((b)안)는
+//            RPC/스키마 변경이라 §S2.4 데이터정책 CONSULT 선행 필요 → 본 커밋 범위 밖(reply 에 보류 명시).
+//   name+phone 동시일치 dedup(NewCheckInDialog L242-248) 이므로 이름(timestamp)이 유일 → placeholder 재사용/
+//   테스트간 값 충돌 없음. 테스트별로 다른 반복숫자를 써 값도 구분한다.
+const DUMMY_PHONE_PODOLOGE = '01011111111'; // 정규화 시 subscriber 전부 1 → 트리거 phone_dummy=true (phi-allowlist 등재값)
+const DUMMY_PHONE_STAGE = '01099999999'; // 정규화 시 subscriber 전부 9 → 트리거 phone_dummy=true (phi-allowlist 등재값)
+
 test.describe('Kanban status transitions', () => {
   // 이 run 이 UI 로 생성한 더미의 정확한 이름(customer_name/name). afterAll 에서 이 이름들만
   // 삭제한다("본인이 만든 row 만" 불변식). 이름접두: `단계이동_`, `칸반테스트_` (KANBAN_FIXTURE_NAME_PREFIXES).
@@ -72,7 +88,8 @@ test.describe('Kanban status transitions', () => {
       const testName = `칸반테스트_${Date.now()}`;
       createdNames.push(testName); // AC-1: afterAll cleanup 대상 등록
       await dialog.locator('#ci-name').fill(testName);
-      await dialog.locator('#ci-phone').fill(`010${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`);
+      // AC-2: 결정적 placeholder → 트리거가 phone_dummy=true 자동 파생(자기식별). 위 상수 memo 참조.
+      await dialog.locator('#ci-phone').fill(DUMMY_PHONE_PODOLOGE);
       await dialog.getByRole('button', { name: '체크인' }).click();
       await expect(page.getByText(/체크인 완료/)).toBeVisible({ timeout: 10_000 });
 
@@ -108,7 +125,8 @@ test.describe('Kanban status transitions', () => {
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
     await dialog.locator('#ci-name').fill(testName);
-    await dialog.locator('#ci-phone').fill(`010${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`);
+    // AC-2: 결정적 placeholder → 트리거가 phone_dummy=true 자동 파생(자기식별). 위 상수 memo 참조.
+    await dialog.locator('#ci-phone').fill(DUMMY_PHONE_STAGE);
     await dialog.locator('button[type="button"]').filter({ hasText: /^재진$/ }).last().click();
     await dialog.getByRole('button', { name: '체크인' }).click();
     await expect(page.getByText(/체크인 완료/)).toBeVisible({ timeout: 10_000 });
