@@ -1423,10 +1423,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── 금액 계산 ──────────────────────────────────────────────────────────
-  const getItemAmount = (item: SelectedItem) => {
-    const override = customAmounts.get(item.service.id);
-    return (override !== undefined ? override : item.service.price) * item.qty;
-  };
+  // T-20260721-foot-PMW-PREPAID-DEDUCT-COPAY-BASE: getItemAmount(전액 = 본인부담+공단+비급여) 제거.
+  //   유일 소비처였던 calcDeductAmount 가 공단 제외 SSOT(computeFootBilling)로 재배선되며 데드코드화 →
+  //   noUnusedLocals 위반 방지 겸 '전액 base' 오용 재발 원천 차단(청구는 항상 수납 grain SSOT 소비).
 
   // ── T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 순서 변경 ────────────────
   // AC-2: DB persist — services.display_order (clinic 단위, useEffect debounce 800ms).
@@ -1532,13 +1531,32 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
   };
 
-  // 선수금차감 후 금액 = prepaid 제외 합산
+  // 선수금차감 후 청구액 = (선수금차감 대상 제외한 항목의) 급여 본인부담금 + 비급여 전액.
+  // ── T-20260721-foot-PMW-PREPAID-DEDUCT-COPAY-BASE [현장 P0, RC] ─────────────────
+  //   [버그] 종전엔 getItemAmount(전액 = 급여 본인부담 + 공단부담 + 비급여) 을 합산 → 선수금 차감 후
+  //   청구액에 공단(NHIS) 몫까지 포함돼 과다청구(예: 29,380 = 총 진료비, 공단 포함). 급여 환자 기대값은
+  //   본인부담(30%) + 비급여(예: 8,800). 실결제 영향(현장 이은상 팀장 보고, 스샷 F0BJ728S6LX).
+  //   [해소] 청구 base 는 BALANCE-SPLIT 배포본이 쓰는 수납 grain SSOT(payCopaymentTotal /
+  //   computeFootBilling, 공단 제외 = 본인부담 30% + 비급여)여야 한다. 병렬 재계산 경로 신설 금지
+  //   (DA §제약1: SSOT 단일소비). 차감대상 제외 subset 을 payBilling(L1493)과 **동일 옵션**
+  //   (unknownGradeCopay:'general_default', 등급 미상 급여 → 외래 기본 30%)의 computeFootBilling 에
+  //   통과시켜 copaymentTotal + nonCoveredTotal 을 청구 base 로 소비한다. 새 산식 경로 없음.
+  //   → 선수금 항목이 없으면 subset = 전체 pricingItems 이므로 payableTotal(L1499)과 정확히 일치.
   // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 prepaid로 분류돼도 항상 청구금액에 산입
   //   (선수금차감 제외 → amount=0 증발 방지). 다회차 4종 차감제외는 그대로 유지.
-  const calcDeductAmount = () =>
-    pricingItems
+  const calcDeductAmount = () => {
+    const deductItems: FootBillingItem[] = pricingItems
       .filter((item) => !prepaidIds.has(item.service.id) || isTrialService(item.service))
-      .reduce((s, item) => s + getItemAmount(item), 0);
+      .map(({ service, qty }) => ({
+        service,
+        qty,
+        unitPrice: customAmounts.get(service.id) ?? service.price ?? 0,
+      }));
+    const deductBilling = computeFootBilling(deductItems, customerInsuranceGrade, {
+      unknownGradeCopay: 'general_default',
+    });
+    return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal;
+  };
 
   // ── 공통 check_in_services 저장 ──────────────────────────────────────────
   // T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
