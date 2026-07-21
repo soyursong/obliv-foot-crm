@@ -2587,9 +2587,10 @@ function IssueDialog({
         code: item.service_code,
         unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
         daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
-        // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5 / A안(총괄 MSG-h6y2): 입력값 그대로, 미입력 시 공란(수기 기입).
-        //   ⚠ 자동값(items[].days 등) 강제 주입 금지 — 빈칸이 정답.
-        total_days: rxItemDosages[item.id]?.total_days || '',
+        // T-20260721-foot-RXPRINT-TOTALDAYS-BLANK (총괄 김주연 최종): 세 칸 전부 기본 '1' + 수기 수정 가능.
+        //   구 T-20260718 LOGIC-LOCK("total_days 빈칸이 정답")은 총괄 결정으로 해제 → 형제 두 칸과 동일한 리터럴 기본값 '1'.
+        //   ⚠ 이건 자동 산출 바인딩(옵션B) 아님 — items[].days 등 자동값 강제 주입 금지. 리터럴 '1' + editable.
+        total_days: rxItemDosages[item.id]?.total_days || '1',
         method: '',
       }));
       base.rx_items_html = buildRxItemsHtml(rxItems);

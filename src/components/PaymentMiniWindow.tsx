@@ -468,9 +468,10 @@ function buildCodeEnrichedValues(
       code: i.service.service_code,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
-      // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).
-      //   기존 '7' 강제 폴백은 입력값을 묻어 "입력해도 미표기"의 일부 원인이었다.
-      total_days: rxItemDosages?.[i.service.id]?.total_days || '',
+      // T-20260721-foot-RXPRINT-TOTALDAYS-BLANK (총괄 김주연 최종): 세 칸 전부 기본 '1' + 수기 수정 가능.
+      //   결제미니창 경로(buildCodeEnrichedValues)와 DocumentPrintPanel 경로는 평행 — 반드시 동시 유지(한쪽만 '' 두면 재오픈).
+      //   구 T-20260718 LOGIC-LOCK(빈칸이 정답) 해제. 자동 산출 바인딩 아님 — 리터럴 '1' + editable. 구 '7' 폴백 부활 금지.
+      total_days: rxItemDosages?.[i.service.id]?.total_days || '1',
     })));
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
