@@ -265,6 +265,40 @@ function buildHtmlPageHtml(
 </div>`;
 }
 
+// ─── T-20260721-foot-BILLDETAIL-DIAGCODE-ADD (AC-5): 상병 토큰 주입 공용 헬퍼 ───
+//   진료비 세부산정내역(bill_detail)·처방전 등에 상병(상병코드·상병명) 토큰을 3경로 대칭 주입한다.
+//   기존 batchDiagItems(일괄출력)·issueDiagItems(단일/재출력=IssueDialog) 이원 로직을 단일 SSOT 로
+//   통합 → 경로 간 배선 divergence 재발 차단(현장: 일괄엔 나오고 단일엔 공란 클래스).
+//   소스 규칙 불변(DIAGCODE-BLANK 교훈 계승): service_charges(category_label='상병') 우선 →
+//   check_in_services(상병) 폴백. 둘 다 없으면 기존 값(autobind) 보존. 빈 medical_charts 미참조.
+//   미도달 시 diag_code_N/diag_name_N 미치환 → bindHtmlTemplate 가 공란 렌더(회귀 0·플레이스홀더 노출 0).
+function applyDiagTokens(
+  values: Record<string, string>,
+  chargesDiag: { code: string; name: string }[],
+  fallbackDiag: { code: string; name: string }[],
+): void {
+  const diagItems = chargesDiag.length > 0 ? chargesDiag : fallbackDiag;
+  if (diagItems.length > 0) {
+    // 기존 diag_code_N 키 초기화 (regression 방지 — 이전 방문/구값 잔존 차단)
+    delete values.diag_code_1; delete values.diag_name_1;
+    delete values.diag_code_2; delete values.diag_name_2;
+    diagItems.forEach((item, idx) => {
+      const n = idx + 1;
+      values[`diag_code_${n}`] = item.code;
+      values[`diag_name_${n}`] = item.name;
+    });
+  }
+  // 행 가시성 (상병 0건이면 auto-bind 기존값 기준)
+  const count = diagItems.length > 0
+    ? diagItems.length
+    : (values.diag_code_2 ? 2 : values.diag_code_1 ? 1 : 0);
+  values['diag_row_3_style'] = count >= 3 ? '' : 'display:none';
+  values['diag_row_4_style'] = count >= 4 ? '' : 'display:none';
+  const extra = diagItems.slice(2).map((i) => i.code).filter(Boolean);
+  values['diag_extra_codes_html'] = extra.length > 0
+    ? extra.map((c) => `<br>${c}`).join('') : '';
+}
+
 // ─── JPG 인쇄 HTML 생성 ───
 
 /**
@@ -1054,39 +1088,22 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       //   check_in_services 에만 저장) fbItemsBatch(check_in_services) 상병으로 폴백 → 일괄출력 처방전에서도 표시.
       //   ⚠ chargeItems 가 아예 비어도(service_charges 무기록) 폴백이 동작하도록 가드 밖에서 독립 산출.
       //   두 소스 모두 없을 때만 medical_charts 기반 autoValues 유지(기존 동작 보존).
-      const batchDiagItems: { code: string; name: string }[] = (() => {
-        const fromCharges = (chargeItems ?? [])
-          .map((c) => {
-            const svc = Array.isArray(c.service) ? c.service[0] : c.service;
-            return {
-              code: (svc as { service_code?: string | null } | null)?.service_code ?? '',
-              name: (svc as { name?: string } | null)?.name ?? '',
-              category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
-            };
-          })
-          .filter((i) => i.category_label === '상병')
-          .map((i) => ({ code: i.code, name: i.name }));
-        if (fromCharges.length > 0) return fromCharges;
-        return fbItemsBatch
-          .filter((fb) => (fb.service.category_label ?? '') === '상병')
-          .map((fb) => ({ code: fb.service.service_code ?? '', name: fb.service.name }));
-      })();
-      if (batchDiagItems.length > 0) {
-        delete autoValues.diag_code_1; delete autoValues.diag_name_1;
-        delete autoValues.diag_code_2; delete autoValues.diag_name_2;
-        batchDiagItems.forEach((item, idx) => {
-          const n = idx + 1;
-          autoValues[`diag_code_${n}`] = item.code;
-          autoValues[`diag_name_${n}`] = item.name;
-        });
-      }
-      const batchDiagCount = batchDiagItems.length > 0 ? batchDiagItems.length
-        : (autoValues.diag_code_2 ? 2 : autoValues.diag_code_1 ? 1 : 0);
-      autoValues['diag_row_3_style'] = batchDiagCount >= 3 ? '' : 'display:none';
-      autoValues['diag_row_4_style'] = batchDiagCount >= 4 ? '' : 'display:none';
-      const batchExtraCodes = batchDiagItems.slice(2).map((i) => i.code).filter(Boolean);
-      autoValues['diag_extra_codes_html'] = batchExtraCodes.length > 0
-        ? batchExtraCodes.map((c) => `<br>${c}`).join('') : '';
+      // T-20260721-foot-BILLDETAIL-DIAGCODE-ADD (AC-5): 공용 헬퍼(applyDiagTokens)로 통일 — 단일/재출력과 대칭.
+      const batchChargesDiag = (chargeItems ?? [])
+        .map((c) => {
+          const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+          return {
+            code: (svc as { service_code?: string | null } | null)?.service_code ?? '',
+            name: (svc as { name?: string } | null)?.name ?? '',
+            category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
+          };
+        })
+        .filter((i) => i.category_label === '상병')
+        .map((i) => ({ code: i.code, name: i.name }));
+      const batchFallbackDiag = fbItemsBatch
+        .filter((fb) => (fb.service.category_label ?? '') === '상병')
+        .map((fb) => ({ code: fb.service.service_code ?? '', name: fb.service.name }));
+      applyDiagTokens(autoValues, batchChargesDiag, batchFallbackDiag);
 
       if (chargeItems && chargeItems.length > 0) {
         const mappedItems = chargeItems.map((c) => {
@@ -2600,33 +2617,15 @@ function IssueDialog({
     //   check_in_services 에만 저장 → service_charges 공란) footBillingItems(check_in_services) 상병으로 폴백.
     //   → 서류발행(PATH-1) 처방전 '질병분류기호'에도 결제미니창 선택 상병코드가 표시(현장 공란 해소).
     //   read-path 재사용(신규 write/DDL 0). 두 소스 모두 없을 때만 medical_charts 폴백(기존 동작 보존).
-    const issueDiagItems: { code: string; name: string }[] = (() => {
-      const fromCharges = serviceItems
-        .filter((i) => i.category_label === '상병')
-        .map((i) => ({ code: i.service_code ?? '', name: i.name }));
-      if (fromCharges.length > 0) return fromCharges;
-      return footBillingItems
-        .filter((fb) => (fb.service.category_label ?? '') === '상병')
-        .map((fb) => ({ code: fb.service.service_code ?? '', name: fb.service.name }));
-    })();
-    if (issueDiagItems.length > 0) {
-      // 먼저 기존 diag_code_N 키 초기화 (regression 방지)
-      delete base.diag_code_1; delete base.diag_name_1;
-      delete base.diag_code_2; delete base.diag_name_2;
-      issueDiagItems.forEach((item, idx) => {
-        const n = idx + 1;
-        base[`diag_code_${n}`] = item.code;
-        base[`diag_name_${n}`] = item.name;
-      });
-    }
-    // 행 가시성 플래그 (상병 0건이면 auto-bind 기준으로 설정)
-    const issueDiagCount = issueDiagItems.length > 0 ? issueDiagItems.length
-      : (base.diag_code_2 ? 2 : base.diag_code_1 ? 1 : 0);
-    base['diag_row_3_style'] = issueDiagCount >= 3 ? '' : 'display:none';
-    base['diag_row_4_style'] = issueDiagCount >= 4 ? '' : 'display:none';
-    const issueExtraCodes = issueDiagItems.slice(2).map((i) => i.code).filter(Boolean);
-    base['diag_extra_codes_html'] = issueExtraCodes.length > 0
-      ? issueExtraCodes.map((c) => `<br>${c}`).join('') : '';
+    // T-20260721-foot-BILLDETAIL-DIAGCODE-ADD (AC-5): 공용 헬퍼(applyDiagTokens)로 통일 — 일괄출력과 대칭.
+    //   단일 출력·재출력(이 IssueDialog 경로 공용) 모두 동일 소스·동일 산식으로 상병 3토큰 렌더 보장.
+    const issueChargesDiag = serviceItems
+      .filter((i) => i.category_label === '상병')
+      .map((i) => ({ code: i.service_code ?? '', name: i.name }));
+    const issueFallbackDiag = footBillingItems
+      .filter((fb) => (fb.service.category_label ?? '') === '상병')
+      .map((fb) => ({ code: fb.service.service_code ?? '', name: fb.service.name }));
+    applyDiagTokens(base, issueChargesDiag, issueFallbackDiag);
 
     // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 보강.
     //   bill_receipt {{non_covered}} / ins_claim_form {{insurance_covered}}·{{copayment}}·{{non_covered}}
