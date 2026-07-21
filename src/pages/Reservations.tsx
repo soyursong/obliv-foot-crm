@@ -57,6 +57,8 @@ import { resvKind, summarizeKinds, isRibbonBrief, KIND_AXIS_LABELS, type ResvKin
 //   buildHourBuckets import 제거 — gridSlots(30분) 직접 사용으로 환원.
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
+// T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 전용 별도 팝업
+import { DocumentReprintPopup } from '@/components/DocumentReprintPopup';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 // T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 직접 렌더 제거 → AdminLayout ChartContext 통합
 import MedicalChartPanel from '@/components/MedicalChartPanel';
@@ -496,6 +498,8 @@ export default function Reservations() {
   // T-20260516-foot-CHART-OPEN-UNIFY AC-1: AdminLayout ChartContext (단일 소스)
   // LOGIC-LOCK: L-004 [CHART-LOCK-010] — openChart 호출은 useChart() 경유만. 직접 접근 금지.
   const { openChart } = useChart();
+  // T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 별도 팝업 대상 (차트 이동 대체)
+  const [docPopupTarget, setDocPopupTarget] = useState<{ customerId: string; name: string | null } | null>(null);
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { profile } = useAuth();
@@ -1813,11 +1817,13 @@ export default function Reservations() {
     openChart(ci.customer_id);
   }, [openChart]);
 
-  // T-20260617-foot-CTXMENU-DOC-ENTRY: 예약관리 행 우클릭 [서류] → 해당 고객 서류 탭 deep-link (additive tab opt).
+  // T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 예약관리 행 우클릭 [서류] → 차트 서류 탭 deep-link(구) 대신 별도 팝업창(신).
+  //   (旧 T-20260617-foot-CTXMENU-DOC-ENTRY: openChart(customer_id, { tab:'documents' }) → 본 티켓이 클릭 동작 supersede)
+  //   차트 이동 없이 우클릭한 그 고객 컨텍스트를 물고 DocumentReprintPopup 오픈. 기존 차트 내 [서류] 탭은 유지(무접촉).
   const handleResvOpenDocuments = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
-    openChart(ci.customer_id, { tab: 'documents' });
-  }, [openChart]);
+    setDocPopupTarget({ customerId: ci.customer_id, name: ci.customer_name ?? null });
+  }, []);
 
   // T-20260713-foot-COMPANION-RESVCLICK-NEWPOPUP-MISROUTE (RC 확정, FE-only):
   //   동행(companion) 예약은 dopamine emit shape 상 customer_id=NULL + external_id `_comp_` 로 착지하는
@@ -3077,6 +3083,13 @@ export default function Reservations() {
             ? (ci) => { setResvContextMenu(null); setSmsTarget(ci); }
             : undefined
         }
+      />
+
+      {/* T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 예약관리 행 우클릭 [서류] 전용 별도 팝업(차트 이동 대체) */}
+      <DocumentReprintPopup
+        customerId={docPopupTarget?.customerId ?? null}
+        customerName={docPopupTarget?.name ?? null}
+        onClose={() => setDocPopupTarget(null)}
       />
 
       {/* T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 */}

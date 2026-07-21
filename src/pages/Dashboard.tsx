@@ -100,6 +100,8 @@ import { PaymentDialog } from '@/components/PaymentDialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
+// T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 전용 별도 팝업
+import { DocumentReprintPopup } from '@/components/DocumentReprintPopup';
 import SendSmsDialog from '@/components/SendSmsDialog';
 import { canAccess } from '@/lib/permissions';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
@@ -3401,6 +3403,8 @@ export default function Dashboard() {
   // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널 상태
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
+  // T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 별도 팝업 대상 (차트 이동 대체)
+  const [docPopupTarget, setDocPopupTarget] = useState<{ customerId: string; name: string | null } | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   // T-20260616-foot-CALLLIST-ENTRYORDER-FALLBACK-RECEIPTLEAK (옵션 A, read-side no-DDL):
   //   진료콜 명단 진입순 폴백 2순위 전용 맵 — check_in_id → 명단 active 전환(to_status∈healer_waiting/purple/yellow)
@@ -5718,14 +5722,16 @@ export default function Dashboard() {
     ctxOpenChart(ci.customer_id);
   }, [ctxOpenChart]);
 
-  // T-20260617-foot-CTXMENU-DOC-ENTRY: 우클릭 [서류] → 해당 고객 서류 탭 deep-link (additive tab opt).
+  // T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] → 차트 서류 탭 deep-link(구) 대신 별도 팝업창(신) 오픈.
+  //   (旧 T-20260617-foot-CTXMENU-DOC-ENTRY: ctxOpenChart(customer_id, { tab:'documents' }) → 본 티켓이 클릭 동작 supersede)
+  //   차트 이동 없이 우클릭한 그 고객 컨텍스트를 물고 DocumentReprintPopup 오픈. 기존 차트 내 [서류] 탭은 유지(무접촉).
   const handleOpenDocumentsFromCtx = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) {
       toast.info('고객 정보가 연결되어 있지 않습니다');
       return;
     }
-    ctxOpenChart(ci.customer_id, { tab: 'documents' });
-  }, [ctxOpenChart]);
+    setDocPopupTarget({ customerId: ci.customer_id, name: ci.customer_name ?? null });
+  }, []);
 
 
   const handleNewReservation = useCallback((ci: CheckIn) => {
@@ -7953,6 +7959,14 @@ export default function Dashboard() {
             ? (ci) => { setResvContextMenu(null); setSmsTarget(ci); }
             : undefined
         }
+      />
+
+      {/* T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 전용 별도 팝업(차트 이동 대체).
+          대시보드 칸반/큐 + 예약 카드 두 surface 우클릭 [서류] 공통 진입. */}
+      <DocumentReprintPopup
+        customerId={docPopupTarget?.customerId ?? null}
+        customerName={docPopupTarget?.name ?? null}
+        onClose={() => setDocPopupTarget(null)}
       />
 
       {/* T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 로컬 예약상세 팝업 제거.
