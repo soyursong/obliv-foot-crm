@@ -1,0 +1,6 @@
+-- Rollback: T-20260721-foot-PAYVIEWER-ACCOUNT-CHOI — 최필경 조회계정 임시부여 회수
+-- (비번 해시 irreversible. 계정 비활성/권한 강등으로 회수.)
+-- 완전 비활성:
+--   UPDATE public.user_profiles SET active=false, approved=false WHERE id='d9bde8a8-887b-4c98-845e-fcc85d6d25af';
+--   UPDATE public.staff SET active=false WHERE user_id='d9bde8a8-887b-4c98-845e-fcc85d6d25af';
+-- RBAC A안(read-only) 승격 시: role 을 정식 조회역할로 교체(3TIER-RBAC 완료 후).

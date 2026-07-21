@@ -1,0 +1,17 @@
+{
+  "ticket": "T-20260721-foot-PAYVIEWER-ACCOUNT-CHOI",
+  "captured_at": "2026-07-21T08:09:21.702Z",
+  "id": "d9bde8a8-887b-4c98-845e-fcc85d6d25af",
+  "email": "pk.choi@medibuilder.com",
+  "email_confirmed_at": "2026-07-21T07:22:06.216083Z",
+  "created_at": "2026-07-21T02:11:30.933861Z",
+  "user_profiles": {
+    "name": "최필경",
+    "role": "staff",
+    "approved": true,
+    "active": true,
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+  },
+  "staff": null,
+  "note": "password hash NOT captured (irreversible). role=manager 임시부여 — 회수 시 rollback SQL 참조."
+}
