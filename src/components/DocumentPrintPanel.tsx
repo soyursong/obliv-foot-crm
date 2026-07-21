@@ -129,6 +129,11 @@ import {
   computeBillReceiptNewCategoryBreakdown,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
   applyBillReceiptNewCategoryTokens,
+  // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: service_charges 직결 폴백 경로도
+  //   정식 HIRA category 매핑(footBillDetailCategory) + codeItems(상병/처방약) 제외(isCodeItem)를
+  //   primary(check_in_services) 경로와 대칭 적용. 종전 폴백 하드코드 `covered?'이학요법료':'기타'` 대체.
+  footBillDetailCategory,
+  isCodeItem,
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
@@ -895,14 +900,19 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           bindValues.fee_grid_html = buildBillReceiptFeeGridHtml(receiptBillItems);
         } else if (serviceItems.length > 0) {
           // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(bill_detail 폴백과 동일 규칙).
-          const fbItems2 = serviceItems.map((item) => ({
-            category: item.is_insurance_covered ? '이학요법료' : '기타',
-            amount: item.amount,
-            count: 1,
-            days: 1,
-            is_insurance_covered: item.is_insurance_covered,
-            copayment_amount: item.copayment_amount ?? undefined,
-          }));
+          // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: 하드코드(covered?'이학요법료':'기타') →
+          //   footBillDetailCategory 정식 매핑(진찰료/검사료/처치및수술료/기타)으로 이식(A안). primary 경로와 동일.
+          //   codeItems(상병/처방약, price=0) 제외(B안) — primary(pricingItems) 대칭. amount=0 이라 합계 불변(무파괴).
+          const fbItems2 = serviceItems
+            .filter((item) => !isCodeItem(item))
+            .map((item) => ({
+              category: footBillDetailCategory(item, item.is_insurance_covered),
+              amount: item.amount,
+              count: 1,
+              days: 1,
+              is_insurance_covered: item.is_insurance_covered,
+              copayment_amount: item.copayment_amount ?? undefined,
+            }));
           fillBillItemCopayment(fbItems2, fbGrade);
           bindValues.fee_grid_html = buildBillReceiptFeeGridHtml(fbItems2);
           // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 폴백도 합계 = 본인부담금 + 비급여(공단 제외).
@@ -1138,17 +1148,21 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           autoValues.rx_items_html = buildRxItemsHtml(rxItems);
           // bill_detail items: SSOT(check_in_services) 우선. fbBatch 없을 때만 service_charges 직결 폴백.
           if (!fbBatch) {
-            const billItems = mappedItems.map((item) => ({
-              category: item.is_insurance_covered ? '이학요법료' : '기타',
-              date: autoValues.visit_date ?? '',
-              code: item.service_code ?? item.hira_code ?? '',
-              name: item.name,
-              amount: item.amount,
-              count: 1,
-              days: 1,
-              is_insurance_covered: item.is_insurance_covered,
-              copayment_amount: item.copayment_amount ?? undefined,
-            }));
+            // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: 하드코드 → footBillDetailCategory 정식 매핑(A안) +
+            //   codeItems(상병/처방약) 제외(B안). primary(pricingItems) 경로 대칭. amount=0 이라 total/비급여 합계 불변.
+            const billItems = mappedItems
+              .filter((item) => !isCodeItem(item))
+              .map((item) => ({
+                category: footBillDetailCategory(item, item.is_insurance_covered),
+                date: autoValues.visit_date ?? '',
+                code: item.service_code ?? item.hira_code ?? '',
+                name: item.name,
+                amount: item.amount,
+                count: 1,
+                days: 1,
+                is_insurance_covered: item.is_insurance_covered,
+                copayment_amount: item.copayment_amount ?? undefined,
+              }));
             autoValues.items_html = buildBillDetailItemsHtml(billItems);
             // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 영수증 항목별 그리드도 동일 billItems 로.
             autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
@@ -2453,17 +2467,22 @@ function IssueDialog({
     } else if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
       // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(기존 동작 보존).
       // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 로 급여 본인부담금 열 표시.
-      const billItems = serviceItems.map((item) => ({
-        category: item.is_insurance_covered ? '이학요법료' : '기타',
-        date: base.visit_date ?? '',
-        code: item.service_code ?? item.hira_code ?? '',
-        name: item.name,
-        amount: item.amount,
-        count: 1,
-        days: 1,
-        is_insurance_covered: item.is_insurance_covered,
-        copayment_amount: item.copayment_amount ?? undefined,
-      }));
+      // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: 하드코드(covered?'이학요법료':'기타') →
+      //   footBillDetailCategory 정식 매핑(A안). category_label 로 진찰료/검사료/처치및수술료 구분 표시.
+      //   codeItems(상병/처방약, price=0) 제외(B안) — primary(pricingItems) 대칭, 진단명/약품 무누출. 합계 불변.
+      const billItems = serviceItems
+        .filter((item) => !isCodeItem(item))
+        .map((item) => ({
+          category: footBillDetailCategory(item, item.is_insurance_covered),
+          date: base.visit_date ?? '',
+          code: item.service_code ?? item.hira_code ?? '',
+          name: item.name,
+          amount: item.amount,
+          count: 1,
+          days: 1,
+          is_insurance_covered: item.is_insurance_covered,
+          copayment_amount: item.copayment_amount ?? undefined,
+        }));
       // T-20260616-foot-DOCFORM-3FIX-REGRESSION: service_charges 직결 경로의 급여 본인/공단 공란 보강
       //   (DB 값 있으면 미개입, 무보험 등급은 분리 불가로 미개입).
       fillBillItemCopayment(billItems, customerInsuranceGrade);
