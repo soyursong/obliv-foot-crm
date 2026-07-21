@@ -55,11 +55,11 @@ test.describe('T-20260708 진료비 서류 공단/본인부담 금액 출력 (bi
     const fb = computeFootBilling(CASE_NORMAL, 'general');
     expect(fb.grandTotal).toBe(363370);          // 합계
     expect(fb.coveredTotal).toBe(13370);          // 급여총액
-    expect(fb.copaymentTotal).toBe(4100);         // 본인부담금(30% 100원 절상: ceil(4011/100)*100)
+    expect(fb.copaymentTotal).toBe(4000);         // 본인부담금(30% 100원 절사: FLOOR(4011/100)*100=4000. T-20260715 CEIL→FLOOR canon 정정, 구 CEIL 4100 stale)
     expect(fb.nonCoveredTotal).toBe(350000);      // 비급여
     // 공단부담(건보부담) = 급여총액 - 본인부담
-    expect(fb.liveBillingValues.insuranceCovered).toBe(9270);
-    expect(fb.liveBillingValues.copayment).toBe(4100);
+    expect(fb.liveBillingValues.insuranceCovered).toBe(9370);  // 13,370 - 4,000 (구 9,270 = CEIL 4100 잔재)
+    expect(fb.liveBillingValues.copayment).toBe(4000);
     // 검산: 건보부담 + 본인부담 + 비급여 = 합계 (AC-2)
     expect(
       fb.liveBillingValues.insuranceCovered + fb.liveBillingValues.copayment + fb.nonCoveredTotal,
@@ -74,21 +74,26 @@ test.describe('T-20260708 진료비 서류 공단/본인부담 금액 출력 (bi
     // DocumentPrintPanel 3경로가 bind 하는 값과 동일 형태 주입.
     const bound = bindHtmlTemplate(tpl!, {
       patient_name: '홍길동',
-      insurance_covered: formatAmount(fb.liveBillingValues.insuranceCovered), // 9,270
-      copayment: formatAmount(fb.liveBillingValues.copayment),                // 4,100
+      insurance_covered: formatAmount(fb.liveBillingValues.insuranceCovered), // 9,370
+      copayment: formatAmount(fb.liveBillingValues.copayment),                // 4,000
       non_covered: formatAmount(fb.nonCoveredTotal),                          // 350,000
-      total_amount: formatAmount(fb.grandTotal),                             // 363,370
+      // GONGDAN-HIDE canon(T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY B안): bill_receipt 합계는
+      //   receipt_total = 급여 본인부담금 + 비급여(공단부담 제외) 로 바인딩. 구 total_amount(공단포함 grandTotal)
+      //   placeholder 는 제거됨(htmlFormTemplates L1780) → 구 기대값 363,370 은 stale.
+      receipt_total: formatAmount(fb.liveBillingValues.copayment + fb.nonCoveredTotal), // 354,000 = 4,000 + 350,000
     });
 
     // 회귀 가드: 미치환 placeholder 잔존 금지
     expect(bound).not.toContain('{{copayment}}');
     expect(bound).not.toContain('{{insurance_covered}}');
+    expect(bound).not.toContain('{{receipt_total}}');
 
-    // 공단부담(9,270) + 본인부담(4,100) 둘 다 렌더
-    expect(bound).toContain('9,270');
-    expect(bound, '본인부담(4,100)이 영수증에 출력되어야 함 = BUG-1 해소').toContain('4,100');
+    // 공단부담(9,370) + 본인부담(4,000) 둘 다 렌더
+    expect(bound).toContain('9,370');
+    expect(bound, '본인부담(4,000)이 영수증에 출력되어야 함 = BUG-1 해소').toContain('4,000');
     expect(bound).toContain('350,000');
-    expect(bound).toContain('363,370');
+    // 합계 = receipt_total 354,000 (공단 제외, GONGDAN-HIDE). 구 grandTotal 363,370 = stale(공단포함).
+    expect(bound, '환자 청구 합계 = 본인부담 + 비급여(공단 제외) = 354,000').toContain('354,000');
   });
 
   test('AC-3 (bill_detail): 계/합계 요약행 본인부담금·공단부담금 총계가 하드코딩 0이 아니다', () => {
@@ -109,9 +114,9 @@ test.describe('T-20260708 진료비 서류 공단/본인부담 금액 출력 (bi
       total_amount: formatAmount(fb.grandTotal),
       subtotal_noncovered: fb.nonCoveredTotal.toLocaleString('ko-KR'),
       total_noncovered: fb.nonCoveredTotal.toLocaleString('ko-KR'),
-      subtotal_copayment: formatAmount(fb.copaymentTotal),                    // 4,100
+      subtotal_copayment: formatAmount(fb.copaymentTotal),                    // 4,000
       total_copayment: formatAmount(fb.copaymentTotal),
-      subtotal_fund: formatAmount(fb.liveBillingValues.insuranceCovered),     // 9,270
+      subtotal_fund: formatAmount(fb.liveBillingValues.insuranceCovered),     // 9,370
       total_fund: formatAmount(fb.liveBillingValues.insuranceCovered),
     });
 
@@ -121,9 +126,9 @@ test.describe('T-20260708 진료비 서류 공단/본인부담 금액 출력 (bi
     expect(bound).not.toContain('{{subtotal_copayment}}');
     expect(bound).not.toContain('{{subtotal_fund}}');
 
-    // 요약행 본인부담금(4,100)/공단부담금(9,270) 총계가 출력됨 (BUG-2 해소)
-    expect(bound, '요약행 본인부담금 총계 출력').toContain('4,100');
-    expect(bound, '요약행 공단부담금 총계 출력').toContain('9,270');
+    // 요약행 본인부담금(4,000)/공단부담금(9,370) 총계가 출력됨 (BUG-2 해소)
+    expect(bound, '요약행 본인부담금 총계 출력').toContain('4,000');
+    expect(bound, '요약행 공단부담금 총계 출력').toContain('9,370');
 
     // per-item 컬럼합 정합: Σ본인부담금 = copaymentTotal, Σ공단부담금 = insuranceCovered
     const covered = billItems.filter((i) => i.is_insurance_covered);
@@ -132,8 +137,8 @@ test.describe('T-20260708 진료비 서류 공단/본인부담 금액 출력 (bi
       (s, i) => s + Math.max(0, i.amount * (i.count ?? 1) * (i.days ?? 1) - (i.copayment_amount ?? 0)),
       0,
     );
-    expect(sumCopay).toBe(fb.copaymentTotal);                     // 4,100
-    expect(sumFund).toBe(fb.liveBillingValues.insuranceCovered);  // 9,270
+    expect(sumCopay).toBe(fb.copaymentTotal);                     // 4,000
+    expect(sumFund).toBe(fb.liveBillingValues.insuranceCovered);  // 9,370
   });
 
   test('AC-3 초진 코드 AA154 / 재진 코드 AA254 표기 (per-item 코드 배선)', () => {
@@ -148,7 +153,7 @@ test.describe('T-20260708 진료비 서류 공단/본인부담 금액 출력 (bi
 
     const reItems = buildFootBillDetailItems(
       computeFootBilling(CASE_NORMAL, 'general').pricingItems, '2026-07-08',
-      { insuranceGrade: 'general', copaymentTotal: 4100 },
+      { insuranceGrade: 'general', copaymentTotal: 4000 },
     );
     expect(reItems.find((i) => i.code === 'AA254'), '재진 AA254 행').toBeTruthy();
   });
