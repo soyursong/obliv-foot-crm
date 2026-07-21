@@ -701,7 +701,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         .from('payments')
         .select('id, amount, method, payment_type, created_at')
         .eq('check_in_id', checkIn.id)
-        .neq('status', 'deleted')
+        // T-20260721-foot-CHECKIN-RECEIPT-SOFTVOID-PHANTOM: fail-closed allow-list (부모 CHARTPAGE-SOFTVOID AC1 계승). 영수증=재무-법적 문서라 취소결제 표시가 곧 오표시. .neq 블랙리스트 재도입 금지
+        .eq('status', 'active')
         .order('created_at'),
     ]);
 

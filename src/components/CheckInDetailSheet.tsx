@@ -718,7 +718,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .from('payments')
         .select('id, amount, method, installment, payment_type, created_at, status, check_in_id, clinic_id')
         .eq('check_in_id', checkIn.id)
-        .neq('status', 'deleted'),
+        // T-20260721-foot-CHECKIN-RECEIPT-SOFTVOID-PHANTOM: fail-closed allow-list (부모 CHARTPAGE-SOFTVOID AC1 계승). .neq 블랙리스트 재도입 금지 — cancelled 등 신규 soft-void 값 누수 방지
+        .eq('status', 'active'),
       checkIn.customer_id
         ? supabase
             .from('check_ins')
@@ -950,7 +951,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     const { count } = await supabase
       .from('payments')
       .select('id', { count: 'exact', head: true })
-      .eq('check_in_id', checkIn.id);
+      .eq('check_in_id', checkIn.id)
+      // T-20260721-foot-CHECKIN-RECEIPT-SOFTVOID-PHANTOM: fail-closed allow-list. active 결제만 삭제 차단(취소·삭제된 결제는 차단 대상 아님 — toast "결제를 먼저 취소하세요" 안내와 정합)
+      .eq('status', 'active');
     if ((count ?? 0) > 0) {
       toast.error(`결제 데이터가 있어 삭제할 수 없습니다 (${count}건). 결제를 먼저 취소하세요.`);
       return;
@@ -2194,8 +2197,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 const mapped = prev.map((p) =>
                   p.id === updated.id ? ({ ...p, ...updated } as typeof p) : p
                 );
-                // soft-delete된 수납은 목록에서 즉시 제거
-                return mapped.filter((p) => p.status !== 'deleted');
+                // T-20260721-foot-CHECKIN-RECEIPT-SOFTVOID-PHANTOM: 낙관적 업데이트도 fail-closed allow-list — active 수납만 유지(취소·삭제 즉시 제거, 조회단 .eq('status','active')와 정합)
+                return mapped.filter((p) => p.status === 'active');
               });
             }
             load(); // DB 재조회로 최종 확인
