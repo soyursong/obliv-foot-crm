@@ -53,6 +53,12 @@ export interface AuthoredMedDoc {
   issuedByLicenseNo: string | null;
   issuedAt: string;
   /**
+   * T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 발행자(진료의) clinic_doctors.id 스냅샷 — 도장 결선용.
+   *   데스크 출력도 loadAutoBindContext 가 내원행 치료의로 도장을 해석해, 발행자(문지은)≠방문 치료의(김윤기)면
+   *   '문지은 발행 소견서에 김윤기 도장'이 찍힌다. 출력 시 이 id 로 도장을 발행자 본인 직인으로 결선. 레거시=null.
+   */
+  issuedByDoctorId: string | null;
+  /**
    * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(check_in) — 상병(3칸) 재현 소스 키(폴백).
    *   출력 시 이 방문의 check_in_services(category_label='상병')에서 상병코드를 읽는다. 레거시 미존재=null.
    */
@@ -126,6 +132,8 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
           issuedAt: String(raw['created_at'] ?? ''),
           // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(상병 재현 소스, 폴백).
           checkInId: (fd['check_in_id'] as string | null) ?? null,
+          // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 발행자 clinic_doctors.id 스냅샷 — 도장 결선용.
+          issuedByDoctorId: (fd['issued_by_doctor_id'] as string | null) ?? null,
           // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST]: 발행본 스냅샷 상병(1급 소스).
           //   field_data.diag_code_1..4 / diag_name_1..4 를 그대로 추출(K29.7/B35.1/B35.3/L60.0 등).
           diagCodes: {
@@ -180,7 +188,16 @@ export async function printAuthoredMedDoc(
   let autoValues: Record<string, string> | undefined;
   if (ctx.checkIn?.customer_id) {
     try {
-      autoValues = await loadAutoBindContext(ctx.checkIn);
+      // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 데스크 출력 도장도 '발행자 본인 직인'으로 결선.
+      //   발행자 clinic_doctors.id(doc.issuedByDoctorId)를 clinicDoctorId(1순위)로, 발행자명(doc.issuedByName)을
+      //   doctorNameOverride(레거시 id 부재 시 이름폴백)로 태워 내원행 치료의 기반 도장 오매핑을 차단한다.
+      //   ⚠ 빌링서식 loadAutoBindContext 호출부(PaymentMiniWindow/DocumentPrintPanel 자체 경로)는 무접점 —
+      //     본 함수는 소견서/진단서 발행본 출력 전용. 07-14 미지정폴백 법인인감(sealFallbackToInstitution) 불변.
+      autoValues = await loadAutoBindContext(
+        ctx.checkIn,
+        doc.issuedByName || undefined,
+        doc.issuedByDoctorId ?? undefined,
+      );
       // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸) 공란 복구 — medical_charts(빈 값) 대신
       //   발행본 원 방문(doc.checkInId)의 check_in_services 상병항목에서 diag_code_1..N 을 채운다.
       //   doc.checkInId 미존재(legacy)면 현재 내원(ctx.checkIn)으로 폴백. 상병 없으면 종전 값 유지(회귀 0).
