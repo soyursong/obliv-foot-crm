@@ -970,6 +970,13 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
+  <!-- T-20260721-foot-COPAY-PROVISIONAL-RELABEL: 급여항목 본인부담 확정 라벨 「본인부담금」 (총괄 김주연 confirm).
+       법정 필수 칸 밖 설명 라인 — 별지 서식 칸 구조·값(본인부담=전액/공단부담=0) canon 불변, 텍스트 설명만(숫자 무변경).
+       영수증(공단0=전액) vs 결제미니창(30% 잠정) 금액 불일치 오독 해소. -->
+  <div style="margin-top:6px; font-size:8pt; text-align:left; color:#333;">
+    ※ 상기 급여 항목의 환자 부담분은 「본인부담금」으로 표기됩니다.
+  </div>
+
   <div style="margin-top:8px; font-size:9pt; text-align:center;">
     신청인 &nbsp;&nbsp; {{patient_name}} &nbsp;&nbsp; (환자와의 관계 : 본인 &nbsp;&nbsp; )의 요청에 따라
   </div>
@@ -1772,7 +1779,10 @@ const BILL_RECEIPT_HTML = `
   </div>
 
   <!-- 주의사항 -->
+  <!-- T-20260721-foot-COPAY-PROVISIONAL-RELABEL: 급여항목 본인부담 확정 라벨 「본인부담금」 (총괄 김주연 confirm).
+       법정 필수 칸 밖 주의(설명) 영역 — 급여/비급여 그리드 칸·값(공단부담/본인부담) canon 불변, 텍스트 설명만. -->
   <div class="br-notice">
+    ※ 상기 급여 항목의 환자 부담분은 「본인부담금」으로 표기됩니다.<br>
     ※ 이 계산서·영수증은 연말정산 의료비 공제 및 보험 청구에 사용하실 수 있습니다.<br>
     ※ 영수증 분실 시 재발급이 되지 않을 수 있으니 잘 보관하시기 바랍니다.
   </div>
@@ -2261,6 +2271,12 @@ const BILL_RECEIPT_NEW_HTML = `
       </tr>
     </tbody>
   </table>
+
+  <!-- T-20260721-foot-COPAY-PROVISIONAL-RELABEL: 급여항목 본인부담 확정 라벨 「본인부담금」 (총괄 김주연 confirm).
+       법정 필수 칸 밖 설명 라인 — 별지 제6호서식 칸 구조·값(⑧ 환자부담=본인+비급여/공단부담=별도) canon 불변, 텍스트 설명만. -->
+  <div style="font-size:6.4pt; color:#333; margin-top:1mm; text-align:left;">
+    ※ 상기 급여 항목의 환자 부담분은 「본인부담금」으로 표기됩니다.
+  </div>
 
   <div style="text-align:right; font-size:6.4pt; color:#555; margin-top:1mm;">210㎜×297㎜[백상지 80g/㎡]</div>
 </div>

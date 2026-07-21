@@ -124,6 +124,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260721-foot-COPAY-PROVISIONAL-RELABEL: 진료비 서류 3종 급여항목 본인부담 확정 라벨 「본인부담금」
+        //   재라벨 (§2-2-6 제3안 B, DA GO, 총괄 confirm). 법정 필수 칸 밖 설명 라인 정적 가드 + 렌더 노출 +
+        //   공단값 canon(공단=0)·합계 산식 무변경 역가드. label-layer only(db_change=false). auth/server 불요.
+        '**/T-20260721-foot-COPAY-PROVISIONAL-RELABEL.spec.ts',
         // T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC: 진료비 서류 2종 정확성 — 계산서·영수증 신양식
         //   ⑧환자부담총액/⑩납부할금액 10원 절사(computeBillDetailRounding SSOT, 세부내역서 합계 정합=2c)
         //   + ⑪납부한금액 합계칸 기본 바인딩(2d). 순수 산식 + 템플릿 정적 가드(auth/server 불요, 결정론).
