@@ -522,10 +522,12 @@ export async function loadAutoBindContext(
   }
 
   // 결제 정보
+  // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: 문서 자동바인딩 수납총액도 active-only(fail-closed).
   const { data: payData } = await supabase
     .from('payments')
     .select('amount, payment_type')
-    .eq('check_in_id', checkIn.id);
+    .eq('check_in_id', checkIn.id)
+    .eq('status', 'active');
 
   const payTotal = (payData ?? []).reduce((s, p) => s + (p.amount ?? 0), 0);
 

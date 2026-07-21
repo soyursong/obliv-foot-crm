@@ -4243,6 +4243,8 @@ export default function Dashboard() {
       .from('payments')
       .select('check_in_id, amount, payment_type')
       .eq('clinic_id', clinic.id)
+      // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: 내원별 당일 수납맵도 active-only(fail-closed).
+      .eq('status', 'active')
       .gte('created_at', start)
       .lte('created_at', end);
     const map = new Map<string, number>();

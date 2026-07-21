@@ -136,7 +136,9 @@ async function loadCustomerStats(
     const chunk = ids.slice(i, i + STATS_CHUNK);
     const [checkInsRes, paymentsRes, pkgPaymentsRes, pkgsRes, birthRes] = await Promise.all([
       supabase.from('check_ins').select('customer_id, checked_in_at').in('customer_id', chunk).neq('status', 'cancelled'),
-      supabase.from('payments').select('customer_id, amount, payment_type').in('customer_id', chunk),
+      // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: 고객별 누적수납 합산도 active-only(fail-closed).
+      //   무필터 시 status IN('cancelled','deleted') 유령행이 고객목록 총수납액에 혼입됨.
+      supabase.from('payments').select('customer_id, amount, payment_type').in('customer_id', chunk).eq('status', 'active'),
       supabase.from('package_payments').select('customer_id, amount, payment_type').in('customer_id', chunk),
       supabase.from('packages').select('customer_id').in('customer_id', chunk).eq('status', 'active'),
       supabase.rpc('fn_customer_birthdates', { p_clinic_id: clinicId, p_ids: chunk }),

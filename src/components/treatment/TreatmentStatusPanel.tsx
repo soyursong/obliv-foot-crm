@@ -179,7 +179,8 @@ export default function TreatmentStatusPanel() {
         ? supabase.from('packages').select('id, package_name, package_type, total_sessions, total_amount').in('id', pkgIds)
         : Promise.resolve({ data: [] as PackageInfo[] }),
       ciIds.length > 0
-        ? supabase.from('payments').select('check_in_id, amount, method, payment_type').in('check_in_id', ciIds)
+        // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: 내원별 수납 표시도 active-only(fail-closed).
+        ? supabase.from('payments').select('check_in_id, amount, method, payment_type').in('check_in_id', ciIds).eq('status', 'active')
         : Promise.resolve({ data: [] as { check_in_id: string; amount: number; method: string; payment_type: string }[] }),
       custIds.length > 0
         ? supabase.from('reservations').select('customer_id, reservation_date, reservation_time')
