@@ -477,6 +477,9 @@ export default defineConfig({
         //   → 브라우저 flow wrong-target. 마스킹 산식 정본 미러(JS normalize NFC) + 마이그 정적 가드로
         //   NFC 교정 계약을 결정론 잠금. 실배포 함수 증거=SQL dry-run(_dryrun.mjs). auth/server/page 불요.
         '**/T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE.spec.ts',
+        // T-20260721-foot-BILLDETAIL-DIAGCODE-ADD (§4): 세부산정내역 상병 3경로 대칭 — applyDiagTokens SSOT
+        //   미러 + bindHtmlTemplate 렌더 spec. auth/server/page 불요(순수 바인딩+헬퍼 계약). unit 에서만 실행.
+        '**/T-20260721-foot-BILLDETAIL-DIAGCODE-ADD.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -536,6 +539,9 @@ export default defineConfig({
         // T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE: unit 전용 순수 산식 미러 + 마이그 정적 가드 spec →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE.spec.ts',
+        // T-20260721-foot-BILLDETAIL-DIAGCODE-ADD: unit 전용 순수 헬퍼 미러+setContent-free 렌더 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260721-foot-BILLDETAIL-DIAGCODE-ADD.spec.ts',
       ],
     },
     {
