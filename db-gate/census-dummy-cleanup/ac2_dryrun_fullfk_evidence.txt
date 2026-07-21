@@ -1,0 +1,11 @@
+# AC-2 §4-B DRY-RUN full-FK · 2026-07-21T07:13:03.705Z · trial=false
+
+── (0) canary ROLLBACK 실효: ✅ 무영속
+── (1) full-FK census (non-zero freeze-scope children):
+     check_ins.customer_id=6[a] status_transitions.check_in_id=7[c] assignment_actions.check_in_id=7[c] check_in_room_logs.check_in_id=1[c]
+── baseline freeze live: {"cust":9,"ci":6,"st":7,"aa":7,"cirl":1}
+
+⛔ ABORT: full-FK census net-loss(30) ≠ DA 선언(22=9/6/7).
+   assignment_actions(7)+check_in_room_logs(1) CASCADE 자식이 DA net-loss·스냅샷 미포함.
+   → DA 재adjudication(net-loss 확장 30) 전까지 trial DELETE skip. 재보고(FOLLOWUP).
+   (off-git snapshot_cascade_collateral_2026-07-21.json 확보 완료 = 재-GO 준비됨)
