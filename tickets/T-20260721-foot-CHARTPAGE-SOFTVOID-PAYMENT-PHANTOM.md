@@ -15,7 +15,7 @@ data_architect_consult: N/A — 코드 전용(신규 컬럼·테이블·enum 0).
 deploy_ready: true
 deploy-ready-by: agent-fdd-dev-foot
 deploy-ready-at: 2026-07-21
-commit_sha: __FILL_AFTER_COMMIT__
+commit_sha: 89711448
 precondition_check: prod schema_migrations 20260514000010(payment_edit_cancel_delete) 적용 확인 — payments.status 컬럼 PRESENT(probe OK), 분포 active=155/cancelled=0/deleted=4/null=0. deleted 4행이 현행 유령합산 대상.
 axis_note: payments.status(고객차트 축). closing_manual_payments.voided_at(SOFTVOID-INFRA, deployed 63271dfd)와 다른 테이블 — 혼동 금지. 본 티켓은 payments.status 축만 교정.
 ---
