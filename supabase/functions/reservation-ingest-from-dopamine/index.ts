@@ -247,9 +247,17 @@ Deno.serve(async (req) => {
 
   // customer 필수 필드
   const phoneE164 = customer['phone_e164'] as string | undefined;
-  const name      = customer['name']       as string | undefined;
-  // 동행명 스냅샷(§4-2b 비키): 명시 customer_real_name 우선 → 동행이면 name 폴백.
-  const customerRealNameIn = customer['customer_real_name'] as string | undefined;
+  // ── T-20260721-foot-CUSTOMER-NAME-NFD-NFC-BACKFILL AC-2 (ingest NFC 가드, ADDITIVE, defense-in-depth) ──
+  //   [진원] 도파민 push payload 가 한글 이름을 유니코드 NFD(자모분해)로 운반 → 가드 없이 customers.name/
+  //          reservations.customer_name 에 raw 적재 → 이름검색·dedup 실패(LIKE '%강승은%'=0). 백필로 기존분 정정,
+  //          본 가드로 재유입 차단. 근원(도파민 write-path)은 별건 T-20260721-dopamine-PUSH-PAYLOAD-NAME-NFC-NORMALIZE-GUARD.
+  //   [계약] persist 前 경계에서 NFC 정규화(값-보존·멱등). 완성형 입력은 no-op, NFD 입력만 교정.
+  //          아래 모든 landing(customers INSERT/fill, reservations.customer_name/customer_real_name)이 이 정규화값을 사용.
+  const nameRaw   = customer['name']       as string | undefined;
+  const name      = typeof nameRaw === 'string' ? nameRaw.normalize('NFC') : nameRaw;
+  // 동행명 스냅샷(§4-2b 비키): 명시 customer_real_name 우선 → 동행이면 name 폴백. (동일 NFC 가드)
+  const customerRealNameInRaw = customer['customer_real_name'] as string | undefined;
+  const customerRealNameIn = typeof customerRealNameInRaw === 'string' ? customerRealNameInRaw.normalize('NFC') : customerRealNameInRaw;
   // T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 본인 실 연락처 스냅샷(§4-2b 비키·표시전용, INV-3).
   //   표준 필드 customer_real_phone 우선 → companion_phone 별칭(도파민 emit 명칭 변형) 폴백. 셋 다 opaque 표시축.
   //   ★ phone_e164(동행 identity 토큰=DUMMY/공유폰)로는 절대 폴백 금지 — 표시전용 실연락처만 착지(§461 collapse 재도입 차단).
