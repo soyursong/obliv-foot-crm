@@ -11,6 +11,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { CANONICAL_ORIGIN, DEPRECATED_HOSTS } from '../../src/lib/canonicalHost';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -120,6 +121,36 @@ export function assertExpectedDbTarget(): void {
   if (url.includes(KNOWN_PROD_REF) && expected !== KNOWN_PROD_REF) {
     throw new Error(
       `[PRODREF-HARDGUARD] target 이 prod ref('${KNOWN_PROD_REF}')를 가리킵니다. 격리 dev DB 로 전환하세요.`,
+    );
+  }
+}
+
+// ── E2E 실행타깃 fail-fast 가드 (T-20260721-foot-TEST-DUMMY-CLEANUP / AC-3) ──
+//   kanban-drag 처럼 **UI 로 운영 DB 에 직접 write** 하는 spec 은 시더(seedCheckIn)·REGISTRY·
+//   scoped 마커를 거치지 않아 teardown 격리 밖에서 더미(check_ins/customers)를 남긴다.
+//   CF-1 계열이 의존하는 운영-격리 자산을 **재설계 없이 재사용**해, 실행 진입 시점에서
+//   운영 URL/DB 대상이면 write 이전에 큰소리로 abort 한다(운영 대시보드 더미 적재 근본차단).
+//     - DB: assertExpectedDbTarget() — 컷오버 후 VITE_SUPABASE_URL 이 기대 dev ref 가 아니면 abort
+//           (EXPECT_DEV_DB_REF 미주입 시 opt-in 무동작 → 컷오버 전 현행 CI 무파손).
+//     - URL: baseURL host 가 정본(pages.dev) 또는 deprecated(vercel.app) 운영 origin 이면 즉시 abort.
+//            webServer(localhost:8091)/CF preview 는 통과 → 정상 CI 무영향.
+export function assertNotProdExecution(baseURL?: string | null): void {
+  // 1) DB 타깃 가드 재사용(PRODREF-HARDGUARD).
+  assertExpectedDbTarget();
+  // 2) URL 타깃 가드 — canonicalHost SSOT(정본/deprecated origin)와 대조.
+  if (!baseURL) return;
+  let host = '';
+  try {
+    host = new URL(baseURL).host;
+  } catch {
+    return; // 상대경로 등 파싱 불가 → URL 가드 skip (DB 가드는 이미 통과)
+  }
+  const prodHost = new URL(CANONICAL_ORIGIN).host;
+  if (host === prodHost || DEPRECATED_HOSTS.has(host)) {
+    throw new Error(
+      `[E2E-EXEC-GUARD] 운영 도메인(${host})을 대상으로 DB write E2E 를 실행하려 합니다. ` +
+        `운영 데이터(대시보드) 오염 차단 — 로컬 webServer/CF preview 대상으로만 실행하세요. ` +
+        `(T-20260721-foot-TEST-DUMMY-CLEANUP AC-3)`,
     );
   }
 }
@@ -667,6 +698,81 @@ export async function sweepScoped(opts: { mode: 'run' | 'stale' }): Promise<Clea
     await deleteByIds(sb, 'reservation_logs', 'reservation_id', resIdArr);
     const r = await deleteByIds(sb, 'reservations', 'id', resIdArr);
     summary.reservations += r.deleted;
+  }
+
+  return summary;
+}
+
+// ── kanban-drag UI 더미 cleanup (T-20260721-foot-TEST-DUMMY-CLEANUP / AC-1) ──
+//   kanban-drag.spec.ts 는 셀프체크인 UI 다이얼로그로 더미를 만든다 → 시더(seedCheckIn) 미경유
+//   = run-scoped 마커(`[QA-FIXTURE]|token|ts`)도 REGISTRY 등록도 없다. 따라서 cleanupAll/
+//   sweepScoped 의 스윕망에 잡히지 않아 운영 DB 에 무한 적재됐다(현장 대시보드 노출 RC).
+//   식별키는 이름접두뿐이다.
+//
+//   ★ 컬럼 타입 주의(scalp2 CHECKIN-E2E-FIXTURE 22P02 사고 계승):
+//     check_ins.notes 는 JSONB(20260419000000_initial_schema.sql:148) 이므로
+//     `.eq('notes', <text>)` 는 invalid_text_representation(22P02) 로 **조용히 [] 를 반환**한다.
+//     → 매칭은 반드시 TEXT 컬럼(check_ins.customer_name / customers.name)으로만 한다.
+//   ★ 오류 표면화: select 오류는 throw 로 즉시 표면화한다(silent [] swallow 금지).
+export const KANBAN_FIXTURE_NAME_PREFIXES = ['단계이동_', '칸반테스트_'] as const;
+
+export interface KanbanCleanupSummary {
+  checkIns: number;
+  customers: number;
+  skipped: number;
+}
+
+/**
+ * kanban-drag 가 이 run 에서 만든 더미(정확한 이름 목록)를 FK 순서로 안전 삭제한다.
+ *   - names 는 spec 이 생성 시점에 수집한 **정확한** customer_name/name 값(=이 run 소유분).
+ *     이름접두 전체 스윕(다른 run in-flight 오삭제 위험)이 아니라 exact-in 매칭 → "본인이 만든
+ *     row 만 삭제"(fixtures 안전 불변식) 준수. leaked 과거 잔재는 AC-2(archive-first, DA 게이트) 소관.
+ *   - 삭제 순서: payments(FK child) → check_ins → customers. per-id 폴백으로 FK 잔존행 격리.
+ *   - notes(JSONB) 미사용 — TEXT 컬럼만. select 오류는 throw(표면화).
+ */
+export async function cleanupKanbanFixtures(names: string[]): Promise<KanbanCleanupSummary> {
+  const sb = svc();
+  const summary: KanbanCleanupSummary = { checkIns: 0, customers: 0, skipped: 0 };
+  const uniq = Array.from(new Set(names.filter((n): n is string => !!n)));
+  if (!uniq.length) return summary;
+
+  // 1) check_ins (customer_name TEXT) → payments 정리 후 삭제.
+  for (const c of chunk(uniq, DELETE_CHUNK)) {
+    const { data, error } = await sb.from('check_ins').select('id').in('customer_name', c);
+    if (error) {
+      throw new Error(`cleanupKanbanFixtures: check_ins select 실패(표면화): ${error.message} (code=${(error as { code?: string }).code ?? '?'})`);
+    }
+    const ckIds = (data ?? []).map((r) => r.id as string);
+    if (ckIds.length) {
+      await deleteByIds(sb, 'payments', 'check_in_id', ckIds);
+      const r = await deleteByIds(sb, 'check_ins', 'id', ckIds);
+      summary.checkIns += r.deleted;
+      summary.skipped += r.skipped;
+    }
+  }
+
+  // 2) customers (name TEXT). 잔여 종속 check_ins(이름 커스텀 등으로 §1 에서 누락된 것)를
+  //    customer_id 로 한 번 더 회수 후 customers 삭제 → FK RESTRICT 로 막히면 per-id skip.
+  for (const c of chunk(uniq, DELETE_CHUNK)) {
+    const { data, error } = await sb.from('customers').select('id').in('name', c);
+    if (error) {
+      throw new Error(`cleanupKanbanFixtures: customers select 실패(표면화): ${error.message} (code=${(error as { code?: string }).code ?? '?'})`);
+    }
+    const custIds = (data ?? []).map((r) => r.id as string);
+    if (custIds.length) {
+      const leftCk = await selectAllValues(
+        () => sb.from('check_ins').select('id').in('customer_id', custIds) as unknown as RangeQB,
+        'id',
+      );
+      if (leftCk.length) {
+        await deleteByIds(sb, 'payments', 'check_in_id', leftCk);
+        const r = await deleteByIds(sb, 'check_ins', 'id', leftCk);
+        summary.checkIns += r.deleted;
+      }
+      const r = await deleteByIds(sb, 'customers', 'id', custIds);
+      summary.customers += r.deleted;
+      summary.skipped += r.skipped;
+    }
   }
 
   return summary;

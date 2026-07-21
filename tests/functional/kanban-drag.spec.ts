@@ -7,8 +7,33 @@
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
+import { assertNotProdExecution, cleanupKanbanFixtures } from '../fixtures';
 
 test.describe('Kanban status transitions', () => {
+  // 이 run 이 UI 로 생성한 더미의 정확한 이름(customer_name/name). afterAll 에서 이 이름들만
+  // 삭제한다("본인이 만든 row 만" 불변식). 이름접두: `단계이동_`, `칸반테스트_` (KANBAN_FIXTURE_NAME_PREFIXES).
+  const createdNames: string[] = [];
+
+  // AC-3 (T-20260721-foot-TEST-DUMMY-CLEANUP): 운영 URL/DB 대상 실행이면 write 이전에 fail-fast.
+  //   PRODREF-HARDGUARD(DB) + canonicalHost(URL) 자산 재사용. webServer(localhost)/preview 는 통과.
+  test.beforeAll(({}, testInfo) => {
+    assertNotProdExecution(testInfo.project.use.baseURL);
+  });
+
+  // AC-1 (T-20260721-foot-TEST-DUMMY-CLEANUP): kanban-drag 는 시더 미경유 UI 체크인으로 더미를
+  //   만들어 cleanupAll/sweepScoped 스윕망 밖에 잔류 → 운영 대시보드 무한 적재 RC. 이 teardown 이
+  //   이 run 이 만든 더미를 FK 순서로 정리한다. 오류는 표면화(silent swallow 금지).
+  test.afterAll(async () => {
+    if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.warn('[kanban-drag cleanup] Supabase env 미설정 → cleanup 건너뜀');
+      return;
+    }
+    const summary = await cleanupKanbanFixtures(createdNames);
+    console.log(
+      `[kanban-drag cleanup] 요청=${createdNames.length} 삭제 check_ins=${summary.checkIns} customers=${summary.customers} skipped=${summary.skipped}`,
+    );
+  });
+
   test('Context menu shows stage options', async ({ page }) => {
     const loaded = await loginAndWaitForDashboard(page);
     if (!loaded) {
@@ -45,6 +70,7 @@ test.describe('Kanban status transitions', () => {
       await expect(dialog).toBeVisible({ timeout: 5_000 });
 
       const testName = `칸반테스트_${Date.now()}`;
+      createdNames.push(testName); // AC-1: afterAll cleanup 대상 등록
       await dialog.locator('#ci-name').fill(testName);
       await dialog.locator('#ci-phone').fill(`010${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`);
       await dialog.getByRole('button', { name: '체크인' }).click();
@@ -69,6 +95,7 @@ test.describe('Kanban status transitions', () => {
 
     // 체크인 생성
     const testName = `단계이동_${Date.now()}`;
+    createdNames.push(testName); // AC-1: afterAll cleanup 대상 등록
     const checkinBtn = page.getByRole('button', { name: /체크인/ }).first();
     const btnVisible = await checkinBtn.isVisible().catch(() => false);
     if (!btnVisible) {
