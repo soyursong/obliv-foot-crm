@@ -250,6 +250,14 @@ Deno.serve(async (req) => {
   const name      = customer['name']       as string | undefined;
   // 동행명 스냅샷(§4-2b 비키): 명시 customer_real_name 우선 → 동행이면 name 폴백.
   const customerRealNameIn = customer['customer_real_name'] as string | undefined;
+  // T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 본인 실 연락처 스냅샷(§4-2b 비키·표시전용, INV-3).
+  //   표준 필드 customer_real_phone 우선 → companion_phone 별칭(도파민 emit 명칭 변형) 폴백. 셋 다 opaque 표시축.
+  //   ★ phone_e164(동행 identity 토큰=DUMMY/공유폰)로는 절대 폴백 금지 — 표시전용 실연락처만 착지(§461 collapse 재도입 차단).
+  const customerRealPhoneIn =
+    (customer['customer_real_phone'] as string | undefined) ??
+    (customer['companion_phone'] as string | undefined) ??
+    (reservation['companion_phone'] as string | undefined) ??
+    (body['companion_phone'] as string | undefined);
 
   // 이름은 동행 포함 필수(표시명 복원 근거).
   if (!name) {
@@ -412,6 +420,11 @@ Deno.serve(async (req) => {
       (customerRealNameIn && customerRealNameIn.trim() !== '')
         ? customerRealNameIn.trim()
         : (isCompanion ? name : undefined);
+    // T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 실연락처 스냅샷(표시전용, 비키). non-empty만 착지 → 미동봉/공백 = undefined(회귀 0).
+    const customerRealPhone =
+      (customerRealPhoneIn && customerRealPhoneIn.trim() !== '')
+        ? customerRealPhoneIn.trim()
+        : undefined;
     // slot_type → visit_type 매핑 (旣존 INSERT 로직과 동일). 미동봉 → 'new'(RPC 기본).
     const visitTypeMapped = slotType ? (slotType === 'new_consult' ? 'new' : 'returning') : 'new';
     // scheduled_at(ISO 8601) → date/time 분해 (INSERT·mutation 비교 공용)
@@ -519,7 +532,8 @@ Deno.serve(async (req) => {
         p_registrar_id:       registrarId,
         p_registrar_name:     registrarNameLanded,
         p_customer_real_name: customerRealName ?? null,
-        p_customer_real_phone: null,
+        // T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 실연락처 → reservations.customer_real_phone(표시전용·비키).
+        p_customer_real_phone: customerRealPhone ?? null,
         p_is_companion:       isCompanion,
         // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모 배선(edit/reschedule 재push 반영).
         //   RPC ON CONFLICT = COALESCE 보존 — 빈값이면 기존 brief_note 유지(no-op). (취소 fast-path는 brief_note 미터치.)
@@ -709,6 +723,9 @@ Deno.serve(async (req) => {
       // T-20260713-foot-INGEST-NAME-OVERWRITE-GUARD: 기존 고객 name no-touch(②) 시 push 명 유실 방지 —
       //   우선순위: 명시 customer_real_name/동행명(customerRealName) → 없으면 no-touch push 명(pushNameSnapshot).
       ...((customerRealName ?? pushNameSnapshot) ? { customer_real_name: (customerRealName ?? pushNameSnapshot) } : {}),
+      // T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 실연락처(표시전용·비키, INV-3) 착지 — 신규 push write-path.
+      //   non-empty만 삽입 → NULL/미동봉 회귀 0. 예약상세 '동행자 연락처' 표시 소스. (RPC 라인과 정합.)
+      ...(customerRealPhone ? { customer_real_phone: customerRealPhone } : {}),
       // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모(문제성발톱 등) 착지.
       //   ★ 이 신규 INSERT 경로가 첫 push(문제성발톱 선택→풋 예약상세 간략메모)의 실 write-path.
       //     brief_note = 旣존 컬럼(TEXT NULL). non-empty만 삽입 → NULL/미동봉 회귀 0. (RPC 라인과 정합.)

@@ -702,6 +702,10 @@ export interface Reservation {
    *  customer_id=NULL 경로(동행 등)에서 customer_name 이 NULL/공란인 malformed push 대비, 표시 시 COALESCE 폴백 소스.
    *  형제 list read-api(READAPI-MIRROR)가 이미 폴백 보유 — detail 팝업 parity(belt&suspenders). 비영속/read-only 축, write 금지. */
   customer_real_name?: string | null;
+  /** T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 본인 실 연락처 스냅샷(비키·표시전용, INV-3, §4-2b).
+   *  동행(customer_id=NULL·customer_phone=NULL) 예약상세 '동행자 연락처' 표시 소스. 식별 미참여(JOIN/dedup/귀속 비사용).
+   *  reservations 직접 select('*') 로 자동 유입. write=upsert RPC/ingest EF only, FE read-only. NULL=정상. */
+  customer_real_phone?: string | null;
   customer_phone: string | null;
   reservation_date: string;
   reservation_time: string;
