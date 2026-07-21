@@ -76,3 +76,10 @@
 \+?821099997720
 \+?821099997713
 \+?821099997721
+
+# ── T-20260721-foot-COMPANION-PHONE-EXPOSE 합성 E2E 동행연락처 phone (2026-07-21) ──
+#   동행자 연락처 표시전용 carriage spec 전용 합성값. 반복 자릿수(5555-4444 공유폰 / 9999-8888) 합성마커,
+#   실환자 재식별 0. source_system='e2e-foot-comp-phone' 격리 + before/afterAll purge 즉시 정리.
+#   provenance: tests/e2e/T-20260721-foot-COMPANION-PHONE-EXPOSE.spec.ts. 리뷰 게이트: dev-foot 자가확인, supervisor QA.
+\+?821055554444
+\+?821099998888

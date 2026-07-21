@@ -1466,6 +1466,16 @@ export function ReservationDetailPopup({
                           : '—'
                     }
                   />
+                  {/* T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행자 연락처(표시전용·비키, INV-3).
+                      동행(customer_id/customer_phone=NULL)은 본인 실 연락처가 reservations.customer_real_phone
+                      스냅샷으로 착지 → 예약자 연락처(휴대폰) 바로 아래 인접 표시. 값 있을 때만 렌더(null-safe):
+                      비-동행·무연락처 예약은 미노출(회귀 0). formatPhone 공용 포맷터로 예약자 연락처와 표기 통일. */}
+                  {reservation.customer_real_phone && reservation.customer_real_phone.trim() !== '' && (
+                    <FieldRow
+                      label="동행자 연락처"
+                      value={formatPhone(reservation.customer_real_phone)}
+                    />
+                  )}
                   <FieldRow
                     label="주소"
                     value={
