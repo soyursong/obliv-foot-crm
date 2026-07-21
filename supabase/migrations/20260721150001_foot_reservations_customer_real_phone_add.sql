@@ -1,5 +1,14 @@
 -- T-20260721-foot-COMPANION-PHONE-EXPOSE-DECISION — 동행자 연락처 표시전용 carriage (표시전용 재사용)
 -- ============================================================================
+-- ★ VERSION BUMP (2026-07-22, T-20260722-foot-MIG-TS-COLLISION-20260721150000-LEDGER-RECON):
+--   본 파일은 원래 version `20260721150000` 이었으나 NFC write-guard trigger(name_nfc_writeguard_trigger)와
+--   timestamp 충돌(중복 version). 원장(supabase_migrations.schema_migrations) 20260721150000 행 = NFC 소유
+--   (introspection 실측: name='name_nfc_writeguard_trigger', NFC 선적용). 본 COMPANION DDL 은 원장 미기록이나
+--   prod 물화 완료(customer_real_phone 컬럼 실재 + RPC persist 절 실재) = loser → `20260721150001` 로 bump.
+--   DA-20260722-foot-MIG-TS-COLLISION-LEDGER-RECON (A) bump + ADDITIVE 원장 재정합, 분기 A-1(물화 O).
+--   원장 `20260721150001` 1행 INSERT = supervisor 전속(재실행 금지·순수 원장 정합). 기존 150000 행 무접촉.
+--   본 DDL 전량 멱등(ADD COLUMN IF NOT EXISTS / CREATE OR REPLACE / REVOKE) = 재replay 무해.
+-- ============================================================================
 -- ★ 목적 (DA 확정 판정 MSG-20260721-161823-xckd):
 --   동행(companion) 예약상세에 '동행자 연락처'를 표시한다. 단, provision 실번호 경로는 REJECT
 --   (동행≠예약자 differ = 제3자 공유폰 collapse 미탐지 = §461/INV-1·§52 위반, 2026-07-01 허브#000982

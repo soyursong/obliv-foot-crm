@@ -1,16 +1,20 @@
 /**
  * DRY-RUN (no-persistence): T-20260721-foot-COMPANION-PHONE-EXPOSE-DECISION
- *   20260721150000_foot_reservations_customer_real_phone_add.sql
+ *   20260721150001_foot_reservations_customer_real_phone_add.sql
+ *   ★ 2026-07-22 timestamp-collision LEDGER-RECON (T-20260722-foot-MIG-TS-COLLISION-...): loser 파일이
+ *     20260721150000 → 20260721150001 로 bump(git mv). 본 DDL 은 이미 prod 물화 완료(A-1) → dry-run 은
+ *     "재replay 멱등성(이미 존재 → no-op)" + "무영속(BEFORE==AFTER)" 을 검증한다(신규 apply 아님).
  *     (1) reservations.customer_real_phone TEXT ADD (nullable, non-key)
  *     (2) upsert_reservation_from_source RPC 에 customer_real_phone persist 절 ADD (18-arg 무변경)
  *
  * No-Persistence Protocol (Migration Dry-Run 단일표준 준수):
  *   1) txn-control strip  — up.sql 의 자체 BEGIN;/COMMIT; 제거(sentinel-bypass 조기확정 차단).
  *   2) exception rollback — 스트립한 DDL 본문을 `BEGIN; <ddl>; ROLLBACK;` 로 감싸 무영속 실행.
- *   3) post-probe         — 실행 후 prod 실재를 재-introspect 하여 "아무것도 영속되지 않음" 확증
- *      (컬럼 여전히 부재 · RPC functiondef 에 persist 절 여전히 부재).
+ *   3) post-probe         — 실행 후 prod 실재를 재-introspect 하여 "dry-run 이 아무것도 영속시키지 않음" 확증.
+ *      ★ A-1 reconcile 맥락: 컬럼·persist 절은 이미 prod 에 존재 → BEFORE(present)==AFTER(present) 이면
+ *        (a) DDL 이 멱등 no-op 이고 (b) ROLLBACK 이 dry-run 변경을 영속시키지 않았음을 동시 확증.
  *
- * 실행: (repo root) node supabase/migrations/20260721150000_foot_reservations_customer_real_phone_add.dryrun.mjs
+ * 실행: (repo root) node supabase/migrations/20260721150001_foot_reservations_customer_real_phone_add.dryrun.mjs
  * 필요: .env.local 의 SUPABASE_ACCESS_TOKEN (Management API, DB 비번 불요).
  */
 import fs from 'fs';
@@ -47,7 +51,7 @@ function stripTxn(file) {
     .trim();
 }
 
-const FILE = '20260721150000_foot_reservations_customer_real_phone_add.sql';
+const FILE = '20260721150001_foot_reservations_customer_real_phone_add.sql';
 let ok = true;
 
 const COL_Q = `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='reservations' AND column_name='customer_real_phone';`;
