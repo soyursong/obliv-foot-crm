@@ -54,9 +54,9 @@ test.describe('bill_detail = check_in_services SSOT (진찰료 포함 + copay + 
 
     // AC-4 기준값: bill_detail 합계 = grandTotal(=영수증 SSOT)
     expect(fb.grandTotal).toBe(363370);
-    // 진찰료(13,370)만 급여 → 30% 100원절상 = 4,100
+    // 진찰료(13,370)만 급여 → 30% 100원 미만 절사(FLOOR) = 4,000 (T-20260715 canon / copayCalc.ts L162)
     expect(fb.coveredTotal).toBe(13370);
-    expect(fb.copaymentTotal).toBe(4100);
+    expect(fb.copaymentTotal).toBe(4000);
 
     const billItems = buildFootBillDetailItems(fb.pricingItems, '2026-06-09', {
       insuranceGrade: 'general',
@@ -72,9 +72,9 @@ test.describe('bill_detail = check_in_services SSOT (진찰료 포함 + copay + 
     expect(consult!.is_insurance_covered).toBe(true);
 
     // AC-2: 진찰료 본인부담금 채워짐(공란/0 아님), 공단부담금 = 금액 - 본인부담금
-    expect(consult!.copayment_amount).toBe(4100);
+    expect(consult!.copayment_amount).toBe(4000);
     const consultTotal = consult!.amount * (consult!.count ?? 1) * (consult!.days ?? 1);
-    expect(consultTotal - (consult!.copayment_amount ?? 0)).toBe(9270); // 공단부담금
+    expect(consultTotal - (consult!.copayment_amount ?? 0)).toBe(9370); // 공단부담금 = 13,370 - 4,000(FLOOR)
 
     // AC-4: 항목 합계 = grandTotal
     const itemsSum = billItems.reduce((s, i) => s + i.amount * (i.count ?? 1) * (i.days ?? 1), 0);
@@ -90,9 +90,9 @@ test.describe('bill_detail = check_in_services SSOT (진찰료 포함 + copay + 
 
     expect(html).toContain('AA254');
     expect(html).toContain('재진진찰료-의원');
-    // 본인부담금 4,100 / 공단부담금 9,270 가 실제 셀에 렌더됨
-    expect(html).toContain('4,100');
-    expect(html).toContain('9,270');
+    // 본인부담금 4,000 / 공단부담금 9,370 가 실제 셀에 렌더됨 (FLOOR canon)
+    expect(html).toContain('4,000');
+    expect(html).toContain('9,370');
     expect(html).not.toContain('진료 항목 없음');
   });
 
@@ -119,7 +119,7 @@ test.describe('bill_detail = check_in_services SSOT (진찰료 포함 + copay + 
     ];
     const fb = computeFootBilling(multiCovered, 'general');
     expect(fb.coveredTotal).toBe(29380);
-    expect(fb.copaymentTotal).toBe(8900); // ceil(29380*0.3/100)*100
+    expect(fb.copaymentTotal).toBe(8800); // floor(29380*0.3/100)*100 (FLOOR canon, T-20260715)
 
     const billItems = buildFootBillDetailItems(fb.pricingItems, '2026-05-21', {
       insuranceGrade: 'general', copaymentTotal: fb.copaymentTotal,
