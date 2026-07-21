@@ -893,6 +893,43 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
+  <!-- T-20260721-foot-PAYDETAIL-DIAGCODE-SHOW: 상병(상병코드·상병명) 표시 (총괄 김주연 요청).
+       diag_code_N/diag_name_N = 소견서/진단서와 동일 단일 소스(service_charges 상병 → check_in_services 폴백,
+       결제미니창 PATH-4 는 선택 상병 codeItems). 값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 빈칸(AC-2,
+       잠정 소견서와 동일 방식). 행 가시성(diag_row_3/4_style)은 print 경로가 이미 세팅 — 신규 바인딩 0.
+       순수 additive 표시 변경(no-DDL, 스키마·입력동선 무변경). -->
+  <table style="margin-bottom:4px;">
+    <thead>
+      <tr>
+        <th style="width:48px;">연번</th>
+        <th style="width:120px;">상병코드</th>
+        <th style="text-align:left;">상병명</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td style="white-space:nowrap;">{{diag_code_1}}</td>
+        <td style="text-align:left;">{{diag_name_1}}</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td style="white-space:nowrap;">{{diag_code_2}}</td>
+        <td style="text-align:left;">{{diag_name_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td>3</td>
+        <td style="white-space:nowrap;">{{diag_code_3}}</td>
+        <td style="text-align:left;">{{diag_name_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td>4</td>
+        <td style="white-space:nowrap;">{{diag_code_4}}</td>
+        <td style="text-align:left;">{{diag_name_4}}</td>
+      </tr>
+    </tbody>
+  </table>
+
   <!-- 항목 테이블 -->
   <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-2/AC-8: 참조양식(IMG_8778) 2단 헤더 정합.
        (1) 주(主)컬럼(항목·일자·코드·명칭·금액·횟수·일수·총액·비급여)을 rowspan="3" 단일 풀높이 셀로 —
