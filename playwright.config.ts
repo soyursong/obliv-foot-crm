@@ -138,6 +138,11 @@ export default defineConfig({
         //   loadAutoBindContext(checkIn) 로 autoValues 로드 → printOpinionDoc 주입. 소스 배선 가드 + 실렌더
         //   (환자정보 7필드·상병 채움 / 스냅샷 override 보존 / checkIn 미전달 회귀0). auth/server 불요.
         '**/T-20260721-foot-OPINIONDOC-DESK-BLANK.spec.ts',
+        // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 소견서/진단서 출력 상병(3칸) 공란 — RC 정정(스냅샷엔
+        //   diag 없음, 실제 상병은 check_in_services). applyDiagCodesFromVisit(service_charges 우선→
+        //   check_in_services 폴백) 신설 + handlePrint/printAuthoredMedDoc 재배선(발행본 check_in_id 기준).
+        //   배선 정적 가드 + 토큰 산출 로직 재현 + diag_opinion 실렌더(상병3칸/엣지0·2건). db_change=false, auth 불요.
+        '**/T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK.spec.ts',
         // T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: cross-run 시드 격리 불변식 가드.
         //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 cleanupAll 전수 스윕이 다른 run 의 in-flight
         //   시드를 못 지움을 DB 직접 검증(교대성 RED 구조적 부재 = AC-2/3/4). auth/server 불요.

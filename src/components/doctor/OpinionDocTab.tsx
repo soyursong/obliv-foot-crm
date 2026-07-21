@@ -49,7 +49,9 @@ import {
 } from '@/lib/opinionDocCompose';
 import { printOpinionDoc } from '@/lib/printOpinionDoc';
 // T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-1): 소견서/진단서 출력 시 공용 바인더로 환자정보·상병코드·의사직인 주입.
-import { loadAutoBindContext } from '@/lib/autoBindContext';
+// T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸)은 medical_charts 가 아닌 check_in_services 상병항목에서
+//   재배선(applyDiagCodesFromVisit) — 발행본 원 방문 상병 재현.
+import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
 // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
 //   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
 import { useUpdateStaffMemo } from '@/lib/opinionRequest';
@@ -410,6 +412,12 @@ export interface PublishedOpinionRow {
   issued_at: string;
   /** 서류종류 — 발행 시점 field_data.doc_type. 미존재(legacy 발행본)는 '소견서'(opinion)로 폴백. */
   doc_type: 'opinion' | 'diagnosis';
+  /**
+   * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(check_in) — 상병(3칸) 재현 소스 키.
+   *   출력 시 이 방문의 check_in_services(category_label='상병')에서 상병코드를 읽어 상병 토큰을 채운다
+   *   (오늘 재내원 check_in 이 아닌 발행본의 원 방문 상병을 재현 = 발행본 스냅샷 참조). 레거시 미존재=null.
+   */
+  check_in_id: string | null;
 }
 function usePublishedOpinions(clinicId: string | null, customerId: string | null, templateId: string | null) {
   return useQuery<PublishedOpinionRow[]>({
@@ -437,6 +445,8 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
           // 표시·인쇄는 seoulISODate(timestamptz) 경유 → created_at(정규 tz) 사용. field_data.published_at 는 KST 스냅샷 보존.
           issued_at: String(r['created_at'] ?? ''),
           doc_type: fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion',
+          // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(상병 재현 소스). RPC 가 field_data 에 스냅샷.
+          check_in_id: (fd['check_in_id'] as string | null) ?? null,
         };
       });
     },
@@ -960,6 +970,11 @@ export function OpinionEditorDialog({
           checked_in_at: visitor.checked_in_at,
         } as CheckIn;
         autoValues = await loadAutoBindContext(checkIn);
+        // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸) 공란 복구 — medical_charts(빈 값) 대신
+        //   발행본 원 방문(row.check_in_id)의 check_in_services 상병항목에서 diag_code_1..N 을 채운다.
+        //   row.check_in_id 미존재(legacy)면 현재 내원(visitor.id)로 폴백. 상병 없으면 종전 값 유지(회귀 0).
+        const diagCheckIn = { id: row.check_in_id ?? visitor.id, clinic_id: clinicId } as CheckIn;
+        await applyDiagCodesFromVisit(autoValues, diagCheckIn);
       } catch (e) {
         // 폴백: autoValues 미주입(종전 9필드 동작). 인쇄 자체는 계속.
         console.warn('[OPINIONDOC-PRINT-4FIX] autoBind 로드 실패 — 기본 바인딩으로 폴백', e);

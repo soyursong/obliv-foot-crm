@@ -19,7 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { seoulISODate } from '@/lib/format';
 import { printOpinionDoc, type OpinionPrintFormKey } from '@/lib/printOpinionDoc';
-import { loadAutoBindContext } from '@/lib/autoBindContext';
+import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
 import type { CheckIn } from '@/lib/types';
 import type { ClinicHeader } from '@/components/doctor/OpinionDocTab';
 
@@ -52,6 +52,11 @@ export interface AuthoredMedDoc {
   issuedByName: string;
   issuedByLicenseNo: string | null;
   issuedAt: string;
+  /**
+   * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(check_in) — 상병(3칸) 재현 소스 키.
+   *   출력 시 이 방문의 check_in_services(category_label='상병')에서 상병코드를 읽는다. 레거시 미존재=null.
+   */
+  checkInId: string | null;
 }
 
 interface AuthoredMedDocResult {
@@ -109,6 +114,8 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
           issuedByName: String(fd['doctor_name'] ?? ''),
           issuedByLicenseNo: (fd['doctor_license_no'] as string | null) ?? null,
           issuedAt: String(raw['created_at'] ?? ''),
+          // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(상병 재현 소스).
+          checkInId: (fd['check_in_id'] as string | null) ?? null,
         };
       }
       return { byType };
@@ -152,6 +159,13 @@ export async function printAuthoredMedDoc(
   if (ctx.checkIn?.customer_id) {
     try {
       autoValues = await loadAutoBindContext(ctx.checkIn);
+      // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸) 공란 복구 — medical_charts(빈 값) 대신
+      //   발행본 원 방문(doc.checkInId)의 check_in_services 상병항목에서 diag_code_1..N 을 채운다.
+      //   doc.checkInId 미존재(legacy)면 현재 내원(ctx.checkIn)으로 폴백. 상병 없으면 종전 값 유지(회귀 0).
+      await applyDiagCodesFromVisit(autoValues, {
+        id: doc.checkInId ?? ctx.checkIn.id,
+        clinic_id: ctx.checkIn.clinic_id,
+      });
     } catch (e) {
       // 폴백: autoValues 미주입(종전 9필드 동작). 인쇄 자체는 계속.
       console.warn('[OPINIONDOC-DESK-BLANK] autoBind 로드 실패 — 기본 바인딩으로 폴백', e);

@@ -61,7 +61,8 @@ test.describe('RC 배선: medDocPrintGate.printAuthoredMedDoc → loadAutoBindCo
   });
 
   test('loadAutoBindContext import + ctx.checkIn 으로 autoValues 로드', () => {
-    expect(GATE_SRC).toContain("import { loadAutoBindContext } from '@/lib/autoBindContext'");
+    // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: applyDiagCodesFromVisit co-import 로 import 확장 → tolerant 매칭.
+    expect(GATE_SRC).toMatch(/import\s*\{[^}]*\bloadAutoBindContext\b[^}]*\}\s*from\s*'@\/lib\/autoBindContext'/);
     expect(GATE_SRC, 'ctx.checkIn 가드 누락').toMatch(/if\s*\(\s*ctx\.checkIn\?\.customer_id\s*\)/);
     expect(GATE_SRC, 'loadAutoBindContext(ctx.checkIn) 호출 누락').toContain(
       'await loadAutoBindContext(ctx.checkIn)',
@@ -114,7 +115,8 @@ test.describe('AC-2: PaymentMiniWindow(수납 미니창) checkIn 전달', () => 
 // ── AC-3: 원장탭(OpinionDocTab) 회귀 0 ────────────────────────────────────────
 test.describe('AC-3: 원장탭 회귀 0 (4FIX 배선 불변)', () => {
   test('OpinionDocTab 는 여전히 loadAutoBindContext 직접 배선(변경 없음)', () => {
-    expect(TAB_SRC).toContain("import { loadAutoBindContext } from '@/lib/autoBindContext'");
+    // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: applyDiagCodesFromVisit co-import 로 import 확장 → tolerant 매칭.
+    expect(TAB_SRC).toMatch(/import\s*\{[^}]*\bloadAutoBindContext\b[^}]*\}\s*from\s*'@\/lib\/autoBindContext'/);
     expect(TAB_SRC).toContain('await loadAutoBindContext(checkIn)');
     expect(TAB_SRC).toMatch(/handlePrint\s*=\s*async/);
   });

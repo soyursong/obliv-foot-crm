@@ -16,6 +16,7 @@ import { QR_CODE_API_ENDPOINT } from '@/lib/externalServices';
 import { formatAmount } from '@/lib/format';
 import { formatPhone } from '@/lib/format';
 import { fetchDutyDoctors } from '@/hooks/useDutyRoster';
+import { loadFootBillingItems } from '@/lib/footBilling';
 import type { CheckIn } from '@/lib/types';
 import {
   INSURANCE_GRADE_LABELS,
@@ -799,6 +800,82 @@ export async function loadAutoBindContext(
     diagCodes,
     insuranceInfo,
   });
+}
+
+/**
+ * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK — 소견서/진단서 출력 상병(3칸) 공란 복구.
+ *
+ * RC(런타임 규명, 프로드 데이터 대조 — 티켓 RC 정정):
+ *   티켓 RC 는 "발행본 스냅샷(form_submissions.field_data)에 저장된 diag_code/name 을
+ *   printOpinionDoc 이 참조하지 않는 바인딩 버그"로 기술됐으나, 프로드 발행본(07/18~20) field_data 를
+ *   실측한 결과 **스냅샷에 diag_code/name 이 존재하지 않는다**(final_text·doctor_name·chart_no 등만 존재).
+ *   medical_charts.diagnosis 도 해당 방문일에 null(또는 행 부재). 즉 소견서/진단서 print 경로가 유일하게
+ *   읽던 medical_charts 소스가 비어 상병 3칸이 공란이었다.
+ *   실제 상병 4건(K297·B351·B353·L600 등)은 **check_in_services(category_label='상병')** 에 존재한다
+ *   (예: check_in 2c76eea6 = B351/B353/K297/L600 = F-4808 값과 일치). 이는 DocumentPrintPanel(배치출력)이
+ *   이미 상병 토큰을 채우는 소스와 동일하다(RXPRINT-LAYOUT-4FIX batchDiagItems, L1067~1099).
+ *   → 소견서/진단서 print 경로에도 같은 상병 소스를 배선해 diag_code_1..N/diag_name_1..N 을 채운다.
+ *   db_change=false(순수 read-path 재배선, 스키마 무변경). 원장 재입력 불요(데이터 이미 존재).
+ *
+ * DocumentPrintPanel batchDiagItems 와 동형(우선순위·행가시성·초과코드 HTML 동일):
+ *   service_charges(상병) 우선 → 없으면 check_in_services(상병, loadFootBillingItems) 폴백 →
+ *   둘 다 없으면 autoValues(medical_charts 기반 code1) 유지(기존 동작 보존, 회귀 0).
+ *
+ * ⚠ 상병은 발행본 '스냅샷' 이 아니라 라이브 상병항목이므로 autoValues(base) 계층에 주입한다
+ *   (printOpinionDoc 의 스냅샷 override 계층 아님 — 상병에 대응하는 스냅샷 값이 없기 때문).
+ *   재출력 시 발행본의 원 방문 상병을 재현하도록 호출부는 발행본 스냅샷의 check_in_id 로 이 함수를 호출한다.
+ *
+ * @param autoValues loadAutoBindContext 결과(in-place 보강 — DocumentPrintPanel 과 동일 패턴)
+ * @param checkIn    상병을 읽을 대상 내원(발행본 스냅샷 check_in_id 기준). id 없으면 no-op.
+ */
+export async function applyDiagCodesFromVisit(
+  autoValues: Record<string, string>,
+  checkIn: Pick<CheckIn, 'id' | 'clinic_id'> | null | undefined,
+): Promise<void> {
+  if (!checkIn?.id) return;
+
+  // 1순위: service_charges 상병 항목(DocumentPrintPanel L1035 쿼리 동형).
+  const { data: chargeItems } = await supabase
+    .from('service_charges')
+    .select('service_id, service:services(name, service_code, category_label)')
+    .eq('check_in_id', checkIn.id);
+  let diagItems: { code: string; name: string }[] = (chargeItems ?? [])
+    .map((c) => {
+      const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+      return {
+        code: (svc as { service_code?: string | null } | null)?.service_code ?? '',
+        name: (svc as { name?: string } | null)?.name ?? '',
+        category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
+      };
+    })
+    .filter((i) => i.category_label === '상병')
+    .map((i) => ({ code: i.code, name: i.name }));
+
+  // 2순위(폴백): check_in_services 상병(결제미니창 PATH-4 는 선택 상병을 여기에만 저장).
+  if (diagItems.length === 0) {
+    const fb = await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
+    diagItems = fb
+      .filter((f) => (f.service.category_label ?? '') === '상병')
+      .map((f) => ({ code: f.service.service_code ?? '', name: f.service.name }));
+  }
+
+  // 토큰 주입 — DocumentPrintPanel batchDiagItems(L1084~1099)와 동일 규칙.
+  if (diagItems.length > 0) {
+    delete autoValues.diag_code_1; delete autoValues.diag_name_1;
+    delete autoValues.diag_code_2; delete autoValues.diag_name_2;
+    diagItems.forEach((item, idx) => {
+      const n = idx + 1;
+      autoValues[`diag_code_${n}`] = item.code;
+      autoValues[`diag_name_${n}`] = item.name;
+    });
+  }
+  const diagCount = diagItems.length > 0
+    ? diagItems.length
+    : (autoValues.diag_code_2 ? 2 : autoValues.diag_code_1 ? 1 : 0);
+  autoValues.diag_row_3_style = diagCount >= 3 ? '' : 'display:none';
+  autoValues.diag_row_4_style = diagCount >= 4 ? '' : 'display:none';
+  const extra = diagItems.slice(2).map((i) => i.code).filter(Boolean);
+  autoValues.diag_extra_codes_html = extra.length > 0 ? extra.map((c) => `<br>${c}`).join('') : '';
 }
 
 /**

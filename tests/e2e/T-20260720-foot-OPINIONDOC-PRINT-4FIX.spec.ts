@@ -137,7 +137,9 @@ test.describe('RC-1: printOpinionDoc autoValues 주입 + 스냅샷 override', ()
   });
 
   test('OpinionDocTab.handlePrint: loadAutoBindContext 로드 후 autoValues 주입', () => {
-    expect(TAB_SRC).toContain("import { loadAutoBindContext } from '@/lib/autoBindContext'");
+    // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 동일 모듈에서 applyDiagCodesFromVisit 를 co-import 하도록
+    //   import 가 확장됨 → 정확 문자열 대신 loadAutoBindContext 가 해당 모듈에서 import 됨을 tolerant 매칭.
+    expect(TAB_SRC).toMatch(/import\s*\{[^}]*\bloadAutoBindContext\b[^}]*\}\s*from\s*'@\/lib\/autoBindContext'/);
     expect(TAB_SRC).toMatch(/handlePrint\s*=\s*async/);
     expect(TAB_SRC).toContain('await loadAutoBindContext(checkIn)');
     expect(TAB_SRC).toMatch(/autoValues,?\s*\n?\s*\}\);/);
