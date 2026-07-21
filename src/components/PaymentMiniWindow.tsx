@@ -1925,10 +1925,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     const doc = medDocAuthored?.byType?.[medDocFormKeyToDocType(formKey)];
     return {
       authored: !!doc,
-      onPrint: () => {
-        const ok = printAuthoredMedDoc(formKey, doc, {
+      onPrint: async () => {
+        // T-20260721-foot-OPINIONDOC-DESK-BLANK (평행경로): checkIn 전달 → 공용 함수가
+        //   loadAutoBindContext 로 환자정보·상병 토큰을 채운다(종전 이름만 표시 공란 해소).
+        const ok = await printAuthoredMedDoc(formKey, doc, {
           patientName: checkIn?.customer_name ?? null,
           clinicHeader: medDocClinicHeader ?? null,
+          checkIn: checkIn ?? undefined,
         });
         if (!ok) toast.error('팝업이 차단되었거나 발행본을 불러올 수 없습니다.');
       },

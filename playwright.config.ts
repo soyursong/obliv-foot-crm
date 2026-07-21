@@ -129,6 +129,11 @@ export default defineConfig({
         //   + ⑪납부한금액 합계칸 기본 바인딩(2d). 순수 산식 + 템플릿 정적 가드(auth/server 불요, 결정론).
         //   CANON-GATE(공단부담금 1a/2b)는 미접촉 — ⑦공단부담총액 {{insurance_covered}} 회귀 가드 포함.
         '**/T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC.spec.ts',
+        // T-20260721-foot-OPINIONDOC-DESK-BLANK: 소견서/진단서 데스크(서류탭·수납 미니창) 출력 환자정보·상병 공란
+        //   — 4FIX(원장탭 전용) 미커버 호출부 확장. printAuthoredMedDoc 에 checkIn 인자 추가 → 내부
+        //   loadAutoBindContext(checkIn) 로 autoValues 로드 → printOpinionDoc 주입. 소스 배선 가드 + 실렌더
+        //   (환자정보 7필드·상병 채움 / 스냅샷 override 보존 / checkIn 미전달 회귀0). auth/server 불요.
+        '**/T-20260721-foot-OPINIONDOC-DESK-BLANK.spec.ts',
         // T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: cross-run 시드 격리 불변식 가드.
         //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 cleanupAll 전수 스윕이 다른 run 의 in-flight
         //   시드를 못 지움을 DB 직접 검증(교대성 RED 구조적 부재 = AC-2/3/4). auth/server 불요.
@@ -471,6 +476,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260721-foot-OPINIONDOC-DESK-BLANK: unit 전용 소스 가드 + bindHtmlTemplate 실렌더 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260721-foot-OPINIONDOC-DESK-BLANK.spec.ts',
         '**/T-20260701-foot-DASH-GLASS-SHADOW-SOFTEN-PASTBANNER-COMPACT.spec.ts',
         // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: 순수 정적/렌더 unit 스펙 — desktop-chrome(auth 의존)
         //   에서 제외해 `npx playwright test <file>` 무-project 실행 시 setup 미기동. (FIX-REQUEST MSG-20260716-003500-sg9r)

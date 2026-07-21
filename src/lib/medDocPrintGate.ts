@@ -19,6 +19,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { seoulISODate } from '@/lib/format';
 import { printOpinionDoc, type OpinionPrintFormKey } from '@/lib/printOpinionDoc';
+import { loadAutoBindContext } from '@/lib/autoBindContext';
+import type { CheckIn } from '@/lib/types';
 import type { ClinicHeader } from '@/components/doctor/OpinionDocTab';
 
 /** 게이트 적용 대상 form_key — 소견서 / 진단서. */
@@ -120,18 +122,41 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
 export interface MedDocPrintContext {
   patientName: string | null;
   clinicHeader: ClinicHeader | null;
+  /**
+   * T-20260721-foot-OPINIONDOC-DESK-BLANK: 데스크(DocumentPrintPanel)·수납(PaymentMiniWindow) 공용 출력의
+   *   autoValues 로드용 내원행(check_in). 지정 시 loadAutoBindContext 로 환자정보(주민번호·생년월일·연령·
+   *   성별·주소·연락처)·상병코드 토큰을 채운다. 미지정 시 종전 9필드만 바인딩(회귀 0).
+   */
+  checkIn?: CheckIn | null;
 }
 
 /**
  * 데스크 발행본 출력 — 해당 서류종류의 원장 발행본을 양식에 바인딩해 인쇄.
  * 발행본이 없으면 false(호출부에서 게이트가 disabled 처리하므로 정상 경로에선 도달 안 함).
+ *
+ * T-20260721-foot-OPINIONDOC-DESK-BLANK (커버리지 보완):
+ *   T-20260720 4FIX 는 원장탭(OpinionDocTab) 출력에만 autoValues(공용 바인더)를 배선하고
+ *   데스크 경로 2곳(DocumentPrintPanel·PaymentMiniWindow)이 이 공용 함수를 autoValues 없이 호출 →
+ *   환자정보·상병 토큰 공란(이름만 표시)이었다. 이제 ctx.checkIn 이 있으면 이 함수 안에서
+ *   loadAutoBindContext(checkIn) 로 autoValues 를 로드해 printOpinionDoc 에 주입한다.
+ *   발행본 스냅샷(발행자·면허·차트·발행일·본문)은 printOpinionDoc 내부 override 로 보존(법정 의무기록 불변).
+ *   조회 실패 시 종전 동작(9필드)으로 폴백해 인쇄 자체는 계속한다.
  */
-export function printAuthoredMedDoc(
+export async function printAuthoredMedDoc(
   formKey: string,
   doc: AuthoredMedDoc | undefined,
   ctx: MedDocPrintContext,
-): boolean {
+): Promise<boolean> {
   if (!doc) return false;
+  let autoValues: Record<string, string> | undefined;
+  if (ctx.checkIn?.customer_id) {
+    try {
+      autoValues = await loadAutoBindContext(ctx.checkIn);
+    } catch (e) {
+      // 폴백: autoValues 미주입(종전 9필드 동작). 인쇄 자체는 계속.
+      console.warn('[OPINIONDOC-DESK-BLANK] autoBind 로드 실패 — 기본 바인딩으로 폴백', e);
+    }
+  }
   return printOpinionDoc({
     body: doc.body,
     chartNo: doc.chartNo,
@@ -143,5 +168,6 @@ export function printAuthoredMedDoc(
     clinicAddress: ctx.clinicHeader?.address ?? null,
     clinicPhone: ctx.clinicHeader?.phone ?? null,
     formKey: medDocFormKeyToPrintForm(formKey),
+    autoValues,
   });
 }
