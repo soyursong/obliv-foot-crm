@@ -31,29 +31,36 @@ test.describe('T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE — 하네스 위생
     if (dbReady) await cleanupAll();
   });
 
-  test('AC-5: seedCheckIn phone 이 E.164(+8210XXXXXXXX)', async () => {
+  // ⚠ AC-5/AC-2 계약 개정: T-20260721-foot-E2E-FIXTURE-SELFID 가 seedCheckIn 자기식별을
+  //   재정의(phone DUMMY-% + is_simulation 기본 true). 구 계약(E.164 + 기본 false)은 폐기됨.
+  test('AC-5(개정): seedCheckIn phone 이 DUMMY-% (자기식별 + phone_dummy 파생)', async () => {
     const h = await seedCheckIn({ visit_type: 'new' });
     try {
-      expect(h.phone, 'seed phone 은 E.164 (Step1 DB CHECK 무파손)').toMatch(/^\+8210\d{8}$/);
-      // 실제 저장값도 E.164 인지 확인
-      const { data } = await sb!.from('customers').select('phone').eq('id', h.customerId).single();
-      expect(data?.phone as string).toMatch(/^\+8210\d{8}$/);
+      expect(h.phone, 'seed phone 은 DUMMY-% (SELFID)').toMatch(/^DUMMY-/);
+      // 실제 저장값 phone + phone_dummy 트리거 파생 확인
+      const { data } = await sb!
+        .from('customers')
+        .select('phone, phone_dummy')
+        .eq('id', h.customerId)
+        .single();
+      expect(data?.phone as string).toMatch(/^DUMMY-/);
+      expect((data as { phone_dummy?: boolean } | null)?.phone_dummy, 'phone_dummy=true(트리거 파생)').toBe(true);
     } finally {
       await h.cleanup();
     }
   });
 
-  test('AC-2: is_simulation opt-in — {simulation:true}→true, 기본→false', async () => {
-    const simH = await seedCheckIn({ visit_type: 'new', simulation: true });
-    const realH = await seedCheckIn({ visit_type: 'new' });
+  test('AC-2(개정): is_simulation 기본 true(SELFID), opt-out(false) 도 존중', async () => {
+    const defH = await seedCheckIn({ visit_type: 'new' });
+    const optOutH = await seedCheckIn({ visit_type: 'new', simulation: false });
     try {
-      const { data: sim } = await sb!.from('customers').select('is_simulation').eq('id', simH.customerId).single();
-      const { data: real } = await sb!.from('customers').select('is_simulation').eq('id', realH.customerId).single();
-      expect(sim?.is_simulation, 'simulation:true → is_simulation=true').toBe(true);
-      expect(real?.is_simulation ?? false, '기본 → is_simulation=false(가시성 계약 보존)').toBe(false);
+      const { data: def } = await sb!.from('customers').select('is_simulation').eq('id', defH.customerId).single();
+      const { data: optOut } = await sb!.from('customers').select('is_simulation').eq('id', optOutH.customerId).single();
+      expect(def?.is_simulation, '기본 → is_simulation=true(비실환자 단일 술어)').toBe(true);
+      expect(optOut?.is_simulation ?? false, 'simulation:false → false(opt-out 존중)').toBe(false);
     } finally {
-      await simH.cleanup();
-      await realH.cleanup();
+      await defH.cleanup();
+      await optOutH.cleanup();
     }
   });
 
