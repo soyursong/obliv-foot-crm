@@ -31,6 +31,12 @@ import {
   resolveAssignReason,
 } from '@/lib/autoAssign';
 import type { CheckInStatus, Reservation, VisitType } from '@/lib/types';
+// T-20260721-foot-BILLING-REMAINING-WORK §3b: 접수 insurance_grade 필수입력화 (null-grade 재발방지).
+import {
+  ALL_INSURANCE_GRADES,
+  INSURANCE_GRADE_SHORT_LABELS,
+  type InsuranceGrade,
+} from '@/lib/insurance';
 
 interface Props {
   open: boolean;
@@ -50,6 +56,9 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [visitType, setVisitType] = useState<VisitType>('new');
+  // T-20260721-foot-BILLING-REMAINING-WORK §3b: 신규 고객 접수 시 자격등급 필수입력.
+  //   null = 미선택 → 신규 고객 INSERT 차단(재발방지). 기존/예약연결 고객은 차트2 등급 관리 → 비대상.
+  const [insuranceGrade, setInsuranceGrade] = useState<InsuranceGrade | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [todayReservations, setTodayReservations] = useState<Reservation[]>([]);
   // T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 예약 고객(customer_id) → 차트번호 맵
@@ -68,6 +77,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setName('');
     setPhone('');
     setVisitType('new');
+    setInsuranceGrade(null);
     setLinkedReservation(null);
     setSelectedCustomerId(null);
     setTodayReservations([]);
@@ -256,6 +266,15 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       if (resolvedExisting) {
         customerId = resolvedExisting.id as string;
       } else if (!ambiguousLink) {
+        // ── T-20260721-foot-BILLING-REMAINING-WORK §3b: 신규 고객 자격등급 필수입력 ──
+        //   신규 customers 행이 grade=null 로 생성되던 게 388건 null-grade 근원(공단부담 0·정산 왜곡).
+        //   신규 생성 시 자격등급 미선택이면 접수 차단(비급여·외국인·미확인도 명시 선택 = 원천 봉인).
+        //   기존/예약연결 고객(위 resolvedExisting/selectedCustomerId)은 이 분기 미진입 → 회귀 0.
+        if (!insuranceGrade) {
+          toast.error('신규 고객은 보험 자격등급을 선택해주세요 (급여 정산·서류 정확도)');
+          setSubmitting(false);
+          return;
+        }
         const { data: created, error: cErr } = await supabase
           .from('customers')
           .insert({
@@ -264,6 +283,10 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
             // Fix-2 (T-20260517-foot-CHECKIN-E164): 신규 생성 시 E.164 저장
             phone: phoneE164,
             visit_type: visitType === 'new' ? 'new' : 'returning',
+            // §3b: 접수 시 선택한 자격등급 즉시 적재(수기입력 source). null-grade 재발방지.
+            insurance_grade: insuranceGrade,
+            insurance_grade_source: 'manual_input',
+            insurance_grade_verified_at: new Date().toISOString(),
           })
           .select('id')
           .single();
@@ -555,6 +578,38 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
               ))}
             </div>
           </div>
+
+          {/* ── T-20260721-foot-BILLING-REMAINING-WORK §3b: 신규 고객 자격등급 필수입력 ──
+              기존 고객(인라인검색/예약연결 선택) 접수 시엔 숨김 — 등급은 차트2에서 관리(회귀 0).
+              신규(미식별) 접수에서만 노출·필수. 비급여/외국인/미확인도 명시 선택으로 null 봉인. */}
+          {!selectedCustomerId && !linkedReservation?.customer_id && (
+            <div className="space-y-1">
+              <Label>
+                보험 자격등급 <span className="text-red-600">*</span>
+                <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                  (신규 접수 필수 — 급여 정산·서류 정확도)
+                </span>
+              </Label>
+              <div className="grid grid-cols-3 gap-1.5" data-testid="checkin-insurance-grade">
+                {ALL_INSURANCE_GRADES.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setInsuranceGrade(g)}
+                    className={cn(
+                      'h-10 rounded-md border px-2 text-xs font-medium transition',
+                      insuranceGrade === g
+                        ? 'border-teal-600 bg-teal-50 text-teal-700'
+                        : 'border-input bg-background hover:bg-muted',
+                    )}
+                  >
+                    {INSURANCE_GRADE_SHORT_LABELS[g]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               취소
