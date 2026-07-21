@@ -476,6 +476,35 @@ ${pages.join('\n')}
   return w;
 }
 
+// ─── T-20260721-foot-DOCREPRINT-OPINION-EDIT-NOSYNC (A안): 발행 고정본 스냅샷 재출력 ───
+//   현장 확정(김주연 총괄 2026-07-21, A안): 이미 발행/출력된 서류를 다시 클릭하면 편집 팝업(IssueDialog)을
+//   열지 않고 최신 발행본 field_data 스냅샷을 그대로 렌더·인쇄한다. 신규 INSERT·재산정 없음 = "찍은 그대로"
+//   재출력(의료법§22 append-only·DOCREPRINT-DOCTOR-CONTENT-PERSIST 정합). 단건 발행 경로(printJpg)와 동일
+//   렌더 SSOT를 공유 — html(rx 2장)·jpg/img 오버레이 공통(preview OK / print FAIL divergence 재발 방지).
+//   ⚠ 순수 렌더 함수(모듈 스코프) — 상태 변경/DB write 없음. pdf 양식은 미지원(호출부에서 폴백).
+function printFormFromSnapshot(
+  template: FormTemplate,
+  values: Record<string, string>,
+  customerName: string,
+): Window | null {
+  if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
+    // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장(약국보관용/환자보관용) — printJpg와 동일.
+    const isLandscape = template.form_key === 'bill_detail';
+    const pages =
+      template.form_key === 'rx_standard'
+        ? [
+            buildHtmlPageHtml(template, values, '약국보관용'),
+            buildHtmlPageHtml(template, values, '환자보관용'),
+          ]
+        : [buildHtmlPageHtml(template, values)];
+    return openBatchPrintWindow(pages, `${template.name_ko} — ${customerName}`, isLandscape);
+  }
+  const imgUrl = getTemplateImageUrl(template.form_key);
+  if (!imgUrl) return null;
+  const pageHtml = buildPageHtml(template, values, imgUrl);
+  return openBatchPrintWindow([pageHtml], `${template.name_ko} — ${customerName}`);
+}
+
 // ─── 메인 컴포넌트 ───
 
 export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false }: Props) {
@@ -1035,6 +1064,32 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     setSelectedTemplate(tpl);
     setIssueDialogOpen(true);
   };
+
+  // ── T-20260721-foot-DOCREPRINT-OPINION-EDIT-NOSYNC (A안 / AC-1·AC-2): 이미 발행/출력된 서류 재출력 ──
+  //   현장 확정(김주연 총괄 2026-07-21): 이미 한번 발행/출력된 서류를 재클릭하면 편집 팝업(IssueDialog)을
+  //   열지 않고 최신 발행본 스냅샷(field_data)을 그대로 재출력한다(신규 INSERT·재산정 없음 = 발행 고정본).
+  //   → 현장 혼란(재출력 클릭 시 수정 팝업이 떠 미발행 편집을 유발) 해소.
+  //   최신 non-voided 발행 이력의 field_data 를 렌더. 스냅샷 부재 또는 pdf 양식(스냅샷 재렌더 미지원)일 때만
+  //   기존 발행 다이얼로그로 폴백(무회귀). 게이트 서류(소견서·진단서)는 이 경로를 타지 않음(gate.onPrint 유지).
+  const handleReprintSnapshot = useCallback(
+    (tpl: FormTemplate) => {
+      const latest = submissions.find(
+        (s) =>
+          s.template_id === tpl.id &&
+          s.status !== 'voided' &&
+          s.field_data &&
+          Object.keys(s.field_data).length > 0,
+      );
+      // 스냅샷 미확보 / pdf 양식 → 기존 발행 다이얼로그로 폴백(신규 발행 동선 보존, AC-3).
+      if (!latest || tpl.template_format === 'pdf') {
+        handleSelectTemplate(tpl);
+        return;
+      }
+      const w = printFormFromSnapshot(tpl, latest.field_data, checkIn.customer_name ?? '');
+      if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+    },
+    [submissions, checkIn.customer_name],
+  );
 
   const handleIssued = () => {
     setIssueDialogOpen(false);
@@ -1771,6 +1826,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
               canAccess={canAccess}
               onToggle={toggleSelect}
               onCardClick={handleSelectTemplate}
+              onReprint={handleReprintSnapshot}
               medDocGate={medDocGate}
               /* T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 구 'bill_receipt' 목록 제거에 따라
                  "영수증 관리" 펼침 패널을 정본 행(신양식 bill_receipt_new='진료비 계산서·영수증')으로 이관.
@@ -1834,6 +1890,7 @@ function TemplateSection({
   canAccess,
   onToggle,
   onCardClick,
+  onReprint,
   medDocGate,
   renderRowExtra,
 }: {
@@ -1844,6 +1901,9 @@ function TemplateSection({
   canAccess: (t: FormTemplate) => boolean;
   onToggle: (key: string) => void;
   onCardClick: (t: FormTemplate) => void;
+  /** T-20260721-foot-DOCREPRINT-OPINION-EDIT-NOSYNC (A안): 이미 발행/출력된(무게이트) 서류 재출력 —
+   *  편집 팝업 없이 발행 고정본 스냅샷 직행. 미지정 시 기존 동작(onCardClick=상세 발행 팝업). */
+  onReprint?: (t: FormTemplate) => void;
   /** T-20260620-foot-MEDDOC-DESK-PRINTONLY: form_key별 의료서류 출력 게이트. 미지정 시 무게이트. */
   medDocGate?: (formKey: string) => MedDocGateInfo;
   /** T-20260623-foot-DOCOUTPUT-DUP-ITEM-REMOVE: 특정 행(예: bill_receipt) 하단에 펼쳐지는 부가 패널(영수증 관리). null이면 토글 미표시. */
@@ -1868,6 +1928,9 @@ function TemplateSection({
           const submissionCount = submissions.filter(
             (s) => s.template_id === tpl.id && s.status !== 'voided',
           ).length;
+          // T-20260721-foot-DOCREPRINT-OPINION-EDIT-NOSYNC (A안): 이미 발행/출력된(무게이트) 서류 판별.
+          //   true → 우측 액션이 [상세 발행](편집 팝업) 대신 [재출력](발행 고정본 스냅샷 직행)으로 전환.
+          const hasIssued = submissionCount > 0 && !!onReprint;
 
           // T-20260620-foot-MEDDOC-DESK-PRINTONLY (B안): 소견서·진단서 게이트.
           //   gate ≠ null 인 행은 체크박스/일괄선택/자유작성(IssueDialog) 동선을 쓰지 않는다.
@@ -1975,14 +2038,28 @@ function TemplateSection({
                     원장 작성 필요
                   </span>
                 )
+              ) : hasIssued ? (
+                /* T-20260721-foot-DOCREPRINT-OPINION-EDIT-NOSYNC (A안 / AC-1): 이미 발행/출력된 서류 —
+                   [상세 발행](편집 팝업) 대신 [재출력]로 전환. 클릭 시 편집 팝업 없이 발행 고정본 스냅샷 직행. */
+                <button
+                  className={`shrink-0 text-[10px] font-semibold hover:underline px-1 ${isSelected ? 'text-white' : 'text-teal-600'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (accessible) onReprint?.(tpl);
+                  }}
+                  data-testid={`docprint-reprint-${tpl.form_key}`}
+                >
+                  재출력 →
+                </button>
               ) : (
-                /* 상세 발행 버튼 (행 우측) — 무게이트 서류 */
+                /* 상세 발행 버튼 (행 우측) — 무게이트 · 미발행 서류(신규 발행 동선, AC-3 보존) */
                 <button
                   className={`shrink-0 text-[10px] font-semibold hover:underline px-1 ${isSelected ? 'text-white' : 'text-teal-600'}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (accessible) onCardClick(tpl);
                   }}
+                  data-testid={`docprint-detail-issue-${tpl.form_key}`}
                 >
                   상세 발행 →
                 </button>
@@ -2879,27 +2956,14 @@ function IssueDialog({
   //   주입된 finalValues 로 인쇄(미주입 시 allValues = 미리보기값). 인쇄본에만 실 연번호가 찍힘.
   const printJpg = useCallback((valuesOverride?: Record<string, string>) => {
     const values = valuesOverride ?? allValues;
-    // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식 분기
-    if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
-      // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
-      const isLandscape = template.form_key === 'bill_detail';
-      const pages = template.form_key === 'rx_standard'
-        ? [
-            buildHtmlPageHtml(template, values, '약국보관용'),
-            buildHtmlPageHtml(template, values, '환자보관용'),
-          ]
-        : [buildHtmlPageHtml(template, values)];
-      const w = openBatchPrintWindow(pages, `${template.name_ko} — ${checkIn.customer_name}`, isLandscape);
-      if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
-      return;
-    }
-    const imgUrl = getTemplateImageUrl(template.form_key);
-    if (!imgUrl) {
+    // T-20260721-foot-DOCREPRINT-OPINION-EDIT-NOSYNC: 단건 발행·재출력 공통 렌더 SSOT(printFormFromSnapshot)로 통일.
+    //   비-html 양식 이미지 미확보 시에만 별도 안내 — 그 외 렌더 로직(html rx 2장/jpg 오버레이)은 모듈 함수 단일 소스.
+    const isHtml = template.template_format === 'html' || isHtmlTemplate(template.form_key);
+    if (!isHtml && !getTemplateImageUrl(template.form_key)) {
       toast.error('양식 이미지를 찾을 수 없습니다');
       return;
     }
-    const pageHtml = buildPageHtml(template, values, imgUrl);
-    const w = openBatchPrintWindow([pageHtml], `${template.name_ko} — ${checkIn.customer_name}`);
+    const w = printFormFromSnapshot(template, values, checkIn.customer_name ?? '');
     if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   }, [template, allValues, checkIn.customer_name]);
 
