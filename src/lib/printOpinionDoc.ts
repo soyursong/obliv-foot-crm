@@ -42,6 +42,17 @@ export interface OpinionPrintData {
    *   미지정(기존 호출부: DocumentPrintPanel/medDocPrintGate)은 종전 동작 유지(회귀 0, 금지1).
    */
   autoValues?: Record<string, string>;
+  /**
+   * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST, 이은상 팀장]: 발행본 스냅샷 상병(1급 소스).
+   *   발행 시점 field_data.diag_code_1..4 / diag_name_1..4 (발행 당시 확정 4상병, 재출력 불변).
+   *   ⚠ autoValues(check_in_services 폴백, 방문일 미매칭 위험) 뒤에 truthy 일 때만 override →
+   *      스냅샷이 있으면 스냅샷이 이기고(4코드 전부 채움), 없으면 autoValues 폴백 유지(회귀 0).
+   *   code3/code4 존재 시 해당 행 가시성(diag_row_3/4_style)도 함께 열어 4코드 전부 렌더.
+   */
+  diagCodes?: {
+    code1: string | null; code2: string | null; code3: string | null; code4: string | null;
+    name1: string | null; name2: string | null; name3: string | null; name4: string | null;
+  };
 }
 
 // 양식별 본문(발행 body)이 들어갈 필드 키.
@@ -88,6 +99,19 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
     ...(data.clinicPhone ? { clinic_phone: data.clinicPhone } : {}),
     ...(data.issuedByName ? { doctor_name: data.issuedByName } : {}),
     ...(data.issuedByLicenseNo ? { doctor_license_no: data.issuedByLicenseNo } : {}),
+    // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST, 이은상 팀장]: 발행본 스냅샷 상병 override.
+    //   ⚠ 반드시 ...autoValues 뒤에 위치(빈 autoValues override 방지) — autoValues 의 상병(check_in
+    //      폴백, 방문일 미매칭 시 공란/1코드)을 스냅샷 값이 이겨야 4코드(K29.7/B35.1/B35.3/L60.0)가 전부 뜬다.
+    //   FIX-① 동일 규칙: 스냅샷 값이 truthy 일 때만 override(null 이면 autoValues 폴백 유지 → 회귀 0,
+    //      diag 없는 발행본은 공란 유지). code3/code4 존재 시 해당 행(diag_row_3/4_style)도 함께 노출.
+    ...(data.diagCodes?.code1 ? { diag_code_1: data.diagCodes.code1 } : {}),
+    ...(data.diagCodes?.name1 ? { diag_name_1: data.diagCodes.name1 } : {}),
+    ...(data.diagCodes?.code2 ? { diag_code_2: data.diagCodes.code2 } : {}),
+    ...(data.diagCodes?.name2 ? { diag_name_2: data.diagCodes.name2 } : {}),
+    ...(data.diagCodes?.code3 ? { diag_code_3: data.diagCodes.code3, diag_row_3_style: '' } : {}),
+    ...(data.diagCodes?.name3 ? { diag_name_3: data.diagCodes.name3 } : {}),
+    ...(data.diagCodes?.code4 ? { diag_code_4: data.diagCodes.code4, diag_row_4_style: '' } : {}),
+    ...(data.diagCodes?.name4 ? { diag_name_4: data.diagCodes.name4 } : {}),
   };
   const html = bindHtmlTemplate(tpl, fieldValues);
   const title = TITLE_BY_FORM[formKey];

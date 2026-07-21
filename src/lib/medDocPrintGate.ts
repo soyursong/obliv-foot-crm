@@ -53,10 +53,20 @@ export interface AuthoredMedDoc {
   issuedByLicenseNo: string | null;
   issuedAt: string;
   /**
-   * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(check_in) — 상병(3칸) 재현 소스 키.
+   * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(check_in) — 상병(3칸) 재현 소스 키(폴백).
    *   출력 시 이 방문의 check_in_services(category_label='상병')에서 상병코드를 읽는다. 레거시 미존재=null.
    */
   checkInId: string | null;
+  /**
+   * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST, 이은상 팀장]: 발행본 스냅샷 상병(1급 소스).
+   *   발행 시점 field_data 에 고정 저장된 diag_code_1..4 / diag_name_1..4 (원장 발행 당시 확정 4상병).
+   *   재출력이 다른 날 이뤄져도 불변 → check_in_services 폴백(방문일 미매칭 위험)보다 우선.
+   *   printOpinionDoc override 에서 autoValues 뒤에 truthy 일 때만 얹어 스냅샷 값을 우선 렌더. 미존재=각 null.
+   */
+  diagCodes: {
+    code1: string | null; code2: string | null; code3: string | null; code4: string | null;
+    name1: string | null; name2: string | null; name3: string | null; name4: string | null;
+  };
 }
 
 interface AuthoredMedDocResult {
@@ -114,8 +124,20 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
           issuedByName: String(fd['doctor_name'] ?? ''),
           issuedByLicenseNo: (fd['doctor_license_no'] as string | null) ?? null,
           issuedAt: String(raw['created_at'] ?? ''),
-          // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(상병 재현 소스).
+          // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(상병 재현 소스, 폴백).
           checkInId: (fd['check_in_id'] as string | null) ?? null,
+          // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST]: 발행본 스냅샷 상병(1급 소스).
+          //   field_data.diag_code_1..4 / diag_name_1..4 를 그대로 추출(K29.7/B35.1/B35.3/L60.0 등).
+          diagCodes: {
+            code1: (fd['diag_code_1'] as string | null) ?? null,
+            code2: (fd['diag_code_2'] as string | null) ?? null,
+            code3: (fd['diag_code_3'] as string | null) ?? null,
+            code4: (fd['diag_code_4'] as string | null) ?? null,
+            name1: (fd['diag_name_1'] as string | null) ?? null,
+            name2: (fd['diag_name_2'] as string | null) ?? null,
+            name3: (fd['diag_name_3'] as string | null) ?? null,
+            name4: (fd['diag_name_4'] as string | null) ?? null,
+          },
         };
       }
       return { byType };
@@ -183,5 +205,8 @@ export async function printAuthoredMedDoc(
     clinicPhone: ctx.clinicHeader?.phone ?? null,
     formKey: medDocFormKeyToPrintForm(formKey),
     autoValues,
+    // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST]: 발행본 스냅샷 상병(1급 소스).
+    //   printOpinionDoc 이 autoValues(check_in 폴백) 뒤에 truthy 일 때만 override → 스냅샷 값 우선.
+    diagCodes: doc.diagCodes,
   });
 }
