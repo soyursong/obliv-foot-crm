@@ -17,7 +17,8 @@
  *
  * AC 매핑:
  *   AC1  → 동선1 송신부(정적): 대시보드 [예약상세] = handleCardResvDetailOrCreate → prefillCustomerForSlot navigate(예약有/無 통일)
- *   AC4  → 시나리오3 (런타임): 컨텍스트 없는 일반 진입 → 빈 슬롯 클릭 → 빈 신규 예약 폼(회귀 0)
+ *   AC4  → 시나리오3 (런타임): 컨텍스트 없는 일반 진입 → 빈 격자 칸 클릭 → 빈 신규 예약 폼(회귀 0)
+ *          ※ [+새 예약] 버튼은 RESVMGMT-GRID-CLICKCREATE-7ADJ ②로 제거 → 격자 빈 칸 클릭(openNewSlot)이 진입점.
  *   AC7  → 시나리오2b (정적): 예약관리 우클릭 [예약상세] = handleResvOpenDetailFromMenu(팝업, navigate 없음)
  *   AC8  → 동선2(정적): [다음예약] navigate+dock+opener / 차트 docked backdrop pass-through+드래그/리사이즈/undock / AdminLayout opener 수신
  *   코어  → 정적 plumbing 가드: 수신부(navPrefillConsumed/pendingPrefillCustomer/initialCustomer) 존재 + handleSelectOtherCustomer 재사용
@@ -75,16 +76,20 @@ test.describe('T-20260630-foot-RESV-CUSTCTX-PREFILL — AC4 회귀(컨텍스트 
     if (!ok) test.skip(true, 'Login failed');
   });
 
-  // 시나리오3: 사이드 메뉴 직접 진입(고객 컨텍스트 없음) → 빈 슬롯 클릭 → 신규 폼이 '빈 상태'.
-  test('AC4(시나리오3): 컨텍스트 없는 예약관리 진입 → [새 예약] 폼이 고객 미선택 빈 상태', async ({ page }) => {
+  // 시나리오3: 사이드 메뉴 직접 진입(고객 컨텍스트 없음) → 빈 격자 칸 클릭 → 신규 폼이 '빈 상태'.
+  //   ⚠ 진입 배선 갱신: 우측 상단 [+새 예약] 버튼은 T-20260630-foot-RESVMGMT-GRID-CLICKCREATE-7ADJ ②로 제거됨.
+  //   신규예약 진입은 격자 빈 칸 클릭(handleCellCreate → openNewSlot → ReservationDetailPopup new-mode)으로 일원화.
+  //   (openNewSlot 경유 유지 = CUSTCTX-PREFILL initialCustomer 분기 보존 — 컨텍스트 없으면 빈 폼 = 회귀 0 검증)
+  test('AC4(시나리오3): 컨텍스트 없는 예약관리 진입 → 빈 칸 클릭 = 신규 폼이 고객 미선택 빈 상태', async ({ page }) => {
     await page.goto('/admin/reservations');
 
-    // 상단 [새 예약] = initialDate/initialCustomer 미전달 빈 진입 — 슬롯 클릭과 동일 new-mode 폼.
-    const newResvBtn = page.getByRole('button', { name: /새 예약/ });
-    await expect(newResvBtn).toBeVisible({ timeout: 10_000 });
-    await newResvBtn.click();
+    // 기본 뷰 = 일간(day). 격자 빈 칸(resv-day-cell-{kind}-{time})이 (+) 버튼을 대체하는 신규예약 진입점.
+    //   컨텍스트 없는 진입이므로 initialCustomer 미전달 = 빈 슬롯 클릭과 동일 new-mode 폼(prefill 0).
+    const emptyCell = page.locator('[data-testid^="resv-day-cell-"]').first();
+    await expect(emptyCell).toBeVisible({ timeout: 10_000 });
+    await emptyCell.click();
 
-    // new-mode 폼(예약 등록) 모달 표시
+    // new-mode 팝업(신규 예약) 모달 표시
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
 
     // 컨텍스트 없음 → 성함 입력칸이 빈 상태(prefill 0). 재진 카드("...님 예약 생성")가 아닌 신규 직접등록 폼.
@@ -94,7 +99,7 @@ test.describe('T-20260630-foot-RESV-CUSTCTX-PREFILL — AC4 회귀(컨텍스트 
     }
     // 재진 prefill 안 됨 → "신규 예약 생성" 라벨(재진이면 "{name}님 예약 생성")
     await expect(page.getByRole('button', { name: /신규 예약 생성/ })).toBeVisible({ timeout: 3_000 });
-    console.log('[AC4/3] 컨텍스트 없는 진입 → 빈 신규 폼(회귀 0) OK');
+    console.log('[AC4/3] 컨텍스트 없는 진입 → 빈 칸 클릭 → 빈 신규 폼(회귀 0) OK');
   });
 });
 
