@@ -1007,7 +1007,12 @@ export default function MedicalChartPanel({
         .from('payments')
         .select('id,amount,memo,method')
         .in('check_in_id', ids)
-        .eq('payment_type', 'payment');
+        .eq('payment_type', 'payment')
+        // T-20260721-foot-MEDCHART-SOFTVOID-PHANTOM-GATED: 진료관리(의사 전용) 수납 표시도 active-only(fail-closed allow-list).
+        //   payments.status: 'active'=정상수납 / 'cancelled'=수납취소 / 'deleted'=삭제 (migration 20260514000010).
+        //   status 무필터 시 취소/삭제 결제가 유령수납으로 합산 → 과다계상. 원 CHARTPAGE 티켓(commit 89711448)과 동일 SSOT.
+        //   ※ .neq 블랙리스트 금지 — 신규 상태값 추가 시 자동 누수. allow-list 로 고정.
+        .eq('status', 'active');
       setVisitPayments(pmts || []);
     } catch {
       setVisitPayments([]);
