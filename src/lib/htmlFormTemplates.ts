@@ -1619,7 +1619,8 @@ const RX_STANDARD_HTML = `
         <td rowspan="4" style="font-size:8pt; vertical-align:top; padding:4px;">처방의 변경.수정.확인.대체시 그 내용 등</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8; font-size:8pt;">조&nbsp;&nbsp;제&nbsp;&nbsp;약&nbsp;&nbsp;&nbsp;&nbsp;성&nbsp;&nbsp;명</td>
+        <!-- T-20260721-foot-RXPRINT-ISSUENO-DATE-PHARMACIST-LABEL (총괄 요청): 조제내역 항목명에 '사' 1글자 추가 → 조제약사 성명 -->
+        <td style="background:#f8f8f8; font-size:8pt;">조&nbsp;&nbsp;제&nbsp;&nbsp;약&nbsp;&nbsp;사&nbsp;&nbsp;성&nbsp;&nbsp;명</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">조제량(조제일수)</td>

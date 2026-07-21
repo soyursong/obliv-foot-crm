@@ -147,9 +147,9 @@ export function buildIssueNo(
  *     ⚠ issue_date 가드를 쓰면 운영 렌더 경로(loadAutoBindContext 가 issue_date=today 를 항상 선바인딩)에서
  *        가드가 무조건 발동 → split 미실행(functional no-op) → 서식 재조정이 운영에 전혀 적용 안 됨
  *        (T-20260718-foot-RXPRINT-FORMAT-ADJUST FIX QA). 따라서 issue_date 존재 가드 제거.
- *   - split 시 issue_date 를 issue_no 앞 8자리(compact YYYYMMDD)로 **덮어써**, 슬롯 앞날짜가 today dashed
- *     ('2026-07-18')가 아닌 compact 8자리('20260718')로 찍히게 한다(요구 형식 정합). issue_date 는
- *     RX_STANDARD_HTML 슬롯 1곳에서만 소비 → 덮어써도 타 필드 무영향.
+ *   - split 시 issue_date 를 issue_no 앞 8자리(YYYYMMDD)를 **YYYY-MM-DD(dashed)** 로 재조립해 **덮어써**,
+ *     슬롯 앞날짜가 '2026-07-21' 형식으로 찍히게 한다(T-20260721 총괄 요청, 미리보기 today dashed 와 통일).
+ *     issue_date 는 RX_STANDARD_HTML 슬롯 1곳에서만 소비 → 덮어써도 타 필드 무영향.
  *   - 순번 zero-pad 폭(ISSUE_NO_SEQ_WIDTH=6, 심평원 5)에 무관하게 '앞 8 / 나머지' 분리라 폭 flip 시에도 정합.
  */
 export function splitIssueNoForDisplay(
@@ -157,9 +157,12 @@ export function splitIssueNoForDisplay(
 ): Record<string, string> {
   const raw = (values.issue_no ?? '').trim();
   if (!/^\d{9,}$/.test(raw)) return values;        // date8 + 순번(1자리↑) 아니면 무변경(멱등: split 후 6자리는 미매치)
+  const ymd = raw.slice(0, 8); // 발행날짜 앞 8자리(compact YYYYMMDD)
   return {
     ...values,
-    issue_date: raw.slice(0, 8), // compact YYYYMMDD 로 덮어씀(today dashed 선바인딩 교정)
+    // T-20260721-foot-RXPRINT-ISSUENO-DATE-PHARMACIST-LABEL (총괄 요청): 교부 날짜를 YYYY-MM-DD(dashed)로 표시.
+    //   구: compact '20260721' → 신: '2026-07-21'. 미리보기(today 선바인딩=dashed)와 발행본 표시형식 통일.
+    issue_date: `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`,
     issue_no: raw.slice(8),
   };
 }
