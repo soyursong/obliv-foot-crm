@@ -1,0 +1,29 @@
+# T-20260721-foot-TEST-DUMMY-CLEANUP — AC-2 §4-B PREFLIGHT (READ-ONLY)  2026-07-21T06:55:43.092Z
+freeze source commit: 15c3adfe  |  keyed on FIXED PK (no LIKE re-scan for selection)
+
+## 1) FREEZE live re-verify + full-column fetch
+  ✅ customers live = 9 (expect 9)
+  ✅ check_ins live = 6 (expect 6)
+  ✅ status_transitions (CASCADE) = 7 (expect 7)
+  ✅ check_ins.customer_id ⊆ freeze customers (외부참조 0)
+
+## 2) child census must be 0 (else §4-B abort → §1 heavy)
+  ✅ payments children = 0 [customer_id=0, check_in_id=0] (expect 0)
+  ✅ service_charges children = 0 [customer_id=0, check_in_id=0] (expect 0)
+  ✅ package_payments children = 0 [customer_id=0] (expect 0)
+  ✅ insurance_claims children = 0 [customer_id=0, check_in_id=0] (expect 0)
+  ✅ form_submissions children = 0 [customer_id=0, check_in_id=0] (expect 0)
+  ✅ medical_charts children = 0 [customer_id=0, check_in_id=0] (expect 0)
+  ✅ reservations children = 0 [customer_id=0] (expect 0)
+
+## 3) predicate self-test (independent re-adjudication)
+  ✅ freeze 전량 DUMMY 접두 매칭 (비매칭 0)
+  ✅ 술어 재스캔 집합 크기 = 9 (silent-swallow 가드 통과)
+  ✅ freeze ⊆ 술어집합 (술어 미포함 freeze 0)
+
+## 4) off-git full-column snapshot (no-snapshot-no-delete)
+  ✅ snapshot 기록: /Users/domas/.config/medibuilder-secrets/backfill-snapshots/foot-test-dummy-cleanup-20260721/snapshot_2026-07-21T0655.json
+  ✅ snapshot counts: customers=9 check_ins=6 status_transitions=7
+
+## VERDICT
+  ✅ PREFLIGHT PASS — 선택 무결·자식0·술어 self-test 통과·snapshot 기록(true). apply 러너 dry-run 진행 가능. 실 DELETE=supervisor DB-GATE + 형 apply_gate.
