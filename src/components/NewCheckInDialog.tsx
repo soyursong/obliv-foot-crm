@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
 import { normalizeToE164, phoneCanonDigits } from '@/lib/phone';
-import { formatPhone, chartNoBadge } from '@/lib/format';
+import { formatPhone, chartNoBadge, todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -280,9 +280,14 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       }
     }
 
+    // T-20260721-foot-DASHBOARD-CHECKIN-ERROR: p_date 는 반드시 KST 날짜여야 한다.
+    //   next_queue_number 와 UNIQUE 인덱스(idx_checkins_clinic_date_queue) 모두 kst_date(checked_in_at)
+    //   로 버킷팅한다. 기존 new Date().toISOString().slice(0,10) 는 UTC 날짜라 KST 오전(00:00~09:00 =
+    //   전일 15:00~24:00 UTC) 창에서 전날(UTC) 버킷의 MAX+1 을 발번 → KST-today 버킷에 이미 존재하는
+    //   번호와 충돌 → INSERT 23505 duplicate key → "체크인 실패". KST today(todaySeoulISODate)로 통일.
     const { data: queueData, error: queueErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: clinicId,
-      p_date: new Date().toISOString().slice(0, 10),
+      p_date: todaySeoulISODate(),
     });
     if (queueErr) {
       toast.error(`대기번호 생성 실패: ${queueErr.message}`);

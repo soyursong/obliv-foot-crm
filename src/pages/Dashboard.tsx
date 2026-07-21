@@ -78,7 +78,7 @@ import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
-import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate, todaySeoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge, birthDateYMD, formatDateDots } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 // T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 통합시간표 포팅, FIX MSG-20260704-175153):
 //   힐러 예약카드 치료유형 fallback 게이트에 Reservations.tsx 와 동일한 분류 SSOT 사용(중복구현 금지).
@@ -6146,9 +6146,11 @@ export default function Dashboard() {
   // 초진(new) → consult_waiting, 재진(returning) → treatment_waiting
   const doCheckInForReservation = async (res: Reservation) => {
     if (!clinic) return;
+    // T-20260721-foot-DASHBOARD-CHECKIN-ERROR: KST today 로 통일(NewCheckInDialog 와 동일 SSOT).
+    //   queue 버킷·UNIQUE 인덱스가 kst_date(checked_in_at) 이므로 client-local(format) 대신 KST 명시.
     const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: clinic.id,
-      p_date: format(new Date(), 'yyyy-MM-dd'),
+      p_date: todaySeoulISODate(),
     });
     if (qErr || queueData == null) {
       toast.error(`대기번호 생성 실패: ${qErr?.message ?? '알 수 없는 오류'}`);
