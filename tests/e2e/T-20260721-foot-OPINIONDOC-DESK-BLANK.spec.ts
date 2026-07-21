@@ -64,17 +64,21 @@ test.describe('RC 배선: medDocPrintGate.printAuthoredMedDoc → loadAutoBindCo
     // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: applyDiagCodesFromVisit co-import 로 import 확장 → tolerant 매칭.
     expect(GATE_SRC).toMatch(/import\s*\{[^}]*\bloadAutoBindContext\b[^}]*\}\s*from\s*'@\/lib\/autoBindContext'/);
     expect(GATE_SRC, 'ctx.checkIn 가드 누락').toMatch(/if\s*\(\s*ctx\.checkIn\?\.customer_id\s*\)/);
-    expect(GATE_SRC, 'loadAutoBindContext(ctx.checkIn) 호출 누락').toContain(
-      'await loadAutoBindContext(ctx.checkIn)',
+    // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: loadAutoBindContext 가 발행자(issued_by) 인자를 받도록
+    //   확장됨(도장 발행자-앵커 결선) → 단일인자 정확문자열 대신 ctx.checkIn 로 시작하는 호출 tolerant 매칭.
+    expect(GATE_SRC, 'loadAutoBindContext(ctx.checkIn) 호출 누락').toMatch(
+      /await loadAutoBindContext\(\s*ctx\.checkIn/,
     );
   });
 
   test('로드한 autoValues 를 printOpinionDoc 에 주입', () => {
-    // return printOpinionDoc({ ... autoValues, }) — autoValues 프로퍼티 전달
+    // return printOpinionDoc({ ... autoValues, ... }) — autoValues 프로퍼티 전달.
+    // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK 이후 autoValues 뒤에 diagCodes 가 붙어 `autoValues,` 다음이
+    //   곧바로 `});` 가 아님 → autoValues 가 printOpinionDoc 인자로 전달됨만 tolerant 확인.
     const printIdx = GATE_SRC.indexOf('return printOpinionDoc({');
     expect(printIdx, 'printOpinionDoc 호출 누락').toBeGreaterThanOrEqual(0);
     expect(GATE_SRC.slice(printIdx), 'printOpinionDoc 에 autoValues 미주입').toMatch(
-      /autoValues,?\s*\n?\s*\}\);/,
+      /autoValues,/,
     );
   });
 
@@ -117,7 +121,9 @@ test.describe('AC-3: 원장탭 회귀 0 (4FIX 배선 불변)', () => {
   test('OpinionDocTab 는 여전히 loadAutoBindContext 직접 배선(변경 없음)', () => {
     // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: applyDiagCodesFromVisit co-import 로 import 확장 → tolerant 매칭.
     expect(TAB_SRC).toMatch(/import\s*\{[^}]*\bloadAutoBindContext\b[^}]*\}\s*from\s*'@\/lib\/autoBindContext'/);
-    expect(TAB_SRC).toContain('await loadAutoBindContext(checkIn)');
+    // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: loadAutoBindContext 가 발행자(issued_by) 인자를 받도록
+    //   확장됨(도장 발행자-앵커 결선) → 단일인자 정확문자열 대신 checkIn 로 시작하는 호출 tolerant 매칭.
+    expect(TAB_SRC).toMatch(/await loadAutoBindContext\(\s*checkIn/);
     expect(TAB_SRC).toMatch(/handlePrint\s*=\s*async/);
   });
 });

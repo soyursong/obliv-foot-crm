@@ -143,6 +143,11 @@ export default defineConfig({
         //   check_in_services 폴백) 신설 + handlePrint/printAuthoredMedDoc 재배선(발행본 check_in_id 기준).
         //   배선 정적 가드 + 토큰 산출 로직 재현 + diag_opinion 실렌더(상병3칸/엣지0·2건). db_change=false, auth 불요.
         '**/T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK.spec.ts',
+        // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 소견서 담당의사-도장 매칭 오류(문지은 발행에 김윤기
+        //   도장). RC=이름란(발행자 스냅샷)↔도장(내원 치료의 독립해석) 소스 분기. 발행자-앵커 결선
+        //   (loadAutoBindContext 에 issued_by_doctor_id/issued_by_name 전달) — 배선 정적 가드 + clinicDoctor
+        //   해석 규칙 재현(F-4808 실측: 치료의 김윤기여도 발행자 문지은 직인) + 07-14 빌링 법인인감 회귀 0.
+        '**/T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH.spec.ts',
         // T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: cross-run 시드 격리 불변식 가드.
         //   scoped 마커(`[QA-FIXTURE]|token|ts`)로 cleanupAll 전수 스윕이 다른 run 의 in-flight
         //   시드를 못 지움을 DB 직접 검증(교대성 RED 구조적 부재 = AC-2/3/4). auth/server 불요.

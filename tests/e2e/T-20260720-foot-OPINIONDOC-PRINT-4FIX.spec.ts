@@ -141,8 +141,10 @@ test.describe('RC-1: printOpinionDoc autoValues 주입 + 스냅샷 override', ()
     //   import 가 확장됨 → 정확 문자열 대신 loadAutoBindContext 가 해당 모듈에서 import 됨을 tolerant 매칭.
     expect(TAB_SRC).toMatch(/import\s*\{[^}]*\bloadAutoBindContext\b[^}]*\}\s*from\s*'@\/lib\/autoBindContext'/);
     expect(TAB_SRC).toMatch(/handlePrint\s*=\s*async/);
-    expect(TAB_SRC).toContain('await loadAutoBindContext(checkIn)');
-    expect(TAB_SRC).toMatch(/autoValues,?\s*\n?\s*\}\);/);
+    // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: loadAutoBindContext 가 발행자(issued_by) 인자를 받도록
+    //   확장됨(도장 발행자-앵커 결선) → 단일인자 정확문자열 대신 checkIn 로 시작하는 호출 tolerant 매칭.
+    expect(TAB_SRC).toMatch(/await loadAutoBindContext\(\s*checkIn/);
+    expect(TAB_SRC).toContain('autoValues');
   });
 });
 

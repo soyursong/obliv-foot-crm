@@ -418,6 +418,14 @@ export interface PublishedOpinionRow {
    *   (오늘 재내원 check_in 이 아닌 발행본의 원 방문 상병을 재현 = 발행본 스냅샷 참조). 레거시 미존재=null.
    */
   check_in_id: string | null;
+  /**
+   * T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 발행 시점 진료의(발행자) clinic_doctors.id 스냅샷.
+   *   RC — 도장(doctor_seal_html)은 loadAutoBindContext 가 내원행의 treating_doctor_id/duty_roster 로 독립
+   *   해석한 진료의의 seal 을 쓰는데, 소견서 이름란은 발행자(issued_by_name) 스냅샷을 쓴다. 두 소스가 갈려
+   *   '문지은 발행 소견서에 (그 방문 치료의) 김윤기 도장'이 찍혔다. 출력 시 이 id 를 clinicDoctorId 로 태워
+   *   도장을 발행자 본인 직인으로 결선한다(이름↔도장 세트 정합). 레거시 미존재=null → issued_by_name 이름폴백.
+   */
+  issued_by_doctor_id: string | null;
 }
 function usePublishedOpinions(clinicId: string | null, customerId: string | null, templateId: string | null) {
   return useQuery<PublishedOpinionRow[]>({
@@ -447,6 +455,8 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
           doc_type: fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion',
           // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 발행 시점 내원(상병 재현 소스). RPC 가 field_data 에 스냅샷.
           check_in_id: (fd['check_in_id'] as string | null) ?? null,
+          // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 발행자(진료의) clinic_doctors.id 스냅샷 — 도장 결선용.
+          issued_by_doctor_id: (fd['issued_by_doctor_id'] as string | null) ?? null,
         };
       });
     },
@@ -969,7 +979,18 @@ export function OpinionEditorDialog({
           customer_phone: visitor.customer_phone ?? null,
           checked_in_at: visitor.checked_in_at,
         } as CheckIn;
-        autoValues = await loadAutoBindContext(checkIn);
+        // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 도장(doctor_seal_html)을 '발행자 본인 직인'으로 결선.
+        //   기본 loadAutoBindContext 는 내원행의 treating_doctor_id/duty_roster 로 진료의를 독립 해석해 그
+        //   진료의 seal 을 쓴다 → 발행자(문지은)와 그 방문 치료의(김윤기)가 다르면 도장이 갈린다(현장 신고 RC).
+        //   발행자 clinic_doctors.id(issued_by_doctor_id)를 clinicDoctorId(1순위)로, 발행자명(issued_by_name)을
+        //   doctorNameOverride(레거시 id 부재 시 이름폴백)로 태워 도장을 발행자 본인 직인으로 결선한다.
+        //   ⚠ 빌링서식(계산서·영수증·세부산정내역서)의 loadAutoBindContext 호출부는 무접점 — 소견서/진단서
+        //     발행본 출력 경로만 발행자-앵커. 미지정 폴백(sealFallbackToInstitution, 07-14 법인인감) 로직 불변.
+        autoValues = await loadAutoBindContext(
+          checkIn,
+          row.issued_by_name || undefined,
+          row.issued_by_doctor_id ?? undefined,
+        );
         // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸) 공란 복구 — medical_charts(빈 값) 대신
         //   발행본 원 방문(row.check_in_id)의 check_in_services 상병항목에서 diag_code_1..N 을 채운다.
         //   row.check_in_id 미존재(legacy)면 현재 내원(visitor.id)로 폴백. 상병 없으면 종전 값 유지(회귀 0).
