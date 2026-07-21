@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import {
   FREEZE_CUSTOMERS, FREEZE_CHECKINS, EXPECT, DUMMY_NAME_PREFIXES,
-  OFFGIT_SNAPSHOT_DIR, FREEZE_SOURCE_COMMIT, TICKET,
+  OFFGIT_SNAPSHOT_DIR, FREEZE_SOURCE_COMMIT, TICKET, CASCADE_COLLATERAL_SNAPSHOT,
 } from './T-20260721-foot-TEST-DUMMY-CLEANUP_freeze.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -56,11 +56,20 @@ const { data: ciRows, error: ciErr } = await sb.from('check_ins').select('*').in
 if (ciErr) fail('check_ins fetch: ' + ciErr.message);
 const { data: stRows, error: stErr } = await sb.from('status_transitions').select('*').in('check_in_id', FREEZE_CHECKINS);
 if (stErr) fail('status_transitions fetch: ' + stErr.message);
+// CASCADE collateral (DA 4차 net-loss 30 편입): assignment_actions 7 + check_in_room_logs 1
+const { data: aaRows, error: aaErr } = await sb.from('assignment_actions').select('*').in('check_in_id', FREEZE_CHECKINS);
+if (aaErr) fail('assignment_actions fetch: ' + aaErr.message);
+const { data: crlRows, error: crlErr } = await sb.from('check_in_room_logs').select('*').in('check_in_id', FREEZE_CHECKINS);
+if (crlErr) fail('check_in_room_logs fetch: ' + crlErr.message);
 
 const nCust = custRows?.length ?? 0, nCi = ciRows?.length ?? 0, nSt = stRows?.length ?? 0;
+const nAa = aaRows?.length ?? 0, nCrl = crlRows?.length ?? 0;
 (nCust === EXPECT.customers ? ok : fail)(`customers live = ${nCust} (expect ${EXPECT.customers})`);
 (nCi === EXPECT.check_ins ? ok : fail)(`check_ins live = ${nCi} (expect ${EXPECT.check_ins})`);
 (nSt === EXPECT.status_transitions ? ok : fail)(`status_transitions (CASCADE) = ${nSt} (expect ${EXPECT.status_transitions})`);
+(nAa === EXPECT.assignment_actions ? ok : fail)(`assignment_actions (CASCADE) = ${nAa} (expect ${EXPECT.assignment_actions})`);
+(nCrl === EXPECT.check_in_room_logs ? ok : fail)(`check_in_room_logs (CASCADE) = ${nCrl} (expect ${EXPECT.check_in_room_logs})`);
+(nCust + nCi + nSt + nAa + nCrl === EXPECT.net_loss_total ? ok : fail)(`net-loss total = ${nCust + nCi + nSt + nAa + nCrl} (expect ${EXPECT.net_loss_total})`);
 
 // check_ins 전량 freeze customer 소유 재확인
 if (ciRows) {
@@ -107,7 +116,7 @@ if (missing.length) out('    술어 미포함 freeze id: ' + missing.join(', '))
 out('\n## 4) off-git full-column snapshot (no-snapshot-no-delete)');
 const snapDir = join(homedir(), '.config/medibuilder-secrets/backfill-snapshots', OFFGIT_SNAPSHOT_DIR);
 let snapWritten = false;
-if (!ABORT && custRows && ciRows && stRows) {
+if (!ABORT && custRows && ciRows && stRows && aaRows && crlRows) {
   mkdirSync(snapDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
   const snapshot = {
@@ -118,9 +127,22 @@ if (!ABORT && custRows && ciRows && stRows) {
   };
   const snapPath = join(snapDir, `snapshot_${stamp}.json`);
   writeFileSync(snapPath, JSON.stringify(snapshot, null, 2));
+  // CASCADE collateral 스냅샷 (DA 4차 net-loss 30 롤백 소스) — assignment_actions + check_in_room_logs
+  const collateral = {
+    ticket: TICKET, note: 'CASCADE collateral (aa/crl) rollback source. OFF-GIT. DA 4차 net-loss 30 편입.',
+    captured_at_probe: new Date().toISOString(),
+    counts: { assignment_actions: aaRows.length, check_in_room_logs: crlRows.length },
+    confdeltype: {
+      'assignment_actions.check_in_id': 'c(CASCADE)',
+      'check_in_room_logs.check_in_id': 'c(CASCADE)',
+    },
+    assignment_actions: aaRows, check_in_room_logs: crlRows,
+  };
+  writeFileSync(join(snapDir, CASCADE_COLLATERAL_SNAPSHOT), JSON.stringify(collateral, null, 2));
   snapWritten = true;
   ok(`snapshot 기록: ${snapPath}`);
   ok(`snapshot counts: customers=${custRows.length} check_ins=${ciRows.length} status_transitions=${stRows.length}`);
+  ok(`cascade-collateral 기록: ${CASCADE_COLLATERAL_SNAPSHOT} (aa=${aaRows.length} crl=${crlRows.length})`);
 } else {
   fail('ABORT 상태 or 데이터 결측 → snapshot 미기록 (no-snapshot-no-delete: DELETE 진행 금지)');
 }
