@@ -160,6 +160,10 @@ interface Payment {
   payment_type: 'payment' | 'refund';
   memo: string | null;
   created_at: string;
+  // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: payments 무효화 상태(migration 20260514000010).
+  //   'active'=정상수납 / 'cancelled'=수납취소 / 'deleted'=삭제. 고객차트 합산은 active-only(fail-closed allow-list).
+  //   ※ closing_manual_payments.voided_at 축(SOFTVOID-INFRA)과는 다른 테이블 — 혼동 금지.
+  status?: 'active' | 'cancelled' | 'deleted' | null;
   // T-20260515-foot-RECEIPT-TAX-SPLIT AC-6: 현금영수증 필드 (DB 마이그레이션 전 null)
   cash_receipt_issued?: boolean | null;
   cash_receipt_type?: 'income_deduction' | 'expense_proof' | null;
@@ -3205,7 +3209,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         // 6 main data (기존 병렬 그룹)
         supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
         supabase.from('check_ins').select('*').eq('customer_id', customerId).order('checked_in_at', { ascending: false }).limit(50),
-        supabase.from('payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+        // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: status='active' allow-list(fail-closed).
+        //   무필터 시 status IN('cancelled','deleted') 유령행이 totalPaid/feePayments 합산·표시에 혼입됨.
+        supabase.from('payments').select('*').eq('customer_id', customerId).eq('status', 'active').order('created_at', { ascending: false }).limit(50),
         supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
         supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30),
         supabase.from('check_ins').select('*').eq('customer_id', customerId).neq('status', 'cancelled').order('checked_in_at', { ascending: false }).limit(100),
@@ -3350,6 +3356,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       .from('payments')
       .select('*')
       .eq('customer_id', customerId)
+      // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: refresh 경로도 초기로드와 동일 active-only allow-list.
+      .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(50);
     setPayments((data ?? []) as Payment[]);
