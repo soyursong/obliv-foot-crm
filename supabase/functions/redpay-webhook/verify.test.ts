@@ -14,6 +14,10 @@ import {
   classifyEvent,
   coerceAmount,
   validateEnvelope,
+  normalizeStatus,
+  parseTimestamp,
+  buildWebhookRawRow,
+  type RedpayWebhookData,
 } from "./verify.ts";
 import {
   centerForMerchant,
@@ -134,8 +138,108 @@ Deno.test("멱등 키 일관성: 동일 event → 동일 (trxid,status,amount)",
   const e2 = validateEnvelope(baseEnvelope());
   assert(e1.ok && e2.ok);
   if (e1.ok && e2.ok) {
-    const k1 = `${e1.data.trxid}|${e1.data.status}|${e1.amount}`;
-    const k2 = `${e2.data.trxid}|${e2.data.status}|${e2.amount}`;
+    const k1 = `${e1.data.trxid}|${e1.status}|${e1.amount}`;
+    const k2 = `${e2.data.trxid}|${e2.status}|${e2.amount}`;
     assertEquals(k1, k2, "동일 이벤트는 동일 멱등 키");
+  }
+});
+
+// ── DA req d: status 정규화 (data.status 우선 → event_type 파생) ────────────────
+Deno.test("status 정규화: data.status 우선, 없거나 비표준이면 event_type 파생", () => {
+  assertEquals(normalizeStatus("Y", "approved"), "Y");
+  assertEquals(normalizeStatus("n", "approved"), "N");   // 대소문자 무관
+  assertEquals(normalizeStatus("M", "cancelled"), "M");
+  assertEquals(normalizeStatus("X", "approved"), "X");
+  // 비표준/누락 → kind 파생
+  assertEquals(normalizeStatus("approved", "approved"), "Y");
+  assertEquals(normalizeStatus("", "approved"), "Y");
+  assertEquals(normalizeStatus(null, "cancelled"), "N");
+  assertEquals(normalizeStatus(undefined, "cancelled"), "N");
+});
+
+Deno.test("validateEnvelope: status 누락 시 reject 하지 않고 event_type 파생(폴러 도메인 수렴)", () => {
+  const noStatus = baseEnvelope();
+  // @ts-expect-error 테스트: status 누락 payload 시뮬레이션
+  delete noStatus.data.status;
+  const v = validateEnvelope(noStatus);
+  assert(v.ok, "status 누락이어도 검증 통과(파생)");
+  if (v.ok) assertEquals(v.status, "Y", "approved → Y 파생");
+
+  const cancelNoStatus = { ...baseEnvelope(), event_type: "payment.cancelled", event_id: "evt_cns" };
+  cancelNoStatus.data = { ...cancelNoStatus.data };
+  // @ts-expect-error 테스트: status 누락
+  delete cancelNoStatus.data.status;
+  const vc = validateEnvelope(cancelNoStatus);
+  assert(vc.ok);
+  if (vc.ok) assertEquals(vc.status, "N", "cancelled → N 파생");
+});
+
+// ── occurred_at 파싱 ─────────────────────────────────────────────────────────
+Deno.test("parseTimestamp: ISO(오프셋) 그대로 / KST 무TZ → +09:00 / 빈값·0000 → null", () => {
+  assertEquals(parseTimestamp("2026-07-22T17:00:00+09:00"), "2026-07-22T08:00:00.000Z");
+  assertEquals(parseTimestamp("2026-07-22 17:00:00"), "2026-07-22T08:00:00.000Z"); // KST 가정
+  assertEquals(parseTimestamp(""), null);
+  assertEquals(parseTimestamp(null), null);
+  assertEquals(parseTimestamp("0000-00-00 00:00:00"), null);
+});
+
+// ── DA req a/b/c: merge-safe webhook row builder ─────────────────────────────
+Deno.test("buildWebhookRawRow (DA req a): 폴러 소유 컬럼 미포함(클로버 방지)", () => {
+  const env = baseEnvelope();
+  const v = validateEnvelope(env);
+  assert(v.ok);
+  if (!v.ok) return;
+  const row = buildWebhookRawRow("clinic-uuid", v.kind, v.status, String(v.data.trxid), v.amount, v.data, env);
+  // 폴러(redpay-reconcile)가 채우는 컬럼은 절대 포함되면 안 됨.
+  assertFalse("tid" in row, "tid 미포함");
+  assertFalse("root_trxid" in row, "root_trxid 미포함");
+  assertFalse("matched_payment_id" in row, "matched_payment_id 미포함");
+  assertFalse("match_rule" in row, "match_rule 미포함");
+  // webhook 소유 컬럼은 포함.
+  assertEquals(row.external_trxid, "TRX123");
+  assertEquals(row.external_status, "Y");
+  assertEquals(row.amount, 120000);
+  assertEquals(row.approval_no, "A987");
+  assertEquals(row.clinic_id, "clinic-uuid");
+});
+
+Deno.test("buildWebhookRawRow (DA req b): raw_payload _source:'webhook' 마커 + 원본 전량", () => {
+  const env = baseEnvelope();
+  const v = validateEnvelope(env);
+  assert(v.ok);
+  if (!v.ok) return;
+  const row = buildWebhookRawRow("clinic-uuid", v.kind, v.status, String(v.data.trxid), v.amount, v.data, env);
+  const rp = row.raw_payload as Record<string, unknown>;
+  assertEquals(rp._source, "webhook", "출처 마커 필수");
+  assertEquals(rp.event_id, "evt_0001");
+  assertEquals(rp.event_type, "payment.approved");
+  assertEquals(rp.occurred_at, "2026-07-22T17:00:00+09:00");
+  assert(rp.data && typeof rp.data === "object", "data 전량 중첩");
+});
+
+Deno.test("buildWebhookRawRow (DA req c): approved_at / cancelled_at 한쪽만 세팅", () => {
+  // approved → approved_at 만
+  const apEnv = baseEnvelope();
+  const av = validateEnvelope(apEnv);
+  assert(av.ok);
+  if (av.ok) {
+    const row = buildWebhookRawRow("c", av.kind, av.status, String(av.data.trxid), av.amount, av.data, apEnv);
+    assert("approved_at" in row, "approved 는 approved_at 세팅");
+    assertFalse("cancelled_at" in row, "approved 는 cancelled_at 미세팅");
+  }
+  // cancelled → cancelled_at 만 (payload 에 approved_at 이 섞여 있어도)
+  const base = baseEnvelope();
+  const cnEnv = {
+    event_id: "evt_cn1",
+    event_type: "payment.cancelled",
+    occurred_at: "2026-07-22T18:00:00+09:00",
+    data: { ...base.data, status: "N", approved_at: "2026-07-22T17:00:00+09:00" } as RedpayWebhookData,
+  };
+  const cv = validateEnvelope(cnEnv);
+  assert(cv.ok);
+  if (cv.ok) {
+    const row = buildWebhookRawRow("c", cv.kind, cv.status, String(cv.data.trxid), cv.amount, cv.data, cnEnv);
+    assert("cancelled_at" in row, "cancelled 는 cancelled_at 세팅");
+    assertFalse("approved_at" in row, "cancelled 는 approved_at 미세팅(양쪽 동시 금지)");
   }
 });

@@ -42,8 +42,8 @@ import {
   verifySignature,
   isPaymentAutoModeOn,
   validateEnvelope,
+  buildWebhookRawRow,
   type RedpayWebhookEnvelope,
-  type RedpayWebhookData,
 } from "./verify.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
@@ -99,17 +99,6 @@ async function sendSlackMessage(channel: string, text: string, token: string): P
   }
 }
 
-// ── KST("YYYY-MM-DD HH:MM:SS") / ISO occurred_at → UTC ISO (redpay-reconcile 미러) ──
-function parseTimestamp(s: string | null | undefined): string | null {
-  const v = (s ?? "").trim();
-  if (!v || v.startsWith("0000")) return null;
-  // ISO(오프셋 포함) 는 그대로, "YYYY-MM-DD HH:MM:SS"(KST) 는 +09:00 부착.
-  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(v);
-  const iso = hasTz ? v.replace(" ", "T") : (v.replace(" ", "T") + "+09:00");
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
-
 // ── clinic_id 해석(slug 안정키, 요청 단위 캐시) ──────────────────────────────────
 let _clinicIdCache: string | null = null;
 async function resolveClinicId(): Promise<string | null> {
@@ -122,38 +111,6 @@ async function resolveClinicId(): Promise<string | null> {
   }
   _clinicIdCache = data.id as string;
   return _clinicIdCache;
-}
-
-// ── redpay_raw_transactions 행 빌드 (임시 수납 레코드) ────────────────────────────
-//   금액·승인번호·시각·센터(merchant)·단말기(tid) 자동 채움(AC-3). matched_payment_id 는
-//   NULL(미배정) — 환자-차트 반자동 배정 UI(별도 스펙)에서 연결. raw_payload = 전량 원본(감사).
-function buildRawRow(
-  clinicId: string,
-  kind: "approved" | "cancelled",
-  data: RedpayWebhookData,
-  amount: number,
-  fullEnvelope: RedpayWebhookEnvelope,
-) {
-  const trxid = String(data.trxid).trim();
-  const status = String(data.status).trim();
-  const approvedAt  = kind === "approved"  ? parseTimestamp(data.approved_at ?? fullEnvelope.occurred_at) : parseTimestamp(data.approved_at);
-  const cancelledAt = kind === "cancelled" ? parseTimestamp(data.cancelled_at ?? fullEnvelope.occurred_at) : parseTimestamp(data.cancelled_at);
-  const rootTrxid = data.root_trxid && String(data.root_trxid).trim() !== "" ? String(data.root_trxid).trim() : null;
-
-  return {
-    clinic_id:       clinicId,
-    external_trxid:  trxid,
-    external_status: status,
-    // amount 원부호 보존 — 취소 판별은 status/event_type 로 이미 완료(AC-2.4, 부호 무판별).
-    amount,
-    approval_no:     data.approval_no ?? null,
-    root_trxid:      rootTrxid,
-    tid:             data.tid ?? null,
-    approved_at:     approvedAt,
-    cancelled_at:    cancelledAt,
-    // 원본 payload 전량 저장(event_id·occurred_at 포함) — 감사·재검증·멱등 추적.
-    raw_payload:     fullEnvelope,
-  };
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -196,7 +153,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.warn(`${LOG} payload 검증 실패(${v.reason}) → 200 ignored.`);
     return json(200, { ok: true, status: "ignored_invalid", reason: v.reason });
   }
-  const { kind, eventId, data, amount } = v;
+  const { kind, eventId, data, amount, status } = v;
 
   // ── 4. business_no 방어 필터 (AC-2.6, 서울오리진) ────────────────────────────
   if (!isAllowedBusinessNo(data.business_no, REDPAY_BUSINESS_NO_ALLOW)) {
@@ -238,29 +195,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(500, { ok: false, error: "clinic_resolve_failed" });
   }
 
-  const row = buildRawRow(clinicId, kind, data, amount, envelope);
+  // merge-safe row builder(DA req a/b/c): 폴러 소유 컬럼(tid/root_trxid/matched_payment_id/
+  //   match_rule) 미포함 + raw_payload _source:"webhook" 마커 + approved_at/cancelled_at 한쪽만.
+  const row = buildWebhookRawRow(clinicId, kind, status, String(data.trxid).trim(), amount, data, envelope);
   try {
     // onConflict (external_trxid, external_status, amount) = 폴러와 동일 유니크 키.
-    //   ignoreDuplicates:true → 중복 event_id 재수신(레드페이 재시도)·폴러 선점 적재 = no-op 멱등.
-    const { error, count } = await supabase
+    //   ignoreDuplicates:false → onConflict DO UPDATE(longre e7a0607 이식). merge-safe 빌더가
+    //   폴러 소유 컬럼을 payload 에서 제외하므로 UPDATE 는 webhook 소유 컬럼만 갱신,
+    //   폴러가 채운 tid/root_trxid/matched_payment_id/match_rule 은 보존(클로버 방지).
+    //   재전송(동일 event_id)·폴러 선행 적재 모두 동일 행에 수렴 → 이중적재 없음(멱등).
+    const { error } = await supabase
       .from("redpay_raw_transactions")
       .upsert(row, {
         onConflict: "external_trxid,external_status,amount",
-        ignoreDuplicates: true,
-        count: "exact",
+        ignoreDuplicates: false,
       });
     if (error) {
       console.error(`${LOG} upsert 오류 → 500(재시도 유도): ${error.message} (event_id=${eventId}).`);
       return json(500, { ok: false, error: "db_upsert_failed" });
     }
-    const inserted = (count ?? 0) > 0;
     console.log(
-      `${LOG} ${kind} 적재 ${inserted ? "신규" : "멱등중복(무시)"} — `
+      `${LOG} ${kind} 적재(멱등 upsert) — `
         + `trxid=${row.external_trxid} status=${row.external_status} amount=${row.amount} event_id=${eventId}.`,
     );
     return json(200, {
       ok: true,
-      status: inserted ? "recorded" : "duplicate_ignored",
+      status: "recorded",
       kind,
       event_id: eventId,
     });
