@@ -84,8 +84,8 @@ const INTERNAL_CRON_SECRET = cfg("INTERNAL_CRON_SECRET");
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
 const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "511-60-00988"); // 종로 풋 (공유 merchant)
-const REDPAY_TID_WHITELIST_ENV = cfg("REDPAY_TID_WHITELIST");
-const REDPAY_MERCHANT_WHITELIST_ENV = cfg("REDPAY_MERCHANT_WHITELIST");
+// REDPAY_TID_WHITELIST_ENV / REDPAY_MERCHANT_WHITELIST_ENV 는 도메인 스코프 해석이 필요하므로
+// REDPAY_DOMAIN 정의 이후로 이동(아래 domainScopedOverride 참조 — T-20260714 FIX phase2 결함2).
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const POLL_MODE = cfg("REDPAY_POLL_MODE", "incremental"); // incremental | daily_full
 const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
@@ -94,12 +94,35 @@ const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
 //   (동일 마스터키·동일 사업자 511-60-00988, merchant band 만 교체). 도메인별 launchd 인스턴스.
 //   레지스트리(redpay_terminal_registry.domain)·하드코딩 DEFAULT·로그라벨이 모두 이 값으로 스코핑.
 const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
+
+// ── 화이트리스트 env override 의 도메인 스코프화 (T-20260714 FIX phase2 결함2) ──────────────
+//   [문제] 공유 ~/.env.redpay-foot 의 비-스코프 REDPAY_MERCHANT_WHITELIST(=foot 26) 를
+//     body 인스턴스가 상속 → foot 26종 로드 → 도메인 경계 붕괴(center=foot stamp 오염, AC-3/4 위반).
+//     원인: env override(우선순위1) 가 도메인 불문(비-스코프)이라 env-swap 로 도메인만 바꿔도 override 는 공유.
+//   [해결] override 를 도메인 스코프화 — (b) 스코프 키 도입 + (a) 비-스코프 override 는 네이티브 도메인 한정:
+//     1) 도메인 스코프 키 REDPAY_MERCHANT_WHITELIST_<DOMAIN>(예: _BODY) 이 있으면 최우선.
+//     2) 비-스코프 REDPAY_MERCHANT_WHITELIST 는 '네이티브' 도메인(foot=.env.redpay-foot 귀속)에서만 유효.
+//        non-foot(body 등)은 무시 → DB registry(domain=REDPAY_DOMAIN) SSOT → 하드코딩 DEFAULT 폴백.
+//   → 3중동기 SSOT(env>registry>default)의 도메인 경계를 env 계층에서부터 강제(env-swap 재사용 정합).
+const NATIVE_ENV_DOMAIN = "foot"; // ~/.env.redpay-foot 의 비-스코프 override 가 귀속되는 도메인
+function domainScopedOverride(baseKey) {
+  const scoped = cfg(`${baseKey}_${REDPAY_DOMAIN.toUpperCase()}`); // 예: REDPAY_MERCHANT_WHITELIST_BODY
+  if (scoped.length > 0) return scoped;                            // (b) 도메인 스코프 키 최우선
+  if (REDPAY_DOMAIN === NATIVE_ENV_DOMAIN) return cfg(baseKey);    // (a) 비-스코프는 네이티브 도메인만
+  return "";                                                       // non-foot: 비-스코프 override 무시
+}
+const REDPAY_TID_WHITELIST_ENV = domainScopedOverride("REDPAY_TID_WHITELIST");
+const REDPAY_MERCHANT_WHITELIST_ENV = domainScopedOverride("REDPAY_MERCHANT_WHITELIST");
 // ── clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①) ──
 //   business_no 는 mutable·overloaded(세무 cert 정정으로 foot 511→457 divergence → clinic 조회 실패
 //   → L558 hard-throw 로 폴러 종료 → 실시간 적재 12h 중단). clinic '해석'은 안정키 slug 우선.
 //   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO, L286) 은 불변 — 물리 merchant=511 유지.
-//   slug 미지정 도메인(body 등)은 business_no 폴백(하위호환 — 기존 동작 보존).
-const DOMAIN_CLINIC_SLUG_DEFAULTS = { foot: "jongno-foot" };
+//   slug 미지정 도메인은 business_no 폴백(하위호환 — 기존 동작 보존).
+//   [T-20260714 FIX phase2 결함1] body(도수)=풋 물리 clinic 공유(seed 마이그 20260714170100 이
+//   registry domain='body' 링크를 slug='jongno-foot' 로 확정. business_no=511 은 세무 cert 정정으로
+//   457 드리프트 → 폴백 조회 0행 → L592 hard-throw. seed 교훈을 폴러 body 경로에도 반영).
+//   ⚠ RedPay API scope(L286 business_no) 는 불변 — 여기 slug 는 '내부 clinic 해석'만 스코핑.
+const DOMAIN_CLINIC_SLUG_DEFAULTS = { foot: "jongno-foot", body: "jongno-foot" };
 const REDPAY_CLINIC_SLUG = cfg("REDPAY_CLINIC_SLUG", DOMAIN_CLINIC_SLUG_DEFAULTS[REDPAY_DOMAIN] ?? "");
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
@@ -199,18 +222,18 @@ async function resolveWhitelists() {
   const envMerchant = REDPAY_MERCHANT_WHITELIST_ENV.length > 0;
   const envTid = REDPAY_TID_WHITELIST_ENV.length > 0;
   if (envMerchant && envTid) {
-    log(`화이트리스트 소스=env override (merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
+    log(`화이트리스트 소스=env override(domain=${REDPAY_DOMAIN}) (merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
     return;
   }
   const reg = await loadRegistryFromDb();
   if (reg) {
     if (!envMerchant) { merchantList = reg.merchants; merchantWhitelist = new Set(merchantList); }
     if (!envTid)      { tidList = reg.tids;           tidWhitelist = new Set(tidList); }
-    log(`화이트리스트 소스=DB registry SSOT (merchant=${merchantWhitelist.size} tid=${tidWhitelist.size}` +
+    log(`화이트리스트 소스=DB registry(domain=${REDPAY_DOMAIN}) (merchant=${merchantWhitelist.size} tid=${tidWhitelist.size}` +
         `${envMerchant ? " · merchant는 env override" : ""}${envTid ? " · tid는 env override" : ""})`);
     return;
   }
-  warn(`화이트리스트 소스=하드코딩 DEFAULT (DB registry 미가용 fail-safe. merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
+  warn(`화이트리스트 소스=하드코딩 DEFAULT(domain=${REDPAY_DOMAIN}) (DB registry 미가용 fail-safe. merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
 }
 
 // ── RedPay 엔드포인트 SSOT + payments.php 탈락 가드 (EF REDPAY_ENDPOINT 원칙 공유) ──
