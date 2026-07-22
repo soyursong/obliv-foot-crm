@@ -1,0 +1,57 @@
+═══════════════════════════════════════════════════════════════════════
+T-20260722-foot-HIRA-SCORE-GONGDAN-4SVC-LOAD — Part A 실행 결과
+실행시각 : 2026-07-22 (Asia/Seoul)
+DB 환경  : foot prod / project_ref=rxlomoozakkjesdqjtvd
+실행방식 : Supabase Management API /database/query (DO block, 원자 트랜잭션)
+SOURCE   : 보건복지부 고시 제2025-186호 · 2026년 적용분 (급여 상대가치점수)
+           점당단가 clinic.hira_unit_value = 95.60 (오블리브의원 서울오리진점)
+db_change=false (값 UPDATE) · RPC/DDL 무변경 · e2e_spec_exempt=db_only
+═══════════════════════════════════════════════════════════════════════
+
+━━ §0. 스키마 실측(발견) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+코드 저장 컬럼 = services.service_code (NOT hira_code).
+active=true 대상 4행은 service_code 보유·hira_code=NULL·hira_score=NULL 상태였음.
+계산경로 확인: calc_copayment 는 services.id 로 행을 읽고 v_service.hira_score 를
+직접 사용(hira_code/service_code 무참조). → id 기준 hira_score 세팅이 계산에 반영됨.
+
+━━ §1. 대상셋 FREEZE (UPDATE 전) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+active=true AND service_code IN (AA154,AA254,AA222,D620300HZ) → count=4 (정확히 4행).
+active=true 이면서 hira_code 로 위 코드 보유하는 행 = 0건 (오매칭 없음).
+
+  id                                    service_code  BEFORE.hira_score  active
+  de611ed5-154a-475d-9eb3-19d6d3bad881  AA154         NULL               true
+  117befad-e8f8-48c6-b496-89c37a68a441  AA254         NULL               true
+  1a82c70a-07fe-4321-be44-8a206e3d1aa0  AA222         NULL               true
+  8e401f7f-6746-4807-9366-4e1d9cfb1e7d  D620300HZ     NULL               true
+
+미접촉 보증(DO NOT TOUCH) — 사후 재확인 결과 변경 0:
+  ed424017 (service_code=AA154, active=false)  hira_score=NULL     (불변)
+  b98f6831 (hira_code=AA154,   active=false)   hira_score=153.36   (불변)
+
+━━ §2. UPDATE 실행 + rows-affected 검증 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DO block WHERE active=true AND service_code IN(...) AND id IN(4개).
+GET DIAGNOSTICS ROW_COUNT: rows-affected = 4 (=기대). RAISE 미발생 → 커밋.
+(rows≠4 시 RAISE EXCEPTION 으로 전체 롤백하도록 내장 — Cross-CRM Write Rows-Affected 표준)
+
+━━ §3. AFTER 재확인 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  AA154      hira_score = 197.07
+  AA254      hira_score = 139.85
+  AA222      hira_score = 49.09
+  D620300HZ  hira_score = 110.20
+
+━━ §4. 사후검증 calc_copayment 4건 (customer=general, clinic=서울오리진점 95.60) ━
+검산식 base = ROUND(소정점수 × 95.60). 공단부담(insurance_covered) 전건 non-zero.
+  code        score   base=ROUND(score×95.6)  calc.base  공단부담   본인부담  rate  data_incomplete
+  AA154       197.07  18840                    18840      13240      5600      0.30  false
+  AA254       139.85  13370                    13370       9370      4000      0.30  false
+  AA222        49.09   4693                     4693       3293      1400      0.30  false
+  D620300HZ   110.20  10535                    10535       7435      3100      0.30  false
+→ base_expected == calc.base 전건 일치. 공단부담 전건 non-zero.
+→ hira_score NULL 시절 default-deny(data_incomplete=true) 분기 → 정상계산(false)로 전환 확인.
+
+━━ §5. RPC/DDL 무변경 확인 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UPDATE(값) 단일. CREATE/ALTER/DROP/함수정의 변경 0건. calc_copayment 정의 불변.
+
+판정 : Part A 완료. 롤백 SQL 확보(_rollback.sql; 4행 hira_score→NULL 복원).
+Part B/C : 대표 첨부 지시서 pending → 미착수(스펙 미확정).
+═══════════════════════════════════════════════════════════════════════
