@@ -54,36 +54,61 @@ const FN_Q = `SELECT count(*)::int AS n
                WHERE n.nspname='public' AND p.proname='fn_selfcheckin_prior_visit'
                  AND pg_get_function_identity_arguments(p.oid)='p_clinic_id uuid, p_customer_id uuid';`;
 
-// ── snapshot BEFORE (net-new → 부재 기대) ──
-const before = { fnExists: (await q(FN_Q))[0].n };
+// ── [FIX-REQUEST] anon EXECUTE 권한 실측 (has_function_privilege). 재배선 2종 + net-new prior_visit ──
+//   PRE-DROP evidence 를 grant 반영본으로 재산출. 각 시그니처의 anon EXECUTE 권한을 boolean 으로 스냅샷.
+const SIGS = {
+  prior_visit:       "public.fn_selfcheckin_prior_visit(uuid,uuid)",
+  match_reservation: "public.fn_selfcheckin_match_reservation(uuid,uuid,text,text)",
+  linked_checkin:    "public.fn_selfcheckin_linked_checkin(uuid,uuid)",
+};
+const aclCols = (keys) => keys.map((k) =>
+  `has_function_privilege('anon','${SIGS[k]}','EXECUTE') AS anon_${k}`).join(',\n  ');
+// prior_visit 는 net-new(BEFORE/AFTER 부재) → has_function_privilege 가 42883.
+//   ∴ BEFORE/AFTER = 실재하는 2종만 / in-txn = 3종 전체(생성 후).
+const ACL_Q_EXISTING = `SELECT\n  ${aclCols(['match_reservation', 'linked_checkin'])};`;
+// Management API 는 멀티스테이트먼트에서 마지막 SELECT 결과만 반환 → in-txn 은 fn count + 3종 ACL 을 단일 행으로.
+const INTXN_VERIFY_Q = `SELECT
+  (${FN_Q.replace(/;\s*$/, '')}) AS n,
+  ${aclCols(['prior_visit', 'match_reservation', 'linked_checkin'])};`;
+
+// ── snapshot BEFORE (prior_visit=부재; match/linked anon=false[0716 sweep 후 정본]) ──
+const before = { fnExists: (await q(FN_Q))[0].n, acl: (await q(ACL_Q_EXISTING))[0] };
 console.log('── BEFORE (prod 실재) ──');
 console.log(JSON.stringify(before, null, 1));
 
-// ── 무영속 실행: BEGIN; <ddl>; <in-txn 존재확인>; ROLLBACK; ──
+// ── 무영속 실행: BEGIN; <ddl>; <in-txn 존재+ACL 확인>; ROLLBACK; ──
+let inTxnAcl = null;
 try {
-  const inTxnCheck = await q(`BEGIN;\n${stripTxn(FILE)}\n${FN_Q}\nROLLBACK;`);
-  // 마지막 SELECT 결과가 in-txn 함수 존재(=1) 확인
+  const inTxnCheck = await q(`BEGIN;\n${stripTxn(FILE)}\n${INTXN_VERIFY_Q}\nROLLBACK;`);
   const rows = Array.isArray(inTxnCheck) ? inTxnCheck.flat() : [];
-  const inTxnN = rows.find((r) => r && typeof r.n === 'number')?.n;
-  if (inTxnN === 1) {
-    console.log('\n✅ DDL 구문·의미 유효 + in-txn 함수 물화 확인(BEGIN…ROLLBACK 무영속).');
+  const verifyRow = rows.find((r) => r && typeof r.anon_prior_visit === 'boolean') ?? null;
+  const inTxnN = verifyRow?.n;
+  inTxnAcl = verifyRow;
+  const aclGranted = inTxnAcl
+    && inTxnAcl.anon_prior_visit === true
+    && inTxnAcl.anon_match_reservation === true
+    && inTxnAcl.anon_linked_checkin === true;
+  if (inTxnN === 1 && aclGranted) {
+    console.log('\n── in-txn ACL (마이그 적용 후 기대: 3종 모두 anon EXECUTE=true) ──');
+    console.log(JSON.stringify(inTxnAcl, null, 1));
+    console.log('\n✅ DDL 구문·의미 유효 + in-txn 함수 물화 + anon EXECUTE 3종 개방 확인(BEGIN…ROLLBACK 무영속).');
   } else {
     ok = false;
-    console.log(`\n❌ in-txn 함수 물화 미확인 (n=${JSON.stringify(inTxnN)}).`);
+    console.log(`\n❌ in-txn 검증 실패 (fnN=${JSON.stringify(inTxnN)}, acl=${JSON.stringify(inTxnAcl)}).`);
   }
 } catch (e) {
   ok = false;
   console.log('\n❌ DDL 실행 실패:', e.message);
 }
 
-// ── post-probe: 아무것도 영속되지 않았는지 재확증 ──
-const after = { fnExists: (await q(FN_Q))[0].n };
+// ── post-probe: 아무것도 영속되지 않았는지 재확증 (fn 부재·ACL 원복) ──
+const after = { fnExists: (await q(FN_Q))[0].n, acl: (await q(ACL_Q_EXISTING))[0] };
 console.log('\n── AFTER (post-probe) ──');
 console.log(JSON.stringify(after, null, 1));
 
 const same = JSON.stringify(before) === JSON.stringify(after);
 if (!same) { ok = false; console.log('\n❌ NO-PERSISTENCE 위반: BEFORE≠AFTER (dry-run 이 prod 를 변경했다!)'); }
-else console.log('\n✅ NO-PERSISTENCE 확증: BEFORE==AFTER (prod 무변경).');
+else console.log('\n✅ NO-PERSISTENCE 확증: BEFORE==AFTER (prod 무변경 — fn 부재·anon ACL 원복).');
 
 console.log(`\n${ok ? 'PASS' : 'FAIL'}: dry-run ${ok ? '통과' : '실패'}`);
 process.exit(ok ? 0 : 1);

@@ -52,4 +52,29 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.fn_selfcheckin_prior_visit(UUID, UUID) FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION public.fn_selfcheckin_prior_visit(UUID, UUID) TO anon, authenticated;
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- [FIX-REQUEST T-20260723-...ANON-CUTOVER / qa_fail=anon_execute_grant_missing]
+--   supervisor DDL-diff / prod-schema DB-GATE 실측(has_function_privilege, prod rxlomoozakkjesdqjtvd):
+--   컷오버가 재배선하는 4 RPC 중 아래 2종은 prod 에서 anon EXECUTE=false.
+--     · 0716 hygiene sweep(batch1 20260716180000 · batch2 20260716210000)이 REVOKE FROM anon,PUBLIC 처리 →
+--       0615 최초 GRANT(anon)를 회수한 상태가 prod 정본. (당시 nowhere-called 판정, 지금 컷오버가 재호출.)
+--   → 키오스크=anon 키. GRANT 부재 시: match_reservation rpc→42501→예약환자 워크인 오처리 /
+--     linked_checkin rpc→42501→예약환자 중복 체크인行. (CEO 07-03/07-10 회피 명시한 degrade.)
+--   ∴ 컷오버가 재배선하는 anon 경로 2종에 anon,authenticated EXECUTE 재개방(REVOKE PUBLIC 동봉).
+--
+-- §15-5-1 CLASS① 정합: 두 함수 모두 zero-PII —
+--   fn_selfcheckin_match_reservation → RETURNS UUID (opaque 예약 id, PHI 미반환) /
+--   fn_selfcheckin_linked_checkin    → RETURNS TABLE(id UUID, queue_number INT) (PHI 미반환).
+--   owner=postgres(마이그 실행 role) 유지 → A7(권한상승) 무발동. SECURITY DEFINER + SET search_path 기정의(0615).
+--   ADDITIVE: 함수 본문/시그니처 미변경, ACL(EXECUTE grant)만 재개방 → 스태프 경로(authenticated) 무훼손.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- (1) 당일 예약 매칭 (customer_id → 예약 UUID). anon 키오스크 재배선 경로 개방.
+REVOKE EXECUTE ON FUNCTION public.fn_selfcheckin_match_reservation(UUID, UUID, TEXT, TEXT) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.fn_selfcheckin_match_reservation(UUID, UUID, TEXT, TEXT) TO anon, authenticated;
+
+-- (2) 예약 연결 체크인 (reservation_id → id·queue_number). anon 키오스크 재배선 경로 개방.
+REVOKE EXECUTE ON FUNCTION public.fn_selfcheckin_linked_checkin(UUID, UUID) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.fn_selfcheckin_linked_checkin(UUID, UUID) TO anon, authenticated;
+
 COMMIT;

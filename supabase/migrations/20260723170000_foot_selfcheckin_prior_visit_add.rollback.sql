@@ -10,4 +10,10 @@ BEGIN;
 
 DROP FUNCTION IF EXISTS public.fn_selfcheckin_prior_visit(UUID, UUID);
 
+-- ── [FIX-REQUEST 역연산] 재배선 2종의 anon EXECUTE 회수 = 종전(0716 sweep 후) anon 부재 상태 복원 ──
+--   함수 자체는 pre-existing(0615) → DROP 아님. ACL 만 원복(REVOKE FROM anon).
+--   authenticated EXECUTE 는 보존(0716 sweep 이 GRANT authenticated 유지했던 정본 상태와 동치).
+REVOKE EXECUTE ON FUNCTION public.fn_selfcheckin_match_reservation(UUID, UUID, TEXT, TEXT) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.fn_selfcheckin_linked_checkin(UUID, UUID) FROM anon;
+
 COMMIT;
