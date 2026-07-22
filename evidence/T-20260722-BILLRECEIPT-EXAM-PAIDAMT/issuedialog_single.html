@@ -1,0 +1,217 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .rn-wrap {
+    font-family: 'Malgun Gothic','Apple SD Gothic Neo',NanumGothic,sans-serif;
+    font-size: 7.3pt; color:#000; background:#fff;
+    padding: 6mm 8mm; width: 194mm; min-height: 285mm;
+  }
+  .rn-legal { font-size:7pt; margin-bottom:1mm; }
+  .rn-title { text-align:center; font-size:14pt; font-weight:bold; letter-spacing:2px; padding:2px 0 4px; }
+  .rn-title .chk { font-size:8.5pt; font-weight:normal; letter-spacing:0; }
+  .rn-wrap table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  .rn-wrap td, .rn-wrap th { border:1px solid #000; padding:1px 3px; vertical-align:middle; font-size:7.3pt; line-height:1.12; }
+  .rn-wrap th { background:#f2f2f2; font-weight:bold; text-align:center; }
+  .rn-lbl { background:#f7f7f7; text-align:center; white-space:nowrap; }
+  .rn-sub { font-size:6.4pt; color:#333; }
+  .rn-num { text-align:right; font-variant-numeric:tabular-nums; padding-right:4px; }
+  .rn-grp { background:#f7f7f7; text-align:center; font-size:6.8pt; width:16px; letter-spacing:1px; }
+  .rn-flex { display:flex; gap:0; align-items:stretch; }
+  .rn-left { flex:0 0 62%; }
+  .rn-right { flex:1; margin-left:-1px; }
+  .rn-right table { height:100%; }
+  @media print {
+    @page { size:A4 portrait; margin:0; }
+    .rn-wrap { width:210mm; padding:5mm 7mm; }
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+<div class="rn-wrap">
+  <div class="rn-legal">■ 국민건강보험 요양급여의 기준에 관한 규칙 [별지 제6호서식] &lt;개정 2024. 7. 18.&gt;</div>
+  <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #1: 대제목 위치 정렬 — 별지 제6호서식 표준은 제목이 페이지
+       정중앙, 체크박스([■]외래…)는 좌측 고정. 前: chk+제목을 한 인라인 그룹으로 center → 제목이 우측으로
+       밀림(off-center). chk 를 absolute left 로 흐름 밖에 두어 제목만 full-width 정중앙 정렬. -->
+  <div class="rn-title" style="position:relative;"><span class="chk" style="position:absolute; left:0; top:50%; transform:translateY(-50%);">[■]외래 [ ]입원 ([ ]퇴원 [ ]중간)</span>진료비 계산서ㆍ영수증</div>
+
+  <table style="margin-bottom:-1px;">
+    <colgroup><col style="width:13%"><col style="width:20%"><col style="width:11%"><col style="width:19%"><col style="width:10%"><col style="width:15%"><col style="width:12%"></colgroup>
+    <tbody>
+      <tr>
+        <td class="rn-lbl">환자등록번호</td><td>F-4302</td>
+        <td class="rn-lbl">환자 성명</td>
+        <td>홍길동<br><span class="rn-sub">생년월일 </span></td>
+        <td class="rn-lbl">진료기간</td><td>2026-07-22</td>
+<!-- T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간/공휴일 자동 판정 →
+             체크박스 자동 체크(마크 소스=night_mark/holiday_mark, DocumentPrintPanel 배선). 미가산 시 공란(회귀0). -->
+        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[]야간 []공휴일</td>
+      </tr>
+      <tr>
+        <td class="rn-lbl">진료과목</td><td>피부과</td>
+        <td class="rn-lbl" style="font-size:6.8pt;">질병군(DRG)번호</td><td></td>
+        <td class="rn-lbl">병실</td><td></td>
+        <td class="rn-lbl" style="font-size:6.4pt;">환자구분<br>건강보험</td>
+      </tr>
+      <tr>
+        <td class="rn-lbl">영수증번호</td><td colspan="6" style="text-align:left;"></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rn-flex">
+    <div class="rn-left">
+      <table>
+        <colgroup><col style="width:16px"><col><col style="width:16%"><col style="width:16%"><col style="width:15%"><col style="width:16%"></colgroup>
+        <thead>
+          <tr>
+            <th colspan="2" rowspan="3">항목</th>
+            <th colspan="3">급여</th>
+            <th rowspan="3">비급여</th>
+          </tr>
+          <tr><th colspan="2">일부 본인부담</th><th rowspan="2">전액<br>본인부담</th></tr>
+          <tr><th>본인부담금</th><th>공단부담금</th></tr>
+        </thead>
+        <tbody>
+          <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #2: 진찰료 급여 본인부담금/공단부담금 컬럼 보완(표시 전용).
+               foot 급여 = 진찰료(초진/재진 진찰료, footBillDetailCategory 기본→진찰료)가 원천이므로 급여 split은
+               진찰료 행에 표기가 정합. 前: 급여 aggregate(copayment/insurance_covered)가 아래 '처치 및 수술료'
+               행에 배치돼 진찰료 칸 공란·처치행 오표기 → 진찰료 행으로 이동(중복표기 방지: 처치행에서는 제거).
+               값 원천=service_charges(Revenue Insurance Split SSOT), 원장 무접촉. 합계 ①/②와 동일값 정합. -->
+          <tr><td class="rn-grp" rowspan="18">기<br>본<br>항<br>목</td><td>진찰료</td><td class="rn-num">2,100</td><td class="rn-num">4,900</td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>입원료 (1인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>입원료 (2·3인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>입원료 (4인실 이상)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>식대</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>투약 및 조제료 (행위료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>투약 및 조제료 (약품비)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>주사료 (행위료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>주사료 (약품비)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>마취료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #2: 급여 split 을 진찰료 행으로 이동(위) → 처치 및 수술료 행은
+               급여 본인/공단 공란(foot 풋케어=비급여, 급여칸 부적합). 중복표기 제거.
+               T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 비급여(전액본인부담) 칸에 category 집계 표시 —
+               '처치 및 수술료'=풋케어 비급여(150,000), '검사료'=검사 비급여(30,000).
+               (표시 전용, 집계 grain 무변경: 150,000+30,000+=④180,000 항상 정합.) -->
+          <tr><td>처치 및 수술료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">150,000</td></tr>
+          <tr><td>검사료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">30,000</td></tr>
+          <tr><td>영상진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>방사선치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>치료재료대</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>재활 및 물리치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>정신요법료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>전혈 및 혈액성분제제료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td class="rn-grp" rowspan="12">선<br>택<br>항<br>목</td><td>CT 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>MRI 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>PET 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>초음파 진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>보철ㆍ교정료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>제증명수수료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>선별급여</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>65세 이상 등 정액</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>정액수가(요양병원)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>정액수가(완화의료)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr><td>질병군 포괄수가</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 처치/검사 분해분 제외한 잔여 비급여만 '기타' 행에.
+               (前: 180,000 전액 → 처치·검사 항목 누락. 이제 =non_covered−처치−검사.) -->
+          <tr><td>기타</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <tr>
+            <td class="rn-lbl" colspan="2" style="font-weight:bold;">합계</td>
+            <td class="rn-num" style="font-weight:bold;">① 2,100</td>
+            <td class="rn-num" style="font-weight:bold;">② 4,900</td>
+            <td class="rn-num" style="font-weight:bold;">③ </td>
+            <td class="rn-num" style="font-weight:bold;">④ 180,000</td>
+          </tr>
+          <tr>
+            <td class="rn-lbl" colspan="2">상한액 초과금 ⑤</td>
+            <td class="rn-num" colspan="4" style="text-align:left;"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rn-right">
+      <table>
+        <colgroup><col style="width:56%"><col></colgroup>
+        <tbody>
+          <tr><th colspan="2">금액산정내용</th></tr>
+          <tr><td>⑥ 진료비 총액<br>(①+②+③+④)</td><td class="rn-num" style="font-weight:bold;">187,000</td></tr>
+          <tr><td>⑦ 공단부담 총액<br>(②+⑤)</td><td class="rn-num">4,900</td></tr>
+          <tr><td>⑧ 환자부담 총액<br>(①-⑤)+③+④</td><td class="rn-num" style="font-weight:bold;">182,100</td></tr>
+          <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num"></td></tr>
+          <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">182,100</td></tr>
+          <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 출력 패널 '납부금액(사전입력)' 값이 있으면
+               ⑪ 합계(납부한 금액)에 반영해 사전 출력. 비영속(FE-only 표시) — payments 수납원장 write 아님.
+               미입력 시 공란(기존 동작 유지). 납부하지 않은 금액(⑩-⑪) = patient_amount − 사전입력. -->
+          <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;"></span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;"></span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;"></span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;">182,100</span></td></tr>
+          <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num"></td></tr>
+          <tr><td>현금영수증 (&nbsp;&nbsp;&nbsp;)</td><td></td></tr>
+          <tr><td>신분확인번호</td><td></td></tr>
+          <tr><td>현금영수증 승인번호</td><td></td></tr>
+          <tr><td colspan="2" style="font-size:6.6pt; color:#555; text-align:left;">* 요양기관 임의활용공간</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-④ (빨간박스 스샷 F0BK4NYLPHN 근거):
+       ④-b 사업자등록번호 값칸(前 col2=auto≈40%)이 불필요하게 넓어 13% 고정으로 축소.
+       ④-a 상호(요양기관명) 값칸을 auto(잔여 최대폭)로 확장 + nowrap → 상호명 1줄 출력(줄바꿈 방지).
+       ⚠ 3FIX 값(457-23-00938)·위치, REPNAME 대표자/도장 회귀 없이 열 너비만 조정. -->
+  <table style="margin-top:2mm;">
+    <colgroup><col style="width:12%"><col style="width:13%"><col style="width:7%"><col><col style="width:8%"><col style="width:15%"></colgroup>
+    <tbody>
+      <tr>
+        <td class="rn-lbl">요양기관 종류</td>
+        <td colspan="5" style="text-align:left;">[■]의원급ㆍ보건기관 &nbsp; [ ]병원급 &nbsp; [ ]종합병원 &nbsp; [ ]상급종합병원</td>
+      </tr>
+      <tr>
+        <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 갱신 511-60-00988 → 457-23-00938 -->
+        <td class="rn-lbl">사업자등록번호</td><td>457-23-00938</td>
+        <td class="rn-lbl">상호</td><td style="white-space:nowrap;"></td>
+        <td class="rn-lbl">전화번호</td><td>02-6956-3438</td>
+      </tr>
+      <!-- T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT B2: 계산서·영수증 신양식(기관 발행) 대표자
+           (=박영진 canonical) 근방 법인(요양기관) 인감 출력. 진료의 개인직인 무사용(fee docs = 개설자·기관 축).
+           세부내역서와 동일 법인 도장으로 정합. -->
+      <tr>
+        <td class="rn-lbl">사업장 소재지</td><td colspan="3"></td>
+        <td class="rn-lbl">대표자</td>
+        <td style="text-align:left;">&nbsp;&nbsp;</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="text-align:center; font-size:9pt; margin-top:3mm; letter-spacing:1px;"></div>
+
+  <table style="margin-top:1.5mm;">
+    <colgroup><col style="width:68%"><col></colgroup>
+    <thead>
+      <tr><th>항목별 설명</th><th>일반사항 안내</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="vertical-align:top; text-align:left; font-size:6.2pt; line-height:1.32; padding:2px 4px;">
+          <div>1. 일부 본인부담: 일반적으로 다음과 같이 본인부담률을 적용하나, 요양기관 지역, 요양기관의 종별, 환자 자격, 선별급여 여부, 병실종류 등에 따라 달라질 수 있습니다.</div>
+          <div style="padding-left:6px;">- 외래 본인부담률: 요양기관 종별에 따라 30% ~ 60% 등</div>
+          <div style="margin-top:1px;">2. 전액 본인부담: 건강보험(의료급여)에서 금액을 정하고 있으나 진료비 전액을 환자 본인이 부담합니다.</div>
+          <div style="margin-top:1px;">3. 상한액 초과금: 본인부담상한액의 최고 금액을 초과하는 본인부담금이 발생한 경우 공단이 부담하는 초과분 중 사전 정산하는 금액을 말합니다.</div>
+        </td>
+        <td style="vertical-align:top; text-align:left; font-size:6.2pt; line-height:1.32; padding:2px 4px;">
+          <div>1. 이 계산서ㆍ영수증에 대한 세부내용은 요양기관에 요구하여 제공받을 수 있습니다.</div>
+          <div style="margin-top:1px;">2. 환자가 전액 부담한 비용과 비급여로 부담한 비용의 타당성 여부를 건강보험심사평가원(☏1644-2000)에 확인 요청하실 수 있습니다.</div>
+          <div style="margin-top:1px;">3. 계산서ㆍ영수증은 「소득세법」에 따른 의료비 공제신청 또는 「조세특례제한법」에 따른 현금영수증 공제신청에 사용할 수 있습니다.</div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- T-20260721-foot-COPAY-PROVISIONAL-RELABEL: 급여항목 본인부담 확정 라벨 「본인부담금」 (총괄 김주연 confirm).
+       법정 필수 칸 밖 설명 라인 — 별지 제6호서식 칸 구조·값(⑧ 환자부담=본인+비급여/공단부담=별도) canon 불변, 텍스트 설명만. -->
+  <div style="font-size:6.4pt; color:#333; margin-top:1mm; text-align:left;">
+    ※ 상기 급여 항목의 환자 부담분은 「본인부담금」으로 표기됩니다.
+  </div>
+
+  <div style="text-align:right; font-size:6.4pt; color:#555; margin-top:1mm;">210㎜×297㎜[백상지 80g/㎡]</div>
+</div>

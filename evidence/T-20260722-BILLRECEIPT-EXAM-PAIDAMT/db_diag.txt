@@ -1,0 +1,16 @@
+=== [1] services category_label 분포 (검사료 매핑 대상 = category_label 검사) ===
+  검사: 총3 급여1/비급여2 hira={(null)} ex: 일반진균검사-KOH도말-조갑조직[cov=true], KOH도말검사[cov=false], 피검사[cov=false]
+  기본: 총19 급여6/비급여13 hira={(null)} ex: 재진-물리치료,주사 등 시술받은 경우[cov=true], 초진진찰료-의원[cov=true], 사망진단서[cov=false], 재진진찰료(영상판독)[cov=false]
+  상병: 총6 급여0/비급여6 hira={(null)} ex: 손발톱백선[cov=false], 내성발톱(감입발톱)[cov=false], 발백선[cov=false], 상세불명의 위염[cov=false]
+  수액: 총15 급여0/비급여15 hira={(null)} ex: 태반주사[cov=false], 글로우수액[cov=false], 태반주사(라이넥)[cov=false], 비타민D 주사[cov=false]
+  제증명: 총13 급여0/비급여13 hira={(null)} ex: 진료확인서(코드,진단명 불포함)[cov=false], 진단서(영문)[cov=false], 진료비영수증[cov=false], 진료의뢰서[cov=false]
+  처방약: 총24 급여0/비급여24 hira={(null)} ex: 한미유리아크림200밀리그램(우레아)(50g)[cov=false], 메섹신정[cov=false], 터미졸크림(테르비나핀염산염)15g[cov=false], 한미유리아크림200밀리그램(우레아)(4g/20g)[cov=false]
+  풋케어: 총35 급여0/비급여35 hira={(null)} ex: 가열성 진균증 레이저 치료[cov=false], 힐러 가열성레이저[cov=false], 힐러 가열성레이저+포돌로게[cov=false], 힐러 가열성레이저+포돌로게+수액[cov=false]
+  풋화장품: 총19 급여0/비급여19 hira={(null)} ex: 프룻 풋 필링 (125ml)[cov=false], 프룻 핸드 풋 크림 (125ml)[cov=false], 풋샴푸 (200ml)[cov=false], Care Toe Band (CTB)[cov=false]
+  (null): 총3 급여3/비급여0 hira={prescription,consultation,examination} ex: 일반 처방료[cov=true], 진찰료 (초진)[cov=true], KOH 균검사[cov=true]
+
+=== [2] '검사' category 서비스 3건: 일반진균검사-KOH도말-조갑조직(cov=true), 피검사(cov=false), KOH도말검사(cov=false) ===
+
+=== [3] 최근 검사 service_charges 0건 (급여여부 실측) ===
+
+=== [4] 검사 항목 포함 최근 방문 없음(최근200 charge 내) ===
