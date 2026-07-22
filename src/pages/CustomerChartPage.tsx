@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 // T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
@@ -8604,6 +8604,20 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-[#51585D]">건강보험 자격등급</span>
             </div>
+            {/* T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: null-grade 눈에 띄는 경고.
+                셀프체크인(키오스크) 신규 유입 고객은 원본 insurance_grade 가 null → 데스크 캡처 유도.
+                모르면 빈칸 유지(추측 강요 금지). 아래 InsuranceGradeSelect 로 확인 후 입력. */}
+            {(customer.insurance_grade == null || customer.insurance_grade === 'unverified') && (
+              <div
+                className="flex items-center gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2 py-1.5"
+                data-testid="chart-grade-capture-warning"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                <span className="text-[11px] font-medium text-amber-800">
+                  자격등급 미입력 — 확인 후 입력해 주세요 (모르면 빈칸 유지)
+                </span>
+              </div>
+            )}
             <InsuranceGradeSelect
               customerId={customer.id}
               editable

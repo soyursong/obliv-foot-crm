@@ -25,6 +25,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import {
+  AlertTriangle,
   Check,
   ChevronRight,
   ChevronDown,
@@ -64,6 +65,12 @@ import type { CheckIn, Service } from '@/lib/types';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
+// T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: 셀프체크인(키오스크) 신규 유입 null-grade 데스크 캡처.
+//   셀프체크인 RPC customers INSERT 에 insurance_grade 부재 → 신규 null 유입. 키오스크는 등급을 모르므로
+//   필수화 불가 → 수납대기/수납(PMW) 진입 시 null-grade 경고 + 데스크접수(NewCheckInDialog, a4cfa17f) 검증된
+//   InsuranceGradeSelect 패턴 재사용(중복 창안 금지). 수납 시점은 등급이 결제 split·서류에 필요한 자연 캡처 포인트.
+import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
+import { useInsuranceGrade } from '@/hooks/useInsurance';
 import {
   FALLBACK_TEMPLATES,
   INSURANCE_FALLBACK_TEMPLATES,
@@ -797,7 +804,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [submitting, setSubmitting] = useState(false);
 
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
+  //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+
+  // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: RAW customers.insurance_grade (미가공 원본, 폴백 없음).
+  //   셀프체크인 신규 고객은 이 값이 null → 데스크(PMW)에서 캡처 유도. 위 effective 는 폴백 때문에
+  //   "실제 미입력 여부" 판정에 못 쓴다(폴백값이 있으면 non-null). 원본 null 여부는 이 hook 으로만 판정.
+  const {
+    grade: rawInsuranceGrade,
+    refresh: refreshRawInsuranceGrade,
+  } = useInsuranceGrade(checkIn?.customer_id ?? null);
+  // null-grade = 원본 미입력(null) 또는 unverified(미확인) — 데스크 캡처 대상.
+  //   'unverified' 는 명시적 미확인 선택값이지만 결제 split 정확도상 실등급 캡처가 필요하므로 경고 대상 포함.
+  const needsGradeCapture =
+    !!checkIn?.customer_id && (rawInsuranceGrade == null || rawInsuranceGrade === 'unverified');
 
   // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 고객 미수금(잔금) — PKG-OUTSTANDING-BALANCE SSOT 산출값.
   //   결제 미니창 진입 시 미수금을 표면화(읽기전용)해 담당자가 즉시 인지하도록 한다.
@@ -2485,6 +2505,39 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 </span>
               </span>
             )}
+          </div>
+        )}
+
+        {/* ── T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: null-grade 데스크 캡처 배너 ──
+            셀프체크인(키오스크) 신규 고객은 self-checkin RPC INSERT 에 insurance_grade 가 없어 원본 null 로 유입된다.
+            키오스크 환자는 등급을 모르므로 필수화 불가 → 수납대기/수납(PMW) 진입 시 담당자가 데스크에서 캡처.
+            수납 시점은 어차피 등급이 결제 split·서류에 필요하므로 자연스러운 캡처 포인트.
+            InsuranceGradeSelect = 데스크접수(NewCheckInDialog, a4cfa17f 배포됨) 검증 패턴 재사용(중복 창안 금지).
+            ⚠️ 추측 강요 금지 — 모르면 빈칸 유지(선택 안 함), 데스크 확인 후 입력. 필수 차단 아님(soft 유도). */}
+        {needsGradeCapture && checkIn.customer_id && (
+          <div
+            className="px-5 py-2.5 border-b shrink-0 bg-amber-50"
+            data-testid="pmw-grade-capture-banner"
+          >
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span className="text-xs font-semibold text-amber-800">
+                보험 자격등급 미입력 — 급여 정산·서류 정확도를 위해 확인 후 입력해 주세요
+              </span>
+              <span className="text-[11px] text-amber-600/80">(모르면 빈칸 유지)</span>
+            </div>
+            <InsuranceGradeSelect
+              customerId={checkIn.customer_id}
+              editable
+              onChanged={() => {
+                // 원본 등급 재조회(경고 배너 재판정) + 빌링용 effective 등급 재로드(급여 split 즉시 반영).
+                refreshRawInsuranceGrade();
+                if (checkIn.customer_id) {
+                  loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
+                    .then((grade) => setCustomerInsuranceGrade(grade));
+                }
+              }}
+            />
           </div>
         )}
 
