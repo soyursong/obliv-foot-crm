@@ -83,7 +83,9 @@ test.describe('T-20260702 통계 TM집계 렌더 무회귀', () => {
     await tmTab.click();
 
     await expect(page.getByText('TM상담사별 집계')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('TM 상담사 (등록자)')).toBeVisible();
-    console.log('[TMSTATS-DOPAMINE-REGISTRANT] TM집계 렌더 OK (registrar_name 표시축)');
+    // T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT (§963⑩(a)): grouping 축이 정규 귀속키로 repoint
+    //   → 헤더 '(등록자)' → '(귀속)'. 실등록자명(진운선)은 드릴다운 '등록자(예약)' 라벨 열에서만 표시.
+    await expect(page.getByText('TM 상담사 (귀속)')).toBeVisible();
+    console.log('[TMSTATS-DOPAMINE-REGISTRANT] TM집계 렌더 OK (귀속키축, registrar_name=label-only)');
   });
 });

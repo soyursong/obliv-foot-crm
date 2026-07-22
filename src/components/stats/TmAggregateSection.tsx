@@ -9,7 +9,7 @@ import {
 import { seoulISODate } from '@/lib/format';
 import {
   tmCounselorLabel,
-  tmRoleNames,
+  tmAttributionKey,
   TM_UNASSIGNED_LABEL,
   TM_WALKIN_LABEL,
   type TmAggregateData,
@@ -28,6 +28,12 @@ import {
  *  - 내원건수: 기간 내 실제 내원 수(이탈 포함, 취소 제외)
  *  - 내원률: 내원수 ÷ 예약수
  *  - TM(상담사) 귀속: reservations.created_by(=user_profiles.id)
+ *
+ * T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT (§963⑩(a) 집행):
+ *  - grouping key + "TM팀만" 필터 inclusion 판정축 = 정규 귀속키(tmAttributionKey, created_by 기반).
+ *  - registrar_name 은 **label-only** — 어떤 count/grouping/filter 에도 read 하지 않는다(집계-inert).
+ *    도파민-출처 예약은 단일 버킷 '도파민 등록'으로 집계, 실등록자명(registrar_name)은 드릴다운의
+ *    '등록자(예약)' 라벨 컬럼에서만 표시(count 무영향).
  */
 
 interface Props {
@@ -75,24 +81,38 @@ export default function TmAggregateSection({
     return WALKIN; // 풋 check_ins엔 created_by 없음 → 매칭 예약 없으면 워크인
   };
 
-  // 표시 라벨(provenance-aware). 상담사(created_by)가 매칭되는 풋 직원이면 직원명,
-  // NULL/미매칭이면서 registrar_name(예약등록자 스냅샷) 있으면 등록자명, 도파민 ingest 예약이면
-  // 도파민/TM 유입 라벨, 그 외 미지정. (onlyMine '내 예약만'은 raw uid(currentUserId)로 판정.)
-  const labelForRes = (r: TmResRow): string =>
-    tmCounselorLabel(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name, r.registrar_name);
-  const labelForCheckIn = (ci: TmCheckInRow): string => {
+  // ── 집계축 = 정규 귀속키(tmAttributionKey) — T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT ──
+  // grouping key / "TM팀만" inclusion / totals 는 오직 created_by 기반 귀속키로만 파생한다.
+  // registrar_name 은 절대 read 하지 않는다(집계-inert). 도파민-출처 = 단일 버킷 '도파민 등록'.
+  const attrKeyForRes = (r: TmResRow): string =>
+    tmAttributionKey(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name);
+  const attrKeyForCheckIn = (ci: TmCheckInRow): string => {
     const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
     if (!matched) return WALKIN;
-    return labelForRes(matched);
+    return attrKeyForRes(matched);
   };
 
-  // T-20260702-foot-TMSTATS-TEAMFILTER-ROLE:
-  //   "TM팀만" = 계정관리 role='tm' 계정만. 판정축을 집계 표시 라벨(labelForRes/labelForCheckIn)과
-  //   동일하게 맞춰 필터·결과·집계 3자가 항상 일치한다. (기존 created_by 단일축 판정은 풋 TM팀이
-  //   registrar_name 경로로 귀속돼 created_by=데스크(admin/coordinator)라 TM 전건 누락 → 오집계였음.)
-  //   role 소스 = user_profiles.role (계약 v1.0 §2-3 enum 'tm'; user_roles flip 은 게이트 SEQUENCED, 현행 소스 유지).
-  const tmNameSet = useMemo(() => tmRoleNames(staffMap), [staffMap]);
-  const isTmLabel = (label: string) => tmNameSet.has(label);
+  // 라벨-only(표시 전용): 실등록자명. 드릴다운 '등록자(예약)' 컬럼에서만 소비 — count 무영향.
+  // (도파민 예약의 실등록자 진운선 등은 여기서만 보이고, 집계는 '도파민 등록' 버킷으로 합쳐진다.)
+  const registrantLabelForRes = (r: TmResRow): string =>
+    tmCounselorLabel(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name, r.registrar_name);
+  const registrantLabelForCheckIn = (ci: TmCheckInRow): string => {
+    const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
+    if (!matched) return WALKIN;
+    return registrantLabelForRes(matched);
+  };
+
+  // "TM팀만" = 정규 귀속키의 role='tm' 판정 (T-20260722 repoint).
+  //   판정축 = created_by → user_profiles.role. registrar_name 무접촉.
+  //   기존(라벨/registrar_name 기반 name-set 매칭)은 registrar_name 경로로 354건이 잘못 inclusion
+  //   되던 §963⑩(a) 위반 → created_by role 직접 판정으로 repoint. 도파민 버킷/미지정은 미포함.
+  //   role 소스 = user_profiles.role (계약 v1.0 §2-3 enum 'tm').
+  const isTmRes = (r: TmResRow): boolean =>
+    !!r.created_by && staffMap[r.created_by]?.role === 'tm';
+  const isTmCheckIn = (ci: TmCheckInRow): boolean => {
+    const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
+    return matched ? isTmRes(matched) : false;
+  };
 
   const isMyRecord = (uid: string | null) => !!uid && !!currentUserId && uid === currentUserId;
 
@@ -110,18 +130,18 @@ export default function TmAggregateSection({
     [visitedCI, onlyMine, currentUserId, allResMap],
   );
 
-  // "TM팀만" 필터 (계정관리 role='tm' 계정만 — 표시 라벨 기준으로 필터·결과·집계 일치)
+  // "TM팀만" 필터 (정규 귀속키 role='tm' 판정 — registrar_name 무접촉)
   const tmFilteredRegistered = useMemo(
-    () => (onlyTmRole ? filteredRegistered.filter((r) => isTmLabel(labelForRes(r))) : filteredRegistered),
-    [filteredRegistered, onlyTmRole, tmNameSet, staffMap],
+    () => (onlyTmRole ? filteredRegistered.filter((r) => isTmRes(r)) : filteredRegistered),
+    [filteredRegistered, onlyTmRole, staffMap],
   );
   const tmFilteredScheduled = useMemo(
-    () => (onlyTmRole ? filteredScheduled.filter((r) => isTmLabel(labelForRes(r))) : filteredScheduled),
-    [filteredScheduled, onlyTmRole, tmNameSet, staffMap],
+    () => (onlyTmRole ? filteredScheduled.filter((r) => isTmRes(r)) : filteredScheduled),
+    [filteredScheduled, onlyTmRole, staffMap],
   );
   const tmFilteredVisited = useMemo(
-    () => (onlyTmRole ? filteredVisited.filter((ci) => isTmLabel(labelForCheckIn(ci))) : filteredVisited),
-    [filteredVisited, onlyTmRole, tmNameSet, staffMap, allResMap],
+    () => (onlyTmRole ? filteredVisited.filter((ci) => isTmCheckIn(ci)) : filteredVisited),
+    [filteredVisited, onlyTmRole, staffMap, allResMap],
   );
 
   const totals = useMemo(() => {
@@ -132,17 +152,17 @@ export default function TmAggregateSection({
     return { registered, scheduled, visited, visitRate };
   }, [tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited]);
 
-  // TM상담사별 집계 — 표시 라벨 기준 합산 + 내원율 (롱래 tmStats 차용)
-  // 표시 라벨(provenance-aware)로 직접 집계 → 같은 라벨끼리 병합.
+  // TM상담사별 집계 — 정규 귀속키(attrKey) 기준 합산 + 내원율 (롱래 tmStats 차용)
+  // grouping key = created_by 귀속(직원명 / '도파민 등록' / '미지정'). registrar_name 무접촉(집계-inert).
   const tmStats = useMemo(() => {
     const map = new Map<string, { tm: string; registered: number; scheduled: number; visited: number }>();
     const ensure = (tm: string) => {
       if (!map.has(tm)) map.set(tm, { tm, registered: 0, scheduled: 0, visited: 0 });
       return map.get(tm)!;
     };
-    tmFilteredRegistered.forEach((r) => (ensure(labelForRes(r)).registered += 1));
-    tmFilteredScheduled.forEach((r) => (ensure(labelForRes(r)).scheduled += 1));
-    tmFilteredVisited.forEach((ci) => (ensure(labelForCheckIn(ci)).visited += 1));
+    tmFilteredRegistered.forEach((r) => (ensure(attrKeyForRes(r)).registered += 1));
+    tmFilteredScheduled.forEach((r) => (ensure(attrKeyForRes(r)).scheduled += 1));
+    tmFilteredVisited.forEach((ci) => (ensure(attrKeyForCheckIn(ci)).visited += 1));
 
     return Array.from(map.values())
       .map((r) => ({ ...r, visitRate: r.scheduled > 0 ? (r.visited / r.scheduled) * 100 : 0 }))
@@ -162,8 +182,9 @@ export default function TmAggregateSection({
       .sort((a, b) => b.count - a.count);
   }, [tmFilteredVisited, allResMap]);
 
-  // KPI 드릴다운 상세 행 (롱래 detailRows 차용, 6컬럼)
-  type DetailRow = { registeredDate: string; reservationDate: string; reservationTime: string; visitDate: string; name: string; phone: string; tm: string; groupKey: string };
+  // KPI 드릴다운 상세 행 (롱래 detailRows 차용)
+  //   tm = 정규 귀속키(집계와 동일 축) / registrant = 실등록자명(label-only, count 무영향)
+  type DetailRow = { registeredDate: string; reservationDate: string; reservationTime: string; visitDate: string; name: string; phone: string; tm: string; registrant: string; groupKey: string };
   const detailRows = useMemo<DetailRow[]>(() => {
     if (!kpiDetail) return [];
     const resIdToVisit = new Map<string, string>();
@@ -183,7 +204,8 @@ export default function TmAggregateSection({
         visitDate: resIdToVisit.get(r.id) || '',
         name: info.name || '',
         phone: info.phone || '',
-        tm: labelForRes(r),
+        tm: attrKeyForRes(r),
+        registrant: registrantLabelForRes(r),
         groupKey: kpiDetail === 'registered' ? regDate : r.reservation_date || '',
       };
     };
@@ -200,7 +222,8 @@ export default function TmAggregateSection({
         visitDate: visit,
         name: info.name || '',
         phone: '',
-        tm: labelForCheckIn(ci),
+        tm: attrKeyForCheckIn(ci),
+        registrant: registrantLabelForCheckIn(ci),
         groupKey: visit,
       };
     };
@@ -214,10 +237,10 @@ export default function TmAggregateSection({
   const kpiTitle = (k: KpiKey) => (k === 'registered' ? '예약등록건수' : k === 'scheduled' ? '예약수' : '내원건수');
 
   const downloadCsv = () => {
-    const headers = ['예약등록일', '예약일', '예약시간', '내원일', '고객명', '핸드폰번호', 'TM상담사'];
+    const headers = ['예약등록일', '예약일', '예약시간', '내원일', '고객명', '핸드폰번호', 'TM상담사(귀속)', '등록자(예약)'];
     const lines = [headers.join(',')];
     detailRows.forEach((r) => {
-      const cells = [r.registeredDate, r.reservationDate, r.reservationTime, r.visitDate, r.name, r.phone, r.tm]
+      const cells = [r.registeredDate, r.reservationDate, r.reservationTime, r.visitDate, r.name, r.phone, r.tm, r.registrant]
         .map((c) => `"${String(c).replace(/"/g, '""')}"`);
       lines.push(cells.join(','));
     });
@@ -340,7 +363,7 @@ export default function TmAggregateSection({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs text-muted-foreground">
-                  <th className="pb-2 font-medium text-left">TM 상담사 (등록자)</th>
+                  <th className="pb-2 font-medium text-left">TM 상담사 (귀속)</th>
                   <th className="pb-2 font-medium text-right">예약등록건수</th>
                   <th className="pb-2 font-medium text-right">예약수</th>
                   <th className="pb-2 font-medium text-right">내원건수</th>
@@ -384,6 +407,8 @@ export default function TmAggregateSection({
         * 예약등록건수는 예약을 추가한 날짜 기준, 예약수는 예약이 잡혀있는 날짜 기준, 내원건수는 실제 체크인한 날짜 기준으로 집계합니다.
         <br />
         * 대기후이탈 등 내원 이후 이탈 건도 내원건수에 포함됩니다(취소 제외).
+        <br />
+        * TM상담사(귀속)는 예약을 등록한 계정(created_by) 기준입니다. 도파민에서 넘어온 예약은 '도파민 등록'으로 합산되며, 실제 등록자명은 숫자를 눌러 상세의 '등록자(예약)' 열에서 확인할 수 있습니다.
       </p>
 
       {/* KPI 숫자 클릭 → 상세 팝업 + CSV 다운로드 */}
@@ -429,7 +454,8 @@ export default function TmAggregateSection({
                         <th className="text-left px-2 py-1 w-24">내원일</th>
                         <th className="text-left px-2 py-1">고객명</th>
                         <th className="text-left px-2 py-1">핸드폰번호</th>
-                        <th className="text-left px-2 py-1">TM상담사</th>
+                        <th className="text-left px-2 py-1">TM상담사(귀속)</th>
+                        <th className="text-left px-2 py-1">등록자(예약)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -442,6 +468,7 @@ export default function TmAggregateSection({
                           <td className="px-2 py-1 font-medium">{r.name}</td>
                           <td className="px-2 py-1 text-muted-foreground">{r.phone}</td>
                           <td className="px-2 py-1 text-muted-foreground">{r.tm}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{r.registrant}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -76,7 +76,8 @@ test.describe('T-20260630 통계 TM집계 렌더 무회귀', () => {
 
     // TM집계 핵심 표/헤더 렌더 (crash 없이 도달) — graceful 표시 보증
     await expect(page.getByText('TM상담사별 집계')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('TM 상담사 (등록자)')).toBeVisible();
-    console.log('[FOOTSTATS-COUNSELOR-NULL] TM집계 렌더 OK (NULL graceful)');
+    // T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT (§963⑩(a)): grouping 축 = 정규 귀속키 → 헤더 '(귀속)'.
+    await expect(page.getByText('TM 상담사 (귀속)')).toBeVisible();
+    console.log('[FOOTSTATS-COUNSELOR-NULL] TM집계 렌더 OK (NULL graceful, 귀속키축)');
   });
 });

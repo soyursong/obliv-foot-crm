@@ -423,6 +423,33 @@ export async function fetchTmAggregate(
 export const TM_UNASSIGNED_LABEL = '미지정';
 export const TM_WALKIN_LABEL = '워크인';
 export const TM_DOPAMINE_LABEL = '도파민/TM 유입 (상담사 미배정)';
+// T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT: 도파민-출처 예약의 단일 집계 버킷.
+export const TM_DOPAMINE_BUCKET = '도파민 등록';
+
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT — 정규 귀속키(canonical attribution key)
+//
+// §963⑩(a) 집행: TM집계 grouping key / "TM팀만" 필터 inclusion 판정축은 반드시
+//   정규 귀속키(reservations.created_by → user_profiles) 로만 파생한다.
+//   ⛔ registrar_name 을 절대 read 하지 않는다(= 집계-inert: registrar_name 편집→count 불변).
+//   registrar_name 은 label-only(표시 라벨) — tmCounselorLabel(표시 헬퍼)/예약관리 페이지에서만 소비.
+//
+// 파생 규칙:
+//   (1) created_by 가 활성 직원에 resolve  → 직원명(귀속 SSOT)
+//   (2) 미해소 + source_system='dopamine'  → 단일 버킷 '도파민 등록'
+//   (3) 그 외 미해소                        → '미지정'
+// 진단 근거(2026-07-22 라이브 실측, 60일 687건): 위반 시 374건이 registrar_name 으로
+//   grouping, 354건이 registrar_name 으로 "TM팀만" inclusion 되고 있었음 → 본 키로 repoint.
+// ─────────────────────────────────────────────────────────────────────────
+export function tmAttributionKey(
+  createdBy: string | null | undefined,
+  sourceSystem: string | null | undefined,
+  staffName: string | null | undefined,
+): string {
+  if (createdBy && staffName) return staffName;                              // (1) 정규 귀속(직원)
+  if ((sourceSystem ?? '').trim() === 'dopamine') return TM_DOPAMINE_BUCKET; // (2) 도파민 단일 버킷
+  return TM_UNASSIGNED_LABEL;                                                // (3) 미지정
+}
 
 /**
  * 예약의 TM상담사(등록자) 표시 라벨을 파생한다 (순수·read-only).
@@ -437,6 +464,10 @@ export const TM_DOPAMINE_LABEL = '도파민/TM 유입 (상담사 미배정)';
  *   등록자명이 안 보였다. (2)번으로 registrar_name 을 예약관리와 동일 SSOT로 표시한다.
  *   ⚠ 직접등록 예약은 (1)번(직원명)에서 이미 잡혀 동작 불변 — 회귀 0. registrar_name 은 표시 전용,
  *      created_by/집계 귀속/인센티브 산식으로 승격하지 않는다(§416 이중계상 격리 유지).
+ *
+ * ⛔ T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT (§963⑩(a)): 본 헬퍼는 **label-only 표시 전용**.
+ *    TM집계 grouping key / "TM팀만" 필터 inclusion 판정축으로 사용 금지 — 그 축은 tmAttributionKey
+ *    (정규 귀속키, registrar_name 무접촉)만 사용한다. 본 함수 결과가 count 에 영향을 주면 위반.
  */
 export function tmCounselorLabel(
   createdBy: string | null | undefined,
