@@ -3827,6 +3827,13 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     [latestCheckIn],
   );
   const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant';
+  // T-20260722-foot-DESIG-THERAPIST-ROLE-GATE: 지정 치료사 편집 = 코디/상담실장 + admin/manager
+  //   그 외(director/therapist/part_lead/staff 등)는 읽기전용(disabled). 원 스펙(T-20260522) 치료사 write는 supersede.
+  const canEditDesignatedTherapist =
+    profile?.role === 'consultant' ||
+    profile?.role === 'coordinator' ||
+    profile?.role === 'admin' ||
+    profile?.role === 'manager';
   // T-20260701-foot-CHART2-TREATREQ-SPLIT (AC-3): 재진 치료신청 자동 파생 소스.
   //   active 패키지가 보유한 시술유형 중 치료신청 5항목과 겹치는 코드만(현재 podologue). 스냅샷 1회.
   const packageDerivedCodes = useMemo<string[]>(() => {
@@ -8666,8 +8673,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
               data-testid="designated-therapist-select"
               value={designatedTherapistId}
               onChange={(e) => saveDesignatedTherapist(e.target.value)}
-              disabled={savingDesignatedTherapist}
-              className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-emerald-500 bg-white disabled:opacity-60"
+              disabled={savingDesignatedTherapist || !canEditDesignatedTherapist}
+              title={!canEditDesignatedTherapist ? '상담실장·코디만 지정 가능해요' : undefined}
+              className={`w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-emerald-500 bg-white disabled:opacity-60 ${!canEditDesignatedTherapist ? 'text-gray-400 cursor-not-allowed' : ''}`}
             >
               <option value="">— 지정 치료사 없음</option>
               {therapistList.map(t => (
