@@ -3662,9 +3662,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   };
 
   // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (B안 = 제어된 전파, 하드 collapse 폐기):
-  //   "당일(KST) 열린" 이 고객의 내원(check_in)의 방문별 상담사(check_ins.consultant_id)만 갱신한다.
+  //   "당일(KST) 열린(미완료)" 이 고객의 내원(check_in)의 방문별 상담사(check_ins.consultant_id)만 갱신한다.
   //   · 영구값(customers.assigned_staff_id)은 절대 건드리지 않는다 — 방향은 항상 영구→방문(하향)뿐.
-  //   · 대상 = latestCheckIn(최근 내원)이 오늘(KST) 접수 + 미취소일 때 그 1건. (assign_consultant_atomic 부하정의와 동일: status <> cancelled)
+  //   · 대상 = latestCheckIn(최근 내원)이 오늘(KST) 접수 + open(status≠done, ≠cancelled)일 때 그 1건.
+  //   · ★done 보존 (planner MSG-oz4g 소급범위 확정): 이미 done 인 방문의 consultant_id 는 '실제 상담자'
+  //     historical record 이므로 auto-overwrite 금지 — open 만 소급, done 은 그대로 둔다(매출귀속 오염과 동일 리스크).
   //   · rows-affected 검증(RLS/스코프 사일런트 성공 오인 차단 — cross-CRM write 표준). 대상 없으면 'none'.
   //   쓰임: ① 상담 탭(방문별) 담당자 = 방문별 write only(item1). ② Zone1 담당자(영구) 변경 시 하향전파(item2, scenario1 AC-1/AC-3).
   const updateTodayOpenCheckInConsultant = useCallback(
@@ -3674,6 +3676,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       if (!ci || !ci.checked_in_at) return 'none';
       if (seoulISODate(ci.checked_in_at) !== todaySeoulISODate()) return 'none'; // 당일(KST) 아님
       if (ci.status === 'cancelled') return 'none';                              // 취소 내원 제외
+      if (ci.status === 'done') return 'none';                                   // ★done 보존 — 실제 상담자 기록 auto-overwrite 금지(open만 소급)
       const { data, error } = await supabase
         .from('check_ins')
         .update({ consultant_id: staffId })
