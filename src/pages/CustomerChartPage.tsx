@@ -506,6 +506,42 @@ function MemoHistoryPanel({
   );
 }
 
+// T-20260722-foot-CHART-CONSULTMEMO-EXPAND: 메모 요약 항목 — 접힘(line-clamp-2) 시 잘리면 [전체보기]/[접기] 토글.
+//   본문은 이미 저장돼 있으나 요약 preview 가 2줄로 잘려 전체 확인 불가 → 표시 로직만 확장(FE-only).
+//   자체 expand 상태 소유(부모 무재렌더). overflow 실측(scrollHeight>clientHeight)으로 잘릴 때만 토글 노출.
+function MemoSummaryItem({ label, content }: { label: string; content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || expanded) return; // 접힘 상태에서만 잘림 여부 측정
+    setOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [content, expanded]);
+  return (
+    <div data-testid={`memo-summary-${label}`}>
+      <div className="text-[10px] font-semibold text-sage-700 mb-0.5">{label}</div>
+      <div
+        ref={bodyRef}
+        className={`text-[11px] text-gray-700 whitespace-pre-wrap break-words ${expanded ? '' : 'line-clamp-2'}`}
+        data-testid={`memo-summary-body-${label}`}
+      >
+        {content}
+      </div>
+      {(overflowing || expanded) && (
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          className="mt-0.5 text-[10px] text-sage-600 hover:underline"
+          data-testid={`memo-summary-toggle-${label}`}
+        >
+          {expanded ? '접기' : '전체보기'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // T-20260523-foot-LASER-TIMER (위치이동 FIX-20260525): 2번차트 3구역 상세 탭 상단 타이머
 interface TimerRecord {
   id: string;
@@ -9075,10 +9111,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   { label: '상담메모', content: consultMemoHistory.latest?.content ?? null },
                   { label: '치료메모', content: latestTreatmentMemo?.content ?? null },
                 ].filter(m => m.content).map(m => (
-                  <div key={m.label} data-testid={`memo-summary-${m.label}`}>
-                    <div className="text-[10px] font-semibold text-sage-700 mb-0.5">{m.label}</div>
-                    <div className="text-[11px] text-gray-700 whitespace-pre-wrap line-clamp-2">{m.content}</div>
-                  </div>
+                  // T-20260722-foot-CHART-CONSULTMEMO-EXPAND: line-clamp-2 preview → [전체보기] 토글로 전문 확인.
+                  <MemoSummaryItem key={m.label} label={m.label} content={m.content as string} />
                 ))}
               </div>
             </div>
