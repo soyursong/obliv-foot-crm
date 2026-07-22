@@ -80,3 +80,8 @@ rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
 # T-20260714 RESVROUTE-DOPAMINE-BACKFILL 스크립트는 PHI-clean(로직 only·리터럴 식별자 0건, freeze id 집합은
 # 실행시 off-git _backup 테이블에만 영속) → SOP §4-b 버전관리 위해 git-track 허용 (*backfill*.sql override)
 !db-gate/T-20260714-foot-RESVROUTE-DOPAMINE-BACKFILL_backfill.sql
+
+# T-20260715 MASKPII-CONTAM-BACKFILL data-correction SQL = PHI-clean(UUID freeze PK + sentinel 토큰만·마스킹명/전화 0건)
+# → SOP §4-b 버전관리 위해 git-track 허용 (*backfill*.sql override)
+!scripts/T-20260715-foot-MASKPII-CONTAM-BACKFILL_mutation.sql
+!scripts/T-20260715-foot-MASKPII-CONTAM-BACKFILL_rollback.sql
