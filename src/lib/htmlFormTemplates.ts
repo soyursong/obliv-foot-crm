@@ -871,9 +871,10 @@ ${COMMON_STYLE}
       <tr>
         <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 등록번호·진료기간 칸 폭 확대 + 데이터 nowrap → 줄바꿈 제거(가로 양식, 폭 여유) -->
         <!-- T-20260629-foot-BILLDETAIL-RRN-ADD: 주민등록번호 컬럼 추가(B안 확정, 총괄). {{patient_rrn}}=loadAutoBindContext rrn_decrypt 경로 재사용(신규 복호 없음). 가로 양식 폭 여유로 무회귀. -->
+        <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §5: 세부내역서 PHI 축소 — 주민등록번호 th+td 한 쌍 제거(7→6칸).
+             계산서·영수증·진단서·소견서 주민번호는 유지(세부내역서만). -->
         <th style="width:104px;">환자등록번호</th>
         <th style="width:80px;">환자성명</th>
-        <th style="width:110px;">주민등록번호</th>
         <th style="width:150px;">진료기간</th>
         <th style="width:60px;">병실</th>
         <th style="width:70px;">환자구분</th>
@@ -884,7 +885,6 @@ ${COMMON_STYLE}
       <tr>
         <td style="white-space:nowrap;">{{record_no}}</td>
         <td>{{patient_name}}</td>
-        <td style="white-space:nowrap;">{{patient_rrn}}</td>
         <td style="white-space:nowrap;">{{visit_date}} ～ {{visit_date}}</td>
         <td>외래</td>
         <td>건강보험</td>
@@ -2137,7 +2137,9 @@ const BILL_RECEIPT_NEW_HTML = `
   <div class="rn-title" style="position:relative;"><span class="chk" style="position:absolute; left:0; top:50%; transform:translateY(-50%);">[■]외래 [ ]입원 ([ ]퇴원 [ ]중간)</span>진료비 계산서ㆍ영수증</div>
 
   <table style="margin-bottom:-1px;">
-    <colgroup><col style="width:13%"><col style="width:20%"><col style="width:11%"><col style="width:19%"><col style="width:10%"><col style="width:15%"><col style="width:12%"></colgroup>
+    <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §3: 야간(공휴일)·환자구분 [라벨][값] 2셀 분리 → 8번째 col 추가
+         (종전 7칸=col7 에 라벨+값 한 셀 crammed). 타 필드와 동일한 [rn-lbl][값] 구조로 정합. -->
+    <colgroup><col style="width:12%"><col style="width:15%"><col style="width:10%"><col style="width:16%"><col style="width:10%"><col style="width:13%"><col style="width:12%"><col style="width:12%"></colgroup>
     <tbody>
       <tr>
         <td class="rn-lbl">환자등록번호</td><td>{{record_no}}</td>
@@ -2146,16 +2148,18 @@ const BILL_RECEIPT_NEW_HTML = `
         <td class="rn-lbl">진료기간</td><td>{{visit_date}}</td>
 <!-- T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간/공휴일 자동 판정 →
              체크박스 자동 체크(마크 소스=night_mark/holiday_mark, DocumentPrintPanel 배선). 미가산 시 공란(회귀0). -->
-        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)<br>[{{night_mark}}]야간 [{{holiday_mark}}]공휴일</td>
+        <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §3: [라벨][값] 2셀 분리(종전 한 셀 <br> crammed). -->
+        <td class="rn-lbl" style="font-size:6.4pt;">야간(공휴일)</td><td style="font-size:6.4pt;">[{{night_mark}}]야간 [{{holiday_mark}}]공휴일</td>
       </tr>
       <tr>
         <td class="rn-lbl">진료과목</td><td>피부과</td>
         <td class="rn-lbl" style="font-size:6.8pt;">질병군(DRG)번호</td><td></td>
         <td class="rn-lbl">병실</td><td></td>
-        <td class="rn-lbl" style="font-size:6.4pt;">환자구분<br>건강보험</td>
+        <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §3: [라벨][값] 2셀 분리(종전 한 셀 <br> crammed). -->
+        <td class="rn-lbl" style="font-size:6.4pt;">환자구분</td><td style="font-size:6.4pt;">건강보험</td>
       </tr>
       <tr>
-        <td class="rn-lbl">영수증번호</td><td colspan="6" style="text-align:left;">{{receipt_no}}</td>
+        <td class="rn-lbl">영수증번호</td><td colspan="7" style="text-align:left;">{{receipt_no}}</td>
       </tr>
     </tbody>
   </table>
@@ -2244,8 +2248,11 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>⑥ 진료비 총액<br>(①+②+③+④)</td><td class="rn-num" style="font-weight:bold;">{{total_amount}}</td></tr>
           <tr><td>⑦ 공단부담 총액<br>(②+⑤)</td><td class="rn-num">{{insurance_covered}}</td></tr>
           <tr><td>⑧ 환자부담 총액<br>(①-⑤)+③+④</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
-          <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num"></td></tr>
-          <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
+          <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액 = 선수금/패키지 차감분({{already_paid}},
+               check_in_services.is_package_session 환자부담분). 미차감건은 공란(회귀0). ⑩ = ⑧−⑨ 전용 토큰({{due_amount}})
+               분리 — patient_amount 하드코딩 폐기(⑨만 채우면 "⑧-⑨" 라벨과 산술모순=허위영수증 재점화 방지, codex 배포차단급). -->
+          <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num">{{already_paid}}</td></tr>
+          <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">{{due_amount}}</td></tr>
           <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 출력 패널 '납부금액(사전입력)' 값이 있으면
                ⑪ 합계(납부한 금액)에 반영해 사전 출력. 비영속(FE-only 표시) — payments 수납원장 write 아님.
                미입력 시 공란(기존 동작 유지). 납부하지 않은 금액(⑩-⑪) = patient_amount − 사전입력. -->
@@ -2300,19 +2307,31 @@ const BILL_RECEIPT_NEW_HTML = `
     <thead>
       <tr><th>항목별 설명</th><th>일반사항 안내</th></tr>
     </thead>
+    <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §4: 하단 안내문 공식 전문(별지 제6호서식) verbatim 교체 + 주(註) 행 추가.
+         종전 축약본 → 법정 전문(기호 ㆍ※「」☏ 그대로). 전문이 길어 한 장 수용 위해 font 6.2pt→5.7pt·line-height 1.25 미세조정만
+         (칸구조·금액 무접촉, §4 레이아웃 가드 준수). -->
     <tbody>
       <tr>
-        <td style="vertical-align:top; text-align:left; font-size:6.2pt; line-height:1.32; padding:2px 4px;">
-          <div>1. 일부 본인부담: 일반적으로 다음과 같이 본인부담률을 적용하나, 요양기관 지역, 요양기관의 종별, 환자 자격, 선별급여 여부, 병실종류 등에 따라 달라질 수 있습니다.</div>
-          <div style="padding-left:6px;">- 외래 본인부담률: 요양기관 종별에 따라 30% ~ 60% 등</div>
-          <div style="margin-top:1px;">2. 전액 본인부담: 건강보험(의료급여)에서 금액을 정하고 있으나 진료비 전액을 환자 본인이 부담합니다.</div>
-          <div style="margin-top:1px;">3. 상한액 초과금: 본인부담상한액의 최고 금액을 초과하는 본인부담금이 발생한 경우 공단이 부담하는 초과분 중 사전 정산하는 금액을 말합니다.</div>
+        <td style="vertical-align:top; text-align:left; font-size:5.7pt; line-height:1.25; padding:2px 4px;">
+          <div>1. 일부 본인부담: 일반적으로 다음과 같이 본인부담률을 적용하나, 요양기관 지역, 요양기관의 종별, 환자 자격, 「국민건강보험법」제41조의4에 따른 요양급여 여부, 병실종류 등에 따라 달라질 수 있습니다.</div>
+          <div style="padding-left:6px;">- 외래 본인부담률: 요양기관 종별에 따라 30% ~ 60%(의료급여는 수급권자 종별 및 의료급여기관 유형 등에 따라 0원 ~ 2500원, 0% ~ 15%) 등</div>
+          <div style="padding-left:6px;">- 입원 본인부담률: 20%(의료급여는 수급권자 종별 및 의료급여기관 유형 등에 따라 0% ~ 10%) 등</div>
+          <div style="padding-left:6px;">※ 식대: 50%(의료급여는 20%)</div>
+          <div style="padding-left:14px;">CTㆍMRIㆍPET: 외래 본인부담률(의료급여는 입원 본인부담률과 동일)</div>
+          <div style="padding-left:14px;">「국민건강보험법」 제41조의4에 따른 요양급여(선별급여): 보건복지부장관이 고시한 항목별 본인부담률</div>
+          <div style="padding-left:6px;">※ 상급종합병원 입원료: 2인실 50% 3인실 40%, 4인실 30% / 종합병원 입원료: 2인실 40%, 3인실 30%,</div>
+          <div style="margin-top:1px;">2. 전액 본인부담: 「국민건강보험법 시행규칙」 별표 6 또는 「의료급여법 시행규칙」 별표 1의2에 따라 적용되는 항목으로 건강보험(의료급여)에서 금액을 정하고 있으나 진료비 전액을 환자 본인이 부담합니다.</div>
+          <div style="margin-top:1px;">3. 상한액 초과금: 본인부담액 상한제에 따라 같은 의료기관에서 연간 500만원(2015년부터는 「국민건강보험법 시행령」 별표 3 제2호에 따라 산정한 본인부담상한액의 최고 금액, 환자가 내는 보험료 등에 따라 다를 수 있음) 이상 본인부담금이 발생한 경우 공단이 부담하는 초과분 중 사전 정산하는 금액을 말합니다.</div>
+          <div style="padding-left:6px;">※ 전액본인부담 및 「국민건강보험법」제41조의4에 따른 요양급여의 본인부담금 등은 본인부담상한액 산정시 제외합니다</div>
         </td>
-        <td style="vertical-align:top; text-align:left; font-size:6.2pt; line-height:1.32; padding:2px 4px;">
+        <td style="vertical-align:top; text-align:left; font-size:5.7pt; line-height:1.25; padding:2px 4px;">
           <div>1. 이 계산서ㆍ영수증에 대한 세부내용은 요양기관에 요구하여 제공받을 수 있습니다.</div>
-          <div style="margin-top:1px;">2. 환자가 전액 부담한 비용과 비급여로 부담한 비용의 타당성 여부를 건강보험심사평가원(☏1644-2000)에 확인 요청하실 수 있습니다.</div>
-          <div style="margin-top:1px;">3. 계산서ㆍ영수증은 「소득세법」에 따른 의료비 공제신청 또는 「조세특례제한법」에 따른 현금영수증 공제신청에 사용할 수 있습니다.</div>
+          <div style="margin-top:1px;">2. 「국민건강보험법」 제48조 또는 「의료급여법」 제11조의3에 따라 환자가 전액 부담한 비용과 비급여로 부담한 비용의 타당성 여부를 건강보험심사평가원(☏1644-2000, 홈페이지: www.hira.or.kr)에 확인 요청하실 수 있습니다.</div>
+          <div style="margin-top:1px;">3. 계산서ㆍ영수증은 「소득세법」에 따른 의료비 공제신청 또는 「조세특례제한법」에 따른 현금영수증 공제신청(현금영수증 승인번호가 적힌 경우만 해당합니다)에 사용할 수 있습니다. 다만, 지출증빙용으로 발급된 "현금영수증(지출증빙)"은 공제신청에 사용할 수 없습니다. (현금영수증 문의 126 인터넷 홈페이지: http://현금영수증.kr)</div>
         </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="text-align:left; font-size:5.7pt; line-height:1.25; padding:2px 4px;">주(註): 진료항목 중 선택항목은 요양기관의 특성에 따라 추가 또는 생략할 수 있으며, 야간(공휴일)진료 시 진료비가 가산될 수 있습니다.</td>
       </tr>
     </tbody>
   </table>

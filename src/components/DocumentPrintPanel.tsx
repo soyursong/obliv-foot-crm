@@ -132,6 +132,8 @@ import {
   // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category 분해 remainder)·결함B(납부박스 payments).
   applyBillReceiptNewCoveredTokens,
   applyBillReceiptPaidBoxTokens,
+  // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
+  loadAlreadyPaidAmount,
   // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: service_charges 직결 폴백 경로도
   //   정식 HIRA category 매핑(footBillDetailCategory) + codeItems(상병/처방약) 제외(isCodeItem)를
   //   primary(check_in_services) 경로와 대칭 적용. 종전 폴백 하드코드 `covered?'이학요법료':'기타'` 대체.
@@ -1368,6 +1370,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       const surchargeIsCalHoliday = batchHolidayDateSet.has(toLocalDateStr(surchargeRefDate));
       // 일괄출력은 편집 UI가 없어 수동 override 없음 → 빈 집합(모든 대상 키 자동 folding).
       const noOverride = new Set<string>();
+      // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분). 방문 단위 1회 로드 후 재사용.
+      const batchAlreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade);
       const valuesFor = (t: FormTemplate): Record<string, string> => {
         const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };
         applyNightHolidaySurcharge(
@@ -1388,7 +1392,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
           applyBillReceiptNewCoveredTokens(v, batchRnItems);
           // 결함B: ⑪ 납부박스 = payments 원장(status=active) 결제수단별 실수납(부모 로드분). 완납 가정 금지.
-          applyBillReceiptPaidBoxTokens(v, paymentItems, patientFloored);
+          //   MASTER-FIXES §1 ⑨ 선수금 차감분 + §2 refund 순액(paymentItems.payment_type).
+          applyBillReceiptPaidBoxTokens(v, paymentItems, patientFloored, batchAlreadyPaid);
         }
         return v;
       };
@@ -2136,6 +2141,9 @@ function IssueDialog({
   //   service_charges 가 비어있는 경로에서만 사용(무파괴). 건보 등급은 copay 산출용.
   const [footBillingItems, setFootBillingItems] = useState<FootBillingItem[]>([]);
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+  // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분, 환자부담분).
+  //   useMemo(단건 미리보기/출력)는 동기라 async 로 미리 로드해 상태로 보관. 미차감건 0(회귀0).
+  const [alreadyPaidAmount, setAlreadyPaidAmount] = useState(0);
   // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: 콘텐츠 핵심 소스(autoValues·serviceItems·
   //   footBillingItems·grade) 로드 완료 게이트. 로드 전 출력/발행 차단 → async state race 로
   //   '내용 누락'(빈 items_html·total 0) 스냅샷 저장/출력 방지.
@@ -2283,10 +2291,18 @@ function IssueDialog({
     //   이 방문 service_charges 저장 등급으로 폴백 → bill_detail 급여구분 붕괴 방지.
     const pGrade = loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id).then((grade) => {
       if (!cancelled) setCustomerInsuranceGrade(grade);
+      return grade;
     });
+    // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액 = 선수금/패키지 차감분(환자부담분).
+    //   grade 확정 후 로드(급여패키지 그레인 가드 — 급여패키지면 본인부담분으로 한정). 미차감건 0(회귀0).
+    const pAlreadyPaid = pGrade.then((grade) =>
+      loadAlreadyPaidAmount(checkIn.id, grade).then((amt) => {
+        if (!cancelled) setAlreadyPaidAmount(amt);
+      }),
+    );
 
-    // 4소스 모두 resolve 후에만 출력/발행 허용. 일부 실패해도 영구 차단 방지(allSettled).
-    Promise.allSettled([pServiceItems, pAutoValues, pFootBilling, pGrade]).then(() => {
+    // 5소스 모두 resolve 후에만 출력/발행 허용. 일부 실패해도 영구 차단 방지(allSettled).
+    Promise.allSettled([pServiceItems, pAutoValues, pFootBilling, pGrade, pAlreadyPaid]).then(() => {
       if (!cancelled) setBillingReady(true);
     });
 
@@ -2331,6 +2347,7 @@ function IssueDialog({
       setServiceItems([]);
       setFootBillingItems([]);
       setCustomerInsuranceGrade(null);
+      setAlreadyPaidAmount(0);
       setAllServices([]);
       setAddServiceOpen(false);
     };
@@ -2774,8 +2791,9 @@ function IssueDialog({
       applyBillReceiptNewCoveredTokens(base, rnItems);
       // 결함B: ⑪ 납부한 금액 = payments 원장(status=active) 결제수단별 실수납 groupBy.
       //   ⚠ prepaid_amount(납부할금액 가정값) 3경로 전파 폐기(REVERIFY-2: 완납 가정=허위영수증 FAIL).
-      //   미납 = 환자부담총액(절사 후) − 실수납 합계.
-      applyBillReceiptPaidBoxTokens(base, paymentItems, patientFloored);
+      //   MASTER-FIXES §1 ⑨ 선수금 차감분(alreadyPaidAmount) + §2 refund 순액(paymentItems.payment_type).
+      //   미납 = ⑩(=⑧−⑨) − 실수납 합계.
+      applyBillReceiptPaidBoxTokens(base, paymentItems, patientFloored, alreadyPaidAmount);
     }
 
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.
@@ -2785,7 +2803,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys, prepaidAmount]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys, prepaidAmount]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =

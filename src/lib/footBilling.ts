@@ -854,20 +854,34 @@ export function applyBillReceiptNewCoveredTokens(
  *
  *   payments 는 status='active' 만 전달(호출부 필터, CHECKIN-RECEIPT-SOFTVOID-PHANTOM 계승 — 취소결제 미표시).
  *
- * @param patientAmount ⑧/⑩ 환자부담총액(10원 절사 후). unpaid = max(0, patientAmount − paidTotal).
+ * @param patientAmount ⑧ 환자부담총액(10원 절사 후).
+ * @param alreadyPaid ⑨ 이미 납부한 금액(선수금/패키지 차감 = check_in_services.is_package_session 환자부담분).
+ *                    ⑩ due_amount = max(0, ⑧ − ⑨). unpaid = max(0, ⑩ − paidTotal). 기본 0(직접결제건 회귀 0).
+ *
+ * T-20260722-foot-BILLRECEIPT-MASTER-FIXES:
+ *   §1 ⑨ '이미 납부한 금액' 칸 신설 + ⑩ 토큰 분리({{due_amount}}=⑧−⑨). ⑨만 채우고 ⑩을 patient_amount 로
+ *      두면 "⑧-⑨" 라벨과 산술모순=허위영수증 재점화 → ⑩ 전용 토큰 필수(codex 배포차단급).
+ *   §2 refund(payment_type='refund') 순액 차감 — 환불 양수·active 가 결제로 이중합산되던 오집계 정정.
+ *   §6 dedup: 패키지 전액차감(method='membership') 결제행은 ⑨(already_paid)에 이미 반영 → ⑪ 버킷에서 제외
+ *      (⑨·⑪ 이중계상 방지). 그 외 method 는 종전대로 groupBy.
  */
 export function applyBillReceiptPaidBoxTokens(
   values: Record<string, string>,
-  payments: Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null }>,
+  payments: Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null; payment_type?: string | null }>,
   patientAmount: number,
+  alreadyPaid: number = 0,
 ): void {
   let card = 0, cash = 0, cashReceipt = 0;
   for (const p of payments) {
     const amt = p.amount ?? 0;
     if (amt === 0) continue;
-    if (p.method === 'card') card += amt;
-    else if (p.cash_receipt_issued) cashReceipt += amt; // 현금/이체 中 현금영수증 발급분
-    else cash += amt;                                    // 현금·이체·멤버십(선불차감) 등
+    // §6 dedup: 멤버십(패키지 전액차감) 결제행은 ⑨ '이미 납부한 금액'에 표기 → ⑪ 이중계상 방지.
+    if (p.method === 'membership') continue;
+    // §2 refund 순액: 환불(payment_type='refund')은 해당 결제수단 버킷에서 차감(paidTotal=Σ결제−Σ환불).
+    const signed = p.payment_type === 'refund' ? -amt : amt;
+    if (p.method === 'card') card += signed;
+    else if (p.cash_receipt_issued) cashReceipt += signed; // 현금/이체 中 현금영수증 발급분
+    else cash += signed;                                    // 현금·이체 등(멤버십 제외)
   }
   const paidTotal = card + cash + cashReceipt;
   values.card_amount = card > 0 ? formatAmount(card) : '';
@@ -876,5 +890,62 @@ export function applyBillReceiptPaidBoxTokens(
   values.paid_total = paidTotal > 0 ? formatAmount(paidTotal) : '';
   // 종전 템플릿 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지 — paid_total 과 동일값으로 동기화.
   values.prepaid_amount = values.paid_total;
-  values.unpaid_amount = formatAmount(Math.max(0, patientAmount - paidTotal));
+  // §1 ⑨ 이미 납부한 금액(선수금/패키지 차감). 0 이면 공란(직접결제건 회귀 0 — 종전 빈 셀 유지).
+  const alreadyPaidSafe = Math.max(0, alreadyPaid);
+  values.already_paid = alreadyPaidSafe > 0 ? formatAmount(alreadyPaidSafe) : '';
+  // §1 ⑩ 납부할 금액 = ⑧ − ⑨ (전용 토큰 분리 — patient_amount 하드코딩 폐기). ⑧≥⑨ 구조 보장(그레인 가드).
+  const dueAmount = Math.max(0, patientAmount - alreadyPaidSafe);
+  values.due_amount = formatAmount(dueAmount);
+  // 미납 = ⑩ − ⑪(실수납). 선수금 완납건이면 ⑩=잔액, paidTotal=잔액 → 미납=0.
+  values.unpaid_amount = formatAmount(Math.max(0, dueAmount - paidTotal));
+}
+
+/**
+ * T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1 — ⑨ '이미 납부한 금액' 소스 로더.
+ *   alreadyPaid = 이 방문(check_in_id)의 선수금/패키지 차감분의 **환자부담분**.
+ *   소스 = check_in_services.price WHERE is_package_session=true (Closing.tsx:504 가 이미 쓰는 정합 소스).
+ *   ⚠ package_payments 원장 금지 — 패키지 단위 할부총액이라 단건 영수증 그레인 오염(codex 확인).
+ *
+ *   급여패키지 그레인 가드(codex): check_in_services.price=급여총액인데 ⑧=copay 만 → full price 를 ⑨에
+ *   넣으면 ⑩ 음수. 따라서 raw price 합이 아니라 computeFootBilling(SSOT) 의 환자부담분
+ *   (copaymentTotal + nonCoveredTotal)을 반환 → 급여패키지면 본인부담분으로 자동 한정, 비급여패키지면
+ *   전액(=price). 산식 canon 무접촉(기존 SSOT read-only 소비). 옵션은 수납 grain 과 동일(general_default).
+ */
+export async function loadAlreadyPaidAmount(
+  checkInId: string,
+  insuranceGrade: InsuranceGrade | null,
+): Promise<number> {
+  const { data: cis } = await supabase
+    .from('check_in_services')
+    .select('service_id, price, is_package_session')
+    .eq('check_in_id', checkInId)
+    .eq('is_package_session', true);
+
+  const rows = (cis ?? []) as { service_id: string; price: number | null; is_package_session: boolean | null }[];
+  if (rows.length === 0) return 0;
+
+  const serviceIds = [...new Set(rows.map((r) => r.service_id))];
+  const { data: svcData } = await supabase
+    .from('services')
+    .select('id, name, service_code, hira_code, hira_category, vat_type, is_insurance_covered, category_label, price')
+    .in('id', serviceIds);
+  const svcMap = new Map<string, BillingService>(
+    ((svcData ?? []) as BillingService[]).map((s) => [s.id, s]),
+  );
+
+  // service_id 별 그룹핑 — loadFootBillingItems 와 동일 규칙(qty=행수, unitPrice=저장 단가).
+  const grouped = new Map<string, FootBillingItem>();
+  for (const r of rows) {
+    const svc = svcMap.get(r.service_id);
+    if (!svc) continue;
+    const existing = grouped.get(r.service_id);
+    if (existing) existing.qty += 1;
+    else grouped.set(r.service_id, { service: svc, qty: 1, unitPrice: r.price ?? svc.price ?? 0 });
+  }
+  const pkgItems = [...grouped.values()];
+  if (pkgItems.length === 0) return 0;
+
+  // SSOT 소비: 환자부담분(급여 본인부담 + 비급여 전액) = 실제 선수금으로 납부된 금액. 산식 canon 무변경.
+  const b = computeFootBilling(pkgItems, insuranceGrade, { unknownGradeCopay: 'general_default' });
+  return Math.max(0, b.copaymentTotal + b.nonCoveredTotal);
 }

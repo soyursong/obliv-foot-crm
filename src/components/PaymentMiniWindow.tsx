@@ -126,6 +126,8 @@ import {
   // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category remainder)·결함B(납부박스 payments groupBy).
   applyBillReceiptNewCoveredTokens,
   applyBillReceiptPaidBoxTokens,
+  // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
+  loadAlreadyPaidAmount,
   type FootBillingItem,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE → T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK:
@@ -1570,19 +1572,23 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     // 결함A: 급여 category remainder 토큰(진찰료 흡수 방지). buildPmwBillDetailItems = DPP 동일 SSOT.
     applyBillReceiptNewCoveredTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
     // 결함B: payments 원장 결제수단별 실수납 groupBy.
+    //   T-20260722-foot-BILLRECEIPT-MASTER-FIXES §2: payment_type select 추가 → refund 순액 차감.
     const { data: payRows } = await supabase
       .from('payments')
-      .select('amount, method, cash_receipt_issued')
+      .select('amount, method, cash_receipt_issued, payment_type')
       .eq('check_in_id', checkIn.id)
       // 취소결제 미표시(CHECKIN-RECEIPT-SOFTVOID-PHANTOM 계승 fail-closed).
       .eq('status', 'active');
     // ⑧/⑩ 환자부담총액(절사 후) = 급여 본인부담 + 비급여(공단 제외, GONGDAN-HIDE-COPAY B안 동일 산식).
     const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
     const { roundedTotal: patientFloored } = computeBillDetailRounding(copaymentTotal + pmwNonCov);
+    // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액 = 선수금/패키지 차감분(환자부담분).
+    const alreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade);
     applyBillReceiptPaidBoxTokens(
       autoValues,
-      (payRows ?? []) as Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null }>,
+      (payRows ?? []) as Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null; payment_type?: string | null }>,
       patientFloored,
+      alreadyPaid,
     );
   };
 
