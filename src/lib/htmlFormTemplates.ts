@@ -2095,7 +2095,7 @@ const KOH_RESULT_HTML = `
 //   patient_amount                            = 급여 본인부담금 + 비급여 (공단 제외) — applyBillingFallback
 //                                               신양식 전용 additive 키. ⑧ 환자부담 총액.
 // 고정 표기(AC4): 진료과목='피부과' · 사업자등록번호='457-23-00938' · 전화번호='02-6956-3438' (리터럴).
-//   (T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 511-60-00988 → 457-23-00938 갱신)
+//   (T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 457-23-00938 로 갱신·확정. 구번호 잔재 제거 T-20260722-foot-BILLRECEIPT-NEWFORM-STALE-BIZNO-COMMENT-FIX)
 //
 // AC7 B안(T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY, 김주연 총괄 ts 1784020522.027429):
 //   총 합계(환자 실부담) = 급여 본인부담금 + 비급여. 공단부담금은 합계에서만 제외, 항목·칸·금액은 표시 유지.
@@ -2277,7 +2277,7 @@ const BILL_RECEIPT_NEW_HTML = `
         <td colspan="5" style="text-align:left;">[■]의원급ㆍ보건기관 &nbsp; [ ]병원급 &nbsp; [ ]종합병원 &nbsp; [ ]상급종합병원</td>
       </tr>
       <tr>
-        <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 갱신 511-60-00988 → 457-23-00938 -->
+        <!-- T-20260717-foot-RECEIPT-NEWFORM-3FIX #3: 사업자등록번호 정본 457-23-00938 확정(구번호 잔재 제거 T-20260722-foot-BILLRECEIPT-NEWFORM-STALE-BIZNO-COMMENT-FIX) -->
         <td class="rn-lbl">사업자등록번호</td><td>457-23-00938</td>
         <td class="rn-lbl">상호</td><td style="white-space:nowrap;">{{clinic_name}}</td>
         <td class="rn-lbl">전화번호</td><td>02-6956-3438</td>
