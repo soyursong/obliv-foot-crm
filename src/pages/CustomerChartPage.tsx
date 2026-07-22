@@ -3661,6 +3661,36 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     return { error: null };
   };
 
+  // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (B안 = 제어된 전파, 하드 collapse 폐기):
+  //   "당일(KST) 열린" 이 고객의 내원(check_in)의 방문별 상담사(check_ins.consultant_id)만 갱신한다.
+  //   · 영구값(customers.assigned_staff_id)은 절대 건드리지 않는다 — 방향은 항상 영구→방문(하향)뿐.
+  //   · 대상 = latestCheckIn(최근 내원)이 오늘(KST) 접수 + 미취소일 때 그 1건. (assign_consultant_atomic 부하정의와 동일: status <> cancelled)
+  //   · rows-affected 검증(RLS/스코프 사일런트 성공 오인 차단 — cross-CRM write 표준). 대상 없으면 'none'.
+  //   쓰임: ① 상담 탭(방문별) 담당자 = 방문별 write only(item1). ② Zone1 담당자(영구) 변경 시 하향전파(item2, scenario1 AC-1/AC-3).
+  const updateTodayOpenCheckInConsultant = useCallback(
+    async (staffId: string | null): Promise<'updated' | 'none' | 'error'> => {
+      if (!customer) return 'none';
+      const ci = latestCheckIn;
+      if (!ci || !ci.checked_in_at) return 'none';
+      if (seoulISODate(ci.checked_in_at) !== todaySeoulISODate()) return 'none'; // 당일(KST) 아님
+      if (ci.status === 'cancelled') return 'none';                              // 취소 내원 제외
+      const { data, error } = await supabase
+        .from('check_ins')
+        .update({ consultant_id: staffId })
+        .eq('id', ci.id)
+        .eq('clinic_id', customer.clinic_id)
+        .select('id');
+      if (error) {
+        console.error('[OWNER-SYNC] 당일 내원 상담사 전파 실패:', error.message);
+        return 'error';
+      }
+      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
+      return 'updated';
+    },
+    [customer, latestCheckIn],
+  );
+
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
   //   RC: customers.phone 만 갱신되고 check_ins/reservations 의 denormalized customer_phone(카드 표기·
   //       verifyChartLinkOrConfirm 가드의 expectedPhone 소스)은 저장 시점 스냅샷 그대로 남아,
@@ -6196,9 +6226,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     <select
                       value={customer.assigned_staff_id ?? ''}
                       onChange={(e) => {
+                        const v = e.target.value || null;
                         setIsDirty(true);
-                        saveCustomerField({ assigned_staff_id: e.target.value || null });
-                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동
+                        setConsultationStaffId(e.target.value); // 방문별 표시값 동기화(표시 전용)
+                        // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (item2, scenario1 AC-1/AC-3):
+                        //   영구 담당(assigned_staff_id) 저장 + 당일 열린 내원의 방문별 상담사(check_ins.consultant_id) 하향전파.
+                        void (async () => {
+                          const { error } = await saveCustomerField({ assigned_staff_id: v });
+                          if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
+                          await updateTodayOpenCheckInConsultant(v);
+                        })();
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
@@ -8936,8 +8973,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   <select
                     value={consultationStaffId}
                     onChange={(e) => {
+                      const v = e.target.value || null;
                       setConsultationStaffId(e.target.value);
-                      saveCustomerField({ assigned_staff_id: e.target.value || null }); // AC-6 쌍방연동
+                      // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (item1): 상담 탭 = 방문별 → check_ins.consultant_id 만 write.
+                      //   영구값(customers.assigned_staff_id)은 절대 미덮음(구 'assigned_staff_id 쌍방 저장' 폐기 = 하드 collapse 제거).
+                      void (async () => {
+                        const r = await updateTodayOpenCheckInConsultant(v);
+                        if (r === 'updated') toast.success('이번 방문 담당자 저장됨');
+                        else if (r === 'none') toast.info('오늘 열린 내원이 없어 방문별 담당자는 저장되지 않았습니다 (담당 실장 지정은 기본정보 담당자에서).');
+                        else toast.error('방문별 담당자 저장 실패 — 새로고침 후 다시 시도해 주세요.');
+                      })();
                     }}
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-sage-500 bg-white"
                   >

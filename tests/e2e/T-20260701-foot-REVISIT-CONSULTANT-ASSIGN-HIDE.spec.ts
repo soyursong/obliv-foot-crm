@@ -141,10 +141,12 @@ test.describe('T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE — 재진 상담 
 
   test('AC-3: NewCheckInDialog 재진 오토필(assigned_staff_id → consultant_id) 폐지 — 재진 consultantId=null 유지', () => {
     const src = read('src/components/NewCheckInDialog.tsx');
-    // 재진 분기에서 assigned_staff_id 를 consultant_id 로 세팅하던 오토필 제거.
+    // 재진 분기에서 assigned_staff_id 를 consultant_id 로 세팅하던 오토필 제거(불변).
     expect(src).not.toMatch(/consultantId = \(cust\?\.assigned_staff_id/);
-    // 상담 배정은 초진(new)만 autoAssignConsultant 로 세팅.
-    expect(src).toMatch(/if \(visitType === 'new'\) \{\s*consultantId = await autoAssignConsultant/);
+    // 상담 배정은 초진(new)만 세팅됨(재진은 null 유지) — 배정이 `if (visitType === 'new')` 블록 안에서만 일어난다.
+    // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC(AC-6) 이후: 초진 배정 = 지정담당 우선, 미지정 시 균등(autoAssignConsultant).
+    //   구 assertion(초진=autoAssignConsultant 직결)을 supersede — 재진 미배정 의도는 동일하게 보존.
+    expect(src).toMatch(/if \(visitType === 'new'\) \{[\s\S]*?consultantId = designated \?\? await autoAssignConsultant\(clinicId\);/);
   });
 
   // ── 정적: AC-4 판정 SSOT 통일 ─────────────────────────────────────────────────

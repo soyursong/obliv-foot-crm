@@ -180,6 +180,18 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     return (data as string | null) ?? null;
   };
 
+  // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (AC-6, 김종민류 재발방지):
+  //   초진 자동배정 시 지정 담당 실장(customers.assigned_staff_id)이 세팅돼 있으면 그 값을 우선한다.
+  //   균등분산(assign_consultant_atomic)은 지정이 없을 때만. 신규 생성 고객은 assigned_staff_id=null → 균등.
+  const fetchAssignedStaffId = async (cid: string): Promise<string | null> => {
+    const { data } = await supabase
+      .from('customers')
+      .select('assigned_staff_id')
+      .eq('id', cid)
+      .maybeSingle();
+    return (data as { assigned_staff_id?: string | null } | null)?.assigned_staff_id ?? null;
+  };
+
   // T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 선택 고객 미수금(패키지/진료비 잔금) 존재 여부.
   const hasOutstanding =
     !!selectedOutstanding &&
@@ -320,7 +332,10 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
 
     let consultantId: string | null = null;
     if (visitType === 'new') {
-      consultantId = await autoAssignConsultant(clinicId);
+      // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (AC-6): 지정 담당(assigned_staff_id) 우선, 미지정 시에만 균등(assign_consultant_atomic).
+      //   기존 고객이 365-recency 로 초진 취급될 때 지정 담당을 무시하고 균등배정하던 김종민류 오배정(강경민↔엄경은) 근본해소.
+      const designated = customerId ? await fetchAssignedStaffId(customerId) : null;
+      consultantId = designated ?? await autoAssignConsultant(clinicId);
     }
     // T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE (AC-3): 재진(returning) 상담 실장 오토필 폐지.
     //   구 T-20260520-REVISIT-CONSULTANT-AUTOFILL 은 재진 체크인 시 customers.assigned_staff_id → consultant_id 를
