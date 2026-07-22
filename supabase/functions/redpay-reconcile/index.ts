@@ -209,6 +209,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let peekBody: RunRequest = { mode: "incremental" };
     try { peekBody = await req.clone().json(); } catch { /* ignore */ }
     if ((peekBody as { mode?: string }).mode === "match_only") {
+      // ── 재잠금 단일 스위치 (gate#3 3조건 / T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD) ──
+      //   match_only 는 레드페이 API 를 호출하지 않지만, 4-Tier 매처(runMatcher)가
+      //   payments.reconciled_at / redpay_raw_transactions.matched_payment_id /
+      //   payment_reconciliation_log 에 "쓰기"를 수행한다(맥스튜디오 폴러의 라이브 쓰기 경로).
+      //   과거 이 분기는 아래 DRY_RUN 분기(L232)보다 먼저 평가돼 REDPAY_DRY_RUN 을 "우회"했다
+      //   → 재잠금 사각(single kill-switch 미충족). gate#3 조건2(즉시 재잠금 + 플래그 단일 위치)를
+      //   충족하기 위해 match_only 쓰기도 REDPAY_DRY_RUN 단일 플래그로 봉쇄한다(cron incremental
+      //   경로와 동일 게이트로 통일). ⇒ 문제 발생 시 EF secret REDPAY_DRY_RUN=true 한 곳만 바꾸면
+      //   양쪽 쓰기 경로(cron incremental + poller match_only)가 즉시 no-write 로 멈춘다.
+      if (REDPAY_DRY_RUN) {
+        console.warn(
+          "[redpay-reconcile][foot][match_only] REDPAY_DRY_RUN=true — 매처 쓰기 재잠금(no-write). " +
+          "reconciled_at/matched_payment_id/reconciliation_log 미기록. " +
+          "해제하려면 EF secret REDPAY_DRY_RUN=false 로 설정 후 EF 재배포."
+        );
+        return json(
+          {
+            status:  "locked",
+            mode:    "match_only",
+            dry_run: true,
+            fetched: 0, upserted: 0, matched: 0, events: 0,
+            reason:  "REDPAY_DRY_RUN=true (재잠금) — 매처 쓰기 차단. gate#3 조건2 단일 재잠금 스위치.",
+          },
+          200
+        );
+      }
       if (!REDPAY_BUSINESS_NO) {
         return json({ status: "blocked", reason: "match_only: REDPAY_BUSINESS_NO 미등록", dry_run: false }, 200);
       }

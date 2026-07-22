@@ -49,6 +49,22 @@ export function parseDryRun(dryRunEnv: string): boolean {
 }
 
 /**
+ * match_only 쓰기 재잠금 판정 (gate#3 조건2 단일 kill-switch)
+ *
+ *   match_only 모드는 레드페이 API 를 호출하지 않지만, 4-Tier 매처가
+ *   payments.reconciled_at / redpay_raw_transactions.matched_payment_id /
+ *   payment_reconciliation_log 에 "쓰기"를 수행한다(맥스튜디오 폴러 라이브 쓰기 경로).
+ *   따라서 이 경로도 REDPAY_DRY_RUN 을 존중해야 한다(과거엔 우회 = 재잠금 사각).
+ *
+ *   - dryRunEnv='true'(또는 빈값/미설정) → 쓰기 차단(true 반환) = 재잠금.
+ *   - dryRunEnv='false'               → 쓰기 허용(false 반환).
+ *   parseDryRun 과 동일 해석(safe default = 재잠금).
+ */
+export function shouldBlockMatchOnlyWrites(dryRunEnv: string): boolean {
+  return parseDryRun(dryRunEnv);
+}
+
+/**
  * TID 화이트리스트 파싱
  * 비어있으면 빈 배열 반환 → 전체 TID 조회 (정상 동작)
  */
