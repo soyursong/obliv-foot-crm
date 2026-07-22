@@ -50,6 +50,7 @@ import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { ReceiptUpload } from '@/components/ReceiptUpload';
 // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위 '레드페이' 하위탭 (카드단말기 자동수집 대조)
 import { RedpayReconcileTab } from '@/components/closing/RedpayReconcileTab';
+import { ReceiptSettlementTab } from '@/components/closing/ReceiptSettlementTab';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -259,7 +260,8 @@ export default function Closing() {
     location.hash === '#payments' ? 'payments' : 'summary';
   const [tab, setTab] = useState<'summary' | 'payments'>(tabFromHash);
   // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위탭 (CRM 수납 / 레드페이). 기본=CRM 수납.
-  const [paySubTab, setPaySubTab] = useState<'crm' | 'redpay'>('crm');
+  // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: '영수증 수납' 3번째 하위탭 신설(레드페이 우측).
+  const [paySubTab, setPaySubTab] = useState<'crm' | 'redpay' | 'receipt'>('crm');
 
   // hash 변경 시(브라우저 앞/뒤 네비게이션) 탭 동기화
   useEffect(() => {
@@ -1753,10 +1755,12 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           {/* T-20260708-foot-REDPAY-CLOSING-TAB AC-2: 결제 탭 하위 '레드페이' 하위탭 신설.
               기존 CRM 수납 레이아웃·동작 무손상 — 아래 전체를 'CRM 수납' 하위탭으로 감싸고
               '레드페이' 하위탭(카드단말기 자동수집 대조)만 신규 추가. */}
-          <Tabs value={paySubTab} onValueChange={(v) => setPaySubTab(v as 'crm' | 'redpay')}>
+          <Tabs value={paySubTab} onValueChange={(v) => setPaySubTab(v as 'crm' | 'redpay' | 'receipt')}>
             <TabsList className="w-full sm:w-auto">
               <TabsTrigger value="crm" className="flex-1 sm:flex-none">CRM 수납</TabsTrigger>
               <TabsTrigger value="redpay" className="flex-1 sm:flex-none">레드페이</TabsTrigger>
+              {/* T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 영수증 수납 = 레드페이 우측 3번째 하위탭 */}
+              <TabsTrigger value="receipt" className="flex-1 sm:flex-none">영수증 수납</TabsTrigger>
             </TabsList>
 
             <TabsContent value="crm" className="space-y-4">
@@ -2187,6 +2191,11 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             {/* T-20260708-foot-REDPAY-CLOSING-TAB: 레드페이 하위탭 (카드단말기 자동수집 + 대조) */}
             <TabsContent value="redpay" className="space-y-4">
               {clinic && <RedpayReconcileTab date={date} clinicId={clinic.id} />}
+            </TabsContent>
+
+            {/* T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: 영수증 수납 하위탭 (OCR 영수증 첨부 수납 5컬럼 대조) */}
+            <TabsContent value="receipt" className="space-y-4">
+              {clinic && <ReceiptSettlementTab date={date} clinicId={clinic.id} />}
             </TabsContent>
           </Tabs>
         </TabsContent>

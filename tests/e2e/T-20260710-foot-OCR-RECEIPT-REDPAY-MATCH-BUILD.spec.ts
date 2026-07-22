@@ -24,10 +24,58 @@
  */
 
 import { test, expect, type Route, type Page } from '@playwright/test';
+import * as fs from 'fs';
 
-const BASE_URL = process.env.BASE_URL ?? 'http://localhost:5173';
+// FE 랜딩 후: 로컬 webServer(playwright.config baseURL=8091)와 정렬 — 미설정 시 8091 로 수렴
+// (구 기본값 5173 은 dev 서버 부재 → 런타임 가드가 항상 skip 하던 문제. live QA 는 BASE_URL 주입.)
+const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8091';
 
-test.use({ storageState: 'playwright/.auth/user.json' });
+// ─────────────────────────────────────────────────────────────
+// FE 랜딩 소스 검증 (live-app 무관, 결정론적) — [영수증 수납] 탭 build
+//   T-20260710 FE build: ReceiptSettlementTab.tsx 신설 + Closing.tsx 3번째 하위탭 배선.
+// ─────────────────────────────────────────────────────────────
+const CLOSING = 'src/pages/Closing.tsx';
+const RECEIPT_TAB = 'src/components/closing/ReceiptSettlementTab.tsx';
+
+test.describe('T-20260710 FE build — [영수증 수납] 하위탭 소스 검증', () => {
+  test('Closing.tsx: 레드페이 우측 3번째 하위탭(receipt) 배선', () => {
+    const src = fs.readFileSync(CLOSING, 'utf-8');
+    // 하위탭 상태에 receipt 추가
+    expect(src).toContain("useState<'crm' | 'redpay' | 'receipt'>('crm')");
+    // 3개 하위탭 트리거 (crm / redpay / receipt) + '영수증 수납' 라벨
+    expect(src).toContain('<TabsTrigger value="receipt"');
+    expect(src).toContain('영수증 수납');
+    // 레드페이 우측(뒤)에 배치 — receipt trigger 가 redpay trigger 보다 뒤
+    expect(src.indexOf('value="receipt"')).toBeGreaterThan(src.indexOf('value="redpay"'));
+    // 하위탭에 컴포넌트 마운트
+    expect(src).toContain('<ReceiptSettlementTab date={date} clinicId={clinic.id} />');
+  });
+
+  test('ReceiptSettlementTab: read-only VIEW 소비 + graceful-degrade + 5컬럼 + 뷰모달', () => {
+    const src = fs.readFileSync(RECEIPT_TAB, 'utf-8');
+    // 데이터 소스 = read-only VIEW 만 소비 (매칭 재계산 금지)
+    expect(src).toContain('v_receipt_settlement_daily');
+    // graceful-degrade(1c-b): 에러 시 []폴백 (throw 금지)
+    expect(src).toContain('return [];');
+    expect(src).not.toContain('if (error) throw error;');
+    // 5컬럼 헤더
+    for (const col of ['날짜/시간', '성함(차트번호)', '결제금액', '승인번호', '원본 영수증']) {
+      expect(src).toContain(col);
+    }
+    // 그리드 + 뷰모달 testid (기존 런타임 spec 계약)
+    expect(src).toContain('data-testid="receipt-settlement-grid"');
+    expect(src).toContain('data-testid="receipt-view-modal"');
+    // 컬럼① = 인쇄시각(receipt_datetime) SSOT, 업로드시각(uploaded_at) 표시축 아님
+    expect(src).toContain('kstDateTime(r.receipt_datetime)');
+    // 뷰모달 = read-only (인쇄/닫기만, 편집 input 없음)
+    expect(src).toContain('인쇄하기');
+    expect(src).toContain('닫기');
+  });
+});
+
+// storageState 는 playwright.config 프로젝트 기본값(.auth/user.json = auth.setup 산출)을 상속.
+//   (구 spec-level override 'playwright/.auth/user.json' = stale 빈 픽스처 → /login 리다이렉트로
+//    런타임 가드가 항상 skip 하던 원인. 제거하여 FE 랜딩 후 Step4 런타임 검증이 실제 승격되도록.)
 
 // ─────────────────────────────────────────────────────────────
 // 헬퍼: receipt-ocr EF mock — 승인번호(8자리) 반환 계약
@@ -88,7 +136,7 @@ test('Step1+2: 차트 [결제영수증 추가] → OCR 검증팝업 승인번호
 
   // 고객차트 진입점([상담내역]>[결제영수증]>[추가]) — FE 랜딩 전 스킵 가드
   const addReceiptBtn = page.getByRole('button', { name: /결제영수증\s*추가|영수증\s*추가/ });
-  await page.goto(`${BASE_URL}/customers`).catch(() => {});
+  await page.goto(`${BASE_URL}/admin/customers`).catch(() => {});
   if (await addReceiptBtn.count() === 0) {
     test.skip(true, '차트 [결제영수증 추가] 진입점 미랜딩 — DA GO 후 FE 랜딩 시 승격');
     return;
@@ -106,7 +154,7 @@ test('Step2-fallback: 인쇄시각 OCR 실패 → 수동입력 폴백 노출', a
   await page.route('**/functions/v1/receipt-ocr', (route) =>
     mockOcrRoute(route, { confidence: 0 }));
   const manualDatetime = page.getByTestId('ocr-confirm-datetime-manual');
-  await page.goto(`${BASE_URL}/customers`).catch(() => {});
+  await page.goto(`${BASE_URL}/admin/customers`).catch(() => {});
   if (await manualDatetime.count() === 0) {
     test.skip(true, '검증팝업 미랜딩 — DA GO 후 FE 랜딩 시 승격');
     return;
@@ -119,8 +167,12 @@ test('Step2-fallback: 인쇄시각 OCR 실패 → 수동입력 폴백 노출', a
 // ─────────────────────────────────────────────────────────────
 
 async function gotoPaymentsTab(page: Page) {
-  await page.goto(`${BASE_URL}/closing#payments`).catch(() => {});
-  await page.waitForLoadState('networkidle').catch(() => {});
+  // 라우트 = /admin/closing (app 은 /admin prefix. 구 '/closing' 은 /admin 대시보드로 리다이렉트됨).
+  await page.goto(`${BASE_URL}/admin/closing#payments`).catch(() => {});
+  await page.waitForLoadState('domcontentloaded').catch(() => {});
+  // 하위탭(결제내역) 렌더 대기 — Supabase realtime 구독으로 networkidle 미수렴 회피.
+  await page.getByRole('tab', { name: /결제내역/ }).first().click().catch(() => {});
+  await page.waitForTimeout(1500);
 }
 
 test('Step4: [영수증 수납] 탭이 레드페이 탭 우측 3번째로 존재', async ({ page }) => {
@@ -178,6 +230,64 @@ test('Step4-col⑤: [이미지 보기] → read-only 뷰 모달(편집필드 無
   await expect(viewModal).toBeVisible();
   // read-only 보장: 모달 내 편집 가능 input/textarea 0개 (검증·보정 팝업과 구분)
   await expect(viewModal.locator('input:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])')).toHaveCount(0);
+  await expect(viewModal.getByRole('button', { name: /인쇄/ })).toBeVisible();
+  await expect(viewModal.getByRole('button', { name: /닫기/ })).toBeVisible();
+});
+
+// ─────────────────────────────────────────────────────────────
+// Step4-col⑤(mock-row): 뷰 응답을 1행으로 mock → [이미지 보기] → read-only 모달 실측
+//   빈 QA DB 로 위 가드가 skip 되어도, 뷰 계약대로 1행이 오면 모달이 read-only 로 뜨는지 런타임 검증.
+// ─────────────────────────────────────────────────────────────
+test('Step4-col⑤(mock-row): 뷰 1행 mock → 이미지 보기 → read-only 모달 렌더', async ({ page }) => {
+  // PostgREST v_receipt_settlement_daily 조회를 1행으로 가로챔 (매처 산출 surface 형태).
+  await page.route('**/rest/v1/v_receipt_settlement_daily*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'content-range': '0-0/1' },
+      body: JSON.stringify([{
+        payment_id: 'mock-pay-1',
+        clinic_id: 'mock-clinic',
+        close_date: '2026-07-10',
+        receipt_datetime: '2026-07-10T14:30:00+09:00',
+        uploaded_at: '2026-07-10T15:00:00+09:00',
+        customer_name: '홍길동',
+        chart_number: 'F0001',
+        amount: 50000,
+        approval_no: '12345678',
+        tid: '1047479255',
+        image_url: 'receipts/mock-receipt.jpg',
+        reconciled_at: '2026-07-10T14:31:00+09:00',
+        redpay_approved_at: '2026-07-10T14:30:05+09:00',
+        redpay_amount: 50000,
+        match_rule: 'approval_amount',
+        match_status: 'matched',
+      }]),
+    });
+  });
+
+  await gotoPaymentsTab(page);
+  const settlementTab = page.getByRole('tab', { name: /영수증\s*수납/ });
+  if (await settlementTab.count() === 0) {
+    test.skip(true, '[영수증 수납] 탭 미랜딩');
+    return;
+  }
+  await settlementTab.click();
+
+  // mock 1행 → 성함/승인번호 표시 + [이미지 보기] 버튼
+  const grid = page.getByTestId('receipt-settlement-grid');
+  await expect(grid.getByText('홍길동')).toBeVisible();
+  await expect(grid.getByText('12345678')).toBeVisible();
+
+  const viewBtn = page.getByRole('button', { name: /이미지\s*보기/ }).first();
+  await viewBtn.click();
+
+  const viewModal = page.getByTestId('receipt-view-modal');
+  await expect(viewModal).toBeVisible();
+  // read-only: 편집 가능한 input/textarea 0개
+  await expect(viewModal.locator('input:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])')).toHaveCount(0);
+  // 조회 필드(결제금액/승인번호) 표시
+  await expect(viewModal.getByText('12345678')).toBeVisible();
   await expect(viewModal.getByRole('button', { name: /인쇄/ })).toBeVisible();
   await expect(viewModal.getByRole('button', { name: /닫기/ })).toBeVisible();
 });
