@@ -472,6 +472,61 @@ export function tmRoleNames(staffMap: Record<string, TmStaffInfo>): Set<string> 
   return s;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT — §963⑩(a) 집계/필터축 정규화
+//
+// cross_crm_data_contract §963⑩(a) HARD INVARIANT (DA-decision 20260722, foot 동형 전파):
+//   registrar_name = 수동편집 가능한 display SoT. 이를 TM집계 grouping key 또는 "TM팀만"
+//   필터 inclusion 판정축으로 쓰면 "편집이 count 버킷을 이동시키는 비결정 집계" + created_by와
+//   발산하는 제2 attribution 축 재구성 → §963⑥/⑧b/§968④ 위반.
+//   ∴ grouping/필터축 = 정규 귀속 identity(reservations.created_by)로 repoint.
+//      dopamine-origin(created_by=NULL, §416 firewall) = 단일 provenance 버킷('도파민 등록').
+//      registrar_name = 화면 label 표시로만(tmCounselorLabel) — 집계/필터축 절대 미참여.
+//
+// ⚠ tmAttributionKey/tmRoleIds 는 registrar_name 을 인자로도 받지 않는다(구조적 차단).
+//   구 tmRoleNames(위) = 표시라벨(registrar_name-aware) 집합 → 필터 inclusion 판정축 사용 금지.
+//   label 표시 helper 로만 존치(§963⑩(a) 위반 재발 방지).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** dopamine-origin(created_by=NULL) TM집계 단일 버킷 라벨 (AC3). */
+export const TM_DOPAMINE_BUCKET = '도파민 등록';
+
+/**
+ * TM집계 grouping key — 정규 귀속키(편집-inert). registrar_name 미참여(인자에도 없음).
+ *   - created_by 매칭 직원        → { key: 'staff:<uid>', label: 직원명 }
+ *   - created_by=NULL + dopamine  → { key: '__dopamine__',  label: '도파민 등록' }  (per-name 분해 금지, AC3)
+ *   - created_by=NULL + 그 외      → { key: '__unassigned__', label: '미지정' }
+ *   - created_by 있으나 미매칭(비활성 등) → { key: 'staff:<uid>', label: '미지정' }
+ * @returns key=집계 병합 키(안정·비편집), label=화면 표시명
+ */
+export function tmAttributionKey(
+  createdBy: string | null | undefined,
+  sourceSystem: string | null | undefined,
+  staffName: string | null | undefined,
+): { key: string; label: string } {
+  if (createdBy) {
+    return { key: `staff:${createdBy}`, label: (staffName ?? '').trim() || TM_UNASSIGNED_LABEL };
+  }
+  if ((sourceSystem ?? '').trim() === 'dopamine') {
+    return { key: '__dopamine__', label: TM_DOPAMINE_BUCKET };
+  }
+  return { key: '__unassigned__', label: TM_UNASSIGNED_LABEL };
+}
+
+/**
+ * "TM팀만" 필터축 = 정규 귀속 identity(created_by) 기준 role='tm' user_profiles.id 집합 (AC2).
+ * 구 tmRoleNames(표시라벨=registrar_name-aware 매칭축)은 §963⑩(a) 위반이라 필터 inclusion 에서 제거.
+ * dopamine-origin(created_by=NULL)은 풋 계정이 없어 자동 제외(도파민 개별 귀속=도파민 자체 stats 소관).
+ * ⛔ 순수 함수 read-only.
+ */
+export function tmRoleIds(staffMap: Record<string, TmStaffInfo>): Set<string> {
+  const s = new Set<string>();
+  for (const [id, info] of Object.entries(staffMap ?? {})) {
+    if (id && info && info.role === 'tm') s.add(id);
+  }
+  return s;
+}
+
 /** 카테고리 코드 → 한국어 표시 */
 export function categoryLabel(code: string): string {
   switch (code) {

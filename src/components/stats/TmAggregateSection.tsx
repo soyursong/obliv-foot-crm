@@ -9,7 +9,8 @@ import {
 import { seoulISODate } from '@/lib/format';
 import {
   tmCounselorLabel,
-  tmRoleNames,
+  tmAttributionKey,
+  tmRoleIds,
   TM_UNASSIGNED_LABEL,
   TM_WALKIN_LABEL,
   type TmAggregateData,
@@ -86,13 +87,29 @@ export default function TmAggregateSection({
     return labelForRes(matched);
   };
 
-  // T-20260702-foot-TMSTATS-TEAMFILTER-ROLE:
-  //   "TM팀만" = 계정관리 role='tm' 계정만. 판정축을 집계 표시 라벨(labelForRes/labelForCheckIn)과
-  //   동일하게 맞춰 필터·결과·집계 3자가 항상 일치한다. (기존 created_by 단일축 판정은 풋 TM팀이
-  //   registrar_name 경로로 귀속돼 created_by=데스크(admin/coordinator)라 TM 전건 누락 → 오집계였음.)
-  //   role 소스 = user_profiles.role (계약 v1.0 §2-3 enum 'tm'; user_roles flip 은 게이트 SEQUENCED, 현행 소스 유지).
-  const tmNameSet = useMemo(() => tmRoleNames(staffMap), [staffMap]);
-  const isTmLabel = (label: string) => tmNameSet.has(label);
+  // ── 정규 귀속키 grouping (§963⑩(a), T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT) ──
+  //   집계 grouping key = tmAttributionKey(created_by) — registrar_name 미참여(편집-inert).
+  //   created_by=NULL(dopamine-origin, §416) → 단일 '도파민 등록' 버킷(per-name 분해 금지, AC3).
+  //   내원의 매칭 예약 없으면 워크인 버킷.
+  const attrOfRes = (r: TmResRow) =>
+    tmAttributionKey(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name);
+  const attrOfCheckIn = (ci: TmCheckInRow): { key: string; label: string } => {
+    const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
+    if (!matched) return { key: '__walkin__', label: WALKIN };
+    return attrOfRes(matched);
+  };
+
+  // "TM팀만" 필터 = 정규 귀속 identity(created_by)가 role='tm' 계정인 행만 (AC2).
+  //   (§963⑩(a): registrar_name/표시라벨 매칭축을 필터 inclusion 판정축으로 쓰는 것 금지 → created_by repoint.
+  //    구 T-20260702 label-매칭축은 '수동편집이 필터 결과를 움직이는 비결정 필터'라 폐기.)
+  //   role 소스 = user_profiles.role (계약 v1.0 §2-3 enum 'tm'). dopamine-origin(created_by=NULL)은
+  //   풋 계정이 없으므로 "TM팀만"에서 제외(도파민 개별 귀속 = 도파민 자체 stats 소관).
+  const tmIdSet = useMemo(() => tmRoleIds(staffMap), [staffMap]);
+  const isTmRes = (r: TmResRow) => !!r.created_by && tmIdSet.has(r.created_by);
+  const isTmCheckIn = (ci: TmCheckInRow) => {
+    const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
+    return !!matched && !!matched.created_by && tmIdSet.has(matched.created_by);
+  };
 
   const isMyRecord = (uid: string | null) => !!uid && !!currentUserId && uid === currentUserId;
 
@@ -110,18 +127,18 @@ export default function TmAggregateSection({
     [visitedCI, onlyMine, currentUserId, allResMap],
   );
 
-  // "TM팀만" 필터 (계정관리 role='tm' 계정만 — 표시 라벨 기준으로 필터·결과·집계 일치)
+  // "TM팀만" 필터 (계정관리 role='tm' 계정만 — 정규 귀속 identity(created_by) 기준, §963⑩(a))
   const tmFilteredRegistered = useMemo(
-    () => (onlyTmRole ? filteredRegistered.filter((r) => isTmLabel(labelForRes(r))) : filteredRegistered),
-    [filteredRegistered, onlyTmRole, tmNameSet, staffMap],
+    () => (onlyTmRole ? filteredRegistered.filter(isTmRes) : filteredRegistered),
+    [filteredRegistered, onlyTmRole, tmIdSet],
   );
   const tmFilteredScheduled = useMemo(
-    () => (onlyTmRole ? filteredScheduled.filter((r) => isTmLabel(labelForRes(r))) : filteredScheduled),
-    [filteredScheduled, onlyTmRole, tmNameSet, staffMap],
+    () => (onlyTmRole ? filteredScheduled.filter(isTmRes) : filteredScheduled),
+    [filteredScheduled, onlyTmRole, tmIdSet],
   );
   const tmFilteredVisited = useMemo(
-    () => (onlyTmRole ? filteredVisited.filter((ci) => isTmLabel(labelForCheckIn(ci))) : filteredVisited),
-    [filteredVisited, onlyTmRole, tmNameSet, staffMap, allResMap],
+    () => (onlyTmRole ? filteredVisited.filter(isTmCheckIn) : filteredVisited),
+    [filteredVisited, onlyTmRole, tmIdSet, allResMap],
   );
 
   const totals = useMemo(() => {
@@ -132,17 +149,17 @@ export default function TmAggregateSection({
     return { registered, scheduled, visited, visitRate };
   }, [tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited]);
 
-  // TM상담사별 집계 — 표시 라벨 기준 합산 + 내원율 (롱래 tmStats 차용)
-  // 표시 라벨(provenance-aware)로 직접 집계 → 같은 라벨끼리 병합.
+  // TM상담사별 집계 — 정규 귀속키(tmAttributionKey.key)로 병합, 표시명 = .label (§963⑩(a))
+  //   registrar_name 은 grouping 축에서 제외(편집-inert). dopamine-origin → '도파민 등록' 단일 버킷(AC3).
   const tmStats = useMemo(() => {
     const map = new Map<string, { tm: string; registered: number; scheduled: number; visited: number }>();
-    const ensure = (tm: string) => {
-      if (!map.has(tm)) map.set(tm, { tm, registered: 0, scheduled: 0, visited: 0 });
-      return map.get(tm)!;
+    const ensure = (key: string, label: string) => {
+      if (!map.has(key)) map.set(key, { tm: label, registered: 0, scheduled: 0, visited: 0 });
+      return map.get(key)!;
     };
-    tmFilteredRegistered.forEach((r) => (ensure(labelForRes(r)).registered += 1));
-    tmFilteredScheduled.forEach((r) => (ensure(labelForRes(r)).scheduled += 1));
-    tmFilteredVisited.forEach((ci) => (ensure(labelForCheckIn(ci)).visited += 1));
+    tmFilteredRegistered.forEach((r) => { const a = attrOfRes(r); ensure(a.key, a.label).registered += 1; });
+    tmFilteredScheduled.forEach((r) => { const a = attrOfRes(r); ensure(a.key, a.label).scheduled += 1; });
+    tmFilteredVisited.forEach((ci) => { const a = attrOfCheckIn(ci); ensure(a.key, a.label).visited += 1; });
 
     return Array.from(map.values())
       .map((r) => ({ ...r, visitRate: r.scheduled > 0 ? (r.visited / r.scheduled) * 100 : 0 }))
