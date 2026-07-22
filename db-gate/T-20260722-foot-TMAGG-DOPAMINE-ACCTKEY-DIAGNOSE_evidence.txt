@@ -1,0 +1,53 @@
+======================================================================
+T-20260722-foot-TMAGG-DOPAMINE-ACCTKEY-DIAGNOSE — read-only evidence
+======================================================================
+
+########## AC-D1  계정 실재 — user_profiles role 분포 ##########
+  user_profiles total = 54
+  role 분포 (active/inactive): {"therapist":9,"admin":12,"admin(inactive)":1,"coordinator":6,"therapist(inactive)":4,"manager":3,"staff":5,"coordinator(inactive)":2,"tm":3,"consultant(inactive)":2,"director":2,"consultant":5}
+
+  >>> role='tm' 계정 = 3 건
+     - id=ce02d366-d62a-4d3c-ad19-06798a372084  name=진운선  email=us.jin@medibuilder.com  active=true  clinic=74967aea-a60b-4da3-a0e7-9c997a930bc8
+     - id=210f3715-1fa9-4b65-a1bb-6571d1a2575a  name=이수빈  email=sb.lee@medibuilder.com  active=true  clinic=74967aea-a60b-4da3-a0e7-9c997a930bc8
+     - id=fcfc2064-534a-4cd7-9065-86105ad01aff  name=김효신  email=hs.kim@medibuilder.com  active=true  clinic=74967aea-a60b-4da3-a0e7-9c997a930bc8
+
+########## AC-D2  created_by 채움 실태 — dopamine-origin 예약 ##########
+  source_system='dopamine' 예약 total = 368
+  created_by 채워짐 = 0 건 / NULL(빈값) = 368 건
+
+  [채워진 건의 created_by → user_profile 매칭 분해]
+     · role='tm' 계정 매칭        = 0  (그중 active = 0)
+     · role≠tm(다른직원) 계정 매칭 = 0
+     · user_profile 미매칭(고아값)  = 0
+
+  [created_by distinct 값별 (상위 25) — 값 / 건수 / 매칭 profile]
+
+  [참고] dopamine 행 registrar_name 채움 = 368 / 빈값 = 0
+    registrar_name distinct (상위 15): [["진운선",123],["이수빈",121],["김효신",116],["[도파민TM] 박민지",7],["[도파민TM] 김수진",1]]
+
+########## AC-D3  매핑 안전성 (로컬 foot 데이터 only) ##########
+  dopamine 예약의 distinct created_by 값 = 0
+     · 그중 로컬 user_profiles role='tm' 로 해석됨       = 0
+     · 그중 active role='tm' 로 해석됨(화면 라벨 반영됨) = 0
+  → created_by(=user_profiles.id)는 로컬 조인만으로 per-name 성립 (email-resolve/counselor_id 타CRM 반입 불필요).
+    (§963⑩(b)/(⑥) 금지 클래스 = cross-namespace resolve. 본 경로는 로컬 UUID FK 조인이라 미저촉.)
+
+======================================================================
+판정 요약 (evidence 기반, 정책 재adjudication 은 DA 몫)
+======================================================================
+  · AC-D1: role='tm' 계정 실재 = 3건 (active 3) → 전제 정정 field-CORRECT (계정 있음)
+  · AC-D2: dopamine 예약 368건 中 created_by 채움 0/NULL 368. AC-D2 (b) 계열 — dopamine 예약 created_by 전부 NULL → 계정은 있어도 push RPC 가 미채움. per-name = emit-side 변경 필요(§963⑩(b)/⑥ 재검토)
+  · AC-D3: created_by→user_profiles 로컬 UUID 조인으로 매핑 성립 (cross-CRM resolve 불요). 금지클래스 미저촉.
+  · AC-D4: 본 실행 SELECT-only, write/DDL 0건.
+======================================================================
+
+[보강] reservations total = 740
+
+source_system 별 (건수 / created_by 채움):
+   ∅               n=  372  created_by채움=315
+   dopamine        n=  368  created_by채움=0
+
+created_via 분포: {"manual":173,"∅":199,"dopamine":368}
+
+registrar_name 형식별: [도파민TM]prefix n=8(cb채움 0) / bare-name n=519(cb채움 147)
+  → bare-name(진운선/이수빈/김효신)=풋 tm계정 보유자, [도파민TM]prefix(박민지/김수진)=풋 계정 미보유자로 추정 구분됨
