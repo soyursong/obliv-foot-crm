@@ -1,18 +1,26 @@
 -- T-20260615-foot-RLS-CLINIC-ISOLATION — Phase 2b (AC2 완료: anon 직접 SELECT 제거 + REVOKE)
 -- 표준: cross_crm_data_contract.md §16-3 / §15 (v1.12).
 -- ════════════════════════════════════════════════════════════════════════════
--- ⛔ 적용 보류(.PHASE2B_HOLD) — 마이그 러너 SKIP. 아래 GATE 충족 전 prod 적용 금지.
+-- ⚠ 파괴적(DESTRUCTIVE) 마이그 — dev 단독 apply 절대 금지.
+--   UN-HELD 2026-07-23 (T-20260703-foot-JONGNO-ANON-PHI-LEAK-RLS-LOCKDOWN full 2b).
+--   러너 자동적용 없음(apply=전용 *_prod_apply.mjs 명시 실행). 잔여 게이트: ↓
+--   (1) supervisor DDL-diff GO  (2) DB-GATE  (3) 최종 apply confirm(파괴적) → 그 후에만 prod.
 -- ════════════════════════════════════════════════════════════════════════════
--- GATE (선결 조건 — 둘 다 충족 후에만 적용):
---   ① 라이브 셀프체크인 키오스크 레포 `foot-checkin`(foot-checkin.pages.dev, 도메인 밖)이
---      customers/check_ins/reservations 의 anon 직접 SELECT + INSERT...RETURNING 의존을
---      Phase 2a RPC(20260615170000_*_additive.sql, fn_selfcheckin_*) 로 전량 전환 완료(cross-repo).
---   ② obliv-foot-crm 의 src/pages/SelfCheckIn.tsx(native 경로) 동일 전환 완료.
---   실증 근거: anon SELECT 정책 제거 시 anon INSERT...RETURNING 이 42501(new row violates RLS) →
---     write 경로도 RPC 화 필수. Phase 2a RPC 6·7(upsert_customer/create_check_in)이 그 대체.
---   조율: planner FOLLOWUP(cross-repo 시퀀싱) + architect CONSULT(2a/2b 분리 패턴 확정).
+-- GATE 선결(둘 다 충족 확인 — 2026-07-23 PRE-DROP 재실측):
+--   ① [MET] 라이브 키오스크 `foot-checkin`(foot-checkin.pages.dev) READ-path anon 직접 SELECT
+--      → SECDEF RPC 컷오버 완료(자식 T-20260723-...-KIOSK-READPATH-ANON-CUTOVER=done,
+--      supervisor POSTCHECK 4/4 PASS). foot-checkin origin/main=2127bdc: anon 직접 READ SELECT=0
+--      (잔존 .from() = check_ins INSERT / reservations UPDATE = write-path 2c 범위, SELECT 아님).
+--   ② [MET] obliv-foot-crm src/pages/SelfCheckIn.tsx(native): anon SELECT=0 (전량 RPC 전환).
+--   실증 근거: anon SELECT 정책 제거 시 anon INSERT...RETURNING 이 42501 → write 경로도 RPC 화 필수.
+--     Phase 2a RPC 6·7(upsert_customer/create_check_in)이 그 대체(prod 존재·컷오버 완료).
 --   §16-3 "무삭제 금지 / 선대체 후 제거" — '제거' 가 본 파일(2a '선대체' 후).
---   §16-7 INVARIANT: 본 파일 적용 전 셀프체크인 동선 회귀 0 (RPC 전환분) prod 검증 필수.
+--   §16-7 INVARIANT: 본 파일 적용 후 셀프체크인 동선 회귀 0 (키오스크 실기기+admin+native) prod 검증 필수.
+-- PRE-DROP DB 스냅샷(anon key, count-only, PHI 미덤프, 2026-07-23):
+--   anon customers=401(旣차단) / check_ins=200 count=370(LEAK LIVE) /
+--   reservations=200 count=22(Track1 today+confirmed scope) / payments=401(旣차단).
+--   → 본 마이그가 닫는 실 잔존 = check_ins(370)+reservations(22). customers/payments 는
+--     旣차단이라 DROP POLICY IF EXISTS + REVOKE(멱등) = no-op·무해.
 -- ════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
