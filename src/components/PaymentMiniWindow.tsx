@@ -116,6 +116,9 @@ import {
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A/B: 신양식(bill_receipt_new) 비급여 category 토큰
   //   주입 SSOT(footBilling 승격) — DPP 와 동일 인자로 소비해 결제미니창 인쇄 시 처치/검사 행 공란 해소.
   applyBillReceiptNewCategoryTokens,
+  // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category remainder)·결함B(납부박스 payments groupBy).
+  applyBillReceiptNewCoveredTokens,
+  applyBillReceiptPaidBoxTokens,
   type FootBillingItem,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE → T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK:
@@ -1534,6 +1537,35 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
   };
 
+  // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (결제미니창 PATH-4) ─────────────────
+  //   신양식(bill_receipt_new) 발행 시 결함A(급여 category remainder)·결함B(⑪ 납부박스 payments) 주입.
+  //   DPP 단건/일괄과 동일 SSOT 헬퍼 사용 — 3경로 대칭. PMW 는 야간가산 미적용이라 순서제약 없음
+  //   (aggregate copayment/insurance_covered 는 위 applyBillingFallback 이 이미 세팅) — 호출부에서 그 뒤에 부른다.
+  //   결함B 원장: payments(status=active) 실수납만 groupBy(완납 가정 금지). 인쇄 시점 미수납이면 납부박스 공란·미납=전액.
+  const applyBillReceiptNewSplitAndPaid = async (
+    autoValues: Record<string, string>,
+    selected: { form_key: string }[],
+  ): Promise<void> => {
+    if (!selected.some((t) => t.form_key === 'bill_receipt_new') || pricingItems.length === 0) return;
+    // 결함A: 급여 category remainder 토큰(진찰료 흡수 방지). buildPmwBillDetailItems = DPP 동일 SSOT.
+    applyBillReceiptNewCoveredTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
+    // 결함B: payments 원장 결제수단별 실수납 groupBy.
+    const { data: payRows } = await supabase
+      .from('payments')
+      .select('amount, method, cash_receipt_issued')
+      .eq('check_in_id', checkIn.id)
+      // 취소결제 미표시(CHECKIN-RECEIPT-SOFTVOID-PHANTOM 계승 fail-closed).
+      .eq('status', 'active');
+    // ⑧/⑩ 환자부담총액(절사 후) = 급여 본인부담 + 비급여(공단 제외, GONGDAN-HIDE-COPAY B안 동일 산식).
+    const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
+    const { roundedTotal: patientFloored } = computeBillDetailRounding(copaymentTotal + pmwNonCov);
+    applyBillReceiptPaidBoxTokens(
+      autoValues,
+      (payRows ?? []) as Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null }>,
+      patientFloored,
+    );
+  };
+
   // 선수금차감 후 청구액 = (선수금차감 대상 제외한 항목의) 급여 본인부담금 + 비급여 전액.
   // ── T-20260721-foot-PMW-PREPAID-DEDUCT-COPAY-BASE [현장 P0, RC] ─────────────────
   //   [버그] 종전엔 getItemAmount(전액 = 급여 본인부담 + 공단부담 + 비급여) 을 합산 → 선수금 차감 후
@@ -2133,6 +2165,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       ) {
         applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
       }
+      // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 신양식 급여 remainder + ⑪ 납부박스 payments 배선.
+      await applyBillReceiptNewSplitAndPaid(autoValues, selected);
       const isFallback = templates[0]?.id.startsWith('fallback-');
       const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
         selected,
@@ -2284,6 +2318,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       ) {
         applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
       }
+      // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 출력+수납 경로도 동일 배선(handleDocPrint 대칭).
+      await applyBillReceiptNewSplitAndPaid(autoValues, selected);
       const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
       const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
         selected,

@@ -133,6 +133,10 @@ export default defineConfig({
         //   + ⑪납부한금액 합계칸 기본 바인딩(2d). 순수 산식 + 템플릿 정적 가드(auth/server 불요, 결정론).
         //   CANON-GATE(공단부담금 1a/2b)는 미접촉 — ⑦공단부담총액 {{insurance_covered}} 회귀 가드 포함.
         '**/T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC.spec.ts',
+        // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 계산서·영수증 신양식 확정결함 2건 —
+        //   결함A(급여 category 분해: 검사료/처치 급여칸 별도표기 + 진찰료 행=aggregate remainder, Σ정합 불변식)
+        //   + 결함B(⑪ 납부박스 payments method별 groupBy 실수납). 순수 산식 + 템플릿 정적 가드(auth/server 불요, 결정론).
+        '**/T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX.spec.ts',
         // T-20260721-foot-OPINIONDOC-DESK-BLANK: 소견서/진단서 데스크(서류탭·수납 미니창) 출력 환자정보·상병 공란
         //   — 4FIX(원장탭 전용) 미커버 호출부 확장. printAuthoredMedDoc 에 checkIn 인자 추가 → 내부
         //   loadAutoBindContext(checkIn) 로 autoValues 로드 → printOpinionDoc 주입. 소스 배선 가드 + 실렌더
@@ -519,6 +523,9 @@ export default defineConfig({
         // T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC: unit 전용 순수 산식+정적 가드 spec →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC.spec.ts',
+        // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: unit 전용 순수 산식+정적 가드 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX.spec.ts',
         // T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE: db-only(unit 전용) — desktop-chrome 에서 제외해
         //   `npx playwright test <file>` 무-project 실행(supervisor QA) 시 auth.setup(TEST_PASSWORD) 미기동.
         '**/T-20260718-foot-SIM-HARNESS-TEARDOWN-HYGIENE.spec.ts',

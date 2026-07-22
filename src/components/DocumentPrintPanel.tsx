@@ -129,6 +129,9 @@ import {
   computeBillReceiptNewCategoryBreakdown,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
   applyBillReceiptNewCategoryTokens,
+  // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category 분해 remainder)·결함B(납부박스 payments).
+  applyBillReceiptNewCoveredTokens,
+  applyBillReceiptPaidBoxTokens,
   // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: service_charges 직결 폴백 경로도
   //   정식 HIRA category 매핑(footBillDetailCategory) + codeItems(상병/처방약) 제외(isCodeItem)를
   //   primary(check_in_services) 경로와 대칭 적용. 종전 폴백 하드코드 `covered?'이학요법료':'기타'` 대체.
@@ -160,6 +163,9 @@ interface PaymentItem {
   method: string | null;
   payment_type: string | null;
   created_at: string;
+  // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B: ⑪ 납부박스 현금영수증 버킷 분류용
+  //   (현금/이체 中 현금영수증 발급분). payments.cash_receipt_issued 원장값.
+  cash_receipt_issued?: boolean | null;
 }
 
 // ─── Props ───
@@ -699,7 +705,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       // T-20260519-foot-RECEIPT-REISSUE: 결제 체크박스용 payments 조회
       supabase
         .from('payments')
-        .select('id, amount, method, payment_type, created_at')
+        // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B: ⑪ 납부박스 현금영수증 버킷 → cash_receipt_issued 필요.
+        .select('id, amount, method, payment_type, created_at, cash_receipt_issued')
         .eq('check_in_id', checkIn.id)
         // T-20260721-foot-CHECKIN-RECEIPT-SOFTVOID-PHANTOM: fail-closed allow-list (부모 CHARTPAGE-SOFTVOID AC1 계승). 영수증=재무-법적 문서라 취소결제 표시가 곧 오표시. .neq 블랙리스트 재도입 금지
         .eq('status', 'active')
@@ -1061,6 +1068,12 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const isFallback = templates[0]?.id.startsWith('fallback-');
 
+      // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함A: 신양식 급여 category remainder 토큰은
+      //   야간가산 fold 이후(valuesFor)에 최종 aggregate 기준으로 계산해야 하므로(순서강제 §3.3),
+      //   billItems 를 valuesFor 스코프에서 참조할 수 있게 hoist. 두 소스(check_in_services/service_charges 폴백)
+      //   중 실제 채워진 것으로 아래에서 대입.
+      let batchRnItems: Parameters<typeof applyBillReceiptNewCoveredTokens>[1] = [];
+
       // T-20260525-foot-INS-FIELD-BIND AC-3: service_charges 전건 로딩 (배치출력용)
       // - bill_detail/rx_standard items_html 주입 (기존)
       // - 상병코드(category_label='상병') → diag_code_N/diag_name_N 주입 (신규)
@@ -1169,6 +1182,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
             // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 신양식 비급여 category 분해(폴백=이학요법료/기타 → 전부 기타行).
             applyBillReceiptNewCategoryTokens(autoValues, billItems);
+            // T-20260722 결함A: 급여 category remainder 토큰 소스(valuesFor 에서 post-surcharge 소비).
+            batchRnItems = billItems;
             const total = mappedItems.reduce((s, item) => s + item.amount, 0);
             autoValues.total_amount = formatAmount(total);
             const nonCoveredTotal = mappedItems
@@ -1232,6 +1247,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(billItems);
           // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 신양식 처치/검사/기타 비급여 행 category 분해.
           applyBillReceiptNewCategoryTokens(autoValues, billItems);
+          // T-20260722 결함A: 급여 category remainder 토큰 소스(valuesFor 에서 post-surcharge 소비). SSOT(check_in_services) 우선.
+          batchRnItems = billItems;
           if (autoValues.rx_items_html == null) autoValues.rx_items_html = buildRxItemsHtml([]);
           if (fbBatch.grandTotal > 0) {
             autoValues.total_amount = formatAmount(fbBatch.grandTotal);
@@ -1361,6 +1378,18 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           surchargeRefDate,
           buildSurchargeDetailRowHtml,
         );
+        // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (일괄출력 경로) ──
+        //   ★야간가산 fold 이후(여기)에 신양식 급여 remainder·납부박스를 계산해 단건(IssueDialog allValues)과 대칭.
+        if (t.form_key === 'bill_receipt_new') {
+          // ⑧/⑩ 환자부담총액 10원 절사(FLOOR) — 단건 경로와 동일 SSOT(computeBillDetailRounding).
+          const rawPatient = parseAmountStr(v.patient_amount);
+          const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+          if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
+          // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
+          applyBillReceiptNewCoveredTokens(v, batchRnItems);
+          // 결함B: ⑪ 납부박스 = payments 원장(status=active) 결제수단별 실수납(부모 로드분). 완납 가정 금지.
+          applyBillReceiptPaidBoxTokens(v, paymentItems, patientFloored);
+        }
         return v;
       };
 
@@ -1801,6 +1830,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           dutyDoctors={dutyDoctors}
           altStatus={altStatus}
           activePackage={activePackage}
+          paymentItems={paymentItems}
           onOpenChange={(o) => {
             setIssueDialogOpen(o);
             if (!o) setSelectedTemplate(null);
@@ -2027,6 +2057,7 @@ function IssueDialog({
   dutyDoctors,
   altStatus = false,
   activePackage = null,
+  paymentItems = [],
 }: {
   template: FormTemplate;
   checkIn: CheckIn;
@@ -2041,6 +2072,9 @@ function IssueDialog({
   altStatus?: boolean;
   /** T-20260522-foot-ALT-BADGE AC-6: 활성 패키지 정보 — ALT OFF 레이저코드 호환성 검증 */
   activePackage?: ActivePackageInfo | null;
+  /** T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B: ⑪ 납부박스 payments 원장(status=active)
+   *  결제수단별 실수납. 부모(DocumentPrintPanel)가 로드한 활성 결제만 주입(취소결제 미표시). */
+  paymentItems?: PaymentItem[];
 }) {
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
@@ -2573,6 +2607,9 @@ function IssueDialog({
     //   (급여 전액 + 비급여 = 법정 ①+②+③+④, 공단 포함). ⑦ 공단부담(insurance_covered)·⑧ 환자부담
     //   (patient_amount = 본인부담금 + 비급여, 공단 제외 — AC7 B안)은 아래 applyBillingFallback 로 설정.
     //   ⚠ 기존 bill_receipt 총액 바인딩 경로 무접촉 — 신 form_key 전용 additive(AC5).
+    // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 급여 category remainder 토큰은 야간가산 fold
+    //   이후(최종 aggregate)에 계산해야 하므로 billItems 를 블록 밖으로 hoist(순서강제 §3.3).
+    let rnItems: Parameters<typeof computeBillReceiptNewCategoryBreakdown>[0] = [];
     if (template.form_key === 'bill_receipt_new') {
       if (footFb && footFb.grandTotal > 0) {
         base.total_amount = formatAmount(footFb.grandTotal);
@@ -2581,7 +2618,6 @@ function IssueDialog({
       // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 처치및수술료·검사료·기타 행 비급여 category 분해.
       //   SSOT billItems(bill_detail·bill_receipt 와 동일 buildFootBillDetailItems) 재사용 → footBillDetailCategory
       //   기준 처치/검사 매핑. footFb 없으면 service_charges 직결 폴백(전부 기타 행, 무파괴).
-      let rnItems: Parameters<typeof computeBillReceiptNewCategoryBreakdown>[0] = [];
       if (footFb) {
         rnItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '', {
           insuranceGrade: customerInsuranceGrade,
@@ -2594,6 +2630,8 @@ function IssueDialog({
           count: 1,
           days: 1,
           is_insurance_covered: item.is_insurance_covered,
+          // T-20260722 결함A: 폴백 경로도 급여분 copay 를 채워 remainder 정합(fillBillItemCopayment 없이 DB값 재사용).
+          copayment_amount: item.copayment_amount ?? undefined,
         }));
       }
       applyBillReceiptNewCategoryTokens(base, rnItems);
@@ -2730,20 +2768,14 @@ function IssueDialog({
       const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
       if (rawPatient > 0) base.patient_amount = formatAmount(patientFloored);
 
-      // T-20260721 AC-2(2d): ⑪ 납부한 금액 [합계] 칸 기본 바인딩.
-      //   RC(diagnose): prepaidAmount 미입력 시 {{prepaid_amount}} 를 공란으로 두어 ⑪ 합계칸이 비어
-      //   출력됐다(현장: '[납부한 금액] 합계칸에 [납부할 금액] 미기입'). 영수증=수납 후 발행이므로
-      //   미입력 기본값 = 납부할금액(=환자부담총액, 절사 후) 으로 표기하고 납부하지 않은 금액=0.
-      //   사전입력(prepaidAmount>0)이 있으면 그 값 우선(부분수납 표기, ITEMFIX ③ 유지). 비영속 FE-only 표시.
-      const prepaid = parseAmountStr(prepaidAmount);
-      const paidSum = prepaid > 0 ? prepaid : patientFloored;
-      if (paidSum > 0) {
-        base.prepaid_amount = formatAmount(paidSum);
-        base.unpaid_amount = formatAmount(Math.max(0, patientFloored - paidSum));
-      } else {
-        base.prepaid_amount = '';
-        base.unpaid_amount = '';
-      }
+      // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX ──
+      // 결함A: 급여 category 분해 토큰 주입. ★야간가산 fold 이후(여기)에 호출해야 진찰료 remainder 가
+      //   최종 aggregate({{copayment}}/{{insurance_covered}}) 기준으로 산출돼 Σ(행)=합계 정합(§3.3 순서강제).
+      applyBillReceiptNewCoveredTokens(base, rnItems);
+      // 결함B: ⑪ 납부한 금액 = payments 원장(status=active) 결제수단별 실수납 groupBy.
+      //   ⚠ prepaid_amount(납부할금액 가정값) 3경로 전파 폐기(REVERIFY-2: 완납 가정=허위영수증 FAIL).
+      //   미납 = 환자부담총액(절사 후) − 실수납 합계.
+      applyBillReceiptPaidBoxTokens(base, paymentItems, patientFloored);
     }
 
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.

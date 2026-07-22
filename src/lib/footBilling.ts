@@ -22,7 +22,7 @@
  */
 import { type InsuranceGrade, getBaseCopayRate, copayFromBase } from './insurance';
 import { supabase } from './supabase';
-import { formatAmount } from './format';
+import { formatAmount, parseAmount } from './format';
 
 // [CI-UNBLOCK] getBaseCopayRate 재수출(facade). footBilling 은 급여 본인부담 산정의 SSOT 파사드라
 //   copay 기본률 조회를 이 모듈 표면에서 함께 노출한다. T-20260715-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY
@@ -760,4 +760,121 @@ export function applyBillReceiptNewCategoryTokens(
   values.proc_noncov = bd.procNonCov > 0 ? formatAmount(bd.procNonCov) : '';
   values.exam_noncov = bd.examNonCov > 0 ? formatAmount(bd.examNonCov) : '';
   values.etc_noncov = bd.etcNonCov > 0 ? formatAmount(bd.etcNonCov) : '';
+}
+
+/**
+ * T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함A — 신양식(bill_receipt_new) 급여 항목행
+ *   category별 (본인/공단) 분해. 별지 제6호서식은 진찰료·검사료가 별개 법정 분류행이므로 급여 검사(KOH
+ *   균검사 등)는 '검사료' 행 급여열에 귀속돼야 한다(진찰료 aggregate 흡수 = 사실오류 표기). DA CANON-GATE
+ *   CONSULT-REPLY(MSG-20260722-105813-70hx) = GO(별도표기=canon).
+ *
+ * ▷ BINDING-1 (★CRITICAL, §2-2-6 인접): copay/fund split 은 **기존 buildFootBillDetailItems/fillBillItemCopayment
+ *   가 채운 항목별 copayment_amount 를 그대로 집계**한다 — 새 인라인 copay/fund 경로 발명 금지.
+ *   fund(공단) = 항목 급여총액 − copay. grade=null covered 는 상위(fillBillItemCopayment L650-652)에서
+ *   copay=급여전액으로 채워지므로 여기선 fund=0(공단=0) 이 자동 성립 → naive 30/70 미적용(phantom NHIS 방지).
+ *   copay ≤ 항목총액이 상위에서 보장(Math.min)되므로 fund ≥ 0.
+ *
+ * ▷ BINDING-2 (총계 불변 = 흡수 전제): 진찰료 행 = **최종 aggregate 잔여(remainder)**.
+ *   진찰료_copay = 최종 aggregate {{copayment}} − Σ(비진찰료 카테고리 copay), 공단 동일.
+ *   aggregate 는 이미 급여 검사분 leg 를 포함(buildFootBillDetailItems 가 copaymentTotal 을 전 급여항목에
+ *   비례배분) → 검사료행 신설은 흡수돼 있던 leg 의 재배치일 뿐 총계 증가 아님(구조적 canon-safe).
+ *   remainder ≥ 0 (aggregate ≥ Σ카테고리 copay). 방어적 max(0, ...) 로 음수 클램프.
+ * ▷ BINDING-3: aggregate 키({{copayment}}/{{insurance_covered}}, 합계①②·⑦)는 무접촉 — remainder 는
+ *   표시 전용 신 토큰(consult_copay/consult_ins)에만 실린다.
+ */
+export function computeBillReceiptNewCoveredBreakdown(
+  billItems: Array<{
+    category?: string;
+    amount: number;
+    count?: number;
+    days?: number;
+    is_insurance_covered: boolean;
+    copayment_amount?: number;
+  }>,
+): {
+  examCovered: number; examCopay: number;
+  procCovered: number; procCopay: number;
+} {
+  let examCovered = 0, examCopay = 0, procCovered = 0, procCopay = 0;
+  for (const it of billItems) {
+    if (!it.is_insurance_covered) continue;
+    const total = (it.amount ?? 0) * (it.count ?? 1) * (it.days ?? 1);
+    if (!(total > 0)) continue;
+    // BINDING-1: 상위가 채운 항목별 copayment_amount 재사용(신규 산출 금지).
+    const copay = Math.min(it.copayment_amount ?? 0, total);
+    if (it.category === '검사료') { examCovered += total; examCopay += copay; }
+    else if (it.category === '처치및수술료') { procCovered += total; procCopay += copay; }
+    // 그 외 급여(진찰료/기타/이학요법료)는 진찰료 행 remainder 로 자연 흡수 — 별도 버킷 없음.
+  }
+  return { examCovered, examCopay, procCovered, procCopay };
+}
+
+/**
+ * T-20260722 결함A 토큰 주입 — 반드시 **applyNightHolidaySurcharge 이후**(최종 aggregate 기준)에 호출.
+ *   야간가산분(진찰료 성격)이 fold 된 최종 {{copayment}}/{{insurance_covered}} 를 remainder 계산에 사용해야
+ *   Σ(행별)=합계 가 안 깨진다(핸드오프 §3.3 순서강제).
+ *
+ *   {{consult_copay}}/{{consult_ins}}  = 진찰료 행(= aggregate 잔여)
+ *   {{exam_copay}}/{{exam_ins}}        = 검사료 행 급여 본인/공단(급여 검사 存 시)
+ *   {{proc_copay}}/{{proc_ins}}        = 처치 및 수술료 행 급여 본인/공단(foot 통상 0 = 공란)
+ *
+ * 불변식: consult_copay + exam_copay + proc_copay == {{copayment}},
+ *         consult_ins  + exam_ins  + proc_ins  == {{insurance_covered}}.
+ */
+export function applyBillReceiptNewCoveredTokens(
+  values: Record<string, string>,
+  billItems: Parameters<typeof computeBillReceiptNewCoveredBreakdown>[0],
+): void {
+  const cb = computeBillReceiptNewCoveredBreakdown(billItems);
+  const examFund = Math.max(0, cb.examCovered - cb.examCopay);
+  const procFund = Math.max(0, cb.procCovered - cb.procCopay);
+  const aggCopay = parseAmount(values.copayment ?? '');            // 최종 aggregate 본인부담(①, post-surcharge)
+  const aggIns = parseAmount(values.insurance_covered ?? '');      // 최종 aggregate 공단부담(②, post-surcharge)
+  // 진찰료 행 = aggregate 잔여(비진찰료 카테고리 차감). 음수 방어(구조적으로 ≥0).
+  const consultCopay = Math.max(0, aggCopay - cb.examCopay - cb.procCopay);
+  const consultIns = Math.max(0, aggIns - examFund - procFund);
+  // 진찰료 행: 종전 {{copayment}}/{{insurance_covered}} aggregate 표기를 remainder 로 승계(항상 표기, 0→'0').
+  values.consult_copay = formatAmount(consultCopay);
+  values.consult_ins = formatAmount(consultIns);
+  // 검사료/처치 급여 행: 급여 항목 존재 시에만 표기(0 이어도 '0' 명시 = 급여 행 canon, buildBillReceiptFeeGridHtml 동형).
+  values.exam_copay = cb.examCovered > 0 ? formatAmount(cb.examCopay) : '';
+  values.exam_ins = cb.examCovered > 0 ? formatAmount(examFund) : '';
+  values.proc_copay = cb.procCovered > 0 ? formatAmount(cb.procCopay) : '';
+  values.proc_ins = cb.procCovered > 0 ? formatAmount(procFund) : '';
+}
+
+/**
+ * T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B — 신양식 ⑪ 납부한 금액 박스 payments 배선.
+ *   법정서식 ⑪은 **실수납(payments 원장) 결제수단별** 기재(세법 공제 직결). 종전 {{prepaid_amount}} =
+ *   납부할금액 가정값(FE 비영속) 전파 → 완납 가정(허위영수증) 위험 → payments method별 groupBy 로 교체.
+ *
+ *   ⚠ 합계 전파로 퉁치기 금지(REVERIFY-2 CRITICAL): 카드/현금/현금영수증 칸을 method별 각각 배선.
+ *   {{card_amount}}=카드 / {{cashreceipt_amount}}=현금영수증(현금·이체 中 현금영수증 발급분) /
+ *   {{cash_amount}}=그 외(현금·이체·멤버십) / {{paid_total}}=Σ(3칸)=실수납 총액 / {{unpaid_amount}}=⑩−⑪.
+ *
+ *   payments 는 status='active' 만 전달(호출부 필터, CHECKIN-RECEIPT-SOFTVOID-PHANTOM 계승 — 취소결제 미표시).
+ *
+ * @param patientAmount ⑧/⑩ 환자부담총액(10원 절사 후). unpaid = max(0, patientAmount − paidTotal).
+ */
+export function applyBillReceiptPaidBoxTokens(
+  values: Record<string, string>,
+  payments: Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null }>,
+  patientAmount: number,
+): void {
+  let card = 0, cash = 0, cashReceipt = 0;
+  for (const p of payments) {
+    const amt = p.amount ?? 0;
+    if (amt === 0) continue;
+    if (p.method === 'card') card += amt;
+    else if (p.cash_receipt_issued) cashReceipt += amt; // 현금/이체 中 현금영수증 발급분
+    else cash += amt;                                    // 현금·이체·멤버십(선불차감) 등
+  }
+  const paidTotal = card + cash + cashReceipt;
+  values.card_amount = card > 0 ? formatAmount(card) : '';
+  values.cash_amount = cash > 0 ? formatAmount(cash) : '';
+  values.cashreceipt_amount = cashReceipt > 0 ? formatAmount(cashReceipt) : '';
+  values.paid_total = paidTotal > 0 ? formatAmount(paidTotal) : '';
+  // 종전 템플릿 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지 — paid_total 과 동일값으로 동기화.
+  values.prepaid_amount = values.paid_total;
+  values.unpaid_amount = formatAmount(Math.max(0, patientAmount - paidTotal));
 }

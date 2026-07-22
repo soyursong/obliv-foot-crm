@@ -99,9 +99,11 @@ test.describe('BILLDOC 2종 정확성 — 총액 10원절사 정합(2c) / 납부
     expect(unpaid).toBe(0);
   });
 
-  test('2d: ⑪ 납부한금액 합계칸 = {{prepaid_amount}}, 납부하지않은금액 = {{unpaid_amount}} 바인딩', () => {
+  test('2d: ⑪ 납부한금액 합계칸 = {{paid_total}}, 납부하지않은금액 = {{unpaid_amount}} 바인딩', () => {
     const tpl = extractNewTemplate();
-    expect(tpl).toMatch(/합계 <span[^>]*>\{\{prepaid_amount\}\}<\/span>/);
+    // ⚠ T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX(결함B)로 SUPERSEDED:
+    //   ⑪ 합계 = FE 수기 {{prepaid_amount}}(완납 가정=허위영수증) → payments 원장 실수납 Σ = {{paid_total}}.
+    expect(tpl).toMatch(/합계 <span[^>]*>\{\{paid_total\}\}<\/span>/);
     expect(tpl).toMatch(/납부하지 않은 금액[\s\S]*?\{\{unpaid_amount\}\}/);
   });
 

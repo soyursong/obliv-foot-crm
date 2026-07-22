@@ -2179,7 +2179,10 @@ const BILL_RECEIPT_NEW_HTML = `
                진찰료 행에 표기가 정합. 前: 급여 aggregate(copayment/insurance_covered)가 아래 '처치 및 수술료'
                행에 배치돼 진찰료 칸 공란·처치행 오표기 → 진찰료 행으로 이동(중복표기 방지: 처치행에서는 제거).
                값 원천=service_charges(Revenue Insurance Split SSOT), 원장 무접촉. 합계 ①/②와 동일값 정합. -->
-          <tr><td class="rn-grp" rowspan="18">기<br>본<br>항<br>목</td><td>진찰료</td><td class="rn-num">{{copayment}}</td><td class="rn-num">{{insurance_covered}}</td><td class="rn-num"></td><td class="rn-num"></td></tr>
+          <!-- T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함A: 진찰료 행 = aggregate '잔여'(remainder)
+               = 최종 {{copayment}}/{{insurance_covered}} − 검사료/처치 급여분. 급여 검사(KOH)가 진찰료로 흡수되지
+               않도록 검사료 행에 별도 표기(별지6호). 합계 ①②·⑦의 aggregate 토큰은 무접촉(remainder 는 신 토큰). -->
+          <tr><td class="rn-grp" rowspan="18">기<br>본<br>항<br>목</td><td>진찰료</td><td class="rn-num">{{consult_copay}}</td><td class="rn-num">{{consult_ins}}</td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>입원료 (1인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>입원료 (2·3인실)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>입원료 (4인실 이상)</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
@@ -2194,8 +2197,10 @@ const BILL_RECEIPT_NEW_HTML = `
                T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-②: 비급여(전액본인부담) 칸에 category 집계 표시 —
                '처치 및 수술료'=풋케어 비급여({{proc_noncov}}), '검사료'=검사 비급여({{exam_noncov}}).
                (표시 전용, 집계 grain 무변경: {{proc_noncov}}+{{exam_noncov}}+{{etc_noncov}}=④{{non_covered}} 항상 정합.) -->
-          <tr><td>처치 및 수술료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{proc_noncov}}</td></tr>
-          <tr><td>검사료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num">{{exam_noncov}}</td></tr>
+          <!-- T-20260722 결함A: 급여 검사·처치가 있으면 해당 행 급여(본인/공단) 칸에 별도 표기(진찰료 흡수 금지).
+               foot 처치(풋케어)는 통상 비급여라 {{proc_copay}}/{{proc_ins}}=공란, 비급여 {{proc_noncov}} 표기. -->
+          <tr><td>처치 및 수술료</td><td class="rn-num">{{proc_copay}}</td><td class="rn-num">{{proc_ins}}</td><td class="rn-num"></td><td class="rn-num">{{proc_noncov}}</td></tr>
+          <tr><td>검사료</td><td class="rn-num">{{exam_copay}}</td><td class="rn-num">{{exam_ins}}</td><td class="rn-num"></td><td class="rn-num">{{exam_noncov}}</td></tr>
           <tr><td>영상진단료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>방사선치료료</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
           <tr><td>치료재료대</td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td><td class="rn-num"></td></tr>
@@ -2244,10 +2249,12 @@ const BILL_RECEIPT_NEW_HTML = `
           <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 출력 패널 '납부금액(사전입력)' 값이 있으면
                ⑪ 합계(납부한 금액)에 반영해 사전 출력. 비영속(FE-only 표시) — payments 수납원장 write 아님.
                미입력 시 공란(기존 동작 유지). 납부하지 않은 금액(⑩-⑪) = patient_amount − 사전입력. -->
-          <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;"></span></td></tr>
-          <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;"></span></td></tr>
-          <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;"></span></td></tr>
-          <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;">{{prepaid_amount}}</span></td></tr>
+          <!-- T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B: ⑪ 납부한 금액 = payments 원장 결제수단별
+               실수납(세법 공제 직결). 카드/현금영수증/현금 각 칸 method별 배선, 합계=Σ(3칸). 합계 전파 퉁치기 금지. -->
+          <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;">{{card_amount}}</span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;">{{cashreceipt_amount}}</span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;">{{cash_amount}}</span></td></tr>
+          <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;">{{paid_total}}</span></td></tr>
           <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num">{{unpaid_amount}}</td></tr>
           <tr><td>현금영수증 (&nbsp;&nbsp;&nbsp;)</td><td></td></tr>
           <tr><td>신분확인번호</td><td></td></tr>
