@@ -15,6 +15,16 @@ project_id = "rxlomoozakkjesdqjtvd"
 [functions.reservation-ingest-from-dopamine]
 verify_jwt = false
 
+# T-20260714-dopamine-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (reopen / runtime-plumbing fix):
+#   dopamine-visitcall-receiver 는 도파민 TM 내원콜 결과(reachable/absent) push 를 X-Callback-Secret
+#   (=DOPAMINE_CALLBACK_SECRET) 헤더로 인증한다(Supabase JWT 아님). 게이트웨이 기본 verify_jwt=true 면
+#   EF 코드 도달 전 401(Missing authorization header) → '내원콜 방문확인' sync 매번 실패.
+#   verify_jwt=false 로 게이트웨이 JWT 검사를 끄고 인증은 EF 내부 X-Callback-Secret 검증(index.ts §Auth,
+#   secret 불일치/누락 → 401 UNAUTHORIZED)에 위임 → secret 검증이 인증 단일 관문이므로 unauth hole 없음
+#   (reservation-ingest-from-dopamine 동일 컨벤션). ※원커밋 a00ed33a 에서 본 config 등록+실배포 둘 다 누락됨.
+[functions.dopamine-visitcall-receiver]
+verify_jwt = false
+
 # T-20260708-foot-REDPAY-CLOSING-TAB (activation_gate):
 #   redpay-reconcile 는 pg_cron(trigger_redpay_reconcile → net.http_post)이 X-Internal-Cron
 #   헤더만 실어 호출한다(Supabase JWT 아님). 게이트웨이 기본 verify_jwt=true 면 EF 코드 도달
