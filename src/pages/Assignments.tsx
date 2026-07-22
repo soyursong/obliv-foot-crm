@@ -98,6 +98,9 @@ interface CustomerLite {
   visit_type: string | null;
   lead_source: string | null;
   visit_route: string | null;
+  // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (AC-6): 2번차트 1구역 담당자 = read-only basis.
+  //   수동배정 select default 프리셋 소스로만 읽음. 배정 write 는 check_ins.consultant_id/therapist_id 에만(RED LINE).
+  assigned_staff_id: string | null;
 }
 
 export default function Assignments() {
@@ -221,7 +224,7 @@ export default function Assignments() {
       if (custIds.length > 0) {
         const { data: custRows } = await supabase
           .from('customers')
-          .select('id, visit_type, lead_source, visit_route')
+          .select('id, visit_type, lead_source, visit_route, assigned_staff_id')
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
@@ -270,7 +273,7 @@ export default function Assignments() {
           const slice = monthCustIds.slice(i, i + CHUNK);
           const { data: rows } = await supabase
             .from('customers')
-            .select('id, visit_type, lead_source, visit_route')
+            .select('id, visit_type, lead_source, visit_route, assigned_staff_id')
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
         }
@@ -379,6 +382,27 @@ export default function Assignments() {
         });
       }
       return deriveTherapyAxis(ci);
+    },
+    [customers],
+  );
+
+  // ── 수동배정 select default 값 (AC-6, read-only 프리셋) ────────────────────────
+  // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC:
+  //   상담 축 select 의 default 값 = 해당 방문 check_ins.consultant_id 가 이미 있으면 그 값(기존값 유지),
+  //   IS NULL(미배정)이면 2번차트 담당자(customers.assigned_staff_id)로 프리셋.
+  //   assigned_staff_id 는 read-only basis(RED LINE) — 이 값은 화면 default 표시일 뿐 자동 write 없음.
+  //   실제 배정 write 는 onChange → doManual → check_ins.consultant_id/therapist_id 에만 발생.
+  //   assigned_staff_id read 출처 = load() customers 벌크 select(park fetchAssignedStaffId 헬퍼와 동일 read
+  //   의미를 배치화한 것; 양방향연동/엔진 코드는 미병합). 치료(therapist_id) 축은 프리셋 대상 아님(consultant_id 한정).
+  const assignSelectValue = useCallback(
+    (ci: CheckIn, role: AssignmentRole): string => {
+      const assignedId = role === 'consult' ? ci.consultant_id : ci.therapist_id;
+      if (assignedId) return assignedId; // 값 있으면 기존값 유지
+      if (role === 'consult') {
+        const cu = ci.customer_id ? customers.get(ci.customer_id) : null;
+        return cu?.assigned_staff_id ?? ''; // consultant_id IS NULL → 2번차트 담당 프리셋
+      }
+      return '';
     },
     [customers],
   );
@@ -880,6 +904,8 @@ export default function Assignments() {
                 )}
                 {todayRows.map(({ ci, role }) => {
                   const assignedId = role === 'consult' ? ci.consultant_id : ci.therapist_id;
+                  // AC-6: 미배정(consultant_id IS NULL) 상담 축은 2번차트 담당자로 default 프리셋. 값 있으면 그 값.
+                  const selectVal = assignSelectValue(ci, role);
                   const axis = axisOf(ci, role);
                   return (
                     <tr key={ci.id} className="border-b last:border-0 hover:bg-muted/20">
@@ -914,7 +940,7 @@ export default function Assignments() {
                           <select
                             data-testid={role === 'consult' ? `assign-consult-select-${ci.id}` : undefined}
                             className="rounded border bg-background px-1.5 py-1 text-xs"
-                            value={assignedId ?? ''}
+                            value={selectVal}
                             disabled={busy}
                             onChange={(e) => void doManual(ci, role, e.target.value)}
                           >
@@ -926,9 +952,9 @@ export default function Assignments() {
                                 {(s.display_name ?? s.name).trim()}
                               </option>
                             ))}
-                            {/* 출근 풀에 없지만 현재 배정된 사람 보존 노출 */}
-                            {assignedId && !poolFor(role).some((s) => s.id === assignedId) && (
-                              <option value={assignedId}>{staffName(assignedId)} (비출근)</option>
+                            {/* 출근 풀에 없지만 현재 배정/프리셋된 사람 보존 노출 (프리셋=2번차트 담당이 비출근/비상담직군일 때 포함) */}
+                            {selectVal && !poolFor(role).some((s) => s.id === selectVal) && (
+                              <option value={selectVal}>{staffName(selectVal)} (비출근)</option>
                             )}
                           </select>
                         )}
