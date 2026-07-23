@@ -30,7 +30,7 @@
 //   - 일반 발송: service_role 키 또는 X-Internal-Cron 헤더
 //   - admin UI 액션: admin 역할 user JWT (supabase.auth.getUser() 검증)
 
-import { createClient } from "npm:@supabase/supabase-js@2.49.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // ── 환경 변수 ─────────────────────────────────────────────────────
 const SUPABASE_URL             = Deno.env.get("SUPABASE_URL")!;
