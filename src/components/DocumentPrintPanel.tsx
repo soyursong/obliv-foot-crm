@@ -142,7 +142,7 @@ import {
 } from '@/lib/footBilling';
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
-import { DocFormSettingsDialog } from '@/components/DocFormSettingsDialog';
+import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocFormSettingsDialog';
 
 // ─── 타입 ───
 
@@ -3481,6 +3481,40 @@ function IssueDialog({
                 <p className="text-[10px] text-emerald-700 leading-tight">
                   입력한 금액이 ⑪ 납부한 금액·납부하지 않은 금액(⑩-⑪)란에 반영되어 출력됩니다. 실제 수납 기록과는 무관한 표기용 값입니다.
                 </p>
+              </div>
+            )}
+
+            {/* T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE ②: 용도 선택을 주 발급 동선에 승격.
+                기존 [수정] 팝업(DocFormSettingsDialog)에만 있던 용도 칩(3종)+자유입력을 발급 폼에 바로 노출 →
+                그냥 출력해도 {{purpose}} 공란 방지. 확인서는 비게이트 서류라 사용 가능(소견서·진단서 제외).
+                ★향후치료의견(treatment_opinion) 재노출 아님 — 용도(purpose)만(총괄 VISITCERT-DISEASE-FUTURETX-HIDE 존중). */}
+            {['treat_confirm_code', 'treat_confirm_nocode', 'treat_confirm', 'visit_confirm'].includes(template.form_key) && (
+              <div className="rounded-lg bg-teal-50 border border-teal-200 p-3 space-y-2">
+                <Label className="text-xs font-semibold text-teal-800">서류 용도</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {DOC_PURPOSE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      data-testid={`docprint-purpose-${opt}`}
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all min-h-[40px] ${
+                        (allValues.purpose ?? '') === opt
+                          ? 'border-teal-400 bg-teal-100 text-teal-800 ring-1 ring-teal-300'
+                          : 'border-gray-200 bg-white text-muted-foreground hover:border-teal-300 hover:text-teal-700'
+                      }`}
+                      onClick={() => updateField('purpose', opt)}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={allValues.purpose ?? ''}
+                  onChange={(e) => updateField('purpose', e.target.value)}
+                  placeholder="직접 입력 (예: 학교 제출용)"
+                  className="text-sm bg-white"
+                  data-testid="docprint-purpose-input"
+                />
               </div>
             )}
 

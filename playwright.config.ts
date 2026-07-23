@@ -124,6 +124,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE: 진료/통원확인서 4결함 중 그룹A(L-006 무관) —
+        //   ①치료기간 '까지' 고아토큰({{discharge_date}}→{{visit_date}}) ②용도선택 발급동선 승격
+        //   ④레이아웃(빈 입원행 제거·라벨 정합). 템플릿 리터럴 정적 가드 + bindHtmlTemplate 실렌더 + 패널 소스 가드.
+        //   ★결함③ 연번호(PMW 발번)=L-006 게이트 pending → 본 커밋 미포함(무접촉 가드만). auth/server 불요.
+        '**/T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE.spec.ts',
         // T-20260721-foot-COPAY-PROVISIONAL-RELABEL: 진료비 서류 3종 급여항목 본인부담 확정 라벨 「본인부담금」
         //   재라벨 (§2-2-6 제3안 B, DA GO, 총괄 confirm). 법정 필수 칸 밖 설명 라인 정적 가드 + 렌더 노출 +
         //   공단값 canon(공단=0)·합계 산식 무변경 역가드. label-layer only(db_change=false). auth/server 불요.
@@ -504,6 +509,10 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE: unit 전용(템플릿 리터럴 정적 + bindHtmlTemplate
+        //   실렌더 + 패널 소스 가드). 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)
+        //   유입 차단. unit 에서만 실행.
+        '**/T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE.spec.ts',
         // T-20260721-foot-OPINIONDOC-DESK-BLANK: unit 전용 소스 가드 + bindHtmlTemplate 실렌더 spec →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260721-foot-OPINIONDOC-DESK-BLANK.spec.ts',

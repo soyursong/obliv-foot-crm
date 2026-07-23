@@ -374,27 +374,20 @@ ${COMMON_STYLE}
        병명(상병코드·상병명·특정기호) 테이블 + 진단확신도 분류 표시줄 제거.
        diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->
 
+  <!-- T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE ①④: 치료기간 '까지' 고아토큰({{discharge_date}}=미바인딩)
+       → {{visit_date}} 교체(단일방문 부터=까지, 통원확인서 관례 정합). 외래전용 확인서(입원 개념 없음)의
+       상시 빈 '입원' 행 제거 + 치료기간 셀 rowspan 해제(:265 진단서 '퇴원일' {{discharge_date}}은 무접촉). -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="2" style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
+        <td style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
         <td style="width:50px; background:#f8f8f8; text-align:center;">외래</td>
         <td>{{visit_date}}</td>
         <td style="width:30px; text-align:center;">부터</td>
-        <td>{{discharge_date}}</td>
+        <td>{{visit_date}}</td>
         <td style="width:30px; text-align:center;">까지</td>
         <td style="width:50px; text-align:center;">(치료</td>
         <td style="width:40px; text-align:right;">{{visit_days}}</td>
-        <td style="text-align:left;">일간)</td>
-      </tr>
-      <tr>
-        <td style="background:#f8f8f8; text-align:center;">입원</td>
-        <td></td>
-        <td style="text-align:center;">부터</td>
-        <td></td>
-        <td style="text-align:center;">까지</td>
-        <td style="text-align:center;">(치료</td>
-        <td style="text-align:right;"></td>
         <td style="text-align:left;">일간)</td>
       </tr>
     </tbody>
@@ -403,7 +396,7 @@ ${COMMON_STYLE}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td style="width:80px; background:#f8f8f8; vertical-align:top;">실통원일수<br>일괄입력</td>
+        <td style="width:80px; background:#f8f8f8; vertical-align:top;">통원일자</td>
         <td style="min-height:36px;">{{visit_date}}</td>
       </tr>
     </tbody>
@@ -579,10 +572,12 @@ ${COMMON_STYLE}
        병명(상병코드·상병명·특정기호) 테이블 + 진단확신도 분류 표시줄 제거.
        diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->
 
+  <!-- T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE ④: 외래전용 통원확인서(입원 개념 없음)의
+       상시 빈 '입원' 행 제거 + 치료기간 셀 rowspan 해제(진료확인서와 대칭). -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="2" style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
+        <td style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
         <td style="width:50px; background:#f8f8f8; text-align:center;">외래</td>
         <td>{{visit_date}}</td>
         <td style="width:30px; text-align:center;">부터</td>
@@ -592,23 +587,13 @@ ${COMMON_STYLE}
         <td style="width:36px; text-align:right;">{{visit_days}}</td>
         <td style="text-align:left;">일간)</td>
       </tr>
-      <tr>
-        <td style="background:#f8f8f8; text-align:center;">입원</td>
-        <td></td>
-        <td style="text-align:center;">부터</td>
-        <td></td>
-        <td style="text-align:center;">까지</td>
-        <td style="text-align:center;">(치료</td>
-        <td style="text-align:right;"></td>
-        <td style="text-align:left;">일간)</td>
-      </tr>
     </tbody>
   </table>
 
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td style="width:80px; background:#f8f8f8; vertical-align:top;">실통원일수<br>일괄입력</td>
+        <td style="width:80px; background:#f8f8f8; vertical-align:top;">통원일자</td>
         <td style="min-height:36px;">{{visit_date}}</td>
       </tr>
     </tbody>
