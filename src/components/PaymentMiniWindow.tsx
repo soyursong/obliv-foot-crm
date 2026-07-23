@@ -1713,6 +1713,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       return false;
     }
 
+    // ── T-20260723-foot-PKGSESSION-LINK-UNWIRED C3 하드닝 (재저장 clobber 방지) ──
+    //   consume RPC 가 이미 마킹한 check_in_services.package_session_id(죽은 FK 전방배선분)는
+    //   DELETE+reinsert 로 재저장하면 항상 NULL 로 clobber 되고, RPC 멱등성(재소비 0 insert)
+    //   때문에 재-마킹되지 않아 ⑨/Closing 정합이 드리프트한다. → DELETE 前 소비완료 마킹을
+    //   service_id 별 FIFO 큐로 스냅샷하고, reinsert row 에 package_session_id·is_package_session
+    //   을 재적용(별도 client UPDATE 없이 단일 INSERT 로 보존 = RPC밖 UPDATE 금지 준수).
+    const { data: priorMarked } = await supabase
+      .from('check_in_services')
+      .select('service_id, package_session_id')
+      .eq('check_in_id', checkIn.id)
+      .not('package_session_id', 'is', null);
+    const preservedQueue = new Map<string, string[]>();
+    for (const r of (priorMarked ?? []) as { service_id: string | null; package_session_id: string | null }[]) {
+      if (!r.service_id || !r.package_session_id) continue;
+      const q = preservedQueue.get(r.service_id) ?? [];
+      q.push(r.package_session_id);
+      preservedQueue.set(r.service_id, q);
+    }
+
     const { error: delError } = await supabase
       .from('check_in_services')
       .delete()
@@ -1733,14 +1752,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       //   → is_package_session=false 보장 → Closing 매출 제외에 안 걸림 + 영수증 패키지 항목 실금액 노출(AC-5)
       const isPkgSession =
         isDeductMode && prepaidIds.has(service.id) && !isTrialService(service);
-      return Array.from({ length: qty }, () => ({
-        check_in_id: checkIn.id,
-        service_id: service.id,
-        service_name: service.name,
-        price: unitPrice,
-        original_price: service.price,
-        is_package_session: isPkgSession,
-      }));
+      return Array.from({ length: qty }, () => {
+        // C3 하드닝: 소비완료 마킹 보존 재적용 (service_id 별 FIFO 팝). 남은 큐가 있으면
+        //   package_session_id 복원 + is_package_session=true 강제(재저장으로 사라지지 않음).
+        const q = preservedQueue.get(service.id);
+        const preservedPsid = q && q.length > 0 ? q.shift()! : null;
+        return {
+          check_in_id: checkIn.id,
+          service_id: service.id,
+          service_name: service.name,
+          price: unitPrice,
+          original_price: service.price,
+          is_package_session: isPkgSession || preservedPsid !== null,
+          package_session_id: preservedPsid,
+        };
+      });
     });
 
     if (rows.length > 0) {
@@ -1987,10 +2013,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       const counts: Record<string, number> = {
         heated_laser: 0, unheated_laser: 0, iv: 0, podologue: 0,
       };
+      // T-20260723-foot-PKGSESSION-LINK-UNWIRED (C1):
+      //   counts 와 동일 결정성으로 (service_id, session_type) deterministic 페어링을 qty 만큼 전개.
+      //   RPC 는 이 service_id 집합만 check_in_services 에 마킹 → 서버 session_type fuzzy 재매칭 금지.
+      const serviceSessions: { service_id: string; session_type: string }[] = [];
       for (const { service, qty } of selectedItems) {
         if (!prepaidIds.has(service.id) || isTrialService(service)) continue;
         const st = prepaidSessionType(service);
-        if (st) counts[st] += qty;
+        if (st) {
+          counts[st] += qty;
+          for (let i = 0; i < qty; i++) {
+            serviceSessions.push({ service_id: service.id, session_type: st });
+          }
+        }
       }
       if (counts.heated_laser + counts.unheated_laser + counts.iv + counts.podologue > 0) {
         const { data: consumeData, error: consumeErr } = await supabase.rpc(
@@ -2000,6 +2035,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             p_customer_id: checkIn.customer_id,
             p_clinic_id: checkIn.clinic_id,
             p_counts: counts,
+            p_service_sessions: serviceSessions,
           },
         );
         if (consumeErr) {
