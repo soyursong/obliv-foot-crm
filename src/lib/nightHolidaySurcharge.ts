@@ -80,7 +80,13 @@ export function resolveSurchargeRefDate(checkedInAt: string | null | undefined, 
 
 /**
  * 야간·공휴일 가산 대상 여부 (body canon isNightOrHoliday 동일).
- * - 일요일 종일 / 공휴일 종일(법정목록 ∪ 달력 빨간날) / 평일·토 18시 이후.
+ * - 일요일 종일 / 공휴일 종일(법정목록 ∪ 달력 빨간날) / 토요일 09시부터 종일 / 평일 18시 이후.
+ *
+ * ── T-20260723-foot-SATURDAY-SURCHARGE-CANON-IMPL (총괄 확정 canon) ──
+ *   토요일(dow===6)은 의원급 기준 09시부터 종일 공휴일과 동일한 30% 가산(13시 기준 아님, 오전 09~13시도 가산).
+ *   별도 토요일 분기값 신설 없이 기존 '공휴일'(holiday) 경로를 그대로 재사용(표기='공휴일' 체크).
+ *   토요일 야간(18시~) 겹침 → 공휴일 단일(기존 canon T-20260706, detectSurchargeKind가 holiday 우선 반환).
+ *   ⚠ cross-repo co-change: body 동일 canon(pair 티켓)과 동시 변경·동시 배포. 한쪽만 배포 금지.
  * @param refDate 판정 기준 일시(출력 시점 = new Date()).
  * @param isCalendarHoliday clinic_events(event_type='holiday') 달력 빨간날 소스 판정 결과.
  */
@@ -91,26 +97,33 @@ export function isNightOrHoliday(refDate: Date, isCalendarHoliday = false): bool
 
   if (dow === 0) return true; // 일요일 종일
   if (KOREAN_HOLIDAYS_2026.has(dateStr) || isCalendarHoliday) return true; // 공휴일 종일
-  if (hour >= 18) return true; // 18시 이후 (평일·토 공통)
+  if (dow === 6 && hour >= 9) return true; // 토요일 09시부터 종일 (공휴일 canon 동일)
+  if (hour >= 18) return true; // 18시 이후 (평일 야간)
   return false;
 }
 
 /**
  * 적용 가산 종류 단일 판별 (body canon detectSurchargeKind 동일).
  * 야간+공휴일 동시 성립 시 **공휴일 우선 단일 가산**(합산 X, 겹침규칙 canon 동일):
- *   - 공휴일(법정공휴일 ∪ 일요일 ∪ 달력 빨간날) → 'holiday' (시간대 무관 전일).
- *   - 공휴일 아니고 평일·토 18시 이후 → 'night'.
+ *   - 공휴일(법정공휴일 ∪ 일요일 ∪ 달력 빨간날 ∪ 토요일 09시~) → 'holiday' (전일 또는 09시부터 종일).
+ *   - 공휴일 아니고 평일 18시 이후 → 'night'.
  *   - 그 외 → null(가산 없음).
  * 반환은 항상 단일 → 이중 가산(합산) 구조적 차단(AC-3).
+ *
+ * ── T-20260723-foot-SATURDAY-SURCHARGE-CANON-IMPL (총괄 확정 canon, 재정의 금지) ──
+ *   토요일(dow===6)은 09시부터 종일 공휴일과 동일 취급 → 기존 'holiday' 경로 재사용(가산율 30% / +050 /
+ *   "(공휴일)" 명칭 그대로, 신규 발명 금지). 오전 09~13시도 가산(13시 기준 아님). 토요일 야간(18시~) 겹침도
+ *   holiday 우선 반환으로 공휴일 단일(기존 T-20260706 canon). 토요일 09시 이전은 미개원 → null(회귀0).
+ *   ⚠ cross-repo co-change: body 동일 canon(pair 티켓)과 로직 diff 일치 필수, 동시 배포.
  */
 export function detectSurchargeKind(refDate: Date, isCalendarHoliday = false): SurchargeKind | null {
   const dow = refDate.getDay(); // 0=Sun, 6=Sat
   const hour = refDate.getHours();
   const dateStr = toLocalDateStr(refDate);
 
-  // 공휴일 종일 우선 (법정공휴일 ∪ 일요일 ∪ 달력 빨간날) — 겹쳐도 공휴일 단일 적용
-  if (dow === 0 || KOREAN_HOLIDAYS_2026.has(dateStr) || isCalendarHoliday) return 'holiday';
-  // 평일·토요일 18시 이후 → 야간
+  // 공휴일 종일 우선 (법정공휴일 ∪ 일요일 ∪ 달력 빨간날 ∪ 토요일 09시~) — 겹쳐도 공휴일 단일 적용
+  if (dow === 0 || KOREAN_HOLIDAYS_2026.has(dateStr) || isCalendarHoliday || (dow === 6 && hour >= 9)) return 'holiday';
+  // 평일 18시 이후 → 야간
   if (hour >= 18) return 'night';
   return null;
 }
