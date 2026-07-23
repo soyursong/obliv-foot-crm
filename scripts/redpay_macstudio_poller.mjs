@@ -83,7 +83,7 @@ const INTERNAL_CRON_SECRET = cfg("INTERNAL_CRON_SECRET");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
-const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "511-60-00988"); // 종로 풋 (공유 merchant)
+const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "457-23-00938"); // 종로 풋 (457=롱레+풋 공유 merchant, 07-23 RedPay flip; 풋은 merchant_id 격리) — T-20260723-foot-REDPAY-LOOKUP-BIZNO-511TO457
 // REDPAY_TID_WHITELIST_ENV / REDPAY_MERCHANT_WHITELIST_ENV 는 도메인 스코프 해석이 필요하므로
 // REDPAY_DOMAIN 정의 이후로 이동(아래 domainScopedOverride 참조 — T-20260714 FIX phase2 결함2).
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
