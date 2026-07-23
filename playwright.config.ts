@@ -481,6 +481,11 @@ export default defineConfig({
         //   → 브라우저 flow wrong-target. 마스킹 산식 정본 미러(JS normalize NFC) + 마이그 정적 가드로
         //   NFC 교정 계약을 결정론 잠금. 실배포 함수 증거=SQL dry-run(_dryrun.mjs). auth/server/page 불요.
         '**/T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE.spec.ts',
+        // T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED: 키오스크 명단 전화 뒤4자리 '****' 이중마스킹
+        //   회귀 락(서버측 phone 계약 가드). RC=FE 이중마스킹(foot-checkin 별도 레포 KIOSK-PHONE-MASK-DOUBLESTAR
+        //   에서 delivered). 이 레포는 마스킹 소스 fn 소유 → phone 산식(뒤4자리 숫자, full-번호 노출 금지)
+        //   정본 미러 + 마이그 정적 가드. native 셀프체크인 렌더 부재(CONSOLIDATE) → unit. auth/server/page 불요.
+        '**/T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -543,6 +548,9 @@ export default defineConfig({
         // T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE: unit 전용 순수 산식 미러 + 마이그 정적 가드 spec →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE.spec.ts',
+        // T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED: unit 전용 순수 산식 미러 + 마이그 정적 가드 →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED.spec.ts',
       ],
     },
     {
