@@ -59,14 +59,31 @@ export async function verifySignature(
   return constantTimeEqual(expected, headerSig.trim().toLowerCase());
 }
 
-// ── 피처플래그 (AC-4) ────────────────────────────────────────────────────────
-//   PAYMENT_AUTO_MODE — 신규 자동화(push 적재) ON/OFF 토글.
+// ── 피처플래그 (AC-4 + 관측모드 T-20260723-foot-REDPAY-PLANB-OBSERVE-MODE) ──────
+//   PAYMENT_AUTO_MODE — 신규 자동화(push 적재)의 3-state 단일 토글.
 //   기본값 = OFF(safe). 문제 발생 시 즉시 기존 수기/폴러 방식으로 롤백.
-//     · OFF → 검증 + 2xx 응답 보장하되 임시 수납 레코드 미생성(수기 흐름 무영향).
-//     · ON  → redpay_raw_transactions 로 push 적재(임시 수납 레코드 생성).
+//     · off       → 검증 + 2xx 응답 보장하되 적재 skip(수기/폴러 흐름 무영향). 현행 100% 동일.
+//     · observe   → raw 전량 적재 + received_at(수신시각) 기록 + _mode:'observe' 마커.
+//                   ★ 매칭(pending_payment 조회/연결)·payments write 절대 미발화(관측 전용).
+//                   폴러(redpay-reconcile)가 _mode='observe' 행을 매칭 대상에서 제외(승격 금지).
+//     · auto(on)  → raw 적재(폴러가 후속 매칭). 향후 풀오토 경로(이번 build 범위 밖).
+//
+//   ▸ 단일 플래그 3-state 채택 근거(택1): 별도 PAYMENT_OBSERVE_MODE 플래그 신설 대신
+//     기존 PAYMENT_AUTO_MODE 값 도메인만 확장('observe' 추가). 두 플래그 병존 시
+//     (예: AUTO=on & OBSERVE=on) 발생하는 모드 충돌·해석 모호성을 원천 제거하고,
+//     결제 자동화 모드의 SSOT 를 단일 env 로 유지(기존 on/true/off 하위호환 불변).
+export type PaymentMode = "off" | "observe" | "auto";
+
+export function resolvePaymentMode(envValue: string | null | undefined): PaymentMode {
+  const v = (envValue ?? "").trim().toLowerCase();
+  if (v === "observe") return "observe";
+  if (v === "on" || v === "true") return "auto";
+  return "off";
+}
+
+/** 하위호환 alias — 'auto'(=기존 ON) 여부. 기존 호출부·테스트 계약 보존. */
 export function isPaymentAutoModeOn(envValue: string | null | undefined): boolean {
-  return (envValue ?? "").trim().toLowerCase() === "on"
-    || (envValue ?? "").trim().toLowerCase() === "true";
+  return resolvePaymentMode(envValue) === "auto";
 }
 
 // ── 이벤트 라우팅 (AC-2.4 / AC-3) ─────────────────────────────────────────────
@@ -135,11 +152,15 @@ export function parseTimestamp(s: string | null | undefined): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-// ── merge-safe webhook → redpay_raw_transactions 행 빌더 (DA req a/b/c) ──────────
+// ── merge-safe webhook → redpay_raw_transactions 행 빌더 (DA req a/b/c + 관측모드) ─
 //   ⚠ 폴러 소유 컬럼 (tid, root_trxid, matched_payment_id, match_rule) 은 절대 미포함.
 //     → onConflict UPDATE 시 폴러가 채운 매칭값을 클로버하지 않는다(longre buildWebhookRawRow 이식).
-//   ⚠ raw_payload 는 반드시 { _source:"webhook", ... } 마커로 감싼다(폴러 적재분과 출처 구분·감사).
+//     → ★ matched_payment_id 를 절대 세팅하지 않음 = 웹훅은 payments/pending_payment write 미발화(AC-2 안전요건).
+//   ⚠ raw_payload 는 반드시 { _source:"webhook", _mode, ... } 마커로 감싼다(폴러 적재분과 출처 구분·감사).
+//     → _mode='observe' = 폴러 매칭 제외 마커(관측 전용, 실 payments 승격 금지).
 //   ⚠ approved_at / cancelled_at 는 kind 에 따라 한쪽만 세팅(양쪽 동시 금지).
+//   ⚠ receivedAtIso 가 주어지면 received_at(웹훅 수신시각) 기록 — 지연 관측·TTL 확정 기준
+//     (T-20260723-foot-REDPAY-PLANB-DDL-BUILD received_at 컬럼, DA §②). 폴러 경로는 미기입=NULL.
 export function buildWebhookRawRow(
   clinicId: string,
   kind: Exclude<RedpayEventKind, "unsupported">,
@@ -148,6 +169,8 @@ export function buildWebhookRawRow(
   amount: number,
   data: RedpayWebhookData,
   envelope: RedpayWebhookEnvelope,
+  mode: Exclude<PaymentMode, "off"> = "auto",
+  receivedAtIso: string | null = null,
 ): Record<string, unknown> {
   const occurredIso = kind === "approved"
     ? parseTimestamp(data.approved_at ?? envelope.occurred_at)
@@ -160,9 +183,10 @@ export function buildWebhookRawRow(
     // amount 원부호 보존 — 취소 판별은 event_type/status 로 완료(AC-2.4, 부호 무판별).
     amount,
     approval_no:     data.approval_no ?? null,
-    // 원본 payload 전량 저장 + webhook 출처 마커(감사·재검증·멱등 추적).
+    // 원본 payload 전량 저장 + webhook 출처/모드 마커(감사·재검증·멱등 추적·폴러 매칭 제외).
     raw_payload: {
       _source:     "webhook",
+      _mode:       mode,      // 'observe' → 폴러 매칭 제외(관측 전용) / 'auto' → 폴러 매칭 대상.
       event_id:    envelope.event_id ?? null,
       event_type:  envelope.event_type ?? null,
       occurred_at: envelope.occurred_at ?? null,
@@ -176,7 +200,18 @@ export function buildWebhookRawRow(
     else                     row.cancelled_at = occurredIso;
   }
 
+  // 웹훅 수신시각(서버 now) — 지연 관측 지표. 컬럼 부재 환경 보호: 값이 주어질 때만 세팅.
+  if (receivedAtIso) row.received_at = receivedAtIso;
+
   return row;
+}
+
+// ── 관측행 판별 (폴러 매칭 제외 SSOT 술어) ──────────────────────────────────────
+//   raw_payload._mode === 'observe' 이면 관측 전용 적재행 → 폴러 매칭/대사 대상에서 제외
+//   (실 payments 승격 금지). 폴러 원본행(_mode 부재)·auto 웹훅행은 매칭 대상(false).
+export function isObserveRawPayload(rawPayload: unknown): boolean {
+  const m = (rawPayload as { _mode?: unknown } | null | undefined)?._mode;
+  return typeof m === "string" && m.trim().toLowerCase() === "observe";
 }
 
 /** amount 를 정수로 강제(문자열/부동소수 방어). 파싱 불가 → null. */

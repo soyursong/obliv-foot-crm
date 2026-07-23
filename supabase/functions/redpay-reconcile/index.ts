@@ -41,10 +41,17 @@ import {
   detectAmountMismatch,
   detectRefundNotInCrm,
   formatAlertMessage,
+  isObserveRow,
   type RawTransaction,
   type CrmPayment,
   type ReconEvent,
 } from "./matcher.ts";
+
+// ── 관측행 매칭 제외 (T-20260723-foot-REDPAY-PLANB-OBSERVE-MODE) ─────────────────
+//   웹훅 관측모드 적재행(raw_payload._mode='observe')은 실 payments 로 승격 금지 →
+//   매칭/대사 대상에서 제외한다. PostgREST or-필터: _mode 키가 없거나(폴러 원본·auto)
+//   'observe' 가 아닌 행만 포함. (NULL 은 neq 로 걸러지므로 is.null 브랜치로 명시 포함.)
+const OBSERVE_EXCLUDE_FILTER = "raw_payload->>_mode.is.null,raw_payload->>_mode.neq.observe";
 
 // ── 픽스처 (DRY_RUN 모드용) ─────────────────────────────────────────────────
 import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" };
@@ -513,13 +520,14 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
 async function runMatcher(clinicId: string): Promise<{ matched: number; events: number }> {
   const now = new Date();
 
-  // 1. 미매칭 raw 거래 조회 (Y 상태 + 미매칭)
-  const { data: rawTrxList, error: rawErr } = await supabase
+  // 1. 미매칭 raw 거래 조회 (Y 상태 + 미매칭). ★ 관측행(_mode='observe') DB-측 제외.
+  const { data: rawTrxListRaw, error: rawErr } = await supabase
     .from("redpay_raw_transactions")
     .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id,raw_payload")
     .eq("clinic_id", clinicId)
     .eq("external_status", "Y")
     .is("matched_payment_id", null)
+    .or(OBSERVE_EXCLUDE_FILTER)
     .order("approved_at", { ascending: true })
     .limit(1000);
 
@@ -527,7 +535,13 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
     console.error("[runMatcher][foot] raw 조회 오류:", rawErr.message);
     return { matched: 0, events: 0 };
   }
-  if (!rawTrxList?.length) {
+  // JS-측 2차 방어(DB 필터 회귀 대비): 관측행이 새어 들어와도 매칭 대상에서 제외.
+  const observeDroppedY = (rawTrxListRaw ?? []).filter((r) => isObserveRow(r)).length;
+  const rawTrxList = (rawTrxListRaw ?? []).filter((r) => !isObserveRow(r));
+  if (observeDroppedY > 0) {
+    console.warn(`[runMatcher][foot][OBSERVE-GUARD] 관측행 ${observeDroppedY}건 매칭 제외(Y, JS 2차 방어) — 실 payments 승격 금지.`);
+  }
+  if (!rawTrxList.length) {
     console.log("[runMatcher][foot] 미매칭 raw Y건 없음 — 매칭 불필요");
     return { matched: 0, events: 0 };
   }
@@ -701,13 +715,20 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   const missingAtVan = detectMissingAtVan(allCrmPayments, now, REDPAY_ALERT_CHANNEL);
   allEvents.push(...missingAtVan);
 
-  // 환불 추적 (N/X/M raw 건)
-  const { data: cancelledRaw } = await supabase
+  // 환불 추적 (N/X/M raw 건). ★ 관측행(_mode='observe') DB-측 제외 + JS 2차 방어.
+  const { data: cancelledRawAll } = await supabase
     .from("redpay_raw_transactions")
     .select("id,clinic_id,external_trxid,external_status,amount,approval_no,root_trxid,tid,approved_at,matched_payment_id,raw_payload")
     .eq("clinic_id", clinicId)
     .in("external_status", ["N", "X", "M"])
+    .or(OBSERVE_EXCLUDE_FILTER)
     .limit(100);
+
+  const observeDroppedCancel = (cancelledRawAll ?? []).filter((r) => isObserveRow(r)).length;
+  const cancelledRaw = (cancelledRawAll ?? []).filter((r) => !isObserveRow(r));
+  if (observeDroppedCancel > 0) {
+    console.warn(`[runMatcher][foot][OBSERVE-GUARD] 관측행 ${observeDroppedCancel}건 환불추적 제외(N/X/M, JS 2차 방어).`);
+  }
 
   if (cancelledRaw?.length) {
     // 환불 추적: reconciled CRM payments 조회 (clinic_id 필터 금지 — AC-2)

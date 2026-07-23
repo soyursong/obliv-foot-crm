@@ -11,6 +11,8 @@ import {
   constantTimeEqual,
   verifySignature,
   isPaymentAutoModeOn,
+  resolvePaymentMode,
+  isObserveRawPayload,
   classifyEvent,
   coerceAmount,
   validateEnvelope,
@@ -122,7 +124,7 @@ Deno.test("business_no 방어 필터 (AC-2.6, 서울오리진)", () => {
   assertEquals(normalizeBusinessNo("511-60-00988"), "5116000988");
 });
 
-Deno.test("피처플래그 PAYMENT_AUTO_MODE (AC-4)", () => {
+Deno.test("피처플래그 PAYMENT_AUTO_MODE (AC-4) — 하위호환 alias", () => {
   assert(isPaymentAutoModeOn("on"));
   assert(isPaymentAutoModeOn("ON"));
   assert(isPaymentAutoModeOn("true"));
@@ -130,6 +132,77 @@ Deno.test("피처플래그 PAYMENT_AUTO_MODE (AC-4)", () => {
   assertFalse(isPaymentAutoModeOn(""));
   assertFalse(isPaymentAutoModeOn(undefined));
   assertFalse(isPaymentAutoModeOn("0"));
+  // 관측모드는 auto 가 아님 → isPaymentAutoModeOn=false (auto 전용 하위호환 계약 보존)
+  assertFalse(isPaymentAutoModeOn("observe"));
+});
+
+// ── 관측모드 3-state 토글 (T-20260723-foot-REDPAY-PLANB-OBSERVE-MODE) ────────────
+Deno.test("resolvePaymentMode: off / observe / auto 3-state", () => {
+  assertEquals(resolvePaymentMode("observe"), "observe");
+  assertEquals(resolvePaymentMode("OBSERVE"), "observe");
+  assertEquals(resolvePaymentMode(" Observe "), "observe");
+  assertEquals(resolvePaymentMode("on"), "auto");
+  assertEquals(resolvePaymentMode("true"), "auto");
+  assertEquals(resolvePaymentMode("off"), "off");
+  assertEquals(resolvePaymentMode(""), "off");
+  assertEquals(resolvePaymentMode(undefined), "off");
+  assertEquals(resolvePaymentMode("0"), "off");
+  assertEquals(resolvePaymentMode("garbage"), "off");
+});
+
+Deno.test("isObserveRawPayload: _mode='observe' 판별", () => {
+  assert(isObserveRawPayload({ _mode: "observe" }));
+  assert(isObserveRawPayload({ _mode: "OBSERVE" }));
+  assertFalse(isObserveRawPayload({ _mode: "auto" }));
+  assertFalse(isObserveRawPayload({ _source: "webhook" })); // _mode 부재
+  assertFalse(isObserveRawPayload({}));                     // 폴러 원본행
+  assertFalse(isObserveRawPayload(null));
+  assertFalse(isObserveRawPayload(undefined));
+});
+
+Deno.test("buildWebhookRawRow (관측모드): _mode='observe' + received_at + 매칭 컬럼 0 (AC-1/AC-2)", () => {
+  const env = baseEnvelope();
+  const v = validateEnvelope(env);
+  assert(v.ok);
+  if (!v.ok) return;
+  const receivedAt = "2026-07-23T06:05:00.000Z";
+  const row = buildWebhookRawRow(
+    "clinic-uuid", v.kind, v.status, String(v.data.trxid), v.amount, v.data, env, "observe", receivedAt,
+  );
+  const rp = row.raw_payload as Record<string, unknown>;
+  // 관측 마커 — 폴러 매칭 제외 키.
+  assertEquals(rp._mode, "observe", "관측행은 _mode='observe' 마커 필수(폴러 제외)");
+  assertEquals(rp._source, "webhook");
+  // 수신시각 기록(지연 관측 지표).
+  assertEquals(row.received_at, receivedAt, "관측행은 received_at 기록");
+  // ★ AC-2 안전요건: 매칭/payments write 유발 컬럼 절대 미포함.
+  assertFalse("matched_payment_id" in row, "관측행에 matched_payment_id 미포함(승격 금지)");
+  assertFalse("match_rule" in row, "관측행에 match_rule 미포함");
+  assert(isObserveRawPayload(rp), "빌더 산출 raw_payload 는 관측행으로 판별되어야(폴러 제외)");
+});
+
+Deno.test("buildWebhookRawRow (auto): _mode='auto' — 폴러 매칭 대상(관측 아님)", () => {
+  const env = baseEnvelope();
+  const v = validateEnvelope(env);
+  assert(v.ok);
+  if (!v.ok) return;
+  const row = buildWebhookRawRow(
+    "clinic-uuid", v.kind, v.status, String(v.data.trxid), v.amount, v.data, env, "auto", "2026-07-23T06:05:00.000Z",
+  );
+  const rp = row.raw_payload as Record<string, unknown>;
+  assertEquals(rp._mode, "auto");
+  assertFalse(isObserveRawPayload(rp), "auto 행은 관측행 아님(폴러 매칭 대상)");
+});
+
+Deno.test("buildWebhookRawRow: receivedAtIso 미지정 시 received_at 미포함(컬럼 부재 환경 보호)", () => {
+  const env = baseEnvelope();
+  const v = validateEnvelope(env);
+  assert(v.ok);
+  if (!v.ok) return;
+  const row = buildWebhookRawRow("c", v.kind, v.status, String(v.data.trxid), v.amount, v.data, env);
+  assertFalse("received_at" in row, "receivedAtIso 미지정 → received_at 미포함");
+  // 기본 mode='auto' 하위호환.
+  assertEquals((row.raw_payload as Record<string, unknown>)._mode, "auto");
 });
 
 Deno.test("멱등 키 일관성: 동일 event → 동일 (trxid,status,amount)", () => {

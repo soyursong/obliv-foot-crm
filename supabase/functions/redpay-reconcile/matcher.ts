@@ -143,6 +143,17 @@ export const TIER2_WINDOW_MS = 30 * 60 * 1000;
 /** 환불/취소 상태 목록 */
 export const CANCELLED_STATUSES = new Set(["N", "X", "M"]);
 
+// ── 관측행 판별 (T-20260723-foot-REDPAY-PLANB-OBSERVE-MODE) ──────────────────────
+//   웹훅 관측모드(PAYMENT_AUTO_MODE=observe)가 적재한 행은 raw_payload._mode='observe'.
+//   ★ 관측 전용 = 매칭/대사 대상에서 제외(실 payments 승격 금지). 폴러 원본행(_mode 부재)·
+//   auto 웹훅행(_mode='auto')은 매칭 대상(false). DB 쿼리 제외 + 이 술어로 JS-측 2차 방어.
+export function isObserveRow(
+  raw: { raw_payload?: Record<string, unknown> | null } | null | undefined,
+): boolean {
+  const m = raw?.raw_payload?._mode;
+  return typeof m === "string" && m.trim().toLowerCase() === "observe";
+}
+
 // ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 
 /**

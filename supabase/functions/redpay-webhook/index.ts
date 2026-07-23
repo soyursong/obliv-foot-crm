@@ -26,7 +26,8 @@
 // ── 환경 변수 ─────────────────────────────────────────────────────────────────
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  — 자동 주입
 //   REDPAY_WEBHOOK_SECRET   — X-WEBHOOK-SIGNATURE 검증 시크릿(env/vault, 평문 git 금지)
-//   PAYMENT_AUTO_MODE       — 'on'(활성) / 그 외(기본 OFF, 수기/폴러 유지). 롤백 스위치.
+//   PAYMENT_AUTO_MODE       — 3-state 단일 토글: 'observe'(관측 전용 적재·매칭 미발화) /
+//                             'on'|'true'(auto 적재·폴러 매칭) / 그 외(기본 off, 수기/폴러 유지). 롤백 스위치.
 //   REDPAY_CLINIC_SLUG      — clinic 해석 안정키(기본 'jongno-foot'). business_no mutable 회피.
 //   REDPAY_WEBHOOK_BUSINESS_NO_ALLOW — 허용 사업자번호 CSV(미설정 시 REDPAY_BUSINESS_NO fallback)
 //   REDPAY_BUSINESS_NO      — 서울오리진 풋 사업자번호(방어필터 fallback allow)
@@ -40,7 +41,7 @@ import {
 } from "../_shared/redpay-foot-merchants.ts";
 import {
   verifySignature,
-  isPaymentAutoModeOn,
+  resolvePaymentMode,
   validateEnvelope,
   buildWebhookRawRow,
   type RedpayWebhookEnvelope,
@@ -182,22 +183,47 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(200, { ok: true, status: "dropped_other_center" });
   }
 
-  // ── 6. 피처플래그 (AC-4) — OFF 면 임시 수납 레코드 미생성(수기/폴러 흐름 무영향) ──
-  if (!isPaymentAutoModeOn(PAYMENT_AUTO_MODE)) {
-    console.log(`${LOG} PAYMENT_AUTO_MODE OFF → 검증 통과·2xx 응답하되 적재 skip (event_id=${eventId}).`);
+  // ── 6. 피처플래그 (AC-4 + 관측모드) — 3-state: off / observe / auto ──────────────
+  //   off     → 적재 skip(수기/폴러 흐름 무영향). 현행 100% 동일(롤백 스위치).
+  //   observe → raw 전량 적재 + received_at 기록 + _mode:'observe' 마커. ★ 매칭·payments write 미발화.
+  //   auto    → raw 적재(폴러가 후속 매칭). 향후 풀오토(이번 build 범위 밖이나 하위호환 보존).
+  const mode = resolvePaymentMode(PAYMENT_AUTO_MODE);
+  if (mode === "off") {
+    console.log(`${LOG} PAYMENT_AUTO_MODE off → 검증 통과·2xx 응답하되 적재 skip (event_id=${eventId}).`);
     return json(200, { ok: true, status: "skipped_flag_off" });
   }
 
-  // ── 7. 적재 (임시 수납 레코드 / 취소 레코드) — 멱등 upsert (AC-2.2 / AC-3) ────────
+  // ── 7. 적재 (관측/auto 공통 raw upsert) — 멱등 upsert (AC-2.2 / AC-3) ────────────
   const clinicId = await resolveClinicId();
   if (!clinicId) {
     // clinic 해석 실패 = 일시 장애로 간주 → 500(레드페이 재시도로 유실 방지).
     return json(500, { ok: false, error: "clinic_resolve_failed" });
   }
 
+  // 웹훅 수신시각 = 서버 now(occurred_at 대비 지연 관측 기준). received_at 컬럼(DDL-BUILD)에 기입.
+  const receivedAtIso = new Date().toISOString();
+
   // merge-safe row builder(DA req a/b/c): 폴러 소유 컬럼(tid/root_trxid/matched_payment_id/
-  //   match_rule) 미포함 + raw_payload _source:"webhook" 마커 + approved_at/cancelled_at 한쪽만.
-  const row = buildWebhookRawRow(clinicId, kind, status, String(data.trxid).trim(), amount, data, envelope);
+  //   match_rule) 미포함 + raw_payload _source:"webhook"+_mode 마커 + approved_at/cancelled_at 한쪽만
+  //   + received_at(수신시각). observe 모드는 _mode:'observe' 로 폴러 매칭에서 제외된다.
+  const row = buildWebhookRawRow(
+    clinicId, kind, status, String(data.trxid).trim(), amount, data, envelope, mode, receivedAtIso,
+  );
+
+  // ── ★ AC-2 안전 자기검증 (관측 전용 무접촉 불변식) ──────────────────────────────
+  //   observe/auto 공통: 웹훅은 payments/pending_payment 에 write 하지 않는다. row 빌더가
+  //   폴러/매칭 소유 컬럼(matched_payment_id/match_rule)을 절대 포함하지 않음을 런타임 재확인.
+  //   위반 시 즉시 중단(500) — 관측이 실 매출/매칭을 건드릴 위험을 코드레벨 차단.
+  if ("matched_payment_id" in row || "match_rule" in row) {
+    console.error(`${LOG}[SAFETY] row 에 매칭 소유 컬럼 혼입 감지 → 적재 중단(관측 무접촉 위반). event_id=${eventId}.`);
+    return json(500, { ok: false, error: "observe_safety_violation" });
+  }
+  if (mode === "observe") {
+    console.log(
+      `${LOG}[OBSERVE] 관측 전용 적재 — raw+received_at 저장, 매칭(pending_payment)·payments write 미발화(0건). ` +
+        `event_id=${eventId} trxid=${row.external_trxid} received_at=${receivedAtIso}.`,
+    );
+  }
   try {
     // onConflict (external_trxid, external_status, amount) = 폴러와 동일 유니크 키.
     //   ignoreDuplicates:false → onConflict DO UPDATE(longre e7a0607 이식). merge-safe 빌더가
@@ -215,12 +241,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json(500, { ok: false, error: "db_upsert_failed" });
     }
     console.log(
-      `${LOG} ${kind} 적재(멱등 upsert) — `
+      `${LOG} ${kind} 적재(멱등 upsert, mode=${mode}) — `
         + `trxid=${row.external_trxid} status=${row.external_status} amount=${row.amount} event_id=${eventId}.`,
     );
     return json(200, {
       ok: true,
-      status: "recorded",
+      status: mode === "observe" ? "observed" : "recorded",
+      mode,
       kind,
       event_id: eventId,
     });
