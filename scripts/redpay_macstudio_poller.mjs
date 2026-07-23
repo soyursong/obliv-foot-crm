@@ -83,9 +83,10 @@ const INTERNAL_CRON_SECRET = cfg("INTERNAL_CRON_SECRET");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
-const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "457-23-00938"); // 종로 풋 (457=롱레+풋 공유 merchant, 07-23 RedPay flip; 풋은 merchant_id 격리) — T-20260723-foot-REDPAY-LOOKUP-BIZNO-511TO457
-// REDPAY_TID_WHITELIST_ENV / REDPAY_MERCHANT_WHITELIST_ENV 는 도메인 스코프 해석이 필요하므로
-// REDPAY_DOMAIN 정의 이후로 이동(아래 domainScopedOverride 참조 — T-20260714 FIX phase2 결함2).
+// REDPAY_BUSINESS_NO / REDPAY_TID_WHITELIST_ENV / REDPAY_MERCHANT_WHITELIST_ENV 는 도메인 스코프 해석이
+// 필요하므로 REDPAY_DOMAIN 정의 이후로 이동(아래 domainScopedOverride 참조).
+//   - whitelist: T-20260714 FIX phase2 결함2.
+//   - business_no: T-20260723-foot-REDPAY-BODY-SONGDO-SCOPE-LIVEPROBE-FLIP (subfix④, DA §6 HIGH catch).
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const POLL_MODE = cfg("REDPAY_POLL_MODE", "incremental"); // incremental | daily_full
 const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
@@ -113,6 +114,26 @@ function domainScopedOverride(baseKey) {
 }
 const REDPAY_TID_WHITELIST_ENV = domainScopedOverride("REDPAY_TID_WHITELIST");
 const REDPAY_MERCHANT_WHITELIST_ENV = domainScopedOverride("REDPAY_MERCHANT_WHITELIST");
+
+// ── business_no 도메인 스코프화 (T-20260723-foot-REDPAY-BODY-SONGDO-SCOPE-LIVEPROBE-FLIP, subfix④) ──
+//   [문제 — DA CONSULT-REPLY §6 HIGH catch] LOOKUP-BIZNO-511TO457(deployed 07-23 20:20)이 공유
+//     ~/.env.redpay* 의 비-스코프 REDPAY_BUSINESS_NO 를 457 로 flip. body(도수) 인스턴스는 plist 에
+//     REDPAY_BUSINESS_NO 미설정 → 공유 env 파일의 457 을 '상속' → body 폴러가 457 pull.
+//     그러나 live-probe(scripts/T-...-BODY-SONGDO-SCOPE-LIVEPROBE.mjs, 07-23) 확증:
+//       · 457-23-00938 = 오블리브 서울오리진점(종로) — 종로 풋/도수(1777269·1777276)/피부.
+//       · 506-60-03455 = 오블리브송도점(송도 신법인) — 송도 도수(1777540751 "도수2" 191건 ₩46.2M 등)·풋·롱래.
+//     ⇒ 비-스코프 457 상속은 whitelist 오염(T-20260714 결함2)과 '동형' 도메인 경계 붕괴.
+//   [해결] whitelist 와 동일 domainScopedOverride 적용:
+//     1) 도메인 스코프 키 REDPAY_BUSINESS_NO_<DOMAIN>(예: _BODY) 최우선.
+//     2) 비-스코프 REDPAY_BUSINESS_NO 는 네이티브(foot) 도메인만 상속. non-foot 은 무시.
+//     3) 스코프 미설정 non-foot 은 DOMAIN default 폴백. body=default 없음 → REDPAY_BUSINESS_NO="" →
+//        L529 guard hard-throw(fail-closed). "457 을 조용히 상속해 오수집"보다 "명시 전까지 정지"가 안전.
+//   ★ body 확정 스코프(종로 457 vs 송도 506 vs 양쪽) = 송도 신법인 귀속(DA §5 finance/CEO gate) +
+//     merchant whitelist 동반갱신 필요(현 body whitelist 1777274-276 은 506 송도 도수 merchant 와 무교집).
+//     → 순수 env flip 만으로 불충분. env 원자 적용 = supervisor secrets 게이트 / 스코프 확정 = planner FOLLOWUP.
+const DOMAIN_BUSINESS_NO_DEFAULTS = { foot: "457-23-00938" }; // foot=종로(서울오리진). body: 명시 필수(default 없음 = fail-closed).
+const REDPAY_BUSINESS_NO = domainScopedOverride("REDPAY_BUSINESS_NO")
+  || (DOMAIN_BUSINESS_NO_DEFAULTS[REDPAY_DOMAIN] ?? "");
 // ── clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①) ──
 //   business_no 는 mutable·overloaded(세무 cert 정정으로 foot 511→457 divergence → clinic 조회 실패
 //   → L558 hard-throw 로 폴러 종료 → 실시간 적재 12h 중단). clinic '해석'은 안정키 slug 우선.
