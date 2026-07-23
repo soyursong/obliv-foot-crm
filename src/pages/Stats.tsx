@@ -9,6 +9,7 @@ import {
   fetchTherapistSummary,
   fetchTherapistServices,
   fetchTmAggregate,
+  fetchVisitRouteStats,
   resolveRange,
   describeStatsError,
   type CategoryRow,
@@ -18,6 +19,7 @@ import {
   type TherapistSummaryRow,
   type TherapistServiceRow,
   type TmAggregateData,
+  type VisitRouteResvRow,
   type StatsRangePreset,
 } from '@/lib/stats';
 import { downloadConsultantSalesReport } from '@/lib/consultantSalesExport';
@@ -29,8 +31,9 @@ import ConsultantSection from '@/components/stats/ConsultantSection';
 import NoshowReturningSection from '@/components/stats/NoshowReturningSection';
 import TherapistStatsSection from '@/components/stats/TherapistStatsSection';
 import TmAggregateSection from '@/components/stats/TmAggregateSection';
+import VisitRouteSection from '@/components/stats/VisitRouteSection';
 
-type StatsTab = 'revenue' | 'therapist' | 'tm';
+type StatsTab = 'revenue' | 'therapist' | 'tm' | 'visit';
 
 // T-20260610-foot-STATS-TM-AGGREGATE-TAB: 'TM집계' 탭 추가.
 // AC5/AC6 — role 기반 가시성: TM 계정은 'TM집계' 탭만, 그 외 역할은 전체 + TM집계.
@@ -38,6 +41,8 @@ const TABS: { key: StatsTab; label: string }[] = [
   { key: 'revenue',   label: '매출 통계' },
   { key: 'therapist', label: '치료사 통계' },
   { key: 'tm',        label: 'TM집계' },
+  // T-20260723-foot-STAT-NAEWON-TAB: '내원 통계'(방문경로별 내원 건수) — TM집계 바로 오른쪽.
+  { key: 'visit',     label: '내원 통계' },
 ];
 
 const PRESETS: { key: StatsRangePreset; label: string }[] = [
@@ -93,6 +98,7 @@ export default function Stats() {
   const [therapistSummary, setTherapistSummary]     = useState<TherapistSummaryRow[]>([]);
   const [therapistServices, setTherapistServices]   = useState<TherapistServiceRow[]>([]);
   const [tmData, setTmData]                         = useState<TmAggregateData | null>(null);
+  const [visitRoutes, setVisitRoutes]               = useState<VisitRouteResvRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
@@ -123,6 +129,11 @@ export default function Stats() {
           const data = await fetchTmAggregate(clinic.id, from, to);
           if (aborted) return;
           setTmData(data);
+        } else if (tab === 'visit') {
+          // T-20260723-foot-STAT-NAEWON-TAB: 방문경로별 내원(방문 완료 예약) read-only 집계.
+          const rows = await fetchVisitRouteStats(clinic.id, from, to);
+          if (aborted) return;
+          setVisitRoutes(rows);
         } else {
           const [summary, services] = await Promise.all([
             fetchTherapistSummary(clinic.id, from, to),
@@ -269,6 +280,8 @@ export default function Stats() {
           rangeFrom={rangeFrom}
           rangeTo={rangeTo}
         />
+      ) : tab === 'visit' ? (
+        <VisitRouteSection rows={visitRoutes} loading={loading} />
       ) : (
         <TherapistStatsSection
           summary={therapistSummary}

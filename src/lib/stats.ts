@@ -527,6 +527,54 @@ export function tmRoleIds(staffMap: Record<string, TmStaffInfo>): Set<string> {
   return s;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260723-foot-STAT-NAEWON-TAB: 내원 통계 (방문경로별 내원 건수) — 조회 전용(READ-ONLY)
+//
+// grain(티켓 CONFLICT-DETAIL 사전 확정): "내원 1건 = 방문 완료 예약 1건"(예약 grain).
+//   ∴ 집계 소스 = reservations.visit_route (예약경로). customers.visit_route 는 always-sync 되는
+//   동일 축이나 본 통계는 예약 grain이므로 reservations 를 본다.
+// 방문 완료 정의(STEP1 #5, 매출 통계와 동일 제외조건): status='checked_in'(체크인=내원완료).
+//   'cancelled'(취소)·'no_show'(노쇼) 제외.
+// 날짜 축: reservation_date(예약일) — 예약관리 화면과 동일 축(AC "1일 건수 = 예약관리 방문완료 건수" 정합).
+// ⚠ SELECT 전용 — 어떤 write 도 하지 않는다(db_change=false). 신규 RPC/VIEW 추가 없음
+//   (STATS-RPC anon revoke sweep 정책 무접촉). 방문경로 값 하드코딩 없음 — 집계는 실제 데이터값 기준,
+//   렌더 목록은 드롭다운 SSOT(VISIT_ROUTE_OPTIONS)에서 동적 생성(컴포넌트 측).
+// 지점 스코프: .eq('clinic_id', clinicId) — 기존 통계와 동일.
+// PostgREST max-rows=1000 cap 우회 = cursor pagination(.range), TM집계 패턴 재사용.
+// ─────────────────────────────────────────────────────────────────────────
+export interface VisitRouteResvRow {
+  id: string;
+  reservation_date: string;      // yyyy-MM-dd (예약일)
+  visit_route: string | null;    // 방문경로(예약경로). NULL/빈값 = 미입력
+  status: string;
+}
+
+export async function fetchVisitRouteStats(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<VisitRouteResvRow[]> {
+  const PAGE_SIZE = 1000;
+  const all: VisitRouteResvRow[] = [];
+  let offset = 0;
+  for (let page = 0; page < 30; page++) {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, reservation_date, visit_route, status')
+      .eq('clinic_id', clinicId)
+      .eq('status', 'checked_in')                 // 방문 완료(체크인)만. 취소·노쇼 자동 제외.
+      .gte('reservation_date', from)              // 시작일 당일 포함
+      .lte('reservation_date', to)                // 종료일 당일 포함
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as VisitRouteResvRow[];
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
 /** 카테고리 코드 → 한국어 표시 */
 export function categoryLabel(code: string): string {
   switch (code) {
