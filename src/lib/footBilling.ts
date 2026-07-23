@@ -248,6 +248,13 @@ export interface BillingService {
    * 미래 적재 시 우선 사용하도록 optional 로 보유. 미적재 시 category_label 로 폴백.
    */
   hira_category?: string | null;
+  /**
+   * HIRA 소정점수(services.hira_score) — 급여 수가 = ROUND(hira_score × clinics.hira_unit_value).
+   * T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여항목 copay base 는 이 점수 파생이 권위
+   *   (§2-2-1, DA da_decision_foot_hira_copay_base_grain_reconcile_20260723). services.price 를
+   *   급여 base 로 쓰던 것은 §2-2-1 위반(잠복 버그) — price 는 비급여 base 전용.
+   */
+  hira_score?: number | null;
   price?: number;
 }
 
@@ -299,10 +306,29 @@ export function computeFootBilling(
   // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (REOPEN/RC): 등급 미상(copayRate=null) 급여 방문의
   //   본인부담 폴백 정책을 호출 컨텍스트별로 분리. 기본값 'covered_full' = 기존 DOCPRINT-RECUR 그대로
   //   (서류출력 경로 회귀 0). 수납잔액(payments grain)만 'general_default' 를 지정한다(§아래 주석).
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default' },
+  // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE (C안): 급여항목 copay base 이원화 해소.
+  //   opts.hiraUnitValue 전달 시 급여(getTaxClass='급여')×hira_score 존재 항목의 base 를 서버
+  //   calc_copayment 와 동일하게 ROUND(hira_score × hira_unit_value) 로 산출(services.price 사용 중단).
+  //   미전달(undefined/null) 시 = 기존 price base 그대로(전 호출부 회귀 0 · backward-compat).
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
-  const amountOf = (i: FootBillingItem) => i.unitPrice * i.qty;
+  // ── 급여 base 권위 소스 (DA da_decision_…_20260723 Q1): ROUND(hira_score × hira_unit_value).
+  //   적용 대상 = 급여(getTaxClass='급여') AND hira_score 존재 AND hira_unit_value(clinics, §2-2-0) 전달.
+  //   그 외(비급여 / hira_score NULL / hira_unit_value 미전달) = 기존 unitPrice(price) base 유지.
+  //   하드코딩·연도 상수 금지 — hira_unit_value 는 호출부(clinics)에서 취득해 주입한다.
+  const hiraUnitValue = opts?.hiraUnitValue ?? null;
+  const coveredBaseUnit = (svc: BillingService): number | null => {
+    if (
+      hiraUnitValue != null &&
+      svc.hira_score != null &&
+      getTaxClass(svc, insuranceGrade) === '급여'
+    ) {
+      return Math.round(svc.hira_score * hiraUnitValue);
+    }
+    return null; // price base 유지
+  };
+  const amountOf = (i: FootBillingItem) => (coveredBaseUnit(i.service) ?? i.unitPrice) * i.qty;
   const grandTotal = pricingItems.reduce((s, i) => s + amountOf(i), 0);
 
   const totalByTax: Record<TaxClass, number> = {
@@ -394,7 +420,7 @@ export async function loadFootBillingItems(
   const serviceIds = [...new Set(rows.map((r) => r.service_id))];
   const { data: svcData } = await supabase
     .from('services')
-    .select('id, name, service_code, hira_code, hira_category, vat_type, is_insurance_covered, category_label, price')
+    .select('id, name, service_code, hira_code, hira_category, hira_score, vat_type, is_insurance_covered, category_label, price')
     .in('id', serviceIds);
 
   const svcMap = new Map<string, BillingService>(
@@ -433,6 +459,26 @@ export async function loadCustomerInsuranceGrade(
     .eq('id', customerId)
     .maybeSingle();
   return (data?.insurance_grade ?? null) as InsuranceGrade | null;
+}
+
+/**
+ * T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE — clinics.hira_unit_value(환산지수, 원) 로드.
+ *
+ * 급여항목 base = ROUND(hira_score × hira_unit_value) 산출에 주입하는 점당단가.
+ *   §2-2-0(stale-drift 안티패턴 금지): 환산지수는 매년 고시(2025=94.1 → 2026=95.60)되므로
+ *   코드 하드코딩·연도 상수 박기 금지 → clinics 에서만 취득한다. NULL(미세팅)이면 급여 base 는
+ *   기존 price 로 폴백(computeFootBilling 이 hiraUnitValue=null → coveredBaseUnit null → price base).
+ */
+export async function loadClinicHiraUnitValue(
+  clinicId: string | null | undefined,
+): Promise<number | null> {
+  if (!clinicId) return null;
+  const { data } = await supabase
+    .from('clinics')
+    .select('hira_unit_value')
+    .eq('id', clinicId)
+    .maybeSingle();
+  return (data?.hira_unit_value ?? null) as number | null;
 }
 
 /**
@@ -1012,7 +1058,7 @@ export async function loadAlreadyPaidAmount(
   const serviceIds = [...new Set(rows.map((r) => r.service_id))];
   const { data: svcData } = await supabase
     .from('services')
-    .select('id, name, service_code, hira_code, hira_category, vat_type, is_insurance_covered, category_label, price')
+    .select('id, name, service_code, hira_code, hira_category, hira_score, vat_type, is_insurance_covered, category_label, price')
     .in('id', serviceIds);
   const svcMap = new Map<string, BillingService>(
     ((svcData ?? []) as BillingService[]).map((s) => [s.id, s]),

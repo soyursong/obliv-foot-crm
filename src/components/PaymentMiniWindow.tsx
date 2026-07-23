@@ -124,6 +124,8 @@ import {
   type CustomerOutstanding,
   // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백(PATH-4 수렴).
   loadEffectiveInsuranceGrade,
+  // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base = ROUND(hira_score × 환산지수) 미러용 점당단가.
+  loadClinicHiraUnitValue,
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: bill_detail 급여구분/본인·공단 split SSOT
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
@@ -873,6 +875,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
 
+  // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: clinics.hira_unit_value(환산지수) — 급여항목 base 를
+  //   서버 calc_copayment 와 동일하게 ROUND(hira_score × hira_unit_value) 로 미러하기 위한 점당단가.
+  //   null 이면 computeFootBilling 이 기존 price base 로 폴백(§2-2-0 하드코딩 금지, clinics 취득만).
+  const [clinicHiraUnitValue, setClinicHiraUnitValue] = useState<number | null>(null);
+
   // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: RAW customers.insurance_grade (미가공 원본, 폴백 없음).
   //   셀프체크인 신규 고객은 이 값이 null → 데스크(PMW)에서 캡처 유도. 위 effective 는 폴백 때문에
   //   "실제 미입력 여부" 판정에 못 쓴다(폴백값이 있으면 non-null). 원본 null 여부는 이 hook 으로만 판정.
@@ -1017,6 +1024,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setRxItemDosages({});
     // T-20260526-foot-COPAY-MINI-BUG: 리셋
     setCustomerInsuranceGrade(null);
+    // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 환산지수 리셋
+    setClinicHiraUnitValue(null);
     // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금 리셋
     setCustomerOutstanding(null);
     // T-20260526-foot-PMW-SIDE-MENU-FEAT: 리셋
@@ -1031,6 +1040,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .then((grade) => {
           setCustomerInsuranceGrade(grade);
         });
+    }
+
+    // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: clinics.hira_unit_value 로드(급여 base ROUND 미러).
+    //   best-effort — 실패/NULL 시 computeFootBilling 이 기존 price base 로 폴백(회귀 0).
+    if (checkIn.clinic_id) {
+      loadClinicHiraUnitValue(checkIn.clinic_id)
+        .then((v) => setClinicHiraUnitValue(v))
+        .catch(() => setClinicHiraUnitValue(null));
     }
 
     // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 고객 미수금(잔금) 비동기 로드.
@@ -1587,7 +1604,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     qty,
     unitPrice: customAmounts.get(service.id) ?? service.price ?? 0,
   }));
-  const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade);
+  // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base = ROUND(hira_score × 환산지수) 미러
+  //   (hiraUnitValue 주입 → coveredTotal/공단부담이 명세 calc_copayment 와 정합, 1원 divergence 제거).
+  const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, {
+    hiraUnitValue: clinicHiraUnitValue,
+  });
   const grandTotal = footBilling.grandTotal;                 // 총 진료비(급여 전액 + 비급여) — 서류 총진료비/합계 표시용
   const totalByTax: Record<TaxClass, number> = footBilling.totalByTax;
   const coveredTotal = footBilling.coveredTotal;             // 급여 진료비 전액(본인 + 공단)
@@ -1603,6 +1624,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   //   general(30%)로 본인부담을 산정('general_default') → grade=general/null 모두 자부담 8,900 로 수렴.
   const payBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, {
     unknownGradeCopay: 'general_default',
+    // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(명세 정합).
+    hiraUnitValue: clinicHiraUnitValue,
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
@@ -1699,6 +1722,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }));
     const deductBilling = computeFootBilling(deductItems, customerInsuranceGrade, {
       unknownGradeCopay: 'general_default',
+      // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(선수금차감 청구 base 정합).
+      hiraUnitValue: clinicHiraUnitValue,
     });
     return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal;
   };
