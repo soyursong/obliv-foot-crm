@@ -126,28 +126,31 @@ test.describe('T-20260715-foot-CONSULTFEE-WRITEPATH-INSURANCE-SPLIT', () => {
     expect(migSql()).toMatch(/NOT COALESCE\(v_service\.is_insurance_covered, false\)[\s\S]*RAISE EXCEPTION/);
   });
 
-  // ── PMW 클라이언트 라우팅 ──────────────────────────────────────────────────
-  test('client: PMW executeAutoDone 가 covered 진찰료를 RPC 로 라우팅', () => {
+  // ── PMW 클라이언트 라우팅 (T-20260723 [a1] 필터 확장 반영) ───────────────────
+  test('client: PMW executeAutoDone 가 covered 급여건을 RPC 로 라우팅 (is_insurance_covered 단독)', () => {
     const s = pmwSrc();
     expect(s).toContain("record_insurance_consult_payment");
-    // covered && consultation 항목 필터
-    expect(s).toMatch(/service\.is_insurance_covered === true &&\s*service\.hira_category === 'consultation'/);
+    // [a1] 발화 조건 = is_insurance_covered 단독. hira_category predicate 삭제됨(dead-path 봉인).
+    expect(s).toMatch(/\.filter\(\(\{ service \}\) => service\.is_insurance_covered === true\)/);
+    expect(s).not.toContain("service.hira_category === 'consultation'");
   });
 
   test('client: 단일 결제수단·비선수금 게이트 + 나머지(비급여) plain remainder', () => {
     const s = pmwSrc();
     expect(s).toMatch(/!isDeductSettle && splits\.length === 1/);
     expect(s).toContain('remainder');
-    // covered consult 없으면 기존 splits 그대로(회귀 0)
+    // covered 없으면 기존 splits 그대로(회귀 0)
     expect(s).toContain('effectiveSplits = splits');
   });
 
-  test('client: RPC 에러 시 throw (부분성공 방지 — atomic)', () => {
+  test('client: RPC 에러 시 throw (부분성공 방지 — atomic) + data_incomplete 만 흡수', () => {
     const s = pmwSrc();
-    // 실제 RPC 호출부(supabase.rpc)에서 에러 시 throw
     const callIdx = s.indexOf("supabase.rpc(\n          'record_insurance_consult_payment'");
     expect(callIdx).toBeGreaterThan(-1);
-    expect(s.slice(callIdx, callIdx + 800)).toMatch(/if \(rpcErr\) throw rpcErr/);
+    const block = s.slice(callIdx, callIdx + 1600);
+    // [a1] data_incomplete 는 per-svc skip(전체 수납 미차단), 그 외 에러는 throw(원자성 유지).
+    expect(block).toMatch(/data_incomplete/i);
+    expect(block).toMatch(/throw rpcErr/);
   });
 
   // ── 롤백 (ADDITIVE) ────────────────────────────────────────────────────────

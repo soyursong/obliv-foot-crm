@@ -1884,6 +1884,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       } | null;
       if (!r) continue;
       if (r.data_incomplete) continue; // 자격/수가 미비 = 금액 날조 금지, 재정산 경로 위임
+      // ── T-20260723-foot-INSCONSULT-WRITEPATH-FKLINK-FOLD [B1 완전봉합] ──────────
+      //   원자 RPC(record_insurance_consult_payment) 의 W5 grade-confirmed zeroing 을 폴백에 이식.
+      //   calc_copayment 는 grade 미확정(unverified/NULL)을 general 정률(30%)로 반환(data_incomplete=false)
+      //   → 폴백이 반환값을 그대로 적재하면 phantom 공단(70%)이 명세에 확정 적재된다(§2-2-4 판정2 위반).
+      //   [a1] 이 splits===1 경로 전 급여건을 원자 RPC 로 흡수하지만, 선수금차감·분할결제(parent C4) 경로는
+      //   여전히 폴백이 유일 명세 write-path → 폴백에도 동일 default-deny 를 이식해야 완전봉합.
+      //   두 경로(원자·폴백)가 동일 §2-2-1b default-deny → grade≠확정 시 공단부담=0 보수 적재로 정합.
+      //   (copay 는 잠정 30% 유지 = 재정산 경로 전제. 원자 RPC W5 와 byte-identical.)
+      const gradeConfirmed =
+        r.applied_grade != null && r.applied_grade !== 'unverified';
+      const coveredAmount = gradeConfirmed ? r.insurance_covered_amount : 0;
       rows.push({
         clinic_id: checkIn.clinic_id,
         check_in_id: checkIn.id,
@@ -1892,7 +1903,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         is_insurance_covered: true,
         hira_score: svc.hira_score ?? null,
         base_amount: r.base_amount,
-        insurance_covered_amount: r.insurance_covered_amount,
+        insurance_covered_amount: coveredAmount,
         copayment_amount: r.copayment_amount,
         exempt_amount: r.exempt_amount,
         customer_grade_at_charge: r.applied_grade,
@@ -1938,38 +1949,37 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     };
 
     // ── T-20260715-foot-CONSULTFEE-WRITEPATH-INSURANCE-SPLIT ─────────────────
-    //   급여 진찰료(건강보험) 수납 write-path. 기존엔 진찰료가 plain payment(tax_type=null)로만 남아
+    //   T-20260723-foot-INSCONSULT-WRITEPATH-FKLINK-FOLD [a1] 발화필터 확장 (DA RATIFY A-a1):
+    //   급여 수납 write-path. 기존엔 급여건이 plain payment(tax_type=null)로만 남아
     //   §2-1 NULL→면세→비급여 오귀속 + 명세(service_charges) 0건 → 매출 급여 칸 영구 0.
-    //   해소: covered 진찰료(is_insurance_covered && hira_category='consultation') 항목의 본인부담분을
-    //   서버 원자 RPC record_insurance_consult_payment 로 라우팅 → service_charge(is_insurance_covered=TRUE,
+    //   해소: covered(is_insurance_covered=TRUE) 항목의 본인부담분을 서버 원자 RPC
+    //   record_insurance_consult_payment 로 라우팅 → service_charge(is_insurance_covered=TRUE,
     //   calc_copayment 반환 적재) + copay payment(tax_type NULL=면세, service_charge_id FK) 원자 생성 + 멱등.
-    //   나머지(비급여·비진찰료 급여 등)만 기존 plain payment 경로 유지(회귀 0). going-forward only(W7).
+    //   ★[a1] 발화 조건은 is_insurance_covered 단독 — hira_category predicate 삭제. hira_category(진찰/처치/
+    //     검사)는 display/분석 분류축이며 write-path 게이트로 쓰지 않는다(dead-path 근본원인 봉인, DA BINDING).
+    //     → 진찰(AA154/254/222)뿐 아니라 처치(M0111)·검사(D620300HZ KOH) 등 전 급여건이 명세+FK-copay 로 적재됨.
+    //   나머지(비급여)만 기존 plain payment 경로 유지(회귀 0). going-forward only(W7).
     //   ⚠ 단일 결제수단(splits.length===1)·비선수금 경로에서만 RPC 사용 — 분할/선수금 혼합은 parent C4
-    //     활성화(1:N 배분) 소관(DA Q3, 본 티켓 blocking 아님) → 기존 동선 그대로.
+    //     활성화(1:N 배분) 소관(DA Q3, 본 티켓 blocking 아님) → 기존 동선 그대로(폴백 snapshot 이 명세 담당).
     const isDeductSettle = taxType === '선수금';
-    const coveredConsultServices =
+    const coveredServices =
       !isDeductSettle && splits.length === 1
         ? Array.from(
             new Map(
               pricingItems
-                .filter(
-                  ({ service }) =>
-                    service.is_insurance_covered === true &&
-                    service.hira_category === 'consultation',
-                )
+                .filter(({ service }) => service.is_insurance_covered === true)
                 .map(({ service }) => [service.id, service]),
             ).values(),
           )
         : [];
 
     let effectiveSplits = splits;
-    if (coveredConsultServices.length > 0) {
+    if (coveredServices.length > 0) {
       const visitDate =
         checkIn.checked_in_at?.slice(0, 10) ??
         new Date().toISOString().slice(0, 10);
       let consultCopaySum = 0;
-      for (const svc of coveredConsultServices) {
-        // atomic RPC — 부분성공(payment만/명세만) 방지: 에러 시 throw 로 전체 수납 중단.
+      for (const svc of coveredServices) {
         const { data: rpcData, error: rpcErr } = await supabase.rpc(
           'record_insurance_consult_payment',
           {
@@ -1981,13 +1991,38 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             p_visit_date: visitDate,
           },
         );
-        if (rpcErr) throw rpcErr;
+        if (rpcErr) {
+          // [B1 완전봉합/§2-2-1b] calc_copayment data_incomplete(hira_score/hira_unit_value/자격 미비)
+          //   → RPC 가 명세·공단 확정 적재를 fail-safe 로 BLOCK(EXCEPTION). 금액 날조 금지.
+          //   해당 svc 는 원자 적재 skip → copay 는 lump payment 에 잔존(plain 경로), 폴백 snapshot 도
+          //   동일 data_incomplete skip(L1886) → phantom 공단 재적재 없음. 필터 확장(진찰 전용→전 급여)이
+          //   data_incomplete svc 로 인해 전체 수납을 막지 않도록 per-svc 로 흡수(회귀 방어).
+          //   그 외 에러(RLS/DB/method 등)는 부분성공(명세만/payment만) 방지 위해 throw 로 전체 수납 중단.
+          if (/data_incomplete/i.test(rpcErr.message ?? '')) {
+            console.warn(
+              '급여 svc data_incomplete — 원자 명세 skip(재정산 경로 위임):',
+              svc.id,
+              rpcErr.message,
+            );
+            continue;
+          }
+          throw rpcErr;
+        }
         const row = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as
-          | { copayment_amount?: number }
+          | { copayment_amount?: number; payment_id?: string | null }
           | null;
-        consultCopaySum += row?.copayment_amount ?? 0;
+        // [G2] cross_crm_write_rowcheck_standard: 성공(error=null)인데 0-row(payment_id 부재) =
+        //   RLS/스코프 불일치로 인한 silent write-failure 가능성 → "성공" 오인 금지.
+        //   RPC 는 정상 경로(신규 생성 or 멱등 hit)에서 반드시 1행(payment_id 비-NULL) 반환 →
+        //   row/payment_id 부재는 명세·FK-copay 미적재 신호 → throw 로 부분성공 차단.
+        if (!row || !row.payment_id) {
+          throw new Error(
+            `급여 수납 원자 write 검증 실패(0-row, service=${svc.id}) — service_charge/copay payment 미적재 의심`,
+          );
+        }
+        consultCopaySum += row.copayment_amount ?? 0;
       }
-      // 진찰료 copay 는 RPC 가 이미 payment 를 생성 → plain 에서 제외. 나머지(비급여 등)만 plain insert.
+      // 급여 copay 는 RPC 가 이미 FK-copay payment 를 생성 → lump 에서 제외. 나머지(비급여 등)만 plain insert.
       const remainder = Math.max(0, splits[0].amount - consultCopaySum);
       effectiveSplits =
         remainder > 0 ? [{ method: splits[0].method, amount: remainder }] : [];
