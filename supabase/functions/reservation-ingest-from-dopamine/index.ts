@@ -165,6 +165,23 @@ function isE164(phone: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(phone);
 }
 
+// ── T-20260723-foot-COMPANION-REALPHONE-RESVPOPUP-DROP: 동행 실연락처 폴백 파생기 ──
+//   [진원] 동행 push(external_id `<parent>_comp_<phone_e164>`)가 companion_phone 필드를
+//          어느 키에도 동봉하지 않음 → reservations.customer_real_phone NULL 착지 → 예약상세 팝업
+//          '동행자 연락처' 공란. 그러나 동행 실연락처는 composite external_id 접미사(`_comp_<phone>`)에
+//          결정적으로 실려 풋CRM 에 이미 도착·저장됨(실측 확증). ⇒ payload 필드 소진 시 external_id 에서 파생.
+//   [안전] 동행(is_companion)에서만·표시전용(customer_real_phone landing)·identity 무접촉:
+//          external_id 는 이미 저장된 값 → PII 표면 증가 0. 엄격 phone 패턴(선택 '+' + 8~15 digits)만
+//          수용 → 이름/토큰 오탐 0. phone_e164/customer_phone/provision 경로 미투입(§461 collapse 무관, 비키·INV-3).
+function companionPhoneFromExternalId(extId: string | undefined): string | undefined {
+  if (!extId) return undefined;
+  const marker = '_comp_';
+  const idx = extId.lastIndexOf(marker);
+  if (idx < 0) return undefined;
+  const suffix = extId.slice(idx + marker.length).trim();
+  return /^\+?\d{8,15}$/.test(suffix) ? suffix : undefined;
+}
+
 // ── T-20260719-foot-DOPAMINE-RESCHED-INGEST-5XX-DIAG: scheduled_at 경계 캐스팅 방어 검증기 ──
 //   도파민 reschedule('날짜 변경') push 가 date-only/malformed scheduled_at 을 운반할 때
 //   substring 파생 date/time 이 비-DATE/비-TIME → RPC 인자(p_reservation_date DATE / p_reservation_time
@@ -261,11 +278,17 @@ Deno.serve(async (req) => {
   // T-20260721-foot-COMPANION-PHONE-EXPOSE: 동행 본인 실 연락처 스냅샷(§4-2b 비키·표시전용, INV-3).
   //   표준 필드 customer_real_phone 우선 → companion_phone 별칭(도파민 emit 명칭 변형) 폴백. 셋 다 opaque 표시축.
   //   ★ phone_e164(동행 identity 토큰=DUMMY/공유폰)로는 절대 폴백 금지 — 표시전용 실연락처만 착지(§461 collapse 재도입 차단).
-  const customerRealPhoneIn =
+  //   T-20260723-foot-COMPANION-REALPHONE-RESVPOPUP-DROP: payload 필드 3소진(undefined/공백) 시
+  //   동행 composite external_id 접미사(`_comp_<phone>`)에서 실연락처 파생(표시전용 폴백). 동행에서만.
+  const customerRealPhoneFromPayload =
     (customer['customer_real_phone'] as string | undefined) ??
     (customer['companion_phone'] as string | undefined) ??
     (reservation['companion_phone'] as string | undefined) ??
     (body['companion_phone'] as string | undefined);
+  const customerRealPhoneIn =
+    (typeof customerRealPhoneFromPayload === 'string' && customerRealPhoneFromPayload.trim() !== '')
+      ? customerRealPhoneFromPayload
+      : (isCompanion ? companionPhoneFromExternalId(externalId) : undefined);
 
   // 이름은 동행 포함 필수(표시명 복원 근거).
   if (!name) {
