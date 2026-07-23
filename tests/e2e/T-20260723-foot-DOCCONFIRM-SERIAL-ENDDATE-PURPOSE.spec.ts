@@ -121,10 +121,12 @@ test.describe('결함②: 용도 선택 주 발급 동선 노출', () => {
   });
 });
 
-// ── 결함③ 연번호: 본 커밋 미포함 무접촉 가드 (L-006 pending) ──────────────
-test.describe('결함③ 가드: 연번호(PMW) 본 커밋 미변경 (L-006 게이트 pending)', () => {
+// ── 결함③ 연번호: 템플릿 토큰 보존 가드 (PMW 발번 배선은 NIGHTHOLIDAY-PMW-UNWIRED spec 소유) ──
+// NOTE: 결함③(PMW 발번)은 후속 단일 PMW pass(T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED, L-006 CLOSED)에서 구현됨.
+//   본 describe 는 그 배선이 의존하는 템플릿 토큰({{visit_no}}/{{purpose}})의 무손상만 회귀-가드한다.
+test.describe('결함③ 가드: 연번호/용도 템플릿 토큰 보존 (PMW 배선의 렌더 계약)', () => {
   test('purpose 토큰은 살아있고 연번호(visit_no) 토큰도 템플릿에 보존', () => {
-    // 결함②로 purpose 렌더 경로는 유지, 연번호 토큰은 무손상(PMW 발번은 별도 pass)
+    // 결함②로 purpose 렌더 경로는 유지, 연번호 토큰은 무손상(PMW 발번이 이 토큰에 merge)
     for (const [name, tpl] of CONFIRM_DOCS) {
       expect(tpl, `${name} purpose 토큰 소실`).toContain('{{purpose}}');
     }

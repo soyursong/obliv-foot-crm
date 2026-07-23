@@ -51,7 +51,9 @@ import { cn } from '@/lib/utils';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
 // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
-import { buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
+// T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 연번호(visit_no) 발번 = buildDocSerial/docSerialPrefix
+//   (수납창 경로 발번 미배선 divergence 해소 — DocumentPrintPanel handleBatchPrint SSOT 동형).
+import { buildIssueNo, splitIssueNoForDisplay, buildDocSerial, docSerialPrefix } from '@/lib/docSerial';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -87,7 +89,13 @@ import {
   buildRxItemsHtml,
   getHtmlTemplate,
   isHtmlTemplate,
+  // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 세부산정내역 가산 급여행 append용 SSOT 빌더(DPP 동형).
+  buildSurchargeDetailRowHtml,
 } from '@/lib/htmlFormTemplates';
+// T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 SSOT 헬퍼(복제금지, DocumentPrintPanel 동형 재사용).
+//   결함A = 수납창(PMW) 출력경로가 applyNightHolidaySurcharge 미호출 → night_mark/holiday_mark 공란·가산 미반영.
+//   판정기준 refDate = 진료일(checked_in_at) — body canon visitDate 미러(과거일 출력 정확).
+import { applyNightHolidaySurcharge, resolveSurchargeRefDate, toLocalDateStr } from '@/lib/nightHolidaySurcharge';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
@@ -385,22 +393,27 @@ async function persistSubmissionsAndResolveIssueNo(params: {
   codeItems: SelectedItem[];
   rxItemDosages?: Record<string, RxDosage>;
   isFallback: boolean;
-}): Promise<string | null> {
+  // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 반환 = 교부번호(rxIssueNo) + 연번호(visit_no) per-template 맵.
+  //   기존 rxIssueNo 단일반환 → { rxIssueNo, visitNoByTemplateId } 로 확장. 인쇄 경로가 form_key별 visit_no 를 주입.
+}): Promise<{ rxIssueNo: string | null; visitNoByTemplateId: Map<string, string> }> {
   const { selected, clinicId, checkInId, customerId, staffId, autoValues, codeItems, rxItemDosages, isFallback } = params;
   const hasRx = selected.some((t) => t.form_key === 'rx_standard');
   const issueYmd = format(new Date(), 'yyyyMMdd');    // 교부번호 앞 8자리(YYYYMMDD)
   const issueDateIso = format(new Date(), 'yyyy-MM-dd'); // RPC p_issue_date(date) 파티션 키
   const nowIso = new Date().toISOString();
+  // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: form_key별 발번된 연번호(visit_no) 수집.
+  const visitNoByTemplateId = new Map<string, string>();
 
   // fallback/미staff: 발행이력 INSERT 불가 → 순번만 채번(persist 없이 공란/UUID 방지). rx 없으면 발번 불요.
+  //   연번호(visit_no)도 INSERT 행이 없어 발번 불가(공란 유지) — DocumentPrintPanel.handlePrint fallback 분기 동형.
   if (isFallback || !staffId) {
-    if (!hasRx || !clinicId) return null;
+    if (!hasRx || !clinicId) return { rxIssueNo: null, visitNoByTemplateId };
     const { data: rxSeq } = await supabase.rpc('issue_foot_rx_issue_no', {
       p_clinic_id: clinicId,
       p_issue_date: issueDateIso,
       p_form_submission_id: null,
     });
-    return buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1) || null;
+    return { rxIssueNo: buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1) || null, visitNoByTemplateId };
   }
 
   // 1) form_submissions INSERT 먼저(issue_no 미포함 field_data) — persist-before-print. 선택 서류 전종 이력 기록(종전과 동일).
@@ -422,9 +435,55 @@ async function persistSubmissionsAndResolveIssueNo(params: {
     console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', insErr.message);
   }
 
-  if (!hasRx || !clinicId) return null;
+  // ── 2) T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 연번호(visit_no) 발번 배선 ──
+  //   [근인] 수납창(PMW) 경로는 issue_foot_doc_serial RPC 미호출 + visit_no 미조립 → 이 창 발급분 {{visit_no}} 공란(88%, F-4790 포함).
+  //   [수정] DocumentPrintPanel handlePrint(:3044-3072)/handleBatchPrint(:1311-1359) SSOT 동형:
+  //     ① 차트번호 1회 로드 ② serial-eligible(docSerialPrefix && chartNo) 행마다 issue_foot_doc_serial(멱등)
+  //     ③ buildDocSerial 조립 ④ field_data.visit_no 갱신 + per-template 맵 수집(인쇄 경로가 form_key별 주입).
+  //   ⚠ 발번대장 무결성 우선: RPC/조립 실패 시 가짜 번호 미기록(visit_no 공란 유지). 처방전 행은 아래 3)/4) 교부번호 갱신과
+  //     합쳐 단일 update(visit_no + issue_no 누적) — handlePrint 의 printValues 누적 패턴 동형(이중 update 상호 clobber 방지).
+  let serialChartNo: string | null = null;
+  if (clinicId && customerId) {
+    const { data: cust } = await supabase
+      .from('customers')
+      .select('chart_number')
+      .eq('id', customerId)
+      .maybeSingle();
+    const cn = (cust?.chart_number as string | null | undefined) ?? null;
+    serialChartNo = cn && String(cn).trim() ? String(cn).trim() : null;
+  }
+  if (serialChartNo && clinicId && insertedRows) {
+    for (const t of selected) {
+      if (!docSerialPrefix(t.form_key)) continue;              // 연번호 대상 아님(prefix 미정의) → skip
+      const rowId = insertedRows.find((r) => r.template_id === t.id)?.id ?? null;
+      if (!rowId) continue;                                     // INSERT 실패 행 → 발번 보류(공란)
+      const { data: seq, error: rpcErr } = await supabase.rpc('issue_foot_doc_serial', {
+        p_clinic_id: clinicId,
+        p_form_submission_id: rowId,
+      });
+      if (rpcErr || typeof seq !== 'number') continue;          // 발번 실패 → 가짜 번호 금지(공란 유지)
+      const docSerial = buildDocSerial({
+        formKey: t.form_key,
+        chartNo: serialChartNo,
+        dateYYYYMMDD: issueYmd,
+        seq,
+      });
+      if (!docSerial) continue;
+      visitNoByTemplateId.set(t.id, docSerial);
+      // 처방전 행은 아래 4)에서 issue_no 와 함께 단일 갱신(누적) → 여기서 update 생략(clobber 방지).
+      if (t.form_key === 'rx_standard') continue;
+      const merged = { ...buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, null), visit_no: docSerial };
+      const { error: updErr } = await supabase
+        .from('form_submissions')
+        .update({ field_data: merged })
+        .eq('id', rowId);
+      if (updErr) toast.error(`연번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+    }
+  }
 
-  // 2) 처방전 행 교부번호 발행시점 채번·persist. 멱등 키=form_submission_id(RPC 가 rx_issue_seq 기록). INSERT 실패 시 fs_id=null(순번만).
+  if (!hasRx || !clinicId) return { rxIssueNo: null, visitNoByTemplateId };
+
+  // 3) 처방전 행 교부번호 발행시점 채번·persist. 멱등 키=form_submission_id(RPC 가 rx_issue_seq 기록). INSERT 실패 시 fs_id=null(순번만).
   const rxTpl = selected.find((t) => t.form_key === 'rx_standard');
   const rxRowId = insertedRows?.find((r) => r.template_id === rxTpl?.id)?.id ?? null;
   const { data: rxSeq, error: rxErr } = await supabase.rpc('issue_foot_rx_issue_no', {
@@ -434,16 +493,21 @@ async function persistSubmissionsAndResolveIssueNo(params: {
   });
   const rxIssueNo = buildIssueNo(issueYmd, !rxErr && typeof rxSeq === 'number' ? rxSeq : 1) || null;
 
-  // 3) field_data.issue_no persist(재인쇄/익일 동일번호 = 불변). rx_issue_seq 권위 순번은 RPC 가 이미 기록 → 표시 갱신만.
-  if (rxIssueNo && rxRowId) {
-    const rxFieldData = buildCodeEnrichedValues(autoValues, codeItems, 'rx_standard', rxItemDosages, rxIssueNo);
+  // 4) field_data 갱신(교부번호 issue_no + 연번호 visit_no 누적). rx_issue_seq/doc_serial_seq 권위 순번은 RPC 가 이미 기록 → 표시 갱신만.
+  //   handlePrint(:3078-3096) 동형: 처방전도 serial-eligible(prefix RX)이므로 위 2)에서 발번된 visit_no 를 함께 merge.
+  const rxVisitNo = rxTpl ? visitNoByTemplateId.get(rxTpl.id) : undefined;
+  if (rxRowId && (rxIssueNo || rxVisitNo)) {
+    const rxFieldData = {
+      ...buildCodeEnrichedValues(autoValues, codeItems, 'rx_standard', rxItemDosages, rxIssueNo),
+      ...(rxVisitNo ? { visit_no: rxVisitNo } : {}),
+    };
     const { error: updErr } = await supabase
       .from('form_submissions')
       .update({ field_data: rxFieldData })
       .eq('id', rxRowId);
     if (updErr) toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
   }
-  return rxIssueNo;
+  return { rxIssueNo, visitNoByTemplateId };
 }
 
 function buildCodeEnrichedValues(
@@ -871,6 +935,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 발행이력 조회+재출력 모달 열림 상태.
   //   기준점(1번차트 DocumentPrintPanel)과 동일 컴포넌트 재사용 — 이력/재출력/권한/RRN마스킹/의료서류 게이트 전부 상속.
   const [docHistoryOpen, setDocHistoryOpen] = useState(false);
+
+  // ── T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 달력 '빨간날'(clinic_events event_type='holiday') 로더 ──
+  //   DocumentPrintPanel batchHolidayDateSet(:517-530) 동형 미러 — 수납창 출력 시 야간·공휴일 가산 자동판정에 사용.
+  //   법정공휴일·일요일은 detectSurchargeKind 내부 판정이라 미로드여도 동작. 법정목록 밖 임시·대체공휴일만 이 소스로 합집합.
+  const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (!checkIn?.clinic_id) return;
+    const clinicId = checkIn.clinic_id;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('clinic_events')
+        .select('event_date')
+        .eq('clinic_id', clinicId)
+        .eq('event_type', 'holiday');
+      if (cancelled || error || !data) return;
+      setHolidayDateSet(new Set(data.map((r) => String(r.event_date))));
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn?.clinic_id]);
 
   // ── T-20260517-foot-BILLING-3ZONE: Zone 3 — 구매패키지 (AC-4) + 금일 시술내역 (AC-5)
   // ── T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 표시 (AC-1, AC-2)
@@ -2194,7 +2278,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 신양식 급여 remainder + ⑪ 납부박스 payments 배선.
       await applyBillReceiptNewSplitAndPaid(autoValues, selected);
       const isFallback = templates[0]?.id.startsWith('fallback-');
-      const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
+      const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
         clinicId: checkIn.clinic_id,
         checkInId: checkIn.id,
@@ -2206,6 +2290,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         isFallback,
       });
 
+      // ── T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 기준(진료일=checked_in_at) ──
+      //   출력 시점(now)이 아니라 진료 당시로 판정(과거일 출력 정확) — DocumentPrintPanel 동형. checked_in_at 부재 시 now 폴백.
+      const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
+      const surchargeIsCalHoliday = holidayDateSet.has(toLocalDateStr(surchargeRefDate));
+
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
       const portraitSelected  = selected.filter((t) => t.form_key !== 'bill_detail');
@@ -2216,6 +2305,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
           // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): persist된 확정 교부번호(rxIssueNo) 주입 → 인쇄본 = 저장본 동일번호.
           const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
+          // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: persist된 연번호(visit_no) 주입 → 인쇄본 = 저장본 동일번호.
+          const vno = visitNoByTemplateId.get(t.id);
+          if (vno) enriched.visit_no = vno;
+          // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산을 form_key별 복사본(enriched)에 SSOT 헬퍼로 반영.
+          //   bill_receipt_new / bill_detail 만 적용(그 외 no-op). PMW 인쇄 경로엔 수동 override UI 없음 → 빈 집합.
+          applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -2347,7 +2442,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 출력+수납 경로도 동일 배선(handleDocPrint 대칭).
       await applyBillReceiptNewSplitAndPaid(autoValues, selected);
       const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
-      const rxIssueNo = await persistSubmissionsAndResolveIssueNo({
+      const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
         clinicId: checkIn.clinic_id,
         checkInId: checkIn.id,
@@ -2359,6 +2454,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         isFallback: isFallbackTpl,
       });
 
+      // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 기준(진료일=checked_in_at) — handleDocPrint 대칭.
+      const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
+      const surchargeIsCalHoliday = holidayDateSet.has(toLocalDateStr(surchargeRefDate));
+
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       {
         const landscapeSel = selected.filter((t) => t.form_key === 'bill_detail');
@@ -2366,6 +2465,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const buildPages2 = (tmplList: typeof selected) =>
           tmplList.flatMap((t) => {
             const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
+            // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: persist된 연번호(visit_no) 주입(handleDocPrint 대칭).
+            const vno = visitNoByTemplateId.get(t.id);
+            if (vno) enriched.visit_no = vno;
+            // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 form_key별 복사본 반영(handleDocPrint 대칭).
+            applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
