@@ -45,6 +45,42 @@ export function consultantOverallUnitPrice(totalRevenue: number, totalCustomers:
   return totalCustomers > 0 ? Math.round(totalRevenue / totalCustomers) : null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE — 일마감 대사 표시(표시계층 only)
+//
+// 부모 RCA(T-20260723-foot-CONSULTANT-TKTREV-DAYCLOSE-RECONCILE, done) 결론:
+//   '상담실장 티켓팅 실적'(View B / foot_stats_consultant) = 상담실장에게 귀속된 매출만
+//   집계(BINDING-3). 일마감(전체 결제)과의 차액 Δ = 미귀속분(상담이력 없는 결제 + 비상담직군).
+//   수학적으로 View B ⊂ 전체결제 → 두 값이 같아지는 건 by-design 상 불가(회귀·버그 아님).
+//
+// 본 헬퍼는 그 by-design 차이를 화면에서 "대사 가능"하게 만드는 순수 표시 파생이다:
+//   실적합(attributed) = Σ consultantRevenue(r)            ← foot_stats_consultant RPC canonical
+//   미귀속(unattributed) = 총매출(순) − 실적합              ← 기존 소스(foot_stats_revenue) 파생
+//   ∴ attributed + unattributed ≡ total (항등, 반올림 오차 없이 성립)
+//
+// ⚠ 순수 read-only. 집계 산식·귀속 스코프(BINDING-3)·RPC·DB 무접촉.
+//   totalNetRevenue = 매출통계 '총 매출(순)'(= pkg+single−refund, net·accounting_date)로,
+//   consultantRevenue(net·accounting_date)와 동일 축이라 차감이 유효하다.
+//   unattributed 를 clamp 하지 않는다 — 항등(실적합+미귀속=총매출)이 화면에서 정확히 성립해야 함.
+// ─────────────────────────────────────────────────────────────────────────
+export interface ConsultantRevenueReconciliation {
+  attributed: number;    // 상담실장 귀속 매출 합계(실적합)
+  unattributed: number;  // 미귀속 매출 (총매출 − 실적합). by-design 상 ≥ 0.
+  total: number;         // 총 매출(순) = 일마감 전체 결제 대사 기준
+}
+
+export function reconcileConsultantRevenue(
+  rows: Pick<ConsultantRow, 'total_amount' | 'avg_amount' | 'ticketing_count'>[],
+  totalNetRevenue: number,
+): ConsultantRevenueReconciliation {
+  const attributed = rows.reduce((s, r) => s + consultantRevenue(r), 0);
+  return {
+    attributed,
+    unattributed: totalNetRevenue - attributed,
+    total: totalNetRevenue,
+  };
+}
+
 const REPORT_HEADERS = ['실장명', '매출', '상담건수', '상담객단가'] as const;
 
 /**

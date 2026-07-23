@@ -2,18 +2,28 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatAmount } from '@/lib/format';
 import type { ConsultantRow } from '@/lib/stats';
-import { consultantRevenue } from '@/lib/consultantSalesExport';
+import { consultantRevenue, reconcileConsultantRevenue } from '@/lib/consultantSalesExport';
 
 interface Props {
   rows: ConsultantRow[];
   loading: boolean;
+  // T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE:
+  //   일마감 대사용 총 매출(순). 미귀속분(= 총매출 − 상담사 귀속합) 파생 표시에만 사용(read-only).
+  totalNetRevenue?: number;
 }
 
 type SortKey = 'name' | 'ticketing' | 'conversion' | 'total' | 'avg';
 
-export default function ConsultantSection({ rows, loading }: Props) {
+export default function ConsultantSection({ rows, loading, totalNetRevenue }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('ticketing');
   const [sortAsc, setSortAsc] = useState(false);
+
+  // T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE:
+  //   일마감 대사(실적합 + 미귀속 = 총매출) 파생. totalNetRevenue 미전달 시 대사 블록 숨김.
+  const recon = useMemo(
+    () => (typeof totalNetRevenue === 'number' ? reconcileConsultantRevenue(rows, totalNetRevenue) : null),
+    [rows, totalNetRevenue],
+  );
 
   const enriched = useMemo(
     () =>
@@ -56,6 +66,20 @@ export default function ConsultantSection({ rows, loading }: Props) {
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-muted-foreground">3. 상담실장 티켓팅 실적</h2>
+
+      {/* T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE:
+          by-design 안내 문구 — '상담실장에게 귀속된 매출만' 합산한 값이라 일마감 총액과 다를 수 있음.
+          숫자 오류가 아니라 집계 범위가 다른 것임을 현장 친화 문구로 명시. */}
+      <div
+        data-testid="consultant-bydesign-note"
+        className="rounded-md border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-800"
+      >
+        아래 금액은 <b>상담실장에게 귀속된 매출만</b> 합산한 값이에요. 상담 이력이 없는 결제나
+        비상담 직원이 받은 결제는 여기 포함되지 않아서, <b>일마감 총액(전체 결제)과 다를 수 있습니다</b>
+        {' '}— 숫자 오류가 아니라 집계 범위가 다른 것이에요. 아래 <b>‘상담실장 귀속 매출 + 미귀속 매출 = 총 매출(순)’</b>
+        {' '}로 직접 맞춰볼 수 있습니다.
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">실장별 실적</CardTitle>
@@ -125,6 +149,37 @@ export default function ConsultantSection({ rows, loading }: Props) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE: 일마감 대사 블록.
+              실적합 + 미귀속 = 총매출(순) 항등이 화면에서 눈으로 성립하도록 표시(파생·read-only). */}
+          {!loading && recon && (
+            <div
+              data-testid="consultant-reconcile"
+              className="mt-4 border-t pt-3 flex flex-col gap-1 text-sm"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">상담실장 귀속 매출 합계</span>
+                <span data-testid="reconcile-attributed" className="tabular-nums font-medium">
+                  {formatAmount(recon.attributed)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">
+                  미귀속 매출
+                  <span className="ml-1 text-xs text-muted-foreground/80">(상담 이력 없음·비상담 직원)</span>
+                </span>
+                <span data-testid="reconcile-unattributed" className="tabular-nums font-medium">
+                  {formatAmount(recon.unattributed)}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between border-t pt-2">
+                <span className="font-semibold">총 매출(순) · 일마감 전체 결제</span>
+                <span data-testid="reconcile-total" className="tabular-nums font-bold text-teal-700">
+                  {formatAmount(recon.total)}
+                </span>
+              </div>
             </div>
           )}
         </CardContent>

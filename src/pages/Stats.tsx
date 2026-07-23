@@ -162,6 +162,15 @@ export default function Stats() {
     ? resolveRange(activePreset, customFrom, customTo)
     : { from: '', to: '' };
 
+  // T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE:
+  //   '상담실장 티켓팅 실적' ↔ 일마감 대사용 총 매출(순). RevenueSection KPI '총 매출 (순)'과
+  //   동일 산식(pkg + single − refund, net·accounting_date). 이 값을 ConsultantSection 에 넘겨
+  //   미귀속분(= 총매출 − 상담사 귀속합)을 파생 표시(read-only). 집계/RPC/DB 무접촉.
+  const revenueNetTotal = useMemo(
+    () => revenue.reduce((s, r) => s + (r.package_amount ?? 0) + (r.single_amount ?? 0) - (r.refund_amount ?? 0), 0),
+    [revenue],
+  );
+
   // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE:
   // 매출통계 탭 일간매출보고 다운로드 (실장별 매출/상담건수/객단가 + 총 매출액).
   // 데이터 소스 = 이미 로드된 consultants(foot_stats_consultant RPC).
@@ -269,7 +278,7 @@ export default function Stats() {
         <>
           <RevenueSection rows={revenue} loading={loading} />
           <CategorySection rows={categories} loading={loading} />
-          <ConsultantSection rows={consultants} loading={loading} />
+          <ConsultantSection rows={consultants} loading={loading} totalNetRevenue={revenueNetTotal} />
           <NoshowReturningSection rows={noshowReturning} loading={loading} />
         </>
       ) : tab === 'tm' ? (
