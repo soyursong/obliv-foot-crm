@@ -91,7 +91,7 @@ const POLL_MODE = cfg("REDPAY_POLL_MODE", "incremental"); // incremental | daily
 const TRIGGER_MATCH = cfg("REDPAY_TRIGGER_MATCH", "true") === "true";
 // ── 도메인 (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER: 멀티센터 env-swap) ──
 //   foot(기본) | body(도수/재활). 동일 폴러 스크립트를 REDPAY_DOMAIN env-swap 으로 재사용
-//   (동일 마스터키·동일 사업자 511-60-00988, merchant band 만 교체). 도메인별 launchd 인스턴스.
+//   (동일 마스터키·동일 사업자 457-23-00938[07-23 RedPay flip; 구 511-60-00988], merchant band 만 교체). 도메인별 launchd 인스턴스.
 //   레지스트리(redpay_terminal_registry.domain)·하드코딩 DEFAULT·로그라벨이 모두 이 값으로 스코핑.
 const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
 
@@ -129,7 +129,7 @@ const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
 
 // ── 풋 스코프 SSOT (redpay_foot_terminal_registry.md §2 = authoritative) ──
-//   ⚠ business_no 511-60-00988 = 5도메인 공유 merchant(풋/도수/피부/롱래스팅 동거).
+//   ⚠ business_no 457-23-00938(07-23 RedPay flip; 구 511-60-00988) = 공유 법인 merchant 피드(구 511 스코프 시절 풋/도수/피부/롱래스팅 5도메인 동거). 도메인 격리는 merchant_id allowlist(아래) — business_no 아님.
 //   EF guard.ts G4 를 "미경유"하므로 타도메인(도수 등) 혼입 방지 필터를 스크립트 자체에서 강제(AC-3).
 //
 //   [2026-07-11 피벗 T-...-REDPAY-MACSTUDIO-POLLER + DA GO MSG-20260711-094634-tjtk]
@@ -169,7 +169,7 @@ const FOOT_TID_WHITELIST_DEFAULT = [
 ];
 
 // ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
-//   da_decision_redpay_rehab_b1_scoping_20260714.md: 재활=도수=body, band 1777274-276, 511-60-00988 하위.
+//   da_decision_redpay_rehab_b1_scoping_20260714.md: 재활=도수=body, band 1777274-276, 457-23-00938 하위(07-23 RedPay flip; 구 511-60-00988).
 //   ★ 도수 TID 미상 → merchant_id 단일 스코핑(1차 권위). tid=[] (belt-and-suspenders 미가용, tid backfill=별도 티켓).
 //   DB registry(domain='body') 미배포/미seed 시의 fail-safe DEFAULT (silent-drop 봉인).
 const DOHSU_MERCHANT_WHITELIST_DEFAULT = [
@@ -632,7 +632,7 @@ async function main() {
     if (dropped.length > 0) {
       totalScopedOut += dropped.length;
       const sampleMerchants = [...new Set(dropped.map((d) => d.merchant?.id ?? "null"))].slice(0, 10);
-      // [UNCLASSIFIED-MERCHANT] = business_no 511-60-00988 피드 중 풋 registry allowlist 밖 merchant.
+      // [UNCLASSIFIED-MERCHANT] = business_no 457-23-00938(07-23 RedPay flip; 구 511-60-00988) 피드 중 풋 registry allowlist 밖 merchant.
       //   대개 도수/피부/롱레(구조적 차단·정상). 단, 미등록 신규 merchant 도 여기 섞이므로 silent-drop 금지
       //   원칙상 항상 표면화(registry §6 알람). DB 영속 알람 = v_redpay_unclassified_merchants.
       warn(`[UNCLASSIFIED-MERCHANT] business_no ${REDPAY_BUSINESS_NO} 피드 중 풋 registry allowlist 외 ${dropped.length}건 제외 ` +
