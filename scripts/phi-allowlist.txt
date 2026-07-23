@@ -83,3 +83,10 @@
 #   provenance: tests/e2e/T-20260721-foot-COMPANION-PHONE-EXPOSE.spec.ts. 리뷰 게이트: dev-foot 자가확인, supervisor QA.
 \+?821055554444
 \+?821099998888
+
+# ── T-20260723-foot-SALESDAILY-INSCOL-READSIDE-RESOURCE 합성 E2E fixture phone (2026-07-23) ──
+#   일마감 급여 열 read-side FK 재소싱(C4) spec 전용 합성값. 010-0000 중간블록 = KR MSIT 비할당
+#   구조적 합성값(실환자 재식별 0). NAME='[INSCOL-READSIDE] 급여' + before/afterAll cleanup(phone 기준)
+#   즉시 정리. provenance: tests/e2e/T-20260723-foot-SALESDAILY-INSCOL-READSIDE-RESOURCE.spec.ts.
+#   리뷰 게이트: dev-foot 자가확인, supervisor QA.
+\+?821000007232

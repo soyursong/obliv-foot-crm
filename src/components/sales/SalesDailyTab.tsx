@@ -20,6 +20,19 @@
  *   좌우 대사(AC-2)는 수납(cash) grain끼리만 유효 → 급여(발생기준) 제외하고 비급여+선수금만 대사.
  *   Stage B(수납수단별 급여 열, C4 payment↔service_charge 링크 확인) = 별도 stage.
  *   ADDITIVE: 신규 컬럼/enum/마이그 0, service_charges는 읽기만(ALTER 금지, C2).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * T-20260723-foot-SALESDAILY-INSCOL-READSIDE-RESOURCE (Stage B / C4 read-side)
+ *   우측 매트릭스 '급여' 열 소스 re-source = payments.service_charge_id FK →
+ *   service_charges.is_insurance_covered=TRUE 조인. (parent a1 write-path deployed 후 착지.)
+ *   · 급여 귀속 판정은 오직 FK(is_insurance_covered)로만 — tax_type='급여' 저장/신설 금지
+ *     (DA canon ruling: tax_type=VAT축[과세/면세], is_insurance_covered=보험축 → conflation 금지).
+ *     copay payment 는 write-path에서 tax_type=NULL(면세) + service_charge_id FK 로 적재됨.
+ *   · 좌측 FK skip: 급여 copay payment 는 발생기준(service_charges)으로 이미 집계됨 →
+ *     좌측 비급여/선수금 버킷에서 skip(중복계상 방지). (pre-C4: tax_type=NULL → taxfree 로 잘못 유입,
+ *     즉 baseTotal[copay 포함] + taxfree[copay payment] = copay 이중계상 status quo 를 C4가 봉합.)
+ *   · legacy tax_type='급여' 잔존행 방어: FK 부재 시 tax_type='급여' 도 급여 귀속 인정(현재 0건).
+ *   ADDITIVE·no-DDL: FK 컬럼(payments.service_charge_id)은 parent canonical(mig 20260715160000) 재사용.
  */
 
 import { useMemo } from 'react';
@@ -57,12 +70,23 @@ const DB_METHOD_TO_ROW: Record<string, MethodRow> = {
   membership: '선수금차감',
 };
 
-/** DB tax_type 값 → 한국어 열 매핑 (미분류는 면세 보수 처리) */
-function taxTypeToCol(tt: string | null): TaxCol {
-  if (tt === '과세_비급여') return '과세';
-  if (tt === '면세_비급여') return '면세';
-  if (tt === '급여') return '급여';
-  if (tt === '선수금') return '선수금';
+/**
+ * 급여 귀속 판정 (C4 read-side) — service_charge_id FK → is_insurance_covered=TRUE 만.
+ *   copay payment 는 write-path에서 tax_type=NULL(면세) + service_charge_id FK 로 적재됨.
+ *   legacy tax_type='급여' 잔존행 방어(FK 부재 시에도 급여 인정, 현재 0건).
+ *   tax_type(VAT축)을 급여(보험축) 판정에 쓰지 않는다 — conflation 금지(DA canon).
+ */
+function isGyeoubPayment(p: RawPayment): boolean {
+  const fkCovered = !!p.service_charge_id && p.service_charges?.is_insurance_covered === true;
+  return fkCovered || p.tax_type === '급여';
+}
+
+/** payment → 우측 매트릭스 열 매핑. 급여=FK 기준(위), 그 외 tax_type(VAT축) 기준. 미분류는 면세 보수. */
+function paymentToCol(p: RawPayment): TaxCol {
+  if (isGyeoubPayment(p)) return '급여';
+  if (p.tax_type === '과세_비급여') return '과세';
+  if (p.tax_type === '면세_비급여') return '면세';
+  if (p.tax_type === '선수금') return '선수금';
   return '면세'; // null or unknown → 면세(비급여)
 }
 
@@ -77,6 +101,13 @@ interface RawPayment {
   payment_type: string | null;
   /** 매출 방어필터용 — T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE */
   customer_id: string | null;
+  /**
+   * T-20260723-foot-SALESDAILY-INSCOL-READSIDE-RESOURCE (C4): 급여 copay ↔ 명세 링크 FK.
+   *   parent canonical(payments.service_charge_id, mig 20260715160000). package_payments엔 없음(항상 미정의).
+   */
+  service_charge_id?: string | null;
+  /** FK 임베드(PostgREST to-one) — service_charges.is_insurance_covered. 급여 귀속 판정 소스. */
+  service_charges?: { is_insurance_covered: boolean } | null;
 }
 
 interface DailyClosingRow {
@@ -144,15 +175,23 @@ export function SalesDailyTab({ filter }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('method, tax_type, amount, payment_type, customer_id')
+        // C4: service_charge_id FK + 임베드 조인(is_insurance_covered)로 급여 귀속 re-source.
+        .select('method, tax_type, amount, payment_type, customer_id, service_charge_id, service_charges(is_insurance_covered)')
         .eq('clinic_id', clinic!.id)
         .neq('status', 'deleted')
         .gte('accounting_date', from)
         .lte('accounting_date', to);
       if (error) throw error;
+      // C4: PostgREST to-one 임베드는 런타임에 object(또는 일부 버전 array) → 단일 object 로 정규화.
+      const rows = (data ?? []).map((r: Record<string, unknown>) => ({
+        ...r,
+        service_charges: Array.isArray(r.service_charges)
+          ? (r.service_charges[0] ?? null)
+          : (r.service_charges ?? null),
+      })) as unknown as RawPayment[];
       // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
       const simIds = await getSimulationCustomerIds(clinic!.id);
-      return excludeSimulationPaymentRows((data ?? []) as RawPayment[], simIds);
+      return excludeSimulationPaymentRows(rows, simIds);
     },
   });
 
@@ -262,9 +301,10 @@ export function SalesDailyTab({ filter }: Props) {
     for (const p of allPayments) {
       const n = net(p);
       const tt = p.tax_type ?? '';
-      if (tt === '급여') {
-        // 급여 수납분(본인부담)은 발생기준(service_charges)으로 대체 집계 → 좌측 비급여 버킷 오염 방지.
-        //   수납수단별 급여 열은 Stage B(C4 payment↔service_charge 링크) 대상.
+      if (isGyeoubPayment(p)) {
+        // C4 좌측 FK skip: 급여 copay(본인부담)는 발생기준(service_charges)으로 이미 집계됨 →
+        //   좌측 비급여/선수금 버킷에서 skip(이중계상 방지). 귀속 판정 = service_charge_id FK
+        //   (is_insurance_covered) 우선 + legacy tax_type='급여' 방어. 수납수단별 급여 열은 우측(C4)이 표시.
         continue;
       } else if (tt === '과세_비급여') {
         taxable += n;
@@ -303,7 +343,7 @@ export function SalesDailyTab({ filter }: Props) {
     };
     for (const p of allPayments) {
       const row = DB_METHOD_TO_ROW[p.method ?? ''];
-      const col = taxTypeToCol(p.tax_type);
+      const col = paymentToCol(p); // C4: 급여 열 = service_charge_id FK 기준(tax_type 아님)
       if (row) m[row][col] += net(p);
     }
     // T-20260618-foot-MANUALPAY-STATS-REFLECT: 수기결제 method → 행 매핑, tax_type 없음 → 면세 열.
@@ -335,7 +375,8 @@ export function SalesDailyTab({ filter }: Props) {
   // AC-2: 좌우 대사 — 수납(cash) grain끼리만 유효. 급여(발생기준·명세 grain)는 대사 제외.
   //   T-20260715 FIX: 좌측 급여가 service_charges(발생기준)로 이관되어 payments(수납)와 grain이 다름.
   //   → 대사는 비급여+선수금(좌측 cashTotal) vs 우측 급여 열 제외 소계로 apples-to-apples.
-  //   우측 급여 열(Stage B, C4)은 현재 payments.tax_type='급여'(=0건) → 오늘 표시/대사 무변화.
+  //   C4: 우측 급여 열 = FK(service_charge_id→is_insurance_covered) 기준 copay 수납분. 좌측도 동일
+  //   copay payment 를 skip(FK skip) → 양변 모두 급여 copay 제외 → 대사 grain 정합 유지.
   const rightCashTotal = totalRight - rightColTotals['급여'];
   const hasAnyRow = allPayments.length > 0 || serviceCharges.length > 0 || manualEntries.length > 0;
   const mismatch = hasAnyRow && Math.abs(left.cashTotal - rightCashTotal) >= 1;
@@ -544,7 +585,11 @@ export function SalesDailyTab({ filter }: Props) {
                 <tr className="border-t-2">
                   <td className="py-3 px-3 font-semibold text-sm">합계</td>
                   {TAX_COLS.map(col => (
-                    <td key={col} className="py-3 px-2 text-right tabular-nums text-xs font-medium">
+                    <td
+                      key={col}
+                      className="py-3 px-2 text-right tabular-nums text-xs font-medium"
+                      data-testid={`sales-daily-right-coltotal-${col}`}
+                    >
                       {rightColTotals[col] !== 0
                         ? formatAmount(rightColTotals[col])
                         : <span className="text-muted-foreground/40">—</span>}
