@@ -17,7 +17,10 @@
 -- ============================================================================
 
 -- 사전 상태 스냅샷 (dry-run 전) — post-probe 대조 기준
-\echo '── PRE-STATE (prod 실측 2026-07-15) ──'
+-- ★C9 재baseline(2026-07-24 재특성화): ROW1.phone 은 benign DUMMY placeholder 로 drift(07-18).
+--   freeze G0 는 ROW1 을 phone_dummy assertion 으로 고정(tail 9089 selector 폐기). RAW 는 tail 9089 유지.
+--   러너(.mjs)는 forward .sql 전문을 읽어 EXECUTE → 본 미러 편집 불요, 아래는 사람 참조용.
+\echo '── PRE-STATE (prod 실측, C9 재baseline as-of 2026-07-24) ──'
 SELECT
   (SELECT count(*) FROM customers WHERE id='0356b229-e8c7-4655-aa6e-651b15370c1f') AS row1_present,          -- 기대 1
   (SELECT count(*) FROM customers WHERE id='c51dd5e0-5e3f-4f5c-a44f-78001ab9cf6b' AND rrn_enc IS NOT NULL) AS raw_has_rrn,  -- 기대 0

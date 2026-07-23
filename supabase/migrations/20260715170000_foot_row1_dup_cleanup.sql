@@ -3,6 +3,11 @@
 -- Ticket : T-20260715-foot-ROW1-DUP-CLEANUP-MUTATION
 -- 특성화 : T-20260714-foot-ROW1-MASTER-DEFECT-CHARACTERIZE (READ-ONLY done)
 --          = 가설A 중복행(self-checkin duplicate) · confidence HIGH · keep=RAW.
+-- 재특성화: T-20260724-foot-ROW1-RECHARACTERIZE (READ-ONLY done, 2026-07-24) — freeze-drift NO-GO 후.
+--          = ROW1.phone drift(07-18 →'DUMMY-'||uuid placeholder) 진단 = benign·identity 불변
+--            (name_hash·RRN v2·RAW-9089 전부 불변). ver=1 phone tail 9089 재확증(RAW 매칭).
+--            가설A HIGH 유지. freeze 상수만 C9 재baseline(아래). DA CONDITIONAL GO(RE-GO,
+--            MSG-20260724-064317-ftsb). 코드구조(65d86586) 무결·재사용 — prod-state drift 이슈지 코드결함 아님.
 -- SOP    : HYBRID
 --   (1) Cross-CRM Orphan-Row Archive-First Cleanup + FK Integrity Guard
 --       — 파괴적 relink + archive-first 2단(archive→verify→remove), hard-DELETE 금지,
@@ -46,6 +51,20 @@
 --                                     confdeltype NOTICE + archived==moved assert. (prod 실측 32 FK)
 --   C6(denorm refresh 스코프 바운드): relink된 check_ins customer_name/phone 로 한정.
 --   C7(dry-run 무영속)              : *.dryrun.sql 미러 + scripts/…_dryrun_run.mjs (buildHarness 3요소).
+--   ── 재특성화 RE-GO 추가 바인딩 (2026-07-24, DA CONDITIONAL GO MSG-20260724-064317-ftsb) ──
+--   C8(RRN fingerprint/episode 불변) : supervisor DB-GATE 독립 확인 — ROW1.rrn_enc fingerprint(v2)
+--                                     불변 = RRN 무오염 재확증 + 07-11 동일방문 episode(self-checkin
+--                                     매칭실패→신규row) 구조 불변. drift 시 abort. freeze 반영:
+--                                     G0 self-checkin 서명 assert(=episode 독립 제3축) + has_rrn=TRUE assert(=RRN 보유 축).
+--   C9(freeze 형식 재baseline)       : G0 = PK-VALUES 고정(v_row1·v_raw). ROW1 phone 은 07-18 benign
+--                                     DUMMY-normalize drift → phone_dummy=true AND phone LIKE 'DUMMY-%'
+--                                     를 고정PK 위 fail-closed ASSERTION 으로(selector 아님·clinic내 DUMMY
+--                                     비유일·DUMMY uuid 하드코딩 금지). RAW tail 9089(live 유효)·has_rrn·
+--                                     name_hash 도 PK 위 assertion. drift값(tail 5773/len42) 앵커 금지. 명시 as-of=2026-07-24.
+--   C10(OOB corrective seal)         : apply 선행의존 = T-20260724-foot-DUMMY-NORMALIZE-OOB-HOLD-GUARD
+--                                     (07-18 dummy-normalize sweep 이 [G0-hold] ROW1 접촉 실증 → hold-aware
+--                                     가드 확정 or apply-window 정지 + G0-ledger 가 re-freeze~apply 사이 OOB
+--                                     재접촉 0 확인). 미충족 시 apply 금지.
 --
 -- 멱등: 이미 이관/삭제된 상태 재실행 시 G* 재검증으로 no-op abort-safe.
 -- ============================================================================
@@ -92,7 +111,7 @@ DECLARE
   v_clinic constant uuid := '74967aea-a60b-4da3-a0e7-9c997a930bc8';   -- jongno-foot
   v_row1   constant uuid := '0356b229-e8c7-4655-aa6e-651b15370c1f';   -- 중복행(삭제 대상)
   v_raw    constant uuid := 'c51dd5e0-5e3f-4f5c-a44f-78001ab9cf6b';   -- 정본(보존 대상)
-  v_ptail  constant text := '9089';
+  v_ptail  constant text := '9089';   -- RAW phone tail (live 유효·불변). ★C9: ROW1은 07-18 benign drift(→DUMMY placeholder)로 phone_dummy assertion 대체.
   fk record;
   moved int; total_moved int := 0; archived_moves int;
   remaining int; total_remaining int;
@@ -122,14 +141,20 @@ BEGIN
   -- ══════════════════════════════════════════════════════════════════════
   -- [G0] freeze re-assert — 단일 count 금지, 지문 교집합(name_hash + ptail + clinic + rrn 상태)
   -- ══════════════════════════════════════════════════════════════════════
-  -- ROW1: 존재 + clinic + ptail + rrn 보유(has_rrn=TRUE)
+  -- ROW1: 존재(PK 고정) + clinic + phone_dummy assertion + rrn 보유(has_rrn=TRUE)
+  --   ★C9 재baseline(07-24): ROW1.phone 은 07-18 OOB dummy-normalize corrective 로
+  --     masked '…9089' → 'DUMMY-'||uuid 로 정규화(benign·identity 불변, forensics 확증).
+  --     freeze 는 PK(v_row1) 고정 앵커 + phone_dummy 를 고정PK 위 fail-closed ASSERTION 으로
+  --     (selector 아님·DUMMY uuid 하드코딩 금지). drift값(tail 5773/len42) 에 앵커 금지.
+  --     pre-drift ver=1 tail 9089 는 역사근거(RAW 매칭 재확증)로만 — live predicate 아님.
   SELECT count(*) INTO n FROM customers c
    WHERE c.id = v_row1 AND c.clinic_id = v_clinic
-     AND right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),4) = v_ptail
+     AND c.phone_dummy = true AND c.phone LIKE 'DUMMY-%'
      AND c.rrn_enc IS NOT NULL;
-  IF n <> 1 THEN RAISE EXCEPTION 'ABORT G0: ROW1 freeze-drift (clinic/ptail/has_rrn 미일치, got %)', n; END IF;
+  IF n <> 1 THEN RAISE EXCEPTION 'ABORT G0: ROW1 freeze-drift (clinic/phone_dummy/has_rrn 미일치, got %)', n; END IF;
 
-  -- RAW: 존재 + clinic + ptail + rrn 미보유(has_rrn=FALSE, 이관 타깃)
+  -- RAW: 존재(PK 고정) + clinic + ptail(9089 live 유효·불변) + rrn 미보유(has_rrn=FALSE, 이관 타깃)
+  --   ★C9: RAW.phone 은 drift 없음(실 E.164 tail 9089 불변) → tail4 가드를 PK 위 assertion 으로 유지.
   SELECT count(*) INTO n FROM customers c
    WHERE c.id = v_raw AND c.clinic_id = v_clinic
      AND right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),4) = v_ptail
