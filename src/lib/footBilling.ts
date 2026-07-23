@@ -844,6 +844,70 @@ export function applyBillReceiptNewCoveredTokens(
 }
 
 /**
+ * T-20260723-foot-BILLRECEIPT-PAIDBOX-NONCOV-MISROUTED 유효작업#1 — 납부박스 불변식 가드(순수 판정).
+ *
+ *   법정 별지 제6호서식 산식을 코드로 강제: **⑧ 환자부담총액 = ⑨ 이미납부 + ⑪ 실수납 + 미납.**
+ *   `applyBillReceiptPaidBoxTokens` 의 `max(0,…)` 클램프가 발동하면(⑨>⑧ → ⑩ 클램프, ⑪>⑩ → 미납 클램프)
+ *   합이 어긋난다 = PKGSESSION 미배선發 정합 이탈 신호. 이를 **표면화(플래그+진단사유)** 한다.
+ *
+ *   ★Stage1 = warn-only (GO 판정 Q2, 2026-07-23): 호출부는 이 결과를 **로그로만** 쓰고 발행은 통과시킨다.
+ *     일시 클램프이상이 정당영수증 발행까지 막으면 현재 증상(표시 오류)보다 나쁜 field-blocking 회귀이기 때문.
+ *   ★Stage2 = hard-block(발행보류): PKGSESSION-LINK-UNWIRED deployed 후 **별도 GO** 에서 활성화(본 스코프 밖).
+ *
+ *   silent 절단 금지 취지 충족: 이상을 삼키지 않고 clampFired/violations 로 항상 표면화(어느 케이스가 새는지
+ *   진단 근거로 축적) — 다만 발행 흐름은 끊지 않음.
+ */
+export interface PaidBoxInvariantResult {
+  /** 클램프 미발동 && ⑧=⑨+⑪+미납 성립. */
+  ok: boolean;
+  /** max(0,…) 절사 발동(⑨>⑧ or ⑪>⑩) — silent 절단 진단 근거. */
+  clampFired: boolean;
+  /** 사람이 읽는 위반 사유(로그·테스트용). */
+  violations: string[];
+  patientAmount: number; // ⑧
+  alreadyPaid: number;   // ⑨ (10원 절사 후)
+  paidTotal: number;     // ⑪
+  dueAmount: number;     // ⑩
+  unpaid: number;        // 미납
+}
+
+export function checkBillReceiptPaidBoxInvariant(
+  patientAmount: number,
+  alreadyPaid: number,
+  paidTotal: number,
+  dueAmount: number,
+  unpaid: number,
+): PaidBoxInvariantResult {
+  const violations: string[] = [];
+  let clampFired = false;
+  // ⑨>⑧ → ⑩=max(0,⑧−⑨) 클램프(선수금이 총액 초과 = 그레인/배선 이탈).
+  if (alreadyPaid > patientAmount) {
+    clampFired = true;
+    violations.push(`⑨ 이미납부(${alreadyPaid}) > ⑧ 환자부담총액(${patientAmount}) → ⑩ 클램프`);
+  }
+  // ⑪>⑩ → 미납=max(0,⑩−⑪) 클램프(실수납이 납부할금액 초과 = 과납/오배선).
+  if (paidTotal > dueAmount) {
+    clampFired = true;
+    violations.push(`⑪ 실수납(${paidTotal}) > ⑩ 납부할금액(${dueAmount}) → 미납 클램프`);
+  }
+  // 법정 산식 불변식: ⑧ = ⑨ + ⑪ + 미납.
+  const sum = alreadyPaid + paidTotal + unpaid;
+  if (sum !== patientAmount) {
+    violations.push(`불변식 위반: ⑧(${patientAmount}) ≠ ⑨+⑪+미납(${sum})`);
+  }
+  return {
+    ok: violations.length === 0,
+    clampFired,
+    violations,
+    patientAmount,
+    alreadyPaid,
+    paidTotal,
+    dueAmount,
+    unpaid,
+  };
+}
+
+/**
  * T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B — 신양식 ⑪ 납부한 금액 박스 payments 배선.
  *   법정서식 ⑪은 **실수납(payments 원장) 결제수단별** 기재(세법 공제 직결). 종전 {{prepaid_amount}} =
  *   납부할금액 가정값(FE 비영속) 전파 → 완납 가정(허위영수증) 위험 → payments method별 groupBy 로 교체.
@@ -891,13 +955,34 @@ export function applyBillReceiptPaidBoxTokens(
   // 종전 템플릿 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지 — paid_total 과 동일값으로 동기화.
   values.prepaid_amount = values.paid_total;
   // §1 ⑨ 이미 납부한 금액(선수금/패키지 차감). 0 이면 공란(직접결제건 회귀 0 — 종전 빈 셀 유지).
-  const alreadyPaidSafe = Math.max(0, alreadyPaid);
+  //   T-20260723-foot-BILLRECEIPT-PAIDBOX-NONCOV-MISROUTED 유효작업#2 [10원 절사 정합]:
+  //   ⑧(patientAmount)은 호출부에서 computeBillDetailRounding 로 10원 절사돼 넘어오는데, ⑨(alreadyPaid)는
+  //   SSOT(copayment 100원절사 + nonCovered raw)의 10원 미만 우수리를 그대로 안고 있어 ⑩=⑧−⑨ 가 10원
+  //   비배수가 될 여지가 있었다. ⑨에도 ⑧과 **동일한 절사규칙**(computeBillDetailRounding=내림)을 적용해
+  //   ⑧·⑨·⑩ 모두 10원 grain 으로 정합시킨다. 내림이므로 ⑨↓ → 원장에 없는 돈을 만들지 않음(허위표기 아님).
+  const alreadyPaidSafe = computeBillDetailRounding(alreadyPaid).roundedTotal; // ≥0 · 10원 배수
   values.already_paid = alreadyPaidSafe > 0 ? formatAmount(alreadyPaidSafe) : '';
-  // §1 ⑩ 납부할 금액 = ⑧ − ⑨ (전용 토큰 분리 — patient_amount 하드코딩 폐기). ⑧≥⑨ 구조 보장(그레인 가드).
+  // §1 ⑩ 납부할 금액 = ⑧ − ⑨ (전용 토큰 분리 — patient_amount 하드코딩 폐기). ⑧·⑨ 모두 10원 배수 → ⑩ 정합.
   const dueAmount = Math.max(0, patientAmount - alreadyPaidSafe);
   values.due_amount = formatAmount(dueAmount);
   // 미납 = ⑩ − ⑪(실수납). 선수금 완납건이면 ⑩=잔액, paidTotal=잔액 → 미납=0.
-  values.unpaid_amount = formatAmount(Math.max(0, dueAmount - paidTotal));
+  const unpaid = Math.max(0, dueAmount - paidTotal);
+  values.unpaid_amount = formatAmount(unpaid);
+
+  // 유효작업#1 [불변식 가드 — Stage1 warn-only]. ⑧=⑨+⑪+미납 성립 여부를 판정해 이상을 표면화한다.
+  //   클램프(⑨>⑧ or ⑪>⑩) 발동 = PKGSESSION 미배선發 어긋남 → 플래그+로그. ★발행은 통과(Stage1).
+  //   hard-block(발행보류)은 PKGSESSION deployed 후 Stage2 별도 GO 에서 활성화(본 스코프에선 금지).
+  const invariant = checkBillReceiptPaidBoxInvariant(patientAmount, alreadyPaidSafe, paidTotal, dueAmount, unpaid);
+  // 비템플릿 진단 마커(렌더 무영향 — 템플릿에 {{_paidbox_invariant}} 토큰 없음). 테스트/디버깅용.
+  values._paidbox_invariant = invariant.ok ? 'ok' : 'warn';
+  if (!invariant.ok) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[BILLRECEIPT-PAIDBOX invariant warn][T-20260723-foot-BILLRECEIPT-PAIDBOX-NONCOV-MISROUTED]',
+      invariant.violations.join(' / '),
+      invariant,
+    );
+  }
 }
 
 /**
