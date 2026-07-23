@@ -956,6 +956,27 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     return () => { cancelled = true; };
   }, [checkIn?.clinic_id]);
 
+  // ── T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE (C안): clinics.hira_unit_value(governed) 로더 ──
+  //   급여 base = ROUND(hira_score × hira_unit_value) 산출을 위해 computeFootBilling 에 주입한다.
+  //   서버 RPC calc_copayment 와 동일 base 소스(clinics.hira_unit_value) — 하드코딩·연도상수 금지(§2-2-0).
+  //   미로드(null)면 computeFootBilling 이 기존 price base 로 폴백(무파괴).
+  const [hiraUnitValue, setHiraUnitValue] = useState<number | null>(null);
+  useEffect(() => {
+    if (!checkIn?.clinic_id) return;
+    const clinicId = checkIn.clinic_id;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('clinics')
+        .select('hira_unit_value')
+        .eq('id', clinicId)
+        .maybeSingle();
+      if (cancelled || error) return;
+      setHiraUnitValue((data?.hira_unit_value ?? null) as number | null);
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn?.clinic_id]);
+
   // ── T-20260517-foot-BILLING-3ZONE: Zone 3 — 구매패키지 (AC-4) + 금일 시술내역 (AC-5)
   // ── T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 표시 (AC-1, AC-2)
   interface ActivePackageInfo {
@@ -1587,7 +1608,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     qty,
     unitPrice: customAmounts.get(service.id) ?? service.price ?? 0,
   }));
-  const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade);
+  const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, { hiraUnitValue });
   const grandTotal = footBilling.grandTotal;                 // 총 진료비(급여 전액 + 비급여) — 서류 총진료비/합계 표시용
   const totalByTax: Record<TaxClass, number> = footBilling.totalByTax;
   const coveredTotal = footBilling.coveredTotal;             // 급여 진료비 전액(본인 + 공단)
@@ -1603,6 +1624,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   //   general(30%)로 본인부담을 산정('general_default') → grade=general/null 모두 자부담 8,900 로 수렴.
   const payBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, {
     unknownGradeCopay: 'general_default',
+    hiraUnitValue,
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
@@ -1667,7 +1689,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
     const { roundedTotal: patientFloored } = computeBillDetailRounding(copaymentTotal + pmwNonCov);
     // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액 = 선수금/패키지 차감분(환자부담분).
-    const alreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade);
+    const alreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade, hiraUnitValue);
     applyBillReceiptPaidBoxTokens(
       autoValues,
       (payRows ?? []) as Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null; payment_type?: string | null }>,
@@ -1699,6 +1721,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }));
     const deductBilling = computeFootBilling(deductItems, customerInsuranceGrade, {
       unknownGradeCopay: 'general_default',
+      hiraUnitValue,
     });
     return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal;
   };

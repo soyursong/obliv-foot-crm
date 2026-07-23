@@ -248,6 +248,11 @@ export interface BillingService {
    * 미래 적재 시 우선 사용하도록 optional 로 보유. 미적재 시 category_label 로 폴백.
    */
   hira_category?: string | null;
+  /**
+   * HIRA 상대가치점수(services.hira_score). 급여 base = ROUND(hira_score × hira_unit_value) 산출용.
+   * (T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE C안 — 서버 calc_copayment §정상분기 base 미러.)
+   */
+  hira_score?: number | null;
   price?: number;
 }
 
@@ -299,10 +304,24 @@ export function computeFootBilling(
   // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (REOPEN/RC): 등급 미상(copayRate=null) 급여 방문의
   //   본인부담 폴백 정책을 호출 컨텍스트별로 분리. 기본값 'covered_full' = 기존 DOCPRINT-RECUR 그대로
   //   (서류출력 경로 회귀 0). 수납잔액(payments grain)만 'general_default' 를 지정한다(§아래 주석).
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default' },
+  // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE (C안, DA GO da_decision_foot_hira_copay_base_grain_reconcile_20260723):
+  //   hiraUnitValue = clinics.hira_unit_value(governed, 호출부 주입). 급여(is_insurance_covered=TRUE)×hira_score
+  //   존재 항목의 base 를 ROUND(hira_score × hira_unit_value) 로 산출(services.price 사용 중단). 서버 RPC
+  //   calc_copayment §정상분기(v_base := ROUND(hira_score×hira_unit_value))와 동일 base. 미주입(null)이면 기존
+  //   price base 로 폴백(무파괴) — 하드코딩·연도상수 금지(§2-2-0), 값은 반드시 clinics 에서 주입받는다.
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
-  const amountOf = (i: FootBillingItem) => i.unitPrice * i.qty;
+  const hiraUnitValue = opts?.hiraUnitValue ?? null;
+  // 항목 base(급여전액 grain): 급여×hira_score 존재 & hira_unit_value 주입 → ROUND(hira_score×unit)×qty,
+  //   그 외(비급여 / hira_score NULL 급여 / hira_unit_value 미주입) → 기존 price(unitPrice)×qty 유지(회귀0).
+  const amountOf = (i: FootBillingItem): number => {
+    const svc = i.service;
+    if (svc.is_insurance_covered === true && svc.hira_score != null && hiraUnitValue != null) {
+      return Math.round(svc.hira_score * hiraUnitValue) * i.qty;
+    }
+    return i.unitPrice * i.qty;
+  };
   const grandTotal = pricingItems.reduce((s, i) => s + amountOf(i), 0);
 
   const totalByTax: Record<TaxClass, number> = {
@@ -394,7 +413,7 @@ export async function loadFootBillingItems(
   const serviceIds = [...new Set(rows.map((r) => r.service_id))];
   const { data: svcData } = await supabase
     .from('services')
-    .select('id, name, service_code, hira_code, hira_category, vat_type, is_insurance_covered, category_label, price')
+    .select('id, name, service_code, hira_code, hira_score, hira_category, vat_type, is_insurance_covered, category_label, price')
     .in('id', serviceIds);
 
   const svcMap = new Map<string, BillingService>(
@@ -999,6 +1018,9 @@ export function applyBillReceiptPaidBoxTokens(
 export async function loadAlreadyPaidAmount(
   checkInId: string,
   insuranceGrade: InsuranceGrade | null,
+  // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base 정합용 clinics.hira_unit_value(governed).
+  //   미전달 시 기존 price base(무파괴). PMW 경로만 주입해 결제창 SSOT 와 자부담분 산식 일치.
+  hiraUnitValue?: number | null,
 ): Promise<number> {
   const { data: cis } = await supabase
     .from('check_in_services')
@@ -1012,7 +1034,7 @@ export async function loadAlreadyPaidAmount(
   const serviceIds = [...new Set(rows.map((r) => r.service_id))];
   const { data: svcData } = await supabase
     .from('services')
-    .select('id, name, service_code, hira_code, hira_category, vat_type, is_insurance_covered, category_label, price')
+    .select('id, name, service_code, hira_code, hira_score, hira_category, vat_type, is_insurance_covered, category_label, price')
     .in('id', serviceIds);
   const svcMap = new Map<string, BillingService>(
     ((svcData ?? []) as BillingService[]).map((s) => [s.id, s]),
@@ -1031,6 +1053,6 @@ export async function loadAlreadyPaidAmount(
   if (pkgItems.length === 0) return 0;
 
   // SSOT 소비: 환자부담분(급여 본인부담 + 비급여 전액) = 실제 선수금으로 납부된 금액. 산식 canon 무변경.
-  const b = computeFootBilling(pkgItems, insuranceGrade, { unknownGradeCopay: 'general_default' });
+  const b = computeFootBilling(pkgItems, insuranceGrade, { unknownGradeCopay: 'general_default', hiraUnitValue });
   return Math.max(0, b.copaymentTotal + b.nonCoveredTotal);
 }
