@@ -8131,6 +8131,28 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
               </div>
               {/* AC-4: 진료대시보드 균검사지에서 발행된 검사결과 보고서 자동 표시(읽기전용·비가역) */}
               <KohPublishedResults clinicId={customer.clinic_id} customerId={customer.id} />
+
+              {/* T-20260723-foot-LABTEST-ISSUE-CHART-LINK-BLOODTEST-ADD: 피검사(혈액검사) 섹션 신규 추가.
+                  기존엔 균검사(KOH)만 노출 → 균검사와 병렬로 피검사 섹션 추가(현장 스샷 F0BK8KW0UR4 근거).
+                  연동 원리(신규 스키마 0 · 재사용): 치료테이블 '결과지 업로드'(BloodResultDialog)와 본 탭 업로드가
+                  동일 patient_file_records(kind='blood_result', customer_id 스코프)를 공유 → 어느 쪽에서 올리든
+                  즉시 양방향 반영. KOH 섹션과 완전 동형(PatientResultFiles kind만 분기, koh_result↔blood_result 격리). */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 font-bold text-rose-800">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" />
+                    피검사(혈액검사)
+                  </span>
+                </div>
+                <PatientResultFiles
+                  customerId={customer.id}
+                  kind="blood_result"
+                  prefix="blood_result"
+                  noun="혈액검사 결과지"
+                  accent="rose"
+                  testidPrefix="blood-result"
+                />
+              </div>
             </div>
           )}
 
