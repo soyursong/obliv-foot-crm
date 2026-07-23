@@ -120,7 +120,7 @@ function getChannel(body: string): "SMS" | "LMS" {
 // statusCode 3058 "전송경로 없음"을 반환(200 수락이나 통신사 미배달)하여
 // DB는 'sent'인데 폰엔 미수신되는 무음 실패가 발생. → 발송 경계에서 국내 형식으로 정규화.
 function toDomesticKR(raw: string): string {
-  let d = (raw ?? "").replace(/[^0-9]/g, "");   // +82 10-1234-5678 → 821012345678
+  let d = (raw ?? "").replace(/[^0-9]/g, "");   // +82-10-1234-5678 → 821012345678
   if (d.startsWith("0082")) d = d.slice(4);     // 0082… 국제접속 prefix 제거 → 1012345678
   if (d.startsWith("82")) d = d.slice(2);       // 821012345678 → 1012345678 (KR 국가코드 제거)
   if (d && !d.startsWith("0")) d = "0" + d;     // 국내 형식 leading-0 복원 → 01012345678
@@ -323,6 +323,51 @@ async function verifyRoleJwt(jwt: string, allowedRoles: string[]): Promise<strin
   }
 }
 
+// ── caller-clinic 격리 검증 (T-20260723-foot-SENDSMS-CALLER-CLINIC-GATE) ──
+// 취약점(derm H-1 동형, PRESENT + clinics=2 LIVE): verifyRoleJwt 는 user_profiles.role 만
+//   대조하고 caller 의 소속 clinic 을 대조하지 않음 → 검증된 스태프가 임의 body.clinic_id
+//   지정 시 그 clinic 의 Vault secret + sender_number 로 provider(Solapi) cross-tenant 발송 가능.
+//   (foot manual_send 는 8역할 광범위 허용 → 조직내 노출면이 crm(admin 한정)보다 넓음.)
+// 방어: provider·vault 접근 이전에, caller(JWT sub = auth.uid() = userId)의 소속 clinic 이
+//   body.clinic_id 와 일치하는지 대조. 미소속이면 false → 호출부에서 403.
+// 식별 기준: user_id(JWT sub) — email 단독필터 신뢰 금지(cross_crm_auth_identity_standard).
+// 소속 소스 = obliv-foot-crm 실 스키마 실측(derm/crm/scalp 지문 복붙 아님):
+//   ① user_profiles.clinic_id == body.clinic_id (단일지점 배정 스태프)
+//   ② user_profiles.clinic_id IS NULL + role∈(admin,manager,director) = 다지점 HQ 권한
+//      → 전 지점 허용. foot 정본 테넌트 격리 규칙 mc_clinic_isolated_v2 / is_admin_or_manager()
+//      (current_user_clinic_id() IS NULL AND role IN ('admin','manager','director')) 와 동형.
+//      HQ 계정의 cross-clinic 발송은 설계상 정당 → 회귀 0.
+//   ③ staff.user_id == userId AND staff.clinic_id == body.clinic_id (staff 배정 fallback, scalp 동형).
+//   셋 중 하나라도 일치하면 통과. clinic_id 가 구체값으로 배정된 스태프가 타 clinic 지정 시만 차단.
+// 정당 예외: service_role/크론 발송은 adminUserId=null(userId 미도달) → 호출부에서 게이트 미적용.
+const MULTI_CLINIC_HQ_ROLES = ["admin", "manager", "director"];
+async function callerBelongsToClinic(userId: string, clinicId: string): Promise<boolean> {
+  try {
+    const { data: profileRow } = await supabase
+      .from("user_profiles")
+      .select("clinic_id, role")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileRow) {
+      const p = profileRow as { clinic_id: string | null; role: string | null };
+      if (p.clinic_id && p.clinic_id === clinicId) return true;
+      // 다지점 HQ 권한(user_profiles.clinic_id NULL + admin/manager/director) → 전 지점 허용
+      if (!p.clinic_id && MULTI_CLINIC_HQ_ROLES.includes(p.role ?? "")) return true;
+    }
+
+    const { data: staffRow } = await supabase
+      .from("staff")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("clinic_id", clinicId)
+      .maybeSingle();
+    return Boolean(staffRow);
+  } catch (e) {
+    console.error("[send-notification] callerBelongsToClinic error:", String(e));
+    return false;
+  }
+}
+
 // ── 메인 핸들러 ──────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -391,6 +436,16 @@ Deno.serve(async (req: Request) => {
         return new Response(
           JSON.stringify({ success: false, message: "clinic_id, recipient_phone 필수" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // ── caller-clinic 격리 게이트 (provider·vault 접근 이전) ──
+      // adminUserId 가 있으면 user-JWT 도달 경로. service_role/크론은 adminUserId=null → 미적용.
+      if (adminUserId && !(await callerBelongsToClinic(adminUserId, clinic_id))) {
+        console.warn(`[send-notification] test_sms cross-tenant BLOCK user=${adminUserId} req_clinic=${clinic_id}`);
+        return new Response(
+          JSON.stringify({ success: false, message: "이 지점의 문자를 발송할 권한이 없습니다." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -509,6 +564,16 @@ Deno.serve(async (req: Request) => {
         return new Response(
           JSON.stringify({ success: false, message: "clinic_id, recipient_phone, body 필수" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // ── caller-clinic 격리 게이트 (provider·vault 접근 이전, ★8역할 광범위 → 필수) ──
+      // adminUserId 가 있으면 user-JWT 도달 경로. service_role/크론은 adminUserId=null → 미적용.
+      if (adminUserId && !(await callerBelongsToClinic(adminUserId, clinic_id))) {
+        console.warn(`[send-notification] manual_send cross-tenant BLOCK user=${adminUserId} req_clinic=${clinic_id}`);
+        return new Response(
+          JSON.stringify({ success: false, message: "이 지점의 문자를 발송할 권한이 없습니다." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
