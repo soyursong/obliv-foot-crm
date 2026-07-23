@@ -164,6 +164,15 @@ COMMENT ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB
 GRANT EXECUTE ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB, JSONB) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ★ ACL PARITY — PUBLIC EXECUTE 회수 (anon-lockdown 유지).
+--   DROP+CREATE FUNCTION 은 신규 함수에 PUBLIC EXECUTE 를 기본 부여한다. 구 4-arg 함수는
+--   PUBLIC 이 REVOKE 된 상태(ACL {postgres,authenticated,service_role})였으므로, 파리티 복원 +
+--   SECURITY DEFINER write RPC 의 anon 도달 차단을 위해 PUBLIC EXECUTE 를 명시 회수한다.
+--   (2026-07-23 prod apply 후 dev-foot 실측으로 PUBLIC 재부여 divergence 발견 → 본 라인으로 고정)
+-- ─────────────────────────────────────────────────────────────────────────────
+REVOKE EXECUTE ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB, JSONB) FROM PUBLIC;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- PostgREST 스키마 캐시 리로드 (시그니처 변경 후 신규 RPC 엔드포인트 즉시 노출)
 -- cross_crm_data_contract.md §23 / docs/PGRST-SCHEMA-RELOAD-HYGIENE-CONVENTION.md 준수.
 -- 부재 시 PGRST202(함수 미발견)로 E2E 실패.

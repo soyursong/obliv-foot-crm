@@ -85,5 +85,7 @@ COMMENT ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB
   IS '선수금차감 회차 소진(멱등, 초과차감 방지). 수납확정 시 package_sessions insert → 잔여 정확 차감. T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT';
 
 GRANT EXECUTE ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB) TO authenticated;
+-- ACL parity: 원본 4-arg 는 PUBLIC EXECUTE 가 회수된 상태였음 → 재생성 후 PUBLIC 회수로 파리티 복원.
+REVOKE EXECUTE ON FUNCTION consume_package_sessions_for_checkin(UUID, UUID, UUID, JSONB) FROM PUBLIC;
 
 NOTIFY pgrst, 'reload schema';
