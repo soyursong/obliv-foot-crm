@@ -2144,7 +2144,7 @@ const BILL_RECEIPT_NEW_HTML = `
       <tr>
         <td class="rn-lbl">환자등록번호</td><td>{{record_no}}</td>
         <td class="rn-lbl">환자 성명</td>
-        <td>{{patient_name}}<br><span class="rn-sub">생년월일 {{patient_birthdate}}</span></td>
+        <td>{{patient_name}}</td>
         <td class="rn-lbl">진료기간</td><td>{{visit_date}}</td>
 <!-- T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간/공휴일 자동 판정 →
              체크박스 자동 체크(마크 소스=night_mark/holiday_mark, DocumentPrintPanel 배선). 미가산 시 공란(회귀0). -->
