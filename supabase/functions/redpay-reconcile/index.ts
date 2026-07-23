@@ -23,7 +23,7 @@
 //   REDPAY_API_URL         — (선택) 거래조회 전체경로 override. 미설정 시 기본값
 //                            https://redpay.kr/api/partner/payments.php. payments.php
 //                            파일명 탈락 시 런타임 가드가 throw(부모 403 사고 RC 차단).
-//   REDPAY_BUSINESS_NO     — 풋 사업자번호 (종로 풋 511-60-00988) — 마스터 키 스코프 필터 필수
+//   REDPAY_BUSINESS_NO     — 풋 사업자번호 (457-23-00938, 07-23 RedPay flip; 롱레+풋 공유 merchant) — 마스터 키 스코프 필터 필수
 //   REDPAY_TID_WHITELIST   — 풋 단말기 TID 목록 (쉼표 구분)
 //   REDPAY_DRY_RUN         — 'true'(기본) = 실호출 차단, 픽스처 시뮬레이션
 //   REDPAY_ALERT_CHANNEL   — M3 알림 채널 (비워두면 로그만)
@@ -110,7 +110,10 @@ const REDPAY_API_KEY            = Deno.env.get("REDPAY_API_KEY") ?? "";
 const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 // clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①).
 //   business_no 는 세무 cert 정정으로 mutable(511→457 divergence → clinic 조회 실패). clinic 해석은 slug 우선.
-//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO) 은 불변 — 물리 merchant=511 유지.
+//   ⚠ [정정 T-20260723-foot-REDPAY-LOOKUP-BIZNO-511TO457] 과거 불변식("물리 merchant=511 유지")은
+//      RedPay 가 07-23 부터 457-23-00938 로만 발송·511 발송제외 확정하며 전제 falsify 됨. RedPay API
+//      scope param(business_no=REDPAY_BUSINESS_NO) 은 이제 457-23-00938. 457=롱레+풋 공유 merchant 이나
+//      풋 격리는 merchant_id(UNIQUE) ingest + server tid param 으로 무결(롱레 merchant_id 미수집).
 const REDPAY_CLINIC_SLUG        = Deno.env.get("REDPAY_CLINIC_SLUG") ?? "jongno-foot";
 const REDPAY_TID_WHITELIST      = Deno.env.get("REDPAY_TID_WHITELIST") ?? "";
 const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") === "true";
@@ -940,7 +943,7 @@ async function fetchRedpayPage(
   const params = new URLSearchParams({
     from:        formatRedpayDate(from),
     to:          formatRedpayDate(to),
-    business_no: REDPAY_BUSINESS_NO,   // 필수 — 마스터 키 사업자 스코프 (511-60-00988)
+    business_no: REDPAY_BUSINESS_NO,   // 필수 — 마스터 키 사업자 스코프 (457-23-00938, 07-23 flip)
     page:        String(page),
     limit:       String(limit),
   });
