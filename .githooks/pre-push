@@ -64,4 +64,31 @@ else
   echo "⚠️  [pre-push] ci_green_gate.sh 부재 — red-CI 게이트 skip (fail-open, watcher 사후 감시)" >&2
 fi
 
+# ── ③ deploy-order 게이트 — gated 커밋 main 조기착지 차단 (mainline push 한정) ──
+#   T-20260723-meta-CF-AUTODEPLOY-DEPLOYGATE-ENFORCE — green·QA-pass 커밋이라도
+#   deploy-gate 미충족(deploy_hold / deploy_not_before 미도래 / deploy_gated=HARD,
+#   depends_on 부모 미배포·field-soak 미완=SOFT WARN) 티켓의 main 도달을 차단.
+#   배경: CF Pages auto-deploy repo = main push 순간 즉시 live → supervisor
+#   착지순서/field-soak 게이트가 관례로만 유지되던 공백 봉합 (6592cf87 실사고).
+#   로직 SSOT = ~/claude-sync/scripts/deploy_order_gate.sh (부재=fail-open+경고,
+#   사후는 watch 워처가 breach 경보). CI-GREEN 게이트(red 차단)와 독립 축.
+#   탈출구: DEPLOY_ORDER_OVERRIDE="사유" git push ... (bus 기록+경보 대상 —
+#   P0 운영다운 hotfix 한정, 티켓 evidence 기록 의무)
+ORDER_GATE="$HOME/claude-sync/scripts/deploy_order_gate.sh"
+if [ -x "$ORDER_GATE" ]; then
+  DOR_MAINLINE="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)"
+  [ -z "$DOR_MAINLINE" ] && DOR_MAINLINE="main"
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    [ "$local_sha" = "$Z40" ] && continue
+    if [ "$remote_ref" = "refs/heads/$DOR_MAINLINE" ]; then
+      if ! bash "$ORDER_GATE" --mode prepush --repo "$REPO_ROOT" --local "$local_sha" --remote "$remote_sha"; then
+        rc=1
+      fi
+    fi
+  done <<< "$PUSH_REFS"
+else
+  echo "⚠️  [pre-push] deploy_order_gate.sh 부재 — deploy-order 게이트 skip (fail-open, watch 사후 감시)" >&2
+fi
+
 exit "$rc"
