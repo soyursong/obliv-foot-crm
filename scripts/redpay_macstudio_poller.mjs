@@ -116,12 +116,12 @@ const REDPAY_MERCHANT_WHITELIST_ENV = domainScopedOverride("REDPAY_MERCHANT_WHIT
 // ── clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①) ──
 //   business_no 는 mutable·overloaded(세무 cert 정정으로 foot 511→457 divergence → clinic 조회 실패
 //   → L558 hard-throw 로 폴러 종료 → 실시간 적재 12h 중단). clinic '해석'은 안정키 slug 우선.
-//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO, L286) 은 불변 — 물리 merchant=511 유지.
+//   ⚠ RedPay API scope param(business_no=REDPAY_BUSINESS_NO, L286) 은 이 slug 해석 정정과 별개 축 — 07-23 RedPay flip 으로 457-23-00938(구 511; RedPay 정산 발송제외). 물리 정산 merchant 가 511→457 이동(외부 RedPay 재등록).
 //   slug 미지정 도메인은 business_no 폴백(하위호환 — 기존 동작 보존).
 //   [T-20260714 FIX phase2 결함1] body(도수)=풋 물리 clinic 공유(seed 마이그 20260714170100 이
 //   registry domain='body' 링크를 slug='jongno-foot' 로 확정. business_no=511 은 세무 cert 정정으로
 //   457 드리프트 → 폴백 조회 0행 → L592 hard-throw. seed 교훈을 폴러 body 경로에도 반영).
-//   ⚠ RedPay API scope(L286 business_no) 는 불변 — 여기 slug 는 '내부 clinic 해석'만 스코핑.
+//   ⚠ 여기 slug 는 '내부 clinic 해석'만 스코핑 — RedPay API scope(L286 business_no=457, 07-23 flip)와 별개 축(혼동 금지).
 const DOMAIN_CLINIC_SLUG_DEFAULTS = { foot: "jongno-foot", body: "jongno-foot" };
 const REDPAY_CLINIC_SLUG = cfg("REDPAY_CLINIC_SLUG", DOMAIN_CLINIC_SLUG_DEFAULTS[REDPAY_DOMAIN] ?? "");
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
