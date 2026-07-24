@@ -3,7 +3,7 @@ id: T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS
 domain: foot
 status: deploy-ready
 qa_result: pending (supervisor DDL-diff 게이트 + prod 적용 대기)
-deploy_commit: TBD (commit 후 기입)
+deploy_commit: 22b4593a5a8b
 deployed_at: n/a (DB 마이그 — supervisor DDL-diff→prod apply 선행. CF Pages 번들 변화 없음: FE 코드 무변경)
 bundle_hash: n/a (FE 코드 무변경 — 순수 DB 마이그)
 priority: P1
