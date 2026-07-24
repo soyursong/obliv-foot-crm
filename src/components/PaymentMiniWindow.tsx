@@ -50,6 +50,11 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
+import {
+  type ExamFlagState,
+  type CisInsertRow,
+  applyExamFlagsToReinsert,
+} from '@/lib/examFlagPreserve';
 // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
 // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 연번호(visit_no) 발번 = buildDocSerial/docSerialPrefix
 //   (수납창 경로 발번 미배선 divergence 해소 — DocumentPrintPanel handleBatchPrint SSOT 동형).
@@ -850,6 +855,30 @@ interface Props {
   onComplete: () => void;
   /** 시술 저장 완료 후 (AC-7 수납대기 금액 갱신용) */
   onSaved?: () => void;
+}
+
+// ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B) ────────────────────
+//   피검사/KOH '치료신청' 은 request_blood_test_for_customer / request_koh_for_customer RPC 가
+//   check_in_services.blood_test_requested / koh_requested 에 마킹하는 check-in 단위 플래그다.
+//   결제 저장/자동저장이 check_in_services 를 DELETE+reinsert 할 때 이 플래그를 재적용하지 않으면
+//   항상 false 로 초기화(clobber) → "화면 이동/재진입 시 치료신청 체크 풀림" 재발의 지배 RC.
+//   → package_session_id C3 보존과 동일 패턴으로 DELETE 前 스냅샷 → reinsert row 에 복원한다.
+//   (no-DDL: 旣존 컬럼만 사용. RPC 밖 별도 UPDATE 없이 단일 INSERT 로 보존 = 서버 write 규칙 준수.)
+
+// ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B): 순수 보존 로직은 lib 로 분리(테스트 공용 SSOT).
+//   check-in 의 마킹된 피검사/KOH 신청 플래그 스냅샷(graceful — 컬럼 부재 42703 시 false).
+async function snapshotExamFlags(checkInId: string): Promise<ExamFlagState> {
+  const off: ExamFlagState = { blood: false, koh: false };
+  const { data, error } = await supabase
+    .from('check_in_services')
+    .select('blood_test_requested, koh_requested')
+    .eq('check_in_id', checkInId);
+  if (error) return off; // 마이그 미적용 prod(42703) 등 → 보존 대상 없음으로 간주(graceful)
+  const rows = (data ?? []) as Array<{ blood_test_requested?: boolean | null; koh_requested?: boolean | null }>;
+  return {
+    blood: rows.some((r) => r.blood_test_requested === true),
+    koh: rows.some((r) => r.koh_requested === true),
+  };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -1770,6 +1799,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       preservedQueue.set(r.service_id, q);
     }
 
+    // ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B RC 하드닝) ──
+    //   피검사/KOH 치료신청 플래그(check_in_services.blood_test_requested/koh_requested)는
+    //   request_*_for_customer RPC 가 이 check-in 의 서비스 행에 마킹한다. 그런데 결제 재저장이
+    //   DELETE+reinsert 하면서 이 플래그를 재적용하지 않아 항상 false 로 clobber → "화면 이동 시
+    //   치료신청 체크 풀림" 재발의 지배 RC. package_session_id C3 보존과 동일 패턴으로 스냅샷 후 복원.
+    //   (no-DDL — 旣존 컬럼만 사용. RPC 밖 별도 UPDATE 없이 단일 INSERT 로 보존.)
+    const examFlags = await snapshotExamFlags(checkIn.id);
+
     const { error: delError } = await supabase
       .from('check_in_services')
       .delete()
@@ -1797,15 +1834,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const preservedPsid = q && q.length > 0 ? q.shift()! : null;
         return {
           check_in_id: checkIn.id,
-          service_id: service.id,
+          service_id: service.id as string | null,
           service_name: service.name,
           price: unitPrice,
           original_price: service.price,
           is_package_session: isPkgSession || preservedPsid !== null,
           package_session_id: preservedPsid,
-        };
+        } as CisInsertRow;
       });
     });
+
+    // Surface B: 피검사/KOH 치료신청 플래그를 재저장 행에 복원(clobber 방지) — 프로덕션·테스트 공용 SSOT.
+    applyExamFlagsToReinsert(rows, checkIn.id, examFlags);
 
     if (rows.length > 0) {
       const { error } = await supabase.from('check_in_services').insert(rows);
@@ -2234,6 +2274,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     // 미저장 항목이 있으면 DB 자동 저장 (수납대기 유지 — status 변경 없음)
     if (!saved && selectedItems.length > 0) {
       try {
+        // Surface B (T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE): 자동저장 DELETE+reinsert 도
+        //   피검사/KOH 신청 플래그를 clobber → 스냅샷 후 복원(saveCheckInServices 동형).
+        const examFlags = await snapshotExamFlags(checkIn.id);
         await supabase
           .from('check_in_services')
           .delete()
@@ -2241,13 +2284,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const rows = selectedItems.flatMap(({ service, qty }) =>
           Array.from({ length: qty }, () => ({
             check_in_id: checkIn.id,
-            service_id: service.id,
+            service_id: service.id as string | null,
             service_name: service.name,
             price: customAmounts.get(service.id) ?? service.price,
             original_price: service.price,
             is_package_session: false,
-          })),
+            package_session_id: null as string | null,
+          } as CisInsertRow)),
         );
+        applyExamFlagsToReinsert(rows, checkIn.id, examFlags);
         if (rows.length > 0) {
           const { error: insertErr } = await supabase.from('check_in_services').insert(rows);
           // INSERT 실패(RLS 등) 시 draft를 보존하고 창만 닫음 — localStorage 삭제 금지
