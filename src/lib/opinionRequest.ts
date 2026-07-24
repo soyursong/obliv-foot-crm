@@ -415,6 +415,124 @@ export function useUpdateStaffMemo(clinicId: string | null) {
   });
 }
 
+// ─── 발행본 행정필드 편집 (T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT, AC-3/AC-4) ──
+//   발행된 소견서/진단서 상세에서 원내 직원이 '발급요청일자(서류 날짜)' 같은 행정필드를 정정한다.
+//   ★A부류(원장 medical 본문=진단소견/의사소견)는 발행본(status='published') 스냅샷에 있고 비가역 트리거로 잠김 →
+//     본 계층은 그 발행본을 절대 건드리지 않는다. 행정필드는 '요청 레코드'(request_origin='staff_consult')의
+//     mutable field_data 에만 write → 발행 원문 스냅샷 불오염(AC-4, 의료법 §22 정합).
+//   ★NO-DDL: form_submissions.field_data(JSONB) 재사용 — 신규 컬럼/테이블/enum/RLS 0.
+//   ★status<>'published' 가드: 요청 레코드는 발행 완료 시 status='voided' 로 전환되므로 draft/voided 모두 편집 대상
+//     (published 발행본 자체는 RLS·트리거로 write 차단 = 이중 안전).
+
+/** 발행본 상세에서 매핑용 — 그 고객의 서류요청(staff_consult) 레코드 전체(발행/미발행 포함). customer_id 스코프(타 환자 배제). */
+export interface CustomerOpinionRequest {
+  id: string;
+  checkInId: string | null;
+  docType: OpinionDocType;
+  requestDate: string;
+  status: string;
+}
+export function useCustomerOpinionRequests(clinicId: string | null, customerId: string | null) {
+  return useQuery<CustomerOpinionRequest[]>({
+    queryKey: ['opinion_customer_requests', clinicId, customerId],
+    enabled: !!clinicId && !!customerId,
+    queryFn: async () => {
+      if (!clinicId || !customerId) return [];
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, check_in_id, field_data, status')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return ((data ?? []) as Array<Record<string, unknown>>)
+        .map((r) => ({ r, fd: (r['field_data'] ?? {}) as Record<string, unknown> }))
+        .filter(({ fd }) => fd['request_origin'] === 'staff_consult')
+        .map(({ r, fd }) => ({
+          id: String(r['id']),
+          checkInId: (r['check_in_id'] as string | null) ?? null,
+          docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+          requestDate: String(fd['request_date'] ?? ''),
+          status: String(r['status'] ?? ''),
+        }));
+    },
+    staleTime: 10_000,
+  });
+}
+
+/** 발행본(check_in_id+doc_type) ↔ 요청 레코드 매핑. check_in_id 우선, 없으면 doc_type 동일 최초. 미발견 null. */
+export function matchRequestForPublished(
+  publishedCheckInId: string | null,
+  docType: OpinionDocType,
+  requests: CustomerOpinionRequest[],
+): CustomerOpinionRequest | null {
+  const sameType = requests.filter((q) => q.docType === docType);
+  if (publishedCheckInId) {
+    const byCheckIn = sameType.find((q) => q.checkInId === publishedCheckInId);
+    if (byCheckIn) return byCheckIn;
+  }
+  return sameType[0] ?? null;
+}
+
+// 발급요청일자(서류 날짜) 정정 저장 + 편집 감사로그(누가·언제·이전값→새값) append.
+//   감사로그 = field_data.admin_edit_log(JSONB 배열, ADDITIVE) — 의료법 §22 방어(정정 이력 추적성).
+export function useUpdateOpinionRequestDate(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      requestId: string;
+      requestDate: string;
+      editorStaffId: string | null;
+      editorName: string;
+    }) => {
+      if (!input.requestId) throw new Error('요청 정보를 확인할 수 없습니다.');
+      const { data: cur } = await supabase
+        .from('form_submissions')
+        .select('field_data, status')
+        .eq('id', input.requestId)
+        .maybeSingle();
+      const row = (cur as { field_data?: Record<string, unknown>; status?: string } | null) ?? null;
+      const prev = (row?.field_data ?? {}) as Record<string, unknown>;
+      if (prev['request_origin'] !== 'staff_consult') throw new Error('편집 대상 요청이 아닙니다.');
+      if (row?.status === 'published') throw new Error('발행 원문은 수정할 수 없습니다.');
+      const prevDate = String(prev['request_date'] ?? '');
+      if (prevDate === input.requestDate) return { ok: true, noop: true };
+      const log = Array.isArray(prev['admin_edit_log']) ? (prev['admin_edit_log'] as unknown[]) : [];
+      const merged = {
+        ...prev,
+        request_date: input.requestDate,
+        admin_edit_log: [
+          ...log,
+          {
+            field: 'request_date',
+            prev: prevDate,
+            next: input.requestDate,
+            by: input.editorStaffId ?? null,
+            by_name: input.editorName ?? '',
+            at: new Date().toISOString(),
+          },
+        ],
+      };
+      // status<>'published' 가드: voided(발행완료 요청)/draft 만 갱신. 발행본(published)은 트리거·RLS로 이중 차단.
+      const { data: upd, error } = await supabase
+        .from('form_submissions')
+        .update({ field_data: merged })
+        .eq('id', input.requestId)
+        .neq('status', 'published')
+        .select('id');
+      if (error) throw error;
+      // Cross-CRM write rows-affected 검증(silent write-failure 금지) — 0행이면 RLS 거부/경합 = 실패로 처리.
+      if (!upd || upd.length === 0) throw new Error('저장에 실패했습니다. 권한 또는 발행 상태를 확인해주세요.');
+      return { ok: true };
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['opinion_request_queue', clinicId] });
+      qc.invalidateQueries({ queryKey: ['opinion_customer_requests', clinicId] });
+      void vars;
+    },
+  });
+}
+
 // ─── 큐 행 임상 컬럼(오늘시술/처방내역/임상경과) — 최근 medical_chart 스냅샷 (read-only, 방어적) ──
 //   AC-11 9컬럼 중 오늘시술/처방내역/임상경과 보조표시. 조회 실패/컬럼부재여도 큐는 깨지지 않음(빈 맵 폴백).
 //   T-20260620-foot-CHART2-DOC-REQUEST-INTEGRATION (AC-2): 처방내역=medical_charts.prescription_items(JSONB)

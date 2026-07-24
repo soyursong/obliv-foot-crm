@@ -54,14 +54,21 @@ import { printOpinionDoc } from '@/lib/printOpinionDoc';
 import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
 // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
 //   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
-import { useUpdateStaffMemo, useQueueClinicalSnaps } from '@/lib/opinionRequest';
+import {
+  useUpdateStaffMemo,
+  useQueueClinicalSnaps,
+  // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행본 행정필드(발급요청일자) 편집 — 요청 레코드 매핑·저장.
+  useCustomerOpinionRequests,
+  useUpdateOpinionRequestDate,
+  matchRequestForPublished,
+} from '@/lib/opinionRequest';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import type { UserProfile, CheckIn } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, FileText, FileDown, Search, ClipboardList, Printer } from 'lucide-react';
+import { Loader2, FileText, FileDown, Search, ClipboardList, Printer, Lock, Check, X } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // 템플릿 옵션 — F0BAETELCTF 미러 (Phase 1 하드코드 기본값, Phase 2 설정 UI 로 이관 예정 AC-8).
@@ -654,6 +661,9 @@ export function OpinionEditorDialog({
   const [doctorId, setDoctorId] = useState<string>(''); // clinic_doctors.id ('' = 미선택→profile 명의)
   const [doctorTouched, setDoctorTouched] = useState(false); // 발행자를 사용자가 수동 변경했는지(자동 기본값 덮어쓰기 방지)
   const [chartOpen, setChartOpen] = useState(false);         // ① 헤더 환자명 클릭 → 진료차트 drawer
+  // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행본 상세 read-only 뷰어(원장 medical 본문 잠금) 대상.
+  const [viewRow, setViewRow] = useState<PublishedOpinionRow | null>(null);
+  const [reqDateDraft, setReqDateDraft] = useState('');   // 발급요청일자(서류 날짜) 편집 draft
   // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT: 금기증 대분류 펼침(표시 전용) 상태.
   //   사용자 토글 OR 소분류 중 선택된 항목 존재 시 펼침(선택 가려짐 방지) — isGroupOpen 으로 합성.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -718,6 +728,46 @@ export function OpinionEditorDialog({
   );
   const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, clinicalCustomerIds);
   const autofillSnap = visitor?.customer_id ? clinicalSnaps[visitor.customer_id] : undefined;
+
+  // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC-3/AC-4): 발행본 상세에서 행정필드(발급요청일자) 편집.
+  //   그 고객의 서류요청(staff_consult) 레코드를 customer_id 스코프로 조회(타 환자 배제) → 발행본과 check_in_id+doc_type 매핑.
+  //   ★원장 medical 본문(발행본 field_data)은 미접촉 — 저장은 요청 레코드 field_data.request_date 로만(발행 원문 불오염).
+  const { data: custRequests = [] } = useCustomerOpinionRequests(clinicId, visitor?.customer_id ?? null);
+  const updateReqDateMut = useUpdateOpinionRequestDate(clinicId);
+  const viewMatchedRequest = useMemo(
+    () => (viewRow ? matchRequestForPublished(viewRow.check_in_id, viewRow.doc_type, custRequests) : null),
+    [viewRow, custRequests],
+  );
+  // 뷰어 오픈/매핑 변경 시 발급요청일자 draft 시드(직전 잔상 방지). 매핑된 요청의 request_date 우선, 없으면 발행일 폴백.
+  const viewRowId = viewRow?.id ?? null;
+  const matchedReqId = viewMatchedRequest?.id ?? null;
+  useEffect(() => {
+    if (!viewRow) { setReqDateDraft(''); return; }
+    setReqDateDraft(viewMatchedRequest?.requestDate || (viewRow.issued_at ? seoulISODate(viewRow.issued_at) : ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewRowId, matchedReqId]);
+
+  // 발급요청일자(서류 날짜) 저장 — 매핑된 요청 레코드에만 write(발행 원문 불오염, AC-4). 성공/실패 토스트(AC-3).
+  const handleSaveReqDate = async () => {
+    if (!viewMatchedRequest) {
+      toast.error('이 발행본과 연결된 서류요청을 찾을 수 없어 발급요청일자를 저장할 수 없습니다.');
+      return;
+    }
+    try {
+      const res = await updateReqDateMut.mutateAsync({
+        requestId: viewMatchedRequest.id,
+        requestDate: reqDateDraft,
+        editorStaffId: profile?.id ?? null,
+        editorName: profile?.name ?? profile?.email ?? '',
+      });
+      // ★toast.success/info 는 묵음(toast.ts) → 저장결과는 반드시 보여야 하므로 toast.confirm(묵음 제외) 사용(AC-3).
+      if ((res as { noop?: boolean })?.noop) { toast.confirm('변경사항이 없습니다.'); return; }
+      toast.confirm('발급요청일자를 저장했습니다.');
+    } catch (e) {
+      toast.error((e as Error)?.message ?? '저장에 실패했습니다.');
+    }
+  };
+
   const signingIds = useMemo(() => visitSigning?.ids ?? new Set<string>(), [visitSigning]);
   const signingNames = visitSigning?.names ?? [];
   const hasSigningInfo = signingIds.size > 0; // 진료의 정보 존재 여부(없으면 fallback=경고 후 허용)
@@ -1056,8 +1106,19 @@ export function OpinionEditorDialog({
                 <tr key={row.id} className="border-b last:border-0 align-top" data-testid="opinion-published-row">
                   <td className="px-1.5 py-1 font-mono text-muted-foreground whitespace-nowrap">{seoulISODate(row.issued_at)}</td>
                   <td className="px-1.5 py-1 text-muted-foreground/90 whitespace-nowrap">{row.issued_by_name}</td>
+                  {/* T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC-2): 내용 클릭 → 발행본 상세(원장 medical 본문
+                      회색·잠금 read-only). 잠금 아이콘으로 '발행 후 수정 불가' 시각 표시. */}
                   <td className="px-1.5 py-1 text-foreground/80">
-                    <span className="block max-w-[14rem] truncate" title={row.body}>{row.body.replace(/\n+/g, ' ')}</span>
+                    <button
+                      type="button"
+                      onClick={() => setViewRow(row)}
+                      className="flex max-w-[14rem] items-center gap-1 text-left text-teal-700 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                      title="클릭하면 발행본 상세를 볼 수 있어요 (원장 소견은 잠금·읽기전용)"
+                      data-testid="opinion-published-view"
+                    >
+                      <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{row.body.replace(/\n+/g, ' ')}</span>
+                    </button>
                   </td>
                   <td className="px-1.5 py-1 whitespace-nowrap text-right">
                     <span className="inline-flex gap-1">
@@ -1478,6 +1539,80 @@ export function OpinionEditorDialog({
         currentUserEmail={profile?.email ?? null}
         variant="full"
       />
+
+      {/* T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT — 발행본 상세(필드 단위 수정권한 분리).
+          ★A부류(원장 medical 본문=진단소견/의사소견): 회색·잠금 read-only. div 렌더 → 키보드/붙여넣기/프로그램적 우회 불가(AC-2, 시나리오3).
+          ★B부류(발급요청일자=서류 날짜): 원내 직원 편집·저장(요청 레코드 field_data.request_date, 발행 원문 불오염 AC-4).
+          ★NOSYNC 정합(AC-5): 발행본 전체 '수정 팝업' 부활 아님 — 본 뷰어는 원장 소견 잠금 + 행정필드만 인라인 편집. */}
+      <Dialog open={!!viewRow} onOpenChange={(o) => { if (!o) setViewRow(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="opinion-published-detail">
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            <FileText className="h-5 w-5 text-teal-600" />
+            {viewRow?.doc_type === 'diagnosis' ? '진단서' : '소견서'} 발행본
+            {visitor?.customer_name && (
+              <span className="text-sm font-normal text-muted-foreground">· {visitor.customer_name}</span>
+            )}
+          </DialogTitle>
+
+          {/* 발행 메타(read-only) — 발행자(담당의)·발행일. */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground" data-testid="opinion-detail-meta">
+            {viewRow?.issued_by_name && <span>발행자(담당의) <span className="font-medium text-foreground">{viewRow.issued_by_name}</span></span>}
+            {viewRow?.issued_at && <span>발행일 <span className="font-medium text-foreground tabular-nums">{seoulISODate(viewRow.issued_at)}</span></span>}
+          </div>
+
+          {/* A부류: 원장 작성 소견(진단소견/의사소견) — 회색 + 잠금 아이콘, 읽기전용(편집 요소 없음). */}
+          <div>
+            <p className="mb-1 flex items-center gap-1 text-sm font-semibold text-muted-foreground">
+              <Lock className="h-3.5 w-3.5" /> 원장 작성 소견 (발행 후 수정 불가 · 의료법 제22조)
+            </p>
+            <div
+              className="max-h-[46vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 px-4 py-3 text-[13px] leading-relaxed text-gray-500 select-text"
+              aria-readonly="true"
+              data-testid="opinion-detail-locked-body"
+            >
+              {(viewRow?.body ?? '').trim() ? viewRow!.body : '표시할 소견 내용이 없습니다.'}
+            </div>
+          </div>
+
+          {/* B부류: 발급요청일자(서류 날짜) — 원내 직원 편집·저장(발행 원문 불오염). */}
+          <div className="rounded-md border border-teal-200 bg-teal-50/50 px-3 py-2" data-testid="opinion-detail-admin">
+            <p className="mb-1.5 text-sm font-semibold text-teal-900">행정 정보 (원내 수정 가능)</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="opinion-detail-reqdate">발급요청일자</label>
+              <input
+                id="opinion-detail-reqdate"
+                type="date"
+                value={reqDateDraft}
+                onChange={(e) => setReqDateDraft(e.target.value)}
+                disabled={!viewMatchedRequest}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+                data-testid="opinion-detail-reqdate-input"
+              />
+              <Button
+                size="sm"
+                className="h-8 gap-1 px-3 text-xs"
+                onClick={() => void handleSaveReqDate()}
+                disabled={!viewMatchedRequest || updateReqDateMut.isPending}
+                data-testid="opinion-detail-reqdate-save"
+              >
+                {updateReqDateMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                저장
+              </Button>
+            </div>
+            {!viewMatchedRequest && (
+              <p className="mt-1 text-[11px] text-muted-foreground" data-testid="opinion-detail-noreq">
+                이 발행본과 연결된 서류요청이 없어 발급요청일자를 수정할 수 없습니다.
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewRow(null)} data-testid="opinion-detail-close">
+              <X className="mr-1 h-3.5 w-3.5" /> 닫기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
