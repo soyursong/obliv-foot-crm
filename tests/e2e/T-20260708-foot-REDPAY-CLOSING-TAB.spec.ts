@@ -22,8 +22,9 @@ const RECON_EF = 'supabase/functions/redpay-reconcile/index.ts';
 //   형제 EF(receipt-ocr Step3)와 공유하는 단일 정의처. env 계약 = REDPAY_API_URL (신규 env 금지).
 const REDPAY_CONFIG = 'supabase/functions/_shared/redpay-config.ts';
 
-// 풋 26 TID 화이트리스트 (redpay_foot_terminal_registry.md §2 = authoritative SSOT, last_verified 2026-07-20)
+// 풋 TID 화이트리스트 (redpay_foot_terminal_registry.md §2 = authoritative SSOT)
 //   T-20260720-...-WHITELIST-EXPAND: 13→26 (VAN7+유선6+멀티8+무선5). registry §5 8곳 소비처 동기.
+//   T-20260725-...-0724GAP(§9): 유선/멀티 4 단말 3세대 재프로비저닝 신 TID 4종(538xxx) 추가(구 479 병존).
 const FOOT_TIDS = [
   '1047479255','1047479254','1047479261','1047479268','1047479262',
   '1047479263','1047479264','1047479469','1047479471','1047479472',
@@ -31,6 +32,8 @@ const FOOT_TIDS = [
   '1047479477','1047479478','1047479479','1047479480','1047479481',
   '1047479482','1047479153','1047479148','1047479155','1047479158',
   '1047479157',
+  // 0724 GAP 신 TID(538xxx): 288003→538236·288004→538231·288006→538241·289004→538237
+  '1047538236','1047538231','1047538241','1047538237',
 ];
 
 // ─── AC-2: 레드페이 하위탭 신설 + CRM 수납 무손상 ────────────────────────────

@@ -157,7 +157,11 @@ const FOOT_MERCHANT_WHITELIST_DEFAULT = [
   "1777289009", "1777289010", "1777289011", "1777289012", "1777289013", // 무선5
 ];
 
-// TID 26종 (merchant 1:1) — 서버-측 tid= narrowing + belt-and-suspenders 보조필터.
+// TID (merchant 1:1) — 서버-측 tid= narrowing + belt-and-suspenders 보조필터.
+//   원 26-set(479xxx) + 0724 GAP 재프로비저닝 신 TID 4종(538xxx) = 구·신 병존(UNION 시맨틱).
+//   T-20260725-...-0724GAP(§9): 4 merchant(288003/004/006·289004) 유선/멀티 단말이 3세대 band(538xxx)로
+//   재등록 → 구 479xxx 는 historical raw 가시성 위해 유지, 신 538xxx 추가(registry superseded_tids UNION 미러).
+//   ★0723GAP(535xxx) 5-merchant remap 은 별도 disjoint 티켓(branch 미merge) → merge 시 additive 결합.
 const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479255", "1047479254", "1047479261", "1047479268", "1047479262",
   "1047479263", "1047479264",             // VAN7 (신규 254·268·262·263·264)
@@ -166,6 +170,8 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479483", "1047479476", "1047479477", "1047479478", "1047479479",
   "1047479480", "1047479481", "1047479482", // 멀티8
   "1047479153", "1047479148", "1047479155", "1047479158", "1047479157", // 무선5
+  // 0724 GAP 신 TID(538xxx) — 288003→538236·288004→538231·288006→538241·289004→538237(구 479 병존):
+  "1047538236", "1047538231", "1047538241", "1047538237", // 유선/멀티 3세대(T-20260725-...-0724GAP §9)
 ];
 
 // ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
