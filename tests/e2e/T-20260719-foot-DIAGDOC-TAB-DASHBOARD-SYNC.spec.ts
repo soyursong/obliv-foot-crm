@@ -238,12 +238,17 @@ test.describe('AC-5 — 치료테이블 맨 뒤 탭 append + 부모 date 상속'
     expect(src).toMatch(/<DiagDocSection\s+date=\{date\}\s+nameInteraction=\{nameInteraction\}/);
   });
 
-  test('맨 뒤 append — plan(경과분석 플랜) 탭 뒤에 diagdoc 위치', () => {
+  // T-20260724-foot-TREATTABLE-TAB-ORDER-RENAME(A/C): 탭 순서 재정렬로 소견서·진단서(diagdoc)가
+  //   ②번째(진료 다음)로 전진, 경과분석 플랜(plan)은 경과분석(progress) 하위 서브탭으로 중첩.
+  //   기존 '맨 뒤(plan 뒤)' 순서 단정은 본 티켓이 supersede → diagdoc이 진료(history) 다음·검사탭 앞임을 검증.
+  test('diagdoc 탭 존재 + 진료(history) 다음 위치(TAB-ORDER-RENAME 이후)', () => {
     const src = PARENT_SRC();
-    const planIdx = src.indexOf('tab-progress-plans');
+    const historyIdx = src.indexOf('tab-doctor-history');
     const diagIdx = src.indexOf('tab-diagdoc');
-    expect(planIdx).toBeGreaterThan(0);
-    expect(diagIdx).toBeGreaterThan(planIdx); // diagdoc 이 plan 뒤(맨 뒤)
+    const examIdx = src.indexOf('tab-exam-targets');
+    expect(historyIdx).toBeGreaterThan(0);
+    expect(diagIdx).toBeGreaterThan(historyIdx); // diagdoc 이 진료 뒤(②번째)
+    expect(examIdx).toBeGreaterThan(diagIdx); // 균검사(③)는 소견서·진단서 뒤
   });
 });
 

@@ -2,9 +2,12 @@
 // Ticket: T-20260620-foot-TREATTABLE-2SECTION-REVAMP (부모, deployed)
 // Ticket: T-20260622-foot-TREATTABLE-ADDON-COMPACT-DATEFILTER (본건 — A컴팩트/B날짜필터/C검사결과생성/D이름인터랙션)
 //
-//   상단 2탭:
-//     ① 진료 환자 이력        → DoctorHistorySection (진료콜 등재 환자 + 처방전/소견·진단서 발행 O/X)
-//     ② 균검사 & 피검사 대상자 → ExamTargetsSection   (koh/blood 신청 환자, 1환자 1행 검사박스)
+//   상단 탭(T-20260724-foot-TREATTABLE-TAB-ORDER-RENAME 재정렬 이후):
+//     ① 진료(history)          → DoctorHistorySection (진료콜 등재 환자 + 처방전/소견·진단서 발행 O/X)
+//     ② 소견서·진단서(diagdoc) → DiagDocSection
+//     ③ 균검사(exam)           → ExamTargetsSection   (koh 신청 환자, 1환자 1행 검사박스)
+//     ④ 피검사(blood)          → BloodDailyListSection
+//     ⑤ 경과분석(progress)     → 하위 서브탭 2개(경과분석/경과분석 플랜)
 //
 //   본건 증분(ADDON):
 //     A. 레이아웃 컴팩트화 — 각 섹션 테이블 여백·행간 축소(정보밀도 ↑).
@@ -43,11 +46,19 @@ import { canAccess } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import type { CheckIn } from '@/lib/types';
 
-// T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 치료테이블 탭 = ①진료 환자 이력 ②균검사&피검사 대상자 ③경과분석.
-// T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정, 진료관리에서 이식) = 맨 뒤. confirm 해소(문지은 대표원장 2026-06-29) → 랜딩.
-//   명칭 구분: ③='경과분석'(오늘 대상자 확인) / ④='경과분석 플랜'(설정). 혼동 금지.
-// T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서(진료대시보드 [서류작성] read-only 재노출) = 맨 뒤.
-type SectionTab = 'history' | 'exam' | 'blood' | 'progress' | 'plan' | 'diagdoc';
+// T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 경과분석 탭 이식.
+// T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: 경과분석 플랜(설정, 진료관리에서 이식). confirm 해소(문지은 대표원장 2026-06-29) → 랜딩.
+// T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: 소견서·진단서(진료대시보드 [서류작성] read-only 재노출).
+// T-20260724-foot-TREATTABLE-TAB-ORDER-RENAME: 탭 진열순서 재정렬 + 명칭변경 + '경과분석 플랜' 중첩(순수 presentational, db 무변경).
+//   A. 순서(왼→오): ①진료(history) ②소견서·진단서(diagdoc) ③균검사(exam) ④피검사(blood) ⑤경과분석(progress).
+//   B. '진료 환자 이력' 라벨 → '진료' (라벨만; 탭 key=history·라우팅·DoctorHistorySection 컴포넌트 불변).
+//   C. 구 top-level '경과분석 플랜'(plan) 탭 → '경과분석'(progress) 하위 서브탭으로 중첩.
+//      콘텐츠 미합침 — 부모=경과분석, 하위 2서브탭 각각 유지:
+//        서브탭1 '경과분석'(targets = ProgressTargetsSection = 오늘 대상자) / 서브탭2 '경과분석 플랜'(plan = ProgressPlansTab = 설정).
+//      value="plan"·testid=tab-progress-plans·testid=tab-progress-targets 전량 보존(하위 서브탭으로 이동).
+type SectionTab = 'history' | 'diagdoc' | 'exam' | 'blood' | 'progress';
+/** C. 경과분석(progress) 부모 탭의 하위 서브탭 — 'targets'(오늘 대상자) / 'plan'(회차tier 체크포인트 설정). */
+type ProgressSubTab = 'targets' | 'plan';
 
 /** D. 이름 우클릭 컨텍스트 메뉴 타깃(섹션이 보유한 최소 고객 정보). */
 export interface NameCtxTarget {
@@ -69,6 +80,8 @@ function todayStr() {
 
 export default function TreatmentTable() {
   const [tab, setTab] = useState<SectionTab>('history');
+  // C. 경과분석(progress) 부모 탭 하위 서브탭 상태 — 기본 'targets'(오늘 대상자).
+  const [progressSub, setProgressSub] = useState<ProgressSubTab>('targets');
 
   // ── B. 탭 공통 단일 날짜선택기(권장 기본) — 부모 소유, 양 섹션 공유 ──
   const today = todayStr();
@@ -183,59 +196,75 @@ export default function TreatmentTable() {
       {/* 2섹션 탭 */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as SectionTab)} className="flex flex-col gap-4">
         <TabsList data-testid="treatment-section-tabs">
+          {/* ① 진료 — T-20260724 B: 라벨만 '진료'로 변경(구 라벨 대체). key=history·컴포넌트 불변. */}
           <TabsTrigger value="history" data-testid="tab-doctor-history">
             <Stethoscope className="size-3.5 mr-1.5" />
-            진료 환자 이력
+            진료
           </TabsTrigger>
-          {/* T-20260724-foot-TREATTABLE-LABTAB-SPLIT-BLOODLIST: [균검사&피검사 대상자] → [균검사]/[피검사] 2탭 분리.
-              균검사 = 기존 ExamTargetsSection 그대로(회귀0), testid 유지. */}
+          {/* ② 소견서·진단서 — T-20260719 DIAGDOC. T-20260724 A: ①진료 다음(2번째)으로 전진 배치. */}
+          <TabsTrigger value="diagdoc" data-testid="tab-diagdoc">
+            <FileText className="size-3.5 mr-1.5" />
+            소견서·진단서
+          </TabsTrigger>
+          {/* ③ 균검사 — ExamTargetsSection(회귀0), testid 유지(LABTAB-SPLIT). */}
           <TabsTrigger value="exam" data-testid="tab-exam-targets">
             <ClipboardList className="size-3.5 mr-1.5" />
             균검사
           </TabsTrigger>
+          {/* ④ 피검사 — 피검사 일일 진행 리스트(LABTAB-SPLIT). */}
           <TabsTrigger value="blood" data-testid="tab-blood-daily">
             <Droplet className="size-3.5 mr-1.5" />
             피검사
           </TabsTrigger>
-          {/* T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: ③경과분석(당일 대상자 리스트). 기존 2탭 뒤. */}
-          <TabsTrigger value="progress" data-testid="tab-progress-targets">
+          {/* ⑤ 경과분석(부모) — T-20260724 C: 하위 2서브탭(경과분석 / 경과분석 플랜) 보유. */}
+          <TabsTrigger value="progress" data-testid="tab-progress">
             <TrendingUp className="size-3.5 mr-1.5" />
             경과분석
-          </TabsTrigger>
-          {/* T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정, 진료관리에서 이식). 맨 뒤.
-              ③경과분석(오늘 대상자)과 명칭 구분 — 본 탭은 회차tier별 체크포인트 설정(ProgressPlansTab). */}
-          <TabsTrigger value="plan" data-testid="tab-progress-plans">
-            <Settings2 className="size-3.5 mr-1.5" />
-            경과분석 플랜
-          </TabsTrigger>
-          {/* T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서(진료대시보드 [서류작성] read-only 재노출). 맨 뒤. */}
-          <TabsTrigger value="diagdoc" data-testid="tab-diagdoc">
-            <FileText className="size-3.5 mr-1.5" />
-            소견서·진단서
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="mt-0">
           <DoctorHistorySection date={date} nameInteraction={nameInteraction} />
         </TabsContent>
+        {/* ② 소견서·진단서 — 부모 공통 날짜(date) 상속(AC-5) + 이름 인터랙션 위임. */}
+        <TabsContent value="diagdoc" className="mt-0">
+          <DiagDocSection date={date} nameInteraction={nameInteraction} />
+        </TabsContent>
         <TabsContent value="exam" className="mt-0">
           <ExamTargetsSection date={date} nameInteraction={nameInteraction} />
         </TabsContent>
-        {/* T-20260724-foot-TREATTABLE-LABTAB-SPLIT-BLOODLIST: [피검사] = 피검사 일일 진행 리스트(신규 8컬럼 양식). */}
+        {/* ④ 피검사 = 피검사 일일 진행 리스트(신규 8컬럼 양식). */}
         <TabsContent value="blood" className="mt-0">
           <BloodDailyListSection date={date} nameInteraction={nameInteraction} />
         </TabsContent>
+        {/* ⑤ 경과분석(부모) — T-20260724-foot-TREATTABLE-TAB-ORDER-RENAME C:
+            구 top-level 'plan'(경과분석 플랜) 탭을 여기 하위 서브탭으로 중첩. 콘텐츠 미합침 — 두 서브탭 각각 유지.
+            서브탭1 '경과분석'(targets=ProgressTargetsSection=오늘 대상자, testid=tab-progress-targets 보존)
+            서브탭2 '경과분석 플랜'(plan=ProgressPlansTab=회차tier 체크포인트 설정, value="plan"·testid=tab-progress-plans 보존) */}
         <TabsContent value="progress" className="mt-0">
-          <ProgressTargetsSection date={date} nameInteraction={nameInteraction} />
-        </TabsContent>
-        {/* T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정). 진료관리에서 이식 — 기능 동일.
-            ProgressPlansTab 는 useClinic 자체 사용(date/nameInteraction 불요) — 회차tier별 체크포인트 CRUD. */}
-        <TabsContent value="plan" className="mt-0">
-          <ProgressPlansTab />
-        </TabsContent>
-        {/* T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서 — 부모 공통 날짜(date) 상속(AC-5) + 이름 인터랙션 위임. */}
-        <TabsContent value="diagdoc" className="mt-0">
-          <DiagDocSection date={date} nameInteraction={nameInteraction} />
+          <Tabs
+            value={progressSub}
+            onValueChange={(v) => setProgressSub(v as ProgressSubTab)}
+            className="flex flex-col gap-4"
+          >
+            <TabsList data-testid="progress-subtabs">
+              <TabsTrigger value="targets" data-testid="tab-progress-targets">
+                <TrendingUp className="size-3.5 mr-1.5" />
+                경과분석
+              </TabsTrigger>
+              <TabsTrigger value="plan" data-testid="tab-progress-plans">
+                <Settings2 className="size-3.5 mr-1.5" />
+                경과분석 플랜
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="targets" className="mt-0">
+              <ProgressTargetsSection date={date} nameInteraction={nameInteraction} />
+            </TabsContent>
+            {/* 경과분석 플랜(설정). ProgressPlansTab 는 useClinic 자체 사용(date/nameInteraction 불요) — 회차tier별 체크포인트 CRUD. */}
+            <TabsContent value="plan" className="mt-0">
+              <ProgressPlansTab />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
 
