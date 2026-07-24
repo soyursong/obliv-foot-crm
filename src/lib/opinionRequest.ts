@@ -264,6 +264,88 @@ export function usePublishedOpinionRequests(clinicId: string | null) {
   });
 }
 
+// ─── 발행완료 서류 '내용 열람'(read-only) — 실제 발행본 조회 (T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN) ──
+//   '서류 완료' 그룹 서류명 클릭 → 그 요청으로 실제 발행된 서류(form_submissions status='published', opinion_doc)
+//   본문(field_data.final_text)을 read-only 로 열람. hub(NAMELIST-EXPAND)는 서류명 나열+해당항목 미리보기까지 —
+//   본 훅은 그 위에 '실제 발행본 내용' 열람 증분을 얹는다(나열/배지 렌더 무접촉, onClick 열람만 결선).
+//   ★read-only READ 전용: status='published' 발행본 read 만. authoring/publish 경로(publish_opinion_doc RPC·
+//     OpinionEditorDialog)·요청/작성 UI(pending) 일절 미접촉.
+//   ★스키마 변경 0(db_change=false): 이미 적재된 field_data(final_text/doc_type/check_in_id) 만 read.
+//   ★교차노출 금지(AC2/AC3): customer_id 필터 → 다른 환자 발행본 구조적 배제. 매핑은 check_in_id+doc_type 원자키.
+export interface PublishedOpinionDoc {
+  id: string;
+  customerId: string | null;
+  checkInId: string | null;
+  docType: OpinionDocType;
+  finalText: string;
+  chartNo: string | null;
+  doctorName: string;
+  issuedAt: string;   // created_at(ISO)
+}
+
+export function usePublishedOpinionDocs(
+  clinicId: string | null,
+  customerIds: string[],
+  templateId: string | null,
+) {
+  const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
+  return useQuery<PublishedOpinionDoc[]>({
+    queryKey: ['opinion_published_docs', clinicId, templateId, key],
+    enabled: !!clinicId && !!templateId && key.length > 0,
+    queryFn: async () => {
+      if (!clinicId || !templateId || !key) return [];
+      const ids = key.split(',');
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, customer_id, check_in_id, field_data, created_at')
+        .eq('clinic_id', clinicId)
+        .eq('template_id', templateId)
+        .eq('status', 'published')
+        .in('customer_id', ids)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+        const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+        return {
+          id: String(r['id']),
+          customerId: (r['customer_id'] as string | null) ?? null,
+          checkInId: (r['check_in_id'] as string | null) ?? null,
+          docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+          finalText: String(fd['final_text'] ?? ''),
+          chartNo: (fd['chart_no'] as string | null) || null,
+          doctorName: String(fd['doctor_name'] ?? ''),
+          issuedAt: String(r['created_at'] ?? ''),
+        };
+      });
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
+// 완료 요청 row ↔ 실제 발행본 원자 매핑(AC3 항목별 매핑 정확·교차노출 금지).
+//   ① check_in_id + doc_type 우선 — 발행 RPC 가 요청 앵커(check_in)를 그대로 published.check_in_id 로 각인하므로
+//      요청 1건 ↔ 발행본 1건 원자 링크(다른 서류/다른 환자 노출 방지).
+//   ② check_in_id 결측(레거시) 시 customer_id + doc_type 폴백 — 여전히 customer 격리(타 환자 배제).
+//   ③ 동일 키 복수 발행본은 resolved_at 에 가장 근접한 1건(publish→resolve 순차성). 미발견 시 null(폴백 재구성).
+export function matchPublishedOpinionDoc(
+  row: OpinionRequestRow,
+  docs: PublishedOpinionDoc[],
+): PublishedOpinionDoc | null {
+  const sameType = docs.filter((d) => d.docType === row.docType);
+  const byCheckIn = row.checkInId ? sameType.filter((d) => d.checkInId === row.checkInId) : [];
+  const candidates = byCheckIn.length > 0
+    ? byCheckIn
+    : sameType.filter((d) => !!d.customerId && d.customerId === row.customerId);
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  const target = row.resolvedAt ? Date.parse(row.resolvedAt) : NaN;
+  if (Number.isNaN(target)) return candidates[0];
+  return candidates
+    .slice()
+    .sort((a, b) => Math.abs(Date.parse(a.issuedAt) - target) - Math.abs(Date.parse(b.issuedAt) - target))[0];
+}
+
 // 요청 처리 완료(원장 발행 or 직원 취소) → draft 를 'voided' 로 갱신해 큐에서 제거.
 //   form_submissions_update RLS = clinic member + status<>'published' → draft 갱신 허용(비가역 트리거 무영향).
 export function useResolveOpinionRequest(clinicId: string | null) {

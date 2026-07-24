@@ -20,6 +20,10 @@ import {
   useQueueClinicalSnaps,
   buildOptionLabelMap,
   docTypeLabel,
+  // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: '서류 완료' 서류명 클릭 → 실제 발행본 내용 read-only 열람.
+  useOpinionDocTemplateId,
+  usePublishedOpinionDocs,
+  matchPublishedOpinionDoc,
   type ClinicalSnap,
   type OpinionRequestRow,
 } from '@/lib/opinionRequest';
@@ -33,7 +37,7 @@ import {
 //   과거(P1-1 배타 disable 도입 이전) 큐 draft 의 selected_keys 에 진단서+금기증이 혼합돼 있으면,
 //   해당항목 셀이 위반 조합을 그대로 '제안'처럼 노출한다(★대표원장 지적: "요청서류에 로직 깨는 서류가 제안돼있다").
 //   → applyPrefillExclusivity 로 표시 키를 정규화 = '작성하기'로 열릴 prefill 과 정확히 동일한 키만 노출(표시≡prefill).
-import { buildContraindKeySet, applyPrefillExclusivity } from '@/lib/opinionDocCompose';
+import { buildContraindKeySet, applyPrefillExclusivity, composeOpinionDoc } from '@/lib/opinionDocCompose';
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속(미리보기 셀 클릭→컬럼-앵커 드롭다운 전문). 공유 컴포넌트 재사용(중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { Button } from '@/components/ui/button';
@@ -45,7 +49,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle, FileText } from 'lucide-react';
 
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
@@ -55,6 +59,14 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   // T-20260625-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 발행 완료 환자를 목록에서 제거하지 않고 '서류 완료' 그룹으로 유지.
   const { data: completedRows = [] } = usePublishedOpinionRequests(clinicId);
   const { data: clinicHeader = null } = useClinicHeader(clinicId);
+  // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: '서류 완료' 서류명 클릭 → 실제 발행본 내용 열람.
+  //   발행본(status='published', opinion_doc)은 이미 적재 — 완료 그룹 환자의 발행본만 read-only 조회(db_change=false).
+  const { data: opinionTemplateId = null } = useOpinionDocTemplateId(clinicId);
+  const completedCustomerIds = useMemo(
+    () => completedRows.map((r) => r.customerId).filter(Boolean) as string[],
+    [completedRows],
+  );
+  const { data: publishedDocs = [] } = usePublishedOpinionDocs(clinicId, completedCustomerIds, opinionTemplateId);
   const resolveMut = useResolveOpinionRequest(clinicId);
 
   // 작업 대상 + 완료 그룹 환자 모두의 임상 스냅(표준 컬럼 정상 표시, AC-5).
@@ -67,6 +79,30 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
 
   const [active, setActive] = useState<OpinionRequestRow | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: 발행완료 서류명 클릭 → 그 서류의 실제 발행본 내용 read-only 열람.
+  //   read-only 뷰어(재발행/취소/수정 버튼 없음, AC4). 나열/배지 렌더는 hub 그대로(무회귀, AC5) — 서류명 onClick 만 결선.
+  const [viewTarget, setViewTarget] = useState<OpinionRequestRow | null>(null);
+  const openDocView = (r: OpinionRequestRow) => setViewTarget(r);
+  // 원자 매핑(AC2/AC3): check_in_id+doc_type(→customer 폴백)로 요청 1건↔발행본 1건. 다른 환자/서류 노출 방지.
+  const viewDoc = useMemo(
+    () => (viewTarget ? matchPublishedOpinionDoc(viewTarget, publishedDocs) : null),
+    [viewTarget, publishedDocs],
+  );
+  // 본문 = 실제 발행본 final_text 우선(AC2 실발행본 일치). 발행본 미발견(레거시 등) 시 요청 저장본(selected_keys)으로
+  //   기존 작성창 합성기(composeOpinionDoc) 재사용해 재구성 폴백 — 둘 다 없으면 안내문(오표기 방지).
+  const viewBody = useMemo(() => {
+    if (!viewTarget) return '';
+    const real = viewDoc?.finalText?.trim();
+    if (real) return real;
+    return composeOpinionDoc({
+      sections: OPINION_SECTIONS,
+      selectedKeys: viewTarget.selectedKeys,
+      hepatitisType: null,
+      oralXReason: viewTarget.oralMedReason,
+      dateISO: viewTarget.requestDate || null,
+    });
+  }, [viewTarget, viewDoc]);
 
   const openWrite = (r: OpinionRequestRow) => {
     setActive(r);
@@ -210,6 +246,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   clinicalSnaps={clinicalSnaps}
                   itemLabelsForRow={itemLabelsForRow}
                   onWrite={openWrite}
+                  onViewDoc={openDocView}
                 />
               </div>
             </div>
@@ -237,6 +274,43 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         requestId={active?.id ?? null}
         onPublished={handlePublished}
       />
+
+      {/* T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN (AC1/AC2/AC4): '서류 완료' 서류명 클릭 → 실제 발행본 내용 열람.
+          read-only 전용 — 재발행/취소/수정 버튼 없음(AC4). 닫기만. 발행 경로(publish_opinion_doc RPC) 미접촉. */}
+      <Dialog open={!!viewTarget} onOpenChange={(o) => { if (!o) setViewTarget(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="docreq-doc-view-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2" data-testid="docreq-doc-view-title">
+              <FileText className="h-5 w-5 text-emerald-600" />
+              {viewTarget ? docTypeLabel(viewTarget.docType) : ''}
+              {viewTarget?.patientName && (
+                <span className="text-sm font-normal text-muted-foreground">· {viewTarget.patientName}</span>
+              )}
+            </DialogTitle>
+            <DialogDescription className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+              {viewTarget?.chartNo && <span>차트번호 {chartNoDisplay(viewTarget.chartNo)}</span>}
+              {viewTarget?.resolvedAt && <span>발행 {seoulHHMM(viewTarget.resolvedAt)}</span>}
+              {viewDoc?.doctorName && <span>발행자 {viewDoc.doctorName}</span>}
+            </DialogDescription>
+          </DialogHeader>
+          {/* 실제 발행본 내용 read-only 열람(작성창 본문과 동일 표현: 원문 그대로 pre-wrap). */}
+          <div
+            className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 px-4 py-3 text-[13px] leading-relaxed text-gray-800"
+            data-testid="docreq-doc-view-body"
+          >
+            {viewBody.trim() ? viewBody : '표시할 서류 내용이 없습니다.'}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setViewTarget(null)}
+              data-testid="docreq-doc-view-close"
+            >
+              닫기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* AC-2: 요청 취소(회수) 확인 다이얼로그 — 실수 취소 방지. 확정 시에만 voided 처리. */}
       <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) setCancelTarget(null); }}>
@@ -297,6 +371,7 @@ function DocReqTable({
   itemLabelsForRow,
   onWrite,
   onCancel,
+  onViewDoc,
 }: {
   rows: OpinionRequestRow[];
   variant: 'pending' | 'done';
@@ -306,6 +381,8 @@ function DocReqTable({
   onWrite: (r: OpinionRequestRow) => void;
   // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: pending 그룹에만 전달(done=undefined → 완료행 취소버튼 미표시, AC-7).
   onCancel?: (r: OpinionRequestRow) => void;
+  // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: done 그룹에만 전달 — 서류명 클릭 → 실제 발행본 내용 열람.
+  onViewDoc?: (r: OpinionRequestRow) => void;
 }) {
   return (
     <table className="w-full text-sm">
@@ -332,6 +409,7 @@ function DocReqTable({
             itemLabels={itemLabelsForRow(r)}
             onWrite={onWrite}
             onCancel={onCancel}
+            onViewDoc={onViewDoc}
           />
         ))}
       </tbody>
@@ -351,6 +429,7 @@ function DocRequestRow({
   itemLabels,
   onWrite,
   onCancel,
+  onViewDoc,
 }: {
   r: OpinionRequestRow;
   variant?: 'pending' | 'done';
@@ -358,6 +437,8 @@ function DocRequestRow({
   itemLabels: string;
   onWrite: (r: OpinionRequestRow) => void;
   onCancel?: (r: OpinionRequestRow) => void;
+  // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: 서류명 클릭 → 실제 발행본 내용 열람(done 그룹만 전달).
+  onViewDoc?: (r: OpinionRequestRow) => void;
 }) {
   const rxCellRef = useRef<HTMLTableCellElement>(null);
   const clinicalCellRef = useRef<HTMLTableCellElement>(null);
@@ -440,14 +521,18 @@ function DocRequestRow({
             >
               <CheckCircle2 className="h-3 w-3" /> 발행 완료{r.resolvedAt ? ` · ${seoulHHMM(r.resolvedAt)}` : ''}
             </button>
-            {/* AC1: 발행완료 옆 발행 서류명 개별 표시(잘림 시 말줄임+툴팁). */}
-            <span
-              className="max-w-[9rem] truncate text-[10px] font-semibold text-emerald-700/90"
-              title={doneDocLabel}
+            {/* AC1: 발행완료 옆 발행 서류명 개별 표시(잘림 시 말줄임+툴팁).
+                T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN — 서류명 클릭 시 실제 발행본 내용 read-only 열람(onViewDoc).
+                hub 나열/배지 렌더는 무회귀(AC5): 표시 텍스트·testid 동일, 클릭 열람만 결선(밑줄 점선으로 클릭 가능 힌트). */}
+            <button
+              type="button"
+              onClick={() => onViewDoc?.(r)}
+              className="max-w-[9rem] truncate text-[10px] font-semibold text-emerald-700/90 underline decoration-dotted underline-offset-2 transition hover:text-emerald-800 hover:decoration-solid"
+              title="클릭하면 발행한 서류 내용을 볼 수 있어요"
               data-testid="docreq-done-docnames"
             >
               {doneDocLabel}
-            </span>
+            </button>
           </div>
         ) : (
           <>
