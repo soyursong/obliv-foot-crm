@@ -1,0 +1,26 @@
+{
+  "ticket": "T-20260724-foot-THERAPIST-DESIGNPT-RESET-R2",
+  "applied_at": "2026-07-24T06:06:06.583Z",
+  "mode": "COMMIT",
+  "customers_nulled": [
+    {
+      "id": "5659dad8-c486-465f-a842-a0f41dbd478c",
+      "chart": "F-4552",
+      "name": "이민태"
+    }
+  ],
+  "reservation_orphans_cleared": [
+    "64d504d2-9f86-496e-bfc9-f0a9512fd64c"
+  ],
+  "post_verify": {
+    "clinic_designated_remaining": [
+      "F-4507 -> 박소예"
+    ],
+    "f4552_designated_null": true,
+    "f4552_reservation_preferred_null": true
+  },
+  "ac3_designated_count": {
+    "박소예": 1,
+    "others": 0
+  }
+}
