@@ -46,6 +46,14 @@ import {
   type CrmPayment,
   type ReconEvent,
 } from "./matcher.ts";
+// ── 풋 스코프 필터 + center 파생 (순수 모듈 추출, T-20260724-foot-REDPAY-DOSU-CONTAM-FIX 파트A) ──
+//   filterToFootScope 를 TID-only → merchant_id 1차 권위 ingest-drop 으로 정합(poller/.mjs·webhook parity).
+//   도수/비풋 merchant 신호(62071914 leak 벡터)를 upsert 前 drop. drift-assert 회귀 가드로 SSOT 정합.
+import {
+  merchantIdOfTrx,
+  centerForRawRow,
+  filterToFootScope,
+} from "./scope-filter.ts";
 
 // ── 관측행 매칭 제외 (T-20260723-foot-REDPAY-PLANB-OBSERVE-MODE) ─────────────────
 //   웹훅 관측모드 적재행(raw_payload._mode='observe')은 실 payments 로 승격 금지 →
@@ -65,43 +73,9 @@ import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" 
 //   band↔center 는 폴러 DEFAULT(scripts/redpay_macstudio_poller.mjs)와 미러. 값 표준 canonical
 //   SSOT = redpay_foot_terminal_registry.md §2 26-set(last_verified 2026-07-20, FOOT-CONFIRMED ADDITIVE).
 //   ⇒ ⛔ 'dohsu'/'dosu'(display alias) ⛔ 'body_rehab'(축오염). 재활도 center='body'.
-const FOOT_MERCHANT_SET = new Set<string>([
-  "1777285001", "1777285003", "1777285004", "1777285005", "1777285006",
-  "1777285007", "1777285008",             // VAN7
-  "1777288001", "1777288003", "1777288004", "1777288005", "1777288006",
-  "1777288008",                           // 유선6
-  "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
-  "1777289006", "1777289007", "1777289008",
-  "1777289009", "1777289010", "1777289011", "1777289012", "1777289013",
-]);
-const BODY_MERCHANT_SET = new Set<string>([
-  "1777274001",
-  "1777275001", "1777275002", "1777275003", "1777275004",
-  "1777275005", "1777275006", "1777275007", "1777275008",
-  "1777276001", "1777276002", "1777276003", "1777276004", "1777276005",
-]);
-
-/** raw_payload.merchant.id 추출 → 안전 문자열. 부재 시 null. */
-function merchantIdOf(rawPayload: unknown): string | null {
-  const m = (rawPayload as { merchant?: { id?: unknown } } | null | undefined)?.merchant?.id;
-  return m != null && `${m}`.trim() !== "" ? `${m}`.trim() : null;
-}
-
-/**
- * raw 트랜잭션(merchant band) → center 명시 파생.
- *   foot 17-set → 'foot' / body 14-band → 'body'.
- *   미분류(폴러 whitelist 상 발생 불가하나 방어) → 'foot' 폴백 + WARN 표면화(silent 금지, registry §6 정신).
- */
-function centerForRawRow(raw: { raw_payload?: unknown } | null | undefined): "foot" | "body" {
-  const mid = merchantIdOf(raw?.raw_payload);
-  if (mid && BODY_MERCHANT_SET.has(mid)) return "body";
-  if (mid && FOOT_MERCHANT_SET.has(mid)) return "foot";
-  console.warn(
-    `[redpay-reconcile][center] 미분류 merchant(id=${mid ?? "∅"}) — center='foot' 폴백(표면화). ` +
-    `신규 단말 후보면 registry(redpay_terminal_registry)에 등록 필요.`,
-  );
-  return "foot";
-}
+//   ★ FOOT_MERCHANT_SET / BODY_MERCHANT_SET / merchantIdOf / centerForRawRow / filterToFootScope 는
+//     순수 모듈 ./scope-filter.ts 로 추출(T-20260724-foot-REDPAY-DOSU-CONTAM-FIX 파트A) — 상단 import 참조.
+//     drift-assert 회귀 가드(scope-filter.regress.test.ts)가 _shared SSOT 와 값 정합을 봉인.
 
 // ── 환경 변수 ─────────────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
@@ -429,16 +403,25 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
 
     totalFetched += items.length;
 
-    // ── 클라이언트-측 2차 방어 (최필경 T-20260708) ──────────────────────────
-    //   마스터 키가 서버-측 tid 필터를 무시하고 타 병원 결제를 돌려줘도, 풋 화이트리스트
-    //   밖 TID 는 upsert 전에 제외한다. 화이트리스트 미설정 시(초기)엔 전량 통과.
-    const { kept, dropped } = filterToFootScope(items, tidWhitelistSet);
+    // ── 클라이언트-측 2차 방어 (최필경 T-20260708 / DOSU-CONTAM-FIX 파트A) ──────────
+    //   마스터 키가 서버-측 tid 필터를 무시하고 타 센터(도수 등) 결제를 돌려줘도, upsert 전에 drop.
+    //   ★ merchant_id 1차 권위(도메인 경계) — 도수/비풋 merchant(62071914 leak 벡터) ingest-drop.
+    //     TID 는 belt-and-suspenders 보조, merchant 값 부재 시에만 TID 폴백(scope-filter.ts).
+    const { kept, dropped, drift } = filterToFootScope(items, tidWhitelistSet);
     if (dropped.length > 0) {
       totalScopedOut += dropped.length;
+      const sampleMerchants = [...new Set(dropped.map((d) => merchantIdOfTrx(d) ?? "null"))].slice(0, 10);
       const sampleTids = [...new Set(dropped.map((d) => d.tid ?? "null"))].slice(0, 10);
       console.warn(
-        `[redpay-reconcile][foot][TENANT-GUARD] 화이트리스트 외 TID ${dropped.length}건 제외 ` +
-        `(타 병원 결제 혼입 차단). 제외 TID 샘플=[${sampleTids.join(",")}]`
+        `[redpay-reconcile][foot][TENANT-GUARD] 풋 allowlist 외(도수/비풋/미등록) ${dropped.length}건 제외 ` +
+        `(타 센터 신호 혼입 차단). 제외 merchant 샘플=[${sampleMerchants.join(",")}] TID 샘플=[${sampleTids.join(",")}]`
+      );
+    }
+    if (drift.length > 0) {
+      const driftTids = [...new Set(drift.map((d) => d.tid ?? "null"))].slice(0, 10);
+      console.warn(
+        `[redpay-reconcile][foot][DRIFT] 풋 merchant 인정 + 미등록 TID ${drift.length}건 — 신규 단말 후보 ` +
+        `(silent include 금지, registry §6). TID 샘플=[${driftTids.join(",")}]`
       );
     }
 
@@ -1058,21 +1041,8 @@ async function upsertRawTransactions(
 
 // ── 공통 헬퍼 ─────────────────────────────────────────────────────────────
 
-// 풋 스코프 필터 — 화이트리스트 밖 TID(타 병원) 제외 (마스터 키 혼입 2차 방어).
-//   whitelist 비어있으면(초기·미설정) 전량 통과 → 활성화 전 UI 렌더 보장.
-function filterToFootScope(
-  items:        RedpayTransaction[],
-  tidWhitelist: Set<string>
-): { kept: RedpayTransaction[]; dropped: RedpayTransaction[] } {
-  if (tidWhitelist.size === 0) return { kept: items, dropped: [] };
-  const kept:    RedpayTransaction[] = [];
-  const dropped: RedpayTransaction[] = [];
-  for (const it of items) {
-    if (it.tid && tidWhitelist.has(it.tid)) kept.push(it);
-    else dropped.push(it);
-  }
-  return { kept, dropped };
-}
+// 풋 스코프 필터(filterToFootScope) + merchant set + center 파생은 ./scope-filter.ts 로 추출
+//   (T-20260724-foot-REDPAY-DOSU-CONTAM-FIX 파트A — TID-only → merchant_id 1차 권위 ingest-drop 정합).
 
 // Redpay approved_at / cancelled_at KST→UTC 변환 헬퍼
 //   Redpay API는 "YYYY-MM-DD HH:MM:SS" 형식의 KST 문자열 반환.

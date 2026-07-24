@@ -1,0 +1,106 @@
+// redpay-reconcile/scope-filter.regress.test.ts — 풋 스코프 필터 회귀 가드
+//
+// T-20260724-foot-REDPAY-DOSU-CONTAM-FIX 파트A (Q1 ingest-drop GO · Q3 단일SSOT 정합 + drift-assert)
+//   실행: deno test supabase/functions/redpay-reconcile/scope-filter.regress.test.ts
+//
+//   ▸ [drift-assert] reconcile 경로 merchant set(scope-filter.ts) 이 webhook 경로 SSOT
+//     (_shared/redpay-foot-merchants.ts) 와 divergence 하면 실패 → 두 티켓(본 건 over-inclusion,
+//     WHITELIST-EXPAND-0723GAP under-inclusion)이 whitelist 를 손댈 때 한쪽만 갱신하는 drift 를 표면화.
+//   ▸ [ingest-drop] 도수(body)·미등록(unknown) merchant 는 drop, 풋 merchant 는 keep 을 고정 →
+//     62071914(merchant 1777276003, 도수) leak 재유입을 회귀로 봉인.
+
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  FOOT_MERCHANT_SET,
+  BODY_MERCHANT_SET,
+  filterToFootScope,
+  centerForRawRow,
+} from "./scope-filter.ts";
+import {
+  FOOT_MERCHANT_SET as SHARED_FOOT,
+  BODY_MERCHANT_SET as SHARED_BODY,
+} from "../_shared/redpay-foot-merchants.ts";
+
+function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+// ── [drift-assert] reconcile merchant set === webhook(_shared) SSOT ──────────────
+Deno.test("drift-assert: FOOT merchant set 은 _shared SSOT 와 동일(divergence 감지)", () => {
+  assert(
+    setsEqual(FOOT_MERCHANT_SET, SHARED_FOOT),
+    `FOOT_MERCHANT_SET drift! reconcile=${FOOT_MERCHANT_SET.size} _shared=${SHARED_FOOT.size} ` +
+    `— reconcile/webhook whitelist 한쪽만 갱신됨(0723GAP 등). 단일SSOT 정합 복원 필요.`,
+  );
+});
+
+Deno.test("drift-assert: BODY merchant set 은 _shared SSOT 와 동일", () => {
+  assert(
+    setsEqual(BODY_MERCHANT_SET, SHARED_BODY),
+    `BODY_MERCHANT_SET drift! reconcile=${BODY_MERCHANT_SET.size} _shared=${SHARED_BODY.size}`,
+  );
+});
+
+Deno.test("FOOT/BODY 대역은 disjoint (겹침 = 도메인 경계 붕괴)", () => {
+  for (const m of FOOT_MERCHANT_SET) {
+    assert(!BODY_MERCHANT_SET.has(m), `merchant ${m} 이 FOOT·BODY 양쪽에 존재`);
+  }
+});
+
+// ── [ingest-drop] 62071914 도수 leak 회귀 봉인 ───────────────────────────────────
+Deno.test("ingest-drop: 도수(body) merchant 는 drop (62071914 leak 벡터 봉인)", () => {
+  const items = [
+    { tid: "1000000001", merchant: { id: "1777285001" } }, // 풋 VAN → keep
+    { tid: "1047479115", merchant: { id: "1777276003" } }, // 도수(62071914 현장 지문) → drop
+    { tid: "1047479115", merchant: { id: "1777276003" } }, // 도수 취소쌍 → drop
+  ];
+  // tidWhitelist 를 비워도(pass-through 였던 구 버그 조건) merchant-drop 이 도수를 걸러야 한다.
+  const { kept, dropped } = filterToFootScope(items, new Set<string>());
+  assertEquals(kept.length, 1, "풋 merchant 1건만 keep");
+  assertEquals(kept[0].merchant.id, "1777285001");
+  assertEquals(dropped.length, 2, "도수 2행 전량 drop");
+  for (const d of dropped) assertEquals(d.merchant.id, "1777276003");
+});
+
+Deno.test("ingest-drop: 미등록(unknown) merchant 도 drop (silent include 금지)", () => {
+  const items = [
+    { tid: "9999999999", merchant: { id: "1888000000" } }, // 미등록 → drop
+    { tid: "1000000002", merchant: { id: "1777289001" } }, // 풋 → keep
+  ];
+  const { kept, dropped } = filterToFootScope(items, new Set<string>());
+  assertEquals(kept.length, 1);
+  assertEquals(dropped.length, 1);
+  assertEquals(dropped[0].merchant.id, "1888000000");
+});
+
+Deno.test("merchant 값 부재 시에만 TID 보조필터로 폴백 (레거시/이상행 유실 방지)", () => {
+  const items = [
+    { tid: "1000000003", merchant: null },        // merchant 부재 + TID 화이트 → keep(폴백)
+    { tid: "8888888888", merchant: null },        // merchant 부재 + TID 비화이트 → drop
+    { tid: null, merchant: undefined },           // merchant·TID 모두 부재 → drop
+  ];
+  const tidW = new Set<string>(["1000000003"]);
+  const { kept, dropped } = filterToFootScope(items, tidW);
+  assertEquals(kept.length, 1, "merchant 부재 + 화이트 TID 만 폴백 keep");
+  assertEquals(kept[0].tid, "1000000003");
+  assertEquals(dropped.length, 2);
+});
+
+Deno.test("drift: 풋 merchant 인정 + 미등록 TID → drift 표면화 (신규 단말 후보)", () => {
+  const items = [
+    { tid: "7777777777", merchant: { id: "1777285001" } }, // 풋 merchant, 미등록 TID → keep + drift
+  ];
+  const tidW = new Set<string>(["1000000001"]); // 다른 풋 TID 만 등록
+  const { kept, dropped, drift } = filterToFootScope(items, tidW);
+  assertEquals(kept.length, 1, "merchant 권위로 keep");
+  assertEquals(dropped.length, 0);
+  assertEquals(drift.length, 1, "미등록 TID 는 drift 로 알람");
+});
+
+// ── centerForRawRow (raw_payload band → center) ────────────────────────────────
+Deno.test("centerForRawRow: 도수 band → 'body', 풋 → 'foot'", () => {
+  assertEquals(centerForRawRow({ raw_payload: { merchant: { id: "1777276003" } } }), "body");
+  assertEquals(centerForRawRow({ raw_payload: { merchant: { id: "1777285001" } } }), "foot");
+});
