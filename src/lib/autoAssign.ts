@@ -842,11 +842,18 @@ export async function manualAssign(opts: {
 }): Promise<{ ok: boolean; message?: string }> {
   try {
     const assignedCol = opts.role === 'consult' ? 'consultant_id' : 'therapist_id';
-    const { error } = await supabase
+    // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A) — cross_crm_write_rowcheck_standard:
+    //   .select('id') 로 영향 행 회수. RLS 필터/스코프 불일치로 0-row(+error=null)가 되면
+    //   silent write-failure 이므로 성공 오인 금지 → ok:false 반환(거짓 '변경됐어요' 토스트 차단).
+    //   write 타깃 = check_ins.consultant_id/therapist_id(per-visit) 만. customers.assigned_staff_id 무접점(RED LINE).
+    const { data, error } = await supabase
       .from('check_ins')
       .update({ [assignedCol]: opts.toStaffId })
-      .eq('id', opts.checkInId);
+      .eq('id', opts.checkInId)
+      .select('id');
     if (error) return { ok: false, message: error.message };
+    if (!data || data.length === 0)
+      return { ok: false, message: '변경 권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.' };
     await logAssignment({
       clinicId: opts.clinicId,
       checkInId: opts.checkInId,

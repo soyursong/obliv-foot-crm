@@ -111,6 +111,10 @@ export default function Assignments() {
   //   (staff 테이블 RLS=is_admin_or_manager(director 포함)와 정합). 그 외 역할은 버튼 비노출 + save 가드.
   const canEditRotation =
     profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+  // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 권한 = admin/manager/director.
+  //   check_ins UPDATE RLS(is_admin_or_manager, director 포함)와 정합. 그 외 역할은 select 비노출(read-only 표시) + write 는 rows-affected 가드로 이중 차단.
+  const canEditDistribution =
+    profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
   const [rotationOpen, setRotationOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -516,6 +520,7 @@ export default function Assignments() {
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
     id: string;
+    checkIn: CheckIn; // 요청1(A) row 담당 수정용 — doManual(check_ins per-visit UPDATE) 대상
     customerName: string;
     role: AssignmentRole;
     staffId: string | null;
@@ -549,6 +554,7 @@ export default function Assignments() {
         const act = latestAct.get(`${ci.id}:${role}`);
         rows.push({
           id: `${ci.id}:${role}`,
+          checkIn: ci,
           customerName: ci.customer_name ?? '—',
           role,
           staffId,
@@ -561,6 +567,17 @@ export default function Assignments() {
     }
     return rows.sort((a, b) => b.at.localeCompare(a.at));
   }, [monthCheckIns, actions, activeTab]);
+
+  // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
+  //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.
+  const distEditStaffOptions = useMemo<Staff[]>(() => {
+    const target = activeTab === 'consult' ? 'consultant' : 'therapist';
+    return staff
+      .filter((s) => s.role === target)
+      .sort((a, b) =>
+        (a.display_name ?? a.name).trim().localeCompare((b.display_name ?? b.name).trim(), 'ko'),
+      );
+  }, [staff, activeTab]);
 
   // ── [배정목록] 탭 — 카테고리 담당자 드롭 옵션 + 선택 담당자 금일 배정 환자목록 ─────────
   // T-20260710-foot-ASSIGNMENT-LIST-TAB
@@ -1050,7 +1067,8 @@ export default function Assignments() {
           <CardTitle className="text-sm">
             금일 배분 이력{' '}
             <span className="text-xs font-normal text-muted-foreground">
-              (오늘 {activeTab === 'consult' ? '상담' : '치료'} 배정 {todayDistribution.length}건 · 표시 전용)
+              (오늘 {activeTab === 'consult' ? '상담' : '치료'} 배정 {todayDistribution.length}건
+              {canEditDistribution ? ' · 담당 수정 가능' : ' · 표시 전용'})
             </span>
           </CardTitle>
         </CardHeader>
@@ -1076,7 +1094,35 @@ export default function Assignments() {
                 {todayDistribution.map((r) => (
                   <tr key={r.id} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium">{r.customerName}</td>
-                    <td className="px-2 py-2">{staffName(r.staffId)}</td>
+                    <td className="px-2 py-2">
+                      {/* T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): admin/manager/director 는 담당 인라인 수정.
+                          write 타깃 = check_ins.consultant_id/therapist_id(per-visit, doManual) 만. assigned_staff_id 무접점(RED LINE).
+                          권한 없으면 기존대로 read-only 표시. */}
+                      {canEditDistribution ? (
+                        <select
+                          data-testid={`dist-edit-select-${r.id}`}
+                          className="rounded border bg-background px-1.5 py-1 text-xs"
+                          value={r.staffId ?? ''}
+                          disabled={busy}
+                          onChange={(e) => {
+                            if (e.target.value && e.target.value !== r.staffId)
+                              void doManual(r.checkIn, r.role, e.target.value);
+                          }}
+                        >
+                          {distEditStaffOptions.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {(s.display_name ?? s.name).trim()}
+                            </option>
+                          ))}
+                          {/* 옵션 풀에 없는 현재 담당(비활성/타역할) 보존 노출 */}
+                          {r.staffId && !distEditStaffOptions.some((s) => s.id === r.staffId) && (
+                            <option value={r.staffId}>{staffName(r.staffId)}</option>
+                          )}
+                        </select>
+                      ) : (
+                        staffName(r.staffId)
+                      )}
+                    </td>
                     <td className="px-2 py-2">
                       <Badge
                         variant={r.method === '자동' ? 'teal' : r.method === '—' ? 'outline' : 'secondary'}
