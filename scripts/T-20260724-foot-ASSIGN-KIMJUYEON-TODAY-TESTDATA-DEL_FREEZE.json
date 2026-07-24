@@ -1,0 +1,744 @@
+{
+  "ticket": "T-20260724-foot-ASSIGN-KIMJUYEON-TODAY-TESTDATA-DEL",
+  "mode": "READ-ONLY FREEZE v2 (WRITE 0)",
+  "generated_note": "재-dry-run freeze (아침 stale 스냅샷 폐기)",
+  "scope_confirmed_by": "김주연 총괄 thread reply_ts=1784890087.134809",
+  "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+  "date_kst": "2026-07-24",
+  "juyeon_staff_id": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+  "keep_staff": {
+    "김지윤": "c23d4491-cbdc-423d-af33-17c836941f9c",
+    "강경민": "6ab26d9f-fd10-4042-9fd7-076f277be5d4"
+  },
+  "freeze": {
+    "A_parkminseok": {
+      "check_ins": [
+        {
+          "id": "32c1431c-23e9-465b-8575-164f8a763ee3",
+          "name": "박민석",
+          "chart": "F-4790",
+          "status": "cancelled",
+          "at": "2026-07-24T02:41:51.665883+00:00"
+        },
+        {
+          "id": "4a406e80-16f4-428e-8f8e-6fa08e0bdc9a",
+          "name": "박민석",
+          "chart": "F-4790",
+          "status": "cancelled",
+          "at": "2026-07-24T05:29:39.400319+00:00"
+        },
+        {
+          "id": "4c0f40b6-e674-473d-bb48-0f5bb7757ad9",
+          "name": "박민석",
+          "chart": "F-4790",
+          "status": "cancelled",
+          "at": "2026-07-24T03:51:48.325356+00:00"
+        },
+        {
+          "id": "9fa4be59-2b48-47f7-beed-561d5483377d",
+          "name": "박민석",
+          "chart": "F-4790",
+          "status": "cancelled",
+          "at": "2026-07-24T02:14:49.808033+00:00"
+        }
+      ],
+      "assignment_actions": [
+        {
+          "id": "13bd2631-a8c1-4596-9264-e5ba923677d7",
+          "check_in_id": "9fa4be59-2b48-47f7-beed-561d5483377d",
+          "action_type": "auto_assign",
+          "role": "consult",
+          "to": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+        },
+        {
+          "id": "920baee0-fe0a-4413-bebf-183ea00742a8",
+          "check_in_id": "32c1431c-23e9-465b-8575-164f8a763ee3",
+          "action_type": "auto_assign",
+          "role": "consult",
+          "to": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+        },
+        {
+          "id": "90610d28-62f3-4fb0-9894-45a393bcf911",
+          "check_in_id": "4c0f40b6-e674-473d-bb48-0f5bb7757ad9",
+          "action_type": "auto_assign",
+          "role": "consult",
+          "to": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+        },
+        {
+          "id": "213e46e4-7455-4596-a2ee-71d27f092634",
+          "check_in_id": "4a406e80-16f4-428e-8f8e-6fa08e0bdc9a",
+          "action_type": "auto_assign",
+          "role": "consult",
+          "to": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+        }
+      ]
+    },
+    "B_seoryutest2": {
+      "check_ins": [
+        {
+          "id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+          "name": "서류테스트2",
+          "chart": "F-5113",
+          "status": "done",
+          "at": "2026-07-24T05:36:09.399291+00:00"
+        }
+      ],
+      "payments": [
+        {
+          "id": "3fc1f13f-aae9-484a-af15-dbf20213fad8",
+          "amount": 8800,
+          "method": "card",
+          "payment_type": "payment",
+          "at": "2026-07-24T05:48:14.151048+00:00"
+        },
+        {
+          "id": "69090734-1f12-45e1-93bc-a3fcc5c5102f",
+          "amount": 8800,
+          "method": "card",
+          "payment_type": "payment",
+          "at": "2026-07-24T05:49:40.990655+00:00"
+        },
+        {
+          "id": "a7343e08-30d9-4957-993d-741a5362884e",
+          "amount": 8800,
+          "method": "card",
+          "payment_type": "refund",
+          "at": "2026-07-24T05:50:04.804209+00:00"
+        },
+        {
+          "id": "6319a7bc-8c31-4d31-83b6-8d45713def88",
+          "amount": 8800,
+          "method": "card",
+          "payment_type": "refund",
+          "at": "2026-07-24T10:24:02.128512+00:00"
+        }
+      ],
+      "service_charges": [
+        {
+          "id": "6ffa7bf5-5ab1-4089-8c28-f2f36a7f62ea",
+          "base_amount": 18840,
+          "insurance_covered_amount": 13240,
+          "copayment_amount": 5600,
+          "is_insurance_covered": true
+        },
+        {
+          "id": "3b972fa1-918a-426f-8e88-d4cd51b7a7ee",
+          "base_amount": 10535,
+          "insurance_covered_amount": 7435,
+          "copayment_amount": 3100,
+          "is_insurance_covered": true
+        }
+      ],
+      "package_sessions": [
+        {
+          "id": "88040473-e1ee-4dc0-8e70-89645e32b746",
+          "package_id": "01ddef31-ca48-4c57-ac4d-8c2696cfe6ad",
+          "session_number": 1,
+          "session_type": "unheated_laser",
+          "status": "used",
+          "unit_price": 300000
+        }
+      ],
+      "assignment_actions": [
+        {
+          "id": "914fb71f-6a53-4c44-a6b5-732c25610db9",
+          "action_type": "auto_assign",
+          "role": "consult",
+          "to": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+        },
+        {
+          "id": "0627a6b3-c508-4916-b278-613b75d067d2",
+          "action_type": "auto_assign",
+          "role": "therapy",
+          "to": "5fb3e3b1-1c5a-461b-9159-c330a52feb95"
+        }
+      ]
+    },
+    "pk_summary": {
+      "check_in_ids": [
+        "9fa4be59-2b48-47f7-beed-561d5483377d",
+        "32c1431c-23e9-465b-8575-164f8a763ee3",
+        "4c0f40b6-e674-473d-bb48-0f5bb7757ad9",
+        "4a406e80-16f4-428e-8f8e-6fa08e0bdc9a",
+        "7f3f8b79-eb3d-45f2-afab-205d52bc4a70"
+      ],
+      "assignment_action_ids": [
+        "13bd2631-a8c1-4596-9264-e5ba923677d7",
+        "920baee0-fe0a-4413-bebf-183ea00742a8",
+        "90610d28-62f3-4fb0-9894-45a393bcf911",
+        "213e46e4-7455-4596-a2ee-71d27f092634",
+        "914fb71f-6a53-4c44-a6b5-732c25610db9",
+        "0627a6b3-c508-4916-b278-613b75d067d2"
+      ],
+      "payment_ids": [
+        "3fc1f13f-aae9-484a-af15-dbf20213fad8",
+        "69090734-1f12-45e1-93bc-a3fcc5c5102f",
+        "a7343e08-30d9-4957-993d-741a5362884e",
+        "6319a7bc-8c31-4d31-83b6-8d45713def88"
+      ],
+      "service_charge_ids": [
+        "6ffa7bf5-5ab1-4089-8c28-f2f36a7f62ea",
+        "3b972fa1-918a-426f-8e88-d4cd51b7a7ee"
+      ],
+      "package_session_ids": [
+        "88040473-e1ee-4dc0-8e70-89645e32b746"
+      ],
+      "orphan_candidate_package_ids": [
+        "01ddef31-ca48-4c57-ac4d-8c2696cfe6ad"
+      ]
+    }
+  },
+  "archive": {
+    "check_ins": [
+      {
+        "id": "32c1431c-23e9-465b-8575-164f8a763ee3",
+        "customer_name": "박민석",
+        "status": "cancelled",
+        "visit_type": "new",
+        "checked_in_at": "2026-07-24T02:41:51.665883+00:00",
+        "customers": {
+          "chart_number": "F-4790"
+        }
+      },
+      {
+        "id": "4a406e80-16f4-428e-8f8e-6fa08e0bdc9a",
+        "customer_name": "박민석",
+        "status": "cancelled",
+        "visit_type": "new",
+        "checked_in_at": "2026-07-24T05:29:39.400319+00:00",
+        "customers": {
+          "chart_number": "F-4790"
+        }
+      },
+      {
+        "id": "4c0f40b6-e674-473d-bb48-0f5bb7757ad9",
+        "customer_name": "박민석",
+        "status": "cancelled",
+        "visit_type": "new",
+        "checked_in_at": "2026-07-24T03:51:48.325356+00:00",
+        "customers": {
+          "chart_number": "F-4790"
+        }
+      },
+      {
+        "id": "9fa4be59-2b48-47f7-beed-561d5483377d",
+        "customer_name": "박민석",
+        "status": "cancelled",
+        "visit_type": "new",
+        "checked_in_at": "2026-07-24T02:14:49.808033+00:00",
+        "customers": {
+          "chart_number": "F-4790"
+        }
+      },
+      {
+        "id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_name": "서류테스트2",
+        "status": "done",
+        "visit_type": "new",
+        "checked_in_at": "2026-07-24T05:36:09.399291+00:00",
+        "customers": {
+          "chart_number": "F-5113"
+        }
+      }
+    ],
+    "assignment_actions": [
+      {
+        "id": "13bd2631-a8c1-4596-9264-e5ba923677d7",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "9fa4be59-2b48-47f7-beed-561d5483377d",
+        "action_type": "auto_assign",
+        "role": "consult",
+        "axis": "인바운드",
+        "from_staff_id": null,
+        "to_staff_id": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "reason": null,
+        "created_by": null,
+        "created_at": "2026-07-24T02:14:50.092735+00:00"
+      },
+      {
+        "id": "920baee0-fe0a-4413-bebf-183ea00742a8",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "32c1431c-23e9-465b-8575-164f8a763ee3",
+        "action_type": "auto_assign",
+        "role": "consult",
+        "axis": "인바운드",
+        "from_staff_id": null,
+        "to_staff_id": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "reason": null,
+        "created_by": null,
+        "created_at": "2026-07-24T02:41:51.925725+00:00"
+      },
+      {
+        "id": "90610d28-62f3-4fb0-9894-45a393bcf911",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "4c0f40b6-e674-473d-bb48-0f5bb7757ad9",
+        "action_type": "auto_assign",
+        "role": "consult",
+        "axis": "인바운드",
+        "from_staff_id": null,
+        "to_staff_id": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "reason": null,
+        "created_by": null,
+        "created_at": "2026-07-24T03:51:48.530787+00:00"
+      },
+      {
+        "id": "213e46e4-7455-4596-a2ee-71d27f092634",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "4a406e80-16f4-428e-8f8e-6fa08e0bdc9a",
+        "action_type": "auto_assign",
+        "role": "consult",
+        "axis": "인바운드",
+        "from_staff_id": null,
+        "to_staff_id": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "reason": null,
+        "created_by": null,
+        "created_at": "2026-07-24T05:29:39.607533+00:00"
+      },
+      {
+        "id": "914fb71f-6a53-4c44-a6b5-732c25610db9",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "action_type": "auto_assign",
+        "role": "consult",
+        "axis": "워크인",
+        "from_staff_id": null,
+        "to_staff_id": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "reason": null,
+        "created_by": null,
+        "created_at": "2026-07-24T05:36:09.603829+00:00"
+      },
+      {
+        "id": "0627a6b3-c508-4916-b278-613b75d067d2",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "action_type": "auto_assign",
+        "role": "therapy",
+        "axis": "main",
+        "from_staff_id": null,
+        "to_staff_id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+        "reason": null,
+        "created_by": "f953b4f4-c28a-4ba9-90b7-1542f73c3f91",
+        "created_at": "2026-07-24T05:48:27.127516+00:00"
+      }
+    ],
+    "payments": [
+      {
+        "id": "3fc1f13f-aae9-484a-af15-dbf20213fad8",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "amount": 8800,
+        "method": "card",
+        "installment": null,
+        "payment_type": "payment",
+        "memo": null,
+        "created_at": "2026-07-24T05:48:14.151048+00:00",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "status": "active",
+        "deleted_at": null,
+        "deleted_by": null,
+        "delete_reason": null,
+        "cancelled_at": null,
+        "cancelled_by": null,
+        "cancel_reason": null,
+        "cash_receipt_issued": null,
+        "cash_receipt_type": null,
+        "cash_receipt_number": null,
+        "taxable_amount": null,
+        "tax_exempt_amount": null,
+        "accounting_date": "2026-07-24",
+        "origin_tx_date": null,
+        "tax_type": "선수금",
+        "appr_info": null,
+        "exclude_tax_report": false,
+        "parent_payment_id": null,
+        "external_id": null,
+        "linked_payment_id": null,
+        "external_approval_no": null,
+        "external_tid": null,
+        "external_trxid": null,
+        "external_status": null,
+        "external_root_trxid": null,
+        "reconciled_at": null,
+        "resettle_reason": null,
+        "resettle_confirmed_grade": null,
+        "package_id": null,
+        "image_url": null,
+        "ocr_receipt_datetime": null,
+        "created_by": null,
+        "service_charge_id": null
+      },
+      {
+        "id": "69090734-1f12-45e1-93bc-a3fcc5c5102f",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "amount": 8800,
+        "method": "card",
+        "installment": null,
+        "payment_type": "payment",
+        "memo": null,
+        "created_at": "2026-07-24T05:49:40.990655+00:00",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "status": "active",
+        "deleted_at": null,
+        "deleted_by": null,
+        "delete_reason": null,
+        "cancelled_at": null,
+        "cancelled_by": null,
+        "cancel_reason": null,
+        "cash_receipt_issued": null,
+        "cash_receipt_type": null,
+        "cash_receipt_number": null,
+        "taxable_amount": null,
+        "tax_exempt_amount": null,
+        "accounting_date": "2026-07-24",
+        "origin_tx_date": null,
+        "tax_type": "선수금",
+        "appr_info": null,
+        "exclude_tax_report": false,
+        "parent_payment_id": null,
+        "external_id": null,
+        "linked_payment_id": null,
+        "external_approval_no": null,
+        "external_tid": null,
+        "external_trxid": null,
+        "external_status": null,
+        "external_root_trxid": null,
+        "reconciled_at": null,
+        "resettle_reason": null,
+        "resettle_confirmed_grade": null,
+        "package_id": null,
+        "image_url": null,
+        "ocr_receipt_datetime": null,
+        "created_by": null,
+        "service_charge_id": null
+      },
+      {
+        "id": "a7343e08-30d9-4957-993d-741a5362884e",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "amount": 8800,
+        "method": "card",
+        "installment": 0,
+        "payment_type": "refund",
+        "memo": "테스트건 환불",
+        "created_at": "2026-07-24T05:50:04.804209+00:00",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "status": "active",
+        "deleted_at": null,
+        "deleted_by": null,
+        "delete_reason": null,
+        "cancelled_at": null,
+        "cancelled_by": null,
+        "cancel_reason": null,
+        "cash_receipt_issued": null,
+        "cash_receipt_type": null,
+        "cash_receipt_number": null,
+        "taxable_amount": null,
+        "tax_exempt_amount": null,
+        "accounting_date": "2026-07-24",
+        "origin_tx_date": null,
+        "tax_type": null,
+        "appr_info": null,
+        "exclude_tax_report": false,
+        "parent_payment_id": null,
+        "external_id": null,
+        "linked_payment_id": "69090734-1f12-45e1-93bc-a3fcc5c5102f",
+        "external_approval_no": null,
+        "external_tid": null,
+        "external_trxid": null,
+        "external_status": null,
+        "external_root_trxid": null,
+        "reconciled_at": null,
+        "resettle_reason": null,
+        "resettle_confirmed_grade": null,
+        "package_id": null,
+        "image_url": null,
+        "ocr_receipt_datetime": null,
+        "created_by": "f953b4f4-c28a-4ba9-90b7-1542f73c3f91",
+        "service_charge_id": null
+      },
+      {
+        "id": "6319a7bc-8c31-4d31-83b6-8d45713def88",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "amount": 8800,
+        "method": "card",
+        "installment": 0,
+        "payment_type": "refund",
+        "memo": ".",
+        "created_at": "2026-07-24T10:24:02.128512+00:00",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "status": "active",
+        "deleted_at": null,
+        "deleted_by": null,
+        "delete_reason": null,
+        "cancelled_at": null,
+        "cancelled_by": null,
+        "cancel_reason": null,
+        "cash_receipt_issued": null,
+        "cash_receipt_type": null,
+        "cash_receipt_number": null,
+        "taxable_amount": null,
+        "tax_exempt_amount": null,
+        "accounting_date": "2026-07-24",
+        "origin_tx_date": null,
+        "tax_type": null,
+        "appr_info": null,
+        "exclude_tax_report": false,
+        "parent_payment_id": null,
+        "external_id": null,
+        "linked_payment_id": "3fc1f13f-aae9-484a-af15-dbf20213fad8",
+        "external_approval_no": null,
+        "external_tid": null,
+        "external_trxid": null,
+        "external_status": null,
+        "external_root_trxid": null,
+        "reconciled_at": null,
+        "resettle_reason": null,
+        "resettle_confirmed_grade": null,
+        "package_id": null,
+        "image_url": null,
+        "ocr_receipt_datetime": null,
+        "created_by": "dad7dc00-dc99-41af-b5fc-42aa77a0bd9b",
+        "service_charge_id": null
+      }
+    ],
+    "service_charges": [
+      {
+        "id": "6ffa7bf5-5ab1-4089-8c28-f2f36a7f62ea",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "service_id": "de611ed5-154a-475d-9eb3-19d6d3bad881",
+        "is_insurance_covered": true,
+        "hira_score": 197.07,
+        "hira_unit_value": 89.4,
+        "base_amount": 18840,
+        "insurance_covered_amount": 13240,
+        "copayment_amount": 5600,
+        "exempt_amount": 0,
+        "customer_grade_at_charge": "general",
+        "copayment_rate_at_charge": 0.3,
+        "calculated_at": "2026-07-24T05:48:15.150274+00:00",
+        "calculation_engine_version": "pmw_checkout_snapshot_v1",
+        "hira_unit_value_year": null
+      },
+      {
+        "id": "3b972fa1-918a-426f-8e88-d4cd51b7a7ee",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "service_id": "8e401f7f-6746-4807-9366-4e1d9cfb1e7d",
+        "is_insurance_covered": true,
+        "hira_score": 110.2,
+        "hira_unit_value": 89.4,
+        "base_amount": 10535,
+        "insurance_covered_amount": 7435,
+        "copayment_amount": 3100,
+        "exempt_amount": 0,
+        "customer_grade_at_charge": "general",
+        "copayment_rate_at_charge": 0.3,
+        "calculated_at": "2026-07-24T05:48:15.150274+00:00",
+        "calculation_engine_version": "pmw_checkout_snapshot_v1",
+        "hira_unit_value_year": null
+      }
+    ],
+    "package_sessions": [
+      {
+        "id": "88040473-e1ee-4dc0-8e70-89645e32b746",
+        "package_id": "01ddef31-ca48-4c57-ac4d-8c2696cfe6ad",
+        "check_in_id": "7f3f8b79-eb3d-45f2-afab-205d52bc4a70",
+        "session_number": 1,
+        "session_type": "unheated_laser",
+        "session_date": "2026-07-24",
+        "unit_price": 300000,
+        "surcharge": 0,
+        "surcharge_memo": null,
+        "status": "used",
+        "performed_by": "7c24cd3b-8e52-4c72-9652-e14f75151514",
+        "memo": null,
+        "created_at": "2026-07-24T05:46:26.890206+00:00",
+        "photos": [],
+        "service_type": null,
+        "deleted_at": null,
+        "deleted_by": null,
+        "treatment_started_at": null,
+        "treatment_ended_at": null
+      }
+    ],
+    "packages_linked": [
+      {
+        "id": "01ddef31-ca48-4c57-ac4d-8c2696cfe6ad",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+        "package_name": "AF레이저",
+        "package_type": "AF레이저",
+        "total_sessions": 1,
+        "heated_sessions": 0,
+        "unheated_sessions": 1,
+        "iv_sessions": 0,
+        "preconditioning_sessions": 0,
+        "shot_upgrade": false,
+        "af_upgrade": false,
+        "upgrade_surcharge": 0,
+        "total_amount": 300000,
+        "paid_amount": 0,
+        "status": "active",
+        "transferred_from": null,
+        "transferred_to": null,
+        "expires_at": null,
+        "contract_date": "2026-07-24",
+        "memo": "테스트용 환불예정",
+        "created_by": null,
+        "created_at": "2026-07-24T05:45:57.827775+00:00",
+        "updated_at": "2026-07-24T05:45:57.827775+00:00",
+        "podologe_sessions": 0,
+        "podologe_unit_price": 0,
+        "iv_company": null,
+        "template_id": "0e6e0870-e8d6-4fdd-963d-dc8df480da91",
+        "heated_unit_price": 0,
+        "unheated_unit_price": 300000,
+        "iv_unit_price": 0,
+        "trial_sessions": 0,
+        "trial_unit_price": 0,
+        "reborn_sessions": 0,
+        "reborn_unit_price": 0,
+        "consultation_fee": 0,
+        "treatment_type": "비가열",
+        "reference_price": 300000,
+        "superseded_by": null,
+        "consultant_id": null
+      }
+    ],
+    "package_payments": []
+  },
+  "ledger_beyond_stated_scope": {
+    "note": "planner 명시 스코프=payments 4건. 아래는 서류테스트2 완료건(check_in) FK-safe 삭제에 동반 필요하나 명시 열거 안 됨 → 승인 필요.",
+    "service_charges": [
+      {
+        "id": "6ffa7bf5-5ab1-4089-8c28-f2f36a7f62ea",
+        "base_amount": 18840,
+        "insurance_covered_amount": 13240,
+        "copayment_amount": 5600,
+        "is_insurance_covered": true
+      },
+      {
+        "id": "3b972fa1-918a-426f-8e88-d4cd51b7a7ee",
+        "base_amount": 10535,
+        "insurance_covered_amount": 7435,
+        "copayment_amount": 3100,
+        "is_insurance_covered": true
+      }
+    ],
+    "package_sessions": [
+      {
+        "id": "88040473-e1ee-4dc0-8e70-89645e32b746",
+        "package_id": "01ddef31-ca48-4c57-ac4d-8c2696cfe6ad",
+        "session_number": 1,
+        "session_type": "unheated_laser",
+        "status": "used",
+        "unit_price": 300000
+      }
+    ],
+    "extra_assignment_action": [
+      {
+        "id": "0627a6b3-c508-4916-b278-613b75d067d2",
+        "role": "therapy",
+        "to": "5fb3e3b1-1c5a-461b-9159-c330a52feb95"
+      }
+    ],
+    "linked_package": [
+      {
+        "id": "01ddef31-ca48-4c57-ac4d-8c2696cfe6ad",
+        "name": "AF레이저",
+        "status": "active",
+        "total_amount": 300000,
+        "paid_amount": 0,
+        "memo": "테스트용 환불예정",
+        "other_sessions": 0
+      }
+    ],
+    "package_payments": []
+  },
+  "keep_excluded": {
+    "note": "(C) 김지윤·강경민 인계/관련 기록 — 정상 담당자변경 audit → 삭제 금지, freeze 셋에서 명시 제외",
+    "handover_actions": [
+      {
+        "id": "4a3d56c5-2f23-44ee-89b9-5010d7eba1fc",
+        "check_in_id": "03b76420-2143-48ae-966a-7b4e36bd9f0c",
+        "role": "consult",
+        "from": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+        "to": "c23d4491-cbdc-423d-af33-17c836941f9c"
+      },
+      {
+        "id": "95be5632-bc15-43b7-90bd-3c8f107602f6",
+        "check_in_id": "31037f47-75ba-41ae-a030-1efbe65d9904",
+        "role": "consult",
+        "from": null,
+        "to": "6ab26d9f-fd10-4042-9fd7-076f277be5d4"
+      },
+      {
+        "id": "f40ac036-2db6-4bc6-96c5-db7a4af6986f",
+        "check_in_id": "625e534d-22e6-4526-8ea5-c34645691b67",
+        "role": "consult",
+        "from": null,
+        "to": "6ab26d9f-fd10-4042-9fd7-076f277be5d4"
+      },
+      {
+        "id": "67fefdd6-c7c3-4e49-885c-23b37eee2afc",
+        "check_in_id": "625e534d-22e6-4526-8ea5-c34645691b67",
+        "role": "consult",
+        "from": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+        "to": "c851fbb1-31ce-4714-b91c-03e9cb8af566"
+      },
+      {
+        "id": "e986fef6-b73b-495f-9653-9878152bc418",
+        "check_in_id": "6c75a038-f993-4140-8f20-dea00e26e423",
+        "role": "consult",
+        "from": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "to": "c23d4491-cbdc-423d-af33-17c836941f9c"
+      },
+      {
+        "id": "f19f3473-368e-4db8-b001-cc9bf3851f52",
+        "check_in_id": "71dfecb7-f790-4dc1-87d1-04303a451707",
+        "role": "consult",
+        "from": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "to": "6ab26d9f-fd10-4042-9fd7-076f277be5d4"
+      },
+      {
+        "id": "d5b396ba-5f15-431c-bb63-0731c3d2440b",
+        "check_in_id": "93ad39b5-81fe-49ca-87dc-3c89a055be6f",
+        "role": "consult",
+        "from": null,
+        "to": "c23d4491-cbdc-423d-af33-17c836941f9c"
+      },
+      {
+        "id": "ec5ad079-788f-45d2-9457-cb57c23954bb",
+        "check_in_id": "976e2667-7d75-4c09-95e2-b6faa7d3a14d",
+        "role": "consult",
+        "from": null,
+        "to": "6ab26d9f-fd10-4042-9fd7-076f277be5d4"
+      },
+      {
+        "id": "e06b5a97-8a32-4b61-a27e-47bfeec474ae",
+        "check_in_id": "ef3d6df6-1f99-4852-b934-e47fc6b369ed",
+        "role": "consult",
+        "from": "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed",
+        "to": "c23d4491-cbdc-423d-af33-17c836941f9c"
+      },
+      {
+        "id": "2b91acb2-b1fc-45dc-b525-6ed86479c88f",
+        "check_in_id": "f5908690-21ca-4806-b571-f0278fe7fd99",
+        "role": "consult",
+        "from": null,
+        "to": "6ab26d9f-fd10-4042-9fd7-076f277be5d4"
+      }
+    ]
+  },
+  "abort": [],
+  "decision_flags": [
+    "서류테스트2 check_in 에 service_charges 2건(매출 명세 원장) — payments 외 추가. 완료건 삭제 시 동반 삭제 필요.",
+    "서류테스트2 check_in 에 package_sessions 1건(패키지 회차) — 연결 package \"AF레이저\"(memo=\"테스트용 환불예정\"). 회차 삭제 시 package 는 회차 0 orphan.",
+    "package 01ddef31-ca48-4c57-ac4d-8c2696cfe6ad(\"AF레이저\"/paid_amount=0) — 회차 전량이 이 check_in 소속 → 삭제 시 회차0 잔존 package. 함께 삭제할지 결정 필요."
+  ]
+}
