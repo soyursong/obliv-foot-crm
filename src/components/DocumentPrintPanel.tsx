@@ -129,9 +129,10 @@ import {
   computeBillReceiptNewCategoryBreakdown,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
   applyBillReceiptNewCategoryTokens,
-  // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category 분해 remainder)·결함B(납부박스 payments).
+  // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category 분해 remainder).
   applyBillReceiptNewCoveredTokens,
-  applyBillReceiptPaidBoxTokens,
+  // T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL: 선출력 수기체크 결제수단 → ⑨~⑪·현금영수증칸 토큰(캐논 supersede).
+  applyBillReceiptPreprintPaymethodTokens,
   // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE: 신양식 aggregate 라이브 SSOT 강제(세부내역과 동일 소스로 수렴).
   applyBillReceiptNewLiveTotals,
   // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
@@ -1372,8 +1373,6 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       const surchargeIsCalHoliday = batchHolidayDateSet.has(toLocalDateStr(surchargeRefDate));
       // 일괄출력은 편집 UI가 없어 수동 override 없음 → 빈 집합(모든 대상 키 자동 folding).
       const noOverride = new Set<string>();
-      // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분). 방문 단위 1회 로드 후 재사용.
-      const batchAlreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade);
       const valuesFor = (t: FormTemplate): Record<string, string> => {
         const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };
         // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE (일괄출력 경로): 신양식 라이브 명시세팅.
@@ -1404,9 +1403,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
           // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
           applyBillReceiptNewCoveredTokens(v, batchRnItems);
-          // 결함B: ⑪ 납부박스 = payments 원장(status=active) 결제수단별 실수납(부모 로드분). 완납 가정 금지.
-          //   MASTER-FIXES §1 ⑨ 선수금 차감분 + §2 refund 순액(paymentItems.payment_type).
-          applyBillReceiptPaidBoxTokens(v, paymentItems, patientFloored, batchAlreadyPaid);
+          // ── T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (일괄출력 경로, 캐논 supersede) ──
+          //   ⑨=환자부담총액(완납)·⑩=공란·미납=0. 일괄출력은 편집 UI가 없어 결제수단 수기체크 불가 →
+          //   ⑪ 수단칸·현금영수증칸은 공란(현장 수기 체크). 단건 경로와 ⑨/⑩/미납 canon 대칭.
+          applyBillReceiptPreprintPaymethodTokens(v, patientFloored, {});
         }
         return v;
       };
@@ -2075,7 +2075,8 @@ function IssueDialog({
   dutyDoctors,
   altStatus = false,
   activePackage = null,
-  paymentItems = [],
+  // paymentItems prop — T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL 이후 미소비(⑪=선출력 수기체크로 대체).
+  //   interface 필드는 부모 주입 호환 위해 유지, 본 컴포넌트에서는 구조분해 제외(TS6133 회피).
 }: {
   template: FormTemplate;
   checkIn: CheckIn;
@@ -2124,7 +2125,6 @@ function IssueDialog({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editOverrides, setEditOverrides] = useState<Record<string, string>>({});
   // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 신양식 사전 납부금액(FE-only 표시, 비영속).
-  const [prepaidAmount, setPrepaidAmount] = useState('');
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
   // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED: 치료테이블 지정 진료의 — 복수 근무의 UI 기본값에 사용.
@@ -2817,11 +2817,16 @@ function IssueDialog({
       // 결함A: 급여 category 분해 토큰 주입. ★야간가산 fold 이후(여기)에 호출해야 진찰료 remainder 가
       //   최종 aggregate({{copayment}}/{{insurance_covered}}) 기준으로 산출돼 Σ(행)=합계 정합(§3.3 순서강제).
       applyBillReceiptNewCoveredTokens(base, rnItems);
-      // 결함B: ⑪ 납부한 금액 = payments 원장(status=active) 결제수단별 실수납 groupBy.
-      //   ⚠ prepaid_amount(납부할금액 가정값) 3경로 전파 폐기(REVERIFY-2: 완납 가정=허위영수증 FAIL).
-      //   MASTER-FIXES §1 ⑨ 선수금 차감분(alreadyPaidAmount) + §2 refund 순액(paymentItems.payment_type).
-      //   미납 = ⑩(=⑧−⑨) − 실수납 합계.
-      applyBillReceiptPaidBoxTokens(base, paymentItems, patientFloored, alreadyPaidAmount);
+      // ── T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (캐논 supersede, 2026-07-24 MSG-...-2fb5) ──
+      //   실 수납 前 서류 선출력이 대부분 → 발급폼에서 결제수단(카드/현금/현금영수증)을 **수기 체크**하면
+      //   ⑨=환자부담총액(완납)·⑩=공란·⑪=선택수단칸 breakdown(비-가산)·미납=0 으로 표기. 현금/현금영수증 선택 시
+      //   신분확인번호·승인번호를 하단 보라박스에 반영. 수기입력값은 manualValues → field_data(JSONB) persist(무DDL).
+      //   ⚠ 종전 payments-원장 driven applyBillReceiptPaidBoxTokens 는 본 신양식 print-time 플로우에서 대체됨.
+      applyBillReceiptPreprintPaymethodTokens(base, patientFloored, {
+        method: base.paymethod_preprint,
+        cashReceiptIdNo: base.cashreceipt_id_number,
+        cashReceiptApprovalNo: base.cashreceipt_approval_no,
+      });
     }
 
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.
@@ -2831,7 +2836,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys, prepaidAmount]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -3491,23 +3496,71 @@ function IssueDialog({
               </div>
             )}
 
-            {/* T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 진료비 계산서·영수증 신양식 전용 —
-                이미 납부한 금액을 미리 입력해 서류에 반영(사전 출력). 비영속(payments 수납 아님) 표시 전용. */}
+            {/* T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (캐논 supersede, 총괄 확정 2026-07-24):
+                실 수납 前 서류 선출력이 대부분 → 발급 시 결제수단(카드/현금/현금영수증)을 수기 체크하면
+                ⑨ 이미 납부한 금액=환자부담총액(완납)·선택수단칸에 동일액 breakdown(비-가산)으로 출력.
+                현금/현금영수증 선택 시 신분확인번호·승인번호 입력칸이 열리고 하단 현금영수증칸에 반영·시스템 저장. */}
             {template.form_key === 'bill_receipt_new' && (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 space-y-1.5">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 space-y-2">
                 <Label className="text-xs font-semibold text-emerald-800">
-                  납부금액(사전입력)
+                  결제수단 (선출력 수기체크)
                 </Label>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  value={prepaidAmount}
-                  onChange={(e) => setPrepaidAmount(e.target.value)}
-                  placeholder="예: 30,000 (미입력 시 공란)"
-                  className="text-sm bg-white"
-                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { key: 'card', label: '카드' },
+                    { key: 'cash', label: '현금' },
+                    { key: 'cashreceipt', label: '현금영수증' },
+                  ].map((opt) => {
+                    const selected = (allValues.paymethod_preprint ?? '') === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        data-testid={`docprint-paymethod-${opt.key}`}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all min-h-[40px] ${
+                          selected
+                            ? 'border-emerald-400 bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                            : 'border-gray-200 bg-white text-muted-foreground hover:border-emerald-300 hover:text-emerald-700'
+                        }`}
+                        // 같은 버튼 재클릭 시 해제(공란) — 미체크 상태로 선출력 가능.
+                        onClick={() => updateField('paymethod_preprint', selected ? '' : opt.key)}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(allValues.paymethod_preprint === 'cash' || allValues.paymethod_preprint === 'cashreceipt') && (
+                  <div className="space-y-2 pt-1">
+                    <div>
+                      <Label className="text-[11px] text-emerald-800">신분확인번호</Label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={allValues.cashreceipt_id_number ?? ''}
+                        onChange={(e) => updateField('cashreceipt_id_number', e.target.value)}
+                        placeholder="현금영수증 신분확인번호(휴대폰번호 등)"
+                        className="text-sm bg-white mt-1"
+                        data-testid="docprint-cashreceipt-idno"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-emerald-800">현금영수증 승인번호</Label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={allValues.cashreceipt_approval_no ?? ''}
+                        onChange={(e) => updateField('cashreceipt_approval_no', e.target.value)}
+                        placeholder="현금영수증 승인번호"
+                        className="text-sm bg-white mt-1"
+                        data-testid="docprint-cashreceipt-approvalno"
+                      />
+                    </div>
+                  </div>
+                )}
                 <p className="text-[10px] text-emerald-700 leading-tight">
-                  입력한 금액이 ⑪ 납부한 금액·납부하지 않은 금액(⑩-⑪)란에 반영되어 출력됩니다. 실제 수납 기록과는 무관한 표기용 값입니다.
+                  ⑨ 이미 납부한 금액 = 환자부담 총액(완납)으로 표기되고, 체크한 결제수단 칸(⑪)에 같은 금액이 반영됩니다.
+                  현금·현금영수증은 승인번호가 하단 현금영수증란에 반영·저장됩니다. (⑩ 납부할 금액은 미사용)
                 </p>
               </div>
             )}

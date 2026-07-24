@@ -2255,9 +2255,11 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;">{{cash_amount}}</span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;">{{paid_total}}</span></td></tr>
           <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num">{{unpaid_amount}}</td></tr>
-          <tr><td>현금영수증 (&nbsp;&nbsp;&nbsp;)</td><td></td></tr>
-          <tr><td>신분확인번호</td><td></td></tr>
-          <tr><td>현금영수증 승인번호</td><td></td></tr>
+          <!-- T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL: 선출력 시 현금/현금영수증 수기체크분 반영.
+               현금영수증( ) 체크마크 + 신분확인번호 + 승인번호 = 발급폼 수기입력값(form_submissions.field_data persist). -->
+          <tr><td>현금영수증 (&nbsp;{{cashreceipt_mark}}&nbsp;)</td><td></td></tr>
+          <tr><td>신분확인번호</td><td class="rn-num" style="text-align:left;">{{cashreceipt_id_number}}</td></tr>
+          <tr><td>현금영수증 승인번호</td><td class="rn-num" style="text-align:left;">{{cashreceipt_approval_no}}</td></tr>
           <tr><td colspan="2" style="font-size:6.6pt; color:#555; text-align:left;">* 요양기관 임의활용공간</td></tr>
         </tbody>
       </table>

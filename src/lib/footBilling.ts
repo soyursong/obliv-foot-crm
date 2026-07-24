@@ -1068,6 +1068,54 @@ export function applyBillReceiptPaidBoxTokens(
 }
 
 /**
+ * T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL — 선출력 수기체크 결제수단 → ⑨~⑪·현금영수증(보라박스) 토큰.
+ *
+ *   ★캐논 supersede(policy_superseded, 2026-07-24 17:51 MSG-...-2fb5): 총괄(field authority) '진행ㄱㄱ' +
+ *   캐논owner(이은상 팀장) endorsement + 책임 현장확정으로 T-20260723-foot-BILLRECEIPT-PAIDBOX-NONCOV-MISROUTED
+ *   (⑪=payments 원장 net만·실수납前 기입 금지)을 print-time 수기체크 플로우에 한해 대체. 세무 waiver=field-accountable.
+ *
+ *   확정 스펙(이은상 팀장 세부스펙 기준):
+ *     - ⑨ 이미 납부한 금액 = 환자부담총액(완납 표기)
+ *     - ⑩ 납부할 금액 = 공란(미사용)
+ *     - ⑪ 납부한 금액 = 서류 선출력 시 결제수단(카드/현금/현금영수증) **수기 체크** → 선택 수단칸에 환자부담총액.
+ *       ⑪은 ⑨의 결제수단 breakdown 표시(**비-가산** — ⑨와 더하지 말 것: ⑧=⑨+미납). double-count 해소.
+ *     - 현금/현금영수증 선택 시 → 신분확인번호·승인번호가 하단 보라박스(현금영수증( )·승인번호)에 반영.
+ *     - 미납(납부하지 않은 금액) = 0 (완납).
+ *
+ *   저장(승인번호·번호 영속) = 호출부에서 manualValues → form_submissions.field_data(기존 JSONB, schema-free)로
+ *   persist. 신규 컬럼/테이블/enum 신설 0 → data-architect 스키마 CONSULT 비해당(db_change 실질 false, §S2.4).
+ */
+export type PreprintPayMethod = 'card' | 'cash' | 'cashreceipt' | '';
+export function applyBillReceiptPreprintPaymethodTokens(
+  values: Record<string, string>,
+  patientAmount: number,
+  opts: { method?: string | null; cashReceiptIdNo?: string | null; cashReceiptApprovalNo?: string | null } = {},
+): void {
+  const method = (opts.method ?? '').trim() as PreprintPayMethod;
+  // ⑨ = ⑧ 환자부담총액과 동일 절사(10원 FLOOR) → 완납액 정합.
+  const patientSafe = computeBillDetailRounding(patientAmount).roundedTotal;
+  const amtStr = patientSafe > 0 ? formatAmount(patientSafe) : '';
+  // ⑨ 이미 납부한 금액 = 환자부담총액(완납 표기). 0 이면 공란.
+  values.already_paid = amtStr;
+  // ⑩ 납부할 금액 = 미사용(공란). "해당 칸은 안 쓸 거야" (총괄).
+  values.due_amount = '';
+  // ⑪ 납부한 금액 = ⑨의 결제수단 breakdown(비-가산). 선출력 수기체크된 수단칸에만 환자부담총액 기입.
+  values.card_amount = method === 'card' ? amtStr : '';
+  values.cashreceipt_amount = method === 'cashreceipt' ? amtStr : '';
+  values.cash_amount = method === 'cash' ? amtStr : '';
+  values.paid_total = method ? amtStr : '';
+  // 종전 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지.
+  values.prepaid_amount = values.paid_total;
+  // 미납 = 0 (완납). 환자부담이 0(무료)이면 공란.
+  values.unpaid_amount = patientSafe > 0 ? formatAmount(0) : '';
+  // 하단 보라박스 — 현금/현금영수증 선택 시에만 반영. 현금영수증( ) 체크마크는 현금영수증 선택 시.
+  values.cashreceipt_mark = method === 'cashreceipt' ? 'V' : '';
+  const showNo = method === 'cash' || method === 'cashreceipt';
+  values.cashreceipt_id_number = showNo ? (opts.cashReceiptIdNo ?? '').trim() : '';
+  values.cashreceipt_approval_no = showNo ? (opts.cashReceiptApprovalNo ?? '').trim() : '';
+}
+
+/**
  * T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1 — ⑨ '이미 납부한 금액' 소스 로더.
  *   alreadyPaid = 이 방문(check_in_id)의 선수금/패키지 차감분의 **환자부담분**.
  *   소스 = check_in_services.price WHERE is_package_session=true (Closing.tsx:504 가 이미 쓰는 정합 소스).
