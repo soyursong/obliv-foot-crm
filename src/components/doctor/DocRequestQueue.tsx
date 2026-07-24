@@ -361,12 +361,18 @@ function DocRequestRow({
 }) {
   const rxCellRef = useRef<HTMLTableCellElement>(null);
   const clinicalCellRef = useRef<HTMLTableCellElement>(null);
+  // T-20260724-foot-DASH-ISSUEDDOCS-NAMELIST-EXPAND: '서류 완료' 그룹 발행완료 뱃지 앵커 + 발행 서류 상세 펼침 토글.
+  const doneBadgeRef = useRef<HTMLButtonElement>(null);
   const [expandRx, setExpandRx] = useState(false);
   const [expandClinical, setExpandClinical] = useState(false);
+  const [expandDone, setExpandDone] = useState(false);
 
   const rx = snap?.prescription || null;
   const progress = snap?.progress || null;
   const isDone = variant === 'done';
+  // AC1/AC4: 발행완료 옆 표시할 발행 서류명 = 발행된 요청의 doc_type 라벨(진단서/소견서). 완료 그룹 = published row 이므로 항상 존재.
+  //   ★read-only READ: usePublishedOpinionRequests 가 이미 읽어온 field_data.doc_type/selected_keys 만 표시(신규 조회·스키마 변경 0).
+  const doneDocLabel = docTypeLabel(r.docType);
 
   return (
     <>
@@ -418,13 +424,31 @@ function DocRequestRow({
       </td>
       <td className="px-2 py-1.5 text-center whitespace-nowrap">
         {isDone ? (
-          /* 서류 완료 그룹 — read-only. 작성하기/반짝효과/내원확인 제거, 발행 완료 뱃지(+발행 시각)만. */
-          <span
-            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
-            data-testid="docreq-done-badge"
-          >
-            <CheckCircle2 className="h-3 w-3" /> 발행 완료{r.resolvedAt ? ` · ${seoulHHMM(r.resolvedAt)}` : ''}
-          </span>
+          /* 서류 완료 그룹 — read-only. 작성하기/반짝효과/내원확인 제거.
+             T-20260724-foot-DASH-ISSUEDDOCS-NAMELIST-EXPAND:
+               AC1 — 발행완료 옆(하단 근접)에 발행한 서류명(진단서/소견서) 개별 표시.
+               AC2 — 발행완료 뱃지 클릭 시 발행한 서류 상세(서류명 + 해당항목) 펼침(ColumnExpandPopover 재사용).
+               AC5 — 열람 전용. 재발행/취소 등 상태변경 버튼 추가 없음(뱃지=펼침 토글만). */
+          <div className="inline-flex flex-col items-center gap-0.5">
+            <button
+              type="button"
+              ref={doneBadgeRef}
+              onClick={() => setExpandDone((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100"
+              data-testid="docreq-done-badge"
+              title="클릭하면 발행한 서류를 확인할 수 있어요"
+            >
+              <CheckCircle2 className="h-3 w-3" /> 발행 완료{r.resolvedAt ? ` · ${seoulHHMM(r.resolvedAt)}` : ''}
+            </button>
+            {/* AC1: 발행완료 옆 발행 서류명 개별 표시(잘림 시 말줄임+툴팁). */}
+            <span
+              className="max-w-[9rem] truncate text-[10px] font-semibold text-emerald-700/90"
+              title={doneDocLabel}
+              data-testid="docreq-done-docnames"
+            >
+              {doneDocLabel}
+            </span>
+          </div>
         ) : (
           <>
             {/* AC-10 작성하기 → prefill 발행창(원장/작성권한자만 본문, OpinionEditorDialog canPublish 게이트). 신규 요청 시각화는 큐 항목·teal-600 버튼 상시 노출로 충분(T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE: 청록 ripple 반짝임 제거). */}
@@ -482,6 +506,35 @@ function DocRequestRow({
         {progress}
       </div>
     </ColumnExpandPopover>
+
+    {/* T-20260724-foot-DASH-ISSUEDDOCS-NAMELIST-EXPAND (AC2): 발행완료 클릭 → 발행한 서류 상세(서류명 + 해당항목) 펼침.
+        완료 그룹(done)에서만 렌더. read-only 표시 전용 — 상태변경 버튼 없음(AC5). ColumnExpandPopover 재사용. */}
+    {isDone && (
+      <ColumnExpandPopover
+        open={expandDone}
+        anchorRef={doneBadgeRef}
+        onClose={() => setExpandDone(false)}
+        testId="docreq-done-expand-pop"
+        widthScale={2}
+      >
+        <div className="px-3 py-2 text-[13px] leading-relaxed text-gray-700" data-testid="docreq-done-expand">
+          <p className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-emerald-700">
+            <CheckCircle2 className="h-3.5 w-3.5" /> 발행한 서류
+          </p>
+          <div className="flex items-start gap-1.5">
+            <span className="mt-0.5 whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700" data-testid="docreq-done-expand-docname">
+              {doneDocLabel}
+            </span>
+            <span className="flex-1 whitespace-pre-wrap break-words text-[12px] text-gray-600" data-testid="docreq-done-expand-items">
+              {itemLabels || '해당 항목 없음'}
+            </span>
+          </div>
+          {r.resolvedAt && (
+            <p className="mt-1.5 text-[11px] text-muted-foreground">발행 {seoulHHMM(r.resolvedAt)}</p>
+          )}
+        </div>
+      </ColumnExpandPopover>
+    )}
     </>
   );
 }
