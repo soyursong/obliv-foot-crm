@@ -99,3 +99,47 @@ test.describe('T-20260724 가드 — 오늘 내원 귀속 차감만 링크', () 
     ).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 시나리오 3 — AC-4(신설): "이력 1회 저장 후 여러 번 재진입해도 유지"(재풀림 반복 종결)
+//   follow-up(김주연 총괄, MSG-20260724-144549): "이력이 한 번 남았는데도 2번차트에서 계속 풀리는 거 같음".
+//
+//   read-only RC 재확인(코드증거): package_id: null 은 全 4곳(Dashboard 6277 / TreatmentTable 110 /
+//     Customers 246 / Reservations 1768) 모두 신규 check_in INSERT 의 기본 payload 일 뿐, 기존 행을
+//     mount/재진입 시 NULL 로 되돌리는 UPDATE 경로는 없음. 즉 foot 의 RC 는 body 형제
+//     (T-20260707-body-CHARTDEDUCT-PKGSELECT-MISSING)의 "mount 재조회 미적용(client stale)"이 아니라
+//     "차감 write 가 check_ins.package_id 를 안 걸던 server write-gap". 재조회 축은 이미 건재:
+//       (1) 2번차트 재진입 = CustomerChartPage mount → check_ins select('*') 최신 재조회(package_id 포함),
+//       (2) 치료테이블/명단 = Dashboard check_ins realtime(postgres_changes '*') + debounce refetch.
+//     따라서 서버에 1회 링크되면 이후 어떤 재진입에서도 그 값이 재조회되고, 링크 write 는 멱등으로 재발 안함.
+//
+//   본 시나리오는 그 "재풀림 종결" 불변식을 결정적으로 고정: 서버 package_id=PKG_A 영속 상태에서
+//   재진입을 N회 반복해도 shouldLinkCheckInPackage 는 매번 false(=재write 없음, 재리셋 없음).
+test.describe('T-20260724 시나리오3 · AC-4 — 이력 1회 저장 후 여러 번 재진입해도 유지(재풀림 종결)', () => {
+  test('서버 package_id=PKG_A 영속 → 재진입 10회 반복해도 매번 링크 write 없음(멱등·무리셋)', () => {
+    // 재진입마다 mount 가 최신 check_in(package_id=PKG_A)을 재조회 → 게이트 입력이 동일 → 항상 false.
+    for (let reentry = 1; reentry <= 10; reentry += 1) {
+      expect(
+        shouldLinkCheckInPackage({
+          latestCheckInId: CI_TODAY,
+          latestCheckInPackageId: PKG_A, // 서버가 이미 보유(1회 저장분) — 재조회로 매번 이 값이 들어옴
+          deductCheckInId: CI_TODAY,
+          targetPackageId: PKG_A,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  test('재진입 시 빈값(NULL)으로 리셋되어 들어오면 즉시 재링크(방어) — 단 정상 경로에선 발생 안함', () => {
+    // 가정상 mount 재조회가 어떤 이유로 NULL 을 반환하더라도(회귀 방어), 게이트는 재링크(true)를 지시해
+    // '풀린 상태로 방치'가 아니라 '다시 연결'로 수렴 → 현장 체감 재풀림이 누적되지 않음.
+    expect(
+      shouldLinkCheckInPackage({
+        latestCheckInId: CI_TODAY,
+        latestCheckInPackageId: null,
+        deductCheckInId: CI_TODAY,
+        targetPackageId: PKG_A,
+      }),
+    ).toBe(true);
+  });
+});
