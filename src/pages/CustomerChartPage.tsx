@@ -61,6 +61,7 @@ import { useClinic } from '@/hooks/useClinic';
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY (축2): 초진/재진 배지를 stored visit_type → recency(365일) 판정으로 통일.
 //   접수분류(JUDGE-365)·배정축과 동일 헬퍼 재사용(single source) → 표시 불일치 해소(AC-3).
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
+import { shouldLinkCheckInPackage } from '@/lib/checkInPackageLink';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
@@ -72,7 +73,9 @@ import { LaserTimerPanel } from '@/components/chart/LaserTimerPanel';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
+// T-20260724-foot-NHIS-MANUAL-CAPTURE: API 자동조회 pivot → 포털 딥링크 + 인라인 캡처
 import { useNhisLookup } from '@/hooks/useNhisLookup';
+import { NhisCapturePanel } from '@/components/insurance/NhisCapturePanel';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
@@ -89,6 +92,8 @@ import { ConsentForm } from '@/components/forms/ConsentForm';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK: 상담내역 탭 '소견서/진단서 요청' 인라인 박스(실장영역)
 import OpinionRequestBox from '@/components/consult/OpinionRequestBox';
+// T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW: 상담내역 탭 소견서·진단서 발행 이력(신청/발행여부/열람)
+import OpinionDocHistorySection from '@/components/chart/OpinionDocHistorySection';
 import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
@@ -2883,10 +2888,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const { performLookup: nhisPerformLookup } = nhis;
 
   // 셀프접수 동의 → 자격조회 자동 트리거 (scaffold).
-  //  - 셀프접수에서 hira_consent=true 로 저장된 고객 차트 진입 시 1회 자동 조회.
-  //  - 차트에서 '건강보험조회' 동의를 켜는 순간(saveCustomerField 가 로컬 상태 갱신)에도 본 effect 가 재발화.
-  //  - API 미연동 현행: graceful(미연동 안내) 표시. silent 로 토스트 억제.
-  //  - API 연동 완료 시: 동의 즉시 실제 자격조회가 자동 실행되는 연결 지점이 됨.
+  //  - T-20260724-foot-NHIS-MANUAL-CAPTURE: 수기조회 pivot 후 silent(자동) 경로는 no-op.
+  //    자동 조회 불가(포털 수기) + 팝업 자동오픈/오조회 방어 → 스태프가 [건보조회] 버튼으로 명시 개시.
+  //    이 effect 는 단일 choke point(performLookup) 로 수렴시키되 silent=true 라 딥링크/감사 미발화(평행경로 ② 무력화).
   const hiraAutoTriggeredRef = useRef<string | null>(null);
   useEffect(() => {
     const cid = customer?.id;
@@ -2908,15 +2912,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 건보조회 행 보험 증번호(건강보험증 번호) 수기 입력값
   const [certNoText, setCertNoText] = useState('');
   const [savingCertNo, setSavingCertNo] = useState(false);
-  // 연동(자동 채움) 바인딩 — 자격조회 응답 payload에 증번호(cert_no)가 오면 입력란에 자동 채움(scaffold).
-  //   현재 API 미연동 → nhis.result.cert_no 항상 부재라 실질 no-op. 착지 후 활성화되는 hook.
-  //   자동 채움 후에도 수동 편집 가능(수기 입력이 1차 경로 유지, [저장]은 스태프가 클릭).
-  useEffect(() => {
-    const fetched = nhis.result?.cert_no;
-    if (fetched && fetched.trim()) {
-      setCertNoText(fetched.trim());
-    }
-  }, [nhis.result?.cert_no]);
+  // T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 롤백 → 증번호 자동채움(nhis.result.cert_no) scaffold 제거.
+  //   증번호는 아래 전용 입력 칸에 스태프가 수기 입력([저장])하는 단일 경로만 유지.
   // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모(직접수정·non-history, customers.customer_note)
   const [customerNoteText, setCustomerNoteText] = useState('');
   // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 로컬 상태 (optimistic update)
@@ -3661,6 +3658,40 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     return { error: null };
   };
 
+  // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력 하향전파):
+  //   park 658a33be(T-20260722-CONSULT-ASSIGN-CHART-OWNER-SYNC item2/scenario1) 헬퍼 이식.
+  //   "당일(KST) 열린(미완료)" 이 고객의 내원(check_in)의 방문별 상담사(check_ins.consultant_id)만 갱신한다.
+  //   「금일 배분 이력」(Assignments.tsx) 담당 칸이 check_ins.consultant_id 를 read 하므로, 이 전파로 배분이력 행이 즉시 갱신된다.
+  //   · 영구값(customers.assigned_staff_id)은 절대 건드리지 않는다 — 방향은 항상 영구→방문(하향)뿐.
+  //   · 대상 = latestCheckIn(최근 내원)이 오늘(KST) 접수 + open(status≠done, ≠cancelled)일 때 그 1건.
+  //   · ★done 보존 (RED LINE (a)): 이미 done 인 방문의 consultant_id 는 '실제 상담자' historical record 이므로
+  //     auto-overwrite 금지 — open 만 소급, done 은 그대로 둔다(매출귀속 오염과 동일 리스크).
+  //   · rows-affected 검증(RLS/스코프 사일런트 성공 오인 차단 — cross-CRM write 표준). 대상 없으면 'none'.
+  const updateTodayOpenCheckInConsultant = useCallback(
+    async (staffId: string | null): Promise<'updated' | 'none' | 'error'> => {
+      if (!customer) return 'none';
+      const ci = latestCheckIn;
+      if (!ci || !ci.checked_in_at) return 'none';
+      if (seoulISODate(ci.checked_in_at) !== todaySeoulISODate()) return 'none'; // 당일(KST) 아님
+      if (ci.status === 'cancelled') return 'none';                              // 취소 내원 제외
+      if (ci.status === 'done') return 'none';                                   // ★done 보존 — 실제 상담자 기록 auto-overwrite 금지(open만 소급)
+      const { data, error } = await supabase
+        .from('check_ins')
+        .update({ consultant_id: staffId })
+        .eq('id', ci.id)
+        .eq('clinic_id', customer.clinic_id)
+        .select('id');
+      if (error) {
+        console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 실패:', error.message);
+        return 'error';
+      }
+      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
+      return 'updated';
+    },
+    [customer, latestCheckIn],
+  );
+
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
   //   RC: customers.phone 만 갱신되고 check_ins/reservations 의 denormalized customer_phone(카드 표기·
   //       verifyChartLinkOrConfirm 가드의 expectedPhone 소스)은 저장 시점 스냅샷 그대로 남아,
@@ -4179,6 +4210,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     });
     setSavingSession(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 회차사용 다이얼로그 차감도 check_ins.package_id 링크
+    {
+      const dlgDeductCheckInId =
+        latestCheckIn?.checked_in_at &&
+        seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
+          ? latestCheckIn.id
+          : null;
+      await linkCheckInPackage(useSessionDlg.packageId, dlgDeductCheckInId);
+    }
 
     // 패키지 세션 + 잔여횟수 새로고침
     if (packages.length > 0) {
@@ -4822,6 +4863,41 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       ? latestCheckIn.id
       : null;
 
+  // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS ── write-path fix (RC 재조정 MSG-ntsx)
+  // RC: 차감(치료 신청)이 package_sessions.check_in_id 만 걸고 check_ins.package_id 를 비워둠(NULL).
+  //     치료테이블/접수카드는 check_ins.package_id 로 '연결됨'을 판정 → 화면 전환·재진입 시 선택이 풀려 보임.
+  //     DB증거: 박병문 F-4995 / 이춘형 F-4851 둘 다 check_ins.package_id=NULL.
+  // FIX: package_sessions insert 성공 후, 차감이 '오늘 내원(deductCheckInId)'에 귀속되면 그 내원의
+  //      check_ins.package_id 를 링크(멱등, no-DDL 기존컬럼 재사용). 게이트=shouldLinkCheckInPackage(순수함수).
+  //      cross-CRM write rowcheck 표준: UPDATE .select() 로 rows-affected 확인(silent 0-row=RLS 차단 감지).
+  const linkCheckInPackage = async (targetPackageId: string, deductCheckInId: string | null) => {
+    const decision = shouldLinkCheckInPackage({
+      latestCheckInId: latestCheckIn?.id,
+      latestCheckInPackageId: latestCheckIn?.package_id,
+      deductCheckInId,
+      targetPackageId,
+    });
+    if (!decision) return;
+    const { data: linkedRows, error } = await supabase
+      .from('check_ins')
+      .update({ package_id: targetPackageId })
+      .eq('id', deductCheckInId as string)
+      .select('id');
+    if (error) {
+      console.warn('[PKG-CHECKIN-LINK] check_ins.package_id 링크 실패:', error.message);
+      return;
+    }
+    if (!linkedRows || linkedRows.length === 0) {
+      // 0-row + error=null: RLS 투명 차단 또는 id 불일치 (silent write-failure 금지)
+      console.warn('[PKG-CHECKIN-LINK] check_ins.package_id 링크 0-row(권한/ID 불일치)');
+      return;
+    }
+    // 로컬 state 즉시 반영 (재진입/화면전환 없이 카드 '연결됨' 유지)
+    setLatestCheckIn((prev) =>
+      prev && prev.id === deductCheckInId ? ({ ...prev, package_id: targetPackageId } as CheckIn) : prev
+    );
+  };
+
   // 같은 내원(check_in_id)·같은 패키지에 이미 'used' 차감 이력이 있으면 그 회차를 반환 (없으면 null)
   // ★ 지정치료사와 무관 — 오직 (package_id, check_in_id) 중복(unique_package_checkin)으로 판정
   const findSameCheckinSession = async (packageId: string, checkInId: string) => {
@@ -4970,6 +5046,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       if (isDupCheckinError(error)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
       toast.error(`차감 실패: ${error.message}`); return;
     }
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 성공 → check_ins.package_id 링크 (write-path fix)
+    await linkCheckInPackage(targetPkg.id, deductCheckInId);
     await refreshPackageSessionsAndRemaining();
     resetDeductFormAfterSave();
     toast.success('회차 차감 완료');
@@ -4984,6 +5062,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       .update({ performed_by: dupDeductModal.therapistId })
       .eq('id', dupDeductModal.existingSessionId);
     if (error) { setDupDeductBusy(false); toast.error(`치료사 변경 실패: ${error.message}`); return; }
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 기존 회차(같은 내원)도 check_ins.package_id 링크 보정
+    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
     await refreshPackageSessionsAndRemaining();
     if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
     setDupDeductBusy(false);
@@ -5017,6 +5097,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       if (isDupCheckinError(error)) { toast.error('같은 날 추가 차감 설정이 아직 반영되지 않았어요. 관리자에게 문의해 주세요.'); return; }
       toast.error(`추가 차감 실패: ${error.message}`); return;
     }
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 같은 내원 추가 차감도 check_ins.package_id 링크
+    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
     await refreshPackageSessionsAndRemaining();
     if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
     setDupDeductBusy(false);
@@ -5162,6 +5244,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       return;
     }
 
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 힐러 차감 성공 → check_ins.package_id 링크
+    await linkCheckInPackage(targetPkg.id, deductCheckInId);
     await refreshPackageSessionsAndRemaining();
     // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
     resetDeductFormAfterSave();
@@ -5868,17 +5952,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           title={
                             !(customer.hira_consent ?? false)
                               ? '건강보험조회 동의(Y) 후 조회할 수 있습니다'
-                              : '건보공단 실시간 자격조회 (성공 시 우측 건강보험 자격등급에 반영)'
+                              : '공단 포털 자격조회 열기 + 결과 붙여넣기 (붙여넣은 등급은 우측 건강보험 자격등급에서 확정)'
                           }
+                          data-testid="nhis-lookup-btn"
                           className={cn(
                             'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
                             customer.hira_consent
                               ? 'border-slate-400 bg-slate-50 text-slate-700 hover:bg-slate-100 cursor-pointer'
                               : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
-                            nhis.loading && 'opacity-60 cursor-wait',
                           )}
                         >
-                          {nhis.loading ? '조회 중…' : '조회'}
+                          건보조회
                         </button>
                         {customer.hira_consent && customer.hira_consent_at && (
                           <span className="text-[10px] text-sage-600">
@@ -5887,10 +5971,18 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         )}
                       </div>
                       {/* 1구역 동선 내 최소 노출: 자격조회 실패/미연동 안내 (2구역 결과뷰 제거 대체). */}
-                      {nhis.error && (
+                      {nhis.error && !nhis.captureOpen && (
                         <span className="text-[10px] leading-snug text-red-600">
                           {nhis.error.message}
                         </span>
+                      )}
+                      {/* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 포털 딥링크 안내 패널(수기 선택 only).
+                          붙여넣기 파서 제거 — 데스크가 포털에서 확인 후 우측 '건강보험 자격등급'에서 직접 선택·저장. */}
+                      {nhis.captureOpen && (
+                        <NhisCapturePanel
+                          customerName={customer.name ?? null}
+                          controller={nhis}
+                        />
                       )}
                       {/* T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호(건강보험증 번호) 전용 입력 칸.
                           현재 고객메모 자유텍스트 workaround 대체. API 미연동 동안 수기 입력이 1차 경로,
@@ -6196,9 +6288,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     <select
                       value={customer.assigned_staff_id ?? ''}
                       onChange={(e) => {
+                        const v = e.target.value || null;
                         setIsDirty(true);
-                        saveCustomerField({ assigned_staff_id: e.target.value || null });
-                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동
+                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동(표시값 동기화)
+                        // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력):
+                        //   영구 담당(assigned_staff_id) 저장 후, 당일 열린 내원의 방문별 상담사(check_ins.consultant_id)를 하향전파.
+                        //   「금일 배분 이력」이 check_ins.consultant_id 를 read 하므로 해당 환자 행 담당자가 즉시 갱신된다.
+                        void (async () => {
+                          const { error } = await saveCustomerField({ assigned_staff_id: v });
+                          if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
+                          await updateTodayOpenCheckInConsultant(v);
+                        })();
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
@@ -7806,6 +7906,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 requestedByName={profile?.name ?? ''}
               />
 
+              {/* ── 소견서·진단서 발행 이력 (T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW) ──
+                  이 환자가 신청한 소견서·진단서의 신청이력(누가·언제)·발행여부(발행완료/미발행)·발행본 열람.
+                  진료대시보드(DASH-ISSUEDDOCS)·치료테이블(TREATTABLE-DOCS-PARITY) 발행이력 패턴의 3번째 surface.
+                  read-only ADDITIVE — form_submissions 단일 원장 재사용, 발행 파이프라인·의사화면 코드 무접촉. ── */}
+              <OpinionDocHistorySection
+                clinicId={customer.clinic_id}
+                customerId={customer.id}
+              />
+
               {/* ── 3줄: 결제영수증 (AC-4: 기존 결제영수증 보기 동선 wiring 유지) ── */}
               <div className="rounded-lg border bg-white p-3 text-xs" data-testid="consult-section-receipt">
                 <ReceiptUploadSection
@@ -8643,6 +8752,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             <InsuranceGradeSelect
               customerId={customer.id}
               editable
+              /* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) 프리필 경로 제거 —
+                 데스크가 포털에서 확인 후 등급을 직접 선택·저장하는 수기 단일 경로만 유지. */
               onChanged={() => {
                 supabase
                   .from('customers')

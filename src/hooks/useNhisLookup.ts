@@ -1,135 +1,65 @@
 /**
- * useNhisLookup — 건보공단 수진자 자격조회 공유 훅
+ * useNhisLookup — 건보공단 수진자 자격 "수기 포털조회" 컨트롤러
  *
- * T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE
- *   건강보험 조회 3구역 정리 — 자격조회 로직을 1구역(좌측 '건보 조회' 진입점)과
- *   2구역(결과 표시 패널)이 동일 상태로 공유하도록 NhisLookupPanel 내부 로직을 훅으로 추출.
- *   - 트리거(performLookup)는 1구역 버튼 + 셀프접수 동의 이벤트로 일원화.
- *   - 2구역은 동일 controller 의 result/error 만 표시(트리거 버튼 제거 — A안).
+ * T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY (이은상 팀장 confirm=B, 파서 롤백)
+ *   붙여넣기 자동파싱(파서) 접근을 롤백한다. 파서가 걸던 이름대조 STRONG 차단 → 거짓 "다른 환자"
+ *   경고 + 등급 자동입력 차단의 원인이었다. 이제 데스크 동선은 **수기 선택 only**:
+ *     [건보조회] → 포털 딥링크 open + 감사 RPC → 데스크가 포털에서 자격여부를 눈으로 확인 →
+ *     우측 '건강보험 자격등급'(InsuranceGradeSelect)에서 등급을 직접 선택 → [저장].
+ *   이 훅은 딥링크 open + 감사 개시 + 안내 패널 토글까지만 담당한다(파싱·제안 없음).
+ *   확정(write)은 InsuranceGradeSelect → updateInsuranceGrade sink 를 그대로 재사용.
  *
- * 원본: NhisLookupPanel (T-20260515-foot-KENBO-API-NATIVE)
- *   AC-2 Edge Function 호출 → 자격등급/본인부담률/적용일 렌더
- *   AC-3 API 장애 graceful degradation (에러 + 외부링크 fallback)
- *   AC-4 sessionStorage 캐시 (TTL 4시간, customer_id 단위)
+ * 단일 choke point: performLookup(=openCapture). 두 트리거(1구역 버튼·셀프접수 effect)가 여기로
+ *   수렴 → 평행경로 재오픈 없음. EF fetch 死호출 없음(nhis-lookup EF 는 동결 유지, 호출만 끊음).
+ *
+ * RRN·인증서는 CRM/클라우드를 절대 경유하지 않음 — 딥링크까지만, 포털/데스크 PC 내부 종결.
+ *
+ * 감사(하드가드 #5): 조회 개시(딥링크 open) 시 log_nhis_eligibility_lookup(customer_id) SECDEF RPC.
+ *   실패해도 동선 무중단(소프트게이트). PII 미전송 — 인자는 customer_id 1개. (prod 적용 완료, 유지.)
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
-import { type InsuranceGrade } from '@/lib/insurance';
-import { updateInsuranceGrade } from '@/hooks/useInsurance';
 
-/** 건보공단 외부 조회 링크 (요양기관 정보마당) — API 미연동 fallback */
+/** 건보공단 수진자자격조회 포털 딥링크 (요양기관 정보마당) */
 export const NHIS_EXTERNAL_URL = 'https://medicare.nhis.or.kr/portal/refer/selectReferInq.do';
-/** 캐시 유효 시간: 4시간 (ms) */
-const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
-
-export interface NhisLookupResult {
-  grade: InsuranceGrade;
-  copayment_rate: number | null;
-  effective_date: string | null;
-  /**
-   * T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD (연동 준비/scaffold):
-   * 건보 자격조회 API 착지 시 응답 payload에 실려 올 건강보험증 번호.
-   * 현재 API 미연동이라 항상 undefined — 착지 후 EF(nhis-lookup)가 채우면
-   * 2번차트 '보험 증번호' 필드에 자동 바인딩된다(수기 입력이 그 전까지 1차 경로).
-   */
-  cert_no?: string | null;
-}
-
-interface NhisErrorCode {
-  error: string;
-  fallback_url?: string;
-  detail?: string;
-}
-
-interface CacheEntry {
-  result: NhisLookupResult;
-  ts: number;
-}
 
 export interface NhisLookupError {
   message: string;
   showFallback: boolean;
 }
 
-/** performLookup 옵션 */
+/** performLookup 옵션 (하위호환) */
 export interface NhisLookupOpts {
-  /** true 면 토스트 억제 — 자동 트리거(셀프접수 동의·동의 클릭)에서 사용 */
+  /** true 면 자동 트리거(셀프접수 effect). 수기 조회에선 딥링크 자동 오픈/감사를 하지 않음(팝업차단·오조회 방지) */
   silent?: boolean;
-  /**
-   * true 면 hiraConsent=false 여도 조회 진행.
-   * 동의 토글 직후처럼 동의가 막 부여됐지만 prop 이 아직 갱신 전(stale)일 때 사용.
-   */
   bypassConsentGate?: boolean;
 }
 
-/** 자격조회 controller — 1구역(트리거)·2구역(표시)이 공유 */
+/** 자격 조회 controller — 1구역(트리거)·안내 패널이 공유 */
 export interface NhisLookupController {
-  loading: boolean;
-  result: NhisLookupResult | null;
+  /** 인라인 안내 패널 노출 여부 */
+  captureOpen: boolean;
   error: NhisLookupError | null;
-  cachedAt: string | null;
+  /** 하위호환: 항상 false (수기 조회는 비동기 조회 없음). 버튼 disabled 계산용 잔존 */
+  loading: boolean;
+  /** 조회 개시: 포털 딥링크 open + 안내 패널 노출 + 감사 RPC. (단일 choke point) */
   performLookup: (forceRefresh?: boolean, opts?: NhisLookupOpts) => Promise<void>;
+  /** 안내 패널 닫기 */
+  closeCapture: () => void;
 }
 
 interface UseNhisLookupOptions {
-  /** 조회 성공 후 등급 갱신되면 호출 (3구역 자동산정 연쇄 트리거 등) */
   onGradeUpdated?: () => void;
 }
 
-function getCacheKey(customerId: string) {
-  return `nhis_lookup_v1_${customerId}`;
-}
-
-function readCache(customerId: string): NhisLookupResult | null {
-  if (!customerId) return null;
-  try {
-    const raw = sessionStorage.getItem(getCacheKey(customerId));
-    if (!raw) return null;
-    const entry: CacheEntry = JSON.parse(raw);
-    if (Date.now() - entry.ts > CACHE_TTL_MS) {
-      sessionStorage.removeItem(getCacheKey(customerId));
-      return null;
-    }
-    return entry.result;
-  } catch {
-    return null;
-  }
-}
-
-function writeCache(customerId: string, result: NhisLookupResult) {
+/** 조회 개시 감사(하드가드 #5). 실패해도 동선 무중단(소프트게이트). PII 미전송. */
+async function logEligibilityLookup(customerId: string): Promise<void> {
   if (!customerId) return;
   try {
-    const entry: CacheEntry = { result, ts: Date.now() };
-    sessionStorage.setItem(getCacheKey(customerId), JSON.stringify(entry));
+    await supabase.rpc('log_nhis_eligibility_lookup', { p_customer_id: customerId });
   } catch {
-    // sessionStorage 쓰기 실패는 무시 (캐시 기능만 비활성)
-  }
-}
-
-function clearCache(customerId: string) {
-  if (!customerId) return;
-  try {
-    sessionStorage.removeItem(getCacheKey(customerId));
-  } catch {
-    // ignore
-  }
-}
-
-/** 에러코드 → 사용자 메시지 변환 */
-export function resolveNhisErrorMessage(code: string | undefined, detail?: string): string {
-  switch (code) {
-    case 'RRN_MISSING':
-      return '주민등록번호가 입력되지 않았습니다. 고객 차트에서 주민번호를 먼저 입력해 주세요.';
-    case 'NHIS_NOT_CONFIGURED':
-      return '건보 자격조회 API가 아직 연동되지 않았습니다. 외부 조회 링크를 이용해 주세요.';
-    case 'NHIS_API_ERROR':
-      return `건보 자격조회 일시 불가 — 외부 조회 링크를 이용해 주세요.${detail ? ` (${detail.slice(0, 80)})` : ''}`;
-    case 'UNAUTHORIZED':
-      return '인증이 필요합니다. 다시 로그인해 주세요.';
-    default:
-      return `건보 자격조회 일시 불가 — 외부 조회 링크를 이용해 주세요.${detail ? ` (${detail.slice(0, 80)})` : ''}`;
+    // 감사 실패가 조회 동선을 break 하지 않는다 (§16-4b INV1 / 하드가드 #6).
   }
 }
 
@@ -139,119 +69,59 @@ export function useNhisLookup(
   hiraConsent: boolean,
   options: UseNhisLookupOptions = {},
 ): NhisLookupController {
-  const { onGradeUpdated } = options;
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<NhisLookupResult | null>(() => readCache(customerId));
+  void options; // onGradeUpdated 는 확정(InsuranceGradeSelect) 경로에서 처리 — 훅은 딥링크/안내까지만
+  const [captureOpen, setCaptureOpen] = useState(false);
   const [error, setError] = useState<NhisLookupError | null>(null);
-  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
-  // customerId 변경(차트 전환) 시 해당 고객 캐시 재반영
+  // 차트 전환(customerId 변경) 시 안내 상태 초기화 — 이전 환자 잔류 방지(오조회 방어)
   useEffect(() => {
-    setResult(readCache(customerId));
+    setCaptureOpen(false);
     setError(null);
-    setCachedAt(null);
   }, [customerId]);
 
   const performLookup = useCallback(
-    async (forceRefresh = false, opts: NhisLookupOpts = {}) => {
+    async (_forceRefresh = false, opts: NhisLookupOpts = {}) => {
       const { silent = false, bypassConsentGate = false } = opts;
-
+      // 자동 트리거(셀프접수 effect)는 팝업 자동오픈/감사 없이 no-op — 수기 조회는 스태프가 명시 개시.
+      if (silent) return;
       if (!hiraConsent && !bypassConsentGate) {
-        if (!silent) {
-          toast.warning('건보 조회 동의가 필요합니다. 조회동의를 Y로 설정해 주세요.');
-        }
+        setError({
+          message: '건보 조회 동의가 필요합니다. 조회동의를 Y로 설정해 주세요.',
+          showFallback: false,
+        });
         return;
       }
       if (!customerId) return;
 
-      // 캐시 확인 (강제 갱신 아닐 때)
-      if (!forceRefresh) {
-        const cached = readCache(customerId);
-        if (cached) {
-          setResult(cached);
-          setError(null);
-          return;
-        }
-      } else {
-        clearCache(customerId);
-      }
-
-      setLoading(true);
       setError(null);
+      setCaptureOpen(true);
 
+      // 포털 딥링크 새 창 오픈 (RRN/인증서는 포털·데스크 PC 내부 종결, CRM 미경유)
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) {
-          throw new Error('로그인 세션이 만료되었습니다.');
-        }
-
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-        const fnUrl = `${supabaseUrl}/functions/v1/nhis-lookup`;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000); // 12s UI timeout
-
-        const res = await fetch(fnUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-          },
-          body: JSON.stringify({ customer_id: customerId }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeout);
-        const json: NhisLookupResult | NhisErrorCode = await res.json();
-
-        if (!res.ok) {
-          const errJson = json as NhisErrorCode;
-          const showFallback = !!errJson.fallback_url || errJson.error === 'NHIS_NOT_CONFIGURED';
-          const message = resolveNhisErrorMessage(errJson.error, errJson.detail);
-          setError({ message, showFallback });
-          return;
-        }
-
-        const lookupResult = json as NhisLookupResult;
-        setResult(lookupResult);
-        writeCache(customerId, lookupResult);
-        setCachedAt(
-          new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-        );
-
-        // 조회 성공 시 customers.insurance_grade 자동 갱신 (source: hira_lookup)
-        if (lookupResult.grade && lookupResult.grade !== 'unverified') {
-          const memo = lookupResult.effective_date
-            ? `건보공단 API 자동조회 · 적용일 ${lookupResult.effective_date}`
-            : '건보공단 API 자동조회';
-          // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: updateInsuranceGrade 가 0-row(사일런트
-          //   유실)를 error 로 승격하므로, 자동 갱신 경로도 반환 error 를 존중해 거짓 성공 toast 를 차단.
-          const { error: gradeErr } = await updateInsuranceGrade(customerId, lookupResult.grade, 'hira_lookup', memo);
-          onGradeUpdated?.();
-          if (!silent) {
-            if (gradeErr) {
-              toast.error(`자격등급 갱신 실패: ${gradeErr}`);
-            } else {
-              toast.success('자격등급이 건보공단 API 조회 결과로 갱신되었습니다.');
-            }
-          }
-        }
-      } catch (err) {
-        const isAbort = err instanceof DOMException && err.name === 'AbortError';
+        window.open(NHIS_EXTERNAL_URL, '_blank', 'noopener,noreferrer');
+      } catch {
+        // 팝업 차단 등 — 안내 패널 내 링크로 폴백(showFallback)
         setError({
-          message: isAbort
-            ? '건보 자격조회 일시 불가 — 응답 시간 초과'
-            : `건보 자격조회 일시 불가 — ${String(err)}`,
+          message: '포털 창을 자동으로 열지 못했습니다. 아래 링크로 열어 주세요.',
           showFallback: true,
         });
-      } finally {
-        setLoading(false);
       }
+
+      // 조회 개시 감사 (비차단)
+      void logEligibilityLookup(customerId);
     },
-    [customerId, hiraConsent, onGradeUpdated],
+    [customerId, hiraConsent],
   );
 
-  return { loading, result, error, cachedAt, performLookup };
+  const closeCapture = useCallback(() => {
+    setCaptureOpen(false);
+  }, []);
+
+  return {
+    captureOpen,
+    error,
+    loading: false,
+    performLookup,
+    closeCapture,
+  };
 }

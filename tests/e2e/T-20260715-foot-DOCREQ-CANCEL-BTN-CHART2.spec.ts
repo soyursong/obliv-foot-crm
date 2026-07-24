@@ -107,11 +107,12 @@ test.describe('T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2 — 서류요청 취소(
     }
   });
 
-  test('AC-6: 작성하기 버튼·반짝효과·RXCLIN 미리보기 드롭다운 회귀 없음', () => {
+  test('AC-6: 작성하기 버튼·RXCLIN 미리보기 드롭다운 회귀 없음 (반짝효과 제거됨)', () => {
     const q = queue();
     expect(q).toContain('data-testid="docreq-write-btn"');
     expect(q).toContain('작성하기');
-    expect(q).toContain('animate-ping');
+    // animate-ping ripple 은 T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE(deployed)로 제거됨 → 부재 단언.
+    expect(q).not.toContain('animate-ping');
     // RXCLIN 표현 상속(ColumnExpandPopover 재사용) 보존.
     expect(q).toContain("from '@/components/doctor/ColumnExpandPopover'");
     expect(q).toContain('testId="docreq-rx-expand-pop"');

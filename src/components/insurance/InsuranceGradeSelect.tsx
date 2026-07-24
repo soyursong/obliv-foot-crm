@@ -27,6 +27,7 @@ import {
   type InsuranceGrade,
   type InsuranceGradeSource,
 } from '@/lib/insurance';
+// T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) prop 경로 제거 — 수기 선택 only.
 import { updateInsuranceGrade, useInsuranceGrade } from '@/hooks/useInsurance';
 
 interface Props {
@@ -37,7 +38,11 @@ interface Props {
   editable?: boolean;
 }
 
-export function InsuranceGradeSelect({ customerId, onChanged, editable = true }: Props) {
+export function InsuranceGradeSelect({
+  customerId,
+  onChanged,
+  editable = true,
+}: Props) {
   const { grade, source, verifiedAt, memo, refresh } = useInsuranceGrade(customerId);
   const [draftGrade, setDraftGrade] = useState<InsuranceGrade>('unverified');
   const [draftSource, setDraftSource] = useState<InsuranceGradeSource>('manual_input');
@@ -51,6 +56,9 @@ export function InsuranceGradeSelect({ customerId, onChanged, editable = true }:
     setDraftSource((source ?? 'manual_input') as InsuranceGradeSource);
     setDraftMemo(memo ?? '');
   }, [grade, source, memo]);
+
+  // T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안 프리필(suggested*) 경로 제거.
+  //   등급 입력은 오직 사람이 [수정/입력] → 등급 클릭 → [저장]으로만 write(자동확정 없음).
 
   const days = daysSinceVerified(verifiedAt);
   const stale = days != null && days >= VERIFICATION_STALE_DAYS;

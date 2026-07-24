@@ -856,6 +856,42 @@ export function computeBillReceiptNewCoveredBreakdown(
 }
 
 /**
+ * T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE:
+ * 진료비 계산서·영수증(bill_receipt_new) **전용** aggregate 라이브 SSOT 강제 세팅.
+ *
+ * RC: aggregate 4토큰({{total_amount}}/{{insurance_covered}}/{{copayment}}/{{non_covered}}) + ⑧{{patient_amount}}
+ *   은 종전 applyBillingFallback(blank-only, isBlankOrZero 가드)에만 의존한다. autobind 은 stale 한
+ *   service_charges(감사로그)에서 이 값들을 이미 채우므로 라이브(check_in_services=computeFootBilling)가
+ *   덮지 못한다 → 세부산정내역(bill_detail, check_in_services 명시세팅)과 금액 발산(240,000 vs 315,000 등).
+ *
+ * 수정: bill_receipt_new 한정으로 라이브 값을 **직접 대입(force)** 한다(가드 우회 — applyBillingFallback 재호출 아님).
+ *   - insurance_covered / copayment / non_covered = computeFootBilling(check_in_services) liveBillingValues
+ *   - total_amount / subtotal_amount = grandTotal(공단 포함 전체합산 — ⑥ 진료비 총액, D3)
+ *   - patient_amount = copayment + non_covered (공단 제외 — AC7 B안 raw. 10원 절사·야간가산 fold 는 호출부 후처리)
+ *
+ * ⚠ 무파괴 가드:
+ *   - applyBillingFallback 일반 정책 **무접촉**(bill_detail·기타 서류 동작 불변 — T-20260609 AC-3 GREEN 유지).
+ *   - grandTotal ≤ 0(check_in_services 미기록 구 데이터)이면 no-op → service_charges 직결 폴백 보존.
+ *   - 반드시 form_key === 'bill_receipt_new' 서류에만 호출(4경로 대칭: DPP 단건·배치·미리보기 + PMW [출력]/[출력및수납]).
+ *   - applyBillReceiptNewCoveredTokens 이전에 호출해야 remainder base(aggregate) 정합(순서강제).
+ */
+export function applyBillReceiptNewLiveTotals(
+  values: Record<string, string>,
+  live: { grandTotal: number; insuranceCovered: number; copayment: number; nonCovered: number },
+): void {
+  if (!(live.grandTotal > 0)) return; // 미기록/구 데이터 → 폴백 보존(무파괴 no-op)
+  const copay = Math.max(0, live.copayment);
+  const nonCov = Math.max(0, live.nonCovered);
+  values.insurance_covered = formatAmount(Math.max(0, live.insuranceCovered));
+  values.copayment = formatAmount(copay);
+  values.non_covered = formatAmount(nonCov);
+  values.total_amount = formatAmount(live.grandTotal);
+  values.subtotal_amount = values.total_amount;
+  // ⑧ 환자부담 총액(raw) = 본인부담금 + 비급여(공단 제외). 최종 10원 절사·야간가산 fold 는 호출부 후처리.
+  values.patient_amount = formatAmount(copay + nonCov);
+}
+
+/**
  * T-20260722 결함A 토큰 주입 — 반드시 **applyNightHolidaySurcharge 이후**(최종 aggregate 기준)에 호출.
  *   야간가산분(진찰료 성격)이 fold 된 최종 {{copayment}}/{{insurance_covered}} 를 remainder 계산에 사용해야
  *   Σ(행별)=합계 가 안 깨진다(핸드오프 §3.3 순서강제).

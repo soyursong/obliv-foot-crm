@@ -50,6 +50,11 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { supabase } from '@/lib/supabase';
+import {
+  type ExamFlagState,
+  type CisInsertRow,
+  applyExamFlagsToReinsert,
+} from '@/lib/examFlagPreserve';
 // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
 // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 연번호(visit_no) 발번 = buildDocSerial/docSerialPrefix
 //   (수납창 경로 발번 미배선 divergence 해소 — DocumentPrintPanel handleBatchPrint SSOT 동형).
@@ -136,6 +141,8 @@ import {
   // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category remainder)·결함B(납부박스 payments groupBy).
   applyBillReceiptNewCoveredTokens,
   applyBillReceiptPaidBoxTokens,
+  // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE: 신양식 aggregate 라이브 SSOT 강제(세부내역과 동일 소스 수렴).
+  applyBillReceiptNewLiveTotals,
   // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
   loadAlreadyPaidAmount,
   type FootBillingItem,
@@ -848,6 +855,30 @@ interface Props {
   onComplete: () => void;
   /** 시술 저장 완료 후 (AC-7 수납대기 금액 갱신용) */
   onSaved?: () => void;
+}
+
+// ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B) ────────────────────
+//   피검사/KOH '치료신청' 은 request_blood_test_for_customer / request_koh_for_customer RPC 가
+//   check_in_services.blood_test_requested / koh_requested 에 마킹하는 check-in 단위 플래그다.
+//   결제 저장/자동저장이 check_in_services 를 DELETE+reinsert 할 때 이 플래그를 재적용하지 않으면
+//   항상 false 로 초기화(clobber) → "화면 이동/재진입 시 치료신청 체크 풀림" 재발의 지배 RC.
+//   → package_session_id C3 보존과 동일 패턴으로 DELETE 前 스냅샷 → reinsert row 에 복원한다.
+//   (no-DDL: 旣존 컬럼만 사용. RPC 밖 별도 UPDATE 없이 단일 INSERT 로 보존 = 서버 write 규칙 준수.)
+
+// ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B): 순수 보존 로직은 lib 로 분리(테스트 공용 SSOT).
+//   check-in 의 마킹된 피검사/KOH 신청 플래그 스냅샷(graceful — 컬럼 부재 42703 시 false).
+async function snapshotExamFlags(checkInId: string): Promise<ExamFlagState> {
+  const off: ExamFlagState = { blood: false, koh: false };
+  const { data, error } = await supabase
+    .from('check_in_services')
+    .select('blood_test_requested, koh_requested')
+    .eq('check_in_id', checkInId);
+  if (error) return off; // 마이그 미적용 prod(42703) 등 → 보존 대상 없음으로 간주(graceful)
+  const rows = (data ?? []) as Array<{ blood_test_requested?: boolean | null; koh_requested?: boolean | null }>;
+  return {
+    blood: rows.some((r) => r.blood_test_requested === true),
+    koh: rows.some((r) => r.koh_requested === true),
+  };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -1676,6 +1707,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     selected: { form_key: string }[],
   ): Promise<void> => {
     if (!selected.some((t) => t.form_key === 'bill_receipt_new') || pricingItems.length === 0) return;
+    // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE ([출력]/[출력및수납] 공용): 신양식 aggregate 라이브 SSOT force.
+    //   RC: applyBillingFallback(isBlankOrZero 가드)이 stale service_charges autobind aggregate 를 보존 → 라이브
+    //   (check_in_services=computeFootBilling)로 못 덮어 세부산정내역(bill_detail)과 발산. 신양식 한정 force 대입으로 수렴.
+    //   ⑥ 진료비 총액 = grandTotal(공단 포함) 강제(D3). DPP 단건·배치와 동일 헬퍼(SSOT 단일소비, D2).
+    //   ★순서: CoveredTokens(remainder) 이전에 호출 — aggregate({{copayment}}/{{insurance_covered}}) 를 base 로 소비하므로.
+    applyBillReceiptNewLiveTotals(autoValues, {
+      grandTotal,
+      insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
+      copayment: copaymentTotal,
+      nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+    });
     // 결함A: 급여 category remainder 토큰(진찰료 흡수 방지). buildPmwBillDetailItems = DPP 동일 SSOT.
     applyBillReceiptNewCoveredTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
     // 결함B: payments 원장 결제수단별 실수납 groupBy.
@@ -1759,6 +1801,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       preservedQueue.set(r.service_id, q);
     }
 
+    // ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B RC 하드닝) ──
+    //   피검사/KOH 치료신청 플래그(check_in_services.blood_test_requested/koh_requested)는
+    //   request_*_for_customer RPC 가 이 check-in 의 서비스 행에 마킹한다. 그런데 결제 재저장이
+    //   DELETE+reinsert 하면서 이 플래그를 재적용하지 않아 항상 false 로 clobber → "화면 이동 시
+    //   치료신청 체크 풀림" 재발의 지배 RC. package_session_id C3 보존과 동일 패턴으로 스냅샷 후 복원.
+    //   (no-DDL — 旣존 컬럼만 사용. RPC 밖 별도 UPDATE 없이 단일 INSERT 로 보존.)
+    const examFlags = await snapshotExamFlags(checkIn.id);
+
     const { error: delError } = await supabase
       .from('check_in_services')
       .delete()
@@ -1784,15 +1834,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const preservedPsid = q && q.length > 0 ? q.shift()! : null;
         return {
           check_in_id: checkIn.id,
-          service_id: service.id,
+          service_id: service.id as string | null,
           service_name: service.name,
           price: unitPrice,
           original_price: service.price,
           is_package_session: preservedPsid !== null,
           package_session_id: preservedPsid,
-        };
+        } as CisInsertRow;
       });
     });
+
+    // Surface B: 피검사/KOH 치료신청 플래그를 재저장 행에 복원(clobber 방지) — 프로덕션·테스트 공용 SSOT.
+    applyExamFlagsToReinsert(rows, checkIn.id, examFlags);
 
     if (rows.length > 0) {
       const { error } = await supabase.from('check_in_services').insert(rows);
@@ -2222,11 +2275,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     // 미저장 항목이 있으면 DB 자동 저장 (수납대기 유지 — status 변경 없음)
     if (!saved && selectedItems.length > 0) {
       try {
-        // ── T-20260724-foot-PKGSESSION-SOURCE-CLOSURE (가드#4: 두 컬럼 함께 SET) ──
-        //   X 닫기 자동저장도 DELETE+reinsert 다. C3 보존 없이 재삽입하면 소비 RPC 가 세팅한
-        //   package_session_id(+is_package_session)를 NULL/false 로 clobber → 소스 미폐쇄
-        //   (FK-null drift + false-when-consumed). saveCheckInServices 와 동형으로 소비완료 링크를
-        //   service_id 별 FIFO 스냅샷·복원한다(두 컬럼 함께 이동).
+        // ── 재통합(GUARD4 ⊕ Surface B): X 닫기 자동저장도 DELETE+reinsert 다. 두 clobber-보존을
+        //   모두 같은 재삽입 배열에 반영한다(한쪽이 다른 쪽을 덮지 않도록) — saveCheckInServices 동형.
+        //   ① GUARD4(T-20260724-foot-PKGSESSION-SOURCE-CLOSURE): C3 보존 없이 재삽입하면 소비 RPC 가
+        //     세팅한 package_session_id(+is_package_session)를 NULL/false 로 clobber → 소스 미폐쇄
+        //     (FK-null drift + false-when-consumed). service_id 별 FIFO 스냅샷·복원(두 컬럼 함께 이동).
+        //   ② Surface B(T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE): 피검사/KOH 신청 플래그
+        //     (blood_test_requested/koh_requested)도 재적용하지 않으면 false 로 clobber → 스냅샷 후 복원.
         const { data: priorMarked } = await supabase
           .from('check_in_services')
           .select('service_id, package_session_id')
@@ -2239,26 +2294,29 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           pq.push(r.package_session_id);
           preservedQueue.set(r.service_id, pq);
         }
+        const examFlags = await snapshotExamFlags(checkIn.id);
         await supabase
           .from('check_in_services')
           .delete()
           .eq('check_in_id', checkIn.id);
         const rows = selectedItems.flatMap(({ service, qty }) =>
           Array.from({ length: qty }, () => {
-            // C3 보존: 소비완료 링크가 있으면 package_session_id + is_package_session 복원(함께).
+            // ① C3 보존: 소비완료 링크가 있으면 package_session_id + is_package_session 복원(함께).
             const pq = preservedQueue.get(service.id);
             const preservedPsid = pq && pq.length > 0 ? pq.shift()! : null;
             return {
               check_in_id: checkIn.id,
-              service_id: service.id,
+              service_id: service.id as string | null,
               service_name: service.name,
               price: customAmounts.get(service.id) ?? service.price,
               original_price: service.price,
               is_package_session: preservedPsid !== null,
               package_session_id: preservedPsid,
-            };
+            } as CisInsertRow;
           }),
         );
+        // ② Surface B: 같은 rows 배열에 피검사/KOH 플래그 복원(package_session_id 는 불변 — clobber 없음).
+        applyExamFlagsToReinsert(rows, checkIn.id, examFlags);
         if (rows.length > 0) {
           const { error: insertErr } = await supabase.from('check_in_services').insert(rows);
           // INSERT 실패(RLS 등) 시 draft를 보존하고 창만 닫음 — localStorage 삭제 금지

@@ -29,7 +29,7 @@ import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/s
 // T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL: 일일 미수금 박스 — footBilling outstanding SSOT 재사용(신규 산출 0)
 import { loadCustomerOutstanding } from '@/lib/footBilling';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC (옵션A): 수기입력 → 정본 write-path 연동(단일 SSOT)
-import { recordManualPayment, type ManualPayAttribution, type ManualPayCheckIn } from '@/lib/manualPaymentWritePath';
+import { recordManualPayment, type ManualPayAttribution, type ManualPayCheckIn, type PaymentSplit } from '@/lib/manualPaymentWritePath';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -2281,6 +2281,14 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
   const [saving, setSaving] = useState(false);
   const { profile } = useAuth();
 
+  // ── T-20260720-foot-DAYCLOSE-MANUALPAY-SPLITPAY-SYNC: 분할결제(카드+이체 등 다-결제수단) ──
+  //   기본 결제금액/결제수단 = leg1. extraLegs = leg2+. 미지정(빈 배열) 시 기존 단일 leg 동선 무회귀.
+  //   수정 모드는 단일 closing_manual_payments 행 편집이라 분할 비대상.
+  const [extraLegs, setExtraLegs] = useState<{ method: 'card' | 'cash' | 'transfer'; amount: string }[]>([]);
+  const isSplit = !isEdit && extraLegs.length > 0;
+  const parseAmt = (s: string) => parseInt((s || '').replace(/[^\d]/g, ''), 10) || 0;
+  const splitTotal = parseAmt(amount) + extraLegs.reduce((s, l) => s + parseAmt(l.amount), 0);
+
   // ── T-20260714-foot-DAYCLOSE-MANUAL-PAY (옵션A): 차트번호 → 고객 연동 정본 귀속 ──
   //   차트번호가 이 클리닉 내 고객 1인으로 유일 해소되면, 활성 패키지 잔금 / 수납대기 내원으로
   //   정본(package_payments/payments) 귀속 가능. 귀속 시 closing_manual_payments 는 만들지 않아
@@ -2342,8 +2350,17 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
 
   const save = async () => {
     if (!customerName.trim()) { toast.error('성함을 입력하세요'); return; }
-    const amt = parseInt(amount.replace(/[^\d]/g, ''), 10);
+    const amt = parseAmt(amount);
     if (!amt || amt <= 0) { toast.error('결제금액을 입력하세요'); return; }
+
+    // ── T-20260720-foot-DAYCLOSE-MANUALPAY-SPLITPAY-SYNC: 분할결제 splits 구성 ──
+    //   행1 = 기본 금액/수단, 행2+ = extraLegs(금액>0만). 단일 행 시 [행1] → 기존 동선 동치.
+    //   (영수증 팝업과 동일한 splits 규약으로 단일 write-path recordManualPayment 에 수렴)
+    const splits: PaymentSplit[] = [
+      { method, amount: amt },
+      ...extraLegs.map((l) => ({ method: l.method, amount: parseAmt(l.amount) })).filter((l) => l.amount > 0),
+    ];
+    if (isSplit && splits.length < 2) { toast.error('분할결제 금액을 입력하세요'); return; }
 
     // ── T-20260714 옵션A: 정본 귀속 선택 시 canonical write-path 경유(closing_manual_payments 미생성) ──
     if (!isEdit && resolvedCust && attrSel !== 'manual') {
@@ -2358,16 +2375,19 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
       } else if (attrSel === 'single') attribution = { kind: 'single' };
       if (!attribution) { setSaving(false); toast.error('귀속 대상을 확인하세요'); return; }
       try {
+        // 분할결제면 splits 전달(각 행 canonical 1행), 단건이면 기존 시그니처 유지(무회귀).
         const res = await recordManualPayment({
-          clinicId, customerId: resolvedCust.id, amount: amt, method,
+          clinicId, customerId: resolvedCust.id,
+          ...(isSplit ? { splits } : { amount: amt, method }),
           attribution, memo: memo || undefined, createdAtOverride,
           actor: { id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null },
         });
         setSaving(false);
+        const splitTag = res.splitCount > 1 ? ` (분할 ${res.splitCount}건)` : '';
         toast.success(
-          res.route === 'package' ? '패키지 잔금 결제로 기록 (미수 반영)'
+          (res.route === 'package' ? '패키지 잔금 결제로 기록 (미수 반영)'
           : res.route === 'checkin' ? (res.kanbanResolved ? '수납 완료 — 대기목록 해소' : '수납 기록됨')
-          : '단건 결제로 기록',
+          : '단건 결제로 기록') + splitTag,
         );
         onSaved();
       } catch (e) {
@@ -2378,7 +2398,7 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
     }
 
     setSaving(true);
-    const payload = {
+    const basePayload = {
       clinic_id: clinicId,
       close_date: closeDate,
       pay_time: payTime || null,
@@ -2387,8 +2407,6 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
       lead_source: leadSource || null,
       visit_type: visitType || null,
       staff_name: staffName || null,
-      amount: amt,
-      method,
       memo: memo || null,
     };
 
@@ -2396,14 +2414,16 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
     if (isEdit && editTarget) {
       ({ error } = await supabase
         .from('closing_manual_payments')
-        .update({ ...payload, updated_at: new Date().toISOString() })
+        .update({ ...basePayload, amount: amt, method, updated_at: new Date().toISOString() })
         .eq('id', editTarget.id));
     } else {
-      ({ error } = await supabase.from('closing_manual_payments').insert(payload));
+      // 분할결제: 행 별 closing_manual_payments 1행씩(카드/이체 subtotal 정합). 단건이면 1행(무회귀).
+      const rows = splits.map((s) => ({ ...basePayload, amount: s.amount, method: s.method }));
+      ({ error } = await supabase.from('closing_manual_payments').insert(rows));
     }
     setSaving(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    toast.success(isEdit ? '수기 결제내역 수정됨' : '수기 결제내역 추가됨');
+    toast.success(isEdit ? '수기 결제내역 수정됨' : (isSplit ? `수기 결제내역 추가됨 (분할 ${splits.length}건)` : '수기 결제내역 추가됨'));
     onSaved();
   };
 
@@ -2508,6 +2528,7 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
             <div className="space-y-1">
               <Label>결제수단</Label>
               <select
+                data-testid="manual-method-select"
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
                 value={method}
                 onChange={e => setMethod(e.target.value as 'card' | 'cash' | 'transfer')}
@@ -2518,6 +2539,55 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
               </select>
             </div>
           </div>
+          {/* T-20260720-foot-DAYCLOSE-MANUALPAY-SPLITPAY-SYNC: 분할결제(카드+이체 등) leg 추가 */}
+          {!isEdit && (
+            <div className="space-y-2">
+              {extraLegs.map((leg, i) => (
+                <div key={i} className="grid grid-cols-2 gap-3" data-testid={`manual-split-leg-${i}`}>
+                  <div className="space-y-1">
+                    <Label>분할 금액 {i + 2}</Label>
+                    <AmountInput
+                      placeholder="0"
+                      value={leg.amount}
+                      onChange={(raw) => setExtraLegs(prev => prev.map((l, j) => j === i ? { ...l, amount: raw } : l))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>결제수단 {i + 2}</Label>
+                    <div className="flex gap-1">
+                      <select
+                        data-testid={`manual-split-method-${i}`}
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                        value={leg.method}
+                        onChange={e => setExtraLegs(prev => prev.map((l, j) => j === i ? { ...l, method: e.target.value as 'card' | 'cash' | 'transfer' } : l))}
+                      >
+                        <option value="card">카드</option>
+                        <option value="cash">현금</option>
+                        <option value="transfer">이체</option>
+                      </select>
+                      <Button
+                        type="button" variant="outline" size="icon" className="shrink-0"
+                        data-testid={`manual-split-remove-${i}`}
+                        onClick={() => setExtraLegs(prev => prev.filter((_, j) => j !== i))}
+                      >✕</Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center justify-between">
+                <Button
+                  type="button" variant="outline" size="sm"
+                  data-testid="manual-split-add"
+                  onClick={() => setExtraLegs(prev => [...prev, { method: 'transfer', amount: '' }])}
+                >+ 분할결제 추가 (다른 결제수단)</Button>
+                {isSplit && (
+                  <span className="text-sm font-medium text-emerald-700" data-testid="manual-split-total">
+                    합계 {splitTotal.toLocaleString()}원
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           <div className="space-y-1">
             <Label>메모</Label>
             <Input placeholder="특이사항" value={memo} onChange={e => setMemo(e.target.value)} />

@@ -1,161 +1,75 @@
 /**
- * T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE — 건강보험 조회 3구역 정리
+ * T-20260622-foot-HEALTHINS-3ZONE-CONSOLIDATE — 반전 재작성 (SUPERSEDED by T-20260724-foot-NHIS-MANUAL-CAPTURE)
  *
- * REOPEN (2026-06-23 김주연 총괄 정정 "아예 이 구역을 없애달라고 한거야" — SUPERSEDES A안):
- *   A. 1구역(좌측 '건보 조회' 버튼) = 자격조회 단일 진입점(nhis.performLookup). 유지.
- *      성공 시 등급은 우측 InsuranceGradeSelect 반영 + 3구역 연쇄. 실패/미연동은 1구역 동선 인라인 최소 노출.
- *      셀프접수 동의 = 자동조회 트리거(scaffold).
- *   B. 3구역('급여 진료비 자동산정') = 1구역 자격조회 결과 반환 시 급여 금액 연쇄 자동계산.
- *      트리거 소스 2구역→1구역 전환돼도 끊김 0 (회귀 핵심: onGradeUpdated → insuranceGradeRefreshKey++).
- *   C/시나리오4. 2구역('건보공단 실시간 자격조회' 패널 + '외부조회' 링크) 전체 섹션 = 차트에서 제거.
- *      (이전 A안의 '버튼만 제거·결과뷰 유지'는 폐기.)
- *
- * 구현 방식: 자격조회 로직은 useNhisLookup 훅 공유. 차트(1구역)는 controller 로 훅을 직접 보유하고
- *   2구역 패널 렌더는 제거. NhisLookupPanel 자체는 기존 CheckInDetailSheet 사용처를 위해 잔존(내부 훅 모드).
- *
- * 본 spec 은 (1) NHIS 에러메시지 순수함수(API 미연동 → 안내문) 검증,
- * (2) 소스 wiring 정적 검증(1구역 트리거 일원화 / 2구역 전체 제거 / 3구역 연쇄 /
- *     셀프접수 동의 트리거 scaffold)으로 현장 클릭 시나리오 4건을 회귀 가드한다.
- * (DB/브라우저 불필요 — supervisor 실QA 는 갤탭 실기기 별도.)
+ * 원 스펙은 "API 자동조회(EF fetch) 단일 진입점 + 2구역/외부링크 제거" 아키텍처를 못박았다.
+ * T-20260724 pivot 으로 그 전제가 반전됨:
+ *   - EF 자동조회 死호출 제거(공단 API blocked) → 포털 딥링크 + 수기 붙여넣기 캡처.
+ *   - 외부 딥링크(medicare.nhis)는 "제거 대상"에서 "핵심 경로"로 반전(캡처 UI 내 재도입).
+ *   - resolveNhisErrorMessage(EF 에러코드 변환) 제거.
+ * 본 스펙은 반전된 불변식만 회귀 가드한다(3구역 자동산정 연쇄는 원 스펙에서 계승 — 여전히 유효).
+ * (원 스펙이 읽던 NhisLookupPanel.tsx 는 폐기됨 → 참조 제거.)
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { resolveNhisErrorMessage } from '../../src/hooks/useNhisLookup';
 
 const __root = dirname(fileURLToPath(import.meta.url));
 function readSrc(rel: string): string {
   return readFileSync(resolve(__root, '../../src', rel), 'utf-8');
 }
-
 const chartSrc = readSrc('pages/CustomerChartPage.tsx');
-const panelSrc = readSrc('components/insurance/NhisLookupPanel.tsx');
 const hookSrc = readSrc('hooks/useNhisLookup.ts');
-// NOTE(T-20260714-foot-OBLIVORIGIN-IDENTITY-4SET FIX): obliv native SelfCheckIn.tsx 사본은
-//   T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE(a869edeb) AC2 로 완전 제거되어 canonical 이
-//   foot-checkin(soyursong/foot-checkin) 단일 레포로 이관됨. 본 레포에 파일이 없어 readSrc 시
-//   ENOENT → 회귀 스펙 실행 실패. 셀프접수 hira_consent scaffold 단언은 canonical 레포 소관.
 
 // ──────────────────────────────────────────────────────────────────────
-// 시나리오 1 (일부): API 미연동 현행 — 1구역 자격조회 시도 시 미연동 안내(에러 메시지)
-//   (메시지는 1구역 동선 인라인으로 노출. 2구역 결과뷰는 제거됨.)
+// 반전 1: EF 자동조회 → 포털 딥링크 + 수기 캡처 (死호출 제거)
 // ──────────────────────────────────────────────────────────────────────
-test.describe('시나리오1: API 미연동 안내 (1구역 트리거)', () => {
-  test('NHIS_NOT_CONFIGURED → "API가 아직 연동되지 않았습니다" 안내', () => {
-    const msg = resolveNhisErrorMessage('NHIS_NOT_CONFIGURED');
-    expect(msg).toContain('연동되지 않았');
-    expect(msg).toContain('외부 조회 링크');
+test.describe('반전1: EF 자동조회 제거 → 포털 딥링크 + 수기 캡처', () => {
+  test('EF fetch(functions/v1/nhis-lookup) 死호출 제거', () => {
+    expect(hookSrc).not.toContain('functions/v1/nhis-lookup');
   });
 
-  test('RRN_MISSING → 주민번호 입력 안내', () => {
-    expect(resolveNhisErrorMessage('RRN_MISSING')).toContain('주민등록번호');
+  test('EF 에러코드 변환기(resolveNhisErrorMessage) 제거', () => {
+    expect(hookSrc).not.toContain('resolveNhisErrorMessage');
   });
 
-  test('미정의 코드 → 일시 불가 + 외부링크 fallback', () => {
-    const msg = resolveNhisErrorMessage(undefined);
-    expect(msg).toContain('외부 조회 링크');
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────────
-// A. 1구역 = 자격조회 단일 진입점
-// ──────────────────────────────────────────────────────────────────────
-test.describe('A. 1구역 자격조회 단일 진입점', () => {
-  test('1구역 "조회" 버튼은 window.open 외부링크가 아니라 실시간 자격조회(nhisPerformLookup) 트리거', () => {
-    // 좌측 '건보 조회' 행에서 더 이상 외부URL을 새창으로 열지 않는다.
-    expect(chartSrc).not.toContain(
-      "window.open('https://medicare.nhis.or.kr/portal/refer/selectReferInq.do', '_blank')",
-    );
-    // 1구역 버튼 클릭이 공유 트리거를 호출한다.
-    expect(chartSrc).toMatch(/onClick=\{\s*\(\)\s*=>\s*\{\s*void nhisPerformLookup\(false\);\s*\}\s*\}/);
+  test('딥링크(medicare.nhis)는 반전되어 핵심 경로로 재도입 — window.open', () => {
+    expect(hookSrc).toContain('medicare.nhis.or.kr');
+    expect(hookSrc).toMatch(/window\.open\(NHIS_EXTERNAL_URL/);
   });
 
-  test('공유 자격조회 훅(useNhisLookup) 도입 + 1구역에서 controller 생성', () => {
-    expect(chartSrc).toContain("import { useNhisLookup } from '@/hooks/useNhisLookup'");
-    expect(chartSrc).toMatch(/const nhis = useNhisLookup\(/);
+  test('단일 choke point 유지: 두 트리거가 performLookup 로 수렴', () => {
     expect(chartSrc).toMatch(/const \{ performLookup: nhisPerformLookup \} = nhis;/);
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────────
-// 시나리오2: 셀프접수 동의 = 자동조회 트리거 (scaffold)
-// ──────────────────────────────────────────────────────────────────────
-test.describe('시나리오2: 셀프접수 동의 = 자동조회 트리거', () => {
-  test('hira_consent=true 진입/전환 시 1구역 자격조회 자동 트리거 (silent) effect 존재', () => {
-    expect(chartSrc).toContain('hiraAutoTriggeredRef');
-    // 동의(true) 일 때만, 고객당 1회, silent 로 트리거
+    // 셀프접수 자동 effect 는 잔존하되 silent → no-op (평행경로 ② 무력화)
     expect(chartSrc).toMatch(/void nhisPerformLookup\(false, \{ silent: true \}\)/);
-    // effect 의존성에 hira_consent 포함 → 동의 토글 시 재발화
-    expect(chartSrc).toMatch(/\[customer\?\.id, customer\?\.hira_consent, nhisPerformLookup\]/);
-  });
-
-  // 셀프접수(SelfCheckIn) 동의 저장부 scaffold 단언은 foot-checkin 레포로 이관됨(위 NOTE 참조).
-  //   본 레포에 native SelfCheckIn 사본이 없어 skip — 회귀 가드는 canonical 레포 spec 이 담당.
-  test.skip('셀프접수(SelfCheckIn) 동의 저장부에 자동조회 scaffold 마커 [MIGRATED→foot-checkin]', () => {});
-
-  test('동의 게이트 우회 옵션(bypassConsentGate) — 토글 직후 stale prop 대응', () => {
-    expect(hookSrc).toContain('bypassConsentGate');
+    expect(hookSrc).toMatch(/if \(silent\) return;/);
   });
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// B. 3구역 = 자격조회 결과 → 급여 자동산정 연쇄 (트리거 소스 전환에도 끊김 0)
+// 계승(여전히 유효): 3구역 자동산정 연쇄 — 트리거 소스 전환에도 끊김 0
 // ──────────────────────────────────────────────────────────────────────
-test.describe('B. 3구역 자동산정 연쇄 유지', () => {
-  test('조회 성공 → onGradeUpdated → insuranceGradeRefreshKey++ (3구역 Chart2InsuranceCalcPanel 재트리거)', () => {
-    // 훅 onGradeUpdated 콜백이 등급 갱신 시 호출됨
-    expect(hookSrc).toMatch(/onGradeUpdated\?\.\(\)/);
-    // 차트에서 onGradeUpdated 가 refreshKey 를 증가시켜 3구역 연쇄
+test.describe('계승: 3구역 자동산정 연쇄 유지', () => {
+  test('등급 확정 → insuranceGradeRefreshKey++ → 3구역(Chart2InsuranceCalcPanel) 재트리거', () => {
     expect(chartSrc).toMatch(/setInsuranceGradeRefreshKey\(\(k\) => k \+ 1\)/);
-    // 3구역 패널은 refreshTrigger 로 동일 키 구독 (연쇄 유지)
     expect(chartSrc).toMatch(/refreshTrigger=\{insuranceGradeRefreshKey\}/);
   });
 
-  test('nhis 훅의 onGradeUpdated 가 nhisOnGradeUpdated(차트 연쇄 콜백)에 연결', () => {
-    expect(chartSrc).toMatch(/\{ onGradeUpdated: nhisOnGradeUpdated \}/);
-    expect(chartSrc).toMatch(/const nhisOnGradeUpdated = useCallback\(/);
+  test('결과 노출·확정 지점 = InsuranceGradeSelect 유지', () => {
+    expect(chartSrc).toContain('<InsuranceGradeSelect');
   });
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// 시나리오4/C. 2구역('건보공단 실시간 자격조회' 패널 + 외부조회 링크) 전체 섹션 제거
-//   (재정의 — SUPERSEDES A안: 버튼만이 아니라 구역 UI 전체를 차트에서 제거)
+// 반전 2: 폐기된 2구역 패널(NhisLookupPanel) 참조 소거
 // ──────────────────────────────────────────────────────────────────────
-test.describe('C/시나리오4. 2구역 전체 섹션 제거', () => {
-  test('차트에서 NhisLookupPanel import/렌더가 모두 제거됨 (2구역 패널 없음)', () => {
-    // import 문 제거 (주석 언급은 허용 — 실제 import/JSX 만 가드)
+test.describe('반전2: NhisLookupPanel 폐기', () => {
+  test('차트에 NhisLookupPanel import/JSX 없음 (폐기됨)', () => {
     expect(chartSrc).not.toMatch(/import\s*\{[^}]*NhisLookupPanel/);
-    // JSX 렌더 제거
     expect(chartSrc).not.toContain('<NhisLookupPanel');
   });
 
-  test('차트에서 2구역 외부조회 링크(요양기관 정보마당 medicare.nhis) 제거', () => {
-    // 외부 자격조회 링크 URL 완전 제거
-    expect(chartSrc).not.toContain('medicare.nhis.or.kr');
-    // 외부조회 버튼(ExternalLink 아이콘 JSX) 제거
-    expect(chartSrc).not.toMatch(/<ExternalLink/);
-  });
-
-  test('결과 노출 지점은 InsuranceGradeSelect(자격등급)로 유지 — 결과뷰 없이도 등급 노출', () => {
-    // 2구역 결과뷰는 사라지되, 자격등급 노출/입력 컴포넌트는 유지(스펙 C: 최소 노출 + 3구역 입력원).
-    expect(chartSrc).toContain('<InsuranceGradeSelect');
-  });
-
-  test('1구역 동선 인라인 에러 노출 — nhis.error 를 좌측 건보조회 행에 표시 (2구역 결과뷰 대체)', () => {
-    expect(chartSrc).toMatch(/\{nhis\.error && \(/);
-    expect(chartSrc).toMatch(/nhis\.error\.message/);
-  });
-
-  test('회귀: NhisLookupPanel 컴포넌트 무결성 유지 (1번차트 사용처는 T-20260629 로 제거됨)', () => {
-    // NOTE(T-20260714 FIX): CheckInDetailSheet(1번차트) 의 NhisLookupPanel row 는
-    //   T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE 로 의도적으로 제거됨(자격조회 트리거 1구역 일원화).
-    //   따라서 "CheckInDetailSheet 에 패널이 잔존" 단언은 폐기 — 대신 미렌더(import 삭제)를 회귀 가드로 반전.
-    const checkInSrc = readSrc('components/CheckInDetailSheet.tsx');
-    expect(checkInSrc.match(/<NhisLookupPanel[\s\S]*?\/>/g) ?? []).toHaveLength(0);
-    // 패널 컴포넌트 자체는 재사용 대비 잔존 + 내부 훅 모드(트리거 버튼 + 결과뷰) 무결성 유지
-    expect(panelSrc).toMatch(/\{!hideTrigger && \(/);
-    expect(panelSrc).toContain('자격등급');
-    expect(panelSrc).toContain('본인부담률');
+  test('대체: 인라인 캡처 패널(NhisCapturePanel)로 재구성', () => {
+    expect(chartSrc).toContain('<NhisCapturePanel');
   });
 });

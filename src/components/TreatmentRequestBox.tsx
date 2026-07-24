@@ -159,16 +159,37 @@ export default function TreatmentRequestBox({
   });
 
   // ── 피검사/KOH 既존 RPC 위임 ────────────────────────────────────────────────
+  //   T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE:
+  //     · persist 검증 — RPC 반환값(실제 적용된 플래그)이 의도값과 다르면 silent no-op 로 간주하고 throw.
+  //     · optimistic 갱신 — 클릭 즉시 체크상태 반영 + refetch/remount 사이 흔들림(flash) 방지, 실패 시 롤백.
   const examMutation = useMutation({
     mutationFn: async (args: { entity: 'blood_flag' | 'koh_flag'; next: boolean }) => {
       const rpc = args.entity === 'blood_flag'
         ? 'request_blood_test_for_customer'
         : 'request_koh_for_customer';
-      const { error } = await supabase.rpc(rpc, { p_customer_id: customerId, p_value: args.next });
+      const { data, error } = await supabase.rpc(rpc, { p_customer_id: customerId, p_value: args.next });
       if (error) throw error;
+      // RPC 는 실제 적용된 플래그(boolean)를 반환한다. 의도값과 불일치 = 서버가 신청을 반영하지 못함
+      //   (예: no-service-row/RLS silent no-op) → 성공으로 오인하지 않도록 명시 실패 처리.
+      if (typeof data === 'boolean' && data !== args.next) {
+        throw new Error('서버가 신청 상태를 반영하지 못했습니다(재시도 필요)');
+      }
+    },
+    onMutate: async (args) => {
+      await qc.cancelQueries({ queryKey: ['treatreq_exam_flags', customerId] });
+      const prev = qc.getQueryData<{ blood: boolean; koh: boolean }>(['treatreq_exam_flags', customerId]);
+      qc.setQueryData<{ blood: boolean; koh: boolean }>(
+        ['treatreq_exam_flags', customerId],
+        (old) => {
+          const base = old ?? { blood: false, koh: false };
+          return args.entity === 'blood_flag'
+            ? { ...base, blood: args.next }
+            : { ...base, koh: args.next };
+        },
+      );
+      return { prev };
     },
     onSuccess: (_d, args) => {
-      qc.invalidateQueries({ queryKey: ['treatreq_exam_flags', customerId] });
       // 既존 토글 + 진료대시보드 리스트업 목록 동시 반영(끊김 없이, AC-4).
       qc.invalidateQueries({ queryKey: ['blood_toggle_target', customerId] });
       qc.invalidateQueries({ queryKey: ['koh_toggle_target', customerId] });
@@ -176,8 +197,16 @@ export default function TreatmentRequestBox({
       qc.invalidateQueries({ queryKey: ['koh_report'] });
       toast.success(args.next ? '검사 신청(ON)' : '검사 신청 해제(OFF)');
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _args, ctx) => {
+      // optimistic 롤백 — 낙관적 반영을 이전 상태로 되돌린 뒤 오류 노출.
+      if (ctx?.prev !== undefined) {
+        qc.setQueryData(['treatreq_exam_flags', customerId], ctx.prev);
+      }
       toast.error(`검사 신청 변경 실패: ${e.message}`);
+    },
+    onSettled: () => {
+      // 서버 확정값으로 최종 수렴(성공/실패 무관).
+      qc.invalidateQueries({ queryKey: ['treatreq_exam_flags', customerId] });
     },
   });
 

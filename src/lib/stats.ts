@@ -483,32 +483,64 @@ export function tmRoleNames(staffMap: Record<string, TmStaffInfo>): Set<string> 
 //      dopamine-origin(created_by=NULL, §416 firewall) = 단일 provenance 버킷('도파민 등록').
 //      registrar_name = 화면 label 표시로만(tmCounselorLabel) — 집계/필터축 절대 미참여.
 //
-// ⚠ tmAttributionKey/tmRoleIds 는 registrar_name 을 인자로도 받지 않는다(구조적 차단).
-//   구 tmRoleNames(위) = 표시라벨(registrar_name-aware) 집합 → 필터 inclusion 판정축 사용 금지.
-//   label 표시 helper 로만 존치(§963⑩(a) 위반 재발 방지).
+// ⚠ 구 tmRoleNames(위) = 표시라벨(registrar_name-aware) 집합 → 필터 inclusion 판정축 사용 금지.
+//   label 표시 helper 로만 존치(§963⑩(a) 위반 재발 방지). tmRoleIds 는 registrar_name 미참여(구조적 차단 유지).
+//
+// ─────────────────────────────────────────────────────────────────────────
+// [CEO-GATED CARVE-OUT] T-20260723-foot-TMAGG-DOPAMINE-REGISTRARNAME-DISPLAYBUCKET-VARIANT
+//   (CEO 대표게이트 통과 2026-07-24 + DA CONVENE GO: Q1 firewall=ACCEPT-CONDITIONAL / Q2 variant=SAFE,
+//    consult_ref DA-20260724-foot-TMAGG-PERNAME-FIREWALL-VARIANT-CONVENE)
+//
+//   dopamine 파티션(created_by=NULL AND source_system='dopamine')에 한해 tmAttributionKey 가
+//   registrar_name 을 **display 버킷 분할**용으로만 인자로 받는다. 이것은 위 REPOINT HARD INVARIANT 의
+//   전면 해제가 아니라 dopamine 파티션 한정 카브아웃이다:
+//     · native(created_by≠NULL) 행은 REPOINT AC4 STAYS — created_by canonical grouping, registrar_name 미참여.
+//     · dopamine + registrar_name 有 → { key: 'dop:{registrar_name}', label: registrar_name } display 버킷.
+//     · dopamine + registrar_name NULL → 기존 '__dopamine__' 단일버킷 fallback.
+//   ⚠ HARD incentive-inert (AC3): dop:* 버킷은 TM집계 COUNT display grouping 전용. created_by 는 NULL 유지 —
+//     매출/인센티브/funnel/attribution 어느 measure 에도 입력 금지(§416 firewall 무접촉, counselor_incentive §1 무유입).
+//   ⚠ name-keyed display best-effort (AC5): dop:{registrar_name} 는 canonical attribution 이 아니다.
+//     동명이인 병합·coordinator↑ 편집에 의한 재분류는 알려진 display caveat(escalation 아님, leg-ii 잔여 리스크).
+//   ⚠ 승격 금지 가드 (AC6): registrar_name 을 이 COUNT 표 밖(매출/인센티브/attribution/funnel)으로 확산 금지.
+//     안정 per-name identity 가 필요해지면 registrar_name 승격이 아니라 §963⑩(a) 원 P1(emit-side opaque
+//     provenance key)로만 확장한다.
 // ─────────────────────────────────────────────────────────────────────────
 
 /** dopamine-origin(created_by=NULL) TM집계 단일 버킷 라벨 (AC3). */
 export const TM_DOPAMINE_BUCKET = '도파민 등록';
 
 /**
- * TM집계 grouping key — 정규 귀속키(편집-inert). registrar_name 미참여(인자에도 없음).
- *   - created_by 매칭 직원        → { key: 'staff:<uid>', label: 직원명 }
- *   - created_by=NULL + dopamine  → { key: '__dopamine__',  label: '도파민 등록' }  (per-name 분해 금지, AC3)
+ * TM집계 grouping key — 정규 귀속키(편집-inert).
+ *   - created_by 매칭 직원        → { key: 'staff:<uid>', label: 직원명 }   (native, REPOINT AC4 STAYS)
+ *   - created_by=NULL + dopamine + registrar_name 有 → { key: 'dop:<registrar_name>', label: registrar_name }
+ *       ★ CEO-GATED CARVE-OUT (VARIANT AC1) — dopamine 파티션 한정 display best-effort 버킷 (위 주석블록 참조).
+ *   - created_by=NULL + dopamine + registrar_name NULL → { key: '__dopamine__', label: '도파민 등록' }  (fallback)
  *   - created_by=NULL + 그 외      → { key: '__unassigned__', label: '미지정' }
  *   - created_by 있으나 미매칭(비활성 등) → { key: 'staff:<uid>', label: '미지정' }
+ *
+ * @param registrarName reservations.registrar_name — **dopamine 파티션 display 버킷 분할 전용**.
+ *   native(created_by 有) grouping 에는 절대 영향 없음(첫 분기에서 이미 반환). COUNT display grouping 밖으로
+ *   승격 금지(VARIANT AC3/AC6). name-keyed display best-effort — canonical attribution 아님(AC5).
  * @returns key=집계 병합 키(안정·비편집), label=화면 표시명
  */
 export function tmAttributionKey(
   createdBy: string | null | undefined,
   sourceSystem: string | null | undefined,
   staffName: string | null | undefined,
+  registrarName?: string | null | undefined,
 ): { key: string; label: string } {
   if (createdBy) {
+    // native(로컬 스태프) — created_by canonical grouping. registrar_name 미참여(REPOINT AC4 STAYS, VARIANT AC2).
     return { key: `staff:${createdBy}`, label: (staffName ?? '').trim() || TM_UNASSIGNED_LABEL };
   }
   if ((sourceSystem ?? '').trim() === 'dopamine') {
-    return { key: '__dopamine__', label: TM_DOPAMINE_BUCKET };
+    // [CEO-GATED CARVE-OUT] dopamine 파티션 한정 per-name display 버킷 (VARIANT AC1).
+    //   created_by 는 여전히 NULL — 이 key 는 COUNT display grouping 전용, incentive/attribution 무유입(AC3).
+    const rn = (registrarName ?? '').trim();
+    if (rn) {
+      return { key: `dop:${rn}`, label: rn };   // display best-effort (AC5). 동명이인 conflation 은 알려진 caveat.
+    }
+    return { key: '__dopamine__', label: TM_DOPAMINE_BUCKET };   // registrar_name NULL → 단일버킷 fallback (AC1)
   }
   return { key: '__unassigned__', label: TM_UNASSIGNED_LABEL };
 }

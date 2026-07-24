@@ -88,11 +88,14 @@ export default function TmAggregateSection({
   };
 
   // ── 정규 귀속키 grouping (§963⑩(a), T-20260722-foot-TMAGG-REGISTRAR-AXIS-REPOINT) ──
-  //   집계 grouping key = tmAttributionKey(created_by) — registrar_name 미참여(편집-inert).
-  //   created_by=NULL(dopamine-origin, §416) → 단일 '도파민 등록' 버킷(per-name 분해 금지, AC3).
+  //   native(created_by 有) grouping key = created_by canonical — registrar_name 미참여(편집-inert, REPOINT AC4 STAYS).
+  //   ★ CEO-GATED CARVE-OUT (T-20260723-foot-TMAGG-DOPAMINE-REGISTRARNAME-DISPLAYBUCKET-VARIANT):
+  //     dopamine 파티션(created_by=NULL) 한정 registrar_name 을 넘겨 per-name display 버킷(dop:{registrar_name})으로
+  //     분할한다. registrar_name NULL 도파민 행은 '도파민 등록' 단일버킷 fallback. COUNT display grouping 전용 —
+  //     created_by NULL 유지, 인센티브/매출/attribution 무유입(VARIANT AC1~AC3/AC6).
   //   내원의 매칭 예약 없으면 워크인 버킷.
   const attrOfRes = (r: TmResRow) =>
-    tmAttributionKey(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name);
+    tmAttributionKey(r.created_by, r.source_system, staffMap[r.created_by ?? '']?.name, r.registrar_name);
   const attrOfCheckIn = (ci: TmCheckInRow): { key: string; label: string } => {
     const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
     if (!matched) return { key: '__walkin__', label: WALKIN };

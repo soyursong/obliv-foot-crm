@@ -102,8 +102,10 @@ test.describe('AC-1 — buildDiagDocRows: draft=미발행 / voided+published=발
   });
 });
 
-test.describe('AC-5 — filterDiagDocByDate: 신청시각(KST) 선택 날짜 스코프 + 최신순', () => {
-  test('선택 날짜(2026-07-19) 신청건만 통과', () => {
+// T-20260724-foot-DOCWRITE-UNISSUED-PERSIST-FILTER (김주연 총괄) — 필터 기준 '날짜'→'발행여부' 전환.
+//   미발행(unpublished)=날짜무관 잔류 / 발행완료(published)=기존 day-scoped 유지(AC1~AC4).
+test.describe('DOCWRITE-UNISSUED — filterDiagDocByDate: 미발행 잔류(날짜무관) / 발행완료 day-scoped', () => {
+  test('AC1/AC3 — 미발행 건은 신청일이 지나도 선택 날짜와 무관하게 잔류', () => {
     const merged = buildDiagDocRows(
       [
         req({ id: 'today', requestedAt: '2026-07-19T10:00:00+09:00' }),
@@ -111,24 +113,41 @@ test.describe('AC-5 — filterDiagDocByDate: 신청시각(KST) 선택 날짜 스
       ],
       [],
     );
-    const out = filterDiagDocByDate(merged, '2026-07-19');
-    expect(out.map((r) => r.id)).toEqual(['today']);
+    // 오늘(07-19) 선택 — 어제 신청 미발행 건도 계속 노출(과거 stale 안 사라짐).
+    expect(filterDiagDocByDate(merged, '2026-07-19').map((r) => r.id)).toEqual(['today', 'yday']);
+    // 미래 날짜(07-25)로 이동해도 미발행 건은 그대로 잔류(날짜가 미발행 잔류를 덮어쓰지 않음).
+    expect(filterDiagDocByDate(merged, '2026-07-25').map((r) => r.id)).toEqual(['today', 'yday']);
   });
 
-  test('날짜이동 — 과거일자 선택 시 그날 신청건으로 재스코프(갱신)', () => {
+  test('AC4 — 발행완료 건은 기존 day-scoped(선택일==신청 KST일) 유지, 미발행 잔류에 안 섞임', () => {
     const merged = buildDiagDocRows(
-      [
-        req({ id: 'today', requestedAt: '2026-07-19T10:00:00+09:00' }),
-        req({ id: 'yday', requestedAt: '2026-07-18T22:00:00+09:00' }),
-      ],
       [],
+      [
+        req({ id: 'pub-today', requestedAt: '2026-07-19T11:00:00+09:00', resolvedAt: '2026-07-19T12:00:00+09:00' }),
+        req({ id: 'pub-yday', requestedAt: '2026-07-18T11:00:00+09:00', resolvedAt: '2026-07-18T12:00:00+09:00' }),
+      ],
     );
-    expect(filterDiagDocByDate(merged, '2026-07-18').map((r) => r.id)).toEqual(['yday']);
+    expect(filterDiagDocByDate(merged, '2026-07-19').map((r) => r.id)).toEqual(['pub-today']);
+    expect(filterDiagDocByDate(merged, '2026-07-18').map((r) => r.id)).toEqual(['pub-yday']);
   });
 
-  test('KST 경계 — UTC 자정 넘긴 시각도 KST 날짜로 정확 귀속', () => {
+  test('AC2 — 발행 완료 처리 시 미발행 잔류 리스트에서 제거(published 로 전환되면 draft 훅에서 빠짐)', () => {
+    // 07-18 신청 → 07-19 발행완료: published(day-scoped)로만 편입, draft 잔류 대상 아님.
+    const merged = buildDiagDocRows(
+      [],
+      [req({ id: 'was-draft', requestedAt: '2026-07-18T10:00:00+09:00', resolvedAt: '2026-07-19T09:00:00+09:00' })],
+    );
+    // 신청일(07-18) 기준 day-scoped — 07-19 미발행 잔류 리스트엔 없음(발행완료로 이동, AC2).
+    expect(filterDiagDocByDate(merged, '2026-07-19')).toHaveLength(0);
+    expect(filterDiagDocByDate(merged, '2026-07-18').map((r) => r.id)).toEqual(['was-draft']);
+  });
+
+  test('KST 경계 — 발행완료 건 UTC 자정 넘긴 시각도 KST 날짜로 정확 귀속(day-scoped)', () => {
     // 2026-07-18T23:30:00+09:00 == 2026-07-18T14:30:00Z → KST 날짜=07-18.
-    const merged = buildDiagDocRows([req({ id: 'edge', requestedAt: '2026-07-18T14:30:00Z' })], []);
+    const merged = buildDiagDocRows(
+      [],
+      [req({ id: 'edge', requestedAt: '2026-07-18T14:30:00Z', resolvedAt: '2026-07-18T15:00:00Z' })],
+    );
     expect(filterDiagDocByDate(merged, '2026-07-18').map((r) => r.id)).toEqual(['edge']);
     expect(filterDiagDocByDate(merged, '2026-07-19')).toHaveLength(0);
   });
