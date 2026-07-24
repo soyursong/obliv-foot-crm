@@ -1,0 +1,40 @@
+{
+  "ticket": "T-20260724-foot-DISTHIST-ASSIGNEE-BBS-KKM-MOVE",
+  "ts": null,
+  "abort": false,
+  "abort_reason": null,
+  "kkm_matches_all": 1,
+  "kkm_matches_clinic": 1,
+  "kkm_candidates": [
+    {
+      "id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+      "name": "강경민",
+      "role": "consultant",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    }
+  ],
+  "kkm_id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+  "target_row_snapshot": {
+    "id": "625e534d-22e6-4526-8ea5-c34645691b67",
+    "customer_id": "fab31584-0b68-4134-b330-68f923fd1481",
+    "customer_name": "백범석",
+    "consultant_id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+    "status": "done",
+    "visit_type": "new",
+    "checked_in_at": "2026-07-24T09:14:28.372341+00:00",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+  },
+  "current_consultant": {
+    "id": "c851fbb1-31ce-4714-b91c-03e9cb8af566",
+    "name": "정연주",
+    "role": "consultant"
+  },
+  "precondition_checks": {
+    "pk_match": true,
+    "clinic_match": true,
+    "current_is_jyj": true,
+    "not_already_kkm": true,
+    "customer_bbs": true
+  }
+}
