@@ -22,6 +22,26 @@
  *           워치독은 registry 를 절대 자동 변경하지 않는다(AC-6, ping-pong 재발 차단).
  *     ③ 휴면/철거: 명단에 있으나 최근 N일(기본 30일) 거래 0건 단말 = 정기 리포트(긴급 아님).
  *
+ * ── ④ TID-grain 대사 층 (T-20260725-REDPAY-WATCHDOG-TID-GRAIN-RECON, DA §10 GO·db_change=false) ─
+ *   왜: ①~③은 감지 단위가 merchant. 그러나 적재/소비 필터의 탈락 단위는 TID((merchant_id,tid) 복합, §8.5.1).
+ *       → 이미 명단에 있는(=known) foot merchant 가 신 TID 를 발급하면, merchant 는 통과하고 TID 만
+ *         silent-drop 되어 ①의 "미분류 merchant" 그물에 안 걸린다(3세대 반복: 0723 535xxx→0724 538xxx).
+ *   무엇: 기배포 merchant-grain 워치독을 폐기하지 않고(유지) TID-grain 대사를 직교 보완 diff-pass 로 얹는다.
+ *     · R1 권위소스 = RedPay 정본 파트너 API(read-only GET), NOT redpay_raw_transactions.
+ *          RedPay 정본은 ingestion·view 필터 둘 다의 상류 → drop 위치(§7 ingestion / §9.4 view) 무관 robust.
+ *          부수신호: 알람 TID 의 raw 존재여부를 함께 emit → raw 있으면 seed-only 소급표면화(§9.5.2) 충분 /
+ *          raw 없으면 백필 필요(§7). 후속 판정 즉시화.
+ *     · R2 grain = foot-스코프 merchant 내부의 TID-grain. merchant_id=권위키 불변(귀속 merchant-anchored 유지,
+ *          타도메인 오발 방지). 탐지 해상도만 TID 로 조정(필터 grain=(merchant_id,tid) 복합).
+ *     · R3 ★불변식: 대사 membership 집합 ≡ 적재/소비필터 membership 집합 = `tid ∪ unnest(superseded_tids)`
+ *          (active foot 행). active tid 만 쓰면 remap-deploy 후 구 TID false-alarm → 반드시 UNION.
+ *     · bizno 스코프(build-gate 1급, §10.5-4): 7/23 bizno 511→457 이관 → 신 TID band=457 하위.
+ *          511 만 조회하면 FALSE-CLEAN(2026-07-25 dev-foot READ-ONLY probe 실증: 511=0건, 457=189건).
+ *          전환기 스코프 = 511 ∪ 457 union (REDPAY_BUSINESS_NOS). merchant-grain(①) fetch 는 무접촉.
+ *     · N-윈도우 = 7일 rolling(REDPAY_WATCHDOG_TID_QUERY_DAYS), 일 1회. dedup = TID-keyed 로컬 상태(신규),
+ *          auto-release = 매 실행 membership 재대조(WHITELIST-EXPAND 로 편입되면 자동 해제 = R3 UNION 자연해소).
+ *     · db_change=false: registry 읽기=read-only(tid·superseded_tids Opt-B′ 旣배포). 신규 DB 표면 0.
+ *
  * ── db_change=false 설계 판정 (DA CONSULT 게이트 미발동) ──────────────────────
  *   알림 dedup 상태는 DB 테이블(watchdog_alert_log)이 아니라 macstudio 로컬 JSON 상태파일로 충분하다.
  *   워치독은 단일 노드(macstudio) 상주 잡 → 로컬 상태가 신뢰 가능. 스키마 무변경 = DA 1차게이트 불필요.
@@ -37,11 +57,13 @@
  *   node scripts/redpay_terminal_watchdog.mjs --dry-run  # 읽기전용: 슬랙 미발송·상태파일 미변경, 알림 문안 로그
  *   node scripts/redpay_terminal_watchdog.mjs --self-test # 네트워크 無 합성 픽스처로 분류/dedup/auto-release 검증
  *
- * author: dev-foot / 2026-07-20
+ * author: dev-foot / 2026-07-20 (④ TID-grain 대사 추가: 2026-07-25)
  * ref: T-20260711-foot-REDPAY-MACSTUDIO-POLLER (폴러 헬퍼 원본),
  *      T-20260711-foot-REDPAY-TERMINAL-REGISTRY-TABLE (registry + v_redpay_unclassified_merchants),
  *      T-20260720-foot-REDPAY-TID-288003-005-WHITELIST-EXPAND (26-set),
- *      redpay_jongno_bizno_ground_truth.md (business_no=511 scope 불변)
+ *      T-20260725-foot-REDPAY-WATCHDOG-TID-GRAIN-RECON (④ TID-grain diff-pass, DA §10 GO·db_change=false),
+ *      redpay_foot_terminal_registry.md §10 (DA SSOT — TID-grain 대사 판정),
+ *      redpay_jongno_bizno_ground_truth.md (bizno scope; 7/23 511→457 이관)
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -83,9 +105,21 @@ const SERVICE_ROLE_KEY = cfg("SUPABASE_SERVICE_ROLE_KEY");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
-const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "511-60-00988"); // ★ scope 불변식
+const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "511-60-00988"); // merchant-grain(①) fetch scope (env=457 현행)
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
+
+// ── TID-grain 대사(④) 전환기 bizno union (build-gate 1급, §10.5-4) ────────────
+//   7/23 bizno 511→457 이관으로 신 TID band 는 457 하위. 511만 조회하면 FALSE-CLEAN.
+//   → 전환기 511 ∪ 457 동시 조회. REDPAY_BUSINESS_NOS(comma) 미설정 시 이 기본값 사용.
+//   ★ merchant-grain(①) 은 기존 REDPAY_BUSINESS_NO 단일 조회를 그대로 사용(무회귀).
+const REDPAY_RECON_BUSINESS_NOS = (() => {
+  const raw = cfg("REDPAY_BUSINESS_NOS", "511-60-00988,457-23-00938");
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  // 현행 단일 bizno(env)가 union 에 없으면 포함(안전 superset)
+  if (REDPAY_BUSINESS_NO && !list.includes(REDPAY_BUSINESS_NO)) list.push(REDPAY_BUSINESS_NO);
+  return [...new Set(list)];
+})();
 
 // ── 워치독 튜너블 ────────────────────────────────────────────────────────────
 //   REDPAY_WATCHDOG_QUERY_DAYS : 무필터 조회 lookback (기본 3일 — "최근 2~3일이면 충분").
@@ -94,6 +128,8 @@ const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
 //   REDPAY_WATCHDOG_SLACK_CHANNEL : 신규단말 긴급알림 채널 (기본 C0ATE5P6JTH).
 //   REDPAY_WATCHDOG_STATE_PATH : dedup 상태파일 (기본 ~/.redpay-watchdog-foot-state.json).
 const QUERY_DAYS = Math.max(1, parseInt(cfg("REDPAY_WATCHDOG_QUERY_DAYS", "3"), 10) || 3);
+//   TID-grain 대사(④) 윈도우 = 7일 rolling(§10.1). churn=연속 burst(0723·0724) → ≥1일 필수; 7일=주말/공휴 커버.
+const TID_QUERY_DAYS = Math.max(1, parseInt(cfg("REDPAY_WATCHDOG_TID_QUERY_DAYS", "7"), 10) || 7);
 const DORMANT_DAYS = Math.max(1, parseInt(cfg("REDPAY_WATCHDOG_DORMANT_DAYS", "30"), 10) || 30);
 const DORMANT_REPORT_DOW = ((parseInt(cfg("REDPAY_WATCHDOG_DORMANT_DOW", "1"), 10)) % 7 + 7) % 7;
 const SLACK_CHANNEL = cfg("REDPAY_WATCHDOG_SLACK_CHANNEL", "C0ATE5P6JTH");
@@ -147,6 +183,26 @@ async function restGet(pathAndQuery) {
   if (!res.ok) throw new Error(`REST GET 실패 ${res.status}: ${body.slice(0, 300)}`);
   return body ? JSON.parse(body) : [];
 }
+// raw-presence 분기(R1 부수신호): 알람 TID 가 redpay_raw_transactions 에 이미 적재돼 있는지.
+//   있음 → seed-only 소급표면화 충분(§9.5.2, view-filter drop). 없음 → 백필 필요(§7, ingestion drop).
+//   read-only 배치 조회(in.(...)). 실패 시 null 반환(비치명 — 알람은 계속, 분기표시만 미상).
+async function checkRawPresence(tids) {
+  const present = new Set();
+  if (!tids || tids.length === 0) return present;
+  try {
+    const CHUNK = 50;
+    for (let i = 0; i < tids.length; i += CHUNK) {
+      const slice = tids.slice(i, i + CHUNK);
+      const inList = slice.map((t) => `"${String(t).replace(/"/g, "")}"`).join(",");
+      const rows = await restGet(`redpay_raw_transactions?tid=in.(${encodeURIComponent(inList)})&select=tid`);
+      for (const r of rows) if (r.tid) present.add(String(r.tid).trim());
+    }
+  } catch (e) {
+    warn(`raw-presence 조회 실패(비치명 — 분기표시 미상 처리): ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+  return present;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 2. registry(active) 로드 — 명단 SSOT (read-only, 워치독은 편입/변경 안 함)
@@ -154,11 +210,33 @@ async function restGet(pathAndQuery) {
 async function loadRegistry() {
   const rows = await restGet(
     `redpay_terminal_registry?domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true` +
-    `&select=merchant_id,tid,terminal_label`
+    `&select=merchant_id,tid,superseded_tids,terminal_label`
   );
   const merchants = new Set(rows.map((r) => (r.merchant_id ?? "").trim()).filter(Boolean));
   const tids = new Set(rows.map((r) => (r.tid ?? "").trim()).filter(Boolean));
-  return { rows, merchants, tids };
+  // ★ R3 불변식: 대사 membership = tid ∪ unnest(superseded_tids) (적재/소비필터와 동일).
+  //   active tid 만 쓰면 remap-deploy 후 구(superseded) TID 가 false-alarm. 반드시 UNION.
+  const membershipTids = buildMembershipTids(rows);
+  return { rows, merchants, tids, membershipTids };
+}
+// R3 membership 빌더 (순수 함수 — self-test 대상). registry 행 배열 → tid ∪ superseded_tids 집합.
+function buildMembershipTids(rows) {
+  const set = new Set();
+  for (const r of rows) {
+    const t = (r.tid ?? "").toString().trim();
+    if (t) set.add(t);
+    for (const s of (r.superseded_tids ?? [])) {
+      const sv = (s ?? "").toString().trim();
+      if (sv) set.add(sv);
+    }
+  }
+  return set;
+}
+// AC-1: RedPay 응답 TID = COALESCE(col_tid, data.tid). 538144 col_tid-only 실증 → 두 shape 병합.
+function extractTid(it) {
+  const colTid = it.tid != null ? String(it.tid).trim() : "";
+  const dataTid = it.data?.tid != null ? String(it.data.tid).trim() : "";
+  return colTid || dataTid || "";
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -188,16 +266,16 @@ async function fetchWithRetry(url, options, maxTries = 3, delayMs = 2000) {
   }
   throw lastError ?? new Error("fetchWithRetry: 알 수 없는 오류");
 }
-async function fetchRedpayPageUnfiltered(baseUrl, from, to, page, limit) {
+async function fetchRedpayPageUnfiltered(baseUrl, from, to, page, limit, bizno = REDPAY_BUSINESS_NO) {
   const params = new URLSearchParams({
     from: formatRedpayDate(from),
     to: formatRedpayDate(to),
-    business_no: REDPAY_BUSINESS_NO, // ★ 유일 스코프 (불변식). tid/merchant 필터 미설정 = 전량.
+    business_no: bizno, // ★ 스코프. tid/merchant 필터 미설정 = 전량.
     page: String(page),
     limit: String(limit),
   });
   const requestUrl = `${baseUrl}?${params}`;
-  log(`RedPay 무필터 조회 page=${page} url=${requestUrl} (X-API-KEY=${mask(REDPAY_API_KEY)})`);
+  log(`RedPay 무필터 조회 bizno=${bizno} page=${page} url=${requestUrl} (X-API-KEY=${mask(REDPAY_API_KEY)})`);
   const res = await fetchWithRetry(requestUrl, { headers: { "X-API-KEY": REDPAY_API_KEY } });
   const ctype = res.headers.get("Content-Type") ?? "";
   if (!ctype.toLowerCase().includes("application/json")) {
@@ -209,17 +287,27 @@ async function fetchRedpayPageUnfiltered(baseUrl, from, to, page, limit) {
   if (!envelope.success) throw new Error(`RedPay API 응답 실패: ${envelope.message}`);
   return { items: envelope.data?.items ?? [], totalPage: envelope.data?.pagination?.total_page ?? 1 };
 }
-async function fetchAllUnfiltered(baseUrl, from, to) {
+async function fetchAllUnfiltered(baseUrl, from, to, bizno = REDPAY_BUSINESS_NO) {
   const all = [];
   let page = 1;
   while (page <= MAX_PAGES) {
-    const { items, totalPage } = await fetchRedpayPageUnfiltered(baseUrl, from, to, page, PAGE_SIZE);
+    const { items, totalPage } = await fetchRedpayPageUnfiltered(baseUrl, from, to, page, PAGE_SIZE, bizno);
     if (items.length === 0) break;
     all.push(...items);
     if (page >= totalPage) break;
     page++;
   }
-  if (page > MAX_PAGES) warn(`MAX_PAGES(${MAX_PAGES}) 도달 — 조회 절단. 511 전량이 예상보다 큼(윈도 축소 검토).`);
+  if (page > MAX_PAGES) warn(`MAX_PAGES(${MAX_PAGES}) 도달 — 조회 절단. bizno=${bizno} 전량이 예상보다 큼(윈도 축소 검토).`);
+  return all;
+}
+// TID-grain 대사(④) 전용 — 전환기 bizno union(511∪457) 동시 조회. 각 item 에 _bizno 태그.
+async function fetchAllUnfilteredMultiBizno(baseUrl, from, to, biznos) {
+  const all = [];
+  for (const bizno of biznos) {
+    const items = await fetchAllUnfiltered(baseUrl, from, to, bizno);
+    for (const it of items) all.push({ ...it, _bizno: bizno });
+    log(`  [TID-recon] bizno=${bizno} 조회 ${items.length}건`);
+  }
   return all;
 }
 
@@ -254,17 +342,51 @@ function classifyUnclassified(items, registryMerchants) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 4b. ④ TID-grain 대사 (순수 함수 — self-test 대상)
+//    직교 보완: ①(merchant-grain)이 못 잡는 "기분류 foot merchant 의 신 TID" blind-spot 을 잡는다.
+//    조건 = merchant ∈ registry(active foot) AND tid ∉ membership(tid∪superseded).
+//      · merchant ∈ registry  → 이 merchant 는 확실히 foot(권위키 불변, 타도메인 오발 0).
+//      · tid ∉ membership     → 적재/소비 필터에서 탈락 중인 신 TID(silent-drop 진행).
+//    merchant ∉ registry 는 ①이 담당(중복알람 방지) → 여기선 제외.
+//    grain = TID (tid 기준 그룹). merchant band-only(미등록) 신규는 ①의 그물.
+// ════════════════════════════════════════════════════════════════════════════
+function detectUnclassifiedFootTids(items, registryMerchants, membershipTids) {
+  const byTid = new Map();
+  for (const it of items) {
+    const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
+    if (mid == null) continue;                 // merchant 없는 이상행 제외(폴러 별도 처리)
+    if (!registryMerchants.has(mid)) continue;  // 미분류 merchant = ① merchant-grain 담당(직교)
+    const tid = extractTid(it);
+    if (!tid) continue;                          // TID 부재행 제외(대사 대상 아님)
+    if (membershipTids.has(tid)) continue;       // 명단 membership 내 = 정상(적재됨)
+    // ★ 여기 도달 = 기분류 foot merchant 의 명단-밖 신 TID = blind-spot silent-drop
+    const name = (it.merchant?.name ?? "").toString();
+    let g = byTid.get(tid);
+    if (!g) {
+      g = { tid, merchant_id: mid, merchant_name: name, trx_count: 0, biznos: new Set() };
+      byTid.set(tid, g);
+    }
+    if (!g.merchant_name && name) g.merchant_name = name;
+    if (it._bizno) g.biznos.add(it._bizno);
+    g.trx_count += 1;
+  }
+  return [...byTid.values()].map((g) => ({ ...g, biznos: [...g.biznos] }));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 5. dedup 상태 (로컬 JSON — DB 무변경). auto-release = registry 편입 시 제거.
 // ════════════════════════════════════════════════════════════════════════════
 function loadState() {
-  if (!existsSync(STATE_PATH)) return { version: 1, alerted_merchants: {}, last_run_at: null, last_dormant_report_at: null };
+  const fresh = () => ({ version: 2, alerted_merchants: {}, alerted_tids: {}, last_run_at: null, last_dormant_report_at: null });
+  if (!existsSync(STATE_PATH)) return fresh();
   try {
     const s = JSON.parse(readFileSync(STATE_PATH, "utf8"));
     if (!s.alerted_merchants) s.alerted_merchants = {};
+    if (!s.alerted_tids) s.alerted_tids = {}; // v1→v2 마이그(TID-grain dedup 신설)
     return s;
   } catch (e) {
     warn(`상태파일 파싱 실패 → 초기화: ${e instanceof Error ? e.message : String(e)}`);
-    return { version: 1, alerted_merchants: {}, last_run_at: null, last_dormant_report_at: null };
+    return fresh();
   }
 }
 function saveState(state) {
@@ -279,6 +401,16 @@ function autoReleaseClassified(state, registryMerchants) {
     if (registryMerchants.has(mid)) { released.push(mid); delete state.alerted_merchants[mid]; }
   }
   if (released.length > 0) log(`dedup auto-release: 명단 편입 감지 → 알림억제 해제 merchant=[${released.join(",")}]`);
+  return released;
+}
+// ④ TID-grain auto-release: membership(tid∪superseded)에 편입된 TID 를 alerted_tids 에서 제거.
+//   = WHITELIST-EXPAND 로 신 TID 가 registry 에 seed 되면 R3 UNION 이 membership 에 포함 → 자연해소.
+function autoReleaseClassifiedTids(state, membershipTids) {
+  const released = [];
+  for (const tid of Object.keys(state.alerted_tids)) {
+    if (membershipTids.has(tid)) { released.push(tid); delete state.alerted_tids[tid]; }
+  }
+  if (released.length > 0) log(`dedup auto-release(TID): 명단 편입 감지 → 알림억제 해제 TID=[${released.join(",")}]`);
   return released;
 }
 
@@ -332,6 +464,7 @@ async function main() {
 
   const baseUrl = resolveRedpayEndpoint();
   log(`가동${DRY_RUN ? " [DRY-RUN]" : ""}: business_no=${REDPAY_BUSINESS_NO} query_days=${QUERY_DAYS} dormant_days=${DORMANT_DAYS} ` +
+      `tid_recon_bizno=[${REDPAY_RECON_BUSINESS_NOS.join("∪")}] tid_query_days=${TID_QUERY_DAYS} ` +
       `slack_ch=${SLACK_CHANNEL} state=${STATE_PATH} url=${baseUrl}`);
 
   // ── registry(명단) 로드 ────────────────────────────────────────────────────
@@ -346,9 +479,10 @@ async function main() {
   const distinctMerchants = new Set(items.map((it) => (it.merchant?.id != null ? String(it.merchant.id) : null)).filter(Boolean));
   log(`무필터 조회 완료: 거래 ${items.length}건 / distinct merchant ${distinctMerchants.size}종 (최근 ${QUERY_DAYS}일)`);
 
-  // ── dedup 상태 + auto-release ──────────────────────────────────────────────
+  // ── dedup 상태 + auto-release (merchant + TID) ─────────────────────────────
   const state = loadState();
   autoReleaseClassified(state, registry.merchants);
+  autoReleaseClassifiedTids(state, registry.membershipTids); // ④ TID membership 편입 시 해제
 
   // ── ② 미분류 단말 감지 → 분기 알림 ────────────────────────────────────────
   const { foot, other } = classifyUnclassified(items, registry.merchants);
@@ -403,8 +537,62 @@ async function main() {
     log(`③ 휴면 단말 없음 (등록 ${registry.rows.length}대 전부 최근 ${DORMANT_DAYS}일 내 거래).`);
   }
 
+  // ── ④ TID-grain 대사 (직교 보완 diff-pass — 기분류 foot merchant 의 명단-밖 신 TID) ──────
+  //    권위소스=RedPay 정본 API 전환기 union(511∪457). merchant-grain(①) fetch 무접촉(별도 조회).
+  const tidRecon = await runTidGrainRecon(baseUrl, now, registry, state);
+
   saveState(state);
-  log(`완료 elapsed_ms=${Date.now() - startMs} new_foot_alerts=${newFootAlerts} suppressed=${suppressed} other=${other.length} dormant=${dormant.length}`);
+  log(`완료 elapsed_ms=${Date.now() - startMs} new_foot_alerts=${newFootAlerts} suppressed=${suppressed} ` +
+      `other=${other.length} dormant=${dormant.length} tid_new=${tidRecon.newTidAlerts} tid_suppressed=${tidRecon.suppressed}`);
+}
+
+// ④ TID-grain 대사 실행부 (main 에서 분리 — 조회/감지/raw분기/dedup/슬랙).
+async function runTidGrainRecon(baseUrl, now, registry, state) {
+  const from = new Date(now.getTime() - TID_QUERY_DAYS * 24 * 60 * 60 * 1000);
+  log(`④ TID-grain 대사 시작: bizno=[${REDPAY_RECON_BUSINESS_NOS.join("∪")}] window=${TID_QUERY_DAYS}일 ` +
+      `membership(tid∪superseded)=${registry.membershipTids.size}건`);
+  const items = await fetchAllUnfilteredMultiBizno(baseUrl, from, now, REDPAY_RECON_BUSINESS_NOS);
+  const flagged = detectUnclassifiedFootTids(items, registry.merchants, registry.membershipTids);
+  log(`④ 대사 조회 ${items.length}건 → 기분류 foot merchant 의 명단-밖 신 TID ${flagged.length}종 감지`);
+
+  if (flagged.length === 0) {
+    log(`④ ✅ TID-grain clean — 명단-밖 신 TID 없음 (적재/소비 필터와 정합).`);
+    return { newTidAlerts: 0, suppressed: 0, flagged: [] };
+  }
+
+  // raw-presence 분기(R1 부수신호) — seed-only(§9.5.2) vs 백필(§7) 후속판정 즉시화
+  const rawPresent = await checkRawPresence(flagged.map((g) => g.tid));
+
+  let newTidAlerts = 0, suppressed = 0;
+  for (const g of flagged) {
+    if (state.alerted_tids[g.tid]) { suppressed++; continue; } // dedup: 이미 알림한 TID
+    // rawPresent=null 이면 조회 실패 → 분기 미상 표기
+    const inRaw = rawPresent == null ? null : rawPresent.has(g.tid);
+    const branchLine =
+      inRaw === true
+        ? `• 조치: 이 거래는 이미 시스템에 수집돼 있어, 명단에 결제회선번호(TID)만 추가하면 과거분까지 즉시 반영됩니다.`
+        : inRaw === false
+          ? `• 조치: 이 거래는 아직 시스템에 수집되지 않아, 명단 등록 후 과거 거래 재수집(보충)이 필요합니다.`
+          : `• 조치: 시스템 수집 여부 확인 실패 — 담당자 확인 요망.`;
+    const text =
+      `🚨 [레드페이 회선 감시] 이미 등록된 단말에서 새 결제회선번호(TID)가 감지되었습니다\n` +
+      `• 가맹점명: ${g.merchant_name || "(이름 없음)"}\n` +
+      `• 단말번호(merchant): ${g.merchant_id} / 새 결제회선번호(TID): ${g.tid}\n` +
+      `• 최근 ${TID_QUERY_DAYS}일 거래: ${g.trx_count}건\n` +
+      `이 결제회선은 아직 관리 명단에 없어, 지금 이 순간 매출/정산 대사에서 누락되고 있을 수 있습니다.\n` +
+      branchLine + `\n` +
+      `단말 담당자가 확인 후 명단(회선번호)에 추가해 주세요. (자동 등록은 하지 않습니다)`;
+    const ok = sendSlack(SLACK_CHANNEL, text);
+    if (ok || DRY_RUN) {
+      state.alerted_tids[g.tid] = {
+        merchant_id: g.merchant_id, merchant_name: g.merchant_name, trx_count: g.trx_count,
+        biznos: g.biznos, raw_present: inRaw, first_alerted_at: ts(),
+      };
+      newTidAlerts++;
+    }
+  }
+  log(`④ 신규 TID 감지: 신규알림 ${newTidAlerts}건 / dedup억제 ${suppressed}건`);
+  return { newTidAlerts, suppressed, flagged };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -440,8 +628,57 @@ function runSelfTest() {
   assert(released.includes("1777289099"), `auto-release: 명단 편입 단말 알림억제 해제`);
   assert(!state.alerted_merchants["1777289099"], `auto-release 후 상태에서 제거됨`);
 
-  // scope 불변식 문서 확인
-  assert(REDPAY_BUSINESS_NO === "511-60-00988" || REDPAY_BUSINESS_NO.startsWith("511"), `business_no scope 불변식(511) 유지`);
+  // ── ④ TID-grain 대사 검증 ──────────────────────────────────────────────────
+  // R3 membership = tid ∪ unnest(superseded_tids)
+  const regRows = [
+    { merchant_id: "1777288003", tid: "1047538231", superseded_tids: ["1047479137"], terminal_label: "풋 유선1" },
+    { merchant_id: "1777289001", tid: "1047535843", superseded_tids: null, terminal_label: "풋 멀티1" },
+  ];
+  const membership = buildMembershipTids(regRows);
+  assert(membership.has("1047538231") && membership.has("1047479137") && membership.has("1047535843"),
+    `R3 membership = tid ∪ superseded_tids (신·구 TID 모두 포함, 실제=${membership.size}종)`);
+  assert(membership.size === 3, `membership 정확히 3종 (중복/공백 제거, 실제=${membership.size})`);
+
+  // AC-1 COALESCE(col_tid, data.tid)
+  assert(extractTid({ tid: "1047538144" }) === "1047538144", `extractTid: col_tid 우선`);
+  assert(extractTid({ tid: null, data: { tid: "1047538206" } }) === "1047538206", `extractTid: data.tid 폴백(538144 col_tid-only 계열)`);
+  assert(extractTid({ merchant: { id: "x" } }) === "", `extractTid: TID 부재 → 빈문자열`);
+
+  const regMerchants = new Set(["1777288003", "1777289001"]);
+  const tidItems = [
+    { merchant: { id: "1777288003", name: "풋 유선1" }, tid: "1047538231", _bizno: "457-23-00938" },      // membership 내 → 정상(제외)
+    { merchant: { id: "1777289001", name: "풋 멀티1" }, tid: "1047999001", _bizno: "457-23-00938" },      // 기분류 merchant 신 TID → ★감지
+    { merchant: { id: "1777289001", name: "풋 멀티1" }, tid: "1047999001", _bizno: "457-23-00938" },      // 동일 TID 건수 누적
+    { merchant: { id: "1777289088", name: "풋 신규단말" }, tid: "1047999088", _bizno: "457-23-00938" },   // 미분류 merchant → ①담당(제외)
+    { merchant: { id: "1777274007", name: "도수 유선" }, tid: "1047888007", _bizno: "511-60-00988" },     // 타도메인 미분류 → 제외
+    { merchant: { id: "1777289001", name: "풋 멀티1" }, tid: null, data: { tid: "1047999002" }, _bizno: "457-23-00938" }, // data.tid shape 신 TID → 감지
+  ];
+  const flagged = detectUnclassifiedFootTids(tidItems, regMerchants, membership);
+  assert(flagged.length === 2, `TID-grain: 기분류 foot merchant 명단-밖 신 TID 2종 감지 (실제=${flagged.length})`);
+  const byTid = Object.fromEntries(flagged.map((g) => [g.tid, g]));
+  assert(byTid["1047999001"] && byTid["1047999001"].trx_count === 2, `신 TID 건수 누적 2 (col_tid shape)`);
+  assert(byTid["1047999002"], `data.tid shape 신 TID 도 COALESCE 로 감지`);
+  assert(!flagged.some((g) => g.merchant_id === "1777289088"), `미분류 merchant(①담당)는 TID-grain 제외(중복알람 방지)`);
+  assert(!flagged.some((g) => g.merchant_id === "1777274007"), `타도메인 merchant 는 registry 밖 → 제외(권위키 불변)`);
+  assert(byTid["1047999001"].biznos.includes("457-23-00938"), `bizno 태그 보존(457)`);
+
+  // ④ TID dedup + auto-release (WHITELIST-EXPAND membership 편입 시 자연해소)
+  const tstate = { version: 2, alerted_merchants: {}, alerted_tids: {} };
+  tstate.alerted_tids["1047999001"] = { first_alerted_at: "x" };
+  const tsupp = flagged.filter((g) => tstate.alerted_tids[g.tid]).length;
+  assert(tsupp === 1, `TID dedup: 이미 알림한 TID 억제 (실제=${tsupp})`);
+  const membershipAfterSeed = buildMembershipTids([
+    ...regRows,
+    { merchant_id: "1777289001", tid: "1047999001", superseded_tids: null }, // seed 됨
+  ]);
+  const tReleased = autoReleaseClassifiedTids(tstate, membershipAfterSeed);
+  assert(tReleased.includes("1047999001"), `TID auto-release: membership 편입(WHITELIST-EXPAND) 시 억제 해제`);
+  assert(!tstate.alerted_tids["1047999001"], `auto-release 후 상태에서 TID 제거됨`);
+
+  // bizno 전환기 스코프 불변식 (build-gate §10.5-4): recon union 이 511·457 모두 커버
+  assert(REDPAY_RECON_BUSINESS_NOS.includes("511-60-00988"), `recon bizno union 511 포함`);
+  assert(REDPAY_RECON_BUSINESS_NOS.includes("457-23-00938"), `recon bizno union 457 포함(7/23 이관 대응)`);
+  assert(REDPAY_RECON_BUSINESS_NOS.includes(REDPAY_BUSINESS_NO), `recon union 이 현행 env bizno(${REDPAY_BUSINESS_NO}) 포함(false-clean 방지)`);
   console.log(`${TAG} ✅ self-test 전체 통과`);
 }
 
