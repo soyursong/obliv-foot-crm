@@ -25,6 +25,8 @@ export type CisInsertRow = {
   package_session_id?: string | null;
   blood_test_requested?: boolean;
   koh_requested?: boolean;
+  /** T-20260724-foot-COSMETIC-SELLER-ATTRIB: 화장품(풋화장품) 판매 치료사 귀속. 비화장품 라인은 항상 null. */
+  seller_staff_id?: string | null;
 };
 
 /** KOH(균검사) 신청 플래그가 실리는 서비스명 판정 — request_koh_for_customer RPC 의 service_name 필터와 동일. */

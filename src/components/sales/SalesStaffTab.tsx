@@ -15,7 +15,12 @@
  *   두 기준을 토글로 공존(별도 신규 view, 기존 payments 비파괴 / AC-2).
  *   field 결정값은 아래 DEDUCT_* 상수로 토글(AC-3/4/5). DECISION-REQUEST 회신 후 반영.
  *
- * READ-ONLY. DB 변경 없음.
+ * T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3) — 화장품(풋화장품) 매출 별도 컬럼(A안, 합산 X).
+ *   버킷 = COALESCE(check_in_services.seller_staff_id, check_ins.therapist_id). NULL='미상' 집계제외.
+ *   double-count single-attribution 불변식: 화장품 라인은 실장의 치료 매출 컬럼에 얹지 않는다
+ *   (수납기준은 담당 therapist 귀속분을 치료 매출에서 차감, 차감기준은 package_sessions 가 화장품 미포함).
+ *
+ * READ-ONLY. DB 변경 없음(집계 조회만).
  */
 
 import { useMemo, useState } from 'react';
@@ -99,6 +104,30 @@ interface DeductStat {
   revenue: number;
   designatedCount: number;
 }
+
+// ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 화장품(풋화장품) 매출 별도 컬럼 ─────────────
+//   check_in_services 화장품 라인 + check_ins 귀속(therapist_id·일자·고객)을 조인.
+//   버킷 = COALESCE(seller_staff_id, check_ins.therapist_id). NULL='미상' 집계제외(백필 금지 원칙).
+interface CosmeticLineRow {
+  price: number | null;
+  seller_staff_id: string | null;
+  service_id: string | null;
+  check_ins: {
+    therapist_id: string | null;
+    clinic_id: string | null;
+    checked_in_at: string | null;
+    customer_id: string | null;
+  } | null;
+}
+
+interface CosmeticStat {
+  amount: number;
+  count: number;
+}
+
+/** 치료 매출 + 화장품 매출을 병기하는 행 (별도 컬럼 A안, 합산 X). */
+type PayRowWithCosmetic = StaffStat & { treatmentRevenue: number; cosmeticRevenue: number };
+type DeductRowWithCosmetic = DeductStat & { cosmeticRevenue: number };
 
 /** session_type → packages 현재 단가 컬럼 (AC-3 'current' 기준 / preconditioning은 스냅샷 fallback) */
 function currentUnitPrice(row: DeductSessionRow): number {
@@ -208,6 +237,87 @@ export function SalesStaffTab({ filter }: Props) {
     },
   });
 
+  // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): staff id→name (화장품 seller 표시명) ──
+  const { data: staffNames = {} } = useQuery<Record<string, string>>({
+    queryKey: ['sales-staff-names', clinic?.id],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('id, name')
+        .eq('clinic_id', clinic!.id);
+      if (error) throw error;
+      const map: Record<string, string> = {};
+      for (const s of (data ?? []) as { id: string; name: string }[]) map[s.id] = s.name;
+      return map;
+    },
+  });
+
+  // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 화장품(풋화장품) 라인 조회 ──
+  //   1) clinic 의 화장품 service_id 집합 → 2) 그 라인 + check_ins 귀속을 조인.
+  //   기간 필터 = check_ins.checked_in_at(KST 바운드). sim 고객 결제 제외(표시매출 방어).
+  const { data: cosmeticLines = [], isLoading: cosmeticLoading } = useQuery<CosmeticLineRow[]>({
+    queryKey: ['sales-staff-cosmetic', clinic?.id, from, to],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data: svcRows, error: svcErr } = await supabase
+        .from('services')
+        .select('id')
+        .eq('clinic_id', clinic!.id)
+        .or('category.eq.풋화장품,category_label.eq.풋화장품');
+      if (svcErr) throw svcErr;
+      const cosmeticIds = (svcRows ?? []).map((s: { id: string }) => s.id);
+      if (cosmeticIds.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('check_in_services')
+        .select(`
+          price, seller_staff_id, service_id,
+          check_ins!inner(therapist_id, clinic_id, checked_in_at, customer_id)
+        `)
+        .in('service_id', cosmeticIds)
+        .eq('check_ins.clinic_id', clinic!.id)
+        .gte('check_ins.checked_in_at', `${from}T00:00:00+09:00`)
+        .lte('check_ins.checked_in_at', `${to}T23:59:59+09:00`)
+        .gt('price', 0);
+      if (error) throw error;
+
+      // sim 고객 제외 (표시매출 방어 — customer_id 는 check_ins 경로).
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const rows = data as unknown as CosmeticLineRow[];
+      if (simIds.size === 0) return rows;
+      return rows.filter(
+        (r) => !r.check_ins?.customer_id || !simIds.has(r.check_ins.customer_id),
+      );
+    },
+  });
+
+  // 화장품 매출 버킷: COALESCE(seller_staff_id, therapist_id). NULL='미상' 집계제외.
+  const cosmeticBySeller = useMemo<Map<string, CosmeticStat>>(() => {
+    const m = new Map<string, CosmeticStat>();
+    for (const r of cosmeticLines) {
+      const bucket = r.seller_staff_id ?? r.check_ins?.therapist_id ?? null;
+      if (!bucket) continue; // 미상(seller·therapist 모두 없음) → 집계 제외
+      const e = m.get(bucket) ?? { amount: 0, count: 0 };
+      e.amount += r.price ?? 0;
+      e.count += 1;
+      m.set(bucket, e);
+    }
+    return m;
+  }, [cosmeticLines]);
+
+  // 수납기준 치료 매출에서 차감할 화장품 금액(= 결제 lump 이 귀속됐던 담당 therapist_id 기준).
+  //   double-count single-attribution 불변식: 화장품 라인은 실장의 치료 매출 컬럼에 얹지 않는다.
+  const cosmeticByTherapist = useMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    for (const r of cosmeticLines) {
+      const t = r.check_ins?.therapist_id;
+      if (!t) continue;
+      m.set(t, (m.get(t) ?? 0) + (r.price ?? 0));
+    }
+    return m;
+  }, [cosmeticLines]);
+
   // ── 수납기준 집계 (AC-1 · AC-2 · AC-3) ──────────────────────────────────────
   const payStats = useMemo<StaffStat[]>(() => {
     const map = new Map<string, StaffStat>();
@@ -305,7 +415,80 @@ export function SalesStaffTab({ filter }: Props) {
     [filteredDeduct],
   );
 
-  const isLoading = basis === 'payment' ? payLoading : deductLoading;
+  // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 별도 컬럼용 augmented 행 ──────────────
+  //   수납기준: 치료 매출 = 기존 revenue − 화장품(담당 therapist 귀속분) 차감(이중산입 방지),
+  //             화장품 매출 = COALESCE(seller, therapist) 버킷. 화장품만 판 seller 는 별도 행 append.
+  const payRowsWithCosmetic = useMemo<PayRowWithCosmetic[]>(() => {
+    const rows: PayRowWithCosmetic[] = filteredPay.map((s) => {
+      const isTher = s.role === 'therapist';
+      const cosmeticRevenue = isTher ? (cosmeticBySeller.get(s.staffId)?.amount ?? 0) : 0;
+      const cosmeticDeducted = isTher ? (cosmeticByTherapist.get(s.staffId) ?? 0) : 0;
+      return {
+        ...s,
+        treatmentRevenue: Math.max(0, s.revenue - cosmeticDeducted),
+        cosmeticRevenue,
+      };
+    });
+    const presentTher = new Set(
+      filteredPay.filter((s) => s.role === 'therapist').map((s) => s.staffId),
+    );
+    for (const [staffId, c] of cosmeticBySeller) {
+      if (presentTher.has(staffId)) continue;
+      const name = staffNames[staffId] ?? '(미등록)';
+      if (searchQuery && !name.toLowerCase().includes(searchQuery)) continue;
+      rows.push({
+        staffId,
+        staffName: name,
+        role: 'therapist',
+        count: 0,
+        revenue: 0,
+        refundAmount: 0,
+        designatedCount: designatedMap[staffId] ?? 0,
+        treatmentRevenue: 0,
+        cosmeticRevenue: c.amount,
+      });
+    }
+    return rows;
+  }, [filteredPay, cosmeticBySeller, cosmeticByTherapist, staffNames, designatedMap, searchQuery]);
+
+  //   차감기준: package_sessions 는 화장품 미포함 → 치료 매출 무회귀, 화장품 매출만 additive.
+  const deductRowsWithCosmetic = useMemo<DeductRowWithCosmetic[]>(() => {
+    const rows: DeductRowWithCosmetic[] = filteredDeduct.map((s) => ({
+      ...s,
+      cosmeticRevenue: cosmeticBySeller.get(s.staffId)?.amount ?? 0,
+    }));
+    const present = new Set(filteredDeduct.map((s) => s.staffId));
+    for (const [staffId, c] of cosmeticBySeller) {
+      if (present.has(staffId)) continue;
+      const name = staffNames[staffId] ?? '(미등록)';
+      if (searchQuery && !name.toLowerCase().includes(searchQuery)) continue;
+      rows.push({
+        staffId,
+        staffName: name,
+        count: 0,
+        revenue: 0,
+        designatedCount: designatedMap[staffId] ?? 0,
+        cosmeticRevenue: c.amount,
+      });
+    }
+    return rows;
+  }, [filteredDeduct, cosmeticBySeller, staffNames, designatedMap, searchQuery]);
+
+  const payDisplayTotals = useMemo(
+    () => ({
+      treatment: payRowsWithCosmetic.reduce((s, r) => s + r.treatmentRevenue, 0),
+      cosmetic: payRowsWithCosmetic.reduce((s, r) => s + r.cosmeticRevenue, 0),
+    }),
+    [payRowsWithCosmetic],
+  );
+
+  const deductCosmeticTotal = useMemo(
+    () => deductRowsWithCosmetic.reduce((s, r) => s + r.cosmeticRevenue, 0),
+    [deductRowsWithCosmetic],
+  );
+
+  const isLoading =
+    (basis === 'payment' ? payLoading : deductLoading) || cosmeticLoading;
 
   // ── 기준 토글 바 ────────────────────────────────────────────────────────────
   const BasisToggle = (
@@ -362,7 +545,7 @@ export function SalesStaffTab({ filter }: Props) {
 
   // ── 차감기준 view (T-20260605) ─────────────────────────────────────────────
   if (basis === 'deduction') {
-    if (filteredDeduct.length === 0) {
+    if (deductRowsWithCosmetic.length === 0) {
       return (
         <div>
           {BasisToggle}
@@ -389,7 +572,7 @@ export function SalesStaffTab({ filter }: Props) {
           <table className="w-full border-collapse">
             <thead className="sticky top-0 z-10 bg-muted/70">
               <tr>
-                {['치료사', '차감 건수', '지정환자수', '차감 매출'].map((h) => (
+                {['치료사', '차감 건수', '지정환자수', '차감 매출(치료)', '화장품 매출'].map((h) => (
                   <th
                     key={h}
                     className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -400,7 +583,7 @@ export function SalesStaffTab({ filter }: Props) {
               </tr>
             </thead>
             <tbody>
-              {filteredDeduct.map((s) => (
+              {deductRowsWithCosmetic.map((s) => (
                 <tr
                   key={s.staffId}
                   data-testid={`sales-staff-deduct-row-${s.staffId}`}
@@ -424,6 +607,13 @@ export function SalesStaffTab({ filter }: Props) {
                   >
                     {formatAmount(Math.round(s.revenue))}원
                   </td>
+                  {/* T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 화장품 매출 별도 컬럼(합산 X) */}
+                  <td
+                    data-testid={`sales-staff-deduct-cosmetic-${s.staffId}`}
+                    className="px-3 py-2 tabular-nums text-right font-semibold text-teal-700"
+                  >
+                    {s.cosmeticRevenue > 0 ? `${formatAmount(Math.round(s.cosmeticRevenue))}원` : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -443,6 +633,12 @@ export function SalesStaffTab({ filter }: Props) {
                 >
                   {formatAmount(Math.round(deductTotals.revenue))}원
                 </td>
+                <td
+                  data-testid="sales-staff-deduct-total-cosmetic"
+                  className="px-3 py-2 tabular-nums text-right text-teal-700"
+                >
+                  {formatAmount(Math.round(deductCosmeticTotal))}원
+                </td>
               </tr>
             </tfoot>
           </table>
@@ -450,6 +646,7 @@ export function SalesStaffTab({ filter }: Props) {
             * 차감기준: 패키지 티켓 차감(시술) 시점의 치료사에게 차감 수가 귀속 (status='used', 환불·취소 제외).
             금액 기준: {DEDUCT_AMOUNT_BASIS === 'snapshot' ? '차감 당시 단가(스냅샷)' : '현재 설정 단가'}
             {DEDUCT_INCLUDE_SURCHARGE ? ' · 추가금 포함' : ' · 추가금 미포함'}
+            {' · 화장품 매출 = 판매 치료사(미지정 시 담당 치료사) 귀속, 치료 매출과 별도 집계(합산 아님).'}
           </p>
         </div>
       </div>
@@ -457,7 +654,7 @@ export function SalesStaffTab({ filter }: Props) {
   }
 
   // ── 수납기준 view (기존) ────────────────────────────────────────────────────
-  if (filteredPay.length === 0) {
+  if (payRowsWithCosmetic.length === 0) {
     return (
       <div>
         {BasisToggle}
@@ -484,7 +681,7 @@ export function SalesStaffTab({ filter }: Props) {
         <table className="w-full border-collapse">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
-              {['치료사/장비명', '역할', '시술 건수', '지정환자수', '실적 금액', '환불 차감액', '순 실적'].map((h) => (
+              {['치료사/장비명', '역할', '시술 건수', '지정환자수', '치료 매출', '화장품 매출', '환불 차감액', '순 실적'].map((h) => (
                 <th
                   key={h}
                   className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -495,8 +692,9 @@ export function SalesStaffTab({ filter }: Props) {
             </tr>
           </thead>
           <tbody>
-            {filteredPay.map((s) => {
-              const net = s.revenue - s.refundAmount;
+            {payRowsWithCosmetic.map((s) => {
+              // 순 실적 = 치료 매출(화장품 제외) − 환불. 화장품 매출은 별도 컬럼(합산 X).
+              const net = s.treatmentRevenue - s.refundAmount;
               return (
                 <tr
                   key={`${s.role}:${s.staffId}`}
@@ -520,7 +718,14 @@ export function SalesStaffTab({ filter }: Props) {
                     ) : '—'}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-right">
-                    {formatAmount(Math.round(s.revenue))}원
+                    {formatAmount(Math.round(s.treatmentRevenue))}원
+                  </td>
+                  {/* T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 화장품 매출 별도 컬럼(seller 귀속) */}
+                  <td
+                    data-testid={`sales-staff-cosmetic-${s.role}-${s.staffId}`}
+                    className="px-3 py-2 tabular-nums text-right font-semibold text-teal-700"
+                  >
+                    {s.cosmeticRevenue > 0 ? `${formatAmount(Math.round(s.cosmeticRevenue))}원` : '—'}
                   </td>
                   <td
                     data-testid={`sales-staff-refund-${s.role}-${s.staffId}`}
@@ -558,7 +763,13 @@ export function SalesStaffTab({ filter }: Props) {
                 data-testid="sales-staff-total-revenue"
                 className="px-3 py-2 tabular-nums text-right"
               >
-                {formatAmount(Math.round(payTotals.revenue))}원
+                {formatAmount(Math.round(payDisplayTotals.treatment))}원
+              </td>
+              <td
+                data-testid="sales-staff-total-cosmetic"
+                className="px-3 py-2 tabular-nums text-right text-teal-700"
+              >
+                {formatAmount(Math.round(payDisplayTotals.cosmetic))}원
               </td>
               <td
                 data-testid="sales-staff-total-refund"
@@ -570,13 +781,15 @@ export function SalesStaffTab({ filter }: Props) {
                 data-testid="sales-staff-total-net"
                 className="px-3 py-2 tabular-nums text-right"
               >
-                {formatAmount(Math.round(payTotals.revenue - payTotals.refund))}원
+                {formatAmount(Math.round(payDisplayTotals.treatment - payTotals.refund))}원
               </td>
             </tr>
           </tfoot>
         </table>
         <p className="px-3 py-1.5 text-xs text-muted-foreground">
           * 소급 방지: 환불액은 환불 처리 당월 해당 직원 실적에서 차감 (과거 월 데이터 불변)
+          <br />
+          * 화장품 매출 = 판매 치료사(미지정 시 담당 치료사) 귀속, 치료 매출 컬럼에서 분리 집계(이중산입 없음).
         </p>
       </div>
     </div>

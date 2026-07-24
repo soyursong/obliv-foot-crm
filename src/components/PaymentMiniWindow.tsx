@@ -224,6 +224,14 @@ const PREPAID_CODE_MAP: Record<string, string[]> = {
 export const isTrialService = (svc: { name?: string | null } | null | undefined): boolean =>
   /체험/.test(svc?.name ?? '');
 
+// T-20260724-foot-COSMETIC-SELLER-ATTRIB: 화장품(풋화장품) 항목 판별.
+//   FOOTCARE_CAT_LABELS['화장품'] = ['풋화장품'] / TAB_CATEGORY_MAP 풋케어 category 기준과 동일 SSOT.
+//   category / category_label 어느 쪽이든 '풋화장품' 이면 화장품 라인 → 판매 치료사 별도 귀속 대상.
+export const isCosmeticService = (
+  svc: { category?: string | null; category_label?: string | null } | null | undefined,
+): boolean =>
+  (svc?.category ?? '') === '풋화장품' || (svc?.category_label ?? '') === '풋화장품';
+
 // T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (c):
 //   선수금차감 대상 서비스 → package_sessions.session_type 역매핑.
 //   PREPAID_CODE_MAP / PREPAID_KEYWORDS 와 동일 기준(코드 우선, '비가열'을 '가열'보다 먼저 판정).
@@ -720,6 +728,15 @@ interface SortablePricingRowProps {
   editingPriceValue: string;
   /** T-20260526-foot-COPAY-MINI-BUG: 급여/비급여 분류용 건보 등급 */
   insuranceGrade: InsuranceGrade | null;
+  // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 라인 판매 치료사 드롭다운 ──
+  /** 화장품(풋화장품) 라인 여부 — true 시 판매 치료사 선택기 노출 */
+  isCosmetic: boolean;
+  /** 판매 치료사 후보(clinic active therapist) */
+  sellerOptions: { id: string; name: string }[];
+  /** 현재 선택된 판매 치료사(미선택 시 null → 저장 시 기본값 폴백) */
+  sellerValue: string | null;
+  /** 판매 치료사 선택 변경 */
+  onSellerChange: (serviceId: string, staffId: string) => void;
   onTogglePrepaid: (id: string) => void;
   onStartEditPrice: (id: string, price: number) => void;
   onCommitEditPrice: (id: string) => void;
@@ -736,6 +753,10 @@ function SortablePricingRow({
   isEditing,
   editingPriceValue,
   insuranceGrade,
+  isCosmetic,
+  sellerOptions,
+  sellerValue,
+  onSellerChange,
   onTogglePrepaid,
   onStartEditPrice,
   onCommitEditPrice,
@@ -766,10 +787,11 @@ function SortablePricingRow({
         zIndex: isDragging ? 10 : undefined,
       }}
       className={cn(
-        'flex items-center gap-1 rounded border px-1.5 py-1 text-[11px] transition-colors',
+        'flex flex-wrap items-center gap-1 rounded border px-1.5 py-1 text-[11px] transition-colors',
         isPrepaid
           ? 'bg-purple-50 border-purple-300'
           : 'bg-white border-input',
+        isCosmetic && 'ring-1 ring-teal-200',
         isDragging && 'shadow-lg',
       )}
     >
@@ -844,6 +866,25 @@ function SortablePricingRow({
       >
         <Trash2 className="h-3 w-3" />
       </button>
+      {/* ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 라인에만 판매 치료사 드롭다운 ──
+          "해당 줄에" 인라인(w-full 로 줄바꿈 노출). 기본값 = 오늘 방문 치료 차감 치료사(부재 시 담당 실장 폴백)로
+          상위에서 prefill(sellerValue). 치료한 사람 ≠ 판매 치료사면 수기 변경 → seller_staff_id 저장. */}
+      {isCosmetic && (
+        <div className="flex w-full items-center gap-1 pl-4 pt-0.5">
+          <span className="shrink-0 text-[10px] text-teal-700">판매 치료사</span>
+          <select
+            data-testid={`cosmetic-seller-select-${service.id}`}
+            value={sellerValue ?? ''}
+            onChange={(e) => onSellerChange(service.id, e.target.value)}
+            className="min-w-0 flex-1 rounded border border-teal-300 bg-white px-1 py-0.5 text-[10px] text-gray-800"
+          >
+            <option value="">미지정</option>
+            {sellerOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }
@@ -947,6 +988,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── PREPAID-DEDUCT: 선수금차감 UI
   const [prepaidIds, setPrepaidIds] = useState<Set<string>>(new Set());
+  // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 판매 치료사 귀속 ──
+  //   sellerMap: service.id → 판매 치료사 staff.id (수기 선택 override). 미선택 항목은 저장 시 defaultSellerId 폴백.
+  //   defaultSellerId: 오늘 방문 치료 차감 치료사(package_sessions.performed_by) → 부재 시 담당 실장(therapist_id) 폴백.
+  //   therapistOptions: clinic active therapist 후보 목록(드롭다운).
+  const [sellerMap, setSellerMap] = useState<Map<string, string>>(new Map());
+  const [defaultSellerId, setDefaultSellerId] = useState<string | null>(null);
+  const [therapistOptions, setTherapistOptions] = useState<{ id: string; name: string }[]>([]);
   // OVERRIDE-RULE: O-002 — 결제 금액 수기 조정 (customAmounts)
   // OVERRIDE: PaymentMiniWindow — customAmounts 결제 창 수기 금액 추가 적용. 기본 로직 전체 연동.
   const [customAmounts, setCustomAmounts] = useState<Map<string, number>>(new Map());
@@ -1048,6 +1096,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setCashReceiptType('income_deduction');
     setPrepaidIds(new Set());
     setCustomAmounts(new Map());
+    // T-20260724-foot-COSMETIC-SELLER-ATTRIB: 판매 치료사 리셋 + 담당 실장 폴백 기본값(차감 치료사는 loadTodayPackageSessions 가 덮어씀)
+    setSellerMap(new Map());
+    setDefaultSellerId(checkIn.therapist_id ?? null);
     setDeductMode(false);
     setDeductAmount(0);
     setActivePackages([]);
@@ -1101,7 +1152,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .order('display_order'),
       supabase
         .from('check_in_services')
-        .select('service_id, price')
+        .select('service_id, price, seller_staff_id')
         .eq('check_in_id', checkIn.id),
       // T-20260522-foot-INS-DOC-PRINT: insurance 카테고리 추가
       supabase
@@ -1129,10 +1180,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       const svcs = (svcsRes.data ?? []) as Service[];
       setServices(svcs);
 
-      const existingCis = (cisRes.data ?? []) as { service_id: string; price: number }[];
+      const existingCis = (cisRes.data ?? []) as { service_id: string; price: number; seller_staff_id?: string | null }[];
       if (existingCis.length > 0) {
         const items: SelectedItem[] = [];
         const overrides = new Map<string, number>();
+        // T-20260724-foot-COSMETIC-SELLER-ATTRIB: 저장된 화장품 판매 치료사 복원 → 재저장 시 clobber 방지.
+        const sellers = new Map<string, string>();
         for (const ci of existingCis) {
           const svc = svcs.find((s) => s.id === ci.service_id);
           if (svc) {
@@ -1146,6 +1199,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 overrides.set(svc.id, ci.price);
               }
             }
+            if (ci.seller_staff_id) sellers.set(svc.id, ci.seller_staff_id);
           }
         }
         if (items.length > 0) {
@@ -1153,6 +1207,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           items.sort((a, b) => (a.service.display_order ?? 0) - (b.service.display_order ?? 0));
           setSelectedItems(items);
           if (overrides.size > 0) setCustomAmounts(overrides);
+          if (sellers.size > 0) setSellerMap(sellers);
           setSaved(true);
         }
         localStorage.removeItem(draftKey(checkIn.id));
@@ -1228,6 +1283,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
   }, [checkIn?.clinic_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 판매 치료사 후보(clinic active therapist) 로드.
+  //   role='therapist' — Reservations/Dashboard 등에서 쓰는 동일 필터 재사용(신규 어휘 발명 금지).
+  useEffect(() => {
+    if (!checkIn?.clinic_id) return;
+    supabase
+      .from('staff')
+      .select('id, name')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('active', true)
+      .eq('role', 'therapist')
+      .order('name', { ascending: true })
+      .then(({ data }) => setTherapistOptions((data ?? []) as { id: string; name: string }[]));
+  }, [checkIn?.clinic_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── 오늘 패키지 세션 로드 → 서비스 목록과 매칭해 자동 prepaid 선택 ──────────
   const loadTodayPackageSessions = useCallback(
     async (customerId: string) => {
@@ -1247,13 +1316,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       const pkgIds = activePkgs.map((p) => p.id);
       const { data: sessData } = await supabase
         .from('package_sessions')
-        .select('session_type')
+        .select('session_type, performed_by')
         .in('package_id', pkgIds)
         .eq('session_date', today)
         .eq('status', 'used');
 
-      const sessions = (sessData ?? []) as { session_type: string }[];
+      const sessions = (sessData ?? []) as { session_type: string; performed_by: string | null }[];
       if (sessions.length === 0) return;
+
+      // T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2 기본값): 오늘 방문 치료를 차감한 치료사(performed_by)를
+      //   화장품 판매 치료사 기본값으로 우선 매핑. 부재 시 reset 에서 세팅한 담당 실장(therapist_id) 폴백 유지.
+      const performer = sessions.find((s) => !!s.performed_by)?.performed_by ?? null;
+      if (performer) setDefaultSellerId(performer);
 
       // 3. services가 로드된 이후에 매칭 → services state를 직접 참조하면 stale할 수 있으므로
       //    잠시 후 실행하거나 services 파라미터 받아야 함.
@@ -1770,6 +1844,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal;
   };
 
+  // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-1 저장): 화장품 라인 seller_staff_id 산출 ──
+  //   화장품(풋화장품) 라인만 귀속 — 수기선택(sellerMap) > 기본값(defaultSellerId=차감치료사/실장) 폴백.
+  //   비화장품 라인은 항상 null(기존 귀속·집계 무회귀). 두 재삽입 경로(save/handleClose)가 동일 SSOT 사용.
+  const resolveSellerStaffId = (service: Service): string | null =>
+    isCosmeticService(service) ? (sellerMap.get(service.id) ?? defaultSellerId ?? null) : null;
+
   // ── 공통 check_in_services 저장 ──────────────────────────────────────────
   // T-20260724-foot-PKGSESSION-SOURCE-CLOSURE (가드#4: is_package_session ⟺ package_session_id):
   //   is_package_session 은 소비 RPC(consume_package_sessions_for_checkin)가 회차 insert 와
@@ -1840,6 +1920,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           original_price: service.price,
           is_package_session: preservedPsid !== null,
           package_session_id: preservedPsid,
+          // T-20260724-foot-COSMETIC-SELLER-ATTRIB: 화장품 라인만 판매 치료사 귀속(그 외 null).
+          seller_staff_id: resolveSellerStaffId(service),
         } as CisInsertRow;
       });
     });
@@ -2312,6 +2394,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               original_price: service.price,
               is_package_session: preservedPsid !== null,
               package_session_id: preservedPsid,
+              // T-20260724-foot-COSMETIC-SELLER-ATTRIB: 자동저장(X 닫기) 경로도 화장품 판매 치료사 보존.
+              seller_staff_id: resolveSellerStaffId(service),
             } as CisInsertRow;
           }),
         );
@@ -3101,6 +3185,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         isEditing={editingPriceId === service.id}
                         editingPriceValue={editingPriceValue}
                         insuranceGrade={customerInsuranceGrade}
+                        // T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 라인 판매 치료사 드롭다운
+                        isCosmetic={isCosmeticService(service)}
+                        sellerOptions={therapistOptions}
+                        sellerValue={sellerMap.get(service.id) ?? defaultSellerId}
+                        onSellerChange={(sid, staff) => {
+                          // 빈 값('미지정')=override 해제(기본값 폴백). 실제 staff.id 만 저장(빈 문자열 FK 방지).
+                          setSellerMap((prev) => {
+                            const next = new Map(prev);
+                            if (staff) next.set(sid, staff);
+                            else next.delete(sid);
+                            return next;
+                          });
+                          setSaved(false);
+                        }}
                         onTogglePrepaid={togglePrepaid}
                         onStartEditPrice={startEditPrice}
                         onCommitEditPrice={commitEditPrice}
