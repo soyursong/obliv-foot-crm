@@ -125,6 +125,8 @@ import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 미수 배지 (소스=footBilling outstanding SSOT 재사용)
 import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
+// T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균/피 검사신청 뱃지 상태형(SSOT 재사용, 신규 정의 금지)
+import type { ExamFlagState } from '@/lib/examFlagPreserve';
 import { OutstandingDueBadge } from '@/components/PkgOutstandingBadge';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
@@ -157,6 +159,11 @@ const AltHolderCtx = createContext<Set<string>>(new Set());
 /** 고객 customer_id → 미수금 Map (T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN)
  *  소스 = loadCustomerOutstanding(SSOT). DraggableCard·통합시간표 카드가 useContext로 읽어 빨강 '미수' 배지 표시. */
 const OutstandingMapCtx = createContext<Map<string, CustomerOutstanding>>(new Map());
+
+/** T-20260724-foot-DASHCARD-EXAMREQ-BADGE: check_in_id → 균/피 검사신청 플래그 맵.
+ *  SSOT = check_in_services.koh_requested / blood_test_requested (읽기전용 소비, 신규 영속 없음).
+ *  DraggableCard 가 useContext로 읽어 카드 배지행에 🔬"균"(초록)/🩸"피"(빨강) 뱃지 표시. */
+const ExamFlagMapCtx = createContext<Map<string, ExamFlagState>>(new Map());
 
 /** T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 남은 check_in_id 집합 → amber 깜빡임 */
 const TimerAlertCtx = createContext<Set<string>>(new Set());
@@ -476,6 +483,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지
   const outstandingMap = useContext(OutstandingMapCtx);
   const outstandingData = checkIn.customer_id ? outstandingMap.get(checkIn.customer_id) : undefined;
+  // T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균/피 검사신청 뱃지(check_in_id 기준 읽기전용 소비)
+  const examFlagMap = useContext(ExamFlagMapCtx);
+  const examFlags = examFlagMap.get(checkIn.id);
   // T-20260522-foot-LASER-TIMER AC-3 / T-20260523 보강: amber(warn) + red(expire)
   const timerAlertSet = useContext(TimerAlertCtx);
   const timerExpiredSet = useContext(TimerExpiredCtx);
@@ -670,6 +680,8 @@ const DraggableCard = memo(function DraggableCard({
           {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           )}
+          {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지 */}
+          <ExamRequestBadges flags={examFlags} />
           {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
           <OutstandingDueBadge data={outstandingData} />
           {hasPkg && (
@@ -851,6 +863,8 @@ const DraggableCard = memo(function DraggableCard({
           /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진=파랑(blue). 구 yellow 하드코드 → A안 파랑 통일 */
           <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
+        {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지 */}
+        <ExamRequestBadges flags={examFlags} />
         {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
         <OutstandingDueBadge data={outstandingData} />
         {hasPkg && (
@@ -1556,6 +1570,38 @@ function NoShowBadge() {
       data-testid="noshow-badge"
     >
       노쇼
+    </span>
+  );
+}
+
+// T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 2번차트 치료신청 탭에서 신청된 균/피 검사 상태를
+//   데스크 대시보드 카드에 아이콘 뱃지로 표시(읽기전용 소비). 총괄 확정안(🅐 아이콘 뱃지형).
+//   · 균검사(koh) → 🔬 + 초록 배경, 라벨 "균"
+//   · 피검사(blood) → 🩸 + 빨강 배경, 라벨 "피"
+//   둘 다면 한 컨테이너 안에서 나란히(줄바꿈/overflow 없이). 미신청이면 렌더 0.
+//   SSOT = check_in_services.koh_requested / blood_test_requested (신규 영속 컬럼 신설 없음).
+function ExamRequestBadges({ flags }: { flags?: ExamFlagState }) {
+  if (!flags || (!flags.koh && !flags.blood)) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 shrink-0" data-testid="exam-request-badges">
+      {flags.koh && (
+        <span
+          data-testid="exam-badge-koh"
+          className="inline-flex items-center gap-0.5 bg-green-100 text-green-800 text-[9px] px-0.5 py-px rounded font-medium whitespace-nowrap"
+          title="균검사 신청됨"
+        >
+          🔬<span>균</span>
+        </span>
+      )}
+      {flags.blood && (
+        <span
+          data-testid="exam-badge-blood"
+          className="inline-flex items-center gap-0.5 bg-red-100 text-red-800 text-[9px] px-0.5 py-px rounded font-medium whitespace-nowrap"
+          title="피검사 신청됨"
+        >
+          🩸<span>피</span>
+        </span>
+      )}
     </span>
   );
 }
@@ -3379,6 +3425,8 @@ export default function Dashboard() {
   const [miniPayTarget, setMiniPayTarget] = useState<CheckIn | null>(null);
   // AC-7: 수납대기 check_in_services 합산 (check_in_id → pending amount)
   const [pendingServiceMap, setPendingServiceMap] = useState<Map<string, number>>(new Map());
+  // T-20260724-foot-DASHCARD-EXAMREQ-BADGE: check_in_id → 균/피 검사신청 플래그(읽기전용 소비)
+  const [examFlagMap, setExamFlagMap] = useState<Map<string, ExamFlagState>>(new Map());
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
@@ -4282,6 +4330,29 @@ export default function Dashboard() {
     setPendingServiceMap(m);
   }, [clinic, rows]);
 
+  // T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 카드에 표시할 균/피 검사신청 플래그 일괄 조회(카드별 N+1 방지).
+  //   SSOT = check_in_services.koh_requested / blood_test_requested (deployed, T-20260723-foot-LABTEST 선례).
+  //   읽기전용 소비 — 신규 영속 컬럼 신설 없음(db_change=false). 컬럼 부재(마이그 미적용) prod 도달 시
+  //   42703 폴백으로 빈 맵(뱃지 미표시) 처리 = 기존 대시보드 회귀 0.
+  const fetchExamFlags = useCallback(async () => {
+    if (!clinic) { setExamFlagMap(new Map()); return; }
+    const ids = rows.map((ci) => ci.id);
+    if (ids.length === 0) { setExamFlagMap(new Map()); return; }
+    const { data, error } = await supabase
+      .from('check_in_services')
+      .select('check_in_id, blood_test_requested, koh_requested')
+      .in('check_in_id', ids);
+    if (error) { setExamFlagMap(new Map()); return; } // 컬럼/권한 오류 → 빈 맵(뱃지 미표시)
+    const m = new Map<string, ExamFlagState>();
+    for (const row of (data ?? []) as { check_in_id: string; blood_test_requested?: boolean; koh_requested?: boolean }[]) {
+      const cur = m.get(row.check_in_id) ?? { blood: false, koh: false };
+      if (row.blood_test_requested === true) cur.blood = true;
+      if (row.koh_requested === true) cur.koh = true;
+      m.set(row.check_in_id, cur);
+    }
+    setExamFlagMap(m);
+  }, [clinic, rows]);
+
   // 타임라인용 — 취소 제외 전체 예약 (confirmed + checked_in + noshow)
   const fetchTimelineReservations = useCallback(async () => {
     if (!clinic) return;
@@ -4594,6 +4665,12 @@ export default function Dashboard() {
   useEffect(() => {
     fetchPendingServices();
   }, [fetchPendingServices]);
+
+  // T-20260724-foot-DASHCARD-EXAMREQ-BADGE: rows(카드) 변경 시 균/피 검사신청 플래그 갱신.
+  //   치료신청 탭 저장 → 카드 재조회(rows 변경) → 재진입/새로고침 시에도 뱃지 상태 정합(AC-4).
+  useEffect(() => {
+    fetchExamFlags();
+  }, [fetchExamFlags]);
 
   useEffect(() => {
     if (!clinic) return;
@@ -7525,6 +7602,8 @@ export default function Dashboard() {
       <PodologeHolderCtx.Provider value={podologeHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
       <OutstandingMapCtx.Provider value={outstandingMap}>
+      {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 카드 균/피 검사신청 뱃지 맵 주입 */}
+      <ExamFlagMapCtx.Provider value={examFlagMap}>
       {/* T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) + red(expire) 2단계 */}
       <TimerAlertCtx.Provider value={timerAlertSet}>
       <TimerExpiredCtx.Provider value={timerExpiredSet}>
@@ -7727,6 +7806,7 @@ export default function Dashboard() {
       </ConsentMapCtx.Provider>
       </TimerExpiredCtx.Provider>
       </TimerAlertCtx.Provider>
+      </ExamFlagMapCtx.Provider>
       </OutstandingMapCtx.Provider>
       </AltHolderCtx.Provider>
       </PodologeHolderCtx.Provider>
