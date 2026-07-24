@@ -601,6 +601,37 @@ function useLatestHealthQ(clinicId: string | null, customerId: string | null) {
 }
 
 // ---------------------------------------------------------------------------
+// T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD (R5 A+B 병행, 문지은 대표원장 A/B 컨펌) —
+//   '서류 날짜'(opinion-date-input) default 를 '오늘'→'해당 환자 최근 진료일(visit_date)' 로.
+//   RC(손정아 F-4673): default=오늘이라 원장이 매번 수동 변경해야 하고, 놓치면 발행일(오늘)이 진단일로 오각인.
+//   authoritative "최근 진료일" 소스 = medical_charts.visit_date 최신 1건(그 환자 실 진료 기록, KST date).
+//   ★PREFLIGHT(R5): 소스 미상/모호(차트 없음 등) → null 반환 → 호출부에서 오늘 폴백 + AC2 확인강조 병행
+//     (맹목 auto-set 로 오히려 오발행 유발 금지). 각인 규칙(§22 append-only) 무접점 — default 소스만 교체.
+// ---------------------------------------------------------------------------
+function useLatestVisitDate(clinicId: string | null, customerId: string | null) {
+  return useQuery<string | null>({
+    queryKey: ['opinion_latest_visit_date', clinicId, customerId],
+    enabled: !!clinicId && !!customerId,
+    queryFn: async () => {
+      if (!clinicId || !customerId) return null;
+      const { data, error } = await supabase
+        .from('medical_charts')
+        .select('visit_date')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .order('visit_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      const v = (data as { visit_date?: string | null } | null)?.visit_date ?? null;
+      // 'YYYY-MM-DD' 형식만 신뢰(입력 date 칸 value 규격). 그 외/미상 → null(오늘 폴백).
+      return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+    },
+    staleTime: 30_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 소견서 작성 팝업 — F0BAETELCTF 옵션 그리드 + editor.
 //   옵션 클릭 → phrase 자동삽입(toggle). editor = textarea(수기수정 SSOT).
 // ---------------------------------------------------------------------------
@@ -650,6 +681,9 @@ export function OpinionEditorDialog({
   const [hepatitisType, setHepatitisType] = useState<HepatitisType | null>(null); // 간염 B/C 드롭다운(미선택=null)
   const [oralXReason, setOralXReason] = useState('');   // 경구약X 사유(괄호 치환, 빈값=원문 보존)
   const [docDate, setDocDate] = useState<string>('');   // 서류 날짜 YYYY-MM-DD ([날짜] 치환)
+  // T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD: 원장이 '서류 날짜'를 수동 변경했는지.
+  //   자동 default(최근 진료일)가 비동기로 도착해도 사용자가 손댄 값은 덮지 않음(doctorTouched 패턴 동형).
+  const [docDateTouched, setDocDateTouched] = useState(false);
   // AC-1: 발건강 질문지에서 자동 pre-check 된 키(QR입력 뱃지 표기용). 의사가 토글하면 해당 키 제거(의사확인).
   const [autoChecked, setAutoChecked] = useState<Set<string>>(new Set());
   const [healthQAppliedFor, setHealthQAppliedFor] = useState<string | null>(null); // 자동체크 적용한 bindKey(오픈당 1회)
@@ -709,6 +743,10 @@ export function OpinionEditorDialog({
 
   // AC-1: 그 환자의 최신 발건강 질문지(read-only) — 자동 pre-check 소스.
   const { data: healthQData, isLoading: hqLoading } = useLatestHealthQ(clinicId, visitor?.customer_id ?? null);
+
+  // T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD: 그 환자 '최근 진료일'(medical_charts.visit_date 최신) — '서류 날짜' default 소스.
+  //   null(차트 없음/미상) → 오늘 폴백(PREFLIGHT). 실장 명시 날짜(initialDate)가 있으면 그 값 우선(자동채움에 안 덮임, AC4).
+  const { data: latestVisitDate = null } = useLatestVisitDate(clinicId, visitor?.customer_id ?? null);
 
   // T-20260724-foot-TREATTABLE-DOCS-PARITY 기능②(AC2): 소견서·진단서 작성 폼 진입 시 생년월일·당일 시술·처방내역 자동연동.
   //   T-20260724-foot-DOCFORM-AUTOFILL-DOB-TX-RX-BLANK [RC 런타임 재현으로 확정]: 기존 배선(useQueueClinicalSnaps
@@ -817,7 +855,11 @@ export function OpinionEditorDialog({
     //   텍스트를 oralXReason 으로 prefill → composeOpinionDoc 가 `[…경구약 복용중]` 괄호를 그 값으로 치환(대괄호 제거)
     //   + 작성창 경구약 미리보기(text-blue-600)에 파란글씨로 노출. 빈/없으면 '' = 기존 동작 유지(AC5).
     setOralXReason((initialOralXReason ?? '').trim());
-    setDocDate(initialDate || todaySeoulISODate());
+    // T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD (R5 A): default 소스 = 실장 명시 날짜(initialDate) 우선 →
+    //   그 환자 최근 진료일(latestVisitDate) → 오늘(PREFLIGHT 폴백). latestVisitDate 가 아직 비동기 미도착이면
+    //   오늘로 두고, 아래 effect 가 도착 시 스냅(원장 미변경·initialDate 없음 한정).
+    setDocDate(initialDate || latestVisitDate || todaySeoulISODate());
+    setDocDateTouched(false);
     setTextTouched(false); // 새 바인딩 → 자동합성 허용(직전 잔상 방지)
     setAutoChecked(new Set()); // AC-1: 새 환자/요청 바인딩 시 자동체크 뱃지 초기화(자동체크는 아래 effect 가 적용)
     setDoctorId(defaultDoctorId);
@@ -854,6 +896,19 @@ export function OpinionEditorDialog({
     if (signed && signed.id !== doctorId) setDoctorId(signed.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, doctorTouched, doctors, visitSigning]);
+
+  // T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD (R5 A): 최근 진료일(visit_date)이 비동기 도착 시 '서류 날짜' 기본값 스냅.
+  //   조건: open + 원장 미변경(docDateTouched=false) + 실장 명시 날짜(initialDate) 없음 → 최근 진료일로 세팅.
+  //   latestVisitDate 미상(null) → 오늘 폴백 유지(PREFLIGHT, 맹목 auto-set 금지). initialDate 있으면 그 값 우선(AC4).
+  useEffect(() => {
+    if (!open || docDateTouched) return;
+    if (initialDate) return;            // 실장 명시 날짜 우선(자동채움에 안 덮임)
+    if (!latestVisitDate) return;       // 미상 → 오늘 폴백 유지
+    if (docDate === latestVisitDate) return;
+    setDocDate(latestVisitDate);
+    setTextTouched(false);              // default 변경 → [날짜] 토큰 재합성
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, docDateTouched, initialDate, latestVisitDate]);
 
   // AC-1: 발건강 질문지 자동 pre-check — 질문지 로드 완료 후 오픈당 1회 적용.
   //   매핑된 옵션 중 아직 선택되지 않은 것을 추가 선택 + 문구 삽입 + QR입력 뱃지(autoChecked) 표기.
@@ -939,9 +994,15 @@ export function OpinionEditorDialog({
       toast.error('소견 내용을 입력해주세요.');
       return;
     }
+    // T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD (R5 B, AC2): 발행 직전 '서류 날짜' 재확인.
+    //   [날짜] 토큰이 있는 서류(showDate)일 때만 날짜 확인 줄을 덧붙임 — 진단일 오각인 최후 방어(과도한 마찰 회피).
+    const dateConfirmLine =
+      showDate && docDate
+        ? `\n\n📅 서류 날짜(진단일): ${docDate}\n이 날짜가 실제 진단일이 맞습니까? 다르면 취소 후 '서류 날짜'를 변경하세요.`
+        : '';
     if (
       !window.confirm(
-        `${visitor.customer_name} 님의 소견서를 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(의무기록·비가역).\n정정이 필요하면 새 소견서를 발행하세요.`,
+        `${visitor.customer_name} 님의 소견서를 발행하시겠습니까?\n\n발행 후에는 수정·취소할 수 없습니다(의무기록·비가역).\n정정이 필요하면 새 소견서를 발행하세요.${dateConfirmLine}`,
       )
     )
       return;
@@ -1328,18 +1389,30 @@ export function OpinionEditorDialog({
               {/* item2 플레이스홀더 변형 셀렉터 — 선택한 항목 원문에 마커가 있을 때만 노출(금기증/진단서 선택 종속). */}
               {(showDate || showHepatitis || showOralXReason) && (
                 <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-2" data-testid="opinion-placeholder-controls">
-                  {/* B-1 날짜: [날짜] → YYYY년 MM월 DD일. 기본값=실장 요청날짜/오늘. */}
+                  {/* B-1 날짜: [날짜] → YYYY년 MM월 DD일. 기본값=실장 요청날짜/최근 진료일/오늘.
+                      T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD (R5 A+B): 기본값=최근 진료일(visit_date)로 세팅 +
+                      '서류 날짜' 칸을 필수 확인 필드로 시각 강조(amber) — 발행일(오늘)이 진단일로 무비판 각인되지 않도록. */}
                   {showDate && (
-                    <div className="flex items-center gap-2">
-                      <label className="w-20 shrink-0 text-sm font-semibold text-foreground" htmlFor="opinion-doc-date">서류 날짜</label>
-                      <input
-                        id="opinion-doc-date"
-                        type="date"
-                        value={docDate}
-                        onChange={(e) => { setDocDate(e.target.value); setTextTouched(false); }}
-                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-                        data-testid="opinion-date-input"
-                      />
+                    <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50/70 px-2 py-1.5" data-testid="opinion-date-guard">
+                      <div className="flex items-center gap-2">
+                        <label className="flex w-20 shrink-0 items-center gap-1 text-sm font-bold text-amber-800" htmlFor="opinion-doc-date">
+                          서류 날짜
+                        </label>
+                        <input
+                          id="opinion-doc-date"
+                          type="date"
+                          value={docDate}
+                          onChange={(e) => { setDocDate(e.target.value); setDocDateTouched(true); setTextTouched(false); }}
+                          className="h-8 flex-1 rounded-md border border-amber-400 bg-white px-2 text-sm font-semibold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          data-testid="opinion-date-input"
+                        />
+                      </div>
+                      <p className="text-[11px] leading-snug text-amber-700" data-testid="opinion-date-guard-hint">
+                        ※ 이 날짜가 서류에 <b>진단일</b>로 각인됩니다. 실제 진단일과 다르면 반드시 변경 후 발행하세요.
+                        {latestVisitDate
+                          ? ` (기본값=최근 진료일 ${latestVisitDate})`
+                          : ' (진료 기록이 없어 오늘 날짜로 설정됨 — 확인 필요)'}
+                      </p>
                     </div>
                   )}
                   {/* §C 간염 B/C 드롭다운: B(C) → B형/C형 전체치환. */}
