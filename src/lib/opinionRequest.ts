@@ -378,6 +378,11 @@ export interface PublishedOpinionDoc {
   chartNo: string | null;
   doctorName: string;
   issuedAt: string;   // created_at(ISO)
+  // T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT: 발행본 '양식 그대로' 열람(양식 렌더러 재사용)을 위한
+  //   추가 스냅샷(이미 적재된 field_data read 만 — db_change=false). 인쇄 경로(OpinionDocTab.handlePrint)와
+  //   동일하게 면허번호는 스냅샷 override, 도장(seal)은 발행자 clinic_doctors.id 로 결선(이름↔도장 세트 정합).
+  issuedByLicenseNo: string | null;   // field_data.doctor_license_no
+  issuedByDoctorId: string | null;    // field_data.issued_by_doctor_id
 }
 
 export function usePublishedOpinionDocs(
@@ -412,6 +417,9 @@ export function usePublishedOpinionDocs(
           chartNo: (fd['chart_no'] as string | null) || null,
           doctorName: String(fd['doctor_name'] ?? ''),
           issuedAt: String(r['created_at'] ?? ''),
+          // T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT: 양식 렌더 바인딩용 추가 스냅샷(read-only field_data).
+          issuedByLicenseNo: (fd['doctor_license_no'] as string | null) || null,
+          issuedByDoctorId: (fd['issued_by_doctor_id'] as string | null) || null,
         };
       });
     },

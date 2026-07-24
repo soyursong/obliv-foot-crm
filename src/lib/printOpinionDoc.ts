@@ -69,13 +69,21 @@ const TITLE_BY_FORM: Record<OpinionPrintFormKey, string> = {
 };
 
 /**
- * 소견서/진단서 인쇄 — 해당 양식에 발행본 스냅샷을 바인딩해 새 창 인쇄.
- * 팝업 차단 시 false 반환(호출부 toast 안내).
+ * T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT: 발행본 스냅샷 → 소견서/진단서 양식 HTML 렌더(순수).
+ *   기존 printOpinionDoc 의 "필드값 조립 + bindHtmlTemplate(L-006 단일 경로)" 로직을 그대로 추출한 것.
+ *   · 인쇄(printOpinionDoc): 이 HTML 을 window.open 새 창에 써서 인쇄한다(종전 동작 불변).
+ *   · 화면 열람(IssuedOpinionDocFormView): 이 HTML 을 read-only iframe 에 그려 발행 시 보이는 양식과
+ *     동일한 레이아웃으로 열람한다(신규 출력 스택 금지 — 발행 미리보기/출력과 같은 양식·바인더 재사용).
+ *   양식 레이아웃·필드 매핑·스냅샷 override 규칙(법정 의무기록 불변 보존)은 이 함수 단일 소스이므로,
+ *   인쇄본과 열람본의 양식이 구조적으로 일치한다(AC2 재사용·동일 양식 보장).
+ *   양식 미존재(getHtmlTemplate null) 시 null 반환(호출부 폴백 안내).
  */
-export function printOpinionDoc(data: OpinionPrintData): boolean {
+export function renderOpinionDocHtml(
+  data: OpinionPrintData,
+): { html: string; title: string } | null {
   const formKey: OpinionPrintFormKey = data.formKey ?? 'diag_opinion';
   const tpl = getHtmlTemplate(formKey);
-  if (!tpl) return false;
+  if (!tpl) return null;
   const bodyField = BODY_FIELD_BY_FORM[formKey];
   // T-20260720-foot-OPINIONDOC-PRINT-4FIX (RC-1): autoBindContext 공용 바인더 값을 base 로 깔고
   //   (환자 주민번호·성별·생년월일·연령·주소·연락처 / 상병코드·상병명 / 의사 직인 doctor_seal_html 등
@@ -115,6 +123,17 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   };
   const html = bindHtmlTemplate(tpl, fieldValues);
   const title = TITLE_BY_FORM[formKey];
+  return { html, title };
+}
+
+/**
+ * 소견서/진단서 인쇄 — 해당 양식에 발행본 스냅샷을 바인딩해 새 창 인쇄.
+ * 팝업 차단 시 false 반환(호출부 toast 안내).
+ */
+export function printOpinionDoc(data: OpinionPrintData): boolean {
+  const rendered = renderOpinionDocHtml(data);
+  if (!rendered) return false;
+  const { html, title } = rendered;
   const win = window.open('', '_blank', 'width=820,height=1000');
   if (!win) return false;
   win.document.open();
