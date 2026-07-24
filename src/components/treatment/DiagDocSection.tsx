@@ -20,10 +20,12 @@
 //     · 발행완료   = voided + resolved_reason='published'(usePublishedOpinionRequests).
 //     · 취소(cancelled) 제외 = 두 훅이 구조적으로 배제(draft 훅=status='draft'만, published 훅=resolved_reason='published'만).
 //
-//   ★AC-5 날짜필터 상속: 치료테이블은 day-scoped surface(모든 탭이 부모 공통 날짜선택기 date 를 공유).
-//     본 탭도 신청시각(requested_at, KST) 기준으로 선택 날짜에 스코프 → 날짜이동 시 자동 갱신(sibling 탭과 정합).
+//   ★AC-5 날짜필터 상속 + T-20260724-foot-DOCWRITE-UNISSUED-PERSIST-FILTER(김주연 총괄) 전환:
+//     치료테이블은 day-scoped surface(모든 탭이 부모 공통 날짜선택기 date 를 공유)이나, 필터 기준을
+//     '날짜'→'발행여부'로 전환 — 미발행(unpublished) 건은 신청 날짜가 지나도 계속 잔류하고(발행 완료 시에만
+//     제거), 발행완료(published) 건만 기존 day-scoped(선택 날짜) 동작을 유지한다. 상세=filterDiagDocByDate 주석.
 //     ※ read-only 재사용 한계: usePublishedOpinionRequests 는 당일(KST) 발행 건만 반환 → 과거일자 '발행완료'는
-//        재구성 불가(그날 신청 후 미발행으로 남은 draft 만 노출). 현장 주 사용처=당일 라이브 뷰(=진료대시보드 [서류작성] 동일 성격).
+//        재구성 불가. 미발행 잔류는 useOpinionRequestQueue(draft, 날짜무관 전건)로 보장.
 //
 //   ★T-20260724-foot-TREATTABLE-DOCS-PARITY 기능① (발행 목록 + 클릭 열람): 진료대시보드 서류 스펙 미러.
 //     canonical = DASH-ISSUEDDOCS-DOCVIEW-CLICKOPEN(deployed 9ec7e5b6, DocRequestQueue 뷰어). 그 렌더러/로직을
@@ -119,11 +121,24 @@ export function buildDiagDocRows(
   return out;
 }
 
-// AC-5 — 선택 날짜(치료테이블 공통 date) 스코프 + 신청시각 역순 정렬.
-//   신청시각(requested_at)의 KST 날짜가 선택 날짜와 같은 행만(day-scoped surface 정합). 최신 신청 위로.
+// T-20260724-foot-DOCWRITE-UNISSUED-PERSIST-FILTER (김주연 총괄) — 필터 기준을 '날짜'→'발행여부'로 전환.
+//   현장 요청: 미발행(unpublished) 건은 그 신청 날짜가 지나도 리스트에서 사라지지 않고 계속 남아야 한다
+//   (뒤늦게 발행하려 할 때 찾을 수 있게). 발행을 완료해야만 리스트에서 빠진다.
+//   ─ 미발행(unpublished): 선택 날짜와 무관하게 항상 잔류(AC1/AC2). '미발행 고정 표시'(AC3) — 날짜 필터가
+//       미발행 잔류를 덮어쓰지 않는다.
+//   ─ 발행완료(published): 기존 day-scoped 동작 유지(신청 KST 날짜 == 선택 날짜) → 발행완료본이 미발행
+//       잔류 리스트에 섞이지 않음(AC4 회귀0). 발행완료 = usePublishedOpinionRequests(당일 KST) 상속.
+//   audit-first(planner db_change 게이트): 발행/미발행 구분은 기존 발행 파이프라인 상태값(draft=미발행 /
+//     voided+resolved_reason='published'=발행완료)에 이미 존재 → 신규 컬럼/파생 0(db_change=false).
+//   정렬: 신청시각 역순(최신 위). 미발행이 과거일이어도 잔류하므로 날짜 혼재 가능 — 신청시각 셀에서 표기 보강.
 export function filterDiagDocByDate(rows: DiagDocRow[], date: string): DiagDocRow[] {
   return rows
-    .filter((r) => !!r.requestedAt && seoulISODate(r.requestedAt) === date)
+    .filter((r) => {
+      // 미발행: 날짜 경과와 무관하게 항상 잔류(발행 완료 시에만 제거).
+      if (r.publishStatus === 'unpublished') return true;
+      // 발행완료: 기존 day-scoped(선택 날짜) 동작 유지.
+      return !!r.requestedAt && seoulISODate(r.requestedAt) === date;
+    })
     .sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
 }
 
@@ -338,7 +353,24 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
                     )}
                   </td>
                   <td className="px-2.5 py-1.5 text-[12px] tabular-nums text-muted-foreground whitespace-nowrap" data-testid="diagdoc-cell-time">
-                    {r.requestedAt ? seoulHHMM(r.requestedAt) : '—'}
+                    {r.requestedAt ? (
+                      <>
+                        {/* T-20260724-foot-DOCWRITE-UNISSUED-PERSIST-FILTER: 미발행 잔류로 과거일자 건이 섞일 수 있어,
+                            신청 날짜가 선택 날짜와 다르면 날짜(월/일)를 함께 표기(어느 날 신청인지 식별). 같으면 기존 시각만. */}
+                        {seoulISODate(r.requestedAt) !== date && (
+                          <span
+                            className="mr-1 rounded bg-amber-50 px-1 py-px text-[10px] font-semibold text-amber-700"
+                            data-testid="diagdoc-cell-carryover-date"
+                            title="신청 날짜가 지난 미발행 건이에요"
+                          >
+                            {seoulISODate(r.requestedAt).slice(5).replace('-', '/')}
+                          </span>
+                        )}
+                        {seoulHHMM(r.requestedAt)}
+                      </>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="px-2.5 py-1.5" data-testid="diagdoc-cell-publish">
                     <PublishBadge status={r.publishStatus} />
