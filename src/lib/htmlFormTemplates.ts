@@ -829,6 +829,9 @@ ${COMMON_STYLE}
   }
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+  /* T-20260724-foot-DOCPRINT-DIAGCODE-OVERFLOW-2PAGE: 상병 2열 그리드는 행수를 절반으로 줄여 1페이지 유지.
+     추가 안전마진으로 상병 셀만 패딩·폰트를 소폭 압축(다른 표·합계 영향 없음). */
+  .bill-wrap .diag-grid td, .bill-wrap .diag-grid th { padding: 1px 4px; font-size: 8pt; line-height: 1.15; }
   @media print {
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
        콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
@@ -883,11 +886,19 @@ ${COMMON_STYLE}
        결제미니창 PATH-4 는 선택 상병 codeItems). 값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 빈칸(AC-2,
        잠정 소견서와 동일 방식). 행 가시성(diag_row_3/4_style)은 print 경로가 이미 세팅 — 신규 바인딩 0.
        순수 additive 표시 변경(no-DDL, 스키마·입력동선 무변경). -->
-  <table style="margin-bottom:4px;">
+  <!-- T-20260724-foot-DOCPRINT-DIAGCODE-OVERFLOW-2PAGE: 상병 표시를 4행 세로 나열 → 2열(2 entries/row) 컴팩트 그리드로 재배치.
+       배경: 상병 다건(2~4건) 시 세로 4행이 아래 진료비 내역표·서명란을 A4 landscape 1페이지 박스(175mm) 밖으로 밀어 2페이지 오버플로우 발생.
+       조치: 가로(272mm) 폭 여유를 활용해 상병 4건도 최대 2 물리행으로 수용 → 세로 높이 절반 → 1페이지 내 완결(AC-1/1′).
+       diag_code_N/diag_name_N 토큰·소스·개수(≤4)·행 가시성 규칙 불변 = 순수 레이아웃(데이터 무접점, AC-4).
+       2번째 물리행(연번 3·4)은 기존과 동일하게 diag_row_3_style(3건 이상 시 노출)로 제어. 미채움 슬롯은 기존 패턴대로 빈칸(AC-3). -->
+  <table class="diag-grid" style="margin-bottom:4px;">
     <thead>
       <tr>
-        <th style="width:48px;">연번</th>
-        <th style="width:120px;">상병코드</th>
+        <th style="width:44px;">연번</th>
+        <th style="width:110px;">상병코드</th>
+        <th style="text-align:left;">상병명</th>
+        <th style="width:44px;">연번</th>
+        <th style="width:110px;">상병코드</th>
         <th style="text-align:left;">상병명</th>
       </tr>
     </thead>
@@ -896,8 +907,6 @@ ${COMMON_STYLE}
         <td>1</td>
         <td style="white-space:nowrap;">{{diag_code_1}}</td>
         <td style="text-align:left;">{{diag_name_1}}</td>
-      </tr>
-      <tr>
         <td>2</td>
         <td style="white-space:nowrap;">{{diag_code_2}}</td>
         <td style="text-align:left;">{{diag_name_2}}</td>
@@ -906,8 +915,6 @@ ${COMMON_STYLE}
         <td>3</td>
         <td style="white-space:nowrap;">{{diag_code_3}}</td>
         <td style="text-align:left;">{{diag_name_3}}</td>
-      </tr>
-      <tr style="{{diag_row_4_style}}">
         <td>4</td>
         <td style="white-space:nowrap;">{{diag_code_4}}</td>
         <td style="text-align:left;">{{diag_name_4}}</td>
