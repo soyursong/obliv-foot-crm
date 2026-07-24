@@ -299,3 +299,46 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB — 브라우저 렌더', () => {
     expect(hasTitle).toBeGreaterThan(0);
   });
 });
+
+// ─── T-20260724-foot-REDPAY-WHITELIST-EXPAND-0723GAP · Opt-B′ (ADDITIVE) 불변식 ───
+//   registry-derived 소비뷰(20260711140000~) + 0723GAP 재프로비저닝 대응. 위 AC-4 블록은
+//   frozen 20260708230000 아티팩트(하드코딩) 대상 — 라이브 소비뷰는 registry SSOT 파생(불변식 아래).
+test.describe('T-20260724-0723GAP · Opt-B′ 마이그 불변식(ADDITIVE-only)', () => {
+  const MIG_0723 = 'supabase/migrations/20260724170000_redpay_foot_registry_0723gap_optbprime.sql';
+  const RB_0723 = 'supabase/migrations/20260724170000_redpay_foot_registry_0723gap_optbprime.rollback.sql';
+
+  test('허용 DDL = ADD COLUMN superseded_tids + CREATE OR REPLACE (DROP UNIQUE/widening 금지)', () => {
+    const sql = fs.readFileSync(MIG_0723, 'utf-8');
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS superseded_tids text\[\]/);
+    expect(sql).toMatch(/CREATE OR REPLACE VIEW public\.v_redpay_reconciliation_daily/);
+    expect(sql).toMatch(/CREATE OR REPLACE VIEW public\.v_receipt_settlement_daily/);
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.get_redpay_feed_freshness/);
+    // ⛔ 파괴적 변경 부재 — 대표 게이트 면제 스코프(planner verdict 2026-07-24).
+    //   주석(설명용 "원 Opt-B(DROP UNIQUE...)")은 제거 후 실행 SQL 만 검사.
+    const code = sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    expect(code).not.toMatch(/DROP\s+CONSTRAINT/i);
+    expect(code).not.toMatch(/DROP\s+.*UNIQUE/i);
+    expect(code).not.toMatch(/ALTER\s+COLUMN.*TYPE/i);
+    expect(code).not.toMatch(/DROP\s+.*(PRIMARY KEY|_pkey)/i);
+    // ON CONFLICT(merchant_id) 유지(UNIQUE 완화 아님)
+    expect(sql).toContain('ON CONFLICT (merchant_id) DO NOTHING');
+  });
+
+  test('tid-membership UNION 확장 — 구·신 TID 모두 가시(historical 무탈락)', () => {
+    const sql = fs.readFileSync(MIG_0723, 'utf-8');
+    expect(sql).toMatch(/UNION\s+SELECT unnest\(redpay_terminal_registry\.superseded_tids\)/);
+    // 6 신 live TID(1047535xxx) + 285002 seed
+    for (const t of ['1047535845', '1047535843', '1047535842', '1047535837', '1047535835', '1047535797']) {
+      expect(sql).toContain(`'${t}'`);
+    }
+    expect(sql).toContain("'1777285002'");
+  });
+
+  test('롤백 = 데이터손실0 (뷰 UNION-이전 복원 + remap 역전 + 285002 DELETE + DROP COLUMN)', () => {
+    const rb = fs.readFileSync(RB_0723, 'utf-8');
+    expect(rb).toMatch(/CREATE OR REPLACE VIEW public\.v_redpay_reconciliation_daily/);
+    expect(rb).toMatch(/DROP COLUMN IF EXISTS superseded_tids/);
+    expect(rb).toMatch(/DELETE FROM public\.redpay_terminal_registry[\s\S]*1777285002/);
+    expect(rb).not.toMatch(/unnest\(redpay_terminal_registry\.superseded_tids\)/); // UNION 제거 확인
+  });
+});

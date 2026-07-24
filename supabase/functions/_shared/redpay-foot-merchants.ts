@@ -5,8 +5,8 @@
 //   문자열 파싱 금지 — merchant_id 는 반드시 이 화이트리스트 Set 으로만 판별한다(AC-2.5).
 //
 // ── canonical SSOT ──────────────────────────────────────────────────────────
-//   값 표준 = redpay_foot_terminal_registry.md §2 26-set(last_verified 2026-07-20,
-//   FOOT-CONFIRMED ADDITIVE). redpay-reconcile/index.ts 의 인라인 FOOT_MERCHANT_SET/
+//   값 표준 = redpay_foot_terminal_registry.md §2/§8 27-set(last_verified 2026-07-24,
+//   FOOT-CONFIRMED ADDITIVE, 0723GAP 285002 편입). redpay-reconcile/index.ts 의 인라인 FOOT_MERCHANT_SET/
 //   BODY_MERCHANT_SET 과 미러(동일 값). 인라인 정의의 형제 EF 공유 불가 문제를
 //   redpay-config.ts 와 같은 방식으로 해소(향후 reconcile 도 이 모듈로 수렴 = 별도 통합 티켓).
 //   ⇒ ⛔ 'dohsu'/'dosu'(display alias) ⛔ 'body_rehab'(축오염). 재활도 center='body'.
@@ -15,10 +15,12 @@
 //   본 화이트리스트는 단말기 레지스트리(redpay_terminal_registry)의 canonical 26-set 을
 //   코드-레벨로 박제한 미러다. 신규 단말 추가 시 registry §2 갱신 → 이 Set 동기(중복 신설 금지).
 
-/** 풋센터(서울오리진 종로 풋) 26-set merchant_id. FOOT-CONFIRMED ADDITIVE 2026-07-20. */
+/** 풋센터(서울오리진 종로 풋) 27-set merchant_id. FOOT-CONFIRMED ADDITIVE.
+ *  26→27: T-20260724-...-0723GAP 285002 편입(풋2, 285001↔285003 seed-omission).
+ *  ★9th locus(webhook path) — poller path(redpay-reconcile inline set)와 미러 유지. */
 export const FOOT_MERCHANT_SET: ReadonlySet<string> = new Set<string>([
-  "1777285001", "1777285003", "1777285004", "1777285005", "1777285006",
-  "1777285007", "1777285008",             // VAN7
+  "1777285001", "1777285002", "1777285003", "1777285004", "1777285005", "1777285006",
+  "1777285007", "1777285008",             // VAN8 (285002=풋2, T-20260724-...-0723GAP seed-omission 편입)
   "1777288001", "1777288003", "1777288004", "1777288005", "1777288006",
   "1777288008",                           // 유선6
   "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
