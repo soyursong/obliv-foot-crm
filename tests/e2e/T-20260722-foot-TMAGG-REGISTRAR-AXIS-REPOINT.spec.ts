@@ -40,6 +40,9 @@ const STAFF: Record<string, TmStaffInfo> = {
 // 컴포넌트 grouping key 재현 helper (attrOfRes 등가).
 const groupKey = (createdBy: string | null, sourceSystem: string | null) =>
   tmAttributionKey(createdBy, sourceSystem, STAFF[createdBy ?? '']?.name);
+// registrar_name 을 넘기는 변형(카브아웃 인자 경로 검증용).
+const groupKeyRn = (createdBy: string | null, sourceSystem: string | null, registrarName: string | null) =>
+  tmAttributionKey(createdBy, sourceSystem, STAFF[createdBy ?? '']?.name, registrarName);
 
 test.describe('T-20260722 AC1 — grouping key = 정규 귀속키(created_by), registrar_name 미참여', () => {
   test('직접등록(created_by=직원) → staff:<uid> 버킷 + 직원명 라벨', () => {
@@ -54,12 +57,16 @@ test.describe('T-20260722 AC1 — grouping key = 정규 귀속키(created_by), r
     expect(a.label).toBe('김주연');
   });
 
-  test('AC5(집계-inert): tmAttributionKey 는 registrar_name 을 인자로도 받지 않는다 — 편집 불가침', () => {
-    // 시그니처가 (createdBy, sourceSystem, staffName) 3-arg 뿐 → registrar_name 구조적 차단.
-    expect(tmAttributionKey.length).toBe(3);
-    // 동일 created_by 면 registrar_name 편집과 무관하게 항상 동일 key (편집→count 버킷 이동 0).
+  test('AC5(native 집계-inert): native(created_by 有) grouping 은 registrar_name 편집에 불가침 — REPOINT AC4 STAYS', () => {
+    // ★ 2026-07-24 CEO-GATED CARVE-OUT(VARIANT) 이후: tmAttributionKey 는 4번째 인자 registrar_name 을
+    //   dopamine 파티션 display 버킷 전용으로 받는다. 그러나 native(created_by 有) 는 첫 분기에서 반환되어
+    //   registrar_name 이 무엇이든 grouping key/label 불변 — REPOINT AC4(native)는 STAYS(VARIANT AC2).
     expect(groupKey('u-tm-2', null).key).toBe('staff:u-tm-2');
     expect(groupKey('u-tm-2', 'dopamine').key).toBe('staff:u-tm-2'); // created_by 있으면 dopamine 무관
+    // registrar_name 을 임의로 넘겨도 native key/label 동일(편집→count 버킷 이동 0).
+    expect(groupKeyRn('u-tm-2', null, '아무개').key).toBe('staff:u-tm-2');
+    expect(groupKeyRn('u-tm-2', null, '아무개').label).toBe('이수빈');
+    expect(groupKeyRn('u-tm-2', 'dopamine', '제3자').key).toBe('staff:u-tm-2');
   });
 });
 
