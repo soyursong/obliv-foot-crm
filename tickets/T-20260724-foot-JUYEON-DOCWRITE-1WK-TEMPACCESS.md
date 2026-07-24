@@ -1,10 +1,11 @@
 ---
 id: T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS
 domain: foot
-status: deploy-ready
-qa_result: pending (supervisor DDL-diff 게이트 + prod 적용 대기)
-deploy_commit: 22b4593a5a8b
-deployed_at: n/a (DB 마이그 — supervisor DDL-diff→prod apply 선행. CF Pages 번들 변화 없음: FE 코드 무변경)
+status: deployed   # 후보 — supervisor 사후검증(read-only) 후 최종 확정. applied_at + POSTCHECK 3항목 evidence 첨부
+qa_result: postcheck-pass (supervisor DDL-diff GO → prod apply 완료, POSTCHECK 3/3 PASS → supervisor 사후검증 대기)
+deploy_commit: 386833ac (merge to main — 22b4593a feat + 9132371a chore)
+applied_at: "2026-07-24 22:59 KST"   # prod rxlomoozakkjesdqjtvd, 정규 러너(마이그 body + schema_migrations 210000 명시 INSERT). 7/25 00:00 KST 발효 전
+deployed_at: n/a (DB 마이그 — CF Pages 번들 변화 없음: FE 코드 무변경). applied_at 참조
 bundle_hash: n/a (FE 코드 무변경 — 순수 DB 마이그)
 priority: P1
 db_change: true (ADDITIVE — 신규 함수 1 foot_juyeon_tempgrant_tick + cron job 1 + 계정 1행 role UPDATE date-gated. 신규 컬럼·테이블·enum 0)
@@ -16,7 +17,8 @@ mig_rollback: supabase/migrations/20260724210000_foot_juyeon_director_1wk_tempgr
 medical_confirm_gate: required
 confirm_status: confirmed (문지은 대표원장 Option A 컨펌 — planner MSG-20260724-185940-dpo3)
 e2e_spec: tests/e2e/T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS.spec.ts (8/8 PASS)
-evidence: evidence/T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS_backup.json + _MIGGATE.md
+evidence: evidence/T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS_backup.json + _MIGGATE.md + _PROD-APPLY-POSTCHECK.md
+postcheck: "ALL PASS — (a1) fn foot_juyeon_tempgrant_tick n=1 secdef anon_exec=false / (a2) cron foot-juyeon-tempgrant-lifecycle active=true */15 / (b) role=admin 유지(발효 전) / (c) schema_migrations 최신=20260724210000"
 slack_channel: C0ATE5P6JTH
 slack_thread_ts: "1784882479.542659"
 ---
