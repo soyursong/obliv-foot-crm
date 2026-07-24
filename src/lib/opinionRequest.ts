@@ -264,6 +264,103 @@ export function usePublishedOpinionRequests(clinicId: string | null) {
   });
 }
 
+// ─── 개별 환자 진료차트 발행이력 (customer-scoped, all-time) ──────────────────────────────
+//   Ticket: T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW (P1, 발행이력 패턴 3번째 surface)
+//   canonical = DASH-ISSUEDDOCS-NAMELIST-EXPAND(deployed a843b4b7, 진료대시보드) / sibling = TREATTABLE-DOCS-PARITY.
+//
+//   ★surface 축: 개별 환자 진료차트(CustomerChartPage 상담내역 탭, OpinionRequestBox 아래 = 실장영역) =
+//     §11.1 고객관리·상담 surface(비대상). 진료대시보드/진료관리(의사공간) 코드 무접촉 — DocRequestQueue/
+//     OpinionDocTab/OpinionEditorDialog/publish_opinion_doc RPC 일절 미수정.
+//
+//   ★진료대시보드/치료테이블과의 차이(왜 신규 훅): 그 두 surface 는 day-scoped(당일 KST) →
+//     usePublishedOpinionRequests 는 '오늘 발행' 건만 반환. 개별 환자 진료차트는 그 환자의 '전체 발행이력'을
+//     보여야 하므로 customer-scoped·all-time 조회가 필요. 단, 소스·판정기준은 100% 동일(form_submissions 단일 원장):
+//       · 미발행   = status='draft' (서류작성 큐 draft)
+//       · 발행완료 = status='voided' + field_data.resolved_reason='published'
+//       · 취소(cancelled) 제외 = 두 판정 어디에도 안 들어감(3 surface 발행상태 정합).
+//   ★read-only READ 전용(db_change=false): 기존 form_submissions field_data read 만. 신규 컬럼/테이블/enum/RLS = 0.
+//   ★교차노출 금지: customer_id 서버필터 → 타 환자 발행이력 구조적 배제.
+export type OpinionPublishStatus = 'published' | 'unpublished';
+export interface CustomerOpinionRequestRow extends OpinionRequestRow {
+  /** 발행여부 — 진료대시보드·치료테이블과 동일 판정(draft=미발행 / voided+published=발행완료). */
+  publishStatus: OpinionPublishStatus;
+}
+
+// 순수 파생 — form_submissions raw 행 → 발행이력 행. (E2E spec 이 직접 import·단언 → drift 방지)
+//   staff_consult 요청만 편입 + cancelled 구조적 제외 + 발행상태 판정 + 신청시각 역순 정렬.
+export function buildCustomerOpinionRows(
+  raw: Array<Record<string, unknown>>,
+): CustomerOpinionRequestRow[] {
+  const out: CustomerOpinionRequestRow[] = [];
+  for (const r of raw) {
+    const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+    // 큐 식별: staff_consult 요청만(펜차트/기타 draft·voided 제출과 분리).
+    if (fd['request_origin'] !== 'staff_consult') continue;
+    const status = String(r['status'] ?? '');
+    let publishStatus: OpinionPublishStatus;
+    if (status === 'draft') {
+      publishStatus = 'unpublished';
+    } else if (status === 'voided' && fd['resolved_reason'] === 'published') {
+      publishStatus = 'published';
+    } else {
+      // voided+cancelled(요청취소) 등 → 발행이력에서 제외(3 surface 판정 정합).
+      continue;
+    }
+    out.push({
+      id: String(r['id']),
+      customerId: (r['customer_id'] as string | null) ?? null,
+      checkInId: (r['check_in_id'] as string | null) ?? null,
+      docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+      selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
+      staffMemo: String(fd['staff_memo'] ?? ''),
+      oralMedReason: String(fd['oral_med_reason'] ?? ''),
+      patientName: String(fd['patient_name'] ?? '—'),
+      chartNo: (fd['chart_no'] as string | null) || null,
+      birthDate: (fd['birth_date'] as string | null) || null,
+      requestedByName: String(fd['requested_by_name'] ?? ''),
+      requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
+      createdAt: String(r['created_at'] ?? ''),
+      requestDate: String(fd['request_date'] ?? ''),
+      resolvedAt: fd['resolved_at'] ? String(fd['resolved_at']) : undefined,
+      publishStatus,
+    });
+  }
+  // 최신 신청 위로(신청시각 역순).
+  return out.sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
+}
+
+export interface CustomerOpinionSummary {
+  total: number;
+  publishedCount: number;
+  unpublishedCount: number;
+}
+export function computeCustomerOpinionSummary(rows: CustomerOpinionRequestRow[]): CustomerOpinionSummary {
+  let publishedCount = 0;
+  for (const r of rows) if (r.publishStatus === 'published') publishedCount += 1;
+  return { total: rows.length, publishedCount, unpublishedCount: rows.length - publishedCount };
+}
+
+export function useCustomerOpinionRequests(clinicId: string | null, customerId: string | null) {
+  return useQuery<CustomerOpinionRequestRow[]>({
+    queryKey: ['opinion_request_customer_history', clinicId, customerId],
+    enabled: !!clinicId && !!customerId,
+    queryFn: async () => {
+      if (!clinicId || !customerId) return [];
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, customer_id, check_in_id, field_data, created_at, status')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .in('status', ['draft', 'voided'])
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return buildCustomerOpinionRows((data ?? []) as Array<Record<string, unknown>>);
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
 // ─── 발행완료 서류 '내용 열람'(read-only) — 실제 발행본 조회 (T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN) ──
 //   '서류 완료' 그룹 서류명 클릭 → 그 요청으로 실제 발행된 서류(form_submissions status='published', opinion_doc)
 //   본문(field_data.final_text)을 read-only 로 열람. hub(NAMELIST-EXPAND)는 서류명 나열+해당항목 미리보기까지 —

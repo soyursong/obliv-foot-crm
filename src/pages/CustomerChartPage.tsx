@@ -92,6 +92,8 @@ import { ConsentForm } from '@/components/forms/ConsentForm';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK: 상담내역 탭 '소견서/진단서 요청' 인라인 박스(실장영역)
 import OpinionRequestBox from '@/components/consult/OpinionRequestBox';
+// T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW: 상담내역 탭 소견서·진단서 발행 이력(신청/발행여부/열람)
+import OpinionDocHistorySection from '@/components/chart/OpinionDocHistorySection';
 import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
@@ -7902,6 +7904,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 birthDate={customer.birth_date ?? null}
                 issuedBy={currentUserStaffId}
                 requestedByName={profile?.name ?? ''}
+              />
+
+              {/* ── 소견서·진단서 발행 이력 (T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW) ──
+                  이 환자가 신청한 소견서·진단서의 신청이력(누가·언제)·발행여부(발행완료/미발행)·발행본 열람.
+                  진료대시보드(DASH-ISSUEDDOCS)·치료테이블(TREATTABLE-DOCS-PARITY) 발행이력 패턴의 3번째 surface.
+                  read-only ADDITIVE — form_submissions 단일 원장 재사용, 발행 파이프라인·의사화면 코드 무접촉. ── */}
+              <OpinionDocHistorySection
+                clinicId={customer.clinic_id}
+                customerId={customer.id}
               />
 
               {/* ── 3줄: 결제영수증 (AC-4: 기존 결제영수증 보기 동선 wiring 유지) ── */}
