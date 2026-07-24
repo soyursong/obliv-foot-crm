@@ -30,7 +30,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
-import { todaySeoulISODate } from '@/lib/format';
+import { todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
@@ -98,6 +98,9 @@ interface CustomerLite {
   visit_type: string | null;
   lead_source: string | null;
   visit_route: string | null;
+  // T-20260724-foot-ASSIGNHIST-CHARTNO-CHART2-LINK (AC-1): 금일 배분 이력 고객 성함 옆 차트번호 병기용.
+  //   presentation only — 저장값 미변경. 미발번(null)이면 chartNoBadge 가 표시 억제.
+  chart_number: string | null;
   // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (AC-6): 2번차트 1구역 담당자 = read-only basis.
   //   수동배정 select default 프리셋 소스로만 읽음. 배정 write 는 check_ins.consultant_id/therapist_id 에만(RED LINE).
   assigned_staff_id: string | null;
@@ -228,7 +231,7 @@ export default function Assignments() {
       if (custIds.length > 0) {
         const { data: custRows } = await supabase
           .from('customers')
-          .select('id, visit_type, lead_source, visit_route, assigned_staff_id')
+          .select('id, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
@@ -277,7 +280,7 @@ export default function Assignments() {
           const slice = monthCustIds.slice(i, i + CHUNK);
           const { data: rows } = await supabase
             .from('customers')
-            .select('id, visit_type, lead_source, visit_route, assigned_staff_id')
+            .select('id, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
         }
@@ -522,6 +525,10 @@ export default function Assignments() {
     id: string;
     checkIn: CheckIn; // 요청1(A) row 담당 수정용 — doManual(check_ins per-visit UPDATE) 대상
     customerName: string;
+    // T-20260724-foot-ASSIGNHIST-CHARTNO-CHART2-LINK: 성함 옆 차트번호 병기(AC-1) + 2번차트 링크(AC-2) 앵커.
+    //   customerId = customers PK(동명이인 오라우팅 방지 식별자). chartNumber = null 이면 미발번(성함 단독).
+    customerId: string | null;
+    chartNumber: string | null;
     role: AssignmentRole;
     staffId: string | null;
     method: string; // 자동 | 수동 | 토스 | 당김 | —
@@ -552,10 +559,13 @@ export default function Assignments() {
         if (!staffId) return;
         if (role !== activeTab) return;
         const act = latestAct.get(`${ci.id}:${role}`);
+        const cust = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
         rows.push({
           id: `${ci.id}:${role}`,
           checkIn: ci,
           customerName: ci.customer_name ?? '—',
+          customerId: ci.customer_id ?? null,
+          chartNumber: cust?.chart_number ?? null,
           role,
           staffId,
           method: act ? (METHOD_KO[act.action_type] ?? '—') : '—',
@@ -566,7 +576,7 @@ export default function Assignments() {
       push('therapy', ci.therapist_id);
     }
     return rows.sort((a, b) => b.at.localeCompare(a.at));
-  }, [monthCheckIns, actions, activeTab]);
+  }, [monthCheckIns, actions, activeTab, monthCustomers]);
 
   // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
   //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.
@@ -1093,7 +1103,36 @@ export default function Assignments() {
                 )}
                 {todayDistribution.map((r) => (
                   <tr key={r.id} className="border-b last:border-0">
-                    <td className="px-3 py-2 font-medium">{r.customerName}</td>
+                    {/* T-20260724-foot-ASSIGNHIST-CHARTNO-CHART2-LINK:
+                        AC-1 성함 옆 차트번호 병기(미발번=성함 단독, 잔여기호 금지).
+                        AC-2 성함 클릭 → 고객 2번차트(/chart/:customerId) 별도 팝업창(window.open).
+                        customerId=customers PK 기준 → 동명이인 오라우팅 방지. customer_id 없으면 링크 비활성.
+                        (Closing.tsx CLOSING-CHARTNUM-POPUP window.open 패턴 재사용) */}
+                    <td className="px-3 py-2 font-medium">
+                      {r.customerId ? (
+                        <button
+                          type="button"
+                          data-testid={`dist-chart-link-${r.id}`}
+                          className="text-left text-teal-600 hover:text-teal-700 hover:underline"
+                          onClick={() =>
+                            window.open(
+                              `${window.location.origin}/chart/${r.customerId}`,
+                              `foot-chart-${r.customerId}`,
+                              'width=1200,height=900,scrollbars=yes,resizable=yes',
+                            )
+                          }
+                        >
+                          {r.customerName}
+                        </button>
+                      ) : (
+                        r.customerName
+                      )}
+                      {r.chartNumber && (
+                        <span className="ml-1 font-mono text-[11px] font-normal text-teal-600">
+                          {chartNoBadge(r.chartNumber)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-2">
                       {/* T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): admin/manager/director 는 담당 인라인 수정.
                           write 타깃 = check_ins.consultant_id/therapist_id(per-visit, doManual) 만. assigned_staff_id 무접점(RED LINE).
