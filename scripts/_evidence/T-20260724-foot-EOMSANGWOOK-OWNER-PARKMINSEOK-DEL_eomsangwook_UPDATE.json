@@ -1,0 +1,26 @@
+{
+  "ticket": "T-20260724-foot-EOMSANGWOOK-OWNER-PARKMINSEOK-DEL",
+  "op": "수정1 UPDATE check_ins.consultant_id 강경민→엄경은",
+  "target_check_in_id": "976e2667-7d75-4c09-95e2-b6faa7d3a14d",
+  "customer": {
+    "id": "fd9417a3-ccaf-4323-a595-04204f6ee32a",
+    "name": "엄상욱",
+    "chart": "F-5057"
+  },
+  "before_consultant_id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+  "before_consultant_name": "강경민",
+  "after_consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+  "after_consultant_name": "엄경은",
+  "rows_affected": 1,
+  "rollback_sql": "UPDATE public.check_ins SET consultant_id = '6ab26d9f-fd10-4042-9fd7-076f277be5d4' WHERE id = '976e2667-7d75-4c09-95e2-b6faa7d3a14d' AND consultant_id = 'b311593d-9e46-4ac8-9424-6b0fa1689a06';",
+  "before_full_row_note": "UPDATE는 consultant_id 단일 컬럼만 변경 — 대상 check_in row는 DELETE되지 않고 그대로 존재하므로 나머지 40여 컬럼은 before/after 동일. 전체 before 행은 STEP01 inspect 로그에 캡처됨(git 이력). rollback_sql로 완전 원복 가능.",
+  "before_key_fields": {
+    "customer_name": "엄상욱",
+    "customer_id": "fd9417a3-ccaf-4323-a595-04204f6ee32a",
+    "chart_number": "F-5057",
+    "visit_type": "new",
+    "status": "done",
+    "created_date": "2026-07-24",
+    "consultant_id(before)": "6ab26d9f (강경민)"
+  }
+}
