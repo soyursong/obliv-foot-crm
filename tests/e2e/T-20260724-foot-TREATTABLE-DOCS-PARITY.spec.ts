@@ -138,19 +138,23 @@ test.describe('T-20260724-foot-TREATTABLE-DOCS-PARITY — 치료테이블 소견
     expect(e).toContain('data-testid="opinion-autofill-rx"');
   });
 
-  test('C2(AC2): 자동연동 소스 = useQueueClinicalSnaps 재사용 + customer_id 로만 조회(타 환자 유입 배제)', () => {
+  // T-20260724-foot-DOCFORM-AUTOFILL-DOB-TX-RX-BLANK [RC fix]: 자동연동 소스를 실 데이터가 존재하는 SSOT 로 재결선.
+  //   구 배선(useQueueClinicalSnaps medical_charts + visitor.birth_date)은 공란 RC 원인 → loadOpinionAutofillRef 로 교체.
+  //   AC2 불변식(customer_id/check_in_id 스코프 조회 = 타 환자 유입 배제)은 유지 — 소스 identity 만 갱신.
+  test('C2(AC2): 자동연동 소스 = loadOpinionAutofillRef 재결선 + customer_id/check_in_id 로만 조회(타 환자 유입 배제)', () => {
     const e = EDITOR_SRC();
-    expect(e).toContain('useQueueClinicalSnaps');
-    expect(e).toContain('clinicalCustomerIds');
-    // visitor.customer_id 만으로 조회 배열 구성.
-    expect(e).toMatch(/visitor\?\.customer_id \? \[visitor\.customer_id\] : \[\]/);
+    expect(e).toContain('loadOpinionAutofillRef');
+    // visitor.customer_id + visitor.id(check_in) 스코프로만 조회(전역/타 환자 소스 미참조).
+    expect(e).toMatch(/loadOpinionAutofillRef\(clinicId, visitor\?\.customer_id \?\? null, visitor\?\.id \?\? null\)/);
+    expect(e).toContain("queryKey: ['opinion_autofill_ref'");
   });
 
   test('C3(AC2): 시술/처방 없는 환자 → 빈 표기(오표기 방지, 시나리오2-4)', () => {
     const e = EDITOR_SRC();
-    // 값 없으면 "없음" 폴백.
-    expect(e).toContain("autofillSnap?.treatment || '없음'");
-    expect(e).toContain("autofillSnap?.prescription || '없음'");
+    // 값 없으면 "없음" 폴백(재결선 후에도 유지).
+    expect(e).toContain("autofillRef?.treatment || '없음'");
+    expect(e).toContain("autofillRef?.prescription || '없음'");
+    expect(e).toContain("autofillRef?.birthDisplay || '없음'");
   });
 
   // ── D. 기능③: 필드권한 경계 가드 ──────────────────────────────────────────────────────
