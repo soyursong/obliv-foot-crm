@@ -72,7 +72,9 @@ import { LaserTimerPanel } from '@/components/chart/LaserTimerPanel';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
+// T-20260724-foot-NHIS-MANUAL-CAPTURE: API 자동조회 pivot → 포털 딥링크 + 인라인 캡처
 import { useNhisLookup } from '@/hooks/useNhisLookup';
+import { NhisCapturePanel } from '@/components/insurance/NhisCapturePanel';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
@@ -2883,10 +2885,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const { performLookup: nhisPerformLookup } = nhis;
 
   // 셀프접수 동의 → 자격조회 자동 트리거 (scaffold).
-  //  - 셀프접수에서 hira_consent=true 로 저장된 고객 차트 진입 시 1회 자동 조회.
-  //  - 차트에서 '건강보험조회' 동의를 켜는 순간(saveCustomerField 가 로컬 상태 갱신)에도 본 effect 가 재발화.
-  //  - API 미연동 현행: graceful(미연동 안내) 표시. silent 로 토스트 억제.
-  //  - API 연동 완료 시: 동의 즉시 실제 자격조회가 자동 실행되는 연결 지점이 됨.
+  //  - T-20260724-foot-NHIS-MANUAL-CAPTURE: 수기조회 pivot 후 silent(자동) 경로는 no-op.
+  //    자동 조회 불가(포털 수기) + 팝업 자동오픈/오조회 방어 → 스태프가 [건보조회] 버튼으로 명시 개시.
+  //    이 effect 는 단일 choke point(performLookup) 로 수렴시키되 silent=true 라 딥링크/감사 미발화(평행경로 ② 무력화).
   const hiraAutoTriggeredRef = useRef<string | null>(null);
   useEffect(() => {
     const cid = customer?.id;
@@ -5868,17 +5869,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           title={
                             !(customer.hira_consent ?? false)
                               ? '건강보험조회 동의(Y) 후 조회할 수 있습니다'
-                              : '건보공단 실시간 자격조회 (성공 시 우측 건강보험 자격등급에 반영)'
+                              : '공단 포털 자격조회 열기 + 결과 붙여넣기 (붙여넣은 등급은 우측 건강보험 자격등급에서 확정)'
                           }
+                          data-testid="nhis-lookup-btn"
                           className={cn(
                             'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
                             customer.hira_consent
                               ? 'border-slate-400 bg-slate-50 text-slate-700 hover:bg-slate-100 cursor-pointer'
                               : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
-                            nhis.loading && 'opacity-60 cursor-wait',
                           )}
                         >
-                          {nhis.loading ? '조회 중…' : '조회'}
+                          건보조회
                         </button>
                         {customer.hira_consent && customer.hira_consent_at && (
                           <span className="text-[10px] text-sage-600">
@@ -5887,10 +5888,20 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         )}
                       </div>
                       {/* 1구역 동선 내 최소 노출: 자격조회 실패/미연동 안내 (2구역 결과뷰 제거 대체). */}
-                      {nhis.error && (
+                      {nhis.error && !nhis.captureOpen && (
                         <span className="text-[10px] leading-snug text-red-600">
                           {nhis.error.message}
                         </span>
+                      )}
+                      {/* T-20260724-foot-NHIS-MANUAL-CAPTURE: 포털 딥링크 + 붙여넣기 인라인 캡처.
+                          붙여넣은 등급 제안은 우측 InsuranceGradeSelect(:suggestedGrade)로 전달 → 사람 확정. */}
+                      {nhis.captureOpen && (
+                        <NhisCapturePanel
+                          customerId={customer.id}
+                          clinicId={customer.clinic_id}
+                          customerName={customer.name ?? null}
+                          controller={nhis}
+                        />
                       )}
                       {/* T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호(건강보험증 번호) 전용 입력 칸.
                           현재 고객메모 자유텍스트 workaround 대체. API 미연동 동안 수기 입력이 1차 경로,
@@ -8643,6 +8654,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             <InsuranceGradeSelect
               customerId={customer.id}
               editable
+              /* T-20260724-foot-NHIS-MANUAL-CAPTURE: 수기 캡처 파서 제안 → 편집 프리필(사람이 [저장] 확정).
+                 suggestedGrade 는 화이트리스트·나이·이름 가드를 통과한 경우에만 non-null. */
+              suggestedGrade={nhis.parsed?.suggestedGrade ?? null}
+              suggestedSource="hira_lookup"
+              suggestedMemo={
+                nhis.parsed?.suggestedGrade
+                  ? `수기 포털조회${nhis.parsed?.acquiredDate ? ` · 자격취득일 ${nhis.parsed.acquiredDate}` : ''}`
+                  : null
+              }
+              suggestionKey={nhis.parsed?.stamp ?? null}
               onChanged={() => {
                 supabase
                   .from('customers')
