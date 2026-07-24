@@ -3662,6 +3662,40 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     return { error: null };
   };
 
+  // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력 하향전파):
+  //   park 658a33be(T-20260722-CONSULT-ASSIGN-CHART-OWNER-SYNC item2/scenario1) 헬퍼 이식.
+  //   "당일(KST) 열린(미완료)" 이 고객의 내원(check_in)의 방문별 상담사(check_ins.consultant_id)만 갱신한다.
+  //   「금일 배분 이력」(Assignments.tsx) 담당 칸이 check_ins.consultant_id 를 read 하므로, 이 전파로 배분이력 행이 즉시 갱신된다.
+  //   · 영구값(customers.assigned_staff_id)은 절대 건드리지 않는다 — 방향은 항상 영구→방문(하향)뿐.
+  //   · 대상 = latestCheckIn(최근 내원)이 오늘(KST) 접수 + open(status≠done, ≠cancelled)일 때 그 1건.
+  //   · ★done 보존 (RED LINE (a)): 이미 done 인 방문의 consultant_id 는 '실제 상담자' historical record 이므로
+  //     auto-overwrite 금지 — open 만 소급, done 은 그대로 둔다(매출귀속 오염과 동일 리스크).
+  //   · rows-affected 검증(RLS/스코프 사일런트 성공 오인 차단 — cross-CRM write 표준). 대상 없으면 'none'.
+  const updateTodayOpenCheckInConsultant = useCallback(
+    async (staffId: string | null): Promise<'updated' | 'none' | 'error'> => {
+      if (!customer) return 'none';
+      const ci = latestCheckIn;
+      if (!ci || !ci.checked_in_at) return 'none';
+      if (seoulISODate(ci.checked_in_at) !== todaySeoulISODate()) return 'none'; // 당일(KST) 아님
+      if (ci.status === 'cancelled') return 'none';                              // 취소 내원 제외
+      if (ci.status === 'done') return 'none';                                   // ★done 보존 — 실제 상담자 기록 auto-overwrite 금지(open만 소급)
+      const { data, error } = await supabase
+        .from('check_ins')
+        .update({ consultant_id: staffId })
+        .eq('id', ci.id)
+        .eq('clinic_id', customer.clinic_id)
+        .select('id');
+      if (error) {
+        console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 실패:', error.message);
+        return 'error';
+      }
+      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
+      return 'updated';
+    },
+    [customer, latestCheckIn],
+  );
+
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
   //   RC: customers.phone 만 갱신되고 check_ins/reservations 의 denormalized customer_phone(카드 표기·
   //       verifyChartLinkOrConfirm 가드의 expectedPhone 소스)은 저장 시점 스냅샷 그대로 남아,
@@ -6207,9 +6241,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     <select
                       value={customer.assigned_staff_id ?? ''}
                       onChange={(e) => {
+                        const v = e.target.value || null;
                         setIsDirty(true);
-                        saveCustomerField({ assigned_staff_id: e.target.value || null });
-                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동
+                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동(표시값 동기화)
+                        // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력):
+                        //   영구 담당(assigned_staff_id) 저장 후, 당일 열린 내원의 방문별 상담사(check_ins.consultant_id)를 하향전파.
+                        //   「금일 배분 이력」이 check_ins.consultant_id 를 read 하므로 해당 환자 행 담당자가 즉시 갱신된다.
+                        void (async () => {
+                          const { error } = await saveCustomerField({ assigned_staff_id: v });
+                          if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
+                          await updateTodayOpenCheckInConsultant(v);
+                        })();
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
