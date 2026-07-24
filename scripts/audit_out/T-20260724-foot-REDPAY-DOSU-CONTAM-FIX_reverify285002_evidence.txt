@@ -1,0 +1,20 @@
+═══ DOSU-CONTAM-FIX §5 재검증 replay (tidWhitelist=∅, merchant 1차 권위) ═══
+FOOT_MERCHANT_SET size = 27 (기대 27) | _shared size = 27 (기대 27)
+285002 ∈ reconcile set = true | ∈ _shared = true
+
+── KEEP ──
+  KEEP  merchant=1777285002 approval=23005414  풋2 285002(RC 미적재#1)
+  KEEP  merchant=1777285002 approval=30031451  풋2 285002(RC 미적재#2)
+  KEEP  merchant=1777285002 approval=30024628  풋2 285002(RC 미적재#3)
+  KEEP  merchant=1777285001 approval=PF285001  풋1 285001(회귀 대조)
+── DROP ──
+  DROP  merchant=1777276003 approval=62071914  도수 62071914(승인)
+  DROP  merchant=1777276003 approval=62071914  도수 62071914(취소쌍)
+
+═══ 판정 ═══
+  (a) 도수 62071914 재유입 0        : PASS (재유입=0)
+  (b) 풋2 VAN 285002 유입 유지(3/3) : PASS (keep=3)
+  (c) 기존 풋 285001 회귀 없음      : PASS (keep=1)
+  (d) 27-set staleness-seal        : PASS
+
+✅ ALL PASS — 도수 재유입 0 & 풋2 285002 유입 유지 동시 재현(회귀 없음)

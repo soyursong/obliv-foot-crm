@@ -15,15 +15,16 @@
 //     _shared/redpay-foot-merchants.ts SSOT 와 대조(Q3 단일SSOT 정합 + divergence 감지).
 //
 // ── canonical SSOT (registry §2 미러) ─────────────────────────────────────────
-//   값 표준 = redpay_foot_terminal_registry.md §2 26-set(last_verified 2026-07-20, FOOT-CONFIRMED ADDITIVE).
+//   값 표준 = redpay_foot_terminal_registry.md §2/§8 27-set(EXPAND-0723GAP 285002 편입,
+//   FOOT-CONFIRMED ADDITIVE). registry §8.2(a) 285002=풋2(VAN, TID 1047535843) ADDITIVE 확정 편입분.
 //   _shared/redpay-foot-merchants.ts (webhook path) 와 동일 값 미러. reconcile 의 _shared 수렴은
 //   별도 통합 티켓(현행 유지). drift-assert 테스트로 divergence 를 봉인.
 //   ⇒ ⛔ 'dohsu'/'dosu'(display alias) ⛔ 'body_rehab'(축오염). 재활도 center='body'.
 
-/** 풋센터(서울오리진 종로 풋) 26-set merchant_id. FOOT-CONFIRMED ADDITIVE 2026-07-20. */
+/** 풋센터(서울오리진 종로 풋) 27-set merchant_id. FOOT-CONFIRMED ADDITIVE(26→27: EXPAND-0723GAP 285002 편입). */
 export const FOOT_MERCHANT_SET: ReadonlySet<string> = new Set<string>([
-  "1777285001", "1777285003", "1777285004", "1777285005", "1777285006",
-  "1777285007", "1777285008",             // VAN7
+  "1777285001", "1777285002", "1777285003", "1777285004", "1777285005",
+  "1777285006", "1777285007", "1777285008", // VAN8 (285002=풋2, EXPAND-0723GAP 편입)
   "1777288001", "1777288003", "1777288004", "1777288005", "1777288006",
   "1777288008",                           // 유선6
   "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
@@ -55,7 +56,7 @@ export function merchantIdOfTrx(
 
 /**
  * raw 트랜잭션(merchant band) → center 명시 파생.
- *   body 14-band → 'body' / foot 26-set → 'foot' / 미분류 → 'foot' 폴백 + WARN 표면화(silent 금지, registry §6).
+ *   body 14-band → 'body' / foot 27-set → 'foot' / 미분류 → 'foot' 폴백 + WARN 표면화(silent 금지, registry §6).
  */
 export function centerForRawRow(
   raw: { raw_payload?: unknown } | null | undefined,
