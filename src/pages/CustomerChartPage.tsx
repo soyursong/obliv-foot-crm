@@ -13,8 +13,6 @@ import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 // T-20260701-foot-CHART2-TREATREQ-SPLIT: 패키지 섹션 [치료신청] 박스(5항목 체크박스). 치료부위 박스와 병렬.
 //   피검사/KOH 는 이 박스 체크박스로 이관(既존 KohRequestToggle/BloodTestRequestToggle 상태 공유 → 별도 토글 제거).
 import TreatmentRequestBox from '@/components/TreatmentRequestBox';
-// T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 시 check_ins.package_id 링크 판정(순수 함수)
-import { shouldLinkCheckInPackage } from '@/lib/checkInPackageLink';
 import { PACKAGE_SESSION_TYPE_TO_REQUEST_CODE } from '@/lib/treatmentRequestCodes';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
@@ -3664,6 +3662,40 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     return { error: null };
   };
 
+  // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력 하향전파):
+  //   park 658a33be(T-20260722-CONSULT-ASSIGN-CHART-OWNER-SYNC item2/scenario1) 헬퍼 이식.
+  //   "당일(KST) 열린(미완료)" 이 고객의 내원(check_in)의 방문별 상담사(check_ins.consultant_id)만 갱신한다.
+  //   「금일 배분 이력」(Assignments.tsx) 담당 칸이 check_ins.consultant_id 를 read 하므로, 이 전파로 배분이력 행이 즉시 갱신된다.
+  //   · 영구값(customers.assigned_staff_id)은 절대 건드리지 않는다 — 방향은 항상 영구→방문(하향)뿐.
+  //   · 대상 = latestCheckIn(최근 내원)이 오늘(KST) 접수 + open(status≠done, ≠cancelled)일 때 그 1건.
+  //   · ★done 보존 (RED LINE (a)): 이미 done 인 방문의 consultant_id 는 '실제 상담자' historical record 이므로
+  //     auto-overwrite 금지 — open 만 소급, done 은 그대로 둔다(매출귀속 오염과 동일 리스크).
+  //   · rows-affected 검증(RLS/스코프 사일런트 성공 오인 차단 — cross-CRM write 표준). 대상 없으면 'none'.
+  const updateTodayOpenCheckInConsultant = useCallback(
+    async (staffId: string | null): Promise<'updated' | 'none' | 'error'> => {
+      if (!customer) return 'none';
+      const ci = latestCheckIn;
+      if (!ci || !ci.checked_in_at) return 'none';
+      if (seoulISODate(ci.checked_in_at) !== todaySeoulISODate()) return 'none'; // 당일(KST) 아님
+      if (ci.status === 'cancelled') return 'none';                              // 취소 내원 제외
+      if (ci.status === 'done') return 'none';                                   // ★done 보존 — 실제 상담자 기록 auto-overwrite 금지(open만 소급)
+      const { data, error } = await supabase
+        .from('check_ins')
+        .update({ consultant_id: staffId })
+        .eq('id', ci.id)
+        .eq('clinic_id', customer.clinic_id)
+        .select('id');
+      if (error) {
+        console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 실패:', error.message);
+        return 'error';
+      }
+      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
+      return 'updated';
+    },
+    [customer, latestCheckIn],
+  );
+
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
   //   RC: customers.phone 만 갱신되고 check_ins/reservations 의 denormalized customer_phone(카드 표기·
   //       verifyChartLinkOrConfirm 가드의 expectedPhone 소스)은 저장 시점 스냅샷 그대로 남아,
@@ -4208,9 +4240,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
       setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
     }
-
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감(치료사 드롭다운) 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
-    await linkCheckInPackage(useSessionDlg.packageId, computeDeductCheckInId(sessionDlgForm.sessionDate));
 
     setUseSessionDlg(null);
   };
@@ -4828,40 +4857,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       ? latestCheckIn.id
       : null;
 
-  // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감(치료 신청) 시 check_ins.package_id 연결.
-  //   RC = 2번차트 차감 경로가 package_sessions.check_in_id 만 걸고 check_ins.package_id 를 비워둠(NULL).
-  //        → 치료테이블/접수 명단 카드(CheckInDetailSheet 등)가 package_id 로 '연결됨'을 판정하므로
-  //           화면 전환·재진입 시 선택(패키지)이 풀린 것처럼 보임(현장 "초기화" 증상). DB증거: package_id=NULL.
-  //   해소 = PaymentDialog(결제 시 link, 527-530)와 대칭으로 차감 저장 성공 후 오늘 내원 카드에 link.
-  //   기존 컬럼 check_ins.package_id 재사용(no-DDL, db_change:false). 파괴적 변경 없음.
-  //   범위: 오늘 내원(deductCheckInId)에 귀속되는 차감만(과거일 백데이트 차감 제외 — 특정 내원에 못 걸음).
-  //         멱등(이미 동일 pkg면 write skip) + 다른 패키지 차감 시 최신 선택으로 갱신(AC-3).
-  //         다른 환자는 별개 check_ins row → 오염 없음(AC-3). 서버 영속 → 명단 이동·재진입 유지(AC-1/2/4).
-  const linkCheckInPackage = async (packageId: string, deductCheckInId: string | null) => {
-    if (
-      !shouldLinkCheckInPackage({
-        latestCheckInId: latestCheckIn?.id,
-        latestCheckInPackageId: latestCheckIn?.package_id,
-        deductCheckInId,
-        targetPackageId: packageId,
-      })
-    ) {
-      return;
-    }
-    const { error } = await supabase
-      .from('check_ins')
-      .update({ package_id: packageId })
-      .eq('id', deductCheckInId);
-    if (error) {
-      // 무차단(graceful): 링크 실패가 차감 완료 UX를 막지 않음. 차감 자체는 이미 성공.
-      console.warn('[CHART2-PKGLINK] check_ins.package_id 링크 실패(무차단):', error.message);
-      return;
-    }
-    setLatestCheckIn((prev) =>
-      prev && prev.id === deductCheckInId ? { ...prev, package_id: packageId } : prev,
-    );
-  };
-
   // 같은 내원(check_in_id)·같은 패키지에 이미 'used' 차감 이력이 있으면 그 회차를 반환 (없으면 null)
   // ★ 지정치료사와 무관 — 오직 (package_id, check_in_id) 중복(unique_package_checkin)으로 판정
   const findSameCheckinSession = async (packageId: string, checkInId: string) => {
@@ -5011,8 +5006,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       toast.error(`차감 실패: ${error.message}`); return;
     }
     await refreshPackageSessionsAndRemaining();
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
-    await linkCheckInPackage(targetPkg.id, deductCheckInId);
     resetDeductFormAfterSave();
     toast.success('회차 차감 완료');
   };
@@ -5027,8 +5020,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       .eq('id', dupDeductModal.existingSessionId);
     if (error) { setDupDeductBusy(false); toast.error(`치료사 변경 실패: ${error.message}`); return; }
     await refreshPackageSessionsAndRemaining();
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 당일 치료사 변경(회차 재사용)도 해당 내원=치료 확정 → 패키지 link 보강
-    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
     if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
     setDupDeductBusy(false);
     resetDeductFormAfterSave();
@@ -5062,8 +5053,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       toast.error(`추가 차감 실패: ${error.message}`); return;
     }
     await refreshPackageSessionsAndRemaining();
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 추가 차감 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
-    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
     if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
     setDupDeductBusy(false);
     resetDeductFormAfterSave();
@@ -5209,8 +5198,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     }
 
     await refreshPackageSessionsAndRemaining();
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 힐러 차감 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
-    await linkCheckInPackage(targetPkg.id, deductCheckInId);
     // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
     resetDeductFormAfterSave();
 
@@ -6254,9 +6241,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     <select
                       value={customer.assigned_staff_id ?? ''}
                       onChange={(e) => {
+                        const v = e.target.value || null;
                         setIsDirty(true);
-                        saveCustomerField({ assigned_staff_id: e.target.value || null });
-                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동
+                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동(표시값 동기화)
+                        // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력):
+                        //   영구 담당(assigned_staff_id) 저장 후, 당일 열린 내원의 방문별 상담사(check_ins.consultant_id)를 하향전파.
+                        //   「금일 배분 이력」이 check_ins.consultant_id 를 read 하므로 해당 환자 행 담당자가 즉시 갱신된다.
+                        void (async () => {
+                          const { error } = await saveCustomerField({ assigned_staff_id: v });
+                          if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
+                          await updateTodayOpenCheckInConsultant(v);
+                        })();
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
