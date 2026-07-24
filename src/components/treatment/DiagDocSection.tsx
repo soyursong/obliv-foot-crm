@@ -55,7 +55,7 @@ import {
 // 발행본 미발견(레거시) 시 요청 저장본(selected_keys)으로 본문 재구성 폴백 — 작성창 합성기 재사용(기존 렌더러).
 import { composeOpinionDoc } from '@/lib/opinionDocCompose';
 import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
-import { seoulISODate, seoulHHMM, chartNoDisplay } from '@/lib/format';
+import { seoulISODate, seoulHHMM, chartNoDisplay, chartNoBadge } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,6 +78,9 @@ export interface DiagDocRow {
   id: string;
   customerId: string | null;
   patientName: string;
+  // T-20260724-foot-TREATTABLE-CHARTNO-CHART2-LINK (AC-1): 성함 옆 차트번호 병기용.
+  //   OpinionRequestRow.chartNo(field_data.chart_no) 상속 — 신규 조회 0(단일 소스 유지). 미발번=null.
+  chartNo: string | null;
   docType: OpinionDocType;      // 요청종류(소견서/진단서)
   requestedAt: string;          // 신청시각(ISO, KST 파생 기준)
   publishStatus: DiagPublishStatus; // 발행여부(발행완료 / 미발행)
@@ -100,6 +103,7 @@ export function buildDiagDocRows(
       id: r.id,
       customerId: r.customerId,
       patientName: r.patientName,
+      chartNo: r.chartNo,
       docType: r.docType,
       requestedAt: r.requestedAt,
       publishStatus: 'published',
@@ -113,6 +117,7 @@ export function buildDiagDocRows(
       id: r.id,
       customerId: r.customerId,
       patientName: r.patientName,
+      chartNo: r.chartNo,
       docType: r.docType,
       requestedAt: r.requestedAt,
       publishStatus: 'unpublished',
@@ -316,6 +321,9 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
                   <td className="px-2.5 py-1.5 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
                   <td className="px-2.5 py-1.5 font-medium whitespace-nowrap">
                     {/* 이름 인터랙션 — 좌클릭=2번차트 open / 우클릭=CRM 컨텍스트 메뉴(부모 nameInteraction 위임, sibling 탭 동일). */}
+                    {/* T-20260724-foot-TREATTABLE-CHARTNO-CHART2-LINK (AC-1): 성함 옆 차트번호 병기.
+                        표기 스타일 = 형제 치료테이블 탭(DoctorHistory/Exam) chartNoBadge 그대로 준용(#F-1234 / 미발번=#미발번).
+                        AC-2(성함클릭→2번차트)는 부모 nameInteraction.onLeftClick(useChart) 로 이미 배선(형제 탭 동일). */}
                     <button
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded px-1 -mx-1 text-left hover:text-teal-700 hover:underline"
@@ -330,7 +338,10 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
                         })
                       }
                     >
-                      {r.patientName}
+                      <span>{r.patientName}</span>
+                      <span className="font-mono text-[11px] font-normal text-muted-foreground/70">
+                        {chartNoBadge(r.chartNo)}
+                      </span>
                     </button>
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap" data-testid="diagdoc-cell-doctype">
