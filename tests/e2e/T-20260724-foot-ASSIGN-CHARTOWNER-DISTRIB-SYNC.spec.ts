@@ -71,7 +71,9 @@ test.describe('[정적] DISTRIB-SYNC AC-1 하향전파 로직', () => {
     // todayDistribution 이 check_in 의 consultant_id/therapist_id 를 담당자(staffId)로 push
     const idx = assignments.indexOf('const todayDistribution');
     expect(idx).toBeGreaterThan(0);
-    const block = assignments.slice(idx, idx + 1600);
+    // window widened 1600→2200 (T-20260724-foot-ASSIGNHIST-CHARTNO-CHART2-LINK 가
+    //   todayDistribution useMemo 에 chart_number 파생 라인 추가 → push() 오프셋 밀림. 단언 의미 불변).
+    const block = assignments.slice(idx, idx + 2200);
     expect(block).toContain("push('consult', ci.consultant_id)");
     expect(block).toContain("push('therapy', ci.therapist_id)");
     // assigned_staff_id 를 배분이력 담당 소스로 쓰지 않음(=하향전파된 consultant_id 가 정본)
