@@ -136,6 +136,8 @@ import {
   // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category remainder)·결함B(납부박스 payments groupBy).
   applyBillReceiptNewCoveredTokens,
   applyBillReceiptPaidBoxTokens,
+  // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE: 신양식 aggregate 라이브 SSOT 강제(세부내역과 동일 소스 수렴).
+  applyBillReceiptNewLiveTotals,
   // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
   loadAlreadyPaidAmount,
   type FootBillingItem,
@@ -1676,6 +1678,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     selected: { form_key: string }[],
   ): Promise<void> => {
     if (!selected.some((t) => t.form_key === 'bill_receipt_new') || pricingItems.length === 0) return;
+    // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE ([출력]/[출력및수납] 공용): 신양식 aggregate 라이브 SSOT force.
+    //   RC: applyBillingFallback(isBlankOrZero 가드)이 stale service_charges autobind aggregate 를 보존 → 라이브
+    //   (check_in_services=computeFootBilling)로 못 덮어 세부산정내역(bill_detail)과 발산. 신양식 한정 force 대입으로 수렴.
+    //   ⑥ 진료비 총액 = grandTotal(공단 포함) 강제(D3). DPP 단건·배치와 동일 헬퍼(SSOT 단일소비, D2).
+    //   ★순서: CoveredTokens(remainder) 이전에 호출 — aggregate({{copayment}}/{{insurance_covered}}) 를 base 로 소비하므로.
+    applyBillReceiptNewLiveTotals(autoValues, {
+      grandTotal,
+      insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
+      copayment: copaymentTotal,
+      nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+    });
     // 결함A: 급여 category remainder 토큰(진찰료 흡수 방지). buildPmwBillDetailItems = DPP 동일 SSOT.
     applyBillReceiptNewCoveredTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
     // 결함B: payments 원장 결제수단별 실수납 groupBy.
