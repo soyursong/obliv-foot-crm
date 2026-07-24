@@ -18,11 +18,14 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2, FileText } from 'lucide-react';
+import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2, FileText, Droplet } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import DoctorHistorySection from '@/components/treatment/DoctorHistorySection';
 import ExamTargetsSection from '@/components/treatment/ExamTargetsSection';
+// T-20260724-foot-TREATTABLE-LABTAB-SPLIT-BLOODLIST: 기존 [균검사&피검사 대상자] 단일 탭을 [균검사]/[피검사] 2탭으로 분리.
+//   균검사 = ExamTargetsSection 그대로 이관(회귀0). 피검사 = '피검사 일일 진행 리스트' 신규(8컬럼, form_submissions 재사용·no-DDL).
+import BloodDailyListSection from '@/components/treatment/BloodDailyListSection';
 import ProgressTargetsSection from '@/components/treatment/ProgressTargetsSection';
 // T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: 진료관리에서 이식한 '경과분석 플랜'(설정) 탭 = ④번째(맨 뒤).
 //   ③경과분석(ProgressTargetsSection=오늘 대상자)과 별개 surface. 자체 useClinic 사용(props 불요). 컴포넌트·DB 동일.
@@ -44,7 +47,7 @@ import type { CheckIn } from '@/lib/types';
 // T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: ④경과분석 플랜(설정, 진료관리에서 이식) = 맨 뒤. confirm 해소(문지은 대표원장 2026-06-29) → 랜딩.
 //   명칭 구분: ③='경과분석'(오늘 대상자 확인) / ④='경과분석 플랜'(설정). 혼동 금지.
 // T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: ⑤소견서·진단서(진료대시보드 [서류작성] read-only 재노출) = 맨 뒤.
-type SectionTab = 'history' | 'exam' | 'progress' | 'plan' | 'diagdoc';
+type SectionTab = 'history' | 'exam' | 'blood' | 'progress' | 'plan' | 'diagdoc';
 
 /** D. 이름 우클릭 컨텍스트 메뉴 타깃(섹션이 보유한 최소 고객 정보). */
 export interface NameCtxTarget {
@@ -184,9 +187,15 @@ export default function TreatmentTable() {
             <Stethoscope className="size-3.5 mr-1.5" />
             진료 환자 이력
           </TabsTrigger>
+          {/* T-20260724-foot-TREATTABLE-LABTAB-SPLIT-BLOODLIST: [균검사&피검사 대상자] → [균검사]/[피검사] 2탭 분리.
+              균검사 = 기존 ExamTargetsSection 그대로(회귀0), testid 유지. */}
           <TabsTrigger value="exam" data-testid="tab-exam-targets">
             <ClipboardList className="size-3.5 mr-1.5" />
-            균검사 &amp; 피검사 대상자
+            균검사
+          </TabsTrigger>
+          <TabsTrigger value="blood" data-testid="tab-blood-daily">
+            <Droplet className="size-3.5 mr-1.5" />
+            피검사
           </TabsTrigger>
           {/* T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: ③경과분석(당일 대상자 리스트). 기존 2탭 뒤. */}
           <TabsTrigger value="progress" data-testid="tab-progress-targets">
@@ -211,6 +220,10 @@ export default function TreatmentTable() {
         </TabsContent>
         <TabsContent value="exam" className="mt-0">
           <ExamTargetsSection date={date} nameInteraction={nameInteraction} />
+        </TabsContent>
+        {/* T-20260724-foot-TREATTABLE-LABTAB-SPLIT-BLOODLIST: [피검사] = 피검사 일일 진행 리스트(신규 8컬럼 양식). */}
+        <TabsContent value="blood" className="mt-0">
+          <BloodDailyListSection date={date} nameInteraction={nameInteraction} />
         </TabsContent>
         <TabsContent value="progress" className="mt-0">
           <ProgressTargetsSection date={date} nameInteraction={nameInteraction} />
