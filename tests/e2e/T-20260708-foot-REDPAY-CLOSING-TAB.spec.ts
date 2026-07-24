@@ -302,3 +302,98 @@ test.describe('T-20260708-REDPAY-CLOSING-TAB — 브라우저 렌더', () => {
     expect(hasTitle).toBeGreaterThan(0);
   });
 });
+
+// ─── T-20260724-foot-REDPAY-WHITELIST-EXPAND-0723GAP · Opt-B′ (ADDITIVE) 불변식 ───
+//   registry-derived 소비뷰(20260711140000~) + 0723GAP 재프로비저닝 대응. 위 AC-4 블록은
+//   frozen 20260708230000 아티팩트(하드코딩) 대상 — 라이브 소비뷰는 registry SSOT 파생(불변식 아래).
+test.describe('T-20260724-0723GAP · Opt-B′ 마이그 불변식(ADDITIVE-only)', () => {
+  const MIG_0723 = 'supabase/migrations/20260724170000_redpay_foot_registry_0723gap_optbprime.sql';
+  const RB_0723 = 'supabase/migrations/20260724170000_redpay_foot_registry_0723gap_optbprime.rollback.sql';
+
+  test('허용 DDL = ADD COLUMN superseded_tids + CREATE OR REPLACE (DROP UNIQUE/widening 금지)', () => {
+    const sql = fs.readFileSync(MIG_0723, 'utf-8');
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS superseded_tids text\[\]/);
+    expect(sql).toMatch(/CREATE OR REPLACE VIEW public\.v_redpay_reconciliation_daily/);
+    expect(sql).toMatch(/CREATE OR REPLACE VIEW public\.v_receipt_settlement_daily/);
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.get_redpay_feed_freshness/);
+    // ⛔ 파괴적 변경 부재 — 대표 게이트 면제 스코프(planner verdict 2026-07-24).
+    //   주석(설명용 "원 Opt-B(DROP UNIQUE...)")은 제거 후 실행 SQL 만 검사.
+    const code = sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    expect(code).not.toMatch(/DROP\s+CONSTRAINT/i);
+    expect(code).not.toMatch(/DROP\s+.*UNIQUE/i);
+    expect(code).not.toMatch(/ALTER\s+COLUMN.*TYPE/i);
+    expect(code).not.toMatch(/DROP\s+.*(PRIMARY KEY|_pkey)/i);
+    // ON CONFLICT(merchant_id) 유지(UNIQUE 완화 아님)
+    expect(sql).toContain('ON CONFLICT (merchant_id) DO NOTHING');
+  });
+
+  test('tid-membership UNION 확장 — 구·신 TID 모두 가시(historical 무탈락)', () => {
+    const sql = fs.readFileSync(MIG_0723, 'utf-8');
+    expect(sql).toMatch(/UNION\s+SELECT unnest\(redpay_terminal_registry\.superseded_tids\)/);
+    // 6 신 live TID(1047535xxx) + 285002 seed
+    for (const t of ['1047535845', '1047535843', '1047535842', '1047535837', '1047535835', '1047535797']) {
+      expect(sql).toContain(`'${t}'`);
+    }
+    expect(sql).toContain("'1777285002'");
+  });
+
+  test('롤백 = 데이터손실0 (뷰 UNION-이전 복원 + remap 역전 + 285002 DELETE + DROP COLUMN)', () => {
+    const rb = fs.readFileSync(RB_0723, 'utf-8');
+    expect(rb).toMatch(/CREATE OR REPLACE VIEW public\.v_redpay_reconciliation_daily/);
+    expect(rb).toMatch(/DROP COLUMN IF EXISTS superseded_tids/);
+    expect(rb).toMatch(/DELETE FROM public\.redpay_terminal_registry[\s\S]*1777285002/);
+    expect(rb).not.toMatch(/unnest\(redpay_terminal_registry\.superseded_tids\)/); // UNION 제거 확인
+  });
+});
+
+// ─── T-20260725-foot-REDPAY-EXPAND0723-8LOCI-CODE-PARITY · poller/plist code-loci drift-assert ───
+//   AC-3: 구·신 whitelist divergence 감지 (DA Q3 권고 계승, 파트A staleness-seal 패턴 재사용).
+//   봉인 대상 = DB seed(prod 기적용)↔코드 loci divergence 재발. 폴러 DEFAULT·plist가 285002 stale로
+//   회귀하면(seed 편입됐는데 코드는 26-set) 일부 경로에서 풋2 재드롭 → 본 assert 로 양쪽 동시 stale 봉인.
+test.describe('T-20260725-EXPAND0723-8LOCI · poller/plist DEFAULT 285002 parity(staleness-seal)', () => {
+  const POLLER = 'scripts/redpay_macstudio_poller.mjs';
+  const PLIST = 'scripts/launchd/com.obliv.foot.redpay-macstudio-poller.plist';
+
+  test('poller FOOT_MERCHANT_WHITELIST_DEFAULT = 27-set(285002 present)', () => {
+    const src = fs.readFileSync(POLLER, 'utf-8');
+    const m = src.match(/const FOOT_MERCHANT_WHITELIST_DEFAULT\s*=\s*\[([\s\S]*?)\];/);
+    expect(m).not.toBeNull();
+    const mids = (m![1].match(/"(\d{10})"/g) ?? []).map((s) => s.replace(/"/g, ''));
+    const uniq = new Set(mids);
+    // staleness-seal: size===27 && has(285002) — 파트A 선례(reconcile↔_shared)와 동형.
+    expect(uniq.size).toBe(27);
+    expect(uniq.has('1777285002')).toBe(true);
+  });
+
+  test('poller FOOT_TID_WHITELIST_DEFAULT = 0723GAP(535xxx) ∪ 0724GAP(538xxx) additive 결합', () => {
+    const src = fs.readFileSync(POLLER, 'utf-8');
+    const m = src.match(/const FOOT_TID_WHITELIST_DEFAULT\s*=\s*\[([\s\S]*?)\];/);
+    expect(m).not.toBeNull();
+    const body = m![1];
+    // 0723GAP 6 신 live VAN TID
+    for (const t of ['1047535845', '1047535843', '1047535842', '1047535837', '1047535835', '1047535797']) {
+      expect(body).toContain(`"${t}"`);
+    }
+    // 0724GAP 4 신 유선/멀티 TID (기존 main 라인, 역회귀 방지)
+    for (const t of ['1047538236', '1047538231', '1047538241', '1047538237']) {
+      expect(body).toContain(`"${t}"`);
+    }
+  });
+
+  test('poller loadRegistryFromDb = tid ∪ superseded_tids (재프로비저닝 무탈락)', () => {
+    const src = fs.readFileSync(POLLER, 'utf-8');
+    expect(src).toMatch(/select=merchant_id,tid,superseded_tids/);
+    expect(src).toMatch(/superseded_tids/);
+  });
+
+  test('plist REDPAY_MERCHANT_WHITELIST 주석 CSV = 285002 present (poller-path 미러)', () => {
+    const src = fs.readFileSync(PLIST, 'utf-8');
+    const line = src.split('\n').find((l) => l.includes('REDPAY_MERCHANT_WHITELIST='));
+    expect(line).toBeTruthy();
+    expect(line).toContain('1777285002');
+    // 양 TID 계열(0723GAP 535 + 0724GAP 538) plist CSV 병존
+    const tidLine = src.split('\n').find((l) => l.includes('REDPAY_TID_WHITELIST='));
+    expect(tidLine).toContain('1047535845');
+    expect(tidLine).toContain('1047538236');
+  });
+});

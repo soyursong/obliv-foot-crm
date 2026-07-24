@@ -144,12 +144,13 @@ const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설�
 //     아래 DEFAULT 상수는 이제 "DB 미가용 fail-safe 폴백"(정전/네트워크 장애 생존)이지 1차 소스가 아니다.
 //     8곳 하드코딩 복제 → 단일 테이블 파생으로 봉인(다음 단말 추가 시 registry seed 1곳만 갱신).
 
-// merchant_id 26종 (VAN7·1777285* / 유선6·1777288* / 멀티·무선13·1777289*) — DB 미가용 fail-safe DEFAULT.
+// merchant_id 27종 (VAN8·1777285* / 유선6·1777288* / 멀티·무선13·1777289*) — DB 미가용 fail-safe DEFAULT.
 //   17→26 확장(T-20260720-foot-REDPAY-TID-288003-005-WHITELIST-EXPAND / DA CONSULT-REPLY MSG-20260720-162717-xzkq).
-//   SSOT = redpay_foot_terminal_registry.md §2 26-set(last_verified 2026-07-20, FOOT-CONFIRMED ADDITIVE).
+//   26→27 확장(T-20260724-...-0723GAP: 285002 풋2 VAN seed-omission 편입, DA CONSULT-REPLY DA-20260724-foot-REDPAY-0723GAP-EXPAND).
+//   SSOT = redpay_foot_terminal_registry.md §2/§8(last_verified 2026-07-24, 0723GAP Opt-B′ ADDITIVE).
 const FOOT_MERCHANT_WHITELIST_DEFAULT = [
-  "1777285001", "1777285003", "1777285004", "1777285005", "1777285006",
-  "1777285007", "1777285008",             // VAN7 (신규 003·005·006·007·008)
+  "1777285001", "1777285002", "1777285003", "1777285004", "1777285005", "1777285006",
+  "1777285007", "1777285008",             // VAN8 (신규 002·003·005·006·007·008)
   "1777288001", "1777288003", "1777288004", "1777288005", "1777288006",
   "1777288008",                           // 유선6 (신규 003·005·006·008)
   "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
@@ -158,13 +159,15 @@ const FOOT_MERCHANT_WHITELIST_DEFAULT = [
 ];
 
 // TID (merchant 1:1) — 서버-측 tid= narrowing + belt-and-suspenders 보조필터.
-//   원 26-set(479xxx) + 0724 GAP 재프로비저닝 신 TID 4종(538xxx) = 구·신 병존(UNION 시맨틱).
+//   원 26-set(479xxx) + 0724GAP 신 TID 4종(538xxx) + 0723GAP 신 TID 6종(535xxx) = 구·신 병존(UNION 시맨틱).
 //   T-20260725-...-0724GAP(§9): 4 merchant(288003/004/006·289004) 유선/멀티 단말이 3세대 band(538xxx)로
 //   재등록 → 구 479xxx 는 historical raw 가시성 위해 유지, 신 538xxx 추가(registry superseded_tids UNION 미러).
-//   ★0723GAP(535xxx) 5-merchant remap 은 별도 disjoint 티켓(branch 미merge) → merge 시 additive 결합.
+//   T-20260724-...-0723GAP Opt-B′: VAN 재프로비저닝 신 6(1047535xxx: 285001→845·002→843·003→842·005→837·006→835·007→797)
+//     구·신 TID 병존(registry superseded_tids 미러). 0724GAP(538xxx)와 disjoint → additive 결합
+//     (T-20260725-...-EXPAND0723-8LOCI-CODE-PARITY: main 0724GAP 라인과 정합 결합).
 const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479255", "1047479254", "1047479261", "1047479268", "1047479262",
-  "1047479263", "1047479264",             // VAN7 (신규 254·268·262·263·264)
+  "1047479263", "1047479264",             // VAN7 (구 live/superseded)
   "1047479469", "1047479471", "1047479472", "1047479473", "1047479474",
   "1047479475",                           // 유선6 (신규 471·473·474·475)
   "1047479483", "1047479476", "1047479477", "1047479478", "1047479479",
@@ -172,6 +175,8 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479153", "1047479148", "1047479155", "1047479158", "1047479157", // 무선5
   // 0724 GAP 신 TID(538xxx) — 288003→538236·288004→538231·288006→538241·289004→538237(구 479 병존):
   "1047538236", "1047538231", "1047538241", "1047538237", // 유선/멀티 3세대(T-20260725-...-0724GAP §9)
+  // 0723 GAP 신 live TID(535xxx) — VAN 재프로비저닝 285001→845·002→843·003→842·005→837·006→835·007→797(구 479 병존):
+  "1047535845", "1047535843", "1047535842", "1047535837", "1047535835", "1047535797", // VAN 신 live(T-20260724-...-0723GAP Opt-B′)
 ];
 
 // ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
@@ -210,11 +215,15 @@ let tidWhitelist = new Set(tidList);
 async function loadRegistryFromDb() {
   try {
     const rows = await restGet(
-      `redpay_terminal_registry?domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true&select=merchant_id,tid`
+      `redpay_terminal_registry?domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true&select=merchant_id,tid,superseded_tids`
     );
     if (!Array.isArray(rows) || rows.length === 0) return null;
     const merchants = [...new Set(rows.map((r) => (r.merchant_id ?? "").trim()).filter(Boolean))];
-    const tids = [...new Set(rows.map((r) => (r.tid ?? "").trim()).filter(Boolean))];
+    // T-20260724-...-0723GAP Opt-B′: tid ∪ superseded_tids (재프로비저닝 구·신 TID 모두 서버-narrowing 대상 → historical 무탈락).
+    const tids = [...new Set(rows.flatMap((r) => [
+      (r.tid ?? "").trim(),
+      ...((Array.isArray(r.superseded_tids) ? r.superseded_tids : []).map((s) => (s ?? "").trim())),
+    ]).filter(Boolean))];
     if (merchants.length === 0) return null; // merchant 없으면 도메인 경계 소실 → 폴백
     return { merchants, tids };
   } catch (e) {
