@@ -2910,15 +2910,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 건보조회 행 보험 증번호(건강보험증 번호) 수기 입력값
   const [certNoText, setCertNoText] = useState('');
   const [savingCertNo, setSavingCertNo] = useState(false);
-  // 연동(자동 채움) 바인딩 — 자격조회 응답 payload에 증번호(cert_no)가 오면 입력란에 자동 채움(scaffold).
-  //   현재 API 미연동 → nhis.result.cert_no 항상 부재라 실질 no-op. 착지 후 활성화되는 hook.
-  //   자동 채움 후에도 수동 편집 가능(수기 입력이 1차 경로 유지, [저장]은 스태프가 클릭).
-  useEffect(() => {
-    const fetched = nhis.result?.cert_no;
-    if (fetched && fetched.trim()) {
-      setCertNoText(fetched.trim());
-    }
-  }, [nhis.result?.cert_no]);
+  // T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 롤백 → 증번호 자동채움(nhis.result.cert_no) scaffold 제거.
+  //   증번호는 아래 전용 입력 칸에 스태프가 수기 입력([저장])하는 단일 경로만 유지.
   // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모(직접수정·non-history, customers.customer_note)
   const [customerNoteText, setCustomerNoteText] = useState('');
   // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 로컬 상태 (optimistic update)
@@ -5981,12 +5974,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           {nhis.error.message}
                         </span>
                       )}
-                      {/* T-20260724-foot-NHIS-MANUAL-CAPTURE: 포털 딥링크 + 붙여넣기 인라인 캡처.
-                          붙여넣은 등급 제안은 우측 InsuranceGradeSelect(:suggestedGrade)로 전달 → 사람 확정. */}
+                      {/* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 포털 딥링크 안내 패널(수기 선택 only).
+                          붙여넣기 파서 제거 — 데스크가 포털에서 확인 후 우측 '건강보험 자격등급'에서 직접 선택·저장. */}
                       {nhis.captureOpen && (
                         <NhisCapturePanel
-                          customerId={customer.id}
-                          clinicId={customer.clinic_id}
                           customerName={customer.name ?? null}
                           controller={nhis}
                         />
@@ -8750,16 +8741,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             <InsuranceGradeSelect
               customerId={customer.id}
               editable
-              /* T-20260724-foot-NHIS-MANUAL-CAPTURE: 수기 캡처 파서 제안 → 편집 프리필(사람이 [저장] 확정).
-                 suggestedGrade 는 화이트리스트·나이·이름 가드를 통과한 경우에만 non-null. */
-              suggestedGrade={nhis.parsed?.suggestedGrade ?? null}
-              suggestedSource="hira_lookup"
-              suggestedMemo={
-                nhis.parsed?.suggestedGrade
-                  ? `수기 포털조회${nhis.parsed?.acquiredDate ? ` · 자격취득일 ${nhis.parsed.acquiredDate}` : ''}`
-                  : null
-              }
-              suggestionKey={nhis.parsed?.stamp ?? null}
+              /* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) 프리필 경로 제거 —
+                 데스크가 포털에서 확인 후 등급을 직접 선택·저장하는 수기 단일 경로만 유지. */
               onChanged={() => {
                 supabase
                   .from('customers')

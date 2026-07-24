@@ -9,7 +9,7 @@
  * - 태블릿 터치 UX (button-grid, h-10 이상)
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatDateDots } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Label } from '@/components/ui/label';
@@ -27,6 +27,7 @@ import {
   type InsuranceGrade,
   type InsuranceGradeSource,
 } from '@/lib/insurance';
+// T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) prop 경로 제거 — 수기 선택 only.
 import { updateInsuranceGrade, useInsuranceGrade } from '@/hooks/useInsurance';
 
 interface Props {
@@ -35,26 +36,12 @@ interface Props {
   onChanged?: () => void;
   /** false 시 수정 차단 (읽기 전용) */
   editable?: boolean;
-  /**
-   * T-20260724-foot-NHIS-MANUAL-CAPTURE: 수기 캡처 파서가 제안한 등급.
-   * suggestionKey 가 바뀌면 편집 모드로 진입하며 이 등급/소스/메모를 초안에 프리필한다.
-   * ★자동 저장하지 않는다★ — 사람이 [저장]을 눌러야 확정(자동확정 금지 불변식).
-   */
-  suggestedGrade?: InsuranceGrade | null;
-  suggestedSource?: InsuranceGradeSource | null;
-  suggestedMemo?: string | null;
-  /** 제안 변경 감지 키(파서 stamp). 같은 값이면 재진입 안 함. */
-  suggestionKey?: number | null;
 }
 
 export function InsuranceGradeSelect({
   customerId,
   onChanged,
   editable = true,
-  suggestedGrade,
-  suggestedSource,
-  suggestedMemo,
-  suggestionKey,
 }: Props) {
   const { grade, source, verifiedAt, memo, refresh } = useInsuranceGrade(customerId);
   const [draftGrade, setDraftGrade] = useState<InsuranceGrade>('unverified');
@@ -70,20 +57,8 @@ export function InsuranceGradeSelect({
     setDraftMemo(memo ?? '');
   }, [grade, source, memo]);
 
-  // T-20260724-foot-NHIS-MANUAL-CAPTURE: 파서 제안 수신 → 편집 모드 프리필(자동저장 X).
-  //   suggestionKey(파서 stamp)가 바뀔 때만 1회 진입. editable=false 면 무시.
-  const appliedSuggestionKey = useRef<number | null>(null);
-  useEffect(() => {
-    if (!editable) return;
-    if (suggestionKey == null) return;
-    if (appliedSuggestionKey.current === suggestionKey) return;
-    if (!suggestedGrade) return; // 제안 등급이 없으면(비화이트리스트·나이모순 등) 프리필 안 함
-    appliedSuggestionKey.current = suggestionKey;
-    setDraftGrade(suggestedGrade);
-    setDraftSource((suggestedSource ?? 'hira_lookup') as InsuranceGradeSource);
-    setDraftMemo(suggestedMemo ?? '수기 포털조회');
-    setEditing(true);
-  }, [suggestionKey, suggestedGrade, suggestedSource, suggestedMemo, editable]);
+  // T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안 프리필(suggested*) 경로 제거.
+  //   등급 입력은 오직 사람이 [수정/입력] → 등급 클릭 → [저장]으로만 write(자동확정 없음).
 
   const days = daysSinceVerified(verifiedAt);
   const stale = days != null && days >= VERIFICATION_STALE_DAYS;
