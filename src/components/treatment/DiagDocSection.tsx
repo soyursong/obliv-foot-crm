@@ -24,8 +24,17 @@
 //     본 탭도 신청시각(requested_at, KST) 기준으로 선택 날짜에 스코프 → 날짜이동 시 자동 갱신(sibling 탭과 정합).
 //     ※ read-only 재사용 한계: usePublishedOpinionRequests 는 당일(KST) 발행 건만 반환 → 과거일자 '발행완료'는
 //        재구성 불가(그날 신청 후 미발행으로 남은 draft 만 노출). 현장 주 사용처=당일 라이브 뷰(=진료대시보드 [서류작성] 동일 성격).
+//
+//   ★T-20260724-foot-TREATTABLE-DOCS-PARITY 기능① (발행 목록 + 클릭 열람): 진료대시보드 서류 스펙 미러.
+//     canonical = DASH-ISSUEDDOCS-DOCVIEW-CLICKOPEN(deployed 9ec7e5b6, DocRequestQueue 뷰어). 그 렌더러/로직을
+//     그대로 이식 — 발행완료 서류명(요청종류 배지)을 클릭하면 실제 발행본 내용을 read-only 로 열람.
+//     · 소스: 기존 usePublishedOpinionDocs(status='published', field_data.final_text) + matchPublishedOpinionDoc
+//       원자매핑(check_in_id+doc_type→customer 폴백, 타 환자 교차노출 배제). 미발견 시 composeOpinionDoc 폴백.
+//     · 순수 view — 재발행/취소/수정 side-effect 절대 없음(AC5). 발행 파이프라인·의사화면 코드 무접촉(db_change=false).
+//     · 기능③(AC3): 원장 작성 medical 본문은 이 뷰어에서 read-only 표시 전용(어떤 경로로도 편집 노출 없음).
+//       행정필드(발급요청일자 등) 편집은 기존 실장 요청박스(OpinionRequestBox '서류 날짜')에서 유지 — 여기 미신설(scope-guard).
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { useClinic } from '@/hooks/useClinic';
@@ -34,11 +43,27 @@ import {
   useOpinionRequestQueue,
   usePublishedOpinionRequests,
   docTypeLabel,
+  // 기능① 발행본 read-only 열람 — 진료대시보드 뷰어(canonical)와 동일 훅/매핑 재사용(단일 소스, 신규 조회 0).
+  useOpinionDocTemplateId,
+  usePublishedOpinionDocs,
+  matchPublishedOpinionDoc,
   type OpinionDocType,
   type OpinionRequestRow,
 } from '@/lib/opinionRequest';
-import { seoulISODate, seoulHHMM } from '@/lib/format';
+// 발행본 미발견(레거시) 시 요청 저장본(selected_keys)으로 본문 재구성 폴백 — 작성창 합성기 재사용(기존 렌더러).
+import { composeOpinionDoc } from '@/lib/opinionDocCompose';
+import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
+import { seoulISODate, seoulHHMM, chartNoDisplay } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Loader2, FileText, Users, CheckCircle2, Clock } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
@@ -154,6 +179,53 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
 
   const summary = useMemo(() => computeDiagDocSummary(rows), [rows]);
 
+  // ── 기능① 발행본 read-only 열람 (DASH-ISSUEDDOCS-DOCVIEW-CLICKOPEN 뷰어 이식) ──────────────────
+  //   발행완료 행의 요청종류(서류명) 클릭 → 실제 발행본(final_text) read-only 뷰어. 발행 파이프라인 무접촉.
+  //   ★단일 소스: 발행완료 원본 OpinionRequestRow 는 published 훅 반환값에서 id 로 역참조(별도조회 없음).
+  const sourceById = useMemo(() => {
+    const m = new Map<string, OpinionRequestRow>();
+    for (const r of published) m.set(r.id, r);
+    return m;
+  }, [published]);
+
+  const { data: templateId = null } = useOpinionDocTemplateId(clinicId);
+  // 화면에 보이는 발행완료 행의 환자만 발행본 조회(customer_id 필터 → 타 환자 교차노출 구조적 배제, AC2/AC3).
+  const publishedCustomerIds = useMemo(
+    () =>
+      rows
+        .filter((r) => r.publishStatus === 'published')
+        .map((r) => r.customerId)
+        .filter(Boolean) as string[],
+    [rows],
+  );
+  const { data: publishedDocs = [] } = usePublishedOpinionDocs(clinicId, publishedCustomerIds, templateId);
+
+  const [viewTarget, setViewTarget] = useState<OpinionRequestRow | null>(null);
+  // 원자 매핑(AC2/AC3): check_in_id+doc_type(→customer 폴백)로 요청 1건↔발행본 1건. 다른 환자/서류 노출 방지.
+  const viewDoc = useMemo(
+    () => (viewTarget ? matchPublishedOpinionDoc(viewTarget, publishedDocs) : null),
+    [viewTarget, publishedDocs],
+  );
+  // 본문 = 실제 발행본 final_text 우선(실발행본 일치). 미발견 시 요청 저장본(selected_keys) 재구성 폴백(기존 합성기).
+  const viewBody = useMemo(() => {
+    if (!viewTarget) return '';
+    const real = viewDoc?.finalText?.trim();
+    if (real) return real;
+    return composeOpinionDoc({
+      sections: OPINION_SECTIONS,
+      selectedKeys: viewTarget.selectedKeys,
+      hepatitisType: null,
+      oralXReason: viewTarget.oralMedReason,
+      dateISO: viewTarget.requestDate || null,
+    });
+  }, [viewTarget, viewDoc]);
+
+  // 발행완료 행 서류명 클릭 → 열람. 원본 요청 row 를 id 로 역참조해 뷰어에 전달(없으면 무동작=방어).
+  const openDocView = (rowId: string) => {
+    const src = sourceById.get(rowId);
+    if (src) setViewTarget(src);
+  };
+
   return (
     <div className="flex flex-col gap-3" data-testid="diagdoc-section">
       <div>
@@ -247,9 +319,23 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
                     </button>
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap" data-testid="diagdoc-cell-doctype">
-                    <Badge className="bg-slate-100 text-slate-700 text-[11px] px-1.5 py-0">
-                      {docTypeLabel(r.docType)}
-                    </Badge>
+                    {/* 기능①(AC1): 발행완료 서류명 클릭 → 실제 발행본 내용 read-only 열람.
+                        미발행 행은 발행본이 없으므로 클릭 불가(정적 배지) — 오표기·빈뷰어 방지. */}
+                    {r.publishStatus === 'published' ? (
+                      <button
+                        type="button"
+                        onClick={() => openDocView(r.id)}
+                        className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-700 underline decoration-dotted underline-offset-2 transition hover:bg-slate-200 hover:text-teal-700 hover:decoration-solid"
+                        title="클릭하면 발행한 서류 내용을 볼 수 있어요"
+                        data-testid="diagdoc-docname-view"
+                      >
+                        {docTypeLabel(r.docType)}
+                      </button>
+                    ) : (
+                      <Badge className="bg-slate-100 text-slate-700 text-[11px] px-1.5 py-0">
+                        {docTypeLabel(r.docType)}
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-2.5 py-1.5 text-[12px] tabular-nums text-muted-foreground whitespace-nowrap" data-testid="diagdoc-cell-time">
                     {r.requestedAt ? seoulHHMM(r.requestedAt) : '—'}
@@ -270,6 +356,44 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
           진료대시보드 [서류작성]에서 접수된 소견서·진단서 신청이 여기에 표시됩니다.
         </p>
       )}
+
+      {/* 기능①(AC1/AC3): 발행완료 서류명 클릭 → 실제 발행본 내용 read-only 열람.
+          read-only 전용 — 재발행/취소/수정 버튼 없음(AC3/AC5). 닫기만. 발행 경로(publish_opinion_doc RPC) 미접촉.
+          원장 작성 medical 본문은 표시만(어떤 경로로도 편집 노출 없음) — DocRequestQueue 뷰어와 동일 표현. */}
+      <Dialog open={!!viewTarget} onOpenChange={(o) => { if (!o) setViewTarget(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="diagdoc-doc-view-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2" data-testid="diagdoc-doc-view-title">
+              <FileText className="h-5 w-5 text-emerald-600" />
+              {viewTarget ? docTypeLabel(viewTarget.docType) : ''}
+              {viewTarget?.patientName && (
+                <span className="text-sm font-normal text-muted-foreground">· {viewTarget.patientName}</span>
+              )}
+            </DialogTitle>
+            <DialogDescription className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+              {viewTarget?.chartNo && <span>차트번호 {chartNoDisplay(viewTarget.chartNo)}</span>}
+              {viewTarget?.resolvedAt && <span>발행 {seoulHHMM(viewTarget.resolvedAt)}</span>}
+              {viewDoc?.doctorName && <span>발행자 {viewDoc.doctorName}</span>}
+            </DialogDescription>
+          </DialogHeader>
+          {/* 실제 발행본 내용 read-only 열람(작성창 본문과 동일 표현: 원문 그대로 pre-wrap). 편집 요소 없음. */}
+          <div
+            className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 px-4 py-3 text-[13px] leading-relaxed text-gray-800"
+            data-testid="diagdoc-doc-view-body"
+          >
+            {viewBody.trim() ? viewBody : '표시할 서류 내용이 없습니다.'}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setViewTarget(null)}
+              data-testid="diagdoc-doc-view-close"
+            >
+              닫기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

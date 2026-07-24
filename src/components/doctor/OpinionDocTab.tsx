@@ -54,7 +54,7 @@ import { printOpinionDoc } from '@/lib/printOpinionDoc';
 import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
 // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
 //   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
-import { useUpdateStaffMemo } from '@/lib/opinionRequest';
+import { useUpdateStaffMemo, useQueueClinicalSnaps } from '@/lib/opinionRequest';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import type { UserProfile, CheckIn } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -707,6 +707,17 @@ export function OpinionEditorDialog({
 
   // AC-1: 그 환자의 최신 발건강 질문지(read-only) — 자동 pre-check 소스.
   const { data: healthQData, isLoading: hqLoading } = useLatestHealthQ(clinicId, visitor?.customer_id ?? null);
+
+  // T-20260724-foot-TREATTABLE-DOCS-PARITY 기능②(AC2): 소견서·진단서 작성 폼 진입 시 생년월일·당일 시술·처방내역
+  //   자동연동(현재 미작동 해소). DocRequestQueue 큐 임상컬럼과 동일 훅(useQueueClinicalSnaps) 재사용 = 단일 소스·신규 조회 0.
+  //   ★customer_id 로만 조회 → 타 환자 데이터 유입·오매핑 구조적 배제(AC2). read-only 참고 표시 전용(편집 필드 아님,
+  //     scope-guard: 신규 staff authoring/편집 폼 미신설). 원장 본문(진단소견/의사소견)은 아래 editor(SSOT) 그대로.
+  const clinicalCustomerIds = useMemo(
+    () => (visitor?.customer_id ? [visitor.customer_id] : []),
+    [visitor?.customer_id],
+  );
+  const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, clinicalCustomerIds);
+  const autofillSnap = visitor?.customer_id ? clinicalSnaps[visitor.customer_id] : undefined;
   const signingIds = useMemo(() => visitSigning?.ids ?? new Set<string>(), [visitSigning]);
   const signingNames = visitSigning?.names ?? [];
   const hasSigningInfo = signingIds.size > 0; // 진료의 정보 존재 여부(없으면 fallback=경고 후 허용)
@@ -1249,6 +1260,30 @@ export function OpinionEditorDialog({
 
             {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
             <div className="flex flex-col gap-2">
+              {/* T-20260724-foot-TREATTABLE-DOCS-PARITY 기능②(AC2): 환자 생년월일·당일 시술·처방내역 자동연동(read-only 참고).
+                  값 = 해당 환자(customer_id) 실데이터 — 타 환자 유입 없음. 없으면 '없음' 표기(오표기 방지).
+                  ★read-only 표시 전용: 원장 medical 본문은 아래 소견 내용 editor(SSOT), 이 패널은 편집 불가(AC3 경계 보존). */}
+              {visitor && (
+                <div className="rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5 text-sm" data-testid="opinion-autofill-ref">
+                  <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                    <ClipboardList className="h-3 w-3" /> 환자 자동연동
+                  </p>
+                  <div className="grid grid-cols-1 gap-y-0.5">
+                    <div className="flex gap-1.5">
+                      <span className="w-16 shrink-0 text-muted-foreground">생년월일</span>
+                      <span className="font-medium text-foreground tabular-nums" data-testid="opinion-autofill-birth">{visitor.birth_date || '없음'}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <span className="w-16 shrink-0 text-muted-foreground">당일 시술</span>
+                      <span className="font-medium text-foreground" data-testid="opinion-autofill-treatment">{autofillSnap?.treatment || '없음'}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <span className="w-16 shrink-0 text-muted-foreground">처방내역</span>
+                      <span className="font-medium text-foreground" data-testid="opinion-autofill-rx">{autofillSnap?.prescription || '없음'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-1/2): 실장(데스크) 요청 메모.
                   원 스펙(T-20260620-INTEGRATION)의 read-only 참고패널 → 편집 가능 textarea 로 전환 + 저장 유지.
                   ★authoring 경계(AC-4, BLOCKING): 이 칸은 '직원 요청 메모'(field_data.staff_memo) 전용 —
