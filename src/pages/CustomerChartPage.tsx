@@ -13,6 +13,8 @@ import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 // T-20260701-foot-CHART2-TREATREQ-SPLIT: 패키지 섹션 [치료신청] 박스(5항목 체크박스). 치료부위 박스와 병렬.
 //   피검사/KOH 는 이 박스 체크박스로 이관(既존 KohRequestToggle/BloodTestRequestToggle 상태 공유 → 별도 토글 제거).
 import TreatmentRequestBox from '@/components/TreatmentRequestBox';
+// T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 시 check_ins.package_id 링크 판정(순수 함수)
+import { shouldLinkCheckInPackage } from '@/lib/checkInPackageLink';
 import { PACKAGE_SESSION_TYPE_TO_REQUEST_CODE } from '@/lib/treatmentRequestCodes';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
@@ -4207,6 +4209,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
     }
 
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감(치료사 드롭다운) 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
+    await linkCheckInPackage(useSessionDlg.packageId, computeDeductCheckInId(sessionDlgForm.sessionDate));
+
     setUseSessionDlg(null);
   };
 
@@ -4823,6 +4828,40 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       ? latestCheckIn.id
       : null;
 
+  // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감(치료 신청) 시 check_ins.package_id 연결.
+  //   RC = 2번차트 차감 경로가 package_sessions.check_in_id 만 걸고 check_ins.package_id 를 비워둠(NULL).
+  //        → 치료테이블/접수 명단 카드(CheckInDetailSheet 등)가 package_id 로 '연결됨'을 판정하므로
+  //           화면 전환·재진입 시 선택(패키지)이 풀린 것처럼 보임(현장 "초기화" 증상). DB증거: package_id=NULL.
+  //   해소 = PaymentDialog(결제 시 link, 527-530)와 대칭으로 차감 저장 성공 후 오늘 내원 카드에 link.
+  //   기존 컬럼 check_ins.package_id 재사용(no-DDL, db_change:false). 파괴적 변경 없음.
+  //   범위: 오늘 내원(deductCheckInId)에 귀속되는 차감만(과거일 백데이트 차감 제외 — 특정 내원에 못 걸음).
+  //         멱등(이미 동일 pkg면 write skip) + 다른 패키지 차감 시 최신 선택으로 갱신(AC-3).
+  //         다른 환자는 별개 check_ins row → 오염 없음(AC-3). 서버 영속 → 명단 이동·재진입 유지(AC-1/2/4).
+  const linkCheckInPackage = async (packageId: string, deductCheckInId: string | null) => {
+    if (
+      !shouldLinkCheckInPackage({
+        latestCheckInId: latestCheckIn?.id,
+        latestCheckInPackageId: latestCheckIn?.package_id,
+        deductCheckInId,
+        targetPackageId: packageId,
+      })
+    ) {
+      return;
+    }
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ package_id: packageId })
+      .eq('id', deductCheckInId);
+    if (error) {
+      // 무차단(graceful): 링크 실패가 차감 완료 UX를 막지 않음. 차감 자체는 이미 성공.
+      console.warn('[CHART2-PKGLINK] check_ins.package_id 링크 실패(무차단):', error.message);
+      return;
+    }
+    setLatestCheckIn((prev) =>
+      prev && prev.id === deductCheckInId ? { ...prev, package_id: packageId } : prev,
+    );
+  };
+
   // 같은 내원(check_in_id)·같은 패키지에 이미 'used' 차감 이력이 있으면 그 회차를 반환 (없으면 null)
   // ★ 지정치료사와 무관 — 오직 (package_id, check_in_id) 중복(unique_package_checkin)으로 판정
   const findSameCheckinSession = async (packageId: string, checkInId: string) => {
@@ -4972,6 +5011,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       toast.error(`차감 실패: ${error.message}`); return;
     }
     await refreshPackageSessionsAndRemaining();
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
+    await linkCheckInPackage(targetPkg.id, deductCheckInId);
     resetDeductFormAfterSave();
     toast.success('회차 차감 완료');
   };
@@ -4986,6 +5027,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       .eq('id', dupDeductModal.existingSessionId);
     if (error) { setDupDeductBusy(false); toast.error(`치료사 변경 실패: ${error.message}`); return; }
     await refreshPackageSessionsAndRemaining();
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 당일 치료사 변경(회차 재사용)도 해당 내원=치료 확정 → 패키지 link 보강
+    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
     if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
     setDupDeductBusy(false);
     resetDeductFormAfterSave();
@@ -5019,6 +5062,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       toast.error(`추가 차감 실패: ${error.message}`); return;
     }
     await refreshPackageSessionsAndRemaining();
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 추가 차감 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
+    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
     if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
     setDupDeductBusy(false);
     resetDeductFormAfterSave();
@@ -5164,6 +5209,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     }
 
     await refreshPackageSessionsAndRemaining();
+    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 힐러 차감 성공 → 오늘 내원 카드에 패키지 link(선택 유지)
+    await linkCheckInPackage(targetPkg.id, deductCheckInId);
     // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
     resetDeductFormAfterSave();
 
