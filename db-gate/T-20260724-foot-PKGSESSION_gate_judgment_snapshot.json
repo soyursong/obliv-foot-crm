@@ -1,0 +1,402 @@
+{
+  "ticket": "T-20260724-foot-PKGSESSION-BACKFILL-AND-EFFICACY",
+  "gate": "SOP §2-F 판정근거 스냅샷 (READ-ONLY prep baseline)",
+  "captured_context": "DA CONSULT-REPLY xk54 GO_WARN sub-gates G-A/G-B/G-C-1/G-C-2",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "note": "rollback 실캡처는 apply 직전 supervisor 재실행(상태 live-mutating: pre-FK 49→50 drift, G-C-1). 본 스냅샷=prep 기준선.",
+  "target_set_count": 43,
+  "prev_flag_true": 26,
+  "prev_flag_false": 17,
+  "prev_flag_null": 0,
+  "all_prev_psid_null": true,
+  "revenue_shift_sum_flipfalse": 4300000,
+  "rows": [
+    {
+      "cis_id": "eb1d0547-c1b5-4576-9cb3-8cdaf79c7630",
+      "target_psid": "c7eb81c5-f52f-49b3-a5d0-270bdf35748e",
+      "session_type": "heated_laser",
+      "price": 350000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-14"
+    },
+    {
+      "cis_id": "f53bcc84-0d7c-4d14-96ad-455964d8db39",
+      "target_psid": "f1efe10e-ff76-42aa-92ca-e511946bbbd3",
+      "session_type": "heated_laser",
+      "price": 350000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "d460437a-7324-4e4b-b5b9-a763ee87516c",
+      "target_psid": "a0fc6b39-99d7-4163-a306-89b968a182ae",
+      "session_type": "heated_laser",
+      "price": 350000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "2554fc9d-f466-4d61-9e6a-49f7a21b7107",
+      "target_psid": "74c5c33b-4565-4f7d-82df-a4fedc7e9baa",
+      "session_type": "heated_laser",
+      "price": 350000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-20"
+    },
+    {
+      "cis_id": "b0425810-070a-4261-b1d1-17c228ecca97",
+      "target_psid": "7b301f95-2e07-47e1-9a5e-8a57479796dc",
+      "session_type": "heated_laser",
+      "price": 280000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "65f933b1-ba6c-499c-9414-e11ebafab706",
+      "target_psid": "17a34686-25dd-4ee9-b651-268e10a0f5a1",
+      "session_type": "heated_laser",
+      "price": 320000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "a01387a5-2235-4c4f-9509-23eb590cd09a",
+      "target_psid": "598c1ba2-7f98-4a37-8368-aca22e1119df",
+      "session_type": "heated_laser",
+      "price": 250000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "f188dcf0-c9ef-446a-9aa5-89e59c3a0a62",
+      "target_psid": "31d6a23d-4955-48d6-b292-e715f9edbea5",
+      "session_type": "podologue",
+      "price": 250000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "aad454d5-7104-452b-9267-efeb051c6d07",
+      "target_psid": "822db5d2-b4fd-4db9-9e61-ebcadc292efd",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-06-09"
+    },
+    {
+      "cis_id": "a0cbc4ef-bf11-4cc9-af4a-e123ad117598",
+      "target_psid": "38441f3b-095d-41e2-8fa8-7e38c83ae330",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-06-12"
+    },
+    {
+      "cis_id": "261d6aad-8cb2-4767-8170-dcc288e28c09",
+      "target_psid": "c08e1602-5391-4d07-9260-1e0ce1bdf13f",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-02"
+    },
+    {
+      "cis_id": "7edf17de-b51f-406f-a315-9308db228bc9",
+      "target_psid": "e0e38b90-0752-48ea-812d-2525cc467d48",
+      "session_type": "unheated_laser",
+      "price": 300000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-07"
+    },
+    {
+      "cis_id": "8282bb19-5038-48d4-a4a4-580bc1f6e195",
+      "target_psid": "fb9ef93f-84f5-4559-af36-7918c686372e",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-07"
+    },
+    {
+      "cis_id": "bdc08d55-5d36-40f9-9e45-43f1dd155ad4",
+      "target_psid": "ad062585-5a97-471a-810b-bc2bea41a5f0",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-07"
+    },
+    {
+      "cis_id": "7a92d1d6-340d-4b4b-9f4e-0de8a5ad0c88",
+      "target_psid": "7287745e-2013-47b7-b5c9-1af1c184a32f",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-07"
+    },
+    {
+      "cis_id": "6939b358-7e5d-40a1-8964-4ac27ff7254d",
+      "target_psid": "5175e4ba-f02d-4882-865d-6f2fee87c423",
+      "session_type": "unheated_laser",
+      "price": 300000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-08"
+    },
+    {
+      "cis_id": "4299825e-34e2-4528-a832-cbf18ec96ca3",
+      "target_psid": "df558316-ca64-4e45-bd75-71dc5deaf50b",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-14"
+    },
+    {
+      "cis_id": "c88e80c2-4789-4a2d-886e-ac1f87cfc327",
+      "target_psid": "462531ec-3a39-4375-a515-2da4e704d278",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-14"
+    },
+    {
+      "cis_id": "ccb9dac3-5c25-4d7a-bc61-bd33fa4cbb8a",
+      "target_psid": "a716c58e-35b4-4960-8360-949a0342d299",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "3c0166f9-ff24-4768-9e2d-17ce1c75ff8b",
+      "target_psid": "dd4cae61-e4c8-4ec7-a6f4-c98514130c0a",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "20f0cad5-7afe-4cfa-b47b-03d9a443750d",
+      "target_psid": "f99149c3-ad73-4e2b-902b-aa4ca689773c",
+      "session_type": "unheated_laser",
+      "price": 260000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "46d47d00-76ca-4bbe-84d1-4d62bf9b73c7",
+      "target_psid": "44c55240-040c-4e8f-b01d-b6e25f1eebaf",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "66b13c92-4c0b-4c7f-b87d-c2f7627c6468",
+      "target_psid": "b58f1960-5d5c-4c13-b9e8-e8b8dff7b0c3",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "cc46990c-a19f-4db3-a575-d8e16b5fef2c",
+      "target_psid": "56d6db3f-2d9b-4562-b66e-8022fd5b1858",
+      "session_type": "unheated_laser",
+      "price": 180000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-17"
+    },
+    {
+      "cis_id": "8653c0ec-3805-4ec2-8371-0cfc3edbedf2",
+      "target_psid": "662d0d26-6d43-46e6-b23c-934fc02e1b20",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-18"
+    },
+    {
+      "cis_id": "fcda8bce-60de-422f-b133-7823250e1a17",
+      "target_psid": "e72d239d-6ddd-4dee-a1c8-100479cf1827",
+      "session_type": "unheated_laser",
+      "price": 260000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-20"
+    },
+    {
+      "cis_id": "750b1ff5-ece7-41c8-99f0-db4f4f5fa54d",
+      "target_psid": "066cb842-5697-4ab6-ba94-a789545fcd4e",
+      "session_type": "unheated_laser",
+      "price": 250000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-20"
+    },
+    {
+      "cis_id": "cf6a393b-b2df-4879-8306-1997a5dd652d",
+      "target_psid": "517e2e7e-f20c-49cd-8cc4-8ed1c9e992c6",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-20"
+    },
+    {
+      "cis_id": "e34098c4-65ef-41b0-8848-83d1d9ad4d08",
+      "target_psid": "28c7db80-7329-477b-a384-c87235a688a3",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-20"
+    },
+    {
+      "cis_id": "d12a75c5-ed36-4c57-a307-997474615d69",
+      "target_psid": "79c323b1-1db7-444b-9dad-e3af534c6049",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-20"
+    },
+    {
+      "cis_id": "7fd08361-2d77-4806-b217-a6694158f226",
+      "target_psid": "5ecd4d2f-b163-4296-811b-b6d03813b59a",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-21"
+    },
+    {
+      "cis_id": "89443cb7-00c3-45f3-afbd-835f674cb831",
+      "target_psid": "2a508619-6342-4854-8e9d-94c6916428f3",
+      "session_type": "unheated_laser",
+      "price": 300000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "144d1c1d-5be2-4a8a-b4ca-1e7799bfdef7",
+      "target_psid": "331ccb53-f84d-4fee-b72f-b9d80c749e17",
+      "session_type": "unheated_laser",
+      "price": 250000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "e83e5b38-cb7b-447e-8485-7f39e6e16984",
+      "target_psid": "70219404-057d-4eae-b27b-19f4079f7eb6",
+      "session_type": "unheated_laser",
+      "price": 200000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "891d5b1c-7133-4065-a717-dc9064ffdf6a",
+      "target_psid": "64547ac7-3df4-4861-b3b6-41132048e8ef",
+      "session_type": "unheated_laser",
+      "price": 250000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "a2aecc90-1f0f-43d5-bc37-d12cd3698ade",
+      "target_psid": "44231e29-9f56-47d7-bffe-2ab06d982e6b",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "82f8c4c2-5d60-4f4e-bc27-4cc3a1589cef",
+      "target_psid": "f80f4965-0ef5-43bf-b401-777090f62aa6",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "6d54c7b0-a0e6-4ed0-8f33-84e377bd76d1",
+      "target_psid": "6ef3ecac-9bd2-458b-9404-4bc455c166db",
+      "session_type": "unheated_laser",
+      "price": 300000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-22"
+    },
+    {
+      "cis_id": "024c65b6-3597-4b6e-b14f-9571862e1eae",
+      "target_psid": "1c8b77f8-1275-46fc-8388-a7921f527024",
+      "session_type": "unheated_laser",
+      "price": 250000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "688b6ab1-22e6-4f28-a702-a0653bf39718",
+      "target_psid": "ac5019fd-8400-4f42-83af-00aba537c0be",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "40c9f75f-b040-4bb8-b557-8a8387e82f2d",
+      "target_psid": "580f0ff1-bfb7-4208-a6c3-4130b100ca73",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "d60790d2-bfc9-4240-afc5-45232037cf5a",
+      "target_psid": "72d03415-e7eb-4d13-93c7-1496da0c870c",
+      "session_type": "unheated_laser",
+      "price": 260000,
+      "prev_psid": null,
+      "prev_flag": false,
+      "kst_date": "2026-07-23"
+    },
+    {
+      "cis_id": "933a4a7d-4062-4b72-ba06-749498f517d0",
+      "target_psid": "1e07f08a-cfc4-4695-a89c-b30b61aa7a52",
+      "session_type": "unheated_laser",
+      "price": 240000,
+      "prev_psid": null,
+      "prev_flag": true,
+      "kst_date": "2026-07-24"
+    }
+  ]
+}
