@@ -21,7 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
 import { renderOpinionDocHtml, type OpinionPrintData } from '@/lib/printOpinionDoc';
 import { seoulISODate } from '@/lib/format';
-import type { OpinionRequestRow, PublishedOpinionDoc } from '@/lib/opinionRequest';
+import type { AdminFieldOverrides, OpinionRequestRow, PublishedOpinionDoc } from '@/lib/opinionRequest';
 import type { CheckIn } from '@/lib/types';
 
 interface ClinicHeaderLike {
@@ -40,6 +40,15 @@ interface Props {
   body: string;
   /** 병원(의료기관) 헤더 — 양식 상단/발행블록 바인딩. */
   clinicHeader: ClinicHeaderLike | null;
+  /**
+   * T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC3/AC4): 발행 후 원내 직원이 정정한 행정필드(B부류)
+   *   오버레이. 발행본(published) snapshot 은 불변이고(AC4), 열람/재출력 시 이 오버레이를 그 위에 얹어 렌더한다.
+   *   - doctorName → 담당의(issuedByName/doctor_name) override
+   *   - issueDate  → 발급일(issue_date) override
+   *   - diagCode   → 상병코드(diag_code_1, primary) override(상병명은 진료기록 기준 유지)
+   *   A부류(진단소견·의사소견 본문)는 여기 없음 — body 스냅샷 그대로(원장 medical content immutable).
+   */
+  adminOverrides?: AdminFieldOverrides;
 }
 
 export default function IssuedOpinionDocFormView({
@@ -48,6 +57,7 @@ export default function IssuedOpinionDocFormView({
   viewDoc,
   body,
   clinicHeader,
+  adminOverrides,
 }: Props) {
   // 인쇄 경로(OpinionDocTab.handlePrint)와 동일한 공용 바인더로 환자정보·상병·직인 토큰 로드(read-only).
   //   check_in / customer 결측이면 미로드(폴백) → 양식은 그대로 그리되 해당 칸만 공란(레이아웃 유지).
@@ -89,25 +99,37 @@ export default function IssuedOpinionDocFormView({
   // 발행본 스냅샷 → 양식 HTML(인쇄 렌더러 재사용). 본문(final_text/재구성) 없으면 null → 안내문 렌더.
   const rendered = useMemo(() => {
     if (!viewTarget || !body.trim()) return null;
+    // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC3/AC4): B부류 오버레이를 발행본 스냅샷 '위에' 얹는다.
+    //   published snapshot 자체는 불변(AC4) — 렌더 시점에만 override(renderOpinionDocHtml 은 truthy 값만 override).
+    //   담당의/발급일 = 오버레이 우선 → 없으면 발행본 스냅샷. 상병코드 = 오버레이 있으면 primary(diag_code_1)만 override.
+    const issuedByName = adminOverrides?.doctorName || viewDoc?.doctorName || null;
+    const issueDate =
+      adminOverrides?.issueDate
+      || (viewDoc?.issuedAt
+        ? seoulISODate(viewDoc.issuedAt)
+        : viewTarget.resolvedAt
+          ? seoulISODate(viewTarget.resolvedAt)
+          : null);
+    const diagCodes = adminOverrides?.diagCode
+      ? { code1: adminOverrides.diagCode, code2: null, code3: null, code4: null,
+          name1: null, name2: null, name3: null, name4: null }
+      : undefined;
     const data: OpinionPrintData = {
       body,
       chartNo: viewDoc?.chartNo ?? viewTarget.chartNo ?? null,
       patientName: viewTarget.patientName ?? null,
-      issuedByName: viewDoc?.doctorName || null,
+      issuedByName,
       issuedByLicenseNo: viewDoc?.issuedByLicenseNo ?? null,
-      issueDate: viewDoc?.issuedAt
-        ? seoulISODate(viewDoc.issuedAt)
-        : viewTarget.resolvedAt
-          ? seoulISODate(viewTarget.resolvedAt)
-          : null,
+      issueDate,
       clinicName: clinicHeader?.name ?? null,
       clinicAddress: clinicHeader?.address ?? null,
       clinicPhone: clinicHeader?.phone ?? null,
       formKey: viewTarget.docType === 'diagnosis' ? 'diagnosis' : 'diag_opinion',
       autoValues: autoValuesQuery.data,
+      diagCodes,
     };
     return renderOpinionDocHtml(data);
-  }, [viewTarget, viewDoc, body, clinicHeader, autoValuesQuery.data]);
+  }, [viewTarget, viewDoc, body, clinicHeader, autoValuesQuery.data, adminOverrides]);
 
   if (!rendered) {
     return (

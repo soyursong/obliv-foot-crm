@@ -10,9 +10,10 @@
 //   상위 섹션이 자체 '소견서·진단서 처리대기 N건' 헤더/뱃지를 그리므로 내부 헤더 블록을 숨겨 중복 제거.
 //   default(false) = 서류작성 탭 기존 동선 그대로(회귀 0). 데이터 경로·테이블·필터 불변.
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
-import { birthYearAgeDisplay, chartNoDisplay, seoulHHMM } from '@/lib/format';
+import { birthYearAgeDisplay, chartNoDisplay, seoulHHMM, seoulISODate } from '@/lib/format';
 import {
   useOpinionRequestQueue,
   usePublishedOpinionRequests,
@@ -24,6 +25,8 @@ import {
   useOpinionDocTemplateId,
   usePublishedOpinionDocs,
   matchPublishedOpinionDoc,
+  // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행본 행정필드(B부류) 정정 저장.
+  useUpdateOpinionAdminFields,
   type ClinicalSnap,
   type OpinionRequestRow,
 } from '@/lib/opinionRequest';
@@ -52,7 +55,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle, FileText } from 'lucide-react';
+import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle, FileText, Lock } from 'lucide-react';
 
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
@@ -106,6 +109,62 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       dateISO: viewTarget.requestDate || null,
     });
   }, [viewTarget, viewDoc]);
+
+  // ── T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC2/AC3/AC4) ────────────────────────────
+  //   발행본 열람 화면에서 A부류(진단소견·의사소견=본문)는 읽기전용 잠금, B부류(발급요청일자·상병코드·담당의·
+  //   발급일)만 원내 직원이 인라인 정정. 저장 = useUpdateOpinionAdminFields(요청행 field_data 오버레이, published 불오염).
+  //   ★NOSYNC 정합(AC5): 옛 전체 '수정 팝업' 부활 아님 — 재출력/열람 동선 유지 위에 행정필드 전용 인라인 패널만 추가.
+  const adminMut = useUpdateOpinionAdminFields(clinicId);
+  type AdminForm = { requestDate: string; diagCode: string; doctorName: string; issueDate: string };
+  const emptyAdminForm: AdminForm = { requestDate: '', diagCode: '', doctorName: '', issueDate: '' };
+  const [adminForm, setAdminForm] = useState<AdminForm>(emptyAdminForm);
+  const [adminInit, setAdminInit] = useState<AdminForm>(emptyAdminForm);
+
+  // 열람 대상 바뀔 때 편집폼 초기화 — 오버레이(정정값) 우선, 없으면 발행본 스냅샷/요청행 값.
+  useEffect(() => {
+    if (!viewTarget) return;
+    const ov = viewTarget.adminOverrides;
+    const initIssueDate =
+      ov?.issueDate
+      || (viewDoc?.issuedAt ? seoulISODate(viewDoc.issuedAt)
+        : viewTarget.resolvedAt ? seoulISODate(viewTarget.resolvedAt) : '');
+    const init: AdminForm = {
+      requestDate: viewTarget.requestDate || '',
+      diagCode: ov?.diagCode ?? '',
+      doctorName: ov?.doctorName ?? viewDoc?.doctorName ?? '',
+      issueDate: initIssueDate,
+    };
+    setAdminForm(init);
+    setAdminInit(init);
+  }, [viewTarget, viewDoc]);
+
+  const adminDirty =
+    adminForm.requestDate !== adminInit.requestDate
+    || adminForm.diagCode !== adminInit.diagCode
+    || adminForm.doctorName !== adminInit.doctorName
+    || adminForm.issueDate !== adminInit.issueDate;
+
+  const handleAdminSave = async () => {
+    if (!viewTarget || !adminDirty) return;
+    if (!profile?.id) { toast.error('직원 계정 정보를 확인할 수 없습니다.'); return; }
+    try {
+      await adminMut.mutateAsync({
+        requestId: viewTarget.id,
+        // 변경된 필드만 전달(미변경=undefined → 오버레이/로그 미생성).
+        requestDate: adminForm.requestDate !== adminInit.requestDate ? adminForm.requestDate : undefined,
+        diagCode: adminForm.diagCode !== adminInit.diagCode ? adminForm.diagCode : undefined,
+        doctorName: adminForm.doctorName !== adminInit.doctorName ? adminForm.doctorName : undefined,
+        issueDate: adminForm.issueDate !== adminInit.issueDate ? adminForm.issueDate : undefined,
+        editorId: profile.id,
+        editorName: profile.name ?? profile.email ?? '직원',
+      });
+      toast.success('행정 정보를 저장했습니다.');
+      // 저장값을 새 기준선으로(저장 후 dirty 해제). 서버 invalidate 로 viewTarget 재로딩 시에도 정합.
+      setAdminInit(adminForm);
+    } catch (e) {
+      toast.error(`저장에 실패했습니다. ${(e as Error)?.message ?? ''}`);
+    }
+  };
 
   const openWrite = (r: OpinionRequestRow) => {
     setActive(r);
@@ -308,8 +367,81 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
               viewDoc={viewDoc}
               body={viewBody}
               clinicHeader={clinicHeader}
+              /* T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC3/AC7): 정정한 B부류 오버레이를
+                 발행본 위에 얹어 열람/재출력 반영. published snapshot 은 불변(AC4). */
+              adminOverrides={viewTarget?.adminOverrides}
             />
           </div>
+
+          {/* T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC2): A부류(원장 작성 내용) 잠금 안내 —
+              진단소견·의사소견 본문은 발행 고정본(읽기전용). 위 양식의 소견 영역은 편집 불가. */}
+          <div
+            className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+            data-testid="docreq-admin-lock-banner"
+          >
+            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>
+              <b className="text-slate-700">진단소견·의사소견</b>은 원장님이 작성한 내용이라 수정할 수 없어요(읽기전용 잠금).
+              아래 <b className="text-slate-700">행정·발급 정보</b>만 정정할 수 있어요.
+            </span>
+          </div>
+
+          {/* T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT (AC3/AC5/AC6): B부류(행정·발급 정보) 인라인 편집.
+              ★옛 전체 '수정 팝업' 부활 아님 — 재출력/열람 동선은 그대로 두고 행정필드 전용 인라인 패널만 추가(NOSYNC 정합).
+              ★저장 = 요청행 field_data 오버레이(published 불오염, AC4) + 편집 감사로그(의료법§22, 상병코드=medical-adjacent). */}
+          <div className="space-y-2 rounded-md border border-teal-200 bg-teal-50/40 px-3 py-3" data-testid="docreq-admin-edit-panel">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-teal-800">
+              <FilePen className="h-3.5 w-3.5" /> 행정·발급 정보 정정 (원내 직원)
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                발급요청일자
+                <input
+                  type="date"
+                  value={adminForm.requestDate}
+                  onChange={(e) => setAdminForm((f) => ({ ...f, requestDate: e.target.value }))}
+                  className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+                  data-testid="docreq-admin-request-date"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                발급일
+                <input
+                  type="date"
+                  value={adminForm.issueDate}
+                  onChange={(e) => setAdminForm((f) => ({ ...f, issueDate: e.target.value }))}
+                  className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+                  data-testid="docreq-admin-issue-date"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                상병코드
+                <input
+                  type="text"
+                  value={adminForm.diagCode}
+                  onChange={(e) => setAdminForm((f) => ({ ...f, diagCode: e.target.value }))}
+                  placeholder="예: K29.7"
+                  className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+                  data-testid="docreq-admin-diag-code"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                담당의
+                <input
+                  type="text"
+                  value={adminForm.doctorName}
+                  onChange={(e) => setAdminForm((f) => ({ ...f, doctorName: e.target.value }))}
+                  placeholder="발행 담당의명"
+                  className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+                  data-testid="docreq-admin-doctor-name"
+                />
+              </label>
+            </div>
+            <p className="text-[11px] leading-snug text-slate-500">
+              ※ 상병코드는 진단과 관련된 정보라 정정 내역(누가·언제·이전값)이 기록으로 남아요. 상병명은 진료 기록 기준으로 표시됩니다.
+            </p>
+          </div>
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -317,6 +449,18 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
               data-testid="docreq-doc-view-close"
             >
               닫기
+            </Button>
+            <Button
+              onClick={handleAdminSave}
+              disabled={!adminDirty || adminMut.isPending}
+              className="bg-teal-600 text-white hover:bg-teal-700"
+              data-testid="docreq-admin-save-btn"
+            >
+              {adminMut.isPending ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> 저장 중…</>
+              ) : (
+                '행정 정보 저장'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

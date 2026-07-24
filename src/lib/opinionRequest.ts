@@ -138,6 +138,33 @@ export function useCreateOpinionRequest(clinicId: string | null) {
   });
 }
 
+// ─── T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행본 행정필드(B부류) 편집 오버레이 ──
+//   발행 소견서/진단서(form_submissions status='published')는 DB 트리거·RLS 로 immutable(의료법§22, C1).
+//   원장 medical content(진단소견·의사소견 = A부류)는 절대 불변. 반면 김주연 총괄 요청(문지은 대표원장
+//   필드분류 relay confirm, thread 1784882479.542659)으로 원내 직원이 행정·발급 metadata(B부류)만 정정 가능.
+//   ★AC4(발행 원문 스냅샷 불오염): B부류 편집은 published row 를 절대 건드리지 않는다. 편집 오버레이는
+//     '요청 행'(status='voided'+resolved_reason='published', RLS status<>'published' 로 mutable)의 field_data
+//     에 append 한다. 발행본(published)은 read-only 로 유지되고, 열람/재출력 시 오버레이를 그 위에 얹어 렌더.
+//   ★NO-DDL: 기존 form_submissions.field_data(JSONB) 재사용 — 신규 컬럼/테이블/enum/RLS = 0.
+//   ★상병코드=medical-adjacent(진단파생) → 편집 감사로그(누가·언제·이전값→새값)로 의료법§22 정합 방어.
+export interface AdminFieldOverrides {
+  /** 담당의(발행자명) 정정 — renderOpinionDocHtml issuedByName override(doctor_name). */
+  doctorName?: string;
+  /** 발급일(YYYY-MM-DD) 정정 — issue_date override. */
+  issueDate?: string;
+  /** 상병코드(1급/primary, 예 K29.7) 정정 — diag_code_1 override. 상병명은 진료기록 기준 유지(scope: 코드만). */
+  diagCode?: string;
+}
+export interface AdminEditLogEntry {
+  field: string;        // 'request_date' | 'doctor_name' | 'issue_date' | 'diag_code'
+  fieldLabel: string;   // 현장 표기('발급요청일자' 등)
+  oldValue: string;
+  newValue: string;
+  by: string;           // staff.id
+  byName: string;       // 편집자 표기 스냅샷
+  at: string;           // ISO
+}
+
 // ─── 진료대시보드 서류작성 큐 (open 요청 = status='draft' + request_origin='staff_consult') ──
 export interface OpinionRequestRow {
   id: string;
@@ -158,6 +185,27 @@ export interface OpinionRequestRow {
   requestDate: string;
   /** T-20260625-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 발행 완료 시각(field_data.resolved_at, ISO). 대기 큐 행은 undefined. */
   resolvedAt?: string;
+  /** T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행 후 원내 직원이 정정한 행정필드 오버레이(field_data.admin_overrides). 없으면 undefined. */
+  adminOverrides?: AdminFieldOverrides;
+  /** 편집 감사로그(field_data.admin_edit_log) — 의료법§22 정합(상병코드=medical-adjacent). */
+  adminEditLog?: AdminEditLogEntry[];
+}
+
+// field_data.admin_overrides(raw JSONB) → AdminFieldOverrides. 빈/결측 시 undefined.
+export function parseAdminOverrides(fd: Record<string, unknown>): AdminFieldOverrides | undefined {
+  const raw = fd['admin_overrides'];
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const out: AdminFieldOverrides = {};
+  if (typeof o['doctor_name'] === 'string' && o['doctor_name']) out.doctorName = o['doctor_name'] as string;
+  if (typeof o['issue_date'] === 'string' && o['issue_date']) out.issueDate = o['issue_date'] as string;
+  if (typeof o['diag_code'] === 'string' && o['diag_code']) out.diagCode = o['diag_code'] as string;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+function parseAdminEditLog(fd: Record<string, unknown>): AdminEditLogEntry[] | undefined {
+  const raw = fd['admin_edit_log'];
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw as AdminEditLogEntry[];
 }
 
 export function useOpinionRequestQueue(clinicId: string | null) {
@@ -254,6 +302,9 @@ export function usePublishedOpinionRequests(clinicId: string | null) {
           createdAt: String(r['created_at'] ?? ''),
           requestDate: String(fd['request_date'] ?? ''),
           resolvedAt: String(fd['resolved_at'] ?? ''),
+          // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행 후 정정된 행정필드 오버레이 + 감사로그(있으면).
+          adminOverrides: parseAdminOverrides(fd),
+          adminEditLog: parseAdminEditLog(fd),
         }))
         // 최근 발행 순(resolved_at desc) — created_at 정렬과 무관하게 완료시각 기준 재정렬.
         .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
@@ -516,6 +567,115 @@ export function useUpdateStaffMemo(clinicId: string | null) {
     onSuccess: () => {
       // 큐(DocRequestQueue) 즉시 반영 — 편집한 메모가 처리대기 큐 표시에도 동기화(AC-1 표시 일관성).
       qc.invalidateQueries({ queryKey: ['opinion_request_queue', clinicId] });
+    },
+  });
+}
+
+// ─── 발행본 행정필드(B부류) 정정 저장 (T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT, AC3/AC4) ──
+//   원내 직원이 발행완료 소견서/진단서의 행정·발급 metadata(발급요청일자·상병코드·담당의·발급일)만 정정.
+//   ★AC4(발행 원문 스냅샷 불오염, BLOCKING): published row 절대 미접촉. 오버레이는 '요청 행'
+//     (status='voided'+resolved_reason='published', RLS status<>'published' 로 mutable) field_data 에 write.
+//     - 발급요청일자 = field_data.request_date(기존 top-level 키) 직접 정정.
+//     - 담당의/발급일/상병코드 = field_data.admin_overrides.{doctor_name,issue_date,diag_code} 오버레이.
+//       (열람/재출력 시 renderOpinionDocHtml override 로 얹음 — 발행본 snapshot 은 불변 유지.)
+//   ★A부류(진단소견·의사소견 본문) 절대 미기록 — B부류 4키만 merge(원장 medical content immutable).
+//   ★감사로그(의료법§22): 변경 필드마다 admin_edit_log 에 {누가·언제·이전값→새값} append(특히 상병코드=medical-adjacent).
+//   ★NO-DDL: form_submissions.field_data(JSONB) 재사용 — 신규 컬럼/테이블/enum/RLS = 0.
+export interface UpdateOpinionAdminFieldsInput {
+  requestId: string;
+  /** 발급요청일자(YYYY-MM-DD). undefined=미변경. */
+  requestDate?: string;
+  /** 담당의(발행자명). undefined=미변경. */
+  doctorName?: string;
+  /** 발급일(YYYY-MM-DD). undefined=미변경. */
+  issueDate?: string;
+  /** 상병코드(primary, 예 K29.7). undefined=미변경. */
+  diagCode?: string;
+  /** 편집자(staff.id) + 표기명 — 감사로그 provenance. */
+  editorId: string;
+  editorName: string;
+}
+
+export function useUpdateOpinionAdminFields(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateOpinionAdminFieldsInput) => {
+      if (!input.requestId) throw new Error('서류 정보를 확인할 수 없습니다.');
+      if (!input.editorId) throw new Error('직원 계정 정보를 확인할 수 없어 저장할 수 없습니다.');
+      const { data: cur } = await supabase
+        .from('form_submissions')
+        .select('field_data, status')
+        .eq('id', input.requestId)
+        .maybeSingle();
+      const row = (cur as { field_data?: Record<string, unknown>; status?: string } | null) ?? null;
+      const prev = (row?.field_data ?? {}) as Record<string, unknown>;
+      // 경계 가드: 발행완료 요청 행만 대상(staff_consult + 발행됨). 발행본(published) 원본은 절대 미접촉(AC4).
+      if (prev['request_origin'] !== 'staff_consult') throw new Error('편집 대상 서류가 아닙니다.');
+      if (row?.status === 'published') throw new Error('발행 원본은 수정할 수 없습니다(의무기록 불변).');
+      if (prev['resolved_reason'] !== 'published') throw new Error('발행 완료된 서류만 정정할 수 있습니다.');
+
+      const prevOverrides = (prev['admin_overrides'] && typeof prev['admin_overrides'] === 'object'
+        ? prev['admin_overrides']
+        : {}) as Record<string, unknown>;
+      const nowIso = new Date().toISOString();
+      const log: AdminEditLogEntry[] = Array.isArray(prev['admin_edit_log'])
+        ? (prev['admin_edit_log'] as AdminEditLogEntry[]).slice()
+        : [];
+
+      const pushLog = (field: string, fieldLabel: string, oldValue: string, newValue: string) => {
+        if (oldValue === newValue) return; // 실제 변경만 기록(무변경 no-op)
+        log.push({ field, fieldLabel, oldValue, newValue, by: input.editorId, byName: input.editorName, at: nowIso });
+      };
+
+      const nextTop: Record<string, unknown> = { ...prev };
+      const nextOverrides: Record<string, unknown> = { ...prevOverrides };
+
+      // 발급요청일자 = top-level request_date 직접 정정.
+      if (input.requestDate !== undefined) {
+        const oldV = String(prev['request_date'] ?? '');
+        const newV = input.requestDate;
+        pushLog('request_date', '발급요청일자', oldV, newV);
+        nextTop['request_date'] = newV;
+      }
+      // 담당의 = admin_overrides.doctor_name 오버레이.
+      if (input.doctorName !== undefined) {
+        const oldV = String(prevOverrides['doctor_name'] ?? '');
+        const newV = input.doctorName;
+        pushLog('doctor_name', '담당의', oldV, newV);
+        if (newV) nextOverrides['doctor_name'] = newV; else delete nextOverrides['doctor_name'];
+      }
+      // 발급일 = admin_overrides.issue_date 오버레이.
+      if (input.issueDate !== undefined) {
+        const oldV = String(prevOverrides['issue_date'] ?? '');
+        const newV = input.issueDate;
+        pushLog('issue_date', '발급일', oldV, newV);
+        if (newV) nextOverrides['issue_date'] = newV; else delete nextOverrides['issue_date'];
+      }
+      // 상병코드 = admin_overrides.diag_code 오버레이(medical-adjacent → 감사로그 필수).
+      if (input.diagCode !== undefined) {
+        const oldV = String(prevOverrides['diag_code'] ?? '');
+        const newV = input.diagCode;
+        pushLog('diag_code', '상병코드', oldV, newV);
+        if (newV) nextOverrides['diag_code'] = newV; else delete nextOverrides['diag_code'];
+      }
+
+      const merged: Record<string, unknown> = {
+        ...nextTop,
+        admin_overrides: nextOverrides,
+        admin_edit_log: log,
+      };
+      const { error } = await supabase
+        .from('form_submissions')
+        .update({ field_data: merged })
+        .eq('id', input.requestId)
+        .eq('status', 'voided'); // 경계 가드: 발행 원본(published) 미접촉 — 요청 행(voided)만 write(AC4)
+      if (error) throw error;
+      return { ok: true };
+    },
+    onSuccess: () => {
+      // 완료 그룹 + 발행본 열람 뷰 즉시 반영.
+      qc.invalidateQueries({ queryKey: ['opinion_request_published', clinicId] });
+      qc.invalidateQueries({ queryKey: ['opinion_request_customer_history', clinicId] });
     },
   });
 }
