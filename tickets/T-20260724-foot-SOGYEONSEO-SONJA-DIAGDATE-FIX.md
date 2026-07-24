@@ -48,3 +48,13 @@ created: 2026-07-24
 ## 액션
 - responder MQ TICKET-UPDATE(relay_to_slack) 로 현장(총괄 김주연, thread 1784877894.599289)에 진단결과+신규발행 확인 요청 전달.
 - 현장이 "신규 발행" 확정 시: 원장 발행 → 완료 확인. (dev-foot는 published 문서 직접 미수정)
+
+## 재요청 재검증 (2026-07-24, responder WORK-REQUEST 재수신 / 총괄+팀장 이중요청)
+- responder MSG-20260724-165328-ls8y: Risk=GO(단일 UPDATE)로 재요청 수신. 단, 이 Risk 판정은 문서가 published인 사실을 미반영.
+- read-only 재프로브(service_role) 결과 상태 **불변**:
+  - published 소견서 2건 여전히 존재 — eb47d3d8(진단일 07-23), 34998176(진단일 07-24, 최신).
+  - **07-22 소견서 없음** = 원장 재발행 아직 미실행.
+  - 그 외 template 공유 레코드(voided/printed/draft, final_text len=0)는 인쇄/작업 로그성 → 소견서 아님, 대상 아님.
+- **직접 DB 정정 재차 미실행.** 근거 3중: ①의료법 append-only(published=원장 발행 의료기록) ②planner 프로토콜(published→직접정정 금지) ③§11 medical_confirm_gate=required·confirm_status≠confirmed(§11.1 문원장 컨펌이 총괄·팀장 포함 모든 지시에 우선).
+- 유일 준수 경로 = **문지은 원장 CRM 소견서 재발행(진단일 2026-07-22, 기존 07-23/07-24 무효처리)**. dev-foot는 재발행 후 화면 실렌더만 확인.
+- 완료조건 #1(진단일=07-22)은 원장 재발행 전까지 미충족 → status escalated-to-field 유지. deploy-ready 미마킹(코드변경 0·정정 미적용).
