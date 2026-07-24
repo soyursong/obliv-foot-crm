@@ -1,0 +1,80 @@
+{
+  "ts_note": "read-only freeze",
+  "target_date": "2026-07-24",
+  "clinic": {
+    "id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "name": "오블리브의원 서울오리진점",
+    "slug": "jongno-foot"
+  },
+  "from_staff": null,
+  "to_staff": {
+    "id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+    "name": "강경민",
+    "role": "consultant",
+    "active": true,
+    "user_id": "170e0cd5-2d17-43d7-9433-3be5280d5d30"
+  },
+  "candidates": [],
+  "freeze": [],
+  "surfaces": {
+    "juyeon_staff_ids": [
+      "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+    ],
+    "stats_before": {
+      "bbs": null,
+      "kkm": {
+        "consultant_id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+        "name": "강경민",
+        "ticketing_count": 3,
+        "package_count": 2,
+        "avg_amount": 1209200,
+        "total_amount": 3627600,
+        "consulted_customer_count": 3
+      }
+    }
+  },
+  "cross_guard": {
+    "kkm_ege_original_8": [
+      {
+        "name": "엄상욱",
+        "date": "2026-07-24"
+      },
+      {
+        "name": "김종민",
+        "date": "2026-07-22"
+      },
+      {
+        "name": "오정길",
+        "date": "2026-07-17"
+      },
+      {
+        "name": "이민태",
+        "date": "2026-07-17"
+      },
+      {
+        "name": "최강선",
+        "date": "2026-07-17"
+      },
+      {
+        "name": "백영호",
+        "date": "2026-07-14"
+      },
+      {
+        "name": "이재성",
+        "date": "2026-07-14"
+      },
+      {
+        "name": "이멋진",
+        "date": "2026-07-14"
+      }
+    ],
+    "bbs_freeze_keys": [],
+    "collisions": [],
+    "note": "KKM-EGE 대상 = 원래 강경민 8건 명시셋(name+date)에 앵커. 백범석발 신규 강경민(→본건 UPDATE 후 강경민 귀속)이 그 8건 명시셋과 (name+date) 매칭 시 KKM-EGE 재조회에 휩쓸릴 위험. 충돌 0 이면 안전."
+  },
+  "abort": [
+    "from staff '백범석' 매치 0건 (기대 1)",
+    "from/to staff id 미확정 — 진행 불가",
+    "freeze 0건 — 금일 백범석 배정 없음 (이동 대상 없음, NO-OP)"
+  ]
+}
