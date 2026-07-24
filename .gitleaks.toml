@@ -48,6 +48,7 @@ regexes = [
   '''[:=]\s*['"](\.{2,}|<[^>]+>|\*{3,}|x{3,}|REPLACE|CHANGE_?ME|placeholder|example|your[_-])['"]''', # 플레이스홀더
   '''\.fill\(''',                            # playwright .fill(pw)
   '''\[AC[0-9-]''',                          # foot e2e 수용기준 로그 마커(console.log("[AC-3] ... PASS: ...")) — status 라벨 오탐 차단
+  '''\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b''', # UUID(식별자, 자격증명 아님) — 데이터정정 evidence 스냅샷의 staff/customer/reservation id 오탐 차단(generic-api-key 고엔트로피 룰)
 ]
 paths = [
   '''(^|/)node_modules/''',

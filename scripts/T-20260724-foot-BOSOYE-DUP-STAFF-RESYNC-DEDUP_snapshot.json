@@ -1,0 +1,506 @@
+{
+  "ticket": "T-20260724-foot-BOSOYE-DUP-STAFF-RESYNC-DEDUP",
+  "phase": "FREEZE/ENUMERATE (read-only)",
+  "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+  "dup_parksoye": {
+    "id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "name": "박소예 [중복정리 2026-07-18]",
+    "role": "therapist",
+    "active": false,
+    "created_at": "2026-05-25 11:15:25.363638+00"
+  },
+  "real_parksoye": {
+    "id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "name": "박소예",
+    "role": "therapist",
+    "active": true,
+    "created_at": "2026-06-01 01:50:09.345659+00"
+  },
+  "f4507_customer": {
+    "id": "df380b13-c069-450a-99a3-2c5bd4d1f17b",
+    "chart_number": "F-4507",
+    "name": "최민지",
+    "designated_therapist_id": "5fb3e3b1-1c5a-461b-9159-c330a52feb95"
+  },
+  "f4507_reservation": {
+    "id": "3971c409-3204-4cc7-9525-55de422b4380",
+    "customer_id": "df380b13-c069-450a-99a3-2c5bd4d1f17b",
+    "preferred_therapist_id": "5c17e4bc-e948-4dc4-a8cf-37904873edeb",
+    "reservation_date": "2026-07-23",
+    "status": "cancelled"
+  },
+  "fk_catalog": [
+    {
+      "conname": "assignment_actions_from_staff_id_fkey",
+      "child_table": "public.assignment_actions",
+      "child_col": "from_staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "assignment_actions_to_staff_id_fkey",
+      "child_table": "public.assignment_actions",
+      "child_col": "to_staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "check_in_services_seller_staff_id_fkey",
+      "child_table": "public.check_in_services",
+      "child_col": "seller_staff_id",
+      "confdeltype": "r"
+    },
+    {
+      "conname": "check_ins_assigned_counselor_id_fkey",
+      "child_table": "public.check_ins",
+      "child_col": "assigned_counselor_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "check_ins_consultant_id_fkey",
+      "child_table": "public.check_ins",
+      "child_col": "consultant_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "check_ins_technician_id_fkey",
+      "child_table": "public.check_ins",
+      "child_col": "technician_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "check_ins_therapist_id_fkey",
+      "child_table": "public.check_ins",
+      "child_col": "therapist_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "clinic_doctors_staff_id_fkey",
+      "child_table": "public.clinic_doctors",
+      "child_col": "staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "clinic_events_created_by_fkey",
+      "child_table": "public.clinic_events",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "customers_assigned_consultant_id_fkey",
+      "child_table": "public.customers",
+      "child_col": "assigned_consultant_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "customers_assigned_staff_id_fkey",
+      "child_table": "public.customers",
+      "child_col": "assigned_staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "customers_designated_therapist_id_fkey",
+      "child_table": "public.customers",
+      "child_col": "designated_therapist_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "daily_room_status_disabled_by_fkey",
+      "child_table": "public.daily_room_status",
+      "child_col": "disabled_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "duty_roster_doctor_id_fkey",
+      "child_table": "public.duty_roster",
+      "child_col": "doctor_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "form_submissions_issued_by_fkey",
+      "child_table": "public.form_submissions",
+      "child_col": "issued_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "health_q_tokens_created_by_fkey",
+      "child_table": "public.health_q_tokens",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "insurance_documents_issued_by_fkey",
+      "child_table": "public.insurance_documents",
+      "child_col": "issued_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "notices_created_by_fkey",
+      "child_table": "public.notices",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "package_sessions_deleted_by_fkey",
+      "child_table": "public.package_sessions",
+      "child_col": "deleted_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "package_sessions_performed_by_fkey",
+      "child_table": "public.package_sessions",
+      "child_col": "performed_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "packages_consultant_id_fkey",
+      "child_table": "public.packages",
+      "child_col": "consultant_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "prescriptions_prescribed_by_fkey",
+      "child_table": "public.prescriptions",
+      "child_col": "prescribed_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "reservation_memo_history_created_by_fkey",
+      "child_table": "public.reservation_memo_history",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "reservations_preferred_therapist_id_fkey",
+      "child_table": "public.reservations",
+      "child_col": "preferred_therapist_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "room_assignments_staff_id_fkey",
+      "child_table": "public.room_assignments",
+      "child_col": "staff_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "staff_attendance_staff_id_fkey",
+      "child_table": "public.staff_attendance",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "staff_temp_off_staff_id_fkey",
+      "child_table": "public.staff_temp_off",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "therapist_capabilities_staff_id_fkey",
+      "child_table": "public.therapist_capabilities",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    }
+  ],
+  "dup_reference_census": [
+    {
+      "table": "public.assignment_actions",
+      "col": "from_staff_id",
+      "confdeltype": "n",
+      "dup_refs": 13
+    },
+    {
+      "table": "public.assignment_actions",
+      "col": "to_staff_id",
+      "confdeltype": "n",
+      "dup_refs": 34
+    },
+    {
+      "table": "public.check_in_services",
+      "col": "seller_staff_id",
+      "confdeltype": "r",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.check_ins",
+      "col": "assigned_counselor_id",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.check_ins",
+      "col": "consultant_id",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.check_ins",
+      "col": "technician_id",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.check_ins",
+      "col": "therapist_id",
+      "confdeltype": "a",
+      "dup_refs": 17
+    },
+    {
+      "table": "public.clinic_doctors",
+      "col": "staff_id",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.clinic_events",
+      "col": "created_by",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.customers",
+      "col": "assigned_consultant_id",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.customers",
+      "col": "assigned_staff_id",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.customers",
+      "col": "designated_therapist_id",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.daily_room_status",
+      "col": "disabled_by",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.duty_roster",
+      "col": "doctor_id",
+      "confdeltype": "c",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.form_submissions",
+      "col": "issued_by",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.health_q_tokens",
+      "col": "created_by",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.insurance_documents",
+      "col": "issued_by",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.notices",
+      "col": "created_by",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.package_sessions",
+      "col": "deleted_by",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.package_sessions",
+      "col": "performed_by",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.packages",
+      "col": "consultant_id",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.prescriptions",
+      "col": "prescribed_by",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.reservation_memo_history",
+      "col": "created_by",
+      "confdeltype": "n",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.reservations",
+      "col": "preferred_therapist_id",
+      "confdeltype": "n",
+      "dup_refs": 1
+    },
+    {
+      "table": "public.room_assignments",
+      "col": "staff_id",
+      "confdeltype": "a",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.staff_attendance",
+      "col": "staff_id",
+      "confdeltype": "c",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.staff_temp_off",
+      "col": "staff_id",
+      "confdeltype": "c",
+      "dup_refs": 0
+    },
+    {
+      "table": "public.therapist_capabilities",
+      "col": "staff_id",
+      "confdeltype": "c",
+      "dup_refs": 2
+    }
+  ],
+  "dup_total_live_refs": 67,
+  "dup_nonzero_refs": [
+    {
+      "table": "public.assignment_actions",
+      "col": "from_staff_id",
+      "confdeltype": "n",
+      "dup_refs": 13
+    },
+    {
+      "table": "public.assignment_actions",
+      "col": "to_staff_id",
+      "confdeltype": "n",
+      "dup_refs": 34
+    },
+    {
+      "table": "public.check_ins",
+      "col": "therapist_id",
+      "confdeltype": "a",
+      "dup_refs": 17
+    },
+    {
+      "table": "public.reservations",
+      "col": "preferred_therapist_id",
+      "confdeltype": "n",
+      "dup_refs": 1
+    },
+    {
+      "table": "public.therapist_capabilities",
+      "col": "staff_id",
+      "confdeltype": "c",
+      "dup_refs": 2
+    }
+  ],
+  "dup_reference_details": [
+    {
+      "table": "public.assignment_actions",
+      "col": "from_staff_id",
+      "ctids": [
+        "(0,39)",
+        "(1,6)",
+        "(1,25)",
+        "(2,31)",
+        "(2,44)",
+        "(3,37)",
+        "(4,1)",
+        "(4,18)",
+        "(6,4)",
+        "(6,18)",
+        "(6,21)",
+        "(7,30)",
+        "(8,29)"
+      ]
+    },
+    {
+      "table": "public.assignment_actions",
+      "col": "to_staff_id",
+      "ctids": [
+        "(1,24)",
+        "(1,13)",
+        "(0,28)",
+        "(1,5)",
+        "(1,12)",
+        "(1,41)",
+        "(1,43)",
+        "(2,30)",
+        "(2,43)",
+        "(2,51)",
+        "(3,34)",
+        "(3,43)",
+        "(3,44)",
+        "(3,48)",
+        "(4,5)",
+        "(4,17)",
+        "(4,20)",
+        "(6,3)",
+        "(6,13)",
+        "(6,17)",
+        "(6,22)",
+        "(6,45)",
+        "(6,50)",
+        "(7,14)",
+        "(7,28)",
+        "(7,33)",
+        "(7,35)",
+        "(7,46)",
+        "(8,13)",
+        "(8,28)",
+        "(8,36)",
+        "(8,52)",
+        "(10,19)",
+        "(10,52)"
+      ]
+    },
+    {
+      "table": "public.check_ins",
+      "col": "therapist_id",
+      "ctids": [
+        "(2,7)",
+        "(2,8)",
+        "(3,19)",
+        "(3,21)",
+        "(4,19)",
+        "(8,2)",
+        "(8,16)",
+        "(9,13)",
+        "(12,16)",
+        "(12,21)",
+        "(14,19)",
+        "(15,10)",
+        "(15,12)",
+        "(18,15)",
+        "(23,1)",
+        "(24,18)",
+        "(34,6)"
+      ]
+    },
+    {
+      "table": "public.reservations",
+      "col": "preferred_therapist_id",
+      "ctids": [
+        "(24,20)"
+      ]
+    },
+    {
+      "table": "public.therapist_capabilities",
+      "col": "staff_id",
+      "ctids": [
+        "(0,9)",
+        "(0,10)"
+      ]
+    }
+  ]
+}
