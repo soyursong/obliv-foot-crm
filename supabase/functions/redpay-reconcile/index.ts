@@ -42,6 +42,8 @@ import {
   detectRefundNotInCrm,
   formatAlertMessage,
   isObserveRow,
+  planReconLogInserts,
+  SUPPRESSIBLE_EVENT_TYPES,
   type RawTransaction,
   type CrmPayment,
   type ReconEvent,
@@ -758,11 +760,65 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
   return { matched, events: allEvents.length };
 }
 
-// ── reconciliation_log insert ───────────────────────────────────────────────
+// ── reconciliation_log insert (state-change 로깅) ────────────────────────────
+//   T-20260725-foot-REDPAY-RECONLOG-IDEMPOTENCY (DA GO, change-class=no-DDL)
+//   지속-미매칭 raw 는 사이클마다 match_failed/missing_in_crm 를 '무-상태변화'로
+//   재생성 → 로그 무한증식 + count 인플레(forensic816: 1 raw→816행). 이를 막기 위해
+//   raw별 '직전 로그 event_type' 과 diff 하여 상태 전이(transition) 시에만 insert 한다.
+//   · append-only 시맨틱 보존 — 기존 로그 소급정정/삭제 없음(SELECT + INSERT 만).
+//   · 억제 대상은 match_failed / missing_in_crm 두 타입에 한정.
+//   · auto_matched 는 terminal(매칭 후 raw 미재유입) — 억제 비대상, 종전대로 무조건 insert.
+//   · upsert-on-unique 는 반려(DDL + 감사이력 소실). 여기선 순수 read-diff 로 구현.
+//   상태 전이 판정(순수 술어)은 matcher.planReconLogInserts / SUPPRESSIBLE_EVENT_TYPES 로 분리.
+
 async function insertReconEvents(events: ReconEvent[]): Promise<void> {
   if (events.length === 0) return;
 
-  const rows = events.map((e) => ({
+  // 1) 억제 후보(raw_transaction_id 有 + 억제 대상 타입) 의 raw id 수집
+  const suppressibleRawIds = Array.from(new Set(
+    events
+      .filter((e) => e.raw_transaction_id && SUPPRESSIBLE_EVENT_TYPES.has(e.event_type))
+      .map((e) => e.raw_transaction_id as string),
+  ));
+
+  // 2) raw별 '직전 로그 event_type' 조회 (append-only 로그의 최신 1건)
+  const lastEventTypeByRaw = new Map<string, string>();
+  if (suppressibleRawIds.length > 0) {
+    const { data: priorLogs, error: priorErr } = await supabase
+      .from("payment_reconciliation_log")
+      .select("raw_transaction_id,event_type,created_at")
+      .in("raw_transaction_id", suppressibleRawIds)
+      .order("created_at", { ascending: false });
+
+    if (priorErr) {
+      // 조회 실패 시 억제하지 않고 종전 동작(전량 insert)으로 폴백 — 로그 유실 방지 우선.
+      console.error(
+        "[redpay-reconcile][foot][RECONLOG-IDEMPOTENCY] prior-log 조회 오류 — 억제 스킵, 전량 insert 폴백:",
+        priorErr.message,
+      );
+    } else {
+      // created_at DESC → raw별 첫 등장이 최신. 이후 등장은 skip.
+      for (const row of (priorLogs ?? []) as Array<{ raw_transaction_id: string | null; event_type: string }>) {
+        if (row.raw_transaction_id && !lastEventTypeByRaw.has(row.raw_transaction_id)) {
+          lastEventTypeByRaw.set(row.raw_transaction_id, row.event_type);
+        }
+      }
+    }
+  }
+
+  // 3) 상태 전이 판정(순수 술어) — 억제 대상 타입은 '직전 event_type 과 다를 때(전이/최초)' 만 insert.
+  const { toInsert, suppressed } = planReconLogInserts(events, lastEventTypeByRaw);
+
+  if (suppressed > 0) {
+    console.log(
+      `[redpay-reconcile][foot][RECONLOG-IDEMPOTENCY] 무-상태변화 억제 ${suppressed}건` +
+      `(match_failed/missing_in_crm) — insert 대상 ${toInsert.length}/${events.length}건.`,
+    );
+  }
+
+  if (toInsert.length === 0) return;
+
+  const rows = toInsert.map((e) => ({
     clinic_id:          e.clinic_id,
     raw_transaction_id: e.raw_transaction_id,
     payment_id:         e.payment_id,

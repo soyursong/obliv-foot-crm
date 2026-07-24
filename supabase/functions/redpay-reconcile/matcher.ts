@@ -667,3 +667,47 @@ export function formatAlertMessage(payload: AlertPayload): string {
       return `[reconciliation 알림] ${payload.alert_type}: ${payload.mismatch_reason ?? ""}`;
   }
 }
+
+// ── reconciliation_log state-change 게이트 (T-20260725-foot-REDPAY-RECONLOG-IDEMPOTENCY) ──
+//   지속-미매칭 raw 가 사이클마다 match_failed/missing_in_crm 를 '무-상태변화'로 재생성 →
+//   로그 무한증식 + count 인플레(forensic816: 1 raw→816행). raw별 '직전 로그 event_type' 과
+//   diff 하여 상태 전이(transition/최초관측) 시에만 insert 한다. append-only 시맨틱 보존.
+//   억제 대상은 아래 두 타입에 한정 — auto_matched 는 terminal 이라 억제 비대상.
+export const SUPPRESSIBLE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "match_failed",
+  "missing_in_crm",
+]);
+
+/**
+ * 순수 술어: recon 이벤트 배열 + raw별 '직전 로그 event_type' 맵을 받아
+ * 실제 insert 할 이벤트와 억제(무-상태변화) 건수를 계산한다. DB I/O 없음.
+ *
+ * · 억제 대상 타입(match_failed/missing_in_crm) 이면서 raw_transaction_id 가 있고,
+ *   직전 로그 event_type 이 현재와 동일하면 → 억제(전이 아님).
+ * · 그 외(비억제 타입, raw 없는 이벤트, 전이/최초관측) → insert.
+ * · 배치-내 상태도 갱신 → 같은 사이클 내 동일 raw·동일타입 중복도 1건으로 억제.
+ *
+ * @param events          이번 사이클 recon 이벤트
+ * @param priorEventType  raw_transaction_id → 직전 로그 event_type (append-only 최신 1건)
+ */
+export function planReconLogInserts(
+  events: ReconEvent[],
+  priorEventType: Map<string, string>,
+): { toInsert: ReconEvent[]; suppressed: number } {
+  // priorEventType 를 배치-내에서 변형하지 않도록 로컬 복제.
+  const seen = new Map<string, string>(priorEventType);
+  let suppressed = 0;
+  const toInsert = events.filter((e) => {
+    if (!(e.raw_transaction_id && SUPPRESSIBLE_EVENT_TYPES.has(e.event_type))) {
+      return true; // 비억제 타입 / raw 없는 이벤트 → 무조건 insert
+    }
+    const prev = seen.get(e.raw_transaction_id);
+    if (prev === e.event_type) {
+      suppressed++;
+      return false; // 무-상태변화 → 억제
+    }
+    seen.set(e.raw_transaction_id, e.event_type); // 전이 확정 → 배치-내 갱신
+    return true;
+  });
+  return { toInsert, suppressed };
+}
