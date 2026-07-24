@@ -1,0 +1,36 @@
+{
+  "ticket": "T-20260724-foot-ASSIGN-KIMJUYEON-TODAY-TESTDATA-DEL",
+  "part": "A_parkminseok",
+  "mode": "VERIFY-ONLY",
+  "freeze_count": {
+    "check_ins": 4,
+    "assignment_actions": 4
+  },
+  "steps": [
+    {
+      "step": "freeze_recheck_check_ins",
+      "matched": 4,
+      "ok": true
+    },
+    {
+      "step": "freeze_recheck_assignment_actions",
+      "matched": 4,
+      "ok": true
+    },
+    {
+      "step": "fk_child_footprint_probe",
+      "counts": {
+        "payments": 0,
+        "service_charges": 0,
+        "package_sessions": 0
+      },
+      "ok": true
+    },
+    {
+      "step": "archive_first",
+      "check_ins": 4,
+      "assignment_actions": 4,
+      "ok": true
+    }
+  ]
+}
