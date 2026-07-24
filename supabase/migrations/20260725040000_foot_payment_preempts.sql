@@ -98,9 +98,15 @@ COMMENT ON COLUMN public.payment_preempts.matched_payment_id IS '매칭 성공 �
 COMMENT ON COLUMN public.payment_preempts.merchant_hint      IS '★표시용 breadcrumb 전용(단말/가맹점 이름). 매칭 키 아님 — 스코프 canon=tid whitelist. business_no/hint 로 매칭 판정 금지.';
 COMMENT ON COLUMN public.payment_preempts.fail_reason        IS 'status=failed 사유(tie_break_ambiguous/webhook_cancelled/approval_declined 등).';
 
--- ── RLS (payments 정책 미러) ────────────────────────────────────────────────
+-- ── RLS (payments canonical 정책 미러 — §16 멀티테넌트 clinic_id 격리 강제) ─────
 --   FE(authenticated 스태프)는 선점 생성(INSERT)·조회(SELECT)·중도취소(UPDATE). matched/expired 전이는
 --   매처/TTL sweep EF 가 service_role(RLS 우회)로 수행 → 별도 authenticated UPDATE 는 취소용만 필요.
+--   ★모든 authenticated 정책은 role 술어 + `AND clinic_id = current_user_clinic_id()` 를 강제한다
+--     (payments canonical RLS 20260615160000 미러, cross_crm_data_contract §16). clinic_id 술어 누락 시
+--     clinic A 스코프 직원이 clinic B 선점 레코드(customer_id·check_in_id·expected_amount 보유, PHI-인접)를
+--     교차조회/교차기록 가능 → §16 격리 회귀. clinic_id 는 NOT NULL 이므로 술어 강제 가능하며,
+--     FE INSERT 는 clinic_id=current_user_clinic_id() 를 채워야 한다(NOT NULL 이므로 필수).
+--   ★service_role(매처/TTL-sweep EF)은 RLS 우회 → 백그라운드 매칭에 무영향.
 ALTER TABLE public.payment_preempts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS payment_preempts_admin_all       ON public.payment_preempts;
@@ -109,15 +115,17 @@ DROP POLICY IF EXISTS payment_preempts_consult_update  ON public.payment_preempt
 DROP POLICY IF EXISTS payment_preempts_approved_read   ON public.payment_preempts;
 
 CREATE POLICY payment_preempts_admin_all ON public.payment_preempts FOR ALL TO authenticated
-  USING (is_admin_or_manager()) WITH CHECK (is_admin_or_manager());
+  USING      (is_admin_or_manager() AND clinic_id = current_user_clinic_id())
+  WITH CHECK (is_admin_or_manager() AND clinic_id = current_user_clinic_id());
 
 CREATE POLICY payment_preempts_consult_insert ON public.payment_preempts FOR INSERT TO authenticated
-  WITH CHECK (is_consultant_or_above());
+  WITH CHECK (is_consultant_or_above() AND clinic_id = current_user_clinic_id());
 
 CREATE POLICY payment_preempts_consult_update ON public.payment_preempts FOR UPDATE TO authenticated
-  USING (is_consultant_or_above()) WITH CHECK (is_consultant_or_above());
+  USING      (is_consultant_or_above() AND clinic_id = current_user_clinic_id())
+  WITH CHECK (is_consultant_or_above() AND clinic_id = current_user_clinic_id());
 
 CREATE POLICY payment_preempts_approved_read ON public.payment_preempts FOR SELECT TO authenticated
-  USING (is_approved_user());
+  USING (is_approved_user() AND clinic_id = current_user_clinic_id());
 
 GRANT SELECT, INSERT, UPDATE ON public.payment_preempts TO authenticated;
