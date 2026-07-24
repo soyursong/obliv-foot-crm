@@ -486,7 +486,8 @@ async function updatePollerState(mode, nowIso, fetched, upserted) {
     warn(`poller_state 갱신 실패 (다음 사이클 재시도) ${res.status}: ${body.slice(0, 200)}`);
     return false;
   }
-  log(`poller_state heartbeat 갱신 완료: mode=${mode} last_incremental_to=${nowIso}`);
+  const writtenField = mode === "incremental" ? "last_incremental_to" : "last_daily_to";
+  log(`poller_state heartbeat 갱신 완료: mode=${mode} ${writtenField}=${nowIso}`);
   return true;
 }
 
