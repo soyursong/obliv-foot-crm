@@ -1729,10 +1729,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── 공통 check_in_services 저장 ──────────────────────────────────────────
-  // T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
-  //   isDeductMode=true 시 prepaidIds 항목에 is_package_session=true 마킹
-  //   → 해당 항목은 Closing 시술별 통계/매출 집계에서 자동 제외됨
-  const saveCheckInServices = async (isDeductMode: boolean = false): Promise<boolean> => {
+  // T-20260724-foot-PKGSESSION-SOURCE-CLOSURE (가드#4: is_package_session ⟺ package_session_id):
+  //   is_package_session 은 소비 RPC(consume_package_sessions_for_checkin)가 회차 insert 와
+  //   원자적으로 함께 SET 하는 파생값이다(단일 진실원천). FE 저장은 flag 를 선(先)마킹하지 않고,
+  //   재저장 시 소비완료 링크(package_session_id)만 C3 보존한다(두 컬럼 항상 함께 이동).
+  //   (구 T-20260519 AC-1: isDeductMode 로 flag 선마킹 → FK-null drift/phantom already-paid 유발, 폐기)
+  const saveCheckInServices = async (): Promise<boolean> => {
     if (pricingItems.length === 0 && codeItems.length === 0) {
       toast.error('시술 코드를 선택해주세요');
       return false;
@@ -1771,15 +1773,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         customAmounts.get(service.id) !== undefined
           ? customAmounts.get(service.id)!
           : service.price;
-      // T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
-      // 선수금차감 모드에서 보라색(prepaid) 항목 = 패키지 세션으로 마킹
-      // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 절대 패키지 세션으로 마킹하지 않음
-      //   → is_package_session=false 보장 → Closing 매출 제외에 안 걸림 + 영수증 패키지 항목 실금액 노출(AC-5)
-      const isPkgSession =
-        isDeductMode && prepaidIds.has(service.id) && !isTrialService(service);
       return Array.from({ length: qty }, () => {
-        // C3 하드닝: 소비완료 마킹 보존 재적용 (service_id 별 FIFO 팝). 남은 큐가 있으면
-        //   package_session_id 복원 + is_package_session=true 강제(재저장으로 사라지지 않음).
+        // ── T-20260724-foot-PKGSESSION-SOURCE-CLOSURE (가드#4: 두 컬럼 함께 SET) ──
+        //   is_package_session 은 package_session_id 와 원자적으로 함께만 움직인다.
+        //   소비 RPC 가 회차 insert 와 동시에 두 컬럼을 SET 하는 단일 진실원천이다. FE 가 flag 만
+        //   선마킹하면 (a) 미소비/미settle 행 phantom already-paid, (b) FK-null drift(소스 미폐쇄,
+        //   F-4790 재발경로)를 만든다. → flag 는 오직 소비완료 링크(preservedPsid = RPC 세팅 FK 의
+        //   C3 보존분)가 있을 때만 true. (RPC UPDATE WHERE 는 is_package_session 미참조 → 매칭 무영향)
         const q = preservedQueue.get(service.id);
         const preservedPsid = q && q.length > 0 ? q.shift()! : null;
         return {
@@ -1788,7 +1788,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           service_name: service.name,
           price: unitPrice,
           original_price: service.price,
-          is_package_session: isPkgSession || preservedPsid !== null,
+          is_package_session: preservedPsid !== null,
           package_session_id: preservedPsid,
         };
       });
@@ -1808,8 +1808,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── [시술 저장 및 포함 금액 산정] (기존 handleSave, 전체 금액) ─────────────
   const handleSaveFull = async () => {
-    // T-20260519-foot-PKG-REVENUE-SPLIT: 일반 저장은 isDeductMode=false
-    const ok = await saveCheckInServices(false);
+    // T-20260724-foot-PKGSESSION-SOURCE-CLOSURE: 저장은 flag 선마킹 없이 C3 링크만 보존
+    const ok = await saveCheckInServices();
     if (!ok) return;
     setSaved(true);
     setDeductMode(false);
@@ -1839,8 +1839,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       await handleSaveFull();
       return;
     }
-    // T-20260519-foot-PKG-REVENUE-SPLIT: 선수금차감 모드에서 prepaid 항목 is_package_session=true 마킹
-    const ok = await saveCheckInServices(true);
+    // T-20260724-foot-PKGSESSION-SOURCE-CLOSURE: 선수금차감 저장도 flag 선마킹 없이 저장.
+    //   is_package_session/package_session_id 는 수납확정 시 소비 RPC 가 원자적으로 함께 SET.
+    const ok = await saveCheckInServices();
     if (!ok) return;
 
     const deducted = calcDeductAmount();
@@ -2221,19 +2222,42 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     // 미저장 항목이 있으면 DB 자동 저장 (수납대기 유지 — status 변경 없음)
     if (!saved && selectedItems.length > 0) {
       try {
+        // ── T-20260724-foot-PKGSESSION-SOURCE-CLOSURE (가드#4: 두 컬럼 함께 SET) ──
+        //   X 닫기 자동저장도 DELETE+reinsert 다. C3 보존 없이 재삽입하면 소비 RPC 가 세팅한
+        //   package_session_id(+is_package_session)를 NULL/false 로 clobber → 소스 미폐쇄
+        //   (FK-null drift + false-when-consumed). saveCheckInServices 와 동형으로 소비완료 링크를
+        //   service_id 별 FIFO 스냅샷·복원한다(두 컬럼 함께 이동).
+        const { data: priorMarked } = await supabase
+          .from('check_in_services')
+          .select('service_id, package_session_id')
+          .eq('check_in_id', checkIn.id)
+          .not('package_session_id', 'is', null);
+        const preservedQueue = new Map<string, string[]>();
+        for (const r of (priorMarked ?? []) as { service_id: string | null; package_session_id: string | null }[]) {
+          if (!r.service_id || !r.package_session_id) continue;
+          const pq = preservedQueue.get(r.service_id) ?? [];
+          pq.push(r.package_session_id);
+          preservedQueue.set(r.service_id, pq);
+        }
         await supabase
           .from('check_in_services')
           .delete()
           .eq('check_in_id', checkIn.id);
         const rows = selectedItems.flatMap(({ service, qty }) =>
-          Array.from({ length: qty }, () => ({
-            check_in_id: checkIn.id,
-            service_id: service.id,
-            service_name: service.name,
-            price: customAmounts.get(service.id) ?? service.price,
-            original_price: service.price,
-            is_package_session: false,
-          })),
+          Array.from({ length: qty }, () => {
+            // C3 보존: 소비완료 링크가 있으면 package_session_id + is_package_session 복원(함께).
+            const pq = preservedQueue.get(service.id);
+            const preservedPsid = pq && pq.length > 0 ? pq.shift()! : null;
+            return {
+              check_in_id: checkIn.id,
+              service_id: service.id,
+              service_name: service.name,
+              price: customAmounts.get(service.id) ?? service.price,
+              original_price: service.price,
+              is_package_session: preservedPsid !== null,
+              package_session_id: preservedPsid,
+            };
+          }),
         );
         if (rows.length > 0) {
           const { error: insertErr } = await supabase.from('check_in_services').insert(rows);
