@@ -1,0 +1,120 @@
+{
+  "customer": [
+    {
+      "id": "4f85924b-07c5-4586-a783-68cdae6ce5f2",
+      "chart_number": "F-4673",
+      "name": "손정아",
+      "birth_date": null
+    }
+  ],
+  "template": [
+    {
+      "id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "form_key": "opinion_doc",
+      "template_has_date_marker": true,
+      "template_has_diagdate_label": false
+    }
+  ],
+  "opinion_docs": [
+    {
+      "id": "34998176-13cc-4f80-bd8c-4a6bb8096382",
+      "status": "published",
+      "created_at": "2026-07-24 04:08:53.695584+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": "opinion",
+      "published_at": "2026-07-24T13:08:53",
+      "issue_date_fd": null,
+      "final_text_head": "상기환자는 상기증상 및 병명으로 2026년 07월 24일에 내원하였고 양측 조갑진균증으로 인한 내향성 발톱과 염증소견으로 내원하심. 환자는 현재 만성적인 위장관 증상을 동반하고 있으며 경구 항진균제는 위장관계 부작용이 가장 빈번하게 보고되는 약물군으로 이는 약물 중단의 주요 원인으로 확인되었음. 조갑진균증 치료를 위해서는 경구 항진균제의 수개월간 지속적 복용이 필수적이나, 장기간 위장 자극으로 인해 식욕부진, 체중 감소, 영양 불량, 기존 위장 질환의 악화 등이 우려됨. 또한 환자가 위장장애로 인해 양성자펌프억제제를 복용할 경우 위산도를 감소시켜 항진균제의 흡수를 현저히 저하시킬 수 있어 치료 효과를 기대하기 어려우며, 동시에 다른 약물의 흡수에도 영향을 미쳐 복잡한 약물 상호작용을 야기할 수 있음. 환자의 현재 위장 상태를 고려할 때 경구 항진균제의 장기 투여는 기존 위장 증상을 지속적으로 악화시키고 치료 순응도를 현저히 저하시킬 위험이 높으므로, 전신 부작용이 없고 위장관 부담을 주지 않으면서 국소적으로 백선균을 직접 사멸시킬 수 있는 레이저 치료와 도포제 치료의 병행이 필요할 것으로 보임. 향후 12-15개월간 외래 추시 및 반복적 보존적 치료를 요함."
+    },
+    {
+      "id": "22086b1a-7ffa-429b-a6bc-aa5b722559de",
+      "status": "voided",
+      "created_at": "2026-07-24 04:06:24.244942+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": "opinion",
+      "published_at": null,
+      "issue_date_fd": null,
+      "final_text_head": null
+    },
+    {
+      "id": "356bd13a-3bcb-47ff-9af7-6bfc6895d946",
+      "status": "printed",
+      "created_at": "2026-07-24 02:46:55.481275+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "f95280b9-4676-4b83-a2e7-debef224d62b",
+      "status": "draft",
+      "created_at": "2026-07-24 02:46:52.657558+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "121ae971-375a-4623-8bd5-8a62cc6dd8ce",
+      "status": "printed",
+      "created_at": "2026-07-24 02:46:09.16006+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "d6483a3b-55fb-4d50-a6af-70c7ba68bb2b",
+      "status": "draft",
+      "created_at": "2026-07-24 02:46:06.867236+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "b5e562f2-6a68-4a59-a069-fb39193cbfc7",
+      "status": "printed",
+      "created_at": "2026-07-24 02:39:37.426916+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "c8f9e20d-b5ce-454d-873d-4db75a997525",
+      "status": "printed",
+      "created_at": "2026-07-24 02:30:02.301194+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "686a8e7b-6fb8-4b38-8439-ff5421cd6cc3",
+      "status": "printed",
+      "created_at": "2026-07-24 02:01:11.086375+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": null,
+      "published_at": null,
+      "issue_date_fd": "2026-07-24",
+      "final_text_head": null
+    },
+    {
+      "id": "eb47d3d8-08cd-4920-9f06-ac1f5d6cedd7",
+      "status": "published",
+      "created_at": "2026-07-23 11:45:22.873215+00",
+      "template_id": "c51efeba-f484-4dd9-9a61-e495dfe6e8d0",
+      "doc_type": "opinion",
+      "published_at": "2026-07-23T20:45:22",
+      "issue_date_fd": null,
+      "final_text_head": "상기환자는 상기증상 및 병명으로 2026년 07월 23일에 내원하였고 양측 조갑진균증으로 인한 내향성 발톱과 염증소견으로 내원하심. 환자는 현재 만성적인 위장관 증상을 동반하고 있으며 경구 항진균제는 위장관계 부작용이 가장 빈번하게 보고되는 약물군으로 이는 약물 중단의 주요 원인으로 확인되었음. 조갑진균증 치료를 위해서는 경구 항진균제의 수개월간 지속적 복용이 필수적이나, 장기간 위장 자극으로 인해 식욕부진, 체중 감소, 영양 불량, 기존 위장 질환의 악화 등이 우려됨. 또한 환자가 위장장애로 인해 양성자펌프억제제를 복용할 경우 위산도를 감소시켜 항진균제의 흡수를 현저히 저하시킬 수 있어 치료 효과를 기대하기 어려우며, 동시에 다른 약물의 흡수에도 영향을 미쳐 복잡한 약물 상호작용을 야기할 수 있음. 환자의 현재 위장 상태를 고려할 때 경구 항진균제의 장기 투여는 기존 위장 증상을 지속적으로 악화시키고 치료 순응도를 현저히 저하시킬 위험이 높으므로, 전신 부작용이 없고 위장관 부담을 주지 않으면서 국소적으로 백선균을 직접 사멸시킬 수 있는 레이저 치료와 도포제 치료의 병행이 필요할 것으로 보임. 향후 12-15개월간 외래 추시 및 반복적 보존적 치료를 요함."
+    }
+  ]
+}
