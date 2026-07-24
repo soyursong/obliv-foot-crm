@@ -86,7 +86,9 @@ test.describe('T-20260625-foot-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER — 발행
     expect(q).toContain("variant=\"pending\"");
     expect(q).toContain('data-testid="docreq-table"');
     expect(q).toContain('data-testid="docreq-write-btn"');
-    expect(q).toContain('animate-ping'); // 신규 요청 반짝(대기 그룹 한정)
+    // animate-ping ripple 은 T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE(212edca2/f865b336, deployed)
+    // 로 의도적 제거됨 → 부재 단언(재도입 방지). stale-green 회귀 위생 T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN.
+    expect(q).not.toContain('animate-ping');
   });
 
   test('시나리오2(AC-5): 완료 그룹도 표준 컬럼(성함·차트번호 등) 동일 헤더 1벌 재사용', () => {
