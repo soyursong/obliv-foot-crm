@@ -40,6 +40,9 @@ import {
 import { buildContraindKeySet, applyPrefillExclusivity, composeOpinionDoc } from '@/lib/opinionDocCompose';
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 처방내역·임상경과 = RXCLIN-PREVIEW-DROPDOWN 표현 상속(미리보기 셀 클릭→컬럼-앵커 드롭다운 전문). 공유 컴포넌트 재사용(중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
+// T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT: 발행완료 서류 클릭 열람을 '소견서 양식 그대로'(발행/출력
+//   렌더러 재사용)로 렌더하는 read-only 뷰. 텍스트 나열 → 실제 발행 양식 레이아웃.
+import IssuedOpinionDocFormView from '@/components/doctor/IssuedOpinionDocFormView';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -278,7 +281,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       {/* T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN (AC1/AC2/AC4): '서류 완료' 서류명 클릭 → 실제 발행본 내용 열람.
           read-only 전용 — 재발행/취소/수정 버튼 없음(AC4). 닫기만. 발행 경로(publish_opinion_doc RPC) 미접촉. */}
       <Dialog open={!!viewTarget} onOpenChange={(o) => { if (!o) setViewTarget(null); }}>
-        <DialogContent className="max-w-2xl" data-testid="docreq-doc-view-dialog">
+        <DialogContent className="max-w-3xl" data-testid="docreq-doc-view-dialog">
           <DialogHeader>
             <DialogTitle className="flex flex-wrap items-center gap-2" data-testid="docreq-doc-view-title">
               <FileText className="h-5 w-5 text-emerald-600" />
@@ -293,12 +296,19 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
               {viewDoc?.doctorName && <span>발행자 {viewDoc.doctorName}</span>}
             </DialogDescription>
           </DialogHeader>
-          {/* 실제 발행본 내용 read-only 열람(작성창 본문과 동일 표현: 원문 그대로 pre-wrap). */}
-          <div
-            className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 px-4 py-3 text-[13px] leading-relaxed text-gray-800"
-            data-testid="docreq-doc-view-body"
-          >
-            {viewBody.trim() ? viewBody : '표시할 서류 내용이 없습니다.'}
+          {/* T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT: 실제 발행본 read-only 열람을 '소견서 양식 그대로'
+              (병원 헤더·환자정보 블록·상병/소견 영역·발급일·담당의·서명/도장)로 렌더. 텍스트 나열 → 실제
+              발행/출력 양식 레이아웃. 발행 미리보기/출력 렌더러(renderOpinionDocHtml, bindHtmlTemplate L-006)
+              재사용 + 발행 저장본 snapshot 주입(db_change=false). viewBody(final_text 우선·composeOpinionDoc
+              폴백)는 그대로 승계 — CLICKOPEN 클릭 열람 동선/데이터소스/read-only 성격 무회귀(AC5). */}
+          <div data-testid="docreq-doc-view-body">
+            <IssuedOpinionDocFormView
+              clinicId={clinicId}
+              viewTarget={viewTarget}
+              viewDoc={viewDoc}
+              body={viewBody}
+              clinicHeader={clinicHeader}
+            />
           </div>
           <DialogFooter>
             <Button
