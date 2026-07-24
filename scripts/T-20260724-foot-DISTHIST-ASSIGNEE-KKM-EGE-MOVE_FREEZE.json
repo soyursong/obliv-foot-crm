@@ -1,0 +1,213 @@
+{
+  "ts_note": "read-only freeze",
+  "clinic": {
+    "id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "name": "오블리브의원 서울오리진점",
+    "slug": "jongno-foot"
+  },
+  "from_staff": {
+    "id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+    "name": "강경민",
+    "role": "consultant",
+    "active": true,
+    "user_id": "170e0cd5-2d17-43d7-9433-3be5280d5d30"
+  },
+  "to_staff": {
+    "id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+    "name": "엄경은",
+    "role": "consultant",
+    "active": true,
+    "user_id": "02540f48-f877-4121-8e92-83b4e993e76b"
+  },
+  "targets": [
+    {
+      "name": "엄상욱",
+      "date": "2026-07-24",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "976e2667-7d75-4c09-95e2-b6faa7d3a14d",
+          "customer_id": "fd9417a3-ccaf-4323-a595-04204f6ee32a",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-24T01:06:11.957169+00:00",
+          "chart_number": "F-5057"
+        }
+      ]
+    },
+    {
+      "name": "김종민",
+      "date": "2026-07-22",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "c391f00b-c3ba-4860-9d15-d4a7f03bba0f",
+          "customer_id": "9669f2c4-a490-41f8-885b-dc89ca54b46b",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-22T00:43:42.899272+00:00",
+          "chart_number": "F-4568"
+        }
+      ]
+    },
+    {
+      "name": "오정길",
+      "date": "2026-07-17",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "378e528e-1d2f-4d6e-9eea-a2147ef05643",
+          "customer_id": "95089fba-96a0-4226-b33c-065e82595626",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-17T04:31:30.000795+00:00",
+          "chart_number": "F-4850"
+        }
+      ]
+    },
+    {
+      "name": "이민태",
+      "date": "2026-07-17",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "87411a19-6d65-4ea3-98bf-9b38348b2607",
+          "customer_id": "5659dad8-c486-465f-a842-a0f41dbd478c",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-17T08:35:49.876872+00:00",
+          "chart_number": "F-4552"
+        }
+      ]
+    },
+    {
+      "name": "최강선",
+      "date": "2026-07-17",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "87426961-d3f0-4a4d-bae3-b5da9ee3c7ce",
+          "customer_id": "c2df98b9-ebdc-413b-b40c-ee8ce023290f",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-17T05:33:11.719743+00:00",
+          "chart_number": "F-4825"
+        }
+      ]
+    },
+    {
+      "name": "백영호",
+      "date": "2026-07-14",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "9b0daa11-f720-4719-afa2-61565f1b1613",
+          "customer_id": "106ecb06-168c-458b-aa11-9b77c83c0a06",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-14T06:26:39.480511+00:00",
+          "chart_number": "F-4533"
+        }
+      ]
+    },
+    {
+      "name": "이재성",
+      "date": "2026-07-14",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "2f6b0e7c-0e75-4ec9-a508-c3ef0bee0c1c",
+          "customer_id": "cbd71b52-6be8-432b-984e-1ee7599a4b0f",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-14T08:10:51.217609+00:00",
+          "chart_number": "F-4702"
+        }
+      ]
+    },
+    {
+      "name": "이멋진",
+      "date": "2026-07-14",
+      "total_on_date": 1,
+      "kkm_rows": 0,
+      "rows": [
+        {
+          "id": "e05cce94-5cc8-4c85-8f34-3355fd7c710c",
+          "customer_id": "8c525a72-0254-4d43-bb8d-d4d7388f3e3a",
+          "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+          "is_kkm": false,
+          "is_juyeon": false,
+          "status": "done",
+          "visit_type": "new",
+          "checked_in_at": "2026-07-14T08:45:21.733377+00:00",
+          "chart_number": "F-4642"
+        }
+      ]
+    }
+  ],
+  "freeze": [],
+  "surfaces": {
+    "juyeon_staff_ids": [
+      "10eacaa8-fa6b-4615-8bf1-02b4f49cb6ed"
+    ],
+    "stats_before": {
+      "kkm": {
+        "consultant_id": "6ab26d9f-fd10-4042-9fd7-076f277be5d4",
+        "name": "강경민",
+        "ticketing_count": 34,
+        "package_count": 6,
+        "avg_amount": 234424,
+        "total_amount": 7970400,
+        "consulted_customer_count": 34
+      },
+      "ege": {
+        "consultant_id": "b311593d-9e46-4ac8-9424-6b0fa1689a06",
+        "name": "엄경은",
+        "ticketing_count": 41,
+        "package_count": 17,
+        "avg_amount": 789320,
+        "total_amount": 32362110,
+        "consulted_customer_count": 41
+      }
+    }
+  },
+  "abort": [
+    "엄상욱@2026-07-24: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "김종민@2026-07-22: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "오정길@2026-07-17: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "이민태@2026-07-17: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "최강선@2026-07-17: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "백영호@2026-07-14: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "이재성@2026-07-14: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "이멋진@2026-07-14: 강경민 귀속 check_in 0건 (기대 1) — 불일치",
+    "freeze 건수 0 ≠ 8"
+  ]
+}
