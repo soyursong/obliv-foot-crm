@@ -132,6 +132,8 @@ import {
   // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 결함A(급여 category 분해 remainder)·결함B(납부박스 payments).
   applyBillReceiptNewCoveredTokens,
   applyBillReceiptPaidBoxTokens,
+  // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE: 신양식 aggregate 라이브 SSOT 강제(세부내역과 동일 소스로 수렴).
+  applyBillReceiptNewLiveTotals,
   // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
   loadAlreadyPaidAmount,
   // T-20260721-foot-BILLDETAIL-SVCCHARGE-FALLBACK-RENDER: service_charges 직결 폴백 경로도
@@ -1374,6 +1376,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       const batchAlreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade);
       const valuesFor = (t: FormTemplate): Record<string, string> => {
         const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };
+        // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE (일괄출력 경로): 신양식 라이브 명시세팅.
+        //   단건(IssueDialog allValues) 경로와 대칭 — 야간가산 fold 이전에 stale service_charges autobind 값을
+        //   라이브(check_in_services=fbBatch)로 force 대입해 bill_detail 과 동일 SSOT 수렴. 신양식 한정(무파괴).
+        if (t.form_key === 'bill_receipt_new' && fbBatch && fbBatch.grandTotal > 0) {
+          applyBillReceiptNewLiveTotals(v, {
+            grandTotal: fbBatch.grandTotal,
+            insuranceCovered: fbBatch.liveBillingValues.insuranceCovered,
+            copayment: fbBatch.liveBillingValues.copayment,
+            nonCovered: fbBatch.liveBillingValues.nonCovered,
+          });
+        }
         applyNightHolidaySurcharge(
           v,
           t.form_key,
@@ -2725,6 +2738,21 @@ function IssueDialog({
       // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 → check_in_services 폴백.
       //   PMW(PATH-4) applyBillingFallback 호출(L1472~1475)과 동일 정의. autobind 값이 있으면 보존.
       applyBillingFallback(base, footFb.liveBillingValues);
+    }
+
+    // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE: 계산서·영수증(bill_receipt_new) 전용 라이브 명시세팅.
+    //   RC: applyBillingFallback(isBlankOrZero 가드)이 stale service_charges autobind 값을 보존 → 라이브(check_in_services)가
+    //   copayment/insurance_covered/non_covered 를 덮지 못해 세부산정내역(bill_detail, check_in_services)과 금액 발산.
+    //   수정: 신양식 한정으로 라이브 값 force 대입, computeFootBilling(footFb) 결과로 명시 덮어씀 → bill_detail 과 동일 SSOT 수렴(AC-1~3).
+    //   applyBillingFallback 일반정책 무접촉(bill_detail·기타 서류 동작 불변, T-20260609 AC-3 GREEN 유지).
+    //   ⚠ 야간가산 fold + patient_amount 10원절사(FLOOR)는 아래(surcharge·patient_amount 블록)에서 종전대로 후처리 — 여기서는 base 값만 세팅.
+    if (template.form_key === 'bill_receipt_new' && footFb && footFb.grandTotal > 0) {
+      applyBillReceiptNewLiveTotals(base, {
+        grandTotal: footFb.grandTotal,
+        insuranceCovered: footFb.liveBillingValues.insuranceCovered,
+        copayment: footFb.liveBillingValues.copayment,
+        nonCovered: footFb.liveBillingValues.nonCovered,
+      });
     }
 
     // T-20260622-foot-DOCSERIAL-AUTOGEN: 등록번호(차트번호)/연번호 자동 생성.
