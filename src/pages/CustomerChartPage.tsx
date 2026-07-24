@@ -3893,7 +3893,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     () => parseFootSites((latestCheckIn?.treatment_memo as { foot_sites?: unknown } | null)?.foot_sites),
     [latestCheckIn],
   );
-  const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant';
+  // T-20260724-foot-CHART2-TREATREQ-COOR-PERM: coordinator 계정도 [치료 신청] 체크/저장 가능 (ADDITIVE).
+  //   chart_treatment_requests RLS는 is_approved_user()(role-무관)라 DB 권한 이미 개방 — FE 게이트만 정합.
+  //   admin/manager/consultant 기존 동작 무변경, 그 외 role은 종전대로 read-only 유지.
+  const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant' || profile?.role === 'coordinator';
   // T-20260722-foot-DESIG-THERAPIST-ROLE-GATE: 지정 치료사 편집 = 코디/상담실장 + admin/manager
   //   그 외(director/therapist/part_lead/staff 등)는 읽기전용(disabled). 원 스펙(T-20260522) 치료사 write는 supersede.
   const canEditDesignatedTherapist =
