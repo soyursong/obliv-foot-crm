@@ -1,0 +1,95 @@
+{
+  "ticket": "T-20260724-foot-ASSIGN-KIMJUYEON-TODAY-TESTDATA-DEL",
+  "branch": "A_parkminseok_F-4790",
+  "da_reply": "MSG-20260724-220943-dski / DA-20260724-foot-ASSIGN-KIMJUYEON-CHECKINSERVICES-REVENUE-UNIVERSE.md (verdict=CLEAR)",
+  "mode": "READ-ONLY (WRITE 0, hard-DELETE HOLD)",
+  "db": "rxlomoozakkjesdqjtvd (foot prod)",
+  "run_at_kst": "2026-07-24",
+  "freeze_set": {
+    "check_ins": [
+      "9fa4be59-2b48-47f7-beed-561d5483377d",
+      "32c1431c-23e9-465b-8575-164f8a763ee3",
+      "4c0f40b6-e674-473d-bb48-0f5bb7757ad9",
+      "4a406e80-16f4-428e-8f8e-6fa08e0bdc9a"
+    ],
+    "check_in_services_count": 27,
+    "all_status": "cancelled (박민석, 취소배정)",
+    "all_package_id": "NULL",
+    "shared_reservation_id": "a095c085-016b-41b7-89d9-eaf07e921950 (parent FK, not a child — no cascade)"
+  },
+  "G1_package_payments_gap": {
+    "adjacent_package_ids": [],
+    "note": "4 check_ins.package_id 전건 NULL / payments 0 / package_sessions 0 → 인접 package 부존재. cis.package_session_id 전건 NULL.",
+    "package_payments_binding_column": "package_id (NOT check_in_id)",
+    "package_payments_adjacent_to_A": 0,
+    "package_payments_table_total_rows": 67,
+    "orphan_pkg_01ddef31_in_A_adjacent": false,
+    "verdict": "CLEAR — (A) 인접 package 0개 → package_payments 0. (B) orphan 01ddef31 (A) 부재."
+  },
+  "G2_exact_id_ledger": {
+    "basis": "freeze exact 4 check_in_id (person-level 아님)",
+    "payments_by_check_in_id": 0,
+    "service_charges_by_check_in_id": 0,
+    "package_sessions_by_check_in_id": 0,
+    "payment_items_by_check_in_id": 0,
+    "package_payments_by_package_id": 0,
+    "note": "payments/service_charges/package_sessions 는 check_in_id FK 보유; package_payments 는 package_id FK만 보유(check_in_id 컬럼 부재) → package 경로로 0 확인.",
+    "verdict": "CLEAR — exact-id 원장 4종 전부 0"
+  },
+  "G2_f4790_overlap": {
+    "f4790_check_ins": [
+      "9fa4be59-2b48-47f7-beed-561d5483377d",
+      "32c1431c-23e9-465b-8575-164f8a763ee3"
+    ],
+    "overlaps_freeze": true,
+    "verdict": "겹침 YES (골든 visit F-4790 = freeze 4건 중 2건). 단 두 check_in 정산행(payments/service_charges) exact-id 0 재확증 → 표시데이터(계산서 items_html) 존재해도 CLEAR 성립."
+  },
+  "G2_cis_bind": {
+    "cis_found": 27,
+    "bind_distinct_check_ins": 4,
+    "stray_check_ins_outside_freeze": 0,
+    "is_package_session_true": 3,
+    "package_session_id_nonnull": 0,
+    "cis_price_sum": 827720,
+    "cis_original_price_sum": 1007720,
+    "verdict": "CLEAR — 27 cis 전건 4 freeze check_in 에만 bind(손자 FK 0). is_package_session=TRUE×3 은 package_session_id 전건 NULL = inert phantom(credit 객체 부존재)."
+  },
+  "full_fk_census_confirmed_delete": {
+    "check_in_services": 27,
+    "status_transitions": 7,
+    "form_submissions": 6,
+    "check_ins": 4,
+    "total_confirmed_delete_rows": 44,
+    "cascade_order_child_to_parent": "status_transitions(7) · form_submissions(6) · check_in_services(27) → check_ins(4)",
+    "set_null_silent_loss": {
+      "payment_reconciliation_log": 0,
+      "notification_logs": 0,
+      "note": "(B) branch 의 324건 SET NULL reconciliation_log 문제 (A) 미재현 — A check_ins payments=0 이므로 reconciliation 접점 0."
+    },
+    "restrict_blockers": {
+      "health_q_results": 0,
+      "reservations": "shared parent (a095c085) — 자식 삭제로 orphan/블로킹 없음(parent 유지)"
+    }
+  },
+  "apply_chain_surface_risk": {
+    "form_submissions_status": "6건 전부 status='printed' (의무기록)",
+    "risk": "trg_form_submissions_published_immutable (Postgres 42501) — printed/published 의무기록 DELETE 시 불변 트리거 노출 → 원자 롤백 위험 (DA apply-chain note 명시)",
+    "recommendation": "apply chain(supervisor DB-GATE) 에서 dry-run surface 필수: (a) 트리거가 DELETE 도 차단하는지 확인, (b) 차단 시 elevated grant/trigger-bypass 또는 form_submissions 처리전략(archive-first 후 트리거 우회 삭제) 확정. READ-ONLY 단계에서는 사실만 surface, 처리 미수행.",
+    "form_submission_ids": [
+      "ccdc65df-bd43-4020-836d-f574d5691e4c",
+      "3aa98922-b32b-476c-91a1-df6d58ce0932",
+      "620142e6-784d-4773-b3e9-42c69b2a6306",
+      "3444158b-9532-4501-9bf8-7fd159876bc7",
+      "89804e03-6bf7-48ad-a14a-f527ea6e110b",
+      "e60cedf3-ea18-4f82-b39d-be10a375c74b"
+    ]
+  },
+  "verdict": {
+    "G1_clean": true,
+    "G2_ledger_clean": true,
+    "G2_cis_bind_clean": true,
+    "f4790_overlap_but_ledger_zero": true,
+    "CLEAR": true,
+    "apply_status": "hard-DELETE 여전히 HOLD — apply 체인: G1/G2 확증(본 회신) → 총괄 scope-확대 confirm → supervisor DB-GATE(form_submissions printed 트리거 처리 포함) → 형 apply_gate → apply → POSTCHECK"
+  }
+}
