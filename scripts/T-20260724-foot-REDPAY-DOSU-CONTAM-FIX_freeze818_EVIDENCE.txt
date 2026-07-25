@@ -1,0 +1,28 @@
+════════════════════════════════════════════════════════════
+[READ-ONLY] REDPAY-DOSU-CONTAM-FIX — 818 child-first freeze/forensic (2026-07-25 12:14:27 KST)
+  ref rxlomoozakkjesdqjtvd · SELECT-only · 0 write · DELETE/DDL 무실행
+════════════════════════════════════════════════════════════
+
+── (1) raw parent (도수 오염 원본) 실측 ──
+  parent 카운트 = 2 (기대=2)
+   · {"id":"f5ca6ec5-9372-466d-9b12-39200ce6e1d0","approval_no":"62071914","merchant_id":"1777276003","mode":null,"created_at":"2026-07-23 11:00:33.736451+00"}
+   · {"id":"60667463-e09b-4a2d-b98b-0175a7c7014c","approval_no":"62071914","merchant_id":"1777276003","mode":null,"created_at":"2026-07-23 11:00:33.736451+00"}
+
+── (2) recon_log child freeze 캡처 ──
+  child(recon_log) 카운트 = 860 (기대=816)
+
+── (3) 원장 무접점 (payment_id NOT NULL = 0 기대) ──
+  recon_log.payment_id NOT NULL = 0 (기대=0 · forensic816 계승)
+
+── (4) forensic 불변식 (external_trxid 단일 / center=body / event_type) ──
+  distinct external_trxid: [{"external_trxid":"0723C8124555","n":860}]
+  center 분포: [{"center":"body","n":860}]
+  event_type 분포: [{"event_type":"missing_in_crm","n":436},{"event_type":"match_failed","n":424}]
+
+── (5) scope 순도 (타 external_trxid 혼입 = 0 기대) ──
+  0723C8124555 외 trxid child = 0 (기대=0)
+
+── (6) freeze-set id 동결 ──
+
+  총 대상 = 862 행 (raw 2 + recon_log 860) — 기대 818
+  VERDICT: REVIEW — 실측이 기대(818/816/2/0/0)와 불일치, supervisor 보고
