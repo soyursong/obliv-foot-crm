@@ -100,7 +100,15 @@ import {
 // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 SSOT 헬퍼(복제금지, DocumentPrintPanel 동형 재사용).
 //   결함A = 수납창(PMW) 출력경로가 applyNightHolidaySurcharge 미호출 → night_mark/holiday_mark 공란·가산 미반영.
 //   판정기준 refDate = 진료일(checked_in_at) — body canon visitDate 미러(과거일 출력 정확).
-import { applyNightHolidaySurcharge, resolveSurchargeRefDate, toLocalDateStr } from '@/lib/nightHolidaySurcharge';
+// T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 수납 정산(본인/공단/수납금액)에도 동일 가산 SSOT 반영.
+//   detectSurchargeKind(토요일 전일·야간·공휴일 canon, T-20260717/23 배포본) + computeSurcharge 추가 소비.
+import {
+  applyNightHolidaySurcharge,
+  resolveSurchargeRefDate,
+  toLocalDateStr,
+  detectSurchargeKind,
+  computeSurcharge,
+} from '@/lib/nightHolidaySurcharge';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
@@ -1746,6 +1754,29 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   //   → 자부담 8,900 / 공단부담액 20,480 이 서로 정합(과거 footBilling 소비 시 grade=null 이면 공단=0 으로
   //   표시돼 '자부담 8,900 인데 공단 0' 모순 발생). 값>0 일 때만 노출. DB 무접촉(표시 전용).
   const insuranceCoveredTotal = payBilling.liveBillingValues.insuranceCovered;
+
+  // ── T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE (수납 정산 가산 반영) ───────────────────
+  //   토요일 전일(dow===6 09시~)·야간(18시~)·공휴일 진찰료 30% 가산을 수납 grain(본인부담·공단부담·
+  //   수납금액)에 반영한다. 3조건(①토요일 ②의원급 진찰료=급여 진찰료 ③건보 적용=coveredTotal>0) 충족 시만
+  //   가산 — computeSurcharge 가 kind=null(평일 주간) 또는 급여 0(비급여)일 때 전부 0 반환하므로 구조적 회귀 0.
+  //   판정 SSOT = detectSurchargeKind(refDate=checked_in_at) 배포본 재사용(병렬 재구현 금지, REUSE 의무).
+  //   겹침(토요일 & 야간) = detectSurchargeKind 가 holiday 단일 반환 → 30% 단일가산(중복합산 없음, canon).
+  //   ★이중계상 가드: 서류 경로(applyNightHolidaySurcharge)는 pre-surcharge autoValues(copaymentTotal/
+  //   coveredTotal/grandTotal) 위에 동일 가산을 더한다. 따라서 그 서류-grain 변수는 불변 유지하고, 여기서는
+  //   수납 표시·payments 기록용 surcharge-inclusive 파생값만 신설한다(서류 회귀 0 · db_change=false, 무DB접촉).
+  //   가산 base = 급여 진찰료 전액(coveredTotal), 수납 grain 본인부담(payCopaymentTotal) 비율로 분할.
+  const settleSurchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
+  const settleSurchargeKind = detectSurchargeKind(
+    settleSurchargeRefDate,
+    holidayDateSet.has(toLocalDateStr(settleSurchargeRefDate)),
+  );
+  const settleSurcharge = computeSurcharge(coveredTotal, payCopaymentTotal, settleSurchargeKind);
+  const payCopaymentWithSurcharge = payCopaymentTotal + settleSurcharge.copay;        // 본인부담금(가산 포함)
+  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함)
+  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함)
+  // 최종 수납금액(수납잔액) = 본인부담 + 비급여 + 가산 본인분. 가산 공단분은 환자가 내지 않음(공단 몫).
+  const payableTotalWithSurcharge = payableTotal + settleSurcharge.copay;
+
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
     ? getBaseCopayRate(customerInsuranceGrade)
@@ -1841,7 +1872,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(선수금차감 청구 base 정합).
       hiraUnitValue: clinicHiraUnitValue,
     });
-    return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal;
+    // T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 차감후 청구액에도 동일 진찰료 30% 가산 반영.
+    //   가산 base = 청구 subset 의 급여 전액(공단·진찰료 아닌 비급여·선수차감분 제외), 본인부담 비율로 분할해 본인분만 산입.
+    //   settleSurchargeKind 재사용(단일 판정 SSOT). 평일/비급여 subset 이면 computeSurcharge 가 0 반환 → 회귀 0.
+    const deductSurcharge = computeSurcharge(
+      deductBilling.coveredTotal,
+      deductBilling.copaymentTotal,
+      settleSurchargeKind,
+    );
+    return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal + deductSurcharge.copay;
   };
 
   // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-1 저장): 화장품 라인 seller_staff_id 산출 ──
@@ -2321,7 +2360,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     //   급여/비급여 무관, 진료기록 미작성·비내원일(계좌이체 등)에도 수납을 그대로 진행한다.
     //   (급여 청구 정합상 진료기록 후속 작성은 여전히 필요 — soft 리마인더로만 안내.)
     // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: payments 기록 = 수납잔액(본인부담금+비급여). 공단부담금 제외.
-    const amount = deductMode ? deductAmount : payableTotal;
+    const amount = deductMode ? deductAmount : payableTotalWithSurcharge; // T-20260725-SATURDAY-SURCHARGE: 수납금액=수납잔액+진찰료 가산 본인분(deductAmount는 calcDeductAmount서 가산 포함)
     // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
     // 선수금차감 여부와 무관하게 항상 사용자가 선택한 payMethod 기록
     // (선수금차감 추적은 package_sessions 회차 소진으로 별도 관리)
@@ -2628,7 +2667,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
     // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: payments 기록 = 수납잔액(본인부담금+비급여). 공단부담금 제외.
     //   (서류 total_amount/공단·본인 split 표기는 아래 applyBillingFallback 그대로 — 총진료비 기준, Part1 무접촉.)
-    const amount = deductMode ? deductAmount : payableTotal;
+    const amount = deductMode ? deductAmount : payableTotalWithSurcharge; // T-20260725-SATURDAY-SURCHARGE: 수납금액=수납잔액+진찰료 가산 본인분(deductAmount는 calcDeductAmount서 가산 포함)
     if (amount < 0) {
       toast.error('결제 금액이 없습니다');
       return;
@@ -2781,7 +2820,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── 표시용 수납 금액 ─────────────────────────────────────────────────────
   // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 수납잔액 표시 = 본인부담금 + 비급여(공단부담금 제외).
-  const displayAmount = deductMode ? deductAmount : payableTotal;
+  const displayAmount = deductMode ? deductAmount : payableTotalWithSurcharge; // T-20260725-SATURDAY-SURCHARGE: 수납금액=수납잔액+진찰료 가산 본인분(deductAmount는 calcDeductAmount서 가산 포함)
 
   // ── T-20260616-foot-PMW-SPLIT-PAYMENT: 분할 합산/차액 (AC-2) ───────────────
   const splitSum = splitRows.reduce((s, r) => s + (r.amount || 0), 0);
@@ -3322,7 +3361,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       const label = isCovered
                         ? `급여 자부담${copayRate !== null ? `(${copayBasisText(customerInsuranceGrade ?? 'unverified') ?? `${Math.round(copayRate * 100)}%`})` : ''}`
                         : cls;
-                      const displayAmt = isCovered ? payCopaymentTotal : amt;
+                      // T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 급여 자부담 = 본인부담 + 진찰료 가산 본인분.
+                      const displayAmt = isCovered ? payCopaymentWithSurcharge : amt;
                       return (
                         <div key={cls} className="flex justify-between text-xs">
                           <span className="text-muted-foreground">{label}</span>
@@ -3335,10 +3375,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         라벨 "공단부담액(명세)" — 명세(service_charges) 기준 추정액이지 EDI 확정액 아님
                         (❌"공단청구액(EDI)" 금지). 값>0(급여 방문·유효등급)일 때만 표시. muted 스타일로
                         수납 대상과 시각적으로 구분. SalesDoctor 집계와 동일 grain/라벨(cross-ref 정합). */}
-                    {insuranceCoveredTotal > 0 && (
+                    {insuranceCoveredWithSurcharge > 0 && (
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>공단부담액(명세)</span>
-                        <span className="tabular-nums">{formatAmount(insuranceCoveredTotal)}</span>
+                        {/* T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 공단부담액 = 급여 공단몫 + 진찰료 가산 공단분. */}
+                        <span className="tabular-nums">{formatAmount(insuranceCoveredWithSurcharge)}</span>
                       </div>
                     )}
                     {/* T-20260720-foot-PAYMINI-CHARTCODE-SPLIT: '진료비 총액' 라인(AC-6).
@@ -3347,14 +3388,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         영수증 별지 제1호 ⑥ '진료비 총액', htmlFormTemplates.ts:2190-2192)과 일치(handoff §5). */}
                     <div className="flex justify-between text-sm font-semibold pt-1 border-t">
                       <span>진료비 총액</span>
-                      <span className="tabular-nums">{formatAmount(grandTotal)}</span>
+                      {/* T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 진료비 총액 = 급여전액+비급여+진찰료 가산 총액. */}
+                      <span className="tabular-nums">{formatAmount(grandTotalWithSurcharge)}</span>
                     </div>
                     {/* T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 하단 볼드 합계 = 수납잔액(본인부담금+비급여).
                         공단부담금은 이 합계에서 제외(수납 대상 아님). 총 진료비는 세금구분(급여+비급여)으로 확인. */}
                     <div className="flex justify-between text-sm font-bold pt-1 border-t">
                       <span>수납잔액</span>
                       <span className="tabular-nums text-purple-700">
-                        {formatAmount(payableTotal)}
+                        {/* T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 수납잔액 = 본인부담+비급여+진찰료 가산 본인분. */}
+                        {formatAmount(payableTotalWithSurcharge)}
                       </span>
                     </div>
                     {prepaidIds.size > 0 && (
