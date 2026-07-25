@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import {
   detectSurchargeKind,
   computeSurcharge,
@@ -197,5 +200,47 @@ test.describe('결함② — 진찰료 단독(진찰료 가산 누락 회귀가�
     expect(n(values.consult_ins)).toBe(aggSolo.insuranceCovered + sc.covered); // 13650
     // 검사 없음 → exam 토큰 공란.
     expect(values.exam_copay ?? '').toBe('');
+  });
+});
+
+/**
+ * ★결함③ — p_surcharge_rate RPC 전달 제거(되돌리기) 회귀가드 (source-level)
+ *
+ * 배경: 6fd6dc85 가 급여 진찰료 수납 시 calc_copayment / record_insurance_consult_payment RPC 에
+ *   `p_surcharge_rate` 인자를 FE 에서 전달 추가 → prod 에 v1.7 RPC 시그니처 부재 → PGRST202(404) →
+ *   급여 진찰료 수납 기록 깨짐. 결함①(FE base 가산)과 겹치면 RPC측+FE측 이중가산.
+ *   → 11c1ebcf 에서 FE call-site 의 p_surcharge_rate 전달을 revert(가산은 결함① FE 산식 경로로 단일화).
+ *
+ * ★가드(재도입 방지): PaymentMiniWindow.tsx 소스에 어떤 RPC 로도 p_surcharge_rate 를 전달하지 않는다.
+ *   - PGRST202(404) 미발생: RPC 는 prod 실재 시그니처(rate 인자 없음)로만 호출.
+ *   - 이중가산 0: 가산은 결함① FE 산식(진찰료 subset)에서 1회만. RPC 는 rate 무전달.
+ *   - RPC/DB 무접촉: service_charges 영속(Option B) 마이그는 별건 — 본 가드는 FE call-site 만 검증.
+ */
+test.describe('결함③ — p_surcharge_rate RPC 전달 제거(재도입 방지 회귀가드)', () => {
+  const specDir = dirname(fileURLToPath(import.meta.url));
+  const pmwSrc = readFileSync(
+    resolve(specDir, '../../src/components/PaymentMiniWindow.tsx'),
+    'utf8',
+  );
+
+  test('PaymentMiniWindow 는 어떤 RPC 에도 p_surcharge_rate 를 전달하지 않는다(PGRST202/이중가산 방지)', () => {
+    expect(pmwSrc).not.toContain('p_surcharge_rate');
+  });
+
+  test('가산 요율(SURCHARGE_RATE)을 RPC 인자 컨텍스트로 재도입하지 않는다', () => {
+    // 결함① FE 산식 경로(computeConsultationSurchargeBase/computeSurcharge)는 rate 를 정상 사용하되,
+    // RPC 전달용 consultSurchargeRate 변수(=6fd6dc85 패턴)는 부재해야 한다.
+    expect(pmwSrc).not.toContain('consultSurchargeRate');
+    expect(pmwSrc).not.toMatch(/p_surcharge_rate\s*:/);
+  });
+
+  test('calc_copayment / record_insurance_consult_payment 호출부에 rate 인자 없음', () => {
+    // 두 RPC 호출부가 prod 실재 시그니처(rate 인자 없음)로만 호출되는지 정적 확인.
+    for (const rpcName of ['calc_copayment', 'record_insurance_consult_payment']) {
+      expect(pmwSrc).toContain(rpcName);
+    }
+    // 파일 전체에 rate 전달 토큰이 0회 → 두 호출부 모두 무전달로 귀결.
+    const occurrences = (pmwSrc.match(/p_surcharge_rate/g) ?? []).length;
+    expect(occurrences).toBe(0);
   });
 });
