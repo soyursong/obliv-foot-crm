@@ -132,8 +132,25 @@ const REDPAY_MERCHANT_WHITELIST_ENV = domainScopedOverride("REDPAY_MERCHANT_WHIT
 //     merchant whitelist 동반갱신 필요(현 body whitelist 1777274-276 은 506 송도 도수 merchant 와 무교집).
 //     → 순수 env flip 만으로 불충분. env 원자 적용 = supervisor secrets 게이트 / 스코프 확정 = planner FOLLOWUP.
 const DOMAIN_BUSINESS_NO_DEFAULTS = { foot: "457-23-00938" }; // foot=종로(서울오리진). body: 명시 필수(default 없음 = fail-closed).
-const REDPAY_BUSINESS_NO = domainScopedOverride("REDPAY_BUSINESS_NO")
+// ── business_no 멀티스코프 (T-20260723-foot-REDPAY-BODY-SONGDO-SCOPE-LIVEPROBE-FLIP, Q1 확정 = pull 양쪽) ──
+//   [스코프 확정 — planner MSG-20260725-172355 / DA AGG-RECON §Q4] body 도수는 두 물리 운영으로 갈라져 있다:
+//     · 종로 도수 = 457-23-00938 (오블리브 서울오리진점).
+//     · 송도 도수 = 506-60-03455 (오블리브송도점 신법인, 1777540751 "도수2" 191건 ₩46.2M 등).
+//   Q1=pull 양쪽(457+506): 송도 raw 원천 보존(457-only = 영구 미포착 = 장래 ledger 봉합 원재료 소실) 위해
+//     506 을 반드시 pull. display/집계 디커플(A안) — 수집(원천 보존)은 집계 봉합의 필요조건(충분조건 아님).
+//   [구현] domain-scoped env 값을 콤마 다중값으로 해석 → RedPay API scope 를 business_no 별로 순회(양 feed pull).
+//     · REDPAY_BUSINESS_NO_BODY = "457-23-00938,506-60-03455" (supervisor secrets 게이트로 원자 주입).
+//     · foot 은 단일 default("457-23-00938") → 1-element 리스트로 하위호환(무영향, Q2=No = 송도풋 leg 없음).
+//     · 각 feed 는 동일 merchant whitelist(아래 DOHSU_MERCHANT_WHITELIST_DEFAULT)로 도메인 격리 —
+//       457 feed=종로 도수 band / 506 feed=송도 도수 merchant. 롱래/송도풋/피부는 whitelist 밖 → 구조적 배제.
+//   ⚠ env 원자 적용(secret) = supervisor 게이트. body 폴러 fail-closed(default 없음) → env+whitelist 동시적용 필수.
+const REDPAY_BUSINESS_NO_RAW = domainScopedOverride("REDPAY_BUSINESS_NO")
   || (DOMAIN_BUSINESS_NO_DEFAULTS[REDPAY_DOMAIN] ?? "");
+const REDPAY_BUSINESS_NO_LIST = [
+  ...new Set(REDPAY_BUSINESS_NO_RAW.split(",").map((b) => b.trim()).filter(Boolean)),
+];
+// 하위호환 대표값(첫 스코프) — clinic 폴백 조회·로그·가드 표기용. RedPay API scope 순회는 _LIST 소비.
+const REDPAY_BUSINESS_NO = REDPAY_BUSINESS_NO_LIST[0] ?? "";
 // ── clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①) ──
 //   business_no 는 mutable·overloaded(세무 cert 정정으로 foot 511→457 divergence → clinic 조회 실패
 //   → L558 hard-throw 로 폴러 종료 → 실시간 적재 12h 중단). clinic '해석'은 안정키 slug 우선.
@@ -189,15 +206,27 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047479153", "1047479148", "1047479155", "1047479158", "1047479157", // 무선5
 ];
 
-// ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
-//   da_decision_redpay_rehab_b1_scoping_20260714.md: 재활=도수=body, band 1777274-276, 457-23-00938 하위(07-23 RedPay flip; 구 511-60-00988).
+// ── 도수(재활, body) merchant DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER + T-20260723 송도 확장) ──
+//   da_decision_redpay_rehab_b1_scoping_20260714.md: 재활=도수=body, 종로 band 1777274-276, 457-23-00938 하위(07-23 RedPay flip; 구 511-60-00988).
 //   ★ 도수 TID 미상 → merchant_id 단일 스코핑(1차 권위). tid=[] (belt-and-suspenders 미가용, tid backfill=별도 티켓).
 //   DB registry(domain='body') 미배포/미seed 시의 fail-safe DEFAULT (silent-drop 봉인).
+//   [T-20260723-foot-REDPAY-BODY-SONGDO-SCOPE-LIVEPROBE-FLIP — 송도 도수(506) merchant 동반추가]
+//     live-probe(scripts/T-...-BODY-SONGDO-SCOPE-LIVEPROBE_EVIDENCE.md §1) 확증: 506-60-03455(송도점) 하위에
+//     송도 도수 = 1777540751("도수2" 191건 ₩46.2M) / 1777540842("도수1" 1건). 이 둘은 종로 band(1777274-276)와
+//     merchant 교집합 0 → 순수 env 457→506 flip 만으론 recon 복구 불가. business_no 양쪽 pull + 이 whitelist 동반교체 필요.
+//     ⚠ 롱래(1777540911/tid 2074000004)·송도풋(1777540215·313·558 등)·피부(1777539xxx)는 506 공유 feed 이나
+//        whitelist 밖 → merchant_id 1차권위 필터로 구조적 배제(§519 오수집 금지 준수 = merchant-only 격리로 보장).
+//     ⚠ 1779768019·020(도수1/2-VAN, 2건)은 evidence 상 송도풋 1779768019~23 대역과 merchant-id collision →
+//        merchant-only 스코핑에서 송도풋 오수집 위험 → 본 whitelist 제외. tid-scoped(2C29430297/313) 편입은 planner 후속.
 const DOHSU_MERCHANT_WHITELIST_DEFAULT = [
+  // 종로 도수(457-23-00938) band — 기존 유지.
   "1777274001",
   "1777275001", "1777275002", "1777275003", "1777275004",
   "1777275005", "1777275006", "1777275007", "1777275008",
   "1777276001", "1777276002", "1777276003", "1777276004", "1777276005",
+  // 송도 도수(506-60-03455) — T-20260723 추가. merchant-id 명확분리(송도풋/롱래/피부와 무교집).
+  "1777540751", // 송도 도수2 — 191건 ₩46.2M (★대량, live-probe primary)
+  "1777540842", // 송도 도수1 — 1건 (unambiguous, 풋 대역 무충돌)
 ];
 const DOHSU_TID_WHITELIST_DEFAULT = []; // 도수 TID 미상 — merchant-only 스코핑
 
@@ -345,11 +374,11 @@ async function fetchWithRetry(url, options, maxTries = 3, delayMs = 2000) {
   throw lastError ?? new Error("fetchWithRetry: 알 수 없는 오류");
 }
 
-async function fetchRedpayPage(from, to, page, limit) {
+async function fetchRedpayPage(from, to, page, limit, businessNo = REDPAY_BUSINESS_NO) {
   const params = new URLSearchParams({
     from: formatRedpayDate(from),
     to: formatRedpayDate(to),
-    business_no: REDPAY_BUSINESS_NO, // 필수 — 마스터 키 사업자 스코프
+    business_no: businessNo, // 필수 — 마스터 키 사업자 스코프 (business_no 별 순회 — T-20260723 양쪽 pull)
     page: String(page),
     limit: String(limit),
   });
@@ -547,8 +576,9 @@ async function main() {
     errlog("SUPABASE_SERVICE_ROLE_KEY 미설정 — ~/.env.redpay-foot 또는 env 확인. 종료.");
     process.exit(1);
   }
-  if (!REDPAY_API_KEY || !REDPAY_BUSINESS_NO) {
-    errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)}) 또는 REDPAY_BUSINESS_NO(${REDPAY_BUSINESS_NO}) 미설정 — 종료.`);
+  if (!REDPAY_API_KEY || REDPAY_BUSINESS_NO_LIST.length === 0) {
+    // body(도수)는 domain-scoped default 없음 → 미설정 시 fail-closed(457 조용한 상속 봉인). supervisor secrets 게이트로 명시 주입.
+    errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)}) 또는 REDPAY_BUSINESS_NO(domain=${REDPAY_DOMAIN}, list=[${REDPAY_BUSINESS_NO_LIST.join(",") || "빈값"}]) 미설정 — 종료(fail-closed).`);
     process.exit(1);
   }
 
@@ -571,7 +601,7 @@ async function main() {
          `merchant_id(${merchantWhitelist.size}건) 1차 권위 단일 스코핑으로 진행(도수 TID 미상 정상 케이스).`);
   }
 
-  log(`가동: mode=${POLL_MODE} business_no=${REDPAY_BUSINESS_NO} ` +
+  log(`가동: mode=${POLL_MODE} business_no=[${REDPAY_BUSINESS_NO_LIST.join(",")}](${REDPAY_BUSINESS_NO_LIST.length}스코프) ` +
       `merchant_whitelist=${merchantWhitelist.size}건(1차) tid_whitelist=${tidWhitelist.size}건(보조) ` +
       `service_role=${mask(SERVICE_ROLE_KEY)} url=${REDPAY_BASE_URL}`);
 
@@ -636,44 +666,54 @@ async function main() {
     throw new Error(`clinic_id 조회 실패 — ${keyDesc}`);
   }
 
-  // ── 페이지 순회: fetch → 스코프 필터 → upsert ──────────────────────────────
+  // ── business_no 스코프 순회 × 페이지 순회: fetch → 스코프 필터 → upsert ────────
+  //   [T-20260723 양쪽 pull] REDPAY_BUSINESS_NO_LIST(foot=1, body=457+506) 를 순회.
+  //   각 business_no feed 는 동일 merchant whitelist 로 도메인 격리(457 종로 도수 / 506 송도 도수).
+  //   upsert 멱등키(external_trxid,external_status,amount)라 feed 교차·재수집 안전(clinic_id 는 slug 단일 stamp).
   let totalFetched = 0;
   let totalScopedOut = 0;
   let totalUpserted = 0;
   let totalErrors = 0;
   let totalDrift = 0;
-  let page = 1;
-  while (true) {
-    const { items, totalPage } = await fetchRedpayPage(fromDt, toDt, page, PAGE_SIZE);
-    if (items.length === 0) break;
-    totalFetched += items.length;
+  for (const businessNo of REDPAY_BUSINESS_NO_LIST) {
+    let bizFetched = 0;
+    let page = 1;
+    while (true) {
+      const { items, totalPage } = await fetchRedpayPage(fromDt, toDt, page, PAGE_SIZE, businessNo);
+      if (items.length === 0) break;
+      totalFetched += items.length;
+      bizFetched += items.length;
 
-    // 스크립트-레벨 타도메인 혼입 방지 필터 (merchant_id 1차 권위, EF guard.ts G4 미경유 대체 — AC-3).
-    const { kept, dropped, drift } = filterToFootScope(items);
-    if (dropped.length > 0) {
-      totalScopedOut += dropped.length;
-      const sampleMerchants = [...new Set(dropped.map((d) => d.merchant?.id ?? "null"))].slice(0, 10);
-      // [UNCLASSIFIED-MERCHANT] = business_no 457-23-00938(07-23 RedPay flip; 구 511-60-00988) 피드 중 풋 registry allowlist 밖 merchant.
-      //   대개 도수/피부/롱레(구조적 차단·정상). 단, 미등록 신규 merchant 도 여기 섞이므로 silent-drop 금지
-      //   원칙상 항상 표면화(registry §6 알람). DB 영속 알람 = v_redpay_unclassified_merchants.
-      warn(`[UNCLASSIFIED-MERCHANT] business_no ${REDPAY_BUSINESS_NO} 피드 중 풋 registry allowlist 외 ${dropped.length}건 제외 ` +
-           `(도수/피부/롱레=정상 구조적 차단 / 미등록 신규 merchant=registry 갱신 필요). ` +
-           `제외 merchant_id 샘플=[${sampleMerchants.join(",")}]. DB 영속 알람=v_redpay_unclassified_merchants`);
-    }
-    if (drift.length > 0) {
-      totalDrift += drift.length;
-      const driftTids = [...new Set(drift.map((d) => d.tid ?? "null"))].slice(0, 10);
-      warn(`[DRIFT-ALARM] 풋 merchant 인정이나 미등록 TID ${drift.length}건 = 신규 풋 단말 후보(적재는 진행). ` +
-           `레지스트리(redpay_foot_terminal_registry.md §2) 17-set 갱신 필요. TID=[${driftTids.join(",")}]`);
-    }
-    if (kept.length > 0) {
-      const { upserted, errors } = await upsertRawTransactions(clinicId, kept);
-      totalUpserted += upserted;
-      totalErrors += errors;
-    }
+      // 스크립트-레벨 타도메인 혼입 방지 필터 (merchant_id 1차 권위, EF guard.ts G4 미경유 대체 — AC-3).
+      const { kept, dropped, drift } = filterToFootScope(items);
+      if (dropped.length > 0) {
+        totalScopedOut += dropped.length;
+        const sampleMerchants = [...new Set(dropped.map((d) => d.merchant?.id ?? "null"))].slice(0, 10);
+        // [UNCLASSIFIED-MERCHANT] = 해당 business_no 피드 중 도메인 registry allowlist 밖 merchant.
+        //   대개 도수/피부/롱레(구조적 차단·정상). 단, 미등록 신규 merchant 도 여기 섞이므로 silent-drop 금지
+        //   원칙상 항상 표면화(registry §6 알람). DB 영속 알람 = v_redpay_unclassified_merchants.
+        warn(`[UNCLASSIFIED-MERCHANT] business_no ${businessNo} 피드 중 registry allowlist(domain=${REDPAY_DOMAIN}) 외 ${dropped.length}건 제외 ` +
+             `(타도메인=정상 구조적 차단 / 미등록 신규 merchant=registry 갱신 필요). ` +
+             `제외 merchant_id 샘플=[${sampleMerchants.join(",")}]. DB 영속 알람=v_redpay_unclassified_merchants`);
+      }
+      if (drift.length > 0) {
+        totalDrift += drift.length;
+        const driftTids = [...new Set(drift.map((d) => d.tid ?? "null"))].slice(0, 10);
+        warn(`[DRIFT-ALARM] 자도메인 merchant 인정이나 미등록 TID ${drift.length}건 = 신규 단말 후보(적재는 진행). ` +
+             `레지스트리(redpay_foot_terminal_registry.md §2) 갱신 필요. TID=[${driftTids.join(",")}]`);
+      }
+      if (kept.length > 0) {
+        const { upserted, errors } = await upsertRawTransactions(clinicId, kept);
+        totalUpserted += upserted;
+        totalErrors += errors;
+      }
 
-    if (page >= totalPage) break;
-    page++;
+      if (page >= totalPage) break;
+      page++;
+    }
+    if (REDPAY_BUSINESS_NO_LIST.length > 1) {
+      log(`business_no=${businessNo} feed 순회 완료: fetched=${bizFetched}`);
+    }
   }
 
   // ── poller_state heartbeat (foot 전용 — body 는 singleton id=1 격리 위해 무접촉) ──
