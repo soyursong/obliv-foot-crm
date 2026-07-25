@@ -79,20 +79,26 @@ test.describe('T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP — 정적 정합', 
     expect(m![1]).toContain("'coordinator'");
   });
 
-  test('제외3 잠금 무회귀(음성 가드): 통계 stats + CSV export = coordinator 미포함(잠금 유지)', () => {
+  test('통계 stats 잠금 무회귀(음성 가드) + customer_export 확대 canon 정합(양성 단언)', () => {
     const p = readRepo(PERMS);
-    // 제외3 = 통계 / 매출집계 / 계정관리. PERM_MATRIX 로 표현되는 잠금 surface:
-    //   - stats(통계) PermKey 에 coordinator 가 (본 우산으로) 추가되지 않았는지 — 잠금 유지
+    // 제외3 = 통계 / 매출집계 / 계정관리. stats(통계)는 잠금 유지 surface — coordinator 미포함이어야 함.
     const stats = p.match(/stats:\s*\[([^\]]*)\]/);
     expect(stats).not.toBeNull();
     expect(stats![1]).not.toContain("'coordinator'");
-    //   - customer_export(고객 CSV·PII) coordinator 비확대(admin/manager/director 한정 유지)
+    //   - customer_export(고객 CSV·PII): 2026-07-18 ADDITIVE canon(T-20260630-foot-PERM-UNLOCK-EXPORT-AUTOSEND ④,
+    //     DA-20260701 GO)로 직원 3역할(coordinator/consultant/therapist) 확대됨. 권한확대 ≠ audit 면제 —
+    //     export 실행은 fn_log_customer_export(DEFINER RPC) 서버감사(customer_export_audit)가 PII-egress sub-gate.
+    //     따라서 이 surface 는 '잠금 유지'가 아니라 '확대 canon'이며, coordinator 포함을 양성 단언한다.
+    //     (구 음성가드 not.toContain('coordinator')는 canon 뒤처짐(stale) — 07-18 갱신 누락분을 본 티켓에서 정정.)
     const exp = p.match(/customer_export:\s*\[([^\]]*)\]/);
     expect(exp).not.toBeNull();
-    expect(exp![1]).not.toContain("'coordinator'");
-    // ※ register(=접수/신규등록 동선) 는 제외3(계정관리)이 아님 — REGISTER-MENU-CODY-UNLOCK(2026-06-30
-    //   김주연 총괄 confirm)로 coordinator 旣개방됨. 계정관리(직원 계정 CRUD)는 staff/user_profiles surface 로
-    //   STAFFCRUD-CODY-PERM 티켓이 별도 관리(본 우산 미적용, AC6). 따라서 register 음성가드는 부적절 → 제거.
+    expect(exp![1]).toContain("'coordinator'");
+    expect(exp![1]).toContain("'consultant'");
+    expect(exp![1]).toContain("'therapist'");
+    // 상위역할 무회귀: 기존 admin/manager/director 도 유지되어야 함(확대는 ADDITIVE, 축소 아님).
+    expect(exp![1]).toContain("'admin'");
+    expect(exp![1]).toContain("'manager'");
+    expect(exp![1]).toContain("'director'");
   });
 
   test('상위역할 무회귀(음성 가드): admin/manager/director 가 daily_room_status 기존 정책에서 유지', () => {
