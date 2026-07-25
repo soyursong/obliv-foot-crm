@@ -1,0 +1,32 @@
+{
+  "ts": "2026-07-25T01:51:01.819Z",
+  "ticket": "T-20260725-foot-JUYEON-OPSMENU-DIRECTOR-SIDEEFFECT",
+  "phase": "FINAL-VERIFY(read-only)",
+  "role": {
+    "id": "ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12",
+    "role": "admin",
+    "updated_at": "2026-07-25 01:49:53.609297+00"
+  },
+  "cron_lifecycle_rows": 0,
+  "tick_hold": {
+    "note": "A안 — 8/1 자동원복 해제. 원복은 foot_juyeon_tempgrant_revert() on-request.",
+    "rows": 0,
+    "p_now": "2026-08-01T06:00:00+00:00",
+    "action": "hold",
+    "target": "ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12",
+    "orig_role": "admin",
+    "temp_role": "director",
+    "auto_revert": false
+  },
+  "baseline": [
+    {
+      "proname": "foot_juyeon_tempgrant_revert",
+      "baseline_admin_const": true
+    },
+    {
+      "proname": "foot_juyeon_tempgrant_tick",
+      "baseline_admin_const": true
+    }
+  ],
+  "CONCLUSION": "PASS — role=admin(3메뉴 복구), lifecycle 종료, tick hold no-op, baseline=admin 보존"
+}
