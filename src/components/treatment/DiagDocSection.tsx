@@ -314,9 +314,18 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
               {rows.map((r, idx) => (
                 <tr
                   key={r.id}
-                  className="border-b last:border-0 transition-colors hover:bg-muted/30"
+                  /* T-20260725-foot-DOCVIEW-...-CLICKFAIL (이슈2): 발행완료 행 '어디를 클릭해도' 발행본 열람.
+                     이전엔 요청종류(서류명) 배지만 클릭 대상이라 현장에서 발행완료 항목/상태배지를 눌러도
+                     안 열렸다(클릭 타깃 발견성 회귀). 발행완료 행 전체를 클릭 타깃으로 확장(미발행 행은 비활성). */
+                  className={`border-b last:border-0 transition-colors ${
+                    r.publishStatus === 'published'
+                      ? 'cursor-pointer hover:bg-teal-50/60'
+                      : 'hover:bg-muted/30'
+                  }`}
                   data-testid="diagdoc-row"
                   data-publish-status={r.publishStatus}
+                  onClick={r.publishStatus === 'published' ? () => openDocView(r.id) : undefined}
+                  title={r.publishStatus === 'published' ? '클릭하면 발행한 서류 내용을 볼 수 있어요' : undefined}
                 >
                   <td className="px-2.5 py-1.5 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
                   <td className="px-2.5 py-1.5 font-medium whitespace-nowrap">
@@ -328,15 +337,17 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded px-1 -mx-1 text-left hover:text-teal-700 hover:underline"
                       data-testid="diagdoc-name-clickable"
-                      onClick={() => nameInteraction.onLeftClick(r.customerId)}
-                      onContextMenu={(e) =>
+                      /* 성함 클릭=2번차트 open(부모 위임) — 행 전체 열람 클릭과 분리하기 위해 전파 차단. */
+                      onClick={(e) => { e.stopPropagation(); nameInteraction.onLeftClick(r.customerId); }}
+                      onContextMenu={(e) => {
+                        e.stopPropagation();
                         nameInteraction.onContextMenu(e, {
                           id: r.customerId ?? '',
                           name: r.patientName,
                           phone: null,
                           visit_type: 'returning',
-                        })
-                      }
+                        });
+                      }}
                     >
                       <span>{r.patientName}</span>
                       <span className="font-mono text-[11px] font-normal text-muted-foreground/70">

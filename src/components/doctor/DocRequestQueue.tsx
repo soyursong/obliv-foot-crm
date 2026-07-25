@@ -340,8 +340,14 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       {/* T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN (AC1/AC2/AC4): '서류 완료' 서류명 클릭 → 실제 발행본 내용 열람.
           read-only 전용 — 재발행/취소/수정 버튼 없음(AC4). 닫기만. 발행 경로(publish_opinion_doc RPC) 미접촉. */}
       <Dialog open={!!viewTarget} onOpenChange={(o) => { if (!o) setViewTarget(null); }}>
-        <DialogContent className="max-w-3xl" data-testid="docreq-doc-view-dialog">
-          <DialogHeader>
+        {/* T-20260725-foot-DOCVIEW-...-MODAL-BTNCLIP (이슈1): 모달을 max-h 로 뷰포트에 가두고 flex-col 로 구성 —
+            헤더/푸터는 고정(shrink-0), 가운데(양식 iframe·잠금안내·행정 정정 패널)만 스크롤. 이전엔 높이 무제한이라
+            iframe(h-68vh)+패널 합계가 뷰포트를 넘겨 '행정 정보 저장' 푸터 버튼이 화면 밖으로 잘렸다. */}
+        <DialogContent
+          className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden"
+          data-testid="docreq-doc-view-dialog"
+        >
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex flex-wrap items-center gap-2" data-testid="docreq-doc-view-title">
               <FileText className="h-5 w-5 text-emerald-600" />
               {viewTarget ? docTypeLabel(viewTarget.docType) : ''}
@@ -355,6 +361,9 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
               {viewDoc?.doctorName && <span>발행자 {viewDoc.doctorName}</span>}
             </DialogDescription>
           </DialogHeader>
+          {/* 가운데 스크롤 영역 — 양식(iframe)+잠금안내+행정정정 패널. 이 영역만 넘칠 때 스크롤(min-h-0 필수).
+              헤더/푸터는 바깥 flex-col 에서 고정되어 '행정 정보 저장' 버튼은 항상 하단에 보인다(이슈1 해소). */}
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" data-testid="docreq-doc-view-scroll">
           {/* T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT: 실제 발행본 read-only 열람을 '소견서 양식 그대로'
               (병원 헤더·환자정보 블록·상병/소견 영역·발급일·담당의·서명/도장)로 렌더. 텍스트 나열 → 실제
               발행/출력 양식 레이아웃. 발행 미리보기/출력 렌더러(renderOpinionDocHtml, bindHtmlTemplate L-006)
@@ -441,8 +450,9 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
               ※ 상병코드는 진단과 관련된 정보라 정정 내역(누가·언제·이전값)이 기록으로 남아요. 상병명은 진료 기록 기준으로 표시됩니다.
             </p>
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t pt-3">
             <Button
               variant="outline"
               onClick={() => setViewTarget(null)}
