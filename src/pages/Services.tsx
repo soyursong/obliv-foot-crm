@@ -911,6 +911,16 @@ function ServiceDialog({
     setSubmitting(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     toast.success(service ? '수정됨' : '서비스 추가됨');
+    // ── T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD (판정4 PRIMARY 진원차단) ──
+    //   급여 서비스인데 수가 점수(hira_score)가 비어 있으면, 수납 시 정가로 임시 부과된다(무경고 오부과 재발창).
+    //   저장 자체는 막지 않는(soft) 경고 — 관리자가 점수 스테이징 후 채우는 운영을 허용(hard-block 아님).
+    //   ※ 이 다이얼로그는 급여속성을 편집하지 않으므로(급여/점수는 별도 시드) 값은 기존 service 를 그대로 승계.
+    if (service?.is_insurance_covered && service?.hira_score == null) {
+      toast.error(
+        '⚠ 급여 서비스에 수가 점수(hira_score)가 비어 있습니다 — 점수 입력 전까지 수납 시 정가로 임시 부과됩니다. 점수 입력 후 재정산하세요.',
+        { duration: 6000 },
+      );
+    }
     onSaved();
   };
 

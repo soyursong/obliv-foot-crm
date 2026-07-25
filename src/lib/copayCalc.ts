@@ -43,11 +43,23 @@ export interface CopayCalcResult {
   applied_rate: number;
   applied_grade: InsuranceGrade;
   /**
-   * 데이터 불완전 BLOCK 플래그 (서버 RPC data_incomplete 미러).
-   * true = 산출 불가(급여+hira_score NULL default-deny / hira_unit_value NULL).
-   * 금액 날조 금지 → 모든 금액 0, applied_rate 0. (§2-2-1b)
+   * 데이터 불완전 플래그 (급여서비스인데 산출 근거 미비 = 거짓완전성 결함 방지).
+   * true = 급여 서비스 × (hira_score NULL / hira_unit_value NULL).
+   *   grade-universal 진실 — general 포함(§2-2-1b canon 에 general 이 누락됐던 결함 정정,
+   *   T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD / DA MSG-20260725-193942-ci9q).
+   * ★ severity 는 data_incomplete_block 이 분리 판정한다(⚠BINDING: 단일 gate 오용 방지) —
+   *   true 만으로 hard-block 하지 말 것. block=false 이면 WARN(정가 임시부과) 이다.
    */
   data_incomplete: boolean;
+  /**
+   * data_incomplete 심각도 분리 플래그 (⚠BINDING severity carrier).
+   *  · true  = hard-BLOCK. 산출 불가 → 모든 금액 0(금액 날조 금지, §2-2-1b).
+   *            capped(차상위/의료급여/노인정액)·등급미상 = 환수불가 harm → 확정 차단.
+   *  · false = WARN(가역). general/grade=null 급여×hira_score NULL = 환수-safe fallback
+   *            (covered=0, copay=price-full) 진행 허용 + '데이터미비' 배지. 눈앞 환자 hard-lockout 금지.
+   * 소비지점이 '단일 data_incomplete gate' 여도 이 플래그로 block/warn 을 grade-aware 하게 분기해야 함.
+   */
+  data_incomplete_block: boolean;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -166,7 +178,7 @@ export function copayFromBase(
 // 핵심 산출 함수
 // ──────────────────────────────────────────────────────────
 
-/** data_incomplete BLOCK 결과 (금액 날조 금지 — 모두 0, rate 0). */
+/** data_incomplete hard-BLOCK 결과 (금액 날조 금지 — 모두 0, rate 0). block=true. */
 function blockedResult(grade: InsuranceGrade): CopayCalcResult {
   return {
     base_amount: 0,
@@ -176,6 +188,7 @@ function blockedResult(grade: InsuranceGrade): CopayCalcResult {
     applied_rate: 0,
     applied_grade: grade,
     data_incomplete: true,
+    data_incomplete_block: true,
   };
 }
 
@@ -213,25 +226,35 @@ export function calcCopayment(
       exempt_amount: 0,
       applied_rate: 1.0,
       applied_grade: grade,
+      // 비급여/외국인 = 정상 전액본인부담. 급여 근거 미비가 아니므로 data_incomplete=false.
       data_incomplete: false,
+      data_incomplete_block: false,
     };
   }
 
-  // ── 2. 급여 + hira_score NULL → default-deny (NULLFIX v1.2) ─────────────
+  // ── 2. 급여 + hira_score NULL ───────────────────────────────────────────
+  //   급여 서비스인데 수가 점수(hira_score)가 비어 있음 = 산출근거 미비.
+  //   T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD (DA MSG-20260725-193942-ci9q):
+  //     · general = 종전 data_incomplete=FALSE 로 '무경고 정가부과' → 거짓완전성 결함(§2-2-1b 에 general 누락).
+  //       → data_incomplete=TRUE(honest, grade-universal) 로 정정하되 severity=WARN(block=false):
+  //         환수-safe fallback(정가·covered=0·copay=price-full) 그대로 진행 + '데이터미비' 배지 노출.
+  //         ⚠ 70% 공단 하드코딩 절대금지 — covered=0 유지(§2-2-4 판정2 phantom 날조 방지). 금액 무변경(가역).
+  //     · capped(차상위/의료급여/노인정액)·등급미상 = 환수불가 harm → hard-BLOCK 유지(blockedResult, §2-2-1b 불변).
   if (service.hira_score == null) {
     if (grade === 'general') {
       const base = service.price ?? 0;
       return {
         base_amount: base,
-        insurance_covered_amount: 0,
-        copayment_amount: base,
+        insurance_covered_amount: 0,   // phantom 공단 금지 — covered=0 (70% 하드코딩 금지)
+        copayment_amount: base,        // 환수-safe fallback: 정가 임시부과
         exempt_amount: 0,
         applied_rate: 1.0,
         applied_grade: grade,
-        data_incomplete: false,
+        data_incomplete: true,         // honest: 급여×점수미비 = 데이터 불완전(grade-universal parity)
+        data_incomplete_block: false,  // WARN: 정가 부과 진행 허용(hard-block 아님) → 점수 입력 후 재정산
       };
     }
-    // low_income_1/2·infant·medical_aid·elderly·unverified 등 → BLOCK
+    // low_income_1/2·infant·medical_aid·elderly·unverified 등 → hard-BLOCK (환수불가 harm)
     return blockedResult(grade);
   }
 
@@ -262,5 +285,6 @@ export function calcCopayment(
     applied_rate: rate,
     applied_grade: grade,
     data_incomplete: false,
+    data_incomplete_block: false,
   };
 }

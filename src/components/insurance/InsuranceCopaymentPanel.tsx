@@ -340,6 +340,13 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
                                 ({svc.hira_code} · {svc.hira_score}점)
                               </span>
                             )}
+                            {/* T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD:
+                                급여 서비스 × 수가 점수 미입력 = 데이터미비 → 정가 임시부과 경고 배지 (재발 예방 net) */}
+                            {svc.is_insurance_covered && svc.hira_score == null && (
+                              <span className="inline-flex w-fit items-center rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-800">
+                                ⚠ 데이터미비 · 정가 임시부과
+                              </span>
+                            )}
                           </span>
                           {r && (
                             <span className="flex items-center gap-1.5 tabular-nums text-[11px]">

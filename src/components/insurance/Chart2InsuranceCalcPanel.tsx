@@ -283,6 +283,14 @@ export function Chart2InsuranceCalcPanel({
                         {svc.hira_code} · {svc.hira_score}점
                       </span>
                     )}
+                    {/* T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD:
+                        급여 서비스인데 수가 점수(hira_score) 미입력 = 데이터미비 → 정가 임시부과 경고 배지.
+                        (active 급여서비스는 전부 점수 보유 → 신규 무점수 도입 시에만 노출되는 재발 예방 net) */}
+                    {svc.is_insurance_covered && svc.hira_score == null && (
+                      <span className="mt-0.5 inline-flex w-fit items-center rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-800">
+                        ⚠ 데이터미비 · 정가 임시부과 (점수 입력 후 재정산)
+                      </span>
+                    )}
                   </div>
                   {r ? (
                     <div className="flex items-center gap-2 shrink-0 tabular-nums">

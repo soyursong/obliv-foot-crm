@@ -110,14 +110,20 @@ test.describe('T-20260713 HIRA-UNIT-VALUE-2026 — 이슈1: 점당단가 governe
 });
 
 test.describe('T-20260713 — NULLFIX v1.2 default-deny 흡수(subsume) 회귀', () => {
-  test('급여+hira_score NULL + general → 전액본인부담 fallback (data_incomplete=false)', () => {
+  // ★ T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD (DA MSG-20260725-193942-ci9q):
+  //   종전 general+NULL → data_incomplete=FALSE 는 '거짓완전성' 결함(무경고 정가부과 재발창)으로 재판정.
+  //   → data_incomplete=TRUE(honest, grade-universal) 로 정정하되 severity=WARN(block=false):
+  //     환수-safe fallback(정가 임시부과·covered=0) 금액은 무변경(가역) → 배지로만 경고.
+  test('급여+hira_score NULL + general → data_incomplete=TRUE·WARN(block=false), 정가 fallback 금액 무변경', () => {
     const r = calcCopayment(
       { is_insurance_covered: true, hira_score: null, copayment_rate_override: null, price: 30000 },
       { hira_unit_value: 95.6 },
       'general',
     );
-    expect(r.data_incomplete).toBe(false);
-    expect(r.copayment_amount).toBe(30000);
+    expect(r.data_incomplete).toBe(true);         // honest parity — general 도 데이터미비로 표시
+    expect(r.data_incomplete_block).toBe(false);  // WARN — hard-block 아님(환수-safe fallback 진행)
+    expect(r.copayment_amount).toBe(30000);        // 정가 임시부과 (금액 무변경 = 가역)
+    expect(r.insurance_covered_amount).toBe(0);    // phantom 공단 금지 (70% 하드코딩 금지)
   });
 
   test('급여+hira_score NULL + low_income_1 → default-deny BLOCK', () => {
@@ -127,6 +133,7 @@ test.describe('T-20260713 — NULLFIX v1.2 default-deny 흡수(subsume) 회귀',
       'low_income_1',
     );
     expect(r.data_incomplete).toBe(true);
+    expect(r.data_incomplete_block).toBe(true); // capped=hard-BLOCK 유지 (환수불가 harm, §2-2-1b 불변)
     expect(r.copayment_amount).toBe(0);
   });
 

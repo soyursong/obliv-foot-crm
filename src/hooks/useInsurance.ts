@@ -72,6 +72,10 @@ export function useCalcCopayment({ serviceId, customerId, clinicId, visitDate }:
           applied_rate: Number(row.applied_rate),
           applied_grade: row.applied_grade,
           data_incomplete: row.data_incomplete ?? false,
+          // 서버 RPC calc_copayment 의 data_incomplete=true 는 hard-BLOCK(금액 0)만 emit(general NULL=false).
+          // → 서버 origin 결과의 severity 는 data_incomplete 와 동치(block). client mirror WARN 은 copayCalc.ts 소관.
+          // (T-20260725-HIRASCORE-NULL-GENERAL-DATAINCOMPLETE-PARITY-GUARD)
+          data_incomplete_block: row.data_incomplete ?? false,
         });
       } else {
         setData(null);
@@ -114,6 +118,8 @@ export async function calcCopaymentBatch(
               applied_rate: Number(row.applied_rate),
               applied_grade: row.applied_grade,
               data_incomplete: row.data_incomplete ?? false,
+              // 서버 origin: data_incomplete=true=hard-BLOCK 동치 (general NULL 은 서버가 false emit).
+              data_incomplete_block: row.data_incomplete ?? false,
             }
           : null,
       ] as const;
