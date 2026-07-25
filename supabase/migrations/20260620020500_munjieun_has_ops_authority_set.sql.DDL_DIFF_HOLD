@@ -25,16 +25,35 @@
 
 BEGIN;
 
--- 단건 가드: prod 유일 director(문지은, MUNJIEUN-ROLE-DIRECTOR B2② swap 완료, id prefix d343769a) 대상.
+-- ════════════════════════════════════════════════════════════════════════
+-- ⚠️ CASUALTY-CORRECTION (2026-07-25, STEP3 landing 재개 시 dev-foot 발견) — ★단건 가정 BROKEN★
+--   원래 가드: "prod 유일 director(문지은, id prefix d343769a) 뿐 → role='director' = functionally 단건."
+--   ★현재 무효★: T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS(deployed 2026-07-25, mig 20260725170000)
+--     가 김주연 총괄(U0ATDB587PV)을 1주 임시 director 로 승격(baseline=admin, on-request revert).
+--     ⇒ 2026-07-25 시점 prod director = 2명(문지은 permanent + 김주연 temp). "단건" 주장은 STALE.
+--   ★영향 판정(NON-DESTRUCTIVE·intent-aligned)★:
+--     · 문지은(director, permanent) → has_ops_authority=true = 본래 대상. ✓
+--     · 김주연(director, temp)      → has_ops_authority=true 로도 세팅됨. 이는 ROLE-MATRIX reassignment_confirm
+--       (2026-06-20 문지은 대표원장 U0ALGAAAJAV 확정: '김주연 총괄 = has_ops_authority=true 유지, 401i ops-X
+--       downgrade 기각')와 ★정합★ — 김주연은 운영최고권한 보유가 확정 intent. 값 자체는 의도대로.
+--     · 타이밍 의존: 김주연이 admin baseline 으로 revert 후 apply 되면 이 UPDATE 는 문지은 1행만.
+--       김주연은 admin escape(hasOpsAuthority: role==='admin')로 운영권한 유지 → 어느 순서든 self-healing.
+--       (flag=true 가 admin 계정에 남아도 redundant·무해. revert 는 role만 바꾸고 flag 미접촉.)
+--   ★결론: 대상셋 = {문지은} ∪ {temp-window 중이면 김주연} = 1~2행. 둘 다 has_ops_authority=true 가
+--     confirmed intent 와 정합하므로 role='director' blanket 유지가 안전(silent downgrade 無, 확대 無).
+--     ▷ 단 실 대상셋·행수는 supervisor DDL-diff 시점 prod 실측으로 freeze·검증(Data-Correction SOP:
+--       single-count 가정 금지, 판정근거 스냅샷 동봉). 김주연 flag 지속 여부에 대한 별도 planner 확정이
+--       필요하면 그 판정을 우선한다(본 파일은 confirmed intent 기준 기본 경로).
 --   id 전체 UUID 는 PHI 마스킹 — 실행자(supervisor)가 prod 에서 확정.
---   role='director' 가드 = prod director 1명(문지은)뿐이라 functionally 단건. updated_at 검증 권장.
+-- ════════════════════════════════════════════════════════════════════════
 UPDATE public.user_profiles
    SET has_ops_authority = true
  WHERE role = 'director'
    AND has_ops_authority = false;   -- idempotent: 이미 true 면 no-op
 
--- 적용 후 검증 (1행, has_ops_authority=true 여야):
+-- 적용 후 검증 (1~2행: 문지은 permanent + [temp-window면 김주연], 전부 has_ops_authority=true 여야):
 --   SELECT id, role, has_ops_authority, updated_at FROM public.user_profiles WHERE role='director';
+--   ★기대 행수는 apply 시점 prod director 수(1 또는 2)와 일치해야 함 — 불일치 시 abort·재확인.
 
 COMMIT;
 
