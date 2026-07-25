@@ -78,7 +78,10 @@ test.describe('T-20260724-foot-ISSUEDDOCS-DOCVIEW-FORMLAYOUT — 발행완료 �
     expect(fv).toContain('applyDiagCodesFromVisit');
     // 발행본 스냅샷(final_text=body / 발행자 / 면허 / 차트번호 / 발행일) 주입.
     expect(fv).toContain('body,');
-    expect(fv).toContain('issuedByName: viewDoc?.doctorName');
+    // PERMSPLIT(2edecdfe) 이후 발행자명 = 계산변수. B부류 오버레이 우선 → 발행본 스냅샷(viewDoc.doctorName) 폴백.
+    //   발행본 스냅샷 doctorName 이 여전히 권위 base(override는 truthy만) → 발행자 실렌더 소스 무회귀(AC2 준수).
+    expect(fv).toContain('adminOverrides?.doctorName || viewDoc?.doctorName');
+    expect(fv).toContain('issuedByName,');
     expect(fv).toContain('issuedByLicenseNo: viewDoc?.issuedByLicenseNo');
     // 발행자 직인 결선 = 발행자 clinic_doctors.id(이름↔도장 세트 정합).
     expect(fv).toContain('viewDoc?.issuedByDoctorId');
