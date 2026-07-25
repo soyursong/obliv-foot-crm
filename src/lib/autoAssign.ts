@@ -554,6 +554,7 @@ export async function maybeAutoAssign(
       .from('check_ins')
       .select('id, clinic_id, customer_id, status, consultant_id, therapist_id, treatment_kind, treatment_category, status_flag')
       .eq('id', checkInId)
+      .is('deleted_at', null) // R2B: soft-hidden 행은 자동배정 대상 아님
       .maybeSingle();
     if (!ci) return { assigned: false };
     const checkIn = ci as CheckInLite;
@@ -864,6 +865,49 @@ export async function manualAssign(opts: {
       toStaffId: opts.toStaffId,
       createdBy: opts.createdBy ?? null,
     });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: String(e) };
+  }
+}
+
+// ── 금일 배분 이력 row soft-hide (삭제) ────────────────────────────────────────
+/**
+ * T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B — 「금일 배분 이력」 row 삭제.
+ *
+ * ★RED LINE (DA CONSULT-REPLY MSG-20260725-022505-y1fl GO 계승):
+ *  (a) hard-DELETE BANNED — check_ins 물리 DELETE 금지(payments FK RESTRICT / check_in_services
+ *      CASCADE / package_sessions·medical_charts·claims 참조 → 매출·원장 붕괴). soft-hide 만.
+ *  (e) rows-affected 검증 — .select('id') 로 영향 행 회수. RLS 거부/스코프 불일치로 0-row(+error=null)
+ *      이면 silent write-failure → 성공 오인 금지(ok:false). cross_crm_write_rowcheck_standard.
+ *  (f) 권한 — admin/manager/원장(director) 한정. FE 노출 게이트 + check_ins UPDATE RLS 이중.
+ *
+ * 멱등 가드: 이미 deleted_at 세팅된 행은 재삭제해도 무해(같은 행 1건 영향). 복원(순소실0)은 별 경로.
+ *
+ * @param checkInId 대상 check_in id
+ * @param deletedBy 실행자 profiles.id (감사용, deleted_by 기록)
+ */
+export async function softHideCheckIn(opts: {
+  checkInId: string;
+  deletedBy?: string | null;
+}): Promise<{ ok: boolean; message?: string }> {
+  try {
+    if (!opts.checkInId) return { ok: false, message: '대상을 찾지 못했습니다.' };
+    const { data, error } = await supabase
+      .from('check_ins')
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: opts.deletedBy ?? null,
+      })
+      .eq('id', opts.checkInId)
+      .is('deleted_at', null) // 이미 숨김 처리된 행 재-스탬프 방지(멱등)
+      .select('id');
+    if (error) return { ok: false, message: error.message };
+    if (!data || data.length === 0)
+      return {
+        ok: false,
+        message: '삭제 권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.',
+      };
     return { ok: true };
   } catch (e) {
     return { ok: false, message: String(e) };

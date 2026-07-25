@@ -380,6 +380,7 @@ export async function fetchTmAggregate(
     fetchAll<TmCheckInRow>((offset) => supabase.from('check_ins')
       .select('id, reservation_id, created_date, checked_in_at, status, customers(name)')
       .eq('clinic_id', clinicId)
+      .is('deleted_at', null) // R2B soft-hide 제외 (내원건수 KPI)
       .neq('status', 'cancelled')
       .gte('created_date', from).lte('created_date', to)
       .range(offset, offset + PAGE_SIZE - 1)),

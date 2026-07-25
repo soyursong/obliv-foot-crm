@@ -43,6 +43,7 @@ import {
   tossAssignment,
   pullAssignment,
   manualAssign,
+  softHideCheckIn,
   maybeAutoAssign,
   fetchTodayWorkingStaffIds,
   fetchTodayTempOffStaffIds,
@@ -165,6 +166,12 @@ export default function Assignments() {
     fromStaffId: string | null;
   } | null>(null);
   const [tossReason, setTossReason] = useState('');
+  // T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 배분 이력 row 삭제(soft-hide) 확인 다이얼로그 타깃.
+  const [distDeleteTarget, setDistDeleteTarget] = useState<{
+    checkIn: CheckIn;
+    customerName: string;
+    role: AssignmentRole;
+  } | null>(null);
   // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-2: 재배정 방식(미배정/수동변경) + 수동 선택 담당.
   //   랜덤 자동재배정 제거 — 반드시 명시 선택. 기본값 = 'reassign'(수동 변경).
   const [tossMode, setTossMode] = useState<'reassign' | 'unassign'>('reassign');
@@ -219,6 +226,7 @@ export default function Assignments() {
         .from('check_ins')
         .select('*')
         .eq('clinic_id', clinic.id)
+        .is('deleted_at', null) // R2B soft-hide 제외
         .gte('checked_in_at', `${todayIso}T00:00:00+09:00`)
         .not('status', 'in', '(done,cancelled)')
         .order('checked_in_at', { ascending: true });
@@ -263,6 +271,7 @@ export default function Assignments() {
         .from('check_ins')
         .select('*')
         .eq('clinic_id', clinic.id)
+        .is('deleted_at', null) // R2B soft-hide 제외 (금일 배분 이력 + 배정 누적카운트 정본)
         .gte('checked_in_at', monthStart)
         .order('checked_in_at', { ascending: true });
       const monthCi = (monthCiRows ?? []) as CheckIn[];
@@ -760,6 +769,26 @@ export default function Assignments() {
     }
   };
 
+  // T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 배분 이력 row 삭제(soft-hide) 실행.
+  //   확인 다이얼로그(distDeleteTarget) '확인' → softHideCheckIn(check_ins.deleted_at 세팅, hard-DELETE 금지).
+  //   권한 = admin/manager/원장(canEditDistribution) + 서버 RLS 이중. rows-affected 가드는 helper 내부.
+  const doSoftHideDist = async () => {
+    if (!distDeleteTarget || !clinic || busy) return;
+    setBusy(true);
+    const res = await softHideCheckIn({
+      checkInId: distDeleteTarget.checkIn.id,
+      deletedBy: profile?.id ?? null,
+    });
+    setBusy(false);
+    if (res.ok) {
+      toast.success('배분 이력에서 삭제했습니다.');
+      setDistDeleteTarget(null);
+      void load();
+    } else {
+      toast.error(res.message ?? '삭제 실패');
+    }
+  };
+
   // ── 미배정 일괄 자동배정 (T-20260618-foot-AUTOASSIGN-RUN-FAIL-TABSCROLL reopen#2, 갈래② 소급구제)
   //  이벤트구동 maybeAutoAssign 은 신규 체크인 생성/전이 시점에만 발화 → 그 전에 직접 INSERT 되어
   //  대기슬롯에 이미 떠 있는 미배정 건은 자동배정이 소급되지 않는다. 본 버튼은 현재 활성 탭(상담/치료)의
@@ -1091,12 +1120,19 @@ export default function Assignments() {
                   <th className="px-2 py-2 text-left font-medium">담당</th>
                   <th className="px-2 py-2 text-left font-medium">방식</th>
                   <th className="px-2 py-2 text-right font-medium">시각</th>
+                  {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 삭제 열 — admin/manager/원장 한정 노출 */}
+                  {canEditDistribution && (
+                    <th className="px-2 py-2 text-right font-medium">삭제</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {todayDistribution.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                    <td
+                      colSpan={canEditDistribution ? 5 : 4}
+                      className="px-3 py-6 text-center text-muted-foreground"
+                    >
                       오늘 배분된 건이 없습니다.
                     </td>
                   </tr>
@@ -1173,6 +1209,29 @@ export default function Assignments() {
                     <td className="px-2 py-2 text-right text-muted-foreground">
                       {r.at ? new Date(r.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) : '—'}
                     </td>
+                    {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 삭제(soft-hide) — 전 행 노출(test 조건 없음).
+                        클릭 → 확인 다이얼로그(distDeleteTarget). admin/manager/원장 한정. */}
+                    {canEditDistribution && (
+                      <td className="px-2 py-2 text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          data-testid={`dist-delete-btn-${r.id}`}
+                          disabled={busy}
+                          className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() =>
+                            setDistDeleteTarget({
+                              checkIn: r.checkIn,
+                              customerName: r.customerName,
+                              role: r.role,
+                            })
+                          }
+                        >
+                          삭제
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1532,6 +1591,43 @@ export default function Assignments() {
               data-testid="toss-confirm-btn"
             >
               토스 확정
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 배분 이력 row 삭제 확인 다이얼로그.
+          '확인' → soft-hide(deleted_at 세팅, 복원가능). 파괴적이지 않지만 오삭제 표면 넓어 확인 필수. */}
+      <Dialog open={!!distDeleteTarget} onOpenChange={(o) => !o && setDistDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>배분 이력 삭제</DialogTitle>
+            <DialogDescription>
+              {distDeleteTarget && (
+                <>
+                  <span className="font-medium text-foreground">{distDeleteTarget.customerName}</span> ·{' '}
+                  {distDeleteTarget.role === 'consult' ? '상담' : '치료'} 배정 줄을 금일 배분 이력에서
+                  삭제할까요? 실제로는 화면에서만 숨겨지며 되살릴 수 있습니다.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDistDeleteTarget(null)}
+              disabled={busy}
+              data-testid="dist-delete-cancel-btn"
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void doSoftHideDist()}
+              disabled={busy}
+              data-testid="dist-delete-confirm-btn"
+            >
+              삭제
             </Button>
           </DialogFooter>
         </DialogContent>

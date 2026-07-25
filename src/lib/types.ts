@@ -500,6 +500,12 @@ export interface CheckIn {
    *  ※ healer_waiting처럼 status 전환만 되고 flag history 미기록인 케이스의 진입(activation)시각 복구용.
    *    HL자동노랑(SSOT 우회 벌크 yellow)은 transition row 자체가 없어 미복구 → known-limitation(접수시각 잔존). */
   derivedCallEntryAt?: string | null;
+  /** soft-hide — T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B (ADDITIVE, DA GO).
+   *  NOT NULL = 「금일 배분 이력」에서 스태프가 삭제(숨김)한 행. 운영 read 전역 WHERE deleted_at IS NULL 로 제외.
+   *  hard-DELETE 대체(결제/시술/원장 FK 보존, 복원가능). deleted_by = 실행자 profiles.id(감사).
+   *  optional(?) — DB select('*')에는 항상 존재, in-memory 리터럴은 미포함 허용. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
 }
 
 export interface Package {

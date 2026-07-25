@@ -111,6 +111,7 @@ export default function DashboardDateDetail({ dateStr, clinicId, onClose }: Prop
           .from('check_ins')
           .select('visit_type')
           .eq('clinic_id', clinicId)
+          .is('deleted_at', null) // R2B soft-hide 제외 (내원 count)
           .not('status', 'in', '("cancelled")')
           .in('visit_type', ['new', 'returning', 'experience'])
           .gte('checked_in_at', dayStart)

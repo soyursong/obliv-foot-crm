@@ -99,9 +99,15 @@ test('회귀: 금일 배분 이력 카드 유지 + 수정 가능 안내 문구',
   expect(src).toMatch(/canEditDistribution \? ' · 담당 수정 가능' : ' · 표시 전용'/);
 });
 
-test('회귀(scope): 요청2(삭제) 미착수 — 배분 이력 row 삭제/DELETE UI 부재', () => {
-  const src = read(PAGE);
-  // 금일 배분 이력 카드 범위 내 삭제 버튼/확인 다이얼로그 testid 부재
-  expect(src).not.toContain('data-testid="dist-delete-btn');
-  expect(src).not.toContain('배분 이력을 삭제');
+// [UPDATED 2026-07-25] 요청2(삭제)는 T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B 에서 구현됨(soft-hide).
+//   R1 시점 "미착수" 단언은 R2B 로 superseded → 삭제는 물리 DELETE 가 아닌 soft-hide 임만 회귀 단언.
+test('회귀(scope): 요청2(삭제)=soft-hide 로 구현 — R1 write 경로(check_ins UPDATE) 불변', () => {
+  const eng = read(ENGINE);
+  // R1 manualAssign(수정)은 여전히 check_ins UPDATE per-visit — 삭제기능이 이를 오염시키지 않음
+  expect(eng).toContain('export async function manualAssign');
+  // 삭제(요청2)도 물리 DELETE 금지(soft-hide) — check_ins .delete() 부재
+  const soft = eng.indexOf('export async function softHideCheckIn');
+  expect(soft).toBeGreaterThan(-1);
+  const body = eng.slice(soft, eng.indexOf('export async function', soft + 1));
+  expect(body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')).not.toMatch(/\.delete\(\)/);
 });

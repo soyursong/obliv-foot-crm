@@ -4176,6 +4176,7 @@ export default function Dashboard() {
       // T-20260718-foot-DASHBOARD-POLL-CHECKIN-SELECT-EGRESS-THROTTLE AC-2: select('*')→표시컬럼 축소(egress↓)
       .select(`${CHECKIN_LIST_COLS}, customers(name, chart_number)`)
       .eq('clinic_id', clinic.id)
+      .is('deleted_at', null) // R2B soft-hide 제외 (내원 대시보드 본문·현황 count)
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
       .order('queue_number', { ascending: true });

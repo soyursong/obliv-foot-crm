@@ -88,6 +88,7 @@ export async function resolveVisitTypeByRecency(
       .from('check_ins')
       .select('checked_in_at')
       .eq('customer_id', customerId)
+      .is('deleted_at', null) // R2B soft-hide 제외 (초진/재진 recency)
       .eq('status', 'done')
       // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC2): 당일 자기방문 제외
       .lt('checked_in_at', todaySeoulMidnightISO())
@@ -138,6 +139,7 @@ export async function resolveVisitTypesByRecency(
         .from('check_ins')
         .select('customer_id, checked_in_at')
         .in('customer_id', slice)
+        .is('deleted_at', null) // R2B soft-hide 제외 (초진/재진 recency 배치)
         .eq('status', 'done')
         // T-20260715-foot-SAMEDAY-VISITTYPE-DISPLAY-CHECKINS-SOURCE (AC2): 당일 자기방문 제외 (single 헬퍼와 동일 규칙 — re-divergence 방지)
         .lt('checked_in_at', todaySeoulMidnightISO())
