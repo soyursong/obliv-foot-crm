@@ -121,6 +121,8 @@ import { loadPublishedKohFieldData } from '@/lib/printKohResult';
 import {
   type FootBillingItem,
   computeFootBilling,
+  // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 야간/공휴일/토요일 가산 base 를 진찰료 급여만으로 한정.
+  computeConsultationSurchargeBase,
   loadFootBillingItems,
   loadEffectiveInsuranceGrade,
   buildFootBillDetailItems,
@@ -1373,6 +1375,11 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       const surchargeIsCalHoliday = batchHolidayDateSet.has(toLocalDateStr(surchargeRefDate));
       // 일괄출력은 편집 UI가 없어 수동 override 없음 → 빈 집합(모든 대상 키 자동 folding).
       const noOverride = new Set<string>();
+      // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
+      //   fbBatch 와 동일 소스(fbItemsBatch/fbGradeBatch, default opts=covered_full) — 진찰료 없으면 null(레거시 폴백).
+      const surchargeConsultBase = fbItemsBatch.length > 0
+        ? computeConsultationSurchargeBase(fbItemsBatch, fbGradeBatch)
+        : null;
       const valuesFor = (t: FormTemplate): Record<string, string> => {
         const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };
         // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE (일괄출력 경로): 신양식 라이브 명시세팅.
@@ -1393,6 +1400,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           noOverride,
           surchargeRefDate,
           buildSurchargeDetailRowHtml,
+          surchargeConsultBase, // T-20260725: 진찰료-only base(균검사 등 제외)
         );
         // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (일괄출력 경로) ──
         //   ★야간가산 fold 이후(여기)에 신양식 급여 remainder·납부박스를 계산해 단건(IssueDialog allValues)과 대칭.
@@ -2792,6 +2800,11 @@ function IssueDialog({
     //   (reopen 2026-07-19) 인라인 로직을 applyNightHolidaySurcharge(SSOT)로 일원화 — 미리보기(여기)와
     //   일괄출력(handleBatchPrint valuesFor)이 동일 헬퍼를 호출해 preview/print divergence를 구조적으로 차단.
     const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
+    // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
+    //   미리보기 aggregate 와 동일 소스(footBillingItems/customerInsuranceGrade, default opts) — 없으면 null(레거시).
+    const surchargeConsultBase = footBillingItems.length > 0
+      ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade)
+      : null;
     applyNightHolidaySurcharge(
       base,
       template.form_key,
@@ -2799,6 +2812,7 @@ function IssueDialog({
       surchargeOverriddenKeys,
       surchargeRefDate,
       buildSurchargeDetailRowHtml,
+      surchargeConsultBase, // T-20260725: 진찰료-only base(균검사 등 제외)
     );
 
     // ── T-20260721-foot-BILLDOC-GONGDAN-ROUND-2DOC AC-1(2c): 신양식 환자부담총액·납부할금액 10원 절사(FLOOR) ──

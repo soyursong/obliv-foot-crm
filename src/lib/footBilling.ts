@@ -563,6 +563,65 @@ export function footBillDetailCategory(service: BillingService, covered: boolean
 }
 
 /**
+ * ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──────────────────────────────
+ * 야간/공휴일/토요일 30% 가산의 canon 적용 대상 판정 = **의원급 진찰료(초진/재진 진찰료·의사상담)
+ * 급여 line-item 인가?** true 인 항목만 가산 base 에 산입한다.
+ *
+ * [배경/버그] 종전 settle·서류 경로는 가산 base 를 급여 전체합(coveredTotal = totalByTax['급여'])으로
+ *   잡아, 균검사(진단검사료, 급여) 등 비진찰료 급여 항목에까지 30% 가산이 부과됐다(환자 과다청구, 현장 P0).
+ *   canon(CANON-ESCALATION / SETTLE 07458cf6) 명시 대상 = "의원급 진찰료" 뿐 → 균검사·검사료·처치료·
+ *   처방/조제료는 대상 밖. 본 predicate 로 base line-item 을 진찰료로 한정한다(over-application 축소).
+ *
+ * ⚠ 이것은 **가산 적용대상 line-item 필터**이지 산식/요율/조건 재정의가 아니다(REDEFINITION 금지).
+ *   computeSurcharge(요율 30%)·detectSurchargeKind(토요일/야간/공휴일 3조건)는 불변 — 이 필터가 고른
+ *   base 만 그 산식에 투입한다.
+ *
+ * 판정 우선순위(footBillDetailCategory 와 동일 소스 계층, 단 진찰료만 정밀판정):
+ *   0) 급여(getTaxClass==='급여')가 아니면 즉시 false (가산은 급여 진찰료 전용).
+ *   1) hira_category(권위 enum) 존재 → 'consultation' 만 진찰료(true). examination(균검사)/procedure/
+ *      prescription 등은 false. (라이브 예: 'KOH 균검사'=examination → 제외, '진찰료(초진)'=consultation → 포함.)
+ *   2) hira_category 미적재(null) → category_label==='기본'(진찰료 버킷) AND 진찰료성 명칭(진찰/상담/초진/재진).
+ *      '기본' 급여라도 단순처치 등 처치성 항목은 명칭 불일치로 제외(처치료 canon 밖). '검사'/'풋케어' 등
+ *      다른 label 은 애초에 여기 도달 안 함(false). (라이브 예: '초진진찰료'·'재진진찰료-의원'·'재진-물리
+ *      치료,주사 등 시술받은 경우'(재진 진찰료)·'의사전화상담' → 포함 / '단순처치 [1일]' → 제외.)
+ *
+ * ※ scalp2(obliv-scalp2-crm) byte-mirror 대상 — 동일 predicate 지문 그대로 이식(가산 base=진찰료-only).
+ */
+export function isConsultationFeeItem(
+  svc: BillingService,
+  insuranceGrade: InsuranceGrade | null = null,
+): boolean {
+  if (getTaxClass(svc, insuranceGrade) !== '급여') return false;
+  // 1) HIRA enum(권위) 우선 — 'consultation' 만 진찰료
+  if (svc.hira_category) return svc.hira_category === 'consultation';
+  // 2) category_label='기본'(진찰료 버킷) 중 진찰료성 명칭만(단순처치 등 처치성 제외)
+  if (svc.category_label === '기본') return /진찰|상담|초진|재진/.test(svc.name ?? '');
+  return false;
+}
+
+/**
+ * ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──────────────────────────────
+ * 진찰료-only 가산 base 산출 — isConsultationFeeItem 로 급여 진찰료 line-item 만 골라
+ * computeFootBilling(SSOT, 산식 불변) 을 그 subset 에 재실행한다. 산식·요율 신규발명 없음(REUSE).
+ *
+ * @param items  전체 pricing items (settle=footBillingItems / 서류=footBillingItems 등 호출부와 동일 소스).
+ * @param opts   computeFootBilling 옵션을 그대로 전달 — 호출부 aggregate 와 동일 grain(수납=general_default,
+ *               서류=covered_full 기본) + hiraUnitValue 를 맞춰 copay 비율이 진찰료 aggregate 와 정합하도록.
+ * @returns covered = 진찰료 급여 전액(본인+공단, 가산 base), copay = 진찰료 급여 본인부담(가산 분할 비율용).
+ *          진찰료 없으면 {covered:0, copay:0} → computeSurcharge 가 전부 0 반환(가산 없음, 회귀0).
+ */
+export function computeConsultationSurchargeBase(
+  items: FootBillingItem[],
+  insuranceGrade: InsuranceGrade | null,
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
+): { covered: number; copay: number } {
+  const consultItems = items.filter((i) => isConsultationFeeItem(i.service, insuranceGrade));
+  if (consultItems.length === 0) return { covered: 0, copay: 0 };
+  const r = computeFootBilling(consultItems, insuranceGrade, opts);
+  return { covered: r.coveredTotal, copay: r.copaymentTotal };
+}
+
+/**
  * bill_detail(진료비세부산정내역) items_html 입력행 빌드 — PMW L1480~1492 와 1:1 동일.
  *
  * T-20260609-foot-DOCFORM-3FIX 이슈1 [버그]: 본인부담금/공단부담금 per-item 컬럼 공란.

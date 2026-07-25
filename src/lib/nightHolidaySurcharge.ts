@@ -181,6 +181,12 @@ function parseAmt(v: string | undefined): number {
  * @param isCalHoliday  clinic_events(event_type='holiday') 달력 빨간날 소스 합집합 판정.
  * @param overriddenKeys 스태프 수동 편집 키(AC-4) — 해당 키는 가산 folding 제외(수동값 우선).
  * @param refDate       판정 기준 일시(출력 시점 = new Date()). 테스트는 특정 일시 주입 가능.
+ * @param consultSurchargeBase ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──
+ *   가산 base 를 **진찰료 급여 line-item 만**으로 한정한 값(covered=진찰료 급여 전액, copay=진찰료 본인부담).
+ *   주입 시 이 값으로 30% 가산을 산정한다 — 균검사(진단검사료)·기타 검사료·처치료 등 비진찰료 급여가
+ *   포함된 aggregate(base.copayment/insurance_covered)로 계산하던 over-application 을 차단한다.
+ *   미주입(undefined/null)이면 레거시(aggregate 급여 전체) 폴백 — line-item 정보가 없는 degenerate 경로 전용.
+ *   호출부는 footBillingItems 가 있으면 computeConsultationSurchargeBase(호출부 grain opts 동일)로 주입한다.
  */
 export function applyNightHolidaySurcharge(
   base: Record<string, string>,
@@ -195,6 +201,7 @@ export function applyNightHolidaySurcharge(
     covered: number;
     date?: string;
   }) => string,
+  consultSurchargeBase?: { covered: number; copay: number } | null,
 ): void {
   if (formKey !== 'bill_receipt_new' && formKey !== 'bill_detail') return;
   const kind = detectSurchargeKind(refDate, isCalHoliday);
@@ -205,9 +212,13 @@ export function applyNightHolidaySurcharge(
 
   if (formKey === 'bill_receipt_new') {
     // 진찰료 급여 base = 본인부담금(①) + 공단부담금(②). foot 급여 = 진찰료(Q4).
+    // 가산 base = 진찰료 급여만(canon). consultSurchargeBase 주입 시 그것으로 한정(균검사 등 제외),
+    //   미주입 시 레거시(aggregate 급여 전체) 폴백 — over-application 은 주입 경로에서 차단된다.
     const copayBase = parseAmt(base.copayment);
     const coveredBase = parseAmt(base.insurance_covered);
-    const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+    const sc = consultSurchargeBase
+      ? computeSurcharge(consultSurchargeBase.covered, consultSurchargeBase.copay, kind)
+      : computeSurcharge(copayBase + coveredBase, copayBase, kind);
     base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
     base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
     if (sc.amount > 0) {
@@ -224,9 +235,12 @@ export function applyNightHolidaySurcharge(
     }
   } else {
     // bill_detail(세부산정내역): 진찰료 급여 base = 표시된 본인부담금 총계 + 공단부담금 총계.
+    //   consultSurchargeBase 주입 시 진찰료-only 로 한정(균검사 등 제외), 미주입 시 레거시 폴백.
     const copayBase = parseAmt(base.subtotal_copayment);
     const coveredBase = parseAmt(base.subtotal_fund);
-    const sc = computeSurcharge(copayBase + coveredBase, copayBase, kind);
+    const sc = consultSurchargeBase
+      ? computeSurcharge(consultSurchargeBase.covered, consultSurchargeBase.copay, kind)
+      : computeSurcharge(copayBase + coveredBase, copayBase, kind);
     base.surcharge_kind_label = kind ? SURCHARGE_KIND_LABEL[kind] : '';
     base.surcharge_amount = sc.amount > 0 ? formatAmount(sc.amount) : '';
     if (sc.amount > 0) {

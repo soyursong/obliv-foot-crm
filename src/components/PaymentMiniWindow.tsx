@@ -108,7 +108,6 @@ import {
   toLocalDateStr,
   detectSurchargeKind,
   computeSurcharge,
-  SURCHARGE_RATE,
 } from '@/lib/nightHolidaySurcharge';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
@@ -154,6 +153,9 @@ import {
   applyBillReceiptNewLiveTotals,
   // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액(선수금/패키지 차감분) 소스 로더.
   loadAlreadyPaidAmount,
+  // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 야간/공휴일/토요일 가산 base 를 진찰료 급여만으로 한정
+  //   (균검사 등 비진찰료 급여 over-application 차단). 산식 불변 — base line-item 필터만.
+  computeConsultationSurchargeBase,
   type FootBillingItem,
 } from '@/lib/footBilling';
 // T-20260612-foot-MEDLAW22-B-GATE → T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK:
@@ -1765,13 +1767,22 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   //   ★이중계상 가드: 서류 경로(applyNightHolidaySurcharge)는 pre-surcharge autoValues(copaymentTotal/
   //   coveredTotal/grandTotal) 위에 동일 가산을 더한다. 따라서 그 서류-grain 변수는 불변 유지하고, 여기서는
   //   수납 표시·payments 기록용 surcharge-inclusive 파생값만 신설한다(서류 회귀 0 · db_change=false, 무DB접촉).
-  //   가산 base = 급여 진찰료 전액(coveredTotal), 수납 grain 본인부담(payCopaymentTotal) 비율로 분할.
+  //   가산 base = 급여 **진찰료** 전액(진찰료-only, 균검사 등 비진찰료 급여 제외), 수납 grain 본인부담 비율로 분할.
+  //   ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──
+  //   [버그] 종전 base = coveredTotal(급여 전체합) → 균검사(진단검사료, 급여)에까지 30% 가산 부과(환자 과다청구).
+  //   canon = "의원급 진찰료" 뿐 → computeConsultationSurchargeBase 로 진찰료 급여 line-item 만 골라 base 산정.
+  //   opts 는 payBilling 과 동일 grain(general_default + hiraUnitValue)로 맞춰 진찰료 copay 비율이 정합.
+  //   산식/요율/3조건(detectSurchargeKind/computeSurcharge) 불변 — 적용대상 line-item 필터만 축소.
   const settleSurchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
   const settleSurchargeKind = detectSurchargeKind(
     settleSurchargeRefDate,
     holidayDateSet.has(toLocalDateStr(settleSurchargeRefDate)),
   );
-  const settleSurcharge = computeSurcharge(coveredTotal, payCopaymentTotal, settleSurchargeKind);
+  const settleSurchargeBase = computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, {
+    unknownGradeCopay: 'general_default',
+    hiraUnitValue: clinicHiraUnitValue,
+  });
+  const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
   const payCopaymentWithSurcharge = payCopaymentTotal + settleSurcharge.copay;        // 본인부담금(가산 포함)
   const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함)
   const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함)
@@ -1874,11 +1885,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       hiraUnitValue: clinicHiraUnitValue,
     });
     // T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 차감후 청구액에도 동일 진찰료 30% 가산 반영.
-    //   가산 base = 청구 subset 의 급여 전액(공단·진찰료 아닌 비급여·선수차감분 제외), 본인부담 비율로 분할해 본인분만 산입.
-    //   settleSurchargeKind 재사용(단일 판정 SSOT). 평일/비급여 subset 이면 computeSurcharge 가 0 반환 → 회귀 0.
+    //   ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──
+    //   가산 base = 청구 subset 의 급여 **진찰료** 전액(균검사 등 비진찰료 급여·비급여·선수차감분 제외), 본인부담
+    //   비율로 분할해 본인분만 산입. deductItems 에 진찰료 없으면 base=0 → 가산 0(회귀 0). settleSurchargeKind 재사용.
+    const deductSurchargeBase = computeConsultationSurchargeBase(deductItems, customerInsuranceGrade, {
+      unknownGradeCopay: 'general_default',
+      hiraUnitValue: clinicHiraUnitValue,
+    });
     const deductSurcharge = computeSurcharge(
-      deductBilling.coveredTotal,
-      deductBilling.copaymentTotal,
+      deductSurchargeBase.covered,
+      deductSurchargeBase.copay,
       settleSurchargeKind,
     );
     return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal + deductSurcharge.copay;
@@ -2179,13 +2195,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       const visitDate =
         checkIn.checked_in_at?.slice(0, 10) ??
         new Date().toISOString().slice(0, 10);
-      // ── T-20260725-foot-SURCHARGE-SERVICECHARGE-PERSIST-POLICY ────────────────
-      //   진찰료 시간외/공휴/토요 30% 가산을 service_charges(명세) 에도 영속(Option B, going-forward).
-      //   가산 판정 SSOT = settleSurchargeKind(detectSurchargeKind, 07458cf6 배포본 재사용, 병렬 재구현 금지) →
-      //   rate 로만 RPC 에 전달. RPC 가 진찰료(hira_category='consultation') 급여건에만 self-gate 반영
-      //   (이중계상 가드 = 진료비 전체합산 금지). calc_copayment(가산 반영 base) 단일권위로 명세+FK-copay 동일 산출 →
-      //   general parity by construction. rate=0(평일 주간) → v1 회귀 0. grade 미확정→명세 covered=0(§2-2-7 AC-1).
-      const consultSurchargeRate = settleSurchargeKind ? SURCHARGE_RATE : 0;
       let consultCopaySum = 0;
       for (const svc of coveredServices) {
         const { data: rpcData, error: rpcErr } = await supabase.rpc(
@@ -2197,7 +2206,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             p_service_id: svc.id,
             p_method: splits[0].method,
             p_visit_date: visitDate,
-            p_surcharge_rate: consultSurchargeRate,
           },
         );
         if (rpcErr) {
@@ -2604,6 +2612,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       //   출력 시점(now)이 아니라 진료 당시로 판정(과거일 출력 정확) — DocumentPrintPanel 동형. checked_in_at 부재 시 now 폴백.
       const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
       const surchargeIsCalHoliday = holidayDateSet.has(toLocalDateStr(surchargeRefDate));
+      // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
+      //   서류 aggregate 와 동일 grain({hiraUnitValue}, covered_full 기본) — footBillingItems 비면 null(레거시 폴백).
+      const surchargeConsultBase = footBillingItems.length
+        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue })
+        : null;
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
@@ -2620,7 +2633,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           if (vno) enriched.visit_no = vno;
           // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산을 form_key별 복사본(enriched)에 SSOT 헬퍼로 반영.
           //   bill_receipt_new / bill_detail 만 적용(그 외 no-op). PMW 인쇄 경로엔 수동 override UI 없음 → 빈 집합.
-          applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml);
+          //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
+          applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -2767,6 +2781,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 기준(진료일=checked_in_at) — handleDocPrint 대칭.
       const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
       const surchargeIsCalHoliday = holidayDateSet.has(toLocalDateStr(surchargeRefDate));
+      // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 한정(균검사 등 제외) — handleDocPrint 대칭.
+      const surchargeConsultBase = footBillingItems.length
+        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue })
+        : null;
 
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       {
@@ -2779,7 +2797,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             const vno = visitNoByTemplateId.get(t.id);
             if (vno) enriched.visit_no = vno;
             // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 form_key별 복사본 반영(handleDocPrint 대칭).
-            applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml);
+            //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
+            applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
