@@ -173,32 +173,36 @@ export async function resettleInsuranceGrade(
   return (data ?? { ok: false, error: '재정산 응답이 비어 있습니다.' }) as ResettleResult;
 }
 
-/** 고객 자격등급 수동 갱신 — verified_at 자동 갱신 */
+/**
+ * 고객 자격등급 수동 갱신 — verified_at 자동 갱신
+ *
+ * T-20260725-foot-INSURANCE-GRADE-SECDEF-RPC (PERMISSION-PARITY STEP5, INV-3 서버강제):
+ *   고위험 write(보험 자격등급)를 클라이언트 직접 .update 에서 SECDEF RPC(update_insurance_grade)
+ *   경유로 수렴. 서버가 권한(승인 운영직원)·입력 allowlist·clinic 격리·0-row 를 강제한다.
+ *   RLS 거부/id 미존재 시 이전엔 error=null + 0-row(사일런트) 였으나, 이제 RPC 가 ok:false + 명시적
+ *   error 를 반환한다(silent write-failure 금지 — cross_crm_write_rowcheck_standard 정합).
+ *   시그니처 무변경 → 호출부(InsuranceGradeSelect) 회귀 0.
+ */
 export async function updateInsuranceGrade(
   customerId: string,
   grade: InsuranceGrade,
   source: InsuranceGradeSource,
   memo?: string | null,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase
-    .from('customers')
-    .update({
-      insurance_grade: grade,
-      insurance_grade_source: source,
-      insurance_grade_verified_at: new Date().toISOString(),
-      insurance_grade_memo: memo ?? null,
-    })
-    .eq('id', customerId)
-    .select('id');
+  const { data, error } = await supabase.rpc('update_insurance_grade', {
+    p_customer_id: customerId,
+    p_grade: grade,
+    p_source: source,
+    p_memo: memo ?? null,
+  });
   if (error) {
     return { error: error.message };
   }
-  // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: rows-affected 검증(사일런트 유실 방어).
-  //   RLS 거부/스코프 불일치/id 미존재 시 supabase 는 error=null + 0-row 를 반환 → 호출부가
-  //   "성공"으로 오인해 거짓 성공 toast + 로컬 상태 낙관 반영 → DB 실재와 divergence.
-  //   .select() 로 반영된 행을 회수해 0-row 를 저장 실패로 판정한다.
-  if (!data || data.length === 0) {
-    return { error: '저장 대상을 찾지 못했습니다. 권한 또는 접속 상태를 확인한 뒤 다시 시도해 주세요.' };
+  const res = data as { ok?: boolean; error?: string } | null;
+  if (!res || res.ok !== true) {
+    return {
+      error: res?.error ?? '저장에 실패했습니다. 권한 또는 접속 상태를 확인한 뒤 다시 시도해 주세요.',
+    };
   }
   return { error: null };
 }
