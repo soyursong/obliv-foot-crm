@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatAmount } from '@/lib/format';
-import { categoryLabel, type CategoryRow } from '@/lib/stats';
+import { applyCategoryWhitelist, categoryLabel, type CategoryRow } from '@/lib/stats';
 
 interface Props {
   rows: CategoryRow[];
@@ -11,7 +11,11 @@ interface Props {
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#a855f7', '#64748b'];
 
-export default function CategorySection({ rows, loading }: Props) {
+export default function CategorySection({ rows: rawRows, loading }: Props) {
+  // T-20260725-foot-STATS-CATEGORY-REVENUE-WHITELIST: 6개 화이트리스트 버킷만 표기(FE 표시 필터).
+  //   매출 산식 불변 — RPC 방출 rows 를 버킷 단위로 합산만. 나머지 카테고리는 숨김('기타' 합산 없음).
+  //   비중(ratio)/전체 합계 = 화이트리스트 6버킷 기준(매출집계 탭과 동일 규약).
+  const rows = useMemo(() => applyCategoryWhitelist(rawRows), [rawRows]);
   const total = useMemo(() => rows.reduce((a, b) => a + (b.amount ?? 0), 0), [rows]);
 
   const chartData = useMemo(

@@ -608,8 +608,92 @@ export async function fetchVisitRouteStats(
   return all;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// T-20260725-foot-STATS-CATEGORY-REVENUE-WHITELIST — 통계 > "시술 종류별 매출" 화이트리스트
+//
+// 통계 페이지(Stats.tsx → CategorySection)의 "2. 시술 종류별 매출" 섹션을 6개 화이트리스트
+// 버킷으로만 표기한다. FE-only 표시 필터 — foot_stats_by_category RPC 무변경(no-DDL/no-schema).
+// 매출 산식·집계 로직 불변, 표시 대상(버킷)만 필터한다.
+//
+// ── 매핑 SSOT (2026-07-25 prod 실측: foot_stats_by_category 방출 category 코드) ──
+//   RPC 는 두 브랜치를 UNION 한다:
+//     · pkg_created(패키지 생성 품목)  → 영문 코드: unheated_laser / heated_laser / podologue /
+//                                        reborn / trial / preconditioning (iv 는 RPC 에서 이미 제외)
+//     · single_paid(단건 결제)         → services.category 한글값: 풋케어 / 기본 / 검사 / 진료 /
+//                                        풋화장품 / 처방약 / 상병 / 수액 / 기타 / 처방
+//   6개 화이트리스트 라벨 ↔ 방출 코드 매핑 (매출집계 탭 SalesTreatmentTab 6버킷과 라벨 일치):
+//     1) 비가열레이저            ← unheated_laser
+//     2) 가열레이저              ← heated_laser
+//     3) 포돌로게(내성)          ← podologue
+//     4) Reborn(각질)           ← reborn
+//     5) 풋화장품                ← 풋화장품(single_paid services.category)
+//     6) 진찰료(기본/서류/검사비) ← 기본 · 검사 · 진료(single_paid services.category)
+//   진찰료 버킷 = 기본(진찰료·처치+제증명 서류는 category='기본' 로 적재됨) + 검사(검사비) + 진료.
+//     ※ 서류(제증명)는 services.category_label='제증명' 이나 category='기본' 이라 '기본' 코드에 이미 포함됨
+//       (2026-07-25 실측 pair: '기본|제증명' 13건). RPC 는 category 만 방출하므로 '기본' 매칭으로 충분.
+//
+// ── KNOWN CAVEAT (표시 필터의 구조적 한계, planner/supervisor 인지용) ──
+//   단건(single_paid) 풋케어 시술(비가열/가열/포돌로게/reborn 의 단건 결제분)은 services.category='풋케어'
+//   단일값으로 적재돼 heated/unheated 로 분해 불가 → 화이트리스트 6버킷 어디에도 매칭 안 됨 → 숨김.
+//   ⇒ 이 섹션의 레이저/포돌로게/Reborn 버킷은 사실상 '패키지 생성(pkg_created)분' 위주로 집계된다.
+//     단건 풋케어를 버킷에 편입하려면 services.name 키워드 분해가 필요하고, 그건 RPC 변경(범위 밖)이다.
+//     (매출집계 탭 SalesTreatmentTab 은 services.name 을 봐서 단건도 분해함 — 두 화면 산식이 원래 다른 축.)
+//   ⇒ 산식 불변 · 표시 필터만. 단건 풋케어 편입 필요 시 별도 티켓(RPC/name 분해)로 재평가.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CategoryBucket {
+  /** 합성 버킷 코드(FE 내부 key). RPC 방출 코드와 충돌 방지 위해 'wl_' 접두. */
+  code: string;
+  label: string;
+  /** 이 버킷에 편입되는 RPC 방출 category 코드(영문/한글) */
+  members: string[];
+}
+
+/** 화이트리스트 6버킷 — 표시 순서·라벨 고정(매출집계 탭 SSOT 와 라벨 일치). */
+export const CATEGORY_WHITELIST: CategoryBucket[] = [
+  { code: 'wl_unheated',  label: '비가열레이저',            members: ['unheated_laser'] },
+  { code: 'wl_heated',    label: '가열레이저',              members: ['heated_laser'] },
+  { code: 'wl_podologue', label: '포돌로게(내성)',          members: ['podologue'] },
+  { code: 'wl_reborn',    label: 'Reborn(각질)',           members: ['reborn'] },
+  { code: 'wl_cosmetic',  label: '풋화장품',                members: ['풋화장품'] },
+  { code: 'wl_consult',   label: '진찰료(기본/서류/검사비)', members: ['기본', '검사', '진료'] },
+];
+
+const WL_LABEL = new Map(CATEGORY_WHITELIST.map((b) => [b.code, b.label]));
+const WL_MEMBER_TO_CODE = new Map<string, string>();
+for (const b of CATEGORY_WHITELIST) {
+  for (const m of b.members) WL_MEMBER_TO_CODE.set(m, b.code);
+}
+
+/**
+ * foot_stats_by_category 결과 rows → 6 화이트리스트 버킷으로 집계(고정 순서).
+ * 화이트리스트 외 category(풋케어·수액·처방약·상병·기타·처방·trial·preconditioning 등)는 제외(숨김).
+ * '기타' 합산 버킷 없음. 매출 산식 불변 — 방출된 sessions/amount 를 버킷 단위로 합산만 한다(표시 필터).
+ * 데이터가 없는 버킷은 결과에서 제외한다(빈 0원 행 미표기).
+ */
+export function applyCategoryWhitelist(rows: CategoryRow[]): CategoryRow[] {
+  const agg = new Map<string, { sessions: number; amount: number }>();
+  for (const r of rows ?? []) {
+    const code = WL_MEMBER_TO_CODE.get(r.category);
+    if (!code) continue; // 화이트리스트 외 → 숨김
+    const cur = agg.get(code) ?? { sessions: 0, amount: 0 };
+    cur.sessions += r.sessions ?? 0;
+    cur.amount += r.amount ?? 0;
+    agg.set(code, cur);
+  }
+  return CATEGORY_WHITELIST
+    .filter((b) => agg.has(b.code))
+    .map((b) => ({
+      category: b.code,
+      sessions: agg.get(b.code)!.sessions,
+      amount: agg.get(b.code)!.amount,
+    }));
+}
+
 /** 카테고리 코드 → 한국어 표시 */
 export function categoryLabel(code: string): string {
+  const wl = WL_LABEL.get(code);
+  if (wl) return wl; // 화이트리스트 버킷 코드(wl_*) → 고정 라벨
   switch (code) {
     case 'heated_laser':     return '레이저(가온)';
     case 'unheated_laser':   return '레이저(비가온)';
