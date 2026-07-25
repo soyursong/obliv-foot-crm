@@ -17,16 +17,19 @@ prod `packages` 분류 (2026-07-25 read-only):
 - **체험권(제외, 분모이자 비전환)** = 무좀체험권(107)·내성체험권(7)·체험권(1) — 2회차 체험권 포함 전부 전환 아님.
 
 ## before/after delta (MIG-GATE dry-run, LIVE vs shadow, no-persistence)
+※ 재실측 2026-07-26 (데이터 성장으로 7월 88→89, exp_conv 0→1 반영). delta·회귀 판정 불변.
 | 기간 | LIVE exp_total | NEW exp_total | 회귀 | LIVE exp_conv | NEW exp_conv | Δconv |
 |------|----:|----:|:--:|----:|----:|----:|
-| 2026-07 | 88 | 88 | 없음 | 0 | 0 | 0 |
+| 2026-07 | 89 | 89 | 없음 | 1 | 1 | 0 |
 | 2026-06 | 1 | 1 | 없음 | 0 | 0 | 0 |
-| 전기간 | 89 | 89 | 없음 | 0 | 0 | 0 |
 
-- **experience_total 무회귀 실증**: 88(7월)·1(6월) LIVE=NEW 동일 (AC#4 ✓).
-- **conversion delta = 0**: LIVE(구 정의, b.package_id NULL로 구조적 0) → NEW(SSOT 정의) 모두 0 → **화면 수치 무변동**.
-- 참고(전기간): '체험 고객이 (당일 아닌) 나중에 정식패키지 구매' 1건 존재 → '당일' 요건으로 정상 제외(SSOT 부합).
-- shadow 함수 사후부재(post-probe) 확인 = 무영속.
+- **experience_total 무회귀 실증**: 89(7월)·1(6월) LIVE=NEW 동일 (AC#4 ✓). 본 변경은 분모 무접점.
+- **conversion delta = 0**: LIVE exp_conv=1(김규리, 체험 내원 당일 발행 '24회권'=정식 다회차 패키지) → NEW 정의로도 1(24회권은
+  total_sessions=24·비체험권·비양도 → 정식 전환 유지). 1회성/체험권 발행은 애초 분자에 없어 무변동 → **화면 수치 무변동(33.3% 유지)**.
+- **왜 수치가 안 낮아지는가**: 현 prod 에서 전환으로 잡히던 유일 1건이 이미 정식(다회차) 패키지라 SSOT 재정의로도 살아남음.
+  1회성 티켓이 전환으로 잡히던 실데이터가 現 0건(구조적 leak 경로만 존재) → 이번 정정은 그 leak 경로를 봉쇄하는 예방적 가드.
+- 참고(전기간): '체험 고객이 (당일 아닌) 나중에 정식패키지 구매' 케이스는 '당일' 요건으로 정상 제외(SSOT 부합).
+- shadow 함수 사후부재(post-probe) 확인 = 무영속(post_probe_shadow_dropped=true).
 
 ## 백필/재집계 (AC#6)
 - 집계단(recompute) 수정 → 원본 무접점 → 과거 전구간 **자동 재집계**(STABLE 조회 시 재계산). 백필 DML/freeze셋 불요.
