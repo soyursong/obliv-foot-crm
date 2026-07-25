@@ -31,8 +31,16 @@ import {
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useChart } from '@/lib/chartContext';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
 
 interface Props {
@@ -74,6 +82,16 @@ interface StaffStat {
   refundAmount: number;
   /** T-20260522-foot-DESIGNATED-THERAPIST AC-4: 지정환자수 */
   designatedCount: number;
+}
+
+// ── T-20260725-foot-THERAPIST-DESIGNATED-CUSTLIST-DRILLDOWN ──────────────────────
+//   '지정 수' 클릭 시 나열할 지정 고객 1인 정보. 명단·카운트를 동일 소스(1쿼리)에서
+//   파생하므로 AC2(명단 인원 == 지정 수) 정합이 구조적으로 보장된다.
+interface DesignatedCustomer {
+  id: string;
+  name: string;
+  chart_number: string | null;
+  designated_therapist_id: string | null;
 }
 
 // ── 차감기준(신규) 타입 ────────────────────────────────────────────────────────
@@ -162,6 +180,15 @@ export function SalesStaffTab({ filter }: Props) {
   // T-20260605: 귀속 기준 토글 (기본 = 차감기준 = 총괄 요청 표시값)
   const [basis, setBasis] = useState<StaffBasis>('deduction');
 
+  // T-20260725-foot-THERAPIST-DESIGNATED-CUSTLIST-DRILLDOWN:
+  //   '지정 수' 클릭 → 지정 고객 명단 팝업(Dialog). 명단 고객 클릭 → 2번차트 이동.
+  //   2번차트 라우팅은 기존 자산(useChart().openChart) 재사용 — 신규 라우팅 신설 금지(AC3).
+  const { openChart } = useChart();
+  const [designatedDialog, setDesignatedDialog] = useState<{
+    staffId: string;
+    staffName: string;
+  } | null>(null);
+
   // accounting_date 기준 조회 — 소급 방지의 핵심 (AC-3) / 수납기준
   const { data: payments = [], isLoading: payLoading } = useQuery<StaffPayRow[]>({
     queryKey: ['sales-staff', clinic?.id, from, to],
@@ -216,26 +243,45 @@ export function SalesStaffTab({ filter }: Props) {
     },
   });
 
-  // T-20260522-foot-DESIGNATED-THERAPIST AC-4: 치료사별 지정환자수
-  const { data: designatedMap = {} } = useQuery<Record<string, number>>({
+  // T-20260522-foot-DESIGNATED-THERAPIST AC-4: 치료사별 지정환자수 (원본 명단)
+  // T-20260725-foot-THERAPIST-DESIGNATED-CUSTLIST-DRILLDOWN: 카운트뿐 아니라 지정 고객
+  //   명단(id/name/chart_number)까지 동일 쿼리로 가져와, '지정 수' 클릭 → 명단 drill-down의
+  //   단일 소스로 삼는다. 카운트-명단 정합(AC2)이 파생 시점에서 구조적으로 보장됨.
+  const { data: designatedCustomers = [] } = useQuery<DesignatedCustomer[]>({
     queryKey: ['sales-staff-designated', clinic?.id],
     enabled: !!clinic,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('designated_therapist_id')
+        .select('id, name, chart_number, designated_therapist_id')
         .eq('clinic_id', clinic!.id)
         .not('designated_therapist_id', 'is', null);
       if (error) throw error;
-      const map: Record<string, number> = {};
-      for (const row of (data ?? []) as { designated_therapist_id: string | null }[]) {
-        if (row.designated_therapist_id) {
-          map[row.designated_therapist_id] = (map[row.designated_therapist_id] ?? 0) + 1;
-        }
-      }
-      return map;
+      return (data ?? []) as DesignatedCustomer[];
     },
   });
+
+  // 치료사 id → 지정 고객 명단. 명단은 이름 오름차순.
+  const designatedListByTherapist = useMemo<Map<string, DesignatedCustomer[]>>(() => {
+    const m = new Map<string, DesignatedCustomer[]>();
+    for (const c of designatedCustomers) {
+      if (!c.designated_therapist_id) continue;
+      const arr = m.get(c.designated_therapist_id) ?? [];
+      arr.push(c);
+      m.set(c.designated_therapist_id, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'ko'));
+    }
+    return m;
+  }, [designatedCustomers]);
+
+  // 카운트 맵은 명단 length 에서 파생 (기존 designatedMap 소비부 호환 유지).
+  const designatedMap = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    for (const [k, arr] of designatedListByTherapist) map[k] = arr.length;
+    return map;
+  }, [designatedListByTherapist]);
 
   // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): staff id→name (화장품 seller 표시명) ──
   const { data: staffNames = {} } = useQuery<Record<string, string>>({
@@ -527,6 +573,85 @@ export function SalesStaffTab({ filter }: Props) {
     </div>
   );
 
+  // T-20260725-foot-THERAPIST-DESIGNATED-CUSTLIST-DRILLDOWN:
+  //   '지정 수' 셀 — 1 이상이면 클릭 가능한 drill-down(링크형), 0이면 비활성 텍스트(AC1·AC4).
+  const renderDesignatedCount = (
+    staffId: string,
+    staffName: string,
+    count: number,
+    testId: string,
+  ) => {
+    if (count <= 0) {
+      return <span className="text-muted-foreground">0</span>;
+    }
+    return (
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={() => setDesignatedDialog({ staffId, staffName })}
+        className="cursor-pointer font-semibold text-emerald-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-emerald-900"
+        title="지정 고객 명단 보기"
+      >
+        {count}
+      </button>
+    );
+  };
+
+  // 현재 팝업 대상 치료사의 지정 고객 명단 (동일 소스 파생 → 카운트 정합 보장).
+  const dialogCustomers = designatedDialog
+    ? designatedListByTherapist.get(designatedDialog.staffId) ?? []
+    : [];
+
+  // ── 지정 고객 명단 Dialog (AC2·AC3·AC4) ───────────────────────────────────────
+  const DesignatedListDialog = (
+    <Dialog
+      open={!!designatedDialog}
+      onOpenChange={(open) => {
+        if (!open) setDesignatedDialog(null);
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle data-testid="designated-dialog-title">
+            {designatedDialog?.staffName} 치료사 지정 고객
+          </DialogTitle>
+          <DialogDescription>
+            지정 수 {dialogCustomers.length}명 · 고객을 클릭하면 2번차트로 이동합니다.
+          </DialogDescription>
+        </DialogHeader>
+        {dialogCustomers.length === 0 ? (
+          <div
+            data-testid="designated-dialog-empty"
+            className="py-8 text-center text-sm text-muted-foreground"
+          >
+            지정된 고객이 없습니다.
+          </div>
+        ) : (
+          <ul data-testid="designated-dialog-list" className="max-h-[60vh] divide-y overflow-auto">
+            {dialogCustomers.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  data-testid={`designated-dialog-customer-${c.id}`}
+                  onClick={() => {
+                    openChart(c.id); // 기존 2번차트 라우팅 재사용(AC3)
+                    setDesignatedDialog(null);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 px-1 py-3 text-left transition-colors hover:bg-muted/50"
+                >
+                  <span className="font-medium">{c.name}</span>
+                  <span className="font-mono text-xs text-teal-600">
+                    {chartNoBadge(c.chart_number)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
   // ── 렌더 ────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -597,9 +722,12 @@ export function SalesStaffTab({ filter }: Props) {
                     {s.count}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-center">
-                    <span className={cn(s.designatedCount > 0 && 'font-semibold text-emerald-700')}>
-                      {s.designatedCount}
-                    </span>
+                    {renderDesignatedCount(
+                      s.staffId,
+                      s.staffName,
+                      s.designatedCount,
+                      `sales-staff-deduct-designated-${s.staffId}`,
+                    )}
                   </td>
                   <td
                     data-testid={`sales-staff-deduct-revenue-${s.staffId}`}
@@ -649,6 +777,7 @@ export function SalesStaffTab({ filter }: Props) {
             {' · 화장품 매출 = 판매 치료사(미지정 시 담당 치료사) 귀속, 치료 매출과 별도 집계(합산 아님).'}
           </p>
         </div>
+        {DesignatedListDialog}
       </div>
     );
   }
@@ -708,14 +837,17 @@ export function SalesStaffTab({ filter }: Props) {
                   <td className="px-3 py-2 tabular-nums text-center">{s.count}</td>
                   {/* T-20260522-foot-DESIGNATED-THERAPIST AC-4 */}
                   <td
-                    data-testid={`sales-staff-designated-${s.role}-${s.staffId}`}
+                    data-testid={`sales-staff-designated-cell-${s.role}-${s.staffId}`}
                     className="px-3 py-2 tabular-nums text-center"
                   >
-                    {s.role === 'therapist' ? (
-                      <span className={cn(s.designatedCount > 0 && 'font-semibold text-emerald-700')}>
-                        {s.designatedCount}
-                      </span>
-                    ) : '—'}
+                    {s.role === 'therapist'
+                      ? renderDesignatedCount(
+                          s.staffId,
+                          s.staffName,
+                          s.designatedCount,
+                          `sales-staff-designated-${s.role}-${s.staffId}`,
+                        )
+                      : '—'}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-right">
                     {formatAmount(Math.round(s.treatmentRevenue))}원
@@ -792,6 +924,7 @@ export function SalesStaffTab({ filter }: Props) {
           * 화장품 매출 = 판매 치료사(미지정 시 담당 치료사) 귀속, 치료 매출 컬럼에서 분리 집계(이중산입 없음).
         </p>
       </div>
+      {DesignatedListDialog}
     </div>
   );
 }
