@@ -34,7 +34,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // ── 환경 변수 ─────────────────────────────────────────────────────
 const SUPABASE_URL             = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// [SVCKEY-ROTATE] 신형 sb_secret 우선 → legacy service_role fallback (무중단 cutover)
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("FOOT_SB_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// legacy raw (내부 caller 가 아직 legacy bearer 제시할 수 있어 equality 검사에서 병행 허용)
+const LEGACY_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const INTERNAL_CRON_SECRET     = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -391,7 +394,9 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Auth 결정 ─────────────────────────────────────────────────
-  const isServiceRole = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  // [SVCKEY-ROTATE] 신형 secret AND legacy service_role 둘 다 shared-secret 로 허용 (내부 caller 미이관분 무중단)
+  const isServiceRole = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    || (LEGACY_SERVICE_ROLE_KEY !== "" && authHeader === `Bearer ${LEGACY_SERVICE_ROLE_KEY}`);
   const isCronCall    = INTERNAL_CRON_SECRET !== "" && cronSecret === INTERNAL_CRON_SECRET;
   const isAdminAction = Boolean(bodyJson._action);
 

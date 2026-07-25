@@ -48,7 +48,8 @@ import {
 } from "./verify.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// [SVCKEY-ROTATE] 신형 sb_secret 우선 → legacy service_role fallback (무중단 cutover)
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("FOOT_SB_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const REDPAY_WEBHOOK_SECRET     = Deno.env.get("REDPAY_WEBHOOK_SECRET") ?? "";
 const PAYMENT_AUTO_MODE         = Deno.env.get("PAYMENT_AUTO_MODE") ?? "";
 const REDPAY_CLINIC_SLUG        = Deno.env.get("REDPAY_CLINIC_SLUG") ?? "jongno-foot";

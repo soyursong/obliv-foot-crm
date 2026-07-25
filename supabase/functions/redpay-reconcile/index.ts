@@ -81,7 +81,10 @@ import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" 
 
 // ── 환경 변수 ─────────────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// [SVCKEY-ROTATE] 신형 sb_secret 우선 → legacy service_role fallback (무중단 cutover)
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("FOOT_SB_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// legacy raw (내부 caller 가 아직 legacy bearer 제시할 수 있어 equality 검사에서 병행 허용)
+const LEGACY_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const REDPAY_API_KEY            = Deno.env.get("REDPAY_API_KEY") ?? "";
 const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 // clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①).
@@ -175,7 +178,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const cronHeader = req.headers.get("x-internal-cron");
   const authHeader = req.headers.get("authorization");
   const isInternalCron = INTERNAL_CRON_SECRET !== "" && cronHeader === INTERNAL_CRON_SECRET;
-  const isServiceRole  = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  // [SVCKEY-ROTATE] 신형 secret AND legacy service_role 둘 다 shared-secret 로 허용 (내부 caller 미이관분 무중단)
+  const isServiceRole  = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    || (LEGACY_SERVICE_ROLE_KEY !== "" && authHeader === `Bearer ${LEGACY_SERVICE_ROLE_KEY}`);
 
   if (!isInternalCron && !isServiceRole) {
     return json({ error: "Unauthorized" }, 401);
