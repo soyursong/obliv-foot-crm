@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.obliv.foot.solapi-balance-monitor
+  T-20260725-foot-SOLAPI-BALANCE-QUOTA-ALERT — 솔라피 SMS 잔액·일일한도 임계 자동 경보(워치독)
+
+  왜: 부모 T-20260721 — 07-21 문자 전면 sent=0 발생 후 정상화까지 4일 소요(무감지). root cause=잔액소진.
+      솔라피 잔액·일일한도는 API/콘솔로만 확인 가능 → 능동 조회 안 하면 소진을 못 봄(CEO Q3).
+      이 워치독이 시간당 1회 활성 지점 잔액을 READ-ONLY 조회 → 임계 도달 시 슬랙 능동 경보.
+
+  ★ read-only 폴링(솔라피 balance API) + 슬랙 알림(장쳰 봇). DB write 0, 스키마 변경 0(db_change=false).
+    시크릿은 redpay 워치독과 동일한 ~/.env.redpay-foot 재사용 가능(SUPABASE_SERVICE_ROLE_KEY).
+    솔라피 apiKey/secret 은 Vault(get_vault_secret RPC)에서 지점별 조회(env 불요).
+
+  튜너블(선택, ~/.env.redpay-foot 또는 ~/.env.solapi-monitor 에 추가 가능):
+    SOLAPI_SMS_UNIT_COST=45              # 1건 차감단가(원). 부모 진단 관측 45원/건(LMS)
+    SOLAPI_MIN_SEND_COUNT=100            # 잔액 경보 임계(발송가능 잔여건수). 미만이면 경보
+    SOLAPI_REALERT_HOURS=24             # 임계 지속 시 재경보 주기(4일 무감지 방지)
+    SOLAPI_QUOTA_LOOKBACK_HOURS=2       # 일일한도 초과 응답 감지 조회창
+    SOLAPI_DAILY_QUOTA=0                # (선택) 확정 일일한도(건). 설정 시 80% 도달 경보 병행
+    SOLAPI_BALANCE_BASELINE_74967aea=…  # (선택) 지점별 정상잔액 기준선(원) → 20% 경보 병행
+    SOLAPI_ALERT_SLACK_CHANNEL=C0ATE5P6JTH   # 경보 채널(기본 풋센터 운영 채널)
+
+  배포 (supervisor, macstudio):
+    0. dry-run/self-test 검증 (라이브 전 필수 — 슬랙 미발송·상태 미변경):
+         cd ~/GitHub/obliv-foot-crm && node scripts/solapi_balance_quota_monitor.mjs --self-test  # 순수로직
+         cd ~/GitHub/obliv-foot-crm && node scripts/solapi_balance_quota_monitor.mjs --dry-run     # 실조회+문안 재현
+    1. 등록:
+         mkdir -p ~/logs
+         ln -sf ~/GitHub/obliv-foot-crm/scripts/launchd/com.obliv.foot.solapi-balance-monitor.plist \
+           ~/Library/LaunchAgents/com.obliv.foot.solapi-balance-monitor.plist
+         launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.solapi-balance-monitor.plist
+    2. 검증:
+         launchctl list | grep solapi-balance-monitor
+         tail -50 ~/logs/solapi_balance_monitor.out   # '문자발송 활성 지점' + '잔액=' + '완료' 확인
+         tail -50 ~/logs/solapi_balance_monitor.err
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.obliv.foot.solapi-balance-monitor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm &amp;&amp; node scripts/solapi_balance_quota_monitor.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/domas/GitHub/obliv-foot-crm</string>
+
+    <!-- 시간당 1회(매시 20분) — 티켓 요구 "최소 시간당 1회". 잔액 소진은 분 단위 급변 없음. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key><integer>20</integer>
+    </dict>
+
+    <!-- 짧은 1회성 잡. 크래시 자동재기동 불필요(다음 시간대 재실행). KeepAlive 미설정. -->
+    <key>RunAtLoad</key><false/>
+
+    <key>StandardOutPath</key><string>/Users/domas/logs/solapi_balance_monitor.out</string>
+    <key>StandardErrorPath</key><string>/Users/domas/logs/solapi_balance_monitor.err</string>
+</dict>
+</plist>
