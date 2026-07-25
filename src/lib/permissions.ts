@@ -3,6 +3,13 @@
 
 import type { StaffRole } from './types';
 
+// T-20260725-foot-PERMISSION-PARITY-PLAYBOOK STEP4 (INV-4 닫힌 role 타입):
+//   개방부(| string)를 제거해 유니온을 '닫는다'. 이제 unknown role 문자열은 컴파일에서 잡힌다
+//   (신규 role 은 이 유니온에 명시 추가해야 하며 = INV-4 강제 → PERM_MATRIX·RLS 패리티 STEP1 게이트 동반).
+//   ★enum 실측(user_profiles.role + staff 로스터): 8역할 + tm(풋 자체/도파민 TM콜센터) + technician(staff
+//     로스터 enum) + doctor(향후 봉직의 forward-ref, canViewPhraseManagement §AC-1 참조). 이 12개로 확정.
+//   ★DB→FE 경계(user.role: string)에서 UserRole 로 좁힐 땐 명시 캐스트(as UserRole)로 유입점을 드러낸다.
+//     unknown role 은 predicate 가 기본값 false 로 안전 처리(권한 미부여 = fail-closed).
 export type UserRole =
   | 'admin'
   | 'manager'
@@ -12,7 +19,9 @@ export type UserRole =
   | 'therapist'
   | 'part_lead'
   | 'staff'
-  | string;
+  | 'tm'            // T-20260610-foot-STAFF-ROLE-TM-ADD: 풋 자체 TM(4메뉴 최소권한) / 도파민 TM콜센터
+  | 'technician'    // T-20260630-foot-STAFFCRUD-CODY-PERM: staff 로스터 enum(director/…/technician)
+  | 'doctor';       // T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE: 향후 봉직의/일반의사 forward-ref
 
 export type PermKey =
   | 'dashboard'

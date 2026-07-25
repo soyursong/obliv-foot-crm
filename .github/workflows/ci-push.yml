@@ -25,6 +25,22 @@ jobs:
       - name: "차트 접근 경로 필수 심볼 검증"
         run: bash scripts/check-chart-access-lock.sh
 
+  # ── 0b) 권한 게이트(무DDL·무브라우저·결정론) ──────────────
+  # T-20260725-foot-PERMISSION-PARITY-PLAYBOOK STEP2/STEP6:
+  #   INV-2(server-first) — 권한 마이그가 .DDL_DIFF_HOLD 로 drift 하면 머지 차단(LEDGER 미등록 0건).
+  #   STEP6(ratchet)      — 신규 인라인 role=== 추가 차단(baseline 초과 시 RED).
+  # 순수 grep·수 초 → build 의존 없이 최속 실패.
+  perm-guards:
+    name: "🔑 Perm Guards (server-first + inline-role ratchet)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: "STEP2 server-first HOLD 게이트"
+        run: bash scripts/check-perm-migration-hold.sh
+      - name: "STEP6 인라인 role=== ratchet"
+        run: bash scripts/check-inline-role-ratchet.sh
+
   # ── 1) TypeScript 타입 체크 ──────────────────
   typecheck:
     name: "🔍 TypeCheck"
@@ -167,5 +183,57 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: chart-open-gate-traces
+          path: test-results/
+          retention-days: 7
+
+  # ── 5) 권한 패리티 E2E (INV-1 role-set 동등 강제) ──────────────
+  # T-20260725-foot-PERMISSION-PARITY-PLAYBOOK STEP1a/1b:
+  #   기존 패리티 스펙(RX-PERMMENU / RLS-MENU-ROLE-PARITY(+SAFEDEFAULTS) / RLS-PARITY-G1·G2 /
+  #   CUSTLIST-CTXMENU / CODY-WRITE-PERM / TREATTABLE-DOCS / SMS-CTXMENU-ALLROLE)를 push 필수
+  #   게이트로 승격 + 신규 PERMISSION-PARITY-PLAYBOOK(coordinator write Set 동등, 닫힌 유니온 가드).
+  #   ★nightly-only 였던 회귀 누락 봉합 — role 하나 FE에만 추가한 PR → 이 job RED.
+  #   ※ 진짜 role-set 동등비교는 SMS/coordinator-write 뿐(나머지는 toContain 존재검사) — 게이트에
+  #     넣으면 전부 잡힌다 가정 금지(STEP1 ★경고). 커버 확장은 STEP1b 로 점진.
+  perm-parity:
+    name: "🔑 Perm Parity"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
+
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_DISABLE_AUTH_LOCK: "1"
+      TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CI: "true"
+      TZ: "Asia/Seoul"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run Perm Parity specs
+        run: npm run test:perm-parity
+
+      - name: Upload report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perm-parity-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload traces (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perm-parity-traces
           path: test-results/
           retention-days: 7

@@ -234,7 +234,7 @@ export default function AdminSettings() {
   // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ③: 메시지 설정 — 3역할(consultant/coordinator/therapist) 일괄 해제.
   //   ⓪ 연결 설정(Solapi 자격증명)은 adminOnly 유지(clinics write=is_admin_or_manager·column-scope 불가 → DEFERRED).
   //   ⑦ 셀프접수 QR 다운로드(read-only)는 3역할 개방. 그 외 섹션은 PERM_MATRIX.messaging(旣 전직원 개방, MSGSETTINGS-STAFF-ACCESS)과 정합.
-  const isUnlock  = isStaffUnlockRole(role);
+  const isUnlock  = isStaffUnlockRole(role || undefined);  // STEP4 닫힌 유니온: '' → undefined(fail-closed)
 
   // ── 권한 가드 ────────────────────────────────────────────────────────────────
   //   기존 가드(admin/manager/director only)는 nav/route/PERM_MATRIX.messaging(전직원 개방)과 모순된 잔존 제약이었음 →

@@ -2764,7 +2764,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 = prod rrn_decrypt 게이트(admin/manager/director).
   //   권한 없는 직원은 rrn_decrypt 가 항상 null 을 반환 → 저장 여부를 빈 값으로 구분 불가.
   //   이 플래그로 '미입력'(=저장 안 됨 오해) 대신 '조회 권한 없음' 안내문을 띄운다. DB 권한은 변경 없음.
-  const userCanViewRrn = canViewRrn(profile?.role ?? '');
+  const userCanViewRrn = canViewRrn(profile?.role ?? undefined);  // STEP4 닫힌 유니온: '' 제거(canViewRrn 이 undefined 안전 처리)
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
   // T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 비가열 레이저 타이머 시작 버튼 시간 단위.

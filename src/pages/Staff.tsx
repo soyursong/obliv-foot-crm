@@ -32,7 +32,7 @@ import {
 
 import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
 // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 CRUD 권한 게이트 + 권한상승 가드(원장 배정 차단) SSOT.
-import { canManageStaff, assignableStaffRolesFor } from '@/lib/permissions';
+import { canManageStaff, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
 
 type Role = StaffRole;
 
@@ -358,7 +358,8 @@ function CreateStaffDialog({
   const [role, setRole] = useState<Role>('therapist');
   const [submitting, setSubmitting] = useState(false);
   // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director'(원장) 배정 불가. admin/manager/director 는 전 역할.
-  const roleOptions = assignableStaffRolesFor(actorRole, ROLE_ORDER);
+  // STEP4 닫힌 유니온: DB→FE 경계(actorRole: Role|string) 명시 캐스트로 유입점 표기. unknown → predicate fail-closed.
+  const roleOptions = assignableStaffRolesFor(actorRole as UserRole | null | undefined, ROLE_ORDER);
 
   useEffect(() => {
     if (!open) {
@@ -447,7 +448,7 @@ function EditStaffDialog({
   const [saving, setSaving] = useState(false);
   // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director' 배정 불가. 단, 기존 행 역할이 옵션에 없으면(타역할 보존) 현재값 보존 표시.
   const roleOptions = useMemo(() => {
-    const base = assignableStaffRolesFor(actorRole, ROLE_ORDER);
+    const base = assignableStaffRolesFor(actorRole as UserRole | null | undefined, ROLE_ORDER);  // STEP4 경계 캐스트
     return target && !base.includes(target.role) ? [target.role, ...base] : base;
   }, [actorRole, target]);
 
