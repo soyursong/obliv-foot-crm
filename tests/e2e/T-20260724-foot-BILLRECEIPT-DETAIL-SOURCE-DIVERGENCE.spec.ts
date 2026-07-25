@@ -146,12 +146,22 @@ test.describe('BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE — 신양식 aggregate 라�
     expect(PMW_SRC).toMatch(/applyBillReceiptNewLiveTotals\(/);
   });
 
-  test('순서강제: 라이브 aggregate 세팅이 applyBillReceiptNewCoveredTokens 이전에 위치(remainder base 정합)', () => {
-    // PMW: SplitAndPaid 내부에서 LiveTotals → CoveredTokens 순.
+  test('순서강제(DOCTOKEN-ORDER): CoveredTokens 는 가산 fold 이후 enriched 에서 계산(autoValues 사전계산 폐지)', () => {
+    // ── T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함② ──
+    //   종전엔 applyBillReceiptNewSplitAndPaid 가 autoValues 에 **가산 fold 前** CoveredTokens 를 계산해
+    //   Σ(급여 remainder)≠급여합계 버그가 났다. 정정: aggregate base(LiveTotals)만 autoValues 에 두고,
+    //   CoveredTokens/납부박스/10원절사는 per-form enriched 에서 applyNightHolidaySurcharge **이후** 재계산.
+    // 1) aggregate base(LiveTotals)는 여전히 autoValues 에 세팅(가산-무관 base — CoveredTokens 원천).
+    expect(PMW_SRC).toMatch(/applyBillReceiptNewLiveTotals\(autoValues/);
     const liveIdxPmw = PMW_SRC.indexOf('applyBillReceiptNewLiveTotals(');
-    const coveredIdxPmw = PMW_SRC.indexOf('applyBillReceiptNewCoveredTokens(autoValues');
+    const coveredIdxPmw = PMW_SRC.indexOf('applyBillReceiptNewCoveredTokens(enriched');
     expect(liveIdxPmw).toBeGreaterThan(0);
-    expect(liveIdxPmw).toBeLessThan(coveredIdxPmw);
+    expect(coveredIdxPmw).toBeGreaterThan(0);
+    expect(liveIdxPmw).toBeLessThan(coveredIdxPmw); // aggregate base 정의가 remainder 계산보다 먼저.
+    // 2) CoveredTokens 는 enriched(가산後)에서만 — autoValues 사전계산(가산前) 제거(버그 재발 방지).
+    expect(PMW_SRC).not.toMatch(/applyBillReceiptNewCoveredTokens\(autoValues/);
+    // 3) 재계산 헬퍼는 per-form 루프에서 가산 fold(applyNightHolidaySurcharge) **직후** 호출(DPP 순서 미러).
+    expect(PMW_SRC).toMatch(/applyNightHolidaySurcharge\(enriched[\s\S]{0,400}?applyPostSurchargePaidTokens\(enriched/);
   });
 
   // ═══════════ D1 무접촉 가드: applyBillingFallback 일반정책 역전 금지 ═══════════

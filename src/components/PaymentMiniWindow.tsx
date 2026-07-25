@@ -1814,48 +1814,77 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
   };
 
+  // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산-무관 fetch 결과(per-form 재계산에 재사용).
+  type PmwPaidBoxCtx = {
+    payRows: Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null; payment_type?: string | null }>;
+    alreadyPaid: number;
+  };
+
   // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (결제미니창 PATH-4) ─────────────────
   //   신양식(bill_receipt_new) 발행 시 결함A(급여 category remainder)·결함B(⑪ 납부박스 payments) 주입.
-  //   DPP 단건/일괄과 동일 SSOT 헬퍼 사용 — 3경로 대칭. PMW 는 야간가산 미적용이라 순서제약 없음
-  //   (aggregate copayment/insurance_covered 는 위 applyBillingFallback 이 이미 세팅) — 호출부에서 그 뒤에 부른다.
+  //   DPP 단건/일괄과 동일 SSOT 헬퍼 사용 — 3경로 대칭.
+  //   ── T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②(출력토큰 가산-순서 정정) ──
+  //   [정정] 종전 주석 "PMW 는 야간가산 미적용이라 순서제약 없음" 은 **사실과 다르다**. PMW 인쇄경로
+  //   (handleDocPrint/handleDocAndSettle)는 form_key별 복사본(enriched)에 applyNightHolidaySurcharge 를 호출해
+  //   실제로 가산을 fold 한다. 그러므로 가산-의존 토큰(CoveredTokens=급여 remainder / 납부박스 ⑧⑨⑩·미납 /
+  //   환자부담 10원 절사)을 가산 fold **前** 에 계산하면 Σ(행)≠합계·⑧≠⑨+미납·절사가 가산前값으로 어긋난다(현장 증상).
+  //   → 이 함수는 가산-**무관** 부분(aggregate LiveTotals + payments/선수금 소스 fetch)만 수행하고,
+  //     가산-의존 토큰은 호출부 per-form 루프에서 applyNightHolidaySurcharge **이후** 에 재계산한다
+  //     (applyPostSurchargePaidTokens, 반환한 {payRows,alreadyPaid} 재사용). DPP canon 순서 미러(§3.3 순서강제).
   //   결함B 원장: payments(status=active) 실수납만 groupBy(완납 가정 금지). 인쇄 시점 미수납이면 납부박스 공란·미납=전액.
   const applyBillReceiptNewSplitAndPaid = async (
     autoValues: Record<string, string>,
     selected: { form_key: string }[],
-  ): Promise<void> => {
-    if (!selected.some((t) => t.form_key === 'bill_receipt_new') || pricingItems.length === 0) return;
+  ): Promise<PmwPaidBoxCtx | null> => {
+    if (!selected.some((t) => t.form_key === 'bill_receipt_new') || pricingItems.length === 0) return null;
     // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE ([출력]/[출력및수납] 공용): 신양식 aggregate 라이브 SSOT force.
     //   RC: applyBillingFallback(isBlankOrZero 가드)이 stale service_charges autobind aggregate 를 보존 → 라이브
     //   (check_in_services=computeFootBilling)로 못 덮어 세부산정내역(bill_detail)과 발산. 신양식 한정 force 대입으로 수렴.
     //   ⑥ 진료비 총액 = grandTotal(공단 포함) 강제(D3). DPP 단건·배치와 동일 헬퍼(SSOT 단일소비, D2).
-    //   ★순서: CoveredTokens(remainder) 이전에 호출 — aggregate({{copayment}}/{{insurance_covered}}) 를 base 로 소비하므로.
+    //   ★가산-무관 base 만: aggregate({{copayment}}/{{insurance_covered}}/{{patient_amount}} raw). CoveredTokens·
+    //     납부박스·10원절사는 가산 fold 이후(per-form)로 이관됨(결함②) — 여기서 계산하면 가산前값이라 어긋난다.
     applyBillReceiptNewLiveTotals(autoValues, {
       grandTotal,
       insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
       copayment: copaymentTotal,
       nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
     });
-    // 결함A: 급여 category remainder 토큰(진찰료 흡수 방지). buildPmwBillDetailItems = DPP 동일 SSOT.
-    applyBillReceiptNewCoveredTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
-    // 결함B: payments 원장 결제수단별 실수납 groupBy.
-    //   T-20260722-foot-BILLRECEIPT-MASTER-FIXES §2: payment_type select 추가 → refund 순액 차감.
+    // 결함B 소스 fetch: payments 원장 결제수단별 실수납(payment_type → refund 순액 차감). 실제 토큰 주입은 per-form.
     const { data: payRows } = await supabase
       .from('payments')
       .select('amount, method, cash_receipt_issued, payment_type')
       .eq('check_in_id', checkIn.id)
       // 취소결제 미표시(CHECKIN-RECEIPT-SOFTVOID-PHANTOM 계승 fail-closed).
       .eq('status', 'active');
-    // ⑧/⑩ 환자부담총액(절사 후) = 급여 본인부담 + 비급여(공단 제외, GONGDAN-HIDE-COPAY B안 동일 산식).
-    const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
-    const { roundedTotal: patientFloored } = computeBillDetailRounding(copaymentTotal + pmwNonCov);
-    // T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액 = 선수금/패키지 차감분(환자부담분).
+    // ⑨ 이미 납부한 금액 = 선수금/패키지 차감분(환자부담분).
     const alreadyPaid = await loadAlreadyPaidAmount(checkIn.id, customerInsuranceGrade);
-    applyBillReceiptPaidBoxTokens(
-      autoValues,
-      (payRows ?? []) as Array<{ method?: string | null; amount?: number | null; cash_receipt_issued?: boolean | null; payment_type?: string | null }>,
-      patientFloored,
+    return {
+      payRows: (payRows ?? []) as PmwPaidBoxCtx['payRows'],
       alreadyPaid,
-    );
+    };
+  };
+
+  // ── T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함② — 가산 fold 이후 재계산(DPP 순서 미러) ──
+  //   applyNightHolidaySurcharge(enriched) 로 가산이 fold 된 **뒤** per-form 으로 호출. bill_receipt_new 한정.
+  //   순서(DPP canon 2825~2843 미러): ① patient_amount 10원 절사(가산 반영 최종값 기준)
+  //     ② applyBillReceiptNewCoveredTokens(급여 remainder — 최종 aggregate copayment/insurance_covered 기준)
+  //     ③ applyBillReceiptPaidBoxTokens(⑧=가산後 환자부담총액으로 ⑨/⑩/미납 재산출).
+  //   ★paidbox 소스 = payments-based 유지(DPP print-time preprint 로 전환하지 않음) — PMW 기존 영수증 semantics 보존.
+  //     평일(가산 kind=null → fold 0)엔 재계산값 ≡ 종전 pre-surcharge 값 → 무회귀(양방향 회귀가드 시나리오3).
+  const applyPostSurchargePaidTokens = (
+    enriched: Record<string, string>,
+    formKey: string,
+    ctx: PmwPaidBoxCtx | null,
+  ): void => {
+    if (formKey !== 'bill_receipt_new' || !ctx) return;
+    // ⑧ 환자부담총액(가산 fold 반영 최종값) 10원 절사(FLOOR) — DPP 와 동일 SSOT.
+    const rawPatient = Number(parseAmountRaw(enriched.patient_amount ?? '')) || 0;
+    const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+    if (rawPatient > 0) enriched.patient_amount = formatAmount(patientFloored);
+    // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
+    applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
+    // 납부박스 ⑧/⑨/⑩/미납 — 가산後 ⑧(patientFloored)로 재산출(payments-based, 완납 가정 금지).
+    applyBillReceiptPaidBoxTokens(enriched, ctx.payRows, patientFloored, ctx.alreadyPaid);
   };
 
   // 선수금차감 후 청구액 = (선수금차감 대상 제외한 항목의) 급여 본인부담금 + 비급여 전액.
@@ -2593,8 +2622,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       ) {
         applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
       }
-      // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 신양식 급여 remainder + ⑪ 납부박스 payments 배선.
-      await applyBillReceiptNewSplitAndPaid(autoValues, selected);
+      // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 신양식 aggregate + 납부박스 payments 소스 fetch.
+      //   T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산-무관 부분만. 가산-의존 토큰은 per-form(아래) 재계산.
+      const paidBoxCtx = await applyBillReceiptNewSplitAndPaid(autoValues, selected);
       const isFallback = templates[0]?.id.startsWith('fallback-');
       const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
@@ -2635,6 +2665,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           //   bill_receipt_new / bill_detail 만 적용(그 외 no-op). PMW 인쇄 경로엔 수동 override UI 없음 → 빈 집합.
           //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
           applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
+          // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
+          applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -2764,7 +2796,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
       }
       // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 출력+수납 경로도 동일 배선(handleDocPrint 대칭).
-      await applyBillReceiptNewSplitAndPaid(autoValues, selected);
+      //   T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산-무관 부분만. 가산-의존 토큰은 per-form(아래) 재계산.
+      const paidBoxCtx = await applyBillReceiptNewSplitAndPaid(autoValues, selected);
       const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
       const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
@@ -2799,6 +2832,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 form_key별 복사본 반영(handleDocPrint 대칭).
             //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
             applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
+            // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
+            applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
