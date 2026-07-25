@@ -1,0 +1,29 @@
+{
+  "ticket": "T-20260725-foot-INGEST-PREFER-AUTHNAME-PORT",
+  "phase": "P1-readonly-measure",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "reservations_cols": [
+    "customer_id",
+    "customer_name",
+    "reservation_date",
+    "source_system"
+  ],
+  "check_ins_cols": [
+    "customer_id",
+    "customer_name"
+  ],
+  "reservations_totals": {
+    "total": 875,
+    "dopamine": 477,
+    "linked_with_snap": 738
+  },
+  "reservations_signature_count": 0,
+  "reservations_signature_sample": [],
+  "companion_snap_count": 137,
+  "check_ins_totals": {
+    "total": 423,
+    "linked_with_snap": 409
+  },
+  "check_ins_signature_count": 0,
+  "check_ins_signature_sample": []
+}

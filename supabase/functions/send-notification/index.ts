@@ -1053,11 +1053,47 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!tmpl) {
-    console.warn(`[send-notification] SKIP: no template for event=${event_type} clinic=${clinic_id}`);
+    // ── T-20260725-foot-SOLAPI-NO-TEMPLATE-RESOLVE-FAIL ②③ (ADDITIVE·no-DDL) ──
+    // ② 원인별 로깅: 레코드無(no_record) vs 비활성(inactive) 구분.
+    //    기존엔 둘 다 error_message="no template found"로 뭉개져, 06-25~07-11 no-template
+    //    에피소드의 실원인(is_active=false 설정상태)을 로그만으로 판별 불가 → 오진 유발.
+    //    is_active 필터 없는 진단 조회 1회(발송 실패 경로에서만) 로 원인축을 로그에 각인.
+    let cause: "no_record" | "inactive" = "no_record";
+    {
+      const probe = await supabase
+        .from("notification_templates")
+        .select("id, is_active")
+        .eq("clinic_id", clinic_id)
+        .eq("event_type", event_type);
+      const rows = (probe.data ?? []) as Array<{ id: string; is_active: boolean }>;
+      if (rows.length > 0) {
+        // 행은 존재하는데 is_active=true 조회가 실패 → 활성행이 하나도 없는 '비활성 설정상태'.
+        // (활성행이 있는데도 여기 도달했다면 조회오류이므로 보수적으로 no_record 유지.)
+        cause = rows.some((r) => r.is_active) ? "no_record" : "inactive";
+      }
+    }
+
+    // ③ config 재발방지 가드: 자동발송 event_type의 no-template은 설정오류로 인한
+    //    무징후 발송중단(30일 집계로만 뒤늦게 드러남 → 이번 오진의 근인)이므로 severity를
+    //    console.error 로 격상 + [CONFIG-GUARD] 태깅 → 모니터링/알림이 즉시 포착.
+    //    (이 조회분기는 SendRequest.event_type: EventType 자동발송 경로로만 진입 → 전 event_type 대상.)
+    const CORE_AUTOMATED: EventType[] = ["resv_confirm", "resv_reminder_d1", "resv_reminder_morning", "noshow"];
+    const isCoreAutomated = CORE_AUTOMATED.includes(event_type as EventType);
+    const errMsg = `no template found (${cause})`;
+
+    if (isCoreAutomated) {
+      console.error(
+        `[send-notification][CONFIG-GUARD] core-automated event has NO active template — ` +
+        `event=${event_type} clinic=${clinic_id} cause=${cause}. ` +
+        `자동발송 무징후 중단: notification_templates(clinic_id,event_type) 활성 템플릿 설정 확인 필요.`
+      );
+    } else {
+      console.warn(`[send-notification] SKIP: no template for event=${event_type} clinic=${clinic_id} cause=${cause}`);
+    }
     await logNotification({ clinic_id, customer_id, reservation_id, event_type,
       recipient_phone: recipientPhone, status: "failed",
-      body_rendered: null, error_message: "no template found", retry_log_id });
-    return new Response(JSON.stringify({ failed: "no template" }), {
+      body_rendered: null, error_message: errMsg, retry_log_id });
+    return new Response(JSON.stringify({ failed: "no template", cause }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
