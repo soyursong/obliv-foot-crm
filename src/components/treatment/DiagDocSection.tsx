@@ -54,7 +54,11 @@ import {
 } from '@/lib/opinionRequest';
 // 발행본 미발견(레거시) 시 요청 저장본(selected_keys)으로 본문 재구성 폴백 — 작성창 합성기 재사용(기존 렌더러).
 import { composeOpinionDoc } from '@/lib/opinionDocCompose';
-import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
+import { OPINION_SECTIONS, useClinicHeader } from '@/components/doctor/OpinionDocTab';
+// T-20260725-foot-OPINIONDOC-...-TREATTABLE-VIEW-PARITY (AC2): 치료테이블 발행본 열람을 진료대시보드
+//   뷰어와 '동일 컴포넌트'로 렌더 — 소견서 양식 그대로(병원헤더·환자정보·상병/소견·발급일·서명/도장).
+//   read-only 전용(재발행/취소/수정/재출력 신규 도입 없음, 의료법§22 발행본 불변). 신규 양식 스택 0.
+import IssuedOpinionDocFormView from '@/components/doctor/IssuedOpinionDocFormView';
 import { seoulISODate, seoulHHMM, chartNoDisplay, chartNoBadge } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -219,6 +223,8 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
     [rows],
   );
   const { data: publishedDocs = [] } = usePublishedOpinionDocs(clinicId, publishedCustomerIds, templateId);
+  // TREATTABLE-VIEW-PARITY: 소견서 양식 렌더용 병원 헤더 — 진료대시보드 뷰어와 동일 훅(신규 조회 0).
+  const { data: clinicHeader = null } = useClinicHeader(clinicId);
 
   const [viewTarget, setViewTarget] = useState<OpinionRequestRow | null>(null);
   // 원자 매핑(AC2/AC3): check_in_id+doc_type(→customer 폴백)로 요청 1건↔발행본 1건. 다른 환자/서류 노출 방지.
@@ -415,8 +421,14 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
           read-only 전용 — 재발행/취소/수정 버튼 없음(AC3/AC5). 닫기만. 발행 경로(publish_opinion_doc RPC) 미접촉.
           원장 작성 medical 본문은 표시만(어떤 경로로도 편집 노출 없음) — DocRequestQueue 뷰어와 동일 표현. */}
       <Dialog open={!!viewTarget} onOpenChange={(o) => { if (!o) setViewTarget(null); }}>
-        <DialogContent className="max-w-2xl" data-testid="diagdoc-doc-view-dialog">
-          <DialogHeader>
+        {/* TREATTABLE-VIEW-PARITY (AC2): 진료대시보드 뷰어(DocRequestQueue)와 동일한 뷰포트-가둠 flex-col 구성 —
+            헤더/푸터 고정(shrink-0), 가운데(소견서 양식 iframe)만 스크롤(min-h-0 flex-1). 양식이 뷰포트를
+            넘겨도 '닫기' 버튼 항상 하단 노출(BTNCLIP 재발 방지). */}
+        <DialogContent
+          className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden"
+          data-testid="diagdoc-doc-view-dialog"
+        >
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex flex-wrap items-center gap-2" data-testid="diagdoc-doc-view-title">
               <FileText className="h-5 w-5 text-emerald-600" />
               {viewTarget ? docTypeLabel(viewTarget.docType) : ''}
@@ -430,14 +442,22 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
               {viewDoc?.doctorName && <span>발행자 {viewDoc.doctorName}</span>}
             </DialogDescription>
           </DialogHeader>
-          {/* 실제 발행본 내용 read-only 열람(작성창 본문과 동일 표현: 원문 그대로 pre-wrap). 편집 요소 없음. */}
-          <div
-            className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 px-4 py-3 text-[13px] leading-relaxed text-gray-800"
-            data-testid="diagdoc-doc-view-body"
-          >
-            {viewBody.trim() ? viewBody : '표시할 서류 내용이 없습니다.'}
+          {/* 실제 발행본 내용 read-only 열람 — 진료대시보드와 '동일 컴포넌트'(IssuedOpinionDocFormView)로
+              소견서 양식 그대로 렌더. 텍스트 나열 → 발행/출력 양식 레이아웃(parity). 발행본 스냅샷 + 원내직원
+              정정 행정필드(adminOverrides) 오버레이 열람 반영. 편집/재출력 트리거 없음(read-only). */}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1" data-testid="diagdoc-doc-view-scroll">
+            <div data-testid="diagdoc-doc-view-body">
+              <IssuedOpinionDocFormView
+                clinicId={clinicId}
+                viewTarget={viewTarget}
+                viewDoc={viewDoc}
+                body={viewBody}
+                clinicHeader={clinicHeader}
+                adminOverrides={viewTarget?.adminOverrides}
+              />
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t pt-3">
             <Button
               variant="outline"
               onClick={() => setViewTarget(null)}
