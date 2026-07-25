@@ -1,8 +1,19 @@
 /**
  * T-20260515-foot-SALES-TAB-TREATMENT
- * 매출집계 탭3 — 시술별 통계
+ * 매출집계 탭3 — 시술 종류별 매출
  *
- * AC-1: services.category_label(또는 category) 기준 대분류 아코디언
+ * T-20260725-foot-SALES-TREATMENT-TAB-WHITELIST6
+ *   화이트리스트 6개 버킷만 표기. 6개 이외(수액·처방약·상병 등)는 이 탭 통계에서 제외(숨김),
+ *   전체 합계는 6개 버킷 합산.
+ *   버킷(표시명·순서 고정):
+ *     1) 비가열레이저  2) 가열레이저  3) 포돌로게(내성)
+ *     4) Reborn(각질)  5) 풋화장품    6) 진찰료(기본/서류/검사비)
+ *   버킷 매칭 = PaymentMiniWindow SSOT(PREPAID_KEYWORDS / isCosmeticService / FOOTCARE_CAT_LABELS)와 교차.
+ *   ※ DB 실제값: Reborn 은 '리본'(RB001~003 / "리본 에센셜(각질)" 등)으로 저장됨 → '리본'|'각질' 매칭
+ *      (영문 'Reborn' 매칭은 DB 0건 → 매칭 누락). 서류=제증명, 검사비=검사 category.
+ *   FE-only 표시 필터. no-DDL·no-schema. 원장 산식/날짜필터/시뮬 방어필터 무접촉.
+ *
+ * AC-1: services.name/category(_label) → 6개 버킷 매핑 후 버킷 단위 아코디언
  * AC-2: 오더 건수 + 수납 기여액 + 매출 비중
  * AC-3: 복합 결제 안분 — check_in_services.price 비율로 결제금액 안분
  *        (service_charges는 보험청구 케이스에만 생성됨 →
@@ -54,18 +65,70 @@ interface Props {
   filter: SalesFilterState;
 }
 
+// ─── 화이트리스트 6개 버킷 (T-20260725-foot-SALES-TREATMENT-TAB-WHITELIST6) ───
+// 순서·표시명 고정. 이 6개만 표기하며 전체 합계도 이 6개 합산.
+
+type BucketId =
+  | 'unheated'
+  | 'heated'
+  | 'podologue'
+  | 'reborn'
+  | 'cosmetic'
+  | 'consult';
+
+const BUCKETS: { id: BucketId; label: string }[] = [
+  { id: 'unheated', label: '비가열레이저' },
+  { id: 'heated', label: '가열레이저' },
+  { id: 'podologue', label: '포돌로게(내성)' },
+  { id: 'reborn', label: 'Reborn(각질)' },
+  { id: 'cosmetic', label: '풋화장품' },
+  { id: 'consult', label: '진찰료(기본/서류/검사비)' },
+];
+
+// 진찰료 버킷 = 기본(진찰료·처치) + 서류(제증명) + 검사비(검사)
+//   category_label: '기본' | '제증명' | '검사'  /  category: '기본' | '검사' | '진료'
+const CONSULT_LABELS = ['기본', '제증명', '검사'];
+const CONSULT_CATS = ['기본', '검사', '진료'];
+
+/**
+ * 시술 1건을 6개 화이트리스트 버킷 중 하나로 매핑. 미해당(수액·처방약·상병 등) → null(제외).
+ * PaymentMiniWindow SSOT 교차:
+ *   - 화장품: isCosmeticService (category/label === '풋화장품') 우선 판정
+ *     (예: '발각질크림'은 각질 명칭이나 category='풋화장품' → 화장품 버킷)
+ *   - 레이저: PREPAID_KEYWORDS 순서 규약 — '비가열'을 '가열'보다 먼저 판정(비가열은 가열의 상위집합)
+ *   - 포돌로게: '포돌로게'
+ *   - Reborn: DB 실제값 '리본'(RB001~003) / '각질' 계열
+ */
+function resolveBucket(svc: CheckInService['services']): BucketId | null {
+  const name = svc?.name ?? '';
+  const cat = svc?.category ?? '';
+  const lab = svc?.category_label ?? '';
+
+  // 1) 풋화장품 (category/label 기준 — 각질 명칭이어도 화장품 우선)
+  if (cat === '풋화장품' || lab === '풋화장품') return 'cosmetic';
+
+  // 2) 진찰료(기본/서류=제증명/검사비=검사)
+  if (CONSULT_LABELS.includes(lab) || CONSULT_CATS.includes(cat) || name.includes('진찰료')) {
+    return 'consult';
+  }
+
+  // 3) 풋케어 시술 — 이름 키워드 (비가열 → 가열 → 포돌로게 순서 SSOT)
+  if (name.includes('비가열')) return 'unheated';
+  if (name.includes('가열')) return 'heated';
+  if (name.includes('포돌로게')) return 'podologue';
+  if (name.includes('리본') || name.includes('각질')) return 'reborn';
+
+  // 4) 그 외(수액·처방약·상병 등) → 화이트리스트 제외
+  return null;
+}
+
 // ─── 집계 로직 ──────────────────────────────────────────────────────────────
 
 interface TreatmentStat {
   name: string;
-  category: string;
+  bucket: BucketId;
   count: number;
   revenue: number;
-}
-
-/** services 레코드에서 표시용 대분류명 결정 (category_label 우선, 없으면 category, 없으면 기타) */
-function resolveCategoryLabel(svc: CheckInService['services']): string {
-  return svc?.category_label ?? svc?.category ?? '기타';
 }
 
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────────────
@@ -109,6 +172,7 @@ export function SalesTreatmentTab({ filter }: Props) {
   // 시술별 집계 (복합결제 안분)
   // AC-3: 복합결제 → check_in_services.price 비율로 결제금액 안분
   //        안분 후 합계 = 원 결제금액 (부동소수 오차는 마지막 항목에 보정)
+  // WHITELIST6: resolveBucket === null 항목은 집계·합계에서 제외.
   const stats = useMemo<TreatmentStat[]>(() => {
     const map = new Map<string, TreatmentStat>();
 
@@ -123,6 +187,9 @@ export function SalesTreatmentTab({ filter }: Props) {
       for (const cs of svcs) {
         const svc = cs.services;
         if (!svc?.name) continue;
+        const bucket = resolveBucket(svc);
+        if (!bucket) continue; // 화이트리스트 6개 이외 제외(숨김)
+
         const key = svc.name;
         const ratio = totalBase > 0 ? (cs.price ?? 0) / totalBase : 1 / svcs.length;
         const contrib = netAmt * ratio;
@@ -134,7 +201,7 @@ export function SalesTreatmentTab({ filter }: Props) {
         } else {
           map.set(key, {
             name: svc.name,
-            category: resolveCategoryLabel(svc),
+            bucket,
             count: 1,
             revenue: contrib,
           });
@@ -146,25 +213,28 @@ export function SalesTreatmentTab({ filter }: Props) {
   }, [payments]);
 
   const totalRevenue = stats.reduce((s, st) => s + st.revenue, 0);
+  const totalCount = stats.reduce((s, st) => s + st.count, 0);
 
-  // 카테고리별 그룹
+  // 버킷별 그룹 — 화이트리스트 순서 고정 (매출순 정렬 X)
   const grouped = useMemo(() => {
-    const map = new Map<string, TreatmentStat[]>();
+    const byBucket = new Map<BucketId, TreatmentStat[]>();
     for (const s of stats) {
-      (map.get(s.category) ?? (() => { const arr: TreatmentStat[] = []; map.set(s.category, arr); return arr; })()).push(s);
+      const arr = byBucket.get(s.bucket) ?? [];
+      arr.push(s);
+      byBucket.set(s.bucket, arr);
     }
-    return Array.from(map.entries()).sort((a, b) => {
-      const sa = a[1].reduce((s, x) => s + x.revenue, 0);
-      const sb = b[1].reduce((s, x) => s + x.revenue, 0);
-      return sb - sa;
-    });
+    // 버킷 내부 항목은 매출 desc
+    return BUCKETS.map((b) => ({
+      ...b,
+      items: (byBucket.get(b.id) ?? []).sort((a, c) => c.revenue - a.revenue),
+    }));
   }, [stats]);
 
-  const toggleCat = (cat: string) => {
+  const toggleCat = (id: string) => {
     setExpandedCats((prev) => {
       const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -180,7 +250,8 @@ export function SalesTreatmentTab({ filter }: Props) {
     );
   }
 
-  if (grouped.length === 0) {
+  // 화이트리스트 6개 버킷 전부 데이터 0 → 빈 상태 (AC-4)
+  if (totalCount === 0) {
     return (
       <div
         data-testid="sales-treatment-empty"
@@ -196,32 +267,37 @@ export function SalesTreatmentTab({ filter }: Props) {
       data-testid="sales-treatment-tab"
       className="space-y-2 text-xs"
     >
-      {grouped.map(([cat, items]) => {
-        const expanded = expandedCats.has(cat);
+      {grouped.map(({ id, label, items }) => {
+        const expanded = expandedCats.has(id);
         const catTotal = items.reduce((s, x) => s + x.revenue, 0);
         const catCount = items.reduce((s, x) => s + x.count, 0);
         const pct = totalRevenue > 0 ? (catTotal / totalRevenue) * 100 : 0;
-        const safeKey = cat.replace(/\s+/g, '-');
+        const hasItems = items.length > 0;
 
         return (
           <div
-            key={cat}
-            data-testid={`sales-treatment-category-${safeKey}`}
+            key={id}
+            data-testid={`sales-treatment-category-${id}`}
             className="rounded-lg border bg-background"
           >
-            {/* 대분류 헤더 */}
+            {/* 버킷 헤더 */}
             <button
-              data-testid={`sales-treatment-category-btn-${safeKey}`}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-muted/40"
-              onClick={() => toggleCat(cat)}
+              data-testid={`sales-treatment-category-btn-${id}`}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+              onClick={() => hasItems && toggleCat(id)}
+              disabled={!hasItems}
               aria-expanded={expanded}
             >
-              {expanded ? (
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              {hasItems ? (
+                expanded ? (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                )
               ) : (
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="h-3.5 w-3.5 shrink-0" />
               )}
-              <span className="font-semibold">{cat}</span>
+              <span className={cn('font-semibold', !hasItems && 'text-muted-foreground')}>{label}</span>
               <span className="ml-1 text-muted-foreground">({catCount}건)</span>
               <div className="ml-auto flex items-center gap-3">
                 <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
@@ -232,18 +308,18 @@ export function SalesTreatmentTab({ filter }: Props) {
                 </div>
                 <span className="w-8 text-right text-muted-foreground">{pct.toFixed(1)}%</span>
                 <span
-                  data-testid={`sales-treatment-cat-total-${safeKey}`}
-                  className="w-24 text-right font-semibold tabular-nums"
+                  data-testid={`sales-treatment-cat-total-${id}`}
+                  className={cn('w-24 text-right font-semibold tabular-nums', catTotal < 0 && 'text-red-600')}
                 >
                   {formatAmount(Math.round(catTotal))}원
                 </span>
               </div>
             </button>
 
-            {/* 소분류 */}
-            {expanded && (
+            {/* 소분류 (버킷 내 시술 항목) */}
+            {expanded && hasItems && (
               <div
-                data-testid={`sales-treatment-category-items-${safeKey}`}
+                data-testid={`sales-treatment-category-items-${id}`}
                 className="border-t"
               >
                 {items.map((item) => {
@@ -268,7 +344,7 @@ export function SalesTreatmentTab({ filter }: Props) {
         );
       })}
 
-      {/* 전체 합계 */}
+      {/* 전체 합계 — 화이트리스트 6개 버킷 합산 */}
       <div
         data-testid="sales-treatment-total"
         className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 font-semibold"
