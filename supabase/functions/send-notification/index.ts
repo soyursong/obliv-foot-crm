@@ -1027,6 +1027,14 @@ Deno.serve(async (req: Request) => {
 
   // ── 단계 6: 템플릿 조회 + 변수 치환 ─────────────────────────
   // image_path 포함 조회 — 마이그레이션 미적용(컬럼 부재) 환경에선 컬럼 없이 폴백(자동발송 회귀 차단).
+  //
+  // T-20260725-foot-NOTIF-TEMPLATE-UNIQUE-CONSTRAINT B (읽기경로 channel 필터 하드닝):
+  //   기존 조회는 (clinic_id, event_type, is_active) 만 필터 → 동일 (clinic, event) 에
+  //   서로 다른 채널의 활성 템플릿이 2개(예: sms + alimtalk) 존재하면 maybeSingle()>1 로
+  //   에러 → tmpl=null → 무징후 no-template(부모 T-20260725-foot-SOLAPI-NO-TEMPLATE-RESOLVE-FAIL)
+  //   재발. 발송 시점 채널(Phase 1 = Solapi 문자 = sms; sms→lms 는 send-time 본문길이 자동승격,
+  //   alimtalk = Phase 2)로 템플릿을 해소하도록 channel 을 명시 필터하여 활성행을 1개로 확정.
+  const SEND_CHANNEL = "sms"; // Phase 1 발송 채널(문자). Phase 2 alimtalk 도입 시 발송 채널 파생으로 확장.
   let tmpl: { body: string; channel?: string; image_path?: string | null } | null = null;
   {
     const withImg = await supabase
@@ -1035,7 +1043,7 @@ Deno.serve(async (req: Request) => {
       .eq("clinic_id", clinic_id)
       .eq("event_type", event_type)
       .eq("is_active", true)
-      .order("channel")
+      .eq("channel", SEND_CHANNEL)
       .maybeSingle();
     if (!withImg.error) {
       tmpl = withImg.data as typeof tmpl;
@@ -1046,7 +1054,7 @@ Deno.serve(async (req: Request) => {
         .eq("clinic_id", clinic_id)
         .eq("event_type", event_type)
         .eq("is_active", true)
-        .order("channel")
+        .eq("channel", SEND_CHANNEL)
         .maybeSingle();
       tmpl = base.data as typeof tmpl;
     }
