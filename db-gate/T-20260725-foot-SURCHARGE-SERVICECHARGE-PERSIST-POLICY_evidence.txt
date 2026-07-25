@@ -1,0 +1,37 @@
+== T-20260725-foot-SURCHARGE-SERVICECHARGE-PERSIST-POLICY — dry-run (BEGIN/ROLLBACK, no-persistence, DB=dev-isolation kcdqtyivtqcjmcrdjkqi) ==
+PRE-state:
+  calc_copayment(p_service_id uuid, p_customer_id uuid, p_clinic_id uuid, p_visit_date date DEFAULT CURRENT_DATE)
+POST-state (migration applied):
+  calc_copayment(p_service_id uuid, p_customer_id uuid, p_clinic_id uuid, p_visit_date date DEFAULT CURRENT_DATE, p_surcharge_rate numeric DEFAULT 0)
+  record_insurance_consult_payment(p_check_in_id uuid, p_customer_id uuid, p_clinic_id uuid, p_service_id uuid, p_method text, p_visit_date date DEFAULT CURRENT_DATE, p_surcharge_rate numeric DEFAULT 0)
+
+── calc_copayment (진찰료 초진 score=153.36, uv=95.6, general) ──
+  rate=0   → base=14661 copay=4300 covered=10361
+  rate=0.3 → base=19060 copay=5700 covered=13360
+  ▶ base_amount==ROUND(153.36×95.6×1.3)=19060 : PASS
+  ▶ 가산 leg: covered +2999 / copay +1400
+  ▶ split 정합 base==copay+covered : PASS
+
+── record_insurance_consult_payment (rate=0.3) → service_charges 실증 ──
+  [general] SC base=19060 copay=5700 covered=13360 grade=general eng=consult_writepath_v2
+  [general] PAY amount=5700 tax_type=NULL(면세) fk=linked
+  [general] base_amount==base×1.3(19060) : PASS
+  [general] AC-3 parity payment==SC.copay : PASS ; split base==copay+covered : PASS
+  [null-grade] SC base=19060 copay=5700 covered=0 grade=unverified eng=consult_writepath_v2
+  [null-grade] PAY amount=5700 tax_type=NULL(면세) fk=linked
+  [null-grade] base_amount==base×1.3(19060) : PASS
+  [null] AC-1 covered==0(phantom 공단 금지) : PASS ; copay=잠정30%가산=5700 payment일치 PASS
+
+── 멱등 재호출 ──
+  1st hit=false / 2nd hit=true 동일 sc? PASS-no-dup
+
+── 회귀 가드: rate=0(평일 주간) == v1 base(회귀 0) ──
+  general rate=0 base=14661 == ROUND(153.36×95.6)=14661 : PASS
+
+── 비-consultation self-gate(이중계상 가드) ──
+  처치(hira_category=procedure) rate=0.3 전달 → base=14661 == ROUND(153.36×95.6)=14661 (가산 미적용, self-gate) : PASS
+
+== ROLLBACK done — 무영속(no persistence) ==
+POST-ROLLBACK dev-isolation state (무영속 확인):
+  calc_copayment(p_service_id uuid, p_customer_id uuid, p_clinic_id uuid, p_visit_date date DEFAULT CURRENT_DATE)
+no-persistence PASS?  PASS (변경 미영속 — PRE 상태 복원)

@@ -108,6 +108,7 @@ import {
   toLocalDateStr,
   detectSurchargeKind,
   computeSurcharge,
+  SURCHARGE_RATE,
 } from '@/lib/nightHolidaySurcharge';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
@@ -2178,6 +2179,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       const visitDate =
         checkIn.checked_in_at?.slice(0, 10) ??
         new Date().toISOString().slice(0, 10);
+      // ── T-20260725-foot-SURCHARGE-SERVICECHARGE-PERSIST-POLICY ────────────────
+      //   진찰료 시간외/공휴/토요 30% 가산을 service_charges(명세) 에도 영속(Option B, going-forward).
+      //   가산 판정 SSOT = settleSurchargeKind(detectSurchargeKind, 07458cf6 배포본 재사용, 병렬 재구현 금지) →
+      //   rate 로만 RPC 에 전달. RPC 가 진찰료(hira_category='consultation') 급여건에만 self-gate 반영
+      //   (이중계상 가드 = 진료비 전체합산 금지). calc_copayment(가산 반영 base) 단일권위로 명세+FK-copay 동일 산출 →
+      //   general parity by construction. rate=0(평일 주간) → v1 회귀 0. grade 미확정→명세 covered=0(§2-2-7 AC-1).
+      const consultSurchargeRate = settleSurchargeKind ? SURCHARGE_RATE : 0;
       let consultCopaySum = 0;
       for (const svc of coveredServices) {
         const { data: rpcData, error: rpcErr } = await supabase.rpc(
@@ -2189,6 +2197,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             p_service_id: svc.id,
             p_method: splits[0].method,
             p_visit_date: visitDate,
+            p_surcharge_rate: consultSurchargeRate,
           },
         );
         if (rpcErr) {
