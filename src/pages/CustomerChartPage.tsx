@@ -3947,6 +3947,14 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //   root cause: RPC 호출 직전 JWT 만료 → 401 → SDK SIGNED_OUT 발화 → 세션 소실
   //   fix 1(auth.tsx v2): refreshSession() 적극 복구 + 100ms fallback
   //   fix 2(here): 401 에러 시 refresh 후 rrn_encrypt 1회 재시도 — SDK SIGNED_OUT 발화 전에 복구
+  //
+  // LOGIC-LOCK: L-007 — 데스크 rrn_encrypt = 진료계약 근거 동의게이트 예외 (B안, CEO 결정)
+  // T-20260719-foot-RRN-ENC-DESK-CONSENT-GATE (CEO 결정 B안, 2026-07-25 RELAY MSG-20260725-163738-murh):
+  //   데스크 직원이 2번차트에서 입력하는 주민번호 저장은 **진료계약 등 별도 법적근거**(개보법 §23 민감정보 +
+  //   §24조의2 고유식별정보, 의료법 §22 진료기록)로 본다 → consent_sensitive 동의 게이트 불요.
+  //   ∴ 아래 rrn_encrypt 호출이 consent 컬럼을 참조/차단하지 않는 것이 **의도된 정상 동작**(버그 아님).
+  //   ⛔ 데스크 경로 rrn_encrypt 앞단에 consent_sensitive 요구 게이트(차단/경고) 신설 금지 —
+  //      추가하려면 CEO/legal 재결정 + LOGIC-LOCK-REGISTRY L-007 갱신 선행. (self-checkin 경로는 별 티켓 관할.)
   const saveRrn = async () => {
     if (!customer) return;
     const digits = (rrnFront + rrnBack).replace(/\D/g, '');
@@ -4018,6 +4026,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     let allOk = true; // DB 저장 단계 중 하나라도 실패하면 false → "저장 후 닫기" 미닫힘
     try {
       // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
+      // LOGIC-LOCK: L-007 — 데스크 rrn_encrypt = 진료계약 근거 동의게이트 예외 (B안, CEO 결정).
+      //   T-20260719-foot-RRN-ENC-DESK-CONSENT-GATE: 데스크 입력 rrn 저장은 진료계약 별도 법적근거로
+      //   consent_sensitive 게이트 불요 = 의도된 정상 동작. consent 요구 차단게이트 신설 금지(상세=saveRrn L-007 주석).
       // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 분기
       // T-20260522-foot-CUST-REG-LOGOUT: 401 시 refreshSession() 후 1회 재시도 추가
       // T-20260629-foot-RRN-EDIT-WIPE-FIX (REOPEN P0, AC-1' 데이터 유실 차단·전 role):

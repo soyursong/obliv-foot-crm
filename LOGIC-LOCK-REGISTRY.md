@@ -147,6 +147,25 @@
 
 ---
 
+## L-007 — 데스크 rrn_encrypt 동의게이트 예외 (진료계약 근거 / B안 CEO 결정)
+
+| 항목 | 내용 |
+|------|------|
+| **상태** | ACTIVE · deployed |
+| **잠금일** | 2026-07-25 (CEO 결정 B안 · RELAY MSG-20260725-163738-murh) |
+| **원칙** | 데스크 2번차트에서 직원이 입력하는 주민번호 저장(`rrn_encrypt`)은 **진료계약 등 별도 법적근거**(개보법 §23 민감정보 + §24조의2 고유식별정보, 의료법 §22 진료기록)로 처리한다. → `consent_sensitive` 동의 게이트를 **요구하지 않는 것이 의도된 정상 동작**. `rrn_encrypt`가 consent 컬럼을 참조/차단하지 않는 것은 버그가 아니라 이 예외의 구현이다. |
+| **허용** | 데스크(authenticated) 경로에서 consent 컬럼 조회 없이 `rrn_encrypt` 직접 호출. 별도 동의서(`ConsentFormDialog` → `consent_sensitive_agreed`)는 부가 캡처로 계속 유효(차단 게이트 아님). |
+| **금지** | 데스크 rrn_encrypt 앞단/함수내부/트리거로 `consent_sensitive=true` 요구 **차단·경고 게이트 신설**(A안 방향). 무동의 rrn_enc 기존 99건에 대한 파괴적 소급 삭제(NULL화)·강제 재동의 백필 — B안 하에서 진료계약 근거로 적법하므로 불요·금지. |
+| **이유** | CEO 결정 B안(2026-07-25). 데스크 입력=진료계약 근거이므로 동의게이트는 정상 운영을 차단하는 오류가 됨. DA CONSULT GO-CONDITIONAL(MSG-20260719-112443-b3ca)의 A안용 forward-트리거·소급백필은 B안 채택으로 **미발동**. |
+| **변경 시** | CEO/legal 재결정 선행 + 이 L-007 갱신. 소스 래칫 `scripts/check-rrn-desk-consent-carveout.sh` 통과 필수(`npm run check:rrn-carveout`). |
+| **파일 목록** | |
+| ↳ `src/pages/CustomerChartPage.tsx` | `saveRrn` + `handleInfoPanelSave` 두 데스크 rrn_encrypt 저장 경로 (`// LOGIC-LOCK: L-007` 주석) |
+| **적용범위** | 데스크(authenticated 2번차트) 한정. self-checkin(anon) 무동의 rrn_enc 경로는 별 티켓(T-20260719-foot-SELFCHECKIN-RRN-ENC-CONSENTLESS-PATH-DIAG) 관할 — 본 예외 무관. |
+| **db_change** | 없음 (코드-only ADDITIVE · DDL/마이그 0 · 파괴적 백필 0). |
+| **티켓** | T-20260719-foot-RRN-ENC-DESK-CONSENT-GATE |
+
+---
+
 ## Override 연동 규칙 — O-{ID} 체계
 
 > **티켓**: T-20260522-foot-OVERRIDE-RULE · **최종 확정**: 2026-05-22 · **승인자**: 김주연 총괄
