@@ -9086,8 +9086,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   <select
                     value={consultationStaffId}
                     onChange={(e) => {
+                      const v = e.target.value || null;
                       setConsultationStaffId(e.target.value);
-                      saveCustomerField({ assigned_staff_id: e.target.value || null }); // AC-6 쌍방연동
+                      // T-20260725-foot-CHART2-ASSIGNHIST-DOWNSYNC-R3 (gap fix): 상담탭 담당자 변경도
+                      //   Zone1(line 6294)과 동일하게 「금일 배분 이력」(check_ins.consultant_id)에 하향전파.
+                      //   기존엔 assigned_staff_id(영구값)만 저장돼 배분이력 미반영(현장 "연동 누락") → 전파 체이닝 추가.
+                      //   ★배분이력 限(RED LINE) — 동일 헬퍼(당일 open check_in.consultant_id만, done 보존, assigned_staff_id 무접점).
+                      void (async () => {
+                        const { error } = await saveCustomerField({ assigned_staff_id: v }); // AC-6 쌍방연동
+                        if (error) return; // 영구 저장 실패 시 미전파(saveCustomerField가 toast 처리)
+                        await updateTodayOpenCheckInConsultant(v);
+                      })();
                     }}
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-sage-500 bg-white"
                   >
