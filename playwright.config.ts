@@ -495,6 +495,9 @@ export default defineConfig({
         //   에서 delivered). 이 레포는 마스킹 소스 fn 소유 → phone 산식(뒤4자리 숫자, full-번호 노출 금지)
         //   정본 미러 + 마이그 정적 가드. native 셀프체크인 렌더 부재(CONSOLIDATE) → unit. auth/server/page 불요.
         '**/T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED.spec.ts',
+        // T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT: A안 자동원복 해제 — 순수 로직 미러
+        //   (tick=hold / revert canonical→admin / baseline 상수 가드). auth 불요, unit 에서만 실행.
+        '**/T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -567,6 +570,9 @@ export default defineConfig({
         // T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED: unit 전용 순수 산식 미러 + 마이그 정적 가드 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260723-foot-SELFCHECKIN-KIOSK-PHONE-4DIGIT-MASKED.spec.ts',
+        // T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT: unit 전용 순수 로직 미러 →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT.spec.ts',
       ],
     },
     {
