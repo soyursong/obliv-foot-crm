@@ -26,40 +26,45 @@
 BEGIN;
 
 -- ════════════════════════════════════════════════════════════════════════
--- ⚠️ CASUALTY-CORRECTION (2026-07-25, STEP3 landing 재개 시 dev-foot 발견) — ★단건 가정 BROKEN★
---   원래 가드: "prod 유일 director(문지은, id prefix d343769a) 뿐 → role='director' = functionally 단건."
---   ★현재 무효★: T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS(deployed 2026-07-25, mig 20260725170000)
---     가 김주연 총괄(U0ATDB587PV)을 1주 임시 director 로 승격(baseline=admin, on-request revert).
---     ⇒ 2026-07-25 시점 prod director = 2명(문지은 permanent + 김주연 temp). "단건" 주장은 STALE.
---   ★영향 판정(NON-DESTRUCTIVE·intent-aligned)★:
---     · 문지은(director, permanent) → has_ops_authority=true = 본래 대상. ✓
---     · 김주연(director, temp)      → has_ops_authority=true 로도 세팅됨. 이는 ROLE-MATRIX reassignment_confirm
---       (2026-06-20 문지은 대표원장 U0ALGAAAJAV 확정: '김주연 총괄 = has_ops_authority=true 유지, 401i ops-X
---       downgrade 기각')와 ★정합★ — 김주연은 운영최고권한 보유가 확정 intent. 값 자체는 의도대로.
---     · 타이밍 의존: 김주연이 admin baseline 으로 revert 후 apply 되면 이 UPDATE 는 문지은 1행만.
---       김주연은 admin escape(hasOpsAuthority: role==='admin')로 운영권한 유지 → 어느 순서든 self-healing.
---       (flag=true 가 admin 계정에 남아도 redundant·무해. revert 는 role만 바꾸고 flag 미접촉.)
---   ★결론: 대상셋 = {문지은} ∪ {temp-window 중이면 김주연} = 1~2행. 둘 다 has_ops_authority=true 가
---     confirmed intent 와 정합하므로 role='director' blanket 유지가 안전(silent downgrade 無, 확대 無).
---     ▷ 단 실 대상셋·행수는 supervisor DDL-diff 시점 prod 실측으로 freeze·검증(Data-Correction SOP:
---       single-count 가정 금지, 판정근거 스냅샷 동봉). 김주연 flag 지속 여부에 대한 별도 planner 확정이
---       필요하면 그 판정을 우선한다(본 파일은 confirmed intent 기준 기본 경로).
---   id 전체 UUID 는 PHI 마스킹 — 실행자(supervisor)가 prod 에서 확정.
+-- ⚠️ CASUALTY-FIX (2026-07-25, planner verdict = REAL · DECOUPLE, FIX-REQUEST MSG-20260725-121911-70l4)
+--   ── 사고 판정(REAL) ──
+--   원래 가드 "prod 유일 director=문지은(id prefix d343769a) → role='director'=functionally 단건" 이 STALE.
+--   T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS(deployed 2026-07-25, mig 20260725170000)가
+--   김주연 총괄(id ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12)을 1주 임시 director 로 승격 →
+--   현재 prod director = 2명(문지은 permanent + 김주연 temp). role-predicate 가 2행 히트 = 사고.
+--   (구 CASUALTY-CORRECTION 의 "blanket role='director' 유지 안전" 결론은 planner verdict 로 REJECT.
+--    임시 director 상태에 편승한 김주연 flag set = 별개 deliberate 단계(subplan ii)에 편승 금지.)
+--
+--   ── FIX = DECOUPLE (문지은 stable id 단건) ──
+--   UPDATE 대상을 문지은 stable id 단건으로 좁힘 — MUNJIEUN B2② swap 가드
+--   (`id=d343769a AND role='admin'`) + JUYEON tempgrant 가드(`id=ee67fc6b AND role='admin'`) 동일
+--   id-scoped 패턴. 원 의도('유일 director=문지은 → has_ops_authority=true')와 정합·여전히 ADDITIVE·shape 무변.
+--
+--   ── 김주연 flag 미포함(고의) ──
+--   김주연 has_ops_authority=true 는 role_reassignment_subplan (ii) = 별개 deliberate 단계.
+--   김주연=admin baseline → admin escape(hasOpsAuthority: role==='admin')로 lock-out 리스크 0 →
+--   지금 flag 불요. subplan (ii)는 김주연 임시 grant 정리(on-request 원복→admin) 후 별도 파일.
+--
+--   ▷ role='director' 가드는 이중 안전장치(id 오타·계정 divergence 시 no-op) — 문지은은 permanent director.
+--     apply 시 rows-affected 는 정확히 1(또는 이미 true 면 0) 이어야 함. 1 초과 시 abort·재확인.
 -- ════════════════════════════════════════════════════════════════════════
 UPDATE public.user_profiles
    SET has_ops_authority = true
- WHERE role = 'director'
-   AND has_ops_authority = false;   -- idempotent: 이미 true 면 no-op
+ WHERE id = 'd343769a-493a-49c9-b718-4c92c6f5db9a'   -- 문지은 대표원장(stable id, permanent director)
+   AND role = 'director'                              -- 이중 가드: id-scope 위에 role 정합 확인
+   AND has_ops_authority = false;                     -- idempotent: 이미 true 면 no-op(0행)
 
--- 적용 후 검증 (1~2행: 문지은 permanent + [temp-window면 김주연], 전부 has_ops_authority=true 여야):
+-- 적용 후 검증 (정확히 문지은 1행만 has_ops_authority=true, 김주연(ee67fc6b)은 미접촉):
 --   SELECT id, role, has_ops_authority, updated_at FROM public.user_profiles WHERE role='director';
---   ★기대 행수는 apply 시점 prod director 수(1 또는 2)와 일치해야 함 — 불일치 시 abort·재확인.
+--   ★기대: 문지은(d343769a)=true. 김주연(ee67fc6b, temp director)=false 유지(admin escape로 운영권한 별도 보장).
+--   ★UPDATE rows-affected 는 0 또는 1 이어야 함 — 1 초과 시 abort·재확인(Data-Correction SOP: 판정근거 스냅샷 동봉).
 
 COMMIT;
 
 -- ════════════════════════════════════════════════════════════════════════
--- ROLLBACK (복구 되돌릴 때만)
+-- ROLLBACK (복구 되돌릴 때만) — 동일 stable id 단건 스코프
 -- ════════════════════════════════════════════════════════════════════════
 -- BEGIN;
---   UPDATE public.user_profiles SET has_ops_authority = false WHERE role='director' AND has_ops_authority = true;
+--   UPDATE public.user_profiles SET has_ops_authority = false
+--    WHERE id = 'd343769a-493a-49c9-b718-4c92c6f5db9a' AND role='director' AND has_ops_authority = true;
 -- COMMIT;
