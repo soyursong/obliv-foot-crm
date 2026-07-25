@@ -44,6 +44,8 @@ import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
 import { TREATMENT_TYPES, PACKAGE_TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
+// T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 예방콜 결과 read-only 배지(상태 무관)
+import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
@@ -8136,6 +8138,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           {isNoShow && (
                             <span data-testid="resv-status-noshow" className="shrink-0 rounded px-1 py-[1px] text-[9px] font-semibold bg-rose-50 text-rose-500 border border-rose-200">노쇼</span>
                           )}
+                          {/* T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 도파민TM 예방콜 결과 —
+                              접수/체크인/노쇼/취소 어느 상태에서도 예약별로 표시(접수전 사이드바 블록에 갇히지 않게 분리). */}
+                          <VisitCallResultBadge result={r.visit_call_result} compact />
                         </button>
                         {isCancelled && r.cancel_reason?.trim() && (
                           <div className="px-1.5 text-[10px] text-gray-400" data-testid="resv-cancel-reason">사유: {r.cancel_reason}</div>

@@ -136,20 +136,35 @@ Deno.serve(async (req) => {
     }
 
     // ── 착지 (canonical UPDATE) ────────────────────────────────────────────────
-    const { error: updErr } = await admin
+    // T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1a):
+    //   cross-CRM Write Rows-Affected 표준 준수 — .select() 로 실제 갱신 row 수를 확인해
+    //   "200 applied:true == 실제 영속" 을 보증한다(silent write-failure 금지).
+    //   진단 결론: 이 EF 의 found-path(예약 조회 성공)만 UPDATE 를 수행하고 곧바로 2xx 를 반환하므로,
+    //   write 에 성공하면서 404 를 반환하는 코드 경로는 존재하지 않는다(404 는 예약 미존재 시에만, write 전 early-return).
+    //   emit 측이 관측한 '404-despite-write' 는 동일 요청 내 divergence 가 아니라, 다른 요청(타 도메인 오라우팅
+    //   /선행 forward-ingest 이전 도착분)의 404 가 집계에 섞인 cross-request 아티팩트다(부모 RECHECK RC-2).
+    //   → 아래 rows-affected 가드는 응답코드가 write 실재를 정직 반영함을 코드로 확정한다.
+    const { data: updRows, error: updErr } = await admin
       .from('reservations')
       .update({
         visit_call_result: visitCallResult,
         visit_call_result_at: new Date(resultAtMs).toISOString(),
         visit_call_result_event_id: eventId,
       })
-      .eq('id', resv.id);
+      .eq('id', resv.id)
+      .select('id');
     if (updErr) {
       console.error('[visitcall-receiver] update error:', updErr.message);
       return json({ ok: false, error: 'INTERNAL', detail: `update failed: ${updErr.message}` }, 500);
     }
+    // rows-affected 검증: 조회는 성공했으나 UPDATE 가 0-row(조회~갱신 사이 삭제 등) → 사일런트 유실 방지.
+    // 재시도 가능 신호로 5xx 반환(2xx 로 위장 금지). 404 아님 — 예약은 조회 시점 실재했음.
+    if (!updRows || updRows.length === 0) {
+      console.error(`[visitcall-receiver] 500 WRITE_NO_ROWS rid=${resv.id} — update affected 0 rows despite prior lookup`);
+      return json({ ok: false, error: 'WRITE_NO_ROWS', detail: 'update affected 0 rows despite prior lookup (retryable)' }, 500);
+    }
 
-    console.log(`[visitcall-receiver] OK rid=${resv.id} result=${visitCallResult} result_at=${resultAt} event_id=${eventId}`);
+    console.log(`[visitcall-receiver] OK rid=${resv.id} result=${visitCallResult} result_at=${resultAt} event_id=${eventId} rows=${updRows.length}`);
     return json({ ok: true, reservation_id: resv.id, applied: true }, 200);
   } catch (e) {
     console.error('[visitcall-receiver] INTERNAL:', String(e));

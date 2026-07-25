@@ -85,6 +85,8 @@ import { normalizeToE164 } from '@/lib/phone';
 //   resvKind 는 is_healer_intent(영속) || healer_flag(레거시) 우선 → 'healer'.
 import { resvKind, isBriefNoteChip } from '@/lib/resvSlotAgg';
 import { cn } from '@/lib/utils';
+// T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 도파민TM 예방콜 결과 read-only 배지(상태 무관)
+import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
 import { subscribeRefresh } from '@/lib/dashboardRefreshBus';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -1956,6 +1958,8 @@ function DraggableBox1Card({
       )}
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 초진 예약 셀 미수 배지 */}
       <OutstandingDueBadge data={box1Outstanding} />
+      {/* T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 도파민TM 예방콜 결과(내원예정/부재) — 접수 전 미내원 카드에 표시 */}
+      <VisitCallResultBadge result={reservation.visit_call_result} compact />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260519-foot-FIRSTVISIT-CHECKIN AC-1: 접수 버튼 — DnD와 분리 위해 onPointerDown stopPropagation */}
@@ -2074,6 +2078,8 @@ function DraggableBox2ResvCard({
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
           REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
       <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
+      {/* T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 도파민TM 예방콜 결과(내원예정/부재) — 접수 전 미내원 카드에 표시 */}
+      <VisitCallResultBadge result={reservation.visit_call_result} compact />
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
