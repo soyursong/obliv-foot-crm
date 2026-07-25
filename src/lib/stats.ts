@@ -50,8 +50,8 @@ export interface TherapistSummaryRow {
   name: string;
   treatment_count: number;             // 치료시간 산출 가능 건수
   avg_treatment_minutes: number | null; // 평균 치료시간(분). 데이터 없으면 null
-  experience_total: number;            // 체험 내원 건수
-  experience_converted: number;        // 패키지 결제 전환 건수
+  experience_total: number;            // 체험 내원 건수(체험권 차감 내원 포함)
+  experience_converted: number;        // 전환 건수 = 체험 내원 당일 신규 '정식(다회차) 패키지' 발행만(1회성·체험권 발행 제외). T-20260725-CONVERSION-EXCLUDE-ONETIME
   conversion_rate: number | null;      // 0~100. experience_total=0 이면 null
   // T-20260607-foot-CHECKIN-DESIGNATED-FLAG (옵션 B): check_ins.therapist_id == customers.designated_therapist_id
   designated_count: number;            // 지정 일치 check_in 수(분자)
