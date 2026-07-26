@@ -22,6 +22,16 @@
 //     '한번 올라왔던'=status_flag_history 에 purple|pink 이력(진료콜 등재 이력) 有. AC5=HANDSTATE '되돌리기'와
 //     다른 write 경로·다른 surface → 충돌 0(본 fix 는 write 경로 불간섭, read 레이어만). 리셋=당일(checked_in_at bound).
 //
+// Ticket: T-20260726-foot-TREATTABLE-JINRYO-DATESCOPE-MISSING (김주연 총괄, P1 hotfix) — 과거일자(7/24·7/25) 미노출
+//   RC(진단, service_role 대조): check_ins 실재(7/24=25/7/25=22건, 데이터 유실 아님). status_flag 는 단일 mutable 필드로
+//     진료(purple→pink) 후 '수납완료'(dark_gray) 전이 시 purple|pink 가 덮여 q1(purple|pink)·구 q2(null)에서 모두 탈락.
+//     그날이 끝나면 진료콜에 올랐던 환자가 전원 dark_gray → 과거일자 [진료] 탭이 통째로 빈 목록 = display bug(db_change=false).
+//     ※ today-only 날짜버그 아님 — 쿼리는 이미 선택 날짜 스코프(dayBounds(date)). PUBDOC-DATESCOPE-EXPAND 와는 다른 RC.
+//   FIX(FE-only): q2 보존 재확보를 null 뿐 아니라 dark_gray 등 non-call terminal flag(진료콜 이력 有)까지 확장.
+//     retainReason: dark_gray=진료완료(수납) / null=상태해제. callRows: dark_gray 포함(null-released만 제외).
+//   sweep(균검사/피검사/경과분석): 셋 다 선택 날짜 스코프(windowBounds/reservation_date)·mutable status_flag 미사용 →
+//     동일 RC 미공유. 공통 스코프 수정 불요(각 탭 별개 소스).
+//
 // 리스트 기준: 선택 날짜 기준 원장 진료콜 명단에 등재된 이력이 있는 환자(내원).
 //   진료콜 등재 = check_ins.status_flag IN ('purple'=진료필요, 'pink'=진료완료). (doctor-call-notify SSOT)
 //   + 상태 풀림 보존(위 티켓): status_flag=null 이나 status_flag_history 에 purple|pink 이력이 있는 행도 재확보(하단 보존).
@@ -177,11 +187,15 @@ export function historyHadDoctorCall(
   return history.some((h) => h.flag === 'purple' || h.flag === 'pink');
 }
 
-// 하단 [진료완료] 섹션 편입 사유 — pink='completed'(진료완료) / 그 외(null 등)='released'(상태해제 보존).
-//   라벨 정합(§확인필요-3): 라벨 그대로의 '진료완료'(pink)와 '상태해제 후 보존'(released)을 배지로 구분.
+// 하단 [진료완료] 섹션 편입 사유 — completed(진료완료) / released(상태해제 보존).
+//   · pink       = 진료완료.
+//   · dark_gray  = 수납완료(진료 후 수납·귀가) — T-20260726: 진료를 마치고 자연 전이된 terminal 상태이므로 '진료완료'로 취급
+//                  (상태를 '푼' 것이 아님 → 'released' amber 배지 오표기 금지).
+//   · 그 외(null) = 상태 플래그를 풀어(해제) 활성 명단에서 내려온 보존 = released.
+//   라벨 정합(§확인필요-3): '진료완료'(pink|dark_gray)와 '상태해제 후 보존'(released=null)을 배지로 구분.
 export type RetainReason = 'completed' | 'released';
 export function retainReason(flag: StatusFlag | null): RetainReason {
-  return flag === 'pink' ? 'completed' : 'released';
+  return flag === 'pink' || flag === 'dark_gray' ? 'completed' : 'released';
 }
 
 // active(진료 진행중=purple) vs done(하단 보존=진료완료 pink + 상태해제 그 외) 분리.
@@ -233,8 +247,16 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
         throw ciErr;
       }
 
-      // q2 — T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN: 상태 풀림(status_flag=null) 보존 재확보.
-      //   당일 범위·비취소 동일, status_flag IS NULL 만. 클라이언트에서 '한번 올라왔던'(history purple|pink) 행만 유지.
+      // q2 — T-20260714-foot-TREATHIST-COMPLETED-LIST-RETAIN + T-20260726-foot-TREATTABLE-JINRYO-DATESCOPE-MISSING:
+      //   진료콜(purple|pink) 이력이 있으나 현재 flag 가 그 외 terminal 상태로 전이된 내원을 하단 [진료완료] 로 보존 재확보.
+      //   ├ 구현 원본(T-20260714): status_flag IS NULL(상태 풀림/해제) 만 재확보.
+      //   └ 확장(T-20260726 RC): status_flag 는 단일 mutable 필드라, 진료(purple→pink) 후 '수납완료'(dark_gray)로 전이되면
+      //       purple|pink 가 dark_gray 로 덮여 q1(purple|pink)·구 q2(null)에서 모두 탈락 → 그날이 끝나면 진료콜에 올랐던
+      //       환자가 전원 dark_gray 가 되어 과거일자 [진료] 탭이 통째로 빈 목록으로 보였음(7/24·7/25 미노출 RC, db_change=false).
+      //       → today-only 날짜버그 아님(쿼리는 이미 선택 날짜 스코프). terminal-flag 덮임 누락이 원인.
+      //   교정: q2 fetch 를 window 내 비취소 전건(flag 무관)으로 넓히고, 클라이언트에서
+      //     (a) 현재 flag 가 purple|pink 아님(= q1 소관 배제) + (b) status_flag_history 에 진료콜 이력 有 로 필터.
+      //     → null(상태해제) + dark_gray(수납완료) + 기타 non-call terminal flag 를 모두 보존(회귀 0, 기존 null 케이스 포함).
       //   실패 시 [] 로 degrade — 활성/완료(q1) 표시는 무파손(기존 대비 악화 0).
       let revRows: Array<Record<string, unknown>> = [];
       try {
@@ -245,15 +267,16 @@ function useDoctorHistory(clinicId: string | null | undefined, date: string) {
           .gte('checked_in_at', start)
           .lte('checked_in_at', end)
           .neq('status', 'cancelled')
-          .is('status_flag', null)
           .order('checked_in_at', { ascending: true });
-        revRows = ((revData ?? []) as Array<Record<string, unknown>>).filter((c) =>
-          historyHadDoctorCall(
+        revRows = ((revData ?? []) as Array<Record<string, unknown>>).filter((c) => {
+          const sf = (c['status_flag'] as StatusFlag | null) ?? null;
+          if (sf === 'purple' || sf === 'pink') return false; // 현재 진료콜 활성 = q1 소관(중복 배제)
+          return historyHadDoctorCall(
             (c['status_flag_history'] as Array<{ flag: StatusFlag | null }> | null) ?? null,
-          ),
-        );
+          );
+        });
       } catch {
-        // 상태해제 보존행 조회 실패 — q1(활성/완료)만으로 진행(섹션 무파손).
+        // 진료콜 이력 보존행 조회 실패 — q1(활성/완료)만으로 진행(섹션 무파손).
       }
 
       // q1(purple/pink) + q2(null 상태해제) 병합 — status_flag 로 상호배타이나 id Set 으로 중복 방어.
@@ -401,9 +424,12 @@ export default function DoctorHistorySection({ date, nameInteraction }: Props) {
   const custIds = rows.map((r) => r.customerId).filter(Boolean) as string[];
   const { data: metaMap } = useCustomerMeta(clinic?.id, custIds);
 
-  // 집계 기준 = 진료콜 명단(purple/pink)만. T-20260714-COMPLETED-LIST-RETAIN 로 보존 편입된 상태해제(null) 행은
-  //   '금일 담당/신청/발행' 카운트에서 제외 → 기존 요약 수치 회귀 0(보존은 리스트 표시 전용).
-  const callRows = rows.filter((r) => r.statusFlag === 'purple' || r.statusFlag === 'pink');
+  // 집계 기준 = 그날 진료콜에 오른(=진료의가 담당한) 명단. T-20260726: 단일 mutable status_flag 특성상 진료 후
+  //   '수납완료'(dark_gray)로 전이된 완료 환자도 그날의 진료 담당 실적이므로 카운트에 포함(과거일자 요약이 표와 정합).
+  //   단 '상태해제'(status_flag=null, 플래그를 푼) 보존행은 진료 담당으로 볼 수 없어 계속 제외 →
+  //   T-20260714-COMPLETED-LIST-RETAIN 의 null-제외 결정 유지(그 케이스 회귀 0). q2 는 진료콜 이력 有 행만 admit 하므로
+  //   non-null 행(purple/pink/dark_gray/기타 terminal)은 전부 '한번 진료콜에 오른' 환자.
+  const callRows = rows.filter((r) => r.statusFlag !== null);
 
   // 요구2 — 진료의별 금일 담당 환자수 요약. 옵션(clinic_doctors) 이름맵으로 treating_doctor_id 해석.
   const { data: doctorOptions = [] } = useTreatingDoctorOptions(clinic?.id, date);

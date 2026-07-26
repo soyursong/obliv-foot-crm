@@ -160,10 +160,13 @@ test.describe('AC-4 — q1 진료콜 명단 불변 + q2 상태해제 보존 쿼�
     expect(src).toContain(".neq('status', 'cancelled')");
   });
 
-  test('q2 — status_flag IS NULL 보존 쿼리 + 당일 바운드 + history 기반 클라이언트 필터', () => {
+  test('q2 — 진료콜 이력 보존 쿼리(당일 바운드) + history 기반 클라이언트 필터', () => {
+    // T-20260726-foot-TREATTABLE-JINRYO-DATESCOPE-MISSING: q2 server-side single-flag(.is null) 필터를 제거하고
+    //   window 전건 fetch → 클라이언트에서 (purple|pink 배제) + historyHadDoctorCall 로 좁힘.
+    //   → 상태해제(null) 보존은 그대로 유지되며(회귀 0), 수납완료(dark_gray) 덮임 케이스까지 함께 재확보.
     const src = SECTION_SRC();
-    expect(src).toContain(".is('status_flag', null)"); // 풀림 = null 재확보
-    expect(src).toContain('historyHadDoctorCall('); // '한번 올라왔던' 클라이언트 필터
+    expect(src).toContain('historyHadDoctorCall('); // '한번 올라왔던' 클라이언트 필터(null·dark_gray 공통)
+    expect(src).toContain("sf === 'purple' || sf === 'pink'"); // q1 중복 배제(현재 진료콜 활성)
     // 당일 바운드(AC-4 리셋=당일) — q1/q2 공통
     expect(src).toContain(".gte('checked_in_at', start)");
     expect(src).toContain(".lte('checked_in_at', end)");
