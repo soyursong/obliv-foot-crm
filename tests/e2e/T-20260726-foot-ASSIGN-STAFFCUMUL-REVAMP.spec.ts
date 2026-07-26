@@ -133,9 +133,11 @@ test('변경5: count↔list 단일소스 — 셀 표시값 = items.length, 팝�
 // ─────────────────────────────────────────────────────────────────────────────
 test('정합: 배정(초진)=assigned/배정(재진)=returning — 기존 집계 정의 재사용(재발명 금지)', () => {
   const src = read(PAGE);
-  // check_ins 정본 + monthAxisOf(재진 판정) 로직 유지 — 카운트 정의 그대로
-  expect(src).toContain("monthAxisOf(ci, 'consult') === 'returning'");
-  expect(src).toContain("monthAxisOf(ci, 'therapy') === 'returning'");
+  // check_ins 정본 + 재진 판정 로직 유지 — 카운트 정의 그대로.
+  // T-20260726 REVISIT-MISCOUNT supersede: 재진 판정 소스만 monthTallyAxisOf(stored 정본)로 분리
+  //   (recency-override 흡수 결함 교정). 축 정의(초진=assigned/재진=returning)·경계는 불변.
+  expect(src).toContain("monthTallyAxisOf(ci, 'consult') === 'returning'");
+  expect(src).toContain("monthTallyAxisOf(ci, 'therapy') === 'returning'");
   // 토스/당김 = assignment_actions audit 유지
   expect(src).toContain("a.action_type === 'toss' && a.from_staff_id");
   expect(src).toContain("a.action_type === 'pull_in' && a.to_staff_id");

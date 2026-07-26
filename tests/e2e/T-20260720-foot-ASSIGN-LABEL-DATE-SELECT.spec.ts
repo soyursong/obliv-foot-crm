@@ -81,8 +81,9 @@ test('AC-3: 선택일 기준 일/월 누적 연동 — staffStats 가 선택일 
   expect(src).toMatch(/const inMonth = \(ms: number\) => ms >= nowMonthStartMs && ms < nowMonthEndExclMs/);
   expect(src).not.toContain('const selMonthStartMs');
   // useMemo 재계산 deps 에 selectedDate(+monthCustomers) 포함(날짜 변경 시 일누적 연동)
+  // T-20260726 REVISIT-MISCOUNT supersede: 누적 tally 축 = monthTallyAxisOf(stored 기준)로 교체 → deps 갱신.
   expect(src).toMatch(
-    /\}, \[staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate\]\)/,
+    /\}, \[staff, actions, monthCheckIns, monthCustomers, monthTallyAxisOf, activeTab, selectedDate\]\)/,
   );
   // 로드 쿼리 하한이 선택월 1일로 파라미터화(불변) + load deps 에 selectedDate
   expect(src).toMatch(/const monthStart = `\$\{selectedDate\.slice\(0, 7\)\}-01T00:00:00\+09:00`/);
@@ -108,9 +109,10 @@ test('AC-5(회귀0): 당월누적 집계 소스 보존 — check_ins 정본 + as
   const src = read(PAGE);
   // T-20260726 supersede: 정렬 키는 명단 length 파생(y.month.assigned.length).
   expect(src).toContain('.sort((x, y) => y.month.assigned.length - x.month.assigned.length)');
-  // month 카운트는 배정=초진/재진 분기(monthAxisOf) 를 기존과 동일하게 사용(정의 재발명 없음)
-  expect(src).toMatch(/monthAxisOf\(ci, 'consult'\) === 'returning'/);
-  expect(src).toMatch(/monthAxisOf\(ci, 'therapy'\) === 'returning'/);
+  // T-20260726 REVISIT-MISCOUNT supersede: month 카운트 배정=초진/재진 분기는 monthTallyAxisOf(stored 정본)
+  //   사용 — recency-override 로 재진이 초진에 흡수되던 결함 교정(축 경계·정의는 불변, 소스만 stored 로 분리).
+  expect(src).toMatch(/monthTallyAxisOf\(ci, 'consult'\) === 'returning'/);
+  expect(src).toMatch(/monthTallyAxisOf\(ci, 'therapy'\) === 'returning'/);
   // 토스/당김 audit 파생 보존
   expect(src).toMatch(/a\.action_type === 'toss' && a\.from_staff_id/);
   expect(src).toMatch(/a\.action_type === 'pull_in' && a\.to_staff_id/);

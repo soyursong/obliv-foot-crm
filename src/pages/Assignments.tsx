@@ -97,6 +97,11 @@ const AXIS_KO: Record<string, string> = {
 interface CustomerLite {
   id: string;
   visit_type: string | null;
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVISIT-MISCOUNT: 접수·완료 시점의 '내구 초진/재진'(customers.visit_type,
+  //   완료 시 영구 'returning' 승격) 원본을 recency-override 와 별도로 보존한다. 직원별 누적 [배정(초진)/(재진)]
+  //   집계는 이 원본을 정본으로 사용 → 현장(총괄) 기대치 "DB 당월 returning 건수" 와 정합. visit_type(=recency 덮어씀)
+  //   은 오늘 배정뷰/배정목록 배지(접수분류·엔진과 통일된 예측)로 유지. 둘의 소스를 분리해 재진이 초진으로 흡수되는 것을 차단.
+  stored_visit_type: string | null;
   lead_source: string | null;
   visit_route: string | null;
   // T-20260724-foot-ASSIGNHIST-CHARTNO-CHART2-LINK (AC-1): 금일 배분 이력 고객 성함 옆 차트번호 병기용.
@@ -259,7 +264,8 @@ export default function Assignments() {
           .from('customers')
           .select('id, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
           .in('id', custIds);
-        for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
+        for (const c of (custRows ?? []) as CustomerLite[])
+          custMap.set(c.id, { ...c, stored_visit_type: c.visit_type });
       }
       // T-20260713 RECENCY-UNIFY: 상담 축 파생 입력을 recency(365일) 판정으로 교체 — visit_type 필드만 override.
       //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 map 의 visit_type 을 recency 결과로 바꾸면
@@ -309,9 +315,13 @@ export default function Assignments() {
             .from('customers')
             .select('id, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
             .in('id', slice);
-          for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
+          // stored_visit_type = 내구 초진/재진 원본 보존(누적 tally 정본). visit_type 은 아래 recency override 대상.
+          for (const c of (rows ?? []) as CustomerLite[])
+            monthCustMap.set(c.id, { ...c, stored_visit_type: c.visit_type });
         }
-        // T-20260713 RECENCY-UNIFY: 월간 상담 축(monthAxisOf)도 recency 판정으로 통일 — visit_type override.
+        // T-20260713 RECENCY-UNIFY: 월간 상담 축(monthAxisOf=오늘 배정목록 배지)만 recency 판정으로 통일 — visit_type override.
+        //   T-20260726 REVISIT-MISCOUNT: 여기서 visit_type 을 recency 로 덮되 stored_visit_type 은 보존 →
+        //   직원별 누적 tally(monthTallyAxisOf)는 stored 를, 오늘 배지(monthAxisOf)는 recency 를 각각 참조.
         const recencyMonthMap = await resolveVisitTypesByRecency(monthCustIds, clinic.id);
         for (const [id, vt] of recencyMonthMap) {
           const cu = monthCustMap.get(id);
@@ -475,6 +485,27 @@ export default function Assignments() {
     [monthCustomers],
   );
 
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVISIT-MISCOUNT — 직원별 누적 [배정(초진)/(재진)] 집계 전용 축.
+  //   현장(총괄) 리포트: 당월누적 배정(재진) 반영건이 전부 초진으로 흡수. RC = monthAxisOf 가 recency-override
+  //   된 visit_type 을 참조 → recency 가 'new' 로 떨어진 stored-'returning' 고객이 초진 버킷에 흡수됨.
+  //   집계 정본은 '내구 초진/재진'(customers.visit_type, stored_visit_type 로 보존)이어야 현장 기대치
+  //   "DB 당월 returning 건수" 와 일치(AC). 오늘 배정목록 배지(monthAxisOf, recency)와는 소스만 분리(축 산식·경계 불변).
+  //   치료(therapy) 축은 항상 균등(재진 미해당) — deriveTherapyAxis 로 monthAxisOf 와 동일 처리(회귀0).
+  const monthTallyAxisOf = useCallback(
+    (ci: CheckIn, role: AssignmentRole): string => {
+      if (role === 'consult') {
+        const cu = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
+        return deriveConsultAxis({
+          visit_type: cu?.stored_visit_type ?? ci.visit_type,
+          lead_source: cu?.lead_source,
+          visit_route: cu?.visit_route,
+        });
+      }
+      return deriveTherapyAxis(ci);
+    },
+    [monthCustomers],
+  );
+
   const staffStats = useMemo<StaffStat[]>(() => {
     // [일누적] 선택일 경계(KST). 한국은 DST 없음 → 24h 가산으로 익일 00:00(상한 exclusive) 산출 안전.
     const selDayStartMs = new Date(`${selectedDate}T00:00:00+09:00`).getTime();
@@ -529,13 +560,13 @@ export default function Assignments() {
       if (ci.consultant_id) {
         const s = staff.find((x) => x.id === ci.consultant_id);
         if (s && s.role === 'consultant') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'consult') === 'returning', ms, itemFromCi(ci));
+          bumpAssign(ensure(s), monthTallyAxisOf(ci, 'consult') === 'returning', ms, itemFromCi(ci));
         }
       }
       if (ci.therapist_id) {
         const s = staff.find((x) => x.id === ci.therapist_id);
         if (s && s.role === 'therapist') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'therapy') === 'returning', ms, itemFromCi(ci));
+          bumpAssign(ensure(s), monthTallyAxisOf(ci, 'therapy') === 'returning', ms, itemFromCi(ci));
         }
       }
     }
@@ -569,7 +600,7 @@ export default function Assignments() {
     return Array.from(byId.values())
       .filter((st) => st.staff.role === wantRole)
       .sort((x, y) => y.month.assigned.length - x.month.assigned.length);
-  }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate]);
+  }, [staff, actions, monthCheckIns, monthCustomers, monthTallyAxisOf, activeTab, selectedDate]);
 
   // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경2: '일일 배정 목표' 값 출처(느슨결합 단일 지점).
   //   현행 화면에 배정목표 소스 없음(staff·설정 컬럼 부재) — 자동배정 엔진(T-20260726-foot-CRM-ASSIGN-V1, 미착수)
