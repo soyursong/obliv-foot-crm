@@ -51,11 +51,24 @@ import type { NameInteraction } from '@/pages/TreatmentTable';
 import ManualExamRequestDialog from '@/components/treatment/ManualExamRequestDialog';
 import { useAuth } from '@/lib/auth';
 import type { UserRole } from '@/lib/permissions';
+import { canActOnExamItem } from '@/lib/permissions';
+// T-20260726-foot-TREATTABLE-TESTITEM-ACTIONS-3BTN: 접수 항목 행 액션 3종(보류/신청취소/재검사).
+import ExamItemActions from '@/components/treatment/ExamItemActions';
+import {
+  useExamItemStatuses,
+  usePersistExamItemStatus,
+  examItemRowKey,
+  examRowStatusClass,
+  type ExamItemStatus,
+} from '@/lib/examItemStatus';
 
 // T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: '검사 신청 수기 추가' 진입점 노출 role — '스태프(관리자) 이상'.
 //   관리 스태프(admin/manager/director/coordinator) + staff. 치료사·컨설턴트 등 비관리 role 은 미노출
 //   (2번차트 토글 경로는 그대로 사용 가능). 필드 요청 시 responder 경유 조정 가능.
 const MANUAL_EXAM_ADD_ROLES: UserRole[] = ['admin', 'manager', 'director', 'coordinator', 'staff'];
+
+// T-20260726-foot-TREATTABLE-TESTITEM-ACTIONS-3BTN: 접수 항목 상태 오버레이 form_key(균검사 탭).
+const EXAM_ITEM_STATUS_FORM_KEY = 'koh_exam_item_status';
 
 // AC-2: 일자별 리스트 윈도(검사신청일 기준, 선택일 끝으로 직전 N일).
 // T-20260710-foot-EXAM-TARGET-TABLE-TODAY-EXPAND: 기존 14일 윈도는 진입 시 직전 14일치가
@@ -77,6 +90,7 @@ interface ExamTargetRow {
   kohNailSites: NailSite[]; // RELOCATE[1]: 채취조갑(koh_nail_sites) — 치료테이블에서 선택·발급.
   kohCreatedAt: string | null; // RELOCATE[1]: KOH 검사일(created_at) — 발급 field_data 검체채취일/의뢰일.
   requestDate: string; // AC-2: 검사신청일(KST YYYY-MM-DD)
+  checkInId: string | null; // ACTIONS-3BTN: 상태 오버레이 form_submissions.check_in_id 귀속.
 }
 
 interface ExamDateGroup {
@@ -153,6 +167,7 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
             kohNailSites: koh ? parseNailSites(raw['koh_nail_sites']) : [],
             kohCreatedAt: koh && raw['created_at'] ? String(raw['created_at']) : null,
             requestDate: reqDate,
+            checkInId: raw['check_in_id'] ? String(raw['check_in_id']) : null,
           });
         }
       }
@@ -483,6 +498,10 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const { profile } = useAuth();
   const canManualAdd = !!profile?.role && MANUAL_EXAM_ADD_ROLES.includes(profile.role);
   const [manualAddOpen, setManualAddOpen] = useState(false);
+  // ACTIONS-3BTN: 접수 항목 행 액션(보류/신청취소/재검사) — 권한 A(canActOnExamItem)만.
+  const canAct = canActOnExamItem(profile?.role);
+  const { data: itemStatusMap } = useExamItemStatuses(clinic?.id, EXAM_ITEM_STATUS_FORM_KEY);
+  const persistItemStatus = usePersistExamItemStatus(clinic?.id, EXAM_ITEM_STATUS_FORM_KEY);
   const { data: groups = [], isLoading, isError, error } = useExamTargets(clinic?.id, date);
   const { data: publishedKoh } = usePublishedKohMap(clinic?.id);
   const { data: bloodResultCounts } = useBloodResultCounts(clinic?.id);
@@ -570,6 +589,43 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
     }
   };
 
+  // ACTIONS-3BTN: 행 상태 조회 + 3종 전이 핸들러(확정 스펙).
+  const itemStatusOf = (r: ExamTargetRow): ExamItemStatus =>
+    itemStatusMap?.get(examItemRowKey(r.customerId, r.requestDate))?.status ?? 'active';
+  const setItemStatus = (r: ExamTargetRow, status: ExamItemStatus) =>
+    persistItemStatus.mutate({ customerId: r.customerId, requestDate: r.requestDate, checkInId: r.checkInId, status });
+  const handleHold = (r: ExamTargetRow) => setItemStatus(r, 'hold');
+  const handleCancel = (r: ExamTargetRow) => {
+    if (!window.confirm(`${r.customerName} 님의 검사 신청을 취소하시겠습니까?\n\n신청 이력은 보존되며(삭제 아님), [재검사]로 다시 신청할 수 있습니다.`)) return;
+    setItemStatus(r, 'cancelled');
+  };
+  // 재검사 하이브리드: 보류중 → 기존 행 재활성(신규 row 없음) / 취소됨 → 신규 접수 row(기존 RPC 경로 재사용).
+  const handleRetest = async (r: ExamTargetRow) => {
+    const cur = itemStatusOf(r);
+    if (cur === 'hold') {
+      setItemStatus(r, 'active');
+      return;
+    }
+    if (cur === 'cancelled') {
+      try {
+        // 원 신청 검사종류(균/피)를 오늘자로 재신청 — ManualExamRequestDialog 와 동일 SSOT RPC.
+        if (r.kohRequested) {
+          const { error } = await supabase.rpc('request_koh_for_customer', { p_customer_id: r.customerId, p_value: true });
+          if (error) throw error;
+        }
+        if (r.bloodRequested) {
+          const { error } = await supabase.rpc('request_blood_test_for_customer', { p_customer_id: r.customerId, p_value: true });
+          if (error) throw error;
+        }
+        qc.invalidateQueries({ queryKey: ['exam_targets'] });
+        qc.invalidateQueries({ queryKey: ['blood_daily_targets'] });
+        toast.success(`${r.customerName} — 재검사 신청 등록 완료`);
+      } catch (e) {
+        toast.error(`재검사 신청 실패: ${(e as Error).message}`);
+      }
+    }
+  };
+
   // 한 환자 행 렌더(그룹 공통).
   const renderRow = (r: ExamTargetRow, idx: number) => {
     const kohFd = r.kohServiceId ? publishedKoh?.get(r.kohServiceId) : undefined;
@@ -578,11 +634,13 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
     const hasBloodResult = bloodResultCount > 0;
     const kohNailText = formatNailSitesShort(r.kohNailSites); // 컴팩트 표기(R1), 결측 '—'
     const kohSaving = saveNailSites.isPending && saveNailSites.variables?.serviceId === r.kohServiceId;
+    const itemStatus = itemStatusOf(r); // ACTIONS-3BTN
     return (
       <tr
         key={`${r.customerId}-${r.requestDate}`}
-        className="border-b last:border-0 transition-colors hover:bg-muted/30"
+        className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${examRowStatusClass(itemStatus)}`}
         data-testid="exam-targets-row"
+        data-item-status={itemStatus}
       >
         <td className="px-2 py-1 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
         <td className="px-2 py-1 font-medium whitespace-nowrap">
@@ -703,6 +761,19 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
             </div>
           </div>
         </td>
+        {/* ACTIONS-3BTN: 접수 항목 행 액션 3종 — 권한 A 만 컬럼 노출. */}
+        {canAct && (
+          <td className="px-2 py-1 align-middle">
+            <ExamItemActions
+              status={itemStatus}
+              busy={persistItemStatus.isPending}
+              testidPrefix="koh-item"
+              onHold={() => handleHold(r)}
+              onCancel={() => handleCancel(r)}
+              onRetest={() => handleRetest(r)}
+            />
+          </td>
+        )}
       </tr>
     );
   };
@@ -814,6 +885,7 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
                           <th className="px-2 py-1 whitespace-nowrap">#</th>
                           <th className="px-2 py-1 whitespace-nowrap">환자</th>
                           <th className="px-2 py-1 whitespace-nowrap">신청 검사 &amp; 검사결과</th>
+                          {canAct && <th className="px-2 py-1 whitespace-nowrap text-center">관리</th>}
                         </tr>
                       </thead>
                       <tbody>{g.rows.map((r, idx) => renderRow(r, idx))}</tbody>

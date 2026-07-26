@@ -411,3 +411,16 @@ export function canViewPhraseManagement(
   // AC-1: 그 외 의사 role(향후 'doctor' 등) 중 운영최고권한 없는 계정 → 비노출.
   return false;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260726-foot-TREATTABLE-TESTITEM-ACTIONS-3BTN — 검사 접수 항목 행 액션(보류/신청취소/재검사) 권한.
+//   확정 스펙(2026-07-26 김주연 총괄, Q2): '권한 A 사용자만' 버튼 노출·동작. 권한 A = 최상위/관리자 tier.
+//   foot CRM 에 'A' role 매핑 부재 → 관리 tier(admin/manager/director=원장)로 매핑(field-soak 확인, 재-block 아님).
+//   Staff.tsx isAdmin(admin/manager/director) 동일 tier. 하위 권한 계정엔 미노출(fail-closed).
+export const EXAM_ITEM_ACTION_ROLES: UserRole[] = ['admin', 'manager', 'director'];
+
+/** 검사 접수 항목 행 액션(보류/신청취소/재검사) 권한 보유 여부. null/undefined 안전 기본값 false. */
+export function canActOnExamItem(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return EXAM_ITEM_ACTION_ROLES.includes(role);
+}

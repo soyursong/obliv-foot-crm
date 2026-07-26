@@ -38,8 +38,21 @@ import { toast } from '@/lib/toast';
 import { Loader2, Droplet, Check, Upload, Eye } from 'lucide-react';
 import BloodResultDialog from '@/components/BloodResultDialog';
 import type { NameInteraction } from '@/pages/TreatmentTable';
+import { useAuth } from '@/lib/auth';
+import { canActOnExamItem } from '@/lib/permissions';
+// T-20260726-foot-TREATTABLE-TESTITEM-ACTIONS-3BTN: 접수 항목 행 액션 3종(보류/신청취소/재검사).
+import ExamItemActions from '@/components/treatment/ExamItemActions';
+import {
+  useExamItemStatuses,
+  usePersistExamItemStatus,
+  examItemRowKey,
+  examRowStatusClass,
+  type ExamItemStatus,
+} from '@/lib/examItemStatus';
 
 const FORM_KEY = 'blood_reception_daily';
+// ACTIONS-3BTN: 접수 항목 상태 오버레이 form_key(피검사 탭) — 접수/서류 체크박스 row 와 별 key(무회귀).
+const ITEM_STATUS_FORM_KEY = 'blood_item_action_status';
 // 진행 리스트 윈도 — 선택일(부모 date, 기본 오늘) 끝으로 직전 N일. 검사→접수→서류수령 지연 추적용.
 const WINDOW_DAYS = 14;
 
@@ -396,10 +409,43 @@ interface Props {
 export default function BloodDailyListSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
   const qc = useQueryClient();
+  const { profile } = useAuth();
   const { data: rows = [], isLoading, isError, error } = useBloodTargets(clinic?.id, date);
   const { data: receptions } = useBloodReceptions(clinic?.id);
   const { data: uploadCounts } = useBloodResultCounts(clinic?.id);
   const persist = usePersistReception(clinic?.id);
+  // ACTIONS-3BTN: 접수 항목 행 액션(보류/신청취소/재검사) — 권한 A(canActOnExamItem)만.
+  const canAct = canActOnExamItem(profile?.role);
+  const { data: itemStatusMap } = useExamItemStatuses(clinic?.id, ITEM_STATUS_FORM_KEY);
+  const persistItemStatus = usePersistExamItemStatus(clinic?.id, ITEM_STATUS_FORM_KEY);
+  const itemStatusOf = (r: BloodTargetRow): ExamItemStatus =>
+    itemStatusMap?.get(examItemRowKey(r.customerId, r.requestDate))?.status ?? 'active';
+  const setItemStatus = (r: BloodTargetRow, status: ExamItemStatus) =>
+    persistItemStatus.mutate({ customerId: r.customerId, requestDate: r.requestDate, checkInId: r.checkInId, status });
+  const handleHold = (r: BloodTargetRow) => setItemStatus(r, 'hold');
+  const handleCancel = (r: BloodTargetRow) => {
+    if (!window.confirm(`${r.customerName} 님의 피검사 신청을 취소하시겠습니까?\n\n신청 이력은 보존되며(삭제 아님), [재검사]로 다시 신청할 수 있습니다.`)) return;
+    setItemStatus(r, 'cancelled');
+  };
+  // 재검사 하이브리드: 보류중 → 기존 행 재활성 / 취소됨 → 신규 접수 row(request_blood_test_for_customer RPC 재사용).
+  const handleRetest = async (r: BloodTargetRow) => {
+    const cur = itemStatusOf(r);
+    if (cur === 'hold') {
+      setItemStatus(r, 'active');
+      return;
+    }
+    if (cur === 'cancelled') {
+      try {
+        const { error: rpcErr } = await supabase.rpc('request_blood_test_for_customer', { p_customer_id: r.customerId, p_value: true });
+        if (rpcErr) throw rpcErr;
+        qc.invalidateQueries({ queryKey: ['blood_daily_targets'] });
+        qc.invalidateQueries({ queryKey: ['exam_targets'] });
+        toast.success(`${r.customerName} — 재검사 신청 등록 완료`);
+      } catch (e) {
+        toast.error(`재검사 신청 실패: ${(e as Error).message}`);
+      }
+    }
+  };
 
   // #3 결과지 업로드/보기 다이얼로그 대상(customer). null=닫힘.
   const [uploadFor, setUploadFor] = useState<{ id: string; name: string } | null>(null);
@@ -463,7 +509,8 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700">접수여부</th>
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700">접수자명</th>
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-yellow-100 text-yellow-800">서류수령여부</th>
-                <th className="px-2 py-2 whitespace-nowrap bg-teal-100 text-teal-800">업로드</th>
+                <th className="border-r px-2 py-2 whitespace-nowrap bg-teal-100 text-teal-800">업로드</th>
+                {canAct && <th className="px-2 py-2 whitespace-nowrap bg-muted/30 text-center">관리</th>}
               </tr>
             </thead>
             <tbody>
@@ -471,12 +518,14 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                 const st = getState(r);
                 const uploadN = uploadCountFor(r);
                 const complete = isComplete(r); // #4 서류수령 AND 업로드 ≥1
+                const itemStatus = itemStatusOf(r); // ACTIONS-3BTN
                 return (
                   <tr
                     key={rowKey(r.customerId, r.requestDate)}
-                    className={`border-b last:border-0 text-center ${complete ? 'bg-muted/40 text-muted-foreground opacity-60' : ''}`}
+                    className={`border-b last:border-0 text-center ${complete ? 'bg-muted/40 text-muted-foreground opacity-60' : examRowStatusClass(itemStatus)}`}
                     data-testid="blood-daily-row"
                     data-complete={complete ? 'true' : 'false'}
+                    data-item-status={itemStatus}
                   >
                     <td className="border-r px-2 py-1.5 tabular-nums text-muted-foreground">{idx + 1}</td>
                     <td className="border-r px-2 py-1.5 tabular-nums whitespace-nowrap">{testDateLabel(r.requestDate)}</td>
@@ -544,6 +593,19 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                         )}
                       </button>
                     </td>
+                    {/* ACTIONS-3BTN: 접수 항목 행 액션 3종 — 권한 A 만 컬럼 노출. */}
+                    {canAct && (
+                      <td className="px-2 py-1.5 align-middle">
+                        <ExamItemActions
+                          status={itemStatus}
+                          busy={persistItemStatus.isPending}
+                          testidPrefix="blood-item"
+                          onHold={() => handleHold(r)}
+                          onCancel={() => handleCancel(r)}
+                          onRetest={() => handleRetest(r)}
+                        />
+                      </td>
+                    )}
                   </tr>
                 );
               })}
