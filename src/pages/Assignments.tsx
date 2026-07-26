@@ -107,6 +107,15 @@ interface CustomerLite {
   assigned_staff_id: string | null;
 }
 
+// T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5: 건수 셀 클릭 → 고객 명단(성함+차트번호) drill-down.
+//   count↔list 단일소스(THERAPIST-DESIGNATED AC2 패턴) — 셀 카운트 = 아래 배열 length 로 파생.
+interface AssignDrillItem {
+  key: string; // 리스트 React key(중복 배정 방지용 유니크). check_in id 또는 action id.
+  name: string; // 고객 성함
+  chartNumber: string | null; // 차트번호(미발번=null → chartNoBadge 표시 억제)
+  customerId: string | null;
+}
+
 export default function Assignments() {
   const clinic = useClinic();
   const { profile } = useAuth();
@@ -157,6 +166,15 @@ export default function Assignments() {
   const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list'>('consult');
   const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
   const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
+
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5: 직원별 누적 건수 셀 drill-down 다이얼로그.
+  //   (staff+구간+지표) 로 고객 성함+차트번호 명단 표시. items = 셀 카운트와 단일소스(count↔list 정합).
+  const [drillDialog, setDrillDialog] = useState<{
+    staffName: string;
+    scopeLabel: string; // '일누적' | '당월누적'
+    metricLabel: string; // '배정(초진)' | '배정(재진)' | '토스' | '당김'
+    items: AssignDrillItem[];
+  } | null>(null);
 
   // 토스 다이얼로그
   const [tossTarget, setTossTarget] = useState<{
@@ -423,19 +441,20 @@ export default function Assignments() {
     [customers],
   );
 
-  // ── 직원별 누적 (선택일 기준 일누적/당월누적 — check_ins 정본 + assignment_actions audit) ─────
-  // T-20260720-foot-ASSIGN-LABEL-DATE-SELECT: 한 직원당 두 구간(day=선택일 당일 / month=선택월 1일~선택일)
-  //   각각 배정(균등)/재진/토스/당김 4지표를 집계. 구간 경계는 아래 staffStats useMemo 에서 선택일로 산출.
+  // ── 직원별 누적 (일누적=선택일 / 당월누적=기준일 당월 강제 — check_ins 정본 + assignment_actions audit) ─────
+  // T-20260720-foot-ASSIGN-LABEL-DATE-SELECT: [일누적] = 선택일 당일.
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경4: [당월누적] = 선택일과 무관하게 '기준일(오늘,KST)' 당월만 강제.
+  //   각 지표는 카운트가 아닌 명단(AssignDrillItem[])으로 수집 → 셀 카운트 = length 파생(count↔list 단일소스, 변경5).
   interface StaffCount {
-    assigned: number; // 균등 대상 배정(축≠재진, auto/manual/pull, 받은 사람)
-    returning: number; // 재진 배정 카운트(균등 제외)
-    tossGiven: number; // 토스 넘긴 사람 +1
-    pulled: number; // 당김 받은 사람 +1
+    assigned: AssignDrillItem[]; // 배정(초진) — 균등 대상(축≠재진, auto/manual/pull, 받은 사람)
+    returning: AssignDrillItem[]; // 배정(재진) — 재진 배정(균등 제외)
+    tossGiven: AssignDrillItem[]; // 토스 넘긴 사람
+    pulled: AssignDrillItem[]; // 당김 받은 사람
   }
   interface StaffStat {
     staff: Staff;
     day: StaffCount; // [일누적] 선택일 당일
-    month: StaffCount; // [당월누적] 선택일 월 1일~선택일
+    month: StaffCount; // [당월누적] 기준일(오늘) 당월 1일~오늘
   }
 
   // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: 배정(균등)/재진 = check_ins(정본) 카운트.
@@ -457,16 +476,33 @@ export default function Assignments() {
   );
 
   const staffStats = useMemo<StaffStat[]>(() => {
-    // 선택일 경계(KST). 한국은 DST 없음 → 24h 가산으로 익일 00:00(상한 exclusive) 산출 안전.
-    const selMonthStartMs = new Date(`${selectedDate.slice(0, 7)}-01T00:00:00+09:00`).getTime();
+    // [일누적] 선택일 경계(KST). 한국은 DST 없음 → 24h 가산으로 익일 00:00(상한 exclusive) 산출 안전.
     const selDayStartMs = new Date(`${selectedDate}T00:00:00+09:00`).getTime();
     const selDayEndExclMs = selDayStartMs + 24 * 60 * 60 * 1000;
-    // 선택일 당일(일누적) / 선택월 1일~선택일(당월누적) 판정 헬퍼.
+    // [당월누적] 변경4 — 선택일과 무관하게 '기준일(오늘,KST)'의 당월(1일 00:00 ~ 오늘 24:00 exclusive)만 강제 집계.
+    //   → 전월 데이터 자동 제외. 월경계 오프바이원: 상한을 (오늘+1일) 00:00 exclusive 로 두어 오늘분 포함·익월 배제.
+    const todayIso = todaySeoulISODate();
+    const nowMonthStartMs = new Date(`${todayIso.slice(0, 7)}-01T00:00:00+09:00`).getTime();
+    const todayStartMs = new Date(`${todayIso}T00:00:00+09:00`).getTime();
+    const nowMonthEndExclMs = todayStartMs + 24 * 60 * 60 * 1000;
+    // 일누적(선택일 당일) / 당월누적(기준일 당월) 판정 헬퍼 — 두 구간은 이제 독립(선택일이 과거월이어도 당월은 오늘 기준).
     const inDay = (ms: number) => ms >= selDayStartMs && ms < selDayEndExclMs;
-    const inMonth = (ms: number) => ms >= selMonthStartMs && ms < selDayEndExclMs;
+    const inMonth = (ms: number) => ms >= nowMonthStartMs && ms < nowMonthEndExclMs;
+
+    // check_in id → row (토스/당김 audit 의 고객 성함·차트번호 join 용).
+    const ciById = new Map<string, CheckIn>(monthCheckIns.map((c) => [c.id, c]));
+    const itemFromCi = (ci: CheckIn): AssignDrillItem => {
+      const cust = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
+      return {
+        key: ci.id,
+        name: ci.customer_name ?? '—',
+        chartNumber: cust?.chart_number ?? null,
+        customerId: ci.customer_id ?? null,
+      };
+    };
 
     const byId = new Map<string, StaffStat>();
-    const zero = (): StaffCount => ({ assigned: 0, returning: 0, tossGiven: 0, pulled: 0 });
+    const zero = (): StaffCount => ({ assigned: [], returning: [], tossGiven: [], pulled: [] });
     const ensure = (s: Staff): StaffStat => {
       let st = byId.get(s.id);
       if (!st) {
@@ -479,55 +515,68 @@ export default function Assignments() {
     for (const s of staff) {
       if (s.role === 'consultant' || s.role === 'therapist') ensure(s);
     }
-    // 배정/재진 — check_ins 정본(자동+수동 공통, 1건당 1회 / 역할별 분리)
-    //   day/month 각 구간에 checked_in_at 기준으로 가산(구간에 함께 속하면 둘 다 +1).
-    const bumpAssign = (st: StaffStat, isReturning: boolean, ms: number) => {
+    // 배정(초진)/배정(재진) — check_ins 정본(자동+수동 공통, 1건당 1회 / 역할별 분리)
+    //   day/month 각 구간에 checked_in_at 기준으로 명단 push(구간에 함께 속하면 둘 다 push).
+    const bumpAssign = (st: StaffStat, isReturning: boolean, ms: number, item: AssignDrillItem) => {
       const key = isReturning ? 'returning' : 'assigned';
-      if (inMonth(ms)) st.month[key] += 1;
-      if (inDay(ms)) st.day[key] += 1;
+      if (inMonth(ms)) st.month[key].push(item);
+      if (inDay(ms)) st.day[key].push(item);
     };
     for (const ci of monthCheckIns) {
       const ms = ci.checked_in_at ? new Date(ci.checked_in_at).getTime() : NaN;
-      if (Number.isNaN(ms) || !inMonth(ms)) continue;
+      // 일누적(과거월 선택 가능) 또는 당월누적(오늘 기준) 중 어느 구간에도 안 걸리면 skip.
+      if (Number.isNaN(ms) || (!inDay(ms) && !inMonth(ms))) continue;
       if (ci.consultant_id) {
         const s = staff.find((x) => x.id === ci.consultant_id);
         if (s && s.role === 'consultant') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'consult') === 'returning', ms);
+          bumpAssign(ensure(s), monthAxisOf(ci, 'consult') === 'returning', ms, itemFromCi(ci));
         }
       }
       if (ci.therapist_id) {
         const s = staff.find((x) => x.id === ci.therapist_id);
         if (s && s.role === 'therapist') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'therapy') === 'returning', ms);
+          bumpAssign(ensure(s), monthAxisOf(ci, 'therapy') === 'returning', ms, itemFromCi(ci));
         }
       }
     }
-    // 토스 N건(넘긴 사람) / 당김 N건(받은 사람) — assignment_actions audit (created_at 기준 구간 판정)
+    // 토스(넘긴 사람) / 당김(받은 사람) — assignment_actions audit (created_at 기준 구간 판정)
+    //   고객 명단 = action.check_in_id → check_in → 고객(성함/차트번호). ci 미조회 시 명단만 '(고객 정보 없음)'.
     for (const a of actions) {
       const ms = new Date(a.created_at).getTime();
-      if (Number.isNaN(ms) || !inMonth(ms)) continue;
+      if (Number.isNaN(ms) || (!inDay(ms) && !inMonth(ms))) continue;
+      const ci = a.check_in_id ? ciById.get(a.check_in_id) : null;
+      const item: AssignDrillItem = ci
+        ? { ...itemFromCi(ci), key: a.id }
+        : { key: a.id, name: '(고객 정보 없음)', chartNumber: null, customerId: null };
       if (a.action_type === 'toss' && a.from_staff_id) {
         const s = staff.find((x) => x.id === a.from_staff_id);
         if (s) {
           const st = ensure(s);
-          st.month.tossGiven += 1;
-          if (inDay(ms)) st.day.tossGiven += 1;
+          if (inMonth(ms)) st.month.tossGiven.push(item);
+          if (inDay(ms)) st.day.tossGiven.push(item);
         }
       }
       if (a.action_type === 'pull_in' && a.to_staff_id) {
         const s = staff.find((x) => x.id === a.to_staff_id);
         if (s) {
           const st = ensure(s);
-          st.month.pulled += 1;
-          if (inDay(ms)) st.day.pulled += 1;
+          if (inMonth(ms)) st.month.pulled.push(item);
+          if (inDay(ms)) st.day.pulled.push(item);
         }
       }
     }
     const wantRole = activeTab === 'consult' ? 'consultant' : 'therapist';
     return Array.from(byId.values())
       .filter((st) => st.staff.role === wantRole)
-      .sort((x, y) => y.month.assigned - x.month.assigned);
-  }, [staff, actions, monthCheckIns, monthAxisOf, activeTab, selectedDate]);
+      .sort((x, y) => y.month.assigned.length - x.month.assigned.length);
+  }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate]);
+
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경2: '일일 배정 목표' 값 출처(느슨결합 단일 지점).
+  //   현행 화면에 배정목표 소스 없음(staff·설정 컬럼 부재) — 자동배정 엔진(T-20260726-foot-CRM-ASSIGN-V1, 미착수)
+  //   이 산출하게 될 값. 엔진 배포 시 이 함수만 교체하면 컬럼/표시 구조 유지(느슨결합). 현재는 미설정('—').
+  const dailyTargetOf = useCallback((_st: StaffStat): number | null => {
+    return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
+  }, []);
 
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
@@ -1268,35 +1317,38 @@ export default function Assignments() {
           {/* T-20260629-foot-ASSIGNMONTHLY-SCROLL-REMOVE: 스크롤/높이 제한 제거 → 직원 수만큼 전체 펼침.
               T-20260720: 일누적/당월누적 2그룹 → 컬럼 증가로 좁은 태블릿 대비 x축 스크롤만 허용. */}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-xs">
+            {/* T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경1: '역할' 컬럼 제거(데이터 존치, 표시만).
+                변경2/3: 일누적=[일일 배정 목표/배정(초진)/배정(재진)/토스/당김], 당월누적=[총 누적 배정/배정(초진)/배정(재진)/토스/당김]. */}
+            <table className="w-full min-w-[680px] text-xs">
               <thead className="border-y bg-muted text-muted-foreground">
-                {/* 1단: [일누적]/[당월누적] 그룹 헤더 */}
+                {/* 1단: [일누적]/[당월누적] 그룹 헤더 (각 5지표) */}
                 <tr>
                   <th className="px-3 py-1.5 text-left font-medium" rowSpan={2}>직원</th>
-                  <th className="px-2 py-1.5 text-left font-medium" rowSpan={2}>역할</th>
                   <th
                     className="border-l px-2 py-1.5 text-center font-semibold text-foreground"
-                    colSpan={4}
+                    colSpan={5}
                     data-testid="accum-group-day"
                   >
                     일누적
                   </th>
                   <th
                     className="border-l px-2 py-1.5 text-center font-semibold text-foreground"
-                    colSpan={4}
+                    colSpan={5}
                     data-testid="accum-group-month"
                   >
                     당월누적
                   </th>
                 </tr>
-                {/* 2단: 각 그룹의 4지표 */}
+                {/* 2단: 각 그룹의 5지표 */}
                 <tr>
-                  <th className="border-l px-2 py-1.5 text-right font-medium">배정(균등)</th>
-                  <th className="px-2 py-1.5 text-right font-medium">재진</th>
+                  <th className="border-l px-2 py-1.5 text-right font-medium">일일 배정 목표</th>
+                  <th className="px-2 py-1.5 text-right font-medium">배정(초진)</th>
+                  <th className="px-2 py-1.5 text-right font-medium">배정(재진)</th>
                   <th className="px-2 py-1.5 text-right font-medium">토스</th>
                   <th className="px-2 py-1.5 text-right font-medium">당김</th>
-                  <th className="border-l px-2 py-1.5 text-right font-medium">배정(균등)</th>
-                  <th className="px-2 py-1.5 text-right font-medium">재진</th>
+                  <th className="border-l px-2 py-1.5 text-right font-medium">총 누적 배정</th>
+                  <th className="px-2 py-1.5 text-right font-medium">배정(초진)</th>
+                  <th className="px-2 py-1.5 text-right font-medium">배정(재진)</th>
                   <th className="px-2 py-1.5 text-right font-medium">토스</th>
                   <th className="px-2 py-1.5 text-right font-medium">당김</th>
                 </tr>
@@ -1304,7 +1356,7 @@ export default function Assignments() {
               <tbody>
                 {staffStats.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
                       상담사·치료사가 없습니다.
                     </td>
                   </tr>
@@ -1346,19 +1398,60 @@ export default function Assignments() {
                         )}
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-muted-foreground">
-                      {st.staff.role === 'consultant' ? '상담사' : '치료사'}
-                    </td>
-                    {/* [일누적] 선택일 당일 */}
-                    <td className="border-l px-2 py-2 text-right font-semibold">{st.day.assigned}</td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">{st.day.returning}</td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">{st.day.tossGiven}</td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">{st.day.pulled}</td>
-                    {/* [당월누적] 선택일 월 1일~선택일 */}
-                    <td className="border-l px-2 py-2 text-right font-semibold">{st.month.assigned}</td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">{st.month.returning}</td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">{st.month.tossGiven}</td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">{st.month.pulled}</td>
+                    {/* 변경1: '역할' 컬럼 제거(데이터 존치, 표시만) */}
+                    {(() => {
+                      const staffLabel = (st.staff.display_name ?? st.staff.name).trim();
+                      // 변경5: 클릭 가능 건수 셀 — count↔list 단일소스(셀 표시값 = items.length).
+                      //   0건이어도 클릭 가능(빈 상태 안내). 좌측경계(border-l)는 그룹 첫 셀에만.
+                      const cell = (
+                        items: AssignDrillItem[],
+                        scopeLabel: string,
+                        metricLabel: string,
+                        testid: string,
+                        leftBorder: boolean,
+                      ) => (
+                        <td className={(leftBorder ? 'border-l ' : '') + 'px-2 py-2 text-right'}>
+                          <button
+                            type="button"
+                            data-testid={testid}
+                            onClick={() =>
+                              setDrillDialog({ staffName: staffLabel, scopeLabel, metricLabel, items })
+                            }
+                            className="inline-flex min-w-[1.5rem] justify-end tabular-nums underline-offset-2 hover:underline focus:underline focus:outline-none"
+                          >
+                            {items.length}
+                          </button>
+                        </td>
+                      );
+                      const dayTarget = dailyTargetOf(st);
+                      const monthTotal = st.month.assigned.length + st.month.returning.length;
+                      return (
+                        <>
+                          {/* [일누적] 선택일 당일 */}
+                          <td
+                            className="border-l px-2 py-2 text-right text-muted-foreground"
+                            data-testid={`accum-day-target-${st.staff.id}`}
+                          >
+                            {dayTarget == null ? '—' : dayTarget.toLocaleString()}
+                          </td>
+                          {cell(st.day.assigned, '일누적', '배정(초진)', `accum-day-assigned-${st.staff.id}`, false)}
+                          {cell(st.day.returning, '일누적', '배정(재진)', `accum-day-returning-${st.staff.id}`, false)}
+                          {cell(st.day.tossGiven, '일누적', '토스', `accum-day-toss-${st.staff.id}`, false)}
+                          {cell(st.day.pulled, '일누적', '당김', `accum-day-pull-${st.staff.id}`, false)}
+                          {/* [당월누적] 기준일(오늘) 당월 1일~오늘 (변경4) */}
+                          <td
+                            className="border-l px-2 py-2 text-right font-semibold"
+                            data-testid={`accum-month-total-${st.staff.id}`}
+                          >
+                            {monthTotal}
+                          </td>
+                          {cell(st.month.assigned, '당월누적', '배정(초진)', `accum-month-assigned-${st.staff.id}`, false)}
+                          {cell(st.month.returning, '당월누적', '배정(재진)', `accum-month-returning-${st.staff.id}`, false)}
+                          {cell(st.month.tossGiven, '당월누적', '토스', `accum-month-toss-${st.staff.id}`, false)}
+                          {cell(st.month.pulled, '당월누적', '당김', `accum-month-pull-${st.staff.id}`, false)}
+                        </>
+                      );
+                    })()}
                   </tr>
                 ))}
               </tbody>
@@ -1485,6 +1578,44 @@ export default function Assignments() {
           </CardContent>
         </Card>
       )}
+
+      {/* T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5: 직원별 누적 건수 셀 → 고객 명단 drill-down.
+          THERAPIST-DESIGNATED(designated-dialog) 패턴 재사용 — 성함+차트번호 리스트, count↔list 단일소스. */}
+      <Dialog open={!!drillDialog} onOpenChange={(o) => !o && setDrillDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle data-testid="accum-drill-title">
+              {drillDialog?.staffName} · {drillDialog?.scopeLabel} {drillDialog?.metricLabel}
+            </DialogTitle>
+            <DialogDescription>
+              {drillDialog?.metricLabel} {drillDialog?.items.length ?? 0}건 · 고객 성함과 차트번호입니다.
+            </DialogDescription>
+          </DialogHeader>
+          {(drillDialog?.items.length ?? 0) === 0 ? (
+            <div
+              data-testid="accum-drill-empty"
+              className="py-8 text-center text-sm text-muted-foreground"
+            >
+              해당 내역이 없습니다.
+            </div>
+          ) : (
+            <ul data-testid="accum-drill-list" className="max-h-[60vh] divide-y overflow-auto">
+              {drillDialog?.items.map((it) => (
+                <li
+                  key={it.key}
+                  data-testid="accum-drill-item"
+                  className="flex items-center justify-between gap-3 px-1 py-3"
+                >
+                  <span className="font-medium">{it.name}</span>
+                  <span className="font-mono text-xs text-teal-600">
+                    {chartNoBadge(it.chartNumber)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* 토스 다이얼로그 — 사유 필수(시나리오4) */}
       <Dialog open={!!tossTarget} onOpenChange={(o) => !o && setTossTarget(null)}>

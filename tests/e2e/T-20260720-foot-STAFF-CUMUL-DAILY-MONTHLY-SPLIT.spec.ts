@@ -42,16 +42,16 @@ test('시나리오1 · AC-2: 각 지표에 [일누적]/[당월누적] 4지표씩
   expect(src).toContain('data-testid="accum-group-month"');
   expect(src).toMatch(/일누적/);
   expect(src).toMatch(/당월누적/);
-  // 일누적 4지표(배정(균등)/재진/토스/당김) 독립 렌더
-  expect(src).toContain('{st.day.assigned}');
-  expect(src).toContain('{st.day.returning}');
-  expect(src).toContain('{st.day.tossGiven}');
-  expect(src).toContain('{st.day.pulled}');
-  // 당월누적 4지표 독립 렌더
-  expect(src).toContain('{st.month.assigned}');
-  expect(src).toContain('{st.month.returning}');
-  expect(src).toContain('{st.month.tossGiven}');
-  expect(src).toContain('{st.month.pulled}');
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP supersede: 4지표 → 5지표(일일 배정 목표/총 누적 배정).
+  //   지표 카운트는 명단 length 파생 클릭셀(testid)로 렌더. day.*/month.* 소스는 유지.
+  for (const scope of ['day', 'month']) {
+    expect(src).toContain(`accum-${scope}-assigned-`);
+    expect(src).toContain(`accum-${scope}-returning-`);
+    expect(src).toContain(`accum-${scope}-toss-`);
+    expect(src).toContain(`accum-${scope}-pull-`);
+  }
+  expect(src).toContain('st.day.assigned');
+  expect(src).toContain('st.month.assigned');
 });
 
 test('시나리오1 · AC-3: 날짜 선택 UI(native date input, 기본값=오늘, max=오늘)', () => {
@@ -66,18 +66,20 @@ test('시나리오1 · AC-3: 날짜 선택 UI(native date input, 기본값=오�
 
 test('시나리오1 · AC-3: 선택일 기준 일누적(그 날)/당월누적(그 달 1일~그 날) 연동', () => {
   const src = read(PAGE);
-  // 선택일 경계 산출
-  expect(src).toContain('const selMonthStartMs');
+  // 일누적 = 선택일 당일 [selDayStart, selDayEndExcl) — 불변.
   expect(src).toContain('const selDayStartMs');
   expect(src).toContain('const selDayEndExclMs');
-  // 일누적 = 선택일 당일 [selDayStart, selDayEndExcl)
   expect(src).toMatch(/const inDay = \(ms: number\) => ms >= selDayStartMs && ms < selDayEndExclMs/);
-  // 당월누적 = 선택월 1일 ~ 선택일 [selMonthStart, selDayEndExcl)
-  expect(src).toMatch(/const inMonth = \(ms: number\) => ms >= selMonthStartMs && ms < selDayEndExclMs/);
-  // 날짜 변경 시 재조회/재계산 (deps 에 selectedDate)
+  // T-20260726 supersede(변경4): 당월누적 = 기준일(오늘) 당월 강제(selMonthStartMs → nowMonthStartMs).
+  expect(src).toContain('const nowMonthStartMs');
+  expect(src).toMatch(/const inMonth = \(ms: number\) => ms >= nowMonthStartMs && ms < nowMonthEndExclMs/);
+  expect(src).not.toContain('const selMonthStartMs');
+  // 날짜 변경 시 재조회/재계산 (deps 에 selectedDate). 로드 하한은 선택월 1일(불변).
   expect(src).toMatch(/const monthStart = `\$\{selectedDate\.slice\(0, 7\)\}-01T00:00:00\+09:00`/);
   expect(src).toMatch(/\}, \[clinic, profile\?\.id, selectedDate\]\)/); // load deps
-  expect(src).toMatch(/\}, \[staff, actions, monthCheckIns, monthAxisOf, activeTab, selectedDate\]\)/); // staffStats deps
+  expect(src).toMatch(
+    /\}, \[staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate\]\)/,
+  ); // staffStats deps
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,37 +97,41 @@ test('시나리오2 · AC-4: 역할별 집계 회귀 없음 — 상담사/치료
   const src = read(PAGE);
   expect(src).toMatch(/const wantRole = activeTab === 'consult' \? 'consultant' : 'therapist'/);
   expect(src).toMatch(/\.filter\(\(st\) => st\.staff\.role === wantRole\)/);
-  // 역할 라벨 표시 회귀 없음
-  expect(src).toMatch(/st\.staff\.role === 'consultant' \? '상담사' : '치료사'/);
+  // T-20260726 변경1: 역할 '표시' 컬럼은 제거(데이터·집계 role 필터는 유지). 라벨 표시 단언 제거.
+  expect(src).not.toContain("{st.staff.role === 'consultant' ? '상담사' : '치료사'}");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 3: 엣지 — 데이터 없는 날짜(값 0) / 월 경계(1일) 정합 + 기존 컬럼·정렬 회귀 없음
 //   §5-3: 배정 0인 날 → 0 정상표시 / 1일 선택 → 일누적=당월누적
 // ─────────────────────────────────────────────────────────────────────────────
-test('시나리오3 · AC-3(엣지): 배정 없는 날 → 카운트 0 기본값(에러 없음)', () => {
+test('시나리오3 · AC-3(엣지): 배정 없는 직원 → 빈 명단 기본값(에러 없음)', () => {
   const src = read(PAGE);
-  // StaffCount 기본값 = 전 지표 0 (zero()) → 데이터 없어도 0 렌더
-  expect(src).toMatch(/const zero = \(\): StaffCount => \(\{ assigned: 0, returning: 0, tossGiven: 0, pulled: 0 \}\)/);
+  // T-20260726 supersede: StaffCount 기본값 = 전 지표 빈 배열(zero()) → 데이터 없어도 length=0 렌더.
+  expect(src).toMatch(
+    /const zero = \(\): StaffCount => \(\{ assigned: \[\], returning: \[\], tossGiven: \[\], pulled: \[\] \}\)/,
+  );
 });
 
-test('시나리오3 · AC-5(엣지): 월 경계(1일) 선택 시 일누적=당월누적 경계 정합', () => {
+test('시나리오3 · AC-5(supersede): 일누적=선택일 / 당월누적=기준일(오늘) 당월 — 독립 경계 (T-20260726 변경4)', () => {
   const src = read(PAGE);
-  // 1일 선택 → selMonthStart == selDayStart → inDay ⊆ inMonth, 동일 경계 소스에서 파생(별도 분기 없음)
-  expect(src).toMatch(/new Date\(`\$\{selectedDate\.slice\(0, 7\)\}-01T00:00:00\+09:00`\)\.getTime\(\)/);
+  // 일누적 경계 = 선택일 / 당월누적 경계 = 기준일(오늘). 더 이상 1일 선택 겹침 전제 아님(당월은 항상 오늘 기준).
   expect(src).toMatch(/new Date\(`\$\{selectedDate\}T00:00:00\+09:00`\)\.getTime\(\)/);
+  expect(src).toContain('const todayIso = todaySeoulISODate();');
+  expect(src).toMatch(/new Date\(`\$\{todayIso\.slice\(0, 7\)\}-01T00:00:00\+09:00`\)/);
 });
 
-test('시나리오3 · AC-5(회귀0): 기존 컬럼(배정(균등)/재진/토스/당김)·정렬 보존', () => {
+test('시나리오3 · AC-5(supersede): 재편 컬럼(배정(초진)/배정(재진)/토스/당김)·정렬 보존 (T-20260726 변경2/3)', () => {
   const src = read(PAGE);
-  // 4지표 컬럼 헤더 보존
-  expect(src).toMatch(/배정\(균등\)/);
-  expect(src).toMatch(/재진/);
+  // 재편된 5지표 헤더(초진/재진). 구 라벨(배정(균등)) 잔존 금지.
+  expect(src).toContain('>배정(초진)</th>');
+  expect(src).toContain('>배정(재진)</th>');
+  expect(src).not.toContain('>배정(균등)</th>');
   expect(src).toMatch(/토스/);
   expect(src).toMatch(/당김/);
-  // 당월 배정 내림차순 정렬 보존
-  expect(src).toContain('.sort((x, y) => y.month.assigned - x.month.assigned)');
-  // 배정=균등/재진 분기(monthAxisOf) 보존 + 토스/당김 audit 파생 보존
+  // 당월 배정 내림차순 정렬 보존(명단 length 파생)
+  expect(src).toContain('.sort((x, y) => y.month.assigned.length - x.month.assigned.length)');
+  // 배정=초진/재진 분기(monthAxisOf) 보존 + 토스/당김 audit 파생 보존
   expect(src).toMatch(/monthAxisOf\(ci, 'consult'\) === 'returning'/);
   expect(src).toMatch(/monthAxisOf\(ci, 'therapy'\) === 'returning'/);
   expect(src).toMatch(/a\.action_type === 'toss' && a\.from_staff_id/);

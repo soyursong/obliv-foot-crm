@@ -46,15 +46,16 @@ test('AC-2: [일누적]/[당월누적] 2그룹 헤더로 분리 표기', () => {
   // 그룹 헤더 텍스트
   expect(src).toMatch(/일누적/);
   expect(src).toMatch(/당월누적/);
-  // 각 구간이 4지표(배정/재진/토스/당김) 를 독립 렌더 (day.* / month.*)
-  expect(src).toContain('{st.day.assigned}');
-  expect(src).toContain('{st.day.returning}');
-  expect(src).toContain('{st.day.tossGiven}');
-  expect(src).toContain('{st.day.pulled}');
-  expect(src).toContain('{st.month.assigned}');
-  expect(src).toContain('{st.month.returning}');
-  expect(src).toContain('{st.month.tossGiven}');
-  expect(src).toContain('{st.month.pulled}');
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP supersede: 4지표 → 5지표(일일 배정 목표/총 누적 배정 추가).
+  //   카운트는 명단(AssignDrillItem[]) length 파생 클릭셀(testid)로 렌더. day.*/month.* 소스는 유지.
+  for (const scope of ['day', 'month']) {
+    expect(src).toContain(`accum-${scope}-assigned-`);
+    expect(src).toContain(`accum-${scope}-returning-`);
+    expect(src).toContain(`accum-${scope}-toss-`);
+    expect(src).toContain(`accum-${scope}-pull-`);
+  }
+  expect(src).toContain('st.day.assigned');
+  expect(src).toContain('st.month.assigned');
 });
 
 test('AC-3: 날짜 선택 UI 추가(native date input, max=오늘, 초기=오늘)', () => {
@@ -71,17 +72,19 @@ test('AC-3: 날짜 선택 UI 추가(native date input, max=오늘, 초기=오늘
 
 test('AC-3: 선택일 기준 일/월 누적 연동 — staffStats 가 선택일 경계로 day/month 분기', () => {
   const src = read(PAGE);
-  // 선택일 경계 산출
-  expect(src).toContain('const selMonthStartMs');
+  // 일누적 = 선택일 당일 [selDayStart, selDayEndExcl) — 불변.
   expect(src).toContain('const selDayStartMs');
   expect(src).toContain('const selDayEndExclMs');
-  // 일누적 = 선택일 당일 [selDayStart, selDayEndExcl)
   expect(src).toMatch(/const inDay = \(ms: number\) => ms >= selDayStartMs && ms < selDayEndExclMs/);
-  // 당월누적 = 선택월 1일 ~ 선택일 [selMonthStart, selDayEndExcl)
-  expect(src).toMatch(/const inMonth = \(ms: number\) => ms >= selMonthStartMs && ms < selDayEndExclMs/);
-  // useMemo 재계산 deps 에 selectedDate 포함(날짜 변경 시 연동 갱신)
-  expect(src).toMatch(/\}, \[staff, actions, monthCheckIns, monthAxisOf, activeTab, selectedDate\]\)/);
-  // 로드 쿼리 하한이 선택월 1일로 파라미터화 + load deps 에 selectedDate
+  // T-20260726 supersede(변경4): 당월누적 = 기준일(오늘) 당월 강제(selMonthStartMs → nowMonthStartMs).
+  expect(src).toContain('const nowMonthStartMs');
+  expect(src).toMatch(/const inMonth = \(ms: number\) => ms >= nowMonthStartMs && ms < nowMonthEndExclMs/);
+  expect(src).not.toContain('const selMonthStartMs');
+  // useMemo 재계산 deps 에 selectedDate(+monthCustomers) 포함(날짜 변경 시 일누적 연동)
+  expect(src).toMatch(
+    /\}, \[staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate\]\)/,
+  );
+  // 로드 쿼리 하한이 선택월 1일로 파라미터화(불변) + load deps 에 selectedDate
   expect(src).toMatch(/const monthStart = `\$\{selectedDate\.slice\(0, 7\)\}-01T00:00:00\+09:00`/);
   expect(src).toMatch(/\}, \[clinic, profile\?\.id, selectedDate\]\)/);
 });
@@ -101,12 +104,11 @@ test('AC-4: 상담/치료 두 탭 동일 적용 — 단일 카드가 activeTab(r
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 3: 엣지/회귀 (AC-5)
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC-5(회귀0): 오늘 선택 시 [당월누적] = 기존 당월 집계 경로와 동일 집합', () => {
+test('AC-5(회귀0): 당월누적 집계 소스 보존 — check_ins 정본 + assignment_actions audit', () => {
   const src = read(PAGE);
-  // 당월 집계는 여전히 check_ins(정본) consultant_id/therapist_id + assignment_actions(audit) 로 파생.
-  //   상한을 선택일 익일 00:00(exclusive) 로만 두므로 오늘 선택 시 monthStart..now 와 동치 → 회귀0.
-  expect(src).toContain('.sort((x, y) => y.month.assigned - x.month.assigned)');
-  // month 카운트는 배정=균등/재진 분기(monthAxisOf) 를 기존과 동일하게 사용
+  // T-20260726 supersede: 정렬 키는 명단 length 파생(y.month.assigned.length).
+  expect(src).toContain('.sort((x, y) => y.month.assigned.length - x.month.assigned.length)');
+  // month 카운트는 배정=초진/재진 분기(monthAxisOf) 를 기존과 동일하게 사용(정의 재발명 없음)
   expect(src).toMatch(/monthAxisOf\(ci, 'consult'\) === 'returning'/);
   expect(src).toMatch(/monthAxisOf\(ci, 'therapy'\) === 'returning'/);
   // 토스/당김 audit 파생 보존
@@ -114,10 +116,11 @@ test('AC-5(회귀0): 오늘 선택 시 [당월누적] = 기존 당월 집계 경
   expect(src).toMatch(/a\.action_type === 'pull_in' && a\.to_staff_id/);
 });
 
-test('AC-5(엣지): 월 초 1일 선택 시 일누적/당월누적 경계가 동일 시작점(선택월 1일)에서 겹침', () => {
+test('AC-5(supersede): 일누적=선택일 / 당월누적=기준일(오늘) 당월 — 독립 경계 (T-20260726 변경4)', () => {
   const src = read(PAGE);
-  // 1일 선택 → selMonthStart == selDayStart → inDay ⊆ inMonth 이므로 동일 값 산출 가능(경계 파생이 동일 소스).
-  //   (별도 분기 없이 경계식만으로 성립함을 소스로 확인)
-  expect(src).toMatch(/new Date\(`\$\{selectedDate\.slice\(0, 7\)\}-01T00:00:00\+09:00`\)\.getTime\(\)/);
+  // 일누적 경계 = 선택일
   expect(src).toMatch(/new Date\(`\$\{selectedDate\}T00:00:00\+09:00`\)\.getTime\(\)/);
+  // 당월누적 경계 = 기준일(오늘, todaySeoulISODate) — 선택일과 독립(전월 자동 제외)
+  expect(src).toContain('const todayIso = todaySeoulISODate();');
+  expect(src).toMatch(/new Date\(`\$\{todayIso\.slice\(0, 7\)\}-01T00:00:00\+09:00`\)/);
 });
