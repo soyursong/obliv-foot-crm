@@ -83,8 +83,8 @@ test.describe('T-20260717-foot-CANCELREQ-DASH-BTN-MISALIGN — 요청취소 버�
     const q = queue();
     expect(q).toContain('data-testid="docreq-write-btn"');
     expect(q).toContain('작성하기');
-    // 작성하기 반짝효과 보존.
-    expect(q).toContain('animate-ping');
+    // animate-ping ripple 은 T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE(212edca2/f865b336, deployed)로 의도적 제거됨 → 부재 단언.
+    expect(q).not.toContain('animate-ping');
   });
 
   test('AC-3: TABLEVIEW 9칼럼·완료 그룹 등 기존 surface 회귀 없음', () => {
