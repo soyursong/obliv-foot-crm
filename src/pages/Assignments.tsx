@@ -30,7 +30,10 @@ import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
-import { todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
+import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/lib/format';
+// T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
+//   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
+import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
@@ -142,6 +145,19 @@ export default function Assignments() {
   const isAdmin = profile?.role === 'admin';
   const [rotationOpen, setRotationOpen] = useState(false);
 
+  // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 = 관리자(원장·총괄) 전용.
+  //   판정 SSOT = 기존 role 체계(admin/manager/director) 재사용 — canEditRotation/Distribution 과 동일 술어(신규 role enum 신설 0).
+  //   ⚠ 이것은 UI 조건부 렌더(탭 자체 숨김)일 뿐이다. 실장별 매출은 payments RLS(payments_approved_read=is_approved_user,
+  //     모든 승인 직원 SELECT 허용) 상 foot_stats_consultant(SECURITY INVOKER)를 비admin 이 직접 호출하면 노출된다.
+  //     즉 서버사이드 no-read-up 은 이 클라이언트 게이트로 완결되지 않으며 신규 admin-gated RPC/RLS 가 필요(db_change→true).
+  //     본 커밋은 UI 게이트 + 표시탭까지만 additive 반영하고, 서버게이트는 planner FOLLOWUP → DA CONSULT 로 승격(임의 RLS 신설 금지).
+  const canViewRanking =
+    profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+
+  // [랭킹] 탭 데이터 — R1 정합 실장 랭킹(당월 누적매출) + 당월 배정건수.
+  const [rankLoading, setRankLoading] = useState(false);
+  const [perfRows, setPerfRows] = useState<ConsultantRow[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [workingIds, setWorkingIds] = useState<Set<string>>(new Set());
@@ -175,7 +191,8 @@ export default function Assignments() {
   //  · 배정목록 → 카테고리(상담/치료) 드롭 → 담당자(상담사/치료사) 드롭 → 선택 담당자 금일 배정 환자목록 read-only 표시.
   //  금일 배정 grain 실측(2026-07-10 prod): 앵커=check_ins(consultant_id/therapist_id). reservations엔 배정필드 부재
   //  (preferred_therapist_id=예약단계 선호값), visits 테이블 부재 → TREATING-DOCTOR-SELECT-SYNC 선례와 정합. DB무변경.
-  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list'>('consult');
+  // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 상위 탭에 [랭킹] 추가('ranking').
+  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list' | 'ranking'>('consult');
   const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
   const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
 
@@ -604,6 +621,76 @@ export default function Assignments() {
     return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
   }, []);
 
+  // ── [랭킹] 탭 (T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK) ─────────────────
+  //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
+  //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 이 이미 산출한 실장별 당월 누적매출을 read-only 소비.
+  //  · 순위 = 당월 누적매출(total_amount) 내림차순(현장 예시데이터와 정합: 엄경은>송지현>…>김주연). tie-break 이름.
+  //  · 배정 건수 = 당월 check_ins(정본) 상 consultant_id 배정 수 — STAFFCUMUL/기존 배정 카운트와 동일 정의(monthCheckIns 재사용).
+  //  · 표시는 read-only. customers.assigned_consultant_id 무접촉(RED LINE).
+  //  · 관리자(canViewRanking) 전용 탭 진입 시에만 fetch. 비admin 은 탭 자체가 없어 이 fetch 가 발화하지 않는다.
+  useEffect(() => {
+    if (mainTab !== 'ranking' || !canViewRanking || !clinic) return;
+    let cancelled = false;
+    void (async () => {
+      setRankLoading(true);
+      try {
+        const todayIso = todaySeoulISODate();
+        const monthStart = `${todayIso.slice(0, 7)}-01`; // 당월 1일(DATE)
+        const rows = await fetchConsultantPerf(clinic.id, monthStart, todayIso);
+        if (!cancelled) setPerfRows(rows);
+      } catch (e) {
+        if (!cancelled) {
+          setPerfRows([]);
+          console.warn('[Assignments] ranking load failed:', e);
+        }
+      } finally {
+        if (!cancelled) setRankLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mainTab, canViewRanking, clinic]);
+
+  // 당월(기준일 KST 당월 1일~오늘) consultant_id 배정 건수 — monthCheckIns(정본) 재사용. 셀 카운트 단일소스.
+  const rankingAssignCounts = useMemo<Map<string, number>>(() => {
+    const todayIso = todaySeoulISODate();
+    const mStartMs = new Date(`${todayIso.slice(0, 7)}-01T00:00:00+09:00`).getTime();
+    const todayStartMs = new Date(`${todayIso}T00:00:00+09:00`).getTime();
+    const mEndExclMs = todayStartMs + 24 * 60 * 60 * 1000; // 오늘분 포함·익일 배제
+    const m = new Map<string, number>();
+    for (const ci of monthCheckIns) {
+      if (!ci.consultant_id) continue;
+      const ms = ci.checked_in_at ? new Date(ci.checked_in_at).getTime() : NaN;
+      if (Number.isNaN(ms) || ms < mStartMs || ms >= mEndExclMs) continue;
+      m.set(ci.consultant_id, (m.get(ci.consultant_id) ?? 0) + 1);
+    }
+    return m;
+  }, [monthCheckIns]);
+
+  interface RankingRow {
+    rank: number;
+    consultantId: string;
+    name: string;
+    revenue: number;
+    assignCount: number;
+  }
+  const rankingRows = useMemo<RankingRow[]>(() => {
+    return [...perfRows]
+      .sort(
+        (a, b) =>
+          (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
+          (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
+      )
+      .map((r, i) => ({
+        rank: i + 1,
+        consultantId: r.consultant_id,
+        name: r.name ?? '—',
+        revenue: r.total_amount ?? 0,
+        assignCount: rankingAssignCounts.get(r.consultant_id) ?? 0,
+      }));
+  }, [perfRows, rankingAssignCounts]);
+
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
     id: string;
@@ -1010,9 +1097,11 @@ export default function Assignments() {
       <Tabs
         value={mainTab}
         onValueChange={(v) => {
-          const next = v as 'consult' | 'therapy' | 'list';
+          const next = v as 'consult' | 'therapy' | 'list' | 'ranking';
+          // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 비admin 이 (URL/이벤트 조작 등으로) ranking 진입 시도 시 무시(이중 가드).
+          if (next === 'ranking' && !canViewRanking) return;
           setMainTab(next);
-          // 상담/치료 탭은 기존 운영 카드의 role 필터(activeTab) 동기화. 배정목록은 자체 드롭으로 조회.
+          // 상담/치료 탭은 기존 운영 카드의 role 필터(activeTab) 동기화. 배정목록/랭킹은 자체 조회.
           if (next === 'consult' || next === 'therapy') setActiveTab(next);
         }}
       >
@@ -1026,11 +1115,17 @@ export default function Assignments() {
           <TabsTrigger value="list" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-list">
             배정목록
           </TabsTrigger>
+          {/* T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] = 관리자(원장·총괄) 전용. 비admin 은 탭 자체 미노출(UI 숨김). */}
+          {canViewRanking && (
+            <TabsTrigger value="ranking" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-ranking">
+              랭킹
+            </TabsTrigger>
+          )}
         </TabsList>
       </Tabs>
 
-      {/* ── [상담]/[치료] 탭: 기존 배정 운영 카드(①~④). 배정목록 탭에서는 미노출. ── */}
-      {mainTab !== 'list' && (
+      {/* ── [상담]/[치료] 탭: 기존 배정 운영 카드(①~④). 배정목록·랭킹 탭에서는 미노출. ── */}
+      {(mainTab === 'consult' || mainTab === 'therapy') && (
         <>
       {/* ① 오늘 배정 현황 */}
       <Card>
@@ -1625,6 +1720,64 @@ export default function Assignments() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── [랭킹] 탭: 실장 랭킹(순위/이름/누적매출/배정건수) — 관리자 전용. ──
+          T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK.
+          데이터 = R1 정합본(fetchConsultantPerf: 재직 실장만 + 매출정합). 순위=당월 누적매출 desc. read-only.
+          ⚠ canViewRanking 이중 가드 — 비admin 은 여기 도달 불가(탭 미노출 + onValueChange 차단 + 아래 && 가드). */}
+      {mainTab === 'ranking' && canViewRanking && (
+        <Card data-testid="assignments-ranking-card">
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm">실장 랭킹 (당월)</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              재직 상담 실장 기준 · 누적 매출 순 · 관리자 전용
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[64vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
+                  <tr>
+                    <th className="w-16 px-3 py-2 text-center font-medium">순위</th>
+                    <th className="px-3 py-2 text-left font-medium">이름</th>
+                    <th className="px-3 py-2 text-right font-medium">누적 매출</th>
+                    <th className="px-3 py-2 text-right font-medium">배정 건수</th>
+                  </tr>
+                </thead>
+                <tbody data-testid="ranking-rows">
+                  {rankLoading && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-loading">
+                        랭킹 불러오는 중…
+                      </td>
+                    </tr>
+                  )}
+                  {!rankLoading && rankingRows.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-empty">
+                        표시할 랭킹 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                  {!rankLoading &&
+                    rankingRows.map((r) => (
+                      <tr key={r.consultantId} className="border-b last:border-0 hover:bg-muted/20" data-testid="ranking-row">
+                        <td className="px-3 py-2.5 text-center font-semibold tabular-nums">{r.rank}</td>
+                        <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-revenue">
+                          {formatAmount(r.revenue)}원
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-assign-count">
+                          {r.assignCount.toLocaleString('ko-KR')}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
