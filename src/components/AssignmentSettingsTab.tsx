@@ -50,9 +50,9 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
   const { profile } = useAuth();
   const uid = profile?.id ?? null;
 
-  // 가중치
+  // 가중치 — 기본 B(월1:주2:객1). 주매출 2배. T-20260726-foot-CRM-ASSIGN-WEIGHT-B
   const [wMonth, setWMonth] = useState('1');
-  const [wWeek, setWWeek] = useState('1');
+  const [wWeek, setWWeek] = useState('2');
   const [wAvg, setWAvg] = useState('1');
   // Daily Target — top 입력, bottom = top/2 (2:1)
   const [topTarget, setTopTarget] = useState('8');
@@ -100,7 +100,7 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
       ]);
       if (w.data) {
         setWMonth(String(w.data.weight_revenue_month ?? 1));
-        setWWeek(String(w.data.weight_revenue_week ?? 1));
+        setWWeek(String(w.data.weight_revenue_week ?? 2)); // 기본 B: 주매출 2배
         setWAvg(String(w.data.weight_avg_ticket ?? 1));
       }
       if (t.data?.top_rank_target) setTopTarget(String(t.data.top_rank_target));
