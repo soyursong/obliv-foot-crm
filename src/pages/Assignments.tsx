@@ -30,7 +30,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
-import { todaySeoulISODate, chartNoBadge } from '@/lib/format';
+import { todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
@@ -114,6 +114,9 @@ interface AssignDrillItem {
   name: string; // 고객 성함
   chartNumber: string | null; // 차트번호(미발번=null → chartNoBadge 표시 억제)
   customerId: string | null;
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5 상세①(fqb6): 팝업 리스트 '일자별 그룹' 기준일(서울 YYYY-MM-DD).
+  //   배정(초진/재진)=check_ins.checked_in_at, 토스/당김=assignment_actions.created_at. null=(날짜 미상) 그룹.
+  date: string | null;
 }
 
 export default function Assignments() {
@@ -498,6 +501,8 @@ export default function Assignments() {
         name: ci.customer_name ?? '—',
         chartNumber: cust?.chart_number ?? null,
         customerId: ci.customer_id ?? null,
+        // 상세①: 배정 일자 = 체크인 시각(KST). 그룹 헤더 소스.
+        date: ci.checked_in_at ? seoulISODate(ci.checked_in_at) : null,
       };
     };
 
@@ -545,9 +550,10 @@ export default function Assignments() {
       const ms = new Date(a.created_at).getTime();
       if (Number.isNaN(ms) || (!inDay(ms) && !inMonth(ms))) continue;
       const ci = a.check_in_id ? ciById.get(a.check_in_id) : null;
+      // 상세①: 토스/당김 그룹 일자 = 액션 발생일(KST) — 체크인일이 아닌 토스/당김한 날 기준.
       const item: AssignDrillItem = ci
-        ? { ...itemFromCi(ci), key: a.id }
-        : { key: a.id, name: '(고객 정보 없음)', chartNumber: null, customerId: null };
+        ? { ...itemFromCi(ci), key: a.id, date: seoulISODate(a.created_at) }
+        : { key: a.id, name: '(고객 정보 없음)', chartNumber: null, customerId: null, date: seoulISODate(a.created_at) };
       if (a.action_type === 'toss' && a.from_staff_id) {
         const s = staff.find((x) => x.id === a.from_staff_id);
         if (s) {
@@ -1599,20 +1605,84 @@ export default function Assignments() {
               해당 내역이 없습니다.
             </div>
           ) : (
-            <ul data-testid="accum-drill-list" className="max-h-[60vh] divide-y overflow-auto">
-              {drillDialog?.items.map((it) => (
-                <li
-                  key={it.key}
-                  data-testid="accum-drill-item"
-                  className="flex items-center justify-between gap-3 px-1 py-3"
-                >
-                  <span className="font-medium">{it.name}</span>
-                  <span className="font-mono text-xs text-teal-600">
-                    {chartNoBadge(it.chartNumber)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div data-testid="accum-drill-list" className="max-h-[60vh] space-y-3 overflow-auto">
+              {(() => {
+                // 변경5 상세①②(fqb6, 목업 F0BKYPYK8TW) — 일자별 그룹 + 가로 2단(2열) 나열.
+                //   최신 일자 상단(내림차순). 성함/차트번호 클릭 → 2번차트(ASSIGNHIST-CHARTNO-CHART2-LINK 재사용).
+                const items = drillDialog?.items ?? [];
+                const groups = new Map<string, AssignDrillItem[]>();
+                for (const it of items) {
+                  const d = it.date ?? '날짜 미상';
+                  const arr = groups.get(d);
+                  if (arr) arr.push(it);
+                  else groups.set(d, [it]);
+                }
+                const keys = Array.from(groups.keys()).sort((a, b) => {
+                  if (a === '날짜 미상') return 1; // 날짜미상 그룹은 맨 아래
+                  if (b === '날짜 미상') return -1;
+                  return b.localeCompare(a); // YYYY-MM-DD 내림차순 = 최신 일자 상단
+                });
+                // 상세②: 신규 라우팅 신설 금지 — 기존 2번차트 window.open 패턴 재사용.
+                const openChart2 = (cid: string) =>
+                  window.open(
+                    `${window.location.origin}/chart/${cid}`,
+                    `foot-chart-${cid}`,
+                    'width=1200,height=900,scrollbars=yes,resizable=yes',
+                  );
+                return keys.map((dkey) => {
+                  const list = groups.get(dkey) ?? [];
+                  // 헤더 표기 26-07-25 (YY-MM-DD). 날짜미상은 원문 유지.
+                  const header = dkey === '날짜 미상' ? dkey : dkey.slice(2);
+                  return (
+                    <div key={dkey} data-testid={`accum-drill-group-${dkey}`}>
+                      <div
+                        data-testid="accum-drill-date-header"
+                        className="mb-1 border-b pb-0.5 text-xs font-semibold text-muted-foreground"
+                      >
+                        {header}
+                      </div>
+                      {/* 가로 2단(2열) — 항목 홀수면 grid 가 마지막 행 우측 칸 자동 공백 처리 */}
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        {list.map((it) => {
+                          const inner = (
+                            <>
+                              <span data-testid="accum-drill-name" className="truncate font-medium">
+                                {it.name}
+                              </span>
+                              <span
+                                data-testid="accum-drill-chartno"
+                                className="shrink-0 font-mono text-xs"
+                              >
+                                {chartNoBadge(it.chartNumber)}
+                              </span>
+                            </>
+                          );
+                          return (
+                            <div key={it.key} data-testid="accum-drill-item" className="min-w-0">
+                              {it.customerId ? (
+                                // 성함/차트번호 어느 쪽을 눌러도(버블링) 2번차트 open
+                                <button
+                                  type="button"
+                                  data-testid={`accum-drill-chart-link-${it.key}`}
+                                  onClick={() => openChart2(it.customerId!)}
+                                  className="flex w-full items-center justify-between gap-2 rounded px-1 py-1.5 text-left text-teal-600 hover:bg-teal-50 hover:underline"
+                                >
+                                  {inner}
+                                </button>
+                              ) : (
+                                <div className="flex w-full items-center justify-between gap-2 px-1 py-1.5 text-muted-foreground">
+                                  {inner}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           )}
         </DialogContent>
       </Dialog>

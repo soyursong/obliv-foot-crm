@@ -129,6 +129,48 @@ test('변경5: count↔list 단일소스 — 셀 표시값 = items.length, 팝�
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 시나리오 3 (스텝4~9): 변경5 상세화 fqb6 (김주연 총괄, MSG-fqb6/s0d0, 목업 F0BKYPYK8TW)
+//   상세① 팝업 리스트 = 일자별 그룹 + 가로 2단(2열)
+//   상세② 성함/차트번호 클릭 → 그 고객 2번차트 (THERAPIST-DESIGNATED/ASSIGNHIST 라우팅 재사용)
+// ─────────────────────────────────────────────────────────────────────────────
+test('상세①(fqb6): AssignDrillItem 에 일자별 그룹 기준 date 필드(서울 YYYY-MM-DD)', () => {
+  const src = read(PAGE);
+  // 리스트 항목이 date 필드 보유 → 일자별 그룹핑 소스
+  expect(src).toMatch(/interface AssignDrillItem[\s\S]*?date: string \| null;/);
+  // 배정(초진/재진) date = check_ins.checked_in_at (KST 변환)
+  expect(src).toContain('date: ci.checked_in_at ? seoulISODate(ci.checked_in_at) : null,');
+  // 토스/당김 date = assignment_actions.created_at (액션 발생일)
+  expect(src).toContain('key: a.id, date: seoulISODate(a.created_at)');
+});
+
+test('상세①(fqb6): 팝업 리스트 = 일자별 그룹(날짜 헤더) + 가로 2단(2열) grid', () => {
+  const src = read(PAGE);
+  // 일자 그룹핑 (Map<date, items[]>) + 최신 일자 상단(내림차순 정렬)
+  expect(src).toContain('const groups = new Map<string, AssignDrillItem[]>();');
+  expect(src).toContain('return b.localeCompare(a);'); // YYYY-MM-DD 내림차순 = 최신 상단
+  // 날짜 헤더 (YY-MM-DD 표기 = slice(2))
+  expect(src).toContain('data-testid="accum-drill-date-header"');
+  expect(src).toMatch(/dkey === '날짜 미상' \? dkey : dkey\.slice\(2\)/);
+  // 가로 2단(2열) — grid-cols-2 (홀수면 마지막 행 우측 자동 공백)
+  expect(src).toContain('grid grid-cols-2');
+  // 항목 testid 는 유지(count↔list 정합 검증 회귀 보호)
+  expect(src).toContain('data-testid="accum-drill-item"');
+});
+
+test('상세②(fqb6): 성함/차트번호 클릭 → 2번차트 window.open — 신규 라우팅 신설 금지(기존 재사용)', () => {
+  const src = read(PAGE);
+  // 성함·차트번호 각각 클릭 타깃 노출(둘 다 클릭 가능 — 버블링으로 동일 버튼 onClick)
+  expect(src).toContain('data-testid="accum-drill-name"');
+  expect(src).toContain('data-testid="accum-drill-chartno"');
+  expect(src).toContain('data-testid={`accum-drill-chart-link-${it.key}`}');
+  // 2번차트 라우팅 = 기존 ASSIGNHIST-CHARTNO-CHART2-LINK 패턴 재사용(/chart/${customerId}, window.open)
+  expect(src).toContain('`${window.location.origin}/chart/${cid}`');
+  expect(src).toContain('`foot-chart-${cid}`');
+  // customerId 없는 항목(고객 정보 없음)은 링크 비활성(오라우팅 방지)
+  expect(src).toContain('{it.customerId ? (');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 정합(reconcile) 불변식 — 착수 전 정합 체크리스트 인코딩
 // ─────────────────────────────────────────────────────────────────────────────
 test('정합: 배정(초진)=assigned/배정(재진)=returning — 기존 집계 정의 재사용(재발명 금지)', () => {
