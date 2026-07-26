@@ -251,6 +251,35 @@ export function useOpinionRequestQueue(clinicId: string | null) {
   });
 }
 
+// form_submissions '발행 완료' raw 행(voided+resolved_reason='published') → OpinionRequestRow 순수 매핑.
+//   day-scoped(usePublishedOpinionRequests, 진료대시보드) / all-time(useAllPublishedOpinionRequests, 치료테이블)
+//   두 훅이 '동일 매핑'을 공유(drift 방지, REDEFINITION_RISK). 발행 여부·날짜 스코프는 각 훅의 쿼리/필터가 결정.
+export function mapPublishedRequestRow(
+  r: Record<string, unknown>,
+  fd: Record<string, unknown>,
+): OpinionRequestRow {
+  return {
+    id: String(r['id']),
+    customerId: (r['customer_id'] as string | null) ?? null,
+    checkInId: (r['check_in_id'] as string | null) ?? null,
+    docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+    selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
+    staffMemo: String(fd['staff_memo'] ?? ''),
+    oralMedReason: String(fd['oral_med_reason'] ?? ''),
+    patientName: String(fd['patient_name'] ?? '—'),
+    chartNo: (fd['chart_no'] as string | null) || null,
+    birthDate: (fd['birth_date'] as string | null) || null,
+    requestedByName: String(fd['requested_by_name'] ?? ''),
+    requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
+    createdAt: String(r['created_at'] ?? ''),
+    requestDate: String(fd['request_date'] ?? ''),
+    resolvedAt: String(fd['resolved_at'] ?? ''),
+    // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행 후 정정된 행정필드 오버레이 + 감사로그(있으면).
+    adminOverrides: parseAdminOverrides(fd),
+    adminEditLog: parseAdminEditLog(fd),
+  };
+}
+
 // ─── 진료대시보드 '서류 완료' 그룹 (T-20260625-foot-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER) ──
 //   원장이 발행을 마치면 useResolveOpinionRequest 가 draft → status='voided' + field_data.resolved_reason='published'
 //   로 전환한다(L196~). 그 완료 row 를 read-only 로 다시 읽어 '서류 완료' 서브헤더 그룹에 표시(목록에서 사라지지 않게).
@@ -259,6 +288,8 @@ export function useOpinionRequestQueue(clinicId: string | null) {
 //   ★cancelled(요청취소) 제외: '서류 완료' = resolved_reason='published' 만(흡수 그라운딩 준수).
 //   ★day-scoped: 진료대시보드는 당일 뷰 → resolved_at(KST) 이 오늘인 발행 건만. created_at 2일 lookback 으로
 //     자정 넘겨 발행된 어제-요청-오늘-완료 건까지 포섭한 뒤 resolved_at KST==today 로 정밀 필터.
+//   ※의사공간(§11.1) 진료대시보드 전용 — day-scoped 유지. 치료테이블(치료사 공간) 과거일자 발행완료 조회는
+//     별도 useAllPublishedOpinionRequests(all-time) 를 쓴다(본 훅 미변경 = 의료 surface 동작 불변).
 export function usePublishedOpinionRequests(clinicId: string | null) {
   return useQuery<OpinionRequestRow[]>({
     queryKey: ['opinion_request_published', clinicId],
@@ -286,27 +317,47 @@ export function usePublishedOpinionRequests(clinicId: string | null) {
           const ra = fd['resolved_at'];
           return typeof ra === 'string' && !!ra && seoulISODate(ra) === today;
         })
-        .map(({ r, fd }) => ({
-          id: String(r['id']),
-          customerId: (r['customer_id'] as string | null) ?? null,
-          checkInId: (r['check_in_id'] as string | null) ?? null,
-          docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
-          selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
-          staffMemo: String(fd['staff_memo'] ?? ''),
-          oralMedReason: String(fd['oral_med_reason'] ?? ''),
-          patientName: String(fd['patient_name'] ?? '—'),
-          chartNo: (fd['chart_no'] as string | null) || null,
-          birthDate: (fd['birth_date'] as string | null) || null,
-          requestedByName: String(fd['requested_by_name'] ?? ''),
-          requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
-          createdAt: String(r['created_at'] ?? ''),
-          requestDate: String(fd['request_date'] ?? ''),
-          resolvedAt: String(fd['resolved_at'] ?? ''),
-          // T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT: 발행 후 정정된 행정필드 오버레이 + 감사로그(있으면).
-          adminOverrides: parseAdminOverrides(fd),
-          adminEditLog: parseAdminEditLog(fd),
-        }))
+        .map(({ r, fd }) => mapPublishedRequestRow(r, fd))
         // 최근 발행 순(resolved_at desc) — created_at 정렬과 무관하게 완료시각 기준 재정렬.
+        .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
+      return rows;
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
+// ─── 치료테이블(치료사 공간) 발행완료 전체이력 (T-20260726-foot-TREATTABLE-PUBDOC-DATESCOPE-EXPAND) ──
+//   RC: usePublishedOpinionRequests 는 resolved_at KST==today 로 '당일 발행'만 반환 → 치료테이블에서 과거일자를
+//     선택해도 그 날짜의 발행완료 소견서/진단서가 재구성 불가(빈 목록). 진료대시보드(의사공간)는 당일 뷰가 맞지만,
+//     치료테이블은 부모 날짜선택기(선택 날짜)로 과거일 조회가 가능해야 한다(현장 요청, TREATTABLE-DATA-MISSING).
+//   FIX: useCustomerOpinionRequests / usePublishedOpinionDocs 의 all-time 조회 패턴을 그대로 재사용 —
+//     clinic-scoped 발행완료(voided+resolved_reason='published') 전건을 반환하고, 날짜 스코프는 소비 컴포넌트
+//     (DiagDocSection.filterDiagDocByDate)가 결정한다. 진단서/소견서 모두 동일 스코프(docType 무관 동일 판정).
+//   ★§11.1 게이트: 치료테이블 = 치료사 공간(비의료, exempt). 진료대시보드용 usePublishedOpinionRequests(day-scoped)
+//     는 미변경 → 의사공간(DocRequestQueue) 동작 불변. 본 훅은 치료테이블에서만 소비.
+//   ★read-only READ 전용(db_change=false): 기존 form_submissions field_data read 만. 신규 컬럼/테이블/enum/RLS = 0.
+//   ★단일 소스: 매핑은 usePublishedOpinionRequests 와 동일 mapPublishedRequestRow 공유(divergent 재정의 0).
+export function useAllPublishedOpinionRequests(clinicId: string | null) {
+  return useQuery<OpinionRequestRow[]>({
+    queryKey: ['opinion_request_published_all', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      if (!clinicId) return [];
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, customer_id, check_in_id, field_data, created_at')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'voided')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const rows = ((data ?? []) as Array<Record<string, unknown>>)
+        .map((r) => ({ r, fd: (r['field_data'] ?? {}) as Record<string, unknown> }))
+        // 서류작성 큐(staff_consult)에서 발행 완료된 건만. cancelled(요청취소) 구조적 제외.
+        .filter(({ fd }) => fd['request_origin'] === 'staff_consult')
+        .filter(({ fd }) => fd['resolved_reason'] === 'published')
+        .map(({ r, fd }) => mapPublishedRequestRow(r, fd))
+        // 최근 발행 순(resolved_at desc).
         .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
       return rows;
     },

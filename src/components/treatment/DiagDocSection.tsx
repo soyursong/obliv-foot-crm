@@ -12,7 +12,8 @@
 //       (선례: DOCHIST-MULTIPATH item② ADDITIVE 재노출·상속 gate-exempt 판정과 구조 동형).
 //
 //   ★단일 소스 강제(REDEFINITION_RISK, CHART-ORDER 좀비 교훈): DocRequestQueue 와 동일한 opinionRequest.ts 훅
-//     (useOpinionRequestQueue / usePublishedOpinionRequests) 만 재사용. 경로별 별도조회(divergent query) 금지.
+//     (useOpinionRequestQueue / useAllPublishedOpinionRequests — 후자는 day-scoped 훅과 동일 mapPublishedRequestRow
+//     매핑 공유) 만 재사용. 경로별 별도조회(divergent query) 금지.
 //     form_submissions write 금지(발행 파이프라인 read·표기만) — DocRequestQueue/DoctorCallDashboard 코드 미수정.
 //
 //   ★발행여부 매핑(db_change=false, planner 확정): 기존 발행 파이프라인 상태값 100% 매핑 — 신규 컬럼/파생 0.
@@ -24,8 +25,10 @@
 //     치료테이블은 day-scoped surface(모든 탭이 부모 공통 날짜선택기 date 를 공유)이나, 필터 기준을
 //     '날짜'→'발행여부'로 전환 — 미발행(unpublished) 건은 신청 날짜가 지나도 계속 잔류하고(발행 완료 시에만
 //     제거), 발행완료(published) 건만 기존 day-scoped(선택 날짜) 동작을 유지한다. 상세=filterDiagDocByDate 주석.
-//     ※ read-only 재사용 한계: usePublishedOpinionRequests 는 당일(KST) 발행 건만 반환 → 과거일자 '발행완료'는
-//        재구성 불가. 미발행 잔류는 useOpinionRequestQueue(draft, 날짜무관 전건)로 보장.
+//     ※ T-20260726-foot-TREATTABLE-PUBDOC-DATESCOPE-EXPAND: 발행완료 소스를 all-time(useAllPublishedOpinionRequests)
+//        로 확장 → 과거일자를 선택하면 그 날의 발행완료 소견서/진단서도 정상 조회(이전엔 당일 KST 발행만 반환돼
+//        과거일 '발행완료'가 빈 목록). 진료대시보드용 day-scoped 훅은 미변경(§11.1 의료 surface 동작 불변).
+//        미발행 잔류는 useOpinionRequestQueue(draft, 날짜무관 전건)로 보장.
 //
 //   ★T-20260724-foot-TREATTABLE-DOCS-PARITY 기능① (발행 목록 + 클릭 열람): 진료대시보드 서류 스펙 미러.
 //     canonical = DASH-ISSUEDDOCS-DOCVIEW-CLICKOPEN(deployed 9ec7e5b6, DocRequestQueue 뷰어). 그 렌더러/로직을
@@ -43,7 +46,10 @@ import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import {
   useOpinionRequestQueue,
-  usePublishedOpinionRequests,
+  // T-20260726-foot-TREATTABLE-PUBDOC-DATESCOPE-EXPAND: 치료테이블은 과거일자 발행완료도 조회해야 하므로
+  //   day-scoped(당일) usePublishedOpinionRequests(진료대시보드 전용) 대신 all-time 훅을 쓴다.
+  //   진료대시보드(의사공간)용 day-scoped 훅은 미변경 → §11.1 의료 surface 동작 불변.
+  useAllPublishedOpinionRequests,
   docTypeLabel,
   // 기능① 발행본 read-only 열람 — 진료대시보드 뷰어(canonical)와 동일 훅/매핑 재사용(단일 소스, 신규 조회 0).
   useOpinionDocTemplateId,
@@ -135,8 +141,9 @@ export function buildDiagDocRows(
 //   (뒤늦게 발행하려 할 때 찾을 수 있게). 발행을 완료해야만 리스트에서 빠진다.
 //   ─ 미발행(unpublished): 선택 날짜와 무관하게 항상 잔류(AC1/AC2). '미발행 고정 표시'(AC3) — 날짜 필터가
 //       미발행 잔류를 덮어쓰지 않는다.
-//   ─ 발행완료(published): 기존 day-scoped 동작 유지(신청 KST 날짜 == 선택 날짜) → 발행완료본이 미발행
-//       잔류 리스트에 섞이지 않음(AC4 회귀0). 발행완료 = usePublishedOpinionRequests(당일 KST) 상속.
+//   ─ 발행완료(published): day-scoped 동작 유지(신청 KST 날짜 == 선택 날짜) → 발행완료본이 미발행
+//       잔류 리스트에 섞이지 않음(AC4 회귀0). 발행완료 소스 = useAllPublishedOpinionRequests(all-time)
+//       — TREATTABLE-PUBDOC-DATESCOPE-EXPAND 로 과거일자 발행완료도 이 필터가 선택 날짜에 맞춰 노출.
 //   audit-first(planner db_change 게이트): 발행/미발행 구분은 기존 발행 파이프라인 상태값(draft=미발행 /
 //     voided+resolved_reason='published'=발행완료)에 이미 존재 → 신규 컬럼/파생 0(db_change=false).
 //   정렬: 신청시각 역순(최신 위). 미발행이 과거일이어도 잔류하므로 날짜 혼재 가능 — 신청시각 셀에서 표기 보강.
@@ -192,7 +199,8 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
 
   // ★read-only 재사용 — DocRequestQueue 와 동일 훅(단일 소스). 별도조회/신규 쿼리 없음.
   const { data: drafts = [], isLoading: draftLoading, isError, error } = useOpinionRequestQueue(clinicId);
-  const { data: published = [], isLoading: pubLoading } = usePublishedOpinionRequests(clinicId);
+  // all-time 발행완료(치료테이블 과거일자 조회) — 날짜 스코프는 아래 filterDiagDocByDate(선택 날짜)가 결정.
+  const { data: published = [], isLoading: pubLoading } = useAllPublishedOpinionRequests(clinicId);
   const isLoading = draftLoading || pubLoading;
 
   // 병합 → 선택 날짜 스코프(AC-5).
