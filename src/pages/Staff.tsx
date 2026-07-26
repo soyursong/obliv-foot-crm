@@ -388,9 +388,19 @@ function CreateStaffDialog({
       return;
     }
     setSubmitting(true);
+    // T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경1: 신규 실장(consultant) 등록 시 표시명 뒤 '실장' suffix 자동 부여.
+    //   예) 홍길동 → 홍길동 실장. 실행4 실장↔슬랙 매핑 명명 규약.
+    //   ⚠ 신규 등록분만(기존 실장 표시명 소급 일괄변경 금지 — 매핑 깨짐 방지).
+    //   ⚠ 표시명(name)만 변형 — 배정/매출귀속 내부 식별자(staff.id UUID)는 무접촉.
+    //   이미 '실장'으로 끝나는 입력은 중복 부여 방지(멱등).
+    const trimmedName = name.trim();
+    const displayName =
+      role === 'consultant' && !/실장\s*$/.test(trimmedName)
+        ? `${trimmedName} 실장`
+        : trimmedName;
     const { error } = await supabase.from('staff').insert({
       clinic_id: clinicId,
-      name: name.trim(),
+      name: displayName,
       role,
       active: true,
     });

@@ -47,9 +47,10 @@ test('AC-1: 배분 이력 각 row 삭제 버튼 렌더 (전 행, test-flag 분�
 
 test('AC-1: 삭제 열/버튼은 권한(canEditDistribution) 게이트 하에서만 노출', () => {
   const src = read(PAGE);
-  // 헤더 삭제 열 + 빈 상태 colSpan 5/4 분기 (권한 시 삭제열 추가)
+  // 헤더 삭제 열 + 빈 상태 colSpan 분기 (권한 시 삭제열 추가)
+  // T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경2 stale 정정: '발송'(확정) 열 추가로 base 4→5, +삭제열 → 6/5.
   expect(src).toMatch(/canEditDistribution && \(\s*\n?\s*<th[^>]*>삭제<\/th>/);
-  expect(src).toMatch(/colSpan=\{canEditDistribution \? 5 : 4\}/);
+  expect(src).toMatch(/colSpan=\{canEditDistribution \? 6 : 5\}/);
   // row 액션 셀도 권한 게이트
   expect(src).toMatch(/canEditDistribution && \(\s*\n?\s*<td[^>]*>\s*\n?\s*<Button/);
 });

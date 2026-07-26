@@ -35,6 +35,16 @@ import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentR
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
 import { toast } from '@/lib/toast';
+import { sendAssignmentSlack } from '@/lib/assignmentDispatch';
+import {
+  computeRanking,
+  computeDailyAssignTargets,
+  fetchConsultantRevenueMetrics,
+  fetchRankingWeights,
+  fetchNextWeekFirstVisitByDate,
+  type ConsultantRevenueMetric,
+} from '@/lib/assignmentStrategy';
+import type { AssignmentRankingWeights } from '@/lib/types';
 import type { CheckIn, CheckInStatus, Staff, AssignmentAction, AssignmentRole } from '@/lib/types';
 import {
   deriveConsultAxis,
@@ -197,6 +207,19 @@ export default function Assignments() {
   //   랜덤 자동재배정 제거 — 반드시 명시 선택. 기본값 = 'reassign'(수동 변경).
   const [tossMode, setTossMode] = useState<'reassign' | 'unassign'>('reassign');
   const [tossToStaffId, setTossToStaffId] = useState<string>('');
+
+  // T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경2: 금일 배분 이력 [확정] 발송 게이트.
+  //   발송은 오직 [확정] 클릭 시에만(구 실행5 즉시 자동발송 없음). dispatchedIds = 발송완료(멱등 가드),
+  //   dispatchBusy = 발송 진행중(재클릭 이중발송 방지). 봇 미초대 동안 발송은 no-op(발송대기)로 성공 확정.
+  //   client 세션 스코프 상태(no-DDL). 크로스-리로드 영속 + 실제 발송 배선은 봇 초대 후속 티켓.
+  const [dispatchedIds, setDispatchedIds] = useState<Set<string>>(new Set());
+  const [dispatchBusy, setDispatchBusy] = useState<Set<string>>(new Set());
+
+  // T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경3: 차주 초진예약 by-date + 랭킹 소스(일일 배정 목표 산출).
+  //   온디맨드+lazy(V1 W2 선례): 진입/컨텍스트 변동 시 재조회 → 초진예약 변동(신규/취소/일자변경) 반영. no-DDL.
+  const [nextWeekFirstVisit, setNextWeekFirstVisit] = useState<Map<string, number>>(new Map());
+  const [consultMetrics, setConsultMetrics] = useState<Map<string, ConsultantRevenueMetric>>(new Map());
+  const [rankingWeights, setRankingWeights] = useState<AssignmentRankingWeights | null>(null);
 
   const staffName = useCallback(
     (id: string | null): string => {
@@ -577,12 +600,47 @@ export default function Assignments() {
       .sort((x, y) => y.month.assigned.length - x.month.assigned.length);
   }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate]);
 
-  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경2: '일일 배정 목표' 값 출처(느슨결합 단일 지점).
-  //   현행 화면에 배정목표 소스 없음(staff·설정 컬럼 부재) — 자동배정 엔진(T-20260726-foot-CRM-ASSIGN-V1, 미착수)
-  //   이 산출하게 될 값. 엔진 배포 시 이 함수만 교체하면 컬럼/표시 구조 유지(느슨결합). 현재는 미설정('—').
-  const dailyTargetOf = useCallback((_st: StaffStat): number | null => {
-    return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
-  }, []);
+  // ── 변경3: 차주 초진예약 by-date + 랭킹 지표 온디맨드 로드(V1 W2 lazy 선례) ─────────
+  //   진입/클리닉/탭/기준일 변동 시 재조회 → 예약관리에서의 초진예약 변동(신규/취소/일자변경)이 다음 진입에 반영.
+  //   INV-1 RED LINE: reservations/payments 조회·파생만. customers.assigned_consultant_id 무접촉.
+  useEffect(() => {
+    if (!clinic) return;
+    let cancelled = false;
+    void (async () => {
+      const todayIso = todaySeoulISODate();
+      const [byDate, metrics, weights] = await Promise.all([
+        fetchNextWeekFirstVisitByDate(clinic.id, todayIso),
+        fetchConsultantRevenueMetrics(clinic.id),
+        fetchRankingWeights(clinic.id),
+      ]);
+      if (cancelled) return;
+      setNextWeekFirstVisit(byDate);
+      setConsultMetrics(metrics);
+      setRankingWeights(weights);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinic, activeTab, selectedDate]);
+
+  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경2 × SENDCONFIRM-WEEKLYTARGET 변경3(느슨결합):
+  //   STAFFCUMUL=[일일 배정 목표] 컬럼 표시 / 본 티켓=값 산출. 상담(consult) 탭 상담사에만 목표 부여(치료 탭 '—').
+  //   산식: computeRanking(WEIGHT-B 확정 산식 재사용) → computeDailyAssignTargets(차주 초진 by-date, 2:1 보간).
+  const dailyTargetMap = useMemo<Map<string, number>>(() => {
+    if (activeTab !== 'consult' || !rankingWeights) return new Map();
+    const consultantIds = staffStats
+      .filter((st) => st.staff.role === 'consultant')
+      .map((st) => st.staff.id);
+    if (consultantIds.length === 0) return new Map();
+    const ranked = computeRanking(consultantIds, consultMetrics, rankingWeights);
+    return computeDailyAssignTargets(ranked, nextWeekFirstVisit);
+  }, [activeTab, staffStats, consultMetrics, rankingWeights, nextWeekFirstVisit]);
+
+  // '일일 배정 목표' 값 주입점(느슨결합 단일 지점). 미산출(치료탭/소스없음) = null → 표시 '—'.
+  const dailyTargetOf = useCallback(
+    (st: StaffStat): number | null => dailyTargetMap.get(st.staff.id) ?? null,
+    [dailyTargetMap],
+  );
 
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
@@ -641,6 +699,39 @@ export default function Assignments() {
     }
     return rows.sort((a, b) => b.at.localeCompare(a.at));
   }, [monthCheckIns, actions, activeTab, monthCustomers]);
+
+  // T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경2: [확정] 클릭 시에만 Slack 발송(게이트).
+  //   멱등: 이미 발송완료(dispatchedIds) 또는 진행중(dispatchBusy)이면 재발송 차단(이중발송 방지).
+  //   봇 미초대 동안 sendAssignmentSlack 은 no-op(발송대기)로 성공 → 상태만 '발송됨' 확정.
+  const confirmDispatch = useCallback(
+    async (row: TodayDistRow) => {
+      if (dispatchedIds.has(row.id) || dispatchBusy.has(row.id)) return; // 멱등 가드
+      setDispatchBusy((prev) => new Set(prev).add(row.id));
+      try {
+        const res = await sendAssignmentSlack({
+          rowId: row.id,
+          role: row.role,
+          staffId: row.staffId,
+          customerName: row.customerName,
+        });
+        if (res.ok) {
+          setDispatchedIds((prev) => new Set(prev).add(row.id));
+          toast.success(res.noop ? '발송 대기로 확정했습니다(알림봇 준비 중).' : '발송했습니다.');
+        } else {
+          toast.error(`발송 실패: ${res.reason ?? '알 수 없음'}`);
+        }
+      } catch {
+        toast.error('발송 처리 중 오류가 발생했습니다.');
+      } finally {
+        setDispatchBusy((prev) => {
+          const next = new Set(prev);
+          next.delete(row.id);
+          return next;
+        });
+      }
+    },
+    [dispatchedIds, dispatchBusy],
+  );
 
   // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
   //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.
@@ -1175,6 +1266,8 @@ export default function Assignments() {
                   <th className="px-2 py-2 text-left font-medium">담당</th>
                   <th className="px-2 py-2 text-left font-medium">방식</th>
                   <th className="px-2 py-2 text-right font-medium">시각</th>
+                  {/* T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경2: 발송(확정) 열 — 클릭 시에만 발송 */}
+                  <th className="px-2 py-2 text-center font-medium">발송</th>
                   {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 삭제 열 — admin/manager/원장 한정 노출 */}
                   {canEditDistribution && (
                     <th className="px-2 py-2 text-right font-medium">삭제</th>
@@ -1185,7 +1278,7 @@ export default function Assignments() {
                 {todayDistribution.length === 0 && (
                   <tr>
                     <td
-                      colSpan={canEditDistribution ? 5 : 4}
+                      colSpan={canEditDistribution ? 6 : 5}
                       className="px-3 py-6 text-center text-muted-foreground"
                     >
                       오늘 배분된 건이 없습니다.
@@ -1263,6 +1356,32 @@ export default function Assignments() {
                     </td>
                     <td className="px-2 py-2 text-right text-muted-foreground">
                       {r.at ? new Date(r.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) : '—'}
+                    </td>
+                    {/* T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경2: [확정] 발송 게이트.
+                        미발송 → [확정] 클릭 시에만 발송(멱등·재클릭 이중발송 방지). 발송완료 → 버튼 비활성 '발송됨'.
+                        봇 미초대 동안 클릭 = 발송대기(no-op)로 상태만 확정. */}
+                    <td className="px-2 py-2 text-center">
+                      {dispatchedIds.has(r.id) ? (
+                        <span
+                          data-testid={`dist-sent-badge-${r.id}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-teal-600"
+                        >
+                          <Check className="h-3 w-3" />
+                          발송됨
+                        </span>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          data-testid={`dist-confirm-btn-${r.id}`}
+                          disabled={dispatchBusy.has(r.id)}
+                          className="h-7 px-2 text-xs"
+                          onClick={() => void confirmDispatch(r)}
+                        >
+                          {dispatchBusy.has(r.id) ? '발송중…' : '확정'}
+                        </Button>
+                      )}
                     </td>
                     {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 삭제(soft-hide) — 전 행 노출(test 조건 없음).
                         클릭 → 확인 다이얼로그(distDeleteTarget). admin/manager/원장 한정. */}

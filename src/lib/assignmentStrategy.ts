@@ -206,6 +206,81 @@ export function interpolateDailyTargets(
   return m;
 }
 
+// ── 변경3: 차주 초진예약 by-date → 일일 배정 목표(순수 파생) ─────────────────────────
+//   (T-20260726-foot-ASSIGN-SENDCONFIRM-WEEKLYTARGET 변경3)
+//   현행 '당일 초진예약수' 대신 '차주(다음주) 초진예약 접수'를 일자별로 집계해 목표 산출의 소스로 삼는다.
+//   랭킹 산식은 재발명 금지 — computeRanking(WEIGHT-B 확정 산식) 재사용. 분배 제약(1등=꼴등 2배 2:1,
+//   고정건수, 중간 선형보간)은 interpolateDailyTargets(V1) 계승. INV-1: 조회·파생만, assigned_consultant_id 무접촉.
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** 다음 주(KST 월~일) 날짜(YYYY-MM-DD) 7개. todayIso 기준(UTC 요일 계산으로 tz-safe). */
+export function nextWeekDatesSeoul(todayIso: string): string[] {
+  const [y, m, d] = todayIso.split('-').map((n) => parseInt(n, 10));
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=일..6=토
+  const backToMon = (dow + 6) % 7; // 이번 주 월요일까지
+  const base = new Date(Date.UTC(y, m - 1, d - backToMon + 7)); // +7 = 다음 주 월요일
+  const out: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(base.getTime() + i * 86400000);
+    out.push(`${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`);
+  }
+  return out;
+}
+
+/**
+ * 차주 초진(visit_type='new') 예약 접수를 일자별로 집계 — reservations 조회(취소·노쇼 제외).
+ * best-effort: 조회 실패 시 빈 Map(목표 '—' fallback). read-only(INV-1).
+ */
+export async function fetchNextWeekFirstVisitByDate(
+  clinicId: string,
+  todayIso: string,
+): Promise<Map<string, number>> {
+  const m = new Map<string, number>();
+  try {
+    const dates = nextWeekDatesSeoul(todayIso);
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('reservation_date, visit_type, status')
+      .eq('clinic_id', clinicId)
+      .eq('visit_type', 'new')
+      .gte('reservation_date', start)
+      .lte('reservation_date', end);
+    if (error || !data) return m;
+    for (const r of data as { reservation_date: string; status: string | null }[]) {
+      if (r.status === 'cancelled' || r.status === 'no_show') continue; // 취소성 제외
+      if (!r.reservation_date) continue;
+      m.set(r.reservation_date, (m.get(r.reservation_date) ?? 0) + 1);
+    }
+    return m;
+  } catch {
+    return m;
+  }
+}
+
+/**
+ * 차주 초진예약 by-date 집계 → 상담사별 '일일 배정 목표'(순수 파생).
+ *   일일 총량 = 차주 초진예약 총건 / 예약이 있는 일수(일평균 유입). 랭킹순 2:1 선형보간 분배.
+ *   top=2*bottom, sum(선형 top..bottom) = 1.5·N·bottom = dailyVolume 로 bottom 역산 → interpolateDailyTargets 계승.
+ *   rankedIds 비거나 유입 0 → 빈 Map(목표 '—').
+ */
+export function computeDailyAssignTargets(
+  rankedIds: string[],
+  byDateCounts: Map<string, number>,
+): Map<string, number> {
+  const n = rankedIds.length;
+  const daysWith = [...byDateCounts.values()].filter((c) => c > 0);
+  const total = daysWith.reduce((a, b) => a + b, 0);
+  const nDays = daysWith.length;
+  if (n === 0 || nDays === 0 || total === 0) return new Map();
+  const dailyVolume = total / nDays; // 차주 일평균 초진 유입(고정건수 기준)
+  const bottom = Math.max(1, dailyVolume / (1.5 * n)); // 2:1 분배 역산
+  const top = bottom * 2;
+  return interpolateDailyTargets(rankedIds, Math.round(top), Math.round(bottom));
+}
+
 /** Daily Target 설정(부재 시 null → daily_target 전략은 랭킹순 fallback). */
 export async function fetchDailyTargetConfig(
   clinicId: string,
