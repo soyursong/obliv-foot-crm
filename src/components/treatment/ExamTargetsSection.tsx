@@ -4,8 +4,10 @@
 // Ticket: T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV (정밀화 후속)
 //   AC-1 컴팩트화 — 밀도만 압축(내용 보존). 행 height/padding/leading 축소, 폰트는 가독 최소 유지.
 //     (RESVCAL-COMPACT-CONTENT-KEEP 동일 원칙: 폰트 과압축 금지 ≥11px, 정보 항목 삭제 0.)
-//   AC-2 일자별 리스트 — 단일 명단 → 검사신청일(check_ins.checked_in_at, KST) 기준 일자별 그룹핑.
-//     기준일자 DISCOVERY 결론: '검사신청일' = checked_in_at. (진료콜 등재일은 자매 섹션 개념이라 검사신청엔 미적용.)
+//   AC-2 일자별 리스트 — 단일 명단 → 검사신청일 기준 일자별 그룹핑.
+//     기준일자: '검사신청일' = 신청행(check_in_services) created_at = 실제 신청시각(KST).
+//     (旧: check_ins.checked_in_at 내원일 기준. T-20260726-foot-EXAM-REQUEST-SAVE-BUG 에서 교정 —
+//      신청 write 가 과거일자 내원에 붙으면 오늘 신청분이 내원일 스코프 밖으로 사라지던 RC(B) 해소.)
 //     부모 공통 날짜선택기의 date 를 '윈도 끝'으로 보고 직전 WINDOW_DAYS 일을 일자별로 묶어 표시.
 //   AC-3 검사신청→검사결과(신규생성) — ⚠ DISCOVERY 게이트(총괄 confirm 전까지 신규 백엔드 0).
 //     · KOH    : 결과 저장모델 존재(form_submissions form_key='koh_result') → 발행본 '결과 보기'(KohResultDialog),
@@ -108,8 +110,13 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
         .select(SEL)
         .eq('check_ins.clinic_id', clinicId)
         .neq('check_ins.status', 'cancelled')
-        .gte('check_ins.checked_in_at', startTs)
-        .lte('check_ins.checked_in_at', endTs)
+        // T-20260726-foot-EXAM-REQUEST-SAVE-BUG (RC=B render/scope loss): 검사신청 write RPC
+        //   (request_koh/blood_for_customer)는 '가장 최근 내원'(과거일자일 수 있음)에 신청행을 INSERT/UPDATE 한다.
+        //   기존 윈도가 부모 check_ins.checked_in_at(내원일) 기준이라, 오늘 신청했으나 신청행이 과거일자 내원에
+        //   붙으면 오늘 목록에서 사라짐(저장은 됐으나 조회 스코프 밖 = "저장된 척 사라짐"의 지배 RC, prod 실측 4/40 확인).
+        //   → 윈도/신청일 기준을 신청행 자신의 created_at(=실제 신청시각)으로 교정. no-DDL·ADDITIVE 소비.
+        .gte('created_at', startTs)
+        .lte('created_at', endTs)
         .or('koh_requested.eq.true,blood_test_requested.eq.true');
       if (error) {
         // ADDITIVE 컬럼 미적용 prod(42703) → 빈 목록 폴백(페이지 무파손).
@@ -122,12 +129,14 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
       for (const raw of (data ?? []) as unknown as Array<Record<string, unknown>>) {
         const ci = (raw['check_ins'] ?? {}) as Record<string, unknown>;
         const cid = String(ci['customer_id'] ?? '');
-        const checkedAt = ci['checked_in_at'];
-        if (!cid || !checkedAt) continue;
+        // T-20260726-foot-EXAM-REQUEST-SAVE-BUG: 검사신청일 = 신청행 created_at(실제 신청시각).
+        //   내원일(checked_in_at)과 다를 수 있음(과거일자 내원에 신청). created_at 결측 시 내원일 폴백.
+        const requestedAt = (raw['created_at'] ?? ci['checked_in_at']) as string | undefined;
+        if (!cid || !requestedAt) continue;
         const koh = raw['koh_requested'] === true;
         const blood = raw['blood_test_requested'] === true;
         if (!koh && !blood) continue;
-        const reqDate = seoulISODate(checkedAt as string); // AC-2: KST 검사신청일
+        const reqDate = seoulISODate(requestedAt); // KST 검사신청일(신청행 created_at 기준)
         const svcId = String(raw['id'] ?? '');
         const key = `${cid}__${reqDate}`;
         const prev = map.get(key);

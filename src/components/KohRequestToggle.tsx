@@ -119,11 +119,16 @@ export default function KohRequestToggle({
   const mutation = useMutation({
     // BUTTON-ALL-CH: 단일 RPC 위임 — 이력 있으면 동기화, 없으면 ON 시 신규 생성. FE 가 분기 안 함(서버 SSOT).
     mutationFn: async (next: boolean) => {
-      const { error } = await supabase.rpc('request_koh_for_customer', {
+      const { data, error } = await supabase.rpc('request_koh_for_customer', {
         p_customer_id: customerId,
         p_value: next,
       });
       if (error) throw error;
+      // T-20260726-foot-EXAM-REQUEST-SAVE-BUG (cross_crm_write_rowcheck INV-W2/W3): RPC 반환행 검증.
+      //   신청(ON)인데 서버가 true 를 반환하지 않으면 성공 간주 금지 → 명시적 에러(silent write-failure 차단).
+      if (next && data !== true) {
+        throw new Error('KOH 균검사 신청이 저장되지 않았습니다. (서버 미확인 — 권한/내원기록 확인)');
+      }
     },
     onSuccess: (_d, next) => {
       qc.invalidateQueries({ queryKey: ['koh_toggle_target', customerId] });

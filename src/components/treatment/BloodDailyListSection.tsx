@@ -83,15 +83,17 @@ function useBloodTargets(clinicId: string | null | undefined, date: string) {
       if (!clinicId) return [];
       const { startTs, endTs } = windowBounds(date);
       const SEL =
-        'id, blood_test_requested, check_in_id, ' +
+        'id, blood_test_requested, created_at, check_in_id, ' +
         'check_ins!inner(customer_id, customer_name, clinic_id, status, checked_in_at)';
       const { data, error } = await supabase
         .from('check_in_services')
         .select(SEL)
         .eq('check_ins.clinic_id', clinicId)
         .neq('check_ins.status', 'cancelled')
-        .gte('check_ins.checked_in_at', startTs)
-        .lte('check_ins.checked_in_at', endTs)
+        // T-20260726-foot-EXAM-REQUEST-SAVE-BUG: 신청일 기준을 신청행 created_at(실제 신청시각)으로 교정.
+        //   내원일(checked_in_at) 기준이면 과거일자 내원에 붙은 오늘 신청분이 사라짐(RC=B, ExamTargetsSection 동일).
+        .gte('created_at', startTs)
+        .lte('created_at', endTs)
         .eq('blood_test_requested', true);
       if (error) {
         // ADDITIVE 컬럼 미적용 prod(42703) → 빈 목록 폴백(페이지 무파손).
@@ -103,9 +105,10 @@ function useBloodTargets(clinicId: string | null | undefined, date: string) {
       for (const raw of (data ?? []) as unknown as Array<Record<string, unknown>>) {
         const ci = (raw['check_ins'] ?? {}) as Record<string, unknown>;
         const cid = String(ci['customer_id'] ?? '');
-        const checkedAt = ci['checked_in_at'];
-        if (!cid || !checkedAt || raw['blood_test_requested'] !== true) continue;
-        const reqDate = seoulISODate(checkedAt as string);
+        // T-20260726-foot-EXAM-REQUEST-SAVE-BUG: 신청일 = 신청행 created_at(실제 신청시각). created_at 결측 시 내원일 폴백.
+        const requestedAt = (raw['created_at'] ?? ci['checked_in_at']) as string | undefined;
+        if (!cid || !requestedAt || raw['blood_test_requested'] !== true) continue;
+        const reqDate = seoulISODate(requestedAt);
         const key = rowKey(cid, reqDate);
         if (map.has(key)) continue;
         map.set(key, {

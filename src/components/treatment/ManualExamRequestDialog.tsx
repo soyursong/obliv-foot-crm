@@ -117,11 +117,17 @@ export default function ManualExamRequestDialog({
   const submit = useMutation({
     mutationFn: async () => {
       if (!selected) throw new Error('환자를 먼저 선택해주세요.');
-      const { error } = await supabase.rpc(KIND_META[kind].rpc, {
+      const { data, error } = await supabase.rpc(KIND_META[kind].rpc, {
         p_customer_id: selected.id,
         p_value: true,
       });
       if (error) throw error;
+      // T-20260726-foot-EXAM-REQUEST-SAVE-BUG (cross_crm_write_rowcheck INV-W2/W3): RPC 반환행 검증.
+      //   신청은 항상 ON(p_value=true) → 서버가 true 를 반환하지 않으면 성공 간주 금지(silent write-failure 차단).
+      //   토글(KohRequestToggle/BloodTestRequestToggle)과 동일 검증 = 단일 저장 로직 수렴.
+      if (data !== true) {
+        throw new Error('검사 신청이 저장되지 않았습니다. (서버 미확인 — 권한/내원기록 확인)');
+      }
     },
     onSuccess: () => {
       // 旣 토글·목록과 동일 쿼리 invalidate(read-after-write) — 재진입 없이 즉시 반영.
