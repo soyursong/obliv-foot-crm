@@ -35,11 +35,15 @@ import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
-import { Loader2, Droplet, Check, Upload, Eye } from 'lucide-react';
+import { Loader2, Droplet, Check, Upload, Eye, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import BloodResultDialog from '@/components/BloodResultDialog';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 import { useAuth } from '@/lib/auth';
-import { canActOnExamItem } from '@/lib/permissions';
+import { canActOnExamItem, canManualAddExam } from '@/lib/permissions';
+// T-20260726-foot-LABTAB-EXAM-REQ-MANUAL-ADD-BY-SEARCH: 성함/차트번호 검색 → 피검사 신청 수기 등록.
+//   균검사 탭(ExamTargetsSection)의 '검사 신청 수기 추가'와 동일 다이얼로그 재사용(lockKind='blood' 고정).
+import ManualExamRequestDialog from '@/components/treatment/ManualExamRequestDialog';
 // T-20260726-foot-TREATTABLE-TESTITEM-ACTIONS-3BTN: 접수 항목 행 액션 3종(보류/신청취소/재검사).
 import ExamItemActions from '@/components/treatment/ExamItemActions';
 import {
@@ -416,6 +420,9 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
   const persist = usePersistReception(clinic?.id);
   // ACTIONS-3BTN: 접수 항목 행 액션(보류/신청취소/재검사) — 권한 A(canActOnExamItem)만.
   const canAct = canActOnExamItem(profile?.role);
+  // LABTAB-EXAM-REQ-MANUAL-ADD: 검사 신청 수기 추가(스태프 이상 role 게이트) — 균검사 탭과 동일 SSOT.
+  const canManualAdd = canManualAddExam(profile?.role);
+  const [manualAddOpen, setManualAddOpen] = useState(false);
   const { data: itemStatusMap } = useExamItemStatuses(clinic?.id, ITEM_STATUS_FORM_KEY);
   const persistItemStatus = usePersistExamItemStatus(clinic?.id, ITEM_STATUS_FORM_KEY);
   const itemStatusOf = (r: BloodTargetRow): ExamItemStatus =>
@@ -476,11 +483,26 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
           <Droplet className="h-4 w-4 text-rose-600" />
           피검사 일일 진행 리스트
         </p>
-        {totalCount > 0 && (
-          <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700" data-testid="blood-daily-count">
-            대상 {totalCount}명 · 서류수령 {doneCount} · 완료 {completeCount}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {totalCount > 0 && (
+            <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700" data-testid="blood-daily-count">
+              대상 {totalCount}명 · 서류수령 {doneCount} · 완료 {completeCount}
+            </span>
+          )}
+          {/* LABTAB-EXAM-REQ-MANUAL-ADD: 검사 신청 수기 추가(스태프 이상). 검사가 '풀렸을' 때 재등록 우회수단. */}
+          {canManualAdd && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => setManualAddOpen(true)}
+              data-testid="blood-manual-add-btn"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              검사 신청 수기 추가
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -628,6 +650,13 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
           customerId={uploadFor.id}
           customerName={uploadFor.name}
         />
+      )}
+
+      {/* LABTAB-EXAM-REQ-MANUAL-ADD: 성함/차트번호 검색 → 피검사 신청 수기 등록(lockKind='blood' 고정).
+          旣 request_blood_test_for_customer RPC 재사용(신규 스키마 0) → useBloodTargets 재조회로
+          4FIX 정렬(역순)·자동비활성 규칙에 자동 부합(별도 정렬/상태 로직 없음). */}
+      {canManualAdd && (
+        <ManualExamRequestDialog open={manualAddOpen} onOpenChange={setManualAddOpen} lockKind="blood" />
       )}
     </div>
   );

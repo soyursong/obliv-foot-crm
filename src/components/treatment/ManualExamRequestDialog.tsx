@@ -60,30 +60,36 @@ function maskPhoneTail(phone: string | null): string {
 export default function ManualExamRequestDialog({
   open,
   onOpenChange,
+  lockKind,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  // T-20260726-foot-LABTAB-EXAM-REQ-MANUAL-ADD-BY-SEARCH: 진입 탭이 검사종류를 고정할 때 사용.
+  //   지정 시(예: 피검사 탭 = 'blood') → 종류 선택 UI 숨김 + 해당 종류로 고정 제출. 미지정(균검사 탭 기존 호출)
+  //   → 두 종류 선택 UI 노출(기본 'koh') = 회귀 없음.
+  lockKind?: ExamKind;
 }) {
   const clinic = useClinic();
   const qc = useQueryClient();
 
+  const initialKind: ExamKind = lockKind ?? 'koh';
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<CustomerHit[]>([]);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<CustomerHit | null>(null);
-  const [kind, setKind] = useState<ExamKind>('koh');
+  const [kind, setKind] = useState<ExamKind>(initialKind);
 
-  // 다이얼로그 열 때마다 상태 초기화(이전 검색 잔상 방지).
+  // 다이얼로그 열 때마다 상태 초기화(이전 검색 잔상 방지). lockKind 있으면 그 종류로 고정.
   useEffect(() => {
     if (open) {
       setQuery('');
       setResults([]);
       setSearched(false);
       setSelected(null);
-      setKind('koh');
+      setKind(lockKind ?? 'koh');
     }
-  }, [open]);
+  }, [open, lockKind]);
 
   // ① 부분검색 — 성함 OR 차트번호(ilike %term%). clinic-scoped. 명시 선택 전용(자동선택 없음).
   const runSearch = useCallback(async () => {
@@ -129,6 +135,8 @@ export default function ManualExamRequestDialog({
       qc.invalidateQueries({ queryKey: ['koh_toggle_target', selected?.id] });
       qc.invalidateQueries({ queryKey: ['blood_toggle_target', selected?.id] });
       qc.invalidateQueries({ queryKey: ['koh_report'] });
+      // LABTAB-EXAM-REQ-MANUAL-ADD: 피검사 일일 진행 리스트(BloodDailyListSection) 즉시 반영.
+      qc.invalidateQueries({ queryKey: ['blood_daily_targets'] });
       const who = [selected?.name, selected?.chart_number].filter(Boolean).join(' ');
       toast.success(`${who} — ${KIND_META[kind].label} 신청 등록 완료`);
       onOpenChange(false);
@@ -143,11 +151,17 @@ export default function ManualExamRequestDialog({
       <DialogContent data-testid="manual-exam-request-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FlaskConical className="h-4 w-4 text-teal-600" />
-            검사 신청 수기 추가
+            {lockKind === 'blood' ? (
+              <Droplet className="h-4 w-4 text-rose-600" />
+            ) : (
+              <FlaskConical className="h-4 w-4 text-teal-600" />
+            )}
+            {lockKind === 'blood' ? '피검사 신청 수기 추가' : '검사 신청 수기 추가'}
           </DialogTitle>
           <DialogDescription>
-            성함 또는 차트번호로 환자를 찾아 검사 신청을 직접 등록합니다.
+            {lockKind === 'blood'
+              ? '성함 또는 차트번호로 환자를 찾아 피검사(혈액검사) 신청을 직접 등록합니다.'
+              : '성함 또는 차트번호로 환자를 찾아 검사 신청을 직접 등록합니다.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -229,8 +243,9 @@ export default function ManualExamRequestDialog({
             </div>
           )}
 
-          {/* ③ 검사 종류 선택 — 균검사(KOH) / 피검사. 환자 선택 후에만 활성. */}
-          {selected && (
+          {/* ③ 검사 종류 선택 — 균검사(KOH) / 피검사. 환자 선택 후에만 활성.
+              lockKind 지정 시(피검사 탭 등) 종류가 고정되므로 선택 UI 숨김. */}
+          {selected && !lockKind && (
             <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3" data-testid="manual-exam-kind">
               <p className="text-xs font-semibold text-muted-foreground">검사 종류</p>
               <div className="flex gap-2">

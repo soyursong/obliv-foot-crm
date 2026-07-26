@@ -424,3 +424,20 @@ export function canActOnExamItem(role: UserRole | null | undefined): boolean {
   if (!role) return false;
   return EXAM_ITEM_ACTION_ROLES.includes(role);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260726-foot-LABTAB-EXAM-REQ-MANUAL-ADD-BY-SEARCH — '검사 신청 수기 추가' 진입점 노출 role (SSOT).
+//   현장(김주연 총괄, U0ATDB587PV): 검사 신청이 '자꾸 풀리는' 버그 보완루트 = 성함/차트번호 검색 수기 등록.
+//   '스태프(관리자) 이상' = 관리 스태프(admin/manager/director/coordinator) + staff. 치료사·컨설턴트 등
+//     비관리 role 은 미노출(2번차트 토글 경로는 그대로 사용 가능). 필드 요청 시 responder 경유 조정.
+//   ★값은 ExamTargetsSection(균검사 탭, T-20260726-foot-EXAM-MANUAL-ADD-SEARCH)의 인라인 MANUAL_EXAM_ADD_ROLES 와
+//     1:1 동일 — 균검사/피검사 두 탭의 수기추가 role 게이트 정합(gate #4). 均検사 탭은 이미 LIVE(commit 2a33968b)라
+//     인라인 상수를 그대로 두고, 신규 피검사 탭(BloodDailyListSection)은 본 SSOT 헬퍼를 사용(라이브 코드 무접점).
+//     향후 정리(consolidate) 시 ExamTargetsSection 도 본 헬퍼로 수렴 예정.
+export const MANUAL_EXAM_ADD_ROLES: UserRole[] = ['admin', 'manager', 'director', 'coordinator', 'staff'];
+
+/** 검사 신청 수기 추가(성함/차트번호 검색 등록) 진입점 노출 권한. null/undefined 안전 기본값 false. */
+export function canManualAddExam(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return MANUAL_EXAM_ADD_ROLES.includes(role);
+}
