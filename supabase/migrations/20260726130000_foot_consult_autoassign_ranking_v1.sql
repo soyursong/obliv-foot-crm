@@ -152,6 +152,11 @@ CREATE POLICY aps_all ON assignment_pointer_state FOR ALL USING (
 ) WITH CHECK (
   clinic_id IN (SELECT clinic_id FROM user_profiles WHERE id = auth.uid()));
 
+-- 원장 기록 (schema_migrations ledger — 재실행 시 충돌 무시)
+INSERT INTO supabase_migrations.schema_migrations (version, name)
+VALUES ('20260726130000', 'foot_consult_autoassign_ranking_v1')
+ON CONFLICT (version) DO NOTHING;
+
 COMMIT;
 
 -- 검증 쿼리 (apply 후 수동 확인용):
