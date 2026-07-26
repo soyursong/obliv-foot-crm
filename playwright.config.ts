@@ -124,6 +124,9 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX: 피검사 일일 리스트 4개선(역순정렬·업로드컬럼·
+        //   결과지 경로 재사용·완료행 비활성) 정적 소스 가드. auth/server 불요(선행 LABTAB-SPLIT spec 스타일). unit 전용.
+        '**/T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX.spec.ts',
         // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE: 진료/통원확인서 4결함 중 그룹A(L-006 무관) —
         //   ①치료기간 '까지' 고아토큰({{discharge_date}}→{{visit_date}}) ②용도선택 발급동선 승격
         //   ④레이아웃(빈 입원행 제거·라벨 정합). 템플릿 리터럴 정적 가드 + bindHtmlTemplate 실렌더 + 패널 소스 가드.
@@ -516,6 +519,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX: unit 전용 정적 소스 가드 → 무-project 실행
+        //   (supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX.spec.ts',
         // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE: unit 전용(템플릿 리터럴 정적 + bindHtmlTemplate
         //   실렌더 + 패널 소스 가드). 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)
         //   유입 차단. unit 에서만 실행.

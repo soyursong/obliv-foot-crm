@@ -18,6 +18,15 @@
 //   template_id NULL + field_data.form_key='blood_reception_daily' (PenChart builtin 양식과 동일 패턴).
 //   field_data = { form_key, request_date, received, receiver_name, docs_received }.
 //   키 = customer_id × request_date. 재사용 우선 원칙(T-20260723 LABTEST 선례) → db_change=false.
+//
+// ─ T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX (증분, no-DDL) ─────────────
+//   #1 이력 역순: 검사신청일 내림차순(최신 접수 맨 위, 오래된 것 아래). 정렬 grain = customer × request_date.
+//   #2 [업로드] 컬럼 신규(9번째): 행별 결과지 업로드 버튼. 나머지 8컬럼/순서/색상은 現 LIVE 유지.
+//   #3 업로드→2번차트 검사결과 자동반영: T-20260723 patient_file_records(kind='blood_result') 경로 재사용.
+//      → BloodResultDialog + query key 'blood_result_counts' 공유(신규 경로 0). CustomerChartPage 검사결과 탭과 양방향 즉시 반영.
+//   #4 완료 행 자동 비활성: 서류수령여부 체크 AND 결과지 업로드파일(≥1) 둘 다 충족 시 회색/비활성(데이터 삭제 아님).
+//      부분충족=활성 유지. 비활성은 접수/서류수령 체크박스·접수자명 입력만 잠금 — [업로드] 버튼은 열람/삭제(재활성 escape hatch) 위해 유지.
+//      업로드 grain = customer(patient_file_records 는 request_date 無) → 동일 customer 다중 request_date 행은 업로드 카운트 공유.
 
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
@@ -26,7 +35,8 @@ import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
-import { Loader2, Droplet, Check } from 'lucide-react';
+import { Loader2, Droplet, Check, Upload, Eye } from 'lucide-react';
+import BloodResultDialog from '@/components/BloodResultDialog';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 
 const FORM_KEY = 'blood_reception_daily';
@@ -164,8 +174,8 @@ function useBloodTargets(clinicId: string | null | undefined, date: string) {
         // 폴백 실패 — 무시(생년 '—' 표기).
       }
 
-      // 검사일자 오름차순(오래된 것 먼저 — mockup 7.22→7.24), 동일자 이름 가나다순.
-      rows.sort((a, b) => a.requestDate.localeCompare(b.requestDate) || a.customerName.localeCompare(b.customerName, 'ko'));
+      // #1 이력 역순: 검사신청일 내림차순(최신 접수 맨 위, 오래된 것 아래), 동일자 이름 가나다순.
+      rows.sort((a, b) => b.requestDate.localeCompare(a.requestDate) || a.customerName.localeCompare(b.customerName, 'ko'));
       return rows;
     },
     refetchInterval: 30_000,
@@ -206,6 +216,36 @@ function useBloodReceptions(clinicId: string | null | undefined) {
     },
     refetchInterval: 60_000,
     staleTime: 10_000,
+  });
+}
+
+// #3/#4 결과지 업로드 카운트 — patient_file_records(kind='blood_result') customer_id 별 건수.
+//   query key 'blood_result_counts' = ExamTargetsSection.useBloodResultCounts 와 동일 → 캐시·invalidate 공유(신규 경로 0).
+//   방어성: 테이블 미적용 prod(42P01/42703) → 빈 Map 폴백(섹션 무파손).
+function useBloodResultCounts(clinicId: string | null | undefined) {
+  return useQuery<Map<string, number>>({
+    queryKey: ['blood_result_counts', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      const map = new Map<string, number>();
+      if (!clinicId) return map;
+      const { data, error } = await supabase
+        .from('patient_file_records')
+        .select('customer_id')
+        .eq('clinic_id', clinicId)
+        .eq('kind', 'blood_result');
+      if (error) {
+        if (/patient_file_records|relation|42P01|42703/.test(error.message ?? '')) return map;
+        throw error;
+      }
+      for (const r of (data ?? []) as Array<{ customer_id: string }>) {
+        const cid = String(r.customer_id ?? '');
+        if (cid) map.set(cid, (map.get(cid) ?? 0) + 1);
+      }
+      return map;
+    },
+    refetchInterval: 60_000,
+    staleTime: 15_000,
   });
 }
 
@@ -285,12 +325,14 @@ function LabCheckbox({
   onToggle,
   testid,
   ariaLabel,
+  disabled = false,
 }: {
   checked: boolean;
   tone: 'red' | 'green';
   onToggle: () => void;
   testid: string;
   ariaLabel: string;
+  disabled?: boolean;
 }) {
   const checkColor = tone === 'green' ? 'text-green-600' : 'text-red-600';
   const borderColor = checked
@@ -302,12 +344,13 @@ function LabCheckbox({
     <button
       type="button"
       onClick={onToggle}
+      disabled={disabled}
       aria-label={ariaLabel}
       aria-checked={checked}
       role="checkbox"
       data-testid={testid}
       data-checked={checked ? 'true' : 'false'}
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-[3px] border-2 bg-white transition hover:bg-black/5 ${borderColor}`}
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-[3px] border-2 bg-white transition ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-black/5'} ${borderColor}`}
     >
       {checked && <Check className={`h-4 w-4 ${checkColor}`} strokeWidth={3} />}
     </button>
@@ -318,9 +361,11 @@ function LabCheckbox({
 function ReceiverNameCell({
   value,
   onCommit,
+  disabled = false,
 }: {
   value: string;
   onCommit: (v: string) => void;
+  disabled?: boolean;
 }) {
   const [text, setText] = useState(value);
   return (
@@ -328,6 +373,7 @@ function ReceiverNameCell({
       key={value}
       type="text"
       defaultValue={value}
+      disabled={disabled}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {
         if (text.trim() !== value.trim()) onCommit(text.trim());
@@ -337,7 +383,7 @@ function ReceiverNameCell({
       }}
       placeholder="접수자"
       data-testid="blood-receiver-input"
-      className="w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-red-700 placeholder:text-red-300 focus:border-red-300 focus:bg-white focus:outline-none"
+      className={`w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-red-700 placeholder:text-red-300 focus:border-red-300 focus:bg-white focus:outline-none ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     />
   );
 }
@@ -349,18 +395,32 @@ interface Props {
 
 export default function BloodDailyListSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
+  const qc = useQueryClient();
   const { data: rows = [], isLoading, isError, error } = useBloodTargets(clinic?.id, date);
   const { data: receptions } = useBloodReceptions(clinic?.id);
+  const { data: uploadCounts } = useBloodResultCounts(clinic?.id);
   const persist = usePersistReception(clinic?.id);
+
+  // #3 결과지 업로드/보기 다이얼로그 대상(customer). null=닫힘.
+  const [uploadFor, setUploadFor] = useState<{ id: string; name: string } | null>(null);
 
   const getState = (r: BloodTargetRow): ReceptionState =>
     receptions?.get(rowKey(r.customerId, r.requestDate)) ?? { id: null, received: false, receiverName: '', docsReceived: false };
+
+  // #4 완료 판정 = 서류수령 체크 AND 결과지 업로드파일 ≥1. 업로드 grain=customer.
+  const uploadCountFor = (r: BloodTargetRow): number => uploadCounts?.get(r.customerId) ?? 0;
+  const isComplete = (r: BloodTargetRow): boolean => getState(r).docsReceived && uploadCountFor(r) >= 1;
 
   const totalCount = rows.length;
   const doneCount = useMemo(
     () => rows.filter((r) => getState(r).docsReceived).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, receptions],
+  );
+  const completeCount = useMemo(
+    () => rows.filter((r) => isComplete(r)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, receptions, uploadCounts],
   );
 
   return (
@@ -372,7 +432,7 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
         </p>
         {totalCount > 0 && (
           <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700" data-testid="blood-daily-count">
-            대상 {totalCount}명 · 서류수령 {doneCount}
+            대상 {totalCount}명 · 서류수령 {doneCount} · 완료 {completeCount}
           </span>
         )}
       </div>
@@ -402,14 +462,22 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">생년월일</th>
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700">접수여부</th>
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700">접수자명</th>
-                <th className="px-2 py-2 whitespace-nowrap bg-yellow-100 text-yellow-800">서류수령여부</th>
+                <th className="border-r px-2 py-2 whitespace-nowrap bg-yellow-100 text-yellow-800">서류수령여부</th>
+                <th className="px-2 py-2 whitespace-nowrap bg-teal-100 text-teal-800">업로드</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, idx) => {
                 const st = getState(r);
+                const uploadN = uploadCountFor(r);
+                const complete = isComplete(r); // #4 서류수령 AND 업로드 ≥1
                 return (
-                  <tr key={rowKey(r.customerId, r.requestDate)} className="border-b last:border-0 text-center" data-testid="blood-daily-row">
+                  <tr
+                    key={rowKey(r.customerId, r.requestDate)}
+                    className={`border-b last:border-0 text-center ${complete ? 'bg-muted/40 text-muted-foreground opacity-60' : ''}`}
+                    data-testid="blood-daily-row"
+                    data-complete={complete ? 'true' : 'false'}
+                  >
                     <td className="border-r px-2 py-1.5 tabular-nums text-muted-foreground">{idx + 1}</td>
                     <td className="border-r px-2 py-1.5 tabular-nums whitespace-nowrap">{testDateLabel(r.requestDate)}</td>
                     <td className="border-r px-2 py-1.5 whitespace-nowrap">
@@ -426,29 +494,55 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                     </td>
                     <td className="border-r px-2 py-1.5 whitespace-nowrap font-mono text-[12px] text-muted-foreground">{chartNoBadge(r.chartNumber)}</td>
                     <td className="border-r px-2 py-1.5 tabular-nums whitespace-nowrap">{birth6(r.birthDate)}</td>
-                    {/* 접수여부 — 핑크 배경 / 빨간 체크 */}
-                    <td className="border-r px-2 py-1.5 bg-pink-50">
+                    {/* 접수여부 — 핑크 배경 / 빨간 체크. #4 완료 시 잠금. */}
+                    <td className={`border-r px-2 py-1.5 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
                       <LabCheckbox
                         checked={st.received}
                         tone="red"
+                        disabled={complete}
                         testid="blood-received-checkbox"
                         ariaLabel={`${r.customerName} 접수여부`}
                         onToggle={() => persist.mutate({ row: r, patch: { received: !st.received } })}
                       />
                     </td>
-                    {/* 접수자명 — 핑크 배경 / 빨강 텍스트 */}
-                    <td className="border-r px-1 py-1 bg-pink-50">
-                      <ReceiverNameCell value={st.receiverName} onCommit={(v) => persist.mutate({ row: r, patch: { receiverName: v } })} />
+                    {/* 접수자명 — 핑크 배경 / 빨강 텍스트. #4 완료 시 잠금. */}
+                    <td className={`border-r px-1 py-1 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
+                      <ReceiverNameCell
+                        value={st.receiverName}
+                        disabled={complete}
+                        onCommit={(v) => persist.mutate({ row: r, patch: { receiverName: v } })}
+                      />
                     </td>
-                    {/* 서류수령여부 — 노랑 배경 / 녹색 체크 */}
-                    <td className="px-2 py-1.5 bg-yellow-50">
+                    {/* 서류수령여부 — 노랑 배경 / 녹색 체크. #4 완료 시 잠금(재활성은 결과지 삭제로). */}
+                    <td className={`border-r px-2 py-1.5 ${complete ? 'bg-muted/30' : 'bg-yellow-50'}`}>
                       <LabCheckbox
                         checked={st.docsReceived}
                         tone="green"
+                        disabled={complete}
                         testid="blood-docs-checkbox"
                         ariaLabel={`${r.customerName} 서류수령여부`}
                         onToggle={() => persist.mutate({ row: r, patch: { docsReceived: !st.docsReceived } })}
                       />
+                    </td>
+                    {/* #2/#3 업로드 — 행별 결과지 업로드/보기. 클릭→BloodResultDialog(kind='blood_result'). 완료 시에도 열람·삭제(재활성) 위해 유지. */}
+                    <td className="px-2 py-1.5 bg-teal-50/60">
+                      <button
+                        type="button"
+                        onClick={() => setUploadFor({ id: r.customerId, name: r.customerName })}
+                        data-testid="blood-upload-btn"
+                        data-upload-count={uploadN}
+                        className="inline-flex items-center gap-1 rounded-md border border-teal-300 bg-white px-2 py-1 text-[12px] font-medium text-teal-700 transition hover:bg-teal-50"
+                      >
+                        {uploadN > 0 ? (
+                          <>
+                            <Eye className="h-3.5 w-3.5" /> 보기 ({uploadN})
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-3.5 w-3.5" /> 업로드
+                          </>
+                        )}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -456,6 +550,22 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* #3 결과지 업로드/보기 — T-20260723 patient_file_records(kind='blood_result') 경로 재사용.
+          닫을 때 카운트 invalidate → 라벨(업로드↔보기)·#4 완료판정 즉시 갱신. 2번차트 검사결과 탭과 양방향 동일 소스. */}
+      {uploadFor && (
+        <BloodResultDialog
+          open={uploadFor !== null}
+          onOpenChange={(v) => {
+            if (!v) {
+              setUploadFor(null);
+              qc.invalidateQueries({ queryKey: ['blood_result_counts', clinic?.id] });
+            }
+          }}
+          customerId={uploadFor.id}
+          customerName={uploadFor.name}
+        />
       )}
     </div>
   );
