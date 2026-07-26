@@ -168,7 +168,33 @@ export async function fetchConsultantPerf(
     p_to: to,
   });
   if (error) throw error;
-  return (data ?? []) as ConsultantRow[];
+  const rows = (data ?? []) as ConsultantRow[];
+
+  // T-20260726-foot-CRM-ASSIGN-RANKING-FIX-R1 (결함1): 재직 실장만 랭킹 대상.
+  //   canonical RPC(foot_stats_consultant) staff join 은 clinic+role='consultant' 로만 좁혀
+  //   active(재직) 술어가 없어 퇴사 상담실장(active=false)이 랭킹에 노출됨(field-soak, 김수린·이승은).
+  //   무-DDL(db_change=false) 유지 위해 RPC 를 고치지 않고 read-side 에서 재직 필터를 교정한다.
+  //   재직 판정 소스 = staff.active(기존 컬럼). 조회 실패(빈/에러) 시 fail-open(회귀0: 기존 표시 유지).
+  //   ★ 매출 계산·귀속(assigned_consultant_id) 무접촉 — 표시 모수만 재직으로 제한(read-only).
+  if (rows.length === 0) return rows;
+  try {
+    const { data: staffRows, error: sErr } = await supabase
+      .from('staff')
+      .select('id, active')
+      .eq('clinic_id', clinicId)
+      .eq('role', 'consultant');
+    if (sErr || !staffRows) return rows; // fail-open: 재직 판정 불가 시 기존 결과 유지
+    // 명시적 active=false(퇴사) 만 제외. active=true/null(미상)은 보존(재직 기준·과필터 방지).
+    const retiredIds = new Set(
+      (staffRows as { id: string; active: boolean | null }[])
+        .filter((s) => s.active === false)
+        .map((s) => s.id),
+    );
+    if (retiredIds.size === 0) return rows;
+    return rows.filter((r) => !retiredIds.has(r.consultant_id));
+  } catch {
+    return rows; // fail-open
+  }
 }
 
 export async function fetchNoshowReturning(
