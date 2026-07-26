@@ -58,7 +58,13 @@ const FORM_KEY = 'blood_reception_daily';
 // ACTIONS-3BTN: 접수 항목 상태 오버레이 form_key(피검사 탭) — 접수/서류 체크박스 row 와 별 key(무회귀).
 const ITEM_STATUS_FORM_KEY = 'blood_item_action_status';
 // 진행 리스트 윈도 — 선택일(부모 date, 기본 오늘) 끝으로 직전 N일. 검사→접수→서류수령 지연 추적용.
-const WINDOW_DAYS = 14;
+// T-20260726-foot-LABTAB-BLOODREQ-UNSET-RC-FIX (C안, 김주연 총괄 confirm slack 1785068401.556639):
+//   14 → 30 연장. 검사→접수→서류수령 지연 흐름이 14일 초과로 밀리는 케이스에서 미완료 항목이
+//   윈도 밖으로 밀려 워크리스트에서 소실(=unset 처럼 보임)되는 현장 이슈 대응. 30일 고정 윈도 유지
+//   (A안 미완료 상시표시 미채택 — 30일 초과 만료 소실은 설계상 동작으로 유지).
+//   본 상수는 useBloodTargets 윈도로, 수기추가 항목(LABTAB-EXAM-REQ-MANUAL-ADD)도 동일 윈도 공유
+//   → 수기추가 우회수단도 30일까지 잔존해 실효 확보(리포트 §a 파생 정합).
+const WINDOW_DAYS = 30;
 
 interface BloodTargetRow {
   customerId: string;
