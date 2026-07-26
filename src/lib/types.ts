@@ -360,6 +360,51 @@ export interface Staff {
    * 읽기경로=autoAssign.pickLeastLoaded 3순위 tie-break(월균등 primary 비파괴). admin이 UPDATE로 편집.
    */
   assign_sort_order?: number | null;
+  /**
+   * T-20260726-foot-CRM-ASSIGN-V1 실행3: 자동배정 대상 여부(직원별 ON/OFF). 기본 true.
+   * 후보 풀 = staff_attendance.status='present' AND auto_assign_enabled=true.
+   */
+  auto_assign_enabled?: boolean | null;
+  /** T-20260726-foot-CRM-ASSIGN-V1 실행6: 실장별 Slack user id(실행5 배정 알림 매핑). NULL=미매핑. */
+  slack_user_id?: string | null;
+}
+
+// ── 상담 자동배정 랭킹·전략 (T-20260726-foot-CRM-ASSIGN-V1) ────────────────────
+
+/** 유입경로(정책/포인터 키). 앱 축(TM|인바운드|워크인) → 정책 enum 매핑. */
+export type AssignLeadSource = 'TM' | 'INBOUND' | 'WALK_IN';
+
+/** 배정 전략: Daily Target 미달 우선 | 랭킹 포인터 순환(라운드로빈 금지). */
+export type AssignStrategy = 'daily_target' | 'ranking_pointer';
+
+/** 실행1 랭킹 가중치(월매출·주매출·객단가). clinic 1행. 부재 시 1:1:1. */
+export interface AssignmentRankingWeights {
+  clinic_id: string;
+  weight_revenue_month: number;
+  weight_revenue_week: number;
+  weight_avg_ticket: number;
+}
+
+/** 실행2 Daily Target 고정건수(1등=꼴등 2배=2:1, DB CHECK 강제). */
+export interface AssignmentDailyTargetConfig {
+  clinic_id: string;
+  top_rank_target: number;
+  bottom_rank_target: number;
+}
+
+/** 실행2 유입경로별 전략. */
+export interface AssignmentLeadSourcePolicy {
+  clinic_id: string;
+  lead_source: AssignLeadSource;
+  strategy: AssignStrategy;
+}
+
+/** 실행2 랭킹 포인터 커서(0-base rank index). cursor_rank≠배정건수. */
+export interface AssignmentPointerState {
+  clinic_id: string;
+  lead_source: AssignLeadSource;
+  cursor_rank: number;
+  reset_date: string | null;
 }
 
 // ── 자동배정 (T-20260617-foot-AUTOASSIGN-BALANCE-TOSS) ─────────────────────────

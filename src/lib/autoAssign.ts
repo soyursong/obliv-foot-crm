@@ -28,6 +28,8 @@ import { GATED_CAPABILITY_CODES } from './treatmentRequestCodes';
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 초진/재진 판정을 stored visit_type → 동적 365일 recency 로 통일.
 //   JUDGE-365(접수분류, prod LIVE)와 동일 헬퍼 재사용 = single source(재-divergence 방지).
 import { resolveVisitTypeByRecency } from './visitRecency';
+// T-20260726-foot-CRM-ASSIGN-V1: 유입경로 정책 설정 시 상담사 선택을 랭킹·전략 레이어에 위임(비파괴 확장).
+import { pickConsultantByStrategy } from './assignmentStrategy';
 import type {
   AssignmentRole,
   AssignmentActionType,
@@ -660,12 +662,23 @@ export async function maybeAutoAssign(
               : '임시휴무 토글됨.'),
         );
       }
-      // 5) 1순위 — 월 균등 least-loaded (재진은 균등 무관하게 풀에서 최소 선택)
+      // 5) 1순위(상담·유입경로 정책 설정 시) — T-20260726-foot-CRM-ASSIGN-V1 랭킹·전략 레이어.
+      //    유입경로(TM/INBOUND/WALK_IN)에 정책이 있으면 매출 랭킹 기반 Daily Target / 랭킹 포인터로 선택.
+      //    후보 풀 = staff_attendance.status='present' ∩ auto_assign_enabled(실행3, 자체 조회).
+      //    정책 미설정/후보없음 → null → 아래 기존 월균등 경로로 자연 fallback(회귀0).
+      //    ★ 매출귀속 RED LINE(조건②/INV-1): 반환값은 check_ins.consultant_id set 대상일 뿐, customers 무접촉.
+      if (role === 'consult') {
+        const strat = await pickConsultantByStrategy({ clinicId: checkIn.clinic_id, axis });
+        if (strat) chosen = strat.staffId;
+      }
+      // 5-b) 기존 월 균등 least-loaded (전략 미적용 시 · 치료사 · 재진 fallback).
       //    T-20260629 ROTATION: 동률 시 기본순번(assign_sort_order)으로 round-robin tie-break.
-      const actions = await fetchMonthActions(checkIn.clinic_id);
-      const load = computeLoad(actions, role, axis, todaySeoulISODate());
-      const order = await fetchAssignSortOrder(checkIn.clinic_id);
-      chosen = pickLeastLoaded(pool, load, order);
+      if (!chosen) {
+        const actions = await fetchMonthActions(checkIn.clinic_id);
+        const load = computeLoad(actions, role, axis, todaySeoulISODate());
+        const order = await fetchAssignSortOrder(checkIn.clinic_id);
+        chosen = pickLeastLoaded(pool, load, order);
+      }
     }
 
     if (!chosen) {

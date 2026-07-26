@@ -4,7 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
-import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, Settings, X, PowerOff, Power, ClipboardList, Building2 } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, Settings, X, PowerOff, Power, ClipboardList, Building2, Shuffle } from 'lucide-react';
+// T-20260726-foot-CRM-ASSIGN-V1 실행6: 상담 자동배정 관리자 설정 탭.
+import { AssignmentSettingsTab } from '@/components/AssignmentSettingsTab';
 // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: DutyRosterTab(근무캘린더) 탭 제거로 import 삭제 — /admin/handover 로 이관
 import { ReservationRegistrarTab } from '@/components/ReservationRegistrarTab';
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 페이지를 '원장정보' 탭으로 임베드.
@@ -62,7 +64,7 @@ interface RoomAssignmentRow {
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 직접 진입(리다이렉트/북마크)로 열 수 있는 탭 화이트리스트.
 //   /admin/clinic-settings → /admin/staff?tab=clinic-info 리다이렉트가 이 탭을 자동 선택.
 // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더'(duty=원장 근무표) 탭은 최상위 [직원 근무 캘린더](/admin/handover)로 승격·흡수됨 → 여기서 제거(중복 노출 방지). 나머지 탭은 유지.
-const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
+const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings', 'assignment']);
 
 export default function StaffPage() {
   const { profile } = useAuth();
@@ -109,6 +111,12 @@ export default function StaffPage() {
               <Settings className="mr-1 h-4 w-4" /> 클리닉 설정
             </TabsTrigger>
           )}
+          {/* T-20260726-foot-CRM-ASSIGN-V1 실행6: 상담 자동배정 설정 탭(admin/manager/director). */}
+          {isAdmin && (
+            <TabsTrigger value="assignment">
+              <Shuffle className="mr-1 h-4 w-4" /> 배정 설정
+            </TabsTrigger>
+          )}
         </TabsList>
         {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: duty TabsContent 제거 — 원장 근무표는 /admin/handover 로 이관 */}
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
@@ -123,6 +131,12 @@ export default function StaffPage() {
         {isAdmin && (
           <TabsContent value="settings">
             {clinic && <ClinicSettingsTab clinic={clinic} onSaved={refetchClinic} />}
+          </TabsContent>
+        )}
+        {/* T-20260726-foot-CRM-ASSIGN-V1 실행6: 상담 자동배정 설정. */}
+        {isAdmin && (
+          <TabsContent value="assignment">
+            {clinic && <AssignmentSettingsTab clinic={clinic} />}
           </TabsContent>
         )}
       </Tabs>
