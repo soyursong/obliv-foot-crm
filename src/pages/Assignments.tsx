@@ -1063,18 +1063,9 @@ export default function Assignments() {
           >
             미배정 일괄 자동배정{unassignedNow.length > 0 ? ` (${unassignedNow.length})` : ''}
           </Button>
-          {canEditRotation && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setRotationOpen(true)}
-              disabled={loading || busy}
-              data-testid="rotation-order-open-btn"
-            >
-              <ListOrdered className="mr-1 h-3.5 w-3.5" />
-              배정 순번 설정
-            </Button>
-          )}
+          {/* T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK §3: '배정 순번 설정' 진입 버튼을
+              헤더(우측)에서 제거 → [랭킹] 탭 내부로 이동(중복 노출 금지). 트리거 위치만 재배치,
+              RotationOrderDialog 저장/데이터 경로 무접촉. */}
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || busy}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             새로고침
@@ -1730,6 +1721,7 @@ export default function Assignments() {
           데이터 = R1 정합본(fetchConsultantPerf: 재직 실장만 + 매출정합). 순위=당월 누적매출 desc. read-only.
           ⚠ canViewRanking 이중 가드 — 비admin 은 여기 도달 불가(탭 미노출 + onValueChange 차단 + 아래 && 가드). */}
       {mainTab === 'ranking' && canViewRanking && (
+        <div className="space-y-4">
         <Card data-testid="assignments-ranking-card">
           <CardHeader className="py-3">
             <CardTitle className="text-sm">실장 랭킹 (당월)</CardTitle>
@@ -1781,6 +1773,36 @@ export default function Assignments() {
             </div>
           </CardContent>
         </Card>
+
+        {/* ── [랭킹] 탭 §3: '배정 순번 설정' 통합(T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK).
+            헤더 우측에 있던 '배정 순번 설정' 진입 버튼을 이 탭 안으로 이동(원 위치 제거 = 중복노출 금지).
+            버튼은 기존 RotationOrderDialog 를 그대로 열며 저장/데이터 경로 무접촉(재배치만).
+            canViewRanking(=admin/manager/director) 탭 게이트 + canEditRotation 동일 술어로 이중 정합. */}
+        {canEditRotation && (
+          <Card data-testid="assignments-rotation-card">
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm">배정 순번 설정</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                자동배정 기본순번 · 치료 파트 가능 시술 편집 · 관리자 전용
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {canEditRotation && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRotationOpen(true)}
+                  disabled={loading || busy}
+                  data-testid="rotation-order-open-btn"
+                >
+                  <ListOrdered className="mr-1 h-3.5 w-3.5" />
+                  배정 순번 설정
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        </div>
       )}
 
       {/* T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5: 직원별 누적 건수 셀 → 고객 명단 drill-down.

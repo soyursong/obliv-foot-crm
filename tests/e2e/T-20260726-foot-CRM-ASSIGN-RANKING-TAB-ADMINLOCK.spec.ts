@@ -19,6 +19,11 @@
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
+const PAGE = 'src/pages/Assignments.tsx';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -167,5 +172,60 @@ test.describe('T-20260726 CRM-ASSIGN [랭킹] 탭 + 관리자 잠금', () => {
     const missing = deriveRanking([{ consultant_id: 's2', name: '무매출' }], new Map());
     expect(missing[0].revenue).toBe(0);
     expect(missing[0].assignCount).toBe(0);
+  });
+
+  // ── 시나리오 4 (§3): '배정 순번 설정' 항목 [랭킹] 탭 통합 + 원 위치(헤더) 제거 ──
+  //  ⚠ 재배치(위치 이동)만 — RotationOrderDialog 저장/데이터 경로 무접촉. 정적 소스 구조 단언으로 검증.
+  //  (실렌더 admin 순번 편집→저장은 supervisor 갤탭 실브라우저 + T-20260629 ROTATION spec 이 커버.)
+  test.describe('S4 배정 순번 설정 → [랭킹] 탭 통합(재배치)', () => {
+    // S4-1: 진입 버튼(rotation-order-open-btn)은 화면에 정확히 1개만 존재(중복 노출 금지).
+    test('S4-1 rotation-order-open-btn 단일 노출(중복 제거)', () => {
+      const src = read(PAGE);
+      const count = (src.match(/data-testid="rotation-order-open-btn"/g) ?? []).length;
+      expect(count).toBe(1);
+    });
+
+    // S4-2: 진입 버튼이 헤더(assignments-scroll-root 헤더 블록)가 아니라 [랭킹] 탭 카드 뒤에 위치.
+    //  = ranking 카드(assignments-ranking-card) → 배정 순번 카드(assignments-rotation-card) → 버튼 순서.
+    test('S4-2 배정 순번 설정 = [랭킹] 탭 내부(assignments-rotation-card)로 이동', () => {
+      const src = read(PAGE);
+      const rankingCardIdx = src.indexOf('data-testid="assignments-ranking-card"');
+      const rotationCardIdx = src.indexOf('data-testid="assignments-rotation-card"');
+      const btnIdx = src.indexOf('data-testid="rotation-order-open-btn"');
+      expect(rankingCardIdx).toBeGreaterThan(-1);
+      expect(rotationCardIdx).toBeGreaterThan(-1);
+      expect(btnIdx).toBeGreaterThan(-1);
+      // 랭킹 탭 통합: 랭킹 카드 → 배정 순번 카드 → 진입 버튼 순으로 등장(탭 내부 통합).
+      expect(rotationCardIdx).toBeGreaterThan(rankingCardIdx);
+      expect(btnIdx).toBeGreaterThan(rotationCardIdx);
+      // 통합 카드는 랭킹 탭 게이트(mainTab === 'ranking' && canViewRanking) 블록 안에 위치.
+      const rankingBlockIdx = src.indexOf("mainTab === 'ranking' && canViewRanking");
+      expect(rankingBlockIdx).toBeGreaterThan(-1);
+      expect(rotationCardIdx).toBeGreaterThan(rankingBlockIdx);
+    });
+
+    // S4-3: 진입 버튼이 헤더(미배정 일괄 자동배정 버튼 ~ 새로고침 사이)에서 제거됨.
+    test('S4-3 헤더에서 배정 순번 설정 버튼 제거(원 위치 중복 노출 제거)', () => {
+      const src = read(PAGE);
+      const batchBtnIdx = src.indexOf('data-testid="batch-autoassign-btn"');
+      const refreshIdx = src.indexOf('void load()} disabled={loading || busy}>');
+      const btnIdx = src.indexOf('data-testid="rotation-order-open-btn"');
+      expect(batchBtnIdx).toBeGreaterThan(-1);
+      expect(refreshIdx).toBeGreaterThan(-1);
+      // 진입 버튼은 헤더(batch ~ refresh 사이)에 없어야 함 → btnIdx 는 refresh(헤더 끝)보다 뒤.
+      expect(btnIdx).toBeGreaterThan(refreshIdx);
+    });
+
+    // S4-4: 통합 탭 권한 = canViewRanking(탭 게이트) + canEditRotation(버튼) — 둘 다 admin/manager/director.
+    //  일반 스태프는 탭 미노출 → 배정 순번 설정도 함께 잠김(§3 권한 동일 적용).
+    test('S4-4 배정 순번 설정도 관리자 전용(탭에 통합되어 함께 잠김)', () => {
+      const src = read(PAGE);
+      // 통합 카드/버튼은 canEditRotation 가드(admin/manager/director) 하에 렌더.
+      expect(src).toMatch(/canEditRotation && \(\s*<Button[\s\S]*?rotation-order-open-btn/);
+      // 탭 게이트 술어 = canViewRanking(비admin 미노출) → 배정 순번 설정도 함께 숨김.
+      expect(canViewRanking('consultant')).toBe(false);
+      expect(canViewRanking('staff')).toBe(false);
+      expect(canViewRanking('admin')).toBe(true);
+    });
   });
 });
