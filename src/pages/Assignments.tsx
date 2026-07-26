@@ -117,6 +117,10 @@ interface AssignDrillItem {
   // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5 상세①(fqb6): 팝업 리스트 '일자별 그룹' 기준일(서울 YYYY-MM-DD).
   //   배정(초진/재진)=check_ins.checked_in_at, 토스/당김=assignment_actions.created_at. null=(날짜 미상) 그룹.
   date: string | null;
+  // T-20260726-foot-ASSIGN-HIST-ROW-DELETE-ADMIN: admin 개별 행 삭제(soft-hide) 대상 check_in id.
+  //   배정(초진/재진) 행만 non-null(itemFromCi 세팅) → drill 팝업에서 삭제 버튼 노출 대상.
+  //   토스/당김 행은 audit 액션(assignment_actions) → null(삭제 비대상: 배정 정본 check_in 을 지우는 게 아님).
+  checkInId: string | null;
 }
 
 export default function Assignments() {
@@ -131,6 +135,11 @@ export default function Assignments() {
   //   check_ins UPDATE RLS(is_admin_or_manager, director 포함)와 정합. 그 외 역할은 select 비노출(read-only 표시) + write 는 rows-affected 가드로 이중 차단.
   const canEditDistribution =
     profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+  // T-20260726-foot-ASSIGN-HIST-ROW-DELETE-ADMIN: 직원별 누적 drill-down 배정 이력 행 삭제 = admin 한정.
+  //   현장 요청(김주연 총괄) '관리자만' = cross_crm_data_contract staff role 8종 중 admin 한정(canEditDistribution 의
+  //   admin/manager/director 와 구분). 서버측(AC3) = softHideCheckIn → check_ins UPDATE RLS(is_admin_or_manager)
+  //   가 staff/counselor 를 차단(일반 스탭 서버 차단 충족). FE 버튼은 admin 에게만 노출.
+  const isAdmin = profile?.role === 'admin';
   const [rotationOpen, setRotationOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -177,6 +186,14 @@ export default function Assignments() {
     scopeLabel: string; // '일누적' | '당월누적'
     metricLabel: string; // '배정(초진)' | '배정(재진)' | '토스' | '당김'
     items: AssignDrillItem[];
+  } | null>(null);
+
+  // T-20260726-foot-ASSIGN-HIST-ROW-DELETE-ADMIN: drill-down 배정 이력 행 삭제(soft-hide) 확인 타깃.
+  //   itemKey = drillDialog.items 낙관적 제거용 React key. checkInId = soft-hide 대상.
+  const [drillDeleteTarget, setDrillDeleteTarget] = useState<{
+    checkInId: string;
+    itemKey: string;
+    name: string;
   } | null>(null);
 
   // 토스 다이얼로그
@@ -503,6 +520,8 @@ export default function Assignments() {
         customerId: ci.customer_id ?? null,
         // 상세①: 배정 일자 = 체크인 시각(KST). 그룹 헤더 소스.
         date: ci.checked_in_at ? seoulISODate(ci.checked_in_at) : null,
+        // ROW-DELETE-ADMIN: 배정(초진/재진) 행 = 이 check_in 이 soft-hide 삭제 대상.
+        checkInId: ci.id,
       };
     };
 
@@ -551,9 +570,10 @@ export default function Assignments() {
       if (Number.isNaN(ms) || (!inDay(ms) && !inMonth(ms))) continue;
       const ci = a.check_in_id ? ciById.get(a.check_in_id) : null;
       // 상세①: 토스/당김 그룹 일자 = 액션 발생일(KST) — 체크인일이 아닌 토스/당김한 날 기준.
+      // ROW-DELETE-ADMIN: 토스/당김 행은 audit 액션 → checkInId=null(삭제 비대상). itemFromCi 의 checkInId 상속 차단.
       const item: AssignDrillItem = ci
-        ? { ...itemFromCi(ci), key: a.id, date: seoulISODate(a.created_at) }
-        : { key: a.id, name: '(고객 정보 없음)', chartNumber: null, customerId: null, date: seoulISODate(a.created_at) };
+        ? { ...itemFromCi(ci), key: a.id, date: seoulISODate(a.created_at), checkInId: null }
+        : { key: a.id, name: '(고객 정보 없음)', chartNumber: null, customerId: null, date: seoulISODate(a.created_at), checkInId: null };
       if (a.action_type === 'toss' && a.from_staff_id) {
         const s = staff.find((x) => x.id === a.from_staff_id);
         if (s) {
@@ -838,6 +858,31 @@ export default function Assignments() {
     if (res.ok) {
       toast.success('배분 이력에서 삭제했습니다.');
       setDistDeleteTarget(null);
+      void load();
+    } else {
+      toast.error(res.message ?? '삭제 실패');
+    }
+  };
+
+  // T-20260726-foot-ASSIGN-HIST-ROW-DELETE-ADMIN: 직원별 누적 drill-down 배정 이력 행 삭제(soft-hide).
+  //   admin 한정(isAdmin 게이트 + 서버 check_ins UPDATE RLS is_admin_or_manager 이중). 확인 다이얼로그 경유.
+  //   실행 후 (a) drill 팝업 items 에서 해당 행 낙관적 제거(행 사라짐) (b) load() → 직원별 누적 셀 재계산(누적 1 감소).
+  const doSoftHideDrill = async () => {
+    if (!drillDeleteTarget || !clinic || busy) return;
+    setBusy(true);
+    const res = await softHideCheckIn({
+      checkInId: drillDeleteTarget.checkInId,
+      deletedBy: profile?.id ?? null,
+    });
+    setBusy(false);
+    if (res.ok) {
+      toast.success('배정 이력에서 삭제했습니다.');
+      // (a) 팝업 리스트에서 해당 행 즉시 제거 — items 는 클릭시점 스냅샷이라 수동 필터.
+      setDrillDialog((prev) =>
+        prev ? { ...prev, items: prev.items.filter((it) => it.key !== drillDeleteTarget.itemKey) } : prev,
+      );
+      setDrillDeleteTarget(null);
+      // (b) 직원별 누적 셀 재계산(deleted_at IS NULL 필터 → 누적 수치 실시간 반영, AC4).
       void load();
     } else {
       toast.error(res.message ?? '삭제 실패');
@@ -1657,22 +1702,48 @@ export default function Assignments() {
                               </span>
                             </>
                           );
+                          // ROW-DELETE-ADMIN: 배정(초진/재진) 행(checkInId 존재)만 admin 삭제 버튼 노출.
+                          //   토스/당김 행(checkInId=null)·비-admin 은 미노출. 서버측 RLS 이중 차단(AC3).
+                          const canDeleteRow = isAdmin && !!it.checkInId;
                           return (
-                            <div key={it.key} data-testid="accum-drill-item" className="min-w-0">
+                            <div
+                              key={it.key}
+                              data-testid="accum-drill-item"
+                              className="flex min-w-0 items-center gap-1"
+                            >
                               {it.customerId ? (
                                 // 성함/차트번호 어느 쪽을 눌러도(버블링) 2번차트 open
                                 <button
                                   type="button"
                                   data-testid={`accum-drill-chart-link-${it.key}`}
                                   onClick={() => openChart2(it.customerId!)}
-                                  className="flex w-full items-center justify-between gap-2 rounded px-1 py-1.5 text-left text-teal-600 hover:bg-teal-50 hover:underline"
+                                  className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded px-1 py-1.5 text-left text-teal-600 hover:bg-teal-50 hover:underline"
                                 >
                                   {inner}
                                 </button>
                               ) : (
-                                <div className="flex w-full items-center justify-between gap-2 px-1 py-1.5 text-muted-foreground">
+                                <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-1 py-1.5 text-muted-foreground">
                                   {inner}
                                 </div>
+                              )}
+                              {canDeleteRow && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  data-testid={`accum-drill-delete-btn-${it.key}`}
+                                  disabled={busy}
+                                  className="h-7 shrink-0 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  onClick={() =>
+                                    setDrillDeleteTarget({
+                                      checkInId: it.checkInId!,
+                                      itemKey: it.key,
+                                      name: it.name,
+                                    })
+                                  }
+                                >
+                                  삭제
+                                </Button>
                               )}
                             </div>
                           );
@@ -1827,6 +1898,43 @@ export default function Assignments() {
               onClick={() => void doSoftHideDist()}
               disabled={busy}
               data-testid="dist-delete-confirm-btn"
+            >
+              삭제
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260726-foot-ASSIGN-HIST-ROW-DELETE-ADMIN: 직원별 누적 drill-down 배정 이력 행 삭제 확인 다이얼로그.
+          admin 한정. '확인' → soft-hide(deleted_at 세팅, 복원가능) + 누적 셀 실시간 재계산. */}
+      <Dialog open={!!drillDeleteTarget} onOpenChange={(o) => !o && setDrillDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>배정 이력 삭제</DialogTitle>
+            <DialogDescription>
+              {drillDeleteTarget && (
+                <>
+                  <span className="font-medium text-foreground">{drillDeleteTarget.name}</span> 배정 이력
+                  줄을 삭제할까요? 직원별 누적 수치에서 빠집니다. 실제로는 화면에서만 숨겨지며 되살릴 수
+                  있습니다.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDrillDeleteTarget(null)}
+              disabled={busy}
+              data-testid="accum-drill-delete-cancel-btn"
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void doSoftHideDrill()}
+              disabled={busy}
+              data-testid="accum-drill-delete-confirm-btn"
             >
               삭제
             </Button>
