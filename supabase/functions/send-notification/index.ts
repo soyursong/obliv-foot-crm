@@ -34,7 +34,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // ── 환경 변수 ─────────────────────────────────────────────────────
 const SUPABASE_URL             = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("FOOT_SB_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// 인바운드 서비스 인증(T-20260702 SVCKEY cutover): 신형 키(FOOT_SB_SECRET_KEY)·legacy service_role
+//   둘 다 Bearer 로 수용 → flip(legacy disable) 전후 내부 알림 호출자 무중단.
+//   문자열 동등비교이므로 키 활성/JWT 유효성과 독립. 크론(X-Internal-Cron)·admin user JWT 경로 무변경.
+const SERVICE_ROLE_BEARERS = [
+  Deno.env.get("FOOT_SB_SECRET_KEY"),
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+].filter((k): k is string => Boolean(k)).map((k) => `Bearer ${k}`);
 const INTERNAL_CRON_SECRET     = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -391,7 +398,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Auth 결정 ─────────────────────────────────────────────────
-  const isServiceRole = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  const isServiceRole = authHeader !== "" && SERVICE_ROLE_BEARERS.includes(authHeader);
   const isCronCall    = INTERNAL_CRON_SECRET !== "" && cronSecret === INTERNAL_CRON_SECRET;
   const isAdminAction = Boolean(bodyJson._action);
 

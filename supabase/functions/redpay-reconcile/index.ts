@@ -81,7 +81,14 @@ import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" 
 
 // ── 환경 변수 ─────────────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("FOOT_SB_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// 인바운드 서비스 인증(T-20260702 SVCKEY cutover): 신형 키(FOOT_SB_SECRET_KEY)·legacy service_role
+//   둘 다 Bearer 로 수용 → flip(legacy disable) 전후 호출자(RedPay 정산 크론 등) 무중단.
+//   문자열 동등비교이므로 키 활성/JWT 유효성과 독립. 크론 경로는 x-internal-cron(별개) 유지.
+const SERVICE_ROLE_BEARERS = [
+  Deno.env.get("FOOT_SB_SECRET_KEY"),
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+].filter((k): k is string => Boolean(k)).map((k) => `Bearer ${k}`);
 const REDPAY_API_KEY            = Deno.env.get("REDPAY_API_KEY") ?? "";
 const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 // clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①).
@@ -175,7 +182,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const cronHeader = req.headers.get("x-internal-cron");
   const authHeader = req.headers.get("authorization");
   const isInternalCron = INTERNAL_CRON_SECRET !== "" && cronHeader === INTERNAL_CRON_SECRET;
-  const isServiceRole  = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  const isServiceRole  = authHeader != null && SERVICE_ROLE_BEARERS.includes(authHeader);
 
   if (!isInternalCron && !isServiceRole) {
     return json({ error: "Unauthorized" }, 401);

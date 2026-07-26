@@ -28,7 +28,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("FOOT_SB_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // 도파민 EF base URL 도출.
 //   FIX-REQUEST D2(2026-07-18): 롱레 미러의 DOPAMINE_FUNCTIONS_URL/CRON_SECRET 은 풋 프로젝트에
 //   미설정(secret 이름 불일치 → 500 dopamine_url_not_configured). 풋 컨벤션 secret 로 정렬:

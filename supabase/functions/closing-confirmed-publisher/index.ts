@@ -12,7 +12,7 @@
 // 유지(회귀 0): status 전이(pending→sent) / DLQ(재시도 소진) / 멱등(종결상태 재발사 차단;
 //   outbox UNIQUE(clinic_id,close_date,revision)) / 내부 인증(X-Internal-Cron=CRON_SECRET).
 //
-// env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY(+ FOOT_SERVICE_ROLE_KEY fallback), CRON_SECRET(=internal_cron_secret).
+// env: SUPABASE_URL, FOOT_SB_SECRET_KEY(신형 sb_secret_ 우선) ?? FOOT_SERVICE_ROLE_KEY ?? SUPABASE_SERVICE_ROLE_KEY(legacy fallback), CRON_SECRET(=internal_cron_secret).
 // 계약: cross_crm_data_contract §10-11-a(outbox 직소비) / §10-14(schema_version 2 정본).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
@@ -20,6 +20,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // 신규 secret 명시 주입 우선 → 표준 service_role fallback (가산적·무중단)
 const SUPABASE_SERVICE_ROLE_KEY =
+  Deno.env.get("FOOT_SB_SECRET_KEY") ??
   Deno.env.get("FOOT_SERVICE_ROLE_KEY") ??
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // worker 인증용 (pg_net 헤더 X-Internal-Cron 과 일치) = vault internal_cron_secret.
