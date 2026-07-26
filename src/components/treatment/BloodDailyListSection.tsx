@@ -266,6 +266,40 @@ function useBloodResultCounts(clinicId: string | null | undefined) {
   });
 }
 
+// T-20260726-foot-RECEIVER-COORD-ACCT-DROPDOWN-WIDTH: 접수자명 = 코디네이터 계정 드롭다운.
+//   목록 = staff(role='coordinator', active=true) × 현재 클리닉(=종로풋센터). read-only, 신규 스키마 0.
+//   derm ASSIGNEE-DROPDOWN 계열(role 필터 + name 정렬) 하드포크 이식. 저장값은 現 field_data.receiver_name(이름 문자열) 그대로.
+interface Coordinator {
+  id: string;
+  name: string;
+}
+function useCoordinators(clinicId: string | null | undefined) {
+  return useQuery<Coordinator[]>({
+    queryKey: ['foot_coordinators', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      if (!clinicId) return [];
+      const { data, error } = await supabase
+        .from('staff')
+        .select('id, name, display_name, role, active')
+        .eq('clinic_id', clinicId) // 현재 클리닉 = 종로풋센터(foot CRM 단일 지점 스코프)
+        .eq('role', 'coordinator')
+        .eq('active', true) // 재직중
+        .order('name', { ascending: true });
+      if (error) {
+        // staff 미적용/스키마 불일치 prod → 빈 목록 폴백(섹션 무파손).
+        if (/staff|relation|42P01|42703|column/.test(error.message ?? '')) return [];
+        throw error;
+      }
+      return ((data ?? []) as Array<{ id: string; name: string | null; display_name: string | null }>)
+        .map((r) => ({ id: r.id, name: (r.display_name || r.name || '').trim() }))
+        .filter((c) => c.name.length > 0);
+    },
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+}
+
 // 접수/서류수령/접수자명 저장 — 없으면 INSERT, 있으면 UPDATE(field_data 병합). 낙관적 캐시 반영.
 function usePersistReception(clinicId: string | null | undefined) {
   const qc = useQueryClient();
@@ -374,34 +408,41 @@ function LabCheckbox({
   );
 }
 
-// 접수자명 셀 — 입력(blur 저장). 서버값 변경 시 key 로 리셋.
+// 접수자명 셀 — 코디네이터 계정 드롭다운(RECEIVER-COORD-ACCT-DROPDOWN). 선택 즉시 저장(receiver_name=이름 문자열).
+//   목록 밖 저장값(레거시 자유입력·퇴사 코디)은 유실 방지 위해 임시 옵션으로 노출 → 재조회 시 선택값 유지.
 function ReceiverNameCell({
   value,
+  options,
   onCommit,
   disabled = false,
 }: {
   value: string;
+  options: Coordinator[];
   onCommit: (v: string) => void;
   disabled?: boolean;
 }) {
-  const [text, setText] = useState(value);
+  const trimmed = (value ?? '').trim();
+  const inList = trimmed.length === 0 || options.some((o) => o.name === trimmed);
   return (
-    <input
-      key={value}
-      type="text"
-      defaultValue={value}
+    <select
+      value={trimmed}
       disabled={disabled}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        if (text.trim() !== value.trim()) onCommit(text.trim());
+      onChange={(e) => {
+        if (e.target.value.trim() !== trimmed) onCommit(e.target.value.trim());
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-      }}
-      placeholder="접수자"
-      data-testid="blood-receiver-input"
-      className={`w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-red-700 placeholder:text-red-300 focus:border-red-300 focus:bg-white focus:outline-none ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
-    />
+      aria-label="접수자명 선택"
+      data-testid="blood-receiver-select"
+      className={`w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-red-700 focus:border-red-300 focus:bg-white focus:outline-none ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-white/60'}`}
+    >
+      <option value="">접수자 선택</option>
+      {/* 목록 밖 저장값(예: 레거시/퇴사) 보존 옵션 — 미선택으로 덮이지 않게 유지 */}
+      {!inList && <option value={trimmed}>{trimmed} (목록 외)</option>}
+      {options.map((o) => (
+        <option key={o.id} value={o.name}>
+          {o.name}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -417,6 +458,8 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
   const { data: rows = [], isLoading, isError, error } = useBloodTargets(clinic?.id, date);
   const { data: receptions } = useBloodReceptions(clinic?.id);
   const { data: uploadCounts } = useBloodResultCounts(clinic?.id);
+  // RECEIVER-COORD-ACCT-DROPDOWN: 접수자명 드롭다운 목록 = 종로풋센터 코디네이터(재직중).
+  const { data: coordinators = [] } = useCoordinators(clinic?.id);
   const persist = usePersistReception(clinic?.id);
   // ACTIONS-3BTN: 접수 항목 행 액션(보류/신청취소/재검사) — 권한 A(canActOnExamItem)만.
   const canAct = canActOnExamItem(profile?.role);
@@ -528,10 +571,11 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">환자명</th>
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">차트번호</th>
                 <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">생년월일</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700">접수여부</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700">접수자명</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-yellow-100 text-yellow-800">서류수령여부</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-teal-100 text-teal-800">업로드</th>
+                {/* RECEIVER-COORD-ACCT-DROPDOWN-WIDTH: 접수여부/접수자명/서류수령여부/업로드 4컬럼 폭 균일. */}
+                <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700 w-32">접수여부</th>
+                <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700 w-32">접수자명</th>
+                <th className="border-r px-2 py-2 whitespace-nowrap bg-yellow-100 text-yellow-800 w-32">서류수령여부</th>
+                <th className="border-r px-2 py-2 whitespace-nowrap bg-teal-100 text-teal-800 w-32">업로드</th>
                 {canAct && <th className="px-2 py-2 whitespace-nowrap bg-muted/30 text-center">관리</th>}
               </tr>
             </thead>
@@ -580,6 +624,7 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                     <td className={`border-r px-1 py-1 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
                       <ReceiverNameCell
                         value={st.receiverName}
+                        options={coordinators}
                         disabled={complete}
                         onCommit={(v) => persist.mutate({ row: r, patch: { receiverName: v } })}
                       />
