@@ -45,8 +45,17 @@ import {
   type NailSite,
   type NailSide,
 } from '@/components/doctor/KohReportTab';
-import { Loader2, FlaskConical, Droplet, ClipboardList, FileText, CalendarDays, Upload, ChevronRight, ChevronDown, FileCheck2 } from 'lucide-react';
+import { Loader2, FlaskConical, Droplet, ClipboardList, FileText, CalendarDays, Upload, ChevronRight, ChevronDown, FileCheck2, Plus } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
+// T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: 성함/차트번호 검색 → 검사종류 → 수기 검사신청(스태프 이상).
+import ManualExamRequestDialog from '@/components/treatment/ManualExamRequestDialog';
+import { useAuth } from '@/lib/auth';
+import type { UserRole } from '@/lib/permissions';
+
+// T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: '검사 신청 수기 추가' 진입점 노출 role — '스태프(관리자) 이상'.
+//   관리 스태프(admin/manager/director/coordinator) + staff. 치료사·컨설턴트 등 비관리 role 은 미노출
+//   (2번차트 토글 경로는 그대로 사용 가능). 필드 요청 시 responder 경유 조정 가능.
+const MANUAL_EXAM_ADD_ROLES: UserRole[] = ['admin', 'manager', 'director', 'coordinator', 'staff'];
 
 // AC-2: 일자별 리스트 윈도(검사신청일 기준, 선택일 끝으로 직전 N일).
 // T-20260710-foot-EXAM-TARGET-TABLE-TODAY-EXPAND: 기존 14일 윈도는 진입 시 직전 14일치가
@@ -470,6 +479,10 @@ interface Props {
 export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
   const qc = useQueryClient();
+  // T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: 수기 검사신청 다이얼로그 + role 게이트.
+  const { profile } = useAuth();
+  const canManualAdd = !!profile?.role && MANUAL_EXAM_ADD_ROLES.includes(profile.role);
+  const [manualAddOpen, setManualAddOpen] = useState(false);
   const { data: groups = [], isLoading, isError, error } = useExamTargets(clinic?.id, date);
   const { data: publishedKoh } = usePublishedKohMap(clinic?.id);
   const { data: bloodResultCounts } = useBloodResultCounts(clinic?.id);
@@ -705,14 +718,29 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
             균검사 &amp; 피검사 대상자
           </p>
         </div>
-        {totalCount > 0 && (
-          <span
-            className="shrink-0 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
-            data-testid="exam-targets-count"
-          >
-            대상 {totalCount}명
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {totalCount > 0 && (
+            <span
+              className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
+              data-testid="exam-targets-count"
+            >
+              대상 {totalCount}명
+            </span>
+          )}
+          {/* T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: 검사 신청 수기 추가(스태프 이상). */}
+          {canManualAdd && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => setManualAddOpen(true)}
+              data-testid="manual-exam-add-btn"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              검사 신청 수기 추가
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -819,6 +847,11 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
           customerId={bloodTarget.id}
           customerName={bloodTarget.name}
         />
+      )}
+
+      {/* T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: 성함/차트번호 검색 → 검사종류 → 수기 검사신청. */}
+      {canManualAdd && (
+        <ManualExamRequestDialog open={manualAddOpen} onOpenChange={setManualAddOpen} />
       )}
     </div>
   );
