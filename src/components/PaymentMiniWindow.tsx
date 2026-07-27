@@ -2727,6 +2727,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('결제 금액이 없습니다');
       return;
     }
+    // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT (splits 선(先)확정) ──────────
+    //   [RC] 출력및수납은 인쇄(applyBillReceiptPaidBoxTokens 납부박스 ⑪·미납)를 executeAutoDone(payments
+    //   insert) **前** 에 실행한다. 그래서 applyBillReceiptNewSplitAndPaid 가 fetch 하는 payments 원장엔
+    //   이번 수납분이 아직 없어 ⑪(납부한 금액)=공란/0, 미납=전액으로 발행되는 현장증상(결제 금액 미반영).
+    //   [해소] 이번에 확정될 splits 를 인쇄 前에 미리 산출해 synthetic payRow 로 납부박스에 주입한다
+    //   (아래 paidBoxCtx append). DB write 는 여전히 executeAutoDone 단일 SSOT(이중수납 없음).
+    //   splits 검증(합산≠수납액)은 인쇄 前에 조기 수행 — 무효 splits 로 서류부터 뽑는 낭비 방지.
+    const taxType = deductMode ? '선수금' : null;
+    const splits = buildSettleSplits(amount);
+    if (!splits) return; // buildSettleSplits 가 이미 toast.error 표기(합산 불일치/미입력)
     // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
     if (!(await ensureChartSavedBeforePublish())) return;
     setDocSettlePrinting(true);
@@ -2798,6 +2808,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 출력+수납 경로도 동일 배선(handleDocPrint 대칭).
       //   T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산-무관 부분만. 가산-의존 토큰은 per-form(아래) 재계산.
       const paidBoxCtx = await applyBillReceiptNewSplitAndPaid(autoValues, selected);
+      // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT (납부박스 실수납 반영) ──────────
+      //   인쇄가 executeAutoDone(payments insert) 前이라 fetch 한 payRows 엔 이번 수납분이 없다(RC).
+      //   이번에 확정될 splits 를 executeAutoDone.buildPayRow 와 동일한 cash_receipt 규칙으로 합성해
+      //   ctx.payRows 에 append → applyBillReceiptPaidBoxTokens 가 ⑪(카드/현금/현금영수증·합계)·미납을 실수납으로 렌더.
+      //   · membership 은 applyBillReceiptPaidBoxTokens 가 ⑪에서 skip(⑨로 귀속) — 합성해도 무영향(DB 삽입행과 동일 semantics).
+      //   · 선수금차감(taxType='선수금')분은 splits=수납잔액 → ⑪=잔액, 선차감분은 ⑨(loadAlreadyPaidAmount)에 별도 표기(이중계상 없음).
+      //   · 기존(prior) payRows 는 보존하고 append → 부분수납 후 잔액수납 등 누적수납도 정합.
+      if (paidBoxCtx) {
+        const settlePayRows = splits.map((s) => {
+          const isCashLike = s.method === 'cash' || s.method === 'transfer';
+          return {
+            method: s.method as string,
+            amount: s.amount,
+            cash_receipt_issued: isCashLike ? cashReceiptIssued : null,
+            payment_type: 'payment' as const,
+          };
+        });
+        paidBoxCtx.payRows = [...paidBoxCtx.payRows, ...settlePayRows];
+      }
       const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
       const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
@@ -2863,12 +2892,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // 2. 수납 + auto-done
       // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
       // T-20260616-foot-PMW-SPLIT-PAYMENT AC-2: 분할결제도 동일 합산 검증 경유
-      const taxType = deductMode ? '선수금' : null;
-      const splits = buildSettleSplits(amount);
-      if (!splits) {
-        setDocSettlePrinting(false);
-        return;
-      }
+      // T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT: taxType·splits 는 인쇄 前 선(先)확정분 재사용(재검증·재toast 없음).
       await executeAutoDone(splits, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
       toast.success('출력 및 수납 완료 — 완료 슬롯으로 이동됩니다');
