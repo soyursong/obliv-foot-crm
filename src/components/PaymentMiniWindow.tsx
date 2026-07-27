@@ -60,8 +60,9 @@ import {
 //   (수납창 경로 발번 미배선 divergence 해소 — DocumentPrintPanel handleBatchPrint SSOT 동형).
 import { buildIssueNo, splitIssueNoForDisplay, buildDocSerial, docSerialPrefix } from '@/lib/docSerial';
 import { useAuth } from '@/lib/auth';
-import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
-import { promoteVisitTypeToReturning } from '@/lib/visitType';
+// T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE(19:47 스코프 확장): 전 [수납] 경로에서 완료전이 부수효과 억제 →
+//   applyStatusFlagTransition('dark_gray') / promoteVisitTypeToReturning 미호출(완료칸 이동은 Dashboard handleDrop 전담).
+//   두 헬퍼는 완료 이동(handleDrop) 경로가 소유 → 여기 import 제거(unused). 로직 이관 아님, 부수효과 위치 원복.
 import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
@@ -936,7 +937,9 @@ async function snapshotExamFlags(checkInId: string): Promise<ExamFlagState> {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Props) {
-  const { profile } = useAuth();
+  // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE(19:47): dark_gray flag 전이 제거로 profile(actor) 미사용 →
+  //   useAuth 값 미구독(완료칸 이동/회색은 Dashboard handleDrop 이 actor 컨텍스트 소유).
+  useAuth();
   // ── Tab + Grid
   const [activeTab, setActiveTab] = useState<TabLabel>('풋케어');
   const [footcareCat, setFootcareCat] = useState<FootCatType>('기본(진찰료)');
@@ -2296,20 +2299,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       if (payErr) throw payErr;
     }
 
-    // ── T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (2026-07-27 김주연 총괄 확정) ──────────────
-    //   [확정 3결정] Q1 스코프 = 선수금 차감(deductMode/isDeductSettle) [수납] 한정(일반 [수납] 현행 유지).
-    //   Q2 종료상태 = 신규 상태값 없음·현행 진행상태 유지 → check_ins.status='done' 완료전이를 스킵(no-DDL, FE 조건분기).
+    // ── T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (2026-07-27 김주연 총괄 확정 + 19:47 스코프 확장) ──────
+    //   [확정 3결정] Q1 스코프(scope_update MSG-ct5n) = **모든 수납 유형** — deductMode(선수금차감)뿐 아니라
+    //     일반 수납/카드/현금/이체 등 [수납] 버튼(handleSettle→executeAutoDone) 전 경로. (기존 deductMode한정 재정의.)
+    //   Q2 종료상태 = 신규 상태값 없음·현행 진행상태 유지 → check_ins.status='done' 완료전이를 스킵(no-DDL, FE 경로).
     //   Q3 수납보존 = payments INSERT + 선수금 회차소진(consume RPC)은 정상 유지, '완료칸 이동/회색처리'만 억제.
-    //   → 선수금차감 수납은 결제·회차차감만 즉시 영속하고 카드는 현재 진행 상태로 남는다. 완료칸 이동(및 그 부수효과
+    //   → [수납]은 결제(+선수금 회차차감)만 즉시 영속하고 카드는 현재 진행 상태로 남는다. 완료칸 이동(및 그 부수효과
     //     status='done'/status_transitions→done/dark_gray flag/visit_type 승격)은 스태프가 카드를 [완료]로 옮길 때
     //     Dashboard 이동 핸들러(handleDrop, newStatus==='done')가 전담한다(중복·유실 없음).
-    if (!isDeductSettle) {
-      const { error: ciErr } = await supabase
-        .from('check_ins')
-        .update({ status: 'done' })
-        .eq('id', checkIn.id);
-      if (ciErr) throw ciErr;
-    }
+    //   ⚠ 스코프 경계: 본 억제는 executeAutoDone(칸반 [수납] 버튼) 한정. recordManualPayment(영수증 팝업·
+    //     일마감 수기수납 'checkin' 라우팅)의 칸반 해소(status='done')는 별도 진입점 → 본 티켓 미변경.
+    //   (구 로직: 여기서 check_ins.status='done' UPDATE 를 수행 → 완료슬롯 자동이동. 전 수납경로에서 제거.)
 
     // ── T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (c) ────────────────────────
     //   선수금차감(taxType='선수금') 수납 확정 시 package_sessions 를 실제 소진한다.
@@ -2355,35 +2355,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }
     }
 
-    // ── T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE: 완료전이 부수효과(status_transitions→done /
-    //   dark_gray 플래그 / visit_type 승격)는 완료 이동에 종속되므로 선수금차감 수납에서 함께 스킵한다.
-    //   (status='done' 을 쓰지 않으면서 to_status='done' 전이를 남기면 유령 완료전이가 되어 부정합. 회색화·
-    //    visit_type 승격도 '완료 시' 이벤트다.) 위 3건은 스태프가 카드를 [완료]로 옮길 때 Dashboard 핸들러가 수행.
-    if (!isDeductSettle) {
-      const { error: trErr } = await supabase.from('status_transitions').insert({
-        check_in_id: checkIn.id,
-        clinic_id: checkIn.clinic_id,
-        from_status: checkIn.status,
-        to_status: 'done',
-      });
-      if (trErr) {
-        console.warn('status_transitions insert failed:', trErr.message);
-      }
-      // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: 수납([수납]) 완료 = 완료 슬롯 이동 →
-      //   status_flag 'dark_gray'(수납완료/회색) 자동전환. 결제·status='done'은 이미 커밋됨 →
-      //   플래그 실패가 결제 흐름을 롤백하지 않음(best-effort). SSOT applyStatusFlagTransition 경유.
-      try {
-        await applyStatusFlagTransition(checkIn, 'dark_gray', {
-          id: profile?.id ?? null,
-          name: profile?.name ?? null,
-          role: profile?.role ?? null,
-        });
-      } catch (flagErr) {
-        console.error('status_flag dark_gray 전이 실패(결제는 정상 완료):', flagErr);
-      }
-      // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
-      await promoteVisitTypeToReturning(checkIn.customer_id);
-    }
+    // ── T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (19:47 스코프 확장: 모든 수납 유형) ─────────────
+    //   완료전이 부수효과(status_transitions→done / dark_gray 플래그 / visit_type 재진 승격)는 완료칸 이동에
+    //   종속되므로 전 [수납] 경로(선수금차감·일반 수납/카드/현금/이체 무관)에서 함께 스킵한다.
+    //   (status='done' 을 쓰지 않으면서 to_status='done' 전이를 남기면 유령 완료전이가 되어 부정합.
+    //    회색화·visit_type 승격도 '완료 시' 이벤트다.) 위 3건은 스태프가 카드를 [완료]로 옮길 때
+    //    Dashboard handleDrop(newStatus==='done') 이 전담한다(중복·유실 없음).
+    //   (구 로직: 여기서 status_transitions insert + applyStatusFlagTransition('dark_gray') +
+    //    promoteVisitTypeToReturning 을 수행 → 완료칸 이동·회색·재진 승격. 전 수납경로에서 제거.)
 
     // T-20260721-foot-CALCOPAY-PIPELINE-RESTORE §2: 급여 명세 스냅샷 재활성 (best-effort).
     //   결제(payments/check_ins done)는 이미 커밋 완료 → 스냅샷 실패해도 결제 흐름 무영향.
@@ -2460,15 +2439,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     try {
       await executeAutoDone(splits, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
-      // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE: 선수금차감 수납은 완료 이동을 하지 않으므로
-      //   "완료 슬롯 이동" 안내를 쓰지 않는다(카드는 현재 진행 상태 유지). 일반 수납은 종전 문구 유지.
-      toast.success(
-        taxType === '선수금'
-          ? '수납 완료 — 카드는 현재 진행 상태로 유지됩니다'
-          : '수납 완료 — 완료 슬롯으로 이동됩니다',
-      );
+      // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (19:47 스코프 확장: 모든 수납 유형): [수납] 은 완료칸
+      //   이동을 하지 않으므로 "완료 슬롯 이동" 안내를 전 수납경로에서 쓰지 않는다(카드는 현재 진행 상태 유지).
+      toast.success('수납 완료 — 카드는 현재 진행 상태로 유지됩니다');
       setSubmitting(false);
-      onComplete(); // ← PAY-SLOT-MOVE: 일반 수납은 완료 이동. 선수금차감은 리페치만(상태 무변경).
+      onComplete(); // ← status='done' 미기록이므로 onComplete 는 리페치·미니창 닫기만(카드 위치·상태 무변경). 완료칸 이동 없음.
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '수납 처리 실패';
       toast.error(msg);

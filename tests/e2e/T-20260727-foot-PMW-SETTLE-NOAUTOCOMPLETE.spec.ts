@@ -1,25 +1,28 @@
 /**
  * E2E spec — T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE
- * 선수금 차감(deductMode) [수납] 시 완료칸 자동이동/회색처리 억제.
+ * [수납] 클릭 시 완료칸 자동이동/회색처리 억제 — 모든 수납 유형(19:47 스코프 확장).
  *
  * 확정 스펙 (2026-07-27 김주연 총괄):
- *   Q1 스코프 = 선수금 차감(deductMode / taxType='선수금') [수납] 한정.
- *              일반 [수납] 완료전이는 현행 유지(스코프 확장 아님).
+ *   Q1 스코프 = **모든 수납 유형**(scope_update MSG-20260727-193904-ct5n, reporter-explicit
+ *              "모든 수납 유형 포함"). 선수금 차감(deductMode/taxType='선수금')뿐 아니라 일반 수납/카드/
+ *              현금/이체 등 [수납] 버튼(handleSettle→executeAutoDone) 전 경로. (기존 deductMode한정 재정의.)
  *   Q2 종료상태 = 신규 상태값 없음·현행 진행상태 유지 → check_ins.status='done' 완료전이 스킵(no-DDL).
  *   Q3 수납보존 = payments INSERT + 선수금 회차소진(consume RPC) 정상 유지.
  *              '완료칸 이동/회색처리'(status='done' / status_transitions→done / dark_gray flag)만 억제.
  *
- * 구현: PaymentMiniWindow.executeAutoDone 에서 isDeductSettle(=taxType==='선수금') 일 때
- *       ① check_ins.status='done' UPDATE 스킵
- *       ② status_transitions(to_status='done') insert 스킵
- *       ③ applyStatusFlagTransition(...,'dark_gray') 스킵 + promoteVisitTypeToReturning 스킵
+ * 구현: PaymentMiniWindow.executeAutoDone 에서 taxType(선수금/일반) 무관하게
+ *       ① check_ins.status='done' UPDATE 스킵 (전 수납경로)
+ *       ② status_transitions(to_status='done') insert 스킵 (전 수납경로)
+ *       ③ applyStatusFlagTransition(...,'dark_gray') 스킵 + promoteVisitTypeToReturning 스킵 (전 수납경로)
  *       ④ payments INSERT / consume_package_sessions_for_checkin RPC 는 그대로 유지
  *   완료칸 이동(및 그 부수효과)은 스태프가 카드를 [완료]로 옮길 때 Dashboard handleDrop 이 전담.
+ *   ⚠ 스코프 경계: 억제는 executeAutoDone(칸반 [수납] 버튼) 한정. recordManualPayment(영수증 팝업·
+ *     일마감 수기수납 'checkin' 라우팅)의 별도 진입점 status='done' 은 본 티켓 미변경.
  *
- * 시나리오 1: 선수금차감 [수납] → payments 기록 + 상태 유지(완료 미이동, 회색 미처리, done 전이 없음)
- * 시나리오 2: 스태프가 [완료]로 이동 → 지연된 완료 부수효과(status=done / dark_gray / 전이) 정상 적용
- * 회귀 가드 A: 일반 [수납](비-선수금) → status='done' 완료전이 정상(핵심 완료동선 무손상)
- * 회귀 가드 B: 선수금차감 경로가 일반 수납 경로에 무영향(taxType 로만 분기)
+ * 시나리오 1: 선수금차감 [수납] → payments 기록 + 상태 유지(완료 미이동·회색 미처리·done 전이 없음)
+ * 시나리오 2: 수납 후 스태프가 [완료]로 이동 → 지연된 완료 부수효과(status=done / dark_gray / 전이) 정상 적용
+ * 회귀 가드 A: 일반 [수납](비-선수금·카드/현금/이체) → **동일하게 완료칸 미이동·회색 미처리**(스코프 확장 반영)
+ * 회귀 가드 B: taxType(선수금/일반) 무관 — 모든 수납 유형이 동일 결과(진행상태 유지). 완료동선은 [완료] 이동이 전담.
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
@@ -29,8 +32,8 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 
 // PaymentMiniWindow.executeAutoDone 완료전이 게이트의 write-semantic 을 그대로 재현하는 시뮬레이터.
-//   isDeductSettle=true → 완료전이(status/transition/flag) 스킵, payment 만 기록.
-//   isDeductSettle=false → 완료전이 수행(종전 동선).
+//   [19:47 스코프 확장] taxType(선수금/일반) 무관하게 완료전이(status/transition/flag)를 항상 스킵.
+//   payment 는 항상 기록(Q3). 완료칸 이동은 [완료] 드래그(handleDrop)가 전담한다.
 async function simulateSettleWritePath(
   sb: ReturnType<typeof createClient>,
   args: {
@@ -38,14 +41,12 @@ async function simulateSettleWritePath(
     clinicId: string;
     customerId: string;
     fromStatus: string;
-    taxType: string | null; // '선수금' | null
+    taxType: string | null; // '선수금' | null — 억제 여부와 무관(전 경로 억제)
     amount: number;
     method: string;
   },
 ) {
-  const isDeductSettle = args.taxType === '선수금';
-
-  // ④ payments INSERT — isDeductSettle 여부와 무관하게 항상 기록(Q3 수납 보존).
+  // ④ payments INSERT — taxType 여부와 무관하게 항상 기록(Q3 수납 보존).
   const { error: payErr } = await sb.from('payments').insert({
     check_in_id: args.checkInId,
     clinic_id: args.clinicId,
@@ -57,31 +58,25 @@ async function simulateSettleWritePath(
   });
   if (payErr) throw new Error(`payments insert 실패: ${payErr.message}`);
 
-  if (!isDeductSettle) {
-    // ① 완료전이 (일반 수납 경로만)
-    const { error: ciErr } = await sb
-      .from('check_ins')
-      .update({ status: 'done' })
-      .eq('id', args.checkInId);
-    if (ciErr) throw new Error(`status=done 전이 실패: ${ciErr.message}`);
-
-    // ② status_transitions → done
-    await sb.from('status_transitions').insert({
-      check_in_id: args.checkInId,
-      clinic_id: args.clinicId,
-      from_status: args.fromStatus,
-      to_status: 'done',
-    });
-
-    // ③ dark_gray 회색화 (표시 플래그)
-    await sb
-      .from('check_ins')
-      .update({ status_flag: 'dark_gray' })
-      .eq('id', args.checkInId);
-  }
+  // ①②③ 완료전이(status='done' / status_transitions→done / dark_gray)는 전 수납경로에서 스킵.
+  //   (구 로직은 여기서 완료전이를 수행했음 — 19:47 스코프 확장으로 모든 수납 유형에서 제거.)
 }
 
-test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 완료 억제', () => {
+// 스태프가 카드를 [완료]로 드래그 → Dashboard handleDrop(newStatus='done') 재현.
+async function simulateMoveToDone(
+  sb: ReturnType<typeof createClient>,
+  args: { checkInId: string; clinicId: string; fromStatus: string },
+) {
+  await sb.from('check_ins').update({ status: 'done', status_flag: 'dark_gray' }).eq('id', args.checkInId);
+  await sb.from('status_transitions').insert({
+    check_in_id: args.checkInId,
+    clinic_id: args.clinicId,
+    from_status: args.fromStatus,
+    to_status: 'done',
+  });
+}
+
+test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — [수납] 완료 억제(모든 수납 유형)', () => {
 
   test('시나리오 1: 선수금차감 [수납] → 결제 기록 + 상태 유지(완료 미이동·회색 미처리·done 전이 없음)', async () => {
     if (!SUPA_URL || !SERVICE_KEY) {
@@ -164,13 +159,13 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
     }
   });
 
-  test('시나리오 2: 선수금차감 수납 후 스태프가 [완료]로 이동 → 지연된 완료 부수효과 정상 적용', async () => {
+  test('시나리오 2: 수납 후 스태프가 [완료]로 이동 → 지연된 완료 부수효과 정상 적용', async () => {
     if (!SUPA_URL || !SERVICE_KEY) {
       test.skip(true, 'Supabase env 미설정 — 스킵');
       return;
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
-    const testName = `deduct-thenmove-${Date.now()}`;
+    const testName = `settle-thenmove-${Date.now()}`;
     const testPhone = `DUMMY-${Date.now()}`;
 
     const { data: customer } = await sb
@@ -195,7 +190,7 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
     const checkInId = checkIn!.id as string;
 
     try {
-      // 선수금차감 수납(완료 억제) — 상태 유지.
+      // 수납(완료 억제) — 상태 유지.
       await simulateSettleWritePath(sb, {
         checkInId,
         clinicId: CLINIC_ID,
@@ -206,15 +201,8 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
         method: 'card',
       });
 
-      // 스태프가 카드를 [완료]로 드래그 → Dashboard handleDrop(newStatus='done') 재현:
-      //   status='done' + status_transitions→done + dark_gray flag.
-      await sb.from('check_ins').update({ status: 'done', status_flag: 'dark_gray' }).eq('id', checkInId);
-      await sb.from('status_transitions').insert({
-        check_in_id: checkInId,
-        clinic_id: CLINIC_ID,
-        from_status: 'preconditioning',
-        to_status: 'done',
-      });
+      // 스태프가 카드를 [완료]로 드래그 → Dashboard handleDrop(newStatus='done') 전담.
+      await simulateMoveToDone(sb, { checkInId, clinicId: CLINIC_ID, fromStatus: 'preconditioning' });
 
       const { data: after } = await sb
         .from('check_ins')
@@ -244,13 +232,13 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
     }
   });
 
-  test('회귀 가드 A: 일반 [수납](비-선수금) → status=done 완료전이 정상 (핵심 완료동선 무손상)', async () => {
+  test('회귀 가드 A: 일반 [수납](비-선수금·카드) → 동일하게 완료칸 미이동·회색 미처리 (스코프 확장 반영)', async () => {
     if (!SUPA_URL || !SERVICE_KEY) {
       test.skip(true, 'Supabase env 미설정 — 스킵');
       return;
     }
     const sb = createClient(SUPA_URL, SERVICE_KEY);
-    const testName = `normal-settle-regress-${Date.now()}`;
+    const testName = `normal-settle-suppress-${Date.now()}`;
     const testPhone = `DUMMY-${Date.now()}`;
 
     const { data: customer } = await sb
@@ -275,7 +263,7 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
     const checkInId = checkIn!.id as string;
 
     try {
-      // 일반 수납(taxType=null) — 완료전이 수행되어야 함.
+      // 일반 수납(taxType=null) — 19:47 스코프 확장: 선수금과 동일하게 완료전이 억제.
       await simulateSettleWritePath(sb, {
         checkInId,
         clinicId: CLINIC_ID,
@@ -291,23 +279,26 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
         .select('status, status_flag')
         .eq('id', checkInId)
         .single();
-      expect(after?.status, '일반 수납은 종전대로 status=done 완료전이').toBe('done');
-      expect(after?.status_flag, '일반 수납 완료 시 dark_gray 회색화 유지').toBe('dark_gray');
+      expect(after?.status, '일반 수납도 완료칸 미이동 — status 진행상태(payment_waiting) 유지').toBe('payment_waiting');
+      expect(after?.status, '일반 수납도 done 자동 이동하지 않음').not.toBe('done');
+      expect(after?.status_flag ?? null, '일반 수납도 dark_gray 회색화 미적용').not.toBe('dark_gray');
 
       const { data: transitions } = await sb
         .from('status_transitions')
         .select('id')
         .eq('check_in_id', checkInId)
         .eq('to_status', 'done');
-      expect(transitions?.length ?? 0, '일반 수납 done 전이 기록 유지').toBeGreaterThan(0);
+      expect(transitions?.length ?? 0, '일반 수납도 done 전이 기록 없음').toBe(0);
 
+      // (Q3) 결제는 정상 기록.
       const { data: pays } = await sb
         .from('payments')
         .select('tax_type')
         .eq('check_in_id', checkInId);
+      expect(pays?.length, '일반 수납 payments 기록 유지').toBeGreaterThan(0);
       expect(pays?.[0]?.tax_type ?? null, '일반 수납 tax_type 은 선수금 아님').not.toBe('선수금');
 
-      console.log('[회귀A] 일반 수납 완료동선(done/dark_gray/전이) 무손상 PASS');
+      console.log('[회귀A] 일반 수납도 완료칸 미이동·회색 미처리(스코프 확장) + 결제 기록 유지 PASS');
     } finally {
       await sb.from('payments').delete().eq('check_in_id', checkInId);
       await sb.from('status_transitions').delete().eq('check_in_id', checkInId);
@@ -316,7 +307,7 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
     }
   });
 
-  test('회귀 가드 B: 분기 기준은 taxType 단독 — 동일 상태에서 선수금/일반이 서로 다른 결과', async () => {
+  test('회귀 가드 B: taxType(선수금/일반) 무관 — 모든 수납 유형이 동일 결과(진행상태 유지)', async () => {
     if (!SUPA_URL || !SERVICE_KEY) {
       test.skip(true, 'Supabase env 미설정 — 스킵');
       return;
@@ -350,7 +341,7 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
     const normal = await seed(974);
 
     try {
-      // 동일 시작상태(preconditioning)에서 taxType 만 다르게 두 경로 실행.
+      // 동일 시작상태(preconditioning)에서 taxType 만 다르게 두 경로 실행 — 결과는 동일해야 함(모두 억제).
       await simulateSettleWritePath(sb, {
         checkInId: deduct.checkInId, clinicId: CLINIC_ID, customerId: deduct.customerId,
         fromStatus: 'preconditioning', taxType: '선수금', amount: 40000, method: 'cash',
@@ -363,9 +354,10 @@ test.describe('T-20260727-PMW-SETTLE-NOAUTOCOMPLETE — 선수금차감 수납 �
       const { data: d } = await sb.from('check_ins').select('status').eq('id', deduct.checkInId).single();
       const { data: n } = await sb.from('check_ins').select('status').eq('id', normal.checkInId).single();
       expect(d?.status, '선수금차감: 진행상태 유지').toBe('preconditioning');
-      expect(n?.status, '일반: 완료 이동').toBe('done');
+      expect(n?.status, '일반 수납: 동일하게 진행상태 유지(더 이상 완료 이동 아님)').toBe('preconditioning');
+      expect(n?.status, '일반 수납도 done 자동 이동 없음').not.toBe('done');
 
-      console.log('[회귀B] taxType 단독 분기 — 선수금≠일반 결과 분리 확인 PASS');
+      console.log('[회귀B] taxType 무관 — 선수금=일반 동일 결과(진행상태 유지) 확인 PASS');
     } finally {
       for (const t of [deduct, normal]) {
         await sb.from('payments').delete().eq('check_in_id', t.checkInId);
