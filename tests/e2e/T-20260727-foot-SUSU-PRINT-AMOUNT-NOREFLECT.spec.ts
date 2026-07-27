@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
   applyBillReceiptPaidBoxTokens,
-  computeBillDetailRounding,
   checkBillReceiptPaidBoxInvariant,
 } from '../../src/lib/footBilling';
 import { formatAmount } from '../../src/lib/format';
@@ -80,34 +79,52 @@ test('S1: 비급여 단건 카드 [출력및수납] → 납부박스 ⑪=88,000�
   expect(inv.ok).toBe(true);
 });
 
-// ── 시나리오 2: 선수금차감(패키지) 잔액 현금 수납 (급여 본인 + 비급여 혼재, 이중계상 가드) ──────
-//   ⑧ patient_amount = 29,380 / ⑨ already_paid = 20,580(패키지 선차감분) / splits = [{cash, 8,800}] 잔액
-//   → ⑪ cash = 8,800 / 미납 = 0. 선차감분은 ⑨에만(이중계상 없음).
-test('S2: 선수금차감 잔액 현금 [출력및수납] → ⑨선차감·⑪잔액 분리·미납=0·이중계상 없음 (수정 후)', () => {
-  const patientAmount = 29380;
-  const alreadyPaidRaw = 20580;
-  const splits: { method: PayMethod; amount: number }[] = [{ method: 'cash', amount: 8800 }];
-  // ⑨ 는 호출부와 동일 10원 절사(computeBillDetailRounding) 적용됨.
-  const alreadyPaidSafe = computeBillDetailRounding(alreadyPaidRaw).roundedTotal;
+/**
+ * handleDocAndSettle.applyPostSurchargePaidTokens 의 ⑨(이미 납부한 금액) 선차감 보정식 재현.
+ *   [RC#2] loadAlreadyPaidAmount 는 check_in_services.is_package_session=true 를 읽는데 그 플래그는 소비
+ *   RPC(executeAutoDone 안·인쇄 後)가 SET → 출력및수납 인쇄 시점엔 ⑨=0. 선차감(isDeductSettle)이면
+ *   ⑨ = ⑧(patientFloored) − 잔액수납(settleAmount) 로 확정.
+ */
+const effectiveAlreadyPaid = (
+  patientFloored: number,
+  settleCtx: { isDeductSettle: boolean; settleAmount: number } | null,
+  loadedAlreadyPaid: number,
+): number =>
+  settleCtx?.isDeductSettle
+    ? Math.max(0, patientFloored - settleCtx.settleAmount)
+    : loadedAlreadyPaid;
 
-  // (a) 버그 재현 — payRows=[] → ⑪ 공란, 미납 = ⑧−⑨ = 잔액 전액(수납했는데 미납으로 찍힘).
-  const bug: Record<string, string> = { patient_amount: formatAmount(patientAmount) };
-  applyBillReceiptPaidBoxTokens(bug, [], patientAmount, alreadyPaidRaw);
-  expect(bug.paid_total).toBe('');
-  expect(n(bug.unpaid_amount)).toBe(patientAmount - alreadyPaidSafe); // 8,800 미납 오표기
+// ── 시나리오 2 (★확정 repro): 선수금차감(패키지) [출력및수납] — 이아현 #F-5227 케이스 ─────────────
+//   ⑧ 환자부담총계 307,800 / 패키지 선차감 300,000 / 차감 후 실수납 잔액 7,800(현금).
+//   기대: ⑨ 300,000(선차감) · ⑩ 7,800 · ⑪ 현금 7,800 · 미납 0. loadAlreadyPaidAmount 는 인쇄시점 0.
+test('S2(확정 repro): 패키지 선차감 [출력및수납] → ⑨=300,000·⑩=⑪=7,800·미납=0 (RC#2 ⑨보정 + ⑪ synthetic)', () => {
+  const patientFloored = 307800;        // ⑧ 환자부담총액(급여 전액분 포함, 10원배수)
+  const settleAmount = 7800;            // 차감 후 실수납(잔액) = deductAmount
+  const splits: { method: PayMethod; amount: number }[] = [{ method: 'cash', amount: settleAmount }];
+  const settleCtx = { isDeductSettle: true, settleAmount };
+  const loadedAlreadyPaid = 0;          // 인쇄 前 is_package_session 미마킹 → loadAlreadyPaidAmount=0
 
-  // (b) 수정 — 잔액 synthetic 현금 payRow append → ⑪ 현금=8,800, 미납=0. ⑨는 선차감분 유지.
-  const fixed: Record<string, string> = { patient_amount: formatAmount(patientAmount) };
-  const payRows = buildSettlePayRows(splits, false); // 현금(현금영수증 미발급)
-  applyBillReceiptPaidBoxTokens(fixed, payRows, patientAmount, alreadyPaidRaw);
-  expect(n(fixed.already_paid)).toBe(alreadyPaidSafe); // ⑨ 선차감분(패키지)
-  expect(n(fixed.cash_amount)).toBe(8800);             // ⑪ 현금칸 = 잔액 실수납
-  expect(fixed.card_amount).toBe('');                  // 카드 미사용
-  expect(n(fixed.paid_total)).toBe(8800);              // ⑪ 합계 = 잔액(선차감분과 분리 → 이중계상 없음)
-  expect(n(fixed.unpaid_amount)).toBe(0);              // ⑩(=⑧−⑨=8,800) − ⑪(8,800) = 0
-  // 불변식 ⑧ = ⑨ + ⑪ + 미납 (선차감분 + 잔액수납 = 환자부담총액)
-  const dueAmount = Math.max(0, patientAmount - alreadyPaidSafe);
-  const inv = checkBillReceiptPaidBoxInvariant(patientAmount, alreadyPaidSafe, 8800, dueAmount, 0);
+  // (a) 버그 재현 — 현행(⑨보정·synthetic 없음): payRows=[], ⑨=0 → ⑩=307,800, ⑪ 공란, 미납=300,000.
+  const bug: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
+  applyBillReceiptPaidBoxTokens(bug, [], patientFloored, loadedAlreadyPaid);
+  expect(bug.already_paid).toBe('');          // ⑨ 공란(선차감 300,000 미반영)
+  expect(bug.paid_total).toBe('');            // ⑪ 공란(실수납 7,800 미반영)
+  expect(n(bug.due_amount)).toBe(307800);     // ⑩ = 전액(차감 미반영)
+  expect(n(bug.unpaid_amount)).toBe(307800);  // 미납 = ⑩−⑪ = 전액(선차감·실수납 모두 미반영) = 현장증상
+
+  // (b) 수정 — ⑨ 보정(patientFloored−잔액) + 잔액 synthetic 현금 payRow.
+  const fixed: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
+  const ap = effectiveAlreadyPaid(patientFloored, settleCtx, loadedAlreadyPaid); // = 300,000
+  const payRows = [...[], ...buildSettlePayRows(splits, false)];                  // fetch(prior)=[] + synthetic
+  applyBillReceiptPaidBoxTokens(fixed, payRows, patientFloored, ap);
+  expect(n(fixed.already_paid)).toBe(300000); // ⑨ 선차감(패키지 선납분)
+  expect(n(fixed.due_amount)).toBe(7800);     // ⑩ = ⑧ − ⑨ = 잔액
+  expect(n(fixed.cash_amount)).toBe(7800);    // ⑪ 현금칸 = 잔액 실수납(자동연동)
+  expect(fixed.card_amount).toBe('');         // 카드 미사용
+  expect(n(fixed.paid_total)).toBe(7800);     // ⑪ 합계 = 잔액(선차감분과 분리 → 이중계상 없음)
+  expect(n(fixed.unpaid_amount)).toBe(0);     // 완납
+  // 법정 불변식 ⑧ = ⑨ + ⑪ + 미납 (300,000 + 7,800 + 0 = 307,800)
+  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 300000, 7800, 7800, 0);
   expect(inv.ok).toBe(true);
 });
 

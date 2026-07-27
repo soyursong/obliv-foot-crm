@@ -1875,6 +1875,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     enriched: Record<string, string>,
     formKey: string,
     ctx: PmwPaidBoxCtx | null,
+    // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT: 출력및수납 전용 선수금차감 ⑨ 보정 컨텍스트 ──
+    //   handleDocAndSettle(출력+수납) 에서만 전달. handleDocPrint(출력 전용)은 미전달(undefined) → 무변경.
+    settleCtx?: { isDeductSettle: boolean; settleAmount: number } | null,
   ): void => {
     if (formKey !== 'bill_receipt_new' || !ctx) return;
     // ⑧ 환자부담총액(가산 fold 반영 최종값) 10원 절사(FLOOR) — DPP 와 동일 SSOT.
@@ -1883,8 +1886,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     if (rawPatient > 0) enriched.patient_amount = formatAmount(patientFloored);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
+    // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT ⑨(이미 납부한 금액) 선차감 보정 ──────────────
+    //   [RC#2] ⑨ 소스 loadAlreadyPaidAmount 는 check_in_services.is_package_session=true 를 읽는데, 이 플래그는
+    //   소비 RPC(consume_package_sessions_for_checkin)가 executeAutoDone **안**(인쇄 後)에 SET 한다. 따라서
+    //   출력및수납 인쇄 시점엔 아직 미마킹 → ⑨=0 → ⑩(=⑧−⑨)=전액·미납=전액(선차감분 300,000 미반영, 현장증상).
+    //   [해소] 선수금차감(isDeductSettle) 출력및수납은 ⑨ = ⑧(patientFloored) − 이번수납잔액(settleAmount) 로 확정한다.
+    //     · ⑨ = 선차감분(패키지 선납 환자부담분) = ⑧ − ⑩(=⑪ 잔액수납). ⑧=⑨+⑪ 정합, 미납=0(완납).
+    //     · patientFloored 기준 산출 → 별도 flooring drift 없이 ⑩=settleAmount 정확 수렴(잔액 10원배수 가정).
+    //     · 선차감분이 이번 방문 소비로 확정될 회차의 선납 환자부담분 = 법정 '이미 납부한 금액' 의미 정합.
+    //   비-차감(isDeductSettle=false) 및 handleDocPrint(출력전용)은 종전 ctx.alreadyPaid(loadAlreadyPaidAmount) 유지.
+    const effectiveAlreadyPaid = settleCtx?.isDeductSettle
+      ? Math.max(0, patientFloored - settleCtx.settleAmount)
+      : ctx.alreadyPaid;
     // 납부박스 ⑧/⑨/⑩/미납 — 가산後 ⑧(patientFloored)로 재산출(payments-based, 완납 가정 금지).
-    applyBillReceiptPaidBoxTokens(enriched, ctx.payRows, patientFloored, ctx.alreadyPaid);
+    applyBillReceiptPaidBoxTokens(enriched, ctx.payRows, patientFloored, effectiveAlreadyPaid);
   };
 
   // 선수금차감 후 청구액 = (선수금차감 대상 제외한 항목의) 급여 본인부담금 + 비급여 전액.
@@ -2862,7 +2877,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
             applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
             // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
-            applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx);
+            // T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT: 출력및수납은 settleCtx 전달 → 선수금차감 ⑨ 보정(인쇄 前 미마킹 RC#2 해소).
+            applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx, {
+              isDeductSettle: deductMode,
+              settleAmount: amount,
+            });
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
