@@ -56,7 +56,7 @@ async function preProbe() {
   return { exists: exists.exists, rows: rows.c, inbound: inbound.c, ppCols: ppCols.c, ledger: led.c };
 }
 
-async function step1Dryrun() {
+async function step1Dryrun(pre) {
   log('\n═══ STEP 1: dryrun.sql 무영속 실행 (prod) ═══');
   const sql = readFileSync(join(MIG_DIR, DRYRUN_FILE), 'utf8');
   try {
@@ -66,12 +66,21 @@ async function step1Dryrun() {
     log(`  ✗ dryrun ABORT/error: ${e.message}`);
     throw new Error(`STEP1 dryrun 실패 — 중단. (${e.message})`);
   }
-  // post-probe: ROLLBACK 이후 테이블 여전히 실재해야 무영속 증명
+  // post-probe: ROLLBACK 이후 테이블 상태가 dryrun 이전과 동일해야 무영속 증명.
+  //   무영속 불변식 = (after.exists === pre.exists). 상태 변화가 관측되면 dryrun 이 영속시킨 것.
+  //   ⚠ idempotent-safe: 대상이 이미 부재(pre.exists=false, 선행 apply 완료)면 dryrun 은 no-op →
+  //     after 도 false 가 정상. "after 반드시 true" 로 단정하면 완료 후 재실행 시 거짓 ABORT 발생(수정 전 버그).
   const after = one(await query(
     `SELECT to_regclass('public.payment_preempts') IS NOT NULL AS exists;`));
-  log(`  post-probe: payment_preempts 실재 = ${after.exists} (기대 true = ROLLBACK 무영속 확인)`);
-  if (!after.exists) throw new Error('STEP1 무영속 위반 — dryrun 이 실제로 DROP 을 영속시킴. 중단.');
-  log('  ✓ STEP1 무영속 통과.');
+  log(`  post-probe: payment_preempts 실재 = ${after.exists} (dryrun 이전=${pre.exists}, 동일해야 무영속)`);
+  if (after.exists !== pre.exists) {
+    throw new Error(`STEP1 무영속 위반 — dryrun 전후 상태 변화(${pre.exists}→${after.exists}). 중단.`);
+  }
+  if (!pre.exists) {
+    log('  ✓ STEP1 무영속 통과 (대상 이미 부재 = 선행 apply 완료·no-op. idempotent).');
+  } else {
+    log('  ✓ STEP1 무영속 통과 (DROP 후 ROLLBACK 로 원복).');
+  }
 }
 
 async function step2Apply() {
@@ -104,7 +113,7 @@ async function step4Postcheck() {
 
 (async () => {
   const pre = await preProbe();
-  await step1Dryrun();
+  await step1Dryrun(pre);
   if (!DO_APPLY) {
     log('\n[--apply 미지정] STEP1 까지만 실행. 실집행하려면 --apply 로 재실행.');
     return;
