@@ -2,7 +2,11 @@
 id: T-20260727-foot-REDPAY-WATCHDOG-LATENCY-CLOSE
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
+deployed_at: 2026-07-27T16:29+09:00
+deploy_mechanism: "macstudio launchd (com.obliv.foot.redpay-macstudio-poller, StartInterval 300s) — NOT a supabase Edge Function. 배포=working tree 신 코드를 폴러가 매 사이클 실행. supabase functions deploy 불요·부적용(supabase/functions/ 무접촉)."
+deploy_evidence: "b1e6dab3 origin/main 병합 확인(ancestor). 살아있는 폴러 인스턴스 신 코드 가동 확인 = /Users/domas/logs/redpay_macstudio_poller.out 16:25 KST 사이클 완료라인에 b1e6dab3 훅 전용 신규 텔레메트리 tid_alarm_new/tid_alarm_suppressed/tid_alarm_skipped 출력(구 코드엔 부재). --self-test 10/10 PASS 재현."
+ef_autopromote_note: "supervisor FIX-REQUEST(MSG-20260727-161605-57az) 전제 '9cf97445가 supabase/functions/ 변경'은 오탐. 9cf97445=티켓 .md 1파일 docs 마킹, 구현 b1e6dab3=scripts/redpay_macstudio_poller.mjs 1파일. EF-AUTOPROMOTE-FALSE-DEPLOY 가드가 frontmatter e2e-spec의 'ef_only' 문자열(=no FE E2E·self-test 대체 의미)을 'Edge Function only'로 오독해 트립한 것으로 판단."
 deploy-ready: true
 build-passed: true
 db-change: false
