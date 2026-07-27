@@ -1,6 +1,6 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. openChart/ChartContext.Provider/CustomerChartSheet 단일 구현. 변경 시 현장 승인 필수
-import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ErrorInfo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ChartContext } from '@/lib/chartContext';
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
@@ -80,13 +80,59 @@ function OutletPageLoader() {
 //   ※ 청크성이 아닌 실제 렌더 throw 는 자동 reload 대상에서 제외(루프 방지) → 수동 fallback 유지.
 //   가드/판별은 @/lib/chunkReload SSOT 공유(App.tsx lazyWithRetry 와 동일 가드).
 
-interface EBState { hasError: boolean; recovering: boolean }
-class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
-  state: EBState = { hasError: false, recovering: false };
-  static getDerivedStateFromError(): EBState { return { hasError: true, recovering: false }; }
+// ── T-20260709-foot-ERRORBOUNDARY-HARDENING (재구현: 현 main HEAD 735e33fd chunk 자가치유 보존) ──
+//   [기존·보존] chunk-load 클래스 자가치유(isChunkLoadError → markAndCheckAutoReload 가드 1회 하드리로드).
+//     ★735e33fd 라이브 outage 실해소 로직 — 절대 회귀 금지. componentDidCatch chunk 경로 그대로 유지.★
+//   [AC1 관측성 추가] Outlet subtree 렌더 예외를 구조화 로깅(role·pathname·search·errorName/message/stack·
+//     componentStack·UA·ts). try/catch 로 swallow — 계측이 앱 동작을 절대 깨뜨리지 않음.
+//     ★chunk-load 조기반환(자가치유) 경로에서도 로깅은 남긴다 → 로깅을 chunk 판별보다 먼저 수행.★
+//   [AC2 복원력 추가] 비-chunk transient throw 의 영구 latch 탈출: resetKey(location.key = 네비게이션마다
+//     유일) 변경 시 getDerivedStateFromProps 로 hasError latch 자동 해제. 1회 throw 후 다른 메뉴로 이동하면
+//     수동 새로고침 없이 정상 화면 복귀.
+//     ★동일지점 재-throw 무한루프 가드: 리셋은 resetKey가 "바뀔 때만" 발생. 같은 resetKey(동일 페이지 재-throw)
+//       에서는 리셋되지 않고 fallback 안정 유지 → 리셋→재throw→리셋 무한루프 원천 차단.★
+//   순수 additive: chunk 자가치유·fallback UI·happy-path 렌더 무변경.
+interface EBState { hasError: boolean; recovering: boolean; resetKey?: string }
+class ChunkErrorBoundary extends Component<{ children: ReactNode; role?: string; resetKey?: string }, EBState> {
+  state: EBState = { hasError: false, recovering: false, resetKey: this.props.resetKey };
+  static getDerivedStateFromError(): Partial<EBState> { return { hasError: true, recovering: false }; }
 
-  componentDidCatch(error: unknown): void {
-    if (!isChunkLoadError(error)) return; // 실제 렌더 버그 → 자동 reload 안 함(루프 방지)
+  // AC2: 네비게이션(resetKey) 변경 감지 → latch 자동 해제. error 여부와 무관히 최신 resetKey 추적.
+  static getDerivedStateFromProps(props: { resetKey?: string }, state: EBState): Partial<EBState> | null {
+    if (props.resetKey !== state.resetKey) {
+      // resetKey가 바뀐 렌더에서만 리셋. 같은 지점 재-throw는 여기 오지 않으므로 무한루프 없음.
+      // recovering(자가치유 진행중) 상태는 건드리지 않는다(하드리로드 진행 표시 보존).
+      return { hasError: false, resetKey: props.resetKey };
+    }
+    return null;
+  }
+
+  componentDidCatch(error: unknown, errorInfo?: ErrorInfo): void {
+    // AC1: 구조화 로깅 — chunk 판별보다 먼저 수행(자가치유 조기반환 경로에서도 로그 확보).
+    //   additive 로깅 전용 — 렌더 흐름/상태전이에 영향 없음. 로깅 실패는 삼킨다.
+    try {
+      const err = error as { name?: string; message?: string; stack?: string } | null;
+      // eslint-disable-next-line no-console
+      console.error('[ChunkErrorBoundary] Outlet subtree render error', {
+        ticket: 'T-20260709-foot-ERRORBOUNDARY-HARDENING',
+        role: this.props.role ?? '(unknown)',
+        isChunkLoadError: isChunkLoadError(error),
+        pathname: typeof window !== 'undefined' ? window.location.pathname : '(ssr)',
+        search: typeof window !== 'undefined' ? window.location.search : '',
+        errorName: err?.name,
+        errorMessage: err?.message,
+        errorStack: err?.stack,
+        componentStack: errorInfo?.componentStack,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '(no-navigator)',
+        // Date.now() 는 계측 목적상 안전 — 렌더 상태에 영향 없음(로그 타임스탬프 전용).
+        ts: new Date().toISOString(),
+      });
+    } catch {
+      // 로깅 실패는 삼킨다 — 계측이 앱 동작을 절대 깨뜨리지 않도록.
+    }
+
+    // [보존] 735e33fd chunk 자가치유 — 절대 회귀 금지.
+    if (!isChunkLoadError(error)) return; // 실제 렌더 버그(비-chunk) → 자동 reload 안 함(루프 방지). AC2 latch-reset 로 복귀.
     // 직전 자동 reload 후 루프윈도우 이내 재발이면 false → 루프 중단, 수동 fallback 유지
     if (!markAndCheckAutoReload(Date.now())) return;
     this.setState({ recovering: true });
@@ -744,7 +790,9 @@ export default function AdminLayout() {
               min-w-0 추가 시 overflow-hidden이 정상 동작 → Dashboard 내용이 이 div 안에 갇힘. */}
           {/* T-20260522-foot-SPA-NAV-RELOAD: Outlet에 독립 Suspense 경계 — AdminLayout unmount 방지 */}
           <div data-testid="page-content-area" className="flex-1 min-w-0 min-h-0 overflow-hidden">
-            <ChunkErrorBoundary>
+            {/* T-20260709-foot-ERRORBOUNDARY-HARDENING: role(AC1 로깅 동봉) + resetKey=location.key(AC2 latch 자동해제) 배선.
+                location.key 는 네비게이션마다 유일 → 페이지 이동 시 비-chunk 오류 latch 자동 해제(수동 새로고침 불필요). */}
+            <ChunkErrorBoundary role={profile?.role} resetKey={location.key}>
               <Suspense fallback={<OutletPageLoader />}>
                 <Outlet />
               </Suspense>
