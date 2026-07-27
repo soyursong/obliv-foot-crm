@@ -1,7 +1,16 @@
 /**
  * T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL
  * T-20260629-foot-SALESDOCTOR-INS-SPLIT (TK-ACC-2 ①)
+ * T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING (A안 ADDITIVE)
  * 매출집계 탭4 — 담당실장별 통계
+ *
+ * ── PKG-REVENUE (A안 ADDITIVE, 김주연 총괄 2026-07-27 확정) ────────────────────
+ * 배경: tax_type='선수금'(패키지 선결제)이 기존 3축(급여/비급여/공단)에서 명시 제외 →
+ *       담당실장별 화면에서 패키지 매출 0원/미표시.
+ * 조치: 기존 급여/비급여 컬럼 숫자 불변(회귀 0 = 배포 게이트) 하에, 최우측에 '패키지(선수금)'
+ *       컬럼 신규 추가. 선수금 버킷을 packageRevenue/packageCount로 별도 집계(ADDITIVE).
+ * 인식시점: 판매(결제)시점 = accounting_date(INSERT 트리거로 판매일 세팅). 회차 차감시점 아님
+ *          (회차 차감은 payments row 미생성 → 자동 제외). READ-ONLY, DB 무변경.
  *
  * AC-1 (SETTLE-STAFF-LABEL): "담당의별" → "담당실장별" 라벨 변경
  * AC-2 (SETTLE-STAFF-LABEL): 데이터소스 consultant_id(deprecated) → customers.assigned_staff_id
@@ -105,6 +114,16 @@ interface StaffStat {
   insuranceCopay: number;
   /** 공단부담액(명세) = service_charges.insurance_covered_amount SUM */
   insuranceCovered: number;
+  /**
+   * T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING (A안 ADDITIVE)
+   * 패키지(선수금) 순매출 = payments(tax_type='선수금') net.
+   * 인식시점 = 판매(결제)시점 = accounting_date(INSERT 트리거로 판매일 세팅, Sales.tsx L230).
+   *   회차 차감은 payments row를 만들지 않으므로 이 버킷은 "판매시점"만 집계(차감시점 아님).
+   * 별도 신규 컬럼 — 기존 급여/비급여 버킷 로직 불변(회귀 0 게이트).
+   */
+  packageRevenue: number;
+  /** 패키지(선수금) 결제 건수 (Q3: 패키지 자체 건수 별도 표시) */
+  packageCount: number;
 }
 
 // ─── 메인 컴포넌트 ───────────────────────────────────────────────────────────
@@ -215,6 +234,8 @@ export function SalesDoctorTab({ filter }: Props) {
           nonInsuranceRevenue: 0,
           insuranceCopay: 0,
           insuranceCovered: 0,
+          packageRevenue: 0,
+          packageCount: 0,
         };
         map.set(staffId, stat);
       }
@@ -231,7 +252,11 @@ export function SalesDoctorTab({ filter }: Props) {
       if (p.tax_type === '급여') {
         stat.insuranceCopay += netAmt;                 // 급여 본인부담금 [수납 권위]
       } else if (p.tax_type === '선수금') {
-        // 선수금(이연매출) — 3축 집계 제외, 별도 버킷 (SSOT §2-1)
+        // 선수금(패키지 선결제) — 기존 3축(급여/비급여/공단)에서는 제외 유지(회귀 0).
+        // T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING: 별도 '패키지' 컬럼으로 집계(ADDITIVE).
+        //   판매(결제)시점 기준(accounting_date=판매일). 회차 차감은 payments row 미생성 → 자동 제외.
+        stat.packageRevenue += netAmt;
+        stat.packageCount += 1;
       } else {
         // 과세_비급여 / 면세_비급여 / NULL(→면세_비급여 귀속) = 비급여 [수납 권위]
         stat.nonInsuranceRevenue += netAmt;
@@ -270,6 +295,8 @@ export function SalesDoctorTab({ filter }: Props) {
       nonIns: filtered.reduce((s, x) => s + x.nonInsuranceRevenue, 0),
       copay: filtered.reduce((s, x) => s + x.insuranceCopay, 0),
       covered: filtered.reduce((s, x) => s + x.insuranceCovered, 0),
+      pkg: filtered.reduce((s, x) => s + x.packageRevenue, 0),
+      pkgCount: filtered.reduce((s, x) => s + x.packageCount, 0),
     }),
     [filtered],
   );
@@ -309,7 +336,7 @@ export function SalesDoctorTab({ filter }: Props) {
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10 bg-muted/70">
           <tr>
-            {['담당실장', '오더 건수', '비급여 순매출', '급여 본부금', '공단부담액 (명세)'].map((h) => (
+            {['담당실장', '오더 건수', '비급여 순매출', '급여 본부금', '공단부담액 (명세)', '패키지 (선수금)'].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -348,6 +375,21 @@ export function SalesDoctorTab({ filter }: Props) {
               >
                 {formatAmount(Math.round(s.insuranceCovered))}원
               </td>
+              {/* T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING: 패키지(선수금) 컬럼 (최우측, ADDITIVE) */}
+              <td
+                data-testid={`sales-doctor-package-${s.staffId}`}
+                className={cn(
+                  'px-3 py-2 tabular-nums text-right font-semibold',
+                  s.packageRevenue < 0 && 'text-red-600',
+                )}
+              >
+                {formatAmount(Math.round(s.packageRevenue))}원
+                {s.packageCount > 0 && (
+                  <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                    ({s.packageCount}건)
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -374,6 +416,17 @@ export function SalesDoctorTab({ filter }: Props) {
               className="px-3 py-2 tabular-nums text-right"
             >
               {formatAmount(Math.round(totals.covered))}원
+            </td>
+            <td
+              data-testid="sales-doctor-total-package"
+              className="px-3 py-2 tabular-nums text-right"
+            >
+              {formatAmount(Math.round(totals.pkg))}원
+              {totals.pkgCount > 0 && (
+                <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                  ({totals.pkgCount}건)
+                </span>
+              )}
             </td>
           </tr>
         </tfoot>
