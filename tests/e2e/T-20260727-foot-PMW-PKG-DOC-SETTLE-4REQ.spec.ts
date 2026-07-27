@@ -60,22 +60,30 @@ const effectiveAlreadyPaid = (
     ? Math.max(0, patientFloored - settleCtx.settleAmount)
     : loadedAlreadyPaid;
 
-/** handleDocPrint 이중계상 가드: payRows 공란일 때만 synthetic 주입(pre-settle). post-settle 은 실원장만. */
+/**
+ * handleDocPrint carry-forward 재현.
+ *   [T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건① REOPEN RC] ⑨ 선차감 보정(settleCtx)은 deductMode 이면
+ *   payRows 유무(pre/post-settle)와 무관하게 세팅한다(⑨=⑧−deductAmount = 패키지 선납 환자부담분, settle 시점 독립).
+ *   synthetic payRow(⑪ 선반영) 주입만 pre-settle(ledger 공란) 이중계상 가드 하에 수행.
+ */
 const applyPrintPath = (
   values: Record<string, string>,
   ledgerPayRows: PayRow[],       // applyBillReceiptNewSplitAndPaid 가 fetch 한 실원장(status=active)
   patientFloored: number,        // ⑧ (가산 fold·10원 절사 후)
   loadedAlreadyPaid: number,     // ⑨ 소스 loadAlreadyPaidAmount(인쇄 前 미마킹이면 0)
   settleAmount: number,          // 이번 회 수납액(deductMode?deductAmount:payableTotalWithSurcharge)
-  isDeductSettle: boolean,
+  isDeductSettle: boolean,       // = deductMode (선수금차감 모드)
   splits: { method: PayMethod; amount: number }[],
   cashReceiptIssued: boolean,
 ): void => {
   let payRows = ledgerPayRows;
   let settleCtx: { isDeductSettle: boolean; settleAmount: number } | null = null;
+  // ⑨ 선차감 보정: deductMode 이면 pre/post-settle 무관하게 세팅(요건① REOPEN RC 해소).
+  if (isDeductSettle) settleCtx = { isDeductSettle: true, settleAmount };
+  // synthetic ⑪ 선반영: pre-settle(ledger 공란)일 때만(이중계상 가드).
   if (ledgerPayRows.length === 0) {
     payRows = [...ledgerPayRows, ...buildSettlePayRows(splits, cashReceiptIssued)];
-    settleCtx = { isDeductSettle, settleAmount };
+    if (!settleCtx) settleCtx = { isDeductSettle: false, settleAmount };
   }
   const ap = effectiveAlreadyPaid(patientFloored, settleCtx, loadedAlreadyPaid);
   applyBillReceiptPaidBoxTokens(values, payRows, patientFloored, ap);
@@ -142,6 +150,35 @@ test('S1c(이중계상 가드): post-settle [출력] → 실원장만 반영, sy
   expect(n(values.paid_total)).toBe(88000);     // 실원장 그대로(이중합산 176,000 아님)
   expect(n(values.card_amount)).toBe(88000);
   expect(n(values.unpaid_amount)).toBe(0);
+});
+
+// ── 시나리오 1-d (요건① REOPEN — field-soak 재현/회귀가드): post-settle [출력] + 비급여 면세 패키지 기납부 ──────
+//   [현장 재현 스샷 F0BKYQE5S6A, 2026-07-27 19:34] 급여 copay 8,800(카드, [수납] 완료) + 비급여 면세 처치·수술료
+//   240,000(패키지 기납부=보라색). ⑧=248,800. [출력]이 [수납] 後(post-settle, 실원장 카드 8,800 존재)라
+//   synthetic 미주입. 처치·수술료는 prepaidSessionType()=null → is_package_session 미마킹 →
+//   loadAlreadyPaidAmount=0(loadedAlreadyPaid=0).
+//   [BEFORE fix] settleCtx 를 ledger 공란일 때만 세팅 → post-settle 이면 null → ⑨=0 → 미납=⑧−⑪=240,000 (버그).
+//   [AFTER fix] deductMode 이면 pre/post 무관 settleCtx 세팅 → ⑨=⑧−deductAmount=240,000 · ⑪=8,800 · 미납=0.
+test('S1d(요건① REOPEN): post-settle 비급여면세 패키지기납부 → ⑨=240,000·⑪=8,800·미납=0(240,000 분리표시 아님)', () => {
+  const patientFloored = 248800;   // ⑧ = 급여 본인부담 8,800 + 비급여 면세 240,000
+  const deductAmount = 8800;       // 이번 회 수납잔액(패키지 기납부 240,000 제외)
+  const ledger: PayRow[] = [{ method: 'card', amount: 8800, cash_receipt_issued: null, payment_type: 'payment' }];
+  const splits: { method: PayMethod; amount: number }[] = [{ method: 'card', amount: 8800 }];
+  const loadedAlreadyPaid = 0;     // 처치·수술료 is_package_session 미마킹 → loadAlreadyPaidAmount=0
+
+  const values: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
+  // post-settle(ledger 존재) + deductMode=true.
+  applyPrintPath(values, ledger, patientFloored, loadedAlreadyPaid, deductAmount, true, splits, false);
+
+  expect(n(values.already_paid)).toBe(240000);  // ⑨ = ⑧ − deductAmount (패키지 기납부 환자부담분)
+  expect(n(values.due_amount)).toBe(8800);       // ⑩ = ⑧ − ⑨
+  expect(n(values.card_amount)).toBe(8800);      // ⑪ 카드칸 = 실원장 실수납(이중합산 없음)
+  expect(n(values.paid_total)).toBe(8800);       // ⑪ 실수납 합계
+  expect(n(values.unpaid_amount)).toBe(0);       // ★핵심: 미납 240,000 분리표시 아님 → 0
+  // 요건①: 패키지 기납부액이 별도 '납부하지 않은 금액'이 아니라 총합계(⑧=⑨+⑪+미납)에 포함.
+  expect(n(values.already_paid) + n(values.paid_total) + n(values.unpaid_amount)).toBe(patientFloored);
+  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 240000, 8800, 8800, 0);
+  expect(inv.ok).toBe(true);
 });
 
 // ── 시나리오 4 (회귀가드 · SAT-SURCHARGE 무회귀): membership split 은 ⑪ skip(⑨ 귀속) ────────────────

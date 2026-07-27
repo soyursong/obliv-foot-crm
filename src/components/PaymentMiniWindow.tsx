@@ -2655,9 +2655,28 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       //     [수납] 이미 완료 후 [출력]이면 payRows 에 실수납 존재 → synthetic 미주입(현행 실원장 렌더 유지 = 이중합산 없음).
       //   ★handleDocPrint 는 payments INSERT 를 하지 않는다(출력 전용) → synthetic 은 인쇄본 표시 전용, DB write 無(db_change=false).
       let printSettleCtx: { isDeductSettle: boolean; settleAmount: number } | null = null;
-      if (paidBoxCtx && paidBoxCtx.payRows.length === 0) {
+      if (paidBoxCtx) {
         const settleAmount = deductMode ? deductAmount : payableTotalWithSurcharge;
-        if (settleAmount >= 0) {
+        // ── T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건① [REOPEN RC — field-soak 재현, 스샷 F0BKYQE5S6A] ──────
+        //   [증상] [수납] 후 [출력](post-settle)에서 비급여 면세 '처치·수술료' 240,000(패키지 기납부=보라색)이
+        //     ⑨ 이미납부에 안 잡히고 '납부하지 않은 금액'=240,000 으로 분리 표시(미납=⑧−⑪).
+        //   [RC] 종전엔 ⑨ 선차감 보정(printSettleCtx)을 synthetic payRow 주입(pre-settle, payRows 공란) 블록 **안**
+        //     에서만 세팅했다. post-settle([수납] 후, payRows 존재)이면 이 블록을 통째로 건너뛰어 printSettleCtx=null
+        //     → effectiveAlreadyPaid 가 loadAlreadyPaidAmount(=check_in_services.is_package_session=true 합)로 폴백.
+        //     그런데 비급여 면세 처치·수술료 같은 패키지 기납부 항목은 prepaidSessionType()=null(비가열/가열/포돌로게/
+        //     수액 아님) → 소비 RPC(consume_package_sessions_for_checkin) 미호출 → is_package_session 미마킹 →
+        //     loadAlreadyPaidAmount=0 → ⑨ 공란 → 미납=240,000.
+        //   [해소] ⑨ 이미납부 = ⑧ − 이번수납잔액(deductAmount) 은 '패키지 선납 환자부담분'의 SSOT-정합 값이고
+        //     settle 시점(payments 유무)과 독립이다. 따라서 deductMode 이면 payRows 유무와 무관하게 printSettleCtx 를
+        //     세팅해 ⑨=⑧−deductAmount 로 확정한다 → 문서 내부 ⑧=⑨+⑪+미납 불변식 정확 성립(미납=deductAmount−⑪).
+        //     is_package_session 마킹되던 laser/iv/포돌로게 케이스도 ⑧−deductAmount ≡ prepaid 환자부담분 → 동일값 수렴
+        //     (무회귀). 비-차감(deductMode=false)은 종전대로 null → loadAlreadyPaidAmount 폴백(직접결제 회귀 0).
+        if (deductMode && settleAmount >= 0) {
+          printSettleCtx = { isDeductSettle: true, settleAmount };
+        }
+        // ★이중계상 가드: synthetic payRow(⑪ 실수납 인쇄본 선반영) 주입은 pre-settle(payRows 공란)일 때만.
+        //   post-settle([수납] 후)이면 실원장 payRows 가 ⑪ 을 채우므로 미주입(이중합산 없음).
+        if (paidBoxCtx.payRows.length === 0 && settleAmount >= 0) {
           const preSplits = buildSettleSplits(settleAmount, { quiet: true });
           if (preSplits && preSplits.reduce((s, r) => s + r.amount, 0) === settleAmount) {
             const settlePayRows = preSplits.map((s) => {
@@ -2670,7 +2689,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               };
             });
             paidBoxCtx.payRows = [...paidBoxCtx.payRows, ...settlePayRows];
-            printSettleCtx = { isDeductSettle: deductMode, settleAmount };
+            // 비-차감 pre-settle(deductMode=false)도 종전처럼 ⑪ 선반영(isDeductSettle=false → ⑨ 폴백 유지).
+            if (!printSettleCtx) printSettleCtx = { isDeductSettle: false, settleAmount };
           }
         }
       }
