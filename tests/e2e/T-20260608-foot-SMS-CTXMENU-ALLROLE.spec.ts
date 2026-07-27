@@ -68,7 +68,10 @@ async function loginIfNeeded(page: import('@playwright/test').Page, email?: stri
 
 async function openDashboardContextMenu(page: import('@playwright/test').Page) {
   await page.goto(`${BASE_URL}/dashboard`);
-  await page.waitForLoadState('networkidle', { timeout: 15000 });
+  // networkidle 은 Supabase realtime 웹소켓/폴링이 상시 활성이라 도달하지 못해 15s 타임아웃(플레이키) 유발.
+  // DOM 로드만 확정하고, networkidle 은 best-effort(도달 못해도 진행) — 체크인 카드 유무는 아래 count 로 판정.
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   const checkInCard = page.locator('[data-checkin-id]').first();
   if ((await checkInCard.count()) === 0) return false;
   await checkInCard.click({ button: 'right' });
