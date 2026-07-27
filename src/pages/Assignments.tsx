@@ -34,6 +34,10 @@ import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/l
 // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
 //   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
 import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
+// T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC §5: '당월 배정 예상 비율' = 기존 배정비율 설정값 재사용(신규 저장 0).
+//   배정 비율 설정값 = assignment_daily_target_config(top/bottom) + interpolateDailyTargets 랭크별 목표(플레이북 [실행 1b]).
+//   비율 = 랭크별 목표 ÷ Σ목표(스케일 불변). 재발명 금지 — 자동배정 엔진과 동일 산식 SSOT 소비. DB 무변경(READ-only).
+import { fetchDailyTargetConfig, interpolateDailyTargets } from '@/lib/assignmentStrategy';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
@@ -80,6 +84,55 @@ const THERAPY_FLOW: CheckInStatus[] = [
 ];
 const PULL_WAIT_STATUSES: CheckInStatus[] = ['consult_waiting', 'treatment_waiting'];
 const PULL_THRESHOLD_MIN = 10; // 미배정 대기 강조(amber) 임계. 당김 후보 자격 자체는 '미배정'만(PULLCAND-ASSIGNED-EXCLUDE)
+
+// ── T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC: 랭킹 탭 날짜 구간 헬퍼(KST, DATE-only 순수) ──
+//   fetchConsultantPerf(from,to) 는 DATE 문자열(YYYY-MM-DD)을 받는다(기존 monthStart 호출과 동일 grain).
+//   UTC 기준 산술로 로컬 tz 흔들림 제거(assignmentStrategy.seoulWindowBounds 와 동일 계산 규약).
+const pad2 = (n: number) => String(n).padStart(2, '0');
+/** ISO(YYYY-MM-DD)에 days 를 더한 ISO 날짜(KST 달력일). */
+function isoAddDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+/** iso 가 속한 주의 월요일 ISO(월~일 주 정의). */
+function mondayOfIso(iso: string): string {
+  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=일..6=토
+  return isoAddDays(iso, -((dow + 6) % 7));
+}
+/** iso 가 속한 달의 1일 ISO. */
+function monthStartOfIso(iso: string): string {
+  return `${iso.slice(0, 7)}-01`;
+}
+/** 선택일 기준 4구간(월누적/이번주/직전주) DATE 경계 산출. */
+function rankingRanges(selDateIso: string): {
+  monthStart: string;
+  thisWeekMon: string;
+  prevWeekMon: string;
+  prevWeekSun: string;
+} {
+  const thisWeekMon = mondayOfIso(selDateIso);
+  return {
+    monthStart: monthStartOfIso(selDateIso),
+    thisWeekMon,
+    prevWeekMon: isoAddDays(thisWeekMon, -7),
+    prevWeekSun: isoAddDays(thisWeekMon, -1),
+  };
+}
+/** 매출액 배열 → staffId별 순위(1위=최고매출, 동점 tie-break=이름). 0/미참여는 후순위. */
+function rankByRevenue(
+  ids: string[],
+  revenueOf: (id: string) => number,
+  nameOf: (id: string) => string,
+): Map<string, number> {
+  const sorted = [...ids].sort(
+    (a, b) => revenueOf(b) - revenueOf(a) || nameOf(a).localeCompare(nameOf(b), 'ko'),
+  );
+  const m = new Map<string, number>();
+  sorted.forEach((id, i) => m.set(id, i + 1));
+  return m;
+}
 
 function activeRole(status: CheckInStatus): AssignmentRole | null {
   if (CONSULT_FLOW.includes(status)) return 'consult';
@@ -155,9 +208,20 @@ export default function Assignments() {
   const canViewRanking =
     profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
 
-  // [랭킹] 탭 데이터 — R1 정합 실장 랭킹(당월 누적매출) + 당월 배정건수.
+  // [랭킹] 탭 데이터 — R1 정합 실장 랭킹(선택일 월누적 매출) + 배정건수.
   const [rankLoading, setRankLoading] = useState(false);
-  const [perfRows, setPerfRows] = useState<ConsultantRow[]>([]);
+  const [perfRows, setPerfRows] = useState<ConsultantRow[]>([]); // 월매출(1일~선택일) — 순위 기준
+  // T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC:
+  //   #1 DatePicker — 랭킹 탭 전용 기준일(기본=오늘 KST). 직원별누적 selectedDate 와 분리(탭 간 커플링 방지).
+  const [rankingDate, setRankingDate] = useState<string>(() => todaySeoulISODate());
+  //   #4 전주매출(직전주 월~일) / 이번주매출(이번주 월~선택일) — 주간 랭킹 변동표 + 전주매출 컬럼 소스.
+  const [prevWeekRevenue, setPrevWeekRevenue] = useState<Map<string, number>>(new Map());
+  const [thisWeekRevenue, setThisWeekRevenue] = useState<Map<string, number>>(new Map());
+  //   #6 배정 건 수 — 선택일 당일 check_ins.consultant_id 배정 수(배정 SSOT=check_ins, 재발명 금지).
+  const [dayAssignCounts, setDayAssignCounts] = useState<Map<string, number>>(new Map());
+  //   #5 당월 초진 예약 총건수(reservations visit_type='new', 취소 제외) × 랭크 배정비율 → 예상 배정건수.
+  const [monthInitResvCount, setMonthInitResvCount] = useState<number>(0);
+  const [dailyTargetCfg, setDailyTargetCfg] = useState<{ top: number; bottom: number } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -622,26 +686,75 @@ export default function Assignments() {
     return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
   }, []);
 
-  // ── [랭킹] 탭 (T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK) ─────────────────
+  // ── [랭킹] 탭 (T-20260726-...-ADMINLOCK + T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC) ──────
   //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
-  //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 이 이미 산출한 실장별 당월 누적매출을 read-only 소비.
-  //  · 순위 = 당월 누적매출(total_amount) 내림차순(현장 예시데이터와 정합: 엄경은>송지현>…>김주연). tie-break 이름.
-  //  · 배정 건수 = 당월 check_ins(정본) 상 consultant_id 배정 수 — STAFFCUMUL/기존 배정 카운트와 동일 정의(monthCheckIns 재사용).
-  //  · 표시는 read-only. customers.assigned_consultant_id 무접촉(RED LINE).
-  //  · 관리자(canViewRanking) 전용 탭 진입 시에만 fetch. 비admin 은 탭 자체가 없어 이 fetch 가 발화하지 않는다.
+  //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 산출값을 date-range 재호출로 read-only 소비.
+  //  · #1 선택일(rankingDate) 기준 6-read 병렬(모두 READ, DB 무변경):
+  //     ① 월매출(1일~선택일) = 순위 기준  ② 전주매출(직전주 월~일)  ③ 이번주매출(이번주 월~선택일, 변동표용)
+  //     ④ 당일 배정건수(check_ins.consultant_id — 배정 SSOT, deleted_at 제외)  ⑤ 당월 초진예약 총건수
+  //     ⑥ 배정비율 설정값(assignment_daily_target_config — 플레이북 [실행 1b], 신규 저장 0)
+  //  · 표시 read-only. customers.assigned_consultant_id 무접촉(RED LINE). admin 전용 탭 진입 시에만 fetch.
+  //  · TM 제외 판단(#6): check_ins.consultant_id 배정은 데스크 상담배정 SSOT이며 lead_source 미보유(TM 판별자 부재).
+  //    reservations 조인 TM 필터는 신뢰불가 + 기존 배정건수 정의(check_ins 전건)와 정합 붕괴 → TM 별도필터 미적용(전건 집계).
   useEffect(() => {
     if (mainTab !== 'ranking' || !canViewRanking || !clinic) return;
     let cancelled = false;
     void (async () => {
       setRankLoading(true);
+      const clinicId = clinic.id;
+      const { monthStart, thisWeekMon, prevWeekMon, prevWeekSun } = rankingRanges(rankingDate);
+      const dayStart = `${rankingDate}T00:00:00+09:00`;
+      const dayEndExcl = `${isoAddDays(rankingDate, 1)}T00:00:00+09:00`;
+      const monthEndExcl = `${isoAddDays(monthStart, 32).slice(0, 7)}-01`; // 선택일 달의 다음달 1일(DATE)
       try {
-        const todayIso = todaySeoulISODate();
-        const monthStart = `${todayIso.slice(0, 7)}-01`; // 당월 1일(DATE)
-        const rows = await fetchConsultantPerf(clinic.id, monthStart, todayIso);
-        if (!cancelled) setPerfRows(rows);
+        const [monthPerf, prevPerf, thisPerf, dayCi, initResv, tgtCfg] = await Promise.all([
+          fetchConsultantPerf(clinicId, monthStart, rankingDate),
+          fetchConsultantPerf(clinicId, prevWeekMon, prevWeekSun),
+          fetchConsultantPerf(clinicId, thisWeekMon, rankingDate),
+          supabase
+            .from('check_ins')
+            .select('consultant_id')
+            .eq('clinic_id', clinicId)
+            .not('consultant_id', 'is', null)
+            .is('deleted_at', null)
+            .gte('checked_in_at', dayStart)
+            .lt('checked_in_at', dayEndExcl),
+          supabase
+            .from('reservations')
+            .select('id', { count: 'exact', head: true })
+            .eq('clinic_id', clinicId)
+            .eq('visit_type', 'new')
+            .neq('status', 'cancelled')
+            .gte('reservation_date', monthStart)
+            .lt('reservation_date', monthEndExcl),
+          fetchDailyTargetConfig(clinicId),
+        ]);
+        if (cancelled) return;
+        const toRevMap = (rows: ConsultantRow[]) => {
+          const m = new Map<string, number>();
+          for (const r of rows) m.set(r.consultant_id, r.total_amount ?? 0);
+          return m;
+        };
+        setPerfRows(monthPerf);
+        setPrevWeekRevenue(toRevMap(prevPerf));
+        setThisWeekRevenue(toRevMap(thisPerf));
+        const dc = new Map<string, number>();
+        for (const r of (dayCi.data ?? []) as { consultant_id: string | null }[]) {
+          if (r.consultant_id) dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
+        }
+        setDayAssignCounts(dc);
+        setMonthInitResvCount(initResv.count ?? 0);
+        setDailyTargetCfg(
+          tgtCfg ? { top: tgtCfg.top_rank_target, bottom: tgtCfg.bottom_rank_target } : null,
+        );
       } catch (e) {
         if (!cancelled) {
           setPerfRows([]);
+          setPrevWeekRevenue(new Map());
+          setThisWeekRevenue(new Map());
+          setDayAssignCounts(new Map());
+          setMonthInitResvCount(0);
+          setDailyTargetCfg(null);
           console.warn('[Assignments] ranking load failed:', e);
         }
       } finally {
@@ -651,46 +764,79 @@ export default function Assignments() {
     return () => {
       cancelled = true;
     };
-  }, [mainTab, canViewRanking, clinic]);
-
-  // 당월(기준일 KST 당월 1일~오늘) consultant_id 배정 건수 — monthCheckIns(정본) 재사용. 셀 카운트 단일소스.
-  const rankingAssignCounts = useMemo<Map<string, number>>(() => {
-    const todayIso = todaySeoulISODate();
-    const mStartMs = new Date(`${todayIso.slice(0, 7)}-01T00:00:00+09:00`).getTime();
-    const todayStartMs = new Date(`${todayIso}T00:00:00+09:00`).getTime();
-    const mEndExclMs = todayStartMs + 24 * 60 * 60 * 1000; // 오늘분 포함·익일 배제
-    const m = new Map<string, number>();
-    for (const ci of monthCheckIns) {
-      if (!ci.consultant_id) continue;
-      const ms = ci.checked_in_at ? new Date(ci.checked_in_at).getTime() : NaN;
-      if (Number.isNaN(ms) || ms < mStartMs || ms >= mEndExclMs) continue;
-      m.set(ci.consultant_id, (m.get(ci.consultant_id) ?? 0) + 1);
-    }
-    return m;
-  }, [monthCheckIns]);
+  }, [mainTab, canViewRanking, clinic, rankingDate]);
 
   interface RankingRow {
     rank: number;
     consultantId: string;
     name: string;
-    revenue: number;
-    assignCount: number;
+    monthRevenue: number; // #2 월매출(1일~선택일)
+    prevWeekRevenue: number; // #4 전주매출(직전주 월~일)
+    avgTicket: number | null; // 객단가(유지) = ARPU(avg_amount)
+    expectedRatio: number | null; // #5 랭크 배정비율(0~1). cfg 부재=null → '—'
+    expectedCount: number | null; // #5 예상 배정건수 = round(당월 초진예약 × 비율)
+    dayAssignCount: number; // #6 당일 누적 배정건수
   }
   const rankingRows = useMemo<RankingRow[]>(() => {
-    return [...perfRows]
-      .sort(
-        (a, b) =>
-          (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
-          (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
-      )
-      .map((r, i) => ({
+    const sorted = [...perfRows].sort(
+      (a, b) =>
+        (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
+        (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
+    );
+    // #5 배정비율 = interpolateDailyTargets(랭크순, top, bottom) 의 랭크별 목표 ÷ Σ목표(스케일 불변).
+    const rankedIds = sorted.map((r) => r.consultant_id);
+    const targets = dailyTargetCfg
+      ? interpolateDailyTargets(rankedIds, dailyTargetCfg.top, dailyTargetCfg.bottom)
+      : null;
+    let sumTargets = 0;
+    if (targets) for (const v of targets.values()) sumTargets += v;
+    return sorted.map((r, i) => {
+      const ratio =
+        targets && sumTargets > 0 ? (targets.get(r.consultant_id) ?? 0) / sumTargets : null;
+      return {
         rank: i + 1,
         consultantId: r.consultant_id,
         name: r.name ?? '—',
-        revenue: r.total_amount ?? 0,
-        assignCount: rankingAssignCounts.get(r.consultant_id) ?? 0,
-      }));
-  }, [perfRows, rankingAssignCounts]);
+        monthRevenue: r.total_amount ?? 0,
+        prevWeekRevenue: prevWeekRevenue.get(r.consultant_id) ?? 0,
+        avgTicket: r.avg_amount ?? null,
+        expectedRatio: ratio,
+        expectedCount: ratio != null ? Math.round(monthInitResvCount * ratio) : null,
+        dayAssignCount: dayAssignCounts.get(r.consultant_id) ?? 0,
+      };
+    });
+  }, [perfRows, prevWeekRevenue, dayAssignCounts, monthInitResvCount, dailyTargetCfg]);
+
+  // ── #3 하단 실장별 랭킹 변동표 (주간 기준 — 전주 순위 vs 이번주 순위, 각 매출 desc) ──────────
+  //  기준 확정(#4): 주간(직전주 월~일 vs 이번주 월~선택일). 스펙 예시(전주 순위/이번주 순위) 정합.
+  //  delta = prevRank − thisRank ( >0 = 순위 상승 ↑N / <0 = 하락 ↓N / 0 = 유지 - ).
+  interface VariationRow {
+    consultantId: string;
+    name: string;
+    prevRank: number | null;
+    thisRank: number | null;
+    delta: number | null;
+  }
+  const variationRows = useMemo<VariationRow[]>(() => {
+    const ids = perfRows.map((r) => r.consultant_id);
+    const nameMap = new Map(perfRows.map((r) => [r.consultant_id, r.name ?? '—']));
+    const nameOf = (id: string) => nameMap.get(id) ?? '—';
+    const prevRankMap = rankByRevenue(ids, (id) => prevWeekRevenue.get(id) ?? 0, nameOf);
+    const thisRankMap = rankByRevenue(ids, (id) => thisWeekRevenue.get(id) ?? 0, nameOf);
+    return ids
+      .map((id) => {
+        const pr = prevRankMap.get(id) ?? null;
+        const tr = thisRankMap.get(id) ?? null;
+        return {
+          consultantId: id,
+          name: nameOf(id),
+          prevRank: pr,
+          thisRank: tr,
+          delta: pr != null && tr != null ? pr - tr : null,
+        };
+      })
+      .sort((a, b) => (a.thisRank ?? 9999) - (b.thisRank ?? 9999));
+  }, [perfRows, prevWeekRevenue, thisWeekRevenue]);
 
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
@@ -1725,33 +1871,57 @@ export default function Assignments() {
         <div className="space-y-4">
         <Card data-testid="assignments-ranking-card">
           <CardHeader className="py-3">
-            <CardTitle className="text-sm">실장 랭킹 (당월)</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              재직 상담 실장 기준 · 누적 매출 순 · 관리자 전용
-            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-sm">실장 랭킹</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  재직 상담 실장 기준 · 월매출(1일~선택일) 순 · 관리자 전용
+                </p>
+              </div>
+              {/* #1 DatePicker — 기존 CRM 컴포넌트(native date input) 재사용(신규 npm 0). 기본=오늘, max=오늘(미래 차단). */}
+              <div className="flex items-center gap-2 text-xs">
+                <label htmlFor="ranking-date" className="font-medium text-muted-foreground">
+                  기준일
+                </label>
+                <input
+                  id="ranking-date"
+                  data-testid="ranking-date"
+                  type="date"
+                  value={rankingDate}
+                  max={todaySeoulISODate()}
+                  onChange={(e) => {
+                    if (e.target.value) setRankingDate(e.target.value);
+                  }}
+                  className="rounded border bg-background px-2 py-1"
+                />
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="max-h-[64vh] overflow-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
                   <tr>
-                    <th className="w-16 px-3 py-2 text-center font-medium">순위</th>
+                    <th className="w-14 px-3 py-2 text-center font-medium">순위</th>
                     <th className="px-3 py-2 text-left font-medium">이름</th>
-                    <th className="px-3 py-2 text-right font-medium">누적 매출</th>
-                    <th className="px-3 py-2 text-right font-medium">배정 건수</th>
+                    <th className="px-3 py-2 text-right font-medium">월매출</th>
+                    <th className="px-3 py-2 text-right font-medium">전주매출</th>
+                    <th className="px-3 py-2 text-right font-medium">객단가</th>
+                    <th className="px-3 py-2 text-right font-medium">당월 배정 예상 비율</th>
+                    <th className="px-3 py-2 text-right font-medium">배정 건 수</th>
                   </tr>
                 </thead>
                 <tbody data-testid="ranking-rows">
                   {rankLoading && (
                     <tr>
-                      <td colSpan={4} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-loading">
+                      <td colSpan={7} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-loading">
                         랭킹 불러오는 중…
                       </td>
                     </tr>
                   )}
                   {!rankLoading && rankingRows.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-empty">
+                      <td colSpan={7} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-empty">
                         표시할 랭킹 데이터가 없습니다.
                       </td>
                     </tr>
@@ -1762,10 +1932,82 @@ export default function Assignments() {
                         <td className="px-3 py-2.5 text-center font-semibold tabular-nums">{r.rank}</td>
                         <td className="px-3 py-2.5 font-medium">{r.name}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-revenue">
-                          {formatAmount(r.revenue)}원
+                          {formatAmount(r.monthRevenue)}원
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-prevweek-revenue">
+                          {formatAmount(r.prevWeekRevenue)}원
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-avg-ticket">
+                          {r.avgTicket != null ? `${formatAmount(r.avgTicket)}원` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-expected-ratio">
+                          {r.expectedRatio != null
+                            ? `${Math.round(r.expectedRatio * 100)}% (${r.expectedCount ?? 0}건)`
+                            : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-assign-count">
-                          {r.assignCount.toLocaleString('ko-KR')}
+                          {r.dayAssignCount.toLocaleString('ko-KR')}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            {!rankLoading && dailyTargetCfg == null && rankingRows.length > 0 && (
+              <p className="px-3 py-2 text-xs text-muted-foreground" data-testid="ranking-ratio-note">
+                ※ 배정 예상 비율은 [배정 순번 설정]의 하루 목표건수(배정 비율)가 설정되어야 표시됩니다.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── #3 하단 실장별 랭킹 변동표(주간: 전주 순위 → 이번주 순위, ↑N/↓N/-) ── */}
+        <Card data-testid="assignments-ranking-variation-card">
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm">실장별 랭킹 변동 (주간)</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              직전 주(월~일) 대비 이번 주(월~선택일) 매출 순위 변동
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[40vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">실장명</th>
+                    <th className="px-3 py-2 text-center font-medium">전주 순위</th>
+                    <th className="px-3 py-2 text-center font-medium">이번주 순위</th>
+                    <th className="px-3 py-2 text-center font-medium">변동</th>
+                  </tr>
+                </thead>
+                <tbody data-testid="ranking-variation-rows">
+                  {!rankLoading && variationRows.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground" data-testid="ranking-variation-empty">
+                        표시할 변동 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                  {!rankLoading &&
+                    variationRows.map((v) => (
+                      <tr key={v.consultantId} className="border-b last:border-0 hover:bg-muted/20" data-testid="ranking-variation-row">
+                        <td className="px-3 py-2.5 font-medium">{v.name}</td>
+                        <td className="px-3 py-2.5 text-center tabular-nums">
+                          {v.prevRank != null ? `${v.prevRank}위` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center tabular-nums">
+                          {v.thisRank != null ? `${v.thisRank}위` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center font-semibold tabular-nums" data-testid="ranking-variation-delta">
+                          {v.delta == null ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : v.delta > 0 ? (
+                            <span className="text-emerald-600">↑{v.delta}</span>
+                          ) : v.delta < 0 ? (
+                            <span className="text-red-500">↓{Math.abs(v.delta)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </td>
                       </tr>
                     ))}
