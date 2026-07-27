@@ -158,7 +158,11 @@ const FOOT_MERCHANT_WHITELIST_DEFAULT = [
   "1777289009", "1777289010", "1777289011", "1777289012", "1777289013", // 무선5
 ];
 
-// TID (merchant 1:1) — 서버-측 tid= narrowing + belt-and-suspenders 보조필터.
+// TID (merchant 1:1) — belt-and-suspenders 보조필터 + drift(신 TID 표면화) 판정용.
+//   ⚠ 서버-측 tid= narrowing 은 제거됨(T-20260727-...-MERCHANT-ADMISSION-STRUCTURAL 접근 A):
+//     tid= 를 API 로 보내면 기등록 merchant 아래 '신 TID' 행이 응답에서 애초 제외 → silent-drop 근본원인.
+//     이제 fetch 는 business_no 스코프로만, admit 은 merchant_id 멤버십(exact set)이 단독 권위.
+//     아래 TID-set 은 fetch narrowing 이 아닌 FE 보조필터/drift 표면화에만 소비된다.
 //   원 26-set(479xxx) + 0724GAP 신 TID 4종(538xxx) + 0723GAP 신 TID 6종(535xxx) = 구·신 병존(UNION 시맨틱).
 //   T-20260725-...-0724GAP(§9): 4 merchant(288003/004/006·289004) 유선/멀티 단말이 3세대 band(538xxx)로
 //   재등록 → 구 479xxx 는 historical raw 가시성 위해 유지, 신 538xxx 추가(registry superseded_tids UNION 미러).
@@ -347,8 +351,13 @@ async function fetchRedpayPage(from, to, page, limit) {
     page: String(page),
     limit: String(limit),
   });
-  // 풋 TID 화이트리스트 전체를 콤마 다중값으로 전송 (서버-측 1차 narrowing).
-  if (tidList.length >= 1) params.set("tid", tidList.join(","));
+  // ★ T-20260727-foot-REDPAY-MERCHANT-ADMISSION-STRUCTURAL (접근 A, DA GO MSG-20260727-092351-8s9h):
+  //   서버-측 tid= narrowing 제거 → business_no 스코프로만 fetch.
+  //   [근본원인] tid= 를 RedPay API 로 전송하면 기등록 foot merchant 아래 '신 TID' 행이 API 응답에서
+  //   애초 제외됨 → filterToFootScope(merchant_id 권위 admit)가 볼 기회조차 없음 = 4세대 silent-drop
+  //   (0723·0724·0725)의 유일 원인. admit 판정은 filterToFootScope 의 merchant_id 멤버십(exact set,
+  //   TID-agnostic)이 단독 권위 → tid= 서버 narrowing 은 admission 을 좁히기만 할 뿐 무익·유해.
+  //   (bizno param(L346) 은 마스터 키 사업자 스코프 — 무접촉.)
 
   const requestUrl = `${REDPAY_BASE_URL}?${params}`;
   log(`redpay 직접 호출 url=${requestUrl} (X-API-KEY=${mask(REDPAY_API_KEY)})`);
@@ -548,8 +557,10 @@ async function main() {
   }
 
   // ── 화이트리스트 확정: env override → DB registry SSOT → 하드코딩 DEFAULT (T-20260711) ──
-  //   서버측 tid= narrowing(fetchRedpayPage) + filterToFootScope 가 확정된 tidList/merchantWhitelist 를
-  //   소비하므로 반드시 페이지 순회 전에 resolve.
+  //   filterToFootScope 가 확정된 merchantWhitelist(admit 권위) 및 tidWhitelist(belt-and-suspenders
+  //   보조 + drift 판정)를 소비하므로 반드시 페이지 순회 전에 resolve.
+  //   ※ 서버측 tid= narrowing 은 제거됨(T-20260727-...-MERCHANT-ADMISSION-STRUCTURAL 접근 A) — fetch 는
+  //     business_no 스코프로만. tidWhitelist 는 이제 FE-측 보조필터/drift 판정에만 쓰임(fetch narrowing 아님).
   await resolveWhitelists();
 
   if (merchantWhitelist.size === 0) {
@@ -562,7 +573,7 @@ async function main() {
     // ⚠ T-20260714-foot-REDPAY-DOHSU: tid 비어있음은 domain=body(도수, TID 미상) 정상 케이스.
     //   merchant_id 가 1차 권위(도메인 경계)이므로 tid 부재여도 merchant-only 스코핑으로 안전.
     //   → 하드 종료(exit) 대신 WARN 다운그레이드. (foot 은 tid 17-set 보유 → 이 경로 미진입.)
-    warn(`TID 화이트리스트 비어있음(domain=${REDPAY_DOMAIN}) — belt-and-suspenders/tid= narrowing 미가용. ` +
+    warn(`TID 화이트리스트 비어있음(domain=${REDPAY_DOMAIN}) — belt-and-suspenders 보조필터/drift 판정 미가용. ` +
          `merchant_id(${merchantWhitelist.size}건) 1차 권위 단일 스코핑으로 진행(도수 TID 미상 정상 케이스).`);
   }
 
@@ -658,8 +669,12 @@ async function main() {
     if (drift.length > 0) {
       totalDrift += drift.length;
       const driftTids = [...new Set(drift.map((d) => d.tid ?? "null"))].slice(0, 10);
-      warn(`[DRIFT-ALARM] 풋 merchant 인정이나 미등록 TID ${drift.length}건 = 신규 풋 단말 후보(적재는 진행). ` +
-           `레지스트리(redpay_foot_terminal_registry.md §2) 17-set 갱신 필요. TID=[${driftTids.join(",")}]`);
+      // ★ T-20260727-...-MERCHANT-ADMISSION-STRUCTURAL AC-3: tid= 서버 narrowing 제거 후
+      //   drift(merchantOk + 미등록 TID) = 기등록 foot merchant 아래 '신 TID 자동 admit' 이 정상 케이스.
+      //   → warn[DRIFT-ALARM] → info[NEW-TID] 강등(오탐/알람 피로 방지). raw 적재는 이미 정상 진행됨.
+      //   계수(totalDrift)는 신 TID 표면화 + registry seed-remap 트리거로 계속 활용(seed 는 non-blocking).
+      log(`[NEW-TID] 풋 merchant 인정 + 미등록 TID ${drift.length}건 = 기등록 merchant 아래 신 단말 자동 admit(정상, raw 적재 완료). ` +
+          `registry(redpay_foot_terminal_registry.md §2/§10) seed-remap 후보(비블로킹). TID=[${driftTids.join(",")}]`);
     }
     if (kept.length > 0) {
       const { upserted, errors } = await upsertRawTransactions(clinicId, kept);
