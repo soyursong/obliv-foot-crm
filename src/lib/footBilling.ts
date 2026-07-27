@@ -1092,7 +1092,12 @@ export function applyBillReceiptPaidBoxTokens(
   values.card_amount = card > 0 ? formatAmount(card) : '';
   values.cash_amount = cash > 0 ? formatAmount(cash) : '';
   values.cashreceipt_amount = cashReceipt > 0 ? formatAmount(cashReceipt) : '';
-  values.paid_total = paidTotal > 0 ? formatAmount(paidTotal) : '';
+  // ── T-20260727-foot-PMW-DOC-LINK-4SPEC 추가-B (총괄 20:26 재지시, reporter U0ATDB587PV) ─────────
+  //   '납부한 금액(합계)' = ⑧ 환자부담 총액과 **동일 금액**(총괄 "납부한 금액 칸에 환자부담 총액이랑 동일한 금액 반영").
+  //   구 로직(합계=Σmethod net)은 선차감·환불 case(예: F-5238 김다예: 선수금 240,000 pkg + 환불 10,480)에서 ⑨/⑩
+  //   스플릿·loadAlreadyPaidAmount 와 얽혀 납부박스 오표기 → 서류 비정상. 합계는 이제 ⑧을 mirror(완납 표기,
+  //   field-accountable — T-20260724-PREPRINT 세무 waiver 캐논 계승). method 셀(카드/현금영수증/현금)은 실수납 net 유지.
+  values.paid_total = patientAmount > 0 ? formatAmount(patientAmount) : '';
   // 종전 템플릿 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지 — paid_total 과 동일값으로 동기화.
   values.prepaid_amount = values.paid_total;
   // §1 ⑨ 이미 납부한 금액(선수금/패키지 차감). 0 이면 공란(직접결제건 회귀 0 — 종전 빈 셀 유지).
@@ -1101,14 +1106,15 @@ export function applyBillReceiptPaidBoxTokens(
   //   SSOT(copayment 100원절사 + nonCovered raw)의 10원 미만 우수리를 그대로 안고 있어 ⑩=⑧−⑨ 가 10원
   //   비배수가 될 여지가 있었다. ⑨에도 ⑧과 **동일한 절사규칙**(computeBillDetailRounding=내림)을 적용해
   //   ⑧·⑨·⑩ 모두 10원 grain 으로 정합시킨다. 내림이므로 ⑨↓ → 원장에 없는 돈을 만들지 않음(허위표기 아님).
-  const alreadyPaidSafe = computeBillDetailRounding(alreadyPaid).roundedTotal; // ≥0 · 10원 배수
-  values.already_paid = alreadyPaidSafe > 0 ? formatAmount(alreadyPaidSafe) : '';
-  // §1 ⑩ 납부할 금액 = ⑧ − ⑨ (전용 토큰 분리 — patient_amount 하드코딩 폐기). ⑧·⑨ 모두 10원 배수 → ⑩ 정합.
+  const alreadyPaidSafe = computeBillDetailRounding(alreadyPaid).roundedTotal; // ≥0 · 10원 배수(불변식 진단용 유지)
   const dueAmount = Math.max(0, patientAmount - alreadyPaidSafe);
-  values.due_amount = formatAmount(dueAmount);
-  // 미납 = ⑩ − ⑪(실수납). 선수금 완납건이면 ⑩=잔액, paidTotal=잔액 → 미납=0.
   const unpaid = Math.max(0, dueAmount - paidTotal);
-  values.unpaid_amount = formatAmount(unpaid);
+  // ── T-20260727-foot-PMW-DOC-LINK-4SPEC 추가-B: ⑨'이미 납부한 금액'/⑩'납부할 금액'/'납부하지 않은 금액' 행이
+  //   템플릿에서 제거됨(분리 표기 제거). 해당 토큰은 비렌더 → blank set(잔존 참조 안전, 회귀0). 위 파생값은
+  //   아래 불변식 진단(warn-only)에만 소비.
+  values.already_paid = '';
+  values.due_amount = '';
+  values.unpaid_amount = '';
 
   // 유효작업#1 [불변식 가드 — Stage1 warn-only]. ⑧=⑨+⑪+미납 성립 여부를 판정해 이상을 표면화한다.
   //   클램프(⑨>⑧ or ⑪>⑩) 발동 = PKGSESSION 미배선發 어긋남 → 플래그+로그. ★발행은 통과(Stage1).
@@ -1154,19 +1160,19 @@ export function applyBillReceiptPreprintPaymethodTokens(
   // ⑨ = ⑧ 환자부담총액과 동일 절사(10원 FLOOR) → 완납액 정합.
   const patientSafe = computeBillDetailRounding(patientAmount).roundedTotal;
   const amtStr = patientSafe > 0 ? formatAmount(patientSafe) : '';
-  // ⑨ 이미 납부한 금액 = 환자부담총액(완납 표기). 0 이면 공란.
-  values.already_paid = amtStr;
-  // ⑩ 납부할 금액 = 미사용(공란). "해당 칸은 안 쓸 거야" (총괄).
+  // ── T-20260727-foot-PMW-DOC-LINK-4SPEC 추가-B (총괄 20:26 재지시): ⑨'이미 납부한 금액'/⑩'납부할 금액'/
+  //   '납부하지 않은 금액' 행 제거(분리 표기 제거). 해당 토큰 비렌더 → blank(회귀0).
+  values.already_paid = '';
   values.due_amount = '';
-  // ⑪ 납부한 금액 = ⑨의 결제수단 breakdown(비-가산). 선출력 수기체크된 수단칸에만 환자부담총액 기입.
+  values.unpaid_amount = '';
+  // ⑨(신) 납부한 금액 = 환자부담총액과 동일 금액. 합계는 항상 환자부담총액(완납 표기, method 무관).
+  //   method 셀(카드/현금영수증/현금)은 선출력 수기체크된 수단칸에만 기입(세법 breakdown).
   values.card_amount = method === 'card' ? amtStr : '';
   values.cashreceipt_amount = method === 'cashreceipt' ? amtStr : '';
   values.cash_amount = method === 'cash' ? amtStr : '';
-  values.paid_total = method ? amtStr : '';
+  values.paid_total = amtStr;
   // 종전 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지.
   values.prepaid_amount = values.paid_total;
-  // 미납 = 0 (완납). 환자부담이 0(무료)이면 공란.
-  values.unpaid_amount = patientSafe > 0 ? formatAmount(0) : '';
   // 하단 보라박스 — 현금/현금영수증 선택 시에만 반영. 현금영수증( ) 체크마크는 현금영수증 선택 시.
   values.cashreceipt_mark = method === 'cashreceipt' ? 'V' : '';
   const showNo = method === 'cash' || method === 'cashreceipt';
