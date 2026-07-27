@@ -6,7 +6,7 @@
  * 기존 월균등 경로로 자연 fallback(회귀0, opt-in).
  *
  * ── 실행1 랭킹 ──
- *   상담사 랭킹 = 월매출·주매출·객단가(payments 온디맨드 재계산) 가중합(기본 1:1:1). 물리 순위 저장 0.
+ *   상담사 랭킹 = 월매출·주매출·객단가(payments 온디맨드 재계산) 가중합(기본 B=월1:주2:객1). 물리 순위 저장 0.
  *   월/주 윈도우는 KST 날짜상대 → 자정 자연 롤오버 = '매일 자정 재계산'(W2: 자정 잡 없음).
  * ── 실행2 전략 ──
  *   daily_target  : Daily Target(1등=꼴등 2배=2:1, 중간 선형보간) 미달 우선. 잔여건 다음 등수 순서.
@@ -125,12 +125,12 @@ export async function fetchConsultantRevenueMetrics(
 
 // ── 실행1: 랭킹 산출(순수) ─────────────────────────────────────────────────────
 
-/** 가중치(부재 시 1:1:1). */
+/** 가중치(부재 시 기본 B = 월1:주2:객1). T-20260726-foot-CRM-ASSIGN-WEIGHT-B */
 export async function fetchRankingWeights(clinicId: string): Promise<AssignmentRankingWeights> {
   const dflt: AssignmentRankingWeights = {
     clinic_id: clinicId,
     weight_revenue_month: 1,
-    weight_revenue_week: 1,
+    weight_revenue_week: 2, // 기본값 B: 주매출 2배(전주 실적 선순환). 랭킹1~2위 선배정 특권 → "이번 주 열심히=다음 주 기회↑"
     weight_avg_ticket: 1,
   };
   try {
