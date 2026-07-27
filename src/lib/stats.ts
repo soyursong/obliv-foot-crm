@@ -162,7 +162,14 @@ export async function fetchConsultantPerf(
   from: string,
   to: string,
 ): Promise<ConsultantRow[]> {
-  const { data, error } = await supabase.rpc('foot_stats_consultant', {
+  // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK §2 (서버사이드 no-read-up):
+  //   진입점을 admin-gated SECDEF 래퍼 `foot_stats_consultant_admin` 로 교체(DA Opt A).
+  //   래퍼가 is_admin_or_manager() fail-closed(42501) 게이트 → 비admin(consultant/coordinator/
+  //   therapist/tm/staff)은 서버에서 거부(빈 응답 아님). 구 `foot_stats_consultant` 는 authenticated
+  //   EXECUTE 회수됨(직접 호출 불가) → 본 함수(fetchConsultantPerf)가 유일 소비 경로.
+  //   ⚠ 소비자 모두 특권 게이트: Stats 매출탭(route admin/manager/director/tm — tm 은 매출탭 미접근)
+  //      + Assignments 랭킹탭(canViewRanking=admin/manager/director). 정당 소비자는 전부 게이트 통과.
+  const { data, error } = await supabase.rpc('foot_stats_consultant_admin', {
     p_clinic_id: clinicId,
     p_from: from,
     p_to: to,

@@ -147,10 +147,11 @@ export default function Assignments() {
 
   // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 = 관리자(원장·총괄) 전용.
   //   판정 SSOT = 기존 role 체계(admin/manager/director) 재사용 — canEditRotation/Distribution 과 동일 술어(신규 role enum 신설 0).
-  //   ⚠ 이것은 UI 조건부 렌더(탭 자체 숨김)일 뿐이다. 실장별 매출은 payments RLS(payments_approved_read=is_approved_user,
-  //     모든 승인 직원 SELECT 허용) 상 foot_stats_consultant(SECURITY INVOKER)를 비admin 이 직접 호출하면 노출된다.
-  //     즉 서버사이드 no-read-up 은 이 클라이언트 게이트로 완결되지 않으며 신규 admin-gated RPC/RLS 가 필요(db_change→true).
-  //     본 커밋은 UI 게이트 + 표시탭까지만 additive 반영하고, 서버게이트는 planner FOLLOWUP → DA CONSULT 로 승격(임의 RLS 신설 금지).
+  //   §2 서버사이드 게이트 완결(마이그 20260727120000 / DA Opt A): 랭킹·매출 데이터는 admin-gated SECDEF 래퍼
+  //     `foot_stats_consultant_admin`(fetchConsultantPerf 진입) 를 통해서만 조회되며, 래퍼가 is_admin_or_manager()
+  //     fail-closed(42501) 로 비admin 을 서버에서 거부한다. 구 `foot_stats_consultant` 는 authenticated EXECUTE
+  //     회수됨 → 비admin 직접 호출도 거부(no-read-up 완결). 즉 아래 canViewRanking 은 UI 숨김(방어심층)이고,
+  //     실 접근통제는 서버 래퍼가 강제한다(UI 우회해도 데이터 유출 0).
   const canViewRanking =
     profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
 

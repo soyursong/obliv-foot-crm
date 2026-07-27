@@ -142,17 +142,42 @@ test.describe('T-20260726 CRM-ASSIGN [랭킹] 탭 + 관리자 잠금', () => {
     expect(canViewRanking(undefined)).toBe(false);
   });
 
-  // ── 시나리오 2 (SERVER, Critical): 비admin 토큰 직접 RPC 호출 → 거부, 데이터유출 0 ──
-  //  ⚠ 현재 서버게이트 미구현(payments_approved_read=is_approved_user 로 모든 승인직원 SELECT 허용).
-  //     기존 role/RLS 로 서버 no-read-up 불가 → 신규 admin-gated RPC/RLS 필요(db_change→true, DA CONSULT).
-  //     임의 RLS 신설 금지 방침에 따라 본 단언은 서버게이트 랜딩 후 활성화(현재 test.fixme = 미구현 표식).
-  test.fixme('S2-SERVER 비admin 토큰 foot_stats_consultant 직접 호출 → 거부 (서버게이트 랜딩 후)', async () => {
-    // 서버게이트(admin-gated 랭킹 RPC/뷰) 랜딩 후:
-    //   const anon = createClient(SUPA_URL, ANON_KEY);  // 비admin(consultant) 세션
-    //   const { data, error } = await anon.rpc('<admin_gated_ranking_rpc>', { ... });
-    //   expect(data ?? []).toHaveLength(0);   // 데이터 유출 0
-    //   expect(error).not.toBeNull();          // 권한 오류(no-read-up)
-    expect(true).toBe(true);
+  // ── 시나리오 2 (SERVER, Critical): 서버게이트 랜딩(마이그 20260727120000 / DA Opt A) 검증 ──
+  //  §2 서버 no-read-up 완결: ① 진입점 = admin-gated SECDEF 래퍼 foot_stats_consultant_admin
+  //  (is_admin_or_manager fail-closed 42501) ② 구 foot_stats_consultant 는 authenticated EXECUTE 회수.
+  test('S2-SERVER 비admin 컨텍스트(auth.uid 부재) 래퍼 호출 → fail-closed 42501 거부, 데이터유출 0', async () => {
+    const c = sb();
+    const { from, to } = currentMonthWindow();
+    // service_role 키 = auth.uid() 부재 → is_admin_or_manager()=false → 래퍼가 최상단에서 RAISE 42501.
+    //   (실 비admin authenticated 세션과 동치의 default-deny 경로 — 관리자 아닌 주체는 서버에서 거부됨.)
+    const { data, error } = await c.rpc('foot_stats_consultant_admin', {
+      p_clinic_id: CLINIC_ID,
+      p_from: from,
+      p_to: to,
+    });
+    expect(error).not.toBeNull(); // 권한 오류(no-read-up) — 빈 응답 아닌 명시 거부
+    expect((error as { code?: string } | null)?.code).toBe('42501');
+    expect(data ?? []).toHaveLength(0); // 데이터 유출 0
+  });
+
+  // ── 시나리오 2 (SERVER, static): 마이그 파일에 DA 하드닝 5조건 랜딩 확인(supervisor DDL-diff 보조 증거) ──
+  test('S2-SERVER-MIG 마이그 20260727120000 = SECDEF 래퍼 + fail-closed + search_path pin + 하위 authenticated 회수', () => {
+    const mig = read('supabase/migrations/20260727120000_foot_stats_consultant_admin_gate.sql');
+    // #3 fail-closed 진입 검사(42501) + canonical(is_admin_or_manager) 재사용.
+    expect(mig).toContain('IF NOT public.is_admin_or_manager() THEN');
+    expect(mig).toContain("ERRCODE = '42501'");
+    // SECDEF + #2 search_path pin.
+    expect(mig).toMatch(/SECURITY DEFINER/);
+    expect(mig).toContain('SET search_path = public, pg_temp');
+    // #1 anon/PUBLIC 차단 + authenticated 만 진입.
+    expect(mig).toContain('REVOKE ALL     ON FUNCTION public.foot_stats_consultant_admin');
+    expect(mig).toContain('GRANT  EXECUTE ON FUNCTION public.foot_stats_consultant_admin(UUID, DATE, DATE) TO authenticated');
+    // ② 하위 SSOT 함수 authenticated EXECUTE 회수(=비admin 직접 호출 차단).
+    expect(mig).toContain('REVOKE EXECUTE ON FUNCTION public.foot_stats_consultant(UUID, DATE, DATE) FROM authenticated');
+    // 롤백 대칭성(회수 복원 + 래퍼 DROP).
+    const rb = read('supabase/migrations/20260727120000_foot_stats_consultant_admin_gate.rollback.sql');
+    expect(rb).toContain('GRANT EXECUTE ON FUNCTION public.foot_stats_consultant(UUID, DATE, DATE) TO authenticated');
+    expect(rb).toContain('DROP FUNCTION IF EXISTS public.foot_stats_consultant_admin');
   });
 
   // ── 시나리오 3: 엣지 케이스 (빈 랭킹 / 단일 실장) ──
