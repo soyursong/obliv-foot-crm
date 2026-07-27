@@ -632,6 +632,9 @@ const DraggableCard = memo(function DraggableCard({
             {mmss}
           </span>
           <div className="flex items-center gap-0.5">
+            {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지를
+                하단 뱃지 줄 → 타이머 행 우측 빈 공간으로 이동(총괄 확정 F0BL0PC6Z9Q 빨간박스). 색/아이콘/판정 불변, 위치만. */}
+            <ExamRequestBadges flags={examFlags} />
             {/* T-20260502-foot-LASER-TIME-UNIT: 레이저실 카드에 시간 단위 배지 */}
             {checkIn.status === 'laser' && checkIn.laser_minutes != null && (
               <Badge className="h-3.5 px-0.5 text-[9px] bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">
@@ -682,8 +685,7 @@ const DraggableCard = memo(function DraggableCard({
           {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           )}
-          {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지 */}
-          <ExamRequestBadges flags={examFlags} />
+          {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균/피 뱃지는 타이머 행 우측으로 이동(위 시간행 참조). 하단 줄에서 제거. */}
           {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
           <OutstandingDueBadge data={outstandingData} />
           {hasPkg && (
@@ -833,6 +835,8 @@ const DraggableCard = memo(function DraggableCard({
           {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
         <div className="flex items-center gap-0.5">
+          {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균/피 검사신청 뱃지 → 타이머 행 우측 빈 공간(non-compact 경로). 색/아이콘/판정 불변, 위치만 이동. */}
+          <ExamRequestBadges flags={examFlags} />
           {checkIn.notes?.id_check_required && (
             <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
           )}
@@ -865,8 +869,7 @@ const DraggableCard = memo(function DraggableCard({
           /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진=파랑(blue). 구 yellow 하드코드 → A안 파랑 통일 */
           <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
-        {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지 */}
-        <ExamRequestBadges flags={examFlags} />
+        {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균/피 뱃지는 타이머 행 우측으로 이동(위 시간행 참조). 하단 줄에서 제거. */}
         {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
         <OutstandingDueBadge data={outstandingData} />
         {hasPkg && (
