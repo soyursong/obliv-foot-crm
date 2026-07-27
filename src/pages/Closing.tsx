@@ -2275,6 +2275,11 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           setPayAttemptCounter((c) => c + 1);
           refreshPayments();
         }}
+        onSettled={() => {
+          // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 후 미니창 유지(같은 창에서 [출력] 이어감).
+          //   미수 갱신만 수행 — setPayTarget(null)(닫기)·counter++(리마운트) 미수행 → 창/내부상태 보존.
+          refreshPayments();
+        }}
         onSaved={() => {
           // 시술 저장 후 미수금(결제대기) 즉시 갱신
           refreshPayments();

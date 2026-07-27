@@ -906,6 +906,14 @@ interface Props {
   onClose: () => void;
   /** 수납 완료 후 (auto-done 포함) */
   onComplete: () => void;
+  /**
+   * T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 성공 후 "창을 닫지 않는" 갱신 콜백.
+   *   현장 동선 = 수납 직후 같은 미니창에서 [출력](계산서·영수증) 등 후속작업을 이어서 수행(REFUND200 요건② enable).
+   *   부모는 데이터 리페치만 하고 미니창 close/dismiss(setTarget(null))·강제 리마운트(counter++)는 하지 않는다.
+   *   미전달 시 handleSettle 은 종전대로 onComplete(닫기) 로 폴백(하위호환).
+   *   ⚠ 수납 처리(payments INSERT·회차 consume RPC)·[닫기]/X 수동닫기·NOAUTOCOMPLETE 카드거동은 무변경 — FE 상태(창 유지)만.
+   */
+  onSettled?: () => void;
   /** 시술 저장 완료 후 (AC-7 수납대기 금액 갱신용) */
   onSaved?: () => void;
 }
@@ -936,7 +944,7 @@ async function snapshotExamFlags(checkInId: string): Promise<ExamFlagState> {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Props) {
+export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onSaved }: Props) {
   // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE(19:47): dark_gray flag 전이 제거로 profile(actor) 미사용 →
   //   useAuth 값 미구독(완료칸 이동/회색은 Dashboard handleDrop 이 actor 컨텍스트 소유).
   useAuth();
@@ -956,6 +964,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState<{ method: PayMethod; amount: number }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 성공 여부(창 유지 모드에서 재클릭 이중수납 차단용).
+  //   창이 닫히지 않고 유지되므로 [수납] 버튼을 계속 누를 수 있음 → payments 이중 INSERT/회차 이중 consume 위험.
+  //   settled=true 이후엔 handleSettle 을 조기 차단하고 버튼을 비활성('수납 완료')한다. checkIn 전환 시 리셋(아래 useEffect).
+  const [settled, setSettled] = useState(false);
 
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
@@ -1096,6 +1108,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
     setSelectedItems([]);
     setSaved(false);
+    // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 새 방문(checkIn.id 전환) 진입 시 수납완료 플래그 리셋
+    //   → [수납] 버튼 재활성. (동일 방문 리페치는 [checkIn?.id] 미변으로 이 effect 미재실행 → 창 유지 상태 보존.)
+    setSettled(false);
     setPayMethod('card');
     // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
     setSplitMode(false);
@@ -2417,6 +2432,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
       return;
     }
+    // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 창 유지 모드 이중수납 차단.
+    //   [수납] 성공 후 창이 열린 채 남으므로 재클릭 가능 → payments 이중 INSERT/회차 이중 consume 방지(버튼 disabled + 이 가드 이중방어).
+    if (settled || submitting) return;
     // ── T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK: 수납 차단 게이트 제거 ──
     //   과거 MEDLAW22-B-GATE 의 진료기록 필수 + 방문일 일치 하드차단을 여기서 완전히 제거.
     //   급여/비급여 무관, 진료기록 미작성·비내원일(계좌이체 등)에도 수납을 그대로 진행한다.
@@ -2441,9 +2459,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       localStorage.removeItem(draftKey(checkIn.id));
       // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (19:47 스코프 확장: 모든 수납 유형): [수납] 은 완료칸
       //   이동을 하지 않으므로 "완료 슬롯 이동" 안내를 전 수납경로에서 쓰지 않는다(카드는 현재 진행 상태 유지).
-      toast.success('수납 완료 — 카드는 현재 진행 상태로 유지됩니다');
+      // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 수납 성공 → settled 마킹(재클릭 이중수납 차단) + 창 유지.
+      setSettled(true);
+      toast.success('수납 완료 — 이어서 [출력](계산서·영수증)을 진행하실 수 있습니다');
       setSubmitting(false);
-      onComplete(); // ← status='done' 미기록이므로 onComplete 는 리페치·미니창 닫기만(카드 위치·상태 무변경). 완료칸 이동 없음.
+      // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: onSettled(창 유지·리페치만) 우선 — 미니창을 닫지 않아
+      //   현장이 같은 창에서 [출력] 등 후속작업을 이어간다(REFUND200 요건② 서류 확인 동선 enable).
+      //   미전달 부모는 종전대로 onComplete(닫기)로 폴백(하위호환). status='done' 미기록은 양쪽 동일(완료칸 이동 없음).
+      if (onSettled) {
+        onSettled();
+      } else {
+        onComplete();
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '수납 처리 실패';
       toast.error(msg);
@@ -3634,12 +3661,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   {/* 수납 버튼 (저장 후 표시) */}
                   {saved && (
                     <Button
-                      className="w-full h-11 sm:h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
+                      className={cn(
+                        'w-full h-11 sm:h-10 text-white text-sm font-semibold',
+                        // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 수납완료 후 창이 유지되므로 상태를 명확히(초록·비활성).
+                        settled
+                          ? 'bg-emerald-600 hover:bg-emerald-600'
+                          : 'bg-purple-600 hover:bg-purple-700',
+                      )}
                       onClick={handleSettle}
-                      disabled={submitting || !splitValid}
+                      // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: settled 시 비활성 → 재클릭 이중수납 차단(창 유지 모드).
+                      disabled={submitting || settled || !splitValid}
                       data-testid="btn-settle"
                     >
-                      {submitting ? '처리 중...' : (
+                      {settled ? (
+                        <span className="inline-flex items-center gap-1"><Check className="w-4 h-4" /> 수납 완료</span>
+                      ) : submitting ? '처리 중...' : (
                         // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 상황별 버튼 레이블
                         // 전액 패키지차감(잔액=0) / 잔액 있는 차감 / 일반 결제
                         deductMode && deductAmount === 0

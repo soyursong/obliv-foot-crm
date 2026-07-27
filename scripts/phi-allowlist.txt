@@ -90,3 +90,9 @@
 #   즉시 정리. provenance: tests/e2e/T-20260723-foot-SALESDAILY-INSCOL-READSIDE-RESOURCE.spec.ts.
 #   리뷰 게이트: dev-foot 자가확인, supervisor QA.
 \+?821000007232
+
+# ── T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN 합성 E2E fixture phone (2026-07-27) ──
+#   결제미니창 [수납] 후 창 유지 witness spec 전용 합성값. 반복 자릿수(9999-88xx) 합성마커,
+#   실환자 재식별 0. NAME='[PMW-KEEPOPEN-TEST] 수납대기' + before/afterAll cleanup(phone 기준) 즉시 정리.
+#   provenance: tests/e2e/T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN.spec.ts. 리뷰 게이트: dev-foot 자가확인, supervisor QA.
+\+?821099998827

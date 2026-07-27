@@ -7964,6 +7964,13 @@ export default function Dashboard() {
           fetchCheckIns();
           fetchPayments();
         }}
+        onSettled={() => {
+          // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 후 미니창을 닫지 않는다(현장이 같은 창에서 [출력] 이어감).
+          //   데이터 리페치만 수행 — setMiniPayTarget(null)(닫기)·counter++(리마운트) 미수행으로 창/내부상태(서류 carry-forward) 유지.
+          //   checkIn 프롭(miniPayTarget) 객체 불변 → PMW 리셋 useEffect([checkIn?.id]) 미재실행 → settled/선택항목 보존.
+          fetchCheckIns();
+          fetchPayments();
+        }}
         onSaved={() => {
           // AC-7: 시술 저장 후 pending 금액 즉시 갱신
           fetchPendingServices();

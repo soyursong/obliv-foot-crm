@@ -3140,6 +3140,9 @@ export default function Reservations() {
         checkIn={resvMiniPayTarget}
         onClose={() => setResvMiniPayTarget(null)}
         onComplete={() => setResvMiniPayTarget(null)}
+        // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 후 미니창 유지(같은 창에서 [출력] 이어감).
+        //   예약관리 경로는 별도 리페치 없음 → 닫기(setResvMiniPayTarget(null)) 미수행만으로 창/내부상태 보존.
+        onSettled={() => { /* keep mini-window open */ }}
         onSaved={() => { toast.success('수납 완료'); setResvMiniPayTarget(null); }}
       />
     </div>
