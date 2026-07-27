@@ -71,13 +71,17 @@ test.describe('T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY', () => {
     expect(c).not.toMatch(/data-testid="closing-refund-processor">\{r\.staff_name/);
   });
 
-  // ── AC-4(블로커 가드): 패키지는 존재하지 않는 FK 로 JOIN 걸지 않음 (쿼리 파손 방지) ──
-  test('AC-4: package_payments 쿼리에 존재하지 않는 processor JOIN 을 걸지 않음', () => {
+  // ── AC-4(블로커 가드) — SUPERSEDED by T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY ──
+  //   Part1 당시엔 package_payments.created_by/FK 부재 → 패키지 processor JOIN 불가('—')였다.
+  //   ACTOR-HISTORY(DA GO ADDITIVE)가 package_payments.created_by 컬럼+FK+RPC 캡처를 추가해 블로커 해소 →
+  //   이제 패키지도 processor JOIN 정상. 원래의 '부재 가드' 단언(not.toContain fkey / processor_name:null)은
+  //   뒤집혔으므로 제거하고, 단건(payments) 경로 무접촉·보존만 회귀 가드로 확인한다.
+  //   (배포순서: DDL 적용이 FE 머지 선행/원자 — ACTOR-HISTORY spec 헤더 참조.)
+  test('AC-4(superseded): 단건 payments processor JOIN 무접촉 보존 (패키지 블로커는 ACTOR-HISTORY 해소)', () => {
     const c = closing();
-    // package_payments_created_by_fkey 는 prod 에 부재 → embed 걸면 PostgREST 400 → 페이지 파손
-    expect(c).not.toContain('package_payments_created_by_fkey');
-    // 패키지 enrichedRow 는 processor_name = null 명시
-    expect(c).toContain('processor_name: null');
+    expect(c).toContain('processor:user_profiles!payments_created_by_fkey(name)');
+    // 패키지 블로커 해소 후 처리자 승계로 전환됨(과거 null 하드코딩 아님)
+    expect(c).toContain('processor_name: p.processor?.name ?? null');
   });
 
   // ── 회귀 가드: 기존 금일 환불 섹션 구조 보존 (T-20260717 STATS-MISSING) ──────

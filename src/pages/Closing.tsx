@@ -100,6 +100,10 @@ interface PackagePaymentRow {
   memo: string | null;
   /** T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행 → 원결제행 링크(패키지). 환불(refund) 행에서만 채워짐. */
   parent_payment_id?: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: 환불 처리 직원(package_payments.created_by). refund_package_payment auth.uid() 캡처. 과거행 NULL. */
+  created_by?: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: user_profiles!package_payments_created_by_fkey embed(name). NULL=미기록('—'). */
+  processor?: { name: string | null } | null;
 }
 
 interface UnpaidCheckIn {
@@ -180,7 +184,7 @@ interface EnrichedRow {
   staff_name: string | null;
   /** T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: 실제 결제/환불 처리자(payments.created_by→user_profiles.name).
    *  ⚠ staff_name(=customers.assigned_staff_id 고객 배정담당)과 다른 축. 환불 이력 처리자 컬럼 전용.
-   *  단건=payments.processor 승계 / 패키지=null(package_payments created_by 부재, Part2 대기) / 수기=null. NULL=미기록('—'). */
+   *  단건=payments.processor 승계 / 패키지=package_payments.processor 승계(T-20260727-ACTOR-HISTORY) / 수기=null. NULL=미기록('—'). */
   processor_name?: string | null;
   amount: number;
   method: string;
@@ -352,18 +356,19 @@ export default function Closing() {
         .from('package_payments')
         // T-20260522-foot-CLOSING-REFUND: id, package_id 추가 (환불 RPC 호출용)
         // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: parent_payment_id 추가(패키지 환불행→원결제행 annotate 매칭용)
-        // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY [블로커]: 패키지는 processor JOIN 불가 —
-        //   package_payments 에 created_by 컬럼/FK 부재(prod 확인, initial_schema 이후 추가 마이그 없음).
-        //   refund_package_payment RPC 도 created_by 미캡처(20260714) + INSERT 대상=package_payments(payments 아님).
-        //   → 티켓 Part 2(RPC created_by 캡처)는 신규 컬럼+FK DDL 을 수반(ADDITIVE·no-DDL 전제 불성립) → DA CONSULT 재조정 필요.
-        //   그 전까지 패키지 환불행 처리자는 데이터 자체가 없어 '—' 표시(processor_name=null).
-        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo, parent_payment_id')
+        // T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: created_by + processor JOIN 추가(단건 PROCESSOR-DISPLAY 패턴 형제 복제).
+        //   환불 이력 '처리자' = package_payments.created_by(refund_package_payment RPC auth.uid() 캡처) → user_profiles.name.
+        //   FK 기본명 package_payments_created_by_fkey (마이그 20260727210000 dryrun §2 검증필). 과거행 NULL → '—'(forward-only).
+        //   read-side 노출은 user_profiles RLS(단건 payments.created_by 경로와 동일 정책) 재사용 → parity·신규표면 0.
+        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo, parent_payment_id, created_by, processor:user_profiles!package_payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
         .order('created_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as PackagePaymentRow[];
+      // T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: processor embed 은 PostgREST 생성타입상 배열추론 →
+      //   many-to-one 실런타임은 객체(or null). 단건(PaymentRow) 과 동형으로 unknown 경유 cast.
+      return (data ?? []) as unknown as PackagePaymentRow[];
     },
   });
 
@@ -918,9 +923,9 @@ export default function Closing() {
             ?? null,
         ),
         staff_name: assignedStaffName,
-        // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: 패키지는 처리자 데이터 자체가 없음
-        //   (package_payments.created_by 컬럼/FK 부재 + refund_package_payment 미캡처) → null('—'). Part 2 후 백필 필요.
-        processor_name: null,
+        // T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: 실제 환불 처리자 = package_payments.created_by JOIN
+        //   (refund_package_payment auth.uid() 캡처분). staff_name(고객 배정담당)과 별개 축. 과거행 미기록 → null('—').
+        processor_name: p.processor?.name ?? null,
         amount: p.amount,
         method: p.method,
         payment_type: p.payment_type,
