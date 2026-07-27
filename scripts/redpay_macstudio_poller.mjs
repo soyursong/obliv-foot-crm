@@ -34,9 +34,10 @@
  *      T-20260708-foot-REDPAY-CLOSING-TAB (뷰/freshness),
  *      redpay-partner-api.md F0BG14RC7GC (envelope/dedup/음수취소 spec)
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. 환경설정 로드 — process.env → ~/.env.redpay-foot → ~/.env.redpay (fallback)
@@ -127,6 +128,28 @@ const REDPAY_CLINIC_SLUG = cfg("REDPAY_CLINIC_SLUG", DOMAIN_CLINIC_SLUG_DEFAULTS
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0b. 미등록 TID 즉시 알람 (T-20260727-foot-REDPAY-WATCHDOG-LATENCY-CLOSE — Option(b))
+// ────────────────────────────────────────────────────────────────────────────
+//   왜: 워치독(redpay_terminal_watchdog.mjs ④ TID-grain 대사)이 "기등록 foot merchant 의 명단-밖
+//     신 TID"(silent-drop)를 잡지만 일 1회 배치 → 인지창 최대 24h. 부모 맥락이 P0 '실시간 매출
+//     누락'이므로 인지창 축소가 본질 처방(planner AC-4 spinoff, DA CONSULT 불요/db_change=false).
+//   무엇: 폴러가 매 사이클(launchd 300s)에서 이미 계산하는 drift(=merchant 인정 + 미등록 TID) 를
+//     즉시 알람 훅으로 재사용 → 인지창을 24h → ≤5분(폴러주기)으로 단축(AC-1). 신규 launchd/중복
+//     폴링 부하 0(기존 조회·필터 결과 위에 additive 훅).
+//   dedup(AC-2): 워치독과 "동일 상태파일"(~/.redpay-watchdog-<domain>-state.json)의 alerted_tids 를
+//     공유 → first_alerted 기준 중복 억제 + 폴러/워치독 상호 이중알람 방지. 워치독 일배치는 백스톱
+//     으로 유지(폴러 다운·511-only bizno 커버, AC-3). auto-release(명단 편입 시 해제)는 워치독이 소유.
+//   fail-safe: 슬랙/상태파일 오류는 모두 비치명 — 적재(폴러 본업)에 절대 영향 없음(best-effort).
+const TID_ALARM_ENABLED = cfg("REDPAY_POLLER_TID_ALARM_ENABLED", "true") === "true"; // 킬스위치
+const TID_ALARM_CHANNEL = cfg("REDPAY_POLLER_TID_ALARM_CHANNEL", cfg("REDPAY_WATCHDOG_SLACK_CHANNEL", "C0ATE5P6JTH"));
+// 워치독과 동일 상태파일 공유(dedup 통일). 워치독 기본값과 정확히 동일 경로.
+const TID_ALARM_STATE_PATH = cfg("REDPAY_WATCHDOG_STATE_PATH", join(homedir(), `.redpay-watchdog-${REDPAY_DOMAIN}-state.json`));
+const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
+
+const ARGS = new Set(process.argv.slice(2));
+const SELF_TEST = ARGS.has("--self-test"); // 네트워크 無 순수로직 검증(AC-4 재현 테스트 = E2E ef_only 대체)
 
 // ── 풋 스코프 SSOT (redpay_foot_terminal_registry.md §2 = authoritative) ──
 //   ⚠ business_no 457-23-00938(07-23 RedPay flip; 구 511-60-00988) = 공유 법인 merchant 피드(구 511 스코프 시절 풋/도수/피부/롱래스팅 5도메인 동거). 도메인 격리는 merchant_id allowlist(아래) — business_no 아님.
@@ -441,6 +464,121 @@ function filterToFootScope(items) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 3b. 미등록 TID 즉시 알람 (T-20260727-...-WATCHDOG-LATENCY-CLOSE — Option(b) 실시간 훅)
+//    drift(=merchant 인정 + 미등록 TID)를 즉시 슬랙 알람 → 인지창 24h → ≤폴러주기(300s)로 단축.
+//    워치독 ④ TID-grain 대사와 동일 시맨틱·동일 dedup 상태파일 공유(이중알람 방지, 워치독=백스톱).
+// ════════════════════════════════════════════════════════════════════════════
+// AC-1(워치독 정합): TID = COALESCE(col_tid, data.tid). 538144 계열 col_tid-only 실증 → 두 shape 병합.
+//   (filterToFootScope 의 admit 판정은 무접촉 — merchant_id 권위 유지. 본 함수는 알람 payload 전용.)
+function extractTid(it) {
+  const colTid = it.tid != null ? String(it.tid).trim() : "";
+  const dataTid = it.data?.tid != null ? String(it.data.tid).trim() : "";
+  return colTid || dataTid || "";
+}
+// 순수 선택자(self-test 대상) — drift 항목 중 '진짜 미등록 TID'만 tid 기준 그룹핑.
+//   · TID 식별 불가(빈문자열) → 스킵(워치독/UNCLASSIFIED 로그가 담당).
+//   · COALESCE TID 가 화이트리스트(tid∪superseded)에 이미 있음 → data.tid-only 등록건 false-alarm 방지.
+//   · 이미 알림한 TID(state.alerted_tids) → dedup 억제(AC-2).
+function selectRealtimeTidAlarms(driftItems, tidWhitelistSet, alertedTids) {
+  const byTid = new Map();
+  for (const it of driftItems) {
+    const tid = extractTid(it);
+    if (!tid) continue;                            // TID 식별 불가 → 스킵
+    if (tidWhitelistSet && tidWhitelistSet.has(tid)) continue; // 등록된 TID(data.tid shape 등) → false-alarm 방지
+    if (alertedTids && alertedTids[tid]) continue; // dedup: 이미 알림한 TID
+    let g = byTid.get(tid);
+    if (!g) {
+      const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
+      g = { tid, merchant_id: mid, merchant_name: (it.merchant?.name ?? "").toString(), trx_count: 0 };
+      byTid.set(tid, g);
+    }
+    if (!g.merchant_name && it.merchant?.name) g.merchant_name = String(it.merchant.name);
+    g.trx_count += 1;
+  }
+  return [...byTid.values()];
+}
+
+// dedup 상태 로드(워치독과 공유). 파싱 실패(워치독 write 중 partial read 등) → null 반환
+//   → 이번 사이클 알람 스킵(폭격/유실 둘 다 방지: 300s 후 재시도 + 워치독 일배치 백스톱).
+function loadAlarmStateSafe() {
+  try {
+    if (!existsSync(TID_ALARM_STATE_PATH)) {
+      return { version: 2, alerted_merchants: {}, alerted_tids: {} };
+    }
+    const s = JSON.parse(readFileSync(TID_ALARM_STATE_PATH, "utf8"));
+    if (!s.alerted_tids) s.alerted_tids = {};
+    if (!s.alerted_merchants) s.alerted_merchants = {};
+    return s;
+  } catch (e) {
+    warn(`[TID-ALARM] dedup 상태 읽기 실패 → 이번 사이클 알람 스킵(다음 사이클 재시도): ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+}
+// 원자적 저장(temp + rename) — 워치독의 동시 read 시 partial-read/파손 방지.
+//   워치독이 쓰는 타 필드(alerted_merchants·last_run_at·last_dormant_report_at)는 parse 원본을 그대로
+//   보존한 채 alerted_tids 만 갱신하므로 무손실.
+function saveAlarmStateAtomic(state) {
+  state.last_poller_tid_alarm_at = ts(); // 워치독 last_run_at 은 건드리지 않음(별도 필드)
+  const tmp = `${TID_ALARM_STATE_PATH}.tmp.${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+  renameSync(tmp, TID_ALARM_STATE_PATH);
+}
+// 슬랙 발송(장쳰 봇 CLI 경유, best-effort). 실패=비치명(적재 본업 무영향).
+function sendSlack(channel, text) {
+  if (!existsSync(SLACK_SEND_SH)) { warn(`[TID-ALARM] 슬랙 발송 스킵(비치명): ${SLACK_SEND_SH} 없음`); return false; }
+  try {
+    execFileSync("/bin/bash", [SLACK_SEND_SH, channel, text], { stdio: "pipe", timeout: 20000 });
+    return true;
+  } catch (e) {
+    errlog(`[TID-ALARM] 슬랙 발송 실패(비치명): ${e instanceof Error ? e.message : String(e)}`);
+    return false;
+  }
+}
+// 실시간 알람 실행부 — drift 누적본을 받아 미등록 TID 즉시 알람(현장 친화 문안, dedup).
+async function fireRealtimeTidAlarms(driftItems) {
+  if (!TID_ALARM_ENABLED) { log("[TID-ALARM] 킬스위치 OFF(REDPAY_POLLER_TID_ALARM_ENABLED=false) — 스킵"); return { alerted: 0, suppressed: 0, skipped: 0 }; }
+  if (tidWhitelist.size === 0) return { alerted: 0, suppressed: 0, skipped: 0 }; // 도수 등 TID 미상 도메인 = 판정 무의미
+  if (!driftItems || driftItems.length === 0) return { alerted: 0, suppressed: 0, skipped: 0 };
+
+  const state = loadAlarmStateSafe();
+  if (state == null) return { alerted: 0, suppressed: 0, skipped: driftItems.length };
+
+  const candidates = selectRealtimeTidAlarms(driftItems, tidWhitelist, state.alerted_tids);
+  // 억제 카운트(로그용) = 이미 알림한 distinct TID 수
+  const distinctDriftTids = new Set(driftItems.map((it) => extractTid(it)).filter((t) => t && !tidWhitelist.has(t)));
+  const suppressed = [...distinctDriftTids].filter((t) => state.alerted_tids[t]).length;
+
+  let alerted = 0;
+  for (const g of candidates) {
+    // 현장 친화 언어(field_lang_dict.md §1): 개발용어 0. 워치독 ④ 문안과 통일.
+    const text =
+      `🚨 [레드페이 회선 감시·실시간] 이미 등록된 단말에서 새 결제회선번호(TID)가 감지되었습니다\n` +
+      `• 가맹점명: ${g.merchant_name || "(이름 없음)"}\n` +
+      `• 단말번호(merchant): ${g.merchant_id || "(미상)"} / 새 결제회선번호(TID): ${g.tid}\n` +
+      `• 방금 들어온 거래: ${g.trx_count}건\n` +
+      `이 결제회선은 아직 관리 명단에 없어, 지금 이 순간 매출/정산 대사에서 누락되고 있을 수 있습니다.\n` +
+      `• 조치: 이 거래는 방금 시스템에 수집되었습니다. 명단에 결제회선번호(TID)만 추가하면 즉시 정상 반영됩니다.\n` +
+      `단말 담당자가 확인 후 명단(회선번호)에 추가해 주세요. (자동 등록은 하지 않습니다)`;
+    const ok = sendSlack(TID_ALARM_CHANNEL, text);
+    if (ok) {
+      state.alerted_tids[g.tid] = {
+        merchant_id: g.merchant_id, merchant_name: g.merchant_name, trx_count: g.trx_count,
+        biznos: [REDPAY_BUSINESS_NO], raw_present: true, // 폴러가 방금 적재함
+        first_alerted_at: ts(), source: "poller-realtime",
+      };
+      alerted++;
+      // AC-4 evidence 로그 — 미등록 TID 주입→즉시 알람 발송 근거.
+      log(`[TID-ALARM-REALTIME] 미등록 TID 즉시 알람 발송 tid=${g.tid} merchant=${g.merchant_id} trx=${g.trx_count} bizno=${REDPAY_BUSINESS_NO} ch=${TID_ALARM_CHANNEL}`);
+    }
+  }
+  if (alerted > 0) {
+    try { saveAlarmStateAtomic(state); }
+    catch (e) { warn(`[TID-ALARM] dedup 상태 저장 실패(비치명 — 다음 사이클 재알람 가능): ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  return { alerted, suppressed, skipped: 0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 4. redpay_raw_transactions upsert (멱등키 external_trxid,external_status,amount)
 // ════════════════════════════════════════════════════════════════════════════
 async function upsertRawTransactions(clinicId, transactions) {
@@ -648,6 +786,7 @@ async function main() {
   let totalUpserted = 0;
   let totalErrors = 0;
   let totalDrift = 0;
+  const allDriftItems = []; // T-20260727-...-WATCHDOG-LATENCY-CLOSE: 즉시 알람 훅용 drift 누적(페이지 교차 dedup)
   let page = 1;
   while (true) {
     const { items, totalPage } = await fetchRedpayPage(fromDt, toDt, page, PAGE_SIZE);
@@ -668,6 +807,7 @@ async function main() {
     }
     if (drift.length > 0) {
       totalDrift += drift.length;
+      allDriftItems.push(...drift); // 즉시 알람 훅용 누적(Option b)
       const driftTids = [...new Set(drift.map((d) => d.tid ?? "null"))].slice(0, 10);
       // ★ T-20260727-...-MERCHANT-ADMISSION-STRUCTURAL AC-3: tid= 서버 narrowing 제거 후
       //   drift(merchantOk + 미등록 TID) = 기등록 foot merchant 아래 '신 TID 자동 admit' 이 정상 케이스.
@@ -694,12 +834,64 @@ async function main() {
   // ── EF match_only 트리거 (best-effort) ─────────────────────────────────────
   if (totalUpserted > 0) await triggerMatcher();
 
+  // ── 미등록 TID 즉시 알람 (Option b — best-effort, 적재 본업 무영향) ──────────
+  //   drift(=merchant 인정 + 미등록 TID) 누적본을 즉시 알람 → 인지창 ≤폴러주기(300s). dedup 은 워치독과 공유.
+  const alarmRes = await fireRealtimeTidAlarms(allDriftItems);
+
   const elapsedMs = Date.now() - startMs;
   log(`완료 elapsed_ms=${elapsedMs} fetched=${totalFetched} scoped_out=${totalScopedOut} ` +
-      `drift=${totalDrift} upserted=${totalUpserted} errors=${totalErrors}`);
+      `drift=${totalDrift} upserted=${totalUpserted} errors=${totalErrors} ` +
+      `tid_alarm_new=${alarmRes.alerted} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped}`);
 }
 
-main().catch((e) => {
-  errlog(`치명 오류: ${e instanceof Error ? e.stack || e.message : String(e)}`);
-  process.exit(1);
-});
+// ════════════════════════════════════════════════════════════════════════════
+// 8. self-test — 네트워크 無 순수로직 검증 (AC-4 재현 = E2E ef_only 대체)
+//    미등록 TID 주입 → selectRealtimeTidAlarms 즉시 감지 + dedup + COALESCE + false-alarm 방지.
+// ════════════════════════════════════════════════════════════════════════════
+function assert(cond, msg) { if (!cond) throw new Error(`SELF-TEST FAIL: ${msg}`); console.log(`  ✅ ${msg}`); }
+function runSelfTest() {
+  console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] self-test 시작 (네트워크 미사용) — 미등록 TID 즉시 알람`);
+  const whitelist = new Set(["1047535843", "1047538231"]); // 등록 TID(tid∪superseded)
+
+  // AC-4: 미등록 TID 주입 (drift 시뮬레이션 — merchant 인정 + 미등록 TID)
+  const drift = [
+    { merchant: { id: "1777289001", name: "종로 풋케어(멀티)" }, tid: "1047999001" },                    // 미등록 → 감지
+    { merchant: { id: "1777289001", name: "종로 풋케어(멀티)" }, tid: "1047999001" },                    // 동일 TID → 건수 누적
+    { merchant: { id: "1777288003", name: "종로 풋케어(유선)" }, tid: null, data: { tid: "1047538231" } }, // data.tid=등록 → false-alarm 방지(스킵)
+    { merchant: { id: "1777288003", name: "종로 풋케어(유선)" }, tid: null, data: { tid: "1047999088" } }, // data.tid 미등록 → COALESCE 감지
+    { merchant: { id: "1777289002", name: "종로 풋케어" }, tid: null },                                    // TID 식별불가 → 스킵
+  ];
+
+  // extractTid COALESCE
+  assert(extractTid({ tid: "1047538144" }) === "1047538144", `extractTid: col_tid 우선`);
+  assert(extractTid({ tid: null, data: { tid: "1047538206" } }) === "1047538206", `extractTid: data.tid 폴백(538144 계열)`);
+  assert(extractTid({ merchant: { id: "x" } }) === "", `extractTid: TID 부재 → 빈문자열`);
+
+  // 즉시 감지 (dedup 없음)
+  const sel = selectRealtimeTidAlarms(drift, whitelist, {});
+  const byTid = Object.fromEntries(sel.map((g) => [g.tid, g]));
+  assert(sel.length === 2, `미등록 TID 2종 즉시 감지 (실제=${sel.length})`);
+  assert(byTid["1047999001"] && byTid["1047999001"].trx_count === 2, `동일 TID 건수 누적 2 (col_tid shape)`);
+  assert(byTid["1047999088"], `data.tid shape 미등록 TID 도 COALESCE 로 감지`);
+  assert(!byTid["1047538231"], `data.tid=등록 TID 는 false-alarm 방지(스킵)`);
+  assert(byTid["1047999001"].merchant_id === "1777289001", `merchant_id 정확`);
+
+  // AC-2: dedup (이미 알림한 TID 억제)
+  const sel2 = selectRealtimeTidAlarms(drift, whitelist, { "1047999001": { first_alerted_at: "x" } });
+  assert(sel2.length === 1 && sel2[0].tid === "1047999088", `dedup: 이미 알림한 TID 억제 (실제=${sel2.length})`);
+
+  // 빈 drift / 도수(TID 미상) 안전
+  assert(selectRealtimeTidAlarms([], whitelist, {}).length === 0, `빈 drift → 0건`);
+
+  console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);
+}
+
+if (SELF_TEST) {
+  try { runSelfTest(); }
+  catch (e) { console.error(`SELF-TEST FAIL: ${e instanceof Error ? e.message : String(e)}`); process.exit(1); }
+} else {
+  main().catch((e) => {
+    errlog(`치명 오류: ${e instanceof Error ? e.stack || e.message : String(e)}`);
+    process.exit(1);
+  });
+}
