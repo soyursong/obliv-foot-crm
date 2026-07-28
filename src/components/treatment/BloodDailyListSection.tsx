@@ -54,6 +54,11 @@ import {
   type ExamItemStatus,
 } from '@/lib/examItemStatus';
 
+// ─ T-20260728-foot-LABTAB-BLOODLIST-COMPACT-DENSITY (증분, 순수 CSS/className, DB·로직 무변경) ─
+//   행간·셀 패딩 축소 → 진료환자목록(진료알림판) 밀도 수준 통일. 선례 재사용:
+//     MEDCHART-TABLE-COLWIDTH-TIGHTEN(T-20260718) / DOCDASH-POSTDEPLOY-REFINE-5(진료알림판 셀 px-1.5 py-1).
+//   th/td 패딩 → px-1.5 py-1 / 테이블 text-[13px]→[12px] / 헤더 [12px]→[11px]
+//   / 체크박스 h-6→h-5(탭영역 20px 유지) / 접수자 select·업로드 버튼 py 축소. 컬럼셋/색상/데이터 계약 무변경.
 const FORM_KEY = 'blood_reception_daily';
 // ACTIONS-3BTN: 접수 항목 상태 오버레이 form_key(피검사 탭) — 접수/서류 체크박스 row 와 별 key(무회귀).
 const ITEM_STATUS_FORM_KEY = 'blood_item_action_status';
@@ -412,9 +417,9 @@ function LabCheckbox({
       role="checkbox"
       data-testid={testid}
       data-checked={checked ? 'true' : 'false'}
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-[3px] border-2 bg-white transition ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-black/5'} ${borderColor}`}
+      className={`inline-flex h-5 w-5 items-center justify-center rounded-[3px] border-2 bg-white transition ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-black/5'} ${borderColor}`}
     >
-      {checked && <Check className={`h-4 w-4 ${checkColor}`} strokeWidth={3} />}
+      {checked && <Check className={`h-3.5 w-3.5 ${checkColor}`} strokeWidth={3} />}
     </button>
   );
 }
@@ -443,7 +448,7 @@ function ReceiverNameCell({
       }}
       aria-label="접수자명 선택"
       data-testid="blood-receiver-select"
-      className={`w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-red-700 focus:border-red-300 focus:bg-white focus:outline-none ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-white/60'}`}
+      className={`w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-[12px] text-red-700 focus:border-red-300 focus:bg-white focus:outline-none ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-white/60'}`}
     >
       <option value="">접수자 선택</option>
       {/* 목록 밖 저장값(예: 레거시/퇴사) 보존 옵션 — 미선택으로 덮이지 않게 유지 */}
@@ -574,20 +579,20 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border bg-background" data-testid="blood-daily-table">
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full border-collapse text-[12px]">
             <thead>
-              <tr className="border-b text-center text-[12px] font-semibold text-foreground">
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30 w-12">순서</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">검사일자</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">환자명</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">차트번호</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-muted/30">생년월일</th>
+              <tr className="border-b text-center text-[11px] font-semibold text-foreground">
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-muted/30 w-12">순서</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-muted/30">검사일자</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-muted/30">환자명</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-muted/30">차트번호</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-muted/30">생년월일</th>
                 {/* RECEIVER-COORD-ACCT-DROPDOWN-WIDTH: 접수여부/접수자명/서류수령여부/업로드 4컬럼 폭 균일. */}
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700 w-32">접수여부</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-pink-100 text-red-700 w-32">접수자명</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-yellow-100 text-yellow-800 w-32">서류수령여부</th>
-                <th className="border-r px-2 py-2 whitespace-nowrap bg-teal-100 text-teal-800 w-32">업로드</th>
-                {canAct && <th className="px-2 py-2 whitespace-nowrap bg-muted/30 text-center">관리</th>}
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-pink-100 text-red-700 w-32">접수여부</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-pink-100 text-red-700 w-32">접수자명</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-yellow-100 text-yellow-800 w-32">서류수령여부</th>
+                <th className="border-r px-1.5 py-1 whitespace-nowrap bg-teal-100 text-teal-800 w-32">업로드</th>
+                {canAct && <th className="px-1.5 py-1 whitespace-nowrap bg-muted/30 text-center">관리</th>}
               </tr>
             </thead>
             <tbody>
@@ -604,9 +609,9 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                     data-complete={complete ? 'true' : 'false'}
                     data-item-status={itemStatus}
                   >
-                    <td className="border-r px-2 py-1.5 tabular-nums text-muted-foreground">{idx + 1}</td>
-                    <td className="border-r px-2 py-1.5 tabular-nums whitespace-nowrap">{testDateLabel(r.requestDate)}</td>
-                    <td className="border-r px-2 py-1.5 whitespace-nowrap">
+                    <td className="border-r px-1.5 py-1 tabular-nums text-muted-foreground">{idx + 1}</td>
+                    <td className="border-r px-1.5 py-1 tabular-nums whitespace-nowrap">{testDateLabel(r.requestDate)}</td>
+                    <td className="border-r px-1.5 py-1 whitespace-nowrap">
                       {/* 좌클릭=2번차트 / 우클릭=CRM 컨텍스트 메뉴(부모 위임, 신규 정의 0) */}
                       <button
                         type="button"
@@ -618,10 +623,10 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                         {r.customerName}
                       </button>
                     </td>
-                    <td className="border-r px-2 py-1.5 whitespace-nowrap font-mono text-[12px] text-muted-foreground">{chartNoBadge(r.chartNumber)}</td>
-                    <td className="border-r px-2 py-1.5 tabular-nums whitespace-nowrap">{birth6(r.birthDate)}</td>
+                    <td className="border-r px-1.5 py-1 whitespace-nowrap font-mono text-[12px] text-muted-foreground">{chartNoBadge(r.chartNumber)}</td>
+                    <td className="border-r px-1.5 py-1 tabular-nums whitespace-nowrap">{birth6(r.birthDate)}</td>
                     {/* 접수여부 — 핑크 배경 / 빨간 체크. #4 완료 시 잠금. */}
-                    <td className={`border-r px-2 py-1.5 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
+                    <td className={`border-r px-1.5 py-1 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
                       <LabCheckbox
                         checked={st.received}
                         tone="red"
@@ -632,7 +637,7 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                       />
                     </td>
                     {/* 접수자명 — 핑크 배경 / 빨강 텍스트. #4 완료 시 잠금. */}
-                    <td className={`border-r px-1 py-1 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
+                    <td className={`border-r px-1 py-0.5 ${complete ? 'bg-muted/30' : 'bg-pink-50'}`}>
                       <ReceiverNameCell
                         value={st.receiverName}
                         options={coordinators}
@@ -641,7 +646,7 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                       />
                     </td>
                     {/* 서류수령여부 — 노랑 배경 / 녹색 체크. #4 완료 시 잠금(재활성은 결과지 삭제로). */}
-                    <td className={`border-r px-2 py-1.5 ${complete ? 'bg-muted/30' : 'bg-yellow-50'}`}>
+                    <td className={`border-r px-1.5 py-1 ${complete ? 'bg-muted/30' : 'bg-yellow-50'}`}>
                       <LabCheckbox
                         checked={st.docsReceived}
                         tone="green"
@@ -652,13 +657,13 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                       />
                     </td>
                     {/* #2/#3 업로드 — 행별 결과지 업로드/보기. 클릭→BloodResultDialog(kind='blood_result'). 완료 시에도 열람·삭제(재활성) 위해 유지. */}
-                    <td className="px-2 py-1.5 bg-teal-50/60">
+                    <td className="px-1.5 py-1 bg-teal-50/60">
                       <button
                         type="button"
                         onClick={() => setUploadFor({ id: r.customerId, name: r.customerName })}
                         data-testid="blood-upload-btn"
                         data-upload-count={uploadN}
-                        className="inline-flex items-center gap-1 rounded-md border border-teal-300 bg-white px-2 py-1 text-[12px] font-medium text-teal-700 transition hover:bg-teal-50"
+                        className="inline-flex items-center gap-1 rounded-md border border-teal-300 bg-white px-2 py-0.5 text-[12px] font-medium text-teal-700 transition hover:bg-teal-50"
                       >
                         {uploadN > 0 ? (
                           <>
@@ -673,7 +678,7 @@ export default function BloodDailyListSection({ date, nameInteraction }: Props) 
                     </td>
                     {/* ACTIONS-3BTN: 접수 항목 행 액션 3종 — 권한 A 만 컬럼 노출. */}
                     {canAct && (
-                      <td className="px-2 py-1.5 align-middle">
+                      <td className="px-1.5 py-1 align-middle">
                         <ExamItemActions
                           status={itemStatus}
                           busy={persistItemStatus.isPending}
