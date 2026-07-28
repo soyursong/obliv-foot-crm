@@ -3,11 +3,17 @@
  *
  * Migration Dry-Run No-Persistence Protocol 준수:
  *   ① pre-probe (READ-ONLY): superseded_tids 컬럼 실재 + 2 merchant 현재 tid=479xxx / superseded=NULL.
- *   ② trial-apply: up.sql 전문을 BEGIN … ROLLBACK(sentinel) 로 실행 → SQL 무오류 + rows-affected + 무영속.
- *   ③ post-probe (READ-ONLY): 2 merchant tid 여전히 479xxx (영속 0 확증).
- *   ④ forecast (READ-ONLY): 신 2 TID 편입 시 7/27~28 gap 소급 표면화 예측(뷰 semantics = r.tid membership).
+ *   ② trial-apply: up.sql 전문을 DO $dryrun$ … RAISE EXCEPTION sentinel 로 실행 → SQL 무오류 검증 + 무영속.
+ *                  (up.sql = 순수 UPDATE, txn-control 문 없음 → sentinel-bypass hazard 없음.)
+ *   ③ post-probe (READ-ONLY): 2 merchant tid 여전히 479xxx (영속 0 확증) + 신 TID 미영속.
+ *   ④ forecast (READ-ONLY, ★view-accurate): 신 2 TID(538xxx)가 tid-membership 에 편입되면
+ *      v_redpay_reconciliation_daily 가 실제로 쓰는 predicate
+ *      (merchant = COALESCE(raw_payload->'merchant'->>'id', …->'data'->>'merchant_id'),
+ *       tid = COALESCE(r.tid, raw_payload->'data'->>'tid')) 하 12행 소급 표면화 예측.
+ *      ⚠ 선례(0725gap) 템플릿의 nested-only `raw_payload->'data'->>'tid'` 경로는 본 payload 형상
+ *         (top-level tid + r.tid 컬럼)과 불일치 → 뷰 실 경로(COALESCE(r.tid,…)) 로 교정.
  *
- * ⚠ 순수 data-lane UPDATE(신규 DDL 0). 영속 write 0. PENDING DA GO — GO 전까지 실행 보류.
+ * ⚠ 순수 data-lane UPDATE(신규 DDL 0). 영속 write 0.
  * 실행: node supabase/migrations/20260728170000_redpay_foot_registry_0728gap_remap.dryrun.mjs
  * 필요: .env.local SUPABASE_ACCESS_TOKEN (Management API PAT).
  */
@@ -40,7 +46,6 @@ async function q(sql) {
 const MERCH = ['1777289006', '1777288008'];
 const NEW_TIDS = ['1047538239', '1047538246'];
 const OLD_TIDS = ['1047479480', '1047479475'];
-const arr = (a) => `ARRAY[${a.map((x) => `'${x}'`).join(',')}]`;
 
 console.log('════ 0728GAP superseded-remap DRY-RUN (무영속) ════\n');
 
@@ -50,24 +55,24 @@ const pre = await q(`
     (SELECT count(*) FROM information_schema.columns
        WHERE table_name='redpay_terminal_registry' AND column_name='superseded_tids') AS has_superseded_col,
     (SELECT count(*) FROM redpay_terminal_registry
-       WHERE domain='foot' AND merchant_id = ANY(${arr(MERCH)})
-         AND tid = ANY(${arr(OLD_TIDS)}) AND active) AS two_at_old_tid,
+       WHERE domain='foot' AND merchant_id = ANY(ARRAY[${MERCH.map((m) => `'${m}'`).join(',')}])
+         AND tid = ANY(ARRAY[${OLD_TIDS.map((t) => `'${t}'`).join(',')}]) AND active) AS two_at_old_tid,
     (SELECT count(*) FROM redpay_terminal_registry
-       WHERE tid = ANY(${arr(NEW_TIDS)})
-          OR superseded_tids && ${arr(NEW_TIDS)}) AS new_tids_present`);
+       WHERE tid = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])
+          OR superseded_tids && ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}]) AS new_tids_present`);
 console.log('① pre-probe:', JSON.stringify(pre[0]));
 console.log('   기대: has_superseded_col=1, two_at_old_tid=2, new_tids_present=0\n');
 
 const preRows = await q(`
-  SELECT merchant_id, tid, superseded_tids
+  SELECT merchant_id, tid, superseded_tids, terminal_label
   FROM redpay_terminal_registry
-  WHERE domain='foot' AND merchant_id = ANY(${arr(MERCH)})
+  WHERE domain='foot' AND merchant_id = ANY(ARRAY[${MERCH.map((m) => `'${m}'`).join(',')}])
   ORDER BY merchant_id`);
 console.log('   2 merchant 현 상태:', JSON.stringify(preRows));
 
-// ── ② trial-apply (BEGIN … ROLLBACK sentinel, 무영속) ──
+// ── ② trial-apply (DO … RAISE EXCEPTION sentinel, 무영속) ──
 const upBody = readFileSync(UP, 'utf8');
-console.log('\n② trial-apply: up.sql 전문 BEGIN…ROLLBACK 실행(무오류 + rows-affected)...');
+console.log('\n② trial-apply: up.sql 전문 DO…sentinel unwind 실행(무오류 검증 + rows-affected)...');
 const trial = await q(`
 DO $dryrun$
 DECLARE
@@ -77,7 +82,7 @@ BEGIN
   ${upBody.replace(/\$dryrun\$/g, '$inner$')}
   GET DIAGNOSTICS v_affected = ROW_COUNT;
   SELECT count(*) INTO v_new FROM public.redpay_terminal_registry
-    WHERE domain='foot' AND tid = ANY(${arr(NEW_TIDS)});
+    WHERE domain='foot' AND tid = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}]);
   RAISE NOTICE 'DRYRUN rows_affected=% new_tid_rows_in_txn=%', v_affected, v_new;
   RAISE EXCEPTION 'DRYRUN_ROLLBACK_SENTINEL(무영속 강제 unwind, affected=% new=%)', v_affected, v_new;
 END
@@ -92,33 +97,44 @@ if (trial !== 'SENTINEL') throw new Error('무영속 sentinel 미발화 — dry-
 const post = await q(`
   SELECT
     (SELECT count(*) FROM redpay_terminal_registry
-       WHERE domain='foot' AND merchant_id = ANY(${arr(MERCH)})
-         AND tid = ANY(${arr(OLD_TIDS)})) AS still_old_tid,
+       WHERE domain='foot' AND merchant_id = ANY(ARRAY[${MERCH.map((m) => `'${m}'`).join(',')}])
+         AND tid = ANY(ARRAY[${OLD_TIDS.map((t) => `'${t}'`).join(',')}])) AS still_old_tid,
     (SELECT count(*) FROM redpay_terminal_registry
-       WHERE tid = ANY(${arr(NEW_TIDS)})) AS new_tid_persisted`);
+       WHERE tid = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])) AS new_tid_persisted`);
 console.log('\n③ post-probe(무영속 확증):', JSON.stringify(post[0]));
 const clean = Number(post[0].still_old_tid) === 2 && Number(post[0].new_tid_persisted) === 0;
 console.log(`   무영속 ${clean ? '✅ PASS' : '❌ FAIL — 영속 흔적!'} (still_old_tid=2, new_tid_persisted=0 기대)\n`);
 if (!clean) throw new Error('무영속 검증 실패 — 영속 흔적 탐지');
 
-// ── ④ forecast (READ-ONLY): 신 TID 편입 후 소급 표면화 예측 (뷰 semantics = r.tid membership) ──
+// ── ④ forecast (READ-ONLY, ★view-accurate): 신 TID 편입 후 12행 소급 표면화 예측 ──
+//   뷰 predicate 를 verbatim 재현 + tid-membership 에 NEW_TIDS 를 UNION(remap 후 tid=신 상태 시뮬).
 const fc = await q(`
   WITH tid_after AS (
     SELECT tid FROM redpay_terminal_registry WHERE domain='foot' AND active AND tid IS NOT NULL
     UNION SELECT unnest(superseded_tids) FROM redpay_terminal_registry WHERE domain='foot' AND active AND superseded_tids IS NOT NULL
-    UNION SELECT unnest(${arr(NEW_TIDS)})
+    UNION SELECT unnest(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])
+  ),
+  merch AS (
+    SELECT merchant_id FROM redpay_terminal_registry WHERE domain='foot' AND active
   )
   SELECT
     (SELECT count(*) FROM redpay_raw_transactions r
-       WHERE r.external_status='Y' AND r.tid = ANY(${arr(NEW_TIDS)})) AS gap_rows_now,
+       WHERE r.external_status='Y'
+         AND r.tid = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])) AS gap_rows_raw,
     (SELECT COALESCE(sum((r.amount)::numeric),0) FROM redpay_raw_transactions r
-       WHERE r.external_status='Y' AND r.tid = ANY(${arr(NEW_TIDS)})) AS gap_amt,
+       WHERE r.external_status='Y'
+         AND r.tid = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])) AS gap_amt_raw,
+    (SELECT count(*) FROM public.v_redpay_reconciliation_daily v
+       WHERE v.tid = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])) AS visible_now_in_view,
     (SELECT count(*) FROM redpay_raw_transactions r
-       WHERE r.external_status='Y' AND r.tid = ANY(${arr(NEW_TIDS)})
-         AND COALESCE(r.tid, r.raw_payload->'data'->>'tid') IN (SELECT tid FROM tid_after)) AS visible_after_remap`);
-console.log('④ forecast(READ-ONLY, remap 후 예측):', JSON.stringify(fc[0]));
-console.log('   · gap_rows_now/gap_amt = 현재 미표면화 raw gap (239 raw10 + 246 raw2 = 12 예상)');
-console.log('   · visible_after_remap = remap 후 tid-membership 하 표면화 예측 (= gap_rows_now 면 완전수렴)');
-const converge = Number(fc[0].gap_rows_now) > 0 && Number(fc[0].gap_rows_now) === Number(fc[0].visible_after_remap);
-console.log(`   ⇒ AC-3 수렴 예측 ${converge ? `✅ (${fc[0].gap_rows_now}→${fc[0].visible_after_remap} 완전수렴)` : '⚠ 재확인 필요'}\n`);
+       WHERE r.external_status='Y'
+         AND COALESCE(r.raw_payload->'merchant'->>'id', r.raw_payload->'data'->>'merchant_id') IN (SELECT merchant_id FROM merch)
+         AND COALESCE(r.tid, r.raw_payload->'data'->>'tid') IN (SELECT tid FROM tid_after)
+         AND COALESCE(r.tid, r.raw_payload->'data'->>'tid') = ANY(ARRAY[${NEW_TIDS.map((t) => `'${t}'`).join(',')}])) AS visible_after_remap`);
+console.log('④ forecast(READ-ONLY, view-accurate, remap 후 예측):', JSON.stringify(fc[0]));
+console.log('   · gap_rows_raw/gap_amt_raw = raw 실재 gap (기대 12 / 11,400,200)');
+console.log('   · visible_now_in_view = remap 前 뷰 표면화 (기대 0)');
+console.log('   · visible_after_remap = remap 후 뷰 predicate 하 표면화 예측 (기대 12 = 완전 수렴)');
+const converge = Number(fc[0].gap_rows_raw) === 12 && Number(fc[0].visible_now_in_view) === 0 && Number(fc[0].visible_after_remap) === 12;
+console.log(`   ⇒ AC-3 수렴 예측 ${converge ? '✅ (0→12)' : '⚠ 재확인 필요'}\n`);
 console.log('════ DRY-RUN 종료 (영속 0) ════');
