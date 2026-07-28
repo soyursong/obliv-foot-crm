@@ -1619,6 +1619,8 @@ export function ReservationDetailPopup({
                         data-testid="popup-registrar-provenance"
                         title="도파민 TM이 등록한 예약(출처 표시 — 풋 계정 미귀속)"
                       >
+                        {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′): 인라인 라벨 strip(이름만).
+                            provenance 는 이 span 자체의 스타일 + title("도파민 TM이 등록한 예약")로 이미 relocate 보존. */}
                         {resolveRegistrarDisplay(reservation.registrar_name, reservation.source_system) || '—'}
                       </span>
                     ) : (
@@ -1843,6 +1845,8 @@ export function ReservationDetailPopup({
                           데이터 소스 = AC7과 동일(registrar_name). AC7 DB검증 결과(write 무결·생성시 미수집)상 미할당 예약은 '—' graceful. */}
                       {/* T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-2: 도파민 ingest 예약은 provenance 라벨/안전 폴백 표시.
                           registrar_name(EF 착지 라벨) 우선, 미보유 시 source_system='dopamine'→'도파민 등록' (공란/오귀속 금지). */}
+                      {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′): 인라인 라벨 strip(이름만).
+                          dopamine-origin provenance 는 아래 '예약경로'='TM' FieldRow(source_system 파생)로 relocate 보존. */}
                       <FieldRow label="예약등록자" value={resolveRegistrarDisplay(selectedResv.registrar_name, selectedResv.source_system) || '—'} />
                       {selectedResv.id !== reservation.id && (
                         // T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-1: 도파민 ingest 예약 'TM' 표시(순수 display).

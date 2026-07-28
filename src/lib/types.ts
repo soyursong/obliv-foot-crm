@@ -1,6 +1,7 @@
 // Supabase table row types for 풋센터 CRM
 
 import type { InsuranceGrade, InsuranceGradeSource, HiraCategory } from './insurance';
+import { DOPAMINE_TM_PREFIX_RE, cleanRegistrantName } from './registrarMatch';
 
 export type VisitType = 'new' | 'returning' | 'experience';
 
@@ -938,16 +939,56 @@ export function resolveVisitRouteDisplay(
  *    - 무매칭 → registrar_id=NULL + registrar_name='[도파민TM] {name}' provenance 라벨 → 그대로 표시.
  *    - registrar_name 미보유(라벨 자체 없음) → source_system='dopamine' 마커로 '도파민 등록' 안전 폴백.
  *
- * @returns 표시용 예약등록자 provenance 라벨. 해당 없으면 '' (caller 가 '—'/'미지정'/편집 Select graceful 처리).
+ * T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (뱃지→이름만, FE read-path only):
+ *   현장 요구 = 예약현황 행에 '[도파민TM] 강솔희' 인라인 라벨 대신 '강솔희' 이름만.
+ *   ★ DA CONSULT-REPLY(DA-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY) = Option A′ 조건부 GO.
+ *     dev 원안 Option A(clean 이름을 풋 registrar 마스터에 이름-매칭해 strip) = REJECT —
+ *     read-side 이름-재해소(§963⑩(b) 이름-버전) + 동명이인 false-resolve hazard.
+ *   ★ A′ mechanism (5-AC HARD):
+ *     ① display-only — 저장값(registrar_name/registrar_id/source_system) write 0, DB에 '[도파민TM] 강솔희' verbatim 존치.
+ *     ② strip = 리터럴 '[도파민TM] ' prefix 결정적 문자열 제거 + source_system='dopamine' 구조 파티션 게이트.
+ *        ⛔ 풋 registrar 마스터/로그인명과 대조 금지(= 이름-매칭 footgun 소거 지점).
+ *        prefix 있는데 source_system≠dopamine = anomaly → strip 안 함(원문 유지·flag).
+ *     ③ provenance relocate·非삭제 — dopamine-origin 신호는 인라인 문자열이 아니라
+ *        비-인라인 뱃지/툴팁으로 보존(resolveRegistrarProvenance, 파생원천=source_system 구조 discriminant).
+ *     ④ §963⑩ HARD INVARIANT — strip된 이름·뱃지는 grouping/filter/attribution/incentive 입력 불가(순수 render).
+ *     ⑤ 동명이인 무의존 — 리터럴 prefix + 구조 게이트 → 이름 비교 부재 → hazard 원천 소거.
+ *   ★ §416 firewall(created_by=NULL + registrar_id=NULL, 인센티브 이중계상 차단)은 display 변경으로 불변.
+ *
+ * @returns 표시용 예약등록자 clean 이름. 해당 없으면 '' (caller 가 '—'/'미지정'/편집 Select graceful 처리).
  */
 export function resolveRegistrarDisplay(
   registrarName?: string | null,
   sourceSystem?: string | null,
 ): string {
   const name = (registrarName ?? '').trim();
-  if (name) return name;                                   // EF 착지 라벨('[도파민TM] {name}') 또는 마스터 스냅샷
+  if (name) {
+    // A′ ②: source_system='dopamine' 구조 파티션 한정 + 리터럴 '[도파민TM] ' prefix 결정적 제거.
+    //   마스터 대조 없음(이름-매칭 hazard 소거). prefix 있는데 source_system≠dopamine = anomaly → strip 안 함.
+    if ((sourceSystem ?? '').trim() === 'dopamine' && DOPAMINE_TM_PREFIX_RE.test(name)) {
+      const clean = cleanRegistrantName(name);
+      if (clean) return clean; // 이름만 (provenance 는 resolveRegistrarProvenance 뱃지로 relocate)
+      // clean 실패(공란/opaque) → 원문 폴백(라벨 유지)
+    }
+    return name; // EF 착지 라벨 또는 마스터 스냅샷
+  }
   if ((sourceSystem ?? '').trim() === 'dopamine') return '도파민 등록';  // 라벨 미보유 안전 폴백(공란 금지)
   return '';
+}
+
+/**
+ * T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′ ③ provenance relocate):
+ *   dopamine-origin 예약의 유입 출처 신호를 인라인 문자열이 아닌 비-인라인 뱃지/툴팁으로 노출할지.
+ *   ★ 파생원천 = source_system='dopamine'(구조 discriminant = SSOT) — 문자열 prefix 탐지 아님.
+ *   ★ pure 삭제 금지(§416 가시신호 완전소실 방지) — resolveRegistrarDisplay 가 라벨을 strip 해도
+ *     이 함수가 true 면 caller 는 작은 provenance 뱃지를 반드시 렌더.
+ *   ★ §963⑩ HARD INVARIANT — 이 뱃지는 순수 display, grouping/filter/attribution/incentive 입력 불가.
+ * @returns 'dopamine' = 도파민TM 유입 뱃지 표시 / null = 미표시.
+ */
+export function resolveRegistrarProvenance(
+  sourceSystem?: string | null,
+): 'dopamine' | null {
+  return (sourceSystem ?? '').trim() === 'dopamine' ? 'dopamine' : null;
 }
 
 /** 예약등록자 마스터 그룹 라벨 순서 (드롭다운 그룹 헤더용). */
