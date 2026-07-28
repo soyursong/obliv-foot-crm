@@ -285,20 +285,25 @@ function useCoordinators(clinicId: string | null | undefined) {
     enabled: !!clinicId,
     queryFn: async () => {
       if (!clinicId) return [];
+      // T-20260728-foot-RECEIVER-COORD-DROPDOWN-EMPTY-FIX: foot `staff`에 display_name 컬럼 없음
+      //   (id, clinic_id, name, role, active, ... 만 실재). 앞선 select에 derm 하드포크 잔재로
+      //   display_name 을 포함 → PostgREST 42703(column does not exist) → 아래 폴백이 삼켜 빈목록 = 드롭다운 0명.
+      //   ∴ select 에서 display_name 제거(name 단일 소스). 데이터는 정상(종로풋센터 코디 active 5명, role='coordinator' canonical).
       const { data, error } = await supabase
         .from('staff')
-        .select('id, name, display_name, role, active')
+        .select('id, name, role, active')
         .eq('clinic_id', clinicId) // 현재 클리닉 = 종로풋센터(foot CRM 단일 지점 스코프)
         .eq('role', 'coordinator')
         .eq('active', true) // 재직중
         .order('name', { ascending: true });
       if (error) {
-        // staff 미적용/스키마 불일치 prod → 빈 목록 폴백(섹션 무파손).
-        if (/staff|relation|42P01|42703|column/.test(error.message ?? '')) return [];
+        // staff 테이블 자체 미적용 prod(undefined_table 42P01)만 빈 목록 폴백(섹션 무파손).
+        //   컬럼/스키마 오류(42703 등)는 개발 버그 → 삼키지 않고 throw(silent-empty 재발 방지 = field-soak 가시화).
+        if (error.code === '42P01' || /relation .* does not exist/i.test(error.message ?? '')) return [];
         throw error;
       }
-      return ((data ?? []) as Array<{ id: string; name: string | null; display_name: string | null }>)
-        .map((r) => ({ id: r.id, name: (r.display_name || r.name || '').trim() }))
+      return ((data ?? []) as Array<{ id: string; name: string | null }>)
+        .map((r) => ({ id: r.id, name: (r.name || '').trim() }))
         .filter((c) => c.name.length > 0);
     },
     staleTime: 60_000,
