@@ -23,6 +23,8 @@ import {
   useAllPublishedOpinionRequests,
   useResolveOpinionRequest,
   useQueueClinicalSnaps,
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 서류작성 큐 행 담당 진료의(치료테이블 [진료]와 동일 값) 조회.
+  useQueueTreatingDoctors,
   buildOptionLabelMap,
   docTypeLabel,
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: '서류 완료' 서류명 클릭 → 실제 발행본 내용 read-only 열람.
@@ -101,6 +103,18 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
     [rows, completedRows],
   );
   const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, customerIds);
+
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 작업 대상 + 완료 그룹 각 행의 담당 진료의(치료테이블
+  //   [진료]와 동일 값 = check_ins.treating_doctor_id → clinic_doctors.name). checkInId 앵커로 해석.
+  const checkInIds = useMemo(
+    () => [...rows, ...completedRows].map((r) => r.checkInId).filter(Boolean) as string[],
+    [rows, completedRows],
+  );
+  const { data: treatingDoctors = {} } = useQueueTreatingDoctors(clinicId, checkInIds);
+  // checkInId → 담당 진료의명. 미지정/내원없음 → ''(셀에서 '미지정' graceful 표기).
+  const doctorNameForRow = (r: OpinionRequestRow) =>
+    (r.checkInId ? treatingDoctors[r.checkInId] : '') ?? '';
+
   const labelMap = useMemo(() => buildOptionLabelMap(), []);
 
   const [active, setActive] = useState<OpinionRequestRow | null>(null);
@@ -324,6 +338,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                 variant="pending"
                 clinicalSnaps={clinicalSnaps}
                 itemLabelsForRow={itemLabelsForRow}
+                doctorNameForRow={doctorNameForRow}
                 onWrite={openWrite}
                 onCancel={openCancel}
               />
@@ -346,6 +361,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   variant="done"
                   clinicalSnaps={clinicalSnaps}
                   itemLabelsForRow={itemLabelsForRow}
+                  doctorNameForRow={doctorNameForRow}
                   onWrite={openWrite}
                   onViewDoc={openDocView}
                 />
@@ -585,6 +601,7 @@ function DocReqTable({
   variant,
   clinicalSnaps,
   itemLabelsForRow,
+  doctorNameForRow,
   onWrite,
   onCancel,
   onViewDoc,
@@ -594,6 +611,8 @@ function DocReqTable({
   clinicalSnaps: Record<string, ClinicalSnap>;
   // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX: 행 단위 배타 정규화 라벨(혼합 큐 위반 조합 표시 차단).
   itemLabelsForRow: (r: OpinionRequestRow) => string;
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 행 담당 진료의명(치료테이블 [진료]와 동일 값). ''=미지정.
+  doctorNameForRow: (r: OpinionRequestRow) => string;
   onWrite: (r: OpinionRequestRow) => void;
   // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: pending 그룹에만 전달(done=undefined → 완료행 취소버튼 미표시, AC-7).
   onCancel?: (r: OpinionRequestRow) => void;
@@ -607,6 +626,8 @@ function DocReqTable({
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">이름</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">생년(만나이)</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">차트번호</th>
+          {/* T-20260728-foot-DOCWRITE-DOCTOR-LINK: 담당 진료의(치료테이블 [진료]와 동일 값) 표시 컬럼. */}
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">담당 진료의</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">오늘시술</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">처방내역</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">임상경과</th>
@@ -623,6 +644,7 @@ function DocReqTable({
             variant={variant}
             snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
             itemLabels={itemLabelsForRow(r)}
+            doctorName={doctorNameForRow(r)}
             onWrite={onWrite}
             onCancel={onCancel}
             onViewDoc={onViewDoc}
@@ -643,6 +665,7 @@ function DocRequestRow({
   variant = 'pending',
   snap,
   itemLabels,
+  doctorName,
   onWrite,
   onCancel,
   onViewDoc,
@@ -651,6 +674,8 @@ function DocRequestRow({
   variant?: 'pending' | 'done';
   snap: ClinicalSnap | undefined;
   itemLabels: string;
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 담당 진료의명(치료테이블 [진료]와 동일 값). ''=미지정.
+  doctorName: string;
   onWrite: (r: OpinionRequestRow) => void;
   onCancel?: (r: OpinionRequestRow) => void;
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: 서류명 클릭 → 실제 발행본 내용 열람(done 그룹만 전달).
@@ -685,6 +710,17 @@ function DocRequestRow({
       </td>
       <td className="px-2 py-1.5 tabular-nums whitespace-nowrap text-foreground/90">{birthYearAgeDisplay(r.birthDate) || '—'}</td>
       <td className="px-2 py-1.5 font-mono whitespace-nowrap text-foreground/90">{r.chartNo ? chartNoDisplay(r.chartNo) : '—'}</td>
+
+      {/* T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 담당 진료의 = 치료테이블 [진료]와 동일 값
+          (check_ins.treating_doctor_id → clinic_doctors.name). 미지정/내원없음 → '미지정'(회색, graceful). */}
+      <td className="px-2 py-1.5 whitespace-nowrap" data-testid="docreq-cell-doctor">
+        {doctorName ? (
+          <span className="font-medium text-foreground/90">{doctorName}</span>
+        ) : (
+          <span className="text-muted-foreground/70">미지정</span>
+        )}
+      </td>
+
       <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80"><span className="block truncate" title={snap?.treatment ?? ''}>{snap?.treatment || '—'}</span></td>
 
       {/* 처방내역 ← medical_charts.prescription_items. RXCLIN 표현 상속: 미리보기 클릭 → 컬럼 폭 드롭다운 전문(widthScale=2, DoctorCallDashboard와 동일). */}

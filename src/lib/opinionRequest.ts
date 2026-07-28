@@ -879,6 +879,67 @@ function summarizeRxItems(items: unknown): string | null {
     .filter((s) => s.length > 0 && s !== '(이름 미입력)');
   return tokens.length > 0 ? tokens.join(', ') : null;
 }
+// ─── T-20260728-foot-DOCWRITE-DOCTOR-LINK: 서류작성 큐 행 '담당 진료의'(치료테이블 [진료]와 동일 값) ──
+//   RC(현장, 김주연 총괄 U0ATDB587PV 2026-07-28): 진료 대시보드 [서류작성] 탭 각 행에 담당 진료의가 하나도
+//   안 따라온다(치료테이블 [진료]에서는 정상 표시). 담당 진료의 SSOT = check_ins.treating_doctor_id →
+//   clinic_doctors.name — TreatingDoctorSelect(write 단일경로)·치료테이블 [진료] 표시·서류 출력 바인딩
+//   (loadAutoBindContext treatingDoctor)·발행자 seed(useVisitTreatingDoctor) 가 공유하는 단일 소스다.
+//   서류요청 큐 행은 checkInId(요청 생성 시 '최근 내원' 앵커, useCreateOpinionRequest)를 이미 들고 있으므로,
+//   그 check_in 의 treating_doctor_id 를 이름으로 해석해 표시한다 → 치료테이블 [진료]와 '동일한 값'(AC).
+//   ★확정 방식(문지은 대표원장 §11 컨펌 '표시+폼 기본값 자동입력 ADDITIVE'): 조회에 진료의 read 만 추가.
+//     발행/저장/귀속 로직 무변경.
+//   ★read-only READ 전용(db_change=false): 기존 check_ins.treating_doctor_id + clinic_doctors.name read 만.
+//     신규 컬럼/테이블/enum/RLS = 0. 미지정/조회실패 → 빈 맵 폴백(graceful, 큐 무붕괴 = 임상스냅 훅과 동형).
+//   ★교차노출 없음: clinic-scoped + 큐가 이미 소유한 checkInId 로만 조회(타 환자/타 지점 유입 배제).
+export function useQueueTreatingDoctors(clinicId: string | null, checkInIds: string[]) {
+  const key = [...new Set(checkInIds.filter(Boolean))].sort().join(',');
+  return useQuery<Record<string, string>>({
+    queryKey: ['opinion_queue_treating_doctor', clinicId, key],
+    enabled: !!clinicId && key.length > 0,
+    queryFn: async () => {
+      const out: Record<string, string> = {};
+      if (!clinicId || !key) return out;
+      try {
+        const ids = key.split(',');
+        // 1) 요청행 checkIn → treating_doctor_id (치료테이블 [진료] 저장 앵커, 동일 필드)
+        const { data: ciData, error: ciErr } = await supabase
+          .from('check_ins')
+          .select('id, treating_doctor_id')
+          .eq('clinic_id', clinicId)
+          .in('id', ids);
+        if (ciErr) throw ciErr;
+        const ciRows = (ciData ?? []) as Array<{ id: string; treating_doctor_id: string | null }>;
+        const doctorIds = [...new Set(ciRows.map((r) => r.treating_doctor_id).filter(Boolean) as string[])];
+        if (doctorIds.length === 0) return out;
+        // 2) treating_doctor_id → clinic_doctors.name. active 필터 없이 이름만 해석 —
+        //    비활성/삭제 원장이라도 이름 유실 방지(TreatingDoctorSelect renderLabel 컨벤션과 정합).
+        const { data: docData, error: docErr } = await supabase
+          .from('clinic_doctors')
+          .select('id, name')
+          .eq('clinic_id', clinicId)
+          .in('id', doctorIds);
+        if (docErr) throw docErr;
+        const nameById = new Map<string, string>();
+        for (const d of (docData ?? []) as Array<{ id: string; name: string | null }>) {
+          if (d.id) nameById.set(String(d.id), String(d.name ?? ''));
+        }
+        for (const r of ciRows) {
+          if (r.treating_doctor_id) {
+            const nm = nameById.get(r.treating_doctor_id);
+            if (nm) out[r.id] = nm; // checkInId → 담당 진료의명
+          }
+        }
+      } catch {
+        // 진료의 조회 불가/컬럼부재 — 담당 진료의 셀은 '미지정' 폴백. 큐 자체는 정상(graceful).
+        return {};
+      }
+      return out;
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
+
 export function useQueueClinicalSnaps(clinicId: string | null, customerIds: string[]) {
   const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
   return useQuery<Record<string, ClinicalSnap>>({
