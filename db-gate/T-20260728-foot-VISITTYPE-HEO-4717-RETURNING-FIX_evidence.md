@@ -43,3 +43,35 @@ Q-C 실고객: 엘런(50만×3), 양재경(26만·5.6천), 정성호(25만·5.6�
 1. 본작업: payments INSERT → **check_in 6151b3b3 status→done 단건 승격**으로 재정의 승인(또는 DA CONSULT). 승인 전 write 0.
 2. Item 2: 53 stuck / 8+ 실고객 → 별도 P1(payment_waiting 정체 일괄 진단·정산 게이트) 신설.
 3. Item 3(강경민 배정이력 정합): 본작업 적용 후 검증 — 현재 보류.
+
+---
+
+## ✅ APPLIED — status→done 단건 승격 (2026-07-28 11:48 KST / 02:48Z)
+> DA CONSULT-REPLY GO_WARN(MSG-8fb8) 승인 후 실행. payments INSERT 폐기 → status 단건 승격.
+> 적용 스크립트: `scripts/T-20260728-foot-VISITTYPE-HEO-4717_promote_apply.mjs` (단일 DO 블록, 각 문 GET DIAGNOSTICS rows=1 강제·RAISE시 전체 롤백)
+> 롤백: `scripts/T-20260728-foot-VISITTYPE-HEO-4717_promote_rollback.sql`
+> 컨텍스트: Management API /database/query (postgres 권한 = service_role equiv, RLS bypass)
+
+### 트리거 사전검증 (step2 완료일 교정 안전성 근거)
+- `set_completed_at()`: `completed_at:=NOW()`는 **OLD.status IS DISTINCT FROM 'done'** 일 때만. step1(→done)에서만 발화, step2(done→done)는 양 분기 미발화 → 07-20 교정값 **보존 확정**.
+- `fn_checkin_cancel_restore_reservation()`: →cancelled 에서만 발화. →done no-op.
+- `sync_waiting_board()`: →done 시 waiting_board DELETE(큐 제거, 정상)·예외격리.
+- dopamine callback trigger = AFTER **INSERT** 전용 → UPDATE 승격은 outbox emit 0 (DA Q4 정합).
+
+### 적용 결과 (POSTCHECK)
+| step | 문 | rows-affected |
+|---|---|---|
+| pre | freeze SELECT: check_in 6151b3b3 status='payment_waiting' 확인 | 1 |
+| step1 | UPDATE status payment_waiting→done | **1** |
+| step2 | UPDATE completed_at:=2026-07-20 06:32:00+00 (권위=payment b695bea6.created_at) | **1** |
+| step3 | INSERT status_transitions (changed_by='system:backfill:T-20260728-foot-VISITTYPE-HEO-4717', transitioned_at=07-20) | **1** |
+| step4 | SKIP (status_flag 이미 'dark_gray' = no-op, DA 선택항목) | — |
+
+### 최종 상태
+- check_in `6151b3b3`: status=`done` / completed_at=`2026-07-20 06:32:00+00` / status_flag=`dark_gray` / **visit_type=`new` 불변**(강제 UPDATE 금지 §준수).
+- status_transitions 1행 존재(감사지문 changed_by).
+- **매출 중립 확인**: payments INSERT 0. 07-20 accounting slice = n:1 / total:8,800 (b695bea6 그대로, 이중계상 없음). orphan payment check_in_id=**NULL 유지**(링크 금지 §준수, DA Q2).
+- **recency 재분류 검증**: `resolveVisitTypeByRecency` 동형 쿼리 → latest done <today KST = 2026-07-20 → diff=8d ≤ 365 → **returning**. 강경민 배정이력 현은호 초진→재진 이동 확정.
+
+### AC 충족
+- AC1 원인기록 ✅ / AC2(개정) status→done→recency 자동 returning ✅ / AC3 배정이력 정합(recency=returning) ✅ / AC4(개정) payment INSERT 없음·07-20 매출 이중계상 없음·타행 무접점 ✅ / AC5 반복패턴 53/12/8명 조회완료→별건 P1(PAYMENT-WAITING-STUCK-PROMOTION-CLASS) ✅.
