@@ -25,6 +25,12 @@ stale env(07-20 스냅샷 digest f9dc25cc)에 누락되면 `runMatcher` 의 Tier
 
 **범위 밖(fast-follow 별티켓)**: matcher merchant-keyed(TID-agnostic) 리팩터. 이번엔 registry-canonical union 이관까지만.
 
+### AC-2 before/after 매칭 동작 앵커 → `ac2-before-after-anchor.txt`
+supervisor 정식 CONSULT-REPLY(MSG-20260729-042504-21c5) 부가발견 folded (planner INFO MSG-20260729-043220-p13s).
+- **divergence 실재**: D env=07-20T08:05Z 스냅샷(digest f9dc25cc, 26 TID·479xxx 세대) vs poller(A) UNSET→registry live union → D 가 07-20 이후 재프로비저닝분을 못 봄.
+- **staleness delta 12 TID**(env 부재·registry 존재): 0723 535xxx(535845/535843/535842/535837/535835/535797) + 0724 538xxx(538241/538237/538231/538236) + 0728 538xxx(538239/538246).
+- **대표례 289006 신 TID 1047538239**(10건/₩11.39M): BEFORE(env-only `has()`=false → Tier1/2 skip → Tier3/manual 강등 + spurious `missing_in_crm`) → AFTER(registry∪env `has()`=true → Tier1/2 자동매칭 + reconciled 스탬프/log write). matcher.ts L298/L325 `tidWhitelist.has(raw.tid)` 성립조건 기준.
+
 ---
 
 ## ②DETECT — 4주체 VALUECHECK fold (회귀센서)
