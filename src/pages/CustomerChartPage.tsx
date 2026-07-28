@@ -27,7 +27,7 @@ import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, 
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
-import { canViewRrn, isStaffUnlockRole } from '@/lib/permissions';
+import { canViewRrn, isStaffUnlockRole, canRequestOpinionDoc, canCancelOpinionRequest } from '@/lib/permissions';
 import { deriveGenderFromRRN } from '@/lib/rrn'; // T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): 성별 파생 표시전용
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay, formatDateDots, formatDateTimeDots } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
@@ -7920,6 +7920,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 birthDate={customer.birth_date ?? null}
                 issuedBy={currentUserStaffId}
                 requestedByName={profile?.name ?? ''}
+                /* T-20260728-foot-CHART2-DOCREQ-HISTORY-COORDPERM (item②): coordinator=신청만.
+                   canRequest=전 직군(coordinator 포함, RLS 패리티) / canCancel=coordinator 제외(취소 버튼 비노출). */
+                canRequest={canRequestOpinionDoc(profile?.role)}
+                canCancel={canCancelOpinionRequest(profile?.role)}
               />
 
               {/* ── 소견서·진단서 발행 이력 (T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW) ──
