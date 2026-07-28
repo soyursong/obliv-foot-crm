@@ -149,6 +149,32 @@ const TID_ALARM_CHANNEL = cfg("REDPAY_POLLER_TID_ALARM_CHANNEL", cfg("REDPAY_WAT
 const TID_ALARM_STATE_PATH = cfg("REDPAY_WATCHDOG_STATE_PATH", join(homedir(), `.redpay-watchdog-${REDPAY_DOMAIN}-state.json`));
 const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
 
+// ════════════════════════════════════════════════════════════════════════════
+// 0c. 미등록 TID 자동 수렴 seed (T-20260728-foot-REDPAY-AUTOSEED-PROVISIONAL-TID — DA CONSULT-REPLY MSG-20260728-185221-xvx6)
+// ────────────────────────────────────────────────────────────────────────────
+//   왜: 0b 실시간 알람은 인지창을 ≤5분으로 줄였지만 "사람이 명단에 신 TID 를 수동 추가"하는 4세대
+//     수동 seed 루프(0723→0724→0725→0728)가 남아 있었다. DA §12 판정 = drift(=기등록 foot merchant
+//     아래 신 TID) 를 폴러가 자동으로 registry 에 수렴 seed → 뷰 membership 즉시 소급 표면화.
+//   ★mechanic 정정(DA §1, INSERT ✗ → superseded DISTINCT-append UPDATE ✓):
+//     · plain "provisional=true INSERT" 는 ON CONFLICT(merchant_id) DO NOTHING = no-op silent-fail
+//       (cross_crm_write_rowcheck_standard 위반). 실체 = 기존 행 superseded_tids append.
+//     · 정본 = 기존 행의 superseded_tids 에 신 TID DISTINCT-append UPDATE(e<>new 가드, 멱등).
+//       membership(tid ∪ superseded) UNION 이 즉시 신 TID 가시화 → 뷰 소급 표면화(raw 는 §10 admission 으로 旣캡처, 손실 0).
+//     · ★primary tid 자동승격 배제(DA §1 강화): 자동 경로는 primary tid 무접촉·append-only.
+//       구·신 병존 live(§8.1) 중 machine 이 primary 를 demote 하면 잘못된 상태단언 → append-only 가 항상-정확·최소표면.
+//       (수동 remap 마이그레이션은 tid=신 승격 유지 — 사람 판정. 자동 경로만 append-only.)
+//     · provisional 컬럼 미신설(DA §2 REJECT): merchant 레벨에서 도메인 경계가 이미 확정 → 안전이득 0 · array 모델 부적합 · no-DDL 유지.
+//   가드(DA §4 = supervisor code-gate 검증 항목):
+//     ① rows-affected=1 assert — UPDATE 후 미검증 성공선언 금지. 0-row 은 (a)이미 존재(멱등 no-op)와
+//        (b)write 차단(RLS/scope) 을 확증 GET 으로 분별. (b)=fail-loud+알람.
+//     ② 멱등 + notify-on-change-only — 실제 append(affected=1) 시에만 슬랙 1회. 동일 TID 재감지 = no-op(재알림 억제).
+//     ③ fail-closed 보존 — registry 소스가 아닐 때(DB 미가용 fallback)·신규/미등록 merchant·active foot 행 부재 시 미발화.
+//        신규/미등록 merchant 는 자동 seed 절대 금지(§3) → 285002 류 도메인 판정 필요건은 DA CONSULT 게이트 존치.
+//     ④ A11 워치독 안전망 존치 — 자동 seed 는 benign NEW-TID 만 해소. NEW-MERCHANT·CROSS-TENANT 는 워치독이 계속 독립 탐지.
+//   fail-safe: 슬랙/DB write 오류는 모두 비치명(적재 본업 무영향, best-effort).
+const AUTOSEED_ENABLED = cfg("REDPAY_POLLER_AUTOSEED_ENABLED", "true") === "true"; // 킬스위치
+const AUTOSEED_CHANNEL = cfg("REDPAY_POLLER_AUTOSEED_CHANNEL", TID_ALARM_CHANNEL);
+
 const ARGS = new Set(process.argv.slice(2));
 const SELF_TEST = ARGS.has("--self-test"); // 네트워크 無 순수로직 검증(AC-4 재현 테스트 = E2E ef_only 대체)
 // T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 런타임에 실제 로드한 허용목록 지문(count+SHA256)만 stdout 출력 후 종료.
@@ -246,6 +272,13 @@ let tidList = REDPAY_TID_WHITELIST_ENV
   : TID_DEFAULT_FOR_DOMAIN.slice();
 let tidWhitelist = new Set(tidList);
 
+// ── AUTOSEED 상태 (T-20260728-...-AUTOSEED) ──────────────────────────────────
+//   자동 수렴 seed 는 registry 가 실제 SSOT 소스일 때만(DB 미가용 fallback 시엔 미발화 = fail-closed §4③).
+//   registryRowByMerchant: merchant_id → { tid(primary), superseded:Set } (domain=REDPAY_DOMAIN, active=true 행).
+//   drift 후보 판정(이미 등록? 무접촉 merchant?) + append 대상 lookup 에 사용.
+let registryRowByMerchant = new Map();
+let registrySource = "default"; // 'registry' | 'default' — 'registry' 일 때만 autoSeed 발화
+
 // redpay_terminal_registry SSOT 조회 → REDPAY_DOMAIN 화이트리스트 파생. 실패 시 null 반환(호출측 폴백).
 async function loadRegistryFromDb() {
   try {
@@ -260,7 +293,7 @@ async function loadRegistryFromDb() {
       ...((Array.isArray(r.superseded_tids) ? r.superseded_tids : []).map((s) => (s ?? "").trim())),
     ]).filter(Boolean))];
     if (merchants.length === 0) return null; // merchant 없으면 도메인 경계 소실 → 폴백
-    return { merchants, tids };
+    return { merchants, tids, rows }; // rows = auto-seed 대상 per-merchant lookup 용(T-20260728-...-AUTOSEED)
   } catch (e) {
     warn(`registry 테이블 조회 실패 → 폴백: ${e instanceof Error ? e.message : String(e)}`);
     return null;
@@ -308,6 +341,24 @@ async function resolveWhitelists() {
   });
   merchantList = resolved.merchantList; merchantWhitelist = new Set(merchantList);
   tidList = resolved.tidList;           tidWhitelist = new Set(tidList);
+  // ── AUTOSEED 소스/행 스냅샷 (T-20260728-...-AUTOSEED §4③ fail-closed) ──
+  //   registry 가 실 SSOT 소스일 때만 per-merchant 행을 보관 → autoSeed 발화 조건.
+  //   DB 미가용(fallback) 이면 registrySource='default' → autoSeed 미발화(도메인 경계 권위 부재).
+  registryRowByMerchant = new Map();
+  if (resolved.source === "registry" && reg && Array.isArray(reg.rows)) {
+    registrySource = "registry";
+    for (const r of reg.rows) {
+      const mid = (r.merchant_id ?? "").trim();
+      if (!mid) continue;
+      const superseded = new Set(
+        (Array.isArray(r.superseded_tids) ? r.superseded_tids : []).map((s) => (s ?? "").trim()).filter(Boolean),
+      );
+      // UNIQUE(merchant_id) → merchant 당 1행. active/domain 은 쿼리에서 이미 스코핑(domain=REDPAY_DOMAIN,active).
+      registryRowByMerchant.set(mid, { tid: (r.tid ?? "").trim(), superseded });
+    }
+  } else {
+    registrySource = "default";
+  }
   whitelistResolveMeta = {
     source: resolved.source,
     merchant_source: resolved.source === "registry" ? (envMerchant ? "env-override" : "registry") : "default/env-init",
@@ -379,6 +430,18 @@ async function restGet(pathAndQuery) {
   const body = await res.text();
   if (!res.ok) throw new Error(`REST GET 실패 ${res.status}: ${body.slice(0, 300)}`);
   return body ? JSON.parse(body) : [];
+}
+// PATCH — return=representation 으로 affected rows 를 회수(rows-affected assert 용, cross_crm_write_rowcheck_standard).
+//   0-row + error=null(HTTP 200) 을 "성공" 으로 오인하지 않도록 반환 배열을 호출부가 반드시 검증.
+async function restPatch(pathAndQuery, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
+    method: "PATCH",
+    headers: restHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`REST PATCH 실패 ${res.status}: ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : [];
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -622,6 +685,153 @@ async function fireRealtimeTidAlarms(driftItems) {
     catch (e) { warn(`[TID-ALARM] dedup 상태 저장 실패(비치명 — 다음 사이클 재알람 가능): ${e instanceof Error ? e.message : String(e)}`); }
   }
   return { alerted, suppressed, skipped: 0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3c. 미등록 TID 자동 수렴 seed (T-20260728-...-AUTOSEED — DA CONSULT-REPLY §12)
+//    drift(=기등록 foot merchant + 미등록 TID)를 registry 기존 행의 superseded_tids 에
+//    DISTINCT-append UPDATE → 뷰 membership(tid ∪ superseded) 즉시 소급 표면화(수동 seed 루프 종식).
+//    primary tid 무접촉(append-only) / provisional 컬럼 미신설 / rows-affected assert / notify-on-change-only / fail-closed.
+// ════════════════════════════════════════════════════════════════════════════
+// 순수 선택자(self-test 대상) — drift 항목 중 '자동 seed 대상'만 (merchant_id, tid) 로 그룹핑.
+//   §4③ fail-closed: registry 소스가 아니면(rowByMerchant 비었으면) 호출부가 애초 진입 안 함.
+//   후보 조건:
+//     · TID 식별 가능(빈문자열 아님).
+//     · 이미 tidWhitelist(tid ∪ superseded) 에 있음 → 스킵(등록 완료 — belt).
+//     · merchant 가 active foot registry 행 보유(rowByMerchant.has) — 미보유 = 신규/미등록 merchant → 자동 seed 절대 금지(§3, DA CONSULT 게이트 존치).
+//     · 신 TID 가 그 행의 primary tid 이거나 이미 superseded 에 있음 → 스킵(멱등 no-op, §4②).
+function selectAutoSeedCandidates(driftItems, rowByMerchant, tidWhitelistSet) {
+  const byTid = new Map();
+  for (const it of driftItems) {
+    const tid = extractTid(it);
+    if (!tid) continue;                                         // TID 식별 불가 → 스킵
+    if (tidWhitelistSet && tidWhitelistSet.has(tid)) continue;  // 이미 등록(tid∪superseded) → 스킵
+    const mid = it.merchant?.id != null ? String(it.merchant.id).trim() : "";
+    if (!mid) continue;                                         // merchant 미상 → autoSeed 대상 아님(도메인 경계 판정 불가)
+    const row = rowByMerchant.get(mid);
+    if (!row) continue;                                         // ★fail-closed: 미등록 merchant → 자동 seed 금지(§3)
+    if (tid === row.tid || row.superseded.has(tid)) continue;   // 이미 존재 → 멱등 no-op
+    let g = byTid.get(tid);
+    if (!g) {
+      g = { tid, merchant_id: mid, merchant_name: (it.merchant?.name ?? "").toString(), trx_count: 0 };
+      byTid.set(tid, g);
+    }
+    if (!g.merchant_name && it.merchant?.name) g.merchant_name = String(it.merchant.name);
+    g.trx_count += 1;
+  }
+  return [...byTid.values()];
+}
+
+// PostgREST array-contains 필터값 인코딩 — text[] `cs`(contains)/`not.cs` 용 `{val}`.
+function pgArrayLiteral(v) { return encodeURIComponent(`{${v}}`); }
+
+// 자동 seed 실행부 — drift 누적본을 받아 미등록 TID 를 registry superseded_tids 에 append(멱등, change-only 알람).
+//   반환 { seeded, noop, failed } (완료 로그용).
+async function autoSeedSupersededTids(driftItems) {
+  if (!AUTOSEED_ENABLED) { log("[AUTOSEED] 킬스위치 OFF(REDPAY_POLLER_AUTOSEED_ENABLED=false) — 스킵"); return { seeded: 0, noop: 0, failed: 0 }; }
+  // §4③ fail-closed: registry 실 SSOT 소스일 때만. DB 미가용 fallback(default) 이면 도메인 경계 권위 부재 → 미발화.
+  if (registrySource !== "registry") { log(`[AUTOSEED] registry 소스 아님(source=${registrySource}) — fail-closed 미발화(§4③)`); return { seeded: 0, noop: 0, failed: 0 }; }
+  if (tidWhitelist.size === 0) return { seeded: 0, noop: 0, failed: 0 };
+  if (!driftItems || driftItems.length === 0) return { seeded: 0, noop: 0, failed: 0 };
+
+  const candidates = selectAutoSeedCandidates(driftItems, registryRowByMerchant, tidWhitelist);
+  if (candidates.length === 0) return { seeded: 0, noop: 0, failed: 0 };
+
+  let seeded = 0, noop = 0, failed = 0;
+  for (const c of candidates) {
+    const { merchant_id: mid, tid, merchant_name } = c;
+    try {
+      // ① 직전 fresh read — read-modify-write 경합창 최소화(수동 remap 마이그·타 사이클과의 concurrent append 무손실).
+      const cur = await restGet(
+        `redpay_terminal_registry?merchant_id=eq.${encodeURIComponent(mid)}&domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true&select=tid,superseded_tids`,
+      );
+      if (!Array.isArray(cur) || cur.length === 0) {
+        // §4③ 미등록 merchant → 자동 seed 금지(스냅샷과 어긋남 = 방금 비활성/삭제됐거나 신규). 워치독/UNCLASSIFIED 가 담당.
+        warn(`[AUTOSEED] active foot 행 부재 → fail-closed 스킵 merchant=${mid} tid=${tid}`);
+        continue;
+      }
+      if (cur.length > 1) {
+        // UNIQUE(merchant_id) 위반 상황 = 이상. 자동 write 금지(잘못된 행 갱신 방지) + fail-loud.
+        failed++;
+        errlog(`[AUTOSEED] merchant=${mid} active foot 행 ${cur.length}개(UNIQUE 위반 이상) — 자동 seed 중단, 사람 확인 필요`);
+        sendSlack(AUTOSEED_CHANNEL,
+          `⚠️ [레드페이 회선 자동수렴] 이상 감지 — 가맹점(${mid}) 관리 명단에 같은 항목이 ${cur.length}개 있어 자동 반영을 멈췄습니다. 담당자 확인이 필요합니다.`);
+        continue;
+      }
+      const curTid = (cur[0].tid ?? "").trim();
+      const curSuperseded = (Array.isArray(cur[0].superseded_tids) ? cur[0].superseded_tids : []).map((s) => (s ?? "").trim()).filter(Boolean);
+      // 이미 존재(멱등 no-op) — primary 이거나 superseded 에 있음 → notify 없음(§4②).
+      if (tid === curTid || curSuperseded.includes(tid)) {
+        noop++;
+        markSeededLocal(mid, tid); // 로컬 스냅샷/whitelist 동기(동일 사이클 fireRealtimeTidAlarms 중복 억제)
+        continue;
+      }
+      // ② DISTINCT-append 계산 (primary tid 무접촉 — DA §1 append-only). 신 TID append.
+      const newSuperseded = [...new Set([...curSuperseded, tid])];
+      // ③ 멱등 가드 필터: primary tid≠신 AND superseded 에 신 TID 미포함인 행만 UPDATE.
+      //    → 동일 TID 재감지 시 매칭 0행(0-row change) = 재알림 억제(§4②). affected assert 로 (a)멱등 vs (b)차단 분별.
+      const patchPath =
+        `redpay_terminal_registry?merchant_id=eq.${encodeURIComponent(mid)}` +
+        `&domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true` +
+        `&tid=neq.${encodeURIComponent(tid)}` +
+        `&superseded_tids=not.cs.${pgArrayLiteral(tid)}`;
+      const affected = await restPatch(patchPath, { superseded_tids: newSuperseded, updated_at: ts() });
+      const n = Array.isArray(affected) ? affected.length : 0;
+      if (n === 1) {
+        // ★성공 — 실제 append(change). rows-affected=1 assert 충족(§4①).
+        seeded++;
+        markSeededLocal(mid, tid);
+        log(`[AUTOSEED-OK] superseded append rows=1 merchant=${mid} tid=${tid} superseded_now=[${newSuperseded.join(",")}] (primary tid 무접촉=append-only)`);
+        // notify-on-change-only(§4②) — 현장 친화 언어(field_lang_dict §1, 개발용어 0).
+        sendSlack(AUTOSEED_CHANNEL,
+          `✅ [레드페이 회선 자동수렴] 이미 등록된 가맹점의 새 결제회선번호(TID)를 관리 명단에 자동 추가했습니다\n` +
+          `• 가맹점명: ${merchant_name || "(이름 없음)"}\n` +
+          `• 단말번호(merchant): ${mid} / 새 결제회선번호(TID): ${tid}\n` +
+          `이제 이 회선의 거래가 매출/정산 대사에 즉시 반영됩니다. (별도 조치 불요)`);
+      } else if (n === 0) {
+        // 0-row: (a)이미 존재(경합 멱등) vs (b)write 차단(RLS/scope) 분별 — 확증 GET(cross_crm_write_rowcheck_standard §4①).
+        const verify = await restGet(
+          `redpay_terminal_registry?merchant_id=eq.${encodeURIComponent(mid)}&domain=eq.${encodeURIComponent(REDPAY_DOMAIN)}&active=eq.true&select=tid,superseded_tids`,
+        );
+        const vRow = Array.isArray(verify) && verify.length === 1 ? verify[0] : null;
+        const vTid = vRow ? (vRow.tid ?? "").trim() : "";
+        const vSup = vRow ? (Array.isArray(vRow.superseded_tids) ? vRow.superseded_tids : []).map((s) => (s ?? "").trim()) : [];
+        if (vRow && (tid === vTid || vSup.includes(tid))) {
+          // (a) 이미 반영됨(직전 경합/타 경로) = benign 멱등 — notify 없음(§4②).
+          noop++;
+          markSeededLocal(mid, tid);
+          log(`[AUTOSEED-NOOP] 0-row 이나 확증결과 이미 존재(경합 멱등) merchant=${mid} tid=${tid} — 재알림 억제`);
+        } else {
+          // (b) write 차단(silent write-failure) — 성공 오인 금지, fail-loud + 알람(cross_crm_write_rowcheck_standard 위반 신호).
+          failed++;
+          errlog(`[AUTOSEED-FAIL] 0-row + 미반영 = write 차단 의심(RLS/scope) merchant=${mid} tid=${tid} — 성공 오인 금지`);
+          sendSlack(AUTOSEED_CHANNEL,
+            `🚨 [레드페이 회선 자동수렴] 자동 반영이 저장되지 않았습니다(가맹점 ${mid} / 회선 ${tid}). ` +
+            `시스템 담당자 확인이 필요합니다. (수동 명단 추가로 즉시 정상화 가능)`);
+        }
+      } else {
+        // n>1 — 필터가 여러 행 매칭(이상). fail-loud.
+        failed++;
+        errlog(`[AUTOSEED-FAIL] UPDATE affected=${n}(>1 이상) merchant=${mid} tid=${tid} — 사람 확인 필요`);
+        sendSlack(AUTOSEED_CHANNEL,
+          `⚠️ [레드페이 회선 자동수렴] 가맹점(${mid}) 자동 반영이 예상보다 많은 항목(${n}개)을 건드려 확인이 필요합니다.`);
+      }
+    } catch (e) {
+      // 비치명 — 적재 본업 무영향. 다음 사이클 재시도(멱등). 워치독 백스톱 존치.
+      failed++;
+      errlog(`[AUTOSEED-FAIL] 예외(비치명 — 다음 사이클 재시도) merchant=${mid} tid=${tid}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { seeded, noop, failed };
+}
+
+// 로컬 스냅샷 + tidWhitelist 동기 — 자동 seed 반영분을 in-memory 에 즉시 반영.
+//   → 동일 사이클 후속 fireRealtimeTidAlarms 가 이 TID 를 '미등록'으로 오탐/중복알람하지 않도록(tidWhitelist.has → 억제).
+function markSeededLocal(mid, tid) {
+  tidWhitelist.add(tid);
+  tidList = [...tidWhitelist];
+  const row = registryRowByMerchant.get(mid);
+  if (row) row.superseded.add(tid);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -897,6 +1107,11 @@ async function main() {
   // ── EF match_only 트리거 (best-effort) ─────────────────────────────────────
   if (totalUpserted > 0) await triggerMatcher();
 
+  // ── 미등록 TID 자동 수렴 seed (T-20260728-...-AUTOSEED — best-effort, 적재 본업 무영향) ──
+  //   ★fireRealtimeTidAlarms 前 실행: 자동 seed 성공분을 tidWhitelist 에 즉시 반영 → 수동 알람에서 중복 억제.
+  //   자동 seed 못한 잔여(신규/미등록 merchant·DB 미가용)만 아래 수동 알람으로 표면화(A11 워치독도 독립 탐지).
+  const seedRes = await autoSeedSupersededTids(allDriftItems);
+
   // ── 미등록 TID 즉시 알람 (Option b — best-effort, 적재 본업 무영향) ──────────
   //   drift(=merchant 인정 + 미등록 TID) 누적본을 즉시 알람 → 인지창 ≤폴러주기(300s). dedup 은 워치독과 공유.
   const alarmRes = await fireRealtimeTidAlarms(allDriftItems);
@@ -904,6 +1119,7 @@ async function main() {
   const elapsedMs = Date.now() - startMs;
   log(`완료 elapsed_ms=${elapsedMs} fetched=${totalFetched} scoped_out=${totalScopedOut} ` +
       `drift=${totalDrift} upserted=${totalUpserted} errors=${totalErrors} ` +
+      `autoseed_seeded=${seedRes.seeded} autoseed_noop=${seedRes.noop} autoseed_failed=${seedRes.failed} ` +
       `tid_alarm_new=${alarmRes.alerted} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped}`);
 }
 
@@ -1010,6 +1226,51 @@ function runSelfTest() {
     ];
     const selE = selectRealtimeTidAlarms(driftE, unionTids, {});
     assert(selE.length === 0, `foot-scope 보존: registry TID union → drift 오탐 재발0(admit merchant_id 무변경)`);
+  }
+
+  // ── AUTOSEED 후보 선택 self-test (T-20260728-...-AUTOSEED §4 가드) ──────────────
+  //   selectAutoSeedCandidates 는 순수함수 — DB 무접근. rows-affected/notify 는 실 PATCH 경로(수동 게이트).
+  {
+    // registry 행 스냅샷: 285001 primary=479255 superseded={538235}, 289001 primary=479483(superseded 없음)
+    const rowByMerchant = new Map([
+      ["1777285001", { tid: "1047479255", superseded: new Set(["1047538235"]) }],
+      ["1777289001", { tid: "1047479483", superseded: new Set() }],
+    ]);
+    const wl = new Set(["1047479255", "1047538235", "1047479483"]); // tid∪superseded
+
+    // A) 기등록 foot merchant + 진짜 신 TID → 후보 1건
+    const a = selectAutoSeedCandidates(
+      [{ merchant: { id: "1777285001", name: "풋(VAN)" }, tid: "1047999777" }], rowByMerchant, wl);
+    assert(a.length === 1 && a[0].tid === "1047999777" && a[0].merchant_id === "1777285001", `autoseed: 기등록 merchant 신 TID → 후보 1건`);
+
+    // B) 동일 신 TID 여러 건 → trx_count 누적, 후보 1건(distinct)
+    const b = selectAutoSeedCandidates(
+      [{ merchant: { id: "1777285001" }, tid: "1047999777" }, { merchant: { id: "1777285001" }, tid: "1047999777" }], rowByMerchant, wl);
+    assert(b.length === 1 && b[0].trx_count === 2, `autoseed: 동일 신 TID 2건 → 후보 1건 trx_count=2`);
+
+    // C) ★fail-closed: 미등록 merchant(registry 행 없음) → 자동 seed 금지(§3)
+    const c = selectAutoSeedCandidates(
+      [{ merchant: { id: "1777285999", name: "미상 신규" }, tid: "1047999888" }], rowByMerchant, wl);
+    assert(c.length === 0, `autoseed: 미등록 merchant → fail-closed 후보 0(§3)`);
+
+    // D) 멱등 no-op: 신 TID 가 이미 primary 이거나 superseded 에 있음 → 후보 제외
+    const d1 = selectAutoSeedCandidates([{ merchant: { id: "1777285001" }, tid: "1047479255" }], rowByMerchant, wl); // primary
+    const d2 = selectAutoSeedCandidates([{ merchant: { id: "1777285001" }, tid: "1047538235" }], rowByMerchant, wl); // superseded
+    assert(d1.length === 0 && d2.length === 0, `autoseed: 이미 primary/superseded → 멱등 no-op 후보 제외(§4②)`);
+
+    // E) 이미 tidWhitelist(등록) → 스킵(belt)
+    const e = selectAutoSeedCandidates([{ merchant: { id: "1777289001" }, tid: "1047479483" }], rowByMerchant, wl);
+    assert(e.length === 0, `autoseed: tidWhitelist 등록 TID → 스킵`);
+
+    // F) TID·merchant 식별 불가 → 스킵(도메인 경계 판정 불가)
+    const f = selectAutoSeedCandidates(
+      [{ merchant: { id: "" }, tid: "1047999999" }, { merchant: { id: "1777285001" }, tid: "" }], rowByMerchant, wl);
+    assert(f.length === 0, `autoseed: merchant/TID 미상 → 스킵`);
+
+    // G) COALESCE — data.tid-only shape 도 extractTid 로 포착(538144류)
+    const g = selectAutoSeedCandidates(
+      [{ merchant: { id: "1777289001" }, data: { tid: "1047999123" } }], rowByMerchant, wl);
+    assert(g.length === 1 && g[0].tid === "1047999123", `autoseed: data.tid-only shape 포착(COALESCE)`);
   }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);
