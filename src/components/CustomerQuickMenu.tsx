@@ -12,7 +12,7 @@
  * 순서: 고객차트 → 진료차트 → 예약하기|예약상세 → 수납 → 문자
  */
 import { useEffect, useRef } from 'react';
-import { BookOpen, CalendarPlus, CreditCard, FileText, MessageSquare, Stethoscope, Pencil } from 'lucide-react';
+import { BookOpen, CalendarPlus, CreditCard, FileText, MessageSquare, Stethoscope } from 'lucide-react';
 import type { CheckIn } from '@/lib/types';
 
 interface Props {
@@ -31,11 +31,6 @@ interface Props {
   /** T-20260606-foot-CTXMENU-SMS-SEND: 문자 발송 콜백 — 제공 시(admin/manager)만 메뉴 항목 표시 */
   onSendSms?: (checkIn: CheckIn) => void;
   /**
-   * T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 행정정보(고객정보) 수정 진입점 콜백.
-   * 제공 시(치료테이블 등)만 메뉴 항목 표시. 부모가 customer fetch 후 EditCustomerDialog(재사용) 오픈.
-   */
-  onEditCustomer?: (checkIn: CheckIn) => void;
-  /**
    * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 예약 액션 항목 라벨.
    * 예약관리(기존 예약 우클릭)에서는 '예약상세'로, 대시보드 고객카드(체크인=신규 예약 생성)에서는 기본 '예약하기'.
    * 텍스트만 분기 — onNewReservation 와이어링은 (a) 팝업 대상 확정 후 별도 변경(REGISTRAR 트랙).
@@ -53,7 +48,6 @@ export function CustomerQuickMenu({
   onOpenPayment,
   onOpenDocuments,
   onSendSms,
-  onEditCustomer,
   reservationActionLabel = '예약하기',
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -77,7 +71,7 @@ export function CustomerQuickMenu({
   if (!position || !checkIn) return null;
 
   // 화면 경계 보정 — 항목 수에 따른 높이 고려 (서류·문자 가변)
-  const itemCount = 4 + (onOpenDocuments ? 1 : 0) + (onSendSms ? 1 : 0) + (onEditCustomer ? 1 : 0);
+  const itemCount = 4 + (onOpenDocuments ? 1 : 0) + (onSendSms ? 1 : 0);
   const x = Math.min(position.x, window.innerWidth - 190);
   const y = Math.min(position.y, window.innerHeight - (60 + itemCount * 44));
 
@@ -170,23 +164,6 @@ export function CustomerQuickMenu({
         >
           <MessageSquare className="h-4 w-4 text-teal-600 shrink-0" />
           문자
-        </button>
-      )}
-
-      {/* 7. 고객정보 수정 — T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 행정정보 수정 진입점.
-          제공 시(치료테이블)만 노출. 클릭 → 부모가 customer fetch 후 EditCustomerDialog(고객관리 재사용) 오픈.
-          기존 항목 순서/동작 무변경(하단 추가). onEditCustomer 미전달 surface(대시보드·예약관리)는 미노출 = 회귀 0. */}
-      {onEditCustomer && (
-        <button
-          data-testid="quick-menu-edit-customer-btn"
-          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
-          onClick={() => {
-            onEditCustomer(checkIn);
-            onClose();
-          }}
-        >
-          <Pencil className="h-4 w-4 text-teal-600 shrink-0" />
-          고객정보 수정
         </button>
       )}
 

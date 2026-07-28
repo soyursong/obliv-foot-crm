@@ -76,8 +76,20 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, FileText, Users, CheckCircle2, Clock } from 'lucide-react';
+import { Loader2, FileText, Users, CheckCircle2, Clock, Pencil } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
+// T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY (AC-1, 위치 명확화 ts:1785211568.841439):
+//   소견서 문서 뷰(발행완료 클릭 시 열리는 화면) 하단에 행정정보(고객정보) 수정 진입점 추가.
+//   기존 고객관리 EditCustomerDialog 재사용(중복 구현 금지). EditCustomerDialog 는 customer 객체 prop
+//   의존 → 진입 시 customer_id 로 customers 행 fetch 후 다이얼로그에 전달(부모 fetch→prop 패턴, AC-2).
+//   ★§11 게이트 판정: 본 진입점은 DiagDocSection(치료테이블=치료사 공간, §11 비대상) 래퍼 JSX 에만 추가.
+//     공유 컴포넌트 IssuedOpinionDocFormView(진료대시보드와 공용)·OpinionDocTab·발행 파이프라인 무접촉.
+//     행정정보(성함·연락처 등)는 medical 본문이 아니므로 원장 컨펌 게이트 비대상.
+import { EditCustomerDialog } from '@/pages/Customers';
+import { isStaffUnlockRole } from '@/lib/permissions';
+import { supabase } from '@/lib/supabase';
+import { toast } from '@/lib/toast';
+import type { Customer } from '@/lib/types';
 
 // ─── 순수 파생 로직 (E2E spec 이 동일 함수를 직접 import·단언 → drift 방지) ───────────────
 
@@ -258,6 +270,26 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
   const openDocView = (rowId: string) => {
     const src = sourceById.get(rowId);
     if (src) setViewTarget(src);
+  };
+
+  // ── 행정정보 수정 진입점(AC-1) — 소견서 문서 뷰 하단 [행정정보 수정] 버튼 → EditCustomerDialog(고객관리 재사용) ──
+  //   EditCustomerDialog 는 customer 객체 prop 의존 → customer_id 로 customers 행 fetch 후 전달(부모 fetch→prop, AC-2).
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const openEditCustomer = async (customerId: string | null) => {
+    if (!customerId) {
+      toast('고객 정보가 없어 수정할 수 없습니다');
+      return;
+    }
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (error || !data) {
+      toast.error('고객 정보를 불러오지 못했습니다');
+      return;
+    }
+    setEditingCustomer(data as Customer);
   };
 
   return (
@@ -465,7 +497,20 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
               />
             </div>
           </div>
-          <DialogFooter className="shrink-0 border-t pt-3">
+          {/* T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY (AC-1): 소견서 문서 뷰 '하단'에 행정정보 수정 진입점.
+              클릭 → 이 발행본 환자(viewTarget.customerId)의 customers 행 fetch 후 EditCustomerDialog(고객관리 재사용) 오픈.
+              발행본(medical 본문)·발행 파이프라인 무접촉 — 고객 행정정보(성함·연락처 등)만 수정(원장 무접점, therapist surface). */}
+          <DialogFooter className="shrink-0 flex-row justify-between gap-2 border-t pt-3 sm:justify-between">
+            <Button
+              variant="secondary"
+              className="gap-1.5"
+              disabled={!viewTarget?.customerId}
+              onClick={() => void openEditCustomer(viewTarget?.customerId ?? null)}
+              data-testid="diagdoc-doc-view-edit-admin-btn"
+            >
+              <Pencil className="h-4 w-4" />
+              행정정보 수정
+            </Button>
             <Button
               variant="outline"
               onClick={() => setViewTarget(null)}
@@ -476,6 +521,15 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY (AC-1): 고객관리와 동일 EditCustomerDialog 재사용(중복 구현 0).
+          canEditSensitive = isStaffUnlockRole(고객관리와 동일 게이팅). customer=null 이면 미표시(controlled). */}
+      <EditCustomerDialog
+        customer={editingCustomer}
+        onOpenChange={(o) => { if (!o) setEditingCustomer(null); }}
+        onUpdated={() => setEditingCustomer(null)}
+        canEditSensitive={isStaffUnlockRole(profile?.role)}
+      />
     </div>
   );
 }

@@ -39,15 +39,12 @@ import DiagDocSection from '@/components/treatment/DiagDocSection';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import SendSmsDialog from '@/components/SendSmsDialog';
-// T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 고객관리 행정정보 수정 다이얼로그 재사용(중복 구현 금지).
-import { EditCustomerDialog } from '@/pages/Customers';
 import { useChart } from '@/lib/chartContext';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
-import { canAccess, isStaffUnlockRole } from '@/lib/permissions';
-import { supabase } from '@/lib/supabase';
+import { canAccess } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
-import type { CheckIn, Customer } from '@/lib/types';
+import type { CheckIn } from '@/lib/types';
 
 // T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL [변경2]: 경과분석 탭 이식.
 // T-20260629-foot-PROGRESSPLAN-TAB-MOVE-TREATTABLE: 경과분석 플랜(설정, 진료관리에서 이식). confirm 해소(문지은 대표원장 2026-06-29) → 랜딩.
@@ -106,26 +103,6 @@ export default function TreatmentTable() {
   const [ctxMenu, setCtxMenu] = useState<{ checkIn: CheckIn; x: number; y: number } | null>(null);
   const [medChartCustomerId, setMedChartCustomerId] = useState<string | null>(null);
   const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
-  // T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 행정정보 수정 — EditCustomerDialog 는 customer 객체 prop
-  //   의존 → 진입 시 customer_id 로 customers 행 fetch 후 다이얼로그에 전달(부모 fetch→prop 패턴, AC-2).
-  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
-
-  const openEditCustomer = useCallback(async (ci: CheckIn) => {
-    if (!ci.customer_id) {
-      toast('고객 정보가 없어 수정할 수 없습니다');
-      return;
-    }
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', ci.customer_id)
-      .maybeSingle();
-    if (error || !data) {
-      toast.error('고객 정보를 불러오지 못했습니다');
-      return;
-    }
-    setEditingCustomer(data as Customer);
-  }, []);
 
   // CustomerQuickMenu 는 CheckIn 기반 — 섹션 행(고객 단위)을 CheckIn 형태로 변환(Customers.customerAsCheckIn 패턴).
   const targetAsCheckIn = useCallback(
@@ -323,20 +300,8 @@ export default function TreatmentTable() {
             setCtxMenu(null);
           }}
           onSendSms={canSendSms ? (ci) => { setSmsTarget(ci); setCtxMenu(null); } : undefined}
-          /* T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 행정정보 수정 진입점 — 치료테이블에서만 노출.
-             부모가 customer fetch(openEditCustomer) 후 EditCustomerDialog(고객관리 재사용) 오픈. */
-          onEditCustomer={(ci) => { setCtxMenu(null); void openEditCustomer(ci); }}
         />
       )}
-
-      {/* T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 행정정보 수정 — 고객관리와 동일 EditCustomerDialog 재사용.
-          canEditSensitive = isStaffUnlockRole(고객관리와 동일 게이팅). 저장 시 원장 무접점(therapist surface). */}
-      <EditCustomerDialog
-        customer={editingCustomer}
-        onOpenChange={(o) => { if (!o) setEditingCustomer(null); }}
-        onUpdated={() => setEditingCustomer(null)}
-        canEditSensitive={isStaffUnlockRole(profile?.role)}
-      />
 
       {/* D. 진료차트 — Customers/Dashboard 와 동일 MedicalChartPanel 재사용 */}
       <MedicalChartPanel
