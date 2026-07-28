@@ -134,8 +134,10 @@ test.describe('결함② — 토요일: 가산 fold 이후 재계산(정순서)�
     );
     expect(inv.ok).toBe(true);
     expect(values._paidbox_invariant).toBe('ok');
-    // ⑧ = ⑩(due, 미수납이므로 = 미납) 정합.
-    expect(n(values.due_amount)).toBe(n(values.patient_amount));
+    // ★ SUPERSEDED by T-20260728 요건2: ⑩ 납부할금액 = 공란(미사용, 칸 존치·PREPRINT 의도상태). 미수납 잔여는
+    //   '납부하지 않은 금액'(unpaid)에 정직 표기. 구 '⑩=⑧ mirror'는 폐기.
+    expect(values.due_amount).toBe('');                                  // ⑩ 공란
+    expect(n(values.unpaid_amount)).toBe(n(values.patient_amount));      // 미납 = ⑧(미수납 전액)
   });
 
   test('버그순서(가산 前 계산) = 출력토큰 발산(회귀 witness)', () => {

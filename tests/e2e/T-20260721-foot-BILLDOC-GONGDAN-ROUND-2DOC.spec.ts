@@ -69,12 +69,13 @@ test.describe('BILLDOC 2종 정확성 — 총액 10원절사 정합(2c) / 납부
     expect(computeBillDetailRounding(308_800).adjustment).toBe(0);
   });
 
-  test('2c: 계산서 ⑧환자부담총액·⑩납부할금액 = {{patient_amount}} 단일 소스(두 칸 동일)', () => {
+  test('2c: 계산서 ⑧환자부담총액={{patient_amount}} · ⑩납부할금액={{due_amount}}(공란·칸 존치)', () => {
     const tpl = extractNewTemplate();
     // ⑧ 환자부담 총액 행
     expect(tpl).toMatch(/⑧ 환자부담 총액[\s\S]*?\{\{patient_amount\}\}/);
-    // ⑩ 납부할 금액 행
-    expect(tpl).toMatch(/⑩ 납부할 금액[\s\S]*?\{\{patient_amount\}\}/);
+    // ★ SUPERSEDED by T-20260728 요건2(김주연 총괄 "이미납부/납부할 칸 존치·공란"): ⑩ 납부할 금액 = 전용 토큰
+    //   {{due_amount}}(PREPRINT 의도상태=공란·칸 존치). 구 {{patient_amount}} mirror(⑩=⑧)는 폐기.
+    expect(tpl).toMatch(/⑩ 납부할 금액[\s\S]*?\{\{due_amount\}\}/);
   });
 
   // ── AC-2 (2d): ⑪ 납부한 금액 합계칸 기본 바인딩 ──

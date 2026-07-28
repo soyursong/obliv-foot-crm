@@ -67,63 +67,64 @@ test('요건1: FLOOR 경로 환불액 ≤ 기징수액 불변식 유지(over-ref
   expect(refund).toBeLessThanOrEqual(200);              // CEIL 경로보다 크지 않음(안전 방향)
 });
 
-// ── 요건(2)/템플릿: 분리 표기 3행 제거 + 납부한 금액 단일칸 유지 ──────────────────────────
-test('요건2[템플릿]: bill_receipt_new — 이미납부/납부할/납부하지않은 행 제거, 납부한 금액(합계) 단일칸 유지', () => {
+// ★★ SUPERSEDED by T-20260728-foot-BILLRECEIPT-PAYMETHOD-PAIDFIELD-2FIX 요건2 (reporter 김주연 총괄) ★★
+//   본 티켓(요건2)의 '분리 표기 3행 제거'는 현장 회귀("양식을 왜 건드려")로 원복됨. ⑨/⑩/납부하지않은 행 재존치.
+//   아래 4개 테스트는 원복 後 기대치(칸 존치 + 선차감분 ⑪ fold, ⑨/⑩ 공란)로 갱신. REFUND200 요건1(마이그)은 무변경.
+
+// ── [원복] 템플릿: ⑨/⑩/납부하지않은 행 재존치 + 납부한 금액(⑪) 유지 ──────────────────────────
+test('요건2[템플릿·원복]: bill_receipt_new — ⑨ 이미납부·⑩ 납부할·납부하지않은 행 재존치, ⑪ 납부한 금액 유지', () => {
   const tpl = getHtmlTemplate('bill_receipt_new');
   expect(tpl).toBeTruthy();
   const html = tpl as string;
-  expect(html).not.toContain('이미 납부한 금액');
-  expect(html).not.toContain('납부할 금액');
-  expect(html).not.toContain('납부하지 않은 금액');
-  expect(html).not.toContain('{{already_paid}}');
-  expect(html).not.toContain('{{due_amount}}');
-  expect(html).not.toContain('{{unpaid_amount}}');
-  // 유지: 납부한 금액(합계) + 결제수단 셀
+  expect(html).toContain('이미 납부한 금액');
+  expect(html).toContain('납부할 금액');
+  expect(html).toContain('납부하지 않은 금액');
+  expect(html).toContain('{{already_paid}}');
+  expect(html).toContain('{{due_amount}}');
+  expect(html).toContain('{{unpaid_amount}}');
   expect(html).toContain('납부한');
   expect(html).toContain('{{paid_total}}');
   expect(html).toContain('{{card_amount}}');
 });
 
-// ── 요건(2)/AC3: 납부한 금액 합계 = 환자부담 총액(완납), 분리 토큰 blank ──────────────────
-test('요건2[AC3]: 카드 완납 → paid_total = 환자부담총액, 분리 토큰 blank', () => {
+// ── [원복+fold] 카드 완납(선수금無) → 카드=⑧·합계=⑧, ⑨/⑩ 공란, 미납=0 ────────────────────
+test('요건2[AC3·원복]: 카드 완납(선수금無) → paid_total=환자부담총액, ⑨/⑩ 공란, 미납=0', () => {
   const values: Record<string, string> = {};
   const patientAmount = 88000;
   const payRows: PayRow[] = [{ method: 'card', amount: 88000, payment_type: 'payment' }];
   applyBillReceiptPaidBoxTokens(values, payRows, patientAmount, 0);
   expect(n(values.paid_total)).toBe(patientAmount);
-  expect(values.paid_total).toBe(formatAmount(patientAmount));
-  expect(values.already_paid).toBe('');
-  expect(values.due_amount).toBe('');
-  expect(values.unpaid_amount).toBe('');
+  expect(n(values.card_amount)).toBe(88000);
+  expect(values.already_paid).toBe('');       // ⑨ 공란(선차감 없음)
+  expect(values.due_amount).toBe('');         // ⑩ 공란(미사용)
+  expect(n(values.unpaid_amount)).toBe(0);    // 납부하지않은 = 0(완납, 칸 존치)
 });
 
-// ── 요건(2)/보라색(패키지 기결제): 선수금(membership) 차감 항목이 '미납' 아닌 완납으로 ──────
-test('요건2[보라색·기결제]: 패키지 기결제(membership) 포함건도 paid_total = 환자부담총액(미납 0)', () => {
+// ── [원복+fold] 보라색(패키지 기결제 membership) → ⑪로 fold, 합계=⑧, 미납=0 ──────────────
+test('요건2[보라색·원복]: 패키지 기결제(membership)+선차감 → ⑪ fold(현금칸)=⑧, 합계=⑧, 미납=0', () => {
   const values: Record<string, string> = {};
-  const patientAmount = 240000; // 환자부담 총액 = 패키지 기결제분 포함
-  // membership(패키지 전액차감) 결제행 — 종전엔 ⑨/미납 스플릿으로 '납부하지 않은 금액' 오표기.
-  const payRows: PayRow[] = [
-    { method: 'membership', amount: 240000, payment_type: 'payment' },
-  ];
+  const patientAmount = 240000;
+  // membership(패키지 전액차감)은 ⑪ 버킷 제외 → paidTotal net=0, 선차감 240,000 fold(폴백 현금칸).
+  const payRows: PayRow[] = [{ method: 'membership', amount: 240000, payment_type: 'payment' }];
   applyBillReceiptPaidBoxTokens(values, payRows, patientAmount, 240000);
-  // 납부한 금액 합계 = 환자부담총액(완납). 분리/미납 표기 없음.
-  expect(n(values.paid_total)).toBe(patientAmount);
-  expect(values.unpaid_amount).toBe('');
+  expect(n(values.paid_total)).toBe(patientAmount); // Σ(셀) = 선차감 fold = ⑧
+  expect(n(values.unpaid_amount)).toBe(0);
+  expect(values.already_paid).toBe('');             // ⑨ 공란(⑪로 fold)
   expect(values.due_amount).toBe('');
 });
 
-// ── 요건(2)/F-5238 유사케이스: 선수금 pkg + 환불 혼재 — 서류 합계 = 환자부담총액 ──────────
-test('요건2[F-5238 유사]: 선수금 pkg + 부분 환불 혼재 → paid_total = 환자부담총액, 분리 표기 없음', () => {
+// ── [원복+fold] F-5238 유사: 선수금 pkg + 부분 환불 혼재 → 합계=⑧, 미납=0 ──────────────
+test('요건2[F-5238·원복]: 선수금 pkg + 부분 환불 혼재 → paid_total=환자부담총액, ⑨/⑩ 공란, 미납=0', () => {
   const values: Record<string, string> = {};
-  const patientAmount = 229520; // 선수금 240,000 − 환불 10,480 = 229,520 환자부담 총액(예시)
+  const patientAmount = 229520; // 선수금 240,000 − 환불 10,480 = 229,520(예시), alreadyPaid=환자부담분
   const payRows: PayRow[] = [
     { method: 'membership', amount: 240000, payment_type: 'payment' },
-    { method: 'card', amount: 10480, payment_type: 'refund' }, // 환불(순액 차감)
+    { method: 'card', amount: 10480, payment_type: 'refund' }, // 환불(순액 차감) → card net −10,480
   ];
-  applyBillReceiptPaidBoxTokens(values, payRows, patientAmount, 240000);
-  // 합계는 항상 환자부담 총액을 mirror(완납 표기) — 분리/미납 칸 미표기.
+  // net: card = −10,480(환불) → 0 미만은 셀 미표기. 선차감(229,520) fold → 완납.
+  applyBillReceiptPaidBoxTokens(values, payRows, patientAmount, 229520);
   expect(n(values.paid_total)).toBe(patientAmount);
   expect(values.already_paid).toBe('');
   expect(values.due_amount).toBe('');
-  expect(values.unpaid_amount).toBe('');
+  expect(n(values.unpaid_amount)).toBe(0);
 });

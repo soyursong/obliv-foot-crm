@@ -97,45 +97,47 @@ const effectiveAlreadyPaid = (
 // ── 시나리오 2 (★확정 repro): 선수금차감(패키지) [출력및수납] — 이아현 #F-5227 케이스 ─────────────
 //   ⑧ 환자부담총계 307,800 / 패키지 선차감 300,000 / 차감 후 실수납 잔액 7,800(현금).
 //   기대: ⑨ 300,000(선차감) · ⑩ 7,800 · ⑪ 현금 7,800 · 미납 0. loadAlreadyPaidAmount 는 인쇄시점 0.
-test('S2(확정 repro): 패키지 선차감 [출력및수납] → ⑨=300,000·⑩=⑪=7,800·미납=0 (RC#2 ⑨보정 + ⑪ synthetic)', () => {
+test('S2(fold): 패키지 선차감 [출력및수납] → 선차감 300,000이 현금칸 fold, 현금=307,800(완납)·미납=0', () => {
+  // ★ SUPERSEDED by T-20260728 요건1: 선차감분(300,000)은 별도 ⑨ 분리표기가 아니라 실 결제수단(현금)칸으로 fold.
   const patientFloored = 307800;        // ⑧ 환자부담총액(급여 전액분 포함, 10원배수)
   const settleAmount = 7800;            // 차감 후 실수납(잔액) = deductAmount
   const splits: { method: PayMethod; amount: number }[] = [{ method: 'cash', amount: settleAmount }];
   const settleCtx = { isDeductSettle: true, settleAmount };
   const loadedAlreadyPaid = 0;          // 인쇄 前 is_package_session 미마킹 → loadAlreadyPaidAmount=0
 
-  // (a) 버그 재현 — 현행(⑨보정·synthetic 없음): payRows=[], ⑨=0 → ⑩=307,800, ⑪ 공란, 미납=300,000.
+  // (a) 버그 재현 — payRows=[], 선차감 미반영: ⑨/⑩ 공란(칸 존치), ⑪ 공란, 미납=전액(선차감·실수납 미반영).
   const bug: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
   applyBillReceiptPaidBoxTokens(bug, [], patientFloored, loadedAlreadyPaid);
-  expect(bug.already_paid).toBe('');          // ⑨ 공란(선차감 300,000 미반영)
-  expect(bug.paid_total).toBe('');            // ⑪ 공란(실수납 7,800 미반영)
-  expect(n(bug.due_amount)).toBe(307800);     // ⑩ = 전액(차감 미반영)
-  expect(n(bug.unpaid_amount)).toBe(307800);  // 미납 = ⑩−⑪ = 전액(선차감·실수납 모두 미반영) = 현장증상
+  expect(bug.already_paid).toBe('');          // ⑨ 공란
+  expect(bug.paid_total).toBe('');            // ⑪ 공란(실수납·선차감 미반영)
+  expect(bug.due_amount).toBe('');            // ⑩ 공란(미사용)
+  expect(n(bug.unpaid_amount)).toBe(307800);  // 미납 = 전액(선차감·실수납 모두 미반영) = 현장증상
 
-  // (b) 수정 — ⑨ 보정(patientFloored−잔액) + 잔액 synthetic 현금 payRow.
+  // (b) 수정 — ⑨ 보정(patientFloored−잔액) + 잔액 synthetic 현금 payRow → 선차감이 현금칸에 fold.
   const fixed: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
   const ap = effectiveAlreadyPaid(patientFloored, settleCtx, loadedAlreadyPaid); // = 300,000
   const payRows = [...[], ...buildSettlePayRows(splits, false)];                  // fetch(prior)=[] + synthetic
   applyBillReceiptPaidBoxTokens(fixed, payRows, patientFloored, ap);
-  expect(n(fixed.already_paid)).toBe(300000); // ⑨ 선차감(패키지 선납분)
-  expect(n(fixed.due_amount)).toBe(7800);     // ⑩ = ⑧ − ⑨ = 잔액
-  expect(n(fixed.cash_amount)).toBe(7800);    // ⑪ 현금칸 = 잔액 실수납(자동연동)
+  expect(fixed.already_paid).toBe('');        // ⑨ 공란(⑪로 fold)
+  expect(fixed.due_amount).toBe('');          // ⑩ 공란(미사용)
+  expect(n(fixed.cash_amount)).toBe(307800);  // ⑪ 현금칸 = 실수납 7,800 + 선차감 300,000 = ⑧(완납)
   expect(fixed.card_amount).toBe('');         // 카드 미사용
-  expect(n(fixed.paid_total)).toBe(7800);     // ⑪ 합계 = 잔액(선차감분과 분리 → 이중계상 없음)
+  expect(n(fixed.paid_total)).toBe(307800);   // ⑪ 합계 = ⑧
   expect(n(fixed.unpaid_amount)).toBe(0);     // 완납
-  // 법정 불변식 ⑧ = ⑨ + ⑪ + 미납 (300,000 + 7,800 + 0 = 307,800)
-  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 300000, 7800, 7800, 0);
+  // 법정 불변식 ⑧ = ⑨(0) + ⑪ + 미납 (0 + 307,800 + 0 = 307,800)
+  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 0, 307800, patientFloored, 0);
   expect(inv.ok).toBe(true);
 });
 
-// ── 회귀 가드: membership split 은 ⑪에서 skip(⑨로 귀속) — 합성해도 무영향 ──────────────
-test('regression: membership synthetic payRow 는 ⑪ paid_total 에 산입되지 않음(⑨ 귀속 semantics 보존)', () => {
+// ── 회귀 가드: membership 은 ⑪ 버킷 skip 이나 선차감분은 폴백 현금칸으로 fold(완납) ──────────────
+test('regression(fold): membership synthetic → ⑪ 버킷 skip·선차감 폴백 현금칸 fold → 합계=50,000(완납)', () => {
+  // ★ SUPERSEDED by T-20260728 요건1: membership 은 ⑪(card/cash/cashreceipt) 버킷 제외(이중계상 방지) 유지하되,
+  //   선차감분(50,000)이 실수납 net 0 → 폴백 현금칸으로 fold → 완납 표기(⑨ 분리표기 아님).
   const patientAmount = 50000;
   const splits: { method: PayMethod; amount: number }[] = [{ method: 'membership', amount: 50000 }];
   const values: Record<string, string> = { patient_amount: formatAmount(patientAmount) };
   applyBillReceiptPaidBoxTokens(values, buildSettlePayRows(splits, false), patientAmount, 50000);
-  // membership 은 ⑪(card/cash/paid_total)에서 skip → paid_total 공란. 완납은 ⑨(already_paid)로 표기.
-  expect(values.paid_total).toBe('');
-  expect(n(values.already_paid)).toBe(50000);
+  expect(n(values.paid_total)).toBe(50000);   // 선차감 fold(폴백 현금칸) → 완납 합계
+  expect(values.already_paid).toBe('');        // ⑨ 공란(⑪로 fold)
   expect(n(values.unpaid_amount)).toBe(0);
 });

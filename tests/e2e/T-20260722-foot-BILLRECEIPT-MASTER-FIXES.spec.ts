@@ -59,11 +59,12 @@ test.describe('BILLRECEIPT-MASTER-FIXES — 선수금⑨·refund순액·칸분�
       308800,
       300000,
     );
-    expect(v.already_paid).toBe('300,000'); // ⑨
-    expect(v.due_amount).toBe('8,800');     // ⑩ = ⑧ − ⑨
-    expect(v.card_amount).toBe('8,800');    // ⑪ 카드
-    expect(v.paid_total).toBe('8,800');
-    expect(v.unpaid_amount).toBe('0');      // ★미납 0 (기존 300,000 오표기 소멸)
+    // ★ SUPERSEDED by T-20260728 요건1: 선차감분(300,000)은 ⑨ 분리표기가 아니라 ⑪ 카드칸으로 fold.
+    expect(v.already_paid).toBe('');          // ⑨ 공란(⑪로 fold)
+    expect(v.due_amount).toBe('');            // ⑩ 공란
+    expect(v.card_amount).toBe('308,800');    // ⑪ 카드 = 실수납 8,800 + 선차감 300,000 = ⑧(완납)
+    expect(v.paid_total).toBe('308,800');
+    expect(v.unpaid_amount).toBe('0');        // ★미납 0
   });
 
   test('§1-regression: 직접결제만(선수금 없음) → ⑨ 공란, ⑩=⑧, 값 불변', () => {
@@ -74,34 +75,39 @@ test.describe('BILLRECEIPT-MASTER-FIXES — 선수금⑨·refund순액·칸분�
       50000,
       0, // alreadyPaid 없음
     );
-    expect(v.already_paid).toBe('');    // ⑨ 공란(종전 빈 셀 유지)
-    expect(v.due_amount).toBe('50,000'); // ⑩ = ⑧
+    expect(v.already_paid).toBe('');    // ⑨ 공란(선차감 없음)
+    expect(v.due_amount).toBe('');       // ⑩ 공란(미사용, 칸 존치) — T-20260728 요건2 원복
+    expect(v.card_amount).toBe('50,000'); // ⑪ 카드 = 실수납(fold 없음, 무회귀)
     expect(v.unpaid_amount).toBe('0');
   });
 
   test('§1-guard: ⑨(alreadyPaid) > ⑧(patientAmount) 이어도 ⑩ 음수 방지(그레인 가드)', () => {
     const v: Record<string, string> = {};
     applyBillReceiptPaidBoxTokens(v, [], 100000, 130000);
-    expect(v.due_amount).toBe('0');    // max(0, ⑧−⑨)
+    // ★ SUPERSEDED: ⑩ 공란(미사용). 선차감 fold 는 ⑧ 상한 clamp → Σ(셀)≤⑧(과징수·미납음수 방지 계승).
+    expect(v.due_amount).toBe('');      // ⑩ 공란
+    expect(v.paid_total).toBe('100,000'); // fold clamp = ⑧(130,000 초과분 미표기)
     expect(v.unpaid_amount).toBe('0');
   });
 
   // ══════════════ §1 시나리오 2: 3경로 패리티 (path-sweeper) ══════════════
 
-  test('§1-path-sweeper: 3 호출부 모두 alreadyPaid(4번째 인자) 전달', () => {
-    // 단건(DPP useMemo) — alreadyPaidAmount 상태 전달.
-    expect(DPP_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(base, paymentItems, patientFloored, alreadyPaidAmount\)/);
-    // 일괄(DPP handleBatchPrint) — batchAlreadyPaid 전달.
-    expect(DPP_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(v, paymentItems, patientFloored, batchAlreadyPaid\)/);
-    // 결제창(PMW) — alreadyPaid 전달.
-    expect(PMW_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(\s*autoValues,[\s\S]*?patientFloored,\s*alreadyPaid,\s*\)/);
+  test('§1-path-sweeper: paidbox(수납)=alreadyPaid fold · DPP(출력)=preprint 경유', () => {
+    // ★ ARCH-MIGRATED (T-20260724~27 PREPRINT/4REQ, T-20260728 요건1 계승): 구 "DPP 2 + PMW 1 = 3 호출부" 스캔은
+    //   obsolete(회귀 아님 — b20c88d2 이전부터 DPP 신양식 print-time 플로우가 applyBillReceiptPreprintPaymethodTokens
+    //   로 대체됨/선출력 수기체크 경로). applyBillReceiptPaidBoxTokens 실호출부 = PMW([수납]) 단일 —
+    //   T-20260728 요건1 fold(effectiveAlreadyPaid) 전달 → 카드칸 = 실수납+선차감 = ⑧.
+    expect(PMW_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(enriched, ctx\.payRows, patientFloored, effectiveAlreadyPaid\)/);
+    // DPP([출력]) 신양식 = preprint paymethod 토큰(요건2 ⑨/⑩/⑪ 복원 경로).
+    expect(DPP_SRC).toMatch(/applyBillReceiptPreprintPaymethodTokens\(base, patientFloored,/);
+    // 회귀 가드: DPP 가 구 payments-원장 driven applyBillReceiptPaidBoxTokens 로 되돌아가지 않음.
+    expect(DPP_SRC).not.toMatch(/applyBillReceiptPaidBoxTokens\(/);
   });
 
-  test('§1-path-sweeper: 3 경로 모두 loadAlreadyPaidAmount(SSOT 소스) 로드', () => {
+  test('§1-path-sweeper: paidbox/preprint 경로 모두 loadAlreadyPaidAmount(SSOT 소스) 로드', () => {
     // package_payments 원장 금지 — check_in_services 정합 소스만.
-    expect(DPP_SRC).toMatch(/loadAlreadyPaidAmount\(checkIn\.id, customerInsuranceGrade\)/); // 일괄
-    expect(DPP_SRC).toMatch(/loadAlreadyPaidAmount\(checkIn\.id, grade\)/);                  // 단건(effect)
-    expect(PMW_SRC).toMatch(/loadAlreadyPaidAmount\(checkIn\.id, customerInsuranceGrade\)/);  // 결제창
+    expect(DPP_SRC).toMatch(/loadAlreadyPaidAmount\(checkIn\.id, grade\)/);                  // DPP(출력 effect)
+    expect(PMW_SRC).toMatch(/loadAlreadyPaidAmount\(checkIn\.id, customerInsuranceGrade\)/);  // PMW(수납)
   });
 
   test('§1-parity: 동일 입력 → 3경로 헬퍼 산출 동일(같은 SSOT 헬퍼)', () => {
@@ -154,10 +160,12 @@ test.describe('BILLRECEIPT-MASTER-FIXES — 선수금⑨·refund순액·칸분�
       308800,
       300000, // ⑨ = 패키지 차감분
     );
-    expect(v.cash_amount).toBe('');       // membership 이 cash 버킷에 안 잡힘
-    expect(v.card_amount).toBe('8,800');
-    expect(v.paid_total).toBe('8,800');   // membership 제외 → ⑪ = 데스크 카드만
-    expect(v.already_paid).toBe('300,000'); // ⑨ 에만 표기
+    // ★ SUPERSEDED by T-20260728 요건1: membership 은 ⑪ 버킷 제외(이중계상 방지 유지)지만 선차감분(300,000)은
+    //   실 결제수단(카드)칸으로 fold → ⑨ 공란·카드=308,800(완납).
+    expect(v.cash_amount).toBe('');       // membership 이 cash 버킷에 안 잡힘(무회귀)
+    expect(v.card_amount).toBe('308,800'); // ⑪ 카드 = 실수납 8,800 + 선차감 fold 300,000
+    expect(v.paid_total).toBe('308,800');
+    expect(v.already_paid).toBe('');       // ⑨ 공란(⑪로 fold)
     expect(v.unpaid_amount).toBe('0');
   });
 
