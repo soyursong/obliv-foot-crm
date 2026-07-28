@@ -157,11 +157,17 @@ test.describe('T-20260725-foot-OPINIONDOC-ADMINBTN-CLIP-TREATTABLE-VIEW-PARITY �
     expect(s).not.toContain('.insert(');
   });
 
-  test('E2(AC2): 치료테이블 뷰어에 재출력/편집/저장 트리거 버튼 미도입(닫기만)', () => {
+  test('E2(AC2): 치료테이블 발행본 뷰어 — 발행본 재출력/재발행 트리거 미도입 (§22 불변 유지)', () => {
     const s = SECTION_SRC();
-    // 진료대시보드의 '행정 정보 저장' 은 원장/원내직원 서류작성 surface 전용 — 치료테이블 뷰어엔 없음.
-    expect(s).not.toContain('행정 정보 저장');
-    // 재출력/인쇄 트리거 미도입.
+    // ── SUPERSEDED by T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN (planner GO 2026-07-29) ──
+    //   본 spec 최초 premise("뷰어는 닫기만 · 저장 트리거 없음")는 승인·배포된 T-20260728로 정당 대체됨:
+    //   치료테이블 뷰어 footer에 [행정정보 수정] 진입점(diagdoc-doc-view-edit-admin-btn) + 전용 편집기
+    //   ('행정 정보 저장' 버튼)가 legit surface로 도입. 편집 대상 = 발행완료 요청행 field_data.admin_overrides
+    //   오버레이(비의료 행정필드) — 발행 '의료본'(published snapshot)·발행 파이프라인 무접촉(§22 스냅샷 불변).
+    //   진료의(발급 의료인) 편집은 MEDSPACE-CONFIRM-GATE로 read-only(DOCTOR_FIELD_EDITABLE=false).
+    //   → 따라서 '행정 정보 저장' 부재 단언은 폐기(현실=legit 존재). E1가 publish RPC/insert/update 부재를 가드.
+    //
+    // 여기서 지키는 §22 불변 = 발행 '의료본' 자체의 재출력/재발행(인쇄) 트리거 미도입 (변함없이 유효):
     expect(s).not.toMatch(/printOpinionDoc\s*\(/);
     expect(s).not.toContain('window.print(');
   });
