@@ -1,6 +1,7 @@
 // Supabase table row types for 풋센터 CRM
 
 import type { InsuranceGrade, InsuranceGradeSource, HiraCategory } from './insurance';
+import { DOPAMINE_TM_PREFIX_RE, registrantMatchKey, cleanRegistrantName } from './registrarMatch';
 
 export type VisitType = 'new' | 'returning' | 'experience';
 
@@ -938,14 +939,35 @@ export function resolveVisitRouteDisplay(
  *    - 무매칭 → registrar_id=NULL + registrar_name='[도파민TM] {name}' provenance 라벨 → 그대로 표시.
  *    - registrar_name 미보유(라벨 자체 없음) → source_system='dopamine' 마커로 '도파민 등록' 안전 폴백.
  *
+ * T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (뱃지→이름만, FE read-path only):
+ *   '[도파민TM] {name}' provenance 라벨 중 clean 이름이 풋CRM 스태프 계정으로도 존재하는
+ *   cross-CRM 동일인이면 뱃지를 떼고 이름만 표시('[도파민TM] 강솔희' → '강솔희').
+ *   ★ planner 스코프결정: 전체 dopamine registrant 일괄제거 아님 —
+ *     동일인(knownRegistrarKeys 매칭) 한정. 외부/TM전용 registrant 는 provenance 뱃지 유지.
+ *   ★ 강솔희 하드코딩 금지 — knownRegistrarKeys(등록자 마스터 ∪ 로그인 표시명) 매칭으로 판별.
+ *   ★ knownRegistrarKeys 미전달(구 2-arg 호출) 시 기존 동작 100% 유지(회귀 0).
+ *   ★ read-path 표시변경만 — 저장값(registrar_name/registrar_id/source_system) write 0,
+ *     §416/§963⑥ provenance 저장정책 무저촉(저장값·attribution 무변경).
+ *
+ * @param knownRegistrarKeys registrantMatchKey 로 환원된 풋 등록자 마스터/스태프 키 Set(선택).
  * @returns 표시용 예약등록자 provenance 라벨. 해당 없으면 '' (caller 가 '—'/'미지정'/편집 Select graceful 처리).
  */
 export function resolveRegistrarDisplay(
   registrarName?: string | null,
   sourceSystem?: string | null,
+  knownRegistrarKeys?: Set<string>,
 ): string {
   const name = (registrarName ?? '').trim();
-  if (name) return name;                                   // EF 착지 라벨('[도파민TM] {name}') 또는 마스터 스냅샷
+  if (name) {
+    // AC-2: '[도파민TM] {name}' 라벨 & clean 이름이 풋 스태프로도 존재 = cross-CRM 동일인 → 뱃지 제거
+    if (knownRegistrarKeys && DOPAMINE_TM_PREFIX_RE.test(name)) {
+      const key = registrantMatchKey(name);
+      const clean = cleanRegistrantName(name);
+      if (key && clean && knownRegistrarKeys.has(key)) return clean; // 이름만
+      // 외부/TM전용(미매칭) → provenance 뱃지 유지(아래 원문 반환)
+    }
+    return name; // EF 착지 라벨('[도파민TM] {name}') 또는 마스터 스냅샷
+  }
   if ((sourceSystem ?? '').trim() === 'dopamine') return '도파민 등록';  // 라벨 미보유 안전 폴백(공란 금지)
   return '';
 }

@@ -5,7 +5,8 @@
 // T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE: 초진 [체크인 전환] 구 정보입력 폼(주민번호+건보동의서) 제거
 //   → 초진도 재진처럼 폼 없이 바로 doCheckIn. 주민번호/동의서 수집은 펜차트로 일원화(정책: RRN-FIELD-REMOVE/CHECKIN-CONSENT-REMOVE).
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { buildKnownRegistrarKeys } from '@/lib/registrarMatch';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
@@ -268,6 +269,13 @@ export function ReservationDetailPopup({
 
   // ── T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자 (현재 예약 대상 편집)
   const [registrars, setRegistrars] = useState<ReservationRegistrar[]>([]);
+  // T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2: 풋 등록자 마스터(registrars) ∪ 로그인 표시명(authorName)
+  //   → clean 매칭 키 Set. '[도파민TM] {name}' 라벨의 clean 이름이 풋 스태프로도 존재하는 cross-CRM 동일인이면
+  //   resolveRegistrarDisplay 가 뱃지를 떼고 이름만 표시. read-only 파생(저장값 무변경).
+  const knownRegistrarKeys = useMemo(
+    () => buildKnownRegistrarKeys([...registrars.map((r) => r.name), authorName]),
+    [registrars, authorName],
+  );
   const [visitRoute, setVisitRoute] = useState<string>('');      // '' = 미지정
   const [registrarId, setRegistrarId] = useState<string>('');    // '' = 미지정
   const [routeSaving, setRouteSaving] = useState(false);
@@ -1619,7 +1627,7 @@ export function ReservationDetailPopup({
                         data-testid="popup-registrar-provenance"
                         title="도파민 TM이 등록한 예약(출처 표시 — 풋 계정 미귀속)"
                       >
-                        {resolveRegistrarDisplay(reservation.registrar_name, reservation.source_system) || '—'}
+                        {resolveRegistrarDisplay(reservation.registrar_name, reservation.source_system, knownRegistrarKeys) || '—'}
                       </span>
                     ) : (
                       /* T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK AC-1: TM 역할은 기존 예약 예약등록자 disabled. */
@@ -1843,7 +1851,7 @@ export function ReservationDetailPopup({
                           데이터 소스 = AC7과 동일(registrar_name). AC7 DB검증 결과(write 무결·생성시 미수집)상 미할당 예약은 '—' graceful. */}
                       {/* T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-2: 도파민 ingest 예약은 provenance 라벨/안전 폴백 표시.
                           registrar_name(EF 착지 라벨) 우선, 미보유 시 source_system='dopamine'→'도파민 등록' (공란/오귀속 금지). */}
-                      <FieldRow label="예약등록자" value={resolveRegistrarDisplay(selectedResv.registrar_name, selectedResv.source_system) || '—'} />
+                      <FieldRow label="예약등록자" value={resolveRegistrarDisplay(selectedResv.registrar_name, selectedResv.source_system, knownRegistrarKeys) || '—'} />
                       {selectedResv.id !== reservation.id && (
                         // T-20260630-foot-FOOTPUSH-ROUTE-TM-REGISTRANT AC-1: 도파민 ingest 예약 'TM' 표시(순수 display).
                         <FieldRow label="예약경로" value={resolveVisitRouteDisplay(selectedResv.visit_route, selectedResv.source_system) || '—'} />
