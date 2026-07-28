@@ -16,7 +16,11 @@ import { useAuth } from '@/lib/auth';
 import { birthYearAgeDisplay, chartNoDisplay, seoulHHMM, seoulISODate } from '@/lib/format';
 import {
   useOpinionRequestQueue,
-  usePublishedOpinionRequests,
+  // T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN: '서류 완료' 그룹 소스를 day-scoped(당일)
+  //   usePublishedOpinionRequests → all-time useAllPublishedOpinionRequests 로 확장. 자정 교차로 어제 발행분이
+  //   진료대시보드에서 사라지던 결함(REOPEN)을 제거한다. 날짜 스코프는 소비 컴포넌트가 selectDashboardCompletedRows
+  //   에서 '전체기간'으로 결정(진료대시보드=날짜선택기 없는 당일 surface). 매핑은 동일 mapPublishedRequestRow 공유(drift 0).
+  useAllPublishedOpinionRequests,
   useResolveOpinionRequest,
   useQueueClinicalSnaps,
   buildOptionLabelMap,
@@ -59,13 +63,27 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle, FileText, Lock } from 'lucide-react';
 
+// T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN — 진료대시보드 '서류 완료' 그룹의 날짜 스코프 결정(소비 컴포넌트).
+//   RC: usePublishedOpinionRequests(day-scoped, resolved_at KST==today)만 읽어 어제 발행분이 자정을 넘기면
+//     진료대시보드 '서류 완료' 목록에서 사라졌다(현장 증상). track2(b) 발행완료 day-scope.
+//   FIX(치료테이블 07-26 선례 동형, db_change=false): 발행완료 소스를 all-time(useAllPublishedOpinionRequests)로
+//     전환하고, 진료대시보드는 날짜선택기가 없는 당일 surface이므로 날짜 스코프를 '전체기간'으로 결정한다.
+//     = 화면 표시 범위만 확장(비파괴). 발행/저장 로직·매핑(mapPublishedRequestRow)·정렬 semantics 전부 불변.
+//   순수 함수(E2E spec 이 직접 import·단언 → drift 방지): all-time 발행완료 행을 그대로(전체기간) 반환하되
+//     발행 시각 역순(resolvedAt desc) 방어적 재정렬(훅이 이미 정렬하지만 소스-무관 표시 순서 고정).
+export function selectDashboardCompletedRows(allPublished: OpinionRequestRow[]): OpinionRequestRow[] {
+  return [...allPublished].sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
+}
+
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
   const { data: rows = [], isLoading, isError, error } = useOpinionRequestQueue(clinicId);
   // T-20260625-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 발행 완료 환자를 목록에서 제거하지 않고 '서류 완료' 그룹으로 유지.
-  const { data: completedRows = [] } = usePublishedOpinionRequests(clinicId);
+  //   T-20260728-...-DATEFILTER-REOPEN: 소스=all-time(전체기간) → 과거일 발행분도 잔류(자정 교차 무손실). 스코프 결정은 selectDashboardCompletedRows.
+  const { data: allPublished = [] } = useAllPublishedOpinionRequests(clinicId);
+  const completedRows = useMemo(() => selectDashboardCompletedRows(allPublished), [allPublished]);
   const { data: clinicHeader = null } = useClinicHeader(clinicId);
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: '서류 완료' 서류명 클릭 → 실제 발행본 내용 열람.
   //   발행본(status='published', opinion_doc)은 이미 적재 — 완료 그룹 환자의 발행본만 read-only 조회(db_change=false).
@@ -650,7 +668,7 @@ function DocRequestRow({
   const progress = snap?.progress || null;
   const isDone = variant === 'done';
   // AC1/AC4: 발행완료 옆 표시할 발행 서류명 = 발행된 요청의 doc_type 라벨(진단서/소견서). 완료 그룹 = published row 이므로 항상 존재.
-  //   ★read-only READ: usePublishedOpinionRequests 가 이미 읽어온 field_data.doc_type/selected_keys 만 표시(신규 조회·스키마 변경 0).
+  //   ★read-only READ: 발행완료 훅(useAllPublishedOpinionRequests)이 이미 읽어온 field_data.doc_type/selected_keys 만 표시(신규 조회·스키마 변경 0).
   const doneDocLabel = docTypeLabel(r.docType);
 
   return (

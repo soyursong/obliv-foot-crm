@@ -504,6 +504,9 @@ export default defineConfig({
         // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT: 진료의 발행명의(진단서 attending_doctor_name 결선)·
         //   진료차트 표시·담당의 드롭다운(doctor_id 앵커)·도장 자동추종 — 정적 소스 가드 + 순수 로직 재현. auth/server 불요.
         '**/T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT.spec.ts',
+        // T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN: 진료대시보드 '서류 완료' 소스 day-scoped→
+        //   all-time 전환(자정 교차 소실 제거). 순수 함수(selectDashboardCompletedRows) + 소스 가드. auth/server 불요, unit 전용.
+        '**/T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -585,6 +588,9 @@ export default defineConfig({
         // T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT: unit 전용 순수 로직 미러 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT.spec.ts',
+        // T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN: unit 전용 순수 함수+소스 가드 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN.spec.ts',
       ],
     },
     {

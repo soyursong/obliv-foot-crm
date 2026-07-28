@@ -151,11 +151,15 @@ test.describe('B. 소스 가드 — all-time 훅 신설 + 의료 surface 불변'
     expect(mapUses.length).toBeGreaterThanOrEqual(2);
   });
 
-  test('의사화면(DocRequestQueue)은 day-scoped 훅을 계속 사용 — 의료 surface 회귀 없음', () => {
+  // ⚠ SUPERSEDED by T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN (§11 의사공간 게이트 CLEARED,
+  //   문지은 대표원장 confirm). 07-26 당시 진료대시보드(DocRequestQueue)는 day-scoped 유지가 불변식이었으나,
+  //   REOPEN 티켓이 바로 그 dashboard '서류 완료' 목록의 자정-교차 소실을 없애기 위해 all-time 로 확장했다.
+  //   → 이제 DocRequestQueue 도 useAllPublishedOpinionRequests 를 소비. 이 spec 은 치료테이블 확장이
+  //     여전히 유효함(all-time 훅·단일 매핑 존재)만 지키고, dashboard 훅 선택은 REOPEN spec 이 소유한다.
+  test('DocRequestQueue 도 all-time 훅 소비 (REOPEN 후) — 치료테이블 확장은 불변', () => {
     const src = DOCQUEUE_SRC();
-    expect(src).toMatch(/usePublishedOpinionRequests\(clinicId\)/);
-    // 치료테이블 전용 all-time 훅은 의사화면에서 쓰지 않음.
-    expect(src).not.toMatch(/useAllPublishedOpinionRequests/);
+    // REOPEN: 진료대시보드도 이제 발행완료 소스를 all-time 로 확장(day-scoped 자정 소실 제거).
+    expect(src).toMatch(/=\s*useAllPublishedOpinionRequests\(clinicId\)/);
   });
 
   test('read-only — 치료테이블 발행완료 소스에 write/RPC 없음', () => {
