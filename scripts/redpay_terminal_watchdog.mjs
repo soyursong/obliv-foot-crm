@@ -377,15 +377,85 @@ function detectUnclassifiedFootTids(items, registryMerchants, membershipTids) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 4c. ⑤ TID별 {건수, net} 소계 대조 (순수 함수 — self-test 대상)
+//    T-20260728-foot-REDPAY-WEBHOOK-TIDFIELD-DIAG-TIDSPLIT-RECONCILE AC-2.
+//    ★배경: 현행 일일 대조는 "전체 합계"만 봄 → 승인(+)↔취소(−)가 서로 다른 TID 에서
+//      상쇄되면 grand-total 은 일치해도 개별 TID 어긋남(누락 승인 + 누락 취소)이 은폐됨.
+//    ★해법: 전체 합계 대조는 그대로 유지하고, 그 위에 TID별 소계 {건수, net} 세분 비교를 additive 로 얹음.
+//    ★불변식(반드시): 이 층은 read-only 집계/비교만. reconcile 매칭 predicate=trxid 전역유일키
+//      (APPROVALNO-NONUNIQUE-GUARD·TIER0-TRXID-HARDENING) 는 무접촉. 매칭키를 TID 로 바꾸지 않는다.
+//    net = 부호보존 amount 합(취소=음수, redpay-partner-api.md §7.2 / 폴러 toRawTrxRow 동일).
+// ════════════════════════════════════════════════════════════════════════════
+
+// RedPay 정본 feed → 소계 map. foot-스코프 = merchant ∈ registry(active foot) AND tid ∈ membership.
+//   (미분류 신 TID 는 ④ 담당 → 여기선 membership 내 = 대사 대상 universe 만.)
+function aggregateTidNetFromRedpay(items, registryMerchants, membershipTids) {
+  const byTid = new Map();
+  for (const it of items) {
+    const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
+    if (mid == null || !registryMerchants.has(mid)) continue; // foot 권위키(merchant∈registry) 밖 제외
+    const tid = extractTid(it);
+    if (!tid || !membershipTids.has(tid)) continue;           // 대사 대상 = membership 내 classified TID
+    const amt = Number(it.amount ?? 0) || 0;                  // 부호보존
+    const e = byTid.get(tid) || { count: 0, net: 0 };
+    e.count += 1; e.net += amt;
+    byTid.set(tid, e);
+  }
+  return byTid;
+}
+
+// DB 행(redpay_raw_transactions) → 소계 map. resolved tid = COALESCE(col tid, data.tid) = 뷰 resolver 정합.
+function aggregateTidNetFromDbRows(rows, membershipTids) {
+  const byTid = new Map();
+  for (const r of rows) {
+    const colTid = r.tid != null ? String(r.tid).trim() : "";
+    const dataTid = r.raw_payload?.data?.tid != null ? String(r.raw_payload.data.tid).trim() : "";
+    const tid = colTid || dataTid || "";
+    if (!tid || !membershipTids.has(tid)) continue;
+    const amt = Number(r.amount ?? 0) || 0;
+    const e = byTid.get(tid) || { count: 0, net: 0 };
+    e.count += 1; e.net += amt;
+    byTid.set(tid, e);
+  }
+  return byTid;
+}
+
+// 소계 대조 (순수 함수). overall = 전체 합계(유지) / perTid = TID별 세분(신규).
+//   maskedByNetting = 전체 합계는 일치하는데 TID별 어긋남이 존재 = 현행 대조가 은폐하던 케이스(★핵심 탐지).
+function compareTidSubtotals(redpayMap, dbMap) {
+  const tids = new Set([...redpayMap.keys(), ...dbMap.keys()]);
+  const perTid = [];
+  let rpCount = 0, rpNet = 0, dbCount = 0, dbNet = 0;
+  for (const tid of [...tids].sort()) {
+    const rp = redpayMap.get(tid) || { count: 0, net: 0 };
+    const db = dbMap.get(tid) || { count: 0, net: 0 };
+    rpCount += rp.count; rpNet += rp.net; dbCount += db.count; dbNet += db.net;
+    const countMatch = rp.count === db.count;
+    const netMatch = rp.net === db.net;
+    perTid.push({ tid, redpay: rp, db, countMatch, netMatch, mismatch: !countMatch || !netMatch });
+  }
+  const overall = {
+    redpay: { count: rpCount, net: rpNet },
+    db: { count: dbCount, net: dbNet },
+    countMatch: rpCount === dbCount,
+    netMatch: rpNet === dbNet,
+  };
+  overall.match = overall.countMatch && overall.netMatch;
+  const mismatches = perTid.filter((p) => p.mismatch);
+  return { overall, perTid, mismatches, maskedByNetting: overall.match && mismatches.length > 0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 5. dedup 상태 (로컬 JSON — DB 무변경). auto-release = registry 편입 시 제거.
 // ════════════════════════════════════════════════════════════════════════════
 function loadState() {
-  const fresh = () => ({ version: 2, alerted_merchants: {}, alerted_tids: {}, last_run_at: null, last_dormant_report_at: null });
+  const fresh = () => ({ version: 3, alerted_merchants: {}, alerted_tids: {}, alerted_subtotals: {}, last_run_at: null, last_dormant_report_at: null });
   if (!existsSync(STATE_PATH)) return fresh();
   try {
     const s = JSON.parse(readFileSync(STATE_PATH, "utf8"));
     if (!s.alerted_merchants) s.alerted_merchants = {};
     if (!s.alerted_tids) s.alerted_tids = {}; // v1→v2 마이그(TID-grain dedup 신설)
+    if (!s.alerted_subtotals) s.alerted_subtotals = {}; // v2→v3 마이그(⑤ 소계 대조 dedup 신설, AC-2)
     return s;
   } catch (e) {
     warn(`상태파일 파싱 실패 → 초기화: ${e instanceof Error ? e.message : String(e)}`);
@@ -561,9 +631,20 @@ async function main() {
   //    권위소스=RedPay 정본 API 전환기 union(511∪457). merchant-grain(①) fetch 무접촉(별도 조회).
   const tidRecon = await runTidGrainRecon(baseUrl, now, registry, state);
 
+  // ── ⑤ TID별 소계 대조 (AC-2, additive) — ④가 조회한 RedPay items 재사용, DB read-only 비교 ──
+  let subtotalRecon = { skipped: true };
+  try {
+    subtotalRecon = await runTidSubtotalRecon(now, registry, tidRecon.items, state);
+  } catch (e) {
+    warn(`⑤ 소계 대조 오류(비치명 — ①~④ 결과 유지): ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   saveState(state);
+  const subMismatch = subtotalRecon.skipped ? "skip" : (subtotalRecon.mismatches?.length ?? 0);
   log(`완료 elapsed_ms=${Date.now() - startMs} new_foot_alerts=${newFootAlerts} suppressed=${suppressed} ` +
-      `other=${other.length} dormant=${dormant.length} tid_new=${tidRecon.newTidAlerts} tid_suppressed=${tidRecon.suppressed}`);
+      `other=${other.length} dormant=${dormant.length} tid_new=${tidRecon.newTidAlerts} tid_suppressed=${tidRecon.suppressed} ` +
+      `subtotal_mismatch=${subMismatch} subtotal_new=${subtotalRecon.newAlerts ?? "-"} subtotal_suppressed=${subtotalRecon.suppressed ?? "-"} ` +
+      `masked_by_netting=${subtotalRecon.maskedByNetting ?? false}`);
 }
 
 // ④ TID-grain 대사 실행부 (main 에서 분리 — 조회/감지/raw분기/dedup/슬랙).
@@ -577,7 +658,7 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
 
   if (flagged.length === 0) {
     log(`④ ✅ TID-grain clean — 명단-밖 신 TID 없음 (적재/소비 필터와 정합).`);
-    return { newTidAlerts: 0, suppressed: 0, flagged: [] };
+    return { newTidAlerts: 0, suppressed: 0, flagged: [], items };
   }
 
   // raw-presence 분기(R1 부수신호) — seed-only(§9.5.2) vs 백필(§7) 후속판정 즉시화
@@ -612,7 +693,97 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
     }
   }
   log(`④ 신규 TID 감지: 신규알림 ${newTidAlerts}건 / dedup억제 ${suppressed}건`);
-  return { newTidAlerts, suppressed, flagged };
+  return { newTidAlerts, suppressed, flagged, items };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ⑤ TID별 소계 대조 실행부 (AC-2). RedPay 정본 feed(④에서 조회한 items 재사용) ↔ DB 소계 비교.
+//    별도 RedPay fetch 없음(④ items 재사용) + DB 는 read-only 페이지 조회. DDL/write 0.
+// ════════════════════════════════════════════════════════════════════════════
+async function fetchDbRawRowsForWindow(now) {
+  const from = new Date(now.getTime() - TID_QUERY_DAYS * 24 * 60 * 60 * 1000);
+  const cutoff = from.toISOString();
+  const rows = [];
+  const LIMIT = 1000;
+  for (let offset = 0; offset < 200000; offset += LIMIT) {
+    const page = await restGet(
+      `redpay_raw_transactions?approved_at=gte.${encodeURIComponent(cutoff)}` +
+      `&select=tid,amount,approved_at,raw_payload&order=approved_at.asc&limit=${LIMIT}&offset=${offset}`
+    );
+    rows.push(...page);
+    if (page.length < LIMIT) break;
+  }
+  return rows;
+}
+
+function fmtWon(n) { return `₩${Number(n || 0).toLocaleString("ko-KR")}`; }
+
+// 소계 어긋남 dedup 시그니처 — 동일 어긋남 상태가 유지되면 매일 재알림 안 함(저소음).
+//   {건수,net} 값이 바뀌면(악화/개선) 시그니처 변경 → 재알림. 어긋남 해소되면 auto-release 로 제거.
+function subtotalSig(m) { return `${m.redpay.count}/${m.redpay.net}|${m.db.count}/${m.db.net}`; }
+
+async function runTidSubtotalRecon(now, registry, redpayItems, state) {
+  log(`⑤ TID별 소계 대조 시작: window=${TID_QUERY_DAYS}일 membership=${registry.membershipTids.size}건 (전체 합계 대조 유지 + TID별 세분 additive)`);
+  if (!Array.isArray(redpayItems)) {
+    warn(`⑤ RedPay items 미전달(④ 조회 실패 추정) — 소계 대조 skip.`);
+    return { skipped: true };
+  }
+  const dbRows = await fetchDbRawRowsForWindow(now);
+  const redpayMap = aggregateTidNetFromRedpay(redpayItems, registry.merchants, registry.membershipTids);
+  const dbMap = aggregateTidNetFromDbRows(dbRows, registry.membershipTids);
+  const cmp = compareTidSubtotals(redpayMap, dbMap);
+
+  // ── (유지) 전체 합계 대조 ──
+  const o = cmp.overall;
+  log(`⑤ [전체 합계 대조] RedPay {건수=${o.redpay.count}, net=${fmtWon(o.redpay.net)}} ↔ ` +
+      `DB {건수=${o.db.count}, net=${fmtWon(o.db.net)}} → ${o.match ? "✅ 합계 일치" : "⚠ 합계 불일치"}`);
+
+  // ── dedup auto-release: 이번 run 에서 어긋남 아닌 TID 는 상태에서 제거(해소된 것) ──
+  const store = state?.alerted_subtotals ?? {};
+  const nowMismatchTids = new Set(cmp.mismatches.map((m) => m.tid));
+  for (const tid of Object.keys(store)) {
+    if (!nowMismatchTids.has(tid)) { delete store[tid]; log(`⑤ dedup auto-release(소계): 어긋남 해소 → TID=${tid} 상태 제거`); }
+  }
+
+  // ── (신규) TID별 소계 세분 ──
+  if (cmp.mismatches.length === 0) {
+    log(`⑤ ✅ TID별 소계 전량 일치 (대사 대상 TID ${cmp.perTid.length}종, 건수·net 모두 정합).`);
+    return { skipped: false, ...cmp, newAlerts: 0, suppressed: 0 };
+  }
+
+  // dedup: 동일 시그니처면 억제, 신규/변경이면 알림.
+  const fresh = [], suppressed = [];
+  for (const m of cmp.mismatches) {
+    const sig = subtotalSig(m);
+    if (store[m.tid]?.sig === sig) { suppressed.push(m); continue; }
+    fresh.push(m);
+    store[m.tid] = { sig, first_alerted_at: store[m.tid]?.first_alerted_at ?? ts(), last_seen_at: ts() };
+  }
+
+  const fmtLine = (m) =>
+    `• TID ${m.tid}: RedPay {${m.redpay.count}건, ${fmtWon(m.redpay.net)}} ↔ ` +
+    `DB {${m.db.count}건, ${fmtWon(m.db.net)}}` +
+    `${m.countMatch ? "" : ` [건수 Δ${m.redpay.count - m.db.count}]`}` +
+    `${m.netMatch ? "" : ` [net Δ${fmtWon(m.redpay.net - m.db.net)}]`}`;
+  log(`⑤ ⚠ TID별 소계 어긋남 ${cmp.mismatches.length}종(신규/변경 ${fresh.length} / dedup억제 ${suppressed.length}):\n${cmp.mismatches.map(fmtLine).join("\n")}`);
+
+  if (fresh.length === 0) {
+    log(`⑤ 전량 dedup 억제(어긋남 상태 불변) — 슬랙 미발송.`);
+    return { skipped: false, ...cmp, newAlerts: 0, suppressed: suppressed.length };
+  }
+
+  const maskHdr = cmp.maskedByNetting
+    ? `⚠️ [레드페이 일일대조] 전체 합계는 맞지만 TID별로 어긋남이 있습니다 (승인↔취소 상쇄로 합계만 봐선 안 잡힘)\n`
+    : `⚠️ [레드페이 일일대조] TID별 결제 소계가 레드페이 원장과 어긋납니다\n`;
+  const text =
+    maskHdr +
+    `• 전체 합계: 레드페이 ${o.redpay.count}건/${fmtWon(o.redpay.net)} ↔ 우리시스템 ${o.db.count}건/${fmtWon(o.db.net)}` +
+    `${o.match ? " (합계는 일치)" : " (합계도 불일치)"}\n` +
+    `• TID별 어긋남 ${fresh.length}종:\n${fresh.map(fmtLine).join("\n")}\n` +
+    `단말/정산 담당자가 해당 결제회선(TID)의 승인·취소 누락 여부를 확인해 주세요. (최근 ${TID_QUERY_DAYS}일 기준)`;
+  sendSlack(SLACK_CHANNEL, text);
+  log(`⑤ 소계 어긋남 슬랙 발송(신규/변경 ${fresh.length}종, masked_by_netting=${cmp.maskedByNetting}).`);
+  return { skipped: false, ...cmp, newAlerts: fresh.length, suppressed: suppressed.length };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -699,6 +870,64 @@ function runSelfTest() {
   assert(REDPAY_RECON_BUSINESS_NOS.includes("511-60-00988"), `recon bizno union 511 포함`);
   assert(REDPAY_RECON_BUSINESS_NOS.includes("457-23-00938"), `recon bizno union 457 포함(7/23 이관 대응)`);
   assert(REDPAY_RECON_BUSINESS_NOS.includes(REDPAY_BUSINESS_NO), `recon union 이 현행 env bizno(${REDPAY_BUSINESS_NO}) 포함(false-clean 방지)`);
+
+  // ── ⑤ TID별 소계 대조 검증 (AC-2) ─────────────────────────────────────────
+  const subMerchants = new Set(["1777289001", "1777289002"]);
+  const subMembership = new Set(["1047538239", "1047538246", "1047538250"]);
+
+  // (a) 정상 케이스: RedPay ↔ DB 소계 전량 일치 (evidence: 239=5건/₩1,090,000, 246=2건/₩10,200 = AC-3 실측 반영)
+  const rpNormal = [
+    ...Array(5).fill({ merchant: { id: "1777289001" }, tid: "1047538239", amount: 218000 }), // 5건, net ₩1,090,000
+    ...Array(2).fill({ merchant: { id: "1777289002" }, tid: "1047538246", amount: 5100 }),   // 2건, net ₩10,200
+  ];
+  const dbNormalRows = [
+    ...Array(5).fill({ tid: "1047538239", amount: 218000, raw_payload: {} }),
+    ...Array(2).fill({ tid: "1047538246", amount: 5100, raw_payload: {} }),
+  ];
+  const cmpNormal = compareTidSubtotals(
+    aggregateTidNetFromRedpay(rpNormal, subMerchants, subMembership),
+    aggregateTidNetFromDbRows(dbNormalRows, subMembership),
+  );
+  assert(cmpNormal.overall.match, `⑤ 정상: 전체 합계 일치`);
+  assert(cmpNormal.overall.redpay.net === 1090000 + 10200, `⑤ 정상: net 합 ₩1,100,200 (239 ₩1,090,000 + 246 ₩10,200)`);
+  assert(cmpNormal.mismatches.length === 0, `⑤ 정상: TID별 소계 어긋남 0 (실제=${cmpNormal.mismatches.length})`);
+  assert(cmpNormal.maskedByNetting === false, `⑤ 정상: masked_by_netting=false`);
+
+  // (b) ★상쇄 은폐 탐지 데모: 승인↔취소가 두 TID 간에 뒤바뀜(mis-attribution) → 전체 {건수,net} 은 동일하지만
+  //    TID별로는 부호가 반대로 어긋남. 현행 "전체 합계만" 대조로는 통과(은폐)되나 TID별 세분이 잡아냄.
+  //    RedPay: 239 승인 +₩100,000 / 246 취소 −₩100,000  → grand {2건, net 0}
+  //    DB    : 239 취소 −₩100,000 / 246 승인 +₩100,000  → grand {2건, net 0}  (승인·취소가 TID 간 뒤바뀜)
+  const rpOffset = [
+    { merchant: { id: "1777289001" }, tid: "1047538239", amount: 100000 },  // 239 승인
+    { merchant: { id: "1777289002" }, tid: "1047538246", amount: -100000 }, // 246 취소
+  ];
+  const dbOffsetRows = [
+    { tid: "1047538239", amount: -100000, raw_payload: {} }, // 239 취소(뒤바뀜)
+    { tid: "1047538246", amount: 100000, raw_payload: {} },  // 246 승인(뒤바뀜)
+  ];
+  const cmpOffset = compareTidSubtotals(
+    aggregateTidNetFromRedpay(rpOffset, subMerchants, subMembership),
+    aggregateTidNetFromDbRows(dbOffsetRows, subMembership),
+  );
+  assert(cmpOffset.overall.countMatch && cmpOffset.overall.netMatch,
+    `⑤ 상쇄: 전체 합계(건수·net) 완전 일치 → 현행 대조 통과(은폐) — {${cmpOffset.overall.redpay.count}건, net 0} 양측 동일`);
+  assert(cmpOffset.overall.match === true, `⑤ 상쇄: overall.match=true (합계만 보면 clean)`);
+  assert(cmpOffset.mismatches.length === 2, `⑤ 상쇄: TID별 세분에서 어긋남 2종 탐지 (실제=${cmpOffset.mismatches.length})`);
+  assert(cmpOffset.maskedByNetting === true, `⑤ 상쇄: masked_by_netting=true (합계 은폐 케이스 ★핵심 탐지)`);
+
+  // (c) resolved tid: webhook shape(data.tid) 도 COALESCE 로 집계 (col tid=NULL, data.tid 값)
+  const dbWebhookRows = [{ tid: null, amount: 218000, raw_payload: { data: { tid: "1047538239" } } }];
+  const whMap = aggregateTidNetFromDbRows(dbWebhookRows, subMembership);
+  assert(whMap.get("1047538239")?.count === 1 && whMap.get("1047538239")?.net === 218000,
+    `⑤ resolved tid: webhook data.tid(col NULL)도 소계 집계 (뷰 resolver 정합)`);
+
+  // (d) dedup 시그니처: 동일 어긋남 상태 = 동일 sig(억제) / 값 변경 = 다른 sig(재알림)
+  const mSame = cmpOffset.mismatches[0];
+  const sig1 = subtotalSig(mSame);
+  const sig2 = subtotalSig({ redpay: mSame.redpay, db: { count: mSame.db.count + 1, net: mSame.db.net + 100000 } });
+  assert(sig1 === subtotalSig(mSame), `⑤ dedup: 동일 어긋남 → 동일 시그니처(억제 대상)`);
+  assert(sig1 !== sig2, `⑤ dedup: 어긋남 값 변경 → 시그니처 변경(재알림 대상)`);
+
   console.log(`${TAG} ✅ self-test 전체 통과`);
 }
 
