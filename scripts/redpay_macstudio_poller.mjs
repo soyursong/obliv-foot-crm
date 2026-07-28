@@ -261,23 +261,51 @@ async function loadRegistryFromDb() {
   }
 }
 
-// 화이트리스트 확정: env override 우선, 없으면 DB SSOT, 그것도 없으면 하드코딩 DEFAULT.
+// ── 화이트리스트 union 결정 (순수·self-test 대상) ────────────────────────────
+//   [T-20260728-foot-REDPAY-POLLER-ENVSHADOW-REGUNION-FIX AC-2 — 236-FALSENEG RC 근본봉인]
+//   RC: 구 resolveWhitelists()는 env override(merchant+tid 양쪽)가 있으면 DB registry(SSOT)를
+//       **완전 shadow**(early-return, DB 미조회)했다. env 가 stale 이면 registry 에 이미 등록·배포된
+//       TID(231/235/236/237/241/245 등)가 tidWhitelist 에 로드되지 않아 filterToFootScope 가
+//       '미등록 신 TID'로 drift 판정 → 236류 오탐(false drift alarm).
+//   [정본]
+//     · merchant(=admit 권위, 매출 안전) : env override 우선 **무변경**. union 미적용(admit surface 불변 → cross-tenant 미확대).
+//     · TID(=belt-and-suspenders·drift 표면화, admit 아님) : env ∪ registry(SSOT) **UNION**.
+//         env 가 stale 이어도 registry TID 를 항상 포함 → 오탐 봉인. TID 는 admit 이 아니므로 매출 무영향.
+//     · reg=null(DB 미가용) : initializer 값(env 또는 하드코딩 DEFAULT) 그대로 → fail-safe(정전/네트워크 생존).
+//   반환 { merchantList, tidList, source }.
+function resolveWhitelistSources({ envMerchant, envTid, baseMerchantList, baseTidList, reg }) {
+  if (!reg) {
+    // DB 미가용 fail-safe: initializer(env or 하드코딩 DEFAULT) 유지
+    return { merchantList: baseMerchantList.slice(), tidList: baseTidList.slice(), source: "default" };
+  }
+  // merchant (admit 권위) — env override 우선 무변경, env 없으면 registry
+  const merchantList = envMerchant ? baseMerchantList.slice() : reg.merchants.slice();
+  // TID (belt-and-suspenders·drift) — env ∪ registry UNION (env stale 여도 registry SSOT 항상 포함)
+  const tidList = envTid ? [...new Set([...reg.tids, ...baseTidList])] : reg.tids.slice();
+  return { merchantList, tidList, source: "registry" };
+}
+
+// 화이트리스트 확정: merchant=env override 우선(무변경) → registry → DEFAULT. tid=env∪registry union → DEFAULT.
 async function resolveWhitelists() {
   const envMerchant = REDPAY_MERCHANT_WHITELIST_ENV.length > 0;
   const envTid = REDPAY_TID_WHITELIST_ENV.length > 0;
-  if (envMerchant && envTid) {
-    log(`화이트리스트 소스=env override(domain=${REDPAY_DOMAIN}) (merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
-    return;
-  }
+  // ⚠ 구 early-return(양쪽 env → DB 미조회) 제거: TID union 을 위해 registry 를 항상 조회한다.
   const reg = await loadRegistryFromDb();
-  if (reg) {
-    if (!envMerchant) { merchantList = reg.merchants; merchantWhitelist = new Set(merchantList); }
-    if (!envTid)      { tidList = reg.tids;           tidWhitelist = new Set(tidList); }
-    log(`화이트리스트 소스=DB registry(domain=${REDPAY_DOMAIN}) (merchant=${merchantWhitelist.size} tid=${tidWhitelist.size}` +
-        `${envMerchant ? " · merchant는 env override" : ""}${envTid ? " · tid는 env override" : ""})`);
-    return;
+  const resolved = resolveWhitelistSources({
+    envMerchant, envTid,
+    baseMerchantList: merchantList, // initializer 값(env 파싱 or 하드코딩 DEFAULT)
+    baseTidList: tidList,
+    reg,
+  });
+  merchantList = resolved.merchantList; merchantWhitelist = new Set(merchantList);
+  tidList = resolved.tidList;           tidWhitelist = new Set(tidList);
+  if (resolved.source === "registry") {
+    log(`화이트리스트 소스=DB registry(domain=${REDPAY_DOMAIN}) ` +
+        `(merchant=${merchantWhitelist.size}${envMerchant ? " env-override(admit 무변경)" : ""} ` +
+        `tid=${tidWhitelist.size}${envTid ? " env∪registry union" : " registry"})`);
+  } else {
+    warn(`화이트리스트 소스=하드코딩 DEFAULT/env(domain=${REDPAY_DOMAIN}) (DB registry 미가용 fail-safe. merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
   }
-  warn(`화이트리스트 소스=하드코딩 DEFAULT(domain=${REDPAY_DOMAIN}) (DB registry 미가용 fail-safe. merchant=${merchantWhitelist.size} tid=${tidWhitelist.size})`);
 }
 
 // ── RedPay 엔드포인트 SSOT + payments.php 탈락 가드 (EF REDPAY_ENDPOINT 원칙 공유) ──
@@ -884,6 +912,72 @@ function runSelfTest() {
 
   // 빈 drift / 도수(TID 미상) 안전
   assert(selectRealtimeTidAlarms([], whitelist, {}).length === 0, `빈 drift → 0건`);
+
+  // ── AC-3: 화이트리스트 env∪registry union (T-20260728-...-ENVSHADOW-REGUNION-FIX) ──
+  //   RC(236-FALSENEG): env stale → registry TID 완전 shadow → 정상 등록 TID 를 '미등록'으로 오탐.
+  const REG = { merchants: ["1777285001", "1777288003"], tids: ["1047538236", "1047538231", "1047538235"] };
+
+  // case A) 양쪽 env override(stale tid) + registry → merchant=env 무변경, tid=env∪registry
+  {
+    const r = resolveWhitelistSources({
+      envMerchant: true, envTid: true,
+      baseMerchantList: ["1777285001"],   // env merchant(admit 권위)
+      baseTidList: ["1047479255"],        // env tid = stale (registry 신 538xxx 누락)
+      reg: REG,
+    });
+    assert(r.source === "registry", `union: reg 존재 → registry union 경로(구 early-return shadow 제거)`);
+    assert(JSON.stringify(r.merchantList) === JSON.stringify(["1777285001"]), `union: merchant admit env 무변경(union 미적용 → cross-tenant 미확대)`);
+    assert(r.tidList.includes("1047479255"), `union: env stale TID 보존(historical 무탈락)`);
+    assert(r.tidList.includes("1047538236") && r.tidList.includes("1047538231") && r.tidList.includes("1047538235"),
+      `union: registry SSOT TID 항상 포함 → 236류 오탐 봉인`);
+    assert(new Set(r.tidList).size === r.tidList.length, `union: TID 중복 제거`);
+  }
+
+  // case B) env-only 양쪽 + DB 미가용(reg=null) → fail-safe env 유지(정전/네트워크 생존)
+  {
+    const r = resolveWhitelistSources({
+      envMerchant: true, envTid: true,
+      baseMerchantList: ["1777285001"], baseTidList: ["1047479255"], reg: null,
+    });
+    assert(r.source === "default", `union: reg=null → fail-safe`);
+    assert(JSON.stringify(r.tidList) === JSON.stringify(["1047479255"]), `union: DB 미가용 시 env tid 유지(fail-safe)`);
+    assert(JSON.stringify(r.merchantList) === JSON.stringify(["1777285001"]), `union: DB 미가용 시 env merchant 유지`);
+  }
+
+  // case C) registry-only(env 없음) → 종전 semantic 유지(registry 전량)
+  {
+    const r = resolveWhitelistSources({
+      envMerchant: false, envTid: false,
+      baseMerchantList: FOOT_MERCHANT_WHITELIST_DEFAULT, baseTidList: FOOT_TID_WHITELIST_DEFAULT, reg: REG,
+    });
+    assert(JSON.stringify(r.merchantList) === JSON.stringify(REG.merchants), `union: env 없음 → merchant=registry(종전 무변경)`);
+    assert(JSON.stringify(r.tidList) === JSON.stringify(REG.tids), `union: env 없음 → tid=registry(union 무의미)`);
+  }
+
+  // case D) 겹침 dedup — env TID 가 registry TID 와 일부 중복
+  {
+    const r = resolveWhitelistSources({
+      envMerchant: false, envTid: true,
+      baseMerchantList: [], baseTidList: ["1047538236", "1047479255"], reg: REG,
+    });
+    assert(r.tidList.filter((t) => t === "1047538236").length === 1, `union: 겹치는 TID 는 1회만(dedup)`);
+    assert(r.tidList.includes("1047479255") && r.tidList.includes("1047538235"), `union: env-고유 + registry-고유 모두 포함`);
+  }
+
+  // case E) foot-scope 보존 evidence — union TID 로 registry TID 는 더 이상 drift 아님(오탐0).
+  //   filterToFootScope: admit=merchant_id(권위·무변경), drift = merchantOk && !tidOk. registry TID 가
+  //   tidWhitelist 에 union 되면 tidOk=true → drift 미판정 = 236류 오탐 재발0.
+  {
+    const unionTids = new Set(resolveWhitelistSources({
+      envMerchant: true, envTid: true,
+      baseMerchantList: ["1777285001"], baseTidList: ["1047479255"], reg: REG,
+    }).tidList);
+    const driftE = [
+      { merchant: { id: "1777285001" }, tid: "1047538236" }, // registry 등록 TID(구 env stale 로 오탐되던 236류)
+    ];
+    const selE = selectRealtimeTidAlarms(driftE, unionTids, {});
+    assert(selE.length === 0, `foot-scope 보존: registry TID union → drift 오탐 재발0(admit merchant_id 무변경)`);
+  }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);
 }
