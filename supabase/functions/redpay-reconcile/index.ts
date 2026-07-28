@@ -55,6 +55,7 @@ import {
   merchantIdOfTrx,
   centerForRawRow,
   filterToFootScope,
+  FOOT_MERCHANT_SET,
 } from "./scope-filter.ts";
 
 // ── 관측행 매칭 제외 (T-20260723-foot-REDPAY-PLANB-OBSERVE-MODE) ─────────────────
@@ -92,6 +93,10 @@ const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 //      풋 격리는 merchant_id(UNIQUE) ingest + server tid param 으로 무결(롱레 merchant_id 미수집).
 const REDPAY_CLINIC_SLUG        = Deno.env.get("REDPAY_CLINIC_SLUG") ?? "jongno-foot";
 const REDPAY_TID_WHITELIST      = Deno.env.get("REDPAY_TID_WHITELIST") ?? "";
+// ── ①FIX (T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS) ────────────
+//   이 EF(reconcile, 판독지점 D)는 풋 전용 → 레지스트리 도메인 스코프 상수 = 'foot' 고정.
+//   redpay_terminal_registry(domain=foot, active) 가 TID 허용목록 canonical SSOT.
+const REDPAY_DOMAIN             = "foot";
 const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") === "true";
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
@@ -114,8 +119,117 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Headers": "authorization, content-type, x-internal-cron",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+// ①FIX — TID 허용목록 registry-canonical 이관 (T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS)
+//   RC: 종전 D(reconcile EF)는 REDPAY_TID_WHITELIST 를 env 단독 read → 신규 풋 단말 TID 가 stale env 에
+//       누락되면 runMatcher 의 Tier1/2 자동매칭(matcher.ts L296/L325 tidWhitelist.has)을 건너뛰어
+//       Tier3/tier4_manual 로 강등 + spurious missing_in_crm/match_failed recon_log 이벤트를 유발했다.
+//   FIX: poller(A, REGUNION-FIX)와 동일 union-source 로 정렬 →
+//        canonical = redpay_terminal_registry(domain='foot', active) 의 `tid ∪ unnest(superseded_tids)`.
+//        env(REDPAY_TID_WHITELIST) = override-only(union 가산, registry 를 shadow 하지 않음).
+//        registry 미가용(DB 오류) 시 env 폴백(fail-safe — 매칭 완전정지 회피, 종전 동작으로 안전 강하).
+//   불변식: no-DDL(registry 테이블 旣배포·읽기만) · admit/scope 무접촉(raw ingest 는 poller A 책임) ·
+//           매출 금액 불변(reconciled 스탬프 대상만 확대) · DA CONSULT-REPLY GO(순차병행 FIX).
+//   ref: redpay_foot_terminal_registry.md §13(locus D) · §12(registry autoseed) · poller resolveWhitelistSources().
+
+/** env(REDPAY_TID_WHITELIST) → 정규화 TID Set (trim·drop-empty·dedup). */
+function envTidSet(): Set<string> {
+  return new Set(REDPAY_TID_WHITELIST.split(",").map((t) => t.trim()).filter(Boolean));
+}
+
+/**
+ * registry(domain='foot', active) 의 canonical TID 집합 = tid ∪ unnest(superseded_tids).
+ * 조회 실패/빈 결과 시 null 반환 → 호출측 env 폴백(fail-safe). read-only(SELECT only)·PHI 무접촉.
+ */
+async function loadRegistryTids(): Promise<Set<string> | null> {
+  try {
+    const { data, error } = await supabase
+      .from("redpay_terminal_registry")
+      .select("tid,superseded_tids")
+      .eq("domain", REDPAY_DOMAIN)
+      .eq("active", true);
+    if (error) {
+      console.warn(`[redpay-reconcile][foot][REGUNION] registry 조회 오류 → env 폴백: ${error.message}`);
+      return null;
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      // 미배포/미seed = 도메인 경계 소실 → env 폴백(silent-empty 로 admit 확장 금지, fail-closed 방향).
+      return null;
+    }
+    const set = new Set<string>();
+    for (const r of data as Array<{ tid?: string | null; superseded_tids?: unknown }>) {
+      const tid = (r.tid ?? "").toString().trim();
+      if (tid) set.add(tid);
+      const sup = Array.isArray(r.superseded_tids) ? r.superseded_tids : [];
+      for (const s of sup) {
+        const t = (s ?? "").toString().trim();
+        if (t) set.add(t);
+      }
+    }
+    return set.size > 0 ? set : null;
+  } catch (e) {
+    console.warn(`[redpay-reconcile][foot][REGUNION] registry 조회 예외 → env 폴백: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+}
+
+/**
+ * TID 허용목록 확정 (poller A 와 동일 union-source).
+ *   registry 가용 → registry ∪ env (env 는 override-only 가산; env stale 이어도 registry SSOT 항상 포함).
+ *   registry 미가용 → env 폴백(fail-safe).
+ * @returns { set, source } — source 는 introspection 지문 라벨용.
+ */
+async function resolveTidWhitelist(): Promise<{ set: Set<string>; source: string }> {
+  const env = envTidSet();
+  const reg = await loadRegistryTids();
+  if (!reg) {
+    return { set: env, source: "env(fallback:registry-unavailable)" };
+  }
+  const union = new Set<string>([...reg, ...env]);
+  return { set: union, source: env.size > 0 ? "env∪registry" : "registry" };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ②DETECT — 허용목록 런타임 지문 introspection (판독지점 D 를 4-way valuecheck 에 편입)
+//   canonical 계약(scripts/lib/redpay_wl_fingerprint.mjs CANON_SPEC 미러 — 정렬순서/구분자/해시 반드시 동일):
+//     trim → drop-empty → dedup → sort(codepoint asc) → join('\n') → SHA-256 소문자 hex.
+//   D 는 merchant=정적 FOOT_MERCHANT_SET(=webhook EF C 미러), TID=실 로드값(registry∪env, ①FIX 경유) 을 노출.
+//   → poller(A)·watchdog(B)·webhook-EF(C) 와 4주체 SHA256 대조로 D 의 env-shadow 를 런타임에 계측.
+//   read-only·no-DDL·PHI 무접촉(registry config·정적 모듈만 read). 결제/매칭/적재 로직과 완전 격리(GET early-return).
+function canonicalizeList(values: Iterable<string>): string[] {
+  const set = new Set<string>();
+  for (const v of values) {
+    const s = (v ?? "").toString().trim();
+    if (s.length > 0) set.add(s);
+  }
+  return [...set].sort();
+}
+async function sha256HexOfList(sortedList: string[]): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sortedList.join("\n")));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function whitelistFingerprintEf(): Promise<Record<string, unknown>> {
+  const merchantSorted = canonicalizeList(FOOT_MERCHANT_SET);
+  const { set: tidSet, source: tidSource } = await resolveTidWhitelist();
+  const tidSorted = canonicalizeList(tidSet);
+  return {
+    subject: "reconcile-ef",
+    domain: "foot",
+    canon_spec: "trim→drop-empty→dedup→sort(codepoint asc)→join('\\n')→sha256-hex",
+    tid_source: tidSource,
+    merchant_source: "static-module(FOOT_MERCHANT_SET)",
+    tid_count: tidSorted.length,
+    tid_sha256: await sha256HexOfList(tidSorted),
+    tid_sorted: tidSorted,
+    merchant_count: merchantSorted.length,
+    merchant_sha256: await sha256HexOfList(merchantSorted),
+    merchant_sorted: merchantSorted,
+    ts: new Date().toISOString(),
+  };
+}
 
 // ── 타입 ──────────────────────────────────────────────────────────────────
 interface RunRequest {
@@ -169,6 +283,23 @@ interface PollerResult {
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
+  }
+
+  // ── ②DETECT: 허용목록 introspection (내부 전용·인증 뒤, fail-closed) ──────────────
+  //   GET ?introspect=whitelist + Authorization: Bearer <SERVICE_ROLE_KEY>. 미인증·키부재 → 401(공개 금지).
+  //   VALUECHECK-EF-AUTH-LEDGER-SPINOFF 계승 fail-closed: SERVICE_ROLE_KEY 미설정 시에도 통과 불가.
+  //   결제/매칭 POST 경로와 완전 격리(top early-return) — 매칭 로직 무영향. read-only·no-DB-write·no-mutation.
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    if (url.searchParams.get("introspect") === "whitelist") {
+      const auth   = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+      const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (!SUPABASE_SERVICE_ROLE_KEY || bearer !== SUPABASE_SERVICE_ROLE_KEY) {
+        return json({ ok: false, error: "unauthorized_introspection" }, 401);
+      }
+      return json({ ok: true, fingerprint: await whitelistFingerprintEf() }, 200);
+    }
+    return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
   // ── 인증 ────────────────────────────────────────────────────────────────
@@ -368,14 +499,14 @@ async function runPoller(mode: "incremental" | "daily_full"): Promise<Omit<Polle
 
   console.log(`[redpay-reconcile][foot] mode=${mode} window=${window.from}~${window.to}`);
 
-  const tidList = REDPAY_TID_WHITELIST
-    ? REDPAY_TID_WHITELIST.split(",").map((t) => t.trim()).filter(Boolean)
-    : [];
-  const tidWhitelistSet = new Set(tidList);
+  // ①FIX: incremental/daily_full 경로도 registry-canonical union 소비(DRY_RUN=false ⇒ runPoller 실 TID 소비).
+  //   server-side narrowing(fetchRedpayPage tid param) + filterToFootScope 둘 다 poller(A) 와 동일 union-source.
+  const { set: tidWhitelistSet, source: tidSource } = await resolveTidWhitelist();
+  const tidList = [...tidWhitelistSet];
 
   console.log(
     `[redpay-reconcile][foot] 스코프: business_no=${REDPAY_BUSINESS_NO} ` +
-    `tid_whitelist=${tidList.length}건 (마스터 키 → business_no+TID 이중 필터 적용)`
+    `tid_whitelist=${tidList.length}건 (source=${tidSource}, 마스터 키 → business_no+TID 이중 필터 적용)`
   );
 
   let totalFetched   = 0;   // API 가 돌려준 원건수
@@ -583,13 +714,13 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
     return { matched: 0, events: 0 };
   }
 
-  const tidWhitelist = new Set(
-    REDPAY_TID_WHITELIST.split(",").map((t) => t.trim()).filter(Boolean)
-  );
+  // ①FIX: env 단독 read 폐기 → registry-canonical(tid ∪ superseded_tids) ∪ env(override-only).
+  //   poller(A)와 동일 union-source → stale env 로 인한 Tier1/2 자동매칭 skip(=강등·spurious missing) 봉인.
+  const { set: tidWhitelist, source: tidSource } = await resolveTidWhitelist();
 
   console.log(
     `[runMatcher][foot] raw Y 미매칭: ${rawTrxList.length}건, CRM pool: ${allCrmPayments.length}건, ` +
-    `TID whitelist: [${[...tidWhitelist].join(",")}]`
+    `TID whitelist: [${[...tidWhitelist].join(",")}] (source=${tidSource})`
   );
 
   // 3. 배치 매칭 (이중 매칭 방지 포함)

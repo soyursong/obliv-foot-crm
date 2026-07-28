@@ -10,7 +10,9 @@
 //   AC-3  ENVSHADOW-REGUNION-FIX(env∪DB union) 적용 후 두 주체 실값 수렴 여부 = fix 실효 evidence.
 //
 //   read-only: 각 주체를 introspection 모드로만 기동(폴링/적재/대사/알림 미진입). DB/registry/env 무변경.
-//   실행: node scripts/redpay_envshadow_valuecheck.mjs [--json out.json] [--ef]  (--ef: 웹훅 EF introspection 포함)
+//   실행: node scripts/redpay_envshadow_valuecheck.mjs [--json out.json] [--ef]
+//     --ef: 웹훅 EF(C) + 대사 EF(D) introspection 포함 → 4주체(A poller·B watchdog·C webhook-EF·D reconcile-EF)
+//           런타임 실 로드값 SHA256 fold 대조(T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS ②DETECT).
 
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -65,6 +67,24 @@ function introspectEf() {
   }
 }
 
+// ── 대사(reconcile) EF introspection (선택) — authed GET ?introspect=whitelist ─────
+//   T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS ②DETECT: 판독지점 D 를 4번째 peer 로 편입.
+//   webhook EF(C) 와 동일 auth 계약(Bearer SERVICE_ROLE_KEY). D 는 TID(registry∪env)+merchant 둘 다 노출.
+function introspectReconcileEf() {
+  const base = process.env.REDPAY_RECONCILE_URL
+    || (process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL.replace(/\/$/, "")}/functions/v1/redpay-reconcile` : null);
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!base || !key) return { ok: false, subject: "reconcile-ef", error: "REDPAY_RECONCILE_URL/SUPABASE_URL 또는 SERVICE_ROLE_KEY 미설정 — reconcile EF introspection skip" };
+  const r = spawnSync("curl", ["-sS", "-m", "20", "-H", `Authorization: Bearer ${key}`, `${base}?introspect=whitelist`], { encoding: "utf8", env: process.env });
+  try {
+    const o = JSON.parse(r.stdout ?? "");
+    if (o?.ok && o.fingerprint?.subject) return { ok: true, ...o.fingerprint };
+    return { ok: false, subject: "reconcile-ef", error: `EF 응답 비정상: ${(r.stdout ?? "").slice(0, 200)}` };
+  } catch {
+    return { ok: false, subject: "reconcile-ef", error: `EF 미배포/응답파싱 실패: ${(r.stdout ?? r.stderr ?? "").slice(0, 200)}` };
+  }
+}
+
 const setDiff = (a, b) => a.filter((x) => !b.includes(x));
 
 // ── 두 지문의 집합 대조 (TID + merchant) ──────────────────────────────────────────
@@ -84,6 +104,42 @@ function compare(aFp, bFp) {
       a_only: setDiff(aM, bM),
       b_only: setDiff(bM, aM),
     },
+  };
+}
+
+// ── 4-way VALUECHECK fold (T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS ②DETECT) ──────
+//   허용목록을 런타임에 읽는 4주체(poller A · watchdog B · webhook-EF C · reconcile-EF D)의 실 로드값
+//   지문을 SHA256 으로 합의(consensus) 대조한다. peer 의 소스가 값을 갖는 축만 fold 대상:
+//     · TID  fold: TID 를 실제 로드하는 주체(poller · watchdog · reconcile-EF)만. (webhook-EF 는 TID 없음 → 제외)
+//     · merchant fold: merchant 를 로드하는 전 주체(A·B·C·D).
+//   합의 = 대상 peer 들의 sha256 이 전부 동일. outlier = 다수 합의에서 벗어난 peer(=env-shadow/deploy-shadow 의심).
+function foldValuecheck(peers, axis) {
+  // peers: [{name, fp}] — fp 는 introspect 결과(ok 인 것만). axis: 'tid' | 'merchant'.
+  const shaKey = axis === "tid" ? "tid_sha256" : "merchant_sha256";
+  const cntKey = axis === "tid" ? "tid_count" : "merchant_count";
+  const srcKey = axis === "tid" ? "tid_source" : "merchant_source";
+  // TID fold 는 실제 TID 를 로드하는 주체만(count>0 또는 source!=n/a). webhook-EF(tid n/a·count0)는 제외.
+  const participating = peers.filter(({ fp }) =>
+    fp.ok && (axis === "merchant" ? true : (fp[srcKey] && fp[srcKey] !== "n/a"))
+  );
+  if (participating.length === 0) return { axis, participants: [], consensus: null, unanimous: false, groups: {} };
+  const groups = {};
+  for (const { name, fp } of participating) {
+    const sha = fp[shaKey];
+    (groups[sha] ??= { sha, count: fp[cntKey], peers: [] }).peers.push(name);
+  }
+  const shaEntries = Object.values(groups).sort((a, b) => b.peers.length - a.peers.length);
+  const consensus = shaEntries[0];
+  const unanimous = shaEntries.length === 1;
+  const outliers = shaEntries.slice(1).flatMap((g) => g.peers);
+  return {
+    axis,
+    participants: participating.map((p) => p.name),
+    consensus_sha256: consensus.sha,
+    consensus_peers: consensus.peers,
+    outlier_peers: outliers,
+    unanimous,
+    groups: Object.fromEntries(shaEntries.map((g) => [g.sha.slice(0, 16), { count: g.count, peers: g.peers }])),
   };
 }
 
@@ -190,8 +246,10 @@ async function main() {
   const poller = introspect("redpay_macstudio_poller.mjs", "poller");
   const watchdog = introspect("redpay_terminal_watchdog.mjs", "watchdog");
   const ef = WITH_EF ? introspectEf() : { ok: false, subject: "webhook-ef", error: "skip (--ef 미지정)" };
+  // ②DETECT 4번째 peer: reconcile EF(D). --ef 지정 시 함께 조회.
+  const reconcileEf = WITH_EF ? introspectReconcileEf() : { ok: false, subject: "reconcile-ef", error: "skip (--ef 미지정)" };
 
-  for (const [name, fp] of [["poller", poller], ["watchdog", watchdog], ["webhook-ef", ef]]) {
+  for (const [name, fp] of [["poller", poller], ["watchdog", watchdog], ["webhook-ef", ef], ["reconcile-ef", reconcileEf]]) {
     if (fp.ok) {
       console.log(`[${name}] source(merchant=${fp.merchant_source} tid=${fp.tid_source}) ` +
         `merchant(count=${fp.merchant_count} sha256=${fp.merchant_sha256.slice(0, 16)}) ` +
@@ -266,10 +324,36 @@ async function main() {
     if (efCmp.merchant.b_only.length) console.log(`  registry 에만(EF 미반영): ${efCmp.merchant.b_only.join(", ")}`);
   }
 
+  // ── 4-way VALUECHECK fold (T-20260729-foot-...-4TH-LOCUS ②DETECT) ─────────────────
+  //   ⚠ A11(feed↔registry coverage)과 별개 축 — 여기 집은 VALUECHECK(런타임 실 로드값 SHA256 합의).
+  const peers4 = [
+    { name: "poller", fp: poller },
+    { name: "watchdog", fp: watchdog },
+    { name: "webhook-ef", fp: ef },
+    { name: "reconcile-ef", fp: reconcileEf },
+  ];
+  const tidFold = foldValuecheck(peers4, "tid");
+  const merchantFold = foldValuecheck(peers4, "merchant");
+  console.log("\n── 4-way VALUECHECK fold (poller ↔ watchdog ↔ webhook-EF ↔ reconcile-EF) ──");
+  console.log(`  TID      fold : ${tidFold.unanimous ? "합의 ✅" : "불합의 ❌"} ` +
+    `참여=[${tidFold.participants.join(", ")}]${tidFold.unanimous ? "" : ` outlier=[${tidFold.outlier_peers.join(", ")}]`}`);
+  if (!tidFold.unanimous) console.log(`     TID sha 그룹: ${JSON.stringify(tidFold.groups)}`);
+  console.log(`  merchant fold : ${merchantFold.unanimous ? "합의 ✅" : "불합의 ❌"} ` +
+    `참여=[${merchantFold.participants.join(", ")}]${merchantFold.unanimous ? "" : ` outlier=[${merchantFold.outlier_peers.join(", ")}]`}`);
+  if (!merchantFold.unanimous) console.log(`     merchant sha 그룹: ${JSON.stringify(merchantFold.groups)}`);
+  const reconcileEfInFold = reconcileEf.ok;
+  console.log(`  reconcile-EF(D) 편입: ${reconcileEfInFold ? "✅ 4주체 대조 성립" : "⚠ D 지문 미확보(EF 미배포/미인증) — 3주체로 축소"}`);
+
   const evidence = {
     generated_at: new Date().toISOString(),
     ticket: "T-20260728-foot-REDPAY-ENVSHADOW-RUNTIME-VALUECHECK",
-    fingerprints: { poller, watchdog, ef },
+    fingerprints: { poller, watchdog, ef, reconcile_ef: reconcileEf },
+    fourway_fold: {
+      note: "T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS ②DETECT — VALUECHECK 축(A11 coverage 축과 별개)",
+      tid: tidFold,
+      merchant: merchantFold,
+      reconcile_ef_included: reconcileEfInFold,
+    },
     ac2: {
       tid_match: tidMatch, merchant_match: merMatch,
       registry_tid_missing_from_poller: registryTidMissingFromPoller,
@@ -284,11 +368,24 @@ async function main() {
   };
   if (JSON_OUT) { writeFileSync(JSON_OUT, JSON.stringify(evidence, null, 2)); console.log(`\n📄 evidence → ${JSON_OUT}`); }
 
-  console.log(`\n═══ 종합: ${envShadowVerdict}${revenueRisk ? " · ★매출위험 P0" : ""} · REGUNION-FIX ${convergent ? "실효(수렴)" : "미수렴"} ═══`);
-  // exit code: 0=env-shadow없음+수렴 / 3=env-shadow(안전방향) / 4=env-shadow(매출위험)
+  // ②DETECT 센서: reconcile-EF(D)가 fold 에 참여했는데 TID 합의에서 벗어나면 = D env-shadow 직접 신호.
+  const dTidOutlier = reconcileEfInFold && tidFold.outlier_peers.includes("reconcile-ef");
+  const dMerchantOutlier = reconcileEfInFold && merchantFold.outlier_peers.includes("reconcile-ef");
+  if (dTidOutlier || dMerchantOutlier) {
+    console.log(`  ▶ ★reconcile-EF(D) env-shadow 감지: ${[dTidOutlier ? "TID" : null, dMerchantOutlier ? "merchant" : null].filter(Boolean).join("+")} 축 fold 이탈`);
+  }
+
+  console.log(`\n═══ 종합: ${envShadowVerdict}${revenueRisk ? " · ★매출위험 P0" : ""} · REGUNION-FIX ${convergent ? "실효(수렴)" : "미수렴"}` +
+    `${reconcileEfInFold ? ` · 4-way TID fold ${tidFold.unanimous ? "합의" : "불합의"}` : ""} ═══`);
+  // exit code: 0=env-shadow없음+수렴+4way합의 / 3=env-shadow(안전방향) / 4=env-shadow(매출위험) / 5=reconcile-EF(D) fold 이탈
   if (revenueRisk) process.exit(4);
   if (envShadowVerdict === "ENV_SHADOW_DETECTED") process.exit(3);
+  if (dTidOutlier || dMerchantOutlier) process.exit(5);
   process.exit(0);
 }
 
-main().catch((e) => { console.error(`치명 오류: ${e instanceof Error ? e.stack : String(e)}`); process.exit(1); });
+// 직접 실행 시에만 main() 진입. import(self-test) 시엔 foldValuecheck 등 순수함수만 재사용.
+export { foldValuecheck, compare };
+if (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((e) => { console.error(`치명 오류: ${e instanceof Error ? e.stack : String(e)}`); process.exit(1); });
+}

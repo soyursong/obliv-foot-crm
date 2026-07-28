@@ -1,0 +1,4 @@
+lib canonical sorted: ["1047479255","1047538231","1047538236"]
+lib(node:crypto)    tid_sha256: 9f5be4ac6104d01ce00bcce2562f3343385467f87f052c3e565cc0bcbdd492a5
+EF (crypto.subtle)  tid_sha256: 9f5be4ac6104d01ce00bcce2562f3343385467f87f052c3e565cc0bcbdd492a5
+PARITY: ✅ IDENTICAL (D↔A↔B↔C hash-compatible)
