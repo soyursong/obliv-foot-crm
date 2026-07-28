@@ -8,7 +8,14 @@
       한국 일반 IP 인 맥스튜디오에서만 레드페이 직접 호출이 200 으로 생존(CEO 조종실 소거실험).
       → 이 폴러가 5분 주기로 레드페이 payments.php 직접 조회 → redpay_raw_transactions upsert.
 
-  배포 (supervisor, macstudio):
+  ★ 실행체 = 폴러 전용 checkout (T-20260729-foot-REDPAY-POLLER-DEDICATED-CHECKOUT):
+      WorkingDirectory = /Users/domas/GitHub/obliv-foot-crm-redpay-poller (detached, origin/main 고정).
+      dev 피처 체크아웃(/Users/domas/GitHub/obliv-foot-crm)과 물리 분리 → non-main 브랜치 체크아웃 시에도
+      폴러 stale 불가. 전환·sync·롤백 runbook = docs/REDPAY-POLLER-DEDICATED-CHECKOUT-RUNBOOK.md.
+
+  배포 (supervisor, macstudio) — 전용 checkout 생성 + 등록:
+    0. 전용 checkout 생성/검증 (최초 1회):
+         bash scripts/redpay_poller_checkout_sync.sh --create   # git worktree add --detach origin/main + shasum 검증
     1. 시크릿 배치 (평문 커밋 금지, .env* gitignore):
          cat >> ~/.env.redpay-foot <<'EOF'
          SUPABASE_URL="https://rxlomoozakkjesdqjtvd.supabase.co"
@@ -25,11 +32,13 @@
          # REDPAY_TID_WHITELIST="1047479255,1047479254,1047479261,1047479268,1047479262,1047479263,1047479264,1047479469,1047479471,1047479472,1047479473,1047479474,1047479475,1047479483,1047479476,1047479477,1047479478,1047479479,1047479480,1047479481,1047479482,1047479153,1047479148,1047479155,1047479158,1047479157,1047538236,1047538231,1047538241,1047538237,1047538235,1047538245,1047538239,1047538246,1047535845,1047535843,1047535842,1047535837,1047535835,1047535797"
          EOF
          chmod 600 ~/.env.redpay-foot
-    2. 등록:
+    2. 등록 (LaunchAgents symlink 도 전용 checkout 의 plist 로 → plist 자체도 main-고정):
          mkdir -p ~/logs
-         ln -sf ~/GitHub/obliv-foot-crm/scripts/launchd/com.obliv.foot.redpay-macstudio-poller.plist \
+         ln -sf ~/GitHub/obliv-foot-crm-redpay-poller/scripts/launchd/com.obliv.foot.redpay-macstudio-poller.plist \
            ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller.plist
          launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller.plist
+    2b. 구→신 무유실 전환(운영 중 재지정)은 scripts/redpay_poller_cutover.sh 로 원자 수행
+         (구 launchd 완전 unload → symlink 재지정 → 신 load → 텔레메트리·200 OK 연속성 확인). runbook 참조.
     3. 검증:
          launchctl list | grep redpay-macstudio-poller
          tail -50 ~/logs/redpay_macstudio_poller.out   # '✅ 레드페이 200 OK' + upserted=N 확인
@@ -39,15 +48,23 @@
 <dict>
     <key>Label</key><string>com.obliv.foot.redpay-macstudio-poller</string>
 
+    <!--
+      T-20260729-foot-REDPAY-POLLER-DEDICATED-CHECKOUT — stale-hazard 근본대책.
+      WorkingDirectory = 폴러 전용 main-고정 checkout(피처 체크아웃과 물리 분리). dev 가 어떤 브랜치를
+      체크아웃해도 폴러 실행체는 origin/main 불변. 매 사이클 진입 시 best-effort FF(fetch+reset --hard
+      origin/main) 로 최신 main 을 self-heal — fetch 실패(네트워크 블립)여도 `;` 로 node 는 항상 실행되며
+      전용 checkout 의 정지상태가 곧 origin/main 이므로 stale 불가(§AC2). registry SSOT·env(~/.env.redpay-foot)
+      ·state 파일은 모두 절대경로(homedir)라 WorkingDirectory 무관하게 동일 해석(§AC4).
+    -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>cd /Users/domas/GitHub/obliv-foot-crm &amp;&amp; node scripts/redpay_macstudio_poller.mjs</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm-redpay-poller &amp;&amp; { git fetch origin main --quiet &amp;&amp; git reset --hard --quiet origin/main ; } ; node scripts/redpay_macstudio_poller.mjs</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/domas/GitHub/obliv-foot-crm</string>
+    <string>/Users/domas/GitHub/obliv-foot-crm-redpay-poller</string>
 
     <!-- 5분(300초) 주기 증분 폴 -->
     <key>StartInterval</key><integer>300</integer>
