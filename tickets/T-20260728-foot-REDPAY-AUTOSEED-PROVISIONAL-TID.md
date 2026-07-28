@@ -5,7 +5,7 @@ priority: P1
 status: deploy-ready
 deploy-ready: true
 build-passed: true
-db-change: false
+db_change: false
 e2e-spec: "ef_only — scripts/redpay_macstudio_poller.mjs --self-test (31/31 PASS; 신규 autoseed 후보선택 7-case 포함. 폴러=macstudio launchd, FE E2E 무관 → self-test 대체. rows-affected assert/notify-on-change/0-row 분별은 실 PATCH 경로 = supervisor code-gate 검증항목)"
 summary: "레드페이 폴러 자동 수렴 seed — drift(기등록 foot merchant 아래 미등록 신 TID)를 registry 기존 행 superseded_tids 에 DISTINCT-append UPDATE 로 자동 반영 → 뷰 membership(tid∪superseded) UNION 즉시 소급 표면화 → 4세대(0723→0724→0725→0728) 수동 seed 루프 구조적 종식. ★DA CONSULT-REPLY(MSG-20260728-185221-xvx6, verdict GO/ADDITIVE data-lane CONDITIONAL) mechanic 정정 준수: (1) plain provisional=true INSERT ✗ (ON CONFLICT(merchant_id) DO NOTHING = no-op silent-fail) → superseded DISTINCT-append UPDATE ✓, (2) primary tid 자동승격 배제 = 자동경로 append-only(구·신 병존 live 중 machine demote 금지, §1 강화), (3) provisional 컬럼 미신설(§2 REJECT, no-DDL). 가드 4종(§4): ①rows-affected=1 assert(0-row 은 확증 GET 으로 멱등 vs write-차단 분별, (b)=fail-loud+알람) ②멱등+notify-on-change-only(dedup, 배열 bloat 0) ③fail-closed(registry 소스 아닐때·신규/미등록 merchant·active foot 행 부재 시 미발화 — 신규 merchant 자동 seed 절대 금지, DA CONSULT 게이트 존치) ④A11 워치독 안전망 존치(NEW-MERCHANT·CROSS-TENANT 독립 탐지). 킬스위치 REDPAY_POLLER_AUTOSEED_ENABLED(default true)."
 created: 2026-07-28
