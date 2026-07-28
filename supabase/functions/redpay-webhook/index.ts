@@ -38,6 +38,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   centerForMerchant,
   isAllowedBusinessNo,
+  FOOT_MERCHANT_SET,
 } from "../_shared/redpay-foot-merchants.ts";
 import {
   verifySignature,
@@ -71,6 +72,40 @@ function json(status: number, body: Record<string, unknown>): Response {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+// ── T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 허용목록 런타임 지문 (introspection) ──────
+//   canonical 계약(scripts/lib/redpay_wl_fingerprint.mjs CANON_SPEC 미러 — 정렬순서/구분자/해시 반드시 동일):
+//     trim → drop-empty → dedup → sort(codepoint asc) → join('\n') → SHA-256 소문자 hex.
+//   웹훅 EF 는 정적 모듈(FOOT_MERCHANT_SET) 만 읽으므로 merchant 지문만 산출(TID 없음). read-only·no-DB.
+function canonicalizeList(values: Iterable<string>): string[] {
+  const set = new Set<string>();
+  for (const v of values) {
+    const s = (v ?? "").toString().trim();
+    if (s.length > 0) set.add(s);
+  }
+  return [...set].sort();
+}
+async function sha256HexOfList(sortedList: string[]): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sortedList.join("\n")));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function whitelistFingerprintEf(): Promise<Record<string, unknown>> {
+  const merchantSorted = canonicalizeList(FOOT_MERCHANT_SET);
+  return {
+    subject: "webhook-ef",
+    domain: "foot",
+    canon_spec: "trim→drop-empty→dedup→sort(codepoint asc)→join('\\n')→sha256-hex",
+    tid_source: "n/a",
+    merchant_source: "static-module(FOOT_MERCHANT_SET)",
+    tid_count: 0,
+    tid_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // sha256("")
+    tid_sorted: [],
+    merchant_count: merchantSorted.length,
+    merchant_sha256: await sha256HexOfList(merchantSorted),
+    merchant_sorted: merchantSorted,
+    ts: new Date().toISOString(),
+  };
 }
 
 // ── Slack 알림 (미등록 merchant) — redpay-reconcile 과 동일 구현 ─────────────────
@@ -115,6 +150,21 @@ async function resolveClinicId(): Promise<string | null> {
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
+  // ── T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 허용목록 introspection (내부 전용·인증 뒤) ──
+  //   GET ?introspect=whitelist + Authorization: Bearer <SERVICE_ROLE_KEY>. 미인증 공개 금지(fail-safe).
+  //   결제 수신 POST 경로와 완전 격리(top early-return) — 결제 로직 무영향. read-only·no-DB·no-mutation.
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    if (url.searchParams.get("introspect") === "whitelist") {
+      const auth = req.headers.get("Authorization") ?? "";
+      const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (!SUPABASE_SERVICE_ROLE_KEY || bearer !== SUPABASE_SERVICE_ROLE_KEY) {
+        return json(401, { ok: false, error: "unauthorized_introspection" });
+      }
+      return json(200, { ok: true, fingerprint: await whitelistFingerprintEf() });
+    }
+    return json(405, { ok: false, error: "method_not_allowed" });
+  }
   if (req.method !== "POST") {
     return json(405, { ok: false, error: "method_not_allowed" });
   }

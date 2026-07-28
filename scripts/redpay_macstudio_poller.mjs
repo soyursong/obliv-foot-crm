@@ -38,6 +38,7 @@ import { readFileSync, writeFileSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { whitelistFingerprint, formatFingerprintLog } from "./lib/redpay_wl_fingerprint.mjs";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. 환경설정 로드 — process.env → ~/.env.redpay-foot → ~/.env.redpay (fallback)
@@ -150,6 +151,9 @@ const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_sen
 
 const ARGS = new Set(process.argv.slice(2));
 const SELF_TEST = ARGS.has("--self-test"); // 네트워크 無 순수로직 검증(AC-4 재현 테스트 = E2E ef_only 대체)
+// T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 런타임에 실제 로드한 허용목록 지문(count+SHA256)만 stdout 출력 후 종료.
+//   실 폴링/적재/DB write 미수행 = read-only introspection. resolveWhitelists() 실 경로를 그대로 태워 "지금 로드값" 확정.
+const INTROSPECT_WL = ARGS.has("--introspect-whitelist");
 
 // ── 풋 스코프 SSOT (redpay_foot_terminal_registry.md §2 = authoritative) ──
 //   ⚠ business_no 457-23-00938(07-23 RedPay flip; 구 511-60-00988) = 공유 법인 merchant 피드(구 511 스코프 시절 풋/도수/피부/롱래스팅 5도메인 동거). 도메인 격리는 merchant_id allowlist(아래) — business_no 아님.
@@ -287,6 +291,9 @@ function resolveWhitelistSources({ envMerchant, envTid, baseMerchantList, baseTi
   return { merchantList, tidList, source: "registry" };
 }
 
+// T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 마지막 resolveWhitelists() 의 소스 판정 메타(introspection 라벨용).
+let whitelistResolveMeta = null;
+
 // 화이트리스트 확정: merchant=env override 우선(무변경) → registry → DEFAULT. tid=env∪registry union → DEFAULT.
 async function resolveWhitelists() {
   const envMerchant = REDPAY_MERCHANT_WHITELIST_ENV.length > 0;
@@ -301,6 +308,13 @@ async function resolveWhitelists() {
   });
   merchantList = resolved.merchantList; merchantWhitelist = new Set(merchantList);
   tidList = resolved.tidList;           tidWhitelist = new Set(tidList);
+  whitelistResolveMeta = {
+    source: resolved.source,
+    merchant_source: resolved.source === "registry" ? (envMerchant ? "env-override" : "registry") : "default/env-init",
+    tid_source: resolved.source === "registry" ? (envTid ? "env∪registry" : "registry") : "default/env-init",
+    env_merchant: envMerchant,
+    env_tid: envTid,
+  };
   if (resolved.source === "registry") {
     log(`화이트리스트 소스=DB registry(domain=${REDPAY_DOMAIN}) ` +
         `(merchant=${merchantWhitelist.size}${envMerchant ? " env-override(admit 무변경)" : ""} ` +
@@ -745,6 +759,23 @@ async function main() {
     //   → 하드 종료(exit) 대신 WARN 다운그레이드. (foot 은 tid 17-set 보유 → 이 경로 미진입.)
     warn(`TID 화이트리스트 비어있음(domain=${REDPAY_DOMAIN}) — belt-and-suspenders 보조필터/drift 판정 미가용. ` +
          `merchant_id(${merchantWhitelist.size}건) 1차 권위 단일 스코핑으로 진행(도수 TID 미상 정상 케이스).`);
+  }
+
+  // ── T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 런타임 실 로드값 지문 (env-shadow 대조 evidence) ──
+  //   기동 시 항상 1줄 로그로 관측(저소음). --introspect-whitelist 면 지문 JSON 만 출력 후 종료(read-only, 폴링 미진입).
+  const wlFp = whitelistFingerprint({
+    subject: "poller",
+    domain: REDPAY_DOMAIN,
+    tidSource: whitelistResolveMeta?.tid_source ?? "unknown",
+    merchantSource: whitelistResolveMeta?.merchant_source ?? "unknown",
+    tids: tidWhitelist,
+    merchants: merchantWhitelist,
+  });
+  log(formatFingerprintLog(wlFp));
+  if (INTROSPECT_WL) {
+    // read-only: 폴링/적재/DB write 미수행. resolveWhitelists() 실 경로 통과 후 지문만 출력.
+    process.stdout.write(JSON.stringify(wlFp) + "\n");
+    process.exit(0);
   }
 
   log(`가동: mode=${POLL_MODE} business_no=${REDPAY_BUSINESS_NO} ` +

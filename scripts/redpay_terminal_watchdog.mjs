@@ -69,6 +69,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { whitelistFingerprint, formatFingerprintLog } from "./lib/redpay_wl_fingerprint.mjs";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. 환경설정 (폴러와 동일 로딩 규약 — process.env → ~/.env.redpay-foot → ~/.env.redpay)
@@ -98,6 +99,8 @@ function cfg(key, fallback = "") {
 const ARGS = new Set(process.argv.slice(2));
 const DRY_RUN = ARGS.has("--dry-run");
 const SELF_TEST = ARGS.has("--self-test");
+// T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 런타임에 실제 로드한 registry membership 지문만 출력 후 종료(read-only).
+const INTROSPECT_WL = ARGS.has("--introspect-whitelist");
 
 // ── Supabase (풋) ───────────────────────────────────────────────────────────
 const SUPABASE_URL = cfg("SUPABASE_URL", "https://rxlomoozakkjesdqjtvd.supabase.co");
@@ -471,6 +474,23 @@ async function main() {
   const registry = await loadRegistry();
   if (registry.merchants.size === 0) { errlog(`registry active merchant 0건(domain=${REDPAY_DOMAIN}) — 명단 미배포 의심. 종료.`); process.exit(1); }
   log(`명단(registry active) merchant=${registry.merchants.size}건 tid=${registry.tids.size}건 로드`);
+
+  // ── T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 런타임 실 로드값 지문 (env-shadow 대조 evidence) ──
+  //   워치독의 admission/drift 판정 membership = tid ∪ unnest(superseded_tids)(R3 불변식) → 지문 TID 집합도 이것.
+  //   기동 시 항상 1줄 로그. --introspect-whitelist 면 지문 JSON 만 출력 후 종료(read-only, 대사/알림 미진입).
+  const wlFp = whitelistFingerprint({
+    subject: "watchdog",
+    domain: REDPAY_DOMAIN,
+    tidSource: "registry(membership=tid∪superseded)",
+    merchantSource: "registry",
+    tids: registry.membershipTids,
+    merchants: registry.merchants,
+  });
+  log(formatFingerprintLog(wlFp));
+  if (INTROSPECT_WL) {
+    process.stdout.write(JSON.stringify(wlFp) + "\n");
+    process.exit(0);
+  }
 
   // ── ① 무필터 전량 조회 ─────────────────────────────────────────────────────
   const now = new Date();
