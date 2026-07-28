@@ -164,7 +164,7 @@ test.describe('T-20260725-foot-OPINIONDOC-ADMINBTN-CLIP-TREATTABLE-VIEW-PARITY �
     //   치료테이블 뷰어 footer에 [행정정보 수정] 진입점(diagdoc-doc-view-edit-admin-btn) + 전용 편집기
     //   ('행정 정보 저장' 버튼)가 legit surface로 도입. 편집 대상 = 발행완료 요청행 field_data.admin_overrides
     //   오버레이(비의료 행정필드) — 발행 '의료본'(published snapshot)·발행 파이프라인 무접촉(§22 스냅샷 불변).
-    //   진료의(발급 의료인) 편집은 MEDSPACE-CONFIRM-GATE로 read-only(DOCTOR_FIELD_EDITABLE=false).
+    //   진료의(발급 의료인) 편집은 문지은 대표원장 Option A 컨펌 후 활성(DOCTOR_FIELD_EDITABLE=true, fast-follow 2026-07-29).
     //   → 따라서 '행정 정보 저장' 부재 단언은 폐기(현실=legit 존재). E1가 publish RPC/insert/update 부재를 가드.
     //
     // 여기서 지키는 §22 불변 = 발행 '의료본' 자체의 재출력/재발행(인쇄) 트리거 미도입 (변함없이 유효):

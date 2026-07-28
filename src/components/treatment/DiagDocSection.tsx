@@ -191,30 +191,39 @@ export interface DocAdminEditForm {
   requestDate: string; // 발급요청일자(YYYY-MM-DD)
   issueDate: string;   // 발급일(YYYY-MM-DD)
   diagCode: string;    // 상병코드(primary, 예 K29.7)
+  doctorId: string;    // 진료의(발급 의료인) 앵커 = clinic_doctors.id. '' = 미지정.
+  doctorName: string;  // 진료의 표시명(doctorId 선택 시 함께 결선). '' = 미지정.
 }
-export const EMPTY_DOC_ADMIN_FORM: DocAdminEditForm = { requestDate: '', issueDate: '', diagCode: '' };
+export const EMPTY_DOC_ADMIN_FORM: DocAdminEditForm = {
+  requestDate: '', issueDate: '', diagCode: '', doctorId: '', doctorName: '',
+};
 
-// ★MEDSPACE-CONFIRM-GATE(Q2, 문지은 대표원장): 진료의(발급 의료인) 변경 = 의료 법정 귀속 → confirm 전까지 read-only.
-//   confirm_status: confirmed 전환 통지(planner) 수신 시 이 플래그만 true 로 바꿔 fast-follow(별도 커밋·게이트 배포).
-export const DOCTOR_FIELD_EDITABLE = false;
+// ★MEDSPACE-CONFIRM-GATE(Q2, 문지은 대표원장): 진료의(발급 의료인) 변경 = 의료 법정 귀속 → confirm 필요.
+//   T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN fast-follow: 문지은 대표원장 Option A 컨펌 완료
+//   (치료사도 [행정정보 수정]에서 담당 진료의를 드롭다운으로 변경 허용) → 플래그 flip(별도 커밋·게이트 배포).
+export const DOCTOR_FIELD_EDITABLE = true;
 
-// 변경된 필드만 담은 저장 payload. ★진료의(doctorName/doctorId)는 구조적으로 포함하지 않는다 —
-//   게이트 전까지 발급 의료인 귀속 불변(read-only). payload에 doctor 키가 없어 오버레이/감사로그도 무생성.
+// 변경된 필드만 담은 저장 payload. 진료의(doctorId)가 바뀌면 doctorName·doctorId 를 함께 실어 보낸다
+//   (mutation 이 doctorName 변경분을 감사로그에 남기고 doctor_id 를 도장 자동추종 앵커로 정정).
 export function buildDocAdminSavePayload(
   form: DocAdminEditForm,
   init: DocAdminEditForm,
-): { requestDate?: string; issueDate?: string; diagCode?: string } {
+): { requestDate?: string; issueDate?: string; diagCode?: string; doctorName?: string; doctorId?: string } {
+  const doctorChanged = form.doctorId !== init.doctorId;
   return {
     requestDate: form.requestDate !== init.requestDate ? form.requestDate : undefined,
     issueDate: form.issueDate !== init.issueDate ? form.issueDate : undefined,
     diagCode: form.diagCode !== init.diagCode ? form.diagCode : undefined,
+    doctorName: doctorChanged ? form.doctorName : undefined,
+    doctorId: doctorChanged ? form.doctorId : undefined,
   };
 }
 export function isDocAdminFormDirty(form: DocAdminEditForm, init: DocAdminEditForm): boolean {
   return (
     form.requestDate !== init.requestDate ||
     form.issueDate !== init.issueDate ||
-    form.diagCode !== init.diagCode
+    form.diagCode !== init.diagCode ||
+    form.doctorId !== init.doctorId
   );
 }
 
@@ -335,14 +344,22 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
       ov?.issueDate
       || (viewDoc?.issuedAt ? seoulISODate(viewDoc.issuedAt)
         : adminEditTarget.resolvedAt ? seoulISODate(adminEditTarget.resolvedAt) : '');
+    // 진료의 seed — 오버레이 앵커(doctor_id) 우선, 없으면 현재 표시명으로 등록 진료의 매칭(id 복원).
+    const seedDoctorName = ov?.doctorName ?? viewDoc?.doctorName ?? '';
+    const seedDoctorId =
+      ov?.doctorId
+      ?? (seedDoctorName ? clinicDoctors.find((d) => d.name === seedDoctorName)?.id : undefined)
+      ?? '';
     const init: DocAdminEditForm = {
       requestDate: adminEditTarget.requestDate || '',
       issueDate: seedIssueDate,
       diagCode: ov?.diagCode ?? '',
+      doctorId: seedDoctorId,
+      doctorName: seedDoctorName,
     };
     setAdminForm(init);
     setAdminInit(init);
-  }, [adminEditTarget, viewDoc]);
+  }, [adminEditTarget, viewDoc, clinicDoctors]);
 
   const adminDirty = isDocAdminFormDirty(adminForm, adminInit);
 
@@ -356,7 +373,7 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
     try {
       await adminMut.mutateAsync({
         requestId: adminEditTarget.id,
-        ...payload, // requestDate/issueDate/diagCode(변경분만). ★진료의(doctor*)는 미포함 — 게이트 전 read-only.
+        ...payload, // requestDate/issueDate/diagCode/진료의(doctorName+doctorId)(변경분만). Option A 컨펌 후 진료의 편집 활성.
         editorId: profile.id,
         editorName: profile.name ?? profile.email ?? '직원',
       });
@@ -655,14 +672,19 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
               />
             </label>
 
-            {/* 진료의(발급 의료인) — MEDSPACE-CONFIRM-GATE(문지은 대표원장). confirm 전까지 read-only 표시.
-                DOCTOR_FIELD_EDITABLE=true 로 fast-follow 시 드롭다운(등록 의사) 활성 예정. */}
+            {/* 진료의(발급 의료인) — MEDSPACE-CONFIRM-GATE(문지은 대표원장) Option A 컨펌 완료 → 드롭다운 활성.
+                유효 발급 의료인(clinic_doctors, active=true) 목록만 노출(진료대시보드와 동일 소스). 선택 →
+                doctor_id(도장 자동추종 앵커) + doctor_name(표시명) 을 admin_overrides 에 정정(감사로그 append). */}
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
               진료의 (발급 의료인)
               {DOCTOR_FIELD_EDITABLE ? (
                 <select
-                  value=""
-                  onChange={() => { /* fast-follow(confirm 후) 활성 */ }}
+                  value={adminForm.doctorId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const doc = clinicDoctors.find((d) => d.id === id);
+                    setAdminForm((f) => ({ ...f, doctorId: id, doctorName: doc?.name ?? '' }));
+                  }}
                   className="h-11 rounded-md border border-input bg-background px-2 text-sm"
                   data-testid="diagdoc-admin-doctor-select"
                 >
