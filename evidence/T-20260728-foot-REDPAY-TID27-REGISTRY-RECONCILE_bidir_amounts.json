@@ -1,0 +1,1306 @@
+{
+  "generated_at": "2026-07-28T18:13:22.488Z",
+  "domain": "foot",
+  "days": 14,
+  "biznos": [
+    "511-60-00988",
+    "457-23-00938"
+  ],
+  "api_item_count": 496,
+  "db_row_count": 332,
+  "registry_rows": 27,
+  "registry_merchants": 27,
+  "ticket": "T-20260728-foot-REDPAY-VERIFY-METHOD-HARDEN",
+  "axis": "B — bidirectional TID reconcile + amounts (DB-txn = our-side)",
+  "parent": "T-20260728-foot-REDPAY-TID27-REGISTRY-RECONCILE",
+  "summary": {
+    "total": 66,
+    "by_verdict": {
+      "active": 20,
+      "superseded": 7,
+      "absent": 7,
+      "DB-only": 6,
+      "API-only": 26,
+      "DB-txn-only": 0
+    },
+    "by_flow": {
+      "captured": 28,
+      "reverse-api-only": 25,
+      "forward-db-only": 0,
+      "no-txn": 13
+    },
+    "counts": {
+      "forward_db_only": 0,
+      "reverse_api_only": 25,
+      "reverse_foot_silent_drop": 1,
+      "reverse_cross_center": 24,
+      "reverse_unknown": 0
+    },
+    "amounts": {
+      "forward_db_only_net": 0,
+      "reverse_foot_silent_drop_net": 0,
+      "reverse_cross_center_net": 74312690,
+      "reverse_unknown_net": 0
+    },
+    "forward_db_only": [],
+    "reverse_foot_silent_drop": [
+      {
+        "tid": "1047479158",
+        "merchants": [
+          "1777289012"
+        ],
+        "api_count": 2,
+        "api_net": 0
+      }
+    ],
+    "reverse_cross_center": [
+      {
+        "tid": "1047479124",
+        "merchants": [
+          "1777281010"
+        ],
+        "api_count": 2,
+        "api_net": 0
+      },
+      {
+        "tid": "1047479137",
+        "merchants": [
+          "1777281001"
+        ],
+        "api_count": 4,
+        "api_net": 0
+      },
+      {
+        "tid": "1047479218",
+        "merchants": [
+          "1777277015"
+        ],
+        "api_count": 2,
+        "api_net": 0
+      },
+      {
+        "tid": "1047479317",
+        "merchants": [
+          "1777274007"
+        ],
+        "api_count": 6,
+        "api_net": 2440000
+      },
+      {
+        "tid": "1047479331",
+        "merchants": [
+          "1777274008"
+        ],
+        "api_count": 2,
+        "api_net": 0
+      },
+      {
+        "tid": "1047479340",
+        "merchants": [
+          "1777275007"
+        ],
+        "api_count": 3,
+        "api_net": 1520000
+      },
+      {
+        "tid": "1047479341",
+        "merchants": [
+          "1777275008"
+        ],
+        "api_count": 1,
+        "api_net": 10000
+      },
+      {
+        "tid": "1047479358",
+        "merchants": [
+          "1777279005"
+        ],
+        "api_count": 2,
+        "api_net": 0
+      },
+      {
+        "tid": "1047479365",
+        "merchants": [
+          "1777279009"
+        ],
+        "api_count": 31,
+        "api_net": 8673100
+      },
+      {
+        "tid": "1047479372",
+        "merchants": [
+          "1777279015"
+        ],
+        "api_count": 8,
+        "api_net": 0
+      },
+      {
+        "tid": "1047479395",
+        "merchants": [
+          "1777280009"
+        ],
+        "api_count": 2,
+        "api_net": 236000
+      },
+      {
+        "tid": "1047535752",
+        "merchants": [
+          "1777269002"
+        ],
+        "api_count": 2,
+        "api_net": 20000
+      },
+      {
+        "tid": "1047535754",
+        "merchants": [
+          "1777269003"
+        ],
+        "api_count": 5,
+        "api_net": 50000
+      },
+      {
+        "tid": "1047535760",
+        "merchants": [
+          "1777269007"
+        ],
+        "api_count": 2,
+        "api_net": 610000
+      },
+      {
+        "tid": "1047535764",
+        "merchants": [
+          "1777277001"
+        ],
+        "api_count": 1,
+        "api_net": 3507900
+      },
+      {
+        "tid": "1047535781",
+        "merchants": [
+          "1777277002"
+        ],
+        "api_count": 6,
+        "api_net": 12972850
+      },
+      {
+        "tid": "1047535793",
+        "merchants": [
+          "1777277006"
+        ],
+        "api_count": 9,
+        "api_net": 6206680
+      },
+      {
+        "tid": "1047535794",
+        "merchants": [
+          "1777277007"
+        ],
+        "api_count": 1,
+        "api_net": 5011200
+      },
+      {
+        "tid": "1047538148",
+        "merchants": [
+          "1777274006"
+        ],
+        "api_count": 8,
+        "api_net": 2087400
+      },
+      {
+        "tid": "1047538179",
+        "merchants": [
+          "1777279004"
+        ],
+        "api_count": 11,
+        "api_net": 2664560
+      },
+      {
+        "tid": "1047538193",
+        "merchants": [
+          "1777279022"
+        ],
+        "api_count": 10,
+        "api_net": 603900
+      },
+      {
+        "tid": "1047538194",
+        "merchants": [
+          "1777280001"
+        ],
+        "api_count": 6,
+        "api_net": 998700
+      },
+      {
+        "tid": "1047538206",
+        "merchants": [
+          "1777279007"
+        ],
+        "api_count": 36,
+        "api_net": 26523400
+      },
+      {
+        "tid": "1047538207",
+        "merchants": [
+          "1777280007"
+        ],
+        "api_count": 2,
+        "api_net": 177000
+      }
+    ],
+    "reverse_unknown": [],
+    "absent": [
+      "1047479148",
+      "1047479155",
+      "1047479157",
+      "1047479261",
+      "1047479264",
+      "1047479469",
+      "1047479476"
+    ]
+  },
+  "rows": [
+    {
+      "tid": "1047479115",
+      "registry": "—",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "API-only",
+      "flow": "captured",
+      "merchants": [
+        "1777276003"
+      ],
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 2,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479124",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777281010"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479137",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777281001"
+      ],
+      "subclass": "cross-center",
+      "api_count": 4,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479148",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479153",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289013"
+      ],
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 2,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479155",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479157",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479158",
+      "registry": "active",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "active",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777289012"
+      ],
+      "subclass": "foot-silent-drop",
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0,
+      "risk_net": 0
+    },
+    {
+      "tid": "1047479218",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777277015"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479254",
+      "registry": "superseded",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "DB-only",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479255",
+      "registry": "superseded",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "DB-only",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479261",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479262",
+      "registry": "superseded",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "DB-only",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479263",
+      "registry": "superseded",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "DB-only",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479264",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479268",
+      "registry": "superseded",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "DB-only",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479317",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777274007"
+      ],
+      "subclass": "cross-center",
+      "api_count": 6,
+      "api_net": 2440000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479331",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777274008"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479340",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777275007"
+      ],
+      "subclass": "cross-center",
+      "api_count": 3,
+      "api_net": 1520000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479341",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777275008"
+      ],
+      "subclass": "cross-center",
+      "api_count": 1,
+      "api_net": 10000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479358",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777279005"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479365",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777279009"
+      ],
+      "subclass": "cross-center",
+      "api_count": 31,
+      "api_net": 8673100,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479372",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777279015"
+      ],
+      "subclass": "cross-center",
+      "api_count": 8,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479395",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777280009"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 236000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479469",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479471",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777288003"
+      ],
+      "api_count": 20,
+      "api_net": 9588000,
+      "db_count": 20,
+      "db_net": 9588000
+    },
+    {
+      "tid": "1047479472",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777288004"
+      ],
+      "api_count": 2,
+      "api_net": 63000,
+      "db_count": 2,
+      "db_net": 63000
+    },
+    {
+      "tid": "1047479473",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777288005"
+      ],
+      "api_count": 14,
+      "api_net": 6640000,
+      "db_count": 14,
+      "db_net": 6640000
+    },
+    {
+      "tid": "1047479474",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777288006"
+      ],
+      "api_count": 9,
+      "api_net": 860000,
+      "db_count": 9,
+      "db_net": 860000
+    },
+    {
+      "tid": "1047479475",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777288008"
+      ],
+      "api_count": 2,
+      "api_net": 0,
+      "db_count": 2,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479476",
+      "registry": "active",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "absent",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479477",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777289003"
+      ],
+      "api_count": 1,
+      "api_net": 4400000,
+      "db_count": 1,
+      "db_net": 4400000
+    },
+    {
+      "tid": "1047479478",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777289004"
+      ],
+      "api_count": 29,
+      "api_net": 211440,
+      "db_count": 29,
+      "db_net": 211440
+    },
+    {
+      "tid": "1047479479",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289005"
+      ],
+      "api_count": 6,
+      "api_net": 339000,
+      "db_count": 6,
+      "db_net": 339000
+    },
+    {
+      "tid": "1047479480",
+      "registry": "superseded",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "superseded",
+      "flow": "captured",
+      "merchants": [
+        "1777289006"
+      ],
+      "api_count": 22,
+      "api_net": 499000,
+      "db_count": 22,
+      "db_net": 499000
+    },
+    {
+      "tid": "1047479481",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289007"
+      ],
+      "api_count": 15,
+      "api_net": 2434000,
+      "db_count": 15,
+      "db_net": 2434000
+    },
+    {
+      "tid": "1047479482",
+      "registry": "superseded",
+      "api": "—",
+      "db": "—",
+      "direction": "registry-only",
+      "verdict": "DB-only",
+      "flow": "no-txn",
+      "api_count": 0,
+      "api_net": 0,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047479483",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289001"
+      ],
+      "api_count": 3,
+      "api_net": 28100,
+      "db_count": 3,
+      "db_net": 28100
+    },
+    {
+      "tid": "1047535752",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777269002"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 20000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535754",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777269003"
+      ],
+      "subclass": "cross-center",
+      "api_count": 5,
+      "api_net": 50000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535760",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777269007"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 610000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535764",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777277001"
+      ],
+      "subclass": "cross-center",
+      "api_count": 1,
+      "api_net": 3507900,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535781",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777277002"
+      ],
+      "subclass": "cross-center",
+      "api_count": 6,
+      "api_net": 12972850,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535793",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777277006"
+      ],
+      "subclass": "cross-center",
+      "api_count": 9,
+      "api_net": 6206680,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535794",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777277007"
+      ],
+      "subclass": "cross-center",
+      "api_count": 1,
+      "api_net": 5011200,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047535797",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777285007"
+      ],
+      "api_count": 8,
+      "api_net": 2580000,
+      "db_count": 8,
+      "db_net": 2580000
+    },
+    {
+      "tid": "1047535835",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777285006"
+      ],
+      "api_count": 9,
+      "api_net": 6300000,
+      "db_count": 9,
+      "db_net": 6300000
+    },
+    {
+      "tid": "1047535837",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777285005"
+      ],
+      "api_count": 10,
+      "api_net": 25870000,
+      "db_count": 10,
+      "db_net": 25870000
+    },
+    {
+      "tid": "1047535842",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777285003"
+      ],
+      "api_count": 6,
+      "api_net": 770000,
+      "db_count": 6,
+      "db_net": 770000
+    },
+    {
+      "tid": "1047535843",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777285002"
+      ],
+      "api_count": 57,
+      "api_net": 6457060,
+      "db_count": 57,
+      "db_net": 6457060
+    },
+    {
+      "tid": "1047535845",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777285001"
+      ],
+      "api_count": 14,
+      "api_net": 508000,
+      "db_count": 14,
+      "db_net": 508000
+    },
+    {
+      "tid": "1047538144",
+      "registry": "—",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "API-only",
+      "flow": "captured",
+      "merchants": [
+        "1777275006"
+      ],
+      "api_count": 25,
+      "api_net": 4745570,
+      "db_count": 25,
+      "db_net": 4745570
+    },
+    {
+      "tid": "1047538148",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777274006"
+      ],
+      "subclass": "cross-center",
+      "api_count": 8,
+      "api_net": 2087400,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047538179",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777279004"
+      ],
+      "subclass": "cross-center",
+      "api_count": 11,
+      "api_net": 2664560,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047538193",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777279022"
+      ],
+      "subclass": "cross-center",
+      "api_count": 10,
+      "api_net": 603900,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047538194",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777280001"
+      ],
+      "subclass": "cross-center",
+      "api_count": 6,
+      "api_net": 998700,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047538206",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777279007"
+      ],
+      "subclass": "cross-center",
+      "api_count": 36,
+      "api_net": 26523400,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047538207",
+      "registry": "—",
+      "api": "seen",
+      "db": "—",
+      "direction": "reverse(API→우리DB)",
+      "verdict": "API-only",
+      "flow": "reverse-api-only",
+      "merchants": [
+        "1777280007"
+      ],
+      "subclass": "cross-center",
+      "api_count": 2,
+      "api_net": 177000,
+      "db_count": 0,
+      "db_net": 0
+    },
+    {
+      "tid": "1047538231",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777288004"
+      ],
+      "api_count": 23,
+      "api_net": 17260000,
+      "db_count": 23,
+      "db_net": 17260000
+    },
+    {
+      "tid": "1047538235",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289003"
+      ],
+      "api_count": 2,
+      "api_net": 20000,
+      "db_count": 2,
+      "db_net": 20000
+    },
+    {
+      "tid": "1047538236",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777288003"
+      ],
+      "api_count": 18,
+      "api_net": 6180000,
+      "db_count": 18,
+      "db_net": 6180000
+    },
+    {
+      "tid": "1047538237",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289004"
+      ],
+      "api_count": 5,
+      "api_net": 1460000,
+      "db_count": 5,
+      "db_net": 1460000
+    },
+    {
+      "tid": "1047538239",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289006"
+      ],
+      "api_count": 12,
+      "api_net": 11410000,
+      "db_count": 12,
+      "db_net": 11410000
+    },
+    {
+      "tid": "1047538241",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777288006"
+      ],
+      "api_count": 11,
+      "api_net": 9070000,
+      "db_count": 11,
+      "db_net": 9070000
+    },
+    {
+      "tid": "1047538245",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777289008"
+      ],
+      "api_count": 3,
+      "api_net": 26600,
+      "db_count": 3,
+      "db_net": 26600
+    },
+    {
+      "tid": "1047538246",
+      "registry": "active",
+      "api": "seen",
+      "db": "recorded",
+      "direction": "both(우리DB∩API)",
+      "verdict": "active",
+      "flow": "captured",
+      "merchants": [
+        "1777288008"
+      ],
+      "api_count": 2,
+      "api_net": 10200,
+      "db_count": 2,
+      "db_net": 10200
+    }
+  ]
+}
