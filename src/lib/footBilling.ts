@@ -808,6 +808,29 @@ export function computeBillDetailRounding(
 }
 
 /**
+ * T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE — 외래 요양급여 **본인일부부담금 aggregate** 100원 미만 절사(내림).
+ *
+ * ⚠ computeBillDetailRounding(floor10, 위)과 **grain 이 다른 별개 SSOT** 다. 값이 달라지는 것이 정상:
+ *   - computeBillDetailRounding(floor10): **요양급여비용총액·청구액·세부산정내역서 문서 렌더** 전용
+ *     — 국민건강보험법 시행령 별표2 **제1항**(10원 미만 절사). 세부내역서 계/합계 행 등 서류 grain.
+ *   - floorOutpatientCopayment(floor100, 본 함수): **외래 본인일부부담금 수납 aggregate**(환자 실수납액) 전용
+ *     — 별표2 **제19조제1항 다만조항**(외래·약국 본인일부부담금 100원 미만 절사, 끝수 100원 미만 = 공단부담).
+ *   두 grain 은 서로 다른 수량의 절사라 double-round 가 아니다(공존 정상).
+ *   근거 SSOT: DA-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE-UNIT · revenue_insurance_split_spec §2-2-1d v1.25.
+ *   (문서 절사값 == 수납 절사값 정합 요건은 DA 판정으로 폐기 — 정합 강제 금지.)
+ *
+ * ★ double-rounding 금지: 대상 = per-item 원단위 raw copay 의 **aggregate**(가산 fold 포함). 개별 pre-floor 후 재합산 금지.
+ * ★ 급여 본인부담 component 에만 적용 — 비급여는 무절사(bundle 전체 floor100 = 신규 버그, body qo4i mirror).
+ *
+ * @param copayAggregate 가산 포함 급여 외래 본인일부부담금 합계(원단위, pre-floor)
+ * @returns 100원 미만 내림값(≥0)
+ */
+export function floorOutpatientCopayment(copayAggregate: number): number {
+  const safe = Number.isFinite(copayAggregate) && copayAggregate > 0 ? copayAggregate : 0;
+  return Math.floor(safe / 100) * 100;
+}
+
+/**
  * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② — 진료비 계산서·영수증 신양식 비급여 항목행 category 분해.
  *
  * 배경(버그): 신양식(bill_receipt_new)은 급여 split(본인/공단)을 진찰료 행에 aggregate 표기(3FIX)하고,
