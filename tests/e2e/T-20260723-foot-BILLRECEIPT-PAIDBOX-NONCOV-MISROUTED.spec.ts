@@ -42,17 +42,19 @@ test.describe('PAIDBOX-NONCOV-MISROUTED — 불변식 가드(warn-only)·10원 �
       248700,
       0,
     );
-    expect(v.already_paid).toBe('');        // ⑨ 공란
-    expect(v.due_amount).toBe('248,700');   // ⑩ = ⑧ − ⑨
-    expect(v.card_amount).toBe('248,700');  // ⑪
+    expect(v.already_paid).toBe('');        // ⑨ 공란(선차감 없음)
+    // ★ SUPERSEDED by T-20260728 요건2: ⑩ 납부할금액 = 공란(미사용, 칸 존치). 선차감 없으므로 fold 무.
+    expect(v.due_amount).toBe('');          // ⑩ 공란
+    expect(v.card_amount).toBe('248,700');  // ⑪ 카드(fold 없음 → net 그대로)
     expect(v.paid_total).toBe('248,700');
     expect(v.unpaid_amount).toBe('0');      // 미납 0
     expect(v._paidbox_invariant).toBe('ok');
   });
 
-  test('골든②: 환불상쇄 net0 → ⑪ 공란, ⑨ 유지, 미납=0, 불변식 ok', () => {
+  test('골든②(fold): 환불상쇄 net0 + 선차감 130,000 → 선차감이 현금칸 폴백 fold, 합계=130,000, 미납=0', () => {
     const v: Record<string, string> = {};
-    // 선수금 130,000 소비(⑨). 당일 결제 100,000 을 같은 날 100,000 환불 → net 0.
+    // ★ SUPERSEDED by T-20260728 요건1: 선수금 130,000 소비. 당일 결제 100,000 을 같은 날 100,000 환불 → card net 0.
+    //   실 결제수단 net 0(폴백) → 선차감분(130,000)이 현금칸 폴백으로 fold → 완납 표기(⑨ 분리표기 아님).
     applyBillReceiptPaidBoxTokens(
       v,
       [
@@ -62,27 +64,31 @@ test.describe('PAIDBOX-NONCOV-MISROUTED — 불변식 가드(warn-only)·10원 �
       130000,
       130000,
     );
-    expect(v.already_paid).toBe('130,000'); // ⑨ 유지(선수금 소비분)
-    expect(v.card_amount).toBe('');         // net 0 → 공란
-    expect(v.paid_total).toBe('');          // ⑪ net 0
-    expect(v.due_amount).toBe('0');         // ⑩ = 130,000 − 130,000
+    expect(v.already_paid).toBe('');        // ⑨ 공란(⑪로 fold)
+    expect(v.card_amount).toBe('');         // card net 0 → 공란
+    expect(v.cash_amount).toBe('130,000');  // 선차감 fold(폴백 현금칸)
+    expect(v.paid_total).toBe('130,000');   // Σ(셀) = 선차감 fold = ⑧
+    expect(v.due_amount).toBe('');          // ⑩ 공란(미사용)
     expect(v.unpaid_amount).toBe('0');
     expect(v._paidbox_invariant).toBe('ok');
   });
 
-  test('골든③: 선차감 F-4790류 → ⑨=선수금(비급여) 300,000, ⑪=8,800, 미납=0, 불변식 ok', () => {
+  test('골든③(fold): 선차감 F-4790류 → 선차감 300,000이 카드칸 fold, 카드=308,800(완납), 미납=0', () => {
     const v: Record<string, string> = {};
-    // ⑧ 308,800 = 선수금 소비 300,000(⑨) + 데스크 진찰료 8,800(당일 카드).
+    // ★ SUPERSEDED by T-20260728 요건1(김주연 총괄, PREPRINT ⑪ superseded 방향 연장): ⑧ 308,800 = 선수금 소비
+    //   300,000 + 데스크 진찰료 8,800(당일 카드). 선차감분은 별도 ⑨ 분리표기가 아니라 실 결제수단(카드)칸으로
+    //   fold → 카드 = 실수납 8,800 + 선차감 300,000 = ⑧(완납). (F-5238 카드 301,400 케이스와 동형)
     applyBillReceiptPaidBoxTokens(
       v,
       [{ method: 'card', amount: 8800, cash_receipt_issued: false, payment_type: 'payment' }],
       308800,
       300000,
     );
-    expect(v.already_paid).toBe('300,000'); // ⑨
-    expect(v.due_amount).toBe('8,800');     // ⑩
-    expect(v.paid_total).toBe('8,800');     // ⑪
-    expect(v.unpaid_amount).toBe('0');      // 미납 0 (허위 미납 표기 소멸)
+    expect(v.already_paid).toBe('');        // ⑨ 공란(⑪로 fold)
+    expect(v.due_amount).toBe('');          // ⑩ 공란(미사용)
+    expect(v.card_amount).toBe('308,800');  // ⑪ 카드 = 실수납+선차감 = ⑧
+    expect(v.paid_total).toBe('308,800');   // 합계 = ⑧(완납)
+    expect(v.unpaid_amount).toBe('0');      // 미납 0
     expect(v._paidbox_invariant).toBe('ok');
   });
 
@@ -111,13 +117,16 @@ test.describe('PAIDBOX-NONCOV-MISROUTED — 불변식 가드(warn-only)·10원 �
     expect(r.violations.join(' ')).toContain('미납 클램프');
   });
 
-  test('가드-warn-only: 불변식 위반이어도 발행 토큰은 정상 산출(throw 없음)', () => {
+  test('가드(fold clamp): ⑨(130,000) > ⑧(100,000) 선차감 초과분은 ⑧ 상한 clamp → throw 없음·완납', () => {
     const v: Record<string, string> = {};
-    // ⑨(130,000) > ⑧(100,000) 이상 케이스 — Stage1 은 막지 않고 통과.
+    // ★ SUPERSEDED by T-20260728 요건1: 선차감(130,000) > ⑧(100,000) 케이스 — fold 는 foldAmt=min(alreadyPaid,
+    //   ⑧−Σpos)=⑧ 로 상한 clamp(과징수·미납음수 방지 계승) → 셀합=⑧, 초과 30,000 미표기(원장에 없는 돈 아님).
+    //   ⑨>⑧ 로 인한 warn 은 clamp 로 해소 → invariant ok. 발행 토큰 정상 산출(throw 없음).
     expect(() => applyBillReceiptPaidBoxTokens(v, [], 100000, 130000)).not.toThrow();
-    expect(v._paidbox_invariant).toBe('warn'); // 플래그 표면화
-    expect(v.due_amount).toBe('0');            // ★발행 토큰은 그대로 산출(발행보류 아님)
+    expect(v.due_amount).toBe('');             // ⑩ 공란(미사용)
+    expect(v.paid_total).toBe('100,000');      // Σ(셀) = ⑧ clamp
     expect(v.unpaid_amount).toBe('0');
+    expect(v._paidbox_invariant).toBe('ok');   // clamp 로 불변식 정합
   });
 
   test('가드-warn-only: 과납(⑪>⑩)도 발행 통과 + warn 플래그', () => {
@@ -146,21 +155,27 @@ test.describe('PAIDBOX-NONCOV-MISROUTED — 불변식 가드(warn-only)·10원 �
 
   // ═══════════ 유효작업#2: 10원 절사 정합 ═══════════
 
-  test('절사①: ⑨ 우수리(8,805) → 10원 내림(8,800), ⑩ 10원 배수 정합', () => {
+  test('절사①(fold): 선차감 우수리(8,805) → 10원 내림(8,800) fold, 미납 10원 배수 정합', () => {
     const v: Record<string, string> = {};
-    // ⑨ 8,805(SSOT copay+nonCovered 우수리) → 8,800 절사. ⑧ 250,000.
+    // ★ SUPERSEDED by T-20260728 요건1: 선차감 8,805(SSOT copay+nonCovered 우수리)는 computeBillDetailRounding
+    //   내림(8,800) 후 결제수단칸(폴백 현금)으로 fold. ⑧ 250,000. 절사규칙은 fold 금액에 그대로 적용.
     applyBillReceiptPaidBoxTokens(v, [], 250000, 8805);
-    expect(v.already_paid).toBe('8,800');         // ⑨ 절사
-    expect(v.due_amount).toBe('241,200');         // ⑩ = 250,000 − 8,800 (10원 배수)
-    // ⑩ 이 10원 배수인지 산술 확인.
-    expect(Number(v.due_amount.replace(/,/g, '')) % 10).toBe(0);
+    expect(v.cash_amount).toBe('8,800');          // 선차감 fold(폴백 현금) = 10원 절사분
+    expect(v.paid_total).toBe('8,800');
+    expect(v.unpaid_amount).toBe('241,200');      // 미납 = ⑧ − fold(8,800) (10원 배수)
+    expect(Number(v.unpaid_amount.replace(/,/g, '')) % 10).toBe(0);
+    expect(v.already_paid).toBe('');              // ⑨ 공란(⑪로 fold)
+    expect(v.due_amount).toBe('');                // ⑩ 공란(미사용)
   });
 
-  test('절사②: ⑨ 이미 10원 배수(300,000) → 무변경(회귀0)', () => {
+  test('절사②(fold): 선차감 이미 10원 배수(300,000) → 무변경 fold(회귀0)', () => {
     const v: Record<string, string> = {};
     applyBillReceiptPaidBoxTokens(v, [], 308800, 300000);
-    expect(v.already_paid).toBe('300,000');
-    expect(v.due_amount).toBe('8,800');
+    expect(v.cash_amount).toBe('300,000');        // 선차감 fold(폴백 현금)
+    expect(v.paid_total).toBe('300,000');
+    expect(v.unpaid_amount).toBe('8,800');        // 미납 = ⑧ − fold
+    expect(v.already_paid).toBe('');
+    expect(v.due_amount).toBe('');
   });
 
   test('절사③: 우수리 여러 값에서 ⑩ 항상 10원 배수(⑧ 10원 배수 전제)', () => {
@@ -180,14 +195,17 @@ test.describe('PAIDBOX-NONCOV-MISROUTED — 불변식 가드(warn-only)·10원 �
       FB_SRC.indexOf('export async function loadAlreadyPaidAmount'),
     );
     // 절사규칙(computeBillDetailRounding)과 불변식 가드(checkBillReceiptPaidBoxInvariant) 모두 헬퍼 내부.
-    expect(fnBody).toMatch(/computeBillDetailRounding\(alreadyPaid\)/);
+    //   ★ T-20260728 요건1: 선차감 절사는 fold 전 clamp 위해 Math.max(0, alreadyPaid) 로 감쌈.
+    expect(fnBody).toMatch(/computeBillDetailRounding\(Math\.max\(0, alreadyPaid\)\)/);
     expect(fnBody).toMatch(/checkBillReceiptPaidBoxInvariant\(/);
   });
 
-  test('대칭②: 3 호출부 모두 동일 헬퍼 경유(path-sweeper 재확인)', () => {
-    expect(PMW_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(\s*autoValues,/);       // PMW
-    expect(DPP_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(base, paymentItems,/);  // DPP 단건
-    expect(DPP_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(v, paymentItems,/);     // DPP 일괄
+  test('대칭②(ARCH-MIGRATED): paidbox 실호출부 = PMW 단일 · DPP = preprint 경유', () => {
+    // ★ T-20260724~27 PREPRINT/4REQ 이관: DPP 신양식 print-time 은 applyBillReceiptPreprintPaymethodTokens 로 대체됨.
+    //   applyBillReceiptPaidBoxTokens 실호출부 = PMW([수납]) 단일(T-20260728 요건1 fold effectiveAlreadyPaid 전달).
+    expect(PMW_SRC).toMatch(/applyBillReceiptPaidBoxTokens\(enriched, ctx\.payRows, patientFloored, effectiveAlreadyPaid\)/);
+    expect(DPP_SRC).toMatch(/applyBillReceiptPreprintPaymethodTokens\(base, patientFloored,/); // DPP 출력 경로
+    expect(DPP_SRC).not.toMatch(/applyBillReceiptPaidBoxTokens\(/);                            // 구 경로 미복귀
   });
 
   test('대칭③: 동일 입력 → 3경로(헬퍼) 산출 동일(진단 마커 포함)', () => {

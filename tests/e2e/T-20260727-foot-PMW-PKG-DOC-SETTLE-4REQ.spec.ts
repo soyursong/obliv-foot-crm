@@ -102,19 +102,19 @@ test('S1(요건①③): 보라색 기납부+선차감 [출력] → ⑨=300,000·
   const values: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
   applyPrintPath(values, [], patientFloored, loadedAlreadyPaid, settleAmount, true, splits, false);
 
-  expect(n(values.already_paid)).toBe(300000); // ⑨ = ⑧ − 잔액 = 선차감(패키지 기납부 환자부담분)
-  expect(n(values.due_amount)).toBe(7800);      // ⑩ = ⑧ − ⑨ = 잔액
-  expect(n(values.cash_amount)).toBe(7800);     // ⑪ 현금칸 = 실수납 잔액
-  expect(values.card_amount).toBe('');          // 카드 미사용
-  expect(n(values.paid_total)).toBe(7800);      // ⑪ 실수납 합계
-  expect(n(values.unpaid_amount)).toBe(0);      // 미납 0
-  // 요건③: '납부한 금액 합계'(⑨ 기납부 + ⑪ 실수납) = '환자 부담 총액'(⑧). 315,600 같은 출처불명 표기 없음.
+  // ★ 요건① SUPERSEDED by T-20260728-foot-BILLRECEIPT-PAYMETHOD-PAIDFIELD-2FIX 요건1 (AC-6: 4REQ ②③④만 무회귀).
+  //   선차감분(선수금)은 별도 ⑨ 분리표기가 아니라 실 결제수단 ⑪로 fold(완납 표기, PREPRINT ⑪ 캐논).
+  expect(values.already_paid).toBe('');          // ⑨ 공란(⑪로 fold)
+  expect(values.due_amount).toBe('');            // ⑩ 공란(미사용)
+  expect(n(values.cash_amount)).toBe(307800);    // ⑪ 현금칸 = 실수납 7,800 + 선차감 300,000 = ⑧(완납)
+  expect(values.card_amount).toBe('');           // 카드 미사용
+  expect(n(values.paid_total)).toBe(307800);     // ⑪ 합계 = ⑧
+  expect(n(values.unpaid_amount)).toBe(0);       // 미납 0
+  // 요건③(무회귀): '납부합계'(⑨ 0 + ⑪ 307,800) = '환자부담총액'(⑧). additive 불변식 유지.
   expect(n(values.already_paid) + n(values.paid_total)).toBe(patientFloored);
-  // 법정 불변식 ⑧ = ⑨ + ⑪ + 미납 (300,000 + 7,800 + 0 = 307,800).
-  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 300000, 7800, 7800, 0);
+  // 법정 불변식 ⑧ = ⑨(0) + ⑪ + 미납 (0 + 307,800 + 0 = 307,800).
+  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 0, 307800, patientFloored, 0);
   expect(inv.ok).toBe(true);
-  // 요건①: 수납금액(⑪ 7,800, 패키지 제외) ≠ 서류총액(⑧ 307,800, 패키지 포함).
-  expect(n(values.paid_total)).not.toBe(patientFloored);
 });
 
 // ── 시나리오 1-b (요건③ 비패키지 완납): 비급여 카드 완납 [출력] pre-settle ──────────────────────────
@@ -170,14 +170,15 @@ test('S1d(요건① REOPEN): post-settle 비급여면세 패키지기납부 → 
   // post-settle(ledger 존재) + deductMode=true.
   applyPrintPath(values, ledger, patientFloored, loadedAlreadyPaid, deductAmount, true, splits, false);
 
-  expect(n(values.already_paid)).toBe(240000);  // ⑨ = ⑧ − deductAmount (패키지 기납부 환자부담분)
-  expect(n(values.due_amount)).toBe(8800);       // ⑩ = ⑧ − ⑨
-  expect(n(values.card_amount)).toBe(8800);      // ⑪ 카드칸 = 실원장 실수납(이중합산 없음)
-  expect(n(values.paid_total)).toBe(8800);       // ⑪ 실수납 합계
+  // ★ 요건① SUPERSEDED by T-20260728 요건1 — 선차감분(240,000)은 ⑪ 카드칸으로 fold(⑨ 분리표기 아님).
+  expect(values.already_paid).toBe('');          // ⑨ 공란(⑪로 fold)
+  expect(values.due_amount).toBe('');            // ⑩ 공란
+  expect(n(values.card_amount)).toBe(248800);    // ⑪ 카드칸 = 실수납 8,800 + 선차감 240,000 = ⑧(완납)
+  expect(n(values.paid_total)).toBe(248800);     // ⑪ 합계 = ⑧
   expect(n(values.unpaid_amount)).toBe(0);       // ★핵심: 미납 240,000 분리표시 아님 → 0
-  // 요건①: 패키지 기납부액이 별도 '납부하지 않은 금액'이 아니라 총합계(⑧=⑨+⑪+미납)에 포함.
+  // 요건①→완납 fold: 패키지 기납부액이 '납부하지 않은 금액'이 아니라 ⑪(=⑧)에 포함.
   expect(n(values.already_paid) + n(values.paid_total) + n(values.unpaid_amount)).toBe(patientFloored);
-  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 240000, 8800, 8800, 0);
+  const inv = checkBillReceiptPaidBoxInvariant(patientFloored, 0, 248800, patientFloored, 0);
   expect(inv.ok).toBe(true);
 });
 
@@ -187,10 +188,11 @@ test('S4(회귀): membership synthetic payRow 는 ⑪ paid_total 에 산입되�
   const patientFloored = 50000;
   const splits: { method: PayMethod; amount: number }[] = [{ method: 'membership', amount: 50000 }];
   const values: Record<string, string> = { patient_amount: formatAmount(patientFloored) };
-  // pre-settle 이지만 membership 은 ⑪(card/cash/paid_total)에서 skip → paid_total 공란, ⑨로 표기.
+  // ★ SUPERSEDED by T-20260728 요건1: membership 은 ⑪ 버킷 skip 이나 선차감분(50,000)이 현금칸 폴백으로 fold →
+  //   paid_total = 50,000(완납), ⑨ 공란. (종전 '⑨ 귀속·paid_total 공란' semantics 는 fold 로 대체)
   applyPrintPath(values, [], patientFloored, 50000, 50000, false, splits, false);
-  expect(values.paid_total).toBe('');
-  expect(n(values.already_paid)).toBe(50000);
+  expect(n(values.paid_total)).toBe(50000);   // 선차감 fold(현금칸 폴백) → 완납 합계
+  expect(values.already_paid).toBe('');       // ⑨ 공란(⑪로 fold)
   expect(n(values.unpaid_amount)).toBe(0);
 });
 

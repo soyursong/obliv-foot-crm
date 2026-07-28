@@ -2240,15 +2240,21 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>⑥ 진료비 총액<br>(①+②+③+④)</td><td class="rn-num" style="font-weight:bold;">{{total_amount}}</td></tr>
           <tr><td>⑦ 공단부담 총액<br>(②+⑤)</td><td class="rn-num">{{insurance_covered}}</td></tr>
           <tr><td>⑧ 환자부담 총액<br>(①-⑤)+③+④</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
-          <!-- T-20260727-foot-PMW-DOC-LINK-4SPEC 추가-B (총괄 20:26 재지시, ts=1785151976, reporter U0ATDB587PV):
-               구 ⑨(선차감 표기 행) / ⑩(잔여청구 표기 행) **분리 표기 제거**(두 행 삭제) + 잔여미납 표기 행 삭제.
-               '납부한 금액(합계)' 단일 칸만 남기고 그 합계 = ⑧ 환자부담 총액과 **동일 금액** 표시(총괄 지시: 납부 합계 칸에
-               환자부담 총액과 동일 금액 반영). 완납 표기 = field-accountable(T-20260724-PREPRINT 세무 waiver 캐논 계승).
-               구 토큰(already_paid/due_amount/unpaid_amount)은 비렌더(footBilling에서 blank set, 회귀0). ⑪→⑨ 리넘버. -->
-          <tr><td rowspan="4">⑨ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;">{{card_amount}}</span></td></tr>
+          <!-- T-20260728-foot-BILLRECEIPT-PAYMETHOD-PAIDFIELD-2FIX 요건2 [회귀 복원, reporter 김주연 총괄]:
+               T-20260727-PMW-REFUND200-DOCUNPAID-2BUG(b20c88d2)가 ⑨'이미 납부한 금액'/⑩'납부할 금액'/'납부하지 않은
+               금액' 행을 양식에서 **삭제**(분리 표기 제거)한 회귀 → 현장 "양식을 왜 건드려". PREPRINT 의도상태(⑨~⑪ 3행
+               + 납부하지않은, ⑩=공란이되 칸 존재)로 최소범위 원복. 값 없으면 공란(footBilling 토큰 세팅). ⑨→⑪ 리넘버 원복.
+               T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1 원본: ⑨ 이미 납부한 금액({{already_paid}}) · ⑩ = ⑧−⑨ 전용
+               토큰({{due_amount}}) 분리(patient_amount 하드코딩 금지 — "⑧-⑨" 라벨 산술모순=허위영수증 방지). -->
+          <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num">{{already_paid}}</td></tr>
+          <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">{{due_amount}}</td></tr>
+          <!-- ⑪ 납부한 금액 = 결제수단별 배선(카드/현금영수증/현금), 합계={{paid_total}}=⑧ 환자부담총액(완납 표기).
+               ⑪은 ⑨의 결제수단 breakdown 표시(비-가산). 선차감분(선수금)은 주 결제수단 셀에 fold(요건1). -->
+          <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;">{{card_amount}}</span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;">{{cashreceipt_amount}}</span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;">{{cash_amount}}</span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">합계 <span style="float:right;font-weight:bold;">{{paid_total}}</span></td></tr>
+          <tr><td>납부하지 않은 금액<br>(⑩-⑪)</td><td class="rn-num">{{unpaid_amount}}</td></tr>
           <!-- T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL: 선출력 시 현금/현금영수증 수기체크분 반영.
                현금영수증( ) 체크마크 + 신분확인번호 + 승인번호 = 발급폼 수기입력값(form_submissions.field_data persist). -->
           <tr><td>현금영수증 (&nbsp;{{cashreceipt_mark}}&nbsp;)</td><td></td></tr>
