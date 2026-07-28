@@ -96,12 +96,17 @@ test.describe('T-20260713 CONSULT-AXIS-RECENCY-UNIFY — 배선/회귀 정적 �
   });
 
   // ── AC-3(연계): 배정 화면 축도 recency 로 수렴 ──
-  test('AC-3b: Assignments 상담 축 입력이 recency 배치 판정으로 override', () => {
+  // ★ T-20260727 RECLASS Phase2A 로 판정 그레인이 '고객단위' → 'check_in 단위(자기 시각 경계)' 로 승격.
+  //   recency 가 상담 축 단일 소스라는 AC-3 취지는 불변 — 배선만 resolveVisitTypesByCheckIn(ci.id) 로 갱신.
+  test('AC-3b: Assignments 상담 축 입력이 recency(check_in 그레인) 판정으로 수렴', () => {
     const src = read(ASSIGNMENTS);
-    expect(src).toContain("import { resolveVisitTypesByRecency } from '@/lib/visitRecency'");
-    expect(src).toContain('await resolveVisitTypesByRecency(custIds, clinic.id)');
-    expect(src).toContain('await resolveVisitTypesByRecency(monthCustIds, clinic.id)');
-    expect(src).toContain('custMap.set(id, { ...cu, visit_type: vt })');
+    expect(src).toContain("import { resolveVisitTypesByCheckIn } from '@/lib/visitRecency'");
+    expect(src).toContain('resolveVisitTypesByCheckIn(');
+    // 축 헬퍼가 ci.id 그레인 맵을 1순위 입력으로 사용(고객단위 override 폐기).
+    expect(src).toMatch(/visitTypeByCi\.get\(ci\.id\)/);
+    expect(src).toMatch(/monthVisitTypeByCi\.get\(ci\.id\)/);
+    // 회귀 차단: 고객단위 resolveVisitTypesByRecency override 잔재 부재.
+    expect(src).not.toContain('resolveVisitTypesByRecency(custIds');
   });
 
   // ── NewCheckInDialog 내부 divergence 제거: 축 파생 visit_type = recency visitType ──
