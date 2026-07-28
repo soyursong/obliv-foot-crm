@@ -431,6 +431,117 @@ export function buildCustomerOpinionRows(
   return out.sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
 }
 
+// ─── T-20260728-foot-CHART2-DOCREQ-HISTORY-COORDPERM (item①): 상담내역 '서류요청 이력 상세 테이블' 파생 ──
+//   기존 buildCustomerOpinionRows(발행이력, 2-state·cancelled 제외)와 달리 **신청됨/발급완료/취소 3-state 전체**를
+//   행으로 노출한다(현장 요청: 요약 줄 → 상세 테이블 확장, 취소 건도 오분류 0으로 표기).
+//   ★발급상태 = DIAGDOC(closed) 상태매핑 재사용(신규 컬럼·파생 0):
+//       · 신청됨(=미발행) = status='draft'
+//       · 발급완료        = status='voided' + field_data.resolved_reason='published'
+//       · 취소            = status='voided' + field_data.resolved_reason='cancelled'
+//   ★신청직원 = field_data.requested_by_name **단독**(DA 정정 MSG-8dqz):
+//       issued_by→staff 조인 금지(발급 시 printer/issuer 로 재기입돼 '발급직원' 오표시) · requested_by_id 컬럼 실측 부재.
+//       결측 시 소비 컴포넌트에서 '—' placeholder(신규 write 트리거 금지).
+//   ★read-only(db_change=false): 기존 form_submissions.field_data read 만. 신규 컬럼/테이블/enum/RLS = 0.
+//   ★buildCustomerOpinionRows(발행이력·cancelled 제외)는 무변경 — 발행이력 배지/요약(computeCustomerOpinionSummary)
+//     과 spec(T-20260724) 판정 정합 유지. 본 상세 테이블만 3-state 로 확장(별 파생, drift 방지 위해 소스 동일).
+export type DocRequestIssueStatus = 'requested' | 'issued' | 'cancelled'; // 신청됨 / 발급완료 / 취소
+
+export const DOC_REQUEST_STATUS_LABEL: Record<DocRequestIssueStatus, string> = {
+  requested: '미발행',   // draft — 신청됨(원장 발행 전). 기존 surface 라벨 정합('미발행').
+  issued: '발행완료',    // voided + resolved_reason='published'
+  cancelled: '취소',     // voided + resolved_reason='cancelled'
+};
+
+// 상세 테이블 행 = 발행이력 행(열람용 필드 계승) + 발급상태(3-state) 증분.
+export interface CustomerDocRequestRow extends CustomerOpinionRequestRow {
+  /** 발급상태(DIAGDOC 3-state) — 상세 테이블 '발급상태' 칼럼 SSOT. */
+  issueStatus: DocRequestIssueStatus;
+}
+
+// 순수 파생 — form_submissions raw 행 → 상세 테이블 행(3-state). E2E spec 이 직접 import·단언(drift 방지).
+//   staff_consult 요청만 편입 + 3-state 판정(취소 포함) + 신청시각 역순 정렬. published(발행 원본) 행은 제외(요청 이력 아님).
+export function buildCustomerDocRequestRows(
+  raw: Array<Record<string, unknown>>,
+): CustomerDocRequestRow[] {
+  const out: CustomerDocRequestRow[] = [];
+  for (const r of raw) {
+    const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+    if (fd['request_origin'] !== 'staff_consult') continue; // 서류요청 큐(펜차트/기타 제출과 분리)
+    const status = String(r['status'] ?? '');
+    let issueStatus: DocRequestIssueStatus;
+    if (status === 'draft') {
+      issueStatus = 'requested';                                              // 신청됨(=미발행)
+    } else if (status === 'voided' && fd['resolved_reason'] === 'published') {
+      issueStatus = 'issued';                                                 // 발급완료
+    } else if (status === 'voided' && fd['resolved_reason'] === 'cancelled') {
+      issueStatus = 'cancelled';                                              // 취소
+    } else {
+      continue; // published 발행 원본 / resolved_reason 미상 voided → 요청 이력 행 아님(제외)
+    }
+    const publishStatus: OpinionPublishStatus = issueStatus === 'issued' ? 'published' : 'unpublished';
+    out.push({
+      id: String(r['id']),
+      customerId: (r['customer_id'] as string | null) ?? null,
+      checkInId: (r['check_in_id'] as string | null) ?? null,
+      docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+      selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
+      staffMemo: String(fd['staff_memo'] ?? ''),
+      oralMedReason: String(fd['oral_med_reason'] ?? ''),
+      patientName: String(fd['patient_name'] ?? '—'),
+      chartNo: (fd['chart_no'] as string | null) || null,
+      birthDate: (fd['birth_date'] as string | null) || null,
+      // ★신청직원 = requested_by_name 단독(issued_by 조인 금지, DA MSG-8dqz). 결측=''(컴포넌트에서 '—').
+      requestedByName: String(fd['requested_by_name'] ?? ''),
+      requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
+      createdAt: String(r['created_at'] ?? ''),
+      requestDate: String(fd['request_date'] ?? ''),
+      resolvedAt: fd['resolved_at'] ? String(fd['resolved_at']) : undefined,
+      publishStatus,
+      issueStatus,
+    });
+  }
+  return out.sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? '')); // 최신 신청 위로
+}
+
+export interface DocRequestSummary {
+  total: number;
+  requestedCount: number; // 미발행(신청됨)
+  issuedCount: number;    // 발급완료
+  cancelledCount: number; // 취소
+}
+export function computeDocRequestSummary(rows: CustomerDocRequestRow[]): DocRequestSummary {
+  let requestedCount = 0, issuedCount = 0, cancelledCount = 0;
+  for (const r of rows) {
+    if (r.issueStatus === 'issued') issuedCount += 1;
+    else if (r.issueStatus === 'cancelled') cancelledCount += 1;
+    else requestedCount += 1;
+  }
+  return { total: rows.length, requestedCount, issuedCount, cancelledCount };
+}
+
+// customer-scoped·all-time 상세 이력 훅 — useCustomerOpinionRequests 와 동일 쿼리(draft+voided) 재사용,
+//   빌더만 3-state(buildCustomerDocRequestRows)로 교체(취소 포함). customer_id 서버필터 → 타 환자 유입 금지.
+export function useCustomerDocRequestHistory(clinicId: string | null, customerId: string | null) {
+  return useQuery<CustomerDocRequestRow[]>({
+    queryKey: ['opinion_request_customer_detail', clinicId, customerId],
+    enabled: !!clinicId && !!customerId,
+    queryFn: async () => {
+      if (!clinicId || !customerId) return [];
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, customer_id, check_in_id, field_data, created_at, status')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .in('status', ['draft', 'voided'])
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return buildCustomerDocRequestRows((data ?? []) as Array<Record<string, unknown>>);
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
 export interface CustomerOpinionSummary {
   total: number;
   publishedCount: number;
