@@ -12,7 +12,7 @@ created: 2026-07-28
 reporter: planner
 risk_verdict: GO
 risk_reason: "진단 확정(추정·강제처치 금지 준수): foot Supabase(rxlomoozakkjesdqjtvd) staff 실측(service_role, RLS 우회) — 종로풋센터(clinic 74967aea) 소속 77행, role 원시값 분포 = coordinator 12(active=true 5명: 김민경·데스크·장예지·김지혜·박민석 / active=false 7명), canonical 영문 'coordinator' 정확 저장(cross_crm_data_contract §441/§487 정합). ∴ 필드소크 WARN 가설(영문 enum vs 저장값 불일치)은 데이터로 반증 — DB 오염/코디부재 아님(분기 B·C 불성립). staff 실컬럼=id,clinic_id,name,role,active,user_id,updated_at,assign_sort_order,auto_assign_enabled,slack_user_id — display_name 없음. 훅과 동일 쿼리 재현 시 HTTP 400 42703 column staff.display_name does not exist 확증. 분기 A(코드 필터/select 값 오류) 확정 → 단일 레이어 최소 blast: BloodDailyListSection.tsx 1파일(select 1줄+map 1줄+폴백 조건 1줄) + 신규 spec 1 + prior WIDTH spec 폴백 단언 1건 갱신. DML 0(db_change=false, rows-affected 검증 불요 — 데이터 미변경). 저장·재조회(receiver_name 문자열) 경로·목록밖 값 보존 옵션·완료시 잠금 등 방어폴백 전부 온존. 신규 spec 8 + WIDTH 회귀 10 + BLOODLIST-4FIX 회귀 = 28/28 PASS + npm run build PASS. 의료게이트 §11.1: 치료테이블=치료사 surface(비의료직군) → gate-exempt. da_consult: 불요(신규 컬럼·테이블·enum 0, read-only + 기존 필드 재사용)."
-commit: PENDING
+commit: 40209eae
 bundled_with: T-20260726-foot-RECEIVER-COORD-ACCT-DROPDOWN-WIDTH
 ---
 
