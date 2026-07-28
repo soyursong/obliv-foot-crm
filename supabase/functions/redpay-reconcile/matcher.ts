@@ -174,29 +174,72 @@ function isUnmatchedCrm(p: CrmPayment): boolean {
   return p.reconciled_at === null && p.external_trxid === null;
 }
 
-// ── Tier 0 — Direct 매칭 (보너스: 직원이 어쩌다 승인번호/TID 입력한 경우) ────────
+// ── Tier 0 — Direct 매칭 (3단 캐스케이드) ─────────────────────────────────────
+//
+// T-20260728-foot-REDPAY-RECONCILE-TIER0-TRXID-HARDENING
+//   DA CONSULT-REPLY: GO (SSOT=da_decision_foot_redpay_reconcile_tier0_trxid_hardening_20260728.md)
+//
+//   ▸ 폐기 (안티패턴): 기존 findTier0Direct 는 bare approval_no OR bare tid 단일키를
+//     그대로 auto-link 했다. 단일키 매칭은 대량 false-merge 위험이다 —
+//       · approval_no 는 단말/일자 간 비유일(재사용) 가능 → 서로 다른 거래를 오결합.
+//       · tid 는 단말(terminal) 단위 식별자 → 같은 단말의 모든 결제를 오결합(최악).
+//     DA 는 (a)approval_no-only / (b)tid-only 이분법을 모두 기각.
+//
+//   ▸ 정답: 3단 캐스케이드로 재정의.
+//     ① trxid-exact (1급 키): raw.external_trxid === p.external_trxid
+//         · 오늘 inert — isUnmatchedCrm 이 p.external_trxid=null 을 요구하므로 현
+//           데이터에서는 발화하지 않는다(external_approval_no 0/295, tier0 30일 0건).
+//         · direct-capture(단말→CRM 직수집) future-proof + 총괄 'trxid 1급키' 문자준수.
+//           inert 이므로 현 auto-match 에 무해(drop 0 · 신규 false-merge 0).
+//     ② composite Model A (= 계약 매칭키 canon): 4조건 전부 요구 —
+//         approval_no ∧ amount ∧ tid ∧ approved_at 윈도.
+//         · 윈도는 신규 발명 금지(contract §789 그림자윈도 ban) → 기존 Tier1 forward
+//           윈도 [approved_at, approved_at+15min] 를 재사용.
+//         · = Tier1 predicate ∧ approval_no 일치 = Tier1 고신뢰 부분집합.
+//     ③ bare approval_no 가지·bare tid 가지 둘 다 삭제.
+//
+//   ★ 불변식(영구 고정): 단일키(approval_no 단독 / tid 단독) auto-link 금지.
+//     tid 는 composite 구성요소 + Tier1/2 whitelist 로만 생존한다.
+//   ★ future note: external_approval_no 채워진 뒤 composite 불충족분은 auto-link 대신
+//     하위 Tier/tier4_manual(수동큐)로 fail-safe 강등 = 의도된 안전동작(손실 아님).
 /**
- * 직접 키 매칭.
- * external_approval_no 또는 external_tid가 CRM에 입력된 경우 우선 매칭.
- * 의무 아님 — 없으면 Tier 1로.
+ * 직접 키 매칭 (3단 캐스케이드). 매칭은 보너스 — 없으면 하위 Tier 로 진행.
  */
 export function findTier0Direct(
   raw:      RawTransaction,
   payments: CrmPayment[]
 ): CrmPayment[] {
+  // ── ① trxid-exact (1급, 오늘 inert — direct-capture future-proof) ─────────
+  if (raw.external_trxid) {
+    const byTrxid = payments.filter(
+      (p) =>
+        isUnmatchedCrm(p) &&
+        p.external_trxid !== null &&
+        p.external_trxid === raw.external_trxid
+    );
+    if (byTrxid.length > 0) return byTrxid;
+  }
+
+  // ── ② composite Model A: approval_no ∧ amount ∧ tid ∧ approved_at 윈도 ──────
+  //    4조건 중 하나라도 불충족이면 auto-link 하지 않는다(→ 하위 Tier/manual).
   const hasApproval = Boolean(raw.approval_no);
   const hasTid      = Boolean(raw.tid);
-  if (!hasApproval && !hasTid) return [];
+  if (!hasApproval || !hasTid || !raw.approved_at) return [];
+
+  const approvedMs = new Date(raw.approved_at).getTime();
 
   return payments.filter((p) => {
     if (!isUnmatchedCrm(p)) return false;
-    if (hasApproval && p.external_approval_no !== null && p.external_approval_no === raw.approval_no) {
-      return true;
-    }
-    if (hasTid && p.external_tid !== null && p.external_tid === raw.tid) {
-      return true;
-    }
-    return false;
+    // approval_no 일치 (단독으로는 링크 금지 — 아래 조건과 AND)
+    if (p.external_approval_no === null || p.external_approval_no !== raw.approval_no) return false;
+    // tid 일치 (composite 구성요소로만 사용)
+    if (p.external_tid === null || p.external_tid !== raw.tid) return false;
+    // amount 일치
+    if (p.amount !== raw.amount) return false;
+    // approved_at forward 윈도 [approved_at, +15min] (Tier1 윈도 재사용)
+    if (!p.created_at) return false;
+    const crmMs = new Date(p.created_at).getTime();
+    return crmMs >= approvedMs && crmMs <= approvedMs + TIER1_WINDOW_MS;
   });
 }
 
