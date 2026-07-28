@@ -3,24 +3,24 @@ import { test, expect } from '@playwright/test';
 /**
  * E2E — T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY
  *   현장(김주연 총괄): "행정정보 수정·변경할 수 있는 기능 치료테이블-진료에도 넣어줘."
- *   ★위치 명확화(2026-07-28 ts:1785211568.841439): 치료테이블 진료 탭 → [소견서·진단서] 서브탭 →
- *     발행완료 클릭 → 열리는 '소견서 문서 뷰(IssuedOpinionDocFormView 다이얼로그)' **하단**에
- *     [행정정보 수정] 진입점 추가. 기존 고객관리 EditCustomerDialog 를 **재사용**(중복 구현 금지), 진입점만.
+ *   ★위치: 치료테이블 진료 탭 → [소견서·진단서] 서브탭 → 발행완료 클릭 → '소견서 문서 뷰
+ *     (IssuedOpinionDocFormView 다이얼로그)' **하단**에 [행정정보 수정] 진입점.
+ *
+ * ★SUPERSEDED-BY: T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN (planner GO 2026-07-29).
+ *   진입점의 대상이 고객관리 EditCustomerDialog(공유 → 회귀위험) → **서류 행정필드 전용 편집기**로 재배선됨.
+ *   본 spec 은 진입점의 '위치/노출/회귀-안전' 불변식만 유지한다(진입점은 재배선 후에도 문서뷰 푸터에 그대로).
+ *   필드셋 정합·저장 payload·진료의 게이트 계약은 REALIGN spec 이 담당.
  *
  * ── 설계 계약(본 spec 이 지키는 불변식) ─────────────────────────────────────────
  *   AC-1 진입점 위치: 소견서 문서 뷰(diagdoc-doc-view-dialog)의 DialogFooter 하단에 [행정정보 수정] 버튼 1개.
- *   AC-2 fetch→prop: EditCustomerDialog 는 customer 객체 prop 의존 → 클릭 시 viewTarget.customerId 로
- *        customers 행 fetch 후 전달. customerId 없으면(=null) 버튼 disabled + fetch/오픈 abort(가드).
+ *   AC-2 게이팅(재배선): 편집 대상 = 발행완료 요청행(viewTarget). viewTarget 없으면 버튼 disabled.
+ *        (구 customer fetch→prop 게이팅은 재배선으로 폐기 — 편집기는 요청행 id 로 동작, customers fetch 불요.)
  *   AC-3 회귀 0: 공유 컴포넌트 IssuedOpinionDocFormView(진료대시보드 뷰어와 공용)·발행 파이프라인 무접촉.
  *        진입점은 DiagDocSection(치료사 공간) 래퍼 JSX 에만 추가 → 진료대시보드 뷰어에는 미노출.
- *
- * 본 spec 은 DiagDocSection 문서뷰 푸터의 **버튼 게이팅 술어**와 **fetch 가드 술어**를 컴포넌트와
- *   동일하게 재현해, fetch→prop 패턴(AC-2)과 회귀-안전(§11 비대상, 공유 뷰어 무접촉)을 단언한다.
- *   (repo 컨벤션 = 순수 계약 재현 spec. 신규 파생함수 0 = 진입점/재사용 성격.)
  */
 
 // ── 소견서 문서 뷰 하단 [행정정보 수정] 버튼 노출/활성 게이팅 재현 (DiagDocSection DialogFooter) ──
-//   viewTarget(발행완료 열람 대상) 존재 시 뷰가 열리고 하단에 버튼 노출. customerId 없으면 disabled.
+//   viewTarget(발행완료 열람 대상) 존재 시 뷰가 열리고 하단에 버튼 노출. viewTarget 없으면 disabled.
 interface ViewTarget {
   customerId: string | null;
 }
@@ -29,15 +29,9 @@ function docViewFooterButtons(viewTarget: ViewTarget | null): string[] {
   // 하단 append 순서: [행정정보 수정] → [닫기] (기존 닫기 버튼 보존)
   return ['행정정보 수정', '닫기'];
 }
-// 버튼 disabled 술어(컴포넌트 재현): customerId 없으면 비활성.
+// 버튼 disabled 술어(재배선 후 컴포넌트 재현): viewTarget 없으면 비활성(편집기는 요청행으로 동작).
 function isEditAdminDisabled(viewTarget: ViewTarget | null): boolean {
-  return !viewTarget?.customerId;
-}
-
-// ── openEditCustomer 부모 fetch 가드 술어(DiagDocSection 재현) ──────────────────────
-//   customerId 없으면 fetch 하지 않고 abort → editingCustomer 미설정.
-function shouldFetchCustomer(customerId: string | null): boolean {
-  return !!customerId;
+  return !viewTarget;
 }
 
 // ── AC-1: 소견서 문서 뷰 하단에 [행정정보 수정] 진입점 노출 ─────────────────────────────
@@ -52,17 +46,14 @@ test('AC-1: 문서 뷰가 닫혀 있으면(viewTarget null) 진입점 버튼도 
   expect(docViewFooterButtons(null)).toEqual([]);
 });
 
-// ── AC-2: 부모 fetch→prop 가드 (customerId 유무) ─────────────────────────────────────
-test('AC-2: customerId 있으면 버튼 활성 + fetch(다이얼로그 오픈)', () => {
+// ── AC-2: 재배선 게이팅 (viewTarget 유무) ─────────────────────────────────────────────
+test('AC-2: viewTarget 있으면 버튼 활성(편집기는 요청행 id 로 동작 — customers fetch 불요)', () => {
   const vt: ViewTarget = { customerId: 'cust-uuid-1' };
   expect(isEditAdminDisabled(vt)).toBe(false);
-  expect(shouldFetchCustomer(vt.customerId)).toBe(true);
 });
 
-test('AC-2: customerId 없으면 버튼 disabled + fetch abort(가드)', () => {
-  const vt: ViewTarget = { customerId: null };
-  expect(isEditAdminDisabled(vt)).toBe(true);
-  expect(shouldFetchCustomer(vt.customerId)).toBe(false);
+test('AC-2: viewTarget 없으면 버튼 disabled', () => {
+  expect(isEditAdminDisabled(null)).toBe(true);
 });
 
 // ── AC-3: 회귀 0 (§11 비대상 · 공유 뷰어 무접촉) ──────────────────────────────────────
