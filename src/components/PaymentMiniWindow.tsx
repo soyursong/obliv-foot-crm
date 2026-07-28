@@ -1762,8 +1762,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
-  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → payableTotal = 8,900 + 0 = 8,900.
-  const payableTotal = payCopaymentTotal + nonCoveredTotal;
+  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → 8,900 + 0 = 8,900.
+  //   T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE: 최종 수납잔액(payableTotalWithSurcharge)은 가산 fold·10원
+  //   절사를 반영해 payCopaymentWithSurcharge(FLOOR) + nonCoveredTotal 로 아래에서 파생한다(가산-무 경로 동일값).
   // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2, 공단부담액 정보성 라인) ─────
   //   공단부담액(명세) = 급여 진료비 − 본인부담금. 배포 SSOT computeFootBilling 의 liveBillingValues
   //   (insuranceCovered = max(0, coveredTotal − copaymentTotal))를 그대로 소비한다(병렬 계산 경로 신설 금지,
@@ -1800,11 +1801,24 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     hiraUnitValue: clinicHiraUnitValue,
   });
   const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
-  const payCopaymentWithSurcharge = payCopaymentTotal + settleSurcharge.copay;        // 본인부담금(가산 포함)
-  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함)
-  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함)
-  // 최종 수납금액(수납잔액) = 본인부담 + 비급여 + 가산 본인분. 가산 공단분은 환자가 내지 않음(공단 몫).
-  const payableTotalWithSurcharge = payableTotal + settleSurcharge.copay;
+  // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE [현장 P0, RC, reporter 김주연 총괄] ──────────────
+  //   [증상] 야간·공휴일 급여 진료 수납 시 가산금(30%)이 포함되면 급여 자부담(본인부담금)에 10원 미만 절사가
+  //     미적용(예: 7,283 → 7,280 으로 안 깎이고 7,283 그대로 청구). 가산 없는 경로만 정상 절사.
+  //   [RC] payCopaymentTotal(copayFromBase)은 100원 FLOOR 라 항상 10원 배수 → 가산-무 경로는 구조적으로 절사됨.
+  //     그러나 가산 본인분 settleSurcharge.copay = Math.round(amount×ratio) 는 임의 원단위(끝 3·7원)라, 두 값의
+  //     합(가산 포함 본인부담)이 10원 배수가 아니게 되는데도 재-절사 지점이 없어 우수리가 그대로 청구됐다.
+  //   [해소] 배포된 절사 SSOT computeBillDetailRounding(BILLDOC-GONGDAN-ROUND, 10원 미만 FLOOR)을 **가산 포함
+  //     본인부담 최종액**에 적용한다(AC-1/AC-3: 절사 base = 본인부담(30%) 최종액). 신규 라운딩 함수 신설 금지(AC-4).
+  //     수납잔액 = 절사된 본인부담 + 비급여(과세·면세). 비급여는 실제 라운드 단가(10원 배수)라 문서 렌더
+  //     patient_amount(=본인+비급여 combined, 동일 SSOT FLOOR, L1904)와 절사값 정합 유지(AC-4).
+  //   [무회귀] 가산 없음(settleSurcharge.copay=0, kind=null) → FLOOR(payCopaymentTotal)=payCopaymentTotal(이미 100원
+  //     배수) → 값 불변(AC-2). 공단부담액·진료비 총액(insuranceCoveredWithSurcharge/grandTotalWithSurcharge)은
+  //     본인부담 절사와 직교 → 산식 불변(AC-3, 법정 표기 칸 무접촉).
+  const payCopaymentWithSurcharge = computeBillDetailRounding(payCopaymentTotal + settleSurcharge.copay).roundedTotal; // 본인부담금(가산 포함, 10원 FLOOR)
+  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함) — 절사 무관(AC-3)
+  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함) — 절사 무관(AC-3)
+  // 최종 수납금액(수납잔액) = 절사된 본인부담(가산 포함) + 비급여 전액. 가산 공단분은 환자가 내지 않음(공단 몫).
+  const payableTotalWithSurcharge = payCopaymentWithSurcharge + nonCoveredTotal;
 
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
@@ -1960,7 +1974,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       deductSurchargeBase.copay,
       settleSurchargeKind,
     );
-    return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal + deductSurcharge.copay;
+    // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE: 차감후 청구액도 동일하게 본인부담(가산 포함)에 10원 FLOOR
+    //   적용(settle 경로 payCopaymentWithSurcharge 와 동형 SSOT). deductSurcharge.copay=Math.round 우수리 제거.
+    //   가산 없음 → FLOOR(copaymentTotal)=copaymentTotal(100원 배수) → 값 불변(무회귀). base=본인부담 최종액(AC-3).
+    const deductCopayWithSurcharge = computeBillDetailRounding(deductBilling.copaymentTotal + deductSurcharge.copay).roundedTotal;
+    return deductCopayWithSurcharge + deductBilling.nonCoveredTotal;
   };
 
   // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-1 저장): 화장품 라인 seller_staff_id 산출 ──
