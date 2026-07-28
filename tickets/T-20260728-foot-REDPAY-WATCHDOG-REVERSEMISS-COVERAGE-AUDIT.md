@@ -36,13 +36,19 @@ READ-ONLY. mutation 0. 코드 인용·런타임 evidence(상태파일·launchd �
 
 ## AC-1 — 소스 divergence 매핑 + 침묵경로 실현가능성 판정
 
-### 두 소스의 admit/reference membership
+### 세 소스의 admit/reference membership (★①보강: 수집 웹훅 EF 명시 포함 — MSG-20260728-173055-manj)
 
-| 축 | 폴러 admission (적재 여부 결정) | 워치독 reference (알람 여부 결정) |
-|----|------|------|
-| fetch scope | `business_no` 단일(env=457-23-00938) — `fetchRedpayPage` L401~408 | ① merchant-grain: `REDPAY_BUSINESS_NO` 단일(**DEFAULT=511**, env=457) — watchdog L108 / ④ TID-grain: `511∪457` union — watchdog L116~122 |
-| admit/detect 권위 | **merchant_id 멤버십**(TID-agnostic). `filterToFootScope` L476~496: `keep = merchantOk \|\| (mid==null && tidOk)` | ① `registryMerchants.has(mid)` 여부 + `merchant.name.includes('풋')` / ④ `merchant∈registry AND tid∉membership(tid∪superseded)` |
-| membership 소스 | `resolveWhitelists()` L291: env override > DB registry(SSOT) > 하드코딩 DEFAULT. **TID = env∪registry UNION**(ENVSHADOW-FIX) | `loadRegistry()` L210: registry active. membership = `tid ∪ unnest(superseded_tids)` (R3, L217) |
+> 총괄(최필경) 재relay(MSG-20260728-171757-q6lh)가 **"수집 EF(redpay-webhook) vs 워치독 EF — 허용목록 소스(DB 테이블명/env var 키) 동일 여부 코드 직접 대조"**를 명시 요구 → AC-1 대조 대상에 폴러 admission·워치독 reference 외 **수집 웹훅 EF(redpay-webhook)** 를 제3 소스로 추가. 결론: **세 경로가 서로 다른 소스**를 읽음(폴러=env∪DB-registry UNION 런타임 / 워치독=DB-registry 런타임 / 웹훅=**컴파일타임 하드코딩 Set**). 특히 웹훅 EF는 DB registry를 **런타임 미참조** → 7/27 0724GAP 확장이 registry+poller env에만 반영되면 웹훅은 재배포 전까지 미반영(§AC-3 code-shadow).
+
+| 축 | 폴러 admission (적재 여부) | 워치독 reference (알람 여부) | ★수집 웹훅 EF `redpay-webhook` (적재 여부) |
+|----|------|------|------|
+| fetch/recv scope | `business_no` 단일(env=457-23-00938) — `fetchRedpayPage` L401~408 | ① merchant-grain: `REDPAY_BUSINESS_NO` 단일(**DEFAULT=511**, env=457) — watchdog L108 / ④ TID-grain: `511∪457` union — watchdog L116~122 | push 수신(RedPay POST). 방어필터 `isAllowedBusinessNo(business_no, REDPAY_WEBHOOK_BUSINESS_NO_ALLOW)` — `redpay-webhook/index.ts` L160, env키 `REDPAY_WEBHOOK_BUSINESS_NO_ALLOW`(fallback `REDPAY_BUSINESS_NO`) L55~56 |
+| admit/detect 권위 | **merchant_id 멤버십**(TID-agnostic). `filterToFootScope` L476~496: `keep = merchantOk \|\| (mid==null && tidOk)` | ① `registryMerchants.has(mid)` 여부 + `merchant.name.includes('풋')` / ④ `merchant∈registry AND tid∉membership(tid∪superseded)` | **merchant_id 멤버십**(TID-agnostic). `centerForMerchant(merchant_id)` L166 → `foot`만 적재, 미등록 merchant → Slack 알림+**미적재** L168~178 (return `unknown_merchant_alerted`) |
+| membership 소스 (DB 테이블명/키) | `resolveWhitelists()` L291: env override > **DB registry `redpay_terminal_registry`(SSOT)** > 하드코딩 DEFAULT. **TID = env∪registry UNION**(ENVSHADOW-FIX). 런타임 조회. | `loadRegistry()` L210: **DB registry `redpay_terminal_registry` active**. membership = `tid ∪ unnest(superseded_tids)` (R3, L217). 런타임 조회. | ⚠ **컴파일타임 하드코딩 `FOOT_MERCHANT_SET` 27-set** — `_shared/redpay-foot-merchants.ts` L19 (`centerForMerchant` 참조). **DB registry 런타임 미참조** — registry의 코드-박제 미러(재배포 시에만 동기). |
+
+**★소스 divergence 판정(①보강 결론)**: 세 경로의 허용목록 소스가 **동일하지 않다**.
+- 폴러 admission·워치독 reference: 둘 다 **DB `redpay_terminal_registry`(SSOT)** 를 **런타임** 조회(폴러는 env∪DB union, 워치독은 DB active) → 정합축 다르나 소스 테이블은 공유.
+- 수집 웹훅 EF: **DB registry 미참조**. 컴파일타임 `FOOT_MERCHANT_SET`(코드 박제) + env business_no 필터만. ⇒ **제3의 divergent 소스**. registry/poller-env 확장이 웹훅에 도달하려면 **코드 재배포 필수** = env-shadow의 컴파일타임 아날로그(**code-shadow**, §AC-3). 웹훅 경로에서 유입되는 미등록·registry-신규 TID는 재배포 전까지 "미등록 merchant"로 Slack 알림 후 **미적재**(적재 침묵) — 침묵경로 B의 웹훅 변종(단 웹훅은 무알람 아님, Slack 발화하므로 침묵도는 낮음).
 
 ### 침묵경로(미탐) 실현가능 — 3개 확정
 
@@ -114,6 +120,7 @@ env 유실 시 ① merchant-grain 이 **511 전량 0건 → FALSE-CLEAN(신규 m
 - **역방향(미탐)은 미봉인**: union 은 tidWhitelist(belt-and-suspenders) 를 넓혀 오탐만 줄일 뿐, admit 권위는 여전히 merchant_id.
   경로 A(NULL)·B(미등록 merchant)·C(env)는 union 과 직교 — **잔존**.
 - 대사뷰(2026-07-24 registry-driven 전환, `v_redpay_reconciliation_daily`)는 `merchant IN registry AND tid IN (tid∪superseded)` **이중 membership 게이트** = membership-blind 아님. 미등록·NULL 은 여전히 view-drop.
+- ★②보강(재relay: "7/27 whitelist 확장 후 워치독 EF 갱신값 반영 여부 = env-shadow 발생 여부"): 워치독은 `loadRegistry()` **런타임 DB 조회**라 registry 갱신을 즉시 반영 → 워치독 자체엔 env-shadow 없음(단 ① fetch bizno 는 env 단일점=경로 C latent). **그러나 수집 웹훅 EF(redpay-webhook)는 별개 hazard**: 허용목록이 컴파일타임 하드코딩 `FOOT_MERCHANT_SET`(§AC-1) → 0724GAP registry 확장을 **런타임 미반영**, 재배포 전까지 신규 registry TID를 "미등록"으로 알림+미적재 = **code-shadow**(env-shadow의 컴파일타임 아날로그). 즉 env-shadow(런타임 값 미갱신)의 사촌으로 웹훅 경로에 code-shadow 잔존. → membership-blind 대사(아래)가 code-shadow까지 표면화하며, 근본 봉인은 웹훅 EF의 registry 런타임 조회 전환(별건 spinoff 후보).
 
 ### 제안 — membership-blind 완전성 대사 (설계만, 구현 별건)
 
@@ -140,6 +147,7 @@ env 유실 시 ① merchant-grain 이 **511 전량 0건 → FALSE-CLEAN(신규 m
 2. **P1 — 경로 A(merchant/tid NULL) 표면화**: `mid==null` 실거래를 drop/skip 하지 말고 별도 quarantine + 알람(현 continue → 표면화). 236→ENVSHADOW 패턴.
 3. **P2 — 경로 C(watchdog ① DEFAULT=511) 제거**: DEFAULT 를 457 로 갱신 또는 ④ 처럼 union 화(env 단일점 제거).
 4. **(도메인外 통보)** 피부(derm)·도수(body) merchant 가 457 공유피드에 실거래(피부7 유선 20건/일) — 각 도메인 CRM 적재 여부 별도 확인 필요(cross-domain).
+5. **P1 — 수집 웹훅 EF code-shadow 봉인**(①/②보강 파생): `redpay-webhook` 의 허용목록을 컴파일타임 `FOOT_MERCHANT_SET`(`_shared/redpay-foot-merchants.ts`)에서 **DB `redpay_terminal_registry` 런타임 조회**로 전환(폴러/워치독과 소스 정렬). 미전환 시 registry 확장마다 웹훅 재배포 동기 절차를 registry SOP에 명문화. env-shadow(런타임)의 컴파일타임 사촌(code-shadow) 봉인.
 
 ## ★에스컬레이션 판정: **미발동**
 
