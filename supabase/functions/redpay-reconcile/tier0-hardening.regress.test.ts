@@ -1,13 +1,21 @@
-// redpay-reconcile/tier0-hardening.regress.test.ts — Tier0 3단 캐스케이드 회귀 고정
+// redpay-reconcile/tier0-hardening.regress.test.ts — Tier0 단일 composite 회귀 고정
 //
-// T-20260728-foot-REDPAY-RECONCILE-TIER0-TRXID-HARDENING (e2e_spec_exempt=ef_only, change-class=no-DDL)
-//   DA CONSULT-REPLY: GO (SSOT=da_decision_foot_redpay_reconcile_tier0_trxid_hardening_20260728.md)
-//   GO 조건②(regression unit test): 아래 4축을 순수 술어로 영구 고정한다.
-//     (1) bare approval_no 단독 auto-link 소멸
-//     (2) bare tid 단독 auto-link 소멸
-//     (3) composite Model A — approval_no ∧ amount ∧ tid ∧ approved_at 윈도 4조건 전부 요구
-//     (4) refund root_trxid 체이닝 무영향 (predicate 변경 ↔ 취소링크 무접점)
-//   추가: trxid-exact 가지는 현 데이터에서 inert(발화 안 함)임을 고정.
+// T-20260729-foot-REDPAY-TIER0-COMPOSITE-OR-CARD-SAMEDAY (e2e_spec_exempt=ef_only, change-class=no-DDL)
+//   DA CONSULT-REPLY: GO (SSOT=da_reply_foot_redpay_tier0_composite_20260728.md,
+//   ticket_id=DA-20260728-REDPAY-TIER0-COMPOSITE). 직전 하드닝(TIER0-TRXID-HARDENING,
+//   composite Model A = approval_no ∧ tid ∧ amount ∧ +15min)을 아래로 정합 강화(supersede).
+//
+//   본 파일이 영구 고정하는 불변식(신 semantics):
+//     (1) 식별자 단독(approval_no·tid 어느 쪽이든) auto-link 금지 — amount·card·payment·
+//         same-day 와 반드시 AND. 식별자는 corroborator 일 뿐 단독 결정권 없음.
+//     (2) 식별자 OR-either — approval_no 또는 tid 중 하나만 corroborate 해도(나머지 조건
+//         충족 시) tier0 확정. (직전 AND-both 는 supersede)
+//     (3) method=='card' ∧ payment_type=='payment' 필수(Q1) — cash/refund 의 stray
+//         식별자로 card raw 오링크 차단.
+//     (4) 시각창 = same-KST-day + forward(Q4). 15min 아님 — 지연입력도 same-day 면 tier0.
+//         ≥2 후보(충돌)는 approved_at 최근접 tie-break, 동률이면 tier4_manual(오링크 0).
+//     (5) trxid-exact ① 가지는 현 데이터에서 inert(발화 안 함) — future-proof.
+//     (6) refund root_trxid 체이닝 무영향 — predicate 변경 ↔ 취소링크 무접점.
 //   실행: deno test supabase/functions/redpay-reconcile/tier0-hardening.regress.test.ts
 
 import { assert, assertEquals, assertFalse } from "https://deno.land/std@0.224.0/assert/mod.ts";
@@ -15,14 +23,15 @@ import {
   findTier0Direct,
   matchTransaction,
   detectRefundNotInCrm,
-  TIER1_WINDOW_MS,
   type RawTransaction,
   type CrmPayment,
 } from "./matcher.ts";
 
-const APPROVED_AT = "2026-07-28T01:00:00.000Z";
-const IN_WINDOW   = "2026-07-28T01:05:00.000Z";                 // approved_at + 5min (윈도 내)
-const OUT_WINDOW  = "2026-07-28T01:20:00.000Z";                 // approved_at + 20min (윈도 밖)
+const APPROVED_AT   = "2026-07-28T01:00:00.000Z"; // KST 10:00 (2026-07-28)
+const IN_WINDOW     = "2026-07-28T01:05:00.000Z"; // +5min  (same KST day, forward)
+const LATE_SAMEDAY  = "2026-07-28T04:30:00.000Z"; // +3.5h  (>15min but same KST day — Q4 win)
+const NEXT_KST_DAY  = "2026-07-28T15:30:00.000Z"; // KST 00:30 익일 (same UTC date, 다음 KST 일)
+const BEFORE_APPR   = "2026-07-28T00:55:00.000Z"; // approved_at 이전 (backward — 배제)
 
 function rawRow(overrides: Partial<RawTransaction>): RawTransaction {
   return {
@@ -57,91 +66,95 @@ function crmPay(overrides: Partial<CrmPayment>): CrmPayment {
   };
 }
 
-// ── (1) bare approval_no 단독 auto-link 소멸 ─────────────────────────────────
-Deno.test("bare approval_no 단독으로는 tier0 매칭되지 않는다", () => {
+// ── (2) OR-either — approval_no 단독 corroboration 으로 tier0 확정 ────────────
+Deno.test("OR-either: approval_no 만 corroborate(+amount+card+payment+same-day) → tier0 매칭", () => {
   const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
-  // CRM 에 approval_no 만 일치, tid/amount/윈도 불충족 (tid null)
+  // CRM 에 approval_no 만 일치, tid 미입력(null) — 나머지 composite 조건 충족
   const p = crmPay({ external_approval_no: "APP123", external_tid: null });
   const hits = findTier0Direct(raw, [p]);
-  assertEquals(hits.length, 0, "approval_no 단독 일치는 auto-link 금지");
+  assertEquals(hits.length, 1, "approval_no corroboration 단독으로 composite 성립");
+  assertEquals(hits[0].id, p.id);
 });
 
-// ── (2) bare tid 단독 auto-link 소멸 ─────────────────────────────────────────
-Deno.test("bare tid 단독으로는 tier0 매칭되지 않는다", () => {
+Deno.test("OR-either: tid 만 corroborate(+amount+card+payment+same-day) → tier0 매칭", () => {
   const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
-  // CRM 에 tid 만 일치, approval_no null
   const p = crmPay({ external_approval_no: null, external_tid: "TID-A" });
   const hits = findTier0Direct(raw, [p]);
-  assertEquals(hits.length, 0, "tid 단독 일치는 auto-link 금지");
+  assertEquals(hits.length, 1, "tid corroboration 단독으로 composite 성립");
+  assertEquals(hits[0].id, p.id);
 });
 
-// ── (3) composite Model A — 4조건 전부 요구 ──────────────────────────────────
-Deno.test("composite: 4조건 전부 충족 시에만 매칭", () => {
+// ── (1) 식별자 단독 auto-link 금지 — 나머지 조건 불충족이면 링크 없음 ──────────
+Deno.test("불변식: 식별자 일치해도 amount 불일치면 링크 없음(DOSU-CONTAM 경로 차단)", () => {
   const raw = rawRow({ approval_no: "APP123", tid: "TID-A", amount: 120000 });
-  const full = crmPay({
-    external_approval_no: "APP123",
-    external_tid: "TID-A",
-    amount: 120000,
-    created_at: IN_WINDOW,
-  });
-  const hits = findTier0Direct(raw, [full]);
-  assertEquals(hits.length, 1, "4조건 전부 충족 → composite 매칭 1건");
-  assertEquals(hits[0].id, full.id);
+  const p = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", amount: 999999 });
+  assertEquals(findTier0Direct(raw, [p]).length, 0, "amount 불일치 → 식별자 corroborate 무효");
 });
 
-Deno.test("composite: 4조건 중 하나라도 불충족이면 매칭 안 됨", () => {
-  const raw = rawRow({ approval_no: "APP123", tid: "TID-A", amount: 120000 });
-  const base = {
-    external_approval_no: "APP123",
-    external_tid: "TID-A",
-    amount: 120000,
-    created_at: IN_WINDOW,
-  };
-  // tid 불일치
-  assertEquals(findTier0Direct(raw, [crmPay({ ...base, external_tid: "TID-B" })]).length, 0, "tid 불일치");
-  // approval_no 불일치
-  assertEquals(findTier0Direct(raw, [crmPay({ ...base, external_approval_no: "APP999" })]).length, 0, "approval_no 불일치");
-  // amount 불일치
-  assertEquals(findTier0Direct(raw, [crmPay({ ...base, amount: 130000 })]).length, 0, "amount 불일치");
-  // approved_at 윈도 밖 (+20min)
-  assertEquals(findTier0Direct(raw, [crmPay({ ...base, created_at: OUT_WINDOW })]).length, 0, "윈도 밖");
+Deno.test("불변식: 식별자 corroborate 전무면 링크 없음", () => {
+  const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
+  const p = crmPay({ external_approval_no: "APP999", external_tid: "TID-Z" }); // 둘 다 불일치
+  assertEquals(findTier0Direct(raw, [p]).length, 0, "approval_no·tid 둘 다 불일치 → 링크 금지");
 });
 
-Deno.test("composite: 윈도는 기존 Tier1 forward [approved_at, +15min] 재사용 (신규 윈도 발명 없음)", () => {
-  const raw = rawRow({ approved_at: APPROVED_AT });
-  const approvedMs = new Date(APPROVED_AT).getTime();
-  const base = { external_approval_no: raw.approval_no!, external_tid: raw.tid!, amount: raw.amount };
-  // 정확히 경계(+15min) 는 포함, 그 1ms 뒤는 배제
-  const atBoundary = new Date(approvedMs + TIER1_WINDOW_MS).toISOString();
-  const pastBoundary = new Date(approvedMs + TIER1_WINDOW_MS + 1).toISOString();
-  assertEquals(findTier0Direct(raw, [crmPay({ ...base, created_at: atBoundary })]).length, 1, "경계 포함");
-  assertEquals(findTier0Direct(raw, [crmPay({ ...base, created_at: pastBoundary })]).length, 0, "경계 초과 배제");
+Deno.test("불변식: raw 에 식별자(approval_no·tid) 둘 다 없으면 composite 미진입", () => {
+  const raw = rawRow({ approval_no: null, tid: null });
+  const p = crmPay({ external_approval_no: "APP123", external_tid: "TID-A" });
+  assertEquals(findTier0Direct(raw, [p]).length, 0, "corroborator 부재 → tier0 미발화(하위 Tier 로)");
 });
 
-Deno.test("composite: approved_at 없으면 매칭 안 됨(윈도 판정 불가)", () => {
+// ── (3) Q1: method/payment_type 필수 — cash/refund stray 식별자 오링크 차단 ────
+Deno.test("Q1: cash payment 는 식별자 일치해도 tier0 오링크 안 됨", () => {
+  const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
+  const cash = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", method: "cash" });
+  assertEquals(findTier0Direct(raw, [cash]).length, 0, "method!=card → 배제");
+});
+
+Deno.test("Q1: refund(payment_type) 는 식별자 일치해도 tier0 오링크 안 됨", () => {
+  const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
+  const refund = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", payment_type: "refund" });
+  assertEquals(findTier0Direct(raw, [refund]).length, 0, "payment_type!=payment → 배제");
+});
+
+// ── (4) Q4: same-KST-day + forward. 15min 아님 ───────────────────────────────
+Deno.test("Q4: +15min 초과라도 same-KST-day·forward 면 tier0 매칭(지연입력 false-negative 방지)", () => {
+  const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
+  const late = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", created_at: LATE_SAMEDAY });
+  assertEquals(findTier0Direct(raw, [late]).length, 1, "+3.5h 지연입력도 same-day 면 tier0 확정");
+});
+
+Deno.test("Q4: 다음 KST 일 created_at 은 배제(same-day 하드바운드)", () => {
+  const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
+  const nextDay = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", created_at: NEXT_KST_DAY });
+  assertEquals(findTier0Direct(raw, [nextDay]).length, 0, "다음 KST 일 → 배제");
+});
+
+Deno.test("Q4: approved_at 이전(backward) created_at 은 배제(forward-only)", () => {
+  const raw = rawRow({ approval_no: "APP123", tid: "TID-A" });
+  const before = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", created_at: BEFORE_APPR });
+  assertEquals(findTier0Direct(raw, [before]).length, 0, "approved_at 이전 → 배제");
+});
+
+Deno.test("composite: approved_at 없으면 매칭 안 됨(시각창 판정 불가)", () => {
   const raw = rawRow({ approved_at: null });
-  const p = crmPay({ external_approval_no: raw.approval_no!, external_tid: raw.tid! });
+  const p = crmPay({ external_approval_no: "APP123", external_tid: "TID-A" });
   assertEquals(findTier0Direct(raw, [p]).length, 0);
 });
 
-// ── trxid-exact 가지: 현 데이터에서 inert (발화 안 함) ────────────────────────
-Deno.test("trxid-exact 가지는 현 데이터에서 inert — external_trxid 채워진 payment 는 isUnmatchedCrm 실패", () => {
+// ── (5) trxid-exact ① 가지: 현 데이터에서 inert ──────────────────────────────
+Deno.test("trxid-exact 가지는 inert — external_trxid 채워진 payment 는 isUnmatchedCrm 실패", () => {
   const raw = rawRow({ external_trxid: "TRX-RAW-1" });
-  // p.external_trxid 가 채워지면 isUnmatchedCrm(external_trxid===null 요구) 실패 → 후보 아님
-  const p = crmPay({ external_trxid: "TRX-RAW-1" });
-  const hits = findTier0Direct(raw, [p]);
-  assertEquals(hits.length, 0, "trxid 채워진 payment 는 매칭 후보에서 제외(inert)");
+  const p = crmPay({ external_trxid: "TRX-RAW-1" }); // isUnmatchedCrm(external_trxid===null) 실패
+  assertEquals(findTier0Direct(raw, [p]).length, 0, "trxid 채워진 payment 는 후보에서 제외(inert)");
 });
 
-Deno.test("trxid-exact 가지: 미래 direct-capture 시맨틱 존재 확인 — trxid 일치 predicate 자체는 코드에 있음", () => {
-  // isUnmatchedCrm 을 우회할 수 없으므로 실제 매칭은 inert 이나,
-  // raw.external_trxid 없는 경우 trxid 가지를 건너뛰고 composite 로 진행하는지만 확인.
+Deno.test("trxid 없으면 composite 로 폴백", () => {
   const raw = rawRow({ external_trxid: "", approval_no: "APP123", tid: "TID-A" });
-  const full = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", amount: 120000, created_at: IN_WINDOW });
-  assertEquals(findTier0Direct(raw, [full]).length, 1, "trxid 없으면 composite 로 폴백");
+  const full = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", created_at: IN_WINDOW });
+  assertEquals(findTier0Direct(raw, [full]).length, 1, "trxid 없으면 composite 진행");
 });
 
-// ── (4) refund root_trxid 체이닝 무영향 ──────────────────────────────────────
+// ── (6) refund root_trxid 체이닝 무영향 ──────────────────────────────────────
 Deno.test("취소행(N/X/M)은 matchTransaction 진입 前 early-return — predicate 무접점", () => {
   for (const status of ["N", "X", "M"]) {
     const raw = rawRow({ external_status: status });
@@ -158,7 +171,7 @@ Deno.test("refund_not_in_crm 는 root_trxid/external_trxid 체이닝 — approva
     external_status: "N",
     root_trxid: "TRX-ORIG-1",
     external_trxid: "TRX-CANCEL-1",
-    approval_no: "APP-DIFFERENT", // approval_no 가 달라도 링크는 trxid 로 성립해야 함
+    approval_no: "APP-DIFFERENT",
   });
   const original = crmPay({
     id: "pay-orig",
@@ -173,7 +186,7 @@ Deno.test("refund_not_in_crm 는 root_trxid/external_trxid 체이닝 — approva
   assertEquals(evt!.event_type, "refund_not_in_crm");
 });
 
-// ── 235 정상페어 시맨틱 — 정상 결제행(Y)은 composite 로 정상 매칭, refund 경로 보존 ──
+// ── 정상 승인행(Y) composite 매칭 (matchTransaction 통합) ─────────────────────
 Deno.test("정상 승인행(Y)은 composite 충족 시 tier0_direct 로 매칭", () => {
   const raw = rawRow({ external_status: "Y", approval_no: "APP123", tid: "TID-A", amount: 120000 });
   const p = crmPay({ external_approval_no: "APP123", external_tid: "TID-A", amount: 120000, created_at: IN_WINDOW });
