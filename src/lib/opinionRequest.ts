@@ -150,6 +150,13 @@ export function useCreateOpinionRequest(clinicId: string | null) {
 export interface AdminFieldOverrides {
   /** 담당의(발행자명) 정정 — renderOpinionDocHtml issuedByName override(doctor_name). */
   doctorName?: string;
+  /**
+   * T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의(진료의) doctor_id 앵커.
+   *   담당의 정정을 free-text 가 아니라 clinic_doctors 드롭다운으로 받으므로(오타/불일치 명의 원천 차단),
+   *   선택 원장 id 를 함께 저장한다. 열람/재출력 시 이 id 를 loadAutoBindContext clinicDoctorId 로 태워
+   *   도장(직인)이 정정된 진료의 본인 직인으로 자동 추종(AC-7, SEAL-DOCTOR-MATCH). NO-DDL(JSONB 재사용).
+   */
+  doctorId?: string;
   /** 발급일(YYYY-MM-DD) 정정 — issue_date override. */
   issueDate?: string;
   /** 상병코드(1급/primary, 예 K29.7) 정정 — diag_code_1 override. 상병명은 진료기록 기준 유지(scope: 코드만). */
@@ -198,6 +205,8 @@ export function parseAdminOverrides(fd: Record<string, unknown>): AdminFieldOver
   const o = raw as Record<string, unknown>;
   const out: AdminFieldOverrides = {};
   if (typeof o['doctor_name'] === 'string' && o['doctor_name']) out.doctorName = o['doctor_name'] as string;
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 doctor_id 앵커(도장 자동추종용).
+  if (typeof o['doctor_id'] === 'string' && o['doctor_id']) out.doctorId = o['doctor_id'] as string;
   if (typeof o['issue_date'] === 'string' && o['issue_date']) out.issueDate = o['issue_date'] as string;
   if (typeof o['diag_code'] === 'string' && o['diag_code']) out.diagCode = o['diag_code'] as string;
   return Object.keys(out).length > 0 ? out : undefined;
@@ -638,6 +647,8 @@ export interface UpdateOpinionAdminFieldsInput {
   requestDate?: string;
   /** 담당의(발행자명). undefined=미변경. */
   doctorName?: string;
+  /** T-20260728 (AC-6): 담당의 doctor_id 앵커(clinic_doctors.id). 드롭다운 선택 시 doctorName 과 함께 전달. */
+  doctorId?: string;
   /** 발급일(YYYY-MM-DD). undefined=미변경. */
   issueDate?: string;
   /** 상병코드(primary, 예 K29.7). undefined=미변경. */
@@ -689,11 +700,19 @@ export function useUpdateOpinionAdminFields(clinicId: string | null) {
         nextTop['request_date'] = newV;
       }
       // 담당의 = admin_overrides.doctor_name 오버레이.
+      //   T-20260728 (AC-6): 드롭다운 선택 → doctor_name(표시)과 doctor_id(도장 자동추종 앵커)를 함께 정정.
+      //   doctorName 변경분만 감사로그에 남긴다(현장 표기값). doctor_id 는 도장 결선용 내부 앵커.
       if (input.doctorName !== undefined) {
         const oldV = String(prevOverrides['doctor_name'] ?? '');
         const newV = input.doctorName;
         pushLog('doctor_name', '담당의', oldV, newV);
         if (newV) nextOverrides['doctor_name'] = newV; else delete nextOverrides['doctor_name'];
+        // 이름을 비우면 앵커도 함께 제거(정합). 드롭다운은 항상 doctorId 동반 전달.
+        if (newV) {
+          if (input.doctorId) nextOverrides['doctor_id'] = input.doctorId; else delete nextOverrides['doctor_id'];
+        } else {
+          delete nextOverrides['doctor_id'];
+        }
       }
       // 발급일 = admin_overrides.issue_date 오버레이.
       if (input.issueDate !== undefined) {

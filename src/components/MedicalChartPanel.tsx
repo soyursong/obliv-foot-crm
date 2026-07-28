@@ -3896,6 +3896,24 @@ export default function MedicalChartPanel({
                       상단 로그인 계정 인디케이터와 구분되는 '서명' 스타일(우측 정렬, 점선 구분, 작성: {이름}). */}
                   {selectedChart && (
                     <div className="flex flex-col items-end gap-1.5 border-t border-dashed border-gray-300 pt-2" data-testid="chart-signature-block">
+                      {/* T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-1): 환자별 지정 진료의(치료테이블
+                          check_ins.treating_doctor_id)를 진료차트에 표시/연결. 종전 서명블록은 signing_doctor_name
+                          (차트 서명자 스냅샷)만 표시해 "진료의가 차트에 연결 안 됨"으로 보이던 갭(저장O·표시X) 해소.
+                          서명자명과 동일하면 중복 표기 억제(이미 그 진료의로 서명), 다르거나 서명 전이면 지정 진료의 노출. */}
+                      {(() => {
+                        if (!treatingDoctorId) return null;
+                        const td = clinicDoctors.find((d) => d.id === treatingDoctorId);
+                        if (!td) return null;
+                        if (selectedChart.signing_doctor_name && selectedChart.signing_doctor_name === td.name) return null;
+                        return (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="chart-treating-doctor">
+                            진료의(지정){' '}
+                            <span className="font-semibold not-italic text-teal-700 text-xs" data-treating-doctor-id={treatingDoctorId}>
+                              {td.name}
+                            </span>
+                          </span>
+                        );
+                      })()}
                       {/* T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-5: 진료의 직인(있으면) 또는 이름 자동 표기.
                           저장된 signing_doctor_name 기준(출력시 임의 선택 의사 아님). 레거시(미보유) 행은 라벨 표기. */}
                       {selectedChart.signing_doctor_name ? (

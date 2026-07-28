@@ -501,6 +501,9 @@ export default defineConfig({
         // T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT: A안 자동원복 해제 — 순수 로직 미러
         //   (tick=hold / revert canonical→admin / baseline 상수 가드). auth 불요, unit 에서만 실행.
         '**/T-20260724-foot-JUYEON-DOCWRITE-DISABLE-AUTOREVERT.spec.ts',
+        // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT: 진료의 발행명의(진단서 attending_doctor_name 결선)·
+        //   진료차트 표시·담당의 드롭다운(doctor_id 앵커)·도장 자동추종 — 정적 소스 가드 + 순수 로직 재현. auth/server 불요.
+        '**/T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -519,6 +522,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT: unit 전용 정적 소스 가드 → 무-project 실행
+        //   (supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT.spec.ts',
         // T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX: unit 전용 정적 소스 가드 → 무-project 실행
         //   (supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX.spec.ts',
