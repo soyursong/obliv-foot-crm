@@ -891,13 +891,26 @@ export function OpinionEditorDialog({
     ta.style.height = `${ta.scrollHeight}px`;
   }, [open, requestId, memoDraft]);
 
-  // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 진료 본 의사로 스냅.
+  // 진료의 정보가 (비동기로) 도착하면 — 사용자가 아직 발행자를 손대지 않았을 때 한해 기본값을 스냅.
+  //   T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 시나리오2 pre-populate): 스냅 우선순위를 defaultDoctorId 와
+  //   동일하게 정합 — ①치료테이블 지정 진료의(treating_doctor_id, = [서류작성] 큐 checkInId 앵커) →
+  //   ②그 내원 서명의. 기존엔 서명의(②)만 스냅해, treating_doctor_id 가 bind 이후 비동기 도착하는 레이스에서
+  //   담당 진료의(치료테이블 [진료]) pre-populate 가 서명의로 덮이거나 유실됐다(현장 "작성하기 시 담당 진료의
+  //   연동 안 됨"). 이제 치료테이블 지정 진료의를 우선 스냅 → 서류 양식 진료의 필드에 담당 진료의 자동 채움.
+  //   ★seed 기본값만 스냅(doctorTouched=false 한정). override·발행게이트(publish_opinion_doc RPC)·
+  //     field_data 스냅샷·귀속 로직 전부 불변(ADDITIVE, 문지은 대표원장 §11 컨펌 방식 정합).
   useEffect(() => {
     if (!open || doctorTouched) return;
-    const signed = doctors.find((d) => signingIds.has(d.id));
-    if (signed && signed.id !== doctorId) setDoctorId(signed.id);
+    let target: string | null = null;
+    if (treatingDoctorId && doctors.some((d) => d.id === treatingDoctorId)) {
+      target = treatingDoctorId; // ① 치료테이블 지정 진료의(담당 진료의) 우선
+    } else {
+      const signed = doctors.find((d) => signingIds.has(d.id)); // ② 그 내원 서명의 폴백
+      if (signed) target = signed.id;
+    }
+    if (target && target !== doctorId) setDoctorId(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, doctorTouched, doctors, visitSigning]);
+  }, [open, doctorTouched, doctors, visitSigning, treatingDoctorId]);
 
   // T-20260724-foot-OPINIONDOC-DOCDATE-DEFAULT-GUARD (R5 A): 최근 진료일(visit_date)이 비동기 도착 시 '서류 날짜' 기본값 스냅.
   //   조건: open + 원장 미변경(docDateTouched=false) + 실장 명시 날짜(initialDate) 없음 → 최근 진료일로 세팅.
