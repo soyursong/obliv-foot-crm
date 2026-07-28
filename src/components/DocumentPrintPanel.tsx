@@ -128,6 +128,10 @@ import {
   buildFootBillDetailItems,
   fillBillItemCopayment,
   computeBillDetailRounding,
+  // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1/§수정3): bill_receipt_new ⑧/⑩
+  //   환자부담총액(=환자 실수납액, 수납 aggregate grain) 절사 SSOT — 외래 본인부담 급여 component 만 floor100,
+  //   비급여 무절사(별표2 제19조제1항 다만조항). PMW(수납창)와 동일 SSOT 로 same-receipt cross-render 정합.
+  floorBillReceiptNewPatientTotal,
   computeBillReceiptNewCategoryBreakdown,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
   applyBillReceiptNewCategoryTokens,
@@ -1405,9 +1409,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (일괄출력 경로) ──
         //   ★야간가산 fold 이후(여기)에 신양식 급여 remainder·납부박스를 계산해 단건(IssueDialog allValues)과 대칭.
         if (t.form_key === 'bill_receipt_new') {
-          // ⑧/⑩ 환자부담총액 10원 절사(FLOOR) — 단건 경로와 동일 SSOT(computeBillDetailRounding).
+          // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1, 일괄인쇄 경로) ──
+          //   [정정] 이전: computeBillDetailRounding(floor10, 번들 전체) → (a) floor10 오적용 + (b) 비급여까지
+          //     절사되는 bundle-floor 신규버그로, 야간·공휴일 급여 진료에서 인쇄 영수증 ⑧(예 7,280) > PMW 수납창
+          //     실수납액(7,200)이 되어 법정서류-실수납 divergence 발생(same-receipt cross-render 불일치).
+          //   [해소] 수납 aggregate grain SSOT floorBillReceiptNewPatientTotal(급여 component 만 floor100·비급여
+          //     무절사)로 통일 → PMW applyPostSurchargePaidTokens 와 동일 값. copay component = v.copayment
+          //     (가산 fold 후 aggregate 급여 본인부담), nonCov = patient_amount − copayment.
+          //   computeBillDetailRounding(floor10)은 bill_detail(세부산정내역서) 문서 grain 전용으로만 유지(§수정2).
           const rawPatient = parseAmountStr(v.patient_amount);
-          const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+          const copayComponent = parseAmountStr(v.copayment);
+          const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
           if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
           // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
           applyBillReceiptNewCoveredTokens(v, batchRnItems);
@@ -2823,8 +2835,14 @@ function IssueDialog({
     //     ⑧/⑩ = 세부내역서 detail_total 과 정확히 정합. base.patient_amount 는 야간가산 fold 반영 최종값.
     //   ⚠ CANON-GATE: ⑦ 공단부담총액({{insurance_covered}}, 1a/2b)은 §2-2-6 v1.14 canon 소관 → **미접촉**.
     if (template.form_key === 'bill_receipt_new') {
+      // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1, 미리보기/단건 경로) ──
+      //   일괄인쇄 경로(valuesFor L1408~)와 대칭 정정. ⑧/⑩ 환자부담총액 = 환자 실수납액 = 수납 aggregate grain
+      //   → floorBillReceiptNewPatientTotal(급여 component 만 floor100·비급여 무절사, PMW 와 동일 SSOT).
+      //   이전 computeBillDetailRounding(floor10, 번들 전체)은 (a) floor10 오적용 (b) 비급여까지 절사되는
+      //   bundle-floor 버그로 영수증 ⑧ > PMW 실수납액 divergence를 남겼다. floor10 은 bill_detail 문서 grain 전용(§수정2).
       const rawPatient = parseAmountStr(base.patient_amount);
-      const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+      const copayComponent = parseAmountStr(base.copayment);
+      const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
       if (rawPatient > 0) base.patient_amount = formatAmount(patientFloored);
 
       // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX ──
