@@ -144,6 +144,9 @@ import {
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
   computeBillDetailRounding,
+  // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 외래 본인부담 수납 aggregate 100원 절사 SSOT
+  //   (computeBillDetailRounding=floor10 문서 grain 과 분리 — DA-…-COPAY-TRUNCATE-UNIT, 별표2 제19조제1항 다만조항).
+  floorOutpatientCopayment,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A/B: 신양식(bill_receipt_new) 비급여 category 토큰
   //   주입 SSOT(footBilling 승격) — DPP 와 동일 인자로 소비해 결제미니창 인쇄 시 처치/검사 행 공란 해소.
   applyBillReceiptNewCategoryTokens,
@@ -1762,8 +1765,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
-  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → payableTotal = 8,900 + 0 = 8,900.
-  const payableTotal = payCopaymentTotal + nonCoveredTotal;
+  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → 8,900 + 0 = 8,900.
+  //   T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE: 최종 수납잔액(payableTotalWithSurcharge)은 가산 fold·10원
+  //   절사를 반영해 payCopaymentWithSurcharge(FLOOR) + nonCoveredTotal 로 아래에서 파생한다(가산-무 경로 동일값).
   // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2, 공단부담액 정보성 라인) ─────
   //   공단부담액(명세) = 급여 진료비 − 본인부담금. 배포 SSOT computeFootBilling 의 liveBillingValues
   //   (insuranceCovered = max(0, coveredTotal − copaymentTotal))를 그대로 소비한다(병렬 계산 경로 신설 금지,
@@ -1800,11 +1804,29 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     hiraUnitValue: clinicHiraUnitValue,
   });
   const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
-  const payCopaymentWithSurcharge = payCopaymentTotal + settleSurcharge.copay;        // 본인부담금(가산 포함)
-  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함)
-  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함)
-  // 최종 수납금액(수납잔액) = 본인부담 + 비급여 + 가산 본인분. 가산 공단분은 환자가 내지 않음(공단 몫).
-  const payableTotalWithSurcharge = payableTotal + settleSurcharge.copay;
+  // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE [현장 P0, RC, reporter 김주연 총괄] ──────────────
+  //   ★ FIX-REQUEST(contract_violation, DA-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE-UNIT): 절사단위 floor10 → **floor100** 정정.
+  //   [증상] 야간·공휴일 급여 진료 수납 시 가산금(30%)이 포함되면 급여 자부담(본인부담금)에 절사가 미적용
+  //     (예: 7,283 → 7,200 으로 안 깎이고 7,283 그대로 청구). 가산 없는 경로만 정상 절사.
+  //   [RC] payCopaymentTotal(copayFromBase)은 100원 FLOOR 라 항상 100원 배수 → 가산-무 경로는 구조적으로 절사됨.
+  //     그러나 가산 본인분 settleSurcharge.copay = Math.round(amount×ratio) 는 임의 원단위라, 두 값의 합(가산 포함
+  //     본인부담)이 100원 배수가 아니게 되는데도 재-절사 지점이 없어 우수리가 그대로 청구됐다.
+  //   [해소] 외래 본인일부부담금 aggregate 절사 SSOT floorOutpatientCopayment(**100원 미만 FLOOR**, 별표2 제19조제1항
+  //     다만조항)을 **가산 포함 급여 본인부담 최종액**(순수 급여 본인부담 component)에 적용한다. 절사대상 = payCopaymentTotal +
+  //     settleSurcharge.copay = **순수 급여 본인부담**(비급여 미포함) → bundle-floor 우려 없음(FIX-REQUEST §4 실측: 순수 component).
+  //     끝수(100원 미만) = 공단부담 귀속. 수납잔액 = 절사된 본인부담 + 비급여(무절사, 별도 합산).
+  //   [scope 분리] 문서 절사(computeBillDetailRounding=floor10, 요양급여비용총액·세부산정내역서 grain)와 수납 본인부담
+  //     aggregate 절사(floorOutpatientCopayment=floor100, 외래 본인부담 grain)는 서로 다른 grain — 값이 달라지는 것이
+  //     정상(DA 판정 = "문서==수납 정합" 요건 폐기). 세부산정내역서 계/합계(L2651 computeBillDetailRounding)는 floor10 유지.
+  //     자매 P2 가산금 line(요양급여비용 component)의 floor10 도 정당·무접촉.
+  //   [무회귀] 가산 없음(settleSurcharge.copay=0, kind=null) → floor100(payCopaymentTotal)=payCopaymentTotal(이미 100원
+  //     배수) → 값 불변(AC-2). 공단부담액·진료비 총액(insuranceCoveredWithSurcharge/grandTotalWithSurcharge)은
+  //     본인부담 절사와 직교 → 산식 불변(AC-3, 법정 표기 칸 무접촉).
+  const payCopaymentWithSurcharge = floorOutpatientCopayment(payCopaymentTotal + settleSurcharge.copay); // 급여 본인부담금(가산 포함, 외래 100원 FLOOR)
+  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함) — 절사 무관(AC-3)
+  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함) — 절사 무관(AC-3)
+  // 최종 수납금액(수납잔액) = 절사된 급여 본인부담(가산 포함, floor100) + 비급여 전액(무절사). 가산 공단분은 환자가 내지 않음(공단 몫).
+  const payableTotalWithSurcharge = payCopaymentWithSurcharge + nonCoveredTotal;
 
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
@@ -1899,9 +1921,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     settleCtx?: { isDeductSettle: boolean; settleAmount: number } | null,
   ): void => {
     if (formKey !== 'bill_receipt_new' || !ctx) return;
-    // ⑧ 환자부담총액(가산 fold 반영 최종값) 10원 절사(FLOOR) — DPP 와 동일 SSOT.
+    // ⑧ 환자부담총액(영수증 신양식, 가산 fold 반영 최종값) — 환자 실수납액 grain = 수납 aggregate 와 동일 정합.
+    //   ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST §4 bundle 실측) ──────────────
+    //   [실측] enriched.patient_amount = 급여 본인부담(가산 fold 포함) + 비급여 **bundle**(footBilling.applyBillReceiptNewLiveTotals
+    //     L950 patient_amount=copay+nonCov, applyNightHolidaySurcharge fold('patient_amount', sc.copay)). → 순수 급여 component 아님.
+    //   [정정] bundle 전체 floor100 = 비급여까지 절사되는 신규 버그(FIX-REQUEST §4 경고). floor100 은 **급여 본인부담
+    //     component 에만** 적용하고 비급여(무절사)와 재합산한다. copay component = enriched.copayment(가산 fold 후 aggregate 본인부담).
+    //   [정합] 이렇게 하면 ⑧(영수증 환자부담총액) = floor100(급여본인부담) + 비급여 = payableTotalWithSurcharge(수납 aggregate)
+    //     와 동일 grain·동일 값 → 납부박스 ⑧=⑨+⑪ 정합 보존. 세부산정내역서(bill_detail, floor10)와는 grain 이 달라 값 상이 = 정상.
     const rawPatient = Number(parseAmountRaw(enriched.patient_amount ?? '')) || 0;
-    const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+    const copayComponent = Number(parseAmountRaw(enriched.copayment ?? '')) || 0;   // 급여 본인부담(가산 fold 포함) — 절사 대상
+    const nonCovComponent = Math.max(0, rawPatient - copayComponent);               // 비급여(무절사) 잔여
+    const patientFloored = rawPatient > 0 ? floorOutpatientCopayment(copayComponent) + nonCovComponent : 0;
     if (rawPatient > 0) enriched.patient_amount = formatAmount(patientFloored);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
@@ -1960,7 +1991,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       deductSurchargeBase.copay,
       settleSurchargeKind,
     );
-    return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal + deductSurcharge.copay;
+    // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 차감후 청구액도 동일하게 급여 본인부담(가산 포함)에
+    //   **외래 100원 FLOOR**(floorOutpatientCopayment) 적용(settle 경로 payCopaymentWithSurcharge 와 동형 SSOT).
+    //   절사대상 = deductBilling.copaymentTotal + deductSurcharge.copay = 순수 급여 본인부담(비급여 미포함) → bundle-floor 우려 없음.
+    //   deductSurcharge.copay=Math.round 우수리 제거. 가산 없음 → floor100(copaymentTotal)=copaymentTotal(100원 배수) →
+    //   값 불변(무회귀). 비급여(nonCoveredTotal)는 무절사 별도 합산. base=본인부담 최종액(AC-3).
+    const deductCopayWithSurcharge = floorOutpatientCopayment(deductBilling.copaymentTotal + deductSurcharge.copay);
+    return deductCopayWithSurcharge + deductBilling.nonCoveredTotal;
   };
 
   // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-1 저장): 화장품 라인 seller_staff_id 산출 ──
