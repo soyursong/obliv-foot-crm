@@ -68,8 +68,8 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { useChart } from '@/lib/chartContext';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
-import { visitRouteOptionsFor, resolveRegistrarDisplay } from '@/lib/types';
-import { isMineRegistrar, buildKnownRegistrarKeys } from '@/lib/registrarMatch';
+import { visitRouteOptionsFor, resolveRegistrarDisplay, resolveRegistrarProvenance } from '@/lib/types';
+import { isMineRegistrar } from '@/lib/registrarMatch';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 // T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림을 날짜선택 옆에 배치(헤더에서 이전)
 import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
@@ -645,15 +645,6 @@ export default function Reservations() {
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
     [weekStart],
-  );
-
-  // T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2: 풋 등록자 마스터(assigneeOptions,
-  //   reservation_registrars active) ∪ 로그인 표시명 → clean 매칭 키 Set. '[도파민TM] {name}'
-  //   라벨의 clean 이름이 풋 스태프로도 존재하는 cross-CRM 동일인인지 저비용 판별용(resolveRegistrarDisplay).
-  //   read-only 파생 — 저장값 무변경.
-  const knownRegistrarKeys = useMemo(
-    () => buildKnownRegistrarKeys([...assigneeOptions, myDisplayName]),
-    [assigneeOptions, myDisplayName],
   );
 
   // ── T-20260609-foot-RESV-LIVE-AUTOSCROLL ─────────────────────────────────────
@@ -2216,7 +2207,7 @@ export default function Reservations() {
               const key = `${dateStr}_${time}`;
               return [...(resvByKey[key] ?? [])]
                 // T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-1: exact + '[도파민TM]' prefix clean-key OR 매칭.
-                .filter((r) => !filterMine || isMineRegistrar(r.registrar_name, mineTarget))
+                .filter((r) => !filterMine || isMineRegistrar(r.registrar_name, mineTarget, r.source_system))
                 .sort((a, b) => {
                   const ko = KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)];
                   if (ko !== 0) return ko;
@@ -2374,14 +2365,29 @@ export default function Reservations() {
                 <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                   <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
                   <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
-                  {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2: cross-CRM 동일인이면 '[도파민TM]' 뱃지 제거, 이름만. */}
+                  {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′): 인라인 '[도파민TM]' 라벨 strip(이름만)
+                      + dopamine-origin provenance 는 비-인라인 뱃지로 relocate(source_system 파생, 非삭제). */}
                   {(() => {
-                    const regDisplay = resolveRegistrarDisplay(r.registrar_name, r.source_system, knownRegistrarKeys);
-                    return regDisplay ? (
-                      <span className="ml-auto min-w-0 truncate text-teal-700" title={`예약등록자 ${regDisplay}`}>
-                        @{regDisplay}
+                    const regDisplay = resolveRegistrarDisplay(r.registrar_name, r.source_system);
+                    if (!regDisplay) return null;
+                    const prov = resolveRegistrarProvenance(r.source_system);
+                    return (
+                      <span
+                        className="ml-auto flex min-w-0 items-center gap-0.5 overflow-hidden text-teal-700"
+                        title={`예약등록자 ${regDisplay}${prov === 'dopamine' ? ' · 도파민TM 유입' : ''}`}
+                      >
+                        <span className="min-w-0 truncate">@{regDisplay}</span>
+                        {prov === 'dopamine' && (
+                          <span
+                            className="shrink-0 rounded bg-violet-100 px-0.5 text-[6px] leading-tight text-violet-600"
+                            data-testid={`registrar-provenance-${r.id}`}
+                            title="도파민TM 유입 예약(출처 표시)"
+                          >
+                            TM
+                          </span>
+                        )}
                       </span>
-                    ) : null;
+                    );
                   })()}
                 </div>
               </div>
@@ -2730,7 +2736,7 @@ export default function Reservations() {
                                   const mineTarget = filterAssignee !== '' ? filterAssignee : myDisplayName;
                                   const visible = list
                                     // T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-1: exact + '[도파민TM]' prefix clean-key OR 매칭.
-                                    .filter((r) => !filterMine || isMineRegistrar(r.registrar_name, mineTarget));
+                                    .filter((r) => !filterMine || isMineRegistrar(r.registrar_name, mineTarget, r.source_system));
                                   const byTime = (a: Reservation, b: Reservation) =>
                                     a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
                                   const colNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);     // 왼쪽 열 = 초진
@@ -2929,18 +2935,30 @@ export default function Reservations() {
                                     <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                                       <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
                                       <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
-                                      {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2: cross-CRM 동일인이면 '[도파민TM]' 뱃지 제거, 이름만. */}
+                                      {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′): 인라인 '[도파민TM]' 라벨 strip(이름만)
+                                          + dopamine-origin provenance 는 비-인라인 뱃지로 relocate(source_system 파생, 非삭제). */}
                                       {(() => {
-                                        const regDisplay = resolveRegistrarDisplay(r.registrar_name, r.source_system, knownRegistrarKeys);
-                                        return regDisplay ? (
+                                        const regDisplay = resolveRegistrarDisplay(r.registrar_name, r.source_system);
+                                        if (!regDisplay) return null;
+                                        const prov = resolveRegistrarProvenance(r.source_system);
+                                        return (
                                           <span
-                                            className="ml-auto min-w-0 truncate text-teal-700"
+                                            className="ml-auto flex min-w-0 items-center gap-0.5 overflow-hidden text-teal-700"
                                             data-testid={`registrar-tag-${r.id}`}
-                                            title={`예약등록자 ${regDisplay}`}
+                                            title={`예약등록자 ${regDisplay}${prov === 'dopamine' ? ' · 도파민TM 유입' : ''}`}
                                           >
-                                            @{regDisplay}
+                                            <span className="min-w-0 truncate">@{regDisplay}</span>
+                                            {prov === 'dopamine' && (
+                                              <span
+                                                className="shrink-0 rounded bg-violet-100 px-0.5 text-[6px] leading-tight text-violet-600"
+                                                data-testid={`registrar-provenance-${r.id}`}
+                                                title="도파민TM 유입 예약(출처 표시)"
+                                              >
+                                                TM
+                                              </span>
+                                            )}
                                           </span>
-                                        ) : null;
+                                        );
                                       })()}
                                     </div>
                                     {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row4/5/6 제거(일뷰 정합):

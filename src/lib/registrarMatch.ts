@@ -79,36 +79,29 @@ export function isSameRegistrar(
 /**
  * AC-1: '내 예약' 필터 판정 — 예약등록자가 대상(로그인 표시명/선택 담당자)인지.
  *   경로1 (회귀 유지): registrar_name 원문 exact trim 매칭
- *     — body-origin·EF 매칭 도파민(clean 스냅샷)·기존 동명이인 수용 동작 불변.
- *   경로2 (gap 보강): '[도파민TM] {name}' prefix 잔존분 → 양측 clean 키(NFC) 매칭
+ *     — native(풋 자체)·EF 매칭 도파민(clean 스냅샷)·기존 동명이인 수용 동작 불변.
+ *   경로2 (gap 보강, DA §963⑫ ① origin-gate): source_system='dopamine' 구조 파티션 한정으로
+ *     '[도파민TM] {name}' prefix 잔존분 → 양측 clean 키(NFC) 매칭.
  *     — created_by=NULL-equiv(풋에선 prefix로 NAME-MATCH 깨짐) 도파민-origin 본인 예약 포함.
+ *     — native 예약은 경로2 미진입(source_system≠dopamine) → exact 경로만 = 회귀 0.
+ *   ★ DA §963⑫ 5-AC 바인딩: ①origin-gate(source_system='dopamine' 한정) ②정규화 SSOT 재사용
+ *     ③null/UUID/opaque false-폴백 ④display-scoping 전용·attribution/ownership/access 비승격
+ *     ⑤보드 non-RLS 전제(예약관리 격자=clinic_id+date, 등록자-RLS 아님 → 동명이인=bounded
+ *       mis-attribution P2, disclosure 아님). RLS 격자였다면 fail-closed(supervisor 배포전 게이트).
  * @param registrarName reservations.registrar_name (read-only)
  * @param mineTarget    로그인 표시명 또는 선택 담당자명
+ * @param sourceSystem  reservations.source_system (경로2 origin-gate)
  */
 export function isMineRegistrar(
   registrarName: string | null | undefined,
   mineTarget: string | null | undefined,
+  sourceSystem?: string | null | undefined,
 ): boolean {
   const target = (mineTarget ?? '').trim();
   if (!target) return false; // 빈 표시명 → 매칭 불가(무차별 흡수 방지)
   // 경로1: 기존 exact match (회귀 0)
   if ((registrarName ?? '').trim() === target) return true;
-  // 경로2: prefix 잔존 clean 키 매칭 (NFC·opaque fallback → false)
+  // 경로2: dopamine-origin 파티션 한정 prefix-strip clean 키 매칭 (NFC·opaque fallback → false)
+  if ((sourceSystem ?? '').trim() !== 'dopamine') return false; // origin-gate
   return isSameRegistrar(registrarName, target);
-}
-
-/**
- * AC-2 보조: 풋 등록자 마스터/스태프 표시명 집합을 clean 매칭 키 Set 으로 환원.
- *   resolveRegistrarDisplay(...,knownKeys) 에서 '[도파민TM] {name}' 라벨의 clean 이름이
- *   풋CRM 스태프 계정으로도 존재하는 cross-CRM 동일인인지 저비용 판별에 사용.
- */
-export function buildKnownRegistrarKeys(
-  names: Iterable<string | null | undefined>,
-): Set<string> {
-  const set = new Set<string>();
-  for (const n of names) {
-    const key = registrantMatchKey(n);
-    if (key) set.add(key);
-  }
-  return set;
 }
