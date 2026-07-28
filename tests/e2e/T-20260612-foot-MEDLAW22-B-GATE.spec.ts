@@ -25,7 +25,13 @@
  * ★ 2026-07-08 supersede(부분): T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK 로
  *   경로1(PaymentMiniWindow) 급여 수납 하드차단(진료기록 필수 + 방문일 일치) 완전 해제.
  *   reporter=김주연 총괄. 경로1 가드는 '차단 부재 + 비차단 soft 리마인더'로 재고정.
- *   경로2(Dashboard 완료드래그)·경로3(PaymentDialog)·게이트 lib 정책은 그대로 유지.
+ *
+ * ★ 2026-07-28 supersede(전면): T-20260728-foot-INSUR-POPUP-REMOVE 로 경로2(Dashboard 완료
+ *   드래그·우클릭)·경로3(PaymentDialog 수납 완료)의 급여 진료기록 하드차단도 완전 해제.
+ *   결정 = 문지은 대표원장 "B안" 직접 컨펌. 이제 급여 진료 + 진료기록 미작성이어도 완료 전환이
+ *   차단 팝업 없이 정상 진행된다. 경로2/3 가드는 '하드차단 부재'로 재고정(아래 (C)).
+ *   → 하드차단 배선·차단 팝업 상세 검증은 T-20260728-foot-INSUR-POPUP-REMOVE.spec.ts 로 이관.
+ *   ⚠ lib(medicalRecordGate) 함수는 존치(soft 리마인더 isCovered 판정 재사용) — (B) 일부 유지.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -149,28 +155,33 @@ test.describe('수납/완료 진입점 배선 (3경로)', () => {
     // 차단 상태(medGateBlocked)·차단 배너는 제거됨.
     expect(src).not.toMatch(/medGateBlocked/);
     expect(src).not.toMatch(/data-testid="medlaw22-block-banner"/);
-    // 수납 버튼 disabled 에서 게이트 차단 제거 — submitting/splitValid 만 남음.
-    expect(src).toMatch(/disabled=\{submitting \|\| !splitValid\}/);
+    // 수납 버튼 disabled 에서 게이트 차단 제거 — submitting/splitValid 기반(게이트 차단 조건 없음).
+    //   ⚠ 2026-07-27 T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN 로 settled 조건이 추가됨
+    //     (disabled={submitting || settled || !splitValid}) — 게이트와 무관한 이중수납 차단. tolerant 매칭.
+    expect(src).toMatch(/disabled=\{submitting[^}]*!splitValid\}/);
+    expect(src).not.toMatch(/medGateBlocked/);
     // 비차단 soft 리마인더는 유지(isCovered 기반 표시 전용).
     expect(src).toMatch(/data-testid="medrecord-reminder"/);
     expect(src).toMatch(/setMedRecordReminder\(res\.isCovered\)/);
   });
 
-  test('경로2 Dashboard 완료 드래그 — newStatus==="done" 분기에서 게이트 평가 + abort', () => {
+  // ⚠ 경로2/3 하드차단은 T-20260728-foot-INSUR-POPUP-REMOVE(문원장 B안, 2026-07-28)로 완전 해제됨.
+  //   아래 두 가드는 이제 '하드차단 부재(완료 전환 정상)'를 회귀 고정한다.
+  //   상세 배선/팝업 검증은 T-20260728-foot-INSUR-POPUP-REMOVE.spec.ts 로 이관.
+  test('경로2 Dashboard 완료(드래그·우클릭) — 급여 진료기록 하드차단 제거(gate.blocked-abort 부재)', () => {
     const src = DASH();
-    expect(src).toMatch(/from '@\/lib\/medicalRecordGate'/);
-    // done 이동 시 평가
-    expect(src).toMatch(/if\s*\(newStatus === 'done'\)\s*\{[\s\S]*evaluateMedicalRecordGate\(row\)/);
-    // blocked 시 return (낙관적 업데이트 전 abort)
-    expect(src).toMatch(/gate\.blocked[\s\S]*?return;/);
+    // 완료 경로에서 게이트 평가 호출·차단 소비가 모두 제거됨(주석 제외한 실코드 기준).
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(code).not.toMatch(/evaluateMedicalRecordGate\s*\(/);
+    expect(code).not.toMatch(/gate\.blocked/);
   });
 
-  test('경로3 PaymentDialog — payment_waiting→done 수납 완료 전 게이트(방어적)', () => {
+  test('경로3 PaymentDialog — 수납 완료 전 급여 진료기록 하드차단 제거(blocked-abort 부재)', () => {
     const src = PAYDLG();
-    expect(src).toMatch(/from '@\/lib\/medicalRecordGate'/);
-    expect(src).toMatch(/checkIn\.status === 'payment_waiting'/);
-    expect(src).toMatch(/evaluateMedicalRecordGate\(checkIn\)/);
-    expect(src).toMatch(/gate\.blocked/);
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(code).not.toMatch(/evaluateMedicalRecordGate\s*\(/);
+    expect(code).not.toMatch(/gate\.blocked/);
+    expect(code).not.toMatch(/MEDLAW22_BLOCK_MESSAGE/);
   });
 });
 

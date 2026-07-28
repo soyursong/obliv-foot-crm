@@ -122,8 +122,8 @@ import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 슬롯 진입 시 상담사/치료사 자동배정(best-effort)
 import { maybeAutoAssign, logRealAssignment } from '@/lib/autoAssign';
-// T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 완료 슬롯 이동 하드차단.
-import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
+// T-20260728-foot-INSUR-POPUP-REMOVE: 급여 진료기록 완료 하드차단(MEDLAW22-B-GATE) 해제 —
+//   Dashboard 완료 경로(드래그/우클릭)에서 evaluateMedicalRecordGate 하드차단 호출 제거(문원장 B안, 2026-07-28).
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 미수 배지 (소스=footBilling outstanding SSOT 재사용)
 import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
@@ -5465,20 +5465,11 @@ export default function Dashboard() {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
 
-      // ── T-20260612-foot-MEDLAW22-B-GATE: 완료 슬롯 이동 시 급여 진료기록 게이트(하드차단) ──
-      //   카드 직접 드래그로 수납창을 건너뛰는 완료 우회 경로도 동일하게 막는다(의료법 제22조).
-      //   급여 방문 + 서명 진료기록 미존재 → 차단(낙관적 업데이트 전 abort). 비급여는 즉시 통과.
-      if (newStatus === 'done') {
-        try {
-          const gate = await evaluateMedicalRecordGate(row);
-          if (gate.blocked) {
-            toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
-            return;
-          }
-        } catch {
-          // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
-        }
-      }
+      // ── T-20260728-foot-INSUR-POPUP-REMOVE: 완료 슬롯 이동 급여 진료기록 하드차단 해제 ──
+      //   구 MEDLAW22-B-GATE 하드차단(급여+서명진료기록 미존재 시 완료 abort)을 제거한다.
+      //   결정 = 문지은 대표원장 "B안" 직접 컨펌(2026-07-28) — 완료 전환을 막지 않는다.
+      //   급여 청구 정합상 진료기록 후속 작성 안내는 결제 미니창 inline ℹ️ soft 리마인더로 존치.
+      //   (드래그 완료는 정상 진행. 비급여도 종전대로 무영향.)
 
       // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 목적 슬롯 맨 뒤(FIFO)
       const moveOrder = nextSlotSortOrder(newStatus, row.id);
@@ -5866,22 +5857,10 @@ export default function Dashboard() {
       return;
     }
 
-    // ── T-20260715-foot-MEDLAW22B-CTXMENU-COMPLETE-GATE-BYPASS: 우클릭 완료 경로 게이트 정합 ──
-    //   드래그 완료 경로(handleDragEnd else-branch)와 동일 조건·메시지로 급여 진료기록
-    //   하드차단 게이트(MEDLAW22-B-GATE)를 적용한다. 우클릭이 게이트를 우회하던 불일치 해소.
-    //   기존 evaluateMedicalRecordGate 로직 재사용(신규 정의 없음) — 비급여는 즉시 통과.
-    //   낙관적 업데이트(setRows) 이전에 abort → 드래그와 identical.
-    if (newStatus === 'done') {
-      try {
-        const gate = await evaluateMedicalRecordGate(ci);
-        if (gate.blocked) {
-          toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
-          return;
-        }
-      } catch {
-        // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
-      }
-    }
+    // ── T-20260728-foot-INSUR-POPUP-REMOVE: 우클릭 완료 경로 급여 진료기록 하드차단 해제 ──
+    //   드래그 완료 경로와 동일하게, 구 MEDLAW22-B-GATE 하드차단을 제거한다(우클릭도 정합).
+    //   결정 = 문지은 대표원장 "B안" 직접 컨펌(2026-07-28) — 완료 전환을 막지 않는다.
+    //   급여 청구 정합상 진료기록 후속 작성 안내는 결제 미니창 inline ℹ️ soft 리마인더로 존치.
 
     markRecentlyUpdated(ci.id);
     // #25 경합 방지: 함수형 업데이트 + 직전 row 캡처
