@@ -58,7 +58,7 @@ import {
 } from '@/lib/autoAssign';
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축(deriveConsultAxis)의 초진/재진 입력을 stored visit_type →
 //   recency(365일) 배치 판정으로 통일. 배정 화면 표시·재진 상담칸 숨김이 접수분류·배지·엔진과 수렴(AC-3).
-import { resolveVisitTypesByRecency } from '@/lib/visitRecency';
+import { resolveVisitTypesByCheckIn } from '@/lib/visitRecency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -232,6 +232,10 @@ export default function Assignments() {
   const [tempOffBusy, setTempOffBusy] = useState<Set<string>>(new Set()); // 토글 중복클릭 가드
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [customers, setCustomers] = useState<Map<string, CustomerLite>>(new Map());
+  // T-20260727-foot-ASSIGN-REVISIT-OVERCOUNT-RECLASS-GATE (2A): 초진/재진 판정을 고객단위 →
+  //   **check_in 레코드 단위(시점정합)** 로 교정. check_in id → VisitType(recency+owner-forced pin).
+  const [visitTypeByCi, setVisitTypeByCi] = useState<Map<string, string>>(new Map()); // 오늘 배정뷰
+  const [monthVisitTypeByCi, setMonthVisitTypeByCi] = useState<Map<string, string>>(new Map()); // 당월 누적
   const [actions, setActions] = useState<AssignmentAction[]>([]);
   // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: 당월 누적 '배정/재진' 카운트의 정본 = check_ins(내구 상태).
   //   audit 로그(assignment_actions)는 toss/당김 집계·방식표시용. 자동+수동 모두 check_ins.{role}_id 에
@@ -363,17 +367,17 @@ export default function Assignments() {
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
-      // T-20260713 RECENCY-UNIFY: 상담 축 파생 입력을 recency(365일) 판정으로 교체 — visit_type 필드만 override.
-      //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 map 의 visit_type 을 recency 결과로 바꾸면
-      //   axisOf(오늘 배정뷰)·재진 상담칸 숨김이 접수분류·배지·엔진과 동일 소스가 된다.
-      {
-        const recencyMap = await resolveVisitTypesByRecency(custIds, clinic.id);
-        for (const [id, vt] of recencyMap) {
-          const cu = custMap.get(id);
-          if (cu) custMap.set(id, { ...cu, visit_type: vt });
-        }
-      }
       setCustomers(custMap);
+      // T-20260727 RECLASS 2A: 축 파생 초진/재진을 **check_in 레코드 단위(시점정합)** recency 로 판정.
+      //   (기존 T-20260713 고객단위 override 는 self-contamination 과다집계 RC → per-checkin 으로 교체.)
+      //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 axisOf 가 이 맵을 우선 사용한다.
+      {
+        const vtMap = await resolveVisitTypesByCheckIn(
+          ci.map((c) => ({ id: c.id, customer_id: c.customer_id, checked_in_at: c.checked_in_at })),
+          clinic.id,
+        );
+        setVisitTypeByCi(vtMap as Map<string, string>);
+      }
 
       // 5) 당월 assignment_actions (토스 N건·당김 N건·금일 배분 '방식' 표시 SSOT)
       //    배정/재진 누적 카운트의 정본은 check_ins(아래 5b) — audit 로그는 toss/당김·방식용.
@@ -413,14 +417,18 @@ export default function Assignments() {
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
         }
-        // T-20260713 RECENCY-UNIFY: 월간 상담 축(monthAxisOf)도 recency 판정으로 통일 — visit_type override.
-        const recencyMonthMap = await resolveVisitTypesByRecency(monthCustIds, clinic.id);
-        for (const [id, vt] of recencyMonthMap) {
-          const cu = monthCustMap.get(id);
-          if (cu) monthCustMap.set(id, { ...cu, visit_type: vt });
-        }
       }
       setMonthCustomers(monthCustMap);
+      // T-20260727 RECLASS 2A: 월간 상담 축(monthAxisOf)도 **check_in 레코드 단위(시점정합)** recency 로 판정.
+      //   RC = 고객단위 판정이 과거날짜 자기 첫 완료방문을 "과거 done" 으로 잡아 순수초진을 재진 오승격.
+      //   per-checkin 판정 = 각 배정 check_in 을 그 방문 시각 이전 done 방문에 대해서만 판정(+owner-forced pin).
+      {
+        const vtMonthMap = await resolveVisitTypesByCheckIn(
+          monthCi.map((c) => ({ id: c.id, customer_id: c.customer_id, checked_in_at: c.checked_in_at })),
+          clinic.id,
+        );
+        setMonthVisitTypeByCi(vtMonthMap as Map<string, string>);
+      }
 
       // 6) 슬롯 진입 시각(당김 10분+ 판정) — 대기 상태로의 최신 transition
       const ciIds = ci.map((c) => c.id);
@@ -512,14 +520,16 @@ export default function Assignments() {
       if (role === 'consult') {
         const cu = ci.customer_id ? customers.get(ci.customer_id) : null;
         return deriveConsultAxis({
-          visit_type: cu?.visit_type ?? ci.visit_type,
+          // T-20260727 RECLASS 2A: 초진/재진 = check_in 레코드 단위(시점정합) recency + owner-forced pin.
+          //   per-checkin 맵 우선, 미해소(폴백) 시에만 stored ci.visit_type.
+          visit_type: visitTypeByCi.get(ci.id) ?? ci.visit_type,
           lead_source: cu?.lead_source,
           visit_route: cu?.visit_route,
         });
       }
       return deriveTherapyAxis(ci);
     },
-    [customers],
+    [customers, visitTypeByCi],
   );
 
   // ── 수동배정 select default 값 (AC-6, read-only 프리셋) ────────────────────────
@@ -567,14 +577,16 @@ export default function Assignments() {
       if (role === 'consult') {
         const cu = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
         return deriveConsultAxis({
-          visit_type: cu?.visit_type ?? ci.visit_type,
+          // T-20260727 RECLASS 2A: 초진/재진 = check_in 레코드 단위(시점정합) recency + owner-forced pin.
+          //   과다집계 RC(고객단위 self-contamination) 교정 핵심 경로.
+          visit_type: monthVisitTypeByCi.get(ci.id) ?? ci.visit_type,
           lead_source: cu?.lead_source,
           visit_route: cu?.visit_route,
         });
       }
       return deriveTherapyAxis(ci);
     },
-    [monthCustomers],
+    [monthCustomers, monthVisitTypeByCi],
   );
 
   const staffStats = useMemo<StaffStat[]>(() => {

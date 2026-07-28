@@ -1,0 +1,14 @@
+{
+  "ticket": "T-20260727-foot-ASSIGN-REVISIT-OVERCOUNT-RECLASS-GATE",
+  "edge": "#5088",
+  "archived_kst": "2026-07-28T13:29:30.633Z",
+  "before": {
+    "id": "85ecbec3-0917-4d71-ae06-1993b855714b",
+    "consultant_id": "c23d4491-cbdc-423d-af33-17c836941f9c",
+    "status": "cancelled",
+    "visit_type": "new",
+    "customer_id": "66a54944-50e2-4e87-8761-2e40c9288e9c"
+  },
+  "from_staff": "김지윤",
+  "to_staff": "강경민"
+}
