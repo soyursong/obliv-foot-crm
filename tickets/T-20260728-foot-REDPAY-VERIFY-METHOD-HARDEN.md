@@ -4,8 +4,8 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: pass
-deploy_commit: d2c4de3d
-deployed_at: 2026-07-29T02:45:00+09:00
+deploy_commit: 2964e654
+deployed_at: 2026-07-29T03:17:00+09:00
 bundle_hash: ef_only — FE 번들 무변경(scripts/docs/evidence only)
 deploy-ready: true
 build-passed: true
