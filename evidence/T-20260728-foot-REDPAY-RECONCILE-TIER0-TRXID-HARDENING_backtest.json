@@ -1,0 +1,36 @@
+{
+  "ticket": "T-20260728-foot-REDPAY-RECONCILE-TIER0-TRXID-HARDENING",
+  "mode": "READ-ONLY (SELECT only, no mutation)",
+  "data_window": {
+    "redpay_raw_transactions_total": 405,
+    "payments_total": 366,
+    "y_status_raws_scanned": 339,
+    "cancel_raws_NXM": 45
+  },
+  "payments_pool": {
+    "external_approval_no_populated": 0,
+    "external_tid_populated": 0,
+    "external_trxid_populated": 135,
+    "unmatched_pool": 231
+  },
+  "axis_a_auto_match_drop": {
+    "old_tier0_auto": 0,
+    "new_tier0_auto": 0,
+    "old_tier0_multi_candidate": 0,
+    "new_tier0_multi_candidate": 0,
+    "drops_count": 0,
+    "drops_sample": [],
+    "PASS": true
+  },
+  "axis_c_new_false_merge": {
+    "false_merges_count": 0,
+    "false_merges_sample": [],
+    "PASS": true
+  },
+  "axis_b_refund_path": {
+    "refund_pairs_preserved": 1,
+    "note": "refund 체이닝은 root_trxid/external_trxid(trxid계열) — tier0 predicate 변경과 무접점",
+    "PASS": true
+  },
+  "OVERALL_PASS": true
+}
