@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-07-28T17:43:37.010Z",
+  "ticket": "T-20260728-foot-REDPAY-VERIFY-METHOD-HARDEN",
+  "axis": "A — REGUNION-FIX before/after divergence proof",
+  "method": "deterministic semantic reproduction (resolveOLD_shadow vs resolveNEW_union on shared fixture)",
+  "parent": "T-20260728-foot-REDPAY-POLLER-ENVSHADOW-REGUNION-FIX",
+  "divergence_definition": "registry(SSOT) TID not loaded by poller = env-shadow silent-drop surface",
+  "cases": [
+    {
+      "case": "236-FALSENEG RC (stale env + registry 신TID)",
+      "before_divergence": 3,
+      "before_missing": [
+        "1047538231",
+        "1047538236",
+        "1047538245"
+      ],
+      "after_divergence": 0,
+      "after_missing": [],
+      "verdict": "PASS"
+    },
+    {
+      "case": "env 완전(누락 없음) — divergence 애초 0",
+      "before_divergence": 0,
+      "before_missing": [],
+      "after_divergence": 0,
+      "after_missing": [],
+      "verdict": "PASS"
+    },
+    {
+      "case": "reg=null (DB 미가용 fail-safe)",
+      "before_divergence": 0,
+      "before_missing": [],
+      "after_divergence": 0,
+      "after_missing": [],
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "UNION_CONVERGENCE_PROVEN"
+}

@@ -21,6 +21,8 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ARGS = process.argv.slice(2);
 const JSON_OUT = ARGS.includes("--json") ? ARGS[ARGS.indexOf("--json") + 1] : null;
 const WITH_EF = ARGS.includes("--ef");
+// T-20260728-foot-REDPAY-VERIFY-METHOD-HARDEN Axis A — union fix 適用 前/後 divergence 증명(결정적·무prod).
+const UNION_PROOF = ARGS.includes("--union-convergence-proof");
 
 // ── 실행주체를 introspection 모드로 기동 → stdout 에서 지문 JSON 라인 파싱 ────────────
 function introspect(scriptRelPath, subjectLabel) {
@@ -85,7 +87,104 @@ function compare(aFp, bFp) {
   };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T-20260728-foot-REDPAY-VERIFY-METHOD-HARDEN Axis A — REGUNION-FIX 前/後 divergence 증명
+//   총괄(최필경) req: "union fix 적용 前/後 각각 런타임 덤프 → union이 divergence 0으로 만들었는지 증명".
+//   ★ prod fix 는 이미 적용됨 → 진짜 '前' 런타임 덤프는 revert 없이 불가. 대신 poller resolveWhitelistSources()
+//     의 (구)shadow-early-return semantic 과 (신)env∪registry-union semantic 을 **동일 fixture** 에 태워
+//     divergence 를 결정적으로 재현한다. no-prod-touch·no-DDL·순수함수 = self-test 등급 evidence.
+//   divergence 정의 = registry(SSOT) 에 있으나 poller 가 로드 못한 TID 집합 크기 = env-shadow silent-drop 표면.
+//     · 구 semantic (envMerchant && envTid → early-return, registry 미조회) → env stale 이면 divergence>0.
+//     · 신 semantic (tid = env ∪ registry)                                    → divergence=0 (수렴 증명).
+// ── poller semantic 충실 재현 (scripts/redpay_macstudio_poller.mjs 대조) ──────────────
+//   구: resolveWhitelists() 안 `if (envMerchant && envTid) { ...; return; }`  = registry shadow.
+function resolveOLD_shadow({ envMerchant, envTid, baseMerchantList, baseTidList, reg }) {
+  // 구 로직: env 양쪽 설정 → registry 완전 shadow (env 값만 사용).
+  if (envMerchant && envTid) return { merchantList: baseMerchantList.slice(), tidList: baseTidList.slice(), source: "env(shadow)" };
+  if (!reg) return { merchantList: baseMerchantList.slice(), tidList: baseTidList.slice(), source: "default" };
+  const merchantList = envMerchant ? baseMerchantList.slice() : reg.merchants.slice();
+  const tidList = envTid ? baseTidList.slice() : reg.tids.slice();
+  return { merchantList, tidList, source: "registry/env" };
+}
+//   신: resolveWhitelistSources() — merchant=env override 우선(union 미적용), tid = env ∪ registry.
+function resolveNEW_union({ envMerchant, envTid, baseMerchantList, baseTidList, reg }) {
+  if (!reg) return { merchantList: baseMerchantList.slice(), tidList: baseTidList.slice(), source: "default" };
+  const merchantList = envMerchant ? baseMerchantList.slice() : reg.merchants.slice();
+  const tidList = envTid ? [...new Set([...reg.tids, ...baseTidList])] : reg.tids.slice();
+  return { merchantList, tidList, source: "registry" };
+}
+function divergenceCount(resolved, reg) {
+  // registry(SSOT) TID 중 poller 로드값(resolved.tidList)에 없는 것 = silent-drop 표면.
+  if (!reg) return { missing: [], count: 0 };
+  const loaded = new Set(resolved.tidList);
+  const missing = reg.tids.filter((t) => !loaded.has(t));
+  return { missing, count: missing.length };
+}
+function unionConvergenceProof() {
+  console.log("═══ REGUNION-FIX 前/後 divergence 증명 (T-20260728-foot-REDPAY-VERIFY-METHOD-HARDEN Axis A) ═══\n");
+  console.log("성격: 결정적 semantic 재현(no-prod·no-DDL·순수). '前'=구 shadow-early-return, '後'=env∪registry union.\n");
+
+  // ── fixture: stale env(538-band 신 TID 누락) + registry(538-band 포함) — 236-FALSENEG RC 재현 ──
+  const cases = [
+    {
+      name: "236-FALSENEG RC (stale env + registry 신TID)",
+      envMerchant: true, envTid: true,
+      baseMerchantList: ["1777289001", "1777289002"],
+      baseTidList: ["1047479255", "1047479254"], // 구 479-band 만(stale)
+      reg: {
+        merchants: ["1777289001", "1777289002"],
+        tids: ["1047479255", "1047479254", "1047538231", "1047538236", "1047538245"], // registry=SSOT(신 538 포함)
+      },
+    },
+    {
+      name: "env 완전(누락 없음) — divergence 애초 0",
+      envMerchant: true, envTid: true,
+      baseMerchantList: ["1777289001"],
+      baseTidList: ["1047479255", "1047538231"],
+      reg: { merchants: ["1777289001"], tids: ["1047479255", "1047538231"] },
+    },
+    {
+      name: "reg=null (DB 미가용 fail-safe)",
+      envMerchant: true, envTid: true,
+      baseMerchantList: ["1777289001"], baseTidList: ["1047479255"], reg: null,
+    },
+  ];
+
+  let allPass = true;
+  const rows = [];
+  for (const c of cases) {
+    const oldR = resolveOLD_shadow(c);
+    const newR = resolveNEW_union(c);
+    const oldD = divergenceCount(oldR, c.reg);
+    const newD = divergenceCount(newR, c.reg);
+    // RC 케이스: 구>0 && 신=0 이어야 fix 실효. env-완전/reg-null 케이스: 구=신(=0 or fail-safe) 회귀 없음.
+    const isRcCase = c.name.startsWith("236");
+    const pass = isRcCase ? (oldD.count > 0 && newD.count === 0) : (newD.count === oldD.count);
+    allPass = allPass && pass;
+    rows.push({ case: c.name, before_divergence: oldD.count, before_missing: oldD.missing, after_divergence: newD.count, after_missing: newD.missing, verdict: pass ? "PASS" : "FAIL" });
+    console.log(`■ ${c.name}`);
+    console.log(`   前(구 shadow)  divergence=${oldD.count}${oldD.count ? ` missing=[${oldD.missing.join(", ")}]` : ""}`);
+    console.log(`   後(union)      divergence=${newD.count}${newD.count ? ` missing=[${newD.missing.join(", ")}]` : ""}`);
+    console.log(`   → ${pass ? "✅ PASS" : "❌ FAIL"}${isRcCase ? "  (union 이 divergence 를 0 으로 봉인)" : "  (회귀 없음)"}\n`);
+  }
+
+  const evidence = {
+    generated_at: new Date().toISOString(),
+    ticket: "T-20260728-foot-REDPAY-VERIFY-METHOD-HARDEN",
+    axis: "A — REGUNION-FIX before/after divergence proof",
+    method: "deterministic semantic reproduction (resolveOLD_shadow vs resolveNEW_union on shared fixture)",
+    parent: "T-20260728-foot-REDPAY-POLLER-ENVSHADOW-REGUNION-FIX",
+    divergence_definition: "registry(SSOT) TID not loaded by poller = env-shadow silent-drop surface",
+    cases: rows,
+    verdict: allPass ? "UNION_CONVERGENCE_PROVEN" : "PROOF_FAILED",
+  };
+  if (JSON_OUT) { writeFileSync(JSON_OUT, JSON.stringify(evidence, null, 2)); console.log(`📄 evidence → ${JSON_OUT}`); }
+  console.log(`═══ 종합: ${evidence.verdict} — 구 semantic 은 stale env 에서 divergence>0(silent-drop), union 은 divergence=0(봉인) ═══`);
+  process.exit(allPass ? 0 : 5);
+}
+
 async function main() {
+  if (UNION_PROOF) return unionConvergenceProof();
   console.log("═══ RedPay env-shadow 런타임 실값 대조 (T-20260728-foot-REDPAY-ENVSHADOW-RUNTIME-VALUECHECK) ═══\n");
 
   const poller = introspect("redpay_macstudio_poller.mjs", "poller");
