@@ -1,0 +1,16 @@
+■ A: all-converged (D registry-union 정합) → TID 합의, D outlier 아님
+   TID fold participants=[poller,watchdog,reconcile-ef] unanimous=true outliers=[]
+   merchant fold participants=[poller,watchdog,webhook-ef,reconcile-ef] unanimous=true
+   → ✅ PASS
+
+■ B: reconcile-EF env-shadow (D stale TID) → 불합의 + D outlier 감지
+   TID fold participants=[poller,watchdog,reconcile-ef] unanimous=false outliers=[reconcile-ef]
+   merchant fold participants=[poller,watchdog,webhook-ef,reconcile-ef] unanimous=true
+   → ✅ PASS
+
+■ C: reconcile-EF 미배포 (3주체 축소)
+   TID fold participants=[poller,watchdog] unanimous=true outliers=[]
+   merchant fold participants=[poller,watchdog,webhook-ef] unanimous=true
+   → ✅ PASS
+
+═══ 4-way fold self-test: ALL PASS ✅ ═══

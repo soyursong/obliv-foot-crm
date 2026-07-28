@@ -123,6 +123,36 @@ deliverable 이며 EF 코드는 무접촉.
 
 ---
 
+## 4.2 ★ Step2 구현 — D env-shadow 진원제거(FIX) + 4-way 계측(DETECT) (T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS)
+
+**성격**: EF-only 코드변경. db_change=false · no-DDL · no-data · additive. DA CONSULT-REPLY MSG-20260729-042150-ko2t GO
+(divergence-risk=HIGH·NON-INERT, 순차병행 2축, 한 배포단위). 2026-07-29 KST.
+
+**①FIX (primary)** — `supabase/functions/redpay-reconcile/index.ts`:
+- 종전 `REDPAY_TID_WHITELIST` env 단독 read(§4.1 진원) 폐기 → `resolveTidWhitelist()` 신설.
+  canonical = `redpay_terminal_registry(domain='foot', active)` 의 `tid ∪ unnest(superseded_tids)`,
+  env = override-only(union 가산), registry 미가용 시 env 폴백(fail-safe).
+- 소비지점 양 경로 교체: `runMatcher()`(match_only) + `runPoller()`(incremental/daily cron).
+  supervisor 실측 REDPAY_DRY_RUN=false ⇒ 양 경로 모두 env TID 실소비 → 양쪽 커버.
+- D 를 poller(A) REGUNION-FIX 와 **동일 union-source** 로 정렬 → §4.1 진원(env staleness → Tier1/2 skip) 제거.
+- merchant 축 무변경(정적 FOOT_MERCHANT_SET). admit/scope 무접촉. 매출 금액 불변.
+
+**②DETECT (회귀센서)** — introspect 라우트 + valuecheck 4-way fold:
+- `redpay-reconcile` EF 에 authed `GET ?introspect=whitelist`(Bearer SERVICE_ROLE_KEY, fail-closed) 추가.
+  merchant=정적 FOOT_MERCHANT_SET, TID=실 로드값(registry∪env). CANON_SPEC 미러(C 와 동일 해시계약).
+- `scripts/redpay_envshadow_valuecheck.mjs`: reconcile-EF(D)를 4번째 peer 로 fold →
+  poller↔watchdog↔webhook-EF↔reconcile-EF **4-way SHA256 대조**. exit5=D fold 이탈(env-shadow) 센서.
+- ⚠ A11(feed↔registry coverage)과 별개 축 — fold 의 집은 VALUECHECK.
+
+**게이트 증거**(`evidence/T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS/`):
+- auth fail-closed: 무인증/오키 → 401, 정키 → 200, 비-introspect GET → 405 (로컬 Deno 실측).
+- SHA256 parity: EF(crypto.subtle) == 공유 lib(node:crypto) → D↔A↔B↔C hash-compatible.
+- 4-way fold self-test: 정합→합의 / D-stale→D outlier 감지 / D-미배포→3주체 축소 = ALL PASS.
+
+**범위 밖(fast-follow 별티켓)**: matcher merchant-keyed(TID-agnostic) 리팩터 — 배포 후 planner 발번.
+
+---
+
 ## 5. 요약
 
 - 용어 확정: 수집=poller(.mjs), 워치독=watchdog(.mjs), 둘 다 EF 아님(macstudio launchd). 웹훅 EF·대사 EF 만 실제 serverless.
