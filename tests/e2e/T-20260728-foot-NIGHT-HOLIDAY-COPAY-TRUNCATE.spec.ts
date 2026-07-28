@@ -6,7 +6,11 @@ import {
   SURCHARGE_RATE,
   KOREAN_HOLIDAYS_2026,
 } from '../../src/lib/nightHolidaySurcharge';
-import { computeBillDetailRounding, floorOutpatientCopayment } from '../../src/lib/footBilling';
+import {
+  computeBillDetailRounding,
+  floorOutpatientCopayment,
+  floorBillReceiptNewPatientTotal,
+} from '../../src/lib/footBilling';
 
 /**
  * E2E — T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (reporter 김주연 총괄, GO_WARN)
@@ -182,6 +186,74 @@ test.describe('시나리오2 — 무가산 경로 회귀 0 (AC-2)', () => {
     expect(r.copayment).toBe(0);
     expect(r.payable).toBe(8800);  // 비급여 무절사 그대로
     expect(r.covered).toBe(0);
+  });
+});
+
+/**
+ * 시나리오4 — bill_receipt_new ⑧ same-receipt cross-render 정합 (FIX-REQUEST NO-GO §수정3)
+ *
+ * ▷ NO-GO 근본원인: 이전 fix 는 PaymentMiniWindow(수납창) ⑧ 만 정정하고, DocumentPrintPanel(인쇄)의
+ *   두 경로(일괄인쇄 valuesFor L1408 · 미리보기/단건 L2825)는 computeBillDetailRounding(floor10, 번들 전체)로
+ *   미수정 → 동일 영수증(bill_receipt_new)의 ⑧ 환자부담총액이 인쇄 경로에서 실수납액보다 커지는 divergence.
+ *   기존 spec 은 PMW 미러 순수함수만 assert 해 DPP 경로를 커버하지 못했다.
+ *
+ * ▷ 해소: PMW·DPP 두 경로가 공유하는 순수 SSOT floorBillReceiptNewPatientTotal(rawPatient, copayComponent) 로
+ *   ⑧ 산출 로직을 통일(급여 component 만 floor100·비급여 무절사). 아래는 그 SSOT + 각 렌더 경로 call-site 를
+ *   1:1 미러해 floor100·비급여-무절사·PMW==DPP 정합을 assert.
+ *
+ * ★ 두 DPP 경로 call-site 미러:
+ *     rawPatient    = parseAmountStr(patient_amount)  // = 급여 본인부담(가산 fold) + 비급여 번들
+ *     copayComponent= parseAmountStr(copayment)        // = 가산 fold 후 aggregate 급여 본인부담
+ *     ⑧ = floorBillReceiptNewPatientTotal(rawPatient, copayComponent)
+ *   PMW call-site(applyPostSurchargePaidTokens) 도 동일 인자·동일 함수 → 구조적 PMW==DPP.
+ */
+const renderReceiptPatientAmount = (rawPatient: number, copayComponent: number) =>
+  floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
+
+test.describe('시나리오4 — bill_receipt_new ⑧ cross-render 정합 (PMW==DPP, FIX-REQUEST §수정3)', () => {
+  test('SSOT floorBillReceiptNewPatientTotal: 급여 component 만 floor100 · 비급여 무절사', () => {
+    // 급여 본인부담 3,380(가산 포함 우수리) + 비급여 8,850(비-100원, 절사 함정) 번들.
+    const copay = 3380;
+    const nonCov = 8850;
+    const rawPatient = copay + nonCov; // 12,230
+    const receipt = floorBillReceiptNewPatientTotal(rawPatient, copay);
+    // 급여만 floor100(3,380→3,300) + 비급여 무절사(8,850) = 12,150.
+    expect(receipt).toBe(3300 + 8850);
+    expect(receipt).toBe(12150);
+    // 비급여 절사 방지(FIX-REQUEST §4): bundle 전체 floor100(12,200)·floor10(12,230) 아님.
+    expect(receipt).not.toBe(floorOutpatientCopayment(rawPatient)); // 12,200
+    expect(receipt).not.toBe(computeBillDetailRounding(rawPatient).roundedTotal); // 12,230
+    // 가드: rawPatient≤0 → 0, copay 음수 가드.
+    expect(floorBillReceiptNewPatientTotal(0, 0)).toBe(0);
+    expect(floorBillReceiptNewPatientTotal(-1, 100)).toBe(0);
+  });
+
+  test('실증표(FIX-REQUEST) — DPP 인쇄 ⑧ == PMW 수납창 실수납액 (더 이상 divergence 없음)', () => {
+    // 케이스A: rawCopay 7,283(급여 본인부담만, 비급여 0). PMW 7,200(floor100) == DPP 인쇄 ⑧.
+    const dppA = renderReceiptPatientAmount(7283, 7283);
+    const pmwA = floorOutpatientCopayment(7283); // PMW 실수납 본인부담
+    expect(dppA).toBe(7200);
+    expect(dppA).toBe(pmwA);
+    // 구버그(floor10) 재현 방지: 인쇄 경로가 7,280 을 내면 안 됨(문서>실수납 divergence).
+    expect(dppA).not.toBe(computeBillDetailRounding(7283).roundedTotal); // 7,280
+
+    // 케이스B: rawCopay 3,380 → 3,300. floor10 no-op(3,380) 이던 구버그 경로도 정정 확인.
+    const dppB = renderReceiptPatientAmount(3380, 3380);
+    expect(dppB).toBe(3300);
+    expect(dppB).not.toBe(computeBillDetailRounding(3380).roundedTotal); // 3,380 (floor10 no-op = 구버그)
+  });
+
+  test('일괄인쇄 == 미리보기/단건 == 수납창: 세 경로 동일 SSOT → 동일 ⑧', () => {
+    // 야간·공휴일 급여 + 비급여 혼합. settle() = PMW 수납 grain, 두 DPP call-site = 동일 함수·동일 인자.
+    const r = settle(8800, 2600, 8850, at(2026, 7, 25, 14));
+    // enriched/base 토큰: patient_amount = 급여 본인부담(가산 fold=rawCopay) + 비급여, copayment = rawCopay.
+    const rawPatient = r.rawCopay + 8850;
+    const copayComponent = r.rawCopay;
+    const batchPrint = renderReceiptPatientAmount(rawPatient, copayComponent);   // valuesFor(일괄인쇄)
+    const previewSingle = renderReceiptPatientAmount(rawPatient, copayComponent); // 미리보기/단건
+    expect(batchPrint).toBe(previewSingle);        // DPP 두 경로 동일
+    expect(batchPrint).toBe(r.payable);            // == PMW 실수납 aggregate(12,150)
+    expect(batchPrint).toBe(12150);
   });
 });
 

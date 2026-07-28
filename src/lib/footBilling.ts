@@ -831,6 +831,34 @@ export function floorOutpatientCopayment(copayAggregate: number): number {
 }
 
 /**
+ * T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO 재제출) —
+ *   진료비 계산서·영수증 **신양식(bill_receipt_new) ⑧/⑩ 환자부담총액** 절사 SSOT.
+ *
+ * ⑧ 환자부담총액 = 환자 실수납액 = **수납 aggregate grain** 이므로 외래 본인부담 절사규칙(floor100, 급여
+ *   component 만·비급여 무절사)을 따른다(DA-20260728-...-UNIT · 별표2 제19조제1항 다만조항). 수납창(PMW)의
+ *   applyPostSurchargePaidTokens(L1932~1936)와 **동일 SSOT** — same-receipt cross-render(수납창 vs 인쇄) 정합 보장.
+ *
+ * ★ bundle 전체 floor 금지: patient_amount 번들(급여 본인부담 + 비급여) 전체를 절사하면 비급여까지 깎여 신규
+ *   버그(FIX-REQUEST §4 경고)다. 절사는 급여 본인부담 component 에만, 비급여는 무절사로 재합산한다.
+ * ★ computeBillDetailRounding(floor10)은 **세부산정내역서(bill_detail) 문서 grain 전용** — 영수증 ⑧ 에는 쓰지 말 것
+ *   (DA grain 분리 정당, §수정2). 두 grain 값이 달라지는 것은 정상.
+ *
+ * @param rawPatient      가산 fold 반영 최종 환자부담총액 번들(급여 본인부담 + 비급여, pre-floor)
+ * @param copayComponent  가산 fold 반영 급여 본인부담 aggregate(절사 대상). enriched/base.copayment.
+ * @returns floor100(급여 본인부담) + 비급여(무절사). rawPatient ≤ 0 이면 0.
+ */
+export function floorBillReceiptNewPatientTotal(
+  rawPatient: number,
+  copayComponent: number,
+): number {
+  const rp = Number.isFinite(rawPatient) && rawPatient > 0 ? rawPatient : 0;
+  if (rp <= 0) return 0;
+  const copay = Number.isFinite(copayComponent) && copayComponent > 0 ? copayComponent : 0;
+  const nonCov = Math.max(0, rp - copay); // 비급여(무절사) 잔여
+  return floorOutpatientCopayment(copay) + nonCov;
+}
+
+/**
  * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② — 진료비 계산서·영수증 신양식 비급여 항목행 category 분해.
  *
  * 배경(버그): 신양식(bill_receipt_new)은 급여 split(본인/공단)을 진찰료 행에 aggregate 표기(3FIX)하고,

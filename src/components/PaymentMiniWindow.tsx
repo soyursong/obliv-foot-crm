@@ -147,6 +147,9 @@ import {
   // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 외래 본인부담 수납 aggregate 100원 절사 SSOT
   //   (computeBillDetailRounding=floor10 문서 grain 과 분리 — DA-…-COPAY-TRUNCATE-UNIT, 별표2 제19조제1항 다만조항).
   floorOutpatientCopayment,
+  // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정3): bill_receipt_new ⑧ 산출 SSOT
+  //   — PMW(수납창)·DPP(인쇄) 공유 순수함수. same-receipt cross-render(PMW==DPP) 정합 보장.
+  floorBillReceiptNewPatientTotal,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A/B: 신양식(bill_receipt_new) 비급여 category 토큰
   //   주입 SSOT(footBilling 승격) — DPP 와 동일 인자로 소비해 결제미니창 인쇄 시 처치/검사 행 공란 해소.
   applyBillReceiptNewCategoryTokens,
@@ -1931,8 +1934,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //     와 동일 grain·동일 값 → 납부박스 ⑧=⑨+⑪ 정합 보존. 세부산정내역서(bill_detail, floor10)와는 grain 이 달라 값 상이 = 정상.
     const rawPatient = Number(parseAmountRaw(enriched.patient_amount ?? '')) || 0;
     const copayComponent = Number(parseAmountRaw(enriched.copayment ?? '')) || 0;   // 급여 본인부담(가산 fold 포함) — 절사 대상
-    const nonCovComponent = Math.max(0, rawPatient - copayComponent);               // 비급여(무절사) 잔여
-    const patientFloored = rawPatient > 0 ? floorOutpatientCopayment(copayComponent) + nonCovComponent : 0;
+    // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정3): DPP(인쇄) 와 동일 SSOT
+    //   floorBillReceiptNewPatientTotal 로 통일 — same-receipt cross-render 정합을 함수 레벨에서 보장(PMW==DPP).
+    //   기존 인라인(floorOutpatientCopayment(copay) + nonCov)과 수학적 동치(무회귀).
+    const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
     if (rawPatient > 0) enriched.patient_amount = formatAmount(patientFloored);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
