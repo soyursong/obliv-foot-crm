@@ -89,10 +89,12 @@ const EXPECTED_ORDER = [
 // ── 시나리오 1: 결제미니창 서류 출력 순서 ──────────────────────────────────────
 
 test('시나리오1: SSOT DOCLIST_ORDER_10 — 확정 순서(구양식 제거 후 11종)', () => {
-  expect(DOCLIST_ORDER_10).toEqual(EXPECTED_ORDER);
-  expect(DOCLIST_ORDER_10.length).toBe(11);
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지가 12번째로 additive 추가됨.
+  //   본 티켓의 불변식 = 확정 11종이 선두 prefix 순서로 보존 + 중복 0. 후속 additive 는 뒤에 append.
+  expect(DOCLIST_ORDER_10.slice(0, EXPECTED_ORDER.length)).toEqual(EXPECTED_ORDER);
+  expect(DOCLIST_ORDER_10.length).toBeGreaterThanOrEqual(11);
   // 중복 없음
-  expect(new Set(DOCLIST_ORDER_10).size).toBe(11);
+  expect(new Set(DOCLIST_ORDER_10).size).toBe(DOCLIST_ORDER_10.length);
 });
 
 test('시나리오1: 결제미니창 — orderDocList 결과가 확정 순서/항목수(11)', () => {

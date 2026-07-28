@@ -126,8 +126,14 @@ test('시나리오2: override 매핑 SSOT — 3건(bill_detail/koh_result/bill_r
 
 test('시나리오3: 순서·표시 집합 = DOCLIST_ORDER_10 그대로 회귀 0 (구양식 제거 후 11종)', () => {
   const result = orderDocList(DB_TEMPLATES_OLD_LABELS);
-  expect(result.map((t) => t.form_key)).toEqual([...DOCLIST_ORDER_10]);
-  expect(result).toHaveLength(DOCLIST_ORDER_10.length);
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지가 DOCLIST_ORDER_10 에 additive 추가됐으나
+  //   본 spec 목(DB_TEMPLATES_OLD_LABELS)에는 그 row 가 없으므로, orderDocList 결과 = 목에 존재하는 화이트리스트
+  //   키만(순서 보존). 기대값 = DOCLIST_ORDER_10 을 목에 존재하는 키로 필터한 것(순서 그대로).
+  const expectedKeys = [...DOCLIST_ORDER_10].filter((k) =>
+    DB_TEMPLATES_OLD_LABELS.some((t) => t.form_key === k),
+  );
+  expect(result.map((t) => t.form_key)).toEqual(expectedKeys);
+  expect(result).toHaveLength(expectedKeys.length);
 });
 
 test('시나리오3: name_ko 외 필드 보존 — form_key 불변, 발행/바인딩 회귀 0', () => {

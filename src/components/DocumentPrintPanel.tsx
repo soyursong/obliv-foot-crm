@@ -149,6 +149,72 @@ import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
 import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocFormSettingsDialog';
 
+// ─── 초진 관리기록지 체크박스 그룹 (T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD) ───
+//   체크칩 토글 → 필드값 '✔'(체크) / ''(미체크) → HTML 템플릿 {{key}} (.cbx 네모 안 ✔) 바인딩.
+//   field_map 에 넣지 않고 전용 블록으로 렌더 → 텍스트 input 중복 노출 방지(자유텍스트만 field_map).
+const FIRST_VISIT_MGMT_CHECK_MARK = '✔';
+interface FvmrCheckGroup { label: string; options: Array<{ key: string; label: string }> }
+const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
+  {
+    label: '방문 목적',
+    options: [
+      { key: 'vp_ingrown', label: '내성발톱' },
+      { key: 'vp_fungal', label: '무좀발톱' },
+      { key: 'vp_thick', label: '두꺼운 발톱' },
+      { key: 'vp_deformed', label: '변형발톱' },
+      { key: 'vp_other', label: '기타' },
+    ],
+  },
+  {
+    label: '관리 부위 (좌/우)',
+    options: [
+      { key: 'side_left', label: '좌(L)' },
+      { key: 'side_right', label: '우(R)' },
+    ],
+  },
+  {
+    label: '발가락',
+    options: [
+      { key: 'toe_1', label: '엄지' },
+      { key: 'toe_2', label: '둘째' },
+      { key: 'toe_3', label: '셋째' },
+      { key: 'toe_4', label: '넷째' },
+      { key: 'toe_5', label: '다섯째' },
+    ],
+  },
+  {
+    label: '통증 여부',
+    options: [
+      { key: 'pain_yes', label: '있음' },
+      { key: 'pain_no', label: '없음' },
+    ],
+  },
+  {
+    label: '보행 불편',
+    options: [
+      { key: 'gait_yes', label: '있음' },
+      { key: 'gait_no', label: '없음' },
+    ],
+  },
+  {
+    label: '초진 시 촬영 기록',
+    options: [
+      { key: 'photo_done', label: '사진 촬영 완료' },
+      { key: 'photo_none', label: '촬영하지 않음' },
+    ],
+  },
+  {
+    label: '초기 관리 내용',
+    options: [
+      { key: 'care_trim', label: '발톱 정리' },
+      { key: 'care_problem', label: '문제성 발톱 관리' },
+      { key: 'care_pressure', label: '압력 감소 조치' },
+      { key: 'care_pad', label: '보호패드 적용' },
+      { key: 'care_other', label: '기타' },
+    ],
+  },
+];
+
 // ─── 타입 ───
 
 interface InvoiceDoc {
@@ -3610,6 +3676,44 @@ function IssueDialog({
                   className="text-sm bg-white"
                   data-testid="docprint-purpose-input"
                 />
+              </div>
+            )}
+
+            {/* T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 체크박스 그룹 (인터랙티브 칩).
+                각 칩 = ✔ 토글 → HTML 템플릿 {{key}} 바인딩(.cbx 네모 안 체크). 자유텍스트(증상경위·관리계획 등)는
+                아래 field_map 입력에서 처리 → 중복 노출 없음. */}
+            {template.form_key === 'first_visit_mgmt_record' && (
+              <div className="rounded-lg bg-lime-50 border border-lime-200 p-3 space-y-3">
+                <Label className="text-xs font-semibold text-lime-800">체크 항목 (선택 시 인쇄물에 ✔ 표시)</Label>
+                {FIRST_VISIT_MGMT_CHECK_GROUPS.map((grp) => (
+                  <div key={grp.label} className="space-y-1.5">
+                    <div className="text-[11px] text-lime-700">{grp.label}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {grp.options.map((opt) => {
+                        const checked = (allValues[opt.key] ?? '') === FIRST_VISIT_MGMT_CHECK_MARK;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            data-testid={`fvmr-check-${opt.key}`}
+                            aria-pressed={checked}
+                            className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all min-h-[40px] ${
+                              checked
+                                ? 'border-lime-500 bg-lime-200 text-lime-900 ring-1 ring-lime-400'
+                                : 'border-gray-200 bg-white text-muted-foreground hover:border-lime-300 hover:text-lime-700'
+                            }`}
+                            onClick={() =>
+                              updateField(opt.key, checked ? '' : FIRST_VISIT_MGMT_CHECK_MARK)
+                            }
+                          >
+                            {checked ? '☑ ' : '☐ '}
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
