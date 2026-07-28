@@ -36,9 +36,11 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
-  centerForMerchant,
+  centerForMerchantWithSet,
+  deriveFootMerchantSet,
   isAllowedBusinessNo,
   FOOT_MERCHANT_SET,
+  type FootMerchantResolution,
 } from "../_shared/redpay-foot-merchants.ts";
 import {
   verifySignature,
@@ -91,19 +93,31 @@ async function sha256HexOfList(sortedList: string[]): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 async function whitelistFingerprintEf(): Promise<Record<string, unknown>> {
-  const merchantSorted = canonicalizeList(FOOT_MERCHANT_SET);
+  // A안(RUNTIME-ALIGN): 유효 admit set = registry 런타임 조회 ∪ static floor(fail-open).
+  //   introspect 로 registry 정렬 반영·source 확인 → AC-3 evidence(registry-신규 TID 적재 재현) 검증창.
+  const resolution = await resolveFootMerchantSet(Date.now());
+  const merchantSorted = canonicalizeList(resolution.set);
+  const staticSorted = canonicalizeList(FOOT_MERCHANT_SET);
   return {
     subject: "webhook-ef",
     domain: "foot",
     canon_spec: "trim→drop-empty→dedup→sort(codepoint asc)→join('\\n')→sha256-hex",
     tid_source: "n/a",
-    merchant_source: "static-module(FOOT_MERCHANT_SET)",
+    // ★ merchant admit = 런타임 registry∪static (A안). resolution_source 로 정렬성공/fail-open 구분.
+    merchant_source: resolution.source === "registry-union"
+      ? "registry(redpay_terminal_registry,domain=foot,active)∪static-floor"
+      : "fallback-static(FOOT_MERCHANT_SET)",
+    merchant_resolution_source: resolution.source,
+    merchant_registry_count: resolution.registryCount,
     tid_count: 0,
     tid_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // sha256("")
     tid_sorted: [],
     merchant_count: merchantSorted.length,
     merchant_sha256: await sha256HexOfList(merchantSorted),
     merchant_sorted: merchantSorted,
+    // static floor 지문(fail-open 기준선·회귀 대조용).
+    static_floor_count: staticSorted.length,
+    static_floor_sha256: await sha256HexOfList(staticSorted),
     ts: new Date().toISOString(),
   };
 }
@@ -147,6 +161,53 @@ async function resolveClinicId(): Promise<string | null> {
   }
   _clinicIdCache = data.id as string;
   return _clinicIdCache;
+}
+
+// ── A안 (T-20260728-foot-REDPAY-WEBHOOK-ALLOWLIST-RUNTIME-ALIGN) — foot admit set 런타임 정렬 ──
+//   허용목록(foot admit) 소스를 컴파일타임 상수(code-shadow) → DB redpay_terminal_registry 런타임
+//   조회로 전환해 폴러(scripts/…poller.mjs loadRegistryFromDb)·워치독과 SSOT 통일.
+//   ★admit 권위 키 = merchant_id (payload data.merchant_id 를 그대로 소비 — TID 아님).
+//   ★fail-open 의무: registry read 실패/타임아웃/빈결과 → deriveFootMerchantSet 이 FOOT_MERCHANT_SET
+//     으로 graceful fallback(admit 전면차단 금지). union 은 static floor 를 축소하지 않음(under-admit 0).
+//   ★per-request query·콜드스타트 지연 완화: 모듈 TTL 캐시 + registry 성공분만 캐시(실패는 즉시 재시도),
+//     실패 시 last-known-good 유지(TTL 만료 후에도 stale 재사용 = fail-open 강화).
+const FOOT_SET_TTL_MS = 60_000; // 60초 — 폴러 사이클보다 짧게. registry 확장 반영 지연 상한.
+let _footSetCache: { res: FootMerchantResolution; loadedAt: number } | null = null;
+
+// registry(domain=foot,active) merchant_id 목록 조회. 실패/빈결과 → null(호출측 fail-open).
+async function loadFootMerchantsFromRegistry(): Promise<string[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from("redpay_terminal_registry")
+      .select("merchant_id")
+      .eq("domain", "foot")
+      .eq("active", true);
+    if (error) {
+      console.warn(`${LOG}[REGISTRY] foot merchant 조회 실패 → fail-open(static): ${error.message}`);
+      return null;
+    }
+    if (!Array.isArray(data) || data.length === 0) return null;
+    return data.map((r) => ((r as { merchant_id?: unknown }).merchant_id ?? "").toString());
+  } catch (err) {
+    console.warn(`${LOG}[REGISTRY] foot merchant 조회 예외 → fail-open(static): ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+// 유효 foot admit set 확정 — TTL 캐시 + fail-open. nowMs 주입(테스트 결정성).
+async function resolveFootMerchantSet(nowMs: number): Promise<FootMerchantResolution> {
+  if (_footSetCache && nowMs - _footSetCache.loadedAt < FOOT_SET_TTL_MS) {
+    return _footSetCache.res;
+  }
+  const rows = await loadFootMerchantsFromRegistry();
+  const res = deriveFootMerchantSet(rows);
+  if (res.source === "registry-union") {
+    _footSetCache = { res, loadedAt: nowMs }; // 성공만 캐시(실패는 다음 요청 재시도)
+    return res;
+  }
+  // registry 미가용(fallback-static): 직전 성공 캐시가 있으면 last-known-good 유지(fail-open 강화).
+  if (_footSetCache) return _footSetCache.res;
+  return res; // 캐시 없음 → 컴파일타임 FOOT_MERCHANT_SET(현행 동치)
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -212,19 +273,29 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(200, { ok: true, status: "dropped_business_no" });
   }
 
-  // ── 5. 센터 분리 — merchant_id 화이트리스트 (AC-2.5) ─────────────────────────
-  const center = centerForMerchant(data.merchant_id);
+  // ── 5. 센터 분리 — merchant_id 화이트리스트 (AC-2.5 / A안 RUNTIME-ALIGN) ─────────
+  //   ★admit 판정 키 = payload data.merchant_id (validateEnvelope 가 data 로 전달한 그 값을 그대로 소비).
+  //     merchant_id 부재(''/null) → centerForMerchantWithSet 이 'unknown' 반환 → 아래 미등록 경로.
+  //     (총괄 최필경 진단 sub-Q: '추출·매핑 단계' — data.merchant_id 가 admit 에 정확히 소비됨을 명시.)
+  //   ★A안: foot admit set 을 registry 런타임 조회로 정렬(fail-open static fallback). body/unknown 은 불변.
+  const footResolution = await resolveFootMerchantSet(Date.now());
+  const center = centerForMerchantWithSet(data.merchant_id, footResolution.set);
   if (center === "unknown") {
-    // 미등록 merchant → Slack 알림(운영 확인) + 미적재.
+    // 미등록 merchant(또는 merchant_id 부재) → Slack 알림(운영 확인) + 미적재.
+    //   ※ merchant_id 부재로 인한 unscopable-quarantine 강화는 SILENT-PATH-HARDEN(경로A)이 담당(경계 조율).
     await sendSlackMessage(
       REDPAY_ALERT_CHANNEL,
       `⚠️ [redpay-webhook] 미등록 merchant_id 수신 — 화이트리스트 확인 필요\n`
         + `merchant_id=${data.merchant_id ?? "∅"} / merchant_name=${data.merchant_name ?? "∅"}\n`
         + `tid=${data.tid ?? "∅"} / trxid=${data.trxid ?? "∅"} / event_id=${eventId}\n`
+        + `allowlist_source=${footResolution.source}(registry=${footResolution.registryCount})\n`
         + `→ registry(redpay_terminal_registry) 등록 여부 확인.`,
       REDPAY_SLACK_BOT_TOKEN,
     );
-    console.warn(`${LOG} 미등록 merchant_id=${data.merchant_id ?? "∅"} → Slack 알림 + 미적재.`);
+    console.warn(
+      `${LOG} 미등록 merchant_id=${data.merchant_id ?? "∅"} → Slack 알림 + 미적재 `
+        + `(allowlist_source=${footResolution.source}, registry=${footResolution.registryCount}).`,
+    );
     return json(200, { ok: true, status: "unknown_merchant_alerted" });
   }
   if (center === "body") {

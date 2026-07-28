@@ -42,9 +42,63 @@ export type MerchantCenter = "foot" | "body" | "unknown";
  *   'unknown' 은 호출부가 Slack 알림 + 미적재로 처리(AC-2.5).
  */
 export function centerForMerchant(merchantId: string | null | undefined): MerchantCenter {
+  return centerForMerchantWithSet(merchantId, FOOT_MERCHANT_SET);
+}
+
+// ── A안 (T-20260728-foot-REDPAY-WEBHOOK-ALLOWLIST-RUNTIME-ALIGN) ────────────────
+//   웹훅 EF 허용목록(foot admit)을 컴파일타임 상수(code-shadow) → DB redpay_terminal_registry
+//   런타임 조회로 정렬해 폴러(loadRegistryFromDb)·워치독과 소스 통일한다.
+//   ★admit 권위 키 = merchant_id (TID 아님). registry 는 UNIQUE(merchant_id) 보유.
+//   ★fail-open 의무: registry 미가용/빈결과 시 컴파일타임 FOOT_MERCHANT_SET 로 graceful
+//     fallback — admit 전면차단 금지(전환이 새 침묵/유실을 만들면 안 됨). union 은 static floor 를
+//     절대 축소하지 않으므로 registry 실패 시에도 현행과 동치(under-admit 0).
+
+export interface FootMerchantResolution {
+  /** 유효 admit set = registry ∪ FOOT_MERCHANT_SET(fail-open floor), 또는 registry 미가용 시 static. */
+  set: ReadonlySet<string>;
+  /** 'registry-union' = registry 실적재 소스 정렬 성공 / 'fallback-static' = fail-open(registry 미가용·빈결과). */
+  source: "registry-union" | "fallback-static";
+  /** registry 에서 로드된 foot merchant_id 개수(fallback 이면 0). */
+  registryCount: number;
+}
+
+/**
+ * registry foot merchant_id 목록 → 유효 admit set 파생 (순수함수, self-test 대상).
+ *   유효 set = registry(domain=foot,active) merchant_id ∪ FOOT_MERCHANT_SET(static floor).
+ *   - registry 결과가 null/빈배열 → { set: FOOT_MERCHANT_SET, source:'fallback-static' } = 현행 동치(fail-open).
+ *   - registry 결과 존재 → union. static floor 는 절대 빠지지 않음 → registry 가 부분적이어도 under-admit 0.
+ *   - union 은 foot 도메인 내부만 확장(registry domain=foot·FOOT_MERCHANT_SET 모두 foot) → cross-tenant over-admit 0.
+ */
+export function deriveFootMerchantSet(
+  registryMerchantIds: readonly (string | null | undefined)[] | null | undefined,
+): FootMerchantResolution {
+  const reg = new Set<string>();
+  for (const m of registryMerchantIds ?? []) {
+    const s = (m ?? "").trim();
+    if (s) reg.add(s);
+  }
+  if (reg.size === 0) {
+    // fail-open: registry 미가용/빈결과 → 컴파일타임 set 유지(현행 100% 동일 동작).
+    return { set: FOOT_MERCHANT_SET, source: "fallback-static", registryCount: 0 };
+  }
+  const union = new Set<string>(FOOT_MERCHANT_SET); // static floor 선주입(축소 불가)
+  for (const m of reg) union.add(m);
+  return { set: union, source: "registry-union", registryCount: reg.size };
+}
+
+/**
+ * merchant_id → center 판별(런타임 foot set 주입판, 문자열 파싱 금지).
+ *   foot admit = 주입된 footSet(=registry∪static, A안) / body drop = 컴파일타임 BODY_MERCHANT_SET / 그 외 unknown.
+ *   ※ body 는 admit 이 아니라 '타 센터 drop(노이즈 억제)' 용도라 컴파일타임 set 유지 —
+ *     cross-domain(body) registry 런타임 read 를 도입하지 않아 foot EF 의 도메인 격리·DA CONSULT 면제를 보존한다.
+ */
+export function centerForMerchantWithSet(
+  merchantId: string | null | undefined,
+  footSet: ReadonlySet<string>,
+): MerchantCenter {
   const mid = (merchantId ?? "").trim();
   if (mid === "") return "unknown";
-  if (FOOT_MERCHANT_SET.has(mid)) return "foot";
+  if (footSet.has(mid)) return "foot";
   if (BODY_MERCHANT_SET.has(mid)) return "body";
   return "unknown";
 }
