@@ -34,6 +34,8 @@ import {
   OpinionEditorDialog,
   OPINION_SECTIONS,
   useClinicHeader,
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 드롭다운 옵션 소스(clinic_doctors) 재사용.
+  useClinicDoctors,
   type VisitorRow,
 } from '@/components/doctor/OpinionDocTab';
 // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX (복문 a): 큐 목록 '해당항목' 표시를 배타규칙으로 정규화.
@@ -115,8 +117,12 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   //   발급일)만 원내 직원이 인라인 정정. 저장 = useUpdateOpinionAdminFields(요청행 field_data 오버레이, published 불오염).
   //   ★NOSYNC 정합(AC5): 옛 전체 '수정 팝업' 부활 아님 — 재출력/열람 동선 유지 위에 행정필드 전용 인라인 패널만 추가.
   const adminMut = useUpdateOpinionAdminFields(clinicId);
-  type AdminForm = { requestDate: string; diagCode: string; doctorName: string; issueDate: string };
-  const emptyAdminForm: AdminForm = { requestDate: '', diagCode: '', doctorName: '', issueDate: '' };
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 = 등록 의사(clinic_doctors) 드롭다운.
+  //   free-text 금지(오타/불일치 명의가 법정서류에 박히는 것 원천 차단). 선택 id 를 doctor_id 앵커로 저장 →
+  //   열람/재출력 시 도장(직인)이 정정 진료의 본인 직인으로 자동 추종(AC-7).
+  const { data: clinicDoctors = [] } = useClinicDoctors(clinicId);
+  type AdminForm = { requestDate: string; diagCode: string; doctorName: string; doctorId: string; issueDate: string };
+  const emptyAdminForm: AdminForm = { requestDate: '', diagCode: '', doctorName: '', doctorId: '', issueDate: '' };
   const [adminForm, setAdminForm] = useState<AdminForm>(emptyAdminForm);
   const [adminInit, setAdminInit] = useState<AdminForm>(emptyAdminForm);
 
@@ -128,20 +134,29 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       ov?.issueDate
       || (viewDoc?.issuedAt ? seoulISODate(viewDoc.issuedAt)
         : viewTarget.resolvedAt ? seoulISODate(viewTarget.resolvedAt) : '');
+    const initDoctorName = ov?.doctorName ?? viewDoc?.doctorName ?? '';
+    // doctor_id 앵커: 오버레이 id 우선, 없으면(레거시/스냅샷) 이름으로 clinic_doctors 역매칭해 seed(무저장, 표시 정합).
+    const initDoctorId =
+      ov?.doctorId
+      ?? viewDoc?.issuedByDoctorId
+      ?? (initDoctorName ? (clinicDoctors.find((d) => d.name === initDoctorName)?.id ?? '') : '')
+      ?? '';
     const init: AdminForm = {
       requestDate: viewTarget.requestDate || '',
       diagCode: ov?.diagCode ?? '',
-      doctorName: ov?.doctorName ?? viewDoc?.doctorName ?? '',
+      doctorName: initDoctorName,
+      doctorId: initDoctorId || '',
       issueDate: initIssueDate,
     };
     setAdminForm(init);
     setAdminInit(init);
-  }, [viewTarget, viewDoc]);
+  }, [viewTarget, viewDoc, clinicDoctors]);
 
   const adminDirty =
     adminForm.requestDate !== adminInit.requestDate
     || adminForm.diagCode !== adminInit.diagCode
     || adminForm.doctorName !== adminInit.doctorName
+    || adminForm.doctorId !== adminInit.doctorId
     || adminForm.issueDate !== adminInit.issueDate;
 
   const handleAdminSave = async () => {
@@ -153,7 +168,13 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         // 변경된 필드만 전달(미변경=undefined → 오버레이/로그 미생성).
         requestDate: adminForm.requestDate !== adminInit.requestDate ? adminForm.requestDate : undefined,
         diagCode: adminForm.diagCode !== adminInit.diagCode ? adminForm.diagCode : undefined,
-        doctorName: adminForm.doctorName !== adminInit.doctorName ? adminForm.doctorName : undefined,
+        // 담당의 정정 시 이름·id 앵커를 함께 전달(도장 자동추종, AC-6/AC-7). 이름 또는 id 어느 쪽이 바뀌어도 전송.
+        doctorName:
+          (adminForm.doctorName !== adminInit.doctorName || adminForm.doctorId !== adminInit.doctorId)
+            ? adminForm.doctorName : undefined,
+        doctorId:
+          (adminForm.doctorName !== adminInit.doctorName || adminForm.doctorId !== adminInit.doctorId)
+            ? (adminForm.doctorId || undefined) : undefined,
         issueDate: adminForm.issueDate !== adminInit.issueDate ? adminForm.issueDate : undefined,
         editorId: profile.id,
         editorName: profile.name ?? profile.email ?? '직원',
@@ -434,16 +455,29 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   data-testid="docreq-admin-diag-code"
                 />
               </label>
+              {/* T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 = 등록 의사 드롭다운(free-text 금지).
+                  선택 시 이름(표시)과 doctor_id(도장 자동추종 앵커)를 함께 세팅. 미지정 옵션은 담당의 비움. */}
               <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 담당의
-                <input
-                  type="text"
-                  value={adminForm.doctorName}
-                  onChange={(e) => setAdminForm((f) => ({ ...f, doctorName: e.target.value }))}
-                  placeholder="발행 담당의명"
+                <select
+                  value={adminForm.doctorId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const doc = clinicDoctors.find((d) => d.id === id) ?? null;
+                    setAdminForm((f) => ({ ...f, doctorId: id, doctorName: doc?.name ?? '' }));
+                  }}
                   className="h-10 rounded-md border border-input bg-background px-2 text-sm"
                   data-testid="docreq-admin-doctor-name"
-                />
+                >
+                  <option value="">담당의 선택</option>
+                  {/* 레거시: 저장된 담당의명이 현 clinic_doctors 목록에 없으면(비활성/삭제) 이름 옵션을 보존 표기. */}
+                  {adminForm.doctorName && !clinicDoctors.some((d) => d.name === adminForm.doctorName) && (
+                    <option value="">{adminForm.doctorName} (미등록)</option>
+                  )}
+                  {clinicDoctors.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <p className="text-[11px] leading-snug text-slate-500">

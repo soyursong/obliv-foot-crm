@@ -68,8 +68,14 @@ test.describe('T-20260724-foot-OPINION-PUBLISHED-EDIT-PERMSPLIT — 발행본 �
     const q = queue();
     expect(q).toContain('adminForm.requestDate !== adminInit.requestDate ? adminForm.requestDate : undefined');
     expect(q).toContain('adminForm.diagCode !== adminInit.diagCode ? adminForm.diagCode : undefined');
-    expect(q).toContain('adminForm.doctorName !== adminInit.doctorName ? adminForm.doctorName : undefined');
     expect(q).toContain('adminForm.issueDate !== adminInit.issueDate ? adminForm.issueDate : undefined');
+    // 담당의(진료의) 정정: 이름·id 앵커를 함께 전달(도장 자동추종 AC-6/AC-7). ATTENDINGDR(7decbe69)
+    // OR-guard 재작성 — 이름 또는 id 어느 쪽이 바뀌어도 둘 다 전송, 둘 다 미변경이면 양쪽 undefined
+    // (오버레이/로그 미생성 불변). AC3 "변경분만 전달" intent 보존.
+    const doctorGuard = 'adminForm.doctorName !== adminInit.doctorName || adminForm.doctorId !== adminInit.doctorId';
+    expect(q).toContain(doctorGuard);                                        // OR-guard 신규식(이름·id 동시 판정)
+    expect(q).toContain('? adminForm.doctorName : undefined');               // doctorName: 변경 시 전송 / 미변경 undefined
+    expect(q).toContain('? (adminForm.doctorId || undefined) : undefined');  // doctorId 변경 케이스 보강(앵커 저장)
   });
 
   // ── AC4: 발행 원문 스냅샷 불오염 — published 미접촉 ───────────────────────────

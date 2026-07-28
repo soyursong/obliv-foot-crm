@@ -283,8 +283,10 @@ test.describe('FIX-① / AC-13: null-safe override (스냅샷 null → autoValue
     expect(PRINT_SRC, 'record_no(chartNo) null-safe 조건부 spread 누락').toMatch(
       /\.\.\.\(data\.chartNo\s*\?\s*\{\s*record_no:\s*data\.chartNo\s*\}\s*:\s*\{\}\)/,
     );
+    // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-2): issuedByName override 가 doctor_name(소견서)에
+    //   더해 attending_doctor_name(진단서 명의)에도 결선되도록 확장됨 — null-safe 조건부(truthy) 형태는 불변.
     expect(PRINT_SRC, 'doctor_name(issuedByName) null-safe 조건부 spread 누락').toMatch(
-      /\.\.\.\(data\.issuedByName\s*\?\s*\{\s*doctor_name:\s*data\.issuedByName\s*\}\s*:\s*\{\}\)/,
+      /\.\.\.\(data\.issuedByName\s*\?\s*\{\s*doctor_name:\s*data\.issuedByName,\s*attending_doctor_name:\s*data\.issuedByName\s*\}\s*:\s*\{\}\)/,
     );
     // body(본문 스냅샷)는 항상 그대로 출력(조건부 아님) — 발행 body 불변
     expect(PRINT_SRC).toMatch(/\[bodyField\]:\s*data\.body\s*\?\?\s*''/);

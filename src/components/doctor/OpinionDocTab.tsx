@@ -346,7 +346,9 @@ export interface ClinicDoctorOption {
   license_no: string | null;
   is_default: boolean;
 }
-function useClinicDoctors(clinicId: string | null) {
+// T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): DocRequestQueue '행정 발급 정보 정정'의
+//   담당의 드롭다운이 동일 옵션 소스(clinic_doctors active)를 재사용하도록 export(중복 구현 금지).
+export function useClinicDoctors(clinicId: string | null) {
   return useQuery<ClinicDoctorOption[]>({
     queryKey: ['opinion_clinic_doctors', clinicId],
     enabled: !!clinicId,
