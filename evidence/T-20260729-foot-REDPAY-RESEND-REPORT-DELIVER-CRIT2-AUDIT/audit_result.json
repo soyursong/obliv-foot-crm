@@ -1,0 +1,281 @@
+{
+  "report": {
+    "ticket": "T-20260729-foot-REDPAY-RESEND-REPORT-DELIVER-CRIT2-AUDIT",
+    "window": "2026-07-28 (KST 하루치 전체)",
+    "read_only": true,
+    "dml_free_selfcheck": "PASS(SELECT/log-read only)",
+    "AC1_deliverable": {
+      "a_total_and_delay": {
+        "total_rows_allday": 43,
+        "delay_computable": 40,
+        "no_approved_at_excluded": 3,
+        "webhook_shape": 3,
+        "poller_shape": 40,
+        "mean_s": 100.9,
+        "median_s": 59.2,
+        "max_s": 245.3,
+        "min_s": 19.9,
+        "negative": 0
+      },
+      "b_resend_by_criterion": {
+        "crit1_event_id_dup": 0,
+        "crit2_retry_marker": "INVALID(필드부재)",
+        "crit3_cadence_tight_total": 2,
+        "crit3_breakdown_tight": {
+          "1min": 2,
+          "5min": 0,
+          "30min": 0
+        },
+        "hits_detail": [
+          {
+            "external_trxid": "0728C8552027",
+            "src": "poller",
+            "event_id": "∅",
+            "delay_s": "60.5"
+          },
+          {
+            "external_trxid": "0728C8528816",
+            "src": "poller",
+            "event_id": "∅",
+            "delay_s": "61.5"
+          }
+        ]
+      },
+      "c_normal_path_only": {
+        "n": 38,
+        "mean_s": 103,
+        "median_s": 58.7,
+        "max_s": 245.3,
+        "min_s": 19.9
+      }
+    },
+    "AC2_crit2_validity": {
+      "retry_marker_field_exists": false,
+      "verdict": "기준 자체 무효(필드 부재) — \"0건 탐지\" 아님",
+      "top_level_keys": [
+        "_mode",
+        "_source",
+        "amount",
+        "approval_no",
+        "approved_at",
+        "cancelled_at",
+        "data",
+        "event_id",
+        "event_type",
+        "merchant",
+        "occurred_at",
+        "order_no",
+        "payment_method",
+        "pg_name",
+        "pg_type",
+        "root_trxid",
+        "status",
+        "status_name",
+        "tid",
+        "trxid"
+      ],
+      "data_keys": [
+        "amount",
+        "approval_no",
+        "business_no",
+        "merchant_id",
+        "merchant_name",
+        "status",
+        "tid",
+        "trxid"
+      ],
+      "note": "webhook형=event_id/event_type/occurred_at/data/_mode/_source. poller형=tid/trxid/amount/status/pg_*/order_no/... 어디에도 retry/attempt/redelivery 표시 없음. HTTP 헤더(실 retry-count 위치)는 raw_payload 미적재 → 구조적 부재."
+    },
+    "AC7_dedup": {
+      "rows_with_event_id": 3,
+      "total": 43,
+      "dup_event_id_groups": 0,
+      "dup_event_id_rows": 0,
+      "mechanism": "redpay-webhook EF upsert onConflict(external_trxid,external_status,amount) DO UPDATE → 동일 event_id/폴러 선행분 동일 행 수렴(멱등). 재수신은 새 행을 남기지 않고 received_at 만 최신 덮음.",
+      "implication": "중복 event_id 0 = \"재전송 없음\"이 아니라 \"dedup으로 소거되어 중복행 미잔존\"과 구분 불가 → 근거#1은 재전송 유무 판정에 신뢰 불가(dedup 하류)."
+    },
+    "AC3_genuine_30min_late": {
+      "count_tight": 0,
+      "count_wide": 0,
+      "verdict": "우리 측 DB 기준 진짜 30분 지각분 = 0건 (tight·wide 공통). 단 (C)미도달형은 DB에 흔적 없음 → \"0건 확정\" 단정 불가(AC-8)."
+    },
+    "AC6_ef_non2xx": {
+      "status_breakdown": [
+        {
+          "mth": "POST",
+          "n": 43,
+          "sc": 200
+        },
+        {
+          "mth": "GET",
+          "n": 1,
+          "sc": 405
+        },
+        {
+          "mth": "POST",
+          "n": 1,
+          "sc": 503
+        }
+      ],
+      "non2xx_events": [
+        {
+          "kst": "2026-07-28 16:43:16",
+          "method": "POST",
+          "status": 503
+        },
+        {
+          "kst": "2026-07-28 19:54:42",
+          "method": "GET",
+          "status": 405
+        }
+      ],
+      "non2xx_POST_count": 1,
+      "verdict": "(B)형 재전송 트리거 후보 = non-2xx POST 1건 → RedPay 재시도 대상. \"재전송 0건\" 확정 불가.",
+      "note": "405는 GET(결제 payload 아님·RedPay 발송 아님). 503(POST)은 플랫폼 레벨 응답(핸들러 미도달 = event_id/payload 미적재). RedPay 발송이었다면 non-2xx→재시도 대상."
+    },
+    "AC8_taxonomy": {
+      "B_reached_error_response": {
+        "def": "수신부 도달 후 non-2xx(401/500/플랫폼503) → RedPay 재시도. 우리 로그로 판정 가능.",
+        "our_data_count": 1
+      },
+      "C_undelivered": {
+        "def": "네트워크·순간장애로 수신부 미도달 → RedPay 재시도. 최종성공 1회만 저장 → event_id 중복 0·응답코드 이력 0 → 우리 데이터로 판정 불가.",
+        "candidate_weak_signal": "1분창 근접 2건(tight)/5건(wide) = (C) 후보(약한 신호, 확정 아님)",
+        "resolution": "외부 RedPay 발송 로그(7/28 재시도 이력 포함) 대조 필요 — 우리 측 데이터로 폐쇄 불가."
+      }
+    }
+  },
+  "raw": {
+    "inventory": [
+      {
+        "total_rows_allday": 43,
+        "delay_computable": 40,
+        "no_approved_at": 3,
+        "webhook_shape": 3,
+        "poller_shape": 40
+      }
+    ],
+    "delayStats": [
+      {
+        "n": 40,
+        "mean_s": "100.9",
+        "median_s": "59.2",
+        "max_s": "245.3",
+        "min_s": "19.9",
+        "negative": 0
+      }
+    ],
+    "keyUniverse": [
+      {
+        "top_level_keys": [
+          "_mode",
+          "_source",
+          "amount",
+          "approval_no",
+          "approved_at",
+          "cancelled_at",
+          "data",
+          "event_id",
+          "event_type",
+          "merchant",
+          "occurred_at",
+          "order_no",
+          "payment_method",
+          "pg_name",
+          "pg_type",
+          "root_trxid",
+          "status",
+          "status_name",
+          "tid",
+          "trxid"
+        ],
+        "data_keys": [
+          "amount",
+          "approval_no",
+          "business_no",
+          "merchant_id",
+          "merchant_name",
+          "status",
+          "tid",
+          "trxid"
+        ]
+      }
+    ],
+    "retryMarker": [
+      {
+        "rows": 43,
+        "has_any_retry_marker": 0
+      }
+    ],
+    "eventId": [
+      {
+        "rows_with_eid": 3,
+        "total": 43,
+        "dup_groups": 0,
+        "dup_rows": "0"
+      }
+    ],
+    "cadence": [
+      {
+        "1min_pm15": 2,
+        "5min_pm15": 0,
+        "30min_pm15": 0,
+        "1min_pm60": 5,
+        "5min_pm60": 0,
+        "30min_pm60": 0
+      }
+    ],
+    "cadenceHits": [
+      {
+        "external_trxid": "0728C8552027",
+        "src": "poller",
+        "event_id": "∅",
+        "delay_s": "60.5"
+      },
+      {
+        "external_trxid": "0728C8528816",
+        "src": "poller",
+        "event_id": "∅",
+        "delay_s": "61.5"
+      }
+    ],
+    "normalPath": [
+      {
+        "n": 38,
+        "mean_s": "103.0",
+        "median_s": "58.7",
+        "max_s": "245.3",
+        "min_s": "19.9"
+      }
+    ],
+    "efStatus": [
+      {
+        "mth": "POST",
+        "n": 43,
+        "sc": 200
+      },
+      {
+        "mth": "GET",
+        "n": 1,
+        "sc": 405
+      },
+      {
+        "mth": "POST",
+        "n": 1,
+        "sc": 503
+      }
+    ],
+    "efNon2xx": [
+      {
+        "mth": "POST",
+        "sc": 503,
+        "ts": 1785224596095000
+      },
+      {
+        "mth": "GET",
+        "sc": 405,
+        "ts": 1785236082716000
+      }
+    ]
+  }
+}
