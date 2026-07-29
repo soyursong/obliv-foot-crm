@@ -255,6 +255,11 @@ export default function Assignments() {
   //   초기값 = 오늘(KST). 오늘 선택 시 [당월누적] = 기존 '직원별 당월 누적' 수치와 동일(회귀0).
   const [selectedDate, setSelectedDate] = useState<string>(() => todaySeoulISODate());
 
+  // T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO: [일일 배정 목표] = 차주(다음 주 월~일) 요일별 초진 예약 건수 자동 표시.
+  //   집계 SSOT = monthInitResvCount 와 동일 술어(reservations visit_type='new' + status!=cancelled + reservation_date DATE범위).
+  //   read-only 파생 표시(write 0). null=로딩 중(미조회), 조회 후 0건 일자는 0으로 표시(AC-5).
+  const [nextWeekTargets, setNextWeekTargets] = useState<Record<string, number> | null>(null);
+
   // T-20260710-foot-ASSIGNMENT-LIST-TAB: 상위 탭 3분기 [상담]/[치료]/[배정목록].
   //  · 상담/치료 → 기존 배정 운영 카드(①오늘현황 ②당김 ③금일배분 ④당월누적) 노출 + activeTab 동기화(로직 불변).
   //  · 배정목록 → 카테고리(상담/치료) 드롭 → 담당자(상담사/치료사) 드롭 → 선택 담당자 금일 배정 환자목록 read-only 표시.
@@ -697,6 +702,69 @@ export default function Assignments() {
   const dailyTargetOf = useCallback((_st: StaffStat): number | null => {
     return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
   }, []);
+
+  // ── T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO ────────────────────────────────
+  //   [일일 배정 목표] = 차주(다음 주) 요일별 초진 예약 건수 자동 계산 + 실시간 반영.
+  //   주 경계 = 월~일(ISO week). 오늘(KST)이 속한 주의 월요일 +7일 = 다음 주 월요일, +6일 = 다음 주 일요일.
+  //   confirm_pending(AC-1): 월~일 기본값으로 착수(현장 이견 시 fast-fix).
+  const nextWeekRange = useMemo(() => {
+    const nextMon = isoAddDays(mondayOfIso(todaySeoulISODate()), 7);
+    const nextSun = isoAddDays(nextMon, 6);
+    const days = Array.from({ length: 7 }, (_, i) => isoAddDays(nextMon, i)); // [월..일] 7개 ISO
+    return { nextMon, nextSun, days };
+  }, []);
+
+  // 집계: 차주 범위 초진 예약을 reservation_date(방문일) 기준 일자별 카운트.
+  //   술어 SSOT = monthInitResvCount 와 동일(visit_type='new' + status!=cancelled). 취소=집계 제외(AC-2/AC-4).
+  const fetchNextWeekTargets = useCallback(async () => {
+    if (!clinic) return;
+    const { nextMon, nextSun } = nextWeekRange;
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('reservation_date')
+      .eq('clinic_id', clinic.id)
+      .eq('visit_type', 'new')
+      .neq('status', 'cancelled')
+      .gte('reservation_date', nextMon)
+      .lte('reservation_date', nextSun);
+    if (error) {
+      console.warn('[Assignments] next-week target load failed:', error);
+      return; // 실패 시 직전 표시 유지(빈 상태로 덮어쓰지 않음)
+    }
+    const counts: Record<string, number> = {};
+    for (const r of (data ?? []) as { reservation_date: string | null }[]) {
+      const d = r.reservation_date;
+      if (!d) continue;
+      const key = d.slice(0, 10); // DATE 'YYYY-MM-DD'
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    setNextWeekTargets(counts);
+  }, [clinic, nextWeekRange]);
+
+  // [상담]/[치료] 탭 진입 시 조회(랭킹/배정목록 탭에서는 미조회 — egress 절감).
+  useEffect(() => {
+    if (mainTab !== 'consult' && mainTab !== 'therapy') return;
+    void fetchNextWeekTargets();
+  }, [mainTab, fetchNextWeekTargets]);
+
+  // 실시간 반영(AC-3/AC-4): reservations 변경 구독 → 재조회. 기존 realtime 패턴 재사용(Reservations.tsx 동형).
+  useEffect(() => {
+    if (!clinic) return;
+    if (mainTab !== 'consult' && mainTab !== 'therapy') return;
+    const ch = supabase
+      .channel(`assign_nextweek_target_${clinic.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations', filter: `clinic_id=eq.${clinic.id}` },
+        () => {
+          void fetchNextWeekTargets();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [clinic, mainTab, fetchNextWeekTargets]);
 
   // ── [랭킹] 탭 (T-20260726-...-ADMINLOCK + T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC) ──────
   //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
@@ -1277,6 +1345,44 @@ export default function Assignments() {
       {/* ── [상담]/[치료] 탭: 기존 배정 운영 카드(①~④). 배정목록·랭킹 탭에서는 미노출. ── */}
       {(mainTab === 'consult' || mainTab === 'therapy') && (
         <>
+      {/* ⓪ 일일 배정 목표 (차주 초진 예약) — T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO.
+          차주(다음 주 월~일) 요일별 초진(신규 첫 방문) 예약 건수 = 그 날의 배정 목표. read-only, 실시간 자동 갱신. */}
+      <Card data-testid="assignments-nextweek-target-card">
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm">일일 배정 목표 · 차주 초진 예약</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            다음 주({nextWeekRange.nextMon.slice(5).replace('-', '.')}~{nextWeekRange.nextSun.slice(5).replace('-', '.')}) 요일별 초진(신규 첫 방문) 예약 건수입니다. 예약 생성·취소 시 자동으로 갱신됩니다.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-7 gap-2" data-testid="nextweek-target-grid">
+            {nextWeekRange.days.map((d, i) => {
+              const dow = ['월', '화', '수', '목', '금', '토', '일'][i];
+              const count = nextWeekTargets ? (nextWeekTargets[d] ?? 0) : null; // null=로딩, 조회 후 0건=0(AC-5)
+              const dowClass = i === 6 ? 'text-red-500' : i === 5 ? 'text-blue-500' : 'text-muted-foreground';
+              return (
+                <div
+                  key={d}
+                  data-testid={`nextweek-target-cell-${d}`}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2 py-4 text-center"
+                >
+                  <span className={`text-sm font-semibold ${dowClass}`}>{dow}</span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {d.slice(5).replace('-', '.')}
+                  </span>
+                  <span
+                    className="text-3xl font-bold tabular-nums text-emerald-700"
+                    data-testid={`nextweek-target-count-${d}`}
+                  >
+                    {count == null ? '·' : count}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ① 오늘 배정 현황 */}
       <Card>
         <CardHeader className="py-3">
