@@ -2,8 +2,10 @@
 id: T-20260729-foot-REDPAY-IDEMPKEY-POLICY-CONFIRM
 domain: foot
 priority: P1
-status: deploy-ready
+status: done
 qa_result: pass
+qa_grade: green
+qa_verified_by: supervisor
 deploy_commit: ba327547
 deployed_at: n/a (no prod change — EF 런타임 로직 무변경, 회귀테스트+보고서만)
 bundle_hash: n/a (ef_only, no FE bundle)
@@ -68,3 +70,21 @@ branch = 무변경(정정 없음)이므로 "정정 후" 백필/재적재 불필�
 
 승인번호(approval_no)는 당일 범위 밖에서 멱등키로 사용하지 않음. 현행 키는 approval_no를
 멱등키에 포함하지 않으므로 위반 없음(approval_no는 row에 저장만, 키 아님).
+
+## supervisor QA 검증 (독립 재검증, 2026-07-29)
+
+**판정: GO / qa_result=pass / qa_grade=Green (no-change close, 무변경 종결)**
+
+독립 실측 대조 — dev-foot 주장 전항 일치:
+- **AC-1 EF onConflict**: `index.ts:357` = `onConflict: "external_trxid,external_status,amount"` ✅ (직접 확인)
+- **DB UNIQUE**: `20260607190000_pay_recon_port.sql:81` = `CONSTRAINT redpay_raw_trx_unique UNIQUE (external_trxid, external_status, amount)` ✅ → EF↔DB 3-튜플 정확 일치. trxid 단독 축소 없음(정책 준수).
+- **AC-4 회귀 가드**: `deno test verify.test.ts` 로컬 재실행 = **22 passed / 0 failed** ✅ (신규 "송도 동시 승인/취소 보존(AC-4)" 테스트 pass 확인). 테스트가 canonical 키의 별-row 보존 + 진짜중복 차단 + trxid-단독이면 흡수됨(금지 정책) 명시 assert.
+- **AC-3 db_change=false**: 신규 DDL 0. 기존 composite UNIQUE가 이미 정본 → DA CONSULT 불요.
+
+게이트:
+- 변경 = 테스트(+44) + 보고서(+70) + 티켓 frontmatter 만. **EF 런타임 무변경**(diff에 index.ts/verify.ts 등 런타임 파일 0) → Build env matrix / Browser sim / E2E = N/A(ef_only).
+- **§8 2.8 / C18 DA HOLD 재확인 = CLEAR**: foot/redpay 활성 HOLD는 `T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY`(Slack 봇토큰 503) 단독 — 본 멱등키 확인과 code-path/DDL/deploy 공유 0 → **not crossed**. 본 티켓 대상 활성 HOLD/additive binding 0, supervisor MQ 미처리 DA 0.
+- **C19 계약자산 RPC body-drift = N/A** (RPC/DDL 무변경).
+- 회귀가드 test + 보고서 이미 `origin/main`(HEAD b7796d19) 착지 → CI 상시 커버. 별도 merge/push/EF 재배포 불요.
+
+현장 알림 = **미발송**(가시 변화 0, 무변경 종결). prod 실샘플 보존 카운트는 read-only 조회로 확정 가능하나 정정 불요라 non-blocking.
