@@ -1,0 +1,66 @@
+{
+  "ticket": "T-20260729-foot-DOCSEAL-HANDKIM-OLDVER-MAPFIX",
+  "clinic": {
+    "id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "slug": "jongno-foot"
+  },
+  "mode": "apply",
+  "targets": [
+    {
+      "name": "한동훈",
+      "doc_id": "ab2819be-d56c-41b9-bc97-da01123ab2a6",
+      "action": "update",
+      "before": {
+        "seal_image_url": "seals/74967aea-a60b-4da3-a0e7-9c997a930bc8/ab2819be-d56c-41b9-bc97-da01123ab2a6.png",
+        "stored": {
+          "size": 35821,
+          "sha256": "a2f669bb9f42d68f433072f0f2c54acd572515a50b4ce96db33a1302e305f583",
+          "reachable": true
+        }
+      },
+      "after": {
+        "seal_image_url": "seals/74967aea-a60b-4da3-a0e7-9c997a930bc8/2fb74ddf-392b-4672-b836-4f86c14d9f82.png",
+        "stored": {
+          "size": 104831,
+          "sha256": "de57a9cf9a6b3a6b38311166c562a69399fa92c8309ad07d3ee1e7d5daeb302f",
+          "reachable": true
+        },
+        "signed_reachable": true
+      },
+      "new_asset": {
+        "source": "/Users/domas/claude-sync/memory/_handoff/ticket_assets/T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT/foot_seal_한동훈.png",
+        "size": 104831,
+        "sha256": "de57a9cf9a6b3a6b38311166c562a69399fa92c8309ad07d3ee1e7d5daeb302f"
+      },
+      "asset_match": true
+    },
+    {
+      "name": "김윤기",
+      "doc_id": "57953f10-1427-438e-9406-ee0b02efef44",
+      "action": "update",
+      "before": {
+        "seal_image_url": "seals/74967aea-a60b-4da3-a0e7-9c997a930bc8/57953f10-1427-438e-9406-ee0b02efef44.png",
+        "stored": {
+          "size": 31913,
+          "sha256": "c0c6d085706226d606ba01c02cb43e6d4659a1bffc6dbbf12d95a76ab82e7569",
+          "reachable": true
+        }
+      },
+      "after": {
+        "seal_image_url": "seals/74967aea-a60b-4da3-a0e7-9c997a930bc8/162e12fb-033b-40fa-9e0c-3b119c19ccb3.png",
+        "stored": {
+          "size": 94948,
+          "sha256": "528496bb26dd937bc9425b18a2296167b18f196c9e7f2a4270d30febefa3b0ab",
+          "reachable": true
+        },
+        "signed_reachable": true
+      },
+      "new_asset": {
+        "source": "/Users/domas/claude-sync/memory/_handoff/ticket_assets/T-20260715-foot-RECEIPT-REPNAME-SEAL-BODYPORT/foot_seal_김윤기.png",
+        "size": 94948,
+        "sha256": "528496bb26dd937bc9425b18a2296167b18f196c9e7f2a4270d30febefa3b0ab"
+      },
+      "asset_match": true
+    }
+  ]
+}
