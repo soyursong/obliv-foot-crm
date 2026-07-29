@@ -110,19 +110,28 @@ function mondayOfIso(iso: string): string {
 function monthStartOfIso(iso: string): string {
   return `${iso.slice(0, 7)}-01`;
 }
-/** 선택일 기준 4구간(월누적/이번주/직전주) DATE 경계 산출. */
+/** 선택일 기준 구간(월누적/이번주/직전주 + 전월 전체) DATE 경계 산출.
+ *  T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT: 월간 변동표용 전월 경계 추가.
+ *   당월 순위 = monthStart~선택일(기존 perfRows, 재산정 없음) / 전월 순위 = prevMonthStart~prevMonthEnd(전월 1일~말일).
+ *   전월매출은 fetchConsultantPerf 동일 엔진 READ 파생(신규 저장 0, db_change=false). */
 function rankingRanges(selDateIso: string): {
   monthStart: string;
   thisWeekMon: string;
   prevWeekMon: string;
   prevWeekSun: string;
+  prevMonthStart: string;
+  prevMonthEnd: string;
 } {
   const thisWeekMon = mondayOfIso(selDateIso);
+  const monthStart = monthStartOfIso(selDateIso);
+  const prevMonthEnd = isoAddDays(monthStart, -1); // 당월 1일 하루 전 = 전월 말일
   return {
-    monthStart: monthStartOfIso(selDateIso),
+    monthStart,
     thisWeekMon,
     prevWeekMon: isoAddDays(thisWeekMon, -7),
     prevWeekSun: isoAddDays(thisWeekMon, -1),
+    prevMonthStart: monthStartOfIso(prevMonthEnd), // 전월 1일
+    prevMonthEnd,
   };
 }
 /** 매출액 배열 → staffId별 순위(1위=최고매출, 동점 tie-break=이름). 0/미참여는 후순위. */
@@ -137,6 +146,103 @@ function rankByRevenue(
   const m = new Map<string, number>();
   sorted.forEach((id, i) => m.set(id, i + 1));
   return m;
+}
+
+// ── 실장별 랭킹 변동표 공통 행 모델 + 프레젠테이션 (주간·월간 단일 포맷 소스) ─────────────
+//  T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT:
+//   · divergence 가드(CHART-ORDER R2 좀비 교훈): 주간/월간이 행 포맷을 각자 구현하지 않도록 렌더를 단일 소스로 수렴.
+//     durable marker=assignments-ranking-variation-card(주간 인스턴스 testid 유지) / ranking-variation-delta.
+//   · 행 포맷 = [실장명 → 변동(↑N/↓N/-) → 이번(당월) 순위 → 전(전월/전주) 순위]. 이번 순위 오름차순(호출부에서 정렬).
+//   · delta = prevRank − thisRank ( >0 = 순위 상승 ↑N / <0 = 하락 ↓N / 0·null = - ).
+interface VariationRow {
+  consultantId: string;
+  name: string;
+  prevRank: number | null;
+  thisRank: number | null;
+  delta: number | null;
+}
+function VariationTable({
+  title,
+  subtitle,
+  rows,
+  loading,
+  thisLabel,
+  prevLabel,
+  cardTestId,
+}: {
+  title: string;
+  subtitle: string;
+  rows: VariationRow[];
+  loading: boolean;
+  thisLabel: string; // 이번주 순위 / 당월 순위
+  prevLabel: string; // 전주 순위 / 전월 순위
+  cardTestId: string;
+}) {
+  return (
+    <Card data-testid={cardTestId}>
+      <CardHeader className="py-3">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="max-h-[40vh] overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">실장명</th>
+                <th className="px-3 py-2 text-center font-medium">변동</th>
+                <th className="px-3 py-2 text-center font-medium">{thisLabel}</th>
+                <th className="px-3 py-2 text-center font-medium">{prevLabel}</th>
+              </tr>
+            </thead>
+            <tbody data-testid="ranking-variation-rows">
+              {!loading && rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-3 py-8 text-center text-muted-foreground"
+                    data-testid="ranking-variation-empty"
+                  >
+                    표시할 변동 데이터가 없습니다.
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                rows.map((v) => (
+                  <tr
+                    key={v.consultantId}
+                    className="border-b last:border-0 hover:bg-muted/20"
+                    data-testid="ranking-variation-row"
+                  >
+                    <td className="px-3 py-2.5 font-medium">{v.name}</td>
+                    <td
+                      className="px-3 py-2.5 text-center font-semibold tabular-nums"
+                      data-testid="ranking-variation-delta"
+                    >
+                      {v.delta == null ? (
+                        <span className="text-muted-foreground">-</span>
+                      ) : v.delta > 0 ? (
+                        <span className="text-emerald-600">↑{v.delta}</span>
+                      ) : v.delta < 0 ? (
+                        <span className="text-red-500">↓{Math.abs(v.delta)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-center tabular-nums">
+                      {v.thisRank != null ? `${v.thisRank}위` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-center tabular-nums">
+                      {v.prevRank != null ? `${v.prevRank}위` : '—'}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function activeRole(status: CheckInStatus): AssignmentRole | null {
@@ -226,6 +332,9 @@ export default function Assignments() {
   //   #4 전주매출(직전주 월~일) / 이번주매출(이번주 월~선택일) — 주간 랭킹 변동표 + 전주매출 컬럼 소스.
   const [prevWeekRevenue, setPrevWeekRevenue] = useState<Map<string, number>>(new Map());
   const [thisWeekRevenue, setThisWeekRevenue] = useState<Map<string, number>>(new Map());
+  //   T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT: 전월(전월 1일~말일) 매출 — 월간 랭킹 변동표 전월 순위 소스.
+  //     당월 순위는 perfRows(월매출 1일~선택일) 재사용(재산정 없음). fetchConsultantPerf 동일 엔진 READ 파생(신규 저장 0).
+  const [prevMonthRevenue, setPrevMonthRevenue] = useState<Map<string, number>>(new Map());
   //   #6 배정 건 수 — 선택일 당일 check_ins.consultant_id 배정 수(배정 SSOT=check_ins, 재발명 금지).
   const [dayAssignCounts, setDayAssignCounts] = useState<Map<string, number>>(new Map());
   //   #5 당월 초진 예약 총건수(reservations visit_type='new', 취소 제외) × 랭크 배정비율 → 예상 배정건수.
@@ -880,15 +989,19 @@ export default function Assignments() {
     void (async () => {
       setRankLoading(true);
       const clinicId = clinic.id;
-      const { monthStart, thisWeekMon, prevWeekMon, prevWeekSun } = rankingRanges(rankingDate);
+      const { monthStart, thisWeekMon, prevWeekMon, prevWeekSun, prevMonthStart, prevMonthEnd } =
+        rankingRanges(rankingDate);
       const dayStart = `${rankingDate}T00:00:00+09:00`;
       const dayEndExcl = `${isoAddDays(rankingDate, 1)}T00:00:00+09:00`;
       const monthEndExcl = `${isoAddDays(monthStart, 32).slice(0, 7)}-01`; // 선택일 달의 다음달 1일(DATE)
       try {
-        const [monthPerf, prevPerf, thisPerf, dayCi, initResv, tgtCfg] = await Promise.all([
+        const [monthPerf, prevPerf, thisPerf, prevMonthPerf, dayCi, initResv, tgtCfg] =
+          await Promise.all([
           fetchConsultantPerf(clinicId, monthStart, rankingDate),
           fetchConsultantPerf(clinicId, prevWeekMon, prevWeekSun),
           fetchConsultantPerf(clinicId, thisWeekMon, rankingDate),
+          // 월간 변동표 전월 순위 소스(전월 1일~말일). 동일 엔진·동일 R1 정합(재직/clinic/deleted_at) 계승.
+          fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd),
           supabase
             .from('check_ins')
             .select('consultant_id')
@@ -916,6 +1029,7 @@ export default function Assignments() {
         setPerfRows(monthPerf);
         setPrevWeekRevenue(toRevMap(prevPerf));
         setThisWeekRevenue(toRevMap(thisPerf));
+        setPrevMonthRevenue(toRevMap(prevMonthPerf));
         const dc = new Map<string, number>();
         for (const r of (dayCi.data ?? []) as { consultant_id: string | null }[]) {
           if (r.consultant_id) dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
@@ -930,6 +1044,7 @@ export default function Assignments() {
           setPerfRows([]);
           setPrevWeekRevenue(new Map());
           setThisWeekRevenue(new Map());
+          setPrevMonthRevenue(new Map());
           setDayAssignCounts(new Map());
           setMonthInitResvCount(0);
           setDailyTargetCfg(null);
@@ -982,13 +1097,7 @@ export default function Assignments() {
   // ── #3 하단 실장별 랭킹 변동표 (주간 기준 — 전주 순위 vs 이번주 순위, 각 매출 desc) ──────────
   //  기준 확정(#4): 주간(직전주 월~일 vs 이번주 월~선택일). 스펙 예시(전주 순위/이번주 순위) 정합.
   //  delta = prevRank − thisRank ( >0 = 순위 상승 ↑N / <0 = 하락 ↓N / 0 = 유지 - ).
-  interface VariationRow {
-    consultantId: string;
-    name: string;
-    prevRank: number | null;
-    thisRank: number | null;
-    delta: number | null;
-  }
+  //  VariationRow 는 모듈 스코프 hoist(주간·월간 공통 모델). thisRank 오름차순 정렬(스펙 §2).
   const variationRows = useMemo<VariationRow[]>(() => {
     const ids = perfRows.map((r) => r.consultant_id);
     const nameMap = new Map(perfRows.map((r) => [r.consultant_id, r.name ?? '—']));
@@ -1009,6 +1118,31 @@ export default function Assignments() {
       })
       .sort((a, b) => (a.thisRank ?? 9999) - (b.thisRank ?? 9999));
   }, [perfRows, prevWeekRevenue, thisWeekRevenue]);
+
+  // ── 월간 실장별 랭킹 변동표 (T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT §작업1) ──
+  //  전월(1일~말일) 매출 순위 vs 당월(1일~선택일) 매출 순위. 당월 = perfRows(월매출) 재사용(재산정 없음).
+  //  주간표와 동일 산식(rankByRevenue)·동일 정렬(thisRank 오름차순)·동일 delta 규약. 순위 모수 = 재직 실장(perfRows).
+  const monthVariationRows = useMemo<VariationRow[]>(() => {
+    const ids = perfRows.map((r) => r.consultant_id);
+    const nameMap = new Map(perfRows.map((r) => [r.consultant_id, r.name ?? '—']));
+    const nameOf = (id: string) => nameMap.get(id) ?? '—';
+    const thisMonthRev = new Map(perfRows.map((r) => [r.consultant_id, r.total_amount ?? 0]));
+    const prevRankMap = rankByRevenue(ids, (id) => prevMonthRevenue.get(id) ?? 0, nameOf);
+    const thisRankMap = rankByRevenue(ids, (id) => thisMonthRev.get(id) ?? 0, nameOf);
+    return ids
+      .map((id) => {
+        const pr = prevRankMap.get(id) ?? null;
+        const tr = thisRankMap.get(id) ?? null;
+        return {
+          consultantId: id,
+          name: nameOf(id),
+          prevRank: pr,
+          thisRank: tr,
+          delta: pr != null && tr != null ? pr - tr : null,
+        };
+      })
+      .sort((a, b) => (a.thisRank ?? 9999) - (b.thisRank ?? 9999));
+  }, [perfRows, prevMonthRevenue]);
 
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
@@ -2258,61 +2392,28 @@ export default function Assignments() {
           </CardContent>
         </Card>
 
-        {/* ── #3 하단 실장별 랭킹 변동표(주간: 전주 순위 → 이번주 순위, ↑N/↓N/-) ── */}
-        <Card data-testid="assignments-ranking-variation-card">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm">실장별 랭킹 변동 (주간)</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              직전 주(월~일) 대비 이번 주(월~선택일) 매출 순위 변동
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[40vh] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">실장명</th>
-                    <th className="px-3 py-2 text-center font-medium">전주 순위</th>
-                    <th className="px-3 py-2 text-center font-medium">이번주 순위</th>
-                    <th className="px-3 py-2 text-center font-medium">변동</th>
-                  </tr>
-                </thead>
-                <tbody data-testid="ranking-variation-rows">
-                  {!rankLoading && variationRows.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground" data-testid="ranking-variation-empty">
-                        표시할 변동 데이터가 없습니다.
-                      </td>
-                    </tr>
-                  )}
-                  {!rankLoading &&
-                    variationRows.map((v) => (
-                      <tr key={v.consultantId} className="border-b last:border-0 hover:bg-muted/20" data-testid="ranking-variation-row">
-                        <td className="px-3 py-2.5 font-medium">{v.name}</td>
-                        <td className="px-3 py-2.5 text-center tabular-nums">
-                          {v.prevRank != null ? `${v.prevRank}위` : '—'}
-                        </td>
-                        <td className="px-3 py-2.5 text-center tabular-nums">
-                          {v.thisRank != null ? `${v.thisRank}위` : '—'}
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-semibold tabular-nums" data-testid="ranking-variation-delta">
-                          {v.delta == null ? (
-                            <span className="text-muted-foreground">-</span>
-                          ) : v.delta > 0 ? (
-                            <span className="text-emerald-600">↑{v.delta}</span>
-                          ) : v.delta < 0 ? (
-                            <span className="text-red-500">↓{Math.abs(v.delta)}</span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        {/* ── #3 하단 실장별 랭킹 변동표 (주간·월간) — T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT.
+            · 행 포맷(공통): [실장명 → 변동(↑N/↓N/-) → 이번(당월) 순위 → 전(전월/전주) 순위], 이번 순위 오름차순.
+            · 주간(기존)/월간(신규) 모두 VariationTable 단일 컴포넌트로 렌더(divergence 가드: 포맷 단일 소스).
+            · 기존 레이아웃 관행(카드 세로 스택) 준수 → 월간 카드를 주간 카드 바로 아래 배치. */}
+        <VariationTable
+          title="실장별 랭킹 변동 (주간)"
+          subtitle="직전 주(월~일) 대비 이번 주(월~선택일) 매출 순위 변동"
+          rows={variationRows}
+          loading={rankLoading}
+          thisLabel="이번주 순위"
+          prevLabel="전주 순위"
+          cardTestId="assignments-ranking-variation-card"
+        />
+        <VariationTable
+          title="실장별 랭킹 변동 (월간)"
+          subtitle="전월(1일~말일) 대비 당월(1일~선택일) 매출 순위 변동"
+          rows={monthVariationRows}
+          loading={rankLoading}
+          thisLabel="당월 순위"
+          prevLabel="전월 순위"
+          cardTestId="assignments-ranking-variation-card-monthly"
+        />
 
         {/* ── [랭킹] 탭 §3: '배정 순번 설정' 통합(T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK).
             헤더 우측에 있던 '배정 순번 설정' 진입 버튼을 이 탭 안으로 이동(원 위치 제거 = 중복노출 금지).
