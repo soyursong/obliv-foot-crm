@@ -65,3 +65,14 @@ verify_jwt = false
 #   ※PAYMENT_AUTO_MODE(기본 OFF)로 적재 ON/OFF 롤백 가능. OFF 면 검증·2xx 만 하고 적재 skip.
 [functions.redpay-webhook]
 verify_jwt = false
+
+# T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD (P1, 최필경 C0ATE5P6JTH · 비대기형 결제 매칭/만료 워커):
+#   redpay-planb-match 는 pg_cron(trigger_redpay_planb_match → net.http_post)이 X-Internal-Cron
+#   헤더(=vault internal_cron_secret)만 실어 1분마다 호출한다(Supabase JWT 아님). 게이트웨이 기본
+#   verify_jwt=true 면 EF 코드 도달 전 401 → 워커가 매번 거부되어 pending_payment open 선점의
+#   TTL 만료(expired)/웹훅 raw 매칭(matched) 전이 불가. verify_jwt=false 로 게이트웨이 JWT 검사를
+#   끄고 인증은 EF 내부(index.ts: X-Internal-Cron==INTERNAL_CRON_SECRET 또는 service_role Bearer,
+#   불일치/누락 → 401)에 위임 → secret 검증이 인증의 단일 관문이므로 unauth hole 없음
+#   (redpay-reconcile / redpay-webhook / attendance-sync 동일 컨벤션).
+[functions.redpay-planb-match]
+verify_jwt = false

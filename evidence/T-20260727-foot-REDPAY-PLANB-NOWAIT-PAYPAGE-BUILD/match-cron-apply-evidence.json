@@ -1,0 +1,33 @@
+{
+  "ticket": "T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD",
+  "migration": "20260729130000_foot_redpay_planb_match_cron.sql",
+  "ddl_diff_go": "MSG-20260729-094524-wz52 (supervisor, verdict=GO)",
+  "applied_by": "dev-foot",
+  "applied_at_utc": "2026-07-29T01:00:xx",
+  "step0_ef_deploy": {
+    "function": "redpay-planb-match",
+    "method": "supabase functions deploy --use-api (local eszip bundler ENOENT → server-side bundle)",
+    "status": "ACTIVE version=1 verify_jwt=false",
+    "config_toml": "[functions.redpay-planb-match] verify_jwt=false 추가 (reconcile/webhook 동형)",
+    "probe_no_auth": "401 unauthorized (guard OK)",
+    "probe_service_role": "200 {ok:true,expired:0,matched:0,skipped_ambiguous:0}"
+  },
+  "pre_probe": { "pg_proc_absent": true, "cron_job_absent": true, "verdict": "clean CREATE (C19 bootstrap, OOB stomp 대상無)" },
+  "dryrun": { "exit0": true, "no_persistence": true, "post_probe_func_absent": true, "post_probe_cron_absent": true },
+  "apply": { "applied": true, "single_txn": true, "ledger_version": "20260729130000", "ledger_recorded": true },
+  "post_probe": {
+    "func_present": true,
+    "c19_baseline_body_md5": "1d03db74fb8076a57895e6eee0381e0b",
+    "cron_schedule": "* * * * *",
+    "cron_active": true
+  },
+  "step5_manual_tick": {
+    "db_fn_return": "{ok:true, run_at:2026-07-29 01:01:42 UTC}",
+    "net_http_response_status": 200,
+    "ef_body": "{ok:true, run_at, expired:0, matched:0, skipped_ambiguous:0}",
+    "vault_path_proven": "get_vault_secret(internal_cron_secret)==EF INTERNAL_CRON_SECRET (200 not 401) + get_vault_secret(supabase_project_url) resolves",
+    "autonomous_cron_tick_200": "01:01:00 UTC auto-fire also 200 (cron live, firing 매 1분)"
+  },
+  "additive": "신규 함수1 + cron job1. 테이블/스키마/enum/RLS/트리거 무접촉. 파괴적 변경 0.",
+  "rollback": "20260729130000_foot_redpay_planb_match_cron.rollback.sql (unschedule + DROP FUNCTION IF EXISTS, 멱등)"
+}
