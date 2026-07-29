@@ -2,6 +2,22 @@
 project_id = "rxlomoozakkjesdqjtvd"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Auth email templates (version-controlled SSOT)
+#
+# T-20260729-foot-PWRESET-EMAIL-LINK-BLOCKED-DANGEROUS (P1):
+#   비번재설정 메일의 '비밀번호 재설정'이 클릭 불가 단순 텍스트로 렌더(현장 스샷 F0BLA8KREFM).
+#   진단 결과 H2(anchor 미포함)=DISCONFIRMED — 원본 recovery template 이미 anchor 보유.
+#   실 증상 RC = 수신측 클라이언트 text/plain 렌더 / 링크 flatten. 방어 처방으로 recovery
+#   template 을 하드닝(anchor 버튼 유지 + 원본 URL 가시 fallback + Korean 로컬라이즈)하고
+#   dashboard-only 였던 template 을 repo 로 version-control(SSOT·rollback base).
+#   ※실제 prod 반영은 Management API PATCH(mailer_templates_recovery_content/subject)로 수행됨.
+#     롤백 = evidence/.../AC6-original-recovery-template-ROLLBACK-BASE.json 의 원본 content 복원.
+# ─────────────────────────────────────────────────────────────────────────────
+[auth.email.template.recovery]
+subject = "[오블리브 풋케어] 비밀번호 재설정 안내"
+content_path = "./supabase/templates/recovery.html"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Edge Function 게이트웨이 설정
 #
 # T-20260629-foot-INGEST-EF-401-VERIFYJWT (P0 hotfix):
