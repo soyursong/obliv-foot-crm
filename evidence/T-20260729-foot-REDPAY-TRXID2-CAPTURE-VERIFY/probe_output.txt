@@ -1,0 +1,43 @@
+═══════════════════════════════════════════════════════════════
+T-20260729-foot-REDPAY-TRXID2-CAPTURE-VERIFY  READ-ONLY probe
+URL: https://rxlomoozakkjesdqjtvd.supabase.co | table: public.redpay_raw_transactions
+target trxids: K104753584526072816401800015160 , K104753584526072816404300699427
+═══════════════════════════════════════════════════════════════
+
+[AUTH-CTX ①] service_role (RLS bypass) — 권위 판정
+rows returned: 2
+
+  ✓ [FOUND] K104753584526072816401800015160
+      external_status = Y
+      amount          = 8800  (기대 8800) ✅일치
+      approval_no     = 00015160  (기대 00015160) ✅일치
+      approved_at     = 2026-07-28T07:40:18+00:00
+      cancelled_at    = null
+      received_at     = 2026-07-28T07:43:08.204+00:00  (웹훅경로)
+      created_at      = 2026-07-28T07:43:08.253113+00:00
+      clinic_id       = 74967aea-a60b-4da3-a0e7-9c997a930bc8
+      tid             = 1047535845  root_trxid=null
+      matched_payment = null  match_rule=null
+
+  ✓ [FOUND] K104753584526072816404300699427
+      external_status = Y
+      amount          = 42000  (기대 42000) ✅일치
+      approval_no     = 00699427  (기대 00699427) ✅일치
+      approved_at     = 2026-07-28T07:40:43+00:00
+      cancelled_at    = null
+      received_at     = 2026-07-28T07:44:20.845+00:00  (웹훅경로)
+      created_at      = 2026-07-28T07:44:20.888198+00:00
+      clinic_id       = 74967aea-a60b-4da3-a0e7-9c997a930bc8
+      tid             = 1047535845  root_trxid=null
+      matched_payment = null  match_rule=null
+
+[AUTH-CTX ②] anon (RLS 적용) — 컨텍스트 대조(판정근거 아님)
+  ok=false status=401 rows=n/a
+  (anon 조회 오류/차단: {"code":"42501","details":null,"hint":null,"message":"permission denied for table user_profiles"})
+
+═══════════════ 판정 요약 (service_role 권위 기준) ═══════════════
+  K104753584526072816401800015160: 저장됨 status=Y amount=8800 금액일치
+  K104753584526072816404300699427: 저장됨 status=Y amount=42000 금액일치
+
+  총 2건 중 저장 2 / 미저장 0 / 금액불일치 0
+  ✅ 전건 저장 확인
