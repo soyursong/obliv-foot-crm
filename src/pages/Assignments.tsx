@@ -57,6 +57,10 @@ import {
   fetchTodayWorkingStaffIds,
   fetchTodayTempOffStaffIds,
   setStaffTempOff,
+  setAssignmentConsultType,
+  ASSIGNMENT_CONSULT_TYPES,
+  ASSIGNMENT_CONSULT_TYPE_DEFAULT,
+  type AssignmentConsultType,
 } from '@/lib/autoAssign';
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축(deriveConsultAxis)의 초진/재진 입력을 stored visit_type →
 //   recency(365일) 배치 판정으로 통일. 배정 화면 표시·재진 상담칸 숨김이 접수분류·배지·엔진과 수렴(AC-3).
@@ -643,11 +647,30 @@ export default function Assignments() {
       if (s.role === 'consultant' || s.role === 'therapist') ensure(s);
     }
     // 배정(초진)/배정(재진) — check_ins 정본(자동+수동 공통, 1건당 1회 / 역할별 분리)
-    //   day/month 각 구간에 checked_in_at 기준으로 명단 push(구간에 함께 속하면 둘 다 push).
-    const bumpAssign = (st: StaffStat, isReturning: boolean, ms: number, item: AssignDrillItem) => {
-      const key = isReturning ? 'returning' : 'assigned';
-      if (inMonth(ms)) st.month[key].push(item);
-      if (inDay(ms)) st.day[key].push(item);
+    // T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 상담(consult) 배정 카운트 분류 SSOT 전환.
+    //   자동 365-recency 판정(monthAxisOf) 대신 실장 수동 선택 assignment_consult_type 로 분류
+    //   (대표 확정 스코프: 배정 카운트 축만 부분 재분리. 7/17 통일축 T-20260713 접수·배지·자동배정 판정은 불변).
+    //   카운터 매핑(총괄 SSOT): 초진→배정(초진) / 재진·대리상담→배정(재진) / 당일재상담→전부 제외 /
+    //   NULL(미분류·pre-feature 과거행)→전부 제외(전향 window 자연 배제, DA Q3 백필 금지).
+    //   치료(therapy) 축은 재진 개념 무해당(항상 균등) → 종전 auto-axis 유지(스코프 밖).
+    const assignConsultBucket = (ci: CheckIn): 'assigned' | 'returning' | null => {
+      switch (ci.assignment_consult_type) {
+        case '초진':
+          return 'assigned'; // 배정(초진)
+        case '재진':
+        case '대리상담':
+          return 'returning'; // 배정(재진)
+        case '당일재상담':
+          return null; // 배정(초진)·배정(재진)·목표 전부 미포함(당일 1차 반영, 중복 방지)
+        default:
+          return null; // NULL/미분류(과거행) — 카운터 제외
+      }
+    };
+    //   day/month 각 구간에 checked_in_at 기준으로 명단 push(구간에 함께 속하면 둘 다 push). bucket=null 이면 skip.
+    const bumpAssign = (st: StaffStat, bucket: 'assigned' | 'returning' | null, ms: number, item: AssignDrillItem) => {
+      if (!bucket) return;
+      if (inMonth(ms)) st.month[bucket].push(item);
+      if (inDay(ms)) st.day[bucket].push(item);
     };
     for (const ci of monthCheckIns) {
       const ms = ci.checked_in_at ? new Date(ci.checked_in_at).getTime() : NaN;
@@ -656,13 +679,13 @@ export default function Assignments() {
       if (ci.consultant_id) {
         const s = staff.find((x) => x.id === ci.consultant_id);
         if (s && s.role === 'consultant') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'consult') === 'returning', ms, itemFromCi(ci));
+          bumpAssign(ensure(s), assignConsultBucket(ci), ms, itemFromCi(ci));
         }
       }
       if (ci.therapist_id) {
         const s = staff.find((x) => x.id === ci.therapist_id);
         if (s && s.role === 'therapist') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'therapy') === 'returning', ms, itemFromCi(ci));
+          bumpAssign(ensure(s), monthAxisOf(ci, 'therapy') === 'returning' ? 'returning' : 'assigned', ms, itemFromCi(ci));
         }
       }
     }
@@ -1159,12 +1182,34 @@ export default function Assignments() {
       fromStaffId,
       createdBy: profile?.id ?? null,
     });
+    // T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN 시나리오4: 상담 배정 시 상담유형 미선택(기본값 유지) →
+    //   기본값 '초진'을 함께 영속(신규 배정만; 이미 값 있으면 실장 선택 존중). 카운터가 초진으로 잡히도록 default-persist.
+    //   best-effort — 실패해도 배정 자체는 성공 처리(다음 드롭다운 선택으로 보정 가능).
+    if (res.ok && role === 'consult' && !ci.assignment_consult_type) {
+      await setAssignmentConsultType({ checkInId: ci.id, value: ASSIGNMENT_CONSULT_TYPE_DEFAULT });
+    }
     setBusy(false);
     if (res.ok) {
       toast.success(`수동 배정 → ${staffName(toStaffId)}`);
       void load();
     } else {
       toast.error(res.message ?? '수동 배정 실패');
+    }
+  };
+
+  // T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 담당 옆 "상담유형" 드롭다운 write 핸들러.
+  //   check_ins.assignment_consult_type 단일 컬럼 write(RED LINE: consultant_id/매출귀속 무접촉).
+  //   성공 시 load() → 직원별 누적 배정(초진/재진) 카운트 즉시 재계산.
+  const doSetConsultType = async (ci: CheckIn, value: AssignmentConsultType) => {
+    if (busy || value === ci.assignment_consult_type) return;
+    setBusy(true);
+    const res = await setAssignmentConsultType({ checkInId: ci.id, value });
+    setBusy(false);
+    if (res.ok) {
+      toast.success(`상담유형 → ${value}`);
+      void load();
+    } else {
+      toast.error(res.message ?? '상담유형 저장 실패');
     }
   };
 
@@ -1440,13 +1485,15 @@ export default function Assignments() {
                   <th className="px-2 py-2 text-left font-medium">상태</th>
                   <th className="px-2 py-2 text-left font-medium">축</th>
                   <th className="px-2 py-2 text-left font-medium">담당</th>
+                  {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 담당 옆 상담유형(수동 4종) — 배정 카운트 SSOT 입력 */}
+                  <th className="px-2 py-2 text-left font-medium">상담유형</th>
                   <th className="px-2 py-2 text-right font-medium">액션</th>
                 </tr>
               </thead>
               <tbody>
                 {todayRows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                    <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                       오늘 배정 대상이 없습니다.
                     </td>
                   </tr>
@@ -1506,6 +1553,27 @@ export default function Assignments() {
                               <option value={selectVal}>{staffName(selectVal)} (비출근)</option>
                             )}
                           </select>
+                        )}
+                      </td>
+                      {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 상담유형 드롭다운(4종, App default 초진).
+                          상담(consult) 배정칸이 열린 행에서만 노출 — 자동재진 숨김/치료축은 카운트 대상 아님(—). */}
+                      <td className="px-2 py-2">
+                        {role === 'consult' && !isReturningAxis(axis) ? (
+                          <select
+                            data-testid={`assign-consult-type-${ci.id}`}
+                            className="rounded border bg-background px-1.5 py-1 text-xs"
+                            value={ci.assignment_consult_type ?? ASSIGNMENT_CONSULT_TYPE_DEFAULT}
+                            disabled={busy}
+                            onChange={(e) => void doSetConsultType(ci, e.target.value as AssignmentConsultType)}
+                          >
+                            {ASSIGNMENT_CONSULT_TYPES.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-2 py-2 text-right">
@@ -1611,6 +1679,10 @@ export default function Assignments() {
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">고객</th>
                   <th className="px-2 py-2 text-left font-medium">담당</th>
+                  {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 담당 옆 상담유형(수동 4종) — 상담 탭 한정 */}
+                  {activeTab === 'consult' && (
+                    <th className="px-2 py-2 text-left font-medium">상담유형</th>
+                  )}
                   <th className="px-2 py-2 text-left font-medium">방식</th>
                   <th className="px-2 py-2 text-right font-medium">시각</th>
                   {/* T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 발송(확정) 열 — 상담 탭 한정(치료 탭 무의미) */}
@@ -1627,7 +1699,7 @@ export default function Assignments() {
                 {todayDistribution.length === 0 && (
                   <tr>
                     <td
-                      colSpan={4 + (activeTab === 'consult' ? 1 : 0) + (canEditDistribution ? 1 : 0)}
+                      colSpan={4 + (activeTab === 'consult' ? 2 : 0) + (canEditDistribution ? 1 : 0)}
                       className="px-3 py-6 text-center text-muted-foreground"
                     >
                       오늘 배분된 건이 없습니다.
@@ -1695,6 +1767,32 @@ export default function Assignments() {
                         staffName(r.staffId)
                       )}
                     </td>
+                    {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 상담유형 셀 — 상담 탭 한정.
+                        canEditDistribution(admin/manager/director) = 인라인 수정 드롭다운, 그 외 read-only 배지.
+                        write 타깃 = check_ins.assignment_consult_type(단일 컬럼) only — 매출귀속 무접촉(RED LINE). */}
+                    {activeTab === 'consult' && (
+                      <td className="px-2 py-2">
+                        {canEditDistribution ? (
+                          <select
+                            data-testid={`dist-consult-type-${r.id}`}
+                            className="rounded border bg-background px-1.5 py-1 text-xs"
+                            value={r.checkIn.assignment_consult_type ?? ASSIGNMENT_CONSULT_TYPE_DEFAULT}
+                            disabled={busy}
+                            onChange={(e) => void doSetConsultType(r.checkIn, e.target.value as AssignmentConsultType)}
+                          >
+                            {ASSIGNMENT_CONSULT_TYPES.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Badge variant="outline" className="font-normal">
+                            {r.checkIn.assignment_consult_type ?? '미분류'}
+                          </Badge>
+                        )}
+                      </td>
+                    )}
                     <td className="px-2 py-2">
                       <Badge
                         variant={r.method === '자동' ? 'teal' : r.method === '—' ? 'outline' : 'secondary'}

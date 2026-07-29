@@ -927,6 +927,49 @@ export async function softHideCheckIn(opts: {
   }
 }
 
+// ── 배정 상담유형(수동 4종) — T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN ────────
+/**
+ * 배정 상담유형 SSOT. 실장이 배정 시 담당 옆 "상담유형" 드롭다운에서 직접 선택.
+ *   초진 / 재진 / 당일재상담 / 대리상담. App default = '초진'(신규 배정 pre-select).
+ * 카운터 매핑(총괄 SSOT): 배정(초진)=초진 / 배정(재진)=재진·대리상담 / 당일재상담·NULL=전부 제외.
+ * DA GO(단일 네임스페이스 enum, ADDITIVE) — bare consult_type/visit_type 금지(자동 365 축 점유).
+ */
+export const ASSIGNMENT_CONSULT_TYPES = ['초진', '재진', '당일재상담', '대리상담'] as const;
+export type AssignmentConsultType = (typeof ASSIGNMENT_CONSULT_TYPES)[number];
+export const ASSIGNMENT_CONSULT_TYPE_DEFAULT: AssignmentConsultType = '초진';
+
+/**
+ * check_ins.assignment_consult_type 수동 write(단일 컬럼). 배정 카운터(초진/재진) SSOT 입력.
+ *   RED LINE: assignment_consult_type 컬럼만 write — consultant_id/assigned_consultant_id(매출귀속) 무접촉.
+ *   rows-affected 가드(cross_crm_write_rowcheck_standard): .select('id') 로 실제 갱신 0행이면 실패 반환
+ *   (RLS 거부/대상 부재를 silent-success 로 오인 금지).
+ */
+export async function setAssignmentConsultType(opts: {
+  checkInId: string;
+  value: AssignmentConsultType;
+}): Promise<{ ok: boolean; message?: string }> {
+  try {
+    if (!opts.checkInId) return { ok: false, message: '대상을 찾지 못했습니다.' };
+    if (!ASSIGNMENT_CONSULT_TYPES.includes(opts.value))
+      return { ok: false, message: '허용되지 않은 상담유형입니다.' };
+    const { data, error } = await supabase
+      .from('check_ins')
+      .update({ assignment_consult_type: opts.value })
+      .eq('id', opts.checkInId)
+      .is('deleted_at', null)
+      .select('id');
+    if (error) return { ok: false, message: error.message };
+    if (!data || data.length === 0)
+      return {
+        ok: false,
+        message: '권한이 없거나 대상을 찾지 못했어요. 변경된 내용이 없습니다.',
+      };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: String(e) };
+  }
+}
+
 // ── 실배정 부하 기록(SSOT 공백 보강) ──────────────────────────────────────────
 
 /**

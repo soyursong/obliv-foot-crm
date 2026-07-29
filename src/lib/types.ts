@@ -559,6 +559,12 @@ export interface CheckIn {
   consult_notify_sent_at?: string | null;
   consult_notify_by?: string | null;
   consult_notify_slack_ts?: string | null;
+  /** T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN (ADDITIVE, DA GO single-enum, DDL-diff).
+   *  배정 시 실장이 선택하는 상담유형(운영 카운터 SSOT 입력). NULL=미분류(pre-feature/과거행 — 카운터 제외).
+   *  값: '초진' | '재진' | '당일재상담' | '대리상담'. 배정(초진)=초진 / 배정(재진)=재진·대리상담 /
+   *  당일재상담·NULL=카운터 전부 제외. App default='초진'(신규 배정 pre-select), DB DEFAULT 없음(백필 금지).
+   *  자동 365-recency 임상 축(visit_type)과 독립 — 매출귀속(assigned_consultant_id) 무접촉(운영축 격리). */
+  assignment_consult_type?: string | null;
 }
 
 export interface Package {

@@ -175,8 +175,11 @@ test('상세②(fqb6): 성함/차트번호 클릭 → 2번차트 window.open —
 // ─────────────────────────────────────────────────────────────────────────────
 test('정합: 배정(초진)=assigned/배정(재진)=returning — 기존 집계 정의 재사용(재발명 금지)', () => {
   const src = read(PAGE);
-  // check_ins 정본 + monthAxisOf(재진 판정) 로직 유지 — 카운트 정의 그대로
-  expect(src).toContain("monthAxisOf(ci, 'consult') === 'returning'");
+  // T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN SUPERSEDE: 상담(consult) 배정 카운트 소스가
+  //   자동 365-recency(monthAxisOf consult) → 실장 수동 선택(assignment_consult_type, assignConsultBucket)로
+  //   부분 재분리(대표 확정 스코프). 배정(초진)=assigned/배정(재진)=returning 셀↔버킷 매핑 정의는 불변.
+  expect(src).toContain('assignConsultBucket(ci)');
+  // 치료(therapy) 축은 재진 개념 무해당 → auto-axis(monthAxisOf) 유지(스코프 밖).
   expect(src).toContain("monthAxisOf(ci, 'therapy') === 'returning'");
   // 토스/당김 = assignment_actions audit 유지
   expect(src).toContain("a.action_type === 'toss' && a.from_staff_id");
