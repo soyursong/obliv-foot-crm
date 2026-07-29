@@ -1,8 +1,9 @@
 {
   "ticket": "T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD",
   "migration": "20260729120000_foot_redpay_planb_expires_default_5min",
-  "supervisor_gate": "MSG-20260729-085344-hjxt (DB-GATE-REPLY, verdict=GO)",
-  "verdict_reconciled": "IDEMPOTENT NO-OP — target state already applied legitimately (prior --apply run)",
+  "supervisor_gate": "MSG-20260729-092544-k4yq (DB-GATE-REPLY, verdict=GO — CANONICAL). Supersedes drift-type refs: prior MSG-6ght CONFIRM (non-canonical type) + MSG-20260729-085344-hjxt.",
+  "supervisor_independent_postverify": "08:58:23 qa_done (mig-gate-postverify) — NOT evidence blind-trust; supervisor ran independent prod read-only probe: expires_at DEFAULT=(now()+00:05:00) / ledger 20260729120000 PRESENT / pending_payment 0-row / COMMENT 5·6min / app SSOT redpayPlanbTtl.ts(5/6) divergence 0. sentinel-bypass ruled out (DEFAULT 5min AND ledger PRESENT — not the hazard signature). commit lineage: 3d831be8=mig SQL, 65a1d241=apply-harness run, same migration 20260729120000, no cross-ticket OOB stomp. C19 N/A. §2.8/C18 DA HOLD CLEAN.",
+  "verdict_reconciled": "IDEMPOTENT NO-OP — target state (5min) already applied legitimately (prior --apply run). No re-apply, no rollback. This GO = db_only MIG-GATE PASS re-confirmation ONLY, NOT deploy GO.",
   "divergence_vs_supervisor_readonly_evidence": {
     "supervisor_pre_readonly": "expires_at DEFAULT = now()+'00:10:00'",
     "dev_foot_pre_probe_at_apply": "expires_at DEFAULT = (now() + '00:05:00'::interval)",
@@ -40,5 +41,6 @@
   "comment_expires_at_prod": "app-set = created_at + interval '5 minutes' (2026-07-29 TTL 축소 fold)",
   "comment_locked_until_prod": "app-set = created_at + interval '6 minutes' (2026-07-29 축소 fold)",
   "app_ssot_alignment": "src/lib/redpayPlanbTtl.ts (5/6) ↔ DEFAULT fallback(5min) divergence 0",
-  "probed_at": "2026-07-29 (dev-foot post-GO reconciliation)"
+  "probed_at": "2026-07-29 (dev-foot post-GO reconciliation)",
+  "canonical_confirm_ack": "2026-07-29 (dev-foot ack MSG-20260729-092544-k4yq): TTL fold 5min DB gate PASS. No DB action required (idempotent no-op). ticket status=in_progress maintained. deploy(main merge) remains a SEPARATE gate requiring build-core + E2E spec + deploy-ready marking."
 }
