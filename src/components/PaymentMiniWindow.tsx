@@ -2973,6 +2973,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
             </div>
             <InsuranceGradeSelect
               customerId={checkIn.customer_id}
+              clinicId={checkIn.clinic_id}
               editable
               onChanged={() => {
                 // 원본 등급 재조회(경고 배너 재판정) + 빌링용 effective 등급 재로드(급여 split 즉시 반영).

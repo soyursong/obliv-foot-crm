@@ -8774,6 +8774,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             )}
             <InsuranceGradeSelect
               customerId={customer.id}
+              clinicId={customer.clinic_id}
               editable
               /* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) 프리필 경로 제거 —
                  데스크가 포털에서 확인 후 등급을 직접 선택·저장하는 수기 단일 경로만 유지. */
