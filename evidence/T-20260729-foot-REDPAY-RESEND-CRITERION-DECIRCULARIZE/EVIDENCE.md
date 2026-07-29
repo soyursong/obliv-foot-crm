@@ -1,0 +1,56 @@
+# T-20260729-foot-REDPAY-RESEND-CRITERION-DECIRCULARIZE — 재전송 판정기준 탈순환화 (증거)
+
+- 실행: 2026-07-29 (prod rxlomoozakkjesdqjtvd, READ-ONLY)
+- 스크립트: `scripts/T-20260729-foot-REDPAY-RESEND-CRITERION-DECIRCULARIZE_reclassify.mjs`
+- 원자료: `evidence/.../reclassify_result.json`
+- 범위: 결제·매칭·매출 산정 경로 **무접촉**. SELECT/집계만(write 0건). 스키마·데이터·코드·TTL 무변경.
+
+## 1. 폐기된 순환논리 (구 기준)
+
+`T-20260728-REDPAY-WEBHOOK-LATENCY-REMEASURE` finalize.mjs 의 분류:
+`RETRY_THRESHOLD = 60s` → **latency(received_at − approved_at) >= 60s = '재전송'**.
+1분 초과를 재전송이라 *정의*하고, 그 재전송이 1분 넘는다고 *보고* = 정보량 0(순환).
+
+## 2. 진단 선행 — raw_payload 재시도 식별필드 실존 (prod, 7/28 표본 43행)
+
+| 항목 | 결과 | 함의 |
+|------|------|------|
+| event_id 보유행 | **3 / 43** (나머지 40행 NULL) | event_id 는 webhook 형상(`_source=webhook`) 3행에만 존재. 40행은 poller 형상 |
+| 중복 event_id 그룹 | **0** | 재전송(동일 event_id)은 webhook EF `onConflict(external_trxid,external_status,amount) DO UPDATE` 로 같은 행에 수렴 → 중복행 미잔존(received_at 은 최신 수신으로 덮임) |
+| retry/attempt 헤더·필드 | **0 / 43** | payload 어디에도 retry 마커 없음. 실 retry-count 가 실릴 HTTP 헤더는 미적재(본문 raw_payload 만 저장) → 구조적 부재 |
+
+⇒ **근거(1)·(2)는 구조상 관측 불가에 가까움.** 근거(3) cadence 정합이 유일한 관측 축.
+
+## 3. 3근거 재분류 결과 (구 기준 '재전송 19건' 표본)
+
+| 근거 | 정의 | 건수 |
+|------|------|------|
+| (1) 같은 event_id 중복수신 | event_id 그룹 count>1 | **0** |
+| (2) 재시도 헤더 존재 | payload retry/attempt 필드 | **0** |
+| (3) 재시도 주기 정합 (tight `[+0, +15s]`) | latency ≈ {60,300,1800}s | 1분창 **2** / 5분창 **0** / 30분창 **0** |
+| (3) 재시도 주기 정합 (wide `[+0, +60s]`) | 관대 대조군 | 1분창 5 / 5분창 0 / 30분창 0 |
+| **처리지연 꼬리** (3근거 어디에도 미해당) | | **17** |
+
+`TOL_BELOW=0` 근거: 재시도는 스케줄 오프셋(60/300/1800s) *이전* 도착이 물리적으로 불가 →
+하한을 경계값에 고정해 정상 처리밴드(≤59.6s) 침범을 차단(재순환 방지).
+
+### 3-1. 19건 개별 latency 분포 (연속 vs 군집 판별)
+
+전 19행 `_source=∅`(poller 형상, event_id 無). latency **60.5s → 245.3s 연속 단봉 분포**로,
+재시도 경계(60/300/1800s)에 **군집(spike)·gap 이 없음**. 60s 근접 2행(60.5·61.5s)도
+poller 형상·단일축(latency) 근거뿐이라 **확정 재전송 아님(cadence-ambiguous)**.
+연속 단봉 = 재전송(이산 재시도 클러스터)이 아니라 **폴러 폴링주기 꼬리**의 지문.
+
+## 4. AC 충족
+
+- **AC-1**: 시간임계(`>=60s=재전송`) 분류 폐기 → 3근거 분류로 교체. read-only 재집계(raw 무변경). ✅
+- **AC-2**: 19건 분해 = event_id중복 0 / 재시도헤더 0 / 재시도주기(1분) 2(약함) / **처리지연 꼬리 17**. ✅
+- **AC-3**: **재시도 30분 창 실 재전송 = 0건** (tight·wide 공통. 최대 latency 245.3s = 30분 경계보다 25.9분 이르름). ✅
+- **AC-4**: 실 발화 SQL 전수 `WITH/SELECT` 시작 + DML 문 부재 self-check **PASS(SELECT-only)**. 결제/매칭/매출 무접촉, 회귀 0. ✅
+- **AC-5**: 현장 relay 본문 = 티켓 signals/FOLLOWUP 로 responder 인계(C0ATE5P6JTH thread 1784708681.507149). ✅
+
+## 5. 결론 (미배정 결제함 설계 근거)
+
+- 구 '재전송 19건'은 **재전송이 아니라 폴러 처리지연 분포의 꼬리(17건 확정 + 2건 약한 1분창 후보)**.
+- **진짜 30분 지각분 = 0건** → 30분 재시도 창에 걸린 실 재전송 없음.
+- 미배정 결제함 설계 시 "30분 늦게 도착하는 재전송 결제" 시나리오는 현 표본상 **실증되지 않음** — 폴링주기(≤~4분) 내 도착이 지연의 실체.
