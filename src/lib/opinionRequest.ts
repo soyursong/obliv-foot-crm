@@ -17,8 +17,6 @@ import { supabase } from '@/lib/supabase';
 import { OPINION_SECTIONS, type OpinionSection } from '@/components/doctor/OpinionDocTab';
 import { formatRxItemToken } from '@/lib/rxTooltip';
 import { todaySeoulISODate, seoulISODate } from '@/lib/format';
-// T-20260729-foot-ALERTBOARD-DOBTXRX-COL-BLANK: 오늘시술(package_sessions.session_type) 간략형 라벨 SSOT 재사용.
-import { sessionTypeLabel } from '@/lib/progressTreatmentCsv';
 
 // 서류종류 2종 (AC-6) — 진단서 / 소견서.
 export type OpinionDocType = 'diagnosis' | 'opinion';
@@ -958,25 +956,34 @@ export function useQueueTreatingDoctors(clinicId: string | null, checkInIds: str
 //     기존 큐 birthDate 는 요청 생성시 field_data 에 박힌 '스냅샷'이라 결측/공란이면 만나이가 안 뜬다.
 //     진료대시보드 환자테이블이 쓰는 live 소스(customers.birth_date, opinionAutofillRef 패턴)를 그대로 읽어
 //     스냅샷보다 우선한다. birthYearAgeDisplay 로 "YYYY (만 N세)" 파생(결측 '—', null-safe).
+//   ★refix-2(T-20260729-...-3COL-DATA-CONNECT, field-soak 🔴 RC): 풋센터는 생년월일을 customers.birth_date
+//     컬럼이 아니라 **주민번호 암호화(customers.rrn_enc)** 로 보관한다(birth_date 는 전 환자 거의 NULL).
+//     그래서 birth_date 컬럼 직접 조회는 전 환자 '—' 회귀를 낳았다(1차 배포 실패 근본원인 (b) 소스축).
+//     → 고객목록/체크인상세/예약팝업이 이미 쓰는 서버 RPC `fn_customer_birthdates(p_clinic_id, p_ids)`
+//       (SECURITY DEFINER, rrn 서버측 복호화 → birth_date_display 'YYYY-MM-DD' 만 반환, 평문 rrn 미노출)
+//       로 전환한다. db_change=false(기존 RPC 재사용, 신규 컬럼/테이블/enum/RLS=0). PHI 가드 = RPC 계승.
+//     반환 'YYYY-MM-DD'(완전연도)는 birthYearAgeDisplay 8자리 분기로 "YYYY (만 N세)" 파생(refix-2 버그(b) 동반수정).
+const BIRTHDATE_RPC_CHUNK = 100; // URL 길이 한계 회피(고객목록 loadCustomerStats 동형).
 export function useQueueCustomerBirthDates(clinicId: string | null, customerIds: string[]) {
   const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
   return useQuery<Record<string, string>>({
-    queryKey: ['opinion_queue_birthdate', clinicId, key],
+    queryKey: ['opinion_queue_birthdate_rpc', clinicId, key],
     enabled: !!clinicId && key.length > 0,
     queryFn: async () => {
       const out: Record<string, string> = {};
       if (!clinicId || !key) return out;
       try {
         const ids = key.split(',');
-        // customer_id 는 이미 clinic-scoped 큐(form_submissions)에서 유래 → id 필터로 정확 조회
-        //   (opinionAutofillRef 의 customers.birth_date 단건 조회 패턴과 동일 소스). RLS 로 지점 격리.
-        const { data, error } = await supabase
-          .from('customers')
-          .select('id, birth_date')
-          .in('id', ids);
-        if (error) throw error;
-        for (const r of (data ?? []) as Array<{ id: string; birth_date: string | null }>) {
-          if (r.id && r.birth_date) out[String(r.id)] = String(r.birth_date);
+        for (let i = 0; i < ids.length; i += BIRTHDATE_RPC_CHUNK) {
+          const chunk = ids.slice(i, i + BIRTHDATE_RPC_CHUNK);
+          const { data, error } = await supabase.rpc('fn_customer_birthdates', {
+            p_clinic_id: clinicId,
+            p_ids: chunk,
+          });
+          if (error) throw error;
+          for (const r of (data ?? []) as Array<{ customer_id: string; birth_date_display: string | null }>) {
+            if (r.customer_id && r.birth_date_display) out[String(r.customer_id)] = String(r.birth_date_display);
+          }
         }
       } catch {
         // 생년 조회 불가 — 셀은 스냅샷 폴백 또는 '—'(큐 무붕괴).
@@ -988,20 +995,44 @@ export function useQueueCustomerBirthDates(clinicId: string | null, customerIds:
   });
 }
 
-//   ─ AC-2(오늘시술) / AC-3(처방내역): 당일(KST) check-in 기준 실 소스 연동.
-//     AC-2 = check_ins.treatment_kind(?? treatment_category) — '2번차트(펜차트) 티켓 차감 기준'(confirm 확정).
-//            당일 차감 시술을 '모두' 나열(첫 건/한 건 아님, MSG-b6gp: "당일 시술 모두 표기").
-//            표시값 SSOT = PKG-BOX-INDICATOR(가열/비가열/포돌로게/수액/체험권 …) = treatment_kind 원값.
-//     AC-3 = 결제미니창(PMW) 당일 처방약 목록(confirm 확정: "결제 창이 더 정확"). PMW settle 시
-//            처방약(services.category_label='처방약') 라인아이템은 check_in_services 로 영속된다
-//            (PaymentMiniWindow.saveCheckInServices, selectedItems=시술+코드아이템 전건 insert). 그 당일
-//            check_in 의 처방약 service_name 을 나열(=medical_charts.prescription_items 아님).
+//   ─ AC-2(오늘시술) / AC-3(처방내역): **해당 방문(check_in) 스코프** 실 소스 연동.
+//     ★refix-2 RC (field-soak 🔴, 1차 배포 실패 근본원인 (a) 스코프축):
+//       1차는 '글로벌 오늘(KST) check_ins' + check_ins.treatment_kind 를 읽었다. 그러나
+//         · treatment_kind/treatment_category/treatment_contents 는 prod 전 행 NULL(죽은 컬럼) → AC-2 전면 '—'
+//         · '서류 완료'(과거일 발행) 행의 방문은 '오늘'이 아니므로 글로벌-오늘 조회에 안 잡혀 전면 공란
+//       → 각 큐 행이 들고 있는 **check_in_id(그 발행요청이 걸린 방문)** 앵커로 재결선(대기=오늘, 완료=과거 모두 정상).
+//     AC-2 = 그 방문의 **패키지 회차 차감**(package_sessions.check_in_id, status='used') → session_type.
+//            = 김주연 총괄 confirm "2번차트(펜차트) 티켓 차감 기준"(웅 맞고)의 실 소스. 당일 차감 '모두' 나열(MSG-b6gp).
+//            표시값 SSOT = 간략형(가열/비가열/포돌로게/수액/체험권/리본) — session_type(영문)→KO 매핑(sessionTypeLabel).
+//     AC-3 = 그 방문의 결제미니창(PMW) 처방약. PMW settle 시 처방약(services.category_label='처방약') 라인아이템은
+//            check_in_services 로 영속된다(PaymentMiniWindow.saveCheckInServices). 방문 check_in_services 의
+//            처방약 service_name 나열(=medical_charts.prescription_items 아님). confirm: "결제 창이 더 정확".
+//   전부 read-only(db_change=false) — 신규 컬럼/테이블/enum/RLS=0. package_sessions/check_in_services 기존 계약.
 export interface TodayProcedureRx {
-  procedures: string[];    // AC-2: 당일 차감 시술(treatment_kind) 전체
-  prescriptions: string[]; // AC-3: 당일 PMW 처방약 service_name 전체
+  procedures: string[];    // AC-2: 그 방문의 패키지 회차 차감 시술(간략형) 전체
+  prescriptions: string[]; // AC-3: 그 방문의 PMW 처방약 service_name 전체
 }
 
-// 순수 파생(E2E spec 이 직접 import·단언 → drift 방지) — check-in 행 → 오늘시술 라벨(ProcedureCell SSOT 동형).
+// 순수 파생(E2E spec 이 직접 import·단언 → drift 방지) — package_sessions.session_type(영문) → 간략 KO 라벨.
+//   SSOT = PKG-BOX-INDICATOR / CustomerChartPage·Reservations TREAT_KO(가열/비가열/포돌로게/수액/체험권/리본).
+//   미지의 session_type 은 원값 trim 그대로 노출(정보손실 방지, graceful).
+const SESSION_TYPE_KO: Record<string, string> = {
+  heated_laser: '가열',
+  unheated_laser: '비가열',
+  podologue: '포돌로게',
+  iv: '수액',
+  preconditioning: '프컨',
+  trial: '체험권',
+  reborn: '리본',
+  'Re:Born': '리본',
+};
+export function sessionTypeLabel(t?: string | null): string {
+  const v = String(t ?? '').trim();
+  if (!v) return '';
+  return SESSION_TYPE_KO[v] ?? v;
+}
+
+// 순수 파생(레거시 호환 — check-in 행 → 시술 라벨). refix-2 이후 production 미사용이나 시그니처 유지(외부 import 방어).
 export function procedureLabelOf(row: { treatment_kind?: string | null; treatment_category?: string | null }): string {
   return String(row.treatment_kind ?? row.treatment_category ?? '').trim();
 }
@@ -1026,84 +1057,7 @@ export function extractRxDrugNames(
   return names;
 }
 
-export function useQueueTodayProcedureRx(clinicId: string | null, customerIds: string[]) {
-  const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
-  return useQuery<Record<string, TodayProcedureRx>>({
-    queryKey: ['opinion_queue_today_proc_rx', clinicId, key],
-    enabled: !!clinicId && key.length > 0,
-    queryFn: async () => {
-      const out: Record<string, TodayProcedureRx> = {};
-      if (!clinicId || !key) return out;
-      try {
-        const ids = key.split(',');
-        const today = todaySeoulISODate();
-        // 1) 당일(KST) check-in — checked_in_at 는 timestamptz 이므로 +09:00 오프셋 경계로 정확 필터
-        //    (KST 오전 UTC 전일 저장분도 offset 비교로 당일에 포함). clinic-scoped + customer in ids.
-        const { data: ciData, error: ciErr } = await supabase
-          .from('check_ins')
-          .select('id, customer_id, treatment_kind, treatment_category, checked_in_at')
-          .eq('clinic_id', clinicId)
-          .in('customer_id', ids)
-          .gte('checked_in_at', `${today}T00:00:00+09:00`)
-          .lte('checked_in_at', `${today}T23:59:59.999+09:00`)
-          .order('checked_in_at', { ascending: true });
-        if (ciErr) throw ciErr;
-        const ciRows = (ciData ?? []) as Array<{
-          id: string; customer_id: string | null;
-          treatment_kind: string | null; treatment_category: string | null;
-        }>;
-        const checkInToCustomer = new Map<string, string>();
-        for (const ci of ciRows) {
-          const cid = String(ci.customer_id ?? '');
-          if (!cid) continue;
-          checkInToCustomer.set(String(ci.id), cid);
-          if (!out[cid]) out[cid] = { procedures: [], prescriptions: [] };
-          const label = procedureLabelOf(ci);
-          if (label) out[cid].procedures.push(label);
-        }
-        // 2) 그 당일 check-in 들의 PMW 처방약(check_in_services + services.category_label='처방약')
-        const checkInIds = ciRows.map((c) => String(c.id)).filter(Boolean);
-        if (checkInIds.length > 0) {
-          const { data: cisData, error: cisErr } = await supabase
-            .from('check_in_services')
-            .select('check_in_id, service_name, services:service_id(category_label)')
-            .in('check_in_id', checkInIds);
-          if (cisErr) throw cisErr;
-          // check_in_id 별 처방약명 수집 → 소속 customer 로 귀속(당일 여러 내원도 합산).
-          const byCheckIn = new Map<string, Array<Record<string, unknown>>>();
-          for (const raw of (cisData ?? []) as Array<Record<string, unknown>>) {
-            const cin = String(raw['check_in_id'] ?? '');
-            if (!cin) continue;
-            const arr = byCheckIn.get(cin) ?? [];
-            arr.push(raw);
-            byCheckIn.set(cin, arr);
-          }
-          for (const [cin, rows] of byCheckIn) {
-            const cid = checkInToCustomer.get(cin);
-            if (!cid || !out[cid]) continue;
-            out[cid].prescriptions.push(...extractRxDrugNames(rows));
-          }
-        }
-      } catch {
-        // 당일 시술/처방 조회 불가 — 두 컬럼은 '—' 폴백. 큐 자체는 정상(graceful).
-        return {};
-      }
-      return out;
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
-}
-
-// T-20260729-foot-ALERTBOARD-DOBTXRX-COL-BLANK (AC-2/3): 오늘시술·처방내역을 '행의 방문(check_in_id)' 스코프로 재결선.
-//   RC(런타임 확정 — scripts/T-20260729-...-COL-BLANK_probe.mjs):
-//     직전 useQueueTodayProcedureRx 는 (a) check_ins.treatment_kind(전행 NULL) 을 오늘시술 소스로 삼고,
-//     (b) '글로벌 오늘(KST) check_ins' 만 조회 → 서류완료(과거일)·비-today 발행요청 행이 전면 공란이었다.
-//   FIX: 알림판 목록의 각 행은 자신의 발행요청 방문 check_in_id 를 앵커로 가진다(loadOpinionAutofillRef 동형).
-//     그 방문 스코프로 소스를 다시 결선(read-only, DDL/write 0. check_in_id 는 clinic-scoped form_submissions 유래 → 타 환자 유입 배제).
-//     · AC-2 오늘시술 = 그 방문의 package_sessions.session_type(=차트2 티켓 차감 = 패키지 회차 차감 = 당일 시술 확정 신호)
-//         → sessionTypeLabel 간략형(레이저비가열/레이저가열/발톱교정/각질/수액/체험/Re:Born). 차감 없으면 공란(AC).
-//     · AC-3 처방내역 = 그 방문의 check_in_services 처방약(services.category_label='처방약') service_name (extractRxDrugNames 재사용).
+// ★refix-2: 방문(check_in) 스코프 조회. key = 각 큐 행의 check_in_id (대기=오늘 방문, 완료=과거 방문 모두).
 export function useQueueVisitProcedureRx(clinicId: string | null, checkInIds: string[]) {
   const key = [...new Set(checkInIds.filter(Boolean))].sort().join(',');
   return useQuery<Record<string, TodayProcedureRx>>({
@@ -1112,24 +1066,25 @@ export function useQueueVisitProcedureRx(clinicId: string | null, checkInIds: st
     queryFn: async () => {
       const out: Record<string, TodayProcedureRx> = {};
       if (!clinicId || !key) return out;
+      const ids = key.split(',');
+      for (const cin of ids) out[cin] = { procedures: [], prescriptions: [] };
       try {
-        const ids = key.split(',');
-        for (const id of ids) out[id] = { procedures: [], prescriptions: [] };
-        // AC-2: 그 방문의 회차 차감(package_sessions) — soft-delete 제외, 세션번호순으로 전부 나열.
+        // 1) AC-2 오늘시술 = 그 방문의 패키지 회차 차감(package_sessions, status='used', soft-delete 제외) → session_type.
         const { data: psData, error: psErr } = await supabase
           .from('package_sessions')
-          .select('check_in_id, session_type, session_number')
+          .select('check_in_id, session_type, session_number, status, deleted_at')
           .in('check_in_id', ids)
+          .eq('status', 'used')
           .is('deleted_at', null)
           .order('session_number', { ascending: true });
         if (psErr) throw psErr;
-        for (const raw of (psData ?? []) as Array<{ check_in_id: string | null; session_type: string | null }>) {
-          const cin = String(raw.check_in_id ?? '');
+        for (const ps of (psData ?? []) as Array<{ check_in_id: string | null; session_type: string | null }>) {
+          const cin = String(ps.check_in_id ?? '');
           if (!cin || !out[cin]) continue;
-          const label = sessionTypeLabel(raw.session_type);
-          if (label && !out[cin].procedures.includes(label)) out[cin].procedures.push(label);
+          const label = sessionTypeLabel(ps.session_type);
+          if (label) out[cin].procedures.push(label);
         }
-        // AC-3: 그 방문의 처방약(check_in_services + services.category_label='처방약').
+        // 2) AC-3 처방내역 = 그 방문의 PMW 처방약(check_in_services + services.category_label='처방약').
         const { data: cisData, error: cisErr } = await supabase
           .from('check_in_services')
           .select('check_in_id, service_name, services:service_id(category_label)')
@@ -1143,14 +1098,12 @@ export function useQueueVisitProcedureRx(clinicId: string | null, checkInIds: st
           arr.push(raw);
           byCheckIn.set(cin, arr);
         }
-        for (const [cin, rowsForCin] of byCheckIn) {
+        for (const [cin, rows] of byCheckIn) {
           if (!out[cin]) continue;
-          for (const nm of extractRxDrugNames(rowsForCin)) {
-            if (!out[cin].prescriptions.includes(nm)) out[cin].prescriptions.push(nm);
-          }
+          out[cin].prescriptions.push(...extractRxDrugNames(rows));
         }
       } catch {
-        // 방문 스코프 시술/처방 조회 불가 — 두 컬럼은 '—' 폴백. 큐 자체는 정상(graceful).
+        // 시술/처방 조회 불가 — 두 컬럼은 '—' 폴백. 큐 자체는 정상(graceful).
         return {};
       }
       return out;
