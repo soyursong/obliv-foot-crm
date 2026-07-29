@@ -13,7 +13,9 @@
  *   시간당 1회 launchd 주기잡으로:
  *     ① 문자발송 활성 지점(clinic_messaging_capability.enabled=true)의 솔라피 계정 잔액을
  *        /cash/v1/balance 로 조회(READ-ONLY). Vault 키는 지점별 vault 명으로 RPC 조회.
- *        - A 종로(74967aea·문지은·26041008595272) / B 송도(b4dc0de5·박영진·26041010278719) 자동 포함.
+ *        - A 종로(74967aea·박영진·26041008595272) / B 송도(b4dc0de5·최강훈·26041010278719) 자동 포함.
+ *          (명의: CEO MSG-20260729-143208-8xlf 정정 — 구 문지은/박영진 supersede. accountId·Vault 키는
+ *           2026-07-29 dev-foot 재확인상 명의변경 후에도 동일·유효(ACCTID-IDENTITY-RECONFIRM_probe).)
  *     ② 잔액 임계 도달 시 긴급 슬랙 경보(장쳰 봇 경유, 채널 C0ATE5P6JTH):
  *        - 절대 건수 기준: 발송 가능 잔여 건수(= floor(잔액/단가)) < 임계(기본 100건). 공유계정이라
  *          % 기준이 모호하다는 부모 티켓 Q1 지적 → 절대 건수를 1급 기준으로 채택.
@@ -25,6 +27,17 @@
  *     ④ 중복 경보 억제(AC-4): 같은 임계 반복 발송 폭격 방지. 로컬 JSON 상태파일 dedup.
  *        단, 무기한 침묵은 "4일 무감지" 재발 → 재경보 주기(기본 24h) 경과 시 1회 재알림.
  *        잔액 회복(임계 상향 돌파) 시 자동 해제 + 회복 안내 1회.
+ *
+ * ── CEO 자동충전 채택 후속(T-20260721 CEO-DECISION 2, MSG-20260729-143208-8xlf) 3종 경보 추가 ──
+ *     (5) 절대 원(₩) 임계 경보: CEO 지정 지점별 절대 잔액 임계(종로 10만/송도 3만)를 기존 발송가능
+ *         잔여건수(4,500원≈100건) 위에 얹는다. env SOLAPI_BALANCE_MIN_WON_<clinicshort> (기본 종로 10만/송도 3만).
+ *     (6) ★자동충전 실패 즉시 경보(가장 중요, 신규): 자동충전 ON(autoRecharge=1)인데 잔액이 '충전 트리거'
+ *         (종로 15만↓/송도 5만↓) 아래로 내려간 채 회복되지 않으면 = 카드 만료·한도초과·결제실패로
+ *         자동충전이 실패한 것. 솔라피 balance API 는 카드결제 실패 이벤트를 직접 노출하지 않으므로
+ *         "autoRecharge=1 AND 잔액 < 트리거"를 프록시로 감지(연속 관측/유예시간 후 경보). autoRecharge=0
+ *         (아직 OFF)이면 미발동 → 오탐 0. env SOLAPI_RECHARGE_TRIGGER_WON_<short> (기본 종로 15만/송도 5만).
+ *     (7) 발송 실패율 급등 경보: 당일(KST) notification_logs failed 건수가 임계(기본 100건/일) 초과 시 경보.
+ *         잔액·한도와 독립적으로 '조용한 대량 실패'를 포착. env SOLAPI_FAIL_SPIKE_COUNT (기본 100).
  *
  * ── db_change=false 설계 판정 (DA CONSULT 게이트 미발동) ──────────────────────────────
  *   경보 dedup 상태는 DB 테이블이 아니라 macstudio 로컬 JSON 상태파일로 충분(단일 노드 상주 잡).
@@ -117,6 +130,24 @@ const SLACK_CHANNEL = cfg("SOLAPI_ALERT_SLACK_CHANNEL", "C0ATE5P6JTH");
 const STATE_PATH = cfg("SOLAPI_MONITOR_STATE_PATH", join(homedir(), ".solapi-balance-monitor-foot-state.json"));
 const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
 
+// ── CEO 자동충전 후속 3종 경보 튜너블 (MSG-20260729-143208-8xlf) ────────────────
+//   SOLAPI_BALANCE_MIN_WON_<clinicshort> : (5) 절대 원 임계(원). 잔액 이 값 미만이면 경보.
+//     기본 종로(74967aea)=100,000 / 송도(b4dc0de5)=30,000. (CEO 지정: 종로 10만 / 송도 3만)
+//   SOLAPI_RECHARGE_TRIGGER_WON_<clinicshort> : (6) 자동충전 트리거 잔액(원). autoRecharge=1 인데
+//     잔액이 이 값 미만이면 '자동충전이 동작해야 하는데 안 됐다'는 신호. 기본 종로=150,000 / 송도=50,000.
+//   SOLAPI_RECHARGE_FAIL_GRACE_POLLS : (6) 자동충전 실패 확정 전 연속 관측 횟수(기본 2). 시간당 1회 폴링
+//     기준 2회 = 약 1~2시간 유예(솔라피 자동충전 반영 지연 흡수 → 오탐 방지). 재경보 주기=잔액과 동일.
+//   SOLAPI_FAIL_SPIKE_COUNT : (7) 당일(KST) 발송 실패 급등 임계(건). 기본 100. 초과 시 경보.
+//   SOLAPI_FAIL_SPIKE_REALERT_HOURS : (7) 실패급등 재경보 주기(기본 6h).
+const RECHARGE_FAIL_GRACE_POLLS = Math.max(1, cfgNum("SOLAPI_RECHARGE_FAIL_GRACE_POLLS", 2));
+const FAIL_SPIKE_COUNT = Math.max(1, cfgNum("SOLAPI_FAIL_SPIKE_COUNT", 100));
+const FAIL_SPIKE_REALERT_MS = Math.max(1, cfgNum("SOLAPI_FAIL_SPIKE_REALERT_HOURS", 6)) * 3600 * 1000;
+// 지점별 절대 임계 기본값(clinic_id 앞 8자 기준). env 로 override 가능.
+const DEFAULT_MIN_WON = { "74967aea": 100000, "b4dc0de5": 30000 };
+const DEFAULT_RECHARGE_TRIGGER_WON = { "74967aea": 150000, "b4dc0de5": 50000 };
+function minWonFor(shortId) { return cfgNum(`SOLAPI_BALANCE_MIN_WON_${shortId}`, DEFAULT_MIN_WON[shortId] ?? 0); }
+function rechargeTriggerFor(shortId) { return cfgNum(`SOLAPI_RECHARGE_TRIGGER_WON_${shortId}`, DEFAULT_RECHARGE_TRIGGER_WON[shortId] ?? 0); }
+
 // 일일한도 초과 판정 토큰(솔라피/CRM 거부 메시지 문자열 — 부분일치, 확장 가능).
 const QUOTA_FAIL_TOKENS = (cfg("SOLAPI_QUOTA_FAIL_TOKENS",
   "일일 발송량 초과,일일발송량 초과,일일 전송량 초과,일일 발송한도,일일한도 초과,발송량 초과,전송한도 초과,일일 전송 한도")
@@ -204,12 +235,17 @@ function remainingSendCount(balance, unitCost = SMS_UNIT_COST) {
   return Math.floor(Math.max(0, Number(balance) || 0) / unitCost);
 }
 
-// 4b. 잔액 임계 평가. info={balance, notificationBalance?, baseline?}. opt={unitCost,minSendCount,lowRatio}
+// 4b. 잔액 임계 평가. info={balance, notificationBalance?, baseline?, minWon?}. opt={unitCost,minSendCount,lowRatio}
 function evaluateBalance(info, opt) {
   const unit = opt.unitCost;
   const balance = Number(info.balance) || 0;
   const remaining = remainingSendCount(balance, unit);
   const reasons = [];
+  // (5) CEO 지정 절대 원(₩) 임계 — 발송가능 건수보다 훨씬 높게 설정되어 '여유있게 미리' 경보.
+  const minWon = (info.minWon != null && info.minWon !== "") ? Number(info.minWon) : null;
+  if (minWon != null && Number.isFinite(minWon) && minWon > 0 && balance < minWon) {
+    reasons.push(`잔액 ${won(balance)}원 < 설정 임계 ${won(minWon)}원`);
+  }
   if (remaining < opt.minSendCount) {
     reasons.push(`발송 가능 잔여 ${remaining}건 (임계 ${opt.minSendCount}건 미만, 잔액 ${won(balance)}원 ÷ 단가 ${won(unit)}원)`);
   }
@@ -232,7 +268,22 @@ function isBalanceRecovered(info, opt) {
   if (nb != null && Number.isFinite(nb) && nb > 0 && balance <= nb * opt.clearMult) return false;
   const base = (info.baseline != null && info.baseline !== "") ? Number(info.baseline) : null;
   if (base != null && Number.isFinite(base) && base > 0 && balance < base * opt.lowRatio * opt.clearMult) return false;
+  // (5) 절대 원 임계 회복도 히스테리시스 — 임계×clearMult 이상이어야 해제(플래핑 방지).
+  const minWon = (info.minWon != null && info.minWon !== "") ? Number(info.minWon) : null;
+  if (minWon != null && Number.isFinite(minWon) && minWon > 0 && balance < minWon * opt.clearMult) return false;
   return true;
+}
+
+// 4c-2. (6) 자동충전 실패 프록시 판정 — autoRecharge=1 인데 잔액이 트리거 미만이면 실패 의심.
+//   info={balance, autoRecharge, rechargeTrigger}. autoRecharge!=1(OFF) 이면 항상 false(오탐 0).
+//   실 경보는 연속 grace 관측 후 확정(호출부 dedup 상태로 카운트) → 솔라피 자동충전 반영지연 흡수.
+function evaluateAutoRechargeFailure(info) {
+  const on = Number(info.autoRecharge) === 1;
+  const balance = Number(info.balance) || 0;
+  const trigger = (info.rechargeTrigger != null && info.rechargeTrigger !== "") ? Number(info.rechargeTrigger) : null;
+  if (!on) return { applicable: false, breached: false, balance, trigger };
+  if (trigger == null || !Number.isFinite(trigger) || trigger <= 0) return { applicable: true, breached: false, balance, trigger };
+  return { applicable: true, breached: balance < trigger, balance, trigger };
 }
 
 // 4d. 일일한도 초과 응답 집계 — notification_logs failed 행 중 토큰 부분일치를 지점별 그룹.
@@ -257,11 +308,23 @@ function shouldAlert(entry, nowMs, realertMs) {
   return (nowMs - entry.last_alerted_ms) >= realertMs;
 }
 
+// 4f. (7) 발송 실패 급등 판정 — 지점별 당일 failed 건수를 임계와 비교. rows=[{clinic_id}], threshold=건.
+function classifyFailureSpike(rows, threshold) {
+  const byClinic = new Map();
+  for (const r of rows) {
+    const cid = r.clinic_id ?? "(unknown)";
+    byClinic.set(cid, (byClinic.get(cid) || 0) + 1);
+  }
+  const spikes = new Map();
+  for (const [cid, cnt] of byClinic) if (cnt > threshold) spikes.set(cid, cnt);
+  return spikes;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 5. dedup 상태 (로컬 JSON — DB 무변경)
 // ════════════════════════════════════════════════════════════════════════════
 function freshState() {
-  return { version: 1, balance: {}, quota: {}, last_run_at: null };
+  return { version: 1, balance: {}, quota: {}, autorecharge: {}, failspike: {}, last_run_at: null };
 }
 function loadState() {
   if (!existsSync(STATE_PATH)) return freshState();
@@ -269,6 +332,8 @@ function loadState() {
     const s = JSON.parse(readFileSync(STATE_PATH, "utf8"));
     if (!s.balance) s.balance = {};
     if (!s.quota) s.quota = {};
+    if (!s.autorecharge) s.autorecharge = {};  // (6) 자동충전 실패 프록시 dedup+연속카운트
+    if (!s.failspike) s.failspike = {};          // (7) 발송 실패 급등 dedup
     return s;
   } catch (e) {
     warn(`상태파일 파싱 실패 → 초기화: ${e instanceof Error ? e.message : String(e)}`);
@@ -336,15 +401,42 @@ async function main() {
 
     const shortId = String(c.clinic_id).slice(0, 8);
     const baseline = cfg(`SOLAPI_BALANCE_BASELINE_${shortId}`, "");
+    const minWon = minWonFor(shortId);
+    const rechargeTrigger = rechargeTriggerFor(shortId);
     const info = {
       balance: bal.balance,
       notificationBalance: bal.lowBalanceAlert && bal.lowBalanceAlert.notificationBalance,
       baseline: baseline || null,
+      minWon: minWon || null,
     };
     const opt = { unitCost: SMS_UNIT_COST, minSendCount: MIN_SEND_COUNT, lowRatio: LOW_RATIO, clearMult: CLEAR_MULT };
     const ev = evaluateBalance(info, opt);
     log(`  [${c.clinic_name}] 잔액=${won(ev.balance)}원 예치금=${won(bal.deposit ?? 0)}원 발송가능=${ev.remaining}건 ` +
-        `autoRecharge=${bal.autoRecharge ?? "?"} breached=${ev.breached}`);
+        `autoRecharge=${bal.autoRecharge ?? "?"} min₩=${won(minWon)} breached=${ev.breached}`);
+
+    // ── (6) 자동충전 실패 프록시 감지 (autoRecharge=1 + 잔액 < 트리거, 연속 grace 관측 후 확정) ──
+    {
+      const rc = evaluateAutoRechargeFailure({ balance: bal.balance, autoRecharge: bal.autoRecharge, rechargeTrigger });
+      const rcEntry = state.autorecharge[c.clinic_id] || { consec: 0, last_alerted_ms: 0 };
+      if (rc.applicable && rc.breached) {
+        rcEntry.consec = (rcEntry.consec || 0) + 1;
+        log(`  [${c.clinic_name}] 자동충전 ON인데 잔액 ${won(rc.balance)}원 < 트리거 ${won(rc.trigger)}원 (연속 ${rcEntry.consec}/${RECHARGE_FAIL_GRACE_POLLS})`);
+        if (rcEntry.consec >= RECHARGE_FAIL_GRACE_POLLS && shouldAlert(rcEntry, nowMs, REALERT_MS)) {
+          const isRealert = Boolean(rcEntry.last_alerted_ms);
+          const text =
+            `🚨 [자동충전 실패 의심] ${c.clinic_name} 문자(SMS) 자동충전이 동작하지 않는 것으로 보입니다${isRealert ? " (계속 미회복 — 재알림)" : ""}\n` +
+            `• 자동충전은 켜져 있으나, 잔액 ${won(rc.balance)}원이 자동충전 기준선 ${won(rc.trigger)}원 아래로 내려간 채 ${RECHARGE_FAIL_GRACE_POLLS}회 연속 회복되지 않았습니다.\n` +
+            `• 흔한 원인: 등록 카드 만료 · 카드 한도 초과 · 결제 실패 · 월 상한 도달.\n` +
+            `솔라피 콘솔에서 자동충전/결제수단(법인카드) 상태를 확인해 주세요. 방치하면 잔액 소진 시 문자가 전면 중단됩니다.`;
+          const ok = sendSlack(SLACK_CHANNEL, text);
+          if (ok || DRY_RUN) { rcEntry.last_alerted_ms = nowMs; rcEntry.last_alerted_at = ts(); balAlerts++; }
+        }
+        state.autorecharge[c.clinic_id] = rcEntry;
+      } else {
+        // 회복 또는 미해당(OFF/트리거 이상) → 상태 해제(연속 카운트 리셋).
+        if (state.autorecharge[c.clinic_id]) { delete state.autorecharge[c.clinic_id]; }
+      }
+    }
 
     const key = c.clinic_id;
     const entry = state.balance[key];
@@ -389,9 +481,54 @@ async function main() {
   // ── ③ 일일 발송한도 점검 ─────────────────────────────────────────────────────
   const quotaResult = await checkDailyQuota(clinics, state, nowMs);
 
+  // ── (7) 발송 실패 급등 점검 ──────────────────────────────────────────────────
+  const spikeResult = await checkFailureSpike(clinics, state, nowMs);
+
   saveState(state);
   log(`완료 elapsed_ms=${Date.now() - startMs} bal_alerts=${balAlerts} bal_suppressed=${balSuppressed} ` +
-      `bal_recovered=${balRecovered} bal_errors=${balErrors} quota_alerts=${quotaResult.alerts} quota_suppressed=${quotaResult.suppressed}`);
+      `bal_recovered=${balRecovered} bal_errors=${balErrors} quota_alerts=${quotaResult.alerts} quota_suppressed=${quotaResult.suppressed} ` +
+      `failspike_alerts=${spikeResult.alerts} failspike_suppressed=${spikeResult.suppressed}`);
+}
+
+// (7) 발송 실패 급등 — 당일(KST) failed 건수 > 임계면 경보. 잔액/한도와 독립(조용한 대량실패 포착).
+async function checkFailureSpike(clinics, state, nowMs) {
+  let alerts = 0, suppressed = 0;
+  const clinicNameById = new Map(clinics.map((c) => [c.clinic_id, c.clinic_name]));
+  // 당일 KST 00:00 을 UTC 로 환산.
+  const kstNow = new Date(nowMs + 9 * 3600 * 1000);
+  const kstMidnightUtcMs = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate()) - 9 * 3600 * 1000;
+  const cutoff = new Date(kstMidnightUtcMs).toISOString();
+  let rows = [];
+  try {
+    rows = await restGet(
+      `notification_logs?status=eq.failed&created_at=gte.${encodeURIComponent(cutoff)}` +
+      `&select=clinic_id&limit=5000`
+    );
+  } catch (e) {
+    warn(`실패급등 조회 실패(비치명): ${e instanceof Error ? e.message : String(e)}`);
+    return { alerts, suppressed };
+  }
+  const spikes = classifyFailureSpike(rows, FAIL_SPIKE_COUNT);
+  for (const [cid, cnt] of spikes) {
+    const name = clinicNameById.get(cid) || `지점(${String(cid).slice(0, 8)})`;
+    const entry = state.failspike[cid];
+    if (!shouldAlert(entry, nowMs, FAIL_SPIKE_REALERT_MS)) { suppressed++; continue; }
+    const isRealert = Boolean(entry && entry.last_alerted_ms);
+    const text =
+      `🚨 [문자 실패 급등] ${name} 오늘 문자 발송 실패가 급증했습니다${isRealert ? " (계속 발생 — 재알림)" : ""}\n` +
+      `• 오늘(0시 기준) 발송 실패 ${cnt}건 (경보 기준 ${FAIL_SPIKE_COUNT}건 초과)\n` +
+      `잔액 부족·발신번호·템플릿 등 원인이 겹쳐 대량 실패 중일 수 있습니다. 문자 발송 상태를 점검해 주세요.`;
+    const ok = sendSlack(SLACK_CHANNEL, text);
+    if (ok || DRY_RUN) {
+      state.failspike[cid] = { clinic_name: name, count: cnt, last_alerted_at: ts(), last_alerted_ms: nowMs };
+      alerts++;
+    }
+  }
+  // 임계 아래로 회복(익일 리셋 등)한 지점 상태 해제.
+  for (const cid of Object.keys(state.failspike)) {
+    if (!spikes.has(cid)) delete state.failspike[cid];
+  }
+  return { alerts, suppressed };
 }
 
 // ③ 일일 발송한도 — 폴백(초과 응답 감지) + (한도 확정 시) 80% 임계 병행.
@@ -510,6 +647,34 @@ function runSelfTest() {
   // 4c. 회복(히스테리시스) — 임계(100건=4,500원) 위지만 clearMult(1.5=6,750원) 미만이면 미회복(플래핑 방지)
   assert(!isBalanceRecovered({ balance: 5000, notificationBalance: "200" }, opt), `잔액 5,000원(111건, clear 150건 미만) → 아직 미회복(홀드밴드)`);
   assert(isBalanceRecovered({ balance: 100000, notificationBalance: "200" }, opt), `잔액 10만원 → 회복`);
+
+  // (5) 절대 원(₩) 임계 경보 — CEO 종로 10만 / 송도 3만
+  const jongno = evaluateBalance({ balance: 90000, minWon: 100000 }, opt);
+  assert(jongno.breached && jongno.reasons.some((r) => r.includes("설정 임계")), `종로 잔액 9만원 < 임계 10만원 → 경보`);
+  const jongnoOk = evaluateBalance({ balance: 200000, minWon: 100000 }, opt);
+  assert(!jongnoOk.breached, `종로 잔액 20만원 ≥ 임계 10만원 → 경보 없음`);
+  const songdo = evaluateBalance({ balance: 25000, minWon: 30000 }, opt);
+  assert(songdo.breached && songdo.reasons.some((r) => r.includes("설정 임계")), `송도 잔액 2.5만원 < 임계 3만원 → 경보`);
+  // (5) 절대 임계 회복 히스테리시스 — 10만 임계는 15만(×1.5) 넘어야 해제
+  assert(!isBalanceRecovered({ balance: 120000, minWon: 100000 }, opt), `잔액 12만원(임계 10만 위지만 ×1.5=15만 미만) → 미회복`);
+  assert(isBalanceRecovered({ balance: 160000, minWon: 100000 }, opt), `잔액 16만원(×1.5=15만 이상) → 회복`);
+
+  // (6) 자동충전 실패 프록시 — autoRecharge=1 + 잔액 < 트리거만 breached, OFF면 미해당
+  const rcOff = evaluateAutoRechargeFailure({ balance: 1000, autoRecharge: 0, rechargeTrigger: 150000 });
+  assert(rcOff.applicable === false && rcOff.breached === false, `자동충전 OFF(현재상태) → 미해당·오탐 0`);
+  const rcFail = evaluateAutoRechargeFailure({ balance: 90000, autoRecharge: 1, rechargeTrigger: 150000 });
+  assert(rcFail.applicable && rcFail.breached, `자동충전 ON인데 잔액 9만 < 트리거 15만 → 실패 의심(breached)`);
+  const rcOk = evaluateAutoRechargeFailure({ balance: 200000, autoRecharge: 1, rechargeTrigger: 150000 });
+  assert(rcOk.applicable && !rcOk.breached, `자동충전 ON + 잔액 20만 ≥ 트리거 15만 → 정상`);
+
+  // (7) 발송 실패 급등 — 당일 failed 건수 > 임계
+  const failRows = [
+    ...Array.from({ length: 130 }, () => ({ clinic_id: "A" })),
+    ...Array.from({ length: 50 }, () => ({ clinic_id: "B" })),
+  ];
+  const spikes = classifyFailureSpike(failRows, 100);
+  assert(spikes.has("A") && spikes.get("A") === 130, `A지점 실패 130건 > 100 → 급등 경보`);
+  assert(!spikes.has("B"), `B지점 실패 50건 ≤ 100 → 경보 없음`);
 
   // 4d. 일일한도 초과 응답 감지(AC-3 폴백)
   const rows = [
