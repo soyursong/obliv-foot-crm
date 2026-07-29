@@ -12,8 +12,15 @@
  *
  * 정의:
  *   · 미배정 유입 = pending_payment.status ∈ {expired, failed}
- *       expired = TTL(선점잠금 6분) 경과 무매칭 / failed = 웹훅N·승인거절·tie-break 실패.
+ *       expired = 선점 유효창(5분) 경과 무매칭 / failed = 웹훅N·승인거절·tie-break 실패.
  *   · 유입률 = 미배정 유입 건수 / 전체 선점(pending_payment 생성) 건수.
+ *
+ * ★ 보관창(1시간) 정합 — T-20260729-foot-REDPAY-PLANB-MATCH-OCCURREDAT-SPEC-FIX 정정2(AC-7 교차확인):
+ *   · 매처(redpay-planb-match)가 '만료 후 1시간(REDPAY_PLANB_RETENTION_MIN)' 이내 expired 선점을 매칭 후보로 보관 →
+ *     late 웹훅 도착 시 expired → matched 로 전이될 수 있다(행 즉시삭제 없음, status 만 갱신).
+ *   · 따라서 '만료 = 곧 미배정 확정' 이 아니다. 보관창(1h)이 닫히기 전 스냅샷은 expired 를 과대집계할 수 있음.
+ *     → 확정 미배정률은 대상 기간 종료(to) 후 최소 (유효창 5분 + 보관창 60분) 경과 뒤 집계해야 late-match 반영.
+ *   · 즉시삭제가 아니라 status 보존이므로 시간이 지나도 expired 행은 소실되지 않는다(집계 안정성 유지).
  *
  * 착수 타이밍: 집계 로직 선개발(본 lib). 실측정은 parent NOWAIT-PAYPAGE-BUILD 라이브 후
  *   (pending_payment 데이터가 쌓여야 유효). parent deploy-ready 비블로킹.

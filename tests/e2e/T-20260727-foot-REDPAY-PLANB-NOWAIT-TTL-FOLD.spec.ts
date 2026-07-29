@@ -47,9 +47,12 @@ test.describe('T-20260727 REDPAY-PLANB TTL 축소 fold — 5분/6분', () => {
     const created = new Date('2026-07-29T10:00:00.000Z');
     expect(computeExpiresAt(created).toISOString()).toBe('2026-07-29T10:05:00.000Z');
     expect(computeLockedUntil(created).toISOString()).toBe('2026-07-29T10:06:00.000Z');
-    // 자동연결 판정: 4분59초 도착=유효 / 5분00초 도착=초과(미배정)
-    expect(isWithinAutoConnect(created, '2026-07-29T10:04:59.000Z')).toBe(true);
-    expect(isWithinAutoConnect(created, '2026-07-29T10:05:00.000Z')).toBe(false);
+    // T-20260729-...-MATCH-OCCURREDAT-SPEC-FIX 정정2: 자동연결 판정 시간 키 = occurred_at(승인시각),
+    //   닫힌 구간 [created, created+5분]. received_at(도착시각) 기준 아님(웹훅 지연 제거).
+    expect(isWithinAutoConnect(created, '2026-07-29T10:04:59.000Z')).toBe(true);   // 유효창 내(승인 +4분59초)
+    expect(isWithinAutoConnect(created, '2026-07-29T10:05:00.000Z')).toBe(true);   // 상한 경계(=expires) 포함
+    expect(isWithinAutoConnect(created, '2026-07-29T10:05:00.001Z')).toBe(false);  // 유효창 초과
+    expect(isWithinAutoConnect(created, '2026-07-29T09:59:59.000Z')).toBe(false);  // created 이전(승인 전) 제외
   });
 
   test('I3: 안내 문구 = "결제는 최대 5분 내 자동 기록"', () => {
