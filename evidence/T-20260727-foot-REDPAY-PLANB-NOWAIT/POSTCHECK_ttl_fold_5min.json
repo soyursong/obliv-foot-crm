@@ -1,0 +1,44 @@
+{
+  "ticket": "T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD",
+  "migration": "20260729120000_foot_redpay_planb_expires_default_5min",
+  "supervisor_gate": "MSG-20260729-085344-hjxt (DB-GATE-REPLY, verdict=GO)",
+  "verdict_reconciled": "IDEMPOTENT NO-OP — target state already applied legitimately (prior --apply run)",
+  "divergence_vs_supervisor_readonly_evidence": {
+    "supervisor_pre_readonly": "expires_at DEFAULT = now()+'00:10:00'",
+    "dev_foot_pre_probe_at_apply": "expires_at DEFAULT = (now() + '00:05:00'::interval)",
+    "classification": "convergent — prod already at 5min target BEFORE this apply attempt",
+    "cause": "prior apply harness --apply run (commit 65a1d241 @ 2026-07-29 08:55:31 +0900) already applied migration; supervisor read-only snapshot predates that apply",
+    "sentinel_bypass_hazard_ruled_out": "hazard signature = DEFAULT=5min AND ledger ABSENT. Observed = DEFAULT=5min AND ledger PRESENT with created_by fingerprint 'T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD-ttl-fold-5min' (exact applyMigration createdBy). Dryrun never writes ledger → NOT the persistence hazard.",
+    "action_taken": "HALT re-apply (harness PRE-probe fail-closed aborted, exit 2). NO rollback (would revert correct target). Reported to supervisor for confirm."
+  },
+  "POSTCHECK_4fields": {
+    "a_expires_at_default_5min": {
+      "result": "PASS",
+      "observed": "(now() + '00:05:00'::interval)"
+    },
+    "b_schema_migrations_ledger_insert": {
+      "result": "PASS",
+      "version": "20260729120000",
+      "name": "foot_redpay_planb_expires_default_5min",
+      "created_by": "T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD-ttl-fold-5min"
+    },
+    "c_other_columns_constraints_unchanged": {
+      "result": "PASS",
+      "expires_at": "NOT NULL, timestamptz — unchanged (only DEFAULT + COMMENT changed)",
+      "locked_until": "nullable, no DEFAULT, app-set only — unchanged (COMMENT only)",
+      "status_check": "CHECK IN ('open','matched','expired','failed','cancelled') — intact",
+      "foreign_keys": "clinic_id/customer_id/check_in_id/matched_raw_txid + pkey — all intact",
+      "rowcount": 0
+    },
+    "d_applied_at_evidence": {
+      "result": "PASS (ledger has no timestamp column in this schema)",
+      "apply_harness_commit": "65a1d241",
+      "apply_commit_time": "2026-07-29 08:55:31 +0900",
+      "note": "ledger presence (created_by fingerprint) + commit timestamp = apply evidence"
+    }
+  },
+  "comment_expires_at_prod": "app-set = created_at + interval '5 minutes' (2026-07-29 TTL 축소 fold)",
+  "comment_locked_until_prod": "app-set = created_at + interval '6 minutes' (2026-07-29 축소 fold)",
+  "app_ssot_alignment": "src/lib/redpayPlanbTtl.ts (5/6) ↔ DEFAULT fallback(5min) divergence 0",
+  "probed_at": "2026-07-29 (dev-foot post-GO reconciliation)"
+}
