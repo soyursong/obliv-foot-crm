@@ -61,6 +61,9 @@ import {
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축(deriveConsultAxis)의 초진/재진 입력을 stored visit_type →
 //   recency(365일) 배치 판정으로 통일. 배정 화면 표시·재진 상담칸 숨김이 접수분류·배지·엔진과 수렴(AC-3).
 import { resolveVisitTypesByCheckIn } from '@/lib/visitRecency';
+// T-20260729-foot-CONSULT-SLACK-INFLOW-WALKIN-MISLABEL: 유입경로 표시/발송 라벨을 자동배정 균등 버킷
+//   (deriveConsultAxis)에서 분리(DECOUPLE)한 SSOT. 재진='재진', 그 외=고객 실제 visit_route 원문.
+import { consultInflowLabel } from '@/lib/consultInflowLabel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -994,8 +997,10 @@ export default function Assignments() {
           staffId,
           method: act ? (METHOD_KO[act.action_type] ?? '—') : '—',
           at: act?.created_at ?? ci.checked_in_at!,
-          // 변경2: 유입경로 = 상담 축 라벨(AXIS_KO 매핑). 발송 게이트/상태는 consult 행에만 의미.
-          inflow: role === 'consult' ? (AXIS_KO[axisOf(ci, 'consult')] ?? axisOf(ci, 'consult')) : '',
+          // T-20260729-foot-CONSULT-SLACK-INFLOW-WALKIN-MISLABEL (DECOUPLE): 유입경로 라벨을 균등 버킷
+          //   축(deriveConsultAxis)에서 분리 → 고객 실제 visit_route 원문 노출(재진은 '재진'). 네이버·지인소개·공홈
+          //   등 실값 소실('워크인' 접힘) 해소. 발송 게이트/상태는 consult 행에만 의미. 배정 로직 무변경.
+          inflow: role === 'consult' ? consultInflowLabel(axisOf(ci, 'consult'), cust) : '',
           notifyStatus: ci.consult_notify_status ?? null,
         });
       };
