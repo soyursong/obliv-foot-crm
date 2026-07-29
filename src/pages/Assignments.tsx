@@ -869,7 +869,7 @@ export default function Assignments() {
   //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 산출값을 date-range 재호출로 read-only 소비.
   //  · #1 선택일(rankingDate) 기준 6-read 병렬(모두 READ, DB 무변경):
   //     ① 월매출(1일~선택일) = 순위 기준  ② 전주매출(직전주 월~일)  ③ 이번주매출(이번주 월~선택일, 변동표용)
-  //     ④ 당일 배정건수(check_ins.consultant_id — 배정 SSOT, deleted_at 제외)  ⑤ 당월 초진예약 총건수
+  //     ④ 당일 배정건수(check_ins.consultant_id — 배정 SSOT, deleted_at + cancelled 제외)  ⑤ 당월 초진예약 총건수
   //     ⑥ 배정비율 설정값(assignment_daily_target_config — 플레이북 [실행 1b], 신규 저장 0)
   //  · 표시 read-only. customers.assigned_consultant_id 무접촉(RED LINE). admin 전용 탭 진입 시에만 fetch.
   //  · TM 제외 판단(#6): check_ins.consultant_id 배정은 데스크 상담배정 SSOT이며 lead_source 미보유(TM 판별자 부재).
@@ -895,6 +895,12 @@ export default function Assignments() {
             .eq('clinic_id', clinicId)
             .not('consultant_id', 'is', null)
             .is('deleted_at', null)
+            // T-20260729-foot-RANKING-DAYASSIGN-COUNT-CANCELLED-EXCLUDE: 취소건 배정 카운트 배제.
+            //   staffStats(누적/드릴 팝업, a7885a99)·금일 배분 이력 표(8ff93685)에서 확립한 불변식
+            //   ('cancelled' 는 배정 카운트/표시에서 제외 — done 등 활성 배정만 집계)을 [랭킹] 탭 '당일 배정건수'
+            //   집계에도 동일 적용. 이전엔 deleted_at 만 필터 → cancelled(비-soft-hide) 배정이 유령으로 과다카운트.
+            //   배정 규칙/assigned_consultant_id 무변경(집계 필터만, RED LINE 무접촉).
+            .neq('status', 'cancelled')
             .gte('checked_in_at', dayStart)
             .lt('checked_in_at', dayEndExcl),
           supabase
