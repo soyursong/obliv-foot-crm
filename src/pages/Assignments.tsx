@@ -1413,31 +1413,34 @@ export default function Assignments() {
         <>
       {/* ⓪ 일일 배정 목표 (차주 초진 예약) — T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO.
           차주(다음 주 월~일) 요일별 초진(신규 첫 방문) 예약 건수 = 그 날의 배정 목표. read-only, 실시간 자동 갱신. */}
+      {/* T-20260729-foot-RANKING-NEXTWEEK-CARD-MONOTONE-COMPACT: 화려한 emerald 색·큰 크기 → 기존 표/테이블 톤에 맞춘
+          모노톤(무채색 bg-muted) + 컴팩트(테이블 헤더 수준 패딩·폰트). 데이터·집계·실시간 구독 로직은 무접촉(스타일만). */}
       <Card data-testid="assignments-nextweek-target-card">
-        <CardHeader className="py-3">
+        <CardHeader className="py-2">
           <CardTitle className="text-sm">일일 배정 목표 · 차주 초진 예약</CardTitle>
           <p className="text-xs text-muted-foreground">
             다음 주({nextWeekRange.nextMon.slice(5).replace('-', '.')}~{nextWeekRange.nextSun.slice(5).replace('-', '.')}) 요일별 초진(신규 첫 방문) 예약 건수입니다. 예약 생성·취소 시 자동으로 갱신됩니다.
           </p>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-7 gap-2" data-testid="nextweek-target-grid">
+        <CardContent className="pb-3">
+          <div className="grid grid-cols-7 gap-1" data-testid="nextweek-target-grid">
             {nextWeekRange.days.map((d, i) => {
               const dow = ['월', '화', '수', '목', '금', '토', '일'][i];
               const count = nextWeekTargets ? (nextWeekTargets[d] ?? 0) : null; // null=로딩, 조회 후 0건=0(AC-5)
-              const dowClass = i === 6 ? 'text-red-500' : i === 5 ? 'text-blue-500' : 'text-muted-foreground';
+              // 모노톤: 주말(토·일)은 무채색 강조(text-foreground), 평일은 muted. 색상 hue 제거.
+              const dowClass = i === 5 || i === 6 ? 'text-foreground' : 'text-muted-foreground';
               return (
                 <div
                   key={d}
                   data-testid={`nextweek-target-cell-${d}`}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2 py-4 text-center"
+                  className="flex flex-col items-center gap-0.5 rounded border bg-muted/40 px-2 py-2 text-center"
                 >
-                  <span className={`text-sm font-semibold ${dowClass}`}>{dow}</span>
-                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                  <span className={`text-xs font-medium ${dowClass}`}>{dow}</span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground">
                     {d.slice(5).replace('-', '.')}
                   </span>
                   <span
-                    className="text-3xl font-bold tabular-nums text-emerald-700"
+                    className="text-base font-semibold tabular-nums text-foreground"
                     data-testid={`nextweek-target-count-${d}`}
                   >
                     {count == null ? '·' : count}
