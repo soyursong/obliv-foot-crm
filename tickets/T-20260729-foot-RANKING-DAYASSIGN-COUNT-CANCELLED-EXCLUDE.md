@@ -2,11 +2,16 @@
 id: T-20260729-foot-RANKING-DAYASSIGN-COUNT-CANCELLED-EXCLUDE
 domain: foot
 priority: P2
-status: deploy-ready
-qa_result: pending
+status: deployed
+qa_result: pass
+qa_grade: Green
 deploy_commit: c251645a1d1a
-deployed_at: 2026-07-30 (ticket branch pushed — origin/main merge = supervisor QA 게이트 대기)
-bundle_hash: 로컬 build ✓ (npm run build ✓, built in 5.98s)
+commit: f58a0106df343309ad943a6a6f390392501d5d69
+deployed_at: 2026-07-30 01:32:31 +09:00
+bundle_hash: index-Dm4HobMA.js (CF version.json commit=f58a0106df34, builtAt 2026-07-29T16:32:31Z)
+qa_verified_by: supervisor
+qa_verified_at: 2026-07-30 01:34 +09:00
+qa_notes: "GO/Green. 이미 origin/main 반영(c251645a fix + f58a0106 docs)·CF auto-deploy 완료(live bundle 'cancelled' guard 확인). Phase1 build OK / Phase1.5 env matrix(신규 env 0) / Phase2 browser baseline BROWSER OK(3|0) / runtime-safety clean / DA HOLD CLEAR / db_change=false·RED LINE(assigned_consultant_id) 무접촉→Contract Gate·DA CONSULT 비해당. dayAssignCounts 집계에 .neq('status','cancelled') 추가로 3번째 surface 불변식 일관화(staffStats a7885a99·이력표 8ff93685 계보). 현장알림 skip: dev-internal 관찰 스핀아웃·reporter_slack_id null·slack_thread_ts null·admin전용 카운트 정확도(현장 동선/중복표시 무영향)."
 db_change: false
 db_migration: none
 db_gate: N/A — FE 표시/집계 레이어 전용. 신규 컬럼·테이블·enum 0. 기존 check_ins.status 조회 컬럼(select 재사용) 에 서버필터 .neq('status','cancelled') 추가만. §S2.4 데이터 정책 자문 게이트 비해당.
