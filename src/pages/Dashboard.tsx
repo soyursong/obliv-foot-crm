@@ -5286,6 +5286,10 @@ export default function Dashboard() {
           clinic_id: row.clinic_id,
           from_status: row.status,
           to_status: newStatus,
+          // T-20260725-foot-MEDIREC-ROOMCAPTURE: 룸수반 전이(방 드롭)에 배정 방 라벨 캡처.
+          //   소스 = 방금 드롭한 roomName(= 동시 기입되는 check_in_room_logs.assigned_room와 동일 값).
+          //   메디렉 상담실 녹취 ↔ 현장동선 조인 앵커. 미수반 전이는 이 경로를 안 타므로 자연 NULL.
+          room_id: roomName,
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
@@ -5972,6 +5976,9 @@ export default function Dashboard() {
         clinic_id: ci.clinic_id,
         from_status: ci.status,
         to_status: 'consultation',
+        // T-20260725-foot-MEDIREC-ROOMCAPTURE: 상담실 배정과 함께 전이에 방 라벨 캡처(consultRoom
+        //   = 동시 기입되는 check_in_room_logs.assigned_room와 동일). 메디렉 조인 앵커.
+        room_id: consultRoom,
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
@@ -6090,6 +6097,9 @@ export default function Dashboard() {
         clinic_id: ci.clinic_id,
         from_status: ci.status,
         to_status: 'preconditioning',
+        // T-20260725-foot-MEDIREC-ROOMCAPTURE: 치료실 배정과 함께 전이에 방 라벨 캡처(treatmentRoom
+        //   = 동시 기입되는 check_in_room_logs.assigned_room와 동일, room_type='treatment').
+        room_id: treatmentRoom,
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
@@ -6142,6 +6152,9 @@ export default function Dashboard() {
         clinic_id: ci.clinic_id,
         from_status: ci.status,
         to_status: 'laser',
+        // T-20260725-foot-MEDIREC-ROOMCAPTURE: 레이저실 배정과 함께 전이에 방 라벨 캡처(laserRoom
+        //   = 동시 기입되는 check_in_room_logs.assigned_room와 동일, room_type='laser').
+        room_id: laserRoom,
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
