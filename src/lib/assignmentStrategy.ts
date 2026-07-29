@@ -206,6 +206,38 @@ export function interpolateDailyTargets(
   return m;
 }
 
+/**
+ * 랭킹 배정 비율(0~1) 맵 — 단일 산식 SSOT (중복 산식 금지, T-20260729-foot-ASSIGN-TARGETCOL AC-4).
+ *
+ *  매출 desc(동점 시 이름 ko 오름차순) 정렬 → interpolateDailyTargets 로 랭크별 목표 산출 →
+ *  각 랭크 목표 ÷ Σ목표 = 스케일 불변 비율. 이 비율에 '초진 예약 수'를 곱하면 직원별 배정 목표.
+ *
+ *  · 랭킹 탭 '배정비율/예상 배정건수'(월 grain: monthInitResvCount × 비율)
+ *  · 직원별 누적 표 '일일 배정 목표' 컬럼(일 grain: selectedDate 초진예약수 × 비율)
+ *  두 소비처가 반드시 이 함수 하나만 호출해 산식 재발명을 차단한다(정렬·보간·정규화 동일).
+ *
+ *  cfg 부재(하루 목표건수 미설정) 또는 Σ목표=0 → null(비율 산출 불가 → 소비처는 '—' 처리).
+ */
+export function rankAssignmentRatios(
+  rows: { consultant_id: string; total_amount?: number | null; name?: string | null }[],
+  cfg: { top: number; bottom: number } | null,
+): Map<string, number> | null {
+  if (!cfg) return null;
+  const sorted = [...rows].sort(
+    (a, b) =>
+      (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
+      (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
+  );
+  const rankedIds = sorted.map((r) => r.consultant_id);
+  const targets = interpolateDailyTargets(rankedIds, cfg.top, cfg.bottom);
+  let sum = 0;
+  for (const v of targets.values()) sum += v;
+  if (sum <= 0) return null;
+  const ratios = new Map<string, number>();
+  for (const id of rankedIds) ratios.set(id, (targets.get(id) ?? 0) / sum);
+  return ratios;
+}
+
 /** Daily Target 설정(부재 시 null → daily_target 전략은 랭킹순 fallback). */
 export async function fetchDailyTargetConfig(
   clinicId: string,

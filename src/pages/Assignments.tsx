@@ -39,7 +39,7 @@ import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
 // T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC §5: '당월 배정 예상 비율' = 기존 배정비율 설정값 재사용(신규 저장 0).
 //   배정 비율 설정값 = assignment_daily_target_config(top/bottom) + interpolateDailyTargets 랭크별 목표(플레이북 [실행 1b]).
 //   비율 = 랭크별 목표 ÷ Σ목표(스케일 불변). 재발명 금지 — 자동배정 엔진과 동일 산식 SSOT 소비. DB 무변경(READ-only).
-import { fetchDailyTargetConfig, interpolateDailyTargets } from '@/lib/assignmentStrategy';
+import { fetchDailyTargetConfig, rankAssignmentRatios } from '@/lib/assignmentStrategy';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
@@ -270,6 +270,18 @@ export default function Assignments() {
   //   집계 SSOT = monthInitResvCount 와 동일 술어(reservations visit_type='new' + status!=cancelled + reservation_date DATE범위).
   //   read-only 파생 표시(write 0). null=로딩 중(미조회), 조회 후 0건 일자는 0으로 표시(AC-5).
   const [nextWeekTargets, setNextWeekTargets] = useState<Record<string, number> | null>(null);
+
+  // ── T-20260729-foot-ASSIGN-TARGETCOL-STAFFCUMUL-EMPTY-WIRE (총괄 결정 B, 완성본) ──────────────
+  //   '직원별 누적' 표 [일일 배정 목표] 컬럼 = 각 상담실장의 랭킹 기준 목표 자동 표시.
+  //   산식(플레이북 실행 1b) = (선택일 초진 예약 수) × (그 실장의 랭킹 배정 비율).
+  //     · 비율 SSOT = rankAssignmentRatios(랭킹 탭 '배정비율'과 동일 함수, 중복 산식 금지 / AC-4).
+  //     · 기준일(AC-3) = selectedDate — 컬럼이 속한 [일누적] 그룹의 day grain(inDay(selectedDate))과 정합.
+  //   접근통제(AC-4/시나리오4): 랭킹·매출 파생값 → canViewRanking(admin/manager/director) 전용.
+  //     비admin 은 서버 SECDEF 래퍼(foot_stats_consultant_admin)가 42501 fail-closed → 아예 조회 불가 → '—' 유지.
+  //   RED LINE(INV-1): customers.assigned_consultant_id 무접촉 — read-only 표시 파생만(실 배정 로직 불변).
+  const [targetPerfRows, setTargetPerfRows] = useState<ConsultantRow[]>([]); // 선택일 월누적 매출(랭킹 순서)
+  const [targetCfg, setTargetCfg] = useState<{ top: number; bottom: number } | null>(null); // 하루 목표건수 config
+  const [selDayInitResvCount, setSelDayInitResvCount] = useState<number | null>(null); // 선택일 초진 예약 수(null=미조회)
 
   // T-20260710-foot-ASSIGNMENT-LIST-TAB: 상위 탭 3분기 [상담]/[치료]/[배정목록].
   //  · 상담/치료 → 기존 배정 운영 카드(①오늘현황 ②당김 ③금일배분 ④당월누적) 노출 + activeTab 동기화(로직 불변).
@@ -714,12 +726,25 @@ export default function Assignments() {
       .sort((x, y) => y.month.assigned.length - x.month.assigned.length);
   }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate]);
 
-  // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경2: '일일 배정 목표' 값 출처(느슨결합 단일 지점).
-  //   현행 화면에 배정목표 소스 없음(staff·설정 컬럼 부재) — 자동배정 엔진(T-20260726-foot-CRM-ASSIGN-V1, 미착수)
-  //   이 산출하게 될 값. 엔진 배포 시 이 함수만 교체하면 컬럼/표시 구조 유지(느슨결합). 현재는 미설정('—').
-  const dailyTargetOf = useCallback((_st: StaffStat): number | null => {
-    return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
-  }, []);
+  // T-20260729-foot-ASSIGN-TARGETCOL-STAFFCUMUL-EMPTY-WIRE (총괄 결정 B):
+  //   '일일 배정 목표' = (선택일 초진 예약 수) × (그 실장 랭킹 배정 비율). 느슨결합 단일 지점 유지.
+  //   비율 SSOT = rankAssignmentRatios(랭킹 탭과 동일 함수). 랭킹은 상담실장(consultant) 개념 →
+  //   치료사(therapy 탭)·비admin 은 랭킹 파생 목표 부재 → null('—'). 상담실장이 랭킹에 없으면(매출 0 등) 목표 0.
+  const targetRatios = useMemo(
+    () => rankAssignmentRatios(targetPerfRows, targetCfg),
+    [targetPerfRows, targetCfg],
+  );
+  const dailyTargetOf = useCallback(
+    (st: StaffStat): number | null => {
+      // 접근통제 + 랭킹 개념 게이트: admin 전용 + 상담(consultant) 탭 + 산식 입력 로딩 완료.
+      if (!canViewRanking) return null;
+      if (st.staff.role !== 'consultant') return null; // 치료사는 랭킹 배정 비율 대상 아님
+      if (targetRatios == null || selDayInitResvCount == null) return null; // config 미설정/미조회 → '—'
+      const ratio = targetRatios.get(st.staff.id) ?? 0; // 랭킹 미포함 실장 = 비율 0 → 목표 0(AC-2 '0이면 0')
+      return Math.round(selDayInitResvCount * ratio);
+    },
+    [canViewRanking, targetRatios, selDayInitResvCount],
+  );
 
   // ── T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO ────────────────────────────────
   //   [일일 배정 목표] = 차주(다음 주) 요일별 초진 예약 건수 자동 계산 + 실시간 반영.
@@ -783,6 +808,61 @@ export default function Assignments() {
       void supabase.removeChannel(ch);
     };
   }, [clinic, mainTab, fetchNextWeekTargets]);
+
+  // ── T-20260729-foot-ASSIGN-TARGETCOL: '일일 배정 목표' 산식 입력 3종 병렬 조회 ──────────────
+  //   ① 선택일 월누적 매출(랭킹 순서) = fetchConsultantPerf(선택일 1일~선택일) — 랭킹 탭과 동일 진입점(SECDEF admin-gated).
+  //   ② 하루 목표건수 config(top/bottom) = fetchDailyTargetConfig — 랭킹 비율 SSOT 입력.
+  //   ③ 선택일 초진 예약 수 = reservations(visit_type='new' + status!=cancelled + reservation_date=선택일).
+  //      술어 SSOT = fetchNextWeekTargets/monthInitResvCount 와 동일(취소 제외). day 경계 = [selectedDate, +1일).
+  const fetchDailyTargetInputs = useCallback(async () => {
+    if (!clinic || !canViewRanking) return; // 비admin → 서버 42501, 미조회(표시 '—' 유지)
+    const clinicId = clinic.id;
+    const monthStart = `${selectedDate.slice(0, 7)}-01`;
+    try {
+      const [perf, cfg, dayResv] = await Promise.all([
+        fetchConsultantPerf(clinicId, monthStart, selectedDate),
+        fetchDailyTargetConfig(clinicId),
+        supabase
+          .from('reservations')
+          .select('id', { count: 'exact', head: true })
+          .eq('clinic_id', clinicId)
+          .eq('visit_type', 'new')
+          .neq('status', 'cancelled')
+          .gte('reservation_date', selectedDate)
+          .lt('reservation_date', isoAddDays(selectedDate, 1)),
+      ]);
+      setTargetPerfRows(perf);
+      setTargetCfg(cfg ? { top: cfg.top_rank_target, bottom: cfg.bottom_rank_target } : null);
+      setSelDayInitResvCount(dayResv.count ?? 0);
+    } catch (e) {
+      // 실패 시 직전 표시 유지(빈 상태로 덮어쓰지 않음). 상담 탭 진입 전 최초엔 selDayInitResvCount=null → '—'.
+      console.warn('[Assignments] daily target inputs load failed:', e);
+    }
+  }, [clinic, canViewRanking, selectedDate]);
+
+  // [상담] 탭 진입/선택일 변경 시 조회(랭킹 파생 = 상담실장 개념 → 치료 탭 미조회, egress 절감).
+  useEffect(() => {
+    if (mainTab !== 'consult') return;
+    void fetchDailyTargetInputs();
+  }, [mainTab, fetchDailyTargetInputs]);
+
+  // 실시간 반영(시나리오3): reservations 변경 → 선택일 초진예약수 재조회 → 목표 즉시 갱신.
+  useEffect(() => {
+    if (!clinic || !canViewRanking || mainTab !== 'consult') return;
+    const ch = supabase
+      .channel(`assign_dailytarget_input_${clinic.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations', filter: `clinic_id=eq.${clinic.id}` },
+        () => {
+          void fetchDailyTargetInputs();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [clinic, canViewRanking, mainTab, fetchDailyTargetInputs]);
 
   // ── [랭킹] 탭 (T-20260726-...-ADMINLOCK + T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC) ──────
   //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
@@ -881,16 +961,10 @@ export default function Assignments() {
         (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
         (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
     );
-    // #5 배정비율 = interpolateDailyTargets(랭크순, top, bottom) 의 랭크별 목표 ÷ Σ목표(스케일 불변).
-    const rankedIds = sorted.map((r) => r.consultant_id);
-    const targets = dailyTargetCfg
-      ? interpolateDailyTargets(rankedIds, dailyTargetCfg.top, dailyTargetCfg.bottom)
-      : null;
-    let sumTargets = 0;
-    if (targets) for (const v of targets.values()) sumTargets += v;
+    // #5 배정비율 = rankAssignmentRatios(단일 산식 SSOT). 직원별 누적 표 '일일 배정 목표' 컬럼과 동일 함수 공유(중복 산식 금지).
+    const ratios = rankAssignmentRatios(perfRows, dailyTargetCfg);
     return sorted.map((r, i) => {
-      const ratio =
-        targets && sumTargets > 0 ? (targets.get(r.consultant_id) ?? 0) / sumTargets : null;
+      const ratio = ratios?.get(r.consultant_id) ?? null;
       return {
         rank: i + 1,
         consultantId: r.consultant_id,
