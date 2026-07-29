@@ -1726,9 +1726,12 @@ export default function Assignments() {
                       {r.at ? new Date(r.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) : '—'}
                     </td>
                     {/* T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 발송(확정) 셀 — 상담 탭 한정.
-                        상태 3-state: 미확정 → [확정] 버튼(admin/manager/director) / 발송중 / 발송됨.
+                        상태 3-state(멱등): 미확정 → [확정] 버튼 / 발송중 / 발송됨.
                         클릭 시에만 send-consult-notify EF → 상담대기방(C0B4HEC9SHH) 발송(자동발송 없음).
-                        멱등: 서버 조건부 claim + notifyStat!=='미확정' 시 버튼 비노출 → 이중발송 방지. */}
+                        멱등: 서버 조건부 claim + notifyStat!=='미확정' 시 버튼 비노출 → 이중발송 방지.
+                        T-20260729-foot-CONFIRM-BTN-ROLE-OPEN: 역할 제한(canEditDistribution) 제거 —
+                          코디네이터 포함 전 역할이 [확정] 버튼 표시+클릭 가능. '미확정' 텍스트 폴백 렌더 경로도 제거.
+                          (총괄 지시: 접근제어 완화. sent/sending 건은 role 무관 배지로 멱등 유지.) */}
                     {activeTab === 'consult' && (
                       <td className="px-2 py-2 text-right">
                         {r.notifyStatus === 'sent' ? (
@@ -1739,7 +1742,7 @@ export default function Assignments() {
                           <Badge variant="secondary" className="font-normal" data-testid={`dist-notify-sending-${r.id}`}>
                             발송중
                           </Badge>
-                        ) : canEditDistribution ? (
+                        ) : (
                           <Button
                             type="button"
                             variant="outline"
@@ -1751,8 +1754,6 @@ export default function Assignments() {
                           >
                             {notifyingId === r.id ? '발송 중…' : '확정'}
                           </Button>
-                        ) : (
-                          <span className="text-muted-foreground" data-testid={`dist-notify-pending-${r.id}`}>미확정</span>
                         )}
                       </td>
                     )}
