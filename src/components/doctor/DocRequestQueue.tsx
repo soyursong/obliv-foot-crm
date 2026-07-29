@@ -23,6 +23,11 @@ import {
   useAllPublishedOpinionRequests,
   useResolveOpinionRequest,
   useQueueClinicalSnaps,
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT: 3개 컬럼 실 데이터 연동(read-only).
+  //   생년(만나이)=customers.birth_date live / 오늘시술=당일 check_ins.treatment_kind 전체 / 처방내역=PMW 당일 처방약.
+  useQueueCustomerBirthDates,
+  useQueueTodayProcedureRx,
+  type TodayProcedureRx,
   // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 서류작성 큐 행 담당 진료의(치료테이블 [진료]와 동일 값) 조회.
   useQueueTreatingDoctors,
   buildOptionLabelMap,
@@ -103,6 +108,18 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
     [rows, completedRows],
   );
   const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, customerIds);
+
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT (AC-1/2/3): 3개 컬럼 실 데이터 연동(read-only).
+  //   AC-1 생년(만나이) = customers.birth_date live(스냅샷보다 우선). AC-2 오늘시술 = 당일 check_ins.treatment_kind 전체.
+  //   AC-3 처방내역 = 결제미니창(PMW) 당일 처방약(check_in_services). 대기+완료 두 테이블 동일 소스.
+  const { data: liveBirthDates = {} } = useQueueCustomerBirthDates(clinicId, customerIds);
+  const { data: todayProcRx = {} } = useQueueTodayProcedureRx(clinicId, customerIds);
+  // customerId → 생년 표시용 값(live 우선, 없으면 요청 스냅샷 birthDate 폴백).
+  const birthDateForRow = (r: OpinionRequestRow) =>
+    (r.customerId ? liveBirthDates[r.customerId] : '') || r.birthDate || null;
+  // customerId → 당일 시술/처방(없으면 빈 배열 → 셀 '—').
+  const todayForRow = (r: OpinionRequestRow): TodayProcedureRx =>
+    (r.customerId ? todayProcRx[r.customerId] : undefined) ?? { procedures: [], prescriptions: [] };
 
   // T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 작업 대상 + 완료 그룹 각 행의 담당 진료의(치료테이블
   //   [진료]와 동일 값 = check_ins.treating_doctor_id → clinic_doctors.name). checkInId 앵커로 해석.
@@ -339,6 +356,8 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                 clinicalSnaps={clinicalSnaps}
                 itemLabelsForRow={itemLabelsForRow}
                 doctorNameForRow={doctorNameForRow}
+                birthDateForRow={birthDateForRow}
+                todayForRow={todayForRow}
                 onWrite={openWrite}
                 onCancel={openCancel}
               />
@@ -362,6 +381,8 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   clinicalSnaps={clinicalSnaps}
                   itemLabelsForRow={itemLabelsForRow}
                   doctorNameForRow={doctorNameForRow}
+                  birthDateForRow={birthDateForRow}
+                  todayForRow={todayForRow}
                   onWrite={openWrite}
                   onViewDoc={openDocView}
                 />
@@ -602,6 +623,8 @@ function DocReqTable({
   clinicalSnaps,
   itemLabelsForRow,
   doctorNameForRow,
+  birthDateForRow,
+  todayForRow,
   onWrite,
   onCancel,
   onViewDoc,
@@ -613,6 +636,9 @@ function DocReqTable({
   itemLabelsForRow: (r: OpinionRequestRow) => string;
   // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 행 담당 진료의명(치료테이블 [진료]와 동일 값). ''=미지정.
   doctorNameForRow: (r: OpinionRequestRow) => string;
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT: AC-1 생년(live 우선) / AC-2·3 당일 시술·처방.
+  birthDateForRow: (r: OpinionRequestRow) => string | null;
+  todayForRow: (r: OpinionRequestRow) => TodayProcedureRx;
   onWrite: (r: OpinionRequestRow) => void;
   // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: pending 그룹에만 전달(done=undefined → 완료행 취소버튼 미표시, AC-7).
   onCancel?: (r: OpinionRequestRow) => void;
@@ -645,6 +671,8 @@ function DocReqTable({
             snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
             itemLabels={itemLabelsForRow(r)}
             doctorName={doctorNameForRow(r)}
+            birthDisplay={birthDateForRow(r)}
+            today={todayForRow(r)}
             onWrite={onWrite}
             onCancel={onCancel}
             onViewDoc={onViewDoc}
@@ -666,6 +694,8 @@ function DocRequestRow({
   snap,
   itemLabels,
   doctorName,
+  birthDisplay,
+  today,
   onWrite,
   onCancel,
   onViewDoc,
@@ -676,6 +706,9 @@ function DocRequestRow({
   itemLabels: string;
   // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 담당 진료의명(치료테이블 [진료]와 동일 값). ''=미지정.
   doctorName: string;
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT: AC-1 생년(live 우선 값, null=결측) / AC-2·3 당일 시술·처방.
+  birthDisplay: string | null;
+  today: TodayProcedureRx;
   onWrite: (r: OpinionRequestRow) => void;
   onCancel?: (r: OpinionRequestRow) => void;
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: 서류명 클릭 → 실제 발행본 내용 열람(done 그룹만 전달).
@@ -689,8 +722,12 @@ function DocRequestRow({
   const [expandClinical, setExpandClinical] = useState(false);
   const [expandDone, setExpandDone] = useState(false);
 
-  const rx = snap?.prescription || null;
-  const progress = snap?.progress || null;
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT:
+  //   AC-3 처방내역 = 결제미니창(PMW) 당일 처방약 전체(', ' 나열). 기존 medical_charts.prescription_items 아님.
+  //   AC-2 오늘시술 = 당일 차감 시술(treatment_kind) 전체(', ' 나열). 당일 없으면 '—'.
+  const rx = today.prescriptions.length > 0 ? today.prescriptions.join(', ') : null;
+  const procedureText = today.procedures.length > 0 ? today.procedures.join(', ') : null;
+  const progress = snap?.progress || null; // 임상경과=기존 소스 유지(본 티켓 범위 밖)
   const isDone = variant === 'done';
   // AC1/AC4: 발행완료 옆 표시할 발행 서류명 = 발행된 요청의 doc_type 라벨(진단서/소견서). 완료 그룹 = published row 이므로 항상 존재.
   //   ★read-only READ: 발행완료 훅(useAllPublishedOpinionRequests)이 이미 읽어온 field_data.doc_type/selected_keys 만 표시(신규 조회·스키마 변경 0).
@@ -708,7 +745,8 @@ function DocRequestRow({
           <span className="ml-1 text-[10px] font-normal text-muted-foreground">· 요청 {r.requestedByName}</span>
         )}
       </td>
-      <td className="px-2 py-1.5 tabular-nums whitespace-nowrap text-foreground/90">{birthYearAgeDisplay(r.birthDate) || '—'}</td>
+      {/* T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT AC-1: 생년(만나이) = customers.birth_date live 우선(스냅샷 폴백). 결측 '—'. */}
+      <td className="px-2 py-1.5 tabular-nums whitespace-nowrap text-foreground/90" data-testid="docreq-cell-birth">{birthYearAgeDisplay(birthDisplay) || '—'}</td>
       <td className="px-2 py-1.5 font-mono whitespace-nowrap text-foreground/90">{r.chartNo ? chartNoDisplay(r.chartNo) : '—'}</td>
 
       {/* T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 담당 진료의 = 치료테이블 [진료]와 동일 값
@@ -721,7 +759,8 @@ function DocRequestRow({
         )}
       </td>
 
-      <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80"><span className="block truncate" title={snap?.treatment ?? ''}>{snap?.treatment || '—'}</span></td>
+      {/* T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT AC-2: 오늘시술 = 당일 check_ins.treatment_kind 전체 나열(PKG-BOX-INDICATOR SSOT). */}
+      <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80" data-testid="docreq-cell-today-proc"><span className="block truncate" title={procedureText ?? ''}>{procedureText || '—'}</span></td>
 
       {/* 처방내역 ← medical_charts.prescription_items. RXCLIN 표현 상속: 미리보기 클릭 → 컬럼 폭 드롭다운 전문(widthScale=2, DoctorCallDashboard와 동일). */}
       <td

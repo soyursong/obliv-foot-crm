@@ -940,6 +940,155 @@ export function useQueueTreatingDoctors(clinicId: string | null, checkInIds: str
   });
 }
 
+// ─── T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT ──────────────────────────────────────────
+//   진료 알림판(DoctorCallDashboard 상시뷰) 소견서·진단서 '처리대기'/'서류 완료' 테이블의 3개 컬럼이
+//   전 환자 '—' 로 비어 있던 회귀를 실 데이터에 연동한다(김주연 총괄 지적, MSG-b6gp confirm 확정).
+//   전부 read-only READ 전용(db_change=false) — 신규 컬럼/테이블/enum/RLS = 0. 조회 실패/컬럼부재여도
+//   큐는 깨지지 않음(빈 맵 폴백 = 기존 임상스냅/담당진료의 훅과 동형 graceful).
+//   ★Silent 0-Row Read 주의(cross-CRM 표준): anon/RLS 0-row 는 '데이터 없음'이 아니라 미조회일 수 있으므로
+//     쿼리는 clinic-scoped + id 필터로 정확히 겨눈다(교차노출 배제 + 실측 근거).
+//
+//   ─ AC-1(생년/만나이): customers.birth_date '실시간' 소스 —
+//     기존 큐 birthDate 는 요청 생성시 field_data 에 박힌 '스냅샷'이라 결측/공란이면 만나이가 안 뜬다.
+//     진료대시보드 환자테이블이 쓰는 live 소스(customers.birth_date, opinionAutofillRef 패턴)를 그대로 읽어
+//     스냅샷보다 우선한다. birthYearAgeDisplay 로 "YYYY (만 N세)" 파생(결측 '—', null-safe).
+export function useQueueCustomerBirthDates(clinicId: string | null, customerIds: string[]) {
+  const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
+  return useQuery<Record<string, string>>({
+    queryKey: ['opinion_queue_birthdate', clinicId, key],
+    enabled: !!clinicId && key.length > 0,
+    queryFn: async () => {
+      const out: Record<string, string> = {};
+      if (!clinicId || !key) return out;
+      try {
+        const ids = key.split(',');
+        // customer_id 는 이미 clinic-scoped 큐(form_submissions)에서 유래 → id 필터로 정확 조회
+        //   (opinionAutofillRef 의 customers.birth_date 단건 조회 패턴과 동일 소스). RLS 로 지점 격리.
+        const { data, error } = await supabase
+          .from('customers')
+          .select('id, birth_date')
+          .in('id', ids);
+        if (error) throw error;
+        for (const r of (data ?? []) as Array<{ id: string; birth_date: string | null }>) {
+          if (r.id && r.birth_date) out[String(r.id)] = String(r.birth_date);
+        }
+      } catch {
+        // 생년 조회 불가 — 셀은 스냅샷 폴백 또는 '—'(큐 무붕괴).
+        return {};
+      }
+      return out;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+//   ─ AC-2(오늘시술) / AC-3(처방내역): 당일(KST) check-in 기준 실 소스 연동.
+//     AC-2 = check_ins.treatment_kind(?? treatment_category) — '2번차트(펜차트) 티켓 차감 기준'(confirm 확정).
+//            당일 차감 시술을 '모두' 나열(첫 건/한 건 아님, MSG-b6gp: "당일 시술 모두 표기").
+//            표시값 SSOT = PKG-BOX-INDICATOR(가열/비가열/포돌로게/수액/체험권 …) = treatment_kind 원값.
+//     AC-3 = 결제미니창(PMW) 당일 처방약 목록(confirm 확정: "결제 창이 더 정확"). PMW settle 시
+//            처방약(services.category_label='처방약') 라인아이템은 check_in_services 로 영속된다
+//            (PaymentMiniWindow.saveCheckInServices, selectedItems=시술+코드아이템 전건 insert). 그 당일
+//            check_in 의 처방약 service_name 을 나열(=medical_charts.prescription_items 아님).
+export interface TodayProcedureRx {
+  procedures: string[];    // AC-2: 당일 차감 시술(treatment_kind) 전체
+  prescriptions: string[]; // AC-3: 당일 PMW 처방약 service_name 전체
+}
+
+// 순수 파생(E2E spec 이 직접 import·단언 → drift 방지) — check-in 행 → 오늘시술 라벨(ProcedureCell SSOT 동형).
+export function procedureLabelOf(row: { treatment_kind?: string | null; treatment_category?: string | null }): string {
+  return String(row.treatment_kind ?? row.treatment_category ?? '').trim();
+}
+
+// 순수 파생 — check_in_services(services.category_label 임베드) 행 목록 → 처방약 service_name 배열.
+//   PostgREST 임베드는 object|array 양쪽 직렬화 가능 → 둘 다 흡수(readChartNo 패턴 동형).
+export function extractRxDrugNames(
+  cisRows: Array<Record<string, unknown>>,
+): string[] {
+  const names: string[] = [];
+  for (const r of cisRows) {
+    const svc = r['services'] as
+      | { category_label?: string | null }
+      | Array<{ category_label?: string | null }>
+      | null
+      | undefined;
+    const cat = Array.isArray(svc) ? (svc[0]?.category_label ?? '') : (svc?.category_label ?? '');
+    if (cat !== '처방약') continue;
+    const nm = String(r['service_name'] ?? '').trim();
+    if (nm) names.push(nm);
+  }
+  return names;
+}
+
+export function useQueueTodayProcedureRx(clinicId: string | null, customerIds: string[]) {
+  const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
+  return useQuery<Record<string, TodayProcedureRx>>({
+    queryKey: ['opinion_queue_today_proc_rx', clinicId, key],
+    enabled: !!clinicId && key.length > 0,
+    queryFn: async () => {
+      const out: Record<string, TodayProcedureRx> = {};
+      if (!clinicId || !key) return out;
+      try {
+        const ids = key.split(',');
+        const today = todaySeoulISODate();
+        // 1) 당일(KST) check-in — checked_in_at 는 timestamptz 이므로 +09:00 오프셋 경계로 정확 필터
+        //    (KST 오전 UTC 전일 저장분도 offset 비교로 당일에 포함). clinic-scoped + customer in ids.
+        const { data: ciData, error: ciErr } = await supabase
+          .from('check_ins')
+          .select('id, customer_id, treatment_kind, treatment_category, checked_in_at')
+          .eq('clinic_id', clinicId)
+          .in('customer_id', ids)
+          .gte('checked_in_at', `${today}T00:00:00+09:00`)
+          .lte('checked_in_at', `${today}T23:59:59.999+09:00`)
+          .order('checked_in_at', { ascending: true });
+        if (ciErr) throw ciErr;
+        const ciRows = (ciData ?? []) as Array<{
+          id: string; customer_id: string | null;
+          treatment_kind: string | null; treatment_category: string | null;
+        }>;
+        const checkInToCustomer = new Map<string, string>();
+        for (const ci of ciRows) {
+          const cid = String(ci.customer_id ?? '');
+          if (!cid) continue;
+          checkInToCustomer.set(String(ci.id), cid);
+          if (!out[cid]) out[cid] = { procedures: [], prescriptions: [] };
+          const label = procedureLabelOf(ci);
+          if (label) out[cid].procedures.push(label);
+        }
+        // 2) 그 당일 check-in 들의 PMW 처방약(check_in_services + services.category_label='처방약')
+        const checkInIds = ciRows.map((c) => String(c.id)).filter(Boolean);
+        if (checkInIds.length > 0) {
+          const { data: cisData, error: cisErr } = await supabase
+            .from('check_in_services')
+            .select('check_in_id, service_name, services:service_id(category_label)')
+            .in('check_in_id', checkInIds);
+          if (cisErr) throw cisErr;
+          // check_in_id 별 처방약명 수집 → 소속 customer 로 귀속(당일 여러 내원도 합산).
+          const byCheckIn = new Map<string, Array<Record<string, unknown>>>();
+          for (const raw of (cisData ?? []) as Array<Record<string, unknown>>) {
+            const cin = String(raw['check_in_id'] ?? '');
+            if (!cin) continue;
+            const arr = byCheckIn.get(cin) ?? [];
+            arr.push(raw);
+            byCheckIn.set(cin, arr);
+          }
+          for (const [cin, rows] of byCheckIn) {
+            const cid = checkInToCustomer.get(cin);
+            if (!cid || !out[cid]) continue;
+            out[cid].prescriptions.push(...extractRxDrugNames(rows));
+          }
+        }
+      } catch {
+        // 당일 시술/처방 조회 불가 — 두 컬럼은 '—' 폴백. 큐 자체는 정상(graceful).
+        return {};
+      }
+      return out;
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
+
 export function useQueueClinicalSnaps(clinicId: string | null, customerIds: string[]) {
   const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
   return useQuery<Record<string, ClinicalSnap>>({
