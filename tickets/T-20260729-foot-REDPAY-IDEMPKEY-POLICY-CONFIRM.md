@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 qa_result: pass
-deploy_commit: a85242d0
+deploy_commit: ba327547
 deployed_at: n/a (no prod change — EF 런타임 로직 무변경, 회귀테스트+보고서만)
 bundle_hash: n/a (ef_only, no FE bundle)
 db_change: false
