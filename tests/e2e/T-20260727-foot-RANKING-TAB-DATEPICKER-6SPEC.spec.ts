@@ -270,10 +270,12 @@ test.describe('T-20260727 [랭킹] 탭 DatePicker + 6스펙', () => {
     expect(src).toContain('>배정 건 수<');
 
     // #3 변동표 카드 — 랭킹 카드 뒤, 랭킹 블록 안. ↑/↓ 파생.
-    const varCardIdx = src.indexOf('data-testid="assignments-ranking-variation-card"');
+    //  T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT: 변동표를 공통 VariationTable 컴포넌트로 추출 →
+    //   카드 testid 는 cardTestId prop 으로 전달(data-testid={cardTestId}). delta testid 는 컴포넌트 정의부(모듈 스코프).
+    const varCardIdx = src.indexOf('cardTestId="assignments-ranking-variation-card"');
     const rankCardIdx = src.indexOf('data-testid="assignments-ranking-card"');
-    expect(varCardIdx).toBeGreaterThan(rankCardIdx);
-    expect(src.indexOf('data-testid="ranking-variation-delta"')).toBeGreaterThan(varCardIdx);
+    expect(varCardIdx).toBeGreaterThan(rankCardIdx); // 변동표 카드는 랭킹 카드 뒤(랭킹 블록 안)
+    expect(src).toContain('data-testid="ranking-variation-delta"'); // ↑/↓ delta durable marker 유지
 
     // #6 배정 건 수 = 당일(check_ins) — 소스에 dayAssignCounts 소비 + 당일 구간 fetch.
     expect(src).toContain('dayAssignCount');
