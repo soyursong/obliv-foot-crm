@@ -5,7 +5,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: pass
-deploy_commit: PENDING_COMMIT
+deploy_commit: c30edd5449a8
 deployed_at: "n/a (NOT yet deployed — supervisor QA gate)"
 bundle_hash: "n/a (pending deploy)"
 db_change: true
