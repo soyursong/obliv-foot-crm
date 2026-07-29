@@ -51,17 +51,41 @@ export interface ConsultantRevenueMetric {
   avgTicket: number;
 }
 
-/** 이달 시작(KST) / 이번 주(월요일 00:00 KST) ISO timestamptz 경계 산출. tz-safe(UTC 요일 계산). */
-export function seoulWindowBounds(todayIso: string): { monthStart: string; weekStart: string } {
+/**
+ * 랭킹 매출 윈도우 경계(KST) ISO timestamptz 산출. tz-safe(UTC 요일 계산).
+ *
+ * T-20260730-foot-ASSIGN-FULLSPEC-IMPL G1 (spec-of-record §094v 가.):
+ *   '주매출' 윈도우 = **전주(직전주 월~일)**. 기존 CRM-ASSIGN-V1 은 weekStart=이번주 월요일(금주)였으나
+ *   김주연 총괄 확정 스펙은 '전주 매출 ×2' → 전주 구간으로 교정한다(랭킹 divergence #1 해소).
+ *   전주는 월초(예: 1~7일)에 전월로 넘어갈 수 있으므로 fetchStart = min(monthStart, weekStart) 로
+ *   payments 쿼리 하한을 확장해 전주 데이터 누락(전월분)이 없게 한다.
+ *   디스플레이 랭킹 탭 '전주매출' 정의(Assignments.rankingRanges prevWeekMon~prevWeekSun)와 동일 구간(정합).
+ *
+ *   · monthStart : 이달 1일 00:00(+09) — 당월 매출·객단가 분모 하한(불변).
+ *   · weekStart  : 직전주 월요일 00:00(+09) — 전주 매출 하한(포함).
+ *   · weekEnd    : 이번주 월요일 00:00(+09) — 전주 매출 상한(미포함) = 직전주 일요일 24:00.
+ *   · fetchStart : min(monthStart, weekStart) — payments 쿼리 하한(전주가 전월이면 확장).
+ */
+export function seoulWindowBounds(todayIso: string): {
+  monthStart: string;
+  weekStart: string;
+  weekEnd: string;
+  fetchStart: string;
+} {
   const monthStart = `${todayIso.slice(0, 7)}-01T00:00:00+09:00`;
   const [y, m, d] = todayIso.split('-').map((n) => parseInt(n, 10));
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=일..6=토
-  const backToMon = (dow + 6) % 7; // 월요일까지 되돌릴 일수
-  const monDate = new Date(Date.UTC(y, m - 1, d - backToMon));
-  const ws = `${monDate.getUTCFullYear()}-${String(monDate.getUTCMonth() + 1).padStart(2, '0')}-${String(
-    monDate.getUTCDate(),
-  ).padStart(2, '0')}`;
-  return { monthStart, weekStart: `${ws}T00:00:00+09:00` };
+  const backToMon = (dow + 6) % 7; // 이번주 월요일까지 되돌릴 일수
+  const fmt = (dt: Date) =>
+    `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      dt.getUTCDate(),
+    ).padStart(2, '0')}`;
+  const thisMon = new Date(Date.UTC(y, m - 1, d - backToMon)); // 이번주 월요일
+  const prevMon = new Date(Date.UTC(y, m - 1, d - backToMon - 7)); // 전주(직전주) 월요일
+  const weekStart = `${fmt(prevMon)}T00:00:00+09:00`;
+  const weekEnd = `${fmt(thisMon)}T00:00:00+09:00`; // 전주 상한(미포함) = 이번주 월요일 00:00
+  const fetchStart = weekStart < monthStart ? weekStart : monthStart;
+  return { monthStart, weekStart, weekEnd, fetchStart };
 }
 
 /**
@@ -74,18 +98,21 @@ export async function fetchConsultantRevenueMetrics(
   const out = new Map<string, ConsultantRevenueMetric>();
   try {
     const today = todaySeoulISODate();
-    const { monthStart, weekStart } = seoulWindowBounds(today);
+    const { monthStart, weekStart, weekEnd, fetchStart } = seoulWindowBounds(today);
     const { data, error } = await supabase
       .from('payments')
       .select('amount, created_at, check_ins!inner(consultant_id)')
       .eq('clinic_id', clinicId)
       .eq('status', 'active')
       .eq('payment_type', 'payment')
-      .gte('created_at', monthStart);
+      // G1: 전주가 전월로 넘어갈 수 있어 하한을 min(monthStart, weekStart)=fetchStart 로 확장.
+      //   당월/전주 귀속은 아래 루프에서 created_at 을 monthStart / [weekStart,weekEnd) 로 분기해 정확히 산정.
+      .gte('created_at', fetchStart);
     if (error || !data) return out;
 
-    // consultant_id → {월매출, 주매출, 이달 담당 check_in 집합(객단가 분모)}
-    const visitSets = new Map<string, Set<string>>();
+    // consultant_id → {월매출(당월만), 주매출(전주 [weekStart,weekEnd)만), avgTicket}
+    // 객단가 분모 = 당월 payment 건수(방문 근사). 전주(전월분) 행은 월매출·건수에서 제외.
+    const cntMap = new Map<string, number>();
     for (const row of data as unknown[]) {
       const r = row as {
         amount: number | null;
@@ -97,21 +124,14 @@ export async function fetchConsultantRevenueMetrics(
       if (!staffId) continue;
       const amt = Number(r.amount ?? 0);
       const cur = out.get(staffId) ?? { revenueMonth: 0, revenueWeek: 0, avgTicket: 0 };
-      cur.revenueMonth += amt;
-      if (r.created_at >= weekStart) cur.revenueWeek += amt;
+      if (r.created_at >= monthStart) {
+        cur.revenueMonth += amt; // 당월(1일~)만
+        cntMap.set(staffId, (cntMap.get(staffId) ?? 0) + 1); // 객단가 분모 = 당월 건수
+      }
+      if (r.created_at >= weekStart && r.created_at < weekEnd) {
+        cur.revenueWeek += amt; // 전주(직전주 월~일)만
+      }
       out.set(staffId, cur);
-      if (!visitSets.has(staffId)) visitSets.set(staffId, new Set());
-      // check_in 단위 방문(객단가 분모) — check_ins embed 는 id 미포함이므로 created_at 근사 키 대신
-      // consultant 별 payment 건수로 근사하지 않고, 별도 방문수는 아래 avgTicket 계산에서 payment 건수 사용.
-    }
-    // 객단가 = 월매출 / 이달 payment 건수(방문 근사). 건수 0 방지.
-    const cntMap = new Map<string, number>();
-    for (const row of data as unknown[]) {
-      const r = row as { check_ins: { consultant_id: string | null } | { consultant_id: string | null }[] | null };
-      const ci = Array.isArray(r.check_ins) ? r.check_ins[0] : r.check_ins;
-      const staffId = ci?.consultant_id ?? null;
-      if (!staffId) continue;
-      cntMap.set(staffId, (cntMap.get(staffId) ?? 0) + 1);
     }
     for (const [staffId, met] of out) {
       const cnt = cntMap.get(staffId) ?? 0;
