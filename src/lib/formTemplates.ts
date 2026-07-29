@@ -739,6 +739,10 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     name_ko: '초진 관리기록지',
     template_path: '',
     template_format: 'html',
+    // T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 자유텍스트 field_map 정리(항목② ③ 제거분).
+    //   제거: nail_status(발톱 상태)·other_check(기타 확인 사항)·care_other_text(초기관리 기타)·care_plan(관리 계획).
+    //   증상경과(symptom_progress)·시술및처방·상병명은 DocumentPrintPanel 전용 블록(드롭다운/상용구)에서 처리 →
+    //   field_map 미포함(텍스트 input 중복 노출 방지, manualValues/allValues 로 인쇄·persist). 운영 DB row 는 동일 형태로 ADDITIVE UPDATE(무DDL).
     field_map: [
       { key: 'patient_name',      label: '성명',            type: 'text',      x: 0, y: 0 },
       { key: 'patient_birthdate', label: '생년월일',        type: 'text',      x: 0, y: 0 },
@@ -746,11 +750,7 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'visit_date',        label: '초진일',          type: 'date',      x: 0, y: 0 },
       { key: 'vp_other_text',     label: '방문목적 기타',   type: 'text',      x: 0, y: 0 },
       { key: 'symptom_history',   label: '증상 발생 경위',  type: 'multiline', x: 0, y: 0, w: 400, h: 60 },
-      { key: 'nail_status',       label: '발톱 상태',       type: 'multiline', x: 0, y: 0, w: 400, h: 40 },
       { key: 'skin_status',       label: '피부 상태',       type: 'multiline', x: 0, y: 0, w: 400, h: 40 },
-      { key: 'other_check',       label: '기타 확인 사항',  type: 'multiline', x: 0, y: 0, w: 400, h: 40 },
-      { key: 'care_other_text',   label: '초기관리 기타',   type: 'text',      x: 0, y: 0 },
-      { key: 'care_plan',         label: '관리 계획',       type: 'multiline', x: 0, y: 0, w: 400, h: 60 },
       { key: 'remarks',           label: '특이사항',        type: 'multiline', x: 0, y: 0, w: 400, h: 60 },
       { key: 'issue_date',        label: '발급일',          type: 'date',      x: 0, y: 0 },
       { key: 'clinic_name',       label: '센터명',          type: 'text',      x: 0, y: 0 },
