@@ -46,6 +46,25 @@ followup: "① 정본 RC 확정용 pk.choi 수신 메일 raw(.eml) 확보(현장
 - **AC#7(테스트계정 링크 생성 실측)**: throwaway user recovery link 생성 정상(위 probe). **실 메일 수신 렌더 실측 = 현장 confirm 게이트(field_confirm_gate)로 위임** — 풋 §10.
 - **우회(A)**: 이미 완료(admin generateLink 슬랙 공유). 본 티켓 = 이메일 경로 방어 하드닝.
 
+## 진단 보강 — Item#3 메일러·발신/수신 도메인 (NEW-TASK MSG-20260729-093943-oxt8, READ-ONLY)
+
+원 NEW-TASK 의 Item#3(SPF/DKIM/DMARC + 메일러 default vs custom SMTP)이 기존 evidence 에 미포함 → READ-ONLY 로 보강. 근거: `evidence/.../ITEM3-mailer-dns-diagnostic.json`.
+
+| 점검 | 결과 | 근거 |
+|------|------|------|
+| **메일러 종류** | **DEFAULT (custom SMTP 없음)** | prod config/auth GET: `smtp_host/user/admin_email/sender_name` 전부 null → 발신 = 공유 `noreply@mail.app.supabase.io` |
+| 기본 발신 도메인 인증 | SES 공유 | `mail.app.supabase.io` SPF=`v=spf1 include:amazonses.com ~all`, supabase.io DMARC=`p=reject`. 단 **전 Supabase 프로젝트 공유** 발신 도메인(브랜드 무정렬) |
+| 링크 도메인 | raw `*.supabase.co` (무브랜드) | `rxlomoozakkjesdqjtvd.supabase.co/auth/v1/verify` — From 도메인과 무관 |
+| **수신측(pk.choi@medibuilder.com)** | **Google Workspace(Gmail)** | MX=`aspmx.l.google.com`(+alt1-4). 위험분류 엔진 = Gmail 피싱/의심링크 classifier |
+
+**구조적 RC(3요소, 정합)**: C1 표시명(`[오블리브 풋케어]`) ↔ From(`mail.app.supabase.io`) 브랜드 불일치 + C2 링크가 무관한 raw `*.supabase.co` verify 도메인 + C3 수신=Gmail. C1+C2 mismatch = Gmail 피싱 시그니처 → 위험 배너 + 링크 비활성/재작성. **현장 증상(위험메일 분류로 링크 차단)과 직접 정합.** 정본 확정(.eml From·Authentication-Results·Gmail 배너 문구)은 여전히 pk.choi 수신 raw 필요(followup ①).
+
+**해소안 분류**:
+- **(A) 즉시 우회** — admin generateLink → responder 슬랙(이미 완료, pk.choi 로그인 가능). 재발송 불요(토큰 무효화 방지). 만료 시 fresh generateLink 1-line 재발급.
+- **(B/C) 근본** — 발신도메인 인증(custom SMTP·브랜드 정렬) / custom auth 링크 도메인. **config + DNS 변경 = 본 티켓 밖(ef_only·db_change=false·READ-ONLY 진단 범위 초과) → 별도 후속 티켓 분리(재판정).**
+
 ## 잔여/후속
 
 - `followup` frontmatter 참조 — ① pk.choi .eml 정본 RC 확정, ② FE recovery deep-link 핸들러 별도 티켓.
+- ③ **(신규, Item#3 발)** default 메일러 → custom SMTP + 브랜드 정렬 발신도메인(SPF/DKIM/DMARC) = **B 후속 티켓**(config+DNS, 재판정).
+- ④ **(신규, Item#3 발)** custom auth(verify) 도메인으로 링크 브랜드 정렬 = **C 후속 티켓**(config+DNS, 재판정).
