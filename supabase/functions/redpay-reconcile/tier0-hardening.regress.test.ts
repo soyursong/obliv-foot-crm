@@ -15,7 +15,9 @@
 //     (4) 시각창 = same-KST-day + forward(Q4). 15min 아님 — 지연입력도 same-day 면 tier0.
 //         ≥2 후보(충돌)는 approved_at 최근접 tie-break, 동률이면 tier4_manual(오링크 0).
 //     (5) trxid-exact ① 가지는 현 데이터에서 inert(발화 안 함) — future-proof.
-//     (6) refund root_trxid 체이닝 무영향 — predicate 변경 ↔ 취소링크 무접점.
+//     (6) refund root 매칭 = trxid 계열 유지(approval_no 미사용) — [정정 T-20260729
+//         TRXID-NONUNIQUE-COMPOSITE-CORRECT Q4] bare root_trxid 단독 REJECT →
+//         반대부호 ∧ |amount| 동일 ∧ 원거래(payment·reconciled) ∧ 시각순서 로 STRENGTHEN.
 //   실행: deno test supabase/functions/redpay-reconcile/tier0-hardening.regress.test.ts
 
 import { assert, assertEquals, assertFalse } from "https://deno.land/std@0.224.0/assert/mod.ts";
@@ -166,23 +168,30 @@ Deno.test("취소행(N/X/M)은 matchTransaction 진입 前 early-return — pred
   }
 });
 
-Deno.test("refund_not_in_crm 는 root_trxid/external_trxid 체이닝 — approval_no 미사용, 하드닝 무영향", () => {
+Deno.test("refund_not_in_crm 는 trxid 계열(approval_no 미사용) — [Q4 정정] 부호·금액·시각 STRENGTHEN 하 링크", () => {
+  // [정정 T-20260729 TRXID-NONUNIQUE-COMPOSITE-CORRECT Q4] bare root_trxid 단독 매칭 REJECT.
+  //   여기선 강화된 4조건(반대부호·|amount| 동일·원거래 payment·시각순서)을 모두 충족시켜
+  //   trxid 계열 링크가 여전히 성립함을 고정(approval_no 는 여전히 미사용).
   const cancelRaw = rawRow({
     external_status: "N",
     root_trxid: "TRX-ORIG-1",
     external_trxid: "TRX-CANCEL-1",
     approval_no: "APP-DIFFERENT",
+    amount: -120000,                     // 취소 = 음수(부호 보존) → 원거래(+)와 반대부호
+    approved_at: APPROVED_AT,            // 환불 시각 01:00
   });
   const original = crmPay({
     id: "pay-orig",
     external_trxid: "TRX-ORIG-1",
+    amount: 120000,                      // |amount| 동일 · 양수(반대부호)
     payment_type: "payment",
     reconciled_at: "2026-07-28T00:50:00.000Z",
+    created_at: "2026-07-28T00:50:00.000Z", // 원거래 ≤ 환불(시각순서)
     external_approval_no: "APP-ORIG",
   });
   const evt = detectRefundNotInCrm(cancelRaw, [original], "#chan");
-  assert(evt !== null, "root_trxid 체이닝으로 원거래 탐지");
-  assertEquals(evt!.payment_id, "pay-orig", "approval_no 아닌 trxid 로 링크");
+  assert(evt !== null, "강화조건 충족 → trxid 계열로 원거래 탐지");
+  assertEquals(evt!.payment_id, "pay-orig", "approval_no 아닌 trxid 계열로 링크(강화 disambiguate)");
   assertEquals(evt!.event_type, "refund_not_in_crm");
 });
 

@@ -176,13 +176,37 @@ function isUnmatchedCrm(p: CrmPayment): boolean {
   return p.reconciled_at === null && p.external_trxid === null;
 }
 
-// ── Tier 0 — Direct 매칭 (trxid-exact + 단일 composite) ───────────────────────
+// ── Tier 0 — Direct 매칭 (단일 composite: trxid/approval_no/tid = corroborator) ──
 //
-// T-20260729-foot-REDPAY-TIER0-COMPOSITE-OR-CARD-SAMEDAY
+// ★★ T-20260729-foot-REDPAY-TRXID-NONUNIQUE-COMPOSITE-CORRECT (Q2 봉인) ★★
+//   DA CONSULT-REPLY (SSOT=da_decision_foot_redpay_trxid_nonunique_composite_20260729.md,
+//   decision_id=DA-20260729-foot-REDPAY-TRXID-NONUNIQUE-COMPOSITE-CORRECT).
+//   verdict = DA GO · CEO면제 · supervisor code-gate. probe RESOLVED(triple-collision 0,
+//   8자형 shared trxid 0 — foot band clean). 07-28 "trxid=합성 유일키·1급 단독 링크키"
+//   전제를 RETRACT(census 실증: 서울오리진 K+30자만 합성구조, 송도 단형 8/9/12/14자는
+//   재사용·8자형 승인/취소 shared trxid). → ① trxid-exact 단독 가지를 폐기(bare trxid
+//   auto-link 소멸)하고 trxid 를 approval_no·tid 와 동일한 corroborator 로 강등해 단일
+//   composite 로 봉인한다. Plan B 직수집(PAYPAGE-BUILD) 착지 前 봉인 선행(P1 concur).
+//   순수 EF·no-DDL·tightening·현 링크 delta≈0(構造的 inert).
+//
+//   ── K1/K2/K3 3층 분리 codify (Q1·Q3, DA §2·§5) ─────────────────────────────
+//   유일키는 하나가 아니라 층별로 3개다 — 하나로 통일 금지(한 층 정답이 다른 층 오답).
+//     · K1 dedup/ingest (within-source, raw upsert onConflict): 확정 바닥
+//       = (external_trxid, external_status, amount). 승인(Y,+)/취소(N,−)는 status+부호로
+//       2행 보존. probe=0 → 3키 확정·무-DDL(현 동작 codify). [3키 이미 live → 코드 무변경]
+//     · K2 match/link (cross-source, raw↔payment): 이 findTier0Direct composite + Tier1~3.
+//     · K3 count grain (report, 대조뷰): raw-row-grain REQUIRED — 계수/집계에서
+//       trxid DISTINCT/GROUP-BY 금지(비유일 → distinct 접기 = 승인취소·단형dup 붕괴 =
+//       undercount·매출왜곡). 승인·취소·dup 각 1행. v_redpay_reconciliation_daily=passthrough.
+//   ★ 불변식(영구 고정): RedPay reconcile 에서 어떤 raw 외부식별자(trxid·approval_no·tid)도
+//     전 포맷 통용 단독 유일키가 아니다. 유일성은 항상 composite(식별자 + amount/부호 +
+//     결제유형/status + 시각/일 bound)로 재구성하며, 다후보는 tier4_manual 로 수동강등한다.
+//
+// ── 계보: T-20260729-foot-REDPAY-TIER0-COMPOSITE-OR-CARD-SAMEDAY (07-28 하드닝 정합) ──
 //   DA CONSULT-REPLY: GO (SSOT=da_reply_foot_redpay_tier0_composite_20260728.md,
 //   ticket_id=DA-20260728-REDPAY-TIER0-COMPOSITE). 직전 하드닝
 //   (T-20260728-...-TIER0-TRXID-HARDENING, composite Model A = approval_no ∧ tid ∧
-//   amount ∧ +15min) 을 아래 3점으로 정합 강화(supersede)한다.
+//   amount ∧ +15min) 을 아래 3점으로 정합 강화(supersede)했다(본 Q2 가 다시 supersede).
 //
 //   ▸ 핵심원리(matching-integrity 불변식): 비-거래고유 값은 단독 충분 링크키가 될 수
 //     없다. external_trxid=거래고유(단독 OK) / approval_no=비고유(코반 재활용) /
@@ -209,40 +233,34 @@ function isUnmatchedCrm(p: CrmPayment): boolean {
 //             created_at. 최근접이 유일하면 확정, 동률(모호)이면 후보 다건을 그대로
 //             반환 → matchTransaction 의 multi-candidate→tier4_manual 가드로 강등.
 //         하드 시각바운드는 same-KST-day(Tier3 grain 정렬) — 15/30min 아님.
-//     ① trxid-exact (1급 키): 오늘 inert — isUnmatchedCrm 이 p.external_trxid=null
-//        을 요구하므로 현 데이터 미발화(external_approval_no 0/295, tier0 30일 0건).
-//        direct-capture future-proof + 총괄 'trxid 1급키' 문자준수. 무해(drop 0).
-//
-//   ★ 불변식(영구 고정): 식별자(approval_no / tid) 단독 auto-link 금지 — 반드시
+//   ★ trxid=corroborator(NON-SOLE-KEY, Q2): trxid 일치는 amount+창 매칭을 tier0 신뢰로
+//     '승격'시킬 뿐 단독 결정권 없음(approval_no·tid 와 동일 처우). 단독 trxid-exact 가지
+//     폐기 = bare trxid auto-link 소멸. Plan B 직수집이 external_trxid 를 pre-match 채워도
+//     단형 shared/재사용 trxid 의 false-merge 발현 차단(반드시 amount∧card∧payment∧same-day AND).
+//   ★ 불변식(영구 고정): 식별자(trxid / approval_no / tid) 단독 auto-link 금지 — 반드시
 //     amount ∧ card ∧ payment_type ∧ same-KST-day 와 AND. multi-candidate→manual.
-//   ★ 회귀손실 0: 현 tier0 auto-link=0(external_approval_no·external_tid 노출 0/295)
-//     → 미매칭 전환되는 기존 링크 0건. tightening·behavior-preserving(delta=0).
-//   ★ future note: external_approval_no/tid 채워진 뒤 composite 불충족분은 auto-link
+//   ★ 회귀손실 0: 현 tier0 auto-link=0(external_approval_no·external_tid 노출 0/295 ∧
+//     매칭풀 external_trxid IS NULL → trxidCorroborates 발화 불가) → 미매칭 전환되는 기존
+//     링크 0건. tightening·behavior-preserving(delta=0). isUnmatchedCrm(external_trxid=null)
+//     이 trxid 가지도 구조적 inert 로 유지 → Plan B 매칭풀 재정의 前까지 무해.
+//   ★ future note: external_trxid/approval_no/tid 채워진 뒤 composite 불충족분은 auto-link
 //     대신 하위 Tier/tier4_manual 로 fail-safe 강등 = 의도된 안전동작(손실 아님).
 /**
- * 직접 키 매칭 (trxid-exact 1급 → 단일 composite). 매칭은 보너스 — 없으면 하위 Tier 로.
+ * 직접 키 매칭 (단일 composite: trxid/approval_no/tid = corroborator).
+ * 매칭은 보너스 — 식별자 corroborate 실패 시 하위 Tier 로 fail-safe 강등.
  */
 export function findTier0Direct(
   raw:      RawTransaction,
   payments: CrmPayment[]
 ): CrmPayment[] {
-  // ── ① trxid-exact (1급, 오늘 inert — direct-capture future-proof) ─────────
-  if (raw.external_trxid) {
-    const byTrxid = payments.filter(
-      (p) =>
-        isUnmatchedCrm(p) &&
-        p.external_trxid !== null &&
-        p.external_trxid === raw.external_trxid
-    );
-    if (byTrxid.length > 0) return byTrxid;
-  }
-
-  // ── ② 단일 composite: 식별자(approval_no OR tid) ∧ amount ∧ card ∧ payment ∧
-  //      same-KST-day ∧ forward. 식별자 없으면 corroborate 불가 → 하위 Tier 로.
+  // ── 단일 composite: 식별자(trxid OR approval_no OR tid) ∧ amount ∧ card ∧ payment ∧
+  //      same-KST-day ∧ forward. 식별자 전무면 corroborate 불가 → 하위 Tier 로.
+  //      (Q2: 종전 ① trxid-exact 단독 가지 폐기 — trxid 를 이 composite 의 corroborator 로 편입.)
   if (!raw.approved_at) return [];
   const hasApproval = Boolean(raw.approval_no);
   const hasTid      = Boolean(raw.tid);
-  if (!hasApproval && !hasTid) return [];
+  const hasTrxid    = Boolean(raw.external_trxid);
+  if (!hasApproval && !hasTid && !hasTrxid) return [];
 
   const approvedMs = new Date(raw.approved_at).getTime();
   const rawDateKst = toKstDateStr(raw.approved_at);
@@ -252,14 +270,17 @@ export function findTier0Direct(
     // Q1: method/payment_type 필수 — cash/refund 의 stray 식별자로 card raw 오링크 차단.
     if (p.method !== "card") return false;
     if (p.payment_type !== "payment") return false;
-    // amount 대조 (DOSU-CONTAM 단일후보 오답 경로 차단의 핵심).
+    // amount 대조 (DOSU-CONTAM 단일후보 오답 경로 + 단형 shared/재사용 trxid false-merge 차단의 핵심).
     if (p.amount !== raw.amount) return false;
-    // Q2: 식별자 corroboration — approval_no OR tid (단독 결정권 없음: 위/아래 AND).
+    // Q2: 식별자 corroboration — trxid OR approval_no OR tid (단독 결정권 없음: 위/아래 AND).
+    //   trxid 는 non-sole-key — bare trxid-exact 로 auto-link 하지 않는다(§1 census: 단형 재사용/shared).
     const approvalCorroborates =
       hasApproval && p.external_approval_no !== null && p.external_approval_no === raw.approval_no;
     const tidCorroborates =
       hasTid && p.external_tid !== null && p.external_tid === raw.tid;
-    if (!approvalCorroborates && !tidCorroborates) return false;
+    const trxidCorroborates =
+      hasTrxid && p.external_trxid !== null && p.external_trxid === raw.external_trxid;
+    if (!approvalCorroborates && !tidCorroborates && !trxidCorroborates) return false;
     // Q4: forward + same-KST-day 하드바운드(15/30min 아님).
     if (!p.created_at) return false;
     const crmMs = new Date(p.created_at).getTime();
@@ -640,9 +661,21 @@ export function detectAmountMismatch(
 }
 
 /**
- * refund_not_in_crm 탐지.
- * redpay 거래 status가 N/X/M(취소·오류·부분취소)이고
- * root_trxid로 연결된 원거래 CRM 결제가 취소되지 않은 경우.
+ * refund_not_in_crm 탐지 (STRENGTHEN — Q4).
+ * redpay 거래 status가 N/X/M(취소·오류·부분취소)이고 원거래 CRM 결제가 취소되지 않은 경우.
+ *
+ * ★★ T-20260729-foot-REDPAY-TRXID-NONUNIQUE-COMPOSITE-CORRECT (Q4 STRENGTHEN) ★★
+ *   DA CONSULT-REPLY §6 (decision_id=DA-20260729-foot-REDPAY-TRXID-NONUNIQUE-COMPOSITE-CORRECT).
+ *   ▸ root_trxid 단독 매칭 REJECT: 8자형(승인/취소 shared trxid)에선 우연히 맞으나, 단형 trxid
+ *     재사용(서로 다른 원거래 2건이 동일 trxid) 시 환불이 오원거래에 매칭 → 오답 refund_not_in_crm.
+ *   ▸ root 매칭 = trxid 계열 일치(root_trxid 유지) ∧ 반대부호(환불 −/원거래 +) ∧ |amount| 동일
+ *     ∧ 원거래(payment·reconciled = 승인 Y 의 CRM 대응) ∧ 시각순서(원거래.created_at ≤ 환불.approved_at)
+ *     + 최근접-직전 시각 tiebreak + 다후보 동률/판별불가 → 수동(payment_id null 로 surface, 오링크 금지).
+ *   ▸ 07-28 §2-2 "환불 링크 trxid 계열 유지(approval_no 이관 금지)" 불변식은 유지 — 부호·금액·시각
+ *     disambiguate 로 정련이지 폐기 아님. 순수 EF·no-DDL → DA GO·supervisor code-gate.
+ *   ※ 취소는 amount 음수(toRawTrxRow: 부호 보존, redpay-partner-api §7.2) → 반대부호 판별 유효.
+ *     부분취소(M, |amount|≠원거래)는 |amount| 동일 미충족 → 이 detector 미발화(DA §6 spec 준수;
+ *     부분취소 별도 처리는 본 결정 스코프 밖 후속). ref matcher §Q4.
  */
 export function detectRefundNotInCrm(
   raw:          RawTransaction,
@@ -652,33 +685,68 @@ export function detectRefundNotInCrm(
   if (!CANCELLED_STATUSES.has(raw.external_status)) return null;
 
   const rootId = raw.root_trxid ?? raw.external_trxid;
-  const original = crmPayments.find(
-    (p) =>
-      p.external_trxid === rootId &&
-      p.payment_type === "payment" &&
-      p.reconciled_at !== null
-  );
+  if (!rootId) return null;
 
-  if (!original) return null;
+  const refundAbs  = Math.abs(raw.amount);
+  const refundSign = Math.sign(raw.amount);
+  const refundMs   = raw.approved_at ? new Date(raw.approved_at).getTime() : null;
+
+  // Q4: root_trxid 단독 REJECT — composite 로 disambiguate.
+  const candidates = crmPayments.filter((p) => {
+    if (p.external_trxid !== rootId) return false;             // trxid 계열 (root_trxid 유지)
+    if (p.payment_type !== "payment") return false;           // 원거래 = 승인(Y)의 CRM 대응
+    if (p.reconciled_at === null) return false;               // 대사된(알려진) 원거래만
+    if (Math.abs(p.amount) !== refundAbs) return false;       // |amount| 동일
+    if (refundSign !== 0 && Math.sign(p.amount) === refundSign) return false; // 반대부호
+    // 시각순서: 원거래.created_at ≤ 환불.approved_at (approved_at 부재 시 순서검사 생략).
+    if (refundMs !== null && p.created_at) {
+      if (new Date(p.created_at).getTime() > refundMs) return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) return null;
+
+  // 단일 → 확정. 다후보 → 최근접-직전(원거래 created_at 이 환불 approved_at 에 가장 근접) tiebreak.
+  let original: CrmPayment | null = null;
+  if (candidates.length === 1) {
+    original = candidates[0];
+  } else if (refundMs !== null) {
+    let bestDelta = Infinity;
+    let tie = 0;
+    for (const p of candidates) {
+      if (!p.created_at) continue;
+      const d = refundMs - new Date(p.created_at).getTime(); // ≥0 (필터에서 보장)
+      if (d < bestDelta) { bestDelta = d; original = p; tie = 1; }
+      else if (d === bestDelta) { tie++; }
+    }
+    if (tie !== 1) original = null; // 동률 모호 → 수동
+  }
+
+  // 다후보 동률/판별불가 → 오원거래 오링크 금지: payment_id null 로 수동 큐 surface.
+  const ambiguous = original === null;
+  const reason = ambiguous
+    ? `redpay 취소(${raw.external_status}) — 원거래 후보 ${candidates.length}건 모호(수동 확인 필요)`
+    : `redpay 취소(${raw.external_status}) — CRM 결제 환불 미반영`;
 
   return {
     clinic_id:          raw.clinic_id,
     raw_transaction_id: raw.id,
-    payment_id:         original.id,
+    payment_id:         ambiguous ? null : original!.id,
     event_type:         "refund_not_in_crm",
     match_rule:         null,
-    mismatch_reason:    `redpay 취소(${raw.external_status}) — CRM 결제 환불 미반영`,
+    mismatch_reason:    reason,
     external_trxid:     raw.external_trxid,
     external_amount:    raw.amount,
-    crm_amount:         original.amount,
+    crm_amount:         ambiguous ? null : original!.amount,
     alert_payload: buildAlertPayload(
       "refund_not_in_crm",
       targetChannel,
       raw.external_trxid,
       raw.amount,
-      original.amount,
+      ambiguous ? null : original!.amount,
       raw.approved_at,
-      `redpay 취소(${raw.external_status}) — CRM 결제 환불 미반영`
+      reason
     ),
   };
 }
@@ -757,6 +825,30 @@ export function formatAlertMessage(payload: AlertPayload): string {
 //   로그 무한증식 + count 인플레(forensic816: 1 raw→816행). raw별 '직전 로그 event_type' 과
 //   diff 하여 상태 전이(transition/최초관측) 시에만 insert 한다. append-only 시맨틱 보존.
 //   억제 대상은 아래 두 타입에 한정 — auto_matched 는 terminal 이라 억제 비대상.
+//
+// ── canonical 접기 하드닝 (T-20260729-foot-REDPAY-RECONLOG-FLAP-IDEMPOTENCY-GAP, AC-3) ──
+//   [대사로그 불변식 v2] 로그 한 행 ⟺ raw 의 '정본(canonical) 대사-상태 macro 전이' 1회.
+//   match_failed 와 missing_in_crm 은 서로 다른 STATE 가 아니라 동일 술어
+//   (external_status='Y' ∧ matched_payment_id IS NULL) 를 만족하는 하나의 macro-state('unmatched')
+//   에 대한 비-상호배타 두 detector 의 이중관측(AC-1 census 확증: 686-cycle same-second dual emission).
+//   따라서 raw event_type 값 자체(직전==현재)로 diff 하던 부모 게이트는 mf↔mic 왕복을 '전이'로 오판
+//   → 억제 실패(flap 로그 41.8만행). 하드닝: 비교 축을 raw event_type 동일성 → canonical macro-state
+//   key 동일성으로 교체. macro 경계를 넘는 실전이(unmatched→auto_matched 등)만 보존.
+//   ★missing_at_van fold 금지 — VAN 미도달이라는 별개 술어·진동 무 → canonical identity 유지(DA §2-1-2).
+//   ★부모 T-20260725 AC-4 'flap=실전이 4회 보존' 문언은 사실오인으로 RETRACT(DA da_decision_..._fold_20260730 §2-1).
+//   기록 값은 최초 관측 event_type 원값 1행 그대로(어느 detector 가 최초 flag 했는지 audit 보존).
+export function canonicalReconState(eventType: string): string {
+  switch (eventType) {
+    // 동일 macro-state('unmatched') 의 비-상호배타 두 sub-label → 접기(fold)
+    case "match_failed":
+    case "missing_in_crm":
+      return "unmatched";
+    // auto_matched / missing_at_van / amount_* 등은 각자 distinct 상태 = identity(★fold 금지)
+    default:
+      return eventType;
+  }
+}
+
 export const SUPPRESSIBLE_EVENT_TYPES: ReadonlySet<string> = new Set([
   "match_failed",
   "missing_in_crm",
@@ -767,9 +859,13 @@ export const SUPPRESSIBLE_EVENT_TYPES: ReadonlySet<string> = new Set([
  * 실제 insert 할 이벤트와 억제(무-상태변화) 건수를 계산한다. DB I/O 없음.
  *
  * · 억제 대상 타입(match_failed/missing_in_crm) 이면서 raw_transaction_id 가 있고,
- *   직전 로그 event_type 이 현재와 동일하면 → 억제(전이 아님).
+ *   직전 로그의 canonical macro-state 가 현재와 동일하면 → 억제(전이 아님).
+ *   ★비교 축 = canonical macro-state key(canonicalReconState) — raw event_type 값 자체가 아니다.
+ *     mf↔mic 왕복은 둘 다 'unmatched' 로 접혀 억제(불변식 v2). unmatched→auto_matched 등
+ *     macro 경계를 넘는 실전이만 보존.
  * · 그 외(비억제 타입, raw 없는 이벤트, 전이/최초관측) → insert.
- * · 배치-내 상태도 갱신 → 같은 사이클 내 동일 raw·동일타입 중복도 1건으로 억제.
+ * · 배치-내 상태도 갱신 → 같은 사이클 내 동일 raw·동일 macro-state 중복(same-second dual emission
+ *   포함)도 1건으로 억제. 기록/갱신 값은 event_type 원값(audit 보존) — 비교만 canonical.
  *
  * @param events          이번 사이클 recon 이벤트
  * @param priorEventType  raw_transaction_id → 직전 로그 event_type (append-only 최신 1건)
@@ -786,11 +882,13 @@ export function planReconLogInserts(
       return true; // 비억제 타입 / raw 없는 이벤트 → 무조건 insert
     }
     const prev = seen.get(e.raw_transaction_id);
-    if (prev === e.event_type) {
+    // 비교 축 = canonical macro-state 동일성(부모: raw event_type 동일성). mf↔mic 를 'unmatched' 로 접어
+    // 이중라벨링 flap 을 억제하되, macro 경계 실전이는 보존. 최초 관측(prev===undefined)은 insert.
+    if (prev !== undefined && canonicalReconState(prev) === canonicalReconState(e.event_type)) {
       suppressed++;
-      return false; // 무-상태변화 → 억제
+      return false; // 동일 macro-state(무-상태변화) → 억제
     }
-    seen.set(e.raw_transaction_id, e.event_type); // 전이 확정 → 배치-내 갱신
+    seen.set(e.raw_transaction_id, e.event_type); // 전이 확정 → 배치-내 갱신(원값 기록, audit 보존)
     return true;
   });
   return { toInsert, suppressed };
