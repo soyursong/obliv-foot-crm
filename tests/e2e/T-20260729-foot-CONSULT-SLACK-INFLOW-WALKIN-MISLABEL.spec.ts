@@ -17,6 +17,7 @@
  *   AC-fix3   CONSULT_AXES 외 모든 값(지인소개·인콜·공홈 등) 실제 값 표시.
  *   AC-fix4   ★자동배정 균등 카운트/랭킹 분배 불변 — deriveConsultAxis/CONSULT_AXES 폴백 미변경.
  *   AC-fix5   DB 변경 없음(마이그레이션 파일 미생성).
+ *   AC-fix6   빈값(null/공란) → '미지정' 플레이스홀더(거짓 '워크인' 금지, planner MSG-9ljf(b) 신설).
  *   배선      Assignments.tsx inflow 바인딩이 consultInflowLabel 로 교정(deriveConsultAxis 직결 라벨 제거).
  */
 import { test, expect } from '@playwright/test';
@@ -27,7 +28,7 @@ import { deriveConsultAxis, isReturningAxis } from '../../src/lib/autoAssign';
 import {
   consultInflowLabel,
   INFLOW_RETURNING_LABEL,
-  INFLOW_DEFAULT_LABEL,
+  INFLOW_UNSPECIFIED_LABEL,
 } from '../../src/lib/consultInflowLabel';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,15 +78,28 @@ test('AC-fix3: CONSULT_AXES 밖 실값(지인소개·인콜·공홈)이 원문 �
   }
 });
 
-test('AC-fix3: lead_source 폴백 + 빈값/재진 경계', () => {
+test('AC-fix3: lead_source 폴백 + 재진 경계', () => {
   // visit_route 없으면 lead_source 원문.
   expect(consultInflowLabel('워크인', { visit_route: null, lead_source: '네이버' })).toBe('네이버');
-  // 둘 다 빈값(라벨 부재) → 기존 기본값 '워크인' 보존(무회귀, 본 티켓 범위 밖).
-  expect(consultInflowLabel('워크인', { visit_route: '', lead_source: null })).toBe(INFLOW_DEFAULT_LABEL);
-  expect(consultInflowLabel('워크인', null)).toBe(INFLOW_DEFAULT_LABEL);
   // 재진 축 → 유입경로 대신 '재진'(route 값 무관, 기존 동작 보존).
   expect(consultInflowLabel('returning', { visit_route: '네이버' })).toBe(INFLOW_RETURNING_LABEL);
   expect(isReturningAxis('returning')).toBe(true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-fix6 — 빈값(null/공란) visit_route → '미지정' 플레이스홀더 (거짓 '워크인' 금지)
+//   planner MSG-9ljf(b) 명시 신설. 빈 visit_route 117건이 '워크인'으로 오표기되던 경로 차단.
+// ─────────────────────────────────────────────────────────────────────────────
+test('AC-fix6: 둘 다 빈값(공란/null) → "미지정"(거짓 워크인 아님)', () => {
+  expect(INFLOW_UNSPECIFIED_LABEL).toBe('미지정');
+  // 공란 문자열 / null / 미조회(cust=null) 전부 '미지정' — 더 이상 '워크인'으로 폴백하지 않음.
+  expect(consultInflowLabel('워크인', { visit_route: '', lead_source: null })).toBe(INFLOW_UNSPECIFIED_LABEL);
+  expect(consultInflowLabel('워크인', { visit_route: null, lead_source: '' })).toBe(INFLOW_UNSPECIFIED_LABEL);
+  expect(consultInflowLabel('워크인', { visit_route: '   ', lead_source: null })).toBe(INFLOW_UNSPECIFIED_LABEL);
+  expect(consultInflowLabel('워크인', null)).toBe(INFLOW_UNSPECIFIED_LABEL);
+  expect(consultInflowLabel('워크인', undefined)).toBe(INFLOW_UNSPECIFIED_LABEL);
+  // ★ 실값 '워크인'(라벨=원문)과 빈값 폴백 구분 — 실제 visit_route='워크인'은 '워크인' 유지.
+  expect(consultInflowLabel('워크인', { visit_route: '워크인' })).toBe('워크인');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
