@@ -30,7 +30,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
-import { todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
+import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/lib/format';
+// T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
+//   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
+import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
+// T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC §5: '당월 배정 예상 비율' = 기존 배정비율 설정값 재사용(신규 저장 0).
+//   배정 비율 설정값 = assignment_daily_target_config(top/bottom) + interpolateDailyTargets 랭크별 목표(플레이북 [실행 1b]).
+//   비율 = 랭크별 목표 ÷ Σ목표(스케일 불변). 재발명 금지 — 자동배정 엔진과 동일 산식 SSOT 소비. DB 무변경(READ-only).
+import { fetchDailyTargetConfig, interpolateDailyTargets } from '@/lib/assignmentStrategy';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
@@ -51,7 +58,7 @@ import {
 } from '@/lib/autoAssign';
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축(deriveConsultAxis)의 초진/재진 입력을 stored visit_type →
 //   recency(365일) 배치 판정으로 통일. 배정 화면 표시·재진 상담칸 숨김이 접수분류·배지·엔진과 수렴(AC-3).
-import { resolveVisitTypesByRecency } from '@/lib/visitRecency';
+import { resolveVisitTypesByCheckIn } from '@/lib/visitRecency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -77,6 +84,55 @@ const THERAPY_FLOW: CheckInStatus[] = [
 ];
 const PULL_WAIT_STATUSES: CheckInStatus[] = ['consult_waiting', 'treatment_waiting'];
 const PULL_THRESHOLD_MIN = 10; // 미배정 대기 강조(amber) 임계. 당김 후보 자격 자체는 '미배정'만(PULLCAND-ASSIGNED-EXCLUDE)
+
+// ── T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC: 랭킹 탭 날짜 구간 헬퍼(KST, DATE-only 순수) ──
+//   fetchConsultantPerf(from,to) 는 DATE 문자열(YYYY-MM-DD)을 받는다(기존 monthStart 호출과 동일 grain).
+//   UTC 기준 산술로 로컬 tz 흔들림 제거(assignmentStrategy.seoulWindowBounds 와 동일 계산 규약).
+const pad2 = (n: number) => String(n).padStart(2, '0');
+/** ISO(YYYY-MM-DD)에 days 를 더한 ISO 날짜(KST 달력일). */
+function isoAddDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+/** iso 가 속한 주의 월요일 ISO(월~일 주 정의). */
+function mondayOfIso(iso: string): string {
+  const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=일..6=토
+  return isoAddDays(iso, -((dow + 6) % 7));
+}
+/** iso 가 속한 달의 1일 ISO. */
+function monthStartOfIso(iso: string): string {
+  return `${iso.slice(0, 7)}-01`;
+}
+/** 선택일 기준 4구간(월누적/이번주/직전주) DATE 경계 산출. */
+function rankingRanges(selDateIso: string): {
+  monthStart: string;
+  thisWeekMon: string;
+  prevWeekMon: string;
+  prevWeekSun: string;
+} {
+  const thisWeekMon = mondayOfIso(selDateIso);
+  return {
+    monthStart: monthStartOfIso(selDateIso),
+    thisWeekMon,
+    prevWeekMon: isoAddDays(thisWeekMon, -7),
+    prevWeekSun: isoAddDays(thisWeekMon, -1),
+  };
+}
+/** 매출액 배열 → staffId별 순위(1위=최고매출, 동점 tie-break=이름). 0/미참여는 후순위. */
+function rankByRevenue(
+  ids: string[],
+  revenueOf: (id: string) => number,
+  nameOf: (id: string) => string,
+): Map<string, number> {
+  const sorted = [...ids].sort(
+    (a, b) => revenueOf(b) - revenueOf(a) || nameOf(a).localeCompare(nameOf(b), 'ko'),
+  );
+  const m = new Map<string, number>();
+  sorted.forEach((id, i) => m.set(id, i + 1));
+  return m;
+}
 
 function activeRole(status: CheckInStatus): AssignmentRole | null {
   if (CONSULT_FLOW.includes(status)) return 'consult';
@@ -142,6 +198,31 @@ export default function Assignments() {
   const isAdmin = profile?.role === 'admin';
   const [rotationOpen, setRotationOpen] = useState(false);
 
+  // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 = 관리자(원장·총괄) 전용.
+  //   판정 SSOT = 기존 role 체계(admin/manager/director) 재사용 — canEditRotation/Distribution 과 동일 술어(신규 role enum 신설 0).
+  //   §2 서버사이드 게이트 완결(마이그 20260727120000 / DA Opt A): 랭킹·매출 데이터는 admin-gated SECDEF 래퍼
+  //     `foot_stats_consultant_admin`(fetchConsultantPerf 진입) 를 통해서만 조회되며, 래퍼가 is_admin_or_manager()
+  //     fail-closed(42501) 로 비admin 을 서버에서 거부한다. 구 `foot_stats_consultant` 는 authenticated EXECUTE
+  //     회수됨 → 비admin 직접 호출도 거부(no-read-up 완결). 즉 아래 canViewRanking 은 UI 숨김(방어심층)이고,
+  //     실 접근통제는 서버 래퍼가 강제한다(UI 우회해도 데이터 유출 0).
+  const canViewRanking =
+    profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+
+  // [랭킹] 탭 데이터 — R1 정합 실장 랭킹(선택일 월누적 매출) + 배정건수.
+  const [rankLoading, setRankLoading] = useState(false);
+  const [perfRows, setPerfRows] = useState<ConsultantRow[]>([]); // 월매출(1일~선택일) — 순위 기준
+  // T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC:
+  //   #1 DatePicker — 랭킹 탭 전용 기준일(기본=오늘 KST). 직원별누적 selectedDate 와 분리(탭 간 커플링 방지).
+  const [rankingDate, setRankingDate] = useState<string>(() => todaySeoulISODate());
+  //   #4 전주매출(직전주 월~일) / 이번주매출(이번주 월~선택일) — 주간 랭킹 변동표 + 전주매출 컬럼 소스.
+  const [prevWeekRevenue, setPrevWeekRevenue] = useState<Map<string, number>>(new Map());
+  const [thisWeekRevenue, setThisWeekRevenue] = useState<Map<string, number>>(new Map());
+  //   #6 배정 건 수 — 선택일 당일 check_ins.consultant_id 배정 수(배정 SSOT=check_ins, 재발명 금지).
+  const [dayAssignCounts, setDayAssignCounts] = useState<Map<string, number>>(new Map());
+  //   #5 당월 초진 예약 총건수(reservations visit_type='new', 취소 제외) × 랭크 배정비율 → 예상 배정건수.
+  const [monthInitResvCount, setMonthInitResvCount] = useState<number>(0);
+  const [dailyTargetCfg, setDailyTargetCfg] = useState<{ top: number; bottom: number } | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [workingIds, setWorkingIds] = useState<Set<string>>(new Set());
@@ -151,6 +232,10 @@ export default function Assignments() {
   const [tempOffBusy, setTempOffBusy] = useState<Set<string>>(new Set()); // 토글 중복클릭 가드
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [customers, setCustomers] = useState<Map<string, CustomerLite>>(new Map());
+  // T-20260727-foot-ASSIGN-REVISIT-OVERCOUNT-RECLASS-GATE (2A): 초진/재진 판정을 고객단위 →
+  //   **check_in 레코드 단위(시점정합)** 로 교정. check_in id → VisitType(recency+owner-forced pin).
+  const [visitTypeByCi, setVisitTypeByCi] = useState<Map<string, string>>(new Map()); // 오늘 배정뷰
+  const [monthVisitTypeByCi, setMonthVisitTypeByCi] = useState<Map<string, string>>(new Map()); // 당월 누적
   const [actions, setActions] = useState<AssignmentAction[]>([]);
   // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: 당월 누적 '배정/재진' 카운트의 정본 = check_ins(내구 상태).
   //   audit 로그(assignment_actions)는 toss/당김 집계·방식표시용. 자동+수동 모두 check_ins.{role}_id 에
@@ -175,7 +260,8 @@ export default function Assignments() {
   //  · 배정목록 → 카테고리(상담/치료) 드롭 → 담당자(상담사/치료사) 드롭 → 선택 담당자 금일 배정 환자목록 read-only 표시.
   //  금일 배정 grain 실측(2026-07-10 prod): 앵커=check_ins(consultant_id/therapist_id). reservations엔 배정필드 부재
   //  (preferred_therapist_id=예약단계 선호값), visits 테이블 부재 → TREATING-DOCTOR-SELECT-SYNC 선례와 정합. DB무변경.
-  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list'>('consult');
+  // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 상위 탭에 [랭킹] 추가('ranking').
+  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list' | 'ranking'>('consult');
   const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
   const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
 
@@ -281,17 +367,17 @@ export default function Assignments() {
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
-      // T-20260713 RECENCY-UNIFY: 상담 축 파생 입력을 recency(365일) 판정으로 교체 — visit_type 필드만 override.
-      //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 map 의 visit_type 을 recency 결과로 바꾸면
-      //   axisOf(오늘 배정뷰)·재진 상담칸 숨김이 접수분류·배지·엔진과 동일 소스가 된다.
-      {
-        const recencyMap = await resolveVisitTypesByRecency(custIds, clinic.id);
-        for (const [id, vt] of recencyMap) {
-          const cu = custMap.get(id);
-          if (cu) custMap.set(id, { ...cu, visit_type: vt });
-        }
-      }
       setCustomers(custMap);
+      // T-20260727 RECLASS 2A: 축 파생 초진/재진을 **check_in 레코드 단위(시점정합)** recency 로 판정.
+      //   (기존 T-20260713 고객단위 override 는 self-contamination 과다집계 RC → per-checkin 으로 교체.)
+      //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 axisOf 가 이 맵을 우선 사용한다.
+      {
+        const vtMap = await resolveVisitTypesByCheckIn(
+          ci.map((c) => ({ id: c.id, customer_id: c.customer_id, checked_in_at: c.checked_in_at })),
+          clinic.id,
+        );
+        setVisitTypeByCi(vtMap as Map<string, string>);
+      }
 
       // 5) 당월 assignment_actions (토스 N건·당김 N건·금일 배분 '방식' 표시 SSOT)
       //    배정/재진 누적 카운트의 정본은 check_ins(아래 5b) — audit 로그는 toss/당김·방식용.
@@ -331,14 +417,18 @@ export default function Assignments() {
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
         }
-        // T-20260713 RECENCY-UNIFY: 월간 상담 축(monthAxisOf)도 recency 판정으로 통일 — visit_type override.
-        const recencyMonthMap = await resolveVisitTypesByRecency(monthCustIds, clinic.id);
-        for (const [id, vt] of recencyMonthMap) {
-          const cu = monthCustMap.get(id);
-          if (cu) monthCustMap.set(id, { ...cu, visit_type: vt });
-        }
       }
       setMonthCustomers(monthCustMap);
+      // T-20260727 RECLASS 2A: 월간 상담 축(monthAxisOf)도 **check_in 레코드 단위(시점정합)** recency 로 판정.
+      //   RC = 고객단위 판정이 과거날짜 자기 첫 완료방문을 "과거 done" 으로 잡아 순수초진을 재진 오승격.
+      //   per-checkin 판정 = 각 배정 check_in 을 그 방문 시각 이전 done 방문에 대해서만 판정(+owner-forced pin).
+      {
+        const vtMonthMap = await resolveVisitTypesByCheckIn(
+          monthCi.map((c) => ({ id: c.id, customer_id: c.customer_id, checked_in_at: c.checked_in_at })),
+          clinic.id,
+        );
+        setMonthVisitTypeByCi(vtMonthMap as Map<string, string>);
+      }
 
       // 6) 슬롯 진입 시각(당김 10분+ 판정) — 대기 상태로의 최신 transition
       const ciIds = ci.map((c) => c.id);
@@ -430,14 +520,16 @@ export default function Assignments() {
       if (role === 'consult') {
         const cu = ci.customer_id ? customers.get(ci.customer_id) : null;
         return deriveConsultAxis({
-          visit_type: cu?.visit_type ?? ci.visit_type,
+          // T-20260727 RECLASS 2A: 초진/재진 = check_in 레코드 단위(시점정합) recency + owner-forced pin.
+          //   per-checkin 맵 우선, 미해소(폴백) 시에만 stored ci.visit_type.
+          visit_type: visitTypeByCi.get(ci.id) ?? ci.visit_type,
           lead_source: cu?.lead_source,
           visit_route: cu?.visit_route,
         });
       }
       return deriveTherapyAxis(ci);
     },
-    [customers],
+    [customers, visitTypeByCi],
   );
 
   // ── 수동배정 select default 값 (AC-6, read-only 프리셋) ────────────────────────
@@ -485,14 +577,16 @@ export default function Assignments() {
       if (role === 'consult') {
         const cu = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
         return deriveConsultAxis({
-          visit_type: cu?.visit_type ?? ci.visit_type,
+          // T-20260727 RECLASS 2A: 초진/재진 = check_in 레코드 단위(시점정합) recency + owner-forced pin.
+          //   과다집계 RC(고객단위 self-contamination) 교정 핵심 경로.
+          visit_type: monthVisitTypeByCi.get(ci.id) ?? ci.visit_type,
           lead_source: cu?.lead_source,
           visit_route: cu?.visit_route,
         });
       }
       return deriveTherapyAxis(ci);
     },
-    [monthCustomers],
+    [monthCustomers, monthVisitTypeByCi],
   );
 
   const staffStats = useMemo<StaffStat[]>(() => {
@@ -603,6 +697,158 @@ export default function Assignments() {
   const dailyTargetOf = useCallback((_st: StaffStat): number | null => {
     return null; // 소스 미도입 → 표시 '—'. 엔진 산출값이 생기면 여기서 파생.
   }, []);
+
+  // ── [랭킹] 탭 (T-20260726-...-ADMINLOCK + T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC) ──────
+  //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
+  //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 산출값을 date-range 재호출로 read-only 소비.
+  //  · #1 선택일(rankingDate) 기준 6-read 병렬(모두 READ, DB 무변경):
+  //     ① 월매출(1일~선택일) = 순위 기준  ② 전주매출(직전주 월~일)  ③ 이번주매출(이번주 월~선택일, 변동표용)
+  //     ④ 당일 배정건수(check_ins.consultant_id — 배정 SSOT, deleted_at 제외)  ⑤ 당월 초진예약 총건수
+  //     ⑥ 배정비율 설정값(assignment_daily_target_config — 플레이북 [실행 1b], 신규 저장 0)
+  //  · 표시 read-only. customers.assigned_consultant_id 무접촉(RED LINE). admin 전용 탭 진입 시에만 fetch.
+  //  · TM 제외 판단(#6): check_ins.consultant_id 배정은 데스크 상담배정 SSOT이며 lead_source 미보유(TM 판별자 부재).
+  //    reservations 조인 TM 필터는 신뢰불가 + 기존 배정건수 정의(check_ins 전건)와 정합 붕괴 → TM 별도필터 미적용(전건 집계).
+  useEffect(() => {
+    if (mainTab !== 'ranking' || !canViewRanking || !clinic) return;
+    let cancelled = false;
+    void (async () => {
+      setRankLoading(true);
+      const clinicId = clinic.id;
+      const { monthStart, thisWeekMon, prevWeekMon, prevWeekSun } = rankingRanges(rankingDate);
+      const dayStart = `${rankingDate}T00:00:00+09:00`;
+      const dayEndExcl = `${isoAddDays(rankingDate, 1)}T00:00:00+09:00`;
+      const monthEndExcl = `${isoAddDays(monthStart, 32).slice(0, 7)}-01`; // 선택일 달의 다음달 1일(DATE)
+      try {
+        const [monthPerf, prevPerf, thisPerf, dayCi, initResv, tgtCfg] = await Promise.all([
+          fetchConsultantPerf(clinicId, monthStart, rankingDate),
+          fetchConsultantPerf(clinicId, prevWeekMon, prevWeekSun),
+          fetchConsultantPerf(clinicId, thisWeekMon, rankingDate),
+          supabase
+            .from('check_ins')
+            .select('consultant_id')
+            .eq('clinic_id', clinicId)
+            .not('consultant_id', 'is', null)
+            .is('deleted_at', null)
+            .gte('checked_in_at', dayStart)
+            .lt('checked_in_at', dayEndExcl),
+          supabase
+            .from('reservations')
+            .select('id', { count: 'exact', head: true })
+            .eq('clinic_id', clinicId)
+            .eq('visit_type', 'new')
+            .neq('status', 'cancelled')
+            .gte('reservation_date', monthStart)
+            .lt('reservation_date', monthEndExcl),
+          fetchDailyTargetConfig(clinicId),
+        ]);
+        if (cancelled) return;
+        const toRevMap = (rows: ConsultantRow[]) => {
+          const m = new Map<string, number>();
+          for (const r of rows) m.set(r.consultant_id, r.total_amount ?? 0);
+          return m;
+        };
+        setPerfRows(monthPerf);
+        setPrevWeekRevenue(toRevMap(prevPerf));
+        setThisWeekRevenue(toRevMap(thisPerf));
+        const dc = new Map<string, number>();
+        for (const r of (dayCi.data ?? []) as { consultant_id: string | null }[]) {
+          if (r.consultant_id) dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
+        }
+        setDayAssignCounts(dc);
+        setMonthInitResvCount(initResv.count ?? 0);
+        setDailyTargetCfg(
+          tgtCfg ? { top: tgtCfg.top_rank_target, bottom: tgtCfg.bottom_rank_target } : null,
+        );
+      } catch (e) {
+        if (!cancelled) {
+          setPerfRows([]);
+          setPrevWeekRevenue(new Map());
+          setThisWeekRevenue(new Map());
+          setDayAssignCounts(new Map());
+          setMonthInitResvCount(0);
+          setDailyTargetCfg(null);
+          console.warn('[Assignments] ranking load failed:', e);
+        }
+      } finally {
+        if (!cancelled) setRankLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mainTab, canViewRanking, clinic, rankingDate]);
+
+  interface RankingRow {
+    rank: number;
+    consultantId: string;
+    name: string;
+    monthRevenue: number; // #2 월매출(1일~선택일)
+    prevWeekRevenue: number; // #4 전주매출(직전주 월~일)
+    avgTicket: number | null; // 객단가(유지) = ARPU(avg_amount)
+    expectedRatio: number | null; // #5 랭크 배정비율(0~1). cfg 부재=null → '—'
+    expectedCount: number | null; // #5 예상 배정건수 = round(당월 초진예약 × 비율)
+    dayAssignCount: number; // #6 당일 누적 배정건수
+  }
+  const rankingRows = useMemo<RankingRow[]>(() => {
+    const sorted = [...perfRows].sort(
+      (a, b) =>
+        (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
+        (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
+    );
+    // #5 배정비율 = interpolateDailyTargets(랭크순, top, bottom) 의 랭크별 목표 ÷ Σ목표(스케일 불변).
+    const rankedIds = sorted.map((r) => r.consultant_id);
+    const targets = dailyTargetCfg
+      ? interpolateDailyTargets(rankedIds, dailyTargetCfg.top, dailyTargetCfg.bottom)
+      : null;
+    let sumTargets = 0;
+    if (targets) for (const v of targets.values()) sumTargets += v;
+    return sorted.map((r, i) => {
+      const ratio =
+        targets && sumTargets > 0 ? (targets.get(r.consultant_id) ?? 0) / sumTargets : null;
+      return {
+        rank: i + 1,
+        consultantId: r.consultant_id,
+        name: r.name ?? '—',
+        monthRevenue: r.total_amount ?? 0,
+        prevWeekRevenue: prevWeekRevenue.get(r.consultant_id) ?? 0,
+        avgTicket: r.avg_amount ?? null,
+        expectedRatio: ratio,
+        expectedCount: ratio != null ? Math.round(monthInitResvCount * ratio) : null,
+        dayAssignCount: dayAssignCounts.get(r.consultant_id) ?? 0,
+      };
+    });
+  }, [perfRows, prevWeekRevenue, dayAssignCounts, monthInitResvCount, dailyTargetCfg]);
+
+  // ── #3 하단 실장별 랭킹 변동표 (주간 기준 — 전주 순위 vs 이번주 순위, 각 매출 desc) ──────────
+  //  기준 확정(#4): 주간(직전주 월~일 vs 이번주 월~선택일). 스펙 예시(전주 순위/이번주 순위) 정합.
+  //  delta = prevRank − thisRank ( >0 = 순위 상승 ↑N / <0 = 하락 ↓N / 0 = 유지 - ).
+  interface VariationRow {
+    consultantId: string;
+    name: string;
+    prevRank: number | null;
+    thisRank: number | null;
+    delta: number | null;
+  }
+  const variationRows = useMemo<VariationRow[]>(() => {
+    const ids = perfRows.map((r) => r.consultant_id);
+    const nameMap = new Map(perfRows.map((r) => [r.consultant_id, r.name ?? '—']));
+    const nameOf = (id: string) => nameMap.get(id) ?? '—';
+    const prevRankMap = rankByRevenue(ids, (id) => prevWeekRevenue.get(id) ?? 0, nameOf);
+    const thisRankMap = rankByRevenue(ids, (id) => thisWeekRevenue.get(id) ?? 0, nameOf);
+    return ids
+      .map((id) => {
+        const pr = prevRankMap.get(id) ?? null;
+        const tr = thisRankMap.get(id) ?? null;
+        return {
+          consultantId: id,
+          name: nameOf(id),
+          prevRank: pr,
+          thisRank: tr,
+          delta: pr != null && tr != null ? pr - tr : null,
+        };
+      })
+      .sort((a, b) => (a.thisRank ?? 9999) - (b.thisRank ?? 9999));
+  }, [perfRows, prevWeekRevenue, thisWeekRevenue]);
 
   // ── AC-3: 금일 배분 이력(read-only) — 오늘 배정된 check_ins(정본). 방식=assignment_actions 최신 action 파생.
   interface TodayDistRow {
@@ -976,18 +1222,9 @@ export default function Assignments() {
           >
             미배정 일괄 자동배정{unassignedNow.length > 0 ? ` (${unassignedNow.length})` : ''}
           </Button>
-          {canEditRotation && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setRotationOpen(true)}
-              disabled={loading || busy}
-              data-testid="rotation-order-open-btn"
-            >
-              <ListOrdered className="mr-1 h-3.5 w-3.5" />
-              배정 순번 설정
-            </Button>
-          )}
+          {/* T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK §3: '배정 순번 설정' 진입 버튼을
+              헤더(우측)에서 제거 → [랭킹] 탭 내부로 이동(중복 노출 금지). 트리거 위치만 재배치,
+              RotationOrderDialog 저장/데이터 경로 무접촉. */}
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || busy}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             새로고침
@@ -1010,9 +1247,11 @@ export default function Assignments() {
       <Tabs
         value={mainTab}
         onValueChange={(v) => {
-          const next = v as 'consult' | 'therapy' | 'list';
+          const next = v as 'consult' | 'therapy' | 'list' | 'ranking';
+          // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 비admin 이 (URL/이벤트 조작 등으로) ranking 진입 시도 시 무시(이중 가드).
+          if (next === 'ranking' && !canViewRanking) return;
           setMainTab(next);
-          // 상담/치료 탭은 기존 운영 카드의 role 필터(activeTab) 동기화. 배정목록은 자체 드롭으로 조회.
+          // 상담/치료 탭은 기존 운영 카드의 role 필터(activeTab) 동기화. 배정목록/랭킹은 자체 조회.
           if (next === 'consult' || next === 'therapy') setActiveTab(next);
         }}
       >
@@ -1026,11 +1265,17 @@ export default function Assignments() {
           <TabsTrigger value="list" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-list">
             배정목록
           </TabsTrigger>
+          {/* T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] = 관리자(원장·총괄) 전용. 비admin 은 탭 자체 미노출(UI 숨김). */}
+          {canViewRanking && (
+            <TabsTrigger value="ranking" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-ranking">
+              랭킹
+            </TabsTrigger>
+          )}
         </TabsList>
       </Tabs>
 
-      {/* ── [상담]/[치료] 탭: 기존 배정 운영 카드(①~④). 배정목록 탭에서는 미노출. ── */}
-      {mainTab !== 'list' && (
+      {/* ── [상담]/[치료] 탭: 기존 배정 운영 카드(①~④). 배정목록·랭킹 탭에서는 미노출. ── */}
+      {(mainTab === 'consult' || mainTab === 'therapy') && (
         <>
       {/* ① 오늘 배정 현황 */}
       <Card>
@@ -1628,6 +1873,191 @@ export default function Assignments() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── [랭킹] 탭: 실장 랭킹(순위/이름/누적매출/배정건수) — 관리자 전용. ──
+          T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK.
+          데이터 = R1 정합본(fetchConsultantPerf: 재직 실장만 + 매출정합). 순위=당월 누적매출 desc. read-only.
+          ⚠ canViewRanking 이중 가드 — 비admin 은 여기 도달 불가(탭 미노출 + onValueChange 차단 + 아래 && 가드). */}
+      {mainTab === 'ranking' && canViewRanking && (
+        <div className="space-y-4">
+        <Card data-testid="assignments-ranking-card">
+          <CardHeader className="py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-sm">실장 랭킹</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  재직 상담 실장 기준 · 월매출(1일~선택일) 순 · 관리자 전용
+                </p>
+              </div>
+              {/* #1 DatePicker — 기존 CRM 컴포넌트(native date input) 재사용(신규 npm 0). 기본=오늘, max=오늘(미래 차단). */}
+              <div className="flex items-center gap-2 text-xs">
+                <label htmlFor="ranking-date" className="font-medium text-muted-foreground">
+                  기준일
+                </label>
+                <input
+                  id="ranking-date"
+                  data-testid="ranking-date"
+                  type="date"
+                  value={rankingDate}
+                  max={todaySeoulISODate()}
+                  onChange={(e) => {
+                    if (e.target.value) setRankingDate(e.target.value);
+                  }}
+                  className="rounded border bg-background px-2 py-1"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[64vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
+                  <tr>
+                    <th className="w-14 px-3 py-2 text-center font-medium">순위</th>
+                    <th className="px-3 py-2 text-left font-medium">이름</th>
+                    <th className="px-3 py-2 text-right font-medium">월매출</th>
+                    <th className="px-3 py-2 text-right font-medium">전주매출</th>
+                    <th className="px-3 py-2 text-right font-medium">객단가</th>
+                    <th className="px-3 py-2 text-right font-medium">당월 배정 예상 비율</th>
+                    <th className="px-3 py-2 text-right font-medium">배정 건 수</th>
+                  </tr>
+                </thead>
+                <tbody data-testid="ranking-rows">
+                  {rankLoading && (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-loading">
+                        랭킹 불러오는 중…
+                      </td>
+                    </tr>
+                  )}
+                  {!rankLoading && rankingRows.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-10 text-center text-muted-foreground" data-testid="ranking-empty">
+                        표시할 랭킹 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                  {!rankLoading &&
+                    rankingRows.map((r) => (
+                      <tr key={r.consultantId} className="border-b last:border-0 hover:bg-muted/20" data-testid="ranking-row">
+                        <td className="px-3 py-2.5 text-center font-semibold tabular-nums">{r.rank}</td>
+                        <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-revenue">
+                          {formatAmount(r.monthRevenue)}원
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-prevweek-revenue">
+                          {formatAmount(r.prevWeekRevenue)}원
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-avg-ticket">
+                          {r.avgTicket != null ? `${formatAmount(r.avgTicket)}원` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-expected-ratio">
+                          {r.expectedRatio != null
+                            ? `${Math.round(r.expectedRatio * 100)}% (${r.expectedCount ?? 0}건)`
+                            : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums" data-testid="ranking-assign-count">
+                          {r.dayAssignCount.toLocaleString('ko-KR')}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            {!rankLoading && dailyTargetCfg == null && rankingRows.length > 0 && (
+              <p className="px-3 py-2 text-xs text-muted-foreground" data-testid="ranking-ratio-note">
+                ※ 배정 예상 비율은 [배정 순번 설정]의 하루 목표건수(배정 비율)가 설정되어야 표시됩니다.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── #3 하단 실장별 랭킹 변동표(주간: 전주 순위 → 이번주 순위, ↑N/↓N/-) ── */}
+        <Card data-testid="assignments-ranking-variation-card">
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm">실장별 랭킹 변동 (주간)</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              직전 주(월~일) 대비 이번 주(월~선택일) 매출 순위 변동
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[40vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 border-y bg-muted text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">실장명</th>
+                    <th className="px-3 py-2 text-center font-medium">전주 순위</th>
+                    <th className="px-3 py-2 text-center font-medium">이번주 순위</th>
+                    <th className="px-3 py-2 text-center font-medium">변동</th>
+                  </tr>
+                </thead>
+                <tbody data-testid="ranking-variation-rows">
+                  {!rankLoading && variationRows.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground" data-testid="ranking-variation-empty">
+                        표시할 변동 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                  {!rankLoading &&
+                    variationRows.map((v) => (
+                      <tr key={v.consultantId} className="border-b last:border-0 hover:bg-muted/20" data-testid="ranking-variation-row">
+                        <td className="px-3 py-2.5 font-medium">{v.name}</td>
+                        <td className="px-3 py-2.5 text-center tabular-nums">
+                          {v.prevRank != null ? `${v.prevRank}위` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center tabular-nums">
+                          {v.thisRank != null ? `${v.thisRank}위` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center font-semibold tabular-nums" data-testid="ranking-variation-delta">
+                          {v.delta == null ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : v.delta > 0 ? (
+                            <span className="text-emerald-600">↑{v.delta}</span>
+                          ) : v.delta < 0 ? (
+                            <span className="text-red-500">↓{Math.abs(v.delta)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── [랭킹] 탭 §3: '배정 순번 설정' 통합(T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK).
+            헤더 우측에 있던 '배정 순번 설정' 진입 버튼을 이 탭 안으로 이동(원 위치 제거 = 중복노출 금지).
+            버튼은 기존 RotationOrderDialog 를 그대로 열며 저장/데이터 경로 무접촉(재배치만).
+            canViewRanking(=admin/manager/director) 탭 게이트 + canEditRotation 동일 술어로 이중 정합. */}
+        {canEditRotation && (
+          <Card data-testid="assignments-rotation-card">
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm">배정 순번 설정</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                자동배정 기본순번 · 치료 파트 가능 시술 편집 · 관리자 전용
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {canEditRotation && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRotationOpen(true)}
+                  disabled={loading || busy}
+                  data-testid="rotation-order-open-btn"
+                >
+                  <ListOrdered className="mr-1 h-3.5 w-3.5" />
+                  배정 순번 설정
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        </div>
       )}
 
       {/* T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5: 직원별 누적 건수 셀 → 고객 명단 drill-down.

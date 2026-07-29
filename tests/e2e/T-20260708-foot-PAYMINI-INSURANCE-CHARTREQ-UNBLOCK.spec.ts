@@ -51,7 +51,10 @@ test.describe('AC-1·AC-2 — 급여 수납 차단 완전 제거', () => {
   test('[수납] 버튼 disabled 에 게이트 차단 조건 없음 — submitting/splitValid 만', () => {
     const src = PMW();
     expect(src).toMatch(/data-testid="btn-settle"/);
-    expect(src).toMatch(/disabled=\{submitting \|\| !splitValid\}/);
+    // ⚠ 2026-07-27 T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN 로 settled 조건이 추가됨
+    //   (disabled={submitting || settled || !splitValid}) — 게이트와 무관한 이중수납 차단. tolerant 매칭.
+    //   (본 조정은 T-20260728-foot-INSUR-POPUP-REMOVE 착수 시 발견된 사전 드리프트 정리 — 게이트 무관.)
+    expect(src).toMatch(/disabled=\{submitting[^}]*!splitValid\}/);
     // 과거 차단 상태 medGateBlocked 완전 제거.
     expect(src).not.toMatch(/medGateBlocked/);
   });

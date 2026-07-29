@@ -441,3 +441,34 @@ export function canManualAddExam(role: UserRole | null | undefined): boolean {
   if (!role) return false;
   return MANUAL_EXAM_ADD_ROLES.includes(role);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260728-foot-CHART2-DOCREQ-HISTORY-COORDPERM — 서류(소견서/진단서) '신청(요청)'·'취소' 권한 SSOT (1지점).
+//   범위 확정(김주연 총괄 U0ATDB587PV, 2026-07-28): coordinator = **신청(요청)만**. 출력(발급)·취소·발행·서명은 미부여
+//     (원장/상위권한 유지, MUNJIEUN-ROLE-DIRECTOR / PUBLISH-BTN-REVERIFY-GATE 방향 정합).
+//   DA CONSULT-REPLY(MSG-20260728-162717-9fka / 정정 MSG-20260728-163619-8dqz): **ADDITIVE, FE-only, 무DDL**.
+//     · form_submissions_insert RLS = active clinic member 전원 허용(role-agnostic, 20260522000010) → 신규 CREATE POLICY 불요.
+//     · coordinator는 cross_crm §2-3 enum 정본 + effective write-set {admin,manager,director,coordinator}에 旣편입
+//       = '과소provisioning 해소'(director-lock 아님). staff_permissions 테이블·is_admin류 boolean·permission flag = 전부 REJECT.
+//   ★REDEFINITION_RISK 정합: ROLE-MATRIX-3TIER-RBAC(in_progress) single-role 모델 위 ADDITIVE 셀 — 신규 병렬 권한체계 아님.
+//   ★신청(request) 노출은 role 축소 금지(FE union = RLS union = 전 active member). unknown role 만 fail-closed(INV-4).
+//     → OPINION_REQUEST_ROLES = 전 UserRole. coordinator 명시 포함, tm/technician/doctor 도 RLS 패리티로 포함(lock-out 0).
+export const OPINION_REQUEST_ROLES: UserRole[] = [
+  'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff', 'tm', 'technician', 'doctor',
+];
+
+/** 서류(소견서/진단서) 발행 '요청(신청)' 권한 — 전 직군(RLS 패리티, coordinator 포함). null/unknown 안전 기본값 false. */
+export function canRequestOpinionDoc(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return OPINION_REQUEST_ROLES.includes(role);
+}
+
+// ★'취소(요청 철회)'는 coordinator 미부여(신청만) — AC②-2/시나리오3. = 신청 role-set − coordinator.
+//   FE 표시 게이트(취소 X 버튼 노출 제어). 다른 역할(실장 consultant 등)의 기존 취소 동선은 무회귀(coordinator 만 제외).
+export const OPINION_CANCEL_ROLES: UserRole[] = OPINION_REQUEST_ROLES.filter((r) => r !== 'coordinator');
+
+/** 서류 요청 '취소(철회)' 버튼 노출 권한. coordinator 제외(신청만). null/unknown 안전 기본값 false. */
+export function canCancelOpinionRequest(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return OPINION_CANCEL_ROLES.includes(role);
+}

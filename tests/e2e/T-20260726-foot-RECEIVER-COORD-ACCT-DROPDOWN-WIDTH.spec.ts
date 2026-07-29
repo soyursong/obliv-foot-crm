@@ -64,9 +64,11 @@ test.describe('#1: 접수자명 = 코디네이터 계정 드롭다운', () => {
     expect(b).toContain('(목록 외)');
   });
 
-  test('방어 폴백 — staff 미적용/스키마 불일치 prod 시 빈 목록(섹션 무파손)', () => {
+  test('방어 폴백 — staff 테이블 미적용(undefined_table) prod 시 빈 목록(섹션 무파손)', () => {
+    // T-20260728-RECEIVER-COORD-DROPDOWN-EMPTY-FIX: 폴백을 42P01(undefined_table)로 축소.
+    //   과거 광역 폴백(42703/column 포함)이 display_name 컬럼오류를 삼켜 빈목록 유발 → 좁힘.
     const b = blood();
-    expect(b).toMatch(/staff\|relation\|42P01\|42703/);
+    expect(b).toContain("error.code === '42P01'");
   });
 });
 

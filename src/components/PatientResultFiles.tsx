@@ -21,6 +21,8 @@ import { toast } from '@/lib/toast';
 import { formatDateTimeDots } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+// T-20260728-foot-CHART2-LABRESULT-VIEW-OVERLAY-POPUP: '보기' → 새 탭 대신 앱 내 팝업(overlay) 뷰어.
+import ResultFileViewerDialog from '@/components/ResultFileViewerDialog';
 
 // FE 게이트 — DB mime CHECK(application/pdf, image/jpeg, image/png) 와 정합. ext 외 거부.
 const ALLOWED_EXT = new Set(['pdf', 'jpg', 'jpeg', 'png']);
@@ -102,6 +104,8 @@ export default function PatientResultFiles({
   const [loading, setLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const ac = ACCENT_MAP[accent];
+  // '보기' 팝업(overlay) 뷰어 대상. url=null → 서명URL 발급 중(로딩). null=닫힘.
+  const [viewer, setViewer] = useState<{ url: string | null; row: PfrRow } | null>(null);
 
   const load = useCallback(async () => {
     if (!customerId) return;
@@ -210,6 +214,18 @@ export default function PatientResultFiles({
     }
   };
 
+  // '보기' — 새 탭(window.open) 대신 앱 내 팝업(overlay)으로 열람. signedUrl(1h) on-demand 발급.
+  const openInViewer = async (row: PfrRow) => {
+    setViewer({ url: null, row }); // 즉시 팝업 오픈(로더)
+    const { data, error } = await supabase.storage.from('documents').createSignedUrl(row.file_path, 3600);
+    if (error || !data?.signedUrl) {
+      toast.error(`파일을 열 수 없습니다: ${error?.message ?? '경로 없음'}`);
+      setViewer(null);
+      return;
+    }
+    setViewer({ url: data.signedUrl, row });
+  };
+
   const handleDelete = async (row: PfrRow) => {
     if (!window.confirm(`'${row.file_name}' 결과지를 삭제할까요? (본인이 올린 파일만 삭제됩니다)`)) return;
     const { error } = await supabase.from('patient_file_records').delete().eq('id', row.id);
@@ -295,9 +311,9 @@ export default function PatientResultFiles({
                   size="sm"
                   variant="ghost"
                   className="h-7 w-7 p-0"
-                  title="새 창에서 보기"
+                  title="결과지 보기 (팝업)"
                   data-testid={`${testidPrefix}-view`}
-                  onClick={() => openSigned(r.file_path, false)}
+                  onClick={() => openInViewer(r)}
                 >
                   <Eye className="h-3.5 w-3.5" />
                 </Button>
@@ -326,6 +342,15 @@ export default function PatientResultFiles({
           ))
         )}
       </div>
+
+      {/* '보기' 팝업(overlay) 뷰어 — 새 탭 대신 앱 내 결과지 열람 */}
+      <ResultFileViewerDialog
+        open={viewer !== null}
+        onOpenChange={(v) => { if (!v) setViewer(null); }}
+        url={viewer?.url ?? null}
+        fileName={viewer?.row.file_name ?? ''}
+        isImage={viewer ? isImage(viewer.row) : false}
+      />
     </div>
   );
 }

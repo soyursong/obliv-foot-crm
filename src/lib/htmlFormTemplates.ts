@@ -2240,16 +2240,16 @@ const BILL_RECEIPT_NEW_HTML = `
           <tr><td>⑥ 진료비 총액<br>(①+②+③+④)</td><td class="rn-num" style="font-weight:bold;">{{total_amount}}</td></tr>
           <tr><td>⑦ 공단부담 총액<br>(②+⑤)</td><td class="rn-num">{{insurance_covered}}</td></tr>
           <tr><td>⑧ 환자부담 총액<br>(①-⑤)+③+④</td><td class="rn-num" style="font-weight:bold;">{{patient_amount}}</td></tr>
-          <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1: ⑨ 이미 납부한 금액 = 선수금/패키지 차감분({{already_paid}},
-               check_in_services.is_package_session 환자부담분). 미차감건은 공란(회귀0). ⑩ = ⑧−⑨ 전용 토큰({{due_amount}})
-               분리 — patient_amount 하드코딩 폐기(⑨만 채우면 "⑧-⑨" 라벨과 산술모순=허위영수증 재점화 방지, codex 배포차단급). -->
+          <!-- T-20260728-foot-BILLRECEIPT-PAYMETHOD-PAIDFIELD-2FIX 요건2 [회귀 복원, reporter 김주연 총괄]:
+               T-20260727-PMW-REFUND200-DOCUNPAID-2BUG(b20c88d2)가 ⑨'이미 납부한 금액'/⑩'납부할 금액'/'납부하지 않은
+               금액' 행을 양식에서 **삭제**(분리 표기 제거)한 회귀 → 현장 "양식을 왜 건드려". PREPRINT 의도상태(⑨~⑪ 3행
+               + 납부하지않은, ⑩=공란이되 칸 존재)로 최소범위 원복. 값 없으면 공란(footBilling 토큰 세팅). ⑨→⑪ 리넘버 원복.
+               T-20260722-foot-BILLRECEIPT-MASTER-FIXES §1 원본: ⑨ 이미 납부한 금액({{already_paid}}) · ⑩ = ⑧−⑨ 전용
+               토큰({{due_amount}}) 분리(patient_amount 하드코딩 금지 — "⑧-⑨" 라벨 산술모순=허위영수증 방지). -->
           <tr><td>⑨ 이미 납부한 금액</td><td class="rn-num">{{already_paid}}</td></tr>
           <tr><td>⑩ 납부할 금액<br>(⑧-⑨)</td><td class="rn-num" style="font-weight:bold;">{{due_amount}}</td></tr>
-          <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 출력 패널 '납부금액(사전입력)' 값이 있으면
-               ⑪ 합계(납부한 금액)에 반영해 사전 출력. 비영속(FE-only 표시) — payments 수납원장 write 아님.
-               미입력 시 공란(기존 동작 유지). 납부하지 않은 금액(⑩-⑪) = patient_amount − 사전입력. -->
-          <!-- T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX 결함B: ⑪ 납부한 금액 = payments 원장 결제수단별
-               실수납(세법 공제 직결). 카드/현금영수증/현금 각 칸 method별 배선, 합계=Σ(3칸). 합계 전파 퉁치기 금지. -->
+          <!-- ⑪ 납부한 금액 = 결제수단별 배선(카드/현금영수증/현금), 합계={{paid_total}}=⑧ 환자부담총액(완납 표기).
+               ⑪은 ⑨의 결제수단 breakdown 표시(비-가산). 선차감분(선수금)은 주 결제수단 셀에 fold(요건1). -->
           <tr><td rowspan="4">⑪ 납부한<br>금액</td><td class="rn-num" style="text-align:left;">카드 <span style="float:right;">{{card_amount}}</span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">현금영수증 <span style="float:right;">{{cashreceipt_amount}}</span></td></tr>
           <tr><td class="rn-num" style="text-align:left;">현금 <span style="float:right;">{{cash_amount}}</span></td></tr>
@@ -2340,6 +2340,190 @@ const BILL_RECEIPT_NEW_HTML = `
 </div>
 `;
 
+// ─── 초진 관리기록지 (T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD) ───
+
+/**
+ * 초진 관리기록지 — 초진(첫 방문) 시 고객 상태·관리 계획을 표준 양식으로 기록·인쇄.
+ * 김주연 총괄 요청(풋센터). 9개 섹션 + 하단 서명영역.
+ *
+ * 체크박스 마크 렌더 규약: `.cbx` = CSS border 로 항상 빈 네모를 그리고, 안에 체크(✔) 문자를 바인딩한다.
+ *   - 체크 필드값 '✔' → 네모 안 ✔ 표시 / 미체크(빈값 '') → 빈 네모. (DocumentPrintPanel 체크칩 토글)
+ *   - bindHtmlTemplate 이 미설정 키를 '' 로 치환 → 미체크 시 빈 네모 유지(회귀 0·플레이스홀더 노출 0).
+ * 자동 채움: {{patient_name}}·{{patient_birthdate}}·{{patient_phone}}·{{visit_date}}·{{issue_date}}·
+ *   {{clinic_name}}·{{doctor_name}} (AUTO_BIND_KEYS). 직인 {{institution_seal_html}} = 법인 인감(getStampUrl).
+ */
+const FIRST_VISIT_MGMT_RECORD_HTML = `
+${COMMON_STYLE}
+<style>
+  .cbx {
+    display: inline-block; width: 13px; height: 13px;
+    border: 1px solid #000; text-align: center; line-height: 12px;
+    font-size: 10pt; vertical-align: middle; margin-right: 3px;
+  }
+  .cb-item { display: inline-flex; align-items: center; margin-right: 14px; white-space: nowrap; font-size: 9pt; }
+  .fvmr-sec-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 26%; vertical-align: middle; }
+  .fvmr-area { min-height: 42px; vertical-align: top; }
+</style>
+<div class="form-wrap">
+  <div class="title" style="letter-spacing:8px;">초 진 관 리 기 록 지</div>
+  <div class="subtitle">FIRST-VISIT MANAGEMENT RECORD</div>
+
+  <!-- ① 고객 정보 + ② 초진일 -->
+  <table style="table-layout:fixed; margin-top:6px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:13%;">성&nbsp;&nbsp;명</td>
+        <td style="width:37%;">{{patient_name}}</td>
+        <td class="fvmr-sec-label" style="width:13%;">생년월일</td>
+        <td style="width:37%;">{{patient_birthdate}}</td>
+      </tr>
+      <tr>
+        <td class="fvmr-sec-label">연 락 처</td>
+        <td>{{patient_phone}}</td>
+        <td class="fvmr-sec-label">초 진 일</td>
+        <td>{{visit_date}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ③ 방문 목적 -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label">방문 목적</td>
+        <td style="text-align:left;">
+          <span class="cb-item"><span class="cbx">{{vp_ingrown}}</span>내성발톱</span>
+          <span class="cb-item"><span class="cbx">{{vp_fungal}}</span>무좀발톱</span>
+          <span class="cb-item"><span class="cbx">{{vp_thick}}</span>두꺼운 발톱</span>
+          <span class="cb-item"><span class="cbx">{{vp_deformed}}</span>변형발톱</span>
+          <span class="cb-item"><span class="cbx">{{vp_other}}</span>기타: {{vp_other_text}}</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ④ 증상 발생 경위 -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label">증상 발생 경위<br><span style="font-weight:normal; font-size:7.5pt;">(고객 진술)</span></td>
+        <td class="fvmr-area">{{symptom_history}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑤ 초진 시 상태 확인 -->
+  <table style="margin-top:4px; table-layout:fixed;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:13%;">관리 부위</td>
+        <td colspan="3" style="text-align:left;">
+          <span class="cb-item"><span class="cbx">{{side_left}}</span>좌(L)</span>
+          <span class="cb-item"><span class="cbx">{{side_right}}</span>우(R)</span>
+          <span style="margin:0 8px; color:#888;">|</span>
+          <span class="cb-item"><span class="cbx">{{toe_1}}</span>엄지</span>
+          <span class="cb-item"><span class="cbx">{{toe_2}}</span>둘째</span>
+          <span class="cb-item"><span class="cbx">{{toe_3}}</span>셋째</span>
+          <span class="cb-item"><span class="cbx">{{toe_4}}</span>넷째</span>
+          <span class="cb-item"><span class="cbx">{{toe_5}}</span>다섯째</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="fvmr-sec-label" style="width:13%;">발톱 상태</td>
+        <td colspan="3" class="fvmr-area" style="min-height:32px;">{{nail_status}}</td>
+      </tr>
+      <tr>
+        <td class="fvmr-sec-label">피부 상태</td>
+        <td colspan="3" class="fvmr-area" style="min-height:32px;">{{skin_status}}</td>
+      </tr>
+      <tr>
+        <td class="fvmr-sec-label">통증 여부</td>
+        <td style="text-align:left; width:37%;">
+          <span class="cb-item"><span class="cbx">{{pain_yes}}</span>있음</span>
+          <span class="cb-item"><span class="cbx">{{pain_no}}</span>없음</span>
+        </td>
+        <td class="fvmr-sec-label" style="width:13%;">보행 불편</td>
+        <td style="text-align:left; width:37%;">
+          <span class="cb-item"><span class="cbx">{{gait_yes}}</span>있음</span>
+          <span class="cb-item"><span class="cbx">{{gait_no}}</span>없음</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="fvmr-sec-label">기타 확인 사항</td>
+        <td colspan="3" class="fvmr-area" style="min-height:32px;">{{other_check}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑥ 초진 시 촬영 기록 -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:26%;">초진 시 촬영 기록</td>
+        <td style="text-align:left;">
+          <span class="cb-item"><span class="cbx">{{photo_done}}</span>사진 촬영 완료</span>
+          <span class="cb-item"><span class="cbx">{{photo_none}}</span>촬영하지 않음</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑦ 초기 관리 내용 -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:26%;">초기 관리 내용</td>
+        <td style="text-align:left;">
+          <span class="cb-item"><span class="cbx">{{care_trim}}</span>발톱 정리</span>
+          <span class="cb-item"><span class="cbx">{{care_problem}}</span>문제성 발톱 관리</span>
+          <span class="cb-item"><span class="cbx">{{care_pressure}}</span>압력 감소 조치</span>
+          <span class="cb-item"><span class="cbx">{{care_pad}}</span>보호패드 적용</span>
+          <span class="cb-item"><span class="cbx">{{care_other}}</span>기타: {{care_other_text}}</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑧ 관리 계획 -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:26%;">관리 계획</td>
+        <td class="fvmr-area">{{care_plan}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑨ 특이사항 -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:26%;">특이사항</td>
+        <td class="fvmr-area">{{remarks}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 하단 서명 영역: 발급일 / 센터명 / 담당자 / 직인 -->
+  <table style="margin-top:10px; table-layout:fixed;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label" style="width:13%;">발 급 일</td>
+        <td style="width:37%;">{{issue_date}}</td>
+        <td class="fvmr-sec-label" style="width:13%;">센 터 명</td>
+        <td style="width:37%;">{{clinic_name}}</td>
+      </tr>
+      <tr>
+        <td class="fvmr-sec-label">담 당 자</td>
+        <td>{{doctor_name}}</td>
+        <td class="fvmr-sec-label">직&nbsp;&nbsp;인</td>
+        <td style="text-align:center; min-height:52px;">{{institution_seal_html}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -2366,6 +2550,8 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   bill_receipt_new: BILL_RECEIPT_NEW_HTML,
   // T-20260522-foot-INS-DOC-PRINT: 보험청구서
   ins_claim_form: INS_CLAIM_FORM_HTML,
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 (9섹션 + 서명영역)
+  first_visit_mgmt_record: FIRST_VISIT_MGMT_RECORD_HTML,
 };
 
 /**

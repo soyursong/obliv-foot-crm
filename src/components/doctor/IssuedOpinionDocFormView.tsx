@@ -61,14 +61,19 @@ export default function IssuedOpinionDocFormView({
 }: Props) {
   // 인쇄 경로(OpinionDocTab.handlePrint)와 동일한 공용 바인더로 환자정보·상병·직인 토큰 로드(read-only).
   //   check_in / customer 결측이면 미로드(폴백) → 양식은 그대로 그리되 해당 칸만 공란(레이아웃 유지).
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6/AC-7): 담당의 정정 오버레이가 있으면 정정된
+  //   원장(id·이름)을 도장/명의 결선의 1급 소스로 쓴다. autoValues(도장=doctor_seal_html)를 정정 진료의
+  //   본인 직인으로 로드해 이름↔도장이 함께 정정된 진료의로 추종한다(SEAL-DOCTOR-MATCH 동형).
+  const effectiveDoctorId = adminOverrides?.doctorId ?? viewDoc?.issuedByDoctorId ?? undefined;
+  const effectiveDoctorName = adminOverrides?.doctorName || viewDoc?.doctorName || undefined;
   const autoValuesQuery = useQuery({
     queryKey: [
       'issued-doc-formview-autobind',
       clinicId,
       viewTarget?.checkInId,
       viewTarget?.customerId,
-      viewDoc?.doctorName,
-      viewDoc?.issuedByDoctorId,
+      effectiveDoctorName,
+      effectiveDoctorId,
     ],
     enabled: !!clinicId && !!viewTarget?.checkInId && !!viewTarget?.customerId,
     staleTime: 30_000,
@@ -87,8 +92,8 @@ export default function IssuedOpinionDocFormView({
       //   발행자명 → doctorNameOverride(레거시 id 부재 시 이름 폴백).
       const values = await loadAutoBindContext(
         checkIn,
-        viewDoc?.doctorName || undefined,
-        viewDoc?.issuedByDoctorId ?? undefined,
+        effectiveDoctorName,
+        effectiveDoctorId,
       );
       // 상병(코드/명) = 발행본 원 방문(check_in) 상병항목에서 재현(medical_charts 공란 대비, DIAGCODE-BLANK 동형).
       await applyDiagCodesFromVisit(values, { id: viewTarget!.checkInId!, clinic_id: clinicId! });

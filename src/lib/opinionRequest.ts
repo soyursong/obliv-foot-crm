@@ -150,6 +150,13 @@ export function useCreateOpinionRequest(clinicId: string | null) {
 export interface AdminFieldOverrides {
   /** 담당의(발행자명) 정정 — renderOpinionDocHtml issuedByName override(doctor_name). */
   doctorName?: string;
+  /**
+   * T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의(진료의) doctor_id 앵커.
+   *   담당의 정정을 free-text 가 아니라 clinic_doctors 드롭다운으로 받으므로(오타/불일치 명의 원천 차단),
+   *   선택 원장 id 를 함께 저장한다. 열람/재출력 시 이 id 를 loadAutoBindContext clinicDoctorId 로 태워
+   *   도장(직인)이 정정된 진료의 본인 직인으로 자동 추종(AC-7, SEAL-DOCTOR-MATCH). NO-DDL(JSONB 재사용).
+   */
+  doctorId?: string;
   /** 발급일(YYYY-MM-DD) 정정 — issue_date override. */
   issueDate?: string;
   /** 상병코드(1급/primary, 예 K29.7) 정정 — diag_code_1 override. 상병명은 진료기록 기준 유지(scope: 코드만). */
@@ -198,6 +205,8 @@ export function parseAdminOverrides(fd: Record<string, unknown>): AdminFieldOver
   const o = raw as Record<string, unknown>;
   const out: AdminFieldOverrides = {};
   if (typeof o['doctor_name'] === 'string' && o['doctor_name']) out.doctorName = o['doctor_name'] as string;
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 doctor_id 앵커(도장 자동추종용).
+  if (typeof o['doctor_id'] === 'string' && o['doctor_id']) out.doctorId = o['doctor_id'] as string;
   if (typeof o['issue_date'] === 'string' && o['issue_date']) out.issueDate = o['issue_date'] as string;
   if (typeof o['diag_code'] === 'string' && o['diag_code']) out.diagCode = o['diag_code'] as string;
   return Object.keys(out).length > 0 ? out : undefined;
@@ -431,6 +440,117 @@ export function buildCustomerOpinionRows(
   return out.sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
 }
 
+// ─── T-20260728-foot-CHART2-DOCREQ-HISTORY-COORDPERM (item①): 상담내역 '서류요청 이력 상세 테이블' 파생 ──
+//   기존 buildCustomerOpinionRows(발행이력, 2-state·cancelled 제외)와 달리 **신청됨/발급완료/취소 3-state 전체**를
+//   행으로 노출한다(현장 요청: 요약 줄 → 상세 테이블 확장, 취소 건도 오분류 0으로 표기).
+//   ★발급상태 = DIAGDOC(closed) 상태매핑 재사용(신규 컬럼·파생 0):
+//       · 신청됨(=미발행) = status='draft'
+//       · 발급완료        = status='voided' + field_data.resolved_reason='published'
+//       · 취소            = status='voided' + field_data.resolved_reason='cancelled'
+//   ★신청직원 = field_data.requested_by_name **단독**(DA 정정 MSG-8dqz):
+//       issued_by→staff 조인 금지(발급 시 printer/issuer 로 재기입돼 '발급직원' 오표시) · requested_by_id 컬럼 실측 부재.
+//       결측 시 소비 컴포넌트에서 '—' placeholder(신규 write 트리거 금지).
+//   ★read-only(db_change=false): 기존 form_submissions.field_data read 만. 신규 컬럼/테이블/enum/RLS = 0.
+//   ★buildCustomerOpinionRows(발행이력·cancelled 제외)는 무변경 — 발행이력 배지/요약(computeCustomerOpinionSummary)
+//     과 spec(T-20260724) 판정 정합 유지. 본 상세 테이블만 3-state 로 확장(별 파생, drift 방지 위해 소스 동일).
+export type DocRequestIssueStatus = 'requested' | 'issued' | 'cancelled'; // 신청됨 / 발급완료 / 취소
+
+export const DOC_REQUEST_STATUS_LABEL: Record<DocRequestIssueStatus, string> = {
+  requested: '미발행',   // draft — 신청됨(원장 발행 전). 기존 surface 라벨 정합('미발행').
+  issued: '발행완료',    // voided + resolved_reason='published'
+  cancelled: '취소',     // voided + resolved_reason='cancelled'
+};
+
+// 상세 테이블 행 = 발행이력 행(열람용 필드 계승) + 발급상태(3-state) 증분.
+export interface CustomerDocRequestRow extends CustomerOpinionRequestRow {
+  /** 발급상태(DIAGDOC 3-state) — 상세 테이블 '발급상태' 칼럼 SSOT. */
+  issueStatus: DocRequestIssueStatus;
+}
+
+// 순수 파생 — form_submissions raw 행 → 상세 테이블 행(3-state). E2E spec 이 직접 import·단언(drift 방지).
+//   staff_consult 요청만 편입 + 3-state 판정(취소 포함) + 신청시각 역순 정렬. published(발행 원본) 행은 제외(요청 이력 아님).
+export function buildCustomerDocRequestRows(
+  raw: Array<Record<string, unknown>>,
+): CustomerDocRequestRow[] {
+  const out: CustomerDocRequestRow[] = [];
+  for (const r of raw) {
+    const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+    if (fd['request_origin'] !== 'staff_consult') continue; // 서류요청 큐(펜차트/기타 제출과 분리)
+    const status = String(r['status'] ?? '');
+    let issueStatus: DocRequestIssueStatus;
+    if (status === 'draft') {
+      issueStatus = 'requested';                                              // 신청됨(=미발행)
+    } else if (status === 'voided' && fd['resolved_reason'] === 'published') {
+      issueStatus = 'issued';                                                 // 발급완료
+    } else if (status === 'voided' && fd['resolved_reason'] === 'cancelled') {
+      issueStatus = 'cancelled';                                              // 취소
+    } else {
+      continue; // published 발행 원본 / resolved_reason 미상 voided → 요청 이력 행 아님(제외)
+    }
+    const publishStatus: OpinionPublishStatus = issueStatus === 'issued' ? 'published' : 'unpublished';
+    out.push({
+      id: String(r['id']),
+      customerId: (r['customer_id'] as string | null) ?? null,
+      checkInId: (r['check_in_id'] as string | null) ?? null,
+      docType: (fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion') as OpinionDocType,
+      selectedKeys: Array.isArray(fd['selected_keys']) ? (fd['selected_keys'] as string[]) : [],
+      staffMemo: String(fd['staff_memo'] ?? ''),
+      oralMedReason: String(fd['oral_med_reason'] ?? ''),
+      patientName: String(fd['patient_name'] ?? '—'),
+      chartNo: (fd['chart_no'] as string | null) || null,
+      birthDate: (fd['birth_date'] as string | null) || null,
+      // ★신청직원 = requested_by_name 단독(issued_by 조인 금지, DA MSG-8dqz). 결측=''(컴포넌트에서 '—').
+      requestedByName: String(fd['requested_by_name'] ?? ''),
+      requestedAt: String(fd['requested_at'] ?? r['created_at'] ?? ''),
+      createdAt: String(r['created_at'] ?? ''),
+      requestDate: String(fd['request_date'] ?? ''),
+      resolvedAt: fd['resolved_at'] ? String(fd['resolved_at']) : undefined,
+      publishStatus,
+      issueStatus,
+    });
+  }
+  return out.sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? '')); // 최신 신청 위로
+}
+
+export interface DocRequestSummary {
+  total: number;
+  requestedCount: number; // 미발행(신청됨)
+  issuedCount: number;    // 발급완료
+  cancelledCount: number; // 취소
+}
+export function computeDocRequestSummary(rows: CustomerDocRequestRow[]): DocRequestSummary {
+  let requestedCount = 0, issuedCount = 0, cancelledCount = 0;
+  for (const r of rows) {
+    if (r.issueStatus === 'issued') issuedCount += 1;
+    else if (r.issueStatus === 'cancelled') cancelledCount += 1;
+    else requestedCount += 1;
+  }
+  return { total: rows.length, requestedCount, issuedCount, cancelledCount };
+}
+
+// customer-scoped·all-time 상세 이력 훅 — useCustomerOpinionRequests 와 동일 쿼리(draft+voided) 재사용,
+//   빌더만 3-state(buildCustomerDocRequestRows)로 교체(취소 포함). customer_id 서버필터 → 타 환자 유입 금지.
+export function useCustomerDocRequestHistory(clinicId: string | null, customerId: string | null) {
+  return useQuery<CustomerDocRequestRow[]>({
+    queryKey: ['opinion_request_customer_detail', clinicId, customerId],
+    enabled: !!clinicId && !!customerId,
+    queryFn: async () => {
+      if (!clinicId || !customerId) return [];
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .select('id, customer_id, check_in_id, field_data, created_at, status')
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .in('status', ['draft', 'voided'])
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return buildCustomerDocRequestRows((data ?? []) as Array<Record<string, unknown>>);
+    },
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+}
+
 export interface CustomerOpinionSummary {
   total: number;
   publishedCount: number;
@@ -638,6 +758,8 @@ export interface UpdateOpinionAdminFieldsInput {
   requestDate?: string;
   /** 담당의(발행자명). undefined=미변경. */
   doctorName?: string;
+  /** T-20260728 (AC-6): 담당의 doctor_id 앵커(clinic_doctors.id). 드롭다운 선택 시 doctorName 과 함께 전달. */
+  doctorId?: string;
   /** 발급일(YYYY-MM-DD). undefined=미변경. */
   issueDate?: string;
   /** 상병코드(primary, 예 K29.7). undefined=미변경. */
@@ -689,11 +811,19 @@ export function useUpdateOpinionAdminFields(clinicId: string | null) {
         nextTop['request_date'] = newV;
       }
       // 담당의 = admin_overrides.doctor_name 오버레이.
+      //   T-20260728 (AC-6): 드롭다운 선택 → doctor_name(표시)과 doctor_id(도장 자동추종 앵커)를 함께 정정.
+      //   doctorName 변경분만 감사로그에 남긴다(현장 표기값). doctor_id 는 도장 결선용 내부 앵커.
       if (input.doctorName !== undefined) {
         const oldV = String(prevOverrides['doctor_name'] ?? '');
         const newV = input.doctorName;
         pushLog('doctor_name', '담당의', oldV, newV);
         if (newV) nextOverrides['doctor_name'] = newV; else delete nextOverrides['doctor_name'];
+        // 이름을 비우면 앵커도 함께 제거(정합). 드롭다운은 항상 doctorId 동반 전달.
+        if (newV) {
+          if (input.doctorId) nextOverrides['doctor_id'] = input.doctorId; else delete nextOverrides['doctor_id'];
+        } else {
+          delete nextOverrides['doctor_id'];
+        }
       }
       // 발급일 = admin_overrides.issue_date 오버레이.
       if (input.issueDate !== undefined) {
@@ -749,6 +879,67 @@ function summarizeRxItems(items: unknown): string | null {
     .filter((s) => s.length > 0 && s !== '(이름 미입력)');
   return tokens.length > 0 ? tokens.join(', ') : null;
 }
+// ─── T-20260728-foot-DOCWRITE-DOCTOR-LINK: 서류작성 큐 행 '담당 진료의'(치료테이블 [진료]와 동일 값) ──
+//   RC(현장, 김주연 총괄 U0ATDB587PV 2026-07-28): 진료 대시보드 [서류작성] 탭 각 행에 담당 진료의가 하나도
+//   안 따라온다(치료테이블 [진료]에서는 정상 표시). 담당 진료의 SSOT = check_ins.treating_doctor_id →
+//   clinic_doctors.name — TreatingDoctorSelect(write 단일경로)·치료테이블 [진료] 표시·서류 출력 바인딩
+//   (loadAutoBindContext treatingDoctor)·발행자 seed(useVisitTreatingDoctor) 가 공유하는 단일 소스다.
+//   서류요청 큐 행은 checkInId(요청 생성 시 '최근 내원' 앵커, useCreateOpinionRequest)를 이미 들고 있으므로,
+//   그 check_in 의 treating_doctor_id 를 이름으로 해석해 표시한다 → 치료테이블 [진료]와 '동일한 값'(AC).
+//   ★확정 방식(문지은 대표원장 §11 컨펌 '표시+폼 기본값 자동입력 ADDITIVE'): 조회에 진료의 read 만 추가.
+//     발행/저장/귀속 로직 무변경.
+//   ★read-only READ 전용(db_change=false): 기존 check_ins.treating_doctor_id + clinic_doctors.name read 만.
+//     신규 컬럼/테이블/enum/RLS = 0. 미지정/조회실패 → 빈 맵 폴백(graceful, 큐 무붕괴 = 임상스냅 훅과 동형).
+//   ★교차노출 없음: clinic-scoped + 큐가 이미 소유한 checkInId 로만 조회(타 환자/타 지점 유입 배제).
+export function useQueueTreatingDoctors(clinicId: string | null, checkInIds: string[]) {
+  const key = [...new Set(checkInIds.filter(Boolean))].sort().join(',');
+  return useQuery<Record<string, string>>({
+    queryKey: ['opinion_queue_treating_doctor', clinicId, key],
+    enabled: !!clinicId && key.length > 0,
+    queryFn: async () => {
+      const out: Record<string, string> = {};
+      if (!clinicId || !key) return out;
+      try {
+        const ids = key.split(',');
+        // 1) 요청행 checkIn → treating_doctor_id (치료테이블 [진료] 저장 앵커, 동일 필드)
+        const { data: ciData, error: ciErr } = await supabase
+          .from('check_ins')
+          .select('id, treating_doctor_id')
+          .eq('clinic_id', clinicId)
+          .in('id', ids);
+        if (ciErr) throw ciErr;
+        const ciRows = (ciData ?? []) as Array<{ id: string; treating_doctor_id: string | null }>;
+        const doctorIds = [...new Set(ciRows.map((r) => r.treating_doctor_id).filter(Boolean) as string[])];
+        if (doctorIds.length === 0) return out;
+        // 2) treating_doctor_id → clinic_doctors.name. active 필터 없이 이름만 해석 —
+        //    비활성/삭제 원장이라도 이름 유실 방지(TreatingDoctorSelect renderLabel 컨벤션과 정합).
+        const { data: docData, error: docErr } = await supabase
+          .from('clinic_doctors')
+          .select('id, name')
+          .eq('clinic_id', clinicId)
+          .in('id', doctorIds);
+        if (docErr) throw docErr;
+        const nameById = new Map<string, string>();
+        for (const d of (docData ?? []) as Array<{ id: string; name: string | null }>) {
+          if (d.id) nameById.set(String(d.id), String(d.name ?? ''));
+        }
+        for (const r of ciRows) {
+          if (r.treating_doctor_id) {
+            const nm = nameById.get(r.treating_doctor_id);
+            if (nm) out[r.id] = nm; // checkInId → 담당 진료의명
+          }
+        }
+      } catch {
+        // 진료의 조회 불가/컬럼부재 — 담당 진료의 셀은 '미지정' 폴백. 큐 자체는 정상(graceful).
+        return {};
+      }
+      return out;
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
+
 export function useQueueClinicalSnaps(clinicId: string | null, customerIds: string[]) {
   const key = [...new Set(customerIds.filter(Boolean))].sort().join(',');
   return useQuery<Record<string, ClinicalSnap>>({

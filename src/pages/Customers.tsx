@@ -909,7 +909,9 @@ export default function Customers() {
 // T-20260508-foot-CUST-FORM-REVAMP: 고객등급 옵션
 const CUSTOMER_GRADE_OPTIONS = ['일반', '1단계', '2단계', '3단계'] as const;
 
-function EditCustomerDialog({
+// T-20260728-foot-ADMININFO-EDIT-TREATTABLE-ENTRY: 치료테이블-진료 탭에서 재사용(중복 구현 금지).
+//   기존 고객관리 render 경로(line~818)는 그대로 — export 키워드만 추가(회귀 0).
+export function EditCustomerDialog({
   customer,
   onOpenChange,
   onUpdated,

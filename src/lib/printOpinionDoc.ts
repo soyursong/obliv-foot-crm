@@ -105,7 +105,15 @@ export function renderOpinionDocHtml(
     ...(data.clinicName ? { clinic_name: data.clinicName } : {}),
     ...(data.clinicAddress ? { clinic_address: data.clinicAddress } : {}),
     ...(data.clinicPhone ? { clinic_phone: data.clinicPhone } : {}),
-    ...(data.issuedByName ? { doctor_name: data.issuedByName } : {}),
+    // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-2): 발행자(=발행시점 진료의) 스냅샷을 소견서
+    //   토큰({{doctor_name}})뿐 아니라 진단서 명의 토큰({{attending_doctor_name}})에도 결선한다.
+    //   ★RC(현장 5회 반복 신고): 종전엔 issuedByName override 가 doctor_name 에만 얹혀, 진단서
+    //     (formKey='diagnosis', 명의란=attending_doctor_name)는 autoValues 의 진료의 해석값(미지정 폴백=
+    //     대표원장/기관명)으로 렌더 → 진료의가 아닌 "대표원장 성함으로 다 들어가 있음". 발행본/관리자 정정
+    //     (adminOverrides.doctorName)이 두 양식 모두에서 발행 명의를 지배하도록 단일 소스로 결선.
+    //   ★도장({{doctor_seal_html}})은 autoValues(issued_by_doctor_id 앵커, T-20260721-SEAL-DOCTOR-MATCH)로
+    //     자동 추종하므로 명의만 고치면 이름·도장이 함께 진료의 것으로 표출된다(AC-7, SEAL 재구현 금지).
+    ...(data.issuedByName ? { doctor_name: data.issuedByName, attending_doctor_name: data.issuedByName } : {}),
     ...(data.issuedByLicenseNo ? { doctor_license_no: data.issuedByLicenseNo } : {}),
     // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST, 이은상 팀장]: 발행본 스냅샷 상병 override.
     //   ⚠ 반드시 ...autoValues 뒤에 위치(빈 autoValues override 방지) — autoValues 의 상병(check_in

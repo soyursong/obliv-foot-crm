@@ -808,6 +808,57 @@ export function computeBillDetailRounding(
 }
 
 /**
+ * T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE — 외래 요양급여 **본인일부부담금 aggregate** 100원 미만 절사(내림).
+ *
+ * ⚠ computeBillDetailRounding(floor10, 위)과 **grain 이 다른 별개 SSOT** 다. 값이 달라지는 것이 정상:
+ *   - computeBillDetailRounding(floor10): **요양급여비용총액·청구액·세부산정내역서 문서 렌더** 전용
+ *     — 국민건강보험법 시행령 별표2 **제1항**(10원 미만 절사). 세부내역서 계/합계 행 등 서류 grain.
+ *   - floorOutpatientCopayment(floor100, 본 함수): **외래 본인일부부담금 수납 aggregate**(환자 실수납액) 전용
+ *     — 별표2 **제19조제1항 다만조항**(외래·약국 본인일부부담금 100원 미만 절사, 끝수 100원 미만 = 공단부담).
+ *   두 grain 은 서로 다른 수량의 절사라 double-round 가 아니다(공존 정상).
+ *   근거 SSOT: DA-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE-UNIT · revenue_insurance_split_spec §2-2-1d v1.25.
+ *   (문서 절사값 == 수납 절사값 정합 요건은 DA 판정으로 폐기 — 정합 강제 금지.)
+ *
+ * ★ double-rounding 금지: 대상 = per-item 원단위 raw copay 의 **aggregate**(가산 fold 포함). 개별 pre-floor 후 재합산 금지.
+ * ★ 급여 본인부담 component 에만 적용 — 비급여는 무절사(bundle 전체 floor100 = 신규 버그, body qo4i mirror).
+ *
+ * @param copayAggregate 가산 포함 급여 외래 본인일부부담금 합계(원단위, pre-floor)
+ * @returns 100원 미만 내림값(≥0)
+ */
+export function floorOutpatientCopayment(copayAggregate: number): number {
+  const safe = Number.isFinite(copayAggregate) && copayAggregate > 0 ? copayAggregate : 0;
+  return Math.floor(safe / 100) * 100;
+}
+
+/**
+ * T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO 재제출) —
+ *   진료비 계산서·영수증 **신양식(bill_receipt_new) ⑧/⑩ 환자부담총액** 절사 SSOT.
+ *
+ * ⑧ 환자부담총액 = 환자 실수납액 = **수납 aggregate grain** 이므로 외래 본인부담 절사규칙(floor100, 급여
+ *   component 만·비급여 무절사)을 따른다(DA-20260728-...-UNIT · 별표2 제19조제1항 다만조항). 수납창(PMW)의
+ *   applyPostSurchargePaidTokens(L1932~1936)와 **동일 SSOT** — same-receipt cross-render(수납창 vs 인쇄) 정합 보장.
+ *
+ * ★ bundle 전체 floor 금지: patient_amount 번들(급여 본인부담 + 비급여) 전체를 절사하면 비급여까지 깎여 신규
+ *   버그(FIX-REQUEST §4 경고)다. 절사는 급여 본인부담 component 에만, 비급여는 무절사로 재합산한다.
+ * ★ computeBillDetailRounding(floor10)은 **세부산정내역서(bill_detail) 문서 grain 전용** — 영수증 ⑧ 에는 쓰지 말 것
+ *   (DA grain 분리 정당, §수정2). 두 grain 값이 달라지는 것은 정상.
+ *
+ * @param rawPatient      가산 fold 반영 최종 환자부담총액 번들(급여 본인부담 + 비급여, pre-floor)
+ * @param copayComponent  가산 fold 반영 급여 본인부담 aggregate(절사 대상). enriched/base.copayment.
+ * @returns floor100(급여 본인부담) + 비급여(무절사). rawPatient ≤ 0 이면 0.
+ */
+export function floorBillReceiptNewPatientTotal(
+  rawPatient: number,
+  copayComponent: number,
+): number {
+  const rp = Number.isFinite(rawPatient) && rawPatient > 0 ? rawPatient : 0;
+  if (rp <= 0) return 0;
+  const copay = Number.isFinite(copayComponent) && copayComponent > 0 ? copayComponent : 0;
+  const nonCov = Math.max(0, rp - copay); // 비급여(무절사) 잔여
+  return floorOutpatientCopayment(copay) + nonCov;
+}
+
+/**
  * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② — 진료비 계산서·영수증 신양식 비급여 항목행 category 분해.
  *
  * 배경(버그): 신양식(bill_receipt_new)은 급여 split(본인/공단)을 진찰료 행에 aggregate 표기(3FIX)하고,
@@ -1088,32 +1139,49 @@ export function applyBillReceiptPaidBoxTokens(
     else if (p.cash_receipt_issued) cashReceipt += signed; // 현금/이체 中 현금영수증 발급분
     else cash += signed;                                    // 현금·이체 등(멤버십 제외)
   }
-  const paidTotal = card + cash + cashReceipt;
-  values.card_amount = card > 0 ? formatAmount(card) : '';
-  values.cash_amount = cash > 0 ? formatAmount(cash) : '';
-  values.cashreceipt_amount = cashReceipt > 0 ? formatAmount(cashReceipt) : '';
-  values.paid_total = paidTotal > 0 ? formatAmount(paidTotal) : '';
+  // (paidTotal = card + cash + cashReceipt 실수납 net → fold 후 cellTotal 로 대체)
+  // ── T-20260728-foot-BILLRECEIPT-PAYMETHOD-PAIDFIELD-2FIX 요건1 [결제수단 금액 귀속 교정, reporter 김주연 총괄] ──
+  //   [증상] 선수금 300,000 + 카드 1,400(⑧=301,400)에서 카드칸이 잔여분 1,400 만 표기(현장 P0).
+  //   [해소] PREPRINT ⑪ 캐논(선택 결제수단에 환자부담총액 귀속) 계승 — 선차감분(선수금/패키지, alreadyPaid)을
+  //     실 결제수단 **주 셀**(card>cashReceipt>cash 우선순위·net>0)에 fold → ⑪ 카드칸 = 실수납+선차감 = ⑧(완납).
+  //     실수납 net 0(순수 선수금 완납·폴백)이면 현금칸 귀속. 평일·직접 단일수납(alreadyPaid=0)·genuine split
+  //     (선수금無 카드+현금 분납)은 fold 잔량0 → 각 net 보존(무회귀).
+  //   ★요건① supersede(planner 의도 — AC-6 무회귀 목록에서 4REQ ①만 제외): 선차감분(선수금)은 이제 별도 ⑨
+  //     분리표기가 아니라 실 결제수단 ⑪ 로 fold(완납 표기, field-accountable — T-20260724-PREPRINT 세무 waiver).
+  //     ⑨=공란·⑩=공란(칸 존치, 요건2)이므로 4REQ ③ 불변식(납부합계=⑨+⑪=⑧, ⑨=0)·PREPRINT ⑪ 모두 정합.
+  const patientSafe = computeBillDetailRounding(patientAmount).roundedTotal; // ⑧ 10원 절사(FLOOR) 정합
+  const alreadyPaidSafe = computeBillDetailRounding(Math.max(0, alreadyPaid)).roundedTotal; // 선차감분(10원 배수)
+  // 음수 net(환불 상쇄)은 셀 표기 대상 아님(종전 'net>0 ? 표기 : 공란' 계승) → clamp 후 fold(refund 오염 방지).
+  const posCard = Math.max(0, card), posCR = Math.max(0, cashReceipt), posCash = Math.max(0, cash);
+  const posSum = posCard + posCR + posCash;
+  // fold 량 = 선차감분. 단 Σ(셀)이 ⑧을 넘지 않도록 clamp(그레인 미스매치·과징수 방지 — 종전 ⑩ 음수 가드 계승).
+  const foldAmt = Math.min(alreadyPaidSafe, Math.max(0, patientSafe - posSum));
+  let cardCell = posCard, cashReceiptCell = posCR, cashCell = posCash;
+  if (foldAmt > 0) {
+    if (posCard > 0) cardCell = posCard + foldAmt;
+    else if (posCR > 0) cashReceiptCell = posCR + foldAmt;
+    else if (posCash > 0) cashCell = posCash + foldAmt;
+    else cashCell = foldAmt; // 실수납 net 0(순수 선수금 완납·환불상쇄) → 현금칸 폴백
+  }
+  const cellTotal = cardCell + cashReceiptCell + cashCell; // = Σ(pos net) + foldAmt ≤ ⑧
+  values.card_amount = cardCell > 0 ? formatAmount(cardCell) : '';
+  values.cash_amount = cashCell > 0 ? formatAmount(cashCell) : '';
+  values.cashreceipt_amount = cashReceiptCell > 0 ? formatAmount(cashReceiptCell) : '';
+  // ⑪ 합계(납부한 금액) = Σ(3칸) = 실수납 + 선차감(완납 표기). 완납건이면 = ⑧(AC-2 납부합계=환자부담총액).
+  values.paid_total = cellTotal > 0 ? formatAmount(cellTotal) : '';
   // 종전 템플릿 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지 — paid_total 과 동일값으로 동기화.
   values.prepaid_amount = values.paid_total;
-  // §1 ⑨ 이미 납부한 금액(선수금/패키지 차감). 0 이면 공란(직접결제건 회귀 0 — 종전 빈 셀 유지).
-  //   T-20260723-foot-BILLRECEIPT-PAIDBOX-NONCOV-MISROUTED 유효작업#2 [10원 절사 정합]:
-  //   ⑧(patientAmount)은 호출부에서 computeBillDetailRounding 로 10원 절사돼 넘어오는데, ⑨(alreadyPaid)는
-  //   SSOT(copayment 100원절사 + nonCovered raw)의 10원 미만 우수리를 그대로 안고 있어 ⑩=⑧−⑨ 가 10원
-  //   비배수가 될 여지가 있었다. ⑨에도 ⑧과 **동일한 절사규칙**(computeBillDetailRounding=내림)을 적용해
-  //   ⑧·⑨·⑩ 모두 10원 grain 으로 정합시킨다. 내림이므로 ⑨↓ → 원장에 없는 돈을 만들지 않음(허위표기 아님).
-  const alreadyPaidSafe = computeBillDetailRounding(alreadyPaid).roundedTotal; // ≥0 · 10원 배수
-  values.already_paid = alreadyPaidSafe > 0 ? formatAmount(alreadyPaidSafe) : '';
-  // §1 ⑩ 납부할 금액 = ⑧ − ⑨ (전용 토큰 분리 — patient_amount 하드코딩 폐기). ⑧·⑨ 모두 10원 배수 → ⑩ 정합.
-  const dueAmount = Math.max(0, patientAmount - alreadyPaidSafe);
-  values.due_amount = formatAmount(dueAmount);
-  // 미납 = ⑩ − ⑪(실수납). 선수금 완납건이면 ⑩=잔액, paidTotal=잔액 → 미납=0.
-  const unpaid = Math.max(0, dueAmount - paidTotal);
-  values.unpaid_amount = formatAmount(unpaid);
+  // ── 요건2 [⑨/⑩/납부하지않은 토큰 원복 — 칸 존치, 값 공란] ──────────────────────────────
+  //   선차감분이 ⑪로 fold 되므로 ⑨(이미 납부한 금액)·⑩(납부할 금액)은 공란(칸은 템플릿에 존치, AC-3/4).
+  //   납부하지 않은 금액 = ⑧ − Σ(⑪ 셀) (완납이면 0, 부분수납이면 잔여미납 정직 표기). 환자부담 0이면 공란.
+  const unpaid = Math.max(0, patientSafe - cellTotal);
+  values.already_paid = '';
+  values.due_amount = '';
+  values.unpaid_amount = patientSafe > 0 ? formatAmount(unpaid) : '';
 
-  // 유효작업#1 [불변식 가드 — Stage1 warn-only]. ⑧=⑨+⑪+미납 성립 여부를 판정해 이상을 표면화한다.
-  //   클램프(⑨>⑧ or ⑪>⑩) 발동 = PKGSESSION 미배선發 어긋남 → 플래그+로그. ★발행은 통과(Stage1).
-  //   hard-block(발행보류)은 PKGSESSION deployed 후 Stage2 별도 GO 에서 활성화(본 스코프에선 금지).
-  const invariant = checkBillReceiptPaidBoxInvariant(patientAmount, alreadyPaidSafe, paidTotal, dueAmount, unpaid);
+  // 유효작업#1 [불변식 가드 — Stage1 warn-only]. ⑧=⑨(0)+⑪(cellTotal)+미납 성립 여부를 판정해 이상을 표면화한다.
+  //   ★발행은 통과(Stage1). hard-block 은 PKGSESSION deployed 후 Stage2 별도 GO 에서 활성화(본 스코프 금지).
+  const invariant = checkBillReceiptPaidBoxInvariant(patientSafe, 0, cellTotal, patientSafe, unpaid);
   // 비템플릿 진단 마커(렌더 무영향 — 템플릿에 {{_paidbox_invariant}} 토큰 없음). 테스트/디버깅용.
   values._paidbox_invariant = invariant.ok ? 'ok' : 'warn';
   if (!invariant.ok) {
@@ -1154,19 +1222,21 @@ export function applyBillReceiptPreprintPaymethodTokens(
   // ⑨ = ⑧ 환자부담총액과 동일 절사(10원 FLOOR) → 완납액 정합.
   const patientSafe = computeBillDetailRounding(patientAmount).roundedTotal;
   const amtStr = patientSafe > 0 ? formatAmount(patientSafe) : '';
-  // ⑨ 이미 납부한 금액 = 환자부담총액(완납 표기). 0 이면 공란.
+  // ── T-20260728-foot-BILLRECEIPT-PAYMETHOD-PAIDFIELD-2FIX 요건2 [회귀 원복, PREPRINT 의도상태] ──────
+  //   b20c88d2(REFUND200 요건2)가 ⑨/⑩/'납부하지않은' 행을 제거(blank set)한 회귀를 원복 → T-20260724-PREPRINT
+  //   캐논 복원: ⑨ 이미 납부한 금액 = ⑧ 환자부담총액(완납 표기, 0이면 공란) / ⑩ 납부할 금액 = 공란(미사용, 칸 존치) /
+  //   납부하지 않은 금액 = 0(완납, 환자부담 0이면 공란).
   values.already_paid = amtStr;
-  // ⑩ 납부할 금액 = 미사용(공란). "해당 칸은 안 쓸 거야" (총괄).
   values.due_amount = '';
+  values.unpaid_amount = patientSafe > 0 ? formatAmount(0) : '';
   // ⑪ 납부한 금액 = ⑨의 결제수단 breakdown(비-가산). 선출력 수기체크된 수단칸에만 환자부담총액 기입.
+  //   합계는 method 선택 시 환자부담총액(완납). method 미선택(공란)이면 합계 공란.
   values.card_amount = method === 'card' ? amtStr : '';
   values.cashreceipt_amount = method === 'cashreceipt' ? amtStr : '';
   values.cash_amount = method === 'cash' ? amtStr : '';
   values.paid_total = method ? amtStr : '';
   // 종전 ⑪ 합계 토큰({{prepaid_amount}}) 호환 유지.
   values.prepaid_amount = values.paid_total;
-  // 미납 = 0 (완납). 환자부담이 0(무료)이면 공란.
-  values.unpaid_amount = patientSafe > 0 ? formatAmount(0) : '';
   // 하단 보라박스 — 현금/현금영수증 선택 시에만 반영. 현금영수증( ) 체크마크는 현금영수증 선택 시.
   values.cashreceipt_mark = method === 'cashreceipt' ? 'V' : '';
   const showNo = method === 'cash' || method === 'cashreceipt';

@@ -1,12 +1,28 @@
 /**
- * T-20260727-foot-REDPAY-WHITELIST-EXPAND-0725GAP — AC-3 READ-ONLY 실측 probe
+ * T-20260727-foot-REDPAY-WHITELIST-EXPAND-0725GAP — AC-3 / post-apply DoD probe (READ-ONLY)
  *
- * 목적(MSG-085030-jt1n INFO §3, 총괄 dvf1 우려): "과거거래 재수집 필요? 뷰가 인라인 파생이
- *   아니라 별도 pull 필요 가능성" — 가정 금지, 실측 판정.
- *   Q1) 235/245 raw 거래가 redpay_raw_transactions 에 이미 영속되어 있나? (있으면 재-pull 불요)
- *   Q2) 뷰 표면화 현재 0 (silent-drop) = view tid-membership 필터 탓인가 (ingestion drop 아님)?
- *   Q3) 289003/289008 registry 旣등록 + 구 tid 세대(479477/479482)/superseded=NULL 재확인 (mechanic=remap).
- *   Q4) merchant band bizno = 457(foot 정본) — cross-tenant(body 511) 무오염.
+ * ★★ 2026-07-27 개정(DA CONSULT-REPLY MSG-20260727-091320-x9zf ★지적 #1 반영) ★★
+ * ─────────────────────────────────────────────────────────────────────────────
+ * evidence-validity trap 제거. 구 probe(73ad7bd9)는 post-apply DoD 신호로 부적합했음:
+ *   · Q1 raw 조회를 `r.tid`(=NULL) OR `raw_payload->>'tid'`(top-level=NULL) 로만 함
+ *     → 뷰가 실제로 읽는 중첩 `data.tid` 미확인 → raw 존재를 false-negative 로 놓칠 위험.
+ *   · Q2b registry_hit 을 `reg.tid = r.tid`(=NULL) 로 조인 → remap 前後 모두 0 에 고착
+ *     → 정상 remap 을 "실패"로 오판(false-negative).
+ * ⇒ 웹훅 payload shape = 중첩: col tid=NULL / top raw_payload->>'tid'=NULL /
+ *    data.tid=538235·538245 / data.merchant_id=289003·289008.
+ *    뷰 resolver = COALESCE(r.tid, raw_payload->'data'->>'tid').
+ *
+ * ★ post-apply 검증 DoD (단일 권위 신호) = live 뷰 resolver 직접 질의:
+ *     SELECT count(*) FROM public.v_redpay_reconciliation_daily
+ *      WHERE tid IN ('1047538235','1047538245');
+ *   · apply 前 = 0 (현 silent-drop 확인)  ·  apply 後 = 3 (소급 표면화 = 완전 수렴).
+ *   registry_hit/raw-only 카운트를 성공신호로 쓰지 말 것.
+ *
+ * ★지적 #2 (recon scope 정합): remap 後 3행은 matched_payment_id=NULL 이라
+ *   recon_status='missing_in_crm' 로 뜬다(정상 — recon 뷰는 VAN↔CRM 대조 read-layer, 매출원장 아님).
+ *   (i) 대응 CRM payments 존재 → runMatcher(5분 cron, approval_no/tid/amount) 자동 링크 → matched 자가치유.
+ *   (ii) payments 부재 → 'missing_in_crm' 이 정확한 상태(현장 결제등록 필요) = payments-원장 gap.
+ *   어느 쪽이든 재-pull/backfill 불요(raw 이미 완전, datalake/Silver 매출은 payments 원장 파생).
  *
  * ⚠ SELECT-only. write 0. Management API READ.
  * 실행: node scripts/T-20260727-foot-REDPAY-0725GAP_ac3_probe.mjs
@@ -37,61 +53,68 @@ async function q(sql) {
 }
 
 const TIDS = ['1047538235', '1047538245'];
+// 뷰 resolver 와 동일: COALESCE(col tid, 중첩 data.tid)
+const RESOLVED_TID = `COALESCE(r.tid, r.raw_payload->'data'->>'tid')`;
 
-console.log('=== T-20260727 0725GAP AC-3 READ-ONLY probe ===\n');
+console.log('=== T-20260727 0725GAP post-apply DoD probe (DA x9zf 지적 #1 반영) ===\n');
 
-// Q1+Q2: raw 원장에 235/245 거래가 영속되어 있나? (ingestion drop 아님 확증)
+// ★ DoD (단일 권위): live 뷰 resolver 직접 질의 — apply 前 0 / 後 3
+const dod = await q(`
+  SELECT count(*) AS surfaced
+  FROM public.v_redpay_reconciliation_daily
+  WHERE tid IN ('${TIDS.join("','")}');`);
+const surfaced = Number(dod[0].surfaced);
+console.log('★ DoD [live 뷰 v_redpay_reconciliation_daily 소급 표면화 카운트]:');
+console.log(`   surfaced = ${surfaced}  (apply 前 기대=0 / apply 後 기대=3)`);
+console.log(`   판정: ${surfaced === 3 ? '✅ REMAP 수렴(3) — DoD PASS' : surfaced === 0 ? '⏳ pre-apply(0) — remap 미적용 상태' : `⚠ 예상외(${surfaced}) — 재확인`}\n`);
+
+// Q1: raw 원장 235/245 영속 여부 — ★중첩 data.tid resolver(구 probe false-negative 교정)
 const raw = await q(`
-  SELECT r.tid,
-         (r.raw_payload->'merchant'->>'id')  AS merchant_id,
-         count(*)                            AS cnt,
-         sum((r.raw_payload->>'amount')::numeric) AS amt,
-         min(r.created_at)                   AS first_seen,
-         max(r.created_at)                   AS last_seen
+  SELECT ${RESOLVED_TID}                                 AS resolved_tid,
+         COALESCE(r.raw_payload->'merchant'->>'id',
+                  r.raw_payload->'data'->>'merchant_id') AS merchant_id,
+         count(*)                                        AS cnt,
+         sum(COALESCE(r.raw_payload->>'amount',
+                      r.raw_payload->'data'->>'amount')::numeric) AS amt,
+         min(r.created_at)                               AS first_seen,
+         max(r.created_at)                               AS last_seen
   FROM public.redpay_raw_transactions r
-  WHERE r.tid IN ('${TIDS.join("','")}')
-     OR (r.raw_payload->>'tid') IN ('${TIDS.join("','")}')
+  WHERE ${RESOLVED_TID} IN ('${TIDS.join("','")}')
   GROUP BY 1,2 ORDER BY 1;`);
-console.log('Q1/Q2 [raw 원장 235/245 영속 여부] — 행 있으면 ingestion-persist 확증(재-pull 불요):');
+console.log('Q1 [raw 원장 235/245 영속 — 중첩 data.tid resolver, 행 있으면 재-pull 불요 확증]:');
 console.table(raw);
 
-// Q2b: 현재 recon 뷰가 235/245를 표면화하는가? (0 이면 view-filter silent-drop)
-const surfaced = await q(`
-  SELECT r.tid, count(*) AS raw_cnt,
-         count(*) FILTER (WHERE reg.tid IS NOT NULL) AS registry_hit
-  FROM public.redpay_raw_transactions r
-  LEFT JOIN public.redpay_terminal_registry reg
-    ON (reg.tid = r.tid OR r.tid = ANY(reg.superseded_tids))
-   AND reg.domain = 'foot' AND reg.active
-  WHERE r.tid IN ('${TIDS.join("','")}')
-  GROUP BY 1 ORDER BY 1;`);
-console.log('\nQ2b [registry_hit=0 → view tid-membership 미편입 = silent-drop 원인이 view-filter]:');
-console.table(surfaced);
+// Q2: recon_status 분포 — ★지적 #2 (missing_in_crm=정상, matched=자가치유)
+const rs = await q(`
+  SELECT tid, recon_status, count(*) AS cnt
+  FROM public.v_redpay_reconciliation_daily
+  WHERE tid IN ('${TIDS.join("','")}')
+  GROUP BY 1,2 ORDER BY 1,2;`);
+console.log('\nQ2 [recon_status 분포 — missing_in_crm=정상(payments-원장 gap or runMatcher 대기), matched=자가치유]:');
+console.table(rs);
 
-// Q3: 289003/289008 registry 旣등록 + 구 tid + superseded 상태 (mechanic=remap 확정)
+// Q3: 289003/289008 registry 상태 (remap 반영 = tid 신 538xxx + 구 479xxx superseded)
 const reg = await q(`
-  SELECT merchant_id, tid, superseded_tids, label, domain, active, bizno
+  SELECT merchant_id, tid, superseded_tids, terminal_label, domain, active
   FROM public.redpay_terminal_registry
   WHERE merchant_id IN ('1777289003','1777289008')
   ORDER BY merchant_id;`);
-console.log('\nQ3 [289003/289008 旣등록·구 tid·superseded=NULL → mechanic=superseded-remap UPDATE]:');
+console.log('\nQ3 [registry — apply 後 tid=신538xxx / superseded_tids=구479xxx 편입 확인]:');
 console.table(reg);
 
-// Q4: merchant bizno 대역 (457 foot vs 511 body) — cross-tenant 무오염
+// Q4: merchant bizno 대역 (457 foot 정본 vs 511 body) — cross-tenant 무오염
 const bizno = await q(`
-  SELECT DISTINCT (r.raw_payload->'merchant'->>'id') AS merchant_id,
-         (r.raw_payload->'merchant'->>'bizNo')       AS biz_no,
-         (r.raw_payload->'merchant'->>'name')        AS name
+  SELECT DISTINCT
+    COALESCE(r.raw_payload->'merchant'->>'id',    r.raw_payload->'data'->>'merchant_id')   AS merchant_id,
+    COALESCE(r.raw_payload->'merchant'->>'bizNo', r.raw_payload->'data'->>'business_no')   AS biz_no,
+    COALESCE(r.raw_payload->'merchant'->>'name',  r.raw_payload->'data'->>'merchant_name') AS name
   FROM public.redpay_raw_transactions r
-  WHERE r.tid IN ('${TIDS.join("','")}')
+  WHERE ${RESOLVED_TID} IN ('${TIDS.join("','")}')
   ORDER BY 1;`);
-console.log('\nQ4 [bizNo=457-23-00938 → foot 정본, body 511 아님 = cross-tenant 무오염]:');
+console.log('\nQ4 [bizNo=457 foot 정본, body 511 아님 = cross-tenant 무오염]:');
 console.table(bizno);
 
 console.log('\n=== 판정 요약 ===');
-const rawPresent = raw.length > 0;
-const noRegistryHit = surfaced.every((s) => Number(s.registry_hit) === 0);
-console.log(`AC-3: raw 영속=${rawPresent ? 'YES(재-pull 불요)' : 'NO(재-pull 필요!)'} · registry_hit=0(view-filter drop)=${noRegistryHit}`);
-console.log('결론:', rawPresent && noRegistryHit
-  ? 'seed(remap)만으로 뷰 소급 표면화 — backfill/재-pull 불요 (총괄 우려 REFUTED, 기존 AC CONFIRMED)'
-  : '★분기 재검토 필요 — 아래 데이터로 DA 판정');
+console.log(`★ post-apply DoD (live 뷰): surfaced=${surfaced} / 기대 3  →  ${surfaced === 3 ? '✅ PASS' : surfaced === 0 ? '⏳ pre-apply' : '⚠'}`);
+console.log(`  raw 영속(중첩 resolver): ${raw.length > 0 ? 'YES(재-pull 불요)' : 'NO'}`);
+console.log('  주의: registry_hit/raw-only 카운트는 DoD 아님 — 오직 live 뷰 surfaced=3 이 성공신호(DA x9zf 지적 #1).');

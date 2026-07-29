@@ -182,7 +182,9 @@ test.describe('AC-4 무회귀', () => {
     // 구 bill_receipt 는 목록에서 제거됨(going-forward 메뉴 변경)
     expect(DOCLIST_ORDER_10).not.toContain('bill_receipt');
     // 정본 진열 순서 SSOT: 10 핵심(신양식 포함) + koh_result = 11 키.
-    expect(DOCLIST_ORDER_10.length).toBe(11);
+    // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 additive 추가 → 최소 11 (koh_result 보존이 핵심).
+    expect(DOCLIST_ORDER_10.length).toBeGreaterThanOrEqual(11);
+    expect(DOCLIST_ORDER_10).toContain('koh_result');
   });
 
   test('referral_letter 자동병합 분기가 그대로 유지된다(병합 지점 재사용, 훼손 아님)', () => {

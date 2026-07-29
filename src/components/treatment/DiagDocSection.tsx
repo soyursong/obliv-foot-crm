@@ -39,7 +39,8 @@
 //     · 기능③(AC3): 원장 작성 medical 본문은 이 뷰어에서 read-only 표시 전용(어떤 경로로도 편집 노출 없음).
 //       행정필드(발급요청일자 등) 편집은 기존 실장 요청박스(OpinionRequestBox '서류 날짜')에서 유지 — 여기 미신설(scope-guard).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { useClinic } from '@/hooks/useClinic';
@@ -55,12 +56,15 @@ import {
   useOpinionDocTemplateId,
   usePublishedOpinionDocs,
   matchPublishedOpinionDoc,
+  // T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN: [행정정보 수정]을 고객관리 EditCustomerDialog(공유·회귀위험)
+  //   에서 서류 행정필드 전용 편집기로 재배선. 발행완료 요청행 field_data.admin_overrides 정정(published 불오염).
+  useUpdateOpinionAdminFields,
   type OpinionDocType,
   type OpinionRequestRow,
 } from '@/lib/opinionRequest';
 // 발행본 미발견(레거시) 시 요청 저장본(selected_keys)으로 본문 재구성 폴백 — 작성창 합성기 재사용(기존 렌더러).
 import { composeOpinionDoc } from '@/lib/opinionDocCompose';
-import { OPINION_SECTIONS, useClinicHeader } from '@/components/doctor/OpinionDocTab';
+import { OPINION_SECTIONS, useClinicHeader, useClinicDoctors } from '@/components/doctor/OpinionDocTab';
 // T-20260725-foot-OPINIONDOC-...-TREATTABLE-VIEW-PARITY (AC2): 치료테이블 발행본 열람을 진료대시보드
 //   뷰어와 '동일 컴포넌트'로 렌더 — 소견서 양식 그대로(병원헤더·환자정보·상병/소견·발급일·서명/도장).
 //   read-only 전용(재발행/취소/수정/재출력 신규 도입 없음, 의료법§22 발행본 불변). 신규 양식 스택 0.
@@ -76,8 +80,19 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, FileText, Users, CheckCircle2, Clock } from 'lucide-react';
+import { Loader2, FileText, Users, CheckCircle2, Clock, Pencil, FilePen, Lock } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
+// T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN (planner GO 2026-07-29):
+//   [행정정보 수정] 진입점을 고객관리 EditCustomerDialog(고객관리와 공유 → 필드삭제 시 회귀) 대신
+//   **서류 행정필드 전용 편집기**(useUpdateOpinionAdminFields 경로)로 재배선.
+//   · 원 문제 ①진료의(발급 의료인) 편집칸 누락 + ②서류에 안 나가는 항목(외국인정보·우편번호 등) 편집칸 잔존
+//     → 재배선으로 동시 해소. 잉여필드는 doc-admin 편집기에 애초에 없고(삭제 아님), 두 필드는 고객관리에 그대로 존치.
+//   · 편집 대상 = 발행완료 요청행(status='voided'+resolved_reason='published') field_data.admin_overrides 오버레이.
+//     발행 원본(published)·발행 파이프라인 무접촉(의료법§22 스냅샷 불변). 신규 스키마 0(NO-DDL, db_change=false).
+//   ★§11 / MEDSPACE-CONFIRM-GATE(Q2): 재배선 + 비의료 행정필드(발급요청일자/발급일/상병코드) 편집 = 게이트 밖(선행 배포).
+//     진료의(발급 의료인) 변경 = 법정 귀속 → 문지은 대표원장 confirm(confirm_status: pending) 전까지 read-only 표시.
+//     confirm 수신 후 DOCTOR_FIELD_EDITABLE=true 로 fast-follow(별도 커밋).
+import { toast } from '@/lib/toast';
 
 // ─── 순수 파생 로직 (E2E spec 이 동일 함수를 직접 import·단언 → drift 방지) ───────────────
 
@@ -170,6 +185,48 @@ export function computeDiagDocSummary(rows: DiagDocRow[]): DiagDocSummary {
   return { total: rows.length, publishedCount, unpublishedCount: rows.length - publishedCount };
 }
 
+// ─── 서류 행정필드 편집기(재배선) 순수 로직 — E2E spec 이 동일 함수 import·단언(drift 방지) ──────────
+//   T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN. 편집 가능한 필드셋 = 서류에 실제 출력되는 행정필드만.
+export interface DocAdminEditForm {
+  requestDate: string; // 발급요청일자(YYYY-MM-DD)
+  issueDate: string;   // 발급일(YYYY-MM-DD)
+  diagCode: string;    // 상병코드(primary, 예 K29.7)
+  doctorId: string;    // 진료의(발급 의료인) 앵커 = clinic_doctors.id. '' = 미지정.
+  doctorName: string;  // 진료의 표시명(doctorId 선택 시 함께 결선). '' = 미지정.
+}
+export const EMPTY_DOC_ADMIN_FORM: DocAdminEditForm = {
+  requestDate: '', issueDate: '', diagCode: '', doctorId: '', doctorName: '',
+};
+
+// ★MEDSPACE-CONFIRM-GATE(Q2, 문지은 대표원장): 진료의(발급 의료인) 변경 = 의료 법정 귀속 → confirm 필요.
+//   T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN fast-follow: 문지은 대표원장 Option A 컨펌 완료
+//   (치료사도 [행정정보 수정]에서 담당 진료의를 드롭다운으로 변경 허용) → 플래그 flip(별도 커밋·게이트 배포).
+export const DOCTOR_FIELD_EDITABLE = true;
+
+// 변경된 필드만 담은 저장 payload. 진료의(doctorId)가 바뀌면 doctorName·doctorId 를 함께 실어 보낸다
+//   (mutation 이 doctorName 변경분을 감사로그에 남기고 doctor_id 를 도장 자동추종 앵커로 정정).
+export function buildDocAdminSavePayload(
+  form: DocAdminEditForm,
+  init: DocAdminEditForm,
+): { requestDate?: string; issueDate?: string; diagCode?: string; doctorName?: string; doctorId?: string } {
+  const doctorChanged = form.doctorId !== init.doctorId;
+  return {
+    requestDate: form.requestDate !== init.requestDate ? form.requestDate : undefined,
+    issueDate: form.issueDate !== init.issueDate ? form.issueDate : undefined,
+    diagCode: form.diagCode !== init.diagCode ? form.diagCode : undefined,
+    doctorName: doctorChanged ? form.doctorName : undefined,
+    doctorId: doctorChanged ? form.doctorId : undefined,
+  };
+}
+export function isDocAdminFormDirty(form: DocAdminEditForm, init: DocAdminEditForm): boolean {
+  return (
+    form.requestDate !== init.requestDate ||
+    form.issueDate !== init.issueDate ||
+    form.diagCode !== init.diagCode ||
+    form.doctorId !== init.doctorId
+  );
+}
+
 // ─── 발행여부 배지 ────────────────────────────────────────────────────────────
 function PublishBadge({ status }: { status: DiagPublishStatus }) {
   const published = status === 'published';
@@ -258,6 +315,75 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
   const openDocView = (rowId: string) => {
     const src = sourceById.get(rowId);
     if (src) setViewTarget(src);
+  };
+
+  // ── 행정정보 수정(재배선, T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN) ──────────────────────
+  //   [행정정보 수정] → 서류 행정필드 전용 편집기(useUpdateOpinionAdminFields). 편집 대상 = 발행완료 요청행.
+  //   진료의는 게이트(DOCTOR_FIELD_EDITABLE) 전까지 read-only 표시(현재 발급의 노출, 편집 불가).
+  const qc = useQueryClient();
+  const adminMut = useUpdateOpinionAdminFields(clinicId);
+  // 진료의(발급 의료인) read-only 표시용 옵션 소스 — 진료대시보드와 동일 훅(신규 조회 0).
+  const { data: clinicDoctors = [] } = useClinicDoctors(clinicId);
+  const [adminEditTarget, setAdminEditTarget] = useState<OpinionRequestRow | null>(null);
+  const [adminForm, setAdminForm] = useState<DocAdminEditForm>(EMPTY_DOC_ADMIN_FORM);
+  const [adminInit, setAdminInit] = useState<DocAdminEditForm>(EMPTY_DOC_ADMIN_FORM);
+
+  const openEditAdmin = (target: OpinionRequestRow | null) => {
+    if (!target) {
+      toast('편집할 서류 정보를 확인할 수 없습니다');
+      return;
+    }
+    setAdminEditTarget(target);
+  };
+
+  // 편집 대상 바뀔 때 폼 초기화 — 오버레이(정정값) 우선, 없으면 요청행/발행본 스냅샷.
+  useEffect(() => {
+    if (!adminEditTarget) return;
+    const ov = adminEditTarget.adminOverrides;
+    const seedIssueDate =
+      ov?.issueDate
+      || (viewDoc?.issuedAt ? seoulISODate(viewDoc.issuedAt)
+        : adminEditTarget.resolvedAt ? seoulISODate(adminEditTarget.resolvedAt) : '');
+    // 진료의 seed — 오버레이 앵커(doctor_id) 우선, 없으면 현재 표시명으로 등록 진료의 매칭(id 복원).
+    const seedDoctorName = ov?.doctorName ?? viewDoc?.doctorName ?? '';
+    const seedDoctorId =
+      ov?.doctorId
+      ?? (seedDoctorName ? clinicDoctors.find((d) => d.name === seedDoctorName)?.id : undefined)
+      ?? '';
+    const init: DocAdminEditForm = {
+      requestDate: adminEditTarget.requestDate || '',
+      issueDate: seedIssueDate,
+      diagCode: ov?.diagCode ?? '',
+      doctorId: seedDoctorId,
+      doctorName: seedDoctorName,
+    };
+    setAdminForm(init);
+    setAdminInit(init);
+  }, [adminEditTarget, viewDoc, clinicDoctors]);
+
+  const adminDirty = isDocAdminFormDirty(adminForm, adminInit);
+
+  // 진료의(발급 의료인) read-only 표시명 — 오버레이 정정값 우선, 없으면 발행본 발행자명.
+  const currentDoctorName = adminEditTarget?.adminOverrides?.doctorName ?? viewDoc?.doctorName ?? '';
+
+  const handleAdminSave = async () => {
+    if (!adminEditTarget || !adminDirty) return;
+    if (!profile?.id) { toast.error('직원 계정 정보를 확인할 수 없습니다.'); return; }
+    const payload = buildDocAdminSavePayload(adminForm, adminInit);
+    try {
+      await adminMut.mutateAsync({
+        requestId: adminEditTarget.id,
+        ...payload, // requestDate/issueDate/diagCode/진료의(doctorName+doctorId)(변경분만). Option A 컨펌 후 진료의 편집 활성.
+        editorId: profile.id,
+        editorName: profile.name ?? profile.email ?? '직원',
+      });
+      toast.success('행정 정보를 저장했습니다.');
+      // 치료테이블 발행완료 소스(all-time)는 별도 query key → 저장 후 명시 invalidate(오버레이 즉시 반영).
+      qc.invalidateQueries({ queryKey: ['opinion_request_published_all', clinicId] });
+      setAdminEditTarget(null);
+    } catch (e) {
+      toast.error(`저장에 실패했습니다. ${(e as Error)?.message ?? ''}`);
+    }
   };
 
   return (
@@ -465,13 +591,150 @@ export default function DiagDocSection({ date, nameInteraction }: Props) {
               />
             </div>
           </div>
-          <DialogFooter className="shrink-0 border-t pt-3">
+          {/* T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN: 소견서 문서 뷰 '하단' [행정정보 수정] 진입점을
+              고객관리 EditCustomerDialog → 서류 행정필드 전용 편집기로 재배선. 클릭 → 이 발행완료 요청행의
+              행정필드(발급요청일자/발급일/상병코드 편집 + 진료의 read-only 표시) 편집기 오픈.
+              발행본(medical 본문)·발행 파이프라인 무접촉(published 불오염, therapist surface, 원장 무접점). */}
+          <DialogFooter className="shrink-0 flex-row justify-between gap-2 border-t pt-3 sm:justify-between">
+            <Button
+              variant="secondary"
+              className="gap-1.5"
+              disabled={!viewTarget}
+              onClick={() => openEditAdmin(viewTarget)}
+              data-testid="diagdoc-doc-view-edit-admin-btn"
+            >
+              <Pencil className="h-4 w-4" />
+              행정정보 수정
+            </Button>
             <Button
               variant="outline"
               onClick={() => setViewTarget(null)}
               data-testid="diagdoc-doc-view-close"
             >
               닫기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260728-foot-DOCADMIN-EDITFORM-FIELDSET-REALIGN: 서류 행정필드 전용 편집기(재배선).
+          편집 = 발행완료 요청행 field_data.admin_overrides(published 불오염, 의료법§22 스냅샷 불변).
+          ★서류에 실제 출력되는 행정필드만 노출: 발급요청일자 · 발급일 · 상병코드(편집) + 진료의(read-only, 게이트).
+            고객관리 전용 필드(외국인정보·우편번호 등)는 이 편집기에 애초에 없음(재배선 자동 해소, 고객관리에 존치). */}
+      <Dialog open={!!adminEditTarget} onOpenChange={(o) => { if (!o) setAdminEditTarget(null); }}>
+        <DialogContent className="max-w-lg" data-testid="diagdoc-admin-edit-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" data-testid="diagdoc-admin-edit-title">
+              <FilePen className="h-5 w-5 text-teal-600" />
+              행정정보 수정
+              {adminEditTarget && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  · {docTypeLabel(adminEditTarget.docType)}
+                  {adminEditTarget.patientName ? ` · ${adminEditTarget.patientName}` : ''}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              서류에 출력되는 발급 정보만 정정할 수 있어요. 진단소견·의사소견 본문은 원장님 작성분이라 수정할 수 없어요.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+              발급요청일자
+              <input
+                type="date"
+                value={adminForm.requestDate}
+                onChange={(e) => setAdminForm((f) => ({ ...f, requestDate: e.target.value }))}
+                className="h-11 rounded-md border border-input bg-background px-2 text-sm"
+                data-testid="diagdoc-admin-request-date"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+              발급일
+              <input
+                type="date"
+                value={adminForm.issueDate}
+                onChange={(e) => setAdminForm((f) => ({ ...f, issueDate: e.target.value }))}
+                className="h-11 rounded-md border border-input bg-background px-2 text-sm"
+                data-testid="diagdoc-admin-issue-date"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+              상병코드
+              <input
+                type="text"
+                value={adminForm.diagCode}
+                onChange={(e) => setAdminForm((f) => ({ ...f, diagCode: e.target.value }))}
+                placeholder="예: K29.7"
+                className="h-11 rounded-md border border-input bg-background px-2 text-sm"
+                data-testid="diagdoc-admin-diag-code"
+              />
+            </label>
+
+            {/* 진료의(발급 의료인) — MEDSPACE-CONFIRM-GATE(문지은 대표원장) Option A 컨펌 완료 → 드롭다운 활성.
+                유효 발급 의료인(clinic_doctors, active=true) 목록만 노출(진료대시보드와 동일 소스). 선택 →
+                doctor_id(도장 자동추종 앵커) + doctor_name(표시명) 을 admin_overrides 에 정정(감사로그 append). */}
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+              진료의 (발급 의료인)
+              {DOCTOR_FIELD_EDITABLE ? (
+                <select
+                  value={adminForm.doctorId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const doc = clinicDoctors.find((d) => d.id === id);
+                    setAdminForm((f) => ({ ...f, doctorId: id, doctorName: doc?.name ?? '' }));
+                  }}
+                  className="h-11 rounded-md border border-input bg-background px-2 text-sm"
+                  data-testid="diagdoc-admin-doctor-select"
+                >
+                  <option value="">진료의 선택</option>
+                  {clinicDoctors.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div
+                  className="flex h-11 items-center gap-1.5 rounded-md border border-dashed border-slate-200 bg-slate-50 px-2 text-sm text-slate-600"
+                  data-testid="diagdoc-admin-doctor-readonly"
+                  title="발급 의료인 변경은 대표원장 확인 후 활성화됩니다"
+                >
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="truncate">{currentDoctorName || '미지정'}</span>
+                </div>
+              )}
+            </label>
+          </div>
+
+          {!DOCTOR_FIELD_EDITABLE && (
+            <p className="flex items-start gap-1.5 text-[11px] leading-snug text-slate-500" data-testid="diagdoc-admin-doctor-gate-note">
+              <Lock className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+              진료의(발급 의료인) 변경은 법정 서류 귀속과 관련되어 대표원장님 확인 후 열릴 예정이에요. 현재는 발급된 의료인이 표시만 됩니다.
+            </p>
+          )}
+          <p className="text-[11px] leading-snug text-slate-500">
+            ※ 상병코드는 진단과 관련된 정보라 정정 내역(누가·언제·이전값)이 기록으로 남아요. 상병명은 진료 기록 기준으로 표시됩니다.
+          </p>
+
+          <DialogFooter className="flex-row justify-end gap-2 border-t pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setAdminEditTarget(null)}
+              data-testid="diagdoc-admin-cancel-btn"
+            >
+              닫기
+            </Button>
+            <Button
+              onClick={() => void handleAdminSave()}
+              disabled={!adminDirty || adminMut.isPending}
+              className="bg-teal-600 text-white hover:bg-teal-700"
+              data-testid="diagdoc-admin-save-btn"
+            >
+              {adminMut.isPending ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> 저장 중…</>
+              ) : (
+                '행정 정보 저장'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

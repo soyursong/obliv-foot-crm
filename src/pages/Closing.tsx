@@ -80,6 +80,10 @@ interface PaymentRow {
   tax_exempt_amount?: number | null;
   /** T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행 → 원결제행 링크(단건). 환불(refund) 행에서만 채워짐. */
   linked_payment_id?: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: 결제/환불 처리 직원(payments.created_by). 과거행 NULL. */
+  created_by?: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: user_profiles!payments_created_by_fkey embed(name). NULL=미기록. */
+  processor?: { name: string | null } | null;
 }
 
 interface PackagePaymentRow {
@@ -96,6 +100,10 @@ interface PackagePaymentRow {
   memo: string | null;
   /** T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행 → 원결제행 링크(패키지). 환불(refund) 행에서만 채워짐. */
   parent_payment_id?: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: 환불 처리 직원(package_payments.created_by). refund_package_payment auth.uid() 캡처. 과거행 NULL. */
+  created_by?: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: user_profiles!package_payments_created_by_fkey embed(name). NULL=미기록('—'). */
+  processor?: { name: string | null } | null;
 }
 
 interface UnpaidCheckIn {
@@ -174,6 +182,10 @@ interface EnrichedRow {
   lead_source: string | null;
   visit_type_label: string;
   staff_name: string | null;
+  /** T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: 실제 결제/환불 처리자(payments.created_by→user_profiles.name).
+   *  ⚠ staff_name(=customers.assigned_staff_id 고객 배정담당)과 다른 축. 환불 이력 처리자 컬럼 전용.
+   *  단건=payments.processor 승계 / 패키지=package_payments.processor 승계(T-20260727-ACTOR-HISTORY) / 수기=null. NULL=미기록('—'). */
+  processor_name?: string | null;
   amount: number;
   method: string;
   payment_type: PaymentType;
@@ -318,7 +330,10 @@ export default function Closing() {
         .from('payments')
         // T-20260522-foot-CLOSING-REFUND: id 추가 (환불 RPC 호출용)
         // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: linked_payment_id 추가(환불행→원결제행 annotate 매칭용)
-        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id')
+        // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: created_by + processor JOIN 추가(SalesPatientTab 패턴 REUSE).
+        //   환불 이력 '처리자' = payments.created_by(refund_single_payment RPC 캡처) → user_profiles.name.
+        //   FK 기본명 payments_created_by_fkey (prod 확인·20260717140000 마이그 dryrun §2 검증필). 과거행 NULL → '—'.
+        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id, created_by, processor:user_profiles!payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -326,7 +341,9 @@ export default function Closing() {
         .neq('status', 'deleted')
         .order('created_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as PaymentRow[];
+      // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: processor embed 은 PostgREST 생성타입상 배열추론 →
+      //   many-to-one 실런타임은 객체(or null). SalesPatientTab 과 동형으로 unknown 경유 cast.
+      return (data ?? []) as unknown as PaymentRow[];
     },
   });
 
@@ -339,13 +356,19 @@ export default function Closing() {
         .from('package_payments')
         // T-20260522-foot-CLOSING-REFUND: id, package_id 추가 (환불 RPC 호출용)
         // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: parent_payment_id 추가(패키지 환불행→원결제행 annotate 매칭용)
-        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo, parent_payment_id')
+        // T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: created_by + processor JOIN 추가(단건 PROCESSOR-DISPLAY 패턴 형제 복제).
+        //   환불 이력 '처리자' = package_payments.created_by(refund_package_payment RPC auth.uid() 캡처) → user_profiles.name.
+        //   FK 기본명 package_payments_created_by_fkey (마이그 20260727210000 dryrun §2 검증필). 과거행 NULL → '—'(forward-only).
+        //   read-side 노출은 user_profiles RLS(단건 payments.created_by 경로와 동일 정책) 재사용 → parity·신규표면 0.
+        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo, parent_payment_id, created_by, processor:user_profiles!package_payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
         .order('created_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as PackagePaymentRow[];
+      // T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: processor embed 은 PostgREST 생성타입상 배열추론 →
+      //   many-to-one 실런타임은 객체(or null). 단건(PaymentRow) 과 동형으로 unknown 경유 cast.
+      return (data ?? []) as unknown as PackagePaymentRow[];
     },
   });
 
@@ -857,6 +880,9 @@ export default function Closing() {
             ?? null,
         ),
         staff_name: consultantName,
+        // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: 실제 처리자 = payments.created_by JOIN(refund_single_payment 캡처분).
+        //   staff_name(고객 배정담당)과 별개 축 — 환불 이력 처리자 컬럼 전용. 미기록 → null('—').
+        processor_name: p.processor?.name ?? null,
         amount: p.amount,
         method: p.method,
         payment_type: p.payment_type,
@@ -897,6 +923,9 @@ export default function Closing() {
             ?? null,
         ),
         staff_name: assignedStaffName,
+        // T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: 실제 환불 처리자 = package_payments.created_by JOIN
+        //   (refund_package_payment auth.uid() 캡처분). staff_name(고객 배정담당)과 별개 축. 과거행 미기록 → null('—').
+        processor_name: p.processor?.name ?? null,
         amount: p.amount,
         method: p.method,
         payment_type: p.payment_type,
@@ -1661,7 +1690,11 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           <td className="py-1.5 pr-2 font-mono text-xs text-muted-foreground">{chartNoBadge(r.chart_number)}</td>
                           <td className="py-1.5 pr-2 text-xs">{r.source === 'package' ? '패키지' : '단건'}</td>
                           <td className="py-1.5 pr-2 text-xs">{METHOD_KO[r.method as Method] ?? r.method}</td>
-                          <td className="py-1.5 pr-2 text-xs">{r.staff_name ?? '미지정'}</td>
+                          {/* T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: 데이터소스 정정 —
+                              기존 r.staff_name(=고객 배정담당 assigned_staff, 실제 환불 처리자 아님·버그)
+                              → r.processor_name(payments.created_by→user_profiles.name). 미기록 '—'.
+                              ★컬럼 라벨(담당자→처리자) / 별도 신설 여부는 reporter 확인 대기(responder 경유) — 데이터소스만 우선 정정. */}
+                          <td className="py-1.5 pr-2 text-xs" data-testid="closing-refund-processor">{r.processor_name ?? '—'}</td>
                           <td className="py-1.5 text-right tabular-nums font-medium text-rose-700">-{formatAmount(r.amount)}</td>
                         </tr>
                       ))}
@@ -2240,6 +2273,11 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
         onComplete={() => {
           setPayTarget(null);
           setPayAttemptCounter((c) => c + 1);
+          refreshPayments();
+        }}
+        onSettled={() => {
+          // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 후 미니창 유지(같은 창에서 [출력] 이어감).
+          //   미수 갱신만 수행 — setPayTarget(null)(닫기)·counter++(리마운트) 미수행 → 창/내부상태 보존.
           refreshPayments();
         }}
         onSaved={() => {

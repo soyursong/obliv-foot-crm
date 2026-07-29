@@ -1,0 +1,93 @@
+T-20260729-foot-REDPAY-RECONCILE-EF-ENVSHADOW-4TH-LOCUS
+AC-2 (①FIX) before/after 매칭 동작 증거 앵커 — 진원 divergence 실 TID셋 기반
+=====================================================================================
+
+출처: supervisor 정식 CONSULT-REPLY MSG-20260729-042504-21c5 부가 발견 (planner INFO
+      MSG-20260729-043220-p13s 로 dev-foot 수신). registry SSOT = redpay_foot_terminal_registry.md.
+성격: 코드/DB 무변경 evidence 보강. AC-2 진원(env staleness) 을 concrete TID 로 고정.
+
+
+0. divergence 런타임 확증 (진원 실재)
+-------------------------------------------------------------------------------------
+- reconcile EF(D) 측 : REDPAY_TID_WHITELIST = SET, **07-20T08:05Z 정적 스냅샷** 고정
+                       (EF secret digest f9dc25cc = 26 TID, 479xxx 세대).
+- poller(A) 측       : REDPAY_TID_WHITELIST = UNSET(plist 주석) → DB registry SSOT
+                       live union 파생 (tid∪unnest(superseded_tids), domain=foot·active).
+- ⇒ D 가 소비하는 TID = 07-20 스냅샷  vs  A/registry = live union  → **divergence 확정**.
+- staleness delta = 07-20 스냅샷 이후 registry 갱신분 = 재프로비저닝 remap 세대(bizno 511→457
+  churn). D 는 이 delta 를 못 봄(env 고정), A/registry 는 봄.
+
+
+1. staleness delta TID 셋 — 07-20 env 스냅샷(f9dc25cc)에 부재 · live registry 에만 존재
+-------------------------------------------------------------------------------------
+env 스냅샷(479xxx 세대)은 아래 merchant 의 **구 TID** 만 보유. live 재프로비저닝 신 TID 는
+registry 의 primary `tid`(신) 로, 구 TID 는 `superseded_tids[]` 로 존재 → tid∪unnest 로 둘 다 가시.
+
+  세대            merchant_id   신 TID(live·registry)   구 TID(env 스냅샷 보유)   비고
+  ── 0723 GAP (VAN, 535xxx / §8) ───────────────────────────────────────────────────
+  0723           1777285001    1047535845              1047479255               구·신 병존 live
+  0723           1777285002    1047535843              (env·구 registry 미보유)  ★신규 merchant(285002)
+  0723           1777285003    1047535842              1047479254
+  0723           1777285005    1047535837              1047479268
+  0723           1777285006    1047535835              1047479262
+  0723           1777285007    1047535797              1047479263
+  ── 0724/0725 GAP (유선/멀티, 538xxx / §9) ──────────────────────────────────────────
+  0724           1777288006    1047538241              1047479474
+  0724           1777289004    1047538237              1047479478
+  0724           1777288004    1047538231              1047479472
+  0724           1777288003    1047538236              1047479471
+  ── 0728 GAP (유선/멀티, 538xxx / §11) ──────────────────────────────────────────────
+  0728           1777289006    1047538239              1047479480     10건 / ₩11,390,000 (7/27~)
+  0728           1777288008    1047538246              1047479475      2건 / ₩10,200 (7/28~)
+
+delta 신 TID (env f9dc25cc 부재, D 가 못 보던 것):
+  1047535845, 1047535843, 1047535842, 1047535837, 1047535835, 1047535797,
+  1047538241, 1047538237, 1047538231, 1047538236, 1047538239, 1047538246
+
+
+2. before / after 매칭 동작 대비 (대표례: merchant 1777289006, 신 TID 1047538239)
+-------------------------------------------------------------------------------------
+코드 경로: matcher.ts findTier1Tight(L298)/findTier2Loose(L325)
+          `if (!raw.tid || !tidWhitelist.has(raw.tid)) return [];`
+          → Tier1/2 성립조건 = raw.tid 가 tidWhitelist Set 에 존재해야 함.
+
+raw 입력: { tid: "1047538239", merchant_id: "1777289006", external_status: "Y", ... }
+          (7/27~ 실거래 10건 / ₩11,390,000)
+
+  [BEFORE] D = env 단독 read (07-20 스냅샷 f9dc25cc)
+    tidWhitelist = envTidSet() = {…, 1047479480, …}   ← 289006 의 '구' TID 만 보유
+    tidWhitelist.has("1047538239") = FALSE
+    → findTier1Tight / findTier2Loose = return []  (Tier1/2 skip)
+    → matchTransaction fall-through → Tier3(휴리스틱)/tier4_manual 강등
+    → detectMissingInCrm → spurious `missing_in_crm` 이벤트 발화 (실제 CRM 에는 결제 존재)
+    → payments.reconciled_at / external_trxid 미스탬프, raw.matched_payment_id 미설정
+
+  [AFTER] D = resolveTidWhitelist() (①FIX, registry-canonical ∪ env)
+    loadRegistryTids(): registry(289006).tid=1047538239, superseded_tids=[1047479480]
+      → tid ∪ unnest(superseded_tids) 에 1047538239 포함
+    tidWhitelist = registry ∪ env 에 1047538239 포함
+    tidWhitelist.has("1047538239") = TRUE
+    → findTier1Tight/findTier2Loose 성립 → payments 후보와 Tier1/2 자동매칭
+    → payments.reconciled_at / external_trxid 스탬프, raw.matched_payment_id 설정,
+      reconciliation_log write. spurious missing_in_crm 소멸.
+
+동일 논리가 §1 delta 12 TID 전건에 적용 (구·신 병존 live 포함 — union 이므로 양쪽 모두 매칭).
+
+
+3. 양 경로 커버 확인 (DRY_RUN=false 실측 반영, supervisor M1)
+-------------------------------------------------------------------------------------
+- runMatcher()  (match_only 경로, index.ts L504) : resolveTidWhitelist() 경유 → delta 커버.
+- runPoller()   (incremental/daily cron 경로, L717): resolveTidWhitelist() 경유 → delta 커버.
+- DRY_RUN 픽스처 프리뷰(L410 tidWhitelistDry, env-only): FIXTURES + payments=[] 전용 inert
+  self-test(no DB write, dry-run-clinic) → 실 reconcile 경로 무접촉이므로 env-only 유지 정당.
+
+
+4. 불변식 재확인
+-------------------------------------------------------------------------------------
+- no-DDL (registry 테이블/뷰 旣배포, SELECT only) · admit/scope 무접촉 · 매출 금액 불변
+  (reconciled 스탬프 대상만 registry 로 확대 = tightening 아닌 자동매칭 skip 방향 해소).
+- registry 미가용 시 env 폴백(fail-safe) → 매칭 완전정지 회피(loadRegistryTids null → env).
+- delta 는 monotonic-widening (구 TID 도 superseded 로 존속 → historical raw 매칭 연속).
+
+결론: AC-2 진원(env staleness) 이 concrete divergence delta TID 셋으로 확증되고, ①FIX 적용으로
+      before(Tier3/manual 강등·spurious missing_in_crm) → after(Tier1/2 자동매칭) 전환됨을 입증.

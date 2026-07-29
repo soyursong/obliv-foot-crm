@@ -14,7 +14,9 @@
 //   승인번호·TID 입력은 보너스(있으면 우선, 없어도 매칭 시도).
 //
 // ── 4-Tier 매칭 우선순위 ──────────────────────────────────────────────────────
-//   Tier 0  — Direct (보너스): external_approval_no / external_tid 직접 일치
+//   Tier 0  — Direct (보너스): trxid-exact 1급 → 단일 composite
+//             (식별자[approval_no OR tid] ∧ amount ∧ card ∧ payment ∧ same-KST-day ∧ forward,
+//              충돌 시 approved_at 최근접 tie-break, 모호 시 tier4_manual)
 //   Tier 1  — Tight (95% 목표): tid whitelist + card + amount + [+15min]
 //   Tier 2  — Loose: 같은 조건 + [+30min], single candidate만 매칭
 //   Tier 3  — Daily Unique: KST 같은 날짜 + amount unique
@@ -174,30 +176,112 @@ function isUnmatchedCrm(p: CrmPayment): boolean {
   return p.reconciled_at === null && p.external_trxid === null;
 }
 
-// ── Tier 0 — Direct 매칭 (보너스: 직원이 어쩌다 승인번호/TID 입력한 경우) ────────
+// ── Tier 0 — Direct 매칭 (trxid-exact + 단일 composite) ───────────────────────
+//
+// T-20260729-foot-REDPAY-TIER0-COMPOSITE-OR-CARD-SAMEDAY
+//   DA CONSULT-REPLY: GO (SSOT=da_reply_foot_redpay_tier0_composite_20260728.md,
+//   ticket_id=DA-20260728-REDPAY-TIER0-COMPOSITE). 직전 하드닝
+//   (T-20260728-...-TIER0-TRXID-HARDENING, composite Model A = approval_no ∧ tid ∧
+//   amount ∧ +15min) 을 아래 3점으로 정합 강화(supersede)한다.
+//
+//   ▸ 핵심원리(matching-integrity 불변식): 비-거래고유 값은 단독 충분 링크키가 될 수
+//     없다. external_trxid=거래고유(단독 OK) / approval_no=비고유(코반 재활용) /
+//     tid=단말고유≠거래고유(그 단말 전 거래에서 상수 → 거래-grain 단독키로 최악).
+//     식별자는 amount+card 기반 매칭을 tier0 신뢰로 승격시키는 corroborator 일 뿐,
+//     단독 결정권이 없다.
+//
+//   ▸ 정정 3점 (이번 티켓):
+//     Q1) composite 에 method=='card' ∧ payment_type=='payment' 필터 추가(필수).
+//         직전 Tier0 누락 — cash/refund payment 에 stray external_approval_no 가
+//         있으면 card raw 에 오링크 가능(Tier1 은 이미 검사, Tier0 만 빠져 있었음).
+//         + amount 대조가 DOSU-CONTAM(단일후보 오답 payment) 경로를 닫는다.
+//     Q2) 두 브랜치(approval_no / tid)를 단일 composite 로 수렴. 식별자 매칭은
+//         OR-either — approval_no 또는 tid 중 하나가 corroborate 하면 충분(직전의
+//         AND-both 는 staff 가 한쪽 식별자만 입력한 정당 건을 떨궈 과도하게 엄격).
+//         단독 결정권 없음은 amount∧card∧payment∧시각 AND 로 보장.
+//     Q4) 15min 하드바운드 폐기 → same-KST-day + forward. Tier0 은 직원이 의도적으로
+//         키를 입력한 건 — 카드 긁고 CRM 입력이 분~시간 지연되는 현장 실태에서 15min
+//         하드바운드는 정당한 늦은-입력을 false-negative 로 떨궈 하위 Tier 강등 유발.
+//         시각창은 '1차 하드필터'가 아니라 '충돌 disambiguator':
+//           · 1차 판별 = 식별자 ∧ amount ∧ card ∧ payment ∧ same-KST-day ∧ forward.
+//             단일 후보면 tier0 확정.
+//           · ≥2 후보(충돌)일 때만 창으로 tie-break — approved_at 이후 최근접
+//             created_at. 최근접이 유일하면 확정, 동률(모호)이면 후보 다건을 그대로
+//             반환 → matchTransaction 의 multi-candidate→tier4_manual 가드로 강등.
+//         하드 시각바운드는 same-KST-day(Tier3 grain 정렬) — 15/30min 아님.
+//     ① trxid-exact (1급 키): 오늘 inert — isUnmatchedCrm 이 p.external_trxid=null
+//        을 요구하므로 현 데이터 미발화(external_approval_no 0/295, tier0 30일 0건).
+//        direct-capture future-proof + 총괄 'trxid 1급키' 문자준수. 무해(drop 0).
+//
+//   ★ 불변식(영구 고정): 식별자(approval_no / tid) 단독 auto-link 금지 — 반드시
+//     amount ∧ card ∧ payment_type ∧ same-KST-day 와 AND. multi-candidate→manual.
+//   ★ 회귀손실 0: 현 tier0 auto-link=0(external_approval_no·external_tid 노출 0/295)
+//     → 미매칭 전환되는 기존 링크 0건. tightening·behavior-preserving(delta=0).
+//   ★ future note: external_approval_no/tid 채워진 뒤 composite 불충족분은 auto-link
+//     대신 하위 Tier/tier4_manual 로 fail-safe 강등 = 의도된 안전동작(손실 아님).
 /**
- * 직접 키 매칭.
- * external_approval_no 또는 external_tid가 CRM에 입력된 경우 우선 매칭.
- * 의무 아님 — 없으면 Tier 1로.
+ * 직접 키 매칭 (trxid-exact 1급 → 단일 composite). 매칭은 보너스 — 없으면 하위 Tier 로.
  */
 export function findTier0Direct(
   raw:      RawTransaction,
   payments: CrmPayment[]
 ): CrmPayment[] {
+  // ── ① trxid-exact (1급, 오늘 inert — direct-capture future-proof) ─────────
+  if (raw.external_trxid) {
+    const byTrxid = payments.filter(
+      (p) =>
+        isUnmatchedCrm(p) &&
+        p.external_trxid !== null &&
+        p.external_trxid === raw.external_trxid
+    );
+    if (byTrxid.length > 0) return byTrxid;
+  }
+
+  // ── ② 단일 composite: 식별자(approval_no OR tid) ∧ amount ∧ card ∧ payment ∧
+  //      same-KST-day ∧ forward. 식별자 없으면 corroborate 불가 → 하위 Tier 로.
+  if (!raw.approved_at) return [];
   const hasApproval = Boolean(raw.approval_no);
   const hasTid      = Boolean(raw.tid);
   if (!hasApproval && !hasTid) return [];
 
-  return payments.filter((p) => {
+  const approvedMs = new Date(raw.approved_at).getTime();
+  const rawDateKst = toKstDateStr(raw.approved_at);
+
+  const candidates = payments.filter((p) => {
     if (!isUnmatchedCrm(p)) return false;
-    if (hasApproval && p.external_approval_no !== null && p.external_approval_no === raw.approval_no) {
-      return true;
-    }
-    if (hasTid && p.external_tid !== null && p.external_tid === raw.tid) {
-      return true;
-    }
-    return false;
+    // Q1: method/payment_type 필수 — cash/refund 의 stray 식별자로 card raw 오링크 차단.
+    if (p.method !== "card") return false;
+    if (p.payment_type !== "payment") return false;
+    // amount 대조 (DOSU-CONTAM 단일후보 오답 경로 차단의 핵심).
+    if (p.amount !== raw.amount) return false;
+    // Q2: 식별자 corroboration — approval_no OR tid (단독 결정권 없음: 위/아래 AND).
+    const approvalCorroborates =
+      hasApproval && p.external_approval_no !== null && p.external_approval_no === raw.approval_no;
+    const tidCorroborates =
+      hasTid && p.external_tid !== null && p.external_tid === raw.tid;
+    if (!approvalCorroborates && !tidCorroborates) return false;
+    // Q4: forward + same-KST-day 하드바운드(15/30min 아님).
+    if (!p.created_at) return false;
+    const crmMs = new Date(p.created_at).getTime();
+    if (crmMs < approvedMs) return false;                          // forward [approved_at, ...]
+    if (toKstDateStr(p.created_at) !== rawDateKst) return false;   // same KST day
+    return true;
   });
+
+  // 1차 판별: 후보 0/1 건이면 그대로 반환(1건이면 tier0 확정).
+  if (candidates.length <= 1) return candidates;
+
+  // ≥2 후보(충돌) → 창을 disambiguator 로: approved_at 이후 최근접 created_at.
+  let minDelta = Infinity;
+  for (const p of candidates) {
+    const d = new Date(p.created_at as string).getTime() - approvedMs;
+    if (d < minDelta) minDelta = d;
+  }
+  const nearest = candidates.filter(
+    (p) => new Date(p.created_at as string).getTime() - approvedMs === minDelta
+  );
+  // 최근접 유일 → 확정. 동률(모호) → 후보 다건 반환 → matchTransaction tier4_manual 강등.
+  return nearest.length === 1 ? nearest : candidates;
 }
 
 // ── Tier 1 — Tight 매칭 (단방향 [approved_at, +15분]) ────────────────────────

@@ -128,9 +128,14 @@ test('AC-2: 목록 표시명에서 "(신양식)" 소멸 + "진료비 계산서·
 // ── AC-3: 11종 재정렬 ──────────────────────────────────────────────────────────
 
 test('AC-3: SSOT DOCLIST_ORDER_10 = 확정 11종 순서(중복 0)', () => {
-  expect(DOCLIST_ORDER_10).toEqual(EXPECTED_ORDER);
-  expect(DOCLIST_ORDER_10.length).toBe(11);
-  expect(new Set(DOCLIST_ORDER_10).size).toBe(11);
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지(first_visit_mgmt_record)가 12번째로
+  //   additive 추가됨. 본 티켓(RECEIPT-CONSOLIDATE-REORDER)의 불변식 = 확정 11종이 '선두 prefix' 순서로
+  //   보존 + 구 bill_receipt 미포함 + 중복 0. 후속 additive 추가는 뒤에 append 되므로 exact-length 대신
+  //   prefix 검증으로 전환(원 티켓 순서·정리 의도 보존, 회귀 0).
+  expect(DOCLIST_ORDER_10.slice(0, EXPECTED_ORDER.length)).toEqual(EXPECTED_ORDER);
+  expect(DOCLIST_ORDER_10.length).toBeGreaterThanOrEqual(11);
+  expect(new Set(DOCLIST_ORDER_10).size).toBe(DOCLIST_ORDER_10.length);
+  expect(DOCLIST_ORDER_10).not.toContain('bill_receipt');
 });
 
 test('AC-3: orderDocList 결과 순서·항목수(11)가 확정 순서와 일치', () => {

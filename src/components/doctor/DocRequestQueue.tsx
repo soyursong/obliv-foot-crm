@@ -16,9 +16,15 @@ import { useAuth } from '@/lib/auth';
 import { birthYearAgeDisplay, chartNoDisplay, seoulHHMM, seoulISODate } from '@/lib/format';
 import {
   useOpinionRequestQueue,
-  usePublishedOpinionRequests,
+  // T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN: '서류 완료' 그룹 소스를 day-scoped(당일)
+  //   usePublishedOpinionRequests → all-time useAllPublishedOpinionRequests 로 확장. 자정 교차로 어제 발행분이
+  //   진료대시보드에서 사라지던 결함(REOPEN)을 제거한다. 날짜 스코프는 소비 컴포넌트가 selectDashboardCompletedRows
+  //   에서 '전체기간'으로 결정(진료대시보드=날짜선택기 없는 당일 surface). 매핑은 동일 mapPublishedRequestRow 공유(drift 0).
+  useAllPublishedOpinionRequests,
   useResolveOpinionRequest,
   useQueueClinicalSnaps,
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 서류작성 큐 행 담당 진료의(치료테이블 [진료]와 동일 값) 조회.
+  useQueueTreatingDoctors,
   buildOptionLabelMap,
   docTypeLabel,
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: '서류 완료' 서류명 클릭 → 실제 발행본 내용 read-only 열람.
@@ -34,6 +40,8 @@ import {
   OpinionEditorDialog,
   OPINION_SECTIONS,
   useClinicHeader,
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 드롭다운 옵션 소스(clinic_doctors) 재사용.
+  useClinicDoctors,
   type VisitorRow,
 } from '@/components/doctor/OpinionDocTab';
 // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX (복문 a): 큐 목록 '해당항목' 표시를 배타규칙으로 정규화.
@@ -57,13 +65,27 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, FilePen, Sparkles, Inbox, CheckCircle2, XCircle, FileText, Lock } from 'lucide-react';
 
+// T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN — 진료대시보드 '서류 완료' 그룹의 날짜 스코프 결정(소비 컴포넌트).
+//   RC: usePublishedOpinionRequests(day-scoped, resolved_at KST==today)만 읽어 어제 발행분이 자정을 넘기면
+//     진료대시보드 '서류 완료' 목록에서 사라졌다(현장 증상). track2(b) 발행완료 day-scope.
+//   FIX(치료테이블 07-26 선례 동형, db_change=false): 발행완료 소스를 all-time(useAllPublishedOpinionRequests)로
+//     전환하고, 진료대시보드는 날짜선택기가 없는 당일 surface이므로 날짜 스코프를 '전체기간'으로 결정한다.
+//     = 화면 표시 범위만 확장(비파괴). 발행/저장 로직·매핑(mapPublishedRequestRow)·정렬 semantics 전부 불변.
+//   순수 함수(E2E spec 이 직접 import·단언 → drift 방지): all-time 발행완료 행을 그대로(전체기간) 반환하되
+//     발행 시각 역순(resolvedAt desc) 방어적 재정렬(훅이 이미 정렬하지만 소스-무관 표시 순서 고정).
+export function selectDashboardCompletedRows(allPublished: OpinionRequestRow[]): OpinionRequestRow[] {
+  return [...allPublished].sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
+}
+
 export default function DocRequestQueue({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
 
   const { data: rows = [], isLoading, isError, error } = useOpinionRequestQueue(clinicId);
   // T-20260625-DOCDASH-DOCSECTION-COMPLETED-SUBHEADER: 발행 완료 환자를 목록에서 제거하지 않고 '서류 완료' 그룹으로 유지.
-  const { data: completedRows = [] } = usePublishedOpinionRequests(clinicId);
+  //   T-20260728-...-DATEFILTER-REOPEN: 소스=all-time(전체기간) → 과거일 발행분도 잔류(자정 교차 무손실). 스코프 결정은 selectDashboardCompletedRows.
+  const { data: allPublished = [] } = useAllPublishedOpinionRequests(clinicId);
+  const completedRows = useMemo(() => selectDashboardCompletedRows(allPublished), [allPublished]);
   const { data: clinicHeader = null } = useClinicHeader(clinicId);
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: '서류 완료' 서류명 클릭 → 실제 발행본 내용 열람.
   //   발행본(status='published', opinion_doc)은 이미 적재 — 완료 그룹 환자의 발행본만 read-only 조회(db_change=false).
@@ -81,6 +103,18 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
     [rows, completedRows],
   );
   const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, customerIds);
+
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 작업 대상 + 완료 그룹 각 행의 담당 진료의(치료테이블
+  //   [진료]와 동일 값 = check_ins.treating_doctor_id → clinic_doctors.name). checkInId 앵커로 해석.
+  const checkInIds = useMemo(
+    () => [...rows, ...completedRows].map((r) => r.checkInId).filter(Boolean) as string[],
+    [rows, completedRows],
+  );
+  const { data: treatingDoctors = {} } = useQueueTreatingDoctors(clinicId, checkInIds);
+  // checkInId → 담당 진료의명. 미지정/내원없음 → ''(셀에서 '미지정' graceful 표기).
+  const doctorNameForRow = (r: OpinionRequestRow) =>
+    (r.checkInId ? treatingDoctors[r.checkInId] : '') ?? '';
+
   const labelMap = useMemo(() => buildOptionLabelMap(), []);
 
   const [active, setActive] = useState<OpinionRequestRow | null>(null);
@@ -115,8 +149,12 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   //   발급일)만 원내 직원이 인라인 정정. 저장 = useUpdateOpinionAdminFields(요청행 field_data 오버레이, published 불오염).
   //   ★NOSYNC 정합(AC5): 옛 전체 '수정 팝업' 부활 아님 — 재출력/열람 동선 유지 위에 행정필드 전용 인라인 패널만 추가.
   const adminMut = useUpdateOpinionAdminFields(clinicId);
-  type AdminForm = { requestDate: string; diagCode: string; doctorName: string; issueDate: string };
-  const emptyAdminForm: AdminForm = { requestDate: '', diagCode: '', doctorName: '', issueDate: '' };
+  // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 = 등록 의사(clinic_doctors) 드롭다운.
+  //   free-text 금지(오타/불일치 명의가 법정서류에 박히는 것 원천 차단). 선택 id 를 doctor_id 앵커로 저장 →
+  //   열람/재출력 시 도장(직인)이 정정 진료의 본인 직인으로 자동 추종(AC-7).
+  const { data: clinicDoctors = [] } = useClinicDoctors(clinicId);
+  type AdminForm = { requestDate: string; diagCode: string; doctorName: string; doctorId: string; issueDate: string };
+  const emptyAdminForm: AdminForm = { requestDate: '', diagCode: '', doctorName: '', doctorId: '', issueDate: '' };
   const [adminForm, setAdminForm] = useState<AdminForm>(emptyAdminForm);
   const [adminInit, setAdminInit] = useState<AdminForm>(emptyAdminForm);
 
@@ -128,20 +166,29 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
       ov?.issueDate
       || (viewDoc?.issuedAt ? seoulISODate(viewDoc.issuedAt)
         : viewTarget.resolvedAt ? seoulISODate(viewTarget.resolvedAt) : '');
+    const initDoctorName = ov?.doctorName ?? viewDoc?.doctorName ?? '';
+    // doctor_id 앵커: 오버레이 id 우선, 없으면(레거시/스냅샷) 이름으로 clinic_doctors 역매칭해 seed(무저장, 표시 정합).
+    const initDoctorId =
+      ov?.doctorId
+      ?? viewDoc?.issuedByDoctorId
+      ?? (initDoctorName ? (clinicDoctors.find((d) => d.name === initDoctorName)?.id ?? '') : '')
+      ?? '';
     const init: AdminForm = {
       requestDate: viewTarget.requestDate || '',
       diagCode: ov?.diagCode ?? '',
-      doctorName: ov?.doctorName ?? viewDoc?.doctorName ?? '',
+      doctorName: initDoctorName,
+      doctorId: initDoctorId || '',
       issueDate: initIssueDate,
     };
     setAdminForm(init);
     setAdminInit(init);
-  }, [viewTarget, viewDoc]);
+  }, [viewTarget, viewDoc, clinicDoctors]);
 
   const adminDirty =
     adminForm.requestDate !== adminInit.requestDate
     || adminForm.diagCode !== adminInit.diagCode
     || adminForm.doctorName !== adminInit.doctorName
+    || adminForm.doctorId !== adminInit.doctorId
     || adminForm.issueDate !== adminInit.issueDate;
 
   const handleAdminSave = async () => {
@@ -153,7 +200,13 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
         // 변경된 필드만 전달(미변경=undefined → 오버레이/로그 미생성).
         requestDate: adminForm.requestDate !== adminInit.requestDate ? adminForm.requestDate : undefined,
         diagCode: adminForm.diagCode !== adminInit.diagCode ? adminForm.diagCode : undefined,
-        doctorName: adminForm.doctorName !== adminInit.doctorName ? adminForm.doctorName : undefined,
+        // 담당의 정정 시 이름·id 앵커를 함께 전달(도장 자동추종, AC-6/AC-7). 이름 또는 id 어느 쪽이 바뀌어도 전송.
+        doctorName:
+          (adminForm.doctorName !== adminInit.doctorName || adminForm.doctorId !== adminInit.doctorId)
+            ? adminForm.doctorName : undefined,
+        doctorId:
+          (adminForm.doctorName !== adminInit.doctorName || adminForm.doctorId !== adminInit.doctorId)
+            ? (adminForm.doctorId || undefined) : undefined,
         issueDate: adminForm.issueDate !== adminInit.issueDate ? adminForm.issueDate : undefined,
         editorId: profile.id,
         editorName: profile.name ?? profile.email ?? '직원',
@@ -285,6 +338,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                 variant="pending"
                 clinicalSnaps={clinicalSnaps}
                 itemLabelsForRow={itemLabelsForRow}
+                doctorNameForRow={doctorNameForRow}
                 onWrite={openWrite}
                 onCancel={openCancel}
               />
@@ -307,6 +361,7 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   variant="done"
                   clinicalSnaps={clinicalSnaps}
                   itemLabelsForRow={itemLabelsForRow}
+                  doctorNameForRow={doctorNameForRow}
                   onWrite={openWrite}
                   onViewDoc={openDocView}
                 />
@@ -434,16 +489,29 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
                   data-testid="docreq-admin-diag-code"
                 />
               </label>
+              {/* T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT (AC-6): 담당의 = 등록 의사 드롭다운(free-text 금지).
+                  선택 시 이름(표시)과 doctor_id(도장 자동추종 앵커)를 함께 세팅. 미지정 옵션은 담당의 비움. */}
               <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 담당의
-                <input
-                  type="text"
-                  value={adminForm.doctorName}
-                  onChange={(e) => setAdminForm((f) => ({ ...f, doctorName: e.target.value }))}
-                  placeholder="발행 담당의명"
+                <select
+                  value={adminForm.doctorId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const doc = clinicDoctors.find((d) => d.id === id) ?? null;
+                    setAdminForm((f) => ({ ...f, doctorId: id, doctorName: doc?.name ?? '' }));
+                  }}
                   className="h-10 rounded-md border border-input bg-background px-2 text-sm"
                   data-testid="docreq-admin-doctor-name"
-                />
+                >
+                  <option value="">담당의 선택</option>
+                  {/* 레거시: 저장된 담당의명이 현 clinic_doctors 목록에 없으면(비활성/삭제) 이름 옵션을 보존 표기. */}
+                  {adminForm.doctorName && !clinicDoctors.some((d) => d.name === adminForm.doctorName) && (
+                    <option value="">{adminForm.doctorName} (미등록)</option>
+                  )}
+                  {clinicDoctors.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <p className="text-[11px] leading-snug text-slate-500">
@@ -533,6 +601,7 @@ function DocReqTable({
   variant,
   clinicalSnaps,
   itemLabelsForRow,
+  doctorNameForRow,
   onWrite,
   onCancel,
   onViewDoc,
@@ -542,6 +611,8 @@ function DocReqTable({
   clinicalSnaps: Record<string, ClinicalSnap>;
   // T-20260629-foot-DOCREQ-DIAGCERT-CONTRA-MUTEX: 행 단위 배타 정규화 라벨(혼합 큐 위반 조합 표시 차단).
   itemLabelsForRow: (r: OpinionRequestRow) => string;
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 행 담당 진료의명(치료테이블 [진료]와 동일 값). ''=미지정.
+  doctorNameForRow: (r: OpinionRequestRow) => string;
   onWrite: (r: OpinionRequestRow) => void;
   // T-20260715-foot-DOCREQ-CANCEL-BTN-CHART2: pending 그룹에만 전달(done=undefined → 완료행 취소버튼 미표시, AC-7).
   onCancel?: (r: OpinionRequestRow) => void;
@@ -555,6 +626,8 @@ function DocReqTable({
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">이름</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">생년(만나이)</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">차트번호</th>
+          {/* T-20260728-foot-DOCWRITE-DOCTOR-LINK: 담당 진료의(치료테이블 [진료]와 동일 값) 표시 컬럼. */}
+          <th className="px-2 py-1.5 font-medium whitespace-nowrap">담당 진료의</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">오늘시술</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">처방내역</th>
           <th className="px-2 py-1.5 font-medium whitespace-nowrap">임상경과</th>
@@ -571,6 +644,7 @@ function DocReqTable({
             variant={variant}
             snap={r.customerId ? clinicalSnaps[r.customerId] : undefined}
             itemLabels={itemLabelsForRow(r)}
+            doctorName={doctorNameForRow(r)}
             onWrite={onWrite}
             onCancel={onCancel}
             onViewDoc={onViewDoc}
@@ -591,6 +665,7 @@ function DocRequestRow({
   variant = 'pending',
   snap,
   itemLabels,
+  doctorName,
   onWrite,
   onCancel,
   onViewDoc,
@@ -599,6 +674,8 @@ function DocRequestRow({
   variant?: 'pending' | 'done';
   snap: ClinicalSnap | undefined;
   itemLabels: string;
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 담당 진료의명(치료테이블 [진료]와 동일 값). ''=미지정.
+  doctorName: string;
   onWrite: (r: OpinionRequestRow) => void;
   onCancel?: (r: OpinionRequestRow) => void;
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: 서류명 클릭 → 실제 발행본 내용 열람(done 그룹만 전달).
@@ -616,7 +693,7 @@ function DocRequestRow({
   const progress = snap?.progress || null;
   const isDone = variant === 'done';
   // AC1/AC4: 발행완료 옆 표시할 발행 서류명 = 발행된 요청의 doc_type 라벨(진단서/소견서). 완료 그룹 = published row 이므로 항상 존재.
-  //   ★read-only READ: usePublishedOpinionRequests 가 이미 읽어온 field_data.doc_type/selected_keys 만 표시(신규 조회·스키마 변경 0).
+  //   ★read-only READ: 발행완료 훅(useAllPublishedOpinionRequests)이 이미 읽어온 field_data.doc_type/selected_keys 만 표시(신규 조회·스키마 변경 0).
   const doneDocLabel = docTypeLabel(r.docType);
 
   return (
@@ -633,6 +710,17 @@ function DocRequestRow({
       </td>
       <td className="px-2 py-1.5 tabular-nums whitespace-nowrap text-foreground/90">{birthYearAgeDisplay(r.birthDate) || '—'}</td>
       <td className="px-2 py-1.5 font-mono whitespace-nowrap text-foreground/90">{r.chartNo ? chartNoDisplay(r.chartNo) : '—'}</td>
+
+      {/* T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 담당 진료의 = 치료테이블 [진료]와 동일 값
+          (check_ins.treating_doctor_id → clinic_doctors.name). 미지정/내원없음 → '미지정'(회색, graceful). */}
+      <td className="px-2 py-1.5 whitespace-nowrap" data-testid="docreq-cell-doctor">
+        {doctorName ? (
+          <span className="font-medium text-foreground/90">{doctorName}</span>
+        ) : (
+          <span className="text-muted-foreground/70">미지정</span>
+        )}
+      </td>
+
       <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80"><span className="block truncate" title={snap?.treatment ?? ''}>{snap?.treatment || '—'}</span></td>
 
       {/* 처방내역 ← medical_charts.prescription_items. RXCLIN 표현 상속: 미리보기 클릭 → 컬럼 폭 드롭다운 전문(widthScale=2, DoctorCallDashboard와 동일). */}

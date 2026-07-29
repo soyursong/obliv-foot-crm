@@ -129,7 +129,9 @@ test.describe('B. 소스 구조 가드', () => {
     expect(s).toContain('usePublishedOpinionDocs');
     expect(s).toContain('matchPublishedOpinionDoc');
     expect(s).toContain('composeOpinionDoc'); // 레거시 폴백
-    expect(s).toContain('useCustomerOpinionRequests');
+    // T-20260728-foot-CHART2-DOCREQ-HISTORY-COORDPERM(item①): 상세 테이블 확장으로 customer-scoped 단일소스 훅이
+    //   useCustomerOpinionRequests(2-state) → useCustomerDocRequestHistory(3-state, 취소 포함)로 진화. 단일소스 원칙 불변.
+    expect(s).toContain('useCustomerDocRequestHistory');
   });
 
   test('B2: read-only 경계 — 발행 파이프라인 write/RPC 미접촉 (회귀임계 a)', () => {

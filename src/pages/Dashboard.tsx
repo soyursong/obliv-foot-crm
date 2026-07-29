@@ -122,8 +122,8 @@ import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 슬롯 진입 시 상담사/치료사 자동배정(best-effort)
 import { maybeAutoAssign, logRealAssignment } from '@/lib/autoAssign';
-// T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 완료 슬롯 이동 하드차단.
-import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
+// T-20260728-foot-INSUR-POPUP-REMOVE: 급여 진료기록 완료 하드차단(MEDLAW22-B-GATE) 해제 —
+//   Dashboard 완료 경로(드래그/우클릭)에서 evaluateMedicalRecordGate 하드차단 호출 제거(문원장 B안, 2026-07-28).
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 미수 배지 (소스=footBilling outstanding SSOT 재사용)
 import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
@@ -632,6 +632,9 @@ const DraggableCard = memo(function DraggableCard({
             {mmss}
           </span>
           <div className="flex items-center gap-0.5">
+            {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지를
+                하단 뱃지 줄 → 타이머 행 우측 빈 공간으로 이동(총괄 확정 F0BL0PC6Z9Q 빨간박스). 색/아이콘/판정 불변, 위치만. */}
+            <ExamRequestBadges flags={examFlags} />
             {/* T-20260502-foot-LASER-TIME-UNIT: 레이저실 카드에 시간 단위 배지 */}
             {checkIn.status === 'laser' && checkIn.laser_minutes != null && (
               <Badge className="h-3.5 px-0.5 text-[9px] bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">
@@ -682,8 +685,7 @@ const DraggableCard = memo(function DraggableCard({
           {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           )}
-          {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지 */}
-          <ExamRequestBadges flags={examFlags} />
+          {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균/피 뱃지는 타이머 행 우측으로 이동(위 시간행 참조). 하단 줄에서 제거. */}
           {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
           <OutstandingDueBadge data={outstandingData} />
           {hasPkg && (
@@ -833,6 +835,8 @@ const DraggableCard = memo(function DraggableCard({
           {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
         <div className="flex items-center gap-0.5">
+          {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균/피 검사신청 뱃지 → 타이머 행 우측 빈 공간(non-compact 경로). 색/아이콘/판정 불변, 위치만 이동. */}
+          <ExamRequestBadges flags={examFlags} />
           {checkIn.notes?.id_check_required && (
             <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
           )}
@@ -865,8 +869,7 @@ const DraggableCard = memo(function DraggableCard({
           /* T-20260625-foot-COLOR-CONVENTION-UNIFY (총괄 A안): 초진=파랑(blue). 구 yellow 하드코드 → A안 파랑 통일 */
           <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         )}
-        {/* T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균(🔬초록)/피(🩸빨강) 검사신청 뱃지 */}
-        <ExamRequestBadges flags={examFlags} />
+        {/* T-20260727-foot-DASHCARD-EXAMICON-TIMER-MOVE: 균/피 뱃지는 타이머 행 우측으로 이동(위 시간행 참조). 하단 줄에서 제거. */}
         {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 체크인 고객박스 미수 배지 (결제완료 시 자동 삭제) */}
         <OutstandingDueBadge data={outstandingData} />
         {hasPkg && (
@@ -5462,20 +5465,11 @@ export default function Dashboard() {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
 
-      // ── T-20260612-foot-MEDLAW22-B-GATE: 완료 슬롯 이동 시 급여 진료기록 게이트(하드차단) ──
-      //   카드 직접 드래그로 수납창을 건너뛰는 완료 우회 경로도 동일하게 막는다(의료법 제22조).
-      //   급여 방문 + 서명 진료기록 미존재 → 차단(낙관적 업데이트 전 abort). 비급여는 즉시 통과.
-      if (newStatus === 'done') {
-        try {
-          const gate = await evaluateMedicalRecordGate(row);
-          if (gate.blocked) {
-            toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
-            return;
-          }
-        } catch {
-          // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
-        }
-      }
+      // ── T-20260728-foot-INSUR-POPUP-REMOVE: 완료 슬롯 이동 급여 진료기록 하드차단 해제 ──
+      //   구 MEDLAW22-B-GATE 하드차단(급여+서명진료기록 미존재 시 완료 abort)을 제거한다.
+      //   결정 = 문지은 대표원장 "B안" 직접 컨펌(2026-07-28) — 완료 전환을 막지 않는다.
+      //   급여 청구 정합상 진료기록 후속 작성 안내는 결제 미니창 inline ℹ️ soft 리마인더로 존치.
+      //   (드래그 완료는 정상 진행. 비급여도 종전대로 무영향.)
 
       // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 목적 슬롯 맨 뒤(FIFO)
       const moveOrder = nextSlotSortOrder(newStatus, row.id);
@@ -5863,22 +5857,10 @@ export default function Dashboard() {
       return;
     }
 
-    // ── T-20260715-foot-MEDLAW22B-CTXMENU-COMPLETE-GATE-BYPASS: 우클릭 완료 경로 게이트 정합 ──
-    //   드래그 완료 경로(handleDragEnd else-branch)와 동일 조건·메시지로 급여 진료기록
-    //   하드차단 게이트(MEDLAW22-B-GATE)를 적용한다. 우클릭이 게이트를 우회하던 불일치 해소.
-    //   기존 evaluateMedicalRecordGate 로직 재사용(신규 정의 없음) — 비급여는 즉시 통과.
-    //   낙관적 업데이트(setRows) 이전에 abort → 드래그와 identical.
-    if (newStatus === 'done') {
-      try {
-        const gate = await evaluateMedicalRecordGate(ci);
-        if (gate.blocked) {
-          toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
-          return;
-        }
-      } catch {
-        // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
-      }
-    }
+    // ── T-20260728-foot-INSUR-POPUP-REMOVE: 우클릭 완료 경로 급여 진료기록 하드차단 해제 ──
+    //   드래그 완료 경로와 동일하게, 구 MEDLAW22-B-GATE 하드차단을 제거한다(우클릭도 정합).
+    //   결정 = 문지은 대표원장 "B안" 직접 컨펌(2026-07-28) — 완료 전환을 막지 않는다.
+    //   급여 청구 정합상 진료기록 후속 작성 안내는 결제 미니창 inline ℹ️ soft 리마인더로 존치.
 
     markRecentlyUpdated(ci.id);
     // #25 경합 방지: 함수형 업데이트 + 직전 row 캡처
@@ -7961,6 +7943,13 @@ export default function Dashboard() {
           setMiniPayTarget(null);
           // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG4: 결제 완료 시 counter++ → 같은 checkIn 재결제 시 강제 리마운트
           setMiniPayAttemptCounter((c) => c + 1);
+          fetchCheckIns();
+          fetchPayments();
+        }}
+        onSettled={() => {
+          // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 후 미니창을 닫지 않는다(현장이 같은 창에서 [출력] 이어감).
+          //   데이터 리페치만 수행 — setMiniPayTarget(null)(닫기)·counter++(리마운트) 미수행으로 창/내부상태(서류 carry-forward) 유지.
+          //   checkIn 프롭(miniPayTarget) 객체 불변 → PMW 리셋 useEffect([checkIn?.id]) 미재실행 → settled/선택항목 보존.
           fetchCheckIns();
           fetchPayments();
         }}

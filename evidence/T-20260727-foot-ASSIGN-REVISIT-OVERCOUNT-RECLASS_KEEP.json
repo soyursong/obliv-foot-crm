@@ -1,0 +1,82 @@
+[
+ {
+  "record_id": "cba142a6-918b-4c71-95df-1cb6b64b3ed5",
+  "customer_id": "b3b7eac9-5974-4056-9fa5-1f174be3c31a",
+  "consultant": "강경민",
+  "assign_kst": "2026-07-25 09:48",
+  "prior_done_visits": 1,
+  "first_prior_visit": "2026-07-18",
+  "last_prior_visit": "2026-07-18",
+  "evidence_record_id": "85766c3b-88ed-4998-b636-a103fc3aed7e"
+ },
+ {
+  "record_id": "d8c8a41d-ff49-4a21-b73d-b181d3aea22e",
+  "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+  "consultant": "김지윤",
+  "assign_kst": "2026-07-04 14:08",
+  "prior_done_visits": 15,
+  "first_prior_visit": "2026-05-20",
+  "last_prior_visit": "2026-06-30",
+  "evidence_record_id": "198dd309-624f-4d78-8f9f-71a798d11af8"
+ },
+ {
+  "record_id": "1c2117de-b091-4227-b8a5-a167c1d865b7",
+  "customer_id": "299b6535-e1f1-420a-bbc2-8f552a4e7487",
+  "consultant": "김지윤",
+  "assign_kst": "2026-07-10 17:57",
+  "prior_done_visits": 1,
+  "first_prior_visit": "2026-06-20",
+  "last_prior_visit": "2026-06-20",
+  "evidence_record_id": "60bfd335-7733-4d77-84e2-2019b171463a"
+ },
+ {
+  "record_id": "73cf24a7-e856-46b6-b036-565491b57e22",
+  "customer_id": "890b3d4e-6264-46d0-9ef4-9a0755db84f1",
+  "consultant": "김지윤",
+  "assign_kst": "2026-07-15 18:23",
+  "prior_done_visits": 1,
+  "first_prior_visit": "2026-07-15",
+  "last_prior_visit": "2026-07-15",
+  "evidence_record_id": "5e7da60c-370a-4825-9b4e-7a8fe1d76f50"
+ },
+ {
+  "record_id": "922ffb60-fe02-42ec-9916-ec6b4e635b30",
+  "customer_id": "9200573f-bf1c-4dab-8c69-f87e1f53a2c6",
+  "consultant": "송지현",
+  "assign_kst": "2026-07-02 11:00",
+  "prior_done_visits": 1,
+  "first_prior_visit": "2026-06-30",
+  "last_prior_visit": "2026-06-30",
+  "evidence_record_id": "c75d8192-5084-4ad2-8f0a-c99ece7e54d8"
+ },
+ {
+  "record_id": "98a70e14-69a3-4143-9fd2-5b12010236a0",
+  "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+  "consultant": "정연주",
+  "assign_kst": "2026-07-01 11:40",
+  "prior_done_visits": 15,
+  "first_prior_visit": "2026-05-20",
+  "last_prior_visit": "2026-06-30",
+  "evidence_record_id": "198dd309-624f-4d78-8f9f-71a798d11af8"
+ },
+ {
+  "record_id": "25db7af7-79c6-494a-8fc6-e84819bedeaf",
+  "customer_id": "d2b849b3-cb3d-4d4e-88f0-1e5b5d393d7a",
+  "consultant": "정연주",
+  "assign_kst": "2026-07-07 17:45",
+  "prior_done_visits": 1,
+  "first_prior_visit": "2026-07-01",
+  "last_prior_visit": "2026-07-01",
+  "evidence_record_id": "f1d45a99-0cd6-4edc-89eb-7111cb6e0d73"
+ },
+ {
+  "record_id": "01e34dd4-f4e5-4768-867c-dc59e2c1dee6",
+  "customer_id": "9200573f-bf1c-4dab-8c69-f87e1f53a2c6",
+  "consultant": "정연주",
+  "assign_kst": "2026-07-13 10:09",
+  "prior_done_visits": 2,
+  "first_prior_visit": "2026-06-30",
+  "last_prior_visit": "2026-07-02",
+  "evidence_record_id": "c75d8192-5084-4ad2-8f0a-c99ece7e54d8"
+ }
+]

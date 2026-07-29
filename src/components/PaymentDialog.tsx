@@ -20,8 +20,8 @@ import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount, chartNoBadge } from '@/lib/format';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, type PackagePaymentRow } from '@/lib/footBilling';
-// T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 완료 하드차단(방어적 적용).
-import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
+// T-20260728-foot-INSUR-POPUP-REMOVE: 급여 진료기록 수납완료 하드차단(MEDLAW22-B-GATE) 해제 —
+//   수납 완료 경로의 evaluateMedicalRecordGate 하드차단 호출 제거(문원장 B안, 2026-07-28).
 import { cn } from '@/lib/utils';
 // T-20260616-foot-PAYDLG-INSURANCE-PANEL-ROLLBACK: 라이브 수납 차단 P0 핫픽스 —
 // 결제 미니창 상단 '급여 진료비 미리보기(건강보험)' 패널 렌더 롤백. 패널 컴포넌트/보험기능은 보존.
@@ -353,21 +353,10 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
     // T-20260514-foot-PAYMENTDLG-TRYCATCH: 네트워크 오류 등 미처리 예외 → submitting 영구 멈춤 방지
     try {
 
-    // ── T-20260612-foot-MEDLAW22-B-GATE: 수납 완료(payment_waiting→done) 전 진료기록 게이트 ──
-    //   수납 완료로 done 전이되는 경우에만 평가(상담→시술 전이는 무관). 급여 방문 + 서명 진료기록
-    //   미존재 → 하드차단(사유 우회 없음). 비급여는 즉시 통과. 평가 오류는 과차단 방지 위해 통과.
-    if (checkIn.status === 'payment_waiting') {
-      try {
-        const gate = await evaluateMedicalRecordGate(checkIn);
-        if (gate.blocked) {
-          toast.error(gate.reason ?? MEDLAW22_BLOCK_MESSAGE);
-          setSubmitting(false);
-          return;
-        }
-      } catch {
-        // 비차단(운영 연속성 우선).
-      }
-    }
+    // ── T-20260728-foot-INSUR-POPUP-REMOVE: 수납 완료 급여 진료기록 하드차단 해제 ──
+    //   구 MEDLAW22-B-GATE 하드차단(payment_waiting→done 시 급여+서명진료기록 미존재 → 수납 abort)을 제거.
+    //   결정 = 문지은 대표원장 "B안" 직접 컨펌(2026-07-28) — 수납·완료를 막지 않는다.
+    //   급여 청구 정합상 진료기록 후속 작성 안내는 결제 미니창 inline ℹ️ soft 리마인더로 존치.
 
     if (balanceKind) {
       // ── T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 잔금(미수금) 결제 ──────────────

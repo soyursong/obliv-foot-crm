@@ -60,12 +60,16 @@ import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 // T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 전용 별도 팝업
 import { DocumentReprintPopup } from '@/components/DocumentReprintPopup';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
+// T-20260727-foot-RESVMGMT-CARD-STATUS-BADGE-SYNC: 도파민TM 내원콜(내원예정/부재) 결과 배지 —
+//   대시보드 통합시간표 box카드(DraggableBox1/2)와 동일 컴포넌트·데이터소스(reservation.visit_call_result) 재사용.
+import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
 // T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 직접 렌더 제거 → AdminLayout ChartContext 통합
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { useChart } from '@/lib/chartContext';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
-import { visitRouteOptionsFor } from '@/lib/types';
+import { visitRouteOptionsFor, resolveRegistrarDisplay, resolveRegistrarProvenance } from '@/lib/types';
+import { isMineRegistrar } from '@/lib/registrarMatch';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 // T-20260629-foot-STAFFASSIGN-ALERT-MOVE-MARQUEE: 자동배정 알림을 날짜선택 옆에 배치(헤더에서 이전)
 import AssignmentNotifyBell from '@/components/AssignmentNotifyBell';
@@ -2202,7 +2206,8 @@ export default function Reservations() {
             const slotList = (time: string) => {
               const key = `${dateStr}_${time}`;
               return [...(resvByKey[key] ?? [])]
-                .filter((r) => !filterMine || (mineTarget !== '' && (r.registrar_name ?? '').trim() === mineTarget))
+                // T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-1: exact + '[도파민TM]' prefix clean-key OR 매칭.
+                .filter((r) => !filterMine || isMineRegistrar(r.registrar_name, mineTarget, r.source_system))
                 .sort((a, b) => {
                   const ko = KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)];
                   if (ko !== 0) return ko;
@@ -2313,6 +2318,12 @@ export default function Reservations() {
                       {r.customer_name?.trim() || '이름없음'}
                     </span>
                   )}
+                  {/* T-20260727-foot-RESVMGMT-CARD-STATUS-BADGE-SYNC: 내원콜(내원예정/부재) 결과 배지 — 이름 옆 인라인.
+                      대시보드 통합시간표 box카드(우측목록) 관례 미러링. result=null 이면 컴포넌트가 null 반환(배지 없는 카드 레이아웃 무영향).
+                      취소건은 여타 인라인 표기(brief_note 등)와 동일하게 미표기(스테일 콜결과 노출 방지). */}
+                  {r.status !== 'cancelled' && (
+                    <VisitCallResultBadge result={r.visit_call_result} compact />
+                  )}
                   {/* T-20260630-...7ADJ ⑥ / [항목6-1] 정합: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                 </div>
                 {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 성함 '바로 아래'에 표기(재배치).
@@ -2354,11 +2365,30 @@ export default function Reservations() {
                 <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                   <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
                   <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
-                  {r.registrar_name && (
-                    <span className="ml-auto min-w-0 truncate text-teal-700" title={`예약등록자 ${r.registrar_name}`}>
-                      @{r.registrar_name}
-                    </span>
-                  )}
+                  {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′): 인라인 '[도파민TM]' 라벨 strip(이름만)
+                      + dopamine-origin provenance 는 비-인라인 뱃지로 relocate(source_system 파생, 非삭제). */}
+                  {(() => {
+                    const regDisplay = resolveRegistrarDisplay(r.registrar_name, r.source_system);
+                    if (!regDisplay) return null;
+                    const prov = resolveRegistrarProvenance(r.source_system);
+                    return (
+                      <span
+                        className="ml-auto flex min-w-0 items-center gap-0.5 overflow-hidden text-teal-700"
+                        title={`예약등록자 ${regDisplay}${prov === 'dopamine' ? ' · 도파민TM 유입' : ''}`}
+                      >
+                        <span className="min-w-0 truncate">@{regDisplay}</span>
+                        {prov === 'dopamine' && (
+                          <span
+                            className="shrink-0 rounded bg-violet-100 px-0.5 text-[6px] leading-tight text-violet-600"
+                            data-testid={`registrar-provenance-${r.id}`}
+                            title="도파민TM 유입 예약(출처 표시)"
+                          >
+                            TM
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
               </DraggableResv>
@@ -2705,7 +2735,8 @@ export default function Reservations() {
                                   // T-20260623-foot-RESVMGMT-MYRESV-ASSIGNEE-DROP-ADD: '내 예약' 기준 담당자 = filterAssignee 선택값(없으면 본인 myDisplayName).
                                   const mineTarget = filterAssignee !== '' ? filterAssignee : myDisplayName;
                                   const visible = list
-                                    .filter((r) => !filterMine || (mineTarget !== '' && (r.registrar_name ?? '').trim() === mineTarget));
+                                    // T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-1: exact + '[도파민TM]' prefix clean-key OR 매칭.
+                                    .filter((r) => !filterMine || isMineRegistrar(r.registrar_name, mineTarget, r.source_system));
                                   const byTime = (a: Reservation, b: Reservation) =>
                                     a.reservation_time < b.reservation_time ? -1 : a.reservation_time > b.reservation_time ? 1 : 0;
                                   const colNew = visible.filter((r) => resvKind(r) === 'new').sort(byTime);     // 왼쪽 열 = 초진
@@ -2854,6 +2885,12 @@ export default function Reservations() {
                                           {chartNoBadge(resvChartMap.get(r.customer_id))}
                                         </span>
                                       )}
+                                      {/* T-20260727-foot-RESVMGMT-CARD-STATUS-BADGE-SYNC: 내원콜(내원예정/부재) 결과 배지 — 이름 옆 인라인(일뷰 renderDayCard 정합).
+                                          대시보드 통합시간표 box카드(우측목록) 관례 동일 컴포넌트·데이터소스(visit_call_result) 재사용. result=null 이면 미렌더(무영향).
+                                          취소건은 미표기(brief_note 등 여타 인라인 표기와 동일 게이트). */}
+                                      {r.status !== 'cancelled' && (
+                                        <VisitCallResultBadge result={r.visit_call_result} compact />
+                                      )}
                                       {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row1: 주뷰 고객박스를 일뷰(renderDayCard) 기준으로 통일 → 이름만.
                                           회차(N회)·진료필요·다음힐러·예약경로 배지 제거(renderDayCard Row1과 정합, L2088~). 취소건 차트번호 배지(PAIRING-AUDIT: 환자명 단독노출 0)는 유지. */}
                                     </div>
@@ -2898,15 +2935,31 @@ export default function Reservations() {
                                     <div className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[7px] opacity-80">
                                       <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', KIND_DOT[resvKind(r)])} />
                                       <span className="shrink-0">{STATUS_LABEL[r.status]}</span>
-                                      {r.registrar_name && (
-                                        <span
-                                          className="ml-auto min-w-0 truncate text-teal-700"
-                                          data-testid={`registrar-tag-${r.id}`}
-                                          title={`예약등록자 ${r.registrar_name}`}
-                                        >
-                                          @{r.registrar_name}
-                                        </span>
-                                      )}
+                                      {/* T-20260728-foot-RESV-DOPATM-BADGE-NAMEONLY-MYFILTER AC-2 (A′): 인라인 '[도파민TM]' 라벨 strip(이름만)
+                                          + dopamine-origin provenance 는 비-인라인 뱃지로 relocate(source_system 파생, 非삭제). */}
+                                      {(() => {
+                                        const regDisplay = resolveRegistrarDisplay(r.registrar_name, r.source_system);
+                                        if (!regDisplay) return null;
+                                        const prov = resolveRegistrarProvenance(r.source_system);
+                                        return (
+                                          <span
+                                            className="ml-auto flex min-w-0 items-center gap-0.5 overflow-hidden text-teal-700"
+                                            data-testid={`registrar-tag-${r.id}`}
+                                            title={`예약등록자 ${regDisplay}${prov === 'dopamine' ? ' · 도파민TM 유입' : ''}`}
+                                          >
+                                            <span className="min-w-0 truncate">@{regDisplay}</span>
+                                            {prov === 'dopamine' && (
+                                              <span
+                                                className="shrink-0 rounded bg-violet-100 px-0.5 text-[6px] leading-tight text-violet-600"
+                                                data-testid={`registrar-provenance-${r.id}`}
+                                                title="도파민TM 유입 예약(출처 표시)"
+                                              >
+                                                TM
+                                              </span>
+                                            )}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                     {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row4/5/6 제거(일뷰 정합):
                                         · Row4 예약메모(📝 booking_memo) 제거 — hover 간략정보(bookingMemo)로 이미 노출.
@@ -3125,6 +3178,9 @@ export default function Reservations() {
         checkIn={resvMiniPayTarget}
         onClose={() => setResvMiniPayTarget(null)}
         onComplete={() => setResvMiniPayTarget(null)}
+        // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 후 미니창 유지(같은 창에서 [출력] 이어감).
+        //   예약관리 경로는 별도 리페치 없음 → 닫기(setResvMiniPayTarget(null)) 미수행만으로 창/내부상태 보존.
+        onSettled={() => { /* keep mini-window open */ }}
         onSaved={() => { toast.success('수납 완료'); setResvMiniPayTarget(null); }}
       />
     </div>

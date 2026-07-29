@@ -725,6 +725,43 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     active: true,
     sort_order: 100,
   },
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 (초진 상태·관리계획 기록·인쇄).
+  //   서류 목록 노출은 DOCLIST_ORDER_10 화이트리스트에 form_key 등록으로 발동(아래). 카테고리 그룹='관리기록'.
+  //   field_map = 자동채움(성명·생년월일·연락처·초진일 등) + 자유텍스트 섹션. 체크박스(방문목적/좌우·발가락/
+  //   촬영/초기관리/통증/보행)는 DocumentPrintPanel 전용 체크칩 블록에서 ✔ 값 토글 → HTML {{key}} 바인딩
+  //   (field_map 미포함 = 텍스트 input 미노출). 운영 노출은 form_templates ADDITIVE seed row(멱등 마이그);
+  //   FALLBACK 은 빈 DB/프리뷰 목록 정합용(SSOT-폴백 불일치 방지, additive·db_change 없음).
+  {
+    id: 'fallback-first-visit-mgmt-record',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'first_visit_mgmt_record',
+    name_ko: '초진 관리기록지',
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name',      label: '성명',            type: 'text',      x: 0, y: 0 },
+      { key: 'patient_birthdate', label: '생년월일',        type: 'text',      x: 0, y: 0 },
+      { key: 'patient_phone',     label: '연락처',          type: 'text',      x: 0, y: 0 },
+      { key: 'visit_date',        label: '초진일',          type: 'date',      x: 0, y: 0 },
+      { key: 'vp_other_text',     label: '방문목적 기타',   type: 'text',      x: 0, y: 0 },
+      { key: 'symptom_history',   label: '증상 발생 경위',  type: 'multiline', x: 0, y: 0, w: 400, h: 60 },
+      { key: 'nail_status',       label: '발톱 상태',       type: 'multiline', x: 0, y: 0, w: 400, h: 40 },
+      { key: 'skin_status',       label: '피부 상태',       type: 'multiline', x: 0, y: 0, w: 400, h: 40 },
+      { key: 'other_check',       label: '기타 확인 사항',  type: 'multiline', x: 0, y: 0, w: 400, h: 40 },
+      { key: 'care_other_text',   label: '초기관리 기타',   type: 'text',      x: 0, y: 0 },
+      { key: 'care_plan',         label: '관리 계획',       type: 'multiline', x: 0, y: 0, w: 400, h: 60 },
+      { key: 'remarks',           label: '특이사항',        type: 'multiline', x: 0, y: 0, w: 400, h: 60 },
+      { key: 'issue_date',        label: '발급일',          type: 'date',      x: 0, y: 0 },
+      { key: 'clinic_name',       label: '센터명',          type: 'text',      x: 0, y: 0 },
+      { key: 'doctor_name',       label: '담당자',          type: 'text',      x: 0, y: 0 },
+    ],
+    requires_signature: false,
+    // 초진 기록 = 데스크/코디·매니저·치료사 등 초진 접점 직군 발행. (의료 게이트 서류 아님)
+    required_role: 'admin|manager|coordinator|therapist',
+    active: true,
+    sort_order: 110,
+  },
 ];
 
 // ─── 원내 도장 ───
@@ -871,6 +908,13 @@ export const FORM_META: Record<
     icon: '🏥',
     color: 'bg-blue-50 border-blue-200',
     description: '실손/단체/자동차보험 청구 공통서식 — 건보 등급·부담률·산정특례 자동 바인딩',
+    print_preset: 'optional',
+  },
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지
+  first_visit_mgmt_record: {
+    icon: '🦶',
+    color: 'bg-lime-50 border-lime-200',
+    description: '초진 시 고객 상태·관리 계획 기록 (방문목적·상태확인·초기관리·관리계획)',
     print_preset: 'optional',
   },
 };
@@ -1102,6 +1146,9 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   'referral_letter',        // 9. 진료의뢰서
   'visit_confirm',          // 10. 통원확인서
   'medical_record_request', // 11. 의무기록사본발급신청서
+  // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지(신규). 제증명이 아닌 내부 관리기록 →
+  //   '관리기록' 그룹(DOC_CATEGORY_MGMTRECORD_KEYS)으로 별도 귀속. 진열은 기존 11종 뒤(맨 아래).
+  'first_visit_mgmt_record', // 12. 초진 관리기록지
 ];
 
 /**
@@ -1180,7 +1227,17 @@ export const DOC_CATEGORY_JEUNGMYEONG_KEYS: ReadonlyArray<string> = [
   'rx_standard',            // 처방전 (무료)
 ];
 
+/**
+ * T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD — '관리기록' 카테고리 그룹 SSOT.
+ * 초진 관리기록지 등 내부 관리기록(제증명·법정서류 아님)을 '제증명' 그룹과 분리해 노출한다.
+ * 김주연 총괄 요청: 마땅한 기존 카테고리가 없으므로 '관리기록' 신설. 향후 관리기록 계열 서류 유입 시 여기에 추가.
+ */
+export const DOC_CATEGORY_MGMTRECORD_KEYS: ReadonlyArray<string> = [
+  'first_visit_mgmt_record', // 초진 관리기록지
+];
+
 export const DOC_GROUP_LABEL_JEUNGMYEONG = '제증명';
+export const DOC_GROUP_LABEL_MGMTRECORD = '관리기록';
 export const DOC_GROUP_LABEL_ETC = '기타 서류';
 
 export interface DocListGroup<T> {
@@ -1190,8 +1247,9 @@ export interface DocListGroup<T> {
 
 /**
  * orderDocList(정렬·필터·라벨 override) 결과를 카테고리 그룹으로 나눈다.
- * - '제증명' 그룹 = DOC_CATEGORY_JEUNGMYEONG_KEYS (A안 확정: DOCLIST_ORDER_10 전체 11 form_key).
- * - '기타 서류' 그룹 = 나머지 — A안 하에서는 비어 렌더 생략(향후 신규 비-제증명 서류 유입 시 방어적으로 유지).
+ * - '제증명' 그룹 = DOC_CATEGORY_JEUNGMYEONG_KEYS (A안 확정: 제증명 계열 11 form_key).
+ * - '관리기록' 그룹 = DOC_CATEGORY_MGMTRECORD_KEYS (T-20260728: 초진 관리기록지 등 내부 관리기록).
+ * - '기타 서류' 그룹 = 나머지 — 비어 렌더 생략(향후 신규 미분류 서류 유입 시 방어적으로 유지).
  * - 각 그룹 내부 순서 = DOCLIST_ORDER_10 확정 순서 유지. 빈 그룹은 반환에서 생략.
  */
 export function groupDocList<T extends { form_key: string }>(
@@ -1201,11 +1259,17 @@ export function groupDocList<T extends { form_key: string }>(
   const jeung = ordered.filter((t) =>
     DOC_CATEGORY_JEUNGMYEONG_KEYS.includes(t.form_key),
   );
+  const mgmt = ordered.filter((t) =>
+    DOC_CATEGORY_MGMTRECORD_KEYS.includes(t.form_key),
+  );
   const etc = ordered.filter(
-    (t) => !DOC_CATEGORY_JEUNGMYEONG_KEYS.includes(t.form_key),
+    (t) =>
+      !DOC_CATEGORY_JEUNGMYEONG_KEYS.includes(t.form_key) &&
+      !DOC_CATEGORY_MGMTRECORD_KEYS.includes(t.form_key),
   );
   const groups: DocListGroup<T>[] = [];
   if (jeung.length) groups.push({ label: DOC_GROUP_LABEL_JEUNGMYEONG, templates: jeung });
+  if (mgmt.length) groups.push({ label: DOC_GROUP_LABEL_MGMTRECORD, templates: mgmt });
   if (etc.length) groups.push({ label: DOC_GROUP_LABEL_ETC, templates: etc });
   return groups;
 }

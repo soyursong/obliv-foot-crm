@@ -128,6 +128,10 @@ import {
   buildFootBillDetailItems,
   fillBillItemCopayment,
   computeBillDetailRounding,
+  // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1/§수정3): bill_receipt_new ⑧/⑩
+  //   환자부담총액(=환자 실수납액, 수납 aggregate grain) 절사 SSOT — 외래 본인부담 급여 component 만 floor100,
+  //   비급여 무절사(별표2 제19조제1항 다만조항). PMW(수납창)와 동일 SSOT 로 same-receipt cross-render 정합.
+  floorBillReceiptNewPatientTotal,
   computeBillReceiptNewCategoryBreakdown,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
   applyBillReceiptNewCategoryTokens,
@@ -148,6 +152,72 @@ import {
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
 import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocFormSettingsDialog';
+
+// ─── 초진 관리기록지 체크박스 그룹 (T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD) ───
+//   체크칩 토글 → 필드값 '✔'(체크) / ''(미체크) → HTML 템플릿 {{key}} (.cbx 네모 안 ✔) 바인딩.
+//   field_map 에 넣지 않고 전용 블록으로 렌더 → 텍스트 input 중복 노출 방지(자유텍스트만 field_map).
+const FIRST_VISIT_MGMT_CHECK_MARK = '✔';
+interface FvmrCheckGroup { label: string; options: Array<{ key: string; label: string }> }
+const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
+  {
+    label: '방문 목적',
+    options: [
+      { key: 'vp_ingrown', label: '내성발톱' },
+      { key: 'vp_fungal', label: '무좀발톱' },
+      { key: 'vp_thick', label: '두꺼운 발톱' },
+      { key: 'vp_deformed', label: '변형발톱' },
+      { key: 'vp_other', label: '기타' },
+    ],
+  },
+  {
+    label: '관리 부위 (좌/우)',
+    options: [
+      { key: 'side_left', label: '좌(L)' },
+      { key: 'side_right', label: '우(R)' },
+    ],
+  },
+  {
+    label: '발가락',
+    options: [
+      { key: 'toe_1', label: '엄지' },
+      { key: 'toe_2', label: '둘째' },
+      { key: 'toe_3', label: '셋째' },
+      { key: 'toe_4', label: '넷째' },
+      { key: 'toe_5', label: '다섯째' },
+    ],
+  },
+  {
+    label: '통증 여부',
+    options: [
+      { key: 'pain_yes', label: '있음' },
+      { key: 'pain_no', label: '없음' },
+    ],
+  },
+  {
+    label: '보행 불편',
+    options: [
+      { key: 'gait_yes', label: '있음' },
+      { key: 'gait_no', label: '없음' },
+    ],
+  },
+  {
+    label: '초진 시 촬영 기록',
+    options: [
+      { key: 'photo_done', label: '사진 촬영 완료' },
+      { key: 'photo_none', label: '촬영하지 않음' },
+    ],
+  },
+  {
+    label: '초기 관리 내용',
+    options: [
+      { key: 'care_trim', label: '발톱 정리' },
+      { key: 'care_problem', label: '문제성 발톱 관리' },
+      { key: 'care_pressure', label: '압력 감소 조치' },
+      { key: 'care_pad', label: '보호패드 적용' },
+      { key: 'care_other', label: '기타' },
+    ],
+  },
+];
 
 // ─── 타입 ───
 
@@ -1405,9 +1475,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (일괄출력 경로) ──
         //   ★야간가산 fold 이후(여기)에 신양식 급여 remainder·납부박스를 계산해 단건(IssueDialog allValues)과 대칭.
         if (t.form_key === 'bill_receipt_new') {
-          // ⑧/⑩ 환자부담총액 10원 절사(FLOOR) — 단건 경로와 동일 SSOT(computeBillDetailRounding).
+          // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1, 일괄인쇄 경로) ──
+          //   [정정] 이전: computeBillDetailRounding(floor10, 번들 전체) → (a) floor10 오적용 + (b) 비급여까지
+          //     절사되는 bundle-floor 신규버그로, 야간·공휴일 급여 진료에서 인쇄 영수증 ⑧(예 7,280) > PMW 수납창
+          //     실수납액(7,200)이 되어 법정서류-실수납 divergence 발생(same-receipt cross-render 불일치).
+          //   [해소] 수납 aggregate grain SSOT floorBillReceiptNewPatientTotal(급여 component 만 floor100·비급여
+          //     무절사)로 통일 → PMW applyPostSurchargePaidTokens 와 동일 값. copay component = v.copayment
+          //     (가산 fold 후 aggregate 급여 본인부담), nonCov = patient_amount − copayment.
+          //   computeBillDetailRounding(floor10)은 bill_detail(세부산정내역서) 문서 grain 전용으로만 유지(§수정2).
           const rawPatient = parseAmountStr(v.patient_amount);
-          const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+          const copayComponent = parseAmountStr(v.copayment);
+          const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
           if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
           // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
           applyBillReceiptNewCoveredTokens(v, batchRnItems);
@@ -2823,8 +2901,14 @@ function IssueDialog({
     //     ⑧/⑩ = 세부내역서 detail_total 과 정확히 정합. base.patient_amount 는 야간가산 fold 반영 최종값.
     //   ⚠ CANON-GATE: ⑦ 공단부담총액({{insurance_covered}}, 1a/2b)은 §2-2-6 v1.14 canon 소관 → **미접촉**.
     if (template.form_key === 'bill_receipt_new') {
+      // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1, 미리보기/단건 경로) ──
+      //   일괄인쇄 경로(valuesFor L1408~)와 대칭 정정. ⑧/⑩ 환자부담총액 = 환자 실수납액 = 수납 aggregate grain
+      //   → floorBillReceiptNewPatientTotal(급여 component 만 floor100·비급여 무절사, PMW 와 동일 SSOT).
+      //   이전 computeBillDetailRounding(floor10, 번들 전체)은 (a) floor10 오적용 (b) 비급여까지 절사되는
+      //   bundle-floor 버그로 영수증 ⑧ > PMW 실수납액 divergence를 남겼다. floor10 은 bill_detail 문서 grain 전용(§수정2).
       const rawPatient = parseAmountStr(base.patient_amount);
-      const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+      const copayComponent = parseAmountStr(base.copayment);
+      const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
       if (rawPatient > 0) base.patient_amount = formatAmount(patientFloored);
 
       // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX ──
@@ -3610,6 +3694,44 @@ function IssueDialog({
                   className="text-sm bg-white"
                   data-testid="docprint-purpose-input"
                 />
+              </div>
+            )}
+
+            {/* T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 체크박스 그룹 (인터랙티브 칩).
+                각 칩 = ✔ 토글 → HTML 템플릿 {{key}} 바인딩(.cbx 네모 안 체크). 자유텍스트(증상경위·관리계획 등)는
+                아래 field_map 입력에서 처리 → 중복 노출 없음. */}
+            {template.form_key === 'first_visit_mgmt_record' && (
+              <div className="rounded-lg bg-lime-50 border border-lime-200 p-3 space-y-3">
+                <Label className="text-xs font-semibold text-lime-800">체크 항목 (선택 시 인쇄물에 ✔ 표시)</Label>
+                {FIRST_VISIT_MGMT_CHECK_GROUPS.map((grp) => (
+                  <div key={grp.label} className="space-y-1.5">
+                    <div className="text-[11px] text-lime-700">{grp.label}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {grp.options.map((opt) => {
+                        const checked = (allValues[opt.key] ?? '') === FIRST_VISIT_MGMT_CHECK_MARK;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            data-testid={`fvmr-check-${opt.key}`}
+                            aria-pressed={checked}
+                            className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all min-h-[40px] ${
+                              checked
+                                ? 'border-lime-500 bg-lime-200 text-lime-900 ring-1 ring-lime-400'
+                                : 'border-gray-200 bg-white text-muted-foreground hover:border-lime-300 hover:text-lime-700'
+                            }`}
+                            onClick={() =>
+                              updateField(opt.key, checked ? '' : FIRST_VISIT_MGMT_CHECK_MARK)
+                            }
+                          >
+                            {checked ? '☑ ' : '☐ '}
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 

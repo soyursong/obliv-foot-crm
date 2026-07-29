@@ -60,8 +60,9 @@ import {
 //   (수납창 경로 발번 미배선 divergence 해소 — DocumentPrintPanel handleBatchPrint SSOT 동형).
 import { buildIssueNo, splitIssueNoForDisplay, buildDocSerial, docSerialPrefix } from '@/lib/docSerial';
 import { useAuth } from '@/lib/auth';
-import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
-import { promoteVisitTypeToReturning } from '@/lib/visitType';
+// T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE(19:47 스코프 확장): 전 [수납] 경로에서 완료전이 부수효과 억제 →
+//   applyStatusFlagTransition('dark_gray') / promoteVisitTypeToReturning 미호출(완료칸 이동은 Dashboard handleDrop 전담).
+//   두 헬퍼는 완료 이동(handleDrop) 경로가 소유 → 여기 import 제거(unused). 로직 이관 아님, 부수효과 위치 원복.
 import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
@@ -143,6 +144,12 @@ import {
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
   computeBillDetailRounding,
+  // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 외래 본인부담 수납 aggregate 100원 절사 SSOT
+  //   (computeBillDetailRounding=floor10 문서 grain 과 분리 — DA-…-COPAY-TRUNCATE-UNIT, 별표2 제19조제1항 다만조항).
+  floorOutpatientCopayment,
+  // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정3): bill_receipt_new ⑧ 산출 SSOT
+  //   — PMW(수납창)·DPP(인쇄) 공유 순수함수. same-receipt cross-render(PMW==DPP) 정합 보장.
+  floorBillReceiptNewPatientTotal,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A/B: 신양식(bill_receipt_new) 비급여 category 토큰
   //   주입 SSOT(footBilling 승격) — DPP 와 동일 인자로 소비해 결제미니창 인쇄 시 처치/검사 행 공란 해소.
   applyBillReceiptNewCategoryTokens,
@@ -905,6 +912,14 @@ interface Props {
   onClose: () => void;
   /** 수납 완료 후 (auto-done 포함) */
   onComplete: () => void;
+  /**
+   * T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 성공 후 "창을 닫지 않는" 갱신 콜백.
+   *   현장 동선 = 수납 직후 같은 미니창에서 [출력](계산서·영수증) 등 후속작업을 이어서 수행(REFUND200 요건② enable).
+   *   부모는 데이터 리페치만 하고 미니창 close/dismiss(setTarget(null))·강제 리마운트(counter++)는 하지 않는다.
+   *   미전달 시 handleSettle 은 종전대로 onComplete(닫기) 로 폴백(하위호환).
+   *   ⚠ 수납 처리(payments INSERT·회차 consume RPC)·[닫기]/X 수동닫기·NOAUTOCOMPLETE 카드거동은 무변경 — FE 상태(창 유지)만.
+   */
+  onSettled?: () => void;
   /** 시술 저장 완료 후 (AC-7 수납대기 금액 갱신용) */
   onSaved?: () => void;
 }
@@ -935,8 +950,10 @@ async function snapshotExamFlags(checkInId: string): Promise<ExamFlagState> {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Props) {
-  const { profile } = useAuth();
+export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onSaved }: Props) {
+  // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE(19:47): dark_gray flag 전이 제거로 profile(actor) 미사용 →
+  //   useAuth 값 미구독(완료칸 이동/회색은 Dashboard handleDrop 이 actor 컨텍스트 소유).
+  useAuth();
   // ── Tab + Grid
   const [activeTab, setActiveTab] = useState<TabLabel>('풋케어');
   const [footcareCat, setFootcareCat] = useState<FootCatType>('기본(진찰료)');
@@ -953,6 +970,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState<{ method: PayMethod; amount: number }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 성공 여부(창 유지 모드에서 재클릭 이중수납 차단용).
+  //   창이 닫히지 않고 유지되므로 [수납] 버튼을 계속 누를 수 있음 → payments 이중 INSERT/회차 이중 consume 위험.
+  //   settled=true 이후엔 handleSettle 을 조기 차단하고 버튼을 비활성('수납 완료')한다. checkIn 전환 시 리셋(아래 useEffect).
+  const [settled, setSettled] = useState(false);
 
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
@@ -1026,7 +1047,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [selectedDocKeys, setSelectedDocKeys] = useState<Set<string>>(new Set());
   const [docPrinting, setDocPrinting] = useState(false);
-  const [docSettlePrinting, setDocSettlePrinting] = useState(false);
+  // T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건④: [출력 및 수납] 제거로 docSettlePrinting state 폐지.
   // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 기록용 staffId
   const [staffId, setStaffId] = useState<string | null>(null);
   // T-20260719-foot-DOCHIST-MULTIPATH-EXTEND item②: 발행이력 조회+재출력 모달 열림 상태.
@@ -1093,6 +1114,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
     setSelectedItems([]);
     setSaved(false);
+    // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 새 방문(checkIn.id 전환) 진입 시 수납완료 플래그 리셋
+    //   → [수납] 버튼 재활성. (동일 방문 리페치는 [checkIn?.id] 미변으로 이 effect 미재실행 → 창 유지 상태 보존.)
+    setSettled(false);
     setPayMethod('card');
     // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
     setSplitMode(false);
@@ -1102,7 +1126,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setSelectedDocKeys(new Set());
     setSubmitting(false);
     setDocPrinting(false);
-    setDocSettlePrinting(false);
     setCashReceiptIssued(false);
     setCashReceiptType('income_deduction');
     setPrepaidIds(new Set());
@@ -1745,8 +1768,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
-  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → payableTotal = 8,900 + 0 = 8,900.
-  const payableTotal = payCopaymentTotal + nonCoveredTotal;
+  //   예: 급여 29,380(본인8,900+공단20,480)+비급여0 → 8,900 + 0 = 8,900.
+  //   T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE: 최종 수납잔액(payableTotalWithSurcharge)은 가산 fold·10원
+  //   절사를 반영해 payCopaymentWithSurcharge(FLOOR) + nonCoveredTotal 로 아래에서 파생한다(가산-무 경로 동일값).
   // ── T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (Part2, 공단부담액 정보성 라인) ─────
   //   공단부담액(명세) = 급여 진료비 − 본인부담금. 배포 SSOT computeFootBilling 의 liveBillingValues
   //   (insuranceCovered = max(0, coveredTotal − copaymentTotal))를 그대로 소비한다(병렬 계산 경로 신설 금지,
@@ -1783,11 +1807,29 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     hiraUnitValue: clinicHiraUnitValue,
   });
   const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
-  const payCopaymentWithSurcharge = payCopaymentTotal + settleSurcharge.copay;        // 본인부담금(가산 포함)
-  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함)
-  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함)
-  // 최종 수납금액(수납잔액) = 본인부담 + 비급여 + 가산 본인분. 가산 공단분은 환자가 내지 않음(공단 몫).
-  const payableTotalWithSurcharge = payableTotal + settleSurcharge.copay;
+  // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE [현장 P0, RC, reporter 김주연 총괄] ──────────────
+  //   ★ FIX-REQUEST(contract_violation, DA-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE-UNIT): 절사단위 floor10 → **floor100** 정정.
+  //   [증상] 야간·공휴일 급여 진료 수납 시 가산금(30%)이 포함되면 급여 자부담(본인부담금)에 절사가 미적용
+  //     (예: 7,283 → 7,200 으로 안 깎이고 7,283 그대로 청구). 가산 없는 경로만 정상 절사.
+  //   [RC] payCopaymentTotal(copayFromBase)은 100원 FLOOR 라 항상 100원 배수 → 가산-무 경로는 구조적으로 절사됨.
+  //     그러나 가산 본인분 settleSurcharge.copay = Math.round(amount×ratio) 는 임의 원단위라, 두 값의 합(가산 포함
+  //     본인부담)이 100원 배수가 아니게 되는데도 재-절사 지점이 없어 우수리가 그대로 청구됐다.
+  //   [해소] 외래 본인일부부담금 aggregate 절사 SSOT floorOutpatientCopayment(**100원 미만 FLOOR**, 별표2 제19조제1항
+  //     다만조항)을 **가산 포함 급여 본인부담 최종액**(순수 급여 본인부담 component)에 적용한다. 절사대상 = payCopaymentTotal +
+  //     settleSurcharge.copay = **순수 급여 본인부담**(비급여 미포함) → bundle-floor 우려 없음(FIX-REQUEST §4 실측: 순수 component).
+  //     끝수(100원 미만) = 공단부담 귀속. 수납잔액 = 절사된 본인부담 + 비급여(무절사, 별도 합산).
+  //   [scope 분리] 문서 절사(computeBillDetailRounding=floor10, 요양급여비용총액·세부산정내역서 grain)와 수납 본인부담
+  //     aggregate 절사(floorOutpatientCopayment=floor100, 외래 본인부담 grain)는 서로 다른 grain — 값이 달라지는 것이
+  //     정상(DA 판정 = "문서==수납 정합" 요건 폐기). 세부산정내역서 계/합계(L2651 computeBillDetailRounding)는 floor10 유지.
+  //     자매 P2 가산금 line(요양급여비용 component)의 floor10 도 정당·무접촉.
+  //   [무회귀] 가산 없음(settleSurcharge.copay=0, kind=null) → floor100(payCopaymentTotal)=payCopaymentTotal(이미 100원
+  //     배수) → 값 불변(AC-2). 공단부담액·진료비 총액(insuranceCoveredWithSurcharge/grandTotalWithSurcharge)은
+  //     본인부담 절사와 직교 → 산식 불변(AC-3, 법정 표기 칸 무접촉).
+  const payCopaymentWithSurcharge = floorOutpatientCopayment(payCopaymentTotal + settleSurcharge.copay); // 급여 본인부담금(가산 포함, 외래 100원 FLOOR)
+  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함) — 절사 무관(AC-3)
+  const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함) — 절사 무관(AC-3)
+  // 최종 수납금액(수납잔액) = 절사된 급여 본인부담(가산 포함, floor100) + 비급여 전액(무절사). 가산 공단분은 환자가 내지 않음(공단 몫).
+  const payableTotalWithSurcharge = payCopaymentWithSurcharge + nonCoveredTotal;
 
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
@@ -1875,16 +1917,44 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     enriched: Record<string, string>,
     formKey: string,
     ctx: PmwPaidBoxCtx | null,
+    // ── 선수금차감 ⑨(이미 납부한 금액) 보정 컨텍스트 ──
+    //   T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT(66af63ff) 도입 → T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건③④가 supersede.
+    //   요건④로 [출력 및 수납]이 제거됨에 따라, 이제 handleDocPrint(출력)의 **pre-settle**(payments 원장 공란) 경로에서만
+    //   printSettleCtx 로 전달된다. post-settle [출력](payRows 존재)·미차감 케이스는 null/undefined → 종전 실원장 ⑨ 유지.
+    settleCtx?: { isDeductSettle: boolean; settleAmount: number } | null,
   ): void => {
     if (formKey !== 'bill_receipt_new' || !ctx) return;
-    // ⑧ 환자부담총액(가산 fold 반영 최종값) 10원 절사(FLOOR) — DPP 와 동일 SSOT.
+    // ⑧ 환자부담총액(영수증 신양식, 가산 fold 반영 최종값) — 환자 실수납액 grain = 수납 aggregate 와 동일 정합.
+    //   ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST §4 bundle 실측) ──────────────
+    //   [실측] enriched.patient_amount = 급여 본인부담(가산 fold 포함) + 비급여 **bundle**(footBilling.applyBillReceiptNewLiveTotals
+    //     L950 patient_amount=copay+nonCov, applyNightHolidaySurcharge fold('patient_amount', sc.copay)). → 순수 급여 component 아님.
+    //   [정정] bundle 전체 floor100 = 비급여까지 절사되는 신규 버그(FIX-REQUEST §4 경고). floor100 은 **급여 본인부담
+    //     component 에만** 적용하고 비급여(무절사)와 재합산한다. copay component = enriched.copayment(가산 fold 후 aggregate 본인부담).
+    //   [정합] 이렇게 하면 ⑧(영수증 환자부담총액) = floor100(급여본인부담) + 비급여 = payableTotalWithSurcharge(수납 aggregate)
+    //     와 동일 grain·동일 값 → 납부박스 ⑧=⑨+⑪ 정합 보존. 세부산정내역서(bill_detail, floor10)와는 grain 이 달라 값 상이 = 정상.
     const rawPatient = Number(parseAmountRaw(enriched.patient_amount ?? '')) || 0;
-    const { roundedTotal: patientFloored } = computeBillDetailRounding(rawPatient);
+    const copayComponent = Number(parseAmountRaw(enriched.copayment ?? '')) || 0;   // 급여 본인부담(가산 fold 포함) — 절사 대상
+    // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정3): DPP(인쇄) 와 동일 SSOT
+    //   floorBillReceiptNewPatientTotal 로 통일 — same-receipt cross-render 정합을 함수 레벨에서 보장(PMW==DPP).
+    //   기존 인라인(floorOutpatientCopayment(copay) + nonCov)과 수학적 동치(무회귀).
+    const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
     if (rawPatient > 0) enriched.patient_amount = formatAmount(patientFloored);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
+    // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT ⑨(이미 납부한 금액) 선차감 보정 ──────────────
+    //   [RC#2] ⑨ 소스 loadAlreadyPaidAmount 는 check_in_services.is_package_session=true 를 읽는데, 이 플래그는
+    //   소비 RPC(consume_package_sessions_for_checkin)가 executeAutoDone **안**(인쇄 後)에 SET 한다. 따라서
+    //   출력및수납 인쇄 시점엔 아직 미마킹 → ⑨=0 → ⑩(=⑧−⑨)=전액·미납=전액(선차감분 300,000 미반영, 현장증상).
+    //   [해소] 선수금차감(isDeductSettle) 출력및수납은 ⑨ = ⑧(patientFloored) − 이번수납잔액(settleAmount) 로 확정한다.
+    //     · ⑨ = 선차감분(패키지 선납 환자부담분) = ⑧ − ⑩(=⑪ 잔액수납). ⑧=⑨+⑪ 정합, 미납=0(완납).
+    //     · patientFloored 기준 산출 → 별도 flooring drift 없이 ⑩=settleAmount 정확 수렴(잔액 10원배수 가정).
+    //     · 선차감분이 이번 방문 소비로 확정될 회차의 선납 환자부담분 = 법정 '이미 납부한 금액' 의미 정합.
+    //   비-차감(isDeductSettle=false) 및 handleDocPrint(출력전용)은 종전 ctx.alreadyPaid(loadAlreadyPaidAmount) 유지.
+    const effectiveAlreadyPaid = settleCtx?.isDeductSettle
+      ? Math.max(0, patientFloored - settleCtx.settleAmount)
+      : ctx.alreadyPaid;
     // 납부박스 ⑧/⑨/⑩/미납 — 가산後 ⑧(patientFloored)로 재산출(payments-based, 완납 가정 금지).
-    applyBillReceiptPaidBoxTokens(enriched, ctx.payRows, patientFloored, ctx.alreadyPaid);
+    applyBillReceiptPaidBoxTokens(enriched, ctx.payRows, patientFloored, effectiveAlreadyPaid);
   };
 
   // 선수금차감 후 청구액 = (선수금차감 대상 제외한 항목의) 급여 본인부담금 + 비급여 전액.
@@ -1926,7 +1996,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       deductSurchargeBase.copay,
       settleSurchargeKind,
     );
-    return deductBilling.copaymentTotal + deductBilling.nonCoveredTotal + deductSurcharge.copay;
+    // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 차감후 청구액도 동일하게 급여 본인부담(가산 포함)에
+    //   **외래 100원 FLOOR**(floorOutpatientCopayment) 적용(settle 경로 payCopaymentWithSurcharge 와 동형 SSOT).
+    //   절사대상 = deductBilling.copaymentTotal + deductSurcharge.copay = 순수 급여 본인부담(비급여 미포함) → bundle-floor 우려 없음.
+    //   deductSurcharge.copay=Math.round 우수리 제거. 가산 없음 → floor100(copaymentTotal)=copaymentTotal(100원 배수) →
+    //   값 불변(무회귀). 비급여(nonCoveredTotal)는 무절사 별도 합산. base=본인부담 최종액(AC-3).
+    const deductCopayWithSurcharge = floorOutpatientCopayment(deductBilling.copaymentTotal + deductSurcharge.copay);
+    return deductCopayWithSurcharge + deductBilling.nonCoveredTotal;
   };
 
   // ── T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-1 저장): 화장품 라인 seller_staff_id 산출 ──
@@ -2280,11 +2356,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       if (payErr) throw payErr;
     }
 
-    const { error: ciErr } = await supabase
-      .from('check_ins')
-      .update({ status: 'done' })
-      .eq('id', checkIn.id);
-    if (ciErr) throw ciErr;
+    // ── T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (2026-07-27 김주연 총괄 확정 + 19:47 스코프 확장) ──────
+    //   [확정 3결정] Q1 스코프(scope_update MSG-ct5n) = **모든 수납 유형** — deductMode(선수금차감)뿐 아니라
+    //     일반 수납/카드/현금/이체 등 [수납] 버튼(handleSettle→executeAutoDone) 전 경로. (기존 deductMode한정 재정의.)
+    //   Q2 종료상태 = 신규 상태값 없음·현행 진행상태 유지 → check_ins.status='done' 완료전이를 스킵(no-DDL, FE 경로).
+    //   Q3 수납보존 = payments INSERT + 선수금 회차소진(consume RPC)은 정상 유지, '완료칸 이동/회색처리'만 억제.
+    //   → [수납]은 결제(+선수금 회차차감)만 즉시 영속하고 카드는 현재 진행 상태로 남는다. 완료칸 이동(및 그 부수효과
+    //     status='done'/status_transitions→done/dark_gray flag/visit_type 승격)은 스태프가 카드를 [완료]로 옮길 때
+    //     Dashboard 이동 핸들러(handleDrop, newStatus==='done')가 전담한다(중복·유실 없음).
+    //   ⚠ 스코프 경계: 본 억제는 executeAutoDone(칸반 [수납] 버튼) 한정. recordManualPayment(영수증 팝업·
+    //     일마감 수기수납 'checkin' 라우팅)의 칸반 해소(status='done')는 별도 진입점 → 본 티켓 미변경.
+    //   (구 로직: 여기서 check_ins.status='done' UPDATE 를 수행 → 완료슬롯 자동이동. 전 수납경로에서 제거.)
 
     // ── T-20260703-foot-JONGNO-PACKAGE-TRIPLE-DEFECT (c) ────────────────────────
     //   선수금차감(taxType='선수금') 수납 확정 시 package_sessions 를 실제 소진한다.
@@ -2330,29 +2412,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }
     }
 
-    const { error: trErr } = await supabase.from('status_transitions').insert({
-      check_in_id: checkIn.id,
-      clinic_id: checkIn.clinic_id,
-      from_status: checkIn.status,
-      to_status: 'done',
-    });
-    if (trErr) {
-      console.warn('status_transitions insert failed:', trErr.message);
-    }
-    // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: 수납([수납]) 완료 = 완료 슬롯 이동 →
-    //   status_flag 'dark_gray'(수납완료/회색) 자동전환. 결제·status='done'은 이미 커밋됨 →
-    //   플래그 실패가 결제 흐름을 롤백하지 않음(best-effort). SSOT applyStatusFlagTransition 경유.
-    try {
-      await applyStatusFlagTransition(checkIn, 'dark_gray', {
-        id: profile?.id ?? null,
-        name: profile?.name ?? null,
-        role: profile?.role ?? null,
-      });
-    } catch (flagErr) {
-      console.error('status_flag dark_gray 전이 실패(결제는 정상 완료):', flagErr);
-    }
-    // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
-    await promoteVisitTypeToReturning(checkIn.customer_id);
+    // ── T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (19:47 스코프 확장: 모든 수납 유형) ─────────────
+    //   완료전이 부수효과(status_transitions→done / dark_gray 플래그 / visit_type 재진 승격)는 완료칸 이동에
+    //   종속되므로 전 [수납] 경로(선수금차감·일반 수납/카드/현금/이체 무관)에서 함께 스킵한다.
+    //   (status='done' 을 쓰지 않으면서 to_status='done' 전이를 남기면 유령 완료전이가 되어 부정합.
+    //    회색화·visit_type 승격도 '완료 시' 이벤트다.) 위 3건은 스태프가 카드를 [완료]로 옮길 때
+    //    Dashboard handleDrop(newStatus==='done') 이 전담한다(중복·유실 없음).
+    //   (구 로직: 여기서 status_transitions insert + applyStatusFlagTransition('dark_gray') +
+    //    promoteVisitTypeToReturning 을 수행 → 완료칸 이동·회색·재진 승격. 전 수납경로에서 제거.)
 
     // T-20260721-foot-CALCOPAY-PIPELINE-RESTORE §2: 급여 명세 스냅샷 재활성 (best-effort).
     //   결제(payments/check_ins done)는 이미 커밋 완료 → 스냅샷 실패해도 결제 흐름 무영향.
@@ -2369,9 +2436,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── T-20260616-foot-PMW-SPLIT-PAYMENT: 수납 splits 빌더 ─────────────────────
   //   splitMode off → 단일 [{payMethod, amount}] (AC-4 회귀 동선).
   //   splitMode on  → splitRows(금액>0만) 사용 + 합산=수납액 검증(AC-2). 불일치 시 null 반환(차단).
+  // T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건③: opts.quiet — [출력] 단독경로의 synthetic payRow 선(先)산출용.
+  //   출력 전용 경로는 splits 미확정(분할 미입력 등)이어도 toast 로 인쇄를 막지 않는다 → 조용히 null 반환(합성 skip).
   const buildSettleSplits = (
     amount: number,
+    opts?: { quiet?: boolean },
   ): { method: PayMethod; amount: number }[] | null => {
+    const quiet = opts?.quiet ?? false;
     if (!splitMode) {
       return [{ method: payMethod, amount }];
     }
@@ -2379,17 +2450,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       .map((r) => ({ method: r.method, amount: Math.round(r.amount) }))
       .filter((r) => r.amount > 0);
     if (rows.length === 0) {
-      toast.error('분할 결제 금액을 입력해주세요');
+      if (!quiet) toast.error('분할 결제 금액을 입력해주세요');
       return null;
     }
     const sum = rows.reduce((s, r) => s + r.amount, 0);
     if (sum !== amount) {
-      const diff = amount - sum;
-      toast.error(
-        diff > 0
-          ? `분할 금액 합계가 ${formatAmount(diff)} 부족합니다`
-          : `분할 금액 합계가 ${formatAmount(-diff)} 초과입니다`,
-      );
+      if (!quiet) {
+        const diff = amount - sum;
+        toast.error(
+          diff > 0
+            ? `분할 금액 합계가 ${formatAmount(diff)} 부족합니다`
+            : `분할 금액 합계가 ${formatAmount(-diff)} 초과입니다`,
+        );
+      }
       return null;
     }
     return rows;
@@ -2401,6 +2474,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
       return;
     }
+    // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 창 유지 모드 이중수납 차단.
+    //   [수납] 성공 후 창이 열린 채 남으므로 재클릭 가능 → payments 이중 INSERT/회차 이중 consume 방지(버튼 disabled + 이 가드 이중방어).
+    if (settled || submitting) return;
     // ── T-20260708-foot-PAYMINI-INSURANCE-CHARTREQ-UNBLOCK: 수납 차단 게이트 제거 ──
     //   과거 MEDLAW22-B-GATE 의 진료기록 필수 + 방문일 일치 하드차단을 여기서 완전히 제거.
     //   급여/비급여 무관, 진료기록 미작성·비내원일(계좌이체 등)에도 수납을 그대로 진행한다.
@@ -2423,9 +2499,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     try {
       await executeAutoDone(splits, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
-      toast.success('수납 완료 — 완료 슬롯으로 이동됩니다');
+      // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE (19:47 스코프 확장: 모든 수납 유형): [수납] 은 완료칸
+      //   이동을 하지 않으므로 "완료 슬롯 이동" 안내를 전 수납경로에서 쓰지 않는다(카드는 현재 진행 상태 유지).
+      // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 수납 성공 → settled 마킹(재클릭 이중수납 차단) + 창 유지.
+      setSettled(true);
+      toast.success('수납 완료 — 이어서 [출력](계산서·영수증)을 진행하실 수 있습니다');
       setSubmitting(false);
-      onComplete(); // ← PAY-SLOT-MOVE: onComplete만 완료 이동. onClose는 이동 없음.
+      // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: onSettled(창 유지·리페치만) 우선 — 미니창을 닫지 않아
+      //   현장이 같은 창에서 [출력] 등 후속작업을 이어간다(REFUND200 요건② 서류 확인 동선 enable).
+      //   미전달 부모는 종전대로 onComplete(닫기)로 폴백(하위호환). status='done' 미기록은 양쪽 동일(완료칸 이동 없음).
+      if (onSettled) {
+        onSettled();
+      } else {
+        onComplete();
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '수납 처리 실패';
       toast.error(msg);
@@ -2625,6 +2712,57 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 신양식 aggregate + 납부박스 payments 소스 fetch.
       //   T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산-무관 부분만. 가산-의존 토큰은 per-form(아래) 재계산.
       const paidBoxCtx = await applyBillReceiptNewSplitAndPaid(autoValues, selected);
+      // ── T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건③+① : [출력] 단독경로 금액바인딩 carry-forward ──────────
+      //   supersedes T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT(66af63ff). 요건④로 [출력 및 수납](handleDocAndSettle)
+      //   진입점이 제거됨 → 그 경로가 갖던 synthetic payRow(RC#1)·⑨선차감보정(RC#2) 금액바인딩을 [출력] 단독경로로
+      //   이관 재사용한다(폐기 아님). 목적: 계산서·영수증 납부박스가 '납부한 금액 합계 = 환자 부담 총액'(미납 0)으로 발행.
+      //     · ⑧ 환자부담총액 = 패키지(보라색 기납부) **포함** 합산총액(applyBillReceiptNewLiveTotals=grandTotal/copay+nonCov) → 요건①.
+      //     · ⑪ 실수납 = 이번 회 수납액(deductMode?deductAmount:payableTotalWithSurcharge, 패키지 **제외**) — buildPayRow 규칙 동일 합성.
+      //     · ⑨ 이미납부 = ⑧ − ⑪(선수금차감분 = 패키지 선납 환자부담분). ⑨+⑪=⑧, 미납=0 → 요건③.
+      //     → 수납금액(⑪, 패키지 제외) ≠ 서류총액(⑧, 패키지 포함) = 정상(요건①).
+      //   ★이중계상 가드: payments 원장에 이번 방문 수납이 **아직 없을 때만**(payRows 공란 = 인쇄 前 수납) synthetic 주입.
+      //     [수납] 이미 완료 후 [출력]이면 payRows 에 실수납 존재 → synthetic 미주입(현행 실원장 렌더 유지 = 이중합산 없음).
+      //   ★handleDocPrint 는 payments INSERT 를 하지 않는다(출력 전용) → synthetic 은 인쇄본 표시 전용, DB write 無(db_change=false).
+      let printSettleCtx: { isDeductSettle: boolean; settleAmount: number } | null = null;
+      if (paidBoxCtx) {
+        const settleAmount = deductMode ? deductAmount : payableTotalWithSurcharge;
+        // ── T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건① [REOPEN RC — field-soak 재현, 스샷 F0BKYQE5S6A] ──────
+        //   [증상] [수납] 후 [출력](post-settle)에서 비급여 면세 '처치·수술료' 240,000(패키지 기납부=보라색)이
+        //     ⑨ 이미납부에 안 잡히고 '납부하지 않은 금액'=240,000 으로 분리 표시(미납=⑧−⑪).
+        //   [RC] 종전엔 ⑨ 선차감 보정(printSettleCtx)을 synthetic payRow 주입(pre-settle, payRows 공란) 블록 **안**
+        //     에서만 세팅했다. post-settle([수납] 후, payRows 존재)이면 이 블록을 통째로 건너뛰어 printSettleCtx=null
+        //     → effectiveAlreadyPaid 가 loadAlreadyPaidAmount(=check_in_services.is_package_session=true 합)로 폴백.
+        //     그런데 비급여 면세 처치·수술료 같은 패키지 기납부 항목은 prepaidSessionType()=null(비가열/가열/포돌로게/
+        //     수액 아님) → 소비 RPC(consume_package_sessions_for_checkin) 미호출 → is_package_session 미마킹 →
+        //     loadAlreadyPaidAmount=0 → ⑨ 공란 → 미납=240,000.
+        //   [해소] ⑨ 이미납부 = ⑧ − 이번수납잔액(deductAmount) 은 '패키지 선납 환자부담분'의 SSOT-정합 값이고
+        //     settle 시점(payments 유무)과 독립이다. 따라서 deductMode 이면 payRows 유무와 무관하게 printSettleCtx 를
+        //     세팅해 ⑨=⑧−deductAmount 로 확정한다 → 문서 내부 ⑧=⑨+⑪+미납 불변식 정확 성립(미납=deductAmount−⑪).
+        //     is_package_session 마킹되던 laser/iv/포돌로게 케이스도 ⑧−deductAmount ≡ prepaid 환자부담분 → 동일값 수렴
+        //     (무회귀). 비-차감(deductMode=false)은 종전대로 null → loadAlreadyPaidAmount 폴백(직접결제 회귀 0).
+        if (deductMode && settleAmount >= 0) {
+          printSettleCtx = { isDeductSettle: true, settleAmount };
+        }
+        // ★이중계상 가드: synthetic payRow(⑪ 실수납 인쇄본 선반영) 주입은 pre-settle(payRows 공란)일 때만.
+        //   post-settle([수납] 후)이면 실원장 payRows 가 ⑪ 을 채우므로 미주입(이중합산 없음).
+        if (paidBoxCtx.payRows.length === 0 && settleAmount >= 0) {
+          const preSplits = buildSettleSplits(settleAmount, { quiet: true });
+          if (preSplits && preSplits.reduce((s, r) => s + r.amount, 0) === settleAmount) {
+            const settlePayRows = preSplits.map((s) => {
+              const isCashLike = s.method === 'cash' || s.method === 'transfer';
+              return {
+                method: s.method as string,
+                amount: s.amount,
+                cash_receipt_issued: isCashLike ? cashReceiptIssued : null,
+                payment_type: 'payment' as const,
+              };
+            });
+            paidBoxCtx.payRows = [...paidBoxCtx.payRows, ...settlePayRows];
+            // 비-차감 pre-settle(deductMode=false)도 종전처럼 ⑪ 선반영(isDeductSettle=false → ⑨ 폴백 유지).
+            if (!printSettleCtx) printSettleCtx = { isDeductSettle: false, settleAmount };
+          }
+        }
+      }
       const isFallback = templates[0]?.id.startsWith('fallback-');
       const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
@@ -2666,7 +2804,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
           applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
           // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
-          applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx);
+          // T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건③: pre-settle [출력]이면 printSettleCtx 전달(선차감 ⑨보정). post-settle 이면 null(현행 실원장 유지).
+          applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx, printSettleCtx);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -2708,178 +2847,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
   };
 
-  // ── [출력 및 수납] — 출력 + auto-done ───────────────────────────────────────
-  // T-20260517-foot-DOC-CODE-INSERT: HTML 템플릿 렌더링 + 상병코드/처방약 자동 주입
-  const handleDocAndSettle = async () => {
-    const selected = templates.filter((t) => selectedDocKeys.has(t.form_key));
-    if (selected.length === 0) {
-      toast.error('서류를 선택해주세요');
-      return;
-    }
-    if (!saved) {
-      toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
-      return;
-    }
-    // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: payments 기록 = 수납잔액(본인부담금+비급여). 공단부담금 제외.
-    //   (서류 total_amount/공단·본인 split 표기는 아래 applyBillingFallback 그대로 — 총진료비 기준, Part1 무접촉.)
-    const amount = deductMode ? deductAmount : payableTotalWithSurcharge; // T-20260725-SATURDAY-SURCHARGE: 수납금액=수납잔액+진찰료 가산 본인분(deductAmount는 calcDeductAmount서 가산 포함)
-    if (amount < 0) {
-      toast.error('결제 금액이 없습니다');
-      return;
-    }
-    // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
-    if (!(await ensureChartSavedBeforePublish())) return;
-    setDocSettlePrinting(true);
-    try {
-      // 1. 서류 출력 (iframe — PAY-SLOT-MOVE AC-4)
-      // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
-      // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-      // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (경로 4 = 1순위 통일 바인딩)
-      const autoValues = await loadAutoBindContext(checkIn);
-
-      // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
-      //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
-      //   공단부담금/본인부담금/비급여 "미표기". 화면 실 산출값으로 폴백(autobind 값 있으면 보존).
-      //   공단부담금 = 급여합계 − 본인부담금, 비급여 = 비급여(과세)+비급여(면세).
-      applyBillingFallback(autoValues, {
-        insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
-        copayment: copaymentTotal,
-        nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
-        // T-20260609-foot-PAY-DOCPRINT-FEE-MISSING: 출력+수납 경로도 동일 폴백 적용(수납 전 출력본과 일치).
-        total: deductMode ? deductAmount : grandTotal,
-      });
-
-      // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
-      if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
-        autoValues.items_html = buildBillDetailItemsHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
-        if (grandTotal > 0) {
-          autoValues.total_amount = formatAmount(grandTotal);
-          autoValues.subtotal_amount = formatAmount(grandTotal);
-        }
-        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-2/6): 세부산정내역 '계'·'합계' = 급여 본인부담금 + 비급여(공단 제외).
-        //   출력+수납 경로도 동일 회귀 — {{detail_subtotal}}/{{detail_total}} 미바인딩 공란 복구. 산식·서식 무변경(AC-7).
-        // T-20260719-foot-MEDCALC-DETAIL-LAYOUT-FIX: AC-① 계 행 열별 세로합 + AC-② 끝처리 조정 + AC-③ 합계(절사 후).
-        {
-          const pmwNonCov = (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0);
-          const pmwFund = Math.max(0, coveredTotal - copaymentTotal);
-          const pmwPayable = copaymentTotal + pmwNonCov;
-          const { adjustment, roundedTotal } = computeBillDetailRounding(pmwPayable);
-          autoValues.subtotal_copayment = formatAmount(copaymentTotal);
-          autoValues.total_copayment = autoValues.subtotal_copayment;
-          autoValues.subtotal_fund = formatAmount(pmwFund);
-          autoValues.total_fund = autoValues.subtotal_fund;
-          autoValues.subtotal_noncovered = formatAmount(pmwNonCov);
-          autoValues.total_noncovered = autoValues.subtotal_noncovered;
-          autoValues.detail_subtotal = formatAmount(pmwPayable);
-          autoValues.detail_rounding = formatAmount(adjustment);
-          autoValues.detail_total = formatAmount(roundedTotal);
-        }
-      }
-      // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: bill_receipt 항목별 그리드(출력+수납 경로).
-      if (selected.some((t) => t.form_key === 'bill_receipt') && pricingItems.length > 0) {
-        autoValues.fee_grid_html = buildBillReceiptFeeGridHtml(buildPmwBillDetailItems(autoValues.visit_date ?? ''));
-        // T-20260716-foot-DOCPRINT-GONGDAN-SUM-REGRESSION (AC-1): 계산서·영수증 소계·총 진료비 합계 = 본인부담금 + 비급여(공단 제외).
-        //   {{receipt_total}} 미바인딩 공란 회귀 복구. 산식·서식 무변경(AC-7), 공단부담 라인 표시 유지(AC-3).
-        autoValues.receipt_total = formatAmount(
-          copaymentTotal + (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
-        );
-      }
-
-      // ★ T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B / L-006 현장승인): persist-before-print.
-      //   출력+수납 경로도 인쇄 전에 form_submissions INSERT + 교부번호 발행시점 채번·persist → 확정 교부번호로 인쇄본 렌더.
-      // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 B: 출력+수납 경로도 신양식 처치/검사 비급여 category 토큰 주입
-      //   (handleDocPrint 와 동일 — 두 발행 경로 대칭 보장).
-      if (
-        selected.some((t) => t.form_key === 'bill_receipt_new' || t.form_key === 'bill_receipt' || t.form_key === 'bill_detail') &&
-        pricingItems.length > 0
-      ) {
-        applyBillReceiptNewCategoryTokens(autoValues, buildPmwBillDetailItems(autoValues.visit_date ?? ''));
-      }
-      // T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX: 출력+수납 경로도 동일 배선(handleDocPrint 대칭).
-      //   T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산-무관 부분만. 가산-의존 토큰은 per-form(아래) 재계산.
-      const paidBoxCtx = await applyBillReceiptNewSplitAndPaid(autoValues, selected);
-      const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
-      const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
-        selected,
-        clinicId: checkIn.clinic_id,
-        checkInId: checkIn.id,
-        customerId: checkIn.customer_id ?? null,
-        staffId,
-        autoValues,
-        codeItems,
-        rxItemDosages,
-        isFallback: isFallbackTpl,
-      });
-
-      // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 기준(진료일=checked_in_at) — handleDocPrint 대칭.
-      const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
-      const surchargeIsCalHoliday = holidayDateSet.has(toLocalDateStr(surchargeRefDate));
-      // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 한정(균검사 등 제외) — handleDocPrint 대칭.
-      const surchargeConsultBase = footBillingItems.length
-        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue })
-        : null;
-
-      // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
-      {
-        const landscapeSel = selected.filter((t) => t.form_key === 'bill_detail');
-        const portraitSel  = selected.filter((t) => t.form_key !== 'bill_detail');
-        const buildPages2 = (tmplList: typeof selected) =>
-          tmplList.flatMap((t) => {
-            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
-            // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: persist된 연번호(visit_no) 주입(handleDocPrint 대칭).
-            const vno = visitNoByTemplateId.get(t.id);
-            if (vno) enriched.visit_no = vno;
-            // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 form_key별 복사본 반영(handleDocPrint 대칭).
-            //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
-            applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
-            // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
-            applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx);
-            if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
-              // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
-              if (t.form_key === 'rx_standard') {
-                const p1 = buildHtmlPageDiv(t, enriched, '약국보관용');
-                const p2 = buildHtmlPageDiv(t, enriched, '환자보관용');
-                return [p1, p2].filter(Boolean);
-              }
-              const page = buildHtmlPageDiv(t, enriched);
-              return page ? [page] : [];
-            }
-            const imgUrl = getTemplateImageUrl(t.form_key);
-            if (!imgUrl) return [];
-            return [buildPageHtml(t, enriched, imgUrl)];
-          });
-        if (landscapeSel.length > 0) {
-          const lPages = buildPages2(landscapeSel);
-          if (lPages.length > 0) printViaIframe(buildPrintHtml(lPages, `서류 출력 — ${checkIn.customer_name}`, true));
-        }
-        if (portraitSel.length > 0) {
-          const pPages = buildPages2(portraitSel);
-          if (pPages.length > 0) printViaIframe(buildPrintHtml(pPages, `서류 출력 — ${checkIn.customer_name}`));
-        }
-      }
-      // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): form_submissions 이력 기록은
-      //   persistSubmissionsAndResolveIssueNo() 에서 **인쇄 전** 이미 완료(persist-before-print). 구 print-후 fire&forget 제거.
-
-      // 2. 수납 + auto-done
-      // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
-      // T-20260616-foot-PMW-SPLIT-PAYMENT AC-2: 분할결제도 동일 합산 검증 경유
-      const taxType = deductMode ? '선수금' : null;
-      const splits = buildSettleSplits(amount);
-      if (!splits) {
-        setDocSettlePrinting(false);
-        return;
-      }
-      await executeAutoDone(splits, taxType);
-      localStorage.removeItem(draftKey(checkIn.id));
-      toast.success('출력 및 수납 완료 — 완료 슬롯으로 이동됩니다');
-      setDocSettlePrinting(false);
-      onComplete();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '출력 및 수납 처리 실패';
-      toast.error(msg);
-      setDocSettlePrinting(false);
-    }
-  };
+  // ── [출력 및 수납] 제거 — T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건④ ──────────────────────
+  //   supersedes T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT(66af63ff): [출력 및 수납](handleDocAndSettle)
+  //   진입점을 제거하고 [출력](handleDocPrint)만 존치한다. 그 경로의 금액바인딩(synthetic payRow·⑨선차감보정)은
+  //   handleDocPrint 로 carry-forward 되어 재사용된다(요건③). 수납은 별도 [수납] 버튼(handleSettle) 경유 유지(요건②).
 
   // ── 표시용 수납 금액 ─────────────────────────────────────────────────────
   // T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT: 수납잔액 표시 = 본인부담금 + 비급여(공단부담금 제외).
@@ -3732,12 +3703,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   {/* 수납 버튼 (저장 후 표시) */}
                   {saved && (
                     <Button
-                      className="w-full h-11 sm:h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
+                      className={cn(
+                        'w-full h-11 sm:h-10 text-white text-sm font-semibold',
+                        // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 수납완료 후 창이 유지되므로 상태를 명확히(초록·비활성).
+                        settled
+                          ? 'bg-emerald-600 hover:bg-emerald-600'
+                          : 'bg-purple-600 hover:bg-purple-700',
+                      )}
                       onClick={handleSettle}
-                      disabled={submitting || !splitValid}
+                      // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: settled 시 비활성 → 재클릭 이중수납 차단(창 유지 모드).
+                      disabled={submitting || settled || !splitValid}
                       data-testid="btn-settle"
                     >
-                      {submitting ? '처리 중...' : (
+                      {settled ? (
+                        <span className="inline-flex items-center gap-1"><Check className="w-4 h-4" /> 수납 완료</span>
+                      ) : submitting ? '처리 중...' : (
                         // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 상황별 버튼 레이블
                         // 전액 패키지차감(잔액=0) / 잔액 있는 차감 / 일반 결제
                         deductMode && deductAmount === 0
@@ -4037,19 +4017,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 {docPrinting ? '출력 중...' : '출력'}
               </Button>
 
-              <Button
-                size="sm"
-                className="w-full gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white h-11 sm:h-9"
-                onClick={handleDocAndSettle}
-                disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved || !splitValid}
-                data-testid="btn-doc-settle"
-              >
-                <Printer className="h-3.5 w-3.5" />
-                {docSettlePrinting
-                  ? '처리 중...'
-                  : `출력 및 수납${saved ? ` ${formatAmount(displayAmount)}` : ''}`}
-              </Button>
-
+              {/* T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건④: [출력 및 수납] 버튼 제거([출력]만 존치).
+                  수납은 진료비 산정 구역의 [수납](handleSettle) 경유. 출력 서류의 금액정합은 handleDocPrint 로 carry-forward(요건③). */}
               {!saved && selectedDocKeys.size > 0 && (
                 <p className="text-[10px] text-amber-600 text-center">시술 저장 후 활성화</p>
               )}

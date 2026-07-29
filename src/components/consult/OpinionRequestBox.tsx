@@ -53,6 +53,8 @@ export default function OpinionRequestBox({
   birthDate,
   issuedBy,
   requestedByName,
+  canRequest = true,
+  canCancel = true,
 }: {
   customerId: string;
   clinicId: string;
@@ -61,6 +63,12 @@ export default function OpinionRequestBox({
   birthDate: string | null;
   issuedBy: string;              // 현재 직원 staff.id (form_submissions.issued_by, NOT NULL)
   requestedByName: string;       // 표기 스냅샷(요청 직원명)
+  // ── T-20260728-foot-CHART2-DOCREQ-HISTORY-COORDPERM (item②) ──
+  //   canRequest = 서류 '신청(요청)' 권한(canRequestOpinionDoc). coordinator 포함 전 직군(RLS 패리티) → 기본 true(무회귀).
+  //   canCancel  = 요청 '취소(철회)' 권한(canCancelOpinionRequest). **coordinator 미부여**(신청만) → false면 취소 X 버튼 비노출.
+  //   ★기본값 true = 기존 호출부(플래그 미전달) 무회귀. 부모(CustomerChartPage)가 profile.role 기반 값 주입.
+  canRequest?: boolean;
+  canCancel?: boolean;
 }) {
   const [docType, setDocType] = useState<OpinionDocType>('opinion');
   // A안 게이트 축: [진단서] docType = 전역 라디오(통틀어 1개) / [소견서] docType = 전역 복수.
@@ -311,7 +319,7 @@ export default function OpinionRequestBox({
         <Button
           size="sm"
           className="h-8 gap-1 bg-neutral-800 px-3 text-[11px] text-white hover:bg-neutral-900 disabled:opacity-40"
-          disabled={createMut.isPending || selected.size === 0 || !issuedBy}
+          disabled={createMut.isPending || selected.size === 0 || !issuedBy || !canRequest}
           onClick={handleRequest}
           data-testid="opinion-req-submit"
         >
@@ -331,17 +339,21 @@ export default function OpinionRequestBox({
               <span className="text-neutral-500">· 해당항목 {q.selectedKeys.length}개</span>
               {q.staffMemo && <span className="truncate text-neutral-500" title={q.staffMemo}>· {q.staffMemo}</span>}
               <span className="ml-auto shrink-0 text-neutral-500">원장 발행 대기</span>
-              {/* 신청내역 목록에서 취소 요청 — 진료대시보드 '요청 취소'와 동일 처리(확인 다이얼로그 후 소프트 취소). */}
-              <button
-                type="button"
-                onClick={() => setCancelTarget(q)}
-                title="취소 요청"
-                aria-label="취소 요청"
-                data-testid={`opinion-req-cancel-${q.id}`}
-                className="shrink-0 rounded p-0.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              {/* 신청내역 목록에서 취소 요청 — 진료대시보드 '요청 취소'와 동일 처리(확인 다이얼로그 후 소프트 취소).
+                  ★T-20260728 item② (AC②-2/시나리오3): coordinator = 신청만 → 취소 버튼 비노출(canCancel=false).
+                    다른 역할(실장 consultant 등) 기존 취소 동선 무회귀. */}
+              {canCancel && (
+                <button
+                  type="button"
+                  onClick={() => setCancelTarget(q)}
+                  title="취소 요청"
+                  aria-label="취소 요청"
+                  data-testid={`opinion-req-cancel-${q.id}`}
+                  className="shrink-0 rounded p-0.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ))}
         </div>

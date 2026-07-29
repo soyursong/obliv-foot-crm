@@ -203,7 +203,12 @@ test.describe('T-20260706-foot-DOCFORM-CATEGORY-RELABEL-ROLLBACK — A안 서류
     const total = groups.reduce((n, g) => n + g.templates.length, 0);
     // T-20260719-foot-DOCLIST-RECEIPT-CONSOLIDATE-REORDER: 입력의 구 bill_receipt 는 화이트리스트 제외 →
     //   groupDocList 결과 = 정본 11종. 발급 동선 보존.
-    expect(total).toBe(DOCLIST_ORDER_10.length); // 11
+    // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지가 DOCLIST_ORDER_10 에 additive 추가돼
+    //   전체 화이트리스트는 12가 됐으나, 본 spec 의 DOC_TEMPLATES 목 입력에는 그 row 가 없으므로(제증명 계열만)
+    //   groupDocList 결과 total 은 제증명 11 그대로. DOCLIST_ORDER_10.length(=12) 대신 목 입력의 유효 화이트리스트
+    //   개수로 검증(제증명 계열 11). 초진 관리기록지 '관리기록' 그룹 검증은 T-20260728 spec 소관.
+    const validInMock = DOC_TEMPLATES.filter((t) => DOCLIST_ORDER_10.includes(t.form_key)).length;
+    expect(total).toBe(validInMock); // 11 (제증명 계열, 구 bill_receipt 제외)
     // 제증명 그룹 내부 순서 = DOCLIST 순서(정본 영수증 bill_receipt_new 가 diagnosis보다 앞)
     const jeung = groups.find((g) => g.label === DOC_GROUP_LABEL_JEUNGMYEONG)!;
     const keys = jeung.templates.map((t) => t.form_key);

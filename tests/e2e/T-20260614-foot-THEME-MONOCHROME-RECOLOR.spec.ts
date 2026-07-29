@@ -124,7 +124,21 @@ test.describe('THEME-MONOCHROME-RECOLOR(재오픈) — 컴파일 CSS 가드 (빌
 test.describe('THEME-MONOCHROME-RECOLOR(재오픈) — 공개 로그인 실렌더 (AC5)', () => {
   test('Public: 로그인 화면 배경이 순수 흰색으로 렌더되고 primary 는 Umber 포인트다', async ({ page }) => {
     await page.goto('/login');
-    await page.waitForLoadState('networkidle');
+    // live-render 안정화: networkidle(cold 단독 30s timeout 재발) 대신,
+    // 테마 CSS 커스텀 프로퍼티가 실제 documentElement 에 적용될 때까지 명시 대기.
+    // assert 대상(--background/--primary) 자체를 대기 조건으로 삼아 flaky 차단.
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForFunction(
+      () => {
+        const s = getComputedStyle(document.documentElement);
+        return (
+          s.getPropertyValue('--background').trim().length > 0 &&
+          s.getPropertyValue('--primary').trim().length > 0
+        );
+      },
+      undefined,
+      { timeout: 15000 },
+    );
 
     const probe = await page.evaluate(() => ({
       bg: getComputedStyle(document.documentElement).getPropertyValue('--background').trim(),
@@ -134,7 +148,8 @@ test.describe('THEME-MONOCHROME-RECOLOR(재오픈) — 공개 로그인 실렌�
     // 배경 = 순수 흰색 oklch(1 0 0)
     expect(probe.bg).toMatch(/oklch\(1 0 0\)/);
     // 강조 포인트 primary = Umber(0.33) 유지
-    expect(probe.primary).toMatch(/0\.33/);
+    // Chromium getComputedStyle 은 oklch 선행0 을 strip 할 수 있어(".33" vs "0.33") 양쪽 매치.
+    expect(probe.primary).toMatch(/0?\.33/);
 
     await page.screenshot({
       path: 'evidence/T-20260614-foot-THEME-MONOCHROME-RECOLOR_login-render.png',

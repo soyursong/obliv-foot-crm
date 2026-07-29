@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { seoulISODate, todaySeoulISODate } from './format';
 import type { VisitType } from './types';
+import { applyOwnerForcedVisitType } from './visitTypeOverrides';
 
 /**
  * T-20260706-foot-INTAKE-REVISIT-JUDGE-365
@@ -169,6 +170,104 @@ export async function resolveVisitTypesByRecency(
     }
     const lastAt = latestAt.get(id) ?? null;
     result.set(id, classifyVisitByRecency(lastAt ? seoulISODate(lastAt) : null, todayISO));
+  }
+  return result;
+}
+
+/** resolveVisitTypesByCheckIn 입력 — 판정 대상 배정 check_in 최소 형상. */
+export interface CheckInVisitRow {
+  id: string;
+  customer_id: string | null | undefined;
+  checked_in_at: string | null | undefined;
+}
+
+/**
+ * T-20260727-foot-ASSIGN-REVISIT-OVERCOUNT-RECLASS-GATE (Phase 2A)
+ *
+ * ★ per-CHECK_IN recency 판정 — resolveVisitTypesByRecency(고객단위)의 **시점정합 교정판**.
+ *
+ * RC(Phase1 §2): 기존 배치는 판정경계 상한이 **'오늘 자정'** 이라, 판정대상 방문 **자기 자신**(과거 날짜의
+ *   첫 완료방문)과 그 **후속 방문**까지 "과거 done"으로 잡아 self-contamination → 순수초진을 재진 오승격.
+ *   (SAMEDAY 가드는 '당일'만 배제 → '과거 날짜의 첫 방문'은 통과.)
+ *
+ * 교정: 판정경계 상한 = '오늘 자정'  →  **'판정대상 check_in 자기 checked_in_at'**.
+ *   각 배정 check_in 을, **그 방문 시각 이전(strict <)의 완료(done) 방문**에 대해서만 recency 판정한다.
+ *   자기·동일/후속 방문은 자동 배제 → 시점정합 초진/재진. (KEEP 정의와 동일: 배정 시각 이전 done 1건+ = 재진.)
+ *
+ * owner-forced 보존: recency 결과를 반환 직전 applyOwnerForcedVisitType(check_in id) 로 pin.
+ *   총괄 수동판단(초진/재진)이 recency 재파생에 덮이지 않게 한다(visitTypeOverrides.ts).
+ *
+ * 반환: check_in id → VisitType. 무이력/이전 done 없음 = new / 조회실패 = returning(기존 폴백 정합).
+ * best-effort — throw 하지 않는다. (판정산식 = classifyVisitByRecency 단일 재사용, re-divergence 방지.)
+ */
+export async function resolveVisitTypesByCheckIn(
+  rows: CheckInVisitRow[],
+  clinicId: string | null | undefined,
+): Promise<Map<string, VisitType>> {
+  const result = new Map<string, VisitType>();
+  const valid = rows.filter((r) => r.id && r.customer_id && r.checked_in_at);
+  if (valid.length === 0) {
+    // 그래도 owner-forced pin 은 반영(무-쿼리라도 override 대상이면 고정).
+    for (const r of rows) if (r.id) result.set(r.id, applyOwnerForcedVisitType(r.id, 'new'));
+    return result;
+  }
+
+  const custIds = [...new Set(valid.map((r) => r.customer_id as string))];
+  // customer_id → 완료(done) 방문 checked_in_at 오름차순 리스트(자기 check_in 시각 이전 판정용).
+  const doneByCust = new Map<string, string[]>();
+  const erroredCust = new Set<string>();
+  const CHUNK = 200; // PostgREST .in() URL 길이 한계 회피
+  for (let i = 0; i < custIds.length; i += CHUNK) {
+    const slice = custIds.slice(i, i + CHUNK);
+    try {
+      let q = supabase
+        .from('check_ins')
+        .select('customer_id, checked_in_at')
+        .in('customer_id', slice)
+        .is('deleted_at', null) // R2B soft-hide 제외
+        .eq('status', 'done') // 완료방문만 = 재진 근거(취소·미방문 제외 — KEEP 정의 정합)
+        .order('checked_in_at', { ascending: true });
+      if (clinicId) q = q.eq('clinic_id', clinicId); // 종로 오리진점 풋센터 한정
+      const { data, error } = await q;
+      if (error) {
+        console.warn('[visitRecency] per-checkin 배치 조회 실패 — 해당 chunk returning 폴백:', error.message);
+        slice.forEach((id) => erroredCust.add(id));
+        continue;
+      }
+      for (const r of (data ?? []) as { customer_id: string; checked_in_at: string }[]) {
+        const arr = doneByCust.get(r.customer_id) ?? [];
+        arr.push(r.checked_in_at);
+        doneByCust.set(r.customer_id, arr);
+      }
+    } catch (e) {
+      console.warn('[visitRecency] per-checkin 배치 예외 — 해당 chunk returning 폴백:', e);
+      slice.forEach((id) => erroredCust.add(id));
+    }
+  }
+
+  for (const row of valid) {
+    const cust = row.customer_id as string;
+    const selfAt = row.checked_in_at as string;
+    if (erroredCust.has(cust)) {
+      result.set(row.id, applyOwnerForcedVisitType(row.id, 'returning')); // 조회 실패 → 보수적 폴백(+override pin)
+      continue;
+    }
+    // 자기 check_in 시각 이전(strict <)의 완료방문 중 최신 1건.
+    const dones = doneByCust.get(cust) ?? [];
+    let lastPriorDone: string | null = null;
+    for (const d of dones) {
+      if (d < selfAt) lastPriorDone = d; // 오름차순 → 마지막으로 통과한 값 = 자기 이전 최신 done
+      else break;
+    }
+    const recency = classifyVisitByRecency(
+      lastPriorDone ? seoulISODate(lastPriorDone) : null,
+      seoulISODate(selfAt), // 판정 기준일 = 판정대상 방문일(오늘 아님 — 시점정합)
+    );
+    result.set(row.id, applyOwnerForcedVisitType(row.id, recency));
+  }
+  // valid 아니지만 id 있는 행도 override pin 기회 부여(그 외 new).
+  for (const r of rows) {
+    if (!result.has(r.id) && r.id) result.set(r.id, applyOwnerForcedVisitType(r.id, 'new'));
   }
   return result;
 }
