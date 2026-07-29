@@ -2352,6 +2352,11 @@ const BILL_RECEIPT_NEW_HTML = `
  * 자동 채움: {{patient_name}}·{{patient_birthdate}}·{{patient_phone}}·{{visit_date}}·{{issue_date}}·
  *   {{clinic_name}}·{{doctor_name}} (AUTO_BIND_KEYS). 직인 {{institution_seal_html}} = 법인 인감(getStampUrl).
  */
+// T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 현장 실사용 후 7건 개편 (base=DOCFORM-FIRSTVISIT-MGMTRECORD).
+//   ② 제거: 관리 부위(좌/우)·발가락·초진 시 촬영 기록. ③ 제거: 기타 확인 사항·발톱 상태·관리계획.
+//   ④ '초기 관리 내용'(체크박스) → '시술 및 처방'(결제 미니창 치료코드 드롭다운 삽입, {{procedure_rx_html}}).
+//   ⑤ 상병명(진단코드 드롭다운 삽입, {{diagnosis_codes_html}}) 신규. ⑥ 증상경과(자유텍스트+상용구, {{symptom_progress}}) 신규.
+//   ⑦ 담당의사 서명란(성함·직인 / 병원명·법인도장 2열). procedure_rx_html/diagnosis_codes_html = _html 접미사 → raw 렌더.
 const FIRST_VISIT_MGMT_RECORD_HTML = `
 ${COMMON_STYLE}
 <style>
@@ -2363,6 +2368,9 @@ ${COMMON_STYLE}
   .cb-item { display: inline-flex; align-items: center; margin-right: 14px; white-space: nowrap; font-size: 9pt; }
   .fvmr-sec-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 26%; vertical-align: middle; }
   .fvmr-area { min-height: 42px; vertical-align: top; }
+  .fvmr-sig-head { background: #f0f0f0; font-weight: bold; text-align: center; }
+  .fvmr-sig-cell { height: 62px; vertical-align: middle; text-align: center; }
+  .fvmr-code-line { display: block; margin: 1px 0; }
 </style>
 <div class="form-wrap">
   <div class="title" style="letter-spacing:8px;">초 진 관 리 기 록 지</div>
@@ -2386,7 +2394,7 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- ③ 방문 목적 -->
+  <!-- 방문 목적 -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
@@ -2402,7 +2410,7 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- ④ 증상 발생 경위 -->
+  <!-- 증상 발생 경위 -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
@@ -2412,32 +2420,25 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- ⑤ 초진 시 상태 확인 -->
+  <!-- 증상경과 (item 6 신규 — 자유텍스트 + 상용구) -->
+  <table style="margin-top:4px;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sec-label">증상경과</td>
+        <td class="fvmr-area">{{symptom_progress}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 초진 시 상태 확인 (축소: 피부 상태 · 통증 여부 · 보행 불편) -->
   <table style="margin-top:4px; table-layout:fixed;">
     <tbody>
       <tr>
-        <td class="fvmr-sec-label" style="width:13%;">관리 부위</td>
-        <td colspan="3" style="text-align:left;">
-          <span class="cb-item"><span class="cbx">{{side_left}}</span>좌(L)</span>
-          <span class="cb-item"><span class="cbx">{{side_right}}</span>우(R)</span>
-          <span style="margin:0 8px; color:#888;">|</span>
-          <span class="cb-item"><span class="cbx">{{toe_1}}</span>엄지</span>
-          <span class="cb-item"><span class="cbx">{{toe_2}}</span>둘째</span>
-          <span class="cb-item"><span class="cbx">{{toe_3}}</span>셋째</span>
-          <span class="cb-item"><span class="cbx">{{toe_4}}</span>넷째</span>
-          <span class="cb-item"><span class="cbx">{{toe_5}}</span>다섯째</span>
-        </td>
-      </tr>
-      <tr>
-        <td class="fvmr-sec-label" style="width:13%;">발톱 상태</td>
-        <td colspan="3" class="fvmr-area" style="min-height:32px;">{{nail_status}}</td>
-      </tr>
-      <tr>
-        <td class="fvmr-sec-label">피부 상태</td>
+        <td class="fvmr-sec-label" style="width:13%;">피부 상태</td>
         <td colspan="3" class="fvmr-area" style="min-height:32px;">{{skin_status}}</td>
       </tr>
       <tr>
-        <td class="fvmr-sec-label">통증 여부</td>
+        <td class="fvmr-sec-label" style="width:13%;">통증 여부</td>
         <td style="text-align:left; width:37%;">
           <span class="cb-item"><span class="cbx">{{pain_yes}}</span>있음</span>
           <span class="cb-item"><span class="cbx">{{pain_no}}</span>없음</span>
@@ -2448,53 +2449,30 @@ ${COMMON_STYLE}
           <span class="cb-item"><span class="cbx">{{gait_no}}</span>없음</span>
         </td>
       </tr>
-      <tr>
-        <td class="fvmr-sec-label">기타 확인 사항</td>
-        <td colspan="3" class="fvmr-area" style="min-height:32px;">{{other_check}}</td>
-      </tr>
     </tbody>
   </table>
 
-  <!-- ⑥ 초진 시 촬영 기록 -->
+  <!-- 시술 및 처방 (item 4 — 결제 미니창 치료코드 드롭다운 삽입) -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td class="fvmr-sec-label" style="width:26%;">초진 시 촬영 기록</td>
-        <td style="text-align:left;">
-          <span class="cb-item"><span class="cbx">{{photo_done}}</span>사진 촬영 완료</span>
-          <span class="cb-item"><span class="cbx">{{photo_none}}</span>촬영하지 않음</span>
-        </td>
+        <td class="fvmr-sec-label" style="width:26%;">시술 및 처방</td>
+        <td class="fvmr-area" style="text-align:left;">{{procedure_rx_html}}</td>
       </tr>
     </tbody>
   </table>
 
-  <!-- ⑦ 초기 관리 내용 -->
+  <!-- 상병명 (item 5 — 진단코드 드롭다운 삽입) -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td class="fvmr-sec-label" style="width:26%;">초기 관리 내용</td>
-        <td style="text-align:left;">
-          <span class="cb-item"><span class="cbx">{{care_trim}}</span>발톱 정리</span>
-          <span class="cb-item"><span class="cbx">{{care_problem}}</span>문제성 발톱 관리</span>
-          <span class="cb-item"><span class="cbx">{{care_pressure}}</span>압력 감소 조치</span>
-          <span class="cb-item"><span class="cbx">{{care_pad}}</span>보호패드 적용</span>
-          <span class="cb-item"><span class="cbx">{{care_other}}</span>기타: {{care_other_text}}</span>
-        </td>
+        <td class="fvmr-sec-label" style="width:26%;">상병명</td>
+        <td class="fvmr-area" style="text-align:left;">{{diagnosis_codes_html}}</td>
       </tr>
     </tbody>
   </table>
 
-  <!-- ⑧ 관리 계획 -->
-  <table style="margin-top:4px;">
-    <tbody>
-      <tr>
-        <td class="fvmr-sec-label" style="width:26%;">관리 계획</td>
-        <td class="fvmr-area">{{care_plan}}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <!-- ⑨ 특이사항 -->
+  <!-- 특이사항 -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
@@ -2504,20 +2482,32 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- 하단 서명 영역: 발급일 / 센터명 / 담당자 / 직인 -->
+  <!-- 발급일 -->
   <table style="margin-top:10px; table-layout:fixed;">
     <tbody>
       <tr>
-        <td class="fvmr-sec-label" style="width:13%;">발 급 일</td>
-        <td style="width:37%;">{{issue_date}}</td>
-        <td class="fvmr-sec-label" style="width:13%;">센 터 명</td>
-        <td style="width:37%;">{{clinic_name}}</td>
+        <td class="fvmr-sec-label" style="width:26%;">발 급 일</td>
+        <td>{{issue_date}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- item 7: 담당의사 서명란 (성함·직인 / 병원명·법인도장 2열) -->
+  <table style="margin-top:8px; table-layout:fixed;">
+    <tbody>
+      <tr>
+        <td class="fvmr-sig-head" style="width:50%;">담당의사 (성함 / 직인)</td>
+        <td class="fvmr-sig-head" style="width:50%;">병원명 (법인도장)</td>
       </tr>
       <tr>
-        <td class="fvmr-sec-label">담 당 자</td>
-        <td>{{doctor_name}}</td>
-        <td class="fvmr-sec-label">직&nbsp;&nbsp;인</td>
-        <td style="text-align:center; min-height:52px;">{{institution_seal_html}}</td>
+        <td class="fvmr-sig-cell">
+          {{doctor_name}}
+          <span style="display:inline-block; margin-left:8px; vertical-align:middle;">{{doctor_seal_html}}</span>
+        </td>
+        <td class="fvmr-sig-cell">
+          {{clinic_name}}
+          <span style="display:inline-block; margin-left:8px; vertical-align:middle;">{{institution_seal_html}}</span>
+        </td>
       </tr>
     </tbody>
   </table>

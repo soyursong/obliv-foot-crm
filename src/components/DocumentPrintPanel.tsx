@@ -158,6 +158,9 @@ import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocForm
 //   field_map 에 넣지 않고 전용 블록으로 렌더 → 텍스트 input 중복 노출 방지(자유텍스트만 field_map).
 const FIRST_VISIT_MGMT_CHECK_MARK = '✔';
 interface FvmrCheckGroup { label: string; options: Array<{ key: string; label: string }> }
+// T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 항목② 관리부위·발가락·초진촬영기록 체크그룹 제거.
+//   항목④ '초기 관리 내용' 체크박스 → '시술 및 처방' 드롭다운(아래 전용 블록)으로 대체하며 체크그룹에서 제거.
+//   잔존 체크그룹 = 방문 목적 / 통증 여부 / 보행 불편.
 const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
   {
     label: '방문 목적',
@@ -167,23 +170,6 @@ const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
       { key: 'vp_thick', label: '두꺼운 발톱' },
       { key: 'vp_deformed', label: '변형발톱' },
       { key: 'vp_other', label: '기타' },
-    ],
-  },
-  {
-    label: '관리 부위 (좌/우)',
-    options: [
-      { key: 'side_left', label: '좌(L)' },
-      { key: 'side_right', label: '우(R)' },
-    ],
-  },
-  {
-    label: '발가락',
-    options: [
-      { key: 'toe_1', label: '엄지' },
-      { key: 'toe_2', label: '둘째' },
-      { key: 'toe_3', label: '셋째' },
-      { key: 'toe_4', label: '넷째' },
-      { key: 'toe_5', label: '다섯째' },
     ],
   },
   {
@@ -198,23 +184,6 @@ const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
     options: [
       { key: 'gait_yes', label: '있음' },
       { key: 'gait_no', label: '없음' },
-    ],
-  },
-  {
-    label: '초진 시 촬영 기록',
-    options: [
-      { key: 'photo_done', label: '사진 촬영 완료' },
-      { key: 'photo_none', label: '촬영하지 않음' },
-    ],
-  },
-  {
-    label: '초기 관리 내용',
-    options: [
-      { key: 'care_trim', label: '발톱 정리' },
-      { key: 'care_problem', label: '문제성 발톱 관리' },
-      { key: 'care_pressure', label: '압력 감소 조치' },
-      { key: 'care_pad', label: '보호패드 적용' },
-      { key: 'care_other', label: '기타' },
     ],
   },
 ];
@@ -2234,6 +2203,19 @@ function IssueDialog({
   const [clinicDoctors, setClinicDoctors] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
   const [selectedClinicDoctorId, setSelectedClinicDoctorId] = useState<string>('');
   const [clinicDoctorOverrides, setClinicDoctorOverrides] = useState<Record<string, string>>({});
+  // ── T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 초진 관리기록지 전용(격리) 상태 ──
+  //   항목④ 시술및처방 / 항목⑤ 상병명 = 결제 미니창과 동일 소스(services, READ-ONLY 재사용)에서 코드 드롭다운 선택.
+  //     - 치료코드(시술및처방) = category_label !== '상병' 인 활성 서비스(풋케어/처방약/검사/수액 등).
+  //     - 상병코드(상병명)     = category_label === '상병' 인 활성 서비스(service_code=코드, name=상병명).
+  //   항목⑥ 증상경과 상용구 = 펜차트 상용구 시스템(phrase_templates, phrase_type='pen_chart') READ-ONLY 재사용.
+  //   선택 결과는 allValues memo 에 procedure_rx_html / diagnosis_codes_html(_html raw) 로 주입 → 인쇄·persist.
+  //   증상경과 자유텍스트는 manualValues(updateField 'symptom_progress') 로 흐름. 전 상태는 form_key 게이트 + 언마운트 리셋.
+  type MgmtCodeSvc = { id: string; name: string; service_code: string | null; category_label: string | null };
+  type MgmtCodePick = { id: string; name: string; code: string };
+  const [mgmtCodeServices, setMgmtCodeServices] = useState<MgmtCodeSvc[]>([]);
+  const [mgmtProcedures, setMgmtProcedures] = useState<MgmtCodePick[]>([]);
+  const [mgmtDiagnoses, setMgmtDiagnoses] = useState<MgmtCodePick[]>([]);
+  const [mgmtPhrases, setMgmtPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
   // T-20260608-foot-DOC-PATH12-SYNC: PMW(PATH-4) 빌링 폴백 소스 — check_in_services 기반.
@@ -2477,6 +2459,40 @@ function IssueDialog({
       });
     return () => { cancelled = true; };
   }, [open, checkIn.customer_id, checkIn.clinic_id]);
+
+  // ── T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 초진 관리기록지 전용 소스 로드(격리 — 다른 서류 무영향) ──
+  //   ①② 코드 드롭다운 소스 = services(결제 미니창과 동일 테이블, READ-ONLY). ③ 상용구 = phrase_templates(펜차트, READ-ONLY).
+  useEffect(() => {
+    if (!open || template.form_key !== 'first_visit_mgmt_record') {
+      setMgmtCodeServices([]);
+      setMgmtPhrases([]);
+      setMgmtProcedures([]);
+      setMgmtDiagnoses([]);
+      return;
+    }
+    let cancelled = false;
+    // 코드 소스(치료코드 + 상병코드) — category_label 로 분기(결제 미니창 TAB_CATEGORY_MAP 과 동일 기준).
+    supabase
+      .from('services')
+      .select('id, name, service_code, category_label')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('active', true)
+      .order('sort_order')
+      .then(({ data }) => {
+        if (!cancelled && data) setMgmtCodeServices(data as MgmtCodeSvc[]);
+      });
+    // 증상경과 상용구 — 펜차트 상용구 시스템 재사용(phrase_type='pen_chart', is_active).
+    supabase
+      .from('phrase_templates')
+      .select('id, name, content')
+      .eq('is_active', true)
+      .eq('phrase_type', 'pen_chart')
+      .order('sort_order')
+      .then(({ data }) => {
+        if (!cancelled && data) setMgmtPhrases(data as { id: number; name: string; content: string }[]);
+      });
+    return () => { cancelled = true; };
+  }, [open, template.form_key, checkIn.clinic_id]);
 
   // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호 당일순번 print-time 로드 제거.
   //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative.
@@ -2933,8 +2949,22 @@ function IssueDialog({
       if (v != null && v !== '') base[k] = v;
     }
 
+    // T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 항목④ 시술및처방 / ⑤ 상병명 선택 코드를 _html(raw)로 주입.
+    //   증상경과(symptom_progress) 자유텍스트는 manualValues 로 이미 base 에 포함(별도 주입 불요).
+    if (template.form_key === 'first_visit_mgmt_record') {
+      const renderCodeLines = (picks: MgmtCodePick[]): string =>
+        picks
+          .map((p) => {
+            const label = p.code ? `${p.code} · ${p.name}` : p.name;
+            return `<span class="fvmr-code-line">- ${label}</span>`;
+          })
+          .join('');
+      base.procedure_rx_html = renderCodeLines(mgmtProcedures);
+      base.diagnosis_codes_html = renderCodeLines(mgmtDiagnoses);
+    }
+
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys, mgmtProcedures, mgmtDiagnoses]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -3544,7 +3574,11 @@ function IssueDialog({
             )}
 
             {/* 복수 근무원장님 선택 배너 */}
-            {dutyDoctors.length > 1 && (
+            {/* T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2 항목①: 초진 관리기록지는 의사 선택 UI 를
+                "면허번호·직인 기준" 단일로 통합 → '서류 발행 원장님 선택'(근무캘린더) 배너 숨김.
+                clinicDoctorOverrides.doctor_name 이 allValues 에서 doctor_name 을 이미 결선하므로 발행 원장 정합 유지.
+                타 서류(form_key ≠ mgmt)는 기존 2배너 동작 무변경(격리). */}
+            {dutyDoctors.length > 1 && template.form_key !== 'first_visit_mgmt_record' && (
               <div className="rounded-lg bg-teal-50 border border-teal-200 p-3 space-y-2">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-teal-800">
                   <UserCheck className="h-3.5 w-3.5" />
@@ -3732,6 +3766,132 @@ function IssueDialog({
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2 항목④⑤⑥: 시술및처방·상병명 코드 드롭다운(결제 미니창 소스 재사용)
+                + 증상경과 자유텍스트 + 상용구(펜차트 재사용). 초진 관리기록지 전용(격리). */}
+            {template.form_key === 'first_visit_mgmt_record' && (
+              <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 space-y-4">
+                {/* 항목④ 시술 및 처방 — 결제 미니창 치료코드(비-상병 서비스) 드롭다운 → 선택 삽입 */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-sky-800">시술 및 처방</Label>
+                  <select
+                    data-testid="fvmr-procedure-select"
+                    className="w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm min-h-[44px]"
+                    value=""
+                    onChange={(e) => {
+                      const svc = mgmtCodeServices.find((s) => s.id === e.target.value);
+                      if (!svc) return;
+                      setMgmtProcedures((prev) =>
+                        prev.some((p) => p.id === svc.id)
+                          ? prev
+                          : [...prev, { id: svc.id, name: svc.name, code: svc.service_code ?? '' }],
+                      );
+                    }}
+                  >
+                    <option value="">치료 코드 선택…</option>
+                    {mgmtCodeServices
+                      .filter((s) => (s.category_label ?? '') !== '상병')
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.service_code ? `${s.service_code} · ${s.name}` : s.name}
+                        </option>
+                      ))}
+                  </select>
+                  {mgmtProcedures.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" data-testid="fvmr-procedure-chips">
+                      {mgmtProcedures.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          data-testid={`fvmr-procedure-chip-${p.id}`}
+                          className="rounded-full border border-sky-400 bg-sky-100 px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-200"
+                          onClick={() => setMgmtProcedures((prev) => prev.filter((x) => x.id !== p.id))}
+                          title="클릭하여 제거"
+                        >
+                          {p.code ? `${p.code} · ${p.name}` : p.name} ✕
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 항목⑤ 상병명 — 결제 미니창 상병코드(category_label='상병') 드롭다운 → 선택 삽입 */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-sky-800">상병명</Label>
+                  <select
+                    data-testid="fvmr-diagnosis-select"
+                    className="w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm min-h-[44px]"
+                    value=""
+                    onChange={(e) => {
+                      const svc = mgmtCodeServices.find((s) => s.id === e.target.value);
+                      if (!svc) return;
+                      setMgmtDiagnoses((prev) =>
+                        prev.some((p) => p.id === svc.id)
+                          ? prev
+                          : [...prev, { id: svc.id, name: svc.name, code: svc.service_code ?? '' }],
+                      );
+                    }}
+                  >
+                    <option value="">상병 코드 선택…</option>
+                    {mgmtCodeServices
+                      .filter((s) => (s.category_label ?? '') === '상병')
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.service_code ? `${s.service_code} · ${s.name}` : s.name}
+                        </option>
+                      ))}
+                  </select>
+                  {mgmtDiagnoses.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" data-testid="fvmr-diagnosis-chips">
+                      {mgmtDiagnoses.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          data-testid={`fvmr-diagnosis-chip-${p.id}`}
+                          className="rounded-full border border-sky-400 bg-sky-100 px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-200"
+                          onClick={() => setMgmtDiagnoses((prev) => prev.filter((x) => x.id !== p.id))}
+                          title="클릭하여 제거"
+                        >
+                          {p.code ? `${p.code} · ${p.name}` : p.name} ✕
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 항목⑥ 증상경과 — 자유텍스트 + 상용구(펜차트 phrase_templates 재사용) 버튼 삽입 */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-sky-800">증상경과</Label>
+                  <Textarea
+                    data-testid="fvmr-symptom-progress"
+                    value={allValues.symptom_progress ?? ''}
+                    onChange={(e) => updateField('symptom_progress', e.target.value)}
+                    placeholder="증상경과 입력 (상용구 버튼으로 문구 삽입 가능)"
+                    rows={3}
+                    className="text-sm bg-white"
+                  />
+                  {mgmtPhrases.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" data-testid="fvmr-phrase-buttons">
+                      {mgmtPhrases.map((ph) => (
+                        <button
+                          key={ph.id}
+                          type="button"
+                          data-testid={`fvmr-phrase-${ph.id}`}
+                          className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 min-h-[40px]"
+                          onClick={() => {
+                            const cur = allValues.symptom_progress ?? '';
+                            updateField('symptom_progress', cur ? `${cur}\n${ph.content}` : ph.content);
+                          }}
+                          title={ph.content}
+                        >
+                          {ph.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
