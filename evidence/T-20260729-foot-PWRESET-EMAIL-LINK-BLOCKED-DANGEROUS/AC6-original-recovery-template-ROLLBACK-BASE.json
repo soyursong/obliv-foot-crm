@@ -1,0 +1,8 @@
+{
+  "captured_at_note": "AC#6 rollback base — ORIGINAL recovery template BEFORE change (Management API GET, project rxlomoozakkjesdqjtvd)",
+  "mailer_subjects_recovery": "Reset Your Password",
+  "mailer_templates_recovery_content": "<h2>Reset Password</h2>\n\n<p>Follow this link to reset the password for your user:</p>\n<p><a href=\"{{ .ConfirmationURL }}\">Reset Password</a></p>",
+  "site_url": "https://obliv-foot-crm.pages.dev",
+  "finding": "H2 DISCONFIRMED — anchor <a href=\"{{ .ConfirmationURL }}\"> already present in original recovery template.",
+  "runtime_probe": "admin generate_link type=recovery (throwaway user) → action_link well-formed https on rxlomoozakkjesdqjtvd.supabase.co, redirect_to=https://obliv-foot-crm.pages.dev. Link generation OK."
+}

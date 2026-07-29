@@ -1,0 +1,29 @@
+<!--
+  obliv-foot-crm — Supabase Auth "Reset Password" (recovery) email template
+  SSOT (version-controlled). Applied to prod (rxlomoozakkjesdqjtvd) via Management API.
+  Ticket: T-20260729-foot-PWRESET-EMAIL-LINK-BLOCKED-DANGEROUS
+
+  왜 이 형태인가 (RC-first 근거):
+  - H2(anchor 미포함) = DISCONFIRMED. 원본 template 도 이미 <a href="{{ .ConfirmationURL }}"> anchor 보유.
+  - 현장 증상('비밀번호 재설정'이 클릭 불가 단순 텍스트) = 수신측 메일 클라이언트가 text/plain 대체본을
+    렌더(anchor 가 라벨 텍스트로 붕괴, URL 소실)하거나 링크 스캐너가 anchor 를 flatten 하는 경우 발생.
+  - 방어(robust) 처방: (1) 버튼 anchor 유지 + (2) 원본 URL 을 '눈에 보이는 복사-붙여넣기용 텍스트'로 노출
+    → HTML 렌더링 클라이언트=클릭 가능 / flatten·text-only 클라이언트=URL 복사 가능. 어느 경우든 사용자 행동 가능.
+  - Korean 로컬라이즈 = 현장 리터러시 정합. teal-emerald(#0d9488) = foot 테마.
+  - REGRESSION GUARD marker: >{{ .ConfirmationURL }}</a>  (visible-URL fallback) — tests/e2e spec 가 검증.
+-->
+<div style="font-family:-apple-system,'Malgun Gothic','Apple SD Gothic Neo',sans-serif;max-width:520px;margin:0 auto;color:#1f2937;line-height:1.6;">
+  <h2 style="color:#0d9488;">비밀번호 재설정</h2>
+  <p>안녕하세요. 오블리브 풋케어 관리자 계정의 <strong>비밀번호 재설정</strong> 요청이 접수되었습니다.</p>
+  <p>아래 버튼을 눌러 새 비밀번호를 설정해 주세요. (보안을 위해 링크는 발송 후 1시간 동안만 유효합니다.)</p>
+  <p style="margin:24px 0;">
+    <a href="{{ .ConfirmationURL }}"
+       style="display:inline-block;padding:14px 28px;background:#0d9488;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px;">
+      비밀번호 재설정
+    </a>
+  </p>
+  <p style="color:#4b5563;font-size:14px;">버튼이 눌리지 않으면 아래 주소를 복사해 브라우저 주소창에 붙여넣어 주세요:</p>
+  <p style="font-size:13px;"><a href="{{ .ConfirmationURL }}" style="color:#0d9488;word-break:break-all;">{{ .ConfirmationURL }}</a></p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
+  <p style="color:#9ca3af;font-size:12px;">본 요청을 직접 하지 않으셨다면 이 메일을 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.</p>
+</div>
