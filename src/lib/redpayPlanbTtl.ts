@@ -23,12 +23,23 @@ export const REDPAY_PLANB_AUTO_CONNECT_MIN = 5;
 /** 선점 잠금 시간(분). 이 시간 동안 같은 단말의 다음 결제를 block. 만료+미매칭 시 status=expired 전이. */
 export const REDPAY_PLANB_LOCK_MIN = 6;
 
+/**
+ * 선점표 보관 기간(분). — T-20260729-foot-REDPAY-PLANB-MATCH-OCCURREDAT-SPEC-FIX 정정2(파라미터 2분리, 신설).
+ * 선점이 만료(status='expired')된 뒤에도 이 기간 동안 매칭 후보로 보관 → late 웹훅(레드페이 재시도 1/5/30분) 자동연결.
+ *   · 선점 유효창(위 autoConnect 5분) 과 별개 축: 유효창=occurred_at 이 들어와야 하는 창 / 보관창=선점행을 매칭 후보로 유지하는 창.
+ *   · 화면에는 미노출(비대기형 UX 유지 — 카운트다운은 유효창 5분만). 매처(redpay-planb-match/match.ts RETENTION_MS)가 이 값을 미러.
+ *   · 만료 후 이 기간 초과분은 매칭 후보에서 자연 제외(행은 보존 → 미배정 유입지표 정합, 즉시삭제 없음).
+ */
+export const REDPAY_PLANB_RETENTION_MIN = 60;
+
 /** 밀리초 환산 상수(FE 타이머/EF 판정 공통 사용). */
 export const REDPAY_PLANB_TTL = {
   autoConnectMin: REDPAY_PLANB_AUTO_CONNECT_MIN,
   lockMin: REDPAY_PLANB_LOCK_MIN,
+  retentionMin: REDPAY_PLANB_RETENTION_MIN,
   autoConnectMs: REDPAY_PLANB_AUTO_CONNECT_MIN * 60 * 1000,
   lockMs: REDPAY_PLANB_LOCK_MIN * 60 * 1000,
+  retentionMs: REDPAY_PLANB_RETENTION_MIN * 60 * 1000,
 } as const;
 
 /**
@@ -50,15 +61,19 @@ export function computeLockedUntil(createdAt: Date | string | number): Date {
 }
 
 /**
- * 자동연결 유효 판정: 웹훅 수신시각(receivedAt)이 expires_at 이내인가?
- * true = 자동매칭 대상 / false = TTL 초과(미배정 결제함 → 사후 수동 연결).
+ * 자동연결 유효창 판정 — T-20260729 정정2: 시간 키 = occurred_at(승인시각), NOT received_at(도착시각).
+ *   승인시각(occurred_at = redpay_raw_transactions.approved_at)이 선점 유효창 [created_at, expires_at] 이내인가?
+ *   true = 자동매칭 대상 / false = 유효창 밖(미배정 결제함 → 사후 수동 연결).
+ *   ★ 웹훅 도착시각(received_at)은 판정에서 완전히 제거 — 웹훅 지연이 유효창을 잠식하지 않음(카드 삽입 5분 온전 확보).
+ *   경계: 닫힌 구간 [created_at, expires_at](승인시각 == expires_at 도 유효). 매처 match.ts isWithinValidWindow 와 동치.
  */
 export function isWithinAutoConnect(
   createdAt: Date | string | number,
-  receivedAt: Date | string | number,
+  occurredAt: Date | string | number,
 ): boolean {
-  const recv = receivedAt instanceof Date ? receivedAt.getTime() : new Date(receivedAt).getTime();
-  return recv < computeExpiresAt(createdAt).getTime();
+  const occ = occurredAt instanceof Date ? occurredAt.getTime() : new Date(occurredAt).getTime();
+  const created = createdAt instanceof Date ? createdAt.getTime() : new Date(createdAt).getTime();
+  return occ >= created && occ <= computeExpiresAt(createdAt).getTime();
 }
 
 /** 직원 안내 문구(완료 뱃지). "결제는 최대 5분 내 자동 기록". */
