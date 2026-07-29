@@ -197,20 +197,40 @@ export function chartNoBadge(chart_number: string | number | null | undefined): 
  *   미래 출생연도를 만들지 않는 보수적 규칙.
  * presentation only — 저장값 미변경. 출력: "1990 (만 35세)".
  * 파싱 불가/결측이면 '' (호출부가 '—' 표기). 나이 이상치(>130 또는 음수)면 연도만 표기.
+ *
+ * T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT (refix-2, 버그(b)): 8자리 '완전연도' 입력도 흡수.
+ *   진료 알림판 3컬럼 연동은 생년 소스를 서버 RPC(fn_customer_birthdates)로 바꿨는데, 그 반환값은
+ *   'YYYY-MM-DD'(완전연도, 예 '1990-12-14')다. 기존 로직은 무조건 앞 6자리를 YYMMDD 로 봐서
+ *   '199012'→YY=19/MM=90 → 파싱실패('') 로 전 환자 '—' 회귀를 유발했다. → 자릿수로 분기:
+ *     · digits.length===8 → YYYYMMDD(완전연도, 세기추정 불요)
+ *     · 그 외(≥6)         → YYMMDD(2자리연도, 세기 휴리스틱) [기존 동작 무회귀]
  */
 export function birthYearAgeDisplay(birth_date: string | null | undefined): string {
   if (!birth_date) return '';
   const digits = String(birth_date).replace(/\D/g, '');
   if (digits.length < 6) return '';
-  const yy = Number(digits.slice(0, 2));
-  const mm = Number(digits.slice(2, 4));
-  const dd = Number(digits.slice(4, 6));
-  if (Number.isNaN(yy) || Number.isNaN(mm) || Number.isNaN(dd)) return '';
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
   const now = new Date();
-  const curYY = now.getFullYear() % 100;
-  const century = yy <= curYY ? 2000 : 1900;
-  const birthYear = century + yy;
+  let birthYear: number;
+  let mm: number;
+  let dd: number;
+  if (digits.length === 8) {
+    // YYYYMMDD (fn_customer_birthdates 서버 파생값 = 완전연도, 세기 정확)
+    birthYear = Number(digits.slice(0, 4));
+    mm = Number(digits.slice(4, 6));
+    dd = Number(digits.slice(6, 8));
+    if (Number.isNaN(birthYear) || birthYear < 1850 || birthYear > now.getFullYear()) return '';
+  } else {
+    // YYMMDD (레거시 2자리연도 — 세기 휴리스틱). 기존 동작 그대로.
+    const yy = Number(digits.slice(0, 2));
+    mm = Number(digits.slice(2, 4));
+    dd = Number(digits.slice(4, 6));
+    if (Number.isNaN(yy)) return '';
+    const curYY = now.getFullYear() % 100;
+    const century = yy <= curYY ? 2000 : 1900;
+    birthYear = century + yy;
+  }
+  if (Number.isNaN(mm) || Number.isNaN(dd)) return '';
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
   let age = now.getFullYear() - birthYear;
   const curMonth = now.getMonth() + 1;
   const curDay = now.getDate();

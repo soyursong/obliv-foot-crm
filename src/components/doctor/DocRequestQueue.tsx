@@ -23,10 +23,11 @@ import {
   useAllPublishedOpinionRequests,
   useResolveOpinionRequest,
   useQueueClinicalSnaps,
-  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT: 3개 컬럼 실 데이터 연동(read-only).
-  //   생년(만나이)=customers.birth_date live / 오늘시술=당일 check_ins.treatment_kind 전체 / 처방내역=PMW 당일 처방약.
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT (refix-2): 3개 컬럼 실 데이터 연동(read-only, 방문 스코프).
+  //   생년(만나이)=fn_customer_birthdates RPC(rrn 서버파생) / 오늘시술=방문 package_sessions.session_type /
+  //   처방내역=방문 check_in_services(처방약). 소스·스코프 근본원인 수정: check_in_id 앵커(대기=오늘·완료=과거).
   useQueueCustomerBirthDates,
-  useQueueTodayProcedureRx,
+  useQueueVisitProcedureRx,
   type TodayProcedureRx,
   // T-20260728-foot-DOCWRITE-DOCTOR-LINK: 서류작성 큐 행 담당 진료의(치료테이블 [진료]와 동일 값) 조회.
   useQueueTreatingDoctors,
@@ -109,24 +110,26 @@ export default function DocRequestQueue({ embedded = false }: { embedded?: boole
   );
   const { data: clinicalSnaps = {} } = useQueueClinicalSnaps(clinicId, customerIds);
 
-  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT (AC-1/2/3): 3개 컬럼 실 데이터 연동(read-only).
-  //   AC-1 생년(만나이) = customers.birth_date live(스냅샷보다 우선). AC-2 오늘시술 = 당일 check_ins.treatment_kind 전체.
-  //   AC-3 처방내역 = 결제미니창(PMW) 당일 처방약(check_in_services). 대기+완료 두 테이블 동일 소스.
-  const { data: liveBirthDates = {} } = useQueueCustomerBirthDates(clinicId, customerIds);
-  const { data: todayProcRx = {} } = useQueueTodayProcedureRx(clinicId, customerIds);
-  // customerId → 생년 표시용 값(live 우선, 없으면 요청 스냅샷 birthDate 폴백).
-  const birthDateForRow = (r: OpinionRequestRow) =>
-    (r.customerId ? liveBirthDates[r.customerId] : '') || r.birthDate || null;
-  // customerId → 당일 시술/처방(없으면 빈 배열 → 셀 '—').
-  const todayForRow = (r: OpinionRequestRow): TodayProcedureRx =>
-    (r.customerId ? todayProcRx[r.customerId] : undefined) ?? { procedures: [], prescriptions: [] };
-
-  // T-20260728-foot-DOCWRITE-DOCTOR-LINK (AC 표시): 작업 대상 + 완료 그룹 각 행의 담당 진료의(치료테이블
-  //   [진료]와 동일 값 = check_ins.treating_doctor_id → clinic_doctors.name). checkInId 앵커로 해석.
+  // T-20260728-foot-DOCWRITE-DOCTOR-LINK / T-20260729-...-3COL-DATA-CONNECT(refix-2): 각 행의 방문(check_in) 앵커.
+  //   담당 진료의(치료테이블 [진료] 동일 값) + 오늘시술/처방내역(방문 스코프) 조회의 공통 키.
   const checkInIds = useMemo(
     () => [...rows, ...completedRows].map((r) => r.checkInId).filter(Boolean) as string[],
     [rows, completedRows],
   );
+
+  // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT (AC-1/2/3, refix-2): 3개 컬럼 실 데이터 연동(read-only).
+  //   AC-1 생년(만나이) = fn_customer_birthdates RPC(rrn 서버파생 'YYYY-MM-DD') — customers.birth_date 컬럼(전 환자 NULL) 아님.
+  //   AC-2 오늘시술   = 그 방문 package_sessions.session_type(간략형) — check_ins.treatment_kind(죽은 컬럼) 아님.
+  //   AC-3 처방내역   = 그 방문 check_in_services(처방약, PMW settle 영속). ★방문 스코프 → 대기(오늘)·완료(과거) 모두 정상.
+  const { data: liveBirthDates = {} } = useQueueCustomerBirthDates(clinicId, customerIds);
+  const { data: visitProcRx = {} } = useQueueVisitProcedureRx(clinicId, checkInIds);
+  // customerId → 생년 표시용 값(RPC 파생 우선, 없으면 요청 스냅샷 birthDate 폴백).
+  const birthDateForRow = (r: OpinionRequestRow) =>
+    (r.customerId ? liveBirthDates[r.customerId] : '') || r.birthDate || null;
+  // checkInId → 그 방문의 시술/처방(없으면 빈 배열 → 셀 '—').
+  const todayForRow = (r: OpinionRequestRow): TodayProcedureRx =>
+    (r.checkInId ? visitProcRx[r.checkInId] : undefined) ?? { procedures: [], prescriptions: [] };
+
   const { data: treatingDoctors = {} } = useQueueTreatingDoctors(clinicId, checkInIds);
   // checkInId → 담당 진료의명. 미지정/내원없음 → ''(셀에서 '미지정' graceful 표기).
   const doctorNameForRow = (r: OpinionRequestRow) =>
@@ -723,8 +726,8 @@ function DocRequestRow({
   const [expandDone, setExpandDone] = useState(false);
 
   // T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT:
-  //   AC-3 처방내역 = 결제미니창(PMW) 당일 처방약 전체(', ' 나열). 기존 medical_charts.prescription_items 아님.
-  //   AC-2 오늘시술 = 당일 차감 시술(treatment_kind) 전체(', ' 나열). 당일 없으면 '—'.
+  //   AC-3 처방내역 = 그 방문 결제미니창(PMW) 처방약 전체(', ' 나열). 기존 medical_charts.prescription_items 아님.
+  //   AC-2 오늘시술 = 그 방문 패키지 회차 차감(package_sessions.session_type 간략형) 전체(', ' 나열). 없으면 '—'.
   const rx = today.prescriptions.length > 0 ? today.prescriptions.join(', ') : null;
   const procedureText = today.procedures.length > 0 ? today.procedures.join(', ') : null;
   const progress = snap?.progress || null; // 임상경과=기존 소스 유지(본 티켓 범위 밖)
@@ -759,7 +762,7 @@ function DocRequestRow({
         )}
       </td>
 
-      {/* T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT AC-2: 오늘시술 = 당일 check_ins.treatment_kind 전체 나열(PKG-BOX-INDICATOR SSOT). */}
+      {/* T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT AC-2(refix-2): 오늘시술 = 그 방문 package_sessions.session_type 간략형 전체 나열(PKG-BOX-INDICATOR SSOT). */}
       <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80" data-testid="docreq-cell-today-proc"><span className="block truncate" title={procedureText ?? ''}>{procedureText || '—'}</span></td>
 
       {/* 처방내역 ← medical_charts.prescription_items. RXCLIN 표현 상속: 미리보기 클릭 → 컬럼 폭 드롭다운 전문(widthScale=2, DoctorCallDashboard와 동일). */}
