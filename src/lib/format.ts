@@ -202,15 +202,36 @@ export function birthYearAgeDisplay(birth_date: string | null | undefined): stri
   if (!birth_date) return '';
   const digits = String(birth_date).replace(/\D/g, '');
   if (digits.length < 6) return '';
+  // T-20260729-foot-ALERTBOARD-DOBTXRX-COL-BLANK (AC-1): 8자리 정년(YYYYMMDD) 포맷 흡수.
+  //   RC: 이전엔 6자리 YYMMDD 만 파싱 → 실 소스가 만들어내는 8자리(ISO "1994-05-30" / 스냅샷 "1994년 05월 30일")
+  //   를 slice(0,2)="19", slice(2,4)="94"(월>12) → 무효 → 전행 공란. 앞 4자리=정년으로 직접 파싱해 결선한다.
+  //   (6자리 YYMMDD 경로는 불변 → 회귀 0.)
+  let birthYear: number;
+  let mm: number;
+  let dd: number;
+  if (digits.length >= 8) {
+    birthYear = Number(digits.slice(0, 4));
+    mm = Number(digits.slice(4, 6));
+    dd = Number(digits.slice(6, 8));
+    if (Number.isNaN(birthYear) || Number.isNaN(mm) || Number.isNaN(dd)) return '';
+    if (birthYear < 1900 || birthYear > 2100 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
+    return ageSuffix(birthYear, mm, dd);
+  }
   const yy = Number(digits.slice(0, 2));
-  const mm = Number(digits.slice(2, 4));
-  const dd = Number(digits.slice(4, 6));
+  mm = Number(digits.slice(2, 4));
+  dd = Number(digits.slice(4, 6));
   if (Number.isNaN(yy) || Number.isNaN(mm) || Number.isNaN(dd)) return '';
   if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
   const now = new Date();
   const curYY = now.getFullYear() % 100;
   const century = yy <= curYY ? 2000 : 1900;
-  const birthYear = century + yy;
+  const birthYear2 = century + yy;
+  return ageSuffix(birthYear2, mm, dd);
+}
+
+/** (birthYear, mm, dd) → "YYYY (만 N세)" 또는 이상치 시 "YYYY"(연도만). birthYearAgeDisplay 공용 파생. */
+function ageSuffix(birthYear: number, mm: number, dd: number): string {
+  const now = new Date();
   let age = now.getFullYear() - birthYear;
   const curMonth = now.getMonth() + 1;
   const curDay = now.getDate();
