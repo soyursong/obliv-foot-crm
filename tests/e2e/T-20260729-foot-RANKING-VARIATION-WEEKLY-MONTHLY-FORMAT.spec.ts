@@ -176,7 +176,12 @@ test.describe('T-20260729 [랭킹] 변동표 월간 추가 + 행 포맷 재편',
     const weekCardIdx = src.indexOf('cardTestId="assignments-ranking-variation-card"');
     const monthCardIdx = src.indexOf('cardTestId="assignments-ranking-variation-card-monthly"');
     expect(weekCardIdx).toBeGreaterThan(rankingBlockIdx);
-    expect(monthCardIdx).toBeGreaterThan(weekCardIdx); // 월간 카드는 주간 카드 아래(세로 스택)
+    expect(monthCardIdx).toBeGreaterThan(weekCardIdx); // 소스 순서: 주간(좌) 먼저, 월간(우) 다음
+    // 배치 = 2단(2-column grid): 주간 좌 / 월간 우, 모바일 stack fallback (김주연 총괄 확정 ts 1785314923.938779).
+    //  두 VariationTable 을 감싼 grid 래퍼가 주간 카드 앞에 위치해야 함(grid-cols-1 md:grid-cols-2).
+    const gridWrapIdx = src.indexOf('grid grid-cols-1 gap-4 md:grid-cols-2');
+    expect(gridWrapIdx).toBeGreaterThan(rankingBlockIdx);
+    expect(gridWrapIdx).toBeLessThan(weekCardIdx);
     // 컴포넌트가 durable marker 를 실제 data-testid 로 렌더(주간 인스턴스 마커 유지).
     expect(src).toContain('data-testid={cardTestId}');
     // delta durable marker 유지(공통 컴포넌트 내 렌더).
