@@ -61,6 +61,9 @@ import {
 // T-20260713-foot-CONSULT-AXIS-RECENCY-UNIFY: 상담 축(deriveConsultAxis)의 초진/재진 입력을 stored visit_type →
 //   recency(365일) 배치 판정으로 통일. 배정 화면 표시·재진 상담칸 숨김이 접수분류·배지·엔진과 수렴(AC-3).
 import { resolveVisitTypesByCheckIn } from '@/lib/visitRecency';
+// T-20260729-foot-CONSULT-SLACK-INFLOW-WALKIN-MISLABEL: 유입경로 표시/발송 라벨을 자동배정 균등 버킷
+//   (deriveConsultAxis)에서 분리(DECOUPLE)한 SSOT. 재진='재진', 그 외=고객 실제 visit_route 원문.
+import { consultInflowLabel } from '@/lib/consultInflowLabel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -971,6 +974,11 @@ export default function Assignments() {
     const rows: TodayDistRow[] = [];
     for (const ci of monthCheckIns) {
       if (!ci.checked_in_at || new Date(ci.checked_in_at).getTime() < todayStartMs) continue;
+      // T-20260729-foot-PATIENT-F5247-DUPASSIGN-NAME-TRUNCATE (Bug A 잔여면): 금일 배분 이력도 취소 배정을 제외.
+      //   ASSIGN-POPUP-DUPASSIGN-NAMETRUNC 는 staffStats(누적/드릴 팝업)에만 cancelled 가드를 넣었고 이 표는 누락 —
+      //   deleted_at 만 필터하는 monthCheckIns 특성상 cancelled(비-soft-hide) 배정이 유령으로 잔존(당월 9건).
+      //   동일 고객이 취소 후 타 실장 재배정(done)되면 이 표에도 두 실장 행이 동시 노출(1환자 2실장). '활성배정만' 불변식 일관 적용.
+      if (ci.status === 'cancelled') continue;
       const push = (role: AssignmentRole, staffId: string | null) => {
         if (!staffId) return;
         if (role !== activeTab) return;
@@ -979,15 +987,20 @@ export default function Assignments() {
         rows.push({
           id: `${ci.id}:${role}`,
           checkIn: ci,
-          customerName: ci.customer_name ?? '—',
+          // T-20260729-foot-PATIENT-F5247-DUPASSIGN-NAME-TRUNCATE (Bug B 잔여면): 성함 = 고객 정본(customers.name) live 우선.
+          //   ASSIGN-POPUP 는 드릴 팝업(itemFromCi)만 교정 — 이 표는 여전히 스냅샷(customer_name)을 읽어 성 누락('홍석') 잔존.
+          //   drill 팝업과 동일 경로로 통일(정본 우선, 스냅샷 fallback). 당월 불일치 3/435(장홍석·김구엽·박경수).
+          customerName: cust?.name ?? ci.customer_name ?? '—',
           customerId: ci.customer_id ?? null,
           chartNumber: cust?.chart_number ?? null,
           role,
           staffId,
           method: act ? (METHOD_KO[act.action_type] ?? '—') : '—',
           at: act?.created_at ?? ci.checked_in_at!,
-          // 변경2: 유입경로 = 상담 축 라벨(AXIS_KO 매핑). 발송 게이트/상태는 consult 행에만 의미.
-          inflow: role === 'consult' ? (AXIS_KO[axisOf(ci, 'consult')] ?? axisOf(ci, 'consult')) : '',
+          // T-20260729-foot-CONSULT-SLACK-INFLOW-WALKIN-MISLABEL (DECOUPLE): 유입경로 라벨을 균등 버킷
+          //   축(deriveConsultAxis)에서 분리 → 고객 실제 visit_route 원문 노출(재진은 '재진'). 네이버·지인소개·공홈
+          //   등 실값 소실('워크인' 접힘) 해소. 발송 게이트/상태는 consult 행에만 의미. 배정 로직 무변경.
+          inflow: role === 'consult' ? consultInflowLabel(axisOf(ci, 'consult'), cust) : '',
           notifyStatus: ci.consult_notify_status ?? null,
         });
       };
@@ -1718,9 +1731,12 @@ export default function Assignments() {
                       {r.at ? new Date(r.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) : '—'}
                     </td>
                     {/* T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 발송(확정) 셀 — 상담 탭 한정.
-                        상태 3-state: 미확정 → [확정] 버튼(admin/manager/director) / 발송중 / 발송됨.
+                        상태 3-state(멱등): 미확정 → [확정] 버튼 / 발송중 / 발송됨.
                         클릭 시에만 send-consult-notify EF → 상담대기방(C0B4HEC9SHH) 발송(자동발송 없음).
-                        멱등: 서버 조건부 claim + notifyStat!=='미확정' 시 버튼 비노출 → 이중발송 방지. */}
+                        멱등: 서버 조건부 claim + notifyStat!=='미확정' 시 버튼 비노출 → 이중발송 방지.
+                        T-20260729-foot-CONFIRM-BTN-ROLE-OPEN: 역할 제한(canEditDistribution) 제거 —
+                          코디네이터 포함 전 역할이 [확정] 버튼 표시+클릭 가능. '미확정' 텍스트 폴백 렌더 경로도 제거.
+                          (총괄 지시: 접근제어 완화. sent/sending 건은 role 무관 배지로 멱등 유지.) */}
                     {activeTab === 'consult' && (
                       <td className="px-2 py-2 text-right">
                         {r.notifyStatus === 'sent' ? (
@@ -1731,7 +1747,7 @@ export default function Assignments() {
                           <Badge variant="secondary" className="font-normal" data-testid={`dist-notify-sending-${r.id}`}>
                             발송중
                           </Badge>
-                        ) : canEditDistribution ? (
+                        ) : (
                           <Button
                             type="button"
                             variant="outline"
@@ -1743,8 +1759,6 @@ export default function Assignments() {
                           >
                             {notifyingId === r.id ? '발송 중…' : '확정'}
                           </Button>
-                        ) : (
-                          <span className="text-muted-foreground" data-testid={`dist-notify-pending-${r.id}`}>미확정</span>
                         )}
                       </td>
                     )}

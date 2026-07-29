@@ -1,0 +1,37 @@
+══ AC-2 커버리지 확장 — center=body (READ-ONLY, mutation 0) ══
+
+── (0) payment_reconciliation_log 존재·center 분포 ──
+  payment_reconciliation_log total content-range: 0-0/574705
+  center=foot: 0-0/553720
+  center=body: 0-0/20985
+  center IS NULL: */0
+
+── redpay_raw_transactions center 파생 분포 ──
+  total raw: 440 | foot: 413 | body: 27 | unclassified: 0
+
+── (a)(b) center=body raw 지문 (n=27) ──
+  trxLen 분포: {"12":27}
+  trxid dup(동일trxid≥2): 0 
+  ★8자형 승인/취소 공유 trxid: 0 
+  승인/취소 공유(길이무관): 0 
+  ★composite(trxid|status|amount) collision(≥2): 0 (none = 3키 충분)
+  현행 false-merge/부분링크 위험(dup trxid 내 matched_payment_id 불일치·부분): 0 (none)
+
+── (a)(b) center=unclassified: 0행 (해당 없음) ──
+
+── (a')(b') ★ payment_reconciliation_log WHERE center=body 지문 (실 body 모집단) ──
+  로드 ledger body 행: 20985
+  trxLen 분포: {"12":20985}
+  event_type 분포: {"match_failed":8548,"missing_in_crm":12435,"auto_matched":2}
+  match_rule 분포: {"tier4_manual":8548,"null":12435,"tier3_daily_unique":2}
+  trxid dup(동일trxid≥2): 25 → len12 0725C8257089×1718, len12 0725C8279622×1620, len12 0725C8311920×1414, len12 0727C8421686×1190, len12 0727C8423664×1192, len12 0728C8528257×530, len12 0728C8533524×484, len12 0728C8539532×438, len12 0728C8539577×432, len12 0728C8551997×355
+  ★8자형 승인/취소(±) 공유 trxid: 0 
+  ★승인/취소(±) 공유 trxid(길이무관): 0 
+  ★composite(trxid|부호|amount) collision(≥2): 25 → 0725C8257089|pos|30400×1718(rules:tier4_manual,) ; 0725C8279622|pos|1950×1620(rules:tier4_manual,) ; 0725C8311920|pos|17800×1414(rules:tier4_manual,) ; 0727C8421686|pos|4040×1190(rules:tier4_manual,) ; 0727C8423664|pos|31300×1192(rules:tier4_manual,) ; 0728C8528257|pos|5999×530(rules:tier4_manual,) ; 0728C8533524|pos|265600×484(rules:tier4_manual,) ; 0728C8539532|pos|15600×438(rules:tier4_manual,)
+  현행 false-merge/부분링크(dup trxid 내 payment_id 불일치·부분): 0 (none)
+
+── (c) Plan B 직수집 노출: payments.external_trxid populated ──
+  external_trxid NOT null: 0-0/200
+  external_trxid NOT null ∧ reconciled_at IS null (Tier0 매칭풀 진입 RISK): */0  (0 이면 現 inert)
+
+══ 완료. AC-3(하드닝)은 DA GO 후 착수 — 본 probe 는 read-only 감사 확장분. ══
