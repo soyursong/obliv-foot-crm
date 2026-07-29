@@ -126,6 +126,28 @@ const REDPAY_MERCHANT_WHITELIST_ENV = domainScopedOverride("REDPAY_MERCHANT_WHIT
 //   ⚠ 여기 slug 는 '내부 clinic 해석'만 스코핑 — RedPay API scope(L286 business_no=457, 07-23 flip)와 별개 축(혼동 금지).
 const DOMAIN_CLINIC_SLUG_DEFAULTS = { foot: "jongno-foot", body: "jongno-foot" };
 const REDPAY_CLINIC_SLUG = cfg("REDPAY_CLINIC_SLUG", DOMAIN_CLINIC_SLUG_DEFAULTS[REDPAY_DOMAIN] ?? "");
+
+// ── ★ 크로스도메인 적재 봉인 (T-20260724-foot-REDPAY-DOSU-CONTAM-FIX 파트A 실효화) ───────────
+//   [RC 확정 2026-07-29 · AC-4.2 실증]  도수(body) 오염(+₩4,745,570 07-24~28, merchant 1777275006·
+//     1777276003 등 25행)의 실 벡터 = filterToFootScope merchant-drop 부재가 아니라, 본 스크립트를
+//     REDPAY_DOMAIN=body 로 재사용한 body 폴러가 body-band 행을 **풋과 공유하는 clinic slug
+//     'jongno-foot'**(위 DEFAULTS, seed 20260714170100) 로 upsert → foot reconcile(runMatcher)가
+//     center 무관하게 body raw 를 foot payment 에 매칭(07-24 +10,000 정산 실침투) + recon_log flapping.
+//   [왜 merchant-drop 이 못 막나] body 폴러의 스코프 자체가 body admit(정상 도메인 동작). merchant-drop
+//     은 foot 경로 leak 만 봉인 → body→foot-clinic 적재는 손대지 못함(파트A 미발효의 진짜 원인).
+//   [불변식] "풋 clinic 테이블(jongno-foot/songdo-foot)엔 foot-center 행만 landing." non-foot 도메인이
+//     풋 clinic 으로 해석되면 **fail-closed(적재 0, 파괴/삭제 없음, db_change=false·additive)**.
+//     DA Q1(ingest-drop GO / downstream REJECT) 판정을 실 write 경계에 그대로 적용 — 신규 정책 아님.
+//   ⇒ 도수 redpay 대사가 계속 필요하면 전용 clinic(예: 'jongno-dosu') 또는 body 프로젝트로 분리
+//     (planner/DA 라우팅). 본 가드는 그전까지 foot 오염을 구조적으로 차단.
+const FOOT_CLINIC_SLUGS = new Set(["jongno-foot", "songdo-foot"]);
+/** 순수 술어(self-test 대상): non-foot 도메인이 풋 clinic 으로 적재하려는 오염 write 인가.
+ *   slug 미지정(bizno 폴백)=풋 관성으로 간주(보수적 fail-closed). foot 도메인은 항상 false. */
+function isCrossDomainFootWrite(domain, clinicSlug, footClinicSlugs) {
+  if (domain === "foot") return false;
+  const targetIsFootClinic = clinicSlug ? footClinicSlugs.has(clinicSlug) : true;
+  return targetIsFootClinic;
+}
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
@@ -1053,6 +1075,18 @@ async function main() {
     throw new Error(`clinic_id 조회 실패 — ${keyDesc}`);
   }
 
+  // ── ★ 크로스도메인 적재 봉인 (T-20260724-foot-REDPAY-DOSU-CONTAM-FIX 파트A 실효화) ──────────
+  //   non-foot 도메인이 풋 clinic 으로 적재하려 하면 fail-closed: fetch/필터 없이 즉시 종료(적재 0).
+  //   멱등 폴러라 재기동 안전. 파괴/삭제 없음(additive). 본 사이클 write 미수행 = live 오염 순증 0.
+  if (isCrossDomainFootWrite(REDPAY_DOMAIN, REDPAY_CLINIC_SLUG, FOOT_CLINIC_SLUGS)) {
+    errlog(
+      `[XDOMAIN-CONTAM-GUARD] domain=${REDPAY_DOMAIN} 인데 target clinic(slug=${REDPAY_CLINIC_SLUG || "(bizno폴백)"})=풋 ` +
+      `→ ${REDPAY_DOMAIN}-band 행을 풋 clinic 테이블에 적재 시 cross-domain 오염(DOSU-CONTAM-FIX RC). ` +
+      `적재 skip(fail-closed, 파괴 없음). 도수 redpay 대사 필요 시 전용 clinic(예: jongno-dosu)/body 프로젝트로 분리 필요.`,
+    );
+    return;
+  }
+
   // ── 페이지 순회: fetch → 스코프 필터 → upsert ──────────────────────────────
   let totalFetched = 0;
   let totalScopedOut = 0;
@@ -1271,6 +1305,30 @@ function runSelfTest() {
     const g = selectAutoSeedCandidates(
       [{ merchant: { id: "1777289001" }, data: { tid: "1047999123" } }], rowByMerchant, wl);
     assert(g.length === 1 && g[0].tid === "1047999123", `autoseed: data.tid-only shape 포착(COALESCE)`);
+  }
+
+  // ── 크로스도메인 적재 봉인 self-test (T-20260724-...-DOSU-CONTAM-FIX 파트A 실효화 §가드) ──────
+  //   불변식: "풋 clinic 엔 foot-center 행만" — non-foot 도메인이 풋 clinic 으로 적재 = fail-closed.
+  {
+    const foots = FOOT_CLINIC_SLUGS;
+    // A) ★핵심 — body 도메인 + jongno-foot(공유 clinic) → 오염 write = 차단(RC 재현)
+    assert(isCrossDomainFootWrite("body", "jongno-foot", foots) === true,
+      `xdomain-guard: body→jongno-foot = 차단(RC: 도수 오염 실 벡터)`);
+    // B) body 도메인 + songdo-foot(풋 clinic) → 차단
+    assert(isCrossDomainFootWrite("body", "songdo-foot", foots) === true,
+      `xdomain-guard: body→songdo-foot = 차단`);
+    // C) ★foot 도메인 무영향 — foot→jongno-foot = 정상 허용(회귀 가드)
+    assert(isCrossDomainFootWrite("foot", "jongno-foot", foots) === false,
+      `xdomain-guard: foot→jongno-foot = 허용(foot 폴러 무영향)`);
+    // D) body 도메인 + 전용 body clinic(jongno-dosu) → 허용(분리 후 정상 경로)
+    assert(isCrossDomainFootWrite("body", "jongno-dosu", foots) === false,
+      `xdomain-guard: body→jongno-dosu(전용) = 허용(분리 후 정상)`);
+    // E) ★fail-closed — non-foot 도메인 + slug 미지정(bizno 폴백) → 보수적 차단(풋 관성)
+    assert(isCrossDomainFootWrite("body", "", foots) === true,
+      `xdomain-guard: body+slug미지정 = fail-closed 차단(bizno 폴백=풋 관성)`);
+    // F) foot 도메인은 slug 미지정이어도 항상 허용
+    assert(isCrossDomainFootWrite("foot", "", foots) === false,
+      `xdomain-guard: foot+slug미지정 = 허용`);
   }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);
