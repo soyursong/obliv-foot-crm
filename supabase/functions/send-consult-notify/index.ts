@@ -193,16 +193,17 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 담당 실장 → Slack mention 해소 (staff.slack_user_id → 6명 매핑 fallback) ──
+  //   ⚠ QA-FIX A안: staff.display_name 컬럼은 foot prod 부재(STAFF-NAME-UNIFY 미마이그) → select 금지(42703).
+  //   → name 만 select. suffix('… 실장')는 name 에 저장되며 nameKey 가 strip 후 6명 매핑 조회 → 정합.
   const { data: st } = await supabase
     .from("staff")
-    .select("name, display_name, slack_user_id")
+    .select("name, slack_user_id")
     .eq("id", row.consultant_id)
     .maybeSingle();
-  const staffRow = (st ?? {}) as { name?: string | null; display_name?: string | null; slack_user_id?: string | null };
-  const displayName = (staffRow.display_name ?? staffRow.name ?? "").trim() || "담당실장";
+  const staffRow = (st ?? {}) as { name?: string | null; slack_user_id?: string | null };
+  const displayName = (staffRow.name ?? "").trim() || "담당실장";
   const slackId =
     (staffRow.slack_user_id ?? "").trim() ||
-    SILJANG_SLACK_MAP[nameKey(staffRow.display_name)] ||
     SILJANG_SLACK_MAP[nameKey(staffRow.name)] ||
     "";
   const mention = slackId ? `<@${slackId}>` : displayName;

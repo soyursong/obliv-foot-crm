@@ -390,18 +390,17 @@ function CreateStaffDialog({
       return;
     }
     setSubmitting(true);
-    // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1: 신규 '실장'(consultant) 등록 시 표시명 뒤 '실장' suffix.
-    //   소급 X(신규 등록분만) · 표시명(display_name)만 대상 · 배정/매출귀속 키(id/name)에 무영향.
-    //   비-실장 역할은 display_name 미설정(null → 기존대로 name 표시).
-    const insertRow: { clinic_id: string; name: string; role: Role; active: boolean; display_name?: string } = {
+    // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1 (QA-FIX A안): 신규 '실장'(consultant) 등록 시 이름 뒤 '실장' suffix.
+    //   ⚠ staff.display_name 컬럼은 foot prod 부재(STAFF-NAME-UNIFY 미마이그) → codebase 전역 'display_name select/insert 금지' 불변식.
+    //   → suffix 를 display_name 이 아닌 name 에 저장(name = "홍길동 실장"). 소급 X(신규 등록분만).
+    //   EF(send-consult-notify) 의 nameKey 가 ' 실장' strip 후 6명 매핑 조회 → 정합(엄경은 등 키 그대로 hit).
+    //   비-실장 역할은 suffix 미부여(기존대로).
+    const insertRow: { clinic_id: string; name: string; role: Role; active: boolean } = {
       clinic_id: clinicId,
-      name: name.trim(),
+      name: role === 'consultant' ? withSiljangSuffix(name) : name.trim(),
       role,
       active: true,
     };
-    if (role === 'consultant') {
-      insertRow.display_name = withSiljangSuffix(name);
-    }
     const { error } = await supabase.from('staff').insert(insertRow);
     setSubmitting(false);
     if (error) {

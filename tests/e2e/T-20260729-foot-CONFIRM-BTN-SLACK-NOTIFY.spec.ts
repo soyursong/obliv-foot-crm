@@ -58,11 +58,14 @@ test('변경1: 6명 실장↔슬랙 ID 매핑 SSOT (총괄 확정 표 그대로)
   }
 });
 
-test('변경1: 신규 실장(consultant) 등록 시에만 display_name suffix — 소급 X, 타역할 무영향', () => {
+test('변경1(QA-FIX A안): 신규 실장(consultant) 등록 시에만 name 에 실장 suffix — display_name insert 금지(prod 부재)', () => {
   const src = read(STAFF);
   expect(src).toMatch(/import \{ withSiljangSuffix \} from '@\/lib\/siljangSlack'/);
-  // consultant 역할일 때만 display_name = withSiljangSuffix(name)
-  expect(src).toMatch(/if \(role === 'consultant'\) \{\s*\n?\s*insertRow\.display_name = withSiljangSuffix\(name\)/);
+  // A안: suffix 는 name 에 저장(consultant 한정). display_name insert 금지(foot prod 부재 42703).
+  expect(src).toMatch(/name: role === 'consultant' \? withSiljangSuffix\(name\) : name\.trim\(\)/);
+  // insertRow 에 display_name 키 부재(불변식 준수)
+  expect(src).not.toMatch(/insertRow\.display_name/);
+  expect(src).not.toMatch(/display_name\?: string/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,9 +96,12 @@ test('변경2: EF 발송 포맷 = <@담당실장SlackID> [고객명]님 [유입�
   expect(src).toContain('C0B4HEC9SHH');
 });
 
-test('변경2: 담당실장 Slack ID 해소 = staff.slack_user_id → 6명 매핑 fallback → 이름', () => {
+test('변경2(QA-FIX A안): 담당실장 Slack ID 해소 = staff.slack_user_id → name 6명 매핑 fallback → 이름', () => {
   const src = read(EF);
-  expect(src).toMatch(/\(staffRow\.slack_user_id \?\? ""\)\.trim\(\) \|\|\s*\n?\s*SILJANG_SLACK_MAP\[nameKey\(staffRow\.display_name\)\] \|\|\s*\n?\s*SILJANG_SLACK_MAP\[nameKey\(staffRow\.name\)\]/);
+  // A안: staff.display_name select 금지(prod 부재) → name 만 조회, nameKey 가 ' 실장' strip 후 매핑 hit.
+  expect(src).toMatch(/\.select\("name, slack_user_id"\)/);
+  expect(src).not.toMatch(/\.select\("[^"]*display_name[^"]*"\)/);
+  expect(src).toMatch(/\(staffRow\.slack_user_id \?\? ""\)\.trim\(\) \|\|\s*\n?\s*SILJANG_SLACK_MAP\[nameKey\(staffRow\.name\)\]/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
