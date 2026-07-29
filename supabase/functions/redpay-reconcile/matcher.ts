@@ -825,6 +825,30 @@ export function formatAlertMessage(payload: AlertPayload): string {
 //   로그 무한증식 + count 인플레(forensic816: 1 raw→816행). raw별 '직전 로그 event_type' 과
 //   diff 하여 상태 전이(transition/최초관측) 시에만 insert 한다. append-only 시맨틱 보존.
 //   억제 대상은 아래 두 타입에 한정 — auto_matched 는 terminal 이라 억제 비대상.
+//
+// ── canonical 접기 하드닝 (T-20260729-foot-REDPAY-RECONLOG-FLAP-IDEMPOTENCY-GAP, AC-3) ──
+//   [대사로그 불변식 v2] 로그 한 행 ⟺ raw 의 '정본(canonical) 대사-상태 macro 전이' 1회.
+//   match_failed 와 missing_in_crm 은 서로 다른 STATE 가 아니라 동일 술어
+//   (external_status='Y' ∧ matched_payment_id IS NULL) 를 만족하는 하나의 macro-state('unmatched')
+//   에 대한 비-상호배타 두 detector 의 이중관측(AC-1 census 확증: 686-cycle same-second dual emission).
+//   따라서 raw event_type 값 자체(직전==현재)로 diff 하던 부모 게이트는 mf↔mic 왕복을 '전이'로 오판
+//   → 억제 실패(flap 로그 41.8만행). 하드닝: 비교 축을 raw event_type 동일성 → canonical macro-state
+//   key 동일성으로 교체. macro 경계를 넘는 실전이(unmatched→auto_matched 등)만 보존.
+//   ★missing_at_van fold 금지 — VAN 미도달이라는 별개 술어·진동 무 → canonical identity 유지(DA §2-1-2).
+//   ★부모 T-20260725 AC-4 'flap=실전이 4회 보존' 문언은 사실오인으로 RETRACT(DA da_decision_..._fold_20260730 §2-1).
+//   기록 값은 최초 관측 event_type 원값 1행 그대로(어느 detector 가 최초 flag 했는지 audit 보존).
+export function canonicalReconState(eventType: string): string {
+  switch (eventType) {
+    // 동일 macro-state('unmatched') 의 비-상호배타 두 sub-label → 접기(fold)
+    case "match_failed":
+    case "missing_in_crm":
+      return "unmatched";
+    // auto_matched / missing_at_van / amount_* 등은 각자 distinct 상태 = identity(★fold 금지)
+    default:
+      return eventType;
+  }
+}
+
 export const SUPPRESSIBLE_EVENT_TYPES: ReadonlySet<string> = new Set([
   "match_failed",
   "missing_in_crm",
@@ -835,9 +859,13 @@ export const SUPPRESSIBLE_EVENT_TYPES: ReadonlySet<string> = new Set([
  * 실제 insert 할 이벤트와 억제(무-상태변화) 건수를 계산한다. DB I/O 없음.
  *
  * · 억제 대상 타입(match_failed/missing_in_crm) 이면서 raw_transaction_id 가 있고,
- *   직전 로그 event_type 이 현재와 동일하면 → 억제(전이 아님).
+ *   직전 로그의 canonical macro-state 가 현재와 동일하면 → 억제(전이 아님).
+ *   ★비교 축 = canonical macro-state key(canonicalReconState) — raw event_type 값 자체가 아니다.
+ *     mf↔mic 왕복은 둘 다 'unmatched' 로 접혀 억제(불변식 v2). unmatched→auto_matched 등
+ *     macro 경계를 넘는 실전이만 보존.
  * · 그 외(비억제 타입, raw 없는 이벤트, 전이/최초관측) → insert.
- * · 배치-내 상태도 갱신 → 같은 사이클 내 동일 raw·동일타입 중복도 1건으로 억제.
+ * · 배치-내 상태도 갱신 → 같은 사이클 내 동일 raw·동일 macro-state 중복(same-second dual emission
+ *   포함)도 1건으로 억제. 기록/갱신 값은 event_type 원값(audit 보존) — 비교만 canonical.
  *
  * @param events          이번 사이클 recon 이벤트
  * @param priorEventType  raw_transaction_id → 직전 로그 event_type (append-only 최신 1건)
@@ -854,11 +882,13 @@ export function planReconLogInserts(
       return true; // 비억제 타입 / raw 없는 이벤트 → 무조건 insert
     }
     const prev = seen.get(e.raw_transaction_id);
-    if (prev === e.event_type) {
+    // 비교 축 = canonical macro-state 동일성(부모: raw event_type 동일성). mf↔mic 를 'unmatched' 로 접어
+    // 이중라벨링 flap 을 억제하되, macro 경계 실전이는 보존. 최초 관측(prev===undefined)은 insert.
+    if (prev !== undefined && canonicalReconState(prev) === canonicalReconState(e.event_type)) {
       suppressed++;
-      return false; // 무-상태변화 → 억제
+      return false; // 동일 macro-state(무-상태변화) → 억제
     }
-    seen.set(e.raw_transaction_id, e.event_type); // 전이 확정 → 배치-내 갱신
+    seen.set(e.raw_transaction_id, e.event_type); // 전이 확정 → 배치-내 갱신(원값 기록, audit 보존)
     return true;
   });
   return { toInsert, suppressed };

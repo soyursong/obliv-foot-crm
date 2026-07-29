@@ -56,14 +56,17 @@ Deno.test("AC1: 직전과 동일 event_type(무-상태변화) → 억제", () =>
   assertEquals(suppressed, 1);
 });
 
-Deno.test("AC1: 전이(match_failed → missing_in_crm) → insert", () => {
+// ★불변식 v2 정정 (T-20260729-...-FLAP-IDEMPOTENCY-GAP AC-3):
+//   구 테스트는 match_failed→missing_in_crm 를 '전이'로 보고 insert 를 기대했으나, AC-1 census 로
+//   둘이 동일 macro-state('unmatched') 의 비-상호배타 이중라벨링임이 확증됨. canonical 접기 하에서는
+//   sub-label 이동(mf↔mic)은 전이가 아니므로 억제된다. (부모 문언 RETRACT, DA §2-1)
+Deno.test("AC1(v2): sub-label 이동(match_failed → missing_in_crm)은 동일 macro-state → 억제", () => {
   const { toInsert, suppressed } = planReconLogInserts(
     [evt({ raw_transaction_id: "raw-1", event_type: "missing_in_crm" })],
     new Map([["raw-1", "match_failed"]]),
   );
-  assertEquals(toInsert.length, 1);
-  assertEquals(suppressed, 0);
-  assertEquals(toInsert[0].event_type, "missing_in_crm");
+  assertEquals(toInsert.length, 0);
+  assertEquals(suppressed, 1);
 });
 
 // AC3: auto_matched 는 terminal — 억제 비대상, 직전이 무엇이든 무조건 insert
@@ -130,8 +133,11 @@ Deno.test("AC4: forensic816 — 지속-미매칭 raw 816 사이클 반복 시 �
   assertEquals(totalInserted, 1, "지속-미매칭 raw 의 로그행은 전이 실횟수(1)로 수렴해야 함");
 });
 
-// AC4 확장: 상태가 실제로 왕복(flap)하면 각 전이가 로그로 남는다(append-only 이력 보존)
-Deno.test("AC4-flap: match_failed ↔ missing_in_crm 왕복 4회 → 전이 4회 모두 로그", () => {
+// ★AC4-flap v2 정정 (FLAP-IDEMPOTENCY-GAP AC-3, 부모 '4회 보존' 문언 RETRACT):
+//   match_failed ↔ missing_in_crm 왕복은 진짜 상태전이가 아니라 동일 macro-state('unmatched') 의
+//   두 detector 이중관측이므로(AC-1 census), canonical 접기 하에서 최초 1행으로 수렴한다.
+//   (구: 4회 모두 로그 → v2: 1행. 실전이 유실 0 — macro 경계 전이만 보존, 아래 R2 테스트가 고정.)
+Deno.test("AC4-flap(v2): match_failed ↔ missing_in_crm 왕복 4회 → 동일 macro-state → 1행 수렴", () => {
   const priorEventType = new Map<string, string>();
   const sequence = ["match_failed", "missing_in_crm", "match_failed", "missing_in_crm"];
   let totalInserted = 0;
@@ -145,24 +151,25 @@ Deno.test("AC4-flap: match_failed ↔ missing_in_crm 왕복 4회 → 전이 4회
     }
   }
 
-  assertEquals(totalInserted, 4, "실 상태 전이는 억제되지 않고 append-only 로 모두 기록");
+  assertEquals(totalInserted, 1, "sub-label 이동은 전이 아님 → canonical 접기로 최초 1행 수렴");
 });
 
-// 혼합 배치: 억제 대상 + 비억제 타입 공존 시 각각 올바르게 분기
-Deno.test("혼합 배치: match_failed(무변화 억제) + auto_matched(insert) + missing_in_crm(전이 insert)", () => {
+// 혼합 배치 v2: 억제 대상 + 비억제 타입 공존 시 각각 올바르게 분기
+//   raw-C(match_failed→missing_in_crm)는 동일 macro-state('unmatched') 이므로 v2 에선 억제된다.
+Deno.test("혼합 배치(v2): match_failed(무변화 억제) + auto_matched(insert) + missing_in_crm(sub-label 이동 억제)", () => {
   const { toInsert, suppressed } = planReconLogInserts(
     [
       evt({ raw_transaction_id: "raw-A", event_type: "match_failed" }),   // 직전 동일 → 억제
       evt({ raw_transaction_id: "raw-B", event_type: "auto_matched", match_rule: "tier0_direct" }), // 비억제 → insert
-      evt({ raw_transaction_id: "raw-C", event_type: "missing_in_crm" }), // 전이 → insert
+      evt({ raw_transaction_id: "raw-C", event_type: "missing_in_crm" }), // 동일 macro-state → 억제
     ],
     new Map([
       ["raw-A", "match_failed"],
       ["raw-C", "match_failed"],
     ]),
   );
-  assertEquals(suppressed, 1);
-  assertEquals(toInsert.map((e) => e.raw_transaction_id).sort(), ["raw-B", "raw-C"]);
+  assertEquals(suppressed, 2);
+  assertEquals(toInsert.map((e) => e.raw_transaction_id).sort(), ["raw-B"]);
 });
 
 // AC2: 순수 술어는 입력 priorEventType 맵을 변형하지 않는다(호출측 append-only 소스 보존)
