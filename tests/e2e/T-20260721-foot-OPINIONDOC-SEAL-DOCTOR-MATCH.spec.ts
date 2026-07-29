@@ -59,9 +59,19 @@ test.describe('AC-1 배선: OpinionDocTab handlePrint → loadAutoBindContext(�
   });
 
   test('loadAutoBindContext 에 발행자명 + 발행자 clinic_doctors.id 전달', () => {
-    // loadAutoBindContext(checkIn, row.issued_by_name || undefined, row.issued_by_doctor_id ?? undefined)
+    // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: 발행자명·도장 앵커를 effectiveDoctorName/
+    //   effectiveDoctorId 로 결선(= row.adminOverrides?.doctorName||row.issued_by_name / doctorId??issued_by_doctor_id).
+    //   '행정정보 수정'(admin_overrides) 없으면 발행 스냅샷으로 폴백 → SEAL-DOCTOR-MATCH 이름↔도장 세트 정합 보존·확장
+    //   (정정 진료의로도 도장 자동추종). 발행자-앵커 계약 불변(리터럴만 effective 값으로 동기화).
     expect(TAB_SRC).toMatch(
-      /loadAutoBindContext\(\s*checkIn,\s*row\.issued_by_name\s*\|\|\s*undefined,\s*row\.issued_by_doctor_id\s*\?\?\s*undefined,?\s*\)/,
+      /loadAutoBindContext\(\s*checkIn,\s*effectiveDoctorName\s*\|\|\s*undefined,\s*effectiveDoctorId\s*\?\?\s*undefined,?\s*\)/,
+    );
+    // effective 값이 발행 스냅샷(row.issued_by_name / row.issued_by_doctor_id)으로 폴백함을 함께 단언(회귀 0).
+    expect(TAB_SRC).toMatch(
+      /effectiveDoctorName\s*=\s*row\.adminOverrides\?\.doctorName\s*\|\|\s*row\.issued_by_name/,
+    );
+    expect(TAB_SRC).toMatch(
+      /effectiveDoctorId\s*=\s*row\.adminOverrides\?\.doctorId\s*\?\?\s*row\.issued_by_doctor_id/,
     );
   });
 });

@@ -207,7 +207,12 @@ test.describe('FIX-REQUEST 배선: 발행본 스냅샷 diag_code/name (1급 소�
       expect(GATE_SRC, `diag_code_${i} 추출 누락`).toContain(`fd['diag_code_${i}']`);
       expect(GATE_SRC, `diag_name_${i} 추출 누락`).toContain(`fd['diag_name_${i}']`);
     }
-    expect(GATE_SRC, 'printOpinionDoc 로 diagCodes 전달 누락').toMatch(/diagCodes:\s*doc\.diagCodes/);
+    // T-20260729-foot-OPINIONDOC-...-STALE: printAuthoredMedDoc 이 상병 정정 오버레이 우선(effectiveDiagCodes
+    //   = ov?.diagCode ? {override} : doc.diagCodes)로 전달 — 정정 없으면 발행본 스냅샷(doc.diagCodes) 폴백이므로
+    //   본 spec 의 스냅샷 1급 소스 계약(diag_code_1..4/diag_name_1..4) 불변. 리터럴만 effectiveDiagCodes 로 동기화.
+    expect(GATE_SRC, 'printAuthoredMedDoc 로 diagCodes(effective) 전달 누락').toMatch(/diagCodes:\s*effectiveDiagCodes/);
+    // 폴백 계약 가드: 정정 없으면 발행본 스냅샷(doc.diagCodes)이 diagCodes 소스임을 함께 단언(회귀 0).
+    expect(GATE_SRC, 'effectiveDiagCodes 의 스냅샷 폴백 누락').toMatch(/effectiveDiagCodes\s*=[\s\S]*doc\.diagCodes/);
   });
 
   test('printOpinionDoc override 는 반드시 ...autoValues 뒤에 위치(빈 autoValues override 방지)', () => {
