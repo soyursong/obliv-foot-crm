@@ -17,6 +17,8 @@ import { supabase } from '@/lib/supabase';
 import { OPINION_SECTIONS, type OpinionSection } from '@/components/doctor/OpinionDocTab';
 import { formatRxItemToken } from '@/lib/rxTooltip';
 import { todaySeoulISODate, seoulISODate } from '@/lib/format';
+// T-20260729-foot-ALERTBOARD-DOBTXRX-COL-BLANK: 오늘시술(package_sessions.session_type) 간략형 라벨 SSOT 재사용.
+import { sessionTypeLabel } from '@/lib/progressTreatmentCsv';
 
 // 서류종류 2종 (AC-6) — 진단서 / 소견서.
 export type OpinionDocType = 'diagnosis' | 'opinion';
@@ -1084,6 +1086,71 @@ export function useQueueTodayProcedureRx(clinicId: string | null, customerIds: s
         }
       } catch {
         // 당일 시술/처방 조회 불가 — 두 컬럼은 '—' 폴백. 큐 자체는 정상(graceful).
+        return {};
+      }
+      return out;
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
+
+// T-20260729-foot-ALERTBOARD-DOBTXRX-COL-BLANK (AC-2/3): 오늘시술·처방내역을 '행의 방문(check_in_id)' 스코프로 재결선.
+//   RC(런타임 확정 — scripts/T-20260729-...-COL-BLANK_probe.mjs):
+//     직전 useQueueTodayProcedureRx 는 (a) check_ins.treatment_kind(전행 NULL) 을 오늘시술 소스로 삼고,
+//     (b) '글로벌 오늘(KST) check_ins' 만 조회 → 서류완료(과거일)·비-today 발행요청 행이 전면 공란이었다.
+//   FIX: 알림판 목록의 각 행은 자신의 발행요청 방문 check_in_id 를 앵커로 가진다(loadOpinionAutofillRef 동형).
+//     그 방문 스코프로 소스를 다시 결선(read-only, DDL/write 0. check_in_id 는 clinic-scoped form_submissions 유래 → 타 환자 유입 배제).
+//     · AC-2 오늘시술 = 그 방문의 package_sessions.session_type(=차트2 티켓 차감 = 패키지 회차 차감 = 당일 시술 확정 신호)
+//         → sessionTypeLabel 간략형(레이저비가열/레이저가열/발톱교정/각질/수액/체험/Re:Born). 차감 없으면 공란(AC).
+//     · AC-3 처방내역 = 그 방문의 check_in_services 처방약(services.category_label='처방약') service_name (extractRxDrugNames 재사용).
+export function useQueueVisitProcedureRx(clinicId: string | null, checkInIds: string[]) {
+  const key = [...new Set(checkInIds.filter(Boolean))].sort().join(',');
+  return useQuery<Record<string, TodayProcedureRx>>({
+    queryKey: ['opinion_queue_visit_proc_rx', clinicId, key],
+    enabled: !!clinicId && key.length > 0,
+    queryFn: async () => {
+      const out: Record<string, TodayProcedureRx> = {};
+      if (!clinicId || !key) return out;
+      try {
+        const ids = key.split(',');
+        for (const id of ids) out[id] = { procedures: [], prescriptions: [] };
+        // AC-2: 그 방문의 회차 차감(package_sessions) — soft-delete 제외, 세션번호순으로 전부 나열.
+        const { data: psData, error: psErr } = await supabase
+          .from('package_sessions')
+          .select('check_in_id, session_type, session_number')
+          .in('check_in_id', ids)
+          .is('deleted_at', null)
+          .order('session_number', { ascending: true });
+        if (psErr) throw psErr;
+        for (const raw of (psData ?? []) as Array<{ check_in_id: string | null; session_type: string | null }>) {
+          const cin = String(raw.check_in_id ?? '');
+          if (!cin || !out[cin]) continue;
+          const label = sessionTypeLabel(raw.session_type);
+          if (label && !out[cin].procedures.includes(label)) out[cin].procedures.push(label);
+        }
+        // AC-3: 그 방문의 처방약(check_in_services + services.category_label='처방약').
+        const { data: cisData, error: cisErr } = await supabase
+          .from('check_in_services')
+          .select('check_in_id, service_name, services:service_id(category_label)')
+          .in('check_in_id', ids);
+        if (cisErr) throw cisErr;
+        const byCheckIn = new Map<string, Array<Record<string, unknown>>>();
+        for (const raw of (cisData ?? []) as Array<Record<string, unknown>>) {
+          const cin = String(raw['check_in_id'] ?? '');
+          if (!cin) continue;
+          const arr = byCheckIn.get(cin) ?? [];
+          arr.push(raw);
+          byCheckIn.set(cin, arr);
+        }
+        for (const [cin, rowsForCin] of byCheckIn) {
+          if (!out[cin]) continue;
+          for (const nm of extractRxDrugNames(rowsForCin)) {
+            if (!out[cin].prescriptions.includes(nm)) out[cin].prescriptions.push(nm);
+          }
+        }
+      } catch {
+        // 방문 스코프 시술/처방 조회 불가 — 두 컬럼은 '—' 폴백. 큐 자체는 정상(graceful).
         return {};
       }
       return out;
