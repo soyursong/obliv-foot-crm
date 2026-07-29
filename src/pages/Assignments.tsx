@@ -2401,25 +2401,28 @@ export default function Assignments() {
         {/* ── #3 하단 실장별 랭킹 변동표 (주간·월간) — T-20260729-foot-RANKING-VARIATION-WEEKLY-MONTHLY-FORMAT.
             · 행 포맷(공통): [실장명 → 변동(↑N/↓N/-) → 이번(당월) 순위 → 전(전월/전주) 순위], 이번 순위 오름차순.
             · 주간(기존)/월간(신규) 모두 VariationTable 단일 컴포넌트로 렌더(divergence 가드: 포맷 단일 소스).
-            · 기존 레이아웃 관행(카드 세로 스택) 준수 → 월간 카드를 주간 카드 바로 아래 배치. */}
-        <VariationTable
-          title="실장별 랭킹 변동 (주간)"
-          subtitle="직전 주(월~일) 대비 이번 주(월~선택일) 매출 순위 변동"
-          rows={variationRows}
-          loading={rankLoading}
-          thisLabel="이번주 순위"
-          prevLabel="전주 순위"
-          cardTestId="assignments-ranking-variation-card"
-        />
-        <VariationTable
-          title="실장별 랭킹 변동 (월간)"
-          subtitle="전월(1일~말일) 대비 당월(1일~선택일) 매출 순위 변동"
-          rows={monthVariationRows}
-          loading={rankLoading}
-          thisLabel="당월 순위"
-          prevLabel="전월 순위"
-          cardTestId="assignments-ranking-variation-card-monthly"
-        />
+            · 배치 = 2단(2-column grid): 주간 좌 / 월간 우 (김주연 총괄 확정 ts 1785314923.938779).
+              모바일(sm 미만)은 grid-cols-1 로 stack(상하) fallback. */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <VariationTable
+            title="실장별 랭킹 변동 (주간)"
+            subtitle="직전 주(월~일) 대비 이번 주(월~선택일) 매출 순위 변동"
+            rows={variationRows}
+            loading={rankLoading}
+            thisLabel="이번주 순위"
+            prevLabel="전주 순위"
+            cardTestId="assignments-ranking-variation-card"
+          />
+          <VariationTable
+            title="실장별 랭킹 변동 (월간)"
+            subtitle="전월(1일~말일) 대비 당월(1일~선택일) 매출 순위 변동"
+            rows={monthVariationRows}
+            loading={rankLoading}
+            thisLabel="당월 순위"
+            prevLabel="전월 순위"
+            cardTestId="assignments-ranking-variation-card-monthly"
+          />
+        </div>
 
         {/* ── [랭킹] 탭 §3: '배정 순번 설정' 통합(T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK).
             헤더 우측에 있던 '배정 순번 설정' 진입 버튼을 이 탭 안으로 이동(원 위치 제거 = 중복노출 금지).
