@@ -35,6 +35,8 @@ import {
 import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
 // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 CRUD 권한 게이트 + 권한상승 가드(원장 배정 차단) SSOT.
 import { canManageStaff, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
+// T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1: 신규 실장 표시명 '실장' suffix.
+import { withSiljangSuffix } from '@/lib/siljangSlack';
 
 type Role = StaffRole;
 
@@ -388,12 +390,19 @@ function CreateStaffDialog({
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.from('staff').insert({
+    // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1: 신규 '실장'(consultant) 등록 시 표시명 뒤 '실장' suffix.
+    //   소급 X(신규 등록분만) · 표시명(display_name)만 대상 · 배정/매출귀속 키(id/name)에 무영향.
+    //   비-실장 역할은 display_name 미설정(null → 기존대로 name 표시).
+    const insertRow: { clinic_id: string; name: string; role: Role; active: boolean; display_name?: string } = {
       clinic_id: clinicId,
       name: name.trim(),
       role,
       active: true,
-    });
+    };
+    if (role === 'consultant') {
+      insertRow.display_name = withSiljangSuffix(name);
+    }
+    const { error } = await supabase.from('staff').insert(insertRow);
     setSubmitting(false);
     if (error) {
       toast.error(`등록 실패: ${error.message}`);

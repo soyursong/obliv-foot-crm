@@ -28,6 +28,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { supabase } from '@/lib/supabase';
+// T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: [확정]→상담대기방 발송 EF 이름 SSOT.
+import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/lib/format';
@@ -245,6 +247,8 @@ export default function Assignments() {
   const [slotEnter, setSlotEnter] = useState<Map<string, string>>(new Map());
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: [확정] 발송 진행 중인 배분 이력 행 id(중복 클릭 방지).
+  const [notifyingId, setNotifyingId] = useState<string | null>(null);
 
   // T-20260618-foot-ASSIGN-CONSULT-THERAPY-TABS: 같은 화면 내 [상담]/[치료] 탭 분리
   // (사이드바 단일 메뉴 유지. active 탭 기준 role 필터만 — 배정/토스/당김 로직 불변)
@@ -931,6 +935,9 @@ export default function Assignments() {
     staffId: string | null;
     method: string; // 자동 | 수동 | 토스 | 당김 | —
     at: string; // ISO (action created_at 우선, 없으면 checked_in_at)
+    // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: [확정] 발송 게이트 바인딩.
+    inflow: string; // 유입경로(축 라벨: TM/인바운드/워크인/재진 …) — 발송 포맷 '[유입경로]'.
+    notifyStatus: string | null; // check_ins.consult_notify_status (NULL=미확정, 'sent'=발송됨)
   }
   const todayDistribution = useMemo<TodayDistRow[]>(() => {
     const todayIso = todaySeoulISODate();
@@ -968,13 +975,16 @@ export default function Assignments() {
           staffId,
           method: act ? (METHOD_KO[act.action_type] ?? '—') : '—',
           at: act?.created_at ?? ci.checked_in_at!,
+          // 변경2: 유입경로 = 상담 축 라벨(AXIS_KO 매핑). 발송 게이트/상태는 consult 행에만 의미.
+          inflow: role === 'consult' ? (AXIS_KO[axisOf(ci, 'consult')] ?? axisOf(ci, 'consult')) : '',
+          notifyStatus: ci.consult_notify_status ?? null,
         });
       };
       push('consult', ci.consultant_id);
       push('therapy', ci.therapist_id);
     }
     return rows.sort((a, b) => b.at.localeCompare(a.at));
-  }, [monthCheckIns, actions, activeTab, monthCustomers]);
+  }, [monthCheckIns, actions, activeTab, monthCustomers, axisOf]);
 
   // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
   //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.
@@ -1175,6 +1185,38 @@ export default function Assignments() {
       void load();
     } else {
       toast.error(res.message ?? '삭제 실패');
+    }
+  };
+
+  // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 금일 배분 이력 [확정] → 상담대기방(C0B4HEC9SHH) 발송 게이트.
+  //   현행 자동발송 없음(factual_check: chat.postMessage prod 미배선) → [확정] 클릭 시에만 발송(신규 배선).
+  //   멱등: 서버 EF 가 조건부 claim(consult_notify_status IS NULL → 'sending' → 'sent') rows-affected 로 이중발송 차단.
+  //   상태 지속(check_ins.consult_notify_status, 3-state) → 새로고침·다중 사용자에도 '발송됨' 유지.
+  //   RED LINE INV-1: 발송상태 컬럼만 write, consultant_id/매출귀속 무접촉.
+  const doConfirmNotify = async (r: TodayDistRow) => {
+    if (!clinic || notifyingId) return;
+    if (r.role !== 'consult') return; // '상담 대기중' 발송 = 상담 배정 한정
+    if (r.notifyStatus === 'sent' || r.notifyStatus === 'sending') return; // 이미 발송됨/발송중(멱등)
+    setNotifyingId(r.id);
+    try {
+      const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.SEND_CONSULT_NOTIFY, {
+        body: { check_in_id: r.checkIn.id, clinic_id: clinic.id, inflow: r.inflow },
+      });
+      const res = (data ?? {}) as { ok?: boolean; sent?: boolean; alreadySent?: boolean; error?: string };
+      if (error || res.error || res.ok === false) {
+        toast.error(res.error ?? error?.message ?? '발송 실패');
+        return;
+      }
+      if (res.alreadySent) {
+        toast.success('이미 발송된 건입니다.');
+      } else {
+        toast.success(`${staffName(r.staffId)} · ${r.customerName}님 상담대기방 발송 완료`);
+      }
+      void load(); // consult_notify_status 재조회 → '발송됨' 반영
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '발송 실패');
+    } finally {
+      setNotifyingId(null);
     }
   };
 
@@ -1571,6 +1613,10 @@ export default function Assignments() {
                   <th className="px-2 py-2 text-left font-medium">담당</th>
                   <th className="px-2 py-2 text-left font-medium">방식</th>
                   <th className="px-2 py-2 text-right font-medium">시각</th>
+                  {/* T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 발송(확정) 열 — 상담 탭 한정(치료 탭 무의미) */}
+                  {activeTab === 'consult' && (
+                    <th className="px-2 py-2 text-right font-medium">발송</th>
+                  )}
                   {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 삭제 열 — admin/manager/원장 한정 노출 */}
                   {canEditDistribution && (
                     <th className="px-2 py-2 text-right font-medium">삭제</th>
@@ -1581,7 +1627,7 @@ export default function Assignments() {
                 {todayDistribution.length === 0 && (
                   <tr>
                     <td
-                      colSpan={canEditDistribution ? 5 : 4}
+                      colSpan={4 + (activeTab === 'consult' ? 1 : 0) + (canEditDistribution ? 1 : 0)}
                       className="px-3 py-6 text-center text-muted-foreground"
                     >
                       오늘 배분된 건이 없습니다.
@@ -1660,6 +1706,37 @@ export default function Assignments() {
                     <td className="px-2 py-2 text-right text-muted-foreground">
                       {r.at ? new Date(r.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) : '—'}
                     </td>
+                    {/* T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 발송(확정) 셀 — 상담 탭 한정.
+                        상태 3-state: 미확정 → [확정] 버튼(admin/manager/director) / 발송중 / 발송됨.
+                        클릭 시에만 send-consult-notify EF → 상담대기방(C0B4HEC9SHH) 발송(자동발송 없음).
+                        멱등: 서버 조건부 claim + notifyStat!=='미확정' 시 버튼 비노출 → 이중발송 방지. */}
+                    {activeTab === 'consult' && (
+                      <td className="px-2 py-2 text-right">
+                        {r.notifyStatus === 'sent' ? (
+                          <Badge variant="teal" className="font-normal" data-testid={`dist-notify-sent-${r.id}`}>
+                            발송됨
+                          </Badge>
+                        ) : r.notifyStatus === 'sending' ? (
+                          <Badge variant="secondary" className="font-normal" data-testid={`dist-notify-sending-${r.id}`}>
+                            발송중
+                          </Badge>
+                        ) : canEditDistribution ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            data-testid={`dist-confirm-btn-${r.id}`}
+                            disabled={busy || notifyingId !== null}
+                            className="h-7 px-2 text-xs text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                            onClick={() => void doConfirmNotify(r)}
+                          >
+                            {notifyingId === r.id ? '발송 중…' : '확정'}
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground" data-testid={`dist-notify-pending-${r.id}`}>미확정</span>
+                        )}
+                      </td>
+                    )}
                     {/* T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 삭제(soft-hide) — 전 행 노출(test 조건 없음).
                         클릭 → 확인 다이얼로그(distDeleteTarget). admin/manager/원장 한정. */}
                     {canEditDistribution && (

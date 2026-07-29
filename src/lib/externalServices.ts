@@ -19,6 +19,8 @@ export const EDGE_FUNCTIONS = {
   DOPAMINE_CALLBACK: 'dopamine-callback',
   /** 알림/문자 발송 (테스트/수동 발송 공통) */
   SEND_NOTIFICATION: 'send-notification',
+  /** T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 금일 배분 이력 [확정]→상담대기방 Slack 발송 (클릭 게이트) */
+  SEND_CONSULT_NOTIFY: 'send-consult-notify',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

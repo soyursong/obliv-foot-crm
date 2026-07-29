@@ -552,6 +552,13 @@ export interface CheckIn {
    *  optional(?) — DB select('*')에는 항상 존재, in-memory 리터럴은 미포함 허용. */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2 (ADDITIVE, DA CONSULT 1차 게이트, R1~R4).
+   *  상담 배정 상담대기방(C0B4HEC9SHH) 발송상태(3-state). NULL=미확정, 'sending'=발송중(claim), 'sent'=발송됨.
+   *  [확정] 버튼 클릭 게이트(멱등 claim). 발송상태 컬럼만 — consultant_id/assigned_consultant_id(매출귀속) 무접촉(RED LINE INV-1). */
+  consult_notify_status?: string | null;
+  consult_notify_sent_at?: string | null;
+  consult_notify_by?: string | null;
+  consult_notify_slack_ts?: string | null;
 }
 
 export interface Package {
