@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { seoulISODate } from '@/lib/format';
 import { printOpinionDoc, type OpinionPrintFormKey } from '@/lib/printOpinionDoc';
 import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
+import { parseAdminOverrides, type AdminFieldOverrides } from '@/lib/opinionRequest';
 import type { CheckIn } from '@/lib/types';
 import type { ClinicHeader } from '@/components/doctor/OpinionDocTab';
 
@@ -73,11 +74,55 @@ export interface AuthoredMedDoc {
     code1: string | null; code2: string | null; code3: string | null; code4: string | null;
     name1: string | null; name2: string | null; name3: string | null; name4: string | null;
   };
+  /**
+   * T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE [P0]: 발행 후 원내 직원이 '행정정보 수정'으로
+   *   정정한 행정필드 오버레이(발행본이 아니라 요청행 field_data.admin_overrides 에 저장됨 — 발행본 불변).
+   *   ★RC: 데스크 출력(printAuthoredMedDoc)은 발행본(status='published') 스냅샷만 읽어 발행 당시 담당의
+   *      (issuedByName)·발행자 도장(issuedByDoctorId)을 그대로 뽑았다 → 담당의 정정(문지은→한동훈)이
+   *      출력에 반영 안 됨. 반면 화면 열람(IssuedOpinionDocFormView)은 이 오버레이를 얹어 정정값을 보여줌.
+   *   이제 useAuthoredMedDocs 가 요청행 오버레이를 발행본에 매칭(check_in_id + doc_type)해 얹고,
+   *   printAuthoredMedDoc 이 IssuedOpinionDocFormView 와 동형으로 override(담당의·도장·발급일·상병코드)한다.
+   *   미정정(오버레이 없음)이면 undefined → 종전 발행본 스냅샷 그대로 출력(회귀 0).
+   */
+  adminOverrides?: AdminFieldOverrides;
 }
 
 interface AuthoredMedDocResult {
   /** 서류종류별 최신 발행본(없으면 미존재 = 원장 미작성). */
   byType: Partial<Record<MedDocType, AuthoredMedDoc>>;
+}
+
+/**
+ * T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE: 발행본 ↔ '행정정보 수정' 오버레이 매칭 후보(순수).
+ *   오버레이는 발행본(published)이 아니라 그 발행을 만든 '요청행'(status='voided'+resolved_reason='published')
+ *   field_data.admin_overrides 에 저장된다(발행본 불변, T-20260724 PERMSPLIT). 요청행의 top-level check_in_id 로
+ *   발행본과 원자 링크(발행 RPC 가 요청 check_in 을 발행본 check_in_id 로 각인 — matchPublishedOpinionDoc 동일 키).
+ */
+export interface AdminOverrideCandidate {
+  docType: MedDocType;
+  /** 요청행 top-level check_in_id(발행본과 매칭 키). 레거시/미상=null. */
+  checkInId: string | null;
+  overrides: AdminFieldOverrides;
+}
+
+/**
+ * 발행본 1건에 얹을 행정 오버레이를 요청행 후보에서 고른다(순수, spec 직접 import → drift 방지).
+ *   1순위: 같은 doc_type + check_in_id 일치(발행 RPC 가 요청 check_in 을 발행본에 각인 → 요청1↔발행1 원자 링크).
+ *          발행본 check_in 이 있는데 일치 후보가 없으면 = 이 서류엔 정정 없음 → undefined(다른 방문 정정 오적용 차단).
+ *   폴백: 발행본 check_in 미상(레거시)이면 같은 doc_type 중 최신 오버레이(candidates 는 created_at desc 로 전달).
+ *   후보 없음/미정정 → undefined(정정 없음 = 발행본 스냅샷 그대로 출력, 회귀 0).
+ */
+export function resolveAdminOverrideForDoc(
+  docType: MedDocType,
+  publishedCheckInId: string | null,
+  candidates: AdminOverrideCandidate[],
+): AdminFieldOverrides | undefined {
+  const sameType = candidates.filter((c) => c.docType === docType);
+  if (sameType.length === 0) return undefined;
+  if (publishedCheckInId) {
+    return sameType.find((c) => c.checkInId === publishedCheckInId)?.overrides;
+  }
+  return sameType[0].overrides; // 레거시(발행본 check_in 미상) 폴백 — 같은 종류 최신 정정.
 }
 
 /**
@@ -107,9 +152,11 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
       if (!templateId) return empty;
 
       // 2) 발행본(published) 최신순. 서류종류별 첫 행(최신)만 채택.
+      //    T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE: top-level check_in_id 도 읽는다
+      //    (요청행 오버레이 매칭 키 — field_data.check_in_id 가 아닌 컬럼값이 발행/요청 양측 원자 링크 SSOT).
       const { data, error } = await supabase
         .from('form_submissions')
-        .select('id, field_data, created_at')
+        .select('id, check_in_id, field_data, created_at')
         .eq('clinic_id', clinicId)
         .eq('customer_id', customerId)
         .eq('template_id', templateId)
@@ -118,10 +165,13 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
       if (error) throw error;
 
       const byType: Partial<Record<MedDocType, AuthoredMedDoc>> = {};
+      // 발행본 top-level check_in_id(오버레이 매칭 키) — byType 채택된 doc 별로 보관.
+      const publishedCheckInByType: Partial<Record<MedDocType, string | null>> = {};
       for (const raw of (data ?? []) as Array<Record<string, unknown>>) {
         const fd = (raw['field_data'] ?? {}) as Record<string, unknown>;
         const docType: MedDocType = fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion';
         if (byType[docType]) continue; // 종류별 최신 1건만
+        publishedCheckInByType[docType] = (raw['check_in_id'] as string | null) ?? null;
         byType[docType] = {
           id: String(raw['id']),
           docType,
@@ -148,6 +198,50 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
           },
         };
       }
+
+      // 3) T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE [P0]: '행정정보 수정' 오버레이를 발행본에 얹는다.
+      //    오버레이는 요청행(status='voided'+resolved_reason='published')의 field_data.admin_overrides 에 저장됨
+      //    (발행본 불변, T-20260724 PERMSPLIT). 데스크 출력이 정정 담당의/도장/발급일/상병코드를 따라가도록,
+      //    발행본과 check_in_id+doc_type 로 매칭해 오버레이를 attach → printAuthoredMedDoc 이 override 적용.
+      //    조회 실패해도 출력은 계속(오버레이 없이 종전 스냅샷 출력, 회귀 0).
+      if (Object.keys(byType).length > 0) {
+        try {
+          const { data: reqData } = await supabase
+            .from('form_submissions')
+            .select('check_in_id, field_data, created_at')
+            .eq('clinic_id', clinicId)
+            .eq('customer_id', customerId)
+            .eq('status', 'voided')
+            .order('created_at', { ascending: false });
+          const candidates: AdminOverrideCandidate[] = [];
+          for (const r of (reqData ?? []) as Array<Record<string, unknown>>) {
+            const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
+            // 서류작성 큐(staff_consult)에서 발행 완료된 요청행만 — 취소·타 draft 제출 배제.
+            if (fd['request_origin'] !== 'staff_consult') continue;
+            if (fd['resolved_reason'] !== 'published') continue;
+            const overrides = parseAdminOverrides(fd);
+            if (!overrides) continue; // 정정 없는 요청행은 후보 아님.
+            candidates.push({
+              docType: fd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion',
+              checkInId: (r['check_in_id'] as string | null) ?? null,
+              overrides,
+            });
+          }
+          if (candidates.length > 0) {
+            for (const docType of Object.keys(byType) as MedDocType[]) {
+              const ov = resolveAdminOverrideForDoc(
+                docType,
+                publishedCheckInByType[docType] ?? null,
+                candidates,
+              );
+              if (ov) byType[docType]!.adminOverrides = ov;
+            }
+          }
+        } catch (e) {
+          console.warn('[OPINIONDOC-ADMININFO-DOCTORNAME-STALE] admin_overrides 로드 실패 — 발행본 스냅샷으로 출력', e);
+        }
+      }
+
       return { byType };
     },
     staleTime: 10_000,
@@ -185,18 +279,32 @@ export async function printAuthoredMedDoc(
   ctx: MedDocPrintContext,
 ): Promise<boolean> {
   if (!doc) return false;
+  // T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE [P0]: '행정정보 수정' 오버레이를 발행본 스냅샷 '위에'
+  //   얹는다(IssuedOpinionDocFormView 열람 경로와 동형 — 출력↔열람 표기 정합). 발행본 스냅샷은 불변,
+  //   출력 렌더 시점에만 정정값이 이긴다(truthy override). 정정 없으면 종전 스냅샷 그대로(회귀 0).
+  //   · 담당의명(doctorName) → issuedByName 지배(소견서 {{doctor_name}} + 진단서 {{attending_doctor_name}} 동시).
+  //   · 담당의 id(doctorId) → 도장 앵커(effectiveDoctorId) 지배 → 이름↔도장 세트 정합(SEAL-DOCTOR-MATCH 동형, AC-2).
+  //   · 발급일(issueDate)/상병코드(diagCode) → 열람과 동일 규칙으로 override(상병은 primary=code1만).
+  const ov = doc.adminOverrides;
+  const effectiveDoctorName = ov?.doctorName || doc.issuedByName;
+  const effectiveDoctorId = ov?.doctorId ?? doc.issuedByDoctorId ?? undefined;
+  const effectiveIssueDate = ov?.issueDate || (doc.issuedAt ? seoulISODate(doc.issuedAt) : null);
+  const effectiveDiagCodes = ov?.diagCode
+    ? { code1: ov.diagCode, code2: null, code3: null, code4: null,
+        name1: null, name2: null, name3: null, name4: null }
+    : doc.diagCodes;
   let autoValues: Record<string, string> | undefined;
   if (ctx.checkIn?.customer_id) {
     try {
-      // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 데스크 출력 도장도 '발행자 본인 직인'으로 결선.
-      //   발행자 clinic_doctors.id(doc.issuedByDoctorId)를 clinicDoctorId(1순위)로, 발행자명(doc.issuedByName)을
-      //   doctorNameOverride(레거시 id 부재 시 이름폴백)로 태워 내원행 치료의 기반 도장 오매핑을 차단한다.
+      // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 데스크 출력 도장도 '발행자(=정정 시 정정 진료의) 본인 직인'
+      //   으로 결선. 정정 진료의 clinic_doctors.id(effectiveDoctorId)를 clinicDoctorId(1순위)로, 정정 진료의명
+      //   (effectiveDoctorName)을 doctorNameOverride(레거시 id 부재 시 이름폴백)로 태워 도장 오매핑을 차단한다.
       //   ⚠ 빌링서식 loadAutoBindContext 호출부(PaymentMiniWindow/DocumentPrintPanel 자체 경로)는 무접점 —
       //     본 함수는 소견서/진단서 발행본 출력 전용. 07-14 미지정폴백 법인인감(sealFallbackToInstitution) 불변.
       autoValues = await loadAutoBindContext(
         ctx.checkIn,
-        doc.issuedByName || undefined,
-        doc.issuedByDoctorId ?? undefined,
+        effectiveDoctorName || undefined,
+        effectiveDoctorId,
       );
       // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸) 공란 복구 — medical_charts(빈 값) 대신
       //   발행본 원 방문(doc.checkInId)의 check_in_services 상병항목에서 diag_code_1..N 을 채운다.
@@ -214,9 +322,10 @@ export async function printAuthoredMedDoc(
     body: doc.body,
     chartNo: doc.chartNo,
     patientName: ctx.patientName ?? null,
-    issuedByName: doc.issuedByName,
+    // T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE: 담당의명 = 정정 오버레이 우선(없으면 발행 스냅샷).
+    issuedByName: effectiveDoctorName,
     issuedByLicenseNo: doc.issuedByLicenseNo,
-    issueDate: doc.issuedAt ? seoulISODate(doc.issuedAt) : null,
+    issueDate: effectiveIssueDate,
     clinicName: ctx.clinicHeader?.name ?? null,
     clinicAddress: ctx.clinicHeader?.address ?? null,
     clinicPhone: ctx.clinicHeader?.phone ?? null,
@@ -224,6 +333,7 @@ export async function printAuthoredMedDoc(
     autoValues,
     // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST]: 발행본 스냅샷 상병(1급 소스).
     //   printOpinionDoc 이 autoValues(check_in 폴백) 뒤에 truthy 일 때만 override → 스냅샷 값 우선.
-    diagCodes: doc.diagCodes,
+    //   T-20260729: 상병코드 정정 오버레이가 있으면 그 값(primary)이 이긴다(열람 경로와 동일).
+    diagCodes: effectiveDiagCodes,
   });
 }

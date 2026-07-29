@@ -507,6 +507,10 @@ export default defineConfig({
         // T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN: 진료대시보드 '서류 완료' 소스 day-scoped→
         //   all-time 전환(자정 교차 소실 제거). 순수 함수(selectDashboardCompletedRows) + 소스 가드. auth/server 불요, unit 전용.
         '**/T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN.spec.ts',
+        // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME [P0]: 소견서 탭 출력이 '행정정보 수정'
+        //   담당의 정정(admin_overrides)을 미참조하던 결함 → OpinionDocTab.handlePrint 재배선(effectiveDoctorName/
+        //   Id). unit 전용 순수 함수(resolveAdminOverrideForDoc)+소스 가드 spec — auth/server/page 불요.
+        '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -525,6 +529,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: unit 전용 정적 소스 가드+순수 함수 →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',
         // T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT: unit 전용 정적 소스 가드 → 무-project 실행
         //   (supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260728-foot-ATTENDINGDR-DOC-ATTRIB-CHART-EDIT.spec.ts',

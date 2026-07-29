@@ -857,6 +857,10 @@ export function useUpdateOpinionAdminFields(clinicId: string | null) {
       // 완료 그룹 + 발행본 열람 뷰 즉시 반영.
       qc.invalidateQueries({ queryKey: ['opinion_request_published', clinicId] });
       qc.invalidateQueries({ queryKey: ['opinion_request_customer_history', clinicId] });
+      // T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE [P0, AC3]: 데스크/수납 출력 게이트 캐시도 무효화 →
+      //   담당의 정정 저장 직후 '새로고침 없이' 출력(useAuthoredMedDocs)에 정정 담당의·도장이 반영된다.
+      //   (queryKey=['meddoc_authored', clinicId, customerId] — clinicId prefix 무효화로 해당 환자 게이트 포함.)
+      qc.invalidateQueries({ queryKey: ['meddoc_authored', clinicId] });
     },
   });
 }

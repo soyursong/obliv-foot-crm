@@ -54,7 +54,10 @@ import { printOpinionDoc } from '@/lib/printOpinionDoc';
 import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
 // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
 //   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
-import { useUpdateStaffMemo } from '@/lib/opinionRequest';
+import { useUpdateStaffMemo, parseAdminOverrides, type AdminFieldOverrides } from '@/lib/opinionRequest';
+// T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: 발행본↔요청행 오버레이 매칭 순수 헬퍼 재사용
+//   (데스크 출력 경로 medDocPrintGate 와 동일 helper → 매칭 규칙 drift 방지).
+import { resolveAdminOverrideForDoc, type AdminOverrideCandidate } from '@/lib/medDocPrintGate';
 // T-20260724-foot-DOCFORM-AUTOFILL-DOB-TX-RX-BLANK: 자동연동 3필드 read-only 로더(실 SSOT 재결선).
 import { loadOpinionAutofillRef, type OpinionAutofillRef } from '@/lib/opinionAutofillRef';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
@@ -430,6 +433,13 @@ export interface PublishedOpinionRow {
    *   도장을 발행자 본인 직인으로 결선한다(이름↔도장 세트 정합). 레거시 미존재=null → issued_by_name 이름폴백.
    */
   issued_by_doctor_id: string | null;
+  /**
+   * T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME (AC-1): 발행 후 '행정정보 수정' 오버레이.
+   *   오버레이는 발행본(불변)이 아니라 그 발행을 만든 요청행(status='voided'+resolved_reason='published')
+   *   field_data.admin_overrides 에 저장(T-20260724 PERMSPLIT). handlePrint 가 담당의명(doctorName)·도장(doctorId)
+   *   을 이 값으로 우선 적용(null-safe). 미존재(대다수 발행분)=undefined → 발행본 스냅샷 그대로 출력(회귀 0).
+   */
+  adminOverrides?: AdminFieldOverrides;
 }
 function usePublishedOpinions(clinicId: string | null, customerId: string | null, templateId: string | null) {
   return useQuery<PublishedOpinionRow[]>({
@@ -446,7 +456,7 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
         .eq('status', 'published')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+      const rows: PublishedOpinionRow[] = ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
         const fd = (r['field_data'] ?? {}) as Record<string, unknown>;
         return {
           id: String(r['id']),
@@ -463,6 +473,45 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
           issued_by_doctor_id: (fd['issued_by_doctor_id'] as string | null) ?? null,
         };
       });
+
+      // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME (AC-2): '행정정보 수정' 오버레이를 발행본에 얹는다.
+      //   오버레이는 요청행(status='voided'+resolved_reason='published') field_data.admin_overrides 에 저장됨
+      //   (발행본 불변, T-20260724 PERMSPLIT). 발행본과 doc_type+check_in_id 로 원자 매칭(resolveAdminOverrideForDoc
+      //   — 데스크 출력 경로 medDocPrintGate 와 동일 순수 헬퍼 재사용 → 매칭 규칙 drift 방지). 조회 실패해도 출력은
+      //   계속(오버레이 없이 발행본 스냅샷 출력, 회귀 0).
+      try {
+        const { data: reqData } = await supabase
+          .from('form_submissions')
+          .select('check_in_id, field_data, created_at')
+          .eq('clinic_id', clinicId)
+          .eq('customer_id', customerId)
+          .eq('status', 'voided')
+          .order('created_at', { ascending: false });
+        const candidates: AdminOverrideCandidate[] = [];
+        for (const rr of (reqData ?? []) as Array<Record<string, unknown>>) {
+          const rfd = (rr['field_data'] ?? {}) as Record<string, unknown>;
+          // 서류작성 큐(staff_consult)에서 발행 완료된 요청행만 — 취소·타 draft 제출 배제.
+          if (rfd['request_origin'] !== 'staff_consult') continue;
+          if (rfd['resolved_reason'] !== 'published') continue;
+          const overrides = parseAdminOverrides(rfd);
+          if (!overrides) continue; // 정정 없는 요청행은 후보 아님.
+          candidates.push({
+            docType: rfd['doc_type'] === 'diagnosis' ? 'diagnosis' : 'opinion',
+            checkInId: (rr['check_in_id'] as string | null) ?? null,
+            overrides,
+          });
+        }
+        if (candidates.length > 0) {
+          for (const row of rows) {
+            const ov = resolveAdminOverrideForDoc(row.doc_type, row.check_in_id, candidates);
+            if (ov) row.adminOverrides = ov;
+          }
+        }
+      } catch (e) {
+        console.warn('[OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME] admin_overrides 로드 실패 — 발행본 스냅샷으로 출력', e);
+      }
+
+      return rows;
     },
     staleTime: 10_000,
   });
@@ -1056,6 +1105,14 @@ export function OpinionEditorDialog({
     //   그동안 printOpinionDoc 이 9필드만 수동주입 → 나머지 토큰이 공란으로 조용히 실패하던 결함(RC-1) 해소.
     //   loadAutoBindContext 는 buildAutoBindValues 전 토큰맵을 반환하고, 발행본 스냅샷(발행자·면허·차트·발행일·
     //   본문)은 printOpinionDoc 내부에서 override 로 보존한다(법정 의무기록 불변). 조회 실패 시 종전 동작으로 폴백.
+    // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME (AC-3): '행정정보 수정'(요청행 admin_overrides)이
+    //   담당의를 정정했으면 출력물에 그 값을 우선 적용(null-safe — 미정정/부분정정 시 발행본 스냅샷 유지, 회귀 0).
+    //   열람뷰(IssuedOpinionDocFormView L67-68)와 동형: 이름=doctorName 폴백, 도장=doctorId 앵커. 이름만 정정하고
+    //   도장을 안 따라가면 '새 이름 ↔ 구 도장' 불일치가 생기므로(SEAL-DOCTOR-MATCH 세트 정합) doctorId 도 함께 앵커.
+    //   ⚠ issue_date/diag_code override 는 본 티켓 스코프 밖(SHARED-SURFACE DIAGCODE-BLANK/OVERFLOW-2PAGE 손상 방지)
+    //     — 발급일=row.issued_at, 상병=check_in_services(applyDiagCodesFromVisit) 종전 소스 그대로 유지.
+    const effectiveDoctorName = row.adminOverrides?.doctorName || row.issued_by_name;
+    const effectiveDoctorId = row.adminOverrides?.doctorId ?? row.issued_by_doctor_id;
     let autoValues: Record<string, string> | undefined;
     if (clinicId && visitor?.customer_id && visitor.id) {
       try {
@@ -1080,8 +1137,8 @@ export function OpinionEditorDialog({
         //     발행본 출력 경로만 발행자-앵커. 미지정 폴백(sealFallbackToInstitution, 07-14 법인인감) 로직 불변.
         autoValues = await loadAutoBindContext(
           checkIn,
-          row.issued_by_name || undefined,
-          row.issued_by_doctor_id ?? undefined,
+          effectiveDoctorName || undefined,
+          effectiveDoctorId ?? undefined,
         );
         // T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK: 상병(3칸) 공란 복구 — medical_charts(빈 값) 대신
         //   발행본 원 방문(row.check_in_id)의 check_in_services 상병항목에서 diag_code_1..N 을 채운다.
@@ -1097,7 +1154,7 @@ export function OpinionEditorDialog({
       body: row.body,
       chartNo: row.chart_no ?? visitor?.chart_number ?? null,
       patientName: visitor?.customer_name ?? null,
-      issuedByName: row.issued_by_name,
+      issuedByName: effectiveDoctorName,
       issuedByLicenseNo: row.issued_by_license_no,
       issueDate: row.issued_at ? seoulISODate(row.issued_at) : null,
       clinicName: clinicHeader?.name ?? null,
