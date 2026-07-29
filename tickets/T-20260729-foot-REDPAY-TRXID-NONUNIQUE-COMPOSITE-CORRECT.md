@@ -4,6 +4,10 @@ domain: foot
 priority: P2
 status: deploy-ready
 deploy-ready: true
+qa_result: pass                                   # dev self-QA: deno 62/62 PASS + vite build OK
+deploy_commit: 1def3ce0                            # branch T-20260729-foot-REDPAY-TRXID-NONUNIQUE-COMPOSITE HEAD (supervisor merge 시 갱신)
+deployed_at: "n/a (NOT yet deployed — EF carve-out: supabase functions deploy by supervisor)"
+bundle_hash: "n/a (EF-only, no FE bundle change)"
 build-passed: true
 db-change: false
 data_consult_gate: "satisfied — DA CONSULT-REPLY GO (decision_id=DA-20260729-foot-REDPAY-TRXID-NONUNIQUE-COMPOSITE-CORRECT, SSOT=da_decision_foot_redpay_trxid_nonunique_composite_20260729.md). no-DDL·no new column/table/enum → §S2.4 gate 통과."
