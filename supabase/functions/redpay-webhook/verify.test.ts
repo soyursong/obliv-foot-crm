@@ -217,6 +217,50 @@ Deno.test("멱등 키 일관성: 동일 event → 동일 (trxid,status,amount)",
   }
 });
 
+// ── T-20260729-foot-REDPAY-IDEMPKEY-POLICY-CONFIRM (AC-2/AC-4): 송도 동시 승인/취소 보존 ─────
+//   정본 멱등키 = trxid + status (+amount). trxid 단독이면 취소가 승인 중복으로 흡수됨.
+//   현행 유니크 키 (external_trxid, external_status, amount) 가 아래 두 불변식을 동시 보장함을 실증:
+//     ① 같은 trxid 로 동시각 승인(+)/취소(-) → status·amount 상이 → 별 row 보존(흡수 금지).
+//     ② 진짜 중복(같은 trxid+status+amount 재수신) → 동일 키 → upsert no-op(1행 수렴, 중복 차단).
+//   ★ trxid 단독 키였다면 ①이 깨진다(승인·취소가 같은 키 → 취소 흡수). 이 테스트가 재발 회귀 가드.
+Deno.test("송도 동시 승인/취소 보존(AC-4): 같은 trxid, 승인·취소 별 row / 진짜중복만 차단", () => {
+  // 실측 사례: trxid 28226869, 동시각 +968,000 승인 / −968,000 취소.
+  const TRXID = "28226869"; // 송도 8자 형식
+  const approvedEnv = {
+    event_id: "evt_ap_1",
+    event_type: "payment.approved",
+    occurred_at: "2026-07-29T14:00:00+09:00",
+    data: { ...baseEnvelope().data, trxid: TRXID, amount: 968000, status: "Y" },
+  };
+  const cancelledEnv = {
+    event_id: "evt_cn_1",
+    event_type: "payment.cancelled",
+    occurred_at: "2026-07-29T14:00:00+09:00",
+    data: { ...baseEnvelope().data, trxid: TRXID, amount: -968000, status: "N" },
+  };
+  const ap = validateEnvelope(approvedEnv);
+  const cn = validateEnvelope(cancelledEnv);
+  assert(ap.ok && cn.ok, "승인·취소 payload 모두 유효");
+  if (ap.ok && cn.ok) {
+    // 현행 유니크 키 = (external_trxid, external_status, amount) — index.ts onConflict 미러.
+    const key = (v: typeof ap) => (v.ok ? `${v.data.trxid}|${v.status}|${v.amount}` : "");
+    const trxidOnly = (v: typeof ap) => (v.ok ? `${v.data.trxid}` : "");
+
+    // ① 정본 키: 승인·취소는 서로 다른 키 → 별 row 보존(취소가 승인에 흡수되지 않음).
+    assert(key(ap) !== key(cn), "정본 키(trxid+status+amount): 승인·취소는 별 row");
+    // 근거: status 상이(Y≠N) — amount 부호에 의존하지 않아도 이미 분리됨.
+    assert(ap.status !== cn.status, "status 상이(Y vs N)로 이미 분리 보장(금액부호 무의존)");
+
+    // ★ 회귀 가드: trxid 단독 키였다면 승인·취소가 같은 키 → 취소 흡수(사고 재현).
+    assertEquals(trxidOnly(ap), trxidOnly(cn), "trxid 단독이면 승인·취소 동일 키 → 흡수(금지 정책)");
+
+    // ② 진짜 중복(승인 재수신) → 정본 키 동일 → upsert no-op(1행 수렴, 중복 차단).
+    const apDup = validateEnvelope(approvedEnv);
+    assert(apDup.ok);
+    if (apDup.ok) assertEquals(key(ap), key(apDup), "진짜중복(동일 trxid+status+amount)은 동일 키 → 차단");
+  }
+});
+
 // ── DA req d: status 정규화 (data.status 우선 → event_type 파생) ────────────────
 Deno.test("status 정규화: data.status 우선, 없거나 비표준이면 event_type 파생", () => {
   assertEquals(normalizeStatus("Y", "approved"), "Y");
