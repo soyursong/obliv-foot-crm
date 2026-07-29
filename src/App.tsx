@@ -87,6 +87,9 @@ const AdminSettings = lazyWithRetry(() => import('@/pages/AdminSettings'));
 const PenChartEditorPage = lazyWithRetry(() => import('@/pages/PenChartEditorPage'));
 // T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 고객 모바일 자가작성 (anon)
 const HealthQMobilePage = lazyWithRetry(() => import('@/pages/HealthQMobilePage'));
+// T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제페이지(신규 route, 기능플래그 게이트).
+//   기존 /payment/* (미니창) 와 분리 — 플래그 OFF 시 페이지 내부에서 /admin 리다이렉트(신규 노출 0).
+const PaymentPlanb = lazyWithRetry(() => import('@/pages/PaymentPlanb'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -262,6 +265,10 @@ function App() {
                 {/* T-20260525-foot-ROLE-PERM-CUSTOM 3차: consultant/coordinator/therapist 추가 */}
                 {/* T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). PERM_MATRIX.messaging 과 동일 집합 SSOT. ★tm 제외★(AC6 STAFF-ROLE-TM-ADD 최소권한). 연결설정(Solapi)=adminOnly 내부게이팅 → staff 라우트 개방해도 자격증명/계정/통계/매출 누수 0. */}
                 <Route path="settings" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff']}><AdminSettings /></RoleGuard>} />
+                {/* T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제페이지(신규 route).
+                    기능플래그(VITE_PAYMENT_PLANB) OFF 시 페이지 내부에서 /admin 리다이렉트 → 신규 노출 0.
+                    RoleGuard 없음(기존 결제 진입 role 계승 — 진입 버튼이 CheckInDetailSheet 플래그 게이트). */}
+                <Route path="payment-planb/:checkInId" element={<PaymentPlanb />} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>

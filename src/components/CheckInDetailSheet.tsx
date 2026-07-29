@@ -5,6 +5,8 @@ import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
+// T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제 진입(기능플래그 게이트, OFF 시 null 반환 → 기존 화면 무변경).
+import PlanbPaymentEntryButton from '@/components/PlanbPaymentEntryButton';
 import { type FootSite, parseFootSite, isCompleteFootSite, parseFootSites } from '@/components/FootSiteSelector';
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { toast } from '@/lib/toast';
@@ -2133,6 +2135,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <CreditCard className="h-3.5 w-3.5" /> 결제 등록
               </Button>
             )}
+            {/* 비대기형 결제(플랜B) 진입 — 기능플래그 ON 시에만 렌더(OFF=무노출, 기존 흐름 무변경) */}
+            <PlanbPaymentEntryButton checkInId={checkIn.id} hasCustomer={!!checkIn.customer_id} />
           </div>
 
           {/* 서류 발행 */}
