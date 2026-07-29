@@ -29,7 +29,13 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { buildRxItemsHtml } from '../../src/lib/htmlFormTemplates';
-import { buildIssueNo, splitIssueNoForDisplay, ISSUE_NO_SEQ_WIDTH } from '../../src/lib/docSerial';
+import {
+  buildIssueNo,
+  splitIssueNoForDisplay,
+  ISSUE_NO_SEQ_WIDTH,
+  docSerialPrefix,
+  buildDocSerial,
+} from '../../src/lib/docSerial';
 
 // playwright 실행 CWD = 레포 루트(package.json 위치).
 const ROOT = process.cwd();
@@ -160,6 +166,113 @@ test('AC3-behavior: buildIssueNo (8+N) 형식 + splitIssueNoForDisplay 표시 �
   expect(once.issue_no).toBe('000025');
   const twice = splitIssueNoForDisplay(once);
   expect(twice.issue_no).toBe('000025'); // 재적용 무변경(멱등)
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3 배치 분기 도달성 (FIX-REQUEST MSG-20260730-024921-h69j §결함1/§결함2)
+//   구 spec 은 `issue_foot_rx_issue_no`·`const isRxIssue` **문자열 존재만 grep** 했다. 그 문자열은
+//   `if (isDocSerial) {…} else {…}` 상호배타 분기의 else 안에 **존재하되 도달 불가(dead branch)** 였다:
+//   docSerialPrefix('rx_standard')='RX' → rx_standard 에서 isDocSerial=TRUE → 항상 if(doc_serial) 승리 →
+//   else(rx issue_no) 미실행 → 교부번호(issue_no) 공란("제 __ 호"). grep-only 라 false-green 통과.
+//   → 아래는 "문자열 존재"가 아니라 **분기 선택 결과(교부번호 산출 여부)** 를 behavior 로 단언한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 배치 serial 루프의 분기 선택 + 발번 로직을 순수 함수로 재현(DocumentPrintPanel.tsx handleBatchPrint 와 동형).
+//   ★핵심 전제: docSerialPrefix('rx_standard')='RX' 라서 rx_standard 는 isDocSerial 도 TRUE 다(함정).
+//   FIX(독립 순차 if 2개) → rx_standard 는 visit_no(doc_serial)와 issue_no(rx) 를 **둘 다** 산출해야 한다.
+function batchIssueFields(
+  formKey: string,
+  chartNo: string | null,
+  opts?: { docSeq?: number; rxSeq?: number; dateYmd?: string },
+): { visit_no?: string; issue_no?: string } {
+  const dateYmd = opts?.dateYmd ?? '20260729';
+  const isDocSerial = !!docSerialPrefix(formKey) && !!chartNo;
+  const isRxIssue = formKey === 'rx_standard' && !!chartNo;
+  const vals: { visit_no?: string; issue_no?: string } = {};
+  if (isDocSerial) {
+    const ds = buildDocSerial({ formKey, chartNo, dateYYYYMMDD: dateYmd, seq: opts?.docSeq ?? 3 });
+    if (ds) vals.visit_no = ds;
+  }
+  if (isRxIssue) {
+    const iss = buildIssueNo(dateYmd, opts?.rxSeq ?? 25);
+    if (iss) vals.issue_no = iss;
+  }
+  return vals;
+}
+
+// 구(버그) 상호배타 if/else 재현 — 이 테스트가 결함1 을 실제로 discriminate 하는지 증명하기 위한 반증 모델.
+function batchIssueFieldsOldBuggy(
+  formKey: string,
+  chartNo: string | null,
+  opts?: { docSeq?: number; rxSeq?: number; dateYmd?: string },
+): { visit_no?: string; issue_no?: string } {
+  const dateYmd = opts?.dateYmd ?? '20260729';
+  const isDocSerial = !!docSerialPrefix(formKey) && !!chartNo;
+  const isRxIssue = formKey === 'rx_standard' && !!chartNo;
+  const vals: { visit_no?: string; issue_no?: string } = {};
+  if (isDocSerial) {
+    const ds = buildDocSerial({ formKey, chartNo, dateYYYYMMDD: dateYmd, seq: opts?.docSeq ?? 3 });
+    if (ds) vals.visit_no = ds;
+  } else if (isRxIssue) {
+    const iss = buildIssueNo(dateYmd, opts?.rxSeq ?? 25);
+    if (iss) vals.issue_no = iss;
+  }
+  return vals;
+}
+
+test('AC3-precondition: docSerialPrefix(rx_standard)=RX → 배치 rx_standard 는 isDocSerial 도 TRUE (dead-branch 함정 문서화)', () => {
+  // 이 전제가 참이기 때문에 구 if/else 에서 rx issue_no(else)가 절대 실행되지 않았다.
+  expect(docSerialPrefix('rx_standard')).toBe('RX');
+  const isDocSerial = !!docSerialPrefix('rx_standard') && !!'F-4302';
+  const isRxIssue = 'rx_standard' === 'rx_standard' && !!'F-4302';
+  expect(isDocSerial).toBe(true);
+  expect(isRxIssue).toBe(true);
+});
+
+test('AC3-behavior(결함1): 배치 rx_standard(차트번호 보유) → 교부번호(issue_no) 실제 산출 + visit_no 동시 세팅', () => {
+  const vals = batchIssueFields('rx_standard', 'F-4302', { docSeq: 3, rxSeq: 25 });
+  // ★현장 보고 결함의 직접 단언: 교부번호가 공란이 아니어야 한다.
+  expect(vals.issue_no).toBeDefined();
+  expect(vals.issue_no).toBe('20260729' + '25'.padStart(ISSUE_NO_SEQ_WIDTH, '0'));
+  expect(vals.issue_no).toMatch(/^\d{14}$/); // "제 __ 호" 공란 아님
+  // 단건 경로와 field_data parity: visit_no(doc_serial)도 동시 세팅(3경로 persist 정합).
+  expect(vals.visit_no).toBe('RX-20260729-F-4302-03');
+});
+
+test('AC3-behavior(결함1 반증): 구 if/else 상호배타 모델은 rx_standard 에서 교부번호 공란 → 본 테스트가 결함을 discriminate', () => {
+  const buggy = batchIssueFieldsOldBuggy('rx_standard', 'F-4302', { docSeq: 3, rxSeq: 25 });
+  // 구 구조에서는 isDocSerial 이 승리 → issue_no 미산출(=현장 보고한 교부번호 공란).
+  expect(buggy.issue_no).toBeUndefined();
+  expect(buggy.visit_no).toBe('RX-20260729-F-4302-03');
+  // 고정(현재) 모델과 대비 — 동일 입력에서 issue_no 산출 여부가 갈린다(테스트 유효성 증명).
+  const fixed = batchIssueFields('rx_standard', 'F-4302', { docSeq: 3, rxSeq: 25 });
+  expect(fixed.issue_no).toBeDefined();
+  expect(fixed.issue_no).not.toBe(buggy.issue_no); // undefined ≠ 산출값
+});
+
+test('AC3-behavior: 비-rx doc_serial 양식(진단서 등)은 visit_no 만 산출(issue_no 무영향 — 회귀 0)', () => {
+  const diag = batchIssueFields('diagnosis', 'F-4302', { docSeq: 7 });
+  expect(diag.visit_no).toBe('DIAG-20260729-F-4302-07');
+  expect(diag.issue_no).toBeUndefined();
+});
+
+test('AC3-behavior: 차트번호 미보유 시 배치 rx 는 미발번(visit_no·issue_no 모두 공란 = 게이트 준수)', () => {
+  const noChart = batchIssueFields('rx_standard', null, { docSeq: 3, rxSeq: 25 });
+  expect(noChart.visit_no).toBeUndefined();
+  expect(noChart.issue_no).toBeUndefined();
+});
+
+test('AC3-source(결함1 구조가드): 배치 루프는 rx issue_no 를 독립 `if (isRxIssue)` 로 실행(else-routed dead branch 금지)', () => {
+  const loopStart = DPP.indexOf('const isRxIssue');
+  const loop = DPP.slice(loopStart, DPP.indexOf('연번호 발번 양식은 per-template'));
+  // 독립 순차 if 2개: doc_serial 과 rx issue_no 가 각자 `if (…) {` 로 실행되어야 한다.
+  expect(loop).toMatch(/if \(isDocSerial\) \{/);
+  expect(loop).toMatch(/if \(isRxIssue\) \{/);
+  // ★구 dead-branch 패턴 금지: rx 발번(issue_foot_rx_issue_no)이 `else {` 로만 도달하면 재발.
+  //   rx RPC 호출 직전 컨텍스트에 `} else {` 가 오지 않아야 한다(상호배타 분기로 회귀 차단).
+  expect(loop).not.toMatch(/\} else \{[\s\S]*?issue_foot_rx_issue_no/);
+  // doc_serial 실패 시 `continue` 로 rx 분기까지 건너뛰던 구 버그 재발 금지(누적 vals 단일 persist).
+  expect(loop).toMatch(/let vals: Record<string, string> = \{ \.\.\.autoValues \};/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
