@@ -77,10 +77,15 @@ test.describe('AC-2 배선: printAuthoredMedDoc → loadAutoBindContext(발행�
     );
   });
 
-  test('loadAutoBindContext 에 발행자명 + 발행자 clinic_doctors.id 전달', () => {
+  test('loadAutoBindContext 에 (정정 우선) 발행자명 + 발행자 clinic_doctors.id 전달', () => {
+    // T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE: 데스크 출력이 '행정정보 수정' 오버레이를 반영하도록
+    //   loadAutoBindContext 인자를 effectiveDoctorName/effectiveDoctorId 로 상향(오버레이 우선, 없으면 발행자 스냅샷).
+    //   ★SEAL 계약 불변: effectiveDoctorId = ov?.doctorId ?? doc.issuedByDoctorId → 정정 없으면 발행자 도장 앵커 유지.
     expect(GATE_SRC).toMatch(
-      /loadAutoBindContext\(\s*ctx\.checkIn,\s*doc\.issuedByName\s*\|\|\s*undefined,\s*doc\.issuedByDoctorId\s*\?\?\s*undefined,?\s*\)/,
+      /loadAutoBindContext\(\s*ctx\.checkIn,\s*effectiveDoctorName\s*\|\|\s*undefined,\s*effectiveDoctorId,?\s*\)/,
     );
+    // 발행자 도장 앵커가 여전히 effective 값의 폴백 소스임을 가드(SEAL-DOCTOR-MATCH 회귀 0).
+    expect(GATE_SRC).toMatch(/effectiveDoctorId\s*=\s*ov\?\.doctorId\s*\?\?\s*doc\.issuedByDoctorId/);
   });
 });
 
