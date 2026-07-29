@@ -154,6 +154,10 @@ const AXIS_KO: Record<string, string> = {
 
 interface CustomerLite {
   id: string;
+  // T-20260729-foot-ASSIGN-POPUP-DUPASSIGN-NAMETRUNC (Bug A): 배정 팝업 성함 = 고객 정본(customers.name) live 소스.
+  //   RC = check_ins.customer_name 스냅샷이 등록 후 이름 정정을 반영하지 못해 성 누락('홍석' vs '장홍석') 등 발생(당월 3/439).
+  //   chart_number 와 동일하게 customers 에서 live 로 읽어 표기 정합 확보(스냅샷 fallback 유지).
+  name: string | null;
   visit_type: string | null;
   lead_source: string | null;
   visit_route: string | null;
@@ -372,7 +376,7 @@ export default function Assignments() {
       if (custIds.length > 0) {
         const { data: custRows } = await supabase
           .from('customers')
-          .select('id, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
+          .select('id, name, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
@@ -422,7 +426,7 @@ export default function Assignments() {
           const slice = monthCustIds.slice(i, i + CHUNK);
           const { data: rows } = await supabase
             .from('customers')
-            .select('id, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
+            .select('id, name, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
         }
@@ -618,7 +622,8 @@ export default function Assignments() {
       const cust = ci.customer_id ? monthCustomers.get(ci.customer_id) : null;
       return {
         key: ci.id,
-        name: ci.customer_name ?? '—',
+        // Bug A: 고객 정본(customers.name) 우선 → 등록 후 이름 정정 반영(성 누락 방지). 스냅샷(customer_name) fallback.
+        name: (cust?.name ?? ci.customer_name ?? '—').trim() || '—',
         chartNumber: cust?.chart_number ?? null,
         customerId: ci.customer_id ?? null,
         // 상세①: 배정 일자 = 체크인 시각(KST). 그룹 헤더 소스.
@@ -653,6 +658,12 @@ export default function Assignments() {
       const ms = ci.checked_in_at ? new Date(ci.checked_in_at).getTime() : NaN;
       // 일누적(과거월 선택 가능) 또는 당월누적(오늘 기준) 중 어느 구간에도 안 걸리면 skip.
       if (Number.isNaN(ms) || (!inDay(ms) && !inMonth(ms))) continue;
+      // T-20260729-foot-ASSIGN-POPUP-DUPASSIGN-NAMETRUNC (Bug B): 취소된 배정은 유효 배정이 아니므로 제외.
+      //   RC = monthCheckIns 는 deleted_at IS NULL 만 필터(status 무관, '누적 카운트 done 포함' 의도) → status='cancelled'
+      //   이면서 soft-hide(deleted_at) 되지 않은 check_in 이 배정 팝업/카운트에 유령으로 잔존. 동일 고객이 취소 후 타 실장으로
+      //   재배정(done)되면 두 실장 팝업에 동시 노출(F-5247 장홍석: 최현희 cancelled + 강경민 done). 당월 유령후보 9건.
+      //   done 은 완료된 실제 배정이므로 유지 — cancelled 만 배제(원내 대기 목록의 done/cancelled 제외와 정합).
+      if (ci.status === 'cancelled') continue;
       if (ci.consultant_id) {
         const s = staff.find((x) => x.id === ci.consultant_id);
         if (s && s.role === 'consultant') {
