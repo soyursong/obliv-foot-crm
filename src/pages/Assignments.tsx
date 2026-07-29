@@ -971,6 +971,11 @@ export default function Assignments() {
     const rows: TodayDistRow[] = [];
     for (const ci of monthCheckIns) {
       if (!ci.checked_in_at || new Date(ci.checked_in_at).getTime() < todayStartMs) continue;
+      // T-20260729-foot-PATIENT-F5247-DUPASSIGN-NAME-TRUNCATE (Bug A 잔여면): 금일 배분 이력도 취소 배정을 제외.
+      //   ASSIGN-POPUP-DUPASSIGN-NAMETRUNC 는 staffStats(누적/드릴 팝업)에만 cancelled 가드를 넣었고 이 표는 누락 —
+      //   deleted_at 만 필터하는 monthCheckIns 특성상 cancelled(비-soft-hide) 배정이 유령으로 잔존(당월 9건).
+      //   동일 고객이 취소 후 타 실장 재배정(done)되면 이 표에도 두 실장 행이 동시 노출(1환자 2실장). '활성배정만' 불변식 일관 적용.
+      if (ci.status === 'cancelled') continue;
       const push = (role: AssignmentRole, staffId: string | null) => {
         if (!staffId) return;
         if (role !== activeTab) return;
@@ -979,7 +984,10 @@ export default function Assignments() {
         rows.push({
           id: `${ci.id}:${role}`,
           checkIn: ci,
-          customerName: ci.customer_name ?? '—',
+          // T-20260729-foot-PATIENT-F5247-DUPASSIGN-NAME-TRUNCATE (Bug B 잔여면): 성함 = 고객 정본(customers.name) live 우선.
+          //   ASSIGN-POPUP 는 드릴 팝업(itemFromCi)만 교정 — 이 표는 여전히 스냅샷(customer_name)을 읽어 성 누락('홍석') 잔존.
+          //   drill 팝업과 동일 경로로 통일(정본 우선, 스냅샷 fallback). 당월 불일치 3/435(장홍석·김구엽·박경수).
+          customerName: cust?.name ?? ci.customer_name ?? '—',
           customerId: ci.customer_id ?? null,
           chartNumber: cust?.chart_number ?? null,
           role,
