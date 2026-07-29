@@ -511,6 +511,12 @@ export default defineConfig({
         //   담당의 정정(admin_overrides)을 미참조하던 결함 → OpinionDocTab.handlePrint 재배선(effectiveDoctorName/
         //   Id). unit 전용 순수 함수(resolveAdminOverrideForDoc)+소스 가드 spec — auth/server/page 불요.
         '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',
+        // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY: 처방전 3경로(단일/배치/결제창) 입력 정합 — rx 필터
+        //   ===처방약·total_days·교부번호 채번·prescriber override·PMW 상병 stale delete. 순수 source-grep +
+        //   lib 함수(buildRxItemsHtml/buildIssueNo/docSerialPrefix) 단언 → auth/server/page 불요. unit 전용.
+        //   (FIX-REQUEST MSG-20260730-024921-h69j §결함2: 무등록 시 무-project 실행이 desktop-chrome 로 낙하 +
+        //    auth.setup(TEST_PASSWORD) 유입 → 자격증명 없는 워크트리/CI 에서 회귀가드 무력화. 등록으로 차단.)
+        '**/T-20260729-foot-RX-PRINT-PATH-CONSISTENCY.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -598,6 +604,10 @@ export default defineConfig({
         // T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN: unit 전용 순수 함수+소스 가드 spec →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260728-foot-DOCWRITE-DASH-UNISSUED-DATEFILTER-REOPEN.spec.ts',
+        // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY: unit 전용 순수 source-grep + lib 함수 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        //   (FIX-REQUEST MSG-20260730-024921-h69j §결함2: 자격증명 없는 워크트리/CI 회귀가드 무력화 방지.)
+        '**/T-20260729-foot-RX-PRINT-PATH-CONSISTENCY.spec.ts',
       ],
     },
     {

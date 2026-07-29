@@ -560,11 +560,21 @@ function buildCodeEnrichedValues(
   // 상병코드 items → diag_code_N / diag_name_N
   // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
   const diagItems = codeItems.filter((i) => (i.service.category_label ?? '') === '상병');
-  diagItems.forEach((item, idx) => {
-    const n = idx + 1;
-    values[`diag_code_${n}`] = item.service.service_code ?? '';
-    values[`diag_name_${n}`] = item.service.name;
-  });
+  // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-6: 상병코드 stale 잔존 = "코드 이상하게 나옴" 실제 원인.
+  //   base(autoValues=차트상병 autoBind)에 diag_code_3/4 등이 있고 이번 선택 상병이 더 적으면, 인덱스 덮어쓰기만으론
+  //   옛 diag_code_3/4(없어진 상병)가 처방전·서류에 잔존. autoBind(autoBindContext L865~872)는 재세팅 전 delete 한다.
+  //   → 동일 패턴: diagItems 세팅 시 재세팅 전 diag_code_1~N·diag_name_1~N 전부 delete(전체 인덱스, 초과 잔존 차단).
+  //   ⚠ diagItems 비었을 때는 wipe 금지(base 차트상병 보존 = 기존 동작). autoBind 와 동일 length>0 가드.
+  if (diagItems.length > 0) {
+    for (const k of Object.keys(values)) {
+      if (/^diag_(code|name)_\d+$/.test(k)) delete values[k];
+    }
+    diagItems.forEach((item, idx) => {
+      const n = idx + 1;
+      values[`diag_code_${n}`] = item.service.service_code ?? '';
+      values[`diag_name_${n}`] = item.service.name;
+    });
+  }
   // 행 가시성: 코드 없는 행은 display:none으로 숨김 (AC-3 regression 방지)
   values['diag_row_3_style'] = diagItems.length >= 3 ? '' : 'display:none';
   values['diag_row_4_style'] = diagItems.length >= 4 ? '' : 'display:none';
