@@ -5968,7 +5968,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           title={
                             !(customer.hira_consent ?? false)
                               ? '건강보험조회 동의(Y) 후 조회할 수 있습니다'
-                              : '공단 포털 자격조회 열기 + 결과 붙여넣기 (붙여넣은 등급은 우측 건강보험 자격등급에서 확정)'
+                              : '공단 포털 자격조회 열기 (등급은 우측 건강보험 자격등급에서 직접 선택)'
                           }
                           data-testid="nhis-lookup-btn"
                           className={cn(

@@ -21,8 +21,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-/** 건보공단 수진자자격조회 포털 딥링크 (요양기관 정보마당) */
-export const NHIS_EXTERNAL_URL = 'https://medicare.nhis.or.kr/portal/refer/selectReferInq.do';
+/**
+ * 건보공단 수진자자격조회 포털 홈 URL.
+ * T-20260729-foot-NHIS-PORTAL-DEEPLINK-DEAD-404: 기존 하드코딩 심층 딥링크
+ *   (/portal/refer/selectReferInq.do)가 공단 시스템 개선으로 폐기되어 soft-404
+ *   (HTTP 200 + 에러본문) 반환 → 현장에선 404. 검증된 홈 URL만 사용하고,
+ *   포털 내 자격조회 메뉴(상단 [자격확인] → [수진자 자격확인])는 안내로 유도한다.
+ */
+export const NHIS_EXTERNAL_URL = 'https://medicare.nhis.or.kr';
 
 export interface NhisLookupError {
   message: string;

@@ -53,6 +53,9 @@ export function NhisCapturePanel({ customerName, controller }: Props) {
           공단 포털에서 자격을 조회해 <b>자격여부를 눈으로 확인</b>한 뒤,
           오른쪽 <b>건강보험 자격등급</b>에서 등급을 직접 선택해 저장해 주세요.
         </p>
+        <p className="text-[11px] leading-snug text-teal-600" data-testid="nhis-capture-menu-hint">
+          포털 접속 후 상단 <b>[자격확인]</b> → <b>[수진자 자격확인]</b> 메뉴에서 조회하세요.
+        </p>
         <a
           href={NHIS_EXTERNAL_URL}
           target="_blank"

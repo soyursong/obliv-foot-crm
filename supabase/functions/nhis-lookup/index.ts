@@ -34,7 +34,9 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const FALLBACK_URL = 'https://medicare.nhis.or.kr/portal/refer/selectReferInq.do';
+// T-20260729-foot-NHIS-PORTAL-DEEPLINK-DEAD-404: 심층 딥링크(/portal/refer/selectReferInq.do)
+//   가 공단 시스템 개선으로 폐기(soft-404) → 검증된 포털 홈 URL만 반환한다.
+const FALLBACK_URL = 'https://medicare.nhis.or.kr';
 
 // ── AC-4: mapQualificationCode — 산정특례·경감 정확화 ─────────────────────
 /**
