@@ -1195,16 +1195,22 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
 
         if (needsItems) {
           // rx_standard 항목 — service_charges 기반(기존 동작 유지).
-          const rxItems = mappedItems.map((item) => ({
-            name: item.name,
-            // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
-            code: item.service_code,
-            unit_dose: '1',
-            daily_freq: '1',
-            // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 배치 경로는 per-item 입력 없음 → 공란(수기 기입).
-            total_days: '',
-            method: '',
-          }));
+          // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-3: rx 약품행 필터 = category_label==='처방약' 로 3경로 통일.
+          //   구 배치경로는 필터 없음 → 상병·검사·진찰료(기본)·풋케어·수액까지 처방전 약품행에 혼입(약국 반려·손님 오류).
+          //   단일(L2780) / PMW(L578) 와 동일 기준(category_label 7종 중 '처방약'만). '!==상병' 옵션은 자체실측 반증으로 폐기.
+          const rxItems = mappedItems
+            .filter((item) => item.category_label === '처방약')
+            .map((item) => ({
+              name: item.name,
+              // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
+              code: item.service_code,
+              unit_dose: '1',
+              daily_freq: '1',
+              // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-2: total_days 3경로 '1' 통일(구 배치경로 공란 → 약국 반려).
+              //   단일(L2790)·PMW(L588)와 동일 리터럴 '1'. 자동 산출 아님(items[].days 주입 금지) — 수기 수정 가능.
+              total_days: '1',
+              method: '',
+            }));
           autoValues.rx_items_html = buildRxItemsHtml(rxItems);
           // bill_detail items: SSOT(check_in_services) 우선. fbBatch 없을 때만 service_charges 직결 폴백.
           if (!fbBatch) {
@@ -1365,9 +1371,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           batchChartNo = cn && String(cn).trim() ? String(cn).trim() : null;
         }
         const issueDateYmd = format(new Date(), 'yyyyMMdd');
+        // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-1: 교부번호(issue_no) RPC p_issue_date(date) 파티션 키.
+        const issueDateIso = format(new Date(), 'yyyy-MM-dd');
         for (const t of selectedTemplates) {
-          const eligible = !!docSerialPrefix(t.form_key) && !!batchChartNo;
-          if (!eligible) continue;
+          // 연번호(visit_no) 대상: 진료확인서·통원확인서·진단서 등(docSerialPrefix 매핑) + 차트번호 보유.
+          const isDocSerial = !!docSerialPrefix(t.form_key) && !!batchChartNo;
+          // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-1: 처방전 교부번호(issue_no) 대상 = rx_standard + 차트번호 보유.
+          //   구 배치경로는 rx issue_no 를 채번하지 않아 "제 __ 호" 공란(약국 반려·손님 오류). 단건(handlePrint L3239~)과
+          //   동일하게 form_submissions 선 INSERT → issue_foot_rx_issue_no(멱등키=inserted.id, 재인쇄 재발번 없음) →
+          //   buildIssueNo(8+N자리) → perTemplateValues.issue_no 주입 + field_data 갱신. 차트번호 없으면 미발번(visit_no 게이트와 동일).
+          const isRxIssue = t.form_key === 'rx_standard' && !!batchChartNo;
+          if (!isDocSerial && !isRxIssue) continue;
           const { data: inserted, error: insErr } = await supabase
             .from('form_submissions')
             .insert({
@@ -1376,30 +1390,47 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
               check_in_id: checkIn.id,
               customer_id: checkIn.customer_id,
               issued_by: staffId,
-              field_data: autoValues, // 발번 전 스냅샷 — RPC 성공 시 아래 visit_no 주입값으로 갱신
+              field_data: autoValues, // 발번 전 스냅샷 — RPC 성공 시 아래 visit_no/issue_no 주입값으로 갱신
               diagnosis_codes: null,
               status: 'printed' as const,
               printed_at: new Date().toISOString(),
             })
             .select('id')
             .single();
-          if (insErr || !inserted?.id) continue; // 선 INSERT 실패 → 뒤 일괄 INSERT 폴백(연번호 미발번)
+          if (insErr || !inserted?.id) continue; // 선 INSERT 실패 → 뒤 일괄 INSERT 폴백(발번 미수행)
           serialIssuedTemplateIds.add(t.id); // 이중 INSERT 차단(성공/발번실패 무관 — 행은 이미 존재)
-          const { data: seq, error: rpcErr } = await supabase.rpc('issue_foot_doc_serial', {
-            p_clinic_id: checkIn.clinic_id,
-            p_form_submission_id: inserted.id,
-          });
-          if (rpcErr || typeof seq !== 'number') continue; // 발번 실패 → 공란 유지(가짜 번호 금지)
-          const docSerial = buildDocSerial({
-            formKey: t.form_key,
-            chartNo: batchChartNo,
-            dateYYYYMMDD: issueDateYmd,
-            seq,
-          });
-          if (!docSerial) continue;
-          const vals = { ...autoValues, visit_no: docSerial };
-          perTemplateValues.set(t.id, vals);
-          await supabase.from('form_submissions').update({ field_data: vals }).eq('id', inserted.id);
+          if (isDocSerial) {
+            const { data: seq, error: rpcErr } = await supabase.rpc('issue_foot_doc_serial', {
+              p_clinic_id: checkIn.clinic_id,
+              p_form_submission_id: inserted.id,
+            });
+            if (rpcErr || typeof seq !== 'number') continue; // 발번 실패 → 공란 유지(가짜 번호 금지)
+            const docSerial = buildDocSerial({
+              formKey: t.form_key,
+              chartNo: batchChartNo,
+              dateYYYYMMDD: issueDateYmd,
+              seq,
+            });
+            if (!docSerial) continue;
+            const vals = { ...autoValues, visit_no: docSerial };
+            perTemplateValues.set(t.id, vals);
+            await supabase.from('form_submissions').update({ field_data: vals }).eq('id', inserted.id);
+          } else {
+            // isRxIssue: 처방전 교부번호 채번(단건 handlePrint 와 동일 산식·멱등키).
+            const { data: rxSeq, error: rxErr } = await supabase.rpc('issue_foot_rx_issue_no', {
+              p_clinic_id: checkIn.clinic_id,
+              p_issue_date: issueDateIso,
+              p_form_submission_id: inserted.id,
+            });
+            // 단건 경로와 동형: RPC 실패 시 seq=1 폴백으로 (8+N)자리 유효값 항상 보장(공란/UUID 반려 방지).
+            const iss = buildIssueNo(issueDateYmd, !rxErr && typeof rxSeq === 'number' ? rxSeq : 1);
+            if (!iss) continue;
+            // ★배치 rx 조립처 2곳 일관(§1-1): rx_items_html(약품행)은 위 autoValues 에 이미 필터·total_days 통일 세팅됨
+            //   → {...autoValues} 복사로 issue_no 와 약품행이 동일 스냅샷에서 발산 없이 결합.
+            const vals = { ...autoValues, issue_no: iss };
+            perTemplateValues.set(t.id, vals);
+            await supabase.from('form_submissions').update({ field_data: vals }).eq('id', inserted.id);
+          }
         }
       }
       // 연번호 발번 양식은 per-template 값(visit_no 주입)으로, 그 외는 공용 autoValues 로 바인딩.
@@ -2551,6 +2582,11 @@ function IssueDialog({
           doctor_license_no: data.license_no ?? '',
           doctor_specialist_no: data.specialist_no ?? '',
           doctor_seal_image: sealUrl,
+          // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-4: 처방전은 prescriber_* 축(htmlFormTemplates)으로 렌더.
+          //   구 override 는 doctor_*/seal 만 세팅 → 원장 드롭다운 변경 시 처방전 이름은 그대로·도장만 바뀌는
+          //   이름↔도장 미스매치. prescriber_name/prescriber_license_no 도 동일 소스(clinic_doctors)로 동기화.
+          prescriber_name: data.name ?? '',
+          prescriber_license_no: data.license_no ?? '',
         });
       }
     })();
@@ -2776,8 +2812,11 @@ function IssueDialog({
     //     total_days 소스 = rxItemDosages(수기 입력) 단일. prescription_sets.items[].days 오염 유입 경로 없음(AC2).
     // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-4: 상병코드(category_label='상병') 항목은 처방전 제외
     //   PaymentMiniWindow buildCodeEnrichedValues와 동일 정책 적용.
+    // T-20260729-foot-RX-PRINT-PATH-CONSISTENCY §1-3: rx 약품행 필터 = category_label==='처방약' 로 확정(3경로 통일).
+    //   구 '!==상병'은 검사·진찰료(기본)·풋케어·수액까지 약품행에 혼입(category_label 7종 실측) → 손님 처방전 오혼입.
+    //   PMW(L578)·배치(L1200~)와 동일 기준. '!==상병' 옵션은 자체실측 반증으로 폐기.
     if (template.form_key === 'rx_standard') {
-      const rxServiceItems = serviceItems.filter((i) => i.category_label !== '상병');
+      const rxServiceItems = serviceItems.filter((i) => i.category_label === '처방약');
       const rxItems = rxServiceItems.map((item) => ({
         name: item.name,
         // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
