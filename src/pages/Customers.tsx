@@ -375,8 +375,12 @@ export default function Customers() {
     return () => { cancelled = true; };
   }, [clinic]);
 
-  // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 컬럼용 전체 staff 이름 맵 로드.
-  //   role/active 무관 전체 — 비활성·director 담당자도 이름 표시(raw UUID 노출 방지). display_name fallback name.
+  // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 컬럼용 staff 이름 맵 로드.
+  //   T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG (Part2 하드닝): active=true 만 로드.
+  //   기존엔 role/active 무관 전체 로드라, 퇴사(active=false) 실장이 담당으로 stale 저장된 행이
+  //   고객관리 목록에 퇴사자 이름으로 표시됨(진단 ⓑ 원인 — 2번차트 Zone1은 active-only라 blank인데 목록만 divergence).
+  //   → active 만 map 에 담아, 퇴사·부재 staff 를 가리키면 map miss → display 에서 '미지정' resolve.
+  //   향후 타 실장 퇴사 시에도 동일 divergence 재발 차단. display_name fallback name.
   useEffect(() => {
     if (!clinic) return;
     let cancelled = false;
@@ -386,7 +390,8 @@ export default function Customers() {
       const { data, error } = await supabase
         .from('staff')
         .select('id, name')
-        .eq('clinic_id', clinic.id);
+        .eq('clinic_id', clinic.id)
+        .eq('active', true);
       if (cancelled || error) return;
       const m = new Map<string, string>();
       for (const s of (data ?? []) as { id: string; name: string | null; display_name: string | null }[]) {
@@ -709,9 +714,11 @@ export default function Customers() {
                   </td>
                   <td className="px-2 py-1.5 text-muted-foreground truncate" data-testid="cust-chart-number">{c.chart_number ?? '-'}</td>
                   {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 — 차트2 assigned_staff_id → 이름.
-                      재진=자동연동 표시 / 첫방문(NULL)·결손=공란('-') 안전표시(AC2/AC4). */}
+                      재진=자동연동 표시 / 첫방문(NULL)·결손=미지정 안전표시(AC2/AC4).
+                      T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG (Part2): NULL·퇴사/부재 staff(map miss) → '미지정' 명시.
+                        현장 요구 '일관되게 표시' — 공란/'-' 대신 "미지정"으로 2번차트 Zone1과 통일. */}
                   <td className="px-2 py-1.5 text-muted-foreground truncate" data-testid="cust-assigned-staff">
-                    {(c.assigned_staff_id && staffNameMap.get(c.assigned_staff_id)) || '-'}
+                    {(c.assigned_staff_id && staffNameMap.get(c.assigned_staff_id)) || '미지정'}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
                   <td className="px-2 py-1.5 text-muted-foreground whitespace-nowrap tabular-nums">
