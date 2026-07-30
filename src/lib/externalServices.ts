@@ -21,6 +21,8 @@ export const EDGE_FUNCTIONS = {
   SEND_NOTIFICATION: 'send-notification',
   /** T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 금일 배분 이력 [확정]→상담대기방 Slack 발송 (클릭 게이트) */
   SEND_CONSULT_NOTIFY: 'send-consult-notify',
+  /** T-20260730-foot-REDPAY-REVERSE-MATCH-SUSU-HOOK: [수납] 저장 훅 → 레드페이 역방향 매칭 1회(claim-first write-path) */
+  REDPAY_REVERSE_MATCH: 'redpay-reverse-match',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

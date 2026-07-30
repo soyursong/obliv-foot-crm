@@ -24,6 +24,7 @@
 // 스키마 변경 없음(기존 테이블/컬럼만 사용, 다중 INSERT) → data-architect CONSULT 불요. db_change=false.
 import { supabase } from './supabase';
 import { applyStatusFlagTransition, type FlagTransitionActor } from './statusFlagTransition';
+import { triggerReverseMatchForCardPayments } from './redpayReverseMatch';
 
 export type PayMethod = 'card' | 'cash' | 'transfer';
 
@@ -145,7 +146,7 @@ export async function recordManualPayment(
   if (attribution.kind === 'checkin') {
     const ci = attribution.checkIn;
     // 분할결제: 행 별 payments 1행씩(동일 check_in_id 귀속). 2번차트 수납내역에 행 별 표시.
-    const { error: pErr } = await supabase.from('payments').insert(
+    const { data: insertedCheckin, error: pErr } = await supabase.from('payments').insert(
       splits.map((s) => ({
         clinic_id: clinicId,
         check_in_id: ci.id,
@@ -157,8 +158,13 @@ export async function recordManualPayment(
         memo: memo ?? '영수증 수납',
         ...createdAtField,
       })),
-    );
+    ).select('id'); // 역방향 매칭 훅 트리거용 id 회수(behavior-preserving — INSERT 동일, 반환값만 추가).
     if (pErr) throw new Error(`결제 기록 실패: ${pErr.message}`);
+
+    // ── 역방향 매칭 훅(T-20260730-foot-REDPAY-REVERSE-MATCH-SUSU-HOOK) ────────────
+    //   카드 결제행이 있으면 방금 저장된 payment 에 대해 레드페이 역방향 매칭 1회 트리거(fire-and-forget).
+    //   EF 가 비-카드행을 self-filter → 관측·연결만, [수납] 흐름 무영향(AC5/§2). 결과 await 하지 않음.
+    fireReverseMatchIfCard(splits, insertedCheckin);
 
     // 칸반 해소: payment_waiting → done (PaymentMiniWindow 동선 재사용). best-effort 부수효과.
     let kanbanResolved = false;
@@ -189,7 +195,7 @@ export async function recordManualPayment(
 
   // ── 'single' — 단건 결제(귀속 없음) ─────────────────────────────────────
   // 분할결제: 행 별 payments 1행씩(check_in_id NULL). 각 행 canonical 1회 → 이중계상 없음.
-  const { error: sErr } = await supabase.from('payments').insert(
+  const { data: insertedSingle, error: sErr } = await supabase.from('payments').insert(
     splits.map((s) => ({
       clinic_id: clinicId,
       check_in_id: null,
@@ -201,7 +207,26 @@ export async function recordManualPayment(
       memo: memo ?? '영수증 수납(단건)',
       ...createdAtField,
     })),
-  );
+  ).select('id'); // 역방향 매칭 훅 트리거용 id 회수(behavior-preserving).
   if (sErr) throw new Error(`단건 결제 기록 실패: ${sErr.message}`);
+  // 역방향 매칭 훅(fire-and-forget, EF self-filter 비-카드) — [수납] 흐름 무영향(AC5/§2).
+  fireReverseMatchIfCard(splits, insertedSingle);
   return { route: 'single', kanbanResolved: false, splitCount: splits.length };
+}
+
+/**
+ * 카드 결제행이 하나라도 있으면 방금 저장된 payment id 들에 대해 역방향 매칭 훅을 트리거한다.
+ *   · fire-and-forget: 결과를 await 하지 않는다(트리거 실패/no-op 는 [수납] 흐름을 블록하지 않음, AC5/§2).
+ *   · 비-카드(현금/이체) payment id 도 함께 넘어가나 EF 가 method='card' self-filter → not_card_payment no-op.
+ *   · 카드행이 전혀 없으면(순수 현금/이체) 아예 트리거하지 않는다(불필요한 EF 호출 회피).
+ *   · triggerReverseMatchForCardPayments 는 내부적으로 throw 하지 않음(catch 흡수) → void 안전.
+ */
+function fireReverseMatchIfCard(
+  splits: PaymentSplit[],
+  inserted: Array<{ id: string }> | null,
+): void {
+  const hasCard = splits.some((s) => s.method === 'card');
+  const ids = (inserted ?? []).map((r) => r.id).filter(Boolean);
+  if (!hasCard || ids.length === 0) return;
+  void triggerReverseMatchForCardPayments(ids);
 }

@@ -35,6 +35,19 @@
 //   REDPAY_REVERSE_MATCH_WINDOW_MIN = 10 (역방향 자동대조 유효창). raw 보관창(1h)과 별개 축(E-1).
 export const REVERSE_MATCH_WINDOW_MS = 10 * 60 * 1000; // 10분 — [수납] 저장 직전 승인 신뢰창.
 
+//   raw 보관창(후보 pool 조회창) — 기존 REDPAY_PLANB_RETENTION_MIN(1h) 미러(E-1 (b) 별개 축).
+//   [수납] 저장 시점에 조회할 unmatched raw 후보 pool 의 시간 하한(approved_at >= now-보관창).
+//   실제 자동대조 유효창(10분) 필터는 selectReverseMatchCandidate 안의 isWithinReverseWindow 가 적용.
+export const REVERSE_MATCH_RETENTION_MS = 60 * 60 * 1000; // 1h
+
+//   match_rule — 역방향 저장훅 매칭 provenance(forward tier0~4 와 분리). reconciliation_log/raw.match_rule 공용.
+export const REVERSE_MATCH_RULE = "reverse_susu_hook" as const;
+
+//   event_type — payment_reconciliation_log 신규 값(DA (d) 권고). auto_matched/manual_matched 와 3-provenance 분리
+//   → 총괄 회수-가시성 지표(reverse-miss 자동연결 count) 성립. precondition 실측: event_type CHECK 부재(자유텍스트)
+//   → 진성 no-DDL(CHECK-widen 아님). forward 값: auto_matched/match_failed/missing_in_crm/missing_at_van.
+export const REVERSE_MATCH_EVENT_TYPE = "reverse_matched" as const;
+
 /** RedPay raw(reverse-match 후보) — DB 칼럼 1:1(reconciliation 매처 RawTransaction 부분집합 + tid). */
 export interface ReverseRaw {
   id: string;                        // raw PK — ★멱등 claim 앵커(단독 유일키).
@@ -209,9 +222,72 @@ export function buildReverseMatchPaymentUpdate(
   if (raw.external_trxid) payload.external_trxid = raw.external_trxid;
   if (raw.approval_no) payload.external_approval_no = raw.approval_no;
   if (raw.tid) payload.external_tid = raw.tid;
-  // AC4 매출-일자 앵커 — approved_at 의 KST 일자. 필드 배선(accounting_date)은 SSOT confirm 게이트.
+  // AC4 매출-일자 앵커 — approved_at 의 KST 일자. D3 확정: 매출-일자 SSOT 앵커 = accounting_date = raw.approved_at KST.
+  //   ⚠ payments.accounting_date 는 INSERT 트리거가 created_at(=저장시각) KST 로 stamp 함(20260515000010_sales_common_db).
+  //     reverse-miss = late-arrival → 저장시각 KST 가 승인일과 다를 수 있음(일경계 drift) → 이 UPDATE 로 approved_at KST 덮어씀.
+  //     (INSERT 트리거는 UPDATE 에 재발화하지 않음 → 이 값이 최종.) 오케스트레이터는 includeAccountingDate=true 로 호출(D3).
   if (includeAccountingDate && raw.approved_at) {
     payload.accounting_date = anchorAccountingDateKst(raw.approved_at);
   }
   return payload;
+}
+
+/**
+ * raw claim UPDATE payload (D1 · AC5 — 직렬화점).
+ *   호출부는 이 payload 로 `UPDATE redpay_raw_transactions SET ... WHERE id=raw.id AND matched_payment_id IS NULL`
+ *   (rows-affected=1 검증)을 수행한다. WHERE 의 `matched_payment_id IS NULL` 가 유일 직렬화점(D1):
+ *   webhook auto-match / OPT3 버튼 / 본 저장훅 최대 3 경쟁자 중 rows-affected=1 획득자만 후속 write 진입,
+ *   패자(rows-affected=0)는 payment annotate 진입 전 abort(D2: payment 는 [수납]흐름이 이미 생성 → 무접촉).
+ */
+export function buildReverseClaimUpdate(paymentId: string): Record<string, unknown> {
+  return { matched_payment_id: paymentId, match_rule: REVERSE_MATCH_RULE };
+}
+
+/**
+ * raw claim rollback payload (D2 · forward 매처 rollback 미러).
+ *   claim 성공(rows-affected=1) 후 payment annotate 실패/0-row 시 raw 링크만 원복.
+ *   ★payment 자체는 삭제하지 않는다(D2: annotate-on-existing, [수납]흐름이 생성한 정상 수납 레코드 유지).
+ */
+export function buildReverseClaimRollback(): Record<string, unknown> {
+  return { matched_payment_id: null, match_rule: null };
+}
+
+/** reconciliation_log 1행(reverse_matched) — index.ts insertReconciliationLog 행 shape parity. */
+export interface ReverseReconLogRow {
+  clinic_id: string;
+  raw_transaction_id: string;
+  payment_id: string;
+  event_type: typeof REVERSE_MATCH_EVENT_TYPE;
+  match_rule: typeof REVERSE_MATCH_RULE;
+  mismatch_reason: null;
+  external_trxid: string | null;
+  external_amount: number;
+  crm_amount: number;
+  raw_payload: null;
+  center: string;
+}
+
+/**
+ * reconciliation_log INSERT 행 빌더 (AC8 — 신규 event_type='reverse_matched').
+ *   forward auto_matched 로그 shape 와 parity(center NOT NULL 폴백 'foot'). append-only 관측 로그이므로
+ *   INSERT 실패는 money-path 를 rollback 하지 않는다(forward 동형 — best-effort).
+ */
+export function buildReverseReconLogRow(
+  raw: Pick<ReverseRaw, "id" | "clinic_id" | "amount" | "external_trxid">,
+  payment: Pick<SavedPayment, "id" | "amount">,
+  center = "foot",
+): ReverseReconLogRow {
+  return {
+    clinic_id: raw.clinic_id,
+    raw_transaction_id: raw.id,
+    payment_id: payment.id,
+    event_type: REVERSE_MATCH_EVENT_TYPE,
+    match_rule: REVERSE_MATCH_RULE,
+    mismatch_reason: null,
+    external_trxid: raw.external_trxid ?? null,
+    external_amount: Number(raw.amount),
+    crm_amount: Number(payment.amount),
+    raw_payload: null,
+    center,
+  };
 }

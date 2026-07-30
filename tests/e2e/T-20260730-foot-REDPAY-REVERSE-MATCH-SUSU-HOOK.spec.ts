@@ -20,8 +20,13 @@
  *   S3. 멱등/race  — raw.id 앵커 소비(claim rows-affected=1) — 패자(webhook/타표면)는 후보에서 배제(중복입금 0).
  *   S4. 보관창 경계 — 역방향 유효창(10분, 신뢰창) ≠ raw 보관창(1h) 분리(E-1). 창 경계 닫힌구간.
  *
- * ⚠ 라이브 write-path(RPC/EF + FE 배선 + cue.paid SoT emit + AC4 매출-일자 필드 확정)는 planner FOLLOWUP
- *   아키텍처 confirm 게이트 이후 배선 → 해당 browser 시나리오는 test.fixme 로 보류(false-green 금지).
+ * ── write-path 배선 확정(planner D1~D4, MSG-20260730-160252) ──────────────────────
+ *   D1 원자성 = EF claim-first(신규 RPC 없음 → no-DDL). raw claim UPDATE(WHERE matched_payment_id IS NULL,
+ *     rows-affected=1)가 유일 직렬화점. D2 race-loss = payment 유지(annotate-on-existing, 삭제 금지).
+ *   D3 매출-일자 앵커 = accounting_date = raw.approved_at KST. D4 cue.paid = annotate-on-existing parity(재발화 없음).
+ *   → 라이브 write-path = EF(redpay-reverse-match) + client lib(redpayReverseMatch) + [수납] 훅(manualPaymentWritePath).
+ *   실 매칭 판정은 deno(reverseMatch.test.ts 21) 전수검증, write-path 오케스트레이션 불변식은 아래 S1~S4 소스계약으로 고정.
+ *   (backend 매칭·seeded raw 대조는 browser 무접점 → false-green 금지 원칙 하에 소스계약으로 검증.)
  */
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
@@ -33,7 +38,13 @@ import {
 
 // Playwright 는 repo root 에서 실행 → CWD 상대경로(기존 planb spec 컨벤션).
 const REVERSE_SRC = 'supabase/functions/redpay-reconcile/reverseMatch.ts';
+const EF_SRC = 'supabase/functions/redpay-reverse-match/index.ts';
+const CLIENT_SRC = 'src/lib/redpayReverseMatch.ts';
+const HOOK_SRC = 'src/lib/manualPaymentWritePath.ts';
 const readReverse = () => fs.readFileSync(REVERSE_SRC, 'utf8');
+const readEf = () => fs.readFileSync(EF_SRC, 'utf8');
+const readClient = () => fs.readFileSync(CLIENT_SRC, 'utf8');
+const readHook = () => fs.readFileSync(HOOK_SRC, 'utf8');
 
 // ── (a) SSOT 계약 — E-1 파라미터 2분리 ───────────────────────────────────────────
 test('E-1: 역방향 유효창(10분) ≠ raw 보관창(1h) — 별개 축 분리', () => {
@@ -96,10 +107,68 @@ test('AC8: event_type=reverse_matched(신규 값) — precondition 실측 no-DDL
   expect(src).toMatch(/event_type CHECK 부재|CHECK 부재/);
 });
 
-// ── (b) 시나리오 1~4 — 라이브 write-path 배선 후 활성(FOLLOWUP 아키텍처 confirm 게이트) ──────
-test.fixme('S1 자동연결(browser) — [수납] 카드 저장 시 유효창 내 미매칭 raw 자동연결·승인번호 표시', async () => {
-  // gated: RPC/EF write-path + FE 배선 confirm 후. 판정 로직은 reverseMatch.test.ts S1 커버.
+// ── (b) 시나리오 1~4 — write-path 오케스트레이션 소스계약(D1~D4 · 활성) ─────────────────
+//   supervisor 매출정합 diff 게이트 불변식을 소스로 고정: payment 1회계상·orphan 방지(check_in 결속)·
+//   raw-claim rows-affected=1·매출일자=accounting_date=approved_at·race 패자 payment 유지·이중귀속0.
+
+test('S1 자동연결 — [수납] 카드 저장 훅 → EF 트리거 배선 + 3-write claim-first(D1)', () => {
+  // (1) [수납] 훅: 카드행 저장 후 역방향 매칭 트리거(fire-and-forget)가 배선됐는가.
+  const hook = readHook();
+  expect(hook).toMatch(/triggerReverseMatchForCardPayments/);
+  expect(hook).toMatch(/fireReverseMatchIfCard/);
+  expect(hook).toMatch(/splits\.some\(\(s\) => s\.method === 'card'\)/); // 카드 있을 때만 트리거
+
+  // (2) client lib: EF 이름 SSOT 참조 + fire-and-forget(throw 안 함).
+  const client = readClient();
+  expect(client).toMatch(/EDGE_FUNCTIONS\.REDPAY_REVERSE_MATCH/);
+  expect(client).toMatch(/payment_id: paymentId/);
+
+  // (3) EF: claim-first 3-write — ① raw claim ② payment annotate ③ reconciliation_log.
+  const ef = readEf();
+  expect(ef).toMatch(/buildReverseClaimUpdate/);            // ① claim
+  expect(ef).toMatch(/buildReverseMatchPaymentUpdate\(raw, reconNow, \/\* includeAccountingDate \*\/ true\)/); // ② D3 앵커
+  expect(ef).toMatch(/buildReverseReconLogRow/);            // ③ reverse_matched 로그
 });
-test.fixme('S2 no-op(browser) — 후보 없음/모호 시 수납만 저장, external_* 미부착', async () => {});
-test.fixme('S3 멱등/race(browser) — webhook auto-match 와 동시 → raw.id claim 승자만, 중복입금 0', async () => {});
-test.fixme('S4 보관창 경계(browser) — 유효창 10분 초과 승인 raw 는 저장훅 자동연결 안 됨(수동 폴백)', async () => {});
+
+test('S1b 직렬화점 = raw claim rows-affected=1(D1 · Write-Rowcheck)', () => {
+  const ef = readEf();
+  // claim UPDATE 에 WHERE matched_payment_id IS NULL 가드(.is(..., null)) + rows-affected=1 검증.
+  expect(ef).toMatch(/\.is\("matched_payment_id", null\)/);
+  expect(ef).toMatch(/claimed\.length !== 1/);
+  // payment annotate 도 rows-affected=1 검증(silent write-failure 금지).
+  expect(ef).toMatch(/payUpdated\.length !== 1/);
+});
+
+test('S2 no-op — 후보 없음/모호/비대상 = 기존 수납 흐름 무변경(AC5·§2)', () => {
+  const ef = readEf();
+  // matched 아니면 claim/annotate 진입 전 return(payment 무접촉).
+  expect(ef).toMatch(/decision\.reason !== "matched"/);
+  expect(ef).toMatch(/not_card_payment/);
+  // 훅은 fire-and-forget(void) — 트리거 실패가 [수납] 저장을 블록하지 않음.
+  const hook = readHook();
+  expect(hook).toMatch(/void triggerReverseMatchForCardPayments/);
+  const client = readClient();
+  expect(client).toMatch(/non-fatal/); // 예외 흡수(throw 안 함)
+});
+
+test('S3 멱등/race — claim 패자(rows=0) payment 유지·annotate 미진입(D2, 이중귀속0)', () => {
+  const ef = readEf();
+  // race-loss: claim 0-row → matched:false, reason=race_lost 로 반환(payment annotate 진입 안 함).
+  expect(ef).toMatch(/race_lost/);
+  // annotate 실패 시 rollback = raw 링크만 원복(payment 삭제/금액 무접촉 = D2).
+  expect(ef).toMatch(/buildReverseClaimRollback/);
+  const reverse = readReverse();
+  // rollback payload 에 payment 를 지우는 키가 없음(D2 annotate-on-existing).
+  expect(reverse).toMatch(/buildReverseClaimRollback[\s\S]*matched_payment_id: null, match_rule: null/);
+});
+
+test('S4 보관창 경계 — 유효창(10분) ≠ 보관창(1h) + orphan 방지(check_in 결속)', () => {
+  const ef = readEf();
+  // 조회 pool = 보관창 1h(REVERSE_MATCH_RETENTION_MS) 하한. 실 유효창 10분 필터는 순수모듈이 적용.
+  expect(ef).toMatch(/REVERSE_MATCH_RETENTION_MS/);
+  expect(ef).toMatch(/selectReverseMatchCandidate/);
+  // D3 매출-일자 앵커 = accounting_date(응답에 실려 supervisor diff 관측).
+  expect(ef).toMatch(/accounting_date/);
+  // orphan 방지 — 이미 대사된(reconciled_at≠NULL) payment 재-annotate 금지(멱등).
+  expect(ef).toMatch(/already_reconciled/);
+});

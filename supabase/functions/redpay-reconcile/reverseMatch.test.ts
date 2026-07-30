@@ -11,12 +11,18 @@
 import { assert, assertEquals, assertFalse } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   REVERSE_MATCH_WINDOW_MS,
+  REVERSE_MATCH_RETENTION_MS,
+  REVERSE_MATCH_RULE,
+  REVERSE_MATCH_EVENT_TYPE,
   isApprovedReverseRaw,
   isObserveRaw,
   isWithinReverseWindow,
   anchorAccountingDateKst,
   selectReverseMatchCandidate,
   buildReverseMatchPaymentUpdate,
+  buildReverseClaimUpdate,
+  buildReverseClaimRollback,
+  buildReverseReconLogRow,
   type ReverseRaw,
   type SavedPayment,
 } from "./reverseMatch.ts";
@@ -191,4 +197,43 @@ Deno.test("annotate payload — includeAccountingDate=true 시 AC4 앵커일자 
     true,
   );
   assertEquals(p.accounting_date, "2026-07-30"); // approved_at KST 일자(감지시각 아님)
+});
+
+// ── write-path 오케스트레이션 helper (D1~D3) ─────────────────────────────────────
+Deno.test("D1 claim payload — matched_payment_id + match_rule='reverse_susu_hook'", () => {
+  assertEquals(REVERSE_MATCH_RULE, "reverse_susu_hook");
+  const c = buildReverseClaimUpdate("pay-99");
+  assertEquals(c.matched_payment_id, "pay-99");
+  assertEquals(c.match_rule, "reverse_susu_hook"); // forward tier0~4 와 분리(provenance)
+});
+
+Deno.test("D2 rollback payload — raw 링크만 원복(payment 삭제 필드 없음)", () => {
+  const rb = buildReverseClaimRollback();
+  assertEquals(rb.matched_payment_id, null);
+  assertEquals(rb.match_rule, null);
+  // ★payment 를 지우거나 amount/method 를 건드리는 키가 절대 없어야 함(D2 annotate-on-existing).
+  assertEquals(Object.keys(rb).sort(), ["match_rule", "matched_payment_id"]);
+});
+
+Deno.test("AC8 reconlog row — event_type='reverse_matched'(신규 값) + shape parity", () => {
+  assertEquals(REVERSE_MATCH_EVENT_TYPE, "reverse_matched");
+  const row = buildReverseReconLogRow(
+    raw({ id: "raw-7", clinic_id: CLINIC, amount: 50000, external_trxid: "TRX-7" }),
+    payment({ id: "pay-7", amount: 50000 }),
+  );
+  assertEquals(row.event_type, "reverse_matched");   // auto_matched/manual_matched 와 3-provenance 분리
+  assertEquals(row.match_rule, "reverse_susu_hook");
+  assertEquals(row.raw_transaction_id, "raw-7");
+  assertEquals(row.payment_id, "pay-7");
+  assertEquals(row.external_amount, 50000);
+  assertEquals(row.crm_amount, 50000);
+  assertEquals(row.center, "foot");                  // center NOT NULL 폴백(멀티센터 스코핑)
+  assertEquals(row.mismatch_reason, null);
+});
+
+Deno.test("E-1 (b) 보관창 상수 = 1h(유효창 10분과 별개 축)", () => {
+  assertEquals(REVERSE_MATCH_RETENTION_MS, 60 * 60 * 1000);
+  assertEquals(REVERSE_MATCH_WINDOW_MS, 10 * 60 * 1000);
+  // 보관창(후보 pool 조회창) > 유효창(자동대조 신뢰창) — 목적 상이(E-1 2축 분리).
+  assert(REVERSE_MATCH_RETENTION_MS > REVERSE_MATCH_WINDOW_MS);
 });
