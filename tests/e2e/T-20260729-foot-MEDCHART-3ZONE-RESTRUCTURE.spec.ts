@@ -191,22 +191,60 @@ test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A3: 일자별 그룹핑', 
   });
 });
 
-// ── AC-A4: no-regression 불변식 가드 (planner 즉시 확정) ─────────────────────
-test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A4: no-regression 불변식', () => {
-  test('2구역 처방내역 = medical_charts.prescription_items 구조화 소스 유지(다운그레이드 금지)', () => {
+// ── AC-A4: G1 폴백 불변식 가드 (문원장 B 결정 후 갱신) ──────────────────────
+//   문원장 B(2026-07-30 ts 1785395371.418339)로 "약이름-only 다운그레이드 금지" interim 은 LIFTED.
+//   B = PMW 유입 처방약 약이름-only 표시(의도적 결정, 회귀 아님). 단 G1(legacy 이력손실 방지) 가드는 유지:
+//   PMW 처방약 없는 방문은 기존 formRx(prescription_items 구조화)로 폴백해야 함.
+test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A4: G1 legacy 폴백 불변식', () => {
+  test('G1 폴백 — PMW 처방약 없을 때 formRx(prescription_items 구조화) 표시 경로 유지', () => {
     const s = panel();
-    // formRx가 prescription_items(name/frequency/count/days 구조) 소스에서 유지되는지
+    // 재소싱 3항 ternary: visitRxDrugNames(PMW) → formRx(구조화·legacy 폴백) → 빈 상태
     expect(s).toContain('prescription_items');
-    expect(s).toContain('formRx');
+    expect(s).toContain('formRx.length > 0');
+    // PMW 브랜치가 비었을 때만 formRx 로 폴백하는 순서 보장
+    expect(s).toContain('visitRxDrugNames.length > 0 ? (');
   });
-  test('rx(처방세트) 탭 HOLD 유지 — 삭제/재소싱 미발생 (탭·콘텐츠 잔존)', () => {
+  test('rx(처방세트) 탭 잔존 — Q2 순서 게이트(재소싱→실브라우저 확인→삭제) 미도달, 삭제 금지', () => {
     const s = panel();
     expect(s).toContain("{ key: 'rx', label: '처방세트' }");
     expect(s).toContain("rightTab === 'rx'");
   });
-  test('phrase(상용구) 탭 HOLD 유지 — 삭제 미발생', () => {
+  test('phrase(상용구) 탭 잔존 — G2 보류 가드 유지(대체경로 브라우저 확인 前 삭제 금지)', () => {
     const s = panel();
     expect(s).toContain("{ key: 'phrase', label: '상용구' }");
     expect(s).toContain("rightTab === 'phrase'");
+  });
+});
+
+// ── AC-A5: rx 재소싱 배선 (문원장 B — PMW 유입 처방약 약이름-only) ───────────────
+//   재소싱 = JINRYO-ALIMPAN read 로직(extractRxDrugNames) 재사용, 무근거 재구현 금지.
+//   소스 = check_in_services(services.category_label='처방약') → service_name(약이름).
+test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A5: rx 재소싱 배선(문원장 B)', () => {
+  test('extractRxDrugNames(JINRYO read 로직) import 재사용 — 신규 PMW 쿼리 재구현 금지', () => {
+    const s = panel();
+    expect(s).toContain("import { extractRxDrugNames } from '@/lib/opinionRequest'");
+    expect(s).toContain('extractRxDrugNames(');
+  });
+  test('재소싱 로더 loadVisitRxDrugNames — check_in_services 처방약 조회(read-only)', () => {
+    const s = panel();
+    const start = s.indexOf('const loadVisitRxDrugNames');
+    expect(start, 'loadVisitRxDrugNames 로더 존재').toBeGreaterThan(-1);
+    const body = s.slice(start, start + 1400);
+    expect(body).toContain(".from('check_in_services')");
+    expect(body).toContain('services:service_id(category_label)');
+    expect(body).not.toContain('.insert(');
+    expect(body).not.toContain('.update(');
+    expect(body).not.toContain('.delete(');
+  });
+  test('PMW 약이름-only 표시 브랜치(rx-pmw-name) 존재 — B 의도적 표시', () => {
+    const s = panel();
+    expect(s).toContain('data-testid="prescription-items-pmw"');
+    expect(s).toContain('rx-pmw-name-');
+  });
+  test('로더가 방문 로드/일자 변경 시 배선(resetForm + date onChange)', () => {
+    const s = panel();
+    expect(s).toContain('loadVisitRxDrugNames(chart.visit_date)');
+    expect(s).toContain('loadVisitRxDrugNames(today)');
+    expect(s).toContain('loadVisitRxDrugNames(e.target.value)');
   });
 });

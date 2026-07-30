@@ -64,6 +64,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate, searchServiceRxDrugs } from '@/lib/prescribableDrugs';
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 2026-07-30): 2구역 처방내역 재소싱 —
+//   PMW 유입 처방약(약이름)을 JINRYO-ALIMPAN read 로직(extractRxDrugNames) 재사용해 표시. 무근거 재구현 금지.
+import { extractRxDrugNames } from '@/lib/opinionRequest';
 import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
@@ -613,6 +616,10 @@ export default function MedicalChartPanel({
   //   섹션이 진단명↔치료사차트 사이에 뒤늦게 삽입 → 임상경과/치료사차트를 아래로 밀어내는 CLS 주범.
   //   in-flight 동안 동일 높이 skeleton으로 자리를 미리 점유해 pop-in 점프 제거.
   const [visitPaymentsLoading, setVisitPaymentsLoading] = useState(false);
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 슬랙 ts 1785395371.418339):
+  //   2구역 처방내역 = 해당 방문 PMW 유입 처방약(약이름). 소스=check_in_services(services.category_label='처방약').
+  //   비어있으면(legacy/수기 갭·G1) 기존 formRx(medical_charts.prescription_items) 구조화 표시로 자연 폴백.
+  const [visitRxDrugNames, setVisitRxDrugNames] = useState<string[]>([]);
   // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 입력은 자동완성/이력 datalist 폐지 →
   //   DiagnosisFolderPicker(폴더 탐색 + 원장별 즐겨찾기) 선택전용으로 전환. 별도 상태 불요(picker 자체조회).
   //   저장값은 순수 상병명(formDx) — medical_charts.diagnosis 저장경로 무변경.
@@ -1068,6 +1075,37 @@ export default function MedicalChartPanel({
     }
   }, [customerId]);
 
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B): 2구역 처방내역 재소싱 로더.
+  //   해당 방문(date)의 PMW 유입 처방약(약이름)을 check_in_services 에서 조회.
+  //   loadVisitPayments 와 동일한 방문 해석 패턴(check_ins by customer_id+date → check_in_id) 재사용 +
+  //   JINRYO-ALIMPAN read 로직(extractRxDrugNames: services.category_label='처방약' 필터 → service_name) 재사용.
+  //   B=약이름-only. 조회 불가/0건이면 빈 배열 → 렌더에서 기존 formRx 구조화 테이블로 자연 폴백(G1 legacy).
+  const loadVisitRxDrugNames = useCallback(async (date: string) => {
+    if (!customerId || !date) { setVisitRxDrugNames([]); return; }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: checkIns } = await (supabase as any)
+        .from('check_ins')
+        .select('id')
+        .eq('customer_id', customerId)
+        .gte('created_at', `${date}T00:00:00+09:00`)
+        .lte('created_at', `${date}T23:59:59+09:00`);
+      if (!checkIns?.length) { setVisitRxDrugNames([]); return; }
+      const ids = (checkIns as { id: string }[]).map(c => c.id);
+      const { data: cisData, error } = await supabase
+        .from('check_in_services')
+        .select('check_in_id, service_name, services:service_id(category_label)')
+        .in('check_in_id', ids);
+      if (error) throw error;
+      const names = extractRxDrugNames((cisData ?? []) as Array<Record<string, unknown>>);
+      // 동일 방문 내 동일 약 중복 표기 방지(순서 보존).
+      setVisitRxDrugNames([...new Set(names)]);
+    } catch {
+      // 처방약 조회 불가 → 폴백(빈 배열) → formRx 구조화 표시(G1). 차트 자체는 정상.
+      setVisitRxDrugNames([]);
+    }
+  }, [customerId]);
+
   // ── 폼 채우기 ────────────────────────────────────────────────────────────────
 
   const resetForm = useCallback((chart?: MedicalChart | null) => {
@@ -1090,6 +1128,7 @@ export default function MedicalChartPanel({
       // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 저장된 차트의 진료의 복원(레거시는 ''→재선택 필요).
       setFormSigningDoctorId(chart.signing_doctor_id ?? '');
       loadVisitPayments(chart.visit_date);
+      loadVisitRxDrugNames(chart.visit_date); // 문원장 B: 2구역 처방내역 PMW 재소싱
     } else {
       setFormDate(today);
       setFormDx('');
@@ -1100,8 +1139,9 @@ export default function MedicalChartPanel({
       // 신규 작성: 진료의 미선택 — 아래 자동기본값 effect가 의사 계정이면 본인으로 채움(AC-P2-1).
       setFormSigningDoctorId('');
       loadVisitPayments(today);
+      loadVisitRxDrugNames(today); // 문원장 B: 2구역 처방내역 PMW 재소싱
     }
-  }, [loadVisitPayments]);
+  }, [loadVisitPayments, loadVisitRxDrugNames]);
 
   // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-1 (자동 기본값): 신규 작성 + 진료의 미선택일 때,
   //   로그인 계정이 의사이고 이름이 일치하는 활성 의사가 있으면 본인 자동 선택.
@@ -3462,7 +3502,7 @@ export default function MedicalChartPanel({
                     <Input
                       type="date"
                       value={formDate}
-                      onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); }}
+                      onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); loadVisitRxDrugNames(e.target.value); }}
                       disabled={isReadOnly}
                       className="h-9 text-sm text-left border-0 max-w-[150px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                       data-testid="medical-chart-date"
@@ -3559,7 +3599,28 @@ export default function MedicalChartPanel({
                     <div className="flex items-center mb-1 min-h-[1.125rem]">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
                     </div>
-                    {formRx.length > 0 ? (
+                    {/* T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 2026-07-30 ts 1785395371.418339):
+                        2구역 처방내역 = 해당 방문 PMW(결제미니창) 유입 처방약, 약이름만 표시(재소싱).
+                        소스=check_in_services 처방약(extractRxDrugNames 재사용). 용법/횟수/일수 미표시=B 의도적 결정(회귀 아님).
+                        PMW 처방약 없으면(legacy/수기·G1) 아래 기존 formRx 구조화 테이블로 폴백(무회귀). */}
+                    {visitRxDrugNames.length > 0 ? (
+                      <div
+                        className="rounded-lg bg-card overflow-hidden"
+                        data-testid="prescription-items-pmw"
+                      >
+                        <ul className="divide-y divide-gray-200">
+                          {visitRxDrugNames.map((nm, idx) => (
+                            <li
+                              key={idx}
+                              className="px-3 py-1.5 text-xs font-medium break-words"
+                              data-testid={`rx-pmw-name-${idx}`}
+                            >
+                              {nm}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : formRx.length > 0 ? (
                       /* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-4: 테두리 전부 제거 —
                          외곽 테두리(border) 제거 + 내부 입력칸/버튼 테두리·그림자도 전부 제거
                          (arbitrary variant [&_input]/[&_button]). 기능 동선(추가/수정/삭제·세트 반영) 무변경.
