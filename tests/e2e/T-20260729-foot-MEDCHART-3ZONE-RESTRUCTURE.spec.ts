@@ -248,3 +248,64 @@ test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A5: rx 재소싱 배선(�
     expect(s).toContain('loadVisitRxDrugNames(e.target.value)');
   });
 });
+
+// ── Phase C — 1구역 진료경과 B안: 좌측 날짜 목록 = check_ins ∪ medical_charts ─────────
+//   (김주연 총괄 U0ATDB587PV 직접 확정, 슬랙 ts 1785396595.742999 / planner MSG-20260730-163737-1fe9)
+//   B = 고객이 내원(체크인)한 날짜 전부 좌측 날짜 목록에 표시. 차트 미작성 내원일도 '미기록' 빈 상태 행으로.
+//   ADDITIVE·비파괴·db_change=false(check_ins 기존 데이터 read-only). 검증=소스 구조 불변식(본 레포 표준).
+test.describe('T-20260729 MEDCHART-3ZONE Phase C / 1구역 진료경과 B안(check_ins union)', () => {
+  test('AC-C1: 내원(check_ins) 일자 소스 로드 — checked_in_at read-only 조회', () => {
+    const s = panel();
+    // loadData 내 check_ins.checked_in_at 조회로 내원일자 union 소스 확보
+    expect(s).toContain("from('check_ins')");
+    expect(s).toContain("select('checked_in_at')");
+    // KST 일자 환산 유틸(우측 방문이력과 동일 timezone 규칙) 사용
+    expect(s).toContain('seoulISODate');
+    expect(s).toContain('setCheckInDates');
+  });
+
+  test('AC-C2: 좌측 목록 = 통합 타임라인(차트 ∪ 가상 내원일), 최신일 우선', () => {
+    const s = panel();
+    expect(s).toContain('const timelineRows');
+    expect(s).toContain('virtualVisitDates');
+    // 차트 있는 일자는 가상행에서 제외(중복 방지)
+    expect(s).toContain('chartVisitDates');
+    expect(s).toContain('!chartVisitDates.has');
+    // 좌측 목록 렌더가 timelineRows 기준(medical_charts 단독 아님)
+    expect(s).toContain('timelineRows.map');
+  });
+
+  test("AC-C3: 차트 미작성 내원일 = '미기록' 빈 상태 가상 행 렌더", () => {
+    const s = panel();
+    expect(s).toContain('data-testid="medical-chart-timeline-virtual-entry"');
+    expect(s).toContain('data-testid="timeline-unrecorded-badge"');
+    expect(s).toContain('미기록');
+  });
+
+  test('AC-C4: 가상행 클릭 = 그 날짜 빈 폼 앵커(신규작성 시맨틱, 유령 UPDATE 방지)', () => {
+    const s = panel();
+    const start = s.indexOf('function selectVirtualDate');
+    expect(start, 'selectVirtualDate 핸들러 존재').toBeGreaterThan(-1);
+    const body = s.slice(start, start + 900);
+    // selectedChartId=null → 저장 시 INSERT(신규), 실차트 UPDATE 오작동 없음
+    expect(body).toContain('setSelectedChartId(null)');
+    expect(body).toContain('setSelectedVirtualDate(date)');
+    expect(body).toContain('visit_date: date');
+  });
+
+  test('AC-C5: 빈 상태 placeholder는 차트/내원 모두 0건일 때만(내원일 있으면 목록 표시)', () => {
+    const s = panel();
+    // isEmptyState 판정이 timelineRows(=union) 기준 — 내원일만 있어도 목록 노출
+    expect(s).toContain('const isEmptyState = timelineRows.length === 0');
+  });
+
+  test('AC-C6 (무회귀): 좌측 목록은 여전히 read-only 소스 — check_ins union 로드에 write 없음', () => {
+    const s = panel();
+    const start = s.indexOf("select('checked_in_at')");
+    expect(start).toBeGreaterThan(-1);
+    const body = s.slice(start - 200, start + 400);
+    expect(body).not.toContain('.insert(');
+    expect(body).not.toContain('.update(');
+    expect(body).not.toContain('.delete(');
+  });
+});

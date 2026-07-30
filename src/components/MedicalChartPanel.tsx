@@ -67,7 +67,7 @@ import { evaluateRxInsuranceGate, searchServiceRxDrugs } from '@/lib/prescribabl
 // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 2026-07-30): 2구역 처방내역 재소싱 —
 //   PMW 유입 처방약(약이름)을 JINRYO-ALIMPAN read 로직(extractRxDrugNames) 재사용해 표시. 무근거 재구현 금지.
 import { extractRxDrugNames } from '@/lib/opinionRequest';
-import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge, birthDateYMD } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulISODate, seoulISODate, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
@@ -675,6 +675,13 @@ export default function MedicalChartPanel({
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안, 김주연 총괄 확정 슬랙 ts 1785396595.742999):
+  //   좌측 날짜 목록 = 고객이 내원(체크인)한 날짜 전부(check_ins ∪ medical_charts). 차트 미작성 내원일도
+  //   "미기록" 빈 상태 행으로 표시. 아래 checkInDates 는 해당 고객의 내원(check_ins) KST 일자 distinct 집합.
+  //   selectedVirtualDate = 현재 선택된 '미기록(차트 없는)' 날짜 행(하이라이트 + 그 날짜 신규작성 앵커).
+  //   db_change=false — check_ins 는 기존 데이터, 스키마 변경 없음. 우측 '방문이력' 탭과 동일 소스(checked_in_at).
+  const [checkInDates, setCheckInDates] = useState<string[]>([]);
+  const [selectedVirtualDate, setSelectedVirtualDate] = useState<string | null>(null);
   // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: loadData(차트 서버조회)가 최초 1회 완료됐는지 신호.
   //   clinical variant 의 today-차트 자동선택(clinicalInit)이 "아직 charts 미로드(초기 빈 배열)" 상태에서
   //   먼저 돌아 ref 가 굳는 레이스를 차단하기 위함. loadData finally 직전 true, 매 로드 시작 시 false 로 재게이트.
@@ -883,7 +890,7 @@ export default function MedicalChartPanel({
     chartsLoadedRef.current = false;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes, clinicDoctorsRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes, clinicDoctorsRes, checkInDatesRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -958,6 +965,17 @@ export default function MedicalChartPanel({
           .eq('active', true)
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: true }),
+        // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안): 해당 고객의 내원(check_ins) 일자.
+        //   좌측 날짜 목록을 check_ins ∪ medical_charts 로 union 확장하기 위한 소스. checked_in_at(우측 방문이력 탭과 동일)
+        //   을 KST 일자로 환산해 distinct. db_change 없음(기존 데이터 read-only). limit 는 장기 재진 고객 안전폭.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('check_ins')
+          .select('checked_in_at')
+          .eq('customer_id', customerId)
+          .eq('clinic_id', clinicId)
+          .order('checked_in_at', { ascending: false })
+          .limit(500),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
@@ -1031,6 +1049,16 @@ export default function MedicalChartPanel({
       //   삭제된 차트는 deletedCharts 로 분리(목록 기본 숨김, 관리자 "삭제된 차트 보기" 토글로만 조회).
       setCharts(merged.filter((c) => !c.is_deleted));
       setDeletedCharts(merged.filter((c) => !!c.is_deleted));
+      // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안): 내원(check_ins) 일자 distinct(KST) 적재.
+      //   checked_in_at(UTC timestamptz) → seoulISODate 로 KST 일자 환산 후 중복 제거. 조회 실패 시 빈 배열
+      //   (=기존 medical_charts 단독 목록으로 자연 폴백, 무회귀). 렌더에서 chart 없는 일자만 '미기록' 가상 행으로 표시.
+      {
+        const ciRows = (checkInDatesRes?.data as { checked_in_at: string | null }[] | null) ?? [];
+        const dates = ciRows
+          .map((r) => (r.checked_in_at ? seoulISODate(r.checked_in_at) : null))
+          .filter((d): d is string => !!d);
+        setCheckInDates([...new Set(dates)]);
+      }
       // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: charts 서버조회 성공 반영 완료 → today-차트 자동선택 허용.
       //   (성공 경로에서만 true. 실패 시 false 유지 → 빈 charts 로 today-차트 자동선택이 굳지 않음)
       chartsLoadedRef.current = true;
@@ -1445,6 +1473,7 @@ export default function MedicalChartPanel({
 
   function selectChart(chart: MedicalChart) {
     setSelectedChartId(chart.id);
+    setSelectedVirtualDate(null); // 실차트 선택 시 '미기록' 가상행 하이라이트 해제
     resetForm(chart);
     setPhrasePopoverVisible(false);
     setEditMode(false); // AC-4: 저장된 차트 진입 시 읽기전용
@@ -1452,9 +1481,32 @@ export default function MedicalChartPanel({
 
   function selectNew() {
     setSelectedChartId(null);
+    setSelectedVirtualDate(null);
     resetForm(null);
     setPhrasePopoverVisible(false);
     setEditMode(true); // AC-4: 신규 작성은 즉시 편집 가능
+  }
+
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안, 김주연 총괄 ts 1785396595.742999):
+  //   좌측 날짜 목록에서 '차트 미작성 내원일'(가상 행)을 클릭했을 때. 로드할 medical_charts 레코드가 없으므로
+  //   selectedChartId=null(=신규작성 시맨틱: 저장 시 그 날짜로 INSERT, 유령 UPDATE 방지) + 폼을 해당 내원일로
+  //   앵커한 빈 상태(미기록)로 초기화. 원장이 그대로 진료경과를 작성해 저장하면 그 날짜 차트가 생성된다.
+  function selectVirtualDate(date: string) {
+    setSelectedChartId(null);
+    setSelectedVirtualDate(date);
+    // resetForm 에 해당 내원일자만 채운 빈 차트를 넘겨 formDate·방문결제/처방 로드를 그 날짜로 앵커(빈 상태 유지).
+    resetForm({
+      id: `virtual:${date}`,
+      visit_date: date,
+      diagnosis: null,
+      treatment_record: null,
+      clinical_progress: null,
+      doctor_memo: null,
+      prescription_items: null,
+      signing_doctor_id: null,
+    } as unknown as MedicalChart);
+    setPhrasePopoverVisible(false);
+    setEditMode(false); // 빈 상태(미기록) 진입 — 원장이 [수정/작성]으로 편집 진입
   }
 
   // ── 저장 ─────────────────────────────────────────────────────────────────────
@@ -2198,8 +2250,23 @@ export default function MedicalChartPanel({
         (b.visit_date || '').localeCompare(a.visit_date || '') ||
         (b.created_at || '').localeCompare(a.created_at || ''))
     : activeCharts;
-  // 실데이터(활성/삭제) 0건 = 빈 상태(더미 아님). placeholder만 노출.
-  const isEmptyState = displayCharts.length === 0;
+
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안, 김주연 총괄 ts 1785396595.742999):
+  //   좌측 날짜 목록 = check_ins ∪ medical_charts 일자 union. 차트가 있는 일자는 기존 차트 행 그대로,
+  //   차트 없는 내원일(check_ins만 있는 날)은 '미기록' 가상 행으로 표시(클릭 시 빈 상태/그날 신규작성 앵커).
+  //   실차트가 있는 일자는 가상 행에서 제외(중복 방지). 최신일 우선 정렬(차트/가상 통합).
+  const chartVisitDates = new Set(displayCharts.map((c) => c.visit_date));
+  const virtualVisitDates = checkInDates.filter((d) => !chartVisitDates.has(d));
+  type TimelineRow =
+    | { kind: 'chart'; date: string; chart: MedicalChart }
+    | { kind: 'virtual'; date: string };
+  const timelineRows: TimelineRow[] = [
+    ...displayCharts.map((c): TimelineRow => ({ kind: 'chart', date: c.visit_date, chart: c })),
+    ...virtualVisitDates.map((d): TimelineRow => ({ kind: 'virtual', date: d })),
+  ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  // 차트/내원(가상) 모두 0건 = 빈 상태(더미 아님). placeholder만 노출.
+  const isEmptyState = timelineRows.length === 0;
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 필터 적용 (OR 로직)
   // T-20260609-foot-MEDCHART-SOAK-REFINE item2 (문지은 대표원장 field-soak 버그):
@@ -3184,7 +3251,48 @@ export default function MedicalChartPanel({
                       '필터 결과 없음' 빈 상태(날짜행 소거) 제거 — 방문 날짜행은 항상 보존, 내용만 가린다. */}
 
                   {/* 아코디언 엔트리 목록 */}
-                  {filteredDisplayCharts.map(chart => {
+                  {/* T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안): 통합 타임라인(차트 ∪ 내원).
+                      차트 없는 내원일(kind:'virtual')은 '미기록' 빈 상태 행으로 표시 — 클릭 시 그 날짜 빈 폼 앵커. */}
+                  {timelineRows.map((row) => {
+                    if (row.kind === 'virtual') {
+                      const isSel = selectedVirtualDate === row.date;
+                      return (
+                        <div
+                          key={`virtual-${row.date}`}
+                          className="border-b border-border/40"
+                          data-testid="medical-chart-timeline-virtual-entry"
+                          data-visit-date={row.date}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => selectVirtualDate(row.date)}
+                            className={`w-full text-left pl-1.5 pr-2 py-2 hover:bg-muted transition-colors min-w-0 ${
+                              isSel ? 'bg-teal-50 border-l-2 border-l-teal-500' : ''
+                            }`}
+                            data-testid={`chart-select-virtual-${row.date}`}
+                          >
+                            <div className="flex items-center gap-1.5 leading-tight">
+                              {/* 유형 닷 컬럼 폭만 유지(내용 없음 → 전부 transparent) */}
+                              <span className="flex items-center gap-1 shrink-0">
+                                <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
+                              </span>
+                              <span className="text-[11px] font-semibold text-teal-700 shrink-0">
+                                {fmtDateShort(row.date)}
+                              </span>
+                              <span
+                                className="ml-auto text-[9px] text-muted-foreground bg-muted/50 border border-border rounded px-1 shrink-0"
+                                data-testid="timeline-unrecorded-badge"
+                              >
+                                미기록
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    }
+                    const chart = row.chart;
                     const isExpanded = expandedChartIds.has(chart.id);
                     const hasTreat = hasTreatMemo(chart);
                     const hasDoc = hasDocMemo(chart);
