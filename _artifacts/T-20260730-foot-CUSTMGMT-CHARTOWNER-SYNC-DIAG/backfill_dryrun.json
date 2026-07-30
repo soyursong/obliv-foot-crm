@@ -1,0 +1,73 @@
+{
+  "ticket": "T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG",
+  "mode": "DRY-RUN",
+  "freeze_snapshot": [
+    {
+      "customer_id": "054948a2-fc42-483b-bc98-2ad1a5727395",
+      "chart_number": "F-0155",
+      "customer_name": "양종필",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    },
+    {
+      "customer_id": "0e27bce7-8311-4c80-9a26-edbba0b4d9e1",
+      "chart_number": "F-4067",
+      "customer_name": "윤민희",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    },
+    {
+      "customer_id": "362663c7-bb77-4e33-9f17-05b94b3fd866",
+      "chart_number": "F-4328",
+      "customer_name": "박세진",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    },
+    {
+      "customer_id": "65351f78-ffee-4a4a-a25d-503c716b8b1e",
+      "chart_number": "F-0896",
+      "customer_name": "김수연",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    },
+    {
+      "customer_id": "8ef1f602-5c89-4c50-b616-6a10695647af",
+      "chart_number": "F-3904",
+      "customer_name": "서호영",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    },
+    {
+      "customer_id": "c074025b-cd27-443c-93a9-151d6d4214d4",
+      "chart_number": "F-4468",
+      "customer_name": "풋 서류 테스트 입니다",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    },
+    {
+      "customer_id": "ca8975d4-b79c-4704-b142-3742692ce787",
+      "chart_number": "F-4470",
+      "customer_name": "김설아",
+      "assigned_staff_id": "5b3a3a5f-9d14-4099-897b-95c6ae86b763",
+      "staff_active": false,
+      "assigned_consultant_id": null
+    }
+  ],
+  "freeze_verify": {
+    "expected": 7,
+    "actual": 7,
+    "problems": [],
+    "passed": true
+  },
+  "dry_run": {
+    "affected": 7,
+    "expected": 7,
+    "persisted": false
+  }
+}

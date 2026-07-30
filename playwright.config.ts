@@ -124,6 +124,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG: 고객관리 담당자 표시 일관화(결정 B).
+        //   담당자 resolution 미러(NULL·퇴사/부재→"미지정") + 소스 가드(Customers.tsx staffNameMap active-only·
+        //   fallback "미지정" / CustomerChartPage Zone1 빈옵션 "미지정"). RED LINE assigned_consultant_id 무접촉.
+        //   auth/server 불요·결정론. 진짜 UI 관측 = supervisor field-soak.
+        '**/T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG.spec.ts',
         // T-20260730-foot-INS-GRADE-LABEL-RECONCILE: 건보 자격등급 라벨/주석 정본화(계산 무변경).
         //   INSURANCE_GRADE_LABELS SSOT(차상위1=면제/차상위2·의급2=정액 1,000)·AC-2 라벨=실청구 대조·
         //   AC-4 금액불변·SSOT 소비경로(패널2 2종+서류토큰 autoBindContext) 정적 가드. auth/server 불요.
@@ -549,6 +554,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG: unit 전용(담당자 resolution 미러 + 정적 소스 가드) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG.spec.ts',
         // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: unit 전용 정적 소스 가드+순수 함수 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',

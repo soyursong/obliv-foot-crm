@@ -6319,7 +6319,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-sage-500 bg-white hover:border-sage-400 transition"
                     >
-                      <option value="">— 선택 —</option>
+                      {/* T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG (Part2): 담당자 미지정(NULL)·목록밖(퇴사) 값 →
+                          빈 옵션 라벨을 "미지정"으로 통일(고객관리 목록과 일관 표시, 현장 요구). 값('')=미지정 저장. */}
+                      <option value="">미지정</option>
                       {/* C2-MANAGER-PAYMENT-MAP v3: 담당자 드롭다운에서만 role='director'(원장) 제외 — DB 비활성 금지, 코드 레벨 필터 */}
                       {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
                       {/* T-20260614-foot-STAFF-DROPDOWN-ROLE-SORT: 표시 순서만 role 정렬(상담실장→코디) — 안정정렬로 동일 role 내 기존 순서 유지 */}
