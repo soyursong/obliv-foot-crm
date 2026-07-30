@@ -372,8 +372,30 @@ export interface Staff {
 
 // ── 상담 자동배정 랭킹·전략 (T-20260726-foot-CRM-ASSIGN-V1) ────────────────────
 
-/** 유입경로(정책/포인터 키). 앱 축(TM|인바운드|워크인) → 정책 enum 매핑. */
-export type AssignLeadSource = 'TM' | 'INBOUND' | 'WALK_IN';
+/**
+ * 유입경로(정책/포인터 키) — governed 영대문자 enum.
+ * T-20260730-foot-ASSIGN-FULLSPEC-IMPL (§094v 다., DA da_decision_foot_assign_leadsource_6path_split):
+ *   비TM 6경로 분리 = 워크인 fall-through 를 결정적 3경로(NAVER/REFERRAL/HOMEPAGE)로 승격.
+ *   각 경로는 assignment_leadsource_policy / assignment_pointer_state 에서 독립 row + 독립 커서(Option B).
+ *   ★ cross_crm_data_contract 의 lead_source='dopamine_tm'(customers 귀속축) 과는 다른 컬럼(foot-local 배정 라우팅 enum).
+ */
+export type AssignLeadSource = 'TM' | 'INBOUND' | 'WALK_IN' | 'NAVER' | 'REFERRAL' | 'HOMEPAGE';
+
+/**
+ * 유입경로 원천 캡처값(visit_route, 한글 · VISIT_ROUTE_OPTIONS) → 배정 라우팅 governed enum(AssignLeadSource) 명시 매핑.
+ * T-20260730-foot-ASSIGN-FULLSPEC-IMPL: deriveConsultAxis 의 암묵 '워크인' fall-through 를 명시 매핑으로 승격(계약 아티팩트).
+ *   네이버→NAVER · 지인소개→REFERRAL · 공홈(공식홈페이지)→HOMEPAGE · 인바운드→INBOUND · 워크인→WALK_IN · TM→TM.
+ *   ★ 매핑 미스(레거시 '온라인'/'기타' 등)만 호출측(deriveAssignLeadSource)에서 WALK_IN 안전 폴백 = 기존 워크인 수렴 보존(회귀0).
+ *   ★ axis(free-text) 가 아닌 이 governed 매핑이 배정 공정성(돈 인접)의 primary accounting substrate (DA Q3).
+ */
+export const VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE: Record<string, AssignLeadSource> = {
+  TM: 'TM',
+  인바운드: 'INBOUND',
+  워크인: 'WALK_IN',
+  네이버: 'NAVER',
+  지인소개: 'REFERRAL',
+  공홈: 'HOMEPAGE',
+};
 
 /** 배정 전략: Daily Target 미달 우선 | 랭킹 포인터 순환(라운드로빈 금지). */
 export type AssignStrategy = 'daily_target' | 'ranking_pointer';

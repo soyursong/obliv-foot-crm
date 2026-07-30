@@ -124,6 +124,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260730-foot-ASSIGN-FULLSPEC-IMPL(§094v 다.): 비TM 유입경로 6경로 분리(Option B) 순수-로직 가드.
+        //   deriveAssignLeadSource 6경로 governed 매핑(fall-through 제거)·네이버/지인소개/공홈 워크인 미결합·재진 null·
+        //   VISIT_ROUTE_OPTIONS 매핑 완전성·정본 영대문자 + CEO-게이트 경계(deriveConsultAxis 재진 recency·집계축 무접촉)
+        //   + DB CHECK 6값 실측(토큰 有시). auth/browser 불요, 결정론. DA ADDITIVE+GO.
+        '**/T-20260730-foot-ASSIGN-LEADSOURCE-6PATH-SPLIT.spec.ts',
         // T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX: 피검사 일일 리스트 4개선(역순정렬·업로드컬럼·
         //   결과지 경로 재사용·완료행 비활성) 정적 소스 가드. auth/server 불요(선행 LABTAB-SPLIT spec 스타일). unit 전용.
         '**/T-20260726-foot-TREATTABLE-LABTAB-BLOODLIST-4FIX.spec.ts',

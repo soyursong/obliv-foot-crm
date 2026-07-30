@@ -29,7 +29,8 @@ import { GATED_CAPABILITY_CODES } from './treatmentRequestCodes';
 //   JUDGE-365(접수분류, prod LIVE)와 동일 헬퍼 재사용 = single source(재-divergence 방지).
 import { resolveVisitTypeByRecency } from './visitRecency';
 // T-20260726-foot-CRM-ASSIGN-V1: 유입경로 정책 설정 시 상담사 선택을 랭킹·전략 레이어에 위임(비파괴 확장).
-import { pickConsultantByStrategy } from './assignmentStrategy';
+// T-20260730-foot-ASSIGN-FULLSPEC-IMPL: 라우팅 lead_source = deriveAssignLeadSource(governed) 직접 파생(6경로 분리).
+import { pickConsultantByStrategy, deriveAssignLeadSource } from './assignmentStrategy';
 import type {
   AssignmentRole,
   AssignmentActionType,
@@ -663,12 +664,20 @@ export async function maybeAutoAssign(
         );
       }
       // 5) 1순위(상담·유입경로 정책 설정 시) — T-20260726-foot-CRM-ASSIGN-V1 랭킹·전략 레이어.
-      //    유입경로(TM/INBOUND/WALK_IN)에 정책이 있으면 매출 랭킹 기반 Daily Target / 랭킹 포인터로 선택.
+      //    T-20260730-foot-ASSIGN-FULLSPEC-IMPL: 라우팅 유입경로 = deriveAssignLeadSource(governed 6경로) — 네이버/지인소개/공홈
+      //      이 워크인 커서에 묶이지 않고 각자 독립 policy·pointer 로 라우팅(Option B). axis(집계 라벨)와 분리.
+      //    유입경로(TM/INBOUND/WALK_IN/NAVER/REFERRAL/HOMEPAGE)에 정책이 있으면 매출 랭킹 기반 Daily Target / 랭킹 포인터로 선택.
       //    후보 풀 = staff_attendance.status='present' ∩ auto_assign_enabled(실행3, 자체 조회).
       //    정책 미설정/후보없음 → null → 아래 기존 월균등 경로로 자연 fallback(회귀0).
       //    ★ 매출귀속 RED LINE(조건②/INV-1): 반환값은 check_ins.consultant_id set 대상일 뿐, customers 무접촉.
+      //    ★ 재진 365-recency 판정 무접촉(CEO gate 경계) — 재진 상담은 위 line 600 에서 이미 skip.
       if (role === 'consult') {
-        const strat = await pickConsultantByStrategy({ clinicId: checkIn.clinic_id, axis });
+        const leadSource = deriveAssignLeadSource({
+          visit_type: recencyVisitType,
+          lead_source: customer?.lead_source,
+          visit_route: customer?.visit_route,
+        });
+        const strat = await pickConsultantByStrategy({ clinicId: checkIn.clinic_id, leadSource });
         if (strat) chosen = strat.staffId;
       }
       // 5-b) 기존 월 균등 least-loaded (전략 미적용 시 · 치료사 · 재진 fallback).

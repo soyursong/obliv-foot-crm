@@ -22,24 +22,48 @@
  */
 import { supabase } from './supabase';
 import { todaySeoulISODate } from './format';
-import type {
-  AssignLeadSource,
-  AssignStrategy,
-  AssignmentRankingWeights,
-  AssignmentDailyTargetConfig,
+import {
+  VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE,
+  type AssignLeadSource,
+  type AssignStrategy,
+  type AssignmentRankingWeights,
+  type AssignmentDailyTargetConfig,
 } from './types';
 
 // ── 축(axis, 한글) → 정책 lead_source(enum) 매핑 ─────────────────────────────────
+// T-20260730-foot-ASSIGN-FULLSPEC-IMPL: 6경로 codify(fall-through 제거). 단, 배정 라우팅 primary substrate 는
+//   axis 가 아니라 deriveAssignLeadSource(visit_route→governed enum) 다. 본 AXIS 맵은 axis 기반 보조 매핑(호환)만 유지.
 const AXIS_TO_LEAD_SOURCE: Record<string, AssignLeadSource> = {
   TM: 'TM',
   인바운드: 'INBOUND',
   워크인: 'WALK_IN',
+  네이버: 'NAVER',
+  지인소개: 'REFERRAL',
+  공홈: 'HOMEPAGE',
 };
 
-/** deriveConsultAxis 결과(TM|인바운드|워크인|returning) → 정책 enum. 재진/미상 = null(전략 미적용). */
+/** deriveConsultAxis 결과(한글 축) → 정책 enum. 재진/미상 = null(전략 미적용). (보조 매핑 — 라우팅 primary=deriveAssignLeadSource) */
 export function mapAxisToLeadSource(axis: string | null | undefined): AssignLeadSource | null {
   if (!axis) return null;
   return AXIS_TO_LEAD_SOURCE[axis] ?? null;
+}
+
+/**
+ * ★배정 라우팅 primary accounting substrate (T-20260730-foot-ASSIGN-FULLSPEC-IMPL / DA Q3).
+ * 유입경로 원문(visit_route ?? lead_source) → governed AssignLeadSource. governed enum 파생-only(수기입력 금지).
+ *   · 재진(returning): null 반환 = 유입경로 전략 미적용(기존 동작 보존). 상담 재진은 상위(maybeAutoAssign)에서 이미 skip.
+ *   · 6경로 명시 매핑(VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE) — 네이버/지인소개/공홈 이 워크인에 묶이지 않고 독립 인식.
+ *   · 매핑 미스(레거시 '온라인'/'기타'/공란 등)만 WALK_IN 안전 폴백 = 기존 '워크인' 수렴 보존(회귀0).
+ * ★ 재진 365-recency 판정 로직 무접촉(CEO gate 경계, T-20260713) — 여기선 visit_type='returning' 만 확인.
+ */
+export function deriveAssignLeadSource(c: {
+  visit_type?: string | null;
+  lead_source?: string | null;
+  visit_route?: string | null;
+}): AssignLeadSource | null {
+  if (c.visit_type === 'returning') return null;
+  const raw = (c.visit_route ?? c.lead_source ?? '').trim();
+  return VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE[raw] ?? 'WALK_IN';
 }
 
 // ── 실행1: 상담사 매출 지표 ───────────────────────────────────────────────────
@@ -444,16 +468,16 @@ export async function fetchTodayConsultAssignCounts(clinicId: string): Promise<M
  * 상담사 자동배정 후보 선택(전략 기반). 정책이 설정된 유입경로에만 동작, 아니면 null → 기존 월균등 fallback.
  *
  * @param clinicId  클리닉
- * @param axis      deriveConsultAxis 결과(TM|인바운드|워크인|returning)
+ * @param leadSource governed 유입경로 enum(deriveAssignLeadSource 결과). null=재진/미상 → 전략 미적용.
  * @param poolFilter (선택) 추가로 후보를 제한할 id 집합(예: 지정 fallback 컨텍스트). 미전달 시 present∩enabled 전체.
  * @returns 선택된 staffId | null(전략 미적용/후보없음 → 호출측 fallback)
  */
 export async function pickConsultantByStrategy(opts: {
   clinicId: string;
-  axis: string | null;
+  leadSource: AssignLeadSource | null;
   poolFilter?: Set<string> | null;
 }): Promise<{ staffId: string; strategy: AssignStrategy; leadSource: AssignLeadSource } | null> {
-  const leadSource = mapAxisToLeadSource(opts.axis);
+  const leadSource = opts.leadSource;
   if (!leadSource) return null; // 재진/미상 = 전략 미적용
 
   const policyMap = await fetchLeadSourcePolicy(opts.clinicId);
