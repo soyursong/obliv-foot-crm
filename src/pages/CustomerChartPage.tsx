@@ -5,6 +5,8 @@ import { format, parseISO } from 'date-fns';
 import { AlertTriangle, CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
+// T-20260730-foot-RRN-CLIPBOARD-COPY-NHIS: 주민번호 앞/뒷자리 클립보드 복사 버튼(공용)
+import { RrnCopyButtons } from '@/components/insurance/RrnCopyButtons';
 // T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
 import { TreatmentMemoComposer, TreatmentMemoEditor } from '@/components/TreatmentMemoComposer';
 // T-20260615-foot-PKGTAB-TOE-RESTORE: 패키지 탭 상단 치료부위(발가락) 일러스트 원상 복원(김주연 총괄). 3b6ab2f 제거분 역복원.
@@ -2763,7 +2765,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     ? (medchartParam as 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult')
     : undefined;
   const { profile, loading: authLoading } = useAuth();
-  // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 = prod rrn_decrypt 게이트(admin/manager/director).
+  // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 = prod rrn_decrypt 게이트.
+  //   ★T-20260620 A2 역할 복원 반영(AC-5, T-20260730): 현재 조회권 = admin·manager·director·consultant·coordinator·therapist 6역할★
+  //   (구 주석 'admin/manager/director' 3역할은 A2 복원 이전 상태 — 코디 포함 6역할이 canViewRrn=RRN_VIEW_ROLES 와 정합).
   //   권한 없는 직원은 rrn_decrypt 가 항상 null 을 반환 → 저장 여부를 빈 값으로 구분 불가.
   //   이 플래그로 '미입력'(=저장 안 됨 오해) 대신 '조회 권한 없음' 안내문을 띄운다. DB 권한은 변경 없음.
   const userCanViewRrn = canViewRrn(profile?.role ?? undefined);  // STEP4 닫힌 유니온: '' 제거(canViewRrn 이 undefined 안전 처리)
@@ -5865,6 +5869,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         <span className="font-mono text-gray-600">
                           {rrnMasked === undefined ? '...' : (rrnMasked ?? '미입력')}
                         </span>
+                        {/* T-20260730-foot-RRN-CLIPBOARD-COPY-NHIS: 앞/뒷자리 복사 버튼(공단 포털 붙여넣기용).
+                            마스킹 무접촉 — rrnFull 세션값을 클립보드로만 전달. rrnFull falsy 시 미렌더. */}
+                        <RrnCopyButtons rrnFull={rrnFull} customerId={customer.id} customerName={customer.name} />
                         <button
                           type="button"
                           // T-20260629-foot-RRN-EDIT-WIPE-FIX (REOPEN P0): [수정] 진입 시 기존 등록값 prefill.
@@ -5997,6 +6004,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                       {nhis.captureOpen && (
                         <NhisCapturePanel
                           customerName={customer.name ?? null}
+                          customerBirthDate={customer.birth_date ?? null}
+                          customerChartNumber={customer.chart_number?.toString() ?? null}
+                          customerId={customer.id}
+                          rrnFull={rrnFull ?? null}
                           controller={nhis}
                         />
                       )}
