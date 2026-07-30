@@ -21,33 +21,48 @@
     SOLAPI_BALANCE_BASELINE_74967aea=…  # (선택) 지점별 정상잔액 기준선(원) → 20% 경보 병행
     SOLAPI_ALERT_SLACK_CHANNEL=C0ATE5P6JTH   # 경보 채널(기본 풋센터 운영 채널)
 
+  ★ 실행체 = 폴러 전용 main-고정 checkout (T-20260729-...-DEDICATED-CHECKOUT broaden, redpay 폴러와 공유):
+      WorkingDirectory = /Users/domas/GitHub/obliv-foot-crm-redpay-poller (detached, origin/main 고정).
+      전용 checkout 생성·sync·롤백 runbook = docs/REDPAY-POLLER-DEDICATED-CHECKOUT-RUNBOOK.md.
+
   배포 (supervisor, macstudio):
-    0. dry-run/self-test 검증 (라이브 전 필수 — 슬랙 미발송·상태 미변경):
-         cd ~/GitHub/obliv-foot-crm && node scripts/solapi_balance_quota_monitor.mjs --self-test  # 순수로직
-         cd ~/GitHub/obliv-foot-crm && node scripts/solapi_balance_quota_monitor.mjs --dry-run     # 실조회+문안 재현
-    1. 등록:
+    0. dry-run/self-test 검증 (라이브 전 필수 — 슬랙 미발송·상태 미변경 / 전용 checkout 에서):
+         cd ~/GitHub/obliv-foot-crm-redpay-poller && node scripts/solapi_balance_quota_monitor.mjs --self-test  # 순수로직
+         cd ~/GitHub/obliv-foot-crm-redpay-poller && node scripts/solapi_balance_quota_monitor.mjs --dry-run     # 실조회+문안 재현
+    1. 등록 (main merge 후 — LaunchAgents symlink 을 전용 checkout 의 plist 로 → plist 자체도 main-고정):
          mkdir -p ~/logs
-         ln -sf ~/GitHub/obliv-foot-crm/scripts/launchd/com.obliv.foot.solapi-balance-monitor.plist \
+         ln -sf ~/GitHub/obliv-foot-crm-redpay-poller/scripts/launchd/com.obliv.foot.solapi-balance-monitor.plist \
            ~/Library/LaunchAgents/com.obliv.foot.solapi-balance-monitor.plist
+         launchctl unload ~/Library/LaunchAgents/com.obliv.foot.solapi-balance-monitor.plist 2>/dev/null
          launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.solapi-balance-monitor.plist
     2. 검증:
-         launchctl list | grep solapi-balance-monitor
-         tail -50 ~/logs/solapi_balance_monitor.out   # '문자발송 활성 지점' + '잔액=' + '완료' 확인
+         launchctl list | grep solapi-balance-monitor   # 단일 엔트리(이중실행 방지)
+         tail -50 ~/logs/solapi_balance_monitor.out   # '문자발송 활성 지점' + '잔액=' + 'min₩=10,000' + '완료' 확인
          tail -50 ~/logs/solapi_balance_monitor.err
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key><string>com.obliv.foot.solapi-balance-monitor</string>
 
+    <!--
+      T-20260729-foot-REDPAY-POLLER-DEDICATED-CHECKOUT (broaden) — stale-임계 hazard 근본대책.
+      WorkingDirectory = 폴러 전용 main-고정 checkout(dev 피처 체크아웃과 물리 분리). redpay 폴러와
+      공통 main-pinned dir 을 공유. dev 가 어떤 브랜치를 체크아웃해도 워치독 실행체는 origin/main 불변
+      → DEFAULT_MIN_WON(양지점 10,000, main 정합)이 dev 브랜치 상태에 오염되지 않음.
+      매 사이클 진입 시 best-effort FF(fetch+reset --hard origin/main) 로 self-heal — fetch 실패
+      (네트워크 블립·redpay 폴러 lock 경합)여도 `;` 로 node 는 항상 실행되며, 공유 dir 의 정지상태가
+      곧 origin/main(redpay 폴러가 5분마다 동일 reset)이므로 stale 불가. 두 job 은 동일 커밋(origin/main)
+      으로만 reset → 파일 flip-flop 없음. Vault·env(~/.env.redpay-foot)·state 는 절대경로라 무관.
+    -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>cd /Users/domas/GitHub/obliv-foot-crm &amp;&amp; node scripts/solapi_balance_quota_monitor.mjs</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm-redpay-poller &amp;&amp; { git fetch origin main --quiet &amp;&amp; git reset --hard --quiet origin/main ; } ; node scripts/solapi_balance_quota_monitor.mjs</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/domas/GitHub/obliv-foot-crm</string>
+    <string>/Users/domas/GitHub/obliv-foot-crm-redpay-poller</string>
 
     <!-- 시간당 1회(매시 20분) — 티켓 요구 "최소 시간당 1회". 잔액 소진은 분 단위 급변 없음. -->
     <key>StartCalendarInterval</key>
