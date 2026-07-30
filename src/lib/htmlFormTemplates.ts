@@ -704,7 +704,8 @@ ${COMMON_STYLE}
         <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">상병명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
-        <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
+        <!-- T-20260730-foot-DOC-LAYOUT-REFIX-3 ②: 헤더 nowrap — 줄바꿈 방지. 표는 auto 레이아웃이라 폭은 상병명(auto)이 흡수 → 총폭 불변. (진단서 184행 DIAGNOSIS_HTML은 무접촉) -->
+        <td style="background:#f0f0f0; text-align:center; width:70px; white-space:nowrap;">특 정 기 호</td>
       </tr>
       <tr>
         <td style="min-height:30px; padding:6px 5px;">{{diag_code_1}}</td>
@@ -1028,10 +1029,11 @@ ${COMMON_STYLE}
   </div>
   <div style="font-size:9pt; text-align:center; margin-top:4px;">{{issue_date}}</div>
 
-  <!-- T-20260729-foot-DOC-LAYOUT-FIX ④: 하단 발급기관표 — 직인(52px≈5%) 제외 후 명칭군 50% / 대표군 50% 대칭. table-layout:fixed+colgroup. -->
+  <!-- T-20260730-foot-DOC-LAYOUT-REFIX-3 ①: 직인칸 5%→8%, 대표자 값칸 33.5%→30.5% (합계 100% 불변, 표 총폭 불변).
+       회귀정정: T-20260729-foot-DOC-LAYOUT-FIX ④ 가 직인칸을 5%로 고정했으나, 도장 실필요폭 = img 52px + td 패딩 8px + 보더 1px = 61px ≈ 6.21% 라 5%(49.1px)에서 −12px 넘쳐 표 테두리에 걸쳤다. 직인 8%(78.6px)로 여유 확보. 대표자 값칸(박영진 3자, 30.5%=79.3mm 여전히 과분)에서 회수. -->
   <table style="margin-top:8px; table-layout:fixed;">
     <colgroup>
-      <col style="width:16%" /><col style="width:31.5%" /><col style="width:14%" /><col style="width:33.5%" /><col style="width:5%" />
+      <col style="width:16%" /><col style="width:31.5%" /><col style="width:14%" /><col style="width:30.5%" /><col style="width:8%" />
     </colgroup>
     <tbody>
       <tr>
@@ -2288,13 +2290,12 @@ const BILL_RECEIPT_NEW_HTML = `
 
   <!-- T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-④ (빨간박스 스샷 F0BK4NYLPHN 근거):
        ④-b 사업자등록번호 값칸(前 col2=auto≈40%)이 불필요하게 넓어 13% 고정으로 축소.
-       ④-a 상호(요양기관명) 값칸을 auto(잔여 최대폭)로 확장 + nowrap → 상호명 1줄 출력(줄바꿈 방지).
+       ④-a 상호(요양기관명) 값칸을 넉넉히 확장 + nowrap → 상호명 1줄 출력(줄바꿈 방지). (col4=21% 고정으로 정합, 아래 REFIX-3 ③ 참조)
        ⚠ 3FIX 값(457-23-00938)·위치, REPNAME 대표자/도장 회귀 없이 열 너비만 조정. -->
   <table style="margin-top:2mm;">
-    <!-- T-20260729-foot-DOC-LAYOUT-FIX ①: 하단 요양기관 정보표 좌우 1:1 균형 재분배 —
-         좌측군(col1~4: 기관종류/사업자번호·값/상호·값·소재지) 50% / 우측군(col5~6: 전화번호·대표자 라벨 + 값·직인) 50%.
-         前: col4=auto 가 잔여 전량 흡수 → 우측(전화 8%·직인 15%) 협착·좌측 쏠림. 명시폭으로 재분배. -->
-    <colgroup><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:33%"></colgroup>
+    <!-- T-20260730-foot-DOC-LAYOUT-REFIX-3 ③: 상호 값칸 15%→21%(36.9mm), 전화번호 라벨칸 17%→11%(19.3mm). 합계 100% 불변.
+         회귀정정: T-20260729-foot-DOC-LAYOUT-FIX ① 가 상호 값칸을 15%로 고정하며 ITEMFIX ④-a(상호 값칸 최대폭+nowrap)를 되돌려, 상호명(오블리브의원 서울오리진점, nowrap ~33mm)이 26.4mm 칸을 +8px 넘쳐 전화번호칸을 침범했다. 전화번호(4자, ~12mm)가 과분한 29.9mm를 쓰고 있어 라벨칸에서 회수. 주석-코드 모순 해소(21% 근거 반영). -->
+    <colgroup><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:21%"><col style="width:11%"><col style="width:33%"></colgroup>
     <tbody>
       <tr>
         <td class="rn-lbl">요양기관 종류</td>

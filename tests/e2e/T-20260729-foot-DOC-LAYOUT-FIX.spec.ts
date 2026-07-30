@@ -71,8 +71,9 @@ test.describe('DOC-LAYOUT-FIX 마크업 불변식', () => {
     expect(NEW_TPL).toMatch(/\.rn-wrap\s*\{\s*width:190mm;\s*padding:5mm 7mm;\s*margin:0 auto;\s*\}/);
     expect(NEW_TPL).not.toMatch(/\.rn-wrap\s*\{\s*width:210mm;\s*padding:5mm 7mm;\s*\}/);
   });
-  test('①-b: 하단 요양기관 정보표 colgroup 6칸, 우측군(전화·대표·직인) col5 17%+col6 33% = 50%', () => {
-    expect(NEW_TPL).toMatch(/<colgroup><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:33%"><\/colgroup>/);
+  test('①-b: 하단 요양기관 정보표 colgroup 6칸, 상호 값칸 col4 21%(REFIX-3) + 전화 라벨칸 col5 11%', () => {
+    // T-20260730-foot-DOC-LAYOUT-REFIX-3 ③: col4 15%→21%(상호값), col5 17%→11%(전화라벨). 합계 100% 불변.
+    expect(NEW_TPL).toMatch(/<colgroup><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:21%"><col style="width:11%"><col style="width:33%"><\/colgroup>/);
   });
 
   // ── ② 통원확인서 (form-wrap, 인라인만) ──
@@ -110,9 +111,10 @@ test.describe('DOC-LAYOUT-FIX 마크업 불변식', () => {
     expect(DETAIL_TPL).toMatch(/<table class="diag-grid" style="margin-bottom:4px; table-layout:fixed;">/);
     expect(DETAIL_TPL).toMatch(/<col style="width:8%" \/><col style="width:18%" \/><col style="width:24%" \/>\s*<col style="width:8%" \/><col style="width:18%" \/><col style="width:24%" \/>/);
   });
-  test('④-c: 하단 발급기관표 fixed + colgroup 명칭군 47.5% / 대표군 47.5% / 직인 5%', () => {
+  test('④-c: 하단 발급기관표 fixed + colgroup 대표자 값칸 30.5% / 직인 8%(REFIX-3, 도장 61px 수용)', () => {
+    // T-20260730-foot-DOC-LAYOUT-REFIX-3 ①: 직인 5%→8%, 대표자 값칸 33.5%→30.5%. 합계 100% 불변.
     expect(DETAIL_TPL).toMatch(/<table style="margin-top:8px; table-layout:fixed;">/);
-    expect(DETAIL_TPL).toMatch(/<col style="width:16%" \/><col style="width:31.5%" \/><col style="width:14%" \/><col style="width:33.5%" \/><col style="width:5%" \/>/);
+    expect(DETAIL_TPL).toMatch(/<col style="width:16%" \/><col style="width:31.5%" \/><col style="width:14%" \/><col style="width:30.5%" \/><col style="width:8%" \/>/);
   });
 
   // ── ⑤ 소견서 (form-wrap, 인라인만) ──
