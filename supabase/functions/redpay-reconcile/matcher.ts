@@ -246,6 +246,39 @@ function isUnmatchedCrm(p: CrmPayment): boolean {
 //   ★ future note: external_trxid/approval_no/tid 채워진 뒤 composite 불충족분은 auto-link
 //     대신 하위 Tier/tier4_manual 로 fail-safe 강등 = 의도된 안전동작(손실 아님).
 /**
+ * 매칭 확정 payment 의 원자 UPDATE payload 를 구성한다 (순수 함수).
+ * T-20260730-foot-REDPAY-APPROVALNO-WRITEBACK-PAYMENTS (DA-20260730 GO 조건부)
+ *
+ * 근본원인: 종전 매칭 확정 시 reconciled_at/external_trxid/external_status 3필드만 승격,
+ *   external_approval_no 미승격 → payments.external_approval_no 전건 NULL → 결제내역 '승인번호 없음'.
+ *
+ * 불변식(DA 조건):
+ *   · C1 (원자성): 반환 객체는 '단일 UPDATE' 로 payment.id 에 한 번에 write 된다(호출부는 별도/선행 write 금지).
+ *       external_approval_no 를 reconciled_at/external_trxid 와 동일 stamp 하므로 writeback 행은 즉시
+ *       (reconciled_at≠NULL ∧ external_trxid≠NULL) → Tier0 pool 의 두 IS NULL 필터 동시 탈락 → 재run
+ *       re-link 불가(transient window 소멸).
+ *   · C4 (순수 단일필드): external_approval_no 만 추가. amount·method·pg_provider·payment_type 등 매출/매칭
+ *       접점 필드 무접촉(populate 만, predicate 무접촉).
+ *   · 유실 방지·멱등: raw.approval_no 가 있을 때만 채운다(NULL 덮어쓰기 금지). 기존값과 동일 진실(VAN 승인번호).
+ *   ★ 프레이밍(DA §1-2): approval_no 는 composite corroborator(단독키 아님) — "trxid=전역유일키"는 RETRACTED.
+ */
+export function buildMatchedPaymentUpdate(
+  raw: Pick<RawTransaction, "external_trxid" | "external_status" | "approval_no">,
+  reconciledAtIso: string,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    reconciled_at:   reconciledAtIso,
+    external_trxid:  raw.external_trxid,
+    external_status: raw.external_status,
+  };
+  // C4·유실방지: raw 원천에 승인번호가 있을 때만 승격.
+  if (raw.approval_no) {
+    payload.external_approval_no = raw.approval_no;
+  }
+  return payload;
+}
+
+/**
  * 직접 키 매칭 (단일 composite: trxid/approval_no/tid = corroborator).
  * 매칭은 보너스 — 식별자 corroborate 실패 시 하위 Tier 로 fail-safe 강등.
  */
