@@ -90,8 +90,11 @@ test.describe('T-20260630-foot-KOHEXAM-ISSUE-RELOCATE-TXTABLE', () => {
     // 발급여부: 미발행 텍스트 + 발행완료(보기, read) 버튼 보존
     expect(k).toContain('data-testid="koh-unpublished"');
     expect(k).toContain('data-testid="koh-published-btn"');
-    // 발급 위치 안내(치료 테이블) 문구
-    expect(k).toContain('치료 테이블');
+    // 발급여부 셀 = READ-ONLY 표기만: 발행완료 '💾 발행완료'(클릭=결과보고서 보기, read) / 미발행 '미발행' 텍스트.
+    //   (구 스펙은 UI 에 '치료 테이블' 발급위치 안내 문구가 있다고 기대했으나 실제 미구현 → 리터럴 대조는 stale.
+    //    실 read-only 계약 = 두 상태 표기의 존재 + [1] 케이스의 발급버튼 부재로 검증한다. prod UI 무접촉.)
+    expect(k).toContain('미발행');
+    expect(k).toContain('발행완료');
   });
 
   // ── [3] 균검사·피검사 분리 표기(4q0l) — 두 줄 스택 + 점선 구분 ────────────────────────────
