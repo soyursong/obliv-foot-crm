@@ -25,9 +25,17 @@
 //   · 본 EF 는 pending_payment(선점표) 전용 매칭을 격리 신설 — 두 기존 EF 의 계약을 건드리지 않음.
 //
 // ── 불변식 (§550 Model A / §789) ───────────────────────────────────────────────
-//   · pending_payment 은 payments 를 write 하지 않는다(매출 grain 아님, 예정=선점).
-//     실 매출 기록/대사는 기존 payments 파이프(redpay-reconcile)가 계승 — 본 EF 는 pending_payment 만 전이.
-//   · 매칭 방향 = redpay_raw_transactions 역참조(matched_raw_txid). payments 신설참조 금지.
+//   · 선점축(pre-match) 불변식: open/expired 미확정 선점은 payments 에 조기진입 금지(미확정 금액이
+//     매출/ROAS/전환에 조기발화하는 오염 차단). matchPass 는 이를 준수한다.
+//   · ★ 경로A(matcher-as-payments-writer, T-20260730-...-PAYWRITE-BUILD-P2, DA GO ADDITIVE):
+//     matched '전이 성공 후에만' payments 1행 INSERT. Model A(§Model A L1279 "matched=payments INSERT됨")
+//     을 위반이 아니라 실현 — 쓰기 주체가 서버(EF)인 것은 브라우저 비의존으로 더 충실. AC7 정합:
+//     recordManualPayment 와 row-shape parity(paymentRow.ts) + single-writer(FE usePlanbClaimStatus 는
+//     status 폴러, write 안 함) + raw-claim 원자앵커 3조건 결속.
+//   · 멱등 SSOT(DA Q4): claim-first — 클라 생성 payment UUID 로 redpay_raw_transactions.matched_payment_id 를
+//     원자 claim(UPDATE ... WHERE matched_payment_id IS NULL, rows=1 만). claim 성공 후에만 INSERT →
+//     orphan payment 물리 불가. rows=0 = 재전송·재클릭·reconcile/타 writer 선점 → skip. 앵커=raw.id(PK).
+//     db_change=false 위해 true-txn RPC 대신 claim-first + 보상 release 채택(RPC 수렴은 fast-follow, DA #10).
 //   · TTL 판정은 pending_payment 에 app-set 된 expires_at/locked_until(정책 단일소스=src/lib/redpayPlanbTtl.ts,
 //     write-time 적용)을 그대로 비교 — EF 에 5/6 상수 재복제 없음(divergence 0).
 //
@@ -51,6 +59,12 @@ import {
   type PendingRow,
   type RawRow,
 } from "./match.ts";
+import {
+  buildPlanbPaymentRow,
+  PlanbPaymentBuildError,
+  type PlanbPendingRow,
+  type PlanbRawRow,
+} from "./paymentRow.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -70,6 +84,19 @@ function json(status: number, body: Record<string, unknown>): Response {
 }
 
 // PendingRow / RawRow 타입은 match.ts(순수 로직 모듈)에서 import.
+//   경로A payments INSERT 는 pending 의 귀속키(customer_id/check_in_id, 스키마상 NOT NULL)와
+//   raw 의 관측컬럼(external_trxid/approval_no/tid) + claim 게이트(matched_payment_id)가 추가로 필요 →
+//   런타임 SELECT 를 확장하고 아래 Full 타입으로 좁혀 paymentRow.ts 빌더에 넘긴다(순수 매칭 로직은 base 타입 유지).
+interface PendingRowFull extends PendingRow {
+  customer_id: string;  // payments 귀속(AC5) — NOT NULL
+  check_in_id: string;  // payments 귀속(AC5) — NOT NULL
+}
+interface RawRowFull extends RawRow {
+  external_trxid: string;             // Model A ② 주석컬럼(AC7) — NOT NULL
+  approval_no: string | null;
+  tid: string | null;
+  matched_payment_id: string | null; // reconcile/타 writer 소비분 배제 + claim 게이트
+}
 
 // ── ① EXPIRE 패스 — now() >= expires_at 인 open → expired ──────────────────────
 async function expirePass(nowIso: string): Promise<number> {
@@ -100,11 +127,11 @@ async function matchPass(
   const cutoffIso = retentionCutoffIso(nowIso, RETENTION_MS);
   const { data: opensRaw, error: e1 } = await supabase
     .from("pending_payment")
-    .select("id, clinic_id, expected_amount, created_at, expires_at, status")
+    .select("id, clinic_id, customer_id, check_in_id, expected_amount, created_at, expires_at, status")
     .in("status", ["open", "expired"])
     .gt("expires_at", cutoffIso);
   if (e1) throw e1;
-  const pendings = (opensRaw ?? []) as PendingRow[];
+  const pendings = (opensRaw ?? []) as PendingRowFull[];
   const retentionCandidates = pendings.filter((p) => p.status === "expired").length;
   if (pendings.length === 0) return { matched: 0, skippedAmbiguous: 0, retentionCandidates };
 
@@ -123,44 +150,129 @@ async function matchPass(
   //   received_at NOT NULL(웹훅 수신분) + amount>0. 취소/환불(N/M/X)은 external_status 필터로 제외.
   const { data: rawsRaw, error: e3 } = await supabase
     .from("redpay_raw_transactions")
-    .select("id, clinic_id, amount, approved_at, external_status, received_at")
+    .select("id, clinic_id, amount, approved_at, external_status, received_at, external_trxid, approval_no, tid, matched_payment_id")
     .eq("external_status", "Y")
     .not("approved_at", "is", null)
     .not("received_at", "is", null)
+    .is("matched_payment_id", null)   // 경로A: reconcile/타 writer 가 이미 payments 로 소비한 raw 배제
     .gt("amount", 0);
   if (e3) throw e3;
-  const raws = (rawsRaw ?? []) as RawRow[];
+  const raws = (rawsRaw ?? []) as RawRowFull[];
 
   let matched = 0;
   let skippedAmbiguous = 0;
 
   for (const [, list] of groups) {
     if (list.length > 1) { skippedAmbiguous += list.length; continue; } // 모호 그룹 스킵
-    const p = list[0];
+    const p = list[0] as PendingRowFull;
     // 후보 raw 선택 — 승인 raw + occurred_at 유효창 + 미소비, 가장 이른 승인시각 우선(match.ts).
-    const raw = selectCandidateRaw(p, raws, used);
+    //   selectCandidateRaw 는 raws 배열의 동일 객체 참조를 반환 → RawRowFull 로 안전 복원.
+    const raw = selectCandidateRaw(p, raws, used) as RawRowFull | null;
     if (raw === null) continue;
 
-    // matched 전이 — 후보 상태(open|expired) 재확인(동시성 가드). 이미 전이됐으면 no-op.
-    const { data: upd, error: eUpd } = await supabase
-      .from("pending_payment")
-      .update({ status: "matched", matched_raw_txid: raw.id, matched_at: nowIso, updated_at: nowIso })
-      .eq("id", p.id)
-      .in("status", ["open", "expired"])
-      .select("id");
-    if (eUpd) {
-      console.error(`${LOG}[MATCH] 전이 오류(id=${p.id}): ${eUpd.message}`);
-      continue;
-    }
-    if ((upd?.length ?? 0) > 0) {
+    // ── 경로A: matched 전이 성공 후 payments INSERT (claim-first, DA Q4 멱등 SSOT) ──────────
+    const wrote = await matchAndRecordPayment(p, raw, nowIso);
+    if (wrote) {
       matched += 1;
       used.add(raw.id); // 이 실행 내 raw 이중매칭 방지(전역 소비 집합 갱신)
-      console.log(
-        `${LOG}[MATCH] 선점 ${p.id}(${p.status}) ← raw ${raw.id} (amount=${p.expected_amount}, occurred_at=${raw.approved_at}) matched.`,
-      );
     }
   }
   return { matched, skippedAmbiguous, retentionCandidates };
+}
+
+// ── 경로A 코어: raw-claim + matched 전이 + payments INSERT (claim-first) ───────────────────────
+//   순서(orphan payment 물리 불가):
+//     0) 결제행 조립(check_in_id/customer_id/금액/매출-일자 앵커 검증). 실패 = 수동폴백(claim 미취득).
+//     1) raw 원자 claim (UPDATE ... WHERE matched_payment_id IS NULL, rows=1 만). rows=0 → 이미 소비, skip.
+//     2) pending 후보상태(open|expired)→matched 전이 (동시성 가드). rows=0 → 상태 이탈 → claim release, skip.
+//     3) payments INSERT (shape-parity 행). 실패 → matched·claim 보상 release → 다음 사이클 재시도.
+//   §CARRY-Q0 NOT-NULL read-check(2차)는 (1) WHERE 술어에 내장(TOCTOU 제거)되어 별도 SELECT 불요.
+//   @returns true = payments 1행 영속(matched 확정) · false = skip/실패(무-write 또는 보상 완료).
+async function matchAndRecordPayment(
+  p: PendingRowFull,
+  raw: RawRowFull,
+  nowIso: string,
+): Promise<boolean> {
+  // (0) 결제행 조립 — 실패(check_in_id/금액/앵커 부정)면 claim 도 취하지 않고 수동폴백.
+  const paymentId = crypto.randomUUID();
+  let row;
+  try {
+    const built = buildPlanbPaymentRow(
+      p as unknown as PlanbPendingRow,
+      raw as unknown as PlanbRawRow,
+      { paymentId, reconciledAtIso: nowIso },
+    );
+    row = built.row;
+    for (const w of built.warnings) console.warn(`${LOG}[MATCH][WARN] 선점 ${p.id}: ${w}`);
+  } catch (err) {
+    const msg = err instanceof PlanbPaymentBuildError ? err.message : String(err);
+    console.error(`${LOG}[MATCH] 결제행 조립 실패(선점 ${p.id}) → INSERT 차단·수동폴백: ${msg}`);
+    return false;
+  }
+
+  // (1) raw 원자 claim — 멱등 1차 방어. rows-affected=1 만 정상.
+  const { data: claimed, error: eClaim } = await supabase
+    .from("redpay_raw_transactions")
+    .update({ matched_payment_id: paymentId })
+    .eq("id", raw.id)
+    .is("matched_payment_id", null)
+    .select("id");
+  if (eClaim) {
+    console.error(`${LOG}[MATCH] raw claim 오류(raw=${raw.id}): ${eClaim.message}`);
+    return false;
+  }
+  if ((claimed?.length ?? 0) === 0) {
+    console.log(`${LOG}[MATCH] raw ${raw.id} 이미 claim 됨(재전송·재클릭·reconcile 선점) → skip(멱등).`);
+    return false;
+  }
+
+  // (2) pending 후보상태(open|expired)→matched 전이 (동시성 가드).
+  const { data: upd, error: eUpd } = await supabase
+    .from("pending_payment")
+    .update({ status: "matched", matched_raw_txid: raw.id, matched_at: nowIso, updated_at: nowIso })
+    .eq("id", p.id)
+    .in("status", ["open", "expired"])
+    .select("id");
+  if (eUpd || (upd?.length ?? 0) === 0) {
+    await releaseClaim(raw.id, paymentId);
+    if (eUpd) console.error(`${LOG}[MATCH] 전이 오류(id=${p.id}) → claim release: ${eUpd.message}`);
+    else console.log(`${LOG}[MATCH] 선점 ${p.id} 이미 후보상태 아님 → claim release, skip.`);
+    return false;
+  }
+
+  // (3) payments INSERT — shape-parity 행(id=claim 앵커). 실패 시 matched·claim 보상 release.
+  const { error: eIns } = await supabase.from("payments").insert(row);
+  if (eIns) {
+    console.error(`${LOG}[MATCH] payments INSERT 실패(선점 ${p.id}, raw ${raw.id}) → matched/claim 보상 release: ${eIns.message}`);
+    // matched → 원상태(open|expired) 되돌림: 우리가 만든 전이만(matched_raw_txid=raw.id 결속 확인).
+    await supabase
+      .from("pending_payment")
+      .update({ status: p.status, matched_raw_txid: null, matched_at: null, updated_at: nowIso })
+      .eq("id", p.id)
+      .eq("status", "matched")
+      .eq("matched_raw_txid", raw.id);
+    await releaseClaim(raw.id, paymentId);
+    return false;
+  }
+
+  console.log(
+    `${LOG}[MATCH] 선점 ${p.id}(${p.status}) ← raw ${raw.id} (amount=${p.expected_amount}, occurred_at=${raw.approved_at}) ` +
+    `matched + payments ${paymentId} INSERT(created_at=${row.created_at} accounting_date=${row.accounting_date}).`,
+  );
+  return true;
+}
+
+/** raw claim 보상 release — 우리가 취득한 claim(matched_payment_id=paymentId)만 되돌린다(타 writer claim 무접촉). */
+async function releaseClaim(rawId: string, paymentId: string): Promise<void> {
+  const { error } = await supabase
+    .from("redpay_raw_transactions")
+    .update({ matched_payment_id: null })
+    .eq("id", rawId)
+    .eq("matched_payment_id", paymentId);
+  if (error) {
+    console.error(`${LOG}[MATCH] claim release 실패(raw=${rawId}, pay=${paymentId}): ${error.message} ` +
+      `— 다음 사이클 dangling ref 주의(수동폴백 필요).`);
+  }
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
