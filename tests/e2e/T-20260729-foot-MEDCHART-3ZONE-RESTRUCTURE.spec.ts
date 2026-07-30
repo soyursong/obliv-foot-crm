@@ -123,3 +123,90 @@ test.describe('T-20260729 MEDCHART-3ZONE Phase B / AC-BUILD', () => {
     expect(hasMedBundle).toBe(true);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Phase A — 처방-무관 착수분 (planner INFO MSG-20260730-151904-dov6 승인)
+//  원장 캐논 3구역 발행서류: "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
+//  planner no-regression 불변식(즉시 확정): 2구역 처방내역 약이름-only 다운그레이드 금지 /
+//    rx·phrase 탭 삭제·재소싱 HOLD 유지(문원장 A/B/C field 결정 대기).
+//  검증 방식: 소스 레벨 구조 불변식 assertion (Phase B와 동일 표준).
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── AC-A1: 발행서류 일자별 리스트 섹션 신설 ─────────────────────────────────
+test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A1: 발행서류 일자별 리스트', () => {
+  test("발행서류 탭에 일자별 리스트 섹션(issued-docs-section) 존재", () => {
+    const s = panel();
+    expect(s).toContain('data-testid="issued-docs-section"');
+    expect(s).toContain('발행 서류 (일자별)');
+  });
+  test('loadIssuedDocs 로더 + lazy-load 트리거(rightTab super) 존재', () => {
+    const s = panel();
+    expect(s).toContain('loadIssuedDocs');
+    expect(s).toContain("else if (rightTab === 'super') loadIssuedDocs()");
+  });
+  test('로딩/에러/빈/리스트 4상태 렌더 분기 존재', () => {
+    const s = panel();
+    expect(s).toContain('data-testid="issued-docs-loading"');
+    expect(s).toContain('data-testid="issued-docs-error"');
+    expect(s).toContain('data-testid="issued-docs-empty"');
+    expect(s).toContain('data-testid="issued-docs-list"');
+  });
+});
+
+// ── AC-A2: 발행서류 소스 = form_submissions (기존 패턴 재사용·read-only·additive) ──
+test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A2: 소스 재사용', () => {
+  test("소스 = form_submissions + form_templates(form_key) 조인 (CustomerChartPage 발행서류 조회 패턴 재사용)", () => {
+    const s = panel();
+    expect(s).toContain(".from('form_submissions')");
+    expect(s).toContain('form_templates!template_id(form_key)');
+  });
+  test('발행 시각(printed_at/signed_at) 있는 항목만 = 실제 발행 이력', () => {
+    const s = panel();
+    expect(s).toContain('r.ts'); // ts = printed_at ?? signed_at, filter(r => r.ts)
+  });
+  test('read-only — loadIssuedDocs 로더는 select 전용(insert/update/delete 미포함)', () => {
+    const s = panel();
+    const start = s.indexOf('const loadIssuedDocs');
+    expect(start, 'loadIssuedDocs 로더 존재').toBeGreaterThan(-1);
+    // 로더 함수 본문 범위(다음 useCallback/함수까지) 슬라이스
+    const body = s.slice(start, start + 1600);
+    expect(body).toContain('.select(');
+    expect(body).not.toContain('.insert(');
+    expect(body).not.toContain('.update(');
+    expect(body).not.toContain('.delete(');
+  });
+});
+
+// ── AC-A3: 일자별 그룹핑 ────────────────────────────────────────────────────
+test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A3: 일자별 그룹핑', () => {
+  test('groupIssuedDocsByDate — 최신 일자 먼저 그룹핑', () => {
+    const s = panel();
+    expect(s).toContain('function groupIssuedDocsByDate');
+    expect(s).toContain('data-testid="issued-docs-date-group"');
+  });
+  test('form_key → 한국어 라벨 매핑(fmtDocLabel/ISSUED_DOC_LABEL) 존재', () => {
+    const s = panel();
+    expect(s).toContain('ISSUED_DOC_LABEL');
+    expect(s).toContain('function fmtDocLabel');
+  });
+});
+
+// ── AC-A4: no-regression 불변식 가드 (planner 즉시 확정) ─────────────────────
+test.describe('T-20260729 MEDCHART-3ZONE Phase A / AC-A4: no-regression 불변식', () => {
+  test('2구역 처방내역 = medical_charts.prescription_items 구조화 소스 유지(다운그레이드 금지)', () => {
+    const s = panel();
+    // formRx가 prescription_items(name/frequency/count/days 구조) 소스에서 유지되는지
+    expect(s).toContain('prescription_items');
+    expect(s).toContain('formRx');
+  });
+  test('rx(처방세트) 탭 HOLD 유지 — 삭제/재소싱 미발생 (탭·콘텐츠 잔존)', () => {
+    const s = panel();
+    expect(s).toContain("{ key: 'rx', label: '처방세트' }");
+    expect(s).toContain("rightTab === 'rx'");
+  });
+  test('phrase(상용구) 탭 HOLD 유지 — 삭제 미발생', () => {
+    const s = panel();
+    expect(s).toContain("{ key: 'phrase', label: '상용구' }");
+    expect(s).toContain("rightTab === 'phrase'");
+  });
+});

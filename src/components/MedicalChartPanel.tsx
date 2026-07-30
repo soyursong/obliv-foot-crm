@@ -262,6 +262,14 @@ interface TreatmentImage {
   name: string;
 }
 
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 3구역 '발행서류' 탭 — 해당 고객 발행서류 일자별 리스트.
+//   원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
+//   소스 = form_submissions (CustomerChartPage L3260-3261 발행서류 조회 패턴 재사용, read-only·additive·처방무관).
+interface IssuedDocEntry {
+  formKey: string | null;
+  ts: string | null; // printed_at ?? signed_at
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface MedicalChartPanelProps {
@@ -330,6 +338,38 @@ function fmtDateFull(dateStr: string): string {
   } catch {
     return dateStr;
   }
+}
+
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 form_key → 한국어 라벨.
+//   CustomerChartPage L6789-6795 FORM_KEY_LABEL 재사용 + 풋 의료서류(소견서/진단서/처방전/계산서) 보강.
+const ISSUED_DOC_LABEL: Record<string, string> = {
+  personal_checklist_general: '개인정보+체크리스트 (일반)',
+  personal_checklist_senior: '개인정보+체크리스트 (어르신)',
+  pen_chart: '보험차트',
+  consent_form: '동의서',
+  receipt: '영수증',
+  bill_receipt: '진료비 계산서·영수증',
+  diag_opinion: '소견서',
+  diagnosis: '진단서',
+  rx_standard: '처방전',
+  koh_result: 'KOH 검사결과',
+};
+function fmtDocLabel(formKey: string | null): string {
+  if (!formKey) return '서류';
+  return ISSUED_DOC_LABEL[formKey] ?? formKey;
+}
+// 발행 시각을 일자별 그룹(yyyy-MM-dd)으로 묶어 최신순 반환.
+function groupIssuedDocsByDate(rows: IssuedDocEntry[]): { date: string; items: IssuedDocEntry[] }[] {
+  const map = new Map<string, IssuedDocEntry[]>();
+  for (const r of rows) {
+    if (!r.ts) continue;
+    const day = r.ts.slice(0, 10); // ISO yyyy-MM-dd
+    if (!map.has(day)) map.set(day, []);
+    map.get(day)!.push(r);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1)) // 최신 일자 먼저
+    .map(([date, items]) => ({ date, items }));
 }
 
 // ── T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX (문지은 대표원장 field-soak) ──────────────
@@ -796,6 +836,11 @@ export default function MedicalChartPanel({
   const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
   const [treatImagesLoaded, setTreatImagesLoaded] = useState(false);
   const [treatImagesLoading, setTreatImagesLoading] = useState(false);
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (3구역 '발행서류' 탭 상단)
+  const [issuedDocs, setIssuedDocs] = useState<IssuedDocEntry[]>([]);
+  const [issuedDocsLoaded, setIssuedDocsLoaded] = useState(false);
+  const [issuedDocsLoading, setIssuedDocsLoading] = useState(false);
+  const [issuedDocsError, setIssuedDocsError] = useState(false);
 
   // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (좌측 타임라인 ⑤)
   const [specialNotes, setSpecialNotes] = useState<SpecialNoteEntry[]>([]);
@@ -1217,6 +1262,10 @@ export default function MedicalChartPanel({
       setVisitHistLoaded(false);
       setTreatImages([]);
       setTreatImagesLoaded(false);
+      // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 리스트 리셋 (새 고객 열림마다)
+      setIssuedDocs([]);
+      setIssuedDocsLoaded(false);
+      setIssuedDocsError(false);
       // T-20260526-foot-VISIT-FOLD-FILTER: 리셋
       setExpandedChartIds(new Set<string>());
       setMemoFilters(new Set<MemoFilter>());
@@ -2047,11 +2096,48 @@ export default function MedicalChartPanel({
     }
   }, [customerId, treatImagesLoaded, treatImagesLoading]);
 
+  // ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 lazy load ──
+  //   원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업". 소스=form_submissions.
+  //   CustomerChartPage L3260-3261 발행서류 조회 패턴을 재사용(신규 쿼리 설계 없이 read-only·additive).
+  //   처방(rx)/상용구(phrase) HOLD 무관 — 삭제/재소싱 대상 탭을 건드리지 않는다.
+  const loadIssuedDocs = useCallback(async () => {
+    if (!customerId || issuedDocsLoaded || issuedDocsLoading) return;
+    setIssuedDocsLoading(true);
+    setIssuedDocsError(false);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('form_submissions')
+        .select('printed_at, signed_at, field_data, form_templates!template_id(form_key)')
+        .eq('customer_id', customerId)
+        .order('printed_at', { ascending: false, nullsFirst: false })
+        .limit(50);
+      if (error) throw error;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = ((data as any[]) ?? []).map((s): IssuedDocEntry => ({
+        // form_templates 조인 우선, 폴백 field_data.form_key (CustomerChartPage L3486 동일 폴백)
+        formKey:
+          (s.form_templates?.form_key as string | undefined) ??
+          ((s.field_data as Record<string, unknown> | null)?.form_key as string | undefined) ??
+          null,
+        ts: (s.printed_at as string | null) ?? (s.signed_at as string | null) ?? null,
+      }));
+      // 발행 시각(printed/signed)이 있는 항목만 = 실제 발행 이력. 미발행 draft 제외.
+      setIssuedDocs(rows.filter((r) => r.ts));
+    } catch {
+      setIssuedDocsError(true);
+    } finally {
+      setIssuedDocsLoaded(true);
+      setIssuedDocsLoading(false);
+    }
+  }, [customerId, issuedDocsLoaded, issuedDocsLoading]);
+
   // ── 탭 전환 시 lazy load 트리거 ────────────────────────────────────────────────
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo는 loadData에서 로드 → 탭 트리거 제거
   useEffect(() => {
     if (rightTab === 'visit_hist') loadVisitHistory();
     else if (rightTab === 'images') loadTreatImages();
+    else if (rightTab === 'super') loadIssuedDocs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightTab]);
 
@@ -4305,6 +4391,59 @@ export default function MedicalChartPanel({
                   {/* 슈퍼상용구 탭 (T-20260603-foot-RX-SUPER-PHRASE) — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
                   {rightTab === 'super' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-super-content">
+                      {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (상단) ──
+                          원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
+                          소스=form_submissions(read-only·additive). 처방/상용구 HOLD 무관. */}
+                      <div className="rounded-lg border bg-muted/10" data-testid="issued-docs-section">
+                        <div className="flex items-center gap-1.5 px-3 py-2 border-b bg-muted/20 text-xs font-semibold text-foreground">
+                          <FileText className="h-3.5 w-3.5 text-teal-600" />
+                          발행 서류 (일자별)
+                        </div>
+                        <div className="p-2">
+                          {issuedDocsLoading ? (
+                            <div className="flex items-center justify-center gap-1.5 py-3 text-[11px] text-muted-foreground" data-testid="issued-docs-loading">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> 불러오는 중…
+                            </div>
+                          ) : issuedDocsError ? (
+                            <div className="rounded-md border border-dashed border-red-200 bg-red-50/40 p-3 text-[11px] text-red-600 text-center" data-testid="issued-docs-error">
+                              발행 서류를 불러오지 못했습니다
+                            </div>
+                          ) : issuedDocs.length === 0 ? (
+                            <div className="rounded-md border border-dashed p-3 text-[11px] text-muted-foreground text-center" data-testid="issued-docs-empty">
+                              발행된 서류가 없습니다
+                            </div>
+                          ) : (
+                            <div className="space-y-2" data-testid="issued-docs-list">
+                              {groupIssuedDocsByDate(issuedDocs).map((grp) => (
+                                <div key={grp.date} data-testid="issued-docs-date-group">
+                                  <div className="text-[10px] font-semibold text-teal-700 px-1 pb-0.5">
+                                    {fmtDateShort(grp.date)}
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    {grp.items.map((doc, di) => (
+                                      <div
+                                        key={`${grp.date}-${di}`}
+                                        className="flex items-center justify-between rounded bg-card border px-2 py-1 text-[11px]"
+                                        data-testid="issued-doc-row"
+                                      >
+                                        <span className="truncate">{fmtDocLabel(doc.formKey)}</span>
+                                        <span className="text-[10px] text-muted-foreground flex items-center gap-1 flex-shrink-0">
+                                          <FileText className="h-3 w-3" />
+                                          {doc.ts ? format(new Date(doc.ts), 'HH:mm', { locale: ko }) : '-'}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 발행서류 템플릿(구 슈퍼상용구) 목록 — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
+                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">서류 템플릿</div>
+
                       {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
                           (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
 
