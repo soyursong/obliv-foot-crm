@@ -80,6 +80,9 @@ async function expirePass(nowIso: string): Promise<number> {
 }
 
 // ── ② MATCH 패스 — 유효창 open 선점을 웹훅 raw 와 예상금액 매칭 ──────────────────
+//   ★ 매칭 대상은 status='open' 만(아래 .eq("status","open")). 따라서 수기입력 폴백 진입으로 제외된
+//     'manual_override'(T-20260730-...-MANUALPAY-PREEMPT-EXCLUDE) 및 expired/failed/cancelled/matched 는
+//     기존 필터로 자동 제외 → 지연 도착 웹훅(레드페이 재전송)의 자동연결 이중기록 창이 봉인됨(AC2, EF 로직 무변경).
 async function matchPass(nowIso: string): Promise<{ matched: number; skippedAmbiguous: number }> {
   // 유효창 open 선점(만료 패스 이후 남은 것 = now() < expires_at).
   const { data: opensRaw, error: e1 } = await supabase

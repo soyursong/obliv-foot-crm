@@ -31,6 +31,7 @@ import { usePlanbClaimStatus } from '@/hooks/usePlanbClaimStatus';
 import {
   isPaymentPlanbEnabled,
   createPendingPayment,
+  excludePendingFromMatch,
   REDPAY_PLANB_AUTO_RECORD_NOTICE,
   REDPAY_PLANB_TTL,
 } from '@/lib/paymentPlanb';
@@ -116,6 +117,21 @@ export default function PaymentPlanb() {
     setPendingId(res.id!);
   }
 
+  // ★ [수기 입력하러 가기] — 클릭 즉시 선점표를 자동매칭에서 제외(이중기록 봉인, AC3=클릭 즉시).
+  //   기존 결제화면(/admin, 대원칙 §2 무접촉)에서 수기 저장 → 그 사이 지연 웹훅의 자동연결을 선제 차단.
+  //   제외 write 가 실패해도(RLS/네트워크) 수기입력 이동은 막지 않음(폴백은 항상 열려 있어야 함) —
+  //   최악의 경우에도 기존 TTL 만료(이미 expired)가 fallback 이므로 baseline 대비 위험 증가 0.
+  async function handleManualFallback() {
+    if (pendingId) {
+      try {
+        await excludePendingFromMatch(pendingId);
+      } catch {
+        /* 이동 비차단: 제외 실패해도 수기입력 폴백은 진행 */
+      }
+    }
+    navigate('/admin');
+  }
+
   const custLabel = checkIn
     ? `${checkIn.customer_name ?? '환자'} ${chartNoBadge(checkIn.chart_number)}`
     : '';
@@ -196,7 +212,7 @@ export default function PaymentPlanb() {
           </p>
           <Button
             className="mt-2 h-14 w-full max-w-xs bg-amber-600 hover:bg-amber-700"
-            onClick={() => navigate('/admin')}
+            onClick={handleManualFallback}
             data-testid="planb-manual-fallback-btn"
           >
             수기 입력하러 가기

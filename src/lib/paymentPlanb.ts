@@ -38,7 +38,9 @@ export function isPaymentPlanbEnabled(): boolean {
 }
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
-export type PendingPaymentStatus = 'open' | 'matched' | 'expired' | 'failed' | 'cancelled';
+// manual_override = 수기입력 폴백 진입으로 자동매칭 제외(T-20260730-...-MANUALPAY-PREEMPT-EXCLUDE).
+export type PendingPaymentStatus =
+  | 'open' | 'matched' | 'expired' | 'failed' | 'cancelled' | 'manual_override';
 
 export interface PendingPaymentRow {
   id: string;
@@ -118,6 +120,44 @@ export async function createPendingPayment(
   return { ok: true, id: data.id as string };
 }
 
+// ── 수기입력 폴백 진입 시 선점표 매칭제외 (이중기록 봉인) ──────────────────────
+/**
+ * 담당자가 [수기 입력하러 가기]로 수기입력 폴백에 진입하면 연관 선점표를 웹훅 자동매칭(match-cron)에서
+ * 즉시 제외한다. status → 'manual_override' + excluded_at set.
+ * T-20260730-foot-REDPAY-PLANB-MANUALPAY-PREEMPT-EXCLUDE (AC1/AC2/AC3).
+ *
+ * ★ 제외 시점 = [수기 입력하러 가기] 버튼 클릭 즉시(AC3 확정). 근거:
+ *   ① 아키텍처 제약: 실제 수기 '저장 완료'는 기존 결제화면(/admin)에서 일어나며 대원칙 §2(기존 UI 무접촉)로
+ *      그 시점을 후킹할 수 없음 → 플랜B 페이지에서 안전하게 후킹 가능한 유일 지점 = 버튼 클릭.
+ *   ② 안전측: 클릭 즉시 제외하면 클릭~저장 사이 창의 자동매칭까지 선제 봉인(이중기록 위험 0).
+ *   ③ 엣지(클릭만 하고 저장 안 함): 그 결제는 자동기록되지 않고 미배정으로 남음 → 담당자가 수기로 마무리.
+ *      누락은 수기로 복구 가능(안전), 이중은 정산 오염(위험) → 안전한 누락측을 택한다.
+ *
+ * 전이 대상 = open/expired/failed(자동매칭 가능/폴백 상태). 'matched'는 제외 대상 아님
+ *   (이미 자동기록 성공 = 수기 재입력 시 이중 → matched 화면엔 버튼 자체가 미노출, 방어적으로도 덮어쓰지 않음).
+ * 감사: manual_override 는 cancelled(직원 의도취소)·expired(단순 만료)와 구분되는 신규 상태.
+ * match EF 는 status='open' 만 매칭하므로 manual_override(비-open)는 기존 필터로 자동 제외됨(EF 로직 무변경).
+ */
+export interface ExcludePendingResult {
+  ok: boolean;
+  /** true = 이번 호출로 매칭제외 전이 성공. false = 대상 아님(이미 matched/cancelled/manual_override 등). */
+  excluded: boolean;
+  message?: string;
+}
+
+export async function excludePendingFromMatch(id: string): Promise<ExcludePendingResult> {
+  if (!id) return { ok: false, excluded: false, message: '선점 ID가 없습니다.' };
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('pending_payment')
+    .update({ status: 'manual_override', excluded_at: nowIso, updated_at: nowIso })
+    .eq('id', id)
+    .in('status', ['open', 'expired', 'failed']) // matched/cancelled/manual_override 는 덮어쓰지 않음
+    .select('id');
+  if (error) return { ok: false, excluded: false, message: error.message };
+  return { ok: true, excluded: (data?.length ?? 0) > 0 };
+}
+
 // ── 선점 상태 조회 (폴링 데이터소스) ──────────────────────────────────────────
 export async function fetchPendingPaymentStatus(id: string): Promise<PendingPaymentRow | null> {
   const { data, error } = await supabase
@@ -132,7 +172,13 @@ export async function fetchPendingPaymentStatus(id: string): Promise<PendingPaym
 // ── 직원 안내 문구 / TTL re-export (page 편의) ────────────────────────────────
 export { REDPAY_PLANB_TTL, REDPAY_PLANB_AUTO_RECORD_NOTICE };
 
-/** 선점이 종료(자동매칭 성공/만료/실패/취소) 상태인지 — 폴링 종료 판정. */
+/** 선점이 종료(자동매칭 성공/만료/실패/취소/수기제외) 상태인지 — 폴링 종료 판정. */
 export function isTerminalStatus(status: PendingPaymentStatus): boolean {
-  return status === 'matched' || status === 'expired' || status === 'failed' || status === 'cancelled';
+  return (
+    status === 'matched' ||
+    status === 'expired' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'manual_override'
+  );
 }
