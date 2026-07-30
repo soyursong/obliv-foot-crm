@@ -1,4 +1,4 @@
-// ExamTargetsSection.tsx — 치료테이블 §B '균검사 & 피검사 대상자'
+// ExamTargetsSection.tsx — 치료테이블 [균검사] 탭 '균검사 대상자' (GUNTAB-CLEANUP: 피검사 분리 후 균검사 전용)
 // Ticket: T-20260620-foot-TREATTABLE-2SECTION-REVAMP (AC-4)
 // Ticket: T-20260622-foot-TREATTABLE-ADDON-COMPACT-DATEFILTER (A컴팩트/B날짜필터/C검사결과/D이름)
 // Ticket: T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV (정밀화 후속)
@@ -19,8 +19,16 @@
 // 리스트업: check_in_services 의 koh_requested / blood_test_requested=true 인 환자. (BLOODTEST-TOGGLE-ADD /
 //   KOHTEST-LIFECYCLE SSOT read-only 재사용 — 신규 스키마 0, ADDITIVE 소비.) 환자×검사신청일 = 1행.
 // 방어성: koh_requested/blood_test_requested 는 ADDITIVE(마이그 미적용 prod 42703) → 폴백 빈 목록.
+//
+// T-20260726-foot-TREATTABLE-GUNTAB-FORM-CLEANUP-DEFAULTEXPAND (FE-only, no-DDL):
+//   A. [균검사] 탭 잔여 피검사 정리 — LABTAB-SPLIT 후 [피검사] 탭(BloodDailyListSection)이
+//      피검사 일일 진행 리스트·접수/서류수령·결과지 업로드/보기를 전담. 본 섹션(균검사 탭)에서
+//      피검사-origin 표시(피검사 badge·결과지 업로드/보기·blood_test_requested 리스트업)를 제거.
+//      리스트업 필터를 koh_requested=true 로 좁혀 피검사-only 신청자 잔존행 제거. 피검사 기능 유실0(피검사 탭 유지).
+//   B. 당일 일자 그룹 기본 펼침 — expandedDates 초기값을 오늘(KST)로 세팅(마운트 즉시 펼침, 데이터 로드 타이밍 무의존).
+//      과거 일자는 접힘 유지·토글 무회귀(기존 그룹 UI 관례 계승).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -30,7 +38,6 @@ import { chartNoBadge, seoulISODate } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import KohResultDialog from '@/components/KohResultDialog';
-import BloodResultDialog from '@/components/BloodResultDialog';
 // T-20260630-foot-KOHEXAM-ISSUE-RELOCATE-TXTABLE [1]: 균검사 '채취조갑 선택 + 발급하기' 를
 //   진료대시보드(KohReportTab)에서 치료테이블(본 섹션)로 이전. 발급 '동작' 로직은 기존 SSOT 재사용 —
 //   순수 헬퍼(buildKohFieldData/포맷/파서)는 KohReportTab 에서 import(정본 유지, 재구현 0),
@@ -45,7 +52,7 @@ import {
   type NailSite,
   type NailSide,
 } from '@/components/doctor/KohReportTab';
-import { Loader2, FlaskConical, Droplet, ClipboardList, FileText, CalendarDays, Upload, ChevronRight, ChevronDown, FileCheck2, Plus } from 'lucide-react';
+import { Loader2, FlaskConical, Droplet, ClipboardList, FileText, CalendarDays, ChevronRight, ChevronDown, FileCheck2, Plus } from 'lucide-react';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 // T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: 성함/차트번호 검색 → 검사종류 → 수기 검사신청(스태프 이상).
 import ManualExamRequestDialog from '@/components/treatment/ManualExamRequestDialog';
@@ -85,7 +92,6 @@ interface ExamTargetRow {
   phone: string | null;
   birthDate: string | null; // RELOCATE[1]: 발급 field_data 생년월일(정규 birth_date). 결측 시 RRN 파생 폴백.
   kohRequested: boolean;
-  bloodRequested: boolean;
   kohServiceId: string | null; // C: 발행본(koh_service_id) lookup 키 + RELOCATE[1] 조갑저장/발급 대상 서비스 id
   kohNailSites: NailSite[]; // RELOCATE[1]: 채취조갑(koh_nail_sites) — 치료테이블에서 선택·발급.
   kohCreatedAt: string | null; // RELOCATE[1]: KOH 검사일(created_at) — 발급 field_data 검체채취일/의뢰일.
@@ -104,7 +110,7 @@ function windowBounds(endDate: string) {
   return { startTs: `${start}T00:00:00+09:00`, endTs: `${endDate}T23:59:59+09:00`, start };
 }
 
-// check_in_services(koh_requested|blood_test_requested=true) → 환자×검사신청일별 1행, 일자별 그룹.
+// check_in_services(koh_requested=true) → 환자×검사신청일별 1행, 일자별 그룹. (GUNTAB-CLEANUP: koh 전용 리스트업)
 function useExamTargets(clinicId: string | null | undefined, date: string) {
   return useQuery<ExamDateGroup[]>({
     queryKey: ['exam_targets', clinicId, date],
@@ -114,8 +120,9 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
       const { startTs, endTs } = windowBounds(date);
       // RELOCATE[1]: koh_nail_sites(조갑부위) + created_at(검사일) 추가 — 치료테이블 발급에 필요.
       //   koh_nail_sites 는 ADDITIVE(마이그 20260612160000) — 미적용 prod 42703 → 아래 폴백 regex 로 흡수.
+      // GUNTAB-CLEANUP A: 균검사 탭은 koh_requested=true 만 리스트업(피검사-only 신청자는 [피검사] 탭 전담).
       const SEL =
-        'id, koh_requested, blood_test_requested, koh_nail_sites, created_at, check_in_id, ' +
+        'id, koh_requested, koh_nail_sites, created_at, check_in_id, ' +
         'check_ins!inner(customer_id, customer_name, clinic_id, status, checked_in_at)';
       const { data, error } = await supabase
         .from('check_in_services')
@@ -124,10 +131,10 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
         .neq('check_ins.status', 'cancelled')
         .gte('check_ins.checked_in_at', startTs)
         .lte('check_ins.checked_in_at', endTs)
-        .or('koh_requested.eq.true,blood_test_requested.eq.true');
+        .eq('koh_requested', true);
       if (error) {
         // ADDITIVE 컬럼 미적용 prod(42703) → 빈 목록 폴백(페이지 무파손).
-        if (/koh_requested|blood_test_requested|koh_nail_sites|42703/.test(error.message ?? '')) return [];
+        if (/koh_requested|koh_nail_sites|42703/.test(error.message ?? '')) return [];
         throw error;
       }
 
@@ -139,15 +146,13 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
         const checkedAt = ci['checked_in_at'];
         if (!cid || !checkedAt) continue;
         const koh = raw['koh_requested'] === true;
-        const blood = raw['blood_test_requested'] === true;
-        if (!koh && !blood) continue;
+        if (!koh) continue;
         const reqDate = seoulISODate(checkedAt as string); // AC-2: KST 검사신청일
         const svcId = String(raw['id'] ?? '');
         const key = `${cid}__${reqDate}`;
         const prev = map.get(key);
         if (prev) {
           prev.kohRequested = prev.kohRequested || koh;
-          prev.bloodRequested = prev.bloodRequested || blood;
           // RELOCATE[1]: KOH 서비스(신청)의 id·조갑부위·검사일을 함께 귀속(첫 KOH 서비스 기준).
           if (koh && !prev.kohServiceId) {
             prev.kohServiceId = svcId || null;
@@ -162,7 +167,6 @@ function useExamTargets(clinicId: string | null | undefined, date: string) {
             phone: null,
             birthDate: null,
             kohRequested: koh,
-            bloodRequested: blood,
             kohServiceId: koh ? svcId || null : null,
             kohNailSites: koh ? parseNailSites(raw['koh_nail_sites']) : [],
             kohCreatedAt: koh && raw['created_at'] ? String(raw['created_at']) : null,
@@ -248,36 +252,6 @@ function usePublishedKohMap(clinicId: string | null | undefined) {
     },
     refetchInterval: 60_000,
     staleTime: 30_000,
-  });
-}
-
-// 혈액검사 결과지 인덱스(customer_id → 등록 건수). patient_file_records(kind='blood_result') read-only.
-//   '결과지 업로드'(0건) vs '결과지 보기'(≥1건) 라벨 분기 + 발행본 read-after-write(invalidate 공유 키).
-//   방어성: 테이블 미적용 prod(42P01/42703) → 빈 Map 폴백(섹션 무파손).
-function useBloodResultCounts(clinicId: string | null | undefined) {
-  return useQuery<Map<string, number>>({
-    queryKey: ['blood_result_counts', clinicId],
-    enabled: !!clinicId,
-    queryFn: async () => {
-      const map = new Map<string, number>();
-      if (!clinicId) return map;
-      const { data, error } = await supabase
-        .from('patient_file_records')
-        .select('customer_id')
-        .eq('clinic_id', clinicId)
-        .eq('kind', 'blood_result');
-      if (error) {
-        if (/patient_file_records|relation|42P01|42703/.test(error.message ?? '')) return map;
-        throw error;
-      }
-      for (const r of (data ?? []) as Array<{ customer_id: string }>) {
-        const cid = String(r.customer_id ?? '');
-        if (cid) map.set(cid, (map.get(cid) ?? 0) + 1);
-      }
-      return map;
-    },
-    refetchInterval: 60_000,
-    staleTime: 15_000,
   });
 }
 
@@ -504,7 +478,6 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const persistItemStatus = usePersistExamItemStatus(clinic?.id, EXAM_ITEM_STATUS_FORM_KEY);
   const { data: groups = [], isLoading, isError, error } = useExamTargets(clinic?.id, date);
   const { data: publishedKoh } = usePublishedKohMap(clinic?.id);
-  const { data: bloodResultCounts } = useBloodResultCounts(clinic?.id);
   // RELOCATE[1]: 균검사 조갑저장·발급 + 발급 field_data 조인(진료의/생년 폴백).
   const saveNailSites = useSaveKohNailSites();
   const publishKoh = usePublishKohFromTx(clinic?.id);
@@ -517,14 +490,14 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   /** 유효 생년 — 정규 birth_date 우선, 결측 시 RRN 파생값. */
   const effectiveBirth = (r: ExamTargetRow): string | null => r.birthDate || (r.customerId ? birthMap?.get(r.customerId) ?? null : null);
   const [viewFieldData, setViewFieldData] = useState<Record<string, unknown> | null>(null);
-  // 혈액검사 결과지 업로드/보기 다이얼로그 타겟(환자). null=닫힘.
-  const [bloodTarget, setBloodTarget] = useState<{ id: string; name: string } | null>(null);
   // T-20260629-foot-TREATBL-COLLAPSE-TOGGLE: 날짜 그룹 아코디언. 펼쳐진 그룹 키(날짜) 집합.
   //   그룹 독립 토글 — 한 그룹 변경이 다른 그룹에 영향 없음.
-  // T-20260702-KOHTARGET-TODAY-EXPAND-DESCRM AC-1: 초기값 = 빈 Set 이나, groups 최초 로드 시점에
-  //   '오늘(당일, KST)' 날짜 묶음만 기본 펼침. 과거 날짜는 접힘으로 시작(치료사는 매일 '오늘 것'만 봄).
-  //   아래 useEffect 가 최초 1회만 오늘을 펼침 → 사용자가 오늘을 접거나 과거를 펼친 뒤에는 재간섭 없음.
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  // T-20260726-GUNTAB-CLEANUP-DEFAULTEXPAND B (T-20260702-KOHTARGET-TODAY-EXPAND-DESCRM 계승):
+  //   '오늘(당일, KST)' 날짜 묶음은 기본 펼침. 과거 날짜는 접힘으로 시작(치료사는 매일 '오늘 것'만 봄).
+  //   ★초기 state 를 오늘로 직접 세팅 → 마운트 즉시 펼침(groups 로드 타이밍/ref 가드 무의존, '계속 접혀있음' RC 제거).
+  //   당일 데이터가 없어도 오늘 키가 set 에 있을 뿐(렌더할 오늘 그룹 없으면 무해). 사용자가 오늘을 접거나
+  //   과거를 펼친 뒤에는 toggleGroup 이 그대로 반영(재간섭 없음).
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set([seoulISODate(new Date())]));
   const toggleGroup = (d: string) =>
     setExpandedDates((prev) => {
       const next = new Set(prev);
@@ -535,19 +508,6 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
 
   const totalCount = groups.reduce((sum, g) => sum + g.rows.length, 0);
   const today = seoulISODate(new Date());
-
-  // T-20260702-KOHTARGET-TODAY-EXPAND-DESCRM AC-1: groups 최초 로드 시 '오늘' 묶음만 기본 펼침.
-  //   오늘 신청 0건(오늘 그룹 없음) → 강제로 다른 날짜를 펼치지 않음(전부 접힘 유지) [정책: supervisor 리뷰 명시].
-  //   ref 가드로 최초 1회만 — 이후 사용자 토글(오늘 접기/과거 펼치기)을 덮어쓰지 않음.
-  const didInitExpandRef = useRef(false);
-  useEffect(() => {
-    if (didInitExpandRef.current) return;
-    if (groups.length === 0) return; // 아직 미로드 — 초기화 보류
-    didInitExpandRef.current = true;
-    if (groups.some((g) => g.date === today)) {
-      setExpandedDates(new Set([today]));
-    }
-  }, [groups, today]);
 
   // RELOCATE[1]: 균검사지 발급 — 진료대시보드(KohReportTab.handlePublish)에서 이전한 발급 동선.
   //   기존 로직 재사용: 조갑부위(nail_sites) + 생년월일 게이트 → buildKohFieldData → publish_koh_result RPC.
@@ -608,17 +568,10 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
     }
     if (cur === 'cancelled') {
       try {
-        // 원 신청 검사종류(균/피)를 오늘자로 재신청 — ManualExamRequestDialog 와 동일 SSOT RPC.
-        if (r.kohRequested) {
-          const { error } = await supabase.rpc('request_koh_for_customer', { p_customer_id: r.customerId, p_value: true });
-          if (error) throw error;
-        }
-        if (r.bloodRequested) {
-          const { error } = await supabase.rpc('request_blood_test_for_customer', { p_customer_id: r.customerId, p_value: true });
-          if (error) throw error;
-        }
+        // 균검사 탭 = koh 신청자만 리스트업 → 오늘자로 균검사 재신청(ManualExamRequestDialog 와 동일 SSOT RPC).
+        const { error } = await supabase.rpc('request_koh_for_customer', { p_customer_id: r.customerId, p_value: true });
+        if (error) throw error;
         qc.invalidateQueries({ queryKey: ['exam_targets'] });
-        qc.invalidateQueries({ queryKey: ['blood_daily_targets'] });
         toast.success(`${r.customerName} — 재검사 신청 등록 완료`);
       } catch (e) {
         toast.error(`재검사 신청 실패: ${(e as Error).message}`);
@@ -630,8 +583,6 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
   const renderRow = (r: ExamTargetRow, idx: number) => {
     const kohFd = r.kohServiceId ? publishedKoh?.get(r.kohServiceId) : undefined;
     const kohPublished = !!kohFd;
-    const bloodResultCount = bloodResultCounts?.get(r.customerId) ?? 0;
-    const hasBloodResult = bloodResultCount > 0;
     const kohNailText = formatNailSitesShort(r.kohNailSites); // 컴팩트 표기(R1), 결측 '—'
     const kohSaving = saveNailSites.isPending && saveNailSites.variables?.serviceId === r.kohServiceId;
     const itemStatus = itemStatusOf(r); // ACTIONS-3BTN
@@ -664,8 +615,8 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
             </span>
           </button>
         </td>
-        {/* 검사별 [상태 박스 | 결과 동작]. T-20260630-KOHEXAM-RELOCATE-TXTABLE [3](재스펙 4q0l):
-            균검사·피검사를 한 줄에 섞지 말고 두 줄로 시각 분리(점선 구분). 가독성 우선(dev 재량). */}
+        {/* 균검사 [상태 박스 | 결과 동작] — RELOCATE[1] 채취조갑 선택 + 발급/결과 보기.
+            GUNTAB-CLEANUP A: 피검사 줄 제거(피검사 탭 전담) → 균검사 단일 줄. */}
         <td className="px-2 py-1">
           <div className="flex flex-col gap-1" data-testid="exam-result-stack">
             {/* 균검사 줄 — RELOCATE[1]: 채취조갑 선택 + 발급하기(진료대시보드→치료테이블 이전).
@@ -728,37 +679,8 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
                 />
               )}
             </div>
-            {/* 피검사 — 결과지 업로드(B안 파일보관). 등록 0건=업로드 / ≥1건=보기. T-...-BLOODTEST-RESULT-PUBLISH-BACKEND
-                [3] 균검사 줄과 점선으로 분리(두 줄 표기) — 한 줄에 섞여 보이지 않게. */}
-            <div
-              className="flex items-center gap-1.5 border-t border-dashed border-muted/70 pt-1"
-              data-testid="exam-blood-group"
-            >
-              <ExamBadge label="피검사" active={r.bloodRequested} tone="rose" testid="exam-blood-badge" />
-              {r.bloodRequested &&
-                (hasBloodResult ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 gap-1 px-1.5 text-[11px]"
-                    data-testid="exam-blood-result-view"
-                    onClick={() => setBloodTarget({ id: r.customerId, name: r.customerName })}
-                    title="등록된 혈액검사 결과지 보기"
-                  >
-                    <FileText className="h-3 w-3" /> 결과지 보기 ({bloodResultCount})
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    className="h-6 gap-1 px-1.5 text-[11px] bg-rose-600 text-white hover:bg-rose-700"
-                    data-testid="exam-blood-result-upload"
-                    onClick={() => setBloodTarget({ id: r.customerId, name: r.customerName })}
-                    title="혈액검사 결과지 업로드(PDF·JPG·PNG)"
-                  >
-                    <Upload className="h-3 w-3" /> 결과지 업로드
-                  </Button>
-                ))}
-            </div>
+            {/* GUNTAB-CLEANUP A: 피검사(badge·결과지 업로드/보기)는 본 균검사 탭에서 제거 →
+                [피검사] 탭(BloodDailyListSection)이 전담. 유실0(피검사 탭에 업로드/보기 상존). */}
           </div>
         </td>
         {/* ACTIONS-3BTN: 접수 항목 행 액션 3종 — 권한 A 만 컬럼 노출. */}
@@ -786,7 +708,7 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
               (기존 '검사신청일 기준 …~… 동안 …활성(●)…' 정적 안내 삭제). 집계·필터·표기 로직은 불변. */}
           <p className="flex items-center gap-1.5 text-sm font-medium">
             <ClipboardList className="h-4 w-4 text-teal-600" />
-            균검사 &amp; 피검사 대상자
+            균검사 대상자
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -828,7 +750,7 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
           data-testid="exam-targets-empty"
         >
           <ClipboardList className="h-5 w-5 text-muted-foreground/40" />
-          해당 기간에 균검사·피검사를 신청한 환자가 없습니다.
+          해당 기간에 균검사를 신청한 환자가 없습니다.
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
@@ -884,7 +806,7 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
                         <tr className="border-b bg-muted/20 text-left text-[11px] font-semibold text-muted-foreground">
                           <th className="px-2 py-1 whitespace-nowrap">#</th>
                           <th className="px-2 py-1 whitespace-nowrap">환자</th>
-                          <th className="px-2 py-1 whitespace-nowrap">신청 검사 &amp; 검사결과</th>
+                          <th className="px-2 py-1 whitespace-nowrap">균검사 &amp; 검사결과</th>
                           {canAct && <th className="px-2 py-1 whitespace-nowrap text-center">관리</th>}
                         </tr>
                       </thead>
@@ -904,22 +826,6 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
         onOpenChange={(v) => { if (!v) setViewFieldData(null); }}
         fieldData={viewFieldData}
       />
-
-      {/* 혈액검사 결과지 업로드/보기 — B안 파일보관(patient_file_records). */}
-      {bloodTarget && (
-        <BloodResultDialog
-          open={bloodTarget !== null}
-          onOpenChange={(v) => {
-            if (!v) {
-              setBloodTarget(null);
-              // 업로드/삭제 반영 — 라벨(업로드↔보기) 갱신을 위해 카운트 재조회.
-              qc.invalidateQueries({ queryKey: ['blood_result_counts', clinic?.id] });
-            }
-          }}
-          customerId={bloodTarget.id}
-          customerName={bloodTarget.name}
-        />
-      )}
 
       {/* T-20260726-foot-EXAM-MANUAL-ADD-SEARCH: 성함/차트번호 검색 → 검사종류 → 수기 검사신청. */}
       {canManualAdd && (

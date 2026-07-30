@@ -78,23 +78,25 @@ test.describe('T-20260620-foot-TREATTABLE-2SECTION-REVAMP', () => {
   });
 
   // ── 시나리오 3: 섹션B 검사 버튼 상태 (AC-4) ────────────────────────────────
-  test('시나리오3: 섹션B = koh/blood 신청 환자 1환자 1행, [균검사][피검사] 동행 배치', () => {
+  // ★T-20260724-LABTAB-SPLIT(탭 분리) + T-20260726-GUNTAB-CLEANUP(A, 균검사 탭 피검사 잔여 제거)로
+  //   SUPERSEDE: 본 [균검사] 탭(ExamTargetsSection)은 이제 koh 전용 — 피검사는 [피검사] 탭 전담.
+  //   원 '동행 배치'(koh+blood 한 행) 계약은 탭 분리로 폐기됨.
+  test('시나리오3: 섹션B([균검사] 탭) = koh 신청 환자 1환자 1행, 균검사 단독 배치', () => {
     const b = sectionB();
-    // 데이터 소스 = check_in_services koh_requested|blood_test_requested
+    // 데이터 소스 = check_in_services, 균검사 탭은 koh_requested 전용 필터
     expect(b).toContain("from('check_in_services')");
     expect(b).toContain('koh_requested');
-    expect(b).toContain('blood_test_requested');
-    expect(b).toContain("or('koh_requested.eq.true,blood_test_requested.eq.true')");
+    expect(b).toContain("eq('koh_requested', true)");
+    expect(b).not.toContain("or('koh_requested.eq.true,blood_test_requested.eq.true')");
     // 1환자 1행 집계(customer_id Map)
     expect(b).toContain('new Map<string, ExamTargetRow>()');
-    // 같은 행에 균검사·피검사 박스 나란히 — AC-4 항목별 별도 행 금지 (ExamBadge testid prop → DOM data-testid)
+    // 균검사 배지 유지 / 피검사 배지는 [피검사] 탭 전담(제거)
     expect(b).toContain('testid="exam-koh-badge"');
-    expect(b).toContain('testid="exam-blood-badge"');
+    expect(b).not.toContain('testid="exam-blood-badge"');
     expect(b).toContain('label="균검사"');
-    expect(b).toContain('label="피검사"');
     // 신청(active)만 ● — active prop 으로 활성/비활성 분기
     expect(b).toContain('active={r.kohRequested}');
-    expect(b).toContain('active={r.bloodRequested}');
+    expect(b).not.toContain('active={r.bloodRequested}');
   });
 
   test('시나리오3: 섹션B 검사박스 활성(●)/비활성(○) 분기', () => {

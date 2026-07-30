@@ -102,21 +102,23 @@ test.describe('T-20260630-foot-KOHEXAM-ISSUE-RELOCATE-TXTABLE', () => {
     expect(b).not.toContain('flex flex-wrap items-center gap-x-3 gap-y-1');
   });
 
-  test('[3] 균검사 줄 / 피검사 줄 = 독립 그룹 + 피검사 줄 점선 시각 구분', () => {
+  // ★T-20260726-GUNTAB-CLEANUP(A)로 SUPERSEDE: 피검사 줄(exam-blood-group)은 [피검사] 탭 전담 →
+  //   균검사 탭에서 제거. 균검사 단일 줄만 남음.
+  test('[3] 균검사 줄만 유지 — 피검사 줄(exam-blood-group)은 [피검사] 탭 전담(제거)', () => {
     const b = sectionB();
     expect(b).toContain('data-testid="exam-koh-group"');
-    expect(b).toContain('data-testid="exam-blood-group"');
-    expect(b).toMatch(/border-t border-dashed[\s\S]{0,80}?data-testid="exam-blood-group"/);
+    expect(b).not.toContain('data-testid="exam-blood-group"');
   });
 
   // ── 회귀: 기존 콘텐츠/동작 보존 ─────────────────────────────────────────────
   test('회귀: 배지·검사결과 동작·이름 인터랙션 보존(레이아웃/발급만 추가)', () => {
     const b = sectionB();
     expect(b).toContain('exam-koh-badge');
-    expect(b).toContain('exam-blood-badge');
     expect(b).toContain('data-testid="exam-koh-result-view"');
-    expect(b).toContain('data-testid="exam-blood-result-upload"');
-    expect(b).toContain('data-testid="exam-blood-result-view"');
+    // ★GUNTAB-CLEANUP(A) SUPERSEDE: 피검사 badge·결과지 업로드/보기는 [피검사] 탭 전담 → 균검사 탭 제거.
+    expect(b).not.toContain('exam-blood-badge');
+    expect(b).not.toContain('data-testid="exam-blood-result-upload"');
+    expect(b).not.toContain('data-testid="exam-blood-result-view"');
     // 旣 '결과 생성'(외부 페이지 이동) 버튼은 발급하기로 대체됨 — 잔존 0.
     expect(b).not.toContain('data-testid="exam-koh-result-new"');
     // 이름 좌/우클릭 위임 보존

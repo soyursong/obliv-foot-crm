@@ -42,11 +42,13 @@ test.describe('T-20260629-foot-TREATBL-COLLAPSE-TOGGLE', () => {
     expect(b).toContain('seoulISODate');
   });
 
-  // ── AC-2: 최초 진입 전 그룹 접힘(▶) — 환자 행 미렌더 ─────────────────────────
-  test('AC-2: 초기 상태 전 그룹 접힘 — expandedDates 빈 Set, 펼침 시에만 테이블 렌더', () => {
+  // ── AC-2: 초기 진입 시 오늘 그룹만 펼침 / 과거 그룹 접힘(▶) — 펼친 그룹만 행 렌더 ──
+  //   ★T-20260726-GUNTAB-CLEANUP-DEFAULTEXPAND(B)로 초기값 SUPERSEDE: 기존 빈 Set(전부 접힘) →
+  //   오늘(KST) 키만 담은 lazy init(오늘 펼침·과거 접힘). isOpen 기반 행 렌더 게이팅은 불변.
+  test('AC-2: 초기 상태 오늘 그룹 펼침·과거 접힘 — expandedDates 오늘-init, 펼침 시에만 테이블 렌더', () => {
     const b = sectionB();
-    // 펼침 키 집합 초기값 = 빈 Set (전 그룹 접힘). 화면 재진입 시 remount → 접힘 복귀.
-    expect(b).toContain('useState<Set<string>>(new Set())');
+    // 펼침 키 집합 초기값 = 오늘(KST) 키 (오늘 펼침, 과거 접힘). GUNTAB-CLEANUP B.
+    expect(b).toMatch(/useState<Set<string>>\(\(\)\s*=>\s*new Set\(\[seoulISODate\(new Date\(\)\)\]\)\)/);
     expect(b).toContain('expandedDates');
     // 펼친 그룹에서만 명단 테이블 렌더(접힘 그룹 행 미렌더) — {isOpen && (...table...)}
     expect(b).toContain('isOpen &&');
@@ -76,9 +78,10 @@ test.describe('T-20260629-foot-TREATBL-COLLAPSE-TOGGLE', () => {
     expect(b).toContain('nameInteraction.onLeftClick(r.customerId)');
     expect(b).toContain('nameInteraction.onContextMenu');
     expect(b).toContain('data-testid="exam-name-clickable"');
-    // 검사결과 동작(균/피검사 결과 보기·생성·업로드)도 보존
+    // 검사결과 동작(균검사 결과 보기·생성·발급) 보존
     expect(b).toContain('exam-koh-badge');
-    expect(b).toContain('exam-blood-badge');
+    // ★GUNTAB-CLEANUP(A) SUPERSEDE: 피검사 badge/결과 동작은 [피검사] 탭 전담 → 균검사 탭에서 제거.
+    expect(b).not.toContain('exam-blood-badge');
   });
 
   // ── AC-5: 그룹 독립 토글 ────────────────────────────────────────────────────
