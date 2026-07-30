@@ -15,7 +15,13 @@
 //
 // 매출귀속 RED LINE(INV-1): consultant_id / customers.assigned_consultant_id 무접촉. 발송상태 컬럼만 write.
 //
-// Auth: admin/manager/director user JWT(canEditDistribution 패리티) + caller-clinic 격리(send-notification 동형).
+// Auth: 유효 CRM staff role JWT(FE ROLE-OPEN 패리티) + caller-clinic 격리(send-notification 동형).
+//   ⚠ T-20260730-foot-ASSIGN-CONFIRM-EF-NON2XX-COORD-DIAG (P0 핫픽스): FE↔EF authz drift 해소.
+//   34a11ce2(T-20260729-foot-CONFIRM-BTN-ROLE-OPEN, 총괄 지시 '접근제어 완화')가 FE [확정] 버튼 role gate
+//   (canEditDistribution=admin/manager/director)를 제거 → 코디네이터 포함 전 역할 표시+클릭. 그러나 본 EF 는
+//   구 allowlist(admin/manager/director) 유지 → coordinator 클릭 시 403 "non-2xx status code" 팝업(현장 장애).
+//   → EF allowlist 를 FE ROLE-OPEN 결정(이미 총괄 승인)과 동기화. 테넌트 안전은 callerBelongsToClinic(clinic 격리)이
+//     계속 강제(불변). 신규 권한 창설 아님 — 기결정 sync. RLS/GRANT/DDL 무변경(EF app-layer only, service_role write).
 //
 // Request Body:
 //   { check_in_id: UUID, clinic_id: UUID, inflow?: string }
@@ -54,7 +60,11 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const CONFIRM_ALLOWED_ROLES = ["admin", "manager", "director"];
+// T-20260730-foot-ASSIGN-CONFIRM-EF-NON2XX-COORD-DIAG: FE ROLE-OPEN(34a11ce2) 패리티 — cross_crm_data_contract
+//   staff role 8종 전체 허용(유효 role guard 유지 → null/잡값 role 은 여전히 거부). 클리닉 격리는 별도로 강제.
+const CONFIRM_ALLOWED_ROLES = [
+  "admin", "manager", "director", "coordinator", "consultant", "therapist", "staff", "tm",
+];
 const MULTI_CLINIC_HQ_ROLES = ["admin", "manager", "director"];
 
 interface ConfirmRequest {
