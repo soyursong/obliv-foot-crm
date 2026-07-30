@@ -44,6 +44,32 @@
  *     (7) 발송 실패율 급등 경보: 당일(KST) notification_logs failed 건수가 임계(기본 100건/일) 초과 시 경보.
  *         잔액·한도와 독립적으로 '조용한 대량 실패'를 포착. env SOLAPI_FAIL_SPIKE_COUNT (기본 100).
  *
+ * ── (6) 실효 재정합 + 직접 더블체크 (T-20260730-foot-SOLAPI-AUTORECHARGE-DOUBLECHECK-RETUNE) ──
+ *   D-1(위)은 트리거를 하드코딩 10,000 으로 정합했다. 본 재정합은 그 위에 3가지를 얹는다.
+ *
+ *   ★라이브 probe 발견(2026-07-30 dev-foot, cashlog_feasibility_probe.mjs 실호출):
+ *     솔라피 /cash/v1/balance 응답이 자동충전 실제 설정을 직접 노출한다 —
+ *       minimumCash      = 자동충전 트리거(송도 실측 10,000. CEO 값과 일치)
+ *       rechargeTo       = 자동충전 목표잔액(송도 실측 100,000. CEO 값과 일치)
+ *       rechargeTryCount = 솔라피 자체 자동충전 시도 카운터(카드 결제 실패/재시도 정황 시 증가)
+ *     → 트리거를 하드코딩에 의존하지 않고 balance API 의 minimumCash 를 1급 소스로 사용(env > API > default).
+ *       계정 콘솔에서 트리거를 바꿔도 코드 수정 없이 자동 정합(하드코딩 drift 제거).
+ *
+ *   A. 실효 파라미터 재정합: 트리거 = env override > balance.minimumCash(실측) > default(10,000).
+ *      회복 판정 = "잔액이 트리거 위로 복귀(= rechargeTo 방향으로 미회복이 풀림)". grace 2폴링(≈1~2h).
+ *   B. 결제/캐시 API 직접 더블체크(cash-log 교차검증):
+ *      솔라피 충전내역(cash/payment history) API 는 부재 — cash/v1/history · point/history ·
+ *      payment/history 전부 404 실증(feasibility 확정). 따라서 '충전 트랜잭션 성공 기록'의 직접 확인은
+ *      balance API 의 rechargeTryCount(솔라피 자체 자동충전 시도 카운터)로 대체한다. 2단 교차검증:
+ *        ① 프록시(balance-recovery): autoRecharge ON & 잔액 < 트리거(minimumCash) & grace 내 미회복.
+ *        ② 직접(rechargeTryCount): 솔라피가 자동충전을 시도했으나 카운터가 남아있음 = 카드결제 실패 정황.
+ *      두 신호 동시(잔액低 + tryCount>0) = 즉시 확정 경보(grace 생략, 미탐 최소). 프록시만 = grace 후 경보.
+ *      사각 보강: 반복 실패로 솔라피가 autoRecharge 를 자동 OFF 시킨 상태(autoRecharge=0 & tryCount>0 &
+ *      잔액<트리거)도 감지(부모/D-1 로직은 OFF면 무조건 미발동 → 이 사각을 놓침).
+ *   C. 오탐 0 (AC 핵심): autoRecharge ON 정상운영에서 잔액은 트리거(1만) 위에서만 진동 → 미발동.
+ *      단, (5)번 절대 원(₩) 임계 경보는 grace 가 없어 pre-recharge 순간 dip(잔액<1만)을 단발 오탐할 수
+ *      있으므로 autoRecharge ON 시 (5)번을 억제(OFF 계정에서만 발동)한다. ON 계정은 (6)번이 전담.
+ *
  * ── db_change=false 설계 판정 (DA CONSULT 게이트 미발동) ──────────────────────────────
  *   경보 dedup 상태는 DB 테이블이 아니라 macstudio 로컬 JSON 상태파일로 충분(단일 노드 상주 잡).
  *   잔액 조회 = 솔라피 API read-only, 한도 감지 = notification_logs read-only. 신규 컬럼/테이블/enum 0.
@@ -156,8 +182,29 @@ const FAIL_SPIKE_REALERT_MS = Math.max(1, cfgNum("SOLAPI_FAIL_SPIKE_REALERT_HOUR
 //   (accountId 실측: 종로 74967aea=26041008595272 / 송도 b4dc0de5=26041010278719 — 팀장 실계정 일치 확인.)
 const DEFAULT_MIN_WON = { "74967aea": 10000, "b4dc0de5": 10000 };
 const DEFAULT_RECHARGE_TRIGGER_WON = { "74967aea": 10000, "b4dc0de5": 10000 };
+// (RETUNE) 자동충전 목표잔액(rechargeTo) 기본값 — balance API 실측 100,000(CEO 값과 일치). 경보 문안·회복 밴드용.
+//   env SOLAPI_RECHARGE_TO_WON_<clinicshort> override. 실 사용값은 balance API 의 rechargeTo 우선(아래 참조).
+const DEFAULT_RECHARGE_TO_WON = { "74967aea": 100000, "b4dc0de5": 100000 };
 function minWonFor(shortId) { return cfgNum(`SOLAPI_BALANCE_MIN_WON_${shortId}`, DEFAULT_MIN_WON[shortId] ?? 0); }
 function rechargeTriggerFor(shortId) { return cfgNum(`SOLAPI_RECHARGE_TRIGGER_WON_${shortId}`, DEFAULT_RECHARGE_TRIGGER_WON[shortId] ?? 0); }
+function rechargeToFor(shortId) { return cfgNum(`SOLAPI_RECHARGE_TO_WON_${shortId}`, DEFAULT_RECHARGE_TO_WON[shortId] ?? 0); }
+// (RETUNE-A) 실효 트리거 해소: env override(있으면) > balance API minimumCash(실측) > 하드코딩 default.
+//   apiMinimumCash 가 유효 양수면 그것을 1급으로 채택(콘솔 설정과 자동 정합, 하드코딩 drift 제거).
+function resolveTrigger(shortId, apiMinimumCash) {
+  const envRaw = cfg(`SOLAPI_RECHARGE_TRIGGER_WON_${shortId}`, "");
+  if (envRaw !== "") { const n = parseFloat(envRaw); if (Number.isFinite(n) && n > 0) return { trigger: n, src: "env" }; }
+  const api = Number(apiMinimumCash);
+  if (Number.isFinite(api) && api > 0) return { trigger: api, src: "api(minimumCash)" };
+  return { trigger: DEFAULT_RECHARGE_TRIGGER_WON[shortId] ?? 0, src: "default" };
+}
+// (RETUNE-A) 실효 목표잔액 해소: env override > balance API rechargeTo(실측) > 하드코딩 default.
+function resolveRechargeTo(shortId, apiRechargeTo) {
+  const envRaw = cfg(`SOLAPI_RECHARGE_TO_WON_${shortId}`, "");
+  if (envRaw !== "") { const n = parseFloat(envRaw); if (Number.isFinite(n) && n > 0) return n; }
+  const api = Number(apiRechargeTo);
+  if (Number.isFinite(api) && api > 0) return api;
+  return DEFAULT_RECHARGE_TO_WON[shortId] ?? 0;
+}
 
 // 일일한도 초과 판정 토큰(솔라피/CRM 거부 메시지 문자열 — 부분일치, 확장 가능).
 const QUOTA_FAIL_TOKENS = (cfg("SOLAPI_QUOTA_FAIL_TOKENS",
@@ -235,7 +282,10 @@ async function fetchSolapiBalance(apiKey, apiSecret) {
   });
   const json = await res.json().catch(() => ({}));
   if (res.status !== 200) throw new Error(`solapi balance ${res.status}: ${JSON.stringify(json).slice(0, 200)}`);
-  return json; // { balance, deposit, autoRecharge, accountId, lowBalanceAlert:{notificationBalance,...}, ... }
+  // 2026-07-30 라이브 probe 실측 필드: balance, deposit, autoRecharge(0/1), accountId, point, minimumCash(자동충전
+  // 트리거), rechargeTo(자동충전 목표잔액), rechargeTryCount(솔라피 자체 자동충전 시도 카운터 — 카드결제 실패 시
+  // 증가; 직접 더블체크 B의 근거), lowBalanceAlert:{notificationBalance,currentBalance,balances,channels,enabled}.
+  return json;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -285,16 +335,55 @@ function isBalanceRecovered(info, opt) {
   return true;
 }
 
-// 4c-2. (6) 자동충전 실패 프록시 판정 — autoRecharge=1 인데 잔액이 트리거 미만이면 실패 의심.
-//   info={balance, autoRecharge, rechargeTrigger}. autoRecharge!=1(OFF) 이면 항상 false(오탐 0).
-//   실 경보는 연속 grace 관측 후 확정(호출부 dedup 상태로 카운트) → 솔라피 자동충전 반영지연 흡수.
+// 4c-2. (6) 자동충전 실패 판정 — RETUNE: 2단 교차검증(프록시 balance-recovery + 직접 rechargeTryCount).
+//   info={balance, autoRecharge, rechargeTrigger, rechargeTryCount?}.
+//     · 프록시신호(proxy): autoRecharge ON & 잔액 < 트리거(minimumCash) → 자동충전이 동작했어야 하는데 안 됨.
+//     · 직접신호(direct): rechargeTryCount>0 → 솔라피가 자동충전을 시도했으나 카운터가 남음 = 카드결제 실패 정황.
+//   반환:
+//     applicable  : 이 판정을 적용할 상황인가(ON, 또는 OFF라도 tryCount>0 사각).
+//     breached    : 충전실패 의심(프록시 또는 사각).
+//     directSignal: 직접신호(tryCount>0) 유무 — 교차검증·즉시확정용.
+//     immediate   : breached && directSignal (2신호 동시) → grace 생략하고 즉시 경보(미탐 최소).
+//   ★오탐 0 설계: autoRecharge ON 정상운영은 잔액이 트리거 위에서만 진동 → breached=false.
+//   실 경보(프록시-only)는 연속 grace 관측 후 확정(호출부 카운트) → 솔라피 자동충전 반영지연 흡수.
 function evaluateAutoRechargeFailure(info) {
   const on = Number(info.autoRecharge) === 1;
   const balance = Number(info.balance) || 0;
   const trigger = (info.rechargeTrigger != null && info.rechargeTrigger !== "") ? Number(info.rechargeTrigger) : null;
-  if (!on) return { applicable: false, breached: false, balance, trigger };
-  if (trigger == null || !Number.isFinite(trigger) || trigger <= 0) return { applicable: true, breached: false, balance, trigger };
-  return { applicable: true, breached: balance < trigger, balance, trigger };
+  const tryCount = (info.rechargeTryCount != null && info.rechargeTryCount !== "") ? Number(info.rechargeTryCount) : 0;
+  const directSignal = Number.isFinite(tryCount) && tryCount > 0;
+  const triggerValid = trigger != null && Number.isFinite(trigger) && trigger > 0;
+  const belowTrigger = triggerValid && balance < trigger;
+
+  if (on) {
+    if (!triggerValid) return { applicable: true, breached: false, balance, trigger, tryCount, directSignal, immediate: false };
+    const breached = belowTrigger;
+    return { applicable: true, breached, balance, trigger, tryCount, directSignal, immediate: breached && directSignal };
+  }
+  // OFF 사각: 반복 실패로 솔라피가 autoRecharge 를 자동 해제한 정황(tryCount>0) + 잔액이 트리거 아래 → 실패로 간주.
+  if (directSignal && belowTrigger) {
+    return { applicable: true, breached: true, balance, trigger, tryCount, directSignal, immediate: true, autoDisabled: true };
+  }
+  return { applicable: false, breached: false, balance, trigger, tryCount, directSignal, immediate: false };
+}
+
+// 4c-3. (6-C) 자동충전 실패 경보 문안 빌더 (spec C — parent ③ 톤/형식, 개발용어 0, 현장 풀이).
+//   pure 함수로 분리 → 호출부·self-test 공용(문안 drift 방지). rc = evaluateAutoRechargeFailure() 결과.
+function buildAutoRechargeAlertText({ clinicName, rc, rechargeTo, gracePolls, isRealert }) {
+  const crossLine = rc.directSignal
+    ? `• 교차검증: 자동충전 시도 흔적 있음(시도 카운트 ${rc.tryCount}) → 카드 결제 단계에서 실패한 정황입니다.`
+    : `• 교차검증: 자동충전 시도 흔적 없음(시도 카운트 0) → 자동충전이 아직 걸리지 않았거나 지연 중일 수 있습니다.`;
+  const headline = rc.autoDisabled
+    ? `🚨 [자동충전 실패] ${clinicName} 문자(SMS) 자동충전이 반복 실패로 꺼진 것으로 보입니다`
+    : `🚨 [자동충전 실패] ${clinicName} 문자(SMS) 자동충전이 정상 동작하지 않는 것으로 보입니다`;
+  return (
+    `${headline}${isRealert ? " (계속 미회복 — 재알림)" : ""}\n` +
+    `• 현재 잔액 ${won(rc.balance)}원 / 자동충전 기준(트리거) ${won(rc.trigger)}원 · 충전 예정액 ${won(rechargeTo)}원\n` +
+    `• 잔액이 기준(${won(rc.trigger)}원) 아래로 내려간 뒤 ${rc.immediate ? "" : `${gracePolls}회 연속 관측 동안 `}${won(rechargeTo)}원 충전으로 회복되지 않았습니다.\n` +
+    `${crossLine}\n` +
+    `• 흔한 원인: 등록 카드 만료 · 카드 한도 초과 · 결제 실패 · 월 상한 도달.\n` +
+    `솔라피 콘솔에서 자동충전/결제수단(법인카드) 상태를 확인해 주세요. 방치하면 잔액 소진 시 문자가 전면 중단됩니다.`
+  );
 }
 
 // 4d. 일일한도 초과 응답 집계 — notification_logs failed 행 중 토큰 부분일치를 지점별 그룹.
@@ -413,39 +502,53 @@ async function main() {
     const shortId = String(c.clinic_id).slice(0, 8);
     const baseline = cfg(`SOLAPI_BALANCE_BASELINE_${shortId}`, "");
     const minWon = minWonFor(shortId);
-    const rechargeTrigger = rechargeTriggerFor(shortId);
+    const autoRechargeOn = Number(bal.autoRecharge) === 1;
+    // (RETUNE-A) 트리거·목표잔액은 balance API 실측(minimumCash/rechargeTo) 1급, env override, default 폴백.
+    const { trigger: rechargeTrigger, src: triggerSrc } = resolveTrigger(shortId, bal.minimumCash);
+    const rechargeTo = resolveRechargeTo(shortId, bal.rechargeTo);
+    const rechargeTryCount = (bal.rechargeTryCount != null && bal.rechargeTryCount !== "") ? Number(bal.rechargeTryCount) : 0;
     const info = {
       balance: bal.balance,
       notificationBalance: bal.lowBalanceAlert && bal.lowBalanceAlert.notificationBalance,
       baseline: baseline || null,
-      minWon: minWon || null,
+      // (RETUNE-C) 절대 원(₩) 임계 경보(5)는 grace 가 없어 autoRecharge ON pre-recharge dip 을 단발 오탐 →
+      //   ON 계정에서는 억제(null). ON 은 (6)번 프록시+직접 교차검증이 전담. OFF 계정에서만 (5)번 발동.
+      minWon: (autoRechargeOn ? null : (minWon || null)),
     };
     const opt = { unitCost: SMS_UNIT_COST, minSendCount: MIN_SEND_COUNT, lowRatio: LOW_RATIO, clearMult: CLEAR_MULT };
     const ev = evaluateBalance(info, opt);
     log(`  [${c.clinic_name}] 잔액=${won(ev.balance)}원 예치금=${won(bal.deposit ?? 0)}원 발송가능=${ev.remaining}건 ` +
-        `autoRecharge=${bal.autoRecharge ?? "?"} min₩=${won(minWon)} breached=${ev.breached}`);
+        `autoRecharge=${bal.autoRecharge ?? "?"} 트리거=${won(rechargeTrigger)}원(${triggerSrc}) 충전목표=${won(rechargeTo)}원 ` +
+        `충전시도카운트=${rechargeTryCount} min₩=${won(minWon)}${autoRechargeOn ? "(ON→억제)" : ""} breached=${ev.breached}`);
 
-    // ── (6) 자동충전 실패 프록시 감지 (autoRecharge=1 + 잔액 < 트리거, 연속 grace 관측 후 확정) ──
+    // ── (6) 자동충전 실패 감지 (RETUNE: 프록시 balance-recovery + 직접 rechargeTryCount 2단 교차검증) ──
     {
-      const rc = evaluateAutoRechargeFailure({ balance: bal.balance, autoRecharge: bal.autoRecharge, rechargeTrigger });
+      const rc = evaluateAutoRechargeFailure({
+        balance: bal.balance, autoRecharge: bal.autoRecharge, rechargeTrigger, rechargeTryCount,
+      });
       const rcEntry = state.autorecharge[c.clinic_id] || { consec: 0, last_alerted_ms: 0 };
       if (rc.applicable && rc.breached) {
         rcEntry.consec = (rcEntry.consec || 0) + 1;
-        log(`  [${c.clinic_name}] 자동충전 ON인데 잔액 ${won(rc.balance)}원 < 트리거 ${won(rc.trigger)}원 (연속 ${rcEntry.consec}/${RECHARGE_FAIL_GRACE_POLLS})`);
-        if (rcEntry.consec >= RECHARGE_FAIL_GRACE_POLLS && shouldAlert(rcEntry, nowMs, REALERT_MS)) {
+        if (rcEntry.low_since_at == null) { rcEntry.low_since_at = ts(); rcEntry.low_balance_seen = rc.balance; }
+        // 직접신호(tryCount>0) 동시 = 즉시 확정(grace 생략). 프록시-only = grace 폴링 충족 후.
+        const graceMet = rc.immediate || rcEntry.consec >= RECHARGE_FAIL_GRACE_POLLS;
+        log(`  [${c.clinic_name}] ${rc.autoDisabled ? "자동충전 자동해제 정황(OFF)" : "자동충전 ON"}인데 잔액 ${won(rc.balance)}원 < 트리거 ${won(rc.trigger)}원 ` +
+            `(연속 ${rcEntry.consec}/${RECHARGE_FAIL_GRACE_POLLS}, 직접신호 충전시도카운트=${rc.tryCount}${rc.immediate ? " → 즉시확정(2신호)" : ""})`);
+        if (graceMet && shouldAlert(rcEntry, nowMs, REALERT_MS)) {
           const isRealert = Boolean(rcEntry.last_alerted_ms);
-          const text =
-            `🚨 [자동충전 실패 의심] ${c.clinic_name} 문자(SMS) 자동충전이 동작하지 않는 것으로 보입니다${isRealert ? " (계속 미회복 — 재알림)" : ""}\n` +
-            `• 자동충전은 켜져 있으나, 잔액 ${won(rc.balance)}원이 자동충전 기준선 ${won(rc.trigger)}원 아래로 내려간 채 ${RECHARGE_FAIL_GRACE_POLLS}회 연속 회복되지 않았습니다.\n` +
-            `• 흔한 원인: 등록 카드 만료 · 카드 한도 초과 · 결제 실패 · 월 상한 도달.\n` +
-            `솔라피 콘솔에서 자동충전/결제수단(법인카드) 상태를 확인해 주세요. 방치하면 잔액 소진 시 문자가 전면 중단됩니다.`;
+          const text = buildAutoRechargeAlertText({
+            clinicName: c.clinic_name, rc, rechargeTo, gracePolls: RECHARGE_FAIL_GRACE_POLLS, isRealert,
+          });
           const ok = sendSlack(SLACK_CHANNEL, text);
-          if (ok || DRY_RUN) { rcEntry.last_alerted_ms = nowMs; rcEntry.last_alerted_at = ts(); balAlerts++; }
+          if (ok || DRY_RUN) { rcEntry.last_alerted_ms = nowMs; rcEntry.last_alerted_at = ts(); rcEntry.try_count = rc.tryCount; balAlerts++; }
         }
         state.autorecharge[c.clinic_id] = rcEntry;
       } else {
-        // 회복 또는 미해당(OFF/트리거 이상) → 상태 해제(연속 카운트 리셋).
-        if (state.autorecharge[c.clinic_id]) { delete state.autorecharge[c.clinic_id]; }
+        // 회복(잔액이 트리거 위로 복귀 = 충전 성공) 또는 미해당(OFF·트리거이상) → 상태 해제(연속 카운트 리셋).
+        if (state.autorecharge[c.clinic_id]) {
+          log(`  [${c.clinic_name}] 자동충전 정상(잔액 ${won(rc.balance)}원 ≥ 트리거 ${won(rechargeTrigger)}원) → 실패경보 상태 해제.`);
+          delete state.autorecharge[c.clinic_id];
+        }
       }
     }
 
@@ -702,6 +805,65 @@ function runSelfTest() {
   assert(minWonHit.breached && minWonHit.reasons.some((r) => r.includes("설정 임계")), `[D-1] 송도 잔액 8천 < min₩ 1만 → 경보`);
   const minWonOk = evaluateBalance({ balance: 300000, minWon: minWonFor("b4dc0de5") }, opt);
   assert(!minWonOk.breached, `[D-1] 송도 잔액 30만 ≥ min₩ 1만(정상대역) → 경보 없음(오탐 제거)`);
+
+  // ══ T-20260730 RETUNE + 직접 더블체크 (A/B/C) ════════════════════════════════════════════
+  // (RETUNE-A) 실효 트리거 해소: env override > balance API minimumCash(실측) > default.
+  assert(resolveTrigger("b4dc0de5", 10000).src === "api(minimumCash)" && resolveTrigger("b4dc0de5", 10000).trigger === 10000,
+    `[A] balance API minimumCash=10000 → 트리거 1급 채택(api)`);
+  assert(resolveTrigger("b4dc0de5", null).src === "default" && resolveTrigger("b4dc0de5", null).trigger === 10000,
+    `[A] API 미노출 → default(1만) 폴백`);
+  assert(resolveTrigger("b4dc0de5", 0).src === "default", `[A] minimumCash=0(무효) → default 폴백(0을 트리거로 오채택 안 함)`);
+  assert(resolveRechargeTo("b4dc0de5", 100000) === 100000, `[A] balance API rechargeTo=100000 → 목표잔액 채택`);
+  assert(resolveRechargeTo("b4dc0de5", null) === 100000, `[A] rechargeTo 미노출 → default(10만) 폴백`);
+
+  // (RETUNE-B) 직접 더블체크 — rechargeTryCount 교차검증.
+  //   ① 프록시-only: 잔액<트리거 & 시도카운트0 → breached, immediate=false(grace 대기).
+  const proxyOnly = evaluateAutoRechargeFailure({ balance: 8000, autoRecharge: 1, rechargeTrigger: 10000, rechargeTryCount: 0 });
+  assert(proxyOnly.breached && proxyOnly.directSignal === false && proxyOnly.immediate === false,
+    `[B] 프록시만(잔액 8천<1만, 시도 0) → 실패의심·grace 대기(즉시확정 아님)`);
+  //   ② 2신호 동시: 잔액<트리거 & 시도카운트>0 → immediate=true(grace 생략, 즉시확정).
+  const bothSig = evaluateAutoRechargeFailure({ balance: 8000, autoRecharge: 1, rechargeTrigger: 10000, rechargeTryCount: 3 });
+  assert(bothSig.breached && bothSig.directSignal && bothSig.immediate,
+    `[B] 2신호(잔액 8천<1만 + 시도 3회) → 즉시확정(카드결제 실패 교차검증)`);
+  //   ③ OFF 사각: autoRecharge 자동해제(OFF) + 시도카운트>0 + 잔액<트리거 → breached·autoDisabled.
+  const blindSpot = evaluateAutoRechargeFailure({ balance: 5000, autoRecharge: 0, rechargeTrigger: 10000, rechargeTryCount: 5 });
+  assert(blindSpot.applicable && blindSpot.breached && blindSpot.autoDisabled && blindSpot.immediate,
+    `[B] OFF 사각(반복실패로 자동해제, 시도 5회, 잔액 5천<1만) → 실패 감지(부모/D-1 미포착 사각 보강)`);
+
+  // (RETUNE-C) ★오탐 0 — autoRecharge ON 정상운영: 잔액 트리거 위 & 시도카운트 0 → 미발동.
+  const onNormal = evaluateAutoRechargeFailure({ balance: 442870, autoRecharge: 1, rechargeTrigger: 10000, rechargeTryCount: 0 });
+  assert(onNormal.applicable && !onNormal.breached && !onNormal.immediate,
+    `[C] ON 정상(잔액 44만 ≥ 트리거 1만, 시도 0) — 라이브 송도 실측값 → 오탐 0`);
+  // OFF 정상(시도 0) → 미해당(부모 오탐 0 계승).
+  const offNormal = evaluateAutoRechargeFailure({ balance: 5000, autoRecharge: 0, rechargeTrigger: 10000, rechargeTryCount: 0 });
+  assert(offNormal.applicable === false && offNormal.breached === false,
+    `[C] OFF & 시도 0 → 미해당(사각 아님, 오탐 0)`);
+  // ★(5)번 절대 경보 억제 — ON 계정은 info.minWon=null 로 진입해 minWon 사유 미발생(pre-recharge dip 단발 오탐 제거).
+  const onDipSuppressed = evaluateBalance({ balance: 9500, minWon: null /* ON→억제 */ }, opt);
+  assert(!onDipSuppressed.reasons.some((r) => r.includes("설정 임계")),
+    `[C] ON pre-recharge dip(잔액 9,500<1만)이라도 (5)번 절대임계 억제 → 단발 오탐 없음`);
+  const offDipAlert = evaluateBalance({ balance: 9500, minWon: 10000 /* OFF→발동 */ }, opt);
+  assert(offDipAlert.reasons.some((r) => r.includes("설정 임계")),
+    `[C] OFF 계정 잔액 9,500<1만 → (5)번 절대임계 정상 발동(억제는 ON 한정)`);
+
+  // (spec C) 실패 경보 문안 빌더 — parent ③ 톤/형식 검증 + 개발용어 0 게이트.
+  const DEV_TERMS = ["T-2026", "commit", "merge", "EF ", "deploy", "P0", "P1", "P2", "rollback", "SHA", "branch"];
+  const txtProxy = buildAutoRechargeAlertText({ clinicName: "오블리브 풋센터 송도", rc: proxyOnly, rechargeTo: 100000, gracePolls: 2, isRealert: false });
+  const txtBoth = buildAutoRechargeAlertText({ clinicName: "오블리브 풋센터 송도", rc: bothSig, rechargeTo: 100000, gracePolls: 2, isRealert: false });
+  const txtDisabled = buildAutoRechargeAlertText({ clinicName: "오블리브 풋센터 송도", rc: blindSpot, rechargeTo: 100000, gracePolls: 2, isRealert: true });
+  assert(txtProxy.includes("[자동충전 실패]") && txtProxy.includes("현재 잔액") && txtProxy.includes("트리거") && txtProxy.includes("충전 예정액"),
+    `[C] 문안 필수요소(자동충전 실패·현재잔액·트리거·충전예정액) 포함`);
+  assert(txtProxy.includes("시도 카운트 0") && txtBoth.includes("시도 카운트 3"),
+    `[C] 교차검증 라인에 시도 카운트(직접신호) 반영`);
+  assert(txtDisabled.includes("반복 실패로 꺼진") && txtDisabled.includes("재알림"),
+    `[C] OFF 사각 = '반복 실패로 꺼짐' 문안 + 재알림 표기`);
+  for (const t of [txtProxy, txtBoth, txtDisabled]) {
+    assert(!DEV_TERMS.some((k) => t.includes(k)), `[C] 현장 문안 언어 게이트 — 개발용어 0건`);
+  }
+  console.log("\n──── (spec C) 실패 경보 문안 렌더 (evidence) ────");
+  console.log("[case: 프록시-only]\n" + txtProxy + "\n");
+  console.log("[case: 2신호 즉시확정]\n" + txtBoth + "\n");
+  console.log("[case: OFF 자동해제 사각·재알림]\n" + txtDisabled + "\n──────────────────────────────────");
 
   // (7) 발송 실패 급등 — 당일 failed 건수 > 임계
   const failRows = [

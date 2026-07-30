@@ -1,0 +1,5 @@
+[2026-07-30T14:08:24.110Z][solapi-balance-monitor][foot] 가동 [DRY-RUN]: unit=45원 min_send=100건 low_ratio=20% realert=24h quota_lookback=2h daily_quota=미확정(폴백) slack_ch=C0ATE5P6JTH state=/Users/domas/.solapi-balance-monitor-foot-state.json
+[2026-07-30T14:08:24.264Z][solapi-balance-monitor][foot] 문자발송 활성 지점 1곳 로드: 오블리브 풋센터 송도
+[2026-07-30T14:08:24.593Z][solapi-balance-monitor][foot]   [오블리브 풋센터 송도] 잔액=442,871원 예치금=492,079원 발송가능=9841건 autoRecharge=1 트리거=10,000원(api(minimumCash)) 충전목표=100,000원 충전시도카운트=0 min₩=10,000(ON→억제) breached=false
+[2026-07-30T14:08:24.778Z][solapi-balance-monitor][foot] [dry-run] 상태파일 미저장 (/Users/domas/.solapi-balance-monitor-foot-state.json)
+[2026-07-30T14:08:24.778Z][solapi-balance-monitor][foot] 완료 elapsed_ms=668 bal_alerts=0 bal_suppressed=0 bal_recovered=0 bal_errors=0 quota_alerts=0 quota_suppressed=0 failspike_alerts=0 failspike_suppressed=0

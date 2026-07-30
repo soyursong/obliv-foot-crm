@@ -1,0 +1,15 @@
+[CASHLOG-FEASIBILITY] READ-ONLY 진단 @ 2026-07-30T14:08:24.815Z
+
+활성 지점 1곳
+
+── [오블리브 풋센터 송도] clinic b4dc0de5 ──
+  Vault: apiKey=NCSE***(len16) apiSecret=O91Y***(len32)
+  [balance] http=200 balance=442870.65 deposit=492078.5 autoRecharge=1 point=0
+            lowBalanceAlert={"notificationBalance":"0","currentBalance":"18.299999999999997","balances":[200],"channels":["SMS"],"enabled":true}
+  [balance:allkeys] accountId, autoRecharge, balance, deposit, lowBalanceAlert, minimumCash, point, rechargeTo, rechargeTryCount, balanceOnly
+  [cash/history] http=404 :: {}
+  [cash/history(paged)] http=404 :: {}
+  [cash/point-history] http=404 :: {}
+  [payment/history] http=404 :: {"errorCode":"ResourceNotFound","errorMessage":"Cannot GET /payment/v1/history?startDate=2026-06-30T14%3A08%3A25.341Z&endDate=2026-07-30T14%3A08%3A25.341Z&limit=10"}
+
+════ feasibility 판정: 위 200 응답 + 충전 트랜잭션(type/amount) 노출 엔드포인트 채택 ════
