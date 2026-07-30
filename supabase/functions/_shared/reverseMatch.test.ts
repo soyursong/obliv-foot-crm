@@ -4,7 +4,7 @@
 //   실행: deno test supabase/functions/redpay-reconcile/reverseMatch.test.ts
 //
 // 고정하는 불변식(DA 착수 AC / E-1·E-2):
-//   · 유효창(10분) 닫힌구간 경계 · 승인만(external_status='Y') · 금액 완전일치 · 같은금액 2건+ 모호 스킵
+//   · 유효창(5분) 닫힌구간 경계 · 승인만(external_status='Y') · 금액 완전일치 · 같은금액 2건+ 모호 스킵
 //   · raw.id 앵커(단독 유일키, trxid 단독 금지) · 매출-일자 앵커=approved_at KST · 카드 payment 만 대상
 //   · annotate payload shape-parity(matcher.buildMatchedPaymentUpdate) + NULL 덮어쓰기 금지(멱등)
 
@@ -79,15 +79,15 @@ Deno.test("observe-mode 적재행은 후보 제외", () => {
 });
 
 // ── isWithinReverseWindow (E-1 · 닫힌구간 경계) ──────────────────────────────────
-Deno.test("유효창 = [now-10분, now] 닫힌구간", () => {
-  assertEquals(REVERSE_MATCH_WINDOW_MS, 10 * 60 * 1000);
+Deno.test("유효창 = [now-5분, now] 닫힌구간", () => {
+  assertEquals(REVERSE_MATCH_WINDOW_MS, 5 * 60 * 1000);
   // 창 내부
   assert(isWithinReverseWindow("2026-07-30T04:57:00.000Z", NOW)); // -3분
-  // 경계(정확히 10분 전) 포함
+  // 경계(정확히 5분 전) 포함
   assert(isWithinReverseWindow(new Date(NOW - REVERSE_MATCH_WINDOW_MS).toISOString(), NOW));
   // 경계(now) 포함
   assert(isWithinReverseWindow(new Date(NOW).toISOString(), NOW));
-  // 창 밖(10분 1초 초과) 제외
+  // 창 밖(5분 1초 초과) 제외
   assertFalse(isWithinReverseWindow(new Date(NOW - REVERSE_MATCH_WINDOW_MS - 1000).toISOString(), NOW));
   // 미래 승인(now 이후) 제외 — forward 방향 위배
   assertFalse(isWithinReverseWindow(new Date(NOW + 1000).toISOString(), NOW));
@@ -231,9 +231,9 @@ Deno.test("AC8 reconlog row — event_type='reverse_matched'(신규 값) + shape
   assertEquals(row.mismatch_reason, null);
 });
 
-Deno.test("E-1 (b) 보관창 상수 = 1h(유효창 10분과 별개 축)", () => {
+Deno.test("E-1 (b) 보관창 상수 = 1h(유효창 5분과 별개 축)", () => {
   assertEquals(REVERSE_MATCH_RETENTION_MS, 60 * 60 * 1000);
-  assertEquals(REVERSE_MATCH_WINDOW_MS, 10 * 60 * 1000);
+  assertEquals(REVERSE_MATCH_WINDOW_MS, 5 * 60 * 1000);
   // 보관창(후보 pool 조회창) > 유효창(자동대조 신뢰창) — 목적 상이(E-1 2축 분리).
   assert(REVERSE_MATCH_RETENTION_MS > REVERSE_MATCH_WINDOW_MS);
 });

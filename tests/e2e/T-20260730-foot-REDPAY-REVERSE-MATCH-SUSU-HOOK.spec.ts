@@ -5,7 +5,7 @@
  *
  * 목적: 레드페이 역방향 매칭([수납] 저장 훅)의 정책 계약이 SSOT(redpayPlanbTtl) · 순수 로직 모듈
  *   (reverseMatch.ts) · AC 불변식에 drift 없이 반영됐는지 검증. 매칭은 backend 판정이므로 browser 무접점 —
- *   판정 로직 자체는 deno 단위테스트(deno test supabase/functions/redpay-reconcile/reverseMatch.test.ts, 17 tests)로
+ *   판정 로직 자체는 deno 단위테스트(deno test supabase/functions/_shared/reverseMatch.test.ts, 21 tests)로
  *   전수 검증하고, 본 spec 은 (a) SSOT 계약(E-1 파라미터 2분리) (b) 시나리오 1~4 불변식 소스 (c) AC 소스 무결성을 커버한다.
  *
  * ── precondition 실측(착수 前, READ-ONLY) 결과 ────────────────────────────────────
@@ -15,10 +15,10 @@
  *      → AC2 pg_provider='redpay' = method='card'+external_* 로 매핑, AC4 paid_at = accounting_date 앵커(SSOT confirm 게이트).
  *
  * ── 시나리오(DA E2E 요구 1~4) ────────────────────────────────────────────────────
- *   S1. 자동연결   — 단일 승인·동금액·유효창(10분) 내 미매칭 raw 1건 → matched(1 raw : 1 payment).
+ *   S1. 자동연결   — 단일 승인·동금액·유효창(5분) 내 미매칭 raw 1건 → matched(1 raw : 1 payment).
  *   S2. no-op      — 후보 없음/모호/비대상 → 기존 수납 흐름 완전 무변경(대원칙 §2).
  *   S3. 멱등/race  — raw.id 앵커 소비(claim rows-affected=1) — 패자(webhook/타표면)는 후보에서 배제(중복입금 0).
- *   S4. 보관창 경계 — 역방향 유효창(10분, 신뢰창) ≠ raw 보관창(1h) 분리(E-1). 창 경계 닫힌구간.
+ *   S4. 보관창 경계 — 역방향 유효창(5분, 신뢰창) ≠ raw 보관창(1h) 분리(E-1). 창 경계 닫힌구간.
  *
  * ── write-path 배선 확정(planner D1~D4, MSG-20260730-160252) ──────────────────────
  *   D1 원자성 = EF claim-first(신규 RPC 없음 → no-DDL). raw claim UPDATE(WHERE matched_payment_id IS NULL,
@@ -37,7 +37,7 @@ import {
 } from '../../src/lib/redpayPlanbTtl';
 
 // Playwright 는 repo root 에서 실행 → CWD 상대경로(기존 planb spec 컨벤션).
-const REVERSE_SRC = 'supabase/functions/redpay-reconcile/reverseMatch.ts';
+const REVERSE_SRC = 'supabase/functions/_shared/reverseMatch.ts';
 const EF_SRC = 'supabase/functions/redpay-reverse-match/index.ts';
 const CLIENT_SRC = 'src/lib/redpayReverseMatch.ts';
 const HOOK_SRC = 'src/lib/manualPaymentWritePath.ts';
@@ -47,11 +47,11 @@ const readClient = () => fs.readFileSync(CLIENT_SRC, 'utf8');
 const readHook = () => fs.readFileSync(HOOK_SRC, 'utf8');
 
 // ── (a) SSOT 계약 — E-1 파라미터 2분리 ───────────────────────────────────────────
-test('E-1: 역방향 유효창(10분) ≠ raw 보관창(1h) — 별개 축 분리', () => {
-  expect(REDPAY_REVERSE_MATCH_WINDOW_MIN).toBe(10);   // 역방향 자동대조 유효창(총괄 v2 제안)
+test('E-1: 역방향 유효창(5분) ≠ raw 보관창(1h) — 별개 축 분리', () => {
+  expect(REDPAY_REVERSE_MATCH_WINDOW_MIN).toBe(5);    // 역방향 자동대조 유효창(총괄 확정 2026-07-30, 10분 철회)
   expect(REDPAY_PLANB_RETENTION_MIN).toBe(60);        // raw 보관창(기존, 불변)
   expect(REDPAY_REVERSE_MATCH_WINDOW_MIN).not.toBe(REDPAY_PLANB_RETENTION_MIN); // 목적 상이 → 한 값으로 묶지 않음
-  expect(REDPAY_PLANB_TTL.reverseMatchWindowMs).toBe(10 * 60 * 1000);
+  expect(REDPAY_PLANB_TTL.reverseMatchWindowMs).toBe(5 * 60 * 1000);
   expect(REDPAY_PLANB_TTL.retentionMs).toBe(60 * 60 * 1000);
 });
 
@@ -162,9 +162,9 @@ test('S3 멱등/race — claim 패자(rows=0) payment 유지·annotate 미진입
   expect(reverse).toMatch(/buildReverseClaimRollback[\s\S]*matched_payment_id: null, match_rule: null/);
 });
 
-test('S4 보관창 경계 — 유효창(10분) ≠ 보관창(1h) + orphan 방지(check_in 결속)', () => {
+test('S4 보관창 경계 — 유효창(5분) ≠ 보관창(1h) + orphan 방지(check_in 결속)', () => {
   const ef = readEf();
-  // 조회 pool = 보관창 1h(REVERSE_MATCH_RETENTION_MS) 하한. 실 유효창 10분 필터는 순수모듈이 적용.
+  // 조회 pool = 보관창 1h(REVERSE_MATCH_RETENTION_MS) 하한. 실 유효창 5분 필터는 순수모듈이 적용.
   expect(ef).toMatch(/REVERSE_MATCH_RETENTION_MS/);
   expect(ef).toMatch(/selectReverseMatchCandidate/);
   // D3 매출-일자 앵커 = accounting_date(응답에 실려 supervisor diff 관측).

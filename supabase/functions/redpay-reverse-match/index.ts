@@ -6,7 +6,7 @@
 //   write-path 확정 = planner MSG-20260730-160252(D1~D4) + kn3b foot-native 필드계약(§52-53 REPLACE)
 //
 // ── 무엇 ──────────────────────────────────────────────────────────────────────
-//   직원이 [수납]을 저장(payments INSERT)한 직후, 그 payment 를 기준으로 유효창(10분) 내 승인됐으나
+//   직원이 [수납]을 저장(payments INSERT)한 직후, 그 payment 를 기준으로 유효창(5분) 내 승인됐으나
 //   auto-match 실패로 matched_payment_id IS NULL 로 남은 redpay raw(reverse-miss)를 1건 안전 연결한다.
 //   판정(후보선택·유효창·모호스킵·앵커일자)은 reverseMatch.ts(순수, deno test 전수검증)가 결정하고,
 //   본 EF 는 그 판정대로 DB write(claim-first 3-write 단일 논리 txn) + cue.paid emit 편입을 수행한다.
@@ -45,7 +45,7 @@ import {
   selectReverseMatchCandidate,
   type ReverseRaw,
   type SavedPayment,
-} from "../redpay-reconcile/reverseMatch.ts";
+} from "../_shared/reverseMatch.ts";
 
 const LOG = "[redpay-reverse-match][foot]";
 const REDPAY_CENTER = "foot";
@@ -121,7 +121,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // ── 2. unmatched 승인 raw 후보 pool 조회(보관창 1h·같은 clinic·같은 금액) ────────
-    //   E-1 (b) 보관창(1h) = 조회 pool 시간 하한. 실 자동대조 유효창(10분)은 순수모듈이 필터.
+    //   E-1 (b) 보관창(1h) = 조회 pool 시간 하한. 실 자동대조 유효창(5분)은 순수모듈이 필터.
     const nowMs = Date.now();
     const retentionCutoffIso = new Date(nowMs - REVERSE_MATCH_RETENTION_MS).toISOString();
     const { data: rawsRaw, error: rawErr } = await admin

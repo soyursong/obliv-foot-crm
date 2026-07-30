@@ -7,7 +7,7 @@
 //
 // ── 무엇 ──────────────────────────────────────────────────────────────────────
 //   방향: 기존 forward 매처(raw→기존 payment, matcher.ts)의 거울상. 직원이 [수납] 저장으로 payment 를
-//   남긴 시점(now), 그 직전 유효창(10분) 내 승인(external_status='Y') 되었으나 auto-match 를 놓쳐
+//   남긴 시점(now), 그 직전 유효창(5분) 내 승인(external_status='Y') 되었으나 auto-match 를 놓쳐
 //   matched_payment_id IS NULL 로 남은 redpay raw(reverse-miss)를 1건만 안전히 되찾아 연결한다.
 //
 // ── 왜 순수 함수 ────────────────────────────────────────────────────────────────
@@ -32,12 +32,12 @@
 //   승인판별(isApprovedRaw)·유효창(닫힌구간)·raw.id 앵커 규율은 공유(값만 forward=+N, reverse=−window).
 
 // ── 정책 상수 (SSOT mirror: src/lib/redpayPlanbTtl.ts, EF 는 TS lib import 불가하여 미러) ──
-//   REDPAY_REVERSE_MATCH_WINDOW_MIN = 10 (역방향 자동대조 유효창). raw 보관창(1h)과 별개 축(E-1).
-export const REVERSE_MATCH_WINDOW_MS = 10 * 60 * 1000; // 10분 — [수납] 저장 직전 승인 신뢰창.
+//   REDPAY_REVERSE_MATCH_WINDOW_MIN = 5 (역방향 자동대조 유효창, 총괄 확정 2026-07-30). raw 보관창(1h)과 별개 축(E-1).
+export const REVERSE_MATCH_WINDOW_MS = 5 * 60 * 1000; // 5분 — [수납] 저장 직전 승인 신뢰창.
 
 //   raw 보관창(후보 pool 조회창) — 기존 REDPAY_PLANB_RETENTION_MIN(1h) 미러(E-1 (b) 별개 축).
 //   [수납] 저장 시점에 조회할 unmatched raw 후보 pool 의 시간 하한(approved_at >= now-보관창).
-//   실제 자동대조 유효창(10분) 필터는 selectReverseMatchCandidate 안의 isWithinReverseWindow 가 적용.
+//   실제 자동대조 유효창(5분) 필터는 selectReverseMatchCandidate 안의 isWithinReverseWindow 가 적용.
 export const REVERSE_MATCH_RETENTION_MS = 60 * 60 * 1000; // 1h
 
 //   match_rule — 역방향 저장훅 매칭 provenance(forward tier0~4 와 분리). reconciliation_log/raw.match_rule 공용.
@@ -113,7 +113,7 @@ export function isApprovedReverseRaw(raw: ReverseRaw): boolean {
 
 /**
  * 역방향 유효창 판정 (E-1 · AC1).
- *   승인시각(approved_at)이 [수납] 저장시각(nowMs) 직전 window(10분) 이내인가?
+ *   승인시각(approved_at)이 [수납] 저장시각(nowMs) 직전 window(5분) 이내인가?
  *   닫힌 구간 [nowMs - window, nowMs] — forward 매처의 [approved_at, approved_at+N] 의 거울상.
  *   · 상한 = nowMs (미래 승인 배제: 카드 승인은 저장보다 앞서야 함 = forward 방향).
  *   · 하한 = nowMs - window (그 이전 승인은 '같은 거래' 신뢰 상실 → 창 밖).
@@ -149,7 +149,7 @@ export function anchorAccountingDateKst(approvedAtIso: string): string {
  *   E-2 오연결 방지 4조건을 모두 강제한다:
  *     ① 승인만(isApprovedReverseRaw = external_status='Y').
  *     ② 금액 완전일치(raw.amount === payment.amount) + 같은 clinic.
- *     ③ 유효창(10분) 내 동일금액 후보가 2건+ 면 모호 → 자동 스킵(ambiguous_multi, 수동 폴백).
+ *     ③ 유효창(5분) 내 동일금액 후보가 2건+ 면 모호 → 자동 스킵(ambiguous_multi, 수동 폴백).
  *     ④ 매칭 앵커 = raw.id(단독 유일키). trxid/approval_no 단독 링크 금지(corroborator일 뿐).
  *   비대상: method≠card 또는 payment_type≠payment → not_card_payment(no-op).
  *   used: 같은 저장 pass/배치 내 이미 소비된 raw.id(재사용 금지, 1 raw : 1 payment).
