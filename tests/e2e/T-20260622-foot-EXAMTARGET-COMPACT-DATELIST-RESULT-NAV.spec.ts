@@ -78,30 +78,44 @@ test.describe('T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV', () => {
   });
 
   // ── AC-3 검사결과 생성(DISCOVERY 게이트) ────────────────────────────────────
-  test('AC-3: KOH 결과 = 별도 저장모델 재사용(신청 boolean 비재사용), 혈액검사 = 결과지 업로드/보기 활성', () => {
+  test('AC-3: KOH 결과 = 별도 저장모델 재사용 + 결과 생성은 치료테이블 인라인 발급(KOHEXAM-RELOCATE 후, 진료대시보드 이동 폐지)', () => {
     const b = sectionB();
-    // KOH 결과 = 신청 boolean 이 아닌 별도 저장모델(form_submissions koh_result) read
+    // KOH 결과 = 신청 boolean 이 아닌 별도 저장모델(form_submissions koh_result) read — 불변.
     expect(b).toContain("queryKey: ['koh_published', clinicId]");
     expect(b).toContain("eq('form_key', 'koh_result')");
     expect(b).toContain('koh_service_id');
-    // 발행본 보기 / 미발행 생성(기존 surface 재사용)
+    // 발행본 보기(기존 surface 재사용) — 불변.
     expect(b).toContain('data-testid="exam-koh-result-view"');
-    expect(b).toContain('data-testid="exam-koh-result-new"');
-    expect(b).toContain("navigate('/admin/doctor-tools')");
-    // 혈액검사 결과 = B안 파일보관 활성(BLOODTEST-RESULT-PUBLISH-BACKEND): 0건=업로드 / ≥1건=보기
-    //   기존 '준비중' 비활성 회귀가드(다시 disabled '준비중' 으로 되돌아가지 않음)
-    expect(b).toContain('data-testid="exam-blood-result-upload"');
-    expect(b).toContain('data-testid="exam-blood-result-view"');
-    expect(b).toContain('<BloodResultDialog');
+    // ★T-20260630-KOHEXAM-ISSUE-RELOCATE-TXTABLE: 미발행 결과 '생성'은 더 이상 진료대시보드(/admin/doctor-tools)로
+    //   내비게이션하지 않고, 본 치료테이블 탭에서 채취조갑 선택 + '발급하기'(exam-koh-issue-btn)로 인라인 발급한다.
+    //   → 구 exam-koh-result-new / doctor-tools 네비게이션은 폐지(잔존 0). 이 이전이 본 티켓 검증 대상.
+    expect(b).toContain('data-testid="exam-koh-issue-btn"');
+    expect(b).toContain('발급하기');
+    expect(b).not.toContain('data-testid="exam-koh-result-new"');
+    expect(b).not.toContain("navigate('/admin/doctor-tools')");
+    // ★T-20260726-GUNTAB-CLEANUP(A): 혈액(피)검사 결과 업로드/보기는 본 [균검사] 탭에서 제거 → [피검사] 탭 전담.
+    //   (구 스펙은 균검사 탭에 blood-result-upload/view + BloodResultDialog 를 기대 → 탭 분리로 stale.)
+    expect(b).not.toContain('data-testid="exam-blood-result-upload"');
+    expect(b).not.toContain('data-testid="exam-blood-result-view"');
+    expect(b).not.toContain('<BloodResultDialog');
+    // '준비중' 비활성 회귀가드 보존.
     expect(b).not.toContain('data-testid="exam-blood-result-new"');
     expect(b).not.toContain('결과(준비중)');
   });
 
-  test('AC-3 NO-DDL: 본 섹션 read-only — insert/update/publish RPC 직접 호출 0', () => {
+  test('AC-3 write 계약: 원시 테이블 write 0 — 발급은 SSOT RPC(set_koh_nail_sites/publish_koh_result)로만(KOHEXAM-RELOCATE)', () => {
     const b = sectionB();
+    // 원시 테이블 write(.insert/.update) 직접 호출은 여전히 0 — NO-DDL·write-correctness 불변.
     expect(b).not.toContain('.insert(');
     expect(b).not.toContain('.update(');
-    expect(b).not.toContain("rpc('publish");
+    // ★T-20260630-KOHEXAM-ISSUE-RELOCATE-TXTABLE: 발급 '동작'이 진료대시보드→치료테이블로 이전되며, 본 섹션은
+    //   이제 read-only 가 아니라 발급을 수행한다(구 "publish RPC 0" 전제는 stale). 단, 발급은 정본 SSOT RPC 로만:
+    //     · 조갑부위 저장 = set_koh_nail_sites  · 결과 발행 = publish_koh_result(idempotent, 중복발급 방지).
+    //   field_data 는 KohReportTab 정본 헬퍼(buildKohFieldData) 재사용 — 재구현 금지.
+    expect(b).toContain("supabase.rpc('set_koh_nail_sites'");
+    expect(b).toContain("supabase.rpc('publish_koh_result'");
+    expect(b).toContain('buildKohFieldData');
+    expect(b).toContain("from '@/components/doctor/KohReportTab'");
   });
 
   // ── AC-4/AC-5 이름 인터랙션(기존 재사용) ────────────────────────────────────

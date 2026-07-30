@@ -64,9 +64,12 @@ test.describe('T-20260620-foot-TREATTABLE-2SECTION-REVAMP', () => {
     // 발행 O/X 배지 2종 (IssueBadge testid prop → DOM data-testid)
     expect(a).toContain('testid="dh-rx-issue"');
     expect(a).toContain('testid="dh-opinion-issue"');
-    // 발행 O/X 라벨
-    expect(a).toContain('발행 O');
-    expect(a).toContain('발행 X');
+    // 발행 O/X 라벨 — IssueBadge(label="발행") 가 issued 분기로 `발행 O`/`발행 X` 를 렌더한다.
+    //   (구 스펙은 소스에 리터럴 '발행 O'/'발행 X' 가 있다고 가정했으나, IssueBadge 컴포넌트화로
+    //    실제 소스는 템플릿 리터럴 `${label} O`/`${label} X` 형태 → 리터럴 대조는 stale. 렌더 기제로 대조.)
+    expect(a).toContain('label="발행"');
+    expect(a).toContain('`${label} O`');
+    expect(a).toContain('`${label} X`');
   });
 
   test('시나리오2: 섹션A 뷰어는 confirm 대기(비활성 자리만 노출 — AC-3 pending)', () => {
