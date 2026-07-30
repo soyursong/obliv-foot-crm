@@ -37,12 +37,14 @@ const ceil100 = (coveredTotal: number, rate: number) =>
   Math.min(Math.ceil((coveredTotal * rate) / 100) * 100, coveredTotal);
 
 // (grade, coveredTotal, 100원 미만 잔차가 발생하도록 선정) — FLOOR≠CEIL 이 되는 실효 케이스.
+// ★[정본화 T-20260730-INS-GRADE-LABEL-RECONCILE] C3(low_income_1)·C8(medical_aid_2) 제거:
+//   v1.6 에서 면제/정액으로 이전(computeFootBilling=copayFromBase SSOT) → 정률 절사 CASE 아님.
+//   종전 14%/15% 기대치는 잠복 RED. 해당 등급 정본(면제/정액)은 아래 별도 test 로 잠금.
+//   여기 남는 정률(FLOOR) 절사 CASE = general(30%)·infant(21%)·elderly_flat(4구간 30%) 만.
 const CASES: Array<{ id: string; grade: InsuranceGrade; coveredTotal: number }> = [
   { id: 'C1 general 30% 절사',       grade: 'general',      coveredTotal: 41134 }, // 12340.2 → 12300 (CEIL 12400)
-  { id: 'C3 low_income_1 14% 절사',  grade: 'low_income_1', coveredTotal: 33333 }, // 4666.62 → 4600 (CEIL 4700)
   { id: 'C4 infant 21% 절사',        grade: 'infant',       coveredTotal: 12345 }, // 2592.45 → 2500 (CEIL 2600)
   { id: 'C6 elderly_flat 30% 절사',  grade: 'elderly_flat', coveredTotal: 40001 }, // 12000.3 → 12000 (CEIL 12100) base>15000
-  { id: 'C8 medical_aid_2 15% 절사', grade: 'medical_aid_2', coveredTotal: 12345 }, // 1851.75 → 1800 (CEIL 1900)
 ];
 
 test.describe('footBilling copayment rounding CEIL→FLOOR (AC-2/AC-3)', () => {
@@ -62,10 +64,21 @@ test.describe('footBilling copayment rounding CEIL→FLOOR (AC-2/AC-3)', () => {
     });
   }
 
-  // C5: medical_aid_1(0%) → 본인부담 0 (절사 무영향).
-  test('C5 medical_aid_1 0%: 본인부담금 0', () => {
-    const res = computeFootBilling([mkCovered(50000)], 'medical_aid_1');
-    expect(res.copaymentTotal).toBe(0);
+  // ★[정본화 T-20260730] 면제/정액 이전 등급 정본 잠금 (computeFootBilling=copayFromBase SSOT, v1.6).
+  //   종전 low_income_1/2·medical_aid_1/2 를 정률(14%/15%/0%×base)로 본 잠복 기대치 폐기.
+  //   차상위1=면제(0) / 차상위2·의급1·의급2=정액 MIN(1000,base). 종전 14%/15% 재발 차단.
+  test('C3 low_income_1 = 면제(0원) — 종전 14% 절사 오적용 폐기', () => {
+    expect(computeFootBilling([mkCovered(33333)], 'low_income_1').copaymentTotal).toBe(0);
+  });
+  test('C5 medical_aid_1 = 정액 MIN(1000,base) (base 50,000 → 1,000)', () => {
+    expect(computeFootBilling([mkCovered(50000)], 'medical_aid_1').copaymentTotal).toBe(1000);
+    expect(computeFootBilling([mkCovered(800)], 'medical_aid_1').copaymentTotal).toBe(800); // base<1000
+  });
+  test('C7 low_income_2 = 정액 MIN(1000,base) (base 12,345 → 1,000)', () => {
+    expect(computeFootBilling([mkCovered(12345)], 'low_income_2').copaymentTotal).toBe(1000);
+  });
+  test('C8 medical_aid_2 = 정액 MIN(1000,base) (base 12,345 → 1,000) — 종전 15% 오적용 폐기', () => {
+    expect(computeFootBilling([mkCovered(12345)], 'medical_aid_2').copaymentTotal).toBe(1000);
   });
 
   // C2: 정확히 100원 배수로 떨어지는 급여 → FLOOR·CEIL 동일(회귀 0).

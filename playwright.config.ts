@@ -124,6 +124,15 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260730-foot-INS-GRADE-LABEL-RECONCILE: 건보 자격등급 라벨/주석 정본화(계산 무변경).
+        //   INSURANCE_GRADE_LABELS SSOT(차상위1=면제/차상위2·의급2=정액 1,000)·AC-2 라벨=실청구 대조·
+        //   AC-4 금액불변·SSOT 소비경로(패널2 2종+서류토큰 autoBindContext) 정적 가드. auth/server 불요.
+        '**/T-20260730-foot-INS-GRADE-LABEL-RECONCILE.spec.ts',
+        // ★[정본화 T-20260730 Part B] 잠복 RED 테스트 정본화 후 unit 편입(종전 CI 밖 → 상시 실행 회귀가드).
+        //   v1.6 면제/정액 정본에 맞춰 low_income_1/2·medical_aid_2 정률(14%/15%) 기대치 폐기 → 재발 차단.
+        //   순수 계산함수(copayCalc/footBilling) 직접 구동, auth/server 불요·결정론.
+        '**/T-20260715-foot-COPAY-GENERAL-CEIL-TO-FLOOR-FIX.spec.ts',
+        '**/T-20260715-foot-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY.spec.ts',
         // T-20260730-foot-ASSIGN-FULLSPEC-IMPL(§094v 다.): 비TM 유입경로 6경로 분리(Option B) 순수-로직 가드.
         //   deriveAssignLeadSource 6경로 governed 매핑(fall-through 제거)·네이버/지인소개/공홈 워크인 미결합·재진 null·
         //   VISIT_ROUTE_OPTIONS 매핑 완전성·정본 영대문자 + CEO-게이트 경계(deriveConsultAxis 재진 recency·집계축 무접촉)
