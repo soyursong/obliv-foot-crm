@@ -32,14 +32,32 @@ export const REDPAY_PLANB_LOCK_MIN = 6;
  */
 export const REDPAY_PLANB_RETENTION_MIN = 60;
 
+/**
+ * 역방향 자동대조 유효창(분). — T-20260730-foot-REDPAY-REVERSE-MATCH-SUSU-HOOK-BUILD (DA §E-1 판정).
+ *
+ * ★ E-1 파라미터 2분리 판정(DA SSOT §SPEC-INPUT E-1 요망):
+ *   · (a) 역방향 자동대조 유효창 = 5분  ← 본 상수. [수납] 저장 시점(now) 기준, 그 직전 5분 내 승인(approved_at)
+ *         한 raw 만 "같은 거래"로 신뢰해 자동연결. 총괄 확정(플랜B 역방향창 5분, 「지시_플랜B_역방향창_
+ *         버튼위치_확정_20260730」): 좁게 시작해 넓히는 방향. 놓침(사후 [환자 연결] 수동 처리 가능) 비용
+ *         << 잘못 붙은 건(승인번호 대조 필요) 충돌 비용. 10분(겹침 실측 22.2%)은 철회.
+ *   · (b) raw 보관창 = 1h (REDPAY_PLANB_RETENTION_MIN) ← 별개 축. 선점표/raw 를 매칭 후보로 유지하는 창.
+ *   → 목적 상이(유효창='같은거래 신뢰창' / 보관창='후보 유지창'). 두 값을 한 상수로 묶지 않는다.
+ *
+ * ⚠ 값(5분)은 총괄 확정(2026-07-30 최필경). 창을 넘는 late/수일방치 reverse-miss 는 본 저장훅이
+ *   자동연결하지 않고(오연결·오backdating 방지) 미배정 결제함(수동)·OPT3 별도버튼 표면으로 위임한다(표면 분리).
+ */
+export const REDPAY_REVERSE_MATCH_WINDOW_MIN = 5;
+
 /** 밀리초 환산 상수(FE 타이머/EF 판정 공통 사용). */
 export const REDPAY_PLANB_TTL = {
   autoConnectMin: REDPAY_PLANB_AUTO_CONNECT_MIN,
   lockMin: REDPAY_PLANB_LOCK_MIN,
   retentionMin: REDPAY_PLANB_RETENTION_MIN,
+  reverseMatchWindowMin: REDPAY_REVERSE_MATCH_WINDOW_MIN,
   autoConnectMs: REDPAY_PLANB_AUTO_CONNECT_MIN * 60 * 1000,
   lockMs: REDPAY_PLANB_LOCK_MIN * 60 * 1000,
   retentionMs: REDPAY_PLANB_RETENTION_MIN * 60 * 1000,
+  reverseMatchWindowMs: REDPAY_REVERSE_MATCH_WINDOW_MIN * 60 * 1000,
 } as const;
 
 /**
