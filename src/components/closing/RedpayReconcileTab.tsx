@@ -20,6 +20,9 @@ import { formatAmount } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+// T-20260730-foot-REDPAY-PLANB-AUTOCANCEL-UNAPPROVED-INBOX AC-1 — '미승인 수납' 배지(플래그 게이트, read-only).
+// 인터림 마운트: UNASSIGNED-INBOX-BUILD admin 섹션 병합 시 그쪽으로 fold.
+import { UnapprovedPaymentBadge } from '@/components/redpay/UnapprovedPaymentBadge';
 
 // ── 타입 ──────────────────────────────────────────────────────
 type ReconStatus =
@@ -184,6 +187,9 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
           <div className="tabular-nums font-semibold text-lg text-amber-700">{mismatchCount}건</div>
         </div>
       </div>
+
+      {/* '미승인 수납' 배지 (AC-1) — 플래그 OFF(기본) 시 미노출. */}
+      <UnapprovedPaymentBadge clinicId={clinicId} />
 
       {/* 대조 목록 (CRM 수납 ↔ 레드페이) — read-only */}
       <Card>

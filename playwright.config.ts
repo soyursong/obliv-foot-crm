@@ -124,6 +124,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260730-foot-REDPAY-PLANB-AUTOCANCEL-UNAPPROVED-INBOX AC-1: '미승인 수납' 집계 순수-로직 가드.
+        //   unapprovedCutoffIso/isUnapprovedFinal — 컷오프=now-보관창(60분, AC-3 자동취소 기준 동일)·
+        //   status∈{expired,failed} 게이트(matched/open/cancelled 제외)·보관창 경계·NULL 안전. auth/server 불요.
+        '**/T-20260730-foot-REDPAY-PLANB-AUTOCANCEL-UNAPPROVED-INBOX.spec.ts',
         // T-20260730-foot-INS-GRADE-LABEL-RECONCILE: 건보 자격등급 라벨/주석 정본화(계산 무변경).
         //   INSURANCE_GRADE_LABELS SSOT(차상위1=면제/차상위2·의급2=정액 1,000)·AC-2 라벨=실청구 대조·
         //   AC-4 금액불변·SSOT 소비경로(패널2 2종+서류토큰 autoBindContext) 정적 가드. auth/server 불요.
