@@ -516,6 +516,7 @@ interface CheckInLite {
   id: string;
   clinic_id: string;
   customer_id: string | null;
+  reservation_id: string | null; // T-20260730 G2: TM 동일슬롯 비TM 예약 lookup 용
   status: CheckInStatus;
   consultant_id: string | null;
   therapist_id: string | null;
@@ -555,7 +556,7 @@ export async function maybeAutoAssign(
     // 1) check_in + customer 로드
     const { data: ci } = await supabase
       .from('check_ins')
-      .select('id, clinic_id, customer_id, status, consultant_id, therapist_id, treatment_kind, treatment_category, status_flag')
+      .select('id, clinic_id, customer_id, reservation_id, status, consultant_id, therapist_id, treatment_kind, treatment_category, status_flag')
       .eq('id', checkInId)
       .is('deleted_at', null) // R2B: soft-hidden 행은 자동배정 대상 아님
       .maybeSingle();
@@ -677,7 +678,26 @@ export async function maybeAutoAssign(
           lead_source: customer?.lead_source,
           visit_route: customer?.visit_route,
         });
-        const strat = await pickConsultantByStrategy({ clinicId: checkIn.clinic_id, leadSource });
+        // T-20260730-foot-ASSIGN-FULLSPEC-IMPL G2: TM 배정은 동일 30분 슬롯 비TM 예약 수를 세어
+        //   랭킹 상위 N명을 skip(Q1)하므로, 이 예약의 슬롯(reservation_date/time)을 전달한다.
+        //   TM 이 아니거나 예약이 없으면 미조회(reservation=null → skip 없음, 순수 턴).
+        let reservation: { date: string; time: string } | null = null;
+        if (leadSource === 'TM' && checkIn.reservation_id) {
+          const { data: rv } = await supabase
+            .from('reservations')
+            .select('reservation_date, reservation_time')
+            .eq('id', checkIn.reservation_id)
+            .maybeSingle();
+          const r = rv as { reservation_date?: string | null; reservation_time?: string | null } | null;
+          if (r?.reservation_date && r?.reservation_time) {
+            reservation = { date: r.reservation_date, time: r.reservation_time };
+          }
+        }
+        const strat = await pickConsultantByStrategy({
+          clinicId: checkIn.clinic_id,
+          leadSource,
+          reservation,
+        });
         if (strat) chosen = strat.staffId;
       }
       // 5-b) 기존 월 균등 least-loaded (전략 미적용 시 · 치료사 · 재진 fallback).
