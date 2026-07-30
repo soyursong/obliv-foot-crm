@@ -28,10 +28,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+// T-20260730-foot-ASSIGN-FULLSPEC-IMPL: 비TM 6경로 분리 — 네이버/지인소개/공홈 을 워크인에서 독립 분기(Option B).
+//   각 경로가 독립 policy row + 독립 랭킹 커서. 미설정('none')=기존 월균등 유지(opt-in, 회귀0).
 const LEAD_SOURCES: { key: AssignLeadSource; label: string }[] = [
   { key: 'TM', label: 'TM (아웃바운드 전화)' },
   { key: 'INBOUND', label: '인바운드 (걸려온 문의)' },
   { key: 'WALK_IN', label: '워크인 (예약없이 방문)' },
+  { key: 'NAVER', label: '네이버 (네이버 예약·플레이스)' },
+  { key: 'REFERRAL', label: '지인소개 (소개 방문)' },
+  { key: 'HOMEPAGE', label: '공홈 (공식 홈페이지)' },
 ];
 
 const STRATEGY_LABEL: Record<AssignStrategy, string> = {
@@ -61,6 +66,9 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
     TM: 'none',
     INBOUND: 'none',
     WALK_IN: 'none',
+    NAVER: 'none',
+    REFERRAL: 'none',
+    HOMEPAGE: 'none',
   });
   // 상담사 목록
   const [consultants, setConsultants] = useState<ConsultantRow[]>([]);
@@ -108,6 +116,9 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
         TM: 'none',
         INBOUND: 'none',
         WALK_IN: 'none',
+        NAVER: 'none',
+        REFERRAL: 'none',
+        HOMEPAGE: 'none',
       };
       for (const r of (p.data ?? []) as { lead_source: AssignLeadSource; strategy: AssignStrategy }[]) {
         nextPolicy[r.lead_source] = r.strategy;
