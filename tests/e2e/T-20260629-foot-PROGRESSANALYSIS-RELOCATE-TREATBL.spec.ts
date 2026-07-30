@@ -49,44 +49,62 @@ test.describe('T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL', () => {
     expect(r).not.toContain('|| r.progress_check_required)');
   });
 
-  test('시나리오1: 예약관리 — 제거 후 전체 예약 표시(OFF 기본) + 새 예약 항상 노출', () => {
+  test('시나리오1: 예약관리 — 제거 후 전체 예약 표시(OFF 기본) + 신규예약 진입 마감(full) 가드', () => {
     const r = reservations();
     // 일간/주간 양쪽 뷰는 보존(회귀 가드)
     expect(r).toContain("viewMode === 'day'");
     expect(r).toContain('주간');
     expect(r).toContain('일간');
-    // '새 예약' 버튼은 filterProgress 가드 없이 항상 노출
+    // 신규예약 진입은 filterProgress(경과분석 필터) 가드 없이 항상 가능
     expect(r).toContain('새 예약');
-    // (+) 슬롯 생성 버튼은 마감(full) 여부로만 가드
-    expect(r).toContain('{!full ? (');
+    // [갱신] 구 (+) 슬롯 생성 버튼(`{!full ? (`)은 T-20260706-RESVMGMT-WEEKLY-CELLCLICK-CREATE[1]
+    //   + T-20260630-RESVMGMT-GRID-CLICKCREATE-7ADJ② 로 완전 제거됨(검증대상 소멸).
+    //   신규예약 진입은 빈 칸 클릭(openNewSlot)으로 일원화 → 실제 동선을 검증한다.
+    //   슬롯 생성은 여전히 마감(full) 여부로만 가드(경과분석 필터 잔재 0).
+    expect(r).toContain('if (!full) openNewSlot(');
+    expect(r).toContain("full ? '정원 마감'");
+    expect(r).not.toContain('{!full ? (');
   });
 
-  test('시나리오1: 회귀 — progress_check_required 트리거/배지(읽기전용)는 유지', () => {
+  test('시나리오1: 회귀 — progress_check_required 트리거/마킹(변경2 소스)은 유지', () => {
     const r = reservations();
-    // 트리거 마킹 데이터(변경2 소스)는 보존: 배지는 progress_check_required 기준으로 계속 렌더
-    expect(r).toContain('r.progress_check_required && (');
-    expect(r).toContain('data-testid={`progress-badge-${r.id}`}');
-    // 예약 생성 시 경과분석 감지 배너도 보존(체크포인트 트리거 자체 불변)
+    // [갱신] T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row5: 예약카드 내 경과분석 배지(progress-badge)의
+    //   읽기전용 표시는 제거됨(검증대상 소멸). 단 트리거/마킹 데이터 자체(변경2=치료테이블 경과분석 탭 소스)는
+    //   불변 → 배지 부재 확인 + 실질(컬럼 write + 감지 배너)로 대체 검증한다.
+    expect(r).not.toContain('data-testid={`progress-badge-${r.id}`}');
+    // (a) 예약 생성 시 progress_check_required/label 컬럼 write(체크포인트 도달 마킹) 보존 = 변경2 데이터 소스
+    expect(r).toContain('progress_check_required: input.progressCheck?.required ?? false');
+    expect(r).toContain('progress_check_label: input.progressCheck?.label ?? null');
+    // (b) 예약 생성 시 경과분석 감지 배너도 보존(체크포인트 트리거 자체 불변)
     expect(r).toContain('data-testid="progress-check-banner"');
   });
 
   // ── 시나리오 2: 치료테이블 경과분석 탭 정상 동선 (AC-4/5/6) ─────────────────
-  test('시나리오2: 치료테이블 — [경과분석] 탭이 기존 2탭 뒤 3번째에 배치', () => {
+  test('시나리오2: 치료테이블 — [경과분석] 탭이 기존 탭 뒤(맨 끝)에 배치 + 대상자 서브탭', () => {
     const t = treatTable();
-    // 신규 탭 트리거 + 섹션 연결
+    // [갱신] T-20260724-foot-TREATTABLE-TAB-ORDER-RENAME(C) + LABTAB-SPLIT(균/피검사 분리) + DIAGDOC:
+    //   최상위 탭이 진료(history)/소견서·진단서(diagdoc)/균검사(exam)/피검사(blood)/경과분석(progress) 5개로 확장.
+    //   [경과분석]은 최상위 탭 data-testid="tab-progress"(맨 끝)로 착지, 그 하위 서브탭 tab-progress-targets 가
+    //   ProgressTargetsSection(오늘 대상자)을 호스팅 → "기존 2탭 뒤 3번째"(구 스펙 전제)를 실동선으로 정합화.
+    expect(t).toContain('data-testid="tab-progress"');
     expect(t).toContain('data-testid="tab-progress-targets"');
     expect(t).toContain('ProgressTargetsSection');
-    // 탭 순서: 진료 환자 이력 → 균·피검사 → 경과분석 (3번째)
+    // 최상위 탭 순서: 진료 → … → 균검사 → 피검사 → 경과분석(맨 끝)
+    //   ('data-testid="tab-progress"' 는 닫는 따옴표 포함이라 서브탭 tab-progress-targets 와 구분되어 최상위 탭에 매칭)
     const idxHistory = t.indexOf('data-testid="tab-doctor-history"');
     const idxExam = t.indexOf('data-testid="tab-exam-targets"');
-    const idxProgress = t.indexOf('data-testid="tab-progress-targets"');
+    const idxBlood = t.indexOf('data-testid="tab-blood-daily"');
+    const idxProgress = t.indexOf('data-testid="tab-progress"');
     expect(idxHistory).toBeGreaterThan(-1);
     expect(idxExam).toBeGreaterThan(-1);
+    expect(idxBlood).toBeGreaterThan(-1);
     expect(idxProgress).toBeGreaterThan(-1);
-    expect(idxProgress).toBeGreaterThan(idxExam);
+    // 경과분석은 균검사·피검사 뒤(맨 끝), 균검사는 진료 뒤
+    expect(idxProgress).toBeGreaterThan(idxBlood);
+    expect(idxBlood).toBeGreaterThan(idxExam);
     expect(idxExam).toBeGreaterThan(idxHistory);
-    // SectionTab 타입에 'progress' 포함(④ 경과분석 플랜은 confirm 후 맨 뒤 독립 랜딩)
-    expect(t).toContain("'history' | 'exam' | 'progress'");
+    // SectionTab 타입에 progress 포함(확장된 5탭 union)
+    expect(t).toContain("'history' | 'diagdoc' | 'exam' | 'blood' | 'progress'");
   });
 
   test('시나리오2: 경과분석 탭 = 당일 progress_check_required 예약 리스트(read-only)', () => {
@@ -156,8 +174,9 @@ test.describe('T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL', () => {
  *
  * [시나리오2] 치료테이블 경과분석 탭 동선
  *   1. admin 로그인 → 사이드바 [치료 테이블] → /admin/treatment-table
- *   2. 기존 2탭(진료 환자 이력 / 균검사&피검사 대상자) 뒤 3번째에 [경과분석] 탭
- *   3. [경과분석] 탭 클릭 → 당일 경과분석 대상 환자가 리스트(테이블) 형태로 표시
+ *   2. [갱신] 최상위 탭 = 진료 / 소견서·진단서 / 균검사 / 피검사 / 경과분석(맨 끝, 5탭)
+ *      — 구 "기존 2탭 뒤 3번째"는 TAB-ORDER-RENAME + LABTAB-SPLIT + DIAGDOC 로 확장됨.
+ *   3. [경과분석] 탭 → 서브탭 '경과분석'(대상자)에서 당일 대상 환자가 리스트(테이블) 형태로 표시
  *   4. 각 행에 환자명·회차·예약시간·담당자 표시
  *   5. 캘린더/일간보기 형태가 아님(리스트/테이블)
  *
