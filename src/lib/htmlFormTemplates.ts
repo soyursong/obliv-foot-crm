@@ -326,7 +326,8 @@ ${COMMON_STYLE}
 const TREAT_CONFIRM_HTML = `
 ${COMMON_STYLE}
 <div class="form-wrap">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ③: 제목 아래 여백 2px→12px (인라인, COMMON_STYLE 무접촉). -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
     <div style="flex:1"></div>
     <div class="title" style="flex:none; padding:0 20px;">진 료 확 인 서</div>
     <!-- T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE: 진료확인서 우측상단 '원부대조필인' 삭제(김주연 총괄). 빈 flex:1 유지 → 제목 중앙정렬 불변 -->
@@ -404,13 +405,14 @@ ${COMMON_STYLE}
 
   <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ③: 용도 입력칸 너비를 내용에 맞게 조정.
        전폭(full-bleed) → 내용맞춤(width:auto 테이블 + 라벨 60px·값 min-width:320px 좌측 배치). -->
-  <table style="margin-top:4px; width:auto;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ③: 용도표 width:auto→100% + table-layout:fixed, 라벨폭 80px(위 통원일자칸과 통일). 인라인 전용. -->
+  <table style="margin-top:4px; width:100%; table-layout:fixed;">
     <tbody>
       <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
            현장 요청(김주연 총괄) — 진료확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
       <tr>
-        <td style="width:60px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
-        <td style="min-width:320px;">{{purpose}}</td>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
+        <td>{{purpose}}</td>
       </tr>
     </tbody>
   </table>
@@ -467,27 +469,28 @@ const TREAT_CONFIRM_DISEASE_BLOCK = `
         <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
-        <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
+        <!-- T-20260729-foot-DOC-LAYOUT-FIX ③: 특정기호 헤더/값셀 white-space:nowrap — 값 줄바꿈 방지. 폭은 상병명(auto)에서 흡수 → 총폭 불변. (진단서·소견서 무접촉, 진료확인서 code블록만) -->
+        <td style="background:#f0f0f0; text-align:center; width:70px; white-space:nowrap;">특 정 기 호</td>
       </tr>
       <tr>
         <td style="min-height:20px;">{{diag_code_1}}</td>
         <td>{{diag_name_1}}</td>
-        <td>{{diag_flag_1}}</td>
+        <td style="white-space:nowrap;">{{diag_flag_1}}</td>
       </tr>
       <tr>
         <td style="min-height:20px;">{{diag_code_2}}</td>
         <td>{{diag_name_2}}</td>
-        <td>{{diag_flag_2}}</td>
+        <td style="white-space:nowrap;">{{diag_flag_2}}</td>
       </tr>
       <tr style="{{diag_row_3_style}}">
         <td style="min-height:20px;">{{diag_code_3}}</td>
         <td>{{diag_name_3}}</td>
-        <td>{{diag_flag_3}}</td>
+        <td style="white-space:nowrap;">{{diag_flag_3}}</td>
       </tr>
       <tr style="{{diag_row_4_style}}">
         <td style="min-height:20px;">{{diag_code_4}}</td>
         <td>{{diag_name_4}}</td>
-        <td>{{diag_flag_4}}</td>
+        <td style="white-space:nowrap;">{{diag_flag_4}}</td>
       </tr>
     </tbody>
   </table>
@@ -526,7 +529,8 @@ const TREAT_CONFIRM_CODE_HTML = TREAT_CONFIRM_HTML.replace(
 const VISIT_CONFIRM_HTML = `
 ${COMMON_STYLE}
 <div class="form-wrap">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ②: 제목 아래 여백 2px→12px (인라인, COMMON_STYLE 무접촉). -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
     <div style="flex:1"></div>
     <div class="title" style="flex:none; padding:0 20px;">통 원 확 인 서</div>
     <!-- T-20260630-foot-DOCPRINT-WONBU-SEAL-REMOVE: 통원확인서 우측상단 '원부대조필인' 삭제(김주연 총괄). 빈 flex:1 유지 → 제목 중앙정렬 불변 -->
@@ -601,13 +605,14 @@ ${COMMON_STYLE}
 
   <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ③: 용도 입력칸 너비를 내용에 맞게 조정.
        전폭(full-bleed) → 내용맞춤(width:auto 테이블 + 라벨 60px·값 min-width:320px 좌측 배치). -->
-  <table style="margin-top:4px; width:auto;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ②: 용도표 width:auto→100% + table-layout:fixed, 라벨폭 80px(위 통원일자칸과 통일). 인라인 전용. -->
+  <table style="margin-top:4px; width:100%; table-layout:fixed;">
     <tbody>
       <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
            현장 요청(김주연 총괄) — 통원확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
       <tr>
-        <td style="width:60px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
-        <td style="min-width:320px;">{{purpose}}</td>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
+        <td>{{purpose}}</td>
       </tr>
     </tbody>
   </table>
@@ -659,34 +664,35 @@ ${COMMON_STYLE}
     <div style="flex:1;"></div>
   </div>
 
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ⑤: 환자정보표 라벨 좌→중앙정렬 (인라인 text-align:center, COMMON_STYLE 무접촉). -->
   <table>
     <tbody>
       <tr>
-        <td style="width:70px; background:#f8f8f8;">환 자 정 보</td>
+        <td style="width:70px; background:#f8f8f8; text-align:center;">환 자 정 보</td>
         <td style="width:140px;">{{record_no}}</td>
-        <td style="width:70px; background:#f8f8f8;">주 민 번 호</td>
+        <td style="width:70px; background:#f8f8f8; text-align:center;">주 민 번 호</td>
         <td>{{patient_rrn}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8;">환자 성명</td>
+        <td style="background:#f8f8f8; text-align:center;">환자 성명</td>
         <td>{{patient_name}}</td>
-        <td style="background:#f8f8f8;">성별</td>
+        <td style="background:#f8f8f8; text-align:center;">성별</td>
         <td>{{patient_gender}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8;">생년월일</td>
+        <td style="background:#f8f8f8; text-align:center;">생년월일</td>
         <td>{{patient_birthdate}}</td>
-        <td style="background:#f8f8f8;">연령</td>
+        <td style="background:#f8f8f8; text-align:center;">연령</td>
         <td>만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
       <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 주소·연락처를 각각 전폭(colspan=3) 행으로 분리.
            이전: 주소 칸이 한 컬럼(~140px)에 묶여 긴 주소 3줄 줄바꿈. 라벨/값 분리(8FIX AC-2)는 유지. -->
       <tr>
-        <td style="background:#f8f8f8;">환자의 주소</td>
+        <td style="background:#f8f8f8; text-align:center;">환자의 주소</td>
         <td colspan="3">{{patient_address}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8; white-space:nowrap;">환자 연락처</td>
+        <td style="background:#f8f8f8; white-space:nowrap; text-align:center;">환자 연락처</td>
         <td colspan="3">{{patient_phone}}</td>
       </tr>
     </tbody>
@@ -770,28 +776,30 @@ ${COMMON_STYLE}
     위의 소견을 제출함.
   </div>
 
-  <table style="margin-top:4px;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ⑤: 하단서명표 라벨 중앙정렬 + table-layout:fixed+colgroup(면허군 col1~2=50% / 의사성명군 col3~4=50%). 인라인 전용, COMMON_STYLE 무접촉. 발행 스냅샷(저장 HTML) 무접촉 — 템플릿만. -->
+  <table style="margin-top:4px; table-layout:fixed;">
+    <colgroup><col style="width:15%" /><col style="width:35%" /><col style="width:15%" /><col style="width:35%" /></colgroup>
     <tbody>
       <tr>
-        <td style="width:60px; background:#f8f8f8;">발 행 일</td>
+        <td style="background:#f8f8f8; text-align:center;">발 행 일</td>
         <td colspan="3">{{issue_date}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8;">의 료 기 관</td>
+        <td style="background:#f8f8f8; text-align:center;">의 료 기 관</td>
         <td colspan="3">{{clinic_name}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">주소 및 명칭</td>
+        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt; text-align:center;">주소 및 명칭</td>
         <td colspan="3">{{clinic_address}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">전화 및 팩스</td>
+        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt; text-align:center;">전화 및 팩스</td>
         <td colspan="3">{{clinic_phone}}</td>
       </tr>
       <tr>
-        <td style="background:#f8f8f8;">면 허 번 호</td>
+        <td style="background:#f8f8f8; text-align:center;">면 허 번 호</td>
         <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
-        <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
+        <td style="background:#f8f8f8; text-align:center; white-space:nowrap;">의 사 성 명</td>
         <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
@@ -854,7 +862,8 @@ ${COMMON_STYLE}
   <div style="font-size:9pt; margin:2px 0 4px;">요양기관기호 : <span style="text-decoration:underline;">{{clinic_code}}</span></div>
 
   <!-- 환자 기본 정보 -->
-  <table style="margin-bottom:4px;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ④: 비고열 명시폭(100px)+table-layout:fixed. 前 비고=폭 무지정 → 잔여 전량 흡수·우측 과폭. -->
+  <table style="margin-bottom:4px; table-layout:fixed;">
     <thead>
       <tr>
         <!-- T-20260629-foot-DOCPRINT-COLWIDTH-WRAP-AUDIT: 등록번호·진료기간 칸 폭 확대 + 데이터 nowrap → 줄바꿈 제거(가로 양식, 폭 여유) -->
@@ -866,7 +875,7 @@ ${COMMON_STYLE}
         <th style="width:150px;">진료기간</th>
         <th style="width:60px;">병실</th>
         <th style="width:70px;">환자구분</th>
-        <th>비고</th>
+        <th style="width:100px;">비고</th>
       </tr>
     </thead>
     <tbody>
@@ -891,14 +900,19 @@ ${COMMON_STYLE}
        조치: 가로(272mm) 폭 여유를 활용해 상병 4건도 최대 2 물리행으로 수용 → 세로 높이 절반 → 1페이지 내 완결(AC-1/1′).
        diag_code_N/diag_name_N 토큰·소스·개수(≤4)·행 가시성 규칙 불변 = 순수 레이아웃(데이터 무접점, AC-4).
        2번째 물리행(연번 3·4)은 기존과 동일하게 diag_row_3_style(3건 이상 시 노출)로 제어. 미채움 슬롯은 기존 패턴대로 빈칸(AC-3). -->
-  <table class="diag-grid" style="margin-bottom:4px;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ④: diag-grid 좌블록(연번·코드·상병명) 50% / 우블록 50% 대칭 — table-layout:fixed+colgroup. -->
+  <table class="diag-grid" style="margin-bottom:4px; table-layout:fixed;">
+    <colgroup>
+      <col style="width:8%" /><col style="width:18%" /><col style="width:24%" />
+      <col style="width:8%" /><col style="width:18%" /><col style="width:24%" />
+    </colgroup>
     <thead>
       <tr>
-        <th style="width:44px;">연번</th>
-        <th style="width:110px;">상병코드</th>
+        <th>연번</th>
+        <th>상병코드</th>
         <th style="text-align:left;">상병명</th>
-        <th style="width:44px;">연번</th>
-        <th style="width:110px;">상병코드</th>
+        <th>연번</th>
+        <th>상병코드</th>
         <th style="text-align:left;">상병명</th>
       </tr>
     </thead>
@@ -1014,10 +1028,14 @@ ${COMMON_STYLE}
   </div>
   <div style="font-size:9pt; text-align:center; margin-top:4px;">{{issue_date}}</div>
 
-  <table style="margin-top:8px;">
+  <!-- T-20260729-foot-DOC-LAYOUT-FIX ④: 하단 발급기관표 — 직인(52px≈5%) 제외 후 명칭군 50% / 대표군 50% 대칭. table-layout:fixed+colgroup. -->
+  <table style="margin-top:8px; table-layout:fixed;">
+    <colgroup>
+      <col style="width:16%" /><col style="width:31.5%" /><col style="width:14%" /><col style="width:33.5%" /><col style="width:5%" />
+    </colgroup>
     <tbody>
       <tr>
-        <td style="width:100px; background:#f8f8f8; text-align:center;">요양기관 명칭</td>
+        <td style="background:#f8f8f8; text-align:center;">요양기관 명칭</td>
         <!-- T-20260714-foot-OBLIVORIGIN-INSTNAME-REPPRINT: 요양기관명 축 재배선 (세부산정내역) -->
         <td>{{hira_institution_name}}</td>
         <td style="width:60px; background:#f8f8f8; text-align:center;">대 표 자</td>
@@ -2117,7 +2135,9 @@ const BILL_RECEIPT_NEW_HTML = `
   .rn-right table { height:100%; }
   @media print {
     @page { size:A4 portrait; margin:0; }
-    .rn-wrap { width:210mm; padding:5mm 7mm; }
+    /* T-20260729-foot-DOC-LAYOUT-FIX ①: A4 중앙정렬 — width 210mm→190mm + margin:0 auto
+       (T-20260629 누락 버그 수정: 210mm full-bleed 는 @page margin:0 에서 좌측 앵커 쏠림. 190mm+auto = 좌우 10mm belt 중앙). */
+    .rn-wrap { width:190mm; padding:5mm 7mm; margin:0 auto; }
     body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   }
 </style>
@@ -2271,7 +2291,10 @@ const BILL_RECEIPT_NEW_HTML = `
        ④-a 상호(요양기관명) 값칸을 auto(잔여 최대폭)로 확장 + nowrap → 상호명 1줄 출력(줄바꿈 방지).
        ⚠ 3FIX 값(457-23-00938)·위치, REPNAME 대표자/도장 회귀 없이 열 너비만 조정. -->
   <table style="margin-top:2mm;">
-    <colgroup><col style="width:12%"><col style="width:13%"><col style="width:7%"><col><col style="width:8%"><col style="width:15%"></colgroup>
+    <!-- T-20260729-foot-DOC-LAYOUT-FIX ①: 하단 요양기관 정보표 좌우 1:1 균형 재분배 —
+         좌측군(col1~4: 기관종류/사업자번호·값/상호·값·소재지) 50% / 우측군(col5~6: 전화번호·대표자 라벨 + 값·직인) 50%.
+         前: col4=auto 가 잔여 전량 흡수 → 우측(전화 8%·직인 15%) 협착·좌측 쏠림. 명시폭으로 재분배. -->
+    <colgroup><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:33%"></colgroup>
     <tbody>
       <tr>
         <td class="rn-lbl">요양기관 종류</td>

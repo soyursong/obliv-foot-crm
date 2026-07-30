@@ -22,24 +22,48 @@
  */
 import { supabase } from './supabase';
 import { todaySeoulISODate } from './format';
-import type {
-  AssignLeadSource,
-  AssignStrategy,
-  AssignmentRankingWeights,
-  AssignmentDailyTargetConfig,
+import {
+  VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE,
+  type AssignLeadSource,
+  type AssignStrategy,
+  type AssignmentRankingWeights,
+  type AssignmentDailyTargetConfig,
 } from './types';
 
 // ── 축(axis, 한글) → 정책 lead_source(enum) 매핑 ─────────────────────────────────
+// T-20260730-foot-ASSIGN-FULLSPEC-IMPL: 6경로 codify(fall-through 제거). 단, 배정 라우팅 primary substrate 는
+//   axis 가 아니라 deriveAssignLeadSource(visit_route→governed enum) 다. 본 AXIS 맵은 axis 기반 보조 매핑(호환)만 유지.
 const AXIS_TO_LEAD_SOURCE: Record<string, AssignLeadSource> = {
   TM: 'TM',
   인바운드: 'INBOUND',
   워크인: 'WALK_IN',
+  네이버: 'NAVER',
+  지인소개: 'REFERRAL',
+  공홈: 'HOMEPAGE',
 };
 
-/** deriveConsultAxis 결과(TM|인바운드|워크인|returning) → 정책 enum. 재진/미상 = null(전략 미적용). */
+/** deriveConsultAxis 결과(한글 축) → 정책 enum. 재진/미상 = null(전략 미적용). (보조 매핑 — 라우팅 primary=deriveAssignLeadSource) */
 export function mapAxisToLeadSource(axis: string | null | undefined): AssignLeadSource | null {
   if (!axis) return null;
   return AXIS_TO_LEAD_SOURCE[axis] ?? null;
+}
+
+/**
+ * ★배정 라우팅 primary accounting substrate (T-20260730-foot-ASSIGN-FULLSPEC-IMPL / DA Q3).
+ * 유입경로 원문(visit_route ?? lead_source) → governed AssignLeadSource. governed enum 파생-only(수기입력 금지).
+ *   · 재진(returning): null 반환 = 유입경로 전략 미적용(기존 동작 보존). 상담 재진은 상위(maybeAutoAssign)에서 이미 skip.
+ *   · 6경로 명시 매핑(VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE) — 네이버/지인소개/공홈 이 워크인에 묶이지 않고 독립 인식.
+ *   · 매핑 미스(레거시 '온라인'/'기타'/공란 등)만 WALK_IN 안전 폴백 = 기존 '워크인' 수렴 보존(회귀0).
+ * ★ 재진 365-recency 판정 로직 무접촉(CEO gate 경계, T-20260713) — 여기선 visit_type='returning' 만 확인.
+ */
+export function deriveAssignLeadSource(c: {
+  visit_type?: string | null;
+  lead_source?: string | null;
+  visit_route?: string | null;
+}): AssignLeadSource | null {
+  if (c.visit_type === 'returning') return null;
+  const raw = (c.visit_route ?? c.lead_source ?? '').trim();
+  return VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE[raw] ?? 'WALK_IN';
 }
 
 // ── 실행1: 상담사 매출 지표 ───────────────────────────────────────────────────
@@ -51,17 +75,41 @@ export interface ConsultantRevenueMetric {
   avgTicket: number;
 }
 
-/** 이달 시작(KST) / 이번 주(월요일 00:00 KST) ISO timestamptz 경계 산출. tz-safe(UTC 요일 계산). */
-export function seoulWindowBounds(todayIso: string): { monthStart: string; weekStart: string } {
+/**
+ * 랭킹 매출 윈도우 경계(KST) ISO timestamptz 산출. tz-safe(UTC 요일 계산).
+ *
+ * T-20260730-foot-ASSIGN-FULLSPEC-IMPL G1 (spec-of-record §094v 가.):
+ *   '주매출' 윈도우 = **전주(직전주 월~일)**. 기존 CRM-ASSIGN-V1 은 weekStart=이번주 월요일(금주)였으나
+ *   김주연 총괄 확정 스펙은 '전주 매출 ×2' → 전주 구간으로 교정한다(랭킹 divergence #1 해소).
+ *   전주는 월초(예: 1~7일)에 전월로 넘어갈 수 있으므로 fetchStart = min(monthStart, weekStart) 로
+ *   payments 쿼리 하한을 확장해 전주 데이터 누락(전월분)이 없게 한다.
+ *   디스플레이 랭킹 탭 '전주매출' 정의(Assignments.rankingRanges prevWeekMon~prevWeekSun)와 동일 구간(정합).
+ *
+ *   · monthStart : 이달 1일 00:00(+09) — 당월 매출·객단가 분모 하한(불변).
+ *   · weekStart  : 직전주 월요일 00:00(+09) — 전주 매출 하한(포함).
+ *   · weekEnd    : 이번주 월요일 00:00(+09) — 전주 매출 상한(미포함) = 직전주 일요일 24:00.
+ *   · fetchStart : min(monthStart, weekStart) — payments 쿼리 하한(전주가 전월이면 확장).
+ */
+export function seoulWindowBounds(todayIso: string): {
+  monthStart: string;
+  weekStart: string;
+  weekEnd: string;
+  fetchStart: string;
+} {
   const monthStart = `${todayIso.slice(0, 7)}-01T00:00:00+09:00`;
   const [y, m, d] = todayIso.split('-').map((n) => parseInt(n, 10));
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=일..6=토
-  const backToMon = (dow + 6) % 7; // 월요일까지 되돌릴 일수
-  const monDate = new Date(Date.UTC(y, m - 1, d - backToMon));
-  const ws = `${monDate.getUTCFullYear()}-${String(monDate.getUTCMonth() + 1).padStart(2, '0')}-${String(
-    monDate.getUTCDate(),
-  ).padStart(2, '0')}`;
-  return { monthStart, weekStart: `${ws}T00:00:00+09:00` };
+  const backToMon = (dow + 6) % 7; // 이번주 월요일까지 되돌릴 일수
+  const fmt = (dt: Date) =>
+    `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      dt.getUTCDate(),
+    ).padStart(2, '0')}`;
+  const thisMon = new Date(Date.UTC(y, m - 1, d - backToMon)); // 이번주 월요일
+  const prevMon = new Date(Date.UTC(y, m - 1, d - backToMon - 7)); // 전주(직전주) 월요일
+  const weekStart = `${fmt(prevMon)}T00:00:00+09:00`;
+  const weekEnd = `${fmt(thisMon)}T00:00:00+09:00`; // 전주 상한(미포함) = 이번주 월요일 00:00
+  const fetchStart = weekStart < monthStart ? weekStart : monthStart;
+  return { monthStart, weekStart, weekEnd, fetchStart };
 }
 
 /**
@@ -74,18 +122,21 @@ export async function fetchConsultantRevenueMetrics(
   const out = new Map<string, ConsultantRevenueMetric>();
   try {
     const today = todaySeoulISODate();
-    const { monthStart, weekStart } = seoulWindowBounds(today);
+    const { monthStart, weekStart, weekEnd, fetchStart } = seoulWindowBounds(today);
     const { data, error } = await supabase
       .from('payments')
       .select('amount, created_at, check_ins!inner(consultant_id)')
       .eq('clinic_id', clinicId)
       .eq('status', 'active')
       .eq('payment_type', 'payment')
-      .gte('created_at', monthStart);
+      // G1: 전주가 전월로 넘어갈 수 있어 하한을 min(monthStart, weekStart)=fetchStart 로 확장.
+      //   당월/전주 귀속은 아래 루프에서 created_at 을 monthStart / [weekStart,weekEnd) 로 분기해 정확히 산정.
+      .gte('created_at', fetchStart);
     if (error || !data) return out;
 
-    // consultant_id → {월매출, 주매출, 이달 담당 check_in 집합(객단가 분모)}
-    const visitSets = new Map<string, Set<string>>();
+    // consultant_id → {월매출(당월만), 주매출(전주 [weekStart,weekEnd)만), avgTicket}
+    // 객단가 분모 = 당월 payment 건수(방문 근사). 전주(전월분) 행은 월매출·건수에서 제외.
+    const cntMap = new Map<string, number>();
     for (const row of data as unknown[]) {
       const r = row as {
         amount: number | null;
@@ -97,21 +148,14 @@ export async function fetchConsultantRevenueMetrics(
       if (!staffId) continue;
       const amt = Number(r.amount ?? 0);
       const cur = out.get(staffId) ?? { revenueMonth: 0, revenueWeek: 0, avgTicket: 0 };
-      cur.revenueMonth += amt;
-      if (r.created_at >= weekStart) cur.revenueWeek += amt;
+      if (r.created_at >= monthStart) {
+        cur.revenueMonth += amt; // 당월(1일~)만
+        cntMap.set(staffId, (cntMap.get(staffId) ?? 0) + 1); // 객단가 분모 = 당월 건수
+      }
+      if (r.created_at >= weekStart && r.created_at < weekEnd) {
+        cur.revenueWeek += amt; // 전주(직전주 월~일)만
+      }
       out.set(staffId, cur);
-      if (!visitSets.has(staffId)) visitSets.set(staffId, new Set());
-      // check_in 단위 방문(객단가 분모) — check_ins embed 는 id 미포함이므로 created_at 근사 키 대신
-      // consultant 별 payment 건수로 근사하지 않고, 별도 방문수는 아래 avgTicket 계산에서 payment 건수 사용.
-    }
-    // 객단가 = 월매출 / 이달 payment 건수(방문 근사). 건수 0 방지.
-    const cntMap = new Map<string, number>();
-    for (const row of data as unknown[]) {
-      const r = row as { check_ins: { consultant_id: string | null } | { consultant_id: string | null }[] | null };
-      const ci = Array.isArray(r.check_ins) ? r.check_ins[0] : r.check_ins;
-      const staffId = ci?.consultant_id ?? null;
-      if (!staffId) continue;
-      cntMap.set(staffId, (cntMap.get(staffId) ?? 0) + 1);
     }
     for (const [staffId, met] of out) {
       const cnt = cntMap.get(staffId) ?? 0;
@@ -418,23 +462,303 @@ export async function fetchTodayConsultAssignCounts(clinicId: string): Promise<M
   }
 }
 
+// ── G4: 전일(이전 영업일) 휴무 판정 (T-20260730-foot-ASSIGN-FULLSPEC-IMPL §Q3) ─────
+//   Q3(총괄 7/30 09:00 confirm): '어제 출근상태 ≠ 출근' → 전부 휴무(주말·연차·오프 구분 없이).
+//   월요일 예외(총괄 7/30 09:15 보충, slack ts=1785370441.129699): 센터 일요일 고정휴무 →
+//   월요일 '전일'은 일요일 스킵, 토요일 출근 여부 기준. 요일기반 이전 영업일 계산으로 일반화.
+
+/** 고정 휴무 요일 집합(0=일). 종로 풋센터 = 일요일 고정휴무. 향후 타 고정휴무일 확장 시 여기에 추가. */
+export const FIXED_HOLIDAY_DOWS = new Set<number>([0]);
+
+/**
+ * '전일(어제)' = 직전 영업일 ISO date(KST). 고정 휴무 요일(FIXED_HOLIDAY_DOWS)은 건너뛴다.
+ *   · 화~토 → 하루 전(월~금).
+ *   · 월요일 → 일요일(고정휴무) 스킵 → 토요일 (Q3 월요일 예외).
+ *   · 일반화: 이전 영업일을 요일 기반으로 산출(향후 타 고정휴무일 확장 대비).
+ * tz-safe: UTC 날짜 산술만 사용(로컬 tz·시각 영향 없음). seoulWindowBounds 와 동일 패턴.
+ */
+export function previousBusinessDayISO(
+  todayIso: string,
+  holidayDows: Set<number> = FIXED_HOLIDAY_DOWS,
+): string {
+  const [y, m, d] = todayIso.split('-').map((n) => parseInt(n, 10));
+  const fmt = (dt: Date) =>
+    `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      dt.getUTCDate(),
+    ).padStart(2, '0')}`;
+  let cur = new Date(Date.UTC(y, m - 1, d));
+  // 최대 14일 뒤로 탐색(무한루프 방지 — 모든 요일이 고정휴무일 순 없음).
+  for (let i = 0; i < 14; i++) {
+    cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() - 1));
+    if (!holidayDows.has(cur.getUTCDay())) return fmt(cur);
+  }
+  return fmt(cur);
+}
+
+/**
+ * 이전 영업일 기준 '휴무' 상담사 id 집합(G4).
+ *   staff_attendance(date=이전영업일)에서 status='present' 인 staff 만 '출근'.
+ *   Q3: 그 외(연차·오프·주말·레코드 부재 포함) 전원 = 휴무 → 후보 중 이전영업일 present 아닌 전원.
+ * graceful: 조회 실패 → 빈 set(= 아무도 휴무 아님 → turnOrder=baseOrder, 배정 동선 무영향).
+ */
+export async function fetchPrevDayOffConsultants(
+  clinicId: string,
+  candidateIds: string[],
+): Promise<Set<string>> {
+  if (candidateIds.length === 0) return new Set();
+  try {
+    const prevIso = previousBusinessDayISO(todaySeoulISODate());
+    const { data, error } = await supabase
+      .from('staff_attendance')
+      .select('staff_id, status')
+      .eq('clinic_id', clinicId)
+      .eq('date', prevIso)
+      .eq('status', 'present');
+    if (error) return new Set();
+    const presentPrev = new Set(
+      (data ?? []).map((r) => (r as { staff_id: string }).staff_id),
+    );
+    return new Set(candidateIds.filter((id) => !presentPrev.has(id)));
+  } catch {
+    return new Set();
+  }
+}
+
+// ── G2: TM(도파민) 턴 배정 (T-20260730-foot-ASSIGN-FULLSPEC-IMPL §094v 나. + Q1/Q2) ──
+
+/**
+ * TM 턴 순서(순수): [이전영업일 휴무자] ++ [나머지], 각 구간 내 기본순번(baseOrder) 유지.
+ *   Q3: '전일 휴무 실장부터 기본순번 순' 시작. 복수 휴무자도 기본순번 순(별도 우선순위 없음).
+ * @param baseOrder 후보 id (기본순번 assign_sort_order asc 로 이미 정렬됨)
+ * @param offSet    이전영업일 휴무 id 집합
+ */
+export function buildTmTurnOrder(baseOrder: string[], offSet: Set<string>): string[] {
+  const off = baseOrder.filter((id) => offSet.has(id));
+  const on = baseOrder.filter((id) => !offSet.has(id));
+  return [...off, ...on];
+}
+
+/**
+ * TM skip 집합(순수) — Q1 랭킹 투영: 동일 30분 슬롯 비TM 예약 수 N → 랭킹 상위 N명(K=1..N) skip.
+ *   ⚠ '이미 그 예약을 보유한 실장' 기준이 아니라 '랭킹 순서로 그 비TM을 받게 될 상위 K명' 기준(Q1 semantic 확정).
+ *   근거: 그 슬롯 비TM 고객은 랭킹(비TM) 배정으로 상위 실장에게 먼저 가므로 TM 순번에서 미리 제외.
+ */
+export function tmRankingSkipSet(rankedIds: string[], nNonTm: number): Set<string> {
+  const k = Math.max(0, nNonTm);
+  return new Set(rankedIds.slice(0, k));
+}
+
+/**
+ * 턴 커서에서 skip 집합을 건너뛰며 다음 TM 배정 대상 선택(순수).
+ *   cursor 부터 순환 walk → skip 아닌 첫 후보. 전원 skip(엣지: N≥후보수) → 배정 동선 막지 않게 cursor 위치 선택.
+ * @returns { chosen, nextCursor } — nextCursor 는 선택 다음 위치(persist용).
+ */
+export function pickTmFromTurn(
+  turnOrder: string[],
+  skipSet: Set<string>,
+  cursor: number,
+): { chosen: string | null; nextCursor: number } {
+  const n = turnOrder.length;
+  if (n === 0) return { chosen: null, nextCursor: 0 };
+  const start = ((cursor % n) + n) % n;
+  for (let step = 0; step < n; step++) {
+    const idx = (start + step) % n;
+    if (!skipSet.has(turnOrder[idx])) {
+      return { chosen: turnOrder[idx], nextCursor: idx + 1 };
+    }
+  }
+  // 전원 skip → 배정 유지(cursor 위치 배정, no-op 방지).
+  return { chosen: turnOrder[start], nextCursor: start + 1 };
+}
+
+/** 'HH:MM[:SS]' → 30분 슬롯 시작 'HH:MM'(floor, Q2). 파싱 실패 시 null. */
+export function toHalfHourSlot(time: string | null | undefined): string | null {
+  if (!time) return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(time.trim());
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  const slotMin = mm < 30 ? 0 : 30;
+  return `${String(hh).padStart(2, '0')}:${String(slotMin).padStart(2, '0')}`;
+}
+
+/**
+ * 동일 30분 슬롯(Q2) 비TM 예약 수 N.
+ *   대상 = reservations(clinic, 같은 날짜, status IN confirmed|checked_in = 예약 예정 명단) 중
+ *          같은 30분 슬롯 & 비TM(=deriveAssignLeadSource 가 TM 도 null(재진) 도 아닌 값).
+ *   비TM = 인바운드·워크인·네이버·지인소개·공홈. 재진(null)은 지정 배정 → 랭킹 슬롯 미소비이므로 제외.
+ * graceful: 조회 실패/슬롯 미상 → 0(skip 없음, 순수 턴 배정).
+ */
+export async function countSlotNonTmReservations(
+  clinicId: string,
+  reservationDate: string,
+  reservationTime: string,
+): Promise<number> {
+  const slot = toHalfHourSlot(reservationTime);
+  if (!slot) return 0;
+  try {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('reservation_time, visit_type, visit_route, status')
+      .eq('clinic_id', clinicId)
+      .eq('reservation_date', reservationDate)
+      .in('status', ['confirmed', 'checked_in']);
+    if (error || !data) return 0;
+    let n = 0;
+    for (const r of data as {
+      reservation_time: string;
+      visit_type?: string | null;
+      visit_route?: string | null;
+    }[]) {
+      if (toHalfHourSlot(r.reservation_time) !== slot) continue;
+      const ls = deriveAssignLeadSource({ visit_type: r.visit_type, visit_route: r.visit_route });
+      if (ls && ls !== 'TM') n++;
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+/** 후보 상담사 기본순번(assign_sort_order) 맵 — TM 턴 정렬용. graceful 빈 맵(컬럼 부재 42703 등). */
+async function fetchConsultantSortOrder(clinicId: string): Promise<Map<string, number>> {
+  try {
+    const { data, error } = await supabase
+      .from('staff')
+      .select('id, assign_sort_order')
+      .eq('clinic_id', clinicId)
+      .eq('active', true)
+      .eq('role', 'consultant');
+    if (error) return new Map();
+    const m = new Map<string, number>();
+    for (const r of (data ?? []) as { id: string; assign_sort_order: number | null }[]) {
+      if (r.assign_sort_order != null) m.set(r.id, r.assign_sort_order);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * TM(도파민) 고객 배정(G2, spec-of-record §094v 나. + Q1/Q2/Q3). daily_target/ranking_pointer 대체(TM 한정).
+ *   ① 후보 = present∩enabled 상담사(fetchPresentEnabledConsultants, 실행3와 동일 pool).
+ *   ② baseOrder = 기본순번(assign_sort_order asc, NULL 후순위, id tie-break).
+ *   ③ 전일(이전영업일) 휴무자부터 → 기본순번 턴(buildTmTurnOrder ← fetchPrevDayOffConsultants, G4+Q3).
+ *   ④ 동일 30분 슬롯 비TM 예약 N → 랭킹 상위 N명 skip(tmRankingSkipSet, Q1 랭킹 투영).
+ *   ⑤ 지속 커서(assignment_pointer_state lead_source='TM', 일일 lazy 리셋)에서 skip 건너뛰며 턴 배정.
+ * ★ 조건② RED LINE 계승: check_ins.consultant_id 만 write 대상, customers 무접촉.
+ * best-effort: 실패/후보0 → null → 호출측 월균등 least-loaded fallback(회귀0).
+ */
+export async function pickTmConsultant(opts: {
+  clinicId: string;
+  reservation?: { date: string; time: string } | null;
+  poolFilter?: Set<string> | null;
+}): Promise<{ staffId: string; leadSource: AssignLeadSource } | null> {
+  try {
+    let candidates = await fetchPresentEnabledConsultants(opts.clinicId);
+    if (opts.poolFilter) candidates = candidates.filter((id) => opts.poolFilter!.has(id));
+    if (candidates.length === 0) return null;
+
+    const [orderMap, offSet, metrics, weights] = await Promise.all([
+      fetchConsultantSortOrder(opts.clinicId),
+      fetchPrevDayOffConsultants(opts.clinicId, candidates),
+      fetchConsultantRevenueMetrics(opts.clinicId),
+      fetchRankingWeights(opts.clinicId),
+    ]);
+
+    const NO_ORDER = Number.MAX_SAFE_INTEGER; // 순번 미지정 = 후순위(pickLeastLoaded 와 동일 규약)
+    const baseOrder = [...candidates].sort(
+      (a, b) =>
+        (orderMap.get(a) ?? NO_ORDER) - (orderMap.get(b) ?? NO_ORDER) ||
+        (a < b ? -1 : a > b ? 1 : 0),
+    );
+    const turnOrder = buildTmTurnOrder(baseOrder, offSet);
+    const ranked = computeRanking(candidates, metrics, weights);
+
+    const nNonTm = opts.reservation
+      ? await countSlotNonTmReservations(
+          opts.clinicId,
+          opts.reservation.date,
+          opts.reservation.time,
+        )
+      : 0;
+    const skipSet = tmRankingSkipSet(ranked, nNonTm);
+
+    // 턴 커서 read(일일 lazy 리셋) — pickByRankingPointer 와 동일 assignment_pointer_state 재사용(lead_source='TM').
+    const today = todaySeoulISODate();
+    let cursor = 0;
+    try {
+      const { data } = await supabase
+        .from('assignment_pointer_state')
+        .select('cursor_rank, reset_date')
+        .eq('clinic_id', opts.clinicId)
+        .eq('lead_source', 'TM')
+        .maybeSingle();
+      const row = data as { cursor_rank: number; reset_date: string | null } | null;
+      cursor = row && row.reset_date === today ? row.cursor_rank : 0;
+    } catch {
+      cursor = 0;
+    }
+
+    const { chosen, nextCursor } = pickTmFromTurn(turnOrder, skipSet, cursor);
+    if (!chosen) return null;
+
+    // advance + persist(best-effort: 실패해도 배정은 진행).
+    try {
+      await supabase.from('assignment_pointer_state').upsert(
+        {
+          clinic_id: opts.clinicId,
+          lead_source: 'TM',
+          cursor_rank: nextCursor,
+          reset_date: today,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'clinic_id,lead_source' },
+      );
+    } catch {
+      /* best-effort */
+    }
+    return { staffId: chosen, leadSource: 'TM' };
+  } catch {
+    return null;
+  }
+}
+
 // ── 오케스트레이터: 유입경로 정책 → 상담사 선택 ───────────────────────────────
 
 /**
  * 상담사 자동배정 후보 선택(전략 기반). 정책이 설정된 유입경로에만 동작, 아니면 null → 기존 월균등 fallback.
  *
  * @param clinicId  클리닉
- * @param axis      deriveConsultAxis 결과(TM|인바운드|워크인|returning)
+ * @param leadSource governed 유입경로 enum(deriveAssignLeadSource 결과). null=재진/미상 → 전략 미적용.
  * @param poolFilter (선택) 추가로 후보를 제한할 id 집합(예: 지정 fallback 컨텍스트). 미전달 시 present∩enabled 전체.
  * @returns 선택된 staffId | null(전략 미적용/후보없음 → 호출측 fallback)
  */
 export async function pickConsultantByStrategy(opts: {
   clinicId: string;
-  axis: string | null;
+  leadSource: AssignLeadSource | null;
   poolFilter?: Set<string> | null;
+  /** T-20260730 G2: TM 배정 시 동일 30분 슬롯 비TM 예약 lookup 을 위한 현재 예약 슬롯(reservation_id → date/time). */
+  reservation?: { date: string; time: string } | null;
 }): Promise<{ staffId: string; strategy: AssignStrategy; leadSource: AssignLeadSource } | null> {
-  const leadSource = mapAxisToLeadSource(opts.axis);
+  const leadSource = opts.leadSource;
   if (!leadSource) return null; // 재진/미상 = 전략 미적용
+
+  // T-20260730-foot-ASSIGN-FULLSPEC-IMPL G2 (§094v 나.): TM(도파민) 고객은 유입경로 정책
+  //   (daily_target/ranking_pointer)이 아니라 '전일휴무 기본순번 턴 + 동일슬롯 비TM 랭킹투영 skip'
+  //   전용 로직으로 배정한다(AC-2: 기존 TM daily_target/ranking_pointer 경로 대체). 정책 row 유무 무관.
+  //   후보0/실패 → null → 호출측 월균등 least-loaded 로 fallback(회귀0).
+  if (leadSource === 'TM') {
+    const tm = await pickTmConsultant({
+      clinicId: opts.clinicId,
+      reservation: opts.reservation ?? null,
+      poolFilter: opts.poolFilter ?? null,
+    });
+    // strategy 필드는 소비처(autoAssign)가 .staffId 만 사용 → 명목 라벨('ranking_pointer', TM 턴은 커서 순환 계열).
+    return tm ? { staffId: tm.staffId, strategy: 'ranking_pointer', leadSource: 'TM' } : null;
+  }
 
   const policyMap = await fetchLeadSourcePolicy(opts.clinicId);
   const strategy = policyMap.get(leadSource);

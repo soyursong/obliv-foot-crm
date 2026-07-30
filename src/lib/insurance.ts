@@ -22,12 +22,12 @@ export { getBaseCopayRate, copayFromBase, copayBasisText, calcCopayment as calcC
 
 export type InsuranceGrade =
   | 'general'          // 일반 30%
-  | 'low_income_1'     // 차상위 1종 14%
-  | 'low_income_2'     // 차상위 2종 14%
-  | 'medical_aid_1'    // 의료급여 1종 0% (정액 1,000원)
-  | 'medical_aid_2'    // 의료급여 2종 15%
+  | 'low_income_1'     // 차상위 1종 면제 (의원 외래 0원) — 종전 14% 오적용 정정(v1.6)
+  | 'low_income_2'     // 차상위 2종 정액 1,000원 (의원 외래) — 종전 14% 오적용 정정(v1.6)
+  | 'medical_aid_1'    // 의료급여 1종 정액 1,000원 (의원 외래)
+  | 'medical_aid_2'    // 의료급여 2종 정액 1,000원 (의원 외래) — 종전 15% 오적용 정정(v1.6)
   | 'infant'           // 만6세 미만 21%
-  | 'elderly_flat'     // 만65세 정액 (조건부)
+  | 'elderly_flat'     // 만65세 노인 (외래 4구간 정률제: 정액 1,500 / 10 / 20 / 30%)
   | 'foreigner'        // 외국인 (전액 비급여)
   | 'unverified';      // 미확인
 
@@ -49,12 +49,12 @@ export type HiraCategory =
 
 export const INSURANCE_GRADE_LABELS: Record<InsuranceGrade, string> = {
   general:       '일반 (30%)',
-  low_income_1:  '차상위 1종 (14%)',
-  low_income_2:  '차상위 2종 (14%)',
+  low_income_1:  '차상위 1종 (면제)',
+  low_income_2:  '차상위 2종 (정액 1,000원)',
   medical_aid_1: '의료급여 1종 (정액 1,000원)',
-  medical_aid_2: '의료급여 2종 (15%)',
+  medical_aid_2: '의료급여 2종 (정액 1,000원)',
   infant:        '만6세 미만 (21%)',
-  elderly_flat:  '만65세 정액 (1,500원)',
+  elderly_flat:  '만65세 노인 (정률제)',
   foreigner:     '외국인 (비급여)',
   unverified:    '미확인',
 };

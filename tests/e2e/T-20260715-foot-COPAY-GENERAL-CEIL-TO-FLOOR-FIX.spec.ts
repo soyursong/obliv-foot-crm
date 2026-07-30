@@ -1,7 +1,9 @@
 /**
  * E2E/unit spec — T-20260715-foot-COPAY-GENERAL-CEIL-TO-FLOOR-FIX
- * 일반 정률경로(비-노인: general 30% / low_income_1·2 14% / medical_aid_2 15% / infant 21% / ELSE)
+ * 일반 정률경로(비-노인: general 30% / infant 21% / unverified·ELSE 30%)
  * 원단위 = 100원 미만 절사(FLOOR) 확정 회귀.
+ * ★[정본화 T-20260730] low_income_1/2·medical_aid_2 는 v1.6 면제/정액 이전으로 정률경로 아님 →
+ *   정률 케이스에서 제외, 정본(면제/정액)은 '무영향 회귀' 블록에서 별도 잠금(종전 0.14/0.15 재발 차단).
  *
  * ★ 정정: 종전 v1.4 일반 정률경로 CEIL(100원 절상) → FLOOR(100원 미만 절사, v1.5).
  *   (v1.4 는 elderly 4구간만 FLOOR, 일반경로 CEIL 잔존 = 일반경로 급여 체계적 초과징수 최대 99원/건.)
@@ -73,10 +75,11 @@ test.describe('T-20260715 일반 정률경로 100원 미만 절사(FLOOR) — ge
 
 test.describe('T-20260715 일반 정률경로 FLOOR — 타 등급(전 정률 등급 동일 규칙)', () => {
   // rate 별 non-정수배 → 절사. 각 등급이 ELSE 정률경로를 타는지 확인.
+  // ★[정본화 T-20260730-INS-GRADE-LABEL-RECONCILE] low_income_1/2·medical_aid_2 는 v1.6 에서
+  //   면제/정액으로 이전 → 더 이상 '일반 정률경로'가 아니다. 종전 0.14/0.15 기대치는 잠복 RED(오적용값).
+  //   정률 CASES 에서 제거하고, 해당 등급의 정본(면제/정액)은 아래 '무영향 회귀' 블록에서 별도 검증.
+  //   여기 남는 정률 등급 = infant(0.21) / unverified(0.30=ELSE) 만.
   const CASES: Array<{ grade: InsuranceGrade; base: number; rate: number; floor: number; ceil: number }> = [
-    { grade: 'low_income_1', base: 10050, rate: 0.14, floor: 1400, ceil: 1500 }, // 1407
-    { grade: 'low_income_2', base: 10050, rate: 0.14, floor: 1400, ceil: 1500 }, // 1407
-    { grade: 'medical_aid_2', base: 10050, rate: 0.15, floor: 1500, ceil: 1600 }, // 1507.5
     { grade: 'infant', base: 10050, rate: 0.21, floor: 2100, ceil: 2200 },        // 2110.5
     { grade: 'unverified', base: 12345, rate: 0.30, floor: 3700, ceil: 3800 },    // ELSE→0.30
   ];
@@ -94,6 +97,24 @@ test.describe('T-20260715 일반 정률경로 FLOOR — 타 등급(전 정률 �
   test('회귀: medical_aid_1 = MIN(1000, base) (정률 아님, 무영향)', () => {
     expect(calcGeneral(5000, 'medical_aid_1').copayment_amount).toBe(1000);
     expect(calcGeneral(800, 'medical_aid_1').copayment_amount).toBe(800);
+  });
+
+  // ── ★정본화(T-20260730): 면제/정액 이전 등급이 정률경로를 타지 않음을 잠금 ──────
+  //   getBaseCopayRate = 0.00(정보성), copay = 면제(0) / 정액 MIN(1000,base). 종전 14%/15% 재발 차단.
+  test('정본: low_income_1 = 면제(0원) · rate 0.00 (종전 0.14 오적용 폐기)', () => {
+    expect(getBaseCopayRate('low_income_1')).toBe(0);
+    expect(calcGeneral(10050, 'low_income_1').copayment_amount).toBe(0);
+    expect(calcGeneral(10050, 'low_income_1').insurance_covered_amount).toBe(10050);
+  });
+  test('정본: low_income_2 = 정액 MIN(1000,base) · rate 0.00 (종전 0.14 오적용 폐기)', () => {
+    expect(getBaseCopayRate('low_income_2')).toBe(0);
+    expect(calcGeneral(10050, 'low_income_2').copayment_amount).toBe(1000);
+    expect(calcGeneral(800, 'low_income_2').copayment_amount).toBe(800); // base<1000 → base
+  });
+  test('정본: medical_aid_2 = 정액 MIN(1000,base) · rate 0.00 (종전 0.15 오적용 폐기)', () => {
+    expect(getBaseCopayRate('medical_aid_2')).toBe(0);
+    expect(calcGeneral(10050, 'medical_aid_2').copayment_amount).toBe(1000);
+    expect(calcGeneral(800, 'medical_aid_2').copayment_amount).toBe(800);
   });
   test('회귀: elderly_flat 정률구간은 4구간 FLOOR(별경로) 유지 — base 18,050 → 1,800', () => {
     expect(calcGeneral(18050, 'elderly_flat').copayment_amount).toBe(1800);
@@ -138,8 +159,6 @@ test.describe('T-20260715 parity — RPC v1.5 (단일권위) ↔ copayCalc.ts (�
       [29380, 'general', 8800],
       [12345, 'general', 3700],
       [100, 'general', 0],
-      [10050, 'low_income_1', 1400],
-      [10050, 'medical_aid_2', 1500],
       [10050, 'infant', 2100],
       [12345, 'unverified', 3700],
     ];

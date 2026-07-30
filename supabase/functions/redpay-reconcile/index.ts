@@ -43,6 +43,7 @@ import {
   formatAlertMessage,
   isObserveRow,
   planReconLogInserts,
+  buildMatchedPaymentUpdate,
   SUPPRESSIBLE_EVENT_TYPES,
   type RawTransaction,
   type CrmPayment,
@@ -765,17 +766,44 @@ async function runMatcher(clinicId: string): Promise<{ matched: number; events: 
         continue;
       }
 
-      const { error: payUpdateErr } = await supabase
+      // ── approval_no writeback (T-20260730-foot-REDPAY-APPROVALNO-WRITEBACK-PAYMENTS, DA-20260730 GO 조건부) ──
+      //   근본원인: 매칭 확정 시 여기서 3필드(reconciled_at/external_trxid/external_status)만 승격하고
+      //   external_approval_no 를 미승격 → payments.external_approval_no 전건 NULL → 결제내역 화면 '승인번호 없음'.
+      //   조치: 승인번호(raw.approval_no)를 payments.external_approval_no 로 writeback(기존 컬럼 UPDATE, no-DDL).
+      //
+      //   C1 (원자성, DA §2-3): 반드시 아래 '기존 단일 UPDATE' 객체에 fold(동일 atomic write). 별도/선행 statement 금지.
+      //     선행하면 transient window(external_approval_no≠NULL ∧ reconciled_at=NULL ∧ external_trxid=NULL)가 생겨
+      //     그 행이 Tier0 pool query(L685-693: external_approval_no NOT NULL ∧ reconciled_at NULL ∧ external_trxid NULL)에
+      //     재진입 → 재run false-match. 동일 UPDATE 로 reconciled_at+external_trxid 를 함께 stamp 하면 두 IS NULL 필터에서
+      //     동시 탈락 → 영구 제외 → re-link 불가(DA Q2 구조검증).
+      //   C4 (순수 단일필드, DA §3): 매출 무접점. external_approval_no 만 추가. amount·method·pg_provider·payment_type·
+      //     기타 flag 무접촉. raw.approval_no 가 있을 때만 채워 기존값 NULL-덮어쓰기(유실) 방지(멱등·behavior-preserving).
+      //   ★불변식 프레이밍(DA §1-2): approval_no 는 composite corroborator(단독 결정권 없음)로 이미 강등됨 —
+      //     이 writeback 은 매칭 predicate 에 무접촉(populate 만). "trxid=전역유일키" 표현은 RETRACTED(07-29 NONUNIQUE-
+      //     COMPOSITE-CORRECT) — 현 불변식 = 어느 식별자(trxid·approval_no·tid)도 단독키 아님·composite 전용.
+      const payUpdatePayload = buildMatchedPaymentUpdate(rawRow, reconNow);
+
+      const { data: payUpdated, error: payUpdateErr } = await supabase
         .from("payments")
-        .update({
-          reconciled_at:   reconNow,
-          external_trxid:  rawRow.external_trxid,
-          external_status: rawRow.external_status,
-        })
-        .eq("id", result.payment_id);
+        .update(payUpdatePayload)
+        .eq("id", result.payment_id)
+        .select("id");   // C2: RETURNING → 실제 갱신 row 수 검증(silent write-failure 금지)
 
       if (payUpdateErr) {
         console.error(`[runMatcher][foot] payment update 오류 (${result.payment_id}):`, payUpdateErr.message);
+        await supabase.from("redpay_raw_transactions")
+          .update({ matched_payment_id: null, match_rule: null })
+          .eq("id", rawRow.id);
+        continue;
+      }
+
+      // C2 (rows-affected, DA §4-2 / cross_crm_write_rowcheck_standard INV-W2/W4/W5): exactly-1 assert.
+      //   0-row + error=null = RLS/스코프 거부를 성공 오판하는 사일런트 유실 → 거부 승격(raw 링크 rollback, INV-W4).
+      if (!payUpdated || payUpdated.length !== 1) {
+        console.error(
+          `[runMatcher][foot] payment update rows-affected≠1 (${result.payment_id}): ` +
+          `got ${payUpdated?.length ?? 0} — 사일런트 write-failure 승격(rollback)`
+        );
         await supabase.from("redpay_raw_transactions")
           .update({ matched_payment_id: null, match_rule: null })
           .eq("id", rawRow.id);
