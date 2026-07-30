@@ -45,7 +45,8 @@ test.describe('T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV', () => {
     // 내용 보존: 환자/검사상태/검사결과/차트번호 컬럼 모두 유지
     expect(b).toContain('exam-name-clickable');
     expect(b).toContain('exam-koh-badge');
-    expect(b).toContain('exam-blood-badge');
+    // ★GUNTAB-CLEANUP(A) SUPERSEDE: 피검사 badge 는 [피검사] 탭 전담 → 균검사 탭에서 제거.
+    expect(b).not.toContain('exam-blood-badge');
     expect(b).toContain('chartNoBadge');
   });
 
@@ -122,7 +123,10 @@ test.describe('T-20260622-foot-EXAMTARGET-COMPACT-DATELIST-RESULT-NAV', () => {
   test('회귀: 빈 상태/리스트업 조건/방어성(42703 폴백) 보존', () => {
     const b = sectionB();
     expect(b).toContain('data-testid="exam-targets-empty"');
-    expect(b).toContain("or('koh_requested.eq.true,blood_test_requested.eq.true')");
+    // ★GUNTAB-CLEANUP(A) SUPERSEDE: 균검사 탭 리스트업 = koh 전용(or 혼합 → koh 단독 필터).
+    //   피검사-only 신청자는 [피검사] 탭 전담.
+    expect(b).toContain("eq('koh_requested', true)");
+    expect(b).not.toContain("or('koh_requested.eq.true,blood_test_requested.eq.true')");
     expect(b).toMatch(/42703/); // ADDITIVE 컬럼 미적용 prod 폴백
     expect(b).toContain('<KohResultDialog');
   });

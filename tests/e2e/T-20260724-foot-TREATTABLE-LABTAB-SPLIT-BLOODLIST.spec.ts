@@ -40,11 +40,13 @@ test.describe('AC-1: 탭 분리', () => {
 });
 
 test.describe('AC-2: 균검사 회귀0', () => {
-  test('ExamTargetsSection 데이터 훅/표기 보존(무변경)', () => {
+  // ★T-20260726-GUNTAB-CLEANUP(A)로 SUPERSEDE: LABTAB-SPLIT 후속 잔여정리 — 균검사 탭에서
+  //   피검사 badge(exam-blood-badge) 제거([피검사] 탭 전담). 균검사 데이터 훅/표기는 보존.
+  test('ExamTargetsSection 균검사 훅/표기 보존 + 피검사 badge 제거(GUNTAB-CLEANUP A)', () => {
     const e = exam();
     expect(e).toContain('useExamTargets');
     expect(e).toContain('exam-koh-badge');
-    expect(e).toContain('exam-blood-badge');
+    expect(e).not.toContain('exam-blood-badge');
     expect(e).toContain("{active ? '●' : '○'}");
   });
 });

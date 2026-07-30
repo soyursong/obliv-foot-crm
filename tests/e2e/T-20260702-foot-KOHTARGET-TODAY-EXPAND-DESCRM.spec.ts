@@ -28,30 +28,29 @@ test.describe('T-20260702-foot-KOHTARGET-TODAY-EXPAND-DESCRM', () => {
     expect(response?.status()).toBeLessThan(400);
   });
 
-  // ── AC-1: '오늘' 묶음만 기본 펼침 (과거 접힘, ref 가드 1회) ────────────────────
-  test('AC-1: groups 최초 로드 시 오늘 날짜 묶음만 기본 펼침 (useEffect + ref 가드)', () => {
+  // ── AC-1: '오늘' 묶음 기본 펼침 (과거 접힘) ──────────────────────────────────
+  //   ★T-20260726-GUNTAB-CLEANUP-DEFAULTEXPAND(B)로 구현 SUPERSEDE: 기존 useEffect+ref 가드
+  //   방식은 groups 로드 타이밍 의존 → '계속 접혀있음' RC 유발. 초기 state 를 오늘(KST)로 직접
+  //   세팅하는 lazy initializer 로 대체(마운트 즉시 펼침). 행동 계약(오늘 펼침·과거 접힘)은 불변.
+  test('AC-1: 초기 로드 시 오늘 날짜 묶음 기본 펼침 (lazy init, GUNTAB-CLEANUP-DEFAULTEXPAND B로 대체)', () => {
     const b = sectionB();
-    // 초기값은 여전히 빈 Set — 로드 전 강제 펼침 없음
-    expect(b).toContain('useState<Set<string>>(new Set())');
-    // 최초 1회만 초기화하는 ref 가드
-    expect(b).toContain('didInitExpandRef');
-    expect(b).toMatch(/const didInitExpandRef = useRef\(false\)/);
-    expect(b).toContain('if (didInitExpandRef.current) return;');
-    // groups 미로드(빈 배열) 시 초기화 보류 → 로드 후 실행
-    expect(b).toContain('if (groups.length === 0) return;');
-    // 오늘 그룹이 있으면 오늘만 펼침 집합으로 설정
-    expect(b).toContain('groups.some((g) => g.date === today)');
-    expect(b).toContain('setExpandedDates(new Set([today]))');
+    // 초기 state = 오늘(KST) 주입 — 마운트 즉시 펼침(타이밍 무의존)
+    expect(b).toMatch(/useState<Set<string>>\(\(\)\s*=>\s*new Set\(\[seoulISODate\(new Date\(\)\)\]\)\)/);
+    // 타이밍 취약한 ref 가드/effect 제거(계속 접혀있음 RC 제거)
+    expect(b).not.toContain('didInitExpandRef');
     // '오늘' 기준 = KST 현재 날짜
     expect(b).toContain('const today = seoulISODate(new Date())');
   });
 
-  // ── AC-1(엣지): 오늘 0건 → 강제 펼침 없음(전부 접힘 유지) ─────────────────────
+  // ── AC-1(엣지): 오늘 0건 → 강제 펼침 없음(과거는 접힘 유지) ────────────────────
+  //   GUNTAB-CLEANUP B: 초기 set 에 오늘 키가 있을 뿐 — 오늘 그룹이 렌더되지 않으면 무해하고,
+  //   과거 날짜는 set 에 없으므로 접힘 유지(강제 펼침 없음). 행동 계약 동일.
   test('AC-1 엣지: 오늘 신청 0건이면 다른 날짜를 강제로 펼치지 않음', () => {
     const b = sectionB();
-    // setExpandedDates 는 오늘 그룹 존재(if) 안에서만 호출 → 오늘 없으면 빈 Set 유지(전부 접힘)
-    const m = b.match(/if \(groups\.some\(\(g\) => g\.date === today\)\) \{\s*setExpandedDates\(new Set\(\[today\]\)\);\s*\}/);
-    expect(m).not.toBeNull();
+    // 초기 set 은 오늘 키만 포함 → 과거 날짜(다른 키)는 미포함 = 접힘
+    expect(b).toMatch(/new Set\(\[seoulISODate\(new Date\(\)\)\]\)/);
+    // 로드 후 다른 날짜를 강제 펼치는 setExpandedDates(new Set([today])) effect 는 제거됨
+    expect(b).not.toContain('setExpandedDates(new Set([today]))');
   });
 
   // ── AC-1: 과거 날짜 수동 확장 가능 (기존 토글 보존) ──────────────────────────
@@ -93,9 +92,11 @@ test.describe('T-20260702-foot-KOHTARGET-TODAY-EXPAND-DESCRM', () => {
     // 활성(●)/미신청(○) 표기 로직 보존
     expect(b).toContain("{active ? '●' : '○'}");
     expect(b).toContain('exam-koh-badge');
-    expect(b).toContain('exam-blood-badge');
-    // 섹션 제목은 유지(제거 대상은 안내문만)
-    expect(b).toContain('균검사 &amp; 피검사 대상자');
+    // ★GUNTAB-CLEANUP(A) SUPERSEDE: 피검사 badge 는 [피검사] 탭 전담 → 균검사 탭에서 제거.
+    expect(b).not.toContain('exam-blood-badge');
+    // 섹션 제목: 'GUNTAB-CLEANUP(A)로 '균검사 & 피검사 대상자' → '균검사 대상자'
+    expect(b).toContain('균검사 대상자');
+    expect(b).not.toContain('균검사 &amp; 피검사 대상자');
     // 빈 목록 분기 유지
     expect(b).toContain('data-testid="exam-targets-empty"');
     expect(b).toContain('groups.length === 0');
