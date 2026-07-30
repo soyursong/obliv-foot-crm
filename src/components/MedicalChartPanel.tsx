@@ -53,10 +53,9 @@ import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Lock, Pill, Search, Trash2, X } from 'lucide-react';
-// T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
-import ConsultRecordTab from '@/components/ConsultRecordTab';
-// T-20260703-foot-STAFFPHOTO-CHART-LINK: 직원촬영 임상사진 원장 조회 탭(readOnly). 느슨 결합 드롭인.
-import TreatmentPhotoGallery from '@/components/TreatmentPhotoGallery';
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 3구역 '상담'·'임상사진' 탭 삭제(원장 U0ALGAAAJAV 직접 컨펌 캐논).
+//   ConsultRecordTab(구 T-20260607-CONSULT-DRAWER, superseded) / TreatmentPhotoGallery 원장뷰(구 T-20260703-STAFFPHOTO-CHART-LINK, superseded)
+//   두 탭 모두 read-only 뷰어(입력능력 0) → CONDITIONAL_GO 안전가드상 무회귀 삭제. import 제거.
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -296,7 +295,8 @@ export interface MedicalChartPanelProps {
   //   임상경과 오기입 차단용 — readOnly=true 면 textarea readOnly + 저장 버튼(embed footer) 미노출.
   // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 패널 열림 시 우측 기본 탭 지정(deep-link/QA 진입용).
   //   미지정 시 기존과 동일하게 'rx'. ?medchart=visit_hist 진입 시 '방문이력' 콘텐츠를 바로 노출하기 위함.
-  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult' | 'clinical_photos';
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 'consult'·'clinical_photos' 탭 삭제. 하위호환 위해 legacy 값 수신은 허용하되 기본 fallback 처리.
+  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images';
   //   default false → 기존 모든 호출자(DoctorCallDashboard 등) 동작 무변경(AC-4 회귀가드).
   readOnly?: boolean;
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안 (문지은 대표원장, '둘다해줘'):
@@ -753,7 +753,8 @@ export default function MedicalChartPanel({
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
   // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 'consult' 탭(📋 상담) 추가
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult' | 'clinical_photos'>('rx');
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 3구역 탭에서 'consult'·'clinical_photos' 제거.
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images'>('rx');
   // T-20260605-foot-RX-PHRASE-CLICK-INSERT: 체크박스 다중선택 → 클릭 시 ✓ 즉시삽입 단일화.
   //   행 클릭 → 그 행만 ✓ 버튼 노출(단일 활성), ✓ 클릭 → 즉시 삽입. (펜차트 PHRASE-MULTISELECT 와 별개 패널)
   const [clickedPhraseId, setClickedPhraseId] = useState<number | null>(null);
@@ -1204,7 +1205,11 @@ export default function MedicalChartPanel({
       setPhrasePopoverVisible(false);
       setClickedPhraseId(null);
       // T-20260609-foot-VISITLOG-NAMING-CLARIFY: deep-link 진입(?medchart=visit_hist)이면 해당 탭으로 열기. 기본은 'rx'(불변).
-      setRightTab(initialRightTab ?? 'rx');
+      // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 삭제된 탭('consult'/'clinical_photos') legacy deep-link 방어 —
+      //   존재하지 않는 탭 값이면 blank 패널 대신 'rx'로 fallback(런타임 안전).
+      const validTabs = ['rx', 'phrase', 'super', 'visit_hist', 'images'] as const;
+      const requestedTab = initialRightTab && (validTabs as readonly string[]).includes(initialRightTab) ? initialRightTab : 'rx';
+      setRightTab(requestedTab);
       // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 리셋 (새 고객 열릴 때마다)
       // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemos는 loadData에서 자동 재로드됨
       setTreatMemos([]);
@@ -4062,12 +4067,15 @@ export default function MedicalChartPanel({
                 <div className={`flex flex-col min-h-0 flex-1 pl-7 ${rightPanelCollapsed ? 'hidden' : ''}`}>
                 {/* 탭 헤더 — 5개 아이콘+라벨 컴팩트 */}
                 <div className="flex-none border-b">
-                  {/* 상단 행: 처방세트 / 상용구 / 슈퍼상용구 (T-20260603-foot-RX-SUPER-PHRASE) */}
+                  {/* 상단 행: 처방세트 / 상용구 / 발행서류
+                      T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): '슈퍼상용구'→'발행서류' 개칭(원장 캐논).
+                        템플릿(applySuperPhrase) 기능은 유지 — 개칭은 라벨/의미만. (처방세트·상용구 삭제는 Phase A 2구역 PMW
+                        read-path 검증 후 별도 진행 — CONDITIONAL_GO 안전가드 국소 HOLD, planner FOLLOWUP) */}
                   <div className="flex border-b border-border/30">
                     {([
                       { key: 'rx', label: '처방세트' },
                       { key: 'phrase', label: '상용구' },
-                      { key: 'super', label: '슈퍼상용구' },
+                      { key: 'super', label: '발행서류' },
                     ] as const).map(({ key, label }) => (
                       <button
                         key={key}
@@ -4084,15 +4092,14 @@ export default function MedicalChartPanel({
                       </button>
                     ))}
                   </div>
-                  {/* 하단 행: 방문이력 / 진료이미지 / 📋 상담
-                      (T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거,
-                       T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 추가 — A안) */}
+                  {/* 하단 행: 방문이력 / 진료이미지
+                      T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): '임상사진'·'상담' 탭 삭제(원장 U0ALGAAAJAV 직접
+                        컨펌 캐논 '삭제 항목=처방세트·상용구·상담·임상사진'). 두 탭은 read-only 뷰어(입력능력 0) → 무회귀 삭제.
+                        supervisor NOTIFY 완료(탭 부재를 QA 회귀로 오판 금지). */}
                   <div className="flex">
                     {([
                       { key: 'visit_hist', label: '방문이력' },
                       { key: 'images', label: '진료이미지' },
-                      { key: 'clinical_photos', label: '임상사진' },
-                      { key: 'consult', label: '상담' },
                     ] as const).map(({ key, label }) => (
                       <button
                         key={key}
@@ -4304,12 +4311,12 @@ export default function MedicalChartPanel({
                       {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
                       {superLoadError ? (
                         <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="super-phrase-load-error">
-                          슈퍼상용구를 불러오지 못했습니다<br />
+                          발행서류 템플릿을 불러오지 못했습니다<br />
                           <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
                         </div>
                       ) : superPhrases.length === 0 ? (
                         <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="super-phrase-empty">
-                          등록된 슈퍼상용구 없음
+                          등록된 발행서류 템플릿 없음
                         </div>
                       ) : (
                         superPhrases.map(sp => (
@@ -4454,31 +4461,9 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* ── T-20260703-foot-STAFFPHOTO-CHART-LINK: 임상사진 탭 (직원촬영 → 원장 조회) ─────
-                      canonical treatment_photos(private 'treatment-photos' 버킷, signed URL) 읽기전용 갤러리.
-                      readOnly → 원장 뷰에서 촬영/삭제 버튼 비노출(업로드·삭제=직원 전용, 조회=원장 포함 전체).
-                      느슨 결합: customerId/clinicId props만 전달 → 총괄 배치 컨펌 시 위치 이동 자유. */}
-                  {rightTab === 'clinical_photos' && (
-                    <div className="p-3" data-testid="right-panel-clinical-photos-content">
-                      <TreatmentPhotoGallery
-                        customerId={customerId}
-                        clinicId={clinicId}
-                        readOnly
-                      />
-                    </div>
-                  )}
-
-                  {/* ── T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 (A안 — 서랍에서 이식) ─────
-                      check_ins 상담단계 기록 읽기전용. 탭 전환만으로 좌측 진료폼 입력은 유지된다. */}
-                  {rightTab === 'consult' && (
-                    // T-20260629-foot-CONSULTTAB-DATE-FILTER-UX (B안, 문지은 대표원장):
-                    //   선택한 차트의 날짜(visit_date)를 넘겨 해당일 상담기록 그룹을 최상단으로.
-                    //   미선택(신규 작성 등)이면 null → 기존 전체 이력·정렬 그대로.
-                    <ConsultRecordTab
-                      customerId={customerId}
-                      selectedDate={selectedChart?.visit_date ?? null}
-                    />
-                  )}
+                  {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): '임상사진'·'상담' 탭 삭제 ─────
+                      임상사진(구 T-20260703-STAFFPHOTO-CHART-LINK, superseded) + 상담(구 T-20260607-CONSULT-DRAWER,
+                      superseded) 콘텐츠 블록 제거. 원장 직접 컨펌 캐논 '삭제 항목' 명시 + read-only 뷰어(입력능력 0). */}
                 </div>
                 {/* T-20260605-foot-RX-PHRASE-CLICK-INSERT: 하단 일괄 '삽입' 버튼 제거 — 행 내 ✓ 즉시삽입으로 단일화 */}
                 </div>{/* /패널 본문 (PHRASE-CHECKBOX-ARROW AC6-3 접힘 래퍼) */}
