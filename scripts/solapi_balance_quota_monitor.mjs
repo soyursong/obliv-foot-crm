@@ -29,13 +29,18 @@
  *        잔액 회복(임계 상향 돌파) 시 자동 해제 + 회복 안내 1회.
  *
  * ── CEO 자동충전 채택 후속(T-20260721 CEO-DECISION 2, MSG-20260729-143208-8xlf) 3종 경보 추가 ──
- *     (5) 절대 원(₩) 임계 경보: CEO 지정 지점별 절대 잔액 임계(종로 10만/송도 3만)를 기존 발송가능
- *         잔여건수(4,500원≈100건) 위에 얹는다. env SOLAPI_BALANCE_MIN_WON_<clinicshort> (기본 종로 10만/송도 3만).
- *     (6) ★자동충전 실패 즉시 경보(가장 중요, 신규): 자동충전 ON(autoRecharge=1)인데 잔액이 '충전 트리거'
- *         (종로 15만↓/송도 5만↓) 아래로 내려간 채 회복되지 않으면 = 카드 만료·한도초과·결제실패로
+ *     (5) 절대 원(₩) 임계 경보: 지점별 절대 잔액 임계를 기존 발송가능 잔여건수(4,500원≈100건) 위에 얹는다.
+ *         env SOLAPI_BALANCE_MIN_WON_<clinicshort>.
+ *         ★ T-20260730-SOLAPI-SMS-ALERT-MONITOR (D-1 정합): 팀장 콘솔 자동충전 = "잔액 1만원 미만 시
+ *           10만원 충전, 양 지점 동일". 임계를 이 확정값에 정합 → 양 지점 min₩ = 10,000(1만원)으로 통일.
+ *           (구값 종로10만/송도3만은 autoRecharge ON 정상 운영대역(1만~10만+)을 오탐 → 폐기.)
+ *     (6) ★자동충전 실패 즉시 경보(가장 중요): 자동충전 ON(autoRecharge=1)인데 잔액이 '충전 트리거'
+ *         (양 지점 1만원↓, = 팀장 콘솔 자동충전 트리거값) 아래로 내려간 채 회복되지 않으면 = 카드 만료·한도초과·결제실패로
  *         자동충전이 실패한 것. 솔라피 balance API 는 카드결제 실패 이벤트를 직접 노출하지 않으므로
  *         "autoRecharge=1 AND 잔액 < 트리거"를 프록시로 감지(연속 관측/유예시간 후 경보). autoRecharge=0
- *         (아직 OFF)이면 미발동 → 오탐 0. env SOLAPI_RECHARGE_TRIGGER_WON_<short> (기본 종로 15만/송도 5만).
+ *         (아직 OFF)이면 미발동 → 오탐 0. env SOLAPI_RECHARGE_TRIGGER_WON_<short> (기본 양 지점 1만원).
+ *         ★ D-1 정합: 팀장 콘솔 트리거(1만원)와 프록시 트리거를 일치시킴. 구값(종로15만/송도5만)은
+ *           autoRecharge ON 시 정상대역을 '충전 실패'로 오탐(예: 잔액 5만 정상인데 <5만 트리거로 경보) → 폐기.
  *     (7) 발송 실패율 급등 경보: 당일(KST) notification_logs failed 건수가 임계(기본 100건/일) 초과 시 경보.
  *         잔액·한도와 독립적으로 '조용한 대량 실패'를 포착. env SOLAPI_FAIL_SPIKE_COUNT (기본 100).
  *
@@ -132,9 +137,10 @@ const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_sen
 
 // ── CEO 자동충전 후속 3종 경보 튜너블 (MSG-20260729-143208-8xlf) ────────────────
 //   SOLAPI_BALANCE_MIN_WON_<clinicshort> : (5) 절대 원 임계(원). 잔액 이 값 미만이면 경보.
-//     기본 종로(74967aea)=100,000 / 송도(b4dc0de5)=30,000. (CEO 지정: 종로 10만 / 송도 3만)
+//     기본 양 지점 = 10,000. (T-20260730 D-1: 팀장 콘솔 자동충전 트리거 1만원에 정합, 양지점 동일.)
 //   SOLAPI_RECHARGE_TRIGGER_WON_<clinicshort> : (6) 자동충전 트리거 잔액(원). autoRecharge=1 인데
-//     잔액이 이 값 미만이면 '자동충전이 동작해야 하는데 안 됐다'는 신호. 기본 종로=150,000 / 송도=50,000.
+//     잔액이 이 값 미만이면 '자동충전이 동작해야 하는데 안 됐다'는 신호. 기본 양 지점 = 10,000
+//     (= 팀장 콘솔 자동충전 트리거 1만원). 구값(종로15만/송도5만)은 ON 정상대역 오탐 → 폐기.
 //   SOLAPI_RECHARGE_FAIL_GRACE_POLLS : (6) 자동충전 실패 확정 전 연속 관측 횟수(기본 2). 시간당 1회 폴링
 //     기준 2회 = 약 1~2시간 유예(솔라피 자동충전 반영 지연 흡수 → 오탐 방지). 재경보 주기=잔액과 동일.
 //   SOLAPI_FAIL_SPIKE_COUNT : (7) 당일(KST) 발송 실패 급등 임계(건). 기본 100. 초과 시 경보.
@@ -143,8 +149,13 @@ const RECHARGE_FAIL_GRACE_POLLS = Math.max(1, cfgNum("SOLAPI_RECHARGE_FAIL_GRACE
 const FAIL_SPIKE_COUNT = Math.max(1, cfgNum("SOLAPI_FAIL_SPIKE_COUNT", 100));
 const FAIL_SPIKE_REALERT_MS = Math.max(1, cfgNum("SOLAPI_FAIL_SPIKE_REALERT_HOURS", 6)) * 3600 * 1000;
 // 지점별 절대 임계 기본값(clinic_id 앞 8자 기준). env 로 override 가능.
-const DEFAULT_MIN_WON = { "74967aea": 100000, "b4dc0de5": 30000 };
-const DEFAULT_RECHARGE_TRIGGER_WON = { "74967aea": 150000, "b4dc0de5": 50000 };
+// ★ T-20260730-SOLAPI-SMS-ALERT-MONITOR (D-1): 팀장 콘솔 자동충전 확정값(트리거 1만원 미만 → 10만원 충전,
+//   양 지점 동일 ON)에 정합. autoRecharge ON 시 잔액은 1만~10만+ 대역을 오르내리므로, 구 임계
+//   (min₩ 종로10만/송도3만, 트리거 종로15만/송도5만)를 유지하면 정상 운영대역을 '잔액부족·충전실패'로
+//   오탐한다. 두 임계 모두 콘솔 트리거값(1만원)으로 양 지점 통일 → (6) 프록시 오탐 제거.
+//   (accountId 실측: 종로 74967aea=26041008595272 / 송도 b4dc0de5=26041010278719 — 팀장 실계정 일치 확인.)
+const DEFAULT_MIN_WON = { "74967aea": 10000, "b4dc0de5": 10000 };
+const DEFAULT_RECHARGE_TRIGGER_WON = { "74967aea": 10000, "b4dc0de5": 10000 };
 function minWonFor(shortId) { return cfgNum(`SOLAPI_BALANCE_MIN_WON_${shortId}`, DEFAULT_MIN_WON[shortId] ?? 0); }
 function rechargeTriggerFor(shortId) { return cfgNum(`SOLAPI_RECHARGE_TRIGGER_WON_${shortId}`, DEFAULT_RECHARGE_TRIGGER_WON[shortId] ?? 0); }
 
@@ -666,6 +677,31 @@ function runSelfTest() {
   assert(rcFail.applicable && rcFail.breached, `자동충전 ON인데 잔액 9만 < 트리거 15만 → 실패 의심(breached)`);
   const rcOk = evaluateAutoRechargeFailure({ balance: 200000, autoRecharge: 1, rechargeTrigger: 150000 });
   assert(rcOk.applicable && !rcOk.breached, `자동충전 ON + 잔액 20만 ≥ 트리거 15만 → 정상`);
+
+  // ── T-20260730 D-1: 팀장 콘솔 확정값(트리거 1만/충전 10만, 양지점) 정합 검증 ──────────────
+  // 기본 임계가 양 지점 1만원으로 정합됐는지(코드 default) — env override 0건일 때 effective 값.
+  assert(rechargeTriggerFor("74967aea") === 10000, `[D-1] 종로 충전트리거 기본값 = 1만원(콘솔 정합)`);
+  assert(rechargeTriggerFor("b4dc0de5") === 10000, `[D-1] 송도 충전트리거 기본값 = 1만원(콘솔 정합)`);
+  assert(minWonFor("74967aea") === 10000, `[D-1] 종로 min₩ 기본값 = 1만원(콘솔 정합)`);
+  assert(minWonFor("b4dc0de5") === 10000, `[D-1] 송도 min₩ 기본값 = 1만원(콘솔 정합)`);
+
+  // ★AC-2 오탐 제거 증명: autoRecharge ON + 잔액이 콘솔 트리거(1만) 위 = 정상대역.
+  //   구 트리거(송도 5만)였다면 잔액 5만은 breached=오탐. 정합 후 트리거 1만 → 정상(오탐 0).
+  const oldFP = evaluateAutoRechargeFailure({ balance: 45000, autoRecharge: 1, rechargeTrigger: 50000 });
+  assert(oldFP.breached, `[AC-2 구값] 송도 잔액 4.5만·ON, 구 트리거 5만 → 오탐 발생(=폐기 사유)`);
+  const newOK = evaluateAutoRechargeFailure({ balance: 45000, autoRecharge: 1, rechargeTrigger: rechargeTriggerFor("b4dc0de5") });
+  assert(newOK.applicable && !newOK.breached, `[AC-2 정합후] 송도 잔액 4.5만·ON, 트리거 1만 → 정상(오탐 0)`);
+  const newOK2 = evaluateAutoRechargeFailure({ balance: 30000, autoRecharge: 1, rechargeTrigger: rechargeTriggerFor("74967aea") });
+  assert(newOK2.applicable && !newOK2.breached, `[AC-2 정합후] 종로 잔액 3만·ON, 트리거 1만 → 정상(오탐 0)`);
+
+  // ★AC-2 미탐 없음 증명: autoRecharge ON인데 잔액이 트리거(1만) 아래 = 진짜 충전실패 → 반드시 감지.
+  const realFail = evaluateAutoRechargeFailure({ balance: 8000, autoRecharge: 1, rechargeTrigger: rechargeTriggerFor("74967aea") });
+  assert(realFail.applicable && realFail.breached, `[AC-2 미탐0] 잔액 8천·ON, 트리거 1만 → 충전실패 감지(breached)`);
+  // (5) 절대 임계도 1만 정합 — 잔액 8천 < 1만 → 경보.
+  const minWonHit = evaluateBalance({ balance: 8000, minWon: minWonFor("b4dc0de5") }, opt);
+  assert(minWonHit.breached && minWonHit.reasons.some((r) => r.includes("설정 임계")), `[D-1] 송도 잔액 8천 < min₩ 1만 → 경보`);
+  const minWonOk = evaluateBalance({ balance: 300000, minWon: minWonFor("b4dc0de5") }, opt);
+  assert(!minWonOk.breached, `[D-1] 송도 잔액 30만 ≥ min₩ 1만(정상대역) → 경보 없음(오탐 제거)`);
 
   // (7) 발송 실패 급등 — 당일 failed 건수 > 임계
   const failRows = [
