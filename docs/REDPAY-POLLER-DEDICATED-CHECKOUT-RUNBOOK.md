@@ -101,3 +101,33 @@ launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller.
 전용 checkout 은 launchd 인라인 FF(매 5분 사이클)로 자동 최신화되므로 별도 cron 불요.
 수동/점검 시 `bash scripts/redpay_poller_checkout_sync.sh` (멱등). Git SSOT 5분 sync 와 정합 —
 항상 `origin/main` FF 방향(로컬 커밋 없음, reset --hard 안전).
+
+## 8. 편입 job — solapi-balance-monitor (2026-07-30 broaden)
+
+동일 shared-checkout hazard 가 솔라피 잔액 워치독(`com.obliv.foot.solapi-balance-monitor`, 매시 :20)에서
+2번째 실증됨: `DEFAULT_MIN_WON`(양지점 10,000, main fc37473c 정합)이 공유 dir 브랜치 상태에 따라
+구임계(종로100,000/송도30,000)로 오염 → 정상 운영대역을 breach 로 **오탐**(안전방향, 미탐 아님).
+
+**대책**: solapi 워치독도 redpay 폴러와 **동일한 전용 main-고정 checkout**(`obliv-foot-crm-redpay-poller`)을
+공유 WorkingDirectory 로 사용. plist 는 redpay 폴러와 같은 self-heal 인라인 FF 를 진입 시 수행:
+
+```
+cd /Users/domas/GitHub/obliv-foot-crm-redpay-poller \
+  && { git fetch origin main --quiet && git reset --hard --quiet origin/main ; } \
+  ; node scripts/solapi_balance_quota_monitor.mjs
+```
+
+- 두 job 은 동일 커밋(origin/main)으로만 reset → 파일 flip-flop·상호 stale 없음. git lock 경합 시에도
+  `;` 로 node 항상 실행, 공유 dir 정지상태가 곧 origin/main 이므로 stale 불가.
+- solapi 는 read-only(잔액 조회)+슬랙 알림뿐 — DB write 0. redpay 폴러의 upsert 와 무간섭.
+- 이중실행 방지: Label 유일(`com.obliv.foot.solapi-balance-monitor`) + 구 unload 후 신 load.
+- **검증**: `--self-test`(양지점 min₩=10,000 assert) + `--dry-run`(실조회 min₩=10,000) + shasum 일치 +
+  다음 :20 자연 로그가 `min₩=10,000`(양지점) 로 갱신.
+
+**main merge 전 interim**: `~/Library/LaunchAgents/com.obliv.foot.solapi-balance-monitor.plist` 를 실파일로
+설치(전용 checkout 이 아직 신 plist 미보유 — reset --hard 로 wipe). **main merge 후** redpay 와 동일하게
+symlink → `~/GitHub/obliv-foot-crm-redpay-poller/scripts/launchd/com.obliv.foot.solapi-balance-monitor.plist`
+로 복원 → plist 자체도 main-고정 (supervisor 배포 step).
+
+**롤백**: `launchctl unload` → symlink 을 `~/GitHub/obliv-foot-crm/scripts/launchd/...` 로 복귀 → `load`.
+(단 dev 체크아웃이 non-main 이면 그 순간 stale — 임시복구 전용.)
