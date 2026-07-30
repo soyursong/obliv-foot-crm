@@ -839,20 +839,57 @@ export default function Assignments() {
   //   '일일 배정 목표' = (선택일 초진 예약 수) × (그 실장 랭킹 배정 비율). 느슨결합 단일 지점 유지.
   //   비율 SSOT = rankAssignmentRatios(랭킹 탭과 동일 함수). 랭킹은 상담실장(consultant) 개념 →
   //   치료사(therapy 탭)·비admin 은 랭킹 파생 목표 부재 → null('—'). 상담실장이 랭킹에 없으면(매출 0 등) 목표 0.
-  const targetRatios = useMemo(
-    () => rankAssignmentRatios(targetPerfRows, targetCfg),
-    [targetPerfRows, targetCfg],
-  );
+  // ── T-20260730-foot-ASSIGN-DAILYTGT-NPROP-CALC-FIX (김주연 총괄 field-soak 정정) ──────────────
+  //   [일일 배정 목표] = 금일 초진 N 건을 '출근 실장'에게만 랭킹 가중치 비례 분배. 개별 목표 합계 = N.
+  //   ▸ 기존 버그: 비율 분모가 전체 상담실장(당일 휴무자 포함) → 출근자 표시합 < N (오늘 17 vs N=27, 10건 배정 밖).
+  //   ▸ 정정: 분모를 출근 실장(workingIds)만으로 축소 + 반올림 나머지를 최하위 랭킹 실장이 흡수 → 정확히 Σ(출근자)=N.
+  //   ▸ 재사용 3종(신규 DDL/데이터소스 없음): N=selDayInitResvCount(상단 카드 금일초진 동일소스) ·
+  //     휴무자 필터=workingIds(CARDLABEL 출근 SSOT, tempOff 는 출근 유지) · 비율=rankAssignmentRatios(weight B/config SSOT).
+  const dailyTargetMap = useMemo<Map<string, number> | null>(() => {
+    if (!canViewRanking) return null;
+    if (targetCfg == null || selDayInitResvCount == null) return null; // config 미설정/미조회 → '—'
+    const N = selDayInitResvCount;
+    // 출근 실장만 분배 대상 (당일 휴무자 제외 = CARDLABEL 정합). targetPerfRows = 재직 상담실장 랭킹 소스.
+    const workingRows = targetPerfRows.filter((r) => workingIds.has(r.consultant_id));
+    if (workingRows.length === 0) return new Map();
+    // 랭킹순(매출 desc, 이름 ko) — rankAssignmentRatios 와 동일 comparator. 최하위 랭킹 = 배열 끝(나머지 흡수 대상).
+    const rankedIds = [...workingRows]
+      .sort(
+        (a, b) =>
+          (b.total_amount ?? 0) - (a.total_amount ?? 0) ||
+          (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
+      )
+      .map((r) => r.consultant_id);
+    // 비율 SSOT = rankAssignmentRatios(출근자만 입력 → 분모=출근자 weight 합). weight B/interpolate config 재사용(재발명 금지).
+    const ratios = rankAssignmentRatios(workingRows, targetCfg);
+    const out = new Map<string, number>();
+    if (!ratios) {
+      // 비율 산출 불가(config Σ=0 등) → 전원 0 (N=0 포함, 에러 없이 '0').
+      for (const id of rankedIds) out.set(id, 0);
+      return out;
+    }
+    let running = 0;
+    for (const id of rankedIds) {
+      const t = Math.round(N * (ratios.get(id) ?? 0)); // round(N × weight/Σweight)
+      out.set(id, t);
+      running += t;
+    }
+    // 반올림 나머지(N − Σ round) 를 최하위 랭킹 실장이 흡수 → 정확히 Σ=N (AC2). N=0 → running=0 → 흡수 0.
+    const lastId = rankedIds[rankedIds.length - 1];
+    out.set(lastId, (out.get(lastId) ?? 0) + (N - running));
+    return out;
+  }, [canViewRanking, targetCfg, selDayInitResvCount, targetPerfRows, workingIds]);
+
   const dailyTargetOf = useCallback(
     (st: StaffStat): number | null => {
       // 접근통제 + 랭킹 개념 게이트: admin 전용 + 상담(consultant) 탭 + 산식 입력 로딩 완료.
       if (!canViewRanking) return null;
       if (st.staff.role !== 'consultant') return null; // 치료사는 랭킹 배정 비율 대상 아님
-      if (targetRatios == null || selDayInitResvCount == null) return null; // config 미설정/미조회 → '—'
-      const ratio = targetRatios.get(st.staff.id) ?? 0; // 랭킹 미포함 실장 = 비율 0 → 목표 0(AC-2 '0이면 0')
-      return Math.round(selDayInitResvCount * ratio);
+      if (dailyTargetMap == null) return null; // config 미설정/미조회 → '—'
+      if (!workingIds.has(st.staff.id)) return null; // 당일 휴무 → '—' (CARDLABEL 정합; 분배 대상 아님)
+      return dailyTargetMap.get(st.staff.id) ?? 0; // 출근·랭킹 미포함 = 0
     },
-    [canViewRanking, targetRatios, selDayInitResvCount],
+    [canViewRanking, dailyTargetMap, workingIds],
   );
 
   // ── T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO ────────────────────────────────
@@ -2064,7 +2101,15 @@ export default function Assignments() {
                 </tr>
                 {/* 2단: 각 그룹의 5지표 */}
                 <tr>
-                  <th className="border-l px-2 py-1.5 text-right font-medium">일일 배정 목표</th>
+                  <th
+                    className="border-l px-2 py-1.5 text-right font-medium"
+                    data-testid="accum-daily-target-header"
+                    /* T-20260730-foot-ASSIGN-DAILYTGT-NPROP-CALC-FIX: 금일 초진 N(분배 총량) 노출 —
+                       비가시 data-* 어피던스(레이아웃/색상 무변경). 출근 실장 목표 합계 = N 정합 검증용. */
+                    data-daily-target-n={selDayInitResvCount ?? ''}
+                  >
+                    일일 배정 목표
+                  </th>
                   <th className="px-2 py-1.5 text-right font-medium">배정(초진)</th>
                   <th className="px-2 py-1.5 text-right font-medium">배정(재진)</th>
                   <th className="px-2 py-1.5 text-right font-medium">토스</th>
