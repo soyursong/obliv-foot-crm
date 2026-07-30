@@ -48,6 +48,7 @@ regexes = [
   '''[:=]\s*['"](\.{2,}|<[^>]+>|\*{3,}|x{3,}|REPLACE|CHANGE_?ME|placeholder|example|your[_-])['"]''', # 플레이스홀더
   '''\.fill\(''',                            # playwright .fill(pw)
   '''\[AC[0-9-]''',                          # foot e2e 수용기준 로그 마커(console.log("[AC-3] ... PASS: ...")) — status 라벨 오탐 차단
+  '''solapi_(api_key|secret)_[0-9a-f]{6,8}''', # vault 슬롯 '이름'(공개 식별자=clinic_id 접두사) — 자격증명 아님. evidence/스냅샷 fingerprint 로그용.
 ]
 paths = [
   '''(^|/)node_modules/''',

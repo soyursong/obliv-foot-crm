@@ -1,0 +1,54 @@
+{
+  "ts": "2026-07-30T12:03:19.568Z",
+  "ticket": "T-20260730-foot-SOLAPI-JONGNO-VAULT-ACTIVATE",
+  "mechanism": "direct-SET",
+  "dry": false,
+  "steps": {
+    "S0_snapshot": {
+      "sender_number": "0269563225",
+      "solapi_validation_status": "pending",
+      "enabled": false,
+      "solapi_api_key_vault_name": "solapi_api_key_74967aea",
+      "solapi_secret_vault_name": "solapi_secret_74967aea",
+      "old_api_key_fp": "NCSF***(len16,sha256:7f77ae3354ff)",
+      "old_secret_fp": "3SHC***(len32,sha256:1ceae25b8b3b)",
+      "old_key_account_id": "26041008595272"
+    },
+    "S1b_lock": {
+      "enabled": false
+    },
+    "S2g_guard": {
+      "provided_account_id": "26041010278719",
+      "target": "26041010278719",
+      "match": true,
+      "equiv_b4dc0de5_key": true,
+      "equiv_b4dc0de5_sec": true
+    },
+    "S2_set": {
+      "vault_key_saved": true,
+      "vault_sec_saved": true
+    },
+    "S3_verify": {
+      "fp_match": true,
+      "slot_account_id": "26041010278719",
+      "account_ok": true,
+      "sender_number": "0269563225",
+      "sender_ok": true,
+      "enabled": false,
+      "validation_status": "pending"
+    },
+    "S4_smoke": {
+      "http": 200,
+      "send_status_code": "2000",
+      "send_from": "0269563225",
+      "send_account_id": "26041010278719",
+      "report_status": "SENDING",
+      "report_status_code": "3000",
+      "report_from": "0269563225",
+      "msgId": "M4V202607302103219BHCMYIJUBJUIPF",
+      "accepted": true,
+      "report_to_masked": "010****0462"
+    }
+  },
+  "outcome": "SMOKE_PASS_HALTED"
+}

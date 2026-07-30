@@ -1,0 +1,16 @@
+{
+  "ts": "2026-07-30T12:03:20.027Z",
+  "ticket": "T-20260730-foot-SOLAPI-JONGNO-VAULT-ACTIVATE",
+  "note": "구값 롤백 근거. 평문 미저장(fingerprint=앞4+len+sha256[0:12]). 구 plaintext 는 동일-run 메모리에만.",
+  "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+  "before": {
+    "sender_number": "0269563225",
+    "solapi_validation_status": "pending",
+    "enabled": false,
+    "solapi_api_key_vault_name": "solapi_api_key_74967aea",
+    "solapi_secret_vault_name": "solapi_secret_74967aea",
+    "old_api_key_fp": "NCSF***(len16,sha256:7f77ae3354ff)",
+    "old_secret_fp": "3SHC***(len32,sha256:1ceae25b8b3b)",
+    "old_key_account_id": "26041008595272"
+  }
+}
