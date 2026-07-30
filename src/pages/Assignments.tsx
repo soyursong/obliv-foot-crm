@@ -1631,7 +1631,9 @@ export default function Assignments() {
           모노톤(무채색 bg-muted) + 컴팩트(테이블 헤더 수준 패딩·폰트). 데이터·집계·실시간 구독 로직은 무접촉(스타일만). */}
       <Card data-testid="assignments-nextweek-target-card">
         <CardHeader className="py-2">
-          <CardTitle className="text-sm">일일 배정 목표 · 차주 초진 예약</CardTitle>
+          {/* T-20260730-foot-ASSIGN-DAILYTGT-OFFSTAFF-CARDLABEL AC1: 혼동 유발 '일일 배정 목표 ·' prefix 제거.
+              하단 [직원별 누적] 표의 동명 컬럼과 혼동 방지. 카드 로직/데이터/모노톤·컴팩트 스타일 무접촉 — 제목 텍스트만. */}
+          <CardTitle className="text-sm">차주 초진 예약</CardTitle>
           <p className="text-xs text-muted-foreground">
             다음 주({nextWeekRange.nextMon.slice(5).replace('-', '.')}~{nextWeekRange.nextSun.slice(5).replace('-', '.')}) 요일별 초진(신규 첫 방문) 예약 건수입니다. 예약 생성·취소 시 자동으로 갱신됩니다.
           </p>
@@ -2144,6 +2146,12 @@ export default function Assignments() {
                           </button>
                         </td>
                       );
+                      // T-20260730-foot-ASSIGN-DAILYTGT-OFFSTAFF-CARDLABEL AC2 [정정 MSG-uqow]:
+                      //   '일일 배정 목표'(당일 예약건 배정 수)는 당일 휴무자를 포함하면 안 됨(총괄).
+                      //   당일 휴무 = 출근 명단(workingIds, fetchTodayWorkingStaffIds=출근 SSOT)에 부재 → '—' 표시.
+                      //   ⚠ 임시 off(tempOff)는 '출근했으나 자동배정만 임시제외' → workingIds 에 포함됨 → 숫자 유지(제외 X).
+                      //     임시 off ≠ 당일 휴무(정정). AC3: 누적 컬럼(당월/총)은 무접촉(과거 실적 유지). AC4: poolFor/엔진/매출귀속 무접촉(표시 필터만).
+                      const isOffToday = !workingIds.has(st.staff.id);
                       const dayTarget = dailyTargetOf(st);
                       const monthTotal = st.month.assigned.length + st.month.returning.length;
                       return (
@@ -2152,8 +2160,9 @@ export default function Assignments() {
                           <td
                             className="border-l px-2 py-2 text-right text-muted-foreground"
                             data-testid={`accum-day-target-${st.staff.id}`}
+                            data-off-today={isOffToday ? 'true' : 'false'}
                           >
-                            {dayTarget == null ? '—' : dayTarget.toLocaleString()}
+                            {isOffToday || dayTarget == null ? '—' : dayTarget.toLocaleString()}
                           </td>
                           {cell(st.day.assigned, '일누적', '배정(초진)', `accum-day-assigned-${st.staff.id}`, false)}
                           {cell(st.day.returning, '일누적', '배정(재진)', `accum-day-returning-${st.staff.id}`, false)}
