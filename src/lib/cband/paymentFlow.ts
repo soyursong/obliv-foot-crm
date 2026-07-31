@@ -16,9 +16,13 @@
  *   상태머신은 DB·WS 를 직접 몰라도 되게 store/sender 를 주입받는다(unit 테스트 결정론 확보).
  *   실 supabase store 는 supabaseAttemptStore.ts(별도, DDL 게이트) 가 제공한다.
  *
+ * ── ★ 3-way CANON 저장레이아웃 (external_* 착지, zpas) ───────────────────────
+ *   승인 성공 시 payments 는 external_approval_no=AUTHNO / external_tid=TID / payment_attempt_id=attemptId(FK)로 착지.
+ *   pos_provider/pos_transaction_id 는 prod 부재(dead) → 금지. external_trxid 는 RedPay 예약키(write 금지).
+ *   CAT-origin 판별자 = payment_attempt_id IS NOT NULL. 실 구현은 supabaseAttemptStore.ts.
+ *
  * ── ★ DDL 게이트 (data policy §S2.4) ────────────────────────────────────────
- *   payment_attempts 테이블/payments 채널컬럼은 data-architect CONSULT-REPLY GO 후 확정.
- *   본 오케스트레이션·상태머신은 회신 대기 없이 착수 가능(planner 지시 §1).
+ *   순 DDL = 신규테이블 cband_payment_attempts(mig 20260731190000) + payments.payment_attempt_id FK(mig 20260731190500).
  *   실 DB 연결(supabaseAttemptStore) + 기능플래그 ON 은 DDL 적용·MIG-GATE 통과 후.
  */
 
@@ -72,6 +76,12 @@ export interface AttemptRecord {
   /** 응답 확정 후 채워짐. */
   authNo?: string | null;
   responseCode?: string | null;
+  /** ★K2(3-way canon): 응답 raw(정규화·PCI-safe) — cband_payment_attempts.raw_response 에 착지(payments 미착지). */
+  rawResponse?: NormalizedResponse | null;
+  /** ★BINDING#3 승인일자(TRANDATE, YYMMDD) — payments.accounting_date 매출일자 앵커. */
+  approvalDate?: string | null;
+  /** ★BINDING#3 승인시각(TRANTIME, HHMMSS). */
+  approvalTime?: string | null;
 }
 
 /**
@@ -79,12 +89,21 @@ export interface AttemptRecord {
  * 상태머신은 이 인터페이스만 알면 되므로 unit 테스트에서 in-memory 스텁 주입 가능.
  */
 export interface AttemptStore {
-  /** ★insert-first: 요청 송신 '전' 시도 레코드를 저장. MSG_TRACE 중복 시 throw(교차세션 유일성 DB unique). */
-  insertAttempt(rec: AttemptRecord): Promise<void>;
-  /** 응답 확정 후 상태·AUTHNO·응답코드 갱신(멱등 — MSG_TRACE 키). */
+  /**
+   * ★insert-first: 요청 송신 '전' 시도 레코드를 저장. MSG_TRACE 중복 시 throw(교차세션 유일성 DB unique).
+   * ★3-way canon: attempt row 의 id 를 반환한다 — 승인 성공 시 payments.payment_attempt_id(FK, CAT-origin 판별자)로 착지.
+   */
+  insertAttempt(rec: AttemptRecord): Promise<{ id: string }>;
+  /** 응답 확정 후 상태·AUTHNO·응답코드·raw_response 갱신(멱등 — MSG_TRACE 키). */
   updateAttempt(msgTrace: string, patch: Partial<AttemptRecord>): Promise<void>;
-  /** 승인 성공 시 수납(payments) 정본 기록. ★pos_provider='cband' + pos_transaction_id=AUTHNO(C1). 성공 시 attempt.payment_id 링크. */
-  recordCardPayment(rec: AttemptRecord & { authNo: string }): Promise<void>;
+  /**
+   * 승인 성공 시 수납(payments) 정본 기록.
+   * ★3-way canon(external_* 착지·dead-column-free): external_approval_no=AUTHNO + external_tid=TID +
+   *   payment_attempt_id=attemptId(FK). pos_provider/pos_transaction_id 는 prod 부재(dead) — 사용 금지.
+   *   external_trxid 는 NULL 유지(RedPay 예약키). accounting_date=승인일자(BINDING#3).
+   *   payment_attempt_id partial UNIQUE 가 이중수납 2차 방어(중복 승인콜백 = 멱등 skip).
+   */
+  recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void>;
 }
 
 export interface PaymentFlowInput {
@@ -163,7 +182,8 @@ export async function runPaymentFlow(
 
   // 1) ★insert-first — 반드시 송신 '전'에 저장(응답 유실 대비 MSG_TRACE 확보).
   //    저장 실패 시 송신하지 않는다(추적 불가 상태로 과금하지 않음).
-  await store.insertAttempt(baseRec);
+  //    ★3-way canon: attempt id 확보 → 승인 시 payments.payment_attempt_id(FK, CAT-origin 판별자)로 착지.
+  const { id: attemptId } = await store.insertAttempt(baseRec);
 
   // 2) 송신(+타임아웃). 무응답은 timedOut=true, raw=null.
   let sr: SendResult;
@@ -193,6 +213,7 @@ export async function runPaymentFlow(
     await store.updateAttempt(msgTrace, {
       status: 'attention',
       responseCode: resp?.responseCode ?? null,
+      rawResponse: resp,   // ★K2: raw(정규화) 를 attempt.raw_response 로 보존(payments 미착지).
     });
     return {
       classification: cls, msgTrace, response: resp, userMessage, needsCheck: true, authNo: null,
@@ -204,12 +225,21 @@ export async function runPaymentFlow(
     const authNo = resp?.authNo ?? '';
     await store.updateAttempt(msgTrace, {
       status: 'approved', authNo, responseCode: resp?.responseCode ?? null,
+      rawResponse: resp,   // ★K2: raw(정규화) 를 attempt.raw_response 로 보존(payments 미착지).
     });
-    // 승인 성공 → payments 정본 수납기록(★pos_provider='cband' + pos_transaction_id=AUTHNO/MERNO/MSG_TRACE).
-    //   ★정정(commit 05dd319c): pg_provider 아님 — foot payments 에 pg_provider 컬럼 부재. pos_* 계열이 정본.
-    //   ★BINDING#3 paid_at=승인시각(TRANDATE/TRANTIME): payments 착지 컬럼 매핑은 DA delta 확정까지 held.
+    // 승인 성공 → payments 정본 수납기록.
+    //   ★3-way canon(external_* 착지·dead-column-free, zpas DA-20260731-FOOT-CBAND-CAT-3WAY-CANON):
+    //     AUTHNO→external_approval_no, TID→external_tid, CAT-origin→payment_attempt_id(FK). pos_*/pg_* 는 prod 부재(금지).
+    //     external_trxid 는 NULL 유지(RedPay 예약키) → RedPay 매처가 external_approval_no/external_tid 로 R↔P 매칭·흡수(③ DEDUP).
+    //   ★BINDING#3 매출일자 앵커 = 승인시각(TRANDATE/TRANTIME) → payments.accounting_date. INSERT/감지시각 금지.
     //   취소(0430)의 '성공'은 수납취소 반영이므로 승인 수납기록과 구분(store 내부 tranType 분기).
-    await store.recordCardPayment({ ...baseRec, status: 'approved', authNo, responseCode: resp?.responseCode ?? null });
+    await store.recordCardPayment({
+      ...baseRec, status: 'approved', authNo, attemptId,
+      responseCode: resp?.responseCode ?? null,
+      rawResponse: resp,
+      approvalDate: resp?.tranDate ?? null,
+      approvalTime: resp?.tranTime ?? null,
+    });
     return {
       classification: cls, msgTrace, response: resp, userMessage, needsCheck: false, authNo,
       approvalDate: resp?.tranDate ?? null, approvalTime: resp?.tranTime ?? null,
@@ -219,6 +249,7 @@ export async function runPaymentFlow(
   // FAIL — 과금 미발생 확정(재시도 안전).
   await store.updateAttempt(msgTrace, {
     status: 'failed', responseCode: resp?.responseCode ?? null,
+    rawResponse: resp,   // ★K2: raw(정규화) 를 attempt.raw_response 로 보존(payments 미착지).
   });
   return {
     classification: cls, msgTrace, response: resp, userMessage, needsCheck: false, authNo: null,

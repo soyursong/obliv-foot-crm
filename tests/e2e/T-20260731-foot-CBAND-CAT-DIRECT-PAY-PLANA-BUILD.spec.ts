@@ -67,11 +67,15 @@ function makeMemStore() {
   const log: string[] = [];
   const attempts = new Map<string, AttemptRecord>();
   const payments: Array<AttemptRecord & { authNo: string }> = [];
+  let seq = 0;
   const store: AttemptStore = {
     async insertAttempt(rec) {
       if (attempts.has(rec.msgTrace)) throw new Error('MSG_TRACE 중복');
+      const id = `attempt-${++seq}`;
       attempts.set(rec.msgTrace, { ...rec });
       log.push(`insert:${rec.msgTrace}:${rec.status}`);
+      // ★3-way canon: attempt id 반환(승인 시 payments.payment_attempt_id FK 착지 근거).
+      return { id };
     },
     async updateAttempt(msgTrace, patch) {
       const cur = attempts.get(msgTrace);
@@ -79,8 +83,9 @@ function makeMemStore() {
       log.push(`update:${msgTrace}:${patch.status ?? ''}`);
     },
     async recordCardPayment(rec) {
+      // rec.attemptId = insertAttempt 반환 id. external_* canonical 착지의 CAT-origin FK.
       payments.push(rec);
-      log.push(`payment:${rec.msgTrace}:${rec.tranType}`);
+      log.push(`payment:${rec.msgTrace}:${rec.tranType}:${rec.attemptId}`);
     },
   };
   return { store, log, attempts, payments };
@@ -317,7 +322,7 @@ test.describe('§12 시나리오 (★D 상태머신)', () => {
 
   test('insert-first 실패 시 송신하지 않음(추적불가 과금 방지)', async () => {
     const failStore: AttemptStore = {
-      async insertAttempt() { throw new Error('DB down'); },
+      async insertAttempt(): Promise<{ id: string }> { throw new Error('DB down'); },
       async updateAttempt() { /* noop */ },
       async recordCardPayment() { /* noop */ },
     };
@@ -340,9 +345,9 @@ test.describe('§12 시나리오 (★D 상태머신)', () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════
-// E) ★C6 테스트금액 격리(is_simulation) + C1 채널상수(pos_provider, pg_provider 아님)
+// E) ★C6 테스트금액 격리(is_simulation) + K1 CAT-origin 판별자(payment_attempt_id, provider 컬럼 없음)
 // ══════════════════════════════════════════════════════════════════════════
-test.describe('C6 is_simulation / C1 pos_provider', () => {
+test.describe('C6 is_simulation / K1 CAT-origin 판별자', () => {
   test('C6: 테스트금액(1001~1006)은 attempt·payments is_simulation=true 각인', async () => {
     const { store, attempts, payments } = makeMemStore();
     const r = await approve({ ...BASE, amount: 1002 }, store, mockSender(REAL_APPROVAL));
@@ -366,11 +371,23 @@ test.describe('C6 is_simulation / C1 pos_provider', () => {
     for (const a of [100, 1000, 1004, 1234, 50000, 0]) expect(isSimulationAmount(a)).toBe(false); // 1004=실거래충돌 금지
   });
 
-  test("C1: 채널상수 = pos_provider('cband') — pg_provider 아님(foot payments 컬럼 부재)", async () => {
-    const mod = await import('../../src/lib/cband/supabaseAttemptStore');
-    expect(mod.CBAND_POS_PROVIDER).toBe('cband');
-    // pg_provider 재도입 회귀 방지: 채널 export 는 pos_ 계열만(pg_provider 상수 미존재).
-    expect((mod as Record<string, unknown>).CBAND_PG_PROVIDER).toBeUndefined();
+  test('K1: CAT-origin 판별자 = payment_attempt_id IS NOT NULL — provider 컬럼(pos_/pg_) 부활 금지', async () => {
+    const mod = await import('../../src/lib/cband/supabaseAttemptStore') as Record<string, unknown>;
+    // ★3-way canon(zpas): pos_provider/pg_provider 컬럼 prod 부재(dead) → 채널 판별은 payment_attempt_id FK.
+    expect(mod.CBAND_ORIGIN_DISCRIMINATOR).toBe('payment_attempt_id IS NOT NULL');
+    // dead-column 회귀 방지: 어떤 provider 상수도 export 하지 않는다.
+    expect(mod.CBAND_POS_PROVIDER).toBeUndefined();
+    expect(mod.CBAND_PG_PROVIDER).toBeUndefined();
+  });
+
+  test('K1: 승인 시 recordCardPayment 가 attemptId(FK)를 받는다 — external_* canonical 착지 근거', async () => {
+    const { store, payments, log } = makeMemStore();
+    const r = await approve({ ...BASE, amount: 1001 }, store, mockSender(REAL_APPROVAL));
+    expect(r.classification).toBe('APPROVED');
+    expect(payments).toHaveLength(1);
+    // payment_attempt_id 로 착지될 attempt id 가 store 로 전달됨(pos_* 아님).
+    expect((payments[0] as Record<string, unknown>).attemptId).toBeTruthy();
+    expect(log.some((l) => /^payment:.*:attempt-\d+$/.test(l))).toBe(true);
   });
 });
 

@@ -2,24 +2,33 @@
  * cband/supabaseAttemptStore.ts — cband_payment_attempts / payments 채널쓰기 실 저장소
  * ════════════════════════════════════════════════════════════════════════════
  * T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD (플랜A · 실 DB store)
- *   SSOT = memory/1_Projects/201_메디빌더_AI도입/da_decision_foot_cband_cat_direct_pay_plana_20260731.md
- *   verdict = GO_ADDITIVE_WITH_CONDITIONS (DA-20260731-FOOT-CBAND-CAT-DIRECT-PAY-PLANA)
+ *   SSOT = memory/1_Projects/201_메디빌더_AI도입/da_decision_foot_cband_cat_direct_pay_3way_canon_20260731.md
+ *   verdict = GO_ADDITIVE_WITH_CORRECTIONS (DA-20260731-FOOT-CBAND-CAT-3WAY-CANON, zpas)
  *
  * paymentFlow.ts 의 AttemptStore 인터페이스를 supabase 로 구현한다.
  *
- * ── ★ DA 확정 반영 (C1/C4/C5/C6) ────────────────────────────────────────────
- *   C1 채널식별 = **pos_provider='cband'**(pg_provider 아님 — foot payments 에 pg_provider 컬럼 부재!) +
- *      **pos_transaction_id=AUTHNO**(둘 다 旣존재, mig 20260703183000 = §10-3a canonical, 채널라벨 DDL 0).
- *      ★external_trxid 는 절대 write 금지(RedPay 매칭 예약키 — Coban 이 채우면 reconcile 오링크).
- *   C4 멱등 = insert-first(cband_payment_attempts) UNIQUE(clinic_id,msg_trace) collide → throw → 송신 중단.
- *      payments INSERT·attempt UPDATE 는 **rows-affected assert**(cross_crm_write_rowcheck_standard INV-W2/W5:
- *      .select() 로 RETURNING → 0-row+error=null 을 silent write-failure 로 승격). 승인 성공 시 payment_id 링크(원자성).
- *   C5 취소(0430) = foot 기존 refund 경로 계승(payment_type='refund', method='card', pos_provider='cband',
- *      원거래 링크=auth_no 참조). 신규 refund 모델 발명 금지.
+ * ── ★ 3-way CANON 저장레이아웃 (external_* 착지 · dead-column-free, K1~K7) ─────────
+ *   LIVE prod introspection(ref rxlomoozakkjesdqjtvd, 2026-07-31) 확정:
+ *     · payments 실컬럼 = external_approval_no / external_tid / external_trxid / accounting_date /
+ *       is_simulation / method … 존재.  **pos_provider / pos_transaction_id / pos_response = 부재(dead)** ·
+ *       pg_* 부재.  → 구 commit(66b8ca27/c2199d0f)의 pos_* write 는 dead-column 참조(런타임 오류) → 폐기.
+ *   K1 payment write:
+ *     · AUTHNO → payments.external_approval_no  (matcher 674/693/697 독출 = dedup 앵커)
+ *     · TID    → payments.external_tid          (matcher 독출 = dedup 앵커) + attempt.cat_tid(원본)
+ *     · 채널='cband' 판별자 → payments.payment_attempt_id(FK, NOT NULL) = CAT-origin (provider 컬럼 신설/부활 안 함)
+ *     · external_trxid 는 **절대 write 금지 = RedPay 예약키**(Coban 이 채우면 reconcile 오링크).
+ *     · BINDING#3 매출일자 앵커 = 승인일자(TRANDATE) → payments.accounting_date(INSERT/감지시각 금지).
+ *   K2 raw 응답 → cband_payment_attempts.raw_response(정규화·PCI 가드) — payments 미착지.
+ *   K5 cross-path = ③ DEDUP(격리 아님): external_approval_no+external_tid+payment_attempt_id 를 payments INSERT 와
+ *     함께 채워 매칭 pool 정상 편입 → RedPay 피드행 R 도착 시 매처가 R↔P 매칭·reconciled_at set·P2 INSERT skip(흡수).
+ *   멱등(§5): insert-first UNIQUE(clinic_id,msg_trace)[L1] + payments.payment_attempt_id partial UNIQUE[L2, 이중수납 2차방어]
+ *     + catClient 앱뮤텍스[L3]. 승인 성공 시 rows-affected assert(cross_crm_write_rowcheck INV-W2/W5).
+ *   C5 취소(0430) = foot 기존 refund 경로 계승(payment_type='refund', method='card', external_* 동일착지, payment_attempt_id).
  *   C6 테스트금액(1001~1006) = is_simulation=true(attempt·payments 패리티, 매출/감사 제외).
  *
  * ── ★ DDL 게이트 (data policy §S2.4) ─────────────────────────────────────────
- *   cband_payment_attempts = 신규 테이블(mig 20260731190000, ADDITIVE). payments 는 무접촉(pos_* 旣존재).
+ *   순 DDL(ADDITIVE) = 신규테이블 cband_payment_attempts 1개(mig 20260731190000, raw_response+PCI가드+is_simulation trg) +
+ *     payments.payment_attempt_id FK(+partial UNIQUE)(mig 20260731190500) + 선택 payments.merchant_no. pos_* · pg_* 무접촉.
  *   기능플래그(VITE_CBAND_PAY) OFF 로 격리 → DDL 적용·MIG-GATE 통과 전 런타임 미도달(프로덕션 무접점).
  */
 
@@ -27,14 +36,35 @@ import { supabase } from '@/lib/supabase';
 import type { AttemptRecord, AttemptStore } from './paymentFlow';
 import { TRANTYPE_CANCEL } from './protocol';
 
-/** 코밴 결제 채널 식별자(payments.pos_provider). ★pg_provider 아님(foot payments 에 부재). §10-3a canonical, C2 술어가 verbatim 소비. */
-export const CBAND_POS_PROVIDER = 'cband' as const;
+/**
+ * ★3-way canon: 코밴 CAT 결제의 채널 식별은 provider 컬럼이 아니라 **payments.payment_attempt_id IS NOT NULL**(FK)로 한다.
+ *   (LIVE prod 에 pos_provider/pg_provider 컬럼 부재 = dead-column. 부활 금지.)
+ *   판독기/UI/refund 렌더는 이 술어를 CAT-origin 판별자로 소비한다.
+ */
+export const CBAND_ORIGIN_DISCRIMINATOR = 'payment_attempt_id IS NOT NULL' as const;
+
+/** TRANDATE(YYMMDD) → ISO date(YYYY-MM-DD). 파싱 실패 시 null(트리거 default 유지). */
+function yymmddToISODate(yymmdd: string | null | undefined): string | null {
+  if (!yymmdd || !/^\d{6}$/.test(yymmdd)) return null;
+  const yy = Number(yymmdd.slice(0, 2));
+  const mm = Number(yymmdd.slice(2, 4));
+  const dd = Number(yymmdd.slice(4, 6));
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  return `20${String(yy).padStart(2, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
+/** postgres unique_violation(23505) 판별 — 중복 승인콜백(멱등 skip) 식별. */
+function isUniqueViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === '23505' || /duplicate key|unique constraint/i.test(error.message ?? '');
+}
 
 export const supabaseAttemptStore: AttemptStore = {
-  async insertAttempt(rec: AttemptRecord): Promise<void> {
+  async insertAttempt(rec: AttemptRecord): Promise<{ id: string }> {
     // ★insert-first: 송신 전 저장. UNIQUE(clinic_id,msg_trace) 위반(중복) 시 error → 상위가 송신 중단(멱등 L1).
     //   C4: .select('id') 로 RETURNING → 0-row+error=null(RLS 거부 등) 도 silent write-failure 로 승격.
     //   취소(0430)는 원거래 AUTHNO 를 auth_no 로 insert-time 저장(실측#2: 취소 AUTHNO=원거래 동일, tran_type 으로만 구분).
+    //   ★반환된 attempt.id = 승인 성공 시 payments.payment_attempt_id(FK, CAT-origin 판별자)로 착지.
     const isCancel = rec.tranType === TRANTYPE_CANCEL;
     const { data, error } = await supabase
       .from('cband_payment_attempts')
@@ -53,10 +83,12 @@ export const supabaseAttemptStore: AttemptStore = {
       })
       .select('id');
     if (error) throw new Error(`결제 시도 기록 실패(insert-first): ${error.message}`);
-    if (!data || data.length === 0) {
+    const attemptId = data?.[0]?.id as string | undefined;
+    if (!attemptId) {
       // 0-row + error=null = RLS 거부/스코프 불일치(INV-W2). 추적 불가 상태로 과금 금지 → 송신 중단.
       throw new Error('결제 시도 기록 실패(insert-first): 0행 반영(권한/스코프 확인 필요).');
     }
+    return { id: attemptId };
   },
 
   async updateAttempt(msgTrace: string, patch: Partial<AttemptRecord>): Promise<void> {
@@ -64,6 +96,8 @@ export const supabaseAttemptStore: AttemptStore = {
     if (patch.status !== undefined) row.status = patch.status;
     if (patch.authNo !== undefined) row.auth_no = patch.authNo;
     if (patch.responseCode !== undefined) row.response_code = patch.responseCode;
+    // ★K2: raw(정규화·PCI-safe) 를 raw_response(jsonb)에 보존. DB BEFORE INSERT/UPDATE PCI 가드가 2차 방어.
+    if (patch.rawResponse !== undefined) row.raw_response = patch.rawResponse;
     const { error } = await supabase
       .from('cband_payment_attempts')
       .update(row)
@@ -74,16 +108,16 @@ export const supabaseAttemptStore: AttemptStore = {
     }
   },
 
-  async recordCardPayment(rec: AttemptRecord & { authNo: string }): Promise<void> {
+  async recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void> {
     const isCancel = rec.tranType === TRANTYPE_CANCEL;
-    // C5 취소 성공 = 수납취소(payment_type='refund', 기존 규약 계승 — 신규 refund 모델 발명 금지).
-    //   C1: 채널=pos_provider='cband', 거래식별자=pos_transaction_id=AUTHNO(둘 다 旣존재 컬럼).
-    //     ★DA reconciliation(MSG-20260731-230159-7gnu, 23:01) 정본 착지 = AUTHNO→pos_transaction_id ·
-    //       채널→pos_provider='cband' · TID→attempt.cat_tid(pos 계열). external_*(trxid/approval_no/tid)는
-    //       RedPay 전용 홈 — Coban write 절대 금지(C2 방화벽 구조보호).
-    //   ★BINDING#3 paid_at=승인시각(TRANDATE/TRANTIME): payments 는 별도 paid_at 컬럼 없이 created_at 을
-    //     결제시각 권위로 사용(outbox trigger MIN(created_at)). 승인시각을 created_at 로 착지시킬지/paid_at
-    //     신규 컬럼을 둘지는 payments 필드매핑 = DA delta 확정 + MIG-GATE 까지 held(현재 default now() 잠정).
+    // ★K1(3-way canon, external_* 착지 · dead-column-free):
+    //   external_approval_no=AUTHNO · external_tid=TID · payment_attempt_id=attemptId(FK, CAT-origin 판별자).
+    //   pos_provider/pos_transaction_id 는 prod 부재(dead) → write 금지. external_trxid 는 NULL 유지(RedPay 예약키).
+    //   C5 취소 성공 = 수납취소(payment_type='refund', 기존 규약 계승 — 신규 refund 모델 발명 금지).
+    //   ★K5 ③ DEDUP: external_approval_no+external_tid+payment_attempt_id 를 payments INSERT 와 함께 원자 write →
+    //     매칭 pool(reconciled_at NULL ∧ external_trxid NULL) 정상 편입 → RedPay 피드행 R 도착 시 매처가 흡수(P2 skip).
+    //     선행/별도 statement 금지(transient window 회피 — 단일 INSERT 에 3필드 동시 착지).
+    //   ★L2 멱등 2차방어: payments.payment_attempt_id partial UNIQUE — 중복 승인콜백 INSERT = 23505 → 멱등 skip(이중수납 차단).
     //   C4: .select('id') 로 rows-affected assert(silent write-failure 금지).
     const { data, error } = await supabase
       .from('payments')
@@ -95,26 +129,45 @@ export const supabaseAttemptStore: AttemptStore = {
         method: 'card',
         installment: 0,
         payment_type: isCancel ? 'refund' : 'payment',
-        pos_provider: CBAND_POS_PROVIDER,   // ★C1 채널 식별(旣존재 컬럼, no-DDL). REDPAY(pos_provider NULL)와 병존.
-        pos_transaction_id: rec.authNo,      // ★C1 AUTHNO canonical home(旣존재 컬럼).
-        is_simulation: rec.isSimulation,     // ★C6 테스트금액 격리(payments 패리티).
+        external_approval_no: rec.authNo,     // ★K1 AUTHNO canonical home(LIVE·matcher 독출=dedup 앵커).
+        external_tid: rec.tid,                // ★K1 TID(LIVE·matcher 독출=dedup 앵커).
+        payment_attempt_id: rec.attemptId,    // ★K1 CAT-origin 판별자(FK) + L2 이중수납 2차방어(partial UNIQUE).
+        // external_trxid 미기입(NULL 유지) = RedPay 예약 매칭키.
+        is_simulation: rec.isSimulation,      // ★C6 테스트금액 격리(payments 패리티).
         memo: isCancel ? '코밴 단말 결제취소' : '코밴 단말 카드결제',
       })
       .select('id');
-    if (error) throw new Error(`수납 기록 실패: ${error.message}`);
+    if (error) {
+      // ★L2 멱등: payment_attempt_id partial UNIQUE 위반(23505) = 중복 승인콜백 → 이중수납 방지, 멱등 no-op.
+      if (isUniqueViolation(error)) {
+        console.warn(`수납 기록 멱등 skip(중복 승인콜백, attempt=${rec.attemptId}): ${error.message}`);
+        return;
+      }
+      throw new Error(`수납 기록 실패: ${error.message}`);
+    }
     const paymentId = data?.[0]?.id as string | undefined;
     if (!paymentId) {
       // 0-row + error=null = RLS 거부/스코프 불일치(INV-W5). 수납 미영속인데 성공 오인 금지.
       throw new Error('수납 기록 실패: 0행 반영(권한/스코프 확인 필요).');
     }
-    // ★승인 성공 → attempt.payment_id 링크(C4 동일 흐름 원자성). 링크 실패는 수납 성립을 되돌리지 않음(로그만).
+    // ★BINDING#3: accounting_date = 승인일자(TRANDATE). payments INSERT 트리거는 created_at KST 로 stamp 하므로,
+    //   UPDATE(트리거 재발화 없음)로 승인일자를 덮어써 late/일경계 drift 를 방지. 승인일자 파싱 실패 시 트리거 default 유지.
+    const acctDate = yymmddToISODate(rec.approvalDate);
+    if (acctDate) {
+      const { error: acctErr } = await supabase
+        .from('payments')
+        .update({ accounting_date: acctDate })
+        .eq('id', paymentId);
+      if (acctErr) console.error(`매출일자(accounting_date) 착지 실패(payment_id=${paymentId}):`, acctErr.message);
+    }
+    // ★승인 성공 → attempt.payment_id 역링크(관측/조인 편의). 링크 실패는 수납 성립을 되돌리지 않음(로그만).
+    //   정본 판별자는 payments.payment_attempt_id(위 INSERT 에 원자 착지) — 이 역링크는 보조.
     const { error: linkErr } = await supabase
       .from('cband_payment_attempts')
       .update({ payment_id: paymentId, updated_at: new Date().toISOString() })
-      .eq('clinic_id', rec.clinicId)
-      .eq('msg_trace', rec.msgTrace);
+      .eq('id', rec.attemptId);
     if (linkErr) {
-      console.error(`수납-시도 링크 실패(msg_trace=${rec.msgTrace}, payment_id=${paymentId}):`, linkErr.message);
+      console.error(`수납-시도 역링크 실패(attempt=${rec.attemptId}, payment_id=${paymentId}):`, linkErr.message);
     }
   },
 };
