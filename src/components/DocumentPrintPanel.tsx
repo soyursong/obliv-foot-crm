@@ -38,6 +38,8 @@ import {
   Check,
   X,
   Stethoscope,
+  Save,
+  FileCheck,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -2281,6 +2283,12 @@ function IssueDialog({
   //   READ-only·db_change:false. null=아직 미로드(필터 미적용, 잠시 clinicDoctors 그대로).
   const [mgmtActiveDirectorStaffIds, setMgmtActiveDirectorStaffIds] = useState<Set<string> | null>(null);
   const [mgmtPhrases, setMgmtPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
+  // ── T-20260731-foot-FIRSTVISIT-MGMTRECORD-CONTENT-SAVE-PERSIST: 저장(draft)/발행(published) 2계층 ──
+  //   현재 편집 중인 draft 행 id. 있으면 [저장] 재클릭은 UPDATE(재편집), 없으면 INSERT(status='draft').
+  //   [발행]은 publish_first_visit_mgmt_record RPC(published 스냅샷 별도 INSERT, draft 존치).
+  //   DA CONSULT-REPLY(20260731 후보 B GO): draft 1행(재편집) + published N행(누적 원장, 불변).
+  const [fvmrDraftId, setFvmrDraftId] = useState<string | null>(null);
+  const [fvmrBusy, setFvmrBusy] = useState(false);
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
   // T-20260608-foot-DOC-PATH12-SYNC: PMW(PATH-4) 빌링 폴백 소스 — check_in_services 기반.
@@ -2583,6 +2591,48 @@ function IssueDialog({
       });
     return () => { cancelled = true; };
   }, [open, template.form_key, checkIn.clinic_id]);
+
+  // ── T-20260731-foot-FIRSTVISIT-MGMTRECORD-CONTENT-SAVE-PERSIST (AC-3 재조회): 기존 draft 로드 → 폼 상태 복원 ──
+  //   초진 관리기록지를 다시 열면 저장했던 내용이 그대로 보이도록(빈 폼 초기화 방지). draft 유일성은
+  //   FE(저장 전 기존 draft SELECT→UPDATE, else INSERT + fvmrBusy 가드)로 보장 → limit(1).maybeSingle.
+  //   ⚠ draft-dedup partial unique index 는 DEFERRED(마이그 헤더: cross-feature dedup 선행) → 인덱스 미의존.
+  //   복원 대상 = _fvmr 스냅샷(작성자 입력 원본). 자동 바인딩 필드(환자명 등)는 매 open DB 재파생(무손실).
+  useEffect(() => {
+    if (!open || template.form_key !== 'first_visit_mgmt_record' || template.id.startsWith('fallback-')) {
+      setFvmrDraftId(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('form_submissions')
+      .select('id, field_data')
+      .eq('template_id', template.id)
+      .eq('check_in_id', checkIn.id)
+      .eq('status', 'draft')
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setFvmrDraftId(data.id as string);
+        const snap = (data.field_data ?? {}) as Record<string, unknown>;
+        const fvmr = (snap._fvmr ?? {}) as {
+          manual?: Record<string, string>;
+          procedures?: MgmtCodePick[];
+          diagnoses?: MgmtCodePick[];
+          clinic_doctor_id?: string;
+          doctor_name?: string;
+        };
+        if (fvmr.manual && typeof fvmr.manual === 'object') {
+          setManualValues((prev) => ({ ...prev, ...fvmr.manual }));
+        }
+        if (Array.isArray(fvmr.procedures)) setMgmtProcedures(fvmr.procedures);
+        if (Array.isArray(fvmr.diagnoses)) setMgmtDiagnoses(fvmr.diagnoses);
+        if (fvmr.clinic_doctor_id) setSelectedClinicDoctorId(fvmr.clinic_doctor_id);
+        if (fvmr.doctor_name) setSelectedDoctorName(fvmr.doctor_name);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, template.form_key, template.id, checkIn.id]);
 
   // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호 당일순번 print-time 로드 제거.
   //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative.
@@ -3455,6 +3505,130 @@ function IssueDialog({
     onIssued();
   };
 
+  // ── T-20260731-foot-FIRSTVISIT-MGMTRECORD-CONTENT-SAVE-PERSIST: 저장/발행 field_data 페이로드 ──
+  //   allValues(인쇄와 동일 스냅샷) + _fvmr(재조회용 작성 입력 원본). 사진은 넣지 않음(authoritative=treatment_photos).
+  const buildFvmrPayload = (): Record<string, unknown> => ({
+    ...allValues,
+    _fvmr: {
+      manual: manualValues,
+      procedures: mgmtProcedures,
+      diagnoses: mgmtDiagnoses,
+      clinic_doctor_id: selectedClinicDoctorId,
+      doctor_name: selectedDoctorName,
+      saved_at: new Date().toISOString(),
+    },
+  });
+
+  // [저장] = draft 영속(재편집 가능). draft 1행 = 저장 전 기존 draft SELECT→UPDATE, 없으면 INSERT.
+  //   (draft-dedup partial unique index 는 DEFERRED → onConflict upsert 미사용, FE SELECT-가드로 유일성 보장.)
+  const handleSaveDraft = async () => {
+    if (!billingReady) {
+      toast.error('서류 내용을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    if (template.id.startsWith('fallback-')) {
+      toast.error('양식이 아직 서버에 등록되지 않아 저장할 수 없습니다.');
+      return;
+    }
+    setFvmrBusy(true);
+    const payload = buildFvmrPayload();
+    try {
+      let targetId = fvmrDraftId;
+      // 이미 열려있는 draft가 없으면 서버에서 재확인(다른 세션이 만든 draft 흡수 → 중복 INSERT 방지).
+      if (!targetId) {
+        const { data: existing } = await supabase
+          .from('form_submissions')
+          .select('id')
+          .eq('template_id', template.id)
+          .eq('check_in_id', checkIn.id)
+          .eq('status', 'draft')
+          .limit(1)
+          .maybeSingle();
+        if (existing?.id) targetId = existing.id as string;
+      }
+      if (targetId) {
+        const { error } = await supabase
+          .from('form_submissions')
+          .update({ field_data: payload })
+          .eq('id', targetId)
+          .eq('status', 'draft'); // published 행 오염 방지(불변 트리거와 이중방어)
+        if (error) throw error;
+        setFvmrDraftId(targetId);
+      } else {
+        const { data: ins, error } = await supabase
+          .from('form_submissions')
+          .insert({
+            clinic_id: checkIn.clinic_id,
+            template_id: template.id,
+            check_in_id: checkIn.id,
+            customer_id: checkIn.customer_id,
+            issued_by: staffId,
+            field_data: payload,
+            status: 'draft',
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+        setFvmrDraftId(ins.id as string);
+      }
+      toast.confirm('저장되었습니다. 다시 열면 작성 내용이 그대로 표시됩니다.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`저장 실패: ${msg}`);
+    } finally {
+      setFvmrBusy(false);
+    }
+  };
+
+  // [발행] = published 스냅샷 별도 행 INSERT(공식 이력·불변). draft는 그대로 살아 재편집·재발행 가능.
+  const handlePublishRecord = async () => {
+    if (!billingReady) {
+      toast.error('서류 내용을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    if (template.id.startsWith('fallback-')) {
+      toast.error('양식이 아직 서버에 등록되지 않아 발행할 수 없습니다.');
+      return;
+    }
+    setFvmrBusy(true);
+    const payload = buildFvmrPayload();
+    try {
+      // 발행 직전 최신 작성 내용을 draft에도 저장(발행본↔작업본 정합 + lineage source 확보).
+      let sourceId = fvmrDraftId;
+      if (sourceId) {
+        await supabase.from('form_submissions').update({ field_data: payload }).eq('id', sourceId).eq('status', 'draft');
+      } else {
+        const { data: ins } = await supabase
+          .from('form_submissions')
+          .insert({
+            clinic_id: checkIn.clinic_id,
+            template_id: template.id,
+            check_in_id: checkIn.id,
+            customer_id: checkIn.customer_id,
+            issued_by: staffId,
+            field_data: payload,
+            status: 'draft',
+          })
+          .select('id')
+          .single();
+        if (ins?.id) { sourceId = ins.id as string; setFvmrDraftId(sourceId); }
+      }
+      const { error } = await supabase.rpc('publish_first_visit_mgmt_record', {
+        p_check_in_id: checkIn.id,
+        p_field_data: payload,
+        p_source_submission_id: sourceId,
+      });
+      if (error) throw error;
+      toast.confirm('발행되었습니다. 공식 발행 이력에 적재되었습니다(작성 내용은 계속 수정·재발행 가능).');
+      onIssued();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`발행 실패: ${msg}`);
+    } finally {
+      setFvmrBusy(false);
+    }
+  };
+
   const meta = FORM_META[template.form_key];
   const hasCoords = template.field_map.length > 0;
 
@@ -4121,6 +4295,31 @@ function IssueDialog({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
+            {/* T-20260731-foot-FIRSTVISIT-MGMTRECORD-CONTENT-SAVE-PERSIST: 초진 관리기록지 전용 [저장]/[발행].
+                저장 = 작성 내용 영속(재편집 가능 draft) / 발행 = 공식 이력 적재(published, 불변). 다른 서류 무영향(격리). */}
+            {template.form_key === 'first_visit_mgmt_record' && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 min-h-[40px] border-teal-400 text-teal-700 hover:bg-teal-50"
+                  onClick={handleSaveDraft}
+                  disabled={fvmrBusy || saving || !billingReady}
+                  data-testid="fvmr-save-draft"
+                >
+                  <Save className="h-3.5 w-3.5" /> {fvmrBusy ? '처리 중…' : '저장'}
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1 min-h-[40px] bg-emerald-600 hover:bg-emerald-700"
+                  onClick={handlePublishRecord}
+                  disabled={fvmrBusy || saving || !billingReady}
+                  data-testid="fvmr-publish"
+                >
+                  <FileCheck className="h-3.5 w-3.5" /> {fvmrBusy ? '처리 중…' : '발행'}
+                </Button>
+              </>
+            )}
             {/* T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: 콘텐츠 4소스 로드 완료(billingReady)
                 전까지 미리보기/인쇄 차단 → 빈 내용 스냅샷 저장/출력 방지. */}
             {(template.template_format !== 'pdf') && (
