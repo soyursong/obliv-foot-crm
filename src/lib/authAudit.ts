@@ -30,6 +30,7 @@ export type AuthAuditAction =
   | 'delete_user'
   | 'ban'
   | 'unban'
+  | 'approve'          // 계정 승인=활성화(approved=true + email_confirmed_at 강제). action 컬럼 CHECK 제약 없음 → DB 변경 불요.
   | 'role_change'
   | 'email_change'
   | 'invite_overwrite';

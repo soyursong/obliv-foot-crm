@@ -114,13 +114,59 @@ export default function Accounts() {
 
   const toggleApproval = async (u: UserProfile) => {
     const next = !u.approved;
-    if (!next && !window.confirm(`${u.name ?? u.email}의 승인을 취소하시겠습니까?`)) return;
-    const { error } = await supabase
+
+    if (next) {
+      // 승인 = 활성화. T-20260801-foot-STAFF-APPROVE-BTN-LOGIN-WIRING-VERIFY:
+      //   승인 버튼이 user_profiles.approved 만 켜고 auth 레벨 email_confirmed_at 을 세팅하지
+      //   않아, 자가회원가입 계정이 GoTrue "Email not confirmed" 로 로그인 거부되던 배선 gap 을
+      //   admin_approve_and_confirm_user RPC(SECURITY DEFINER)로 한 트랜잭션에 봉합.
+      //   → approved=true + email_confirmed_at 강제 + rows-affected 서버 검증(조용한 실패 차단).
+      // INV-5 §3-B: 계정 활성화(로그인 가능 상태로의 auth-state 변경) = auth op → actor 감사.
+      const auditId = await recordAuthAction(supabase, {
+        actorUserId,
+        targetUserId: u.id,
+        targetEmail: u.email,
+        action: 'approve',
+      });
+      const { data, error } = await supabase.rpc('admin_approve_and_confirm_user', {
+        target_user_id: u.id,
+      });
+      await stampAuthActionOutcome(supabase, auditId, error ? 'failed' : 'succeeded');
+      if (error) { toast.error(`승인 실패: ${error.message}`); return; }
+      // 스펙2: 승인 후 안내 토스트 개선. 스펙1(email 자동확인)이 처리됐으면 추가 안내 불필요.
+      const confirmedNow = (data as { email_confirmed_now?: boolean } | null)?.email_confirmed_now;
+      const already = (data as { already_confirmed?: boolean } | null)?.already_confirmed;
+      toast.success(
+        confirmedNow || already
+          ? '승인 완료 — 이제 해당 계정으로 로그인할 수 있어요'
+          : '승인 완료 — 로그인 시 문제가 있으면 이메일 인증을 확인하세요',
+      );
+      fetchUsers();
+      return;
+    }
+
+    // 승인 취소(비활성화 아님, approved=false). email_confirmed_at 은 되돌리지 않음.
+    if (!window.confirm(`${u.name ?? u.email}의 승인을 취소하시겠습니까?`)) return;
+    const auditId = await recordAuthAction(supabase, {
+      actorUserId,
+      targetUserId: u.id,
+      targetEmail: u.email,
+      action: 'approve',
+      requestMeta: { direction: 'revoke' },
+    });
+    // cross_crm_write_rowcheck_standard: .select() 로 rows-affected 확인 — 0-row 조용한 실패 차단.
+    const { data: rows, error } = await supabase
       .from('user_profiles')
-      .update({ approved: next })
-      .eq('id', u.id);
+      .update({ approved: false })
+      .eq('id', u.id)
+      .select('id');
+    await stampAuthActionOutcome(supabase, auditId, error ? 'failed' : 'succeeded');
     if (error) { toast.error(error.message); return; }
-    toast.success(next ? '승인됨' : '승인 취소됨');
+    if (!rows || rows.length === 0) {
+      toast.error('승인 취소가 반영되지 않았어요(권한/RLS 확인 필요)');
+      return;
+    }
+    toast.success('승인 취소됨');
     fetchUsers();
   };
 

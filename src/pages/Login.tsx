@@ -7,6 +7,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+// 스펙3(T-20260801-foot-STAFF-APPROVE-BTN-LOGIN-WIRING-VERIFY): GoTrue 영문 오류 → 한국어 안내.
+//   특히 "Email not confirmed" = 계정이 아직 활성화(이메일 인증)되지 않은 상태 → 승인 안내로 연결.
+function koreanAuthError(msg: string): string {
+  const m = (msg || '').toLowerCase();
+  if (m.includes('email not confirmed')) {
+    return '이메일 인증이 완료되지 않아 로그인할 수 없어요. 관리자 승인(계정 활성화) 후 다시 시도하거나, 관리자에게 계정 활성화를 요청하세요.';
+  }
+  if (m.includes('invalid login credentials') || m.includes('invalid') && m.includes('credential')) {
+    return '이메일 또는 비밀번호가 올바르지 않습니다.';
+  }
+  if (m.includes('too many requests') || m.includes('rate limit')) {
+    return '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  // 알 수 없는 오류: 한국어 안내 + 원문 병기(디버깅 단서 보존).
+  return `로그인에 실패했어요. 잠시 후 다시 시도해 주세요. (${msg})`;
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const { refresh, signOut } = useAuth();
@@ -25,7 +42,7 @@ export default function Login() {
       password,
     });
     if (authError) {
-      setError(authError.message);
+      setError(koreanAuthError(authError.message));
       setLoading(false);
       return;
     }
