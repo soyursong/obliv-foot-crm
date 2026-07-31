@@ -606,7 +606,16 @@ Deno.serve(async (req: Request) => {
         solapi_validation_status: string | null;
       };
 
-      if (!mc.enabled || !mc.solapi_api_key_vault_name || !mc.solapi_secret_vault_name || !mc.sender_number) {
+      // T-20260731-foot-MSGSET-SENDBLOCK-RECOVER: 비활성화(enabled=false)와 실제 미설정(연결/발신번호 누락)을
+      //   구분해 안내한다. 종전엔 두 경우 모두 "미설정 — 먼저 저장하세요"로 표출되어, 발신번호가 이미 저장돼 있고
+      //   '발송 활성화' 토글만 꺼져 있는 상태(운영 self-halt)에서 현장이 "이미 저장했는데?"라며 혼선을 겪었다.
+      if (!mc.enabled) {
+        return new Response(
+          JSON.stringify({ success: false, message: "문자 발송이 비활성화되어 있습니다. ⓪ 연결 설정에서 '메시지 발송 활성화'를 켠 뒤 저장하세요." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (!mc.solapi_api_key_vault_name || !mc.solapi_secret_vault_name || !mc.sender_number) {
         return new Response(
           JSON.stringify({ success: false, message: "문자 발송 설정이 완료되지 않았습니다 (연결/발신번호 미설정). 메시지 설정에서 먼저 저장하세요." }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
