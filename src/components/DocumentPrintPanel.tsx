@@ -155,6 +155,8 @@ import {
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
 import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocFormSettingsDialog';
+// T-20260731-foot-FIRSTVISIT-MGMTRECORD-PHOTO-2SLOT-LR: 초진 관리기록지 발 사진 2슬롯(오른발/왼발)
+import { FirstVisitFootPhotoSlots } from '@/components/FirstVisitFootPhotoSlots';
 
 // ─── 초진 관리기록지 체크박스 그룹 (T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD) ───
 //   체크칩 토글 → 필드값 '✔'(체크) / ''(미체크) → HTML 템플릿 {{key}} (.cbx 네모 안 ✔) 바인딩.
@@ -4594,6 +4596,19 @@ function IssueDialog({
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* T-20260731-foot-FIRSTVISIT-MGMTRECORD-PHOTO-2SLOT-LR: 초진 관리기록지 발 사진 2슬롯(오른발/왼발).
+                treatment_photos 재사용(source='first_visit_mgmt_record'·foot_side L/R·check_in 결속) — DA Option A.
+                초진 관리기록지 전용(격리): form_key 게이트. 사진은 기록지 인쇄 스냅샷과 무관(별도 authoritative 저장). */}
+            {template.form_key === 'first_visit_mgmt_record' && checkIn.customer_id && checkIn.clinic_id && (
+              <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50/40 p-3">
+                <FirstVisitFootPhotoSlots
+                  checkInId={checkIn.id}
+                  customerId={checkIn.customer_id}
+                  clinicId={checkIn.clinic_id}
+                />
               </div>
             )}
 
