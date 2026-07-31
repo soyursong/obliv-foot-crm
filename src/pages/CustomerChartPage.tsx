@@ -814,7 +814,8 @@ function ReceiptUploadSection({
   const [amountDlg, setAmountDlg] = useState<{
     open: boolean; splits: { method: 'card' | 'cash' | 'transfer'; amount: string }[];
     targetSel: string; paymentDate: string;
-  }>({ open: false, splits: [{ method: 'cash', amount: '' }], targetSel: '', paymentDate: todaySeoulISODate() });
+  // T-20260731-foot-RECEIPT-PAYMETHOD-DEFAULT-CARD: 결제 대부분이 카드 → 첫 분할행 결제수단 기본 선택값을 'card'로 프리셀렉트(초기 표시값만; 스태프 수동변경·저장값·산식 불변).
+  }>({ open: false, splits: [{ method: 'card', amount: '' }], targetSel: '', paymentDate: todaySeoulISODate() });
   // 활성 패키지 목록 (영수증 결제 라우팅 대상)
   // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: totalSessions 추가 — 회수=1 영수증은 단건(payments)으로 분기.
   const [activePkgs, setActivePkgs] = useState<{ id: string; name: string; totalSessions: number }[]>([]);
@@ -862,7 +863,8 @@ function ReceiptUploadSection({
       ? `pkg:${activePkgs[0].id}`
       : (waitingCIs.length > 0 ? `ci:${waitingCIs[0].id}` : 'single');
     setAmountDlg({
-      open: true, splits: [{ method: 'cash', amount: '' }],
+      // T-20260731-foot-RECEIPT-PAYMETHOD-DEFAULT-CARD: 팝업 오픈 시 결제수단 기본 선택값 = 카드(프리셀렉트).
+      open: true, splits: [{ method: 'card', amount: '' }],
       targetSel: defaultSel, paymentDate: todaySeoulISODate(),
     });
   }, [activePkgs, waitingCIs]);
