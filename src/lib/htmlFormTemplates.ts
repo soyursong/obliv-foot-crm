@@ -1,5 +1,9 @@
 // LOGIC-LOCK: L-006 — 서류출력 경로 통일. bindHtmlTemplate + HTML 11종 양식 정의. 변경 시 현장 승인 필수
 
+// T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 초진 관리기록지 방문목적 증상 체크옵션 SSOT
+//   (발건강 설문지 '발 관련 증상'과 문구·순서 공유 → 어휘 drift 방지).
+import { FOOT_VISIT_PURPOSE_SYMPTOM_OPTIONS } from '@/lib/footSymptomOptions';
+
 /**
  * HTML/CSS 기반 디지털 양식 템플릿
  *
@@ -2433,6 +2437,8 @@ ${COMMON_STYLE}
           <span class="cb-item"><span class="cbx">{{vp_fungal}}</span>무좀발톱</span>
           <span class="cb-item"><span class="cbx">{{vp_thick}}</span>두꺼운 발톱</span>
           <span class="cb-item"><span class="cbx">{{vp_deformed}}</span>변형발톱</span>
+          <!-- T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 발건강 설문지 '발 관련 증상' 전체 additive (SSOT). '기타'는 아래 기존칸과 정합(중복 미생성). -->
+          ${FOOT_VISIT_PURPOSE_SYMPTOM_OPTIONS.map((o) => `<span class="cb-item"><span class="cbx">{{${o.key}}}</span>${o.label}</span>`).join('\n          ')}
           <span class="cb-item"><span class="cbx">{{vp_other}}</span>기타: {{vp_other_text}}</span>
         </td>
       </tr>

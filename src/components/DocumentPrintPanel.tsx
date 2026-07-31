@@ -154,6 +154,8 @@ import {
 import type { InsuranceGrade } from '@/lib/insurance';
 // T-20260629-foot-DOCPRINT-EDIT-BTN: 서류 [출력] 옆 [수정] → 공통 설정/편집 팝업(§2#4 canonical).
 import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocFormSettingsDialog';
+// T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 초진 관리기록지 방문목적 증상 옵션 SSOT.
+import { FOOT_VISIT_PURPOSE_SYMPTOM_OPTIONS } from '@/lib/footSymptomOptions';
 
 // ─── 초진 관리기록지 체크박스 그룹 (T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD) ───
 //   체크칩 토글 → 필드값 '✔'(체크) / ''(미체크) → HTML 템플릿 {{key}} (.cbx 네모 안 ✔) 바인딩.
@@ -187,6 +189,9 @@ const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
       { key: 'vp_fungal', label: '무좀발톱' },
       { key: 'vp_thick', label: '두꺼운 발톱' },
       { key: 'vp_deformed', label: '변형발톱' },
+      // T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 발건강 설문지 '발 관련 증상' 전체 additive.
+      //   SSOT(footSymptomOptions) 재사용 → 문구·순서 drift 방지. '기타'는 SSOT에서 제외됨(기존 vp_other 정합).
+      ...FOOT_VISIT_PURPOSE_SYMPTOM_OPTIONS,
       { key: 'vp_other', label: '기타' },
     ],
   },

@@ -16,6 +16,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
+// T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: '발 관련 증상' 라벨 SSOT (초진 관리기록지 방문목적과 공유)
+import { FOOT_SYMPTOM_OPTIONS } from '@/lib/footSymptomOptions';
 // T-20260606-foot-CHART2-FOOTQ-VIEWER: 고민되는 발톱 부위 선택 (2번차트 발가락 일러스트 재활용)
 import FootToeIllustration from '@/components/FootToeIllustration';
 import type { FootSite } from '@/components/FootSiteSelector';
@@ -60,18 +62,9 @@ function toggle<T>(arr: T[], val: T): T[] {
 // 발건강질문지 5섹션 최종 확정본 (MSG-175815-mlsv)
 
 // ── 1번 발 관련 증상 (다중) — 현장 확정 순서·텍스트 그대로 ──────────────────────
-const SYMPTOM_OPTIONS = [
-  '발톱 변색 및 변형',
-  '내성발톱(파고드는 발톱)',
-  '발가락 통증',
-  '발냄새',
-  '발건조 및 각질',
-  '발 땀 많음',
-  '가려움증',
-  '발톱 끝 부서짐',
-  '울퉁불퉁한 발톱',
-  '기타',
-];
+// T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 라벨 배열을 SSOT(footSymptomOptions)로 승격 →
+//   초진 관리기록지 '방문목적'과 문구·순서 공유(어휘 drift 방지). 값·순서는 종전과 동일.
+const SYMPTOM_OPTIONS = FOOT_SYMPTOM_OPTIONS;
 
 // ── 2번 발 건강 관련 경험 (4문) — 현장 확정 ────────────────────────────────────
 // Q1 문제성 발톱 치료: 없음 / 있음 → 치료방법
