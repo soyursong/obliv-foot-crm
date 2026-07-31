@@ -134,6 +134,31 @@ function rankingRanges(selDateIso: string): {
     prevMonthEnd,
   };
 }
+/** 랭킹 소스(당월누적 매출) 조회 + 월경계 폴백.
+ *  T-20260801-foot-ASSIGN-DAILYTGT-MONTHBOUNDARY-WINDOW-FIX:
+ *   당월 윈도우 [monthStart, to] 가 (a) 모수 0행(공백)이거나 (b) 월 첫날(monthStart===to, 윈도우 단일일 붕괴)
+ *   이면 → 전월 전체 윈도우 [전월1일, 전월말일]로 재조회해 랭킹 모수를 채운다.
+ *   ▸ 근인: 월 첫날 monthStart===selectedDate → [08-01,08-01] 단일일 → consultant_universe 공백 → 랭킹/목표 전원 '—'.
+ *     매월 1일마다 재발하는 구조결함 → 일반해(모든 월 첫날/모수공백일)로 정정. 하드코딩 날짜 없음.
+ *   ▸ 회귀0: 당월 모수가 존재하고 월 첫날이 아닌 날(2일차 이후)은 폴백 미발동 → 기존 당월누적 동작 불변.
+ *   ▸ 두 랭킹파생 화면(일일 배정 목표 컬럼 + 랭킹 탭) 공유 소스라 함께 복구.
+ *   ▸ RPC 시그니처/스키마 불변(no-DDL). 전월매출 개념은 이미 prevMonthRevenue 로 존재 → 설계 정합.
+ *   ▸ N비례 산식(NPROP-CALC-FIX)·config·rankAssignmentRatios 불변 — '랭킹비율' 소스 윈도우만 정정. Σ=N 불변. */
+async function fetchRankingSourceWithMonthFallback(
+  clinicId: string,
+  monthStart: string,
+  to: string,
+): Promise<ConsultantRow[]> {
+  const monthRows = await fetchConsultantPerf(clinicId, monthStart, to);
+  const needFallback = monthRows.length === 0 || monthStart === to;
+  if (!needFallback) return monthRows; // 당월 모수 존재 & 월 첫날 아님 → 기존 동작 불변
+  const prevMonthEnd = isoAddDays(monthStart, -1); // 전월 말일
+  const prevMonthStart = monthStartOfIso(prevMonthEnd); // 전월 1일
+  const prevRows = await fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd);
+  // 전월도 공백(신규 오픈 등)이면 당월 결과 유지 — 폴백이 상황을 악화시키지 않음(빈 표시 유지, 회귀0).
+  return prevRows.length > 0 ? prevRows : monthRows;
+}
+
 /** 매출액 배열 → staffId별 순위(1위=최고매출, 동점 tie-break=이름). 0/미참여는 후순위. */
 function rankByRevenue(
   ids: string[],
@@ -993,7 +1018,8 @@ export default function Assignments() {
     const monthStart = `${selectedDate.slice(0, 7)}-01`;
     try {
       const [perf, cfg, dayResv] = await Promise.all([
-        fetchConsultantPerf(clinicId, monthStart, selectedDate),
+        // 월경계 폴백(MONTHBOUNDARY-WINDOW-FIX): 월 첫날/당월 공백이면 전월 전체로 랭킹 모수 채움.
+        fetchRankingSourceWithMonthFallback(clinicId, monthStart, selectedDate),
         fetchDailyTargetConfig(clinicId),
         supabase
           .from('reservations')
@@ -1061,7 +1087,9 @@ export default function Assignments() {
       try {
         const [monthPerf, prevPerf, thisPerf, prevMonthPerf, dayCi, initResv, tgtCfg] =
           await Promise.all([
-          fetchConsultantPerf(clinicId, monthStart, rankingDate),
+          // 월경계 폴백(MONTHBOUNDARY-WINDOW-FIX): 월 첫날/당월 공백이면 전월 전체로 랭킹 모수 채움.
+          //   당월 순위·배정비율·예상건수 소스(perfRows) 정정. 전주/이번주/전월 변동표 소스는 불변.
+          fetchRankingSourceWithMonthFallback(clinicId, monthStart, rankingDate),
           fetchConsultantPerf(clinicId, prevWeekMon, prevWeekSun),
           fetchConsultantPerf(clinicId, thisWeekMon, rankingDate),
           // 월간 변동표 전월 순위 소스(전월 1일~말일). 동일 엔진·동일 R1 정합(재직/clinic/deleted_at) 계승.
