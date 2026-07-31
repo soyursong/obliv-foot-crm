@@ -1,0 +1,30 @@
+{
+  "ticket": "T-20260731-foot-CALLERCLINIC-GATE-STAFF-CLINICNULL",
+  "action": "deactivate unused coordinator account (Option B, 김주연 총괄 U0ATDB587PV, 2026-07-31 18:35)",
+  "captured_at_utc": "2026-07-31 (READ-ONLY prod introspection, Management API = postgres/service context)",
+  "target_anchor": {
+    "id": "68c50c25-8725-4e96-8a52-c47dde03a786",
+    "email": "sj.lee0719@medibuilder.com"
+  },
+  "match_count": 1,
+  "snapshot_completeness": "full-column via to_jsonb(user_profiles) — prod catalog 전수 파생 (§2-S-3)",
+  "before_full_column_user_profiles": {
+    "id": "68c50c25-8725-4e96-8a52-c47dde03a786",
+    "name": "이승준",
+    "role": "coordinator",
+    "email": "sj.lee0719@medibuilder.com",
+    "active": true,
+    "approved": false,
+    "clinic_id": null,
+    "created_at": "2026-07-13T12:56:41.48116+00:00",
+    "updated_at": "2026-07-13T12:56:41.48116+00:00",
+    "access_tier": "member",
+    "exempt_from_restrictions": false
+  },
+  "staff_rows_for_user_id": [],
+  "staff_row_count": 0,
+  "mutation": "user_profiles.active: true -> false (single row, id+email anchored)",
+  "columns_untouched": ["id", "name", "role", "email", "approved", "clinic_id", "created_at", "updated_at", "access_tier", "exempt_from_restrictions"],
+  "ledger_contact": "none (schema_migrations 등 원장 무접점 — data-only UPDATE, no DDL)",
+  "gate_note": "caller-clinic 게이트 로직/pass_same_clinic 무접점. 계정 비활성화(active=false)만."
+}
