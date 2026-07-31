@@ -51,6 +51,8 @@ const SILJANG_SLACK_MAP: Record<string, string> = {
   "강경민": "U0BFYC35B0X",
   "김지윤": "U0B902NG8JF",
   "김주연": "U0ATDB587PV",
+  // T-20260731-foot-TMNOTIFY-CHOIHH-SLACKID-MAP — 최현희 실장 실제 멤버 ID(총괄 재확인, 봇 ID·기존 6명 무충돌). SSOT 동기화.
+  "최현희": "U0BKRDWDG9Z",
 };
 
 const corsHeaders = {
