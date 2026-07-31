@@ -360,6 +360,12 @@ export default function Assignments() {
   //   확정 기록되므로, 집계를 그 공통 정본 경로로 통합하면 audit 로그 유실/지연과 무관하게 정확(1건당 1회).
   const [monthCheckIns, setMonthCheckIns] = useState<CheckIn[]>([]);
   const [monthCustomers, setMonthCustomers] = useState<Map<string, CustomerLite>>(new Map());
+  // T-20260731-foot-INFLOW-LABEL-TM-STAMP-GAP (경로 A): reservation_id → source_system 맵(read-only 참조만).
+  //   고객선언 유입경로(visit_route/lead_source)가 비었을 때 이벤트 provenance('dopamine'→'TM') 폴백 라벨용.
+  //   컬럼 write 0 · customers write 0 · 매출축(Revenue Source Split) 무오염 — 표시 파생에만 사용.
+  const [monthResvSourceSystem, setMonthResvSourceSystem] = useState<Map<string, string | null>>(
+    new Map(),
+  );
   const [slotEnter, setSlotEnter] = useState<Map<string, string>>(new Map());
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -556,6 +562,27 @@ export default function Assignments() {
         }
       }
       setMonthCustomers(monthCustMap);
+      // 5c-2) T-20260731-foot-INFLOW-LABEL-TM-STAMP-GAP (경로 A): 당월 check_ins 의 reservation source_system.
+      //   고객선언 유입경로가 비었고 이 예약을 도파민(TM)이 만든 경우('dopamine') 라벨 폴백('TM')에 사용.
+      //   read-only 참조만 — reservations write 0. walk-in(reservation_id NULL)은 맵 미포함 → 폴백 무발동.
+      const monthResvIds = Array.from(
+        new Set(monthCi.map((c) => c.reservation_id).filter(Boolean)),
+      ) as string[];
+      const monthResvSrcMap = new Map<string, string | null>();
+      if (monthResvIds.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < monthResvIds.length; i += CHUNK) {
+          const slice = monthResvIds.slice(i, i + CHUNK);
+          const { data: rsvRows } = await supabase
+            .from('reservations')
+            .select('id, source_system')
+            .in('id', slice);
+          for (const r of (rsvRows ?? []) as Array<{ id: string; source_system: string | null }>) {
+            monthResvSrcMap.set(r.id, r.source_system ?? null);
+          }
+        }
+      }
+      setMonthResvSourceSystem(monthResvSrcMap);
       // T-20260727 RECLASS 2A: 월간 상담 축(monthAxisOf)도 **check_in 레코드 단위(시점정합)** recency 로 판정.
       //   RC = 고객단위 판정이 과거날짜 자기 첫 완료방문을 "과거 done" 으로 잡아 순수초진을 재진 오승격.
       //   per-checkin 판정 = 각 배정 check_in 을 그 방문 시각 이전 done 방문에 대해서만 판정(+owner-forced pin).
@@ -1251,7 +1278,16 @@ export default function Assignments() {
           // T-20260729-foot-CONSULT-SLACK-INFLOW-WALKIN-MISLABEL (DECOUPLE): 유입경로 라벨을 균등 버킷
           //   축(deriveConsultAxis)에서 분리 → 고객 실제 visit_route 원문 노출(재진은 '재진'). 네이버·지인소개·공홈
           //   등 실값 소실('워크인' 접힘) 해소. 발송 게이트/상태는 consult 행에만 의미. 배정 로직 무변경.
-          inflow: role === 'consult' ? consultInflowLabel(axisOf(ci, 'consult'), cust) : '',
+          // T-20260731-foot-INFLOW-LABEL-TM-STAMP-GAP (경로 A): 고객선언 유입경로가 비었고 예약이 도파민(TM)
+          //   출처면('dopamine') 'TM' 폴백. source_system 은 read-only 참조(3번째 인자) — 배정축/매출축 무접촉.
+          inflow:
+            role === 'consult'
+              ? consultInflowLabel(
+                  axisOf(ci, 'consult'),
+                  cust,
+                  ci.reservation_id ? monthResvSourceSystem.get(ci.reservation_id) : null,
+                )
+              : '',
           notifyStatus: ci.consult_notify_status ?? null,
         });
       };
@@ -1259,7 +1295,7 @@ export default function Assignments() {
       push('therapy', ci.therapist_id);
     }
     return rows.sort((a, b) => b.at.localeCompare(a.at));
-  }, [monthCheckIns, actions, activeTab, monthCustomers, axisOf]);
+  }, [monthCheckIns, actions, activeTab, monthCustomers, monthResvSourceSystem, axisOf]);
 
   // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
   //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.

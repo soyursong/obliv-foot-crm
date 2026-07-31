@@ -124,8 +124,9 @@ test('AC-fix4: CONSULT_AXES 에 네이버 미추가 — 배정 축 폴백 로직
 test('배선: inflow 바인딩이 consultInflowLabel SSOT 로 교정됨', () => {
   const src = read(ASSIGNMENTS);
   expect(src).toContain("import { consultInflowLabel } from '@/lib/consultInflowLabel'");
-  // 신규 바인딩: consultInflowLabel(axisOf(...), cust)
-  expect(src).toMatch(/inflow: role === 'consult' \? consultInflowLabel\(axisOf\(ci, 'consult'\), cust\) : ''/);
+  // 신규 바인딩: consultInflowLabel(axisOf(ci,'consult'), cust, <source_system>) — 인자 순서 무관 whitespace 허용.
+  //   T-20260731-foot-INFLOW-LABEL-TM-STAMP-GAP: 3번째 인자(source_system 폴백) 추가로 멀티라인 전환 → 유연 매칭.
+  expect(src).toMatch(/consultInflowLabel\(\s*axisOf\(ci, 'consult'\),\s*cust\b/);
   // 구 버그 바인딩(AXIS_KO[axisOf(...)] 를 그대로 라벨로) 제거 확인.
   expect(src).not.toMatch(/inflow: role === 'consult' \? \(AXIS_KO\[axisOf\(ci, 'consult'\)\]/);
 });
