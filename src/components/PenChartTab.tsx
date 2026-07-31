@@ -84,6 +84,8 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 // T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 모바일 자가작성 결과 패널
 import { HealthQResultsPanel } from '@/components/HealthQResultsPanel';
+// T-20260731-foot-PENCHART-PHOTO-ATTACH: 펜차트 stem 결속 사진 첨부(Storage-only, DB row 0)
+import { PenChartAttachPanel, penChartAttachPrefix, stemFromChartName } from '@/components/PenChartAttachPanel';
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: SignaturePad UI 제거 (하단 서명란 불필요)
 
 // ─── 상용구 데이터 ───
@@ -2918,6 +2920,21 @@ export function PenChartTab({
     const path = `${storagePath}/${chart.name}`;
     const { error } = await supabase.storage.from('photos').remove([path]);
     if (error) toast.error(`삭제 실패: ${error.message}`);
+    // T-20260731-foot-PENCHART-PHOTO-ATTACH: 펜차트 PNG 삭제 시 stem 결속 첨부 prefix 도 app-side cascade 정리
+    //   → 새 orphan 클래스(부모 삭제 후 남는 pen-chart-attach/{stem}/ 잔류) 신설 0 (DA delta-CONSULT-REPLY).
+    //   첨부는 별도 DB row 가 없는 순수 Storage 자산이라 storage.remove 만으로 완결(의료법 보존 대상 아님 — 참고사진).
+    try {
+      const attachPrefix = penChartAttachPrefix(customerId, stemFromChartName(chart.name));
+      const { data: attachFiles } = await supabase.storage
+        .from('photos')
+        .list(attachPrefix, { limit: 100 });
+      const attachPaths = (attachFiles ?? [])
+        .filter((f) => f.name && !f.name.endsWith('/') && f.id)
+        .map((f) => `${attachPrefix}/${f.name}`);
+      if (attachPaths.length > 0) {
+        await supabase.storage.from('photos').remove(attachPaths);
+      }
+    } catch { /* 첨부 정리 실패는 차트 삭제 자체를 막지 않음(best-effort cascade) */ }
     if (selectedChart?.name === chart.name) setSelectedChart(null);
     await loadSavedCharts();
   };
@@ -4246,6 +4263,13 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
           </div>
           {/* T-20260622-foot-PENCHART-EDIT-NOACTION: 수정 배경 로더와 동일 CORS-clean 캐시 적재(taint 차단) */}
           <img crossOrigin="anonymous" src={selectedChart.url} alt="펜차트" className="w-full rounded border" />
+          {/* T-20260731-foot-PENCHART-PHOTO-ATTACH: 이 펜차트 stem 에 결속된 사진 첨부 영역(파일선택+드래그&드롭).
+              Storage-only(photos 버킷 / customer/{id}/pen-chart-attach/{stem}/) — 차트 저장 동선과 완전 분리
+              → 사진 미첨부 저장 정상(AC4). stem = 저장 파일명에서 확장자만 제거(prefix 보존). */}
+          <PenChartAttachPanel
+            customerId={customerId}
+            stem={stemFromChartName(selectedChart.name)}
+          />
         </div>
       )}
 
