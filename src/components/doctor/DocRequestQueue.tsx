@@ -717,11 +717,10 @@ function DocRequestRow({
   // T-20260724-foot-ISSUEDDOCS-DOCVIEW-CLICKOPEN: 서류명 클릭 → 실제 발행본 내용 열람(done 그룹만 전달).
   onViewDoc?: (r: OpinionRequestRow) => void;
 }) {
-  const rxCellRef = useRef<HTMLTableCellElement>(null);
+  // T-20260729-foot-ALIMPAN-RX-MULTILIST-ALWAYSVISIBLE: 처방내역 셀은 클릭 드롭다운 제거(상시 전건 표기) → 셀 앵커 ref·펼침 state 불요.
   const clinicalCellRef = useRef<HTMLTableCellElement>(null);
   // T-20260724-foot-DASH-ISSUEDDOCS-NAMELIST-EXPAND: '서류 완료' 그룹 발행완료 뱃지 앵커 + 발행 서류 상세 펼침 토글.
   const doneBadgeRef = useRef<HTMLButtonElement>(null);
-  const [expandRx, setExpandRx] = useState(false);
   const [expandClinical, setExpandClinical] = useState(false);
   const [expandDone, setExpandDone] = useState(false);
 
@@ -765,14 +764,15 @@ function DocRequestRow({
       {/* T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT AC-2(refix-2): 오늘시술 = 그 방문 package_sessions.session_type 간략형 전체 나열(PKG-BOX-INDICATOR SSOT). */}
       <td className="px-2 py-1.5 max-w-[10rem] text-foreground/80" data-testid="docreq-cell-today-proc"><span className="block truncate" title={procedureText ?? ''}>{procedureText || '—'}</span></td>
 
-      {/* 처방내역 ← medical_charts.prescription_items. RXCLIN 표현 상속: 미리보기 클릭 → 컬럼 폭 드롭다운 전문(widthScale=2, DoctorCallDashboard와 동일). */}
+      {/* T-20260729-foot-ALIMPAN-RX-MULTILIST-ALWAYSVISIBLE: 처방내역 = 당일 처방약 전건 상시 표기.
+          AC-1 전건 나열(today.prescriptions 는 이미 당일 전건 배열 — 포집 무변경, ', ' 나열) /
+          AC-2 상시 표기(truncate·클릭 드롭다운 ColumnExpandPopover 제거 → hover/클릭 없이 셀 안에서 줄바꿈 wrap 전체 노출) /
+          AC-3 없으면 '—'. 다른 셀(오늘시술·임상경과) 드롭다운·표시는 무접촉(parent 3COL 회귀 방지). */}
       <td
-        ref={rxCellRef}
-        className={`px-2 py-1.5 max-w-[10rem] text-foreground/80 ${rx ? 'cursor-pointer hover:text-teal-700' : ''}`}
+        className="px-2 py-1.5 max-w-[12rem] text-foreground/80"
         data-testid="docreq-cell-rx"
-        onClick={rx ? () => setExpandRx((v) => !v) : undefined}
       >
-        <span className="block truncate">{rx || '—'}</span>
+        <span className="block whitespace-normal break-words leading-snug" data-testid={rx ? 'docreq-rx-list' : undefined}>{rx || '—'}</span>
       </td>
 
       {/* 임상경과 ← chief_complaint || diagnosis. RXCLIN 표현 상속(widthScale=1). */}
@@ -861,19 +861,8 @@ function DocRequestRow({
       </td>
     </tr>
 
-    {/* 처방내역 전문 펼침(컬럼-앵커, RXCLIN과 동일 표현). 팝오버는 portal 렌더 → <tr> 형제로 배치(DoctorCallDashboard 패턴). */}
-    <ColumnExpandPopover
-      open={expandRx && !!rx}
-      anchorRef={rxCellRef}
-      onClose={() => setExpandRx(false)}
-      testId="docreq-rx-expand-pop"
-      widthScale={2}
-    >
-      <div className="whitespace-pre-wrap break-words px-3 py-2 text-[13px] leading-relaxed text-gray-700" data-testid="docreq-rx-expand">
-        {rx}
-      </div>
-    </ColumnExpandPopover>
-
+    {/* T-20260729-foot-ALIMPAN-RX-MULTILIST-ALWAYSVISIBLE: 처방내역 전문 펼침(ColumnExpandPopover) 제거 —
+        전건이 셀 안에 상시 표기되어 별도 펼침 불요. 임상경과 펼침은 유지(범위 밖). */}
     {/* 임상경과 전문 펼침(컬럼-앵커, RXCLIN과 동일 표현) */}
     <ColumnExpandPopover
       open={expandClinical && !!progress}
