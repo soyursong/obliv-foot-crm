@@ -150,23 +150,24 @@ export function ResultCard({ result, defaultExpanded = false }: { result: HQResu
   const nailSites = parseFootSites((result.form_data as Record<string, unknown>)?.concern_nail_sites);
   const submittedDate = format(new Date(result.submitted_at), 'yyyy.MM.dd HH:mm', { locale: ko });
 
-  // T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 첨부사진 — clinic 스코프 RLS + private 버킷 signed download URL.
-  const [photos, setPhotos] = useState<{ id: string; url: string }[]>([]);
+  // T-20260731-foot-FOOTQST-PHOTO-UPLOAD/2SLOT: 첨부사진 — clinic 스코프 RLS + private 버킷 signed download URL.
+  //   foot_side(오른발=R/왼발=L) laterality 라벨 함께 조회. sort_order(제출 시 R→L 순) 정렬 유지.
+  const [photos, setPhotos] = useState<{ id: string; url: string; foot_side: string | null }[]>([]);
   useEffect(() => {
     let alive = true;
     (async () => {
       const { data, error } = await supabase
         .from('health_q_photos')
-        .select('id, storage_path')
+        .select('id, storage_path, foot_side')
         .eq('result_id', result.id)
         .order('sort_order', { ascending: true });
       if (error || !data || !alive) return;
       const signed = await Promise.all(
-        (data as { id: string; storage_path: string }[]).map(async (p) => {
+        (data as { id: string; storage_path: string; foot_side: string | null }[]).map(async (p) => {
           const { data: s } = await supabase.storage
             .from('foot-health-q-photos')
             .createSignedUrl(p.storage_path, 60 * 30); // 30분 TTL
-          return { id: p.id, url: s?.signedUrl ?? '' };
+          return { id: p.id, url: s?.signedUrl ?? '', foot_side: p.foot_side };
         }),
       );
       if (alive) setPhotos(signed.filter((p) => p.url));
@@ -217,22 +218,32 @@ export function ResultCard({ result, defaultExpanded = false }: { result: HQResu
                   <FootToeIllustration value={nailSites} readOnly />
                 </div>
               )}
-              {/* T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 고객 첨부사진 (클릭 시 원본 새 탭) */}
+              {/* T-20260731-foot-FOOTQST-PHOTO-2SLOT: 고객 첨부사진 (오른발/왼발 라벨, 클릭 시 원본 새 탭) */}
               {photos.length > 0 && (
                 <div className="pt-3">
                   <p className="text-xs font-medium text-gray-500 mb-1">첨부 사진 ({photos.length})</p>
                   <div className="grid grid-cols-3 gap-2">
-                    {photos.map((p) => (
-                      <a
-                        key={p.id}
-                        href={p.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block aspect-square overflow-hidden rounded-lg border border-teal-100"
-                      >
-                        <img src={p.url} alt="첨부 사진" className="h-full w-full object-cover" />
-                      </a>
-                    ))}
+                    {photos.map((p) => {
+                      const sideLabel = p.foot_side === 'R' ? '오른발' : p.foot_side === 'L' ? '왼발' : null;
+                      return (
+                        <a
+                          key={p.id}
+                          href={p.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block overflow-hidden rounded-lg border border-teal-100"
+                        >
+                          {sideLabel && (
+                            <span className="block bg-teal-50 px-1 py-0.5 text-center text-[10px] font-semibold text-teal-700">
+                              {sideLabel}
+                            </span>
+                          )}
+                          <span className="block aspect-square overflow-hidden">
+                            <img src={p.url} alt={sideLabel ?? '첨부 사진'} className="h-full w-full object-cover" />
+                          </span>
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               )}
