@@ -77,7 +77,13 @@ export const supabaseAttemptStore: AttemptStore = {
   async recordCardPayment(rec: AttemptRecord & { authNo: string }): Promise<void> {
     const isCancel = rec.tranType === TRANTYPE_CANCEL;
     // C5 취소 성공 = 수납취소(payment_type='refund', 기존 규약 계승 — 신규 refund 모델 발명 금지).
-    //   C1: 채널=pos_provider='cband', 거래식별자=pos_transaction_id=AUTHNO(둘 다 旣존재 컬럼). external_trxid write 금지.
+    //   C1: 채널=pos_provider='cband', 거래식별자=pos_transaction_id=AUTHNO(둘 다 旣존재 컬럼).
+    //     ★DA reconciliation(MSG-20260731-230159-7gnu, 23:01) 정본 착지 = AUTHNO→pos_transaction_id ·
+    //       채널→pos_provider='cband' · TID→attempt.cat_tid(pos 계열). external_*(trxid/approval_no/tid)는
+    //       RedPay 전용 홈 — Coban write 절대 금지(C2 방화벽 구조보호).
+    //   ★BINDING#3 paid_at=승인시각(TRANDATE/TRANTIME): payments 는 별도 paid_at 컬럼 없이 created_at 을
+    //     결제시각 권위로 사용(outbox trigger MIN(created_at)). 승인시각을 created_at 로 착지시킬지/paid_at
+    //     신규 컬럼을 둘지는 payments 필드매핑 = DA delta 확정 + MIG-GATE 까지 held(현재 default now() 잠정).
     //   C4: .select('id') 로 rows-affected assert(silent write-failure 금지).
     const { data, error } = await supabase
       .from('payments')

@@ -72,16 +72,20 @@ export interface NormalizedResponse {
   tranType: string | null;
   /** 승인번호(AUTHNO). ★취소 응답도 원거래와 동일 값 — 구분은 tranType 으로. */
   authNo: string | null;
-  /** 응답코드(RESPCODE). "0000"=성공. */
+  /** 응답코드. ★실측 정본 = ERRCODE("0000"=성공, "9999"=메시지동반 실패). RESPCODE 등은 별칭 관용. */
   responseCode: string | null;
-  /** 응답 메시지(RESPMSG, 있으면). */
+  /** 응답 메시지. ★실측 정본 = MSG1(+ ERRCODE=9999 시 ResultMessage 의 [-N] 패턴). */
   responseMessage: string | null;
-  /** 가맹점번호(MERNO) — 수납기록 필수. */
+  /** 가맹점번호(MERNO) — 수납기록 필수(정산 귀속 §11). */
   merno: string | null;
   /** 승인금액(TAMT, 파싱된 정수). 없으면 null. */
   amount: number | null;
-  /** 거래 추적번호(MSG_TRACE) — 요청과 대조·유실 시 승인내역조회 키. */
+  /** 거래 추적번호. ★실측 정본 = TRANSERIAL(요청 MSG_TRACE 가 그대로 되돌아옴, §5-3/§9). 유실 시 단말 승인내역조회 유일 키. */
   msgTrace: string | null;
+  /** ★승인 거래일자(TRANDATE, YYMMDD). 취소 시 원거래 ORI_DATE 근거 + BINDING#3(paid_at=승인시각, 일경계 drift 방지). */
+  tranDate: string | null;
+  /** ★승인 거래시각(TRANTIME, HHMMSS). BINDING#3(paid_at=승인시각) 근거. */
+  tranTime: string | null;
   /** 카드 관련 부가정보(카드사·할부 등, 있으면 원문 유지). */
   cardName: string | null;
   /** 파싱 원본(감사/디버그용). */
@@ -251,7 +255,12 @@ function pick(raw: Record<string, unknown>, keys: string[]): string | null {
 
 /**
  * safeParse 결과를 CRM 표준 필드로 정규화한다(별칭·대소문자 관대).
- * 미지 필드는 무시(실측#3), 필수축(TRANTYPE/AUTHNO/RESPCODE/MERNO)만 안정 추출.
+ * 미지 필드는 무시(실측#3), 필수축만 안정 추출.
+ *
+ * ★ 실측 정본 필드명(35KB SSOT §5-3/부록 실측 원문, 공개 HTTPS 재실증 2회) 우선:
+ *   응답코드=ERRCODE / 추적번호=TRANSERIAL / 메시지=MSG1(+9999 시 ResultMessage) /
+ *   승인번호=AUTHNO(trailing space → pick 이 trim) / 거래일시=TRANDATE·TRANTIME /
+ *   카드사=ISSUECARD·PURCHASECARD. RESPCODE/MSG_TRACE 등 종전 추정 별칭은 관용 폴백으로 보존.
  */
 export function normalize(parsed: Record<string, unknown> | null): NormalizedResponse {
   const raw = parsed ?? {};
@@ -260,12 +269,18 @@ export function normalize(parsed: Record<string, unknown> | null): NormalizedRes
   return {
     tranType: pick(raw, ['TRANTYPE', 'TRAN_TYPE', 'TRAN']),
     authNo: pick(raw, ['AUTHNO', 'APPRNO', 'APPROVALNO', 'AUTH_NO']),
-    responseCode: pick(raw, ['RESPCODE', 'RESPONSECODE', 'RESCODE', 'RESULTCODE', 'CODE']),
-    responseMessage: pick(raw, ['RESPMSG', 'RESPONSEMESSAGE', 'RESMSG', 'MESSAGE', 'MSG']),
+    // ★ERRCODE 가 실측 정본 판정 필드(0000=성공). RESPCODE 계열은 종전 추정 별칭(관용 폴백).
+    responseCode: pick(raw, ['ERRCODE', 'RESPCODE', 'RESPONSECODE', 'RESCODE', 'RESULTCODE', 'CODE']),
+    // ★MSG1 이 실측 정본 서버 메시지. ERRCODE=9999 실패 시 ResultMessage 의 [-N] 패턴도 함께.
+    responseMessage: pick(raw, ['MSG1', 'RESULTMESSAGE', 'RESULT_MESSAGE', 'RESPMSG', 'RESPONSEMESSAGE', 'RESMSG', 'MESSAGE', 'MSG']),
     merno: pick(raw, ['MERNO', 'MERCHANTNO', 'MID']),
     amount,
-    msgTrace: pick(raw, ['MSG_TRACE', 'MSGTRACE', 'TRACE', 'TRACENO']),
-    cardName: pick(raw, ['CARDNAME', 'ISSUER', 'CARD_NM', 'CARDCO']),
+    // ★TRANSERIAL 이 실측 정본(요청 MSG_TRACE 가 그대로 echo). MSG_TRACE 계열은 관용 폴백.
+    msgTrace: pick(raw, ['TRANSERIAL', 'MSG_TRACE', 'MSGTRACE', 'TRACE', 'TRACENO']),
+    tranDate: pick(raw, ['TRANDATE', 'TRAN_DATE', 'ORI_DATE']),
+    tranTime: pick(raw, ['TRANTIME', 'TRAN_TIME']),
+    // ★ISSUECARD(발급사)/PURCHASECARD(매입사)가 실측 정본. 종전 추정 별칭도 폴백.
+    cardName: pick(raw, ['ISSUECARD', 'PURCHASECARD', 'CARDNAME', 'ISSUER', 'CARD_NM', 'CARDCO']),
     raw,
   };
 }

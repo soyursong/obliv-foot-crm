@@ -111,6 +111,10 @@ export interface PaymentFlowResult {
   needsCheck: boolean;
   /** 승인 시 AUTHNO. */
   authNo: string | null;
+  /** ★승인 거래일자(TRANDATE, YYMMDD) — BINDING#3(paid_at=승인시각) 근거. payments 착지는 held 마이그. */
+  approvalDate: string | null;
+  /** ★승인 거래시각(TRANTIME, HHMMSS) — BINDING#3 근거. */
+  approvalTime: string | null;
 }
 
 /** WS 송신부 주입 타입(테스트 시 mock). */
@@ -171,6 +175,7 @@ export async function runPaymentFlow(
     const cls: PaymentClassification = 'ATTENTION';
     return {
       classification: cls, msgTrace, response: null, needsCheck: true, authNo: null,
+      approvalDate: null, approvalTime: null,
       userMessage: (e as Error)?.name === 'CbandBusyError'
         ? '결제 요청이 이미 진행 중입니다. 잠시 후 상태를 확인해 주세요. (확인 필요)'
         : responseMessageForUser(cls, null),
@@ -189,7 +194,10 @@ export async function runPaymentFlow(
       status: 'attention',
       responseCode: resp?.responseCode ?? null,
     });
-    return { classification: cls, msgTrace, response: resp, userMessage, needsCheck: true, authNo: null };
+    return {
+      classification: cls, msgTrace, response: resp, userMessage, needsCheck: true, authNo: null,
+      approvalDate: resp?.tranDate ?? null, approvalTime: resp?.tranTime ?? null,
+    };
   }
 
   if (cls === 'APPROVED') {
@@ -197,17 +205,25 @@ export async function runPaymentFlow(
     await store.updateAttempt(msgTrace, {
       status: 'approved', authNo, responseCode: resp?.responseCode ?? null,
     });
-    // 승인 성공 → payments 정본 수납기록(pg_provider='cband' + AUTHNO/MERNO/MSG_TRACE).
+    // 승인 성공 → payments 정본 수납기록(★pos_provider='cband' + pos_transaction_id=AUTHNO/MERNO/MSG_TRACE).
+    //   ★정정(commit 05dd319c): pg_provider 아님 — foot payments 에 pg_provider 컬럼 부재. pos_* 계열이 정본.
+    //   ★BINDING#3 paid_at=승인시각(TRANDATE/TRANTIME): payments 착지 컬럼 매핑은 DA delta 확정까지 held.
     //   취소(0430)의 '성공'은 수납취소 반영이므로 승인 수납기록과 구분(store 내부 tranType 분기).
     await store.recordCardPayment({ ...baseRec, status: 'approved', authNo, responseCode: resp?.responseCode ?? null });
-    return { classification: cls, msgTrace, response: resp, userMessage, needsCheck: false, authNo };
+    return {
+      classification: cls, msgTrace, response: resp, userMessage, needsCheck: false, authNo,
+      approvalDate: resp?.tranDate ?? null, approvalTime: resp?.tranTime ?? null,
+    };
   }
 
   // FAIL — 과금 미발생 확정(재시도 안전).
   await store.updateAttempt(msgTrace, {
     status: 'failed', responseCode: resp?.responseCode ?? null,
   });
-  return { classification: cls, msgTrace, response: resp, userMessage, needsCheck: false, authNo: null };
+  return {
+    classification: cls, msgTrace, response: resp, userMessage, needsCheck: false, authNo: null,
+    approvalDate: resp?.tranDate ?? null, approvalTime: resp?.tranTime ?? null,
+  };
 }
 
 /** 승인 흐름 헬퍼. */
