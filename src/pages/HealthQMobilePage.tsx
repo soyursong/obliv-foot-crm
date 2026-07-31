@@ -359,6 +359,8 @@ export default function HealthQMobilePage() {
   const [info,     setInfo]     = useState<TokenInfo | null>(null);
   const [data,     setData]     = useState<HealthQData>(emptyData);
   const [errorMsg, setErrorMsg] = useState('');
+  // T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 발/발톱 사진 첨부(선택). Pattern B — edge fn 서명 URL 업로드.
+  const [photos,   setPhotos]   = useState<{ file: File; url: string }[]>([]);
 
   // ── 토큰 검증 ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -450,10 +452,38 @@ export default function HealthQMobilePage() {
         // 스토리지 업로드 실패는 무시 — DB 저장이 주 경로
       }
 
+      // T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 첨부사진 Pattern B 업로드 → paths 수집.
+      //   anon 은 버킷 직접 GRANT 없음 → edge fn(token 검증)이 token-경로 한정 서명 URL 발급 →
+      //   uploadToSignedUrl 로만 업로드. 제출 RPC(p_photos)가 result 연관 + path prefix 재검증.
+      const photoPayload: { path: string; content_type: string; byte_size: number }[] = [];
+      if (photos.length > 0) {
+        const { data: signRes, error: signErr } = await anonClient.functions.invoke('health-q-photo-sign', {
+          body: {
+            token,
+            files: photos.map((p) => ({ content_type: p.file.type, byte_size: p.file.size })),
+          },
+        });
+        if (signErr || !signRes?.ok) {
+          throw new Error(signRes?.error ? `사진 업로드 준비 실패 (${signRes.error})` : '사진 업로드 준비 실패');
+        }
+        const uploads = signRes.uploads as {
+          path: string; signed_url: string; upload_token: string; content_type: string;
+        }[];
+        for (let i = 0; i < uploads.length; i++) {
+          const u = uploads[i];
+          const { error: upErr } = await anonClient.storage
+            .from(signRes.bucket as string)
+            .uploadToSignedUrl(u.path, u.upload_token, photos[i].file, { contentType: photos[i].file.type });
+          if (upErr) throw new Error(`사진 업로드 실패: ${upErr.message}`);
+          photoPayload.push({ path: u.path, content_type: photos[i].file.type, byte_size: photos[i].file.size });
+        }
+      }
+
       const { data: result, error } = await anonClient.rpc('fn_health_q_submit', {
         p_token:        token,
         p_form_data:    formData as unknown as Record<string, unknown>,
         p_storage_path: storagePath,
+        p_photos:       photoPayload,
       });
 
       if (error) throw new Error(error.message);
@@ -470,11 +500,31 @@ export default function HealthQMobilePage() {
       setErrorMsg((e as Error).message);
       setStep('error');
     }
-  }, [token, info, data]);
+  }, [token, info, data, photos]);
 
   const set = (k: keyof HealthQData, v: unknown) =>
     setData((prev) => ({ ...prev, [k]: v }));
   const d = data;
+
+  // ── T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 사진 첨부 핸들러 (최대 10장) ────────
+  const addPhotos = (files: FileList | null) => {
+    if (!files) return;
+    // 입력창 value='' 리셋 전에 File 객체를 즉시 materialize(FileList 는 라이브 참조).
+    const picked = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (picked.length === 0) return;
+    setPhotos((prev) => {
+      const room = Math.max(0, 10 - prev.length);
+      const next = picked.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
+      return [...prev, ...next];
+    });
+  };
+  const removePhoto = (idx: number) => {
+    setPhotos((prev) => {
+      const target = prev[idx];
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
 
   // ── T-20260625-foot-FOREIGN-HEALTHQ-EN: 언어 분기 헬퍼 ──────────────────────
   // ko 모드면 tt()/optL() 모두 한국어 원본 그대로 반환 → 무회귀.
@@ -1044,6 +1094,67 @@ export default function HealthQMobilePage() {
             )}
           </section>
         )}
+
+        {/* ── 사진 첨부 (선택) — T-20260731-foot-FOOTQST-PHOTO-UPLOAD ─────────────── */}
+        <section className="space-y-4 rounded-2xl p-4"
+          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: C.dark }}>
+              {tt('발 · 발톱 사진 첨부', 'Attach foot / nail photos')}
+              <span className="text-xs font-normal ml-1" style={{ color: C.mutedText }}>
+                {tt('(선택)', '(optional)')}
+              </span>
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color: C.mutedText }}>
+              {tt('고민되는 부위를 촬영해 첨부해주세요. 최대 10장.',
+                  'Photograph the area of concern and attach. Up to 10 photos.')}
+            </p>
+          </div>
+
+          {photos.length > 0 && (
+            <div className="grid grid-cols-3 gap-2" data-testid="hq-photo-grid">
+              {photos.map((p, i) => (
+                <div key={p.url} className="relative aspect-square overflow-hidden rounded-xl border"
+                  style={{ borderColor: C.border }}>
+                  <img src={p.url} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    aria-label={tt('사진 삭제', 'Remove photo')}
+                    className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white text-lg leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {photos.length < 10 && (
+            <div className="grid grid-cols-2 gap-2">
+              <label
+                className="flex min-h-[56px] cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-base font-semibold active:scale-[0.99] transition"
+                style={{ borderColor: C.borderActive, color: C.primary }}
+              >
+                📷 {tt('카메라 촬영', 'Camera')}
+                <input
+                  type="file" accept="image/*" capture="environment" multiple className="hidden"
+                  onChange={(e) => { addPhotos(e.target.files); e.currentTarget.value = ''; }}
+                />
+              </label>
+              <label
+                className="flex min-h-[56px] cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-base font-semibold active:scale-[0.99] transition"
+                style={{ borderColor: C.borderActive, color: C.primary }}
+              >
+                🖼 {tt('앨범 선택', 'Album')}
+                <input
+                  type="file" accept="image/*" multiple className="hidden"
+                  onChange={(e) => { addPhotos(e.target.files); e.currentTarget.value = ''; }}
+                />
+              </label>
+            </div>
+          )}
+        </section>
 
         <p className="text-center text-xs pb-4" style={{ color: C.mutedText }}>
           {tt('모든 정보는 진료 목적으로만 사용됩니다', 'All information is used for medical purposes only')}

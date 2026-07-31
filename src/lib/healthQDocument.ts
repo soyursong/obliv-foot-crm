@@ -209,16 +209,32 @@ export function buildHealthQDocumentHtml(result: HQResult, opts: DocumentOpts): 
 /** 별도창(window.open) 으로 발건강질문지 자가작성 문서를 연다. */
 export function openHealthQDocumentWindow(result: HQResult, opts: DocumentOpts): void {
   const html = buildHealthQDocumentHtml(result, opts);
-  const win = window.open('', '_blank', 'width=900,height=1000,noopener');
-  if (!win) {
-    // 팝업 차단 fallback — Blob URL 로 새 탭 열기
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  // ★버그수정(T-20260731-foot-FOOTQST-POPUPWIN-BROKEN):
+  //   features 문자열에 'noopener' 를 넣으면 HTML 사양상 window.open() 이 *항상 null* 을 반환한다.
+  //   → 반환 핸들(win)이 언제나 null 이 되어 아래 document.write 경로가 죽고, blob fallback 만 타게 됨.
+  //     (갤탭 브라우저에서 blob 새탭이 빈화면/차단되어 "별도창이 안 열림" 으로 관측)
+  //   noopener 제거 → 반환된 win 핸들에 직접 문서를 write (가장 신뢰도 높은 경로).
+  //   ※ 이 함수는 반드시 클릭 onClick 동기 컨텍스트에서 호출한다(async await 뒤 호출 시 팝업차단됨).
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  if (win && win.document) {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
     return;
   }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
+  // 팝업 차단/핸들 확보 실패 fallback — Blob URL 로 새 탭 열기
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const tab = window.open(url, '_blank');
+  if (!tab) {
+    // 최후 fallback — 동기 유저제스처 내 anchor click 으로 팝업차단 우회
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
