@@ -7,6 +7,8 @@ import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, P
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 // T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제 진입(기능플래그 게이트, OFF 시 null 반환 → 기존 화면 무변경).
 import PlanbPaymentEntryButton from '@/components/PlanbPaymentEntryButton';
+// T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD: 코밴 CAT 직결 결제 진입(3중 게이트, OFF/미탐지 시 null → 기존 화면 무변경).
+import CbandPayEntryButton from '@/components/CbandPayEntryButton';
 import { type FootSite, parseFootSite, isCompleteFootSite, parseFootSites } from '@/components/FootSiteSelector';
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { toast } from '@/lib/toast';
@@ -2137,6 +2139,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             )}
             {/* 비대기형 결제(플랜B) 진입 — 기능플래그 ON 시에만 렌더(OFF=무노출, 기존 흐름 무변경) */}
             <PlanbPaymentEntryButton checkInId={checkIn.id} hasCustomer={!!checkIn.customer_id} />
+            {/* 코밴 CAT 직결 결제(플랜A) — 플래그 ON + 단말설정 + 단말감지 3중 게이트 시에만 렌더(OFF/미탐지=무노출) */}
+            <CbandPayEntryButton checkInId={checkIn.id} clinicId={checkIn.clinic_id} customerId={checkIn.customer_id ?? null} />
           </div>
 
           {/* 서류 발행 */}
