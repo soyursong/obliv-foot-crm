@@ -107,7 +107,7 @@ const COMMON_STYLE = `
     .circle-filled { background: #111; }
     .large-area { min-height: 60px; }
     /* T-20260515-foot-FORM-ONELINE-RX: 라벨 셀 한줄 정렬 — background:#f8f8f8 셀 전체 적용 */
-    td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
+    td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; text-align: center; }
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 출력물 중앙·여백 배치 전면 재검토(표현 레이어만 — 구조/데이터/발행로직 불변).
        증상(현장 박장군님): 출력해보니 전체적으로 중앙배치 안 됨 — 위·좌측 쏠림 + 아래 공간 과다.
        근본원인: 직전 CENTER-ALIGN 은 form-wrap 을 margin:12mm auto 로 .page(210mm) 안에서 CSS상 중앙
@@ -128,7 +128,7 @@ const COMMON_STYLE = `
          T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-6): 상단 30mm→23mm(2줄↑) 재조정에 맞춰
          콘텐츠박스 255mm→262mm(=297-23-12)로 확대 → 하단 12mm 클립가드 유지·단일 페이지·넘침/잘림 없음. */
       .form-wrap { width: 190mm; min-height: 262mm; padding: 6mm 8mm; margin: 0 auto; }
-      td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
+      td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; text-align: center; }
     }
   </style>
 `;
@@ -307,7 +307,7 @@ ${COMMON_STYLE}
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td colspan="3">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
-        <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
+        <td style="background:#f8f8f8; white-space:nowrap;">의 사 성 명</td>
         <!-- T-20260718-foot-DOCPRINT-DIAGNOSIS-DOCTOR-BIND: 진단서 진료의 성명 = 진단서 전용 {{attending_doctor_name}}
              (실 의료인·사람, clinicDoctor 기준). ★{{doctor_name}}(billing 대표자 축)은 미지정 시 기관명으로 폴백
              (T-20260713 UNLINKED, field-confirmed)해 진단서 '의사 성명'이 기관명으로 찍혀 진료의 신원 오표기(법정
@@ -375,13 +375,14 @@ ${COMMON_STYLE}
        병명(상병코드·상병명·특정기호) 테이블 + 진단확신도 분류 표시줄 제거.
        diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->
 
-  <!-- T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE ①④: 치료기간 '까지' 고아토큰({{discharge_date}}=미바인딩)
-       → {{visit_date}} 교체(단일방문 부터=까지, 통원확인서 관례 정합). 외래전용 확인서(입원 개념 없음)의
-       상시 빈 '입원' 행 제거 + 치료기간 셀 rowspan 해제(:265 진단서 '퇴원일' {{discharge_date}}은 무접촉). -->
+  <!-- T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE ①: 치료기간 '까지' 고아토큰({{discharge_date}}=미바인딩)
+       → {{visit_date}} 교체(단일방문 부터=까지) 유지(진단서 '퇴원일' {{discharge_date}}은 무접촉).
+       T-20260731-foot-DOCFORM-URGENT-6FIX AC-2: 입원 행 복원 + 치료기간 셀 rowspan="2" 복원(법무팀 2026-07-31,
+       진료·통원확인서 대칭). "빈칸이라도 입원 칸은 넣는다" — T-20260723 ④의 '외래전용이라 제거' 근거 폐기. 입원 행 값 영구 공란. -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
+        <td rowspan="2" style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
         <td style="width:50px; background:#f8f8f8; text-align:center;">외래</td>
         <td>{{visit_date}}</td>
         <td style="width:30px; text-align:center;">부터</td>
@@ -389,6 +390,17 @@ ${COMMON_STYLE}
         <td style="width:30px; text-align:center;">까지</td>
         <td style="width:50px; text-align:center;">(치료</td>
         <td style="width:40px; text-align:right;">{{visit_days}}</td>
+        <td style="text-align:left;">일간)</td>
+      </tr>
+      <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-2: 입원 행 복원(법무팀 2026-07-31, 통원확인서와 대칭). 값 영구 공란. bd4b0088 제거분 원본 8셀 그대로. -->
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">입원</td>
+        <td></td>
+        <td style="text-align:center;">부터</td>
+        <td></td>
+        <td style="text-align:center;">까지</td>
+        <td style="text-align:center;">(치료</td>
+        <td style="text-align:right;"></td>
         <td style="text-align:left;">일간)</td>
       </tr>
     </tbody>
@@ -442,7 +454,7 @@ ${COMMON_STYLE}
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td colspan="1">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
-        <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
+        <td style="background:#f8f8f8; white-space:nowrap;">의 사 성 명</td>
         <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
@@ -541,18 +553,19 @@ ${COMMON_STYLE}
        라벨15%+값35% 좌우 대칭 → 좌·우 반반. table-layout:fixed 로 첫 행 폭 고정(colspan 행 정합). -->
   <table style="table-layout:fixed;">
     <tbody>
+      <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-5⑤: 행1우측=성별 / 행2우측=연령 위치 교환(롤모델 정합). 라벨·값 쌍 이동. -->
       <tr>
         <td style="width:15%; background:#f8f8f8;">병 록 번 호</td>
         <td style="width:35%;">{{record_no}}</td>
-        <td style="width:15%; background:#f8f8f8;">연 령</td>
-        <td style="width:35%; white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
+        <td style="width:15%; background:#f8f8f8;">성별</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-6①: 성별 하드코딩 → 주민번호 산출 바인딩 -->
+        <td style="width:35%; white-space:nowrap;">{{patient_gender}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">연 번 호</td>
         <td>{{visit_no}}</td>
-        <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">성별</td>
-        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-6①: 성별 하드코딩 → 주민번호 산출 바인딩 -->
-        <td>{{patient_gender}}</td>
+        <td style="background:#f8f8f8;">연 령</td>
+        <td style="white-space:nowrap;">만&nbsp;<strong>{{patient_age}}</strong>&nbsp;세</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
@@ -571,17 +584,22 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 상병(병명)·진단분류 비노출.
-       현장 요청(김주연 총괄, 2026-06-22) — 통원확인서에서 상병명 항목을 화면·인쇄 모두 미표시.
-       병명(상병코드·상병명·특정기호) 테이블 + 진단확신도 분류 표시줄 제거.
-       diag 바인딩 컨텍스트·발행/published 트리거 불변 — 템플릿에서 미렌더할 뿐. -->
+  <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-3: 병명(상병코드·상병명·특정기호) 블록 + 진단확신도 분류 복원.
+       2026-06-22 김주연 총괄 비노출 지시(T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE)를
+       팀장 2026-07-31 지시로 SUPERSEDE — 롤모델 이미지 정합. ※총괄 사실통지 대상.
+       진료확인서 CODE 변형이 쓰는 TREAT_CONFIRM_DISEASE_BLOCK 상수 그대로 재사용(신규 마크업 0, 발산 방지).
+       통원확인서는 단일 발급폼이므로 무조건 렌더(code/nocode 2분기 없음).
+       진단확신도(임상적추정/최종진단/임상적진단)는 데이터 연동 아닌 하드코딩(토큰 0) — 기존 3서류와 동일. 데이터소스 신설=후속 별건.
+       diag 토큰·autoBind 무접촉(진료확인서 CODE가 이미 같은 토큰 소비 → 배선 신설 0). -->
+${TREAT_CONFIRM_DISEASE_BLOCK}
 
-  <!-- T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE ④: 외래전용 통원확인서(입원 개념 없음)의
-       상시 빈 '입원' 행 제거 + 치료기간 셀 rowspan 해제(진료확인서와 대칭). -->
+  <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-1: 입원 행 복원 + 치료기간 셀 rowspan="2" 복원(법무팀 2026-07-31 결정).
+       근거: "빈칸을 넣더라도 통원확인서에 입원 칸은 넣는다" — T-20260723 ④의 '외래전용이라 제거' 근거 폐기.
+       입원 행 값은 영구 공란(바인딩 신설 금지). '까지' 칸 {{visit_date}} 유지(discharge_date 고아토큰 부활 금지). -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
+        <td rowspan="2" style="width:50px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:8.5pt;">치료<br>기간</td>
         <td style="width:50px; background:#f8f8f8; text-align:center;">외래</td>
         <td>{{visit_date}}</td>
         <td style="width:30px; text-align:center;">부터</td>
@@ -589,6 +607,17 @@ ${COMMON_STYLE}
         <td style="width:30px; text-align:center;">까지</td>
         <td style="width:48px; text-align:center;">(치료</td>
         <td style="width:36px; text-align:right;">{{visit_days}}</td>
+        <td style="text-align:left;">일간)</td>
+      </tr>
+      <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-1: 입원 행 복원(법무팀 2026-07-31). 값 영구 공란. bd4b0088 제거분 원본 8셀 그대로. -->
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">입원</td>
+        <td></td>
+        <td style="text-align:center;">부터</td>
+        <td></td>
+        <td style="text-align:center;">까지</td>
+        <td style="text-align:center;">(치료</td>
+        <td style="text-align:right;"></td>
         <td style="text-align:left;">일간)</td>
       </tr>
     </tbody>
@@ -603,24 +632,15 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ③: 용도 입력칸 너비를 내용에 맞게 조정.
-       전폭(full-bleed) → 내용맞춤(width:auto 테이블 + 라벨 60px·값 min-width:320px 좌측 배치). -->
-  <!-- T-20260729-foot-DOC-LAYOUT-FIX ②: 용도표 width:auto→100% + table-layout:fixed, 라벨폭 80px(위 통원일자칸과 통일). 인라인 전용. -->
-  <table style="margin-top:4px; width:100%; table-layout:fixed;">
-    <tbody>
-      <!-- T-20260622-foot-VISITCERT-DISEASE-FUTURETX-HIDE: 향후치료(향후 치료의견) 비노출.
-           현장 요청(김주연 총괄) — 통원확인서 화면·인쇄 모두 미표시. treatment_opinion 바인딩 불변. 용도 행은 유지. -->
-      <tr>
-        <td style="width:80px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td>
-        <td>{{purpose}}</td>
-      </tr>
-    </tbody>
-  </table>
+  <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-5⑧: 용도 행 미렌더(롤모델 정합, 팀장 2026-07-31).
+       {{purpose}} 토큰·발급 UI(DocumentPrintPanel 용도 선택, T-20260723 ②)·저장 경로 전부 무접촉 — 인쇄물에만 미표시.
+       복원 시 아래 블록: <table style="margin-top:4px; width:100%; table-layout:fixed;"><tbody><tr>
+       <td style="width:80px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도</td><td>{{purpose}}</td></tr></tbody></table> -->
 
   <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ④: "상기인은~확인함" 텍스트칸 세로 높이 3배(≈36px→108px).
        min-height:108px + flex 상하중앙 정렬(기존 text-align:center 유지). -->
   <div class="confirm-text" style="margin-top:6px; min-height:108px; display:flex; align-items:center; justify-content:center;">
-    상기인은 위와 같이 통원중임(통원하였음)을 확인함.
+    상기인은 위와 같이 진료중임(진료하였음)을 확인함.
   </div>
 
   <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ⑤: 하단 발행일~주소및명칭 섹션 좌우 50:50.
@@ -642,7 +662,7 @@ ${COMMON_STYLE}
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
-        <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
+        <td style="background:#f8f8f8; white-space:nowrap;">의 사 성 명</td>
         <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
@@ -838,9 +858,7 @@ ${COMMON_STYLE}
   }
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
-  /* T-20260724-foot-DOCPRINT-DIAGCODE-OVERFLOW-2PAGE: 상병 2열 그리드는 행수를 절반으로 줄여 1페이지 유지.
-     추가 안전마진으로 상병 셀만 패딩·폰트를 소폭 압축(다른 표·합계 영향 없음). */
-  .bill-wrap .diag-grid td, .bill-wrap .diag-grid th { padding: 1px 4px; font-size: 8pt; line-height: 1.15; }
+  /* T-20260731-foot-DOCFORM-URGENT-6FIX AC-D2: diag-grid 표 삭제에 따라 고아 CSS 규칙 제거(.bill-wrap .diag-grid). */
   @media print {
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
        콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
@@ -891,51 +909,9 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- T-20260721-foot-PAYDETAIL-DIAGCODE-SHOW: 상병(상병코드·상병명) 표시 (총괄 김주연 요청).
-       diag_code_N/diag_name_N = 소견서/진단서와 동일 단일 소스(service_charges 상병 → check_in_services 폴백,
-       결제미니창 PATH-4 는 선택 상병 codeItems). 값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 빈칸(AC-2,
-       잠정 소견서와 동일 방식). 행 가시성(diag_row_3/4_style)은 print 경로가 이미 세팅 — 신규 바인딩 0.
-       순수 additive 표시 변경(no-DDL, 스키마·입력동선 무변경). -->
-  <!-- T-20260724-foot-DOCPRINT-DIAGCODE-OVERFLOW-2PAGE: 상병 표시를 4행 세로 나열 → 2열(2 entries/row) 컴팩트 그리드로 재배치.
-       배경: 상병 다건(2~4건) 시 세로 4행이 아래 진료비 내역표·서명란을 A4 landscape 1페이지 박스(175mm) 밖으로 밀어 2페이지 오버플로우 발생.
-       조치: 가로(272mm) 폭 여유를 활용해 상병 4건도 최대 2 물리행으로 수용 → 세로 높이 절반 → 1페이지 내 완결(AC-1/1′).
-       diag_code_N/diag_name_N 토큰·소스·개수(≤4)·행 가시성 규칙 불변 = 순수 레이아웃(데이터 무접점, AC-4).
-       2번째 물리행(연번 3·4)은 기존과 동일하게 diag_row_3_style(3건 이상 시 노출)로 제어. 미채움 슬롯은 기존 패턴대로 빈칸(AC-3). -->
-  <!-- T-20260729-foot-DOC-LAYOUT-FIX ④: diag-grid 좌블록(연번·코드·상병명) 50% / 우블록 50% 대칭 — table-layout:fixed+colgroup. -->
-  <table class="diag-grid" style="margin-bottom:4px; table-layout:fixed;">
-    <colgroup>
-      <col style="width:8%" /><col style="width:18%" /><col style="width:24%" />
-      <col style="width:8%" /><col style="width:18%" /><col style="width:24%" />
-    </colgroup>
-    <thead>
-      <tr>
-        <th>연번</th>
-        <th>상병코드</th>
-        <th style="text-align:left;">상병명</th>
-        <th>연번</th>
-        <th>상병코드</th>
-        <th style="text-align:left;">상병명</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>1</td>
-        <td style="white-space:nowrap;">{{diag_code_1}}</td>
-        <td style="text-align:left;">{{diag_name_1}}</td>
-        <td>2</td>
-        <td style="white-space:nowrap;">{{diag_code_2}}</td>
-        <td style="text-align:left;">{{diag_name_2}}</td>
-      </tr>
-      <tr style="{{diag_row_3_style}}">
-        <td>3</td>
-        <td style="white-space:nowrap;">{{diag_code_3}}</td>
-        <td style="text-align:left;">{{diag_name_3}}</td>
-        <td>4</td>
-        <td style="white-space:nowrap;">{{diag_code_4}}</td>
-        <td style="text-align:left;">{{diag_name_4}}</td>
-      </tr>
-    </tbody>
-  </table>
+  <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-D: 상병(상병코드·상병명) 표 삭제(팀장 2026-07-31). ※총괄 사실통지 대상
+       (T-20260721-PAYDETAIL-DIAGCODE-SHOW 로 추가 → OVERFLOW-2PAGE·DOC-LAYOUT-FIX④ 3회 손댄 자산 폐기).
+       {{diag_code_N}}/{{diag_name_N}} 토큰 소스(autoBind)는 무접촉 — 소견서·진단서·진료확인서(CODE)가 공유. 템플릿에서 미렌더만. -->
 
   <!-- 항목 테이블 -->
   <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-2/AC-8: 참조양식(IMG_8778) 2단 헤더 정합.
@@ -2167,7 +2143,7 @@ const BILL_RECEIPT_NEW_HTML = `
       </tr>
       <tr>
         <td class="rn-lbl">진료과목</td><td>피부과</td>
-        <td class="rn-lbl" style="font-size:6.8pt;">질병군(DRG)번호</td><td></td>
+        <td class="rn-lbl" style="font-size:6.8pt;">질병군(DRG)</td><td></td>
         <td class="rn-lbl">병실</td><td></td>
         <!-- T-20260722-foot-BILLRECEIPT-MASTER-FIXES §3: [라벨][값] 2셀 분리(종전 한 셀 <br> crammed). -->
         <td class="rn-lbl" style="font-size:6.4pt;">환자구분</td><td style="font-size:6.4pt;">건강보험</td>
