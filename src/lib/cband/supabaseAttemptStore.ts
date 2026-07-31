@@ -111,7 +111,7 @@ export const supabaseAttemptStore: AttemptStore = {
   async recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void> {
     const isCancel = rec.tranType === TRANTYPE_CANCEL;
     // ★K1(3-way canon, external_* 착지 · dead-column-free):
-    //   external_approval_no=AUTHNO · external_tid=TID · payment_attempt_id=attemptId(FK, CAT-origin 판별자).
+    //   external_approval_no=AUTHNO · external_tid=TID · payment_attempt_id=attemptId(FK, CAT-origin 판별자) · merchant_no=MERNO(§9 필수).
     //   pos_provider/pos_transaction_id 는 prod 부재(dead) → write 금지. external_trxid 는 NULL 유지(RedPay 예약키).
     //   C5 취소 성공 = 수납취소(payment_type='refund', 기존 규약 계승 — 신규 refund 모델 발명 금지).
     //   ★K5 ③ DEDUP: external_approval_no+external_tid+payment_attempt_id 를 payments INSERT 와 함께 원자 write →
@@ -131,6 +131,7 @@ export const supabaseAttemptStore: AttemptStore = {
         payment_type: isCancel ? 'refund' : 'payment',
         external_approval_no: rec.authNo,     // ★K1 AUTHNO canonical home(LIVE·matcher 독출=dedup 앵커).
         external_tid: rec.tid,                // ★K1 TID(LIVE·matcher 독출=dedup 앵커).
+        merchant_no: rec.merno,               // ★§9 MERNO 저장 필수(총괄) — mig190500 착지 컬럼에 값-write(ADDITIVE·DDL무변). A11/A12 MERNO 대사 조인 + DEDUP(K5) MERNO 축.
         payment_attempt_id: rec.attemptId,    // ★K1 CAT-origin 판별자(FK) + L2 이중수납 2차방어(partial UNIQUE).
         // external_trxid 미기입(NULL 유지) = RedPay 예약 매칭키.
         is_simulation: rec.isSimulation,      // ★C6 테스트금액 격리(payments 패리티).

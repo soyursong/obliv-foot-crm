@@ -267,6 +267,8 @@ test.describe('§12 시나리오 (★D 상태머신)', () => {
     // 수납기록 1건 + 시도레코드 approved
     expect(payments).toHaveLength(1);
     expect(payments[0].authNo).toBe('28102510');
+    // ★§9 MERNO 필수(총괄): recordCardPayment 가 MERNO 를 수신 → supabaseAttemptStore 가 payments.merchant_no 로 값-write.
+    expect(payments[0].merno).toBe(BASE.merno);
     expect(attempts.get(r.msgTrace)?.status).toBe('approved');
     expect(isValidTrace(r.msgTrace)).toBe(true);
   });
