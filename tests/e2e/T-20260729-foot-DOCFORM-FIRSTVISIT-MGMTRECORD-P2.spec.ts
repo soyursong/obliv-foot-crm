@@ -83,9 +83,11 @@ test('AC-4: 초기 관리 내용 → 시술 및 처방 + 치료코드 드롭다�
   const html = getHtmlTemplate(NEW_KEY)!;
   expect(html).toContain('시술 및 처방');
   expect(html).toContain('{{procedure_rx_html}}');
-  // 드롭다운 UI + 소스 필터(비-상병 서비스) 존재.
+  // 드롭다운 UI 존재.
   expect(panelSrc).toContain('data-testid="fvmr-procedure-select"');
-  expect(panelSrc).toMatch(/category_label \?\? ''\) !== '상병'/);
+  // T-20260730-foot-...-P3 item4 supersede: 시술및처방 필터가 '비-상병 전체' → 서비스관리 4개 카테고리
+  //   (기본/검사/풋케어/수액) optgroup 그룹으로 진화. 구 `!== '상병'` 단일 필터는 P3에서 대체됨.
+  expect(panelSrc).toContain('FVMR_PROCEDURE_CATEGORIES');
 });
 
 // ── AC-5: 상병명 진단코드 드롭다운 신규 ──
@@ -97,16 +99,17 @@ test('AC-5: 상병명 진단코드 드롭다운 신규 배선', () => {
   expect(panelSrc).toMatch(/category_label \?\? ''\) === '상병'/);
 });
 
-// ── AC-6: 증상경과 자유텍스트 + 상용구(펜차트 재사용) ──
-test('AC-6: 증상경과 자유텍스트 + 상용구 버튼(phrase_templates pen_chart 재사용)', () => {
+// ── AC-6: 증상경과 자유텍스트 + 상용구 (T-20260730 P3 item5로 소스 진화) ──
+test('AC-6: 증상경과 자유텍스트 + 상용구 버튼(P3 item5 supersede: 진료관리>슈퍼상용구 super_phrases)', () => {
   const html = getHtmlTemplate(NEW_KEY)!;
   expect(html).toContain('증상경과');
   expect(html).toContain('{{symptom_progress}}');
   expect(panelSrc).toContain('data-testid="fvmr-symptom-progress"');
   expect(panelSrc).toContain('data-testid="fvmr-phrase-buttons"');
-  // 펜차트 상용구 시스템 재사용(phrase_type='pen_chart').
-  expect(panelSrc).toContain("from('phrase_templates')");
-  expect(panelSrc).toMatch(/phrase_type'?,?\s*'pen_chart'/);
+  // T-20260730-foot-...-P3 item5 supersede: 상용구 소스 펜차트(phrase_templates/pen_chart) →
+  //   현장 지정 진료관리>슈퍼상용구(super_phrases.clinical_progress)로 전환.
+  expect(panelSrc).toContain("from('super_phrases')");
+  expect(panelSrc).toContain('clinical_progress');
 });
 
 // ── AC-7: 담당의사 서명란 2열 ──
@@ -183,14 +186,14 @@ test('AC-9: 마이그레이션은 field_map UPDATE(무DDL) + 대상 form_key 한
   }
 });
 
-test('AC-9: services/phrase_templates 는 READ-ONLY(select 만, mgmt 경로 write 무접점)', () => {
-  // mgmt 전용 로더는 select 만 사용(insert/update/delete 없음).
+test('AC-9: mgmt 소스 로더 READ-ONLY(select 만, write 무접점) — P3 item5 supersede: super_phrases', () => {
+  // mgmt 전용 로더는 select 만 사용(insert/update/delete 없음). P3에서 상용구 소스 super_phrases 로 전환 + staff 조회(item2) 추가.
   const loader = panelSrc.slice(
     panelSrc.indexOf('초진 관리기록지 전용 소스 로드'),
-    panelSrc.indexOf('초진 관리기록지 전용 소스 로드') + 1400,
+    panelSrc.indexOf('초진 관리기록지 전용 소스 로드') + 2000,
   );
   expect(loader).toContain("from('services')");
-  expect(loader).toContain("from('phrase_templates')");
+  expect(loader).toContain("from('super_phrases')");
   expect(loader).not.toMatch(/\.(insert|update|delete|upsert)\(/);
 });
 
